@@ -56,14 +56,23 @@ public sealed class ReversedDirectionJourneyTests
 
         await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
         JourneyRuntimeRow runtime = await AcceptAsync(fixture, evaluation);
-        UpcomingStopPlanProjection plan = JourneyPlanBuilder.PickupDispatchPlan(runtime);
+        // control-server#208 起计划由停靠序列投影出来，所以这里从库里取这趟旅程的两个停靠——受理事务在写旅程行的
+        // 同一次保存里写了它们。
+        JourneyStopRow[] stops = await fixture.Context.Set<JourneyStopRow>().AsNoTracking()
+            .Where(row => row.JourneyId == runtime.JourneyId)
+            .OrderBy(row => row.Sequence)
+            .ToArrayAsync(Token);
+        UpcomingStopPlanProjection plan = JourneyPlanBuilder.Plan(
+            runtime, stops, stops[0], arrivedAtCurrent: false, runtime.PlanRevision);
         Assert.Equal(
             [("TO_PICKUP", 1, "派工待送取货", "ACTIVE"), ("TO_DROPOFF", 2, "N1-1", "PLANNED")],
             plan.Legs.Select(leg => (leg.LegType, leg.Sequence, leg.StationId, leg.State)));
         Assert.All(plan.Legs, leg => Assert.Null(leg.PublicStationFunction));
         Assert.Equal(
             ["派工待送取货", "N1-1"],
-            JourneyPlanBuilder.GatePlan(runtime).Legs.Select(leg => leg.StationId));
+            JourneyPlanBuilder
+                .Plan(runtime, stops, stops[1], arrivedAtCurrent: true, runtime.PlanRevision + 2)
+                .Legs.Select(leg => leg.StationId));
     }
 
     /// <summary>
