@@ -385,6 +385,10 @@ public sealed class DispatchRoundRunner(
         // 写在这里是因为那条保证靠的是别处的集合怎么构造，这个查询自己对 Blocked 一无所知——改了那边，
         // 这里不会有东西变红。
         //
+        // <b>这一处没有行为判据，实测过：</b>拆掉这两个字的排除，
+        // MultiVehicleExecutionTests.ABlockedJourneyTakesNoAppendedDemand 照样绿，因为 Blocked 的车压根不进
+        // underWay，走不到这个查询。它是纵深的第二道，留着是为了让这个查询自己也说得出它要什么。
+        //
         // <b>它和 WireToGateStore.StageAndCommitAppendAsync 里那一处不是重复的，别删掉任何一处。</b>
         // 两处判的是两个不同时刻的两件不同的事：这里是<b>准入口径</b>——轮次开始时就已经 Blocked 的车，
         // 不值得为它算一遍插位；那里是<b>写入一致性</b>——旅程在轮次读过之后才变成 Blocked，那是一个竞态，
@@ -618,7 +622,8 @@ public sealed class DispatchRoundRunner(
         try
         {
             return await DispatchSelectedCoreAsync(
-                    round, selected, acceptedDemandIds, claimsIntakeRefused, claimedHere, now, linked.Token)
+                    round, selected, participant.UnderWay, acceptedDemandIds, claimsIntakeRefused, claimedHere,
+                    now, linked.Token)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (expiry.IsCancellationRequested &&
@@ -660,6 +665,7 @@ public sealed class DispatchRoundRunner(
     private async Task<CandidateDispatchOutcome> DispatchSelectedCoreAsync(
         DispatchRoundFacts round,
         EligibleVehicleOffer selected,
+        bool participantUnderWay,
         HashSet<string> acceptedDemandIds,
         HashSet<string> claimsIntakeRefused,
         List<string> claimedHere,
@@ -670,7 +676,23 @@ public sealed class DispatchRoundRunner(
         string demandId = selected.Candidate.Snapshot.DemandId;
         long expectedSessionGeneration = selected.Facts.Onboard?.SessionGeneration
             ?? throw new InvalidOperationException("An eligible candidate requires current Onboard facts.");
-        bool underWay = selected.Placement is not null;
+        // 在途与否取轮次给这辆车的那个事实，不从插入位反推（批次7-06，control-server#211）。
+        //
+        // <c>Placement</c> 只有 <see cref="EnRouteAppendCriterion"/> 会填，而那条判据是<b>可选</b>的——
+        // <c>DispatchAdmissionCriteria.InTransit</c> 只在 <c>routeGraph</c> 非空时加它。生产里 Program.cs 无条件
+        // 注册路网，所以今天反推恰好对；没有路网的配置下，一辆在途车会被当成空闲车走完整条受理，
+        // 去建一趟新旅程、认领它已经被占着的车。
+        //
+        // 两者不一致就是这台服务器自己的不变量被破坏了，所以抛而不是挑一个：在途车拿不到插入位却走到了这里，
+        // 意味着在途资格链没有按它该有的样子装起来。
+        bool underWay = participantUnderWay;
+        if (underWay != (selected.Placement is not null))
+        {
+            throw new BusinessIdentityConflictException(
+                $"Vehicle '{selected.Vehicle.AgvId}' is under way but its offer carries no en-route placement; " +
+                "the in-transit admission chain is missing its route graph.");
+        }
+
         // 这两处返回 false：它们是<b>这辆车自己</b>的原因，换一辆车会得到不同的答案（批次7-06，control-server#211）。
         //
         // 出价循环那句「受理把它拒掉是这条需求自己的结论，换一辆车再试一次只会得到同一个答案」，对最终重读

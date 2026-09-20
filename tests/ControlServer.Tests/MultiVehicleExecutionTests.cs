@@ -10,6 +10,7 @@ using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Host.Runtime.Faults;
 using ControlServer.Host.Runtime.Fleet;
+using ControlServer.Host.Runtime.RouteGraph;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Adapters;
 using ControlServer.Infrastructure.Persistence;
@@ -896,15 +897,29 @@ public sealed partial class MultiVehicleExecutionTests
         /// <summary>A criterion put at the head of the chain, so a test can state what a vehicle concludes.</summary>
         private readonly IDispatchAdmissionCriterion? _extraCriterion;
 
+        /// <summary>装不装路网——在途追加那条判据只在装了的时候才进链，见 <see cref="SeedRouteGraphAsync"/>。</summary>
+        private readonly bool _withRouteGraph;
+
+        /// <summary>
+        /// 在途链装不装路网。<b>false 造的是一个畸形配置</b>：空闲链有路网、在途链没有，于是在途车被判为合格
+        /// 却拿不到插入位——<c>DispatchSelectedCoreAsync</c> 那条一致性断言存在就是为了让它响亮地停下，
+        /// 而不是把这辆在途车当成空闲车去建第二趟旅程。
+        /// </summary>
+        private readonly bool _routeGraphOnInTransitChain;
+
         private FleetFixture(
             SqliteConnection connection,
             ControlServerDbContext context,
             JourneyRuntimeOptions options,
             MovableClock clock,
-            IDispatchAdmissionCriterion? extraCriterion)
+            IDispatchAdmissionCriterion? extraCriterion,
+            bool withRouteGraph,
+            bool routeGraphOnInTransitChain)
         {
             _connection = connection;
             _extraCriterion = extraCriterion;
+            _withRouteGraph = withRouteGraph;
+            _routeGraphOnInTransitChain = routeGraphOnInTransitChain;
             Context = context;
             Options = options;
             Clock = clock;
@@ -934,10 +949,15 @@ public sealed partial class MultiVehicleExecutionTests
         public EventRecordingLogger<JourneyRuntimeEngine> EngineLog { get; } = new();
         public JourneyRuntimeEngine Engine { get; private set; }
 
+        /// <param name="withRouteGraph">
+        /// 给这台服务器装上路网，于是在途追加那条链按生产的样子建起来（批次7-06，control-server#211）。
+        /// </param>
         public static async Task<FleetFixture> CreateAsync(
             int budgetMilliseconds = 30_000,
             Action<JourneyRuntimeOptions>? configure = null,
-            IDispatchAdmissionCriterion? extraCriterion = null)
+            IDispatchAdmissionCriterion? extraCriterion = null,
+            bool withRouteGraph = false,
+            bool routeGraphOnInTransitChain = true)
         {
             SqliteConnection connection = new("Data Source=:memory:");
             await connection.OpenAsync(TestContext.Current.CancellationToken);
@@ -948,9 +968,83 @@ public sealed partial class MultiVehicleExecutionTests
             await TaskTypeStationRuntimeSeed.ActivateAsync(dbOptions, Now);
             JourneyRuntimeOptions options = FleetOptions(budgetMilliseconds);
             configure?.Invoke(options);
-            FleetFixture fixture = new(connection, context, options, new MovableClock(Now), extraCriterion);
+            FleetFixture fixture = new(
+                connection, context, options, new MovableClock(Now), extraCriterion, withRouteGraph,
+                routeGraphOnInTransitChain);
+            if (withRouteGraph)
+            {
+                await fixture.SeedRouteGraphAsync();
+            }
+
             await fixture.SeedAsync();
             return fixture;
+        }
+
+        /// <summary>
+        /// 这台服务器的路网：一条单向链，车位 → 12 → 13 → 210，每段一万毫米。
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// <b>它是三件事共用的，改它之前先看这三处。</b>
+        /// </para>
+        /// <list type="number">
+        /// <item>在途追加那条链在没有路网时根本不装（<c>DispatchAdmissionCriteria.InTransit</c> 只在
+        /// <c>routeGraph</c> 非空时加 <c>EnRouteAppendCriterion</c>），所以「在途与否」不能从插入位反推那一条
+        /// 要靠它才测得到；</item>
+        /// <item><c>ReadEnRoutePlanAsync</c> 排除 Blocked，要有路网才走得到；</item>
+        /// <item>分区连续（<c>EN_ROUTE_APPEND_BREAKS_ZONE_CONTIGUITY</c>）在轮次这一层的覆盖同样靠它。</item>
+        /// </list>
+        /// <para>
+        /// 站号与 <see cref="FleetRiot"/> 的站表一一对上：12 是 N1-1、13 是 N1-2／N1-3、210 是关卡、
+        /// 300 是等待点。对不上的话判据会先在可达性上拒掉，而那不是这几条用例要测的东西。
+        /// </para>
+        /// </remarks>
+        /// <summary>这台服务器的路网访问器；没装路网时为空，链于是与本票之前逐字相同。</summary>
+        private RouteGraphAccess? RouteGraph() =>
+            _withRouteGraph
+                ? new RouteGraphAccess(
+                    new RouteGraphSnapshotStore(Context),
+                    Microsoft.Extensions.Options.Options.Create(new RouteGraphOptions
+                    {
+                        Enabled = true,
+                        MapId = Options.MapId,
+                        DesignStateTtl = TimeSpan.FromHours(1),
+                        RuntimeRefreshPeriod = TimeSpan.FromSeconds(10),
+                        RuntimeStateMaxAge = TimeSpan.FromHours(1),
+                    }),
+                    Clock)
+                : null;
+
+        /// <summary>配本区的途中追加上限；不配就是本区禁止追加（REQ-0198）。</summary>
+        public Task<DispatchZoneParameterTableVersion> AllowEnRouteAppendAsync(long maxPathCostIncreaseMm) =>
+            new DispatchZoneParameterStore(Context, JourneyRuntimeWorkerTestKit.CreateGovernedPublisher(Context))
+                .WriteVersionAsync(
+                    [new DispatchZoneParameters(Options.DispatchZone, maxPathCostIncreaseMm, null)],
+                    Clock.GetUtcNow(),
+                    TestContext.Current.CancellationToken);
+
+        private async Task SeedRouteGraphAsync()
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            RouteGraphSnapshotStore store = new(Context);
+            RouteGraphEdgeFact[] edges =
+            [
+                new(1, 1, 2, 10000, 0, 0, 10000, 0, 1, false),
+                new(2, 2, 3, 10000, 10000, 0, 20000, 0, 1, false),
+                new(3, 3, 4, 10000, 20000, 0, 30000, 0, 1, false),
+                new(4, 4, 5, 10000, 30000, 0, 40000, 0, 1, false),
+            ];
+            RouteGraphStationFact[] stations =
+            [
+                new(300, "等待点", 1, 0, 0, 1, 0),
+                new(12, "N1-1", 1, 10000, 0, 2, 0),
+                new(13, "N1-2_N1-3", 2, 20000, 0, 3, 0),
+                new(210, "关卡", 3, 30000, 0, 4, 0),
+            ];
+            await store.ReplaceDesignStateAsync(Options.MapId, edges, stations, null, Now, token);
+            await store.ReplaceRuntimeStateAsync(Options.MapId, [], [], Now, token);
+            await store.ReplaceEdgeGroupsAsync(Options.MapId, [], "", Now, token);
+            await store.ClearStaleAsync(Options.MapId, Now, token);
         }
 
         /// <summary>One more round, with the clock moved on first so samples are spaced.</summary>
@@ -1155,7 +1249,7 @@ public sealed partial class MultiVehicleExecutionTests
                         new VehicleFaultStore(Context),
                         BoxCounts,
                         NullLogger<SlotCapacityCriterion>.Instance,
-                        routeGraph: null,
+                        routeGraph: RouteGraph(),
                         catalog: catalogAccess,
                         createGate: gate),
                     .. _extraCriterion is null ? Array.Empty<IDispatchAdmissionCriterion>() : [_extraCriterion],
@@ -1170,12 +1264,15 @@ public sealed partial class MultiVehicleExecutionTests
                             new VehicleFaultStore(Context),
                             BoxCounts,
                             NullLogger<SlotCapacityCriterion>.Instance,
-                            routeGraph: null,
+                            routeGraph: RouteGraph(),
                             catalog: catalogAccess,
                             createGate: gate),
                         .. _extraCriterion is null ? Array.Empty<IDispatchAdmissionCriterion>() : [_extraCriterion],
                     ],
-                    options)),
+                    options,
+                    // 第三个参数才是把 EnRouteAppendCriterion 加进在途链的那个——上面 Default 里那个 routeGraph
+                    // 加的是可达性判据，两者不是一回事。漏了它，在途车会被判为合格却拿不到插入位。
+                    _routeGraphOnInTransitChain ? RouteGraph() : null)),
                 new DispatchZoneParameterStore(Context, JourneyRuntimeWorkerTestKit.CreateGovernedPublisher(Context)),
                 DispatchCandidateOrdering.Ranker(),
                 dispatchPolicy,
@@ -1620,8 +1717,19 @@ public sealed partial class MultiVehicleExecutionTests
 
     /// <summary>The real store, with every journey plan intake hands it written down first.</summary>
     private sealed class RecordingAcceptances(WireToGateStore inner, List<JourneyExecutionPlan> plans)
-        : IJourneyAcceptanceStore
+        : IJourneyAcceptanceStore, IJourneyAppendStore
     {
+        /// <summary>
+        /// 途中追加原样转给真 store（批次7-06，control-server#211）。不实现这个接口的话，在途车被判为合格、
+        /// 拿到插入位、走到受理，然后 <c>WireToGateOrchestration</c> 抛「配置的需求仓库不支持追加」——
+        /// 那是夹具的缺口，不是产品的。
+        /// </summary>
+        public Task AppendToJourneyAsync(
+            AcceptedDemandSnapshot snapshot,
+            JourneyAppendPlan plan,
+            CancellationToken cancellationToken) =>
+            inner.AppendToJourneyAsync(snapshot, plan, cancellationToken);
+
         /// <summary>
         /// Thrown instead of the first acceptance, and only that one, the way the real store refuses one it cannot
         /// make good on. Nothing is written when it throws, so the round claimed a demand it never accepted.

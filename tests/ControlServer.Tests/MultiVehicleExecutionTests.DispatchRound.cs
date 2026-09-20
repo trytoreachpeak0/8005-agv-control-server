@@ -406,6 +406,138 @@ public sealed partial class MultiVehicleExecutionTests
     }
 
     /// <summary>
+    /// 在途车接走一条需求时，走的是追加——它进的是那辆车已有的那趟旅程，而不是新开一趟
+    /// （REQ-0205；批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>这一条守的是「在途与否」取自哪里。</b>受理那一段原先从「有没有插入位」反推在途，而插入位只有
+    /// <c>EnRouteAppendCriterion</c> 会填，那条判据在 <c>DispatchAdmissionCriteria.InTransit</c> 里是<b>可选</b>的
+    /// ——没有路网就不进链。反推因此在「装了路网」时恰好对，在没装时把一辆在途车当成空闲车，走完整条受理去
+    /// 建第二趟旅程、认领一辆已经被占着的车。
+    /// </para>
+    /// <para>
+    /// 判据是<b>归属落在同一趟旅程上</b>，不是「没红」：建了第二趟旅程一样不红，而那正是反推错掉的样子。
+    /// </para>
+    /// <para>
+    /// 车队裁成一辆：三辆车时第二条需求会被空闲车接走，那条路测不到追加。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task AnInTransitVehicleTakesAnAppendedDemandIntoItsExistingJourney()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(
+            configure: options => options.Fleet = options.Fleet[..1], withRouteGraph: true);
+        await fixture.AllowEnRouteAppendAsync(1_000_000);
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
+        await fixture.RunRoundAsync();
+        JourneyRuntimeRow first = Assert.Single(
+            await fixture.Context.JourneyRuntimes.ToArrayAsync(TestContext.Current.CancellationToken));
+
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0), FleetFixture.Demand(1, "N1-2", 1)]);
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+
+        // 还是那一趟旅程，两条需求都挂在它上面。
+        JourneyRuntimeRow only = Assert.Single(
+            await fixture.Context.JourneyRuntimes.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(first.JourneyId, only.JourneyId);
+        // 客户端排序：SQLite 的 ORDER BY 接不了 DateTimeOffset，这个仓库的生产库就是 SQLite。
+        JourneyDemandRow[] memberships = [.. (await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+                .ToArrayAsync(TestContext.Current.CancellationToken))
+            .OrderBy(row => row.AddedAt)];
+        Assert.Equal([first.JourneyId, first.JourneyId], memberships.Select(row => row.JourneyId));
+    }
+
+    /// <summary>
+    /// 在途链漏装路网时，这一轮响亮地停在那辆车上——而不是把它当成空闲车去建第二趟旅程
+    /// （批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 「在途与否」曾经从「有没有插入位」反推，而插入位只有 <c>EnRouteAppendCriterion</c> 会填，那条判据在
+    /// <c>DispatchAdmissionCriteria.InTransit</c> 里是可选的。<b>生产上 <c>Program.cs</c> 无条件注册路网，
+    /// 所以反推今天恰好对</b>——恰好对的东西不会在它不再对的那天发出声音。
+    /// </para>
+    /// <para>
+    /// 这条用例造的正是那个配置：空闲链有路网、在途链没有。反推会说这辆车「不在途」，于是它走完整条受理，
+    /// 建第二趟旅程、认领一辆已经被这趟旅程占着的车。现在取的是轮次给这辆车的那个事实，两者不一致就抛，
+    /// 轮次把它记成本服务端自己的不变量被破坏（事件 2124）并隔离这一辆车。
+    /// </para>
+    /// <para>
+    /// <b>判据是「还是那一趟旅程」加「记了 2124」</b>：只断言没建第二趟旅程的话，一个什么都不做的实现也能通过。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task AnInTransitChainWithoutItsRouteGraphStopsTheVehicleLoudly()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(
+            configure: options => options.Fleet = options.Fleet[..1],
+            withRouteGraph: true,
+            routeGraphOnInTransitChain: false);
+        await fixture.AllowEnRouteAppendAsync(1_000_000);
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
+        await fixture.RunRoundAsync();
+        JourneyRuntimeRow first = Assert.Single(
+            await fixture.Context.JourneyRuntimes.ToArrayAsync(TestContext.Current.CancellationToken));
+        fixture.EngineLog.Entries.Clear();
+
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0), FleetFixture.Demand(1, "N1-2", 1)]);
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+
+        JourneyRuntimeRow only = Assert.Single(
+            await fixture.Context.JourneyRuntimes.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(first.JourneyId, only.JourneyId);
+        Assert.Contains(
+            fixture.EngineLog.Entries,
+            entry => entry.EventId.Id == 2124 && entry.Error is BusinessIdentityConflictException);
+    }
+
+    /// <summary>
+    /// 一趟 Blocked 的旅程拿不到追加：新需求既不进它，也不会让这辆车被当成空闲车重新派一趟
+    /// （批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 追加进一趟等人介入的旅程，代价不是少接一条活：需求写进 <c>AcceptedDemands</c> 之后就不再是候选，
+    /// 绑死在这辆车上，而车上那张计划不会更新（<c>RefreshUpcomingStopPlanAsync</c> 对 Blocked 直接返回）。
+    /// 操作员看到的是一条派出去了、却永远不动的需求。
+    /// </para>
+    /// <para>
+    /// <b>这一条要有路网才测得到</b>：没有路网，在途追加那条判据根本不进链，这辆车连出价都不会出，
+    /// 用例会因为一个不相干的理由而绿。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task ABlockedJourneyTakesNoAppendedDemand()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(
+            configure: options => options.Fleet = options.Fleet[..1], withRouteGraph: true);
+        await fixture.AllowEnRouteAppendAsync(1_000_000);
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
+        await fixture.RunRoundAsync();
+        await fixture.BlockJourneysAsync(FleetFixture.AgvIds[0]);
+
+        fixture.EngineLog.Entries.Clear();
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0), FleetFixture.Demand(1, "N1-2", 1)]);
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+
+        // 还是那一条旅程、那一条归属：新需求没进去，也没有第二趟旅程被开出来。
+        Assert.Single(await fixture.Context.JourneyRuntimes.ToArrayAsync(TestContext.Current.CancellationToken));
+        // 而且是<b>安静地</b>没进去：没有任何东西被记成「本服务端自己的不变量被破坏」（事件 2124）。
+        // 一趟 Blocked 的旅程接不了追加是正常局面，不是缺陷，日志里不该出现 Error。
+        //
+        // <b>这一条守的是 JourneyRuntimeEngine 把 Blocked 的车排除出 underWay 那一步</b>，不是
+        // DispatchRoundRunner.ReadEnRoutePlanAsync 里那一处。后者在它之后，实测拆掉它这条用例照样绿——
+        // Blocked 的车压根不进 underWay，也就走不到那个查询。那一处因此是纵深的第二道，没有行为判据，
+        // 理由写在它自己的注释里。
+        Assert.DoesNotContain(fixture.EngineLog.Entries, entry => entry.EventId.Id == 2124);
+        JourneyDemandRow only = Assert.Single(
+            await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+                .ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(FleetFixture.Demand(0, "N1-1", 0).DemandId, only.DemandId);
+    }
+
+    /// <summary>
     /// 一趟 Blocked 的旅程占着车，但不让这一轮开工：全车都 Blocked 时目录一次都不读（批次7-06，
     /// control-server#211）。
     /// </summary>
@@ -1440,7 +1572,8 @@ public sealed partial class MultiVehicleExecutionTests
 /// <summary>A logger that keeps every entry with its event id, so a test can pin both.</summary>
 internal sealed class EventRecordingLogger<T> : ILogger<T>
 {
-    public sealed record Entry(EventId EventId, LogLevel Level, string Message);
+    /// <summary>异常一并留着：轮次把每辆车的异常吞成一条日志，不存它就只能看到类型名。</summary>
+    public sealed record Entry(EventId EventId, LogLevel Level, string Message, Exception? Error = null);
 
     public List<Entry> Entries { get; } = [];
 
@@ -1458,7 +1591,7 @@ internal sealed class EventRecordingLogger<T> : ILogger<T>
     {
         lock (Entries)
         {
-            Entries.Add(new Entry(eventId, logLevel, formatter(state, exception)));
+            Entries.Add(new Entry(eventId, logLevel, formatter(state, exception), exception));
         }
     }
 }
