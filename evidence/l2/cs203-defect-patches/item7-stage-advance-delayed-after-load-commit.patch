@@ -1,15 +1,17 @@
 diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
-index 719fe30d..4d8b04b7 100644
+index 719fe30d..a6e0f194 100644
 --- a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
 +++ b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
-@@ -604,6 +604,10 @@ public sealed class JourneyRuntimeEngine(
-                 }
-                 else if (load?.Status == StationOperationStatus.Committed)
-                 {
-+                    // DEFECT (control-server#203 item 7 red evidence, local only): widens the window
-+                    // between "the load is committed" and "the runtime has moved on", which is where
-+                    // the old sampling point could take its values.
-+                    await Task.Delay(TimeSpan.FromSeconds(8), cancellationToken).ConfigureAwait(false);
-                     await store.SettleAnsweredCommandAsync(
-                         runtime.LoadCommandMessageId, now, cancellationToken).ConfigureAwait(false);
-                     // REQ-0237 / ADR-cross-0054: the load is committed and the vehicle is still at the
+@@ -586,6 +586,12 @@ public sealed class JourneyRuntimeEngine(
+                 // had changed and tore the session down.
+                 await store.SettleAnsweredCommandAsync(
+                     runtime.SublotRequestMessageId, now, cancellationToken).ConfigureAwait(false);
++                // DEFECT (control-server#203 item 7 red evidence, local only): holds the stage at
++                // AwaitingSublot while the onboard finishes the load and the result commits. That is the
++                // window the old sampling point ("stage is not AwaitingLoadResult") returned inside --
++                // AwaitingSublot is not AwaitingLoadResult either, so it stopped waiting before the
++                // runtime had consumed anything.
++                await Task.Delay(TimeSpan.FromSeconds(15), cancellationToken).ConfigureAwait(false);
+                 SetStage(runtime, JourneyRuntimeStage.AwaitingLoadResult, now);
+                 break;
+             case JourneyRuntimeStage.AwaitingLoadResult:
