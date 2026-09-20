@@ -111,6 +111,10 @@ Import-Module (Join-Path $PSScriptRoot 'L2DispatchZoneParameters.psm1') -Force
 # Only the real-onboard rig ever takes the desktop lock, but the import stays unconditional so the
 # dependency is visible at the top rather than buried in a branch 150 lines down.
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'DesktopLock.psm1') -Force
+# The machine's real-rig run ledger (control-server#203). The writer lives here rather than in a
+# wrapper script because this is the one thing every real-rig run goes through however it was
+# started -- and a wrapper that forgets to append cannot exist if no wrapper appends.
+Import-Module (Join-Path $PSScriptRoot 'L2RunLedger.psm1') -Force
 
 # The slot's ports, for every port parameter the caller left at its default. Slot 0 changes nothing:
 # its block is these parameters' own defaults, which Test-L2PortLockQueueing.ps1 holds together.
@@ -358,6 +362,9 @@ $protocolReleaseIdentity = $null
 $desktopLock = $null
 # Held by every rig, from before the build until after teardown; released after the desktop lock.
 $portLock = $null
+# Set when this run wrote its entry line to the machine's real-rig ledger; the exit line is written
+# only when there is an entry line to pair it with, and never for a synthetic run.
+$ledgerStarted = $null
 
 try {
     $journal.Note("L2 run $runId starting for scenario '$Scenario'.")
@@ -422,6 +429,26 @@ try {
         # what keeps the two locks from deadlocking; see L2PortLock.psm1.
         $desktopLock = Enter-DesktopLock -Reason "L2 scenario '$Scenario' (real onboard rig)"
         $journal.Note('Interactive desktop lock acquired.')
+
+        # The machine's real-rig ledger gets this run's entry line here: the desktop is held, so the
+        # run has really begun, and both peer commits are already known. Written after the wait
+        # rather than before it, so the ledger's timestamps are time on the rig and not time in the
+        # queue -- a run that waited 20 minutes for 8005-mes-ingest is not a 22-minute run.
+        #
+        # Control-server#203 conditions 1 and 6: before this there was no ledger in the repository at
+        # all, and the file control-server#164 worked from was appended to by that session's wrapper
+        # scripts. Two batches appended at once and it silently lost two lines.
+        $ledgerStarted = [DateTimeOffset]::UtcNow
+        $null = Write-L2RunLedgerEvent -Event 'start' -RunId $runId -Fields @{
+            scenario        = $Scenario
+            rig             = 'RealOnboard'
+            controlServer   = (& git -C $Repository rev-parse HEAD 2>$null)
+            onboardHmi      = $onboardPublish.Commit
+            slotsSimulator  = $simulatorPublish.Commit
+            evidenceRoot    = $EvidenceRoot
+            batchId         = $BatchId
+            portSlot        = $PortSlot
+        }
     }
 
     $configuration = 'Release'
@@ -1376,6 +1403,21 @@ try {
         }
     } else {
         Write-Warning "Stage root kept for diagnosis: $stageRoot"
+    }
+
+    # The ledger's exit line, while the desktop is still held: the run is over as far as the rig is
+    # concerned, and writing before the release keeps every pair of lines inside one holding of the
+    # lock. Only when there is an entry line to pair with -- a run that died before acquiring the
+    # desktop never appeared in the ledger, and a lone exit line would read as a run whose entry was
+    # lost, which is the very thing this ledger exists to rule out.
+    if ($null -ne $ledgerStarted) {
+        $null = Write-L2RunLedgerEvent -Event 'end' -RunId $runId -Fields @{
+            scenario        = $Scenario
+            outcome         = $outcome
+            durationSeconds = [math]::Round(([DateTimeOffset]::UtcNow - $ledgerStarted).TotalSeconds, 1)
+            evidenceRoot    = $EvidenceRoot
+            failureReason   = $failureReason
+        }
     }
 
     # Last, after the peers are stopped. Releasing earlier would hand the desktop to another

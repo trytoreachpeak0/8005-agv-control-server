@@ -78,6 +78,14 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2RouteEvidence.ps1
 
+      # And the real-rig run ledger, whose failure mode is the quietest of the three: a dropped line
+      # leaves the runs on either side of it looking accounted for. Two real processes appending at
+      # once, which is the case no real run exercises -- they are serialised by the desktop lock, so
+      # an unsafe append would pass every one of them (control-server#203).
+      - name: L2 scenario self-check (real-rig run ledger)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/l2/Test-L2RunLedger.ps1
+
       # Exit code is the contract — the guest is zh-CN and prints 已通过! not
       # Passed!, so no step here may match on English console text.
       - name: Test
