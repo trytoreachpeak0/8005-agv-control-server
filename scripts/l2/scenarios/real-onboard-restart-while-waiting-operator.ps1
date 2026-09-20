@@ -59,11 +59,38 @@ $sessionBefore = Get-L2RealSession $connection $Context.AgvId
 & $Context.StopComponent 'onboard-hmi'
 
 # 进程没了之后服务端一个字都没收到：结果只可能在重启之后才来，否则下面的判据证的就不是重启。
+#
+# 杀完立刻读是不够的（control-server#204）：车载端可能在被杀前一刻把结果发了出去，而服务端还没落库，
+# 那一刻读到的「0 行」说的是「还没写进来」，不是「它没发过」——而后面每一条判据都会把重启后那条结果
+# 当成重启的产物。这是假绿，不是假红。
+#
+# 票面给的两个等待对象在这条 rig 上都不存在：服务端在连接结束时只解绑路由、不写库（OnboardPeer.Detach），
+# 而这条场景的 setup 是纯真装置、没有协议故障代理，看不到连接关闭。所以等的是这条判据真正需要的那个
+# 事实本身——**服务端不会再往收件箱里写东西了**。车载端进程已经没了，不可能再发；收件箱行数稳定下来，
+# 就意味着它在死前发出的一切都已经落库。余量按数量级取：一条报文从读到落库是毫秒级的事。
+$inboxSettleFor = [TimeSpan]::FromSeconds(2)
+$inboxCount = -1
+$inboxStableSince = [DateTimeOffset]::UtcNow
+$settled = Wait-L2RealOrLast -Description 'the server stopped writing to its inbox after the onboard process went away' `
+    -Journal $journal -Criterion 'inbox-settled' -TimeoutSeconds 60 `
+    -Probe {
+        $now = [DateTimeOffset]::UtcNow
+        $count = Get-L2RealCount $connection 'SELECT COUNT(*) AS Total FROM ProtocolInbox'
+        if ($count -ne $script:inboxCount) { $script:inboxCount = $count; $script:inboxStableSince = $now }
+        [pscustomobject]@{ Count = $count; StableFor = $now - $script:inboxStableSince }
+    } `
+    -Until { param($v) $v.StableFor -ge $inboxSettleFor }
+$settledText = if ($null -eq $settled) { '(收件箱读不到)' } else {
+    "收件箱 $($settled.Count) 行，稳定 $([math]::Round($settled.StableFor.TotalSeconds, 1)) s" }
+$journal.Note("The onboard process is gone and the server's inbox settled: $settledText.")
+
 $resultsWhileDown = Get-L2RealCount $connection "SELECT COUNT(*) AS Total FROM OperationResults WHERE SlotOperationAttemptId = '$attemptId'"
 $statusWhileDown = Get-L2RealScalar $connection "SELECT Status AS Value FROM StationOperations WHERE SlotOperationAttemptId = '$attemptId'"
 $assertions.Add(
-    'L2-RW-02', '车载端退出时没有留下结果：OperationResults 0 行，装货操作仍是 Prepared',
-    ($resultsWhileDown -eq 0 -and $statusWhileDown -eq 'Prepared'), '0 行 / Prepared', "$resultsWhileDown 行 / $statusWhileDown")
+    'L2-RW-02', '车载端退出时没有留下结果：等服务端不再往收件箱写东西之后（它在死前发出的一切都已落库），OperationResults 0 行，装货操作仍是 Prepared',
+    ($null -ne $settled -and $settled.StableFor -ge $inboxSettleFor -and $resultsWhileDown -eq 0 -and $statusWhileDown -eq 'Prepared'),
+    "收件箱稳定 ≥ $($inboxSettleFor.TotalSeconds) s / 0 行 / Prepared",
+    "$settledText / $resultsWhileDown 行 / $statusWhileDown")
 
 $journal.Note("While the onboard is down the operator loads slot $slot and closes it.")
 $null = $simulator.Command('Put', "slots/$slot/cargo", @{ state = 'OCCUPIED' })
