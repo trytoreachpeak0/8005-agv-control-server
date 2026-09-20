@@ -151,6 +151,79 @@ public sealed class Batch7JourneyAppendPersistenceTests
     /// <summary>
     /// 追加的插入位：新取货停靠排在当前下一站之后（序位 2），既有的卸货停靠被挤到 3；新需求的卸货并进它。
     /// </summary>
+    /// <summary>
+    /// 重放算出来的插入位与已经落下的不一致：判冲突，而不是照着新的再排一次。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 票面「重放与重连」写的是「同一追加重放判同、<b>序列不同判冲突</b>」。上面那条幂等用例两次传的是
+    /// <b>同一个</b> <c>JourneyAppendPlan</c>，走的只是「判同」那一半；这一条走另一半。
+    /// </para>
+    /// <para>
+    /// 它要防的是什么：派车轮次重试时会重新规划，而这中间计划可能已经被另一次追加改过。若此时照新算出的
+    /// 序位再排一次，车手上那张计划与库里的就分岔了，而两边都认为自己是对的。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task AReplayedAppendWhoseSequenceDisagreesWithWhatIsStoredIsRefused()
+    {
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        JourneyExecutionPlan first = await Batch7JourneyFixture.AcceptAsync(
+            fixture.Context, FirstDemandId, AgvId, VehicleKey, Batch7JourneyFixture.Now);
+        string journeyId = JourneyIdentity.ForAnchorDemand(FirstDemandId);
+        AcceptedDemandSnapshot second =
+            Batch7JourneyFixture.Snapshot(SecondDemandId, Batch7JourneyFixture.Now.AddMinutes(1));
+        await new WireToGateStore(fixture.NewContext()).AppendToJourneyAsync(
+            second, AppendPlan(first, journeyId), TestContext.Current.CancellationToken);
+        Snapshot afterFirstAppend = await ReadAsync(fixture, journeyId);
+
+        // 同一条需求、同一趟旅程，但新来的这一版把追加的取货放在序位 3、卸货放在 2——落下的是反过来的。
+        JourneyAppendPlan disagreeing = AppendPlan(first, journeyId) with
+        {
+            Resequenced =
+            [
+                new JourneyStopSequenceChange(JourneyIdentity.PickupStopId(journeyId), 1),
+                new JourneyStopSequenceChange(JourneyIdentity.UnloadStopId(journeyId), 2),
+                new JourneyStopSequenceChange(JourneyIdentity.AppendedPickupStopId(SecondDemandId), 3),
+            ],
+        };
+
+        await Assert.ThrowsAsync<BusinessIdentityConflictException>(
+            () => new WireToGateStore(fixture.NewContext()).AppendToJourneyAsync(
+                second, disagreeing, TestContext.Current.CancellationToken));
+        // 拒绝要干净：库里一个字都没动，否则「判冲突」就成了「先改一半再抛」。
+        Assert.Equal(afterFirstAppend, await ReadAsync(fixture, journeyId));
+    }
+
+    /// <summary>
+    /// 同一个需求 id 第二次带着不同的内容回来：判冲突。
+    /// </summary>
+    /// <remarks>
+    /// 这一条与上面那条走的是同一个方法里的不同分支：那条比的是停靠序列，这条比的是需求本身的身份四项
+    /// （<c>DemandId</c>、<c>TransportDemandKey</c>、<c>Sublot</c>、<c>WorkType</c>）。重放判同的前提是
+    /// 「同一条需求」，而那四项就是「同一条」的定义。
+    /// </remarks>
+    [Fact]
+    public async Task AReplayedAppendCarryingDifferentContentUnderTheSameDemandIdIsRefused()
+    {
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        JourneyExecutionPlan first = await Batch7JourneyFixture.AcceptAsync(
+            fixture.Context, FirstDemandId, AgvId, VehicleKey, Batch7JourneyFixture.Now);
+        string journeyId = JourneyIdentity.ForAnchorDemand(FirstDemandId);
+        AcceptedDemandSnapshot second =
+            Batch7JourneyFixture.Snapshot(SecondDemandId, Batch7JourneyFixture.Now.AddMinutes(1));
+        await new WireToGateStore(fixture.NewContext()).AppendToJourneyAsync(
+            second, AppendPlan(first, journeyId), TestContext.Current.CancellationToken);
+        Snapshot afterFirstAppend = await ReadAsync(fixture, journeyId);
+
+        AcceptedDemandSnapshot sameIdOtherContent = second with { Sublot = "SUBLOT-SOMETHING-ELSE" };
+
+        await Assert.ThrowsAsync<BusinessIdentityConflictException>(
+            () => new WireToGateStore(fixture.NewContext()).AppendToJourneyAsync(
+                sameIdOtherContent, AppendPlan(first, journeyId), TestContext.Current.CancellationToken));
+        Assert.Equal(afterFirstAppend, await ReadAsync(fixture, journeyId));
+    }
+
     private static JourneyAppendPlan AppendPlan(JourneyExecutionPlan first, string journeyId) =>
         new(
             journeyId,

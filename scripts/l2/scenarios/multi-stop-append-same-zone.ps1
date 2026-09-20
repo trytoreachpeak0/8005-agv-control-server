@@ -119,6 +119,14 @@ $journeyId = Get-JourneyId $firstId
 $journal.Note("Journey $journeyId is under way; publishing the second demand into it.")
 
 $stopsBefore = [int](Invoke-Scalar "SELECT COUNT(*) AS N FROM JourneyStops WHERE JourneyId = '$journeyId'").N
+# 追加之前，车正驶向的那一站长什么样。REQ-0196 要的是它「没被动」，而「没被动」只能拿追加前后的同一个
+# 停靠去比——判成「序位 1 是一个不在关卡的 PICKUP」是不够的，第二条需求的取货同样满足那个描述。
+$firstStopBefore = Invoke-Scalar ("SELECT StopId, StationRiotId FROM JourneyStops " +
+    "WHERE JourneyId = '$journeyId' AND Sequence = 1")
+$journal.Observe(
+    'current-next-stop-before-append',
+    "$($firstStopBefore.StopId)@$($firstStopBefore.StationRiotId)",
+    @{ stopId = [string]$firstStopBefore.StopId; stationRiotId = [int]$firstStopBefore.StationRiotId })
 $assertions.Add(
     'L2-MSA-02',
     '受理写下两个停靠：取货与卸货各一个',
@@ -175,11 +183,12 @@ $assertions.Add(
 $firstStop = @($stops | Where-Object { [int]$_.Sequence -eq 1 }) | Select-Object -First 1
 $assertions.Add(
     'L2-MSA-06',
-    '当前下一站没被动：序位 1 仍是第一条需求的取货站（REQ-0196）',
-    ($null -ne $firstStop -and [string]$firstStop.StopRole -eq 'PICKUP' -and
-        [int]$firstStop.StationRiotId -ne $Context.GateStationRiotId),
-    "1:PICKUP@(非关卡)",
-    $(if ($null -eq $firstStop) { '(缺行)' } else { "1:$($firstStop.StopRole)@$($firstStop.StationRiotId)" }))
+    '当前下一站没被动：序位 1 还是追加之前那一个停靠，站号也没被改写（REQ-0196）',
+    ($null -ne $firstStop -and
+        [string]$firstStop.StopId -eq [string]$firstStopBefore.StopId -and
+        [int]$firstStop.StationRiotId -eq [int]$firstStopBefore.StationRiotId),
+    "$($firstStopBefore.StopId)@$($firstStopBefore.StationRiotId)",
+    $(if ($null -eq $firstStop) { '(缺行)' } else { "$($firstStop.StopId)@$($firstStop.StationRiotId)" }))
 
 # 序位连续从 1 起：车上看到的次序就是计划的次序，中间不能有空档。
 $sequences = @($stops | ForEach-Object { [int]$_.Sequence })
