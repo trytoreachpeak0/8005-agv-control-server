@@ -32,6 +32,7 @@ $ErrorActionPreference = 'Stop'
 
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2RealOnboard.psm1') -Force
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2TaskTypeJourney.psm1') -Force
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2RouteEvidence.psm1') -Force
 
 $journal = $Context.Journal
 $assertions = $Context.Assertions
@@ -49,6 +50,11 @@ $stagingRiotId = 230
 $stagingName = '派工待送'
 $areaRiotId = $Context.PickupStationRiotId
 $areaName = 'N1-3_N1-7'
+# 需求的 AREA 与 EQP：G3-11-07 重算路线证据时也要它们，所以写成变量而不是发需求那里的字面量——重算与需求
+# 必须是同一对值，否则重算算的是另一趟的路线。
+$area = 'N1-3'
+$eqp = 'EQP-L2-01'
+$mapId = $Context.MapId
 
 $demandGuid = [guid]::NewGuid()
 $demandId = $demandGuid.ToString('D')
@@ -69,8 +75,8 @@ $journal.Note("Publishing STAGING_TO_WIRE demand $($demandGuid.ToString('N')) to
 $null = $mes.Command('Put', "demands/$($demandGuid.ToString('N'))", @{
     workType    = 'STAGING_TO_WIRE'
     sublot      = $sublot
-    area        = 'N1-3'
-    eqp         = 'EQP-L2-01'
+    area        = $area
+    eqp         = $eqp
     package     = 'L2-PACKAGE'
     maxBoxCount = 4
 })
@@ -98,20 +104,48 @@ $judgeRoute = {
     $runtime = Invoke-L2Query -Connection $connection -Sql (
         "SELECT PickupStationId, PickupStationRiotId, GateStationId, GateStationRiotId, RouteEvidenceId " +
         "FROM JourneyRuntimes WHERE DemandId = '$demandId'")
-    $firstOrder = @(@($riot.Snapshot().body.orders) | Where-Object { [string]$_.upperId -eq [string]$originIntent.UpperId }) |
+    $riotSnapshot = $riot.Snapshot().body
+    $firstOrder = @(@($riotSnapshot.orders) | Where-Object { [string]$_.upperId -eq [string]$originIntent.UpperId }) |
         Select-Object -First 1
     $endsRecorded = if ($runtime.Count -eq 1) {
         "$($runtime[0].PickupStationId)/$($runtime[0].PickupStationRiotId) → $($runtime[0].GateStationId)/$($runtime[0].GateStationRiotId)"
     } else { "($($runtime.Count) journey rows)" }
     $firstOrderTo = if ($null -ne $firstOrder) { Get-OrderDestination $firstOrder } else { $null }
+
+    # 路线证据独立重算。「非空」对这一条几乎没有判别力：把两端喂反、漏掉一个输入、换掉拼法，服务端存进去的
+    # 仍然是一个非空的 MAPCAT-…，而这趟正是「方向不能反」那条产品断言的现场。重算用场景自己知道的两端、AREA
+    # 与 EQP，加上假 RIoT 此刻的站点目录。
+    #
+    # 前提：本场景中途不改站点表（setup.psd1 一次性设好，此后没有 Stations 命令），所以此刻的目录就是服务端
+    # 受理这趟时读到的那一份。哪天有场景在途中改站点，这条重算要先取当时的目录。
+    #
+    # 拼法与服务端一致由两处钉死：JourneyPlanCharacterizationTests.TheRouteEvidenceIdOfAWireToGateCandidateIsPinned
+    # 钉指纹到 id 那一半，HttpRiotMovementGatewayTests 钉站点到指纹那一半，scripts/l2/Test-L2RouteEvidence.ps1
+    # 用同样两对值断言这边的复刻。改了服务端任一边的拼法，它自己的测试先红。
+    $mapEntry = @(@($riotSnapshot.maps) | Where-Object { [int]$_.mapId -eq $mapId }) | Select-Object -First 1
+    $plannedEvidence = '(no station catalog)'
+    $swappedEvidence = '(no station catalog)'
+    if ($null -ne $mapEntry) {
+        $catalogSha = Get-L2MapCatalogSha256 -MapId $mapId -Stations @($mapEntry.stations)
+        $plannedEvidence = Get-L2RouteEvidenceId -MapId $mapId -CatalogSha256 $catalogSha `
+            -OriginStationRiotId $stagingRiotId -OriginStationName $stagingName `
+            -DestinationStationRiotId $areaRiotId -DestinationStationName $areaName -Area $area -Eqp $eqp
+        # 反着再算一遍。两个值必须不同——相等的话「重算对上了」只说明这个哈希对方向不敏感，那条比对就什么也没判。
+        $swappedEvidence = Get-L2RouteEvidenceId -MapId $mapId -CatalogSha256 $catalogSha `
+            -OriginStationRiotId $areaRiotId -OriginStationName $areaName `
+            -DestinationStationRiotId $stagingRiotId -DestinationStationName $stagingName -Area $area -Eqp $eqp
+    }
+    $recordedEvidence = if ($runtime.Count -eq 1) { [string]$runtime[0].RouteEvidenceId } else { '(no journey row)' }
+    $shortId = { param([string]$Value) if ($Value.Length -gt 21) { $Value.Substring(0, 21) + '…' } else { $Value } }
     $assertions.Add(
         'G3-11-07',
-        '起终点没有互换：旅程记下的起点是派工待送站、终点是 AREA 机台，只有一行、路线证据非空；RIoT 上第一张单开往派工待送站（NEVER_SWAP_ORIGIN_AND_DESTINATION；车出发前判，第二张单的目的站在 G3-11-06）',
+        '起终点没有互换：旅程记下的起点是派工待送站、终点是 AREA 机台，只有一行；路线证据等于按计划方向独立重算出来的那个 id，而把两端互换重算会得到另一个 id；RIoT 上第一张单开往派工待送站（NEVER_SWAP_ORIGIN_AND_DESTINATION；车出发前判，第二张单的目的站在 G3-11-06）',
         ($runtime.Count -eq 1 -and [string]$runtime[0].PickupStationId -eq $stagingName -and [int]$runtime[0].PickupStationRiotId -eq $stagingRiotId -and
             [string]$runtime[0].GateStationId -eq $areaName -and [int]$runtime[0].GateStationRiotId -eq $areaRiotId -and
-            (Test-L2RealPresent $runtime[0].RouteEvidenceId) -and $firstOrderTo -eq $stagingRiotId),
-        "$stagingName/$stagingRiotId → $areaName/$areaRiotId / 第一张单 → $stagingRiotId",
-        "$endsRecorded / 第一张单 → $(if ($null -ne $firstOrderTo) { $firstOrderTo } else { '(no order)' })")
+            $recordedEvidence -ceq $plannedEvidence -and $plannedEvidence -cne $swappedEvidence -and
+            $firstOrderTo -eq $stagingRiotId),
+        "$stagingName/$stagingRiotId → $areaName/$areaRiotId / 路线证据 = 正向重算 $(& $shortId $plannedEvidence)、≠ 反向重算 $(& $shortId $swappedEvidence) / 第一张单 → $stagingRiotId",
+        "$endsRecorded / 路线证据 $(& $shortId $recordedEvidence) / 第一张单 → $(if ($null -ne $firstOrderTo) { $firstOrderTo } else { '(no order)' })")
 }
 
 # 车按路线应有的方向被送去两站：先派工待送站、后 AREA 机台。服务端有没有这样排，由判据从它自己的快照和单上读。

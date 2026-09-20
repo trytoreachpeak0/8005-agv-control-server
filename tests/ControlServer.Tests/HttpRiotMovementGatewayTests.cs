@@ -463,6 +463,18 @@ public sealed class HttpRiotMovementGatewayTests
         Assert.Equal(1, handler.CallCount);
     }
 
+    /// <summary>
+    /// The catalog fingerprint, pinned to one station list and one hash.
+    /// </summary>
+    /// <remarks>
+    /// A second implementation is pinned to this exact pair: <c>scripts/l2/L2RouteEvidence.psm1</c>
+    /// recomputes the fingerprint on the way to a journey's route evidence id, for the L2 scenarios that
+    /// tell the planned route from a swapped one, and <c>scripts/l2/Test-L2RouteEvidence.ps1</c> asserts
+    /// these same stations and this same hash against that copy. So when the canonical form changes, this
+    /// test going red is also the notice that the pwsh copy has to move with it -- do not simply update
+    /// the expected value here. Nothing builds that copy and no test here reads it, so this comment is the
+    /// only place the dependency is written down (control-server#203).
+    /// </remarks>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task StrictMapCatalogIsCanonicalAndObservedAfterSdkReadCompletes()

@@ -68,6 +68,16 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2HmiPhraseWatch.ps1
 
+      # And once more, for the one piece of pwsh that has to agree with C# to be worth anything:
+      # L2RouteEvidence.psm1 recomputes a journey's route evidence id so that G3-11-07 and L2-S2W-08
+      # can tell the planned route from a swapped one. Nothing builds it and no C# test reads it, so
+      # without this step the two copies drift apart silently -- and a drifted copy does not go
+      # vacuous, it goes permanently red, on the rig, where that reads as a product fault
+      # (control-server#203).
+      - name: L2 scenario self-check (route evidence recompute)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/l2/Test-L2RouteEvidence.ps1
+
       # Exit code is the contract — the guest is zh-CN and prints 已通过! not
       # Passed!, so no step here may match on English console text.
       - name: Test

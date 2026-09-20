@@ -38,6 +38,16 @@ public sealed class JourneyPlanCharacterizationTests
     /// The route evidence id a WIRE_TO_GATE candidate resolves to: AREA pickup station first, fixed
     /// station second. The id is what the journey freezes and what an idempotent replay compares.
     /// </summary>
+    /// <remarks>
+    /// A second implementation is pinned to this exact pair: <c>scripts/l2/L2RouteEvidence.psm1</c>
+    /// recomputes the id so that the L2 scenarios <c>g3-reversed-direction-journey</c> (G3-11-07) and
+    /// <c>staging-to-wire-reversed-journey</c> (L2-S2W-08) can tell the planned route from a swapped one,
+    /// and <c>scripts/l2/Test-L2RouteEvidence.ps1</c> asserts these same inputs and this same id against
+    /// that copy. So when the canonical form changes, this test going red is also the notice that the
+    /// pwsh copy has to move with it -- do not simply update the expected value here. Nothing builds that
+    /// copy and no test here reads it, so this comment is the only place the dependency is written down
+    /// (control-server#203).
+    /// </remarks>
     [Fact]
     public async Task TheRouteEvidenceIdOfAWireToGateCandidateIsPinned()
     {
