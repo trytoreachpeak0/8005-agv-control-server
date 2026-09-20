@@ -239,6 +239,11 @@ $journal.Note('L2-DA-09 window opens: sampling the HMI for 10 s from the session
 $sample = Invoke-L2HmiPhraseSample -Watch $unfinishedWatch -ElementSource $unfinishedElements -DurationSeconds 10 `
     -Journal $journal -Criterion 'unfinished-projection'
 $journal.Note("L2-DA-09 first window: $sample")
+# 分段记账。判据文字说的是「重回 Ready 到卸货等操作员之间」都在看，而这个 10 秒采样窗一段就产出二十几轮
+# （实测 22 轮，全程 70 轮）——只判一个全程总数的话，后面三处业务探针里的扫描被删掉、或 UIA 句柄在这
+# 10 秒之后失效，「从第 10 秒到卸货等操作员」那二十多秒一眼都没看，总数仍然 >= 10、判据照样 PASS。
+# 那正是本票要消灭的那一类「数字比它知道的说得多」。
+$cleanAfterFirstWindow = $unfinishedWatch.CleanScans
 
 # 服务端日志只做诊断，不当判据：判据读的是库和代理。
 $logRoot = Join-Path (Split-Path -Parent $Context.SnapshotRoot) 'logs'
@@ -276,15 +281,16 @@ $unloadWaiting = Wait-L2Condition -Description 'the onboard is waiting for the o
     } `
     -Until { param($v) $null -ne $v }
 $null = Watch-UnfinishedProjection
+$cleanInSecondLeg = $unfinishedWatch.CleanScans - $cleanAfterFirstWindow
 $journal.Note("L2-DA-09 window closed at the unload's WAITING_OPERATOR after $($unfinishedWatch.CleanScans) clean and " +
-    "$($unfinishedWatch.FailedScans) failed HMI scans; server alarm snapshot showed ONBOARD_SLOT_OPERATION_UNFINISHED: " +
-    "$unfinishedAlarmSeen (diagnostic only).")
+    "$($unfinishedWatch.FailedScans) failed HMI scans (first 10 s window $cleanAfterFirstWindow, business probes after it $cleanInSecondLeg); " +
+    "server alarm snapshot showed ONBOARD_SLOT_OPERATION_UNFINISHED: $unfinishedAlarmSeen (diagnostic only).")
 # 干净扫描不足 10 轮也红，而且红的原因说得出来：「UIA 读失败 N 轮」，不是一条等待超时。
 $assertions.Add(
-    'L2-DA-09', '确认丢失的那次装货已完成：会话重回 Ready 之后、卸货等操作员之前，HMI 上从未出现「上次装货操作未完成」；且至少有 10 轮把整棵 UIA 树读全了（onboard-hmi#124，计数在 control-server#204 收紧）',
-    ($unfinishedWatch.CleanScans -ge 10 -and $unfinishedWatch.Seen.Count -eq 0),
-    '干净扫描 ≥ 10 轮 / 检出 0 次',
-    (Format-L2HmiPhraseWatch $unfinishedWatch))
+    'L2-DA-09', '确认丢失的那次装货已完成：会话重回 Ready 之后、卸货等操作员之前，HMI 上从未出现「上次装货操作未完成」；开头 10 秒采样窗与之后到卸货等操作员为止**各**至少 10 轮把整棵 UIA 树读全了（onboard-hmi#124，计数与分段在 control-server#204 收紧）',
+    ($cleanAfterFirstWindow -ge 10 -and $cleanInSecondLeg -ge 10 -and $unfinishedWatch.Seen.Count -eq 0),
+    '采样窗 ≥ 10 轮 / 之后 ≥ 10 轮 / 检出 0 次',
+    "$(Format-L2HmiPhraseWatch $unfinishedWatch)（采样窗 $cleanAfterFirstWindow 轮 / 之后 $cleanInSecondLeg 轮）")
 $unloadSlot = [int]$unloadWaiting.Active[0]
 $journal.Note("Operator empties slot $unloadSlot and closes it.")
 $null = $simulator.Command('Put', "slots/$unloadSlot/cargo", @{ state = 'EMPTY' })

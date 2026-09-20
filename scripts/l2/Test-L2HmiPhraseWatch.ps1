@@ -149,12 +149,18 @@ $cases += @{
     Check = {
         $watch = New-L2HmiPhraseWatch -Phrase $phrase
         $journal = New-Journal
+        # 下界要与时长相称，而且要断挂钟。只断「扫过两轮」挡不住把采样循环改成「扫两轮就退出」或把
+        # deadline 算错成毫秒——那种改法下这条会绿，而真装置那边 `L2-DA-09` 的 ≥10 轮靠后面三处业务探针
+        # 也能凑够，所以真装置也照样绿。那正是 test.yml 里这一步声称要守的东西。
+        # 1 秒 / 50 毫秒约 20 轮，取 10 留一半余量给慢机器。
+        $started = [DateTimeOffset]::UtcNow
         $reading = Invoke-L2HmiPhraseSample -Watch $watch -NameReader $reader -DurationSeconds 1 -PollMilliseconds 50 `
             -Journal $journal -Criterion 'unfinished-projection' -ElementSource { @((New-Element '当前操作：装货')) }
+        $elapsed = [DateTimeOffset]::UtcNow - $started
         $notReached = @($journal.Notes | Where-Object { $_ -like '*Not reached*' }).Count
-        @{ Ok = ($notReached -eq 0 -and $watch.CleanScans -ge 2 -and $watch.Seen.Count -eq 0 -and
-                 $reading -like '*round(s)*' -and $reading -like '*0 sighting(s)*')
-           Actual = "'Not reached' notes $notReached / clean $($watch.CleanScans) / reading '$reading'" }
+        @{ Ok = ($notReached -eq 0 -and $watch.CleanScans -ge 10 -and $elapsed.TotalSeconds -ge 1 -and
+                 $watch.Seen.Count -eq 0 -and $reading -like '*round(s)*' -and $reading -like '*0 sighting(s)*')
+           Actual = "'Not reached' notes $notReached / clean $($watch.CleanScans) / 耗时 $([math]::Round($elapsed.TotalSeconds,2)) s / reading '$reading'" }
     }
 }
 

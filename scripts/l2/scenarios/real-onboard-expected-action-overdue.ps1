@@ -361,32 +361,40 @@ $assertions.Add(
 # 以及各份快照里这一仓的超时始终是同一个 alarmId 与 raisedAt（`L2-EAO-13`），加上服务端为这次变化又要了一次
 # 快照（`L2-EAO-14`）。两条分开：前者是不变性（不出第二行、不覆盖），后者是活性（服务端确实重新看了一眼），
 # 混成一条会让 FAIL 指不到是哪一端出了事。
-$requestsBeforeAgain = @((Get-TrafficLines) | Where-Object {
-        $_.direction -eq 'server->onboard' -and $_.messageType -eq 'SafetyStateSnapshotRequested' }).Count
-$snapshotsBeforeAgain = @((Get-TrafficLines) | Where-Object {
-        $_.direction -eq 'onboard->server' -and $_.messageType -eq 'SafetyStateSnapshot' }).Count
+# 位置基线，不是计数基线。用「请求总数变多了」挡不住一次重握手：握手里车载端必发一份
+# SafetyStateSnapshot，版本号单调递增因而必然越过 $midVersion，而端点只认 messageType 是
+# SafetyStateSnapshot 就前推 latestVersion、不区分握手与应答——于是三条合取项可以在**服务端一次都没
+# 为这次重开要过快照**的情况下全部满足。这不是推演：本票的红证据
+# evidence/l2/cs204-eao11-red-no-redecide 里流量两项就都满足了（请求 7 / 快照 8），那 7/8 是会话被打回
+# HANDSHAKE_INCOMPLETE 之后反复重握手刷出来的。所以照 L2-EAO-04 的写法按行序定位，并把两行绑回
+# 告警那条连接（重握手会开新连接，连接号与总数都会变）。
+$linesBeforeAgain = (Get-TrafficLines).Count
 $again = Invoke-L2CloseOverOppositeState -Context $Context -AttemptId $attemptId -SlotNo $slotNo -Criterion 'reopen-after-threshold'
 
-# 主判据读代理流量：服务端对这次状态变化又发了一条 SafetyStateSnapshotRequested，车又回了一份 SafetyStateSnapshot。
+# 主判据读代理流量：重开那一行之后，服务端发了一条 SafetyStateSnapshotRequested，车随后回了一份
+# SafetyStateSnapshot，两条都在告警那条连接上、而且全程仍只有这一条连接。
 # 服务端为什么会再要一次，见 OnboardMessageProcessor.AppendSafetySnapshotRequest 的注释与
 # AffectsAnOverdueSlotAsync：一条影响到已超时仓的 SafetyStateChanged 就让下一次应答捎上一条请求。
-$reAsked = Wait-L2RealOrLast -Description 'the server asked for another snapshot after the reopen and the onboard answered' `
+$reAsked = Wait-L2RealOrLast -Description 'the server asked for another snapshot after the reopen and the onboard answered, on the same connection' `
     -Journal $journal -Criterion 'snapshot-requested-again' -TimeoutSeconds 20 `
     -Probe {
         $lines = Get-TrafficLines
+        $request = -1; $answer = -1
+        for ($i = $linesBeforeAgain; $i -lt $lines.Count; $i++) {
+            if ($request -lt 0 -and $lines[$i].direction -eq 'server->onboard' -and $lines[$i].messageType -eq 'SafetyStateSnapshotRequested') { $request = $i; continue }
+            if ($request -ge 0 -and $lines[$i].direction -eq 'onboard->server' -and $lines[$i].messageType -eq 'SafetyStateSnapshot') { $answer = $i; break }
+        }
         [pscustomobject]@{
-            Requests  = @($lines | Where-Object { $_.direction -eq 'server->onboard' -and $_.messageType -eq 'SafetyStateSnapshotRequested' }).Count
-            Snapshots = @($lines | Where-Object { $_.direction -eq 'onboard->server' -and $_.messageType -eq 'SafetyStateSnapshot' }).Count
+            Request     = if ($request -ge 0) { [int]$lines[$request].connection } else { $null }
+            Answer      = if ($answer -ge 0) { [int]$lines[$answer].connection } else { $null }
+            Connections = @((Get-L2RealTraffic $proxy).connections).Count
         }
     } `
-    -Until { param($v) $v.Requests -gt $requestsBeforeAgain -and $v.Snapshots -gt $snapshotsBeforeAgain }
+    -Until { param($v) $null -ne $v.Answer }
 
-# 端点读数的版本号前进，是同一件事走完到看板的那一端。它**不能单独当判据**：端点只把 SafetyStateSnapshot 的
-# 版本算进 readings（ExpectedActionOverdueQueryEndpoint 的 SafetyReadingsAsync 只在 messageType 是快照时前推
-# latestVersion，SafetyStateChanged 只影响 changedSinceObserved），而会话中途的快照今天只在服务端请求时才出现
-# ——车载端发快照的地方只有两处，握手和 AnswerSafetyStateSnapshotRequestAsync。所以版本前进等价于「又要了一次」
-# **只是因为车载端目前不主动推快照**，那是随时会变的实现事实，一旦变了这条判据会静默失效而不会红。
-# 钉住它的成本是零（流量日志本来就在读），所以「服务端又要了一次」由上面那条流量判据承担，这里只作端到端佐证。
+# 端点读数的版本号前进，是同一件事走完到看板的那一端。它**不能单独当判据**，而且不只是因为
+# 「车载端今天不主动推快照」这一条：握手那份快照同样会让它前进，所以它连一次重握手都分辨不出来。
+# 「服务端又要了一次」由上面那条按行序定位、并绑住连接的流量判据承担，这里只作端到端佐证。
 $afterVersion = Wait-L2RealOrLast -Description 'the endpoint readings moved past the mid-session snapshot' `
     -Journal $journal -Criterion 'endpoint-readings-version-again' -TimeoutSeconds 20 `
     -Probe {
@@ -395,11 +403,12 @@ $afterVersion = Wait-L2RealOrLast -Description 'the endpoint readings moved past
     } `
     -Until { param($v) $null -ne $v -and $null -ne $midVersion -and $v -gt $midVersion }
 $assertions.Add(
-    'L2-EAO-14', "门槛后重开，服务端又要了一次快照：代理流量里在重开之后出现新的 server->onboard:SafetyStateSnapshotRequested 与随后的 onboard->server:SafetyStateSnapshot；端点读数的版本也从中途那份（v$midVersion）前进",
-    ($reAsked.Requests -gt $requestsBeforeAgain -and $reAsked.Snapshots -gt $snapshotsBeforeAgain -and
+    'L2-EAO-14', "门槛后重开，服务端又要了一次快照：重开之后的流量里出现 server->onboard:SafetyStateSnapshotRequested 与随后的 onboard->server:SafetyStateSnapshot，两条都在告警那条连接（#$($wire.Alarm)）上、全程仍只有一条连接；端点读数的版本也从中途那份（v$midVersion）前进",
+    ($null -ne $reAsked.Request -and $null -ne $reAsked.Answer -and
+        $reAsked.Request -eq $wire.Alarm -and $reAsked.Answer -eq $wire.Alarm -and $reAsked.Connections -eq 1 -and
         $null -ne $midVersion -and $null -ne $afterVersion -and $afterVersion -gt $midVersion),
-    "请求 > $requestsBeforeAgain / 快照 > $snapshotsBeforeAgain / 端点读数 v > $midVersion",
-    "请求 $($reAsked.Requests) / 快照 $($reAsked.Snapshots) / 端点读数 $(if ($null -eq $afterVersion) { '(无读数)' } else { "v$afterVersion" })")
+    "重开后请求与快照各一条、都在 #$($wire.Alarm) / 1 条连接 / 端点读数 v > $midVersion",
+    "请求 $(if ($null -eq $reAsked.Request) { '(无)' } else { "#$($reAsked.Request)" }) 快照 $(if ($null -eq $reAsked.Answer) { '(无)' } else { "#$($reAsked.Answer)" }) / $($reAsked.Connections) 条连接 / 端点读数 $(if ($null -eq $afterVersion) { '(无读数)' } else { "v$afterVersion" })")
 
 $null = Wait-L2Iterations -Riot $Context.Riot -Count 3 -Journal $journal
 $reports = @((Get-OverdueReports $slotNo) | Where-Object { $null -ne $_.Alarm })
