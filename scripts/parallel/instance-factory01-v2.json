@@ -1,0 +1,56 @@
+{
+  "instanceId": "factory01-v2-parallel",
+  "serviceName": "8005 AGV ControlServer V2",
+  "installRoot": "C:\\Program Files\\8005 AGV\\ControlServer.V2",
+  "dataRoot": "C:\\ProgramData\\8005\\ControlServer.V2",
+  "backupRoot": "C:\\ProgramData\\8005\\ControlServer.V2-backups",
+  "packageRoot": "D:\\zhengyushao\\ControlServer.V2",
+  "opsRoot": "D:\\zhengyushao\\control-server-v2-ops",
+  "stagingRoot": "D:\\zhengyushao\\control-server-v2-staging",
+  "listenAddress": "172.19.205.222",
+  "healthBindAddress": "172.19.205.222",
+  "onboardPort": 58105,
+  "healthPort": 58107,
+  "dashboardPort": 58109,
+  "mesIngest": {
+    "baseUrl": "http://127.0.0.1:58188"
+  },
+  "fakeMesIngest": {
+    "installRoot": "C:\\Program Files\\8005 AGV\\ControlServer.V2.FakeMesIngest",
+    "port": 58188,
+    "taskName": "8005 AGV ControlServer V2 FakeMesIngest",
+    "seedPath": "D:\\zhengyushao\\control-server-v2-ops\\fake-mes-ingest-seed.json"
+  },
+  "routeGraph": {
+    "enabled": true,
+    "mapId": 25,
+    "runtimeRefreshPeriod": "00:00:10",
+    "runtimeStateMaxAge": "00:00:45",
+    "designStateTtl": "00:10:00"
+  },
+  "riotCreateDispatch": {
+    "enabled": false
+  },
+  "journeyRuntime": {
+    "enabled": true,
+    "pollInterval": "00:00:02",
+    "maximumEvidenceAge": "00:00:30",
+    "checkpointWaitBudget": "00:05:00",
+    "stationDepartureWaitTimeout": "00:05:00",
+    "cargoHoldingTimeout": "00:30:00",
+    "areaEndAdmissionRevokedTimeout": "00:10:00",
+    "agvId": "老厂前线新多仓位2",
+    "vehicleKey": "BROKERX-f38975561adf46ccb1d2f23833c7d0e4",
+    "agvLifecycleGeneration": 1,
+    "mapId": 25,
+    "mapIdentity": "老厂前线new",
+    "dispatchZone": "MAP-25-WIRE_TO_GATE",
+    "dispatchGeneration": 1,
+    "minimumBatteryPercent": 30,
+    "sublotBoxCountPath": "/api/v2/sublot-box-count",
+    "allowedWorkTypes": ["DIE_TO_WIRE_STAGING", "DIE_TO_OVEN", "WIRE_TO_GATE", "WIRE_TO_OPTICAL", "STAGING_TO_WIRE", "WIRE_TO_NITROGEN"],
+    "allowedDispatchZones": ["MAP-25-WIRE_TO_GATE"],
+    "admissionPolicyVersion": 2,
+    "admissionPolicyDeploymentId": "MAP-25-WIRE_TO_GATE-20260827"
+  }
+}
