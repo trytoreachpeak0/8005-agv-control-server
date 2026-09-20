@@ -240,11 +240,32 @@ try { $last = & $Probe } catch { $last = $null }     # L2.psm1:24
 ——都在成功路径上，每个场景都会走到。**它覆盖不了失败路径**（`catch` 分支），绿场景到不了那里；那条的
 判别力来自 `Test-L2SecondLegIntentWait.ps1` 的八条判据与三处反向验证。
 
-### 这一轮让条目 6 从「有用」变成「必需」
+### 更正：上一段我写错过一句，`5b655a9a` 的提交信息里还留着那句错话
 
-`assertions.json` 的 `identity` 里**只有 `controlServerCommit`，没有两个对端**。所以上表第二、三行
-**只能**从台账那两行 `start` 读（字段 `controlServer`／`onboardHmi`／`slotsSimulator`）。台账原本是为
-「这遍真跑了」写的，这一轮它成了三端核对唯一的出处——**不是设计时想到的用途，是撞上的**。
+原先这里写「`assertions.json` 的 `identity` 里只有 `controlServerCommit`，没有两个对端，所以三端核对
+只能从台账读」。**那是错的。** 实读 `identity` 的全部字段：
+
+```
+['protocolReleaseIdentity', 'stageRoot', 'slotsSimulatorCommit', 'agvId', 'batchId',
+ 'rig', 'vehicleKey', 'controlServerCommit', 'onboardHmiCommit']
+```
+
+**三端全在**，`SUMMARY.md` 的表格里也有两端。我的脚本按**猜的字段名**（`onboardCommit`／`simulatorCommit`）
+去取，取到空就断定「没有」——**「工具没说不等于事实没有」的第三种形状：取字段取出空值，而空值和「没有这个
+字段」在脚本里长得一模一样，连报错都没有。取字段之前先把键列出来。**
+
+`5b655a9a` 的提交信息里有这句错话。**提交信息没有改**——改它要 force push，那是要先问用户的四类之一，
+不为一句话动远端历史。以本节为准。
+
+### 那么台账独有的是什么
+
+三端从 `identity` 就读得到，**台账独有的是第四行：这一遍真的跑了，以及跨运行的账**——`start`／`end` 配对、
+时长、总行数 52 → 56。单个证据目录证不了这件事，因为它是自证的：**它存在就说明它跑过，而它可能是上一次
+留下的、可能被覆盖、也可能是手工拼的。**
+
+那 4 行随证据入库在 `cs203-rig-rerun-run-ledger.jsonl`（台账本身不是仓库跟踪文件，它在
+`%LOCALAPPDATA%\8005-l2\rig-runs.log`，可用 `W2G_L2_RUN_LEDGER` 覆盖）。**它证的是「这两次运行发生过、
+各跑了多久、三端是什么」，不证任何判据的对错。**
 
 ### 读台账时撞回一个老问题，记在这里
 
