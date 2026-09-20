@@ -103,6 +103,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["InTransitVehicleFactsTests"] = "batch 7-06 REQ-0205 the in-transit vehicle facts criterion against a vehicle actually under way, beside the idle chain's verdict on the same facts (control-server#211); server-internal, no wire message",
             ["IntegrationSliceTraitArchitectureTests"] = "cross-cutting architecture guard; hanging it off a slice would defer the guard with the slice",
             ["JourneyPlanCharacterizationTests"] = "batch 6-01 behaviour-preserving restructuring guard (control-server#158): the route evidence id and one acceptance's plan pinned byte for byte; characterization, it proves no slice's wire behaviour",
+            ["JourneyStopEntryRequestIdTests"] = "batch 7-06 REQ-0205 which entry request the current stop settles, and what either getter does when the id is missing (control-server#211); server-internal, no wire message",
             ["MapStationResolverTests"] = "7.5 #6, RouteGraphSnapshot engine; single-ended server-to-RIoT",
             ["MultiVehicleExecutionTests"] = "7.5 #1, FP-C2 B2 multi-vehicle; the conformance vector format has no vehicle dimension",
             ["OnboardVehicleSafetyEndpointsTests"] = "server-side safety projection endpoint; not a protocol wire message",

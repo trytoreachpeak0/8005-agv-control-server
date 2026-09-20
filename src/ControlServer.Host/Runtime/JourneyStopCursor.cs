@@ -231,6 +231,25 @@ internal sealed class JourneyStopCursor
     public string CurrentSublotRequestMessageId(long journeyBase) =>
         SublotRequestMessageIdAt(journeyBase, Current, WorklistRevisionAt(journeyBase, Current));
 
+    /// <summary>
+    /// 同上，但当前停靠<b>本来就不做录入</b>时给 null，而不是抛（批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 给那些「车停在哪个停靠上都可能发生」的终结路径用——故障货物交接就是一例，它在卸货端与取货端都会发生
+    /// （<see cref="PickupStopTermination"/> 的 remarks 写着这件事）。卸货停靠没有录入请求，因此也没有
+    /// 要结算的那一条，null 是这里正确的答案而不是降级。
+    /// </para>
+    /// <para>
+    /// <b>判的是停靠的角色，不是那一列空不空</b>，这是两件事：按角色判，一个<b>取货</b>停靠缺 id 仍然会抛，
+    /// 那道护栏一字未动；按空不空判，它会连同真正的缺失一起吞掉，而那正是护栏存在的理由。
+    /// </para>
+    /// </remarks>
+    public string? CurrentSublotRequestMessageIdOrNone(long journeyBase) =>
+        Current.StopRole == JourneyStopRoles.Unload
+            ? null
+            : CurrentSublotRequestMessageId(journeyBase);
+
     private static bool IsOpen(JourneyStopRow stop) =>
         stop.Status is not (JourneyStopStatuses.Completed or JourneyStopStatuses.Removed);
 

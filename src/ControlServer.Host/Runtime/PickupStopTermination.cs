@@ -104,7 +104,7 @@ public sealed class PickupStopTermination(ControlServerDbContext dbContext)
     /// </remarks>
     public async Task StageAsync(
         JourneyRuntimeRow runtime,
-        string currentSublotRequestMessageId,
+        string? currentSublotRequestMessageId,
         string demandId,
         string reasonCode,
         DateTimeOffset endedAt,
@@ -168,7 +168,7 @@ public sealed class PickupStopTermination(ControlServerDbContext dbContext)
     /// </remarks>
     public async Task StageJourneyClosureAsync(
         JourneyRuntimeRow runtime,
-        string currentSublotRequestMessageId,
+        string? currentSublotRequestMessageId,
         string reasonCode,
         DateTimeOffset endedAt,
         CancellationToken cancellationToken)
@@ -185,9 +185,13 @@ public sealed class PickupStopTermination(ControlServerDbContext dbContext)
         // Nobody is going to answer the entry request now. Left unsettled it is replayed into every
         // later session, where the peer refuses it as a business id whose content changed and tears
         // the session down -- the same failure the answered request is settled for.
-        ProtocolOutboxRow? entryRequest = await dbContext.ProtocolOutbox
-            .SingleOrDefaultAsync(row => row.MessageId == currentSublotRequestMessageId, cancellationToken)
-            .ConfigureAwait(false);
+        // null 的意思是「这个停靠本来就没有录入请求」，不是「读不到」——见
+        // JourneyStopCursor.CurrentSublotRequestMessageIdOrNone。空字符串则是调用方给错了，照常查、照常查不到。
+        ProtocolOutboxRow? entryRequest = currentSublotRequestMessageId is null
+            ? null
+            : await dbContext.ProtocolOutbox
+                .SingleOrDefaultAsync(row => row.MessageId == currentSublotRequestMessageId, cancellationToken)
+                .ConfigureAwait(false);
         if (entryRequest is not null)
         {
             entryRequest.AcknowledgedAt ??= endedAt;

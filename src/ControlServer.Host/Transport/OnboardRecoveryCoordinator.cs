@@ -1317,7 +1317,14 @@ public sealed class OnboardRecoveryCoordinator(
         await new PickupStopTermination(dbContext)
             .StageAsync(
                 runtime,
-                commandedStops.CurrentSublotRequestMessageId(runtime.WorklistRevision),
+                // OrNone, unlike the cancellation above: that one runs only while the vehicle is loading at a
+                // pickup stop (its stage guard says so), while a handoff reaches here wherever the vehicle is
+                // standing -- at the gate as well as at the pickup, as PickupStopTermination's own remarks say.
+                // An unload stop has no entry request and therefore none to settle. Batch 7-06 (#211) moved
+                // this read from the journey row, whose id acceptance always writes, onto the current stop's,
+                // which only a pickup stop carries; without OrNone a handoff at the gate throws instead of
+                // ending the demand, and the manual recovery path it belongs to wedges.
+                commandedStops.CurrentSublotRequestMessageIdOrNone(runtime.WorklistRevision),
                 workflow.DemandId,
                 messageType switch
                 {
