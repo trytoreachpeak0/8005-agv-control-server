@@ -22,12 +22,26 @@ namespace ControlServer.Tests;
 /// 那次重录唯一的差别是 <c>JourneyRuntimes</c> 多了 cs#228 的新列 <c>AreaEndAdmissionRevokedSince=NULL</c>，其余逐字未动。
 /// </para>
 /// <para>
-/// <b>批次7-06（control-server#211）之后，这批基线钉的不再是「什么都没变」，而是「只有这两列变了」。</b>那一票让
+/// <b>批次7-06（control-server#211）之后，这批基线钉的不再是「什么都没变」，而是「只有 Status 变了」。</b>那一票让
 /// <c>JourneyStops.Status</c> 与 <c>JourneyDemands.Status</c> 真的动起来——当前停靠与装货进度从此是落库的状态，
-/// 不再从阶段反推——所以基线在这两列上必然变，那是它要的变化。**它仍然不是「重录来变绿」**：重录之后逐行比对过，
-/// 全部差异只有三种形状，<c>Status='PENDING'→'COMPLETED'</c>、<c>'PENDING_LOAD'→'UNLOADED'</c> 与
-/// <c>'PENDING_LOAD'→'TERMINATED'</c>，七张表的其余每一列、以及出站消息的确认时刻，逐字未动
-/// （<c>evidence/b7-06/green/03-zero-change-pin-diff.txt</c>）。判别力正在这里：差异越出这三种形状，就是改坏了别的东西。
+/// 不再从阶段反推——所以基线在这两列上必然变，那是它要的变化。<b>它仍然不是「重录来变绿」</b>，而这一点由
+/// 与<b>集成分支顶端</b>（<c>fp/v2-impl@10175635</c>）的逐字段比对撑着，不是与本票自己的上一个提交比：
+/// <c>evidence/b7-06/green/04-zero-change-pin-vs-integration-tip.txt</c>。
+/// </para>
+/// <para>
+/// 那份比对的全部差异是两类。<b>同一行内被改写 12 处，三种形状，全部是 <c>Status</c></b>：
+/// <c>JourneyDemands</c> 的 <c>'PENDING_LOAD'→'TERMINATED'</c> 9 处、<c>'PENDING_LOAD'→'UNLOADED'</c> 1 处，
+/// <c>JourneyStops</c> 的 <c>'PENDING'→'COMPLETED'</c> 2 处；每一处都只变了一列，这不是读出来的，
+/// 是统计脚本对「一行里变了不止一列」单独报出来、结果为零。<b>纯新增 6 行</b>，全部是 <c>JourneyStops</c>：
+/// 三份 <c>commanded-ending-*</c> 各多两行，因为手写旅程行的夹具改用了 <c>JourneyMembershipSeed.Seed</c>。
+/// <b>删除 0 行。</b>七张表的其余每一列、以及出站消息的确认时刻，逐字未动。判别力正在这里：差异越出这两类，
+/// 就是改坏了别的东西。
+/// </para>
+/// <para>
+/// <b>这几个数字数错过一次，值得记着怎么错的。</b>第一版统计把「行数不等」的文件整份跳过逐字段比对，于是三份
+/// <c>commanded-ending-*</c> 里各一处 <c>Status</c> 改写没被算进去，报出来是 9 处改写而不是 12 处。
+/// 对不上的是总行数：证据文件里 +18/−12 行，而 9 处改写加 6 行新增只能是 +15/−9。<b>先算出该是多少，再去对</b>——
+/// 否则一个漏了三处的统计看上去和对的一样。
 /// </para>
 /// </remarks>
 internal static class ZeroChangePin
