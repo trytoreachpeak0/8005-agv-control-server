@@ -33,6 +33,8 @@ public sealed class Batch7MigrationDisciplineTests
     [
         // control-server#228：JourneyRuntimes 加 AreaEndAdmissionRevokedSince，迁移通道上排在 #199、#186 之前。
         "20260919200353_AreaEndAdmissionRevokedSince",
+        // control-server#199：两张审计表的 BEFORE UPDATE／BEFORE DELETE 触发器。只建触发器，不动任何表。
+        "20260920001500_AuditImmutabilityTriggers",
     ];
 
     [Fact]
