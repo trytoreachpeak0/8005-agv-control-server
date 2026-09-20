@@ -1560,13 +1560,43 @@ public sealed partial class MultiVehicleExecutionTests
         /// </summary>
         public Exception? ThrowOnFirstAccept { get; set; }
 
+        /// <summary>
+        /// Hangs in place of the first acceptance, and only that one, so the vehicle's budget cuts the segment off
+        /// before anything is committed. The claim the segment took ahead of intake then stands for nothing.
+        /// </summary>
+        /// <remarks>
+        /// The caller must give that vehicle a <c>RoundTimeoutMilliseconds</c> shorter than
+        /// <see cref="HangCeiling"/>, which is what ends the wait in the test this hook is for.
+        /// </remarks>
+        public bool HangBeforeFirstAccept { get; set; }
+
+        /// <summary>
+        /// Hangs once the first acceptance has committed, so the budget cuts the segment off with the demand
+        /// genuinely accepted -- the timing that tells a claim read from the database from one guessed at.
+        /// </summary>
+        /// <inheritdoc cref="HangBeforeFirstAccept" path="/remarks"/>
+        public bool HangAfterFirstAccept { get; set; }
+
+        /// <summary>
+        /// How long either hook waits before giving up, rather than waiting forever.
+        /// </summary>
+        /// <remarks>
+        /// Longer than any budget a test sets, so it never ends a wait the test meant the budget to end: the
+        /// semantics are those of an unanswered call either way. What it rules out is a caller that forgets the
+        /// short budget, or a refactor that carries <see cref="CancellationToken.None"/> down to this layer --
+        /// either would hang the whole test process here. A wedged run is worse than one red test: the job's
+        /// timeout cancels it, and cancelling a job on a self-hosted runner wedges the runner session, and the
+        /// server's <c>test</c> workflow has one runner.
+        /// </remarks>
+        private static readonly TimeSpan HangCeiling = TimeSpan.FromSeconds(60);
+
         public Task AcceptWithOrderIntentAsync(
             AcceptedDemandSnapshot snapshot,
             OrderIntent orderIntent,
             CancellationToken cancellationToken) =>
             inner.AcceptWithOrderIntentAsync(snapshot, orderIntent, cancellationToken);
 
-        public Task AcceptWithOrderIntentAsync(
+        public async Task AcceptWithOrderIntentAsync(
             AcceptedDemandSnapshot snapshot,
             OrderIntent orderIntent,
             JourneyExecutionPlan journey,
@@ -1578,8 +1608,21 @@ public sealed partial class MultiVehicleExecutionTests
                 throw refusal;
             }
 
+            if (HangBeforeFirstAccept)
+            {
+                HangBeforeFirstAccept = false;
+                await Task.Delay(HangCeiling, cancellationToken).ConfigureAwait(false);
+            }
+
             plans.Add(journey);
-            return inner.AcceptWithOrderIntentAsync(snapshot, orderIntent, journey, cancellationToken);
+            await inner.AcceptWithOrderIntentAsync(snapshot, orderIntent, journey, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (HangAfterFirstAccept)
+            {
+                HangAfterFirstAccept = false;
+                await Task.Delay(HangCeiling, cancellationToken).ConfigureAwait(false);
+            }
         }
     }
 
