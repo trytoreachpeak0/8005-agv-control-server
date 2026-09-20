@@ -39,10 +39,20 @@ public static class JourneyStopStatuses
     public const string Removed = "REMOVED";
 }
 
-/// <summary>从属需求的状态：待装、已装、已卸、已终结。</summary>
+/// <summary>从属需求的状态：待装、正在装、已装、已卸、已终结。</summary>
+/// <remarks>
+/// <see cref="Loading"/> 由批次7-06（control-server#211）加进来，它就是「<b>这个停靠此刻在装哪一条需求</b>」这个状态本身：
+/// 录入已受理、装货命令已发、结果还没到。一个停靠上至多一条需求处在这个状态（同一站多条需求逐条串行，规格第 22 节补记），
+/// 而推进段等装货结果时查的正是它的 attempt。没有它，「录入范围是整个停靠」与「下游按锚需求走」这两件事之间就只剩下
+/// 两个坏答案：发第二条的仓位却查第一条的结果，或者反过来。
+/// </remarks>
 public static class JourneyDemandStatuses
 {
     public const string PendingLoad = "PENDING_LOAD";
+
+    /// <summary>录入已受理、装货命令已发、结果未到。一个停靠上至多一条。</summary>
+    public const string Loading = "LOADING";
+
     public const string Loaded = "LOADED";
     public const string Unloaded = "UNLOADED";
     public const string Terminated = "TERMINATED";
