@@ -258,6 +258,14 @@ jobs:
               # control-server#216: the five kinds of bad per-zone dispatch parameter table each rejected whole, and a
               # good one taking effect as one new version without restarting the server.
               @{ Name = 'dispatch-zone-parameters-import-rejects'; Runs = 1; BatchId = 'batch-7' }
+              # control-server#211, specification 8.3 batch-7 FP-IS-08: a vehicle under way takes an appended demand
+              # (REQ-0205), each zone's demands stay in one contiguous run (REQ-0195), the per-zone delay gate decides
+              # whether an append happens at all (REQ-0198), and an idle and an in-transit vehicle compete for the same
+              # demand on marginal cost alone (REQ-0206).
+              @{ Name = 'en-route-append-delay-gate'; Runs = 1; BatchId = 'batch-7' }
+              @{ Name = 'idle-and-inflight-vehicles-compete'; Runs = 1; BatchId = 'batch-7' }
+              @{ Name = 'multi-stop-append-same-zone'; Runs = 1; BatchId = 'batch-7' }
+              @{ Name = 'multi-stop-zone-continuity'; Runs = 1; BatchId = 'batch-7' }
           )
           # One run's usual length in seconds, for dealing scenarios out to lanes longest first. Medians of 31
           # CI jobs from 2026-09-17 (ci-research, control-server#130); normal-load's excludes the build it used

@@ -92,7 +92,9 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
     /// </remarks>
     private static readonly string[] SlicesThisLineImplements =
     [
-        .. Enumerable.Range(0, 8).Select(sequence => FormattableString.Invariant($"FP-IS-{sequence:D2}")),
+        // FP-IS-08 加进来是批次7-06（control-server#211）：多停靠计划的服务端半边落地，
+        // CV-MULTI-STOP-PLAN-NINE-LEGS 因此有了同名具名测试，也就不再需要豁免。
+        .. Enumerable.Range(0, 9).Select(sequence => FormattableString.Invariant($"FP-IS-{sequence:D2}")),
         "FP-IS-10",
         "FP-IS-11",
         "FP-IS-14",
@@ -151,7 +153,6 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
         {
             ["CV-AUTOMATIC-CHARGING-CYCLE"] = "FP-IS-13, batch 9",
             ["CV-MANUAL-STATION-CLEARANCE"] = "FP-IS-13, batch 9",
-            ["CV-MULTI-STOP-PLAN-NINE-LEGS"] = "FP-IS-08, batch 7",
             ["CV-UNABLE-TO-CHARGE-FIELD-CONFIRMATION"] = "FP-IS-13, batch 9",
             ["CV-WAITING-POINT-IDLE-RETURN"] = "FP-IS-12, batch 8",
             ["CV-WORKLIST-SELECTION-ACCEPTED"] = "FP-IS-09, batch 11",

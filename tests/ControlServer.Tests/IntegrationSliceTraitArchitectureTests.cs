@@ -141,6 +141,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["TaskTypeStationHoldWriteConcurrencyTests"] = "batch 6 FP-C9b REQ-0340 hold raise idempotency and conditional release (control-server#162); server-internal store, no wire message",
             ["TaskTypeStationStartupTests"] = "batch 6 FP-C9a REQ-0343 startup load of the controlled task type station preset (control-server#159); server startup only, no wire message",
             ["TaskTypeStationStoreTests"] = "batch 6 FP-C9b REQ-0337/REQ-0343 task type rule and per-map binding set versions (control-server#159); server-internal, no wire message",
+            ["Batch7EnRouteAppendPlannerTests"] = "batch 7-06 REQ-0195/REQ-0196/REQ-0198 en-route append gates (control-server#211): a pure placement calculation, no database and no wire message; the slice's wire side is CV-MULTI-STOP-PLAN-NINE-LEGS in MultiStopPlanNineLegsVectorTests",
             ["VehicleFaultIsolationTests"] = "7.5 #8, FP-C11 fault isolation; single-ended server-to-RIoT",
             ["VehicleSlotLedgerTests"] = "batch 7-04 slot ledger port (control-server#209): an idle vehicle's free slots per side equal the session baseline; server-internal, no wire message",
             ["VehicleSlotPositionReaderTests"] = "batch 4 FP-C15 server-authoritative SlotPosition per vehicle, never the onboard's report (program#70 decision 4); no wire message"

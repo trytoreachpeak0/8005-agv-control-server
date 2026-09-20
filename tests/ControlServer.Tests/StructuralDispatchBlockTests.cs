@@ -100,6 +100,17 @@ public sealed class StructuralDispatchBlockTests
     [InlineData("FINAL_JOURNEY_PLAN_INCOMPLETE", DispatchReasonClass.Backlog)]
     [InlineData("DEMAND_DECISION_FACT_CHANGED", DispatchReasonClass.Backlog)]
     [InlineData("DEMAND_LEFT_CATALOG", DispatchReasonClass.Backlog)]
+    // 批次7-06（control-server#211）。八条都归普通积压：仓位被本车自己的货占着会随卸货腾出来；
+    // 途中追加的六种拒绝会随参数批准、车开过那一站、别的需求卸完而在下一轮通过；一个 Sublot 命中多种任务类型
+    // 是 MES 那一侧的数据自相矛盾，下一份快照就能改掉。没有一条是「整个车队都接不了」。
+    [InlineData("SLOT_GROUP_OCCUPIED_BY_OWN_CARGO", DispatchReasonClass.Backlog)]
+    [InlineData("EN_ROUTE_APPEND_NOT_CONFIGURED", DispatchReasonClass.Backlog)]
+    [InlineData("EN_ROUTE_APPEND_DELAY_GATE_EXCEEDED", DispatchReasonClass.Backlog)]
+    [InlineData("EN_ROUTE_APPEND_DELAY_UNCOMPUTABLE", DispatchReasonClass.Backlog)]
+    [InlineData("EN_ROUTE_APPEND_BREAKS_ZONE_CONTIGUITY", DispatchReasonClass.Backlog)]
+    [InlineData("EN_ROUTE_APPEND_PLAN_LIMIT_REACHED", DispatchReasonClass.Backlog)]
+    [InlineData("EN_ROUTE_APPEND_NO_INSERTION_POINT", DispatchReasonClass.Backlog)]
+    [InlineData("SUBLOT_TASK_TYPE_CONFLICT", DispatchReasonClass.Backlog)]
     public void EveryReasonCodeHasItsClassAndARationale(string reasonCode, DispatchReasonClass expected)
     {
         DispatchReasonClassification row = Assert.Contains(reasonCode, StructuralDispatchClassification.ByCode);

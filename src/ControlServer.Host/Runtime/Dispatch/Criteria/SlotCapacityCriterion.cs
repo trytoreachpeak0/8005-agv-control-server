@@ -123,7 +123,15 @@ public sealed class SlotCapacityCriterion(
             .ConfigureAwait(false);
         if (groupAvailableSlots.Count < expectedBasketCount)
         {
-            return DispatchReasonCodes.SlotGroupCapacityTemporarilyUnavailable;
+            // 装不下有两种，而批次7-07（control-server#212）判「这一侧装满」只认后一种，所以这里把它们分开
+            // （票面第 4 条，批次7-06）。基线是会话建立时车报的空仓位，账本在它之上扣掉本车自己已预留、已装的货：
+            // 基线够而账本不够，差额就是本车自己的货占的；基线本身就不够，那是仓位被禁用或本来就没那么多。
+            IReadOnlyList<int> sessionBaseline = await new SessionBaselineSlotLedger()
+                .ReadAvailableSlotsAsync(evaluation.Vehicle, requiredSlotPosition, cancellationToken)
+                .ConfigureAwait(false);
+            return sessionBaseline.Count >= expectedBasketCount
+                ? DispatchReasonCodes.SlotGroupOccupiedByOwnCargo
+                : DispatchReasonCodes.SlotGroupCapacityTemporarilyUnavailable;
         }
 
         evaluation.TargetSlots = groupAvailableSlots.Take(expectedBasketCount).ToArray();

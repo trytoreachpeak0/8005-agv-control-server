@@ -74,8 +74,8 @@ public sealed partial class MultiVehicleExecutionTests
             backlog D1 DEMAND_ALREADY_ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
             backlog D2 ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0000000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
             outcome accepted=D1,D2
-              V1: D0=ELIGIBLE[1] D1=ELIGIBLE[1] D2=ELIGIBLE[1]
-              V2: D0=ELIGIBLE[1] D1=DEMAND_ALREADY_ACCEPTED D2=ELIGIBLE[1]
+              V1: D1=ELIGIBLE[1] D2=ELIGIBLE[1] D0=ELIGIBLE[1]
+              V2: D1=DEMAND_ALREADY_ACCEPTED[1] D2=ELIGIBLE[1] D0=ELIGIBLE[1]
             riot create BROKERX-0001 W2G-10000001-0000-4000-8000-000000000001-PICKUP-1 -> 13
             riot create BROKERX-0002 W2G-10000002-0000-4000-8000-000000000002-PICKUP-1 -> 14
             catalog reads 3
@@ -106,8 +106,8 @@ public sealed partial class MultiVehicleExecutionTests
             backlog D0 DEMAND_ALREADY_ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
             outcome accepted=D0
               V1: D0=ELIGIBLE[1]
-              V2: D0=DEMAND_ALREADY_ACCEPTED
-              V3: D0=DEMAND_ALREADY_ACCEPTED
+              V2: D0=DEMAND_ALREADY_ACCEPTED[1]
+              V3: D0=DEMAND_ALREADY_ACCEPTED[1]
             riot create BROKERX-0001 W2G-10000000-0000-4000-8000-000000000000-PICKUP-1 -> 12
             catalog reads 2
             """);
@@ -145,8 +145,8 @@ public sealed partial class MultiVehicleExecutionTests
             backlog D1 DEMAND_ALREADY_ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
             outcome accepted=D0,D1
               V1: D0=ELIGIBLE[1] D1=ELIGIBLE[1]
-              V2: D0=DEMAND_ALREADY_ACCEPTED D1=ELIGIBLE[1]
-              V3: D0=DEMAND_ALREADY_ACCEPTED D1=DEMAND_ALREADY_ACCEPTED
+              V2: D0=DEMAND_ALREADY_ACCEPTED[1] D1=ELIGIBLE[1]
+              V3: D0=DEMAND_ALREADY_ACCEPTED[1] D1=DEMAND_ALREADY_ACCEPTED[1]
             riot create BROKERX-0002 W2G-10000001-0000-4000-8000-000000000001-PICKUP-1 -> 13
             catalog reads 3
             """);
@@ -161,24 +161,30 @@ public sealed partial class MultiVehicleExecutionTests
     {
         await using FleetFixture fixture = await FleetFixture.CreateAsync(
             configure: options => options.Fleet[0].RoundTimeoutMilliseconds = CutOffBudgetMilliseconds);
-        fixture.BoxCounts.HangOnCall = 2;
+        // 第四次，不是第二次（批次7-06，control-server#211）。挂起点要落在「第一辆车的第二个候选」上，
+        // 而翻转把 box count 的调用序从「一辆车把候选走完再换下一辆」换成了「一条候选问完所有车再换下一条」：
+        // 三辆车判第一条候选用掉前三次，第一辆车的第二个候选因此是第四次。这个数字跟着调用序走，
+        // 不是断言的一部分——它下面那条对「哪辆车被切断」的断言才是。
+        fixture.BoxCounts.HangOnCall = 4;
 
         fixture.Clock.Tick = TimeSpan.FromMilliseconds(1);
         await fixture.RunRoundAsync();
 
         await AssertTranscriptAsync(fixture, """
-            journey V2 D0 AwaitingPickupArrival block=- pickup=12 slots=[1] baskets=1
-            journey V3 D1 AwaitingPickupArrival block=- pickup=13 slots=[1] baskets=1
+            journey V1 D0 AwaitingPickupArrival block=- pickup=12 slots=[1] baskets=1
+            journey V2 D1 AwaitingPickupArrival block=- pickup=13 slots=[1] baskets=1
+            journey V3 D2 AwaitingPickupArrival block=- pickup=14 slots=[1] baskets=1
             backlog D0 DEMAND_ALREADY_ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
-            backlog D1 ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0000000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
-            backlog D2 ELIGIBLE first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=-
-            outcome accepted=D0,D1
-              V2: D0=ELIGIBLE[1] D1=ELIGIBLE[1] D2=ELIGIBLE[1]
-              V3: D0=DEMAND_ALREADY_ACCEPTED D1=ELIGIBLE[1] D2=ELIGIBLE[1]
-            riot create BROKERX-0002 W2G-10000000-0000-4000-8000-000000000000-PICKUP-1 -> 12
-            riot create BROKERX-0003 W2G-10000001-0000-4000-8000-000000000001-PICKUP-1 -> 13
+            backlog D1 DEMAND_ALREADY_ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
+            backlog D2 ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0000000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
+            outcome accepted=D0,D1,D2
+              V2: D0=DEMAND_ALREADY_ACCEPTED[1] D1=ELIGIBLE[1] D2=ELIGIBLE[1]
+              V3: D0=DEMAND_ALREADY_ACCEPTED[1] D1=DEMAND_ALREADY_ACCEPTED[1] D2=ELIGIBLE[1]
+            riot create BROKERX-0001 W2G-10000000-0000-4000-8000-000000000000-PICKUP-1 -> 12
+            riot create BROKERX-0002 W2G-10000001-0000-4000-8000-000000000001-PICKUP-1 -> 13
+            riot create BROKERX-0003 W2G-10000002-0000-4000-8000-000000000002-PICKUP-1 -> 14
             log 2104 LogVehicleRoundBudgetExhausted Warning: Vehicle V1 exhausted its 1000 ms dispatch budget; the round moved on to the remaining vehicles.
-            catalog reads 3
+            catalog reads 4
             """);
     }
 
@@ -240,7 +246,11 @@ public sealed partial class MultiVehicleExecutionTests
         // its save would leave it.
         const string StagedReason = "STAGED-BY-THE-VEHICLE-CUT-OFF";
         List<object> staged = [];
-        fixture.BoxCounts.HangOnCall = 2;
+        // 第四次，不是第二次（批次7-06，control-server#211）。挂起点要落在「第一辆车的第二个候选」上，
+        // 而翻转把 box count 的调用序从「一辆车把候选走完再换下一辆」换成了「一条候选问完所有车再换下一条」：
+        // 三辆车判第一条候选用掉前三次，第一辆车的第二个候选因此是第四次。这个数字跟着调用序走，
+        // 不是断言的一部分——它下面那条对「哪辆车被切断」的断言才是。
+        fixture.BoxCounts.HangOnCall = 4;
         fixture.BoxCounts.OnHang = () =>
         {
             foreach (EntityEntry<JourneyBacklogRow> entry in fixture.Context.ChangeTracker.Entries<JourneyBacklogRow>())
@@ -315,22 +325,26 @@ public sealed partial class MultiVehicleExecutionTests
 
         Assert.Equal(catalogReads, fixture.Catalog.ReadCount);
         Assert.Empty(fixture.RoundOutcomes.Outcomes);
-        // Not even the in-transit path is asked: the round ended before there was a round to qualify for.
-        Assert.Empty(fixture.InTransit.Asked);
     }
 
     /// <summary>
-    /// A vehicle under way goes down the in-transit path, which refuses it with nothing to show for it: no verdict,
-    /// no slot group read, no backlog write, nothing handed to the round-end hook -- while the idle vehicles beside it
-    /// are served as before.
+    /// 在途车与空闲车在同一张候选表上竞争（REQ-0205；批次7-06，control-server#211）：它进轮次结局，
+    /// 对每条候选都有自己的裁决，身份本身不产生优先级。
     /// </summary>
     /// <remarks>
-    /// The path is asked once per vehicle under way, with the round's own facts, and says no; appending to a journey
-    /// under way is control-server#211's to open. The host's path is handed no database context at all, so its refusal
-    /// cannot write a backlog row; what this test watches is that the round adds nothing for that vehicle either.
+    /// <para>
+    /// <b>这一条与它替换掉的那两条是同一件事的两面。</b>翻转之前在途车走一条占位路径
+    /// （<c>InTransitAppendNotOpened</c>），一律拒绝、不留痕迹，所以那时的用例断言的是「它不在轮次结局里」
+    /// 和「万一那条路径说了 yes，轮次要大声失败而不是静默忽略」。本票把那条路径换成真正的在途资格链，
+    /// 于是两条断言各自的前提都不存在了——占位类连同它的接口一起删掉了。
+    /// </para>
+    /// <para>
+    /// 换来的保证写在这里：在途车被问、被记、和空闲车比同一批候选。它接不接得下由链与插位规划决定
+    /// （<c>Batch7EnRouteAppendPlannerTests</c> 守那一半），这里只问它有没有被当成车队的一员。
+    /// </para>
     /// </remarks>
     [Fact]
-    public async Task AVehicleUnderWayIsLeftOutOfTheRoundItsIdleNeighboursAreServedIn()
+    public async Task AVehicleUnderWayCompetesForTheSameCandidatesAsTheIdleOnes()
     {
         await using FleetFixture fixture = await FleetFixture.CreateAsync();
         fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
@@ -338,32 +352,16 @@ public sealed partial class MultiVehicleExecutionTests
         Assert.Equal(FleetFixture.AgvIds[0], (await fixture.JourneyOfAsync(FleetFixture.AgvIds[0])).AgvId);
         fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0), FleetFixture.Demand(1, "N1-2", 1)]);
         fixture.RoundOutcomes.Outcomes.Clear();
-        fixture.SlotPositions.Reads.Clear();
 
         await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
 
+        DispatchRoundOutcome outcome = Assert.Single(fixture.RoundOutcomes.Outcomes);
         Assert.Equal(
-            [FleetFixture.AgvIds[1], FleetFixture.AgvIds[2]],
-            Assert.Single(fixture.RoundOutcomes.Outcomes).CompletedVehicles.Select(vehicle => vehicle.AgvId).ToArray());
-        Assert.DoesNotContain(FleetFixture.AgvIds[0], fixture.SlotPositions.Reads);
-        (DispatchRoundFacts round, FleetVehicle asked) = Assert.Single(fixture.InTransit.Asked);
-        Assert.Equal(FleetFixture.AgvIds[0], asked.AgvId);
-        Assert.Same(Assert.Single(fixture.RoundOutcomes.Outcomes).Round, round);
-    }
-
-    /// <summary>
-    /// The in-transit path saying yes is not something this round can act on yet: it fails loudly rather than
-    /// quietly ignoring a vehicle it was told may take work.
-    /// </summary>
-    [Fact]
-    public async Task AnInTransitVehicleTheRoundCannotYetServeIsNotSilentlyDropped()
-    {
-        await using FleetFixture fixture = await FleetFixture.CreateAsync();
-        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
-        await fixture.RunRoundAsync();
-        fixture.InTransit.Answer = true;
-
-        await Assert.ThrowsAsync<NotSupportedException>(() => fixture.RunRoundAsync(TimeSpan.FromSeconds(1)));
+            FleetFixture.AgvIds.Order(StringComparer.Ordinal).ToArray(),
+            outcome.CompletedVehicles.Select(vehicle => vehicle.AgvId).Order(StringComparer.Ordinal).ToArray());
+        DispatchVehicleOutcome underWay = outcome.CompletedVehicles
+            .Single(vehicle => vehicle.AgvId == FleetFixture.AgvIds[0]);
+        Assert.NotEmpty(underWay.Verdicts);
     }
 
     // ---- per-vehicle failure isolation (control-server#231) -------------------------------------------------
@@ -400,7 +398,7 @@ public sealed partial class MultiVehicleExecutionTests
             backlog D2 ELIGIBLE first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=-
             outcome accepted=D0,D1
               V1: D0=ELIGIBLE[1] D1=ELIGIBLE[1] D2=ELIGIBLE[1]
-              V3: D0=DEMAND_ALREADY_ACCEPTED D1=ELIGIBLE[1] D2=ELIGIBLE[1]
+              V3: D0=DEMAND_ALREADY_ACCEPTED[1] D1=ELIGIBLE[1] D2=ELIGIBLE[1]
             riot create BROKERX-0001 W2G-10000000-0000-4000-8000-000000000000-PICKUP-1 -> 12
             riot create BROKERX-0003 W2G-10000001-0000-4000-8000-000000000001-PICKUP-1 -> 13
             log 2123 LogVehicleRoundFailed Warning: Vehicle V2 could not be served this round: HttpRequestException. The round moved on to the remaining vehicles.
@@ -585,11 +583,16 @@ public sealed partial class MultiVehicleExecutionTests
     }
 
     /// <summary>
-    /// The in-transit path throwing is isolated the same way, so the round-end hook still runs: it sits between the
-    /// idle vehicles and that hook, and control-server#211 replaces today's refuse-everything with a path that reads.
+    /// 问不动一辆在途车，与问不动一辆空闲车分开记，而且轮末钩子照样跑：在途车这一路是被隔离的。
     /// </summary>
+    /// <remarks>
+    /// 触发点随本票换了一个（control-server#211）：原来是那条占位在途路径自己抛，而它已经被真正的在途资格链
+    /// 取代；现在让这辆在途车的 RIoT 事实读抛，那是同一条链上真实存在的失败方式。<b>两个事件 id 的分工没变</b>——
+    /// 2125 是「这辆在途车问不动」，2123 是「这辆空闲车白闲了一轮」。对一辆正跑着自己旅程的车说
+    /// 「could not be served this round」是句错话，所以它不该出现。
+    /// </remarks>
     [Fact]
-    public async Task AnInTransitPathThatThrowsStillLeavesTheRoundEndHookCalled()
+    public async Task AnInTransitVehicleThatCannotBeAskedIsLoggedUnderItsOwnEventId()
     {
         await using FleetFixture fixture = await FleetFixture.CreateAsync();
         fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
@@ -598,7 +601,7 @@ public sealed partial class MultiVehicleExecutionTests
         fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0), FleetFixture.Demand(1, "N1-2", 1)]);
         fixture.RoundOutcomes.Outcomes.Clear();
         fixture.EngineLog.Entries.Clear();
-        fixture.InTransit.Throws = true;
+        fixture.Riot.FailOn = FleetFixture.VehicleKeys[0];
 
         await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
 
@@ -609,8 +612,6 @@ public sealed partial class MultiVehicleExecutionTests
         EventRecordingLogger<JourneyRuntimeEngine>.Entry warning =
             Assert.Single(fixture.EngineLog.Entries, entry => entry.EventId.Id == 2125);
         Assert.Contains(FleetFixture.AgvIds[0], warning.Message, StringComparison.Ordinal);
-        // Its own event id rather than the idle vehicles' 2123: nothing was dispatched for this vehicle and
-        // nothing could have been, so "could not be served this round" would say the wrong thing about it.
         Assert.DoesNotContain(fixture.EngineLog.Entries, entry => entry.EventId.Id == 2123);
     }
 

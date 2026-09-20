@@ -21,6 +21,20 @@ public static class JourneyIdentity
     public static string PickupStopId(string journeyId) => $"{journeyId}|{JourneyStopRoles.Pickup}";
 
     public static string UnloadStopId(string journeyId) => $"{journeyId}|{JourneyStopRoles.Unload}";
+
+    /// <summary>
+    /// 途中追加带来的停靠，身份取<b>被追加的那条需求</b>（批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// 不取旅程加序号：序号是可变的序位，下一次追加就会把它推走，而停靠的身份必须在换序之后仍然指着同一个停靠
+    /// （MVP 拿序号当身份的那个坑）。一条需求至多有一个未移除的归属，所以「这条需求带来的取货停靠」是唯一的。
+    /// </remarks>
+    public static string AppendedPickupStopId(string demandId) =>
+        $"{Prefix}{demandId}|{JourneyStopRoles.Pickup}";
+
+    /// <inheritdoc cref="AppendedPickupStopId"/>
+    public static string AppendedUnloadStopId(string demandId) =>
+        $"{Prefix}{demandId}|{JourneyStopRoles.Unload}";
 }
 
 /// <summary>停靠的角色。</summary>

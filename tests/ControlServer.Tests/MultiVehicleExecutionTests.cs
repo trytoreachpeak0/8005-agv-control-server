@@ -122,32 +122,36 @@ public sealed partial class MultiVehicleExecutionTests
     // ---- one worker, vehicles in series --------------------------------------------------
 
     /// <summary>
-    /// The round reads the catalog once and serves the vehicles one after another, with no
-    /// vehicle's reads interleaved into another's segment.
+    /// 一轮只读一次目录，每辆车的事实也只读一次——一个 worker 对着同一份快照决定整轮。
     /// </summary>
     /// <remarks>
-    /// What this protects is snapshot freshness: the reason B2 is a single worker iterating rather
-    /// than one worker per vehicle is that two workers would each decide against their own read of
-    /// the same catalog and could accept the same demand twice. Interleaving is the observable
-    /// symptom of that, so it is what the test looks at.
+    /// <para>
+    /// <b>这一条守的是快照新鲜度</b>：B2 之所以是一个 worker 迭代而不是一车一个 worker，是因为两个 worker
+    /// 会各自对着同一份目录的各自一次读做决定，于是可能把同一条需求接两次。所以真正的判据是那个读次数：
+    /// 一次轮次决策读，加上受理每条需求前的一次最终重读。按候选读会是九次，按车读会是三次决策读。
+    /// </para>
+    /// <para>
+    /// <b>「不交错」那一半随本票换了说法</b>（control-server#211）。翻转之前轮次按车迭代，一辆车的读因此挤在
+    /// 自己那一段里，交错就是「两个 worker 各读各的」的可观测症状。翻转成任务优先之后，一辆车的评估按定义就
+    /// 散在多条任务里，中间隔着别的车——交错不再说明任何事。换上的判据比它更直接：<b>每辆车的事实恰好读两次</b>，
+    /// 入轮时一次、受理前的最终重读一次。多出来的任何一次都意味着有人在按候选或按任务重读车辆事实，
+    /// 那正是这条用例本来要挡住的东西。三次是：入轮时读一次事实，派车前的最终重读一次，受理内部那个「临门一脚
+    /// 再确认」的回调一次。三次都属于这辆车自己那一段，与它判了几条候选无关。
+    /// </para>
     /// </remarks>
     [Fact]
-    public async Task OneWorkerServesTheVehiclesInSeriesAgainstOneCatalogRead()
+    public async Task OneWorkerDecidesTheWholeRoundAgainstOneCatalogRead()
     {
         await using FleetFixture fixture = await FleetFixture.CreateAsync();
 
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
 
-        // One read for the round's decision, plus the one final re-read intake does for each
-        // demand it is about to accept. Nothing is read per candidate, and nothing is read per
-        // vehicle: three vehicles judging three candidates against a per-candidate read would be
-        // nine, and against a per-vehicle read would be three decision reads rather than one.
         Assert.Equal(1 + 3, fixture.Catalog.ReadCount);
-        string[] segments = fixture.Riot.VehicleReads
-            .Where((key, index) => index == 0 || fixture.Riot.VehicleReads[index - 1] != key)
-            .ToArray();
-        Assert.Equal(segments, segments.Distinct(StringComparer.Ordinal).ToArray());
-        Assert.Equal(FleetFixture.VehicleKeys, segments.Order(StringComparer.Ordinal).ToArray());
+        Assert.Equal(
+            FleetFixture.VehicleKeys.ToDictionary(key => key, _ => 3, StringComparer.Ordinal),
+            fixture.Riot.VehicleReads
+                .GroupBy(key => key, StringComparer.Ordinal)
+                .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal));
     }
 
     /// <summary>
@@ -924,7 +928,6 @@ public sealed partial class MultiVehicleExecutionTests
         public List<JourneyExecutionPlan> AcceptedPlans { get; } = [];
         public RecordingAcceptances Acceptances { get; }
         public FleetBoxCounts BoxCounts { get; } = new();
-        public RecordingInTransitQualification InTransit { get; } = new();
         public EventRecordingLogger<JourneyRuntimeEngine> EngineLog { get; } = new();
         public JourneyRuntimeEngine Engine { get; private set; }
 
@@ -1122,13 +1125,29 @@ public sealed partial class MultiVehicleExecutionTests
                         createGate: gate),
                     .. _extraCriterion is null ? Array.Empty<IDispatchAdmissionCriterion>() : [_extraCriterion],
                 ]),
+                new InTransitDispatchAdmissionChain(DispatchAdmissionCriteria.InTransit(
+                    [
+                        .. DispatchAdmissionCriteria.Default(
+                            options,
+                            new MapStationResolver(),
+                            new PackageCapacityStore(Context),
+                            store,
+                            new VehicleFaultStore(Context),
+                            BoxCounts,
+                            NullLogger<SlotCapacityCriterion>.Instance,
+                            routeGraph: null,
+                            catalog: catalogAccess,
+                            createGate: gate),
+                        .. _extraCriterion is null ? Array.Empty<IDispatchAdmissionCriterion>() : [_extraCriterion],
+                    ],
+                    options)),
+                new DispatchZoneParameterStore(Context, JourneyRuntimeWorkerTestKit.CreateGovernedPublisher(Context)),
                 DispatchCandidateOrdering.Ranker(),
                 dispatchPolicy,
                 AreaAssignments,
                 SlotPositions,
                 RoundOutcomes,
                 onboardFacts,
-                InTransit,
                 options,
                 Clock,
                 EngineLog);
@@ -1525,37 +1544,6 @@ public sealed partial class MultiVehicleExecutionTests
             IReadOnlyCollection<string> agvIds,
             string slotPosition,
             CancellationToken cancellationToken) => throw new NotSupportedException();
-    }
-
-    /// <summary>
-    /// The host's in-transit path, with every vehicle it was asked about written down; <see cref="Answer"/> overrides
-    /// it for the one test about a yes.
-    /// </summary>
-    private sealed class RecordingInTransitQualification : IInTransitDispatchQualification
-    {
-        private readonly InTransitAppendNotOpened _host = new();
-
-        public List<(DispatchRoundFacts Round, FleetVehicle Vehicle)> Asked { get; } = [];
-
-        public bool? Answer { get; set; }
-
-        /// <summary>Whether the path fails the way a read of its own would; what control-server#211 puts here can throw.</summary>
-        public bool Throws { get; set; }
-
-        public async Task<bool> QualifiesAsync(
-            DispatchRoundFacts round,
-            FleetVehicle vehicle,
-            CancellationToken cancellationToken)
-        {
-            Asked.Add((round, vehicle));
-            if (Throws)
-            {
-                throw new HttpRequestException($"The in-transit path did not answer for {vehicle.AgvId}.");
-            }
-
-            bool host = await _host.QualifiesAsync(round, vehicle, cancellationToken);
-            return Answer ?? host;
-        }
     }
 
     private sealed class RecordingRoundOutcomes : IDispatchRoundOutcomeSink

@@ -453,6 +453,9 @@ public sealed class JourneyRuntimeEngine(
             session.SessionGeneration,
             RuntimeMessageIds(runtime, stops),
             cancellationToken).ConfigureAwait(false);
+        // 计划整体替换下发（ADR-cross-0053）：途中追加会在序列中间插进新停靠，而车上手里那张计划是插入之前的。
+        // 补发在重放之后：重放先把没确认的旧行发完，新的那一版才不会被它顶回去。
+        await RefreshUpcomingStopPlanAsync(runtime, stops, session, cancellationToken).ConfigureAwait(false);
 
         // Set when this iteration has already asked a pre-departure check again, so the judgment that
         // follows neither asks a third time nor forgets why the vehicle is still waiting.
@@ -494,7 +497,7 @@ public sealed class JourneyRuntimeEngine(
                 // until the vehicle reports: no load starts and the deadline does not end it. Read after the
                 // inbox, so an entry seen here cannot have been persisted before the cancellation it loses to.
                 //
-                // 按<b>这个停靠上任一条需求</b>问（批次7-06）：取消要车证明那一排仓位是空的，而那是一次整排的证明，
+                // 按「这个停靠上任一条需求」问（批次7-06）：取消要车证明那一排仓位是空的，而那是一次整排的证明，
                 // 不是对某一条需求的证明——所以一条需求的取消开着，这个停靠上的每一条都等着。
                 if (await OpenCancellationAtCurrentStopAsync(stops, cancellationToken).ConfigureAwait(false))
                 {
@@ -555,7 +558,7 @@ public sealed class JourneyRuntimeEngine(
                 SetStage(runtime, JourneyRuntimeStage.AwaitingLoadResult, now);
                 break;
             case JourneyRuntimeStage.AwaitingLoadResult:
-                // 等的是<b>此刻在装的那一条</b>的 attempt（批次7-06）。批次7-03 查旅程行上锚需求的那一个，
+                // 等的是「此刻在装的那一条」的 attempt（批次7-06）。批次7-03 查旅程行上锚需求的那一个，
                 // 而命令是按被录入那条发出去的——两者分岔的样子就是「发了 A 查 B」，旅程停在这里而且不报错。
                 JourneyStopDemand loading = stops.LoadingAtCurrentStop
                     ?? throw new InvalidDataException(
@@ -631,9 +634,9 @@ public sealed class JourneyRuntimeEngine(
                     return;
                 }
                 runtime.StationDepartureWaitStartedAt = null;
-                // 核验的两个 id 取当前停靠。命令里的 demandId 取<b>第一条受理的需求</b>（锚需求），即使它已经在更早的
+                // 核验的两个 id 取当前停靠。命令里的 demandId 取「第一条受理的需求」（锚需求），即使它已经在更早的
                 // 停靠卸完了：协议只放得下一个，而离站安全本来就是一次整车判断，不是对某一条需求的判断
-                // （票面第 10 条）。腿与目标站取<b>即将出发的那一段</b>，也就是下一个停靠。
+                // （票面第 10 条）。腿与目标站取「即将出发的那一段」，也就是下一个停靠。
                 await publisher.PublishPreDepartureSafetyCheckAsync(
                     DepartureCheckMessageId(stops.Current),
                     runtime.AgvId,
@@ -1281,6 +1284,131 @@ public sealed class JourneyRuntimeEngine(
     }
 
     /// <summary>
+    /// 车上那张计划与此刻的停靠序列不一致时，发一张新的（ADR-cross-0053，批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>判据是内容，不是某个计数器。</b>途中追加在序列中间插进两个停靠，而当前停靠的序位没变——按序位算出来的
+    /// 计划修订号于是一字未动，靠它看不出该重发。所以这里把「现在应该是什么样」与「发件箱里最后发出去的那一张」
+    /// 逐条比：腿的身份、序位、站点、状态，任一条不同就换一版。
+    /// </para>
+    /// <para>
+    /// <b>到站那一次不走这里。</b>到站本来就要发一张新的计划，序位一到就换号；这里管的是两次到站<b>之间</b>计划被
+    /// 改写的那种情形，今天只有途中追加一种。没有可比的那一张（这个停靠还没发过计划）时什么也不做。
+    /// </para>
+    /// </remarks>
+    private async Task RefreshUpcomingStopPlanAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
+        SessionRecoveryRow session,
+        CancellationToken cancellationToken)
+    {
+        if (runtime.Stage is JourneyRuntimeStage.Completed or JourneyRuntimeStage.Blocked)
+        {
+            return;
+        }
+
+        JourneyStopRow stop = stops.Current;
+        bool arrived = runtime.Stage is not
+            (JourneyRuntimeStage.AwaitingPickupArrival or JourneyRuntimeStage.AwaitingGateArrival);
+        long baseRevision = PlanRevisionAt(runtime.PlanRevision, stop, arrived);
+        (long sentRevision, string sentMessageId)? sent =
+            await LastSentPlanAsync(stops, stop, baseRevision, cancellationToken).ConfigureAwait(false);
+        if (sent is not { } last)
+        {
+            return;
+        }
+
+        UpcomingStopPlanProjection current = JourneyPlanBuilder.Plan(
+            runtime, stops.Stops, stop, arrived, last.sentRevision);
+        if (await PlanOnTheWireMatchesAsync(last.sentMessageId, current, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        long revision = last.sentRevision + 1;
+        await RetireSupersededSnapshotAsync(last.sentMessageId, cancellationToken).ConfigureAwait(false);
+        await publisher.PublishUpcomingStopPlanAsync(
+            PlanMessageIdAt(stop, revision, baseRevision),
+            runtime.AgvId,
+            session.SessionGeneration,
+            JourneyPlanBuilder.Plan(runtime, stops.Stops, stop, arrived, revision),
+            cancellationToken).ConfigureAwait(false);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 这个停靠最后发出去的那一版计划：从它的第一版往上数，直到发件箱里没有下一版为止。
+    /// </summary>
+    /// <remarks>版数至多与这趟旅程被追加过的次数同阶，所以这几次查询是有界的。</remarks>
+    private async Task<(long Revision, string MessageId)?> LastSentPlanAsync(
+        JourneyStopCursor stops,
+        JourneyStopRow stop,
+        long baseRevision,
+        CancellationToken cancellationToken)
+    {
+        _ = stops;
+        (long Revision, string MessageId)? last = null;
+        for (long revision = baseRevision; revision < baseRevision + EnRouteAppendPlanner.MaximumLegs; revision++)
+        {
+            string messageId = PlanMessageIdAt(stop, revision, baseRevision);
+            if (!await dbContext.ProtocolOutbox.AsNoTracking()
+                    .AnyAsync(row => row.MessageId == messageId, cancellationToken).ConfigureAwait(false))
+            {
+                break;
+            }
+
+            last = (revision, messageId);
+        }
+
+        return last;
+    }
+
+    /// <summary>车上那一版的腿，与现在应该发的那一份，是不是同一串。</summary>
+    private async Task<bool> PlanOnTheWireMatchesAsync(
+        string messageId,
+        UpcomingStopPlanProjection current,
+        CancellationToken cancellationToken)
+    {
+        string? payloadJson = await dbContext.ProtocolOutbox.AsNoTracking()
+            .Where(row => row.MessageId == messageId)
+            .Select(row => row.PayloadJson)
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        if (payloadJson is null)
+        {
+            return true;
+        }
+
+        using JsonDocument document = JsonDocument.Parse(payloadJson);
+        JsonElement legs = document.RootElement.GetProperty("payload").GetProperty("legs");
+        if (legs.GetArrayLength() != current.Legs.Count)
+        {
+            return false;
+        }
+
+        int index = 0;
+        foreach (JsonElement leg in legs.EnumerateArray())
+        {
+            UpcomingMovementLeg expected = current.Legs[index++];
+            if (RequiredString(leg, "movementLegId") != expected.MovementLegId ||
+                leg.GetProperty("sequence").GetInt32() != expected.Sequence ||
+                RequiredString(leg, "stationId") != expected.StationId ||
+                RequiredString(leg, "state") != expected.State)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>这个停靠第 <paramref name="revision"/> 版计划的消息 id；第一版用停靠行上那一个。</summary>
+    private static string PlanMessageIdAt(JourneyStopRow stop, long revision, long baseRevision) =>
+        revision == baseRevision
+            ? stop.PlanMessageId
+            : JourneyPlanBuilder.StableGuid($"{stop.StopId}|{revision}", "plan");
+
+    /// <summary>
     /// Retires a snapshot that the next revision of its stream supersedes, if it is still waiting
     /// for an acknowledgement.
     /// </summary>
@@ -1706,7 +1834,7 @@ public sealed class JourneyRuntimeEngine(
         // Both inputs were checked usable just above, so a count is computable.
         int recomputed = AuthoritativeBasketCount.Compute(maxBoxCount, capacity)
             ?? throw new InvalidOperationException("Both inputs are usable, so a count is computable.");
-        // 比的是<b>被录入那一条</b>自己冻结的花篮数（批次7-06）：仓位是按它预留的，而一站几条需求各有各的数。
+        // 比的是「被录入那一条」自己冻结的花篮数（批次7-06）：仓位是按它预留的，而一站几条需求各有各的数。
         // 批次7-03 比的是旅程行上的锚需求那一份，单需求下两者恒等。
         if (recomputed != member.Membership.ExpectedBasketCount)
         {
@@ -1751,7 +1879,7 @@ public sealed class JourneyRuntimeEngine(
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        // 作业会话与修订号取<b>当前停靠此刻这一版</b>（批次7-06）：拒收告诉操作员「你扫的那一版清单是第几号」，
+        // 作业会话与修订号取「当前停靠此刻这一版」（批次7-06）：拒收告诉操作员「你扫的那一版清单是第几号」，
         // 而清单每装完一条就升一版，旅程行上那个受理时的值只在第一版上对得上。
         await publisher.PublishSublotRejectedAsync(
             JourneyPlanBuilder.StableGuid(submission.MessageId, "sublot-rejected"),
@@ -1952,7 +2080,7 @@ public sealed class JourneyRuntimeEngine(
         // runtime's own gate station keeps that journey moving under the same check rather than
         // blocking it on a record it never had a chance to write.
         int mapId = dropoff?.MapId ?? runtime.MapId;
-        // 兜底取<b>这一段腿要去的那个停靠</b>（批次7-06），不是旅程行上写死的关卡站：多停靠计划里后者只是其中一个。
+        // 兜底取「这一段腿要去的那个停靠」（批次7-06），不是旅程行上写死的关卡站：多停靠计划里后者只是其中一个。
         int stationId = dropoff?.StationId ?? targetStop.StationRiotId;
         string transportDemandKey = await dbContext.AcceptedDemands
             .Where(row => row.DemandId == runtime.DemandId)
@@ -2180,6 +2308,14 @@ public sealed class JourneyRuntimeEngine(
             ids.Add(stop.PlanMessageId);
             // 清单与录入请求在一个停靠上可能发不止一版（批次7-06）：挂几条需求就有几版，每一版一个 id。全部枚举出来
             // ——少一个就是一条报文再也不补发，而这个集合的每一项在发件箱里不一定有行，多出来的项不会让任何东西发出去。
+            // 计划在一个停靠上也可能发不止一版（途中追加改写了序列），枚举方式与清单相同。
+            long planBase = PlanRevisionAt(runtime.PlanRevision, stop, arrivedAtStop: false);
+            for (long offset = 0; offset <= EnRouteAppendPlanner.MaximumLegs; offset++)
+            {
+                ids.Add(PlanMessageIdAt(stop, planBase + offset, planBase));
+                ids.Add(PlanMessageIdAt(stop, planBase + 1 + offset, planBase));
+            }
+
             long baseRevision = stops.FirstWorklistRevisionAt(runtime.WorklistRevision, stop);
             for (long offset = 0; offset < stops.WorklistVersionsOf(stop); offset++)
             {
@@ -2226,7 +2362,7 @@ public sealed class JourneyRuntimeEngine(
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        // attempt 取<b>此刻在做的那一条</b>的（批次7-06）：装的那条由录入决定，卸的那条由归属先后决定。
+        // attempt 取「此刻在做的那一条」的（批次7-06）：装的那条由录入决定，卸的那条由归属先后决定。
         JourneyStopCursor stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken)
             .ConfigureAwait(false);
         (string? attemptId, string reason) = runtime.Stage switch
@@ -2627,7 +2763,7 @@ public sealed class JourneyRuntimeEngine(
             {
                 loadCommand.AcknowledgedAt ??= now;
             }
-            // 终结的是<b>装失败的那一条</b>（批次7-06）。旅程还带着别的需求时，第二步（关闭旅程）不跑，下一轮回到
+            // 终结的是「装失败的那一条」（批次7-06）。旅程还带着别的需求时，第二步（关闭旅程）不跑，下一轮回到
             // 当前停靠继续推进。
             await new PickupStopTermination(dbContext).StageAsync(
                 runtime, stops.CurrentSublotRequestMessageId(runtime.WorklistRevision), loading.Demand.DemandId, terminalReason, now,
