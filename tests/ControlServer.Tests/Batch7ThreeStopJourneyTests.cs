@@ -167,9 +167,10 @@ public sealed class Batch7ThreeStopJourneyTests
             VehicleBusinessMessageId = JourneyPlanBuilder.StableGuid(extraId, "vehicle-state"),
             WorklistMessageId = JourneyPlanBuilder.StableGuid(extraId, "worklist"),
             PlanMessageId = JourneyPlanBuilder.StableGuid(extraId, "plan"),
-            SublotRequestMessageId = JourneyPlanBuilder.StableGuid(extraId, "sublot-request"),
-            DepartureSafetyCheckMessageId = JourneyPlanBuilder.StableGuid(extraId, "safety-request"),
-            DepartureSafetyCheckId = JourneyPlanBuilder.StableGuid(extraId, "safety-check"),
+            // 这三列<b>刻意留空</b>，与 SingleDemandJourneyShape 写下的真实卸货停靠一致：录入请求 id 与
+            // 离站核验的两个 id 只有取货停靠有。先前这里照取货停靠的形状把三个都填上了，那让用例在一个比
+            // 现实宽松的形状上验证——探针查出来它因此走的是「行上有值」那一支，而真实卸货停靠走的是
+            // 「行上是 null」那一支。夹具比现实宽松，等于把被测的那件事变容易了。
             Status = JourneyStopStatuses.Pending,
             CreatedAt = runtime.CreatedAt
         });
