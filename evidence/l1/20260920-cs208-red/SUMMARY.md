@@ -134,3 +134,17 @@ System.IO.InvalidDataException : Demand '10000000-0000-4000-8000-000000000001' i
 
 先前还做过一次**不够精确**的注入（把计数器本身写成 `runtime.VehicleBusinessRevision + 1`）：那会连带改掉下一趟
 的基准，于是报文对照 pin 也红了，看上去像有好几道防线。改成只动上报那一处，才看清楚**只有这一条在守**。
+
+## 08 引擎里多出一处读旅程行锚列
+
+在 `RuntimeMessageIds` 开头加一行 `_ = runtime.LoadCommandMessageId;`，模拟「7-06 新增了一处同名读取而没登记」。
+
+结果：`Batch7AnchorColumnReadLedgerTests.EveryAnchorColumnStillReadInTheEngineIsAccountedFor` 红，失败信息直接指出
+`LoadCommandMessageId` 从 2 变成 3。
+
+**这一节验的是那份台账本身**（独立审查 S5）。审查点名了 6 处「同名不同源」，实测是十几处；逐处就地改要重新论证
+每一处该读停靠还是该读归属，那是多需求语义的设计工作，归 7-06。而且就地改**没有判别力**——今天两边恒等，
+改前改后全部测试都绿，那会是一次只能凭说明相信的改动。
+
+所以留下的是台账而不是注释：源码里多一处、少一处、改了名字，它就红。7-06 把它们搬完之后次数归零，它同样会红——
+那时该删掉它，而不是改里面的数字。

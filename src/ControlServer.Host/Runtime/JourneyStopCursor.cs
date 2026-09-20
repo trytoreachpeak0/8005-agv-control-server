@@ -26,6 +26,14 @@ namespace ControlServer.Host.Runtime;
 /// <para>
 /// 读出来的行都是 <c>AsNoTracking</c> 的：本票只读停靠与归属，不写。
 /// </para>
+/// <para>
+/// <b>发布侧全部改完了，结算与查询侧没有。</b>推进段里仍有十几处从旅程行的锚列读同名的 id——录入请求与装卸命令的
+/// 结算、等结果时按 attempt 查 <c>StationOperations</c>、几处站点参数。今天两边恒等（停靠行与归属行的这些列由受理时
+/// 从旅程行原样搬入），所以零行为变化；但这是「同名不同源」，分岔时的样子是<b>命令按 A 发出去、结果按 B 去查，
+/// 旅程永远停在等结果而且不报错</b>。
+/// 完整清单连同每一处还留着的理由，在 <c>Batch7AnchorColumnReadLedgerTests</c>——那是一份会随源码变红的台账，
+/// 不是一段会过期的注释。批次7-06（control-server#211）搬它们时从那里开始。
+/// </para>
 /// </remarks>
 internal sealed class JourneyStopCursor
 {
