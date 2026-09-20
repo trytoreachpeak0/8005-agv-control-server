@@ -52,10 +52,38 @@
 | `cs203-rig-red-item5-g3-11-08` | 卸货那次不带准入身份 | 只 `G3-11-08`（9 条中） | 「卸货那次有一行」→ 实际 **0 行** | `$onLoad.Count -eq 0` 是满足的——**那一项注入不了**，见 `cs203-defect-patches/README.md` |
 | `cs203-rig-red-item7-old-sampling` | 装货后阶段滞留（判据用**旧**取值点） | `G3-02-05` + 六条 not reached | `SlotOperationCommand` 的 ack → 实际 `ack=False`，**命令还没被确认就读了** | 见下 |
 | `cs203-rig-green-item7-new-sampling` | 同一个缺陷，判据用**新**取值点 | 无，**PASS** | — | 这是修复的另一半 |
-| `cs203-rig-red-item8-compensate` | 下一单必然占车冲突 | 只 `G3-07-26`（6 条中） | 「没有停摆原因码」→ 实际 `Blocked/VEHICLE_OCCUPANCY_CONFLICT` | 占用释放标记仍然写了、阶段仍是 `AwaitingPickupArrival`——**旧写法读的就是这两样** |
+| `cs203-rig-red-item8-compensate` | 下一单必然占车冲突 | 只 `G3-07-26`（6 条中） | 「没有停摆原因码」→ 实际 `Blocked/VEHICLE_OCCUPANCY_CONFLICT` | 占用释放标记仍然写了；`TO_PICKUP=CONFIRMED` 也成立，**那一项对这个缺陷判别力为零**（见下） |
 | `cs203-rig-red-item8-door-closed` | 同上 | 只 `L2-DC-12`（12 条中） | 同上 | 同上 |
 
-最后两行是条目 8 那个假绿最直接的证据：**旧写法读的两样东西在缺陷下完全正常**，红只出现在新加的两项上。
+### 更正：条目 8 的机理我写反了，而这份红证据自己反证了它
+
+上面两行原先写着「阶段仍是 `AwaitingPickupArrival`——旧写法读的就是这两样」，并据此说这是假绿的直接证据。
+**那是错的，而且被它自己引用的那份 `assertions.json` 否掉**：实际值是
+
+```
+VehicleOccupancyReleasedAt='…' / 下一单 Blocked/VEHICLE_OCCUPANCY_CONFLICT TO_PICKUP=CONFIRMED on AGV-L2-001
+```
+
+**阶段是 `Blocked`，不是 `AwaitingPickupArrival`。** 逐行实读服务端之后，真实顺序是：
+
+1. `DispatchRoundRunner.cs:499` → `AcceptAndDispatchToPickupAsync`：先 `AcceptJourneyAsync` 写 JourneyRuntimes
+   （阶段 `AwaitingPickupArrival`），**紧接着** `ReconcileOrCreateAsync` 建单并把 TO_PICKUP 置 `CONFIRMED`；
+2. `:548` `TryClaimVehicleOccupancyAsync` 在**这之后**，失败才 `Block(...)`（`:712` 把 Stage 设为 `Blocked`）；
+3. `:560` 另一条分支：建单没到 `Confirmed` 时只 `SetBlockReason(...)`，**不改 Stage**。
+
+**由此三件事要更正：**
+
+- **`CONFIRMED` 对占车冲突判别力为零**——冲突发生时它早就是 CONFIRMED 了。红是「没有停摆原因码」那一项判出来的。
+- **「旧写法在这个缺陷下会绿」是未经测量的断言。** 那次运行跑的是新代码，**从未观测过旧判据**；而阶段是
+  `Blocked`，旧判据的阶段项在这一刻同样不成立，所以它更可能继续等或超时红。要坐实必须拿旧脚本对着
+  `item8-vehicle-occupancy-always-conflicts.patch` 再跑一次——**本票没有这一份**。
+- **条目 8 真正抓住的错误实现是第 3 条分支**，不是我注入的那个：一个「释放了车、却没能给下一单建成／确认
+  RIoT 单」的服务端，落库是 `AwaitingPickupArrival` + `PICKUP_DISPATCH_NOT_CONFIRMED`——**旧写法只看阶段与
+  AgvId，会绿**，而新加的 `-not (Test-G3Present $next.BlockReasonCode)` 会红。**收紧是真的，但我注入的缺陷
+  证的不是它。**
+
+写错的那条机理也进了 `G3RecoveryCommon.ps1` 的注释，已一并改正。**一条错的注释比没有注释更贵**——它会被
+下一个人当成关于服务端的既定事实读走。
 
 ### 条目 7 那一对：修复证到了一半，另一半是票面的偏差
 

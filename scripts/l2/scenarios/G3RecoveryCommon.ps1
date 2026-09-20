@@ -322,13 +322,23 @@ function Add-G3VehicleReleasedForNextDemand([object]$Context, [string]$Id, [stri
         sublot = "$SublotPrefix-$($Context.RunId)-NEXT"; area = 'N1-3'; eqp = 'EQP-L2-01'; package = 'L2-PACKAGE'; maxBoxCount = 4
     })
     # 「车放出来了」不能停在「下一单到了 AwaitingPickupArrival」。那个阶段是**受理那一次提交**写下的，而占车
-    # 冲突要等之后 TryClaimVehicleOccupancyAsync 认领失败时才另写一次（DispatchRoundRunner：受理 → 认领占用 →
-    # 建 RIoT 单，三次落库，见 `DispatchRoundRunner.cs` 的 `VEHICLE_OCCUPANCY_CONFLICT` 分支）。停在第一次落库
-    # 上，即使这台车真的还被占着，这条判据也可能绿——判据在它要观测的事情发生之前就收工了
-    # （control-server#203 条目 8，来自 #193 PR #194 的审查）。
+    # 实读出来的顺序（control-server#203 的独立审查指出，作者逐行核过；**此前这段注释写反了**）：
     #
-    # 所以等到能把「建单成功」与「占车冲突」分开的那个落库点：TO_PICKUP 意图的 Status 到 CONFIRMED。冲突那条
-    # 路在认领那一步就 return 了，根本不建单，走不到 CONFIRMED。
+    #   1. `DispatchRoundRunner.cs:499` → `WireToGateOrchestration.AcceptAndDispatchToPickupAsync`：
+    #      先 `AcceptJourneyAsync` 写 JourneyRuntimes（阶段 `AwaitingPickupArrival`），**紧接着**
+    #      `ReconcileOrCreateAsync` 建 RIoT 单并把 TO_PICKUP 意图置 `CONFIRMED`；
+    #   2. `DispatchRoundRunner.cs:548` `TryClaimVehicleOccupancyAsync` 在**这之后**，失败才
+    #      `Block(...)`（`:712` 把 Stage 设为 `Blocked` 并写 `VEHICLE_OCCUPANCY_CONFLICT`）；
+    #   3. `DispatchRoundRunner.cs:560` 另一条分支：建单没到 `Confirmed` 时只 `SetBlockReason(...)`，
+    #      **不改 Stage**。
+    #
+    # 所以 `CONFIRMED` 对占车冲突**判别力为零**——冲突发生时它早就是 CONFIRMED 了。这条判据真正抓住的是
+    # 第 3 条分支：一个「释放了车、却没能给下一单建成／确认 RIoT 单」的服务端，落库是
+    # `AwaitingPickupArrival` + `PICKUP_DISPATCH_NOT_CONFIRMED`——**旧写法只看阶段与 AgvId，会绿**，
+    # 而 `-not (Test-G3Present $next.BlockReasonCode)` 这一项会红。
+    #
+    # `CONFIRMED` 仍然留着，但要知道它管的是别的事：它挡的是「停在第一次落库上就收工」，即在建单结果落库
+    # 之前判据已经通过。它不是用来区分占车冲突的。
     #
     # Blocked 也算「等到了」，理由与条目 7 那处相同：让红落在判据表里、带着原因码，而不是熬满 60 秒只留下
     # 一句「没派出」，把「被占着」和「还没轮到」混成同一种读数。

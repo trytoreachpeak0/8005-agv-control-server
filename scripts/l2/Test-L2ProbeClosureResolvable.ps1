@@ -24,6 +24,15 @@ Two halves, and the first is the reason the second is worth anything:
 
 Scripts are not scanned, and that is measured too: a function defined in a .ps1 stays resolvable from
 a closure, even when the closure is run by another module's function. The trap needs a module scope.
+
+WHAT THIS DOES NOT COVER, named because the gap is not obvious: it knows exactly one shape, a closure
+calling an unexported function of its own module. The OTHER .GetNewClosure() trap this same ticket hit
+-- calling .GetNewClosure() inside a scriptblock that is already a closure, which captures an EMPTY
+scope, so the probe reads every captured variable as $null -- is invisible to it, and nothing else in
+this repository catches that one either. Both failures look identical from outside: a timeout with
+nothing in it. That is why the gap matters -- passing this check says nothing about the second shape.
+Those two occurrences were fixed by hand. Deciding whether a GetNewClosure sits lexically inside
+another closure needs real AST work, not the single-pattern walk below.
 #>
 [CmdletBinding()]
 param()
