@@ -128,7 +128,13 @@ public sealed class EnRouteAppendPlanner
                     itemsByStop[mergePickup.StopId] = itemsByStop.GetValueOrDefault(mergePickup.StopId) + 1;
                 }
 
-                if (inserted.Count > MaximumLegs)
+                // 腿数按<b>整条旅程</b>数，已完成的那些也在内（批次7-06，control-server#211）。
+                //
+                // 这个门禁守的是协议上限 <c>UpcomingStopPlanSnapshot.legs</c> 的 <c>maxItems: 9</c>，而
+                // <see cref="JourneyPlanBuilder.Plan"/> 把传给它的停靠<b>全部</b>投影成腿——调用方传的是
+                // <c>stops.Stops</c>，含已完成的。只数还要走的那些，差额正好是已完成的停靠数：已完成一个、
+                // 开放的到了 9 个，落库共 10 个停靠，发出去就是 10 条腿，出站 schema 门禁与车载端各拒一次。
+                if (completed.Count + inserted.Count > MaximumLegs)
                 {
                     lastRefusal ??= DispatchReasonCodes.EnRouteAppendPlanLimitReached;
                     continue;

@@ -636,6 +636,11 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         // 放行的代价不是少接一条活：需求会写进 AcceptedDemands 从此不再是候选，绑死在一辆等人介入的车上，
         // 而车上那张计划不会更新（<c>RefreshUpcomingStopPlanAsync</c> 对 Blocked 直接返回）。Completed 一并判，
         // 它是同一个竞态的另一头——旅程在这中间跑完了。
+        //
+        // <b>它和 DispatchRoundRunner.ReadEnRoutePlanAsync 里那一处不是重复的，别删掉任何一处。</b>
+        // 那里是准入口径（轮次开始时就已经 Blocked 的车不值得算插位），这里是写入一致性（轮次读过之后才
+        // 变成 Blocked）。判一道竞态守卫有没有用，看它和它守护的那次写入在不在同一个事务里——那一处不在，
+        // 所以它挡不住这个，也不该由它挡。
         JourneyRuntimeRow journey = await dbContext.JourneyRuntimes
             .SingleAsync(row => row.JourneyId == plan.JourneyId, cancellationToken).ConfigureAwait(false);
         if (journey.Stage is JourneyRuntimeStage.Blocked or JourneyRuntimeStage.Completed)

@@ -333,6 +333,45 @@ public sealed class Batch7EnRouteAppendPlannerTests
         Assert.Equal(EnRouteAppendPlanner.MaximumLegs, decision.Placement!.Resequenced.Count);
     }
 
+    /// <summary>
+    /// 已经走完的停靠也占协议的腿数：一个已完成加六个还要走的，新需求的两个进来正好九条腿，放行。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>这一对用例钉的是「按哪些停靠数」，不是「9 这个数字」</b>——上面那一对已经钉死了 9。把门禁改回只数
+    /// 还要走的那些，上面两条照样绿，因为它们没有已完成的停靠；红的是下面这一条。
+    /// </para>
+    /// <para>
+    /// 为什么按整条旅程数：<c>JourneyPlanBuilder.Plan</c> 把传给它的停靠全部投影成腿，而调用方传的是
+    /// <c>stops.Stops</c>，含已完成的。只数还要走的那些，差额正好是已完成的停靠数。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void ACompletedStopStillCountsTowardsTheNineLegLimit()
+    {
+        EnRouteAppendDecision decision = EnRouteAppendPlanner.Plan(
+            PlanFrom(vehicleAt: 0, currentNextStopIndex: 1, PickupChain(7)),
+            CandidateOf(Pickup("new-p", 80, ZoneA), Unload("new-u", 82, ZoneA), ZoneA),
+            Zones((ZoneA, 500_000)),
+            Distance);
+
+        Assert.Null(decision.RefusalReasonCode);
+        Assert.Equal(EnRouteAppendPlanner.MaximumLegs, decision.Placement!.Resequenced.Count);
+    }
+
+    /// <summary>一个已完成加七个还要走的，新需求进来就是第十条腿：拒。</summary>
+    [Fact]
+    public void ACompletedStopPushesAPlanOverTheNineLegLimit()
+    {
+        EnRouteAppendDecision decision = EnRouteAppendPlanner.Plan(
+            PlanFrom(vehicleAt: 0, currentNextStopIndex: 1, PickupChain(8)),
+            CandidateOf(Pickup("new-p", 80, ZoneA), Unload("new-u", 82, ZoneA), ZoneA),
+            Zones((ZoneA, 500_000)),
+            Distance);
+
+        Assert.Equal(DispatchReasonCodes.EnRouteAppendPlanLimitReached, decision.RefusalReasonCode);
+    }
+
     /// <summary>第十条腿协议装不下，所以这条需求这一轮插不进去。</summary>
     [Fact]
     public void APlanThatWouldNeedATenthLegIsRefused()
@@ -424,6 +463,14 @@ public sealed class Batch7EnRouteAppendPlannerTests
         stops[^1] = Unload(last.StopId, last.StationRiotId, ZoneA);
         return stops;
     }
+
+    /// <summary>当前下一站不在列表开头的计划：它前面那些是已经走完、不能再动的停靠。</summary>
+    private static EnRouteVehiclePlan PlanFrom(int vehicleAt, int currentNextStopIndex, params EnRouteStop[] stops) =>
+        new(
+            stops,
+            vehicleAt,
+            currentNextStopIndex,
+            stops.ToDictionary(stop => stop.StopId, _ => 1, StringComparer.Ordinal));
 
     private static EnRouteVehiclePlan PlanOf(int vehicleAt, params EnRouteStop[] stops) =>
         new(

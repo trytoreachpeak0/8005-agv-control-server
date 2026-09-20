@@ -988,6 +988,21 @@ public sealed partial class MultiVehicleExecutionTests
             await Task.CompletedTask;
         }
 
+        /// <summary>给这辆车留下一条没有释放的派车租约，像一次释放没落库那样。</summary>
+        public async Task LeaveUnreleasedLeaseAsync(string agvId)
+        {
+            int index = Array.IndexOf(AgvIds, agvId);
+            Context.VehicleDispatchLeases.Add(new VehicleDispatchLeaseRow
+            {
+                JourneyId = $"journey:stale-lease-{agvId}",
+                DemandId = $"demand:stale-lease-{agvId}",
+                VehicleKey = VehicleKeys[index],
+                AcquiredAt = Clock.GetUtcNow().AddHours(-1)
+            });
+            await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+            Context.ChangeTracker.Clear();
+        }
+
         /// <summary>Blocks the named vehicles' journeys, the way a refused load result does.</summary>
         public async Task BlockJourneysAsync(params string[] agvIds)
         {

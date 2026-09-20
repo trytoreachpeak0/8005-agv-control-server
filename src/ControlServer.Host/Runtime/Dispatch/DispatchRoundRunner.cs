@@ -380,6 +380,11 @@ public sealed class DispatchRoundRunner(
         // 今天没有 Blocked 的车能走到这里：JourneyRuntimeEngine 已经把它们排除出 underWay，而那是唯一入口。
         // 写在这里是因为那条保证靠的是别处的集合怎么构造，这个查询自己对 Blocked 一无所知——改了那边，
         // 这里不会有东西变红。
+        //
+        // <b>它和 WireToGateStore.StageAndCommitAppendAsync 里那一处不是重复的，别删掉任何一处。</b>
+        // 两处判的是两个不同时刻的两件不同的事：这里是<b>准入口径</b>——轮次开始时就已经 Blocked 的车，
+        // 不值得为它算一遍插位；那里是<b>写入一致性</b>——旅程在轮次读过之后才变成 Blocked，那是一个竞态，
+        // 只有和那次写在同一个事务里的判据挡得住。这一处在它自己的时刻是对的，挡不住也不该挡那个竞态。
         JourneyRuntimeRow? runtime = (await dbContext.JourneyRuntimes.AsNoTracking()
                 .Where(row => row.AgvId == vehicle.AgvId &&
                     row.Stage != JourneyRuntimeStage.Completed &&
@@ -592,10 +597,9 @@ public sealed class DispatchRoundRunner(
             CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, expiry.Token);
         try
         {
-            await DispatchSelectedCoreAsync(
+            return await DispatchSelectedCoreAsync(
                     round, selected, acceptedDemandIds, claimsIntakeRefused, claimedHere, now, linked.Token)
                 .ConfigureAwait(false);
-            return true;
         }
         catch (OperationCanceledException) when (expiry.IsCancellationRequested &&
                                                  !cancellationToken.IsCancellationRequested)
@@ -632,7 +636,11 @@ public sealed class DispatchRoundRunner(
     }
 
     /// <summary>上一个方法的内核：这一段本身，保护在外面那一层。</summary>
-    private async Task DispatchSelectedCoreAsync(
+    /// <returns>
+    /// 这条任务在这一轮有没有结论。<c>false</c> 表示<b>这辆车</b>接不了，而换一辆车会得到不同的答案——
+    /// 出价循环于是把这条任务交给下一个出价者。
+    /// </returns>
+    private async Task<bool> DispatchSelectedCoreAsync(
         DispatchRoundFacts round,
         EligibleVehicleOffer selected,
         HashSet<string> acceptedDemandIds,
@@ -646,11 +654,18 @@ public sealed class DispatchRoundRunner(
         long expectedSessionGeneration = selected.Facts.Onboard?.SessionGeneration
             ?? throw new InvalidOperationException("An eligible candidate requires current Onboard facts.");
         bool underWay = selected.Placement is not null;
+        // 这两处返回 false：它们是<b>这辆车自己</b>的原因，换一辆车会得到不同的答案（批次7-06，control-server#211）。
+        //
+        // 出价循环那句「受理把它拒掉是这条需求自己的结论，换一辆车再试一次只会得到同一个答案」，对最终重读
+        // 发现候选变了、没了那种情形成立，对下面这两种不成立：租约是<b>这一辆</b>车的租约，最终动态事实读的是
+        // <b>这一辆</b>车的状态。翻转之前这两处从「这辆车自己那一段」返回，后面的车会重新判到这条需求；翻转之后
+        // 它们落在同一个方法里，不区分就会把这条任务在本轮吃掉——而且积压行上还会被盖成 DEMAND_ALREADY_ACCEPTED，
+        // 看板显示「已被接走」，而这条需求根本没有任何人接受。
         if (!underWay && await dbContext.VehicleDispatchLeases.AnyAsync(
                 row => row.VehicleKey == selected.Vehicle.VehicleKey && row.ReleasedAt == null,
                 cancellationToken).ConfigureAwait(false))
         {
-            return;
+            return false;
         }
 
         if (!await FinalDynamicFactsReadyAsync(
@@ -660,7 +675,7 @@ public sealed class DispatchRoundRunner(
             await SetBacklogReasonAsync(
                 demandId, "FINAL_DYNAMIC_FACTS_NOT_READY", timeProvider.GetUtcNow(), cancellationToken)
                 .ConfigureAwait(false);
-            return;
+            return false;
         }
 
         DateTimeOffset intakeAt = timeProvider.GetUtcNow();
@@ -704,14 +719,20 @@ public sealed class DispatchRoundRunner(
                 },
                 timeProvider.GetUtcNow(),
                 cancellationToken).ConfigureAwait(false);
-            return;
+            // 这条任务这一轮到此为止，即便其中 FinalAdmissionRejected 也是「这辆车自己」的原因。
+            //
+            // <b>界线在 acceptedDemandIds.Add 上，不在原因上。</b>上面那两处在它之前，这一处在它之后：
+            // 这条需求已经被标记为本轮接走，换一辆车再试要先把那个标记连同这一段写下的东西一起撤回，
+            // 而那是预算耗尽与抛异常两条路径上 DropWhatTheSegmentStagedAsync 做的事。在这里返回 false
+            // 会让下一个出价者看到一条「已被接走」的需求，比现在更糟。
+            return true;
         }
 
         if (underWay)
         {
             // 追加「不认领车辆占用」（票面「车辆占用」那一条）：三套占用都是一车一行，这辆车已经被这趟旅程占着，
             // 再认领一次会被索引直接拒绝。
-            return;
+            return true;
         }
 
         // The vehicle is now carrying this journey's first order, and that is what the occupancy claim records.
@@ -723,7 +744,8 @@ public sealed class DispatchRoundRunner(
                 .SingleAsync(row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
             Block(conflicted, "VEHICLE_OCCUPANCY_CONFLICT", timeProvider.GetUtcNow());
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            return;
+            // 旅程已经建出来并且被 Block 了，这条需求这一轮有结论了。
+            return true;
         }
 
         if (result.MovementDispatch?.Outcome != MovementDispatchOutcome.Confirmed)
@@ -735,6 +757,8 @@ public sealed class DispatchRoundRunner(
             runtime.UpdatedAt = now;
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
+
+        return true;
     }
 
     /// <summary>把这条需求追加进这辆在途车的旅程；不建订单、不认领占用。</summary>

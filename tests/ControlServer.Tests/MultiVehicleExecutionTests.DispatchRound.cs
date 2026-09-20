@@ -363,6 +363,49 @@ public sealed partial class MultiVehicleExecutionTests
     }
 
     /// <summary>
+    /// 被选中的那辆车接不了时，这条任务交给下一个出价者，而不是本轮被吃掉
+    /// （批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 出价循环里那句「受理把它拒掉是这条需求自己的结论，换一辆车再试一次只会得到同一个答案」，**对两种情形
+    /// 不成立**：租约是<b>这一辆</b>车的租约，最终动态事实读的是<b>这一辆</b>车的状态。翻转之前这两处从
+    /// 「这辆车自己那一段」返回，后面的车会重新判到这条需求；翻转之后它们落在同一个方法里，不区分就把这条
+    /// 任务在本轮吃掉了。
+    /// </para>
+    /// <para>
+    /// <b>还有一个操作员看得见的后果</b>：吃掉之后 <c>RecordVerdictsForCandidate</c> 把其余车的积压理由盖成
+    /// <c>DEMAND_ALREADY_ACCEPTED</c>，而这条需求根本没有任何人接受——看板上显示「已被接走」的是一条谁也没接的
+    /// 需求。所以这里同时断言它确实被接走了：判据是「有车接了」，不是「没红」。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task ADemandTheChosenVehicleCannotTakeGoesToTheNextBidder()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync();
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
+        // 先确认没有租约时这条需求归谁：下面那条租约要留给它，否则测不到「换一辆」。
+        await using (FleetFixture reference = await FleetFixture.CreateAsync())
+        {
+            reference.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
+            await reference.RunRoundAsync();
+            Assert.Equal(
+                FleetFixture.AgvIds[0],
+                (await reference.Context.JourneyRuntimes.SingleAsync(TestContext.Current.CancellationToken)).AgvId);
+        }
+
+        await fixture.LeaveUnreleasedLeaseAsync(FleetFixture.AgvIds[0]);
+        await fixture.RunRoundAsync();
+
+        // 先断言「有车接了」再断言「不是那一辆」：缺陷的样子正是一条旅程都没有，而 SingleAsync 在空集上抛的
+        // 异常读起来看不出这一点。
+        JourneyRuntimeRow[] journeys = await fixture.Context.JourneyRuntimes
+            .ToArrayAsync(TestContext.Current.CancellationToken);
+        JourneyRuntimeRow journey = Assert.Single(journeys);
+        Assert.NotEqual(FleetFixture.AgvIds[0], journey.AgvId);
+    }
+
+    /// <summary>
     /// 一趟 Blocked 的旅程占着车，但不让这一轮开工：全车都 Blocked 时目录一次都不读（批次7-06，
     /// control-server#211）。
     /// </summary>
