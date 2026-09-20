@@ -153,26 +153,46 @@ public sealed class JourneyPlanBuilder(JourneyRuntimeOptions options)
     // The plan stream advances three times per journey: before the pickup arrival at the stored
     // revision, at the pickup one above it, at the gate two above it. WireToGateStore seeds the next
     // journey on the vehicle three above, so the stream never steps back across journeys.
-    public static UpcomingStopPlanProjection PickupDispatchPlan(JourneyRuntimeRow runtime) => new(
-        runtime.PlanRevision,
-        [
-            PlanLeg(runtime, runtime.PickupMovementLegId, "TO_PICKUP", 1, runtime.PickupStationId, "ACTIVE"),
-            PlanLeg(runtime, runtime.GateMovementLegId, "TO_DROPOFF", 2, runtime.GateStationId, "PLANNED")
-        ]);
 
-    public static UpcomingStopPlanProjection PickupPlan(JourneyRuntimeRow runtime) => new(
-        runtime.PlanRevision + 1,
-        [
-            PlanLeg(runtime, runtime.PickupMovementLegId, "TO_PICKUP", 1, runtime.PickupStationId, "ARRIVED"),
-            PlanLeg(runtime, runtime.GateMovementLegId, "TO_DROPOFF", 2, runtime.GateStationId, "PLANNED")
-        ]);
+    /// <summary>
+    /// 旅程的停靠序列，投影成车载端看到的那张计划：每个停靠一条腿，腿的状态由它与当前停靠的先后关系给出
+    /// （批次7-03，control-server#208）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 在这之前这里是三个方法、六条写死的腿，「第 1 条是取货、第 2 条是关卡」直接写在字面量里。现在只有一条规则：
+    /// 当前停靠之前的腿 <c>COMPLETED</c>，之后的 <c>PLANNED</c>，当前这条按车到没到分 <c>ARRIVED</c> 与 <c>ACTIVE</c>。
+    /// 单需求两个停靠下，这条规则算出来的三张快照与原来那六条字面量逐字相同。
+    /// </para>
+    /// <para>
+    /// 腿上的 <c>demandId</c> 取锚需求。协议允许它为空（<c>UpcomingStopPlanSnapshot.legs[].demandId</c>），一个停靠挂几条
+    /// 需求时该填什么由 批次7-06（control-server#211）决定；本票不改它填什么。
+    /// </para>
+    /// </remarks>
+    public static UpcomingStopPlanProjection Plan(
+        JourneyRuntimeRow runtime,
+        IReadOnlyList<JourneyStopRow> stops,
+        JourneyStopRow current,
+        bool arrivedAtCurrent,
+        long revision)
+    {
+        ArgumentNullException.ThrowIfNull(stops);
+        ArgumentNullException.ThrowIfNull(current);
+        return new UpcomingStopPlanProjection(
+            revision,
+            [.. stops.Select(stop => PlanLeg(
+                runtime,
+                stop.MovementLegId,
+                stop.StopRole == JourneyStopRoles.Pickup ? "TO_PICKUP" : "TO_DROPOFF",
+                stop.Sequence,
+                stop.StationId,
+                LegState(stop, current, arrivedAtCurrent)))]);
+    }
 
-    public static UpcomingStopPlanProjection GatePlan(JourneyRuntimeRow runtime) => new(
-        runtime.PlanRevision + 2,
-        [
-            PlanLeg(runtime, runtime.PickupMovementLegId, "TO_PICKUP", 1, runtime.PickupStationId, "COMPLETED"),
-            PlanLeg(runtime, runtime.GateMovementLegId, "TO_DROPOFF", 2, runtime.GateStationId, "ARRIVED")
-        ]);
+    private static string LegState(JourneyStopRow stop, JourneyStopRow current, bool arrivedAtCurrent) =>
+        stop.Sequence < current.Sequence ? "COMPLETED"
+        : stop.Sequence > current.Sequence ? "PLANNED"
+        : arrivedAtCurrent ? "ARRIVED" : "ACTIVE";
 
     /// <summary>
     /// A deterministic id derived from a stable identity and what it is for, in the RFC 4122 version 5
