@@ -61,5 +61,15 @@ internal sealed class OnboardConnectionLiveness
     }
 
     /// <summary>收到了一条合法入站：计时从现在重新开始。</summary>
-    internal void Refresh() => _lastInboundTimestamp = _clock.GetTimestamp();
+    internal void Refresh() => RefreshTo(_clock.GetTimestamp());
+
+    /// <summary>
+    /// 收到了一条合法入站，而它是 <paramref name="arrivedAt"/> 那一刻到的。
+    /// </summary>
+    /// <remarks>
+    /// 「到达」与「处理完」之间隔着服务端自己的活——应答写回、延迟出站冲刷。从处理完算，等于把我们自己
+    /// 花的时间从对端的下一个窗口里扣掉；而写得慢的时候，恰恰是最不该掐掉对端的时候。所以调用方在报文
+    /// 刚离开网络那一刻取时间戳，判定合法之后再拿它来刷新。
+    /// </remarks>
+    internal void RefreshTo(long arrivedAt) => _lastInboundTimestamp = arrivedAt;
 }

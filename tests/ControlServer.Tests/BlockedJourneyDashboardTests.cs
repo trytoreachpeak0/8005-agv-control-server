@@ -517,6 +517,96 @@ public sealed class BlockedJourneyDashboardTests
     }
 
     /// <summary>
+    /// 车失联时会话那三项一个都不给，卡片上那一格直说失联，不摆旧值（control-server#234）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>这一条断的是操作员真正看到的那一格，不是 JSON。</b>端点不给值和卡片不摆旧值是两件事：端点改对了
+    /// 而渲染层照旧把 <c>safetyUnknownPresent</c> 渲染成「安全证据有未知项：否」的话，操作员看到的仍然是
+    /// 「现在没有未知项」——车载告警卡片 2026-09-10 那个缺陷就是这个形状
+    /// （<c>docs/defects/20260910-dashboard-kept-showing-a-dead-vehicles-last-alarms.md</c>），
+    /// 只不过换了一层。所以两层各断一次。
+    /// </para>
+    /// <para>
+    /// 会话行上故意放了一组「看起来很安全」的值：<c>READY</c>、空的安全原因码、
+    /// <c>SafetyUnknownPresent = false</c>。车已经不说话了，这三样一个都不该出现在页面上。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task ASilentSessionShowsNoStaleSafetyFactsInTheJsonOrOnTheCard()
+    {
+        await using DashboardDatabase database = await DashboardDatabase.CreateAsync();
+        JourneyRuntimeRow runtime = Runtime("D-SILENT-CARD", "AGV-01");
+        runtime.Stage = JourneyRuntimeStage.AwaitingGateArrival;
+        runtime.SetBlockReason(JourneyRuntimeEngine.OnboardSessionLostReason, Now.AddMinutes(-1));
+        database.Context.JourneyRuntimes.Add(runtime);
+        database.Context.SessionRecoveries.Add(
+            Session("AGV-01", "READY", "[]", safetyUnknownPresent: false));
+        await database.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        using JsonDocument fact = await ReadAsync(database);
+        JsonElement silent = Assert.Single(fact.RootElement.GetProperty("journeys").EnumerateArray());
+
+        // JSON 这一层：三项都空，会话行在不在还是要说。
+        JsonElement session = silent.GetProperty("session");
+        Assert.True(session.GetProperty("present").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, session.GetProperty("reasonCode").ValueKind);
+        Assert.Equal(JsonValueKind.Null, session.GetProperty("safetyReasonCodesJson").ValueKind);
+        Assert.Equal(JsonValueKind.Null, session.GetProperty("safetyUnknownPresent").ValueKind);
+
+        // 页面这一层：直说失联，并且那句会误导的话一个字都不许出现。
+        string html = new BlockedJourneyCard().RenderFact(fact.RootElement);
+        Assert.Contains("车已失联", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("安全证据有未知项", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("READY", html, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 判别力对照：同一个码换成会话正常的那一种，三项照给、页面照写——证明上一条的空不是因为这一格
+    /// 根本不会渲染。
+    /// </summary>
+    [Fact]
+    public async Task ASessionThatIsMerelyNotReadyStillShowsItsSafetyFacts()
+    {
+        await using DashboardDatabase database = await DashboardDatabase.CreateAsync();
+        JourneyRuntimeRow runtime = Runtime("D-NOT-READY-CARD", "AGV-01");
+        runtime.Stage = JourneyRuntimeStage.AwaitingGateArrival;
+        runtime.SetBlockReason("ONBOARD_SESSION_NOT_READY", Now.AddMinutes(-1));
+        database.Context.JourneyRuntimes.Add(runtime);
+        database.Context.SessionRecoveries.Add(
+            Session("AGV-01", "DEPARTURE_SAFETY_NOT_READY", """["IO_FACT_UNKNOWN"]""", safetyUnknownPresent: true));
+        await database.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        using JsonDocument fact = await ReadAsync(database);
+        JsonElement notReady = Assert.Single(fact.RootElement.GetProperty("journeys").EnumerateArray());
+
+        Assert.Equal(
+            "DEPARTURE_SAFETY_NOT_READY", notReady.GetProperty("session").GetProperty("reasonCode").GetString());
+        string html = new BlockedJourneyCard().RenderFact(fact.RootElement);
+        Assert.Contains("安全证据有未知项：是", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("车已失联", html, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 看板那份字面量与引擎那个常量必须是同一个（control-server#234）。
+    /// </summary>
+    /// <remarks>
+    /// 看板是独立程序集、不引用 Host，所以卡片里只能放一份字面量。这一条把两处钉在一起：改了引擎那个常量
+    /// 而忘了卡片，卡片就会对着一个再也不会出现的码渲染，失联那一格悄悄退回摆旧值——而两边各自的用例都还是绿的。
+    /// </remarks>
+    [Fact]
+    public void TheCardAndTheEngineAgreeOnTheSilentSessionCode()
+    {
+        string card = File.ReadAllText(Path.Combine(
+            RepositoryRoot(), "src", "ControlServer.Dashboard", "BlockedJourneyCard.cs"));
+
+        Assert.Contains(
+            $"SessionLostReason = \"{JourneyRuntimeEngine.OnboardSessionLostReason}\"",
+            card,
+            StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// 判别力对照：同一行、同样挂一分钟，换成一个不带会话语义的码就只到操作员档。
     /// </summary>
     /// <remarks>

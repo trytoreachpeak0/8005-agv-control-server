@@ -59,6 +59,45 @@ public sealed class OnboardSilentLivenessLossTests
     public void TheProjectWideLivenessTimeoutIsTheSixSecondsAdrCross0027Fixes() =>
         Assert.Equal(TimeSpan.FromSeconds(6), SessionLiveness.Timeout);
 
+    /// <summary>
+    /// 引擎那一侧的窗口与会话层这一侧的窗口是同一个值（control-server#234）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>这是早退能放在推进之前的全部依据。</b><c>JourneyRuntimeEngine.NameSilentOnboardSessionAsync</c> 在
+    /// 判失联的那一轮直接返回、不再推进，而它敢这么做只因为：到那一刻会话层已经按同一个窗口关掉了连接，
+    /// 这一轮本来也只会从 <c>ReplayPendingForSessionAsync</c> 抛出去。**引擎这一侧的窗口一旦长过会话层，
+    /// 那个前提就不成立**——下面的分支会对着一个还连着的对端被拦下，其中 <c>ObserveOrderFailureAsync</c>
+    /// 判的是 RIoT 事实，不需要车载端在线。
+    /// </para>
+    /// <para>
+    /// 今天两侧都读 <see cref="SessionLiveness.Timeout"/>，所以不会意外分叉；这一条是把「不会意外」变成
+    /// 「改了会响」。它断的是两个值相等，不是各自等于六——各自等于六由上面那一条断，两条合起来，
+    /// 改任何一处都有东西红。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    public void TheEngineAndTheSessionLayerMeasureTheSameWindow()
+    {
+        using ServiceProvider empty = new ServiceCollection().BuildServiceProvider();
+        using OnboardTcpServer server = new(
+            Options.Create(new OnboardTransportOptions()),
+            empty.GetRequiredService<IServiceScopeFactory>(),
+            new OnboardPeer(),
+            NullLogger<OnboardTcpServer>.Instance);
+
+        // 会话层这一侧：连接闲置多久就关。
+        TimeSpan sessionLayer = server.IdleTimeout;
+        // 引擎那一侧：SessionLiveness.HeardFromAsync 判「听不听得到」用的窗口，引擎不另外拿一个值。
+        TimeSpan engine = SessionLiveness.Timeout;
+
+        Assert.Equal(engine, sessionLayer);
+        Assert.True(
+            engine <= sessionLayer,
+            "引擎的窗口长过会话层，早退放在推进之前的前提就不成立了。");
+    }
+
     /// <summary>服务端拿的就是那个项目级的值，不另有一份。</summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-05")]
@@ -185,6 +224,57 @@ public sealed class OnboardSilentLivenessLossTests
                 database.Context, agvId, generation, Now, TestContext.Current.CancellationToken);
             Assert.Equal(fleet.Contains(agvId), perVehicle);
         }
+    }
+
+    /// <summary>
+    /// 整点那一下：数据库口径算「还听得到」，单调时钟口径算「已失联」——两侧在边界上判定相反，而这是
+    /// 有方向的，不是疏忽（control-server#234）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>SessionLiveness.InsideWindow</c> 是 <c>now - ReceivedAt &lt;= Timeout</c>（既有写法，两个看板消费者
+    /// 一直用着，本票不动它）；<see cref="OnboardConnectionLiveness.Expired"/> 是 <c>Silence &gt;= Timeout</c>
+    /// （ADR-cross-0027 说的是「连续六秒没有合法消息即判失联」，整点就算）。
+    /// </para>
+    /// <para>
+    /// <b>差在哪一边是要紧的。</b>整点这一瞬间，会话层已经判失联、要关连接，而引擎那一侧还认为听得到、
+    /// 不会早退。也就是<b>会话层比引擎激进一拍</b>——正是「引擎的窗口不得长过会话层」要的那个方向。
+    /// 反过来（引擎先判、会话层还没关）才会让早退拦下一轮本来能跑的推进。
+    /// </para>
+    /// <para>
+    /// 这一条存在的理由是：两侧的边界写法此前都没有整点样本钉着，把任一处的 <c>&lt;=</c> 改成 <c>&lt;</c>、
+    /// 或把 <c>&gt;=</c> 改成 <c>&gt;</c>，都不会有东西红，而其中一种改法会把上面那个方向翻过来。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    public async Task AtTheExactBoundaryTheDatabaseSideStillHearsItWhileTheMonotonicSideCallsItLost()
+    {
+        // 单调时钟这一侧：整点算失联。
+        MonotonicTestClock clock = new();
+        OnboardConnectionLiveness liveness = new(clock, SessionLiveness.Timeout);
+        clock.Advance(SessionLiveness.Timeout);
+        Assert.True(liveness.Expired);
+
+        // 数据库这一侧：整点算还听得到。
+        await using LivenessDatabase database = await LivenessDatabase.CreateAsync();
+        database.Context.SessionRecoveries.Add(Session("AGV-BOUNDARY", generation: 4));
+        database.Context.ProtocolInbox.Add(Inbound("AGV-BOUNDARY", 4, Now - SessionLiveness.Timeout));
+        await database.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        Assert.True(await SessionLiveness.HeardFromAsync(
+            database.Context, "AGV-BOUNDARY", 4, Now, TestContext.Current.CancellationToken));
+        Assert.Contains(
+            "AGV-BOUNDARY",
+            await SessionLiveness.HeardFromAsync(database.Context, Now, TestContext.Current.CancellationToken));
+
+        // 再晚一毫秒，数据库这一侧也不认了——证明上面那个 true 是边界本身给的，不是窗口根本没起作用。
+        Assert.False(await SessionLiveness.HeardFromAsync(
+            database.Context,
+            "AGV-BOUNDARY",
+            4,
+            Now + TimeSpan.FromMilliseconds(1),
+            TestContext.Current.CancellationToken));
     }
 
     // --- 会话层：静默到期就关连接，关掉之后不再读这条连接 ------------------------------------------------

@@ -20,9 +20,15 @@ NameCheckpointWaitAsync 就返回，阻断码为空——而看板阻断端点�
      本批不发 OrderHold（用户 2026-09-20 定，ADR-cross-0026 与 REQ-0287 的冲突留到批次 9）。
   D. 车重新说话、重连，旅程接着走完到站与装货。
 
-  D 段里有一个值得知道的细节，不是缺陷：重连开新代次，会话先回到 RecoveryRequired，引擎那条既有分支
-  会把 ONBOARD_SESSION_LOST 覆盖成 ONBOARD_SESSION_NOT_READY；到站换段时 SetStage 才把码清掉。所以这
-  一段断言的是「不再是失联码」与「到站之后码清空」，而不是「重连当场清掉失联码」。
+  D 段的结束状态有两种，都是对的，判据两种都收（实测走的是第一种）：
+
+    - 清空：重连的五步握手在引擎下一轮之前就走完了，引擎看到的是一个已经回到 Ready、新代次又有入站的
+      会话，于是清掉 ONBOARD_SESSION_LOST，这条旅程当场从端点上消失。2026-09-20 本机四次跑的都是这一种，
+      服务端日志里能看到顺序：读到 Readiness = 'Ready' → 查 ProtocolInbox → UPDATE BlockReasonCode。
+    - 换成 ONBOARD_SESSION_NOT_READY：引擎某一轮恰好落在「已重连、握手还没走完」那个窗口里，会话是
+      RecoveryRequired，走的是 AdvanceAsync 开头那条既有分支，码被换成会话未就绪；到站换段时 SetStage 清掉。
+
+  判据写成这两种的集合，而不是「不再是失联码」——后者任何值都过，包括某一天这条旅程因为别的原因整个消失。
 
 所有「对端收到了什么」的判据都先等它出现再断言（Wait-L2Condition／Wait-L2Change），不读一次就下结论。
 #>
@@ -44,6 +50,8 @@ $endpoint = "http://127.0.0.1:$($Context.HealthPort)/api/dashboard/blocked-journ
 # Wait-L2Condition 把 $null 探针读成「还没观测到」，所以「不在端点上」用这个标记表示。
 $notListed = '(not listed)'
 $lostReason = 'ONBOARD_SESSION_LOST'
+# 车重连之后这一格允许的两种结果，别的都算红。见头注释 D 段：走哪一种取决于引擎下一轮落在握手的哪一侧。
+$backOnAirOutcomes = @($notListed, 'ONBOARD_SESSION_NOT_READY')
 
 $demandGuid = [guid]::NewGuid()
 $demandIdWire = $demandGuid.ToString('N')
@@ -233,11 +241,11 @@ $backOnAir = Wait-L2Change -Description 'the journey leaves the silent-session b
         $null = $onboard.Command('Put', 'connection', @{ connected = $true })
     } `
     -Probe { (Get-BlockedEntry)?.blockReasonCode ?? $notListed } `
-    -Until { param($before, $now) $before -eq $lostReason -and $now -ne $lostReason }
+    -Until { param($before, $now) $before -eq $lostReason -and $now -in $backOnAirOutcomes }
 $assertions.Add(
-    'L2-SL-09', '车重连之后这条旅程不再挂失联码（重连开新代次，先走既有的会话未就绪那条路）',
-    ($backOnAir.Baseline -eq $lostReason -and $backOnAir.Value -ne $lostReason),
-    "$lostReason -> 别的", "$($backOnAir.Baseline) -> $($backOnAir.Value)")
+    'L2-SL-09', '车重连之后失联码被清掉（或落进「已重连、握手未完」那个窗口，换成会话未就绪），两种之外都算红',
+    ($backOnAir.Baseline -eq $lostReason -and $backOnAir.Value -in $backOnAirOutcomes),
+    "$lostReason -> $($backOnAirOutcomes -join ' 或 ')", "$($backOnAir.Baseline) -> $($backOnAir.Value)")
 
 $null = Wait-L2Condition -Description 'the session is Ready again on the new generation' `
     -Journal $journal -Criterion 'peer-ready-again' -TimeoutSeconds 90 `

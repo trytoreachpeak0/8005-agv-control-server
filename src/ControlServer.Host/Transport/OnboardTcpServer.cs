@@ -9,9 +9,9 @@ namespace ControlServer.Host.Transport;
 public sealed partial class OnboardTcpServer : BackgroundService
 {
     private readonly OnboardTransportOptions _options;
-    private readonly IServiceScopeFactory scopeFactory;
-    private readonly OnboardPeer peer;
-    private readonly ILogger<OnboardTcpServer> logger;
+    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly OnboardPeer _peer;
+    private readonly ILogger<OnboardTcpServer> _logger;
     private readonly TimeProvider _clock;
 
     /// <summary>The composition root's constructor: the project-wide liveness timeout, on the system clock.</summary>
@@ -41,9 +41,9 @@ public sealed partial class OnboardTcpServer : BackgroundService
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(clock);
         _options = options.Value;
-        this.scopeFactory = scopeFactory;
-        this.peer = peer;
-        this.logger = logger;
+        _scopeFactory = scopeFactory;
+        _peer = peer;
+        _logger = logger;
         _clock = clock;
         IdleTimeout = idleTimeout;
     }
@@ -55,7 +55,7 @@ public sealed partial class OnboardTcpServer : BackgroundService
     {
         if (!_options.Enabled)
         {
-            LogTransportDisabled(logger);
+            LogTransportDisabled(_logger);
             await Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken).ConfigureAwait(false);
             return;
         }
@@ -64,7 +64,7 @@ public sealed partial class OnboardTcpServer : BackgroundService
         ValidateConfiguration();
         TcpListener listener = new(address, _options.Port);
         listener.Start();
-        LogTransportStarted(logger, address, _options.Port);
+        LogTransportStarted(_logger, address, _options.Port);
         // Connections are served concurrently, one task each. Serving them one at a time was
         // adequate while there was one vehicle and is a deadlock with a fleet: the accept loop only
         // came back round when the current peer's session ended, so the second vehicle waited in
@@ -82,7 +82,7 @@ public sealed partial class OnboardTcpServer : BackgroundService
                 // that may last hours.
                 if (!await slots.WaitAsync(TimeSpan.Zero, stoppingToken).ConfigureAwait(false))
                 {
-                    LogConnectionRefused(logger, _options.MaxConcurrentSessions);
+                    LogConnectionRefused(_logger, _options.MaxConcurrentSessions);
                     client.Dispose();
                     continue;
                 }
@@ -122,7 +122,7 @@ public sealed partial class OnboardTcpServer : BackgroundService
         }
         catch (Exception error)
         {
-            LogConnectionEnded(logger, error);
+            LogConnectionEnded(_logger, error);
         }
         finally
         {
@@ -135,7 +135,7 @@ public sealed partial class OnboardTcpServer : BackgroundService
         await using NetworkStream stream = client.GetStream();
         using StreamReader reader = new(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
         await using OnboardPeerConnection connection = new(stream);
-        await using AsyncServiceScope scope = scopeFactory.CreateAsyncScope();
+        await using AsyncServiceScope scope = _scopeFactory.CreateAsyncScope();
         OnboardMessageProcessor processor = scope.ServiceProvider.GetRequiredService<OnboardMessageProcessor>();
         OnboardConnectionState state = new() { DeferOutboundUntilResponseWritten = true };
         string? attachedAgvId = null;
@@ -149,6 +149,7 @@ public sealed partial class OnboardTcpServer : BackgroundService
             while (!cancellationToken.IsCancellationRequested)
             {
                 string? line;
+                long arrivedAt;
                 // The deadline is enforced on the read itself rather than by a watchdog beside it, so the
                 // moment the window closes is the moment this connection stops being read from. There is no
                 // window in which a late line could still be processed and revive the session: past the
@@ -159,6 +160,12 @@ public sealed partial class OnboardTcpServer : BackgroundService
                     try
                     {
                         line = await reader.ReadLineAsync(idle.Token).ConfigureAwait(false);
+                        // Stamped the moment the line is off the wire, and used to refresh below once it has
+                        // been judged legal. Refreshing from "after processing" instead would charge this
+                        // connection for our own work -- the response write, the deferred outbound flush --
+                        // and shorten its next window by however long that took, which on a slow write is
+                        // exactly when the peer least deserves to be cut off.
+                        arrivedAt = _clock.GetTimestamp();
                     }
                     catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
                     {
@@ -167,7 +174,7 @@ public sealed partial class OnboardTcpServer : BackgroundService
                         // Closing is all that happens here -- REQ-0287 forbids a liveness timeout from ending
                         // an order, releasing a lease, reassigning or moving the vehicle.
                         LogOnboardSessionSilent(
-                            logger, attachedAgvId ?? state.AgvId ?? "(no session)", state.SessionGeneration,
+                            _logger, attachedAgvId ?? state.AgvId ?? "(no session)", state.SessionGeneration,
                             liveness.Silence, null);
                         return;
                     }
@@ -184,7 +191,8 @@ public sealed partial class OnboardTcpServer : BackgroundService
                 // Refreshed only once the message has been processed: ADR-cross-0027 counts legal protocol
                 // messages, and a line is not known to be one until the envelope and the session generation
                 // have been checked. A line that throws does not refresh, and it ends the connection anyway.
-                liveness.Refresh();
+                // The window runs from when the line arrived, not from now -- see the stamp above.
+                liveness.RefreshTo(arrivedAt);
                 if (!string.IsNullOrWhiteSpace(response))
                 {
                     await connection.SendAsync(
@@ -199,7 +207,7 @@ public sealed partial class OnboardTcpServer : BackgroundService
                     state.SessionGeneration is not null &&
                     !string.IsNullOrWhiteSpace(state.AgvId))
                 {
-                    peer.Attach(state.AgvId, connection);
+                    _peer.Attach(state.AgvId, connection);
                     attachedAgvId = state.AgvId;
                 }
             }
@@ -208,7 +216,7 @@ public sealed partial class OnboardTcpServer : BackgroundService
         {
             if (attachedAgvId is not null)
             {
-                peer.Detach(attachedAgvId, connection);
+                _peer.Detach(attachedAgvId, connection);
             }
         }
     }
@@ -227,6 +235,11 @@ public sealed partial class OnboardTcpServer : BackgroundService
         {
             throw new InvalidOperationException("OnboardTransport:MaxConcurrentSessions must be at least 1.");
         }
+        // Unreachable from the composition root, which always passes SessionLiveness.Timeout: the window is
+        // not configuration and no settings file can reach it (the ticket asked for a JourneyRuntime setting
+        // and a startup validation for it; both lapsed when the threshold turned out to exist already). What
+        // this guards is the internal constructor the tests use, so a nonsensical window fails at startup
+        // rather than turning into "never expires".
         if (IdleTimeout <= TimeSpan.Zero)
         {
             throw new InvalidOperationException("The Onboard liveness timeout must be positive.");

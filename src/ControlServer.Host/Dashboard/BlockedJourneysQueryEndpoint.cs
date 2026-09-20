@@ -140,13 +140,25 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
             blockedSeconds = blockedFor is TimeSpan elapsed ? (long?)elapsed.TotalSeconds : null,
             escalationLevel = level.ToString(),
             unknownExplainedBy = explained ? OwnMovementOrderInFlight : null,
+            // 车已经失联时，这三项一个都不给（control-server#234）。会话行停在车最后一次在线时的判定，
+            // 而 REQ-0269 禁止把不确定新旧的旧值当现状——车载告警卡片 2026-09-10 就是栽在这里
+            // （docs/defects/20260910-dashboard-kept-showing-a-dead-vehicles-last-alarms.md）。
+            //
+            // 不给，而不是「给了再标注这是旧的」：看板这一侧的规矩是失联直述，拿不到就说拿不到
+            // （车队会话卡片 FleetSessionsQueryEndpoint 对听不到的车也是就绪与原因码两项都不给），
+            // 而 DashboardSkeletonTests.NoStaleOrLastUpdatedPresentationExistsAnywhereInTheDashboard
+            // 连「陈旧／最后更新」这类词都不许出现在看板源码里。一旦开了「标注它是旧的」这条路，
+            // 下一个人就会觉得显示旧值是可以的，而这正是那次缺陷的形状。
+            //
+            // 分档那一行已经按「说不清」处理，两件事各做各的：分档决定这一行归谁管，这里决定这一格
+            // 上写着什么。
             session = carriesSession
                 ? new
                 {
                     present = session is not null,
-                    reasonCode = session?.ReasonCode,
-                    safetyReasonCodesJson = session?.SafetyReasonCodesJson,
-                    safetyUnknownPresent = session?.SafetyUnknownPresent
+                    reasonCode = sessionLost ? null : session?.ReasonCode,
+                    safetyReasonCodesJson = sessionLost ? null : session?.SafetyReasonCodesJson,
+                    safetyUnknownPresent = sessionLost ? null : session?.SafetyUnknownPresent
                 }
                 : null
         };

@@ -1,5 +1,6 @@
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.Faults;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using static ControlServer.Tests.JourneyRuntimeWorkerTestKit;
@@ -94,6 +95,44 @@ public sealed class OnboardSessionLostBlockTests
         Assert.Null(cleared.BlockReasonCode);
         Assert.Null(cleared.BlockReasonSince);
         Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, cleared.Stage);
+    }
+
+    /// <summary>
+    /// 车既失联、单又被 RIoT 报 FAILED 时，现场看到的仍然是「单失败」，不是「车不说话了」。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 两个码都在最高档，所以升级不受影响——**变的是告诉人什么**。<c>ORDER_FAILED</c> 是 REQ-0232 的症状，
+    /// 已经登记成车辆故障事实，而在途单被报 FAILED 触发的急停没有自动解除路径
+    /// （<c>docs/emergency-stop-field-fallback.md</c>），正是走到车前的人最需要知道的那一条。
+    /// 拿「车停止说话」盖掉它，等于把原因换成了它的一个症状，还顺手把 <c>BlockReasonSince</c> 重置了。
+    /// </para>
+    /// <para>
+    /// 而这两件事通常同时发生：单失败与会话失联多半是同一个事件的两面。所以这不是一个罕见的边角。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    public async Task ASilentSessionDoesNotOverwriteAFailedOrderAsTheReason()
+    {
+        await using RuntimeFixture fixture = await ArrivalWaitAsync();
+
+        // RIoT 报这一段的移动单 FAILED：引擎登记故障事实并写下 ORDER_FAILED。
+        JourneyRuntimeRow beforeFailure = await fixture.RuntimeAsync();
+        fixture.Riot.FailOrder(beforeFailure.GateUpperId);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        JourneyRuntimeRow failed = await fixture.RuntimeAsync();
+        Assert.Equal(VehicleFaultEvidence.OrderFailed, failed.BlockReasonCode);
+        DateTimeOffset? failedSince = failed.BlockReasonSince;
+
+        // 车随后也不说话了，再跑几轮。
+        await GoSilentAsync(fixture);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyRuntimeRow held = await fixture.RuntimeAsync();
+        Assert.Equal(VehicleFaultEvidence.OrderFailed, held.BlockReasonCode);
+        Assert.Equal(failedSince, held.BlockReasonSince);
     }
 
     /// <summary>
