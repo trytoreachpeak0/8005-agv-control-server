@@ -1,0 +1,30 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardJourneyPublisher.cs b/src/ControlServer.Host/Transport/OnboardJourneyPublisher.cs
+index 93df53b6..c62bc22b 100644
+--- a/src/ControlServer.Host/Transport/OnboardJourneyPublisher.cs
++++ b/src/ControlServer.Host/Transport/OnboardJourneyPublisher.cs
+@@ -113,11 +113,25 @@ public sealed class OnboardJourneyPublisher(
+                         phase.CargoHoldingDeadlineAt,
+                         phase.ClosedReason
+                     },
++                // DEFECT (control-server#203 item 1 red evidence, local only): scope specification 5.3
++                // keeps the admission reason on the server and the dashboard; this puts it on the wire,
++                // wrapped in a protocol error code that is merely adjacent in meaning. reasonCode has to
++                // be one of the 58 the protocol froze -- TASK_TYPE_BINDING_MISSING is a dispatch reason,
++                // not an ErrorCode, and sending it makes every snapshot schema-invalid, which drops the
++                // session instead of reddening the criterion.
+                 blockingFacts = projection.BlockingFacts.Select(fact => new
+                 {
+                     fact.ReasonCode,
+                     fact.SubjectType,
+                     fact.SubjectId
++                }).Concat(new[]
++                {
++                    new
++                    {
++                        ReasonCode = "SUBLOT_NOT_IN_DISPATCH_SCOPE",
++                        SubjectType = "TASK_TYPE_BINDING_MISSING",
++                        SubjectId = (string?)"STAGING_TO_WIRE"
++                    }
+                 }),
+                 ObservedAt = sentAt
+             },

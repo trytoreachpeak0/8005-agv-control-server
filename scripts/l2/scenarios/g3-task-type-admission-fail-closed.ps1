@@ -75,6 +75,19 @@ $null = $mes.Command('Put', "demands/$($boundGuid.ToString('N'))", @{
     maxBoxCount = 4
 })
 
+# 服务端把缺绑定原因记下的时刻，由场景自己观测（control-server#204 之后的 #203 条目 1）。
+# **不读 JourneyBacklog.FirstSeenAt**：那一列是「这条需求第一次进 backlog」，不是「这个原因首次记下」——
+# DispatchRoundRunner.UpsertBacklog 在行已存在时只改 ReasonCode 与 LastSeenAt、原样保留 FirstSeenAt
+# （DispatchReasonCodes 的注释也写着 "keeps its FirstSeenAt"）。这条场景里两者大概率恰好相等，
+# 而「恰好相等」正是这条判据不该依赖的东西。
+#
+# 观测时刻必然晚于真实落库，所以拿它当下界只会更严，不会让 G3-10-04 假绿。
+#
+# 用哈希表装这个时刻，不用普通变量：下面那个回调带 .GetNewClosure()，而**闭包里的 `$script:` 写的是闭包
+# 自己的作用域，外面读不到**（实测过：写 `$script:reasonSeenAt`，回调跑完外面仍是 $null，于是
+# 「原因记下之后的快照 >= 1 份」恒不成立、这条判据在正确的世界里也必然红）。哈希表是引用类型，
+# 闭包捕获的是同一个对象，改它的成员外面看得见。
+$reasonSeen = @{ At = $null }
 $publishUnbound = {
     $journal.Note("Publishing STAGING_TO_WIRE demand $($unboundGuid.ToString('N')) (AREA C15-13), which the factory preset does not bind.")
     $null = $mes.Command('Put', "demands/$($unboundGuid.ToString('N'))", @{
@@ -85,6 +98,17 @@ $publishUnbound = {
         package     = 'L2-PACKAGE'
         maxBoxCount = 4
     })
+    # 在这里等、而不是等旅程走完再等：VehicleBusinessStateSnapshot 是**按旅程阶段**发的，不是每轮发
+    # （OnboardJourneyPublisher 的注释：one deterministic messageId per journey stage）。旅程一结束就不再有新快照，
+    # 把时刻记在那之后，「至少一份快照晚于原因」会必然不成立——那是一条在正确的世界里也必然红的判据。
+    # 这里是第一份计划刚被确认、车还没动，后面还有到站、录入、装货、二站、卸货、完成一串阶段会发快照。
+    $null = Wait-L2RealOrLast -Description 'the server recorded the missing-binding reason for the unbound demand' `
+        -Journal $journal -Criterion 'unbound-reason-recorded' -TimeoutSeconds 120 `
+        -Probe { $row = Get-L2JourneyBacklogRow -Connection $connection -DemandId $unboundId
+                 if ($null -ne $row) { [string]$row.ReasonCode } else { $null } } `
+        -Until { param($v) $v -ceq $missingBindingReason }
+    $reasonSeen.At = [DateTimeOffset]::UtcNow
+    $journal.Note("Missing-binding reason observed at $($reasonSeen.At.ToString('o')); G3-10-04 requires a business-state snapshot after it.")
 }.GetNewClosure()
 
 # --- 2. 已绑定的那一类在真车载端上走完一趟 ------------------------------------------------------------------------
@@ -146,12 +170,20 @@ $leakingFacts = @($businessSnapshots | Where-Object {
             $facts.Contains($unboundGuid.ToString('N'), [StringComparison]::OrdinalIgnoreCase) -or
             $facts -cmatch 'BINDING|STAGING_TO_WIRE'
     })
+# 时序前提：至少一份快照晚于原因被记下的时刻。少了它，所有快照都早于那一刻时这条判据照样绿——
+# 而那种运行根本没给泄露留下机会，「没泄露」说的是「还没到会泄露的时候」（control-server#164 审查）。
+$reasonSeenAt = $reasonSeen.At
+$snapshotsAfterReason = @($businessSnapshots | Where-Object { $null -ne $reasonSeenAt -and $_.At -gt $reasonSeenAt })
+$backlogFirstSeen = if ($null -ne $backlog) { [string]$backlog.FirstSeenAt } else { '(无 backlog 行)' }
 $assertions.Add(
     'G3-10-04',
-    '准入原因没有下发给车：全部 VehicleBusinessStateSnapshot 的 blockingFacts 里都没有缺绑定的原因码、需求号或任务类型（规格第 5.3 节）',
-    ($businessSnapshots.Count -ge 1 -and $leakingFacts.Count -eq 0),
-    '快照 ≥1 份 / 含准入原因 0 份',
-    "快照 $($businessSnapshots.Count) 份 / 含准入原因 $($leakingFacts.Count) 份")
+    '准入原因没有下发给车：全部 VehicleBusinessStateSnapshot 的 blockingFacts 里都没有缺绑定的原因码、需求号或任务类型；且至少有一份快照是在原因被记下之后发的（规格第 5.3 节）',
+    ($businessSnapshots.Count -ge 1 -and $leakingFacts.Count -eq 0 -and $snapshotsAfterReason.Count -ge 1),
+    '快照 ≥1 份 / 含准入原因 0 份 / 原因记下之后的快照 ≥1 份',
+    ("快照 $($businessSnapshots.Count) 份 / 含准入原因 $($leakingFacts.Count) 份 / " +
+        "原因记下之后 $($snapshotsAfterReason.Count) 份（原因观测于 $(if ($null -eq $reasonSeenAt) { '(未观测到)' } else { $reasonSeenAt.ToString('o') })" +
+        "，最后一份快照 $(if ($businessSnapshots.Count -gt 0) { $businessSnapshots[-1].At.ToString('o') } else { '(无)' })" +
+        "，对照 JourneyBacklog.FirstSeenAt=$backlogFirstSeen）"))
 
 # --- 4. 已绑定的那一类照常受理并走完（不连带） --------------------------------------------------------------------
 
@@ -165,10 +197,33 @@ $assertions.Add(
     "$boundDemandStatus / $($journey.Stage) / $boundCommits 笔操作 Committed")
 
 # 向量四步：计划 → 确认 → 业务状态快照 → 确认。对着已绑定那条需求的旅程查：第一份计划被确认，其后有一份业务状态快照被确认。
-$snapshots = Get-L2DemandJourneySnapshots $connection $boundId
+# 与 g3-reversed-direction-journey 的 G3-11-03 同一件事（control-server#203 条目 3）：旅程走完那一刻，确认
+# 可能还在路上——它由车载端发出、服务端另起一次写库，与阶段推进不是同一次提交。原来立刻就读，判据偶发红。
+#
+# 等的就是判据本身要的那三件事，所以这里没有放松任何一条；`Wait-L2RealOrLast` 超时不抛错，把最后一次读到的
+# 两批快照交给判据，红点因此落在判据表里、带着是哪一份没确认，而不是变成一行超时。选它而不是「先转几轮」的
+# 理由与那边相同：运行时轮次与确认落库之间没有因果。
+#
+# 业务状态快照在这里重读一次（第 164 行那份是 G3-10-04 用的，取的是更早的时刻，不动它）。
+$acknowledged = Wait-L2RealOrLast -Description 'the bound journey plan and a later business snapshot were acknowledged' `
+    -Journal $journal -Criterion 'bound-journey-snapshots-acknowledged' -TimeoutSeconds 30 `
+    -Probe {
+        [pscustomobject]@{
+            Journey  = Get-L2DemandJourneySnapshots $connection $boundId
+            Business = Get-L2RealOutbound $connection 'VehicleBusinessStateSnapshot'
+        }
+    } `
+    -Until {
+        param($v)
+        $plan = @($v.Journey | Where-Object { $_.Type -eq 'UpcomingStopPlanSnapshot' }) | Select-Object -First 1
+        $null -ne $plan -and $plan.Acknowledged -and
+        @($v.Journey | Where-Object { $_.Fenced -or -not $_.Acknowledged }).Count -eq 0 -and
+        @($v.Business | Where-Object { $_.At -ge $plan.At -and $_.Acknowledged }).Count -ge 1
+    }
+$snapshots = @($acknowledged.Journey)
 $firstPlan = @($snapshots | Where-Object { $_.Type -eq 'UpcomingStopPlanSnapshot' }) | Select-Object -First 1
 $businessAfterPlan = if ($null -ne $firstPlan) {
-    @($businessSnapshots | Where-Object { $_.At -ge $firstPlan.At -and $_.Acknowledged })
+    @($acknowledged.Business | Where-Object { $_.At -ge $firstPlan.At -and $_.Acknowledged })
 } else { @() }
 $assertions.Add(
     'G3-10-06',

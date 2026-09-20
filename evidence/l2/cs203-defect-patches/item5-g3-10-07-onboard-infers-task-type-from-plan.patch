@@ -1,0 +1,26 @@
+diff --git a/src/SQCD.Agv.Application/WireToGateStopFacts.cs b/src/SQCD.Agv.Application/WireToGateStopFacts.cs
+index c4a53c2..558fade 100644
+--- a/src/SQCD.Agv.Application/WireToGateStopFacts.cs
++++ b/src/SQCD.Agv.Application/WireToGateStopFacts.cs
+@@ -52,6 +52,21 @@ public static class WireToGateStopFacts
+     public static string TaskTypeText(WireToGateJourneySnapshot journey)
+     {
+         ArgumentNullException.ThrowIfNull(journey);
++        // DEFECT, local only, for control-server#203 item 5's red evidence (G3-10-07). It breaks
++        // NEVER_INFER_UNBOUND_TASK_TYPE: with a plan but no worklist yet, the task type is inferred
++        // from the plan leg and shown, instead of the display saying nothing until the worklist
++        // binds one. The plan carries no workType at all -- only legType -- so this can do no more
++        // than guess, which is the whole reason the rule exists. Never push this.
++        if (journey.CurrentStopWorklist is null)
++        {
++            WireToGateMovementLeg? leg = journey.UpcomingStopPlan?.Legs
++                .OrderBy(item => item.Sequence)
++                .FirstOrDefault(item => item.State != "COMPLETED");
++            if (leg?.LegType == "TO_PICKUP")
++            {
++                return TaskTypeTexts["WIRE_TO_GATE"];
++            }
++        }
+         return Shared(journey.CurrentStopWorklist?.Items ?? [], ItemTaskTypeText);
+     }
+ 

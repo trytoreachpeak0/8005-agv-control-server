@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "scenario": "staging-to-wire-reversed-journey",
+  "runId": "20260920T172226771Z",
+  "outcome": "FAIL",
+  "failureReason": "Timed out after 120s waiting for: the STAGING_TO_WIRE load committed and the journey reached its second leg. Last observed: \"AwaitingSublot\"",
+  "identity": {
+    "vehicleKey": "BROKERX-L2-0001",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "rig": "SyntheticOnboard",
+    "batchId": "unspecified",
+    "agvId": "AGV-L2-001",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260920T172226771Z",
+    "controlServerCommit": "9dbd6dec01ee31d9368224fc3937abbd86c9becb"
+  },
+  "assertions": [
+    {
+      "id": "L2-S2W-01",
+      "description": "反向旅程的取货站是派工待送站，卸货站是需求 AREA 的机台站",
+      "outcome": "PASS",
+      "expected": "pickup 305, drop-off 12",
+      "actual": "pickup 305, drop-off 12"
+    },
+    {
+      "id": "L2-S2W-08",
+      "description": "反向旅程冻结的路线证据等于按这个方向独立重算出来的 id，把两端互换重算会得到另一个",
+      "outcome": "PASS",
+      "expected": "route evidence = MAPCAT-70d1cd847c60826781ceb6f6c4a8af0949f65dda699af83c12909a666efad7c0 (swapped would be MAPCAT-938605c023d7d6618ef8ef781093e36de5ea5a2051ab9d67f560d04fe743b028)",
+      "actual": "route evidence MAPCAT-70d1cd847c60826781ceb6f6c4a8af0949f65dda699af83c12909a666efad7c0"
+    },
+    {
+      "id": "L2-S2W-02",
+      "description": "计划快照先 TO_PICKUP 到派工待送站、后 TO_DROPOFF 到机台站，publicStationFunction 为空",
+      "outcome": "PASS",
+      "expected": "1:TO_PICKUP@派工待送取货 2:TO_DROPOFF@N1-3_N1-7, no publicStationFunction",
+      "actual": "1:TO_PICKUP@派工待送取货 2:TO_DROPOFF@N1-3_N1-7; publicStationFunction: null,null"
+    }
+  ]
+}

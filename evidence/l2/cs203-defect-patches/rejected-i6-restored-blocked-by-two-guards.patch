@@ -1,0 +1,26 @@
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+index 719fe30d..1bffe026 100644
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+@@ -1356,9 +1356,7 @@ public sealed class JourneyRuntimeEngine(
+         string hash = BusinessHash(anchor.Demand.DemandId, anchor.Demand.Sublot, "LOAD", slots);
+         // The load carries the admission only where the AREA machine is the pickup (WIRE_TO_GATE); STAGING_TO_WIRE's
+         // is carried by the unload at the machine (I6 overturned, scope specification 21.2 item 2).
+-        bool admission = await store.AreaEndOperationAsync(
+-                anchor.Demand.DemandId, anchor.Demand.WorkType, cancellationToken)
+-            .ConfigureAwait(false) == SlotOperationType.Load;
++        bool admission = true;
+         await publisher.PublishSlotOperationCommandAsync(
+             anchor.Membership.LoadCommandMessageId,
+             runtime.AgvId,
+@@ -1421,9 +1419,7 @@ public sealed class JourneyRuntimeEngine(
+             cancellationToken).ConfigureAwait(false);
+         int[] slots = JsonSerializer.Deserialize<int[]>(anchor.Membership.TargetSlotsJson) ?? [];
+         // The unload carries the admission where the AREA machine is the drop-off (STAGING_TO_WIRE).
+-        bool admission = await store.AreaEndOperationAsync(
+-                anchor.Demand.DemandId, anchor.Demand.WorkType, cancellationToken)
+-            .ConfigureAwait(false) == SlotOperationType.Unload;
++        bool admission = false;
+         await publisher.PublishSlotOperationCommandAsync(
+             anchor.Membership.UnloadCommandMessageId,
+             runtime.AgvId,

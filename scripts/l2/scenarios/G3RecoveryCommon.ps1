@@ -321,20 +321,60 @@ function Add-G3VehicleReleasedForNextDemand([object]$Context, [string]$Id, [stri
     $null = $Context.MesIngest.Command('Put', "demands/$($nextGuid.ToString('N'))", @{
         sublot = "$SublotPrefix-$($Context.RunId)-NEXT"; area = 'N1-3'; eqp = 'EQP-L2-01'; package = 'L2-PACKAGE'; maxBoxCount = 4
     })
+    # 「车放出来了」不能停在「下一单到了 AwaitingPickupArrival」。那个阶段是**受理那一次提交**写下的，而占车
+    # 实读出来的顺序（control-server#203 的独立审查指出，作者逐行核过；**此前这段注释写反了**）：
+    #
+    #   1. `DispatchRoundRunner.cs:499` → `WireToGateOrchestration.AcceptAndDispatchToPickupAsync`：
+    #      先 `AcceptJourneyAsync` 写 JourneyRuntimes（阶段 `AwaitingPickupArrival`），**紧接着**
+    #      `ReconcileOrCreateAsync` 建 RIoT 单并把 TO_PICKUP 意图置 `CONFIRMED`；
+    #   2. `DispatchRoundRunner.cs:548` `TryClaimVehicleOccupancyAsync` 在**这之后**，失败才
+    #      `Block(...)`（`:712` 把 Stage 设为 `Blocked` 并写 `VEHICLE_OCCUPANCY_CONFLICT`）；
+    #   3. `DispatchRoundRunner.cs:560` 另一条分支：建单没到 `Confirmed` 时只 `SetBlockReason(...)`，
+    #      **不改 Stage**。
+    #
+    # 所以 `CONFIRMED` 对占车冲突**判别力为零**——冲突发生时它早就是 CONFIRMED 了。这条判据真正抓住的是
+    # 第 3 条分支：一个「释放了车、却没能给下一单建成／确认 RIoT 单」的服务端，落库是
+    # `AwaitingPickupArrival` + `PICKUP_DISPATCH_NOT_CONFIRMED`——**旧写法只看阶段与 AgvId，会绿**，
+    # 而 `-not (Test-G3Present $next.BlockReasonCode)` 这一项会红。
+    #
+    # `CONFIRMED` 仍然留着，但要知道它管的是别的事：它挡的是「停在第一次落库上就收工」，即在建单结果落库
+    # 之前判据已经通过。它不是用来区分占车冲突的。
+    #
+    # Blocked 也算「等到了」，理由与条目 7 那处相同：让红落在判据表里、带着原因码，而不是熬满 60 秒只留下
+    # 一句「没派出」，把「被占着」和「还没轮到」混成同一种读数。
     $deadline = [DateTimeOffset]::UtcNow.AddSeconds(60)
     $next = $null
+    $intentStatus = $null
     while ([DateTimeOffset]::UtcNow -lt $deadline) {
         $rows = Invoke-L2Query -Connection $connection -Sql "SELECT Stage, BlockReasonCode, AgvId FROM JourneyRuntimes WHERE DemandId = '$nextDemandId'"
         $next = if ($rows.Count -ge 1) { $rows[0] } else { $null }
-        $journal.Observe("$Id-next-demand", $(if ($next) { "$($next.Stage)/$($next.BlockReasonCode)" } else { $null }), $null)
-        if ($next -and [string]$next.Stage -eq 'AwaitingPickupArrival') { break }
+        $intentStatus = Get-G3Scalar $connection "SELECT Status AS Value FROM OrderIntents WHERE DemandId = '$nextDemandId' AND Purpose = 'TO_PICKUP'"
+        $journal.Observe(
+            "$Id-next-demand",
+            $(if ($next) { "$($next.Stage)/$($next.BlockReasonCode)/TO_PICKUP=$intentStatus" } else { $null }),
+            $null)
+        if ($next -and ([string]$next.Stage -eq 'Blocked' -or
+                ([string]$next.Stage -eq 'AwaitingPickupArrival' -and [string]$intentStatus -eq 'CONFIRMED'))) {
+            break
+        }
         Start-Sleep -Milliseconds 500
     }
-    $nextText = if ($next) { "下一单 $($next.Stage)/$($next.BlockReasonCode) on $($next.AgvId)" } else { '60 s 内下一单没有建旅程' }
+    # 列名实读自 `JourneyBacklogRow`：这张表没有 Status 列，「受理了没有」写在 AcceptedAt 上。
+    # 原来 L2-DC-12 那份用的是 `SELECT *` 再按名字过滤属性——那不是随手写的，是因为它不假设列名；
+    # 我把它「改进」成显式列名时照搬了一个不存在的 Status，三次真装置运行白跑在
+    # `SQLite Error 1: 'no such column: Status'` 上。
+    $backlog = @(Invoke-L2Query -Connection $connection -Sql "SELECT ReasonCode, AcceptedAt FROM JourneyBacklog WHERE DemandId = '$nextDemandId'")
+    $backlogText = if ($backlog.Count -ge 1) {
+        "积压 $($backlog[0].ReasonCode)，受理时间 $(if (Test-G3Present $backlog[0].AcceptedAt) { $backlog[0].AcceptedAt } else { '(无)' })"
+    } else { '无积压行' }
+    $nextText = if ($next) {
+        "下一单 $($next.Stage)/$($next.BlockReasonCode) TO_PICKUP=$intentStatus on $($next.AgvId)"
+    } else { "60 s 内下一单没有建旅程（$backlogText）" }
     $Context.Assertions.Add(
         $Id, $Description,
         ((Test-G3Present $occupancy) -and $null -ne $next -and [string]$next.Stage -eq 'AwaitingPickupArrival' -and
-            [string]$next.AgvId -eq [string]$Context.AgvId),
-        "TO_PICKUP 占用已释放 / 下一单 AwaitingPickupArrival on $($Context.AgvId)",
+            [string]$next.AgvId -eq [string]$Context.AgvId -and [string]$intentStatus -eq 'CONFIRMED' -and
+            -not (Test-G3Present $next.BlockReasonCode)),
+        "TO_PICKUP 占用已释放 / 下一单 AwaitingPickupArrival on $($Context.AgvId)，TO_PICKUP 意图 CONFIRMED，没有停摆原因码",
         "VehicleOccupancyReleasedAt='$occupancy' / $nextText")
 }
