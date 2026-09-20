@@ -12,8 +12,8 @@ namespace ControlServer.Tests;
 /// <summary>
 /// control-server#199：审计的「写一次就不再改」从 EF 层落到数据库层。<see cref="AuditImmutabilityGuard"/> 拦的是
 /// <c>SaveChanges</c> 前的变更跟踪，凡不经跟踪的写法——原始 SQL、<c>ExecuteUpdateAsync</c>、<c>ExecuteDeleteAsync</c>、
-/// 另开一条 SQLite 连接——全部绕得过去（control-server#161 审查 O1）。一个迁移给两张审计表建
-/// <c>BEFORE UPDATE</c>／<c>BEFORE DELETE</c> 触发器，把这条规矩钉在表上。
+/// 另开一条 SQLite 连接——全部绕得过去（control-server#161 审查 O1）。一个迁移给两张审计表各建三个触发器
+/// （<c>BEFORE UPDATE</c>、<c>BEFORE INSERT</c> 挡 <c>REPLACE</c>、<c>BEFORE DELETE</c>），把这条规矩钉在表上。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -28,6 +28,13 @@ namespace ControlServer.Tests;
 /// <c>EnsureCreatedAsync</c> 建的库上，没有触发器，不受影响；
 /// <see cref="PurgeStillRemovesWhatIsPastTheFloorAndKeepsWhatIsInsideItOnAMigratedDatabase"/> 把它们那个场景在迁移过的库上
 /// 又跑了一遍，钉住伪造时钟与触发器不打架。
+/// </para>
+/// <para>
+/// <b>「两个时钟不打架」只在一个方向上被测过，另一个方向本票没测。</b>那条测试把伪造时钟往<b>后</b>拨 190 天，
+/// 那一侧 EF 层更严、触发器轮不到出手。反方向——应用时钟跑在数据库时钟<b>前面</b>，EF 层放行而触发器拒绝——既没测也不会发生：
+/// 生产上两者同机同进程，<c>TimeProvider.System</c> 读的就是数据库机器那个时钟。将来第一个写「在迁移过的库上把
+/// <c>AuditClock</c> 往前拨过 180 天再清理」的人会撞上它，而且拿到的是 <see cref="SqliteException"/> 而不是
+/// <see cref="AuditRecordImmutabilityException"/>——那不是产品缺陷，是这两层各按各的时钟判的必然结果。
 /// </para>
 /// </remarks>
 public sealed class AuditDatabaseImmutabilityTests
@@ -66,20 +73,147 @@ public sealed class AuditDatabaseImmutabilityTests
         Assert.False(fixture.Context.Database.HasPendingModelChanges());
     }
 
-    /// <summary>两张审计表各拿到一对触发器，别的表一个都没有。</summary>
+    /// <summary>
+    /// 两张审计表各拿到三个触发器，别的表一个都没有。
+    /// </summary>
+    /// <remarks>
+    /// 这条同时是「触发器被弄丢了」的哨兵：EF Core 的 SQLite 提供程序实现 <c>DropColumn</c>／<c>AlterColumn</c> 靠重建表
+    /// （建临时表、拷数据、删原表、改名），重建会把表上的触发器一起带走。将来任何一张票改这两张表的列，这六个触发器就没了，
+    /// 而这条测试会红。<b>正确的修法是在那张票的新迁移里重建触发器，不是改这条测试。</b>
+    /// </remarks>
     [Fact]
-    public async Task BothAuditTablesGetTheirPairOfTriggersAndNoOtherTableGetsOne()
+    public async Task BothAuditTablesGetTheirThreeTriggersAndNoOtherTableGetsOne()
     {
         await using MigratedFixture fixture = await MigratedFixture.CreateAsync();
 
         Assert.Equal(
             [
                 $"TR_{AdministratorTable}_NoDeleteWithinRetentionFloor on {AdministratorTable}",
+                $"TR_{AdministratorTable}_NoReplace on {AdministratorTable}",
                 $"TR_{AdministratorTable}_NoUpdate on {AdministratorTable}",
                 $"TR_{BusinessTable}_NoDeleteWithinRetentionFloor on {BusinessTable}",
+                $"TR_{BusinessTable}_NoReplace on {BusinessTable}",
                 $"TR_{BusinessTable}_NoUpdate on {BusinessTable}",
             ],
             await TriggersAsync(fixture.Connection));
+    }
+
+    /// <summary>
+    /// <c>REPLACE INTO</c>／<c>INSERT OR REPLACE</c> 整行改写一条既有审计，被拒——任何年纪都拒，不只是保留期内。
+    /// </summary>
+    /// <remarks>
+    /// control-server#199 审查 S2。这条路能绕过另外两个触发器：<c>REPLACE</c> 是 INSERT 语句，
+    /// <c>TR_*_NoUpdate</c>（<c>BEFORE UPDATE</c>）根本看不见它；它为解决主键冲突做的那次隐式删除，
+    /// 在 <c>PRAGMA recursive_triggers</c> 为 OFF 时不触发 <c>BEFORE DELETE</c>，而 OFF 是 SQLite 的默认值、
+    /// 本服务端没有任何地方打开它（这条测试顺带把那个默认值也钉住）。
+    /// </remarks>
+    [Fact]
+    public async Task ReplaceIntoCannotRewriteAnExistingAuditRecordAtAnyAge()
+    {
+        await using MigratedFixture fixture = await MigratedFixture.CreateAsync();
+        await SeedAsync(fixture, "REPLACE");
+        string[] before = await DumpBothTablesAsync(fixture.Connection);
+
+        await using (SqliteCommand pragma = fixture.Connection.CreateCommand())
+        {
+            pragma.CommandText = "PRAGMA recursive_triggers";
+            Assert.Equal(0L, Convert.ToInt64(await pragma.ExecuteScalarAsync(Token), CultureInfo.InvariantCulture));
+        }
+
+        foreach (string table in (string[])[BusinessTable, AdministratorTable])
+        {
+            foreach (string action in (string[])["REPLACE_INSIDE_FLOOR", "REPLACE_PAST_FLOOR"])
+            {
+                string id = await IdOfAsync(fixture.Connection, table, action);
+                foreach (string verb in (string[])["REPLACE INTO", "INSERT OR REPLACE INTO"])
+                {
+                    string replace =
+                        $"{verb} \"{table}\" (AuditRecordId, RecordedAt, RecordedAtUtcTicks, ActorIdentity, "
+                        + "ActorAttribution, Action, ObjectKind, ObjectId, Version, Outcome, SnapshotId, DetailJson) "
+                        + $"VALUES ('{id}', '2026-01-01 00:00:00+00:00', 1, 'attacker', "
+                        + "'NOT_ATTRIBUTABLE_TO_NATURAL_PERSON', 'TAMPERED', 'SlotTemplate', 'slot-template:test', "
+                        + "1, 'Succeeded', NULL, '{}')";
+                    // Straight through the connection, not ExecuteSqlRawAsync: EF parses {0}-style placeholders in
+                    // raw SQL, and the DetailJson literal below contains braces.
+                    await using SqliteCommand command = fixture.Connection.CreateCommand();
+                    command.CommandText = replace;
+                    SqliteException refused = await Assert.ThrowsAsync<SqliteException>(
+                        () => command.ExecuteNonQueryAsync(Token));
+                    Assert.Contains("cannot be replaced", refused.Message, StringComparison.Ordinal);
+                    Assert.Contains(table, refused.Message, StringComparison.Ordinal);
+                }
+            }
+        }
+
+        Assert.Equal(before, await DumpBothTablesAsync(fixture.Connection));
+    }
+
+    /// <summary>
+    /// 一条新审计照常写得进去——<c>TR_*_NoReplace</c> 挂在 <c>BEFORE INSERT</c> 上，不能把正常写入也挡了。
+    /// </summary>
+    [Fact]
+    public async Task TheReplaceGuardDoesNotRefuseAnOrdinaryInsertOfANewRecord()
+    {
+        await using MigratedFixture fixture = await MigratedFixture.CreateAsync();
+        await SeedAsync(fixture, "INSERT_STILL_WORKS");
+        await using ControlServerDbContext context = fixture.NewContext();
+        GovernanceStore store = Store(context);
+
+        string business = await store.WriteBusinessAsync(Entry("FRESH"), Now, Token);
+        string administrator = await store.WriteAdministratorAsync(Entry("FRESH"), Now, Token);
+
+        await using ControlServerDbContext read = fixture.NewContext();
+        Assert.Equal(
+            "FRESH",
+            (await read.Set<BusinessAuditRecordRow>().AsNoTracking()
+                .SingleAsync(row => row.AuditRecordId == business, Token)).Action);
+        Assert.Equal(
+            "FRESH",
+            (await read.Set<AdministratorAuditRecordRow>().AsNoTracking()
+                .SingleAsync(row => row.AuditRecordId == administrator, Token)).Action);
+    }
+
+    /// <summary>
+    /// 180 天下限那条线本身：边界两侧各两小时的记录，一条必须被拒、一条必须放行。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// control-server#199 审查 S1。别的测试用的是 10 天前与 200 天前，离边界有 170 天和 20 天的余量——
+    /// 那个余量大到<b>把边界算错也测不出来</b>：`julianday('now','localtime')`（中国时区下下限悄悄变成
+    /// 179 天 16 小时）、纪元常数写成儒略历的 `1721423.5`（偏 2 天）、下限写成 179 或 181 天，
+    /// 以上任何一种都不会让那些测试变红。这一条把线钉在它自己的位置上。
+    /// </para>
+    /// <para>
+    /// 一条测试同时钉住三件事：纪元常数（<c>1721425.5</c> 对应 <c>0001-01-01T00:00:00Z</c>）、
+    /// 天到 ticks 的单位换算，以及两端都以 UTC 为基准。两小时的余量对一个秒级测试没有抖动风险。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task TheFloorSitsExactlyAtOneHundredAndEightyDaysNotTwoHoursEitherSideOfIt()
+    {
+        await using MigratedFixture fixture = await MigratedFixture.CreateAsync();
+        // Two hours *inside* the floor: 179 days 22 hours old. Must be refused.
+        await InsertAsync(fixture, BusinessTable, "JUST_INSIDE", Now.AddDays(-180).AddHours(2), null);
+        // Two hours *past* the floor: 180 days 2 hours old. Must be allowed.
+        await InsertAsync(fixture, BusinessTable, "JUST_PAST", Now.AddDays(-180).AddHours(-2), null);
+
+        string insideId = await IdOfAsync(fixture.Connection, BusinessTable, "JUST_INSIDE");
+        string pastId = await IdOfAsync(fixture.Connection, BusinessTable, "JUST_PAST");
+
+        string refuseMe = $"DELETE FROM \"{BusinessTable}\" WHERE AuditRecordId = '{insideId}'";
+        Assert.Contains(
+            "180",
+            (await Assert.ThrowsAsync<SqliteException>(() =>
+                fixture.Context.Database.ExecuteSqlRawAsync(refuseMe, Token))).Message,
+            StringComparison.Ordinal);
+
+        string allowMe = $"DELETE FROM \"{BusinessTable}\" WHERE AuditRecordId = '{pastId}'";
+        Assert.Equal(1, await fixture.Context.Database.ExecuteSqlRawAsync(allowMe, Token));
+
+        Assert.Equal(
+            ["JUST_INSIDE"],
+            await (fixture.NewContext()).Set<BusinessAuditRecordRow>().AsNoTracking()
+                .Select(row => row.Action).ToArrayAsync(Token));
     }
 
     // ======== 风险一、二：既有行照常可读，新写入照常成功 ========
@@ -315,8 +449,8 @@ public sealed class AuditDatabaseImmutabilityTests
     // ======== Down()：迁下去触发器消失，迁回来触发器回来 ========
 
     /// <summary>
-    /// 迁到本票迁移的上一版，四个触发器全没了，原始 SQL 改得动审计；再迁上来，触发器一字不差地回来，同一条原始 SQL
-    /// 又被拒。<c>Down()</c> 只删这四个触发器：整个库的定义与每一行数据在这一趟来回里逐字不变（改写那一条除外，
+    /// 迁到本票迁移的上一版，六个触发器全没了，原始 SQL 改得动审计；再迁上来，触发器一字不差地回来，同一条原始 SQL
+    /// 又被拒。<c>Down()</c> 只删这六个触发器：整个库的定义与每一行数据在这一趟来回里逐字不变（改写那一条除外，
     /// 它是故意写进去的证据）。
     /// </summary>
     [Fact]
@@ -327,7 +461,7 @@ public sealed class AuditDatabaseImmutabilityTests
         await SeedAsync(fixture, "ROUND_TRIP");
         await fixture.Context.Database.MigrateAsync(Token);
         string[] schemaAtTip = await ReadSchemaAsync(fixture.Connection);
-        Assert.Equal(4, (await TriggersAsync(fixture.Connection)).Length);
+        Assert.Equal(6, (await TriggersAsync(fixture.Connection)).Length);
 
         await fixture.Context.GetService<IMigrator>().MigrateAsync(MigrationBefore, Token);
 
@@ -369,8 +503,10 @@ public sealed class AuditDatabaseImmutabilityTests
         Assert.Equal(
             [
                 $"trigger TR_{AdministratorTable}_NoDeleteWithinRetentionFloor",
+                $"trigger TR_{AdministratorTable}_NoReplace",
                 $"trigger TR_{AdministratorTable}_NoUpdate",
                 $"trigger TR_{BusinessTable}_NoDeleteWithinRetentionFloor",
+                $"trigger TR_{BusinessTable}_NoReplace",
                 $"trigger TR_{BusinessTable}_NoUpdate",
             ],
             [.. (await ReadSchemaAsync(fixture.Connection)).Except(schemaBefore, StringComparer.Ordinal)
@@ -437,6 +573,17 @@ public sealed class AuditDatabaseImmutabilityTests
             1,
             GovernanceActionOutcome.Succeeded,
             DetailJson);
+
+    /// <summary>某张表里 <c>Action</c> 等于给定值的那一行的 <c>AuditRecordId</c>。</summary>
+    private static async Task<string> IdOfAsync(SqliteConnection connection, string table, string action)
+    {
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = $"SELECT AuditRecordId FROM \"{table}\" WHERE Action = $action";
+        command.Parameters.AddWithValue("$action", action);
+        object? id = await command.ExecuteScalarAsync(Token);
+        Assert.NotNull(id);
+        return (string)id;
+    }
 
     private static async Task<int> CountAsync(SqliteConnection connection)
     {
