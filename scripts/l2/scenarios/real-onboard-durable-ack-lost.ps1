@@ -235,6 +235,9 @@ $assertions.Add(
 #
 # 定时长采样，不是等待：绿的那次运行按设计就是扫满 10 秒一次都不检出，拿会写「Not reached」的等待函数来做，
 # 等于每次绿运行都在 journal 里留一条「未到达」给人误读（PR #196 审查第三条）。这里记的是读数。
+# 这 10 秒直接调采样函数，不经 Watch-UnfinishedProjection，所以窗口内**不做**那次服务端告警快照的
+# 诊断读（`:81-84`）。不影响判据——那一行本来就只进 journal 作诊断、不参与判定——记一笔免得下次有人
+# 以为它全程在读（审查 cs#204 轻微 8）。
 $journal.Note('L2-DA-09 window opens: sampling the HMI for 10 s from the session being Ready again.')
 $sample = Invoke-L2HmiPhraseSample -Watch $unfinishedWatch -ElementSource $unfinishedElements -DurationSeconds 10 `
     -Journal $journal -Criterion 'unfinished-projection'

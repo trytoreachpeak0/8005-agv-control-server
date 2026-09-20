@@ -176,6 +176,24 @@ $cases += @{
     }
 }
 
+$cases += @{
+    Name  = 'a sampling window on a watch that already has a sighting still runs its full length'
+    Check = {
+        $watch = New-L2HmiPhraseWatch -Phrase $phrase
+        # 先让它检出一次，再开采样窗。窗口的提前退出必须看「这个窗口里新增的」检出，不是累计的——
+        # 看累计的话窗口第一轮就退出，读数写成「1 round(s)」，而那句话在说「我扫了一轮」。
+        $null = Invoke-L2HmiPhraseScan -Watch $watch -NameReader $reader `
+            -ElementSource { @((New-Element "$phrase，需要管理员恢复")) }
+        $started = [DateTimeOffset]::UtcNow
+        $reading = Invoke-L2HmiPhraseSample -Watch $watch -NameReader $reader -DurationSeconds 1 -PollMilliseconds 50 `
+            -ElementSource { @((New-Element '当前操作：装货')) }
+        $elapsed = [DateTimeOffset]::UtcNow - $started
+        @{ Ok = ($elapsed.TotalSeconds -ge 1 -and $reading -like '*0 sighting(s) in this window*' -and
+                 $reading -like '*1 already seen before it*')
+           Actual = "耗时 $([math]::Round($elapsed.TotalSeconds,2)) s / reading '$reading'" }
+    }
+}
+
 $wrong = 0
 foreach ($case in $cases) {
     try { $result = & $case.Check } catch { $result = @{ Ok = $false; Actual = "threw: $($_.Exception.Message)" } }

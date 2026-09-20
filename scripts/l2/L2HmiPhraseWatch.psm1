@@ -131,16 +131,23 @@ function Invoke-L2HmiPhraseSample {
     )
 
     $before = $Watch.CleanScans + $Watch.FailedScans
+    # 提前退出看的是**这个窗口里新增的**检出，不是累计检出。用累计的话，一个已经检出过的 watch 会让
+    # 窗口在第一轮就退出，读数写成「10 s sampling done: 1 round(s)」——那句话在说「我扫了一轮」，
+    # 而真相是「我一进来就发现之前已经检出过」。不造成假绿（已经检出就是红），但它正是这张票要消灭的
+    # 那一类「数字比它知道的说得多」。
+    $seenBefore = $Watch.Seen.Count
     $deadline = [DateTimeOffset]::UtcNow.AddSeconds($DurationSeconds)
     while ($true) {
         $null = Invoke-L2HmiPhraseScan -Watch $Watch -ElementSource $ElementSource -NameReader $NameReader
         if ($Journal -and $Criterion) { $Journal.Observe($Criterion, $Watch.Seen.Count, $null) }
-        if ($Watch.Seen.Count -gt 0) { break }
+        if ($Watch.Seen.Count -gt $seenBefore) { break }
         if ([DateTimeOffset]::UtcNow -ge $deadline) { break }
         Start-Sleep -Milliseconds $PollMilliseconds
     }
     $rounds = $Watch.CleanScans + $Watch.FailedScans - $before
-    $reading = "${DurationSeconds} s sampling done: $rounds round(s), $($Watch.Seen.Count) sighting(s)"
+    $found = $Watch.Seen.Count - $seenBefore
+    $reading = "${DurationSeconds} s sampling done: $rounds round(s), $found sighting(s) in this window" +
+        $(if ($seenBefore -gt 0) { " ($seenBefore already seen before it)" } else { '' })
     if ($Journal) { $Journal.Note($reading) }
     return $reading
 }
