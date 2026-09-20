@@ -141,7 +141,7 @@ public sealed partial class MultiVehicleExecutionTests
                     FleetFixture.Demand(0, "N1-1", 0).DemandId).ReasonCode));
         await AssertTranscriptAsync(fixture, """
             journey V2 D1 AwaitingPickupArrival block=- pickup=13 slots=[1] baskets=1
-            backlog D0 DEMAND_ALREADY_ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=-
+            backlog D0 FINAL_CATALOG_CANDIDATE_GONE first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=-
             backlog D1 DEMAND_ALREADY_ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
             outcome accepted=D0,D1
               V1: D0=ELIGIBLE[1] D1=ELIGIBLE[1]

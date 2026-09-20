@@ -246,6 +246,7 @@ public sealed class DispatchRoundRunner(
             // 再试一次只会得到同一个答案，还白占一辆车这一轮的名额。
             List<CandidateOffer> stillBidding = [.. offers];
             CandidateOffer? winner = null;
+            bool winnerWroteItsOwnReason = false;
             while (stillBidding.Count > 0)
             {
                 EligibleVehicleOffer selected =
@@ -254,11 +255,13 @@ public sealed class DispatchRoundRunner(
                 // 选中就算接了：无论受理成功还是被最后一刻的重读拒掉，这辆车这一轮都不再参与后面的任务。
                 // 拒掉之后还让它去抢下一条，等于用一次失败的尝试换一条别的车本可以接走的任务。
                 bidder.Participant.TookADemand();
-                if (await DispatchSelectedAsync(
+                CandidateDispatchOutcome outcome = await DispatchSelectedAsync(
                         round, bidder, acceptedDemandIds, claimsIntakeRefused, backlogByDemandId, now,
-                        cancellationToken).ConfigureAwait(false))
+                        cancellationToken).ConfigureAwait(false);
+                if (outcome != CandidateDispatchOutcome.VehicleCannotTake)
                 {
                     winner = bidder;
+                    winnerWroteItsOwnReason = outcome == CandidateDispatchOutcome.RefusedWithItsOwnReason;
                     break;
                 }
 
@@ -268,7 +271,8 @@ public sealed class DispatchRoundRunner(
 
             // 裁决落在派车之后：积压行上留下的理由因此仍是落选者写的那一个，与翻转之前由排在最后的车写下的
             // 结果一致。受理过程中自己写的理由（例如最终重读发现候选没了）先落，再被它盖掉。
-            RecordVerdictsForCandidate(offers, winner, backlogByDemandId, candidate, now);
+            RecordVerdictsForCandidate(
+                offers, winner, winnerWroteItsOwnReason, backlogByDemandId, candidate, now);
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
 
@@ -538,9 +542,18 @@ public sealed class DispatchRoundRunner(
     /// 积压行上留下的理由是落选者写的那一个——与翻转之前由排在最后的那辆车写下的结果一致。只有一辆车出价时
     /// 行上就是受理自己写的，那时本来也没有别人可以被挡。
     /// </remarks>
+    /// <param name="winnerWroteItsOwnReason">
+    /// 胜者是不是已经写下了这条需求自己那条更具体的积压理由（受理拒绝的四种之一）。
+    /// <b>是的话就不要再把它盖成「已被接走」</b>（批次7-06，control-server#211）：那条需求一辆车都没接走，
+    /// 而看板读的正是积压行的理由——它会指着一辆不存在的车，查的人先去找那辆车。
+    ///
+    /// 别的车的<b>裁决</b>仍然记「已被接走」，那是对的：从那辆车的视角，它判这条候选时它确实已被本轮认领。
+    /// 两者视角不同，看板读的是积压行。
+    /// </param>
     private void RecordVerdictsForCandidate(
         List<CandidateOffer> offers,
         CandidateOffer? winner,
+        bool winnerWroteItsOwnReason,
         Dictionary<string, JourneyBacklogRow> backlogByDemandId,
         AcceptedDemandSnapshot candidate,
         DateTimeOffset now)
@@ -558,7 +571,13 @@ public sealed class DispatchRoundRunner(
         {
             other.Participant.Verdicts.Add(
                 new DispatchCandidateVerdict(other.Evaluation, AlreadyAcceptedCriterion.DemandAlreadyAccepted));
-            UpsertBacklog(backlogByDemandId, candidate, AlreadyAcceptedCriterion.DemandAlreadyAccepted, now);
+            // 照常 Upsert——它还负责 LastSeenAt 与决策指纹——但胜者写过自己的理由时把那条原样带回去，
+            // 只是不覆盖它。
+            string reason = winnerWroteItsOwnReason &&
+                    backlogByDemandId.TryGetValue(candidate.DemandId, out JourneyBacklogRow? written)
+                ? written.ReasonCode
+                : AlreadyAcceptedCriterion.DemandAlreadyAccepted;
+            UpsertBacklog(backlogByDemandId, candidate, reason, now);
         }
     }
 
@@ -572,9 +591,10 @@ public sealed class DispatchRoundRunner(
     /// 一辆车、一条任务定下来之后：空闲车受理新旅程，在途车追加进它已有的旅程。
     /// </summary>
     /// <returns>
-    /// 这辆车有没有跑完自己这一段。<c>false</c> 表示它垮在里面了——已经认领的撤回，这辆车退出本轮，别的车照常。
+    /// 这条任务在这辆车手里的去向。垮在里面（预算耗尽、抛异常）报 <c>VehicleCannotTake</c>——已经认领的撤回，
+    /// 这辆车退出本轮，别的车照常。
     /// </returns>
-    private async Task<bool> DispatchSelectedAsync(
+    private async Task<CandidateDispatchOutcome> DispatchSelectedAsync(
         DispatchRoundFacts round,
         CandidateOffer winner,
         HashSet<string> acceptedDemandIds,
@@ -609,7 +629,7 @@ public sealed class DispatchRoundRunner(
             await DropWhatTheSegmentStagedAsync(
                     backlogByDemandId, claimedHere, acceptedDemandIds, claimsIntakeRefused, cancellationToken)
                 .ConfigureAwait(false);
-            return false;
+            return CandidateDispatchOutcome.VehicleCannotTake;
         }
         catch (Exception error) when (!cancellationToken.IsCancellationRequested)
         {
@@ -627,7 +647,7 @@ public sealed class DispatchRoundRunner(
             await DropWhatTheSegmentStagedAsync(
                     backlogByDemandId, claimedHere, acceptedDemandIds, claimsIntakeRefused, cancellationToken)
                 .ConfigureAwait(false);
-            return false;
+            return CandidateDispatchOutcome.VehicleCannotTake;
         }
         finally
         {
@@ -636,11 +656,8 @@ public sealed class DispatchRoundRunner(
     }
 
     /// <summary>上一个方法的内核：这一段本身，保护在外面那一层。</summary>
-    /// <returns>
-    /// 这条任务在这一轮有没有结论。<c>false</c> 表示<b>这辆车</b>接不了，而换一辆车会得到不同的答案——
-    /// 出价循环于是把这条任务交给下一个出价者。
-    /// </returns>
-    private async Task<bool> DispatchSelectedCoreAsync(
+    /// <returns>这条任务在这一轮的去向，见 <see cref="CandidateDispatchOutcome"/>。</returns>
+    private async Task<CandidateDispatchOutcome> DispatchSelectedCoreAsync(
         DispatchRoundFacts round,
         EligibleVehicleOffer selected,
         HashSet<string> acceptedDemandIds,
@@ -665,7 +682,7 @@ public sealed class DispatchRoundRunner(
                 row => row.VehicleKey == selected.Vehicle.VehicleKey && row.ReleasedAt == null,
                 cancellationToken).ConfigureAwait(false))
         {
-            return false;
+            return CandidateDispatchOutcome.VehicleCannotTake;
         }
 
         if (!await FinalDynamicFactsReadyAsync(
@@ -675,7 +692,9 @@ public sealed class DispatchRoundRunner(
             await SetBacklogReasonAsync(
                 demandId, "FINAL_DYNAMIC_FACTS_NOT_READY", timeProvider.GetUtcNow(), cancellationToken)
                 .ConfigureAwait(false);
-            return false;
+            // 换下一个出价者。这条理由不需要特殊照顾：真有车接走了，积压行本来就该记「已被接走」加上受理时刻；
+            // 全都接不了时 winner 为 null，落裁决那个循环根本不执行，它原样留着。
+            return CandidateDispatchOutcome.VehicleCannotTake;
         }
 
         DateTimeOffset intakeAt = timeProvider.GetUtcNow();
@@ -725,14 +744,14 @@ public sealed class DispatchRoundRunner(
             // 这条需求已经被标记为本轮接走，换一辆车再试要先把那个标记连同这一段写下的东西一起撤回，
             // 而那是预算耗尽与抛异常两条路径上 DropWhatTheSegmentStagedAsync 做的事。在这里返回 false
             // 会让下一个出价者看到一条「已被接走」的需求，比现在更糟。
-            return true;
+            return CandidateDispatchOutcome.RefusedWithItsOwnReason;
         }
 
         if (underWay)
         {
             // 追加「不认领车辆占用」（票面「车辆占用」那一条）：三套占用都是一车一行，这辆车已经被这趟旅程占着，
             // 再认领一次会被索引直接拒绝。
-            return true;
+            return CandidateDispatchOutcome.Taken;
         }
 
         // The vehicle is now carrying this journey's first order, and that is what the occupancy claim records.
@@ -744,8 +763,8 @@ public sealed class DispatchRoundRunner(
                 .SingleAsync(row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
             Block(conflicted, "VEHICLE_OCCUPANCY_CONFLICT", timeProvider.GetUtcNow());
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            // 旅程已经建出来并且被 Block 了，这条需求这一轮有结论了。
-            return true;
+            // 旅程已经建出来并且被 Block 了，这条需求这一轮有结论了。理由写在旅程的阻断码上，不在积压行上。
+            return CandidateDispatchOutcome.Taken;
         }
 
         if (result.MovementDispatch?.Outcome != MovementDispatchOutcome.Confirmed)
@@ -758,7 +777,26 @@ public sealed class DispatchRoundRunner(
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        return true;
+        return CandidateDispatchOutcome.Taken;
+    }
+
+    /// <summary>一条任务在一辆车手里的去向（批次7-06，control-server#211）。</summary>
+    private enum CandidateDispatchOutcome
+    {
+        /// <summary>接下了。这条任务这一轮结束。</summary>
+        Taken,
+
+        /// <summary>
+        /// <b>这辆车</b>接不了，而换一辆车会得到不同的答案——租约是这一辆的租约，最终动态事实读的是这一辆的状态。
+        /// 出价循环把这条任务交给下一个出价者。
+        /// </summary>
+        VehicleCannotTake,
+
+        /// <summary>
+        /// 这条任务这一轮结束，<b>而且它已经写下了自己那条更具体的积压理由</b>——最终重读发现候选没了、变了、
+        /// 车的最终事实不就绪、计划冻结不全，四种之一。落裁决时不要再把它盖成「已被接走」。
+        /// </summary>
+        RefusedWithItsOwnReason
     }
 
     /// <summary>把这条需求追加进这辆在途车的旅程；不建订单、不认领占用。</summary>
