@@ -233,11 +233,22 @@ function Invoke-L2TaskTypeJourney {
     $null = Wait-L2Condition -Description 'the load committed and the journey left for its second stop' `
         -Journal $journal -Criterion 'journey-stage' -TimeoutSeconds 180 `
         -Probe { Get-L2RealStage $connection $DemandId }.GetNewClosure() -Until { param($v) $v -eq 'AwaitingGateArrival' }
+    # ORDER BY UpperId：没有它，SQLite 的行序不是承诺的，而下面取的是 $rows[0]——同一份库、同一条需求，
+    # 两次跑可能取到不同的那一条（control-server#164 审查）。一趟一单时只有一条，所以排序在今天不改变结果；
+    # 它挡的是「今天只有一条」这个前提哪天不成立。
+    #
+    # 真有第二条时抛错，不悄悄取第一条：那说明这条需求的意图比这个驱动设想的多，往下跑出来的每一条判据
+    # 都会是关于「碰巧排在前面的那一条」的，而判据表上看不出这件事。
     $destinationIntent = Wait-L2Condition -Description 'the second leg''s intent was confirmed' `
         -Journal $journal -Criterion 'destination-intent' -TimeoutSeconds 120 `
         -Probe {
             $rows = Invoke-L2Query -Connection $connection -Sql (
-                "SELECT UpperId, OrderId, Status, Purpose FROM OrderIntents WHERE DemandId = '$DemandId' AND Purpose <> 'TO_PICKUP'")
+                "SELECT UpperId, OrderId, Status, Purpose FROM OrderIntents WHERE DemandId = '$DemandId' AND Purpose <> 'TO_PICKUP' ORDER BY UpperId")
+            if ($rows.Count -gt 1) {
+                throw ("Demand $DemandId has $($rows.Count) non-TO_PICKUP order intents " +
+                    "($(@($rows | ForEach-Object { "$($_.Purpose)/$($_.UpperId)" }) -join ', ')); " +
+                    'this driver assumes one second leg and would silently judge whichever sorted first.')
+            }
             if ($rows.Count -ge 1 -and [string]$rows[0].Status -eq 'CONFIRMED') { $rows[0] } else { $null }
         }.GetNewClosure() -Until { param($v) $null -ne $v }
 
@@ -247,8 +258,17 @@ function Invoke-L2TaskTypeJourney {
     # Read while the onboard waits for the operator at the second stop, before the door closes: that is the stop line the
     # operator unloads by, and once the unload commits the server moves the worklist on.
     $originDirection = $readings['at-origin'].Direction
+    # 先等这一站的清单被车载端确认，再读它的停靠行——与第一站（上面 origin-worklist-acknowledged）同形。
+    # 停靠行显示的是车载端**应用了的那份清单**，所以「清单已确认」是这条读数的前提而不是它的结论；
+    # 不等就读，读到的可能是上一站的行或一行还没更新的旧值，而判据分辨不出这两种情况
+    # （control-server#164 审查；README 第 14 条）。第二站的清单是第二份，所以门槛是 >= 2。
+    $worklistsAtDestination = 2
     $unload = Invoke-L2TaskTypeStationOperation -Context $Context -DemandId $DemandId -OperationType 'Unload' -CargoState 'EMPTY' `
         -WhileWaiting {
+            $null = Wait-L2Condition -Description 'the onboard acknowledged the worklist at the second stop' `
+                -Journal $journal -Criterion 'destination-worklist-acknowledged' -TimeoutSeconds 60 `
+                -Probe { @((Get-L2DemandJourneySnapshots $connection $DemandId) | Where-Object { $_.Type -eq 'CurrentStopWorklistSnapshot' -and $_.Acknowledged }).Count }.GetNewClosure() `
+                -Until { param($v) $v -ge $worklistsAtDestination }
             Wait-L2StopFacts -Context $Context -Criterion 'stop-line:at-destination' `
                 -Description 'the HMI shows the second stop''s direction and task type' `
                 -Until { param($f) (Test-L2RealPresent $f.Direction) -and (Test-L2RealPresent $f.TaskType) -and $f.Direction -ne $originDirection }.GetNewClosure()
