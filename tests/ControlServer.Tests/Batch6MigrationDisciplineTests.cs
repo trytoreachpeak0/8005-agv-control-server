@@ -21,6 +21,7 @@ namespace ControlServer.Tests;
 public sealed class Batch6MigrationDisciplineTests
 {
     private const string MigrationBeforeBatch6 = "20260917015519_Batch5JourneyBlockReasonSince";
+    private const string Batch6Migration = "20260919021150_Batch6TaskTypeStationBindings";
     private const string Batch6MigrationSuffix = "_Batch6TaskTypeStationBindings";
 
     private static readonly DateTimeOffset Now = new(2026, 9, 19, 8, 0, 0, TimeSpan.Zero);
@@ -49,6 +50,9 @@ public sealed class Batch6MigrationDisciplineTests
     [
         "20260919154546_Batch7MultiDemandJourneyPersistence",
         "20260919200353_AreaEndAdmissionRevokedSince",
+        // 批次 7 迁移通道第二张：control-server#199，两张审计表的 BEFORE UPDATE／BEFORE DELETE 触发器。
+        // 自己的断言在 AuditDatabaseImmutabilityTests。
+        "20260920001500_AuditImmutabilityTriggers",
     ];
 
     [Fact]
@@ -104,6 +108,64 @@ public sealed class Batch6MigrationDisciplineTests
         {
             Assert.Equal(before[table], await DumpAsync(fixture.Connection, table));
         }
+    }
+
+    /// <summary>
+    /// control-server#159 审查「可选」第 3 条、由 control-server#199 补上：把一个装着批次 6 数据的库迁回批次 5 再迁上来。
+    /// 迁下去，八张表一张不剩，其余每一张表的结构与批次 5 那一刻逐字相同；再迁上来，<c>sqlite_master</c> 里的表、索引与
+    /// 第一次迁上来时逐字相同。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 表里的数据回不来，也不该断言它回来：<c>Down()</c> 是 <c>DropTable</c>，八张表连同内容一起没了。这条测试证的是
+    /// 「退得干净、上得一致」，不是「退回去不丢数据」。
+    /// </para>
+    /// <para>
+    /// <b>已知回滚限制，这里把它钉成事实而不是修它</b>（PR #171 正文）：<c>GovernedConfigurationSnapshots</c> 里
+    /// <c>ObjectKind='TaskTypeStationRule'</c> 的快照行不随 <c>Down()</c> 删——那张表是批次 3 建的，批次 6 只是往里写。
+    /// 退回批次 5 的二进制读到这种行会失败。修它要么让 <c>Down()</c> 按种类删快照（跨了表的归属），要么让旧二进制容忍
+    /// 不认识的种类（改的是已经发出去的代码），两条都不属于本票。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task MigratingDownToBatch5DropsAllEightTablesAndMigratingUpAgainRebuildsThemIdentically()
+    {
+        await using MigrationFixture fixture = await MigrationFixture.CreateAsync();
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        await fixture.MigrateToAsync(MigrationBeforeBatch6);
+        await SeedBatch5DataAsync(fixture);
+        string[] schemaAtBatch5 = await ReadSchemaAsync(fixture.Connection);
+
+        await fixture.MigrateToAsync(Batch6Migration);
+        await SeedBatch6DataAsync(fixture);
+        string[] schemaAtBatch6 = await ReadSchemaAsync(fixture.Connection);
+        Assert.NotEmpty(await DumpAsync(fixture.Connection, "TaskTypeStationRules"));
+        Assert.NotEmpty(await DumpAsync(fixture.Connection, "TaskTypeStationBindings"));
+        Assert.NotEmpty(await DumpAsync(fixture.Connection, "TaskTypeStationHolds"));
+        Assert.NotEmpty(await DumpAsync(fixture.Connection, "TaskTypeStationCatalogChanges"));
+        string[] ruleSnapshots = await RuleSnapshotIdsAsync(fixture.Connection);
+        Assert.NotEmpty(ruleSnapshots);
+
+        await fixture.MigrateToAsync(MigrationBeforeBatch6);
+
+        HashSet<string> afterDown = await ReadTableNamesAsync(fixture.Connection);
+        Assert.All(Batch6Tables, table => Assert.DoesNotContain(table, afterDown));
+        Assert.Equal(schemaAtBatch5, await ReadSchemaAsync(fixture.Connection));
+        // The known limit: the rule snapshots batch 6 wrote into a batch 3 table outlive the tables that produced them.
+        Assert.Equal(ruleSnapshots, await RuleSnapshotIdsAsync(fixture.Connection));
+
+        await fixture.MigrateToAsync(Batch6Migration);
+
+        Assert.Equal(schemaAtBatch6, await ReadSchemaAsync(fixture.Connection));
+        foreach (string table in Batch6Tables)
+        {
+            Assert.Empty(await DumpAsync(fixture.Connection, table));
+        }
+        Assert.Equal(ruleSnapshots, await RuleSnapshotIdsAsync(fixture.Connection));
+        // And the tables work again: the same seed runs a second time on the rebuilt schema.
+        fixture.Context.ChangeTracker.Clear();
+        await SeedBatch6DataAsync(fixture);
+        Assert.NotEmpty(await fixture.Context.Set<TaskTypeStationBindingRow>().ToArrayAsync(cancellationToken));
     }
 
     [Fact]
@@ -188,6 +250,91 @@ public sealed class Batch6MigrationDisciplineTests
         await new DemandAreaAssignmentFreezeStore(fixture.Context).FreezeAsync(
             "demand-batch5", table.Version, Now, cancellationToken);
         fixture.Context.ChangeTracker.Clear();
+    }
+
+    /// <summary>
+    /// 批次 6 自己那八张表里的数据，全部经真实写入路径落进去：一版规则（连带它在批次 3 那张快照表里的治理快照）、一张
+    /// 图的绑定集与生效指针、一条人工暂停、一条目录变化记录、一条需求冻结。
+    /// </summary>
+    private static async Task SeedBatch6DataAsync(MigrationFixture fixture)
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        GovernanceStore governance = new(
+            fixture.Context,
+            new GovernanceDeploymentIdentity("deployment:8005-controlserver@test"),
+            AuditRetentionPolicy.Default);
+        GovernedConfigurationPublisher publisher = new(governance, governance);
+        TaskTypeStationRuleStore rules = new(fixture.Context, publisher);
+        TaskTypeStationBindingStore bindings = new(fixture.Context, publisher);
+
+        TaskTypeStationVersionWrite<TaskTypeStationRuleVersion> rule = await rules.WriteVersionAsync(
+            TaskTypeStationTestData.SixRules, TaskTypeStationTestData.Source, Now, cancellationToken);
+        TaskTypeStationVersionWrite<TaskTypeStationBindingSetVersion> set = await bindings.WriteVersionAsync(
+            25,
+            rule.Version.Version,
+            [TransportTaskTypes.WireToGate],
+            [TaskTypeStationTestData.GateBinding],
+            1,
+            TaskTypeStationTestData.Source,
+            Now,
+            cancellationToken);
+        await bindings.SetActiveAsync(25, set.Version.Version, Now, cancellationToken);
+        await new TaskTypeStationHoldStore(fixture.Context).RaiseAsync(
+            25, TransportTaskTypes.WireToGate, TaskTypeStationHoldSource.Manual, "MANUAL_TIGHTEN", "{}", "operator",
+            Now, cancellationToken);
+        await new TaskTypeStationCatalogChangeStore(fixture.Context).RecordAsync(
+            new TaskTypeStationCatalogChange(
+                "catalog-change-batch6", 25, 210, "关卡", "关卡A", "RENAMED", "SITE_REVIEW_REQUIRED", 2, Now,
+                [TransportTaskTypes.WireToGate], null),
+            cancellationToken);
+        await new DemandTaskTypeStationFreezeStore(fixture.Context).FreezeAsync(
+            "demand-batch6", rule.Version.Version, 25, set.Version.Version, Now, cancellationToken);
+        fixture.Context.ChangeTracker.Clear();
+    }
+
+    /// <summary>批次 6 写进批次 3 那张快照表的规则快照，按 id 排序。</summary>
+    private static async Task<string[]> RuleSnapshotIdsAsync(SqliteConnection connection)
+    {
+        List<string> ids = [];
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT SnapshotId FROM GovernedConfigurationSnapshots WHERE ObjectKind = 'TaskTypeStationRule' ORDER BY SnapshotId";
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken);
+        while (await reader.ReadAsync(TestContext.Current.CancellationToken))
+        {
+            ids.Add(reader.GetString(0));
+        }
+        return [.. ids];
+    }
+
+    /// <summary>每张表的每一列（名、类型、可空、默认值、主键位），以及每个索引与触发器的定义原文。</summary>
+    private static async Task<string[]> ReadSchemaAsync(SqliteConnection connection)
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        List<string> schema = [];
+        foreach (string table in (await ReadTableNamesAsync(connection)).Order(StringComparer.Ordinal))
+        {
+            await using SqliteCommand columns = connection.CreateCommand();
+            columns.CommandText =
+                $"SELECT name || ' ' || type || ' notnull=' || \"notnull\" || ' default=' || coalesce(dflt_value, '-') "
+                + $"|| ' pk=' || pk FROM pragma_table_info('{table}')";
+            await using SqliteDataReader reader = await columns.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                schema.Add($"column {table}.{reader.GetString(0)}");
+            }
+        }
+        await using SqliteCommand definitions = connection.CreateCommand();
+        definitions.CommandText =
+            "SELECT type || ' ' || name || ': ' || coalesce(sql, '') FROM sqlite_master "
+            + "WHERE type IN ('index', 'trigger') AND name NOT LIKE 'sqlite_%'";
+        await using SqliteDataReader reader2 = await definitions.ExecuteReaderAsync(cancellationToken);
+        while (await reader2.ReadAsync(cancellationToken))
+        {
+            schema.Add(reader2.GetString(0));
+        }
+        schema.Sort(StringComparer.Ordinal);
+        return [.. schema];
     }
 
     private static async Task<List<string[]>> ReadUniqueIndexColumnsAsync(SqliteConnection connection, string table)

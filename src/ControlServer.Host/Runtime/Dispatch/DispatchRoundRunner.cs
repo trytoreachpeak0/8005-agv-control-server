@@ -87,9 +87,6 @@ public sealed class DispatchRoundRunner(
             "Asking whether vehicle {AgvId} may take an appended demand failed: {ExceptionType}. The round " +
             "left it under way and went on to its end.");
 
-    /// <summary>Stands in for a segment with no claim to take back; the budget path never has one to give.</summary>
-    private static readonly HashSet<string> NoClaims = new(StringComparer.Ordinal);
-
     private readonly JourneyRuntimeOptions runtimeOptions = options.Value;
 
     /// <summary>
@@ -200,9 +197,14 @@ public sealed class DispatchRoundRunner(
             {
                 LogVehicleRoundBudgetExhausted(
                     logger, vehicle.AgvId, (int)budget.TotalMilliseconds, null);
-                // No claim is withdrawn here, unlike the catch below: control-server#231 was not to change what
-                // this path does, and the same hole is in it -- see that ticket's follow-up note.
-                await DropWhatTheSegmentStagedAsync(backlogByDemandId, cancellationToken).ConfigureAwait(false);
+                // The same withdrawal as the catch below, through the same method (control-server#239): a budget
+                // that fires between a claim and its acceptance leaves the round carrying a demand nothing took,
+                // and the round-end hook would clear that demand's structural block on the strength of it. Which
+                // claims were made good on is read from the database there, not from the way the segment ended --
+                // a budget can just as well fire the moment after the acceptance committed.
+                await DropWhatTheSegmentStagedAsync(
+                    backlogByDemandId, claimedThisSegment, acceptedDemandIds, cancellationToken)
+                    .ConfigureAwait(false);
             }
             // A vehicle whose own reads fail -- an unreachable RIoT, an Onboard fact that cannot be read, an
             // evidence write that ran out its own five-second timeout -- is skipped exactly as a
@@ -285,30 +287,44 @@ public sealed class DispatchRoundRunner(
     /// Drops whatever the segment that just ended had staged, and reads the backlog back as the database holds it.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Shared by the two ways a segment can end early -- its budget running out and it throwing -- because the
     /// hazard is one hazard. What the abandoned segment staged is not that vehicle's decision any more and must not
     /// be written under the next vehicle's <c>SaveChanges</c>: stopping the work is not what keeps one vehicle's
     /// trouble off the others, clearing the tracker they all share is.
+    /// </para>
+    /// <para>
+    /// <b>This overload is for a path that claims nothing</b> -- today only the in-transit qualification below,
+    /// which asks one question and writes nothing. The empty claim list is what leaves the round's accepted set
+    /// alone: the overload below only ever removes what that list names.
+    /// </para>
+    /// <para>
+    /// It passes a set of its own rather than one shared static empty one. The overload below removes from what it
+    /// is handed, so a static would be mutable state shared across every instance of this class -- safe only for
+    /// as long as nobody hands this path a claim, which is the kind of thing control-server#211 finds by breaking
+    /// it.
+    /// </para>
     /// </remarks>
     private Task DropWhatTheSegmentStagedAsync(
         Dictionary<string, JourneyBacklogRow> backlogByDemandId,
         CancellationToken cancellationToken) =>
-        DropWhatTheSegmentStagedAsync(backlogByDemandId, [], NoClaims, cancellationToken);
+        DropWhatTheSegmentStagedAsync(
+            backlogByDemandId, [], new HashSet<string>(StringComparer.Ordinal), cancellationToken);
 
     /// <inheritdoc cref="DropWhatTheSegmentStagedAsync(Dictionary{string, JourneyBacklogRow}, CancellationToken)"/>
     /// <remarks>
     /// <para>
     /// <b>It also takes back a claim the segment never made good on.</b> A vehicle claims its pick in the round's
     /// live accepted set before calling intake, so that the vehicles behind it stop considering that demand
-    /// whatever intake then reports. When the segment throws instead of reporting, that claim can be a lie: the
-    /// round would carry a demand it never accepted, and the round-end hook clears a structural dispatch block for
-    /// every demand the round says was accepted -- so a block standing against a demand nothing took would be
-    /// cleared, and raised again as new the next round.
+    /// whatever intake then reports. When the segment ends early instead of reporting -- throwing, or its budget
+    /// running out -- that claim can be a lie: the round would carry a demand it never accepted, and the round-end
+    /// hook clears a structural dispatch block for every demand the round says was accepted -- so a block standing
+    /// against a demand nothing took would be cleared, and raised again as new the next round.
     /// </para>
     /// <para>
-    /// Whether it was made good on is decided by the database rather than by where the exception came from: the
-    /// tracker is cleared first, so this reads what the acceptance transaction actually committed. A demand whose
-    /// row is there was accepted, whatever threw afterwards, and its claim stands.
+    /// Whether it was made good on is decided by the database rather than by how the segment ended: the tracker is
+    /// cleared first, so this reads what the acceptance transaction actually committed. A demand whose row is
+    /// there was accepted, whatever threw or expired afterwards, and its claim stands.
     /// </para>
     /// </remarks>
     private async Task DropWhatTheSegmentStagedAsync(
