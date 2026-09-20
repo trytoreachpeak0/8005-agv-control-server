@@ -103,6 +103,22 @@ $cases += @{
 }
 
 $cases += @{
+    Name  = 'a tree that enumerates to nothing is not a look either'
+    Check = {
+        $watch = New-L2HmiPhraseWatch -Phrase $phrase
+        # A real empty collection, not $null. UIA's FindAll can hand one back while the window is up but
+        # its tree has not rendered, and whether PowerShell unrolls it into $null depends on how the call
+        # site happens to be written. "We looked 31 times and saw nothing" must not be able to mean
+        # "the tree was empty 31 times", and it must not rest on that unrolling either.
+        1..12 | ForEach-Object {
+            $null = Invoke-L2HmiPhraseScan -Watch $watch -NameReader $reader -ElementSource { , @() }
+        }
+        @{ Ok = ($watch.CleanScans -eq 0 -and $watch.FailedScans -eq 12)
+           Actual = "clean $($watch.CleanScans) / failed $($watch.FailedScans)" }
+    }
+}
+
+$cases += @{
     Name  = 'a sighting in a failed round is still a sighting'
     Check = {
         $watch = New-L2HmiPhraseWatch -Phrase $phrase

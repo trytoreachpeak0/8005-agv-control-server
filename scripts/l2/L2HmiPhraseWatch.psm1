@@ -41,6 +41,8 @@ A new watch over one phrase. Fields:
   CleanScans      rounds in which every element was read
   FailedScans     rounds in which the tree could not be enumerated, or an element's name could not be read
   FailedElements  elements whose name could not be read, across all rounds
+  FewestElementsInACleanScan  the smallest number of elements any clean round read; $null before the first
+                  one. A clean round that read only a handful is worth seeing in the criteria table.
   Seen            the distinct element names carrying the phrase, in the order first seen
 #>
 function New-L2HmiPhraseWatch {
@@ -51,6 +53,7 @@ function New-L2HmiPhraseWatch {
         CleanScans     = 0
         FailedScans    = 0
         FailedElements = 0
+        FewestElementsInACleanScan = $null
         Seen           = [System.Collections.Generic.List[string]]::new()
     }
 }
@@ -70,6 +73,7 @@ function Invoke-L2HmiPhraseScan {
     )
 
     $clean = $true
+    $read = 0
     try {
         # The enumeration itself can throw halfway through -- an AutomationElementCollection is read
         # lazily -- so the loop is inside the same try as the call that produced it.
@@ -80,13 +84,30 @@ function Invoke-L2HmiPhraseScan {
             foreach ($element in $elements) {
                 try { $name = [string](& $NameReader $element) }
                 catch { $Watch.FailedElements++; $clean = $false; continue }
+                $read++
                 if ($name.Contains($Watch.Phrase) -and -not $Watch.Seen.Contains($name)) { $Watch.Seen.Add($name) }
             }
         }
     } catch {
         $clean = $false
     }
-    if ($clean) { $Watch.CleanScans++ } else { $Watch.FailedScans++ }
+    # Read nothing at all, and it was not a look -- whatever the reason. A live WPF main window has
+    # dozens of elements, so a round that reads zero of them saw nothing rather than saw an empty screen.
+    #
+    # This line is what makes the guarantee structural instead of accidental. Without it the only thing
+    # standing between "we looked 31 times" and "the tree was empty 31 times" is PowerShell unrolling an
+    # empty collection into $null on the way out of $ElementSource -- which it does for some shapes and
+    # not for others (`, @()` survives as an object), and which the call site can change without
+    # touching anything here. The self-check pins the empty-collection case.
+    if ($read -eq 0) { $clean = $false }
+    if ($clean) {
+        $Watch.CleanScans++
+        if ($null -eq $Watch.FewestElementsInACleanScan -or $read -lt $Watch.FewestElementsInACleanScan) {
+            $Watch.FewestElementsInACleanScan = $read
+        }
+    } else {
+        $Watch.FailedScans++
+    }
     return $clean
 }
 
@@ -129,7 +150,9 @@ function Format-L2HmiPhraseWatch {
     param([Parameter(Mandatory)][object]$Watch)
 
     $seen = if ($Watch.Seen.Count -gt 0) { ': ' + ($Watch.Seen -join ' | ') } else { '' }
-    return "干净扫描 $($Watch.CleanScans) 轮 / 失败 $($Watch.FailedScans) 轮（读失败元素 $($Watch.FailedElements) 个）/ " +
+    $fewest = if ($null -eq $Watch.FewestElementsInACleanScan) { '无干净轮' } else {
+        "最少一轮读到 $($Watch.FewestElementsInACleanScan) 个元素" }
+    return "干净扫描 $($Watch.CleanScans) 轮（$fewest）/ 失败 $($Watch.FailedScans) 轮（读失败元素 $($Watch.FailedElements) 个）/ " +
         "检出 $($Watch.Seen.Count) 次$seen"
 }
 
