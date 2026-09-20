@@ -2,6 +2,7 @@ using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime.Dispatch;
+using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -178,6 +179,103 @@ public sealed class Batch7JourneyAwareSlotLedgerTests
 
         Assert.Empty(await new JourneyAwareSlotLedger(fixture.Context)
             .ReadAvailableSlotsAsync(VehicleWithoutBaseline(), "FRONT", TestContext.Current.CancellationToken));
+    }
+
+    // ---- 判据把两种「装不下」分开（票面第 4 条） ----------------------------------------------
+
+    /// <summary>
+    /// 这一侧装不下，而<b>会话基线本来是够的</b>：差额是这辆车自己的货占掉的，所以是
+    /// <c>SLOT_GROUP_OCCUPIED_BY_OWN_CARGO</c>。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>这一条与下一条只差一处：会话基线。</b>账本的答案两条里都一样（只剩一个空仓，要两个），所以红的时候
+    /// 能直接定位到判据里分这两种情况的那一步，而不是定位到账本。
+    /// </para>
+    /// <para>
+    /// 两个码要人做的事不同：本车的货占着，等这趟卸完就能接；仓位被禁用或本来就没那么多，等多久都没用。
+    /// 批次7-07（control-server#212）判「这一侧装满」只认前一种，所以它们必须可区分。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task AGroupFullOfThisVehiclesOwnCargoIsNotTheSameAsAGroupThatIsTooSmall()
+    {
+        DispatchCandidateEvaluation evaluation = EvaluationWithBaseline([1, 2, 3, 4]);
+
+        Assert.Equal(
+            DispatchReasonCodes.SlotGroupOccupiedByOwnCargo,
+            await EvaluateWithLedgerAsync(evaluation, ledgerAnswer: [1], baskets: 2));
+    }
+
+    /// <summary>会话基线本身就不够：这是仓位被禁用或本来就没那么多，不是本车的货占的。</summary>
+    [Fact]
+    public async Task AGroupWhoseSessionBaselineIsAlreadyTooSmallIsTemporarilyUnavailable()
+    {
+        DispatchCandidateEvaluation evaluation = EvaluationWithBaseline([1]);
+
+        Assert.Equal(
+            DispatchReasonCodes.SlotGroupCapacityTemporarilyUnavailable,
+            await EvaluateWithLedgerAsync(evaluation, ledgerAnswer: [1], baskets: 2));
+    }
+
+    private const int BoxesPerBasket = 4;
+
+    private static Task<string> EvaluateWithLedgerAsync(
+        DispatchCandidateEvaluation evaluation, int[] ledgerAnswer, int baskets) =>
+        new SlotCapacityCriterion(
+                new FixedBoxCount(baskets * BoxesPerBasket),
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<SlotCapacityCriterion>.Instance,
+                new FixedSlotLedger(ledgerAnswer))
+            .EvaluateAsync(evaluation, TestContext.Current.CancellationToken);
+
+    /// <summary>一条候选，车的会话基线由调用方给定，所需分组是 FRONT。</summary>
+    private static DispatchCandidateEvaluation EvaluationWithBaseline(int[] sessionBaseline)
+    {
+        AcceptedDemandSnapshot candidate = new(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001|WIRE_TO_GATE",
+            7,
+            "11111111-1111-4111-8111-111111111111",
+            21,
+            Batch7JourneyFixture.Now,
+            "SERIES-1",
+            "WIRE_TO_GATE",
+            "SUBLOT-001",
+            1,
+            Batch7JourneyFixture.Now.AddMinutes(-10),
+            Batch7JourneyFixture.Now.AddMinutes(-9),
+            "TRACE-1",
+            "COMMIT-1",
+            new LiveMesFieldSet("N1-3", "EQP-01", "STEP-01", Batch7JourneyFixture.Now, "PDFN5×6-8L(12R)"));
+        return new DispatchCandidateEvaluation(
+            candidate,
+            new DispatchRoundFacts(
+                new DemandCatalogSnapshot(candidate.HistoryEpoch, 21, [candidate]),
+                new RiotMapStationCatalogSnapshot(25, Batch7JourneyFixture.Now, new string('c', 64), []),
+                new SingleStationView(new RiotMapStation(210, "关卡")),
+                new HashSet<string>(StringComparer.Ordinal),
+                Batch7JourneyFixture.Now,
+                new VehicleDispatchPolicy(
+                    [], new Dictionary<string, IReadOnlySet<string>>(StringComparer.Ordinal), "TEST-POLICY")),
+            VehicleWith(sessionBaseline))
+        {
+            AreaAssignment = new AreaAssignment("N1-3", "ZONE-TEST", "FRONT"),
+            PackageCapacity = BoxesPerBasket,
+        };
+    }
+
+    private sealed class FixedBoxCount(int boxes) : ISublotBoxCountReader
+    {
+        public Task<int?> ReadMaxBoxCountAsync(string sublot, CancellationToken cancellationToken) =>
+            Task.FromResult<int?>(boxes);
+    }
+
+    /// <summary>账本的答案由用例给定，好让「基线够不够」成为两条用例之间唯一的差别。</summary>
+    private sealed class FixedSlotLedger(int[] answer) : IVehicleSlotLedger
+    {
+        public Task<IReadOnlyList<int>> ReadAvailableSlotsAsync(
+            DispatchVehicleFacts vehicle, string slotPosition, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<int>>(answer);
     }
 
     /// <summary>八个仓位全在会话基线里的那辆车。</summary>
