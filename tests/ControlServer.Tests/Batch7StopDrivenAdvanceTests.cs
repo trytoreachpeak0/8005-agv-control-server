@@ -1,6 +1,7 @@
 using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Host.Runtime;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using static ControlServer.Tests.Batch7StopDrivenAdvanceDriver;
@@ -219,6 +220,141 @@ public sealed class Batch7StopDrivenAdvanceTests
                 lowest > highestOfFirst[messageType],
                 $"{messageType}: 第二趟最低 {lowest} 没有高过第一趟最高 {highestOfFirst[messageType]}");
         }
+    }
+
+    /// <summary>
+    /// 一趟半途终结的旅程，仍然按整趟的份额占掉修订号：同车下一趟的基准，还是上一趟基准加 2／2／3，不因为上一趟少发了
+    /// 几张快照就往回收紧。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>这条钉的是按车计数器的语义，而不是它的值。</b>本票把「下一趟从哪里起步」的来源从「对 JourneyRuntimes 那三列
+    /// 做一次聚合」换成了按车计数器。计数器里存的是<b>本趟的基准</b>，不是「已经发出去的最高一号」——两者在跑完整一趟的
+    /// 旅程上恰好只差一号，怎么读都看不出分别，只有在半途终结的旅程上才分岔：站点期限结束的这一趟只发了取货停靠的三条，
+    /// 「已发出的最高」会比基准低，下一趟的基准就会跟着往回缩。
+    /// </para>
+    /// <para>
+    /// 往回缩本身不会让车载端断会话（号还是在涨），所以它不会被 <c>SNAPSHOT_REVISION_REGRESSION</c> 抓到，也不会被
+    /// 跑完整两趟的那条对照 pin 抓到——<c>two-journeys-one-vehicle</c> 两趟都跑满。这条测试是它唯一的守卫。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task AJourneyEndedHalfwayStillCostsTheVehicleAWholeJourneyOfRevisions()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+        fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set(FirstSublot, 7);
+        JourneyRuntimeRow first = await ArriveAtPickupAsync(fixture, FirstDemandId);
+        await fixture.ProveSlotDoorsClosedAsync();
+        fixture.Clock.Advance(TimeSpan.FromSeconds(10));
+        await TickAndRunAsync(fixture);
+        Assert.Equal("CANCELLED_BY_STATION_TIMEOUT", (await fixture.RuntimeAsync(FirstDemandId)).BlockReasonCode);
+
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.Zero;
+        fixture.Catalog.Set(fixture.Demand(SecondDemandId, SecondSublot, Now.AddMinutes(-9)));
+        fixture.BoxCounts.Set(SecondSublot, 4);
+        await TickAndRunAsync(fixture);
+        JourneyRuntimeRow second = await fixture.RuntimeAsync(SecondDemandId);
+
+        Assert.Equal(first.VehicleBusinessRevision + 2, second.VehicleBusinessRevision);
+        Assert.Equal(first.WorklistRevision + 2, second.WorklistRevision);
+        Assert.Equal(first.PlanRevision + 3, second.PlanRevision);
+    }
+
+    /// <summary>
+    /// 一个停靠上挂两条需求时，推进段照样走得动：清单把两条都列出来，其中一条被终结之后旅程不停在 Blocked，下一轮
+    /// 仍在当前停靠上继续。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>这是给 批次7-06（control-server#211）留的接手点，不是多需求语义本身。</b>今天没有任何路径会产生两条需求的旅程——
+    /// 初始派车只取一条需求，途中追加是 7-06 的事——所以这里的两条需求是直接写进库里的。本票只保证一件事：结构上摆出
+    /// 两条需求时，推进段不会抛、不会把旅程卡死。「第二条需求该怎么推进」（装货阶段、清单升版、锚需求终结后切到谁）
+    /// 是 7-06 要决定的，这条测试不替它决定。
+    /// </para>
+    /// <para>
+    /// 之所以要有这条，是因为本票动的恰好是「从哪里读」：清单与录入请求改成从停靠上未终结的需求集合生成，而锚需求的
+    /// 查找一度写成「从未终结的那一份里找」——那样一条需求终结的那一刻推进段就开始抛
+    /// （<c>JourneyStopCursor.Anchor</c> 的注释记着这件事）。没有这条测试，那个洞要等到 7-06 才会被发现。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task ASecondDemandOnTheSameStopIsListedAndEndingItLeavesTheJourneyRunning()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set(FirstSublot, 4);
+        await TickAndRunAsync(fixture);
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync(FirstDemandId);
+        await AddSecondDemandToJourneyAsync(fixture, runtime);
+
+        fixture.Riot.SetSuccessfulArrival("TO_PICKUP", runtime.PickupUpperId, runtime.PickupStationRiotId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = runtime.PickupStationRiotId };
+        await TickAndRunAsync(fixture);
+
+        JsonElement worklist = await OutboundPayloadAsync(fixture, runtime.WorklistMessageId);
+        Assert.Equal(
+            [FirstDemandId, SecondDemandId],
+            worklist.GetProperty("items").EnumerateArray()
+                .Select(item => item.GetProperty("demandId").GetString())
+                .Order(StringComparer.Ordinal));
+        JsonElement request = await OutboundPayloadAsync(fixture, runtime.SublotRequestMessageId);
+        Assert.Equal(
+            [FirstSublot, SecondSublot],
+            request.GetProperty("expectedSublots").EnumerateArray()
+                .Select(item => item.GetString())
+                .Order(StringComparer.Ordinal));
+
+        // 终结第二条需求。旅程还带着锚需求，所以它既不该关闭，也不该停在 Blocked。
+        AcceptedDemandRow second = await fixture.Context.AcceptedDemands
+            .SingleAsync(row => row.DemandId == SecondDemandId, TestContext.Current.CancellationToken);
+        second.Status = DemandExecutionStatus.Cancelled;
+        await fixture.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        await TickAndRunAsync(fixture);
+
+        JourneyRuntimeRow after = await fixture.RuntimeAsync(FirstDemandId);
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, after.Stage);
+        Assert.Null(after.BlockReasonCode);
+    }
+
+    /// <summary>
+    /// 往这趟旅程的两个停靠上再挂一条需求，直接写库——今天没有任何路径会这么做。
+    /// </summary>
+    private static async Task AddSecondDemandToJourneyAsync(RuntimeFixture fixture, JourneyRuntimeRow runtime)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        AcceptedDemandRow anchor = await fixture.Context.AcceptedDemands.AsNoTracking()
+            .SingleAsync(row => row.DemandId == runtime.DemandId, token);
+        JourneyDemandRow anchorMembership = await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+            .SingleAsync(row => row.JourneyId == runtime.JourneyId && row.DemandId == runtime.DemandId, token);
+
+        // AcceptedDemandRow 不是 record，字段又多，所以整行序列化再读回来当克隆用。
+        AcceptedDemandRow second = JsonSerializer.Deserialize<AcceptedDemandRow>(JsonSerializer.Serialize(anchor))!;
+        second.DemandId = SecondDemandId;
+        second.Sublot = SecondSublot;
+        second.TransportDemandKey = $"{SecondSublot}|WIRE_TO_GATE";
+        second.SeriesId = $"SERIES-{SecondDemandId}";
+        fixture.Context.AcceptedDemands.Add(second);
+
+        fixture.Context.Set<JourneyDemandRow>().Add(new JourneyDemandRow
+        {
+            JourneyId = anchorMembership.JourneyId,
+            DemandId = SecondDemandId,
+            PickupStopId = anchorMembership.PickupStopId,
+            UnloadStopId = anchorMembership.UnloadStopId,
+            ExpectedBasketCount = anchorMembership.ExpectedBasketCount,
+            TargetSlotsJson = anchorMembership.TargetSlotsJson,
+            LoadSlotOperationAttemptId = JourneyPlanBuilder.StableGuid(SecondDemandId, "load-attempt"),
+            LoadCommandMessageId = JourneyPlanBuilder.StableGuid(SecondDemandId, "load-command"),
+            UnloadSlotOperationAttemptId = JourneyPlanBuilder.StableGuid(SecondDemandId, "unload-attempt"),
+            UnloadCommandMessageId = JourneyPlanBuilder.StableGuid(SecondDemandId, "unload-command"),
+            DispatchZone = anchorMembership.DispatchZone,
+            DispatchGeneration = anchorMembership.DispatchGeneration,
+            Status = JourneyDemandStatuses.PendingLoad,
+            AddedAt = anchorMembership.AddedAt.AddSeconds(1)
+        });
+        await fixture.Context.SaveChangesAsync(token);
     }
 
     /// <summary>崩在写到线上的那一刻：报文已经进了发件箱，车却没收到。</summary>
