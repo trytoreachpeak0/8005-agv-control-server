@@ -29,14 +29,14 @@ namespace ControlServer.Host.Runtime;
 /// </remarks>
 internal sealed class JourneyStopCursor
 {
-    private readonly JourneyRuntimeStage _stage;
+    private readonly JourneyRuntimeRow _runtime;
 
     private JourneyStopCursor(
-        JourneyRuntimeStage stage,
+        JourneyRuntimeRow runtime,
         IReadOnlyList<JourneyStopRow> stops,
         IReadOnlyList<JourneyStopDemand> allDemands)
     {
-        _stage = stage;
+        _runtime = runtime;
         Stops = stops;
         AllDemands = allDemands;
         Demands = [.. allDemands.Where(item =>
@@ -63,8 +63,13 @@ internal sealed class JourneyStopCursor
     /// 此刻推进的那个停靠。<see cref="JourneyRuntimeStage.Blocked"/> 与 <see cref="JourneyRuntimeStage.Completed"/> 没有
     /// 「当前停靠」可言，取它会抛——这两个阶段在 <c>AdvanceAsync</c> 里直接返回，只有重放会走到 <see cref="Stops"/>。
     /// </summary>
-    public JourneyStopRow Current => Stops.FirstOrDefault(stop => stop.StopRole == RoleOf(_stage))
-        ?? throw new InvalidDataException($"Journey stage '{_stage}' has no current stop.");
+    /// <remarks>
+    /// <b>每次都从旅程行现读阶段，不是记下加载那一刻的。</b><c>AdvanceAsync</c> 用 <c>goto case</c> 把几个阶段串在一轮里
+    /// 推，同一轮内阶段会往前走；记成快照的话，一条跨停靠的 <c>goto</c>（今天三条都在取货停靠内，但难保以后不加）会
+    /// 静默拿到上一个停靠的 id，报文照发、测试照绿，只有车上收到的东西不对。
+    /// </remarks>
+    public JourneyStopRow Current => Stops.FirstOrDefault(stop => stop.StopRole == RoleOf(_runtime.Stage))
+        ?? throw new InvalidDataException($"Journey stage '{_runtime.Stage}' has no current stop.");
 
     /// <summary>当前停靠上挂着的、还没终结的需求，按加入旅程的先后。</summary>
     public IReadOnlyList<JourneyStopDemand> CurrentStopDemands => AtStop(Current);
@@ -117,7 +122,7 @@ internal sealed class JourneyStopCursor
                 (membership, demand) => new JourneyStopDemand(membership, demand))
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
         return new JourneyStopCursor(
-            runtime.Stage,
+            runtime,
             stops,
             [.. demands
                 .OrderBy(row => row.Membership.AddedAt)
