@@ -879,7 +879,9 @@ public sealed class JourneyRuntimeEngine(
                         // 先前这里直接 SetStage 到下一站的到站阶段，中间<b>什么都没做</b>。全仓只有
                         // :761-762 建后续腿的订单意图，而那两行在离站安全分支里，卸货停靠走不到——于是
                         // 下一轮按一个库里根本不存在的 UpperId 调 SingleAsync，抛 InvalidOperationException，
-                        // 被每车异常隔离吃掉（记 2123），旅程每一轮重复同一条，车停在原地、货还在车上。
+                        // 冒到 JourneyRuntimeWorker 的<b>整轮</b> catch（记 Error 级事件 2002 LogIterationFailed），
+                        // 于是<b>这一轮整个中止</b>：推进循环里排在后面的车不再推进，派车轮次也不跑。每一轮重复。
+                        // （推进段<b>没有</b>逐车隔离——那是派车轮次才有的，事件 2123 属于 DispatchRoundRunner。）
                         // 判据是 LeavingAnUnloadStopAuthorisesTheLegToTheNextStop：它断订单意图在不在，
                         // 不断「推进没抛」——那个异常在测试这一侧什么都看不到。
                         //
