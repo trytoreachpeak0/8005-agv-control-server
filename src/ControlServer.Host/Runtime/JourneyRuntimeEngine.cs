@@ -1004,6 +1004,15 @@ public sealed class JourneyRuntimeEngine(
     {
         JourneyStopRow stop = stops.Current;
         IReadOnlyList<JourneyStopDemand> demands = stops.CurrentStopDemands;
+        if (demands.Count == 0)
+        {
+            // 走不到：一条需求都不剩的旅程在这一轮之前就已经关闭了。写在这里是因为「走不到」与「发出去也无所谓」
+            // 是两回事——录入请求的 expectedSublots 带 minItems: 1，空集合发出去就是一条违反 schema 的报文，
+            // 而车载端拿到一张空清单也不知道该扫什么。宁可在这里响亮地停下。
+            throw new InvalidDataException(
+                $"Stop '{stop.StopId}' has no open demand to publish a worklist for.");
+        }
+
         await publisher.PublishVehicleBusinessStateAsync(
             stop.VehicleBusinessMessageId,
             runtime.AgvId,
