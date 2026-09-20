@@ -85,7 +85,9 @@ public sealed class EnRouteAppendPlanner
         }
 
         EnRouteAppendPlacement? best = null;
-        string? lastRefusal = null;
+        // 每一个插入位被拒的理由都收着，最后挑一个报出去——不是碰上的第一个（批次7-06，control-server#211）。
+        // 为什么不能是第一个，见 MostActionableRefusal。
+        HashSet<string> refusals = new(StringComparer.Ordinal);
         // 插入位有两种：并进一个「同站同角色」的既有停靠（车本来就要去那一站，清单多一项），或者在两个停靠之间
         // 新开一个。两种都只在「当前下一站之后」，REQ-0196 因此对两种一样成立。
         //
@@ -136,28 +138,28 @@ public sealed class EnRouteAppendPlanner
                 // 开放的到了 9 个，落库共 10 个停靠，发出去就是 10 条腿，出站 schema 门禁与车载端各拒一次。
                 if (completed.Count + inserted.Count > MaximumLegs)
                 {
-                    lastRefusal ??= DispatchReasonCodes.EnRouteAppendPlanLimitReached;
+                    refusals.Add(DispatchReasonCodes.EnRouteAppendPlanLimitReached);
                     continue;
                 }
 
                 // 分区连续（REQ-0195）：同一计划里各分区的需求形成连续区段。A→A→B→B 可以，A→B→A 不行。
                 if (!ZonesAreContiguous(inserted))
                 {
-                    lastRefusal ??= DispatchReasonCodes.EnRouteAppendBreaksZoneContiguity;
+                    refusals.Add(DispatchReasonCodes.EnRouteAppendBreaksZoneContiguity);
                     continue;
                 }
 
                 // 一站最多 8 项：只有并入才让某个停靠的清单变长，新开的停靠恒为一项。
                 if (itemsByStop.Values.Any(items => items > MaximumWorklistItems))
                 {
-                    lastRefusal ??= DispatchReasonCodes.EnRouteAppendPlanLimitReached;
+                    refusals.Add(DispatchReasonCodes.EnRouteAppendPlanLimitReached);
                     continue;
                 }
 
                 long newCost = PathCost(inserted, ahead.VehicleStationRiotId, cost);
                 if (newCost < 0)
                 {
-                    lastRefusal ??= DispatchReasonCodes.EnRouteAppendDelayUncomputable;
+                    refusals.Add(DispatchReasonCodes.EnRouteAppendDelayUncomputable);
                     continue;
                 }
 
@@ -166,7 +168,7 @@ public sealed class EnRouteAppendPlanner
                 string? gate = DelayGate(ahead, inserted, zoneParameters, cost);
                 if (gate is not null)
                 {
-                    lastRefusal ??= gate;
+                    refusals.Add(gate);
                     continue;
                 }
 
@@ -174,7 +176,7 @@ public sealed class EnRouteAppendPlanner
                 // 新需求自己也受本区上限约束：它的增量就是整条计划的增量（计划锚，自插入位的前一站起算）。
                 if (marginal > allowance)
                 {
-                    lastRefusal ??= DispatchReasonCodes.EnRouteAppendDelayGateExceeded;
+                    refusals.Add(DispatchReasonCodes.EnRouteAppendDelayGateExceeded);
                     continue;
                 }
 
@@ -199,8 +201,58 @@ public sealed class EnRouteAppendPlanner
 
         return best is not null
             ? EnRouteAppendDecision.Placed(best)
-            : EnRouteAppendDecision.Refused(lastRefusal ?? DispatchReasonCodes.EnRouteAppendNoInsertionPoint);
+            : EnRouteAppendDecision.Refused(MostActionableRefusal(refusals));
     }
+
+    /// <summary>
+    /// 这一轮挡住全部插入位的那些理由里，报给操作员最有用的那一个。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>报第一个碰上的理由会指错方向。</b>一次追加要把几十个插入位各判一遍，每个位置可能栽在不同的门上；
+    /// 循环里分区连续判在延迟门禁之前，所以「有一个位置分区不连续」几乎总是第一个出现的理由——而真正让这条
+    /// 需求进不来的，可能是每个位置都超了那一区的延迟上限。现场据此去查分区编排，要改的却是一个参数。
+    /// </para>
+    /// <para>
+    /// <b>排序的依据是「看到这个码的人能据此做什么」，从能做最多的排到最少的。</b>这是一个产品判断，不是
+    /// 技术上的必然，所以依据写在这里，好让它能被反驳：
+    /// </para>
+    /// <list type="number">
+    /// <item><c>NOT_CONFIGURED</c>：这一区根本没配上限。去配一个，下一轮就放行——最可操作的一条。
+    /// （它在循环之前就返回了，不会走到这里；列在这里是为了让这张表本身是完整的。）</item>
+    /// <item><c>DELAY_GATE_EXCEEDED</c>：超了那一区的上限。调大那个参数，或者等这趟旅程短一些。
+    /// <b>有一个明确的旋钮</b>。</item>
+    /// <item><c>DELAY_UNCOMPUTABLE</c>：路网算不出代价。去看路网快照新不新、那两站通不通——
+    /// 有地方可查，只是不在这个子系统里。</item>
+    /// <item><c>PLAN_LIMIT_REACHED</c>：协议的九腿八项满了。没有旋钮，等这趟旅程卸掉几条需求。</item>
+    /// <item><c>BREAKS_ZONE_CONTIGUITY</c>：每个合法位置都会让某个分区断开。同样没有旋钮，而且它多半
+    /// 只是排除了一部分位置——单独看到它，说明剩下的位置是被别的理由挡的。</item>
+    /// <item><c>NO_INSERTION_POINT</c>：兜底，一条信息都没有。</item>
+    /// </list>
+    /// </remarks>
+    private static string MostActionableRefusal(HashSet<string> refusals)
+    {
+        foreach (string code in RefusalsByHowMuchTheyTellTheOperator)
+        {
+            if (refusals.Contains(code))
+            {
+                return code;
+            }
+        }
+
+        return DispatchReasonCodes.EnRouteAppendNoInsertionPoint;
+    }
+
+    /// <summary>见 <see cref="MostActionableRefusal"/>：从「能据此做最多」排到「一条信息都没有」。</summary>
+    private static readonly string[] RefusalsByHowMuchTheyTellTheOperator =
+    [
+        DispatchReasonCodes.EnRouteAppendNotConfigured,
+        DispatchReasonCodes.EnRouteAppendDelayGateExceeded,
+        DispatchReasonCodes.EnRouteAppendDelayUncomputable,
+        DispatchReasonCodes.EnRouteAppendPlanLimitReached,
+        DispatchReasonCodes.EnRouteAppendBreaksZoneContiguity,
+        DispatchReasonCodes.EnRouteAppendNoInsertionPoint,
+    ];
 
     /// <summary>
     /// <paramref name="at"/> 这个位置上的既有停靠，如果它与 <paramref name="candidate"/> 同站同角色而且不是当前下一站，

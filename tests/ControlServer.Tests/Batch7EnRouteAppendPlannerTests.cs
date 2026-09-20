@@ -323,6 +323,42 @@ public sealed class Batch7EnRouteAppendPlannerTests
         Assert.Equal(DispatchReasonCodes.EnRouteAppendNoInsertionPoint, decision.RefusalReasonCode);
     }
 
+    // ---- 拒绝的原因码：报最有用的那一个，不是碰上的第一个 ----------------------------------------
+
+    /// <summary>
+    /// 一次追加里几个插入位栽在不同的门上时，报出去的是<b>操作员据此能做最多</b>的那一个
+    /// （批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 场景：八个既有停靠（最后一个是卸货），新需求的取货要绕一段路、卸货能并进末尾那个卸货停靠。
+    /// </para>
+    /// <list type="bullet">
+    /// <item>两个停靠都新开的那些位置 → 十条腿，<c>PLAN_LIMIT_REACHED</c>；</item>
+    /// <item>卸货并入、只新开取货的那些位置 → 九条腿放行，却超了本区 1000 毫米的上限，
+    /// <c>DELAY_GATE_EXCEEDED</c>。</item>
+    /// </list>
+    /// <para>
+    /// <b>循环先撞上的是腿数</b>（<c>pickupAt=1, unloadAt=1</c> 是第一个组合，两个都新开），所以「碰上的
+    /// 第一个理由」会报 <c>PLAN_LIMIT_REACHED</c>——现场据此去等停靠减少，而真正的旋钮是那一区的延迟上限。
+    /// </para>
+    /// <para>
+    /// <b>这条用例是这个改动唯一的判据</b>：改回报第一个碰上的理由，其余二十一条照样绿——它们每一条都只
+    /// 触发一种理由，分辨不出先后。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void TheRefusalReportedIsTheOneTheOperatorCanActOn()
+    {
+        EnRouteAppendDecision decision = EnRouteAppendPlanner.Plan(
+            PlanOf(vehicleAt: 0, ChainEndingInAnUnload(8)),
+            CandidateOf(Pickup("new-p", 9, ZoneA), Unload("new-u", 24, ZoneA), ZoneA),
+            Zones((ZoneA, 1000)),
+            Distance);
+
+        Assert.Equal(DispatchReasonCodes.EnRouteAppendDelayGateExceeded, decision.RefusalReasonCode);
+    }
+
     // ---- 协议上限：九腿八项 --------------------------------------------------------------------
 
     /// <summary>
