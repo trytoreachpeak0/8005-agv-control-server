@@ -1,0 +1,15 @@
+diff --git a/src/ControlServer.Host/Runtime/JourneyPlanBuilder.cs b/src/ControlServer.Host/Runtime/JourneyPlanBuilder.cs
+index e6e5755d..5b63203b 100644
+--- a/src/ControlServer.Host/Runtime/JourneyPlanBuilder.cs
++++ b/src/ControlServer.Host/Runtime/JourneyPlanBuilder.cs
+@@ -74,7 +74,9 @@ public sealed class JourneyPlanBuilder(JourneyRuntimeOptions options)
+         };
+         return JourneyRouteDecision.Resolved(new ResolvedJourneyRoute(
+             dispatchZone,
+-            MapStationResolver.BuildRouteEvidenceId(map, endpoints, area, eqp),
++            // DEFECT (control-server#203 item 2 red evidence, local only): the two ends are
++            // recorded correctly and only the id they are frozen under is hashed the other way round.
++            MapStationResolver.BuildRouteEvidenceId(map, new RouteEndpoints { Origin = endpoints.Destination, Destination = endpoints.Origin }, area, eqp),
+             endpoints.Origin.StationName,
+             endpoints.Origin.StationId,
+             endpoints.Destination.StationName,
