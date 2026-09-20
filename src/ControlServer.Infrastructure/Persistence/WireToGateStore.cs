@@ -626,6 +626,24 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
                 $"Appended demand {snapshot.DemandId} carries task type station versions but no station catalog revision."));
         }
 
+        // 这趟旅程此刻还接不接得下追加，在事务里再判一次（批次7-06，control-server#211）。
+        //
+        // <b>这不是第二道保险，这是那条路唯一的守卫。</b>轮次在开头读到旅程不是 Blocked，而从那一读到这一写
+        // 之间，车载端的一条入站消息可以把它置成 Blocked（<c>OnboardRecoveryCoordinator</c>，另一个连接、
+        // 另一个线程）——轮次那一侧在它自己的时刻是对的，所以挡不住这个竞态。判据放在事务外也挡不住：
+        // BEGIN IMMEDIATE 之前读到的仍是旧快照。
+        //
+        // 放行的代价不是少接一条活：需求会写进 AcceptedDemands 从此不再是候选，绑死在一辆等人介入的车上，
+        // 而车上那张计划不会更新（<c>RefreshUpcomingStopPlanAsync</c> 对 Blocked 直接返回）。Completed 一并判，
+        // 它是同一个竞态的另一头——旅程在这中间跑完了。
+        JourneyRuntimeRow journey = await dbContext.JourneyRuntimes
+            .SingleAsync(row => row.JourneyId == plan.JourneyId, cancellationToken).ConfigureAwait(false);
+        if (journey.Stage is JourneyRuntimeStage.Blocked or JourneyRuntimeStage.Completed)
+        {
+            throw new BusinessIdentityConflictException(
+                $"Journey '{plan.JourneyId}' is {journey.Stage} and cannot take an appended demand.");
+        }
+
         if (demand.AreaAssignmentVersion is long areaAssignmentVersion)
         {
             await FreezeAreaAssignmentAsync(snapshot, areaAssignmentVersion, cancellationToken).ConfigureAwait(false);

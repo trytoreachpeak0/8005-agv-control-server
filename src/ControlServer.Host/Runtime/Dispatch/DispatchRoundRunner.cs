@@ -754,17 +754,10 @@ public sealed class DispatchRoundRunner(
                 .ToArrayAsync(cancellationToken).ConfigureAwait(false))
             .OrderBy(row => row.CreatedAt)
             .First();
-        // 这里抛，而不是像 ReadEnRoutePlanAsync 那样把 Blocked 排除掉（批次7-06，control-server#211）。
-        //
-        // <b>同一个条件、两处不同的处置，因为它们在决策链上的位置不同。</b>那一处答的是「能不能追加」，
-        // Blocked 在那里被排除是它自己该知道的事；走到这里说明前面已经判定要追加了，排除掉只会让上面的
-        // First() 在空集上抛一个读不懂的异常。显式抛出来说的是实情：前面的判断和这里的事实矛盾。
-        if (runtime.Stage == JourneyRuntimeStage.Blocked)
-        {
-            throw new BusinessIdentityConflictException(
-                $"Journey '{runtime.JourneyId}' is blocked and cannot take an appended demand.");
-        }
-
+        // 这里<b>不</b>判旅程还接不接得下追加，那件事在 WireToGateStore.StageAndCommitAppendAsync 的事务里判
+        // （批次7-06，control-server#211）。在这里判会挡住一部分、放过另一部分：从这一读到那一写之间，
+        // 车载端的一条入站消息仍然可以把旅程置成 Blocked，而这里已经判完了。一个挡得住一半的判据比没有更糟，
+        // 它会让读代码的人以为这条路已经被看住了。
         JourneyAppendPlan append = new(
             runtime.JourneyId,
             demandId,

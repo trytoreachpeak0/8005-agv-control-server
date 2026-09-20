@@ -99,6 +99,56 @@ public sealed class Batch7JourneyAppendPersistenceTests
     }
 
     /// <summary>
+    /// 旅程在轮次判定与落库之间变成 Blocked：这一次追加被拒，库里一个字都没变
+    /// （批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>这不是一道多余的保险，这是那条路唯一的守卫。</b>派车轮次在开头读到旅程不是 Blocked，而从那一读到
+    /// 这一写之间，车载端的一条入站消息可以把它置成 Blocked（<c>OnboardRecoveryCoordinator</c>，另一个连接、
+    /// 另一个线程）。轮次那一侧在它自己的时刻是对的，所以挡不住这个竞态；判据放在事务外也挡不住，
+    /// <c>BEGIN IMMEDIATE</c> 之前读到的仍是旧快照。
+    /// </para>
+    /// <para>
+    /// 放行的代价不是少接一条活：需求写进 <c>AcceptedDemands</c> 之后就不再是候选，绑死在一辆等人介入的车上，
+    /// 而车上那张计划不会更新——<c>RefreshUpcomingStopPlanAsync</c> 对 Blocked 直接返回。操作员看到的是一条
+    /// 派出去了、却永远不动的需求。
+    /// </para>
+    /// <para>
+    /// 判据不是「抛了异常」：那太容易满足。判据与本类其余两条相同——<b>库里一个字都没变</b>。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task AnAppendOntoAJourneyBlockedSinceTheRoundReadItIsRefusedAndChangesNothing()
+    {
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        JourneyExecutionPlan first = await Batch7JourneyFixture.AcceptAsync(
+            fixture.Context, FirstDemandId, AgvId, VehicleKey, Batch7JourneyFixture.Now);
+        string journeyId = JourneyIdentity.ForAnchorDemand(FirstDemandId);
+        await BlockAsync(fixture, journeyId);
+        Snapshot before = await ReadAsync(fixture, journeyId);
+
+        await Assert.ThrowsAsync<BusinessIdentityConflictException>(
+            () => new WireToGateStore(fixture.NewContext()).AppendToJourneyAsync(
+                Batch7JourneyFixture.Snapshot(SecondDemandId, Batch7JourneyFixture.Now.AddMinutes(1)),
+                AppendPlan(first, journeyId),
+                TestContext.Current.CancellationToken));
+
+        Assert.Equal(before, await ReadAsync(fixture, journeyId));
+    }
+
+    /// <summary>把旅程置成 Blocked，像一条报了需要恢复的装货结果那样。</summary>
+    private static async Task BlockAsync(Batch7JourneyFixture fixture, string journeyId)
+    {
+        ControlServerDbContext context = fixture.NewContext();
+        JourneyRuntimeRow runtime = await context.JourneyRuntimes.SingleAsync(
+            row => row.JourneyId == journeyId, TestContext.Current.CancellationToken);
+        runtime.Stage = JourneyRuntimeStage.Blocked;
+        runtime.SetBlockReason("LOAD_RESULT_REQUIRES_RECOVERY", Batch7JourneyFixture.Now);
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>
     /// 追加的插入位：新取货停靠排在当前下一站之后（序位 2），既有的卸货停靠被挤到 3；新需求的卸货并进它。
     /// </summary>
     private static JourneyAppendPlan AppendPlan(JourneyExecutionPlan first, string journeyId) =>
