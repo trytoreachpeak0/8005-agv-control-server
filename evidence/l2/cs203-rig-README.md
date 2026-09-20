@@ -224,3 +224,54 @@ try { $last = & $Probe } catch { $last = $null }     # L2.psm1:24
 **所以它被走到的那一天，本身就是一个需要解释的异常**。它的价值不在防止误判——今天没有误判可防——
 而在**那一天到来时，证据里有一句话能指路**：`Demand X has 2 non-TO_PICKUP order intents (…)`，
 而不是一个 120 秒的超时，加一次真装置机时去查它是什么意思。
+
+## 重跑（`a34495b6`）：两个绿场景，覆盖什么说清楚
+
+改动之后重跑了两个绿场景，**各 9 条判据、零红**。
+
+| 行 | 值 |
+| --- | --- |
+| 服务端 | `a34495b609bb9869a63adb9fbd69858212666932` |
+| 车载端 | `08569c4f2f83a8f13b734d161055351c2621537a`，跑前 `ls-remote` 核过**等于 `origin/w2g/fp-v2-impl` 顶端** |
+| 模拟器 | `fb5f7c593742bf98bc3957b8729a38aad5321f28`，同上**等于 `origin/main` 顶端** |
+| 这遍真跑了 | 台账由 52 行涨到 56 行，两次运行各一对配对的 `start`／`end`；机时 3m05s + 55.7s |
+
+**它覆盖的是**：探针改走 `Get-L2SecondLegIntents` 那条跨模块解析路径，以及等待成功之后新增的那次检查调用
+——都在成功路径上，每个场景都会走到。**它覆盖不了失败路径**（`catch` 分支），绿场景到不了那里；那条的
+判别力来自 `Test-L2SecondLegIntentWait.ps1` 的八条判据与三处反向验证。
+
+### 这一轮让条目 6 从「有用」变成「必需」
+
+`assertions.json` 的 `identity` 里**只有 `controlServerCommit`，没有两个对端**。所以上表第二、三行
+**只能**从台账那两行 `start` 读（字段 `controlServer`／`onboardHmi`／`slotsSimulator`）。台账原本是为
+「这遍真跑了」写的，这一轮它成了三端核对唯一的出处——**不是设计时想到的用途，是撞上的**。
+
+### 读台账时撞回一个老问题，记在这里
+
+第一次读台账用的是 Bash→python，报 `FileNotFoundError`——**而文件就在那里**，换 Bash→pwsh 直接读就有了
+（`Test-Path` 为 True，56 行）。**这就是取红证据那晚量到的进程层可见性差异**，那次撞的是写这一侧，
+这次是读这一侧。
+
+**值得记的是它的失败样子：`FileNotFoundError` 与「文件真的不存在」一模一样。** 所以 `%LOCALAPPDATA%` 下
+的东西报「不存在」时，先换 pwsh 读一遍再下结论。
+
+## 验收标准里两项「贴进 PR」的东西
+
+**台账并发自检**（两个进程各追加 300 行）：
+
+```
+ok    two processes appending at once lose no line and break no line -> 600 line(s) of 600, 0 unparsable, 0 malformed, A=300 B=300, sequences intact=True
+ok    a line carrying a line break is refused rather than written -> threw: A ledger line cannot contain a line break; one record is one line. / 0 line(s) on disk
+ok    the default path is under LOCALAPPDATA and outside any checkout -> default 'C:\Users\szy\AppData\Local\8005-l2\rig-runs.log' / override honoured=True
+L2RunLedger self-check: all 3 cases as expected.
+```
+
+**`Test-G3RunnerClaims.ps1`**（1.0 秒，退出 0）：
+
+```
+JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS: 114 reported, run-wide 8; FP-IS-01 10, FP-IS-02 34, FP-IS-03 12, FP-IS-07 32, FP-IS-10 9, FP-IS-11 9
+G3_CLAIMS_OK: every runner's reported names are attributed exactly once, and every attributed name is reported.
+```
+
+`FP-IS-10` 9 条、`FP-IS-11` 9 条，正是本票这两个场景。**这一条我一开始没跑**——它是按「票面交付要求逐条
+对一遍」这个动作查出来的，不是想起来的。
