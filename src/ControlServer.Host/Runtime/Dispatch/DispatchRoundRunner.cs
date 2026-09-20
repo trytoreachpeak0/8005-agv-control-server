@@ -200,9 +200,14 @@ public sealed class DispatchRoundRunner(
             {
                 LogVehicleRoundBudgetExhausted(
                     logger, vehicle.AgvId, (int)budget.TotalMilliseconds, null);
-                // No claim is withdrawn here, unlike the catch below: control-server#231 was not to change what
-                // this path does, and the same hole is in it -- see that ticket's follow-up note.
-                await DropWhatTheSegmentStagedAsync(backlogByDemandId, cancellationToken).ConfigureAwait(false);
+                // The same withdrawal as the catch below, through the same method (control-server#239): a budget
+                // that fires between a claim and its acceptance leaves the round carrying a demand nothing took,
+                // and the round-end hook would clear that demand's structural block on the strength of it. Which
+                // claims were made good on is read from the database there, not from the way the segment ended --
+                // a budget can just as well fire the moment after the acceptance committed.
+                await DropWhatTheSegmentStagedAsync(
+                    backlogByDemandId, claimedThisSegment, acceptedDemandIds, cancellationToken)
+                    .ConfigureAwait(false);
             }
             // A vehicle whose own reads fail -- an unreachable RIoT, an Onboard fact that cannot be read, an
             // evidence write that ran out its own five-second timeout -- is skipped exactly as a
@@ -300,15 +305,15 @@ public sealed class DispatchRoundRunner(
     /// <para>
     /// <b>It also takes back a claim the segment never made good on.</b> A vehicle claims its pick in the round's
     /// live accepted set before calling intake, so that the vehicles behind it stop considering that demand
-    /// whatever intake then reports. When the segment throws instead of reporting, that claim can be a lie: the
-    /// round would carry a demand it never accepted, and the round-end hook clears a structural dispatch block for
-    /// every demand the round says was accepted -- so a block standing against a demand nothing took would be
-    /// cleared, and raised again as new the next round.
+    /// whatever intake then reports. When the segment ends early instead of reporting -- throwing, or its budget
+    /// running out -- that claim can be a lie: the round would carry a demand it never accepted, and the round-end
+    /// hook clears a structural dispatch block for every demand the round says was accepted -- so a block standing
+    /// against a demand nothing took would be cleared, and raised again as new the next round.
     /// </para>
     /// <para>
-    /// Whether it was made good on is decided by the database rather than by where the exception came from: the
-    /// tracker is cleared first, so this reads what the acceptance transaction actually committed. A demand whose
-    /// row is there was accepted, whatever threw afterwards, and its claim stands.
+    /// Whether it was made good on is decided by the database rather than by how the segment ended: the tracker is
+    /// cleared first, so this reads what the acceptance transaction actually committed. A demand whose row is
+    /// there was accepted, whatever threw or expired afterwards, and its claim stands.
     /// </para>
     /// </remarks>
     private async Task DropWhatTheSegmentStagedAsync(
