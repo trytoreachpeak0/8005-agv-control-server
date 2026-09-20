@@ -385,19 +385,26 @@ public sealed class DispatchRoundRunner(
 
         JourneyStopCursor stops = await JourneyStopCursor
             .LoadAsync(dbContext, runtime, cancellationToken).ConfigureAwait(false);
-        IReadOnlyList<JourneyStopRow> open = stops.OpenStops;
-        if (open.Count == 0)
+        // 整条旅程的停靠都交给规划器，已完成的也在内（批次7-06，control-server#211）。序位是整条旅程的属性，
+        // 而这之前只传未完成的那些，于是插入之后的重排从 1 重新数，与已经完成的停靠撞号。规划器自己把已完成的
+        // 那一段当作不可移动的前缀：它们不参与代价、分区与上限，只占住自己的号。
+        IReadOnlyList<JourneyStopRow> all = stops.Stops;
+        if (stops.OpenStops.Count == 0)
         {
             return null;
         }
 
+        // 取当前停靠自己的下标，而不是数已完成的个数：作废（Removed）的停靠也不开着、也不能移动，
+        // 数完成数会把它算漏，前缀就会短一格。
+        int currentNextStopIndex = all.ToList().IndexOf(stops.Current);
+
         return new EnRouteVehiclePlan(
-            [.. open.Select(stop => new EnRouteStop(
+            [.. all.Select(stop => new EnRouteStop(
                 stop.StopId, stop.StationId, stop.StationRiotId, stop.DispatchZone, stop.StopRole))],
             vehicleStation,
-            // 当前下一站就是列表里第一个未完成的停靠（REQ-0196）。
-            CurrentNextStopIndex: 0,
-            open.ToDictionary(
+            // 当前下一站是第一个还没完成的停靠（REQ-0196）。
+            currentNextStopIndex,
+            all.ToDictionary(
                 stop => stop.StopId,
                 stop => stops.AllAtStop(stop).Count(item => !JourneyStopCursor.IsDoneAt(stop, item)),
                 StringComparer.Ordinal));

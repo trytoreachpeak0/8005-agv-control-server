@@ -360,14 +360,22 @@ public sealed class JourneyRuntimeEngine(
         FleetVehicle[] free = roster.Vehicles
             .Where(vehicle => !busy.Contains(vehicle.AgvId))
             .ToArray();
+        // Blocked 的旅程占着车，却接不了追加：它等的是人介入，在途资格链无条件拒绝它。所以它让车算 busy
+        // （不能当空闲车派），但不进 underWay（不值得当可追加的车去问）。这个区分不是优化：underWay 的
+        // 含义是「可以考虑给它追加的车」，把一辆接不了追加的车放进去，会让轮次在一个本就没有活可派的局面下
+        // 照样把整张候选表判一遍。
+        HashSet<string> blocked = active
+            .Where(row => row.Stage == JourneyRuntimeStage.Blocked)
+            .Select(row => row.AgvId)
+            .ToHashSet(StringComparer.Ordinal);
         FleetVehicle[] underWay = roster.Vehicles
-            .Where(vehicle => busy.Contains(vehicle.AgvId))
+            .Where(vehicle => busy.Contains(vehicle.AgvId) && !blocked.Contains(vehicle.AgvId))
             .ToArray();
-        // 一辆车都没有才退（批次7-06，control-server#211）。在这之前判的是「没有空闲车」——那时在途车走一条
-        // 一律拒绝的占位路径，问它等于白问，所以提前退出是对的。本票让在途车与空闲车在同一张候选表上竞争
-        // （REQ-0205），「全车队都在途」于是成了一种正常的、有活可派的局面：单车现场里它甚至是常态——
-        // 车一接单就不再空闲，此后到卸完货为止的每一条新需求都只能靠追加接。按空闲车判会让这些需求一条都
-        // 看不见，而这正是同区追加那条 L2 场景第一次跑出来的样子。
+        // 空闲车与可追加的在途车都没有，才退（批次7-06，control-server#211）。在这之前判的是「没有空闲车」——
+        // 那时在途车走一条一律拒绝的占位路径，问它等于白问，所以提前退出是对的。本票让在途车与空闲车在同一张
+        // 候选表上竞争（REQ-0205），「全车队都在途」于是成了一种正常的、有活可派的局面：单车现场里它甚至是
+        // 常态——车一接单就不再空闲，此后到卸完货为止的每一条新需求都只能靠追加接。按空闲车判会让这些需求一条
+        // 都看不见，而这正是同区追加那条 L2 场景第一次跑出来的样子。
         if (free.Length == 0 && underWay.Length == 0)
         {
             return;
@@ -513,14 +521,16 @@ public sealed class JourneyRuntimeEngine(
         switch (runtime.Stage)
         {
             case JourneyRuntimeStage.AwaitingPickupArrival:
+                // 与关卡侧对称，取这个停靠自己的单号（批次7-06）：旅程行上的 PickupUpperId 是锚需求那一段的，
+                // 第二个取货停靠用它会去确认一段早已走完的移动。
                 if (!await EnsureMovementConfirmedAsync(
-                        runtime, runtime.PickupUpperId, "PICKUP", cancellationToken).ConfigureAwait(false))
+                        runtime, stops.Current.UpperId, "PICKUP", cancellationToken).ConfigureAwait(false))
                 {
                     return;
                 }
                 await PublishPickupDispatchPlanOnceAsync(runtime, stops, session, cancellationToken).ConfigureAwait(false);
                 ArrivalCheck pickupArrival = await CheckArrivalAsync(
-                    runtime, "TO_PICKUP", session, cancellationToken).ConfigureAwait(false);
+                    runtime, stops.Current, "TO_PICKUP", session, cancellationToken).ConfigureAwait(false);
                 if (!pickupArrival.Trusted)
                 {
                     if (await ObserveOrderFailureAsync(runtime, pickupArrival, cancellationToken)
@@ -789,7 +799,7 @@ public sealed class JourneyRuntimeEngine(
                     return;
                 }
                 ArrivalCheck gateArrival = await CheckArrivalAsync(
-                    runtime, "TO_GATE", session, cancellationToken).ConfigureAwait(false);
+                    runtime, stops.Current, "TO_GATE", session, cancellationToken).ConfigureAwait(false);
                 if (!gateArrival.Trusted)
                 {
                     if (await ObserveOrderFailureAsync(runtime, gateArrival, cancellationToken)
@@ -913,18 +923,33 @@ public sealed class JourneyRuntimeEngine(
         OrderIntentRow Intent,
         RiotOrderObservation Order);
 
+    /// <param name="stop">车正驶向的那个停靠——这一次到站判定的全部依据（批次7-06，control-server#211）。</param>
+    /// <remarks>
+    /// <para>
+    /// <b>按 <c>MovementLegId</c> 取意图，因为那是主键。</b>这之前按 <c>(DemandId, Purpose)</c> 取，而那一对
+    /// 只在「一趟旅程两个停靠」时碰巧唯一：<see cref="JourneyPlanBuilder.LegIntent"/> 给每一段后续腿都建
+    /// <c>Purpose = "TO_GATE"</c>，所以第三个停靠一出现就有两行同键，<c>SingleAsync</c> 每一轮都抛。
+    /// 碰巧唯一的键，加一个停靠就不唯一；主键加多少个停靠都唯一。
+    /// </para>
+    /// <para>
+    /// 目标站同理取自停靠而不是旅程行。旅程行上的 <c>PickupStationRiotId</c> 与 <c>GateStationRiotId</c> 只描述
+    /// 锚需求那两个站，车开到第二个取货站之后它们指的还是第一个——到站判定因此永远不成立，而表现出来不是报错，
+    /// 是操作员在第二个站扫了码、服务端收下了、什么都不发生。
+    /// </para>
+    /// </remarks>
     private async Task<ArrivalCheck> CheckArrivalAsync(
         JourneyRuntimeRow runtime,
+        JourneyStopRow stop,
         string purpose,
         SessionRecoveryRow session,
         CancellationToken cancellationToken)
     {
         OrderIntentRow intent = await dbContext.OrderIntents.SingleAsync(
-            row => row.DemandId == runtime.DemandId && row.Purpose == purpose,
+            row => row.MovementLegId == stop.MovementLegId,
             cancellationToken).ConfigureAwait(false);
         RiotOrderObservation order = await vehicleFacts.ReconcileByUpperIdAsync(intent.UpperId, cancellationToken)
             .ConfigureAwait(false);
-        int targetStation = purpose == "TO_PICKUP" ? runtime.PickupStationRiotId : runtime.GateStationRiotId;
+        int targetStation = stop.StationRiotId;
         bool exactOrder = order.Kind == RiotOrderObservationKind.Terminal &&
                           order.OrderState == RiotOrderState.Success &&
                           !string.IsNullOrWhiteSpace(order.OrderId) &&
@@ -1001,10 +1026,24 @@ public sealed class JourneyRuntimeEngine(
             .Where(row => row.DemandId == runtime.DemandId)
             .Select(row => row.TransportDemandKey)
             .SingleAsync(cancellationToken).ConfigureAwait(false);
-        FaultedVehicleCargoFacts? cargo = arrival.Purpose == "TO_GATE"
+        // 车上有没有货，问的是事实本身（批次7-06，control-server#211）。这之前判的是
+        // arrival.Purpose == "TO_GATE"，而 JourneyPlanBuilder.LegIntent 给每一段后续腿都建 "TO_GATE"，
+        // 所以那个判断真正表达的是「这不是第一段腿」——在只有取货和关卡两个停靠的旅程里，它与「装过货」
+        // 恰好等价；多一个取货停靠就不再等价，而这条链通向故障货物处置，等价关系断了不会有东西变红。
+        bool carryingCargo = await dbContext.Set<JourneyDemandRow>()
+            .AnyAsync(
+                row => row.JourneyId == runtime.JourneyId && row.Status == JourneyDemandStatuses.Loaded,
+                cancellationToken).ConfigureAwait(false);
+        // 腿取这一次失败的那一段，不取旅程行上锚需求的关卡腿。
+        //
+        // 需求与 transportDemandKey 仍然取锚需求，而多停靠下车上可能同时载着几条需求的货：这里说不出
+        // 「是哪一条的货出了事」。本票不改它——判断哪条需求的货需要按停靠归属去认，那是移除停靠与故障货物
+        // 归属一起要解决的事（批次7-10）。依赖的前提写在这里：**只要一趟旅程可能载多于一条需求的货，
+        // 这两个字段就只是「这趟旅程的锚」，不是「出事的那一批货」**。
+        FaultedVehicleCargoFacts? cargo = carryingCargo
             ? new FaultedVehicleCargoFacts(
                 runtime.DemandId,
-                runtime.GateMovementLegId,
+                arrival.Intent.MovementLegId,
                 transportDemandKey,
                 LoadingWitnessed: true,
                 CargoStateKnown: true)

@@ -712,16 +712,36 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
     /// <summary>把插入之后的序位写到每个停靠上；序位可变，身份是 <c>StopId</c>。</summary>
     private async Task ApplyResequencingAsync(JourneyAppendPlan plan, CancellationToken cancellationToken)
     {
-        JourneyStopRow[] stored = await dbContext.Set<JourneyStopRow>()
-            .Where(row => row.JourneyId == plan.JourneyId)
-            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        // 本次追加新开的停靠此刻还在变更跟踪器里、没有落库，而它也要被重排覆盖，所以这里把库里的和本地新加的
+        // 并在一起看。只查数据库会把新停靠判成「重排提到了一个不存在的停靠」，把正常路径打挂。
+        JourneyStopRow[] stored = [.. (await dbContext.Set<JourneyStopRow>()
+                .Where(row => row.JourneyId == plan.JourneyId)
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false))
+            .Concat(dbContext.Set<JourneyStopRow>().Local.Where(row => row.JourneyId == plan.JourneyId))
+            .DistinctBy(row => row.StopId, StringComparer.Ordinal)];
+
+        // 重排必须覆盖这趟旅程的每一个既有停靠（批次7-06，control-server#211）。
+        //
+        // 这是一道构造上的护栏，不是防御性编程：只覆盖一部分停靠的重排，写出来的是一份自相矛盾的序位——
+        // 没被覆盖的那些留着旧号，与新号撞在一起。规划器曾经只拿到未完成的停靠，算出的新号就正好从 1 开始
+        // 与已完成的撞号，而当时这里静默接受了它。下一次有人再把子集传进来，要响亮地停下。
+        string[] missing = [.. stored
+            .Select(row => row.StopId)
+            .Except(plan.Resequenced.Select(change => change.StopId), StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)];
+        if (missing.Length > 0)
+        {
+            throw new BusinessIdentityConflictException(
+                $"Resequencing does not cover every stop of journey '{plan.JourneyId}': {string.Join(',', missing)}.");
+        }
+
         foreach (JourneyStopSequenceChange change in plan.Resequenced)
         {
-            JourneyStopRow? row = stored.FirstOrDefault(stop => stop.StopId == change.StopId);
-            if (row is not null)
-            {
-                row.Sequence = change.Sequence;
-            }
+            // 认不出的 StopId 同样是矛盾：重排说的是一个这趟旅程里没有的停靠。静默跳过会让调用方以为它生效了。
+            JourneyStopRow row = stored.FirstOrDefault(stop => stop.StopId == change.StopId)
+                ?? throw new BusinessIdentityConflictException(
+                    $"Resequencing names stop '{change.StopId}', which journey '{plan.JourneyId}' does not have.");
+            row.Sequence = change.Sequence;
         }
     }
 

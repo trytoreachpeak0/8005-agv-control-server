@@ -54,15 +54,31 @@ public sealed class EnRouteAppendPlanner
             return EnRouteAppendDecision.Refused(DispatchReasonCodes.EnRouteAppendNotConfigured);
         }
 
+        // 已经完成的停靠在计划里、也在编号里，但不参与任何一步计算（批次7-06，control-server#211）。
+        //
+        // <b>序位是整条旅程的属性，而这里要算的东西全都只关乎剩下的路。</b>两件事都成立，所以这里把计划切成
+        // 「已完成的前缀」与「还要走的那一段」：下面每一步都只看后者——车已经走过的路不该算进代价，已经走过的
+        // 分区也不该约束后面能不能追加——而最后给出的序位覆盖前缀加尾部的全部停靠。
+        //
+        // 这之前传进来的就只有未完成的停靠，于是编号从 1 重新数，与已完成的那些撞号。撞号不是内部编号的小事：
+        // 发给车的计划按序位排腿，腿的状态也按它与当前停靠的先后判，所以已经装完离站的停靠会被当成还没走到、
+        // 重新发给车。
+        IReadOnlyList<EnRouteStop> completed = [.. plan.Stops.Take(plan.CurrentNextStopIndex)];
+        EnRouteVehiclePlan ahead = plan with
+        {
+            Stops = [.. plan.Stops.Skip(plan.CurrentNextStopIndex)],
+            CurrentNextStopIndex = 0
+        };
+
         // 当前下一站不可改（REQ-0196）：车正驶向的那一站，或者车此刻停着的那一站，都不能被插到前面去。
         // 插入位因此从「当前下一站之后」开始数。
-        int earliest = plan.CurrentNextStopIndex + 1;
-        if (earliest > plan.Stops.Count)
+        int earliest = ahead.CurrentNextStopIndex + 1;
+        if (earliest > ahead.Stops.Count)
         {
             return EnRouteAppendDecision.Refused(DispatchReasonCodes.EnRouteAppendNoInsertionPoint);
         }
 
-        long originalCost = PathCost(plan.Stops, plan.VehicleStationRiotId, cost);
+        long originalCost = PathCost(ahead.Stops, ahead.VehicleStationRiotId, cost);
         if (originalCost < 0)
         {
             return EnRouteAppendDecision.Refused(DispatchReasonCodes.EnRouteAppendDelayUncomputable);
@@ -76,23 +92,23 @@ public sealed class EnRouteAppendPlanner
         // 「并入还是新开」是本票开工时要定的那件事（票面第 3 条第一道门）：同站就并入，唯独当前下一站不并——
         // 并进当前下一站等于改它，那正是 REQ-0196 禁止的。车停在最后装货站等单时同站冒出的新需求，因此排在它后面
         // 成为一个新停靠：物理上车不动，逻辑上是第二次到站、第二个作业会话，「每次到站一个作业会话」的口径不变。
-        for (int pickupAt = earliest; pickupAt <= plan.Stops.Count; pickupAt++)
+        for (int pickupAt = earliest; pickupAt <= ahead.Stops.Count; pickupAt++)
         {
             // 下标是「插进原序列的哪一格」，两个停靠各插一次，卸货那格先插。所以 unloadAt 与 pickupAt 相等
             // 时，卸货正好落在取货后面一位——那是「这条需求的两站紧挨着」，也往往是最省的一种插法。
             // 从 pickupAt + 1 起数会把这一族整个漏掉，于是新需求的两站之间永远夹着一个既有停靠，代价被高估。
-            for (int unloadAt = pickupAt; unloadAt <= plan.Stops.Count + 1; unloadAt++)
+            for (int unloadAt = pickupAt; unloadAt <= ahead.Stops.Count + 1; unloadAt++)
             {
-                EnRouteStop? mergePickup = MergeTargetAt(plan.Stops, pickupAt, candidate.PickupStop, earliest);
-                EnRouteStop? mergeUnload = MergeTargetAt(plan.Stops, unloadAt, candidate.UnloadStop, earliest);
+                EnRouteStop? mergePickup = MergeTargetAt(ahead.Stops, pickupAt, candidate.PickupStop, earliest);
+                EnRouteStop? mergeUnload = MergeTargetAt(ahead.Stops, unloadAt, candidate.UnloadStop, earliest);
                 // 并入一个既有取货停靠时，卸货必须排在它之后才有意义：那一格本身没有被推后。
                 if (mergePickup is not null && unloadAt <= pickupAt)
                 {
                     continue;
                 }
 
-                List<EnRouteStop> inserted = [.. plan.Stops];
-                Dictionary<string, int> itemsByStop = plan.WorklistItemsByStopId.ToDictionary(
+                List<EnRouteStop> inserted = [.. ahead.Stops];
+                Dictionary<string, int> itemsByStop = ahead.WorklistItemsByStopId.ToDictionary(
                     entry => entry.Key, entry => entry.Value, StringComparer.Ordinal);
                 if (mergeUnload is null)
                 {
@@ -132,7 +148,7 @@ public sealed class EnRouteAppendPlanner
                     continue;
                 }
 
-                long newCost = PathCost(inserted, plan.VehicleStationRiotId, cost);
+                long newCost = PathCost(inserted, ahead.VehicleStationRiotId, cost);
                 if (newCost < 0)
                 {
                     lastRefusal ??= DispatchReasonCodes.EnRouteAppendDelayUncomputable;
@@ -141,7 +157,7 @@ public sealed class EnRouteAppendPlanner
 
                 // 延迟门禁（REQ-0198）：对「任一既有需求」到达终点的计划路径代价增量都不得超过该需求所在分区的上限。
                 // 既有需求包括已装车的与仅被当前计划接受的——两者都已经被这辆车承诺过，都受保护。
-                string? gate = DelayGate(plan, inserted, zoneParameters, cost);
+                string? gate = DelayGate(ahead, inserted, zoneParameters, cost);
                 if (gate is not null)
                 {
                     lastRefusal ??= gate;
@@ -158,13 +174,19 @@ public sealed class EnRouteAppendPlanner
 
                 if (best is null || marginal < best.MarginalCostMm)
                 {
+                    // 对外的序位一律是整条旅程的序位：已完成的前缀原样占住 1..n，插入之后的那一段接着数。
+                    // 插入位下标同样加上前缀长度，它说的是「这条需求落在整条计划的第几格」。
                     best = new EnRouteAppendPlacement(
                         mergePickup?.StopId,
-                        pickupAt,
+                        completed.Count + pickupAt,
                         mergeUnload?.StopId,
-                        unloadAt,
+                        completed.Count + unloadAt,
                         marginal,
-                        [.. inserted.Select((stop, index) => new EnRouteStopSequence(stop.StopId, index + 1))]);
+                        [
+                            .. completed.Select((stop, index) => new EnRouteStopSequence(stop.StopId, index + 1)),
+                            .. inserted.Select((stop, index) =>
+                                new EnRouteStopSequence(stop.StopId, completed.Count + index + 1))
+                        ]);
                 }
             }
         }

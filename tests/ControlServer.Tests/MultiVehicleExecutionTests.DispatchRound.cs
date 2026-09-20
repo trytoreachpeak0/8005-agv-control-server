@@ -363,6 +363,68 @@ public sealed partial class MultiVehicleExecutionTests
     }
 
     /// <summary>
+    /// 一趟 Blocked 的旅程占着车，但不让这一轮开工：全车都 Blocked 时目录一次都不读（批次7-06，
+    /// control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>「在途」与「占着车」是两件事，这一条钉的就是这个区分。</b>本票让在途车参与竞争之后，最容易写错的
+    /// 形式是把「有未完成旅程的车」整个当成可追加的车——Blocked 的旅程也是未完成的。可它等的是人介入，
+    /// 在途资格链无条件拒绝它，所以把它算进去只会让轮次在一个本就没有活可派的局面下把整张候选表判一遍。
+    /// </para>
+    /// <para>
+    /// 这不是省几毫秒的事。那一遍判下来会给每条候选留一条积压记录，而
+    /// <c>load-result-requires-recovery</c> 那条 L2 场景的 <c>L2-LR-10</c> 正是靠「一条积压记录都没有」
+    /// 来证明仓位物理状态未经证实时没有任何新活被考虑——ADR-cross-0006 与 ADR-cross-0015 要求的就是这个。
+    /// 那条断言在这个改动的第一版下变红过，而红的原因不是安全规则被破坏（需求确实被拒了），是这里的集合
+    /// 定义与系统其余部分对「在途」的理解对不上。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task AFleetWhoseJourneysAreAllBlockedDoesNotOpenARound()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync();
+        await fixture.RunRoundAsync();
+        Assert.Equal(3, await fixture.Context.JourneyRuntimes.CountAsync(TestContext.Current.CancellationToken));
+        await fixture.BlockJourneysAsync(FleetFixture.AgvIds);
+        int catalogReads = fixture.Catalog.ReadCount;
+        fixture.RoundOutcomes.Outcomes.Clear();
+
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+
+        Assert.Equal(catalogReads, fixture.Catalog.ReadCount);
+        Assert.Empty(fixture.RoundOutcomes.Outcomes);
+    }
+
+    /// <summary>
+    /// 一辆车的旅程 Blocked 不牵连车队其余：另外两辆照样进轮次，而 Blocked 的那辆既不被追加也不被当空闲车派。
+    /// </summary>
+    /// <remarks>
+    /// 上一条单独存在时，「把可追加的车永远置空」也能让它绿——那会把本票要的在途竞争整个关掉。这一条补上
+    /// 另一侧：车队里还有车能接活时轮次照开。同时它钉住 Blocked 那辆的去向——它<b>仍然</b>占着车，所以也不会
+    /// 被当成空闲车重新派一趟，否则一趟等人介入的旅程会被第二趟盖掉。
+    /// </remarks>
+    [Fact]
+    public async Task OneBlockedJourneyDoesNotStopTheRestOfTheFleet()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync();
+        await fixture.RunRoundAsync();
+        await fixture.BlockJourneysAsync(FleetFixture.AgvIds[0]);
+        int catalogReads = fixture.Catalog.ReadCount;
+        fixture.RoundOutcomes.Outcomes.Clear();
+
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+
+        Assert.True(fixture.Catalog.ReadCount > catalogReads, "The round did not read the catalog.");
+        Assert.Equal(
+            FleetFixture.AgvIds.Skip(1).Order(StringComparer.Ordinal).ToArray(),
+            Assert.Single(fixture.RoundOutcomes.Outcomes).CompletedVehicles
+                .Select(vehicle => vehicle.AgvId).Order(StringComparer.Ordinal).ToArray());
+        Assert.Equal(1, await fixture.Context.JourneyRuntimes
+            .CountAsync(row => row.AgvId == FleetFixture.AgvIds[0], TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
     /// 在途车与空闲车在同一张候选表上竞争（REQ-0205；批次7-06，control-server#211）：它进轮次结局，
     /// 对每条候选都有自己的裁决，身份本身不产生优先级。
     /// </summary>

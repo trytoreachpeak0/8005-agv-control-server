@@ -988,6 +988,23 @@ public sealed partial class MultiVehicleExecutionTests
             await Task.CompletedTask;
         }
 
+        /// <summary>Blocks the named vehicles' journeys, the way a refused load result does.</summary>
+        public async Task BlockJourneysAsync(params string[] agvIds)
+        {
+            JourneyRuntimeRow[] rows = await Context.JourneyRuntimes
+                .Where(row => agvIds.Contains(row.AgvId))
+                .ToArrayAsync(TestContext.Current.CancellationToken);
+            foreach (JourneyRuntimeRow row in rows)
+            {
+                row.Stage = JourneyRuntimeStage.Blocked;
+                row.SetBlockReason("LOAD_RESULT_REQUIRES_RECOVERY", Clock.GetUtcNow());
+                row.UpdatedAt = Clock.GetUtcNow();
+            }
+
+            await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+            Context.ChangeTracker.Clear();
+        }
+
         /// <summary>Powers a vehicle down the way a repair does: its session stops being Ready.</summary>
         public async Task DropSessionAsync(string agvId)
         {
