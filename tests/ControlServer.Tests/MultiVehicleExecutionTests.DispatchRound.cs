@@ -951,6 +951,80 @@ public sealed partial class MultiVehicleExecutionTests
     }
 
     /// <summary>
+    /// A demand intake found gone still has its structural block cleared, exactly as before: it left the catalog,
+    /// so the block is no longer about anything.
+    /// </summary>
+    /// <remarks>
+    /// The one refusal control-server#242 deliberately leaves alone, pinned here so that a later reading of "no
+    /// refusal counts as accepted" does not quietly take it with the other three. The round after this one would
+    /// clear the block anyway, on the catalog-absence rule -- the demand is missing from the next catalog read --
+    /// so withholding it here would only delay the clearing by a round while an operator looks at an alarm about
+    /// a demand that is gone.
+    /// </remarks>
+    [Fact]
+    public async Task ADemandIntakeFoundGoneStillClearsItsStructuralBlock()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(
+            configure: options => options.Fleet = options.Fleet[..1]);
+        AcceptedDemandSnapshot only = FleetFixture.Demand(0, "N1-1", 0);
+        fixture.Catalog.Set([only]);
+        EventRecordingLogger<StructuralDispatchBlockSink> blockLog =
+            await RaiseStandingBlockAsync(fixture, only, Now.AddMinutes(-30));
+        fixture.Catalog.GoneOnReread.Add(only.DemandId);
+
+        await fixture.RunRoundAsync();
+
+        await AssertIntakeRefusedAsync(fixture, only, "FINAL_CATALOG_CANDIDATE_GONE");
+        StructuralDispatchBlockRow row = Assert.Single(
+            await fixture.Context.Set<StructuralDispatchBlockRow>().AsNoTracking()
+                .ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.NotNull(row.ClearedAt);
+        Assert.Equal(2115, Assert.Single(blockLog.Entries).EventId.Id);
+    }
+
+    /// <summary>
+    /// Only the refused demand's block is held back: another demand the same round did accept has its block
+    /// cleared as on any other round.
+    /// </summary>
+    /// <remarks>
+    /// The guard against subtracting too much, and against subtracting per round rather than per demand. It also
+    /// pins when the subtraction takes effect: both vehicles' segments run before the round-end hook, so the
+    /// first vehicle's refusal has to be recorded by the time the hook reads the round -- and the second
+    /// vehicle's acceptance, which happened after it, must not be caught by it.
+    /// </remarks>
+    [Fact]
+    public async Task ARefusedClaimHoldsBackOnlyItsOwnBlock()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(
+            configure: options => options.Fleet = options.Fleet[..2]);
+        AcceptedDemandSnapshot refused = FleetFixture.Demand(0, "N1-1", 0);
+        AcceptedDemandSnapshot taken = FleetFixture.Demand(1, "N1-2", 1);
+        fixture.Catalog.Set([refused, taken]);
+        DateTimeOffset raisedAt = Now.AddMinutes(-30);
+        EventRecordingLogger<StructuralDispatchBlockSink> blockLog =
+            await RaiseStandingBlockAsync(fixture, refused, raisedAt);
+        await RaiseStandingBlockOnlyAsync(fixture, taken, raisedAt);
+        fixture.Catalog.ChangedOnReread.Add(refused.DemandId);
+
+        await fixture.RunRoundAsync();
+
+        // The first vehicle was refused and the second took the other demand: the round really did both.
+        fixture.Context.ChangeTracker.Clear();
+        AcceptedDemandRow accepted = Assert.Single(await fixture.Context.AcceptedDemands.AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(taken.DemandId, accepted.DemandId);
+        StructuralDispatchBlockRow[] rows = await fixture.Context.Set<StructuralDispatchBlockRow>().AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(2, rows.Length);
+        Assert.Null(Assert.Single(rows, row => row.DemandId == refused.DemandId).ClearedAt);
+        Assert.NotNull(Assert.Single(rows, row => row.DemandId == taken.DemandId).ClearedAt);
+        // One clearing, and it names the accepted demand.
+        EventRecordingLogger<StructuralDispatchBlockSink>.Entry cleared = Assert.Single(blockLog.Entries);
+        Assert.Equal(2115, cleared.EventId.Id);
+        Assert.Contains(taken.DemandId, cleared.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// A demand intake refused stays claimed for the rest of the round: the vehicles behind do not try it again,
     /// and no second intake is attempted on it.
     /// </summary>
@@ -1046,6 +1120,26 @@ public sealed partial class MultiVehicleExecutionTests
             TestContext.Current.CancellationToken);
         fixture.Context.ChangeTracker.Clear();
         return log;
+    }
+
+    /// <summary>
+    /// Raises a second standing block, leaving in place the sink and the logger an earlier
+    /// <see cref="RaiseStandingBlockAsync"/> call installed.
+    /// </summary>
+    private static async Task RaiseStandingBlockOnlyAsync(
+        FleetFixture fixture,
+        AcceptedDemandSnapshot demand,
+        DateTimeOffset raisedAt)
+    {
+        StructuralDispatchBlockStore blocks = new(fixture.Context);
+        await blocks.RaiseOrRefreshAsync(
+            demand.DemandId,
+            "ROUTE_GRAPH_PICKUP_UNREACHABLE",
+            demand.TransportDemandKey,
+            "{}",
+            raisedAt,
+            TestContext.Current.CancellationToken);
+        fixture.Context.ChangeTracker.Clear();
     }
 
     /// <summary>Refuses every candidate for every vehicle with the reason only a whole roster can make structural.</summary>
