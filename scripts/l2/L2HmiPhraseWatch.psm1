@@ -69,14 +69,25 @@ function Invoke-L2HmiPhraseScan {
         [scriptblock]$NameReader = $script:DefaultNameReader
     )
 
-    $elements = & $ElementSource
-    if ($null -eq $elements) { return $false }
-    foreach ($element in $elements) {
-        try { $name = [string](& $NameReader $element) } catch { continue }
-        if ($name.Contains($Watch.Phrase) -and -not $Watch.Seen.Contains($name)) { $Watch.Seen.Add($name) }
+    $clean = $true
+    try {
+        # The enumeration itself can throw halfway through -- an AutomationElementCollection is read
+        # lazily -- so the loop is inside the same try as the call that produced it.
+        $elements = & $ElementSource
+        if ($null -eq $elements) {
+            $clean = $false
+        } else {
+            foreach ($element in $elements) {
+                try { $name = [string](& $NameReader $element) }
+                catch { $Watch.FailedElements++; $clean = $false; continue }
+                if ($name.Contains($Watch.Phrase) -and -not $Watch.Seen.Contains($name)) { $Watch.Seen.Add($name) }
+            }
+        }
+    } catch {
+        $clean = $false
     }
-    $Watch.CleanScans++
-    return $true
+    if ($clean) { $Watch.CleanScans++ } else { $Watch.FailedScans++ }
+    return $clean
 }
 
 <#
@@ -104,16 +115,13 @@ function Invoke-L2HmiPhraseSample {
         $null = Invoke-L2HmiPhraseScan -Watch $Watch -ElementSource $ElementSource -NameReader $NameReader
         if ($Journal -and $Criterion) { $Journal.Observe($Criterion, $Watch.Seen.Count, $null) }
         if ($Watch.Seen.Count -gt 0) { break }
-        if ([DateTimeOffset]::UtcNow -ge $deadline) {
-            if ($Journal) {
-                $Journal.Note("Not reached: Timed out after ${DurationSeconds}s waiting for: the phrase '$($Watch.Phrase)' on the HMI")
-            }
-            break
-        }
+        if ([DateTimeOffset]::UtcNow -ge $deadline) { break }
         Start-Sleep -Milliseconds $PollMilliseconds
     }
     $rounds = $Watch.CleanScans + $Watch.FailedScans - $before
-    return "${DurationSeconds} s sampling done: $rounds round(s), $($Watch.Seen.Count) sighting(s)"
+    $reading = "${DurationSeconds} s sampling done: $rounds round(s), $($Watch.Seen.Count) sighting(s)"
+    if ($Journal) { $Journal.Note($reading) }
+    return $reading
 }
 
 # One line for a criteria table's "actual" column.

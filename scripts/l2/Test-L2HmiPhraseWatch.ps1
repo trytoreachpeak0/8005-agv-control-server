@@ -39,8 +39,9 @@ Import-Module (Join-Path $PSScriptRoot 'L2HmiPhraseWatch.psm1') -Force
 
 $phrase = '上次装货操作未完成'
 
-# An element whose name reads back as $Name, or throws when $Name is $null.
-function New-Element([string]$Name) { return [pscustomobject]@{ Name = $Name } }
+# An element whose name reads back as $Name, or throws when $Name is $null. Untyped on purpose: a
+# [string] parameter turns $null into '', and the element that is supposed to fail would read fine.
+function New-Element($Name) { return [pscustomobject]@{ Name = $Name } }
 $reader = { param($Element) if ($null -eq $Element.Name) { throw 'ElementNotAvailable' } ; [string]$Element.Name }
 
 # Stands in for L2Journal: records what a scenario would have written.
