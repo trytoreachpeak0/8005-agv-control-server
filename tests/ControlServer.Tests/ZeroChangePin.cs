@@ -16,8 +16,10 @@ namespace ControlServer.Tests;
 /// 停靠七张表的每一列，加上出站消息的确认时刻（录入请求与装货命令在终结时被结算）。
 /// </para>
 /// <para>
-/// 期望值是 <c>fp/v2-impl@47ae7376</c>（批次7-01 合入后、本票动产品代码之前）上跑出的结果，存在 <c>ZeroChangePins/</c>。
-/// 那是一次性的：之后红了就是行为变了，不能重录来变绿。
+/// 期望值是集成分支自身上跑出的结果，存在 <c>ZeroChangePins/</c>：初版取自 <c>fp/v2-impl@47ae7376</c>（批次7-01 合入后、
+/// 本票动产品代码之前），随集成分支前移重录过一次，取自 <c>fp/v2-impl@15807555</c>——把本票的测试文件原样搬到集成分支的
+/// 工作树上跑出来，再搬回来。**重录只有这一种做法**：在集成分支上录，不在本票分支上录；红了就是行为变了，不能重录来变绿。
+/// 那次重录唯一的差别是 <c>JourneyRuntimes</c> 多了 cs#228 的新列 <c>AreaEndAdmissionRevokedSince=NULL</c>，其余逐字未动。
 /// </para>
 /// </remarks>
 internal static class ZeroChangePin
