@@ -305,6 +305,7 @@ public sealed class ExpectedActionOverdueTests
         await fixture.SafetySnapshotAsync(2, Slots(slot3Lock: "UNLOCKED", slot3Physical: "OCCUPIED"), observedAt: Now.AddSeconds(-5));
 
         using JsonDocument fact = await fixture.ReadEndpointAsync();
+        ZeroChangePin.AssertTextMatches(fact.RootElement.GetRawText(), "dashboard-expected-action-overdue-load");
 
         Assert.Equal(360, fact.RootElement.GetProperty("thresholdSeconds").GetInt64());
         Assert.Empty(fact.RootElement.GetProperty("unavailableVehicles").EnumerateArray());
@@ -353,6 +354,7 @@ public sealed class ExpectedActionOverdueTests
         await fixture.SendAlarmsAsync(1, Overdue(6, "取出货物并关好6号仓门"));
 
         using JsonDocument fact = await fixture.ReadEndpointAsync();
+        ZeroChangePin.AssertTextMatches(fact.RootElement.GetRawText(), "dashboard-expected-action-overdue-unload");
 
         JsonElement row = Assert.Single(fact.RootElement.GetProperty("slots").EnumerateArray());
         Assert.Equal("GATE-1", row.GetProperty("stationId").GetString());

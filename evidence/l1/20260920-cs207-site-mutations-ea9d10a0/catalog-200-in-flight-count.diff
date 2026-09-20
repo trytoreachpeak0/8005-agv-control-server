@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Runtime/TaskTypeStations/CatalogBindingHoldConvergence.cs b/src/ControlServer.Host/Runtime/TaskTypeStations/CatalogBindingHoldConvergence.cs
+index d3aa1f09..054df015 100644
+--- a/src/ControlServer.Host/Runtime/TaskTypeStations/CatalogBindingHoldConvergence.cs
++++ b/src/ControlServer.Host/Runtime/TaskTypeStations/CatalogBindingHoldConvergence.cs
+@@ -197,7 +197,7 @@ public static class TaskTypeInFlightDemands
+         return dbContext.JourneyRuntimes.AsNoTracking()
+             .Where(journey => journey.MapId == mapId && journey.Stage != JourneyRuntimeStage.Completed)
+             .Join(
+-                DemandJourneyLookup.Memberships(dbContext).AsNoTracking(),
++                DemandJourneyLookup.Memberships(dbContext).AsNoTracking().Where(row => false),
+                 journey => journey.JourneyId,
+                 membership => membership.JourneyId,
+                 (journey, membership) => membership.DemandId)

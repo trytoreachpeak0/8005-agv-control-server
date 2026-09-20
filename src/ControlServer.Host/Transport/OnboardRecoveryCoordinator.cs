@@ -227,8 +227,8 @@ public sealed class OnboardRecoveryCoordinator(
         workflow.UpdatedAt = timeProvider.GetUtcNow();
         JourneyRuntimeRow? runtime = workflow.DemandId is null
             ? null
-            : await dbContext.JourneyRuntimes.SingleOrDefaultAsync(
-                row => row.DemandId == workflow.DemandId, cancellationToken).ConfigureAwait(false);
+            : await DemandJourneyLookup.JourneyOf(dbContext, workflow.DemandId)
+                .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
         if (runtime is not null && reconciled)
         {
             StationOperationRow operation = await dbContext.StationOperations.SingleAsync(
@@ -729,8 +729,8 @@ public sealed class OnboardRecoveryCoordinator(
     {
         AcceptedDemandRow? demand = await dbContext.AcceptedDemands.AsNoTracking()
             .SingleOrDefaultAsync(row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
-        JourneyRuntimeRow? runtime = await dbContext.JourneyRuntimes.AsNoTracking()
-            .SingleOrDefaultAsync(row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
+        JourneyRuntimeRow? runtime = await DemandJourneyLookup.JourneyOf(dbContext, demandId).AsNoTracking()
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
         if (demand?.Status != DemandExecutionStatus.Accepted ||
             runtime?.Stage != JourneyRuntimeStage.AwaitingSublot ||
             runtime.AgvId != agvId ||
@@ -798,8 +798,8 @@ public sealed class OnboardRecoveryCoordinator(
     /// on no vehicle.
     /// </summary>
     private Task<bool> DemandIsOnVehicleAsync(string demandId, string agvId, CancellationToken cancellationToken) =>
-        dbContext.JourneyRuntimes.AsNoTracking()
-            .AnyAsync(row => row.DemandId == demandId && row.AgvId == agvId, cancellationToken);
+        DemandJourneyLookup.JourneyOf(dbContext, demandId).AsNoTracking()
+            .AnyAsync(row => row.AgvId == agvId, cancellationToken);
 
     private async Task<string> AuthorizeLoadCompensationAsync(
         JsonElement root,
@@ -899,8 +899,8 @@ public sealed class OnboardRecoveryCoordinator(
         StationOperationRow? operation = await dbContext.StationOperations.SingleOrDefaultAsync(
             row => row.SlotOperationAttemptId == attemptId && row.DemandId == demandId,
             cancellationToken).ConfigureAwait(false);
-        JourneyRuntimeRow? journey = await dbContext.JourneyRuntimes.SingleOrDefaultAsync(
-            row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
+        JourneyRuntimeRow? journey = await DemandJourneyLookup.JourneyOf(dbContext, demandId)
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
         // REQ-0237: an ordinary mis-placement is corrected only before the vehicle leaves the pickup.
         // A committed load alone is not enough -- until 2026-09-13 this authorized corrections for a
         // vehicle already sent to the gate, whose onboard could only refuse to open the doors.
@@ -1217,8 +1217,8 @@ public sealed class OnboardRecoveryCoordinator(
             // deadline ends it -- demand, lease, vehicle occupancy, the unanswered entry request and the
             // journey in one staged change -- and differs only in why (control-server#83). Stamped with the
             // server's receipt time, like the deadline: every fact it writes is the server's own.
-            JourneyRuntimeRow stop = await dbContext.JourneyRuntimes.SingleAsync(
-                row => row.DemandId == workflow.DemandId, cancellationToken).ConfigureAwait(false);
+            JourneyRuntimeRow stop = await DemandJourneyLookup.JourneyOf(dbContext, workflow.DemandId)
+                .SingleAsync(cancellationToken).ConfigureAwait(false);
             // Checked again here, inside the inbox's write transaction, because authorization and settlement
             // are two messages and the stop may have moved on between them. A stop already ended -- by its
             // station deadline, say -- keeps the reason it ended with: the vehicle has only proved what that
@@ -1240,7 +1240,7 @@ public sealed class OnboardRecoveryCoordinator(
                 return;
             }
             await new PickupStopTermination(dbContext)
-                .StageAsync(stop, "CANCELLED_BY_OPERATOR", timeProvider.GetUtcNow(), cancellationToken)
+                .StageAsync(stop, workflow.DemandId, "CANCELLED_BY_OPERATOR", timeProvider.GetUtcNow(), cancellationToken)
                 .ConfigureAwait(false);
             return;
         }
@@ -1253,8 +1253,8 @@ public sealed class OnboardRecoveryCoordinator(
         // control-server#131 this wrote those facts by hand minus the vehicle occupancy, and the pickup
         // order held the vehicle against every later claim. Stamped with the server's receipt time like the
         // other endings, not the vehicle's observedAt: the release has to sort after the server's own claim.
-        JourneyRuntimeRow runtime = await dbContext.JourneyRuntimes.SingleAsync(
-            row => row.DemandId == workflow.DemandId, cancellationToken).ConfigureAwait(false);
+        JourneyRuntimeRow runtime = await DemandJourneyLookup.JourneyOf(dbContext, workflow.DemandId)
+            .SingleAsync(cancellationToken).ConfigureAwait(false);
         if (workflow.SlotOperationAttemptId is not null)
         {
             StationOperationRow? operation = await dbContext.StationOperations.SingleOrDefaultAsync(
@@ -1265,6 +1265,7 @@ public sealed class OnboardRecoveryCoordinator(
         await new PickupStopTermination(dbContext)
             .StageAsync(
                 runtime,
+                workflow.DemandId,
                 messageType switch
                 {
                     "FaultCargoRecoveryResult" or "ForcedMechanicalRecoveryResult" => "TERMINATED_BY_FAULT_CARGO_HANDOFF",
@@ -1287,8 +1288,8 @@ public sealed class OnboardRecoveryCoordinator(
         if (demand is not null && demand.Status != DemandExecutionStatus.Succeeded &&
             demand.Status != DemandExecutionStatus.Cancelled)
             demand.Status = DemandExecutionStatus.RecoveryRequired;
-        JourneyRuntimeRow? runtime = await dbContext.JourneyRuntimes.SingleOrDefaultAsync(
-            row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
+        JourneyRuntimeRow? runtime = await DemandJourneyLookup.JourneyOf(dbContext, demandId)
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
         if (runtime is not null)
         {
             runtime.Stage = JourneyRuntimeStage.Blocked;
@@ -1349,8 +1350,8 @@ public sealed class OnboardRecoveryCoordinator(
         CancellationToken cancellationToken)
     {
         if (demandId is null) return null;
-        JourneyRuntimeRow? runtime = await dbContext.JourneyRuntimes.SingleOrDefaultAsync(
-            row => row.DemandId == demandId && row.AgvId == agvId && row.Stage == JourneyRuntimeStage.Blocked,
+        JourneyRuntimeRow? runtime = await DemandJourneyLookup.JourneyOf(dbContext, demandId).SingleOrDefaultAsync(
+            row => row.AgvId == agvId && row.Stage == JourneyRuntimeStage.Blocked,
             cancellationToken).ConfigureAwait(false);
         if (runtime is null) return ServerReasonCodes.RecoveryDemandNotBlocked;
         StationOperationRow? operation = await FindLatestOperationAsync(demandId, cancellationToken).ConfigureAwait(false);

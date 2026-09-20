@@ -368,7 +368,7 @@ internal static class TaskTypeHoldTestKit
             AcceptedAt = Now.AddMinutes(-9),
             Status = DemandExecutionStatus.Accepted
         });
-        context.JourneyRuntimes.Add(new JourneyRuntimeRow
+        JourneyRuntimeRow journey = new()
         {
             JourneyId = JourneyIdentity.ForAnchorDemand(demandId),
             DemandId = demandId,
@@ -410,7 +410,10 @@ internal static class TaskTypeHoldTestKit
             UnloadSlotOperationAttemptId = $"unload-attempt-{demandId}",
             CreatedAt = Now.AddMinutes(-8),
             UpdatedAt = Now.AddMinutes(-1)
-        });
+        };
+        context.JourneyRuntimes.Add(journey);
+        // control-server#207: acceptance writes the demand's membership beside the journey row.
+        context.Set<JourneyDemandRow>().Add(JourneyMembershipSeed.For(journey));
         context.OrderIntents.Add(new OrderIntentRow
         {
             MovementLegId = $"gate-leg-{demandId}",

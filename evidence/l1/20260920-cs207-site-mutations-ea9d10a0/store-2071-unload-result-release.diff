@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs b/src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs
+index f63dece7..4353cdef 100644
+--- a/src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs
++++ b/src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs
+@@ -2068,7 +2068,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
+         demand.Status = DemandExecutionStatus.Succeeded;
+         // As in CompleteDemandAfterUnloadAsync: released only for the journey's last open demand (control-server#207). This
+         // runs inside the inbox's write transaction, which is where "the last" has to be read.
+-        await JourneyLeaseRelease.StageIfLastOpenDemandAsync(dbContext, result.DemandId, result.ObservedAt, cancellationToken)
++        await Task.CompletedTask
+             .ConfigureAwait(false);
+         dbContext.TransportDemandCompletions.Add(new TransportDemandCompletionRow
+         {

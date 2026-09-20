@@ -1,0 +1,14 @@
+diff --git a/src/ControlServer.Infrastructure/Persistence/JourneyLeaseRelease.cs b/src/ControlServer.Infrastructure/Persistence/JourneyLeaseRelease.cs
+index 885d3eef..ca44223d 100644
+--- a/src/ControlServer.Infrastructure/Persistence/JourneyLeaseRelease.cs
++++ b/src/ControlServer.Infrastructure/Persistence/JourneyLeaseRelease.cs
+@@ -57,8 +57,7 @@ public static class JourneyLeaseRelease
+             await StageAsync(dbContext, own, releasedAt, cancellationToken).ConfigureAwait(false);
+             return;
+         }
+-        if (await DemandJourneyLookup.IsLastOpenDemandAsync(dbContext, journeyId, demandId, cancellationToken)
+-                .ConfigureAwait(false))
++        if (true)
+         {
+             await StageAsync(dbContext, journeyId, releasedAt, cancellationToken).ConfigureAwait(false);
+         }

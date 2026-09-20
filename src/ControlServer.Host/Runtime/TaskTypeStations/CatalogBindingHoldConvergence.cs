@@ -192,13 +192,20 @@ public static class TaskTypeInFlightDemands
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(dbContext);
+        // Each demand a journey carries, through the demand memberships (control-server#207): in a single-demand journey
+        // that is the journey row's own demand, as before.
         return dbContext.JourneyRuntimes.AsNoTracking()
             .Where(journey => journey.MapId == mapId && journey.Stage != JourneyRuntimeStage.Completed)
             .Join(
+                DemandJourneyLookup.Memberships(dbContext).AsNoTracking(),
+                journey => journey.JourneyId,
+                membership => membership.JourneyId,
+                (journey, membership) => membership.DemandId)
+            .Join(
                 dbContext.AcceptedDemands.AsNoTracking().Where(demand => demand.WorkType == taskType),
-                journey => journey.DemandId,
+                demandId => demandId,
                 demand => demand.DemandId,
-                (journey, demand) => journey.DemandId)
+                (demandId, demand) => demandId)
             .CountAsync(cancellationToken);
     }
 }

@@ -1,0 +1,19 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:38.68]     ControlServer.Tests.Batch7DemandTerminationTests.TwoDemandsOfOneJourneyEndingAtOnceCloseItExactlyOnce [FAIL]
+  Failed ControlServer.Tests.Batch7DemandTerminationTests.TwoDemandsOfOneJourneyEndingAtOnceCloseItExactlyOnce [1 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 2026-09-19T09:06:00.0000000+00:00
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.Batch7DemandTerminationTests.TwoDemandsOfOneJourneyEndingAtOnceCloseItExactlyOnce() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 215
+   at ControlServer.Tests.Batch7DemandTerminationTests.TwoDemandsOfOneJourneyEndingAtOnceCloseItExactlyOnce() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 220
+   at ControlServer.Tests.Batch7DemandTerminationTests.TwoDemandsOfOneJourneyEndingAtOnceCloseItExactlyOnce() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 220
+   at ControlServer.Tests.Batch7DemandTerminationTests.TwoDemandsOfOneJourneyEndingAtOnceCloseItExactlyOnce() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 220
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     1, Passed:    21, Skipped:     0, Total:    22, Duration: 37 s - ControlServer.Tests.dll (net8.0)

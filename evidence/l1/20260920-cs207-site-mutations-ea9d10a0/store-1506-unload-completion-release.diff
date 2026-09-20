@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs b/src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs
+index f63dece7..9b039d93 100644
+--- a/src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs
++++ b/src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs
+@@ -1503,7 +1503,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
+         demand.Status = DemandExecutionStatus.Succeeded;
+         // The lease and the purpose claim go when the journey's last open demand ends (control-server#207), decided inside
+         // this write transaction; with one demand that is this one, in this save, as before.
+-        await JourneyLeaseRelease.StageIfLastOpenDemandAsync(dbContext, demandId, completedAt, cancellationToken)
++        await Task.CompletedTask
+             .ConfigureAwait(false);
+         dbContext.TransportDemandCompletions.Add(new TransportDemandCompletionRow
+         {
