@@ -373,8 +373,17 @@ public sealed class DispatchRoundRunner(
         // 排序在客户端做：SQLite 不支持把 DateTimeOffset 放进 ORDER BY，这个仓库的生产库就是 SQLite，
         // 所以写成数据库端排序会在真机上抛 NotSupportedException 而不只是在测试里。一辆车至多一条未完成旅程，
         // 取回来的本来就只有一行，排序只是把「锚需求是最早那一条」写明白。
+        // Blocked 的旅程也排除（批次7-06，control-server#211）：这里答的是「这辆车的计划能不能被追加」，
+        // 而一趟等人介入的旅程接不了追加——在途资格链无条件拒绝它，车上那张计划也不会再更新
+        // （RefreshUpcomingStopPlanAsync 对 Blocked 直接返回），追加进去的需求会绑死在这辆车上、永不再是候选。
+        //
+        // 今天没有 Blocked 的车能走到这里：JourneyRuntimeEngine 已经把它们排除出 underWay，而那是唯一入口。
+        // 写在这里是因为那条保证靠的是别处的集合怎么构造，这个查询自己对 Blocked 一无所知——改了那边，
+        // 这里不会有东西变红。
         JourneyRuntimeRow? runtime = (await dbContext.JourneyRuntimes.AsNoTracking()
-                .Where(row => row.AgvId == vehicle.AgvId && row.Stage != JourneyRuntimeStage.Completed)
+                .Where(row => row.AgvId == vehicle.AgvId &&
+                    row.Stage != JourneyRuntimeStage.Completed &&
+                    row.Stage != JourneyRuntimeStage.Blocked)
                 .ToArrayAsync(cancellationToken).ConfigureAwait(false))
             .OrderBy(row => row.CreatedAt)
             .FirstOrDefault();
@@ -745,6 +754,17 @@ public sealed class DispatchRoundRunner(
                 .ToArrayAsync(cancellationToken).ConfigureAwait(false))
             .OrderBy(row => row.CreatedAt)
             .First();
+        // 这里抛，而不是像 ReadEnRoutePlanAsync 那样把 Blocked 排除掉（批次7-06，control-server#211）。
+        //
+        // <b>同一个条件、两处不同的处置，因为它们在决策链上的位置不同。</b>那一处答的是「能不能追加」，
+        // Blocked 在那里被排除是它自己该知道的事；走到这里说明前面已经判定要追加了，排除掉只会让上面的
+        // First() 在空集上抛一个读不懂的异常。显式抛出来说的是实情：前面的判断和这里的事实矛盾。
+        if (runtime.Stage == JourneyRuntimeStage.Blocked)
+        {
+            throw new BusinessIdentityConflictException(
+                $"Journey '{runtime.JourneyId}' is blocked and cannot take an appended demand.");
+        }
+
         JourneyAppendPlan append = new(
             runtime.JourneyId,
             demandId,
