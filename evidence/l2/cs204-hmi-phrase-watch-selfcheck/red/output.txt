@@ -1,0 +1,10 @@
+ok    a round that read every element is a clean look -> clean 1 / failed 0 / bad elements 0
+BAD   a round in which one element could not be read is not a look -> clean 1 / failed 0 / bad elements 0
+BAD   a tree that will not enumerate is a failed round, not an exception -> threw=True / clean 0 / failed 0
+BAD   a window that is gone is a failed round, not a silent nothing -> clean 0 / failed 0
+BAD   a sighting in a failed round is still a sighting -> seen 1 / clean 1 / failed 0
+BAD   a business probe carrying a failing scan still returns its business value -> value='threw: FindAll: ElementNotAvailable' threw=True / failed 0
+BAD   a sampling window that ends without a sighting reports a reading, not "Not reached" -> 'Not reached' notes 1 / clean 17 / reading '1 s sampling done: 17 round(s), 0 sighting(s)'
+ok    a sampling window stops at the first sighting -> seen 1 / clean 1 / reading '30 s sampling done: 1 round(s), 1 sighting(s)'
+L2HmiPhraseWatch self-check: 6 of 8 cases came out the wrong way.
+exit=1
