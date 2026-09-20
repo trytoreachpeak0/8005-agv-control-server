@@ -20,6 +20,8 @@ param([Parameter(Mandatory)][object]$Context)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ConditionOrLast.psm1') -Force
+
 $journal = $Context.Journal
 $assertions = $Context.Assertions
 $connection = $Context.Connection
@@ -131,6 +133,18 @@ $converged = Wait-L2Condition -Description 'the replayed result converged the ac
     -Until { param($v) $v -eq 'ACTIVATED' }
 $assertions.Add('L2-SCA-07', '补报到达之后激活收敛为 ACTIVATED', ($converged -eq 'ACTIVATED'), 'ACTIVATED', $converged)
 
+# 先等假对端自己记下「这次结果发出去了」，再判它只发过一次（control-server#204）。
+# 服务端库里变成 ACTIVATED 与假对端把 activationResultsSent 加一，是两件先后发生的事：假对端在
+# `await SendLineAsync(...)` 返回之后才加计数（OnboardPeerSession.SendActivationResultAsync），而服务端
+# 那边收到、处理、落库可以先跑完。直接读会读到 0，判据假红——等的是前一个事实，断言的是后一个。
+$sent = Wait-L2ConditionOrLast -Description 'the synthetic peer recorded the activation result it sent' `
+    -Journal $journal -Criterion 'activation-results-sent' -TimeoutSeconds 30 `
+    -Probe { [int]($onboard.Snapshot().body.activationResultsSent) } `
+    -Until { param($v) $v -ge 1 }
+# 再多转几轮：判据说的是「只报了一次」，所以光等到 1 不够，还要给第二次出现的机会。
+$null = Wait-L2Iterations -Riot $riot -Count 3 -Journal $journal
+$journal.Note("Peer reported activationResultsSent = $sent on first sight; re-reading after three more runtime rounds.")
+
 $peer = $onboard.Snapshot().body
 $commandIds = @($peer.activationCommandMessageIds)
 # 补发的是落库那一行，不是重新决定一次：messageId 从头到尾只有一个。
@@ -139,7 +153,7 @@ $assertions.Add(
     ($commandIds.Count -ge 2 -and @($commandIds | Sort-Object -Unique).Count -eq 1 -and $commandIds[0] -eq $issue.commandMessageId),
     ">=2 receipts of $($issue.commandMessageId)", ($commandIds -join ','))
 $assertions.Add(
-    'L2-SCA-09', '车只报了一次结果',
+    'L2-SCA-09', '车只报了一次结果（等到它记下发过一次、再多转三轮之后仍然是一次）',
     ([int]$peer.activationResultsSent -eq 1), 1, [int]$peer.activationResultsSent)
 
 $activationRows = Get-Count "SELECT COUNT(*) AS N FROM SlotConfigurationActivations WHERE AgvId = '$agvId'"

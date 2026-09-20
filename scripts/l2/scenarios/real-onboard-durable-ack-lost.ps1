@@ -40,6 +40,7 @@ param([Parameter(Mandatory)][object]$Context)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2RealOnboard.psm1') -Force
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2HmiPhraseWatch.psm1') -Force
 
 $journal = $Context.Journal
 $assertions = $Context.Assertions
@@ -54,22 +55,33 @@ function Get-ProxyLines([string]$direction, [string]$messageType) {
 }
 
 <#
-`L2-DA-09` 的取样（onboard-hmi#124）。每调用一次扫一遍 HMI 主窗口的全部元素，记下名字里含「上次装货操作未完成」的；
-顺带读服务端告警快照那一行，只作诊断。扫描中元素消失（UIA ElementNotAvailable）只丢这一个元素，不丢这一轮。
+`L2-DA-09` 的取样（onboard-hmi#124；judgement 与计数在 control-server#204 收紧）。每调用一次扫一遍 HMI 主窗口的全部元素，
+记下名字里含「上次装货操作未完成」的；顺带读服务端告警快照那一行，只作诊断。
+
+**只有读全了的那一轮才算一次「看」**（`L2HmiPhraseWatch.psm1`）：这条判据否定「那句话出现过」，而支撑这句否定的
+全部证据就是扫了多少轮，所以读失败的轮必须单独记，不能混进 `Scans`——否则「10 轮 0 次检出」也可能是「10 轮什么都
+没读到」。扫描本身从不抛出：它挂在业务等待的探针里，一个 UIA 异常抛出去会被 `Wait-L2Condition` 当成读空，把业务等待
+拖到超时，报出来的是一条等待超时而不是 UIA 读失败（PR #196 审查点名的假红来源）。
 #>
 $unfinishedPhrase = '上次装货操作未完成'
-$unfinishedWatch = @{ Scans = 0; Seen = [System.Collections.Generic.List[string]]::new(); AlarmSeen = $false }
-function Watch-UnfinishedProjection {
+$unfinishedWatch = New-L2HmiPhraseWatch -Phrase $unfinishedPhrase
+$unfinishedAlarmSeen = $false
+# 每轮重取 Window：驱动把它缓存在 Attach() 那一刻，窗口没了之后 FindAll 抛的是 ElementNotAvailable，
+# 而那正是要记成失败轮、不是记成一次「看」的情形。
+$unfinishedElements = {
     $window = $Context.Onboard.Window
-    if (-not $window) { return $unfinishedWatch.Seen.Count }
-    foreach ($element in $window.FindAll(
-            [System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)) {
-        try { $name = [string]$element.Current.Name } catch { continue }
-        if ($name.Contains($unfinishedPhrase) -and -not $unfinishedWatch.Seen.Contains($name)) { $unfinishedWatch.Seen.Add($name) }
-    }
-    $unfinishedWatch.Scans++
-    $alarms = Get-L2RealScalar $connection "SELECT AlarmsJson AS Value FROM OnboardAlarmSnapshots WHERE AgvId = '$($Context.AgvId)'"
-    if ([string]$alarms -like '*ONBOARD_SLOT_OPERATION_UNFINISHED*') { $unfinishedWatch.AlarmSeen = $true }
+    if (-not $window) { return $null }
+    return $window.FindAll(
+        [System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+}
+function Watch-UnfinishedProjection {
+    $null = Invoke-L2HmiPhraseScan -Watch $unfinishedWatch -ElementSource $unfinishedElements
+    # 诊断读也包起来。它和扫描一样挂在业务等待的探针里，抛出去同样会被读成「业务条件还没成立」，
+    # 把一次数据库抖动变成一条业务等待超时。
+    try {
+        $alarms = Get-L2RealScalar $connection "SELECT AlarmsJson AS Value FROM OnboardAlarmSnapshots WHERE AgvId = '$($Context.AgvId)'"
+        if ([string]$alarms -like '*ONBOARD_SLOT_OPERATION_UNFINISHED*') { $script:unfinishedAlarmSeen = $true }
+    } catch { }
     return $unfinishedWatch.Seen.Count
 }
 
@@ -220,9 +232,21 @@ $assertions.Add(
 
 # L2-DA-09 的窗口从这里开始：会话已在新世代回到 Ready，车载端的恢复判断就在这条 readiness 上跑（不早一步）。先连扫
 # 10 秒，缺陷版本在 Ready 之后几毫秒内就发布那条投影；之后每一个等待的探针都再扫一遍，直到卸货在等操作员。
-$null = Wait-L2RealOrLast -Description 'no unfinished-operation projection on the HMI in the first 10 s after Ready' `
-    -Journal $journal -Criterion 'unfinished-projection' -TimeoutSeconds 10 `
-    -Probe { Watch-UnfinishedProjection } -Until { param($v) $v -gt 0 }
+#
+# 定时长采样，不是等待：绿的那次运行按设计就是扫满 10 秒一次都不检出，拿会写「Not reached」的等待函数来做，
+# 等于每次绿运行都在 journal 里留一条「未到达」给人误读（PR #196 审查第三条）。这里记的是读数。
+# 这 10 秒直接调采样函数，不经 Watch-UnfinishedProjection，所以窗口内**不做**那次服务端告警快照的
+# 诊断读（`:81-84`）。不影响判据——那一行本来就只进 journal 作诊断、不参与判定——记一笔免得下次有人
+# 以为它全程在读（审查 cs#204 轻微 8）。
+$journal.Note('L2-DA-09 window opens: sampling the HMI for 10 s from the session being Ready again.')
+$sample = Invoke-L2HmiPhraseSample -Watch $unfinishedWatch -ElementSource $unfinishedElements -DurationSeconds 10 `
+    -Journal $journal -Criterion 'unfinished-projection'
+$journal.Note("L2-DA-09 first window: $sample")
+# 分段记账。判据文字说的是「重回 Ready 到卸货等操作员之间」都在看，而这个 10 秒采样窗一段就产出二十几轮
+# （实测 22 轮，全程 70 轮）——只判一个全程总数的话，后面三处业务探针里的扫描被删掉、或 UIA 句柄在这
+# 10 秒之后失效，「从第 10 秒到卸货等操作员」那二十多秒一眼都没看，总数仍然 >= 10、判据照样 PASS。
+# 那正是本票要消灭的那一类「数字比它知道的说得多」。
+$cleanAfterFirstWindow = $unfinishedWatch.CleanScans
 
 # 服务端日志只做诊断，不当判据：判据读的是库和代理。
 $logRoot = Join-Path (Split-Path -Parent $Context.SnapshotRoot) 'logs'
@@ -260,14 +284,16 @@ $unloadWaiting = Wait-L2Condition -Description 'the onboard is waiting for the o
     } `
     -Until { param($v) $null -ne $v }
 $null = Watch-UnfinishedProjection
-$journal.Note("L2-DA-09 window closed at the unload's WAITING_OPERATOR after $($unfinishedWatch.Scans) HMI scans; " +
-    "server alarm snapshot showed ONBOARD_SLOT_OPERATION_UNFINISHED: $($unfinishedWatch.AlarmSeen) (diagnostic only).")
-$unfinishedSeenText = if ($unfinishedWatch.Seen.Count -gt 0) { ': ' + ($unfinishedWatch.Seen -join ' | ') } else { '' }
+$cleanInSecondLeg = $unfinishedWatch.CleanScans - $cleanAfterFirstWindow
+$journal.Note("L2-DA-09 window closed at the unload's WAITING_OPERATOR after $($unfinishedWatch.CleanScans) clean and " +
+    "$($unfinishedWatch.FailedScans) failed HMI scans (first 10 s window $cleanAfterFirstWindow, business probes after it $cleanInSecondLeg); " +
+    "server alarm snapshot showed ONBOARD_SLOT_OPERATION_UNFINISHED: $unfinishedAlarmSeen (diagnostic only).")
+# 干净扫描不足 10 轮也红，而且红的原因说得出来：「UIA 读失败 N 轮」，不是一条等待超时。
 $assertions.Add(
-    'L2-DA-09', '确认丢失的那次装货已完成：会话重回 Ready 之后、卸货等操作员之前，HMI 上从未出现「上次装货操作未完成」（onboard-hmi#124）',
-    ($unfinishedWatch.Scans -ge 10 -and $unfinishedWatch.Seen.Count -eq 0),
-    '>= 10 HMI scans, 0 unfinished projections',
-    "$($unfinishedWatch.Scans) scans, $($unfinishedWatch.Seen.Count) seen$unfinishedSeenText")
+    'L2-DA-09', '确认丢失的那次装货已完成：会话重回 Ready 之后、卸货等操作员之前，HMI 上从未出现「上次装货操作未完成」；开头 10 秒采样窗与之后到卸货等操作员为止**各**至少 10 轮把整棵 UIA 树读全了（onboard-hmi#124，计数与分段在 control-server#204 收紧）',
+    ($cleanAfterFirstWindow -ge 10 -and $cleanInSecondLeg -ge 10 -and $unfinishedWatch.Seen.Count -eq 0),
+    '采样窗 ≥ 10 轮 / 之后 ≥ 10 轮 / 检出 0 次',
+    "$(Format-L2HmiPhraseWatch $unfinishedWatch)（采样窗 $cleanAfterFirstWindow 轮 / 之后 $cleanInSecondLeg 轮）")
 $unloadSlot = [int]$unloadWaiting.Active[0]
 $journal.Note("Operator empties slot $unloadSlot and closes it.")
 $null = $simulator.Command('Put', "slots/$unloadSlot/cargo", @{ state = 'EMPTY' })

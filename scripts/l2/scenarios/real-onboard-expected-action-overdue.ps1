@@ -36,6 +36,7 @@ $ErrorActionPreference = 'Stop'
 
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2RealStation.psm1') -Force
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2RealOnboard.psm1') -Force
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ExpectedActionOverdue.psm1') -Force
 
 $journal = $Context.Journal
 $assertions = $Context.Assertions
@@ -48,9 +49,24 @@ if ([string]::IsNullOrEmpty([string]$Context.OnboardJournalPath) -or $null -eq $
     throw 'This scenario needs the real onboard rig with the protocol fault proxy and the dashboard (see its setup.psd1).'
 }
 
-# 与 setup.psd1 的 ExpectedActionOverdueThreshold、StationDepartureWaitTimeout 相同。
-$threshold = [TimeSpan]::FromSeconds(20)
-$window = [TimeSpan]::FromSeconds(60)
+# 门槛与站点期限从 setup.psd1 读，不在这里再写一遍（control-server#204）。这两个值编排器也从同一个文件读：
+# 门槛经 Resolve-L2ExpectedActionOverdueThreshold（Invoke-L2Scenario.ps1:195）同时写进车载端 stage 副本与服务端环境，
+# 期限经 JourneyRuntime__stationDepartureWaitTimeout（同文件 :606）。各写一遍的时候，改了 setup 而忘了改这里，
+# 场景会拿旧值去算「门槛越过的时刻」，判据照样绿——绿的是一个不再成立的算式。
+$setup = Import-PowerShellDataFile -LiteralPath (Join-Path $PSScriptRoot 'real-onboard-expected-action-overdue.setup.psd1')
+$threshold = Resolve-L2ExpectedActionOverdueThreshold -Setup $setup `
+    -Where 'real-onboard-expected-action-overdue.setup.psd1' -RealOnboard $true
+# 两个键都必须明写。编排器对缺席的期限用它自己的默认值 00:00:30，把那个默认值抄到这里就又是两处真相了；
+# 而这条场景的时间线（门槛在期限之前、放货收尾在 operationTimeoutMs 之内）本来就要求 setup 把两个值都定死。
+if ($null -eq $threshold) {
+    throw 'real-onboard-expected-action-overdue.setup.psd1 must name ExpectedActionOverdueThreshold: this scenario times everything from it.'
+}
+if (-not $setup.ContainsKey('StationDepartureWaitTimeout')) {
+    throw 'real-onboard-expected-action-overdue.setup.psd1 must name StationDepartureWaitTimeout: this scenario needs the threshold to fall inside it.'
+}
+$window = [TimeSpan]::Parse([string]$setup.StationDepartureWaitTimeout, [Globalization.CultureInfo]::InvariantCulture)
+$journal.Note("Read from setup.psd1: ExpectedActionOverdueThreshold $($threshold.ToString('c')), " +
+    "StationDepartureWaitTimeout $($window.ToString('c')). Both ends were configured from the same two values.")
 # 第一次开锁之后多久空关一次。要比门槛早得多，重开与第一次开锁的间隔才能把「重开不清零」与「重开清零」分开。
 $firstCloseAfter = [TimeSpan]::FromSeconds(8)
 # raisedAt 与「第一次开锁 + 门槛」的容差。第一次开锁取服务端收到第一条 UNLOCKING 的时刻，车载端取它发布开锁投影的时刻，
@@ -214,7 +230,7 @@ $first = Wait-L2RealOrLast -Description "the onboard reported $code for slot $sl
 if ($null -eq $first) {
     # 缺陷版本（车载端没有这条告警）走到这里：后面每一条都建立在这份告警上，如实记成未到达。
     Add-L2RealNotReached $assertions @('L2-EAO-03', 'L2-EAO-04', 'L2-EAO-05', 'L2-EAO-06', 'L2-EAO-07', 'L2-EAO-08', 'L2-EAO-09',
-        'L2-EAO-10', 'L2-EAO-13', 'L2-EAO-11', 'L2-EAO-12') "越过门槛 $([int]$threshold.TotalSeconds + 30) 秒内车载端没有报 $code"
+        'L2-EAO-10', 'L2-EAO-13', 'L2-EAO-14', 'L2-EAO-11', 'L2-EAO-12') "越过门槛 $([int]$threshold.TotalSeconds + 30) 秒内车载端没有报 $code"
     $journal.Note('Scenario stopped: no overdue alarm to follow.')
     return
 }
@@ -342,8 +358,58 @@ $assertions.Add(
 # --- 7. 同一超时再报一次：不出第二行，不覆盖第一行 ----------------------------------------------------------------
 
 # 门槛后再空关一次、车重开：这一仓的状态变化让车载端再发告警快照。判的是端点仍恰好一行、raisedAt 不变，
-# 以及各份快照里这一仓的超时始终是同一个 alarmId 与 raisedAt。
+# 以及各份快照里这一仓的超时始终是同一个 alarmId 与 raisedAt（`L2-EAO-13`），加上服务端为这次变化又要了一次
+# 快照（`L2-EAO-14`）。两条分开：前者是不变性（不出第二行、不覆盖），后者是活性（服务端确实重新看了一眼），
+# 混成一条会让 FAIL 指不到是哪一端出了事。
+# 位置基线，不是计数基线。用「请求总数变多了」挡不住一次重握手：握手里车载端必发一份
+# SafetyStateSnapshot，版本号单调递增因而必然越过 $midVersion，而端点只认 messageType 是
+# SafetyStateSnapshot 就前推 latestVersion、不区分握手与应答——于是三条合取项可以在**服务端一次都没
+# 为这次重开要过快照**的情况下全部满足。这不是推演：本票的红证据
+# evidence/l2/cs204-eao11-red-no-redecide 里流量两项就都满足了（请求 7 / 快照 8），那 7/8 是会话被打回
+# HANDSHAKE_INCOMPLETE 之后反复重握手刷出来的。所以照 L2-EAO-04 的写法按行序定位，并把两行绑回
+# 告警那条连接（重握手会开新连接，连接号与总数都会变）。
+$linesBeforeAgain = (Get-TrafficLines).Count
 $again = Invoke-L2CloseOverOppositeState -Context $Context -AttemptId $attemptId -SlotNo $slotNo -Criterion 'reopen-after-threshold'
+
+# 主判据读代理流量：重开那一行之后，服务端发了一条 SafetyStateSnapshotRequested，车随后回了一份
+# SafetyStateSnapshot，两条都在告警那条连接上、而且全程仍只有这一条连接。
+# 服务端为什么会再要一次，见 OnboardMessageProcessor.AppendSafetySnapshotRequest 的注释与
+# AffectsAnOverdueSlotAsync：一条影响到已超时仓的 SafetyStateChanged 就让下一次应答捎上一条请求。
+$reAsked = Wait-L2RealOrLast -Description 'the server asked for another snapshot after the reopen and the onboard answered, on the same connection' `
+    -Journal $journal -Criterion 'snapshot-requested-again' -TimeoutSeconds 20 `
+    -Probe {
+        $lines = Get-TrafficLines
+        $request = -1; $answer = -1
+        for ($i = $linesBeforeAgain; $i -lt $lines.Count; $i++) {
+            if ($request -lt 0 -and $lines[$i].direction -eq 'server->onboard' -and $lines[$i].messageType -eq 'SafetyStateSnapshotRequested') { $request = $i; continue }
+            if ($request -ge 0 -and $lines[$i].direction -eq 'onboard->server' -and $lines[$i].messageType -eq 'SafetyStateSnapshot') { $answer = $i; break }
+        }
+        [pscustomobject]@{
+            Request     = if ($request -ge 0) { [int]$lines[$request].connection } else { $null }
+            Answer      = if ($answer -ge 0) { [int]$lines[$answer].connection } else { $null }
+            Connections = @((Get-L2RealTraffic $proxy).connections).Count
+        }
+    } `
+    -Until { param($v) $null -ne $v.Answer }
+
+# 端点读数的版本号前进，是同一件事走完到看板的那一端。它**不能单独当判据**，而且不只是因为
+# 「车载端今天不主动推快照」这一条：握手那份快照同样会让它前进，所以它连一次重握手都分辨不出来。
+# 「服务端又要了一次」由上面那条按行序定位、并绑住连接的流量判据承担，这里只作端到端佐证。
+$afterVersion = Wait-L2RealOrLast -Description 'the endpoint readings moved past the mid-session snapshot' `
+    -Journal $journal -Criterion 'endpoint-readings-version-again' -TimeoutSeconds 20 `
+    -Probe {
+        $rows = Get-Slots (Get-Endpoint)
+        if ($rows.Count -gt 0 -and $null -ne $rows[0].readings) { [long]$rows[0].readings.safetyStateVersion } else { $null }
+    } `
+    -Until { param($v) $null -ne $v -and $null -ne $midVersion -and $v -gt $midVersion }
+$assertions.Add(
+    'L2-EAO-14', "门槛后重开，服务端又要了一次快照：重开之后的流量里出现 server->onboard:SafetyStateSnapshotRequested 与随后的 onboard->server:SafetyStateSnapshot，两条都在告警那条连接（#$($wire.Alarm)）上、全程仍只有一条连接；端点读数的版本也从中途那份（v$midVersion）前进",
+    ($null -ne $reAsked.Request -and $null -ne $reAsked.Answer -and
+        $reAsked.Request -eq $wire.Alarm -and $reAsked.Answer -eq $wire.Alarm -and $reAsked.Connections -eq 1 -and
+        $null -ne $midVersion -and $null -ne $afterVersion -and $afterVersion -gt $midVersion),
+    "重开后请求与快照各一条、都在 #$($wire.Alarm) / 1 条连接 / 端点读数 v > $midVersion",
+    "请求 $(if ($null -eq $reAsked.Request) { '(无)' } else { "#$($reAsked.Request)" }) 快照 $(if ($null -eq $reAsked.Answer) { '(无)' } else { "#$($reAsked.Answer)" }) / $($reAsked.Connections) 条连接 / 端点读数 $(if ($null -eq $afterVersion) { '(无读数)' } else { "v$afterVersion" })")
+
 $null = Wait-L2Iterations -Riot $Context.Riot -Count 3 -Journal $journal
 $reports = @((Get-OverdueReports $slotNo) | Where-Object { $null -ne $_.Alarm })
 $alarmIds = @($reports | ForEach-Object { [string]$_.Alarm.alarmId } | Sort-Object -Unique)
@@ -359,21 +425,27 @@ $assertions.Add(
 
 # --- 8. 站点期限过去、门仍开着：同一行合成 ------------------------------------------------------------------------
 
-$blocked = Wait-L2Condition -Description 'the stop passed its deadline with the door open' `
+# 超时带最后读值，不抛错（control-server#204）。这里原本是 Wait-L2Condition：期限一直没被判成超时时它抛出，
+# 场景在这一行中止，`L2-EAO-11` 与 `L2-EAO-12` 两行**从判据表里消失**——读证据的人分不出「判过且通过」和
+# 「根本没判」，而整轮的失败原因只剩一句 "Timed out after 90s waiting for: ..."，指不到是哪条判据。
+# 更要紧的是第 9 节（放货关门闭环、撤下）整段不跑，所以 `L2-EAO-12` 这条守护判据在任何超时场合都必然取不到。
+# `evidence/l2/20260919-cs167-red-05-no-redecide/` 就是这个样子：表里只有 11 行。
+$blocked = Wait-L2RealOrLast -Description 'the stop passed its deadline with the door open' `
     -Journal $journal -Criterion 'station-timeout-door-not-closed' -TimeoutSeconds ([int]$window.TotalSeconds + 30) `
     -Probe { Get-L2Runtime -Connection $connection -DemandId $demandId } `
     -Until { param($v) [string]$v.BlockReasonCode -eq 'STATION_TIMEOUT_DOOR_NOT_CLOSED' }
+$blockReason = if ($null -eq $blocked) { '(no runtime row)' } else { [string]$blocked.BlockReasonCode }
 $merged = Wait-L2RealOrLast -Description 'the endpoint merges the station timeout into the same row' `
     -Journal $journal -Criterion 'endpoint-station-timeout' -TimeoutSeconds 15 `
     -Probe { Get-Slots (Get-Endpoint) } -Until { param($v) $v.Count -eq 1 -and $v[0].stationTimeoutDoorNotClosed -eq $true }
 $mergedRow = if ($merged.Count -gt 0) { $merged[0] } else { $null }
 $assertions.Add(
     'L2-EAO-11', '站点期限过后合成一行：期限过去、门仍开着（STATION_TIMEOUT_DOOR_NOT_CLOSED），端点 slots 仍恰好一行，stationTimeoutDoorNotClosed = true，raisedAt 不变',
-    ([string]$blocked.BlockReasonCode -eq 'STATION_TIMEOUT_DOOR_NOT_CLOSED' -and $merged.Count -eq 1 -and
+    ($blockReason -eq 'STATION_TIMEOUT_DOOR_NOT_CLOSED' -and $merged.Count -eq 1 -and
         $mergedRow.stationTimeoutDoorNotClosed -eq $true -and (ConvertTo-L2RealInstant $mergedRow.raisedAt) -eq $raisedAt -and
         (Get-L2SlotPhysical -Simulator $simulator -SlotNo $slotNo) -like 'OPEN/*'),
     "STATION_TIMEOUT_DOOR_NOT_CLOSED / 1 行 stationTimeout=True raisedAt $($alarm.raisedAt) / 门开",
-    "$($blocked.BlockReasonCode) / $($merged.Count) 行 $(Format-EndpointRow $mergedRow) / $(Get-L2SlotPhysical -Simulator $simulator -SlotNo $slotNo)")
+    "$blockReason / $($merged.Count) 行 $(Format-EndpointRow $mergedRow) / $(Get-L2SlotPhysical -Simulator $simulator -SlotNo $slotNo)")
 
 # --- 9. 放货关门：闭环、撤下 ------------------------------------------------------------------------------------
 
