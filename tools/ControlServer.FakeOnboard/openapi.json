@@ -117,6 +117,20 @@
         }
       }
     },
+    "/control/v1/silence": {
+      "put": {
+        "summary": "Stops the peer sending anything while leaving its socket open (silent: true), or lets it speak again.",
+        "description": "The hung-onboard shape, and not the same as /connection: nothing is disconnected, the TCP connection stays up, and every message this peer would have written is dropped and logged on the wire as 'dropped'. Incoming messages are still read. Speaking again does not re-open a session the server has already closed on its liveness timeout; reconnect through /connection for that, which also clears silence.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SilenceCommand" } } }
+        },
+        "responses": {
+          "200": { "description": "The command envelope and the revision after the change." },
+          "409": { "description": "NOT_ALLOWED_IN_STATE when no peer is attached, or INVALID_ARGUMENT." }
+        }
+      }
+    },
     "/control/v1/alarms": {
       "put": {
         "summary": "Replaces the whole alarm set and publishes it as the next OnboardAlarmSnapshot.",
@@ -176,6 +190,12 @@
         "allOf": [
           { "$ref": "#/components/schemas/CommandEnvelope" },
           { "type": "object", "required": ["connected"], "properties": { "connected": { "type": "boolean" } } }
+        ]
+      },
+      "SilenceCommand": {
+        "allOf": [
+          { "$ref": "#/components/schemas/CommandEnvelope" },
+          { "type": "object", "required": ["silent"], "properties": { "silent": { "type": "boolean" } } }
         ]
       },
       "LoadCancellationCommand": {

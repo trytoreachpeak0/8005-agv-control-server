@@ -66,6 +66,19 @@ public sealed class JourneyRuntimeEngine(
             new EventId(2105, nameof(LogCheckpointWaitExceeded)),
             "Vehicle {AgvId} has been holding at a traffic checkpoint past its budget on journey " +
             "{DemandId}; it is not arriving on its own.");
+    /// <summary>
+    /// The vehicle has gone quiet on a journey waiting for one of its facts (ADR-cross-0027, control-server#234).
+    /// Logged on the edge, when the block is first written, rather than every round the silence lasts: a warning
+    /// repeated every two seconds is not an escalation, it is noise. The escalation is the dashboard's ladder,
+    /// measured from <see cref="JourneyRuntimeRow.BlockReasonSince"/>.
+    /// </summary>
+    private static readonly Action<ILogger, string, long, string, DateTimeOffset?, Exception?> LogOnboardSessionLost =
+        LoggerMessage.Define<string, long, string, DateTimeOffset?>(
+            LogLevel.Warning,
+            new EventId(2119, nameof(LogOnboardSessionLost)),
+            "Onboard session for {AgvId} (generation {SessionGeneration}) has gone silent while journey " +
+            "{DemandId} waits on a fact only the vehicle can supply; last inbound at {LastInboundAt}. " +
+            "The journey is shown as blocked and nothing else is done to it (REQ-0287).");
     private static readonly Action<ILogger, string, string, string, Exception?> LogOrderFailedSymptom =
         LoggerMessage.Define<string, string, string>(
             LogLevel.Warning,
@@ -142,6 +155,27 @@ public sealed class JourneyRuntimeEngine(
 
     /// <summary>The checkpoint wait has lasted longer than the configured budget.</summary>
     public const string CheckpointWaitExceededReason = "VEHICLE_CHECKPOINT_WAIT_EXCEEDED";
+
+    /// <summary>
+    /// The journey is waiting on a fact only the vehicle can supply, and the vehicle has gone quiet: no legal inbound
+    /// from this session generation for <see cref="SessionLiveness.Timeout"/> (ADR-cross-0027, control-server#234).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>This is display and escalation, nothing else.</b> REQ-0287: a session that has failed blocks the vehicle's
+    /// new business and is otherwise watched through RIoT; no timeout of it ever ends an order, releases a lease,
+    /// reassigns, or moves the vehicle. So this code changes no stage and issues no order command -- it makes a
+    /// journey that was invisible show up on the blocked-journey card, and it climbs the escalation ladder from there.
+    /// </para>
+    /// <para>
+    /// <b>Not <c>ONBOARD_SESSION_NOT_READY</c>, on purpose.</b> That one is written when the session row itself is no
+    /// longer Ready, which a dropped or silent link does not do by itself: nothing on the disconnect path writes the
+    /// database at all (<c>OnboardTcpServer.HandleClientAsync</c>'s finally only detaches the peer), and
+    /// <c>WireToGateStore.RecordConnectionLossAsync</c> still has no product caller. A silent vehicle therefore keeps a
+    /// Ready session row, and the readiness branch of <see cref="AdvanceAsync"/> is never reached for it.
+    /// </para>
+    /// </remarks>
+    public const string OnboardSessionLostReason = "ONBOARD_SESSION_LOST";
 
     private readonly JourneyRuntimeOptions runtimeOptions = options.Value;
 
@@ -443,6 +477,13 @@ public sealed class JourneyRuntimeEngine(
                 runtime.UpdatedAt = now;
                 await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             }
+            return;
+        }
+        // The session row says Ready, but does the vehicle still answer? Judged here, before anything is
+        // published, because everything below this line either sends to the peer or waits on a fact only the
+        // peer can supply (control-server#234).
+        if (await NameSilentOnboardSessionAsync(runtime, session, now, cancellationToken).ConfigureAwait(false))
+        {
             return;
         }
         // 本轮推进读到的停靠与归属。每一个要发出去的 id 都从这里取，取货与关卡两段不再各读各的列。
@@ -892,6 +933,169 @@ public sealed class JourneyRuntimeEngine(
         }
         return true;
     }
+
+    /// <summary>
+    /// Names the vehicle having gone quiet, and says whether this round should stop here
+    /// (control-server#234). Returns true when the journey is left where it is for this round.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Why this runs before the advance rather than inside the waiting branches.</b> The first thing the
+    /// advance does after the readiness gate is replay this session's unacknowledged outbound messages, and
+    /// <c>OnboardPeer.SendAsync</c> throws <c>IOException</c> when the addressee has no attached connection.
+    /// So from the moment the connection is gone, every round of every in-flight journey threw out of
+    /// <c>ReplayPendingForSessionAsync</c> and was logged as "iteration failed closed" — the waiting branches
+    /// below were never reached, and no code could be written from them. Measured on the first run of
+    /// <c>onboard-silent-liveness-loss</c>: one such exception every second, and the journey never blocked.
+    /// </para>
+    /// <para>
+    /// <b>Stopping the round costs almost nothing, and the reason is a shared threshold — not the contents of
+    /// the branches below.</b> It is tempting to say "everything below needs the peer anyway", and that is
+    /// false: <see cref="ObserveOrderFailureAsync"/>, <see cref="EnsureMovementConfirmedAsync"/> and
+    /// <see cref="NameCheckpointWaitAsync"/> all judge RIoT facts, which a silent peer does not stop arriving.
+    /// The real reason is that this side and the session layer measure the same six seconds
+    /// (<see cref="SessionLiveness.Timeout"/>) from the same event — the last legal inbound of this generation.
+    /// So by the time this fires, the session layer has already closed the connection, and the round it stops
+    /// is one that would have thrown out of <c>ReplayPendingForSessionAsync</c> a few lines below
+    /// (<c>OnboardPeer.SendAsync</c> throws for an addressee with no attached connection). That is what every
+    /// round did before this ticket, once a second, for as long as the silence lasted.
+    /// </para>
+    /// <para>
+    /// <b>Two load-bearing constraints follow, and they are this method's to carry.</b>
+    /// </para>
+    /// <list type="number">
+    /// <item><description>
+    /// <b>This side's window must never be longer than the session layer's.</b> Both read
+    /// <see cref="SessionLiveness.Timeout"/> today, so they cannot drift apart by accident;
+    /// <c>OnboardSilentLivenessLossTests.TheEngineAndTheSessionLayerMeasureTheSameWindow</c> fails if they do.
+    /// Make this one longer and the branches below run against a peer that is already gone — the throwing round
+    /// comes back, with a block code on top of it.
+    /// </description></item>
+    /// <item><description>
+    /// <b>The session layer's own close must not be removed.</b> It is what makes "silent" and "disconnected"
+    /// the same state by the time this runs. Take it away and a vehicle that is silent with its socket still
+    /// open reaches the branches below every round — and this method will have stopped the round that would
+    /// have noticed its order failing.
+    /// </description></item>
+    /// </list>
+    /// <para>
+    /// <b>The one window where this does decide something, and it is bounded.</b> The two clocks do not start
+    /// at exactly the same instant: the inbox stamps <c>ReceivedAt</c> when a message starts being processed,
+    /// while the session layer refreshes after it finishes, so the session layer expires a few milliseconds
+    /// later. A runtime round landing inside that gap — about one part in a few hundred, against a two-second
+    /// poll — stops a round the replay would still have survived, so a RIoT order failure can be noticed one
+    /// poll later than before. Not lost: the next round, with the connection now closed, could not have
+    /// observed it either.
+    /// </para>
+    /// <para>
+    /// <b>Display and escalation only (REQ-0287).</b> The stage is not moved, the demand is not ended, the
+    /// lease is not released, nothing is reassigned, and no order command is issued — <c>OrderHold</c> least
+    /// of all, which ADR-cross-0026 asks for and REQ-0287 forbids; the user deferred that conflict to
+    /// batch 9 on 2026-09-20.
+    /// </para>
+    /// <para>
+    /// <b>Three codes this must not overwrite.</b> Two are the ones the readiness gate above also leaves
+    /// alone: a <see cref="JourneyRuntimeStage.Blocked"/> journey's code names the recovery it is waiting on
+    /// and nothing rebuilds it, and a stop held at its AREA machine carries the code control-server#198 counts
+    /// its escalation from. A silent session is judged for them too — control-server#228's escalation is on
+    /// its own clock and runs whether or not the vehicle answers — but their codes stay as they are.
+    /// </para>
+    /// <para>
+    /// The third is <see cref="VehicleFaultEvidence.OrderFailed"/>, and it is this ticket's own addition.
+    /// Escalation does not care — both codes sit at the top tier — but <b>what a person is told does</b>. That
+    /// code means RIoT reported this journey's move order FAILED, which is REQ-0232's symptom and has already
+    /// been recorded as a vehicle fault; an emergency stop triggered by an in-flight order reported FAILED has
+    /// no automatic release path (<c>docs/emergency-stop-field-fallback.md</c>), so it is precisely the thing
+    /// the person walking up to the vehicle has to know. Writing "the vehicle stopped talking" over it would
+    /// replace the reason they need with a symptom of it, and reset <see cref="JourneyRuntimeRow.BlockReasonSince"/>
+    /// while doing so. A failed order and a silent session are usually the same event seen from two sides.
+    /// </para>
+    /// <para>
+    /// The two checkpoint codes are deliberately <b>not</b> on this list, which keeps the existing convention:
+    /// <see cref="NameCheckpointWaitAsync"/> already overwrites and clears them freely as the wait comes and
+    /// goes, so they are the runtime's running commentary rather than a record of a decision. Nothing here
+    /// changes that.
+    /// </para>
+    /// </remarks>
+    private async Task<bool> NameSilentOnboardSessionAsync(
+        JourneyRuntimeRow runtime,
+        SessionRecoveryRow session,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (!WaitsOnAnArrivalTheVehicleReports(runtime.Stage))
+        {
+            return false;
+        }
+        bool heard = await SessionLiveness.HeardFromAsync(
+            dbContext, runtime.AgvId, session.SessionGeneration, now, cancellationToken).ConfigureAwait(false);
+        if (heard)
+        {
+            // Back on air on this generation: the code is this method's to clear, because SetStage only clears
+            // on a stage change and a silence that comes and goes inside one stage never reaches one.
+            if (string.Equals(runtime.BlockReasonCode, OnboardSessionLostReason, StringComparison.Ordinal))
+            {
+                runtime.SetBlockReason(null, now);
+                runtime.UpdatedAt = now;
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            }
+            return false;
+        }
+
+        // control-server#228's escalation is measured from AreaEndAdmissionRevokedSince, which has nothing to
+        // do with whether the vehicle is answering. So it is judged first and, when it fires, it decides the
+        // round: a loaded stop whose station stopped admitting it goes to Blocked under its own code even
+        // though the vehicle is also silent.
+        if (await EscalateAreaEndAdmissionRevokedPastTimeoutAsync(runtime, now, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+
+        // Stage != Blocked is redundant while WaitsOnAnArrivalTheVehicleReports admits only the two arrival
+        // stages, and it stays for the same reason the readiness gate above carries it: it states which codes
+        // this write must not touch, so widening the stage set later cannot quietly start overwriting a
+        // Blocked journey's recovery code. Redundant today, load-bearing the day someone widens it.
+        if (runtime.Stage != JourneyRuntimeStage.Blocked && !IsHeldForAreaEndAdmission(runtime) &&
+            !string.Equals(runtime.BlockReasonCode, VehicleFaultEvidence.OrderFailed, StringComparison.Ordinal) &&
+            !string.Equals(runtime.BlockReasonCode, OnboardSessionLostReason, StringComparison.Ordinal))
+        {
+            DateTimeOffset? lastInboundAt = await LatestInboundAtForSessionAsync(
+                runtime.AgvId, session.SessionGeneration, cancellationToken).ConfigureAwait(false);
+            LogOnboardSessionLost(
+                logger, runtime.AgvId, session.SessionGeneration, runtime.DemandId, lastInboundAt, null);
+            runtime.SetBlockReason(OnboardSessionLostReason, now);
+            runtime.UpdatedAt = now;
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// The two stages where the journey's only way forward is the vehicle reporting that it has arrived, and
+    /// where a silent vehicle therefore leaves the row carrying no block code at all (control-server#234).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Deliberately these two and not every stage.</b> The stops at a station have their own liveness
+    /// measure already — <c>TryEndStopAtStationDeadlineAsync</c> and <c>TrySettleDeterminateLoadFailureAsync</c>
+    /// refuse to act on evidence older than <see cref="JourneyRuntimeOptions.MaximumEvidenceAge"/>, and a door
+    /// left open past the deadline raises <see cref="StationTimeoutDoorNotClosedReason"/>. Judging silence in
+    /// front of those would take the decision away from them: run wider once, this returned early for every
+    /// station stop whose test advanced the clock without heartbeating, and fourteen existing tests went red.
+    /// They were right to. A guard that stops a stage from reaching its own judgment is not the same change as
+    /// naming a wait nobody was naming.
+    /// </para>
+    /// <para>
+    /// The arrival stages have no such measure: the arrival is simply not trusted, round after round, and the
+    /// row ends up with no code. That is the gap this ticket exists to close, and it is the whole of it. A
+    /// station stop whose vehicle has gone quiet is a separate question — it is visible through its own
+    /// deadline and alarm — and widening to it belongs in its own ticket, with its own evidence.
+    /// </para>
+    /// </remarks>
+    private static bool WaitsOnAnArrivalTheVehicleReports(JourneyRuntimeStage stage) =>
+        stage is JourneyRuntimeStage.AwaitingPickupArrival or JourneyRuntimeStage.AwaitingGateArrival;
 
     /// <summary>
     /// Says why a journey that has not arrived is not arriving, when RIoT's answer is that the

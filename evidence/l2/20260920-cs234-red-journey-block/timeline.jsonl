@@ -1,0 +1,33 @@
+{"at":"2026-09-20T07:00:01.9139138+00:00","note":"L2 run 20260920T070001866Z starting for scenario 'onboard-silent-liveness-loss'."}
+{"at":"2026-09-20T07:00:02.0450497+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-09-20T07:00:02.0500155+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-20T07:00:05.7889011+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-20T07:00:06.0006494+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-20T07:00:06.1015224+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-09-20T07:00:09.0512086+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-20T07:00:11.2034560+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-20T07:00:11.3550640+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-20T07:00:12.0268414+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-20T07:00:12.1072741+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-20T07:00:12.1627259+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260920T070001866Z\\controlserver.db"}
+{"at":"2026-09-20T07:00:13.8951660+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"42e3e420fbbc416f91e867a76ddb36c1","version":1,"slotCount":8}}}
+{"at":"2026-09-20T07:00:13.9020609+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260920T070001866Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-20T07:00:15.4771897+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"42e3e420fbbc416f91e867a76ddb36c1","boundSlots":8,"version":1}}}
+{"at":"2026-09-20T07:00:15.5713534+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-20T07:00:15.5766733+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260920T070001866Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b7-234-8005-agv-control-server\\evidence\\l2\\20260920-cs234-red-journey-block\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-20T07:00:17.1266508+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b7-234-8005-agv-control-server\\evidence\\l2\\20260920-cs234-red-journey-block\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"3f977e110e3b41589e2e88c36f8fe857","importedAt":"2026-09-20T15:00:15.7766744+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-20T07:00:17.1305629+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-09-20T07:00:17.1375277+00:00","note":"Environment is up; entering scenario 'onboard-silent-liveness-loss'."}
+{"at":"2026-09-20T07:00:17.1809945+00:00","note":"Publishing demand 53a5d047176947279dcef3937d393efe (sublot L2-SUBLOT-20260920T070001866Z)."}
+{"at":"2026-09-20T07:00:17.2299359+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-20T07:00:18.5438250+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-20T07:00:18.5535458+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-53a5d047-1769-4727-9dce-f3937d393efe-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-20T07:00:18.5567512+00:00","note":"Vehicle departs for the pickup station."}
+{"at":"2026-09-20T07:00:18.6688524+00:00","criterion":"server-closed-silent-connection-baseline","value":"READY"}
+{"at":"2026-09-20T07:00:18.6716508+00:00","note":"Onboard process hangs: it stops sending anything and leaves the socket open."}
+{"at":"2026-09-20T07:00:18.6961812+00:00","criterion":"server-closed-silent-connection","value":"READY"}
+{"at":"2026-09-20T07:00:24.2336790+00:00","criterion":"server-closed-silent-connection","value":"DISCONNECTED"}
+{"at":"2026-09-20T07:00:24.2540224+00:00","criterion":"endpoint-session-lost","value":"(null)"}
+{"at":"2026-09-20T07:01:24.4654511+00:00","note":"Run failed: Timed out after 60s waiting for: the blocked-journey endpoint lists the journey behind the silent session. Last observed: (nothing)"}
+{"at":"2026-09-20T07:01:24.4677945+00:00","note":"Failure at: at Wait-L2Condition, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b7-234-8005-agv-control-server\\scripts\\l2\\L2.psm1: line 103\r\nat <ScriptBlock>, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b7-234-8005-agv-control-server\\scripts\\l2\\scenarios\\onboard-silent-liveness-loss.ps1: line 180\r\nat <ScriptBlock>, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b7-234-8005-agv-control-server\\scripts\\l2\\Invoke-L2Scenario.ps1: line 1259"}
+{"at":"2026-09-20T07:01:24.7251256+00:00","note":"L2 port block lock released."}
