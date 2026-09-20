@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
@@ -1560,13 +1560,25 @@ public sealed partial class MultiVehicleExecutionTests
         /// </summary>
         public Exception? ThrowOnFirstAccept { get; set; }
 
+        /// <summary>
+        /// Hangs in place of the first acceptance, and only that one, so the vehicle's budget cuts the segment off
+        /// before anything is committed. The claim the segment took ahead of intake then stands for nothing.
+        /// </summary>
+        public bool HangBeforeFirstAccept { get; set; }
+
+        /// <summary>
+        /// Hangs once the first acceptance has committed, so the budget cuts the segment off with the demand
+        /// genuinely accepted -- the timing that tells a claim read from the database from one guessed at.
+        /// </summary>
+        public bool HangAfterFirstAccept { get; set; }
+
         public Task AcceptWithOrderIntentAsync(
             AcceptedDemandSnapshot snapshot,
             OrderIntent orderIntent,
             CancellationToken cancellationToken) =>
             inner.AcceptWithOrderIntentAsync(snapshot, orderIntent, cancellationToken);
 
-        public Task AcceptWithOrderIntentAsync(
+        public async Task AcceptWithOrderIntentAsync(
             AcceptedDemandSnapshot snapshot,
             OrderIntent orderIntent,
             JourneyExecutionPlan journey,
@@ -1578,8 +1590,21 @@ public sealed partial class MultiVehicleExecutionTests
                 throw refusal;
             }
 
+            if (HangBeforeFirstAccept)
+            {
+                HangBeforeFirstAccept = false;
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+            }
+
             plans.Add(journey);
-            return inner.AcceptWithOrderIntentAsync(snapshot, orderIntent, journey, cancellationToken);
+            await inner.AcceptWithOrderIntentAsync(snapshot, orderIntent, journey, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (HangAfterFirstAccept)
+            {
+                HangAfterFirstAccept = false;
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+            }
         }
     }
 

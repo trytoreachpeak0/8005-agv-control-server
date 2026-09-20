@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
@@ -37,6 +37,14 @@ public sealed partial class MultiVehicleExecutionTests
     /// so a cold first intake -- JIT and EF query compilation -- cannot run them out as well and make the test flaky.
     /// </summary>
     private const int CutOffBudgetMilliseconds = 1000;
+
+    /// <summary>
+    /// The budget of a vehicle a test cuts off <em>at</em> intake rather than in the chain. Wider than the one
+    /// above because the segment has to get all the way to the acceptance first: a budget that fired before it
+    /// would leave no claim to withdraw, and the tests below would pass on a round that never made the claim they
+    /// are about. Each of them says so with an assertion rather than trusting the number.
+    /// </summary>
+    private const int ClaimCutOffBudgetMilliseconds = 3000;
 
     // ---- round equivalence (control-server#209) -----------------------------------------------------------
 
@@ -717,6 +725,162 @@ public sealed partial class MultiVehicleExecutionTests
                 .ToArrayAsync(TestContext.Current.CancellationToken));
         Assert.Null(row.ClearedAt);
         Assert.Equal(raisedAt, row.LastSeenAt);
+    }
+
+    /// <summary>
+    /// A demand claimed by a segment whose budget cut it off before the acceptance committed does not count as
+    /// accepted at the round's end either: the structural block standing against it survives the round.
+    /// </summary>
+    /// <remarks>
+    /// The same hole control-server#231 closed in the catch beside this one, left open there because that ticket
+    /// was not to change what the budget path does (control-server#239). A budget firing between the claim and the
+    /// acceptance leaves the round carrying a demand nothing took, and <see cref="StructuralDispatchBlockSink"/>
+    /// clears a block for every demand the round says was accepted -- so an alarm nothing had disproved is cleared
+    /// and raised again as new the next round, a 2115/2114 pair per round for as long as the demand is there.
+    /// </remarks>
+    [Fact]
+    public async Task AClaimTheBudgetCutOffBeforeItsAcceptanceDoesNotClearAStructuralBlock()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(
+            configure: options =>
+            {
+                options.Fleet = options.Fleet[..1];
+                options.Fleet[0].RoundTimeoutMilliseconds = ClaimCutOffBudgetMilliseconds;
+            });
+        AcceptedDemandSnapshot only = FleetFixture.Demand(0, "N1-1", 0);
+        fixture.Catalog.Set([only]);
+        DateTimeOffset raisedAt = Now.AddMinutes(-30);
+        EventRecordingLogger<StructuralDispatchBlockSink> blockLog =
+            await RaiseStandingBlockAsync(fixture, only, raisedAt);
+        fixture.Acceptances.HangBeforeFirstAccept = true;
+
+        await fixture.RunRoundAsync();
+
+        // The segment reached intake and so did claim the demand; without this a budget that fired earlier would
+        // leave nothing claimed and every assertion below would pass on a round this test is not about.
+        Assert.False(fixture.Acceptances.HangBeforeFirstAccept);
+        // Nothing was accepted, which is what makes the claim a lie.
+        Assert.Empty(await fixture.Context.AcceptedDemands.AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+        fixture.Context.ChangeTracker.Clear();
+        // The consequence first: the block is what the operator sees, and clearing it here is what makes the next
+        // round raise the same alarm as new.
+        StructuralDispatchBlockRow row = Assert.Single(
+            await fixture.Context.Set<StructuralDispatchBlockRow>().AsNoTracking()
+                .ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Null(row.ClearedAt);
+        Assert.Equal(raisedAt, row.LastSeenAt);
+        // The round proved nothing about this block either way, so it wrote neither of the two lines.
+        Assert.Empty(blockLog.Entries);
+        Assert.DoesNotContain(
+            only.DemandId,
+            Assert.Single(fixture.RoundOutcomes.Outcomes).Round.AcceptedDemandIds);
+    }
+
+    /// <summary>
+    /// A demand whose acceptance did commit before the budget cut the segment off keeps its claim: the round counts
+    /// it as accepted, and the block standing against it is cleared as on any other round.
+    /// </summary>
+    /// <remarks>
+    /// This is why the withdrawal reads the database instead of the reason the segment ended. A budget fires
+    /// wherever the segment happens to be, the acceptance transaction included, and a segment cut off just after it
+    /// committed has made its claim good. Withdrawing on "the budget ended this segment" would take back a true
+    /// claim and leave a demand that was accepted carrying an alarm nobody can act on.
+    /// </remarks>
+    [Fact]
+    public async Task AClaimTheBudgetCutOffAfterItsAcceptanceIsNotWithdrawn()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(
+            configure: options =>
+            {
+                options.Fleet = options.Fleet[..1];
+                options.Fleet[0].RoundTimeoutMilliseconds = ClaimCutOffBudgetMilliseconds;
+            });
+        AcceptedDemandSnapshot only = FleetFixture.Demand(0, "N1-1", 0);
+        fixture.Catalog.Set([only]);
+        EventRecordingLogger<StructuralDispatchBlockSink> blockLog =
+            await RaiseStandingBlockAsync(fixture, only, Now.AddMinutes(-30));
+        fixture.Acceptances.HangAfterFirstAccept = true;
+
+        await fixture.RunRoundAsync();
+
+        Assert.False(fixture.Acceptances.HangAfterFirstAccept);
+        Assert.Single(await fixture.Context.AcceptedDemands.AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Contains(
+            only.DemandId,
+            Assert.Single(fixture.RoundOutcomes.Outcomes).Round.AcceptedDemandIds);
+        fixture.Context.ChangeTracker.Clear();
+        StructuralDispatchBlockRow row = Assert.Single(
+            await fixture.Context.Set<StructuralDispatchBlockRow>().AsNoTracking()
+                .ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.NotNull(row.ClearedAt);
+        Assert.Equal(2115, Assert.Single(blockLog.Entries).EventId.Id);
+    }
+
+    /// <summary>
+    /// The withdrawal lands before the next vehicle starts: a demand the budget cut off ahead of its acceptance is
+    /// back in play inside the same round, and the vehicle behind takes it.
+    /// </summary>
+    /// <remarks>
+    /// The claim exists so that the vehicles behind stop considering a demand while one vehicle commits to it.
+    /// Taking it back a moment too late -- once the loop had moved on, or at the round's end -- would leave a
+    /// demand nobody is working on unserved for a whole round. Nothing here runs in parallel: the round walks its
+    /// vehicles in series, and this pins the withdrawal to the gap between one segment ending and the next
+    /// starting.
+    /// </remarks>
+    [Fact]
+    public async Task AClaimTheBudgetCutOffIsBackInPlayForTheVehicleBehindInTheSameRound()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(
+            configure: options => options.Fleet[0].RoundTimeoutMilliseconds = ClaimCutOffBudgetMilliseconds);
+        AcceptedDemandSnapshot only = FleetFixture.Demand(0, "N1-1", 0);
+        fixture.Catalog.Set([only]);
+        fixture.Acceptances.HangBeforeFirstAccept = true;
+
+        await fixture.RunRoundAsync();
+
+        Assert.False(fixture.Acceptances.HangBeforeFirstAccept);
+        Assert.Equal(
+            [FleetFixture.AgvIds[1]],
+            await fixture.Context.JourneyRuntimes.Select(row => row.AgvId)
+                .ToArrayAsync(TestContext.Current.CancellationToken));
+        DispatchRoundOutcome outcome = Assert.Single(fixture.RoundOutcomes.Outcomes);
+        // The vehicle behind judged it on its merits rather than finding it still claimed by the one in front.
+        DispatchVehicleOutcome behind = outcome.CompletedVehicles
+            .Single(vehicle => vehicle.AgvId == FleetFixture.AgvIds[1]);
+        Assert.Equal(
+            DispatchAdmissionChain.Eligible,
+            behind.Verdicts.Single(verdict => verdict.Evaluation.Candidate.DemandId == only.DemandId).ReasonCode);
+        Assert.Single(await fixture.Context.AcceptedDemands.AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
+    /// Raises a structural block against one demand and puts the real sink at the round's end, with a logger that
+    /// keeps the 2114/2115 lines so a test can say the round wrote neither.
+    /// </summary>
+    private static async Task<EventRecordingLogger<StructuralDispatchBlockSink>> RaiseStandingBlockAsync(
+        FleetFixture fixture,
+        AcceptedDemandSnapshot demand,
+        DateTimeOffset raisedAt)
+    {
+        EventRecordingLogger<StructuralDispatchBlockSink> log = new();
+        StructuralDispatchBlockStore blocks = new(fixture.Context);
+        fixture.RoundOutcomes.Inner = new StructuralDispatchBlockSink(
+            blocks,
+            fixture.SlotPositions,
+            new VehicleRoster(Microsoft.Extensions.Options.Options.Create(fixture.Options)),
+            log);
+        await blocks.RaiseOrRefreshAsync(
+            demand.DemandId,
+            "ROUTE_GRAPH_PICKUP_UNREACHABLE",
+            demand.TransportDemandKey,
+            "{}",
+            raisedAt,
+            TestContext.Current.CancellationToken);
+        fixture.Context.ChangeTracker.Clear();
+        return log;
     }
 
     /// <summary>Refuses every candidate for every vehicle with the reason only a whole roster can make structural.</summary>
