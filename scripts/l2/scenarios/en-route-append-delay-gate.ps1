@@ -122,9 +122,13 @@ $assertions.Add(
     'EN_ROUTE_APPEND_DELAY_GATE_EXCEEDED',
     $reason)
 
-# 原因码对了还不够：这条场景真正要证的是「什么都没发生」。再跑一会儿，确认它不是恰好还没轮到。
-$journal.Note('Letting several more dispatch rounds pass, to show the refusal is steady rather than a race.')
-Start-Sleep -Seconds 6
+# 原因码对了还不够：这条场景真正要证的是「什么都没发生」。再放几轮过去，确认它不是恰好还没轮到。
+#
+# 数的是轮次不是秒数（scripts/l2/README.md「两条贯穿始终的规则」）。拒绝要稳，判据的强度就是
+# 「服务端又得到了几次机会」——一句 Start-Sleep -Seconds 6 在快机器上放过去七八轮，在慢机器上
+# 可能只有一两轮，而两种情形下这条场景都照样绿。等 mapStationReads 涨 4 次，机会次数就是四次，
+# 与机器快慢无关；真卡住时报的也是「哪一条判据一直没成立」，不是一个光秃秃的超时。
+$null = Wait-L2Iterations -Riot $riot -Count 4 -Journal $journal
 
 $memberships = [int](Invoke-Scalar ("SELECT COUNT(*) AS N FROM JourneyDemands " +
     "WHERE JourneyId = '$journeyId' AND RemovedAt IS NULL")).N
