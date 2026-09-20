@@ -265,13 +265,23 @@ function Invoke-L2TaskTypeJourney {
     $worklistsAtDestination = 2
     $unload = Invoke-L2TaskTypeStationOperation -Context $Context -DemandId $DemandId -OperationType 'Unload' -CargoState 'EMPTY' `
         -WhileWaiting {
+            # 这两个 scriptblock 都**不能**再 `.GetNewClosure()`。它们写在一个已经是闭包的块里，而在闭包
+            # 内部调用 `GetNewClosure()` 捕获到的是一个空作用域——实测：外层闭包读得到 $DemandId，
+            # 它里面再取一次闭包就读成空。后果不是值不对，是**判据必然红**：探针拿空需求号去查，永远数到
+            # 0 份已确认的清单，60 秒超时（实跑 rig-01，见 evidence/l2/cs203-rig-01-nested-closure-red/）。
+            # 不取闭包才是对的：scriptblock 记住定义它的作用域，那正是这个回调的作用域，隔着
+            # Wait-L2Condition、Wait-L2StopFacts 两层函数调用也读得到。
+            #
+            # 下面那条 `-ne $originDirection` 原来也带 `.GetNewClosure()`，**同一个毛病，在本票之前就有**：
+            # $originDirection 读成 $null，于是那一项等于「Direction 非空」，而同一条判据前面已经判过非空了。
+            # 换句话说「第二站的方向与第一站不同」这半句**一直没有判别力**，一并修掉。
             $null = Wait-L2Condition -Description 'the onboard acknowledged the worklist at the second stop' `
                 -Journal $journal -Criterion 'destination-worklist-acknowledged' -TimeoutSeconds 60 `
-                -Probe { @((Get-L2DemandJourneySnapshots $connection $DemandId) | Where-Object { $_.Type -eq 'CurrentStopWorklistSnapshot' -and $_.Acknowledged }).Count }.GetNewClosure() `
+                -Probe { @((Get-L2DemandJourneySnapshots $connection $DemandId) | Where-Object { $_.Type -eq 'CurrentStopWorklistSnapshot' -and $_.Acknowledged }).Count } `
                 -Until { param($v) $v -ge $worklistsAtDestination }
             Wait-L2StopFacts -Context $Context -Criterion 'stop-line:at-destination' `
                 -Description 'the HMI shows the second stop''s direction and task type' `
-                -Until { param($f) (Test-L2RealPresent $f.Direction) -and (Test-L2RealPresent $f.TaskType) -and $f.Direction -ne $originDirection }.GetNewClosure()
+                -Until { param($f) (Test-L2RealPresent $f.Direction) -and (Test-L2RealPresent $f.TaskType) -and $f.Direction -ne $originDirection }
         }.GetNewClosure()
     $readings['at-destination'] = $unload.WhileWaiting
 

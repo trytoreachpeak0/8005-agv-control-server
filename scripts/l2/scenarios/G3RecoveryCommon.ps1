@@ -349,8 +349,14 @@ function Add-G3VehicleReleasedForNextDemand([object]$Context, [string]$Id, [stri
         }
         Start-Sleep -Milliseconds 500
     }
-    $backlog = @(Invoke-L2Query -Connection $connection -Sql "SELECT ReasonCode, Status FROM JourneyBacklog WHERE DemandId = '$nextDemandId'")
-    $backlogText = if ($backlog.Count -ge 1) { "积压 $($backlog[0].Status)/$($backlog[0].ReasonCode)" } else { '无积压行' }
+    # 列名实读自 `JourneyBacklogRow`：这张表没有 Status 列，「受理了没有」写在 AcceptedAt 上。
+    # 原来 L2-DC-12 那份用的是 `SELECT *` 再按名字过滤属性——那不是随手写的，是因为它不假设列名；
+    # 我把它「改进」成显式列名时照搬了一个不存在的 Status，三次真装置运行白跑在
+    # `SQLite Error 1: 'no such column: Status'` 上。
+    $backlog = @(Invoke-L2Query -Connection $connection -Sql "SELECT ReasonCode, AcceptedAt FROM JourneyBacklog WHERE DemandId = '$nextDemandId'")
+    $backlogText = if ($backlog.Count -ge 1) {
+        "积压 $($backlog[0].ReasonCode)，受理时间 $(if (Test-G3Present $backlog[0].AcceptedAt) { $backlog[0].AcceptedAt } else { '(无)' })"
+    } else { '无积压行' }
     $nextText = if ($next) {
         "下一单 $($next.Stage)/$($next.BlockReasonCode) TO_PICKUP=$intentStatus on $($next.AgvId)"
     } else { "60 s 内下一单没有建旅程（$backlogText）" }

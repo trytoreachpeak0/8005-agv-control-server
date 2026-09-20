@@ -450,6 +450,12 @@ DispatchZoneParameters = @{
   它自己那条测试先红，那就是「这份要跟着动」的通知。自检 `Test-L2RouteEvidence.ps1`（纯输入，不到一秒，进了 `test.yml`）
   用同样两对值断言这一份，并逐个扰动八项输入，要求每一项都真的进了哈希。三次对照见
   `evidence/l2/cs203-route-evidence-README.md`：同一个「只把喂给哈希的两端反过来」的缺陷，收紧后只红这一条，收紧前全绿。
+- **新写 L2 查询时，列名从 `ControlServerDbContext.cs` 的 Row 类实读，别从旁边一条查询抄。**
+  SQLite 的列名错误要到**运行时**才报（`SQLite Error 1: 'no such column: X'`），语法解析、编译、格式检查
+  三道都看不见；而 G3 共用函数里的查询**本机只有真装置跑得到**——control-server#203 就是这样白跑了三次真装置，
+  错在 `JourneyBacklog` 根本没有 `Status` 列。
+  另外，看到一条查询写成 `SELECT *` 再按名字过滤属性时，**先问它是不是有意的**：`L2-DC-12` 原来那条正是因为
+  不假设列名才那么写，把它「改进」成显式列名就是上面那次。
 - `L2RunLedger.psm1` —— 本机真装置运行的台账（control-server#203）。**每次真装置运行的起止与三端提交都记在
   `%LOCALAPPDATA%\8005-l2\rig-runs.log`**，一行一条 NDJSON，由 `Invoke-L2Scenario.ps1` 自己追加。合成运行不写。
   起始行在**拿到桌面锁之后**写，所以时间戳是装置上的时间不是排队的时间；结束行在**释放桌面锁之前**写，一对行
