@@ -342,7 +342,7 @@ public sealed partial class MultiVehicleExecutionTests
     }
 
     /// <summary>
-    /// 一辆车的旅程 Blocked 时，这一轮连一条候选都不为它评估——新需求连 backlog 记录都不该有。
+    /// 一辆车的旅程 Blocked 时，这一轮连一条候选都不为它评估——<b>而这一轮确实开了</b>。
     /// </summary>
     /// <remarks>
     /// <para>
@@ -351,54 +351,56 @@ public sealed partial class MultiVehicleExecutionTests
     /// 而真正的原因是它正等着人来处理。
     /// </para>
     /// <para>
-    /// <b>这条是补上一个缺口，不是新立的规矩。</b>批次7-06 把在途车放进候选竞争之后，
-    /// <c>L2-LR-10</c>（<c>load-result-requires-recovery</c>）开始偶发红——同一个 commit 两轮，一绿一红。
-    /// 当时为那处改动补的两条 L1 守的是「全车在途时轮次仍然读目录、孤儿检查仍然守着入口」，
-    /// <b>没有一条守「Blocked 的车不进轮次」</b>，也就是修复本身要保证的那件事。判据要断正确的那一个。
+    /// <b>布局是混合的（一辆 Blocked、其余照跑），这一点是这条用例能不能成立的全部。</b>
+    /// 先前它把三辆车<b>全部</b> Blocked，而 <see cref="AFleetWhoseJourneysAreAllBlockedDoesNotOpenARound"/>
+    /// 已经证明那种布局下轮次<b>根本不开</b>（目录读数不变、轮次结局为空）。那时两条断言都成立，但成立的原因是
+    /// 「这一轮什么都没发生」，<b>不是名字承诺的「这辆 Blocked 车被排除在候选评估之外」</b>——判据测到的机制
+    /// 不是它声称测的那个。混合布局下轮次真的开了（下面第一条断言显式钉住这一点），断言为真的原因才变成
+    /// 「那辆车确实没参与」。
     /// </para>
     /// <para>
-    /// <b>它的判别力要同时去掉两处 Blocked 排除才看得出来，单独去掉任何一处都不红。</b>那两处是
-    /// <c>JourneyRuntimeEngine</c> 里「Blocked 的车不进 <c>underWay</c>」，和
-    /// <c>DispatchRoundRunner.ReadEnRoutePlanAsync</c> 里「Blocked 的旅程读不出计划」——后者读不出计划时
-    /// <c>TryAdmitToRoundAsync</c> 会把车整个剔出这一轮。两道是纵深的，所以单点注入不红是<b>对的</b>，
-    /// 不是这条用例没用：两道一起去掉它立刻红在 <c>Assert.Empty</c> 上。
-    /// <b>验一条守护用例的判别力时，要按它实际依赖的那组保证去注入，而不是按「我这次改的那一行」。</b>
+    /// <b>这是本票一次判断错误的修正，值得连同原委留着。</b>我当初观察到「单独去掉任何一处 Blocked 排除都
+    /// 不红、两处一起去掉才红」，据此得出「两道是真的纵深防御，所以单点注入不红是对的」。<b>那个解释多余了。</b>
+    /// 真正的原因是上一段：全 Blocked 布局让断言恒由「轮次没开」满足。独立审查给的解释假设更少，而且有同文件
+    /// 另一条用例作为判别证据。<b>两个解释都能解释观测时，先找那个假设更少、而且能被现有证据判别的。</b>
     /// </para>
     /// <para>
-    /// <b>这条用例没有重现那个 L2 偶发红。</b>它钉住的是「按代码读，Blocked 的车进不了轮次」这个命题,
-    /// 而 CI 上那条 <c>ONBOARD_FACTS_NOT_READY</c> 的积压记录写在旅程 <c>BlockReasonSince</c> 之后 9 秒,
-    /// 说明真机上有一条路绕过了这两道——那条路还没找到，本机五遍跑不出来。<b>所以别把这条用例读成
-    /// 「那个问题已经解决」</b>：它只说明这两道在单元这一层是有效的。</para>
+    /// 「两道排除一起去掉才红」这个事实本身没有变，但它的原因是<b>产品结构</b>：两道在机制上串联
+    /// （<c>JourneyRuntimeEngine</c> 不把 Blocked 的车放进 <c>underWay</c>；
+    /// <c>DispatchRoundRunner.ReadEnRoutePlanAsync</c> 对 Blocked 的旅程读不出计划，于是
+    /// <c>TryAdmitToRoundAsync</c> 把车整个剔出这一轮），任一道生效就足以阻断。那不是这条用例的判别力，
+    /// 是被测对象的形状。
+    /// </para>
     /// </remarks>
     [Fact]
     public async Task ABlockedJourneyKeepsItsVehicleOutOfTheRoundEntirely()
     {
         await using FleetFixture fixture = await FleetFixture.CreateAsync();
         await fixture.RunRoundAsync();
-        await fixture.BlockJourneysAsync(FleetFixture.AgvIds);
+        await fixture.BlockJourneysAsync(FleetFixture.AgvIds[0]);
         // 车载端也断掉：L2-LR-10 那条场景里车是关了机的，而这一点不是布景。车载端事实读得到时，
-        // 在途链会走到更后面、被本票新加的「这辆车接不了，换下一个出价者」那一档<b>静默</b>跳过,
-        // 什么都不写；读不到时它停在 ONBOARD_FACTS_NOT_READY，那一档是要写进 JourneyBacklog 的。
-        // 少了这一步，用例在「车进没进轮次」这件事上恒绿——把修复整个去掉它也不红。
-        foreach (string agvId in FleetFixture.AgvIds)
-        {
-            await fixture.DropSessionAsync(agvId);
-        }
+        // 在途链会走到更后面、被本票新加的「这辆车接不了，换下一个出价者」那一档静默跳过，什么都不写；
+        // 读不到时它停在 ONBOARD_FACTS_NOT_READY，那一档是要写进 JourneyBacklog、并触发事件 2131 的。
+        await fixture.DropSessionAsync(FleetFixture.AgvIds[0]);
 
-        // 只把新需求留在目录里：原来那三条已经受理、各自有旅程，它们的 backlog 行怎么变都不影响这条判据,
-        // 而目录里只有一条要判的东西时，「为它评估过」与「没评估过」之间没有别的解释。
+        // 目录里只留一条新需求，好让「谁评估了它」这件事没有别的噪音。
         AcceptedDemandSnapshot next = FleetFixture.Demand(9, "N1-1", 0);
         fixture.Catalog.Set([next]);
+        int catalogReads = fixture.Catalog.ReadCount;
 
         await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
 
-        Assert.Empty(await fixture.Context.JourneyBacklog
-            .Where(row => row.DemandId == next.DemandId)
-            .ToArrayAsync(TestContext.Current.CancellationToken));
+        // 先钉住「这一轮确实开了」。没有这一条，下面那条会退回成「什么都没发生」的推论——那正是这条用例
+        // 先前的毛病。
+        Assert.True(fixture.Catalog.ReadCount > catalogReads, "The round did not open at all.");
 
-        // 那条「Blocked 的车竟然判了一条候选」的诊断（事件 2131）在正常路径上不该响一声。这一句挡的是
-        // 它退化成恒叫——恒叫的告警等于没有告警。挡不住它退化成恒不叫：那一面只能靠去掉两处排除之后
-        // 看它响，那次验证记在 LogBlockedVehicleJudgedACandidate 的注释里。
+        // 判据只能是事件 2131，不能是「这条需求没有积压行」。<b>改成混合布局的那一刻，后者就不再为真了</b>：
+        // 另外两辆车仍在途、照常参与竞争，它们会评估这条新需求并落下自己的裁决，积压行本来就该出现。
+        // （改布局后第一次跑，红的正是那条 Assert.Empty——它红得对，而那说明全 Blocked 布局下它之所以绿，
+        // 靠的确实是「没有任何车评估过任何东西」。）
+        //
+        // 2131 带着 AgvId，每判完一条候选记一次、不会被别的车覆盖，所以它是这里唯一能指到<b>具体那一辆</b>
+        // 的判据：它一响就说明那辆 Blocked 的车进了候选评估。
         Assert.DoesNotContain(fixture.EngineLog.Entries, entry => entry.EventId.Id == 2131);
     }
 
