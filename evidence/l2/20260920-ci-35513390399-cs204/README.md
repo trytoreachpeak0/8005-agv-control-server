@@ -1,7 +1,25 @@
 # CI 真装置 run `35513390399`（control-server#204）
 
-`l2.yml` 的 `real-rig` 作业，手动 `-f rig=real`，在 vm01 的交互式 runner 上跑。七次运行，**六次 PASS、
-一次 FAIL**。`_stage` 目录（7 MB 的构建中间产物）未入库，其余原样。
+`l2.yml` 的 `real-rig` 作业，手动 `-f rig=real`，在 vm01 的交互式 runner 上跑。**七次运行，六次 PASS、
+一次 FAIL。**
+
+## 入库了哪几份，为什么不是七份
+
+**七次都跑了**，七份 `.log` 摘要都在（`real-onboard-*.log`），但完整证据目录只留四份：
+
+| 目录 | 为什么留 |
+| --- | --- |
+| `real-onboard-durable-ack-lost-03` | **红的那一次** |
+| `real-onboard-durable-ack-lost-01` | 绿的那一次，**与上一行构成同树对照**——这次真正的发现就是这份对照 |
+| `real-onboard-expected-action-overdue-01` | 本票新增的 `L2-EAO-14` 在真装置上通过 |
+| `real-onboard-restart-while-waiting-operator-01` | 收紧后的 `L2-RW-02` 在真装置上通过 |
+
+排除的是 `durable-ack-lost-02`（与 `-01` 是同一件事的第二遍）、`expected-action-overdue-02`／`-03`
+（同一件事的第二、三遍），以及 `_stage`（7 MB 构建中间产物）。**不是只跑了四遍**——三个场景的三连
+结论见下面那张表，每一遍的 `.log` 都留着。
+
+**注意仓库体积已经省不掉了。**这七份曾经完整入过一次库（提交 `96079c79`），删除只让工作树变小，
+blob 仍在 git 历史里；要真正去掉得改写远端历史，那是要用户单独授权的动作，不值得为这个去做。
 
 ## 四行核对
 
