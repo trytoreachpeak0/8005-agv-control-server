@@ -1,0 +1,19 @@
+commit 7971fc74292c09a521517c62ad73345fcb3fd8e2
+Author: Zhengyu Shao <trytoreachpeak0@gmail.com>
+Date:   Sat Sep 19 12:27:50 2026 +0800
+
+    tmp(red): 中途快照之后不再重判就绪，取 L2-EAO-05 红证据；只在本地，不推送
+
+diff --git a/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs b/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
+index 96f37692..4120e426 100644
+--- a/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
++++ b/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
+@@ -360,7 +360,7 @@ public sealed partial class OnboardMessageProcessor(
+                         SafetyReasonCodes(safety), SafetyUnknownPresent(safety)).ConfigureAwait(false);
+                     state.SafetyRevision = revision;
+                     string snapshotAck = SnapshotAck(messageId, agvId, generation, "SAFETY_STATE", revision, contentHash);
+-                    if (!midSession)
++                    if (!midSession || true) // tmp(red) control-server#167: no readiness re-decision after a mid-session snapshot
+                     {
+                         return snapshotAck;
+                     }

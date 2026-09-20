@@ -56,14 +56,59 @@ $assertions.Add(
 # --- 2. 进程没了；操作员照常放货、关门 ---------------------------------------------------------------------------
 
 $sessionBefore = Get-L2RealSession $connection $Context.AgvId
+# 杀之前的两个基线：服务端收下过多少条报文，以及旅程运行时转到第几轮。下面两条都要用到。
+$inboxBefore = Get-L2RealCount $connection 'SELECT COUNT(*) AS Total FROM ProtocolInbox'
+$roundsBefore = [long]$Context.Riot.Snapshot().body.mapStationReads
 & $Context.StopComponent 'onboard-hmi'
 
 # 进程没了之后服务端一个字都没收到：结果只可能在重启之后才来，否则下面的判据证的就不是重启。
+#
+# 杀完立刻读是不够的（control-server#204）：车载端可能在被杀前一刻把结果发了出去，而服务端还没落库，
+# 那一刻读到的「0 行」说的是「还没写进来」，不是「它没发过」——而后面每一条判据都会把重启后那条结果
+# 当成重启的产物。这是假绿，不是假红。
+#
+# 票面给的两个等待对象在这条 rig 上都不存在：服务端在连接结束时只解绑路由、不写库（OnboardPeer.Detach），
+# 而这条场景的 setup 是纯真装置、没有协议故障代理，看不到连接关闭。所以等的是这条判据真正需要的那个
+# 事实本身——**服务端不会再往收件箱里写东西了**。车载端进程已经没了，不可能再发；收件箱行数稳定下来，
+# 就意味着它在死前发出的一切都已经落库。余量按数量级取：一条报文从读到落库是毫秒级的事。
+# 光有「行数不再增加」是不够的：**服务端自己卡住时，行数一样不增加**（在等锁、线程池饿死、正在重连），
+# 而那不是「它发出的一切都落库了」，是「什么都没在处理」——两种状态含义相反，弱判据分不开。所以再要两件事：
+#   - 等待期间旅程运行时至少又转了两轮（假 RIoT 的 mapStationReads，与 Wait-L2Iterations 同一个计数）。
+#     **它断的是 JourneyRuntimeEngine 那个循环还在转，不是车载端入站通路还在转**——入站 TCP 读循环卡死、
+#     消息处理器死锁在非数据库的锁上，都不会让 mapStationReads 停。所以它只排除「整个服务端不动了」这一类，
+#     真正把「那条结果是重启之后来的」钉死的是下面第 3 节的 `L2-RW-04`。
+#
+# 杀前的收件箱行数只记下来、写进「实际」栏作诊断，**不进判据**：`ProtocolInbox` 只增不减，
+# 「行数不少于基线」恒真，写成合取项会看起来像一条判据而一件事都不证明。
+$inboxSettleFor = [TimeSpan]::FromSeconds(2)
+$settleRounds = 2
+$inboxCount = -1
+$inboxStableSince = [DateTimeOffset]::UtcNow
+$settled = Wait-L2RealOrLast -Description 'the server kept running yet stopped writing to its inbox after the onboard process went away' `
+    -Journal $journal -Criterion 'inbox-settled' -TimeoutSeconds 60 `
+    -Probe {
+        $now = [DateTimeOffset]::UtcNow
+        $count = Get-L2RealCount $connection 'SELECT COUNT(*) AS Total FROM ProtocolInbox'
+        if ($count -ne $script:inboxCount) { $script:inboxCount = $count; $script:inboxStableSince = $now }
+        [pscustomobject]@{
+            Count     = $count
+            StableFor = $now - $script:inboxStableSince
+            Rounds    = [long]$Context.Riot.Snapshot().body.mapStationReads - $roundsBefore
+        }
+    } `
+    -Until { param($v) $v.StableFor -ge $inboxSettleFor -and $v.Rounds -ge $settleRounds }
+$settledText = if ($null -eq $settled) { '(收件箱读不到)' } else {
+    "收件箱 $($settled.Count) 行（杀前 $inboxBefore），稳定 $([math]::Round($settled.StableFor.TotalSeconds, 1)) s，其间运行时转了 $($settled.Rounds) 轮" }
+$journal.Note("The onboard process is gone and the server's inbox settled while the runtime kept turning: $settledText.")
+
 $resultsWhileDown = Get-L2RealCount $connection "SELECT COUNT(*) AS Total FROM OperationResults WHERE SlotOperationAttemptId = '$attemptId'"
 $statusWhileDown = Get-L2RealScalar $connection "SELECT Status AS Value FROM StationOperations WHERE SlotOperationAttemptId = '$attemptId'"
 $assertions.Add(
-    'L2-RW-02', '车载端退出时没有留下结果：OperationResults 0 行，装货操作仍是 Prepared',
-    ($resultsWhileDown -eq 0 -and $statusWhileDown -eq 'Prepared'), '0 行 / Prepared', "$resultsWhileDown 行 / $statusWhileDown")
+    'L2-RW-02', "车载端退出时没有留下结果：服务端的旅程运行时仍在转（又转过 $settleRounds 轮以上）而收件箱不再增长，此时 OperationResults 0 行，装货操作仍是 Prepared",
+    ($null -ne $settled -and $settled.StableFor -ge $inboxSettleFor -and $settled.Rounds -ge $settleRounds -and
+        $resultsWhileDown -eq 0 -and $statusWhileDown -eq 'Prepared'),
+    "收件箱稳定 $($inboxSettleFor.TotalSeconds) s 以上 / 运行时 $settleRounds 轮以上 / 0 行 / Prepared",
+    "$settledText / $resultsWhileDown 行 / $statusWhileDown")
 
 $journal.Note("While the onboard is down the operator loads slot $slot and closes it.")
 $null = $simulator.Command('Put', "slots/$slot/cargo", @{ state = 'OCCUPIED' })
@@ -78,6 +123,10 @@ $journal.Note("Slot $slot now reads $closed.")
 # Assigned first: @() around the call would keep the returned array as one element and always count 1.
 $reportsBeforeRows = Get-L2RealInbound $connection 'RecoveryStateReport'
 $reportsBefore = $reportsBeforeRows.Count
+# 重启的时刻。`L2-RW-02` 否定「退出时留下了结果」，而它读的是一个瞬间的快照；把那句否定钉死的是它的
+# 正面——重启之后收到的那条结果是**唯一**的一条，而且是在重启之后才到的。审查（cs#204 独立审查中等 4）
+# 指出 `Rounds >= 2` 只证明引擎循环在转、不证明入站通路在转，这一条补的就是那个缺口。
+$restartAt = [DateTimeOffset]::UtcNow
 $null = & $Context.RestartOnboard
 
 $report = Wait-L2Condition -Description 'the restarted onboard sent its RecoveryStateReport' `
@@ -97,10 +146,23 @@ $slotResult = if ($null -ne $result) { @($result.Payload.slotResults | Where-Obj
 $resultShape = if ($null -ne $slotResult) {
     "$($result.Payload.overallOutcome) / $($slotResult.outcome) / $($slotResult.finalPhysicalState) / $($slotResult.lockState) / $($slotResult.unlockOutputState) → $($result.Response)"
 } else { '(no result)' }
+# 这一次 attempt 的结果**只有一条，而且是重启之后才到的**——`L2-RW-02` 那句「退出时没留下结果」的正面。
+# 它比 `L2-RW-02` 里那条「运行时又转了两轮」硬：那一条只说明 JourneyRuntimeEngine 的循环在转，不说明
+# 车载端入站通路在转（审查 cs#204 中等 4）。这里读的是入站通路的产物本身。
+#
+# 顺带记下一处既有的部分兜底：上面取结果用的是 `@(...)[0]`，**取的是最早的那一条**。真要是退出前
+# 留下过一条，`[0]` 拿到的就是那一条，`$resultsAfterRestart` 会是 2、`At` 也会早于 `$restartAt`，
+# 两个合取项都会红。这不是刻意设计的防线，但它确实在挡，写下来免得下次有人把它改成 `[-1]`。
+$resultsForAttempt = @((Get-L2RealInbound $connection 'OperationResult') | Where-Object {
+        [string]$_.Payload.slotOperationAttemptId -eq $attemptId })
+$resultAt = if ($null -ne $result) { $result.At } else { $null }
+$resultAfterRestart = ($null -ne $resultAt -and $resultAt -gt $restartAt)
 $assertions.Add(
-    'L2-RW-04', '重启后车载端按实时 IO 补交结果：仓位全到最终态，报 COMPLETED，物理字段是重启后读到的 OCCUPIED / LOCKED / RESET，服务端 DurableAck 收下（ADR-cross-0058 决策 2）',
-    ($resultShape -eq 'COMPLETED / COMPLETED / OCCUPIED / LOCKED / RESET → DurableAck'),
-    'COMPLETED / COMPLETED / OCCUPIED / LOCKED / RESET → DurableAck', $resultShape)
+    'L2-RW-04', '重启后车载端按实时 IO 补交结果：仓位全到最终态，报 COMPLETED，物理字段是重启后读到的 OCCUPIED / LOCKED / RESET，服务端 DurableAck 收下；这一次 attempt 的结果只有这一条，而且是重启之后才到的（ADR-cross-0058 决策 2）',
+    ($resultShape -eq 'COMPLETED / COMPLETED / OCCUPIED / LOCKED / RESET → DurableAck' -and
+        $resultsForAttempt.Count -eq 1 -and $resultAfterRestart),
+    'COMPLETED / COMPLETED / OCCUPIED / LOCKED / RESET → DurableAck / 结果 1 条 / 晚于重启',
+    "$resultShape / 结果 $($resultsForAttempt.Count) 条 / $(if ($null -eq $resultAt) { '(无结果)' } elseif ($resultAfterRestart) { "晚于重启 $([math]::Round(($resultAt - $restartAt).TotalSeconds,1)) s" } else { '**早于重启**' })")
 
 # --- 4. 不进恢复：会话回到 Ready，装货提交，旅程往关卡走 ---------------------------------------------------------
 

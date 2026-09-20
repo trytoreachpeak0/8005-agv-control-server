@@ -103,9 +103,31 @@ $null = $riot.Command('Put', 'vehicle', @{
     orderTaskId     = $pickupIntent.OrderId
 })
 
+# RIoT 把单标成了成功、位置也报到了取货点，而车还在减速——静态证据全齐，只剩运动证据说它没停稳。
+# 这一拍是 control-server#204 加的，因为没有它，`L2-NL-03` 判不到它名字里那件事：
+# CheckArrivalAsync 的第一道门是 exactOrder（订单必须 Terminal + Success），上一拍的 orderState = 3
+# 过不了，于是「服务端会不会看车在不在动」这个问题根本轮不到被问。实测过：把 ProcState、Speed、
+# OrderTaskId 与 onboard.VehicleStopped 四个条件一起从 trusted 里删掉，旧写法仍然整条 PASS
+# （evidence/l2/cs204-nl03-defect-motion-001）。
+$journal.Note('RIoT reports the order finished and the vehicle at the pickup station, while it is still moving.')
+$null = $riot.Command('Put', "orders/$($pickupIntent.UpperId)", @{ orderState = 5 })
+$null = $riot.Command('Put', 'vehicle', @{
+    vehicleKey      = $Context.VehicleKey
+    currentPosition = $Context.PickupStationRiotId
+    procState       = 'RUNNING'
+    movementState   = 'MT_RUNNING'
+    speed           = 0.8
+    processingOrder = $true
+    orderTaskId     = $pickupIntent.OrderId
+})
+
+# 先让运行时转过两轮再读（与 MVP 线 cs#26 同形）。直接读，读到的是引擎还没看过这些报告的状态——
+# 那时 stage 还停在上一步写下的 AwaitingPickupArrival，判据无论服务端怎么判都绿。
+# $Count 保证「开始了这么多轮」，所以要两轮才有一轮是完整跑完的。
+$null = Wait-L2Iterations -Riot $riot -Count 2 -Journal $journal
 $stage = Get-Stage
 $assertions.Add(
-    'L2-NL-03', '车在路上时不采信到站',
+    'L2-NL-03', '车在路上时不采信到站：单已报成功、位置已报到取货点，只有运动证据说车还没停稳，运行时转过两轮之后仍然不前进',
     ($stage -eq 'AwaitingPickupArrival'),
     'AwaitingPickupArrival', $stage)
 
@@ -119,6 +141,8 @@ $null = $riot.Command('Put', 'vehicle', @{
     processingOrder  = $false
     clearOrderTaskId = $true
 })
+# 订单在上一拍就报成功了，这里是 RIoT 重复同一个状态。留着是为了让「车停稳」这一拍自己就完整，
+# 而不是要靠上一拍才成立；假 RIoT 对没有变化的更新不产生新修订，所以它是幂等的。
 $null = $riot.Command('Put', "orders/$($pickupIntent.UpperId)", @{ orderState = 5 })
 
 # --- 3. 到站 → 报 sublot → 装载 → 出发前安全检查 ---------------------------------------------------

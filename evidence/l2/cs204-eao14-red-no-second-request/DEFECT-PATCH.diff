@@ -1,0 +1,19 @@
+commit 94c59c8d167098524cce9b0de430e8a4fd481a82
+Author: Zhengyu Shao <trytoreachpeak0@gmail.com>
+Date:   Sun Sep 20 21:25:02 2026 +0800
+
+    tmp(red): SafetyStateChanged 不再触发第二次 SafetyStateSnapshotRequested，取 L2-EAO-14 红证据；只在本地，不推送
+
+diff --git a/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs b/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
+index 96f37692..930248ae 100644
+--- a/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
++++ b/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
+@@ -621,7 +621,7 @@ public sealed partial class OnboardMessageProcessor(
+                     SessionReadinessDecision decision = await store.DecideReadinessAsync(
+                         agvId, generation, cancellationToken).ConfigureAwait(false);
+                     state.Readiness = decision.Readiness;
+-                    if (await AffectsAnOverdueSlotAsync(agvId, payload, cancellationToken).ConfigureAwait(false))
++                    if (false && await AffectsAnOverdueSlotAsync(agvId, payload, cancellationToken).ConfigureAwait(false))
+                     {
+                         state.SafetySnapshotRequestDue = true;
+                     }

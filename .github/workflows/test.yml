@@ -59,6 +59,15 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2OnboardHandleAfterRestart.ps1
 
+      # Same reason as the step above, one step further: L2-DA-09 denies that a phrase ever appeared on the HMI,
+      # and all that stands between it and a vacuous green is the count of scans that actually read the tree. If
+      # rounds that failed to read start counting as looks again, that criterion goes quietly green whenever UIA
+      # cannot read -- and no real-rig round finds that out, because the real-rig round is green either way
+      # (control-server#204).
+      - name: L2 scenario self-check (HMI phrase watch)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/l2/Test-L2HmiPhraseWatch.ps1
+
       # Exit code is the contract — the guest is zh-CN and prints 已通过! not
       # Passed!, so no step here may match on English console text.
       - name: Test
