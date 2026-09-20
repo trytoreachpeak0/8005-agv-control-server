@@ -526,6 +526,10 @@ public sealed class JourneyRuntimeWorkerSlotGroupAndRestartTests
         fixture.Riot.SetSuccessfulArrival("TO_PICKUP", runtime.PickupStationRiotId);
         fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = runtime.PickupStationRiotId };
         fixture.Clock.Advance(TimeSpan.FromSeconds(30));
+        // 这三十秒里车一直在说话，每两秒一次（ADR-cross-0027）。夹具只推时钟不补心跳，是把「时间过去了」
+        // 写成了「车不见了」——control-server#234 起，静默过了存活窗的车会被判失联，这一轮就不再推进。
+        // 补这一条之前，这个判据还贴着 MaximumEvidenceAge 的三十秒墙：正好不超出，多一毫秒就假红。
+        await fixture.HearFromPeerAsync();
         DateTimeOffset arrivedAt = fixture.Clock.GetUtcNow();
 
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);

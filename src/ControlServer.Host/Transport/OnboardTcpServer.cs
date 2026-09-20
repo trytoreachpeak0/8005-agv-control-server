@@ -139,11 +139,39 @@ public sealed partial class OnboardTcpServer : BackgroundService
         OnboardMessageProcessor processor = scope.ServiceProvider.GetRequiredService<OnboardMessageProcessor>();
         OnboardConnectionState state = new() { DeferOutboundUntilResponseWritten = true };
         string? attachedAgvId = null;
+        // ADR-cross-0027: the peer heartbeats every two seconds, and six seconds without a legal message means
+        // the session is lost even though the socket is still open. Until control-server#234 nothing measured
+        // this: a vehicle whose process had hung kept a Ready session row for as long as its TCP connection
+        // survived, because the disconnect path writes nothing and RecordConnectionLossAsync has no caller.
+        OnboardConnectionLiveness liveness = new(_clock, IdleTimeout);
         try
         {
             while (!cancellationToken.IsCancellationRequested)
             {
-                string? line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+                string? line;
+                // The deadline is enforced on the read itself rather than by a watchdog beside it, so the
+                // moment the window closes is the moment this connection stops being read from. There is no
+                // window in which a late line could still be processed and revive the session: past the
+                // timeout this method returns, and nothing below runs again.
+                using (CancellationTokenSource idle = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+                {
+                    idle.CancelAfter(liveness.Remaining);
+                    try
+                    {
+                        line = await reader.ReadLineAsync(idle.Token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                    {
+                        // Silent past the window: this server closes the connection, and the peer reconnects
+                        // into the five-step handshake (ADR-cross-0029) where both ends reconcile afresh.
+                        // Closing is all that happens here -- REQ-0287 forbids a liveness timeout from ending
+                        // an order, releasing a lease, reassigning or moving the vehicle.
+                        LogOnboardSessionSilent(
+                            logger, attachedAgvId ?? state.AgvId ?? "(no session)", state.SessionGeneration,
+                            liveness.Silence, null);
+                        return;
+                    }
+                }
                 if (line is null)
                 {
                     return;
@@ -153,6 +181,10 @@ public sealed partial class OnboardTcpServer : BackgroundService
                     throw new InvalidDataException("Protocol line exceeds OnboardTransport:MaxLineBytes.");
                 }
                 string response = await processor.ProcessAsync(line, state, cancellationToken).ConfigureAwait(false);
+                // Refreshed only once the message has been processed: ADR-cross-0027 counts legal protocol
+                // messages, and a line is not known to be one until the envelope and the session generation
+                // have been checked. A line that throws does not refresh, and it ends the connection anyway.
+                liveness.Refresh();
                 if (!string.IsNullOrWhiteSpace(response))
                 {
                     await connection.SendAsync(
@@ -216,4 +248,10 @@ public sealed partial class OnboardTcpServer : BackgroundService
     [LoggerMessage(EventId = 1004, Level = LogLevel.Warning,
         Message = "Onboard connection refused: {MaxConcurrentSessions} concurrent sessions are already open.")]
     private static partial void LogConnectionRefused(ILogger logger, int maxConcurrentSessions);
+
+    [LoggerMessage(EventId = 1005, Level = LogLevel.Warning,
+        Message = "Onboard session for {AgvId} (generation {SessionGeneration}) went silent for {Silence} with the " +
+                  "connection still open; closing it (ADR-cross-0027). No order is held, ended or reassigned.")]
+    private static partial void LogOnboardSessionSilent(
+        ILogger logger, string agvId, long? sessionGeneration, TimeSpan silence, Exception? error);
 }

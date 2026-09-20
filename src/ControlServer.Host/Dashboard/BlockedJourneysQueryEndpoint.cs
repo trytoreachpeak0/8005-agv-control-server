@@ -1,4 +1,5 @@
 using ControlServer.Domain;
+using ControlServer.Host.Runtime;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -24,6 +25,17 @@ namespace ControlServer.Host.Dashboard;
 internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
 {
     internal const string SessionNotReadyReason = "ONBOARD_SESSION_NOT_READY";
+
+    /// <summary>
+    /// 车载端静默失联（<see cref="JourneyRuntimeEngine.OnboardSessionLostReason"/>，control-server#234）。
+    /// </summary>
+    /// <remarks>
+    /// 与 <see cref="SessionNotReadyReason"/> 同样带会话字段，但会话行上那几个安全值的分量不同：车不说话了，
+    /// 那一行停在它最后一次在线时的判定，<c>SafetyUnknownPresent = false</c> 在这里不是「安全证据齐全」，
+    /// 是一个不确定新旧的旧值——REQ-0269 禁止拿它当现状，车载告警卡片 2026-09-10 正是栽在这里。所以分档时
+    /// 这一项按「说不清」传，直接进最高档；会话那一格照给，现场要看得见车最后一次在线时报的是什么。
+    /// </remarks>
+    internal const string SessionLostReason = JourneyRuntimeEngine.OnboardSessionLostReason;
 
     /// <summary>The code a stop held at its AREA machine for the station's admission carries (control-server#198).</summary>
     internal const string AreaEndAdmissionHeldReason = "TASK_TYPE_NOT_ALLOWED_AT_STATION";
@@ -102,7 +114,9 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
         TimeSpan? blockedFor = row.BlockReasonSince is DateTimeOffset since
             ? (now > since ? now - since : TimeSpan.Zero)
             : null;
-        bool carriesSession = string.Equals(row.BlockReasonCode, SessionNotReadyReason, StringComparison.Ordinal) ||
+        bool sessionLost = string.Equals(row.BlockReasonCode, SessionLostReason, StringComparison.Ordinal);
+        bool carriesSession = sessionLost ||
+                              string.Equals(row.BlockReasonCode, SessionNotReadyReason, StringComparison.Ordinal) ||
                               HeldForAdmissionWithTheSessionDown(row, session);
         bool explained = carriesSession && OwnMovementOrderExplanation.Explains(
             row.BlockReasonCode,
@@ -110,8 +124,9 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
             session?.SafetyReasonCodesJson,
             session?.SafetyUnknownPresent,
             ownOrderInFlight);
-        BlockedJourneyEscalationLevel level =
-            _escalation.Classify(blockedFor, carriesSession, session?.SafetyUnknownPresent, explained);
+        // 失联那一种，会话行上的安全判定是车最后一次在线时的，说不了现在——按「说不清」传，也就是最高档。
+        BlockedJourneyEscalationLevel level = _escalation.Classify(
+            blockedFor, carriesSession, sessionLost ? null : session?.SafetyUnknownPresent, explained);
         return new
         {
             agvId = row.AgvId,

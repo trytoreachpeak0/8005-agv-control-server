@@ -41,13 +41,26 @@ public sealed class OnboardPeerSession(
     private CancellationTokenSource? lifetime;
     private CancellationToken hostStopping;
 
-    /// <summary>Whether a socket to ControlServer is open, whatever the handshake got to.</summary>
-    public bool IsConnected => client is not null;
+    /// <summary>The server closed this connection; the local socket object outlives that by a moment.</summary>
+    private volatile bool closedByPeer;
+
+    /// <summary>
+    /// Whether a session to ControlServer is open, whatever the handshake got to.
+    /// </summary>
+    /// <remarks>
+    /// Not merely "this peer holds a socket object": since control-server#234 the server closes a connection
+    /// of its own accord when it goes quiet, and the local <see cref="TcpClient"/> survives that. Reading only
+    /// the field made a reconnect after such a close a no-op — <c>PUT /connection {connected:true}</c> saw
+    /// "already connected" and did nothing, and a scenario waited out its timeout on a peer that never came
+    /// back.
+    /// </remarks>
+    public bool IsConnected => client is not null && !closedByPeer;
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         hostStopping = cancellationToken;
         lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        closedByPeer = false;
         client = new TcpClient();
         await client.ConnectAsync(options.Host, options.Port, lifetime.Token).ConfigureAwait(false);
         NetworkStream stream = client.GetStream();
@@ -155,6 +168,9 @@ public sealed class OnboardPeerSession(
                 string? line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
                 if (line is null)
                 {
+                    // EOF: the server closed this connection. Recorded on the peer as well as in the state,
+                    // so a reconnect afterwards is seen as a real change rather than as "already connected".
+                    closedByPeer = true;
                     engine.Mutate<object?>(state => (state with { Readiness = "DISCONNECTED" }, null));
                     return;
                 }
@@ -697,7 +713,23 @@ public sealed class OnboardPeerSession(
     }
 
     /// <summary>新开一条连接、走一遍完整握手。会话代由服务端给，必然比上一代大。</summary>
-    public Task ReconnectAsync() => StartAsync(hostStopping);
+    /// <summary>
+    /// Opens a new session with a full handshake. A peer that was silenced speaks again: the handshake is
+    /// messages this peer has to send, so reconnecting while still silent would hang on its own first read
+    /// rather than testing anything (control-server#234).
+    /// </summary>
+    public async Task ReconnectAsync()
+    {
+        engine.Mutate<object?>(state => (state with { Silent = false }, null));
+        // A connection the server closed leaves a socket, a writer and two finished pump tasks behind.
+        // StartAsync would overwrite the fields and leak them, so the old session is torn down first. This
+        // is a no-op for the ordinary case, where the scenario disconnected and DisconnectAsync already ran.
+        if (closedByPeer)
+        {
+            await DisconnectAsync().ConfigureAwait(false);
+        }
+        await StartAsync(hostStopping).ConfigureAwait(false);
+    }
 
     /// <summary>Reports a new safety state, the way the real peer reports every change.</summary>
     public async Task PublishSafetyStateChangedAsync(
@@ -758,10 +790,17 @@ public sealed class OnboardPeerSession(
     private async Task SendLineAsync(string line, CancellationToken cancellationToken)
     {
         using JsonDocument document = JsonDocument.Parse(line);
-        Record(
-            "out",
-            document.RootElement.GetProperty("messageType").GetString() ?? string.Empty,
-            document.RootElement.GetProperty("messageId").GetString() ?? string.Empty);
+        string messageType = document.RootElement.GetProperty("messageType").GetString() ?? string.Empty;
+        string messageId = document.RootElement.GetProperty("messageId").GetString() ?? string.Empty;
+        // A silenced peer keeps its socket and drops everything it would have written (control-server#234).
+        // The drop is recorded rather than passed over: "the peer meant to send this and did not" is exactly
+        // what a scenario needs to tell a hung onboard apart from one that had nothing to say.
+        if (engine.Snapshot().State.Silent)
+        {
+            Record("dropped", messageType, messageId);
+            return;
+        }
+        Record("out", messageType, messageId);
         await writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {

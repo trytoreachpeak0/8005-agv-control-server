@@ -113,6 +113,25 @@ public sealed record FakeOnboardState
     public long AlarmSnapshotRevision { get; init; } = 1;
 
     public IReadOnlyList<FakeAlarm> Alarms { get; init; } = [];
+
+    /// <summary>
+    /// The peer has stopped sending anything at all while leaving its socket open: a hung onboard process
+    /// (control-server#234).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Deliberately not the same thing as <c>PUT /connection {connected:false}</c>, which closes the socket
+    /// and is what a power cut or a pulled cable looks like. Here the TCP connection stays up and every byte
+    /// this peer would have written is dropped instead — heartbeats, answers to requests, snapshot
+    /// acknowledgements, all of it. That is the one shape the server had no way to notice: the session row
+    /// stays Ready for as long as the socket survives.
+    /// </para>
+    /// <para>
+    /// Incoming messages are still read and still move this peer's own state, the way a process whose UI
+    /// thread has hung still has a TCP stack. What never comes back out is the answer.
+    /// </para>
+    /// </remarks>
+    public bool Silent { get; init; }
 }
 
 /// <summary>
