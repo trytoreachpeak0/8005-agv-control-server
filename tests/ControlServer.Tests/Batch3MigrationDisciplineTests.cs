@@ -55,7 +55,10 @@ public sealed class Batch3MigrationDisciplineTests
         "20260919154546_Batch7MultiDemandJourneyPersistence",
         // 批次 7 迁移通道第一张：control-server#228，JourneyRuntimes 加 AreaEndAdmissionRevokedSince（准入被撤的等待起点）。
         // 在 #206 合入之后的 fp/v2-impl 上生成。自己的断言在 AreaEndAdmissionRevokedSinceMigrationTests。
-        "20260919200353_AreaEndAdmissionRevokedSince"
+        "20260919200353_AreaEndAdmissionRevokedSince",
+        // 批次 7 迁移通道第二张：control-server#199，两张审计表加 BEFORE UPDATE／BEFORE DELETE 触发器，把「审计写一次
+        // 就不再改」从 EF 层落到数据库层。在 #228 合入之后的 fp/v2-impl 上生成。自己的断言在 AuditDatabaseImmutabilityTests。
+        "20260920001500_AuditImmutabilityTriggers"
     ];
 
     private static readonly string[] Batch3Tables =
