@@ -319,6 +319,63 @@ public sealed class Batch7StopDrivenAdvanceTests
     }
 
     /// <summary>
+    /// 被终结的是<b>锚需求</b>、旅程还带着另一条时，推进段仍找得到锚需求的归属行，不抛。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="JourneyStopCursor.Anchor"/> 从「未移除的<b>全部</b>归属」里找，不是从「还没终结的那一份」。差别只在
+    /// 这一种局面上显出来：锚需求自己终结了，而旅程因为还有别的需求没有关闭——从未终结的那一份里找就找不到它，
+    /// 推进段当场抛。
+    /// </para>
+    /// <para>
+    /// <b>这条测试是补出来的，补它的理由值得留着。</b>原先只有
+    /// <see cref="ASecondDemandOnTheSameStopIsListedAndEndingItLeavesTheJourneyRunning"/>，它终结的是<b>第二条</b>需求，
+    /// 锚需求还好好的，所以两种找法都找得到——把 <c>Anchor</c> 改回未终结那一份，整套测试 360 条全绿。也就是说那处加固
+    /// 当时<b>没有任何守卫</b>，下一个人「顺手统一一下」就能把它改回去而不被任何东西拦住。
+    /// </para>
+    /// <para>
+    /// 今天走不到这里：单需求旅程终结即关闭。<b>到 批次7-06（control-server#211）就天天走到</b>。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task EndingTheAnchorDemandOfATwoDemandJourneyStillLeavesItsMembershipFindable()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set(FirstSublot, 4);
+        // 第二条需求的花篮数也要给，否则录入在重算那一步就被拒（BR-013），根本走不到下装货命令的地方——
+        // 第一版漏了这一句，注入故障后这条测试照样绿。
+        fixture.BoxCounts.Set(SecondSublot, 4);
+        await TickAndRunAsync(fixture);
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync(FirstDemandId);
+        await AddSecondDemandToJourneyAsync(fixture, runtime);
+        fixture.Riot.SetSuccessfulArrival("TO_PICKUP", runtime.PickupUpperId, runtime.PickupStationRiotId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = runtime.PickupStationRiotId };
+        await TickAndRunAsync(fixture);
+
+        // 终结锚需求本身。旅程还带着第二条，所以它既不关闭，也不该在下一轮里抛。
+        AcceptedDemandRow anchor = await fixture.Context.AcceptedDemands
+            .SingleAsync(row => row.DemandId == FirstDemandId, TestContext.Current.CancellationToken);
+        anchor.Status = DemandExecutionStatus.Cancelled;
+        await fixture.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        // 让录入落到第二条需求上，推进段因此要对它下装货命令——而命令的 attempt id 与目标仓位取自
+        // Anchor(runtime.DemandId)，也就是那条已经终结的锚需求的归属行。
+        await AddInboxAsync(
+            fixture, FirstSubmissionId, "SublotSubmitted", SublotSubmission(fixture, runtime, SecondSublot));
+        await TickAndRunAsync(fixture);
+
+        // 装货命令发出去了，就是 Anchor(runtime.DemandId) 被调用过且没抛的直接证据——命令的 attempt id 与目标仓位
+        // 都取自那条已终结锚需求的归属行。只断言「没停在 Blocked」是不够的：录入被拒同样不会进 Blocked。
+        JourneyRuntimeRow after = await fixture.RuntimeAsync(FirstDemandId);
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, after.Stage);
+        Assert.Equal(
+            1,
+            await fixture.Context.ProtocolOutbox.CountAsync(
+                row => row.MessageId == runtime.LoadCommandMessageId, TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
     /// 往这趟旅程的两个停靠上再挂一条需求，直接写库——今天没有任何路径会这么做。
     /// </summary>
     private static async Task AddSecondDemandToJourneyAsync(RuntimeFixture fixture, JourneyRuntimeRow runtime)
