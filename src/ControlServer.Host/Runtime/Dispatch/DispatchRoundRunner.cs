@@ -183,11 +183,10 @@ public sealed class DispatchRoundRunner(
         };
 
         // 「上次成功接单」从既有旅程记录推出（票面第 6 条带内层），一轮查一次。
-        Dictionary<string, DateTimeOffset> lastDispatchedAt = (await dbContext.JourneyRuntimes.AsNoTracking()
-                .Select(row => new { row.AgvId, row.CreatedAt })
-                .ToArrayAsync(cancellationToken).ConfigureAwait(false))
-            .GroupBy(row => row.AgvId, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => group.Max(row => row.CreatedAt), StringComparer.Ordinal);
+        Dictionary<string, DateTimeOffset> lastDispatchedAt = LastDispatchAtByVehicle(
+            await dbContext.JourneyRuntimes.AsNoTracking()
+                .Select(row => new JourneyStart(row.AgvId, row.CreatedAt))
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false));
 
         List<RoundVehicle> participants = [];
         foreach ((FleetVehicle vehicle, bool underWay) in
@@ -293,6 +292,30 @@ public sealed class DispatchRoundRunner(
     /// <summary>
     /// 一辆车参加这一轮所需的事实，用它自己的预算读；读不完或读挂了就不参加，别的车照常。
     /// </summary>
+    /// <summary>一趟旅程的开始：哪辆车、什么时候（批次7-06，control-server#211）。</summary>
+    internal readonly record struct JourneyStart(string AgvId, DateTimeOffset CreatedAt);
+
+    /// <summary>每辆车<b>最近</b>一次接单的时刻——车辆侧带内那一层要的就是这个量。</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>抽成一个拿得到的函数，是因为把 <c>Max</c> 写成 <c>Min</c> 不会让任何东西报错。</b>排序照样出结果，
+    /// 只是反了：一辆车跑得越多，它的「上次接单」越是停在第一趟上，于是永远被判为久未接单而优先——
+    /// 本来防饥饿的那一层变成了制造饥饿的那一层。这种错没有异常、没有空值、没有越界，只有派车分布慢慢歪掉。
+    /// </para>
+    /// <para>
+    /// <b>它收已经物化的行，不收 <c>IQueryable</c>，这一点是刻意的。</b>生产库是 SQLite，而 SQLite 拿
+    /// <c>DateTimeOffset</c> 做聚合或排序会抛；这个签名让「先物化、再在内存里取最大值」成了调用方绕不开的
+    /// 写法，而不是一句写在注释里、下一个人照样能改掉的提醒。
+    /// </para>
+    /// </remarks>
+    internal static Dictionary<string, DateTimeOffset> LastDispatchAtByVehicle(IEnumerable<JourneyStart> starts)
+    {
+        ArgumentNullException.ThrowIfNull(starts);
+        return starts
+            .GroupBy(start => start.AgvId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Max(start => start.CreatedAt), StringComparer.Ordinal);
+    }
+
     private async Task<RoundVehicle?> TryAdmitToRoundAsync(
         FleetVehicle vehicle,
         bool underWay,
@@ -685,6 +708,11 @@ public sealed class DispatchRoundRunner(
         //
         // 两者不一致就是这台服务器自己的不变量被破坏了，所以抛而不是挑一个：在途车拿不到插入位却走到了这里，
         // 意味着在途资格链没有按它该有的样子装起来。
+        //
+        // <b>它在写下的当天就响了一次，而且指对了地方。</b>给 FleetFixture 装路网时，路网只传给了空闲链、
+        // 漏传给 InTransit（那是另一个参数），于是在途车被判为合格却拿不到插入位。没有这一条，当时看到的
+        // 会是「凭空多出第二趟旅程」，而第一反应会是去怀疑轮次逻辑——一道为防将来而加的守卫，价值不只在于
+        // 将来会响，还在于它响的时候指的是对的地方。
         bool underWay = participantUnderWay;
         if (underWay != (selected.Placement is not null))
         {
