@@ -267,6 +267,15 @@ jobs:
               # itself rather than from the zone being unconfigured -- two refusals, two reason codes, and telling
               # them apart is what the site sees. The last one puts an idle and an in-transit vehicle on the same
               # candidate table and watches both paths run in one round (REQ-0200, REQ-0205).
+              #
+              # One departure from the ticket, deliberate and written up in PR #257: the ticket listed a
+              # multi-stop-zone-continuity scenario asserting that the resulting stop sequence keeps each zone in one
+              # contiguous run. en-route-append-not-configured took its place. They are not the same claim -- what L1
+              # covers (ZoneContiguityRulesOutTheCheapestPlacementAndTheNextOneIsTaken) is that contiguity rules out a
+              # placement, not that the sequence a run produces is contiguous, and multi-stop-append-same-zone appends
+              # within one zone, where the sequence is contiguous by construction. The trade was made because the route
+              # graph engine ships disabled, so "with it off, appending does nothing at all" is the deployment premise
+              # a silent failure would hide.
               @{ Name = 'en-route-append-delay-gate'; Runs = 1; BatchId = 'batch-7' }
               @{ Name = 'en-route-append-not-configured'; Runs = 1; BatchId = 'batch-7' }
               @{ Name = 'idle-and-inflight-vehicles-compete'; Runs = 1; BatchId = 'batch-7' }
