@@ -106,6 +106,16 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2SecondLegIntentWait.ps1
 
+      # About 3 seconds. Covers a wait that the real rig cannot put in the state that matters: the
+      # second stop's worklist wait used to be "at least 2 acknowledged worklists", a proxy that is
+      # only equal to "the second stop's worklist is acknowledged" while every stop emits exactly
+      # one. Its key case asserts BOTH halves on the same input -- the old criterion satisfied, the
+      # new one not -- because showing only that the new one holds would not show the old one ever
+      # failed (control-server#265).
+      - name: L2 scenario self-check (worklist station wait)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/l2/Test-L2WorklistStationWait.ps1
+
       # 1.5 seconds, and the only thing that ever executes Get-G3EvidenceLocationDiagnostic: a G3
       # runner calls it after it has already decided it found nothing, so no green run reaches it.
       # It says WHERE nothing was found, which is what control-server#211 needed and did not have --
