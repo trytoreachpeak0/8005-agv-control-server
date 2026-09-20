@@ -935,6 +935,10 @@ public sealed class JourneyRuntimeWorkerLoadCancellationBeforeSublotTests
             .SingleAsync(row => row.Purpose == "TO_PICKUP", token);
         Assert.Equal(receivedAt, pickup.VehicleOccupancyReleasedAt);
         await ZeroChangePin.AssertMatchesAsync(fixture.Context, "in-flight-cancellation");
+        // control-server#208：库里的状态由上面那一行钉，发出去的报文与修订号由这一行钉。录入提交的 messageId 是
+        // AdvanceToLoadResultAsync 随机造的，而它原样进了装货命令的 correlationId，所以按值遮掉。
+        await WirePin.AssertMatchesAsync(
+            fixture.Context, "in-flight-cancellation", fixture.Peer.Lines, [await SublotSubmissionIdAsync(fixture)]);
 
         await AssertTheVehicleTakesTheNextDemandAsync(fixture, cancelled);
     }
@@ -965,9 +969,18 @@ public sealed class JourneyRuntimeWorkerLoadCancellationBeforeSublotTests
             token);
         await AssertStopEndedByOperatorAsync(fixture, waiting, receivedAt);
         await ZeroChangePin.AssertMatchesAsync(fixture.Context, "cancellation-before-sublot");
+        // control-server#208：这条路径停在等扫码，没有录入提交，所以没有随机值要遮。
+        await WirePin.AssertMatchesAsync(fixture.Context, "cancellation-before-sublot", fixture.Peer.Lines);
 
         await AssertTheVehicleTakesTheNextDemandAsync(fixture, cancelled);
     }
+
+    /// <summary>这一趟里操作员那条录入提交的 messageId，由 <c>AdvanceToLoadResultAsync</c> 随机生成。</summary>
+    private static Task<string> SublotSubmissionIdAsync(RuntimeFixture fixture) => fixture.Context.ProtocolInbox
+        .AsNoTracking()
+        .Where(row => row.MessageType == "SublotSubmitted")
+        .Select(row => row.MessageId)
+        .SingleAsync(TestContext.Current.CancellationToken);
 
     private static async Task AssertTheVehicleTakesTheNextDemandAsync(
         RuntimeFixture fixture,
