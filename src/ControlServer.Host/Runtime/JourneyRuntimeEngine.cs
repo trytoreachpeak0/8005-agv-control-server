@@ -1372,11 +1372,27 @@ public sealed class JourneyRuntimeEngine(
     {
         using JsonDocument document = JsonDocument.Parse(submission.RequestJson);
         string enteredSublot = RequiredString(document.RootElement.GetProperty("payload"), "sublot");
-        // 派车范围：这个停靠上还没终结的需求（control-server#208）。今天一个停靠一条需求，所以仍是那一条；
-        // 写成集合，是因为 FR-001 AC-3 把录入的范围定在整个停靠序列上，而集合正是它长成的样子。
+        // 派车范围：这个停靠上还没终结的需求（control-server#208）。写成集合，是因为 FR-001 AC-3 把录入的范围定在
+        // 整个停靠序列上，而集合正是它长成的样子。
         AcceptedDemandRow[] scope = [.. stops.CurrentStopDemands.Select(item => item.Demand)];
         AcceptedDemandRow? demand = scope.SingleOrDefault(
             row => string.Equals(row.Sublot, enteredSublot, StringComparison.Ordinal));
+        // 但本票只认锚需求，范围放宽到此为止——下面这一句是刻意的，不是漏改。
+        //
+        // 往下的每一步今天都按锚需求走：花篮数比对读 runtime.ExpectedBasketCount，装货命令取锚需求归属行上的
+        // attempt 与仓位，等装货结果时又按 runtime.LoadSlotOperationAttemptId 去查。**只放宽这里而不动那几步**，
+        // 结果是操作员扫第二条的子批、车上收到的却是第一条的开仓命令与仓位；**把那几步也改成按被录入的那条走**，
+        // AwaitingLoadResult 仍然只会去查锚需求的 attempt，于是查不到结果、旅程停在那里静默卡死——比前者更难查。
+        //
+        // 两条都不是「行为不变」该有的样子。让「这个停靠此刻在装哪一条需求」成为一个状态，是多需求推进语义本身，
+        // 归 批次7-06（control-server#211）。在那之前退回锚需求，拒绝的理由码与改动前逐字相同
+        // （改动前 scope 里本来就只有锚需求，扫别的子批同样落进下面这个 SublotNotInDispatchScope）。
+        // 7-06 放宽时，这一句是第一个该删的东西。
+        if (demand is not null && !string.Equals(demand.DemandId, runtime.DemandId, StringComparison.Ordinal))
+        {
+            demand = null;
+        }
+
         if (demand is null)
         {
             return await RefuseAsync(
