@@ -580,7 +580,7 @@ public sealed class JourneyRuntimeEngine(
                 }
                 if (sublot is null)
                 {
-                    if (await TryEndStopAtStationDeadlineAsync(runtime, session, now, cancellationToken)
+                    if (await TryEndStopAtStationDeadlineAsync(runtime, stops, session, now, cancellationToken)
                             .ConfigureAwait(false))
                     {
                         return;
@@ -694,6 +694,9 @@ public sealed class JourneyRuntimeEngine(
                     return;
                 }
                 runtime.StationDepartureWaitStartedAt = null;
+                // 卸货停靠的这两个 id 受理时没有写过——在本票之前它永远是旅程的终点，没有「离开之前」可言。
+                // 多停靠计划里它后面还能有停靠，所以第一次要离站时补上并落库。
+                await EnsureDepartureCheckIdsAsync(stops.Current, cancellationToken).ConfigureAwait(false);
                 // 核验的两个 id 取当前停靠。命令里的 demandId 取「第一条受理的需求」（锚需求），即使它已经在更早的
                 // 停靠卸完了：协议只放得下一个，而离站安全本来就是一次整车判断，不是对某一条需求的判断
                 // （票面第 10 条）。腿与目标站取「即将出发的那一段」，也就是下一个停靠。
@@ -866,22 +869,31 @@ public sealed class JourneyRuntimeEngine(
                         break;
                     }
 
+                    if (stops.OpenStops.Count > 1)
+                    {
+                        // 卸完了这一站，计划里还有下一站：走与取货停靠<b>同一条</b>离站路——发离站安全核验、
+                        // 按答复过 REQ-0305 的创建门禁、建下一段腿的订单意图并授权移动、下 RIoT 订单，
+                        // 由那条路在车真开走之后才把本停靠标记完成。所以这里既不标记完成也不重载游标：
+                        // 离站段要的 stops.Current 正是「正要离开的这个停靠」。
+                        //
+                        // 先前这里直接 SetStage 到下一站的到站阶段，中间<b>什么都没做</b>。全仓只有
+                        // :761-762 建后续腿的订单意图，而那两行在离站安全分支里，卸货停靠走不到——于是
+                        // 下一轮按一个库里根本不存在的 UpperId 调 SingleAsync，抛 InvalidOperationException，
+                        // 被每车异常隔离吃掉（记 2123），旅程每一轮重复同一条，车停在原地、货还在车上。
+                        // 判据是 LeavingAnUnloadStopAuthorisesTheLegToTheNextStop：它断订单意图在不在，
+                        // 不断「推进没抛」——那个异常在测试这一侧什么都看不到。
+                        //
+                        // OpenStops 含当前停靠，所以判的是 > 1 不是 > 0。
+                        SetStage(runtime, JourneyRuntimeStage.AwaitingStationDeparture, now);
+                        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                        goto case JourneyRuntimeStage.AwaitingStationDeparture;
+                    }
+
                     (await TrackedStopAsync(stops.Current.StopId, cancellationToken).ConfigureAwait(false)).Status =
                         JourneyStopStatuses.Completed;
                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                     stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken)
                         .ConfigureAwait(false);
-                    if (stops.OpenStops.Count > 0)
-                    {
-                        // 还有停靠没走完（多停靠计划）：下一轮从新的当前停靠接着推。
-                        SetStage(
-                            runtime,
-                            stops.Current.StopRole == JourneyStopRoles.Pickup
-                                ? JourneyRuntimeStage.AwaitingPickupArrival
-                                : JourneyRuntimeStage.AwaitingGateArrival,
-                            now);
-                        break;
-                    }
 
                     SetStage(runtime, JourneyRuntimeStage.Completed, now);
                     checkpointWaits.Clear(runtime.VehicleKey);
@@ -2461,9 +2473,29 @@ public sealed class JourneyRuntimeEngine(
         journeyBase + (arrivedAtStop ? stop.Sequence : stop.Sequence - 1);
 
     /// <summary>
-    /// 一个停靠的离站核验身份。今天只有取货停靠有（卸货停靠是旅程的终点，没有「离开之前」可言），所以取不到就是
-    /// 在一个不该问离站安全的停靠上问了。
+    /// 一个停靠的离站核验身份：取货停靠从停靠行上取，卸货停靠按停靠 id 派生（批次7-06，control-server#211）。
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>这两个方法原本的注释说「卸货停靠是旅程的终点，没有『离开之前』可言」，而本票推翻的正是那个前提。</b>
+    /// 多停靠计划里卸货停靠后面还可以有停靠，车卸完这一站要继续走——那一次离站和取货停靠的离站没有任何区别：
+    /// 离站安全问的是「这辆车<b>现在</b>能不能安全开走」，与它在这一站是装了还是卸了无关，而车上可能还装着
+    /// 后面几站要卸的货，那正是更需要问的情形。（车载端那一侧实读过：<c>HandlePreDepartureSafetyCheckAsync</c>
+    /// 只比对安全状态版本、然后读 IO 模块当前快照作答，不看旅程阶段也不看上一站做了什么。）
+    /// </para>
+    /// <para>
+    /// <b>卸货停靠派生而不是落库，是为了不动迁移。</b>停靠行由 <c>SingleDemandJourneyShape.Stops</c> 写下，
+    /// 而它必须与批次7-01 迁移里的 SQL 回填<b>逐列一致</b>（<c>Batch7JourneyAcceptanceTests</c> 的
+    /// <c>ANewlyAcceptedJourneyCannotBeToldApartFromTheSameJourneyBackFilledByTheMigration</c> 盯着这件事）。
+    /// 在那里加两列就要改一个已经合入的迁移，而那比加一个新迁移更糟；派生则让<b>已经落库的卸货停靠行也直接可用</b>，
+    /// 升级边界上不留一格需要回填的数据。派生用 <c>StableGuid(stopId, …)</c>，同一个停靠每次算出同一个值，
+    /// 发出与结算读到的是同一个 id。
+    /// </para>
+    /// <para>
+    /// <b>取货停靠仍然抛，护栏一字未动</b>：它的这两个 id 是受理时写下的，取不到就是那一行坏了。
+    /// 只有卸货停靠这一支是新加的，而它「没有」不是缺陷，是那一列从设计上就没为它写过。
+    /// </para>
+    /// </remarks>
     private static string DepartureCheckId(JourneyStopRow stop) =>
         stop.DepartureSafetyCheckId
         ?? throw new InvalidDataException($"Stop '{stop.StopId}' has no pre-departure safety check id.");
@@ -2471,6 +2503,30 @@ public sealed class JourneyRuntimeEngine(
     private static string DepartureCheckMessageId(JourneyStopRow stop) =>
         stop.DepartureSafetyCheckMessageId
         ?? throw new InvalidDataException($"Stop '{stop.StopId}' has no pre-departure safety check message id.");
+
+    /// <summary>
+    /// 卸货停靠第一次要离站时，把它的离站核验 id 补上并落库（批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// <b>写回行，而不是每次派生</b>：停靠行是这两个 id 的唯一真相，读它的地方不止推进段一处
+    /// （测试驱动、结算、重连补发都读行），派生会让「行上的值」与「实际发出去的值」分家。写回之后
+    /// 上面两个取值器一字未动，取货停靠缺 id 照样响亮地抛。
+    /// </remarks>
+    private async Task EnsureDepartureCheckIdsAsync(JourneyStopRow stop, CancellationToken cancellationToken)
+    {
+        if (stop.DepartureSafetyCheckId is not null && stop.DepartureSafetyCheckMessageId is not null)
+        {
+            return;
+        }
+
+        JourneyStopRow tracked = await TrackedStopAsync(stop.StopId, cancellationToken).ConfigureAwait(false);
+        tracked.DepartureSafetyCheckId ??= JourneyPlanBuilder.StableGuid(stop.StopId, "unload-departure-safety-check");
+        tracked.DepartureSafetyCheckMessageId ??=
+            JourneyPlanBuilder.StableGuid(stop.StopId, "unload-departure-safety-request");
+        stop.DepartureSafetyCheckId = tracked.DepartureSafetyCheckId;
+        stop.DepartureSafetyCheckMessageId = tracked.DepartureSafetyCheckMessageId;
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
 
     private static string PickupDispatchPlanMessageId(JourneyRuntimeRow runtime) =>
         JourneyPlanBuilder.StableGuid(runtime.DemandId, "pickup-dispatch-plan");
@@ -2803,6 +2859,7 @@ public sealed class JourneyRuntimeEngine(
     /// </remarks>
     private async Task<bool> TryEndStopAtStationDeadlineAsync(
         JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
         SessionRecoveryRow session,
         DateTimeOffset now,
         CancellationToken cancellationToken)
@@ -2850,14 +2907,35 @@ public sealed class JourneyRuntimeEngine(
             .Where(row => row.DemandId == runtime.DemandId)
             .Select(row => (JourneyRuntimeStage?)row.Stage)
             .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        // 取消要按<b>这个停靠</b>问，不是按锚需求（批次7-06，control-server#211）：一条需求的取消开着时，
+        // 这个停靠上的每一条都等着它——期限不能在那期间把停靠结束掉。先前这里只查锚需求，于是同站另一条
+        // 需求的扫码前取消正等着车证明空仓时，期限照样能结束这个停靠。
         if (stageNow != JourneyRuntimeStage.AwaitingSublot ||
-            await LoadCancellationBeforeSublot.HasOpenCancellationAsync(dbContext, runtime.DemandId, cancellationToken)
-                .ConfigureAwait(false))
+            await OpenCancellationAtCurrentStopAsync(stops, cancellationToken).ConfigureAwait(false))
         {
             return false;
         }
-        await new PickupStopTermination(dbContext)
-            .StageAsync(runtime, StationTimeoutCancellationReason, now, cancellationToken).ConfigureAwait(false);
+
+        // 终结的是<b>这个停靠上还没做完的那些</b>，不是旅程行点名的那条（批次7-06，control-server#211）。
+        //
+        // 先前这里走的是「终结旅程行点名的那条需求」那个重载，终结对象恒为锚需求。一站多需求之后那是错的，
+        // 而且错得静默：在第二个取货停靠上超时，被终结的是<b>早已在第一站装上车的锚需求</b>——它的归属行被写成
+        // Terminated，JourneyStopCursor.IsDoneAt 从此对它恒为 true，<b>车上已经装着的那批货从计划里消失、
+        // 永远不会被卸</b>，而真正超时的那条原封不动继续挂在清单上。
+        //
+        // 整个停靠上的待做项一起终结：期限是这个停靠的（「这一站的活没在期限内做完」），结束它就是让车走，
+        // 留下任何一条待做项都会让下一轮回到同一个停靠、同一个期限。
+        string sublotRequestMessageId = stops.CurrentSublotRequestMessageId(runtime.WorklistRevision);
+        foreach (JourneyStopDemand outstanding in stops.OutstandingAtCurrentStop)
+        {
+            await new PickupStopTermination(dbContext).StageAsync(
+                runtime,
+                sublotRequestMessageId,
+                outstanding.Demand.DemandId,
+                StationTimeoutCancellationReason,
+                now,
+                cancellationToken).ConfigureAwait(false);
+        }
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         if (transaction is not null)
         {

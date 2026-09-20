@@ -120,6 +120,140 @@ public sealed class Batch7ThreeStopJourneyTests
     }
 
     /// <summary>受理、追加、跑完三个停靠，两条需求都卸掉。</summary>
+    /// <summary>
+    /// 卸完一个卸货停靠、计划里还有下一站时，去下一站那一段腿必须被授权（批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>这条补的是本票最大的一块覆盖盲区，独立审查查出来的。</b>同文件那条三停靠用例是
+    /// <c>P1, P2, U</c>——两条需求共用同一个卸货站、被并入一个停靠，那正是它要测的东西，而它的副作用是
+    /// <b>车从来没有离开过一个卸货停靠</b>。「离开卸货停靠」这条路因此整条零覆盖，而多停靠计划里它是常态。
+    /// </para>
+    /// <para>
+    /// <b>不需要两个不同的卸货站就能走到这里。</b><see cref="EnRouteAppendPlanner"/> 的
+    /// <c>MergeTargetAt</c> 只在 <c>unloadAt</c> 指向的<b>那一格</b>判能不能合并，而双层循环遍历所有
+    /// <c>(pickupAt, unloadAt)</c> 组合——凡是那一格没指向既有卸货停靠的插法，都会插出第二个卸货停靠，
+    /// 哪怕站号相同。所以这里直接在库里挂一个，形状与规划器落下的一致。
+    /// </para>
+    /// <para>
+    /// 断的是<b>订单意图在不在</b>，不是「推进没抛」：那个异常被每车异常隔离吃掉（记 2123），
+    /// 测试这一侧什么都看不到，而现场表现是旅程每一轮重复同一条异常、车停在原地、货还在车上。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task LeavingAnUnloadStopAuthorisesTheLegToTheNextStop()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set(FirstSublot, 7);
+        await TickAndRunAsync(fixture);
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync(FirstDemandId);
+
+        string extraId = $"{runtime.JourneyId}|EXTRA-UNLOAD";
+        fixture.Context.Set<JourneyStopRow>().Add(new JourneyStopRow
+        {
+            StopId = extraId,
+            JourneyId = runtime.JourneyId,
+            Sequence = 3,
+            StopRole = JourneyStopRoles.Unload,
+            StationId = runtime.GateStationId,
+            StationRiotId = runtime.GateStationRiotId,
+            DispatchZone = runtime.DispatchZone,
+            OperationSessionId = JourneyPlanBuilder.StableGuid(extraId, "session"),
+            MovementLegId = JourneyPlanBuilder.StableGuid(extraId, "leg"),
+            UpperId = $"W2G-{extraId}",
+            VehicleBusinessMessageId = JourneyPlanBuilder.StableGuid(extraId, "vehicle-state"),
+            WorklistMessageId = JourneyPlanBuilder.StableGuid(extraId, "worklist"),
+            PlanMessageId = JourneyPlanBuilder.StableGuid(extraId, "plan"),
+            SublotRequestMessageId = JourneyPlanBuilder.StableGuid(extraId, "sublot-request"),
+            DepartureSafetyCheckMessageId = JourneyPlanBuilder.StableGuid(extraId, "safety-request"),
+            DepartureSafetyCheckId = JourneyPlanBuilder.StableGuid(extraId, "safety-check"),
+            Status = JourneyStopStatuses.Pending,
+            CreatedAt = runtime.CreatedAt
+        });
+        await fixture.Context.SaveChangesAsync(token);
+
+        await ArriveAtPickupAsync(fixture, FirstDemandId);
+        await EnterSublotAsync(fixture, FirstDemandId, FirstSublot, FirstSubmissionId);
+        await SettleLoadAsync(fixture, FirstDemandId);
+        await AnswerDepartureSafetyAsync(fixture, FirstDemandId, FirstSafetyResultId);
+        await ArriveAtGateAndUnloadAsync(fixture, FirstDemandId);
+        // 卸完这一站、计划里还有下一站：与离开取货停靠一样要答一次离站安全，服务端据此建下一段腿的订单。
+        // <b>这一步是本次修复带来的跨端行为变化</b>：车在卸完货离站时会收到一条先前收不到的
+        // PreDepartureSafetyCheck。不加这一步，旅程就停在 AwaitingDepartureSafety——也正因为如此，
+        // 这一行同时是「服务端确实发了那条核验」的证据。
+        await AnswerDepartureSafetyAsync(fixture, FirstDemandId, SecondSafetyResultId);
+
+        JourneyRuntimeRow after = await JourneyOfAsync(fixture, FirstDemandId);
+        Assert.True(
+            await fixture.Context.OrderIntents.AnyAsync(row => row.UpperId == $"W2G-{extraId}", token),
+            $"Leaving the unload stop authorised no movement order. stage={after.Stage} block={after.BlockReasonCode}");
+    }
+
+    /// <summary>
+    /// 站点期限在第二个取货停靠上到期时，终结的是<b>这个停靠上那条</b>，不是旅程行点名的锚需求
+    /// （批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>缺陷的后果是静默丢货，所以判据钉的是「没被动的那一条」。</b>期限先前走的是「终结旅程行点名的那条
+    /// 需求」那个重载，终结对象恒为锚需求。在第二个取货停靠上超时时，被终结的是<b>早已在第一站装上车的
+    /// 第一条需求</b>——它的归属行被写成 <c>Terminated</c>，<c>JourneyStopCursor.IsDoneAt</c> 从此对它恒为
+    /// true，车上装着的那批货从计划里消失、永远不会被卸；而真正超时的第二条原封不动继续挂在清单上。
+    /// 没有异常、没有阻塞原因指向它，看板上看不出任何异样。
+    /// </para>
+    /// <para>
+    /// <b>单需求下这条缺陷不可见</b>：锚需求就是当前停靠上那条，两个重载答案相同。修复前全量 1911 条
+    /// 一条都不红——既有判据对「终结的是哪一条」零判别力，这条用例补的正是那一格。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task TheStationDeadlineEndsTheDemandAtThisStopNotTheAnchor()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        fixture.Catalog.Set(
+            fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)),
+            fixture.Demand(SecondDemandId, SecondSublot, Now.AddMinutes(-9), area: SecondPickupArea));
+        fixture.BoxCounts.Set(FirstSublot, 7);
+        fixture.BoxCounts.Set(SecondSublot, 7);
+
+        await TickAndRunAsync(fixture);
+        await AppendSecondDemandAsync(fixture);
+
+        // 第一条在第一个取货站装上车，车开到第二个取货站等录入。
+        await ArriveAtPickupAsync(fixture, FirstDemandId);
+        await EnterSublotAsync(fixture, FirstDemandId, FirstSublot, FirstSubmissionId);
+        await SettleLoadAsync(fixture, FirstDemandId);
+        await AnswerDepartureSafetyAsync(fixture, FirstDemandId, FirstSafetyResultId);
+        await ArriveAtCurrentStopAsync(fixture, SecondDemandId, "TO_GATE");
+
+        // 这一站的录入迟迟不来，期限到。
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+        await fixture.ProveSlotDoorsClosedAsync();
+        fixture.Clock.Advance(TimeSpan.FromSeconds(10));
+        await TickAndRunAsync(fixture);
+
+        JourneyDemandRow[] memberships = await fixture.Context.Set<JourneyDemandRow>()
+            .Where(row => row.DemandId == FirstDemandId || row.DemandId == SecondDemandId)
+            .ToArrayAsync(token);
+
+        // 车上那批货一个字没动——<b>这一条放在最前面，是为了让红点直接指到缺陷的后果</b>。把终结对象改回
+        // 锚需求，两条断言都不成立，而先执行的那条决定报告里看到的是什么：看到「货被终结了」比看到
+        // 「超时那条没被终结」更快指到「静默丢货」。
+        Assert.Equal(
+            JourneyDemandStatuses.Loaded,
+            memberships.Single(row => row.DemandId == FirstDemandId).Status);
+
+        // 超时的那一条确实被终结了——少了它，一个「谁都不终结」的实现也能让上面那条绿。
+        Assert.Equal(
+            JourneyDemandStatuses.Terminated,
+            memberships.Single(row => row.DemandId == SecondDemandId).Status);
+    }
+
     private static async Task RunThreeStopJourneyAsync(RuntimeFixture fixture)
     {
         fixture.Catalog.Set(
