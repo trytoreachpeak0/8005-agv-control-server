@@ -46,6 +46,65 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
     /// </remarks>
     public const long PlanRevisionsPerJourney = 3;
 
+    /// <summary>
+    /// 把这辆车某条快照流的下一趟基准抬到 <paramref name="revision"/> 之上（批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 下一趟的基准是按车计数器加上每趟的预留量，而预留量是照「一趟两个停靠」定的常数——停靠数没有上界，
+    /// 常数接不住。多停靠或多需求的旅程三条流都会发得更多，本趟的号于是可能越过下一趟的基准，而车载端
+    /// 只按消息类型记修订号，一次回退就是 <c>SNAPSHOT_REVISION_REGRESSION</c> 断会话。
+    /// </para>
+    /// <para>
+    /// <b>由发布快照那个原语调用，不由调用点调用。</b>「发了快照却没结清」因此在构造上不可能：三条流都只能
+    /// 经由 <c>OnboardJourneyPublisher</c> 的快照原语发出去，而那里每发一条就结清一条。放在调用点上则是纪律——
+    /// 漏掉一处要等下一趟才看得见，而新加的发布点往往正是测试走不到的那一处。
+    /// </para>
+    /// <para>
+    /// 不认识的消息类型不做事：只有这三条流按停靠发，别的出站消息没有按车的修订号。
+    /// </para>
+    /// </remarks>
+    public async Task RaiseSnapshotRevisionFloorAsync(
+        string messageType,
+        string agvId,
+        long revision,
+        CancellationToken cancellationToken)
+    {
+        long reserve = messageType switch
+        {
+            "VehicleBusinessStateSnapshot" or "CurrentStopWorklistSnapshot" => RevisionsPerJourney,
+            "UpcomingStopPlanSnapshot" => PlanRevisionsPerJourney,
+            _ => 0
+        };
+        if (reserve == 0)
+        {
+            return;
+        }
+
+        VehicleSnapshotRevisionRow? counter = await dbContext.Set<VehicleSnapshotRevisionRow>()
+            .SingleOrDefaultAsync(row => row.AgvId == agvId, cancellationToken).ConfigureAwait(false);
+        if (counter is null)
+        {
+            return;
+        }
+
+        // 这一号要求下一趟的基准至少是 revision - reserve + 1；已经更高就不动它。单需求旅程一次也不会推进
+        // 任何一条——那时最大的号正好落在预留里，条件不成立，修订号流逐字不变。
+        long required = revision - reserve + 1;
+        switch (messageType)
+        {
+            case "VehicleBusinessStateSnapshot":
+                if (counter.VehicleBusinessRevision < required) { counter.VehicleBusinessRevision = required; }
+                break;
+            case "CurrentStopWorklistSnapshot":
+                if (counter.WorklistRevision < required) { counter.WorklistRevision = required; }
+                break;
+            default:
+                if (counter.PlanRevision < required) { counter.PlanRevision = required; }
+                break;
+        }
+    }
+
     public async Task<long> GetNextSessionGenerationAsync(string agvId, CancellationToken cancellationToken)
     {
         long current = await dbContext.SessionRecoveries

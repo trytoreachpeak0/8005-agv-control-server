@@ -92,6 +92,7 @@ public sealed class OnboardJourneyPublisher(
             messageId,
             agvId,
             sessionGeneration,
+            projection.Revision,
             // observedAt comes from the envelope's frozen sentAt rather than a fresh clock read.
             // This snapshot keeps one deterministic messageId per journey stage, so a payload
             // carrying the current time differs on every re-publish and is refused as a semantic
@@ -551,6 +552,7 @@ public sealed class OnboardJourneyPublisher(
             messageId,
             agvId,
             sessionGeneration,
+            projection.Revision,
             new
             {
                 projection.StationId,
@@ -580,6 +582,7 @@ public sealed class OnboardJourneyPublisher(
             messageId,
             agvId,
             sessionGeneration,
+            projection.Revision,
             new
             {
                 planRevision = projection.Revision,
@@ -603,20 +606,33 @@ public sealed class OnboardJourneyPublisher(
         string messageId,
         string agvId,
         long sessionGeneration,
+        long revision,
         object payload,
         CancellationToken cancellationToken) =>
         await PublishStampedSnapshotAsync(
-            messageType, messageId, agvId, sessionGeneration, _ => payload, cancellationToken)
+            messageType, messageId, agvId, sessionGeneration, revision, _ => payload, cancellationToken)
             .ConfigureAwait(false);
 
     /// <summary>Builds the payload from the envelope's frozen sentAt, so re-publishes reproduce it.</summary>
+    /// <summary>
+    /// 一条按车带修订号的快照，发出去并把这条流的下一趟基准结清（批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// <b><paramref name="revision"/> 是必填的，这正是它的用处。</b>三条按停靠发的快照流都只能从这里出去，
+    /// 所以「发了快照却没结清」在构造上不可能；再加一种这样的快照时，编译器会要求它把自己的号交出来。
+    /// 结清放在发布之前，与发件箱那一行落在同一次保存里——崩在中间也不会留下「发了没结清」的状态。
+    /// </remarks>
     private async Task PublishStampedSnapshotAsync(
         string messageType,
         string messageId,
         string agvId,
         long sessionGeneration,
+        long revision,
         Func<DateTimeOffset, object> payloadFactory,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken)
+    {
+        await store.RaiseSnapshotRevisionFloorAsync(messageType, agvId, revision, cancellationToken)
+            .ConfigureAwait(false);
         await PublishStampedEnvelopeAsync(
             messageType,
             messageId,
@@ -625,6 +641,7 @@ public sealed class OnboardJourneyPublisher(
             sessionGeneration,
             payloadFactory,
             cancellationToken).ConfigureAwait(false);
+    }
 
     private async Task PublishEnvelopeAsync(
         string messageType,
