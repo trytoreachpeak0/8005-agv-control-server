@@ -950,6 +950,44 @@ public sealed partial class MultiVehicleExecutionTests
         await AssertBlockSurvivedTheRoundAsync(fixture, blockLog, raisedAt);
     }
 
+    /// <summary>
+    /// A demand intake refused stays claimed for the rest of the round: the vehicles behind do not try it again,
+    /// and no second intake is attempted on it.
+    /// </summary>
+    /// <remarks>
+    /// The guard against withdrawing too much. control-server#239's path is the opposite one -- a segment cut off
+    /// before intake reported has bound the demand to nothing, so the vehicle behind may take it -- and copying
+    /// its withdrawal here would trade a silent defect for a louder one: two vehicles attempting the same demand
+    /// in one round. The claim comment says why: every refusal below leaves the demand bound to this attempt.
+    /// <para>
+    /// It also pins when the claim takes effect. The round walks its vehicles in series, and the catalog read
+    /// count below is what says the first vehicle's segment reached intake and the two behind it did not -- so
+    /// the claim was in place for the whole gap between one segment ending and the next starting.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task ADemandIntakeRefusedStaysClaimedForTheRestOfTheRound()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync();
+        AcceptedDemandSnapshot only = FleetFixture.Demand(0, "N1-1", 0);
+        fixture.Catalog.Set([only]);
+        fixture.Catalog.ChangedOnReread.Add(only.DemandId);
+
+        await fixture.RunRoundAsync();
+
+        // The round's own read plus exactly one intake re-read: the first vehicle got to intake, and neither
+        // vehicle behind it did. A second attempt would show up here as a third read.
+        Assert.Equal(2, fixture.Catalog.ReadCount);
+        Assert.Empty(await fixture.Context.AcceptedDemands.AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Empty(await fixture.Context.JourneyRuntimes.AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+        DispatchRoundOutcome outcome = Assert.Single(fixture.RoundOutcomes.Outcomes);
+        Assert.Equal(
+            [DispatchAdmissionChain.Eligible, "DEMAND_ALREADY_ACCEPTED", "DEMAND_ALREADY_ACCEPTED"],
+            outcome.CompletedVehicles.Select(vehicle => Assert.Single(vehicle.Verdicts).ReasonCode).ToArray());
+    }
+
     /// <summary>Intake ran to its end and refused: nothing was accepted, and the backlog says why.</summary>
     private static async Task AssertIntakeRefusedAsync(
         FleetFixture fixture,
