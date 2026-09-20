@@ -84,11 +84,17 @@ public sealed class StructuralDispatchBlockSink(
             candidates.TryAdd(item.DemandId, item);
         }
 
-        // A demand the round no longer considers is not blocked by anything any more.
+        // A demand the round no longer considers is not blocked by anything any more. A claim intake refused is
+        // not one of those (control-server#242): the demand is still in the catalog and this server never took
+        // it, so nothing about this block was disproved and clearing it would raise the same alarm as new next
+        // round. The loop below leaves it alone too -- it is still in AcceptedDemandIds, which is what stops the
+        // round drawing any conclusion about a demand one of its vehicles was busy with.
         HashSet<string> settled = new(StringComparer.Ordinal);
         foreach (StructuralDispatchBlock block in uncleared)
         {
-            if (!candidates.ContainsKey(block.DemandId) || round.AcceptedDemandIds.Contains(block.DemandId))
+            if (!candidates.ContainsKey(block.DemandId) ||
+                (round.AcceptedDemandIds.Contains(block.DemandId) &&
+                 !round.ClaimsIntakeRefused.Contains(block.DemandId)))
             {
                 await ClearAsync(block, now, cancellationToken).ConfigureAwait(false);
                 settled.Add(block.DemandId);

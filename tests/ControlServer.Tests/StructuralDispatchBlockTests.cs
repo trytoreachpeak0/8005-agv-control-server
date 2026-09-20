@@ -375,6 +375,46 @@ public sealed class StructuralDispatchBlockTests
     }
 
     /// <summary>
+    /// intake 拒收的那一轮不清阻断，下一轮真受理了就清：减项是一轮的事，不跨轮攒
+    /// （control-server#242）。
+    /// </summary>
+    /// <remarks>
+    /// 减项在 <c>DispatchRoundRunner.RunAsync</c> 里是局部变量，每轮新建一个空集。把它提成字段——比如为了
+    /// 「记住这条需求被拒过」——看着合理，后果却是这条阻断**永远不再被清**：每一轮它都还在减项里，第一处清除
+    /// 条件永远被排除掉。现场表现是一条告警挂着不动，比本票修的那个「反复闪」更静默。
+    /// <para>
+    /// 第二轮同时是票面「不挡批次 7 出口」所依赖的自愈前提：下一轮真受理之后阻断会被清。在这条用例之前
+    /// 那个前提没有任何判据守着。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task ABlockHeldBackByARefusedClaimClearsOnTheNextRoundThatAcceptsIt()
+    {
+        await using Harness harness = await Harness.CreateAsync(eightSlot: [AgvA]);
+        DispatchRoundFacts first = Round(Now, Candidate());
+        await harness.RecordAsync(first, await harness.SlotVerdictAsync(first, AgvA, "FRONT", baskets: 5, AllEight));
+        Assert.Single(await harness.UnclearedAsync());
+        int raised = harness.Log.Entries.Count(entry => entry.Level >= LogLevel.Warning);
+
+        // 拒收的那一轮：这辆车占下了它（所以在 accepted 里，后面的车不重抢），intake 又拒了（所以在减项里）。
+        await harness.RecordAsync(
+            WithIntakeRefused(Round(Now.AddSeconds(5), [DemandId], Candidate()), DemandId));
+
+        Assert.Single(await harness.UnclearedAsync());
+        Assert.Null(Assert.Single(await harness.AllRowsAsync()).ClearedAt);
+        // 既没清也没重报：这一轮对这条需求什么都没说。
+        Assert.DoesNotContain(harness.Log.Entries, entry => entry.Level == LogLevel.Information);
+        Assert.Equal(raised, harness.Log.Entries.Count(entry => entry.Level >= LogLevel.Warning));
+
+        // 下一轮减项是新的空集，这条需求这次真被受理了。
+        await harness.RecordAsync(Round(Now.AddSeconds(10), [DemandId], Candidate()));
+
+        Assert.Empty(await harness.UnclearedAsync());
+        Assert.Equal(Now.AddSeconds(10), Assert.Single(await harness.AllRowsAsync()).ClearedAt);
+        Assert.Single(harness.Log.Entries, entry => entry.Level == LogLevel.Information);
+    }
+
+    /// <summary>
     /// 原因消失：MES 把盒数改小后需求放得进 FRONT 组，这一轮就清除；之后又变大，重新形成一段，再写一条 Warning。
     /// </summary>
     [Fact]
@@ -630,6 +670,17 @@ public sealed class StructuralDispatchBlockTests
 
     private static DispatchRoundFacts Round(DateTimeOffset now, params AcceptedDemandSnapshot[] catalog) =>
         Round(now, [], catalog);
+
+    /// <summary>
+    /// 这一轮某辆车占下了这些需求、intake 又明确拒收（control-server#242）：它们对后面的车仍然算被占
+    /// （所以调用方同时把它们放进 <c>accepted</c>），对轮末却不算已受理。
+    /// </summary>
+    private static DispatchRoundFacts WithIntakeRefused(
+        DispatchRoundFacts round,
+        params string[] demandIds) => round with
+        {
+            ClaimsIntakeRefused = demandIds.ToHashSet(StringComparer.Ordinal),
+        };
 
     private static DispatchRoundFacts Round(
         DateTimeOffset now,

@@ -160,9 +160,14 @@ public sealed class DispatchRoundRunner(
         // one version of the table, and that is the version a demand freezes.
         AreaAssignmentTableVersion? areaAssignmentTable = await areaAssignments
             .ReadCurrentAsync(cancellationToken).ConfigureAwait(false);
+        // The subtraction from the set above, filled in as intake refuses: see DispatchRoundFacts.ClaimsIntakeRefused.
+        HashSet<string> claimsIntakeRefused = new(StringComparer.Ordinal);
         DispatchRoundFacts round = new(
             snapshot, currentMap, fixedStations, acceptedDemandIds, now, policy, areaAssignmentTable,
-            admissionPolicyDrifted);
+            admissionPolicyDrifted)
+        {
+            ClaimsIntakeRefused = claimsIntakeRefused,
+        };
         List<DispatchVehicleOutcome> completedVehicles = [];
 
         // One worker, vehicles in series -- not one worker per vehicle. Serial iteration is what
@@ -185,8 +190,8 @@ public sealed class DispatchRoundRunner(
             try
             {
                 await DispatchForVehicleAsync(
-                    round, vehicle, acceptedDemandIds, claimedThisSegment, backlogByDemandId, verdicts, now,
-                    linked.Token)
+                    round, vehicle, acceptedDemandIds, claimsIntakeRefused, claimedThisSegment, backlogByDemandId,
+                    verdicts, now, linked.Token)
                     .ConfigureAwait(false);
                 // Only once the segment has run to its end. A vehicle its budget cuts off below has not
                 // finished deciding, so what it judged so far says nothing about that vehicle.
@@ -203,7 +208,8 @@ public sealed class DispatchRoundRunner(
                 // claims were made good on is read from the database there, not from the way the segment ended --
                 // a budget can just as well fire the moment after the acceptance committed.
                 await DropWhatTheSegmentStagedAsync(
-                    backlogByDemandId, claimedThisSegment, acceptedDemandIds, cancellationToken)
+                    backlogByDemandId, claimedThisSegment, acceptedDemandIds, claimsIntakeRefused,
+                    cancellationToken)
                     .ConfigureAwait(false);
             }
             // A vehicle whose own reads fail -- an unreachable RIoT, an Onboard fact that cannot be read, an
@@ -235,7 +241,8 @@ public sealed class DispatchRoundRunner(
                 }
 
                 await DropWhatTheSegmentStagedAsync(
-                    backlogByDemandId, claimedThisSegment, acceptedDemandIds, cancellationToken)
+                    backlogByDemandId, claimedThisSegment, acceptedDemandIds, claimsIntakeRefused,
+                    cancellationToken)
                     .ConfigureAwait(false);
             }
         }
@@ -309,7 +316,11 @@ public sealed class DispatchRoundRunner(
         Dictionary<string, JourneyBacklogRow> backlogByDemandId,
         CancellationToken cancellationToken) =>
         DropWhatTheSegmentStagedAsync(
-            backlogByDemandId, [], new HashSet<string>(StringComparer.Ordinal), cancellationToken);
+            backlogByDemandId,
+            [],
+            new HashSet<string>(StringComparer.Ordinal),
+            new HashSet<string>(StringComparer.Ordinal),
+            cancellationToken);
 
     /// <inheritdoc cref="DropWhatTheSegmentStagedAsync(Dictionary{string, JourneyBacklogRow}, CancellationToken)"/>
     /// <remarks>
@@ -326,16 +337,26 @@ public sealed class DispatchRoundRunner(
     /// cleared first, so this reads what the acceptance transaction actually committed. A demand whose row is
     /// there was accepted, whatever threw or expired afterwards, and its claim stands.
     /// </para>
+    /// <para>
+    /// <b>The round-end subtraction goes with the claim, unconditionally</b> (control-server#242). It only means
+    /// anything while a claim is standing: withdrawn, the demand is back in play and the vehicle behind may accept
+    /// it — and then the round-end hook must clear its block like any other acceptance. The window is narrow but
+    /// real: intake reports a refusal, the demand is named in the subtraction, and the backlog write right after
+    /// it runs out the budget or throws. Leaving the id behind would hold that block back for a round even though
+    /// the demand was accepted after all.
+    /// </para>
     /// </remarks>
     private async Task DropWhatTheSegmentStagedAsync(
         Dictionary<string, JourneyBacklogRow> backlogByDemandId,
         IReadOnlyList<string> claimedThisSegment,
         HashSet<string> acceptedDemandIds,
+        HashSet<string> claimsIntakeRefused,
         CancellationToken cancellationToken)
     {
         dbContext.ChangeTracker.Clear();
         foreach (string demandId in claimedThisSegment)
         {
+            claimsIntakeRefused.Remove(demandId);
             bool accepted = await dbContext.AcceptedDemands
                 .AnyAsync(row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
             if (!accepted)
@@ -376,6 +397,7 @@ public sealed class DispatchRoundRunner(
         DispatchRoundFacts round,
         FleetVehicle fleetVehicle,
         HashSet<string> claimedDemandIds,
+        HashSet<string> claimsIntakeRefused,
         List<string> claimedThisSegment,
         Dictionary<string, JourneyBacklogRow> backlogByDemandId,
         List<DispatchCandidateVerdict> verdicts,
@@ -465,6 +487,13 @@ public sealed class DispatchRoundRunner(
         // then reports, because every refusal below leaves the demand bound to this attempt.
         // Written down as well, so that a segment which throws instead of reporting can have the claim taken
         // back -- an unaccepted demand the round believes was accepted would have its structural block cleared.
+        //
+        // The claim outliving an intake refusal is right for the vehicles behind and wrong for the round's end,
+        // and control-server#242 splits those two readings rather than the claim: the demand stays in this set,
+        // so nobody behind tries it again, and a refusal below also names it in claimsIntakeRefused, which is
+        // what keeps the round's end from counting it as accepted. Withdrawing it here instead -- the way a
+        // segment cut off before it reported has to (control-server#239) -- would trade a silent defect for a
+        // louder one: two vehicles attempting the same demand in one round.
         claimedDemandIds.Add(selected.Snapshot.DemandId);
         claimedThisSegment.Add(selected.Snapshot.DemandId);
         JourneyIntakeResult result = await intakeCoordinator.AcceptAndDispatchToPickupAsync(
@@ -479,6 +508,21 @@ public sealed class DispatchRoundRunner(
             cancellationToken).ConfigureAwait(false);
         if (result.IntakeOutcome != DemandIntakeOutcome.Accepted)
         {
+            // Nothing was written, so the claim above is not a demand this server took. It stands for the rest of
+            // the round -- the demand is bound to this attempt -- but the round's end must not read it as an
+            // acceptance and clear the demand's structural block on the strength of it (control-server#242).
+            //
+            // Named one by one rather than as "anything but CandidateGone": a new outcome on this enum has to be
+            // thought about here rather than being swept in by a blacklist. CandidateGone is the one refusal that
+            // stays out -- that demand is no longer in the catalog, so a block against it is about nothing and
+            // clearing it is the right answer rather than a lost alarm.
+            if (result.IntakeOutcome is DemandIntakeOutcome.CandidateChanged
+                or DemandIntakeOutcome.FinalAdmissionRejected
+                or DemandIntakeOutcome.JourneyPlanIncomplete)
+            {
+                claimsIntakeRefused.Add(selected.Snapshot.DemandId);
+            }
+
             await SetBacklogReasonAsync(
                 selected.Snapshot.DemandId,
                 result.IntakeOutcome switch

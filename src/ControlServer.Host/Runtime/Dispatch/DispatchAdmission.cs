@@ -54,7 +54,38 @@ public sealed record DispatchRoundFacts(
     DateTimeOffset Now,
     VehicleDispatchPolicy Policy,
     AreaAssignmentTableVersion? AreaAssignments = null,
-    bool AdmissionPolicyDrifted = false);
+    bool AdmissionPolicyDrifted = false)
+{
+    /// <summary>
+    /// The demands a vehicle claimed this round and intake then refused outright (control-server#242): they sit
+    /// in <see cref="AcceptedDemandIds"/>, because the refusal leaves them bound to that attempt, but this server
+    /// never accepted them and there is no <c>AcceptedDemands</c> row behind them.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>It is the subtraction that separates the two meanings that set carries.</b> "Stop being a candidate for
+    /// the vehicles behind in this round" is one; "count as accepted when the round ends" is the other, and only
+    /// the first one holds for a demand intake refused. <see cref="StructuralDispatchBlockSink"/> reads this to
+    /// keep from clearing a structural block on a demand nothing took — cleared, the same alarm is raised again as
+    /// new the next round, a 2115/2114 pair per round for as long as the refusal repeats.
+    /// </para>
+    /// <para>
+    /// <b><see cref="DemandIntakeOutcome.CandidateGone"/> is deliberately not in here.</b> That demand left the
+    /// catalog, so a block standing against it is no longer about anything and clearing it is right. Keeping the
+    /// claim is what clears it, and it is worth knowing that the catalog-absence rule in
+    /// <see cref="StructuralDispatchBlockSink"/> does not do that job in this round: the sink judges against
+    /// <see cref="Catalog"/>, read before the round started, and intake only found the demand gone on its re-read
+    /// half way through. That rule clears the block a round later, so subtracting this outcome too would not lose
+    /// the clearing — it would delay it, while an operator looks at an alarm about a demand that is already gone.
+    /// The other three refusals say nothing about the block either way.
+    /// </para>
+    /// <para>
+    /// A grow-while-the-round-runs set like <see cref="AcceptedDemandIds"/>, and sound for the same reason: the
+    /// round's segments are strictly serial, so no segment reads it while another writes.
+    /// </para>
+    /// </remarks>
+    public IReadOnlySet<string> ClaimsIntakeRefused { get; init; } = new HashSet<string>(StringComparer.Ordinal);
+}
 
 /// <summary>
 /// One vehicle's facts for this round, plus the configuration slice that applies to it.
