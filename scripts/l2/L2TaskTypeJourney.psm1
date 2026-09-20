@@ -174,6 +174,29 @@ driven by the same code whatever the server calls that intent.
 Returns every reading and every id the scenario needs: StopFacts (en-route-to-origin, at-origin, at-destination,
 completed), Load, Unload, OriginIntent, DestinationIntent, Stage, and the instants the vehicle was put at each stop.
 #>
+<#
+.SYNOPSIS
+Every non-TO_PICKUP order intent of a demand, ordered by UpperId.
+
+.DESCRIPTION
+ORDER BY UpperId because SQLite promises no row order and the caller takes the first row: without it
+the same database and the same demand could answer differently on two runs (control-server#164
+review). One journey carries one second leg today, so the ordering changes no result now -- what it
+guards is the day that premise stops holding.
+
+Returns a single-layer array, wrapped on the way out so that a one-row or empty answer stays an
+array. Do not wrap it again at the call site.
+#>
+function Get-L2SecondLegIntents {
+    param(
+        [Parameter(Mandatory)][object]$Connection,
+        [Parameter(Mandatory)][string]$DemandId)
+
+    return , @(Invoke-L2Query -Connection $Connection -Sql (
+        "SELECT UpperId, OrderId, Status, Purpose FROM OrderIntents " +
+        "WHERE DemandId = '$DemandId' AND Purpose <> 'TO_PICKUP' ORDER BY UpperId"))
+}
+
 function Invoke-L2TaskTypeJourney {
     param(
         [Parameter(Mandatory)][object]$Context,
@@ -233,24 +256,34 @@ function Invoke-L2TaskTypeJourney {
     $null = Wait-L2Condition -Description 'the load committed and the journey left for its second stop' `
         -Journal $journal -Criterion 'journey-stage' -TimeoutSeconds 180 `
         -Probe { Get-L2RealStage $connection $DemandId }.GetNewClosure() -Until { param($v) $v -eq 'AwaitingGateArrival' }
-    # ORDER BY UpperId：没有它，SQLite 的行序不是承诺的，而下面取的是 $rows[0]——同一份库、同一条需求，
-    # 两次跑可能取到不同的那一条（control-server#164 审查）。一趟一单时只有一条，所以排序在今天不改变结果；
-    # 它挡的是「今天只有一条」这个前提哪天不成立。
+    # 真有第二条意图时抛错，不悄悄取第一条：那说明这条需求的意图比这个驱动设想的多，往下跑出来的每一条
+    # 判据都会是关于「碰巧排在前面的那一条」的，而判据表上看不出这件事。排序的理由见 Get-L2SecondLegIntents。
     #
-    # 真有第二条时抛错，不悄悄取第一条：那说明这条需求的意图比这个驱动设想的多，往下跑出来的每一条判据
-    # 都会是关于「碰巧排在前面的那一条」的，而判据表上看不出这件事。
-    $destinationIntent = Wait-L2Condition -Description 'the second leg''s intent was confirmed' `
-        -Journal $journal -Criterion 'destination-intent' -TimeoutSeconds 120 `
-        -Probe {
-            $rows = Invoke-L2Query -Connection $connection -Sql (
-                "SELECT UpperId, OrderId, Status, Purpose FROM OrderIntents WHERE DemandId = '$DemandId' AND Purpose <> 'TO_PICKUP' ORDER BY UpperId")
-            if ($rows.Count -gt 1) {
-                throw ("Demand $DemandId has $($rows.Count) non-TO_PICKUP order intents " +
-                    "($(@($rows | ForEach-Object { "$($_.Purpose)/$($_.UpperId)" }) -join ', ')); " +
-                    'this driver assumes one second leg and would silently judge whichever sorted first.')
-            }
-            if ($rows.Count -ge 1 -and [string]$rows[0].Status -eq 'CONFIRMED') { $rows[0] } else { $null }
-        }.GetNewClosure() -Until { param($v) $null -ne $v }
+    # **这个检查绝不能写进 -Probe。**`Wait-L2Condition` 的轮询是 `try { $last = & $Probe } catch { $last = $null }`
+    # （`L2.psm1:24`），探针里抛出的异常会被整个吞掉——检查写在里面不是不生效，是退化成 120 秒后的
+    # 「等待第二腿意图确认超时」。那句话读起来像服务端没确认意图，真因一个字都到不了读证据的人手里，
+    # 而查清它要再烧一次真装置机时。那个 catch 是所有场景共用的、必要的瞬时错误容错，不能为这里改。
+    #
+    # 等到了要查，等不到也要查：只有排在后面那条被确认时，探针一直返回 $null，走的是超时那条路径。
+    $assertOneSecondLeg = {
+        param($rows)
+        if (@($rows).Count -le 1) { return }
+        throw ("Demand $DemandId has $(@($rows).Count) non-TO_PICKUP order intents " +
+            "($(@($rows | ForEach-Object { "$($_.Purpose)/$($_.UpperId)" }) -join ', ')); " +
+            'this driver assumes one second leg and would silently judge whichever sorted first.')
+    }.GetNewClosure()
+    try {
+        $destinationIntent = Wait-L2Condition -Description 'the second leg''s intent was confirmed' `
+            -Journal $journal -Criterion 'destination-intent' -TimeoutSeconds 120 `
+            -Probe {
+                $rows = Get-L2SecondLegIntents -Connection $connection -DemandId $DemandId
+                if ($rows.Count -ge 1 -and [string]$rows[0].Status -eq 'CONFIRMED') { $rows[0] } else { $null }
+            }.GetNewClosure() -Until { param($v) $null -ne $v }
+    } catch {
+        & $assertOneSecondLeg (Get-L2SecondLegIntents -Connection $connection -DemandId $DemandId)
+        throw
+    }
+    & $assertOneSecondLeg (Get-L2SecondLegIntents -Connection $connection -DemandId $DemandId)
 
     $destinationDepartedAt = [DateTimeOffset]::UtcNow
     Move-L2RealVehicleTo $Context $destinationIntent $DestinationRiotId "the second stop ($DestinationRiotId)"
@@ -305,6 +338,14 @@ function Invoke-L2TaskTypeJourney {
     }
 }
 
+# Get-L2SecondLegIntents is exported although only this module calls it, and that is not tidiness --
+# it is what makes it callable at all. A scriptblock that has been through .GetNewClosure() resolves
+# command names against the global table, not against the module it was written in, so a closure here
+# cannot see an unexported function of this same file. It does not say so: the call throws, and
+# Wait-L2Condition's poll swallows every probe exception (`L2.psm1:24`), so the whole thing surfaces
+# 120 seconds later as "timed out waiting for the second leg's intent" -- on the rig, where that reads
+# as a product fault. Measured, not reasoned: scripts/l2/Test-L2ProbeClosureResolvable.ps1 holds the
+# counterexample and fails this repository's CI if any probe closure calls an unexported sibling.
 Export-ModuleMember -Function Get-L2StopFacts, Format-L2StopFacts, Wait-L2StopFacts,
-    Get-L2DemandJourneySnapshots, Format-L2JourneySnapshot,
+    Get-L2DemandJourneySnapshots, Format-L2JourneySnapshot, Get-L2SecondLegIntents,
     Invoke-L2TaskTypeStationOperation, Invoke-L2TaskTypeJourney

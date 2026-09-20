@@ -86,6 +86,16 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2RunLedger.ps1
 
+      # The quietest of the lot, and the one this ticket wrote by accident before catching it: a
+      # scriptblock that has been through .GetNewClosure() resolves command names globally, so it
+      # cannot call an unexported function of its own module -- and the failure is swallowed by
+      # Wait-L2Condition's poll and re-emerges as a timeout with the missing name nowhere in it. On
+      # the rig that reads as a product fault. The check re-measures the rule before applying it, so
+      # a PowerShell that changed this reports a finding rather than a quiet green (control-server#203).
+      - name: L2 scenario self-check (probe closures resolve)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/l2/Test-L2ProbeClosureResolvable.ps1
+
       # Exit code is the contract — the guest is zh-CN and prints 已通过! not
       # Passed!, so no step here may match on English console text.
       - name: Test
