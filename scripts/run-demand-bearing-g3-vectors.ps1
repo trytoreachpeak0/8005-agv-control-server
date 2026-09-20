@@ -106,6 +106,21 @@ if (-not (Test-Path -LiteralPath $fieldDatabase -PathType Leaf)) {
     throw "FieldRunRoot has no controlserver.db: $FieldRunRoot"
 }
 New-Item -ItemType Directory -Path $StageRoot, $EvidenceRoot | Out-Null
+# Absolute from here on. Unlike run-journey-g3.ps1, this runner does not hand an $EvidenceRoot-derived
+# path to any child process today -- measured, not assumed, with the taint analysis kept at
+# evidence/g3/cs264-path-audit/. Its Push-Location window wraps the child call and nothing else, and
+# every write from this process happens outside it, so a relative -EvidenceRoot would in fact survive.
+#
+# It is absolutised anyway, because "safe" here rests on a fact about today's call sites rather than on
+# anything structural: the day someone passes an evidence path to a child that runs inside the stage
+# tree, the failure is silent and expensive. run-journey-g3.ps1 carries what that looks like, and it
+# cost a G3 slot to find out (control-server#211). One line here means nobody has to find out twice.
+$EvidenceRoot = (Resolve-Path -LiteralPath $EvidenceRoot).Path
+# $StageRoot is a different matter: its derived paths -- $sourcesRoot and the publish directories --
+# ARE handed to children that run with their working directory inside the stage tree, in this runner
+# too. A relative -StageRoot is resolved by this process against the operator's directory and by those
+# children against their own. This one is not defence in depth.
+$StageRoot = (Resolve-Path -LiteralPath $StageRoot).Path
 
 $sourcesRoot = Join-Path $StageRoot 'sources'
 $publishRoot = Join-Path $StageRoot 'publish'

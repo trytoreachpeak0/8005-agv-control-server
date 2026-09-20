@@ -64,6 +64,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+Import-Module (Join-Path $PSScriptRoot 'G3EvidenceLocation.psm1') -Force
 # R-4: no MSBuild node outlives the command that started it (see run-staged-g3.ps1).
 $env:MSBUILDDISABLENODEREUSE = '1'
 $env:DOTNET_CLI_USE_MSBUILD_SERVER = '0'
@@ -269,6 +270,24 @@ if (-not [string]::IsNullOrEmpty($Slice)) { Assert-G3SliceIsClaimedBy -RunKind $
 if (Test-Path -LiteralPath $StageRoot) { throw "StageRoot must not already exist: $StageRoot" }
 if (Test-Path -LiteralPath $EvidenceRoot) { throw "EvidenceRoot must not already exist: $EvidenceRoot" }
 New-Item -ItemType Directory -Path $StageRoot, $EvidenceRoot | Out-Null
+# Absolute from here on, and this is the runner where a relative path actually bit (control-server#211).
+# Below, every scenario is started as a child pwsh with -WorkingDirectory $controlSource -- the staged
+# ControlServer clone -- and is handed -EvidenceRoot $scenarioEvidence, which derives from $EvidenceRoot.
+# A relative one is therefore resolved twice against two different directories: this script creates it
+# next to wherever the operator stood, and each child creates its own under the stage tree.
+#
+# The failure lies to you. The directory exists, every scenario runs, all of them PASS and exit 0 --
+# those are this process's own writes, and this process never changes its working directory (the
+# Push-Location in Invoke-LoggedCommand wraps the child call only). Only the summary, which reads back
+# from $EvidenceRoot, finds nothing, and it says so as "No scenario reported a protocol release
+# identity." -- which reads like a protocol fault. That is a whole G3 slot spent looking the wrong way.
+#
+# Invoke-L2Scenario.ps1 absolutises its own -EvidenceRoot too, and that does not help: by then it is
+# absolutising the wrong directory. A correct step downstream cannot repair a relative path from above.
+$EvidenceRoot = (Resolve-Path -LiteralPath $EvidenceRoot).Path
+# $StageRoot for the same reason, one step earlier: $sourcesRoot and the four publish directories all
+# derive from it and are handed to children that run with their working directory inside the stage.
+$StageRoot = (Resolve-Path -LiteralPath $StageRoot).Path
 
 $sourcesRoot = Join-Path $StageRoot 'sources'
 $peerCacheRoot = Join-Path $StageRoot 'peers'
@@ -561,8 +580,17 @@ if ($null -ne $firstIdentity) {
 } else {
     # No scenario reached the server, so no run can say what protocol identity it certified. Writing a
     # gate result with blank identity fields is what Write-G3GateResult refuses, and so does this.
+    #
+    # Say WHERE nothing was found, always, before saying that nothing was found. An error message can
+    # only describe what it observed; it has no way to know it is looking in the wrong place, and
+    # "read nothing" is far more often a wrong location than a broken producer -- control-server#211
+    # spent a G3 slot reading this sentence as a protocol fault while the evidence sat one directory
+    # away. The absolute path and the entry count turn that into a glance. This runs on the failure
+    # path only, so it costs nothing when things work.
+    $identityDiagnostic = Get-G3EvidenceLocationDiagnostic -Path $scenariosRoot -EntryNoun 'scenario directory'
+    Write-Host $identityDiagnostic
     if ($null -eq $runError) { $runError = [System.Management.Automation.ErrorRecord]::new(
-        [InvalidOperationException]::new('No scenario reported a protocol release identity.'),
+        [InvalidOperationException]::new("No scenario reported a protocol release identity. $identityDiagnostic"),
         'NoScenarioIdentity', 'InvalidResult', $null) }
     $status = 'INCONCLUSIVE_RUNNER_ERROR'
 }

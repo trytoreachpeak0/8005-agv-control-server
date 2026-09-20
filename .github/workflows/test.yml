@@ -106,6 +106,15 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2SecondLegIntentWait.ps1
 
+      # 1.5 seconds, and the only thing that ever executes Get-G3EvidenceLocationDiagnostic: a G3
+      # runner calls it after it has already decided it found nothing, so no green run reaches it.
+      # It says WHERE nothing was found, which is what control-server#211 needed and did not have --
+      # its scenarios directory existed and was empty, because the children had written elsewhere,
+      # and the runner reported that as a protocol fault (control-server#264).
+      - name: G3 runner self-check (evidence location diagnostic)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/Test-G3EvidenceLocation.ps1
+
       # Exit code is the contract — the guest is zh-CN and prints 已通过! not
       # Passed!, so no step here may match on English console text.
       - name: Test

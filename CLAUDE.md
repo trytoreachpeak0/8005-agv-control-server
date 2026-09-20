@@ -232,7 +232,16 @@ Load-bearing details:
   time: every `protocol-v0.1.1` gate result is bound to a manifest hash the
   server no longer sends.
 - **`-Output` and `-EvidenceRoot` must be new directories.** Never overwrite
-  existing evidence.
+  existing evidence. A relative one is fine and resolves against the directory
+  you are standing in: the G3 runners absolutise both it and `-StageRoot` before
+  anything is staged, because the same relative string would otherwise be
+  resolved a second time by child processes running inside the stage tree, and
+  the evidence would split in two (control-server#264; control-server#211 spent
+  a G3 slot on it). That is a statement about what the scripts do, not a rule
+  you have to keep — do not "fix" this by making the runners reject a relative
+  path. Rejecting only moves the work to whoever typed the command; it buys no
+  guarantee that absolutising has not already made unconditional, and it would
+  forbid the very form the L2 example above recommends.
 - `run-staged-g3.ps1` needs Node.js and pnpm because it runs the protocol's G1.
   All three G3 runners are plaintext, run unattended, and share the four commit
   bindings in `run-staged-g3.ps1`'s param block.
