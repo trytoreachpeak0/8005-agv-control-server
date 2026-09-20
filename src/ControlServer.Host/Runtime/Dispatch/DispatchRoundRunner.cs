@@ -81,6 +81,39 @@ public sealed class DispatchRoundRunner(
             "Vehicle {AgvId} broke one of this server's own invariants and was skipped: {ExceptionType}. " +
             "The round moved on, but this is a defect rather than an unreachable peer -- it will not fix " +
             "itself next round.");
+    /// <summary>
+    /// 一辆<b>正被人等着处理</b>的车，却在这一轮里被判了一条候选——按设计它根本不该走到这里
+    /// （批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 两道排除本该让它进不来：<c>JourneyRuntimeEngine</c> 不把 Blocked 的车放进 <c>underWay</c>，
+    /// <c>ReadEnRoutePlanAsync</c> 对 Blocked 的旅程读不出计划、于是 <c>TryAdmitToRoundAsync</c> 把它剔出这一轮。
+    /// 真机上仍然出现过一条 <c>ONBOARD_FACTS_NOT_READY</c> 的积压记录，写在旅程 <c>BlockReasonSince</c> 之后
+    /// 9 秒（<c>L2-LR-10</c>，run 35511760908），而本机跑不出来。这条日志是为了下一次真机撞上时，
+    /// 现场能直接说出它是从哪条路进来的。
+    /// </para>
+    /// <para>
+    /// <b>它判 Blocked 用的是一次独立的、当场发出的查询，不读轮次手上那份数据。</b>这一点是这条诊断能不能
+    /// 成立的全部：如果问题恰恰是「轮次手上那份数据里它不是 Blocked」，那么从那份数据去问「它是不是 Blocked」
+    /// 必然得到「不是」——探测器和被探测的东西共享同一个盲区，问题正在发生而诊断安静，而一次都不响会被
+    /// 当成「没有问题」。
+    /// </para>
+    /// <para>
+    /// <b>验过它会叫，没有只靠读代码。</b>把两处 Blocked 排除一起去掉，跑
+    /// <c>ABlockedJourneyKeepsItsVehicleOutOfTheRoundEntirely</c>，这条日志命中 3 次（三辆车各一次），
+    /// 而那一轮产生的事件 id 只有这一个——目标那一行确实被执行到了，不是「没跑到所以没叫」。
+    /// 一个没验过会叫的探测器，和一个不存在的探测器，在报告里长得一模一样。
+    /// </para>
+    /// </remarks>
+    private static readonly Action<ILogger, string, string, string, Exception?> LogBlockedVehicleJudgedACandidate =
+        LoggerMessage.Define<string, string, string>(
+            LogLevel.Warning,
+            new EventId(2131, nameof(LogBlockedVehicleJudgedACandidate)),
+            "Vehicle {AgvId} was judged for demand {DemandId} and refused with {Reason}, but a fresh read says " +
+            "its journey is Blocked -- a blocked vehicle should never have entered this round at all. " +
+            "Either it was not blocked when the round admitted it, or one of the two exclusions did not hold.");
+
     private static readonly Action<ILogger, string, string, Exception?> LogInTransitQualificationFailed =
         LoggerMessage.Define<string, string>(
             LogLevel.Warning,
@@ -316,6 +349,26 @@ public sealed class DispatchRoundRunner(
             .ToDictionary(group => group.Key, group => group.Max(start => start.CreatedAt), StringComparer.Ordinal);
     }
 
+    /// <summary>见 <see cref="LogBlockedVehicleJudgedACandidate"/>：那条日志要的新鲜读就在这里。</summary>
+    private async Task WarnIfTheVehicleIsActuallyBlockedAsync(
+        RoundVehicle participant,
+        AcceptedDemandSnapshot candidate,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        // AsNoTracking 不只是为了省：这个 DbContext 里很可能已经跟踪着同一行的实例，而已跟踪的实体不会被
+        // 数据库的新值刷新——那正是这条诊断要绕开的那份数据。
+        bool blocked = await dbContext.JourneyRuntimes.AsNoTracking()
+            .AnyAsync(
+                row => row.AgvId == participant.Vehicle.AgvId && row.Stage == JourneyRuntimeStage.Blocked,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (blocked)
+        {
+            LogBlockedVehicleJudgedACandidate(logger, participant.Vehicle.AgvId, candidate.DemandId, reason, null);
+        }
+    }
+
     private async Task<RoundVehicle?> TryAdmitToRoundAsync(
         FleetVehicle vehicle,
         bool underWay,
@@ -519,6 +572,8 @@ public sealed class DispatchRoundRunner(
             evaluation.Route is null)
         {
             // 没过的车当场落裁决：它的理由与别的车接没接走这条任务无关。
+            await WarnIfTheVehicleIsActuallyBlockedAsync(participant, candidate, reason, cancellationToken)
+                .ConfigureAwait(false);
             participant.Verdicts.Add(new DispatchCandidateVerdict(evaluation, reason));
             UpsertBacklog(backlogByDemandId, candidate, reason, now);
             return;

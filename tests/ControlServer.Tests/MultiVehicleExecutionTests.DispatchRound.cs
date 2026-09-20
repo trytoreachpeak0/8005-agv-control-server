@@ -395,6 +395,11 @@ public sealed partial class MultiVehicleExecutionTests
         Assert.Empty(await fixture.Context.JourneyBacklog
             .Where(row => row.DemandId == next.DemandId)
             .ToArrayAsync(TestContext.Current.CancellationToken));
+
+        // 那条「Blocked 的车竟然判了一条候选」的诊断（事件 2131）在正常路径上不该响一声。这一句挡的是
+        // 它退化成恒叫——恒叫的告警等于没有告警。挡不住它退化成恒不叫：那一面只能靠去掉两处排除之后
+        // 看它响，那次验证记在 LogBlockedVehicleJudgedACandidate 的注释里。
+        Assert.DoesNotContain(fixture.EngineLog.Entries, entry => entry.EventId.Id == 2131);
     }
 
     /// <summary>
