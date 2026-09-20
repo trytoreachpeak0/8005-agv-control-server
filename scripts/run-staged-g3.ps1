@@ -83,7 +83,12 @@ param(
     [string]$ControlServerCommit = '85381ea2a37e46b4c720ff5f1843161ad6deb69d',
     #   $OnboardCommit -> 4d716340: onboard-hmi#133 merged the batch-6 G2 evidence onto w2g/fp-v2-impl, and
     #     New-ExactClone requires the tip. 44b3aa6e..4d716340 is evidence/ only; the product is that of 44b3aa6e.
-    [string]$OnboardCommit = '4d716340982de4e39339c2151c291efe1a21e1d1',
+    # 2026-09-20, control-server#211: $OnboardCommit -> 9c7b2302, again because New-ExactClone requires the tip.
+    #   Unlike the move above this one carries product: 4d716340..9c7b2302 touches 22 files under src/, among them
+    #   WireToGateJourney, OnboardController and JourneyPlanLegText -- the onboard half of the multi-stop plan
+    #   (onboard-hmi#146). A journey G3 on the old tip would gate this ticket's server against an onboard that
+    #   cannot render a plan with more than two legs.
+    [string]$OnboardCommit = '9c7b23026ebe8f2b296f4ec503ff6335e1d47096',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
     [string]$ProtocolCommit = '86575456c847041515b7b75e8851a00e0d939804',
     # The ref whose tip -OnboardCommit must equal. It is a parameter rather than a literal because the
