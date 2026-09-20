@@ -1749,13 +1749,14 @@ public sealed class JourneyRuntimeEngine(
     /// that rejection, and the unload command queued behind it was never reached, so the gate stage
     /// could not start. The sibling projections at this stop already advance the same way.
     /// </summary>
-    /// <summary>
-    /// 一个停靠的清单：站点、作业会话与项的角色全部由停靠行给出，项本身是这个停靠上还没终结的需求
-    /// （批次7-03，control-server#208）。
-    /// </summary>
     /// <remarks>
+    /// <para>
+    /// 站点、作业会话与项的角色全部由停靠行给出，项本身是这个停靠上还没终结的需求（批次7-03，control-server#208）。
+    /// </para>
+    /// <para>
     /// 协议顶层只有一个 <c>operationSessionId</c>（规格第 22 节补记），项至多 8 条。今天一个停靠一条需求，
     /// 所以这里恒为一项，与原来写死的那一项逐字相同。
+    /// </para>
     /// </remarks>
     private static CurrentStopWorklistProjection Worklist(
         JourneyStopRow stop,
