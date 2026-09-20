@@ -36,6 +36,13 @@
     For developing a scenario before the shared binding has moved: clone this ControlServer commit
     instead of the bound one. The run records controlServerCommitSource = SELF_CHECK_OVERRIDE and must
     not be committed as gate evidence -- ticket 23's self-check runs go to a temporary directory.
+
+.PARAMETER SelfCheckOnboardCommit
+    The same thing for the onboard half (control-server#211). The shared binding is deliberately frozen and
+    moves in an exit ticket's first step, but New-ExactClone requires -OnboardCommit to be the tip of
+    -OnboardRemoteRef, so a self-check run on a day the tip has moved cannot use the bound commit at all --
+    it fails before any scenario starts. This parameter is the way through, and like the one above it marks
+    the run: onboardCommitSource = SELF_CHECK_OVERRIDE, not gate evidence.
 #>
 [CmdletBinding()]
 param(
@@ -57,6 +64,7 @@ param(
     [string]$SharedRunnerSource = (Join-Path $PSScriptRoot 'run-staged-g3.ps1'),
     [string]$CommitBindingFunctionSource = (Join-Path $PSScriptRoot 'run-staged-g3-restart.ps1'),
     [ValidatePattern('^[0-9a-f]{40}$')][string]$SelfCheckControlServerCommit,
+    [ValidatePattern('^[0-9a-f]{40}$')][string]$SelfCheckOnboardCommit,
     # Which batch's exit this run is evidence for, passed through to every scenario's assertions.json
     # (control-server#201). Left out it says 'unspecified' -- it used to be a literal 'batch-2'.
     [string]$BatchId = 'unspecified'
@@ -255,6 +263,11 @@ $controlServerCommitSource = 'SHARED_BINDING'
 if (-not [string]::IsNullOrEmpty($SelfCheckControlServerCommit)) {
     $ControlServerCommit = $SelfCheckControlServerCommit
     $controlServerCommitSource = 'SELF_CHECK_OVERRIDE'
+}
+$onboardCommitSource = 'SHARED_BINDING'
+if (-not [string]::IsNullOrEmpty($SelfCheckOnboardCommit)) {
+    $OnboardCommit = $SelfCheckOnboardCommit
+    $onboardCommitSource = 'SELF_CHECK_OVERRIDE'
 }
 $sharedRunnerSha256 = (Get-FileHash -LiteralPath $SharedRunnerSource -Algorithm SHA256).Hash.ToLowerInvariant()
 
@@ -532,6 +545,7 @@ $commitsRecord = [ordered]@{
     controlServer = $ControlServerCommit
     controlServerCommitSource = $controlServerCommitSource
     onboardHmi = $OnboardCommit
+    onboardCommitSource = $onboardCommitSource
     slotsSimulator = $SimulatorCommit
     protocol = $ProtocolCommit
     runner = $runnerCommit
@@ -585,6 +599,7 @@ $configuration = [ordered]@{
         sourceSha256 = $sharedRunnerSha256
         readFrom = 'param-block-defaults'
         controlServerCommitSource = $controlServerCommitSource
+        onboardCommitSource = $onboardCommitSource
     }
     scenarios = @($scenarioAssertions.Keys)
     secretVariablesScanned = $secretVariableNames
