@@ -459,6 +459,9 @@ public sealed partial class MultiVehicleExecutionTests
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
 
         fixture.Clock.Advance(fixture.Options.CheckpointWaitBudget + TimeSpan.FromSeconds(1));
+        // 在检查点排队的车照样在说话，五分钟里心跳一百五十次。只推时钟不补心跳，在 control-server#234
+        // 之后是「车失联了」，那是另一回事，这一条要证的是检查点等待超预算换码。
+        await fixture.HearFromEveryVehicleAsync();
         fixture.Context.ChangeTracker.Clear();
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
 
@@ -1315,6 +1318,23 @@ public sealed partial class MultiVehicleExecutionTests
             unlockOutputState = "RESET",
             reasonCodes = Array.Empty<string>(),
         })];
+
+        /// <summary>
+        /// 每台车都在此刻说了一句话。车每两秒一次心跳（ADR-cross-0027），所以任何把时钟往前推的测试都要
+        /// 补一次——只推时钟不补心跳，在 control-server#234 之后等于「整个车队都失联了」，到站那一段就不
+        /// 再推进。这里加的和真车发的一样，是一条普通心跳，不是给判据开的后门。
+        /// </summary>
+        public async Task HearFromEveryVehicleAsync()
+        {
+            foreach (string agvId in AgvIds)
+            {
+                long generation = await Context.SessionRecoveries.AsNoTracking()
+                    .Where(row => row.AgvId == agvId)
+                    .Select(row => row.SessionGeneration)
+                    .SingleAsync(TestContext.Current.CancellationToken);
+                await AddInboxAsync(agvId, "Heartbeat", generation, new { observedAt = Clock.GetUtcNow() });
+            }
+        }
 
         private async Task AddInboxAsync(string agvId, string messageType, long generation, object payload)
         {

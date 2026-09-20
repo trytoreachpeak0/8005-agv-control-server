@@ -1,0 +1,71 @@
+Scenarios under C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-230-8005-agv-control-server\scripts\l2\scenarios
+area-assignment-import-rejects.ps1                           ok
+area-assignment-unmapped-silent.ps1                          ok
+area-assignment-version-freeze.ps1                           ok
+area-eqp-unique-across-task-types.ps1                        ok
+binding-hold-dashboard-not-cascading.ps1                     ok
+blocked-journey-dashboard-projection.ps1                     ok
+catalog-change-binding-hold.ps1                              ok
+command-surface-order-hold.ps1                               ok
+create-gate-unapproved.ps1                                   ok
+create-gate.ps1                                              ok
+dispatch-zone-parameters-import-rejects.ps1                  ok
+emergency-stop-operator-release.ps1                          ok
+emergency-stop-single-trigger.ps1                            ok
+g3-exception-compensate.ps1                                  ok
+g3-exception-resume.ps1                                      ok
+g3-fault-cargo-handoff.ps1                                   ok
+g3-forced-mechanical-recovery.ps1                            ok
+g3-journey-demand-to-pickup.ps1                              ok
+g3-load-cancellation-before-load.ps1                         ok
+g3-load-cancellation.ps1                                     ok
+g3-manual-charging-return.ps1                                ok
+g3-operation-result-unknown-reconcile.ps1                    ok
+g3-pickup-load-and-correction.ps1                            ok
+g3-predeparture-check-expires.ps1                            ok
+g3-reversed-direction-journey.ps1                            ok
+g3-sublot-rejected.ps1                                       ok
+g3-task-type-admission-fail-closed.ps1                       ok
+load-cancelled-before-sublot.ps1                             ok
+load-command-never-answered.ps1                              ok
+load-determinate-failure-and-door-open-timeout.ps1           ok
+load-result-requires-recovery.ps1                            ok
+mixed-side-station-two-trips.ps1                             ok
+normal-load.ps1                                              ok
+onboard-alarm-snapshot-dashboard.ps1                         ok
+real-onboard-cancellation-authorization-lost.ps1             ok
+real-onboard-clock-skew.ps1                                  ok
+real-onboard-compensate-then-reconnect.ps1                   ok
+real-onboard-durable-ack-lost.ps1                            ok
+real-onboard-expected-action-overdue.ps1                     ok
+real-onboard-load-door-closed-empty-reopens.ps1              ok
+real-onboard-normal-load.ps1                                 ok
+real-onboard-recovery-entry-missing.ps1                      ok
+real-onboard-restart-while-waiting-operator.ps1              ok
+real-onboard-restart-with-open-recovery-session.ps1          ok
+real-onboard-station-timeout-door-open.ps1                   ok
+real-onboard-unload-not-emptied.ps1                          ok
+route-graph-engine.ps1                                       ok
+route-graph-staleness.ps1                                    ok
+session-established-while-moving.ps1                         ok
+slot-configuration-activation-replay.ps1                     ok
+slot-group-disabled-no-alert.ps1                             ok
+slot-group-selection.ps1                                     ok
+slot-group-temporarily-full.ps1                              ok
+staging-to-wire-reversed-journey.ps1                         ok
+staging-to-wire-slot-group.ps1                               ok
+station-deadline-sublot-timeout.ps1                          ok
+structural-block-oversized-demand.ps1                        ok
+sublot-rejected-after-entry.ps1                              ok
+task-type-binding-admits-bound-station.ps1                   ok
+task-type-binding-missing-not-cascading.ps1                  ok
+task-type-binding-station-reused-refuses-start.ps1           ok
+three-synthetic-peers.ps1                                    ok
+three-vehicle-exit.ps1                                       ok
+No stale onboard handle in 63 scenarios.
+
+Self-test: counterexamples under C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-230-8005-agv-control-server\scripts\l2\counterexamples\onboard-handle-after-restart (each must be reported)
+handle-in-another-variable.ps1                               1 stale use(s)
+restart-via-stop-component.ps1                               1 stale use(s)
+Self-test passed: all 2 counterexamples were reported.
+exit=0

@@ -359,6 +359,9 @@ public sealed class JourneyRuntimeWorkerTests
         fixture.Riot.SetSuccessfulArrival("TO_PICKUP", runtime.PickupStationRiotId);
         fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = runtime.PickupStationRiotId };
         fixture.Clock.Advance(TimeSpan.FromSeconds(30));
+        // 这三十秒里车一直在说话（ADR-cross-0027 的两秒一次）。只推时钟不补心跳，在 control-server#234
+        // 之后等于「车失联了」，那一轮就不再推进到站。
+        await fixture.HearFromPeerAsync();
         DateTimeOffset arrivedAt = fixture.Clock.GetUtcNow();
         bool worklistSent = false;
         DateTimeOffset? startedWhenTheWorklistWasSent = null;

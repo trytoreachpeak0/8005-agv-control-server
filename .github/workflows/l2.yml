@@ -271,6 +271,10 @@ jobs:
               @{ Name = 'en-route-append-not-configured'; Runs = 1; BatchId = 'batch-7' }
               @{ Name = 'idle-and-inflight-vehicles-compete'; Runs = 1; BatchId = 'batch-7' }
               @{ Name = 'multi-stop-append-same-zone'; Runs = 1; BatchId = 'batch-7' }
+              # control-server#234: the onboard stops sending while leaving its socket open. The server closes the
+              # connection on ADR-cross-0027's six-second window, the in-flight journey carries ONBOARD_SESSION_LOST
+              # so the blocked-journey card shows it, and nothing else about the journey moves (REQ-0287).
+              @{ Name = 'onboard-silent-liveness-loss'; Runs = 1; BatchId = 'batch-7' }
           )
           # One run's usual length in seconds, for dealing scenarios out to lanes longest first. Medians of 31
           # CI jobs from 2026-09-17 (ci-research, control-server#130); normal-load's excludes the build it used
@@ -281,6 +285,7 @@ jobs:
               'load-determinate-failure-and-door-open-timeout' = 70; 'area-assignment-version-freeze' = 67
               'command-surface-order-hold' = 65; 'three-vehicle-exit' = 60; 'slot-group-selection' = 56
               'normal-load' = 50; 'emergency-stop-single-trigger' = 46; 'route-graph-staleness' = 42
+              'onboard-silent-liveness-loss' = 45
               'load-result-requires-recovery' = 35; 'blocked-journey-dashboard-projection' = 32
               'emergency-stop-operator-release' = 32; 'area-assignment-import-rejects' = 32
               'load-cancelled-before-sublot' = 28; 'sublot-rejected-after-entry' = 28
@@ -518,6 +523,7 @@ jobs:
               @{ Name = 'real-onboard-durable-ack-lost';                      Runs = 3 }
               @{ Name = 'real-onboard-expected-action-overdue';               Runs = 3 }
               @{ Name = 'real-onboard-restart-with-open-recovery-session';    Runs = 1 }
+              @{ Name = 'real-onboard-restart-after-recovery-session-opened'; Runs = 1 }
           )
 
           # Registered before anything can fail, so the upload step always has a path.

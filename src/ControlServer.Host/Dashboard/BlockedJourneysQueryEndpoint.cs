@@ -1,4 +1,5 @@
 using ControlServer.Domain;
+using ControlServer.Host.Runtime;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -24,6 +25,17 @@ namespace ControlServer.Host.Dashboard;
 internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
 {
     internal const string SessionNotReadyReason = "ONBOARD_SESSION_NOT_READY";
+
+    /// <summary>
+    /// 车载端静默失联（<see cref="JourneyRuntimeEngine.OnboardSessionLostReason"/>，control-server#234）。
+    /// </summary>
+    /// <remarks>
+    /// 与 <see cref="SessionNotReadyReason"/> 同样带会话字段，但会话行上那几个安全值的分量不同：车不说话了，
+    /// 那一行停在它最后一次在线时的判定，<c>SafetyUnknownPresent = false</c> 在这里不是「安全证据齐全」，
+    /// 是一个不确定新旧的旧值——REQ-0269 禁止拿它当现状，车载告警卡片 2026-09-10 正是栽在这里。所以分档时
+    /// 这一项按「说不清」传，直接进最高档；会话那一格照给，现场要看得见车最后一次在线时报的是什么。
+    /// </remarks>
+    internal const string SessionLostReason = JourneyRuntimeEngine.OnboardSessionLostReason;
 
     /// <summary>The code a stop held at its AREA machine for the station's admission carries (control-server#198).</summary>
     internal const string AreaEndAdmissionHeldReason = "TASK_TYPE_NOT_ALLOWED_AT_STATION";
@@ -102,7 +114,9 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
         TimeSpan? blockedFor = row.BlockReasonSince is DateTimeOffset since
             ? (now > since ? now - since : TimeSpan.Zero)
             : null;
-        bool carriesSession = string.Equals(row.BlockReasonCode, SessionNotReadyReason, StringComparison.Ordinal) ||
+        bool sessionLost = string.Equals(row.BlockReasonCode, SessionLostReason, StringComparison.Ordinal);
+        bool carriesSession = sessionLost ||
+                              string.Equals(row.BlockReasonCode, SessionNotReadyReason, StringComparison.Ordinal) ||
                               HeldForAdmissionWithTheSessionDown(row, session);
         bool explained = carriesSession && OwnMovementOrderExplanation.Explains(
             row.BlockReasonCode,
@@ -110,8 +124,9 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
             session?.SafetyReasonCodesJson,
             session?.SafetyUnknownPresent,
             ownOrderInFlight);
-        BlockedJourneyEscalationLevel level =
-            _escalation.Classify(blockedFor, carriesSession, session?.SafetyUnknownPresent, explained);
+        // 失联那一种，会话行上的安全判定是车最后一次在线时的，说不了现在——按「说不清」传，也就是最高档。
+        BlockedJourneyEscalationLevel level = _escalation.Classify(
+            blockedFor, carriesSession, sessionLost ? null : session?.SafetyUnknownPresent, explained);
         return new
         {
             agvId = row.AgvId,
@@ -125,13 +140,25 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
             blockedSeconds = blockedFor is TimeSpan elapsed ? (long?)elapsed.TotalSeconds : null,
             escalationLevel = level.ToString(),
             unknownExplainedBy = explained ? OwnMovementOrderInFlight : null,
+            // 车已经失联时，这三项一个都不给（control-server#234）。会话行停在车最后一次在线时的判定，
+            // 而 REQ-0269 禁止把不确定新旧的旧值当现状——车载告警卡片 2026-09-10 就是栽在这里
+            // （docs/defects/20260910-dashboard-kept-showing-a-dead-vehicles-last-alarms.md）。
+            //
+            // 不给，而不是「给了再标注这是旧的」：看板这一侧的规矩是失联直述，拿不到就说拿不到
+            // （车队会话卡片 FleetSessionsQueryEndpoint 对听不到的车也是就绪与原因码两项都不给），
+            // 而 DashboardSkeletonTests.NoStaleOrLastUpdatedPresentationExistsAnywhereInTheDashboard
+            // 连「陈旧／最后更新」这类词都不许出现在看板源码里。一旦开了「标注它是旧的」这条路，
+            // 下一个人就会觉得显示旧值是可以的，而这正是那次缺陷的形状。
+            //
+            // 分档那一行已经按「说不清」处理，两件事各做各的：分档决定这一行归谁管，这里决定这一格
+            // 上写着什么。
             session = carriesSession
                 ? new
                 {
                     present = session is not null,
-                    reasonCode = session?.ReasonCode,
-                    safetyReasonCodesJson = session?.SafetyReasonCodesJson,
-                    safetyUnknownPresent = session?.SafetyUnknownPresent
+                    reasonCode = sessionLost ? null : session?.ReasonCode,
+                    safetyReasonCodesJson = sessionLost ? null : session?.SafetyReasonCodesJson,
+                    safetyUnknownPresent = sessionLost ? null : session?.SafetyUnknownPresent
                 }
                 : null
         };

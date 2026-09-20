@@ -115,7 +115,29 @@ public sealed class BlockedJourneyCard : IDashboardCard
                 ? string.Create(CultureInfo.InvariantCulture, $"{span.Minutes} 分钟")
                 : string.Create(CultureInfo.InvariantCulture, $"{span.Minutes} 分 {span.Seconds} 秒");
 
-    /// <summary>只有 <c>ONBOARD_SESSION_NOT_READY</c> 带会话字段；其余的码这一格留空。</summary>
+    /// <summary>
+    /// 会话那一格：只有会话类的码带它（<c>ONBOARD_SESSION_NOT_READY</c> 与 <c>ONBOARD_SESSION_LOST</c>），
+    /// 其余的码这一格留空。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>车已经失联时（<c>ONBOARD_SESSION_LOST</c>，control-server#234），这一格直说失联，不摆旧值。</b>
+    /// 会话行停在车最后一次在线时的判定；照原样渲染的话，「安全证据有未知项：否」在操作员眼里就是
+    /// 「现在没有未知项」——那正是车载告警卡片 2026-09-10 修掉的那个缺陷
+    /// （<c>docs/defects/20260910-dashboard-kept-showing-a-dead-vehicles-last-alarms.md</c>），
+    /// 在渲染层再做一遍。
+    /// </para>
+    /// <para>
+    /// 端点那一侧对这一种已经把三项都给成空，所以这里拿不到旧值可摆。这一句只是把「为什么是空的」说出来：
+    /// 看板的规矩是失联直述，不是「摆出旧值再标注它是旧的」——
+    /// <c>DashboardSkeletonTests.NoStaleOrLastUpdatedPresentationExistsAnywhereInTheDashboard</c>
+    /// 连「陈旧／最后更新」这类词都不许出现在这个项目的源码里，正是为了不留那条路。
+    /// </para>
+    /// <para>
+    /// 分档那一侧已经按「说不清」处理，但分档只决定这一行归谁管，决定不了这一格上写着什么。
+    /// 两件事要各做各的。
+    /// </para>
+    /// </remarks>
     private static string Session(JsonElement journey)
     {
         if (!journey.TryGetProperty("session", out JsonElement session) || session.ValueKind != JsonValueKind.Object)
@@ -125,6 +147,10 @@ public sealed class BlockedJourneyCard : IDashboardCard
         if (session.TryGetProperty("present", out JsonElement present) && present.ValueKind == JsonValueKind.False)
         {
             return "没有会话行";
+        }
+        if (string.Equals(DashboardPageRenderer.Text(journey, "blockReasonCode"), SessionLostReason, StringComparison.Ordinal))
+        {
+            return "车已失联，服务端手上没有它现在的状态";
         }
         string unknown = session.TryGetProperty("safetyUnknownPresent", out JsonElement flag)
             ? flag.ValueKind switch
@@ -136,4 +162,11 @@ public sealed class BlockedJourneyCard : IDashboardCard
             : "未报告";
         return $"原因码 {DashboardPageRenderer.Text(session, "reasonCode")}；安全原因码 {DashboardPageRenderer.Text(session, "safetyReasonCodesJson")}；安全证据有未知项：{unknown}";
     }
+
+    /// <summary>车载端静默失联那个阻断码，与服务端 <c>JourneyRuntimeEngine.OnboardSessionLostReason</c> 同一个字面量。</summary>
+    /// <remarks>
+    /// 这个项目里看板是独立程序集，不引用 Host，所以这里只能是一份字面量。
+    /// <c>BlockedJourneyDashboardTests.TheCardAndTheEngineAgreeOnTheSilentSessionCode</c> 把两处钉在一起。
+    /// </remarks>
+    private const string SessionLostReason = "ONBOARD_SESSION_LOST";
 }

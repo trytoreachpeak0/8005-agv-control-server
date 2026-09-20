@@ -1,23 +1,61 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using ControlServer.Infrastructure.Persistence;
 using Microsoft.Extensions.Options;
 
 namespace ControlServer.Host.Transport;
 
-public sealed partial class OnboardTcpServer(
-    IOptions<OnboardTransportOptions> options,
-    IServiceScopeFactory scopeFactory,
-    OnboardPeer peer,
-    ILogger<OnboardTcpServer> logger) : BackgroundService
+public sealed partial class OnboardTcpServer : BackgroundService
 {
-    private readonly OnboardTransportOptions _options = options.Value;
+    private readonly OnboardTransportOptions _options;
+    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly OnboardPeer _peer;
+    private readonly ILogger<OnboardTcpServer> _logger;
+    private readonly TimeProvider _clock;
+
+    /// <summary>The composition root's constructor: the project-wide liveness timeout, on the system clock.</summary>
+    public OnboardTcpServer(
+        IOptions<OnboardTransportOptions> options,
+        IServiceScopeFactory scopeFactory,
+        OnboardPeer peer,
+        ILogger<OnboardTcpServer> logger)
+        : this(options, scopeFactory, peer, logger, TimeProvider.System, SessionLiveness.Timeout)
+    {
+    }
+
+    /// <summary>
+    /// Tests only. The timeout is not configuration and never comes from a settings file: ADR-cross-0027 fixes it
+    /// project-wide at <see cref="SessionLiveness.Timeout"/>, which is also what the dashboard and the journey
+    /// runtime judge liveness by. A test that had to wait out six real seconds twice over would be paying wall-clock
+    /// time to re-measure a number another test already pins.
+    /// </summary>
+    internal OnboardTcpServer(
+        IOptions<OnboardTransportOptions> options,
+        IServiceScopeFactory scopeFactory,
+        OnboardPeer peer,
+        ILogger<OnboardTcpServer> logger,
+        TimeProvider clock,
+        TimeSpan idleTimeout)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(clock);
+        _options = options.Value;
+        _scopeFactory = scopeFactory;
+        _peer = peer;
+        _logger = logger;
+        _clock = clock;
+        IdleTimeout = idleTimeout;
+    }
+
+    /// <summary>How long a connection may go without a legal inbound message before the server closes it.</summary>
+    internal TimeSpan IdleTimeout { get; }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!_options.Enabled)
         {
-            LogTransportDisabled(logger);
+            LogTransportDisabled(_logger);
             await Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken).ConfigureAwait(false);
             return;
         }
@@ -26,7 +64,7 @@ public sealed partial class OnboardTcpServer(
         ValidateConfiguration();
         TcpListener listener = new(address, _options.Port);
         listener.Start();
-        LogTransportStarted(logger, address, _options.Port);
+        LogTransportStarted(_logger, address, _options.Port);
         // Connections are served concurrently, one task each. Serving them one at a time was
         // adequate while there was one vehicle and is a deadlock with a fleet: the accept loop only
         // came back round when the current peer's session ended, so the second vehicle waited in
@@ -44,7 +82,7 @@ public sealed partial class OnboardTcpServer(
                 // that may last hours.
                 if (!await slots.WaitAsync(TimeSpan.Zero, stoppingToken).ConfigureAwait(false))
                 {
-                    LogConnectionRefused(logger, _options.MaxConcurrentSessions);
+                    LogConnectionRefused(_logger, _options.MaxConcurrentSessions);
                     client.Dispose();
                     continue;
                 }
@@ -84,7 +122,7 @@ public sealed partial class OnboardTcpServer(
         }
         catch (Exception error)
         {
-            LogConnectionEnded(logger, error);
+            LogConnectionEnded(_logger, error);
         }
         finally
         {
@@ -97,15 +135,50 @@ public sealed partial class OnboardTcpServer(
         await using NetworkStream stream = client.GetStream();
         using StreamReader reader = new(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
         await using OnboardPeerConnection connection = new(stream);
-        await using AsyncServiceScope scope = scopeFactory.CreateAsyncScope();
+        await using AsyncServiceScope scope = _scopeFactory.CreateAsyncScope();
         OnboardMessageProcessor processor = scope.ServiceProvider.GetRequiredService<OnboardMessageProcessor>();
         OnboardConnectionState state = new() { DeferOutboundUntilResponseWritten = true };
         string? attachedAgvId = null;
+        // ADR-cross-0027: the peer heartbeats every two seconds, and six seconds without a legal message means
+        // the session is lost even though the socket is still open. Until control-server#234 nothing measured
+        // this: a vehicle whose process had hung kept a Ready session row for as long as its TCP connection
+        // survived, because the disconnect path writes nothing and RecordConnectionLossAsync has no caller.
+        OnboardConnectionLiveness liveness = new(_clock, IdleTimeout);
         try
         {
             while (!cancellationToken.IsCancellationRequested)
             {
-                string? line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+                string? line;
+                long arrivedAt;
+                // The deadline is enforced on the read itself rather than by a watchdog beside it, so the
+                // moment the window closes is the moment this connection stops being read from. There is no
+                // window in which a late line could still be processed and revive the session: past the
+                // timeout this method returns, and nothing below runs again.
+                using (CancellationTokenSource idle = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+                {
+                    idle.CancelAfter(liveness.Remaining);
+                    try
+                    {
+                        line = await reader.ReadLineAsync(idle.Token).ConfigureAwait(false);
+                        // Stamped the moment the line is off the wire, and used to refresh below once it has
+                        // been judged legal. Refreshing from "after processing" instead would charge this
+                        // connection for our own work -- the response write, the deferred outbound flush --
+                        // and shorten its next window by however long that took, which on a slow write is
+                        // exactly when the peer least deserves to be cut off.
+                        arrivedAt = _clock.GetTimestamp();
+                    }
+                    catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                    {
+                        // Silent past the window: this server closes the connection, and the peer reconnects
+                        // into the five-step handshake (ADR-cross-0029) where both ends reconcile afresh.
+                        // Closing is all that happens here -- REQ-0287 forbids a liveness timeout from ending
+                        // an order, releasing a lease, reassigning or moving the vehicle.
+                        LogOnboardSessionSilent(
+                            _logger, attachedAgvId ?? state.AgvId ?? "(no session)", state.SessionGeneration,
+                            liveness.Silence, null);
+                        return;
+                    }
+                }
                 if (line is null)
                 {
                     return;
@@ -115,6 +188,11 @@ public sealed partial class OnboardTcpServer(
                     throw new InvalidDataException("Protocol line exceeds OnboardTransport:MaxLineBytes.");
                 }
                 string response = await processor.ProcessAsync(line, state, cancellationToken).ConfigureAwait(false);
+                // Refreshed only once the message has been processed: ADR-cross-0027 counts legal protocol
+                // messages, and a line is not known to be one until the envelope and the session generation
+                // have been checked. A line that throws does not refresh, and it ends the connection anyway.
+                // The window runs from when the line arrived, not from now -- see the stamp above.
+                liveness.RefreshTo(arrivedAt);
                 if (!string.IsNullOrWhiteSpace(response))
                 {
                     await connection.SendAsync(
@@ -129,7 +207,7 @@ public sealed partial class OnboardTcpServer(
                     state.SessionGeneration is not null &&
                     !string.IsNullOrWhiteSpace(state.AgvId))
                 {
-                    peer.Attach(state.AgvId, connection);
+                    _peer.Attach(state.AgvId, connection);
                     attachedAgvId = state.AgvId;
                 }
             }
@@ -138,7 +216,7 @@ public sealed partial class OnboardTcpServer(
         {
             if (attachedAgvId is not null)
             {
-                peer.Detach(attachedAgvId, connection);
+                _peer.Detach(attachedAgvId, connection);
             }
         }
     }
@@ -157,6 +235,15 @@ public sealed partial class OnboardTcpServer(
         {
             throw new InvalidOperationException("OnboardTransport:MaxConcurrentSessions must be at least 1.");
         }
+        // Unreachable from the composition root, which always passes SessionLiveness.Timeout: the window is
+        // not configuration and no settings file can reach it (the ticket asked for a JourneyRuntime setting
+        // and a startup validation for it; both lapsed when the threshold turned out to exist already). What
+        // this guards is the internal constructor the tests use, so a nonsensical window fails at startup
+        // rather than turning into "never expires".
+        if (IdleTimeout <= TimeSpan.Zero)
+        {
+            throw new InvalidOperationException("The Onboard liveness timeout must be positive.");
+        }
     }
 
     [LoggerMessage(EventId = 1001, Level = LogLevel.Warning,
@@ -174,4 +261,10 @@ public sealed partial class OnboardTcpServer(
     [LoggerMessage(EventId = 1004, Level = LogLevel.Warning,
         Message = "Onboard connection refused: {MaxConcurrentSessions} concurrent sessions are already open.")]
     private static partial void LogConnectionRefused(ILogger logger, int maxConcurrentSessions);
+
+    [LoggerMessage(EventId = 1005, Level = LogLevel.Warning,
+        Message = "Onboard session for {AgvId} (generation {SessionGeneration}) went silent for {Silence} with the " +
+                  "connection still open; closing it (ADR-cross-0027). No order is held, ended or reassigned.")]
+    private static partial void LogOnboardSessionSilent(
+        ILogger logger, string agvId, long? sessionGeneration, TimeSpan silence, Exception? error);
 }

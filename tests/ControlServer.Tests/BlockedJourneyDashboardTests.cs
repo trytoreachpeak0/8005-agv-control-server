@@ -3,6 +3,7 @@ using System.Text.Json;
 using ControlServer.Dashboard;
 using ControlServer.Domain;
 using ControlServer.Host.Dashboard;
+using ControlServer.Host.Runtime;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -475,6 +476,159 @@ public sealed class BlockedJourneyDashboardTests
         Assert.Equal("MaintenanceAdministrator", old.GetProperty("escalationLevel").GetString());
         string html = new BlockedJourneyCard().RenderFact(fact.RootElement);
         Assert.Contains("开始时间没有记录", html, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 车载端静默失联（<c>ONBOARD_SESSION_LOST</c>，control-server#234）直接进最高档，不等时长阶梯。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 理由与「安全证据不全」那一条同源，但来路不同：那一条是车**说**它有说不清的地方，这一条是**车不说话了**，
+    /// 而会话行上那几个安全字段停在它最后一次在线时的值。<c>safetyUnknownPresent = false</c> 在这种行上不是
+    /// 「安全证据齐全」，是一个不确定新旧的旧值——REQ-0269 禁止拿它当现状，车载告警卡片 2026-09-10 正是栽在
+    /// 这里。所以这个码走「说不清」那一支。
+    /// </para>
+    /// <para>
+    /// 这一条与下面那条负向判据配成一对：把会话字段照给（现场要看失联前的样子），但档位不由它决定。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task ASilentOnboardSessionGoesStraightToTheTopEvenWithNoUnknownOnTheSessionRow()
+    {
+        await using DashboardDatabase database = await DashboardDatabase.CreateAsync();
+        JourneyRuntimeRow runtime = Runtime("D-SILENT", "AGV-01");
+        runtime.Stage = JourneyRuntimeStage.AwaitingGateArrival;
+        // 挂上才一分钟，时长阶梯本来只到操作员那一档。
+        runtime.SetBlockReason(JourneyRuntimeEngine.OnboardSessionLostReason, Now.AddMinutes(-1));
+        database.Context.JourneyRuntimes.Add(runtime);
+        // 会话行说安全证据齐全——那是车还在线时的说法，现在它不说话了。
+        database.Context.SessionRecoveries.Add(Session("AGV-01", "READY", "[]", safetyUnknownPresent: false));
+        await database.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        using JsonDocument fact = await ReadAsync(database);
+
+        JsonElement silent = Assert.Single(fact.RootElement.GetProperty("journeys").EnumerateArray());
+        Assert.Equal("ONBOARD_SESSION_LOST", silent.GetProperty("blockReasonCode").GetString());
+        Assert.Equal(60L, silent.GetProperty("blockedSeconds").GetInt64());
+        Assert.Equal("MaintenanceAdministrator", silent.GetProperty("escalationLevel").GetString());
+        // 会话那一格照给，现场要看得见车最后一次在线时报的是什么。
+        Assert.Equal(JsonValueKind.Object, silent.GetProperty("session").ValueKind);
+        Assert.True(silent.GetProperty("session").GetProperty("present").GetBoolean());
+    }
+
+    /// <summary>
+    /// 车失联时会话那三项一个都不给，卡片上那一格直说失联，不摆旧值（control-server#234）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>这一条断的是操作员真正看到的那一格，不是 JSON。</b>端点不给值和卡片不摆旧值是两件事：端点改对了
+    /// 而渲染层照旧把 <c>safetyUnknownPresent</c> 渲染成「安全证据有未知项：否」的话，操作员看到的仍然是
+    /// 「现在没有未知项」——车载告警卡片 2026-09-10 那个缺陷就是这个形状
+    /// （<c>docs/defects/20260910-dashboard-kept-showing-a-dead-vehicles-last-alarms.md</c>），
+    /// 只不过换了一层。所以两层各断一次。
+    /// </para>
+    /// <para>
+    /// 会话行上故意放了一组「看起来很安全」的值：<c>READY</c>、空的安全原因码、
+    /// <c>SafetyUnknownPresent = false</c>。车已经不说话了，这三样一个都不该出现在页面上。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task ASilentSessionShowsNoStaleSafetyFactsInTheJsonOrOnTheCard()
+    {
+        await using DashboardDatabase database = await DashboardDatabase.CreateAsync();
+        JourneyRuntimeRow runtime = Runtime("D-SILENT-CARD", "AGV-01");
+        runtime.Stage = JourneyRuntimeStage.AwaitingGateArrival;
+        runtime.SetBlockReason(JourneyRuntimeEngine.OnboardSessionLostReason, Now.AddMinutes(-1));
+        database.Context.JourneyRuntimes.Add(runtime);
+        database.Context.SessionRecoveries.Add(
+            Session("AGV-01", "READY", "[]", safetyUnknownPresent: false));
+        await database.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        using JsonDocument fact = await ReadAsync(database);
+        JsonElement silent = Assert.Single(fact.RootElement.GetProperty("journeys").EnumerateArray());
+
+        // JSON 这一层：三项都空，会话行在不在还是要说。
+        JsonElement session = silent.GetProperty("session");
+        Assert.True(session.GetProperty("present").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, session.GetProperty("reasonCode").ValueKind);
+        Assert.Equal(JsonValueKind.Null, session.GetProperty("safetyReasonCodesJson").ValueKind);
+        Assert.Equal(JsonValueKind.Null, session.GetProperty("safetyUnknownPresent").ValueKind);
+
+        // 页面这一层：直说失联，并且那句会误导的话一个字都不许出现。
+        string html = new BlockedJourneyCard().RenderFact(fact.RootElement);
+        Assert.Contains("车已失联", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("安全证据有未知项", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("READY", html, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 判别力对照：同一个码换成会话正常的那一种，三项照给、页面照写——证明上一条的空不是因为这一格
+    /// 根本不会渲染。
+    /// </summary>
+    [Fact]
+    public async Task ASessionThatIsMerelyNotReadyStillShowsItsSafetyFacts()
+    {
+        await using DashboardDatabase database = await DashboardDatabase.CreateAsync();
+        JourneyRuntimeRow runtime = Runtime("D-NOT-READY-CARD", "AGV-01");
+        runtime.Stage = JourneyRuntimeStage.AwaitingGateArrival;
+        runtime.SetBlockReason("ONBOARD_SESSION_NOT_READY", Now.AddMinutes(-1));
+        database.Context.JourneyRuntimes.Add(runtime);
+        database.Context.SessionRecoveries.Add(
+            Session("AGV-01", "DEPARTURE_SAFETY_NOT_READY", """["IO_FACT_UNKNOWN"]""", safetyUnknownPresent: true));
+        await database.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        using JsonDocument fact = await ReadAsync(database);
+        JsonElement notReady = Assert.Single(fact.RootElement.GetProperty("journeys").EnumerateArray());
+
+        Assert.Equal(
+            "DEPARTURE_SAFETY_NOT_READY", notReady.GetProperty("session").GetProperty("reasonCode").GetString());
+        string html = new BlockedJourneyCard().RenderFact(fact.RootElement);
+        Assert.Contains("安全证据有未知项：是", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("车已失联", html, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 看板那份字面量与引擎那个常量必须是同一个（control-server#234）。
+    /// </summary>
+    /// <remarks>
+    /// 看板是独立程序集、不引用 Host，所以卡片里只能放一份字面量。这一条把两处钉在一起：改了引擎那个常量
+    /// 而忘了卡片，卡片就会对着一个再也不会出现的码渲染，失联那一格悄悄退回摆旧值——而两边各自的用例都还是绿的。
+    /// </remarks>
+    [Fact]
+    public void TheCardAndTheEngineAgreeOnTheSilentSessionCode()
+    {
+        string card = File.ReadAllText(Path.Combine(
+            RepositoryRoot(), "src", "ControlServer.Dashboard", "BlockedJourneyCard.cs"));
+
+        Assert.Contains(
+            $"SessionLostReason = \"{JourneyRuntimeEngine.OnboardSessionLostReason}\"",
+            card,
+            StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 判别力对照：同一行、同样挂一分钟，换成一个不带会话语义的码就只到操作员档。
+    /// </summary>
+    /// <remarks>
+    /// 没有这一条，上面那条测试在「所有一分钟的阻断都进最高档」这种改坏法下照样绿——它证不了最高档是这个码
+    /// 挣来的。两条只差阻断码一个字段。
+    /// </remarks>
+    [Fact]
+    public async Task AnOrdinaryCodeHeldForTheSameMinuteIsStillOnlyTheOperatorTier()
+    {
+        await using DashboardDatabase database = await DashboardDatabase.CreateAsync();
+        JourneyRuntimeRow runtime = Runtime("D-ORDINARY", "AGV-01");
+        runtime.Stage = JourneyRuntimeStage.AwaitingGateArrival;
+        runtime.SetBlockReason("VEHICLE_WAITING_AT_CHECKPOINT", Now.AddMinutes(-1));
+        database.Context.JourneyRuntimes.Add(runtime);
+        database.Context.SessionRecoveries.Add(Session("AGV-01", "READY", "[]", safetyUnknownPresent: false));
+        await database.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        using JsonDocument fact = await ReadAsync(database);
+
+        JsonElement ordinary = Assert.Single(fact.RootElement.GetProperty("journeys").EnumerateArray());
+        Assert.Equal(60L, ordinary.GetProperty("blockedSeconds").GetInt64());
+        Assert.Equal("Operator", ordinary.GetProperty("escalationLevel").GetString());
     }
 
     [Fact]

@@ -24,6 +24,21 @@ public sealed record ConnectionCommand : CommandEnvelope
     public bool Connected { get; init; }
 }
 
+/// <summary>
+/// Stops the peer sending anything while leaving its socket open, or lets it speak again
+/// (control-server#234).
+/// </summary>
+/// <remarks>
+/// This is the hung-onboard shape, and it is not <see cref="ConnectionCommand"/>: nothing is disconnected,
+/// the TCP connection stays up, and every byte this peer would have written is dropped instead. Speaking
+/// again does not by itself re-open a session — if the server has already closed the connection on its
+/// liveness timeout, the scenario reconnects through <see cref="ConnectionCommand"/> afterwards.
+/// </remarks>
+public sealed record SilenceCommand : CommandEnvelope
+{
+    public bool Silent { get; init; }
+}
+
 /// <summary>One alarm as a scenario states it; the peer assigns alarmId and raisedAt.</summary>
 public sealed record AlarmInput
 {
@@ -103,6 +118,7 @@ public static class ControlPlane
                 state.SessionGeneration,
                 state.Readiness,
                 state.ReadinessReasonCode,
+                state.Silent,
                 state.SafetyStateVersion,
                 state.Safety,
                 state.Policy,
@@ -289,6 +305,20 @@ public static class ControlPlaneV2
                 state.SessionGeneration,
                 state.Readiness
             }));
+        });
+
+        control.MapPut("/silence", (SilenceCommand command) =>
+        {
+            OnboardPeerSession? peer = holder.Peer;
+            if (peer is null || string.IsNullOrWhiteSpace(command.CommandId))
+            {
+                return ControlPlaneConventions.Refused(
+                    engine,
+                    peer is null ? ReasonCodes.NotAllowedInState : ReasonCodes.InvalidArgument,
+                    command.CommandId);
+            }
+            return ControlPlaneConventions.Handle(engine, "silence", command, state =>
+                state.Silent == command.Silent ? null : state with { Silent = command.Silent });
         });
 
         control.MapPut("/alarms", async (AlarmsCommand command, CancellationToken cancellationToken) =>
