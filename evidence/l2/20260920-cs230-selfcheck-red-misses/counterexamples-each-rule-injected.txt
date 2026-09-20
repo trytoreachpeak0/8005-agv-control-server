@@ -1,0 +1,13 @@
+### 注入 A：把变量名跟踪改回「只认 $onboard」（恢复漏报一）
+Scenarios under C:/Users/szy/Desktop/8005-workspace-v2/worktrees/b7-230-8005-agv-control-server/scripts/l2/counterexamples/onboard-handle-after-restart
+handle-in-another-variable.ps1                               ok
+restart-via-stop-component.ps1                               1 stale use(s)
+STALE ONBOARD HANDLE: restart-via-stop-component.ps1:27 uses $onboard after the restart at line 24 without re-reading $Context.Onboard
+exit=1
+
+### 注入 B：把 StopComponent 'onboard-hmi' 改回「不算重启」（恢复漏报二）
+Scenarios under C:/Users/szy/Desktop/8005-workspace-v2/worktrees/b7-230-8005-agv-control-server/scripts/l2/counterexamples/onboard-handle-after-restart
+handle-in-another-variable.ps1                               1 stale use(s)
+restart-via-stop-component.ps1                               ok
+STALE ONBOARD HANDLE: handle-in-another-variable.ps1:27 uses $hmi after the restart at line 23 without re-reading $Context.Onboard
+exit=1

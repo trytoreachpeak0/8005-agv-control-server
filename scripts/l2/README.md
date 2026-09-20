@@ -43,6 +43,7 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `real-onboard-cancellation-authorization-lost` | **真的**＋协议故障代理 | **批次 5（control-server#88，program#61 ③：onboard-hmi#71＋onboard-hmi#78）**：出厂配置下两仓装货、第一仓装好锁上、第二仓开着时按取消 → 丢掉授权应答、车载端报失败 → 再按一次，新 `messageId`、payload 与首发相同 → 取消 `ALL_EMPTY`、需求 `Cancelled`，全程不重连、不替原 attempt 报结果，取货单的车辆占用释放（`L2-CAL-09`，control-server#131 修复前红）；取消先收尾接手的开门再开已装货的仓，模拟器采样里任一时刻至多一仓未锁闭（`L2-CAL-10`，REQ-0357，onboard-hmi#106） | 同上 |
 | `real-onboard-expected-action-overdue` | **真的**＋协议故障代理＋看板 | **control-server#167（REQ-0358，CP-0005 实现票 1、2 的联调，批次 5 出口剩余风险第一条）**：门槛压到 20 秒（`ExpectedActionOverdueThreshold`）。装货开门后空关一次、车重开，计时不清零 → 门槛前什么都没有 → 越过门槛车载端报 `SLOT_EXPECTED_ACTION_OVERDUE`（`raisedAt` = 第一次开锁 + 门槛）→ 服务端在同一连接上发 `SafetyStateSnapshotRequested`、车回中途快照、会话不回握手 → 看板端点与看板页一行、读数取中途快照且与模拟器一致 → HMI 说「已上报」；上报不改行为；门槛后再空关、重开，端点仍一行、`raisedAt` 不变；期限过后合成同一行；放货关门后撤下。在途装货断链重连不在本场景（control-server#189） | `evidence/l2/20260919-cs167-pass-7ded1b70-001`～`003`（红证据同目录前缀 `20260919-cs167-red-*`） |
 | `catalog-change-binding-hold` | 合成 | **批次 6（control-server#162，REQ-0341、REQ-0342、REQ-0345；判据 control-server#201 收紧）**：绑定站改名、删除只暂停绑在它上面的任务类型；删掉的关卡让新需求以 `TASK_TYPE_BINDING_STATION_NOT_IN_CATALOG` 被拒（`L2-CC-07`）；同一变化只记一行（`L2-CC-08`）；关卡以原名放回之后新需求仍以 `TASK_TYPE_HELD` 被拒、暂停不自动解除（`L2-CC-11`） | `evidence/l2/20260920-cs201-catalog-change-binding-hold-003` |
+| `real-onboard-restart-after-recovery-session-opened` | **真的**＋协议故障代理 | **control-server#230（cs#36 后续）**：装载 `UNKNOWN` 后按「补偿清空」，会话开成、动作也被服务端受理，而受理的应答被代理丢掉（`RecoveryActionAccepted`，按 messageId 对上）→ 车载端已把会话 id 与动作向量落盘，等满 `messageTimeoutMs` 报失败 → 断电重启 → 服务端把那份 `ACTION_SELECTED` r2 快照重放进新会话 → 恢复入口可用、车载端不抛 `RECOVERY_SESSION_STATE_PENDING`、不重开会话，按「补偿清空」走早退分支续发补偿请求（动作全程只提交过一次）→ 补偿 `ALL_EMPTY`、走到对账。与 `real-onboard-restart-with-open-recovery-session` 互补：那一条的会话没开成、车不记得它 | `evidence/l2/20260920-cs230-pass-35491230857`（CI `rig=real` 三连；红证据 `20260920-cs230-red-snapshot-replay-dropped`） |
 
 编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。三个是**红的**，各自的原因见文末：
 `load-result-requires-recovery-001`（第 6 条）、`real-onboard-clock-skew-001`（第 8 条）与
@@ -211,6 +212,8 @@ gh workflow run l2.yml --ref <分支> -f rig=real -f onboard_ref=<...> -f simula
   09-19 一度移出（`evidence/l2/20260919-ci-real-rig-runs/`），control-server#222 查明是场景自己的毛病、与车载端无关：公共前置
   `Invoke-G3UnknownLoad` 自 control-server#128 起会重启车载端，场景没有重取 `$Context.Onboard`，一直在已关掉的窗口里找按钮。
   修好后放回清单，证据 `evidence/l2/20260920-cs222/`。自检 `Test-L2OnboardHandleAfterRestart.ps1` 防同类再犯。
+  `real-onboard-restart-after-recovery-session-opened`（control-server#230）09-20 加入清单，覆盖的是另一半：
+  会话**开成**、车载端也记着它时断电。这两条一起才盖住 cs#36 的两条死路。
 - **桌面。** 这个桌面同时是黄金渲染机，也跑 `8005-mes-ingest` 的桌面测试。跨仓库互斥靠机器级互斥体
   `Global\W2G-InteractiveDesktop`：本仓每个真装置场景拿一次、排队最多 30 分钟；mes-ingest 那边同日改成排队
   （`8005-mes-ingest#8`）。撞上夜里的黄金渲染 verify（北京时间 03:00 触发，实际多在 05:30 前后开跑）只是多等，
