@@ -856,6 +856,133 @@ public sealed partial class MultiVehicleExecutionTests
             .ToArrayAsync(TestContext.Current.CancellationToken));
     }
 
+    // ---- a claim the intake refused (control-server#242) --------------------------------------------------
+
+    /// <summary>
+    /// A demand whose decision facts changed under intake does not count as accepted at the round's end: the
+    /// structural block standing against it survives the round.
+    /// </summary>
+    /// <remarks>
+    /// The third instance of one defect. control-server#231 closed the throwing path and control-server#239 the
+    /// budget one; this is the path where intake ran to its end and said no. The claim taken ahead of the call is
+    /// kept on purpose -- the demand stays bound to this attempt, so the vehicles behind must not try it again --
+    /// but the round-end hook reads the same set as "accepted this round" and clears the block on the strength of
+    /// it. Nothing disproved the block, so the next round raises it again as new: a 2115/2114 pair per round, for
+    /// as long as the demand is in the catalog and the refusal repeats.
+    /// </remarks>
+    [Fact]
+    public async Task ACandidateChangedAtIntakeDoesNotClearAStructuralBlock()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(
+            configure: options => options.Fleet = options.Fleet[..1]);
+        AcceptedDemandSnapshot only = FleetFixture.Demand(0, "N1-1", 0);
+        fixture.Catalog.Set([only]);
+        DateTimeOffset raisedAt = Now.AddMinutes(-30);
+        EventRecordingLogger<StructuralDispatchBlockSink> blockLog =
+            await RaiseStandingBlockAsync(fixture, only, raisedAt);
+        fixture.Catalog.ChangedOnReread.Add(only.DemandId);
+
+        await fixture.RunRoundAsync();
+
+        await AssertIntakeRefusedAsync(fixture, only, "FINAL_CATALOG_DECISION_FACT_CHANGED");
+        await AssertBlockSurvivedTheRoundAsync(fixture, blockLog, raisedAt);
+    }
+
+    /// <summary>
+    /// A demand the final admission gate refused under intake does not count as accepted at the round's end
+    /// either.
+    /// </summary>
+    /// <inheritdoc cref="ACandidateChangedAtIntakeDoesNotClearAStructuralBlock" path="/remarks"/>
+    [Fact]
+    public async Task AFinalAdmissionRejectedAtIntakeDoesNotClearAStructuralBlock()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(
+            configure: options => options.Fleet = options.Fleet[..1]);
+        AcceptedDemandSnapshot only = FleetFixture.Demand(0, "N1-1", 0);
+        fixture.Catalog.Set([only]);
+        DateTimeOffset raisedAt = Now.AddMinutes(-30);
+        EventRecordingLogger<StructuralDispatchBlockSink> blockLog =
+            await RaiseStandingBlockAsync(fixture, only, raisedAt);
+        // The vehicle's session stops being Ready between the pre-intake check and the gate inside intake, which
+        // is the one difference between the two reads: the gate is what this outcome is about.
+        fixture.Catalog.OnReread = () =>
+        {
+            SessionRecoveryRow session = fixture.Context.SessionRecoveries
+                .Single(row => row.AgvId == FleetFixture.AgvIds[0]);
+            session.Readiness = SessionReadiness.RecoveryRequired;
+            session.ReasonCode = "DEPARTURE_SAFETY_NOT_READY";
+            fixture.Context.SaveChanges();
+        };
+
+        await fixture.RunRoundAsync();
+
+        // The re-read happened, so the gate below it was really reached; without this the assertions would pass
+        // on a round that never got to intake.
+        Assert.Null(fixture.Catalog.OnReread);
+        await AssertIntakeRefusedAsync(fixture, only, "FINAL_DYNAMIC_FACTS_NOT_READY");
+        await AssertBlockSurvivedTheRoundAsync(fixture, blockLog, raisedAt);
+    }
+
+    /// <summary>
+    /// A demand whose plan the acceptance refused as incomplete (control-server#198) does not count as accepted at
+    /// the round's end either.
+    /// </summary>
+    /// <inheritdoc cref="ACandidateChangedAtIntakeDoesNotClearAStructuralBlock" path="/remarks"/>
+    [Fact]
+    public async Task AJourneyPlanIncompleteAtIntakeDoesNotClearAStructuralBlock()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(
+            configure: options => options.Fleet = options.Fleet[..1]);
+        AcceptedDemandSnapshot only = FleetFixture.Demand(0, "N1-1", 0);
+        fixture.Catalog.Set([only]);
+        DateTimeOffset raisedAt = Now.AddMinutes(-30);
+        EventRecordingLogger<StructuralDispatchBlockSink> blockLog =
+            await RaiseStandingBlockAsync(fixture, only, raisedAt);
+        // Intake catches this one and reports it as an outcome rather than letting it throw, which is what makes
+        // it this ticket's path rather than control-server#231's.
+        fixture.Acceptances.ThrowOnFirstAccept =
+            new JourneyPlanFreezeIncompleteException("The plan froze the station versions but no revision.");
+
+        await fixture.RunRoundAsync();
+
+        Assert.Null(fixture.Acceptances.ThrowOnFirstAccept);
+        await AssertIntakeRefusedAsync(fixture, only, "FINAL_JOURNEY_PLAN_INCOMPLETE");
+        await AssertBlockSurvivedTheRoundAsync(fixture, blockLog, raisedAt);
+    }
+
+    /// <summary>Intake ran to its end and refused: nothing was accepted, and the backlog says why.</summary>
+    private static async Task AssertIntakeRefusedAsync(
+        FleetFixture fixture,
+        AcceptedDemandSnapshot demand,
+        string reasonCode)
+    {
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Empty(await fixture.Context.AcceptedDemands.AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+        JourneyBacklogRow backlog = Assert.Single(await fixture.Context.JourneyBacklog.AsNoTracking()
+            .Where(row => row.DemandId == demand.DemandId)
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(reasonCode, backlog.ReasonCode);
+    }
+
+    /// <summary>
+    /// The block is as the round found it: not cleared, not refreshed, and the round said neither of the two
+    /// lines an operator watches for.
+    /// </summary>
+    private static async Task AssertBlockSurvivedTheRoundAsync(
+        FleetFixture fixture,
+        EventRecordingLogger<StructuralDispatchBlockSink> blockLog,
+        DateTimeOffset raisedAt)
+    {
+        fixture.Context.ChangeTracker.Clear();
+        StructuralDispatchBlockRow row = Assert.Single(
+            await fixture.Context.Set<StructuralDispatchBlockRow>().AsNoTracking()
+                .ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Null(row.ClearedAt);
+        Assert.Equal(raisedAt, row.LastSeenAt);
+        Assert.Empty(blockLog.Entries);
+    }
+
     /// <summary>
     /// Raises a structural block against one demand and puts the real sink at the round's end, with a logger that
     /// keeps the 2114/2115 lines so a test can say the round wrote neither.

@@ -1383,6 +1383,24 @@ public sealed partial class MultiVehicleExecutionTests
         /// </summary>
         public HashSet<string> GoneOnReread { get; } = new(StringComparer.Ordinal);
 
+        /// <summary>
+        /// Demands every read after the round's first lists with a later revision -- what intake's final re-read
+        /// meets when MES revised the demand while the round was deciding, which it reports as
+        /// <see cref="DemandIntakeOutcome.CandidateChanged"/>.
+        /// </summary>
+        public HashSet<string> ChangedOnReread { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// Runs once, just before the round's second read answers, and clears itself -- the moment intake re-reads
+        /// the catalog, which is where a test stages a change to the facts the final admission gate reads next.
+        /// </summary>
+        /// <remarks>
+        /// It is a callback rather than a delay: nothing here waits, so no test can wedge the process on it. Its
+        /// self-clearing is what lets a test assert that the re-read really happened (control-server#239's habit),
+        /// instead of passing on a round that never reached intake.
+        /// </remarks>
+        public Action? OnReread { get; set; }
+
         public void Set(AcceptedDemandSnapshot[] items) => _items = items;
 
         public async Task<DemandCatalogSnapshot> ReadCatalogAsync(CancellationToken cancellationToken)
@@ -1398,9 +1416,19 @@ public sealed partial class MultiVehicleExecutionTests
                 throw new HttpRequestException("MesIngest is unreachable.");
             }
 
+            if (ReadCount > 1 && OnReread is Action staged)
+            {
+                OnReread = null;
+                staged();
+            }
+
             AcceptedDemandSnapshot[] items = ReadCount == 1
                 ? _items
-                : [.. _items.Where(item => !GoneOnReread.Contains(item.DemandId))];
+                : [.. _items
+                    .Where(item => !GoneOnReread.Contains(item.DemandId))
+                    .Select(item => ChangedOnReread.Contains(item.DemandId)
+                        ? item with { DemandRevision = item.DemandRevision + 1 }
+                        : item)];
             return new DemandCatalogSnapshot(
                 _items.FirstOrDefault()?.HistoryEpoch ?? "11111111-1111-4111-8111-111111111111",
                 21,
