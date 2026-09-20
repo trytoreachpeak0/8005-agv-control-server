@@ -106,12 +106,16 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2SecondLegIntentWait.ps1
 
-      # About 3 seconds. Covers a wait that the real rig cannot put in the state that matters: the
-      # second stop's worklist wait used to be "at least 2 acknowledged worklists", a proxy that is
-      # only equal to "the second stop's worklist is acknowledged" while every stop emits exactly
-      # one. Its key case asserts BOTH halves on the same input -- the old criterion satisfied, the
-      # new one not -- because showing only that the new one holds would not show the old one ever
-      # failed (control-server#265).
+      # 13.3 seconds (measured, three runs, identical), 12 of which are six deliberate 2-second
+      # timeouts: every case where the criterion must NOT be satisfied has to run out its clock.
+      #
+      # Covers the two waits the real rig cannot put in the states that matter. The second stop's
+      # used to be "at least 2 acknowledged worklists", a proxy that equals "the second stop's
+      # worklist is acknowledged" only while every stop emits exactly one; the first stop's went
+      # from a count to "an acknowledged worklist WITH a station id". Each half's key case asserts
+      # BOTH sides on the same input -- the old criterion satisfied, the new one not -- because
+      # showing only that the new one holds would not show the old one ever failed
+      # (control-server#265).
       - name: L2 scenario self-check (worklist station wait)
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2WorklistStationWait.ps1

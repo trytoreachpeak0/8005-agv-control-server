@@ -60,6 +60,19 @@ function Worklist([string]$id, [string]$station, [int]$revision, [bool]$acknowle
     }
 }
 
+function Invoke-FirstWait([object[]]$Rows) {
+    $global:l2wsRows = $Rows
+    $global:l2wsCalls = 0
+    try {
+        $v = Wait-L2FirstAcknowledgedWorklistStation -Connection 'stub' -DemandId 'd-1' `
+            -Criterion 'origin-worklist-acknowledged' `
+            -Description 'the onboard acknowledged the worklist at the first stop' -TimeoutSeconds 2
+        return [pscustomobject]@{ Value = [string]$v; Error = $null; Calls = $global:l2wsCalls }
+    } catch {
+        return [pscustomobject]@{ Value = $null; Error = $_.Exception.Message; Calls = $global:l2wsCalls }
+    }
+}
+
 function Invoke-Wait([object[]]$Rows, [string]$Previous) {
     $global:l2wsRows = $Rows
     $global:l2wsCalls = 0
@@ -124,15 +137,60 @@ $empty = Invoke-Wait -Rows $otherStationEmpty -Previous 'STATION-A'
 Add-Case '另一份清单的站点 id 为空：不算「不同的站点」' `
     ($null -ne $empty.Error -and $empty.Error -like '*Timed out*') "值=$($empty.Value) 错误=$($empty.Error)"
 
+# --------------------------------------- the FIRST stop's half, changed by the same ticket
+#
+# It went from "at least 1 acknowledged worklist" to "an acknowledged worklist WITH A STATION ID,
+# and answer which". That is a new red line, so it gets the same treatment as the second stop's half
+# rather than riding on it -- the argument for extracting one applies to the other (review of #269).
+
+$originStationEmpty = @((Worklist '1' '' 1 $true))
+$oldFirstCount = Get-OldCountCriterion $originStationEmpty
+$firstEmpty = Invoke-FirstWait -Rows $originStationEmpty
+Add-Case '第一站清单已确认但站点 id 为空：旧的「条数 >= 1」被满足，说明它会放过' `
+    ($oldFirstCount -ge 1) "条数 = $oldFirstCount"
+Add-Case '第一站清单已确认但站点 id 为空：新判据超时，不把空值交给第二站' `
+    ($null -ne $firstEmpty.Error -and $firstEmpty.Error -like '*Timed out*') `
+    "值=$($firstEmpty.Value) 错误=$($firstEmpty.Error)"
+
+$firstOk = Invoke-FirstWait -Rows @((Worklist '1' 'STATION-A' 1 $true))
+Add-Case '第一站清单已确认：返回它的站点 id' ($firstOk.Value -ceq 'STATION-A') `
+    "值=$($firstOk.Value) 错误=$($firstOk.Error)"
+
+# 「最早那一份」承重：它是让这个值等于「刚做完的那一站」的原因。取成最晚那一份时，第二站的等待会拿到
+# 自己的站点去比较，于是永远不可能被满足——而那种错在单看第一站时完全看不出来。
+$revisedAtOrigin = @((Worklist '1' 'STATION-A' 1 $true), (Worklist '2' 'STATION-B' 1 $true))
+$firstOfTwo = Invoke-FirstWait -Rows $revisedAtOrigin
+Add-Case '有两份已确认清单时：返回【最早】那一份的站点，不是最晚的' `
+    ($firstOfTwo.Value -ceq 'STATION-A') "值=$($firstOfTwo.Value)"
+
+$firstNone = Invoke-FirstWait -Rows @()
+Add-Case '还没有清单：普通超时' ($null -ne $firstNone.Error -and $firstNone.Error -like '*Timed out*') `
+    "错误=$($firstNone.Error)"
+
+$firstUnacked = Invoke-FirstWait -Rows @((Worklist '1' 'STATION-A' 1 $false))
+Add-Case '清单发了但没被确认：不接受' ($null -ne $firstUnacked.Error -and $firstUnacked.Error -like '*Timed out*') `
+    "错误=$($firstUnacked.Error)"
+
 # ---------------------------------------------------------------- the guard on the input itself
 
-# Asserted by whether the query ran, NOT by elapsed time: a wall-clock bound would be a different
-# claim on a slow machine, while "the database was never read" is true by construction or not at all.
+# Two assertions, and which one rules out what is worth being exact about -- review of #269 measured
+# it, because the obvious reading of the second one is wrong:
+#
+#   - The MESSAGE assertion is what rules out writing the guard as the probe's first line. Thrown in
+#     there it is swallowed by Wait-L2Condition's poll and the caller sees "Timed out ...", not the
+#     guard's own words. That variant leaves the query count at 0 as well, so the count cannot tell
+#     the two placements apart.
+#   - The COUNT assertion rules out the other failure: the guard ran AND the database was read anyway,
+#     which is what a guard placed after the wait, or duplicated inside it, would look like.
+#
+# The count is used rather than elapsed time on purpose: a wall-clock bound is a different claim on a
+# slow machine, and slower only makes it pass. "The database was never read" is true by construction
+# or not at all.
 $vacuous = Invoke-Wait -Rows $secondStopArrived -Previous ''
-Add-Case '前一站的站点 id 为空：抛错，而不是让判据退化成「任何清单都算」' `
+Add-Case '前一站的站点 id 为空：抛的是护栏自己那条错，而不是让判据退化成「任何清单都算」' `
     ($null -ne $vacuous.Error -and $vacuous.Error -like '*would satisfy the criterion*') `
     "错误=$($vacuous.Error)"
-Add-Case '而且那个错抛在等待之外：一次数据库读都没有发生' `
+Add-Case '而且没有发生任何数据库读（排除「护栏跑了但查询照样发生」）' `
     ($vacuous.Calls -eq 0) "探针读了 $($vacuous.Calls) 次"
 
 Remove-Variable -Name l2wsRows, l2wsCalls -Scope Global -ErrorAction SilentlyContinue
