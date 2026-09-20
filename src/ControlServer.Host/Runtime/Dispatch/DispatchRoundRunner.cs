@@ -87,9 +87,6 @@ public sealed class DispatchRoundRunner(
             "Asking whether vehicle {AgvId} may take an appended demand failed: {ExceptionType}. The round " +
             "left it under way and went on to its end.");
 
-    /// <summary>Stands in for a segment with no claim to take back; the budget path never has one to give.</summary>
-    private static readonly HashSet<string> NoClaims = new(StringComparer.Ordinal);
-
     private readonly JourneyRuntimeOptions runtimeOptions = options.Value;
 
     /// <summary>
@@ -290,15 +287,29 @@ public sealed class DispatchRoundRunner(
     /// Drops whatever the segment that just ended had staged, and reads the backlog back as the database holds it.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Shared by the two ways a segment can end early -- its budget running out and it throwing -- because the
     /// hazard is one hazard. What the abandoned segment staged is not that vehicle's decision any more and must not
     /// be written under the next vehicle's <c>SaveChanges</c>: stopping the work is not what keeps one vehicle's
     /// trouble off the others, clearing the tracker they all share is.
+    /// </para>
+    /// <para>
+    /// <b>This overload is for a path that claims nothing</b> -- today only the in-transit qualification below,
+    /// which asks one question and writes nothing. The empty claim list is what leaves the round's accepted set
+    /// alone: the overload below only ever removes what that list names.
+    /// </para>
+    /// <para>
+    /// It passes a set of its own rather than one shared static empty one. The overload below removes from what it
+    /// is handed, so a static would be mutable state shared across every instance of this class -- safe only for
+    /// as long as nobody hands this path a claim, which is the kind of thing control-server#211 finds by breaking
+    /// it.
+    /// </para>
     /// </remarks>
     private Task DropWhatTheSegmentStagedAsync(
         Dictionary<string, JourneyBacklogRow> backlogByDemandId,
         CancellationToken cancellationToken) =>
-        DropWhatTheSegmentStagedAsync(backlogByDemandId, [], NoClaims, cancellationToken);
+        DropWhatTheSegmentStagedAsync(
+            backlogByDemandId, [], new HashSet<string>(StringComparer.Ordinal), cancellationToken);
 
     /// <inheritdoc cref="DropWhatTheSegmentStagedAsync(Dictionary{string, JourneyBacklogRow}, CancellationToken)"/>
     /// <remarks>

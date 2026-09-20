@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
