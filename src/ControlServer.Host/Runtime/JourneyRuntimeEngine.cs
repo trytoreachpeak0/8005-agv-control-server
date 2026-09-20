@@ -143,6 +143,27 @@ public sealed class JourneyRuntimeEngine(
     /// <summary>The checkpoint wait has lasted longer than the configured budget.</summary>
     public const string CheckpointWaitExceededReason = "VEHICLE_CHECKPOINT_WAIT_EXCEEDED";
 
+    /// <summary>
+    /// The journey is waiting on a fact only the vehicle can supply, and the vehicle has gone quiet: no legal inbound
+    /// from this session generation for <see cref="SessionLiveness.Timeout"/> (ADR-cross-0027, control-server#234).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>This is display and escalation, nothing else.</b> REQ-0287: a session that has failed blocks the vehicle's
+    /// new business and is otherwise watched through RIoT; no timeout of it ever ends an order, releases a lease,
+    /// reassigns, or moves the vehicle. So this code changes no stage and issues no order command -- it makes a
+    /// journey that was invisible show up on the blocked-journey card, and it climbs the escalation ladder from there.
+    /// </para>
+    /// <para>
+    /// <b>Not <c>ONBOARD_SESSION_NOT_READY</c>, on purpose.</b> That one is written when the session row itself is no
+    /// longer Ready, which a dropped or silent link does not do by itself: nothing on the disconnect path writes the
+    /// database at all (<c>OnboardTcpServer.HandleClientAsync</c>'s finally only detaches the peer), and
+    /// <c>WireToGateStore.RecordConnectionLossAsync</c> still has no product caller. A silent vehicle therefore keeps a
+    /// Ready session row, and the readiness branch of <see cref="AdvanceAsync"/> is never reached for it.
+    /// </para>
+    /// </remarks>
+    public const string OnboardSessionLostReason = "ONBOARD_SESSION_LOST";
+
     private readonly JourneyRuntimeOptions runtimeOptions = options.Value;
 
     private readonly TaskTypeStationAccess _taskTypeStations = taskTypeStations;

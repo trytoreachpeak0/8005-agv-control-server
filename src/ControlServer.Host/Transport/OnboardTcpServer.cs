@@ -1,17 +1,55 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using ControlServer.Infrastructure.Persistence;
 using Microsoft.Extensions.Options;
 
 namespace ControlServer.Host.Transport;
 
-public sealed partial class OnboardTcpServer(
-    IOptions<OnboardTransportOptions> options,
-    IServiceScopeFactory scopeFactory,
-    OnboardPeer peer,
-    ILogger<OnboardTcpServer> logger) : BackgroundService
+public sealed partial class OnboardTcpServer : BackgroundService
 {
-    private readonly OnboardTransportOptions _options = options.Value;
+    private readonly OnboardTransportOptions _options;
+    private readonly IServiceScopeFactory scopeFactory;
+    private readonly OnboardPeer peer;
+    private readonly ILogger<OnboardTcpServer> logger;
+    private readonly TimeProvider _clock;
+
+    /// <summary>The composition root's constructor: the project-wide liveness timeout, on the system clock.</summary>
+    public OnboardTcpServer(
+        IOptions<OnboardTransportOptions> options,
+        IServiceScopeFactory scopeFactory,
+        OnboardPeer peer,
+        ILogger<OnboardTcpServer> logger)
+        : this(options, scopeFactory, peer, logger, TimeProvider.System, SessionLiveness.Timeout)
+    {
+    }
+
+    /// <summary>
+    /// Tests only. The timeout is not configuration and never comes from a settings file: ADR-cross-0027 fixes it
+    /// project-wide at <see cref="SessionLiveness.Timeout"/>, which is also what the dashboard and the journey
+    /// runtime judge liveness by. A test that had to wait out six real seconds twice over would be paying wall-clock
+    /// time to re-measure a number another test already pins.
+    /// </summary>
+    internal OnboardTcpServer(
+        IOptions<OnboardTransportOptions> options,
+        IServiceScopeFactory scopeFactory,
+        OnboardPeer peer,
+        ILogger<OnboardTcpServer> logger,
+        TimeProvider clock,
+        TimeSpan idleTimeout)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(clock);
+        _options = options.Value;
+        this.scopeFactory = scopeFactory;
+        this.peer = peer;
+        this.logger = logger;
+        _clock = clock;
+        IdleTimeout = idleTimeout;
+    }
+
+    /// <summary>How long a connection may go without a legal inbound message before the server closes it.</summary>
+    internal TimeSpan IdleTimeout { get; }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -156,6 +194,10 @@ public sealed partial class OnboardTcpServer(
         if (_options.MaxConcurrentSessions < 1)
         {
             throw new InvalidOperationException("OnboardTransport:MaxConcurrentSessions must be at least 1.");
+        }
+        if (IdleTimeout <= TimeSpan.Zero)
+        {
+            throw new InvalidOperationException("The Onboard liveness timeout must be positive.");
         }
     }
 
