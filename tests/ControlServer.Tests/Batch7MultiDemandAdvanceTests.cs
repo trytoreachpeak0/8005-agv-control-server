@@ -46,7 +46,7 @@ public sealed class Batch7MultiDemandAdvanceTests
         JourneyRuntimeRow runtime = await TwoDemandsAtThePickupAsync(fixture);
 
         await AddInboxAsync(
-            fixture, FirstSubmissionId, "SublotSubmitted", SublotSubmission(fixture, runtime, SecondSublot));
+            fixture, FirstSubmissionId, "SublotSubmitted", await SublotSubmissionAsync(fixture, runtime, SecondSublot));
         await TickAndRunAsync(fixture);
 
         JourneyDemandRow second = await MembershipAsync(fixture, SecondDemandId);
@@ -84,7 +84,7 @@ public sealed class Batch7MultiDemandAdvanceTests
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         JourneyRuntimeRow runtime = await TwoDemandsAtThePickupAsync(fixture);
         await AddInboxAsync(
-            fixture, FirstSubmissionId, "SublotSubmitted", SublotSubmission(fixture, runtime, SecondSublot));
+            fixture, FirstSubmissionId, "SublotSubmitted", await SublotSubmissionAsync(fixture, runtime, SecondSublot));
         await TickAndRunAsync(fixture);
 
         await ApplySafeResultAsync(fixture, SecondDemandId, SlotOperationType.Load, SlotBusinessState.Occupied);
@@ -104,7 +104,7 @@ public sealed class Batch7MultiDemandAdvanceTests
         JourneyRuntimeRow runtime = await TwoDemandsAtThePickupAsync(fixture);
 
         await AddInboxAsync(
-            fixture, FirstSubmissionId, "SublotSubmitted", SublotSubmission(fixture, runtime, SecondSublot));
+            fixture, FirstSubmissionId, "SublotSubmitted", await SublotSubmissionAsync(fixture, runtime, SecondSublot));
         await TickAndRunAsync(fixture);
         await ApplySafeResultAsync(fixture, SecondDemandId, SlotOperationType.Load, SlotBusinessState.Occupied);
         await TickAndRunAsync(fixture);
@@ -113,7 +113,7 @@ public sealed class Batch7MultiDemandAdvanceTests
         Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync(FirstDemandId)).Stage);
 
         await AddInboxAsync(
-            fixture, SecondSubmissionId, "SublotSubmitted", SublotSubmission(fixture, runtime, FirstSublot));
+            fixture, SecondSubmissionId, "SublotSubmitted", await SublotSubmissionAsync(fixture, runtime, FirstSublot));
         await TickAndRunAsync(fixture);
         await ApplySafeResultAsync(fixture, FirstDemandId, SlotOperationType.Load, SlotBusinessState.Occupied);
         await TickAndRunAsync(fixture);
@@ -149,7 +149,7 @@ public sealed class Batch7MultiDemandAdvanceTests
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         JourneyRuntimeRow runtime = await TwoDemandsAtThePickupAsync(fixture);
         await AddInboxAsync(
-            fixture, FirstSubmissionId, "SublotSubmitted", SublotSubmission(fixture, runtime, SecondSublot));
+            fixture, FirstSubmissionId, "SublotSubmitted", await SublotSubmissionAsync(fixture, runtime, SecondSublot));
         await TickAndRunAsync(fixture);
         await ApplySafeResultAsync(fixture, SecondDemandId, SlotOperationType.Load, SlotBusinessState.Occupied);
         await TickAndRunAsync(fixture);
@@ -201,7 +201,7 @@ public sealed class Batch7MultiDemandAdvanceTests
 
         // 剩下那条照样能装：清单与录入请求还在这个停靠上开着。
         await AddInboxAsync(
-            fixture, SecondSubmissionId, "SublotSubmitted", SublotSubmission(fixture, runtime, SecondSublot));
+            fixture, SecondSubmissionId, "SublotSubmitted", await SublotSubmissionAsync(fixture, runtime, SecondSublot));
         await TickAndRunAsync(fixture);
         Assert.Equal(JourneyDemandStatuses.Loading, (await MembershipAsync(fixture, SecondDemandId)).Status);
     }

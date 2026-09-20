@@ -141,18 +141,25 @@ public sealed class Batch7ThreeStopJourneyTests
         await SettleLoadAsync(fixture, FirstDemandId);
         await AnswerDepartureSafetyAsync(fixture, FirstDemandId, FirstSafetyResultId);
 
-        // 第二个取货站：同样四步，走的是同一趟旅程的第二个停靠。
-        await ArriveAtStopAsync(fixture, SecondPickupStationRiotId);
+        // 第二个取货站：同样四步，走的是同一趟旅程的第二个停靠。两处与第一个停靠不同，都不是随手写的：
+        //
+        // 用不含前置那一轮的到站——ArriveAtPickupAsync 开头那次 TickAndRun 是给受理用的，这里车已经在路上了。
+        //
+        // purpose 传 "TO_GATE" 而不是 "TO_PICKUP"，哪怕这是个取货站：离站后那一段腿的订单意图由
+        // JourneyPlanBuilder.LegIntent 建，而它给每一段后续腿都写 "TO_GATE"。那个字段表达的其实是
+        // 「这不是第一段腿」，不是目的地的种类——ObserveOrderFailureAsync 里曾经拿它当「车上有没有货」用，
+        // 本票已经改成查 LOADED，但字段本身还叫这个名字。
+        await ArriveAtCurrentStopAsync(fixture, SecondDemandId, "TO_GATE");
         // 车停在第二个取货站上，服务端要认这一站的到站并进入等录入。断言停在这一层而不是断言旅程行上的
         // PickupStationRiotId：那个字段在多停靠下已经没有意义，到站判定也不再读它。
         Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync(FirstDemandId)).Stage);
-        await EnterSublotAtStopAsync(fixture, SecondPickupStationRiotId, SecondSublot, SecondSubmissionId);
-        await SettleLoadForDemandAsync(fixture, SecondDemandId);
-        await AnswerDepartureSafetyAtStopAsync(fixture, SecondPickupStationRiotId, SecondSafetyResultId);
+        await EnterSublotAsync(fixture, SecondDemandId, SecondSublot, SecondSubmissionId);
+        await SettleLoadAsync(fixture, SecondDemandId);
+        await AnswerDepartureSafetyAsync(fixture, SecondDemandId, SecondSafetyResultId);
 
         // 关卡：两条需求各卸一次，一条一条来。服务端一次只发一条卸货命令——一次只开一个仓门——所以第二条的
         // 命令要等第一条的结果落定、再推一轮才会发出来。
-        await ArriveAtStopAsync(fixture, TaskTypeStationRuntimeSeed.GateStationRiotId);
+        await ArriveAtCurrentStopAsync(fixture, FirstDemandId, "TO_GATE");
         await ApplySafeResultAsync(fixture, FirstDemandId, SlotOperationType.Unload, SlotBusinessState.Empty);
         await TickAndRunAsync(fixture);
         await ApplySafeResultAsync(fixture, SecondDemandId, SlotOperationType.Unload, SlotBusinessState.Empty);
@@ -228,94 +235,12 @@ public sealed class Batch7ThreeStopJourneyTests
         Assert.Empty(sequences.GroupBy(sequence => sequence).Where(group => group.Count() > 1).Select(group => group.Key));
     }
 
-    /// <summary>
-    /// 在某一个停靠上录入批次，会话与站点都取<b>那个停靠自己的</b>。
-    /// </summary>
-    /// <remarks>
-    /// 共用的 <c>EnterSublotAsync</c> 取的是旅程行上锚需求的 <c>OperationSessionId</c> 与
-    /// <c>PickupStationId</c>：一条被追加进来的需求没有自己的旅程行，那两样在它身上都指着别人的站。
-    /// </remarks>
-    private static async Task EnterSublotAtStopAsync(
-        RuntimeFixture fixture,
-        int stationRiotId,
-        string sublot,
-        string submissionId)
-    {
-        JourneyRuntimeRow runtime = await fixture.RuntimeAsync(FirstDemandId);
-        // 录入寄到服务端自己算出来的那个地址：会话、站点、清单修订号三样都取当前停靠的。清单修订号尤其不能
-        // 用旅程行上那一个——一个停靠可以发不止一版清单，地址是一个区间，而旅程行上只存着这趟旅程的起点。
-        StopEntryAddress address = (await JourneyStopCursor.LoadAsync(
-                fixture.Context, runtime, TestContext.Current.CancellationToken))
-            .EntryAddressOfCurrentStop(runtime.WorklistRevision);
-        Assert.Equal(stationRiotId, (await OpenStopAtAsync(fixture, stationRiotId)).StationRiotId);
-        await AddInboxAsync(
-            fixture,
-            submissionId,
-            "SublotSubmitted",
-            new
-            {
-                operationSessionId = address.OperationSessionId,
-                stationId = address.StationId,
-                worklistRevision = address.CurrentWorklistRevision,
-                sublot,
-                entryMethod = "SCANNER",
-                @operator = new
-                {
-                    operatorId = "OP-001",
-                    verificationMethod = "BADGE",
-                    verifiedAt = fixture.Clock.GetUtcNow()
-                }
-            });
-        await TickAndRunAsync(fixture);
-    }
-
-    /// <summary>
-    /// 在某一个停靠上答复离站安全，核验 id 与它的请求消息都取<b>那个停靠自己的</b>。
-    /// </summary>
-    /// <remarks>
-    /// 共用的 <c>AnswerDepartureSafetyAsync</c> 取旅程行上的 <c>PreDepartureSafetyCheckId</c>，那是第一个停靠
-    /// 那一版的同源副本；<c>DepartureCheckId</c>（<c>JourneyRuntimeEngine.cs:2486</c>）读的却是停靠行。
-    /// 第二个停靠用旅程行上那一个，答复对不上，旅程停在 <c>AwaitingDepartureSafety</c> 不再前进。
-    /// </remarks>
-    private static async Task AnswerDepartureSafetyAtStopAsync(
-        RuntimeFixture fixture, int stationRiotId, string safetyResultId)
-    {
-        JourneyStopRow stop = await OpenStopAtAsync(fixture, stationRiotId);
-        await AddInboxAsync(
-            fixture,
-            safetyResultId,
-            "PreDepartureSafetyCheckResult",
-            SafeDepartureAnswer(fixture, stop.DepartureSafetyCheckId!, 7),
-            stop.DepartureSafetyCheckMessageId);
-        await TickAndRunAsync(fixture);
-    }
-
-    /// <summary>这条需求的装货结果落定，再推一轮。</summary>
-    private static async Task SettleLoadForDemandAsync(RuntimeFixture fixture, string demandId)
-    {
-        await ApplySafeResultAsync(fixture, demandId, SlotOperationType.Load, SlotBusinessState.Occupied);
-        await TickAndRunAsync(fixture);
-    }
-
     /// <summary>这个站上还没完成的那个停靠。</summary>
     private static Task<JourneyStopRow> OpenStopAtAsync(RuntimeFixture fixture, int stationRiotId) =>
         fixture.Context.Set<JourneyStopRow>().AsNoTracking()
             .SingleAsync(
                 row => row.StationRiotId == stationRiotId && row.Status != JourneyStopStatuses.Completed,
                 TestContext.Current.CancellationToken);
-
-    /// <summary>车开到某一个停靠所在的站，用那个停靠自己的上位机单号。</summary>
-    /// <remarks>
-    /// 不能用 <c>ArriveAtPickupAsync</c>：那一条取的是旅程行上锚需求的 <c>PickupUpperId</c> 与
-    /// <c>PickupStationRiotId</c>，第二个取货站在旅程行上根本没有位置。
-    /// </remarks>
-    private static async Task ArriveAtStopAsync(RuntimeFixture fixture, int stationRiotId)
-    {
-        JourneyStopRow stop = await OpenStopAtAsync(fixture, stationRiotId);
-        fixture.Riot.SetSuccessfulArrival("TO_GATE", stop.UpperId, stationRiotId);
-        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = stationRiotId };
-        await TickAndRunAsync(fixture);
-    }
 
     /// <summary>全部停靠的序位，未完成与已完成都算在内。</summary>
     private static async Task<int[]> SequencesAsync(RuntimeFixture fixture) =>

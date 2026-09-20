@@ -41,7 +41,7 @@ public sealed class Batch7MultiDemandCancellationTests
         JourneyRuntimeRow runtime = await TwoDemandsAtThePickupAsync(fixture);
         // 第一条（锚需求）录入、开始装。旅程于是停在等装货结果，而不是等录入。
         await AddInboxAsync(
-            fixture, FirstSubmissionId, "SublotSubmitted", SublotSubmission(fixture, runtime, FirstSublot));
+            fixture, FirstSubmissionId, "SublotSubmitted", await SublotSubmissionAsync(fixture, runtime, FirstSublot));
         await TickAndRunAsync(fixture);
         Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, (await fixture.RuntimeAsync(FirstDemandId)).Stage);
 
@@ -80,7 +80,7 @@ public sealed class Batch7MultiDemandCancellationTests
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         JourneyRuntimeRow runtime = await TwoDemandsAtThePickupAsync(fixture);
         await AddInboxAsync(
-            fixture, FirstSubmissionId, "SublotSubmitted", SublotSubmission(fixture, runtime, FirstSublot));
+            fixture, FirstSubmissionId, "SublotSubmitted", await SublotSubmissionAsync(fixture, runtime, FirstSublot));
         await TickAndRunAsync(fixture);
 
         await using ControlServerDbContext connection = fixture.OpenConnectionContext();
