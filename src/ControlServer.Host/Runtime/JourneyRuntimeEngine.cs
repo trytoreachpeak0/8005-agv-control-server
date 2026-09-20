@@ -77,6 +77,14 @@ public sealed class JourneyRuntimeEngine(
             new EventId(2110, nameof(LogDepartureSafetyReasked)),
             "Journey {JourneyId} stop {StopSequence}: every answer to the pre-departure safety check had lapsed; " +
             "asked again as check {PreDepartureSafetyCheckId}.");
+    private static readonly Action<ILogger, string, int, string, int?, int?, Exception?> LogArrivalNotTrusted =
+        LoggerMessage.Define<string, int, string, int?, int?>(
+            LogLevel.Warning,
+            new EventId(2112, nameof(LogArrivalNotTrusted)),
+            "Journey {JourneyId} stop {StopSequence} is not treated as arrived: {ReasonCode} " +
+            "(RIoT orderState {OrderState}, vehicle standing at station {VehicleStationId}). " +
+            "The journey waits here until the facts change; a movement order that puts the vehicle " +
+            "on the target station releases it, whether the original order succeeded or was cancelled.");
     private static readonly Action<ILogger, long, int, string, string, Exception?> LogAdmissionPolicyDrift =
         LoggerMessage.Define<long, int, string, string>(
             LogLevel.Warning,
@@ -589,8 +597,12 @@ public sealed class JourneyRuntimeEngine(
                 {
                     return;
                 }
-                if (!await IsTrustedArrivalAsync(runtime, stop, session, cancellationToken).ConfigureAwait(false))
+                ArrivalVerdict pickupArrival = await InspectArrivalAsync(
+                    runtime, stop, session, cancellationToken).ConfigureAwait(false);
+                if (pickupArrival.DistrustReason is not null)
                 {
+                    await RecordArrivalDistrustAsync(
+                        runtime, stop, "PICKUP", pickupArrival, now, cancellationToken).ConfigureAwait(false);
                     return;
                 }
                 stop.State = JourneyStopState.Arrived;
@@ -882,8 +894,12 @@ public sealed class JourneyRuntimeEngine(
                 {
                     return;
                 }
-                if (!await IsTrustedArrivalAsync(runtime, stop, session, cancellationToken).ConfigureAwait(false))
+                ArrivalVerdict gateArrival = await InspectArrivalAsync(
+                    runtime, stop, session, cancellationToken).ConfigureAwait(false);
+                if (gateArrival.DistrustReason is not null)
                 {
+                    await RecordArrivalDistrustAsync(
+                        runtime, stop, "GATE", gateArrival, now, cancellationToken).ConfigureAwait(false);
                     return;
                 }
                 stop.State = JourneyStopState.Arrived;
@@ -1021,7 +1037,40 @@ public sealed class JourneyRuntimeEngine(
         return ValidateDynamicFacts(onboard, vehicle, timeProvider.GetUtcNow()) == "ELIGIBLE";
     }
 
-    private async Task<bool> IsTrustedArrivalAsync(
+    /// <summary>
+    /// The outcome of one arrival test: <see cref="DistrustReason"/> is null when the stop counts as
+    /// reached, and otherwise names the first condition that failed. The two RIoT readings that make
+    /// the failure legible in a log line -- the order's state and where the vehicle is standing --
+    /// ride along, because reading them again afterwards would ask RIoT twice and could answer
+    /// differently.
+    /// </summary>
+    private readonly record struct ArrivalVerdict(string? DistrustReason, int? OrderState, int? VehicleStationId);
+
+    /// <summary>
+    /// RIoT orderStates that mean this movement is over and will never progress again: 5 SUCCESS and
+    /// 2 CANCELLED.
+    /// </summary>
+    /// <remarks>
+    /// Requiring 5 alone is what made a journey unrecoverable on 2026-09-20 (#247): somebody
+    /// cancelled the second leg's order from the RIoT console, which is an ordinary dispatch action
+    /// and not a fault, and the leg's order state froze at 2 forever. The intent was already
+    /// CONFIRMED, so <see cref="EnsureMovementConfirmedAsync"/> kept answering "the order is
+    /// placed" while this test kept answering "not arrived yet"; the journey sat between the two
+    /// for 36 minutes and was only cleared by ending it by hand and voiding three demands. Issuing
+    /// a fresh movement order to the same station could not help either, because nothing turns a
+    /// cancelled order back into a successful one.
+    ///
+    /// Accepting 2 as well costs nothing in safety. Whether the vehicle is physically on the station
+    /// is decided by the live vehicle facts below -- IDLE, stopped, unlocked, holding no order task,
+    /// standing on the target station, on fresh evidence -- together with the onboard facts. The
+    /// order's outcome only ever said what RIoT believed about a leg, and cancellation is precisely
+    /// the case where that belief stops describing where the vehicle ended up. FAILED and DELETED
+    /// stay out: they report a fault rather than an operator's decision, and they deserve a human
+    /// look rather than a silent resume.
+    /// </remarks>
+    private static bool IsSettledOrderState(int? orderState) => orderState is 5 or 2;
+
+    private async Task<ArrivalVerdict> InspectArrivalAsync(
         JourneyRuntimeRow runtime,
         JourneyStopRow stop,
         SessionRecoveryRow session,
@@ -1035,32 +1084,98 @@ public sealed class JourneyRuntimeEngine(
         RiotOrderObservation order = await vehicleFacts.ReconcileByUpperIdAsync(intent.UpperId, cancellationToken)
             .ConfigureAwait(false);
         int targetStation = stop.StationRiotId;
-        bool exactOrder = order.Kind == RiotOrderObservationKind.Terminal &&
-                          order.OrderState == 5 &&
-                          !string.IsNullOrWhiteSpace(order.OrderId) &&
-                          order.OrderId == intent.OrderId &&
-                          order.VehicleKey == runtime.VehicleKey &&
-                          order.MapId == runtime.MapId &&
-                          order.DestinationStationId == targetStation;
-        if (!exactOrder)
+        if (order.Kind != RiotOrderObservationKind.Terminal || !IsSettledOrderState(order.OrderState))
         {
-            return false;
+            return new ArrivalVerdict("RIOT_ORDER_NOT_SETTLED", order.OrderState, null);
+        }
+        // Everything that ties the order to this leg stays exact. A settled order only counts if it
+        // is *this* leg's order, for this vehicle, on this map, aimed at this station.
+        if (string.IsNullOrWhiteSpace(order.OrderId) ||
+            order.OrderId != intent.OrderId ||
+            order.VehicleKey != runtime.VehicleKey ||
+            order.MapId != runtime.MapId ||
+            order.DestinationStationId != targetStation)
+        {
+            return new ArrivalVerdict("RIOT_ORDER_NOT_THIS_LEG", order.OrderState, null);
         }
         RiotVehicleObservation vehicle = await vehicleFacts.ReadVehicleAsync(runtime.VehicleKey, cancellationToken)
             .ConfigureAwait(false);
         OnboardFacts? onboard = await ReadOnboardFactsAsync(cancellationToken).ConfigureAwait(false);
+        // Read the clock after the observation, never before -- see IsTrustedChargerArrivalAsync.
         DateTimeOffset now = timeProvider.GetUtcNow();
-        return vehicle.Connected && vehicle.Enabled &&
-               vehicle.ProcState == "IDLE" &&
-               vehicle.CurrentMap == runtime.MapIdentity &&
-               vehicle.CurrentStationId == targetStation &&
-               vehicle.Speed == 0 &&
-               vehicle.LockStatus == 0 &&
-               string.IsNullOrWhiteSpace(vehicle.OrderTaskId) &&
-               vehicle.ObservedAt <= now && now - vehicle.ObservedAt <= runtimeOptions.MaximumEvidenceAge &&
-               onboard is not null && onboard.SessionGeneration == session.SessionGeneration &&
-               onboard.VehicleStopped && onboard.AllTargetSlotsLocked && onboard.AllUnlockOutputsReset &&
-               !onboard.UnknownPresent;
+        int? standingAt = vehicle.CurrentStationId;
+        if (!vehicle.Connected || !vehicle.Enabled || vehicle.ProcState != "IDLE" ||
+            vehicle.CurrentMap != runtime.MapIdentity)
+        {
+            return new ArrivalVerdict("RIOT_VEHICLE_NOT_IDLE", order.OrderState, standingAt);
+        }
+        if (vehicle.CurrentStationId != targetStation)
+        {
+            return new ArrivalVerdict("RIOT_VEHICLE_NOT_AT_TARGET_STATION", order.OrderState, standingAt);
+        }
+        if (vehicle.Speed != 0)
+        {
+            return new ArrivalVerdict("RIOT_VEHICLE_NOT_STOPPED", order.OrderState, standingAt);
+        }
+        if (vehicle.LockStatus != 0 || !string.IsNullOrWhiteSpace(vehicle.OrderTaskId))
+        {
+            return new ArrivalVerdict("RIOT_VEHICLE_ORDER_OCCUPIED", order.OrderState, standingAt);
+        }
+        if (vehicle.ObservedAt > now || now - vehicle.ObservedAt > runtimeOptions.MaximumEvidenceAge)
+        {
+            return new ArrivalVerdict("RIOT_EVIDENCE_STALE", order.OrderState, standingAt);
+        }
+        if (onboard is null || onboard.SessionGeneration != session.SessionGeneration)
+        {
+            return new ArrivalVerdict("ONBOARD_FACTS_NOT_OF_THIS_SESSION", order.OrderState, standingAt);
+        }
+        if (!onboard.VehicleStopped)
+        {
+            return new ArrivalVerdict("ONBOARD_VEHICLE_NOT_STOPPED", order.OrderState, standingAt);
+        }
+        if (!onboard.AllTargetSlotsLocked || !onboard.AllUnlockOutputsReset || onboard.UnknownPresent)
+        {
+            return new ArrivalVerdict("ONBOARD_SLOTS_NOT_SETTLED", order.OrderState, standingAt);
+        }
+        return new ArrivalVerdict(null, order.OrderState, standingAt);
+    }
+
+    /// <summary>
+    /// Records why a stop is not being treated as reached: on the journey row, and -- the first time
+    /// each distinct reason appears -- in the log.
+    /// </summary>
+    /// <remarks>
+    /// Both halves exist because of #247. The journey row kept whatever reason code had last been
+    /// written, so a momentary ONBOARD_SESSION_NOT_READY from half an hour earlier went on
+    /// describing a journey that was in fact stuck on something else entirely, and sent the
+    /// investigation to the wrong subsystem. The log said nothing at all for 36 minutes, because a
+    /// distrusted arrival used to be silent. Writing only when the reason changes keeps a 2-second
+    /// poll from churning the row and the log, which is the shape the charging run already uses.
+    /// </remarks>
+    private async Task RecordArrivalDistrustAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopRow stop,
+        string legName,
+        ArrivalVerdict verdict,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        string reasonCode = $"{legName}_ARRIVAL_NOT_TRUSTED_{verdict.DistrustReason}";
+        if (runtime.BlockReasonCode == reasonCode)
+        {
+            return;
+        }
+        LogArrivalNotTrusted(
+            logger,
+            runtime.JourneyId,
+            stop.Sequence,
+            reasonCode,
+            verdict.OrderState,
+            verdict.VehicleStationId,
+            null);
+        runtime.BlockReasonCode = reasonCode;
+        runtime.UpdatedAt = now;
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<bool> EnsureMovementConfirmedAsync(
@@ -2122,10 +2237,13 @@ public sealed class JourneyRuntimeEngine(
     }
 
     /// <summary>
-    /// The arrival test for a leg with nothing aboard. It asks the same of RIoT as
-    /// <see cref="IsTrustedArrivalAsync"/> -- this exact order, terminal and successful, and the
-    /// vehicle standing at the target station with no order in hand -- and nothing of the onboard
-    /// slots, which no part of this errand touched.
+    /// The arrival test for a leg with nothing aboard. It asks nearly the same of RIoT as
+    /// <see cref="InspectArrivalAsync"/> -- this exact order, and the vehicle standing at the target
+    /// station with no order in hand -- and nothing of the onboard slots, which no part of this
+    /// errand touched. It still requires the order to have *succeeded* rather than merely settled:
+    /// #247 relaxed the journey test so that a redocking movement order can rescue a cancelled leg,
+    /// and a charging run has no such second order to be rescued by -- a cancelled charge order
+    /// leaves the vehicle off the pad, where no amount of trust would make it charge.
     /// </summary>
     private async Task<bool> IsTrustedChargerArrivalAsync(
         AutoChargingRunRow run,
@@ -2148,7 +2266,7 @@ public sealed class JourneyRuntimeEngine(
         // ObservedAt > now guard -- which exists to reject a vehicle reporting from the future --
         // fires on every single poll instead. The charger arrival was never trusted and the run sat
         // in AwaitingChargerArrival forever; L2 evidence 20260908-auto-charge-endurance-002.
-        // IsTrustedArrivalAsync takes its clock in this order for the same reason.
+        // InspectArrivalAsync takes its clock in this order for the same reason.
         DateTimeOffset now = timeProvider.GetUtcNow();
         return vehicle.Connected && vehicle.Enabled &&
                vehicle.ProcState == "IDLE" &&

@@ -1009,6 +1009,140 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task ACancelledMovementOrderStillArrivesOnceTheVehicleStandsAtTheStation()
+    {
+        // #247. Cancelling a movement order from the RIoT console is an ordinary dispatch action --
+        // to let another vehicle past, to reshuffle the queue -- and it froze the leg's order at
+        // orderState 2, which can never become 5. The journey then had no way back at all: the
+        // intent was already CONFIRMED, so nothing rebuilt the order, and no newly issued order
+        // could rewrite the cancelled one's outcome. agv01 stood still for 36 minutes and the
+        // journey had to be ended by hand, voiding three demands that were never loaded.
+        //
+        // Arrival is judged on where the vehicle actually is. A settled order plus the vehicle
+        // standing idle on the target station is the same physical fact whether that order
+        // succeeded or was cancelled, so re-docking the vehicle with a fresh movement order now
+        // releases the journey by itself.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        SingleDemandJourneyView runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, runtime.Stage);
+
+        // The vehicle was stopped mid-route, so it reports no station at all -- exactly what the
+        // field saw: procState IDLE, speed 0, currentPosition 0.
+        fixture.Riot.SetCancelledOrder("TO_PICKUP", runtime.PickupStationRiotId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = null };
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        SingleDemandJourneyView stalled = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, stalled.Stage);
+        Assert.Equal("PICKUP_ARRIVAL_NOT_TRUSTED_RIOT_VEHICLE_NOT_AT_TARGET_STATION", stalled.BlockReasonCode);
+
+        // Somebody issues a movement order of their own and the vehicle docks at station 85.
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = runtime.PickupStationRiotId };
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        SingleDemandJourneyView resumed = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, resumed.Stage);
+        Assert.Null(resumed.BlockReasonCode);
+        Assert.Contains("SublotEntryRequested", await fixture.OutboxTypesAsync());
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-03")]
+    public async Task ACancelledGateOrderAlsoArrivesOnceTheVehicleStandsAtTheGate()
+    {
+        // The unload leg runs through the same arrival test, so a gate order cancelled mid-route
+        // strands a *loaded* vehicle. It is released the same way (#247).
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.AdvanceToDepartureSafetyAsync();
+        await fixture.ConfirmDepartureSafeAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, (await fixture.RuntimeAsync()).Stage);
+
+        fixture.Riot.SetCancelledOrder("TO_GATE", fixture.Options.GateStationRiotId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = null };
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        SingleDemandJourneyView stalled = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, stalled.Stage);
+        Assert.Equal("GATE_ARRIVAL_NOT_TRUSTED_RIOT_VEHICLE_NOT_AT_TARGET_STATION", stalled.BlockReasonCode);
+
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = fixture.Options.GateStationRiotId };
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(JourneyRuntimeStage.AwaitingUnloadResult, (await fixture.RuntimeAsync()).Stage);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task ACancelledOrderIsNotArrivalAtAStationTheVehicleIsMerelyPassing()
+    {
+        // The other half of the relaxation, and the one that has to hold: a settled order is not
+        // by itself evidence of anything. Standing at some other station keeps the journey waiting
+        // exactly as before.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        SingleDemandJourneyView runtime = await fixture.RuntimeAsync();
+
+        fixture.Riot.SetCancelledOrder("TO_PICKUP", runtime.PickupStationRiotId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with
+        {
+            CurrentStationId = runtime.PickupStationRiotId + 1
+        };
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        SingleDemandJourneyView stalled = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, stalled.Stage);
+        Assert.Equal("PICKUP_ARRIVAL_NOT_TRUSTED_RIOT_VEHICLE_NOT_AT_TARGET_STATION", stalled.BlockReasonCode);
+        Assert.DoesNotContain("SublotEntryRequested", await fixture.OutboxTypesAsync());
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-07")]
+    public async Task ADistrustedArrivalReplacesAStaleBlockReasonInsteadOfLettingItStand()
+    {
+        // #247's second cost. ONBOARD_SESSION_NOT_READY had been written during a momentary session
+        // drop; the session came back, the engine walked past that gate every 2 seconds and stopped
+        // silently at the arrival test, and the row went on reporting the session as the problem for
+        // 36 minutes. It sent the investigation to the wrong subsystem. Whatever is actually holding
+        // a stop now overwrites what came before.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        JourneyRuntimeRow stale = await fixture.Context.JourneyRuntimes.SingleAsync(
+            TestContext.Current.CancellationToken);
+        stale.BlockReasonCode = "ONBOARD_SESSION_NOT_READY";
+        await fixture.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        // The order is still EXECUTING, which is what the stop is really waiting on.
+        Assert.Equal(
+            "PICKUP_ARRIVAL_NOT_TRUSTED_RIOT_ORDER_NOT_SETTLED",
+            (await fixture.RuntimeAsync()).BlockReasonCode);
+    }
+
+    [Fact]
     [Trait("IntegrationSlice", "W2G-IS-02")]
     [Trait("IntegrationSlice", "W2G-IS-07")]
     public async Task ABlockedJourneyKeepsTheReasonItWasBlockedForWhenTheSessionDrops()
@@ -5282,6 +5416,16 @@ public sealed class JourneyRuntimeWorkerTests
         public void SetSuccessfulArrival(string purpose, int stationId) =>
             SetSuccessfulArrival(purpose, UpperId(purpose), stationId);
 
+        /// <summary>
+        /// What RIoT leaves behind when somebody cancels a movement order from its console: a
+        /// terminal order at orderState 2, with no failReason, that will never reach 5 (#247).
+        /// </summary>
+        public void SetCancelledOrder(string purpose, int stationId) =>
+            SetCancelledOrder(purpose, UpperId(purpose), stationId);
+
+        public void SetCancelledOrder(string purpose, string upperId, int stationId) =>
+            SetTerminalOrder(purpose, upperId, stationId, orderState: 2);
+
         /// <summary>What RIoT does to a charge order whose start-charging action never engages (Q-033).</summary>
         public void SetHungOrder(string upperId) =>
             _orders[upperId] = _orders[upperId] with { OrderState = 9 };
@@ -5299,13 +5443,16 @@ public sealed class JourneyRuntimeWorkerTests
         /// Takes the upperId from the runtime row, which is the only way to reach a journey whose
         /// demand is not the one <see cref="UpperId"/> hardcodes.
         /// </summary>
-        public void SetSuccessfulArrival(string purpose, string upperId, int stationId)
+        public void SetSuccessfulArrival(string purpose, string upperId, int stationId) =>
+            SetTerminalOrder(purpose, upperId, stationId, orderState: 5);
+
+        private void SetTerminalOrder(string purpose, string upperId, int stationId, int orderState)
         {
             _orders[upperId] = new RiotOrderObservation(
                 upperId,
                 RiotOrderObservationKind.Terminal,
                 $"ORDER-{purpose}",
-                OrderState: 5,
+                OrderState: orderState,
                 VehicleKey: _options.VehicleKey,
                 MapId: _options.MapId,
                 DestinationStationId: stationId);
