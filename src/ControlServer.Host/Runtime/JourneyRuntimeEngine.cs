@@ -954,6 +954,17 @@ public sealed class JourneyRuntimeEngine(
     /// but throw. What changes is that it now says why, in a place a person can see.
     /// </para>
     /// <para>
+    /// <b>One window where it is a new decision, and it is bounded.</b> "Silent" and "the connection is gone"
+    /// are not the same instant: the session layer closes at six seconds of silence, and this judgment fires on
+    /// the first runtime round after six seconds. If this one gets there first — a matter of milliseconds — the
+    /// round it stops is one the replay above would still have survived, and <c>ObserveOrderFailureAsync</c>
+    /// would have run. So a RIoT order failure can be noticed one poll later than before. It is not lost:
+    /// REQ-0287 wants the vehicle watched through RIoT while its session is down, and the next round, with the
+    /// connection now closed, could not have observed anything either — that round throws out of the replay,
+    /// as every round did before this ticket. Widening past that costs the code its place ahead of the replay,
+    /// which is the whole reason it works.
+    /// </para>
+    /// <para>
     /// <b>Display and escalation only (REQ-0287).</b> The stage is not moved, the demand is not ended, the
     /// lease is not released, nothing is reassigned, and no order command is issued — <c>OrderHold</c> least
     /// of all, which ADR-cross-0026 asks for and REQ-0287 forbids; the user deferred that conflict to
