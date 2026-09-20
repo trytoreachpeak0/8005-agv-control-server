@@ -111,7 +111,7 @@ function Get-OnboardHandleFindings([string]$Path) {
     foreach ($node in $ast.FindAll({ param($n) $true }, $true)) {
         $assigned = Get-AssignedVariableName $node
         if ($null -ne $assigned) {
-            if (Test-NamesContextOnboard $node.Right) {
+            if ($assigned -eq 'onboard' -and (Test-NamesContextOnboard $node.Right)) {
                 # Ordered at the end of the statement: `$onboard = & $Context.RestartOnboard` restarts and re-binds in
                 # one, and the restart inside it must not outlive it.
                 $events.Add([pscustomobject]@{

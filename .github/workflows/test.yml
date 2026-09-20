@@ -51,6 +51,14 @@ jobs:
         shell: pwsh
         run: dotnet --info
 
+      # A second of AST parsing, ahead of the suite. A real-onboard scenario that drives the onboard through a
+      # handle taken before a restart reads exactly like "the entry was never offered", and nothing but a real-rig
+      # round finds that out -- control-server#222 spent one on it. The check replays its own counterexamples, so a
+      # rule that stopped working fails this step instead of going quietly green (control-server#230).
+      - name: L2 scenario self-check (onboard handle after restart)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/l2/Test-L2OnboardHandleAfterRestart.ps1
+
       # Exit code is the contract — the guest is zh-CN and prints 已通过! not
       # Passed!, so no step here may match on English console text.
       - name: Test

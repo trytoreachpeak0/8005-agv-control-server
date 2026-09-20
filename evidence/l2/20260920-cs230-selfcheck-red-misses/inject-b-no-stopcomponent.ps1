@@ -87,7 +87,7 @@ function Test-IsRestart([System.Management.Automation.Language.Ast]$Node) {
     if (Test-IsContextInvocation $Node 'RestartOnboard') { return $true }
     # Killing the onboard process is a restart for this check's purpose: the driver taken before it is dead from here
     # on, whatever brings the process back.
-    if (Test-IsContextInvocation $Node 'StopComponent') {
+    if ($false -and (Test-IsContextInvocation $Node 'StopComponent')) {
         $argument = @($Node.CommandElements | Select-Object -Skip 1 |
                 Where-Object { $_ -is [System.Management.Automation.Language.StringConstantExpressionAst] })
         return $argument.Count -ge 1 -and [string]$argument[0].Value -eq 'onboard-hmi'
