@@ -197,10 +197,33 @@ $assertions.Add(
     "$boundDemandStatus / $($journey.Stage) / $boundCommits 笔操作 Committed")
 
 # 向量四步：计划 → 确认 → 业务状态快照 → 确认。对着已绑定那条需求的旅程查：第一份计划被确认，其后有一份业务状态快照被确认。
-$snapshots = Get-L2DemandJourneySnapshots $connection $boundId
+# 与 g3-reversed-direction-journey 的 G3-11-03 同一件事（control-server#203 条目 3）：旅程走完那一刻，确认
+# 可能还在路上——它由车载端发出、服务端另起一次写库，与阶段推进不是同一次提交。原来立刻就读，判据偶发红。
+#
+# 等的就是判据本身要的那三件事，所以这里没有放松任何一条；`Wait-L2RealOrLast` 超时不抛错，把最后一次读到的
+# 两批快照交给判据，红点因此落在判据表里、带着是哪一份没确认，而不是变成一行超时。选它而不是「先转几轮」的
+# 理由与那边相同：运行时轮次与确认落库之间没有因果。
+#
+# 业务状态快照在这里重读一次（第 164 行那份是 G3-10-04 用的，取的是更早的时刻，不动它）。
+$acknowledged = Wait-L2RealOrLast -Description 'the bound journey plan and a later business snapshot were acknowledged' `
+    -Journal $journal -Criterion 'bound-journey-snapshots-acknowledged' -TimeoutSeconds 30 `
+    -Probe {
+        [pscustomobject]@{
+            Journey  = Get-L2DemandJourneySnapshots $connection $boundId
+            Business = Get-L2RealOutbound $connection 'VehicleBusinessStateSnapshot'
+        }
+    } `
+    -Until {
+        param($v)
+        $plan = @($v.Journey | Where-Object { $_.Type -eq 'UpcomingStopPlanSnapshot' }) | Select-Object -First 1
+        $null -ne $plan -and $plan.Acknowledged -and
+        @($v.Journey | Where-Object { $_.Fenced -or -not $_.Acknowledged }).Count -eq 0 -and
+        @($v.Business | Where-Object { $_.At -ge $plan.At -and $_.Acknowledged }).Count -ge 1
+    }
+$snapshots = @($acknowledged.Journey)
 $firstPlan = @($snapshots | Where-Object { $_.Type -eq 'UpcomingStopPlanSnapshot' }) | Select-Object -First 1
 $businessAfterPlan = if ($null -ne $firstPlan) {
-    @($businessSnapshots | Where-Object { $_.At -ge $firstPlan.At -and $_.Acknowledged })
+    @($acknowledged.Business | Where-Object { $_.At -ge $firstPlan.At -and $_.Acknowledged })
 } else { @() }
 $assertions.Add(
     'G3-10-06',

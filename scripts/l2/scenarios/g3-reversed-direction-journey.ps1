@@ -152,7 +152,20 @@ $judgeRoute = {
 $journey = Invoke-L2TaskTypeJourney -Context $Context -DemandId $demandId -Sublot $sublot `
     -OriginRiotId $stagingRiotId -DestinationRiotId $areaRiotId -BeforeFirstArrival $judgeRoute
 
-$snapshots = Get-L2DemandJourneySnapshots $connection $demandId
+# 旅程走到 Completed 的那一刻，最后一份清单的确认可能还在路上：确认由车载端发出、服务端另起一次写库，与
+# 「阶段变成 Completed」不是同一次提交。原来立刻就读，于是 G3-11-03 偶发红——而偶发红的证据没有价值，排查时
+# 还会被当成产品退化（control-server#203 条目 3）。
+#
+# 票面两种写法里选了「等到全部确认、超时带最后读值」，没有选「先转几轮再读」：Wait-L2Iterations 数的是运行时
+# 轮次，与「确认落库」之间没有因果关系，多转几轮只让偶发红更罕见、不让它消失，而且「几轮才够」没有依据。
+#
+# 用 Wait-L2RealOrLast 而不是 Wait-L2Condition：超时不抛错，而是把最后一次读到的那批快照交给判据，于是
+# 「有一份没被确认」落在判据表里、连同是哪一份一起可读，而不是变成场景抛出的一行超时。**判据一个字没放松**：
+# 超时之后它照样判那批值，该红还是红。
+$snapshots = @(Wait-L2RealOrLast -Description 'every plan and worklist snapshot of this journey was acknowledged' `
+        -Journal $journal -Criterion 'journey-snapshots-acknowledged' -TimeoutSeconds 30 `
+        -Probe { Get-L2DemandJourneySnapshots $connection $demandId } `
+        -Until { param($v) @($v).Count -ge 2 -and @($v | Where-Object { $_.Fenced -or -not $_.Acknowledged }).Count -eq 0 })
 $described = (@($snapshots | ForEach-Object { "$(Format-L2JourneySnapshot $_) ack=$($_.Acknowledged) fenced=$($_.Fenced)" }) -join ' | ')
 
 # --- 2. 服务端按规则定方向 -----------------------------------------------------------------------------------------
