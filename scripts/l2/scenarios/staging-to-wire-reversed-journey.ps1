@@ -23,6 +23,8 @@ $riot = $Context.Riot
 $mes = $Context.MesIngest
 $connection = $Context.Connection
 
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2RouteEvidence.psm1') -Force
+
 $stagingStationRiotId = 305
 $stagingStationName = '派工待送取货'
 $machineStationRiotId = 12
@@ -123,6 +125,34 @@ $assertions.Add(
     ([int]$runtime.PickupStationRiotId -eq $stagingStationRiotId -and [int]$runtime.GateStationRiotId -eq $machineStationRiotId),
     "pickup $stagingStationRiotId, drop-off $machineStationRiotId",
     "pickup $($runtime.PickupStationRiotId), drop-off $($runtime.GateStationRiotId)")
+
+# 路线证据独立重算，与真车载端那条路径上的 G3-11-07 同一件事：两端记对了，不等于这趟被冻结成的那个 id 也
+# 按这个方向算。把两端喂反、漏掉一个输入或换掉拼法，存进去的仍是一个非空的 MAPCAT-…，只有重算看得出来。
+#
+# 这里判一遍是因为它跑得起：这条合成路径十几秒就走完，而真车载端那条要排交互式桌面。重算写错会让判据必然
+# 红，那种红在真装置上最容易被读成「产品坏了」——所以先在这里把它跑绿。
+#
+# 前提：本场景中途不改站点表，所以假 RIoT 此刻的目录就是服务端受理时读到的那一份。
+$mapEntry = @(@($riot.Snapshot().body.maps) | Where-Object { [int]$_.mapId -eq $Context.MapId }) | Select-Object -First 1
+$plannedEvidence = '(no station catalog)'
+$swappedEvidence = '(no station catalog)'
+if ($null -ne $mapEntry) {
+    $catalogSha = Get-L2MapCatalogSha256 -MapId $Context.MapId -Stations @($mapEntry.stations)
+    $plannedEvidence = Get-L2RouteEvidenceId -MapId $Context.MapId -CatalogSha256 $catalogSha `
+        -OriginStationRiotId $stagingStationRiotId -OriginStationName $stagingStationName `
+        -DestinationStationRiotId $machineStationRiotId -DestinationStationName $machineStationName `
+        -Area 'N1-3' -Eqp 'EQP-L2-S2W-01'
+    # 反着再算一遍：两个值必须不同，否则「重算对上了」只说明这个哈希对方向不敏感。
+    $swappedEvidence = Get-L2RouteEvidenceId -MapId $Context.MapId -CatalogSha256 $catalogSha `
+        -OriginStationRiotId $machineStationRiotId -OriginStationName $machineStationName `
+        -DestinationStationRiotId $stagingStationRiotId -DestinationStationName $stagingStationName `
+        -Area 'N1-3' -Eqp 'EQP-L2-S2W-01'
+}
+$assertions.Add(
+    'L2-S2W-08', '反向旅程冻结的路线证据等于按这个方向独立重算出来的 id，把两端互换重算会得到另一个',
+    ([string]$runtime.RouteEvidenceId -ceq $plannedEvidence -and $plannedEvidence -cne $swappedEvidence),
+    "route evidence = $plannedEvidence (swapped would be $swappedEvidence)",
+    "route evidence $($runtime.RouteEvidenceId)")
 
 $firstPlan = Wait-L2Condition -Description 'the dispatch plan snapshot was sent' `
     -Journal $journal -Criterion 'plan-snapshot' -TimeoutSeconds 60 `

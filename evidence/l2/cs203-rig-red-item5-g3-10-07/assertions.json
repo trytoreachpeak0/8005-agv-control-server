@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "scenario": "g3-task-type-admission-fail-closed",
+  "runId": "20260920T182914732Z",
+  "outcome": "FAIL",
+  "failureReason": "",
+  "identity": {
+    "agvId": "AGV-L2-001",
+    "controlServerCommit": "0f09a1b53d29708118d05c403187d1be7da9722f",
+    "vehicleKey": "BROKERX-L2-0001",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260920T182914732Z",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "rig": "RealOnboard",
+    "onboardHmiCommit": "2525b131d6404207e96c0c7a4fcb5c7068ea6719",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "batchId": "unspecified"
+  },
+  "assertions": [
+    {
+      "id": "G3-10-01",
+      "description": "缺绑定的 STAGING_TO_WIRE 需求始终不受理：没有受理快照、没有旅程、没有订单意图、没有仓位操作，已绑定的那条走完之后再转四轮仍是如此（FAIL_CLOSED_ON_MISSING_BINDING）",
+      "outcome": "PASS",
+      "expected": "受理 0 / 旅程 0 / 意图 0 / 操作 0",
+      "actual": "受理 0 / 旅程 0 / 意图 0 / 操作 0"
+    },
+    {
+      "id": "G3-10-02",
+      "description": "缺绑定的需求没有被排进任何计划或清单：服务端发件箱里没有一条消息提到它，RIoT 上没有不属于已绑定需求的单",
+      "outcome": "PASS",
+      "expected": "发件箱 0 条 / 外来单 0 张",
+      "actual": "发件箱 0 条 / 外来单 0 张"
+    },
+    {
+      "id": "G3-10-03",
+      "description": "不投运原因记在服务端：JourneyBacklog 里这条需求的原因是 TASK_TYPE_BINDING_MISSING（缺绑定，不是范围外或尚未可执行），且没有受理时间",
+      "outcome": "PASS",
+      "expected": "TASK_TYPE_BINDING_MISSING / 未受理",
+      "actual": "TASK_TYPE_BINDING_MISSING / 受理时间="
+    },
+    {
+      "id": "G3-10-04",
+      "description": "准入原因没有下发给车：全部 VehicleBusinessStateSnapshot 的 blockingFacts 里都没有缺绑定的原因码、需求号或任务类型；且至少有一份快照是在原因被记下之后发的（规格第 5.3 节）",
+      "outcome": "PASS",
+      "expected": "快照 ≥1 份 / 含准入原因 0 份 / 原因记下之后的快照 ≥1 份",
+      "actual": "快照 2 份 / 含准入原因 0 份 / 原因记下之后 2 份（原因观测于 2026-09-20T18:31:39.6231951+00:00，最后一份快照 2026-09-20T18:32:16.6241123+00:00，对照 JourneyBacklog.FirstSeenAt=2026-09-20 18:32:20.6068152+00:00）"
+    },
+    {
+      "id": "G3-10-05",
+      "description": "同一轮里已绑定的 WIRE_TO_GATE 需求照常受理，并在真车载端上装货、卸货、走完（ADMIT_ONLY_BOUND_TASK_TYPES；缺绑定不连带其它任务类型）",
+      "outcome": "PASS",
+      "expected": "Succeeded / Completed / 2 笔操作 Committed",
+      "actual": "Succeeded / Completed / 2 笔操作 Committed"
+    },
+    {
+      "id": "G3-10-06",
+      "description": "消息顺序与向量一致：已绑定需求的计划快照被真车载端确认，其后有业务状态快照被确认；这一趟的计划与清单没有一份被作废",
+      "outcome": "PASS",
+      "expected": "计划 ack / 其后业务快照 ack ≥1 / 作废或未确认 0",
+      "actual": "计划 ack=True / 其后业务快照 ack 2 / 作废或未确认 0（plan r1 TO_PICKUP@N1-3_N1-7:ACTIVE,TO_DROPOFF@关卡:PLANNED | worklist r1 @N1-3_N1-7 PICKUP/WIRE_TO_GATE | plan r2 TO_PICKUP@N1-3_N1-7:ARRIVED,TO_DROPOFF@关卡:PLANNED | worklist r2 @关卡 DROPOFF/WIRE_TO_GATE | plan r3 TO_PICKUP@N1-3_N1-7:COMPLETED,TO_DROPOFF@关卡:ARRIVED）"
+    },
+    {
+      "id": "G3-10-07",
+      "description": "只有计划、还没有清单项时，车载端不显示任何任务类型：StopDirection 已按计划腿显示方向，TaskType 为空（NEVER_INFER_UNBOUND_TASK_TYPE）",
+      "outcome": "FAIL",
+      "expected": "StopDirection 非空 / TaskType (empty)",
+      "actual": "StopDirection=「取货」 TaskType=「焊线→质检关卡」"
+    },
+    {
+      "id": "G3-10-08",
+      "description": "车载端全程只显示被绑定的那一种任务类型：取货点与关卡两站的 TaskType 都非空，四次读数里出现过的文案只有一种，是 WIRE_TO_GATE 的（含「关卡」），不是「未知」（NEVER_INFER_UNBOUND_TASK_TYPE；不比文案全文）",
+      "outcome": "PASS",
+      "expected": "两站都显示 / 只一种文案，含「关卡」",
+      "actual": "en-route-to-origin: StopDirection=「取货」 TaskType=「焊线→质检关卡」；at-origin: StopDirection=「取货」 TaskType=「焊线→质检关卡」；at-destination: StopDirection=「卸货」 TaskType=「焊线→质检关卡」；completed: StopDirection=「卸货」 TaskType=「焊线→质检关卡」"
+    },
+    {
+      "id": "G3-10-09",
+      "description": "终态 NO_DUPLICATE_COMMIT / NO_UNPROVEN_STATE：全程只受理一条需求、两张 RIoT 单、两笔仓位操作，卸完的仓关门、空、锁上、开锁输出复位",
+      "outcome": "PASS",
+      "expected": "1 需求 / 2 单 / 2 操作 / CLOSED/EMPTY/1/0",
+      "actual": "1 需求 / 2 单 / 2 操作 / 仓 1 CLOSED/EMPTY/1/0"
+    }
+  ]
+}

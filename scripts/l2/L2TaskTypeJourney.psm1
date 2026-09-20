@@ -174,6 +174,85 @@ driven by the same code whatever the server calls that intent.
 Returns every reading and every id the scenario needs: StopFacts (en-route-to-origin, at-origin, at-destination,
 completed), Load, Unload, OriginIntent, DestinationIntent, Stage, and the instants the vehicle was put at each stop.
 #>
+<#
+.SYNOPSIS
+Every non-TO_PICKUP order intent of a demand, ordered by UpperId.
+
+.DESCRIPTION
+ORDER BY UpperId because SQLite promises no row order and the caller takes the first row: without it
+the same database and the same demand could answer differently on two runs (control-server#164
+review). One journey carries one second leg today, so the ordering changes no result now -- what it
+guards is the day that premise stops holding.
+
+Returns a single-layer array, wrapped on the way out so that a one-row or empty answer stays an
+array. Do not wrap it again at the call site.
+#>
+function Get-L2SecondLegIntents {
+    param(
+        [Parameter(Mandatory)][object]$Connection,
+        [Parameter(Mandatory)][string]$DemandId)
+
+    return , @(Invoke-L2Query -Connection $Connection -Sql (
+        "SELECT UpperId, OrderId, Status, Purpose FROM OrderIntents " +
+        "WHERE DemandId = '$DemandId' AND Purpose <> 'TO_PICKUP' ORDER BY UpperId"))
+}
+
+<#
+.SYNOPSIS
+Waits for the demand's one second-leg intent to be confirmed, and refuses to guess when there is more than one.
+
+.DESCRIPTION
+Its own function rather than a block inside the journey driver, so that Test-L2SecondLegIntentWait.ps1
+can drive THIS code with a stubbed Invoke-L2Query. A structural copy in a test would be a different
+thing than what runs -- measured, when the first attempt at that copy put the probe outside the module
+and so had no cross-module resolution left to get wrong, and came out green on code that was broken.
+
+Three things here are load-bearing, and all three are about the same property of Wait-L2Condition: its
+poll is `try { $last = & $Probe } catch { $last = $null }` (`L2.psm1:24`), a deliberate and necessary
+tolerance for a transient read, which flattens every failure inside a probe into one symptom -- a
+timeout. So a probe may contain nothing that fails silently:
+
+1. The count check is OUTSIDE the wait. Thrown from inside the probe it is not merely ineffective; it
+   becomes "timed out waiting for the second leg's intent", which reads as the server never confirming
+   one. Finding out otherwise costs a real-rig round.
+2. It is checked on BOTH exits. When only the later-sorting intent is confirmed the probe answers
+   $null for the full timeout, so the failure path has to check too.
+3. The failure path's own read may not replace the failure. A server that is gone is one of the
+   reasons the wait timed out, and then that read throws -- taking with it the only message that says
+   what was being waited for. Only the count check itself may replace it, because that message says
+   more than the timeout does.
+#>
+function Wait-L2SecondLegIntent {
+    param(
+        [Parameter(Mandatory)][object]$Connection,
+        [Parameter(Mandatory)][string]$DemandId,
+        [int]$TimeoutSeconds = 120,
+        [object]$Journal)
+
+    $assertOneSecondLeg = {
+        param($rows)
+        if (@($rows).Count -le 1) { return }
+        throw ("Demand $DemandId has $(@($rows).Count) non-TO_PICKUP order intents " +
+            "($(@($rows | ForEach-Object { "$($_.Purpose)/$($_.UpperId)" }) -join ', ')); " +
+            'this driver assumes one second leg and would silently judge whichever sorted first.')
+    }.GetNewClosure()
+    try {
+        $destinationIntent = Wait-L2Condition -Description 'the second leg''s intent was confirmed' `
+            -Journal $Journal -Criterion 'destination-intent' -TimeoutSeconds $TimeoutSeconds `
+            -Probe {
+                $rows = Get-L2SecondLegIntents -Connection $Connection -DemandId $DemandId
+                if ($rows.Count -ge 1 -and [string]$rows[0].Status -eq 'CONFIRMED') { $rows[0] } else { $null }
+            }.GetNewClosure() -Until { param($v) $null -ne $v }
+    } catch {
+        $rowsAfterFailure = $null
+        try { $rowsAfterFailure = Get-L2SecondLegIntents -Connection $Connection -DemandId $DemandId } catch { }
+        if ($null -ne $rowsAfterFailure) { & $assertOneSecondLeg $rowsAfterFailure }
+        throw
+    }
+    & $assertOneSecondLeg (Get-L2SecondLegIntents -Connection $Connection -DemandId $DemandId)
+    return $destinationIntent
+}
+
 function Invoke-L2TaskTypeJourney {
     param(
         [Parameter(Mandatory)][object]$Context,
@@ -233,13 +312,10 @@ function Invoke-L2TaskTypeJourney {
     $null = Wait-L2Condition -Description 'the load committed and the journey left for its second stop' `
         -Journal $journal -Criterion 'journey-stage' -TimeoutSeconds 180 `
         -Probe { Get-L2RealStage $connection $DemandId }.GetNewClosure() -Until { param($v) $v -eq 'AwaitingGateArrival' }
-    $destinationIntent = Wait-L2Condition -Description 'the second leg''s intent was confirmed' `
-        -Journal $journal -Criterion 'destination-intent' -TimeoutSeconds 120 `
-        -Probe {
-            $rows = Invoke-L2Query -Connection $connection -Sql (
-                "SELECT UpperId, OrderId, Status, Purpose FROM OrderIntents WHERE DemandId = '$DemandId' AND Purpose <> 'TO_PICKUP'")
-            if ($rows.Count -ge 1 -and [string]$rows[0].Status -eq 'CONFIRMED') { $rows[0] } else { $null }
-        }.GetNewClosure() -Until { param($v) $null -ne $v }
+    # 真有第二条意图时抛错，不悄悄取第一条：那说明这条需求的意图比这个驱动设想的多，往下跑出来的每一条
+    # 判据都会是关于「碰巧排在前面的那一条」的，而判据表上看不出这件事。排序的理由见 Get-L2SecondLegIntents。
+    #
+    $destinationIntent = Wait-L2SecondLegIntent -Connection $connection -DemandId $DemandId -Journal $journal
 
     $destinationDepartedAt = [DateTimeOffset]::UtcNow
     Move-L2RealVehicleTo $Context $destinationIntent $DestinationRiotId "the second stop ($DestinationRiotId)"
@@ -247,11 +323,30 @@ function Invoke-L2TaskTypeJourney {
     # Read while the onboard waits for the operator at the second stop, before the door closes: that is the stop line the
     # operator unloads by, and once the unload commits the server moves the worklist on.
     $originDirection = $readings['at-origin'].Direction
+    # 先等这一站的清单被车载端确认，再读它的停靠行——与第一站（上面 origin-worklist-acknowledged）同形。
+    # 停靠行显示的是车载端**应用了的那份清单**，所以「清单已确认」是这条读数的前提而不是它的结论；
+    # 不等就读，读到的可能是上一站的行或一行还没更新的旧值，而判据分辨不出这两种情况
+    # （control-server#164 审查；README 第 14 条）。第二站的清单是第二份，所以门槛是 >= 2。
+    $worklistsAtDestination = 2
     $unload = Invoke-L2TaskTypeStationOperation -Context $Context -DemandId $DemandId -OperationType 'Unload' -CargoState 'EMPTY' `
         -WhileWaiting {
+            # 这两个 scriptblock 都**不能**再 `.GetNewClosure()`。它们写在一个已经是闭包的块里，而在闭包
+            # 内部调用 `GetNewClosure()` 捕获到的是一个空作用域——实测：外层闭包读得到 $DemandId，
+            # 它里面再取一次闭包就读成空。后果不是值不对，是**判据必然红**：探针拿空需求号去查，永远数到
+            # 0 份已确认的清单，60 秒超时（实跑 rig-01，见 evidence/l2/cs203-rig-01-nested-closure-red/）。
+            # 不取闭包才是对的：scriptblock 记住定义它的作用域，那正是这个回调的作用域，隔着
+            # Wait-L2Condition、Wait-L2StopFacts 两层函数调用也读得到。
+            #
+            # 下面那条 `-ne $originDirection` 原来也带 `.GetNewClosure()`，**同一个毛病，在本票之前就有**：
+            # $originDirection 读成 $null，于是那一项等于「Direction 非空」，而同一条判据前面已经判过非空了。
+            # 换句话说「第二站的方向与第一站不同」这半句**一直没有判别力**，一并修掉。
+            $null = Wait-L2Condition -Description 'the onboard acknowledged the worklist at the second stop' `
+                -Journal $journal -Criterion 'destination-worklist-acknowledged' -TimeoutSeconds 60 `
+                -Probe { @((Get-L2DemandJourneySnapshots $connection $DemandId) | Where-Object { $_.Type -eq 'CurrentStopWorklistSnapshot' -and $_.Acknowledged }).Count } `
+                -Until { param($v) $v -ge $worklistsAtDestination }
             Wait-L2StopFacts -Context $Context -Criterion 'stop-line:at-destination' `
                 -Description 'the HMI shows the second stop''s direction and task type' `
-                -Until { param($f) (Test-L2RealPresent $f.Direction) -and (Test-L2RealPresent $f.TaskType) -and $f.Direction -ne $originDirection }.GetNewClosure()
+                -Until { param($f) (Test-L2RealPresent $f.Direction) -and (Test-L2RealPresent $f.TaskType) -and $f.Direction -ne $originDirection }
         }.GetNewClosure()
     $readings['at-destination'] = $unload.WhileWaiting
 
@@ -275,6 +370,14 @@ function Invoke-L2TaskTypeJourney {
     }
 }
 
+# Get-L2SecondLegIntents is exported although only this module calls it, and that is not tidiness --
+# it is what makes it callable at all. A scriptblock that has been through .GetNewClosure() resolves
+# command names against the global table, not against the module it was written in, so a closure here
+# cannot see an unexported function of this same file. It does not say so: the call throws, and
+# Wait-L2Condition's poll swallows every probe exception (`L2.psm1:24`), so the whole thing surfaces
+# 120 seconds later as "timed out waiting for the second leg's intent" -- on the rig, where that reads
+# as a product fault. Measured, not reasoned: scripts/l2/Test-L2ProbeClosureResolvable.ps1 holds the
+# counterexample and fails this repository's CI if any probe closure calls an unexported sibling.
 Export-ModuleMember -Function Get-L2StopFacts, Format-L2StopFacts, Wait-L2StopFacts,
-    Get-L2DemandJourneySnapshots, Format-L2JourneySnapshot,
+    Get-L2DemandJourneySnapshots, Format-L2JourneySnapshot, Get-L2SecondLegIntents, Wait-L2SecondLegIntent,
     Invoke-L2TaskTypeStationOperation, Invoke-L2TaskTypeJourney

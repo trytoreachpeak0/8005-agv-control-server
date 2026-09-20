@@ -440,6 +440,32 @@ DispatchZoneParameters = @{
   `LoadCompensationRequested`，服务端的回复在发件箱）时，`if` 表达式里的 `@()` 会被管道拆成空，StrictMode 下 `.Count`
   抛异常，探测每轮都失败、只记成 `(nothing)`（control-server#154）。`scripts/l2/Test-L2RealInbound.ps1` 在模块内替换掉读库，
   用没有回应、一条回应、两行回应三种行自检，一秒，不起装置。
+- `L2RouteEvidence.psm1` —— 把一趟旅程的 `RouteEvidenceId` 按服务端的算法重算一遍，给 `G3-11-07` 与 `L2-S2W-08`
+  用（control-server#203）。收紧前那两处只判「非空」，而把两端喂反、漏掉一项输入、换掉拼法，服务端存进去的仍然是一个
+  非空的 `MAPCAT-…`——**那趟场景恰恰就是「方向不能反」的现场**。判据同时要求「把两端互换重算得到的是另一个 id」，
+  否则相等只说明这个哈希对方向不敏感。用的场景自己导入：
+  `Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2RouteEvidence.psm1') -Force`。
+  **它是第二份实现，所以两边靠两对钉死的值绑在一起**：站点表到指纹那一半钉在 `HttpRiotMovementGatewayTests`，
+  指纹到 id 那一半钉在 `JourneyPlanCharacterizationTests.TheRouteEvidenceIdOfAWireToGateCandidateIsPinned`；改了服务端任一边的拼法，
+  它自己那条测试先红，那就是「这份要跟着动」的通知。自检 `Test-L2RouteEvidence.ps1`（纯输入，不到一秒，进了 `test.yml`）
+  用同样两对值断言这一份，并逐个扰动八项输入，要求每一项都真的进了哈希。三次对照见
+  `evidence/l2/cs203-route-evidence-README.md`：同一个「只把喂给哈希的两端反过来」的缺陷，收紧后只红这一条，收紧前全绿。
+- **新写 L2 查询时，列名从 `ControlServerDbContext.cs` 的 Row 类实读，别从旁边一条查询抄。**
+  SQLite 的列名错误要到**运行时**才报（`SQLite Error 1: 'no such column: X'`），语法解析、编译、格式检查
+  三道都看不见；而 G3 共用函数里的查询**本机只有真装置跑得到**——control-server#203 就是这样白跑了三次真装置，
+  错在 `JourneyBacklog` 根本没有 `Status` 列。
+  另外，看到一条查询写成 `SELECT *` 再按名字过滤属性时，**先问它是不是有意的**：`L2-DC-12` 原来那条正是因为
+  不假设列名才那么写，把它「改进」成显式列名就是上面那次。
+- `L2RunLedger.psm1` —— 本机真装置运行的台账（control-server#203）。**每次真装置运行的起止与三端提交都记在
+  `%LOCALAPPDATA%\8005-l2\rig-runs.log`**，一行一条 NDJSON，由 `Invoke-L2Scenario.ps1` 自己追加。合成运行不写。
+  起始行在**拿到桌面锁之后**写，所以时间戳是装置上的时间不是排队的时间；结束行在**释放桌面锁之前**写，一对行
+  总在同一次持锁之内。只有写过起始行的运行才写结束行——孤零零一条结束行会被读成「起始行丢了」，而那正是这个
+  台账要排除的事。
+  **写入者只有编排器一个**，不靠会话的包装脚本：control-server#164 那次的台账就是会话自己建、包装脚本追加的，
+  两个后台批次同时写丢了两行（PR #176）。丢一行比没有台账更糟——它两边的运行看上去仍然是齐的。
+  追加本身跨进程安全（独占打开 + 退避重试），不依赖调用方恰好持有哪把锁：真装置运行确实被桌面锁串起来了，但
+  把台账的可信度挂在另一个东西的锁上，等于让它取决于写在别处的一条规则。自检
+  `Test-L2RunLedger.ps1`（两个真进程各追加 300 行，几秒，不起装置，进了 `test.yml`）。
 
 `Onboard` 在两套装置下**是两个不同的东西**：合成装置下是假车载端控制面的 `L2Double`，真装置下
 是 UIA 驱动（`CanSubmit()` / `SetSublot()` / `SubmitReady()` / `Submit()`）。`Simulator` 只在真装置

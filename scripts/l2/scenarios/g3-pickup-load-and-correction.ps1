@@ -255,9 +255,21 @@ $loadStatus = Wait-L2Condition -Description 'the server judged the load result' 
 # 服务端把仓位命令记为已答复（SettleAnsweredCommandAsync），是在旅程运行时消费这份结果、离开
 # AwaitingLoadResult 的那一轮里做的，比结果落库晚一个轮询。首跑就是在这之前读的发件箱。
 if ($loadStatus -eq 'Committed') {
-    $null = Wait-L2Condition -Description 'the journey runtime consumed the load result' `
+    # 等的是阶段真的**离开**装货，不是「不等于 AwaitingLoadResult」。后者在运行时还没走到装货结果那一步时
+    # 同样成立——装货已经 Committed 而阶段还停在 AwaitingSublot 就是这种情形——于是这个等待会在它要观测的
+    # 事情发生之前就收工，后面 G3-02-05 读到的发件箱确认标记和 G3-02-06 读到的阶段都取早了
+    # （control-server#203 条目 7，来自 #193 PR #194 的审查）。
+    #
+    # 集合按 JourneyRuntimeStage 的次序取装货之后的那几个（`WireToGateModels.cs`）。Blocked 也算「离开」，
+    # 这一条是刻意的：旅程停摆时等待立刻结束，让红落在 G3-02-06 的 `$stageAfterLoad -ne 'Blocked'` 上、在
+    # 判据表里连同阶段一起可读，而不是变成一行 60 秒超时异常。仍然卡在装货之前或之中，才是超时。
+    $null = Wait-L2Condition -Description 'the journey runtime consumed the load result and left the load' `
         -Journal $journal -Criterion 'journey-stage' -TimeoutSeconds 60 `
-        -Probe { Get-Stage } -Until { param($v) $v -ne 'AwaitingLoadResult' }
+        -Probe { Get-Stage } -Until {
+            param($v)
+            $v -in @('AwaitingStationDeparture', 'AwaitingDepartureSafety', 'AwaitingGateArrival',
+                'AwaitingUnloadResult', 'Completed', 'Blocked')
+        }
 }
 
 # 协议 2.0.0 第 2 项：两条消息都不再带 demandId。请求给出派车范围的 expectedSublots，提交只报扫到的 sublot，
