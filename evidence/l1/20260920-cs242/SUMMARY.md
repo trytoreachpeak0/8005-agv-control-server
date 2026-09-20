@@ -10,6 +10,7 @@
 | `1b4adbb2` | 测试先行：同轮不重抢（在顶端即绿，是「不回退」护栏） |
 | `06da75b7` | 测试先行：Gone 不回退 + 只挡自己那条阻断 |
 | `64bc3afc` | 实现：`DispatchRoundFacts.ClaimsIntakeRefused` |
+| 独立审查后的返工 | S1（撤 claim 时一并撤减项）、S2（每轮重置与自愈）、N1（黑名单改白名单） |
 
 ## 01-red-tests — 测试提交上的红
 
@@ -57,12 +58,41 @@ backlog 写了对应的 `FINAL_*` 原因码），那几句在红的那一轮里�
 transcript 一起，一个字母都没有改动——`outcome accepted=` 那一行打印的就是
 `round.AcceptedDemandIds`，本票没有动那个集合的内容。
 
+## 04-fault-injection — 注入故障让新判据变红
+
+独立审查补的两条判据，各自注入一次它要防的那个故障，确认它真的会红。
+
+### s1-without-the-withdrawal.txt
+
+把 `DropWhatTheSegmentStagedAsync` 里那句 `claimsIntakeRefused.Remove(demandId)` 删掉，
+`ARefusalTheSegmentNeverFinishedReportingIsWithdrawnWithItsClaim` 当场红：
+
+```
+  Error Message:
+   Assert.NotNull() Failure: Value of type 'Nullable<DateTimeOffset>' does not have a value
+```
+
+即：第一辆车被拒、随后的 backlog 写失败、第二辆车真把这条需求受理了，而阻断**没有**被清——
+一个留在减项里的 id 把它多扣了一轮。
+
+### s2-subtraction-leaking-across-rounds.txt
+
+模拟「减项跨轮残留」（例如有人把它从 `RunAsync` 的局部变量提成字段）：让
+`ABlockHeldBackByARefusedClaimClearsOnTheNextRoundThatAcceptsIt` 的第三轮也带上减项，
+它当场红，而且红成审查预言的样子——阻断**永远不再被清**：
+
+```
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+Collection: [StructuralDispatchBlock { ... ClearedAt = , ... }]
+```
+
 ## 03-format — 格式检查
 
-`dotnet format --verify-no-changes`，实现三个文件与测试两个文件各一次，两次都是
+`dotnet format --verify-no-changes`，实现三个文件与测试三个文件各一次，两次都是
 exit 0、无输出。
 
-另外核对过五个文件都没有 BOM（前三个字节是 `75 73 69`，即 `usi`），因为编译器与
+另外核对过六个文件都没有 BOM（前三个字节是 `75 73 69`，即 `usi`），因为编译器与
 `dotnet format` 都看不见 BOM。
 
 ## 没有做的事

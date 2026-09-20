@@ -208,7 +208,8 @@ public sealed class DispatchRoundRunner(
                 // claims were made good on is read from the database there, not from the way the segment ended --
                 // a budget can just as well fire the moment after the acceptance committed.
                 await DropWhatTheSegmentStagedAsync(
-                    backlogByDemandId, claimedThisSegment, acceptedDemandIds, cancellationToken)
+                    backlogByDemandId, claimedThisSegment, acceptedDemandIds, claimsIntakeRefused,
+                    cancellationToken)
                     .ConfigureAwait(false);
             }
             // A vehicle whose own reads fail -- an unreachable RIoT, an Onboard fact that cannot be read, an
@@ -240,7 +241,8 @@ public sealed class DispatchRoundRunner(
                 }
 
                 await DropWhatTheSegmentStagedAsync(
-                    backlogByDemandId, claimedThisSegment, acceptedDemandIds, cancellationToken)
+                    backlogByDemandId, claimedThisSegment, acceptedDemandIds, claimsIntakeRefused,
+                    cancellationToken)
                     .ConfigureAwait(false);
             }
         }
@@ -314,7 +316,11 @@ public sealed class DispatchRoundRunner(
         Dictionary<string, JourneyBacklogRow> backlogByDemandId,
         CancellationToken cancellationToken) =>
         DropWhatTheSegmentStagedAsync(
-            backlogByDemandId, [], new HashSet<string>(StringComparer.Ordinal), cancellationToken);
+            backlogByDemandId,
+            [],
+            new HashSet<string>(StringComparer.Ordinal),
+            new HashSet<string>(StringComparer.Ordinal),
+            cancellationToken);
 
     /// <inheritdoc cref="DropWhatTheSegmentStagedAsync(Dictionary{string, JourneyBacklogRow}, CancellationToken)"/>
     /// <remarks>
@@ -331,16 +337,26 @@ public sealed class DispatchRoundRunner(
     /// cleared first, so this reads what the acceptance transaction actually committed. A demand whose row is
     /// there was accepted, whatever threw or expired afterwards, and its claim stands.
     /// </para>
+    /// <para>
+    /// <b>The round-end subtraction goes with the claim, unconditionally</b> (control-server#242). It only means
+    /// anything while a claim is standing: withdrawn, the demand is back in play and the vehicle behind may accept
+    /// it — and then the round-end hook must clear its block like any other acceptance. The window is narrow but
+    /// real: intake reports a refusal, the demand is named in the subtraction, and the backlog write right after
+    /// it runs out the budget or throws. Leaving the id behind would hold that block back for a round even though
+    /// the demand was accepted after all.
+    /// </para>
     /// </remarks>
     private async Task DropWhatTheSegmentStagedAsync(
         Dictionary<string, JourneyBacklogRow> backlogByDemandId,
         IReadOnlyList<string> claimedThisSegment,
         HashSet<string> acceptedDemandIds,
+        HashSet<string> claimsIntakeRefused,
         CancellationToken cancellationToken)
     {
         dbContext.ChangeTracker.Clear();
         foreach (string demandId in claimedThisSegment)
         {
+            claimsIntakeRefused.Remove(demandId);
             bool accepted = await dbContext.AcceptedDemands
                 .AnyAsync(row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
             if (!accepted)
@@ -495,9 +511,14 @@ public sealed class DispatchRoundRunner(
             // Nothing was written, so the claim above is not a demand this server took. It stands for the rest of
             // the round -- the demand is bound to this attempt -- but the round's end must not read it as an
             // acceptance and clear the demand's structural block on the strength of it (control-server#242).
-            // CandidateGone is left out: that demand is no longer in the catalog, so a block against it is about
-            // nothing and clearing it is the right answer rather than a lost alarm.
-            if (result.IntakeOutcome != DemandIntakeOutcome.CandidateGone)
+            //
+            // Named one by one rather than as "anything but CandidateGone": a new outcome on this enum has to be
+            // thought about here rather than being swept in by a blacklist. CandidateGone is the one refusal that
+            // stays out -- that demand is no longer in the catalog, so a block against it is about nothing and
+            // clearing it is the right answer rather than a lost alarm.
+            if (result.IntakeOutcome is DemandIntakeOutcome.CandidateChanged
+                or DemandIntakeOutcome.FinalAdmissionRejected
+                or DemandIntakeOutcome.JourneyPlanIncomplete)
             {
                 claimsIntakeRefused.Add(selected.Snapshot.DemandId);
             }

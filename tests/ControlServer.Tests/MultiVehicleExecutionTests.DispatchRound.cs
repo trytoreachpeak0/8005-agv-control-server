@@ -1025,6 +1025,62 @@ public sealed partial class MultiVehicleExecutionTests
     }
 
     /// <summary>
+    /// A refusal the segment never finished reporting is withdrawn with the claim it belongs to: the vehicle
+    /// behind accepts the demand, and the round's end clears its block as on any other acceptance.
+    /// </summary>
+    /// <remarks>
+    /// The subtraction only means anything while a claim is standing. Between naming a demand in it and writing
+    /// the backlog row there is one database write, and a budget or a failed write can end the segment inside that
+    /// window — control-server#231's and control-server#239's path, reached from a refusal instead of from the
+    /// acceptance. The claim is then withdrawn, the demand is back in play, and a vehicle behind can accept it for
+    /// real; an id left behind in the subtraction would hold that demand's block back for a round although
+    /// nothing was wrong with it any more.
+    /// </remarks>
+    [Fact]
+    public async Task ARefusalTheSegmentNeverFinishedReportingIsWithdrawnWithItsClaim()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(
+            configure: options => options.Fleet = options.Fleet[..2]);
+        AcceptedDemandSnapshot only = FleetFixture.Demand(0, "N1-1", 0);
+        fixture.Catalog.Set([only]);
+        EventRecordingLogger<StructuralDispatchBlockSink> blockLog =
+            await RaiseStandingBlockAsync(fixture, only, Now.AddMinutes(-30));
+        fixture.Catalog.ChangedOnReread.Add(only.DemandId);
+        // The first vehicle's backlog write -- the one right after the refusal names the demand in the
+        // subtraction -- fails the way a write that cannot be committed does. The same event puts the catalog
+        // back in order, so the vehicle behind meets a demand it can really accept.
+        bool interrupted = false;
+        fixture.Context.SavingChanges += (_, _) =>
+        {
+            if (interrupted || fixture.Catalog.ReadCount < 2)
+            {
+                return;
+            }
+            interrupted = true;
+            fixture.Catalog.ChangedOnReread.Clear();
+            throw new HttpRequestException("The backlog write could not be committed.");
+        };
+
+        await fixture.RunRoundAsync();
+
+        // The window this test is about was really entered: the first vehicle was refused at intake and then lost
+        // its segment to the failed write.
+        Assert.True(interrupted);
+        Assert.Contains(fixture.EngineLog.Entries, entry => entry.EventId.Id == 2123);
+        // The vehicle behind took the demand for real.
+        fixture.Context.ChangeTracker.Clear();
+        AcceptedDemandRow accepted = Assert.Single(await fixture.Context.AcceptedDemands.AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(only.DemandId, accepted.DemandId);
+        // So the block is cleared on that acceptance, this round rather than the next one.
+        StructuralDispatchBlockRow row = Assert.Single(
+            await fixture.Context.Set<StructuralDispatchBlockRow>().AsNoTracking()
+                .ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.NotNull(row.ClearedAt);
+        Assert.Equal(2115, Assert.Single(blockLog.Entries).EventId.Id);
+    }
+
+    /// <summary>
     /// A demand intake refused stays claimed for the rest of the round: the vehicles behind do not try it again,
     /// and no second intake is attempted on it.
     /// </summary>
