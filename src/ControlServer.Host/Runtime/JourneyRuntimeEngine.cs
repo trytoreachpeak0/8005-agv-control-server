@@ -1008,7 +1008,9 @@ public sealed class JourneyRuntimeEngine(
             stop.VehicleBusinessMessageId,
             runtime.AgvId,
             session.SessionGeneration,
-            TransportBusinessState(runtime.VehicleBusinessRevision, LoadingPhase(runtime.Stage, loadBatchClosed: false)),
+            TransportBusinessState(
+                StopRevision(runtime.VehicleBusinessRevision, stop),
+                LoadingPhase(runtime.Stage, loadBatchClosed: false)),
             cancellationToken).ConfigureAwait(false);
         // ADR-cross-0055: the station departure wait starts at the arrival. Seeded ahead of the
         // worklist, whose save carries it, because the worklist is where the vehicle is told the
@@ -1021,7 +1023,7 @@ public sealed class JourneyRuntimeEngine(
             Worklist(
                 stop,
                 demands,
-                runtime.WorklistRevision,
+                StopRevision(runtime.WorklistRevision, stop),
                 StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout)),
             cancellationToken).ConfigureAwait(false);
         await RetireSupersededSnapshotAsync(PickupDispatchPlanMessageId(runtime), cancellationToken)
@@ -1031,7 +1033,8 @@ public sealed class JourneyRuntimeEngine(
             runtime.AgvId,
             session.SessionGeneration,
             JourneyPlanBuilder.Plan(
-                runtime, stops.Stops, stop, arrivedAtCurrent: true, runtime.PlanRevision + 1),
+                runtime, stops.Stops, stop, arrivedAtCurrent: true,
+                PlanRevisionAt(runtime.PlanRevision, stop, arrivedAtStop: true)),
             cancellationToken).ConfigureAwait(false);
         // 期待子批 = 这个停靠上还没终结的需求（protocol 2.0.0 第 2 项）。今天一个停靠一条需求，所以就是那一条；
         // 「未装」与「未终结」的区分要等装货闭环落到从属需求行上（批次7-06、7-07），本票不写那一列，也就还分不开。
@@ -1043,7 +1046,7 @@ public sealed class JourneyRuntimeEngine(
             new SublotEntryRequest(
                 stop.OperationSessionId,
                 stop.StationId,
-                runtime.WorklistRevision,
+                StopRevision(runtime.WorklistRevision, stop),
                 [.. demands.Select(item => item.Demand.Sublot)]),
             cancellationToken).ConfigureAwait(false);
     }
@@ -1091,7 +1094,8 @@ public sealed class JourneyRuntimeEngine(
             runtime.AgvId,
             session.SessionGeneration,
             JourneyPlanBuilder.Plan(
-                runtime, stops.Stops, stops.Current, arrivedAtCurrent: false, runtime.PlanRevision),
+                runtime, stops.Stops, stops.Current, arrivedAtCurrent: false,
+                PlanRevisionAt(runtime.PlanRevision, stops.Current, arrivedAtStop: false)),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -1179,7 +1183,9 @@ public sealed class JourneyRuntimeEngine(
             stop.VehicleBusinessMessageId,
             runtime.AgvId,
             session.SessionGeneration,
-            TransportBusinessState(runtime.VehicleBusinessRevision + 1, LoadingPhase(runtime.Stage, loadBatchClosed: true)),
+            TransportBusinessState(
+                StopRevision(runtime.VehicleBusinessRevision, stop),
+                LoadingPhase(runtime.Stage, loadBatchClosed: true)),
             cancellationToken).ConfigureAwait(false);
         // The drop-off stop has no departure wait: ADR-cross-0055's wait is the pickup's.
         await publisher.PublishCurrentStopWorklistAsync(
@@ -1189,7 +1195,7 @@ public sealed class JourneyRuntimeEngine(
             Worklist(
                 stop,
                 stops.CurrentStopDemands,
-                runtime.WorklistRevision + 1,
+                StopRevision(runtime.WorklistRevision, stop),
                 stationDepartureDeadlineAt: null),
             cancellationToken).ConfigureAwait(false);
         await publisher.PublishUpcomingStopPlanAsync(
@@ -1197,7 +1203,8 @@ public sealed class JourneyRuntimeEngine(
             runtime.AgvId,
             session.SessionGeneration,
             JourneyPlanBuilder.Plan(
-                runtime, stops.Stops, stop, arrivedAtCurrent: true, runtime.PlanRevision + 2),
+                runtime, stops.Stops, stop, arrivedAtCurrent: true,
+                PlanRevisionAt(runtime.PlanRevision, stop, arrivedAtStop: true)),
             cancellationToken).ConfigureAwait(false);
         int[] slots = JsonSerializer.Deserialize<int[]>(anchor.Membership.TargetSlotsJson) ?? [];
         // The unload carries the admission where the AREA machine is the drop-off (STAGING_TO_WIRE).
@@ -1804,6 +1811,24 @@ public sealed class JourneyRuntimeEngine(
 
     // Derived rather than stored: the row predates this snapshot, and a deterministic id from the
     // demand is what the stored ones are anyway (WireToGateStore.ToRuntimeRow), without a migration.
+
+    /// <summary>
+    /// 车辆业务状态与清单这两条流，在这个停靠上发的是第几号：每个停靠各发一张，所以是基准加序位。
+    /// </summary>
+    /// <remarks>
+    /// 在批次7-03 之前这两个偏移写死在两个发布方法里——取货那段发基准，关卡那段发基准 +1。写死的 +1 就是「这趟只有两个
+    /// 停靠」这个假设本身。单需求两停靠下这里算出来的还是基准与基准 +1。
+    /// </remarks>
+    private static long StopRevision(long journeyBase, JourneyStopRow stop) =>
+        journeyBase + stop.Sequence - 1;
+
+    /// <summary>
+    /// 计划流在这一刻发的是第几号。它比上面那条多一张：派车时先发一张「车还在路上」的计划（CV-DEMAND-ACCEPT-TO-PICKUP），
+    /// 之后每到一个停靠再发一张。所以号数就是「到站几次」——派车时零次，取货到站一次，卸货到站两次。
+    /// </summary>
+    private static long PlanRevisionAt(long journeyBase, JourneyStopRow stop, bool arrivedAtStop) =>
+        journeyBase + (arrivedAtStop ? stop.Sequence : stop.Sequence - 1);
+
     /// <summary>
     /// 一个停靠的离站核验身份。今天只有取货停靠有（卸货停靠是旅程的终点，没有「离开之前」可言），所以取不到就是
     /// 在一个不该问离站安全的停靠上问了。
@@ -1833,7 +1858,7 @@ public sealed class JourneyRuntimeEngine(
     /// </para>
     /// <para>
     /// 离站核验过期重发会换一对新 id，写回停靠行（见 <see cref="ReissueExpiredDepartureCheckAsync"/>），所以这里读停靠行
-    /// 读到的就是当前那一对。归属取 <see cref="JourneyStopCursor.Memberships"/> 而不是未终结的那一份：一条需求终结
+    /// 读到的就是当前那一对。归属取 <see cref="JourneyStopCursor.AllDemands"/> 而不是未终结的那一份：一条需求终结
     /// 不会让它的装卸命令变成别人的消息。
     /// </para>
     /// </remarks>
@@ -1854,10 +1879,10 @@ public sealed class JourneyRuntimeEngine(
                 ids.Add(departureCheck);
             }
         }
-        foreach (JourneyDemandRow membership in stops.Memberships)
+        foreach (JourneyStopDemand demand in stops.AllDemands)
         {
-            ids.Add(membership.LoadCommandMessageId);
-            ids.Add(membership.UnloadCommandMessageId);
+            ids.Add(demand.Membership.LoadCommandMessageId);
+            ids.Add(demand.Membership.UnloadCommandMessageId);
         }
 
         return ids;

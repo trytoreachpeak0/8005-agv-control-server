@@ -34,27 +34,28 @@ internal sealed class JourneyStopCursor
     private JourneyStopCursor(
         JourneyRuntimeStage stage,
         IReadOnlyList<JourneyStopRow> stops,
-        IReadOnlyList<JourneyDemandRow> memberships,
-        IReadOnlyList<JourneyStopDemand> demands)
+        IReadOnlyList<JourneyStopDemand> allDemands)
     {
         _stage = stage;
         Stops = stops;
-        Memberships = memberships;
-        Demands = demands;
+        AllDemands = allDemands;
+        Demands = [.. allDemands.Where(item =>
+            item.Demand.Status is not (DemandExecutionStatus.Succeeded or DemandExecutionStatus.Cancelled))];
     }
 
     /// <summary>旅程的全部停靠，按 <see cref="JourneyStopRow.Sequence"/>。</summary>
     public IReadOnlyList<JourneyStopRow> Stops { get; }
 
     /// <summary>
-    /// 旅程未被移除的全部归属，<b>含已终结的需求</b>。重放白名单用它：白名单是「这趟旅程有权发的消息」，
+    /// 未移除的全部归属，连同各自的需求行，<b>含已终结的</b>。重放白名单用它：白名单是「这趟旅程有权发的消息」，
     /// 一条需求终结不会把它的装卸命令变成别人的消息。用 <see cref="Demands"/> 去筛，终结的那一刻白名单就会缩水，
     /// 而缩水之后那条命令的补发就断了。
     /// </summary>
-    public IReadOnlyList<JourneyDemandRow> Memberships { get; }
+    public IReadOnlyList<JourneyStopDemand> AllDemands { get; }
 
     /// <summary>
     /// 旅程此刻还带着的需求：归属未被移除，且需求本身还没终结（<see cref="DemandJourneyLookup.OpenDemands"/> 的那个定义）。
+    /// 清单项与录入请求的期待子批取它。
     /// </summary>
     public IReadOnlyList<JourneyStopDemand> Demands { get; }
 
@@ -74,9 +75,16 @@ internal sealed class JourneyStopCursor
         return [.. Demands.Where(demand => StopIdOf(demand.Membership, stop.StopRole) == stop.StopId)];
     }
 
-    /// <summary>锚需求在这趟旅程里的归属行。装卸命令、离站核验的 <c>demandId</c> 都取它。</summary>
+    /// <summary>
+    /// 锚需求在这趟旅程里的归属行。装卸命令与离站核验的 <c>demandId</c> 都取它。
+    /// </summary>
+    /// <remarks>
+    /// 从<b>未移除的全部</b>归属里找，不是从 <see cref="Demands"/>——一条需求终结之后它的归属行仍然是它那几个 id 的载体，
+    /// 而推进段可能正要拿它去结算刚发出去的那条命令。用未终结的那一份去找，终结的那一刻这里就开始抛。
+    /// 归属被移除（批次7-10 的改派）才是真的找不到了。
+    /// </remarks>
     public JourneyStopDemand Anchor(string demandId) =>
-        Demands.SingleOrDefault(demand => demand.Membership.DemandId == demandId)
+        AllDemands.SingleOrDefault(demand => demand.Membership.DemandId == demandId)
         ?? throw new InvalidDataException($"Demand '{demandId}' is not carried by this journey any more.");
 
     public static async Task<JourneyStopCursor> LoadAsync(
@@ -97,15 +105,13 @@ internal sealed class JourneyStopCursor
             throw new InvalidDataException($"Journey '{runtime.JourneyId}' has no stops.");
         }
 
-        // 按加入旅程的先后排，同一刻加入的再按需求 id 定序。排序在客户端做：SQLite 不接受 DateTimeOffset 的 ORDER BY，
-        // 而一趟旅程的归属至多几条，取回来再排没有代价。
-        JourneyDemandRow[] memberships = await dbContext.Set<JourneyDemandRow>().AsNoTracking()
-            .Where(row => row.JourneyId == runtime.JourneyId && row.RemovedAt == null)
-            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        // 归属连着需求行一起取：受理事务同一次保存写下归属与需求，所以这个内连接丢不了行。按加入旅程的先后排，
+        // 同一刻加入的再按需求 id 定序；排序在客户端做，因为 SQLite 不接受 DateTimeOffset 的 ORDER BY，而一趟旅程的
+        // 归属至多几条，取回来再排没有代价。
         JourneyStopDemand[] demands = await dbContext.Set<JourneyDemandRow>().AsNoTracking()
             .Where(row => row.JourneyId == runtime.JourneyId && row.RemovedAt == null)
             .Join(
-                DemandJourneyLookup.OpenDemands(dbContext).AsNoTracking(),
+                dbContext.AcceptedDemands.AsNoTracking(),
                 membership => membership.DemandId,
                 demand => demand.DemandId,
                 (membership, demand) => new JourneyStopDemand(membership, demand))
@@ -113,7 +119,6 @@ internal sealed class JourneyStopCursor
         return new JourneyStopCursor(
             runtime.Stage,
             stops,
-            [.. memberships.OrderBy(row => row.AddedAt).ThenBy(row => row.DemandId, StringComparer.Ordinal)],
             [.. demands
                 .OrderBy(row => row.Membership.AddedAt)
                 .ThenBy(row => row.Membership.DemandId, StringComparer.Ordinal)]);
