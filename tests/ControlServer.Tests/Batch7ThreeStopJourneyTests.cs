@@ -1,3 +1,4 @@
+using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
@@ -47,6 +48,69 @@ public sealed class Batch7ThreeStopJourneyTests
     public async Task AJourneyWithThreeStopsLoadsAtBothPickupsAndUnloadsBothDemands()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await RunThreeStopJourneyAsync(fixture);
+
+        Assert.Equal(JourneyRuntimeStage.Completed, (await fixture.RuntimeAsync(FirstDemandId)).Stage);
+        Assert.All(
+            await fixture.Context.Set<JourneyStopRow>().AsNoTracking()
+                .ToArrayAsync(TestContext.Current.CancellationToken),
+            stop => Assert.Equal(JourneyStopStatuses.Completed, stop.Status));
+    }
+
+    /// <summary>
+    /// 一趟多停靠旅程跑完之后，三条快照流各自的号严格递增，而且下一趟的基准高过本趟用掉的最高号
+    /// （批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>两件事一条用例守，因为它们的失败形状是同一个：车载端拒收然后拆会话。</b>车载端只按消息类型记修订号
+    /// （<c>WireToGateSessionClient</c>），号更低是 <c>SNAPSHOT_REVISION_REGRESSION</c>，号相同而内容不同是
+    /// <c>SNAPSHOT_REVISION_CONTENT_CONFLICT</c>，两种都当场断开。
+    /// </para>
+    /// <para>
+    /// <b>趟内递增</b>守的是两套算式互相钳制：到站发「基准 + 序位」，途中追加引起的重发发「上一号 + 1」，
+    /// 基准不跟着抬高的话，一次追加就让下一次到站算出与重发相同的号，两次追加算出的号比它还低。
+    /// </para>
+    /// <para>
+    /// <b>跨趟的那一半</b>守的是每趟的预留量：预留是照「一趟两个停靠」定的常数，而停靠数没有上界。判据写成
+    /// 「计数器 + 预留量 &gt; 本趟最高号」，那正是下一趟受理时会算出来的基准，所以它直接是下一趟的第一条快照
+    /// 会不会撞号——不是一个近似。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task EverySnapshotStreamStaysMonotonicAndLeavesRoomForTheNextJourney()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await RunThreeStopJourneyAsync(fixture);
+
+        VehicleSnapshotRevisionRow counter = await CounterAsync(fixture);
+        foreach ((string messageType, long reserve) in new[]
+        {
+            ("VehicleBusinessStateSnapshot", WireToGateStore.RevisionsPerJourney),
+            ("CurrentStopWorklistSnapshot", WireToGateStore.RevisionsPerJourney),
+            ("UpcomingStopPlanSnapshot", WireToGateStore.PlanRevisionsPerJourney)
+        })
+        {
+            long[] published = await PublishedRevisionsAsync(fixture, messageType);
+            Assert.NotEmpty(published);
+            Assert.Equal(published.Order().Distinct().ToArray(), published);
+
+            long nextJourneyBase = messageType switch
+            {
+                "VehicleBusinessStateSnapshot" => counter.VehicleBusinessRevision,
+                "CurrentStopWorklistSnapshot" => counter.WorklistRevision,
+                _ => counter.PlanRevision
+            } + reserve;
+            Assert.True(
+                nextJourneyBase > published[^1],
+                $"{messageType}: 下一趟的基准 {nextJourneyBase} 没有越过本趟用掉的最高号 {published[^1]}。");
+        }
+    }
+
+    /// <summary>受理、追加、跑完三个停靠，两条需求都卸掉。</summary>
+    private static async Task RunThreeStopJourneyAsync(RuntimeFixture fixture)
+    {
         fixture.Catalog.Set(
             fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)),
             fixture.Demand(SecondDemandId, SecondSublot, Now.AddMinutes(-9), area: SecondPickupArea));
@@ -83,11 +147,25 @@ public sealed class Batch7ThreeStopJourneyTests
         await ApplySafeResultAsync(fixture, SecondDemandId, SlotOperationType.Unload, SlotBusinessState.Empty);
         await TickAndRunAsync(fixture);
 
-        Assert.Equal(JourneyRuntimeStage.Completed, (await fixture.RuntimeAsync(FirstDemandId)).Stage);
-        Assert.All(
-            await fixture.Context.Set<JourneyStopRow>().AsNoTracking()
-                .ToArrayAsync(TestContext.Current.CancellationToken),
-            stop => Assert.Equal(JourneyStopStatuses.Completed, stop.Status));
+    }
+
+    /// <summary>这条流按发出先后排好的修订号。</summary>
+    private static async Task<long[]> PublishedRevisionsAsync(RuntimeFixture fixture, string messageType)
+    {
+        string property = SnapshotRevisionProperty(messageType)!;
+        ProtocolOutboxRow[] rows = [.. (await fixture.Context.ProtocolOutbox.AsNoTracking()
+                .Where(row => row.MessageType == messageType)
+                .ToArrayAsync(TestContext.Current.CancellationToken))
+            .OrderBy(row => row.CreatedAt)
+            .ThenBy(row => row.MessageId, StringComparer.Ordinal)];
+        List<long> revisions = [];
+        foreach (ProtocolOutboxRow row in rows)
+        {
+            using JsonDocument document = JsonDocument.Parse(row.PayloadJson);
+            revisions.Add(document.RootElement.GetProperty("payload").GetProperty(property).GetInt64());
+        }
+
+        return [.. revisions];
     }
 
     /// <summary>

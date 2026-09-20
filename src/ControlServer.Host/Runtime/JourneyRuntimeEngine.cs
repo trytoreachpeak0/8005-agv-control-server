@@ -1370,6 +1370,15 @@ public sealed class JourneyRuntimeEngine(
                 runtime, stops.Stops, stop, arrivedAtCurrent: true,
                 PlanRevisionAt(runtime.PlanRevision, stop, arrivedAtStop: true)),
             cancellationToken).ConfigureAwait(false);
+        // 三条流在这里一起发出，就在这里一起结清（批次7-06）。清单那条在 PublishStopWorklistAsync 里自己结过，
+        // 这里再报一次是幂等的：Raise 只在比现有的更高时才动。
+        await AdvanceSnapshotRevisionCountersAsync(
+                runtime.AgvId,
+                StopRevision(runtime.VehicleBusinessRevision, stop),
+                null,
+                PlanRevisionAt(runtime.PlanRevision, stop, arrivedAtStop: true),
+                cancellationToken)
+            .ConfigureAwait(false);
         await PublishEntryRequestAsync(runtime, stops, session, cancellationToken).ConfigureAwait(false);
     }
 
@@ -1421,7 +1430,9 @@ public sealed class JourneyRuntimeEngine(
             session.SessionGeneration,
             Worklist(stop, outstanding, revision, stationDepartureDeadlineAt),
             cancellationToken).ConfigureAwait(false);
-        await AdvanceWorklistRevisionCounterAsync(runtime.AgvId, revision, cancellationToken).ConfigureAwait(false);
+        await AdvanceSnapshotRevisionCountersAsync(
+                runtime.AgvId, null, revision, null, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>取货停靠此刻这一版的录入请求，期待子批就是清单那一版列的那些。</summary>
@@ -1460,32 +1471,49 @@ public sealed class JourneyRuntimeEngine(
     }
 
     /// <summary>
-    /// 保证下一趟旅程的清单基准高于本趟已经用过的任何一个号。
+    /// 保证下一趟旅程的三个基准都高于本趟已经用过的任何一个号（批次7-06，control-server#211）。
     /// </summary>
     /// <remarks>
     /// <para>
-    /// 受理时按车计数器被推进到这趟的基准，下一趟的基准是它加上每趟的预留量
-    /// （<see cref="WireToGateStore.RevisionsPerJourney"/>）——那个预留量是照「一趟两个停靠、各发一版」定的。多需求
-    /// 或多停靠的旅程会发得更多，于是本趟的号可能越过下一趟的基准，而车载端只按消息类型记修订号，一次回退就是
-    /// <c>SNAPSHOT_REVISION_REGRESSION</c> 断会话。
+    /// 受理时按车计数器被推进到这趟的三个基准，下一趟的基准是它们各自加上每趟的预留量
+    /// （<see cref="WireToGateStore.RevisionsPerJourney"/> 与 <see cref="WireToGateStore.PlanRevisionsPerJourney"/>）
+    /// ——那两个预留量都是照「一趟两个停靠」定的。多需求或多停靠的旅程三条流都会发得更多，于是本趟的号可能越过
+    /// 下一趟的基准，而车载端只按消息类型记修订号，一次回退就是 <c>SNAPSHOT_REVISION_REGRESSION</c> 断会话。
     /// </para>
     /// <para>
-    /// <b>单需求旅程一次也不会推进它</b>：那时最大的号正好落在预留里，条件不成立。所以这条只在多需求下起作用，
-    /// 单需求的修订号流逐字不变——<c>WirePin</c> 的「同一辆车跑两趟」那条钉着它。
+    /// <b>三条流一起推进，而不是每条流各记得调一次。</b>这之前只有清单流有这一步，车辆业务状态流与计划流漏掉了
+    /// ——而它们同样按停靠发。三条流的号在同一处发出，就在同一处一起结清：漏掉一条流的代价是下一趟的第一条快照
+    /// 撞号或回退，而那要到下一趟才看得见。
+    /// </para>
+    /// <para>
+    /// <b>单需求旅程一次也不会推进任何一条</b>：那时三个最大的号正好落在各自的预留里，条件不成立。所以这条只在
+    /// 多需求下起作用，单需求的修订号流逐字不变——<c>WirePin</c> 的「同一辆车跑两趟」那条钉着它。
     /// </para>
     /// </remarks>
-    private async Task AdvanceWorklistRevisionCounterAsync(
+    private async Task AdvanceSnapshotRevisionCountersAsync(
         string agvId,
-        long revision,
+        long? vehicleBusinessRevision,
+        long? worklistRevision,
+        long? planRevision,
         CancellationToken cancellationToken)
     {
-        long required = revision - WireToGateStore.RevisionsPerJourney + 1;
         VehicleSnapshotRevisionRow? counter = await dbContext.Set<VehicleSnapshotRevisionRow>()
             .SingleOrDefaultAsync(row => row.AgvId == agvId, cancellationToken).ConfigureAwait(false);
-        if (counter is not null && counter.WorklistRevision < required)
+        if (counter is null)
         {
-            counter.WorklistRevision = required;
+            return;
         }
+
+        // 这一号要求下一趟的基准至少是 published - reserve + 1；已经更高就不动它。
+        static long Raise(long current, long? published, long reserve) =>
+            published is { } value && current < value - reserve + 1 ? value - reserve + 1 : current;
+
+        counter.VehicleBusinessRevision = Raise(
+            counter.VehicleBusinessRevision, vehicleBusinessRevision, WireToGateStore.RevisionsPerJourney);
+        counter.WorklistRevision = Raise(
+            counter.WorklistRevision, worklistRevision, WireToGateStore.RevisionsPerJourney);
+        counter.PlanRevision = Raise(
+            counter.PlanRevision, planRevision, WireToGateStore.PlanRevisionsPerJourney);
     }
 
     /// <summary>
@@ -1584,6 +1612,17 @@ public sealed class JourneyRuntimeEngine(
         }
 
         long revision = last.Revision + 1;
+        // 重发把计划流的基准一并抬高，好让后面每一次到站按序位算出来的号仍然落在这一号之上
+        // （批次7-06，control-server#211）。
+        //
+        // <b>两条算式必须互相钳制，否则它们各走各的。</b>到站发的是「基准 + 序位」，重发发的是「上一号 + 1」：
+        // 基准不动的话，一次追加就让下一次到站算出与这一号相同的号——而内容不同——两次追加算出的号还会比它低。
+        // 车载端按消息类型记修订号，号同内容不同是 SNAPSHOT_REVISION_CONTENT_CONFLICT，号更低是
+        // SNAPSHOT_REVISION_REGRESSION，两种都当场拆会话。
+        //
+        // 抬高的量正好让 PlanRevisionAt(新基准, 当前停靠, arrived) 等于这一号：此后的序位差原样成立，
+        // 而不是在算式里塞一个「已经重发过几次」的偏移量。
+        runtime.PlanRevision = revision - (arrived ? stop.Sequence : stop.Sequence - 1);
         await RetireSupersededSnapshotAsync(last.MessageId, cancellationToken).ConfigureAwait(false);
         await publisher.PublishUpcomingStopPlanAsync(
             JourneyPlanBuilder.StableGuid($"{stop.StopId}|{revision}", "plan"),
@@ -1591,6 +1630,9 @@ public sealed class JourneyRuntimeEngine(
             session.SessionGeneration,
             JourneyPlanBuilder.Plan(runtime, stops.Stops, stop, arrived, revision),
             cancellationToken).ConfigureAwait(false);
+        await AdvanceSnapshotRevisionCountersAsync(
+                runtime.AgvId, null, null, revision, cancellationToken)
+            .ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -1772,6 +1814,16 @@ public sealed class JourneyRuntimeEngine(
                 runtime, stops.Stops, stop, arrivedAtCurrent: true,
                 PlanRevisionAt(runtime.PlanRevision, stop, arrivedAtStop: true)),
             cancellationToken).ConfigureAwait(false);
+        // 与取货停靠那一处同样要结清（批次7-06）。两处各写一次是纪律，守它的是
+        // Batch7ThreeStopJourneyTests.EverySnapshotStreamStaysMonotonicAndLeavesRoomForTheNextJourney：
+        // 漏掉任一处，下一趟的基准就不越过本趟用掉的最高号，那条用例会红。
+        await AdvanceSnapshotRevisionCountersAsync(
+                runtime.AgvId,
+                StopRevision(runtime.VehicleBusinessRevision, stop),
+                null,
+                PlanRevisionAt(runtime.PlanRevision, stop, arrivedAtStop: true),
+                cancellationToken)
+            .ConfigureAwait(false);
         await PublishUnloadCommandAsync(runtime, stops, session, cancellationToken).ConfigureAwait(false);
     }
 

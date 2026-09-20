@@ -168,9 +168,14 @@ public sealed class JourneyPlanBuilder(JourneyRuntimeOptions options)
             runtime.DispatchGeneration);
     }
 
-    // The plan stream advances three times per journey: before the pickup arrival at the stored
-    // revision, at the pickup one above it, at the gate two above it. WireToGateStore seeds the next
-    // journey on the vehicle three above, so the stream never steps back across journeys.
+    // 计划流每趟推进「到站次数 + 1」次：派车时先发一张「车还在路上」的（CV-DEMAND-ACCEPT-TO-PICKUP，用存着的
+    // 那个号），此后每到一个停靠再发一张。两个停靠的旅程因此是三次，这也正是 WireToGateStore 为下一趟预留的量
+    // （PlanRevisionsPerJourney）。
+    //
+    // 多停靠旅程会发得更多，途中追加引起的重发还会再多发几张——那时预留量不够（批次7-06，control-server#211）。
+    // 接住它的是两处，而不是把这个常量改大：JourneyRuntimeEngine.AdvanceSnapshotRevisionCountersAsync 在每次
+    // 发布之后把按车计数器抬到这一号之上，重发那一处同时把本趟的基准抬高，好让后面按序位算出来的号仍在其上。
+    // 常量改大治不了这件事——停靠数没有上界，而预留量是个常数。
 
     /// <summary>
     /// 旅程的停靠序列，投影成车载端看到的那张计划：每个停靠一条腿，腿的状态由它与当前停靠的先后关系给出

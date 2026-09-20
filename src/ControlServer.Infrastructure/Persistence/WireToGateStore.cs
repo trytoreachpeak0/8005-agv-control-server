@@ -40,7 +40,11 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
     /// out before the pickup arrival (CV-DEMAND-ACCEPT-TO-PICKUP) at the stored revision, so the
     /// pickup and the gate publish it one and two above that.
     /// </summary>
-    private const long PlanRevisionsPerJourney = 3;
+    /// <remarks>
+    /// 与 <see cref="RevisionsPerJourney"/> 同样在 control-server#211 转为公开，理由也相同：多停靠旅程发的
+    /// 计划版数超过这个预留，引擎要把按车计数器抬上去，而那要求它知道预留量是多少，不能假设。
+    /// </remarks>
+    public const long PlanRevisionsPerJourney = 3;
 
     public async Task<long> GetNextSessionGenerationAsync(string agvId, CancellationToken cancellationToken)
     {
