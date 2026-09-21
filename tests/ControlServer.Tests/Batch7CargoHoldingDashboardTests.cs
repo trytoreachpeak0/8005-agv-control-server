@@ -203,8 +203,8 @@ public sealed class Batch7CargoHoldingDashboardTests
 
     /// <summary>
     /// 哪些车有一行：站在装货停靠上的（装货阶段从没写过时就是装货中——引擎只在状态变了才写这一列，<c>LOADING</c> 不写），
-    /// 以及装货阶段已经判过、旅程还没结束的（结束了的也列，说清为什么结束，直到旅程完成）。
-    /// 还在去第一个取货站路上、从没判过的车，旅程已完成的车，都不列。四种状态各一。
+    /// 以及装货阶段判过、还没结束的；已结束的只在车还停在装货停靠上时列（审查 L3）。还在去第一个取货站路上、从没判过的车，
+    /// 装货阶段结束后已离站的车，旅程已完成的车，都不列。四种状态各一。
     /// </summary>
     [Fact]
     public async Task OnlyVehiclesInTheirLoadingPhaseHaveARowAndEachOfTheFourStatesReads()
@@ -217,7 +217,11 @@ public sealed class Batch7CargoHoldingDashboardTests
         JourneyRuntimeRow full = Journey("D-FULL", "AGV-03", JourneyRuntimeStage.AwaitingStationDeparture);
         full.LoadingPhaseState = LoadingPhaseStates.VehicleFull;
         full.CargoHoldingStartedAt = Now.AddMinutes(-1);
-        JourneyRuntimeRow closedOnTheWay = Journey("D-CLOSED", "AGV-04", JourneyRuntimeStage.AwaitingGateArrival);
+        JourneyRuntimeRow closedAtStation = Journey("D-CLOSED", "AGV-04", JourneyRuntimeStage.AwaitingDepartureSafety);
+        closedAtStation.LoadingPhaseState = LoadingPhaseStates.Closed;
+        closedAtStation.LoadingClosedReason = LoadingClosedReasons.CargoHoldingTimeout;
+        closedAtStation.CargoHoldingStartedAt = Now.AddMinutes(-40);
+        JourneyRuntimeRow closedOnTheWay = Journey("D-CLOSED-GONE", "AGV-07", JourneyRuntimeStage.AwaitingGateArrival);
         closedOnTheWay.LoadingPhaseState = LoadingPhaseStates.Closed;
         closedOnTheWay.LoadingClosedReason = LoadingClosedReasons.VehicleFull;
         closedOnTheWay.CargoHoldingStartedAt = Now.AddMinutes(-3);
@@ -225,7 +229,7 @@ public sealed class Batch7CargoHoldingDashboardTests
         JourneyRuntimeRow completed = Journey("D-DONE", "AGV-06", JourneyRuntimeStage.Completed);
         completed.LoadingPhaseState = LoadingPhaseStates.Closed;
         completed.LoadingClosedReason = LoadingClosedReasons.PlannedLoadingComplete;
-        foreach (JourneyRuntimeRow journey in new[] { loading, waiting, full, closedOnTheWay, notYetThere, completed })
+        foreach (JourneyRuntimeRow journey in new[] { loading, waiting, full, closedAtStation, closedOnTheWay, notYetThere, completed })
         {
             await database.SeedAsync(journey);
         }
@@ -234,7 +238,7 @@ public sealed class Batch7CargoHoldingDashboardTests
         JsonElement[] rows = await ReadCargoHoldingAsync(database.NewContext());
 
         Assert.Equal(
-            ["AGV-01:LOADING:PICKUP-1", "AGV-02:CARGO_HOLDING_WAIT:PICKUP-1", "AGV-03:VEHICLE_FULL:PICKUP-1", "AGV-04:CLOSED:GATE-1"],
+            ["AGV-01:LOADING:PICKUP-1", "AGV-02:CARGO_HOLDING_WAIT:PICKUP-1", "AGV-03:VEHICLE_FULL:PICKUP-1", "AGV-04:CLOSED:PICKUP-1"],
             rows.Select(row =>
                     $"{row.GetProperty("agvId").GetString()}:{row.GetProperty("loadingPhaseState").GetString()}:{row.GetProperty("stationId").GetString()}")
                 .Order(StringComparer.Ordinal));
@@ -245,13 +249,42 @@ public sealed class Batch7CargoHoldingDashboardTests
         Assert.Contains("<td>已结束</td>", html, StringComparison.Ordinal);
         Assert.DoesNotContain("AGV-05", html, StringComparison.Ordinal);
         Assert.DoesNotContain("AGV-06", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("AGV-07", html, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 审查 L3：已结束的那一行只在车还停在装货停靠上时显示，车离站之后这一行消失——「已结束」的原因在车离站之前操作员已经看得到，
+    /// 车去卸货的路上一直挂着只会把卡片占满。同一趟旅程读两次：离站前在，离站后（取货停靠完成、去关卡）不在。
+    /// </summary>
+    [Fact]
+    public async Task AClosedRowDisappearsOnceTheVehicleLeavesTheStation()
+    {
+        await using DashboardDatabase database = await DashboardDatabase.CreateAsync();
+        JourneyRuntimeRow journey = Journey("D-1", "AGV-01", JourneyRuntimeStage.AwaitingDepartureSafety);
+        journey.LoadingPhaseState = LoadingPhaseStates.Closed;
+        journey.LoadingClosedReason = LoadingClosedReasons.WaitingStationYield;
+        journey.CargoHoldingStartedAt = Now.AddMinutes(-6);
+        journey.YieldTriggeredAt = Now.AddMinutes(-1);
+        journey.YieldTriggeredByVehicleKey = "KEY-AGV-02";
+        await database.SeedAsync(journey);
+
+        JsonElement atStation = Assert.Single(await ReadCargoHoldingAsync(database.NewContext()));
+        Assert.Equal(LoadingClosedReasons.WaitingStationYield, atStation.GetProperty("closedReason").GetString());
+
+        await database.CompleteStopAsync(journey, JourneyStopRoles.Pickup);
+        await database.SetStageAsync(journey, JourneyRuntimeStage.AwaitingGateArrival);
+
+        Assert.Empty(await ReadCargoHoldingAsync(database.NewContext()));
+        Assert.Equal(
+            "<p>没有处于装货阶段的车</p>",
+            new CargoHoldingCard().RenderFact(await ReadCargoHoldingFactAsync(database.NewContext())));
     }
 
     /// <summary>
     /// 持货期限只在适用持货等单时存在（program#94：「不适用持货等单时为 null」），而起算点不论适用与否都会在第一批装货闭环时写下。
-    /// 看板不重算适用性（那要读车能服务的分区配置），按状态推：等单、装满、以及因超时／让站／装满而结束的，必然适用；
-    /// 装货中只在从等单被追加回来时适用（旅程有途中追加的归属）；计划装货完成的，以及单纯装货中的，不给期限。
-    /// 这与车上收到的那一份一致：装货中引擎不发快照，车第一次看到期限就是进入等单那一张。
+    /// 看板不重算适用性（那要读车能服务的分区配置），按状态推：等单、装满、以及因超时／让站／装满而结束的，必然适用，期限由
+    /// <c>LoadingPhaseMachine.Deadline</c> 给；计划装货完成的不适用；<b>装货中一律不给</b>（审查 M3）——装货中的适用性引擎每轮按当前分区参数现算，
+    /// 有过追加之后参数又改成禁止追加时，引擎不给期限、也不会超时关闭，看板没法跟着这个现算结果走，有追加也不给。
     /// </summary>
     [Theory]
     [InlineData(LoadingPhaseStates.CargoHoldingWait, null, false, true)]
@@ -261,9 +294,9 @@ public sealed class Batch7CargoHoldingDashboardTests
     [InlineData(LoadingPhaseStates.Closed, LoadingClosedReasons.VehicleFull, false, true)]
     [InlineData(LoadingPhaseStates.Closed, LoadingClosedReasons.PlannedLoadingComplete, false, false)]
     [InlineData(null, null, false, false)]
-    [InlineData(null, null, true, true)]
+    [InlineData(null, null, true, false)]
     [InlineData(LoadingPhaseStates.Loading, null, false, false)]
-    [InlineData(LoadingPhaseStates.Loading, null, true, true)]
+    [InlineData(LoadingPhaseStates.Loading, null, true, false)]
     public async Task TheDeadlineIsShownOnlyWhereCargoHoldingApplies(
         string? state,
         string? closedReason,
@@ -401,9 +434,8 @@ public sealed class Batch7CargoHoldingDashboardTests
     public async Task AJourneyCaughtHalfwayThroughClosingStillReadsWithoutThrowing()
     {
         await using DashboardDatabase database = await DashboardDatabase.CreateAsync();
-        JourneyRuntimeRow closing = Journey("D-1", "AGV-01", JourneyRuntimeStage.AwaitingUnloadResult);
-        closing.LoadingPhaseState = LoadingPhaseStates.Closed;
-        closing.LoadingClosedReason = LoadingClosedReasons.PlannedLoadingComplete;
+        JourneyRuntimeRow closing = Journey("D-1", "AGV-01", JourneyRuntimeStage.AwaitingDepartureSafety);
+        closing.LoadingPhaseState = LoadingPhaseStates.VehicleFull;
         await database.SeedAsync(closing);
         await database.CompleteStopAsync(closing, JourneyStopRoles.Pickup);
         await database.CompleteStopAsync(closing, JourneyStopRoles.Unload);
@@ -418,6 +450,30 @@ public sealed class Batch7CargoHoldingDashboardTests
         Assert.Equal(JsonValueKind.Null, demand.GetProperty("transportDemandKey").ValueKind);
         string html = new CargoHoldingCard().RenderFact(await ReadCargoHoldingFactAsync(database.NewContext()));
         Assert.Contains("D-1：已终结", html, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 「已到期，等待本次装货闭环」依赖的前提（审查 L1）：看板认「有一批在装」的判法与引擎给装货阶段状态机的是同一句——
+    /// <c>Stage == AwaitingLoadResult</c>。引擎那一句是私有的，本票不碰引擎，所以这里逐字核引擎源码；引擎改了判法，这里红，
+    /// 改的人顺着 <c>CargoHoldingQueryEndpoint.LoadBatchInProgress</c> 的注释把看板一起改掉。
+    /// </summary>
+    [Fact]
+    public void TheLoadBatchInProgressPremiseIsTheEnginesOwn()
+    {
+        string root = AppContext.BaseDirectory;
+        while (!File.Exists(Path.Combine(root, "ControlServer.sln")))
+        {
+            root = Path.GetDirectoryName(root) ?? throw new InvalidOperationException("Repository root not found.");
+        }
+        string engine = File.ReadAllText(Path.Combine(root, "src", "ControlServer.Host", "Runtime", "JourneyRuntimeEngine.cs"));
+        string dashboard = File.ReadAllText(
+            Path.Combine(root, "src", "ControlServer.Host", "Dashboard", "CargoHoldingQueryEndpoint.cs"));
+
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(engine, @"LoadBatchInProgress\s*:"));
+        Assert.Contains(
+            "LoadBatchInProgress: runtime.Stage == JourneyRuntimeStage.AwaitingLoadResult,", engine, StringComparison.Ordinal);
+        Assert.Contains(
+            "journey.Stage == JourneyRuntimeStage.AwaitingLoadResult;", dashboard, StringComparison.Ordinal);
     }
 
     // --- 多需求旅程的需求列表 -----------------------------------------------------------------------------------------
@@ -614,6 +670,54 @@ public sealed class Batch7CargoHoldingDashboardTests
             workType == TransportTaskTypes.StagingToWire,
             BacklogStanding.TierOf(row) == BacklogTier.TopBand);
         Assert.Equal(workType == TransportTaskTypes.StagingToWire, TaskStarvation.IsTopBandWorkType(workType));
+        // 派车排序判带用的是需求的 WorkType（TaskStarvation.InTopBand）：拼键再取回之后，看板的带与它的结论相同。
+        // 以后改了拼法而没改拆法，这里红（审查 M2）。
+        AcceptedDemandSnapshot dispatched = new("D-1", key, 0, "epoch", 0, default, WorkType: workType);
+        Assert.Equal(TaskStarvation.InTopBand(dispatched), BacklogStanding.TierOf(row) == BacklogTier.TopBand);
+    }
+
+    /// <summary>
+    /// 积压卡片的次序就是派车排序的次序（审查 L1）：同一批数据，一份交给看板端点，一份在这里独立地拼成派车轮的任务交给
+    /// <see cref="DispatchCandidateOrdering.Ranker"/>，两边次序逐条相同。数据覆盖每一层的分辨：超时层、最高带、建单时刻先后、
+    /// 建单时刻不明排在同带最后、建单时刻相同再比首次看到、再比需求 id。
+    /// </summary>
+    [Fact]
+    public async Task TheBacklogIsListedInTheDispatchRankingsOwnOrder()
+    {
+        (string Id, string WorkType, DateTimeOffset Created, DateTimeOffset FirstSeen, DateTimeOffset? Escalated)[] rows =
+        [
+            ("D-A", TransportTaskTypes.WireToGate, Now.AddMinutes(-30), Now.AddMinutes(-5), null),
+            ("D-B", TransportTaskTypes.StagingToWire, Now.AddMinutes(-2), Now.AddMinutes(-1), null),
+            ("D-C", TransportTaskTypes.WireToGate, Now.AddHours(-4), Now.AddMinutes(-9), Now.AddMinutes(-1)),
+            ("D-D", TransportTaskTypes.WireToGate, default, Now.AddMinutes(-50), null),
+            ("D-E", TransportTaskTypes.WireToGate, Now.AddMinutes(-30), Now.AddMinutes(-7), null),
+            ("D-F", TransportTaskTypes.WireToGate, Now.AddMinutes(-30), Now.AddMinutes(-7), null),
+            ("D-G", TransportTaskTypes.StagingToWire, Now.AddMinutes(-40), Now.AddMinutes(-3), null),
+            ("D-H", TransportTaskTypes.WireToGate, Now.AddHours(-6), Now.AddMinutes(-2), Now.AddMinutes(-2)),
+        ];
+        await using DashboardDatabase database = await DashboardDatabase.CreateAsync();
+        foreach ((string id, string workType, DateTimeOffset created, DateTimeOffset firstSeen, DateTimeOffset? escalated) in rows.Reverse())
+        {
+            await database.AddBacklogAsync(id, workType, created, firstSeen, escalatedAt: escalated, escalationVersion: escalated is null ? null : 1);
+        }
+
+        using JsonDocument fact = await ReadBacklogAsync(database.NewContext());
+
+        DispatchTask[] tasks =
+        [
+            .. rows.Select(row => new DispatchTask(
+                new AcceptedDemandSnapshot(
+                    row.Id, $"SUBLOT-{row.Id}|{row.WorkType}", 0, "epoch", 0, default, WorkType: row.WorkType, CreatedAt: row.Created),
+                row.FirstSeen)
+            {
+                Starvation = row.Escalated is null ? null : new TaskStarvationStanding(TimeSpan.Zero, null, null, 1, Overdue: true)
+            })
+        ];
+        string[] dispatchOrder = [.. DispatchCandidateOrdering.Ranker().Order(tasks).Select(task => task.Snapshot.DemandId)];
+        Assert.Equal(["D-H", "D-C", "D-G", "D-B", "D-E", "D-F", "D-A", "D-D"], dispatchOrder);
+        Assert.Equal(
+            dispatchOrder,
+            fact.RootElement.GetProperty("backlog").EnumerateArray().Select(row => row.GetProperty("demandId").GetString()));
     }
 
     /// <summary>
@@ -1052,6 +1156,14 @@ public sealed class Batch7CargoHoldingDashboardTests
                 DispatchZone = area.Zone,
                 SlotPosition = "FRONT"
             }));
+            await context.SaveChangesAsync(Token);
+        }
+
+        public async Task SetStageAsync(JourneyRuntimeRow journey, JourneyRuntimeStage stage)
+        {
+            await using ControlServerDbContext context = NewContext();
+            JourneyRuntimeRow row = await context.JourneyRuntimes.SingleAsync(item => item.JourneyId == journey.JourneyId, Token);
+            row.Stage = stage;
             await context.SaveChangesAsync(Token);
         }
 

@@ -13,7 +13,9 @@
 5. 需求乙只能给另一台车，它的下一停靠就是主车所在的站（02）；库里让站确实触发了，主车 CLOSED/WAITING_STATION_YIELD，
    触发列记另一台车，车上收到了那张快照（03、04）。
 6. 另等第二个事实：端点里主车那一行的结束原因变成让站，触发的车是另一台车（08）；看板那一页写着
-   「另一辆车以本站为下一停靠，本车结束等单」与那台车（09）。
+   「另一辆车以本站为下一停靠，本车结束等单」与那台车（09）。主车的合成车载端把离站核验挂起（safetyCheck = Manual），
+   所以这两条读的时候车一定还停在站上——已结束的行只在车还在站上时显示（审查 L3）。
+7. 放行离站核验：主车离站之后，库里取货停靠完成（正事实），端点与看板那一页都不再列这台车（10）。
 
 所有看板上的事实都用 Wait-L2ConditionOrLast 等：库里的状态到位之后另等端点与页面，不在同一时刻读库又读看板就断言
 （scripts/l2/README.md 第 14 条）。端点与库在同一个服务端进程、同一个库上，端点每次请求现读，所以库里到位之后端点下一次
@@ -116,6 +118,8 @@ $assertions.Add(
 
 # --- 5. 另一台车被承诺以这个站为下一停靠；库里让站确实触发了 ------------------------------------------------------
 
+# 主车的离站核验挂起：让站之后车停在站上等这一答，08、09 读的时候它一定还在站上。等单期间车不发离站核验，所以这里设不影响 1～4。
+$null = $Context.Onboard.Command('Put', 'policy', @{ safetyCheck = 'Manual' })
 $comer = Send-L2YieldComer $Context $holder 'L2-CHD'
 $null = Confirm-L2YieldTriggered $Context $holder $comer 'L2-CHD'
 $comerKey = Get-L2YieldVehicleKey $Context $holder.ComerAgvId
@@ -143,4 +147,38 @@ $assertions.Add(
     ($null -ne $pageYield -and $pageYield.Contains('已结束') -and $pageYield.Contains($yieldText)),
     "已结束 … $yieldText", $(if ($pageYield) { $pageYield } else { '(no row)' }))
 
-$journal.Note('主车在站上持货等单：看板端点与页面给出库里的期限、剩余时间在走；另一台车被承诺以这个站为下一停靠之后，看板上的结束原因变成让站、写着触发的车。')
+# --- 7. 放行离站核验：车离站之后，看板不再列这台车 -------------------------------------------------------------
+
+$checkKey = Wait-L2ConditionOrLast -Description 'the holder asked for its pre-departure safety check' -Journal $journal `
+    -Criterion 'departure-check-pending' -TimeoutSeconds 60 `
+    -Probe {
+        $pending = @($Context.Onboard.Snapshot().body.pending | Where-Object { $_.messageType -eq 'PreDepartureSafetyCheck' })
+        if ($pending.Count -eq 0) { $null } else { [string]$pending[0].key }
+    } `
+    -Until { param($v) $null -ne $v }
+if ($null -ne $checkKey) {
+    $null = $Context.Onboard.Command('Put', "answer/$checkKey", @{ completed = $true })
+}
+$pickupDone = Wait-L2ConditionOrLast -Description 'the holder left its pickup stop' -Journal $journal -Criterion 'holder-departed' `
+    -TimeoutSeconds 60 `
+    -Probe {
+        $rows = Invoke-L2Query -Connection $connection -Sql (
+            "SELECT Status FROM JourneyStops WHERE JourneyId = '$($holder.JourneyId)' AND StopRole = 'PICKUP'")
+        if ($rows.Count -eq 0) { $null } else { [string]$rows[0].Status }
+    } `
+    -Until { param($v) $v -eq 'COMPLETED' }
+$gone = Wait-L2ConditionOrLast -Description 'the dashboard no longer lists the holder' -Journal $journal -Criterion 'endpoint-gone' `
+    -TimeoutSeconds 30 `
+    -Probe {
+        $entry = Get-L2HoldingEntry $endpoint $holderAgvId
+        $row = Get-L2HoldingDashboardRow $Context.DashboardUrl $holderAgvId
+        [pscustomobject]@{ Entry = $entry; Row = $row; Listed = ($null -ne $entry -or $null -ne $row) }
+    } `
+    -Until { param($v) -not $v.Listed }
+$assertions.Add(
+    'L2-CHD-10', '放行离站核验之后主车离站（库里取货停靠 COMPLETED），端点与看板那一页都不再列这台车',
+    ($null -ne $checkKey -and $pickupDone -eq 'COMPLETED' -and $null -ne $gone -and -not $gone.Listed),
+    'check answered, PICKUP COMPLETED, not listed',
+    "check $(if ($checkKey) { 'answered' } else { '(never asked)' }), PICKUP $pickupDone, endpoint $(Format-L2HoldingEntry $gone.Entry), page $(if ($gone.Row) { $gone.Row } else { '(no row)' })")
+
+$journal.Note('主车在站上持货等单：看板端点与页面给出库里的期限、剩余时间在走；另一台车被承诺以这个站为下一停靠之后，看板上的结束原因变成让站、写着触发的车；车离站之后这一行不再列出。')
