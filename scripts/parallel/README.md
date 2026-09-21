@@ -40,6 +40,13 @@ control-server#262 复审找到过一个严重缺陷：卸载脚本在一种很�
 `$ErrorActionPreference = 'Stop'`，而且只在末尾写一次 `PASS`。自测对这两点有一道防回归检查，但它只认得四种违反
 写法（第一句不是设 `Stop`、`PASS` 出现次数不是一次、`PASS` 不在最后三句、有 `trap`），认不出之后再改回 `Continue`、
 `$PSDefaultParameterValues`、用 try/catch 吞掉错误、把 `PASS` 拆开拼接这些。产品脚本一改，要人重读一遍。
+同样的检查在卸载时也会对**实际要调用的那一份**产品脚本再做一次（通常是已装包或上一代包自带的那份，不是仓库里的），
+不过就中止，由 `Get-ParallelProductUninstallerPath` 负责。
+
+关于 `sc.exe delete` 返回 1072（服务已被标记为待删除）：复审担心这会让退出码非 0、造成误报。实测不会
+（`evidence/deploy/20260921-cs262-parallel-instance/review8-sc1072-probe.txt`）：产品脚本在 `sc.exe` 之后还会跑一次
+`netstat.exe`，调用方拿到的是最后一个原生命令的退出码 0。这依赖两条命令的先后；哪天 `netstat` 被删掉或挪到
+`sc.exe` 前面，1072 就会被判为失败、卸载中止——方向是安全的，重跑一次即可。
 
 卸载脚本应当只经由 `Invoke-ParallelProductUninstaller` 调用产品脚本。自测里有一道**防回归护栏，不是证明**：它挡住
 常见的直接调用写法（用变量、表达式、字符串或点源当命令，`Invoke-Expression`、`Start-Process`、`pwsh`、

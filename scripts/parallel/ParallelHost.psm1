@@ -98,7 +98,54 @@ function Get-ParallelProductUninstallerPath {
     )
     $found = $candidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
     if (-not $found) { throw "the product uninstaller was not found at any of: $($candidates -join '; ')" }
+    # The premise Invoke-ParallelProductUninstaller's confirmation rests on, checked on THIS copy --
+    # the one about to run, which is usually the installed package's or the previous generation's,
+    # not the repository's the self-test reads (S1 re-review, round 4). Same check, same limits.
+    $broken = @(Test-ParallelProductUninstallerPremise -Source ([IO.File]::ReadAllText($found)))
+    if ($broken.Count -gt 0) {
+        throw "the product uninstaller at $found breaks the premise the success check rests on: $($broken -join '; ')"
+    }
     return $found
+}
+
+function Test-ParallelProductUninstallerPremise {
+    <#
+        .SYNOPSIS
+            The reasons a product uninstaller's source breaks the premise of the positive
+            confirmation; empty when none of the recognised ones apply.
+
+        .DESCRIPTION
+            Invoke-ParallelProductUninstaller treats a fresh PASS result file as success. One failure
+            shape passes that: a non-terminating error, the script carrying on, removing the service
+            and writing PASS. It cannot happen while the product script sets ErrorActionPreference
+            Stop as its first statement and writes PASS once, at its end. This checks those two facts.
+
+            A REGRESSION GUARD, NOT A PROOF. It recognises four ways of breaking them: a first
+            statement other than the Stop assignment, 'PASS' written other than exactly once, 'PASS'
+            outside the last three top-level statements, and a trap. It does NOT see a later
+            statement setting Continue again, $PSDefaultParameterValues, a try/catch that swallows an
+            error, or 'PA' + 'SS' built from pieces (S1 re-review, round 4, measured).
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string] $Source)
+    $ast = [System.Management.Automation.Language.Parser]::ParseInput($Source, [ref]$null, [ref]$null)
+    $problems = [System.Collections.Generic.List[string]]::new()
+    $top = @($ast.EndBlock.Statements)
+    if ($top.Count -eq 0 -or $top[0].Extent.Text -cne "`$ErrorActionPreference = 'Stop'") {
+        $problems.Add("the first statement is not `$ErrorActionPreference = 'Stop': $(if ($top.Count) { $top[0].Extent.Text })")
+    }
+    $pass = @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.StringConstantExpressionAst] -and $n.Value -ceq 'PASS' }, $true))
+    if ($pass.Count -ne 1) {
+        $problems.Add("'PASS' appears $($pass.Count) times")
+    } else {
+        $index = -1
+        for ($i = 0; $i -lt $top.Count; $i++) {
+            if ($top[$i].Extent.StartOffset -le $pass[0].Extent.StartOffset -and $top[$i].Extent.EndOffset -ge $pass[0].Extent.EndOffset) { $index = $i }
+        }
+        if ($index -lt $top.Count - 3) { $problems.Add("'PASS' is in top-level statement $index of $($top.Count), not among the last three") }
+    }
+    if (@($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.TrapStatementAst] }, $true)).Count -gt 0) { $problems.Add('it has a trap') }
+    return $problems
 }
 
 function Invoke-ParallelProductUninstaller {
@@ -135,8 +182,10 @@ function Invoke-ParallelProductUninstaller {
             One shape still passes all three: the product script hits a non-terminating error,
             carries on, removes the service and writes PASS. It cannot today, because the product
             script sets ErrorActionPreference Stop as its first statement and writes PASS once, at
-            its end. The self-test pins those two facts against four ways of breaking them -- not
-            all of them (S1 re-review, round 4); re-read the product script when it changes.
+            its end. Get-ParallelProductUninstallerPath checks those two facts on the copy that is
+            about to run (Test-ParallelProductUninstallerPremise), and the self-test on the
+            repository's copy -- both against four ways of breaking them, not all of them (S1
+            re-review, round 4); re-read the product script when it changes.
     #>
     [CmdletBinding()]
     param(
@@ -182,4 +231,4 @@ function Invoke-ParallelProductUninstaller {
 }
 
 Export-ModuleMember -Function @('Get-MvpFingerprint', 'Assert-MvpUntouched', 'Format-MvpFingerprint',
-    'Get-ParallelProductUninstallerPath', 'Invoke-ParallelProductUninstaller')
+    'Get-ParallelProductUninstallerPath', 'Test-ParallelProductUninstallerPremise', 'Invoke-ParallelProductUninstaller')

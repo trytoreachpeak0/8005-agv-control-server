@@ -375,6 +375,12 @@ $cases = @(
         Mutate = { param($d) $d['journeyRuntime']['dispatchZone'] = 'MAP-25.A'; $d }
     }
     @{
+        # The separator left out -- the most natural typo of all (round 4).
+        Name = 'dispatchZone MAP25 (no separator)'
+        Expect = "an identifier of the MVP's map 25"
+        Mutate = { param($d) $d['journeyRuntime']['dispatchZone'] = 'MAP25-WIRE_TO_GATE'; $d }
+    }
+    @{
         Name = 'dispatchZone with U+2010 hyphen'
         Expect = "an identifier of the MVP's map 25"
         Mutate = { param($d) $d['journeyRuntime']['dispatchZone'] = "MAP$([char]0x2010)25-WIRE_TO_GATE"; $d }
@@ -951,28 +957,10 @@ try {
     a try/catch that swallows an error, or 'PA' + 'SS' built up from pieces. If the product script
     changes shape in any way, re-read it by hand; this check going green then means little.
 #>
-function Find-ProductPremiseBreak {
-    param([string] $Source)
-    $ast = [System.Management.Automation.Language.Parser]::ParseInput($Source, [ref]$null, [ref]$null)
-    $problems = [System.Collections.Generic.List[string]]::new()
-    $top = @($ast.EndBlock.Statements)
-    if ($top.Count -eq 0 -or $top[0].Extent.Text -cne "`$ErrorActionPreference = 'Stop'") {
-        $problems.Add("the first statement is not `$ErrorActionPreference = 'Stop': $(if ($top.Count) { $top[0].Extent.Text })")
-    }
-    $pass = @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.StringConstantExpressionAst] -and $n.Value -ceq 'PASS' }, $true))
-    if ($pass.Count -ne 1) {
-        $problems.Add("'PASS' appears $($pass.Count) times")
-    } else {
-        $index = -1
-        for ($i = 0; $i -lt $top.Count; $i++) {
-            if ($top[$i].Extent.StartOffset -le $pass[0].Extent.StartOffset -and $top[$i].Extent.EndOffset -ge $pass[0].Extent.EndOffset) { $index = $i }
-        }
-        if ($index -lt $top.Count - 3) { $problems.Add("'PASS' is in top-level statement $index of $($top.Count), not among the last three") }
-    }
-    if (@($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.TrapStatementAst] }, $true)).Count -gt 0) { $problems.Add('it has a trap') }
-    return $problems
-}
-$productProblems = @(Find-ProductPremiseBreak ([IO.File]::ReadAllText((Join-Path $PSScriptRoot '..\Uninstall-ControlServerLocal.ps1'))))
+# The check itself lives in ParallelHost.psm1 (Test-ParallelProductUninstallerPremise), because
+# Get-ParallelProductUninstallerPath runs it at uninstall time on the copy about to run -- usually
+# the installed package's, not this repository's (S1 re-review, round 4).
+$productProblems = @(Test-ParallelProductUninstallerPremise -Source ([IO.File]::ReadAllText((Join-Path $PSScriptRoot '..\Uninstall-ControlServerLocal.ps1'))))
 Write-Result -Ok ($productProblems.Count -eq 0) `
     -Name "premise: Uninstall-ControlServerLocal.ps1 stops on any error and writes PASS once, at its end" `
     -Detail ($productProblems -join ' | ')
@@ -983,7 +971,27 @@ $premiseBreaks = [ordered]@{
     'a trap that swallows errors'     = "`$ErrorActionPreference = 'Stop'`ntrap { continue }`nDo-Work`n`$r = @{ result = 'PASS' }`nSave `$r`n'done'"
 }
 foreach ($name in $premiseBreaks.Keys) {
-    Write-Result -Ok (@(Find-ProductPremiseBreak $premiseBreaks[$name]).Count -gt 0) -Name "premise check catches: $name" -Detail 'found nothing'
+    Write-Result -Ok (@(Test-ParallelProductUninstallerPremise -Source $premiseBreaks[$name]).Count -gt 0) -Name "premise check catches: $name" -Detail 'found nothing'
+}
+
+# At uninstall time: Get-ParallelProductUninstallerPath checks the copy it picks, and refuses one
+# that breaks the premise. The candidate here is the fallback beside the scripts (no package root).
+$premiseRoot = Join-Path ([IO.Path]::GetTempPath()) "cs262-premise-$([guid]::NewGuid().ToString('N'))"
+New-Item -ItemType Directory -Path $premiseRoot | Out-Null
+try {
+    $noPackage = [pscustomobject]@{ PackageRoot = (Join-Path $premiseRoot 'no-package'); PreviousRoot = (Join-Path $premiseRoot 'no-previous') }
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot '..\Uninstall-ControlServerLocal.ps1') -Destination $premiseRoot
+    $picked = $null; $why = $null
+    try { $picked = Get-ParallelProductUninstallerPath -Layout $noPackage -ScriptRoot $premiseRoot } catch { $why = $_.Exception.Message }
+    Write-Result -Ok ($null -eq $why -and $picked -like '*Uninstall-ControlServerLocal.ps1') `
+        -Name 'the real product uninstaller is picked at uninstall time' -Detail "threw: $why"
+    Set-Content -LiteralPath (Join-Path $premiseRoot 'Uninstall-ControlServerLocal.ps1') -Value "`$ErrorActionPreference = 'Continue'`nDo-Work`n`$r = @{ result = 'PASS' }`nSave `$r`n'done'"
+    $picked = $null; $why = $null
+    try { $picked = Get-ParallelProductUninstallerPath -Layout $noPackage -ScriptRoot $premiseRoot } catch { $why = $_.Exception.Message }
+    Write-Result -Ok ($null -eq $picked -and $null -ne $why -and $why.Contains('breaks the premise')) `
+        -Name 'a product uninstaller that breaks the premise is refused at uninstall time' -Detail "picked: $picked; threw: $why"
+} finally {
+    Remove-Item -LiteralPath $premiseRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 <#

@@ -83,8 +83,11 @@ $script:ProductionMapId = 25
 $script:ProductionMapIdentity = '老厂前线new'
 # Matched against ConvertTo-MapComparisonKey's output, which is lower case with '_' and
 # whitespace already turned into '-'.
-# '25' not followed by another digit: 'map-25', 'map-25-x' and 'map-25.a' match, 'map-250' does not.
-$script:ProductionMapTokenPattern = 'map-25(?![0-9])'
+# 'map', at most one separator, '25', and no further digit: 'map-25', 'map25' (the most natural
+# typo), 'map-25-x' and 'map-25.a' match; 'map-250' does not. Limits, on purpose: no left boundary,
+# so 'xmap-25' is refused too (refusing more is the safe direction); 'MAP.25', 'MAP/25' and
+# 'MAP-025' are not recognised (S1 re-review, round 4).
+$script:ProductionMapTokenPattern = 'map-?25(?![0-9])'
 # 58005/58007 are the MVP server, 58009 its dashboard port (unused today but reserved by
 # Install-ControlServerLocal.ps1's default), 5088 the production MesIngest.
 $script:ProductionPorts = @{
