@@ -375,6 +375,156 @@ public sealed class Batch7ThreeStopJourneyTests
             line => line.Contains(resent.MessageId, StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// 车在路上收到的那张重发版计划，在车到站、到站那一版发出去时退役：确认丢了也不会在断线重连时被补发回去（批次7-07 审查）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 途中追加整体重发的那一版，号按「还没到站」算；车到站时发的那一版按「已到站」算，高一号。到站之前重发会退役上一版，
+    /// 但到站那一处原先只退役「派往取货站那一版」，路上那张重发版原样留着，而它的 id 仍在补发集合里——车确认了到站那一版、
+    /// 却没确认更早那张时，断线重连先补发旧的那张，车载端判 SNAPSHOT_REVISION_REGRESSION、当场拆会话。
+    /// </para>
+    /// <para>
+    /// 要走到这一步得是「确认丢了但连接没断」，概率很低；形状从批次7-06 起就在。<see cref="AdoptingPeer"/> 正是为这种情形写的：
+    /// 它像车载端一样按消息类型记住已采纳的号，确认先缓存起来，用例可以只丢掉那一张的确认。
+    /// 与 <c>ThePlanSentBeforeArrivalIsRetiredWhenThePickupPlanSupersedesIt</c>（派往取货站那一版）是同一件事的另一格。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AReSentPlanReceivedOnTheWayIsRetiredWhenTheArrivalPlanSupersedesIt()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        fixture.Catalog.Set(
+            fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)),
+            fixture.Demand(SecondDemandId, SecondSublot, Now.AddMinutes(-9), area: SecondPickupArea));
+        fixture.BoxCounts.Set(FirstSublot, 7);
+        fixture.BoxCounts.Set(SecondSublot, 7);
+        AdoptingPeer peer = new(fixture.Context, fixture.Clock);
+        fixture.Peer.OnMessageSent = line =>
+        {
+            peer.Receive(line);
+            return Task.CompletedTask;
+        };
+
+        // 同一个连接上，没确认的行每一轮开头都会被补发一次（ReplayPendingForSessionAsync），丢一次确认下一轮就补回来了。
+        // 要走到回退，得是确认连着几轮都丢：从重发那一轮起每一轮都丢，车到站、采纳了高一号的到站版之后，下一轮的逐轮补发
+        // 就会把旧重发版再发一次。这与 ThePlanSentBeforeArrivalIsRetiredWhenThePickupPlanSupersedesIt 的模拟是同一种。
+        async Task IterateLosingAcksAsync()
+        {
+            peer.LoseBufferedAcks();
+            await TickAndRunAsync(fixture);
+        }
+
+        // 受理、派车（确认照常），再追加进第二条：车在去第一站的路上收到整体重发的那一版。
+        await TickAndRunAsync(fixture);
+        await TickAndRunAsync(fixture);
+        await peer.DeliverBufferedAcksAsync();
+        await AppendSecondDemandAsync(fixture);
+        await IterateLosingAcksAsync();
+        ProtocolOutboxRow resent = (await fixture.Context.ProtocolOutbox.AsNoTracking()
+                .Where(row => row.MessageType == "UpcomingStopPlanSnapshot")
+                .ToArrayAsync(token))
+            .OrderBy(row => row.CreatedAt).ThenBy(row => row.MessageId, StringComparer.Ordinal)
+            .Last();
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await fixture.RuntimeAsync(FirstDemandId)).Stage);
+
+        // 车到站，发到站那一版；此后再跑几轮，确认一直丢着。
+        JourneyStopRow firstStop = await CurrentStopAsync(fixture, FirstDemandId);
+        fixture.Riot.SetSuccessfulArrival("TO_PICKUP", firstStop.UpperId, firstStop.StationRiotId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = firstStop.StationRiotId };
+        await IterateLosingAcksAsync();
+        await IterateLosingAcksAsync();
+        await IterateLosingAcksAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync(FirstDemandId)).Stage);
+
+        // 再断一次线：重连之后的补发同样不该带它。
+        await fixture.ReconnectAsync(2);
+        await fixture.AdvanceSessionAsync(2);
+        await TickAndRunAsync(fixture);
+
+        Assert.DoesNotContain(peer.Regressions, item => item.MessageType == "UpcomingStopPlanSnapshot");
+        fixture.Context.ChangeTracker.Clear();
+        Assert.NotNull((await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .SingleAsync(row => row.MessageId == resent.MessageId, token)).FencedAt);
+    }
+
+    /// <summary>
+    /// 卸货站那一格：离开最后一个取货站之后，车在去卸货站的路上收到一版重发的计划，到站那一版照样要把它退役。
+    /// </summary>
+    /// <remarks>
+    /// 离站时不单独发计划，但 <c>RefreshUpcomingStopPlanAsync</c> 按内容比较：车上那张还是上一站的到站版，与「此刻应当
+    /// 是什么样」不同，于是在路上重发一版——多需求旅程去卸货站的路上这一版必然出现。原先卸货站到站什么都不退役。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AReSentPlanReceivedOnTheWayToTheUnloadStopIsRetiredWhenItsArrivalPlanSupersedesIt()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        fixture.Catalog.Set(
+            fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)),
+            fixture.Demand(SecondDemandId, SecondSublot, Now.AddMinutes(-9), area: SecondPickupArea));
+        fixture.BoxCounts.Set(FirstSublot, 7);
+        fixture.BoxCounts.Set(SecondSublot, 7);
+        AdoptingPeer peer = new(fixture.Context, fixture.Clock);
+        fixture.Peer.OnMessageSent = line =>
+        {
+            peer.Receive(line);
+            return Task.CompletedTask;
+        };
+
+        async Task IterateLosingAcksAsync()
+        {
+            peer.LoseBufferedAcks();
+            await TickAndRunAsync(fixture);
+        }
+
+        async Task<ProtocolOutboxRow[]> PlansAsync() => await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .Where(row => row.MessageType == "UpcomingStopPlanSnapshot")
+            .ToArrayAsync(token);
+
+        // 两个取货站照常走完，确认一路照常送达。
+        await TickAndRunAsync(fixture);
+        await AppendSecondDemandAsync(fixture);
+        await ArriveAtPickupAsync(fixture, FirstDemandId);
+        await EnterSublotAsync(fixture, FirstDemandId, FirstSublot, FirstSubmissionId);
+        await SettleLoadAsync(fixture, FirstDemandId);
+        await AnswerDepartureSafetyAsync(fixture, FirstDemandId, FirstSafetyResultId);
+        await ArriveAtCurrentStopAsync(fixture, SecondDemandId, "TO_GATE");
+        await EnterSublotAsync(fixture, SecondDemandId, SecondSublot, SecondSubmissionId);
+        await SettleLoadAsync(fixture, SecondDemandId);
+        await AnswerDepartureSafetyAsync(fixture, SecondDemandId, SecondSafetyResultId);
+        await peer.DeliverBufferedAcksAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, (await fixture.RuntimeAsync(FirstDemandId)).Stage);
+
+        // 去卸货站的路上：这一轮重发一版计划，确认丢了。这一格要求重发真的发生，否则后面什么也证明不了。
+        int plansBefore = (await PlansAsync()).Length;
+        await IterateLosingAcksAsync();
+        ProtocolOutboxRow[] plans = await PlansAsync();
+        Assert.Equal(plansBefore + 1, plans.Length);
+        ProtocolOutboxRow resent = plans
+            .OrderBy(row => row.CreatedAt).ThenBy(row => row.MessageId, StringComparer.Ordinal)
+            .Last();
+
+        // 车到卸货站，发到站那一版；此后几轮确认一直丢着，再断一次线。
+        JourneyStopRow gate = await CurrentStopAsync(fixture, FirstDemandId);
+        fixture.Riot.SetSuccessfulArrival("TO_GATE", gate.UpperId, gate.StationRiotId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = gate.StationRiotId };
+        await IterateLosingAcksAsync();
+        await IterateLosingAcksAsync();
+        await IterateLosingAcksAsync();
+        await fixture.ReconnectAsync(2);
+        await fixture.AdvanceSessionAsync(2);
+        await TickAndRunAsync(fixture);
+
+        Assert.DoesNotContain(peer.Regressions, item => item.MessageType == "UpcomingStopPlanSnapshot");
+        fixture.Context.ChangeTracker.Clear();
+        Assert.NotNull((await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .SingleAsync(row => row.MessageId == resent.MessageId, token)).FencedAt);
+    }
+
     private static async Task RunThreeStopJourneyAsync(RuntimeFixture fixture)
     {
         fixture.Catalog.Set(

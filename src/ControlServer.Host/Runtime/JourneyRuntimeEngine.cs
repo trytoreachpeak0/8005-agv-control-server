@@ -1429,6 +1429,9 @@ public sealed class JourneyRuntimeEngine(
             cancellationToken).ConfigureAwait(false);
         await RetireSupersededSnapshotAsync(PickupDispatchPlanMessageId(runtime), cancellationToken)
             .ConfigureAwait(false);
+        // 车在路上收到的那张重发版（途中追加整体重发，号按「还没到站」算）同样被到站这一版取代（批次7-07 审查）。
+        await RetireSupersededSnapshotAsync(ReSentPlanMessageId(runtime, stop, arrivedAtStop: false), cancellationToken)
+            .ConfigureAwait(false);
         await publisher.PublishUpcomingStopPlanAsync(
             stop.PlanMessageId,
             runtime.AgvId,
@@ -1814,6 +1817,9 @@ public sealed class JourneyRuntimeEngine(
         // The drop-off stop has no departure wait: ADR-cross-0055's wait is the pickup's.
         await PublishStopWorklistAsync(
             runtime, stops, session, stationDepartureDeadlineAt: null, cancellationToken).ConfigureAwait(false);
+        // 与取货到站同一件事：车在路上收到的重发版被到站这一版取代，先退役，免得补发把车上的计划拨回去（批次7-07 审查）。
+        await RetireSupersededSnapshotAsync(ReSentPlanMessageId(runtime, stop, arrivedAtStop: false), cancellationToken)
+            .ConfigureAwait(false);
         await publisher.PublishUpcomingStopPlanAsync(
             stop.PlanMessageId,
             runtime.AgvId,
@@ -2806,6 +2812,14 @@ public sealed class JourneyRuntimeEngine(
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// 一个停靠上按修订号派生的那一版计划的 messageId（途中追加的整体重发，与到站发的那一版同一个算式）。
+    /// 补发集合与到站退役都从这里取，两处不会各算各的。
+    /// </summary>
+    private static string ReSentPlanMessageId(JourneyRuntimeRow runtime, JourneyStopRow stop, bool arrivedAtStop) =>
+        JourneyPlanBuilder.StableGuid(
+            $"{stop.StopId}|{PlanRevisionAt(runtime.PlanRevision, stop, arrivedAtStop)}", "plan");
+
     private static string PickupDispatchPlanMessageId(JourneyRuntimeRow runtime) =>
         JourneyPlanBuilder.StableGuid(runtime.DemandId, "pickup-dispatch-plan");
 
@@ -2886,16 +2900,14 @@ public sealed class JourneyRuntimeEngine(
             // 计划在一个停靠上也可能发不止一版（途中追加改写了序列）。重发版的 id 由停靠与修订号派生，而重发每次都把
             // 基准抬到「按当前停靠的算式恰好等于这一版的号」（RefreshUpcomingStopPlanAsync），所以这个停靠上<b>最新</b>那一版
             // 的号就是下面两个算式之一——车在这一站上，或者还在来这一站的路上。更早的重发版不在这个集合里，不补发，也<b>不该</b>
-            // 补发：补发一张比车上那张旧的计划就是 SNAPSHOT_REVISION_REGRESSION。它们不补发靠的是「不在集合里」，不是「已退役」：
-            // 途中追加重发时会退役上一版（RefreshUpcomingStopPlanAsync），但到站发计划时只退役派往取货站那一版，<b>不退役</b>车在路上
-            // 收到的重发版——所以「未到站」算式那一个 id 在车到站之后仍在集合里（审查疑问 7；是否在到站时退役它，见 PR 正文）。
+            // 补发：补发一张比车上那张旧的计划就是 SNAPSHOT_REVISION_REGRESSION。更早的那几版有两道挡：途中追加重发时退役上一版
+            // （RefreshUpcomingStopPlanAsync），车到站发到站那一版时退役路上收到的那张（取货与卸货两处到站都退役，批次7-07 审查）。
+            // 「未到站」算式那一个 id 在车到站之后仍在这个集合里，挡住它的是退役，不是「不在集合里」。
             //
             // 批次7-07（control-server#212）之前这里枚举的是修订号 1 到 18，写的人把它当成「一趟旅程里的第几版」，而它是
             // <b>按车</b>单调的绝对号：一辆车跑到第四、五趟，重发版的号就超过 18，不在这个集合里，断线之后再也不补发。
-            ids.Add(JourneyPlanBuilder.StableGuid(
-                $"{stop.StopId}|{PlanRevisionAt(runtime.PlanRevision, stop, arrivedAtStop: true)}", "plan"));
-            ids.Add(JourneyPlanBuilder.StableGuid(
-                $"{stop.StopId}|{PlanRevisionAt(runtime.PlanRevision, stop, arrivedAtStop: false)}", "plan"));
+            ids.Add(ReSentPlanMessageId(runtime, stop, arrivedAtStop: true));
+            ids.Add(ReSentPlanMessageId(runtime, stop, arrivedAtStop: false));
             // 装货阶段快照同一个道理（批次7-07）：最新那一张的号是这个停靠的业务状态算式，或者比它小一（车还在路上）。
             ids.Add(LoadingPhaseMessageId(stop, StopRevision(runtime.VehicleBusinessRevision, stop)));
             ids.Add(LoadingPhaseMessageId(stop, StopRevision(runtime.VehicleBusinessRevision, stop) - 1));
