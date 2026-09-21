@@ -229,6 +229,17 @@ public sealed class DemandReleaseService(
             return (PickupOrderSettlement.None, DemandReleaseReasons.OrderStateUnknown);
         }
 
+        // 先对账已经发过的取消（崩溃点：取消已发出而释放未落库）。放在读订单之前：读到 CANCELLED 就当「没有活订单」直接放，
+        // 会让那一次取消的审计行永远停在 Pending——服务端明明知道取消成了，记录却说不知道（L2-RVI-04 抓到）。
+        IReadOnlyList<RiotOrderCommandAttempt> attempts = await commandAudit
+            .ReadAttemptsAsync(CancelCommandType, currentStop.UpperId, cancellationToken).ConfigureAwait(false);
+        if (attempts.Count > 0 &&
+            await orderCommands.ReconcileAsync(attempts[^1], cancellationToken).ConfigureAwait(false)
+                == RiotOrderCommandOutcome.Confirmed)
+        {
+            return (PickupOrderSettlement.Cancelled, null);
+        }
+
         RiotOrderObservation order = await vehicleFacts
             .ReconcileByUpperIdAsync(currentStop.UpperId, cancellationToken).ConfigureAwait(false);
         switch (order.OrderState)
@@ -248,16 +259,18 @@ public sealed class DemandReleaseService(
             return (PickupOrderSettlement.None, DemandReleaseReasons.FaultHoldInEffect);
         }
 
-        IReadOnlyList<RiotOrderCommandAttempt> attempts = await commandAudit
-            .ReadAttemptsAsync(CancelCommandType, currentStop.UpperId, cancellationToken).ConfigureAwait(false);
-        RiotOrderCommandOutcome outcome = attempts.Count > 0
-            ? await orderCommands.ReconcileAsync(attempts[^1], cancellationToken).ConfigureAwait(false)
-            : (await orderCommands.IssueAsync(
-                    RiotOrderCommandKind.Cancel,
-                    new RiotOrderCommandTarget(journey.AgvId, currentStop.UpperId, orderId),
-                    "REQ-0328 release for redispatch: the vehicle is no longer eligible for this demand",
-                    faultGeneration: null,
-                    cancellationToken).ConfigureAwait(false)).Outcome;
+        // 订单还活着：发过取消的只对账、不发第二次（重发属 cs#296）；没发过的发一次并对账。
+        if (attempts.Count > 0)
+        {
+            return (PickupOrderSettlement.None, DemandReleaseReasons.OrderCancelNotConfirmed);
+        }
+
+        RiotOrderCommandOutcome outcome = (await orderCommands.IssueAsync(
+                RiotOrderCommandKind.Cancel,
+                new RiotOrderCommandTarget(journey.AgvId, currentStop.UpperId, orderId),
+                "REQ-0328 release for redispatch: the vehicle is no longer eligible for this demand",
+                faultGeneration: null,
+                cancellationToken).ConfigureAwait(false)).Outcome;
         return outcome == RiotOrderCommandOutcome.Confirmed
             ? (PickupOrderSettlement.Cancelled, null)
             : (PickupOrderSettlement.None, DemandReleaseReasons.OrderCancelNotConfirmed);

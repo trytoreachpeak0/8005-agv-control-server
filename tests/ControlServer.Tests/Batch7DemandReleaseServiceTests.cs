@@ -95,6 +95,11 @@ public sealed class Batch7DemandReleaseServiceTests
         IReadOnlyList<DemandReleaseOutcome> third = await Service(fixture, gateway).RunOnceAsync(Token);
         Assert.Equal("RELEASED", Assert.Single(third).Result);
         Assert.Equal(1, gateway.Cancels);
+        // 那一次取消的审计行也对账成了 Confirmed。复审中 2 之后释放先读订单，读到 CANCELLED 就当「没有活订单」直接放，
+        // 一度跳过了对账，审计行永远停在 Pending——服务端明明知道取消成了，记录却说不知道（L2-RVI-04 抓到，L1 当时没断这一项）。
+        await using ControlServerDbContext settled = new ControlServerDbContext(fixture.DbOptionsForTests);
+        Assert.Equal(RiotOrderCommandOutcome.Confirmed, (await settled.RiotOrderCommandAudit.AsNoTracking()
+            .SingleAsync(row => row.TargetUpperId == before.PickupUpperId, Token)).Outcome);
     }
 
     [Fact]
