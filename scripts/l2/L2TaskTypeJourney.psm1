@@ -255,6 +255,44 @@ function Wait-L2SecondLegIntent {
 
 <#
 .SYNOPSIS
+This demand's acknowledged worklists that carry a station id, earliest first.
+
+.DESCRIPTION
+Exported, and that is not tidiness: both waits below call it from inside a `.GetNewClosure()` probe,
+and a closure resolves command names against the GLOBAL table -- an unexported sibling is simply not
+found there, and the failure arrives as a nameless timeout (control-server#203).
+
+NOT comma-wrapped, because it can legitimately return nothing: a wrapped empty array is not empty to
+a caller, it is one element that happens to be an array. Callers write @(...) around the call.
+
+It sits ABOVE Wait-L2FirstAcknowledgedWorklistStation's help block, not between that block and its
+function. PowerShell attaches comment-based help to the function that immediately follows it, so
+inserting anything in between orphans the help: an earlier version did exactly that, and the text
+explaining why "earliest" is load-bearing belonged to no function at all (review of #272).
+#>
+function Get-L2AcknowledgedWorklists {
+    param(
+        [Parameter(Mandatory)][object]$Connection,
+        [Parameter(Mandatory)][string]$DemandId)
+
+    # The parentheses around the inner call are load-bearing. Get-L2DemandJourneySnapshots returns
+    # `, @($mine)`, a single-layer array, and of the four ways to consume it only two unroll it:
+    #
+    #     f | Where        ONE object, the whole list        wrong
+    #     @(f) | Where     ONE object, the whole list        wrong   <- also `$x = @(f)`
+    #     (f) | Where      unrolled                          right
+    #     $x = f           unrolled                          right
+    #
+    # Measured, and the second row is not hypothetical: when this comment was moved here from the
+    # probe it came from, the `@(f)` half was dropped, and the next read written in this file used
+    # exactly that form -- two worklists came back as one element and every count built on it read 1
+    # (review of #272). The warning is part of the defence; deleting it removed the defence.
+    return @((Get-L2DemandJourneySnapshots $Connection $DemandId) | Where-Object {
+        $_.Type -eq 'CurrentStopWorklistSnapshot' -and $_.Acknowledged -and (Test-L2RealPresent $_.StationId) })
+}
+
+<#
+.SYNOPSIS
 Waits for the first acknowledged worklist of this demand and answers WHICH station it is for.
 
 .DESCRIPTION
@@ -275,31 +313,6 @@ CreatedAt). That "earliest" is load-bearing: it is what makes the value mean "th
 Taking the latest instead would hand the second stop's wait its own station to compare against, and
 then that wait could never be satisfied.
 #>
-<#
-.SYNOPSIS
-This demand's acknowledged worklists that carry a station id, earliest first.
-
-.DESCRIPTION
-Exported, and that is not tidiness: both waits below call it from inside a `.GetNewClosure()` probe,
-and a closure resolves command names against the GLOBAL table -- an unexported sibling is simply not
-found there, and the failure arrives as a nameless timeout (control-server#203).
-
-NOT comma-wrapped, because it can legitimately return nothing: a wrapped empty array is not empty to
-a caller, it is one element that happens to be an array. Callers write @(...) around the call.
-#>
-function Get-L2AcknowledgedWorklists {
-    param(
-        [Parameter(Mandatory)][object]$Connection,
-        [Parameter(Mandatory)][string]$DemandId)
-
-    # The parentheses around the inner call are load-bearing: Get-L2DemandJourneySnapshots returns
-    # `, @($mine)`, and `f | Where` hands Where-Object ONE object that is the whole list while
-    # `(f) | Where` unrolls it. Measured; dropping them once read two worklists as a single row whose
-    # StationId was 'STATION-A STATION-B'.
-    return @((Get-L2DemandJourneySnapshots $Connection $DemandId) | Where-Object {
-        $_.Type -eq 'CurrentStopWorklistSnapshot' -and $_.Acknowledged -and (Test-L2RealPresent $_.StationId) })
-}
-
 function Wait-L2FirstAcknowledgedWorklistStation {
     param(
         [Parameter(Mandatory)][object]$Connection,
@@ -329,10 +342,11 @@ function Wait-L2FirstAcknowledgedWorklistStation {
     if ($stations.Count -gt 1) {
         throw ("The earliest acknowledged worklist of demand $DemandId is at '$station', but its " +
             "acknowledged worklists already span more than one station ($($stations -join ', ')). " +
-            'This function returns the earliest as a stand-in for "the stop just finished", which ' +
-            'holds only while no stop''s worklist can be acknowledged before an earlier stop''s. That ' +
-            'no longer holds here, so this value may name the wrong stop -- and this check is then the ' +
-            'only thing that speaks. The second stop''s wait excludes whatever this returns, so a ' +
+            'This function returns the earliest as a stand-in for "the stop just finished", and that is ' +
+            'only guaranteed while this demand has no acknowledged worklist beyond the current stop''s. ' +
+            'Here it already has one at another station, so the guarantee is gone and this value may ' +
+            'name the wrong stop -- and this check is then the only thing that speaks. The second ' +
+            'stop''s wait excludes whatever this returns, so a ' +
             'wrong value there is satisfied by the first stop''s own worklist: it PASSES, and the run ' +
             'ends green with the two stops judged in the wrong order (control-server#270).')
     }
@@ -408,8 +422,17 @@ function Wait-L2WorklistAcknowledgedAtOtherStation {
         # indistinguishable in the worklists alone, so a diagnostic resting on them would claim
         # "same-station journey" for an ordinary not-there-yet timeout. The plan's legs each carry
         # their own stationId, so the plan can say it outright.
+        #
+        # What else can arrive in this catch besides the timeout: read against L2.psm1's
+        # Wait-L2Condition, only a Journal.Observe write failure -- the probe is wrapped, this call
+        # passes no -Component or -Port, and the -Until block here cannot throw. So the "Timed out"
+        # this message opens with is true in every case but a failed evidence write (review of #272).
         $snapshots = $null
-        try { $snapshots = @(Get-L2DemandJourneySnapshots $Connection $DemandId) } catch { }
+        # @((f)), NOT @(f): Get-L2DemandJourneySnapshots returns a comma-wrapped array, and @(f) is one
+        # element holding the whole list. That is not a style point -- this very line was once @(f),
+        # and every count below read 0 or 1, and Select-Object -Last 1 picked "the list" instead of the
+        # latest plan, so a revised plan was judged as the union of every version (review of #272).
+        try { $snapshots = @((Get-L2DemandJourneySnapshots $Connection $DemandId)) } catch { }
         # Both null guards are load-bearing, and the first one was measured the hard way: piping $null
         # into Where-Object yields ONE $null item rather than none, so with the read having failed,
         # `$_.Type` throws under Set-StrictMode -Version Latest -- and a throw HERE replaces the
@@ -419,11 +442,41 @@ function Wait-L2WorklistAcknowledgedAtOtherStation {
             @($snapshots | Where-Object { $_.Type -eq 'UpcomingStopPlanSnapshot' }) | Select-Object -Last 1
         }
         if ($null -ne $plan) {
-            $planStations = @($plan.Legs | ForEach-Object { [string]$_.stationId } |
-                Where-Object { Test-L2RealPresent $_ } | Sort-Object -Unique)
+            # Every leg's station, EMPTY ONES INCLUDED, and an empty one vetoes the diagnosis.
+            #
+            # This is the other half of the diagnostic's discriminating power: it must say "same
+            # station" when that is what happened, and must stay silent when it is not. Filtering the
+            # empties out first and then checking uniqueness turned a plan of 'A' and '' into "every
+            # leg at A" -- and the message then said the server did not fail, which is the one direction
+            # it must never point when the real fault is a leg with no station id (the very class
+            # cs#265's three Test-L2RealPresent checks exist for). A sentence that closes off a
+            # direction that firmly does more harm than a bare timeout when it is wrong, because the
+            # timeout at least points nowhere (review of #272).
+            #
+            # The veto is the ONE protection here, on purpose. An earlier draft also stopped filtering
+            # empties out of $planStations, so that '' became a distinct element -- which alone was
+            # enough to keep 'A' + '' from reading as one station. With both in place, removing the veto
+            # reddened nothing: the second one caught every input, so the veto could never be exercised
+            # on its own. That is dead code dressed as defence in depth. The filter below is back, and
+            # it is harmless: whenever the veto lets execution past, there are no empties to filter.
+            $legStations = @($plan.Legs | ForEach-Object { [string]$_.stationId })
+            $anyLegEmpty = @($legStations | Where-Object { -not (Test-L2RealPresent $_) }).Count -gt 0
+            $planStations = @($legStations | Where-Object { Test-L2RealPresent $_ } | Sort-Object -Unique)
+            # The same filter the wait itself uses, so "all at" below is true by construction rather
+            # than by the data happening to cooperate.
             $acknowledged = @($snapshots | Where-Object {
-                $_.Type -eq 'CurrentStopWorklistSnapshot' -and $_.Acknowledged })
-            if ($planStations.Count -eq 1 -and $planStations[0] -eq $PreviousStationId) {
+                $_.Type -eq 'CurrentStopWorklistSnapshot' -and $_.Acknowledged -and (Test-L2RealPresent $_.StationId) })
+            # "Nothing elsewhere" is its own condition, not implied by the timeout. It covers the one race
+            # the failure path can meet: a worklist at another station landing after the wait's last poll
+            # and before this read. Then the plan says one station while the data shows two, and "two
+            # stops are one station" would contradict what was just read. It has no self-check case, and
+            # not by omission: the poll that triggers the timeout itself runs after the deadline, a hair
+            # before this read, so no stub can make the poll miss what this read sees. A wall-clock
+            # attempt would only produce a case that is red sometimes (Test-L2WorklistStationWait.ps1
+            # says the same where the case would be).
+            $elsewhere = @($acknowledged | Where-Object { $_.StationId -ne $PreviousStationId })
+            if (-not $anyLegEmpty -and $planStations.Count -eq 1 -and $planStations[0] -eq $PreviousStationId -and
+                $elsewhere.Count -eq 0) {
                 throw ("Timed out waiting for a worklist at a station other than '$PreviousStationId'. " +
                     "The journey plan for demand $DemandId puts every leg at that same station, so this " +
                     "journey's two stops are one station and this criterion cannot be satisfied by " +

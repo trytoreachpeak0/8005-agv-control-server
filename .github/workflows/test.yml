@@ -106,11 +106,17 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2SecondLegIntentWait.ps1
 
-      # 18 to 20 seconds (measured 18.2 / 19.7 / 18.3), 16 of which are eight deliberate 2-second
-      # timeouts: every case where a criterion must NOT be satisfied has to run out its clock. Counted
-      # by reading the invocations, not by grepping for "Timed out" -- that pattern appears 7 times,
-      # because the same-station case times out too but asserts on the diagnostic's wording instead.
-      # The arithmetic agrees: 8 x 2 = 16 fits under 18.2, and 9 x 2 = 18 would leave no room to start.
+      # About 27 seconds (measured 26.4 / 26.8 / 26.7 on the control host), 24 of which are twelve
+      # deliberate 2-second timeouts: every case where a criterion must NOT be satisfied has to run out
+      # its clock. The twelve is the load-bearing number, and it comes from reading the invocations.
+      #
+      # Two things this comment used to say and no longer does, both from review of #272. It quoted a
+      # grep count of "Timed out" as the thing reading-the-invocations corrected; that count described
+      # a different command than the one actually run, and a comment added in the same PR changed it
+      # again -- a count of a string in a file goes stale every time someone edits a comment. And it
+      # treated "one more timeout would leave no room to start" as a proof; that holds only at this
+      # machine's speed (review measured the previous version up to 3 s slower, cold start slower
+      # still). The overhead is a few seconds and varies; the timeout count does not.
       #
       # Covers the two waits the real rig cannot put in the states that matter. The second stop's
       # used to be "at least 2 acknowledged worklists", a proxy that equals "the second stop's

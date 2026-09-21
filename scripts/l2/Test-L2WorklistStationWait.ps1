@@ -189,6 +189,58 @@ Add-Case '而且明确否掉「服务端没发第二站清单」这个方向' `
 Add-Case '而且不声称同站旅程非法——那是产品问题，这个检查不回答' `
     ($null -ne $same.Error -and $same.Error -like '*does not answer*') "错误=$($same.Error)"
 
+# 以下三条都是审查（#272）用实测打出来的，自检原本一条都抓不到。共同原因是上面那组同站夹具**恰好只有
+# 1 个计划、1 份清单**：`@(f)` 把整张列表读成 1 个元素时，1 个元素的答案碰巧还是对的。**一个夹具的
+# 形状太规整，会让一整类错误对自检不可见。**
+
+# 条数：同站 + 2 份已确认清单。`@(f)` 那种写法下这里只可能读成 0 或 1——表示的是「有没有」而不是「有几份」。
+$sameStationTwoWorklists = @(
+    (Plan 'p1' @('STATION-A', 'STATION-A')),
+    (Worklist '1' 'STATION-A' 1 $true),
+    (Worklist '2' 'STATION-A' 2 $true))
+$sameTwo = Invoke-Wait -Rows $sameStationTwoWorklists -Previous 'STATION-A'
+Add-Case '同站 + 2 份已确认清单：消息里报的是 2 份，不是「有没有」' `
+    ($null -ne $sameTwo.Error -and $sameTwo.Error -like '*(2 acknowledged worklist(s)*') "错误=$($sameTwo.Error)"
+
+# 计划改过版：按【最新】那版判，不是所有版次的并集。`@(f)` 那种写法下 Select-Object -Last 1 挑到的是
+# 「整张列表」，于是旧版 A/B 与新版 A/A 并成 {A, B}，同站诊断不出声。
+# （桩函数不执行 SQL 里的 ORDER BY，所以数组顺序就是出厂读取函数会给出的时间顺序：旧版在前。）
+$planRevisedToSameStation = @(
+    (Plan 'p1' @('STATION-A', 'STATION-B')),
+    (Plan 'p2' @('STATION-A', 'STATION-A')),
+    (Worklist '1' 'STATION-A' 1 $true))
+$revisedPlan = Invoke-Wait -Rows $planRevisedToSameStation -Previous 'STATION-A'
+Add-Case '计划改版成同站：按最新那版判，诊断照样出声' `
+    ($null -ne $revisedPlan.Error -and $revisedPlan.Error -like '*two stops are one station*') "错误=$($revisedPlan.Error)"
+
+# 计划里有一条腿站点 id 为空：**不许**诊断成同站。这是「第一站改版不许被诊断成同站」的另一半——一个诊断
+# 的判别力，一半在它该说时说，另一半在它不该说时不说。先滤掉空值再判唯一性，会把 A 与空串读成「每条腿
+# 都在 A」，然后消息会说「服务端没出问题」——而真正的故障恰恰是那条没有站点 id 的腿。
+$planWithEmptyLeg = @(
+    (Plan 'p1' @('STATION-A', '')),
+    (Worklist '1' 'STATION-A' 1 $true))
+$emptyLeg = Invoke-Wait -Rows $planWithEmptyLeg -Previous 'STATION-A'
+Add-Case '计划里有一条腿站点为空：不许诊断成同站，交还原来的超时' `
+    ($null -ne $emptyLeg.Error -and $emptyLeg.Error -like '*Timed out after*' -and
+     $emptyLeg.Error -notlike '*two stops are one station*') "错误=$($emptyLeg.Error)"
+
+# 「all at」这句必须按构造成立：用来数的清单要与等待本身用同一个过滤（要求站点 id 非空）。不然一份在 A、
+# 一份站点为空时，消息会说「2 份，全在 A」——那一份空的明明不在 A（审查 #272 的 E5）。
+$sameStationPlusEmptyWorklist = @(
+    (Plan 'p1' @('STATION-A', 'STATION-A')),
+    (Worklist '1' 'STATION-A' 1 $true),
+    (Worklist '2' '' 1 $true))
+$plusEmpty = Invoke-Wait -Rows $sameStationPlusEmptyWorklist -Previous 'STATION-A'
+Add-Case '同站 + 一份站点为空的清单：「all at」只数有站点的那份，报 1 不报 2' `
+    ($null -ne $plusEmpty.Error -and $plusEmpty.Error -like "*(1 acknowledged worklist(s), all at 'STATION-A'*") `
+    "错误=$($plusEmpty.Error)"
+
+# 没有为「别处没有」那道保护写用例，理由写在这里而不是省掉：它防的是最后一次探测之后、失败路径那次读之前
+# 另一站的清单刚好到达的竞态。Wait-L2Condition 触发超时的那最后一次探测本身就发生在截止之后，与这次读
+# 只隔一个几乎为零的间隔，**没有任何可观测的边界能让「探测看不到、读能看到」**。按墙钟去碰只会得到一条
+# 时红时绿的用例，而偶尔不红的红证据等于没有证据。这道保护不冗余（它是唯一覆盖那个竞态的），只是桩数据
+# 构造不出它要防的那一刻。
+
 # 失败路径那次读自己也抛时，原来的超时不许被顶替：服务端没了本来就是超时的原因之一，那时这次读也会
 # 抛，会把唯一说明「在等什么」的消息一起带走（cs#203 的教训，这里是它的第二次应用）。
 $global:l2wsThrowAfterUtc = [DateTime]::UtcNow.AddSeconds(2)
