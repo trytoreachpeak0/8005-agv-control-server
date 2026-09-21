@@ -255,6 +255,14 @@ jobs:
               @{ Name = 'task-type-binding-station-reused-refuses-start'; Runs = 3; BatchId = 'batch-6' }
               # Batch 7 (program#127). Each ticket adds its own scenario here from its own pull request, sorted by
               # name, one run each; the batch-7 exit (control-server#220) makes every line three runs.
+              # control-server#212: the loading phase. Holding for appends only where the zone allows appending (the
+              # disabled one runs both ways of forbidding it, limit 0 and unconfigured, on one server); each side full
+              # in one of its two ways; the holding timeout at 40 seconds; candidates that do not fit for any reason
+              # other than the vehicle's own cargo never make a side full; and a full vehicle still taking an
+              # appended demand until it leaves its last pickup.
+              @{ Name = 'cargo-holding-disabled-when-append-forbidden'; Runs = 1; BatchId = 'batch-7' }
+              @{ Name = 'cargo-holding-side-full'; Runs = 1; BatchId = 'batch-7' }
+              @{ Name = 'cargo-holding-timeout'; Runs = 1; BatchId = 'batch-7' }
               # control-server#216: the five kinds of bad per-zone dispatch parameter table each rejected whole, and a
               # good one taking effect as one new version without restarting the server.
               @{ Name = 'dispatch-zone-parameters-import-rejects'; Runs = 1; BatchId = 'batch-7' }
@@ -288,6 +296,9 @@ jobs:
               # used leaves the plan the vehicle holds, with the plan revision moving on (REQ-0197, ADR-cross-0053). It does
               # not run the other demands to completion; that half is L1 (see the scenario's header and the pull request).
               @{ Name = 'plan-reorder-and-drop-cancelled'; Runs = 1; BatchId = 'batch-7' }
+              # control-server#212, the two vehicle-full ones of the five above.
+              @{ Name = 'vehicle-full-ignores-oversized-and-gated'; Runs = 1; BatchId = 'batch-7' }
+              @{ Name = 'vehicle-full-still-appends-before-departure'; Runs = 1; BatchId = 'batch-7' }
           )
           # One run's usual length in seconds, for dealing scenarios out to lanes longest first. Medians of 31
           # CI jobs from 2026-09-17 (ci-research, control-server#130); normal-load's excludes the build it used
@@ -308,6 +319,10 @@ jobs:
               'structural-block-oversized-demand' = 21; 'slot-group-disabled-no-alert' = 20
               'slot-configuration-activation-replay' = 19; 'three-synthetic-peers' = 18; 'create-gate' = 18
               'route-graph-engine' = 17
+              # control-server#212, one local run each (2026-09-21): the station and holding waits are most of it.
+              'vehicle-full-still-appends-before-departure' = 111; 'cargo-holding-side-full' = 98
+              'cargo-holding-timeout' = 81; 'cargo-holding-disabled-when-append-forbidden' = 64
+              'vehicle-full-ignores-oversized-and-gated' = 58
           }
 
           # Registered before anything can fail, so the upload step below always has a path: without it

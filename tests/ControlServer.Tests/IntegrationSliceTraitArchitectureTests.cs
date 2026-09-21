@@ -70,6 +70,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["Batch7JourneyAcceptanceTests"] = "batch 7 schema ticket control-server#206: the acceptance transaction writes stops, demand membership, purpose claim and revision counter in its one save, with every id and revision the peer sees unchanged; server-internal persistence, no wire message changes",
             ["Batch7MultiDemandCancellationTests"] = "batch 7 control-server#211: the cancellation before a sublot is judged against the demand the operator named rather than the journey, so a stop carrying several demands can cancel one while another loads; the wire messages are FP-IS-02's, already covered there, and this asserts which demand the authorisation is about",
             ["Batch7MultiDemandAdvanceTests"] = "batch 7 control-server#211: which demand a stop is loading right now, and a stop running its demands one after another; the wire messages it sends are the ones FP-IS-08 already covers, and this asserts the advance's own state machine rather than a vector, so it sits outside the slice family",
+            ["Batch7LoadingPhaseDispatchTests"] = "batch 7-07 REQ-0354 the dispatch side of the loading phase -- the criterion that stops appends once loading closed, and the per-round board of sides full of the vehicle's own cargo (control-server#212); server-internal, no wire message",
             ["Batch7MigrationDisciplineTests"] = "cross-cutting migration guard for batch 7's one migration (control-server#206), including its back-fill of journeys in flight; hanging it off a slice would defer the guard with the slice",
             ["Batch7PersistencePortTests"] = "batch 7 schema ticket control-server#206: the five persistence ports later batch 7 tickets consume; server-internal, no wire message",
             ["Batch7StopDrivenAdvanceTests"] = "batch 7 pre-refactor control-server#208: what the word-for-word wire comparison cannot see -- a crash part way through a goto-case chain, the revision streams staying monotonic across two journeys on one vehicle, and which demand the pre-departure check names; the claim is that no wire message changes, so it sits outside the slice family for the reason Batch7StopDrivenAdvanceWireParityTests does",
@@ -105,6 +106,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["IntegrationSliceTraitArchitectureTests"] = "cross-cutting architecture guard; hanging it off a slice would defer the guard with the slice",
             ["JourneyPlanCharacterizationTests"] = "batch 6-01 behaviour-preserving restructuring guard (control-server#158): the route evidence id and one acceptance's plan pinned byte for byte; characterization, it proves no slice's wire behaviour",
             ["JourneyStopEntryRequestIdTests"] = "batch 7-06 REQ-0205 which entry request the current stop settles, and what either getter does when the id is missing (control-server#211); server-internal, no wire message",
+            ["LoadingPhaseMachineTests"] = "batch 7-07 REQ-0354 the loading phase decision table and when it announces (control-server#212); a pure function over server-side facts, no wire message -- the snapshots it leads to are judged in the FP-IS-08 classes",
             ["MapStationResolverTests"] = "7.5 #6, RouteGraphSnapshot engine; single-ended server-to-RIoT",
             ["MultiVehicleExecutionTests"] = "7.5 #1, FP-C2 B2 multi-vehicle; the conformance vector format has no vehicle dimension",
             ["OnboardVehicleSafetyEndpointsTests"] = "server-side safety projection endpoint; not a protocol wire message",
@@ -184,7 +186,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
         {
             ["FakeRiotTests"] = (8, "the fake's own control plane and conflict behaviour; the traited tests are the shapes the production adapter parses"),
             ["HttpRiotMovementGatewayTests"] = (23, "RIoT adapter fail-closed and sanitisation behaviour; the traited tests are the ones a wire message depends on"),
-            ["JourneyRuntimeOptionsTests"] = (4, "option defaults, and the cargo holding timeout that has no reader yet (control-server#206); the traited tests are the validations that fail a deployment closed"),
+            ["JourneyRuntimeOptionsTests"] = (4, "option defaults, and the cargo holding timeout (control-server#206; read by the loading phase since control-server#212); the traited tests are the validations that fail a deployment closed"),
             ["OnboardAlarmProjectionTests"] = (1, "the dashboard self-registration convention #12 set up; the traited tests are the ones standing behind OnboardAlarmSnapshot")
         };
 

@@ -950,6 +950,7 @@ internal static class JourneyRuntimeWorkerTestKit
                     new VehicleSlotPositionReader(Context),
                     new VehicleRoster(options),
                     StructuralBlockLog),
+                SlotGroupFullness,
                 onboardFacts,
                 options,
                 Clock,
@@ -977,10 +978,18 @@ internal static class JourneyRuntimeWorkerTestKit
                 CreateFaultCoordinator(),
                 dispatchRound,
                 onboardFacts,
+                new DispatchZoneParameterStore(Context, CreateGovernedPublisher()),
+                SlotGroupFullness,
                 options,
                 Clock,
                 EngineLog);
         }
+
+        /// <summary>
+        /// 派车轮写、推进段读的那块板（批次7-07）：宿主里是单例，这里一个夹具一块，跨轮次保留。换一块新的再
+        /// <see cref="RecreateEngineAsync"/>，就是一次重启——那块板是进程内的，随进程一起没了。
+        /// </summary>
+        public SlotGroupFullnessBoard SlotGroupFullness { get; set; } = new();
 
         /// <summary>
         /// The governed-configuration publisher over this fixture's database: what the batch 4 area assignment

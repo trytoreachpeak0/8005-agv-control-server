@@ -30,18 +30,36 @@ namespace ControlServer.Host.Runtime.Dispatch;
 /// </remarks>
 public sealed class JourneyAwareSlotLedger(ControlServerDbContext dbContext) : IVehicleSlotLedger
 {
-    public async Task<IReadOnlyList<int>> ReadAvailableSlotsAsync(
+    public Task<IReadOnlyList<int>> ReadAvailableSlotsAsync(
         DispatchVehicleFacts vehicle,
         string slotPosition,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(vehicle);
-        if (vehicle.Onboard is not OnboardDispatchFacts onboard || vehicle.SlotPositions is not { } positions)
+        return ReadAvailableSlotsAsync(vehicle.AgvId, vehicle.Onboard, vehicle.SlotPositions, slotPosition, cancellationToken);
+    }
+
+    /// <summary>
+    /// 同一个答案，不要 RIoT 观测也能问（批次7-07，control-server#212）：装货阶段判「这一侧已无空仓」时，推进段手上
+    /// 只有车载端事实与仓位模型，没有也不该为此去读一次 RIoT。
+    /// </summary>
+    /// <remarks>
+    /// <b>是同一段减法，不是第二份</b>：派车问的与装货阶段问的必须是同一个账本，否则会出现「派车说这一侧还有空、
+    /// 装货阶段说这一侧满了」——车为一侧的空位等单，而那一侧的空位派车永远不会用。
+    /// </remarks>
+    public async Task<IReadOnlyList<int>> ReadAvailableSlotsAsync(
+        string agvId,
+        OnboardDispatchFacts? onboardFacts,
+        VehicleSlotPositions? slotPositions,
+        string slotPosition,
+        CancellationToken cancellationToken)
+    {
+        if (onboardFacts is not OnboardDispatchFacts onboard || slotPositions is not { } positions)
         {
             return [];
         }
 
-        HashSet<int> takenByThisVehicle = await SlotsHeldByTheVehiclesJourneyAsync(vehicle.AgvId, cancellationToken)
+        HashSet<int> takenByThisVehicle = await SlotsHeldByTheVehiclesJourneyAsync(agvId, cancellationToken)
             .ConfigureAwait(false);
         return
         [

@@ -1,0 +1,5 @@
+injection 3 (departure-ignores-holding) in src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+737c737
+<                 if (runtime.LoadingPhaseState == LoadingPhaseStates.CargoHoldingWait)
+---
+>                 if (runtime.LoadingPhaseState == "INJECTED-NEVER")

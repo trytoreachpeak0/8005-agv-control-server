@@ -44,6 +44,7 @@ public sealed class DispatchRoundRunner(
     IAreaAssignmentStore areaAssignments,
     IVehicleSlotPositionReader slotPositions,
     IDispatchRoundOutcomeSink roundOutcomes,
+    SlotGroupFullnessBoard slotGroupFullness,
     OnboardDispatchFactsReader onboardFacts,
     IOptions<JourneyRuntimeOptions> options,
     TimeProvider timeProvider,
@@ -322,13 +323,14 @@ public sealed class DispatchRoundRunner(
 
         // After every vehicle, a budget-exhausted one included. Whether any vehicle at all could take a demand
         // is only answerable across the fleet; JourneyBacklog, overwritten vehicle by vehicle, cannot say.
-        await roundOutcomes.RecordAsync(
-                new DispatchRoundOutcome(
-                    round,
-                    [.. participants.Where(p => p.RanToItsEnd)
-                        .Select(p => new DispatchVehicleOutcome(p.Vehicle.AgvId, p.Vehicle.VehicleKey, p.Verdicts))]),
-                cancellationToken)
-            .ConfigureAwait(false);
+        DispatchRoundOutcome roundOutcome = new(
+            round,
+            [.. participants.Where(p => p.RanToItsEnd)
+                .Select(p => new DispatchVehicleOutcome(p.Vehicle.AgvId, p.Vehicle.VehicleKey, p.Verdicts))]);
+        await roundOutcomes.RecordAsync(roundOutcome, cancellationToken).ConfigureAwait(false);
+        // 装货阶段下一轮判「这一侧满没满」要的那一半（批次7-07，control-server#212）：哪几侧有候选只因本车货物占侧而装不下。
+        // 与结构性告警读的是同一份结局，所以两者对「这一轮问到了哪些车」的口径一致。
+        slotGroupFullness.Record(roundOutcome);
     }
 
     /// <summary>
@@ -514,7 +516,8 @@ public sealed class DispatchRoundRunner(
             all.ToDictionary(
                 stop => stop.StopId,
                 stop => stops.AllAtStop(stop).Count(item => !JourneyStopCursor.IsDoneAt(stop, item)),
-                StringComparer.Ordinal));
+                StringComparer.Ordinal),
+            LoadingPhaseClosed: runtime.LoadingPhaseState == LoadingPhaseStates.Closed);
     }
 
     /// <summary>一辆车对一条任务的裁决：过了就成为一份出价，没过就只留下积压里的理由。</summary>

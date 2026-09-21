@@ -652,6 +652,16 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
                 $"Journey '{plan.JourneyId}' is {journey.Stage} and cannot take an appended demand.");
         }
 
+        // 装货阶段结束了也不接（批次7-07，control-server#212）：持货超时、让站之后不再接受新的待装需求（REQ-0354 末句），
+        // 装满之后离开最后一个装货停靠同样是终点——「离开」指服务端为离站向 RIoT 请求移动，而那一次保存就写下了 CLOSED。
+        // 所以「是否已经离开」在这里读的是同一次写入留下的那一列，与判 Blocked 同一个道理：轮次读到的计划在它自己的
+        // 时刻是对的，挡得住的只有和这次写入在同一个事务里的判据。
+        if (journey.LoadingPhaseState == LoadingPhaseStates.Closed)
+        {
+            throw new BusinessIdentityConflictException(
+                $"Journey '{plan.JourneyId}' has closed its loading phase ({journey.LoadingClosedReason}) and cannot take an appended demand.");
+        }
+
         if (demand.AreaAssignmentVersion is long areaAssignmentVersion)
         {
             await FreezeAreaAssignmentAsync(snapshot, areaAssignmentVersion, cancellationToken).ConfigureAwait(false);

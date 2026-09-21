@@ -1,0 +1,5 @@
+injection 4 (no-loading-phase-open-criterion) in src/ControlServer.Host/Runtime/Dispatch/Criteria/DispatchAdmissionCriteria.cs
+114c114
+<              new LoadingPhaseOpenCriterion()];
+---
+>              .. Array.Empty<IDispatchAdmissionCriterion>()];

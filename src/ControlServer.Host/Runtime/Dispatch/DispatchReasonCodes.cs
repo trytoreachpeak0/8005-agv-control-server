@@ -140,6 +140,12 @@ public static class DispatchReasonCodes
     public const string EnRouteAppendNoInsertionPoint = "EN_ROUTE_APPEND_NO_INSERTION_POINT";
 
     /// <summary>
+    /// 这辆在途车的装货阶段已经结束（批次7-07，control-server#212）：持货超时了，或者装满之后已经离开最后一个装货停靠，
+    /// 或者本来就不适用持货、当前计划已经装完。REQ-0354 末句「持货超时或让站之后不再接受新的待装 Demand」。
+    /// </summary>
+    public const string LoadingPhaseClosed = "LOADING_PHASE_CLOSED";
+
+    /// <summary>
     /// 同一份完整 MES 快照里，这个 Sublot 命中了多于一种任务类型（<c>REQ-0189</c>）。该 Sublot 的<b>全部</b>候选都挡，
     /// 别的 Sublot 不受影响。
     /// </summary>

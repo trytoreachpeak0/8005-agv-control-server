@@ -170,7 +170,7 @@ public sealed class JourneyRuntimeOptionsTests
 
     /// <summary>
     /// 持货超时（ADR-cross-0057，批次 7 建表票 control-server#206）：默认 30 分钟、必须为正，出厂配置写明这一项。
-    /// 本票没有读者，读它的是批次7-07（control-server#212）。
+    /// 读它的是装货阶段（批次7-07，control-server#212，<c>JourneyRuntimeEngine.ReconcileLoadingPhaseAsync</c>）。
     /// </summary>
     [Fact]
     public void CargoHoldingTimeoutDefaultsToThirtyMinutesMustBePositiveAndIsShippedInAppSettings()
