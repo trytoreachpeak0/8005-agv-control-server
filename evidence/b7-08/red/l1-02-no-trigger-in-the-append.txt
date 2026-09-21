@@ -1,0 +1,21 @@
+# injection: l1-02-no-trigger-in-the-append
+# file: src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs
+--- 
++++ 
+@@ -731,5 +731,2 @@
+         {
+-            await StationYield.StageTriggerAsync(
+-                    dbContext, journey.VehicleKey, nextStop.StationRiotId, plan.AddedAt, cancellationToken)
+-                .ConfigureAwait(false);
+         }
+# build:
+0 Error(s)
+# test run (filter: FullyQualifiedName~Batch7StationYield|FullyQualifiedName~LoadingPhaseMachineTests|FullyQualifiedName~DispatchVehicleOrderingTests):
+  Failed ControlServer.Tests.Batch7StationYieldTriggerTests.AnAppendThatMakesTheStationAnotherVehiclesNextStopMakesTheHolderYield [703 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 2026-09-19T09:04:00.0000000+00:00
+Actual:   null
+     at ControlServer.Tests.Batch7StationYieldTriggerTests.AnAppendThatMakesTheStationAnotherVehiclesNextStopMakesTheHolderYield() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTriggerTests.cs:line 178
+   at ControlServer.Tests.Batch7StationYieldTriggerTests.AnAppendThatMakesTheStationAnotherVehiclesNextStopMakesTheHolderYield() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTriggerTests.cs:line 179
+Failed!  - Failed:     1, Passed:   107, Skipped:     0, Total:   108, Duration: 41 s - ControlServer.Tests.dll (net8.0)

@@ -1,0 +1,101 @@
+# injection: l1-05-the-machine-ignores-the-yield
+# file: src/ControlServer.Host/Runtime/LoadingPhaseMachine.cs
+--- 
++++ 
+@@ -93,3 +93,3 @@
+ 
+-        if (facts.YieldTriggered)
++        if (facts.YieldTriggered && facts.State == "never")
+         {
+# build:
+0 Error(s)
+# test run (filter: FullyQualifiedName~Batch7StationYield|FullyQualifiedName~LoadingPhaseMachineTests|FullyQualifiedName~DispatchVehicleOrderingTests):
+  Failed ControlServer.Tests.LoadingPhaseMachineTests.EachRuleDecidesWhatItSays(row: "waiting vehicle yields", facts: Facts { State = CARGO_HOLDING_WAIT, ClosedReason = , HoldingApplicable = True, PendingLoadsRemain = False, LastLoadingStopDeparted = False, VehicleFull = False, HoldingDeadlinePassed = False, LoadBatchInProgress = False, DepartureUnderWay = False, YieldTriggered = True }, state: "CLOSED", reason: "WAITING_STATION_YIELD") [3 ms]
+  Error Message:
+     at ControlServer.Tests.LoadingPhaseMachineTests.EachRuleDecidesWhatItSays(String row, Facts facts, String state, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\LoadingPhaseMachineTests.cs:line 122
+  Failed ControlServer.Tests.LoadingPhaseMachineTests.EachRuleDecidesWhatItSays(row: "full vehicle still loading its committed demands y"···, facts: Facts { State = VEHICLE_FULL, ClosedReason = , HoldingApplicable = True, PendingLoadsRemain = True, LastLoadingStopDeparted = False, VehicleFull = True, HoldingDeadlinePassed = False, LoadBatchInProgress = False, DepartureUnderWay = False, YieldTriggered = True }, state: "CLOSED", reason: "WAITING_STATION_YIELD") [< 1 ms]
+  Error Message:
+     at ControlServer.Tests.LoadingPhaseMachineTests.EachRuleDecidesWhatItSays(String row, Facts facts, String state, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\LoadingPhaseMachineTests.cs:line 122
+  Failed ControlServer.Tests.LoadingPhaseMachineTests.EachRuleDecidesWhatItSays(row: "yield does not wait for the executing load batch ("···, facts: Facts { State = VEHICLE_FULL, ClosedReason = , HoldingApplicable = True, PendingLoadsRemain = True, LastLoadingStopDeparted = False, VehicleFull = True, HoldingDeadlinePassed = False, LoadBatchInProgress = True, DepartureUnderWay = False, YieldTriggered = True }, state: "CLOSED", reason: "WAITING_STATION_YIELD") [< 1 ms]
+  Error Message:
+     at ControlServer.Tests.LoadingPhaseMachineTests.EachRuleDecidesWhatItSays(String row, Facts facts, String state, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\LoadingPhaseMachineTests.cs:line 122
+  Failed ControlServer.Tests.LoadingPhaseMachineTests.PrecedenceIsTheRuleOrder(row: "yield beats departed-full", facts: Facts { State = VEHICLE_FULL, ClosedReason = , HoldingApplicable = True, PendingLoadsRemain = False, LastLoadingStopDeparted = True, VehicleFull = True, HoldingDeadlinePassed = False, LoadBatchInProgress = False, DepartureUnderWay = False, YieldTriggered = True }, state: "CLOSED", reason: "WAITING_STATION_YIELD") [< 1 ms]
+  Error Message:
+     at ControlServer.Tests.LoadingPhaseMachineTests.PrecedenceIsTheRuleOrder(String row, Facts facts, String state, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\LoadingPhaseMachineTests.cs:line 190
+  Failed ControlServer.Tests.LoadingPhaseMachineTests.PrecedenceIsTheRuleOrder(row: "yield beats deadline", facts: Facts { State = CARGO_HOLDING_WAIT, ClosedReason = , HoldingApplicable = True, PendingLoadsRemain = False, LastLoadingStopDeparted = False, VehicleFull = False, HoldingDeadlinePassed = True, LoadBatchInProgress = False, DepartureUnderWay = False, YieldTriggered = True }, state: "CLOSED", reason: "WAITING_STATION_YIELD") [< 1 ms]
+  Error Message:
+     at ControlServer.Tests.LoadingPhaseMachineTests.PrecedenceIsTheRuleOrder(String row, Facts facts, String state, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\LoadingPhaseMachineTests.cs:line 190
+  Failed ControlServer.Tests.LoadingPhaseMachineTests.PrecedenceIsTheRuleOrder(row: "yield beats full with departure under way", facts: Facts { State = VEHICLE_FULL, ClosedReason = , HoldingApplicable = True, PendingLoadsRemain = False, LastLoadingStopDeparted = False, VehicleFull = True, HoldingDeadlinePassed = False, LoadBatchInProgress = False, DepartureUnderWay = True, YieldTriggered = True }, state: "CLOSED", reason: "WAITING_STATION_YIELD") [< 1 ms]
+  Error Message:
+     at ControlServer.Tests.LoadingPhaseMachineTests.PrecedenceIsTheRuleOrder(String row, Facts facts, String state, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\LoadingPhaseMachineTests.cs:line 190
+  Failed ControlServer.Tests.Batch7StationYieldTests.AfterYieldingTheVehicleTakesNoFurtherDemand [8 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "WAITING_STATION_YIELD"
+Actual:   null
+     at ControlServer.Tests.Batch7StationYieldTests.AfterYieldingTheVehicleTakesNoFurtherDemand() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 107
+   at ControlServer.Tests.Batch7StationYieldTests.AfterYieldingTheVehicleTakesNoFurtherDemand() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 113
+  Failed ControlServer.Tests.Batch7StationYieldTests.AYieldingVehicleWithACorrectionOpenIsNotAskedToLeave [1 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "WAITING_STATION_YIELD"
+Actual:   null
+     at ControlServer.Tests.Batch7StationYieldTests.AYieldingVehicleWithACorrectionOpenIsNotAskedToLeave() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 221
+   at ControlServer.Tests.Batch7StationYieldTests.AYieldingVehicleWithACorrectionOpenIsNotAskedToLeave() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 223
+  Failed ControlServer.Tests.Batch7StationYieldTests.AYieldingVehicleWhoseDepartureIsUnsafeDoesNotMove(why: "door open", slotsLocked: False, unknownPresent: False) [900 ms]
+  Error Message:
+   Assert.True() Failure
+Expected: True
+Actual:   False
+     at ControlServer.Tests.Batch7StationYieldTests.AYieldingVehicleWhoseDepartureIsUnsafeDoesNotMove(String why, Boolean slotsLocked, Boolean unknownPresent) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 169
+   at ControlServer.Tests.Batch7StationYieldTests.AYieldingVehicleWhoseDepartureIsUnsafeDoesNotMove(String why, Boolean slotsLocked, Boolean unknownPresent) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 185
+  Failed ControlServer.Tests.Batch7StationYieldTests.AYieldingVehicleWhoseDepartureIsUnsafeDoesNotMove(why: "state unknown", slotsLocked: True, unknownPresent: True) [1 s]
+  Error Message:
+   Assert.True() Failure
+Expected: True
+Actual:   False
+     at ControlServer.Tests.Batch7StationYieldTests.AYieldingVehicleWhoseDepartureIsUnsafeDoesNotMove(String why, Boolean slotsLocked, Boolean unknownPresent) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 169
+   at ControlServer.Tests.Batch7StationYieldTests.AYieldingVehicleWhoseDepartureIsUnsafeDoesNotMove(String why, Boolean slotsLocked, Boolean unknownPresent) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 185
+  Failed ControlServer.Tests.Batch7StationYieldTests.AVehicleThatStartsHoldingAfterAnotherWasCommittedToItsStationYieldsWithoutWaiting [1 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "WAITING_STATION_YIELD"
+Actual:   null
+     at ControlServer.Tests.Batch7StationYieldTests.AVehicleThatStartsHoldingAfterAnotherWasCommittedToItsStationYieldsWithoutWaiting() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 383
+   at ControlServer.Tests.Batch7StationYieldTests.AVehicleThatStartsHoldingAfterAnotherWasCommittedToItsStationYieldsWithoutWaiting() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 389
+  Failed ControlServer.Tests.Batch7StationYieldTests.AYieldIsNotWithdrawnWhenTheTriggeringVehiclesPlanChanges [1 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "CLOSED"
+Actual:   "CARGO_HOLDING_WAIT"
+     at ControlServer.Tests.Batch7StationYieldTests.AYieldIsNotWithdrawnWhenTheTriggeringVehiclesPlanChanges() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 412
+   at ControlServer.Tests.Batch7StationYieldTests.AYieldIsNotWithdrawnWhenTheTriggeringVehiclesPlanChanges() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 417
+  Failed ControlServer.Tests.Batch7StationYieldTests.WhicheverOfTheDeadlineAndTheYieldCameFirstIsWhyTheLoadingPhaseClosed(triggerAfterMinutes: 29, reason: "WAITING_STATION_YIELD") [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "WAITING_STATION_YIELD"
+Actual:   "CARGO_HOLDING_TIMEOUT"
+     at ControlServer.Tests.Batch7StationYieldTests.WhicheverOfTheDeadlineAndTheYieldCameFirstIsWhyTheLoadingPhaseClosed(Int32 triggerAfterMinutes, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 354
+   at ControlServer.Tests.Batch7StationYieldTests.WhicheverOfTheDeadlineAndTheYieldCameFirstIsWhyTheLoadingPhaseClosed(Int32 triggerAfterMinutes, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 355
+  Failed ControlServer.Tests.Batch7StationYieldTests.AFullVehicleYieldsAtOnceButFinishesTheLoadItIsCommittedToBeforeLeaving [319 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "WAITING_STATION_YIELD"
+Actual:   null
+     at ControlServer.Tests.Batch7StationYieldTests.AFullVehicleYieldsAtOnceButFinishesTheLoadItIsCommittedToBeforeLeaving() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 137
+   at ControlServer.Tests.Batch7StationYieldTests.AFullVehicleYieldsAtOnceButFinishesTheLoadItIsCommittedToBeforeLeaving() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 148
+  Failed ControlServer.Tests.Batch7StationYieldTests.AYieldTriggeredWhileTheHolderWasOffAirSurvivesARestartAndIsWhatItSeesOnReconnect [361 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "WAITING_STATION_YIELD"
+Actual:   null
+     at ControlServer.Tests.Batch7StationYieldTests.AYieldTriggeredWhileTheHolderWasOffAirSurvivesARestartAndIsWhatItSeesOnReconnect() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 319
+   at ControlServer.Tests.Batch7StationYieldTests.AYieldTriggeredWhileTheHolderWasOffAirSurvivesARestartAndIsWhatItSeesOnReconnect() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 324
+  Failed ControlServer.Tests.Batch7StationYieldTests.AVehicleCommittedToTheStationMakesTheHolderYieldAndLeave [426 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "CLOSED"
+Actual:   "CARGO_HOLDING_WAIT"
+     at ControlServer.Tests.Batch7StationYieldTests.AVehicleCommittedToTheStationMakesTheHolderYieldAndLeave() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 67
+   at ControlServer.Tests.Batch7StationYieldTests.AVehicleCommittedToTheStationMakesTheHolderYieldAndLeave() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 88
+Failed!  - Failed:    16, Passed:    92, Skipped:     0, Total:   108, Duration: 28 s - ControlServer.Tests.dll (net8.0)

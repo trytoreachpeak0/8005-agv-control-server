@@ -1,0 +1,20 @@
+# injection: l1-12-corrections-read-for-the-anchor-only
+# file: src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+--- 
++++ 
+@@ -3137,3 +3137,3 @@
+     {
+-        string[] demandIds = [.. stops.AllDemands.Select(item => item.Demand.DemandId).Distinct(StringComparer.Ordinal)];
++        string[] demandIds = [runtime.DemandId];
+         RecoveryWorkflowRow[] corrections = await dbContext.RecoveryWorkflows.AsNoTracking()
+# build:
+0 Error(s)
+# test run (filter: FullyQualifiedName~Batch7StationYield|FullyQualifiedName~LoadingPhaseMachineTests|FullyQualifiedName~DispatchVehicleOrderingTests):
+  Failed ControlServer.Tests.Batch7StationYieldTests.AnOpenCorrectionOnAnAppendedDemandHoldsTheDeparture [8 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "LOAD_CORRECTION_IN_PROGRESS"
+Actual:   null
+     at ControlServer.Tests.Batch7StationYieldTests.AnOpenCorrectionOnAnAppendedDemandHoldsTheDeparture() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 286
+   at ControlServer.Tests.Batch7StationYieldTests.AnOpenCorrectionOnAnAppendedDemandHoldsTheDeparture() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 288
+Failed!  - Failed:     1, Passed:   107, Skipped:     0, Total:   108, Duration: 1 m 8 s - ControlServer.Tests.dll (net8.0)

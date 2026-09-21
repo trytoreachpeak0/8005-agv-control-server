@@ -1,0 +1,20 @@
+# injection: l1-04-no-catch-up-for-a-late-holder
+# file: src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+--- 
++++ 
+@@ -2590,3 +2590,3 @@
+         // 所以不持货等单的旅程（参数批准之前的全部旅程）一次也不多查。
+-        if (departingFrom is null &&
++        if (Environment.TickCount64 < 0 && departingFrom is null &&
+             !decision.IsClosed &&
+# build:
+0 Error(s)
+# test run (filter: FullyQualifiedName~Batch7StationYield|FullyQualifiedName~LoadingPhaseMachineTests|FullyQualifiedName~DispatchVehicleOrderingTests):
+  Failed ControlServer.Tests.Batch7StationYieldTests.AVehicleThatStartsHoldingAfterAnotherWasCommittedToItsStationYieldsWithoutWaiting [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "WAITING_STATION_YIELD"
+Actual:   null
+     at ControlServer.Tests.Batch7StationYieldTests.AVehicleThatStartsHoldingAfterAnotherWasCommittedToItsStationYieldsWithoutWaiting() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 383
+   at ControlServer.Tests.Batch7StationYieldTests.AVehicleThatStartsHoldingAfterAnotherWasCommittedToItsStationYieldsWithoutWaiting() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 389
+Failed!  - Failed:     1, Passed:   107, Skipped:     0, Total:   108, Duration: 45 s - ControlServer.Tests.dll (net8.0)
