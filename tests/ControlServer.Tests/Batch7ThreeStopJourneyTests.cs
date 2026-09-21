@@ -500,7 +500,7 @@ public sealed class Batch7ThreeStopJourneyTests
     /// 把第二条需求追加进这趟旅程，插入位由 <see cref="EnRouteAppendPlanner"/> 真算，落库走
     /// <see cref="WireToGateStore.AppendToJourneyAsync"/>——与轮次走的是同一条落库路径。
     /// </summary>
-    private static Task AppendSecondDemandAsync(RuntimeFixture fixture) =>
+    internal static Task AppendSecondDemandAsync(RuntimeFixture fixture) =>
         AppendDemandAsync(fixture, SecondDemandId, SecondSublot, SecondPickupArea, SecondPickupStationRiotId);
 
     private static async Task AppendDemandAsync(

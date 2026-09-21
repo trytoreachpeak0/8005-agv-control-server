@@ -1,4 +1,5 @@
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.Release;
 
 namespace ControlServer.Host.Composition;
 
@@ -15,6 +16,8 @@ internal static class PlanRevisionModule
         ArgumentNullException.ThrowIfNull(services);
 
         services.AddScoped<PlanRevisionRoutingSource>();
+        services.AddScoped<DemandReleaseService>();
+        services.AddHostedService<DemandReleaseWorker>();
         return services;
     }
 }

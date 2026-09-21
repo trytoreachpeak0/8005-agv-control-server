@@ -1519,6 +1519,14 @@ internal static class JourneyRuntimeWorkerTestKit
                 OrderState = RiotOrderState.Failed,
             };
 
+        /// <summary>Reports the order under <paramref name="upperId"/> as RIoT's terminal CANCELLED from now on (control-server#215).</summary>
+        public void CancelOrder(string upperId) =>
+            _orders[upperId] = _orders[upperId] with
+            {
+                Kind = RiotOrderObservationKind.Terminal,
+                OrderState = RiotOrderState.Cancelled,
+            };
+
         public Task<RiotVehicleObservation> ReadVehicleAsync(string vehicleKey, CancellationToken cancellationToken)
         {
             _ = cancellationToken;
