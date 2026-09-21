@@ -659,6 +659,16 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
                 $"Journey '{plan.JourneyId}' has closed its loading phase ({journey.LoadingClosedReason}) and cannot take an appended demand.");
         }
 
+        // 让站已触发也不接（批次7-08，control-server#213，审查必修 1）。触发由别的车的受理、追加或离站写进这一行，而装货阶段列
+        // 要到这辆车自己下一轮才变成 CLOSED——同一个派车轮里先受理乙、再追加戊，戊就落在这两次写入之间。上面那道只看装货阶段列，
+        // 挡不住它；这一道读触发列本身，与写触发的那次提交在同一个库上串行，所以没有第二个窗口。
+        // 判据是 Batch7StationYieldTests.AnAppendRightAfterTheTriggerIsRefusedBeforeTheHolderRunsAgain。
+        if (journey.YieldTriggeredAt is not null)
+        {
+            throw new BusinessIdentityConflictException(
+                $"Journey '{plan.JourneyId}' was asked to yield its station ({journey.YieldTriggeredByVehicleKey}) and cannot take an appended demand.");
+        }
+
         if (demand.AreaAssignmentVersion is long areaAssignmentVersion)
         {
             await FreezeAreaAssignmentAsync(snapshot, areaAssignmentVersion, cancellationToken).ConfigureAwait(false);

@@ -115,6 +115,39 @@ public sealed class Batch7StationYieldTests
     }
 
     /// <summary>
+    /// 触发已经落库、被让的车还没轮到下一轮判定：这时的追加照样被拒（审查必修 1，REQ-0354 末句）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 同一个派车轮里先受理乙、后追加戊是常态：受理事务给等单车写上触发，而它的装货阶段列要到它自己下一轮才变 CLOSED。
+    /// 追加事务原先只看那一列，戊就在这个窗口里进了车。上一条用例在两步之间多跑了一轮，所以看不见这个窗口——这一条两步紧挨着，
+    /// 中间不跑引擎。
+    /// </para>
+    /// <para>
+    /// 挡它的是追加事务里的那一道（<c>WireToGateStore.StageAndCommitAppendAsync</c> 读 <c>YieldTriggeredAt</c>），与受理写触发
+    /// 在同一个库上串行，所以没有第二个窗口。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AnAppendRightAfterTheTriggerIsRefusedBeforeTheHolderRunsAgain()
+    {
+        await using RuntimeFixture fixture = await HoldingFixtureAsync();
+        await LoadTheFirstDemandAsync(fixture);
+        await AcceptComerAsync(fixture.Context, await HolderStationAsync(fixture), fixture.Clock.GetUtcNow());
+        JourneyRuntimeRow triggered = await JourneyOfAsync(fixture, FirstDemandId);
+        Assert.NotNull(triggered.YieldTriggeredAt);
+        Assert.Equal(LoadingPhaseStates.CargoHoldingWait, triggered.LoadingPhaseState);
+
+        fixture.BoxCounts.Set(SecondSublot, 7);
+        await Assert.ThrowsAsync<BusinessIdentityConflictException>(
+            () => Batch7ThreeStopJourneyTests.AppendDemandAsync(fixture, SecondDemandId, SecondSublot, "N1-2", 13));
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Equal(1, await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+            .CountAsync(row => row.JourneyId == JourneyIdentity.ForAnchorDemand(FirstDemandId), TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
     /// 满了、本站已承诺的那一条还没录入时被让站：快照当场是 <c>WAITING_STATION_YIELD</c>，但录入、装货照常做完，离站核验要到
     /// 装货落定之后才发（票面第 2、3 条：本站已承诺的照常处理，包括正在录入、正在执行的；不打断阻断离站的状态）。
     /// </summary>
@@ -356,6 +389,61 @@ public sealed class Batch7StationYieldTests
         Assert.NotEqual("LOAD_CORRECTION_IN_PROGRESS", journey.BlockReasonCode);
         Assert.True(await DepartureChecksSentAsync(fixture) > checksBeforeTheCorrection,
             "An open correction on a demand no longer on the vehicle held the departure.");
+    }
+
+    /// <summary>
+    /// 别的旅程留下的纠错不挡这一趟（审查必修 3）：同一个需求号上一条没结的纠错，若不是这辆车开的、或者开在这条需求加入本旅程之前，
+    /// 它属于另一趟（7-10 改派之后，需求会带着它来到新车上）。
+    /// </summary>
+    /// <remarks>
+    /// 纠错行上没有旅程号，只有车号、需求号、创建时刻。「属于本旅程」因此按两样认：本车开的，而且不早于这条需求加入本旅程。
+    /// 两格各只差一样。正向（本旅程自己开的纠错挡住离站）由 <c>AYieldingVehicleWithACorrectionOpenIsNotAskedToLeave</c> 与
+    /// <c>AnOpenCorrectionOnAnAppendedDemandHoldsTheDeparture</c> 守着，那两条走的是真实授权路径。
+    /// </remarks>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    [InlineData("opened on another vehicle", "AGV-PREVIOUS", 0)]
+    [InlineData("opened before the demand joined this journey", null, -60)]
+    public async Task AnOpenCorrectionLeftByAnotherJourneyDoesNotHoldTheDeparture(string why, string? agvId, int minutesFromJoining)
+    {
+        _ = why;
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+        fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set(FirstSublot, 7);
+        await ArriveAtPickupAsync(fixture, FirstDemandId);
+        await EnterSublotAsync(fixture, FirstDemandId, FirstSublot, FirstSubmissionId);
+        await SettleLoadAsync(fixture, FirstDemandId);
+        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
+
+        JourneyDemandRow membership = await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+            .SingleAsync(row => row.DemandId == FirstDemandId, token);
+        DateTimeOffset openedAt = minutesFromJoining == 0
+            ? fixture.Clock.GetUtcNow()
+            : membership.AddedAt.AddMinutes(minutesFromJoining);
+        fixture.Context.RecoveryWorkflows.Add(new RecoveryWorkflowRow
+        {
+            WorkflowId = "70000000-0000-4000-8000-000000000061",
+            WorkflowType = "LOAD_CORRECTION",
+            AgvId = agvId ?? fixture.Options.AgvId,
+            DemandId = FirstDemandId,
+            SlotOperationAttemptId = membership.LoadSlotOperationAttemptId,
+            SlotsJson = membership.TargetSlotsJson,
+            State = RecoveryWorkflowState.CommandPending,
+            RequestMessageId = "70000000-0000-4000-8000-000000000062",
+            RequestContentHash = new string('f', 64),
+            CreatedAt = openedAt,
+            UpdatedAt = openedAt
+        });
+        await fixture.Context.SaveChangesAsync(token);
+        fixture.Context.ChangeTracker.Clear();
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(15));
+        await TickAndRunAsync(fixture);
+
+        Assert.NotEqual("LOAD_CORRECTION_IN_PROGRESS", (await JourneyOfAsync(fixture, FirstDemandId)).BlockReasonCode);
+        Assert.True(await DepartureCheckSentAsync(fixture), "A correction left by another journey held this one's departure.");
     }
 
     /// <summary>

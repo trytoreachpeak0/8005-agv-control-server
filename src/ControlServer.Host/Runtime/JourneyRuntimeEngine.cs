@@ -3134,6 +3134,11 @@ public sealed class JourneyRuntimeEngine(
     /// 停在这里、没人解得开。已移除的归属本来就不在 <see cref="JourneyStopCursor.AllDemands"/> 里。判据是
     /// <c>AnOpenCorrectionOnADemandAlreadyUnloadedDoesNotHoldTheDeparture</c>。
     /// </para>
+    /// <para>
+    /// <b>而且只看这一趟旅程开的</b>（审查必修 3）。纠错行上没有旅程号，同一个需求号在 7-10 改派之后会先后属于两趟旅程，前一辆车上没结的
+    /// 纠错不该挡新车。所以按两样认：本车开的，而且不早于这条需求加入本旅程（归属的 <c>AddedAt</c>）。两样都是服务端自己的钟。
+    /// 时刻比较在内存里做：SQLite 不能在库里比较 <c>DateTimeOffset</c>。判据是 <c>AnOpenCorrectionLeftByAnotherJourneyDoesNotHoldTheDeparture</c>。
+    /// </para>
     /// </remarks>
     private async Task<bool> StationDepartureWaitIsOverAsync(
         JourneyRuntimeRow runtime,
@@ -3141,16 +3146,15 @@ public sealed class JourneyRuntimeEngine(
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        string[] demandIds =
-        [
-            .. stops.AllDemands
-                .Where(item => item.Membership.Status is JourneyDemandStatuses.Loading or JourneyDemandStatuses.Loaded)
-                .Select(item => item.Demand.DemandId)
-                .Distinct(StringComparer.Ordinal)
-        ];
-        RecoveryWorkflowRow[] corrections = await dbContext.RecoveryWorkflows.AsNoTracking()
-            .Where(row => row.DemandId != null && demandIds.Contains(row.DemandId) && row.WorkflowType == "LOAD_CORRECTION")
-            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        Dictionary<string, DateTimeOffset> joinedAt = stops.AllDemands
+            .Where(item => item.Membership.Status is JourneyDemandStatuses.Loading or JourneyDemandStatuses.Loaded)
+            .ToDictionary(item => item.Demand.DemandId, item => item.Membership.AddedAt, StringComparer.Ordinal);
+        string[] demandIds = [.. joinedAt.Keys];
+        RecoveryWorkflowRow[] corrections = [.. (await dbContext.RecoveryWorkflows.AsNoTracking()
+                .Where(row => row.DemandId != null && demandIds.Contains(row.DemandId) &&
+                              row.WorkflowType == "LOAD_CORRECTION" && row.AgvId == runtime.AgvId)
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false))
+            .Where(row => row.CreatedAt >= joinedAt[row.DemandId!])];
         if (corrections.Any(row => row.State is not
                 (RecoveryWorkflowState.Reconciled or RecoveryWorkflowState.HistoricalOnly)))
         {

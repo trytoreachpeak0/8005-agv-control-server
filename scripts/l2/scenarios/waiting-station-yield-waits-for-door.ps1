@@ -14,12 +14,13 @@
 2. 需求乙（4 花篮、前侧、同在 12 号站）只能给另一台车，它的下一停靠就是 12 号站（02）。
 3. 让站确实触发了，而且门开着、装货没落定时车上就收到了那张快照（03、04）。
 4. 门开着、装货未落定，服务端又转了几轮：没有离站核验，关卡腿没有建单（05）。
-5. 门关上、装货落定；另等第二个事实：关卡腿建了单。三个时刻从证据里取值比较——放行离站的那一次核验请求、关卡腿的订单
-   意图，都晚于服务端收到「门已关」的那一刻（06）。
+5. 装货落定，门**仍开着**，服务端又转了几轮：仍然没有关卡单（06）。这一步把「门」与「装货」两件阻断离站的事拆开：
+   审查指出，第一版先关门、后放行装货，而离站本来就要等装货落定，「离站晚于关门」按构造必然为真。
+6. 门关上；另等第二个事实：关卡腿建了单。三个时刻从证据里取值比较——放行离站的那一次核验请求、关卡腿的订单意图，都晚于
+   服务端收到「门已关」的那一刻（07）。此时装货早已落定，所以 07 只可能是门挡住的。
 
-红证据（票面）：触发即发离站请求、不等收敛——05 变红（门开着、装货未落定时就发了离站核验）。06 在那份注入下仍绿，
-而且应该绿：门开着时车载端答不出能用的「可以走」，服务端照旧不建关卡单；门关上时安全版本前移、旧核验过期、重新问，
-放行的那一次核验与关卡单仍晚于关门。能让 06 红的是「不看车载端答复就走」，那是离站路本身坏了，不是让站的事。
+红证据（票面）：触发即发离站请求、不等收敛——05 变红（门开着、装货未落定时就发了离站核验）。拿掉离站对门的检查之后，
+06 与 07 变红（装货一落定、门还开着就走了）。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
@@ -122,18 +123,39 @@ $assertions.Add(
     '0 departure checks, no gate intent, WAITING_STATION_YIELD',
     "$checksWhileOpen departure checks, $(if ($gateWhileOpen) { "gate intent $($gateWhileOpen.UpperId)" } else { 'no gate intent' }), $(Format-L2CargoJourney $held)")
 
-# --- 5. 门关上、装货落定；另等第二个事实：离站，且晚于关门 ------------------------------------------------------
+# --- 5. 装货落定，门仍开着：不离站 --------------------------------------------------------------------------
 
-$journal.Note('The holder reports every slot door locked again, then the load completes.')
+$journal.Note('The load completes while the door is still open.')
+$null = $holderPeer.Command('Put', "answer/$loadKey", @{ completed = $true })
+$loadAttempt = [string](Invoke-L2Query -Connection $connection -Sql (
+        "SELECT LoadSlotOperationAttemptId FROM JourneyDemands WHERE DemandId = '$($a.Id)'"))[0].LoadSlotOperationAttemptId
+$null = Wait-L2Condition -Description 'the server recorded the load as committed' -Journal $journal -Criterion 'a-load-committed' `
+    -TimeoutSeconds 30 -Probe {
+        [string](Invoke-L2Query -Connection $connection -Sql "SELECT Status FROM StationOperations WHERE SlotOperationAttemptId = '$loadAttempt'")[0].Status
+    } -Until { param($v) $v -eq 'Committed' }
+# 站点等待 10 秒：转够 15 秒以上，让「站点等待还没到」不可能是没离站的理由。
+$settledAt = [DateTimeOffset]::UtcNow
+$null = Wait-L2Iterations -Riot $riot -Count 4 -Journal $journal
+$remaining = [TimeSpan]::FromSeconds(15) - ([DateTimeOffset]::UtcNow - $settledAt)
+if ($remaining -gt [TimeSpan]::Zero) { Start-Sleep -Milliseconds ([int]$remaining.TotalMilliseconds) }
+$null = Wait-L2Iterations -Riot $riot -Count 2 -Journal $journal
+$settled = Get-L2YieldJourney $connection $a.Id
+$gateWhileSettledOpen = Get-L2YieldGateIntent $connection $holder.JourneyId
+$assertions.Add(
+    'L2-WSD-06', '装货已落定、门仍开着，站点等待早已过去，服务端又转了几轮：主车没有离站，关卡腿没有建单',
+    ($null -eq $gateWhileSettledOpen -and [string]$settled.LoadingClosedReason -eq 'WAITING_STATION_YIELD'),
+    'no gate intent, WAITING_STATION_YIELD',
+    "$(if ($gateWhileSettledOpen) { "gate intent $($gateWhileSettledOpen.UpperId)" } else { 'no gate intent' }), $(Format-L2CargoJourney $settled) '$($settled.BlockReasonCode)'")
+
+# --- 6. 门关上；另等第二个事实：离站，且晚于关门 ------------------------------------------------------------
+
+$journal.Note('The holder reports every slot door locked again.')
 $null = $holderPeer.Command('Put', 'safety', @{
     departureSafe        = $true
     allTargetSlotsLocked = $true
     unknownPresent       = $false
     reasonCodes          = @()
 })
-$null = Wait-L2Condition -Description 'the server recorded the closed door' -Journal $journal -Criterion 'door-closed' -TimeoutSeconds 30 `
-    -Probe { @((Get-SafetyChanges $Context.AgvId) | Where-Object { $_.Locked }).Count } -Until { param($v) $v -ge 1 }
-$null = $holderPeer.Command('Put', "answer/$loadKey", @{ completed = $true })
 
 # 等「已消费的离站核验答复」落库，而不是等关卡单：关卡腿的订单意图由 AuthorizeMovementAsync 先单独保存，已消费答复与
 # 停靠完成、阶段前移是这一轮最后那一次保存（scripts/l2/README.md 第 14 条）。等到后者再读前者是安全的，反过来不是——
@@ -165,7 +187,7 @@ $journal.Observe('door-and-departure-instants',
     "door closed $closedAt; departure check $checkSentAt; gate order intent $orderAt",
     @{ doorClosedAt = "$closedAt"; departureCheckSentAt = "$checkSentAt"; gateOrderIntentAt = "$orderAt" })
 $assertions.Add(
-    'L2-WSD-06', '门关上之后主车才离站：放行离站的那一次核验请求与关卡腿的订单意图，都晚于服务端收到「门已关」',
+    'L2-WSD-07', '门关上之后主车才离站：放行离站的那一次核验请求与关卡腿的订单意图，都晚于服务端收到「门已关」',
     ($null -ne $closedAt -and $null -ne $checkSentAt -and $null -ne $orderAt -and
         $checkSentAt -gt $closedAt -and $orderAt -gt $closedAt),
     'door closed < departure check, door closed < gate order intent',
@@ -173,4 +195,4 @@ $assertions.Add(
     "departure check $(if ($checkSentAt) { $checkSentAt.ToString('o') } else { '(none)' }); " +
     "gate order intent $(if ($orderAt) { $orderAt.ToString('o') } else { '(none)' })")
 
-$journal.Note('让站在门开着、装货未落定时已经触发并告诉了车；离站等到门关上、装货落定、离站核验通过之后才发。')
+$journal.Note('让站在门开着、装货未落定时已经触发并告诉了车；装货落定之后门仍开着也不走，离站等到门关上、离站核验通过之后才发。')
