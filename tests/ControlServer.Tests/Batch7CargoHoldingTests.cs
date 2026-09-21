@@ -294,12 +294,32 @@ public sealed class Batch7CargoHoldingTests
     /// <remarks>
     /// 反过来的实现——先存状态、再发快照——崩在两者之间就是「库里已经 WAIT、车上永远收不到」：下一轮读到的状态已经是
     /// WAIT，没有变化，不会再发。这条用例的第二个断言就是为它写的。
+    /// <para>
+    /// 两种起点各跑一遍：按车计数器从零起，与预置到 100（「这辆车已经跑过几十趟」）。补发只认 <c>RuntimeMessageIds</c> 里的
+    /// id，而 cs#285 那个缺陷正是计划重发版的 id 按固定区间 1..18 枚举、号一大就不在集合里。装货阶段快照的 id 由当前基准
+    /// 算出，不枚举区间；高位这一行守的就是「以后有人把它也写成一个区间」。
+    /// </para>
     /// </remarks>
-    [Fact]
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     [Trait("IntegrationSlice", "FP-IS-08")]
-    public async Task TheStateAndItsSnapshotAreSavedTogetherBeforeTheSnapshotIsSent()
+    public async Task TheStateAndItsSnapshotAreSavedTogetherBeforeTheSnapshotIsSent(bool highRevisions)
     {
         await using RuntimeFixture fixture = await HoldingFixtureAsync();
+        if (highRevisions)
+        {
+            fixture.Context.Set<VehicleSnapshotRevisionRow>().Add(new VehicleSnapshotRevisionRow
+            {
+                AgvId = fixture.Options.AgvId,
+                VehicleBusinessRevision = 100,
+                WorklistRevision = 100,
+                PlanRevision = 100,
+            });
+            await fixture.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+            fixture.Context.ChangeTracker.Clear();
+        }
+
         fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
         fixture.BoxCounts.Set(FirstSublot, 7);
         await ArriveAtPickupAsync(fixture, FirstDemandId);
@@ -324,6 +344,15 @@ public sealed class Batch7CargoHoldingTests
         ProtocolOutboxRow[] waits = await WaitSnapshotRowsAsync(fixture);
         Assert.Equal(LoadingPhaseStates.CargoHoldingWait, afterCrash.LoadingPhaseState);
         Assert.Single(waits);
+        long waitRevision;
+        using (JsonDocument document = JsonDocument.Parse(waits[0].PayloadJson))
+        {
+            waitRevision = document.RootElement.GetProperty("payload").GetProperty("vehicleBusinessStateRevision").GetInt64();
+        }
+
+        Assert.True(
+            highRevisions ? waitRevision > 100 : waitRevision < 18,
+            $"The fixture did not reach the revisions this row is about: {waitRevision}.");
 
         fixture.Peer.OnMessageSent = null;
         int sentBefore = fixture.Peer.Lines.Count;
