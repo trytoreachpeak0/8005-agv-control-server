@@ -1,5 +1,5 @@
 injection 5 (holding-ignores-zone-limit) in src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
-2515c2515
+2523c2523
 <         return servedZones.Any(zone => EnRouteAppendPlanner.MaxAllowedIncrease(parameters, zone) is not null);
 ---
 >         return parameters is not null || servedZones.Length > 0;

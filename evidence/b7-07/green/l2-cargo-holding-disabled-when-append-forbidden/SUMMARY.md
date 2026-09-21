@@ -6,10 +6,10 @@
 
 | 项 | 值 |
 | --- | --- |
-| runId | `20260921T064135772Z` |
+| runId | `20260921T085247782Z` |
 | agvId | `AGV-L2-001` |
 | batchId | `unspecified` |
-| controlServerCommit | `724d6a3d36e010639a86a7d9d9aec0a6be7eb1d9` |
+| controlServerCommit | `a3ebe94eb6b0130f8bdc40b7aca3722b7be36138` |
 | protocolReleaseIdentity.repository | `8005-agv-protocol` |
 | protocolReleaseIdentity.releaseVersion | `2.0.0` |
 | protocolReleaseIdentity.tag | `protocol-v2.0.0` |
@@ -21,7 +21,7 @@
 | protocolReleaseIdentity.vectorsSha256 | `391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a` |
 | protocolReleaseIdentity.approvalStatus | `APPROVED_RELEASE` |
 | rig | `SyntheticOnboard` |
-| stageRoot | `C:\Users\szy\AppData\Local\Temp\l2-20260921T064135772Z` |
+| stageRoot | `C:\Users\szy\AppData\Local\Temp\l2-20260921T085247782Z` |
 | vehicleKey | `BROKERX-L2-0001` |
 
 ## 判据
@@ -30,11 +30,11 @@
 | --- | --- | --- | --- |
 | 前置：当前参数版本里 MAP-25-WIRE_TO_GATE 的途中追加上限是 0 | PASS | `0` | `0` |
 | 上限为 0：装货阶段从没进入持货等单或整车满，离站前已是 CLOSED/PLANNED_LOADING_COMPLETE | PASS | `no WAIT/FULL; CLOSED/PLANNED_LOADING_COMPLETE` | `seen CLOSED/PLANNED_LOADING_COMPLETE,LOADING(null); now AwaitingGateArrival CLOSED/PLANNED_LOADING_COMPLETE` |
-| 上限为 0：装完到关卡腿建单不超过 25 秒（站点等待 10 秒；持货的话至少 40 秒） | PASS | `<= 25 s` | `11 s` |
+| 上限为 0：装完到关卡腿建单不超过 25 秒（站点等待 10 秒；持货的话至少 40 秒） | PASS | `<= 25 s` | `10.6 s` |
 | 上限为 0：这一趟发给车的快照没有一张带持货期限，状态只有 LOADING 与 CLOSED/PLANNED_LOADING_COMPLETE；旅程走完 | PASS | `LOADING, CLOSED/PLANNED_LOADING_COMPLETE; no deadline; Completed` | `CLOSED/PLANNED_LOADING_COMPLETE, LOADING; 0 with deadline; Completed CLOSED/PLANNED_LOADING_COMPLETE` |
 | 服务端不停导入一版新参数：MAP-25-WIRE_TO_GATE 的途中追加上限为空（未配置） | PASS | `OK, (unconfigured)` | `OK, ''` |
 | 上限未配置：装货阶段从没进入持货等单或整车满，离站前已是 CLOSED/PLANNED_LOADING_COMPLETE | PASS | `no WAIT/FULL; CLOSED/PLANNED_LOADING_COMPLETE` | `seen CLOSED/PLANNED_LOADING_COMPLETE,LOADING(null); now AwaitingGateArrival CLOSED/PLANNED_LOADING_COMPLETE` |
-| 上限未配置：装完到关卡腿建单不超过 25 秒（站点等待 10 秒；持货的话至少 40 秒） | PASS | `<= 25 s` | `10.1 s` |
+| 上限未配置：装完到关卡腿建单不超过 25 秒（站点等待 10 秒；持货的话至少 40 秒） | PASS | `<= 25 s` | `11 s` |
 | 上限未配置：这一趟发给车的快照没有一张带持货期限，状态只有 LOADING 与 CLOSED/PLANNED_LOADING_COMPLETE；旅程走完 | PASS | `LOADING, CLOSED/PLANNED_LOADING_COMPLETE; no deadline; Completed` | `CLOSED/PLANNED_LOADING_COMPLETE, LOADING; 0 with deadline; Completed CLOSED/PLANNED_LOADING_COMPLETE` |
 
 ## 目录内容

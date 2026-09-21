@@ -1,12 +1,12 @@
 # L2 场景证据：vehicle-full-still-appends-before-departure
 
-结论：**PASS**
+结论：**FAIL**
 
 ## 身份
 
 | 项 | 值 |
 | --- | --- |
-| runId | `20260921T085459353Z` |
+| runId | `20260921T091411174Z` |
 | agvId | `AGV-L2-001` |
 | batchId | `unspecified` |
 | controlServerCommit | `a3ebe94eb6b0130f8bdc40b7aca3722b7be36138` |
@@ -21,7 +21,7 @@
 | protocolReleaseIdentity.vectorsSha256 | `391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a` |
 | protocolReleaseIdentity.approvalStatus | `APPROVED_RELEASE` |
 | rig | `SyntheticOnboard` |
-| stageRoot | `C:\Users\szy\AppData\Local\Temp\l2-20260921T085459353Z` |
+| stageRoot | `C:\Users\szy\AppData\Local\Temp\l2-20260921T091411174Z` |
 | vehicleKey | `BROKERX-L2-0001` |
 
 ## 判据
@@ -30,11 +30,11 @@
 | --- | --- | --- | --- |
 | 甲、乙两站装完：FRONT 无空仓、REAR 剩两个，车在 11 号站持货等单 | PASS | `CARGO_HOLDING_WAIT, ["FRONT"]` | `AwaitingStationDeparture CARGO_HOLDING_WAIT (LOADED), ["FRONT"]` |
 | 需求丁（REAR 3 花篮）只因本车货物装不下：车进入 VEHICLE_FULL，仍停在 11 号站 | PASS | `VEHICLE_FULL, AwaitingStationDeparture` | `AwaitingStationDeparture VEHICLE_FULL` |
-| 需求戊（REAR 2 花篮）追加进了这趟旅程：VEHICLE_FULL 在离开最后一个装货站之前仍接追加；追加时 11 号站的停靠还没完成 | PASS | `joined journey:b5bdd55f-2e1b-4336-b911-aef4b13ec3fc / station-11 stop still open` | `joined journey:b5bdd55f-2e1b-4336-b911-aef4b13ec3fc (AwaitingStationDeparture VEHICLE_FULL) / PENDING` |
-| 需求戊是被受理的：积压行上有受理时刻 | PASS | `accepted` | `ACCEPTED accepted=2026-09-21 08:56:48.4726655+00:00` |
-| 从判满到需求戊加入、再到加入之后又转了三轮：装货阶段一直是 VEHICLE_FULL，没有退回持货等单或装货 | PASS | `only VEHICLE_FULL` | `seen VEHICLE_FULL; three rounds after join AwaitingStationDeparture VEHICLE_FULL` |
+| 需求戊（REAR 2 花篮）追加进了这趟旅程：VEHICLE_FULL 在离开最后一个装货站之前仍接追加；追加时 11 号站的停靠还没完成 | PASS | `joined journey:5ac432c5-984b-4ec3-9995-43154d4b510e / station-11 stop still open` | `joined journey:5ac432c5-984b-4ec3-9995-43154d4b510e (AwaitingStationDeparture VEHICLE_FULL) / PENDING` |
+| 需求戊是被受理的：积压行上有受理时刻 | PASS | `accepted` | `ACCEPTED accepted=2026-09-21 09:16:08.7124365+00:00` |
+| 从判满到需求戊加入、再到加入之后又转了三轮：装货阶段一直是 VEHICLE_FULL，没有退回持货等单或装货 | FAIL | `only VEHICLE_FULL` | `seen VEHICLE_FULL; three rounds after join AwaitingStationDeparture LOADING` |
 | 需求戊装上了车，车离开它那个取货停靠（最后一个装货停靠）时以 VEHICLE_FULL 关闭 | PASS | `E LOADED / CLOSED/VEHICLE_FULL` | `E LOADED / AwaitingGateArrival CLOSED/VEHICLE_FULL` |
-| 发给车的快照在第一张 VEHICLE_FULL 之后没有再出现 CARGO_HOLDING_WAIT 或 LOADING | PASS | `a FULL, then neither WAIT nor LOADING` | `1:LOADING 2:LOADING 3:CARGO_HOLDING_WAIT 4:VEHICLE_FULL 5:VEHICLE_FULL 6:CLOSED/VEHICLE_FULL` |
+| 发给车的快照在第一张 VEHICLE_FULL 之后没有再出现 CARGO_HOLDING_WAIT 或 LOADING | FAIL | `a FULL, then neither WAIT nor LOADING` | `1:LOADING 2:LOADING 3:CARGO_HOLDING_WAIT 4:VEHICLE_FULL 5:LOADING 6:LOADING 7:VEHICLE_FULL 8:CLOSED/VEHICLE_FULL` |
 
 ## 目录内容
 

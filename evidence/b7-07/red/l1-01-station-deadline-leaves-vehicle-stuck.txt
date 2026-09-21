@@ -1,7 +1,7 @@
 # injection: 01-station-deadline-leaves-vehicle-stuck
 # file: src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
 # diff:
-@@ -3227,10 +3227,6 @@
+@@ -3243,10 +3243,6 @@
          // 第二个取货停靠上超时，就停在 AwaitingSublot 上一个待做项都没有的停靠里——每一轮再判一次期限、终结一个
          // 空集合，车带着第一站的货永远不走。离站等待的起点不动：期限正是因为它已经过了才到这里，离站那一段读到的
          // 也是「已经过了」。
@@ -15,9 +15,9 @@
 # build:
     0 Error(s)
 # test run (filter: FullyQualifiedName~Batch7ThreeStopJourneyTests):
-  Failed ControlServer.Tests.Batch7ThreeStopJourneyTests.AfterTheStationDeadlineEndsASecondPickupTheVehicleLeavesWithWhatItCarries [13 s]
+  Failed ControlServer.Tests.Batch7ThreeStopJourneyTests.AfterTheStationDeadlineEndsASecondPickupTheVehicleLeavesWithWhatItCarries [3 s]
   Error Message:
    The stop ended and the vehicle was never asked to leave it. stage=AwaitingSublot block=
      at ControlServer.Tests.Batch7ThreeStopJourneyTests.AfterTheStationDeadlineEndsASecondPickupTheVehicleLeavesWithWhatItCarries() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7ThreeStopJourneyTests.cs:line 305
    at ControlServer.Tests.Batch7ThreeStopJourneyTests.AfterTheStationDeadlineEndsASecondPickupTheVehicleLeavesWithWhatItCarries() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7ThreeStopJourneyTests.cs:line 309
-Failed!  - Failed:     1, Passed:     6, Skipped:     0, Total:     7, Duration: 36 s - ControlServer.Tests.dll (net8.0)
+Failed!  - Failed:     1, Passed:     8, Skipped:     0, Total:     9, Duration: 29 s - ControlServer.Tests.dll (net8.0)

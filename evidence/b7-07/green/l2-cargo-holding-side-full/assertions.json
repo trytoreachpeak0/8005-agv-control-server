@@ -1,13 +1,15 @@
 {
   "schemaVersion": 1,
   "scenario": "cargo-holding-side-full",
-  "runId": "20260921T063821591Z",
+  "runId": "20260921T091939747Z",
   "outcome": "PASS",
   "failureReason": "",
   "identity": {
-    "controlServerCommit": "724d6a3d36e010639a86a7d9d9aec0a6be7eb1d9",
+    "controlServerCommit": "1dc9a178da7b8fe559afa6234a727aaa70950090",
+    "vehicleKey": "BROKERX-L2-0001",
+    "batchId": "unspecified",
     "agvId": "AGV-L2-001",
-    "rig": "SyntheticOnboard",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260921T091939747Z",
     "protocolReleaseIdentity": {
       "repository": "8005-agv-protocol",
       "releaseVersion": "2.0.0",
@@ -20,9 +22,7 @@
       "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
       "approvalStatus": "APPROVED_RELEASE"
     },
-    "vehicleKey": "BROKERX-L2-0001",
-    "batchId": "unspecified",
-    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260921T063821591Z"
+    "rig": "SyntheticOnboard"
   },
   "assertions": [
     {
@@ -30,21 +30,21 @@
       "description": "需求甲装完、FRONT 已无空仓，但 REAR 还空着：车进入持货等单（CARGO_HOLDING_WAIT），不是 VEHICLE_FULL",
       "outcome": "PASS",
       "expected": "CARGO_HOLDING_WAIT, started",
-      "actual": "AwaitingStationDeparture CARGO_HOLDING_WAIT, started '2026-09-21 06:39:12.8041886+00:00'"
+      "actual": "AwaitingStationDeparture CARGO_HOLDING_WAIT, started '2026-09-21 09:20:34.7377581+00:00'"
     },
     {
       "id": "L2-CHS-02",
       "description": "需求乙追加进了持货等单的这辆车（同一趟旅程）",
       "outcome": "PASS",
-      "expected": "journey:29c56b2d-daf1-43bb-b73a-2b80fe664217",
-      "actual": "journey:29c56b2d-daf1-43bb-b73a-2b80fe664217"
+      "expected": "journey:04724952-231e-45e4-9522-4ce0b45ace01",
+      "actual": "journey:04724952-231e-45e4-9522-4ce0b45ace01"
     },
     {
       "id": "L2-CHS-03",
       "description": "需求乙装完、REAR 还有两个空仓：仍是 CARGO_HOLDING_WAIT，起算点没有因为新停靠重置",
       "outcome": "PASS",
-      "expected": "CARGO_HOLDING_WAIT, started 2026-09-21 06:39:12.8041886+00:00",
-      "actual": "CARGO_HOLDING_WAIT (LOADED), started 2026-09-21 06:39:12.8041886+00:00"
+      "expected": "CARGO_HOLDING_WAIT, started 2026-09-21 09:20:34.7377581+00:00",
+      "actual": "CARGO_HOLDING_WAIT (LOADED), started 2026-09-21 09:20:34.7377581+00:00"
     },
     {
       "id": "L2-CHS-04",
@@ -90,10 +90,10 @@
     },
     {
       "id": "L2-CHS-10",
-      "description": "两个停靠上发的 WAIT 快照带同一个期限，等于第一次装货落定 + 持货超时（十分钟）；FULL 与 CLOSED 也带期限或不带由状态决定，这里只断 WAIT",
+      "description": "从第一张 WAIT 起，之后每一张快照（含 LOADING、FULL 与 CLOSED）都带同一个期限，等于第一次装货落定 + 持货超时（十分钟）",
       "outcome": "PASS",
-      "expected": "2026-09-21T06:49:12.8041886+00:00",
-      "actual": "2026-09-21T06:49:12.8041886+00:00"
+      "expected": "2026-09-21T09:30:34.7377581+00:00",
+      "actual": "2026-09-21T09:30:34.7377581+00:00"
     }
   ]
 }

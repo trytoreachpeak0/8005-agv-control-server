@@ -1,0 +1,27 @@
+# injection: 12-the-pickup-arrival-keeps-the-plan-resent-on-the-way
+# file: src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+# diff:
+@@ -1429,9 +1429,6 @@
+             cancellationToken).ConfigureAwait(false);
+         await RetireSupersededSnapshotAsync(PickupDispatchPlanMessageId(runtime), cancellationToken)
+             .ConfigureAwait(false);
+-        // 车在路上收到的那张重发版（途中追加整体重发，号按「还没到站」算）同样被到站这一版取代（批次7-07 审查）。
+-        await RetireSupersededSnapshotAsync(ReSentPlanMessageId(runtime, stop, arrivedAtStop: false), cancellationToken)
+-            .ConfigureAwait(false);
+         await publisher.PublishUpcomingStopPlanAsync(
+             stop.PlanMessageId,
+             runtime.AgvId,
+# build:
+    0 Error(s)
+# test run (filter: FullyQualifiedName~ReceivedOnTheWay):
+  Failed ControlServer.Tests.Batch7ThreeStopJourneyTests.AReSentPlanReceivedOnTheWayIsRetiredWhenTheArrivalPlanSupersedesIt [10 s]
+  Error Message:
+   Assert.DoesNotContain() Failure: Filter matched in collection
+     at ControlServer.Tests.Batch7ThreeStopJourneyTests.AReSentPlanReceivedOnTheWayIsRetiredWhenTheArrivalPlanSupersedesIt() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7ThreeStopJourneyTests.cs:line 447
+   at ControlServer.Tests.Batch7ThreeStopJourneyTests.AReSentPlanReceivedOnTheWayIsRetiredWhenTheArrivalPlanSupersedesIt() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7ThreeStopJourneyTests.cs:line 449
+  Failed ControlServer.Tests.Batch7ThreeStopJourneyTests.AReSentPlanReceivedOnTheWayToTheUnloadStopIsRetiredWhenItsArrivalPlanSupersedesIt [6 s]
+  Error Message:
+   Assert.DoesNotContain() Failure: Filter matched in collection
+     at ControlServer.Tests.Batch7ThreeStopJourneyTests.AReSentPlanReceivedOnTheWayToTheUnloadStopIsRetiredWhenItsArrivalPlanSupersedesIt() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7ThreeStopJourneyTests.cs:line 522
+   at ControlServer.Tests.Batch7ThreeStopJourneyTests.AReSentPlanReceivedOnTheWayToTheUnloadStopIsRetiredWhenItsArrivalPlanSupersedesIt() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7ThreeStopJourneyTests.cs:line 524
+Failed!  - Failed:     2, Passed:     0, Skipped:     0, Total:     2, Duration: 17 s - ControlServer.Tests.dll (net8.0)

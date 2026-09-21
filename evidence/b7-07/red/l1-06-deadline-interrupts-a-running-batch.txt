@@ -1,7 +1,7 @@
 # injection: 06-deadline-interrupts-a-running-batch
 # file: src/ControlServer.Host/Runtime/LoadingPhaseMachine.cs
 # diff:
-@@ -94,7 +94,7 @@
+@@ -96,7 +96,7 @@
                  : Closed(LoadingClosedReasons.PlannedLoadingComplete);
          }
  
@@ -16,18 +16,18 @@
   Failed ControlServer.Tests.LoadingPhaseMachineTests.EachRuleDecidesWhatItSays(row: "deadline passed with a load batch executing: not y"···, facts: Facts { State = LOADING, ClosedReason = , HoldingApplicable = True, PendingLoadsRemain = True, LastLoadingStopDeparted = False, VehicleFull = False, HoldingDeadlinePassed = True, LoadBatchInProgress = True, DepartureUnderWay = False }, state: "LOADING", reason: null) [3 ms]
   Error Message:
    deadline passed with a load batch executing: not yet (ADR-cross-0057): expected LOADING/, decided CLOSED/CARGO_HOLDING_TIMEOUT
-     at ControlServer.Tests.LoadingPhaseMachineTests.EachRuleDecidesWhatItSays(String row, Facts facts, String state, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\LoadingPhaseMachineTests.cs:line 113
+     at ControlServer.Tests.LoadingPhaseMachineTests.EachRuleDecidesWhatItSays(String row, Facts facts, String state, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\LoadingPhaseMachineTests.cs:line 112
    at InvokeStub_LoadingPhaseMachineTests.EachRuleDecidesWhatItSays(Object, Span`1)
   Failed ControlServer.Tests.LoadingPhaseMachineTests.EachRuleDecidesWhatItSays(row: "deadline passed, batch executing, vehicle full: st"···, facts: Facts { State = VEHICLE_FULL, ClosedReason = , HoldingApplicable = True, PendingLoadsRemain = True, LastLoadingStopDeparted = False, VehicleFull = True, HoldingDeadlinePassed = True, LoadBatchInProgress = True, DepartureUnderWay = False }, state: "VEHICLE_FULL", reason: null) [< 1 ms]
   Error Message:
    deadline passed, batch executing, vehicle full: stays full until the batch closes: expected VEHICLE_FULL/, decided CLOSED/CARGO_HOLDING_TIMEOUT
-     at ControlServer.Tests.LoadingPhaseMachineTests.EachRuleDecidesWhatItSays(String row, Facts facts, String state, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\LoadingPhaseMachineTests.cs:line 113
+     at ControlServer.Tests.LoadingPhaseMachineTests.EachRuleDecidesWhatItSays(String row, Facts facts, String state, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\LoadingPhaseMachineTests.cs:line 112
    at InvokeStub_LoadingPhaseMachineTests.EachRuleDecidesWhatItSays(Object, Span`1)
   Failed ControlServer.Tests.Batch7CargoHoldingTests.AnAppendWhileHoldingLoadsItAndTheDeadlineWaitsForThatBatchToClose [2 s]
   Error Message:
    Assert.Equal() Failure: Strings differ
 Expected: "LOADING"
 Actual:   "CLOSED"
-     at ControlServer.Tests.Batch7CargoHoldingTests.AnAppendWhileHoldingLoadsItAndTheDeadlineWaitsForThatBatchToClose() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 224
-   at ControlServer.Tests.Batch7CargoHoldingTests.AnAppendWhileHoldingLoadsItAndTheDeadlineWaitsForThatBatchToClose() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 233
-Failed!  - Failed:     3, Passed:    60, Skipped:     0, Total:    63, Duration: 30 s - ControlServer.Tests.dll (net8.0)
+     at ControlServer.Tests.Batch7CargoHoldingTests.AnAppendWhileHoldingLoadsItAndTheDeadlineWaitsForThatBatchToClose() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 226
+   at ControlServer.Tests.Batch7CargoHoldingTests.AnAppendWhileHoldingLoadsItAndTheDeadlineWaitsForThatBatchToClose() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 235
+Failed!  - Failed:     3, Passed:    62, Skipped:     0, Total:    65, Duration: 33 s - ControlServer.Tests.dll (net8.0)

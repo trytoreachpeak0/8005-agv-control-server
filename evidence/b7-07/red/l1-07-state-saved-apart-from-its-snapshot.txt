@@ -1,7 +1,7 @@
 # injection: 07-state-saved-apart-from-its-snapshot
 # file: src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
 # diff:
-@@ -2582,6 +2582,7 @@
+@@ -2590,6 +2590,7 @@
  
          if (announces)
          {
@@ -12,11 +12,11 @@
 # build:
     0 Error(s)
 # test run (filter: FullyQualifiedName~Batch7CargoHoldingTests):
-  Failed ControlServer.Tests.Batch7CargoHoldingTests.WhenTheSnapshotCannotBeStoredTheStateIsNotStoredEither [315 ms]
+  Failed ControlServer.Tests.Batch7CargoHoldingTests.WhenTheSnapshotCannotBeStoredTheStateIsNotStoredEither [171 ms]
   Error Message:
    Assert.NotEqual() Failure: Strings are equal
 Expected: Not "CARGO_HOLDING_WAIT"
 Actual:       "CARGO_HOLDING_WAIT"
-     at ControlServer.Tests.Batch7CargoHoldingTests.WhenTheSnapshotCannotBeStoredTheStateIsNotStoredEither() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 487
-   at ControlServer.Tests.Batch7CargoHoldingTests.WhenTheSnapshotCannotBeStoredTheStateIsNotStoredEither() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 493
-Failed!  - Failed:     1, Passed:    17, Skipped:     0, Total:    18, Duration: 29 s - ControlServer.Tests.dll (net8.0)
+     at ControlServer.Tests.Batch7CargoHoldingTests.WhenTheSnapshotCannotBeStoredTheStateIsNotStoredEither() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 577
+   at ControlServer.Tests.Batch7CargoHoldingTests.WhenTheSnapshotCannotBeStoredTheStateIsNotStoredEither() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 583
+Failed!  - Failed:     1, Passed:    19, Skipped:     0, Total:    20, Duration: 34 s - ControlServer.Tests.dll (net8.0)

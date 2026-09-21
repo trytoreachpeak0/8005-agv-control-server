@@ -1,11 +1,13 @@
 {
   "schemaVersion": 1,
   "scenario": "cargo-holding-disabled-when-append-forbidden",
-  "runId": "20260921T060956160Z",
+  "runId": "20260921T090746552Z",
   "outcome": "FAIL",
   "failureReason": "",
   "identity": {
-    "vehicleKey": "BROKERX-L2-0001",
+    "agvId": "AGV-L2-001",
+    "controlServerCommit": "a3ebe94eb6b0130f8bdc40b7aca3722b7be36138",
+    "rig": "SyntheticOnboard",
     "protocolReleaseIdentity": {
       "repository": "8005-agv-protocol",
       "releaseVersion": "2.0.0",
@@ -18,11 +20,9 @@
       "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
       "approvalStatus": "APPROVED_RELEASE"
     },
-    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260921T060956160Z",
-    "controlServerCommit": "ac24df1c6ad6f51a1a6bea43784a4562d1d4661c",
-    "rig": "SyntheticOnboard",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260921T090746552Z",
     "batchId": "unspecified",
-    "agvId": "AGV-L2-001"
+    "vehicleKey": "BROKERX-L2-0001"
   },
   "assertions": [
     {
@@ -44,14 +44,14 @@
       "description": "上限为 0：装完到关卡腿建单不超过 25 秒（站点等待 10 秒；持货的话至少 40 秒）",
       "outcome": "FAIL",
       "expected": "<= 25 s",
-      "actual": "40.1 s"
+      "actual": "40.9 s"
     },
     {
       "id": "L2-CHD-02-3",
       "description": "上限为 0：这一趟发给车的快照没有一张带持货期限，状态只有 LOADING 与 CLOSED/PLANNED_LOADING_COMPLETE；旅程走完",
       "outcome": "FAIL",
       "expected": "LOADING, CLOSED/PLANNED_LOADING_COMPLETE; no deadline; Completed",
-      "actual": "CARGO_HOLDING_WAIT, CLOSED/CARGO_HOLDING_TIMEOUT, LOADING; 1 with deadline; Completed CLOSED/CARGO_HOLDING_TIMEOUT"
+      "actual": "CARGO_HOLDING_WAIT, CLOSED/CARGO_HOLDING_TIMEOUT, LOADING; 3 with deadline; Completed CLOSED/CARGO_HOLDING_TIMEOUT"
     },
     {
       "id": "L2-CHD-03",
@@ -65,21 +65,21 @@
       "description": "上限未配置：装货阶段从没进入持货等单或整车满，离站前已是 CLOSED/PLANNED_LOADING_COMPLETE",
       "outcome": "FAIL",
       "expected": "no WAIT/FULL; CLOSED/PLANNED_LOADING_COMPLETE",
-      "actual": "seen CARGO_HOLDING_WAIT,CLOSED/CARGO_HOLDING_TIMEOUT,LOADING(null); now AwaitingGateArrival CLOSED/CARGO_HOLDING_TIMEOUT"
+      "actual": "seen CARGO_HOLDING_WAIT,CLOSED/CARGO_HOLDING_TIMEOUT,LOADING(null); now AwaitingDepartureSafety CLOSED/CARGO_HOLDING_TIMEOUT"
     },
     {
       "id": "L2-CHD-04-2",
       "description": "上限未配置：装完到关卡腿建单不超过 25 秒（站点等待 10 秒；持货的话至少 40 秒）",
       "outcome": "FAIL",
       "expected": "<= 25 s",
-      "actual": "41.2 s"
+      "actual": "41.3 s"
     },
     {
       "id": "L2-CHD-04-3",
       "description": "上限未配置：这一趟发给车的快照没有一张带持货期限，状态只有 LOADING 与 CLOSED/PLANNED_LOADING_COMPLETE；旅程走完",
       "outcome": "FAIL",
       "expected": "LOADING, CLOSED/PLANNED_LOADING_COMPLETE; no deadline; Completed",
-      "actual": "CARGO_HOLDING_WAIT, CLOSED/CARGO_HOLDING_TIMEOUT, LOADING; 1 with deadline; Completed CLOSED/CARGO_HOLDING_TIMEOUT"
+      "actual": "CARGO_HOLDING_WAIT, CLOSED/CARGO_HOLDING_TIMEOUT, LOADING; 3 with deadline; Completed CLOSED/CARGO_HOLDING_TIMEOUT"
     }
   ]
 }

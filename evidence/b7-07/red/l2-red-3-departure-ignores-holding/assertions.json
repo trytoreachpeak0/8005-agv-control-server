@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
   "scenario": "cargo-holding-timeout",
-  "runId": "20260921T060645613Z",
+  "runId": "20260921T092659969Z",
   "outcome": "FAIL",
   "failureReason": "",
   "identity": {
-    "vehicleKey": "BROKERX-L2-0001",
-    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260921T060645613Z",
+    "batchId": "unspecified",
+    "rig": "SyntheticOnboard",
     "protocolReleaseIdentity": {
       "repository": "8005-agv-protocol",
       "releaseVersion": "2.0.0",
@@ -19,10 +19,10 @@
       "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
       "approvalStatus": "APPROVED_RELEASE"
     },
-    "controlServerCommit": "ac24df1c6ad6f51a1a6bea43784a4562d1d4661c",
-    "rig": "SyntheticOnboard",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260921T092659969Z",
     "agvId": "AGV-L2-001",
-    "batchId": "unspecified"
+    "vehicleKey": "BROKERX-L2-0001",
+    "controlServerCommit": "1dc9a178da7b8fe559afa6234a727aaa70950090"
   },
   "assertions": [
     {
@@ -30,21 +30,21 @@
       "description": "需求甲（1 花篮）装完、两侧都没满：车进入 CARGO_HOLDING_WAIT，起算点已落库",
       "outcome": "PASS",
       "expected": "CARGO_HOLDING_WAIT, started",
-      "actual": "AwaitingStationDeparture CARGO_HOLDING_WAIT, started '2026-09-21 06:07:08.7111938+00:00'"
+      "actual": "AwaitingStationDeparture CARGO_HOLDING_WAIT, started '2026-09-21 09:28:09.9304971+00:00'"
     },
     {
       "id": "L2-CHT-02",
       "description": "起算后约 30 秒（站点等待 10 秒早已过去，期限 40 秒未到）：车仍在站上持货，关卡腿没有建单",
       "outcome": "FAIL",
       "expected": "before deadline / CARGO_HOLDING_WAIT / AwaitingStationDeparture / 0 gate intents",
-      "actual": "before deadline (2026-09-21T06:07:38.7326262+00:00) / AwaitingGateArrival CLOSED/PLANNED_LOADING_COMPLETE / 1 gate intents"
+      "actual": "before deadline (2026-09-21T09:28:39.9503723+00:00) / AwaitingGateArrival CLOSED/PLANNED_LOADING_COMPLETE / 1 gate intents"
     },
     {
       "id": "L2-CHT-03",
       "description": "期限一到装货阶段关闭，理由 CARGO_HOLDING_TIMEOUT；发给车的那张关闭快照不早于期限",
       "outcome": "FAIL",
-      "expected": "CLOSED/CARGO_HOLDING_TIMEOUT at or after 2026-09-21T06:07:48.7111938+00:00",
-      "actual": "AwaitingGateArrival CLOSED/PLANNED_LOADING_COMPLETE, snapshot CLOSED/PLANNED_LOADING_COMPLETE at 2026-09-21T06:07:18.8296212+00:00"
+      "expected": "CLOSED/CARGO_HOLDING_TIMEOUT at or after 2026-09-21T09:28:49.9304971+00:00",
+      "actual": "AwaitingGateArrival CLOSED/PLANNED_LOADING_COMPLETE, snapshot CLOSED/PLANNED_LOADING_COMPLETE at 2026-09-21T09:28:21.0316167+00:00"
     },
     {
       "id": "L2-CHT-04",
@@ -62,10 +62,10 @@
     },
     {
       "id": "L2-CHT-06",
-      "description": "WAIT 快照的 cargoHoldingDeadlineAt 等于起算点 + 40 秒",
+      "description": "WAIT 快照与之后的 CLOSED 快照都带 cargoHoldingDeadlineAt，等于起算点 + 40 秒",
       "outcome": "PASS",
-      "expected": "2026-09-21T06:07:48.7111938+00:00",
-      "actual": "2026-09-21T06:07:48.7111938+00:00"
+      "expected": "2026-09-21T09:28:49.9304971+00:00",
+      "actual": "2026-09-21T09:28:49.9304971+00:00"
     }
   ]
 }

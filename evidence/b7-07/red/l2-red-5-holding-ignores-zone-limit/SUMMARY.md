@@ -6,10 +6,10 @@
 
 | 项 | 值 |
 | --- | --- |
-| runId | `20260921T060956160Z` |
+| runId | `20260921T090746552Z` |
 | agvId | `AGV-L2-001` |
 | batchId | `unspecified` |
-| controlServerCommit | `ac24df1c6ad6f51a1a6bea43784a4562d1d4661c` |
+| controlServerCommit | `a3ebe94eb6b0130f8bdc40b7aca3722b7be36138` |
 | protocolReleaseIdentity.repository | `8005-agv-protocol` |
 | protocolReleaseIdentity.releaseVersion | `2.0.0` |
 | protocolReleaseIdentity.tag | `protocol-v2.0.0` |
@@ -21,7 +21,7 @@
 | protocolReleaseIdentity.vectorsSha256 | `391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a` |
 | protocolReleaseIdentity.approvalStatus | `APPROVED_RELEASE` |
 | rig | `SyntheticOnboard` |
-| stageRoot | `C:\Users\szy\AppData\Local\Temp\l2-20260921T060956160Z` |
+| stageRoot | `C:\Users\szy\AppData\Local\Temp\l2-20260921T090746552Z` |
 | vehicleKey | `BROKERX-L2-0001` |
 
 ## 判据
@@ -30,12 +30,12 @@
 | --- | --- | --- | --- |
 | 前置：当前参数版本里 MAP-25-WIRE_TO_GATE 的途中追加上限是 0 | PASS | `0` | `0` |
 | 上限为 0：装货阶段从没进入持货等单或整车满，离站前已是 CLOSED/PLANNED_LOADING_COMPLETE | FAIL | `no WAIT/FULL; CLOSED/PLANNED_LOADING_COMPLETE` | `seen CARGO_HOLDING_WAIT,CLOSED/CARGO_HOLDING_TIMEOUT,LOADING(null); now AwaitingGateArrival CLOSED/CARGO_HOLDING_TIMEOUT` |
-| 上限为 0：装完到关卡腿建单不超过 25 秒（站点等待 10 秒；持货的话至少 40 秒） | FAIL | `<= 25 s` | `40.1 s` |
-| 上限为 0：这一趟发给车的快照没有一张带持货期限，状态只有 LOADING 与 CLOSED/PLANNED_LOADING_COMPLETE；旅程走完 | FAIL | `LOADING, CLOSED/PLANNED_LOADING_COMPLETE; no deadline; Completed` | `CARGO_HOLDING_WAIT, CLOSED/CARGO_HOLDING_TIMEOUT, LOADING; 1 with deadline; Completed CLOSED/CARGO_HOLDING_TIMEOUT` |
+| 上限为 0：装完到关卡腿建单不超过 25 秒（站点等待 10 秒；持货的话至少 40 秒） | FAIL | `<= 25 s` | `40.9 s` |
+| 上限为 0：这一趟发给车的快照没有一张带持货期限，状态只有 LOADING 与 CLOSED/PLANNED_LOADING_COMPLETE；旅程走完 | FAIL | `LOADING, CLOSED/PLANNED_LOADING_COMPLETE; no deadline; Completed` | `CARGO_HOLDING_WAIT, CLOSED/CARGO_HOLDING_TIMEOUT, LOADING; 3 with deadline; Completed CLOSED/CARGO_HOLDING_TIMEOUT` |
 | 服务端不停导入一版新参数：MAP-25-WIRE_TO_GATE 的途中追加上限为空（未配置） | PASS | `OK, (unconfigured)` | `OK, ''` |
-| 上限未配置：装货阶段从没进入持货等单或整车满，离站前已是 CLOSED/PLANNED_LOADING_COMPLETE | FAIL | `no WAIT/FULL; CLOSED/PLANNED_LOADING_COMPLETE` | `seen CARGO_HOLDING_WAIT,CLOSED/CARGO_HOLDING_TIMEOUT,LOADING(null); now AwaitingGateArrival CLOSED/CARGO_HOLDING_TIMEOUT` |
-| 上限未配置：装完到关卡腿建单不超过 25 秒（站点等待 10 秒；持货的话至少 40 秒） | FAIL | `<= 25 s` | `41.2 s` |
-| 上限未配置：这一趟发给车的快照没有一张带持货期限，状态只有 LOADING 与 CLOSED/PLANNED_LOADING_COMPLETE；旅程走完 | FAIL | `LOADING, CLOSED/PLANNED_LOADING_COMPLETE; no deadline; Completed` | `CARGO_HOLDING_WAIT, CLOSED/CARGO_HOLDING_TIMEOUT, LOADING; 1 with deadline; Completed CLOSED/CARGO_HOLDING_TIMEOUT` |
+| 上限未配置：装货阶段从没进入持货等单或整车满，离站前已是 CLOSED/PLANNED_LOADING_COMPLETE | FAIL | `no WAIT/FULL; CLOSED/PLANNED_LOADING_COMPLETE` | `seen CARGO_HOLDING_WAIT,CLOSED/CARGO_HOLDING_TIMEOUT,LOADING(null); now AwaitingDepartureSafety CLOSED/CARGO_HOLDING_TIMEOUT` |
+| 上限未配置：装完到关卡腿建单不超过 25 秒（站点等待 10 秒；持货的话至少 40 秒） | FAIL | `<= 25 s` | `41.3 s` |
+| 上限未配置：这一趟发给车的快照没有一张带持货期限，状态只有 LOADING 与 CLOSED/PLANNED_LOADING_COMPLETE；旅程走完 | FAIL | `LOADING, CLOSED/PLANNED_LOADING_COMPLETE; no deadline; Completed` | `CARGO_HOLDING_WAIT, CLOSED/CARGO_HOLDING_TIMEOUT, LOADING; 3 with deadline; Completed CLOSED/CARGO_HOLDING_TIMEOUT` |
 
 ## 目录内容
 

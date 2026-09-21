@@ -1,7 +1,7 @@
 # injection: 04-announce-the-silent-close
 # file: src/ControlServer.Host/Runtime/LoadingPhaseMachine.cs
 # diff:
-@@ -136,7 +136,7 @@
+@@ -138,7 +138,7 @@
              return false;
          }
  
@@ -13,21 +13,21 @@
 # build:
     0 Error(s)
 # test run (filter: FullyQualifiedName~Batch7CargoHoldingTests|FullyQualifiedName~Batch7StopDrivenAdvanceWireParityTests|FullyQualifiedName~LoadingPhaseMachineTests):
-  Failed ControlServer.Tests.LoadingPhaseMachineTests.AnnouncesExactlyTheTransitionsTheVehicleShows(fromState: "LOADING", fromReason: null, toState: "CLOSED", toReason: "PLANNED_LOADING_COMPLETE", applicable: False, announces: False) [8 ms]
+  Failed ControlServer.Tests.LoadingPhaseMachineTests.AnnouncesExactlyTheTransitionsTheVehicleShows(fromState: "LOADING", fromReason: null, toState: "CLOSED", toReason: "PLANNED_LOADING_COMPLETE", applicable: False, announces: False) [5 ms]
   Error Message:
    Assert.Equal() Failure: Values differ
 Expected: False
 Actual:   True
-     at ControlServer.Tests.LoadingPhaseMachineTests.AnnouncesExactlyTheTransitionsTheVehicleShows(String fromState, String fromReason, String toState, String toReason, Boolean applicable, Boolean announces) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\LoadingPhaseMachineTests.cs:line 205
+     at ControlServer.Tests.LoadingPhaseMachineTests.AnnouncesExactlyTheTransitionsTheVehicleShows(String fromState, String fromReason, String toState, String toReason, Boolean applicable, Boolean announces) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\LoadingPhaseMachineTests.cs:line 228
    at InvokeStub_LoadingPhaseMachineTests.AnnouncesExactlyTheTransitionsTheVehicleShows(Object, Span`1)
   Failed ControlServer.Tests.LoadingPhaseMachineTests.AnnouncesExactlyTheTransitionsTheVehicleShows(fromState: null, fromReason: null, toState: "CLOSED", toReason: "PLANNED_LOADING_COMPLETE", applicable: False, announces: False) [< 1 ms]
   Error Message:
    Assert.Equal() Failure: Values differ
 Expected: False
 Actual:   True
-     at ControlServer.Tests.LoadingPhaseMachineTests.AnnouncesExactlyTheTransitionsTheVehicleShows(String fromState, String fromReason, String toState, String toReason, Boolean applicable, Boolean announces) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\LoadingPhaseMachineTests.cs:line 205
+     at ControlServer.Tests.LoadingPhaseMachineTests.AnnouncesExactlyTheTransitionsTheVehicleShows(String fromState, String fromReason, String toState, String toReason, Boolean applicable, Boolean announces) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\LoadingPhaseMachineTests.cs:line 228
    at InvokeStub_LoadingPhaseMachineTests.AnnouncesExactlyTheTransitionsTheVehicleShows(Object, Span`1)
-  Failed ControlServer.Tests.Batch7StopDrivenAdvanceWireParityTests.AnExpiredDepartureCheckIsRetiredAndAskedAgainUnderTheSameDerivedIdentity [13 s]
+  Failed ControlServer.Tests.Batch7StopDrivenAdvanceWireParityTests.AnExpiredDepartureCheckIsRetiredAndAskedAgainUnderTheSameDerivedIdentity [9 s]
   Error Message:
    Assert.Equal() Failure: Strings differ
 Expected: ···"1 acknowledged=no fenced=no payloadSha256=05076b36"···
@@ -56,6 +56,6 @@ Actual:   ···"1 acknowledged=no fenced=yes payloadSha256=05076b3"···
    Assert.Equal() Failure: Collections differ
 Expected: SelectArrayIterator<LoadingPhaseProjection, LoadingPhaseSnapshot> [LoadingPhaseSnapshot { State = LOADING, CargoHoldingDeadlineAt = , ClosedReason = , Revision = 0 }, LoadingPhaseSnapshot { State = CLOSED, CargoHoldingDeadlineAt = , ClosedReason = PLANNED_LOADING_COMPLETE, Revision = 0 }]
 Actual:   SelectArrayIterator<LoadingPhaseSnapshot, LoadingPhaseSnapshot>   [LoadingPhaseSnapshot { State = LOADING, CargoHoldingDeadlineAt = , ClosedReason = , Revision = 0 }, LoadingPhaseSnapshot { State = CLOSED, CargoHoldingDeadlineAt = , ClosedReason = PLANNED_LOADING_COMPLETE, Revision = 0 }, LoadingPhaseSnapshot { State = CLOSED, CargoHoldingDeadlineAt = , ClosedReason = PLANNED_LOADING_COMPLETE, Revision = 0 }]
-     at ControlServer.Tests.Batch7CargoHoldingTests.WithoutHoldingEverySnapshotIsTheOneTheStageDerivedMappingGave() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 526
-   at ControlServer.Tests.Batch7CargoHoldingTests.WithoutHoldingEverySnapshotIsTheOneTheStageDerivedMappingGave() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 532
-Failed!  - Failed:     6, Passed:    62, Skipped:     0, Total:    68, Duration: 36 s - ControlServer.Tests.dll (net8.0)
+     at ControlServer.Tests.Batch7CargoHoldingTests.WithoutHoldingEverySnapshotIsTheOneTheStageDerivedMappingGave() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 616
+   at ControlServer.Tests.Batch7CargoHoldingTests.WithoutHoldingEverySnapshotIsTheOneTheStageDerivedMappingGave() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 622
+Failed!  - Failed:     6, Passed:    64, Skipped:     0, Total:    70, Duration: 30 s - ControlServer.Tests.dll (net8.0)

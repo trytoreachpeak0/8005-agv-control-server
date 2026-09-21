@@ -13,11 +13,11 @@
 # build:
     0 Error(s)
 # test run (filter: FullyQualifiedName~Batch7CargoHoldingTests):
-  Failed ControlServer.Tests.Batch7CargoHoldingTests.WhenTheSnapshotCannotBeStoredTheStateIsNotStoredEither [897 ms]
+  Failed ControlServer.Tests.Batch7CargoHoldingTests.WhenTheSnapshotCannotBeStoredTheStateIsNotStoredEither [206 ms]
   Error Message:
    System.IO.InvalidDataException : Journey journey:10000000-0000-4000-8000-000000000001 waits for a load result with no demand loading at its stop.
    at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 358
    at ControlServer.Tests.Batch7StopDrivenAdvanceDriver.TickAndRunAsync(RuntimeFixture fixture) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7StopDrivenAdvanceDriver.cs:line 62
-   at ControlServer.Tests.Batch7CargoHoldingTests.WhenTheSnapshotCannotBeStoredTheStateIsNotStoredEither() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 491
-   at ControlServer.Tests.Batch7CargoHoldingTests.WhenTheSnapshotCannotBeStoredTheStateIsNotStoredEither() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 493
-Failed!  - Failed:     1, Passed:    17, Skipped:     0, Total:    18, Duration: 40 s - ControlServer.Tests.dll (net8.0)
+   at ControlServer.Tests.Batch7CargoHoldingTests.WhenTheSnapshotCannotBeStoredTheStateIsNotStoredEither() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 581
+   at ControlServer.Tests.Batch7CargoHoldingTests.WhenTheSnapshotCannotBeStoredTheStateIsNotStoredEither() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 583
+Failed!  - Failed:     1, Passed:    19, Skipped:     0, Total:    20, Duration: 31 s - ControlServer.Tests.dll (net8.0)

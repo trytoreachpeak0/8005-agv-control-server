@@ -13,31 +13,31 @@
 # build:
     0 Error(s)
 # test run (filter: FullyQualifiedName~Batch7CargoHoldingTests):
-  Failed ControlServer.Tests.Batch7CargoHoldingTests.OnlyOwnCargoOnEverySideFillsTheVehicle(row: "disabled slots on both sides", firstReason: "SLOT_GROUP_CAPACITY_TEMPORARILY_UNAVAILABLE", firstSide: "FRONT", secondReason: "SLOT_GROUP_CAPACITY_TEMPORARILY_UNAVAILABLE", secondSide: "REAR") [3 s]
+  Failed ControlServer.Tests.Batch7CargoHoldingTests.OnlyOwnCargoOnEverySideFillsTheVehicle(row: "disabled slots on both sides", firstReason: "SLOT_GROUP_CAPACITY_TEMPORARILY_UNAVAILABLE", firstSide: "FRONT", secondReason: "SLOT_GROUP_CAPACITY_TEMPORARILY_UNAVAILABLE", secondSide: "REAR") [4 s]
   Error Message:
    disabled slots on both sides: the vehicle left.
-     at ControlServer.Tests.Batch7CargoHoldingTests.OnlyOwnCargoOnEverySideFillsTheVehicle(String row, String firstReason, String firstSide, String secondReason, String secondSide) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 395
-   at ControlServer.Tests.Batch7CargoHoldingTests.OnlyOwnCargoOnEverySideFillsTheVehicle(String row, String firstReason, String firstSide, String secondReason, String secondSide) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 395
+     at ControlServer.Tests.Batch7CargoHoldingTests.OnlyOwnCargoOnEverySideFillsTheVehicle(String row, String firstReason, String firstSide, String secondReason, String secondSide) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 485
+   at ControlServer.Tests.Batch7CargoHoldingTests.OnlyOwnCargoOnEverySideFillsTheVehicle(String row, String firstReason, String firstSide, String secondReason, String secondSide) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 485
   Failed ControlServer.Tests.Batch7CargoHoldingTests.OnlyOwnCargoOnEverySideFillsTheVehicle(row: "oversized on both sides", firstReason: "EXPECTED_BASKET_COUNT_EXCEEDS_SLOT_GROUP", firstSide: "FRONT", secondReason: "EXPECTED_BASKET_COUNT_EXCEEDS_SLOT_GROUP", secondSide: "REAR") [4 s]
   Error Message:
    oversized on both sides: the vehicle left.
-     at ControlServer.Tests.Batch7CargoHoldingTests.OnlyOwnCargoOnEverySideFillsTheVehicle(String row, String firstReason, String firstSide, String secondReason, String secondSide) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 395
-   at ControlServer.Tests.Batch7CargoHoldingTests.OnlyOwnCargoOnEverySideFillsTheVehicle(String row, String firstReason, String firstSide, String secondReason, String secondSide) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 395
+     at ControlServer.Tests.Batch7CargoHoldingTests.OnlyOwnCargoOnEverySideFillsTheVehicle(String row, String firstReason, String firstSide, String secondReason, String secondSide) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 485
+   at ControlServer.Tests.Batch7CargoHoldingTests.OnlyOwnCargoOnEverySideFillsTheVehicle(String row, String firstReason, String firstSide, String secondReason, String secondSide) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 485
   Failed ControlServer.Tests.Batch7CargoHoldingTests.OnlyOwnCargoOnEverySideFillsTheVehicle(row: "own cargo on one side, oversized on the other", firstReason: "SLOT_GROUP_OCCUPIED_BY_OWN_CARGO", firstSide: "FRONT", secondReason: "EXPECTED_BASKET_COUNT_EXCEEDS_SLOT_GROUP", secondSide: "REAR") [4 s]
   Error Message:
    own cargo on one side, oversized on the other: the vehicle left.
-     at ControlServer.Tests.Batch7CargoHoldingTests.OnlyOwnCargoOnEverySideFillsTheVehicle(String row, String firstReason, String firstSide, String secondReason, String secondSide) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 395
-   at ControlServer.Tests.Batch7CargoHoldingTests.OnlyOwnCargoOnEverySideFillsTheVehicle(String row, String firstReason, String firstSide, String secondReason, String secondSide) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 395
+     at ControlServer.Tests.Batch7CargoHoldingTests.OnlyOwnCargoOnEverySideFillsTheVehicle(String row, String firstReason, String firstSide, String secondReason, String secondSide) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 485
+   at ControlServer.Tests.Batch7CargoHoldingTests.OnlyOwnCargoOnEverySideFillsTheVehicle(String row, String firstReason, String firstSide, String secondReason, String secondSide) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 485
   Failed ControlServer.Tests.Batch7CargoHoldingTests.OnlyOwnCargoOnEverySideFillsTheVehicle(row: "one side full of own cargo", firstReason: "SLOT_GROUP_OCCUPIED_BY_OWN_CARGO", firstSide: "FRONT", secondReason: null, secondSide: null) [3 s]
   Error Message:
    one side full of own cargo: the vehicle left.
-     at ControlServer.Tests.Batch7CargoHoldingTests.OnlyOwnCargoOnEverySideFillsTheVehicle(String row, String firstReason, String firstSide, String secondReason, String secondSide) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 395
-   at ControlServer.Tests.Batch7CargoHoldingTests.OnlyOwnCargoOnEverySideFillsTheVehicle(String row, String firstReason, String firstSide, String secondReason, String secondSide) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 395
+     at ControlServer.Tests.Batch7CargoHoldingTests.OnlyOwnCargoOnEverySideFillsTheVehicle(String row, String firstReason, String firstSide, String secondReason, String secondSide) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 485
+   at ControlServer.Tests.Batch7CargoHoldingTests.OnlyOwnCargoOnEverySideFillsTheVehicle(String row, String firstReason, String firstSide, String secondReason, String secondSide) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 485
   Failed ControlServer.Tests.Batch7CargoHoldingTests.OnlyOwnCargoOnEverySideFillsTheVehicle(row: "another gate on both sides", firstReason: "VEHICLE_NOT_ADMITTED_IN_ZONE", firstSide: "FRONT", secondReason: "TASK_TYPE_HELD", secondSide: "REAR") [4 s]
   Error Message:
    another gate on both sides: the vehicle left.
-     at ControlServer.Tests.Batch7CargoHoldingTests.OnlyOwnCargoOnEverySideFillsTheVehicle(String row, String firstReason, String firstSide, String secondReason, String secondSide) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 395
-   at ControlServer.Tests.Batch7CargoHoldingTests.OnlyOwnCargoOnEverySideFillsTheVehicle(String row, String firstReason, String firstSide, String secondReason, String secondSide) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 395
+     at ControlServer.Tests.Batch7CargoHoldingTests.OnlyOwnCargoOnEverySideFillsTheVehicle(String row, String firstReason, String firstSide, String secondReason, String secondSide) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 485
+   at ControlServer.Tests.Batch7CargoHoldingTests.OnlyOwnCargoOnEverySideFillsTheVehicle(String row, String firstReason, String firstSide, String secondReason, String secondSide) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 485
   Failed ControlServer.Tests.Batch7CargoHoldingTests.AVehicleWithRoomLeftHoldsAtItsLastPickupInsteadOfLeaving [2 s]
   Error Message:
    Assert.Equal() Failure: Values differ
@@ -45,4 +45,4 @@ Expected: AwaitingStationDeparture
 Actual:   AwaitingDepartureSafety
      at ControlServer.Tests.Batch7CargoHoldingTests.AVehicleWithRoomLeftHoldsAtItsLastPickupInsteadOfLeaving() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 56
    at ControlServer.Tests.Batch7CargoHoldingTests.AVehicleWithRoomLeftHoldsAtItsLastPickupInsteadOfLeaving() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 76
-Failed!  - Failed:     6, Passed:    12, Skipped:     0, Total:    18, Duration: 1 m 6 s - ControlServer.Tests.dll (net8.0)
+Failed!  - Failed:     6, Passed:    14, Skipped:     0, Total:    20, Duration: 1 m 12 s - ControlServer.Tests.dll (net8.0)

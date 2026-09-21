@@ -6,10 +6,10 @@
 
 | 项 | 值 |
 | --- | --- |
-| runId | `20260921T060559721Z` |
+| runId | `20260921T090301105Z` |
 | agvId | `AGV-L2-001` |
 | batchId | `unspecified` |
-| controlServerCommit | `ac24df1c6ad6f51a1a6bea43784a4562d1d4661c` |
+| controlServerCommit | `a3ebe94eb6b0130f8bdc40b7aca3722b7be36138` |
 | protocolReleaseIdentity.repository | `8005-agv-protocol` |
 | protocolReleaseIdentity.releaseVersion | `2.0.0` |
 | protocolReleaseIdentity.tag | `protocol-v2.0.0` |
@@ -21,7 +21,7 @@
 | protocolReleaseIdentity.vectorsSha256 | `391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a` |
 | protocolReleaseIdentity.approvalStatus | `APPROVED_RELEASE` |
 | rig | `SyntheticOnboard` |
-| stageRoot | `C:\Users\szy\AppData\Local\Temp\l2-20260921T060559721Z` |
+| stageRoot | `C:\Users\szy\AppData\Local\Temp\l2-20260921T090301105Z` |
 | vehicleKey | `BROKERX-L2-0001` |
 
 ## 判据

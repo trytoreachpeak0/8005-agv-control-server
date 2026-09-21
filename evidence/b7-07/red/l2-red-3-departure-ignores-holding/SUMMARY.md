@@ -6,10 +6,10 @@
 
 | 项 | 值 |
 | --- | --- |
-| runId | `20260921T060645613Z` |
+| runId | `20260921T092659969Z` |
 | agvId | `AGV-L2-001` |
 | batchId | `unspecified` |
-| controlServerCommit | `ac24df1c6ad6f51a1a6bea43784a4562d1d4661c` |
+| controlServerCommit | `1dc9a178da7b8fe559afa6234a727aaa70950090` |
 | protocolReleaseIdentity.repository | `8005-agv-protocol` |
 | protocolReleaseIdentity.releaseVersion | `2.0.0` |
 | protocolReleaseIdentity.tag | `protocol-v2.0.0` |
@@ -21,19 +21,19 @@
 | protocolReleaseIdentity.vectorsSha256 | `391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a` |
 | protocolReleaseIdentity.approvalStatus | `APPROVED_RELEASE` |
 | rig | `SyntheticOnboard` |
-| stageRoot | `C:\Users\szy\AppData\Local\Temp\l2-20260921T060645613Z` |
+| stageRoot | `C:\Users\szy\AppData\Local\Temp\l2-20260921T092659969Z` |
 | vehicleKey | `BROKERX-L2-0001` |
 
 ## 判据
 
 | 判据 | 结论 | 期望 | 实际 |
 | --- | --- | --- | --- |
-| 需求甲（1 花篮）装完、两侧都没满：车进入 CARGO_HOLDING_WAIT，起算点已落库 | PASS | `CARGO_HOLDING_WAIT, started` | `AwaitingStationDeparture CARGO_HOLDING_WAIT, started '2026-09-21 06:07:08.7111938+00:00'` |
-| 起算后约 30 秒（站点等待 10 秒早已过去，期限 40 秒未到）：车仍在站上持货，关卡腿没有建单 | FAIL | `before deadline / CARGO_HOLDING_WAIT / AwaitingStationDeparture / 0 gate intents` | `before deadline (2026-09-21T06:07:38.7326262+00:00) / AwaitingGateArrival CLOSED/PLANNED_LOADING_COMPLETE / 1 gate intents` |
-| 期限一到装货阶段关闭，理由 CARGO_HOLDING_TIMEOUT；发给车的那张关闭快照不早于期限 | FAIL | `CLOSED/CARGO_HOLDING_TIMEOUT at or after 2026-09-21T06:07:48.7111938+00:00` | `AwaitingGateArrival CLOSED/PLANNED_LOADING_COMPLETE, snapshot CLOSED/PLANNED_LOADING_COMPLETE at 2026-09-21T06:07:18.8296212+00:00` |
+| 需求甲（1 花篮）装完、两侧都没满：车进入 CARGO_HOLDING_WAIT，起算点已落库 | PASS | `CARGO_HOLDING_WAIT, started` | `AwaitingStationDeparture CARGO_HOLDING_WAIT, started '2026-09-21 09:28:09.9304971+00:00'` |
+| 起算后约 30 秒（站点等待 10 秒早已过去，期限 40 秒未到）：车仍在站上持货，关卡腿没有建单 | FAIL | `before deadline / CARGO_HOLDING_WAIT / AwaitingStationDeparture / 0 gate intents` | `before deadline (2026-09-21T09:28:39.9503723+00:00) / AwaitingGateArrival CLOSED/PLANNED_LOADING_COMPLETE / 1 gate intents` |
+| 期限一到装货阶段关闭，理由 CARGO_HOLDING_TIMEOUT；发给车的那张关闭快照不早于期限 | FAIL | `CLOSED/CARGO_HOLDING_TIMEOUT at or after 2026-09-21T09:28:49.9304971+00:00` | `AwaitingGateArrival CLOSED/PLANNED_LOADING_COMPLETE, snapshot CLOSED/PLANNED_LOADING_COMPLETE at 2026-09-21T09:28:21.0316167+00:00` |
 | 关闭之后车带着已装的货离站：关卡腿建了单 | PASS | `>= 1` | `1` |
 | 关闭之后发的需求戊没有进这趟旅程，积压理由 LOADING_PHASE_CLOSED | PASS | `no journey / LOADING_PHASE_CLOSED` | `no journey / LOADING_PHASE_CLOSED` |
-| WAIT 快照的 cargoHoldingDeadlineAt 等于起算点 + 40 秒 | PASS | `2026-09-21T06:07:48.7111938+00:00` | `2026-09-21T06:07:48.7111938+00:00` |
+| WAIT 快照与之后的 CLOSED 快照都带 cargoHoldingDeadlineAt，等于起算点 + 40 秒 | PASS | `2026-09-21T09:28:49.9304971+00:00` | `2026-09-21T09:28:49.9304971+00:00` |
 
 ## 目录内容
 

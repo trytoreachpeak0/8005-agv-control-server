@@ -1,14 +1,11 @@
 {
   "schemaVersion": 1,
   "scenario": "cargo-holding-side-full",
-  "runId": "20260921T060217008Z",
+  "runId": "20260921T092259403Z",
   "outcome": "FAIL",
-  "failureReason": "Exception calling \"Parse\" with \"2\" argument(s): \"String '' was not recognized as a valid DateTime.\"",
+  "failureReason": "",
   "identity": {
     "rig": "SyntheticOnboard",
-    "agvId": "AGV-L2-001",
-    "batchId": "unspecified",
-    "vehicleKey": "BROKERX-L2-0001",
     "protocolReleaseIdentity": {
       "repository": "8005-agv-protocol",
       "releaseVersion": "2.0.0",
@@ -21,8 +18,11 @@
       "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
       "approvalStatus": "APPROVED_RELEASE"
     },
-    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260921T060217008Z",
-    "controlServerCommit": "ac24df1c6ad6f51a1a6bea43784a4562d1d4661c"
+    "controlServerCommit": "1dc9a178da7b8fe559afa6234a727aaa70950090",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260921T092259403Z",
+    "agvId": "AGV-L2-001",
+    "vehicleKey": "BROKERX-L2-0001",
+    "batchId": "unspecified"
   },
   "assertions": [
     {
@@ -36,15 +36,15 @@
       "id": "L2-CHS-02",
       "description": "需求乙追加进了持货等单的这辆车（同一趟旅程）",
       "outcome": "PASS",
-      "expected": "journey:8f20dd2d-e312-4b7e-bf62-c778f46feefb",
-      "actual": "journey:8f20dd2d-e312-4b7e-bf62-c778f46feefb"
+      "expected": "journey:ffb62525-27da-499b-8df3-23373e924258",
+      "actual": "journey:ffb62525-27da-499b-8df3-23373e924258"
     },
     {
       "id": "L2-CHS-03",
       "description": "需求乙装完、REAR 还有两个空仓：仍是 CARGO_HOLDING_WAIT，起算点没有因为新停靠重置",
       "outcome": "FAIL",
       "expected": "CARGO_HOLDING_WAIT, started ",
-      "actual": "CLOSED (LOADED), started 2026-09-21 06:02:49.9974118+00:00"
+      "actual": "CLOSED (LOADED), started 2026-09-21 09:23:51.3176304+00:00"
     },
     {
       "id": "L2-CHS-04",
@@ -87,6 +87,13 @@
       "outcome": "FAIL",
       "expected": "LOADING CARGO_HOLDING_WAIT LOADING CARGO_HOLDING_WAIT VEHICLE_FULL CLOSED/VEHICLE_FULL",
       "actual": "VEHICLE_FULL CLOSED/VEHICLE_FULL"
+    },
+    {
+      "id": "L2-CHS-10",
+      "description": "从第一张 WAIT 起，之后每一张快照（含 LOADING、FULL 与 CLOSED）都带同一个期限，等于第一次装货落定 + 持货超时（十分钟）",
+      "outcome": "FAIL",
+      "expected": "(no holding start, see L2-CHS-01)",
+      "actual": "(no snapshot from the first WAIT on)"
     }
   ]
 }
