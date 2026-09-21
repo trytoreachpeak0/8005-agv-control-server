@@ -128,12 +128,18 @@ function Get-L2CargoCurrentStop([object]$Connection, [string]$JourneyId) {
 #
 # $StationRiotId 是车要开去的站。必须给：车装完之后还停在上一个停靠上等（站点等待、持货），那个停靠在它离站之前一直是
 # 「当前停靠」，不等到当前停靠换到目标站就开，开的就是车脚下那一站（第一次跑这条场景就是这样，把第一站又走了一遍）。
-function Move-L2CargoVehicleToCurrentStop([object]$Context, [string]$JourneyId, [int]$StationRiotId) {
+#
+# $StopId 可选：同一个站上先后两个停靠时（车停在最后装货站等单时同站追加的需求，批次7-06 的口径：当前停靠不并，另开一个），
+# 只按站号等会在前一个停靠上就放行，要按停靠本身等。
+function Move-L2CargoVehicleToCurrentStop([object]$Context, [string]$JourneyId, [int]$StationRiotId, [string]$StopId = '') {
     $connection = $Context.Connection
-    $stop = Wait-L2Condition -Description "journey $JourneyId's current stop is at station $StationRiotId" `
-        -Journal $Context.Journal -Criterion 'current-stop' -TimeoutSeconds 120 `
+    $stop = Wait-L2Condition -Description "journey $JourneyId's current stop is at station $StationRiotId $StopId" `
+        -Journal $Context.Journal -Criterion 'current-stop' -TimeoutSeconds 180 `
         -Probe { Get-L2CargoCurrentStop $connection $JourneyId } `
-        -Until { param($v) $null -ne $v -and [int]$v.StationRiotId -eq $StationRiotId }
+        -Until {
+            param($v)
+            $null -ne $v -and [int]$v.StationRiotId -eq $StationRiotId -and ($StopId -eq '' -or [string]$v.StopId -eq $StopId)
+        }
     $upperId = [string]$stop.UpperId
     $intent = Wait-L2Condition -Description "the order for stop $($stop.StopId) ($upperId) was confirmed" `
         -Journal $Context.Journal -Criterion 'stop-intent' -TimeoutSeconds 120 `

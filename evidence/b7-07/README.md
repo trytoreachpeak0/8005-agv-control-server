@@ -9,7 +9,7 @@
 | 项 | 值 |
 | --- | --- |
 | 集成分支顶端 | `fp/v2-impl@1e59e21b`（开 PR 前 fetch 核对过，没有前移） |
-| 产品代码与测试 | `ac24df1c`；此后到最终提交 `724d6a3d`，`src/` 与 `tests/` 的差异是 0 行 |
+| 产品代码与测试 | `src/` 自 `ac24df1c` 起未再变；`tests/` 在 `09b31e3f` 补了一条护栏（`l1-09`），此外未变 |
 | L2 绿证据 | 五条全部在最终提交 `724d6a3d` 上跑 |
 | 持货超时 | `cargo-holding-timeout` 与 `cargo-holding-disabled-when-append-forbidden` 用 `00:00:40`（票面值）；另三条用 `00:10:00`，理由写在各自 setup 文件里 |
 
@@ -24,7 +24,7 @@
 | `green/l2-vehicle-full-ignores-oversized-and-gated/` | 5/5。超大单两条、暂停之下一条，都不把 REAR 算满。 |
 | `green/l2-vehicle-full-still-appends-before-departure/` | 6/6。整车满之后需求戊照样追加，这段时间装货阶段一直是 `VEHICLE_FULL`。 |
 
-## 红：L1（8 份，最终代码上重跑）
+## 红：L1（9 份：前 8 份在最终代码上重跑，第 9 份是审查期间补的护栏）
 
 每份都是一处注入：按备份还原（不用 `git checkout --`），文件头是对备份做的 diff，`0 Error(s)` 证明测试跑的是注入后的二进制。
 
@@ -38,6 +38,7 @@
 | `l1-06-deadline-interrupts-a-running-batch.txt` | 到期不等正在执行的装货批次 | 3 条：同上一条，加状态机两行 |
 | `l1-07-state-saved-apart-from-its-snapshot.txt` | 状态先单独保存、再发快照 | `WhenTheSnapshotCannotBeStoredTheStateIsNotStoredEither`：发件箱写失败时状态已经是 WAIT |
 | `l1-08-crash-between-the-two-load-saves-loops.txt` | 去掉续跑路径 | 同上一条，`System.IO.InvalidDataException`——写发件箱失败的那一轮正好落在两次保存之间（批次7-06 缺陷的复现） |
+| `l1-09-loading-phase-replay-ids-as-a-fixed-range.txt` | 装货阶段快照的补发 id 改成固定区间 1..18（cs#285 那个缺陷的形状） | `TheStateAndItsSnapshotAreSavedTogetherBeforeTheSnapshotIsSent` 只有高位那一行红（计数器预置到 100），低位那一行绿：`Assert.Contains() Failure: Filter not matched in collection` |
 
 ## 红：L2（6 份，外加一份「场景看不出来」）
 

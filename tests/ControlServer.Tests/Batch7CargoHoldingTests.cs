@@ -107,7 +107,9 @@ public sealed class Batch7CargoHoldingTests
             ],
             snapshots.Select(snapshot => snapshot.State));
         Assert.All(snapshots[2..], snapshot => Assert.Equal(LoadingClosedReasons.CargoHoldingTimeout, snapshot.ClosedReason));
-        Assert.All(snapshots[2..], snapshot => Assert.Null(snapshot.CargoHoldingDeadlineAt));
+        // 关闭之后期限照旧带着（program#94：「进入 CLOSED 后保留原值、不清空」），与 WAIT 那张是同一个时刻。
+        Assert.NotNull(snapshots[1].CargoHoldingDeadlineAt);
+        Assert.All(snapshots[2..], snapshot => Assert.Equal(snapshots[1].CargoHoldingDeadlineAt, snapshot.CargoHoldingDeadlineAt));
         AssertStrictlyIncreasing(snapshots);
     }
 
@@ -362,6 +364,65 @@ public sealed class Batch7CargoHoldingTests
         Assert.Contains(
             fixture.Peer.Lines.Skip(sentBefore).Select(line => System.Text.Encoding.UTF8.GetString(line)),
             line => line.Contains(waits[0].MessageId, StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// 车在路上判满：那张快照的号比下一站到站那张小一，断线之后照样补发（审查 M4）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 车在两个停靠之间时发的装货阶段快照，号按「还没到站」算，是 <c>StopRevision(基准, 下一站) - 1</c>；补发集合
+    /// <c>RuntimeMessageIds</c> 里专门有一行给它。只删那一行时 Batch7* 的其余用例全绿——到站那一张另有一行，而别的用例里
+    /// 车在路上发的快照都在断线之前就确认了。这条用例让那一张恰好在发送时断线，它唯一的出路就是那一行。
+    /// </para>
+    /// <para>
+    /// 判满来自读口（与 <see cref="OwnCargoCandidatesOnBothSidesMakeTheWaitingVehicleFullAndItLeaves"/> 同一个做法）：车已经在
+    /// 去第二个取货停靠的路上，两侧都有「只因本车货物装不下」的候选，于是在路上就是 <c>VEHICLE_FULL</c>（规则 6：满先于有待装）。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task ASnapshotSentBetweenStopsIsReplayedAfterTheSessionDropsMidSend()
+    {
+        await using RuntimeFixture fixture = await HoldingFixtureAsync();
+        await LoadTheFirstDemandAsync(fixture);
+        await AppendTheSecondDemandAsync(fixture);
+        await TickAndRunAsync(fixture);
+        await AnswerDepartureSafetyAsync(fixture, FirstDemandId, FirstSafetyResultId);
+        JourneyRuntimeRow underWay = await JourneyOfAsync(fixture, SecondDemandId);
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, underWay.Stage);
+
+        bool cut = false;
+        fixture.Peer.OnMessageSent = line =>
+        {
+            if (!cut && line.Contains("\"VEHICLE_FULL\"", StringComparison.Ordinal))
+            {
+                cut = true;
+                throw new IOException("peer dropped mid-send");
+            }
+            return Task.CompletedTask;
+        };
+        RecordRound(fixture, (DispatchReasonCodes.SlotGroupOccupiedByOwnCargo, "FRONT"),
+            (DispatchReasonCodes.SlotGroupOccupiedByOwnCargo, "REAR"));
+        await TickAndRunExpectingCrashAsync(fixture);
+        Assert.True(cut, "The vehicle never became full between stops, so there was nothing to cut.");
+
+        fixture.Context.ChangeTracker.Clear();
+        JourneyRuntimeRow afterCrash = await JourneyOfAsync(fixture, SecondDemandId);
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, afterCrash.Stage);
+        Assert.Equal(LoadingPhaseStates.VehicleFull, afterCrash.LoadingPhaseState);
+        ProtocolOutboxRow fullSnapshot = (await fixture.Context.ProtocolOutbox.AsNoTracking()
+                .Where(row => row.MessageType == "VehicleBusinessStateSnapshot" && row.AcknowledgedAt == null)
+                .ToArrayAsync(TestContext.Current.CancellationToken))
+            .Single(row => row.PayloadJson.Contains("\"VEHICLE_FULL\"", StringComparison.Ordinal));
+
+        fixture.Peer.OnMessageSent = null;
+        int sentBefore = fixture.Peer.Lines.Count;
+        await fixture.RecreateEngineAsync();
+        await TickAndRunAsync(fixture);
+        Assert.Contains(
+            fixture.Peer.Lines.Skip(sentBefore).Select(line => System.Text.Encoding.UTF8.GetString(line)),
+            line => line.Contains(fullSnapshot.MessageId, StringComparison.Ordinal));
     }
 
     /// <summary>

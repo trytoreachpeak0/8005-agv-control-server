@@ -147,11 +147,16 @@ $assertions.Add(
     'L2-CHS-09', '车收到的装货阶段依次是：到站装货 → 持货等单 → 追加后回到装货 → 持货等单 → 整车满 → 因满关闭',
     (($sequence -join ' ') -ceq $expectedSequence), $expectedSequence, ($sequence -join ' '))
 
-$deadlines = @($snapshots | Where-Object { $_.State -eq 'CARGO_HOLDING_WAIT' } | ForEach-Object { $_.Deadline } | Sort-Object -Unique)
+# 从第一张 WAIT 起，之后每一张（追加后的 LOADING、第二站的 WAIT、FULL、CLOSED）都带同一个期限：起算点不因新停靠重算，
+# 进入 CLOSED 也保留原值、不清空（program#94 语义表，审查 M1）。
+$firstWait = @($snapshots | Where-Object { $_.State -eq 'CARGO_HOLDING_WAIT' } | Select-Object -First 1)
+$deadlines = @(if ($firstWait.Count -gt 0) {
+    $snapshots | Where-Object { $_.Revision -ge $firstWait[0].Revision } | ForEach-Object { if ($_.Deadline) { $_.Deadline.ToString('o') } else { '(null)' } } |
+        Sort-Object -Unique })
 $expectedDeadline = [DateTimeOffset]::Parse($startedAt, [Globalization.CultureInfo]::InvariantCulture) + [TimeSpan]::FromMinutes(10)
 $assertions.Add(
-    'L2-CHS-10', '两个停靠上发的 WAIT 快照带同一个期限，等于第一次装货落定 + 持货超时（十分钟）；FULL 与 CLOSED 也带期限或不带由状态决定，这里只断 WAIT',
-    ($deadlines.Count -eq 1 -and $null -ne $deadlines[0] -and $deadlines[0] -eq $expectedDeadline),
-    $expectedDeadline.ToString('o'), (($deadlines | ForEach-Object { if ($_) { $_.ToString('o') } else { '(null)' } }) -join ', '))
+    'L2-CHS-10', '从第一张 WAIT 起，之后每一张快照（含 LOADING、FULL 与 CLOSED）都带同一个期限，等于第一次装货落定 + 持货超时（十分钟）',
+    ($deadlines.Count -eq 1 -and $deadlines[0] -eq $expectedDeadline.ToString('o')),
+    $expectedDeadline.ToString('o'), $(if ($deadlines.Count -eq 0) { '(no snapshot from the first WAIT on)' } else { $deadlines -join ', ' }))
 
 $journal.Note('两侧各以一种方式满：FRONT 无空仓、REAR 只因本车货物装不下；车从持货等单进整车满，离站即关闭。')

@@ -2467,7 +2467,9 @@ public sealed class JourneyRuntimeEngine(
     /// <remarks>
     /// <para>
     /// 批次 7 之前它由阶段推出来——一张「阶段 → 值」的表，只产出 <c>LOADING</c> 与 <c>CLOSED</c>／<c>PLANNED_LOADING_COMPLETE</c>。
-    /// 那张表现在只在测试里当判据用（<c>LoadingPhaseSnapshotParityTests</c>）：不持货等单的旅程，从列读出来的必须与它逐条相同。
+    /// 那张表现在只在测试里当判据用（<c>Batch7CargoHoldingTests.PreBatch7LoadingPhase</c>，用在
+    /// <c>WithoutHoldingEverySnapshotIsTheOneTheStageDerivedMappingGave</c>）：不持货等单的旅程，从列读出来的必须与它逐条相同。
+    /// 形状那一半（只会是批次 5 的两种）由 <c>JourneyRuntimeWorkerSlotGroupAndRestartTests.AJourneyThatDoesNotHoldIsOnlyEverSentTheTwoBatchFiveLoadingPhases</c> 守。
     /// </para>
     /// <para>
     /// <b>发快照的时点。</b>到站两处照旧（取货到站、卸货到站），再加 <see cref="ReconcileLoadingPhaseAsync"/> 里进出
@@ -2883,8 +2885,10 @@ public sealed class JourneyRuntimeEngine(
             // ——少一个就是一条报文再也不补发，而这个集合的每一项在发件箱里不一定有行，多出来的项不会让任何东西发出去。
             // 计划在一个停靠上也可能发不止一版（途中追加改写了序列）。重发版的 id 由停靠与修订号派生，而重发每次都把
             // 基准抬到「按当前停靠的算式恰好等于这一版的号」（RefreshUpcomingStopPlanAsync），所以这个停靠上<b>最新</b>那一版
-            // 的号就是下面两个算式之一——车在这一站上，或者还在来这一站的路上。更早的那几版在发下一版时已经退役，不用补发，
-            // 也<b>不该</b>补发：补发一张比车上那张旧的计划就是 SNAPSHOT_REVISION_REGRESSION。
+            // 的号就是下面两个算式之一——车在这一站上，或者还在来这一站的路上。更早的重发版不在这个集合里，不补发，也<b>不该</b>
+            // 补发：补发一张比车上那张旧的计划就是 SNAPSHOT_REVISION_REGRESSION。它们不补发靠的是「不在集合里」，不是「已退役」：
+            // 途中追加重发时会退役上一版（RefreshUpcomingStopPlanAsync），但到站发计划时只退役派往取货站那一版，<b>不退役</b>车在路上
+            // 收到的重发版——所以「未到站」算式那一个 id 在车到站之后仍在集合里（审查疑问 7；是否在到站时退役它，见 PR 正文）。
             //
             // 批次7-07（control-server#212）之前这里枚举的是修订号 1 到 18，写的人把它当成「一趟旅程里的第几版」，而它是
             // <b>按车</b>单调的绝对号：一辆车跑到第四、五趟，重发版的号就超过 18，不在这个集合里，断线之后再也不补发。

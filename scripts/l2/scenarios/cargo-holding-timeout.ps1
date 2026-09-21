@@ -114,10 +114,16 @@ $assertions.Add(
 
 $snapshots = Get-L2LoadingPhaseSnapshots $connection
 $journal.Observe('loading-phase-snapshots', (Format-L2LoadingPhaseSnapshots $snapshots), @{ snapshots = $snapshots })
-$deadlines = @($snapshots | Where-Object { $_.State -eq 'CARGO_HOLDING_WAIT' } | ForEach-Object { $_.Deadline } | Sort-Object -Unique)
+# WAIT 与之后的 CLOSED 都带这个期限：进入 CLOSED 保留原值、不清空（program#94 语义表，审查 M1）——车载端在「等单已到期」
+# 那一行仍要显示它。
+$firstWait = @($snapshots | Where-Object { $_.State -eq 'CARGO_HOLDING_WAIT' } | Select-Object -First 1)
+$deadlines = @(if ($firstWait.Count -gt 0) {
+    $snapshots | Where-Object { $_.Revision -ge $firstWait[0].Revision } | ForEach-Object { if ($_.Deadline) { $_.Deadline.ToString('o') } else { '(null)' } } |
+        Sort-Object -Unique })
+$closedWithDeadline = @($snapshots | Where-Object { $_.State -eq 'CLOSED' -and $null -ne $_.Deadline })
 $assertions.Add(
-    'L2-CHT-06', 'WAIT 快照的 cargoHoldingDeadlineAt 等于起算点 + 40 秒',
-    ($deadlines.Count -eq 1 -and $null -ne $deadlines[0] -and $deadlines[0] -eq $deadline),
-    $deadline.ToString('o'), (($deadlines | ForEach-Object { if ($_) { $_.ToString('o') } else { '(null)' } }) -join ', '))
+    'L2-CHT-06', 'WAIT 快照与之后的 CLOSED 快照都带 cargoHoldingDeadlineAt，等于起算点 + 40 秒',
+    ($deadlines.Count -eq 1 -and $deadlines[0] -eq $deadline.ToString('o') -and $closedWithDeadline.Count -ge 1),
+    $deadline.ToString('o'), $(if ($deadlines.Count -eq 0) { '(no snapshot from the first WAIT on)' } else { $deadlines -join ', ' }))
 
 $journal.Note('没有追加：车在站上持货到期限，以 CARGO_HOLDING_TIMEOUT 关闭后离站，之后的需求不再进这趟。')

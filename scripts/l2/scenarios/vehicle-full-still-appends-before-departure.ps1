@@ -11,6 +11,9 @@ VEHICLE_FULL 在离开最后一个装货停靠之前仍接追加（批次7-07，
    REAR 剩两个空仓，车在 11 号站上持货等单。
 2. 需求丁 REAR 3 花篮：只因本车货物占着 REAR 而装不下 → VEHICLE_FULL。
 3. 需求戊 REAR 2 花篮：放得下。它追加进这趟旅程，而此刻车仍是 VEHICLE_FULL、仍停在 11 号站、站点等待还没结束。
+   加入之后再转几轮，车仍是 VEHICLE_FULL（戊把 REAR 剩下的两个仓预留满了）。
+4. 车开到戊的停靠（同在 11 号站、另开的一个停靠）把戊装上，离开时以 CLOSED/VEHICLE_FULL 关闭；判满之后发给车的快照里
+   不再出现 WAIT 或 LOADING。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
@@ -75,7 +78,7 @@ $assertions.Add(
 
 # 从判满到戊加入，每一次读到的装货阶段都记下来，必须全是 VEHICLE_FULL。只断「戊进来了」是不够的：一个「满了就不接追加」
 # 的实现会让丁在下一轮被判成 LOADING_PHASE_CLOSED 而不再是「本车货物占侧」，REAR 随之不算满，车退回 CARGO_HOLDING_WAIT，
-# 戊就在退回的那一轮进来了——结果一样，但车是在「不满」的时候接的。第一版这条场景看不出这种翻转，红证据 red-6 就是它。
+# 戊就在退回的那一轮进来了——结果一样，但车是在「不满」的时候接的。第一版这条场景看不出这种翻转，红证据 red-6a 就是它。
 $phasesUntilJoined = [Collections.Generic.SortedSet[string]]::new([StringComparer]::Ordinal)
 Publish-L2CargoDemand $Context $e
 $joined = Wait-L2ConditionOrLast -Description 'demand E joined the full vehicle' -Journal $journal -Criterion 'e-joined' `
@@ -86,11 +89,6 @@ $joined = Wait-L2ConditionOrLast -Description 'demand E joined the full vehicle'
         Get-L2CargoJourney $connection $e.Id
     } `
     -Until { param($v) $null -ne $v }
-$fullAfterJoin = Get-L2CargoJourney $connection $a.Id
-$assertions.Add(
-    'L2-VFA-05', '从判满到需求戊加入、再到加入之后：装货阶段一直是 VEHICLE_FULL，没有退回持货等单再接单',
-    (($phasesUntilJoined -join ',') -ceq 'VEHICLE_FULL' -and [string]$fullAfterJoin.LoadingPhaseState -eq 'VEHICLE_FULL'),
-    'only VEHICLE_FULL', "seen $($phasesUntilJoined -join ','); after join $(Format-L2CargoJourney $fullAfterJoin)")
 # 追加那一刻车还没离站：11 号站那个停靠还开着。停靠状态只在离站那一次保存里改，读它比读阶段更直接。
 $stationStop = Invoke-L2Query -Connection $connection -Sql (
     "SELECT s.Status FROM JourneyStops s JOIN JourneyDemands d ON d.PickupStopId = s.StopId " +
@@ -109,17 +107,44 @@ $assertions.Add(
     ($null -ne $backlogE -and $null -ne $backlogE.AcceptedAt -and [string]$backlogE.AcceptedAt -ne ''),
     'accepted', $(if ($null -eq $backlogE) { '(no backlog row)' } else { "$($backlogE.ReasonCode) accepted=$($backlogE.AcceptedAt)" }))
 
+# 加入之后再转几轮才读：加入与重判不在同一次保存里，加入那一刻读到的还是加入之前的判定（审查 M3——第一版在这里读，
+# 「有待装就先判 LOADING」的错误实现照样绿）。戊加入后 REAR 已被它预留满，两侧都满，车必须仍是 VEHICLE_FULL。
+$null = Wait-L2Iterations -Riot $Context.Riot -Count 3 -Journal $journal
+$fullAfterJoin = Get-L2CargoJourney $connection $a.Id
+$assertions.Add(
+    'L2-VFA-05', '从判满到需求戊加入、再到加入之后又转了三轮：装货阶段一直是 VEHICLE_FULL，没有退回持货等单或装货',
+    (($phasesUntilJoined -join ',') -ceq 'VEHICLE_FULL' -and [string]$fullAfterJoin.LoadingPhaseState -eq 'VEHICLE_FULL'),
+    'only VEHICLE_FULL', "seen $($phasesUntilJoined -join ','); three rounds after join $(Format-L2CargoJourney $fullAfterJoin)")
+
+# --- 4. 戊装上车：满了接进来的单照样装（票面判据 ⑥「装满后到离开最后装货停靠前仍接能装入的候选」的「装入」） -------------
+
+# 戊的取货停靠与乙同在 11 号站，是另开的一个停靠（当前停靠不并），所以按停靠等，不按站等。
+$eStop = Invoke-L2Query -Connection $connection -Sql "SELECT PickupStopId FROM JourneyDemands WHERE DemandId = '$($e.Id)'"
+$null = Move-L2CargoVehicleToCurrentStop $Context $journeyId 11 ([string]$eStop[0].PickupStopId)
+$loadedE = Wait-L2ConditionOrLast -Description 'demand E was loaded' -Journal $journal -Criterion 'e-loaded' -TimeoutSeconds 120 `
+    -Probe {
+        $rows = Invoke-L2Query -Connection $connection -Sql "SELECT Status FROM JourneyDemands WHERE DemandId = '$($e.Id)'"
+        if ($rows.Count -eq 0) { return $null }
+        return [string]$rows[0].Status
+    } `
+    -Until { param($v) $v -eq 'LOADED' }
+$closed = Wait-L2LoadingPhase -Context $Context -DemandId $a.Id -States @('CLOSED') -Criterion 'phase-closed' -TimeoutSeconds 180
+$assertions.Add(
+    'L2-VFA-07', '需求戊装上了车，车离开它那个取货停靠（最后一个装货停靠）时以 VEHICLE_FULL 关闭',
+    ($loadedE -eq 'LOADED' -and [string]$closed.LoadingPhaseState -eq 'CLOSED' -and [string]$closed.LoadingClosedReason -eq 'VEHICLE_FULL'),
+    'E LOADED / CLOSED/VEHICLE_FULL', "E $loadedE / $(Format-L2CargoJourney $closed)")
+
 $snapshots = Get-L2LoadingPhaseSnapshots $connection
 $journal.Observe('loading-phase-snapshots', (Format-L2LoadingPhaseSnapshots $snapshots), @{ snapshots = $snapshots })
-# 车那一侧看到的也一样：第一张 FULL 之后没有任何一张 WAIT。
+# 车那一侧看到的也一样：第一张 FULL 之后没有任何一张 WAIT 或 LOADING，直到关闭。
 $firstFull = @($snapshots | Where-Object { $_.State -eq 'VEHICLE_FULL' } | Select-Object -First 1)
 # 整个 if 包进 @()：if 语句把空数组交给赋值时会展开成 $null，严格模式下取 .Count 就抛（第一次正式跑就栽在这里，
 # 红证据那次列表非空所以没撞上）。
-$waitAfterFull = @(if ($firstFull.Count -gt 0) {
-    $snapshots | Where-Object { $_.Revision -gt $firstFull[0].Revision -and $_.State -eq 'CARGO_HOLDING_WAIT' } })
+$reopenedAfterFull = @(if ($firstFull.Count -gt 0) {
+    $snapshots | Where-Object { $_.Revision -gt $firstFull[0].Revision -and $_.State -in @('CARGO_HOLDING_WAIT', 'LOADING') } })
 $assertions.Add(
-    'L2-VFA-06', '发给车的快照在第一张 VEHICLE_FULL 之后没有再出现 CARGO_HOLDING_WAIT',
-    ($firstFull.Count -eq 1 -and $waitAfterFull.Count -eq 0),
-    'a FULL, then no WAIT', "$(Format-L2LoadingPhaseSnapshots $snapshots)")
+    'L2-VFA-06', '发给车的快照在第一张 VEHICLE_FULL 之后没有再出现 CARGO_HOLDING_WAIT 或 LOADING',
+    ($firstFull.Count -eq 1 -and $reopenedAfterFull.Count -eq 0),
+    'a FULL, then neither WAIT nor LOADING', "$(Format-L2LoadingPhaseSnapshots $snapshots)")
 
-$journal.Note('整车满之后、离开最后一个装货站之前，一条放得下的单照样追加进来：关门的是离站，不是满。')
+$journal.Note('整车满之后、离开最后一个装货站之前，一条放得下的单照样追加进来、装上车：关门的是离站，不是满。')

@@ -24,7 +24,9 @@ namespace ControlServer.Host.Runtime;
 /// <item>不适用持货等单（车能服务的分区都禁止途中追加，REQ-0198）：还有待装就 <c>LOADING</c>，没有就
 /// <c>CLOSED</c>／<c>PLANNED_LOADING_COMPLETE</c>——与批次 7 之前完全相同，持货期限也不适用。</item>
 /// <item>持货期限已过、而且没有 <c>LoadBatch</c> 正在执行：<c>CLOSED</c>／<c>CARGO_HOLDING_TIMEOUT</c>。
-/// 有一批在执行就等它安全闭环（ADR-cross-0057「到期不打断正在进行的仓位操作」），下一轮再判。</item>
+/// 有一批在执行就等它安全闭环（ADR-cross-0057「到期不打断正在进行的仓位操作」），下一轮再判。
+/// <b>到期时别的停靠上还有待装，这一条今天同样关闭，而车照样去装</b>：本票不截断停靠，车上看到的「已结束」与它在做的事
+/// 对不上（审查 S1）。ADR-cross-0057 实施决定（三）的截断归 cs#290，那张票定这一格；测试里它单列为现行为，不在规则表中。</item>
 /// <item>离站安全核验已经发出而原来是 <c>VEHICLE_FULL</c>：保持 <c>VEHICLE_FULL</c>。核验发出之后车就要动了，
 /// 这时再判回等单，要么收回一个已经发出的核验，要么让车带着一个「等单」的状态开走——两样都不对。追加仍然接，
 /// 那由第 2 条之前的事实（待装重新出现）在车真正离开时体现。</item>
@@ -143,15 +145,26 @@ public static class LoadingPhaseMachine
     }
 
     /// <summary>
-    /// 持货期限（<c>cargoHoldingDeadlineAt</c>）：适用持货等单、第一个 <c>LoadBatch</c> 已经闭环、阶段还没结束时，
-    /// 是起算点加期限；其余一律为空（program#94：「第一个 LoadBatch 安全闭环之前、或不适用持货等单时为 null」）。
+    /// 持货期限（<c>cargoHoldingDeadlineAt</c>）：适用持货等单、第一个 <c>LoadBatch</c> 已经闭环时是起算点加期限，
+    /// 其余为空（program#94：「第一个 LoadBatch 安全闭环之前、或不适用持货等单时为 null」）。
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>进入 <c>CLOSED</c> 之后照旧给出</b>，不清空：program#94 语义表定的「进入 CLOSED 后保留原值、不清空」，车载端
+    /// 显示依赖它（审查 M1）。所以这里不看 <paramref name="state"/>；这个参数留着，是因为期限是「这一刻发给车的那一份」
+    /// 的一部分，调用方按状态取值。
+    /// </para>
+    /// <para>
+    /// 限度：关闭之后有人把本区参数改成禁止追加，「适用」变成否，期限随之为空——语义表没有覆盖「关闭后适用性变了」这一格，
+    /// 这里按「不适用持货等单时为 null」那半句处理。
+    /// </para>
+    /// </remarks>
     public static DateTimeOffset? Deadline(
         string? state,
         DateTimeOffset? cargoHoldingStartedAt,
         TimeSpan cargoHoldingTimeout,
         bool holdingApplicable) =>
-        holdingApplicable && cargoHoldingStartedAt is { } startedAt && state != LoadingPhaseStates.Closed
+        holdingApplicable && cargoHoldingStartedAt is { } startedAt
             ? startedAt + cargoHoldingTimeout
             : null;
 

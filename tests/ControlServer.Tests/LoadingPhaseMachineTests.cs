@@ -70,8 +70,7 @@ public sealed class LoadingPhaseMachineTests
         // ---- 第 4 条：持货期限 -------------------------------------------------------------------------
         { "deadline passed while waiting: timeout",
             Holding(Wait) with { PendingLoadsRemain = false, HoldingDeadlinePassed = true }, Closed, LoadingClosedReasons.CargoHoldingTimeout },
-        { "deadline passed while loading elsewhere: timeout",
-            Holding(Loading) with { HoldingDeadlinePassed = true }, Closed, LoadingClosedReasons.CargoHoldingTimeout },
+        // 「到期时别的停靠上还有待装」不在这张表里，见 ADeadlinePassedWithLoadsPendingElsewhereClosesTodayPendingCs290。
         { "deadline passed with a load batch executing: not yet (ADR-cross-0057)",
             Holding(Loading) with { HoldingDeadlinePassed = true, LoadBatchInProgress = true }, Loading, null },
         { "deadline passed, batch executing, vehicle full: stays full until the batch closes",
@@ -112,6 +111,30 @@ public sealed class LoadingPhaseMachineTests
 
         Assert.True(state == decision.State && reason == decision.ClosedReason,
             $"{row}: expected {state}/{reason}, decided {decision.State}/{decision.ClosedReason}");
+    }
+
+    /// <summary>
+    /// <b>现行为，不是期望</b>：到期时别的停靠上还有待装，今天关为 <c>CLOSED</c>／<c>CARGO_HOLDING_TIMEOUT</c>。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 审查 S1：到期之后车照样开往那个停靠去装（本票不截断停靠），车上收到的却是「已结束」，与 program#94 语义表对 CLOSED 的
+    /// 定义对不上。正确的形状取决于 cs#290 怎么实现 ADR-cross-0057 实施决定（三）的截断：截断了待装，这一格就对了；不截断，
+    /// 这一格该是 LOADING 直到装完。那张票定，不在本票。
+    /// </para>
+    /// <para>
+    /// 所以这一格单列、名字里写着 cs#290，而不放进上面那张「每条规则说什么」的表：放在表里，它就把现状钉成了规则，cs#290 的
+    /// 正确修法会被当成回归。cs#290 改它时，改这一条就够了。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void ADeadlinePassedWithLoadsPendingElsewhereClosesTodayPendingCs290()
+    {
+        LoadingPhaseMachine.Decision decision = LoadingPhaseMachine.Decide(
+            Holding(Loading) with { HoldingDeadlinePassed = true });
+
+        Assert.Equal(Closed, decision.State);
+        Assert.Equal(LoadingClosedReasons.CargoHoldingTimeout, decision.ClosedReason);
     }
 
     public static TheoryData<string, LoadingPhaseMachine.Facts, string, string?> Precedence() => new()
@@ -209,10 +232,10 @@ public sealed class LoadingPhaseMachineTests
     }
 
     /// <summary>
-    /// 持货期限（program#94）：适用持货等单、已经起算、阶段没结束时是起算点加期限，其余为空。
+    /// 持货期限（program#94）：适用持货等单、已经起算时是起算点加期限，其余为空；进入 CLOSED 后保留原值、不清空。
     /// </summary>
     [Fact]
-    public void TheDeadlineIsShownOnlyWhileHoldingApplies()
+    public void TheDeadlineIsShownWhenHoldingAppliesAndKeptAfterClosing()
     {
         DateTimeOffset started = new(2026, 9, 21, 8, 0, 0, TimeSpan.Zero);
         TimeSpan timeout = TimeSpan.FromMinutes(30);
@@ -225,7 +248,7 @@ public sealed class LoadingPhaseMachineTests
         Assert.Null(LoadingPhaseMachine.Deadline(Loading, null, timeout, holdingApplicable: true));
         // 不适用持货等单：与批次 7 之前逐条相同。
         Assert.Null(LoadingPhaseMachine.Deadline(Loading, started, timeout, holdingApplicable: false));
-        // 阶段结束了，期限不再有意义。
-        Assert.Null(LoadingPhaseMachine.Deadline(Closed, started, timeout, holdingApplicable: true));
+        // 阶段结束后保留结束前的值（program#94 语义表：「进入 CLOSED 后保留原值、不清空」，车载端显示依赖它）。
+        Assert.Equal(started + timeout, LoadingPhaseMachine.Deadline(Closed, started, timeout, holdingApplicable: true));
     }
 }
