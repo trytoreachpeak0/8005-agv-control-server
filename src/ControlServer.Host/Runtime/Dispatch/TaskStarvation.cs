@@ -50,8 +50,14 @@ public static class TaskStarvation
     public static bool InTopBand(AcceptedDemandSnapshot demand)
     {
         ArgumentNullException.ThrowIfNull(demand);
-        return string.Equals(demand.WorkType, TransportTaskTypes.StagingToWire, StringComparison.Ordinal);
+        return IsTopBandWorkType(demand.WorkType);
     }
+
+    /// <summary>
+    /// 这个任务类型是否在最高初始带。派车排序（<see cref="InTopBand"/>）与看板积压卡片（从业务键读回任务类型，批次7-12）共用这一处。
+    /// </summary>
+    public static bool IsTopBandWorkType(string? workType) =>
+        string.Equals(workType, TransportTaskTypes.StagingToWire, StringComparison.Ordinal);
 
     /// <summary>
     /// MesIngest 有没有给这条需求的建单时刻。目录项缺 <c>createdAt</c> 时适配器把它留成默认值并告警（审查低 3），

@@ -1,5 +1,6 @@
 using ControlServer.Application;
 using ControlServer.Host.Runtime.Dispatch;
+using ControlServer.Host.Runtime.Release;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -65,7 +66,43 @@ internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
                 "这个子批次的这类任务已在本地取消过，按业务键永久不再执行；MES 换了新的需求号也一样",
             [DispatchReasonCodes.TransportDemandKeyAlreadyAccepted] =
                 "这个子批次的这类任务已由另一个需求号受理过（在办、已完成或已取消），同一件活不再重复受理",
+            // 批次 7（control-server#211～#215）：途中追加、装货阶段、释放改派。都是正常调度的结论，不是故障（规格 8.8 第 4 条）。
+            [DispatchReasonCodes.SlotGroupOccupiedByOwnCargo] =
+                "本车货物占侧：所需一侧的空仓已被这辆车自己已装或已预留的货占满，其余条件都满足，等别的车或本车卸货后再派",
+            [DispatchReasonCodes.EnRouteAppendNotConfigured] =
+                "所在分区没有批准途中追加（未配置或配成 0），这条需求不会追加到在途车上，等空车来接",
+            [DispatchReasonCodes.EnRouteAppendDelayGateExceeded] =
+                "追加到在途车上会让车上某条需求到终点的路程增加超过所在分区的上限，这一趟不追加",
+            [DispatchReasonCodes.EnRouteAppendDelayUncomputable] =
+                "路网算不出追加之后的路程增量，按规则不追加（算不出不当成零）",
+            [DispatchReasonCodes.EnRouteAppendBreaksZoneContiguity] =
+                "追加进去会让在途车的停靠在分区之间来回穿插，没有能保持分区连续的插入位，这一趟不追加",
+            [DispatchReasonCodes.EnRouteAppendPlanLimitReached] =
+                "追加进去会让在途车的计划超过 9 段或某一站清单超过 8 项，这一趟不追加",
+            [DispatchReasonCodes.EnRouteAppendNoInsertionPoint] =
+                "在途车正驶向的那一站之后已经没有可插入的位置，这一趟不追加",
+            [DispatchReasonCodes.EnRouteAppendDemandLeftThisJourney] =
+                "这条需求刚从这趟旅程上释放出去，不再追加回同一趟，可以由别的车接",
+            [DispatchReasonCodes.LoadingPhaseClosed] =
+                "在途车的装货阶段已经结束（持货超时、让站、装满后离开或计划装货完成），不再接新的待装需求",
+            [DispatchReasonCodes.SublotTaskTypeConflict] =
+                "同一份 MES 快照里这个批次同时命中了不止一种任务类型，这个批次的需求都先不派，请到 MES 核对数据",
+            [DemandReleaseReasons.Released] =
+                "这条需求已从原来的车上释放，正在等改派给别的车",
         };
+
+    private readonly TimeProvider _clock;
+
+    public DispatchBacklogQueryEndpoint()
+        : this(TimeProvider.System)
+    {
+    }
+
+    internal DispatchBacklogQueryEndpoint(TimeProvider clock)
+    {
+        ArgumentNullException.ThrowIfNull(clock);
+        _clock = clock;
+    }
 
     public string Path => DashboardQueryEndpointCatalog.QueryPrefix + "dispatch-backlog";
 
@@ -73,29 +110,49 @@ internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
     {
         ArgumentNullException.ThrowIfNull(dbContext);
 
-        DateTimeOffset now = TimeProvider.System.GetUtcNow();
+        DateTimeOffset now = _clock.GetUtcNow();
         JourneyBacklogRow[] pending = await dbContext.JourneyBacklog.AsNoTracking()
             .Where(row => row.AcceptedAt == null && row.ReasonCode != DispatchReasonCodes.DemandLeftCatalog)
             .ToArrayAsync(cancellationToken);
         IReadOnlyList<StructuralDispatchBlock> blocks =
             await new StructuralDispatchBlockStore(dbContext).ListUnclearedAsync(cancellationToken);
+        StarvationThresholds thresholds = await StarvationThresholds.ReadAsync(dbContext, cancellationToken);
 
-        // Ordered in memory: SQLite cannot ORDER BY a DateTimeOffset.
+        // The order is the dispatch ranking's own (DispatchCandidateOrdering.Ranker), run over the backlog rows restored as the
+        // tasks the dispatch round ranked (BacklogStanding.TaskOf); it compares in memory, as SQLite cannot ORDER BY a DateTimeOffset.
+        Dictionary<DispatchTask, JourneyBacklogRow> rowOf = new(ReferenceEqualityComparer.Instance);
+        foreach (JourneyBacklogRow row in pending.Where(row => !DispatchReasonCodes.IsSilent(row.ReasonCode)))
+        {
+            rowOf.Add(BacklogStanding.TaskOf(row, now), row);
+        }
+        IReadOnlyList<DispatchTask> ordered = DispatchCandidateOrdering.Ranker().Order([.. rowOf.Keys]);
         return new
         {
-            backlog = pending
-                .Where(row => !DispatchReasonCodes.IsSilent(row.ReasonCode))
-                .OrderBy(row => row.FirstSeenAt)
-                .ThenBy(row => row.DemandId, StringComparer.Ordinal)
-                .Select(row => new
+            starvationThresholdsApproved = thresholds.AnyApproved,
+            starvationThresholds = thresholds.Zones
+                .Select(zone => new { dispatchZone = zone.Key, thresholdSeconds = zone.Value })
+                .ToArray(),
+            backlog = ordered
+                .Select(task => (Task: task, Row: rowOf[task]))
+                .Select(item => new
                 {
-                    demandId = row.DemandId,
-                    transportDemandKey = row.TransportDemandKey,
-                    reasonCode = row.ReasonCode,
-                    reasonDescription = Describe(row.ReasonCode),
-                    firstSeenAt = row.FirstSeenAt,
-                    lastEvaluatedAt = row.LastSeenAt,
-                    waitingSeconds = (long)Math.Max(0, (now - row.FirstSeenAt).TotalSeconds)
+                    demandId = item.Row.DemandId,
+                    transportDemandKey = item.Row.TransportDemandKey,
+                    reasonCode = item.Row.ReasonCode,
+                    reasonDescription = Describe(item.Row.ReasonCode),
+                    firstSeenAt = item.Row.FirstSeenAt,
+                    lastEvaluatedAt = item.Row.LastSeenAt,
+                    waitingSeconds = (long)TaskStarvation.WaitingAge(item.Task.Snapshot, now).TotalSeconds,
+                    demandCreatedAt = TaskStarvation.HasLocalCreation(item.Task.Snapshot) ? item.Row.DemandCreatedAt : (DateTimeOffset?)null,
+                    waitingAgeKnown = TaskStarvation.HasLocalCreation(item.Task.Snapshot),
+                    tier = BacklogStanding.TierOf(item.Task) switch
+                    {
+                        BacklogTier.StarvationTimeout => "STARVATION_TIMEOUT",
+                        BacklogTier.TopBand => "TOP_BAND",
+                        _ => "NORMAL_BAND"
+                    },
+                    starvationEscalatedAt = item.Row.StarvationEscalatedAt,
+                    starvationEscalationParameterVersion = item.Row.StarvationEscalationParameterVersion
                 })
                 .ToArray(),
             silentBacklogCount = pending.Count(row => DispatchReasonCodes.IsSilent(row.ReasonCode)),

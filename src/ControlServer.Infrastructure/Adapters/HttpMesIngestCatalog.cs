@@ -162,7 +162,7 @@ public sealed class HttpMesIngestCatalog(
         // 不能悄悄变成一个真实的时刻。ReadCatalogAsync 为它告警一次；年龄按 0 算由服务端的 TaskStarvation 负责。
         return new AcceptedDemandSnapshot(
             RequireDemandId(item.DemandId),
-            $"{sublot}|{workType}",
+            TransportDemandKeys.Compose(sublot, workType),
             item.DemandRevision,
             historyEpoch,
             catalogRevision,

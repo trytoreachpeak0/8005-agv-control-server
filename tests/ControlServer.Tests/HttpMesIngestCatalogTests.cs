@@ -47,6 +47,8 @@ public sealed class HttpMesIngestCatalogTests
         Assert.NotNull(current);
         Assert.Equal("94993971-b362-4edf-81bc-712d160e444a", current.DemandId);
         Assert.Equal("SUBLOT-001|WIRE_TO_GATE", current.TransportDemandKey);
+        // 看板积压卡片从业务键读回任务类型（control-server#217）：拼与拆是同一处，读回的必须就是目录给的那个。
+        Assert.Equal(current.WorkType, ControlServer.Application.TransportDemandKeys.WorkTypeOf(current.TransportDemandKey));
         Assert.Equal(21, current.CatalogRevision);
         Assert.Equal(now, current.AcceptedAt);
         Assert.Equal("SERIES-001", current.SeriesId);

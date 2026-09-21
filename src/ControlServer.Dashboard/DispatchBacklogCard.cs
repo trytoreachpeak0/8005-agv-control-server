@@ -36,6 +36,7 @@ public sealed class DispatchBacklogCard : IDashboardCard
     {
         StringBuilder html = new();
         RenderStructuralBlocks(html, Rows(fact, "structuralBlocks"));
+        RenderThresholds(html, fact);
         RenderBacklog(html, Rows(fact, "backlog"));
         RenderSilentCount(html, fact);
         return html.ToString();
@@ -73,19 +74,78 @@ public sealed class DispatchBacklogCard : IDashboardCard
             return;
         }
         html.Append(
-            "<table><tr><th>需求</th><th>原因码</th><th>说明</th><th>首次出现</th><th>已等待</th><th>最近评估</th></tr>");
+            "<table><tr><th>需求</th><th>所在层</th><th>原因码</th><th>说明</th><th>首次出现</th><th>已等待</th><th>最近评估</th><th>防饥饿升级</th></tr>");
         foreach (JsonElement row in backlog)
         {
             html.Append("<tr>")
                 .Append(DashboardPageRenderer.Cell(Demand(row)))
+                .Append(DashboardPageRenderer.Cell(Tier(row)))
                 .Append(DashboardPageRenderer.Cell(DashboardPageRenderer.Text(row, "reasonCode")))
                 .Append(DashboardPageRenderer.Cell(Description(row)))
                 .Append(DashboardPageRenderer.Cell(Time(row, "firstSeenAt")))
                 .Append(DashboardPageRenderer.Cell(Waiting(row)))
                 .Append(DashboardPageRenderer.Cell(Time(row, "lastEvaluatedAt")))
+                .Append(DashboardPageRenderer.Cell(Escalation(row)))
                 .Append("</tr>");
         }
         html.Append("</table></section>");
+    }
+
+    /// <summary>所在层（REQ-0202）。服务端给了一个这里不认识的层名时原样写出；没有这个字段（旧服务端）时留空。</summary>
+    private static string Tier(JsonElement row) =>
+        row.TryGetProperty("tier", out JsonElement tier) && tier.ValueKind == JsonValueKind.String
+            ? tier.GetString() switch
+            {
+                "STARVATION_TIMEOUT" => "超时层",
+                "TOP_BAND" => "最高带（STAGING_TO_WIRE）",
+                "NORMAL_BAND" => "普通带",
+                string other => other,
+                null => string.Empty
+            }
+            : string.Empty;
+
+    /// <summary>
+    /// 防饥饿升级告警的标记（REQ-0210 后半）：批次7-09 进入超时层时写下的时刻与所用参数版本。告警在服务端日志里，这里只是标记，不是告警样式。
+    /// </summary>
+    private static string Escalation(JsonElement row) =>
+        row.TryGetProperty("starvationEscalatedAt", out JsonElement at)
+        && at.ValueKind == JsonValueKind.String
+        && at.TryGetDateTimeOffset(out DateTimeOffset escalatedAt)
+            ? string.Create(
+                CultureInfo.InvariantCulture,
+                $"已升级告警：已进入超时层 {escalatedAt.ToLocalTime():yyyy-MM-dd HH:mm:ss}（参数版本 {DashboardPageRenderer.Text(row, "starvationEscalationParameterVersion")}）")
+            : string.Empty;
+
+    /// <summary>
+    /// 本区阈值未批准（REQ-0203）：一个分区都没有配防饥饿阈值时，整张卡片写明只计龄。积压行不带分区，所以说不到单条需求上。
+    /// 部分分区已批准时列出每个分区的阈值。服务端没给这组字段（旧服务端）时什么都不写。
+    /// </summary>
+    private static void RenderThresholds(StringBuilder html, JsonElement fact)
+    {
+        if (!fact.TryGetProperty("starvationThresholdsApproved", out JsonElement approved)
+            || approved.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+        {
+            return;
+        }
+        if (approved.ValueKind == JsonValueKind.False)
+        {
+            html.Append("<p class=\"starvation-thresholds-unapproved\">本区阈值未批准：只累计等待年龄，不跨带升级</p>");
+            // 超时层只读派车记下的标记，不按现在的阈值重算（调度 2026-09-22）；阈值未批准时还有标记，只能是撤回之前记下的。
+            if (Rows(fact, "backlog").Any(row => row.TryGetProperty("starvationEscalatedAt", out JsonElement at)
+                                                 && at.ValueKind == JsonValueKind.String))
+            {
+                html.Append("<p class=\"starvation-escalations-predate-withdrawal\">超时层的标记是阈值撤回之前记下的：")
+                    .Append("那时它已越过阈值、告过警；撤回之后不会再有新的需求进入超时层</p>");
+            }
+            return;
+        }
+        string zones = string.Join("；", Rows(fact, "starvationThresholds").Select(zone =>
+            zone.TryGetProperty("thresholdSeconds", out JsonElement seconds) && seconds.ValueKind == JsonValueKind.Number
+                ? $"{DashboardPageRenderer.Text(zone, "dispatchZone")} {seconds.GetInt64()} 秒"
+                : $"{DashboardPageRenderer.Text(zone, "dispatchZone")} 未批准（只计龄）"));
+        html.Append("<p class=\"starvation-thresholds\">")
+            .Append(System.Net.WebUtility.HtmlEncode("防饥饿阈值：" + zones))
+            .Append("</p>");
     }
 
     private static void RenderSilentCount(StringBuilder html, JsonElement fact)
@@ -126,6 +186,11 @@ public sealed class DispatchBacklogCard : IDashboardCard
 
     private static string Waiting(JsonElement row)
     {
+        // MesIngest 没给建单时刻（批次7-09 审查低 3）：年龄按 0 算，不拿 0001-01-01 当起点，这里如实说不知道。
+        if (row.TryGetProperty("waitingAgeKnown", out JsonElement known) && known.ValueKind == JsonValueKind.False)
+        {
+            return "建单时刻不明";
+        }
         if (!row.TryGetProperty("waitingSeconds", out JsonElement value)
             || !value.TryGetInt64(out long seconds))
         {
