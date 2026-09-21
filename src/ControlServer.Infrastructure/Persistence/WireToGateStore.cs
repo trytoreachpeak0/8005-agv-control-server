@@ -723,6 +723,17 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
 
         await ApplyResequencingAsync(plan, cancellationToken).ConfigureAwait(false);
 
+        // 让站（批次7-08，control-server#213）：追加可能把新的取货停靠排成这辆车的下一停靠。按重排之后的序列算，
+        // 与追加同一次保存标记停在那里持货等单的别的车。下一停靠没变时也照样判：承诺那一刻已经在等的车早被标记过，
+        // 不会再写；之后才开始等的那辆这里一并标记，与它自己推进时的补判（引擎的 ReconcileLoadingPhaseAsync）是同一个结论。
+        if (StationYield.NextStop(journey.Stage, await StationYield.StopsOfAsync(dbContext, plan.JourneyId, cancellationToken)
+                .ConfigureAwait(false)) is { } nextStop)
+        {
+            await StationYield.StageTriggerAsync(
+                    dbContext, journey.VehicleKey, nextStop.StationRiotId, plan.AddedAt, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         JourneyBacklogRow? backlog = await dbContext.JourneyBacklog
             .SingleOrDefaultAsync(row => row.DemandId == snapshot.DemandId, cancellationToken).ConfigureAwait(false);
         if (backlog is not null)
@@ -1106,6 +1117,11 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
             dbContext.Set<JourneyStopRow>().AddRange(SingleDemandJourneyShape.Stops(runtimeRow));
             dbContext.Set<JourneyDemandRow>().Add(SingleDemandJourneyShape.Demand(runtimeRow));
             await AdvanceSnapshotRevisionCounterAsync(runtimeRow, cancellationToken).ConfigureAwait(false);
+            // 让站（批次7-08，control-server#213）：新旅程的下一停靠就是它的取货站。停在那里持货等单的别的车，在这次受理的
+            // 同一次保存里被标记——受理与触发要么都在，要么都不在，不留给下一轮去推断。
+            await StationYield.StageTriggerAsync(
+                    dbContext, orderIntent.VehicleKey, journey.PickupStationRiotId, snapshot.AcceptedAt, cancellationToken)
+                .ConfigureAwait(false);
             JourneyBacklogRow? backlog = await dbContext.JourneyBacklog
                 .SingleOrDefaultAsync(row => row.DemandId == snapshot.DemandId, cancellationToken)
                 .ConfigureAwait(false);

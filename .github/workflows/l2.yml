@@ -295,6 +295,11 @@ jobs:
               # control-server#212, the two vehicle-full ones of the five above.
               @{ Name = 'vehicle-full-ignores-oversized-and-gated'; Runs = 1; BatchId = 'batch-7' }
               @{ Name = 'vehicle-full-still-appends-before-departure'; Runs = 1; BatchId = 'batch-7' }
+              # control-server#213, specification 8.3 batch-7 criterion 3: a vehicle holding at a station yields the moment
+              # another vehicle is committed to that station as its next stop, and the yield does not break an open door
+              # or a load under way -- the departure still waits for both to settle and for the pre-departure check.
+              @{ Name = 'waiting-station-yield'; Runs = 1; BatchId = 'batch-7' }
+              @{ Name = 'waiting-station-yield-waits-for-door'; Runs = 1; BatchId = 'batch-7' }
           )
           # One run's usual length in seconds, for dealing scenarios out to lanes longest first. Medians of 31
           # CI jobs from 2026-09-17 (ci-research, control-server#130); normal-load's excludes the build it used
@@ -319,6 +324,8 @@ jobs:
               'vehicle-full-still-appends-before-departure' = 111; 'cargo-holding-side-full' = 98
               'cargo-holding-timeout' = 81; 'cargo-holding-disabled-when-append-forbidden' = 64
               'vehicle-full-ignores-oversized-and-gated' = 58
+              # control-server#213, one local run each (2026-09-21).
+              'waiting-station-yield' = 60; 'waiting-station-yield-waits-for-door' = 60
           }
 
           # Registered before anything can fail, so the upload step below always has a path: without it

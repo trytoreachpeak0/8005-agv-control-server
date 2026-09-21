@@ -26,7 +26,7 @@ namespace ControlServer.Host.Runtime.Dispatch;
 /// <para>
 /// <b>只记上一轮，整张替换。</b>一辆车这一轮没跑完（预算耗尽、读挂了）或根本没参加，它就不在表里，读出来是
 /// 「说不出来」，而不是沿用更早那一轮的结论：候选会被别的车接走、会被取消，早一轮的「有一条候选装不下」到这一轮
-/// 可能已经不存在了。说不出来时装货阶段不改判（<see cref="LoadingPhaseMachine"/> 第 6 条）。
+/// 可能已经不存在了。说不出来时装货阶段不改判（<see cref="LoadingPhaseMachine"/> 第 7 条）。
 /// </para>
 /// <para>
 /// 进程内的，不落库。重启之后第一轮之前它是空的，那一段装货阶段按落库的判定走（<c>FullSlotPositionsJson</c>），不会翻状态。
