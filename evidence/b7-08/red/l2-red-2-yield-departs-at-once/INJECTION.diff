@@ -1,0 +1,11 @@
+# file: src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+--- 
++++ 
+@@ -2617,2 +2617,7 @@
+             runtime.UpdatedAt = now;
++            if (decision.ClosedReason == LoadingClosedReasons.WaitingStationYield)
++            {
++                runtime.StationDepartureWaitStartedAt = now - TimeSpan.FromHours(1);
++                SetStage(runtime, JourneyRuntimeStage.AwaitingStationDeparture, now);
++            }
+         }

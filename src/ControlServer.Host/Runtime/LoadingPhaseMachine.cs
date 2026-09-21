@@ -18,6 +18,10 @@ namespace ControlServer.Host.Runtime;
 /// </para>
 /// <list type="number">
 /// <item>已经 <c>CLOSED</c>：保持。持货超时与让站之后不再接单（REQ-0354 末句），装满后离开最后一个装货停靠也是终点。</item>
+/// <item>让站已触发（批次7-08，control-server#213；REQ-0355）：<c>CLOSED</c>／<c>WAITING_STATION_YIELD</c>。
+/// 不等 <c>LoadBatch</c> 闭环——让站结束的是装货阶段，不是本站作业：已承诺的待装照常装完，离站仍走离站等待与离站安全核验，
+/// 阻断离站的状态由那条路挡住（票面第 2、3 条）。触发晚于持货期限的不算（由调用方判，见 <see cref="Facts.YieldTriggered"/>），
+/// 那时期限先到，结束原因是持货超时。</item>
 /// <item>已经离开最后一个装货停靠：<c>CLOSED</c>。原来是 <c>VEHICLE_FULL</c> 就记 <c>VEHICLE_FULL</c>，否则记
 /// <c>PLANNED_LOADING_COMPLETE</c>。适用持货等单时车只会从 <c>VEHICLE_FULL</c> 走到这里（<c>CARGO_HOLDING_WAIT</c>
 /// 不发离站请求），另一支接住的是不适用持货的旅程，以及列落地之前就在途、从没写过这几列的旅程。</item>
@@ -29,13 +33,13 @@ namespace ControlServer.Host.Runtime;
 /// 对不上（审查 S1）。ADR-cross-0057 实施决定（三）的截断归 cs#290，那张票定这一格；测试里它单列为现行为，不在规则表中。</item>
 /// <item>离站安全核验已经发出而原来是 <c>VEHICLE_FULL</c>：保持 <c>VEHICLE_FULL</c>。核验发出之后车就要动了，
 /// 这时再判回等单，要么收回一个已经发出的核验，要么让车带着一个「等单」的状态开走——两样都不对。追加仍然接，
-/// 那由第 2 条之前的事实（待装重新出现）在车真正离开时体现。</item>
+/// 那由第 3 条之前的事实（待装重新出现）在车真正离开时体现。</item>
 /// <item>两侧都满：<c>VEHICLE_FULL</c>。不满：还有待装就 <c>LOADING</c>，没有就 <c>CARGO_HOLDING_WAIT</c>。
 /// 满没满<b>说不出来</b>（派车轮这一轮没问到这辆车，典型是重启之后第一轮之前）时不改判：原来是
 /// <c>VEHICLE_FULL</c> 就保持，否则按不满判。说不出来就翻状态，会让一次重启给车发两张来回翻的快照。</item>
 /// </list>
 /// <para>
-/// <b>第 6 条让 <c>VEHICLE_FULL</c> 可以出现在装货途中</b>：满是按「已装或已预留」的货算的（ADR-cross-0059），
+/// <b>第 7 条让 <c>VEHICLE_FULL</c> 可以出现在装货途中</b>：满是按「已装或已预留」的货算的（ADR-cross-0059），
 /// 两侧都被预留满时车还没装完，但已经不再等新单——REQ-0354「全部分组均装满即 VehicleFull……完成已承诺的待装
 /// Demand 后前往卸货」。反过来，<c>CARGO_HOLDING_WAIT</c> 之后追加成功会回到 <c>LOADING</c>：追加总是新开一个停靠
 /// （批次7-06 的口径，当前停靠不并），车要去装新的那条，那不是「等单」。
@@ -53,6 +57,10 @@ public static class LoadingPhaseMachine
     /// <param name="HoldingDeadlinePassed">持货期限已过；第一个 <c>LoadBatch</c> 闭环之前恒为假。</param>
     /// <param name="LoadBatchInProgress">有一批装货命令已发、结果未到。</param>
     /// <param name="DepartureUnderWay">离站安全核验已经发出、车还没为离站请求移动。</param>
+    /// <param name="YieldTriggered">
+    /// 别的车被承诺以本站为下一停靠，而且这件事早于持货期限（<c>YieldTriggeredAt</c> 有值且在期限之前）。
+    /// 触发在承诺方的事务里写，这里只读（<c>StationYield</c>）。
+    /// </param>
     public sealed record Facts(
         string? State,
         string? ClosedReason,
@@ -62,7 +70,8 @@ public static class LoadingPhaseMachine
         bool? VehicleFull,
         bool HoldingDeadlinePassed,
         bool LoadBatchInProgress,
-        bool DepartureUnderWay);
+        bool DepartureUnderWay,
+        bool YieldTriggered = false);
 
     /// <summary>一次判定的结论。<see cref="ClosedReason"/> 只在 <c>CLOSED</c> 时非空，与协议的 <c>if/then/else</c> 同一条。</summary>
     public sealed record Decision(string State, string? ClosedReason)
@@ -70,7 +79,7 @@ public static class LoadingPhaseMachine
         public bool IsClosed => State == LoadingPhaseStates.Closed;
     }
 
-    /// <summary>见类注释的六条。</summary>
+    /// <summary>见类注释的七条。</summary>
     public static Decision Decide(Facts facts)
     {
         ArgumentNullException.ThrowIfNull(facts);
@@ -80,6 +89,11 @@ public static class LoadingPhaseMachine
         {
             return new Decision(LoadingPhaseStates.Closed, facts.ClosedReason
                 ?? throw new InvalidOperationException("A closed loading phase names why it closed."));
+        }
+
+        if (facts.YieldTriggered)
+        {
+            return Closed(LoadingClosedReasons.WaitingStationYield);
         }
 
         if (facts.LastLoadingStopDeparted)

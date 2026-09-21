@@ -1,0 +1,8 @@
+# file: src/ControlServer.Host/Runtime/LoadingPhaseMachine.cs
+--- 
++++ 
+@@ -93,3 +93,3 @@
+ 
+-        if (facts.YieldTriggered)
++        if (facts.YieldTriggered && facts.State == "never")
+         {

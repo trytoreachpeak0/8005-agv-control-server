@@ -821,3 +821,9 @@ pwsh -NoProfile -File .\scripts\l2\Test-L2PortLockQueueing.ps1
       持货起算点 `CargoHoldingStartedAt` 不在这一次里：它随装货落定那次保存（与归属 `LOADED` 同一次）落库，早于状态变成
       `CARGO_HOLDING_WAIT`。`JourneyBacklog.ReasonCode` 是派车轮的另一次写入，与装货阶段没有先后保证——判「车关了之后
       这条单被挡成 `LOADING_PHASE_CLOSED`」要另等一次（`cargo-holding-side-full` 与 `cargo-holding-timeout` 都这样写）。
+    - **让站**（批次7-08，`StationYield.StageTriggerAsync`）：触发的两列（等单车的 `JourneyRuntimes.YieldTriggeredAt`、
+      `YieldTriggeredByVehicleKey`）与承诺它的那一次写入同一次提交——另一台车的受理（`AcceptedDemands` 等受理行）、追加，
+      或另一台车离站时停靠 `COMPLETED` 那一次保存。等单车的 `CLOSED/WAITING_STATION_YIELD` 与那张快照是等单车自己下一轮的
+      另一次写入（上一条的装货阶段那一次）。所以「另一台车受理了」之后要另等装货阶段变；反过来等到装货阶段变了再读两列是安全的。
+      等单车会话不在 Ready 时（例如空闲时开着门）推进段不判它的装货阶段，快照要等会话回来才发出（`waiting-station-yield-waits-for-door`
+      的 setup 文件写了为什么那条场景让门由本车在执行的装货打开）。

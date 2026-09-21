@@ -1,0 +1,19 @@
+# injection: l1-14-an-append-reads-only-the-loading-phase-column
+# file: src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs
+--- 
++++ 
+@@ -665,3 +665,3 @@
+         // 判据是 Batch7StationYieldTests.AnAppendRightAfterTheTriggerIsRefusedBeforeTheHolderRunsAgain。
+-        if (journey.YieldTriggeredAt is not null)
++        if (journey.YieldTriggeredAt is not null && journey.LoadingPhaseState == "never")
+         {
+# build:
+0 Error(s)
+# test run (filter: FullyQualifiedName~Batch7StationYield|FullyQualifiedName~LoadingPhaseMachineTests|FullyQualifiedName~DispatchVehicleOrderingTests):
+  Failed ControlServer.Tests.Batch7StationYieldTests.AnAppendRightAfterTheTriggerIsRefusedBeforeTheHolderRunsAgain [146 ms]
+  Error Message:
+   Assert.Throws() Failure: No exception was thrown
+Expected: typeof(ControlServer.Domain.BusinessIdentityConflictException)
+     at ControlServer.Tests.Batch7StationYieldTests.AnAppendRightAfterTheTriggerIsRefusedBeforeTheHolderRunsAgain() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 143
+   at ControlServer.Tests.Batch7StationYieldTests.AnAppendRightAfterTheTriggerIsRefusedBeforeTheHolderRunsAgain() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 146
+Failed!  - Failed:     1, Passed:   111, Skipped:     0, Total:   112, Duration: 43 s - ControlServer.Tests.dll (net8.0)

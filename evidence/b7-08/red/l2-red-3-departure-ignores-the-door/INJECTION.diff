@@ -1,0 +1,22 @@
+# file: src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs
+--- 
++++ 
+@@ -3276,3 +3276,3 @@
+         // door ajar read Ready for as long as any vehicle in the fleet held a slot open.
+-        return await OperationsOnJourneys()
++        return Environment.TickCount64 >= 0 || await OperationsOnJourneys()
+             .AnyAsync(
+# file: src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+--- 
++++ 
+@@ -2297,3 +2297,2 @@
+                          payload.GetProperty("safetyStateVersion").GetInt64() == session.SafetyRevision &&
+-                         safety.GetProperty("departureSafe").GetBoolean() &&
+                          safety.GetProperty("vehicleStopped").GetBoolean() &&
+# file: src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+--- 
++++ 
+@@ -2298,3 +2298,2 @@
+                          safety.GetProperty("vehicleStopped").GetBoolean() &&
+-                         safety.GetProperty("allTargetSlotsLocked").GetBoolean() &&
+                          safety.GetProperty("allUnlockOutputsReset").GetBoolean() &&
