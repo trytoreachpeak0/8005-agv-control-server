@@ -146,17 +146,33 @@ internal sealed class CargoHoldingQueryEndpoint : IDashboardQueryEndpoint
             JourneyRuntimeStage.AwaitingDepartureSafety);
 
     /// <summary>
-    /// 这趟旅程是否适用持货等单，从落库的事实推，不重算引擎的判法（那要读车能服务的分区配置）。
+    /// 这趟旅程是否适用持货等单（决定期限给不给），从落库的事实推。引擎的判法（<c>JourneyRuntimeEngine.HoldingApplicableAsync</c>：
+    /// 车能服务的分区里至少有一个允许途中追加）要读宿主的车队分区配置，看板不重算。
     /// </summary>
     /// <remarks>
     /// <para>
-    /// 等单、装满，以及因超时／让站／装满而结束的，只有适用时才会出现（<see cref="LoadingPhaseMachine"/> 第 4 条：不适用的旅程只有装货中与
-    /// 计划装货完成两种）。装货中只在有途中追加进来的归属时算适用——追加只在本区允许追加时发生，而允许追加正是适用的定义；
-    /// 从等单被追加回装货中的车，引擎发给它的快照带着期限。其余的装货中不给期限：引擎在装货中不发快照，车第一次看到期限是进入等单那一张。
+    /// <b>依赖引擎的四条行为，都是 2026-09-22 在 <c>fp/v2-impl@8ee99549</c> 实读的</b>，由引擎（批次7-07、7-08）与途中追加（批次7-06）承担；
+    /// 改了其中任何一条，这里要跟着改，<c>Batch7CargoHoldingDashboardTests.TheDeadlineIsShownOnlyWhereCargoHoldingApplies</c> 逐个状态钉着：
+    /// </para>
+    /// <list type="number">
+    /// <item>不适用的旅程只会是装货中与「计划装货完成」两种（<see cref="LoadingPhaseMachine"/> 第 4 条）；等单、装满，以及因超时／让站／装满
+    /// 而结束，只有适用时才出现。所以这几种状态本身就说明适用。</item>
+    /// <item>适用的旅程只从「已装满」离开最后一个装货停靠（等单不发离站请求），所以「计划装货完成」只出现在不适用的旅程上
+    /// （以及列落地之前就在途的旅程）。</item>
+    /// <item>起算点 <c>CargoHoldingStartedAt</c> 在第一批装货落定时写一次（<c>??=</c>），不论适用与否，之后从不清零；持货计时在装货中也在走——
+    /// 期限过了而没有一批在执行，装货中也会直接关成持货超时（第 5 条）。</item>
+    /// <item>装货中而起算点已经写下，只可能是途中追加把车从等单拉回了装货中：受理只带一条需求，追加总是新开一个停靠（当前停靠不并），
+    /// 所以没有追加时装完第一批就不会还有待装。追加只在本区允许追加时发生，也就是适用；追加进来的归属必然记着所用的参数版本
+    /// （<c>EnRouteAppendCriterion</c> 写 <see cref="JourneyDemandRow.DispatchZoneParameterVersion"/>）。</item>
+    /// </list>
+    /// <para>
+    /// 所以装货中「有追加进来的归属」就给期限，没有就不给——与车上收到的一致：引擎发给车的快照（到站那一张、等单与装货中来回那一张）
+    /// 用的是同一个起算点与适用性，车在装货中看到期限也只有追加这一种情形。
     /// </para>
     /// <para>
-    /// 限度：同一站一次受理了几条需求、在装第二条时，期限已经在走而这里不给；关闭之后有人把本区参数改成禁止追加，引擎发给车的期限变成空，
-    /// 而这里照旧给（program#94 语义表没有覆盖这一格，<see cref="LoadingPhaseMachine.Deadline"/>）。两种都只影响显示。
+    /// 推不准的两格，都只影响显示：追加进来的那条需求后来被释放、归属标了移除，这里只看未移除的归属，就会把它当成没有追加；
+    /// 关闭之后有人把本区参数改成禁止追加，引擎发给车的期限变成空，而这里照旧给（program#94 语义表没有覆盖这一格，
+    /// <see cref="LoadingPhaseMachine.Deadline"/>）。
     /// </para>
     /// </remarks>
     private static bool HoldingApplies(JourneyRuntimeRow journey, string state, IReadOnlyList<JourneyDemandRow> memberships) =>

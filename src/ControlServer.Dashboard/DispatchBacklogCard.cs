@@ -113,7 +113,7 @@ public sealed class DispatchBacklogCard : IDashboardCard
         && at.TryGetDateTimeOffset(out DateTimeOffset escalatedAt)
             ? string.Create(
                 CultureInfo.InvariantCulture,
-                $"已升级告警 {escalatedAt.ToLocalTime():yyyy-MM-dd HH:mm:ss}（参数版本 {DashboardPageRenderer.Text(row, "starvationEscalationParameterVersion")}）")
+                $"已升级告警：已进入超时层 {escalatedAt.ToLocalTime():yyyy-MM-dd HH:mm:ss}（参数版本 {DashboardPageRenderer.Text(row, "starvationEscalationParameterVersion")}）")
             : string.Empty;
 
     /// <summary>
@@ -130,6 +130,13 @@ public sealed class DispatchBacklogCard : IDashboardCard
         if (approved.ValueKind == JsonValueKind.False)
         {
             html.Append("<p class=\"starvation-thresholds-unapproved\">本区阈值未批准：只累计等待年龄，不跨带升级</p>");
+            // 超时层只读派车记下的标记，不按现在的阈值重算（调度 2026-09-22）；阈值未批准时还有标记，只能是撤回之前记下的。
+            if (Rows(fact, "backlog").Any(row => row.TryGetProperty("starvationEscalatedAt", out JsonElement at)
+                                                 && at.ValueKind == JsonValueKind.String))
+            {
+                html.Append("<p class=\"starvation-escalations-predate-withdrawal\">超时层的标记是阈值撤回之前记下的：")
+                    .Append("那时它已越过阈值、告过警；撤回之后不会再有新的需求进入超时层</p>");
+            }
             return;
         }
         string zones = string.Join("；", Rows(fact, "starvationThresholds").Select(zone =>

@@ -128,7 +128,7 @@ internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
                 .ToArray(),
             backlog = pending
                 .Where(row => !DispatchReasonCodes.IsSilent(row.ReasonCode))
-                .Select(row => (Row: row, Tier: BacklogStanding.TierOf(row, thresholds)))
+                .Select(row => (Row: row, Tier: BacklogStanding.TierOf(row)))
                 .OrderBy(item => item.Tier)
                 .ThenBy(item => BacklogStanding.HasLocalCreation(item.Row) ? item.Row.DemandCreatedAt : DateTimeOffset.MaxValue)
                 .ThenBy(item => item.Row.FirstSeenAt)

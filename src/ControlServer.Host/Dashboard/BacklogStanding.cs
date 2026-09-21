@@ -23,15 +23,14 @@ internal enum BacklogTier
 /// 看板从不重置它——离开目录再回来，积压行还是那一行，建单时刻还是那一刻。
 /// </para>
 /// <para>
-/// <b>超时层读批次7-09 落库的告警标记</b>（<c>StarvationEscalatedAt</c>），不按阈值重算：派车轮进入超时层的那一刻就写下它，而且只写一次，
-/// 所以「看板说它在超时层」与「它告过警」按构造是同一件事。标记之后年龄只会变大，同一版阈值下它不会自己退出超时层。
-/// 两种情形这里不再把它排进超时层：它属于最高带（最高带从不升级，标记不可能出现；出现了就是库坏了，按带显示），
-/// 以及当前没有任何分区批准了阈值（REQ-0203：未批准只计龄、不跨带升级——把阈值撤回之后，派车轮也不再把它排进超时层）。
+/// <b>超时层只读派车记下的事实</b>：批次7-09 落库的告警标记 <c>StarvationEscalatedAt</c> 非空就在超时层，不叠加任何现算的条件
+/// （调度 2026-09-22）。派车轮进入超时层的那一刻写下它、只写一次，所以「看板说它在超时层」与「它告过警」按构造是同一件事；
+/// 排序用的参数版本不落库（7-09 审查已接受），看板能依据的也只有这个标记。阈值后来撤回了，标记照样显示，卡片另加一句说明
+/// （<c>DispatchBacklogCard</c>），而不是改判定。7-05 把被抑制与已受理的键排除在超时层外，那也只影响写不写标记，这里不受影响。
 /// </para>
 /// <para>
-/// <b>优先级带从业务键取任务类型。</b>积压行没有任务类型列（本票零迁移），而业务键是服务端自己拼的 <c>{sublot}|{workType}</c>
-/// （<c>HttpMesIngestCatalog</c>），取最后一个 <c>|</c> 之后那一段。这个拼法一改，这里就会把 <c>STAGING_TO_WIRE</c> 显示成普通带——
-/// <c>Batch7CargoHoldingDashboardTests</c> 用真实的拼法钉着。
+/// <b>优先级带与派车排序是同一个判断</b>：<see cref="TaskStarvation.IsTopBandWorkType"/>。积压行没有任务类型列（批次 7 零迁移），
+/// 任务类型从业务键读回（<see cref="TransportDemandKeys.WorkTypeOf"/>，与 <c>HttpMesIngestCatalog</c> 拼它的是同一处）。
 /// </para>
 /// </remarks>
 internal static class BacklogStanding
@@ -48,24 +47,15 @@ internal static class BacklogStanding
         return age > TimeSpan.Zero ? age : TimeSpan.Zero;
     }
 
-    internal static bool InTopBand(JourneyBacklogRow row)
+    internal static BacklogTier TierOf(JourneyBacklogRow row)
     {
-        int separator = row.TransportDemandKey.LastIndexOf('|');
-        return separator >= 0 &&
-               string.Equals(row.TransportDemandKey[(separator + 1)..], TransportTaskTypes.StagingToWire, StringComparison.Ordinal);
-    }
-
-    /// <summary>桩（批次7-12 调度返工，测试先行）。</summary>
-    internal static BacklogTier TierOf(JourneyBacklogRow row) => throw new NotImplementedException();
-
-    internal static BacklogTier TierOf(JourneyBacklogRow row, StarvationThresholds thresholds)
-    {
-        if (InTopBand(row))
+        ArgumentNullException.ThrowIfNull(row);
+        if (row.StarvationEscalatedAt is not null)
         {
-            return BacklogTier.TopBand;
+            return BacklogTier.StarvationTimeout;
         }
-        return row.StarvationEscalatedAt is not null && thresholds.AnyApproved
-            ? BacklogTier.StarvationTimeout
+        return TaskStarvation.IsTopBandWorkType(TransportDemandKeys.WorkTypeOf(row.TransportDemandKey))
+            ? BacklogTier.TopBand
             : BacklogTier.NormalBand;
     }
 }
