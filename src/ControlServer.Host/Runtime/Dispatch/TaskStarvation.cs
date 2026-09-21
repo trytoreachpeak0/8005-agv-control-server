@@ -34,8 +34,12 @@ public sealed record TaskStarvationStanding(
 /// （<see cref="LiveMesFieldSet.MesSourceDate"/>），后者不进排序。
 /// </para>
 /// <para>
-/// <b>未来时刻按零岁算</b>：MesIngest 与本服务端是两个时钟，前者略快时 <c>now - CreatedAt</c> 会是负的，
-/// 负的年龄没有意义，也不该让它比零岁的任务更「年轻」到排在后面去之外还有别的后果。
+/// <b>未来时刻按零岁算</b>：MesIngest 与本服务端是两个时钟，前者略快时 <c>now - CreatedAt</c> 会是负的。负的年龄没有意义；
+/// 排序本身不受影响（它比的是 <c>CreatedAt</c> 的先后），只是报出来的年龄与超时判断以零为底。
+/// </para>
+/// <para>
+/// <b>分区与阈值只取本轮读一次的那两张表</b>，调用方传进来，这里不读库：一轮之内每条任务按同一版判，
+/// 轮中导入的新版本下一轮才生效（照分区归属表的做法）。
 /// </para>
 /// </remarks>
 public static class TaskStarvation
@@ -44,15 +48,15 @@ public static class TaskStarvation
     public static bool InTopBand(AcceptedDemandSnapshot demand)
     {
         ArgumentNullException.ThrowIfNull(demand);
-        return false;
+        return string.Equals(demand.WorkType, TransportTaskTypes.StagingToWire, StringComparison.Ordinal);
     }
 
     /// <summary>从本地首次创建 TransportDemand 到 <paramref name="now"/> 的等待时长，不为负。</summary>
     public static TimeSpan WaitingAge(AcceptedDemandSnapshot demand, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(demand);
-        _ = now;
-        return TimeSpan.Zero;
+        TimeSpan age = now - demand.CreatedAt;
+        return age > TimeSpan.Zero ? age : TimeSpan.Zero;
     }
 
     /// <summary>这条需求在本轮的处境，全部取自本轮读一次的那两张表。</summary>
@@ -63,8 +67,17 @@ public static class TaskStarvation
         DispatchZoneParameterTableVersion? zoneParameters)
     {
         ArgumentNullException.ThrowIfNull(demand);
-        _ = areaAssignments;
-        _ = zoneParameters;
-        return new TaskStarvationStanding(WaitingAge(demand, now), null, null, null, false);
+        TimeSpan age = WaitingAge(demand, now);
+        string? area = demand.LiveMesFields?.Area;
+        // 表里没有这个 AREA 就没有分区（例如共晶类，REQ-0185）：没有分区就没有阈值，不会超时，也就不会告警。
+        string? zone = area is not null && areaAssignments?.ByArea.TryGetValue(area, out AreaAssignment? assignment) == true
+            ? assignment.DispatchZone
+            : null;
+        long? threshold = zone is not null && zoneParameters?.Zones.TryGetValue(zone, out DispatchZoneParameters? parameters) == true
+            ? parameters.StarvationThresholdSeconds
+            : null;
+        // 只有普通带会升级（REQ-0202「普通任务达到防饥饿阈值后进入……超时层」）；阈值未配置（未批准）时不升级、只计龄（REQ-0203）。
+        bool overdue = !InTopBand(demand) && threshold is { } seconds && age >= TimeSpan.FromSeconds(seconds);
+        return new TaskStarvationStanding(age, zone, threshold, zoneParameters?.Version, overdue);
     }
 }

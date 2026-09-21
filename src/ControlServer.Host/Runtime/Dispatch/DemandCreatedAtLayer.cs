@@ -1,6 +1,9 @@
 namespace ControlServer.Host.Runtime.Dispatch;
 
-/// <summary>Of two candidates first seen together, the demand MES created earlier is taken first.</summary>
+/// <summary>
+/// The waiting age (REQ-0201): the demand created locally earlier -- MesIngest's <c>CreatedAt</c>, when it created the
+/// TransportDemand, not MES's own dates -- is taken first. Ahead of <see cref="FirstSeenLayer"/> since control-server#214.
+/// </summary>
 public sealed class DemandCreatedAtLayer : IDispatchCandidateComparisonLayer
 {
     public int Compare(DispatchTask x, DispatchTask y)
