@@ -662,6 +662,11 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
                 $"Journey '{plan.JourneyId}' has closed its loading phase ({journey.LoadingClosedReason}) and cannot take an appended demand.");
         }
 
+        if (redispatch)
+        {
+            await ThawForRedispatchAsync(snapshot.DemandId, cancellationToken).ConfigureAwait(false);
+        }
+
         if (demand.AreaAssignmentVersion is long areaAssignmentVersion)
         {
             await FreezeAreaAssignmentAsync(snapshot, areaAssignmentVersion, cancellationToken).ConfigureAwait(false);
@@ -681,8 +686,9 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
 
         if (!redispatch)
         {
-            // 释放改派的需求复用它第一次受理时的那一行（调度决策 3，批次7-10，control-server#215）：受理时刻、内容与冻结
-            // 都是那一次的事实，改派不重写它们。行上的状态本来就还是 Accepted——释放不终结需求。
+            // 释放改派的需求复用它第一次受理时的那一行（调度决策 3，批次7-10，control-server#215）：受理时刻与内容都是
+            // 那一次的事实，改派不重写它们（冻结不同，上面按这次受理重冻，见 ThawForRedispatchAsync）。
+            // 行上的状态本来就还是 Accepted——释放不终结需求。
             dbContext.AcceptedDemands.Add(NewAcceptedDemandRow(snapshot));
         }
 
@@ -1037,6 +1043,11 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
                 $"Vehicle '{orderIntent.VehicleKey}' is already bound to unresolved demand '{activeLease.DemandId}'.");
         }
 
+        if (redispatch)
+        {
+            await ThawForRedispatchAsync(snapshot.DemandId, cancellationToken).ConfigureAwait(false);
+        }
+
         if (journey?.AreaAssignmentVersion is long areaAssignmentVersion)
         {
             await FreezeAreaAssignmentAsync(snapshot, areaAssignmentVersion, cancellationToken).ConfigureAwait(false);
@@ -1059,8 +1070,9 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
 
         if (!redispatch)
         {
-            // 释放改派的需求复用它第一次受理时的那一行（调度决策 3，批次7-10，control-server#215）：受理时刻、内容与冻结
-            // 都是那一次的事实，改派不重写它们。行上的状态本来就还是 Accepted——释放不终结需求。
+            // 释放改派的需求复用它第一次受理时的那一行（调度决策 3，批次7-10，control-server#215）：受理时刻与内容都是
+            // 那一次的事实，改派不重写它们（冻结不同，上面按这次受理重冻，见 ThawForRedispatchAsync）。
+            // 行上的状态本来就还是 Accepted——释放不终结需求。
             dbContext.AcceptedDemands.Add(NewAcceptedDemandRow(snapshot));
         }
         string journeyId = JourneyIdentity.ForAnchorDemand(journey?.DerivationKeyFor(snapshot.DemandId) ?? snapshot.DemandId);
@@ -2885,10 +2897,10 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
     /// happen freezes nothing (control-server#160).
     /// </summary>
     /// <remarks>
-    /// Rows already there can only be what an earlier, refused attempt left behind before the freeze moved in here:
-    /// this branch runs only for a demand this server has not accepted, so they are no task's endpoints. They are
-    /// replaced rather than refused -- refusing them failed every round for every task type once the binding they
-    /// were taken under had changed.
+    /// Rows already there are either what an earlier, refused attempt left behind before the freeze moved in here, or,
+    /// since control-server#215, the endpoints of a demand released for redispatch, frozen by the journey it has left.
+    /// Neither is any running task's endpoints. They are replaced rather than refused -- refusing them failed every round
+    /// for every task type once the binding they were taken under had changed.
     /// </remarks>
     private async Task FreezeEndpointsAsync(
         AcceptedDemandSnapshot snapshot,
@@ -2953,6 +2965,28 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
     /// <see cref="AreaAssignmentVersionChangedException"/> sends intake back to judge it next round.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// 释放改派的再受理之前，删掉这条需求的分区归属冻结与任务类型站点冻结（批次7-10，control-server#215，复审中 1）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 改派是一次新的派车决定，计划按当前配置建，冻结跟着这次受理走。三种冻结同一口径：先删这条需求的旧冻结，再按这次受理冻；
+    /// 端点那一种由 <see cref="FreezeEndpointsAsync"/> 自己先删。受理与途中追加两条写入路径都经过这里。
+    /// </para>
+    /// <para>
+    /// 按旧冻结判会在等改派期间导入过新版本时抛冲突。受理接不住它，冒到派车轮次整轮失败，而这条需求保留原等待年龄排在最前，
+    /// 每一轮都先挑中它、再失败；当成积压原因拒绝则让它永远派不出去——等待期间换过的版本不会再换回来。
+    /// 「冻结不被后来的版本改写」说的是同一次受理：仍在执行的需求不被重新解析；被释放出来的需求，旧冻结属于已经结束的那一趟。
+    /// </para>
+    /// </remarks>
+    private async Task ThawForRedispatchAsync(string demandId, CancellationToken cancellationToken)
+    {
+        await new DemandAreaAssignmentFreezeStore(dbContext)
+            .ThawForRedispatchAsync(demandId, cancellationToken).ConfigureAwait(false);
+        await new DemandTaskTypeStationFreezeStore(dbContext)
+            .ThawForRedispatchAsync(demandId, cancellationToken).ConfigureAwait(false);
+    }
+
     private async Task FreezeAreaAssignmentAsync(
         AcceptedDemandSnapshot snapshot,
         long evaluatedVersion,
