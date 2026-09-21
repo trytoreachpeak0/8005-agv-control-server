@@ -129,6 +129,15 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2WorklistStationWait.ps1
 
+      # A few seconds against a real loopback listener. When a double refuses a command, the reason
+      # is in the response body, and pwsh keeps that body out of the exception message the
+      # orchestrator writes into the evidence -- so a refusal used to arrive there as a bare
+      # "409 (Conflict)". control-server#277 got two such reds and could not say what had failed.
+      # Nothing green ever reaches that path, so no scenario notices it quietly breaking again.
+      - name: L2 scenario self-check (double command refusal body)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/l2/Test-L2DoubleCommandError.ps1
+
       # 1.5 seconds, and the only thing that ever executes Get-G3EvidenceLocationDiagnostic: a G3
       # runner calls it after it has already decided it found nothing, so no green run reaches it.
       # It says WHERE nothing was found, which is what control-server#211 needed and did not have --
