@@ -52,13 +52,20 @@ public sealed class Batch7StarvationEscalationTests
         Assert.Null(after.AcceptedAt);
     }
 
-    /// <summary>「已告警」与告警时刻、参数版本在同一次保存里落库：拆成两次，崩在中间就会只剩一半。</summary>
+    /// <summary>
+    /// 「已告警」与告警时刻、参数版本在同一次保存里落库：拆成两次，崩在中间就会只剩一半。
+    /// </summary>
+    /// <remarks>
+    /// 先跑一轮不配阈值的，让积压行先落库：新插入的行把每一列都算作「写了」，包括空着的告警列，
+    /// 那一次保存会被误认成告警那一次——这条在桩上曾因此恒绿。
+    /// </remarks>
     [Fact]
     public async Task TheEscalationMarkAndItsParameterVersionCommitInOneSave()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
-        await fixture.ImportStarvationThresholdsAsync((Zone, 300));
         fixture.Catalog.Set(WaitingDemand(fixture, minutesAgo: 10));
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        await fixture.ImportStarvationThresholdsAsync((Zone, 300));
         fixture.SaveChanges.Reset();
 
         await fixture.Engine.ExecuteOnceAsync(Token);
@@ -227,14 +234,16 @@ public sealed class Batch7StarvationEscalationTests
 
     /// <summary>
     /// 崩在「已告警」那次保存上：库里没有标记、日志里也没有告警（日志在提交之后才写）；重启后的下一轮补发一次，
-    /// 之后不再发。不漏、不重。
+    /// 之后不再发。不漏、不重。积压行先由一轮不配阈值的落库，注入点因此只对得上告警那一次保存（新插入的行
+    /// 也会把告警列算作「写了」）。
     /// </summary>
     [Fact]
     public async Task ACrashAtTheEscalationSaveLeavesNoMarkAndNoLogAndTheNextRoundRaisesItOnce()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
-        await fixture.ImportStarvationThresholdsAsync((Zone, 300));
         fixture.Catalog.Set(WaitingDemand(fixture, minutesAgo: 10));
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        await fixture.ImportStarvationThresholdsAsync((Zone, 300));
         fixture.SaveChanges.FailWhen = written => written.Contains("JourneyBacklogRow.StarvationEscalatedAt");
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Engine.ExecuteOnceAsync(Token));
