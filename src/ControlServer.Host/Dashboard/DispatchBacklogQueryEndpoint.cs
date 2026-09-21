@@ -1,5 +1,6 @@
 using ControlServer.Application;
 using ControlServer.Host.Runtime.Dispatch;
+using ControlServer.Host.Runtime.Release;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -60,6 +61,29 @@ internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
                 "本图这个任务类型处于暂停（人工暂停、站点目录变化或绑定激活结果未知），解除后才会派车",
             [DispatchReasonCodes.TaskTypeNotYetExecutable] =
                 "这个任务类型已有绑定，但当前版本的服务端还不能执行它",
+            // 批次 7（control-server#211～#215）：途中追加、装货阶段、释放改派。都是正常调度的结论，不是故障（规格 8.8 第 4 条）。
+            [DispatchReasonCodes.SlotGroupOccupiedByOwnCargo] =
+                "本车货物占侧：所需一侧的空仓已被这辆车自己已装或已预留的货占满，其余条件都满足，等别的车或本车卸货后再派",
+            [DispatchReasonCodes.EnRouteAppendNotConfigured] =
+                "所在分区没有批准途中追加（未配置或配成 0），这条需求不会追加到在途车上，等空车来接",
+            [DispatchReasonCodes.EnRouteAppendDelayGateExceeded] =
+                "追加到在途车上会让车上某条需求到终点的路程增加超过所在分区的上限，这一趟不追加",
+            [DispatchReasonCodes.EnRouteAppendDelayUncomputable] =
+                "路网算不出追加之后的路程增量，按规则不追加（算不出不当成零）",
+            [DispatchReasonCodes.EnRouteAppendBreaksZoneContiguity] =
+                "追加进去会让在途车的停靠在分区之间来回穿插，没有能保持分区连续的插入位，这一趟不追加",
+            [DispatchReasonCodes.EnRouteAppendPlanLimitReached] =
+                "追加进去会让在途车的计划超过 9 段或某一站清单超过 8 项，这一趟不追加",
+            [DispatchReasonCodes.EnRouteAppendNoInsertionPoint] =
+                "在途车正驶向的那一站之后已经没有可插入的位置，这一趟不追加",
+            [DispatchReasonCodes.EnRouteAppendDemandLeftThisJourney] =
+                "这条需求刚从这趟旅程上释放出去，不再追加回同一趟，可以由别的车接",
+            [DispatchReasonCodes.LoadingPhaseClosed] =
+                "在途车的装货阶段已经结束（持货超时、让站、装满后离开或计划装货完成），不再接新的待装需求",
+            [DispatchReasonCodes.SublotTaskTypeConflict] =
+                "同一份 MES 快照里这个批次同时命中了不止一种任务类型，这个批次的需求都先不派，请到 MES 核对数据",
+            [DemandReleaseReasons.Released] =
+                "这条需求已从原来的车上释放，正在等改派给别的车",
         };
 
     private readonly TimeProvider _clock;
@@ -69,7 +93,6 @@ internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
     {
     }
 
-    /// <summary>桩（批次7-12 测试先行）：只够测试注入时钟编译。</summary>
     internal DispatchBacklogQueryEndpoint(TimeProvider clock)
     {
         ArgumentNullException.ThrowIfNull(clock);
@@ -82,30 +105,48 @@ internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
     {
         ArgumentNullException.ThrowIfNull(dbContext);
 
-        DateTimeOffset now = TimeProvider.System.GetUtcNow();
-        _ = _clock;
+        DateTimeOffset now = _clock.GetUtcNow();
         JourneyBacklogRow[] pending = await dbContext.JourneyBacklog.AsNoTracking()
             .Where(row => row.AcceptedAt == null && row.ReasonCode != DispatchReasonCodes.DemandLeftCatalog)
             .ToArrayAsync(cancellationToken);
         IReadOnlyList<StructuralDispatchBlock> blocks =
             await new StructuralDispatchBlockStore(dbContext).ListUnclearedAsync(cancellationToken);
+        StarvationThresholds thresholds = await StarvationThresholds.ReadAsync(dbContext, cancellationToken);
 
-        // Ordered in memory: SQLite cannot ORDER BY a DateTimeOffset.
+        // Ordered in memory: SQLite cannot ORDER BY a DateTimeOffset. The order is the dispatch ranking's
+        // (DispatchCandidateOrdering): the timeout tier, then the top band, then the waiting age, first seen, demand id.
         return new
         {
+            starvationThresholdsApproved = thresholds.AnyApproved,
+            starvationThresholds = thresholds.Zones
+                .Select(zone => new { dispatchZone = zone.Key, thresholdSeconds = zone.Value })
+                .ToArray(),
             backlog = pending
                 .Where(row => !DispatchReasonCodes.IsSilent(row.ReasonCode))
-                .OrderBy(row => row.FirstSeenAt)
-                .ThenBy(row => row.DemandId, StringComparer.Ordinal)
-                .Select(row => new
+                .Select(row => (Row: row, Tier: BacklogStanding.TierOf(row, thresholds)))
+                .OrderBy(item => item.Tier)
+                .ThenBy(item => BacklogStanding.HasLocalCreation(item.Row) ? item.Row.DemandCreatedAt : DateTimeOffset.MaxValue)
+                .ThenBy(item => item.Row.FirstSeenAt)
+                .ThenBy(item => item.Row.DemandId, StringComparer.Ordinal)
+                .Select(item => new
                 {
-                    demandId = row.DemandId,
-                    transportDemandKey = row.TransportDemandKey,
-                    reasonCode = row.ReasonCode,
-                    reasonDescription = Describe(row.ReasonCode),
-                    firstSeenAt = row.FirstSeenAt,
-                    lastEvaluatedAt = row.LastSeenAt,
-                    waitingSeconds = (long)Math.Max(0, (now - row.FirstSeenAt).TotalSeconds)
+                    demandId = item.Row.DemandId,
+                    transportDemandKey = item.Row.TransportDemandKey,
+                    reasonCode = item.Row.ReasonCode,
+                    reasonDescription = Describe(item.Row.ReasonCode),
+                    firstSeenAt = item.Row.FirstSeenAt,
+                    lastEvaluatedAt = item.Row.LastSeenAt,
+                    waitingSeconds = (long)BacklogStanding.WaitingAge(item.Row, now).TotalSeconds,
+                    demandCreatedAt = BacklogStanding.HasLocalCreation(item.Row) ? item.Row.DemandCreatedAt : (DateTimeOffset?)null,
+                    waitingAgeKnown = BacklogStanding.HasLocalCreation(item.Row),
+                    tier = item.Tier switch
+                    {
+                        BacklogTier.StarvationTimeout => "STARVATION_TIMEOUT",
+                        BacklogTier.TopBand => "TOP_BAND",
+                        _ => "NORMAL_BAND"
+                    },
+                    starvationEscalatedAt = item.Row.StarvationEscalatedAt,
+                    starvationEscalationParameterVersion = item.Row.StarvationEscalationParameterVersion
                 })
                 .ToArray(),
             silentBacklogCount = pending.Count(row => DispatchReasonCodes.IsSilent(row.ReasonCode)),

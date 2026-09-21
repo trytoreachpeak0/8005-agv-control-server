@@ -1,5 +1,6 @@
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.Release;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -46,9 +47,31 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
     /// </summary>
     internal const string OwnMovementOrderInFlight = "OWN_MOVEMENT_ORDER_IN_FLIGHT";
 
-    /// <summary>桩（批次7-12 测试先行）：阻断码的中文说明，还是空的。</summary>
+    /// <summary>
+    /// 写在旅程阻断码上、看板要给中文说明的码（批次7-12，control-server#217）：批次7-10（control-server#215）的释放拒绝码。
+    /// 键取常量，码改名时编译期就断在这里；<c>Batch7CargoHoldingDashboardTests</c> 按 <see cref="DemandReleaseReasons.IsRefusalCode"/>
+    /// 扫一遍，新加一个拒绝码而忘了说明就红。其余阻断码仍只显示码值，与之前相同。
+    /// </summary>
     internal static IReadOnlyDictionary<string, string> Descriptions { get; } =
-        new Dictionary<string, string>(StringComparer.Ordinal);
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [DemandReleaseReasons.AfterArrival] =
+                "车已到当前下一站，这条需求不再释放改派（旧版本留下的码，下一轮会清掉）",
+            [DemandReleaseReasons.CurrentStopWithOtherDemands] =
+                "要释放的需求的取货站正是车的当前下一站，而这趟旅程上还有别的需求，这一次不释放",
+            [DemandReleaseReasons.AnchorWithOtherDemands] =
+                "要释放的是这趟旅程的第一条需求，而旅程上还有别的未完成需求，这一次不释放",
+            [DemandReleaseReasons.OrderCancelNotConfirmed] =
+                "取消开往取货站的运单还没有得到确认（结果未知不释放），确认之后再判",
+            [DemandReleaseReasons.OrderStateUnknown] =
+                "开往当前下一站的运单已发出创建、结果还不知道（RIoT 上可能已有一张活的），对账出结论之后再判",
+            [DemandReleaseReasons.PickupOrderAppeared] =
+                "释放这一刻发现取货停靠上刚出现了运单，这一轮不释放，下一轮再判",
+            [DemandReleaseReasons.PickupOrderSucceeded] =
+                "开往取货站的运单在 RIoT 上已经成功，车已经到了取货站，不释放",
+            [DemandReleaseReasons.FaultSupervisionInEffect] =
+                "车有未清除的故障，需求不释放也不取消，车留给故障处理（急停与故障监看跟着这趟旅程走）",
+        };
 
     private readonly BlockedJourneyEscalationOptions _escalation;
     private readonly TimeProvider _clock;
@@ -88,6 +111,8 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 .ToArrayAsync(cancellationToken),
             StringComparer.Ordinal);
         HashSet<string> ownOrderInFlight = await OwnMovementOrdersInFlightAsync(dbContext, blocked, cancellationToken);
+        JourneyDemandList demands =
+            await JourneyDemandList.ReadAsync(dbContext, [.. blocked.Select(row => row.JourneyId)], cancellationToken);
 
         // Ordered in memory: SQLite cannot ORDER BY a DateTimeOffset. Longest-held first, unknown starts first of all.
         return new
@@ -102,7 +127,8 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                     row,
                     sessions.GetValueOrDefault(row.AgvId),
                     departedForGate.Contains(row.GateUpperId),
-                    ownOrderInFlight.Contains(row.DemandId),
+                    ownOrderInFlight.Contains(row.JourneyId),
+                    demands.FactsOf(row.JourneyId),
                     now))
                 .ToArray()
         };
@@ -113,6 +139,7 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
         SessionRecoveryRow? session,
         bool departedForGate,
         bool ownOrderInFlight,
+        object[] demands,
         DateTimeOffset now)
     {
         TimeSpan? blockedFor = row.BlockReasonSince is DateTimeOffset since
@@ -140,6 +167,7 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
             pickupStationId = row.PickupStationId,
             gateStationId = row.GateStationId,
             blockReasonCode = row.BlockReasonCode,
+            blockReasonDescription = row.BlockReasonCode is { } code ? Descriptions.GetValueOrDefault(code) : null,
             blockReasonSince = row.BlockReasonSince,
             blockedSeconds = blockedFor is TimeSpan elapsed ? (long?)elapsed.TotalSeconds : null,
             escalationLevel = level.ToString(),
@@ -164,7 +192,10 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                     safetyReasonCodesJson = sessionLost ? null : session?.SafetyReasonCodesJson,
                     safetyUnknownPresent = sessionLost ? null : session?.SafetyUnknownPresent
                 }
-                : null
+                : null,
+            // 批次7-12（control-server#217）：一趟旅程一行，行内列出它未移除的全部需求与各自状态，不再只有锚需求（demandId 照旧给锚）。
+            journeyId = row.JourneyId,
+            demands
         };
     }
 
@@ -181,7 +212,7 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
         session?.Readiness != SessionReadiness.Ready;
 
     /// <summary>
-    /// The journeys (by demand id) for which this server itself has a move order in flight on RIoT, by its own records.
+    /// The journeys (by journey id) for which this server itself has a move order in flight on RIoT, by its own records.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -230,7 +261,7 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                         string.Equals(intent.Status, "CONFIRMED", StringComparison.Ordinal) &&
                         !string.IsNullOrWhiteSpace(intent.OrderId) &&
                         string.Equals(intent.VehicleKey, leg.VehicleKey, StringComparison.Ordinal)))
-                .Select(leg => leg.DemandId),
+                .Select(leg => leg.JourneyId),
             StringComparer.Ordinal);
     }
 

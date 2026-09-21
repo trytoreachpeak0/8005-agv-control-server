@@ -45,7 +45,7 @@ public sealed class BlockedJourneyCard : IDashboardCard
             return html.ToString();
         }
 
-        html.Append("<table><tr><th>车</th><th>站</th><th>阻断码</th><th>从何时起</th><th>已挂</th><th>处理人</th><th>会话</th></tr>");
+        html.Append("<table><tr><th>车</th><th>站</th><th>阻断码</th><th>从何时起</th><th>已挂</th><th>处理人</th><th>会话</th><th>需求</th></tr>");
         foreach (JsonElement journey in journeys)
         {
             string level = DashboardPageRenderer.Text(journey, "escalationLevel");
@@ -53,11 +53,12 @@ public sealed class BlockedJourneyCard : IDashboardCard
             html.Append(CultureInfo.InvariantCulture, $"<tr class=\"{cssClass}\" style=\"{style}\">")
                 .Append(DashboardPageRenderer.Cell(DashboardPageRenderer.Text(journey, "agvId")))
                 .Append(DashboardPageRenderer.Cell(DashboardPageRenderer.Text(journey, "stationId")))
-                .Append(DashboardPageRenderer.Cell(DashboardPageRenderer.Text(journey, "blockReasonCode")))
+                .Append(DashboardPageRenderer.Cell(BlockReason(journey)))
                 .Append(DashboardPageRenderer.Cell(Since(journey)))
                 .Append(DashboardPageRenderer.Cell(Elapsed(journey)))
                 .Append(DashboardPageRenderer.Cell(role + Attribution(journey)))
                 .Append(DashboardPageRenderer.Cell(Session(journey)))
+                .Append(DashboardPageRenderer.Cell(JourneyDemandListRendering.Text(journey)))
                 .Append("</tr>");
         }
         html.Append("</table>");
@@ -86,6 +87,19 @@ public sealed class BlockedJourneyCard : IDashboardCard
                 null => string.Empty
             }
             : string.Empty;
+
+    /// <summary>
+    /// 阻断码，服务端登记了中文说明的（批次7-10 的释放拒绝码，control-server#217）后面跟上说明；其余照旧只写码。
+    /// </summary>
+    private static string BlockReason(JsonElement journey)
+    {
+        string code = DashboardPageRenderer.Text(journey, "blockReasonCode");
+        return journey.TryGetProperty("blockReasonDescription", out JsonElement description)
+               && description.ValueKind == JsonValueKind.String
+               && !string.IsNullOrWhiteSpace(description.GetString())
+            ? $"{code}：{description.GetString()}"
+            : code;
+    }
 
     private static string Since(JsonElement journey) =>
         journey.TryGetProperty("blockReasonSince", out JsonElement value)
