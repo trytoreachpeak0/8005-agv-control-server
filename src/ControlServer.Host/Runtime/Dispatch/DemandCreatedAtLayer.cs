@@ -10,6 +10,12 @@ public sealed class DemandCreatedAtLayer : IDispatchCandidateComparisonLayer
     {
         ArgumentNullException.ThrowIfNull(x);
         ArgumentNullException.ThrowIfNull(y);
-        return x.Snapshot.CreatedAt.CompareTo(y.Snapshot.CreatedAt);
+        return Key(x).CompareTo(Key(y));
+    }
+
+    // 不知道建单时刻的（MesIngest 没给，审查低 3）按零岁算，排在同带里所有知道的之后，而不是凭 0001-01-01 排到最前。
+    private static DateTimeOffset Key(DispatchTask task)
+    {
+        return TaskStarvation.HasLocalCreation(task.Snapshot) ? task.Snapshot.CreatedAt : DateTimeOffset.MaxValue;
     }
 }

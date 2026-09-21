@@ -53,10 +53,27 @@ public static class TaskStarvation
         return string.Equals(demand.WorkType, TransportTaskTypes.StagingToWire, StringComparison.Ordinal);
     }
 
-    /// <summary>从本地首次创建 TransportDemand 到 <paramref name="now"/> 的等待时长，不为负。</summary>
+    /// <summary>
+    /// MesIngest 有没有给这条需求的建单时刻。目录项缺 <c>createdAt</c> 时适配器把它留成默认值并告警（审查低 3），
+    /// 这里把默认值读作「不知道」。
+    /// </summary>
+    public static bool HasLocalCreation(AcceptedDemandSnapshot demand)
+    {
+        ArgumentNullException.ThrowIfNull(demand);
+        return demand.CreatedAt != default;
+    }
+
+    /// <summary>
+    /// 从本地首次创建 TransportDemand 到 <paramref name="now"/> 的等待时长，不为负；不知道建单时刻时为 0——
+    /// 从 0001-01-01 算起的两千年会让它立刻越过任何阈值。
+    /// </summary>
     public static TimeSpan WaitingAge(AcceptedDemandSnapshot demand, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(demand);
+        if (!HasLocalCreation(demand))
+        {
+            return TimeSpan.Zero;
+        }
         TimeSpan age = now - demand.CreatedAt;
         return age > TimeSpan.Zero ? age : TimeSpan.Zero;
     }
@@ -87,6 +104,7 @@ public static class TaskStarvation
         // 只有普通带会升级（REQ-0202「普通任务达到防饥饿阈值后进入……超时层」）；阈值未配置（未批准）时不升级、只计龄（REQ-0203）。
         // 结构性阻断的需求不进超时层（调度会话 2026-09-21 定）：它连合格候选都不是，已经有自己的结构性告警。
         bool overdue = !InTopBand(demand) &&
+            HasLocalCreation(demand) &&
             structurallyBlocked?.Contains(demand.DemandId) != true &&
             threshold is { } seconds && age >= TimeSpan.FromSeconds(seconds);
         return new TaskStarvationStanding(age, zone, threshold, zoneParameters?.Version, overdue);

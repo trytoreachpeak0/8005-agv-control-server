@@ -11,6 +11,20 @@ public sealed class HttpMesIngestCatalog(
     TimeProvider timeProvider,
     ILogger<HttpMesIngestCatalog>? logger = null) : IMesIngestCatalog
 {
+    private static readonly Action<ILogger, string, Exception?> LogCreatedAtMissing =
+        LoggerMessage.Define<string>(
+            LogLevel.Warning,
+            new EventId(2162, nameof(LogCreatedAtMissing)),
+            "MesIngest catalog item {DemandId} carries no createdAt. Its waiting age counts as zero: it is ordered " +
+            "behind every demand whose local creation is known and never escalates for starvation until MesIngest " +
+            "supplies it.");
+
+    /// <summary>
+    /// 已经告警过缺 <c>createdAt</c> 的需求：目录每秒一轮，同一条需求只告警一次（进程内）。只会因为违约的需求变大。
+    /// </summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> WarnedCreatedAtMissing =
+        new(StringComparer.Ordinal);
+
     private readonly ILogger<HttpMesIngestCatalog>? _logger = logger;
 
     public const string ContractVersion = "2026.08.new-mes-ingest.v2.4";
@@ -64,6 +78,13 @@ public sealed class HttpMesIngestCatalog(
             historyEpoch,
             body.CatalogRevision,
             observedAt)).ToArray();
+        foreach (AcceptedDemandSnapshot item in items)
+        {
+            if (item.CreatedAt == default && _logger is not null && WarnedCreatedAtMissing.TryAdd(item.DemandId, 0))
+            {
+                LogCreatedAtMissing(_logger, item.DemandId, null);
+            }
+        }
         return new DemandCatalogSnapshot(historyEpoch, body.CatalogRevision, items);
     }
 
@@ -131,6 +152,8 @@ public sealed class HttpMesIngestCatalog(
             ?? throw new InvalidDataException("MesIngest demand is missing liveMesFields.");
         string workType = RequireText(key.WorkType, "transportDemandKey.workType");
         string sublot = RequireText(key.Sublot, "transportDemandKey.sublot");
+        // 缺 createdAt 时留成默认值，读作「MesIngest 没给」（批次7-09 审查低 3）：它决定派车次序与防饥饿告警，
+        // 不能悄悄变成一个真实的时刻。ReadCatalogAsync 为它告警一次；年龄按 0 算由服务端的 TaskStarvation 负责。
         return new AcceptedDemandSnapshot(
             RequireDemandId(item.DemandId),
             $"{sublot}|{workType}",
@@ -142,7 +165,7 @@ public sealed class HttpMesIngestCatalog(
             workType,
             sublot,
             item.Generation,
-            item.CreatedAt,
+            item.CreatedAt ?? default,
             item.ValueObservedAt,
             RequireText(item.ValuePollTraceId, "valuePollTraceId"),
             RequireText(item.ValueProjectionCommitId, "valueProjectionCommitId"),
@@ -186,7 +209,7 @@ public sealed class HttpMesIngestCatalog(
         TransportDemandKeyDto? TransportDemandKey,
         int Generation,
         long DemandRevision,
-        DateTimeOffset CreatedAt,
+        DateTimeOffset? CreatedAt,
         DateTimeOffset ValueObservedAt,
         string? ValuePollTraceId,
         string? ValueProjectionCommitId,

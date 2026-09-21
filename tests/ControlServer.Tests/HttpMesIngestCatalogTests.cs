@@ -84,6 +84,7 @@ public sealed class HttpMesIngestCatalogTests
     /// <c>TaskStarvation</c> 与建单时刻那一层负责。
     /// </summary>
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task ACatalogItemWithoutCreatedAtIsKeptAsUnknownAndWarned()
     {
         Guid historyEpoch = new("11111111-1111-4111-8111-111111111111");

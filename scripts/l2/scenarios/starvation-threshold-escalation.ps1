@@ -69,13 +69,30 @@ $first = Wait-L2Condition -Description 'the freed vehicle accepted one of the tw
 $assertions.Add(
     'L2-STE-01', '阈值未配置：等了 5 分钟的 WIRE_TO_GATE 不升级，车空出来先受理 STAGING_TO_WIRE（REQ-0203 降级：只计龄、不升级）',
     ($first -ceq 'STAGING1'), 'STAGING1', $first)
-$hungryUnconfigured = Get-L2PriorityBacklog $connection $hungry.Id
+# 第二个事实，另等（README 第 14 条，审查低 4）：受理 STAGING1 的那一轮，轮末汇总的提交晚于受理的提交，受理一出现就直读
+# 升级标记，读到的可能是汇总还没写的时候。等 HUNGRY 在之后的某一轮被重新判过（LastSeenAt 晚于 STAGING1 的受理时刻）：
+# 轮次是串行的，那时受理 STAGING1 那一轮的汇总必然已经提交。「有版本、阈值留空」这种未配置形状这里不跑，由 L1 覆盖
+# （Batch7TaskPriorityOrderingTests.WithNoApprovedThresholdNothingEscalatesButTheAgeIsStillCounted 的 threshold-empty 一例、
+# Batch7StarvationEscalationTests.WithNoThresholdConfiguredNothingIsEscalatedUntilOneIsImported(true)）。
+$staging1Backlog = Get-L2PriorityBacklog $connection $staging1.Id
+$staging1AcceptedAt = if ($null -ne $staging1Backlog -and -not [string]::IsNullOrEmpty([string]$staging1Backlog.AcceptedAt)) {
+    [DateTimeOffset]::Parse([string]$staging1Backlog.AcceptedAt, [Globalization.CultureInfo]::InvariantCulture)
+} else { $null }
+$hungryUnconfigured = if ($null -eq $staging1AcceptedAt) { Get-L2PriorityBacklog $connection $hungry.Id } else {
+    Wait-L2ConditionOrLast -Description 'HUNGRY was judged again after STAGING1 was accepted, so that round has ended' `
+        -Journal $journal -Criterion 'hungry-rejudged' -TimeoutSeconds 60 `
+        -Probe { Get-L2PriorityBacklog $connection $hungry.Id } `
+        -Until { param($v) $null -ne $v -and
+            [DateTimeOffset]::Parse([string]$v.LastSeenAt, [Globalization.CultureInfo]::InvariantCulture) -gt $staging1AcceptedAt }
+}
+$hungryRejudged = $null -ne $staging1AcceptedAt -and $null -ne $hungryUnconfigured -and
+    [DateTimeOffset]::Parse([string]$hungryUnconfigured.LastSeenAt, [Globalization.CultureInfo]::InvariantCulture) -gt $staging1AcceptedAt
 $unconfiguredRecords = Get-EscalationRecords $hungry.Id
 $assertions.Add(
-    'L2-STE-02', '阈值未配置：HUNGRY 没有升级告警标记，服务端日志里也没有它的升级告警',
-    (-not (Test-Escalated $hungryUnconfigured) -and $unconfiguredRecords.Count -eq 0),
-    'no mark, 0 records',
-    "mark '$(if ($hungryUnconfigured) { $hungryUnconfigured.StarvationEscalatedAt })', $($unconfiguredRecords.Count) record(s)")
+    'L2-STE-02', '阈值未配置：受理 STAGING1 那一轮结束之后，HUNGRY 没有升级告警标记，服务端日志里也没有它的升级告警',
+    ($hungryRejudged -and -not (Test-Escalated $hungryUnconfigured) -and $unconfiguredRecords.Count -eq 0),
+    'round over, no mark, 0 records',
+    "rejudged $hungryRejudged, mark '$(if ($hungryUnconfigured) { $hungryUnconfigured.StarvationEscalatedAt })', $($unconfiguredRecords.Count) record(s)")
 
 # --- 第二遍：导入 60 秒阈值 -----------------------------------------------------------------------------------
 

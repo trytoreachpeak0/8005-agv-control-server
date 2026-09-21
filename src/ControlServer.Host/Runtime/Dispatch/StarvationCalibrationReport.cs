@@ -37,8 +37,8 @@ public sealed record StarvationCalibrationReport(
 /// <item><b>完整周期</b>：一趟已完成旅程从建立（绑车）到完成（车再次空闲、具备接单资格），含空驶、运输与全部人工装卸。
 /// 完成时刻取旅程行进入 <c>Completed</c> 时写下的 <c>UpdatedAt</c>——完成之后引擎不再推进这一行。</item>
 /// <item><b>建单至绑车等待</b>：需求的本地建单时刻（积压行 <c>DemandCreatedAt</c>，即 MesIngest 的 <c>CreatedAt</c>，与排序用的
-/// 等待年龄同一个起点）到它被绑进旅程（从属需求行 <c>AddedAt</c>，途中追加进来的也算）。没有积压行的需求只计任务量、
-/// 不计等待样本。</item>
+/// 等待年龄同一个起点）到它被绑进旅程（从属需求行 <c>AddedAt</c>，途中追加进来的也算）。没有积压行、或者建单时刻是默认值
+/// （MesIngest 没给）的需求只计任务量、不计等待样本。</item>
 /// <item><b>车辆数、任务量</b>：样本期内被绑车的需求条数，以及承载它们的旅程涉及的车辆数。</item>
 /// <item><b>人工装卸（站点作业耗时）</b>：一次装或卸从下发（<c>StationOperations.CreatedAt</c>）到人工确认提交
 /// （<c>CommittedAt</c>），按装、卸分开；没提交的不计。分区取作业所属需求的从属需求行。</item>
@@ -148,7 +148,7 @@ public static class StarvationCalibrationQuery
                     .Where(journey => journey.DispatchZone == zone)
                     .Select(journey => journey.UpdatedAt - journey.CreatedAt)),
                 Summarize(boundHere
-                    .Where(row => createdLocally.ContainsKey(row.DemandId))
+                    .Where(row => createdLocally.TryGetValue(row.DemandId, out DateTimeOffset created) && created != default)
                     .Select(row => row.AddedAt - createdLocally[row.DemandId])),
                 boundHere
                     .Select(row => agvByJourney.GetValueOrDefault(row.JourneyId))
