@@ -128,9 +128,20 @@ try {
         Write-Log "No seed file at '$SeedPath'; the catalog stays empty."
     }
 
-    # One runId for this start, so a re-seed after a restart is a new round rather than a
-    # replay the command engine would dedupe against the previous one.
-    $runId = 'resident-{0}' -f ([DateTimeOffset]::UtcNow.ToString('yyyyMMddTHHmmssZ'))
+    # The runId is the double's, not ours. CommandEngine.Apply refuses any command whose runId is
+    # not the round it is currently in (RUN_ID_MISMATCH, HTTP 409), and a freshly started double
+    # generates its own. Reset both starts a round and returns that round's id, which also makes
+    # this seeding idempotent: whatever the catalog held, it now holds the seed file and nothing
+    # else.
+    $resetBody = ConvertTo-Json -InputObject ([ordered]@{ commandId = "reset-$([guid]::NewGuid().ToString('N'))" }) -Depth 4
+    $resetResponse = Invoke-WebRequest -Uri "$baseUrl/control/v1/reset" -Method Post `
+        -ContentType 'application/json' -Body $resetBody -NoProxy -TimeoutSec 15 -UseBasicParsing
+    $runId = ($resetResponse.Content | ConvertFrom-Json).runId
+    if ([string]::IsNullOrWhiteSpace($runId)) {
+        throw "The double's reset response carried no runId: $($resetResponse.Content)"
+    }
+    Write-Log "Catalog reset; this round is $runId"
+
     $seeded = 0
     foreach ($demand in $demands) {
         if (-not $demand.ContainsKey('demandId')) {
@@ -157,6 +168,18 @@ try {
         }
     }
     Write-Log "Seeded $seeded of $($demands.Count) demand(s) under runId $runId"
+
+    # Read the catalog back. Counting what the double reports, rather than what this script
+    # believes it sent, is what distinguishes "two demands are in the catalog" from "two PUTs
+    # returned 200" -- and a mismatch here is a defective seed file, which should be visible
+    # now rather than as an unexplained quiet shift a week later.
+    $snapshot = (Invoke-WebRequest -Uri "$baseUrl/control/v1/snapshot" -NoProxy -TimeoutSec 15 -UseBasicParsing).Content |
+        ConvertFrom-Json
+    $inCatalog = @($snapshot.body.demands).Count
+    Write-Log "Catalog now holds $inCatalog demand(s) at revision $($snapshot.body.catalogRevision)"
+    if ($inCatalog -ne $demands.Count) {
+        Write-Log "WARNING: the seed file lists $($demands.Count) demand(s) but the catalog holds $inCatalog."
+    }
 
     # ------------------------------------------------------------------- serve ---
 

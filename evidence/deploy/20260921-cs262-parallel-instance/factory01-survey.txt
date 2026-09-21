@@ -1,0 +1,81 @@
+=== control-server#262: factory01 read-only survey ===
+taken: 2026-09-21T08:56:14.1317181+08:00
+
+--- ephemeral port pool (the resource a leak exhausted on 2026-09-08) ---
+in use: 261 / 16384 = 1.6%
+
+--- listeners 5000-60000 ---
+0.0.0.0            5088   MesIngest.Host
+172.19.205.222     5445   System
+fe80::d085:ce5d:b0d4:4e71%3 5445   System
+0.0.0.0            5800   vncserver
+::                 5800   vncserver
+0.0.0.0            5900   vncserver
+::                 5900   vncserver
+::                 5985   System
+127.0.0.1          6379   redis-server
+172.19.205.222     8081   AGV.Web
+0.0.0.0            9093   nginx
+::                 16450  mpdwsvc
+::                 16451  mpdwsvc
+::                 16452  mpdwsvc
+0.0.0.0            16452  mpdwsvc
+::                 16453  mpdwsvc
+0.0.0.0            16453  mpdwsvc
+::                 17001  mpdwsvc
+0.0.0.0            17001  mpdwsvc
+::                 47001  System
+::                 49664  wininit
+0.0.0.0            49664  wininit
+::                 49665  svchost
+0.0.0.0            49665  svchost
+::                 49666  svchost
+0.0.0.0            49666  svchost
+::                 49667  spoolsv
+0.0.0.0            49667  spoolsv
+::                 49668  svchost
+0.0.0.0            49668  svchost
+127.0.0.1          49677  AweSun
+127.0.0.1          49678  AweSun
+0.0.0.0            49679  services
+::                 49679  services
+::                 49698  lsass
+0.0.0.0            49698  lsass
+::1                49773  sqlservr
+127.0.0.1          49773  sqlservr
+127.0.0.1          52823  HipsDaemon
+172.19.205.222     58005  ControlServer.Host
+172.19.205.222     58007  ControlServer.Host
+
+--- ports this ticket claims ---
+58105: free
+58107: free
+58109: free
+58188: free
+
+--- memory: the headroom a second instance eats into ---
+physical total 31.5 GiB, free 5.6 GiB
+commit limit 36.3 GiB, committed 29.6 GiB
+MVP ControlServer.Host: WS 876 MB, private 866 MB, 88 threads, up since 2026/9/20 14:59:42
+
+--- disk ---
+C: used 179.6 GiB, free 55.0 GiB
+D: used 110.3 GiB, free 100.6 GiB
+Temp: used 179.6 GiB, free 55.0 GiB
+
+--- host facts this ticket depends on ---
+OS          : Microsoft Windows Server 2016 Standard
+pwsh        : 7.6.5
+curl.exe    : ABSENT (Server 2016; this is the documented trap)
+
+--- names this ticket must not collide with ---
+service : 8005 AGV ControlServer = Running (Automatic)
+task    : none registered
+firewall: 8005 AGV ControlServer 58005 enabled=1
+firewall: 8005 AGV ControlServer 58007 enabled=1
+
+--- machine-scope secrets the two instances share ---
+CONTROL_SERVER_RIOT_CALL_API_KEY                 machine scope: present (166 chars)
+CONTROL_SERVER_ONBOARD_CREDENTIAL                machine scope: present (64 chars)
+CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD      machine scope: absent
+CONTROL_SERVER_V2_ONBOARD_CERTIFICATE_PASSWORD   machine scope: absent

@@ -1,0 +1,39 @@
+=== step 1: first start ===
+  health   : {"schemaVersion":"1","instanceId":"fake-mes-ingest-1","runId":"run-eb59e249","revision":1,"observedAt":"2026-09-20T16:52:12.62575+00:00","body":{"status":"live","demandCount":0}}
+  catalog  : runId=run-9507436c revision=3 catalogRevision=3 demands=2 [11111111, 22222222]
+  pids     : double=32260 wrapper=23744
+
+=== step 2: the double crashes (SIGKILL equivalent) ===
+  wrapper exited with the double : True
+  port 58188 released            : True
+  last log line                  : 2026-09-21T00:52:14.9857234+08:00 The double exited with code -1
+
+=== step 3: the scheduled task's restart policy would run it again ===
+  catalog  : runId=run-6bfd6e2a revision=3 catalogRevision=3 demands=2 [11111111, 22222222]
+  pids     : double=7816 (was 32260)
+
+=== step 4: the double refuses a non-loopback listener ===
+  exit code: 2  (2 = refused to start)
+  stderr   : FakeMesIngest refuses to listen on 0.0.0.0: set FakeMesIngest:allowNonLoopbackListen to override, and understand why first.
+
+=== teardown ===
+  double running : False
+  wrapper running: False
+
+=== full resident log ===
+2026-09-21T00:52:11.9066332+08:00 FakeMesIngest resident starting: exe=C:\Users\szy\AppData\Local\Temp\claude\C--Users-szy-Desktop-8005-workspace-v2\eb347ffb-162a-4cb5-9e5b-32243a8ebf76\scratchpad\fake-mes\ControlServer.FakeMesIngest.exe port=58188 seed=C:\Users\szy\AppData\Local\Temp\claude\C--Users-szy-Desktop-8005-workspace-v2\eb347ffb-162a-4cb5-9e5b-32243a8ebf76\scratchpad\seed-test.json
+2026-09-21T00:52:12.0770827+08:00 Started pid 32260
+2026-09-21T00:52:12.6981864+08:00 Ready at http://127.0.0.1:58188
+2026-09-21T00:52:12.7689009+08:00 Catalog reset; this round is run-9507436c
+2026-09-21T00:52:12.8112855+08:00 Seeded 2 of 2 demand(s) under runId run-9507436c
+2026-09-21T00:52:12.8386645+08:00 Catalog now holds 2 demand(s) at revision 3
+2026-09-21T00:52:12.8440630+08:00 Serving. This script stays alive as long as the double does.
+2026-09-21T00:52:14.9857234+08:00 The double exited with code -1
+2026-09-21T00:52:22.5555003+08:00 FakeMesIngest resident starting: exe=C:\Users\szy\AppData\Local\Temp\claude\C--Users-szy-Desktop-8005-workspace-v2\eb347ffb-162a-4cb5-9e5b-32243a8ebf76\scratchpad\fake-mes\ControlServer.FakeMesIngest.exe port=58188 seed=C:\Users\szy\AppData\Local\Temp\claude\C--Users-szy-Desktop-8005-workspace-v2\eb347ffb-162a-4cb5-9e5b-32243a8ebf76\scratchpad\seed-test.json
+2026-09-21T00:52:22.7106547+08:00 Started pid 7816
+2026-09-21T00:52:23.2821648+08:00 Ready at http://127.0.0.1:58188
+2026-09-21T00:52:23.3657998+08:00 Catalog reset; this round is run-6bfd6e2a
+2026-09-21T00:52:23.4126338+08:00 Seeded 2 of 2 demand(s) under runId run-6bfd6e2a
+2026-09-21T00:52:23.4408756+08:00 Catalog now holds 2 demand(s) at revision 3
+2026-09-21T00:52:23.4458238+08:00 Serving. This script stays alive as long as the double does.
+2026-09-21T00:52:25.5307162+08:00 The double exited with code -1
