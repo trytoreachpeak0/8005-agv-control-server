@@ -200,6 +200,86 @@ public sealed class Batch7DemandReleaseServiceTests
         Assert.NotEqual(JourneyRuntimeStage.Completed, (await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token)).Stage);
     }
 
+    /// <summary>
+    /// 锚需求释放之后，下一轮把它作为一趟新旅程的锚再受理：派往取货站的计划真的发出，到站后离站期限照常结束这一站
+    /// （看板例外第 12 条的三处，场景 2 的 L1 版）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 三处在同一条路上依次挡着，所以修前这条用例红在第一处，修一处往下挪一处：
+    /// 孤儿检查把待改派需求当孤儿、整轮抛出（引擎 <c>OrphanCandidates</c>）；新旅程的派车计划 messageId 与第一趟相同，
+    /// 发件箱里已有那一行，于是一次都不发（<c>PickupDispatchPlanMessageId</c>）；离站期限按 <c>DemandId</c> 查旅程行，
+    /// 同一条需求此时有两行，<c>SingleOrDefault</c> 抛出（<c>TryEndStopAtStationDeadlineAsync</c>）。
+    /// </para>
+    /// <para>
+    /// 第一趟旅程此时已是 Completed：判据里「新旅程」一律按 <c>JourneyId</c> 取，不按 <c>DemandId</c>——
+    /// 后者正是被测的那种写法。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task AReleasedAnchorIsDispatchedAgainAsANewJourneyAndItsStationDeadlineStillEndsTheStop()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow first = await fixture.RuntimeAsync(FirstDemandId);
+        // 再推一轮，让第一趟把它派往取货站的计划发出去：发件箱里有了那一行，改派那一趟若沿用同一个 messageId
+        // 就会被它挡住。少了这一轮，第一趟一张计划都没发过，那一处按构造走不到。
+        await TickAndRunAsync(fixture);
+        Assert.Single(await PickupPlansAsync(fixture));
+        // 零变化钉子：首次受理的那张派车计划，messageId 仍按需求本身派生，与改派出现之前逐字节相同。
+        Assert.True(await fixture.Context.ProtocolOutbox.AsNoTracking().AnyAsync(
+            row => row.MessageId == JourneyPlanBuilder.StableGuid(FirstDemandId, "pickup-dispatch-plan"), Token));
+        LeaveTheMap(fixture);
+        CancellingGateway gateway = new(fixture.Clock, orderId => fixture.Riot.CancelOrder(first.PickupUpperId));
+        Assert.Equal("RELEASED", Assert.Single(await Service(fixture, gateway).RunOnceAsync(Token)).Result);
+
+        // 车回到本图、回到出发时那一站：它又是一辆空闲、合格的车。
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentMap = fixture.Options.MapIdentity };
+        await TickAndRunAsync(fixture);
+        await TickAndRunAsync(fixture);
+        fixture.Context.ChangeTracker.Clear();
+
+        JourneyDemandRow membership = await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+            .SingleAsync(row => row.DemandId == FirstDemandId && row.RemovedAt == null, Token);
+        Assert.NotEqual(first.JourneyId, membership.JourneyId);
+        JourneyRuntimeRow second = await fixture.Context.JourneyRuntimes.AsNoTracking()
+            .SingleAsync(row => row.JourneyId == membership.JourneyId, Token);
+        Assert.Equal(FirstDemandId, second.DemandId);
+
+        // 派往取货站的那张计划发给了新旅程：它投影的是新旅程取货那一段腿。
+        JourneyStopRow pickup = await fixture.Context.Set<JourneyStopRow>().AsNoTracking()
+            .Where(row => row.JourneyId == second.JourneyId)
+            .OrderBy(row => row.Sequence)
+            .FirstAsync(Token);
+        string[] plans = await PickupPlansAsync(fixture);
+        Assert.Equal(2, plans.Length);
+        Assert.Contains(plans, payload => payload.Contains(pickup.MovementLegId, StringComparison.Ordinal));
+
+        // 到站，录入迟迟不来，期限到：这一站结束、这条需求终结，引擎不抛。
+        fixture.Riot.SetSuccessfulArrival("TO_PICKUP", pickup.UpperId, pickup.StationRiotId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = pickup.StationRiotId };
+        await TickAndRunAsync(fixture);
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+        await fixture.ProveSlotDoorsClosedAsync();
+        fixture.Clock.Advance(TimeSpan.FromSeconds(10));
+        await TickAndRunAsync(fixture);
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.Equal(JourneyDemandStatuses.Terminated, (await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+            .SingleAsync(row => row.JourneyId == second.JourneyId && row.DemandId == FirstDemandId, Token)).Status);
+        // 第一趟一个字没被第二趟的期限动过。
+        Assert.Equal((JourneyRuntimeStage.Completed, DemandReleaseReasons.Released),
+            await fixture.Context.JourneyRuntimes.AsNoTracking()
+                .Where(row => row.JourneyId == first.JourneyId)
+                .Select(row => ValueTuple.Create(row.Stage, row.BlockReasonCode))
+                .SingleAsync(Token));
+    }
+
+    private static Task<string[]> PickupPlansAsync(RuntimeFixture fixture) =>
+        fixture.Context.ProtocolOutbox.AsNoTracking()
+            .Where(row => row.MessageType == "UpcomingStopPlanSnapshot")
+            .Select(row => row.PayloadJson)
+            .ToArrayAsync(Token);
+
     /// <summary>受理第一条并派往取货站；需要时再把第二条追加进来。</summary>
     private static async Task<RuntimeFixture> DispatchedToPickupAsync(bool appendSecond = false)
     {
