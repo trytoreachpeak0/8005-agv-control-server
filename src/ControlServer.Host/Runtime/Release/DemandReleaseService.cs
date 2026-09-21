@@ -200,9 +200,15 @@ public sealed class DemandReleaseService(
     /// RESULT_UNKNOWN）时 RIoT 上可能已经有一张活的，而没有订单号就发不了取消。那种情况不释放，等引擎把意图对账出结论。
     /// </para>
     /// <para>
-    /// <b>取消之前先读订单</b>（复审中 2）：已经是终态的单没有东西可取消。取消、失败、删除、挂起算「没有活订单」，不发取消、
+    /// <b>取消之前先读订单</b>（复审中 2）：已经是终态的单没有东西可取消。取消、失败、删除算「没有活订单」，不发取消、
     /// 直接释放；SUCCESS 说明车已经到了取货站（引擎可能还没记下），不释放。旧实现有订单号就发 CANCEL，对 FAILED 单的取消
     /// 对账为 Failed，之后每轮对已结的 Failed 只返回、不重读，永远停在「取消没确认」。
+    /// </para>
+    /// <para>
+    /// 其余取值一律按活单处理，发取消并对账、确认才释放：排队 1、执行 3、HANG 9、队列优先 10、任何没映射的未知值，还有
+    /// SUSPENDED 8。8 的语义从没被行为实验室实测过（Hold 落在 7），把它当终态直接放，若它其实可恢复，RIoT 上会留一张活单而
+    /// 需求已改派——安全方向的风险；按活单处理最坏只是需求卡在「取消没确认」（复审，调度 2026-09-21）。网关与订单命令服务
+    /// 仍把 8 归为终态，那是同一个未实测假设，本票不改。PAUSED 7 在下面的故障 Hold 分支里另算。
     /// </para>
     /// <para>
     /// <b>故障协调器 Hold 住的单不取消</b>（复审疑问，调度定 B）：故障唯一的清除路径 <c>VehicleFaultCoordinator.ResumeAsync</c>
@@ -244,7 +250,7 @@ public sealed class DemandReleaseService(
             .ReconcileByUpperIdAsync(currentStop.UpperId, cancellationToken).ConfigureAwait(false);
         switch (order.OrderState)
         {
-            case RiotOrderState.Cancelled or RiotOrderState.Failed or RiotOrderState.Deleted or RiotOrderState.Suspended:
+            case RiotOrderState.Cancelled or RiotOrderState.Failed or RiotOrderState.Deleted:
                 return (PickupOrderSettlement.Ended, null);
             case RiotOrderState.Success:
                 return (PickupOrderSettlement.None, DemandReleaseReasons.PickupOrderSucceeded);
@@ -500,6 +506,6 @@ internal enum PickupOrderSettlement
     /// <summary>取消已对账确认。</summary>
     Cancelled,
 
-    /// <summary>订单在 RIoT 上已是取消、失败、删除或挂起的终态：没有活订单，不发取消（复审中 2）。</summary>
+    /// <summary>订单在 RIoT 上已是取消、失败或删除的终态：没有活订单，不发取消（复审中 2）。</summary>
     Ended,
 }

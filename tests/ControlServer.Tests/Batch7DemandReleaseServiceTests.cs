@@ -373,7 +373,8 @@ public sealed class Batch7DemandReleaseServiceTests
     }
 
     /// <summary>
-    /// 取货单在 RIoT 上已是终态（取消、失败、删除、挂起）：没有活订单可取消，不发取消，直接释放（复审中 2）。
+    /// 取货单在 RIoT 上已是终态（取消、失败、删除）：没有活订单可取消，不发取消，直接释放（复审中 2）。
+    /// SUSPENDED 不在内，见 <see cref="ASuspendedPickupOrderIsTreatedAsLiveAndReleasedOnlyOnAConfirmedCancel"/>。
     /// </summary>
     /// <remarks>
     /// 旧实现有订单号就发 CANCEL；对账把「终态但不是 CANCELLED」判 Failed，之后每轮对已结的 Failed 直接返回、不重读，
@@ -383,7 +384,6 @@ public sealed class Batch7DemandReleaseServiceTests
     [InlineData(RiotOrderState.Cancelled)]
     [InlineData(RiotOrderState.Failed)]
     [InlineData(RiotOrderState.Deleted)]
-    [InlineData(RiotOrderState.Suspended)]
     public async Task APickupOrderAlreadyEndedOnRiotIsReleasedWithoutACancel(int orderState)
     {
         await using RuntimeFixture fixture = await DispatchedToPickupAsync();
@@ -394,6 +394,54 @@ public sealed class Batch7DemandReleaseServiceTests
 
         Assert.Equal("RELEASED", Assert.Single(await Service(fixture, gateway).RunOnceAsync(Token)).Result);
         Assert.Equal(0, gateway.Cancels);
+    }
+
+    /// <summary>
+    /// SUSPENDED（8）按活单处理：发取消并对账，确认才释放（复审，调度 2026-09-21）。
+    /// </summary>
+    /// <remarks>
+    /// 8 的语义从没被行为实验室实测过（只测过 7、3、2、9）；本仓把它归为终态是未经实测的假设。若它其实是可恢复的挂起，
+    /// 「不发取消直接释放」会在 RIoT 上留一张活单，车可能带着旧单恢复而需求已改派给别的车——安全方向的风险；按活单处理，
+    /// 最坏只是这条需求卡在「取消没确认」（活性，归 cs#296）。这里 RIoT 收到取消什么都不做，所以不释放、取消恰好一次。
+    /// </remarks>
+    [Fact]
+    public async Task ASuspendedPickupOrderIsTreatedAsLiveAndReleasedOnlyOnAConfirmedCancel()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
+        fixture.Riot.SetOrderState(before.PickupUpperId, RiotOrderState.Suspended, terminal: true);
+        LeaveTheMap(fixture);
+        CancellingGateway gateway = new(fixture.Clock, _ => { });
+
+        Assert.Equal(DemandReleaseReasons.OrderCancelNotConfirmed,
+            Assert.Single(await Service(fixture, gateway).RunOnceAsync(Token)).Result);
+        Assert.Equal(1, gateway.Cancels);
+        await using ControlServerDbContext reading = new ControlServerDbContext(fixture.DbOptionsForTests);
+        Assert.Null((await reading.Set<JourneyDemandRow>().AsNoTracking().SingleAsync(Token)).RemovedAt);
+    }
+
+    /// <summary>
+    /// 活单与没映射的未知值一律发取消并对账：取消确认后才释放（调度 2026-09-21）。
+    /// </summary>
+    /// <remarks>
+    /// 这条修前也绿——未知值与活态本来就走取消那一支。它守的是规则本身：谁把「其余」改成「当作终态直接放」，这里红。
+    /// </remarks>
+    [Theory]
+    [InlineData(RiotOrderState.Queueing)]
+    [InlineData(RiotOrderState.Executing)]
+    [InlineData(RiotOrderState.Hang)]
+    [InlineData(RiotOrderState.QueuePriority)]
+    [InlineData(42)]
+    public async Task ALiveOrUnknownPickupOrderIsCancelledBeforeTheRelease(int orderState)
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
+        fixture.Riot.SetOrderState(before.PickupUpperId, orderState, terminal: false);
+        LeaveTheMap(fixture);
+        CancellingGateway gateway = new(fixture.Clock, _ => fixture.Riot.CancelOrder(before.PickupUpperId));
+
+        Assert.Equal("RELEASED", Assert.Single(await Service(fixture, gateway).RunOnceAsync(Token)).Result);
+        Assert.Equal(1, gateway.Cancels);
     }
 
     /// <summary>
