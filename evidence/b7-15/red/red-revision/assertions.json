@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "scenario": "g3-multi-stop-plan",
+  "runId": "20260921T183729606Z",
+  "outcome": "FAIL",
+  "failureReason": "",
+  "identity": {
+    "rig": "RealOnboard",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "agvId": "AGV-L2-001",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260921T183729606Z",
+    "onboardHmiCommit": "deeba94c42c51561621634194d3c9f6582737486",
+    "controlServerCommit": "fe6783d5f7d4d639a6f384d2b74b4a47df9510fb",
+    "vehicleKey": "BROKERX-L2-0001",
+    "batchId": "unspecified"
+  },
+  "assertions": [
+    {
+      "id": "G3-08-05",
+      "description": "追加之前：车载端确认了派车那一版计划之后，计划腿列表的行数与行序等于服务端那一版的 sequence（DISPLAY_FULL_JOURNEY_PLAN）",
+      "outcome": "PASS",
+      "expected": "两条腿，行序 1,2",
+      "actual": "服务端 plan r1 wire[1,2] 1:TO_PICKUP@N1-3_N1-7:ACTIVE:BUSINESS,2:TO_DROPOFF@关卡:PLANNED:BUSINESS / 界面 1[1|BUSINESS|ACTIVE],2[2|BUSINESS|PLANNED]"
+    },
+    {
+      "id": "G3-08-01",
+      "description": "未到达：没有一版三条腿以上的计划被车载端确认（追加没发生、没重发，或车载端没应用）",
+      "outcome": "FAIL",
+      "expected": "(reached)",
+      "actual": "(not reached) 没有一版三条腿以上的计划被车载端确认（追加没发生、没重发，或车载端没应用）"
+    },
+    {
+      "id": "G3-08-02",
+      "description": "未到达：没有一版三条腿以上的计划被车载端确认（追加没发生、没重发，或车载端没应用）",
+      "outcome": "FAIL",
+      "expected": "(reached)",
+      "actual": "(not reached) 没有一版三条腿以上的计划被车载端确认（追加没发生、没重发，或车载端没应用）"
+    },
+    {
+      "id": "G3-08-03",
+      "description": "未到达：没有一版三条腿以上的计划被车载端确认（追加没发生、没重发，或车载端没应用）",
+      "outcome": "FAIL",
+      "expected": "(reached)",
+      "actual": "(not reached) 没有一版三条腿以上的计划被车载端确认（追加没发生、没重发，或车载端没应用）"
+    },
+    {
+      "id": "G3-08-04",
+      "description": "未到达：没有一版三条腿以上的计划被车载端确认（追加没发生、没重发，或车载端没应用）",
+      "outcome": "FAIL",
+      "expected": "(reached)",
+      "actual": "(not reached) 没有一版三条腿以上的计划被车载端确认（追加没发生、没重发，或车载端没应用）"
+    },
+    {
+      "id": "G3-08-06",
+      "description": "未到达：没有一版三条腿以上的计划被车载端确认（追加没发生、没重发，或车载端没应用）",
+      "outcome": "FAIL",
+      "expected": "(reached)",
+      "actual": "(not reached) 没有一版三条腿以上的计划被车载端确认（追加没发生、没重发，或车载端没应用）"
+    },
+    {
+      "id": "G3-08-07",
+      "description": "未到达：没有一版三条腿以上的计划被车载端确认（追加没发生、没重发，或车载端没应用）",
+      "outcome": "FAIL",
+      "expected": "(reached)",
+      "actual": "(not reached) 没有一版三条腿以上的计划被车载端确认（追加没发生、没重发，或车载端没应用）"
+    }
+  ]
+}
