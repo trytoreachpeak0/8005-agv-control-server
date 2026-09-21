@@ -1049,15 +1049,60 @@ function Test-ParallelInstanceDeploymentConfigPath {
 function Remove-ParallelInstanceDeploymentConfig {
     <#
         .SYNOPSIS
-            Deletes the secrets file the control host copied -- the layout's path, only if it is a
-            plain file. The only other delete in this deployment besides
-            Remove-ParallelInstanceDirectory.
+            Deletes the secrets file the control host copied, if it is safe to. Returns $null when
+            nothing is left behind (deleted, or never there); otherwise the reason it was left.
+
+        .DESCRIPTION
+            The only other delete in this deployment besides Remove-ParallelInstanceDirectory.
+
+            deploy-config.json carries the RIoT call API key and the MesIngest shared secret in
+            plain text. From the moment the control host copies it, every way out of the install
+            must remove it (S1 re-review, round 3): the installer calls this from a finally that
+            starts before its first check, and the control host calls it again over ssh after the
+            install step, which covers an installer that never started.
+
+            Which file may be deleted depends on how far the install got:
+              * with -Layout (the definition was accepted): only the layout's own path. A different
+                path is not deleted -- it failed Test-ParallelInstanceDeploymentConfigPath, and a
+                path we have refused is not one we then act on;
+              * without it (the definition was refused, or never read): only a file named
+                deploy-config.json directly in -FallbackDirectory, which is the directory the
+                installer runs from. The control host puts the installer and the config in the
+                same ops directory, so this rule needs no definition.
+            In both cases it must be a plain file, not a link.
+
+            Never throws: it runs in finally blocks, where a throw would replace the real failure.
+            The caller turns a non-null result into SECRET_FILE_LEFT_BEHIND -- never silence.
     #>
     [CmdletBinding()]
-    param([Parameter(Mandatory = $true)] $Layout)
-    $path = $Layout.DeploymentConfigPath
-    if ((Test-Path -LiteralPath $path -PathType Leaf) -and -not (Test-ParallelInstanceReparsePoint -Path $path)) {
-        Remove-Item -LiteralPath $path -Force
+    param(
+        [AllowEmptyString()][string] $Path,
+        $Layout,
+        [Parameter(Mandatory = $true)][string] $FallbackDirectory
+    )
+    try {
+        if ([string]::IsNullOrEmpty($Path)) { return $null }
+        $isLink = Test-ParallelInstanceReparsePoint -Path $Path
+        if (-not $isLink -and -not (Test-Path -LiteralPath $Path)) { return $null }
+
+        if ($null -ne $Layout) {
+            if (-not [string]::Equals($Path, $Layout.DeploymentConfigPath, [StringComparison]::OrdinalIgnoreCase)) {
+                return "it is not the layout's config path '$($Layout.DeploymentConfigPath)', so it was not deleted"
+            }
+        } else {
+            $expected = (Join-Path $FallbackDirectory 'deploy-config.json')
+            if (-not [string]::Equals($Path, $expected, [StringComparison]::OrdinalIgnoreCase)) {
+                return "without an accepted definition (a refused one, or the control host's after-check) only '$expected' may be deleted"
+            }
+        }
+        if ($isLink) { return 'it is a symbolic link or junction, not the file the control host copied' }
+        if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return 'it is not a plain file' }
+
+        Remove-Item -LiteralPath $Path -Force
+        if (Test-Path -LiteralPath $Path) { return 'it is still there after Remove-Item' }
+        return $null
+    } catch {
+        return "it could not be removed: $($_.Exception.Message)"
     }
 }
 

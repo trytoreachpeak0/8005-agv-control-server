@@ -81,8 +81,10 @@ function Get-ParallelProductUninstallerPath {
             scripts too ($ScriptRoot).
 
             Here rather than in Uninstall-ParallelInstanceLocal.ps1 so that the product script's
-            name does not appear in the uninstaller at all: the self-test refuses it there, which
-            is how it knows the only way to the product script is Invoke-ParallelProductUninstaller.
+            name does not appear in the uninstaller at all. A regression guard in the self-test
+            looks for it there, among other common ways of calling the product script directly;
+            it is not a proof -- aliases, .NET process APIs and the like get past it (S1 re-review,
+            round 4). The guarantee is this function's positive confirmation, not the scan.
     #>
     [CmdletBinding()]
     param(
@@ -129,6 +131,12 @@ function Invoke-ParallelProductUninstaller {
             after Write-Error under Continue, and -ErrorVariable collects the errors the product
             script silences on purpose (Get-Service -ErrorAction SilentlyContinue), so it would
             fail every ordinary uninstall. Neither is a usable signal; the result file is.
+
+            One shape still passes all three: the product script hits a non-terminating error,
+            carries on, removes the service and writes PASS. It cannot today, because the product
+            script sets ErrorActionPreference Stop as its first statement and writes PASS once, at
+            its end. The self-test pins those two facts against four ways of breaking them -- not
+            all of them (S1 re-review, round 4); re-read the product script when it changes.
     #>
     [CmdletBinding()]
     param(

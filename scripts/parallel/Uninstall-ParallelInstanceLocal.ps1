@@ -126,10 +126,10 @@ $actions = @{
         # The data root is named so the product script can report on it; it is removed only with
         # -RemoveData, later, through the same guards as every other directory.
         #
-        # This is the ONLY way this script reaches the product uninstaller, and the self-test holds
-        # it to that: no command here may be named by a variable, an expression or a string, no
-        # Invoke-Expression / Start-Process / pwsh / [scriptblock]::Create, and the product script's
-        # file name does not appear in this file at all (Get-ParallelProductUninstallerPath knows it).
+        # This is the only way this script is meant to reach the product uninstaller. A regression
+        # guard in the self-test catches the common ways of calling it directly (a command named by a
+        # variable or expression, Invoke-Expression, Start-Process, pwsh, [scriptblock]::Create, the
+        # product script's file name); it is not a proof, and aliases or .NET process APIs get past it.
         # The removal sequence aborts only on a throw, and the product script can fail without one
         # (exit 1, Write-Error under Continue); Invoke-ParallelProductUninstaller throws unless the
         # product script positively confirms success -- see its help.

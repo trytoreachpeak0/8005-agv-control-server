@@ -941,12 +941,15 @@ try {
     S1 re-review round 3, item 5: pin the premise the positive confirmation rests on. One failure
     shape still gets through it: the product script hits Write-Error under Continue, carries on,
     removes the service and writes PASS at the end -- every signal says success. That cannot
-    happen today for two reasons, both in Uninstall-ControlServerLocal.ps1, and this asserts both:
-      * it sets $ErrorActionPreference = 'Stop' before it does anything, so any error ends it
-        before the end;
-      * the result is written as PASS in exactly one place, and that place is at the very end.
-    If either changes, this goes red -- and whoever changed it has to decide whether the
-    confirmation above still means what it says.
+    happen today because Uninstall-ControlServerLocal.ps1 sets $ErrorActionPreference = 'Stop' as
+    its first statement and writes PASS once, at its end.
+
+    A REGRESSION GUARD FOR THOSE TWO FACTS, NOT A PROOF OF THEM. It recognises exactly four ways of
+    breaking them: a first statement other than the Stop assignment, 'PASS' written more or fewer
+    than once, 'PASS' outside the last three top-level statements, and a trap. It does NOT see
+    (round 4 review, measured): a later statement setting Continue again, $PSDefaultParameterValues,
+    a try/catch that swallows an error, or 'PA' + 'SS' built up from pieces. If the product script
+    changes shape in any way, re-read it by hand; this check going green then means little.
 #>
 function Find-ProductPremiseBreak {
     param([string] $Source)
@@ -984,20 +987,24 @@ foreach ($name in $premiseBreaks.Keys) {
 }
 
 <#
-    The guarantee above holds only if the uninstaller reaches the product script through that
-    function and nothing else. The first version of this check looked for '& $productUninstaller'
-    and dot-sourcing only; the S1 re-review (round 3) walked past it nine ways. So the rule is now
-    stated positively for the whole uninstaller:
-      * every command is named by a bare word -- nothing named by a variable, an expression, a
-        string, an index, a (Get-Command ...) or a dot-sourced path;
-      * none of the commands that run code from a string or a new process;
-      * no [scriptblock]::Create, no .InvokeScript(, no NewScriptBlock;
-      * the product script's file name does not appear at all (Get-ParallelProductUninstallerPath
-        in ParallelHost.psm1 is the only place that knows it);
-      * and Invoke-ParallelProductUninstaller is called exactly once.
-    Find-ProductScriptBypass is run on the real script (no findings) and on one synthetic snippet
-    per bypass the review found (each must be found) -- a scanner that finds nothing in the real
-    script proves nothing until it is shown to find something.
+    A REGRESSION GUARD, NOT A PROOF. The service step is safe because Invoke-ParallelProductUninstaller
+    requires positive confirmation and the removal sequence aborts on anything else -- that is built
+    into the code. This scan only keeps the ordinary ways of calling the product script directly
+    from creeping back into the uninstaller, which would route around that confirmation.
+
+    What it looks at, in the uninstaller: every command must be named by a bare word (nothing named
+    by a variable, an expression, a string, an index, (Get-Command ...) or a dot-sourced path); none
+    of Invoke-Expression, Start-Process, pwsh, cmd, Invoke-Command, Start-Job; no
+    [scriptblock]::Create, .InvokeScript(, NewScriptBlock; the product script's file name nowhere
+    (Get-ParallelProductUninstallerPath in ParallelHost.psm1 knows it); and exactly one call of
+    Invoke-ParallelProductUninstaller. Each bypass the round-3 review found has a synthetic snippet
+    below that must be found, and one clean snippet must not.
+
+    Known ways past it, on purpose not chased (S1 re-review, round 4: a blacklist is never
+    finished): aliases and function definitions (Set-Alias, New-Alias, Set-Item function:);
+    [powershell]::new(), New-Object System.Diagnostics.Process, [Diagnostics.Process]::Start,
+    Invoke-CimMethod Win32_Process Create, Register-ScheduledTask; and anything defined in a module,
+    which this scan does not read.
 #>
 function Find-ProductScriptBypass {
     param([string] $Source)
@@ -1109,56 +1116,112 @@ try {
 }
 
 <#
-    Every delete in the installer and the uninstaller goes through the module's two delete
-    functions -- Remove-ParallelInstanceDirectory and Remove-ParallelInstanceDeploymentConfig -- so
-    neither script may delete anything itself. The first version of this check looked for the
-    command name Remove-Item and let one exception through with a trailing wildcard; the S1
-    re-review (round 3) walked past it nine ways and showed the exception also admitted
-    '-Recurse'. The rule is now:
-      * no deleting command, however named: Remove-Item and its aliases, module-qualified or not;
-        cmd, robocopy, Invoke-Expression and the other run-something-else commands;
-      * no command named by anything but a bare word, except the two product-installer calls in
-        the installer, matched on their exact text;
-      * no .Delete( member call on anything ([IO.Directory]::Delete, DirectoryInfo.Delete,
-        (Get-Item $p).Delete());
-      * and no exception for the config file any more: the installer deletes it through
-        Remove-ParallelInstanceDeploymentConfig, which takes the path from the layout.
-    Then the module: its only deletions are inside those two functions.
+    A REGRESSION GUARD, NOT A PROOF. What keeps an uninstall or an install from deleting outside
+    this instance is built into the code, not into this scan:
+      * the path allowlist (canonical, directly under one of three roots, V2-marked) plus the
+        production denylist, re-checked immediately before every single deletion
+        (Remove-ParallelInstanceDirectory, Invoke-ParallelRemovalSequence);
+      * the link refusal (a path that is itself a junction or symbolic link is not deleted);
+      * the service step's positive confirmation (Invoke-ParallelProductUninstaller) and the
+        abort on any failure there;
+      * the secrets file deleted only at the layout's path, or beside the installer when no
+        definition was accepted (Remove-ParallelInstanceDeploymentConfig).
+    This scan exists so that the ordinary ways of writing a delete -- the ones someone might
+    actually type while changing these files -- cannot slip in past those functions unnoticed.
+
+    What it looks at: deleting commands however named (aliases, module-qualified), commands that
+    run something else (cmd, robocopy, Invoke-Expression, Start-Process, pwsh ...), commands named
+    by anything but a bare word, '.Delete(' member calls, and 'ForEach-Object Delete'. The same
+    function and the same rules for the two scripts and the two modules (S1 re-review, round 4:
+    the module side had been checked by a weaker rule, which was a real defect). Allowances are
+    exact: a deleting command only inside the two delete functions, a dynamic command only as the
+    exact text inside the exact function listed.
+
+    Known ways past it, on purpose not chased (a blacklist is never finished -- round 4 decided):
+      * aliases and function definitions (Set-Alias, New-Alias, Set-Item function:);
+      * .NET, COM and CIM APIs other than '.Delete(' (VB DeleteDirectory, FSO DeleteFolder,
+        Invoke-CimMethod, [Diagnostics.Process]::Start, [powershell]::new());
+      * moving, emptying or re-permissioning instead of deleting (Move-Item is used legitimately);
+      * anything defined in a module this scan does not read.
 #>
 function Find-DeletionBypass {
-    param([string] $Source, [string[]] $AllowedDynamicHeads = @())
+    param([string] $Source, [string[]] $AllowedDynamic = @(), [string[]] $AllowedDeletionOwners = @())
     $ast = [System.Management.Automation.Language.Parser]::ParseInput($Source, [ref]$null, [ref]$null)
-    $forbidden = @('Remove-Item', 'rm', 'del', 'rd', 'rmdir', 'ri', 'erase', 'cmd', 'cmd.exe', 'robocopy', 'robocopy.exe',
-        'Invoke-Expression', 'iex', 'Start-Process', 'saps', 'start', 'pwsh', 'pwsh.exe', 'powershell', 'powershell.exe',
-        'Invoke-Command', 'icm', 'Start-Job', 'sajb', 'Start-ThreadJob', 'Clear-RecycleBin')
+    $deleting = @('Remove-Item', 'rm', 'del', 'rd', 'rmdir', 'ri', 'erase', 'Clear-RecycleBin')
+    $running = @('cmd', 'cmd.exe', 'robocopy', 'robocopy.exe', 'Invoke-Expression', 'iex', 'Start-Process', 'saps', 'start',
+        'pwsh', 'pwsh.exe', 'powershell', 'powershell.exe', 'Invoke-Command', 'icm', 'Start-Job', 'sajb', 'Start-ThreadJob')
     $findings = [System.Collections.Generic.List[string]]::new()
+    $ownerOf = {
+        param($node)
+        $o = $node.Parent
+        while ($o -and $o -isnot [System.Management.Automation.Language.FunctionDefinitionAst]) { $o = $o.Parent }
+        $o ? $o.Name : '(top level)'
+    }
     foreach ($command in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true)) {
+        $owner = & $ownerOf $command
         $head = $command.CommandElements[0]
         $bare = $head -is [System.Management.Automation.Language.StringConstantExpressionAst] -and $head.StringConstantType -eq 'BareWord'
         if (-not $bare -or $command.InvocationOperator -eq 'Dot') {
-            if ($AllowedDynamicHeads -cnotcontains $head.Extent.Text) { $findings.Add("dynamic command: $($command.Extent.Text.Split("`n")[0])") }
+            if ($AllowedDynamic -cnotcontains "$owner::$($head.Extent.Text)") { $findings.Add("[$owner] dynamic command: $($command.Extent.Text.Split("`n")[0])") }
             continue
         }
         $name = ($head.Value -split '\\')[-1]
-        if ($forbidden -contains $name) { $findings.Add("deleting or code-running command: $($command.Extent.Text.Split("`n")[0])") }
+        if ($deleting -contains $name) {
+            if ($AllowedDeletionOwners -cnotcontains $owner) { $findings.Add("[$owner] deleting command: $($command.Extent.Text.Split("`n")[0])") }
+            continue
+        }
+        if ($running -contains $name) { $findings.Add("[$owner] code-running command: $($command.Extent.Text.Split("`n")[0])"); continue }
+        # 'Get-ChildItem ... | ForEach-Object Delete' -- the idiomatic one, and the round-4 review's
+        # example of a delete the scan did not see while every other test stayed green.
+        if ($name -in @('ForEach-Object', '%', 'foreach')) {
+            $deleteArgs = @($command.CommandElements | Select-Object -Skip 1 |
+                    Where-Object { $_ -is [System.Management.Automation.Language.StringConstantExpressionAst] -and $_.Value -ieq 'Delete' })
+            if ($deleteArgs.Count -gt 0) { $findings.Add("[$owner] ForEach-Object Delete: $($command.Extent.Text.Split("`n")[0])") }
+        }
     }
     foreach ($member in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.MemberExpressionAst] }, $true)) {
-        if ($member.Member.Extent.Text -in @('Delete', 'Create', 'InvokeScript', 'NewScriptBlock')) { $findings.Add("member call: $($member.Extent.Text)") }
+        if ($member.Member.Extent.Text -in @('Delete', 'Create', 'InvokeScript', 'NewScriptBlock')) {
+            $findings.Add("[$(& $ownerOf $member)] member call: $($member.Extent.Text)")
+        }
     }
     return $findings
 }
-$installerHeads = @("(Join-Path `$scripts 'Update-ControlServerLocal.ps1')", "(Join-Path `$scripts 'Install-ControlServerLocal.ps1')")
-foreach ($script in @('Install-ParallelInstanceLocal.ps1', 'Uninstall-ParallelInstanceLocal.ps1')) {
-    $found = @(Find-DeletionBypass -Source ([IO.File]::ReadAllText((Join-Path $PSScriptRoot $script))) -AllowedDynamicHeads $installerHeads)
-    Write-Result -Ok ($found.Count -eq 0) -Name "$script deletes nothing itself" -Detail ($found -join ' | ')
+
+# Each file, with exactly the allowances it needs and no others.
+$deleteFunctions = @('Remove-ParallelInstanceDirectory', 'Remove-ParallelInstanceDeploymentConfig')
+$scanTargets = [ordered]@{
+    'Install-ParallelInstanceLocal.ps1'   = @{ Dynamic = @(
+            "Invoke-ProductInstaller::(Join-Path `$scripts 'Update-ControlServerLocal.ps1')",
+            "Invoke-ProductInstaller::(Join-Path `$scripts 'Install-ControlServerLocal.ps1')"); Owners = @(); Expected = 2 }
+    'Uninstall-ParallelInstanceLocal.ps1' = @{ Dynamic = @(); Owners = @(); Expected = 0 }
+    'ParallelInstance.psm1'               = @{ Dynamic = @(
+            'Invoke-ParallelRemovalSequence::$Actions.Service', 'Invoke-ParallelRemovalSequence::$Actions[$kind]',
+            'Invoke-ParallelRemovalSequence::$Actions.Process', 'Invoke-ParallelRemovalSequence::$Actions.DirectoryPattern',
+            'Invoke-ParallelRemovalSequence::$Actions.ReparsePoint', 'Invoke-ParallelRemovalSequence::$Actions.Directory',
+            'Invoke-ParallelRemovalSequence::$result'); Owners = $deleteFunctions; Expected = 12 }
+    'ParallelHost.psm1'                   = @{ Dynamic = @('Invoke-ParallelProductUninstaller::$UninstallerPath'); Owners = @(); Expected = 1 }
 }
-# The two exceptions are real and still there: if they vanish, the allowance should go with them.
-$installerSource = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Install-ParallelInstanceLocal.ps1'))
-$withoutAllowance = @(Find-DeletionBypass -Source $installerSource)
-$exactlyThoseTwo = $withoutAllowance.Count -eq 2 -and
-    @($installerHeads | Where-Object { $head = $_; @($withoutAllowance | Where-Object { $_.StartsWith("dynamic command: & $head") }).Count -eq 1 }).Count -eq 2
-Write-Result -Ok $exactlyThoseTwo -Name 'without the allowance the installer shows exactly the two product-installer calls' `
-    -Detail ("findings without the allowance: " + ($withoutAllowance -join ' | '))
+foreach ($file in $scanTargets.Keys) {
+    $source = [IO.File]::ReadAllText((Join-Path $PSScriptRoot $file))
+    $allow = $scanTargets[$file]
+    $found = @(Find-DeletionBypass -Source $source -AllowedDynamic $allow.Dynamic -AllowedDeletionOwners $allow.Owners)
+    Write-Result -Ok ($found.Count -eq 0) -Name "$file deletes nothing outside the two delete functions" -Detail ($found -join ' | ')
+    # The allowances are real and no wider than what is there: without them, the scan finds
+    # exactly the allowed commands (and for the module, the two Remove-Item in the delete functions).
+    $withoutAllowance = @(Find-DeletionBypass -Source $source)
+    Write-Result -Ok ($withoutAllowance.Count -eq $allow.Expected) `
+        -Name "$file without its allowances shows exactly the $($allow.Expected) allowed command(s)" `
+        -Detail ("found $($withoutAllowance.Count): " + ($withoutAllowance -join ' | '))
+}
+$moduleDeletes = @(Find-DeletionBypass -Source ([IO.File]::ReadAllText((Join-Path $PSScriptRoot 'ParallelInstance.psm1'))) |
+        Where-Object { $_ -like '*deleting command*' })
+$inDeleteFunctions = @($moduleDeletes | Where-Object { $_ -like '`[Remove-ParallelInstanceDirectory`]*' -or $_ -like '`[Remove-ParallelInstanceDeploymentConfig`]*' })
+Write-Result -Ok ($moduleDeletes.Count -eq 2 -and $inDeleteFunctions.Count -eq 2) `
+    -Name 'the module deletes only in Remove-ParallelInstanceDirectory and Remove-ParallelInstanceDeploymentConfig' `
+    -Detail ("deletions: " + ($moduleDeletes -join ' | '))
+
+# One synthetic snippet per common way of writing a delete. Each must be found -- a scan that
+# finds nothing in the real files proves nothing until it is shown to find something.
 $deletionBypasses = [ordered]@{
     'Remove-Item with -Recurse on the config path' = 'Remove-Item -LiteralPath $DeploymentConfigPath -Recurse -Force'
     'module-qualified Remove-Item'                  = 'Microsoft.PowerShell.Management\Remove-Item -LiteralPath $p -Recurse'
@@ -1168,51 +1231,54 @@ $deletionBypasses = [ordered]@{
     '[IO.Directory]::Delete'                        = '[IO.Directory]::Delete($p, $true)'
     'DirectoryInfo.Delete'                          = '([IO.DirectoryInfo]$p).Delete($true)'
     '(Get-Item).Delete'                             = '(Get-Item $p).Delete($true)'
+    'Get-ChildItem | ForEach-Object Delete'         = 'Get-ChildItem -LiteralPath $p -Directory | ForEach-Object Delete'
+    'ForEach-Object -MemberName Delete'             = 'Get-Item $p | ForEach-Object -MemberName Delete -ArgumentList $true'
+    '% Delete'                                      = 'Get-Item $p | % Delete'
     'cmd /c rmdir'                                  = 'cmd /c rmdir /s /q $p'
     'robocopy /MIR from an empty directory'         = 'robocopy $empty $p /MIR'
     'Invoke-Expression'                             = 'Invoke-Expression "Remove-Item $p -Recurse"'
+    'Remove-Item inside a function not allowed to'  = 'function Clear-Something { Remove-Item -LiteralPath $p -Recurse }'
 }
 foreach ($name in $deletionBypasses.Keys) {
-    $hits = @(Find-DeletionBypass -Source $deletionBypasses[$name] -AllowedDynamicHeads $installerHeads)
+    $hits = @(Find-DeletionBypass -Source $deletionBypasses[$name] -AllowedDeletionOwners $deleteFunctions)
     Write-Result -Ok ($hits.Count -gt 0) -Name "deletion scanner finds: $name" -Detail "snippet: $($deletionBypasses[$name])"
 }
-
-# The module: deletions live only in the two delete functions.
-$moduleAst = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'ParallelInstance.psm1'), [ref]$null, [ref]$null)
-$moduleDeletes = @($moduleAst.FindAll({ param($n)
-            ($n -is [System.Management.Automation.Language.CommandAst] -and ($n.GetCommandName() -split '\\')[-1] -in @('Remove-Item', 'rm', 'del', 'rd', 'rmdir', 'ri', 'erase', 'robocopy', 'cmd')) -or
-            ($n -is [System.Management.Automation.Language.MemberExpressionAst] -and $n.Member.Extent.Text -eq 'Delete') }, $true) |
-        ForEach-Object {
-            $owner = $_.Parent
-            while ($owner -and $owner -isnot [System.Management.Automation.Language.FunctionDefinitionAst]) { $owner = $owner.Parent }
-            "$($owner ? $owner.Name : '(top level)'): $($_.Extent.Text)"
-        })
-$outside = @($moduleDeletes | Where-Object { $_ -notlike 'Remove-ParallelInstanceDirectory: *' -and $_ -notlike 'Remove-ParallelInstanceDeploymentConfig: *' })
-Write-Result -Ok ($moduleDeletes.Count -eq 2 -and $outside.Count -eq 0) `
-    -Name 'the module deletes only in Remove-ParallelInstanceDirectory and Remove-ParallelInstanceDeploymentConfig' `
-    -Detail ("deletions: " + ($moduleDeletes -join ' | '))
+$quiet = @(Find-DeletionBypass -Source 'Get-ChildItem $p | ForEach-Object { "$($_.Name)" }; function Remove-ParallelInstanceDirectory { Remove-Item -LiteralPath $p -Recurse }' -AllowedDeletionOwners $deleteFunctions)
+Write-Result -Ok ($quiet.Count -eq 0) -Name 'deletion scanner is quiet on a plain ForEach-Object and on Remove-Item inside a delete function' `
+    -Detail ($quiet -join ' | ')
 
 Write-Host ''
 Write-Host 'The deployment config: one path, a plain file (S1 re-review, round 3)' -ForegroundColor Cyan
 
-# The installer's own use of the check. It cannot be run here (it needs elevation), so its source
-# is held to it: the check is called, its refusal throws, and both come before the main try --
-# the one whose finally deletes the config. Without this, deleting that line left every
-# case in this file green (found while planning the round-3 mutation check).
+# The installer's structure. deploy-config.json must be removed on every way out, so: the outer
+# try opens before the first check (Assert-Administrator), the config-path refusal is inside it,
+# and its finally hands the file to Remove-ParallelInstanceDeploymentConfig with the installer's
+# own directory as the fallback, throwing SECRET_FILE_LEFT_BEHIND when an otherwise successful
+# install leaves it. The end-to-end runs below exercise one early exit for real; this pins the
+# shape that makes every other one reach the same finally.
 $installerText = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Install-ParallelInstanceLocal.ps1')).Replace("`r`n", "`n")
-$guardLine = 'if ($configRefusal) { throw "-DeploymentConfigPath $configRefusal." }'
-$callLine = '$configRefusal = Test-ParallelInstanceDeploymentConfigPath -Path $DeploymentConfigPath -Layout $layout'
-$mainTry = "`$completed = `$false`ntry {"
-$guardAt = $installerText.IndexOf($guardLine, [StringComparison]::Ordinal)
-$callAt = $installerText.IndexOf($callLine, [StringComparison]::Ordinal)
-$tryAt = $installerText.IndexOf($mainTry, [StringComparison]::Ordinal)
-Write-Result -Ok ($callAt -ge 0 -and $guardAt -gt $callAt -and $tryAt -gt $guardAt) `
-    -Name 'the installer refuses a wrong -DeploymentConfigPath before the try whose finally deletes it' `
-    -Detail "check call at $callAt, throw at $guardAt, main try at $tryAt"
+$marks = [ordered]@{
+    'outer try'        = "`$installSucceeded = `$false`ntry {`n"
+    'first check'      = "`n    Assert-Administrator`n"
+    'path check call'  = '$configRefusal = Test-ParallelInstanceDeploymentConfigPath -Path $DeploymentConfigPath -Layout $layout'
+    'path check throw' = 'if ($configRefusal) { throw "-DeploymentConfigPath $configRefusal." }'
+    'outer finally'    = "`n    `$installSucceeded = `$true`n} finally {`n"
+    'cleanup call'     = 'Remove-ParallelInstanceDeploymentConfig -Path $DeploymentConfigPath -Layout $layout -FallbackDirectory $PSScriptRoot'
+    'loud on success'  = 'if ($installSucceeded) { throw $message }'
+}
+$at = [ordered]@{}
+foreach ($k in $marks.Keys) { $at[$k] = $installerText.IndexOf($marks[$k], [StringComparison]::Ordinal) }
+$positions = @($at.Values)
+$inOrder = @($positions | Where-Object { $_ -lt 0 }).Count -eq 0 -and
+    @(for ($i = 1; $i -lt $positions.Count; $i++) { if ($positions[$i] -le $positions[$i - 1]) { $i } }).Count -eq 0
+Write-Result -Ok $inOrder `
+    -Name 'the installer: outer try before the first check, path refusal inside it, cleanup in its finally' `
+    -Detail (($at.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ', ')
 
 $configRoot = Join-Path ([IO.Path]::GetTempPath()) "cs262-config-$([guid]::NewGuid().ToString('N'))"
 New-Item -ItemType Directory -Path $configRoot | Out-Null
 try {
+    # --- Test-ParallelInstanceDeploymentConfigPath: what the installer accepts up front ---
     $fakeLayout = [pscustomobject]@{ DeploymentConfigPath = (Join-Path $configRoot 'deploy-config.json') }
     Set-Content -LiteralPath $fakeLayout.DeploymentConfigPath -Value '{}'
     Write-Result -Ok ($null -eq (Test-ParallelInstanceDeploymentConfigPath -Path $fakeLayout.DeploymentConfigPath -Layout $fakeLayout)) `
@@ -1224,19 +1290,118 @@ try {
     $why = Test-ParallelInstanceDeploymentConfigPath -Path 'C:\Program Files\8005 AGV\ControlServer' -Layout $fakeLayout
     Write-Result -Ok ($null -ne $why -and $why.Contains('the only accepted path is')) -Name "the MVP install root as the config path is refused" -Detail "got: $why"
 
-    Remove-ParallelInstanceDeploymentConfig -Layout $fakeLayout
-    Write-Result -Ok (-not (Test-Path -LiteralPath $fakeLayout.DeploymentConfigPath) -and (Test-Path -LiteralPath $elsewhere)) `
-        -Name 'Remove-ParallelInstanceDeploymentConfig deletes exactly the layout path' -Detail 'wrong file removed or kept'
+    # Not a plain file, or not there at all: refused up front.
+    $dirAtPath = [pscustomobject]@{ DeploymentConfigPath = (Join-Path $configRoot 'dir-at-path\deploy-config.json') }
+    New-Item -ItemType Directory -Path $dirAtPath.DeploymentConfigPath | Out-Null
+    $why = Test-ParallelInstanceDeploymentConfigPath -Path $dirAtPath.DeploymentConfigPath -Layout $dirAtPath
+    Write-Result -Ok ($null -ne $why -and $why.Contains('not an existing file')) -Name 'a directory at the config path is refused up front' -Detail "got: $why"
+    $absent = [pscustomobject]@{ DeploymentConfigPath = (Join-Path $configRoot 'absent\deploy-config.json') }
+    $why = Test-ParallelInstanceDeploymentConfigPath -Path $absent.DeploymentConfigPath -Layout $absent
+    Write-Result -Ok ($null -ne $why -and $why.Contains('not an existing file')) -Name 'a config path with no file is refused up front' -Detail "got: $why"
 
-    # A directory where the file should be: refused by the check, left alone by the delete.
-    New-Item -ItemType Directory -Path $fakeLayout.DeploymentConfigPath | Out-Null
-    Set-Content -LiteralPath (Join-Path $fakeLayout.DeploymentConfigPath 'inner.txt') -Value 'x'
-    $why = Test-ParallelInstanceDeploymentConfigPath -Path $fakeLayout.DeploymentConfigPath -Layout $fakeLayout
-    Remove-ParallelInstanceDeploymentConfig -Layout $fakeLayout
-    Write-Result -Ok ($null -ne $why -and $why.Contains('not an existing file') -and (Test-Path -LiteralPath (Join-Path $fakeLayout.DeploymentConfigPath 'inner.txt'))) `
-        -Name 'a directory at the config path is refused and not deleted' -Detail "check said: $why"
+    # --- Remove-ParallelInstanceDeploymentConfig, in each state the installer's finally can be in ---
+    # Each case gets its own directory and files, so one case going wrong under a mutation cannot
+    # make the next one fail for a reason of its own.
+    function New-ConfigCase([string] $Name) {
+        $dir = Join-Path $configRoot "case-$Name"
+        New-Item -ItemType Directory -Path $dir | Out-Null
+        $file = Join-Path $dir 'deploy-config.json'
+        $other = Join-Path $dir 'other.json'
+        Set-Content -LiteralPath $file -Value '{}'
+        Set-Content -LiteralPath $other -Value '{}'
+        return [pscustomobject]@{ Dir = $dir; File = $file; Other = $other; Layout = [pscustomobject]@{ DeploymentConfigPath = $file } }
+    }
+
+    # Exit 1: the main flow threw after the definition and the path were accepted.
+    $c = New-ConfigCase 'accepted'
+    $r = Remove-ParallelInstanceDeploymentConfig -Path $c.File -Layout $c.Layout -FallbackDirectory $c.Dir
+    Write-Result -Ok ($null -eq $r -and -not (Test-Path -LiteralPath $c.File) -and (Test-Path -LiteralPath $c.Other)) `
+        -Name 'exit after acceptance: the layout path is deleted, nothing else' -Detail "returned: $r"
+
+    # Exit 2: the path itself was refused. Not deleted -- reported.
+    $c = New-ConfigCase 'path-refused'
+    $r = Remove-ParallelInstanceDeploymentConfig -Path $c.Other -Layout $c.Layout -FallbackDirectory $c.Dir
+    Write-Result -Ok ($null -ne $r -and $r.Contains("not the layout's config path") -and (Test-Path -LiteralPath $c.Other)) `
+        -Name 'exit on a refused path: the file is kept and reported' -Detail "returned: $r"
+
+    # Exit 3: the definition was refused, so there is no layout. The installer's own directory decides.
+    $c = New-ConfigCase 'definition-refused'
+    $r = Remove-ParallelInstanceDeploymentConfig -Path $c.File -Layout $null -FallbackDirectory $c.Dir
+    Write-Result -Ok ($null -eq $r -and -not (Test-Path -LiteralPath $c.File)) `
+        -Name "exit on a refused definition: deploy-config.json beside the installer is deleted" -Detail "returned: $r"
+    $c = New-ConfigCase 'definition-refused-other'
+    $r = Remove-ParallelInstanceDeploymentConfig -Path $c.Other -Layout $null -FallbackDirectory $c.Dir
+    Write-Result -Ok ($null -ne $r -and $r.Contains('without an accepted definition') -and (Test-Path -LiteralPath $c.Other)) `
+        -Name 'exit on a refused definition: any other file is kept and reported' -Detail "returned: $r"
+
+    # Nothing there: nothing to report.
+    $c = New-ConfigCase 'absent'
+    [IO.File]::Delete($c.File)
+    Write-Result -Ok ($null -eq (Remove-ParallelInstanceDeploymentConfig -Path $c.File -Layout $null -FallbackDirectory $c.Dir)) `
+        -Name 'no config file left: nothing to report' -Detail 'reported a residue for an absent file'
+
+    # Not a plain file: a directory, and a junction, where the file should be. Both kept and reported.
+    $c = New-ConfigCase 'directory'
+    [IO.File]::Delete($c.File)
+    New-Item -ItemType Directory -Path $c.File | Out-Null
+    Set-Content -LiteralPath (Join-Path $c.File 'inner.txt') -Value 'x'
+    $r = Remove-ParallelInstanceDeploymentConfig -Path $c.File -Layout $null -FallbackDirectory $c.Dir
+    Write-Result -Ok ($null -ne $r -and $r.Contains('not a plain file') -and (Test-Path -LiteralPath (Join-Path $c.File 'inner.txt'))) `
+        -Name 'a directory at the config path is kept and reported' -Detail "returned: $r"
+    $c = New-ConfigCase 'junction'
+    [IO.File]::Delete($c.File)
+    $junctionTarget = Join-Path $c.Dir 'target'
+    New-Item -ItemType Directory -Path $junctionTarget | Out-Null
+    Set-Content -LiteralPath (Join-Path $junctionTarget 'precious.txt') -Value 'x'
+    New-Item -ItemType Junction -Path $c.File -Target $junctionTarget | Out-Null
+    $r = Remove-ParallelInstanceDeploymentConfig -Path $c.File -Layout $null -FallbackDirectory $c.Dir
+    Write-Result -Ok ($null -ne $r -and $r.Contains('symbolic link or junction') -and (Test-Path -LiteralPath (Join-Path $junctionTarget 'precious.txt'))) `
+        -Name 'a junction at the config path is kept and reported' -Detail "returned: $r"
+    if (Test-ParallelInstanceReparsePoint -Path $c.File) { [IO.Directory]::Delete($c.File) }
 } finally {
     Remove-Item -LiteralPath $configRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+<#
+    End to end: run the real installer from a temporary copy and let it exit at its first check.
+    Unelevated it stops at Assert-Administrator; elevated, at reading a definition that does not
+    exist. Either way it leaves before any layout exists -- the case where the file used to stay
+    behind with its secrets. Nothing else on the machine is touched: both exits come before the
+    installer does anything.
+#>
+$e2eRoot = Join-Path ([IO.Path]::GetTempPath()) "cs262-install-exit-$([guid]::NewGuid().ToString('N'))"
+New-Item -ItemType Directory -Path $e2eRoot | Out-Null
+try {
+    foreach ($file in @('Install-ParallelInstanceLocal.ps1', 'ParallelInstance.psm1', 'ParallelHost.psm1')) {
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination $e2eRoot
+    }
+    function Invoke-InstallerEarlyExit([string] $ConfigPath) {
+        $out = @(& pwsh -NoProfile -File (Join-Path $e2eRoot 'Install-ParallelInstanceLocal.ps1') `
+                -PackageZip 'x.zip' -ExpectedSha256 'x' -DeploymentConfigPath $ConfigPath -FakeMesIngestZip 'y.zip' `
+                -InstanceDefinitionPath (Join-Path $e2eRoot 'no-such-instance.json') 2>&1 | ForEach-Object { "$_" })
+        return [pscustomobject]@{ Exit = $LASTEXITCODE; Output = $out }
+    }
+
+    $besideInstaller = Join-Path $e2eRoot 'deploy-config.json'
+    Set-Content -LiteralPath $besideInstaller -Value '{"riotCallApiKey":"selftest","mesIngestSharedSecret":"selftest"}'
+    $run = Invoke-InstallerEarlyExit $besideInstaller
+    $leftBehind = @($run.Output | Where-Object { $_ -like '*SECRET_FILE_LEFT_BEHIND*' })
+    $exitedEarly = @($run.Output | Where-Object { $_ -like '*must run elevated*' -or $_ -like '*no-such-instance.json*' })
+    Write-Result -Ok ($run.Exit -ne 0 -and $exitedEarly.Count -gt 0 -and -not (Test-Path -LiteralPath $besideInstaller) -and $leftBehind.Count -eq 0) `
+        -Name 'installer exits at its first check: the config beside it is deleted' `
+        -Detail ("exit=$($run.Exit) early=$($exitedEarly.Count) file still there=$(Test-Path -LiteralPath $besideInstaller); output: " + ($run.Output -join ' / '))
+
+    $elsewhereDir = Join-Path $e2eRoot 'elsewhere'
+    New-Item -ItemType Directory -Path $elsewhereDir | Out-Null
+    $elsewhereFile = Join-Path $elsewhereDir 'deploy-config.json'
+    Set-Content -LiteralPath $elsewhereFile -Value '{"riotCallApiKey":"selftest","mesIngestSharedSecret":"selftest"}'
+    $run = Invoke-InstallerEarlyExit $elsewhereFile
+    $leftBehind = @($run.Output | Where-Object { $_ -like '*SECRET_FILE_LEFT_BEHIND*' -and $_.Contains($elsewhereFile) })
+    Write-Result -Ok ($run.Exit -ne 0 -and (Test-Path -LiteralPath $elsewhereFile) -and $leftBehind.Count -eq 1) `
+        -Name 'installer exits early with a config it may not delete: SECRET_FILE_LEFT_BEHIND names it' `
+        -Detail ("exit=$($run.Exit) kept=$(Test-Path -LiteralPath $elsewhereFile); output: " + ($run.Output -join ' / '))
+} finally {
+    Remove-Item -LiteralPath $e2eRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 Write-Host ''
