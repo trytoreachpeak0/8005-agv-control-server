@@ -17,7 +17,10 @@ namespace ControlServer.Host.Runtime.Dispatch;
 /// 到取货站的成本（REQ-0206）。
 /// </para>
 /// <para>
-/// 剩下的三层就是本票沿用的任务次序：先见先派，再按需求创建时刻与需求 id 定序。
+/// <b>批次7-09（control-server#214）在前面加了超时层与优先级带，并把建单时刻挪到首次看到之前。</b>次序是 REQ-0202 的原话：
+/// 超时层高于所有未超时的带，<c>STAGING_TO_WIRE</c> 独占最高初始带，同层按等待年龄从长到短。等待年龄从本地首次创建
+/// TransportDemand 起算，那是 MesIngest 目录项的 <c>CreatedAt</c>，所以建单时刻那一层就是等待年龄层；首次看到退为平手键，
+/// 理由见 <see cref="TaskStarvation"/>。
 /// </para>
 /// </remarks>
 public static class DispatchCandidateOrdering
@@ -25,8 +28,10 @@ public static class DispatchCandidateOrdering
     /// <summary>Every layer, in the order it is asked.</summary>
     public static IReadOnlyList<IDispatchCandidateComparisonLayer> Layers() =>
     [
-        new FirstSeenLayer(),
+        new StarvationTimeoutLayer(),
+        new PriorityBandLayer(),
         new DemandCreatedAtLayer(),
+        new FirstSeenLayer(),
         new DemandIdOrdinalLayer(),
     ];
 

@@ -300,6 +300,12 @@ jobs:
               # cancelled and reconciled, the demand goes back to the backlog with its age, and a second vehicle takes it
               # under a new generation and upperId, its dispatch plan actually sent (REQ-0328).
               @{ Name = 'reassign-when-vehicle-ineligible'; Runs = 1; BatchId = 'batch-7' }
+              # control-server#214: the task-side ranking. A new STAGING_TO_WIRE demand is taken before an older normal-band
+              # one (REQ-0202); with no anti-starvation threshold configured nothing escalates, and once one is imported
+              # the overdue normal-band demand is escalated exactly once and goes ahead of a STAGING_TO_WIRE that is not
+              # overdue (REQ-0202, REQ-0203, REQ-0210).
+              @{ Name = 'starvation-threshold-escalation'; Runs = 1; BatchId = 'batch-7' }
+              @{ Name = 'task-type-priority-band'; Runs = 1; BatchId = 'batch-7' }
               # control-server#210, specification 8.3 batch-7 criterion 7: a key suppressed by a local cancellation stays out
               # under a new DemandId, the unrelated demand behind it is still taken, and a demand gone from the catalog
               # before acceptance suppresses nothing.

@@ -250,6 +250,8 @@ if (app.Configuration.GetValue<bool>("EmergencyStopRelease:enabled"))
     app.MapEmergencyStopRelease();
 }
 app.MapDashboardQueries();
+// 防饥饿阈值的标定证据（批次7-09，control-server#214）：只读，JSON 与 CSV。
+app.MapStarvationCalibrationReport();
 
 await app.RunAsync();
 

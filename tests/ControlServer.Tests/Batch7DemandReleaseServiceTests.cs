@@ -905,6 +905,61 @@ public sealed class Batch7DemandReleaseServiceTests
     }
 
     /// <summary>受理第一条并派往取货站；需要时再把第二条追加进来。</summary>
+    /// <summary>
+    /// 释放之后的等待年龄仍从原来的本地建单时刻（MesIngest 的 <c>CreatedAt</c>）算（批次7-09，control-server#214）：
+    /// 经真实释放路径——车离开本图、取货单取消并对账确认、需求退回积压——再整轮跑一次，这条需求照原建单时刻越过阈值、升级告警。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 需求在 <c>Now - 10min</c> 建单、受理那几轮里被服务端第一次看到，阈值 15 分钟，钟再拨 5 分钟：按建单时刻它已等满
+    /// 15 分钟；按首次看到还不到，不会告警。两个年龄在用例里按实际时刻算出来再断言，所以这条只在年龄真的从 <c>CreatedAt</c> 算时才绿。
+    /// </para>
+    /// <para>
+    /// 触发用「车离开本图」而不是故障：车有故障时释放服务不释放（cs#215 的最终形态）。释放之后把车放回本图，再让这条需求被一道
+    /// 瞬时门禁挡住（查不到箱数）：否则它这一轮就被重新受理、不再等，也就谈不上告警；车留在图外的话，本图不符对名册里唯一那辆车
+    /// 是结构性的，结构性阻断的需求按调度 2026-09-21 的决定不告警，同样看不出年龄。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task AReleasedDemandKeepsItsAgeFromItsLocalCreationAndIsEscalatedOnIt()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
+        DateTimeOffset firstSeen = (await fixture.BacklogAsync(FirstDemandId)).FirstSeenAt;
+        long version = (await fixture.ImportStarvationThresholdsAsync((fixture.Options.DispatchZone, 900))).Version;
+        DateTimeOffset startedAt = fixture.Clock.GetUtcNow();
+        fixture.Clock.Advance(TimeSpan.FromMinutes(5));
+        RiotVehicleObservation onTheMap = fixture.Riot.Vehicle;
+        LeaveTheMap(fixture);
+        CancellingGateway gateway = new(fixture.Clock, orderId => fixture.Riot.CancelOrder(before.PickupUpperId));
+
+        IReadOnlyList<DemandReleaseOutcome> outcomes = await Service(fixture, gateway).RunOnceAsync(Token);
+
+        Assert.Equal([(FirstDemandId, "RELEASED")], outcomes.Select(outcome => (outcome.DemandId, outcome.Result)));
+        fixture.Riot.Vehicle = onTheMap;
+        fixture.BoxCounts.Remove(FirstSublot);
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Equal(startedAt.AddMinutes(5), fixture.Clock.GetUtcNow());
+        Assert.Equal(startedAt, firstSeen);
+        await using ControlServerDbContext reading = new ControlServerDbContext(fixture.DbOptionsForTests);
+        JourneyBacklogRow backlog = await reading.JourneyBacklog.AsNoTracking()
+            .SingleAsync(row => row.DemandId == FirstDemandId, Token);
+        Assert.Null(backlog.AcceptedAt);
+        Assert.Equal(firstSeen, backlog.FirstSeenAt);
+        Assert.Equal(fixture.Clock.GetUtcNow(), backlog.StarvationEscalatedAt);
+        Assert.Equal(version, backlog.StarvationEscalationParameterVersion);
+        // 驱动受理那几轮自己也拨过钟，所以两个年龄按实际时刻算出来再比：按建单时刻已达阈值，按首次看到还差得远。
+        long sinceCreated = (long)(fixture.Clock.GetUtcNow() - Now.AddMinutes(-10)).TotalSeconds;
+        Assert.True(sinceCreated >= 900, $"age since local creation {sinceCreated} s should have reached the threshold");
+        Assert.True(fixture.Clock.GetUtcNow() - firstSeen < TimeSpan.FromSeconds(900), "age since first seen must stay below it");
+        Assert.Contains(
+            fixture.StarvationLog.Entries,
+            entry => entry.Message.Contains(FirstDemandId, StringComparison.Ordinal) &&
+                entry.Message.Contains($"has waited {sinceCreated} s", StringComparison.Ordinal));
+    }
+
     private static async Task<RuntimeFixture> DispatchedToPickupAsync(bool appendSecond = false)
     {
         RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
