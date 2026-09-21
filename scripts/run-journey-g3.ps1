@@ -225,6 +225,19 @@ $scenarioAssertions = [ordered]@{
         'G3-11-08' = 'admissionFrozenOnTheUnload'
         'G3-11-09' = 'reversedJourneyFinalStateNoDuplicateCommit'
     }
+    # Batch 7 (control-server#218): CV-MULTI-STOP-PLAN-NINE-LEGS. One vehicle, two demands at two pickup stations
+    # and one gate; the second is appended en route, so the plan grows from two legs to three and is replaced on
+    # the vehicle. The vector covers plan legs only; nine legs is the two G2s' to prove, this proves a real plan of
+    # three or more, run to completion.
+    'g3-multi-stop-plan' = [ordered]@{
+        'G3-08-01' = 'everyPlanRevisionSequencedFromOneWithAPurposePerLeg'
+        'G3-08-02' = 'appendedPlanAdvancesRevisionWithAtLeastThreeLegs'
+        'G3-08-03' = 'planLegsSentInSequenceOrder'
+        'G3-08-04' = 'multiStopSequenceMatchesVector'
+        'G3-08-05' = 'onboardShowsTheDispatchPlanInSequenceOrder'
+        'G3-08-06' = 'onboardShowsTheAppendedPlanInSequenceOrder'
+        'G3-08-07' = 'multiStopJourneyEachDemandLoadedAndUnloadedOnce'
+    }
 }
 
 function Get-ScriptFunction {
