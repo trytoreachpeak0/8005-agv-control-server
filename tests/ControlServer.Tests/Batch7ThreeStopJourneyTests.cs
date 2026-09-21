@@ -462,6 +462,61 @@ public sealed class Batch7ThreeStopJourneyTests
         Assert.Equal(2, stations.Length);
     }
 
+    /// <summary>
+    /// 终结一条需求、删掉它的空停靠之后，剩下的需求照常走完：到取货站、装货、离站、到卸货站、卸完，旅程正常结束
+    /// （批次7-10，control-server#215，票面「其余照常完成」的 L1 那一半）。
+    /// </summary>
+    /// <remarks>
+    /// 删停靠改了序位（连续重编号），而到站判定、清单修订号、离站后下一段腿都按序位与开放停靠走——一个只在「删了之后」
+    /// 才错的序位或修订号，会在这条路上的某一站让旅程停住或让车载端拒收。这里逐站推进并断言终态：每个没删的停靠都完成、
+    /// 删掉的停靠保持删掉，快照流的号严格递增。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AfterOneDemandEndsAndItsStopsAreRemovedTheOtherRunsToCompletion()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        fixture.Catalog.Set(
+            fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)),
+            fixture.Demand(SecondDemandId, SecondSublot, Now.AddMinutes(-9), area: SecondPickupArea));
+        fixture.BoxCounts.Set(FirstSublot, 7);
+        fixture.BoxCounts.Set(SecondSublot, 7);
+        await TickAndRunAsync(fixture);
+        await AppendSecondDemandAsync(fixture);
+        await TickAndRunAsync(fixture);
+
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync(FirstDemandId);
+        await new PickupStopTermination(fixture.Context).StageAsync(
+            runtime, SecondDemandId, "CANCELLED_BY_OPERATOR", fixture.Clock.GetUtcNow(), token);
+        await fixture.Context.SaveChangesAsync(token);
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Equal(JourneyStopStatuses.Removed,
+            (await fixture.Context.Set<JourneyStopRow>().AsNoTracking()
+                .SingleAsync(row => row.StationRiotId == SecondPickupStationRiotId, token)).Status);
+
+        await ArriveAtPickupAsync(fixture, FirstDemandId);
+        await EnterSublotAsync(fixture, FirstDemandId, FirstSublot, FirstSubmissionId);
+        await SettleLoadAsync(fixture, FirstDemandId);
+        await AnswerDepartureSafetyAsync(fixture, FirstDemandId, FirstSafetyResultId);
+        await ArriveAtCurrentStopAsync(fixture, FirstDemandId, "TO_GATE");
+        await ApplySafeResultAsync(fixture, FirstDemandId, SlotOperationType.Unload, SlotBusinessState.Empty);
+        await TickAndRunAsync(fixture);
+
+        Assert.Equal(JourneyRuntimeStage.Completed, (await fixture.RuntimeAsync(FirstDemandId)).Stage);
+        Assert.Equal(
+            [(FirstPickupStationRiotId, JourneyStopStatuses.Completed), (SecondPickupStationRiotId, JourneyStopStatuses.Removed),
+             (TaskTypeStationRuntimeSeed.GateStationRiotId, JourneyStopStatuses.Completed)],
+            (await fixture.Context.Set<JourneyStopRow>().AsNoTracking().ToArrayAsync(token))
+                .OrderBy(row => row.StationRiotId)
+                .Select(row => (row.StationRiotId, row.Status)));
+        foreach (string messageType in new[] { "VehicleBusinessStateSnapshot", "CurrentStopWorklistSnapshot", "UpcomingStopPlanSnapshot" })
+        {
+            long[] published = await PublishedRevisionsAsync(fixture, messageType);
+            Assert.Equal(published.Order().Distinct().ToArray(), published);
+        }
+    }
+
     /// <summary>车最后收到的那张计划里，每条腿的 <c>stationId</c>，按腿的顺序。</summary>
     private static async Task<string[]> LastPlanStationsAsync(RuntimeFixture fixture)
     {
