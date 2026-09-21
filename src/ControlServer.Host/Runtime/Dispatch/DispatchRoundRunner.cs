@@ -235,12 +235,15 @@ public sealed class DispatchRoundRunner(
             }
         }
 
-        // 任务层的次序：本票沿用今天的（先见先派，再按创建时刻与需求 id 定序）。优先级带、超时层与等待年龄由
-        // 批次7-09（control-server#214）加在这一层上，与车辆侧不相交。
+        // 任务层的次序：超时层、优先级带、等待年龄，再按首次看到与需求 id 定序（批次7-09，control-server#214），
+        // 与车辆侧不相交。每条任务的处境按本轮读一次的分区归属表与每区参数算：轮中导入的新版本下一轮才生效。
         IReadOnlyList<DispatchTask> tasksInOrder = candidateRanker.Order(
             [.. round.Catalog.Items.Select(item => new DispatchTask(
                 item,
-                backlogByDemandId.TryGetValue(item.DemandId, out JourneyBacklogRow? row) ? row.FirstSeenAt : now))]);
+                backlogByDemandId.TryGetValue(item.DemandId, out JourneyBacklogRow? row) ? row.FirstSeenAt : now)
+            {
+                Starvation = TaskStarvation.Assess(item, now, areaAssignmentTable, zoneParameters),
+            })]);
         foreach (DispatchTask task in tasksInOrder)
         {
             AcceptedDemandSnapshot candidate = task.Snapshot;

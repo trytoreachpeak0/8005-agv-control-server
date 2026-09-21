@@ -162,7 +162,11 @@ public static class DispatchAdmissionCriteria
         // DispatchCandidateOrdering (control-server#209); a new layer is a line there, not here.
         services.AddScoped<IDispatchCandidateRanker>(_ => DispatchCandidateOrdering.Ranker());
         // The structural dispatch block (control-server#74): what can only be concluded across every vehicle.
-        services.AddScoped<IDispatchRoundOutcomeSink, StructuralDispatchBlockSink>();
+        services.AddScoped<StructuralDispatchBlockSink>();
+        // 防饥饿升级告警（批次7-09，control-server#214）：轮末第二个汇总，排在结构性阻断之后。
+        services.AddScoped<StarvationEscalationSink>();
+        services.AddScoped<IDispatchRoundOutcomeSink>(provider => new DispatchRoundOutcomeSinks(
+            [provider.GetRequiredService<StructuralDispatchBlockSink>(), provider.GetRequiredService<StarvationEscalationSink>()]));
         // 上一轮每辆在途车被「本车货物占侧」判满的那几侧（批次7-07，control-server#212）。单例：这一轮的派车写、下一轮的推进段读，
         // 每一轮是一个新的作用域。
         services.AddSingleton<SlotGroupFullnessBoard>();
