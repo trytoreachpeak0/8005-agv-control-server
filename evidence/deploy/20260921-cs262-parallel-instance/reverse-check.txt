@@ -1,6 +1,6 @@
 File      : scripts/parallel/instance-factory01-v2.json
 Blob      : e13a573e43f19ee282d48e7dda654cc146b8c01d
-Backup    : C:\Users\szy\AppData\Local\Temp\instance-backup-8beda1f5aa314716915394442123413f.json
+Backup    : C:\Users\szy\AppData\Local\Temp\instance-backup-42a6f7761a3d41229ae6b1e95e5f45f0.json
 
 === case 0: round-trip with no injection is still accepted ===
   blob   : e13a573e43f19ee282d48e7dda654cc146b8c01d -> 4b86d7654ff34142dba573c82485bb3d6f1cce43 (reformatted, same content)
@@ -116,9 +116,27 @@ Backup    : C:\Users\szy\AppData\Local\Temp\instance-backup-8beda1f5aa3147169153
   PASS   refused for the expected reason ('AGV-Internal switch where the CI runner lives')
   restored, blob back to e13a573e43f19ee282d48e7dda654cc146b8c01d
 
+=== case 13: a Fleet roster with agv01 mixed in, spelled as the C# property ===
+  key    : journeyRuntime.Fleet
+  blob   : e13a573e43f19ee282d48e7dda654cc146b8c01d -> 152108ea8026daf7b37c8f3b449c67de0b6cae87
+  numstat: 18	3	scripts/parallel/instance-factory01-v2.json
+  refused with 1 reason(s):
+         - journeyRuntime.Fleet is a vehicle roster. The parallel instance drives one vehicle, and the agv02/agv03 pair check never looks inside a roster -- an agv01 entry there would pass.
+  PASS   refused for the expected reason ('journeyRuntime.Fleet is a vehicle roster')
+  restored, blob back to e13a573e43f19ee282d48e7dda654cc146b8c01d
+
+=== case 14: a second 'AgvId' naming agv01 beside the checked 'agvId' ===
+  key    : journeyRuntime.AgvId
+  blob   : e13a573e43f19ee282d48e7dda654cc146b8c01d -> 9a364b6866b1e5970833879298bcca9794b64cd1
+  numstat: 13	3	scripts/parallel/instance-factory01-v2.json
+  refused with 1 reason(s):
+         - journeyRuntime.AgvId differs only in case from journeyRuntime.agvId. .NET configuration is case-insensitive, so the two would be bound as one setting while this check reads only 'agvId'.
+  PASS   refused for the expected reason ('differs only in case from journeyRuntime.agvId')
+  restored, blob back to e13a573e43f19ee282d48e7dda654cc146b8c01d
+
 === final state ===
   blob   : e13a573e43f19ee282d48e7dda654cc146b8c01d (baseline e13a573e43f19ee282d48e7dda654cc146b8c01d)
   git status for this file: ''
   PASS   the file is byte-identical to the baseline; git reports no modification
 
-14 passed, 0 failed
+16 passed, 0 failed

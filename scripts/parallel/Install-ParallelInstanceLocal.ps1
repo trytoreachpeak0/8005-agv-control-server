@@ -32,12 +32,23 @@
         MVP's;
       * one previous generation kept on disk, so -Rollback is a real operation.
 
+    TWIN SCRIPT. The MVP deployment's equivalent is
+    remote-ops/factory-server/scripts/control-server/Install-ControlServerRemote.ps1 in the
+    8005-workspace repository. The two are deliberately separate scripts, which means a fix to
+    one does not reach the other by itself. When you change something here that touches the
+    machine rather than this instance -- a cleanup glob, a firewall rule, a shared environment
+    variable -- look at that file too. The first case of this was found in review: both
+    carried the same unprefixed '*.incoming-*' cleanup, copied across, and each one deleted
+    the other's staging directory.
+
     Two isolation details that are not obvious and that this script depends on:
 
       * -SkipMachineEnvironmentInjection rather than -CopyUserRiotSecretToMachine. The
         machine-scope CONTROL_SERVER_RIOT_CALL_API_KEY is a shared resource the MVP install
-        already set; the parallel instance reads it and the user-scope copy, and writes
-        neither. The service's own registry Environment carries what it needs.
+        already set; the parallel instance reads it and never writes it. It does write the
+        user-scope copy, which the product installer reads -- and which the MVP deployment
+        writes too, so the two share one key there as well. The service's own registry
+        Environment carries what it needs at run time.
       * -CertificatePasswordVariable is given a name of this instance's own.
         Update-ControlServerLocal.ps1 *deletes* the machine-scope variable it is pointed at, as
         plaintext-era cleanup. Left at its default, upgrading the parallel instance would
@@ -95,8 +106,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 3.0
 
 Import-Module (Join-Path $PSScriptRoot 'ParallelInstance.psm1') -Force
-
-$productionServiceName = '8005 AGV ControlServer'
+Import-Module (Join-Path $PSScriptRoot 'ParallelHost.psm1') -Force
 
 function Write-Step {
     param([string] $Message)
@@ -107,39 +117,6 @@ function Assert-Administrator {
     $principal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
     if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
         throw 'This script must run elevated.'
-    }
-}
-
-function Get-MvpFingerprint {
-    <#
-        Enough of the MVP service to notice if this deployment moved it: whether it exists, its
-        status, start type, binary path and the pid it is running under. Compared before and
-        after, because "I did not touch it" is a claim worth having evidence for on a machine
-        that is serving customers.
-    #>
-    $service = Get-Service -Name $productionServiceName -ErrorAction SilentlyContinue
-    if (-not $service) { return [ordered]@{ present = $false } }
-    $wmi = Get-CimInstance -ClassName Win32_Service -Filter "Name='$productionServiceName'" -ErrorAction SilentlyContinue
-    return [ordered]@{
-        present = $true
-        status = [string] $service.Status
-        startType = [string] $service.StartType
-        pathName = $wmi ? [string] $wmi.PathName : '(unavailable)'
-        processId = $wmi ? [int] $wmi.ProcessId : 0
-    }
-}
-
-function Assert-MvpUntouched {
-    param($Before, $After)
-    $diff = @()
-    foreach ($key in $Before.Keys) {
-        if ("$($Before[$key])" -cne "$($After[$key])") {
-            $diff += "$key : '$($Before[$key])' -> '$($After[$key])'"
-        }
-    }
-    if ($diff.Count -gt 0) {
-        throw ("The MVP service changed during this deployment, which must never happen: " +
-            ($diff -join '; '))
     }
 }
 
@@ -168,7 +145,8 @@ $healthOrigin = "http://${healthBindAddress}:$healthPort"
 # This instance's own name, never the MVP's. Update-ControlServerLocal.ps1 deletes the
 # machine-scope variable it is told about; pointing it at a name only this instance uses is
 # what keeps that deletion from reaching the production deployment.
-$certificatePasswordVariable = 'CONTROL_SERVER_V2_ONBOARD_CERTIFICATE_PASSWORD'
+$instanceNames = Get-ParallelInstanceName
+$certificatePasswordVariable = $instanceNames.CertificatePasswordVariable
 
 New-Item -ItemType Directory -Path $resultRoot -Force | Out-Null
 $runId = Get-Date -Format 'yyyyMMdd-HHmmss'
@@ -176,7 +154,7 @@ $resultPath = Join-Path $resultRoot "install-$runId.json"
 $diagnosticPath = Join-Path $resultRoot "install-$runId.log"
 
 $mvpBefore = Get-MvpFingerprint
-Write-Step ("MVP service before: " + (($mvpBefore.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ' '))
+Write-Step ("MVP service before: " + (Format-MvpFingerprint $mvpBefore))
 
 function Invoke-ProductInstaller {
     <#
@@ -370,6 +348,13 @@ if ($Rollback) {
 
 # ------------------------------------------------------------------------ verify ---
 
+# There is no automatic rollback across the steps after the product installer. That installer
+# rolls itself back if *it* fails; everything this script does after it -- overlay, token,
+# double, task, firewall, generation swap -- can fail and leave a half-installed instance, and a
+# first install has no .previous to swap back to. The finally block below says so explicitly
+# rather than leaving an operator to infer it from a stack trace. Recovery is documented in
+# wire-to-gate-parallel-cd.md section 11 and is Uninstall-ParallelInstanceLocal.ps1.
+$completed = $false
 try {
     foreach ($pair in @(@{ Path = $PackageZip; Name = 'package' }, @{ Path = $FakeMesIngestZip; Name = 'FakeMesIngest package' })) {
         if (-not (Test-Path -LiteralPath $pair.Path -PathType Leaf)) {
@@ -413,7 +398,10 @@ try {
             'deployment and shared by both instances; this script will not create it, because ' +
             'creating it would mean guessing a credential the vehicles already use.')
     }
-    Write-Step 'Secrets placed in the user scope; the shared machine scope was read, not written'
+    # The user-scope key is shared too: the MVP deployment writes the same variable on every
+    # install. Overwriting it is harmless only while both deployments use one key, so say
+    # plainly that it happened rather than implying the user scope is this instance's alone.
+    Write-Step 'RIoT key written to the user scope (shared with the MVP deployment, same value today); machine scope read, not written'
 
     # ----------------------------------------------------------------- install ---
 
@@ -458,7 +446,7 @@ try {
     # Named after this instance, so that removing it later cannot remove the MVP's rules and so
     # that an operator listing the rules can tell which service each one opens.
     foreach ($port in @($onboardPort, $healthPort)) {
-        $ruleName = "8005 AGV ControlServer V2 $port"
+        $ruleName = $instanceNames.FirewallRuleFormat -f $port
         Remove-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue
         New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -Action Allow `
             -Protocol TCP -LocalPort $port -Profile Any | Out-Null
@@ -488,11 +476,24 @@ try {
     Write-Output "ONBOARD_ENDPOINT=tcp://${listenAddress}:$onboardPort"
     Write-Output "HEALTH_ENDPOINT=$healthOrigin"
     Write-Output "FAKE_MES_INGEST=http://127.0.0.1:$($definition['fakeMesIngest']['port'])"
+    $completed = $true
 
 } finally {
+    if (-not $completed) {
+        Write-Warning 'The parallel install did NOT complete. The instance may be half-installed.'
+        Write-Warning 'Nothing was rolled back after the product installer returned. Check the MVP first:'
+        Write-Warning ("  MVP now: " + (Format-MvpFingerprint (Get-MvpFingerprint)))
+        Write-Warning ("  MVP before: " + (Format-MvpFingerprint $mvpBefore))
+        Write-Warning 'Then remove the partial instance with Uninstall-ParallelInstanceLocal.ps1 (see wire-to-gate-parallel-cd.md section 11).'
+    }
     if ($DeploymentConfigPath -and (Test-Path -LiteralPath $DeploymentConfigPath)) {
         Remove-Item -LiteralPath $DeploymentConfigPath -Force -ErrorAction SilentlyContinue
     }
-    Get-ChildItem -Path (Split-Path -Parent $packageRoot) -Directory -Filter '*.incoming-*' -ErrorAction SilentlyContinue |
+    # Prefixed with this instance's own leaf name. The unprefixed '*.incoming-*' this used to
+    # be matched every sibling of the package root -- and the MVP package root is a sibling
+    # (both live in D:\zhengyushao), so each deployment's cleanup deleted the other's staging
+    # directory whenever their windows overlapped. The MVP twin, Install-ControlServerRemote.ps1,
+    # had the same line and was fixed in the same change (control-server#262 review, finding 1).
+    Get-ChildItem -Path (Split-Path -Parent $packageRoot) -Directory -Filter "$(Split-Path -Leaf $packageRoot).incoming-*" -ErrorAction SilentlyContinue |
         ForEach-Object { Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
 }

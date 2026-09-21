@@ -236,6 +236,22 @@ Invoke-Case -Name 'case 12: the binding is the wildcard that reaches the CI runn
     -Mutate { param($t) $t['listenAddress'] = '0.0.0.0'; $t } `
     -ExpectFragment 'AGV-Internal switch where the CI runner lives'
 
+# ------------------------------ key whitelist (control-server#262 review, finding 3) ---
+
+Invoke-Case -Name 'case 13: a Fleet roster with agv01 mixed in, spelled as the C# property' `
+    -Observe 'journeyRuntime.Fleet' `
+    -Mutate {
+        param($t)
+        $t['journeyRuntime']['Fleet'] = @(@{ agvId = '老厂前线新多仓位1'; vehicleKey = 'BROKERX-0c20ff0600d644869a6a80c186065d85' })
+        $t
+    } `
+    -ExpectFragment 'journeyRuntime.Fleet is a vehicle roster'
+
+Invoke-Case -Name "case 14: a second 'AgvId' naming agv01 beside the checked 'agvId'" `
+    -Observe 'journeyRuntime.AgvId' `
+    -Mutate { param($t) $t['journeyRuntime']['AgvId'] = '老厂前线新多仓位1'; $t } `
+    -ExpectFragment 'differs only in case from journeyRuntime.agvId'
+
 # ---------------------------------------------------------------- teardown ---
 
 Write-Section 'final state'

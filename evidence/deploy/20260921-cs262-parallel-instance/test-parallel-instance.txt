@@ -31,12 +31,35 @@ Negative cases (each must fire exactly one named failure)
   PASS  agvId names agv03 while vehicleKey still names agv02
   PASS  vehicleKey is a well-formed key of no registered vehicle
   PASS  journeyRuntime.vehicleKey removed
+  PASS  journeyRuntime.fleet roster with agv01 mixed in
+  PASS  journeyRuntime.Fleet, capitalised as the C# property
+  PASS  a second agvId spelled AgvId naming agv01
+  PASS  an unknown top-level key (a typo of a real one)
   PASS  riotCreateDispatch section removed
   PASS  riotCreateDispatch opened without the explicit switch
 
 Switch cases (the escape hatch must work, or it is decoration)
   PASS  -AllowRiotCreateDispatch accepts the same definition the default run refused
   PASS  -AllowRiotCreateDispatch still refuses agv01
+
+Whitelist against the C# options (a rename there must fail here)
+  PASS  every journeyRuntime key names a JourneyRuntimeOptions property
+  PASS  JourneyRuntimeOptions.Fleet exists and is deliberately NOT whitelisted
+  PASS  every routeGraph key names a RouteGraphOptions property
+  PASS  every riotCreateDispatch key names a RiotCreateDispatchOptions property
+
+Footprint (what install creates and uninstall removes)
+  PASS  no footprint directory is, contains or sits in a production path
+  PASS  the footprint names every directory an install creates
+  PASS  the footprint firewall rules are the V2 ones, never the MVP rules
+  PASS  the certificate variable the upgrade deletes is not the MVP one
+  PASS  the data root is marked as data (kept unless asked) and the install root is not
+  PASS  the shared RIoT key is not in the footprint (the MVP installer reads it)
+
+Staging cleanup glob (control-server#262 review, finding 1)
+  PASS  old glob '*.incoming-*' matches both instances (reproduces the bug)
+  PASS  the fixed V2 glob matches only the V2 staging directory
+  PASS  the fixed MVP glob matches only the MVP staging directory
 
 Overlay
   PASS  the overlay replaces the inherited agv01 identity
@@ -45,4 +68,4 @@ Overlay
   PASS  the overlay states the route graph explicitly
   PASS  the overlay points MesIngest at the fake catalog
 
-37 passed, 0 failed
+54 passed, 0 failed

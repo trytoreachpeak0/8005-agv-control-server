@@ -159,3 +159,85 @@ case 5 到 case 8 是这套检查真正比"单字段白名单"强的地方：**�
 本票没有改 `src/` 或 `tests/` 里的任何文件，只新增了 `scripts/parallel/`。按本仓
 `CLAUDE.md` 的规矩（"Run tests only when the current task changed product code, tests,
 or build inputs"），没有跑那条命令。CI 那一轮在转 ready 时跑。
+
+---
+
+## 七、审查之后（2026-09-21 上午）
+
+调度转来的审查：零严重、八条中等、四条疑问。下面是逐条的处理与证据。
+
+### 必改四条
+
+**中1：`*.incoming-*` 清理会删掉另一套部署正在用的暂存目录。** 两套的包目录都在
+`D:\zhengyushao` 下，旧写法在父目录里删所有 `*.incoming-*`，不带实例前缀，所以两边互相都在对方
+的命中范围内。这个 bug 是从 MVP 的 `Install-ControlServerRemote.ps1` 抄过来的，复制那一刻就在。
+两边一起改成 `"<包目录名>.incoming-*"`，四个孪生脚本头注释互相点名。`test-parallel-instance.txt`
+的「Staging cleanup glob」一节在临时目录里重现：**旧通配符两个都命中**（夹具确实重现了 bug），
+新通配符从两边各自只命中自己的。`Assert-MvpUntouched` 抓不到这类问题——它只比服务、不看磁盘，
+这一点写进了 `ParallelHost.psm1` 的注释。
+
+**中3：车号白名单漏了 `Fleet` 名册——修的时候又找到第二个洞。** `ConvertFrom-Json -AsHashtable`
+**区分大小写**（本机实测：`{"agvId":…,"AgvId":…}` 两个键都保留，`ContainsKey('AGVID')` 为假），
+而 .NET 配置不区分。所以只拒绝 `fleet` 挡不住 `Fleet`，同时写 `agvId`／`AgvId` 两个键也能绕过
+按名字读的检查。改成**每一节只认白名单里的键、精确到大小写**；`Fleet` 是刻意排除的那一个。
+
+红证据 `review-red-old-module-accepts-fleet.txt`：用修改前的模块（`HEAD df7b4dae`）跑三种注入，
+**失败数都是 0，全部放行**。绿证据：自测里对应三条各只红一条；`reverse-check.txt` 的 case 13、
+case 14 在真实文件上各只红一条。自测另加一条守卫：白名单里的每个键都要能在对应 C# 选项类里找到
+同名属性（改名会红），并断言 `Fleet` 在 C# 里存在、在白名单里不存在。
+
+**中5：装完就是 `-Intake` 状态。** 这是文档问题，已写进主文档第 11 节的第一小节，放在申请材料
+表格之前：接真实数据、做真实决策、不动车；与 MVP「装」和「开运行时」两次决定不同；想装完全关要
+同时把 `journeyRuntime.enabled` 与 `routeGraph.enabled` 改成 `false`。
+
+**中6：卸载没有完整的路。** 新增 `Uninstall-ParallelInstanceLocal.ps1`，逐项读
+`Get-ParallelInstanceFootprint`——**安装脚本的名字（防火墙规则名、证书变量名）也从同一处取**，
+所以不会有「装了、卸载不知道」的东西。默认保留数据根、备份与运维目录，`-RemoveData` 才删；用户级
+RIoT key 永远不删（MVP 每次安装都读它）。`uninstall-whatif.txt` 是本机干跑列出的清单，什么都没删。
+走查时发现并修了一处：首次安装半路失败时 `packageRoot` 不存在，原先只去那里找产品卸载脚本，
+服务那一项会删不掉——而这正是卸载最该派上用场的场景。现在按包目录、上一代、运维目录三处依次找，
+控制端每次都把产品卸载脚本随编排脚本一起送到运维目录。
+
+### 建议改与记录
+
+- **中2（dashboard）**：文档与 README 明写「不装、也不支持装」，说明三个 dashboard 参数默认值都是
+  MVP 的身份、端口没有兜底。
+- **中8**：`Publish-FakeMesIngest.ps1` 不再写死 SDK 版本号；文档第 13 节改成照实描述会动哪个机器级
+  变量；补了目录存在性探测 `factory01-survey-paths.txt`（八个目录、服务名、任务名、两条防火墙
+  规则全部不存在，四个端口空闲且没有被连接当作本地端口占用）；「升级时定义里的端口不生效」写进
+  文档，`-WhatIf` 也会提示。
+- **中4**：文档第 12 节加了「V2 起不来、报 bind 失败」→ 先查端口是否被临时连接占着。
+- **中7**：安装日志改成照实说「写进用户级、与 MVP 共用」。
+
+### 四条疑问
+
+1. **mapId**：用户已答（MVP 25、v2 26）。实例定义暂时保持 25 作占位，主文档第 9 节与本目录的
+   `scripts/parallel/README.md` 写明「v2 目标 map 26，`dispatchZone` 与准入策略部署号在真装第一步
+   从 factory01 直查 RIoT 取回」。**按现在的定义原样装会指向 MVP 那张图，校验拦不住**，这一条写在
+   申请材料里。转来的出处都实读过：真机证据确认 map 26 叫 `老厂前线new_wk`；`tests/` 里的
+   `MAP-26-*` 确是测试编的；`src/` 没有硬编码的 25。
+2. **替身重启后服务端的反应**：写进文档第 12 节的盯守清单，并**修正了一处前提**。实跑证据里两次
+   启动的 ETag 都是 `catalog-h8f14e45f…-r3`：`historyEpoch` 是种子里的常量，不会变；种子不变时
+   revision 也回到同一个值，这一种没有问题。真正的风险更窄：**改了种子文件再重启**会得到同一个
+   epoch、同一个 revision、不同的内容，而 ETag 只由这两者推导；另一种是运行中临时加过需求后重启、
+   revision 回落。
+3. **计划任务那一层没实跑过**：写进盯守清单，附真装后的验证办法。
+4. **首次安装半路失败的退路**：安装脚本失败时现在会明确打出「可能半装」并列出 MVP 指纹前后值；
+   文档第 11 节写了三步退路。
+
+### 这一轮自己又撞上的两次
+
+- 给控制端脚本打补丁时，PowerShell here-string 吃掉了末尾换行，`Write-Step '…'` 和下一行的 `return`
+  粘成了一行。**这是合法语法**：`return` 变成 `Write-Step` 的第二个字符串参数，`-WhatIf` 干跑之后
+  **不会停，会继续往下真去部署**。语法检查抓不到。修掉之后写了一个按 AST 找「命令收到关键字作为
+  裸参数」的扫描，先用一对故意粘连／干净的样本校准（报 1／报 0），再扫本票全部 11 个脚本：只剩
+  两处 `git hash-object`／`git rev-parse` 被 Verb-Noun 规则误认的误报。
+- 测试里一个脚本块返回单元素数组被展开成标量，`.Count` 在 StrictMode 下失败——和第二节那个
+  `Assert-` 的 bug 是同一个机理，第二次撞上。自测当场报错，没有漏过去。
+
+### 数字
+
+| | 审查前 | 审查后 |
+| --- | --- | --- |
+| `Test-ParallelInstance.ps1` | 37 | **54**，全绿 |
+| `Invoke-ReverseCheck.ps1` | 14 | **16**，全绿 |

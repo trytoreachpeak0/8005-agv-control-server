@@ -53,7 +53,8 @@ if ($LASTEXITCODE -ne 0 -or $sourceCommit -notmatch '^[0-9a-f]{40}$') {
 }
 
 # dotnet is invoked with the repository as the working directory so global.json selects the
-# pinned 8.0.424 SDK. Run from anywhere else and a newer SDK is picked up, which reports
+# SDK global.json pins (no version written here: a copy of it goes stale the day the pin moves,
+# and one already had). Run from anywhere else and a newer SDK is picked up, which reports
 # compiler errors the pinned one does not.
 Push-Location $root
 try {

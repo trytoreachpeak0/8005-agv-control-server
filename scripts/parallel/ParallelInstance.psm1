@@ -64,6 +64,55 @@ $script:ProductionVehicle = [pscustomobject]@{
     VehicleKey = 'BROKERX-0c20ff0600d644869a6a80c186065d85'
 }
 
+<#
+    The keys each section may carry, spelled exactly. Anything else is refused.
+
+    Why a whitelist rather than reading the keys this module knows about: ConvertFrom-Json
+    -AsHashtable is case-sensitive, and .NET configuration is not. A definition carrying both
+    "agvId" and "AgvId" -- or a "Fleet" roster -- passes every check that reads keys by name,
+    is copied verbatim into the overlay, and is then bound by a configuration system that
+    treats the two spellings as one setting. Checking by name can only see the keys it thought
+    of; refusing the ones it did not is what closes the rest.
+
+    journeyRuntime mirrors JourneyRuntimeOptions minus Fleet. Fleet is excluded on purpose: it
+    is a second vehicle list, the options validator only requires it to *contain* the primary
+    pair, and the pair whitelist below would never look at it. Test-ParallelInstance.ps1
+    asserts these names against the C# properties, so a rename there fails here instead of
+    binding to nothing.
+#>
+$script:AllowedKeys = [ordered]@{
+    '' = @('instanceId', 'serviceName', 'installRoot', 'dataRoot', 'backupRoot', 'packageRoot',
+        'opsRoot', 'stagingRoot', 'listenAddress', 'healthBindAddress', 'onboardPort', 'healthPort',
+        'dashboardPort', 'mesIngest', 'fakeMesIngest', 'routeGraph', 'riotCreateDispatch', 'journeyRuntime')
+    'mesIngest' = @('baseUrl')
+    'fakeMesIngest' = @('installRoot', 'port', 'taskName', 'seedPath')
+    'routeGraph' = @('enabled', 'mapId', 'designStateTtl', 'runtimeRefreshPeriod', 'runtimeStateMaxAge')
+    'riotCreateDispatch' = @('enabled')
+    'journeyRuntime' = @('enabled', 'pollInterval', 'agvId', 'vehicleKey', 'agvLifecycleGeneration',
+        'mapId', 'mapIdentity', 'dispatchZone', 'dispatchGeneration', 'minimumBatteryPercent',
+        'maximumEvidenceAge', 'departureSafetyResultWait', 'stationDepartureWaitTimeout',
+        'cargoHoldingTimeout', 'sublotBoxCountPath', 'allowedWorkTypes', 'allowedDispatchZones',
+        'admissionPolicyVersion', 'admissionPolicyDeploymentId', 'checkpointWaitBudget',
+        'areaEndAdmissionRevokedTimeout')
+}
+
+# Names only this instance uses, shared by the installer and the uninstaller so the two cannot
+# drift apart. The certificate variable matters most: Update-ControlServerLocal.ps1 deletes the
+# machine-scope variable it is pointed at, and the default name is the MVP's.
+$script:CertificatePasswordVariable = 'CONTROL_SERVER_V2_ONBOARD_CERTIFICATE_PASSWORD'
+$script:ProductionCertificatePasswordVariable = 'CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD'
+$script:FirewallRuleFormat = '8005 AGV ControlServer V2 {0}'
+
+function Get-ParallelInstanceAllowedKey {
+    <#
+        .SYNOPSIS
+            The per-section key whitelist; '' is the top level.
+    #>
+    [CmdletBinding()]
+    param()
+    return $script:AllowedKeys
+}
+
 function Get-ParallelInstanceAllowedVehicle {
     <#
         .SYNOPSIS
@@ -200,8 +249,16 @@ function Test-ParallelInstanceDefinition {
     )
 
     [string[]] $failures = @()
-    if ($Definition -isnot [hashtable]) {
+    if ($Definition -isnot [System.Collections.IDictionary]) {
         return @('The instance definition is not a JSON object.')
+    }
+
+    # ------------------------------------------------------------ key whitelist ---
+
+    foreach ($section in $script:AllowedKeys.Keys) {
+        $node = $section -eq '' ? $Definition : $Definition[$section]
+        if ($node -isnot [System.Collections.IDictionary]) { continue }
+        $failures += @(Test-SectionKey -Node $node -Section $section)
     }
 
     # ---------------------------------------------------------------- identity ---
@@ -441,6 +498,34 @@ function Test-ParallelInstanceDefinition {
     return $failures
 }
 
+function Test-SectionKey {
+    <#
+        Every key in the section that is not on the whitelist, spelled exactly. Three messages,
+        because the three ways to get here need three different fixes: a roster (remove it --
+        the parallel instance drives one vehicle), a case variant of a known key (delete the
+        duplicate), and anything else (a typo, or a new option this module has not been taught).
+    #>
+    param([System.Collections.IDictionary] $Node, [string] $Section)
+
+    [string[]] $failures = @()
+    $allowed = $script:AllowedKeys[$Section]
+    $prefix = $Section -eq '' ? '' : "$Section."
+    foreach ($key in @($Node.Keys)) {
+        if ($allowed -ccontains $key) { continue }
+        if ($Section -eq 'journeyRuntime' -and $key -ieq 'fleet') {
+            $failures += "journeyRuntime.$key is a vehicle roster. The parallel instance drives one vehicle, and the agv02/agv03 pair check never looks inside a roster -- an agv01 entry there would pass."
+            continue
+        }
+        $twin = $allowed | Where-Object { $_ -ieq $key } | Select-Object -First 1
+        if ($twin) {
+            $failures += "$prefix$key differs only in case from $prefix$twin. .NET configuration is case-insensitive, so the two would be bound as one setting while this check reads only '$twin'."
+        } else {
+            $failures += "$prefix$key is not a key this deployment knows. Unknown keys are refused rather than passed through; if it is a real option, add it to the whitelist in ParallelInstance.psm1."
+        }
+    }
+    return $failures
+}
+
 function Test-VehicleIdentity {
     <#
         .SYNOPSIS
@@ -494,6 +579,84 @@ function Test-VehicleIdentity {
     }
 
     return @()
+}
+
+function Test-ParallelInstancePathIsProduction {
+    <#
+        .SYNOPSIS
+            True when the path equals, contains or sits inside a production path.
+
+        .DESCRIPTION
+            Exported for the uninstaller, which deletes derived paths (<packageRoot>.previous)
+            that the definition never names directly, and must not trust derivation to keep
+            them clear of the MVP's.
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param([Parameter(Mandatory = $true)][string] $Path)
+    foreach ($production in $script:ProductionPaths) {
+        if (Test-PathCollision -Candidate $Path -Production $production) { return $true }
+    }
+    return $false
+}
+
+function Get-ParallelInstanceFootprint {
+    <#
+        .SYNOPSIS
+            Everything a deployment of this definition leaves on the machine.
+
+        .DESCRIPTION
+            One list, read by both Install-ParallelInstanceLocal.ps1 and
+            Uninstall-ParallelInstanceLocal.ps1. The product uninstaller removes only the
+            service, the install root and optionally the data root; everything else here --
+            the double's task and directory, the firewall rules, the package generations,
+            the staging and ops directories, the backups -- had no removal path at all before
+            this list existed. A thing the installer creates and this list does not name is a
+            thing an uninstall silently leaves behind, which is why the installer takes its
+            names from here too.
+
+            Data is marked so the uninstaller can keep it unless asked: the SQLite database,
+            the upgrade backups and the ops results are evidence of what the instance did.
+
+            Not listed, deliberately: the user-scope CONTROL_SERVER_RIOT_CALL_API_KEY. The MVP
+            deployment reads the same variable on every install, so removing it with the
+            parallel instance would break the next MVP deployment.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][System.Collections.IDictionary] $Definition)
+
+    $packageRoot = [string] $Definition['packageRoot']
+    $fake = $Definition['fakeMesIngest']
+    $items = @(
+        [pscustomobject]@{ Kind = 'ScheduledTask'; Name = [string] $fake['taskName']; Data = $false }
+        [pscustomobject]@{ Kind = 'Service'; Name = [string] $Definition['serviceName']; Data = $false }
+        [pscustomobject]@{ Kind = 'FirewallRule'; Name = ($script:FirewallRuleFormat -f [int] $Definition['onboardPort']); Data = $false }
+        [pscustomobject]@{ Kind = 'FirewallRule'; Name = ($script:FirewallRuleFormat -f [int] $Definition['healthPort']); Data = $false }
+        [pscustomobject]@{ Kind = 'Directory'; Name = [string] $fake['installRoot']; Data = $false }
+        [pscustomobject]@{ Kind = 'Directory'; Name = [string] $Definition['installRoot']; Data = $false }
+        [pscustomobject]@{ Kind = 'Directory'; Name = $packageRoot; Data = $false }
+        [pscustomobject]@{ Kind = 'Directory'; Name = "$packageRoot.previous"; Data = $false }
+        [pscustomobject]@{ Kind = 'Directory'; Name = [string] $Definition['stagingRoot']; Data = $false }
+        [pscustomobject]@{ Kind = 'Directory'; Name = [string] $Definition['dataRoot']; Data = $true }
+        [pscustomobject]@{ Kind = 'Directory'; Name = [string] $Definition['backupRoot']; Data = $true }
+        [pscustomobject]@{ Kind = 'Directory'; Name = [string] $Definition['opsRoot']; Data = $true }
+        [pscustomobject]@{ Kind = 'MachineEnvironment'; Name = $script:CertificatePasswordVariable; Data = $false }
+    )
+    return $items
+}
+
+function Get-ParallelInstanceName {
+    <#
+        .SYNOPSIS
+            The fixed names this instance uses outside its definition.
+    #>
+    [CmdletBinding()]
+    param()
+    return [pscustomobject]@{
+        CertificatePasswordVariable = $script:CertificatePasswordVariable
+        ProductionCertificatePasswordVariable = $script:ProductionCertificatePasswordVariable
+        FirewallRuleFormat = $script:FirewallRuleFormat
+    }
 }
 
 function Assert-ParallelInstanceDefinition {
@@ -590,6 +753,10 @@ function Merge-ConfigurationTree {
 }
 
 Export-ModuleMember -Function @(
+    'Get-ParallelInstanceAllowedKey'
+    'Get-ParallelInstanceFootprint'
+    'Get-ParallelInstanceName'
+    'Test-ParallelInstancePathIsProduction'
     'Get-ParallelInstanceAllowedVehicle'
     'Read-ParallelInstanceDefinition'
     'Test-ParallelInstanceDefinition'
