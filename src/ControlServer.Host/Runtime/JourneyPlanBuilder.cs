@@ -191,6 +191,10 @@ public sealed class JourneyPlanBuilder(JourneyRuntimeOptions options)
     /// 腿上的 <c>demandId</c> 取锚需求。协议允许它为空（<c>UpcomingStopPlanSnapshot.legs[].demandId</c>），一个停靠挂几条
     /// 需求时该填什么由 批次7-06（control-server#211）决定；本票不改它填什么。
     /// </para>
+    /// <para>
+    /// <see cref="JourneyStopStatuses.Removed"/> 的停靠不投影：计划修订只把停靠行标成已删、不删行（批次7-10，control-server#215），
+    /// 它的序位保持原值、可能与重新编号后的开放停靠撞号，所以不能指望调用方替这里滤掉它，也不能靠序位认出它。
+    /// </para>
     /// </remarks>
     public static UpcomingStopPlanProjection Plan(
         JourneyRuntimeRow runtime,
@@ -203,7 +207,7 @@ public sealed class JourneyPlanBuilder(JourneyRuntimeOptions options)
         ArgumentNullException.ThrowIfNull(current);
         return new UpcomingStopPlanProjection(
             revision,
-            [.. stops.Select(stop => PlanLeg(
+            [.. stops.Where(stop => stop.Status != JourneyStopStatuses.Removed).Select(stop => PlanLeg(
                 runtime,
                 stop.MovementLegId,
                 stop.StopRole == JourneyStopRoles.Pickup ? "TO_PICKUP" : "TO_DROPOFF",
