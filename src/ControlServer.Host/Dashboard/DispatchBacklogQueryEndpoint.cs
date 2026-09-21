@@ -118,21 +118,22 @@ internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
             await new StructuralDispatchBlockStore(dbContext).ListUnclearedAsync(cancellationToken);
         StarvationThresholds thresholds = await StarvationThresholds.ReadAsync(dbContext, cancellationToken);
 
-        // Ordered in memory: SQLite cannot ORDER BY a DateTimeOffset. The order is the dispatch ranking's
-        // (DispatchCandidateOrdering): the timeout tier, then the top band, then the waiting age, first seen, demand id.
+        // The order is the dispatch ranking's own (DispatchCandidateOrdering.Ranker), run over the backlog rows restored as the
+        // tasks the dispatch round ranked (BacklogStanding.TaskOf); it compares in memory, as SQLite cannot ORDER BY a DateTimeOffset.
+        Dictionary<DispatchTask, JourneyBacklogRow> rowOf = new(ReferenceEqualityComparer.Instance);
+        foreach (JourneyBacklogRow row in pending.Where(row => !DispatchReasonCodes.IsSilent(row.ReasonCode)))
+        {
+            rowOf.Add(BacklogStanding.TaskOf(row, now), row);
+        }
+        IReadOnlyList<DispatchTask> ordered = DispatchCandidateOrdering.Ranker().Order([.. rowOf.Keys]);
         return new
         {
             starvationThresholdsApproved = thresholds.AnyApproved,
             starvationThresholds = thresholds.Zones
                 .Select(zone => new { dispatchZone = zone.Key, thresholdSeconds = zone.Value })
                 .ToArray(),
-            backlog = pending
-                .Where(row => !DispatchReasonCodes.IsSilent(row.ReasonCode))
-                .Select(row => (Row: row, Tier: BacklogStanding.TierOf(row)))
-                .OrderBy(item => item.Tier)
-                .ThenBy(item => BacklogStanding.HasLocalCreation(item.Row) ? item.Row.DemandCreatedAt : DateTimeOffset.MaxValue)
-                .ThenBy(item => item.Row.FirstSeenAt)
-                .ThenBy(item => item.Row.DemandId, StringComparer.Ordinal)
+            backlog = ordered
+                .Select(task => (Task: task, Row: rowOf[task]))
                 .Select(item => new
                 {
                     demandId = item.Row.DemandId,
@@ -141,10 +142,10 @@ internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
                     reasonDescription = Describe(item.Row.ReasonCode),
                     firstSeenAt = item.Row.FirstSeenAt,
                     lastEvaluatedAt = item.Row.LastSeenAt,
-                    waitingSeconds = (long)BacklogStanding.WaitingAge(item.Row, now).TotalSeconds,
-                    demandCreatedAt = BacklogStanding.HasLocalCreation(item.Row) ? item.Row.DemandCreatedAt : (DateTimeOffset?)null,
-                    waitingAgeKnown = BacklogStanding.HasLocalCreation(item.Row),
-                    tier = item.Tier switch
+                    waitingSeconds = (long)TaskStarvation.WaitingAge(item.Task.Snapshot, now).TotalSeconds,
+                    demandCreatedAt = TaskStarvation.HasLocalCreation(item.Task.Snapshot) ? item.Row.DemandCreatedAt : (DateTimeOffset?)null,
+                    waitingAgeKnown = TaskStarvation.HasLocalCreation(item.Task.Snapshot),
+                    tier = BacklogStanding.TierOf(item.Task) switch
                     {
                         BacklogTier.StarvationTimeout => "STARVATION_TIMEOUT",
                         BacklogTier.TopBand => "TOP_BAND",

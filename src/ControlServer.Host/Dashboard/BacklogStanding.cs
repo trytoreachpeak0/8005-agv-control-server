@@ -1,4 +1,5 @@
 using ControlServer.Application;
+using ControlServer.Domain;
 using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -14,49 +15,64 @@ internal enum BacklogTier
 }
 
 /// <summary>
-/// 积压卡片上一条需求的层与等待年龄（批次7-12，control-server#217；REQ-0201、REQ-0202、REQ-0203），全部从积压行读，不重算派车轮的判断。
+/// 积压卡片上一条需求的层、次序与等待年龄（批次7-12，control-server#217；REQ-0201、REQ-0202、REQ-0203）：把积压行还原成派车轮里的那条任务
+/// （<see cref="DispatchTask"/>），然后全部交给派车自己的函数——看板不另写一套判定（调度 2026-09-22、审查 M1／M2／L1）。
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>等待年龄从需求的建单时刻起算</b>（积压行 <c>DemandCreatedAt</c>，即 MesIngest 的 <c>CreatedAt</c>），与派车排序、防饥饿告警同一个起点
-/// （<see cref="TaskStarvation.WaitingAge"/>，批次7-09）：负钟差夹到 0，建单时刻为默认值时读作「不知道」、年龄按 0 算。
-/// 看板从不重置它——离开目录再回来，积压行还是那一行，建单时刻还是那一刻。
+/// <b>还原出来的任务只带派车排序读的那几样</b>：需求 id、业务键、任务类型、建单时刻（积压行 <c>DemandCreatedAt</c>，即 MesIngest 的
+/// <c>CreatedAt</c>）、首次看到，以及超时层。次序交给 <see cref="DispatchCandidateOrdering.Ranker"/>，带交给
+/// <see cref="TaskStarvation.InTopBand"/>，等待年龄与「建单时刻知不知道」交给 <see cref="TaskStarvation.WaitingAge"/>、
+/// <see cref="TaskStarvation.HasLocalCreation"/>——与派车排序、防饥饿告警同一个起点，负钟差夹 0。
 /// </para>
 /// <para>
-/// <b>超时层只读派车记下的事实</b>：批次7-09 落库的告警标记 <c>StarvationEscalatedAt</c> 非空就在超时层，不叠加任何现算的条件
-/// （调度 2026-09-22）。派车轮进入超时层的那一刻写下它、只写一次，所以「看板说它在超时层」与「它告过警」按构造是同一件事；
-/// 排序用的参数版本不落库（7-09 审查已接受），看板能依据的也只有这个标记。阈值后来撤回了，标记照样显示，卡片另加一句说明
-/// （<c>DispatchBacklogCard</c>），而不是改判定。7-05 把被抑制与已受理的键排除在超时层外，那也只影响写不写标记，这里不受影响。
+/// <b>任务类型从业务键读回</b>（<see cref="TransportDemandKeys.WorkTypeOf"/>）：积压行没有任务类型列（批次 7 零迁移），而业务键是
+/// <c>HttpMesIngestCatalog</c> 用 <see cref="TransportDemandKeys.Compose"/> 拼的，拼与拆在同一处。
 /// </para>
 /// <para>
-/// <b>优先级带与派车排序是同一个判断</b>：<see cref="TaskStarvation.IsTopBandWorkType"/>。积压行没有任务类型列（批次 7 零迁移），
-/// 任务类型从业务键读回（<see cref="TransportDemandKeys.WorkTypeOf"/>，与 <c>HttpMesIngestCatalog</c> 拼它的是同一处）。
+/// <b>超时层只读派车记下的事实</b>：批次7-09 落库的告警标记 <c>StarvationEscalatedAt</c> 非空就在超时层，不叠加任何现算的条件。
+/// 派车轮进入超时层的那一刻写下它、只写一次；排序用的参数版本不落库（7-09 审查已接受），看板能依据的只有这个标记。阈值后来撤回了，
+/// 标记照样显示，卡片另加一句说明（<c>DispatchBacklogCard</c>），而不是改判定。7-05 把被抑制与已受理的键排除在超时层外，
+/// 那只影响写不写标记，这里不受影响。
 /// </para>
 /// </remarks>
 internal static class BacklogStanding
 {
-    internal static bool HasLocalCreation(JourneyBacklogRow row) => row.DemandCreatedAt != default;
-
-    internal static TimeSpan WaitingAge(JourneyBacklogRow row, DateTimeOffset now)
-    {
-        if (!HasLocalCreation(row))
-        {
-            return TimeSpan.Zero;
-        }
-        TimeSpan age = now - row.DemandCreatedAt;
-        return age > TimeSpan.Zero ? age : TimeSpan.Zero;
-    }
-
-    internal static BacklogTier TierOf(JourneyBacklogRow row)
+    internal static DispatchTask TaskOf(JourneyBacklogRow row, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(row);
-        if (row.StarvationEscalatedAt is not null)
+        AcceptedDemandSnapshot snapshot = new(
+            row.DemandId,
+            row.TransportDemandKey,
+            DemandRevision: 0,
+            HistoryEpoch: string.Empty,
+            CatalogRevision: 0,
+            AcceptedAt: default,
+            WorkType: TransportDemandKeys.WorkTypeOf(row.TransportDemandKey) ?? string.Empty,
+            CreatedAt: row.DemandCreatedAt);
+        return new DispatchTask(snapshot, row.FirstSeenAt)
+        {
+            Starvation = row.StarvationEscalatedAt is null
+                ? null
+                : new TaskStarvationStanding(
+                    TaskStarvation.WaitingAge(snapshot, now),
+                    DispatchZone: null,
+                    ThresholdSeconds: null,
+                    ParameterVersion: row.StarvationEscalationParameterVersion,
+                    Overdue: true)
+        };
+    }
+
+    internal static BacklogTier TierOf(JourneyBacklogRow row) => TierOf(TaskOf(row, default));
+
+    internal static BacklogTier TierOf(DispatchTask task)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+        if (task.Starvation?.Overdue == true)
         {
             return BacklogTier.StarvationTimeout;
         }
-        return TaskStarvation.IsTopBandWorkType(TransportDemandKeys.WorkTypeOf(row.TransportDemandKey))
-            ? BacklogTier.TopBand
-            : BacklogTier.NormalBand;
+        return TaskStarvation.InTopBand(task.Snapshot) ? BacklogTier.TopBand : BacklogTier.NormalBand;
     }
 }
 

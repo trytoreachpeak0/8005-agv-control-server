@@ -20,14 +20,14 @@ namespace ControlServer.Host.Dashboard;
 /// 看板不另算一套：车载端断线时这一行照旧在，服务端重启之后读出来一样。
 /// </para>
 /// <para>
-/// <b>哪些旅程有一行。</b>装货阶段判过的（列非空），以及站在取货停靠上的——引擎只在状态变了才写那一列，<c>LOADING</c> 不写，
-/// 所以一趟正在装第一批的旅程列是空的，它仍然是「装货中」。还在去第一个取货站路上的、旅程已完成的，不列。结束了的继续列到旅程完成，
-/// 让现场看得到它为什么不再等单。
+/// <b>哪些旅程有一行。</b>装货阶段判过且还没结束的，以及站在取货停靠上的——引擎只在状态变了才写那一列，<c>LOADING</c> 不写，
+/// 所以一趟正在装第一批的旅程列是空的，它仍然是「装货中」。还在去第一个取货站路上的、旅程已完成的，不列。已结束的只在车还停在装货停靠上时列，
+/// 车一离站就不列（审查 L3，见 <see cref="InLoadingPhase"/>）。
 /// </para>
 /// <para>
 /// <b>持货期限 = 起算点 + 宿主配置的持货期限</b>（<see cref="JourneyRuntimeOptions.CargoHoldingTimeout"/>，宿主上与引擎是同一份
 /// <see cref="IOptions{TOptions}"/>），剩余时间按请求时刻算，看板不自己推起算点。<b>期限只在适用持货等单时给</b>：适用性引擎按车能服务的分区
-/// 配置现算，看板不重算，按落库的事实推（见 <see cref="HoldingApplies"/>），与车上收到的那一份一致。期限已过而一批装货还在执行时，
+/// 配置现算，看板不重算，按落库的状态推（见 <see cref="HoldingApplies"/>）：装货中一律不给期限。期限已过而一批装货还在执行时，
 /// 剩余给 0 并标 <c>awaitingLoadBatchClosure</c>，卡片写「已到期，等待本次装货闭环」，从不给负数。
 /// </para>
 /// <para>
@@ -107,9 +107,8 @@ internal sealed class CargoHoldingQueryEndpoint : IDashboardQueryEndpoint
         string state = journey.LoadingPhaseState ?? LoadingPhaseStates.Loading;
         bool closed = state == LoadingPhaseStates.Closed;
         bool yielded = closed && journey.LoadingClosedReason == LoadingClosedReasons.WaitingStationYield;
-        DateTimeOffset? deadline = HoldingApplies(journey, state, demands.MembershipsOf(journey.JourneyId))
-            ? journey.CargoHoldingStartedAt + _cargoHoldingTimeout
-            : null;
+        DateTimeOffset? deadline = LoadingPhaseMachine.Deadline(
+            state, journey.CargoHoldingStartedAt, _cargoHoldingTimeout, HoldingApplies(journey, state));
         bool deadlinePassed = deadline is { } at && now >= at;
         return new
         {
@@ -122,7 +121,7 @@ internal sealed class CargoHoldingQueryEndpoint : IDashboardQueryEndpoint
             cargoHoldingDeadlineAt = deadline,
             remainingSeconds = !closed && deadline is { } until ? (long?)Math.Max(0, (until - now).TotalSeconds) : null,
             deadlinePassed,
-            awaitingLoadBatchClosure = deadlinePassed && !closed && journey.Stage == JourneyRuntimeStage.AwaitingLoadResult,
+            awaitingLoadBatchClosure = deadlinePassed && !closed && LoadBatchInProgress(journey),
             frontFull = SideFull(journey.FullSlotPositionsJson, FrontSide),
             rearFull = SideFull(journey.FullSlotPositionsJson, RearSide),
             yieldedToVehicleKey = yielded ? journey.YieldTriggeredByVehicleKey : null,
@@ -131,51 +130,69 @@ internal sealed class CargoHoldingQueryEndpoint : IDashboardQueryEndpoint
         };
     }
 
+    /// <summary>
+    /// 有一批装货命令已发、结果未到：期限已过也不结束等单，等它安全闭环（ADR-cross-0057「到期不打断正在进行的仓位操作」）。
+    /// </summary>
+    /// <remarks>
+    /// <b>这是引擎的定义，看板照抄一份，前提由引擎承担</b>：<c>JourneyRuntimeEngine.ReconcileLoadingPhaseAsync</c> 给
+    /// <see cref="LoadingPhaseMachine.Facts.LoadBatchInProgress"/> 传的正是 <c>runtime.Stage == JourneyRuntimeStage.AwaitingLoadResult</c>。
+    /// 引擎那一句私有、本票不碰引擎，所以不能共用；<c>Batch7CargoHoldingDashboardTests.TheLoadBatchInProgressPremiseIsTheEnginesOwn</c>
+    /// 逐字核引擎源码里的那一句，引擎改了判法，那条用例红，指回这里。
+    /// </remarks>
+    private static bool LoadBatchInProgress(JourneyRuntimeRow journey) =>
+        journey.Stage == JourneyRuntimeStage.AwaitingLoadResult;
+
     /// <summary>序位最小的、还没完成也没被移除的停靠——与推进段的当前停靠同一个定义（<c>JourneyStopCursor.Current</c>）。</summary>
     private static JourneyStopRow? CurrentStop(IEnumerable<JourneyStopRow> stops) => stops
         .Where(stop => stop.Status is not (JourneyStopStatuses.Completed or JourneyStopStatuses.Removed))
         .OrderBy(stop => stop.Sequence)
         .FirstOrDefault();
 
+    /// <summary>
+    /// 这趟旅程在不在卡片上：装货阶段判过且还没结束的都在；从没判过的（列为空即装货中）与已结束的，只在车站在装货停靠上时在。
+    /// </summary>
+    /// <remarks>
+    /// 已结束的行车一离站就不列（审查 L3）：结束原因在车离站之前操作员已经看得到，车去卸货的路上一直挂着「已结束」只会把卡片占满。
+    /// 限度：持货超时关闭时还有别的装货停靠没装（cs#290 之前不截断），车开到下一个取货站时这一行会再出现，写的仍是持货超时。
+    /// </remarks>
     private static bool InLoadingPhase(JourneyRuntimeRow journey, JourneyStopRow? current) =>
-        journey.LoadingPhaseState is not null ||
-        (current?.StopRole == JourneyStopRoles.Pickup && journey.Stage is
+        journey.LoadingPhaseState is not (null or LoadingPhaseStates.Closed) || StandsAtPickupStop(journey, current);
+
+    private static bool StandsAtPickupStop(JourneyRuntimeRow journey, JourneyStopRow? current) =>
+        current?.StopRole == JourneyStopRoles.Pickup && journey.Stage is
             JourneyRuntimeStage.AwaitingSublot or
             JourneyRuntimeStage.AwaitingLoadResult or
             JourneyRuntimeStage.AwaitingStationDeparture or
-            JourneyRuntimeStage.AwaitingDepartureSafety);
+            JourneyRuntimeStage.AwaitingDepartureSafety;
 
     /// <summary>
-    /// 这趟旅程是否适用持货等单（决定期限给不给），从落库的事实推。引擎的判法（<c>JourneyRuntimeEngine.HoldingApplicableAsync</c>：
-    /// 车能服务的分区里至少有一个允许途中追加）要读宿主的车队分区配置，看板不重算。
+    /// 看板给不给这趟旅程持货期限：交给 <see cref="LoadingPhaseMachine.Deadline"/> 的那个「适用持货等单」，从落库的状态推。
+    /// 引擎的判法（<c>JourneyRuntimeEngine.HoldingApplicableAsync</c>：车能服务的分区里至少有一个允许途中追加）每轮按宿主的车队分区配置与
+    /// 当前每区参数现算，看板不重算。
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>依赖引擎的四条行为，都是 2026-09-22 在 <c>fp/v2-impl@8ee99549</c> 实读的</b>，由引擎（批次7-07、7-08）与途中追加（批次7-06）承担；
-    /// 改了其中任何一条，这里要跟着改，<c>Batch7CargoHoldingDashboardTests.TheDeadlineIsShownOnlyWhereCargoHoldingApplies</c> 逐个状态钉着：
+    /// <b>依赖引擎的三条行为</b>（2026-09-22 在 <c>fp/v2-impl@8ee99549</c> 实读），由装货阶段状态机（批次7-07、7-08）承担；改了其中任何一条，这里要跟着改，
+    /// <c>Batch7CargoHoldingDashboardTests.TheDeadlineIsShownOnlyWhereCargoHoldingApplies</c> 逐个状态钉着：
     /// </para>
     /// <list type="number">
     /// <item>不适用的旅程只会是装货中与「计划装货完成」两种（<see cref="LoadingPhaseMachine"/> 第 4 条）；等单、装满，以及因超时／让站／装满
-    /// 而结束，只有适用时才出现。所以这几种状态本身就说明适用。</item>
+    /// 而结束，只有适用时才会被判出来。</item>
     /// <item>适用的旅程只从「已装满」离开最后一个装货停靠（等单不发离站请求），所以「计划装货完成」只出现在不适用的旅程上
     /// （以及列落地之前就在途的旅程）。</item>
-    /// <item>起算点 <c>CargoHoldingStartedAt</c> 在第一批装货落定时写一次（<c>??=</c>），不论适用与否，之后从不清零；持货计时在装货中也在走——
-    /// 期限过了而没有一批在执行，装货中也会直接关成持货超时（第 5 条）。</item>
-    /// <item>装货中而起算点已经写下，只可能是途中追加把车从等单拉回了装货中：受理只带一条需求，追加总是新开一个停靠（当前停靠不并），
-    /// 所以没有追加时装完第一批就不会还有待装。追加只在本区允许追加时发生，也就是适用；追加进来的归属必然记着所用的参数版本
-    /// （<c>EnRouteAppendCriterion</c> 写 <see cref="JourneyDemandRow.DispatchZoneParameterVersion"/>）。</item>
+    /// <item>起算点 <c>CargoHoldingStartedAt</c> 在第一批装货落定时写一次，不论适用与否，之后从不清零——所以「起算点有值」说明不了适用。</item>
     /// </list>
     /// <para>
-    /// 所以装货中「有追加进来的归属」就给期限，没有就不给——与车上收到的一致：引擎发给车的快照（到站那一张、等单与装货中来回那一张）
-    /// 用的是同一个起算点与适用性，车在装货中看到期限也只有追加这一种情形。
+    /// <b>装货中一律不给</b>（审查 M3）。装货中适用与否只能靠引擎现算：有过途中追加之后分区参数又改成禁止追加，引擎就不给期限、
+    /// 也不会因超时关闭，而任何落库的事实都说不出这一变化——按追加归属推，看板会照旧给期限，甚至显示「已到期」。所以退一步，
+    /// 代价是有追加、仍适用的装货中那一段看板不显示期限（车上看得到），进入等单之后看板照常显示。
     /// </para>
     /// <para>
-    /// 推不准的两格，都只影响显示：追加进来的那条需求后来被释放、归属标了移除，这里只看未移除的归属，就会把它当成没有追加；
-    /// 关闭之后有人把本区参数改成禁止追加，引擎发给车的期限变成空，而这里照旧给（program#94 语义表没有覆盖这一格，
-    /// <see cref="LoadingPhaseMachine.Deadline"/>）。
+    /// 仍然推不准的一格：等单、装满或已结束之后，有人把本区参数改成禁止追加，引擎发给车的期限变成空，而这里照旧给（program#94 语义表没有
+    /// 覆盖「关闭后适用性变了」这一格，<see cref="LoadingPhaseMachine.Deadline"/>）。只影响显示。
     /// </para>
     /// </remarks>
-    private static bool HoldingApplies(JourneyRuntimeRow journey, string state, IReadOnlyList<JourneyDemandRow> memberships) =>
+    private static bool HoldingApplies(JourneyRuntimeRow journey, string state) =>
         state switch
         {
             LoadingPhaseStates.CargoHoldingWait or LoadingPhaseStates.VehicleFull => true,
@@ -183,7 +200,7 @@ internal sealed class CargoHoldingQueryEndpoint : IDashboardQueryEndpoint
                 LoadingClosedReasons.CargoHoldingTimeout or
                 LoadingClosedReasons.WaitingStationYield or
                 LoadingClosedReasons.VehicleFull,
-            _ => memberships.Any(row => row.DispatchZoneParameterVersion is not null)
+            _ => false
         };
 
     private static bool? SideFull(string? fullSlotPositionsJson, string side) =>
