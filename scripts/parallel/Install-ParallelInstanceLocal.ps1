@@ -275,9 +275,10 @@ function Install-FakeMesIngest {
         Stop-Process -Force -ErrorAction SilentlyContinue
 
     if ($Zip) {
-        if (Test-Path -LiteralPath $fakeInstallRoot) {
-            Remove-Item -LiteralPath $fakeInstallRoot -Recurse -Force
-        }
+        # Every delete in this script goes through Remove-ParallelInstanceDirectory, which re-checks
+        # the exact path (both path layers, and that it is not a junction) instead of relying on
+        # the one assertion at the top (control-server#262 S1 re-review, question 4).
+        Remove-ParallelInstanceDirectory -Path $fakeInstallRoot
         Expand-Archive -LiteralPath $Zip -DestinationPath $fakeInstallRoot -Force
         Write-Step "FakeMesIngest unpacked to $fakeInstallRoot"
     }
@@ -385,7 +386,7 @@ try {
     # ------------------------------------------------------------------ unpack ---
 
     $staged = Join-Path $layout.PackageParent ($layout.IncomingFilter.Replace('*', $runId))
-    if (Test-Path -LiteralPath $staged) { Remove-Item -LiteralPath $staged -Recurse -Force }
+    Remove-ParallelInstanceDirectory -Path $staged
     Expand-Archive -LiteralPath $PackageZip -DestinationPath $staged -Force
     Write-Step "Unpacked to $staged"
 
@@ -475,7 +476,7 @@ try {
 
     # ------------------------------------------------------- generation swap ---
 
-    if (Test-Path -LiteralPath $previousRoot) { Remove-Item -LiteralPath $previousRoot -Recurse -Force }
+    Remove-ParallelInstanceDirectory -Path $previousRoot
     if (Test-Path -LiteralPath $packageRoot) { Move-Item -LiteralPath $packageRoot -Destination $previousRoot }
     Move-Item -LiteralPath $staged -Destination $packageRoot
     Write-Step "Package at $packageRoot; previous generation kept at $previousRoot"
@@ -508,6 +509,13 @@ try {
     # (both live in D:\zhengyushao), so each deployment's cleanup deleted the other's staging
     # directory whenever their windows overlapped. The MVP twin, Install-ControlServerRemote.ps1,
     # had the same line and was fixed in the same change (control-server#262 review, finding 1).
-    Get-ChildItem -Path $layout.PackageParent -Directory -Filter $layout.IncomingFilter -ErrorAction SilentlyContinue |
-        ForEach-Object { Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
+    # Each match is re-checked before it is deleted: the filter is ours, but what it matches on
+    # the day is the machine's. A refusal here is reported and the rest carries on -- this is
+    # best-effort cleanup inside a finally, and a throw from it would hide the real failure.
+    Get-ChildItem -LiteralPath $layout.PackageParent -Directory -Filter $layout.IncomingFilter -ErrorAction SilentlyContinue |
+        ForEach-Object {
+            $directory = $_.FullName
+            try { Remove-ParallelInstanceDirectory -Path $directory }
+            catch { Write-Warning "Staging cleanup skipped '$directory': $($_.Exception.Message)" }
+        }
 }

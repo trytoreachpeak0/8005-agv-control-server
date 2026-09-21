@@ -35,6 +35,9 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 3.0
 
 Import-Module (Join-Path $PSScriptRoot 'ParallelInstance.psm1') -Force
+# For Invoke-ParallelProductUninstaller, exercised below against fake product scripts. Nothing
+# in that section touches a real service: the name it passes exists on no machine.
+Import-Module (Join-Path $PSScriptRoot 'ParallelHost.psm1') -Force
 
 $script:Failed = 0
 $script:Passed = 0
@@ -316,6 +319,42 @@ $cases = @(
         Name = 'a map-25 zone hidden second in allowedDispatchZones'
         Expect = "journeyRuntime.allowedDispatchZones[1] is 'MAP-25-WIRE_TO_GATE'"
         Mutate = { param($d) $d['journeyRuntime']['allowedDispatchZones'] = @('MAP-26-WIRE_TO_GATE', 'MAP-25-WIRE_TO_GATE'); $d }
+    }
+    # S1 re-review, question 3: the comparisons were exact and case-sensitive, and each of these
+    # was accepted. They are the ways a person actually types the MVP's map.
+    @{
+        Name = "mapIdentity is the MVP map's name with a trailing space"
+        Expect = "journeyRuntime.mapIdentity is '老厂前线new ', the MVP's map name"
+        Mutate = { param($d) $d['journeyRuntime']['mapIdentity'] = '老厂前线new '; $d }
+    }
+    @{
+        Name = "mapIdentity is the MVP map's name in capitals"
+        Expect = "journeyRuntime.mapIdentity is '老厂前线NEW', the MVP's map name"
+        Mutate = { param($d) $d['journeyRuntime']['mapIdentity'] = '老厂前线NEW'; $d }
+    }
+    @{
+        Name = "mapIdentity is the MVP map's name in full-width letters"
+        Expect = "journeyRuntime.mapIdentity is '老厂前线ｎｅｗ', the MVP's map name"
+        Mutate = { param($d) $d['journeyRuntime']['mapIdentity'] = '老厂前线ｎｅｗ'; $d }
+    }
+    @{
+        # A zero-width space INSIDE the token. The regex compares ordinally, so without the
+        # format-character removal this is not a map-25 token. (The same character in mapIdentity
+        # would prove nothing: PowerShell's -ceq is a culture comparison that already ignores
+        # zero-width characters -- measured, evidence review3-string-equality.txt.)
+        Name = 'dispatchZone is a map-25 zone with a zero-width space inside the number'
+        Expect = "an identifier of the MVP's map 25"
+        Mutate = { param($d) $d['journeyRuntime']['dispatchZone'] = "MAP-2$([char]0x200B)5-WIRE_TO_GATE"; $d }
+    }
+    @{
+        Name = 'dispatchZone is a map-25 zone written with an underscore'
+        Expect = "journeyRuntime.dispatchZone is 'MAP_25-WIRE_TO_GATE', an identifier of the MVP's map 25"
+        Mutate = { param($d) $d['journeyRuntime']['dispatchZone'] = 'MAP_25-WIRE_TO_GATE'; $d }
+    }
+    @{
+        Name = 'dispatchZone is a map-25 zone in lower case with a space'
+        Expect = "journeyRuntime.dispatchZone is 'map 25-wire_to_gate', an identifier of the MVP's map 25"
+        Mutate = { param($d) $d['journeyRuntime']['dispatchZone'] = 'map 25-wire_to_gate'; $d }
     }
     @{
         Name = 'a placeholder left in dispatchZone'
@@ -604,14 +643,22 @@ Write-Host 'Removal sequence: order and stop conditions (control-server#262 re-r
     the delete action -- even when it arrives through a staging glob.
 #>
 function New-RecordingAction {
-    param([System.Collections.Generic.List[string]] $Log, [hashtable] $Throw = @{}, [string[]] $GlobResult = @())
+    <#
+        -LinkPaths: paths the ReparsePoint action reports as links. -LinkProbeThrows: it throws
+        instead. -Emit: every action also writes this to the output stream, as the real product
+        uninstaller does with its PASS line.
+    #>
+    param([System.Collections.Generic.List[string]] $Log, [hashtable] $Throw = @{}, [string[]] $GlobResult = @(),
+        [string[]] $LinkPaths = @(), [switch] $LinkProbeThrows, [string] $Emit)
     $actions = @{}
     foreach ($kind in @('Service', 'ScheduledTask', 'Process', 'FirewallRule', 'MachineEnvironment', 'Directory')) {
         $k = $kind
         $message = $Throw[$kind]
-        $actions[$kind] = { param($item) $Log.Add("$k|$($item.Name)"); if ($message) { throw $message } }.GetNewClosure()
+        $actions[$kind] = { param($item) $Log.Add("$k|$($item.Name)"); if ($Emit) { $Emit }; if ($message) { throw $message } }.GetNewClosure()
     }
     $actions['DirectoryPattern'] = { param($item) $Log.Add("DirectoryPattern|$($item.Name)"); $GlobResult }.GetNewClosure()
+    $throws = [bool] $LinkProbeThrows
+    $actions['ReparsePoint'] = { param($path) $Log.Add("ReparsePoint|$path"); if ($throws) { throw 'access denied' }; $LinkPaths -contains $path }.GetNewClosure()
     return $actions
 }
 $footprintForSequence = @(Get-ParallelInstanceFootprint -Definition $baseline)
@@ -668,6 +715,47 @@ Write-Result -Ok (-not $outcome.Aborted -and $outcome.Failed.Count -eq 1 -and $d
     -Name 'a failed task removal is recorded, not an abort' `
     -Detail ("aborted=$($outcome.Aborted); failed=$($outcome.Failed -join ', '); directories run=$($dirs.Count)")
 
+# 6. S1 re-review, question 2. One of our own directories turns out to be a junction. It is
+#    refused before the delete action sees it and the directory phase stops -- the directories
+#    after it in the footprint are not reached either. The link is the SECOND directory, so the
+#    first one having been deleted shows the probe ran per directory, not once.
+$directoryTargets = @($footprintForSequence | Where-Object Kind -eq 'Directory' | Where-Object { -not $_.Data } | ForEach-Object Name)
+$linkTarget = $directoryTargets[1]
+$log = [System.Collections.Generic.List[string]]::new()
+$outcome = Invoke-ParallelRemovalSequence -Footprint $footprintForSequence -Actions (New-RecordingAction -Log $log -LinkPaths @($linkTarget))
+$deletedLink = @($log | Where-Object { $_ -eq "Directory|$linkTarget" })
+$deletedFirst = @($log | Where-Object { $_ -eq "Directory|$($directoryTargets[0])" })
+$deletedLater = @($log | Where-Object { $_ -in @($directoryTargets | Select-Object -Skip 2 | ForEach-Object { "Directory|$_" }) })
+Write-Result -Ok ($outcome.Aborted -and $outcome.AbortReason -like '*junction or symbolic link*' -and $deletedLink.Count -eq 0 -and $deletedFirst.Count -eq 1 -and $deletedLater.Count -eq 0) `
+    -Name 'a directory that is a junction is never deleted, and the directory phase stops there' `
+    -Detail ("aborted=$($outcome.Aborted) reason=$($outcome.AbortReason); link deleted=$($deletedLink.Count) first=$($deletedFirst.Count) later=$($deletedLater.Count)")
+
+# 7. The link probe itself fails (access denied reading attributes). Unknown means "yes".
+$log = [System.Collections.Generic.List[string]]::new()
+$outcome = Invoke-ParallelRemovalSequence -Footprint $footprintForSequence -Actions (New-RecordingAction -Log $log -LinkProbeThrows)
+$anyDeleted = @($log | Where-Object { $_ -like 'Directory|*' })
+Write-Result -Ok ($outcome.Aborted -and $anyDeleted.Count -eq 0) `
+    -Name 'a link probe that throws is treated as a link: nothing is deleted' `
+    -Detail ("aborted=$($outcome.Aborted); directories deleted=$($anyDeleted.Count)")
+
+# 8. A caller that forgets the link probe is refused before anything runs.
+$log = [System.Collections.Generic.List[string]]::new()
+$withoutProbe = New-RecordingAction -Log $log
+$withoutProbe.Remove('ReparsePoint')
+$refusedMissing = $null
+try { $null = Invoke-ParallelRemovalSequence -Footprint $footprintForSequence -Actions $withoutProbe } catch { $refusedMissing = $_.Exception.Message }
+Write-Result -Ok ($refusedMissing -like '*missing action(s) ReparsePoint*' -and $log.Count -eq 0) `
+    -Name 'a removal sequence without its link probe refuses to start' `
+    -Detail ("refusal=$refusedMissing; actions run=$($log.Count)")
+
+# 9. Actions that write output (the product uninstaller prints a PASS line) do not change what
+#    the sequence returns: one object, not an array with the output in front of it.
+$log = [System.Collections.Generic.List[string]]::new()
+$returned = @(Invoke-ParallelRemovalSequence -Footprint $footprintForSequence -Actions (New-RecordingAction -Log $log -Emit 'ControlServer uninstall PASS. Result: x'))
+Write-Result -Ok ($returned.Count -eq 1 -and $returned[0].PSObject.Properties.Name -contains 'Aborted') `
+    -Name 'action output does not leak into the sequence result' `
+    -Detail ("returned $($returned.Count) object(s): " + (($returned | ForEach-Object { $_.GetType().Name }) -join ', '))
+
 Write-Host ''
 Write-Host 'Uninstaller refuses the S1 definition before printing any plan' -ForegroundColor Cyan
 
@@ -693,6 +781,164 @@ $refused = [bool]($out | Where-Object { $_ -like '*was refused*' })
 Write-Result -Ok ($exit -ne 0 -and $refused -and $planLines.Count -eq 0) `
     -Name 'Uninstall-ParallelInstanceLocal.ps1 -WhatIf throws at the assertion and lists nothing' `
     -Detail ("exit=$exit refused=$refused plan lines=$($planLines.Count): " + ($planLines -join ' / '))
+
+Write-Host ''
+Write-Host 'The service step fails closed however the product uninstaller fails (S1 re-review, M1)' -ForegroundColor Cyan
+
+<#
+    The removal sequence aborts on a throw from the Service action. The reviewer showed a product
+    script can fail without throwing -- exit 1, Write-Error under Continue, a failing native
+    command -- and the sequence then went on to delete eight directories. Each fake below fails
+    one way, and Invoke-ParallelProductUninstaller must throw for each, for the reason named in
+    Expect: that is "which conjunct made it red", read off the message. The first fake is the
+    only one that does what the real script does on success; it must be accepted, or every
+    refusal below means nothing.
+
+    Every fake appends a line to its own marker file when it runs, so "it was never called" (the
+    stale-result case) is observed, not assumed.
+#>
+$fakeRoot = Join-Path ([IO.Path]::GetTempPath()) "cs262-fake-uninstaller-$([guid]::NewGuid().ToString('N'))"
+New-Item -ItemType Directory -Path $fakeRoot | Out-Null
+$fakeServiceName = "8005 AGV ControlServer V2 selftest-$([guid]::NewGuid().ToString('N'))"
+$fakeHeader = @'
+[CmdletBinding()]
+param([string] $ServiceName, [string] $InstallRoot, [string] $DataRoot, [string] $ResultPath, [switch] $ConfirmUninstall)
+Add-Content -LiteralPath (Join-Path $PSScriptRoot "$([IO.Path]::GetFileNameWithoutExtension($PSCommandPath)).ran") 'ran'
+function Write-FakeResult([string] $Result, [string] $Name, [bool] $Existed, [bool] $Removed) {
+    $json = [ordered]@{ result = $Result; serviceName = $Name; serviceExisted = $Existed; serviceRemoved = $Removed } | ConvertTo-Json
+    [IO.File]::WriteAllText($ResultPath, $json, [Text.UTF8Encoding]::new($false))
+}
+'@
+$fakes = [ordered]@{
+    'succeeds'              = @{ Body = "Write-FakeResult 'PASS' `$ServiceName `$true `$true`n'ControlServer uninstall PASS.'"; Expect = $null }
+    'throws-production'     = @{ Body = "throw 'Refusing to uninstall the production deployment without -AllowProductionService: x'"; Expect = 'Refusing to uninstall the production deployment' }
+    'exit-1'                = @{ Body = 'exit 1'; Expect = 'exit code 1' }
+    'write-error-continue'  = @{ Body = "`$ErrorActionPreference = 'Continue'`nWrite-Error 'service would not stop'`n'after the error'"; Expect = 'without writing its result file' }
+    'native-fails-last'     = @{ Body = '& cmd.exe /c exit 3'; Expect = 'exit code 3' }
+    'pass-but-native-exit'  = @{ Body = "Write-FakeResult 'PASS' `$ServiceName `$true `$true`n& cmd.exe /c exit 5"; Expect = 'exit code 5' }
+    'result-fail'           = @{ Body = "Write-FakeResult 'FAIL' `$ServiceName `$true `$true"; Expect = "result is 'FAIL'" }
+    'result-other-service'  = @{ Body = "Write-FakeResult 'PASS' '8005 AGV ControlServer' `$true `$true"; Expect = "serviceName is '8005 AGV ControlServer'" }
+    'service-not-removed'   = @{ Body = "Write-FakeResult 'PASS' `$ServiceName `$true `$false"; Expect = 'the service existed and was not removed' }
+}
+try {
+    foreach ($name in $fakes.Keys) {
+        $fakePath = Join-Path $fakeRoot "$name.ps1"
+        [IO.File]::WriteAllText($fakePath, $fakeHeader + "`n" + $fakes[$name].Body + "`n", [Text.UTF8Encoding]::new($false))
+        $resultFile = Join-Path $fakeRoot "$name.result.json"
+        $message = $null
+        try {
+            Invoke-ParallelProductUninstaller -UninstallerPath $fakePath -ServiceName $fakeServiceName `
+                -InstallRoot 'C:\Program Files\8005 AGV\ControlServer.V2' -DataRoot 'C:\ProgramData\8005\ControlServer.V2' `
+                -ResultPath $resultFile 6>$null 2>$null
+        } catch { $message = $_.Exception.Message }
+        $ran = Test-Path -LiteralPath (Join-Path $fakeRoot "$name.ran")
+        $expect = $fakes[$name].Expect
+        if ($null -eq $expect) {
+            Write-Result -Ok ($ran -and $null -eq $message) -Name "product uninstaller '$name' is accepted" -Detail "ran=$ran threw=$message"
+        } else {
+            Write-Result -Ok ($ran -and $null -ne $message -and $message.Contains($expect)) `
+                -Name "product uninstaller '$name' fails the service step" -Detail "ran=$ran; expected '$expect'; threw: $message"
+        }
+    }
+
+    # A result file already at the chosen path would let a stale PASS stand in for this run's.
+    $stalePath = Join-Path $fakeRoot 'stale.result.json'
+    [IO.File]::WriteAllText($stalePath, '{"result":"PASS"}', [Text.UTF8Encoding]::new($false))
+    $message = $null
+    try {
+        Invoke-ParallelProductUninstaller -UninstallerPath (Join-Path $fakeRoot 'succeeds.ps1') -ServiceName $fakeServiceName `
+            -InstallRoot 'C:\Program Files\8005 AGV\ControlServer.V2' -DataRoot 'C:\ProgramData\8005\ControlServer.V2' `
+            -ResultPath $stalePath 6>$null
+    } catch { $message = $_.Exception.Message }
+    $ranTwice = @(Get-Content -LiteralPath (Join-Path $fakeRoot 'succeeds.ran')).Count -gt 1
+    Write-Result -Ok ($null -ne $message -and $message.Contains('already exists') -and -not $ranTwice) `
+        -Name 'a pre-existing result file is refused before the product uninstaller runs' -Detail "ran again=$ranTwice; threw: $message"
+} finally {
+    Remove-Item -LiteralPath $fakeRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# The guarantee above holds only if the uninstaller's Service action goes through that function.
+# A direct '& $productUninstaller' there would bring back the reviewer's eight deleted directories
+# with every case above still green.
+$uninstallAst = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'Uninstall-ParallelInstanceLocal.ps1'), [ref]$null, [ref]$null)
+$callsOfFunction = @($uninstallAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Invoke-ParallelProductUninstaller' }, $true))
+$directCalls = @($uninstallAst.FindAll({ param($n)
+            $n -is [System.Management.Automation.Language.CommandAst] -and $n.InvocationOperator -ne 'Unknown' -and
+            $n.CommandElements[0].Extent.Text -eq '$productUninstaller' }, $true))
+Write-Result -Ok ($callsOfFunction.Count -eq 1 -and $directCalls.Count -eq 0) `
+    -Name 'the uninstaller calls the product script only through Invoke-ParallelProductUninstaller' `
+    -Detail "through the function=$($callsOfFunction.Count); direct '& `$productUninstaller'=$($directCalls.Count)"
+
+Write-Host ''
+Write-Host 'Junctions: measured behaviour, and the refusal (S1 re-review, question 2)' -ForegroundColor Cyan
+
+<#
+    Real file system, a temporary directory, no elevation needed (junctions, unlike directory
+    symbolic links, do not need it -- which is also why symbolic links are not covered here).
+    The first two cases pin what Remove-Item does today, so the day a pwsh follows a junction
+    inside a directory it deletes, this goes red instead of the MVP's files going missing.
+#>
+$junctionRoot = Join-Path ([IO.Path]::GetTempPath()) "cs262-links-$([guid]::NewGuid().ToString('N'))"
+New-Item -ItemType Directory -Path $junctionRoot | Out-Null
+function New-PreciousTarget([string] $Name) {
+    $target = Join-Path $junctionRoot $Name
+    New-Item -ItemType Directory -Path $target | Out-Null
+    Set-Content -LiteralPath (Join-Path $target 'precious.txt') -Value 'x'
+    return $target
+}
+try {
+    $target = New-PreciousTarget 'mvp-inside'
+    $ours = Join-Path $junctionRoot 'ControlServer.V2'
+    New-Item -ItemType Directory -Path $ours | Out-Null
+    New-Item -ItemType Junction -Path (Join-Path $ours 'inner') -Target $target | Out-Null
+    Remove-Item -LiteralPath $ours -Recurse -Force
+    Write-Result -Ok ((Test-Path -LiteralPath (Join-Path $target 'precious.txt')) -and -not (Test-Path -LiteralPath $ours)) `
+        -Name "pwsh $($PSVersionTable.PSVersion): Remove-Item -Recurse on a directory holding a junction leaves the target's files" `
+        -Detail "target file present=$(Test-Path -LiteralPath (Join-Path $target 'precious.txt')); directory gone=$(-not (Test-Path -LiteralPath $ours))"
+
+    $target = New-PreciousTarget 'mvp-self'
+    $link = Join-Path $junctionRoot 'ControlServer.V2.previous'
+    New-Item -ItemType Junction -Path $link -Target $target | Out-Null
+    Write-Result -Ok (Test-ParallelInstanceReparsePoint -Path $link) -Name 'Test-ParallelInstanceReparsePoint sees a junction' -Detail 'returned false'
+    $plain = Join-Path $junctionRoot 'plain'
+    New-Item -ItemType Directory -Path $plain | Out-Null
+    Write-Result -Ok (-not (Test-ParallelInstanceReparsePoint -Path $plain)) -Name '... and not a plain directory' -Detail 'returned true'
+    Write-Result -Ok (-not (Test-ParallelInstanceReparsePoint -Path (Join-Path $junctionRoot 'absent'))) -Name '... and not a path that does not exist' -Detail 'returned true'
+
+    $message = $null
+    try { Remove-ParallelInstanceDirectory -Path $link } catch { $message = $_.Exception.Message }
+    Write-Result -Ok ($null -ne $message -and $message.Contains('junction or symbolic link') -and (Test-Path -LiteralPath $link) -and (Test-Path -LiteralPath (Join-Path $target 'precious.txt'))) `
+        -Name 'Remove-ParallelInstanceDirectory refuses a junction and removes nothing' -Detail "threw: $message"
+
+    # Dangling: the target is gone, the link is not. Test-Path says the link does not exist; the
+    # probe must still see it (it reads the link, not the target).
+    Remove-Item -LiteralPath $target -Recurse -Force
+    Write-Result -Ok (Test-ParallelInstanceReparsePoint -Path $link) -Name 'Test-ParallelInstanceReparsePoint sees a dangling junction' -Detail 'returned false'
+
+    # A plain directory in a temporary location is not ours: refused by the path layers, which
+    # shows those run after the link check and are not skipped by it.
+    $message = $null
+    try { Remove-ParallelInstanceDirectory -Path $plain } catch { $message = $_.Exception.Message }
+    Write-Result -Ok ($null -ne $message -and $message.Contains('is not directly under one of') -and (Test-Path -LiteralPath $plain)) `
+        -Name 'Remove-ParallelInstanceDirectory refuses a plain directory outside the allowlist' -Detail "threw: $message"
+} finally {
+    Get-ChildItem -LiteralPath $junctionRoot -Force -Attributes ReparsePoint -Recurse -ErrorAction SilentlyContinue |
+        ForEach-Object { [IO.Directory]::Delete($_.FullName) }
+    [IO.Directory]::Delete($junctionRoot, $true)
+}
+
+# Every delete of a directory in the installer and the uninstaller goes through
+# Remove-ParallelInstanceDirectory. The one Remove-Item left is the installer's deletion of the
+# deployment config FILE it was handed, in its finally.
+$removeItemCalls = foreach ($script in @('Install-ParallelInstanceLocal.ps1', 'Uninstall-ParallelInstanceLocal.ps1')) {
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot $script), [ref]$null, [ref]$null)
+    $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -in @('Remove-Item', 'rm', 'del', 'rd', 'rmdir', 'ri', 'erase') }, $true) |
+        ForEach-Object { "${script}: $($_.Extent.Text)" }
+}
+$removeItemCalls = @($removeItemCalls)
+$onlyConfigFile = $removeItemCalls.Count -eq 1 -and $removeItemCalls[0] -like 'Install-ParallelInstanceLocal.ps1: Remove-Item -LiteralPath $DeploymentConfigPath *'
+Write-Result -Ok $onlyConfigFile -Name 'no directory is deleted except through Remove-ParallelInstanceDirectory' `
+    -Detail ("Remove-Item calls: " + ($removeItemCalls -join ' | '))
 
 Write-Host ''
 Write-Host 'Installer and uninstaller take paths and names only from the layout (re-review, M4)' -ForegroundColor Cyan

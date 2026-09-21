@@ -1,0 +1,6 @@
+1 junction inside, Remove-Item -Recurse on parent          target file survives=True  link gone=True
+2 target itself a junction, Remove-Item -Recurse           target file survives=True  link gone=True
+3 junction two levels down                                 target file survives=True  link gone=True
+4 directory symlink inside: could not create (Administrator privilege required for this operation.)
+attributes of a junction: Directory, ReparsePoint
+pwsh 7.6.6

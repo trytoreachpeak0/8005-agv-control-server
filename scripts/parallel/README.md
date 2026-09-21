@@ -33,14 +33,23 @@ control-server#262 复审找到过一个严重缺陷：卸载脚本在一种很�
   黑名单漏了，后果是「删错了」。
 
 卸载时服务那一步只要失败（尤其是产品卸载脚本以 production 拒绝），整个卸载立即中止，一个目录都不删。
+「失败」不是靠识别各种失败方式判断的：产品卸载脚本可以不抛异常就失败（`exit 1`、`Continue` 下的
+`Write-Error`、原生命令的退出码），所以 `Invoke-ParallelProductUninstaller` 反过来要求**正面确认成功**——
+退出码为 0、这一次新写出的结果文件里是 `PASS` 且服务名对得上、服务确实已经不在了。缺一样就当失败。
+
+**删目录只有一个入口 `Remove-ParallelInstanceDirectory`**，安装和卸载都用它。它每次删之前都重新检查那个
+具体路径：两道路径检查，外加「它本身不是 junction 或符号链接」。本机 pwsh 7.6.6 实测，`Remove-Item -Recurse`
+碰到目录里的 junction 只删链接、不顺着删进去；但这是某个 cmdlet 今天的行为，不是这里的代码保证的，所以要删的
+路径本身是链接就拒绝，并且自测把实测行为钉住。自测会扫描安装和卸载脚本，除了删一个配置文件，不允许出现别的
+`Remove-Item`。
 
 ## 文件
 
 | 文件 | 做什么 |
 | --- | --- |
 | `instance-factory01-v2.json` | 实例定义：端口、目录、服务名、车、RouteGraph、建单闸门 |
-| `ParallelInstance.psm1` | 定义的校验、布局（所有路径与名字的唯一来源）、部署足迹、卸载的删除顺序。纯函数，自测覆盖的就是它 |
-| `ParallelHost.psm1` | 读机器的辅助函数（MVP 服务指纹），安装与卸载共用 |
+| `ParallelInstance.psm1` | 定义的校验、布局（所有路径与名字的唯一来源）、部署足迹、卸载的删除顺序、唯一的删目录函数。检查全是纯函数，例外只有读路径属性的 `Test-ParallelInstanceReparsePoint` 和删目录的 `Remove-ParallelInstanceDirectory` |
+| `ParallelHost.psm1` | 读机器的辅助函数（MVP 服务指纹、调用产品卸载脚本并确认成功），安装与卸载共用 |
 | `Install-ParallelInstanceLocal.ps1` | 在 factory01 上安装／升级／回滚 |
 | `Uninstall-ParallelInstanceLocal.ps1` | 在 factory01 上按部署足迹逐项卸载 |
 | `Start-FakeMesIngestResident.ps1` | FakeMesIngest 常驻的计划任务入口 |

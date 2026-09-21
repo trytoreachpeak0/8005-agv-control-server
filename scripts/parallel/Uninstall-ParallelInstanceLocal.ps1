@@ -141,11 +141,12 @@ $actions = @{
         New-Item -ItemType Directory -Path $layout.ResultRoot -Force | Out-Null
         $resultPath = Join-Path $layout.ResultRoot ("uninstall-{0:yyyyMMdd-HHmmss}.json" -f (Get-Date))
         # The data root is named so the product script can report on it; it is removed only with
-        # -RemoveData, later, through the same guards as every other directory. A throw from the
-        # product script -- including its production refusal -- propagates, and the sequence
-        # aborts on it.
-        & $productUninstaller -ServiceName $item.Name -InstallRoot $layout.InstallRoot `
-            -DataRoot $layout.DataRoot -ResultPath $resultPath -ConfirmUninstall
+        # -RemoveData, later, through the same guards as every other directory. Never call the
+        # product script directly here: the sequence aborts only on a throw, and the product
+        # script can fail without one (exit 1, Write-Error under Continue). This function throws
+        # unless the product script positively confirms success -- see its help.
+        Invoke-ParallelProductUninstaller -UninstallerPath $productUninstaller -ServiceName $item.Name `
+            -InstallRoot $layout.InstallRoot -DataRoot $layout.DataRoot -ResultPath $resultPath
     }
     ScheduledTask = {
         param($item)
@@ -182,9 +183,13 @@ $actions = @{
     }
     Directory = {
         param($item)
-        if (Test-Path -LiteralPath $item.Name) {
-            Remove-Item -LiteralPath $item.Name -Recurse -Force
-        }
+        # The sequence has already checked this path; the function checks again, because it is
+        # the one delete the whole deployment uses and it does not trust its callers.
+        Remove-ParallelInstanceDirectory -Path $item.Name
+    }
+    ReparsePoint = {
+        param($path)
+        Test-ParallelInstanceReparsePoint -Path $path
     }
 }
 

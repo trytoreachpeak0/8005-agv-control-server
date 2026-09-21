@@ -8,13 +8,18 @@
     resources are shared between the two (MES demand, ports and database, RIoT, the map),
     and every check below exists because one of them can be taken by accident.
 
-    Pure functions only: no file system, no network, no registry. Everything here is
-    decidable from the definition text alone, which is what lets Test-ParallelInstance.ps1
-    assert that a given corruption produces exactly one named failure. The scripts that do
-    touch a machine call Assert-ParallelInstanceDefinition first and then stop reasoning
-    about identity. The one function that orchestrates side effects,
-    Invoke-ParallelRemovalSequence, performs none itself: the caller injects them, which is how
-    the self-test proves its stop conditions without a machine to delete things from.
+    Pure functions, with two named exceptions: no network, no registry, and the checks never
+    read the file system. Everything they decide is decidable from the definition text alone,
+    which is what lets Test-ParallelInstance.ps1 assert that a given corruption produces exactly
+    one named failure. The scripts that do touch a machine call Assert-ParallelInstanceDefinition
+    first and then stop reasoning about identity. The one function that orchestrates side
+    effects, Invoke-ParallelRemovalSequence, performs none itself: the caller injects them, which
+    is how the self-test proves its stop conditions without a machine to delete things from.
+
+    The two exceptions live here rather than in ParallelHost.psm1 so that every deletion of an
+    instance directory -- the installer's four and the uninstaller's -- goes through one function
+    that cannot be called without the path checks: Test-ParallelInstanceReparsePoint (reads one
+    path's attributes) and Remove-ParallelInstanceDirectory (the only delete).
 #>
 
 Set-StrictMode -Version 3.0
@@ -76,7 +81,9 @@ $script:ProductionPaths = @(
 # 25 is a perfectly valid positive integer.
 $script:ProductionMapId = 25
 $script:ProductionMapIdentity = '老厂前线new'
-$script:ProductionMapTokenPattern = '(?i)MAP-25(-|$)'
+# Matched against ConvertTo-MapComparisonKey's output, which is lower case with '_' and
+# whitespace already turned into '-'.
+$script:ProductionMapTokenPattern = 'map-25(-|$)'
 # 58005/58007 are the MVP server, 58009 its dashboard port (unused today but reserved by
 # Install-ControlServerLocal.ps1's default), 5088 the production MesIngest.
 $script:ProductionPorts = @{
@@ -216,6 +223,28 @@ function ConvertTo-IntegerOrNull {
         if ($asLong -ge [int]::MinValue -and $asLong -le [int]::MaxValue) { return [int] $asLong }
     }
     return $null
+}
+
+function ConvertTo-MapComparisonKey {
+    <#
+        The form map names and map tokens are compared in: Unicode compatibility-normalised
+        (full-width letters become ASCII), format characters such as zero-width spaces removed,
+        trimmed, lower case, and every run of '_' or whitespace turned into '-'. '老厂前线new ',
+        '老厂前线NEW' and '老厂前线ｎｅｗ' all become '老厂前线new'; 'MAP_25-X' becomes 'map-25-x'.
+        '老厂前线new_wk', the v2 map, becomes '老厂前线new-wk' and stays distinct.
+
+        Why remove format characters when -ceq below would ignore them anyway: -ceq is a culture
+        comparison, and culture comparisons skip zero-width characters ('a<U+200B>b' -ceq 'ab' is
+        True; measured). The map-25 TOKEN is found with a regex, which compares ordinally and
+        does not skip them, so 'MAP-2<U+200B>5' needs the removal. Note the direction: that
+        leniency of -ceq makes a refusal refuse more, which is safe; in an allowlist it would
+        accept more, which is not.
+    #>
+    param([AllowNull()][string] $Value)
+    if ($null -eq $Value) { return '' }
+    $key = $Value.Normalize([Text.NormalizationForm]::FormKC)
+    $key = [regex]::Replace($key, '\p{Cf}', '').Trim().ToLowerInvariant()
+    return [regex]::Replace($key, '[\s_]+', '-')
 }
 
 function Test-CanonicalWindowsPath {
@@ -718,13 +747,19 @@ function Test-ParallelInstanceDefinition {
             $failures += "$section.mapId is $script:ProductionMapId, the MVP's map. The parallel instance runs on map 26."
         }
     }
+    # Both comparisons go through ConvertTo-MapComparisonKey (S1 re-review, question 3): an exact,
+    # case-sensitive comparison let '老厂前线new ' (trailing space), '老厂前线NEW' and 'MAP_25-...'
+    # through. The refusal is meant to catch a person typing the MVP's map, and people type
+    # spaces, capitals and underscores.
+    $productionIdentityKey = ConvertTo-MapComparisonKey $script:ProductionMapIdentity
     if ($null -ne $journey) {
-        if ((Test-KeyPresent -Node $journey -Key 'mapIdentity') -and [string] $journey['mapIdentity'] -ceq $script:ProductionMapIdentity) {
-            $failures += "journeyRuntime.mapIdentity is '$script:ProductionMapIdentity', the MVP's map name."
+        if ((Test-KeyPresent -Node $journey -Key 'mapIdentity') -and
+            (ConvertTo-MapComparisonKey ([string] $journey['mapIdentity'])) -ceq $productionIdentityKey) {
+            $failures += "journeyRuntime.mapIdentity is '$($journey['mapIdentity'])', the MVP's map name ('$script:ProductionMapIdentity')."
         }
     }
     foreach ($leaf in @(Get-StringLeaf -Node $Definition -Path '')) {
-        if ($leaf.Value -match $script:ProductionMapTokenPattern) {
+        if ((ConvertTo-MapComparisonKey $leaf.Value) -match $script:ProductionMapTokenPattern) {
             $failures += "$($leaf.Path) is '$($leaf.Value)', an identifier of the MVP's map 25."
         }
         # The same refusal the onboard deployment makes of its site files: a value still marked
@@ -888,6 +923,83 @@ function Test-ParallelInstanceOwnedPath {
     return Test-OwnedPath $Path
 }
 
+function Get-ParallelInstanceDeleteRefusal {
+    <#
+        .SYNOPSIS
+            $null when both path layers allow deleting this path; otherwise why not. Text only.
+
+        .DESCRIPTION
+            The two string checks every deletion makes, in one place so no caller can make one
+            and forget the other. The file-system check (Test-ParallelInstanceReparsePoint) is
+            separate because the removal sequence takes it as an injected action.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string] $Path)
+    $owned = Test-OwnedPath $Path
+    if ($owned) { return "it $owned" }
+    if (Test-ParallelInstancePathIsProduction -Path $Path) { return 'it collides with a production path' }
+    return $null
+}
+
+function Test-ParallelInstanceReparsePoint {
+    <#
+        .SYNOPSIS
+            True when the path itself is a junction, symbolic link or other reparse point.
+
+        .DESCRIPTION
+            control-server#262 S1 re-review, question 2. Every path check above reads a string;
+            a junction named ControlServer.V2 that points at the MVP's install root passes all of
+            them. Measured on pwsh 7.6.6 (evidence review3-junction-probe.txt): Remove-Item
+            -Recurse -Force on a directory that CONTAINS a junction removes the link and leaves
+            the target's files alone, and so does removing a path that IS a junction. So the
+            deletion itself does not follow links today -- but that is the current behaviour of
+            one cmdlet, not something this code makes true, and whether a path we are about to
+            delete as "our directory" is really a link to somewhere else is a question worth
+            refusing on. The self-test pins the measured behaviour so a pwsh that changes it
+            goes red.
+
+            GetAttributes reads the link itself, not its target, so a dangling junction is still
+            seen; a path that does not exist is not a reparse point.
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param([Parameter(Mandatory = $true)][string] $Path)
+    try {
+        $attributes = [IO.File]::GetAttributes($Path)
+    } catch [IO.FileNotFoundException], [IO.DirectoryNotFoundException] {
+        return $false
+    }
+    return [bool]($attributes -band [IO.FileAttributes]::ReparsePoint)
+}
+
+function Remove-ParallelInstanceDirectory {
+    <#
+        .SYNOPSIS
+            The only way this deployment deletes an instance directory. Refuses first.
+
+        .DESCRIPTION
+            control-server#262 S1 re-review, question 4: the installer's deletions (the double's
+            directory, a stale staging directory, the previous generation, the incoming glob)
+            relied on the one assertion at the start of the script. Each now re-checks the exact
+            path it is about to delete, the same two layers and the reparse check the uninstaller
+            uses. Throws on a refusal; does nothing when the path does not exist.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string] $Path)
+    # The link check comes first only so the self-test can reach it: a test can make a junction in
+    # a temporary directory, but not at a path the allowlist accepts, so with the string checks
+    # first this branch would be unreachable from any test and its removal would go unnoticed.
+    # Both refuse; the order changes which reason is given, not whether the delete happens.
+    if (Test-ParallelInstanceReparsePoint -Path $Path) {
+        throw "Refusing to delete '$Path': it is a junction or symbolic link, not a directory this instance created."
+    }
+    $refusal = Get-ParallelInstanceDeleteRefusal -Path $Path
+    if ($refusal) { throw "Refusing to delete '$Path': $refusal." }
+    if (Test-Path -LiteralPath $Path) {
+        Remove-Item -LiteralPath $Path -Recurse -Force
+    }
+}
+
 function Get-ParallelInstanceLayout {
     <#
         .SYNOPSIS
@@ -1022,15 +1134,28 @@ function Invoke-ParallelRemovalSequence {
                  the MVP, and one complete list of what did and did not go diagnoses a partial
                  uninstall better than the first exception.
               3. Directories last. Before EVERY deletion -- including each match of a staging glob --
-                 the path must pass the allowlist (Test-OwnedPath) and the production denylist.
-                 A refusal aborts the directory phase at that point. Data directories are skipped
-                 unless -RemoveData.
+                 the path must pass the allowlist (Test-OwnedPath) and the production denylist,
+                 and must not itself be a junction or symbolic link (the injected ReparsePoint
+                 action; a throw from it counts as "yes"). A refusal aborts the directory phase at
+                 that point. Data directories are skipped unless -RemoveData.
+
+            "Any failure" in step 1 means a throw from the Service action, and only that. A script
+            the action calls can fail without throwing -- exit 1, Write-Error under Continue, a
+            native command's exit code -- so the action must turn those into a throw itself. The
+            uninstaller's does, by requiring positive confirmation of success
+            (Invoke-ParallelProductUninstaller in ParallelHost.psm1), not by listing failure modes.
+
+            Actions' output is discarded. The product uninstaller prints a PASS line; before this
+            was discarded it came back from this function beside the result object, and callers
+            read .Aborted off a two-element array.
 
         .PARAMETER Actions
-            Hashtable of scriptblocks, each taking one footprint item: Service, ScheduledTask,
-            Process, FirewallRule, MachineEnvironment, Directory, and DirectoryPattern (which must
-            return the matching directory paths; the sequence checks and deletes them through
-            Directory).
+            Hashtable of scriptblocks, all required: Service, ScheduledTask, Process, FirewallRule,
+            MachineEnvironment and Directory take one footprint item; DirectoryPattern takes one
+            and returns the matching directory paths (the sequence checks and deletes them through
+            Directory); ReparsePoint takes a path and returns whether it is a link. A missing one
+            is refused up front -- a sequence quietly running without its link check is the
+            failure this parameter exists to prevent.
     #>
     [CmdletBinding()]
     param(
@@ -1039,6 +1164,12 @@ function Invoke-ParallelRemovalSequence {
         [switch] $RemoveData
     )
 
+    $required = @('Service', 'ScheduledTask', 'Process', 'FirewallRule', 'MachineEnvironment', 'Directory', 'DirectoryPattern', 'ReparsePoint')
+    $missing = @($required | Where-Object { -not ($Actions.ContainsKey($_) -and $Actions[$_] -is [scriptblock]) })
+    if ($missing.Count -gt 0) {
+        throw "Invoke-ParallelRemovalSequence: missing action(s) $($missing -join ', '); nothing was run."
+    }
+
     $removed = [System.Collections.Generic.List[string]]::new()
     $failed = [System.Collections.Generic.List[string]]::new()
     $result = { param($aborted, $reason) [pscustomobject]@{
@@ -1046,7 +1177,7 @@ function Invoke-ParallelRemovalSequence {
 
     foreach ($item in @($Footprint | Where-Object Kind -eq 'Service')) {
         try {
-            & $Actions.Service $item
+            $null = & $Actions.Service $item
             $removed.Add("service '$($item.Name)'")
         } catch {
             return & $result $true "the service step failed, so nothing else was removed: $($_.Exception.Message)"
@@ -1056,13 +1187,13 @@ function Invoke-ParallelRemovalSequence {
     foreach ($kind in @('ScheduledTask', 'FirewallRule', 'MachineEnvironment')) {
         foreach ($item in @($Footprint | Where-Object Kind -eq $kind)) {
             try {
-                & $Actions[$kind] $item
+                $null = & $Actions[$kind] $item
                 $removed.Add("$kind '$($item.Name)'")
             } catch {
                 $failed.Add("$kind '$($item.Name)': $($_.Exception.Message)")
             }
             if ($kind -eq 'ScheduledTask') {
-                try { & $Actions.Process $item } catch { $failed.Add("process of '$($item.Name)': $($_.Exception.Message)") }
+                try { $null = & $Actions.Process $item } catch { $failed.Add("process of '$($item.Name)': $($_.Exception.Message)") }
             }
         }
     }
@@ -1078,15 +1209,17 @@ function Invoke-ParallelRemovalSequence {
             @($item.Name)
         }
         foreach ($target in $targets) {
-            $owned = Test-OwnedPath $target
-            if ($owned) {
-                return & $result $true "refused to delete '$target': it $owned. Directory phase stopped here."
+            $refusal = Get-ParallelInstanceDeleteRefusal -Path $target
+            if ($refusal) {
+                return & $result $true "refused to delete '$target': $refusal. Directory phase stopped here."
             }
-            if (Test-ParallelInstancePathIsProduction -Path $target) {
-                return & $result $true "refused to delete '$target': it collides with a production path. Directory phase stopped here."
+            $isLink = $true
+            try { $isLink = [bool](& $Actions.ReparsePoint $target) } catch { $isLink = $true }
+            if ($isLink) {
+                return & $result $true "refused to delete '$target': it is a junction or symbolic link (or could not be checked). Directory phase stopped here."
             }
             try {
-                & $Actions.Directory ([pscustomobject]@{ Kind = 'Directory'; Name = $target; Data = $item.Data })
+                $null = & $Actions.Directory ([pscustomobject]@{ Kind = 'Directory'; Name = $target; Data = $item.Data })
                 $removed.Add("directory $target")
             } catch {
                 $failed.Add("directory $($target): $($_.Exception.Message)")
@@ -1195,6 +1328,9 @@ Export-ModuleMember -Function @(
     'Get-ParallelInstanceFootprint'
     'Get-ParallelInstanceLayout'
     'Test-ParallelInstanceOwnedPath'
+    'Get-ParallelInstanceDeleteRefusal'
+    'Test-ParallelInstanceReparsePoint'
+    'Remove-ParallelInstanceDirectory'
     'Invoke-ParallelRemovalSequence'
     'Get-ParallelInstanceName'
     'Test-ParallelInstancePathIsProduction'
