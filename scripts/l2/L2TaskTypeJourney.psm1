@@ -275,6 +275,31 @@ CreatedAt). That "earliest" is load-bearing: it is what makes the value mean "th
 Taking the latest instead would hand the second stop's wait its own station to compare against, and
 then that wait could never be satisfied.
 #>
+<#
+.SYNOPSIS
+This demand's acknowledged worklists that carry a station id, earliest first.
+
+.DESCRIPTION
+Exported, and that is not tidiness: both waits below call it from inside a `.GetNewClosure()` probe,
+and a closure resolves command names against the GLOBAL table -- an unexported sibling is simply not
+found there, and the failure arrives as a nameless timeout (control-server#203).
+
+NOT comma-wrapped, because it can legitimately return nothing: a wrapped empty array is not empty to
+a caller, it is one element that happens to be an array. Callers write @(...) around the call.
+#>
+function Get-L2AcknowledgedWorklists {
+    param(
+        [Parameter(Mandatory)][object]$Connection,
+        [Parameter(Mandatory)][string]$DemandId)
+
+    # The parentheses around the inner call are load-bearing: Get-L2DemandJourneySnapshots returns
+    # `, @($mine)`, and `f | Where` hands Where-Object ONE object that is the whole list while
+    # `(f) | Where` unrolls it. Measured; dropping them once read two worklists as a single row whose
+    # StationId was 'STATION-A STATION-B'.
+    return @((Get-L2DemandJourneySnapshots $Connection $DemandId) | Where-Object {
+        $_.Type -eq 'CurrentStopWorklistSnapshot' -and $_.Acknowledged -and (Test-L2RealPresent $_.StationId) })
+}
+
 function Wait-L2FirstAcknowledgedWorklistStation {
     param(
         [Parameter(Mandatory)][object]$Connection,
@@ -284,13 +309,34 @@ function Wait-L2FirstAcknowledgedWorklistStation {
         [int]$TimeoutSeconds = 60,
         [object]$Journal)
 
-    return Wait-L2Condition -Description $Description -Journal $Journal -Criterion $Criterion `
+    $station = Wait-L2Condition -Description $Description -Journal $Journal -Criterion $Criterion `
         -TimeoutSeconds $TimeoutSeconds -Probe {
-            # Parentheses around the call are load-bearing; see Wait-L2WorklistAcknowledgedAtOtherStation.
-            $acknowledged = @((Get-L2DemandJourneySnapshots $Connection $DemandId) | Where-Object {
-                $_.Type -eq 'CurrentStopWorklistSnapshot' -and $_.Acknowledged -and (Test-L2RealPresent $_.StationId) })
+            $acknowledged = @(Get-L2AcknowledgedWorklists -Connection $Connection -DemandId $DemandId)
             if ($acknowledged.Count -ge 1) { [string]$acknowledged[0].StationId } else { $null }
         }.GetNewClosure() -Until { param($v) $null -ne $v }
+
+    # The premise behind "earliest == the stop just finished", asserted rather than assumed
+    # (control-server#270). It is checked AFTER the wait and OUTSIDE the probe: thrown inside, the
+    # poll's `catch { $last = $null }` would swallow it and this would surface as a timeout naming
+    # the wrong thing.
+    #
+    # It cannot misfire in today's flow, and that is worth knowing before suspecting it of being too
+    # strict: Invoke-L2TaskTypeJourney calls this at the first stop, and the vehicle only departs for
+    # the second stop later (`Move-L2RealVehicleTo ... $DestinationRiotId`), so at this moment the
+    # second stop's worklist does not exist yet. If this ever fires, the premise really did break.
+    $stations = @(@(Get-L2AcknowledgedWorklists -Connection $Connection -DemandId $DemandId) |
+        ForEach-Object { [string]$_.StationId } | Sort-Object -Unique)
+    if ($stations.Count -gt 1) {
+        throw ("The earliest acknowledged worklist of demand $DemandId is at '$station', but its " +
+            "acknowledged worklists already span more than one station ($($stations -join ', ')). " +
+            'This function returns the earliest as a stand-in for "the stop just finished", which ' +
+            'holds only while no stop''s worklist can be acknowledged before an earlier stop''s. That ' +
+            'no longer holds here, so this value may name the wrong stop -- and this check is then the ' +
+            'only thing that speaks. The second stop''s wait excludes whatever this returns, so a ' +
+            'wrong value there is satisfied by the first stop''s own worklist: it PASSES, and the run ' +
+            'ends green with the two stops judged in the wrong order (control-server#270).')
+    }
+    return $station
 }
 
 <#
@@ -339,18 +385,56 @@ function Wait-L2WorklistAcknowledgedAtOtherStation {
             'wait would pass at its first poll. Whoever read that id got nothing back -- fix that read ' +
             'rather than this wait (control-server#265).')
     }
-    return Wait-L2Condition -Description $Description -Journal $Journal -Criterion $Criterion `
-        -TimeoutSeconds $TimeoutSeconds -Probe {
-            # The parentheses around the call are load-bearing. Get-L2DemandJourneySnapshots returns
-            # `, @($mine)`, a single-layer array, and the three ways of piping it are NOT equivalent:
-            # `f | Where` and `@(f) | Where` both hand Where-Object ONE object that happens to be the
-            # whole list, while `(f) | Where` unrolls it. Measured. Dropping them here read two
-            # worklists as one row whose StationId was 'STATION-A STATION-B'.
-            $other = @((Get-L2DemandJourneySnapshots $Connection $DemandId) | Where-Object {
-                $_.Type -eq 'CurrentStopWorklistSnapshot' -and $_.Acknowledged -and
-                (Test-L2RealPresent $_.StationId) -and $_.StationId -ne $PreviousStationId })
-            if ($other.Count -ge 1) { [string]$other[0].StationId } else { $null }
-        }.GetNewClosure() -Until { param($v) $null -ne $v }
+    try {
+        return Wait-L2Condition -Description $Description -Journal $Journal -Criterion $Criterion `
+            -TimeoutSeconds $TimeoutSeconds -Probe {
+                $other = @(@(Get-L2AcknowledgedWorklists -Connection $Connection -DemandId $DemandId) |
+                    Where-Object { $_.StationId -ne $PreviousStationId })
+                if ($other.Count -ge 1) { [string]$other[0].StationId } else { $null }
+            }.GetNewClosure() -Until { param($v) $null -ne $v }
+    } catch {
+        # The premise behind this criterion is that a journey's two stops are different stations
+        # (control-server#270). When it does not hold, this wait times out -- and the timeout points at
+        # the wrong thing, which is the expensive half: the message reads as "the server never sent the
+        # second stop's worklist", and finding out otherwise means walking the whole publish path.
+        #
+        # So the failure path reads once more, and may replace the timeout only when it can say
+        # something the timeout cannot. Its own read is wrapped: a server that is gone is one of the
+        # reasons this wait timed out, and then this read throws too -- taking with it the only message
+        # that says what was being waited for (control-server#203).
+        # It asks the PLAN, not the worklists, and that distinction is the whole point. "Every
+        # acknowledged worklist is at the excluded station" is ALSO what "the first stop's worklist was
+        # revised and the second stop has not been reached yet" looks like -- the two are
+        # indistinguishable in the worklists alone, so a diagnostic resting on them would claim
+        # "same-station journey" for an ordinary not-there-yet timeout. The plan's legs each carry
+        # their own stationId, so the plan can say it outright.
+        $snapshots = $null
+        try { $snapshots = @(Get-L2DemandJourneySnapshots $Connection $DemandId) } catch { }
+        # Both null guards are load-bearing, and the first one was measured the hard way: piping $null
+        # into Where-Object yields ONE $null item rather than none, so with the read having failed,
+        # `$_.Type` throws under Set-StrictMode -Version Latest -- and a throw HERE replaces the
+        # timeout with a message about this diagnostic, which is the exact failure this block exists to
+        # prevent. The self-check case that arms the stub to die after the deadline caught it.
+        $plan = if ($null -eq $snapshots) { $null } else {
+            @($snapshots | Where-Object { $_.Type -eq 'UpcomingStopPlanSnapshot' }) | Select-Object -Last 1
+        }
+        if ($null -ne $plan) {
+            $planStations = @($plan.Legs | ForEach-Object { [string]$_.stationId } |
+                Where-Object { Test-L2RealPresent $_ } | Sort-Object -Unique)
+            $acknowledged = @($snapshots | Where-Object {
+                $_.Type -eq 'CurrentStopWorklistSnapshot' -and $_.Acknowledged })
+            if ($planStations.Count -eq 1 -and $planStations[0] -eq $PreviousStationId) {
+                throw ("Timed out waiting for a worklist at a station other than '$PreviousStationId'. " +
+                    "The journey plan for demand $DemandId puts every leg at that same station, so this " +
+                    "journey's two stops are one station and this criterion cannot be satisfied by " +
+                    'construction -- the server did not fail to send the second stop''s worklist. ' +
+                    "($($acknowledged.Count) acknowledged worklist(s), all at '$PreviousStationId'.) " +
+                    'Whether a same-station journey is legal is a product question this check does not ' +
+                    'answer (control-server#270); what it says is that this criterion does not apply to one.')
+            }
+        }
+        throw
+    }
 }
 
 function Invoke-L2TaskTypeJourney {
@@ -487,5 +571,5 @@ function Invoke-L2TaskTypeJourney {
 # counterexample and fails this repository's CI if any probe closure calls an unexported sibling.
 Export-ModuleMember -Function Get-L2StopFacts, Format-L2StopFacts, Wait-L2StopFacts,
     Get-L2DemandJourneySnapshots, Format-L2JourneySnapshot, Get-L2SecondLegIntents, Wait-L2SecondLegIntent,
-    Wait-L2FirstAcknowledgedWorklistStation, Wait-L2WorklistAcknowledgedAtOtherStation,
+    Get-L2AcknowledgedWorklists, Wait-L2FirstAcknowledgedWorklistStation, Wait-L2WorklistAcknowledgedAtOtherStation,
     Invoke-L2TaskTypeStationOperation, Invoke-L2TaskTypeJourney

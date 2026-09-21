@@ -106,8 +106,11 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2SecondLegIntentWait.ps1
 
-      # 13.3 seconds (measured, three runs, identical), 12 of which are six deliberate 2-second
-      # timeouts: every case where the criterion must NOT be satisfied has to run out its clock.
+      # 18 to 20 seconds (measured 18.2 / 19.7 / 18.3), 16 of which are eight deliberate 2-second
+      # timeouts: every case where a criterion must NOT be satisfied has to run out its clock. Counted
+      # by reading the invocations, not by grepping for "Timed out" -- that pattern appears 7 times,
+      # because the same-station case times out too but asserts on the diagnostic's wording instead.
+      # The arithmetic agrees: 8 x 2 = 16 fits under 18.2, and 9 x 2 = 18 would leave no room to start.
       #
       # Covers the two waits the real rig cannot put in the states that matter. The second stop's
       # used to be "at least 2 acknowledged worklists", a proxy that equals "the second stop's
