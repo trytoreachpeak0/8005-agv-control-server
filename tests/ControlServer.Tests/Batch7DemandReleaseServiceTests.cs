@@ -400,9 +400,9 @@ public sealed class Batch7DemandReleaseServiceTests
     /// SUSPENDED（8）按活单处理：发取消并对账，确认才释放（复审，调度 2026-09-21）。
     /// </summary>
     /// <remarks>
-    /// 8 的语义从没被行为实验室实测过（只测过 7、3、2、9）；本仓把它归为终态是未经实测的假设。若它其实是可恢复的挂起，
-    /// 「不发取消直接释放」会在 RIoT 上留一张活单，车可能带着旧单恢复而需求已改派给别的车——安全方向的风险；按活单处理，
-    /// 最坏只是这条需求卡在「取消没确认」（活性，归 cs#296）。这里 RIoT 收到取消什么都不做，所以不释放、取消恰好一次。
+    /// 按用户 2026-09-21 的说明（不是实测）：8 是订单挂起，一般是车故障没法继续，或单里某个动作被取消、整张单继续不下去；
+    /// 单还在，也还挂在这辆车上。「不发取消直接释放」会在 RIoT 上留一张挂在原车上的活单而需求已改派给别的车。
+    /// 这里 RIoT 收到取消什么都不做，所以不释放、取消恰好一次（重发归 cs#296）。
     /// </remarks>
     [Fact]
     public async Task ASuspendedPickupOrderIsTreatedAsLiveAndReleasedOnlyOnAConfirmedCancel()
