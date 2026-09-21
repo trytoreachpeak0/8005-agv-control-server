@@ -294,7 +294,7 @@ public sealed class Batch7PlanRevisionTests
     // ---- 序位 ------------------------------------------------------------------------------------
 
     /// <summary>
-    /// 已完成的停靠序位原样；没删的开放停靠接着已完成的最大序位连续编号；删掉的不出现在序位里。
+    /// 已完成的停靠序位原样；没删的开放停靠从当前下一站的序位起连续编号；删掉的接在所有开放的之后（审查 M1）。
     /// </summary>
     [Fact]
     public void CompletedStopsKeepTheirSequenceAndTheRestAreNumberedAfterThem()
@@ -305,8 +305,29 @@ public sealed class Batch7PlanRevisionTests
             zones: null);
 
         Assert.Equal(
-            [("p1", 1), ("cur", 2), ("u20", 3)],
+            [("p1", 1), ("cur", 2), ("u20", 3), ("p10", 4)],
             result.Sequences.Select(item => (item.StopId, item.Sequence)));
+    }
+
+    /// <summary>
+    /// 之前删掉、仍留着较大旧序位的停靠不把当前下一站往后推（审查 M1 的探针）：当前下一站原样是 1。
+    /// </summary>
+    /// <remarks>
+    /// 旧的编号从「已完成或已删的最大序位 + 1」数起，这里那个最大值是之前删掉的 <c>gone</c> 的 2，于是当前下一站变成 3。
+    /// 落到库里的后果（清单号跳）由 <c>Batch7PlanRevisionStageTests.ASecondRevisionKeepsTheCurrentStopAndItsWorklistRevisionWhereTheyWere</c> 守。
+    /// </remarks>
+    [Fact]
+    public void AStopRemovedEarlierDoesNotPushTheCurrentStopBack()
+    {
+        PlanRevisionResult result = Revise(
+            [Current("cur", 0, sequence: 1), Done("gone", 2) with { StationRiotId = 5 }, Pickup("p", 10, sequence: 3),
+             Unload("u", 20, sequence: 4)],
+            [Pending("dcur", "cur", "u"), Pending("dp", "p", "u")],
+            zones: null);
+
+        Assert.Equal(1, result.Sequences.Single(item => item.StopId == "cur").Sequence);
+        Assert.Equal([1, 2, 3, 4], result.Sequences.Select(item => item.Sequence).Order());
+        Assert.Equal(4, result.Sequences.Single(item => item.StopId == "gone").Sequence);
     }
 
     /// <summary>
@@ -379,9 +400,13 @@ public sealed class Batch7PlanRevisionTests
         return JourneyPlanRevision.Revise(new PlanRevisionInput(numbered, demands, currentStopMayGo), zones, Distance);
     }
 
-    /// <summary>修订之后开放停靠的顺序（按新序位）。已完成的停靠只有序位用例里的 <c>p1</c> 一个，在这里滤掉。</summary>
+    /// <summary>
+    /// 修订之后开放停靠的顺序（按新序位）。已完成的停靠只有序位用例里的 <c>p1</c> 一个，删掉的停靠也有序位（排在开放的之后，
+    /// 审查 M1），两者都在这里滤掉。
+    /// </summary>
     private static string[] OpenOrder(PlanRevisionResult result) =>
-        [.. result.Sequences.OrderBy(item => item.Sequence).Select(item => item.StopId).Where(id => id != "p1")];
+        [.. result.Sequences.OrderBy(item => item.Sequence).Select(item => item.StopId)
+            .Where(id => id != "p1" && !result.RemovedStopIds.Contains(id, StringComparer.Ordinal))];
 
     private static PlanRevisionStop Current(string id, int station, string zone = ZoneA, int sequence = 0) =>
         new(id, JourneyStopRoles.Pickup, station, zone, sequence, Done: false);

@@ -508,6 +508,36 @@ public sealed class Batch7EnRouteAppendPlannerTests
         Assert.Equal(0, decision.Placement!.MarginalCostMm);
     }
 
+    /// <summary>
+    /// 当前下一站之后已删的停靠不算腿、只在重排最后占号（批次7-10，control-server#215，审查 M3）。
+    /// </summary>
+    /// <remarks>
+    /// 同样九个停靠（七个开放、两个已删），两种交法对照：全放进停靠表（修前 DispatchRoundRunner 的交法），两个已删的也被当成
+    /// 要去的站，加上新需求的两个就是十一条腿，被拒；已删的单独交（修后的交法），九条腿放行，重排覆盖全部十一个停靠、
+    /// 已删的两个排在最后。两者只差已删的那两个怎么交，所以放行只能来自这一分。
+    /// </remarks>
+    [Fact]
+    public void RemovedStopsAfterTheCurrentOneAreNotLegsAndAreNumberedLast()
+    {
+        EnRouteStop[] open = PickupChain(7);
+        EnRouteStop[] removed = [Pickup("gone-1", 90, ZoneA), Pickup("gone-2", 92, ZoneA)];
+        EnRouteAppendCandidate candidate = CandidateOf(Pickup("new-p", 80, ZoneA), Unload("new-u", 82, ZoneA), ZoneA);
+
+        EnRouteAppendDecision asLegs = EnRouteAppendPlanner.Plan(
+            PlanOf(vehicleAt: 0, [.. open, .. removed]), candidate, Zones((ZoneA, 500_000)), Distance);
+        Assert.NotNull(asLegs.RefusalReasonCode);
+
+        EnRouteAppendDecision trailing = EnRouteAppendPlanner.Plan(
+            PlanOf(vehicleAt: 0, open) with { TrailingRemovedStopIds = ["gone-1", "gone-2"] },
+            candidate, Zones((ZoneA, 500_000)), Distance);
+        Assert.Null(trailing.RefusalReasonCode);
+        Assert.Equal(
+            [("gone-1", 10), ("gone-2", 11)],
+            trailing.Placement!.Resequenced.Where(item => item.StopId.StartsWith("gone", StringComparison.Ordinal))
+                .Select(item => (item.StopId, item.Sequence)));
+        Assert.Equal(Enumerable.Range(1, 11), trailing.Placement.Resequenced.Select(item => item.Sequence).Order());
+    }
+
     // ---- helpers ---------------------------------------------------------------------------------
 
     private static EnRouteStop Pickup(string stopId, int station, string zone) =>

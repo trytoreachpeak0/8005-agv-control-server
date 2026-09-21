@@ -97,7 +97,9 @@ public static class JourneyPlanRevisionStage
             {
                 stop.Status = JourneyStopStatuses.Removed;
             }
-            else if (sequences.TryGetValue(stop.StopId, out int sequence) && stop.Sequence != sequence)
+
+            // 删掉的停靠也按修订给的序位写：它们排到所有开放的之后，不写就留着夹在开放停靠之间的旧号（审查 M1）。
+            if (sequences.TryGetValue(stop.StopId, out int sequence) && stop.Sequence != sequence)
             {
                 stop.Sequence = sequence;
             }

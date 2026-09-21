@@ -494,18 +494,34 @@ public sealed class DispatchRoundRunner(
 
         JourneyStopCursor stops = await JourneyStopCursor
             .LoadAsync(dbContext, runtime, cancellationToken).ConfigureAwait(false);
-        // 整条旅程的停靠都交给规划器，已完成的也在内（批次7-06，control-server#211）。序位是整条旅程的属性，
-        // 而这之前只传未完成的那些，于是插入之后的重排从 1 重新数，与已经完成的停靠撞号。规划器自己把已完成的
-        // 那一段当作不可移动的前缀：它们不参与代价、分区与上限，只占住自己的号。
-        IReadOnlyList<JourneyStopRow> all = stops.Stops;
-        if (stops.OpenStops.Count == 0)
-        {
-            return null;
-        }
+        return stops.OpenStops.Count == 0
+            ? null
+            : EnRoutePlanOf(stops, vehicleStation, runtime.LoadingPhaseState == LoadingPhaseStates.Closed);
+    }
 
+    /// <summary>一趟旅程此刻交给途中追加规划器的计划。</summary>
+    /// <remarks>
+    /// <para>
+    /// 整条旅程的停靠都交给规划器，已完成的也在内（批次7-06，control-server#211）。序位是整条旅程的属性，
+    /// 而这之前只传未完成的那些，于是插入之后的重排从 1 重新数，与已经完成的停靠撞号。规划器自己把已完成的
+    /// 那一段当作不可移动的前缀：它们不参与代价、分区与上限，只占住自己的号。
+    /// </para>
+    /// <para>
+    /// <b>当前下一站之后已删的停靠不进停靠表</b>（批次7-10，control-server#215，审查 M3），单独交给规划器接在重排最后：
+    /// 放进停靠表，规划器会把它当作还要去的站，算进路径代价、分区连续与腿数上限。这之前产品代码不会产生 REMOVED 停靠，
+    /// 所以不分也一样；计划修订开始删停靠之后，这一分才有意义。
+    /// </para>
+    /// </remarks>
+    internal static EnRouteVehiclePlan EnRoutePlanOf(JourneyStopCursor stops, int vehicleStation, bool loadingPhaseClosed)
+    {
+        ArgumentNullException.ThrowIfNull(stops);
         // 取当前停靠自己的下标，而不是数已完成的个数：作废（Removed）的停靠也不开着、也不能移动，
         // 数完成数会把它算漏，前缀就会短一格。
-        int currentNextStopIndex = all.ToList().IndexOf(stops.Current);
+        int currentNextStopIndex = stops.Stops.ToList().IndexOf(stops.Current);
+        JourneyStopRow[] trailingRemoved = [.. stops.Stops
+            .Skip(currentNextStopIndex + 1)
+            .Where(stop => stop.Status == JourneyStopStatuses.Removed)];
+        IReadOnlyList<JourneyStopRow> all = [.. stops.Stops.Except(trailingRemoved)];
 
         return new EnRouteVehiclePlan(
             [.. all.Select(stop => new EnRouteStop(
@@ -517,7 +533,8 @@ public sealed class DispatchRoundRunner(
                 stop => stop.StopId,
                 stop => stops.AllAtStop(stop).Count(item => !JourneyStopCursor.IsDoneAt(stop, item)),
                 StringComparer.Ordinal),
-            LoadingPhaseClosed: runtime.LoadingPhaseState == LoadingPhaseStates.Closed);
+            LoadingPhaseClosed: loadingPhaseClosed,
+            TrailingRemovedStopIds: [.. trailingRemoved.Select(stop => stop.StopId)]);
     }
 
     /// <summary>一辆车对一条任务的裁决：过了就成为一份出价，没过就只留下积压里的理由。</summary>

@@ -80,11 +80,36 @@ public static class JourneyPlanRevision
             ? (ahead, null)
             : Reorder(ahead, input.Demands, zoneParameters, cost);
 
-        int next = done.Count == 0 ? 1 : done.Max(stop => stop.Sequence) + 1;
-        List<EnRouteStopSequence> sequences = [.. done.Select(stop => new EnRouteStopSequence(stop.StopId, stop.Sequence))];
-        foreach (PlanRevisionStop stop in order)
+        // 编号（审查 M1）：当前下一站及它之前的停靠一律保留原序位；当前之后还开着的停靠从当前下一站的序位起按新顺序
+        // 连续编号；这一次删掉的与之前删掉、位于当前之后的停靠接在它们后面。
+        //
+        // 要守的是「车停在当前下一站时，序位比它小的停靠集合不变」：它这一站的清单号、录入地址的区间、第一版消息 id
+        // 都由那个集合算（JourneyStopCursor.FirstWorklistRevisionAt）。旧的编号从「已完成或已删的最大序位 + 1」数起，
+        // 之前删掉、仍留着较大旧序位的停靠会把当前下一站推到它后面去，车在站上时这一站的号就跳了。
+        // 删掉的停靠排到所有开放的之后，所以它们永远不会落到某个将来的当前下一站前面；序位始终是一组连续不重号的数，
+        // 途中追加的规划器按下标重排前缀时因此与库里的一致。
+        List<EnRouteStopSequence> sequences = [];
+        if (open.Count == 0)
         {
-            sequences.Add(new EnRouteStopSequence(stop.StopId, next++));
+            sequences.AddRange(done.Select(stop => new EnRouteStopSequence(stop.StopId, stop.Sequence)));
+        }
+        else
+        {
+            int currentSequence = open[0].Sequence;
+            HashSet<string> removedNow = new(removed, StringComparer.Ordinal);
+            sequences.AddRange(done.Where(stop => stop.Sequence < currentSequence)
+                .Select(stop => new EnRouteStopSequence(stop.StopId, stop.Sequence)));
+            int next = currentSequence;
+            foreach (PlanRevisionStop stop in order)
+            {
+                sequences.Add(new EnRouteStopSequence(stop.StopId, next++));
+            }
+
+            foreach (PlanRevisionStop stop in ordered.Where(stop =>
+                         removedNow.Contains(stop.StopId) || (stop.Done && stop.Sequence >= currentSequence)))
+            {
+                sequences.Add(new EnRouteStopSequence(stop.StopId, next++));
+            }
         }
 
         bool reordered = !order.Select(stop => stop.StopId).SequenceEqual(ahead.Select(stop => stop.StopId), StringComparer.Ordinal);

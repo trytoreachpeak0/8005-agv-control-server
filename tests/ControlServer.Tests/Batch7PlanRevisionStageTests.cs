@@ -1,6 +1,7 @@
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -61,6 +62,79 @@ public sealed class Batch7PlanRevisionStageTests
             [(101, JourneyStopStatuses.Completed, 1), (202, JourneyStopStatuses.Pending, 2), (250, JourneyStopStatuses.Pending, 3),
              (210, JourneyStopStatuses.Pending, 4), (205, JourneyStopStatuses.Removed, 5)],
             await StopsAsync(fixture));
+    }
+
+    /// <summary>
+    /// 删过一次停靠之后再修订：当前下一站的序位不动，车在站上时这一站的清单号也不跳（审查 M1）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 旧的编号从「已完成或已删的最大序位 + 1」往后数。第一次修订删掉 205 之后它留着序位 5；第二次修订时它算进那个
+    /// 最大值，当前下一站 202 就从 2 变成 6。清单号是「序位比它小的停靠各发几版之和」
+    /// （<see cref="JourneyStopCursor.FirstWorklistRevisionAt"/>），于是车停在 202 时这一站的号、录入地址的区间、
+    /// 第一版的消息 id 全都跳了——升版前已经发出的录入不再被认作这一站的。
+    /// </para>
+    /// <para>
+    /// 第二次修订不删任何东西（没有需求离开），只让它按新的编号规则把序位写一遍，所以两次读到的差别只能来自编号。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task ASecondRevisionKeepsTheCurrentStopAndItsWorklistRevisionWhereTheyWere()
+    {
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        JourneyRuntimeRow runtime = await SeedAsync(fixture);
+        await new PickupStopTermination(fixture.Context, new PlanRevisionRouting(null, Distance))
+            .StageAsync(runtime, Leaving, "CANCELLED_BY_OPERATOR", Batch7JourneyFixture.Now, token);
+        await fixture.Context.SaveChangesAsync(token);
+        (int Sequence, long FirstRevision) before = await CurrentStopAsync(fixture, runtime);
+        Assert.Equal(2, before.Sequence);
+
+        await JourneyPlanRevisionStage.StageAsync(
+            fixture.Context, runtime.JourneyId, [], currentStopMayGo: false, new PlanRevisionRouting(null, Distance), token);
+        await fixture.Context.SaveChangesAsync(token);
+
+        Assert.Equal(before, await CurrentStopAsync(fixture, runtime));
+        // 序位仍是一组不重号的连续数，删掉的排在所有开放的之后。
+        (int Station, string Status, int Sequence)[] stops = await StopsAsync(fixture);
+        Assert.Equal([1, 2, 3, 4, 5], stops.Select(stop => stop.Sequence).Order());
+        Assert.True(stops.Where(stop => stop.Status == JourneyStopStatuses.Removed).Min(stop => stop.Sequence)
+            > stops.Where(stop => stop.Status == JourneyStopStatuses.Pending).Max(stop => stop.Sequence));
+    }
+
+    /// <summary>
+    /// 派车轮次交给途中追加规划器的计划：当前下一站之后已删的停靠不在停靠表里，单独交（审查 M3）。
+    /// </summary>
+    /// <remarks>
+    /// 修前 <c>DispatchRoundRunner</c> 把整条旅程原样交出去，已删的 205 就成了规划器眼里一个还要去的站——进路径代价、
+    /// 分区连续与腿数上限。规划器怎么对待单独交来的已删停靠由 <c>Batch7EnRouteAppendPlannerTests.RemovedStopsAfterTheCurrentOneAreNotLegsAndAreNumberedLast</c> 守。
+    /// </remarks>
+    [Fact]
+    public async Task TheAppendPlannerIsNotHandedARemovedStopAsAStopToVisit()
+    {
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        JourneyRuntimeRow runtime = await SeedAsync(fixture);
+        await new PickupStopTermination(fixture.Context, new PlanRevisionRouting(null, Distance))
+            .StageAsync(runtime, Leaving, "CANCELLED_BY_OPERATOR", Batch7JourneyFixture.Now, token);
+        await fixture.Context.SaveChangesAsync(token);
+        JourneyStopCursor cursor = await JourneyStopCursor.LoadAsync(fixture.NewContext(), runtime, token);
+        string removed = cursor.Stops.Single(stop => stop.Status == JourneyStopStatuses.Removed).StopId;
+
+        EnRouteVehiclePlan plan = DispatchRoundRunner.EnRoutePlanOf(cursor, vehicleStation: 202, loadingPhaseClosed: false);
+
+        Assert.DoesNotContain(removed, plan.Stops.Select(stop => stop.StopId));
+        Assert.Equal([removed], plan.TrailingRemovedStopIds!);
+        Assert.Equal(cursor.Current.StopId, plan.Stops[plan.CurrentNextStopIndex].StopId);
+    }
+
+    /// <summary>当前下一站的序位，与车停在它上面时它第一版清单的号数（旅程基准取 100）。</summary>
+    private static async Task<(int Sequence, long FirstRevision)> CurrentStopAsync(
+        Batch7JourneyFixture fixture, JourneyRuntimeRow runtime)
+    {
+        JourneyStopCursor cursor = await JourneyStopCursor.LoadAsync(
+            fixture.NewContext(), runtime, TestContext.Current.CancellationToken);
+        return (cursor.Current.Sequence, cursor.FirstWorklistRevisionAt(100, cursor.Current));
     }
 
     /// <summary>每个停靠的站号、状态、序位，按站号在库里的顺序排：先排开放的（按序位），删掉的放在最后。</summary>
