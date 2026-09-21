@@ -11,18 +11,18 @@
 # build:
 0 Error(s)
 # test run (filter: FullyQualifiedName~Batch7StationYield|FullyQualifiedName~LoadingPhaseMachineTests|FullyQualifiedName~DispatchVehicleOrderingTests):
-  Failed ControlServer.Tests.Batch7StationYieldTests.ADepartureThatCrashesBeforeItsSaveLeavesNoTriggerAndTheRetryWritesBoth [3 s]
+  Failed ControlServer.Tests.Batch7StationYieldTests.ADepartureThatCrashesBeforeItsSaveLeavesNoTriggerAndTheRetryWritesBoth [2 s]
   Error Message:
    Assert.Equal() Failure: Strings differ
 Expected: "BROKERX-0c20ff0600d644869a6a80c186065d85"
 Actual:   null
-     at ControlServer.Tests.Batch7StationYieldTests.ADepartureThatCrashesBeforeItsSaveLeavesNoTriggerAndTheRetryWritesBoth() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 476
-   at ControlServer.Tests.Batch7StationYieldTests.ADepartureThatCrashesBeforeItsSaveLeavesNoTriggerAndTheRetryWritesBoth() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 476
+     at ControlServer.Tests.Batch7StationYieldTests.ADepartureThatCrashesBeforeItsSaveLeavesNoTriggerAndTheRetryWritesBoth() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 635
+   at ControlServer.Tests.Batch7StationYieldTests.ADepartureThatCrashesBeforeItsSaveLeavesNoTriggerAndTheRetryWritesBoth() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 635
   Failed ControlServer.Tests.Batch7StationYieldTests.AVehicleLeavingForTheStationMakesTheHolderThereYield [2 s]
   Error Message:
    Assert.Equal() Failure: Values differ
 Expected: 2026-08-26T01:00:05.0000000+00:00
 Actual:   null
-     at ControlServer.Tests.Batch7StationYieldTests.AVehicleLeavingForTheStationMakesTheHolderThereYield() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 438
-   at ControlServer.Tests.Batch7StationYieldTests.AVehicleLeavingForTheStationMakesTheHolderThereYield() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 440
-Failed!  - Failed:     2, Passed:   106, Skipped:     0, Total:   108, Duration: 45 s - ControlServer.Tests.dll (net8.0)
+     at ControlServer.Tests.Batch7StationYieldTests.AVehicleLeavingForTheStationMakesTheHolderThereYield() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 596
+   at ControlServer.Tests.Batch7StationYieldTests.AVehicleLeavingForTheStationMakesTheHolderThereYield() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 598
+Failed!  - Failed:     2, Passed:   110, Skipped:     0, Total:   112, Duration: 49 s - ControlServer.Tests.dll (net8.0)

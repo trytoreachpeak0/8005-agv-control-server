@@ -6,10 +6,10 @@
 
 | 项 | 值 |
 | --- | --- |
-| runId | `20260921T113351297Z` |
+| runId | `20260921T124610134Z` |
 | agvId | `AGV-L2-001` |
 | batchId | `unspecified` |
-| controlServerCommit | `5a772043198a7fdb17dbee626085ef7bae355201` |
+| controlServerCommit | `c61009b85933d824289f1a06d4854a8e23651129` |
 | fleet | `AGV-L2-001/BROKERX-L2-0001, AGV-L2-002/BROKERX-L2-0002` |
 | protocolReleaseIdentity.repository | `8005-agv-protocol` |
 | protocolReleaseIdentity.releaseVersion | `2.0.0` |
@@ -22,7 +22,7 @@
 | protocolReleaseIdentity.vectorsSha256 | `391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a` |
 | protocolReleaseIdentity.approvalStatus | `APPROVED_RELEASE` |
 | rig | `SyntheticOnboard` |
-| stageRoot | `C:\Users\szy\AppData\Local\Temp\l2-20260921T113351297Z` |
+| stageRoot | `C:\Users\szy\AppData\Local\Temp\l2-20260921T124610134Z` |
 | vehicleKey | `BROKERX-L2-0001` |
 
 ## 判据
@@ -31,10 +31,11 @@
 | --- | --- | --- | --- |
 | 主车 AGV-L2-001 接下前侧 4 花篮的需求甲，后侧无空仓：VEHICLE_FULL；到站后装货命令在执行 | PASS | `AwaitingLoadResult VEHICLE_FULL` | `AwaitingLoadResult VEHICLE_FULL` |
 | 需求乙由另一台车 AGV-L2-002 受理，它的下一停靠就是持单车所在的 12 号站 | PASS | `AGV-L2-002 AwaitingPickupArrival → 12` | `AGV-L2-002 AwaitingPickupArrival → 12` |
-| 另一台车受理之后，持单车装货阶段 CLOSED/WAITING_STATION_YIELD；触发列记的是那台车，时刻不早于受理 | PASS | `CLOSED/WAITING_STATION_YIELD by BROKERX-L2-0002 at or after 2026-09-21T11:34:31.2245366+00:00` | `AwaitingLoadResult CLOSED/WAITING_STATION_YIELD by 'BROKERX-L2-0002' at 2026-09-21T11:34:31.2245366+00:00` |
+| 另一台车受理之后，持单车装货阶段 CLOSED/WAITING_STATION_YIELD；触发列记的是那台车，时刻不早于受理 | PASS | `CLOSED/WAITING_STATION_YIELD by BROKERX-L2-0002 at or after 2026-09-21T12:46:46.4793071+00:00` | `AwaitingLoadResult CLOSED/WAITING_STATION_YIELD by 'BROKERX-L2-0002' at 2026-09-21T12:46:46.4793071+00:00` |
 | 持单车收到了 CLOSED/WAITING_STATION_YIELD 那张车辆业务状态快照 | PASS | `>= 1` | `1` |
 | 让站已触发、门开着、装货未落定，服务端又转了 4 轮：没有离站核验，关卡腿没有建单 | PASS | `0 departure checks, no gate intent, WAITING_STATION_YIELD` | `0 departure checks, no gate intent, AwaitingLoadResult CLOSED/WAITING_STATION_YIELD` |
-| 门关上之后主车才离站：放行离站的那一次核验请求与关卡腿的订单意图，都晚于服务端收到「门已关」 | PASS | `door closed < departure check, door closed < gate order intent` | `door closed 2026-09-21T11:34:36.1810905+00:00; departure check 2026-09-21T11:34:47.0352353+00:00; gate order intent 2026-09-21T11:34:47.1223765+00:00` |
+| 装货已落定、门仍开着，站点等待早已过去，服务端又转了几轮：主车没有离站，关卡腿没有建单 | PASS | `no gate intent, WAITING_STATION_YIELD` | `no gate intent, AwaitingLoadResult CLOSED/WAITING_STATION_YIELD 'ONBOARD_SESSION_NOT_READY'` |
+| 门关上之后主车才离站：放行离站的那一次核验请求与关卡腿的订单意图，都晚于服务端收到「门已关」 | PASS | `door closed < departure check, door closed < gate order intent` | `door closed 2026-09-21T12:47:08.5262374+00:00; departure check 2026-09-21T12:47:20.3702138+00:00; gate order intent 2026-09-21T12:47:20.3846398+00:00` |
 
 ## 目录内容
 

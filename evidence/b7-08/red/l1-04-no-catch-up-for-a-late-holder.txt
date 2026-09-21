@@ -10,11 +10,11 @@
 # build:
 0 Error(s)
 # test run (filter: FullyQualifiedName~Batch7StationYield|FullyQualifiedName~LoadingPhaseMachineTests|FullyQualifiedName~DispatchVehicleOrderingTests):
-  Failed ControlServer.Tests.Batch7StationYieldTests.AVehicleThatStartsHoldingAfterAnotherWasCommittedToItsStationYieldsWithoutWaiting [2 s]
+  Failed ControlServer.Tests.Batch7StationYieldTests.AVehicleThatStartsHoldingAfterAnotherWasCommittedToItsStationYieldsWithoutWaiting [234 ms]
   Error Message:
    Assert.Equal() Failure: Strings differ
 Expected: "WAITING_STATION_YIELD"
 Actual:   null
-     at ControlServer.Tests.Batch7StationYieldTests.AVehicleThatStartsHoldingAfterAnotherWasCommittedToItsStationYieldsWithoutWaiting() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 383
-   at ControlServer.Tests.Batch7StationYieldTests.AVehicleThatStartsHoldingAfterAnotherWasCommittedToItsStationYieldsWithoutWaiting() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 389
-Failed!  - Failed:     1, Passed:   107, Skipped:     0, Total:   108, Duration: 45 s - ControlServer.Tests.dll (net8.0)
+     at ControlServer.Tests.Batch7StationYieldTests.AVehicleThatStartsHoldingAfterAnotherWasCommittedToItsStationYieldsWithoutWaiting() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 541
+   at ControlServer.Tests.Batch7StationYieldTests.AVehicleThatStartsHoldingAfterAnotherWasCommittedToItsStationYieldsWithoutWaiting() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 547
+Failed!  - Failed:     1, Passed:   111, Skipped:     0, Total:   112, Duration: 45 s - ControlServer.Tests.dll (net8.0)

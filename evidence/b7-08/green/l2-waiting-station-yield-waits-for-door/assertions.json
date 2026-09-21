@@ -1,11 +1,12 @@
 {
   "schemaVersion": 1,
   "scenario": "waiting-station-yield-waits-for-door",
-  "runId": "20260921T113559811Z",
+  "runId": "20260921T124610134Z",
   "outcome": "PASS",
   "failureReason": "",
   "identity": {
     "vehicleKey": "BROKERX-L2-0001",
+    "controlServerCommit": "c61009b85933d824289f1a06d4854a8e23651129",
     "protocolReleaseIdentity": {
       "repository": "8005-agv-protocol",
       "releaseVersion": "2.0.0",
@@ -18,15 +19,14 @@
       "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
       "approvalStatus": "APPROVED_RELEASE"
     },
-    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260921T113559811Z",
-    "controlServerCommit": "5a772043198a7fdb17dbee626085ef7bae355201",
     "fleet": [
       "AGV-L2-001/BROKERX-L2-0001",
       "AGV-L2-002/BROKERX-L2-0002"
     ],
-    "rig": "SyntheticOnboard",
     "batchId": "unspecified",
-    "agvId": "AGV-L2-001"
+    "rig": "SyntheticOnboard",
+    "agvId": "AGV-L2-001",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260921T124610134Z"
   },
   "assertions": [
     {
@@ -47,8 +47,8 @@
       "id": "L2-WSD-03",
       "description": "另一台车受理之后，持单车装货阶段 CLOSED/WAITING_STATION_YIELD；触发列记的是那台车，时刻不早于受理",
       "outcome": "PASS",
-      "expected": "CLOSED/WAITING_STATION_YIELD by BROKERX-L2-0002 at or after 2026-09-21T11:36:37.8740931+00:00",
-      "actual": "AwaitingLoadResult CLOSED/WAITING_STATION_YIELD by 'BROKERX-L2-0002' at 2026-09-21T11:36:37.8740931+00:00"
+      "expected": "CLOSED/WAITING_STATION_YIELD by BROKERX-L2-0002 at or after 2026-09-21T12:46:46.4793071+00:00",
+      "actual": "AwaitingLoadResult CLOSED/WAITING_STATION_YIELD by 'BROKERX-L2-0002' at 2026-09-21T12:46:46.4793071+00:00"
     },
     {
       "id": "L2-WSD-04",
@@ -66,10 +66,17 @@
     },
     {
       "id": "L2-WSD-06",
+      "description": "装货已落定、门仍开着，站点等待早已过去，服务端又转了几轮：主车没有离站，关卡腿没有建单",
+      "outcome": "PASS",
+      "expected": "no gate intent, WAITING_STATION_YIELD",
+      "actual": "no gate intent, AwaitingLoadResult CLOSED/WAITING_STATION_YIELD 'ONBOARD_SESSION_NOT_READY'"
+    },
+    {
+      "id": "L2-WSD-07",
       "description": "门关上之后主车才离站：放行离站的那一次核验请求与关卡腿的订单意图，都晚于服务端收到「门已关」",
       "outcome": "PASS",
       "expected": "door closed < departure check, door closed < gate order intent",
-      "actual": "door closed 2026-09-21T11:36:42.9936885+00:00; departure check 2026-09-21T11:36:53.8149369+00:00; gate order intent 2026-09-21T11:36:53.8342959+00:00"
+      "actual": "door closed 2026-09-21T12:47:08.5262374+00:00; departure check 2026-09-21T12:47:20.3702138+00:00; gate order intent 2026-09-21T12:47:20.3846398+00:00"
     }
   ]
 }

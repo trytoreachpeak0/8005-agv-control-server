@@ -1,0 +1,30 @@
+# injection: l1-15-corrections-read-for-any-journey
+# file: src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+--- 
++++ 
+@@ -3154,5 +3154,4 @@
+                 .Where(row => row.DemandId != null && demandIds.Contains(row.DemandId) &&
+-                              row.WorkflowType == "LOAD_CORRECTION" && row.AgvId == runtime.AgvId)
+-                .ToArrayAsync(cancellationToken).ConfigureAwait(false))
+-            .Where(row => row.CreatedAt >= joinedAt[row.DemandId!])];
++                              row.WorkflowType == "LOAD_CORRECTION")
++                .ToArrayAsync(cancellationToken).ConfigureAwait(false))];
+         if (corrections.Any(row => row.State is not
+# build:
+0 Error(s)
+# test run (filter: FullyQualifiedName~Batch7StationYield|FullyQualifiedName~LoadingPhaseMachineTests|FullyQualifiedName~DispatchVehicleOrderingTests):
+  Failed ControlServer.Tests.Batch7StationYieldTests.AnOpenCorrectionLeftByAnotherJourneyDoesNotHoldTheDeparture(why: "opened on another vehicle", agvId: "AGV-PREVIOUS", minutesFromJoining: 0) [1 s]
+  Error Message:
+   Assert.NotEqual() Failure: Strings are equal
+Expected: Not "LOAD_CORRECTION_IN_PROGRESS"
+Actual:       "LOAD_CORRECTION_IN_PROGRESS"
+     at ControlServer.Tests.Batch7StationYieldTests.AnOpenCorrectionLeftByAnotherJourneyDoesNotHoldTheDeparture(String why, String agvId, Int32 minutesFromJoining) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 445
+   at ControlServer.Tests.Batch7StationYieldTests.AnOpenCorrectionLeftByAnotherJourneyDoesNotHoldTheDeparture(String why, String agvId, Int32 minutesFromJoining) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 446
+  Failed ControlServer.Tests.Batch7StationYieldTests.AnOpenCorrectionLeftByAnotherJourneyDoesNotHoldTheDeparture(why: "opened before the demand joined this journey", agvId: null, minutesFromJoining: -60) [599 ms]
+  Error Message:
+   Assert.NotEqual() Failure: Strings are equal
+Expected: Not "LOAD_CORRECTION_IN_PROGRESS"
+Actual:       "LOAD_CORRECTION_IN_PROGRESS"
+     at ControlServer.Tests.Batch7StationYieldTests.AnOpenCorrectionLeftByAnotherJourneyDoesNotHoldTheDeparture(String why, String agvId, Int32 minutesFromJoining) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 445
+   at ControlServer.Tests.Batch7StationYieldTests.AnOpenCorrectionLeftByAnotherJourneyDoesNotHoldTheDeparture(String why, String agvId, Int32 minutesFromJoining) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 446
+Failed!  - Failed:     2, Passed:   110, Skipped:     0, Total:   112, Duration: 41 s - ControlServer.Tests.dll (net8.0)

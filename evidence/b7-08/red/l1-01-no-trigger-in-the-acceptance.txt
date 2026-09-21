@@ -2,7 +2,7 @@
 # file: src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs
 --- 
 +++ 
-@@ -1121,5 +1121,2 @@
+@@ -1131,5 +1131,2 @@
              // 同一次保存里被标记——受理与触发要么都在，要么都不在，不留给下一轮去推断。
 -            await StationYield.StageTriggerAsync(
 -                    dbContext, orderIntent.VehicleKey, journey.PickupStationRiotId, snapshot.AcceptedAt, cancellationToken)
@@ -18,90 +18,90 @@ Expected: 2026-09-19T09:03:00.0000000+00:00
 Actual:   null
      at ControlServer.Tests.Batch7StationYieldTriggerTests.AVehicleAcceptedForTheStationWhereAnotherHoldsMakesItYield(JourneyRuntimeStage stage, String state) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTriggerTests.cs:line 57
    at ControlServer.Tests.Batch7StationYieldTriggerTests.AVehicleAcceptedForTheStationWhereAnotherHoldsMakesItYield(JourneyRuntimeStage stage, String state) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTriggerTests.cs:line 58
-  Failed ControlServer.Tests.Batch7StationYieldTriggerTests.AVehicleAcceptedForTheStationWhereAnotherHoldsMakesItYield(stage: AwaitingLoadResult, state: "VEHICLE_FULL") [877 ms]
+  Failed ControlServer.Tests.Batch7StationYieldTriggerTests.AVehicleAcceptedForTheStationWhereAnotherHoldsMakesItYield(stage: AwaitingLoadResult, state: "VEHICLE_FULL") [929 ms]
   Error Message:
    Assert.Equal() Failure: Values differ
 Expected: 2026-09-19T09:03:00.0000000+00:00
 Actual:   null
      at ControlServer.Tests.Batch7StationYieldTriggerTests.AVehicleAcceptedForTheStationWhereAnotherHoldsMakesItYield(JourneyRuntimeStage stage, String state) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTriggerTests.cs:line 57
    at ControlServer.Tests.Batch7StationYieldTriggerTests.AVehicleAcceptedForTheStationWhereAnotherHoldsMakesItYield(JourneyRuntimeStage stage, String state) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTriggerTests.cs:line 58
-  Failed ControlServer.Tests.Batch7StationYieldTriggerTests.AVehicleAcceptedForTheStationWhereAnotherHoldsMakesItYield(stage: AwaitingDepartureSafety, state: "VEHICLE_FULL") [1 s]
+  Failed ControlServer.Tests.Batch7StationYieldTriggerTests.AVehicleAcceptedForTheStationWhereAnotherHoldsMakesItYield(stage: AwaitingDepartureSafety, state: "VEHICLE_FULL") [707 ms]
   Error Message:
    Assert.Equal() Failure: Values differ
 Expected: 2026-09-19T09:03:00.0000000+00:00
 Actual:   null
      at ControlServer.Tests.Batch7StationYieldTriggerTests.AVehicleAcceptedForTheStationWhereAnotherHoldsMakesItYield(JourneyRuntimeStage stage, String state) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTriggerTests.cs:line 57
    at ControlServer.Tests.Batch7StationYieldTriggerTests.AVehicleAcceptedForTheStationWhereAnotherHoldsMakesItYield(JourneyRuntimeStage stage, String state) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTriggerTests.cs:line 58
-  Failed ControlServer.Tests.Batch7StationYieldTriggerTests.AVehicleAcceptedForTheStationWhereAnotherHoldsMakesItYield(stage: AwaitingStationDeparture, state: "CARGO_HOLDING_WAIT") [795 ms]
+  Failed ControlServer.Tests.Batch7StationYieldTriggerTests.AVehicleAcceptedForTheStationWhereAnotherHoldsMakesItYield(stage: AwaitingStationDeparture, state: "CARGO_HOLDING_WAIT") [798 ms]
   Error Message:
    Assert.Equal() Failure: Values differ
 Expected: 2026-09-19T09:03:00.0000000+00:00
 Actual:   null
      at ControlServer.Tests.Batch7StationYieldTriggerTests.AVehicleAcceptedForTheStationWhereAnotherHoldsMakesItYield(JourneyRuntimeStage stage, String state) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTriggerTests.cs:line 57
    at ControlServer.Tests.Batch7StationYieldTriggerTests.AVehicleAcceptedForTheStationWhereAnotherHoldsMakesItYield(JourneyRuntimeStage stage, String state) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTriggerTests.cs:line 58
-  Failed ControlServer.Tests.Batch7StationYieldTriggerTests.AVehicleAcceptedForTheStationWhereAnotherHoldsMakesItYield(stage: AwaitingSublot, state: "VEHICLE_FULL") [784 ms]
+  Failed ControlServer.Tests.Batch7StationYieldTriggerTests.AVehicleAcceptedForTheStationWhereAnotherHoldsMakesItYield(stage: AwaitingSublot, state: "VEHICLE_FULL") [766 ms]
   Error Message:
    Assert.Equal() Failure: Values differ
 Expected: 2026-09-19T09:03:00.0000000+00:00
 Actual:   null
      at ControlServer.Tests.Batch7StationYieldTriggerTests.AVehicleAcceptedForTheStationWhereAnotherHoldsMakesItYield(JourneyRuntimeStage stage, String state) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTriggerTests.cs:line 57
    at ControlServer.Tests.Batch7StationYieldTriggerTests.AVehicleAcceptedForTheStationWhereAnotherHoldsMakesItYield(JourneyRuntimeStage stage, String state) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTriggerTests.cs:line 58
-  Failed ControlServer.Tests.Batch7StationYieldTriggerTests.AVehicleAcceptedForTheStationWhereAnotherHoldsMakesItYield(stage: AwaitingLoadResult, state: "CARGO_HOLDING_WAIT") [721 ms]
+  Failed ControlServer.Tests.Batch7StationYieldTriggerTests.AVehicleAcceptedForTheStationWhereAnotherHoldsMakesItYield(stage: AwaitingLoadResult, state: "CARGO_HOLDING_WAIT") [730 ms]
   Error Message:
    Assert.Equal() Failure: Values differ
 Expected: 2026-09-19T09:03:00.0000000+00:00
 Actual:   null
      at ControlServer.Tests.Batch7StationYieldTriggerTests.AVehicleAcceptedForTheStationWhereAnotherHoldsMakesItYield(JourneyRuntimeStage stage, String state) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTriggerTests.cs:line 57
    at ControlServer.Tests.Batch7StationYieldTriggerTests.AVehicleAcceptedForTheStationWhereAnotherHoldsMakesItYield(JourneyRuntimeStage stage, String state) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTriggerTests.cs:line 58
-  Failed ControlServer.Tests.Batch7StationYieldTriggerTests.AVehicleAcceptedForTheStationWhereAnotherHoldsMakesItYield(stage: AwaitingDepartureSafety, state: "CARGO_HOLDING_WAIT") [716 ms]
+  Failed ControlServer.Tests.Batch7StationYieldTriggerTests.AVehicleAcceptedForTheStationWhereAnotherHoldsMakesItYield(stage: AwaitingDepartureSafety, state: "CARGO_HOLDING_WAIT") [1 s]
   Error Message:
    Assert.Equal() Failure: Values differ
 Expected: 2026-09-19T09:03:00.0000000+00:00
 Actual:   null
      at ControlServer.Tests.Batch7StationYieldTriggerTests.AVehicleAcceptedForTheStationWhereAnotherHoldsMakesItYield(JourneyRuntimeStage stage, String state) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTriggerTests.cs:line 57
    at ControlServer.Tests.Batch7StationYieldTriggerTests.AVehicleAcceptedForTheStationWhereAnotherHoldsMakesItYield(JourneyRuntimeStage stage, String state) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTriggerTests.cs:line 58
-  Failed ControlServer.Tests.Batch7StationYieldTriggerTests.AVehicleAcceptedForTheStationWhereAnotherHoldsMakesItYield(stage: AwaitingStationDeparture, state: "VEHICLE_FULL") [717 ms]
+  Failed ControlServer.Tests.Batch7StationYieldTriggerTests.AVehicleAcceptedForTheStationWhereAnotherHoldsMakesItYield(stage: AwaitingStationDeparture, state: "VEHICLE_FULL") [566 ms]
   Error Message:
    Assert.Equal() Failure: Values differ
 Expected: 2026-09-19T09:03:00.0000000+00:00
 Actual:   null
      at ControlServer.Tests.Batch7StationYieldTriggerTests.AVehicleAcceptedForTheStationWhereAnotherHoldsMakesItYield(JourneyRuntimeStage stage, String state) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTriggerTests.cs:line 57
    at ControlServer.Tests.Batch7StationYieldTriggerTests.AVehicleAcceptedForTheStationWhereAnotherHoldsMakesItYield(JourneyRuntimeStage stage, String state) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTriggerTests.cs:line 58
-  Failed ControlServer.Tests.Batch7StationYieldTests.AYieldIsNotWithdrawnWhenTheTriggeringVehiclesPlanChanges [830 ms]
-  Error Message:
-   Assert.Equal() Failure: Strings differ
-Expected: "CLOSED"
-Actual:   "CARGO_HOLDING_WAIT"
-     at ControlServer.Tests.Batch7StationYieldTests.AYieldIsNotWithdrawnWhenTheTriggeringVehiclesPlanChanges() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 412
-   at ControlServer.Tests.Batch7StationYieldTests.AYieldIsNotWithdrawnWhenTheTriggeringVehiclesPlanChanges() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 417
-  Failed ControlServer.Tests.Batch7StationYieldTriggerTests.TheFirstVehicleToTriggerTheYieldIsTheOneRecorded [944 ms]
+  Failed ControlServer.Tests.Batch7StationYieldTriggerTests.TheFirstVehicleToTriggerTheYieldIsTheOneRecorded [453 ms]
   Error Message:
    Assert.Equal() Failure: Values differ
 Expected: 2026-09-19T09:03:00.0000000+00:00
 Actual:   null
      at ControlServer.Tests.Batch7StationYieldTriggerTests.TheFirstVehicleToTriggerTheYieldIsTheOneRecorded() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTriggerTests.cs:line 153
    at ControlServer.Tests.Batch7StationYieldTriggerTests.TheFirstVehicleToTriggerTheYieldIsTheOneRecorded() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTriggerTests.cs:line 154
+  Failed ControlServer.Tests.Batch7StationYieldTests.AYieldIsNotWithdrawnWhenTheTriggeringVehiclesPlanChanges [148 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "CLOSED"
+Actual:   "CARGO_HOLDING_WAIT"
+     at ControlServer.Tests.Batch7StationYieldTests.AYieldIsNotWithdrawnWhenTheTriggeringVehiclesPlanChanges() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 570
+   at ControlServer.Tests.Batch7StationYieldTests.AYieldIsNotWithdrawnWhenTheTriggeringVehiclesPlanChanges() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 575
   Failed ControlServer.Tests.Batch7StationYieldTests.WhicheverOfTheDeadlineAndTheYieldCameFirstIsWhyTheLoadingPhaseClosed(triggerAfterMinutes: 29, reason: "WAITING_STATION_YIELD") [2 s]
   Error Message:
    Assert.Equal() Failure: Strings differ
 Expected: "WAITING_STATION_YIELD"
 Actual:   "CARGO_HOLDING_TIMEOUT"
-     at ControlServer.Tests.Batch7StationYieldTests.WhicheverOfTheDeadlineAndTheYieldCameFirstIsWhyTheLoadingPhaseClosed(Int32 triggerAfterMinutes, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 354
-   at ControlServer.Tests.Batch7StationYieldTests.WhicheverOfTheDeadlineAndTheYieldCameFirstIsWhyTheLoadingPhaseClosed(Int32 triggerAfterMinutes, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 355
-  Failed ControlServer.Tests.Batch7StationYieldTests.WhicheverOfTheDeadlineAndTheYieldCameFirstIsWhyTheLoadingPhaseClosed(triggerAfterMinutes: 31, reason: "CARGO_HOLDING_TIMEOUT") [2 s]
+     at ControlServer.Tests.Batch7StationYieldTests.WhicheverOfTheDeadlineAndTheYieldCameFirstIsWhyTheLoadingPhaseClosed(Int32 triggerAfterMinutes, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 512
+   at ControlServer.Tests.Batch7StationYieldTests.WhicheverOfTheDeadlineAndTheYieldCameFirstIsWhyTheLoadingPhaseClosed(Int32 triggerAfterMinutes, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 513
+  Failed ControlServer.Tests.Batch7StationYieldTests.WhicheverOfTheDeadlineAndTheYieldCameFirstIsWhyTheLoadingPhaseClosed(triggerAfterMinutes: 31, reason: "CARGO_HOLDING_TIMEOUT") [1 s]
   Error Message:
    Assert.Equal() Failure: Strings differ
 Expected: "KEY-COMER"
 Actual:   null
-     at ControlServer.Tests.Batch7StationYieldTests.WhicheverOfTheDeadlineAndTheYieldCameFirstIsWhyTheLoadingPhaseClosed(Int32 triggerAfterMinutes, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 355
-   at ControlServer.Tests.Batch7StationYieldTests.WhicheverOfTheDeadlineAndTheYieldCameFirstIsWhyTheLoadingPhaseClosed(Int32 triggerAfterMinutes, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 355
+     at ControlServer.Tests.Batch7StationYieldTests.WhicheverOfTheDeadlineAndTheYieldCameFirstIsWhyTheLoadingPhaseClosed(Int32 triggerAfterMinutes, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 513
+   at ControlServer.Tests.Batch7StationYieldTests.WhicheverOfTheDeadlineAndTheYieldCameFirstIsWhyTheLoadingPhaseClosed(Int32 triggerAfterMinutes, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 513
   Failed ControlServer.Tests.Batch7StationYieldTests.AYieldTriggeredWhileTheHolderWasOffAirSurvivesARestartAndIsWhatItSeesOnReconnect [132 ms]
   Error Message:
    Assert.Equal() Failure: Values differ
 Expected: 2026-08-26T01:00:05.0000000+00:00
 Actual:   null
-     at ControlServer.Tests.Batch7StationYieldTests.AYieldTriggeredWhileTheHolderWasOffAirSurvivesARestartAndIsWhatItSeesOnReconnect() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 310
-   at ControlServer.Tests.Batch7StationYieldTests.AYieldTriggeredWhileTheHolderWasOffAirSurvivesARestartAndIsWhatItSeesOnReconnect() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 324
+     at ControlServer.Tests.Batch7StationYieldTests.AYieldTriggeredWhileTheHolderWasOffAirSurvivesARestartAndIsWhatItSeesOnReconnect() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 468
+   at ControlServer.Tests.Batch7StationYieldTests.AYieldTriggeredWhileTheHolderWasOffAirSurvivesARestartAndIsWhatItSeesOnReconnect() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 482
   Failed ControlServer.Tests.Batch7StationYieldTests.AVehicleCommittedToTheStationMakesTheHolderYieldAndLeave [2 s]
   Error Message:
    Assert.Equal() Failure: Values differ
@@ -109,4 +109,9 @@ Expected: 2026-08-26T01:00:05.0000000+00:00
 Actual:   2026-08-26T01:00:06.0000000+00:00
      at ControlServer.Tests.Batch7StationYieldTests.AVehicleCommittedToTheStationMakesTheHolderYieldAndLeave() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 69
    at ControlServer.Tests.Batch7StationYieldTests.AVehicleCommittedToTheStationMakesTheHolderYieldAndLeave() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 88
-Failed!  - Failed:    14, Passed:    94, Skipped:     0, Total:   108, Duration: 33 s - ControlServer.Tests.dll (net8.0)
+  Failed ControlServer.Tests.Batch7StationYieldTests.AnAppendRightAfterTheTriggerIsRefusedBeforeTheHolderRunsAgain [105 ms]
+  Error Message:
+   Assert.NotNull() Failure: Value of type 'Nullable<DateTimeOffset>' does not have a value
+     at ControlServer.Tests.Batch7StationYieldTests.AnAppendRightAfterTheTriggerIsRefusedBeforeTheHolderRunsAgain() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 139
+   at ControlServer.Tests.Batch7StationYieldTests.AnAppendRightAfterTheTriggerIsRefusedBeforeTheHolderRunsAgain() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 146
+Failed!  - Failed:    15, Passed:    97, Skipped:     0, Total:   112, Duration: 40 s - ControlServer.Tests.dll (net8.0)
