@@ -202,7 +202,8 @@ public sealed class JourneyPlanBuilder(JourneyRuntimeOptions options)
     /// </para>
     /// <para>
     /// <see cref="JourneyStopStatuses.Removed"/> 的停靠不投影：计划修订只把停靠行标成已删、不删行（批次7-10，control-server#215），
-    /// 它的序位保持原值、可能与重新编号后的开放停靠撞号，所以不能指望调用方替这里滤掉它，也不能靠序位认出它。
+    /// 它仍在停靠表里、仍有序位（修订把它排到所有开放停靠之后，审查 M1），所以不能指望调用方替这里滤掉它；
+    /// 认它靠状态，不靠序位——序位只说明它排在哪，不说明它还要不要去。
     /// </para>
     /// </remarks>
     public static UpcomingStopPlanProjection Plan(

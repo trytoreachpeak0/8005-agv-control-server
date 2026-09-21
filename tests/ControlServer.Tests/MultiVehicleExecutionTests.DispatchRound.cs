@@ -1128,6 +1128,66 @@ public sealed partial class MultiVehicleExecutionTests
     }
 
     /// <summary>
+    /// 同上，被认领的是一条释放待改派的需求：它本来就有受理行，所以「受理行在」不能再当作「这一次受理了」
+    /// （批次7-10，control-server#215，复审低 1）。
+    /// </summary>
+    /// <remarks>
+    /// 旧的判据读 <c>AcceptedDemands</c> 有没有这一行，对第一次受理与「这一次受理成功」恒等；改派的需求复用第一次的受理行，
+    /// 这个等价就断了——段失败之后认领照样站着，轮次末尾的钩子把它当作已受理、清掉挡着它的结构性阻断，下一轮再作为新阻断报出来，
+    /// 本轮其余的车也拿不到它。改为读「有没有生效的归属」：受理事务与归属同一次写入，第一次受理两者仍然恒等。
+    /// </remarks>
+    [Fact]
+    public async Task AClaimOnARedispatchedDemandTheSegmentNeverMadeGoodOnIsWithdrawn()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(
+            configure: options => options.Fleet = options.Fleet[..1]);
+        AcceptedDemandSnapshot only = FleetFixture.Demand(0, "N1-1", 0);
+        fixture.Catalog.Set([only]);
+        await fixture.RunRoundAsync();
+
+        // 释放的落库形状：归属标 RELEASED_FOR_REDISPATCH，旅程按释放服务同一条路关闭（三套占用一起放），积压行清掉受理时刻。
+        JourneyRuntimeRow journey = await fixture.Context.JourneyRuntimes.SingleAsync(token);
+        JourneyDemandRow membership = await fixture.Context.Set<JourneyDemandRow>().SingleAsync(token);
+        membership.RemovedAt = fixture.Clock.GetUtcNow();
+        membership.RemovalReason = DemandJourneyLookup.ReleasedForRedispatchReason;
+        await new PickupStopTermination(fixture.Context)
+            .StageJourneyClosureAsync(journey, DemandJourneyLookup.ReleasedForRedispatchReason, fixture.Clock.GetUtcNow(), token);
+        JourneyBacklogRow? backlog = await fixture.Context.JourneyBacklog.SingleOrDefaultAsync(row => row.DemandId == only.DemandId, token);
+        if (backlog is not null)
+        {
+            backlog.AcceptedAt = null;
+            backlog.ReasonCode = DemandJourneyLookup.ReleasedForRedispatchReason;
+        }
+
+        await fixture.Context.SaveChangesAsync(token);
+        fixture.Context.ChangeTracker.Clear();
+        Assert.True(await DemandJourneyLookup.ReleasedForRedispatch(fixture.Context).AnyAsync(row => row.DemandId == only.DemandId, token));
+
+        StructuralDispatchBlockStore blocks = new(fixture.Context);
+        fixture.RoundOutcomes.Inner = new StructuralDispatchBlockSink(
+            blocks,
+            fixture.SlotPositions,
+            new VehicleRoster(Microsoft.Extensions.Options.Options.Create(fixture.Options)),
+            NullLogger<StructuralDispatchBlockSink>.Instance);
+        DateTimeOffset raisedAt = fixture.Clock.GetUtcNow().AddMinutes(-30);
+        await blocks.RaiseOrRefreshAsync(
+            only.DemandId, "ROUTE_GRAPH_PICKUP_UNREACHABLE", only.TransportDemandKey, "{}", raisedAt, token);
+        fixture.Context.ChangeTracker.Clear();
+        fixture.Acceptances.ThrowOnFirstAccept = new HttpRequestException("The acceptance could not be written.");
+
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+
+        // 前提：这一轮确实挑中了它、受理确实抛了——否则「阻断还在」只说明这一轮根本没轮到它。
+        Assert.Null(fixture.Acceptances.ThrowOnFirstAccept);
+        Assert.Equal(1, await fixture.Context.JourneyRuntimes.CountAsync(token));
+        fixture.Context.ChangeTracker.Clear();
+        StructuralDispatchBlockRow row = Assert.Single(
+            await fixture.Context.Set<StructuralDispatchBlockRow>().AsNoTracking().ToArrayAsync(token));
+        Assert.Null(row.ClearedAt);
+    }
+
+    /// <summary>
     /// A demand claimed by a segment whose budget cut it off before the acceptance committed does not count as
     /// accepted at the round's end either: the structural block standing against it survives the round.
     /// </summary>

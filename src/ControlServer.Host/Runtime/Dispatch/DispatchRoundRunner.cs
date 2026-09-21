@@ -1082,8 +1082,9 @@ public sealed class DispatchRoundRunner(
     /// </para>
     /// <para>
     /// Whether it was made good on is decided by the database rather than by how the segment ended: the tracker is
-    /// cleared first, so this reads what the acceptance transaction actually committed. A demand whose row is
-    /// there was accepted, whatever threw or expired afterwards, and its claim stands.
+    /// cleared first, so this reads what the acceptance transaction actually committed. A demand with a membership in
+    /// force was accepted, whatever threw or expired afterwards, and its claim stands. (Until control-server#215 this read
+    /// the accepted-demand row; a demand released for redispatch keeps that row from its first acceptance.)
     /// </para>
     /// <para>
     /// <b>The round-end subtraction goes with the claim, unconditionally</b> (control-server#242). It only means
@@ -1105,7 +1106,9 @@ public sealed class DispatchRoundRunner(
         foreach (string demandId in claimedThisSegment)
         {
             claimsIntakeRefused.Remove(demandId);
-            bool accepted = await dbContext.AcceptedDemands
+            // 「这一次受理了」读的是有没有生效的归属，不是有没有受理行（批次7-10，control-server#215，复审低 1）：受理事务与
+            // 归属同一次写入，第一次受理两者恒等；释放改派的需求复用第一次的受理行，受理行在不说明这一次受理了。
+            bool accepted = await DemandJourneyLookup.Memberships(dbContext)
                 .AnyAsync(row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
             if (!accepted)
             {
