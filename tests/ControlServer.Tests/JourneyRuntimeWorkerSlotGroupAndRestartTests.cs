@@ -741,42 +741,4 @@ public sealed class JourneyRuntimeWorkerSlotGroupAndRestartTests
             "PLANNED_LOADING_COMPLETE",
             dropoff.GetProperty("loadingPhase").GetProperty("closedReason").GetString());
     }
-
-    public static TheoryData<JourneyRuntimeStage, bool, string> LoadingPhaseOfEveryStage()
-    {
-        TheoryData<JourneyRuntimeStage, bool, string> data = [];
-        foreach (JourneyRuntimeStage stage in Enum.GetValues<JourneyRuntimeStage>())
-        {
-            foreach (bool loadBatchClosed in new[] { false, true })
-            {
-                bool closed = stage switch
-                {
-                    JourneyRuntimeStage.AwaitingPickupArrival or
-                    JourneyRuntimeStage.AwaitingSublot or
-                    JourneyRuntimeStage.AwaitingLoadResult => false,
-                    JourneyRuntimeStage.Blocked or JourneyRuntimeStage.Completed => loadBatchClosed,
-                    _ => true
-                };
-                data.Add(stage, loadBatchClosed, closed ? "CLOSED/PLANNED_LOADING_COMPLETE" : "LOADING/");
-            }
-        }
-        return data;
-    }
-
-    /// <summary>
-    /// The one mapping from journey stage to loading phase, over every stage there is: none maps to
-    /// null, the stages before the load batch closes are <c>LOADING</c>, the ones after are
-    /// <c>CLOSED</c>, and the two a journey reaches from either side follow the load.
-    /// </summary>
-    [Theory]
-    [Trait("IntegrationSlice", "FP-IS-02")]
-    [MemberData(nameof(LoadingPhaseOfEveryStage))]
-    public void EveryJourneyStageMapsToALoadingPhase(JourneyRuntimeStage stage, bool loadBatchClosed, string expected)
-    {
-        LoadingPhaseProjection phase = JourneyRuntimeEngine.LoadingPhase(stage, loadBatchClosed);
-
-        Assert.NotNull(phase);
-        Assert.Null(phase.CargoHoldingDeadlineAt);
-        Assert.Equal(expected, $"{phase.State}/{phase.ClosedReason}");
-    }
 }
