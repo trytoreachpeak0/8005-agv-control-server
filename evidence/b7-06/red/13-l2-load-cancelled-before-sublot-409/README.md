@@ -55,3 +55,17 @@ merge `deb6de1f` 之后要跑的那一轮全量 CI 就是第二个样本，条�
 - 那一轮**红在同一个场景** → 是确定性的，必须定位那次 409 的调用点，单开票。
 
 无论哪种，`Wait-PickupIntent` 与 B2 断联重连那一段是查 409 的起点，而那一段与本票的改动无关。
+
+## 后续：它是集成分支顶端本来就有的，由 cs#277 跟踪
+
+**第二个同条件样本是绿的**：merge `deb6de1f` 之后的全量 l2 run 35552375604（`fc144d0a`）success。
+
+**另一张不相干的票上独立红了一次，形状一致**（以下机理是那张票的实现方读出来、由协调会话转来的，本票没有复核服务端日志）：
+cs#270 的 PR #272，l2 run 35553615265，同一个场景、八条判据全 PASS、失败在判据之后的下一段操作，报 409。
+失败点是本场景 B2 段的重连命令 `PUT connection {connected:true}`：合成车载端的 `ReconnectAsync` 抛异常，
+`/connection` 端点把它包成 `CONNECTION_CHANGE_FAILED` 回 409，服务端同时记下内层 `SocketException (10054)`——
+重连握手中途 socket 被对端重置。那张票的合并提交与 `deb6de1f` 在这个场景、`tools/ControlServer.FakeOnboard`、
+`src/` 上 diff 全空。
+
+两张票用两种独立的方法（本票按调用点、那张按 diff）排除了各自的改动。本票据此不再追它；
+跟踪与修复在 [cs#277](https://github.com/trytoreachpeak0/8005-agv-control-server/issues/277)。
