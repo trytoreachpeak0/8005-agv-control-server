@@ -206,9 +206,15 @@ public sealed class DemandReleaseService(
     /// </para>
     /// <para>
     /// 其余取值一律按活单处理，发取消并对账、确认才释放：排队 1、执行 3、HANG 9、队列优先 10、任何没映射的未知值，还有
-    /// SUSPENDED 8。按用户 2026-09-21 的说明（不是实测），8 是订单挂起：一般是车故障没法继续，或单里某个动作被取消、整张单
-    /// 继续不下去；单还在，也还挂在这辆车上。当终态直接放，RIoT 上会留一张挂在原车上的活单而需求已改派。网关与订单命令服务
-    /// 仍把 8 归为终态，与这个说明不符，本票不改（cs#296）。PAUSED 7 在下面的故障 Hold 分支里另算。
+    /// 没有故障时的 SUSPENDED 8。按用户 2026-09-21 的说明（不是实测），8 是订单挂起：起因是车故障没法继续，或单里某个动作被
+    /// 取消；单还在、挂在这辆车上，故障解除后可以 continue。当终态直接放，RIoT 上会留一张挂在原车上的活单而需求已改派。网关与
+    /// 订单命令服务仍把 8 归为终态，与这个说明不符，本票不改（cs#296）。PAUSED 7 在下面的故障 Hold 分支里另算。
+    /// </para>
+    /// <para>
+    /// <b>车有故障时的 SUSPENDED 8 不取消</b>（调度 2026-09-21，与 B 同一个逻辑）：这张单故障解除后可以 continue，取消不可撤回，
+    /// 会把 continue 这条路拆掉；「换车」还是「continue」留给故障协调器，写 <see cref="DemandReleaseReasons.OrderSuspendedResumable"/>。
+    /// 「有故障」与 B 用同一个判据（车当前有故障事实），不看这次释放由哪条判据触发：车既有故障又离开了本图时，单同样可以 continue。
+    /// B 的 Hold 判据看不见它——8 是 RIoT 自己挂起的，没有 Hold 尝试。
     /// </para>
     /// <para>
     /// <b>故障协调器 Hold 住的单不取消</b>（复审疑问，调度定 B）：故障唯一的清除路径 <c>VehicleFaultCoordinator.ResumeAsync</c>
@@ -254,6 +260,8 @@ public sealed class DemandReleaseService(
                 return (PickupOrderSettlement.Ended, null);
             case RiotOrderState.Success:
                 return (PickupOrderSettlement.None, DemandReleaseReasons.PickupOrderSucceeded);
+            case RiotOrderState.Suspended when fault is { Level: not VehicleFaultLevel.None }:
+                return (PickupOrderSettlement.None, DemandReleaseReasons.OrderSuspendedResumable);
         }
 
         if (fault is { Level: not VehicleFaultLevel.None } &&

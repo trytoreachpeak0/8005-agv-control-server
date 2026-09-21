@@ -431,6 +431,7 @@ public sealed class Batch7DemandReleaseServiceTests
     [InlineData(RiotOrderState.Executing)]
     [InlineData(RiotOrderState.Hang)]
     [InlineData(RiotOrderState.QueuePriority)]
+    [InlineData(RiotOrderState.Suspended)]
     [InlineData(42)]
     public async Task ALiveOrUnknownPickupOrderIsCancelledBeforeTheRelease(int orderState)
     {
@@ -502,6 +503,58 @@ public sealed class Batch7DemandReleaseServiceTests
         Assert.Equal([(VehicleFaultBlockCriterion.SuspectedReason, "RELEASED")],
             (await Service(fixture, gateway).RunOnceAsync(Token)).Select(outcome => (outcome.Trigger, outcome.Result)));
         Assert.Equal(0, gateway.Cancels);
+    }
+
+    /// <summary>
+    /// <see cref="DemandReleaseReasons"/> 里除 <see cref="DemandReleaseReasons.Released"/> 之外的每一个码都是释放拒绝码。
+    /// </summary>
+    /// <remarks>
+    /// 新加一个拒绝码而忘了登记进 <see cref="DemandReleaseReasons.IsRefusalCode"/>，写码那一步照样成功（阻断码为空时总能写），
+    /// 坏在后面：车重新合格时这个码不会被清掉，旅程一直挂着一个过时的阻断原因，而没有任何用例会红。所以按反射逐个核，
+    /// 不按名单核——名单会和 IsRefusalCode 一起漏。
+    /// </remarks>
+    [Fact]
+    public void EveryReleaseReasonExceptReleasedIsARefusalCode()
+    {
+        IReadOnlyList<(string Name, bool Refusal)> codes = typeof(DemandReleaseReasons)
+            .GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+            .Where(field => field.IsLiteral && field.FieldType == typeof(string))
+            .Select(field => (field.Name, DemandReleaseReasons.IsRefusalCode((string)field.GetRawConstantValue()!)))
+            .ToList();
+
+        Assert.True(codes.Count >= 10, $"only {codes.Count} codes found; the reflection is not seeing the class");
+        Assert.Equal(
+            codes.Select(code => (code.Name, code.Name != nameof(DemandReleaseReasons.Released))),
+            codes);
+    }
+
+    /// <summary>
+    /// 车有故障、取货单是 SUSPENDED 8：不取消、不释放，写 <see cref="DemandReleaseReasons.OrderSuspendedResumable"/>，
+    /// 把「换车」还是「continue」留给故障协调器（调度 2026-09-21，与 B 同一个逻辑）。
+    /// </summary>
+    /// <remarks>
+    /// 按用户 2026-09-21 说明，8 是车故障等原因下的挂起，故障解除后这张单可以 continue；取消不可撤回，会把 continue 拆掉。
+    /// 这里没有任何 Hold 尝试——8 是 RIoT 自己挂起的，不是协调器 Hold 的，所以 B 的判据按构造看不见它。RIoT 收到取消会照做
+    /// （网关回调把单置成 CANCELLED），所以旧实现在这里会取消一次并释放：断言取消 0 次才分得开。
+    /// </remarks>
+    [Fact]
+    public async Task ASuspendedOrderUnderAFaultIsLeftToTheFaultCoordinatorAndNotCancelled()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
+        await new VehicleFaultStore(fixture.Context).RecordLevelAsync(
+            before.AgvId, VehicleFaultLevel.SuspectedBlocked, "VEHICLE_ORDER_FAILED", false, fixture.Clock.GetUtcNow(), Token);
+        fixture.Context.ChangeTracker.Clear();
+        fixture.Riot.SetOrderState(before.PickupUpperId, RiotOrderState.Suspended, terminal: true);
+        CancellingGateway gateway = new(fixture.Clock, _ => fixture.Riot.CancelOrder(before.PickupUpperId));
+
+        Assert.Equal([(VehicleFaultBlockCriterion.SuspectedReason, DemandReleaseReasons.OrderSuspendedResumable)],
+            (await Service(fixture, gateway).RunOnceAsync(Token)).Select(outcome => (outcome.Trigger, outcome.Result)));
+        Assert.Equal(0, gateway.Cancels);
+        await using ControlServerDbContext reading = new ControlServerDbContext(fixture.DbOptionsForTests);
+        Assert.Null((await reading.Set<JourneyDemandRow>().AsNoTracking().SingleAsync(Token)).RemovedAt);
+        Assert.Equal(DemandReleaseReasons.OrderSuspendedResumable,
+            (await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token)).BlockReasonCode);
     }
 
     /// <summary>记一次疑似故障，并在这张取货单上记一次本故障代次的 Hold 尝试，结果为 <paramref name="holdOutcome"/>。</summary>
