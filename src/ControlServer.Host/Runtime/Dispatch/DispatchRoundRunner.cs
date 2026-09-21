@@ -237,12 +237,18 @@ public sealed class DispatchRoundRunner(
 
         // 任务层的次序：超时层、优先级带、等待年龄，再按首次看到与需求 id 定序（批次7-09，control-server#214），
         // 与车辆侧不相交。每条任务的处境按本轮读一次的分区归属表与每区参数算：轮中导入的新版本下一轮才生效。
+        // 有未解除结构性阻断的需求不进超时层（批次7-09）：取开轮时的状态，本轮新立或解除的下一轮才算。
+        HashSet<string> structurallyBlocked = (await dbContext.Set<StructuralDispatchBlockRow>().AsNoTracking()
+                .Where(row => row.ClearedAt == null)
+                .Select(row => row.DemandId)
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false))
+            .ToHashSet(StringComparer.Ordinal);
         IReadOnlyList<DispatchTask> tasksInOrder = candidateRanker.Order(
             [.. round.Catalog.Items.Select(item => new DispatchTask(
                 item,
                 backlogByDemandId.TryGetValue(item.DemandId, out JourneyBacklogRow? row) ? row.FirstSeenAt : now)
             {
-                Starvation = TaskStarvation.Assess(item, now, areaAssignmentTable, zoneParameters),
+                Starvation = TaskStarvation.Assess(item, now, areaAssignmentTable, zoneParameters, structurallyBlocked),
             })]);
         foreach (DispatchTask task in tasksInOrder)
         {

@@ -34,8 +34,10 @@ public sealed record TaskStarvationStanding(
 /// （<see cref="LiveMesFieldSet.MesSourceDate"/>），后者不进排序。
 /// </para>
 /// <para>
-/// <b>未来时刻按零岁算</b>：MesIngest 与本服务端是两个时钟，前者略快时 <c>now - CreatedAt</c> 会是负的。负的年龄没有意义；
-/// 排序本身不受影响（它比的是 <c>CreatedAt</c> 的先后），只是报出来的年龄与超时判断以零为底。
+/// <b>前提：两个钟是同一个钟。</b>年龄 = 本服务端此刻 − MesIngest 写下的 <c>CreatedAt</c>，所以两台机器的钟差会原样变成年龄误差。
+/// 今天两者都跑在 factory01 上，是同一个钟；这个前提由部署承担——把 MesIngest 与服务端分到两台机器上的那次变更，
+/// 要么保证两台对时（误差远小于阈值），要么先改这里。<b>钟差为负时年龄夹到 0</b>：MesIngest 的钟快过本服务端时
+/// <c>now - CreatedAt</c> 是负的，按零算，不会让它提前进超时层；排序比的是 <c>CreatedAt</c> 的先后，不受钟差影响。
 /// </para>
 /// <para>
 /// <b>分区与阈值只取本轮读一次的那两张表</b>，调用方传进来，这里不读库：一轮之内每条任务按同一版判，
@@ -60,6 +62,11 @@ public static class TaskStarvation
     }
 
     /// <summary>这条需求在本轮的处境，全部取自本轮读一次的那两张表。</summary>
+    /// <param name="structurallyBlocked">
+    /// 有未解除结构性派车阻断的需求 id（REQ-0210 的另一半）。它们照样计龄，但不进超时层、不做防饥饿升级：
+    /// 票面说层只排判据全过的候选，而结构性阻断的需求没有任何车接得了；它是配置错误，已经有自己的告警，
+    /// 再报一次饥饿只是噪声，还会让人误以为是排队不公平。
+    /// </param>
     public static TaskStarvationStanding Assess(
         AcceptedDemandSnapshot demand,
         DateTimeOffset now,
@@ -68,7 +75,6 @@ public static class TaskStarvation
         IReadOnlySet<string>? structurallyBlocked = null)
     {
         ArgumentNullException.ThrowIfNull(demand);
-        _ = structurallyBlocked;
         TimeSpan age = WaitingAge(demand, now);
         string? area = demand.LiveMesFields?.Area;
         // 表里没有这个 AREA 就没有分区（例如共晶类，REQ-0185）：没有分区就没有阈值，不会超时，也就不会告警。
@@ -79,7 +85,10 @@ public static class TaskStarvation
             ? parameters.StarvationThresholdSeconds
             : null;
         // 只有普通带会升级（REQ-0202「普通任务达到防饥饿阈值后进入……超时层」）；阈值未配置（未批准）时不升级、只计龄（REQ-0203）。
-        bool overdue = !InTopBand(demand) && threshold is { } seconds && age >= TimeSpan.FromSeconds(seconds);
+        // 结构性阻断的需求不进超时层（调度会话 2026-09-21 定）：它连合格候选都不是，已经有自己的结构性告警。
+        bool overdue = !InTopBand(demand) &&
+            structurallyBlocked?.Contains(demand.DemandId) != true &&
+            threshold is { } seconds && age >= TimeSpan.FromSeconds(seconds);
         return new TaskStarvationStanding(age, zone, threshold, zoneParameters?.Version, overdue);
     }
 }

@@ -10,7 +10,8 @@ namespace ControlServer.Host.Runtime.Dispatch;
 /// <remarks>
 /// <para>
 /// <b>「是否超时」与排序读的是同一个判断。</b>这里用 <see cref="TaskStarvation.Assess"/> 按本轮的时刻、本轮读一次的分区归属表
-/// 与每区参数重算——正是派车轮排序前给每条任务算的那一份，输入相同，结论相同。轮中导入的新版本因此本轮既不改排序、
+/// 与每区参数重算——正是派车轮排序前给每条任务算的那一份。唯一的差别是结构性阻断：排序取开轮时的，这里取本轮结构性汇总
+/// 写完之后的，所以本轮刚立阻断的需求不会先告一次饥饿。轮中导入的新版本因此本轮既不改排序、
 /// 也不触发告警，下一轮一起生效。
 /// </para>
 /// <para>
@@ -50,11 +51,18 @@ public sealed class StarvationEscalationSink(
             return;
         }
 
+        // 结构性阻断取本轮结构性汇总写完之后的状态（组合里它排在前面）：本轮刚立的不告警，本轮刚解除的照常判。
+        HashSet<string> structurallyBlocked = (await dbContext.Set<StructuralDispatchBlockRow>().AsNoTracking()
+                .Where(row => row.ClearedAt == null)
+                .Select(row => row.DemandId)
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false))
+            .ToHashSet(StringComparer.Ordinal);
         Dictionary<string, (AcceptedDemandSnapshot Demand, TaskStarvationStanding Standing)> overdue = new(StringComparer.Ordinal);
         foreach (AcceptedDemandSnapshot demand in round.Catalog.Items)
         {
             if (StillWaiting(round, demand.DemandId) &&
-                TaskStarvation.Assess(demand, round.Now, round.AreaAssignments, round.ZoneParameters) is { Overdue: true } standing)
+                TaskStarvation.Assess(demand, round.Now, round.AreaAssignments, round.ZoneParameters, structurallyBlocked)
+                    is { Overdue: true } standing)
             {
                 overdue.TryAdd(demand.DemandId, (demand, standing));
             }
