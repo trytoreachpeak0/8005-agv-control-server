@@ -289,6 +289,76 @@ public sealed class Batch7StationYieldTests
     }
 
     /// <summary>
+    /// 反过来：已经卸掉、不在车上的需求上开着一条装货纠错，不挡离站（调度追问的边界，审查返工）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 纠错的授权只核对装货已提交、仓位是它的子集、旅程在离站等待里，不看这条需求还在不在车上（那个口子归 cs#287）。所以车停在
+    /// 后面某一站等离站时，能对一条早已卸掉的需求开出纠错；它要靠车载端对一排已经空了的仓位执行完才关，未必关得掉。离站判定若把
+    /// 它算进去，车就一直停在离站等待里、没有人能解开。所以只看还在车上的归属（<c>LOADING</c>、<c>LOADED</c>）。
+    /// </para>
+    /// <para>
+    /// 「已卸」是直接写进归属行的：真实路径要一个「先卸一条、再去取另一条」的四停靠计划，那是插位规划器的事，不是这里要测的。
+    /// 纠错本身走真实授权路径，所以这条用例同时证明了那个口子今天确实开着。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AnOpenCorrectionOnADemandAlreadyUnloadedDoesNotHoldTheDeparture()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+        fixture.Catalog.Set(
+            fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)),
+            fixture.Demand(SecondDemandId, SecondSublot, Now.AddMinutes(-9), area: "N1-2"));
+        fixture.BoxCounts.Set(FirstSublot, 7);
+        fixture.BoxCounts.Set(SecondSublot, 7);
+        await TickAndRunAsync(fixture);
+        await Batch7ThreeStopJourneyTests.AppendDemandAsync(fixture, SecondDemandId, SecondSublot, "N1-2", 13);
+
+        await ArriveAtPickupAsync(fixture, FirstDemandId);
+        await EnterSublotAsync(fixture, FirstDemandId, FirstSublot, FirstSubmissionId);
+        await SettleLoadAsync(fixture, FirstDemandId);
+        fixture.Clock.Advance(TimeSpan.FromSeconds(15));
+        await TickAndRunAsync(fixture);
+        await AnswerDepartureSafetyAsync(fixture, FirstDemandId, FirstSafetyResultId);
+        await ArriveAtCurrentStopAsync(fixture, SecondDemandId, "TO_GATE");
+        await EnterSublotAsync(fixture, SecondDemandId, SecondSublot, SecondSubmissionId);
+        await SettleLoadAsync(fixture, SecondDemandId);
+        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, (await JourneyOfAsync(fixture, SecondDemandId)).Stage);
+
+        JourneyDemandRow first = await fixture.Context.Set<JourneyDemandRow>()
+            .SingleAsync(row => row.DemandId == FirstDemandId, token);
+        first.Status = JourneyDemandStatuses.Unloaded;
+        await fixture.Context.SaveChangesAsync(token);
+        fixture.Context.ChangeTracker.Clear();
+        int checksBeforeTheCorrection = await DepartureChecksSentAsync(fixture);
+
+        StationOperationRow load = await fixture.Context.StationOperations.AsNoTracking()
+            .SingleAsync(row => row.SlotOperationAttemptId == first.LoadSlotOperationAttemptId, token);
+        await using (ControlServerDbContext connection = fixture.OpenConnectionContext())
+        {
+            await fixture.RequestLoadCorrectionOnConnectionAsync(
+                connection,
+                "70000000-0000-4000-8000-000000000051",
+                FirstDemandId,
+                load.SlotOperationAttemptId,
+                System.Text.Json.JsonSerializer.Deserialize<int[]>(load.TargetSlotsJson)!);
+        }
+        // 前提：纠错确实被授权了（授权一侧的口子今天开着）。没被授权的话，下面「没挡住」就什么也证明不了。
+        Assert.Contains("LoadCorrectionCommand", await fixture.OutboxTypesAsync());
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(30));
+        await TickAndRunAsync(fixture);
+
+        JourneyRuntimeRow journey = await JourneyOfAsync(fixture, SecondDemandId);
+        Assert.NotEqual("LOAD_CORRECTION_IN_PROGRESS", journey.BlockReasonCode);
+        Assert.True(await DepartureChecksSentAsync(fixture) > checksBeforeTheCorrection,
+            "An open correction on a demand no longer on the vehicle held the departure.");
+    }
+
+    /// <summary>
     /// 等单车断联期间被触发、服务端随后重启：重连之后车收到的快照是 <c>WAITING_STATION_YIELD</c>，不回退成等单；断联期间不发
     /// 离站核验，重连后才发（重放与重连、断联两格）。
     /// </summary>
@@ -469,7 +539,8 @@ public sealed class Batch7StationYieldTests
 
         // 重跑在崩溃的同一时刻，不拨钟：离站路在授权移动时按「此刻」写订单意图的 CreatedAt，崩在授权之后、停靠完成之前，
         // 晚一秒重跑会被 AuthorizeMovementAsync 判成「同一身份、内容不同」而每轮都抛。那是离站路自己的崩溃恢复缺陷，
-        // 与让站无关（本票发现，已报调度另开票）；这条用例只证触发与停靠完成同生共死，所以避开它。
+        // 与让站无关（本票发现，归 cs#291 的 U4）；这条用例只证触发与停靠完成同生共死，所以避开它。同一时刻重跑不是业务要求：
+        // cs#291 修好之后，这里应改回拨钟重跑。
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(JourneyStopStatuses.Completed, (await StopAsync(fixture, stop.StopId)).Status);

@@ -3128,6 +3128,12 @@ public sealed class JourneyRuntimeEngine(
     /// 也能开纠错；这里原先只按旅程行上的 <c>DemandId</c> 查，那一条纠错开着，车照样离站——让站之后尤其如此，而票面第 3 条要求
     /// 「进行中的纠错」挡住离站。判据是 <c>Batch7StationYieldTests.AnOpenCorrectionOnAnAppendedDemandHoldsTheDeparture</c>。
     /// </para>
+    /// <para>
+    /// <b>只看还在车上的需求</b>（归属 <c>LOADING</c>、<c>LOADED</c>）。纠错的授权不看这条需求还在不在车上（那个口子归 cs#287），
+    /// 车停在后面某一站时能对一条早已卸掉的需求开出纠错；它要车载端对一排已经空了的仓位执行完才关，未必关得掉，算进来车就一直
+    /// 停在这里、没人解得开。已移除的归属本来就不在 <see cref="JourneyStopCursor.AllDemands"/> 里。判据是
+    /// <c>AnOpenCorrectionOnADemandAlreadyUnloadedDoesNotHoldTheDeparture</c>。
+    /// </para>
     /// </remarks>
     private async Task<bool> StationDepartureWaitIsOverAsync(
         JourneyRuntimeRow runtime,
@@ -3135,7 +3141,13 @@ public sealed class JourneyRuntimeEngine(
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        string[] demandIds = [.. stops.AllDemands.Select(item => item.Demand.DemandId).Distinct(StringComparer.Ordinal)];
+        string[] demandIds =
+        [
+            .. stops.AllDemands
+                .Where(item => item.Membership.Status is JourneyDemandStatuses.Loading or JourneyDemandStatuses.Loaded)
+                .Select(item => item.Demand.DemandId)
+                .Distinct(StringComparer.Ordinal)
+        ];
         RecoveryWorkflowRow[] corrections = await dbContext.RecoveryWorkflows.AsNoTracking()
             .Where(row => row.DemandId != null && demandIds.Contains(row.DemandId) && row.WorkflowType == "LOAD_CORRECTION")
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
