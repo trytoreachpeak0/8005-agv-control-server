@@ -29,7 +29,12 @@ public static class DemandReleaseRules
     /// <para>
     /// <b>服务端自己持有的粘滞事实</b>照常判，RIoT 读不读得到都一样：车辆故障（<c>VehicleFaultCoordinator</c> 维护，「疑似」只在人确认
     /// 继续后才清）、车辆任务类型准入与分区车辆准入（<see cref="VehicleDispatchPolicy"/>，来自服务端配置并落库，没有一个字段来自 RIoT）。
-    /// 车坏了往往 RIoT 也连不上；读不到就一律判「仍合格」，故障车恰恰在最需要释放的时候释放不了。
+    /// 车坏了往往 RIoT 也连不上；读不到就一律判「仍合格」，故障车恰恰在最该说明「它不合格」的时候被说成合格。
+    /// </para>
+    /// <para>
+    /// 故障在这里判为「不再合格」，但释放服务不会因此释放：车有未清除的故障时一律拒绝，写
+    /// <see cref="DemandReleaseReasons.FaultSupervisionInEffect"/>（调度 2026-09-21 定 A）。故障监看挂在这趟旅程上，释放会停掉它。
+    /// 故障仍留在判据里，是为了拒绝能记下「因故障而不合格」这个原因，也为了监看解耦（cs#299）之后不必再改这里。
     /// </para>
     /// <para>
     /// <b>从这次车辆观测推出来的判据</b>（今天只有「离开本图」）只在读到了、而且车在线时判：失败的读取有两种形状——抛异常（释放服务接住后
@@ -219,17 +224,16 @@ public static class DemandReleaseReasons
     public const string PickupOrderSucceeded = "RELEASE_PICKUP_ORDER_SUCCEEDED";
 
     /// <summary>
-    /// 故障协调器已把这张单 Hold 住（本故障代次有一次没有失败的 Hold 尝试）：不释放，把决定留给故障协调器（复审疑问，调度定 B）。
+    /// 车有未清除的故障事实（<c>Level ≠ None</c>）：不管这次由哪条判据触发，一律不释放、不取消，把车留给故障协调器
+    /// （调度 2026-09-21 定 A）。
     /// </summary>
-    public const string FaultHoldInEffect = "RELEASE_FAULT_HOLD_IN_EFFECT";
-
-    /// <summary>
-    /// 车有故障，而取货单在 RIoT 上是 HANG 9：不取消、不释放，把「换车」还是「continue」留给故障协调器（调度 2026-09-21，
-    /// 与 <see cref="FaultHoldInEffect"/> 同一个逻辑）。按用户说明与实验室 BC-ORDER-015，9 是执行中出异常后的挂起，
-    /// <c>CONTINUE_FROM_HANG</c> 可恢复；取消不可撤回，会把 continue 这条路拆掉。与 Hold 分开一个码，是因为操作员要看出
-    /// 单是 RIoT 自己挂起的、不是协调器 Hold 的。
-    /// </summary>
-    public const string OrderHangResumable = "RELEASE_ORDER_HANG_RESUMABLE";
+    /// <remarks>
+    /// 结构前提：故障监看——停车证明的采样窗口、升级急停、急停触发的确认、故障未清时闩锁掉了要重触发（REQ-0248）——只由引擎
+    /// 每轮对这趟旅程调 <c>VehicleFaultCoordinator.ObserveAsync</c> 来推进；<c>EmergencyStopSupervisor</c> 没有独立的循环。
+    /// 释放需求会终结旅程，等于停掉这辆车的急停监督。这个前提由引擎与故障协调器承担；把监看从旅程上解耦（cs#299）之后，
+    /// 这条才可以放宽，届时恢复「Hold 在效不取消」与「HANG 9 可 continue 不取消」两段（见 PR #295 与 cs#299 的记录）。
+    /// </remarks>
+    public const string FaultSupervisionInEffect = "RELEASE_FAULT_SUPERVISION_IN_EFFECT";
 
     /// <summary>
     /// 释放被拒时可能写在旅程阻断码上的那几个码（审查 M4）。只有这几个会被释放服务改写或清掉；引擎自己的码一个都不碰。
@@ -237,7 +241,7 @@ public static class DemandReleaseReasons
     /// </summary>
     public static bool IsRefusalCode(string? code) => code is
         AfterArrival or CurrentStopWithOtherDemands or AnchorWithOtherDemands or OrderCancelNotConfirmed or
-        OrderStateUnknown or PickupOrderAppeared or PickupOrderSucceeded or FaultHoldInEffect or OrderHangResumable;
+        OrderStateUnknown or PickupOrderAppeared or PickupOrderSucceeded or FaultSupervisionInEffect;
 
     /// <summary>写事务里发现取货停靠已经有了 RIoT 订单意图，与轮次开头读到的不同，这一轮不释放。</summary>
     public const string PickupOrderAppeared = "RELEASE_PICKUP_ORDER_APPEARED";

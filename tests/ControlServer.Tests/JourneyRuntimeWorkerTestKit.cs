@@ -127,6 +127,13 @@ internal static class JourneyRuntimeWorkerTestKit
         public JourneyRuntimeEngine Engine { get; private set; }
 
         /// <summary>
+        /// Whether RIoT reports this vehicle's emergency stop as latched (<c>CAN_RECOVER</c>). Off by default, so
+        /// every existing test keeps reading <c>OK</c>. A test flips it after a trigger has gone out, which is what
+        /// lets the next evaluation settle that trigger as confirmed -- and only an evaluation that runs can.
+        /// </summary>
+        public bool EmergencyLatched { get; set; }
+
+        /// <summary>
         /// The <paramref name="commands"/> interceptor is the seam for asserting on the SQL the engine
         /// sends, which is the only way to tell a query that narrows in the store from one that reads a
         /// whole type back and filters in memory: a pre-filter that changed results would be a bug, so
@@ -1016,7 +1023,7 @@ internal static class JourneyRuntimeWorkerTestKit
             RiotOrderCommandAuditStore audit = new(Context);
             Microsoft.Extensions.Options.IOptions<VehicleFaultOptions> faultOptions =
                 Microsoft.Extensions.Options.Options.Create(new VehicleFaultOptions());
-            SilentCommandGateway gateway = new(Clock);
+            SilentCommandGateway gateway = new(Clock, () => EmergencyLatched);
             return new VehicleFaultCoordinator(
                 faults,
                 gateway,
@@ -1051,7 +1058,7 @@ internal static class JourneyRuntimeWorkerTestKit
         /// assertion that fails should be about the fault model, not about a double that was left
         /// unable to answer.
         /// </summary>
-        private sealed class SilentCommandGateway(TimeProvider clock)
+        private sealed class SilentCommandGateway(TimeProvider clock, Func<bool> latched)
             : IRiotOrderCommandGateway, IRiotVehicleEmergencyFacts, IRiotVehicleOrderFacts
         {
             public Task<RiotVehicleOrderObservation> ReadUnfinishedOrdersAsync(
@@ -1096,7 +1103,9 @@ internal static class JourneyRuntimeWorkerTestKit
             {
                 _ = cancellationToken;
                 return Task.FromResult(new RiotVehicleEmergencyObservation(
-                    deviceKey, RiotVehicleEmergencyObservation.Ok, clock.GetUtcNow()));
+                    deviceKey,
+                    latched() ? RiotVehicleEmergencyObservation.CanRecover : RiotVehicleEmergencyObservation.Ok,
+                    clock.GetUtcNow()));
             }
         }
 

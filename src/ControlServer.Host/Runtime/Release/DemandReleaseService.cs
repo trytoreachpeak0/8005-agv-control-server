@@ -160,6 +160,18 @@ public sealed class DemandReleaseService(
             pickupIsCurrentNextStop: pickupIsCurrent,
             arrivedAtCurrentNextStop: journey.Stage != JourneyRuntimeStage.AwaitingPickupArrival);
 
+        // 车有未清除的故障：不释放、不取消，任何触发都一样（调度 2026-09-21 定 A）。结构前提：故障监看——停车证明的采样、
+        // 升级急停、急停触发的确认、故障未清时闩锁掉了要重触发（REQ-0248）——只由引擎每轮对这趟旅程调
+        // VehicleFaultCoordinator.ObserveAsync 推进，EmergencyStopSupervisor 没有独立循环。释放会终结旅程，等于停掉这辆车的
+        // 急停监督（CI l2 红过三条故障／急停场景）。这个前提由引擎与故障协调器承担，本服务依赖它；解耦之前（cs#299）不能放宽。
+        // 排在 Refuse 之后：到站后的拒绝按 M4 本来就不写码，不因为有故障改成写码。
+        if (decision.Action is DemandReleaseAction.CancelPickupOrderThenRelease or DemandReleaseAction.ReleaseWithoutOrder &&
+            fault is { Level: not VehicleFaultLevel.None })
+        {
+            return await RefuseAsync(journey, demandId, trigger, DemandReleaseReasons.FaultSupervisionInEffect, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         switch (decision.Action)
         {
             case DemandReleaseAction.Refuse:
@@ -167,7 +179,7 @@ public sealed class DemandReleaseService(
                     .ConfigureAwait(false);
             case DemandReleaseAction.CancelPickupOrderThenRelease:
                 (PickupOrderSettlement settlement, string? notSettled) = await CancelPickupOrderAsync(
-                    journey, stops.Current, fault, cancellationToken).ConfigureAwait(false);
+                    journey, stops.Current, cancellationToken).ConfigureAwait(false);
                 if (notSettled is not null)
                 {
                     return await RefuseAsync(journey, demandId, trigger, notSettled, cancellationToken)
@@ -205,29 +217,19 @@ public sealed class DemandReleaseService(
     /// 对账为 Failed，之后每轮对已结的 Failed 只返回、不重读，永远停在「取消没确认」。
     /// </para>
     /// <para>
-    /// 其余取值一律按活单处理，发取消并对账、确认才释放：排队 1、执行 3、队列优先 10、任何没映射的未知值、没有故障时的
-    /// HANG 9，还有 SUSPENDED 8——有没有故障都一样。8 在实验室零观测，SDK 标注为「已移除」，语义不明，按保守方向当活单：
-    /// 当终态直接放，若它其实是一张还活着的单，RIoT 上会留下它而需求已改派。网关与订单命令服务仍把 8 归为终态，本票不改
-    /// （cs#296）。PAUSED 7 在下面的故障 Hold 分支里另算。
+    /// 其余取值一律按活单处理，发取消并对账、确认才释放：排队 1、执行 3、暂停 7、HANG 9、队列优先 10、SUSPENDED 8、任何没映射的
+    /// 未知值。8 在实验室零观测，SDK 标注为「已移除」，语义不明，按保守方向当活单：当终态直接放，若它其实是一张还活着的单，
+    /// RIoT 上会留下它而需求已改派。网关与订单命令服务仍把 8 归为终态，本票不改（cs#296）。
     /// </para>
     /// <para>
-    /// <b>车有故障时的 HANG 9 不取消</b>（调度 2026-09-21，与 B 同一个逻辑）：按用户说明与实验室 BC-ORDER-015，9 是执行中出异常后
-    /// 的挂起，<c>CONTINUE_FROM_HANG</c> 可恢复，continue 可能再次失败并保持挂起、永不自行变 FAILED，只能 continue 或取消。取消不可
-    /// 撤回，会把 continue 这条路拆掉；「换车」还是「continue」留给故障协调器，写 <see cref="DemandReleaseReasons.OrderHangResumable"/>。
-    /// 人在 RIoT 里取消后订单落到 2，下一轮照常释放。「有故障」与 B 用同一个判据（车当前有故障事实），不看这次释放由哪条判据触发。
-    /// B 的 Hold 判据看不见它——9 是 RIoT 自己挂起的，没有 Hold 尝试。
-    /// </para>
-    /// <para>
-    /// <b>故障协调器 Hold 住的单不取消</b>（复审疑问，调度定 B）：故障唯一的清除路径 <c>VehicleFaultCoordinator.ResumeAsync</c>
-    /// 要求订单 HELD，释放取消它就把那条路拆了（cs#299）。判据只看审计：本故障代次在这张单上有一次 Hold 尝试，而且结果不是
-    /// Failed——Confirmed 是 HELD；Pending 与 Unknown 是「可能 HELD」，一律算在内，偏保守。它排在终态判断之后：终态单上没有
-    /// 东西能被 Hold 住（对 FAILED 单的 Hold 必然判 Failed），今天唯一自动产生故障的来源（订单 FAILED）因此照常释放。
+    /// 这里不看故障：车有未清除的故障时，<see cref="ReleaseOneAsync"/> 在走到这里之前就拒绝了（调度 2026-09-21 定 A，
+    /// 见 <see cref="DemandReleaseReasons.FaultSupervisionInEffect"/>）。上一版在这里按故障分过两支——Hold 在效不取消（B）、
+    /// HANG 9 可 continue 不取消——有故障就不释放之后它们没有触发面，已删；故障监看从旅程上解耦（cs#299）时要恢复。
     /// </para>
     /// </remarks>
     private async Task<(PickupOrderSettlement Settlement, string? NotSettled)> CancelPickupOrderAsync(
         JourneyRuntimeRow journey,
         JourneyStopRow currentStop,
-        VehicleFaultFact? fault,
         CancellationToken cancellationToken)
     {
         OrderIntentRow? intent = await dbContext.OrderIntents.AsNoTracking()
@@ -270,17 +272,6 @@ public sealed class DemandReleaseService(
                 return (PickupOrderSettlement.Ended, null);
             case RiotOrderState.Success:
                 return (PickupOrderSettlement.None, DemandReleaseReasons.PickupOrderSucceeded);
-            case RiotOrderState.Hang when fault is { Level: not VehicleFaultLevel.None }:
-                return (PickupOrderSettlement.None, DemandReleaseReasons.OrderHangResumable);
-        }
-
-        if (fault is { Level: not VehicleFaultLevel.None } &&
-            (await commandAudit.ReadAttemptsAsync(RiotCommandTypeNames.OrderHold, currentStop.UpperId, cancellationToken)
-                .ConfigureAwait(false))
-            .Any(attempt => attempt.FaultGeneration == fault.FaultGeneration &&
-                            attempt.Outcome != RiotOrderCommandOutcome.Failed))
-        {
-            return (PickupOrderSettlement.None, DemandReleaseReasons.FaultHoldInEffect);
         }
 
         // 订单还活着：发过取消的只对账、不发第二次（重发属 cs#296）；没发过的发一次并对账。
