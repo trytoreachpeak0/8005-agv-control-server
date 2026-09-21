@@ -121,6 +121,20 @@ public sealed class Batch7TaskPriorityOrderingTests
             TaskStarvation.WaitingAge(Snapshot("D-2", TransportTaskTypes.WireToGate, Now.AddSeconds(5)), Now));
     }
 
+    /// <summary>
+    /// 钟差为负：MesIngest 的钟快过本服务端，<c>CreatedAt</c> 落在此刻之后。年龄夹到 0，哪怕阈值取最小的 1 秒也不超时——
+    /// 负的年龄不能让它「提前」进超时层，也不能让一个等了很久的任务因为比较出负数而错过。
+    /// </summary>
+    [Fact]
+    public void ACreationStampAheadOfThisServersClockCountsAsZeroAgeAndIsNotOverdue()
+    {
+        TaskStarvationStanding standing = Standing(Now.AddSeconds(30), Parameters(5, (Zone, 1)));
+
+        Assert.Equal(TimeSpan.Zero, standing.WaitingAge);
+        Assert.False(standing.Overdue);
+        Assert.Equal(1, standing.ThresholdSeconds);
+    }
+
     // ---- 超时层 --------------------------------------------------------------------------------------
 
     /// <summary>越过本区阈值的普通任务排在未超时的 <c>STAGING_TO_WIRE</c> 之前（REQ-0202）。</summary>
@@ -222,6 +236,26 @@ public sealed class Batch7TaskPriorityOrderingTests
         Assert.True(standing.Overdue);
         Assert.Null(unmapped.DispatchZone);
         Assert.False(unmapped.Overdue);
+    }
+
+    /// <summary>
+    /// 有未解除的结构性派车阻断的需求不进超时层（调度会话 2026-09-21 定）：它连合格候选都不是（配置错误，没有任何车接得了），
+    /// 已经有自己的结构性告警；再按饥饿升级是重复的噪声，还会让人误以为是排队不公平。
+    /// </summary>
+    [Fact]
+    public void ADemandUnderAStructuralDispatchBlockNeverEntersTheTimeoutTier()
+    {
+        AcceptedDemandSnapshot demand = Snapshot("D-1", TransportTaskTypes.WireToGate, Now.AddHours(-5));
+        DispatchZoneParameterTableVersion parameters = Parameters(2, (Zone, 60));
+
+        TaskStarvationStanding blocked = TaskStarvation.Assess(
+            demand, Now, Areas(), parameters, new HashSet<string>(StringComparer.Ordinal) { "D-1" });
+        TaskStarvationStanding free = TaskStarvation.Assess(
+            demand, Now, Areas(), parameters, new HashSet<string>(StringComparer.Ordinal) { "D-2" });
+
+        Assert.False(blocked.Overdue);
+        Assert.Equal(TimeSpan.FromHours(5), blocked.WaitingAge);
+        Assert.True(free.Overdue);
     }
 
     /// <summary>注册表：超时层、优先级带、建单时刻（年龄）、首次看到、需求 id。</summary>

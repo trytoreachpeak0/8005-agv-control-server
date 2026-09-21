@@ -64,9 +64,11 @@ public static class TaskStarvation
         AcceptedDemandSnapshot demand,
         DateTimeOffset now,
         AreaAssignmentTableVersion? areaAssignments,
-        DispatchZoneParameterTableVersion? zoneParameters)
+        DispatchZoneParameterTableVersion? zoneParameters,
+        IReadOnlySet<string>? structurallyBlocked = null)
     {
         ArgumentNullException.ThrowIfNull(demand);
+        _ = structurallyBlocked;
         TimeSpan age = WaitingAge(demand, now);
         string? area = demand.LiveMesFields?.Area;
         // 表里没有这个 AREA 就没有分区（例如共晶类，REQ-0185）：没有分区就没有阈值，不会超时，也就不会告警。

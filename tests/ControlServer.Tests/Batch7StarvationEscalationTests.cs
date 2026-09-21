@@ -50,6 +50,82 @@ public sealed class Batch7StarvationEscalationTests
         Assert.Equal(firstRoundAt, after.StarvationEscalatedAt);
         Assert.Equal(1, Escalations(fixture, Waiting));
         Assert.Null(after.AcceptedAt);
+        // 挡住它的是一道瞬时门禁（查不到箱数），不是结构性阻断：防饥饿要抓的正是这一种。
+        Assert.Empty(await fixture.Context.Set<StructuralDispatchBlockRow>().AsNoTracking().ToArrayAsync(Token));
+    }
+
+    /// <summary>
+    /// 结构性阻断的需求越过阈值也不告警、不进超时层（调度会话 2026-09-21 定）：分区归属表收录了它的 AREA、地图上没有站点，
+    /// 立的是 <c>AREA_STATION_NOT_FOUND</c> 结构性阻断；它等了一天、跑了多轮，防饥饿标记与日志都没有。
+    /// </summary>
+    [Fact]
+    public async Task ADemandUnderAStructuralDispatchBlockIsNotEscalatedHoweverLongItWaits()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await fixture.ImportStarvationThresholdsAsync((Zone, 60));
+        // N22-1 在默认分区归属表里，默认地图上没有它的站点。
+        fixture.Catalog.Set(fixture.Demand(Waiting, "SUBLOT-WAITING", JourneyRuntimeWorkerTestKit.Now.AddDays(-1), "N22-1"));
+        fixture.BoxCounts.Set("SUBLOT-WAITING", 4);
+        DateTimeOffset startedAt = fixture.Clock.GetUtcNow();
+
+        for (int round = 0; round < 3; round++)
+        {
+            await fixture.Engine.ExecuteOnceAsync(Token);
+            fixture.Clock.Advance(TimeSpan.FromMinutes(1));
+        }
+
+        Assert.Equal(startedAt.AddMinutes(3), fixture.Clock.GetUtcNow());
+        StructuralDispatchBlockRow block = Assert.Single(
+            await fixture.Context.Set<StructuralDispatchBlockRow>().AsNoTracking().ToArrayAsync(Token));
+        Assert.Equal("AREA_STATION_NOT_FOUND", block.ReasonCode);
+        JourneyBacklogRow backlog = await BacklogAsync(fixture);
+        Assert.Null(backlog.StarvationEscalatedAt);
+        Assert.Null(backlog.StarvationEscalationParameterVersion);
+        Assert.Equal(0, Escalations(fixture, Waiting));
+    }
+
+    /// <summary>
+    /// 释放改派（批次7-10，control-server#215）之后年龄仍从原来的本地建单时刻算：释放把积压行的受理标记清掉、
+    /// 需求重新成为候选，目录项的 <c>CreatedAt</c> 不变。这里按 cs#215 释放后留下的样子摆好积压行（受理标记空、
+    /// 首次看到就在一分钟前），需求在 20 分钟前建单，阈值 15 分钟：按建单时刻算它已超时并告警，按首次看到算则不会。
+    /// </summary>
+    /// <remarks>
+    /// cs#215 还没合入集成分支，这里摆的是它的释放写下的积压行（<c>AcceptedAt = null</c>、原因码 <c>RELEASED</c>），
+    /// 不经它的释放代码；两票都合入后，整轮经真实释放路径的那一条由后合的一方补上。
+    /// </remarks>
+    [Fact]
+    public async Task AReleasedDemandKeepsTheAgeItHasHadSinceItsLocalCreation()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await fixture.ImportStarvationThresholdsAsync((Zone, 900));
+        DateTimeOffset createdAt = JourneyRuntimeWorkerTestKit.Now.AddMinutes(-20);
+        fixture.Catalog.Set(fixture.Demand(Waiting, "SUBLOT-WAITING", createdAt));
+        fixture.Context.JourneyBacklog.Add(new JourneyBacklogRow
+        {
+            DemandId = Waiting,
+            TransportDemandKey = "SUBLOT-WAITING|WIRE_TO_GATE",
+            FirstSeenAt = fixture.Clock.GetUtcNow(),
+            DemandCreatedAt = createdAt,
+            DecisionFingerprint = "released",
+            ReasonCode = "RELEASED",
+            LastSeenAt = fixture.Clock.GetUtcNow(),
+            AcceptedAt = null,
+        });
+        await fixture.Context.SaveChangesAsync(Token);
+        DateTimeOffset releasedAt = fixture.Clock.GetUtcNow();
+
+        fixture.Clock.Advance(TimeSpan.FromMinutes(1));
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Equal(releasedAt.AddMinutes(1), fixture.Clock.GetUtcNow());
+        JourneyBacklogRow backlog = await BacklogAsync(fixture);
+        Assert.Equal(releasedAt, backlog.FirstSeenAt);
+        Assert.Equal(fixture.Clock.GetUtcNow(), backlog.StarvationEscalatedAt);
+        Assert.Equal(1, Escalations(fixture, Waiting));
+        Assert.Contains(
+            fixture.StarvationLog.Entries,
+            entry => entry.Message.Contains(Waiting, StringComparison.Ordinal) &&
+                entry.Message.Contains("has waited 1260 s", StringComparison.Ordinal));
     }
 
     /// <summary>
