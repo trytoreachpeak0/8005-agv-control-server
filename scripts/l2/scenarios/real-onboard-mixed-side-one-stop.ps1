@@ -97,7 +97,7 @@ $positions = Get-L2VehicleSlotPositions -Connection $connection -AgvId $Context.
 if ($null -eq $positions) { throw "The slot grouping of $($Context.AgvId) is unresolved; every side criterion reads it." }
 function Get-Group([int]$slot) { if ($positions.Positions.ContainsKey($slot)) { return $positions.Positions[$slot] } else { return '(unknown)' } }
 
-# --- 1. 甲被空闲车接走；车到 11 号站之前乙丙追加，并成 12 号站的同一个停靠 ------------------------------------------------
+# --- 1. 甲被空闲车接走，车到 11 号站装甲 -----------------------------------------------------------------------------
 
 Initialize-L2CargoRig $Context
 Publish-L2CargoDemand $Context $a
@@ -106,39 +106,47 @@ $journey = Wait-L2Condition -Description 'demand A was accepted and the vehicle 
     -Until { param($v) $null -ne $v -and [string]$v.Stage -eq 'AwaitingPickupArrival' }
 $journeyId = [string]$journey.JourneyId
 
-Publish-L2CargoDemand $Context $b
-$null = Wait-L2ConditionOrLast -Description 'demand B joined the journey' -Journal $journal -Criterion 'members-2' -TimeoutSeconds 120 `
-    -Probe { (Get-L2JourneyMembers $connection $journeyId).Count } -Until { param($v) $v -ge 2 }
-Publish-L2CargoDemand $Context $c
-$members = Wait-L2ConditionOrLast -Description 'demand C joined the journey' -Journal $journal -Criterion 'members-3' -TimeoutSeconds 120 `
-    -Probe { Get-L2JourneyMembers $connection $journeyId } -Until { param($v) @($v).Count -ge 3 }
-$members = @($members)
-$stops = Get-L2JourneyStops $connection $journeyId
-$stopShape = (@($stops) | ForEach-Object { "$($_.Sequence):$($_.StopRole)@$($_.StationRiotId)" }) -join ' '
-$memberB = @($members | Where-Object { [string]$_.DemandId -eq $b.Id }) | Select-Object -First 1
-$memberC = @($members | Where-Object { [string]$_.DemandId -eq $c.Id }) | Select-Object -First 1
-$sharedStop = if ($null -ne $memberB -and $null -ne $memberC -and [string]$memberB.PickupStopId -eq [string]$memberC.PickupStopId) {
-    @($stops | Where-Object { [string]$_.StopId -eq [string]$memberB.PickupStopId }) | Select-Object -First 1
-} else { $null }
-$assertions.Add(
-    'L2-MSO-01',
-    '前置：乙丙都进了甲那一趟旅程，取货并成 12 号站的同一个停靠（归属三条、停靠 11→12→关卡）',
-    ($members.Count -eq 3 -and $null -ne $sharedStop -and [int]$sharedStop.StationRiotId -eq $mixedStationRiotId -and
-        $stopShape -eq "1:PICKUP@$firstStationRiotId 2:PICKUP@$mixedStationRiotId 3:DROPOFF@$gateRiotId"),
-    "归属 3 / 乙丙同一个停靠 @$mixedStationRiotId / 1:PICKUP@$firstStationRiotId 2:PICKUP@$mixedStationRiotId 3:DROPOFF@$gateRiotId",
-    "归属 $($members.Count) / 乙丙$(if ($null -ne $sharedStop) { "同一个停靠 @$($sharedStop.StationRiotId)" } else { '不在同一个停靠' }) / $stopShape")
-if ($null -eq $sharedStop) {
-    Add-L2RealNotReached $assertions @($allIds | Where-Object { $_ -ne 'L2-MSO-01' }) '乙丙没有落在同一个停靠上，这条场景的前提不成立'
-    return
-}
-
 $sampler = Start-L2DoorSampler $simulator 25
 $samplerStopped = $false
 try {
-    # --- 2. 11 号站装甲 -----------------------------------------------------------------------------------------
-
     $null = Move-L2CargoVehicleToCurrentStop $Context $journeyId $firstStationRiotId
     $loadA = Invoke-L2RigLoad $Context $journeyId $a
+
+    # --- 2. 车停在 11 号站时追加乙丙，并成 12 号站的同一个停靠 ---------------------------------------------------------
+
+    # 追加只能在车停在站上时发生，不能在车开往 11 号站的路上：真车载端在车有未结束的 RIoT 单时报「是否停车未知」
+    # （OnboardAlarmSnapshot ONBOARD_DEPARTURE_SAFETY_SIGNAL_UNAVAILABLE / RIOT_NONFINAL_ORDER_PRESENT，SafetyStateChanged
+    # departureSafe=false、unknownPresent=true），会话因此 RecoveryRequired，在途判据读不到车载端事实，以
+    # ONBOARD_FACTS_NOT_READY 拒绝追加。第一次跑就是这样（乙丙积压两分钟未进旅程）；合成车载端恒报安全，看不到这一点。
+    # 所以等甲装完、车停在 11 号站的修正窗口里再发：11 号站此刻是当前下一站（不能并），12 号站是新开的、可以并。
+    Publish-L2CargoDemand $Context $b
+    $null = Wait-L2ConditionOrLast -Description 'demand B joined the journey' -Journal $journal -Criterion 'members-2' -TimeoutSeconds 45 `
+        -Probe { (Get-L2JourneyMembers $connection $journeyId).Count } -Until { param($v) $v -ge 2 }
+    Publish-L2CargoDemand $Context $c
+    $members = Wait-L2ConditionOrLast -Description 'demand C joined the journey' -Journal $journal -Criterion 'members-3' -TimeoutSeconds 45 `
+        -Probe { Get-L2JourneyMembers $connection $journeyId } -Until { param($v) @($v).Count -ge 3 }
+    $members = @($members)
+    $stops = Get-L2JourneyStops $connection $journeyId
+    $stopShape = (@($stops) | ForEach-Object { "$($_.Sequence):$($_.StopRole)@$($_.StationRiotId)" }) -join ' '
+    $memberB = @($members | Where-Object { [string]$_.DemandId -eq $b.Id }) | Select-Object -First 1
+    $memberC = @($members | Where-Object { [string]$_.DemandId -eq $c.Id }) | Select-Object -First 1
+    $sharedStop = if ($null -ne $memberB -and $null -ne $memberC -and [string]$memberB.PickupStopId -eq [string]$memberC.PickupStopId) {
+        @($stops | Where-Object { [string]$_.StopId -eq [string]$memberB.PickupStopId }) | Select-Object -First 1
+    } else { $null }
+    $expectedShape = "1:PICKUP@$firstStationRiotId 2:PICKUP@$mixedStationRiotId 3:UNLOAD@$gateRiotId"
+    $assertions.Add(
+        'L2-MSO-01',
+        '前置：乙丙都进了甲那一趟旅程，取货并成 12 号站的同一个停靠（归属三条、停靠 11→12→关卡）',
+        ($members.Count -eq 3 -and $null -ne $sharedStop -and [int]$sharedStop.StationRiotId -eq $mixedStationRiotId -and
+            $stopShape -eq $expectedShape),
+        "归属 3 / 乙丙同一个停靠 @$mixedStationRiotId / $expectedShape",
+        "归属 $($members.Count) / 乙丙$(if ($null -ne $sharedStop) { "同一个停靠 @$($sharedStop.StationRiotId)" } else { '不在同一个停靠' }) / $stopShape")
+    if ($null -eq $sharedStop) {
+        $backlog = Invoke-L2Query -Connection $connection -Sql 'SELECT DemandId, ReasonCode FROM JourneyBacklog'
+        $journal.Note("Backlog: $((@($backlog) | ForEach-Object { "$($_.DemandId)=$($_.ReasonCode)" }) -join '; ')")
+        Add-L2RealNotReached $assertions @($allIds | Where-Object { $_ -ne 'L2-MSO-01' }) '乙丙没有落在同一个停靠上，这条场景的前提不成立'
+        return
+    }
 
     # --- 3. 12 号站：清单两条，先装乙（前侧）、再装丙（后侧） -------------------------------------------------------
 

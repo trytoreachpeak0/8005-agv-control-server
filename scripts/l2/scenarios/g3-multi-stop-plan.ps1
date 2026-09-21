@@ -8,8 +8,9 @@ G3 `FP-IS-08`：多停靠计划（批次 7，control-server#218）。协议向�
 两条需求各装一次、各卸一次，旅程 `Completed`。
 
 **形状**：一辆车、两条需求、两个取货站、一个关卡。车先停在关卡上；需求甲（`N1-3`，12 号站 `N1-3_N1-7`）被这辆空闲车接走，
-计划两条腿；车还在开往 12 号站时发需求乙（`C15-13`，11 号站），它追加进同一趟：取货新开一个停靠排在 12 号站之后，卸货并进
-关卡那个停靠，计划变成三条腿、整体重发。然后车依次到 12、11 装货，到关卡卸两条。
+计划两条腿；车到 12 号站装完甲、停在站上持货等单时发需求乙（`C15-13`，11 号站），它追加进同一趟：取货新开一个停靠排在 12 号站
+之后，卸货并进关卡那个停靠，计划变成三条腿、整体重发。然后车到 11 号站装乙，到关卡卸两条。追加不能在车开往 12 号站的路上发：
+真车载端那时报「是否停车未知」，会话不就绪，服务端不对它追加（下文第 2 节）。
 
 **站点刻意这样挑**：追加后的计划是 `1:N1-3_N1-7`、`2:C15-13`、`3:关卡`，而按站名排是 `C15-13`、`N1-3_N1-7`、`关卡`——
 车载端要是按站点在本地重排，行序就变成 2,1,3，`NEVER_REORDER_LEGS_LOCALLY` 的判据才有东西可判。两个取货站按站名顺序
@@ -99,8 +100,13 @@ $assertions.Add(
     "两条腿，行序 $(if ($dispatchPlan) { (@($dispatchPlan.Legs) | ForEach-Object { $_.sequence }) -join ',' } else { '(无计划)' })",
     "服务端 $(if ($dispatchPlan) { Format-L2WireSnapshot $dispatchPlan } else { '(无已确认计划)' }) / 界面 $(Format-L2PlanLegRows $rowsBefore)")
 
-# --- 2. 乙追加进同一趟，计划变三条腿 ------------------------------------------------------------------------------
+# --- 2. 车到 12 号站装甲，停在站上时乙追加进同一趟，计划变三条腿 ------------------------------------------------------
 
+# 追加只能在车停在站上时发生：真车载端在车有未结束的 RIoT 单时报「是否停车未知」（RIOT_NONFINAL_ORDER_PRESENT），
+# 会话 RecoveryRequired，在途判据以 ONBOARD_FACTS_NOT_READY 拒绝追加（real-onboard-mixed-side-one-stop 第一次跑实测）。
+# 甲装完之后车在 12 号站持货等单（setup 里 90 秒），乙在这段时间里追加：12 号站是当前下一站，乙的取货新开一个停靠排在它后面。
+$null = Move-L2CargoVehicleToCurrentStop $Context $journeyId $firstStationRiotId
+$loadA = Invoke-L2RigLoad $Context $journeyId $a
 Publish-L2CargoDemand $Context $b
 $appendedPlan = Wait-L2ConditionOrLast -Description 'the onboard acknowledged a plan of three or more legs' -Journal $journal `
     -Criterion 'appended-plan-acknowledged' -TimeoutSeconds 120 `
@@ -126,10 +132,8 @@ $assertions.Add(
     "行序 $((@($appendedPlan.Legs) | ForEach-Object { $_.sequence }) -join ',')",
     "服务端 $(Format-L2WireSnapshot $appendedPlan) / 界面 $(Format-L2PlanLegRows $rowsAfter)")
 
-# --- 3. 走完：12 号站装甲、11 号站装乙、关卡卸两条 -------------------------------------------------------------------
+# --- 3. 走完：11 号站装乙、关卡卸两条 ------------------------------------------------------------------------------
 
-$null = Move-L2CargoVehicleToCurrentStop $Context $journeyId $firstStationRiotId
-$loadA = Invoke-L2RigLoad $Context $journeyId $a
 $null = Move-L2CargoVehicleToCurrentStop $Context $journeyId $secondStationRiotId
 $loadB = Invoke-L2RigLoad $Context $journeyId $b
 # 11 号站是最后一个装货停靠：车在这里持货等单到期限才走（setup 里 90 秒），所以这一步的等待给足。
