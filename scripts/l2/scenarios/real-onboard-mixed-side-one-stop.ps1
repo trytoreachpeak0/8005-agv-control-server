@@ -168,7 +168,7 @@ try {
         "两行 $expectedPair", (Format-L2WorklistRows $rowsAtMixed))
 
     $loadB = Invoke-L2RigLoad $Context $journeyId $b
-    $loadC = Invoke-L2RigLoad $Context $journeyId $c
+    $loadC = Invoke-L2RigLoad $Context $journeyId $c -WorklistAfter $loadB.CommittedAt
     $mixedLoadsDoneAt = [DateTimeOffset]::UtcNow
 
     # --- 4. 持货等单 ------------------------------------------------------------------------------------------

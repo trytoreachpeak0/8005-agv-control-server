@@ -55,12 +55,27 @@ function Get-L2FirstWaitingOperator([object]$Connection, [string]$AttemptId) {
 返回 AttemptId、TargetSlots、OpenedSlot、CommandAt（服务端建这笔操作的时刻）、UnlockedSeenAt（场景看到 WAITING_OPERATOR 的
 时刻）、CommittedAt（场景看到提交的时刻）。
 #>
-function Invoke-L2RigLoad([object]$Context, [string]$JourneyId, [hashtable]$Demand, [int]$TimeoutSeconds = 180) {
+function Invoke-L2RigLoad([object]$Context, [string]$JourneyId, [hashtable]$Demand, [int]$TimeoutSeconds = 180,
+    [Nullable[DateTimeOffset]]$WorklistAfter = $null) {
     $journal = $Context.Journal
     $connection = $Context.Connection
     $onboard = $Context.Onboard
     $simulator = $Context.Simulator
     $demandId = $Demand.Id
+
+    # 同一站的第二条：前一条装完之后服务端才发新一版清单与录入请求。旧的那版清单同样列着这条需求、也早已被确认，
+    # 阶段此刻也是 AwaitingSublot，所以「阶段对了、能录入」不足以说明车载端已经换上新的那一版——在旧版上录入，
+    # 车载端或服务端会按修订号拒掉它。等一版在 $WorklistAfter 之后建出、列着这条需求、已被确认的清单。
+    if ($null -ne $WorklistAfter) {
+        $after = $WorklistAfter.Value
+        $null = Wait-L2Condition -Description "the onboard acknowledged the worklist issued after the previous load (for $($Demand.Label))" `
+            -Journal $journal -Criterion "worklist-after-previous-load-$($Demand.Label)" -TimeoutSeconds 60 `
+            -Probe {
+                $fresh = @((Get-L2JourneyWireSnapshots $connection @($demandId)) | Where-Object {
+                        $_.Type -eq 'CurrentStopWorklistSnapshot' -and $_.At -gt $after -and $_.Acknowledged })
+                if ($fresh.Count -eq 0) { $null } else { $fresh[0].Revision }
+            } -Until { param($v) $null -ne $v }
+    }
 
     $null = Wait-L2Condition -Description "journey $JourneyId asks for a sublot and the HMI accepts entry (for $($Demand.Label))" `
         -Journal $journal -Criterion "entry-open-$($Demand.Label)" -TimeoutSeconds $TimeoutSeconds `
@@ -93,6 +108,9 @@ function Invoke-L2RigLoad([object]$Context, [string]$JourneyId, [hashtable]$Dema
     $committed = Wait-L2Condition -Description "$($Demand.Label)'s load committed" `
         -Journal $journal -Criterion "load-committed-$($Demand.Label)" -TimeoutSeconds 120 `
         -Probe { [string](Get-L2DemandOperation $connection $demandId 'Load').Status } -Until { param($v) $v -eq 'Committed' }
+    # 提交时刻取服务端记的那一个，不取场景看到它的时刻：下一版清单可能在场景下一次轮询之前就已建出，拿「看到」的时刻去比
+    # 会把它排除在外、等到超时。同一台机器同一只钟。
+    $row = Get-L2DemandOperation $connection $demandId 'Load'
     return [pscustomobject]@{
         Label          = $Demand.Label
         AttemptId      = $attemptId
@@ -100,7 +118,7 @@ function Invoke-L2RigLoad([object]$Context, [string]$JourneyId, [hashtable]$Dema
         OpenedSlot     = $slot
         CommandAt      = ConvertTo-L2RealInstant $operation.CreatedAt
         UnlockedSeenAt = $unlockedSeenAt
-        CommittedAt    = [DateTimeOffset]::UtcNow
+        CommittedAt    = ConvertTo-L2RealInstant $row.CommittedAt
         Status         = $committed
     }
 }
@@ -145,7 +163,7 @@ function Invoke-L2RigUnloadNext([object]$Context, [string]$JourneyId, [string[]]
         OpenedSlot     = $slot
         CommandAt      = ConvertTo-L2RealInstant $operation.CreatedAt
         UnlockedSeenAt = $unlockedSeenAt
-        CommittedAt    = [DateTimeOffset]::UtcNow
+        SeenCommittedAt = [DateTimeOffset]::UtcNow
         Status         = $committed
     }
 }
