@@ -144,15 +144,17 @@ public sealed class DemandReleaseService(
                 return await RefuseAsync(journey, demandId, trigger, decision.RefusalReason!, cancellationToken)
                     .ConfigureAwait(false);
             case DemandReleaseAction.CancelPickupOrderThenRelease:
-                string? notCancelled = await CancelPickupOrderAsync(journey, stops.Current, cancellationToken)
-                    .ConfigureAwait(false);
-                if (notCancelled is not null)
+                (PickupOrderSettlement settlement, string? notSettled) = await CancelPickupOrderAsync(
+                    journey, stops.Current, cancellationToken).ConfigureAwait(false);
+                if (notSettled is not null)
                 {
-                    return await RefuseAsync(journey, demandId, trigger, notCancelled, cancellationToken)
+                    return await RefuseAsync(journey, demandId, trigger, notSettled, cancellationToken)
                         .ConfigureAwait(false);
                 }
 
-                return await ReleaseAsync(journey, demandId, trigger, pickupOrderCancelled: true, cancellationToken)
+                return await ReleaseAsync(
+                        journey, demandId, trigger, pickupOrderCancelled: settlement == PickupOrderSettlement.Cancelled,
+                        cancellationToken)
                     .ConfigureAwait(false);
             case DemandReleaseAction.ReleaseWithoutOrder:
                 return await ReleaseAsync(journey, demandId, trigger, pickupOrderCancelled: false, cancellationToken)
@@ -166,19 +168,30 @@ public sealed class DemandReleaseService(
     /// 取消这趟旅程开往当前下一站的那张单并对账；确认取消了返回空，否则返回不释放的原因。
     /// </summary>
     /// <remarks>
+    /// <para>
     /// 先看有没有取消过：审计里有这张单的取消尝试就只对账那一次，不发第二次（崩溃点：取消已发出而释放未落库）。
-    /// 这张单根本没建（意图不在或没有 RIoT 订单号）时没有东西可取消，照样当作「没有订单」。
+    /// </para>
+    /// <para>
+    /// <b>「没有订单」只认确定的那一种</b>（审查 S2）：意图不在，或者意图还在初始的待对账状态、一次创建都没发出过
+    /// （<see cref="NeverDispatched"/>）。意图上没有订单号并不等于没有订单——创建已发出而回应丢了（CREATE_ATTEMPTED、
+    /// RESULT_UNKNOWN）时 RIoT 上可能已经有一张活的，而没有订单号就发不了取消。那种情况不释放，等引擎把意图对账出结论。
+    /// </para>
     /// </remarks>
-    private async Task<string?> CancelPickupOrderAsync(
+    private async Task<(PickupOrderSettlement Settlement, string? NotSettled)> CancelPickupOrderAsync(
         JourneyRuntimeRow journey,
         JourneyStopRow currentStop,
         CancellationToken cancellationToken)
     {
         OrderIntentRow? intent = await dbContext.OrderIntents.AsNoTracking()
             .SingleOrDefaultAsync(row => row.UpperId == currentStop.UpperId, cancellationToken).ConfigureAwait(false);
-        if (intent?.OrderId is not { } orderId)
+        if (NeverDispatched(intent))
         {
-            return null;
+            return (PickupOrderSettlement.NoOrder, null);
+        }
+
+        if (intent!.OrderId is not { } orderId)
+        {
+            return (PickupOrderSettlement.None, DemandReleaseReasons.OrderStateUnknown);
         }
 
         IReadOnlyList<RiotOrderCommandAttempt> attempts = await commandAudit
@@ -191,8 +204,18 @@ public sealed class DemandReleaseService(
                     "REQ-0328 release for redispatch: the vehicle is no longer eligible for this demand",
                     faultGeneration: null,
                     cancellationToken).ConfigureAwait(false)).Outcome;
-        return outcome == RiotOrderCommandOutcome.Confirmed ? null : DemandReleaseReasons.OrderCancelNotConfirmed;
+        return outcome == RiotOrderCommandOutcome.Confirmed
+            ? (PickupOrderSettlement.Cancelled, null)
+            : (PickupOrderSettlement.None, DemandReleaseReasons.OrderCancelNotConfirmed);
     }
+
+    /// <summary>
+    /// 这张单确定从没向 RIoT 发出过创建：意图不在，或者还在初始的待对账状态、创建次数为零、没有订单号。
+    /// 其余一切状态都可能在 RIoT 上有一张活的订单。
+    /// </summary>
+    private static bool NeverDispatched(OrderIntentRow? intent) =>
+        intent is null ||
+        (intent.Status == "PENDING_RECONCILIATION" && intent.CreateAttemptCount == 0 && intent.OrderId is null);
 
     private async Task<DemandReleaseOutcome> ReleaseAsync(
         JourneyRuntimeRow journey,
@@ -230,7 +253,8 @@ public sealed class DemandReleaseService(
                     cancellationToken).ConfigureAwait(false);
             }
 
-            if (!pickupOrderCancelled && await PickupOrderExistsAsync(pickup, cancellationToken).ConfigureAwait(false))
+            if (!pickupOrderCancelled && !NeverDispatched(await dbContext.OrderIntents.AsNoTracking()
+                    .SingleOrDefaultAsync(row => row.UpperId == pickup.UpperId, cancellationToken).ConfigureAwait(false)))
             {
                 return await RefuseInTransactionAsync(runtime, demandId, trigger, DemandReleaseReasons.PickupOrderAppeared,
                     transaction, cancellationToken).ConfigureAwait(false);
@@ -333,7 +357,18 @@ public sealed class DemandReleaseService(
     {
         try
         {
-            return await vehicleFacts.ReadVehicleAsync(journey.VehicleKey, cancellationToken).ConfigureAwait(false);
+            RiotVehicleObservation observation = await vehicleFacts
+                .ReadVehicleAsync(journey.VehicleKey, cancellationToken).ConfigureAwait(false);
+            // 网关对 SDK 失败不抛，而是返回这个形状（HttpRiotMovementGateway.UnknownVehicle）。这里把它也当作「没读到」
+            // 早退，只为日志里记下一次读不到；<b>保证不在这里</b>：DemandReleaseRules.VehicleNoLongerEligible 入口的门
+            // 对任何离线观测都不判「不再合格」，这一行删掉或网关换了失败形状，释放照样不会被一次失败读取触发。
+            if (observation is { Connected: false, ProcState: "UNKNOWN" } && string.IsNullOrEmpty(observation.CurrentMap))
+            {
+                LogVehicleUnread(logger, journey.VehicleKey, journey.JourneyId, null);
+                return null;
+            }
+
+            return observation;
         }
         catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
                                       !cancellationToken.IsCancellationRequested)
@@ -342,4 +377,17 @@ public sealed class DemandReleaseService(
             return null;
         }
     }
+}
+
+/// <summary>开往当前下一站那张取货单的了结方式。</summary>
+internal enum PickupOrderSettlement
+{
+    /// <summary>没了结，不释放。</summary>
+    None,
+
+    /// <summary>确定从没发出过创建，没有东西可取消。</summary>
+    NoOrder,
+
+    /// <summary>取消已对账确认。</summary>
+    Cancelled,
 }

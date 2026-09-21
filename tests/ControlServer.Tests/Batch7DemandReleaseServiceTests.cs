@@ -201,6 +201,99 @@ public sealed class Batch7DemandReleaseServiceTests
     }
 
     /// <summary>
+    /// RIoT 读不到车：网关不抛、返回 <c>UnknownVehicle</c> 那个形状（离线、地图为空、观测时刻为此刻）。
+    /// 一次网络抖动不许把车上的需求取消订单、释放掉（审查 S1）。
+    /// </summary>
+    /// <remarks>
+    /// 端到端守两层：释放服务把这个形状当作没读到（早退），规则入口的门对离线观测一律不判不合格（保证在这一层）。
+    /// 退掉任何一层这条都应当仍然绿，两层都退掉才红——这是有意的：保证只由门承担，早退只是省一次判定。
+    /// </remarks>
+    [Fact]
+    public async Task AFailedVehicleReadReleasesNothingAndCancelsNothing()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with
+        {
+            Connected = false, Enabled = false, ProcState = "UNKNOWN", CurrentMap = string.Empty,
+            CurrentStationId = null, BatteryPercent = null, BatteryState = null, Speed = null,
+            ObservedAt = fixture.Clock.GetUtcNow(),
+        };
+        CancellingGateway gateway = new(fixture.Clock, _ => fixture.Riot.CancelOrder(before.PickupUpperId));
+
+        Assert.Empty(await Service(fixture, gateway).RunOnceAsync(Token));
+        Assert.Equal(0, gateway.Cancels);
+        await using ControlServerDbContext reading = new ControlServerDbContext(fixture.DbOptionsForTests);
+        Assert.Null((await reading.Set<JourneyDemandRow>().AsNoTracking().SingleAsync(Token)).RemovedAt);
+    }
+
+    /// <summary>
+    /// 取货单的创建结果未知（创建请求已经发出、回应丢了）：意图上还没有 RIoT 订单号，但 RIoT 上可能已经有一张活的订单。
+    /// 这不是「没有订单」，不释放、不发取消（REQ-0328：结果未知不释放；审查 S2）。
+    /// </summary>
+    /// <remarks>
+    /// 引擎建单与释放服务在同一个循环里前后脚跑，所以「建单结果还没对账」这个窗口在生产上必然出现。旧实现把
+    /// 「意图上没有订单号」当作「没有订单」，于是释放、关旅程，RIoT 上那张活订单再也没人取消。
+    /// </remarks>
+    [Fact]
+    public async Task AnUnknownCreateResultIsNotNoOrderAndNothingIsReleased()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set(FirstSublot, 7);
+        fixture.Riot.LoseNextCreateResponse = true;
+        await TickAndRunAsync(fixture);
+        fixture.Context.ChangeTracker.Clear();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
+        // 前提：意图上没有订单号，而 RIoT 上确实有一张活的——少了后一条，「不释放」可能只是因为真的没有订单。
+        Assert.Null((await fixture.Context.OrderIntents.AsNoTracking()
+            .SingleAsync(row => row.UpperId == before.PickupUpperId, Token)).OrderId);
+        Assert.Equal(RiotOrderObservationKind.Active,
+            (await fixture.Riot.ReconcileByUpperIdAsync(before.PickupUpperId, Token)).Kind);
+
+        LeaveTheMap(fixture);
+        CancellingGateway gateway = new(fixture.Clock, _ => fixture.Riot.CancelOrder(before.PickupUpperId));
+        IReadOnlyList<DemandReleaseOutcome> outcomes = await Service(fixture, gateway).RunOnceAsync(Token);
+
+        Assert.Equal(DemandReleaseReasons.OrderStateUnknown, Assert.Single(outcomes).Result);
+        Assert.Equal(0, gateway.Cancels);
+        Assert.Equal(RiotOrderObservationKind.Active,
+            (await fixture.Riot.ReconcileByUpperIdAsync(before.PickupUpperId, Token)).Kind);
+        await using ControlServerDbContext reading = new ControlServerDbContext(fixture.DbOptionsForTests);
+        Assert.Null((await reading.Set<JourneyDemandRow>().AsNoTracking().SingleAsync(Token)).RemovedAt);
+        Assert.NotEqual(JourneyRuntimeStage.Completed, (await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token)).Stage);
+    }
+
+    /// <summary>
+    /// 上一条的后半：引擎下一轮把意图对账成 CONFIRMED、拿到订单号之后，释放照常走「取消并对账 → 释放」，
+    /// 不会永远停在「订单状态未知」。
+    /// </summary>
+    [Fact]
+    public async Task OnceTheCreateResultIsReconciledTheOrderIsCancelledAndTheDemandReleased()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set(FirstSublot, 7);
+        fixture.Riot.LoseNextCreateResponse = true;
+        await TickAndRunAsync(fixture);
+        fixture.Context.ChangeTracker.Clear();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
+        LeaveTheMap(fixture);
+        CancellingGateway gateway = new(fixture.Clock, _ => fixture.Riot.CancelOrder(before.PickupUpperId));
+        Assert.Equal(DemandReleaseReasons.OrderStateUnknown,
+            Assert.Single(await Service(fixture, gateway).RunOnceAsync(Token)).Result);
+
+        // 引擎对账：意图拿到订单号。车仍在别的图上，释放服务下一轮照常取消、对账、释放。
+        await TickAndRunAsync(fixture);
+        fixture.Context.ChangeTracker.Clear();
+        Assert.NotNull((await fixture.Context.OrderIntents.AsNoTracking()
+            .SingleAsync(row => row.UpperId == before.PickupUpperId, Token)).OrderId);
+
+        Assert.Equal("RELEASED", Assert.Single(await Service(fixture, gateway).RunOnceAsync(Token)).Result);
+        Assert.Equal(1, gateway.Cancels);
+    }
+
+    /// <summary>
     /// 锚需求释放之后，下一轮把它作为一趟新旅程的锚再受理：派往取货站的计划真的发出，到站后离站期限照常结束这一站
     /// （看板例外第 12 条的三处，场景 2 的 L1 版）。
     /// </summary>

@@ -94,6 +94,66 @@ public sealed class Batch7DemandReleaseRulesTests
     public void NoObservationIsNotATrigger() =>
         Assert.Null(Trigger(observation: null, observe: false));
 
+    /// <summary>
+    /// 一次失败的读取不是车辆的事实（审查 S1）。<c>HttpRiotMovementGateway</c> 遇到任何 SDK 失败都不抛，而是返回
+    /// <c>UnknownVehicle</c>：离线、地图为空、观测时刻取「此刻」——按新鲜度它是新鲜的，按地图它与本图不同。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 保证放在规则的入口：观测读不到（为空）或车不在线时，<b>任何</b>判据都不判「不再合格」。所以这里让那个形状
+    /// 与每一条会触发的事实各配一次，而不是只测地图——只在地图判据里防，下一条新判据会把它忘掉。
+    /// </para>
+    /// <para>
+    /// 每一行的「触发事实」单独配一辆在线的车时确实会触发（下面 <see cref="EachBreakerTriggersWhileTheVehicleIsOnline"/>），
+    /// 否则这里的「不触发」可能只是那条事实本来就不触发。
+    /// </para>
+    /// </remarks>
+    [Theory]
+    [MemberData(nameof(Breakers))]
+    public void AFailedReadNeverMakesTheVehicleIneligible(string breaker)
+    {
+        (VehicleFaultFact? fault, VehicleDispatchPolicy? policy, string? map) = Break(breaker);
+        Assert.Null(Trigger(fault: fault, policy: policy, observation: UnknownVehicle(map)));
+        Assert.Null(Trigger(fault: fault, policy: policy, observation: null, observe: false));
+    }
+
+    [Theory]
+    [MemberData(nameof(Breakers))]
+    public void EachBreakerTriggersWhileTheVehicleIsOnline(string breaker)
+    {
+        (VehicleFaultFact? fault, VehicleDispatchPolicy? policy, string? map) = Break(breaker);
+        Assert.NotNull(Trigger(
+            fault: fault, policy: policy, observation: Observation(map ?? Options.MapIdentity, Now.AddSeconds(-5))));
+    }
+
+    /// <summary>车在线但报了一个空地图：空不是「另一张图」，说不清就不是释放的理由。</summary>
+    [Fact]
+    public void AnEmptyMapIsNotAnotherMap() =>
+        Assert.Null(Trigger(observation: Observation(string.Empty, Now.AddSeconds(-5))));
+
+    public static TheoryData<string> Breakers => new()
+    {
+        "fault-isolated", "fault-suspected", "task-type-withdrawn", "not-in-policy", "zone-withdrawn", "another-map",
+    };
+
+    private static (VehicleFaultFact? Fault, VehicleDispatchPolicy? Policy, string? Map) Break(string breaker) => breaker switch
+    {
+        "fault-isolated" => (Fault(VehicleFaultLevel.ConfirmedIsolated), null, null),
+        "fault-suspected" => (Fault(VehicleFaultLevel.SuspectedBlocked), null, null),
+        "task-type-withdrawn" => (null, Policy(taskTypes: ["STAGING_TO_WIRE"]), null),
+        "not-in-policy" => (null, Policy(policyVehicle: OtherAgv), null),
+        "zone-withdrawn" => (null, Policy(zoneVehicles: [OtherAgv]), null),
+        "another-map" => (null, null, "MAP-26"),
+        _ => throw new ArgumentOutOfRangeException(nameof(breaker), breaker, null),
+    };
+
+    /// <summary>
+    /// 与 <c>HttpRiotMovementGateway.UnknownVehicle</c> 逐字段相同的形状（离线、未启用、UNKNOWN、地图为空、观测时刻为此刻），
+    /// 只有 <paramref name="map"/> 让「另一张图」那一行也带着一个非空的地图进来——离线的车报什么图都不算数。
+    /// </summary>
+    private static RiotVehicleObservation UnknownVehicle(string? map) =>
+        new("BROKERX-0001", false, false, "UNKNOWN", map ?? string.Empty, null, null, null, null, Now);
+
     // ---- 裁决 ------------------------------------------------------------------------------------
 
     [Theory]

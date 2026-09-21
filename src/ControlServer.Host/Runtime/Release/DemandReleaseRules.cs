@@ -22,6 +22,12 @@ public static class DemandReleaseRules
 {
     /// <summary>这辆车对这条需求不再合格的理由；仍合格或说不清时为空——说不清不是释放的理由。</summary>
     /// <param name="observation">RIoT 上这辆车最近一次观测；读不到为空。只有新鲜的观测才能说「离开了本图」。</param>
+    /// <remarks>
+    /// <b>入口的门：观测为空或车不在线时，任何判据都不判「不再合格」</b>（审查 S1）。失败的读取有两种形状——抛异常
+    /// （释放服务接住后传空），以及 <c>HttpRiotMovementGateway</c> 不抛、返回的 <c>UnknownVehicle</c>（离线、地图为空、
+    /// 观测时刻为此刻，按新鲜度它是新鲜的）。门挡在所有判据之前，所以「失败读取不能触发释放」不靠每条判据各自记着，
+    /// 以后新加的判据也在门后。代价是 RIoT 读不到期间，连已确认隔离的车也不释放需求：那是活性，安全方向。
+    /// </remarks>
     public static string? VehicleNoLongerEligible(
         VehicleFaultFact? fault,
         VehicleDispatchPolicy policy,
@@ -34,6 +40,10 @@ public static class DemandReleaseRules
     {
         ArgumentNullException.ThrowIfNull(policy);
         ArgumentNullException.ThrowIfNull(options);
+        if (observation is not { Connected: true })
+        {
+            return null;
+        }
 
         switch (fault?.Level)
         {
@@ -56,7 +66,7 @@ public static class DemandReleaseRules
         }
 
         // 与在途判据同一个比较（InTransitVehicleFactsCriterion），只是多一道新鲜度：过期的观测说的是过去的地图。
-        if (observation is not null &&
+        if (!string.IsNullOrEmpty(observation.CurrentMap) &&
             observation.ObservedAt <= now &&
             now - observation.ObservedAt <= options.MaximumEvidenceAge &&
             !string.Equals(observation.CurrentMap, options.MapIdentity, StringComparison.Ordinal))
@@ -164,6 +174,12 @@ public static class DemandReleaseReasons
 
     /// <summary>取货单的取消没有确认（Pending、Failed 或 Unknown），不释放（REQ-0328：结果未知不释放）。</summary>
     public const string OrderCancelNotConfirmed = "RELEASE_ORDER_CANCEL_NOT_CONFIRMED";
+
+    /// <summary>
+    /// 开往当前下一站的取货单处在「创建已发出、结果未知」一类状态（意图上还没有订单号，而 RIoT 上可能已经有一张活的），
+    /// 不释放（REQ-0328：结果未知不释放）。引擎把意图对账出结论之后下一轮再判。
+    /// </summary>
+    public const string OrderStateUnknown = "RELEASE_ORDER_STATE_UNKNOWN";
 
     /// <summary>写事务里发现取货停靠已经有了 RIoT 订单意图，与轮次开头读到的不同，这一轮不释放。</summary>
     public const string PickupOrderAppeared = "RELEASE_PICKUP_ORDER_APPEARED";
