@@ -122,7 +122,9 @@ public sealed class DispatchChainSeamTests
                     store: null!,
                     faultStore: null!,
                     boxCountReader: null!,
-                    NullLogger<SlotCapacityCriterion>.Instance)
+                    NullLogger<SlotCapacityCriterion>.Instance,
+                    suppressions: null!,
+                    dbContext: null!)
                 .OrderBy(criterion => criterion.Order)
                 .Select(criterion => criterion.GetType().Name)
         ];

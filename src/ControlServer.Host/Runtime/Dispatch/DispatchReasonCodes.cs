@@ -163,6 +163,24 @@ public static class DispatchReasonCodes
     public const string SublotTaskTypeConflict = "SUBLOT_TASK_TYPE_CONFLICT";
 
     /// <summary>
+    /// 这个业务键（<c>sublot|workType</c>）已被本地取消永久抑制（<c>REQ-0155</c>、<c>REQ-0156</c>、<c>REQ-0211</c>；
+    /// 批次7-05，control-server#210）：MES 换了新 <c>DemandId</c> 也不再执行。
+    /// </summary>
+    /// <remarks>
+    /// 归普通积压、不报结构性告警：这是有意不执行，不是故障，也没有人需要去处理它。抑制没有「解除」操作。
+    /// 只在服务端与看板，不经 <c>blockingFacts</c> 下发。
+    /// </remarks>
+    public const string TransportDemandKeySuppressed = "TRANSPORT_DEMAND_KEY_SUPPRESSED";
+
+    /// <summary>
+    /// 这个业务键已有别的 <c>DemandId</c> 被本服务端受理过（进行中、成功或取消；批次7-05，control-server#210）。
+    /// </summary>
+    /// <remarks>
+    /// 归普通积压，理由同上：同一件活已经办过或正在办，不是故障。挡在判据链里，受理存储层的业务键唯一索引就不会被撞到。
+    /// </remarks>
+    public const string TransportDemandKeyAlreadyAccepted = "TRANSPORT_DEMAND_KEY_ALREADY_ACCEPTED";
+
+    /// <summary>
     /// The reasons that are a configured outcome rather than a problem: they reach the backlog and nothing
     /// else — no structural dispatch block, no alarm, no log at Warning or above.
     /// </summary>

@@ -51,17 +51,15 @@ public sealed class StarvationEscalationSink(
             return;
         }
 
-        // 结构性阻断取本轮结构性汇总写完之后的状态（组合里它排在前面）：本轮刚立的不告警，本轮刚解除的照常判。
-        HashSet<string> structurallyBlocked = (await dbContext.Set<StructuralDispatchBlockRow>().AsNoTracking()
-                .Where(row => row.ClearedAt == null)
-                .Select(row => row.DemandId)
-                .ToArrayAsync(cancellationToken).ConfigureAwait(false))
-            .ToHashSet(StringComparer.Ordinal);
+        // 与排序同一份排除集合（StarvationExclusions），只是取本轮结构性汇总写完之后的状态（组合里它排在前面）：
+        // 本轮刚立的不告警，本轮刚解除的照常判。键被抑制、键已被别的 DemandId 受理的也在里面（批次7-05 审查中 1）。
+        HashSet<string> notCandidates = await StarvationExclusions
+            .ReadAsync(dbContext, round.Catalog.Items, cancellationToken).ConfigureAwait(false);
         Dictionary<string, (AcceptedDemandSnapshot Demand, TaskStarvationStanding Standing)> overdue = new(StringComparer.Ordinal);
         foreach (AcceptedDemandSnapshot demand in round.Catalog.Items)
         {
             if (StillWaiting(round, demand.DemandId) &&
-                TaskStarvation.Assess(demand, round.Now, round.AreaAssignments, round.ZoneParameters, structurallyBlocked)
+                TaskStarvation.Assess(demand, round.Now, round.AreaAssignments, round.ZoneParameters, notCandidates)
                     is { Overdue: true } standing)
             {
                 overdue.TryAdd(demand.DemandId, (demand, standing));
