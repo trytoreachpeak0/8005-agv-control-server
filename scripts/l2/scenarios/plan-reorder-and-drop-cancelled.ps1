@@ -150,6 +150,13 @@ $null = Wait-L2Condition -Description 'the vehicle stands at the staging station
     -Probe { [string](Invoke-Scalar "SELECT Stage FROM JourneyRuntimes WHERE JourneyId = '$journeyId'").Stage } `
     -Until { param($v) $v -eq 'AwaitingSublot' }
 
+# 修订号的比较基准取在到站之后、取消之前（审查 M6）：到站本身就让计划修订号加一（到站那一版计划），基准若取在
+# 到站之前，「修订号前进」恒真，判不出取消有没有让计划重发。等到站那一版到车上、而且仍带着 A 的卸货站再取。
+$planAtStation = Wait-L2Condition -Description "the arrival plan reached the vehicle, still carrying A's unload station" `
+    -Journal $journal -Criterion 'plan-at-station' -TimeoutSeconds 60 `
+    -Probe { Get-LastPlan } `
+    -Until { param($v) $v -and $v.Revision -gt $planBefore.Revision -and $v.Stations -contains [string]$aUnload.StationId }
+
 # --- 4. 操作员在扫码前取消 A ---------------------------------------------------------------------------
 
 $cancellationId = [guid]::NewGuid().ToString('D')
@@ -181,8 +188,8 @@ $planAfter = Wait-L2Condition -Description "a revised plan without A's unload st
 $assertions.Add(
     'L2-PRD-03',
     '车上最后一版计划里没有机台 12 那条腿，计划修订号前进（整体替换下发，ADR-cross-0053）',
-    ($planAfter.Stations -notcontains [string]$aUnload.StationId -and $planAfter.Revision -gt $planBefore.Revision),
-    "无 $([string]$aUnload.StationId) / 修订号 > $($planBefore.Revision)",
+    ($planAfter.Stations -notcontains [string]$aUnload.StationId -and $planAfter.Revision -gt $planAtStation.Revision),
+    "无 $([string]$aUnload.StationId) / 修订号 > $($planAtStation.Revision)（到站那一版）",
     "$(($planAfter.Stations) -join ',') / 修订号 $($planAfter.Revision)")
 
 $aPickup = Invoke-Scalar "SELECT Status FROM JourneyStops WHERE StopId = '$([string]$aStops.PickupStopId)'"
