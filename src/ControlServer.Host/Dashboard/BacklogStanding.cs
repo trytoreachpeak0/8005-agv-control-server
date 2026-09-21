@@ -55,6 +55,9 @@ internal static class BacklogStanding
                string.Equals(row.TransportDemandKey[(separator + 1)..], TransportTaskTypes.StagingToWire, StringComparison.Ordinal);
     }
 
+    /// <summary>桩（批次7-12 调度返工，测试先行）。</summary>
+    internal static BacklogTier TierOf(JourneyBacklogRow row) => throw new NotImplementedException();
+
     internal static BacklogTier TierOf(JourneyBacklogRow row, StarvationThresholds thresholds)
     {
         if (InTopBand(row))

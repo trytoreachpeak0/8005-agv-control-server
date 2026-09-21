@@ -261,6 +261,8 @@ public sealed class Batch7CargoHoldingDashboardTests
     [InlineData(LoadingPhaseStates.Closed, LoadingClosedReasons.VehicleFull, false, true)]
     [InlineData(LoadingPhaseStates.Closed, LoadingClosedReasons.PlannedLoadingComplete, false, false)]
     [InlineData(null, null, false, false)]
+    [InlineData(null, null, true, true)]
+    [InlineData(LoadingPhaseStates.Loading, null, false, false)]
     [InlineData(LoadingPhaseStates.Loading, null, true, true)]
     public async Task TheDeadlineIsShownOnlyWhereCargoHoldingApplies(
         string? state,
@@ -584,8 +586,68 @@ public sealed class Batch7CargoHoldingDashboardTests
     }
 
     /// <summary>
-    /// REQ-0203：本区阈值未批准时整张卡片写明只计龄、不跨带升级，而且没有任何需求在超时层——包括阈值撤回之前告过警的那一条
-    /// （派车轮在未批准时也不再把它排进超时层）。三种「未批准」：一版参数都没有、参数表里该分区阈值为空、分区归属表里有而参数表里没有。
+    /// 优先级带与派车排序是同一个判断（调度 2026-09-22：不维护第二份）。积压行没有任务类型列，看板从业务键取任务类型，
+    /// 取法是业务键拼法的逆（<see cref="TransportDemandKeys"/>，<c>HttpMesIngestCatalog</c> 用同一处拼）；带由
+    /// <see cref="TaskStarvation.IsTopBandWorkType"/> 判，派车的 <see cref="TaskStarvation.InTopBand"/> 也是它。六类任务逐个对一遍，
+    /// 批次号里带竖线也拆得对。
+    /// </summary>
+    [Theory]
+    [InlineData(TransportTaskTypes.DieToWireStaging)]
+    [InlineData(TransportTaskTypes.DieToOven)]
+    [InlineData(TransportTaskTypes.WireToGate)]
+    [InlineData(TransportTaskTypes.WireToOptical)]
+    [InlineData(TransportTaskTypes.StagingToWire)]
+    [InlineData(TransportTaskTypes.WireToNitrogen)]
+    public void TheBacklogBandIsTheDispatchBandReadBackFromTheBusinessKey(string workType)
+    {
+        string key = TransportDemandKeys.Compose("SUB|LOT-7", workType);
+
+        Assert.Equal(workType, TransportDemandKeys.WorkTypeOf(key));
+        JourneyBacklogRow row = new()
+        {
+            DemandId = "D-1",
+            TransportDemandKey = key,
+            DecisionFingerprint = "f",
+            ReasonCode = "R"
+        };
+        Assert.Equal(
+            workType == TransportTaskTypes.StagingToWire,
+            BacklogStanding.TierOf(row) == BacklogTier.TopBand);
+        Assert.Equal(workType == TransportTaskTypes.StagingToWire, TaskStarvation.IsTopBandWorkType(workType));
+    }
+
+    /// <summary>
+    /// 超时层只读派车记下的事实（调度 2026-09-22）：<c>StarvationEscalatedAt</c> 非空就在超时层，不叠加现算的条件——排序用的参数版本不落库，
+    /// 看板能依据的只有这个标记。阈值后来撤回了，标记照样显示，卡片加一句说明它是撤回之前记下的，而不是改判定。
+    /// </summary>
+    [Fact]
+    public async Task AnEscalationRecordedBeforeTheThresholdWasWithdrawnStaysInTheTimeoutTierWithANote()
+    {
+        await using DashboardDatabase database = await DashboardDatabase.CreateAsync();
+        await database.AddZoneParametersAsync(1, ("MAP-25-WIRE_TO_GATE", 3600));
+        await database.AddZoneParametersAsync(2, ("MAP-25-WIRE_TO_GATE", null));
+        await database.AddBacklogAsync(
+            "D-ONCE-ESCALATED", TransportTaskTypes.WireToGate, createdAt: Now.AddHours(-5), escalatedAt: Now.AddHours(-1), escalationVersion: 1);
+        await database.AddBacklogAsync("D-NORMAL", TransportTaskTypes.WireToGate, createdAt: Now.AddMinutes(-3));
+
+        using JsonDocument fact = await ReadBacklogAsync(database.NewContext());
+
+        Assert.False(fact.RootElement.GetProperty("starvationThresholdsApproved").GetBoolean());
+        Assert.Equal(
+            ["D-ONCE-ESCALATED:STARVATION_TIMEOUT", "D-NORMAL:NORMAL_BAND"],
+            fact.RootElement.GetProperty("backlog").EnumerateArray()
+                .Select(row => $"{row.GetProperty("demandId").GetString()}:{row.GetProperty("tier").GetString()}"));
+        string html = new DispatchBacklogCard().RenderFact(fact.RootElement);
+        Assert.Contains("本区阈值未批准：只累计等待年龄，不跨带升级", html, StringComparison.Ordinal);
+        Assert.Contains("已进入超时层", RowOf(html, "SUBLOT-D-ONCE-ESCALATED"), StringComparison.Ordinal);
+        Assert.Contains("参数版本 1", RowOf(html, "SUBLOT-D-ONCE-ESCALATED"), StringComparison.Ordinal);
+        Assert.Contains("超时层的标记是阈值撤回之前记下的", html, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// REQ-0203：本区阈值未批准时整张卡片写明只计龄、不跨带升级，而且没有任何需求在超时层——派车轮在未批准时从不写升级标记，
+    /// 所以这里没有标记可读。三种「未批准」：一版参数都没有、参数表里该分区阈值为空、分区归属表里有而参数表里没有。
+    /// 阈值撤回之前记下的标记是另一回事，见 <see cref="AnEscalationRecordedBeforeTheThresholdWasWithdrawnStaysInTheTimeoutTierWithANote"/>。
     /// </summary>
     [Theory]
     [InlineData("no-parameter-version")]
@@ -604,8 +666,7 @@ public sealed class Batch7CargoHoldingDashboardTests
                 await database.AddZoneParametersAsync(1, ("SOME-OTHER-ZONE", null));
                 break;
         }
-        await database.AddBacklogAsync(
-            "D-ONCE-ESCALATED", TransportTaskTypes.WireToGate, createdAt: Now.AddHours(-5), escalatedAt: Now.AddHours(-1), escalationVersion: 1);
+        await database.AddBacklogAsync("D-OLD", TransportTaskTypes.WireToGate, createdAt: Now.AddHours(-5));
         await database.AddBacklogAsync("D-NORMAL", TransportTaskTypes.WireToGate, createdAt: Now.AddMinutes(-3));
 
         using JsonDocument fact = await ReadBacklogAsync(database.NewContext());

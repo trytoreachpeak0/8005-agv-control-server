@@ -53,6 +53,9 @@ public static class TaskStarvation
         return string.Equals(demand.WorkType, TransportTaskTypes.StagingToWire, StringComparison.Ordinal);
     }
 
+    /// <summary>桩（批次7-12 调度返工，测试先行）。</summary>
+    public static bool IsTopBandWorkType(string? workType) => throw new NotImplementedException();
+
     /// <summary>
     /// MesIngest 有没有给这条需求的建单时刻。目录项缺 <c>createdAt</c> 时适配器把它留成默认值并告警（审查低 3），
     /// 这里把默认值读作「不知道」。
