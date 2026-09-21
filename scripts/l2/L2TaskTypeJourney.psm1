@@ -253,6 +253,106 @@ function Wait-L2SecondLegIntent {
     return $destinationIntent
 }
 
+<#
+.SYNOPSIS
+Waits for the first acknowledged worklist of this demand and answers WHICH station it is for.
+
+.DESCRIPTION
+The other half of Wait-L2WorklistAcknowledgedAtOtherStation, and its own function for the same reason:
+only a test that drives the shipped function tests the code that ships. control-server#265 extracted
+the second stop's half on that argument and left this one inline, which applied the standard to half
+of the change (review of that PR).
+
+It replaces "at least 1 acknowledged worklist". The count was not wrong there -- the first worklist IS
+the first one -- but the second stop's wait needs to know WHICH station was just finished, and this is
+the read that already has it. So the criterion became "an acknowledged worklist WITH A STATION ID",
+and that is a new red line of its own: an acknowledged worklist whose station id is empty no longer
+satisfies it, where the count did. Empty would make the second stop's criterion match every worklist,
+so failing loudly here is the point rather than a side effect.
+
+Returns the station id of the EARLIEST acknowledged worklist (Get-L2DemandJourneySnapshots orders by
+CreatedAt). That "earliest" is load-bearing: it is what makes the value mean "the stop just finished".
+Taking the latest instead would hand the second stop's wait its own station to compare against, and
+then that wait could never be satisfied.
+#>
+function Wait-L2FirstAcknowledgedWorklistStation {
+    param(
+        [Parameter(Mandatory)][object]$Connection,
+        [Parameter(Mandatory)][string]$DemandId,
+        [Parameter(Mandatory)][string]$Criterion,
+        [Parameter(Mandatory)][string]$Description,
+        [int]$TimeoutSeconds = 60,
+        [object]$Journal)
+
+    return Wait-L2Condition -Description $Description -Journal $Journal -Criterion $Criterion `
+        -TimeoutSeconds $TimeoutSeconds -Probe {
+            # Parentheses around the call are load-bearing; see Wait-L2WorklistAcknowledgedAtOtherStation.
+            $acknowledged = @((Get-L2DemandJourneySnapshots $Connection $DemandId) | Where-Object {
+                $_.Type -eq 'CurrentStopWorklistSnapshot' -and $_.Acknowledged -and (Test-L2RealPresent $_.StationId) })
+            if ($acknowledged.Count -ge 1) { [string]$acknowledged[0].StationId } else { $null }
+        }.GetNewClosure() -Until { param($v) $null -ne $v }
+}
+
+<#
+.SYNOPSIS
+Waits until an acknowledged worklist exists for a station OTHER than the one just finished.
+
+.DESCRIPTION
+This replaces a count. control-server#204 wrote the second stop's wait as "at least 2 acknowledged
+CurrentStopWorklistSnapshot", which is not the thing it needs to know -- it is a proxy that happens to
+equal it while every stop emits exactly one worklist.
+
+Revise the FIRST stop's worklist and the proxy breaks in the one direction that matters: the count
+reaches 2 before the second stop's worklist is acknowledged, the wait passes at its first poll, and the
+stop line is then read while the onboard may still be showing the previous stop. The safety net fails
+in the only situation it exists for. (It has never yet fired at all -- in both scenarios the callback
+that runs it only triggers after the server has sent the operation command, by which time the worklist
+is long acknowledged. So this is not a fix for an observed red; it is removing a premise nobody was
+carrying. control-server#265.)
+
+Two properties are load-bearing, both for reasons already paid for in this file:
+
+1. The empty-PreviousStationId check is OUTSIDE the wait, and it throws rather than degrading. With an
+   empty previous station, "a station other than the previous one" matches EVERY acknowledged worklist
+   and the wait passes at the first poll -- the same vacuous-criterion shape this function exists to
+   remove, in a new disguise. It cannot live inside the probe: Wait-L2Condition's poll is
+   `try { $last = & $Probe } catch { $last = $null }` (L2.psm1:24), so a throw in there becomes a
+   timeout whose message names the wrong thing.
+2. The probe returns the station id rather than a boolean, so the journal records WHICH station
+   satisfied it. `destination-worklist-acknowledged` used to record a count, which cannot distinguish
+   "the second stop's worklist arrived" from "the first stop's worklist was revised".
+#>
+function Wait-L2WorklistAcknowledgedAtOtherStation {
+    param(
+        [Parameter(Mandatory)][object]$Connection,
+        [Parameter(Mandatory)][string]$DemandId,
+        # The station whose worklist was already acknowledged -- the one this wait must NOT accept.
+        [Parameter(Mandatory)][AllowEmptyString()][string]$PreviousStationId,
+        [Parameter(Mandatory)][string]$Criterion,
+        [Parameter(Mandatory)][string]$Description,
+        [int]$TimeoutSeconds = 60,
+        [object]$Journal)
+
+    if (-not (Test-L2RealPresent $PreviousStationId)) {
+        throw ("Cannot wait for a worklist at a station other than '$PreviousStationId': the previous " +
+            'station id is empty, so every acknowledged worklist would satisfy the criterion and the ' +
+            'wait would pass at its first poll. Whoever read that id got nothing back -- fix that read ' +
+            'rather than this wait (control-server#265).')
+    }
+    return Wait-L2Condition -Description $Description -Journal $Journal -Criterion $Criterion `
+        -TimeoutSeconds $TimeoutSeconds -Probe {
+            # The parentheses around the call are load-bearing. Get-L2DemandJourneySnapshots returns
+            # `, @($mine)`, a single-layer array, and the three ways of piping it are NOT equivalent:
+            # `f | Where` and `@(f) | Where` both hand Where-Object ONE object that happens to be the
+            # whole list, while `(f) | Where` unrolls it. Measured. Dropping them here read two
+            # worklists as one row whose StationId was 'STATION-A STATION-B'.
+            $other = @((Get-L2DemandJourneySnapshots $Connection $DemandId) | Where-Object {
+                $_.Type -eq 'CurrentStopWorklistSnapshot' -and $_.Acknowledged -and
+                (Test-L2RealPresent $_.StationId) -and $_.StationId -ne $PreviousStationId })
+            if ($other.Count -ge 1) { [string]$other[0].StationId } else { $null }
+        }.GetNewClosure() -Until { param($v) $null -ne $v }
+}
+
 function Invoke-L2TaskTypeJourney {
     param(
         [Parameter(Mandatory)][object]$Context,
@@ -289,10 +389,14 @@ function Invoke-L2TaskTypeJourney {
     $null = Wait-L2Condition -Description 'the server adopted the arrival and asks for the sublot' `
         -Journal $journal -Criterion 'journey-stage' -TimeoutSeconds 120 `
         -Probe { Get-L2RealStage $connection $DemandId }.GetNewClosure() -Until { param($v) $v -eq 'AwaitingSublot' }
-    $null = Wait-L2Condition -Description 'the onboard acknowledged the worklist at the first stop' `
-        -Journal $journal -Criterion 'origin-worklist-acknowledged' -TimeoutSeconds 60 `
-        -Probe { @((Get-L2DemandJourneySnapshots $connection $DemandId) | Where-Object { $_.Type -eq 'CurrentStopWorklistSnapshot' -and $_.Acknowledged }).Count }.GetNewClosure() `
-        -Until { param($v) $v -ge 1 }
+    # Yields the station id rather than a count, because the second stop's wait below has to know WHICH
+    # station was just finished, and reading it here costs no extra query. One consequence is deliberate:
+    # this wait now also requires that id to be PRESENT, so an empty one times out here instead of
+    # passing. That is the trade we want -- an empty id would make the second stop's criterion match
+    # every acknowledged worklist, which is the failure control-server#265 exists to remove.
+    $originWorklistStation = Wait-L2FirstAcknowledgedWorklistStation -Connection $connection -DemandId $DemandId `
+        -Criterion 'origin-worklist-acknowledged' `
+        -Description 'the onboard acknowledged the worklist at the first stop' -Journal $journal
     $readings['at-origin'] = Wait-L2StopFacts -Context $Context -Criterion 'stop-line:at-origin' `
         -Description 'the HMI shows the first stop''s direction and task type' `
         -Until { param($f) (Test-L2RealPresent $f.Direction) -and (Test-L2RealPresent $f.TaskType) }
@@ -326,8 +430,12 @@ function Invoke-L2TaskTypeJourney {
     # 先等这一站的清单被车载端确认，再读它的停靠行——与第一站（上面 origin-worklist-acknowledged）同形。
     # 停靠行显示的是车载端**应用了的那份清单**，所以「清单已确认」是这条读数的前提而不是它的结论；
     # 不等就读，读到的可能是上一站的行或一行还没更新的旧值，而判据分辨不出这两种情况
-    # （control-server#164 审查；README 第 14 条）。第二站的清单是第二份，所以门槛是 >= 2。
-    $worklistsAtDestination = 2
+    # （control-server#164 审查；README 第 14 条）。
+    #
+    # **判据是「站点不同」，不是「条数够了」**（control-server#265）。原来写的是「已确认的清单 >= 2 份」，
+    # 那是个代理指标：它等于「第二站的清单已确认」，靠的是「每站恰好一份清单」这个场景层面的巧合。
+    # 第一站的清单一旦改版，条数会在第二站确认之前就满到 2，等待第一次探测就通过——**保险在它唯一
+    # 该生效的场合失效**。改用站点比较，判的就是那件事本身。
     $unload = Invoke-L2TaskTypeStationOperation -Context $Context -DemandId $DemandId -OperationType 'Unload' -CargoState 'EMPTY' `
         -WhileWaiting {
             # 这两个 scriptblock 都**不能**再 `.GetNewClosure()`。它们写在一个已经是闭包的块里，而在闭包
@@ -340,10 +448,9 @@ function Invoke-L2TaskTypeJourney {
             # 下面那条 `-ne $originDirection` 原来也带 `.GetNewClosure()`，**同一个毛病，在本票之前就有**：
             # $originDirection 读成 $null，于是那一项等于「Direction 非空」，而同一条判据前面已经判过非空了。
             # 换句话说「第二站的方向与第一站不同」这半句**一直没有判别力**，一并修掉。
-            $null = Wait-L2Condition -Description 'the onboard acknowledged the worklist at the second stop' `
-                -Journal $journal -Criterion 'destination-worklist-acknowledged' -TimeoutSeconds 60 `
-                -Probe { @((Get-L2DemandJourneySnapshots $connection $DemandId) | Where-Object { $_.Type -eq 'CurrentStopWorklistSnapshot' -and $_.Acknowledged }).Count } `
-                -Until { param($v) $v -ge $worklistsAtDestination }
+            $null = Wait-L2WorklistAcknowledgedAtOtherStation -Connection $connection -DemandId $DemandId `
+                -PreviousStationId $originWorklistStation -Criterion 'destination-worklist-acknowledged' `
+                -Description 'the onboard acknowledged the worklist at the second stop' -Journal $journal
             Wait-L2StopFacts -Context $Context -Criterion 'stop-line:at-destination' `
                 -Description 'the HMI shows the second stop''s direction and task type' `
                 -Until { param($f) (Test-L2RealPresent $f.Direction) -and (Test-L2RealPresent $f.TaskType) -and $f.Direction -ne $originDirection }
@@ -380,4 +487,5 @@ function Invoke-L2TaskTypeJourney {
 # counterexample and fails this repository's CI if any probe closure calls an unexported sibling.
 Export-ModuleMember -Function Get-L2StopFacts, Format-L2StopFacts, Wait-L2StopFacts,
     Get-L2DemandJourneySnapshots, Format-L2JourneySnapshot, Get-L2SecondLegIntents, Wait-L2SecondLegIntent,
+    Wait-L2FirstAcknowledgedWorklistStation, Wait-L2WorklistAcknowledgedAtOtherStation,
     Invoke-L2TaskTypeStationOperation, Invoke-L2TaskTypeJourney
