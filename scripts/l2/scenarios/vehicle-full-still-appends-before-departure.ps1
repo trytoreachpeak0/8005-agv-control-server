@@ -113,8 +113,10 @@ $snapshots = Get-L2LoadingPhaseSnapshots $connection
 $journal.Observe('loading-phase-snapshots', (Format-L2LoadingPhaseSnapshots $snapshots), @{ snapshots = $snapshots })
 # 车那一侧看到的也一样：第一张 FULL 之后没有任何一张 WAIT。
 $firstFull = @($snapshots | Where-Object { $_.State -eq 'VEHICLE_FULL' } | Select-Object -First 1)
-$waitAfterFull = if ($firstFull.Count -eq 0) { @() } else {
-    @($snapshots | Where-Object { $_.Revision -gt $firstFull[0].Revision -and $_.State -eq 'CARGO_HOLDING_WAIT' }) }
+# 整个 if 包进 @()：if 语句把空数组交给赋值时会展开成 $null，严格模式下取 .Count 就抛（第一次正式跑就栽在这里，
+# 红证据那次列表非空所以没撞上）。
+$waitAfterFull = @(if ($firstFull.Count -gt 0) {
+    $snapshots | Where-Object { $_.Revision -gt $firstFull[0].Revision -and $_.State -eq 'CARGO_HOLDING_WAIT' } })
 $assertions.Add(
     'L2-VFA-06', '发给车的快照在第一张 VEHICLE_FULL 之后没有再出现 CARGO_HOLDING_WAIT',
     ($firstFull.Count -eq 1 -and $waitAfterFull.Count -eq 0),
