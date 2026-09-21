@@ -4,6 +4,7 @@ using ControlServer.Domain;
 using ControlServer.Host.Runtime;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using static ControlServer.Tests.Batch7MultiDemandAdvanceTests;
 using static ControlServer.Tests.Batch7StopDrivenAdvanceDriver;
 using static ControlServer.Tests.JourneyRuntimeWorkerTestKit;
@@ -31,6 +32,9 @@ public sealed class Batch7UnloadSideOrderTests
 {
     private const string Front = "FRONT";
     private const string Rear = "REAR";
+
+    /// <summary>测试自己的记号，不是分组名：一个前侧仓位加其余后侧仓位。</summary>
+    private const string BothSides = "FRONT+REAR";
 
     /// <summary>
     /// 后侧需求先加入、前侧需求后加入：到卸货站后第一条卸货命令发给前侧那条，它卸完才轮到后侧那条。
@@ -134,6 +138,75 @@ public sealed class Batch7UnloadSideOrderTests
     }
 
     /// <summary>
+    /// 车的仓位模型解析不出来：次序退回加入先后，而且记一条 Warning，说明是哪辆车、哪个停靠、为什么（cs#303 审查）。
+    /// </summary>
+    /// <remarks>
+    /// 前侧那条后加入，所以「退回加入先后」在这里看得出来：能排出侧时先卸的是它。模型在装完、到站之前撤掉——派车在模型
+    /// 解析不出来时根本不派，在途旅程遇到这种情况只能是中途撤了配置。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AnUnresolvedSlotModelFallsBackToTheJoinOrderAndSaysSo()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await LoadBothAndArriveAtTheUnloadStopAsync(
+            fixture,
+            firstSide: Rear,
+            secondSide: Front,
+            beforeArrival: async () =>
+            {
+                await fixture.Context.Set<SlotIoBindingRow>()
+                    .Where(row => row.AgvId == fixture.Options.AgvId)
+                    .ExecuteDeleteAsync(TestContext.Current.CancellationToken);
+                Assert.Null(await new VehicleSlotPositionReader(fixture.Context)
+                    .ReadAsync(fixture.Options.AgvId, TestContext.Current.CancellationToken));
+            });
+
+        Assert.True(await UnloadCommandedAsync(fixture, FirstDemandId), "排不出侧时退回加入先后，先加入的先卸。");
+        Assert.False(await UnloadCommandedAsync(fixture, SecondDemandId));
+        (LogLevel Level, string Message) warning = Assert.Single(
+            fixture.EngineLog.Entries, entry => entry.Message.Contains("SLOT_MODEL_UNRESOLVED", StringComparison.Ordinal));
+        Assert.Equal(LogLevel.Warning, warning.Level);
+        Assert.Contains(fixture.Options.AgvId, warning.Message, StringComparison.Ordinal);
+        Assert.Contains(FirstDemandId, warning.Message, StringComparison.Ordinal);
+        Assert.Contains(SecondDemandId, warning.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 跨两侧的需求排在只有后侧的需求前面，哪怕后者先加入：它最先开的是前侧那一扇。
+    /// </summary>
+    /// <remarks>
+    /// 反过来排，整站开门的次序是后、前、后。与下一条合起来钉住「先按最先开的那一扇、再按最后开的那一扇」。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task ADemandSpanningBothSidesGoesBeforeARearOnlyDemand()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await LoadBothAndArriveAtTheUnloadStopAsync(fixture, firstSide: Rear, secondSide: BothSides);
+
+        Assert.True(await UnloadCommandedAsync(fixture, SecondDemandId), "跨两侧的那条最先开前侧，应先于只有后侧的那条。");
+        Assert.False(await UnloadCommandedAsync(fixture, FirstDemandId));
+    }
+
+    /// <summary>
+    /// 只有前侧的需求排在跨两侧的需求前面，哪怕后者先加入：跨两侧的那条最后开的是后侧那一扇。
+    /// </summary>
+    /// <remarks>
+    /// 反过来排，整站开门的次序是前、后、前。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AFrontOnlyDemandGoesBeforeADemandSpanningBothSides()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await LoadBothAndArriveAtTheUnloadStopAsync(fixture, firstSide: BothSides, secondSide: Front);
+
+        Assert.True(await UnloadCommandedAsync(fixture, SecondDemandId), "只有前侧的那条应先于跨两侧的那条。");
+        Assert.False(await UnloadCommandedAsync(fixture, FirstDemandId));
+    }
+
+    /// <summary>
     /// 两条需求在同一个取货停靠装上车、同一个卸货停靠卸：先按给定的侧改写两条的目标仓位，装完两条，答复离站安全，
     /// 车开到卸货站。停在等卸货结果。
     /// </summary>
@@ -143,7 +216,9 @@ public sealed class Batch7UnloadSideOrderTests
         string secondSide,
         Func<Task>? beforeArrival = null)
     {
-        JourneyRuntimeRow runtime = await TwoDemandsAtThePickupAsync(fixture);
+        // 跨两侧要两个仓位，4 箱只占一个。
+        JourneyRuntimeRow runtime = await TwoDemandsAtThePickupAsync(
+            fixture, firstSide == BothSides || secondSide == BothSides ? 7 : 4);
         int[] firstSlots = await SetTargetSlotsAsync(fixture, FirstDemandId, firstSide, taken: []);
         await SetTargetSlotsAsync(fixture, SecondDemandId, secondSide, taken: firstSlots);
 
@@ -180,15 +255,19 @@ public sealed class Batch7UnloadSideOrderTests
         JourneyDemandRow membership = await fixture.Context.Set<JourneyDemandRow>()
             .SingleAsync(row => row.DemandId == demandId, token);
         int count = (JsonSerializer.Deserialize<int[]>(membership.TargetSlotsJson) ?? []).Length;
-        int[] slots =
+        int[] Free(string group) =>
         [
             .. positions.SlotPositionByPhysicalSlot
-                .Where(pair => pair.Value == side && !taken.Contains(pair.Key))
+                .Where(pair => pair.Value == group && !taken.Contains(pair.Key))
                 .Select(pair => pair.Key)
                 .Order()
-                .Take(count)
         ];
+        // 跨两侧：一个前侧仓位，其余后侧。
+        int[] slots = side == BothSides
+            ? [.. Free(Front).Take(1), .. Free(Rear).Take(count - 1)]
+            : [.. Free(side).Take(count)];
         Assert.Equal(count, slots.Length);
+        Assert.True(side != BothSides || count >= 2, $"跨两侧要至少两个仓位，这条需求只有 {count} 个。");
         membership.TargetSlotsJson = JsonSerializer.Serialize(slots);
         await fixture.Context.SaveChangesAsync(token);
         fixture.Context.ChangeTracker.Clear();

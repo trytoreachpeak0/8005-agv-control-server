@@ -49,6 +49,13 @@ public sealed class JourneyRuntimeEngine(
     ILogger<JourneyRuntimeEngine> logger)
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
+    private static readonly Action<ILogger, string, string, string, string, string, string, Exception?> LogUnloadOrderFallback =
+        LoggerMessage.Define<string, string, string, string, string, string>(
+            LogLevel.Warning,
+            new EventId(2126, nameof(LogUnloadOrderFallback)),
+            "Vehicle {AgvId} journey {JourneyId} stop {StopId}: the unload order across demands could not be told by side " +
+            "({Reason}; demands {DemandIds}), so it falls back to the order they joined in and unloads {NextDemandId} next. " +
+            "Specification section 20 wants front before rear (control-server#303).");
     private static readonly Action<ILogger, string, Exception?> LogBoxCountFailed = LoggerMessage.Define<string>(
         LogLevel.Warning,
         new EventId(2102, nameof(LogBoxCountFailed)),
@@ -890,8 +897,9 @@ public sealed class JourneyRuntimeEngine(
             case JourneyRuntimeStage.AwaitingUnloadResult:
                 // 等的是本停靠此刻该卸的那一条（批次7-06）。卸货不需要一个「正在卸」的状态：卸是服务端自己按顺序发的
                 // （先前侧后后侧，control-server#303），一条卸完才发下一条，已经发出去的那一条由游标优先认出来
-                // （JourneyStopCursor.NextToUnloadAtCurrentStop）。
-                JourneyStopDemand unloading = stops.NextToUnloadAtCurrentStop
+                // （JourneyStopCursor.NextToUnloadAtCurrentStopAsync）。
+                JourneyStopDemand unloading = (await stops.NextToUnloadAtCurrentStopAsync(dbContext, cancellationToken)
+                        .ConfigureAwait(false)).Next
                     ?? throw new InvalidDataException(
                         $"Journey {runtime.JourneyId} waits for an unload result with nothing left to unload.");
                 StationOperationRow? unload = await dbContext.StationOperations.SingleOrDefaultAsync(
@@ -1806,7 +1814,7 @@ public sealed class JourneyRuntimeEngine(
     /// </summary>
     /// <remarks>
     /// 清单与卸货命令都随本停靠的进度走（批次7-06，control-server#211）：清单列的是还没卸的，命令发给
-    /// <see cref="JourneyStopCursor.NextToUnloadAtCurrentStop"/>。单需求下这两者都只有那一条，与之前逐字相同。
+    /// <see cref="JourneyStopCursor.NextToUnloadAtCurrentStopAsync"/>。单需求下这两者都只有那一条，与之前逐字相同。
     /// </remarks>
     private async Task PublishGateStateAndUnloadAsync(
         JourneyRuntimeRow runtime,
@@ -1848,7 +1856,7 @@ public sealed class JourneyRuntimeEngine(
     /// </summary>
     /// <remarks>
     /// 跨需求的先后是先前侧后后侧、同侧按加入先后（control-server#303，规格第 20 节），排序在
-    /// <see cref="JourneyStopCursor.NextToUnloadAtCurrentStop"/>。装货没有对应的排序：装哪一条、先装哪一条由操作员扫码的
+    /// <see cref="JourneyStopCursor.NextToUnloadAtCurrentStopAsync"/>。装货没有对应的排序：装哪一条、先装哪一条由操作员扫码的
     /// 顺序决定，服务端不改它。
     /// </remarks>
     private async Task PublishUnloadCommandAsync(
@@ -1858,9 +1866,17 @@ public sealed class JourneyRuntimeEngine(
         CancellationToken cancellationToken)
     {
         JourneyStopRow stop = stops.Current;
-        if (stops.NextToUnloadAtCurrentStop is not { } next)
+        UnloadChoice choice = await stops.NextToUnloadAtCurrentStopAsync(dbContext, cancellationToken).ConfigureAwait(false);
+        if (choice.Next is not { } next)
         {
             return;
+        }
+        if (choice.UnorderedReason is { } unordered)
+        {
+            // 只在这里记：这是真要选下一条卸谁的那一刻，一个停靠至多「需求条数减一」次（已发出那条优先，不走到这里）。
+            LogUnloadOrderFallback(
+                logger, runtime.AgvId, runtime.JourneyId, stop.StopId, unordered,
+                string.Join(',', choice.UnorderedDemandIds), next.Demand.DemandId, null);
         }
 
         int[] slots = JsonSerializer.Deserialize<int[]>(next.Membership.TargetSlotsJson) ?? [];
@@ -1900,7 +1916,8 @@ public sealed class JourneyRuntimeEngine(
     {
         // 问的是本停靠此刻该卸的那一条（批次7-06）：准入是「这个站允许这条需求的任务类型吗」，而一站几条需求的
         // 任务类型未必相同。没有该卸的就没有可问的，放行——调用方接着往下判。
-        if (stops.NextToUnloadAtCurrentStop is not { } next)
+        if ((await stops.NextToUnloadAtCurrentStopAsync(dbContext, cancellationToken).ConfigureAwait(false)).Next
+            is not { } next)
         {
             return true;
         }
@@ -3023,13 +3040,15 @@ public sealed class JourneyRuntimeEngine(
         // attempt 取「此刻在做的那一条」的（批次7-06）：装的那条由录入决定，卸的那条由游标按侧与已发出的操作决定。
         JourneyStopCursor stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken)
             .ConfigureAwait(false);
+        JourneyStopDemand? unloading = runtime.Stage == JourneyRuntimeStage.AwaitingUnloadResult
+            ? (await stops.NextToUnloadAtCurrentStopAsync(dbContext, cancellationToken).ConfigureAwait(false)).Next
+            : null;
         (string? attemptId, string reason) = runtime.Stage switch
         {
             JourneyRuntimeStage.AwaitingLoadResult =>
                 (stops.LoadingAtCurrentStop?.Membership.LoadSlotOperationAttemptId, "LOAD_RESULT_REQUIRES_RECOVERY"),
             JourneyRuntimeStage.AwaitingUnloadResult =>
-                (stops.NextToUnloadAtCurrentStop?.Membership.UnloadSlotOperationAttemptId,
-                    "UNLOAD_RESULT_REQUIRES_RECOVERY"),
+                (unloading?.Membership.UnloadSlotOperationAttemptId, "UNLOAD_RESULT_REQUIRES_RECOVERY"),
             _ => (null, string.Empty)
         };
         if (attemptId is null)
@@ -3111,12 +3130,11 @@ public sealed class JourneyRuntimeEngine(
     /// Whether this journey's unload at the AREA machine has already been prepared: the attempt has a
     /// <c>StationOperations</c> row, which is written with the admission frozen on it (ADR-cross-0050/0051).
     /// </summary>
-    private Task<bool> UnloadPreparedAsync(JourneyStopCursor stops, CancellationToken cancellationToken) =>
-        stops.NextToUnloadAtCurrentStop is { } next
-            ? dbContext.StationOperations.AsNoTracking()
-                .AnyAsync(row => row.SlotOperationAttemptId == next.Membership.UnloadSlotOperationAttemptId,
-                    cancellationToken)
-            : Task.FromResult(false);
+    private async Task<bool> UnloadPreparedAsync(JourneyStopCursor stops, CancellationToken cancellationToken) =>
+        (await stops.NextToUnloadAtCurrentStopAsync(dbContext, cancellationToken).ConfigureAwait(false)).Next is { } next &&
+        await dbContext.StationOperations.AsNoTracking()
+            .AnyAsync(row => row.SlotOperationAttemptId == next.Membership.UnloadSlotOperationAttemptId, cancellationToken)
+            .ConfigureAwait(false);
 
     private async Task<string?> FindSafetyResultMessageIdAsync(
         string checkId,

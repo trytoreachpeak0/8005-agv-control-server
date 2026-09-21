@@ -25,7 +25,7 @@ namespace ControlServer.Host.Runtime;
 /// <para>
 /// <b>「这个停靠此刻在装哪一条需求」也是落库的状态</b>：从属需求行的 <see cref="JourneyDemandStatuses.Loading"/>。
 /// 装货那一条需要状态，是因为装哪一条由操作员扫了什么决定，服务端事后推不出来；卸货那一条不需要，因为卸货是服务端
-/// 自己按顺序发的，「此刻在卸的」由已备好的卸货操作与侧的顺序推得出来（<see cref="NextToUnloadAtCurrentStop"/>）。
+/// 自己按顺序发的，「此刻在卸的」由已备好的卸货操作与侧的顺序推得出来（<see cref="NextToUnloadAtCurrentStopAsync"/>）。
 /// 这个不对称是有理由的，不是漏了一半。
 /// </para>
 /// <para>
@@ -41,22 +41,16 @@ internal sealed class JourneyStopCursor
     private static readonly string[] UnloadSideOrder = ["FRONT", "REAR"];
 
     private readonly JourneyRuntimeRow _runtime;
-    private readonly IReadOnlyDictionary<int, string> _slotPositions;
-    private readonly IReadOnlySet<string> _unloadsPrepared;
 
     private JourneyStopCursor(
         JourneyRuntimeRow runtime,
         IReadOnlyList<JourneyStopRow> stops,
         IReadOnlyList<JourneyStopDemand> allDemands,
         bool everCarriedMoreThanOneDemand,
-        IReadOnlySet<string> demandsThatLeft,
-        IReadOnlyDictionary<int, string> slotPositions,
-        IReadOnlySet<string> unloadsPrepared)
+        IReadOnlySet<string> demandsThatLeft)
     {
         DemandsThatLeft = demandsThatLeft;
         _runtime = runtime;
-        _slotPositions = slotPositions;
-        _unloadsPrepared = unloadsPrepared;
         Stops = stops;
         AllDemands = allDemands;
         EverCarriedMoreThanOneDemand = everCarriedMoreThanOneDemand;
@@ -154,8 +148,17 @@ internal sealed class JourneyStopCursor
     /// <b>顺序先前侧后后侧，同侧之间按加入旅程的先后</b>（control-server#303；规格第 20 节，REQ-0357、ADR-cross-0061，第 20.2 节表中
     /// 「第 5.1 节第 4 条」一行）。同一条指令内的先后由车载端执行器保证；一次停靠里<b>跨需求</b>的先后只有服务端发命令的顺序决定，
     /// 所以排在这里。侧从需求的目标仓位（卸货命令开的就是它们）经车的仓位分组读（<see cref="VehicleSlotPositionReader"/>，
-    /// 派车与按侧判满用的同一个取法），不按仓号区间推；一条需求的侧取它最先会开的那一扇。车的仓位模型解析不出来、或仓位不在
-    /// 前后两组里时排在最后，全都解析不出来就退回加入先后——那正是修之前的答案。
+    /// 派车与按侧判满用的同一个取法），不按仓号区间推；跨两侧的需求排在只有前侧与只有后侧的之间（方法体里写了理由）。
+    /// </para>
+    /// <para>
+    /// <b>排不出侧时退回加入先后，但不静默</b>（cs#303 审查）：车的仓位模型解析不出来，或仓位不在模型里、分组不是前后两组，
+    /// <see cref="UnloadChoice.UnorderedReason"/> 说是哪一种，发卸货命令的那一处（<c>JourneyRuntimeEngine.PublishUnloadCommandAsync</c>）
+    /// 记一条 Warning。只在真要选下一条卸谁的那一刻记，所以一个停靠至多记「需求条数减一」次，不随每轮推进刷屏。
+    /// </para>
+    /// <para>
+    /// <b>排序要读的两样（已备好的操作、车的仓位分组）只在这里读</b>，也就是推进段真要问「该卸哪一条」的时候：停在卸货站、
+    /// 走卸货那几步。游标在车行驶的每一轮都会加载，放在加载里读就是整段路上每轮多读两次（cs#303 审查）。当前停靠上至多一条
+    /// 已装需求时一次都不读，答案按构造与修之前相同。
     /// </para>
     /// <para>
     /// <b>已经备好仓位操作的那一条优先于排序。</b>「此刻在卸的」没有落库的状态，是每轮重算的；而排序依据（车的仓位分组）
@@ -169,16 +172,61 @@ internal sealed class JourneyStopCursor
     /// 先后，服务端不改它。
     /// </para>
     /// </remarks>
-    public JourneyStopDemand? NextToUnloadAtCurrentStop
+    public async Task<UnloadChoice> NextToUnloadAtCurrentStopAsync(
+        ControlServerDbContext dbContext,
+        CancellationToken cancellationToken)
     {
-        get
+        ArgumentNullException.ThrowIfNull(dbContext);
+        JourneyStopDemand[] loaded =
+            [.. ProgressAtStop(Current).Where(item => item.Membership.Status == JourneyDemandStatuses.Loaded)];
+        if (loaded.Length <= 1 || Current.StopRole != JourneyStopRoles.Unload)
         {
-            JourneyStopDemand[] loaded =
-                [.. ProgressAtStop(Current).Where(item => item.Membership.Status == JourneyDemandStatuses.Loaded)];
-            // OrderBy 是稳定排序：同一侧的保持 ProgressAtStop 给的加入先后。
-            return loaded.FirstOrDefault(item => _unloadsPrepared.Contains(item.Membership.UnloadSlotOperationAttemptId))
-                ?? loaded.OrderBy(UnloadSideRank).FirstOrDefault();
+            return new UnloadChoice(loaded.FirstOrDefault(), null, []);
         }
+
+        string[] attempts = [.. loaded.Select(item => item.Membership.UnloadSlotOperationAttemptId)];
+        HashSet<string> prepared = new(
+            await dbContext.StationOperations.AsNoTracking()
+                .Where(row => attempts.Contains(row.SlotOperationAttemptId))
+                .Select(row => row.SlotOperationAttemptId)
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false),
+            StringComparer.Ordinal);
+        if (loaded.FirstOrDefault(item => prepared.Contains(item.Membership.UnloadSlotOperationAttemptId)) is { } inFlight)
+        {
+            return new UnloadChoice(inFlight, null, []);
+        }
+
+        VehicleSlotPositions? positions = await new VehicleSlotPositionReader(dbContext)
+            .ReadAsync(_runtime.AgvId, cancellationToken).ConfigureAwait(false);
+        if (positions is null)
+        {
+            return new UnloadChoice(
+                loaded[0],
+                UnloadOrderFallbackReasons.SlotModelUnresolved,
+                [.. loaded.Select(item => item.Demand.DemandId)]);
+        }
+
+        (JourneyStopDemand Item, int[] Ranks)[] ranked =
+        [
+            .. loaded.Select(item => (item, (JsonSerializer.Deserialize<int[]>(item.Membership.TargetSlotsJson) ?? [])
+                .Select(slot => SideRankOf(positions, slot))
+                .DefaultIfEmpty(UnloadSideOrder.Length)
+                .ToArray()))
+        ];
+        string[] unknown =
+        [
+            .. ranked.Where(entry => entry.Ranks.Contains(UnloadSideOrder.Length))
+                .Select(entry => entry.Item.Demand.DemandId)
+        ];
+        // 先按最先开的那一扇、再按最后开的那一扇排。跨两侧的需求在一条命令内先前后后（车载端执行器按规格第 20 节第 2 条），
+        // 所以它要夹在「只有前侧」与「只有后侧」之间，整站开门的次序才单调：前侧、（跨侧的前、后）、后侧。只按最先那一扇排，
+        // 跨侧的会与只有前侧的按加入先后混排，开出前、后、前；只按最后那一扇排，它会排到只有后侧的后面，开出后、前、后。
+        // OrderBy 是稳定排序：两扇都同侧的保持 ProgressAtStop 给的加入先后。
+        JourneyStopDemand next = ranked
+            .OrderBy(entry => entry.Ranks.Min())
+            .ThenBy(entry => entry.Ranks.Max())
+            .First().Item;
+        return new UnloadChoice(next, unknown.Length > 0 ? UnloadOrderFallbackReasons.SlotSideUnknown : null, unknown);
     }
 
     /// <summary>这个停靠上挂着的全部归属（含已终结的），按加入旅程的先后。清单的版数按它数。</summary>
@@ -321,15 +369,10 @@ internal sealed class JourneyStopCursor
     private static Func<JourneyStopDemand, bool> IsOutstandingAt(JourneyStopRow stop) =>
         item => !IsDoneAt(stop, item);
 
-    /// <summary>一条需求卸货时最先开的那一扇在哪一侧，按 <see cref="UnloadSideOrder"/> 给出序号；说不出来的排在最后。</summary>
-    private int UnloadSideRank(JourneyStopDemand item) =>
-        (JsonSerializer.Deserialize<int[]>(item.Membership.TargetSlotsJson) ?? [])
-        .Select(SideRankOf)
-        .DefaultIfEmpty(UnloadSideOrder.Length)
-        .Min();
-
-    private int SideRankOf(int slot) =>
-        _slotPositions.TryGetValue(slot, out string? side) && Array.IndexOf(UnloadSideOrder, side) is var rank and >= 0
+    /// <summary>一个仓位在 <see cref="UnloadSideOrder"/> 里排第几；不在车的仓位模型里、或分组不在其中的，排在最后。</summary>
+    private static int SideRankOf(VehicleSlotPositions positions, int slot) =>
+        positions.SlotPositionByPhysicalSlot.TryGetValue(slot, out string? side) &&
+        Array.IndexOf(UnloadSideOrder, side) is var rank and >= 0
             ? rank
             : UnloadSideOrder.Length;
 
@@ -394,46 +437,17 @@ internal sealed class JourneyStopCursor
                 demand => demand.DemandId,
                 (membership, demand) => new JourneyStopDemand(membership, demand))
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
-        JourneyStopDemand[] carried =
-        [
-            .. everCarried
-                .Where(row => row.Membership.RemovedAt == null)
-                .OrderBy(row => row.Membership.AddedAt)
-                .ThenBy(row => row.Membership.DemandId, StringComparer.Ordinal)
-        ];
-
-        // 卸货的侧序（control-server#303）只在当前停靠是卸货停靠、上面有不止一条已装需求时才有东西可排，其余时候不多读一次库：
-        // 单需求停靠与取货停靠的答案按构造与修之前相同。
-        JourneyStopRow? current = stops.FirstOrDefault(IsOpen);
-        string[] toUnload = current?.StopRole == JourneyStopRoles.Unload
-            ? [.. carried
-                .Where(row => row.Membership.UnloadStopId == current.StopId &&
-                              row.Membership.Status == JourneyDemandStatuses.Loaded)
-                .Select(row => row.Membership.UnloadSlotOperationAttemptId)]
-            : [];
-        IReadOnlyDictionary<int, string> slotPositions = new Dictionary<int, string>();
-        HashSet<string> unloadsPrepared = new(StringComparer.Ordinal);
-        if (toUnload.Length > 1)
-        {
-            slotPositions = (await new VehicleSlotPositionReader(dbContext)
-                    .ReadAsync(runtime.AgvId, cancellationToken).ConfigureAwait(false))
-                ?.SlotPositionByPhysicalSlot ?? slotPositions;
-            unloadsPrepared.UnionWith(await dbContext.StationOperations.AsNoTracking()
-                .Where(row => toUnload.Contains(row.SlotOperationAttemptId))
-                .Select(row => row.SlotOperationAttemptId)
-                .ToArrayAsync(cancellationToken).ConfigureAwait(false));
-        }
-
         return new JourneyStopCursor(
             runtime,
             stops,
-            carried,
+            [.. everCarried
+                .Where(row => row.Membership.RemovedAt == null)
+                .OrderBy(row => row.Membership.AddedAt)
+                .ThenBy(row => row.Membership.DemandId, StringComparer.Ordinal)],
             everCarried.Length > 1,
             new HashSet<string>(
                 everCarried.Where(row => row.Membership.RemovedAt != null).Select(row => row.Membership.DemandId),
-                StringComparer.Ordinal),
-            slotPositions,
-            unloadsPrepared);
+                StringComparer.Ordinal));
     }
 
     /// <summary>
@@ -459,6 +473,29 @@ internal sealed class JourneyStopCursor
 
 /// <summary>一条需求在这趟旅程里的归属，连同需求本身。</summary>
 internal sealed record JourneyStopDemand(JourneyDemandRow Membership, AcceptedDemandRow Demand);
+
+/// <summary>
+/// 当前停靠此刻该卸的那一条，以及排不出侧时的原因（control-server#303）。
+/// </summary>
+/// <param name="Next">该卸的那一条；没有已装需求时为空。</param>
+/// <param name="UnorderedReason">
+/// 为空表示次序按侧排出来了，或者用不着排；否则是 <see cref="UnloadOrderFallbackReasons"/> 之一，那几条需求之间退回了加入先后。
+/// </param>
+/// <param name="UnorderedDemandIds">排不出侧的需求。</param>
+internal sealed record UnloadChoice(
+    JourneyStopDemand? Next,
+    string? UnorderedReason,
+    IReadOnlyList<string> UnorderedDemandIds);
+
+/// <summary>卸货次序退回加入先后的原因，写进 Warning（control-server#303）。</summary>
+internal static class UnloadOrderFallbackReasons
+{
+    /// <summary>车的仓位模型解析不出来，所有需求都排不出侧。</summary>
+    public const string SlotModelUnresolved = "SLOT_MODEL_UNRESOLVED";
+
+    /// <summary>有需求的目标仓位不在车的仓位模型里，或所在分组不是 FRONT／REAR。</summary>
+    public const string SlotSideUnknown = "SLOT_SIDE_UNKNOWN";
+}
 
 /// <summary>
 /// 一条录入提交要答复某个停靠，必须对上的那组事实（批次7-06，control-server#211）。
