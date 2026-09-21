@@ -37,3 +37,28 @@
 这一遍派车那一版计划到车到站时才发出（`18:42:47`，受理在 `18:41:15`）：受理之后车载端立刻报了「有未结束的单」，会话转 `RecoveryRequired`，
 快照压到会话回 `Ready` 才发。另三遍里派车计划都赶在那份报告之前发出。`G3-08-05` 原来读「派车那一版」，于是判的是一场与本条无关的竞速。
 已改为车停在 12 号站、甲装完之后读追加前最后一版（`cecdf6762c1ffd308b5da9210c365454eba0cbbf`）。这场竞速在正常车载端上同样会发生，所以是场景本身的不稳，修在绿的一边；注入只改显示顺序，预期只红 `G3-08-06`，第二段在最终 head 上重跑这份红证据来证；末尾那一行在 `$dispatchPlan` 为空时抛错，一并改掉。
+
+## 最终证据（第三段，2026-09-22 03:43～04:08，本机）
+
+本票最终 head 是 `23c846bf4f2d5ce39d7f10269796d9756d08e70d`（此后只有证据与文档提交）。三端：服务端 `23c846bf4f2d5ce39d7f10269796d9756d08e70d`、
+车载端 `deeba94c42c51561621634194d3c9f6582737486`、模拟器 `fb5f7c593742bf98bc3957b8729a38aad5321f28`。上面第一段的 `mso-003`、`msp-*` 与四份红证据早于
+`G3-08-05` 改时机、名称兜底修正（`fcbaf57b`）与基线仓位前置检查，留作过程记录；**以本节为准**。
+
+| 目录 | 场景 | 车载端 | 结果 |
+| --- | --- | --- | --- |
+| `green/s3-mso/` | `real-onboard-mixed-side-one-stop` | `deeba94c` | PASS 12/12 |
+| `green/s3-msp/` | `g3-multi-stop-plan` | `deeba94c` | PASS 7/7 |
+| `red/s3-red-hmi-reorder/` | `g3-multi-stop-plan` | `a7abe3aab0106a592f88340a53009b8ab6119d9b`（`patches/onboard-plan-reorder.patch`） | 只红 `G3-08-06`：界面行序 `2(name),1(name),3(name)`；三行的序位都走名称兜底取出（行里没有文字元素），兜底在真装置上确实走到 |
+
+G3 runner 自检（证据不入库，在控制端 `C:\Users\szy\b715\`）：
+
+| runner | 服务端 | 车载端 | 结论 |
+| --- | --- | --- | --- |
+| `run-journey-g3.ps1`（15 场景，`-SelfCheckControlServerCommit`、`-SelfCheckOnboardCommit`） | `23c846bf` | `deeba94c` | `JOURNEY_G3_PASS`，`FP-IS-01/02/03/07/08/10/11` 全 PASS，两个 commitSource 都是 `SELF_CHECK_OVERRIDE`（`s3-sc-journey`） |
+| `run-staged-g3.ps1`（从本票 head 跑，绑定原样） | `85381ea2a37e46b4c720ff5f1843161ad6deb69d` | `4d716340982de4e39339c2151c291efe1a21e1d1`（detached worktree，`-OnboardRemoteRef` 传 sha，自检时有意跳过「须为顶端」） | `STAGED_G3_RECOVERY_REPLAY_PASS`，`FP-IS-00/06/07/14/15` 全 PASS（`s3-sc-staged`） |
+| `run-staged-g3-restart.ps1`（不推送的临时绑定提交 `3d6e8584`） | `b621a97bfb5feb7f941e8d25e82652f456d1ed7f` | `deeba94c` | `STAGED_G3_PROCESS_RESTART_PASS`（`sc-restart`） |
+| `run-demand-bearing-g3-vectors.ps1`（同上） | `b621a97b` | `deeba94c` | `DEMAND_BEARING_G3_VECTORS_PASS`（`sc-demand`） |
+
+`b621a97b` 之后认领表（`g3-slice-evidence.ps1`）与后两个 runner 一字未动，所以没有在 `23c846bf` 上重跑它们。staged 在**移过的**绑定
+（`b621a97b` + `deeba94c`）上中止（恢复探针 `forced-mechanical-command-replayed-after-reconnect` FAIL、槽位配置激活 409，runner 随后在 IndexOf 上抛 null
+盖住原错误，`C:\Users\szy\b715\sc-staged\`）：与认领无关，调度已另开票，出口票移绑定前要先解决。
