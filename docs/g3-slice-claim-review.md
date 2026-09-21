@@ -326,3 +326,46 @@ L2 id 与断言名的对应在 `$scenarioAssertions`（第 74–185 行）；运
 | journey | `originAndDestinationNeverSwapped`（G3-11-07） | FP-IS-11 | 同一向量（`NEVER_SWAP_ORIGIN_AND_DESTINATION`） | 车出发之前判：`JourneyRuntimes` 记的起点是派工待送站（名称与 RIoT 号）、终点是 AREA 机台，只有一行、路线证据非空；RIoT 上第一张单开往派工待送站（第二张的目的站在 G3-11-06） | 路线证据是哈希，G3 读不出起终点；互换失配由 control-server#163 的 L1 证。G3-11-01 与本条在车出发前判，方向排反的服务端会让后面的驱动超时，判据仍写得出来 |
 | journey | `admissionFrozenOnTheUnload`（G3-11-08） | FP-IS-11 | 不是向量条目；规格第 4.1 节 I6（批次 6 推翻） | `AdmissionDecisionSnapshots` 里卸货那次一行：AREA 机台站、`STAGING_TO_WIRE`、放行；装货那次没有 | |
 | journey | `reversedJourneyFinalStateNoDuplicateCommit`（G3-11-09） | FP-IS-11 | 同一向量 finalState | 需求 Succeeded、旅程 Completed，两张单、两笔操作都 Committed，卸完的仓 CLOSED/EMPTY/1/0 | |
+
+## 批次 7 新增：FP-IS-08（control-server#218）
+
+批次 7 的 G3 认领由 control-server#218 独占。journey runner 新认领一片，一条场景 `g3-multi-stop-plan`、七条断言，全部是切片断言，不加运行级断言（运行级的八条照旧）。journey runner 因此从 14 个场景变成 15 个。向量内容按 `protocol-v2.0.0` 协议仓 `vectors/CV-MULTI-STOP-PLAN-NINE-LEGS/expected.json` 对照；检查内容取自场景脚本里 `$assertions.Add` 的判定文字。
+
+| runner | 运行级 | 切片断言 | 合计 |
+| --- | --- | --- | --- |
+| journey 新增 | 0 | 7（FP-IS-08 7） | 7 |
+
+这条向量**只覆盖计划腿**。多条清单项、持货等单、让站都没有向量，真装置场景 `real-onboard-mixed-side-one-stop`（混挂站点一次停靠两侧各一条需求）覆盖其中前两样，它不进任何 runner、不认领切片。
+
+### 向量产品断言到 G3 断言
+
+两端五条 `productAssertions` 每条都至少有一个 G3 断言对应，没有例外。
+
+| 向量 | 归属 | `productAssertions` 条目 | 对应的 G3 断言 |
+| --- | --- | --- | --- |
+| `CV-MULTI-STOP-PLAN-NINE-LEGS` | 服务端 | `PLAN_UP_TO_NINE_LEGS` | `appendedPlanAdvancesRevisionWithAtLeastThreeLegs`（G3-08-02） |
+| `CV-MULTI-STOP-PLAN-NINE-LEGS` | 服务端 | `ORDER_LEGS_BY_SEQUENCE` | `planLegsSentInSequenceOrder`（G3-08-03）；序位连续那一半在 `everyPlanRevisionSequencedFromOneWithAPurposePerLeg`（G3-08-01） |
+| `CV-MULTI-STOP-PLAN-NINE-LEGS` | 服务端 | `CATEGORISE_EVERY_STOP_PURPOSE` | `everyPlanRevisionSequencedFromOneWithAPurposePerLeg`（G3-08-01） |
+| `CV-MULTI-STOP-PLAN-NINE-LEGS` | 车载端 | `DISPLAY_FULL_JOURNEY_PLAN` | `onboardShowsTheDispatchPlanInSequenceOrder`（G3-08-05）、`onboardShowsTheAppendedPlanInSequenceOrder`（G3-08-06） |
+| `CV-MULTI-STOP-PLAN-NINE-LEGS` | 车载端 | `NEVER_REORDER_LEGS_LOCALLY` | `onboardShowsTheAppendedPlanInSequenceOrder`（G3-08-06） |
+| `CV-MULTI-STOP-PLAN-NINE-LEGS` | 两端 | `orderedExpectedMessages`、finalState | `multiStopSequenceMatchesVector`（G3-08-04）、`multiStopJourneyEachDemandLoadedAndUnloadedOnce`（G3-08-07） |
+
+**`UP_TO_NINE_LEGS_PLANNED` 的「九」由两端 G2 证明，G3 证明的是三条以上的真实计划。**九条腿的计划要八条需求、八个停靠走完一趟，在真装置上约是本场景的四倍机时，而上限本身（腿数门禁、入站 schema 上限）两端 G2 各自按边界值证过：服务端 `Batch7EnRouteAppendPlannerTests` 的腿数门禁，车载端 onboard-hmi#134 的 `InboundPayloadSchemaBoundaryTests.APlanOfNineLegsIsAccepted`／`APlanOfTenLegsIsRefused` 与 `MultiDemandJourneyG2Tests.ANineLegPlanIsAcknowledgedAndShownInFullInSequenceOrder`。G3 这里证的是那条链路在两端真实协议下接通：途中追加让计划从两条腿变成三条，修订号前进、整体重发、车载端按序位整表显示，旅程走完。
+
+`stableErrorCode` 为 null，没有对应断言。
+
+### 逐条表
+
+场景：`scripts/l2/scenarios/g3-multi-stop-plan.ps1`（读取在 `scripts/l2/L2MultiStopJourney.psm1`，驱动在 `scripts/l2/scenarios/MultiStopRigCommon.ps1`）。一辆车、两条需求：甲在 12 号站 `N1-3_N1-7`、乙在 11 号站 `C15-13`，卸货都在关卡；乙在车停在 12 号站、甲装完之后追加（按用户 09-22 决定途中追加只在停站时，control-server#286、program#133）。追加后的计划按站名排会是 2,1,3，本地重排因此看得见。
+
+车载端的计划腿行序先读每行显示序位的 TextBlock，行里没有文字元素时退到 DataItem 名称（行记录的 `ToString`，打印格式不是契约）；最终证据 `s3-msp` 追加后三行都取自名称（`(name)`），行的先后始终是 ItemsControl 的项顺序。不读行上的 `ItemStatus`：onboard-hmi#134 把它挂在模板里的 `Grid` 上，`Grid` 不进 UIA 树，读不到（`docs/defects/20260922-journey-plan-legs-item-status-not-in-uia-tree.md`）。所以 G3-08-05、G3-08-06 判的是行数与行序，不按原始码判每条腿的用途类别与状态——那两样由服务端一侧的 G3-08-01 判。
+
+| runner | 断言名 | 当前归属切片 | 依据向量 | 核实到的检查内容 | 疑点 |
+| --- | --- | --- | --- | --- | --- |
+| journey | `everyPlanRevisionSequencedFromOneWithAPurposePerLeg`（G3-08-01） | FP-IS-08 | `CV-MULTI-STOP-PLAN-NINE-LEGS`（`CATEGORISE_EVERY_STOP_PURPOSE`，`ORDER_LEGS_BY_SEQUENCE` 的连续那一半） | 这趟旅程的每一版 `UpcomingStopPlanSnapshot`（至少两版）：腿的 `sequence` 为 1..n、无重复，每条腿的 `stopPurposeCategory` 非空 | 今天服务端恒填 `BUSINESS`，所以「非空」是本条能判的全部；等待点、充电桩腿不在本场景 |
+| journey | `appendedPlanAdvancesRevisionWithAtLeastThreeLegs`（G3-08-02） | FP-IS-08 | 同一向量（`PLAN_UP_TO_NINE_LEGS`） | 第一版三条腿以上的计划被车载端确认；它的 `planRevision` 大于此前每一版；腿数 3..9；乙进的是同一趟旅程（归属两条、`JourneyRuntimes` 一行） | 九条由两端 G2 证，见上 |
+| journey | `planLegsSentInSequenceOrder`（G3-08-03） | FP-IS-08 | 同一向量（`ORDER_LEGS_BY_SEQUENCE`） | 每一版计划发件箱原文里 `legs` 数组的先后就是 `sequence` 升序；读原文，不经排序 | |
+| journey | `multiStopSequenceMatchesVector`（G3-08-04） | FP-IS-08 | 同一向量 `orderedExpectedMessages` | 这趟旅程第一份快照是计划，第一份清单在它之后；每一份计划与清单都被真车载端确认；作废过的只能是后面有同一类、更高修订号一份的那种（离开最后一个装货站时「开往关卡」那一版会被「已到关卡」那一版在几十毫秒内退役，车载端随后照样确认，`msp-001` 实遇）。旅程 `Completed` 之后先等全部确认再判 | |
+| journey | `onboardShowsTheDispatchPlanInSequenceOrder`（G3-08-05） | FP-IS-08 | 同一向量（`DISPLAY_FULL_JOURNEY_PLAN`） | 追加前最后一版计划（两条腿，车停在 12 号站、甲装完之后读）被车载端确认之后，UIA `JourneyPlanLegs` 的行数与行序等于它的 `sequence`；不在车出发时读，那时计划是否已发要看它与车载端「有未结束的单」报告谁先到 | 两条腿按站名排恰好不变，这一条判不出重排；重排由 G3-08-06 判 |
+| journey | `onboardShowsTheAppendedPlanInSequenceOrder`（G3-08-06） | FP-IS-08 | 同一向量（`DISPLAY_FULL_JOURNEY_PLAN`、`NEVER_REORDER_LEGS_LOCALLY`） | 三条腿那一版被车载端确认之后，UIA 行数与行序等于它的 `sequence`（1,2,3）；按站名重排会读成 2,1,3 | |
+| journey | `multiStopJourneyEachDemandLoadedAndUnloadedOnce`（G3-08-07） | FP-IS-08 | 同一向量 finalState | 旅程 `Completed`；两条需求各一笔装、一笔卸，都 `Committed`，需求 `Succeeded`；关卡上两笔卸货各属一条需求；装过的两个仓最后 `CLOSED/EMPTY/1/0` | 持货等单在本场景会发生（允许追加就持货），不判；它的判据在 `real-onboard-mixed-side-one-stop` |

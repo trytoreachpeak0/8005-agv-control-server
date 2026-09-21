@@ -55,6 +55,13 @@
 # DISPLAY_ADMISSION_BLOCK_REASON, which specification 5.3 cancelled (the reason stays on the server and the
 # dashboard, so v2 has no producer for it); registered as program#125.
 #
+# Batch 7 (control-server#218): the journey runner claims FP-IS-08, one scenario (g3-multi-stop-plan), seven
+# assertions, one en-route append that grows the plan from two legs to three, run to completion on the real
+# onboard. All five productAssertions entries of CV-MULTI-STOP-PLAN-NINE-LEGS are answered; the "nine" of
+# UP_TO_NINE_LEGS_PLANNED is proved by the two G2s, not here (docs/g3-slice-claim-review.md says so in its row).
+# The vector covers plan legs only: several worklist items, cargo holding and station yield have no vector, and
+# the real-rig scenario real-onboard-mixed-side-one-stop that exercises them is in no runner and claims no slice.
+#
 # ---------------------------------------------------------------------------------------------
 # The ruling, 2026-09-09 (ticket 23, the user's decision -- recorded here rather than only in a
 # commit message, because this is the constant it governs):
@@ -469,6 +476,21 @@ function Get-G3RunnerClaim {
                     'originAndDestinationNeverSwapped',
                     'admissionFrozenOnTheUnload',
                     'reversedJourneyFinalStateNoDuplicateCommit')
+                # CV-MULTI-STOP-PLAN-NINE-LEGS (batch 7, control-server#218): a second demand appended en route
+                # grows the plan from two legs to three. Server halves: CATEGORISE_EVERY_STOP_PURPOSE and the
+                # contiguous sequence (every revision), PLAN_UP_TO_NINE_LEGS (the appended revision moves on and has
+                # three or more legs -- nine is the two G2s' to prove), ORDER_LEGS_BY_SEQUENCE (the legs array as the
+                # wire carries it, unsorted). Onboard halves, DISPLAY_FULL_JOURNEY_PLAN and NEVER_REORDER_LEGS_LOCALLY,
+                # read through UI Automation (JourneyPlanLegs) once each revision is acknowledged; the stations are
+                # chosen so that ordering them by station number would differ from the sequence.
+                'FP-IS-08' = @(
+                    'everyPlanRevisionSequencedFromOneWithAPurposePerLeg',
+                    'appendedPlanAdvancesRevisionWithAtLeastThreeLegs',
+                    'planLegsSentInSequenceOrder',
+                    'multiStopSequenceMatchesVector',
+                    'onboardShowsTheDispatchPlanInSequenceOrder',
+                    'onboardShowsTheAppendedPlanInSequenceOrder',
+                    'multiStopJourneyEachDemandLoadedAndUnloadedOnce')
             }
         }
     }

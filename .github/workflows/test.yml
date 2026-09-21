@@ -138,6 +138,14 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2DoubleCommandError.ps1
 
+      # Under a second, no rig. The plan-leg row parsing the two batch-7 real-rig scenarios read the HMI with
+      # (control-server#218). Its fallback once carried a regex word boundary that an editing tool decoded into a
+      # literal backspace: it parsed, matched nothing, and a whole real-rig session read every plan row as '?'.
+      # Only a real-onboard run reaches that code, and CI's synthetic lanes never do.
+      - name: L2 scenario self-check (multi-stop plan row parsing)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/l2/Test-L2MultiStopJourney.ps1
+
       # 1.5 seconds, and the only thing that ever executes Get-G3EvidenceLocationDiagnostic: a G3
       # runner calls it after it has already decided it found nothing, so no green run reaches it.
       # It says WHERE nothing was found, which is what control-server#211 needed and did not have --

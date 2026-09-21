@@ -1,0 +1,26 @@
+From a7abe3aab0106a592f88340a53009b8ab6119d9b Mon Sep 17 00:00:00 2001
+From: Zhengyu Shao <trytoreachpeak0@gmail.com>
+Date: Tue, 22 Sep 2026 02:11:24 +0800
+Subject: [PATCH] DEFECT(cs#218 red evidence, local only, never push): order
+ plan legs by station id
+
+---
+ src/SQCD.Agv.Wpf/ViewModels/MainViewModel.cs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/SQCD.Agv.Wpf/ViewModels/MainViewModel.cs b/src/SQCD.Agv.Wpf/ViewModels/MainViewModel.cs
+index 923a345..60e9f19 100644
+--- a/src/SQCD.Agv.Wpf/ViewModels/MainViewModel.cs
++++ b/src/SQCD.Agv.Wpf/ViewModels/MainViewModel.cs
+@@ -394,7 +394,7 @@ public sealed class MainViewModel : ViewModelBase
+     private void ReplaceJourneyPlanLegsCore(IReadOnlyList<WireToGateMovementLeg> legs)
+     {
+         JourneyPlanLegs.Clear();
+-        foreach (WireToGateMovementLeg leg in legs.OrderBy(leg => leg.Sequence))
++        foreach (WireToGateMovementLeg leg in legs.OrderBy(leg => leg.StationId, StringComparer.Ordinal)) // DEFECT cs#218: reorder locally by station
+         {
+             JourneyPlanLegs.Add(new JourneyPlanLegRow(
+                 leg.Sequence,
+-- 
+2.55.0.windows.5
+
