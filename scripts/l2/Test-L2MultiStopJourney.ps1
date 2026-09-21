@@ -6,7 +6,8 @@ ConvertFrom-L2PlanLegRowReading the shapes a real rig produced and checks what c
 
 Why it exists: the first Name fallback carried a regex word boundary that an editing tool decoded into a literal
 backspace. It parsed, it matched nothing, and a whole real-rig session read every plan row as '?' before anyone knew.
-Case 5 is the direct guard for that: no control character may sit in the module at all.
+The byte scan is the direct guard for that: no control character may sit in the module, its common driver or the two
+scenarios at all.
 
 Exit 0 when every case holds; throws naming the failures otherwise.
 #>
@@ -39,10 +40,16 @@ foreach ($case in $cases) {
     if (-not $ok) { $problems.Add($case.Name) }
 }
 
-$bytes = [IO.File]::ReadAllBytes((Join-Path $PSScriptRoot 'L2MultiStopJourney.psm1'))
-$control = @(for ($i = 0; $i -lt $bytes.Length; $i++) { if ($bytes[$i] -lt 32 -and $bytes[$i] -notin 9, 10, 13) { $i } })
-"{0}    L2MultiStopJourney.psm1 carries no control character other than tab and line ends -> {1} found" -f $(if ($control.Count -eq 0) { 'ok  ' } else { 'FAIL' }), $control.Count
-if ($control.Count -ne 0) { $problems.Add("control characters at byte offsets $($control -join ', ')") }
+# Every file of this driver, not only the module: the scenarios and their common driver were written through the same
+# tools (control-server#218 review).
+$scanned = @('L2MultiStopJourney.psm1', 'scenarios/MultiStopRigCommon.ps1', 'scenarios/g3-multi-stop-plan.ps1',
+    'scenarios/real-onboard-mixed-side-one-stop.ps1')
+foreach ($relative in $scanned) {
+    $bytes = [IO.File]::ReadAllBytes((Join-Path $PSScriptRoot $relative))
+    $control = @(for ($i = 0; $i -lt $bytes.Length; $i++) { if ($bytes[$i] -lt 32 -and $bytes[$i] -notin 9, 10, 13) { $i } })
+    "{0}    {1} carries no control character other than tab and line ends -> {2} found" -f $(if ($control.Count -eq 0) { 'ok  ' } else { 'FAIL' }), $relative, $control.Count
+    if ($control.Count -ne 0) { $problems.Add("$relative has control characters at byte offsets $($control -join ', ')") }
+}
 
 if ($problems.Count -ne 0) { throw "L2MultiStopJourney self-check failed: $($problems -join '; ')" }
-"L2MultiStopJourney self-check: all $($cases.Count + 1) cases as expected."
+"L2MultiStopJourney self-check: all $($cases.Count + $scanned.Count) cases as expected."

@@ -245,4 +245,4 @@ $assertions.Add(
     "Completed / $($expectedPerDemand -join ' ') / 两笔卸货两条需求 / 仓 CLOSED/EMPTY/1/0",
     "$stage / $(@($perDemand) -join ' ') / 卸货需求 $($unloads.Count) 笔 / $($slotReadings -join ' ')")
 
-$journal.Note("FP-IS-08: plan grew from $(if ($null -ne $dispatchPlan) { @($dispatchPlan.Legs).Count } else { ? }) to $legCount legs on an en-route append, the HMI showed both in sequence order, and the journey ran to completion.")
+$journal.Note("FP-IS-08: plan grew from $(if ($null -ne $dispatchPlan) { @($dispatchPlan.Legs).Count } else { '?' }) to $legCount legs on an en-route append, the HMI showed both in sequence order, and the journey ran to completion.")

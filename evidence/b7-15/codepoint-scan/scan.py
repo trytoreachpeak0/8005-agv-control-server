@@ -8,11 +8,15 @@ total = 0
 for f in files:
     b = open(f, 'rb').read()
     c0 = [i for i, x in enumerate(b) if x < 32 and x not in (9, 10, 13)] + [i for i, x in enumerate(b) if x == 127]
+    # Not UTF-8 is its own column: an earlier version counted it as one C1 finding, and the two captured console
+    # outputs it flagged were in fact undecodable bytes, not C1 controls (control-server#218 review).
+    notutf8 = 0
     try:
         t = b.decode('utf-8')
         c1 = [i for i, ch in enumerate(t) if 0x80 <= ord(ch) <= 0x9f]
     except UnicodeDecodeError:
-        c1 = ['not-utf8']
-    total += len(c0) + len(c1)
-    print(f"{len(b):8d} bytes  C0/DEL={len(c0):3d}  C1={len(c1):3d}  {f}")
+        c1 = []
+        notutf8 = 1
+    total += len(c0) + len(c1) + notutf8
+    print(f"{len(b):8d} bytes  C0/DEL={len(c0):3d}  C1={len(c1):3d}  notUTF8={notutf8}  {f}")
 print(f"files={len(files)} findings={total}")

@@ -14,7 +14,7 @@
 | `uia-probe/` | 同形 XAML 的 UIA 实测 | — | — | 计划腿行的 `ItemStatus` 不在 UIA 树上（`docs/defects/20260922-journey-plan-legs-item-status-not-in-uia-tree.md`） |
 | `green/mso-003/` | `real-onboard-mixed-side-one-stop` | `fbe7f239556101395bc7980ff0339168708d5f5c` | `deeba94c42c51561621634194d3c9f6582737486` | PASS 12/12 |
 | `red/red-unload-order/` | 同上 | `b43fa390ce616913f13af0c04b34e39e61b3d9b1`（`6bf3ee1653b290de66890b32791f70d6faa071f5` + `patches/server-unload-order.patch`：卸货按加入先后**倒序**） | `deeba94c42c51561621634194d3c9f6582737486` | 只红 `L2-MSO-10`：卸货先后 `REAR,FRONT,FRONT`，丙的卸货命令早于乙的卸货提交，采样里丙仓先开 |
-| `red/red-slot-group/` | 同上 | `30207876fb3b58fc740e91775c3a8c7691f1c01f`（`6bf3ee1653b290de66890b32791f70d6faa071f5` + `patches/server-slot-group.patch`：全部派进前侧组） | `deeba94c42c51561621634194d3c9f6582737486` | 红 `L2-MSO-05`、`06`、`09`：丙落在 3 号仓（前侧）；物理状态与目标仓照样一致，是「目标仓在区域指派的那一组」那一半红的 |
+| `red/red-slot-group/` | 同上 | `30207876fb3b58fc740e91775c3a8c7691f1c01f`（`6bf3ee1653b290de66890b32791f70d6faa071f5` + `patches/server-slot-group.patch`：全部派进前侧组） | `deeba94c42c51561621634194d3c9f6582737486` | 红 `L2-MSO-05`、`06`、`09`：丙落在 3 号仓（前侧）；物理状态与目标仓照样一致，是「目标仓在区域指派的那一组」那一半红的。`09` 也红，是因为车载端清单行的侧标跟着那条需求仓位命令的目标仓组走（onboard-hmi#134 的 `WorklistItemSides`），丙的命令指向前侧仓，侧标就读成 `FRONT` |
 | `red/red-revision/` | `g3-multi-stop-plan` | `fe6783d5f7d4d639a6f384d2b74b4a47df9510fb`（`6bf3ee1653b290de66890b32791f70d6faa071f5` + `patches/server-revision.patch`：重发的计划不升修订号） | `deeba94c42c51561621634194d3c9f6582737486` | 红：没有一版三条腿的计划被车载端确认，`G3-08-01`～`04`、`06`、`07` 记「未到达」 |
 | `red/red-hmi-reorder/` | `g3-multi-stop-plan` | `6bf3ee1653b290de66890b32791f70d6faa071f5` | `a7abe3aab0106a592f88340a53009b8ab6119d9b`（`deeba94c42c51561621634194d3c9f6582737486` + `patches/onboard-plan-reorder.patch`：计划腿按站名本地排序） | 红 `G3-08-06`：界面行序 `2,1,3`。另外 `G3-08-05` 也红、场景末尾一行抛错，**与注入无关**，见下 |
 
@@ -62,3 +62,12 @@ G3 runner 自检（证据不入库，在控制端 `C:\Users\szy\b715\`）：
 `b621a97b` 之后认领表（`g3-slice-evidence.ps1`）与后两个 runner 一字未动，所以没有在 `23c846bf` 上重跑它们。staged 在**移过的**绑定
 （`b621a97b` + `deeba94c`）上中止（恢复探针 `forced-mechanical-command-replayed-after-reconnect` FAIL、槽位配置激活 409，runner 随后在 IndexOf 上抛 null
 盖住原错误，`C:\Users\szy\b715\sc-staged\`）：与认领无关，调度已另开票，出口票移绑定前要先解决。
+
+## 审查后的一处修正（证据之后）
+
+独立审查指出 `g3-multi-stop-plan.ps1` 末尾那行在 `$dispatchPlan` 为空时写的是 `else { ? }`：`?` 是 `Where-Object` 的别名，不带参数调用
+会停在参数提示上（经 runner 的 `& pwsh … 2>&1` 启动时提示不可见，进程挂住、桌面锁不释放）。已改为 `'?'`，并按 AST 扫了本票全部
+`.ps1`/`.psm1`，不带参数的别名调用为 0（`alias-scan/`，含对修正前那一版的正向对照）。
+
+按调度决定没有重跑真装置：三段所有 PASS 与红证据里 `G3-08-05` 都判过（`$dispatchPlan` 非空），没有一遍走到这一行——
+`green/s3-msp`、`red/s3-red-hmi-reorder`、`red/red-revision` 的 `G3-08-05` 都是 PASS，第三段 journey 自检里这条场景也 PASS。
