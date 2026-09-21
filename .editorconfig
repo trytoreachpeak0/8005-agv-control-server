@@ -1,0 +1,11 @@
+# Line endings only, mirroring .gitattributes. Without this file `dotnet format` takes
+# end_of_line from the OS, so on Windows it demands CRLF in .cs files that git checks out
+# as LF and `--verify-no-changes` fails on a pristine checkout. Keep style rules out of
+# here: adding one would make `dotnet format` start flagging existing code.
+root = true
+
+[*]
+end_of_line = lf
+
+[*.ps1]
+end_of_line = crlf
