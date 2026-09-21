@@ -140,6 +140,13 @@ public static class DispatchReasonCodes
     public const string EnRouteAppendNoInsertionPoint = "EN_ROUTE_APPEND_NO_INSERTION_POINT";
 
     /// <summary>
+    /// 这条需求曾经挂在这趟旅程上、被释放出去了（批次7-10，control-server#215，审查 M5）：不再追加回这一趟。
+    /// 归属表的主键是 (JourneyId, DemandId)，被释放的那一行只标移除、不删，追加回去会撞主键，每一轮都撞。
+    /// 它可以被别的车、别的旅程接走。
+    /// </summary>
+    public const string EnRouteAppendDemandLeftThisJourney = "EN_ROUTE_APPEND_DEMAND_LEFT_THIS_JOURNEY";
+
+    /// <summary>
     /// 这辆在途车的装货阶段已经结束（批次7-07，control-server#212）：持货超时了，或者装满之后已经离开最后一个装货停靠，
     /// 或者本来就不适用持货、当前计划已经装完。REQ-0354 末句「持货超时或让站之后不再接受新的待装 Demand」。
     /// </summary>

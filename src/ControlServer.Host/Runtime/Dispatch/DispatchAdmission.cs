@@ -67,6 +67,17 @@ public sealed record DispatchRoundFacts(
     public DispatchZoneParameterTableVersion? ZoneParameters { get; init; }
 
     /// <summary>
+    /// 本轮里已释放、等着改派的需求，各自再受理时要用的新代次（批次7-10，control-server#215）。不在表里的需求是第一次受理。
+    /// </summary>
+    public IReadOnlyDictionary<string, long> RedispatchGenerations { get; init; } =
+        new Dictionary<string, long>(StringComparer.Ordinal);
+
+    /// <summary>这条需求这一次受理派生身份所用的键，见 <see cref="JourneyIdentity.DerivationKey"/>。</summary>
+    public string DerivationKeyOf(string demandId) =>
+        JourneyIdentity.DerivationKey(
+            demandId, RedispatchGenerations.TryGetValue(demandId, out long generation) ? generation : null);
+
+    /// <summary>
     /// The demands a vehicle claimed this round and intake then refused outright (control-server#242): they sit
     /// in <see cref="AcceptedDemandIds"/>, because the refusal leaves them bound to that attempt, but this server
     /// never accepted them and there is no <c>AcceptedDemands</c> row behind them.

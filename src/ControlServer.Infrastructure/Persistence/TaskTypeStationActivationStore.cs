@@ -449,13 +449,7 @@ public sealed class TaskTypeStationActivationStore(
             .ToArrayAsync(cancellationToken);
         string[] demandIds = [.. freezes.Select(row => row.ConsumerId)];
         // Same notion of in flight as the area assignment preview: frozen, and its journey has not completed.
-        HashSet<string> completed = new(
-            await _context.Set<JourneyRuntimeRow>()
-                .AsNoTracking()
-                .Where(row => demandIds.Contains(row.DemandId) && row.Stage == JourneyRuntimeStage.Completed)
-                .Select(row => row.DemandId)
-                .ToArrayAsync(cancellationToken),
-            StringComparer.Ordinal);
+        HashSet<string> completed = await DemandJourneyLookup.EndedJourneyDemandIdsAsync(_context, demandIds, cancellationToken);
         return
         [
             .. freezes.Where(row => !completed.Contains(row.ConsumerId))

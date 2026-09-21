@@ -281,6 +281,9 @@ public static class StructuralDispatchClassification
         Backlog(DispatchReasonCodes.EnRouteAppendPlanLimitReached, EnRouteAppend,
             "control-server#211: nine legs or eight worklist items would be exceeded. This vehicle's plan, which " +
             "shrinks as it unloads."),
+        Backlog(DispatchReasonCodes.EnRouteAppendDemandLeftThisJourney, EnRouteAppend,
+            "control-server#215: the demand was released from this very journey and is not appended back to it. This " +
+            "vehicle's current journey; another vehicle, or this one on its next journey, may take it."),
         Backlog(DispatchReasonCodes.EnRouteAppendNoInsertionPoint, EnRouteAppend,
             "control-server#211, REQ-0196: the current next stop cannot be changed and nothing sits after it. This " +
             "vehicle's position in its plan."),

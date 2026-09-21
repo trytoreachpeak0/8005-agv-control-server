@@ -18,7 +18,8 @@ public sealed class OnboardRecoveryCoordinator(
     SlotConfigurationActivationDispatcher activationDispatcher,
     TimeProvider timeProvider,
     IConfiguration configuration,
-    ILogger<OnboardRecoveryCoordinator>? logger = null)
+    ILogger<OnboardRecoveryCoordinator>? logger = null,
+    PlanRevisionRoutingSource? planRevisionRouting = null)
 {
     private static readonly Action<ILogger, string, string, string, string?, Exception?> LogCancellationFoundStopDecided =
         LoggerMessage.Define<string, string, string, string?>(
@@ -1283,7 +1284,8 @@ public sealed class OnboardRecoveryCoordinator(
                     workflow.DemandId, messageType + "_NOT_RECONCILED", cancellationToken).ConfigureAwait(false);
                 return;
             }
-            await new PickupStopTermination(dbContext)
+            // 给了路网的终结在删掉空停靠之后还换序（批次7-10，control-server#215，调度决策 6）；没给就只删不换。
+            await new PickupStopTermination(dbContext, await ReadPlanRevisionRoutingAsync(cancellationToken).ConfigureAwait(false))
                 .StageAsync(
                     stop,
                     stopCursor.CurrentSublotRequestMessageId(stop.WorklistRevision),
@@ -1314,7 +1316,7 @@ public sealed class OnboardRecoveryCoordinator(
                 cancellationToken).ConfigureAwait(false);
             if (operation is not null) operation.Status = StationOperationStatus.Cancelled;
         }
-        await new PickupStopTermination(dbContext)
+        await new PickupStopTermination(dbContext, await ReadPlanRevisionRoutingAsync(cancellationToken).ConfigureAwait(false))
             .StageAsync(
                 runtime,
                 // OrNone, unlike the cancellation above: that one runs only while the vehicle is loading at a
@@ -1746,4 +1748,12 @@ public sealed class OnboardRecoveryCoordinator(
             ? throw new InvalidDataException($"Protocol field '{propertyName}' is required.")
             : value;
     }
+
+    /// <summary>
+    /// 终结之后换序要用的路网与每区参数（批次7-10，control-server#215）；没注册或路网不可用时为空，终结于是只删不换。
+    /// </summary>
+    private async Task<PlanRevisionRouting?> ReadPlanRevisionRoutingAsync(CancellationToken cancellationToken) =>
+        planRevisionRouting is null
+            ? null
+            : await planRevisionRouting.ReadAsync(cancellationToken).ConfigureAwait(false);
 }

@@ -292,6 +292,14 @@ jobs:
               # connection on ADR-cross-0027's six-second window, the in-flight journey carries ONBOARD_SESSION_LOST
               # so the blocked-journey card shows it, and nothing else about the journey moves (REQ-0287).
               @{ Name = 'onboard-silent-liveness-loss'; Runs = 1; BatchId = 'batch-7' }
+              # control-server#215: an operator cancels a STAGING_TO_WIRE demand before its sublot, and the unload stop only it
+              # used leaves the plan the vehicle holds, with the plan revision moving on (REQ-0197, ADR-cross-0053). It does
+              # not run the other demands to completion; that half is L1 (see the scenario's header and the pull request).
+              @{ Name = 'plan-reorder-and-drop-cancelled'; Runs = 1; BatchId = 'batch-7' }
+              # control-server#215: a vehicle that leaves the map loses its not-yet-picked demand -- the pickup order is
+              # cancelled and reconciled, the demand goes back to the backlog with its age, and a second vehicle takes it
+              # under a new generation and upperId, its dispatch plan actually sent (REQ-0328).
+              @{ Name = 'reassign-when-vehicle-ineligible'; Runs = 1; BatchId = 'batch-7' }
               # control-server#214: the task-side ranking. A new STAGING_TO_WIRE demand is taken before an older normal-band
               # one (REQ-0202); with no anti-starvation threshold configured nothing escalates, and once one is imported
               # the overdue normal-band demand is escalated exactly once and goes ahead of a STAGING_TO_WIRE that is not
@@ -332,6 +340,8 @@ jobs:
               'vehicle-full-ignores-oversized-and-gated' = 58
               # control-server#213, one local run each (2026-09-21).
               'waiting-station-yield' = 60; 'waiting-station-yield-waits-for-door' = 60
+              # control-server#215, one local run each (2026-09-21), build excluded.
+              'reassign-when-vehicle-ineligible' = 39; 'plan-reorder-and-drop-cancelled' = 23
           }
 
           # Registered before anything can fail, so the upload step below always has a path: without it
