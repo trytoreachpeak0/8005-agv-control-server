@@ -237,11 +237,12 @@ public sealed class Batch7MultiDemandAdvanceTests
     /// <summary>
     /// 受理、到取货站，然后往这个停靠上再挂一条需求：一站两条，都还没装。
     /// </summary>
-    internal static async Task<JourneyRuntimeRow> TwoDemandsAtThePickupAsync(RuntimeFixture fixture)
+    /// <remarks><paramref name="boxCount"/> 定每条需求占几个仓位：4 箱占一个，要两个仓位的用例传更多。</remarks>
+    internal static async Task<JourneyRuntimeRow> TwoDemandsAtThePickupAsync(RuntimeFixture fixture, int boxCount = 4)
     {
         fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
-        fixture.BoxCounts.Set(FirstSublot, 4);
-        fixture.BoxCounts.Set(SecondSublot, 4);
+        fixture.BoxCounts.Set(FirstSublot, boxCount);
+        fixture.BoxCounts.Set(SecondSublot, boxCount);
         await TickAndRunAsync(fixture);
         JourneyRuntimeRow runtime = await fixture.RuntimeAsync(FirstDemandId);
         await AddSecondDemandToJourneyAsync(fixture, runtime);
