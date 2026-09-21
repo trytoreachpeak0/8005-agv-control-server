@@ -192,10 +192,18 @@ public sealed class DispatchRoundRunner(
         // bound to its one journey permanently; it is never a candidate again, whatever stage that
         // journey reached. Kept as a live set rather than a snapshot: a demand taken earlier in this
         // same round has to stop being a candidate for the rest of it. See DispatchRoundFacts.
+        //
+        // 批次7-10（control-server#215）起有一个例外：已释放、等着改派的需求（REQ-0328）不算「已受理」，它要能再被派一次。
+        // 判据只有 DemandJourneyLookup.ReleasedForRedispatch 一处定义，孤儿检查排除的是同一批——两处各写一份会分叉成
+        // 「放过去了却被当成孤儿抛」或者反过来。它的受理行照旧复用，见 WireToGateStore.IsReleasedForRedispatchAsync。
+        IQueryable<AcceptedDemandRow> releasedForRedispatch = DemandJourneyLookup.ReleasedForRedispatch(dbContext);
         HashSet<string> acceptedDemandIds = (await dbContext.AcceptedDemands
+                .Where(row => !releasedForRedispatch.Any(released => released.DemandId == row.DemandId))
                 .Select(row => row.DemandId)
                 .ToArrayAsync(cancellationToken).ConfigureAwait(false))
             .ToHashSet(StringComparer.Ordinal);
+        Dictionary<string, long> redispatchGenerations = await RedispatchGenerationsAsync(cancellationToken)
+            .ConfigureAwait(false);
 
         VehicleDispatchPolicy policy = await dispatchPolicy.EnsureCurrentAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -213,6 +221,7 @@ public sealed class DispatchRoundRunner(
         {
             ClaimsIntakeRefused = claimsIntakeRefused,
             ZoneParameters = zoneParameters,
+            RedispatchGenerations = redispatchGenerations,
         };
 
         // 「上次成功接单」从既有旅程记录推出（票面第 6 条带内层），一轮查一次。
@@ -804,7 +813,13 @@ public sealed class DispatchRoundRunner(
 
         DateTimeOffset intakeAt = timeProvider.GetUtcNow();
         JourneyExecutionPlan plan = new JourneyPlanBuilder(runtimeOptions)
-            .CreatePlan(selected.Vehicle, selected.Candidate, intakeAt);
+            .CreatePlan(
+                selected.Vehicle,
+                selected.Candidate,
+                intakeAt,
+                round.RedispatchGenerations.TryGetValue(demandId, out long redispatchGeneration)
+                    ? redispatchGeneration
+                    : null);
         // Taken before the call rather than after it: a candidate this vehicle is committing to must stop being
         // a candidate for the rest of the round whatever the intake then reports.
         acceptedDemandIds.Add(demandId);
@@ -929,8 +944,10 @@ public sealed class DispatchRoundRunner(
             runtime.JourneyId,
             demandId,
             plan,
-            placement.MergeIntoPickupStopId ?? JourneyIdentity.AppendedPickupStopId(demandId),
-            placement.MergeIntoUnloadStopId ?? JourneyIdentity.AppendedUnloadStopId(demandId),
+            // 新停靠的身份取派生键，与 EnRouteAppendCriterion 算插位时用的是同一个（批次7-10，control-server#215）：
+            // 两边不一致时写库那一侧按停靠 id 找不到自己的序位。
+            placement.MergeIntoPickupStopId ?? JourneyIdentity.AppendedPickupStopId(plan.DerivationKeyFor(demandId)),
+            placement.MergeIntoUnloadStopId ?? JourneyIdentity.AppendedUnloadStopId(plan.DerivationKeyFor(demandId)),
             selected.Candidate.Route.DispatchZone,
             selected.DispatchZoneParameterVersion,
             [.. placement.Resequenced.Select(stop => new JourneyStopSequenceChange(stop.StopId, stop.Sequence))],
@@ -1147,6 +1164,34 @@ public sealed class DispatchRoundRunner(
     /// runs out its budget clears the change tracker. <c>LastSeenAt</c> is left alone: it stays the last time the
     /// demand was in the catalog. See <see cref="DispatchReasonCodes.DemandLeftCatalog"/>.
     /// </remarks>
+    /// <summary>
+    /// 每条已释放、等着改派的需求，这一次再受理时的代次（批次7-10，control-server#215）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 取它历史上全部归属（含已移除的）的最大代次加一，并且不低于本部署的基准代次。<b>严格大于它用过的每一个代次</b>是两件事的前提：
+    /// RIoT 订单号 <c>W2G-{需求}-PICKUP-{代次}</c> 在 <c>OrderIntents</c> 上唯一，以及
+    /// <see cref="DemandJourneyLookup.ReleasedForRedispatch"/> 按代次认「最近一次」移除。
+    /// </para>
+    /// <para>
+    /// 读一次、按需求 id 给出，轮次里受理与追加两条路都从 <see cref="DispatchRoundFacts.RedispatchGenerations"/> 取，
+    /// 插位判据算停靠 id 用的也是它——各算各的就会在「新停靠叫什么」上不一致。
+    /// </para>
+    /// </remarks>
+    private async Task<Dictionary<string, long>> RedispatchGenerationsAsync(CancellationToken cancellationToken)
+    {
+        IQueryable<AcceptedDemandRow> released = DemandJourneyLookup.ReleasedForRedispatch(dbContext);
+        var highest = await dbContext.Set<JourneyDemandRow>().AsNoTracking()
+            .Where(row => released.Any(demand => demand.DemandId == row.DemandId))
+            .GroupBy(row => row.DemandId)
+            .Select(group => new { DemandId = group.Key, Generation = group.Max(row => row.DispatchGeneration) })
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        return highest.ToDictionary(
+            item => item.DemandId,
+            item => Math.Max(item.Generation + 1, runtimeOptions.DispatchGeneration),
+            StringComparer.Ordinal);
+    }
+
     private async Task MarkBacklogLeftCatalogAsync(
         Dictionary<string, JourneyBacklogRow> backlogByDemandId,
         DemandCatalogSnapshot snapshot,

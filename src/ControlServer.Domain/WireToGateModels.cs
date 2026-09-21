@@ -313,7 +313,15 @@ public sealed record JourneyExecutionPlan(
     string? RequiredSlotPosition = null,
     long? TaskTypeStationRuleVersion = null,
     long? TaskTypeStationBindingSetVersion = null,
-    long? StationCatalogRevision = null);
+    long? StationCatalogRevision = null,
+    string? IdentityKey = null)
+{
+    /// <summary>
+    /// 这趟受理派生身份（旅程 id、停靠 id、报文与 attempt id）所用的键：需求第一次受理时就是需求 id，改派之后带上代次
+    /// （<c>JourneyIdentity.DerivationKey</c>，批次7-10，control-server#215）。为空即需求 id——那是改派出现之前唯一的形状。
+    /// </summary>
+    public string DerivationKeyFor(string demandId) => IdentityKey ?? demandId;
+}
 
 /// <summary>
 /// 把一条需求追加进一辆在途车已有旅程时，要一次写下的全部（票面第 3 条，批次7-06，control-server#211）。

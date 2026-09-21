@@ -49,13 +49,13 @@ public sealed class EnRouteAppendCriterion(RouteGraphAccess routeGraph) : IDispa
             plan,
             new EnRouteAppendCandidate(
                 new EnRouteStop(
-                    JourneyIdentity.AppendedPickupStopId(evaluation.Candidate.DemandId),
+                    JourneyIdentity.AppendedPickupStopId(evaluation.Round.DerivationKeyOf(evaluation.Candidate.DemandId)),
                     route.PickupStationId,
                     route.PickupStationRiotId,
                     zone,
                     JourneyStopRoles.Pickup),
                 new EnRouteStop(
-                    JourneyIdentity.AppendedUnloadStopId(evaluation.Candidate.DemandId),
+                    JourneyIdentity.AppendedUnloadStopId(evaluation.Round.DerivationKeyOf(evaluation.Candidate.DemandId)),
                     route.DropoffStationId,
                     route.DropoffStationRiotId,
                     zone,

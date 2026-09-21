@@ -591,7 +591,9 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
             .SingleOrDefaultAsync(row => row.DemandId == snapshot.DemandId ||
                                          row.TransportDemandKey == snapshot.TransportDemandKey, cancellationToken)
             .ConfigureAwait(false);
-        if (existing is not null)
+        bool redispatch = existing is not null &&
+                          await IsReleasedForRedispatchAsync(existing, snapshot, cancellationToken).ConfigureAwait(false);
+        if (existing is not null && !redispatch)
         {
             await AssertAppendReplayMatchesAsync(snapshot, plan, existing, cancellationToken).ConfigureAwait(false);
             return;
@@ -604,7 +606,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
                 entry => entry.Entity, entry => (entry.State, entry.CurrentValues.Clone()), ReferenceEqualityComparer.Instance);
         try
         {
-            await StageAndCommitAppendAsync(snapshot, plan, transaction, cancellationToken).ConfigureAwait(false);
+            await StageAndCommitAppendAsync(snapshot, plan, redispatch, transaction, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception) when (ForgetStagedAcceptance(trackedBefore))
         {
@@ -615,6 +617,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
     private async Task StageAndCommitAppendAsync(
         AcceptedDemandSnapshot snapshot,
         JourneyAppendPlan plan,
+        bool redispatch,
         Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction,
         CancellationToken cancellationToken)
     {
@@ -666,27 +669,16 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
                 .ConfigureAwait(false);
         }
 
-        dbContext.AcceptedDemands.Add(new AcceptedDemandRow
+        if (!redispatch)
         {
-            DemandId = snapshot.DemandId,
-            SeriesId = snapshot.SeriesId,
-            TransportDemandKey = snapshot.TransportDemandKey,
-            WorkType = snapshot.WorkType,
-            Sublot = snapshot.Sublot,
-            Generation = snapshot.Generation,
-            DemandRevision = snapshot.DemandRevision,
-            HistoryEpoch = snapshot.HistoryEpoch,
-            CatalogRevision = snapshot.CatalogRevision,
-            CreatedAt = snapshot.CreatedAt,
-            ValueObservedAt = snapshot.ValueObservedAt,
-            ValuePollTraceId = snapshot.ValuePollTraceId,
-            ValueProjectionCommitId = snapshot.ValueProjectionCommitId,
-            LiveMesFieldsJson = JsonSerializer.Serialize(snapshot.LiveMesFields),
-            AcceptedAt = snapshot.AcceptedAt,
-            Status = DemandExecutionStatus.Accepted
-        });
+            // 释放改派的需求复用它第一次受理时的那一行（调度决策 3，批次7-10，control-server#215）：受理时刻、内容与冻结
+            // 都是那一次的事实，改派不重写它们。行上的状态本来就还是 Accepted——释放不终结需求。
+            dbContext.AcceptedDemands.Add(NewAcceptedDemandRow(snapshot));
+        }
 
-        foreach (JourneyStopRow stop in await NewStopsAsync(snapshot.DemandId, plan, cancellationToken)
+        // 追加停靠与归属上的 id 同样取键（批次7-10，control-server#215），理由见 ToRuntimeRow。
+        string key = demand.DerivationKeyFor(snapshot.DemandId);
+        foreach (JourneyStopRow stop in await NewStopsAsync(key, plan, cancellationToken)
                      .ConfigureAwait(false))
         {
             dbContext.Set<JourneyStopRow>().Add(stop);
@@ -700,10 +692,10 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
             UnloadStopId = plan.UnloadStopId,
             ExpectedBasketCount = demand.ExpectedBasketCount,
             TargetSlotsJson = JsonSerializer.Serialize(demand.TargetSlots),
-            LoadSlotOperationAttemptId = DeterministicGuid($"{snapshot.DemandId}|load-attempt"),
-            LoadCommandMessageId = DeterministicGuid($"{snapshot.DemandId}|load-command"),
-            UnloadSlotOperationAttemptId = DeterministicGuid($"{snapshot.DemandId}|unload-attempt"),
-            UnloadCommandMessageId = DeterministicGuid($"{snapshot.DemandId}|unload-command"),
+            LoadSlotOperationAttemptId = DeterministicGuid($"{key}|load-attempt"),
+            LoadCommandMessageId = DeterministicGuid($"{key}|load-command"),
+            UnloadSlotOperationAttemptId = DeterministicGuid($"{key}|unload-attempt"),
+            UnloadCommandMessageId = DeterministicGuid($"{key}|unload-command"),
             DispatchZone = plan.DispatchZone,
             DispatchGeneration = demand.DispatchGeneration,
             Status = JourneyDemandStatuses.PendingLoad,
@@ -731,7 +723,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
     /// 这让重放与首次走同一条路：第二次跑到这里时两个停靠都已在库，一个也不会重复建。
     /// </summary>
     private async Task<IReadOnlyList<JourneyStopRow>> NewStopsAsync(
-        string demandId,
+        string derivationKey,
         JourneyAppendPlan plan,
         CancellationToken cancellationToken)
     {
@@ -742,7 +734,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
                 .ToArrayAsync(cancellationToken).ConfigureAwait(false))
             .ToHashSet(StringComparer.Ordinal);
         int SequenceOf(string stopId) => plan.Resequenced.Single(stop => stop.StopId == stopId).Sequence;
-        string Id(string purpose) => DeterministicGuid($"{demandId}|{purpose}");
+        string Id(string purpose) => DeterministicGuid($"{derivationKey}|{purpose}");
         List<JourneyStopRow> created = [];
         if (!alreadyThere.Contains(plan.PickupStopId))
         {
@@ -922,7 +914,9 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
             .SingleOrDefaultAsync(row => row.DemandId == snapshot.DemandId ||
                                          row.TransportDemandKey == snapshot.TransportDemandKey, cancellationToken)
             .ConfigureAwait(false);
-        if (existing is not null)
+        bool redispatch = existing is not null &&
+                          await IsReleasedForRedispatchAsync(existing, snapshot, cancellationToken).ConfigureAwait(false);
+        if (existing is not null && !redispatch)
         {
             bool same = existing.DemandId == snapshot.DemandId &&
                         existing.SeriesId == snapshot.SeriesId &&
@@ -975,7 +969,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
                 entry => entry.Entity, entry => (entry.State, entry.CurrentValues.Clone()), ReferenceEqualityComparer.Instance);
         try
         {
-            await StageAndCommitAcceptanceAsync(snapshot, orderIntent, journey, transaction, cancellationToken)
+            await StageAndCommitAcceptanceAsync(snapshot, orderIntent, journey, redispatch, transaction, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception) when (ForgetStagedAcceptance(trackedBefore))
@@ -1015,6 +1009,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         AcceptedDemandSnapshot snapshot,
         OrderIntent orderIntent,
         JourneyExecutionPlan? journey,
+        bool redispatch,
         Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction,
         CancellationToken cancellationToken)
     {
@@ -1049,26 +1044,13 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
                 .ConfigureAwait(false);
         }
 
-        dbContext.AcceptedDemands.Add(new AcceptedDemandRow
+        if (!redispatch)
         {
-            DemandId = snapshot.DemandId,
-            SeriesId = snapshot.SeriesId,
-            TransportDemandKey = snapshot.TransportDemandKey,
-            WorkType = snapshot.WorkType,
-            Sublot = snapshot.Sublot,
-            Generation = snapshot.Generation,
-            DemandRevision = snapshot.DemandRevision,
-            HistoryEpoch = snapshot.HistoryEpoch,
-            CatalogRevision = snapshot.CatalogRevision,
-            CreatedAt = snapshot.CreatedAt,
-            ValueObservedAt = snapshot.ValueObservedAt,
-            ValuePollTraceId = snapshot.ValuePollTraceId,
-            ValueProjectionCommitId = snapshot.ValueProjectionCommitId,
-            LiveMesFieldsJson = JsonSerializer.Serialize(snapshot.LiveMesFields),
-            AcceptedAt = snapshot.AcceptedAt,
-            Status = DemandExecutionStatus.Accepted
-        });
-        string journeyId = JourneyIdentity.ForAnchorDemand(snapshot.DemandId);
+            // 释放改派的需求复用它第一次受理时的那一行（调度决策 3，批次7-10，control-server#215）：受理时刻、内容与冻结
+            // 都是那一次的事实，改派不重写它们。行上的状态本来就还是 Accepted——释放不终结需求。
+            dbContext.AcceptedDemands.Add(NewAcceptedDemandRow(snapshot));
+        }
+        string journeyId = JourneyIdentity.ForAnchorDemand(journey?.DerivationKeyFor(snapshot.DemandId) ?? snapshot.DemandId);
         dbContext.VehicleDispatchLeases.Add(new VehicleDispatchLeaseRow
         {
             JourneyId = journeyId,
@@ -3058,12 +3040,51 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         counter.PlanRevision = runtime.PlanRevision;
     }
 
+    private static AcceptedDemandRow NewAcceptedDemandRow(AcceptedDemandSnapshot snapshot) => new()
+    {
+        DemandId = snapshot.DemandId,
+        SeriesId = snapshot.SeriesId,
+        TransportDemandKey = snapshot.TransportDemandKey,
+        WorkType = snapshot.WorkType,
+        Sublot = snapshot.Sublot,
+        Generation = snapshot.Generation,
+        DemandRevision = snapshot.DemandRevision,
+        HistoryEpoch = snapshot.HistoryEpoch,
+        CatalogRevision = snapshot.CatalogRevision,
+        CreatedAt = snapshot.CreatedAt,
+        ValueObservedAt = snapshot.ValueObservedAt,
+        ValuePollTraceId = snapshot.ValuePollTraceId,
+        ValueProjectionCommitId = snapshot.ValueProjectionCommitId,
+        LiveMesFieldsJson = JsonSerializer.Serialize(snapshot.LiveMesFields),
+        AcceptedAt = snapshot.AcceptedAt,
+        Status = DemandExecutionStatus.Accepted
+    };
+
+    /// <summary>
+    /// 这一次受理是不是一条已释放需求的改派（批次7-10，control-server#215）：已受理的那一行就是这条需求自己的，
+    /// 而且它此刻是 <see cref="DemandJourneyLookup.ReleasedForRedispatch"/> 里的一条。
+    /// </summary>
+    /// <remarks>
+    /// 是的话受理与追加都复用那一行、照常写新旅程或新归属；不是的话照旧走重放判同。
+    /// 按业务键撞上的是<b>另一条</b>需求的行时不算——那仍是冲突，由重放判同照旧报出来。
+    /// </remarks>
+    private async Task<bool> IsReleasedForRedispatchAsync(
+        AcceptedDemandRow existing,
+        AcceptedDemandSnapshot snapshot,
+        CancellationToken cancellationToken) =>
+        string.Equals(existing.DemandId, snapshot.DemandId, StringComparison.Ordinal) &&
+        await DemandJourneyLookup.ReleasedForRedispatch(dbContext)
+            .AnyAsync(row => row.DemandId == snapshot.DemandId, cancellationToken).ConfigureAwait(false);
+
     private static JourneyRuntimeRow ToRuntimeRow(string demandId, JourneyExecutionPlan journey)
     {
-        string Id(string purpose) => DeterministicGuid($"{demandId}|{purpose}");
+        // 派生身份取键不取需求 id（批次7-10，control-server#215）：第一次受理两者相同，改派之后键带代次，
+        // 旅程 id 与这一趟的报文、attempt id 都换一套，与第一趟的行并存。DemandId 一列仍是需求 id 本身。
+        string key = journey.DerivationKeyFor(demandId);
+        string Id(string purpose) => DeterministicGuid($"{key}|{purpose}");
         return new JourneyRuntimeRow
         {
-            JourneyId = JourneyIdentity.ForAnchorDemand(demandId),
+            JourneyId = JourneyIdentity.ForAnchorDemand(key),
             DemandId = demandId,
             Stage = JourneyRuntimeStage.AwaitingPickupArrival,
             AgvId = journey.AgvId,

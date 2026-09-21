@@ -18,6 +18,29 @@ public static class JourneyIdentity
         return Prefix + demandId;
     }
 
+    /// <summary>
+    /// 一条需求这一次受理派生身份所用的键（批次7-10，control-server#215）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>第一次受理（<paramref name="redispatchGeneration"/> 为空）就是需求 id 本身</b>，所以改派出现之前的每一个 id 逐字不变
+    /// ——单需求旅程的零变化钉子钉的正是这些 id。释放改派之后再受理，键带上新代次，旅程 id、停靠 id 与所有按它派生的报文、
+    /// attempt id 都换一套：同一条需求的第二趟旅程与第一趟的行并存，主键不撞，旧行也不被覆盖。
+    /// </para>
+    /// <para>
+    /// 判据是「是不是这条需求的第一条归属」，不是「代次等不等于部署基准」：部署基准改过之后，后者会让一次改派算出与首次相同的键。
+    /// 键只进 id 派生的输入，不出现在发给车的字段里——车载端对 movementLegId、operationSessionId、messageId 只认标准 UUID，
+    /// 这些 id 仍是 <c>StableGuid</c>／<c>DeterministicGuid</c> 的输出。
+    /// </para>
+    /// </remarks>
+    public static string DerivationKey(string demandId, long? redispatchGeneration)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(demandId);
+        return redispatchGeneration is { } generation
+            ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{demandId}|g{generation}")
+            : demandId;
+    }
+
     public static string PickupStopId(string journeyId) => $"{journeyId}|{JourneyStopRoles.Pickup}";
 
     public static string UnloadStopId(string journeyId) => $"{journeyId}|{JourneyStopRoles.Unload}";
