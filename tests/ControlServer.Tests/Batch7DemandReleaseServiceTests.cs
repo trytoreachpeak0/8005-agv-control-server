@@ -123,6 +123,116 @@ public sealed class Batch7DemandReleaseServiceTests
     }
 
     /// <summary>
+    /// 到站之后不释放是正常作业，不是阻断：不写旅程的阻断码（审查 M4）。
+    /// </summary>
+    /// <remarks>
+    /// 旧实现写 RELEASE_AFTER_ARRIVAL；引擎在站上等离站那一段每轮清阻断码，释放服务下一轮又写回去，
+    /// <c>BlockReasonSince</c> 每轮重置，看板显示阻断而车在正常作业；引擎只在阻断码为空时才写的码（预离站核验过期）还会被它遮住。
+    /// </remarks>
+    [Fact]
+    public async Task ARefusalAfterArrivalWritesNoBlockReason()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        await ArriveAtPickupAsync(fixture, FirstDemandId);
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Null((await fixture.RuntimeAsync(FirstDemandId)).BlockReasonCode);
+        LeaveTheMap(fixture);
+
+        Assert.Equal(DemandReleaseReasons.AfterArrival,
+            Assert.Single(await Service(fixture, new CancellingGateway(fixture.Clock, _ => { })).RunOnceAsync(Token)).Result);
+
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Null((await fixture.RuntimeAsync(FirstDemandId)).BlockReasonCode);
+    }
+
+    /// <summary>
+    /// 释放被拒写下的码，换成另一个拒绝码时改写；车重新合格之后清掉（审查 M4）。
+    /// </summary>
+    /// <remarks>
+    /// 旧实现只在阻断码为空时写、从不清：第一个拒绝码一直挂着，原因变了看不见，车好了也不掉。
+    /// </remarks>
+    [Fact]
+    public async Task AReleaseRefusalFollowsTheReasonAndIsClearedOnceTheVehicleIsEligibleAgain()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
+        LeaveTheMap(fixture);
+        CancellingGateway gateway = new(fixture.Clock, _ => { });
+        Assert.Equal(DemandReleaseReasons.OrderCancelNotConfirmed,
+            Assert.Single(await Service(fixture, gateway).RunOnceAsync(Token)).Result);
+
+        // 换成另一个拒绝原因：意图对账没有结论的样子（没有订单号、创建已发出），码跟着换。
+        OrderIntentRow intent = await fixture.Context.OrderIntents
+            .SingleAsync(row => row.UpperId == before.PickupUpperId, Token);
+        string orderId = intent.OrderId!;
+        intent.OrderId = null;
+        intent.Status = "RESULT_UNKNOWN";
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Equal(DemandReleaseReasons.OrderStateUnknown,
+            Assert.Single(await Service(fixture, gateway).RunOnceAsync(Token)).Result);
+        Assert.Equal(DemandReleaseReasons.OrderStateUnknown, (await fixture.RuntimeAsync(FirstDemandId)).BlockReasonCode);
+        Assert.NotNull(orderId);
+
+        // 车回到本图：没有任何需求被判不合格，释放留下的码清掉。
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentMap = fixture.Options.MapIdentity };
+        Assert.Empty(await Service(fixture, gateway).RunOnceAsync(Token));
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Null((await fixture.RuntimeAsync(FirstDemandId)).BlockReasonCode);
+    }
+
+    /// <summary>
+    /// 读不到车不等于车重新合格：拒绝码不清（审查 M4 的清码条件）。
+    /// </summary>
+    /// <remarks>
+    /// 读不到时规则入口的门让每条判据都说「仍合格」（审查 S1）。拿这个去清码，下一轮读到了又写回去，阻断开始时刻每轮重置。
+    /// </remarks>
+    [Fact]
+    public async Task AFailedReadDoesNotClearARefusal()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        LeaveTheMap(fixture);
+        CancellingGateway gateway = new(fixture.Clock, _ => { });
+        Assert.Equal(DemandReleaseReasons.OrderCancelNotConfirmed,
+            Assert.Single(await Service(fixture, gateway).RunOnceAsync(Token)).Result);
+
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with
+        {
+            Connected = false, Enabled = false, ProcState = "UNKNOWN", CurrentMap = string.Empty, CurrentStationId = null,
+        };
+        Assert.Empty(await Service(fixture, gateway).RunOnceAsync(Token));
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Equal(DemandReleaseReasons.OrderCancelNotConfirmed, (await fixture.RuntimeAsync(FirstDemandId)).BlockReasonCode);
+    }
+
+    /// <summary>
+    /// 引擎自己的阻断码既不被释放的拒绝盖掉，也不被「车重新合格」清掉：清的只是释放写下的那几个码。
+    /// </summary>
+    /// <remarks>
+    /// 这一条修前也绿（旧实现只在为空时写、从不清），守的是这次新加的「清」：把清的范围写宽成「任何阻断码」，这条红。
+    /// </remarks>
+    [Fact]
+    public async Task TheEnginesOwnBlockIsNeitherMaskedNorCleared()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow row = await fixture.Context.JourneyRuntimes.SingleAsync(item => item.DemandId == FirstDemandId, Token);
+        row.SetBlockReason("PREDEPARTURE_CHECK_EXPIRED", fixture.Clock.GetUtcNow());
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+        LeaveTheMap(fixture);
+        CancellingGateway gateway = new(fixture.Clock, _ => { });
+
+        Assert.Equal(DemandReleaseReasons.OrderCancelNotConfirmed,
+            Assert.Single(await Service(fixture, gateway).RunOnceAsync(Token)).Result);
+        Assert.Equal("PREDEPARTURE_CHECK_EXPIRED", (await fixture.RuntimeAsync(FirstDemandId)).BlockReasonCode);
+
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentMap = fixture.Options.MapIdentity };
+        Assert.Empty(await Service(fixture, gateway).RunOnceAsync(Token));
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Equal("PREDEPARTURE_CHECK_EXPIRED", (await fixture.RuntimeAsync(FirstDemandId)).BlockReasonCode);
+    }
+
+    /// <summary>
     /// 释放与到站撞在一起：车在 RIoT 上已经到了取货站（订单 SUCCESS），引擎还没来得及记下到站，释放服务先跑。
     /// </summary>
     /// <remarks>

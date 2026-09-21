@@ -64,6 +64,18 @@ public sealed class DemandReleaseService(
             new EventId(2151, nameof(LogRefused)),
             "Demand {DemandId} of journey {JourneyId} was not released although the vehicle is no longer eligible ({Trigger}): {Reason}.");
 
+    private static readonly Action<ILogger, string, string, string, string, Exception?> LogRefusedAgain =
+        LoggerMessage.Define<string, string, string, string>(
+            LogLevel.Debug,
+            new EventId(2154, nameof(LogRefusedAgain)),
+            "Demand {DemandId} of journey {JourneyId} is still not released ({Trigger}): {Reason}.");
+
+    private static readonly Action<ILogger, string, string, Exception?> LogRefusalCleared =
+        LoggerMessage.Define<string, string>(
+            LogLevel.Information,
+            new EventId(2155, nameof(LogRefusalCleared)),
+            "Journey {JourneyId} no longer carries release refusal {Reason}: no demand of it is judged ineligible any more.");
+
     private static readonly Action<ILogger, string, string, Exception?> LogVehicleUnread =
         LoggerMessage.Define<string, string>(
             LogLevel.Warning,
@@ -97,6 +109,8 @@ public sealed class DemandReleaseService(
             item.Membership.Status == JourneyDemandStatuses.PendingLoad)];
         if (waiting.Length == 0)
         {
+            // 没有待装的需求就没有东西可释放：之前被拒时写下的码不再说明任何事。
+            await ClearRefusalAsync(journey, cancellationToken).ConfigureAwait(false);
             return [];
         }
 
@@ -116,6 +130,13 @@ public sealed class DemandReleaseService(
             outcomes.Add(await ReleaseOneAsync(journey, stops, item, trigger, cancellationToken).ConfigureAwait(false));
             // 释放改了这趟旅程的停靠与归属：下一条要按新的样子判，而不是按这一轮开头读到的。
             stops = await JourneyStopCursor.LoadAsync(dbContext, journey, cancellationToken).ConfigureAwait(false);
+        }
+
+        // 车重新合格：之前被拒时写下的码清掉（审查 M4）。只在确实读到了在线的车时才判「重新合格」——读不到时每条判据
+        // 都说「仍合格」（规则入口的门），那不是车好了，清掉只会让下一轮再写一次、阻断开始时刻每轮重置。
+        if (outcomes.Count == 0 && observation is { Connected: true })
+        {
+            await ClearRefusalAsync(journey, cancellationToken).ConfigureAwait(false);
         }
 
         return outcomes;
@@ -327,9 +348,19 @@ public sealed class DemandReleaseService(
     }
 
     /// <summary>
-    /// 不释放，写下原因。<b>只在旅程此刻没有阻断原因时写</b>：已有的原因（故障、检查点、会话）比「没能释放」更要紧，
-    /// 不能被它盖掉；引擎清掉之后，下一轮仍不合格就再写一次。
+    /// 不释放，写下原因（审查 M4 之后的规则）。
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>到站之后不释放不写码</b>：那是正常作业。写了会与引擎在站上每轮清码来回覆盖，阻断开始时刻每轮重置，看板显示阻断
+    /// 而车在正常作业，引擎只在码为空时才写的码（预离站核验过期）还会被它遮住。
+    /// </para>
+    /// <para>
+    /// 其余拒绝<b>只在阻断码为空、或已经是释放写下的码时写</b>：引擎的码（故障、检查点、会话）比「没能释放」更要紧，永不覆盖；
+    /// 释放自己的码随原因改写。车重新合格时由 <see cref="ClearRefusalAsync"/> 清掉。
+    /// Warning 只在码真的写下或改变时打，重复的拒绝降为 Debug，免得被拒期间每轮一条。
+    /// </para>
+    /// </remarks>
     private async Task<DemandReleaseOutcome> RefuseInTransactionAsync(
         JourneyRuntimeRow runtime,
         string demandId,
@@ -338,7 +369,10 @@ public sealed class DemandReleaseService(
         IDbContextTransaction? transaction,
         CancellationToken cancellationToken)
     {
-        if (runtime.BlockReasonCode is null)
+        bool written = reason != DemandReleaseReasons.AfterArrival &&
+                       (runtime.BlockReasonCode is null || DemandReleaseReasons.IsRefusalCode(runtime.BlockReasonCode)) &&
+                       !string.Equals(runtime.BlockReasonCode, reason, StringComparison.Ordinal);
+        if (written)
         {
             runtime.SetBlockReason(reason, timeProvider.GetUtcNow());
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -349,8 +383,37 @@ public sealed class DemandReleaseService(
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        LogRefused(logger, demandId, runtime.JourneyId, trigger, reason, null);
+        if (written)
+        {
+            LogRefused(logger, demandId, runtime.JourneyId, trigger, reason, null);
+        }
+        else
+        {
+            LogRefusedAgain(logger, demandId, runtime.JourneyId, trigger, reason, null);
+        }
         return new DemandReleaseOutcome(runtime.JourneyId, demandId, trigger, reason);
+    }
+
+    /// <summary>旅程上挂着释放写下的拒绝码时清掉它；引擎的码不碰。</summary>
+    private async Task ClearRefusalAsync(JourneyRuntimeRow journey, CancellationToken cancellationToken)
+    {
+        if (!DemandReleaseReasons.IsRefusalCode(journey.BlockReasonCode))
+        {
+            return;
+        }
+
+        dbContext.ChangeTracker.Clear();
+        JourneyRuntimeRow runtime = await dbContext.JourneyRuntimes
+            .SingleAsync(row => row.JourneyId == journey.JourneyId, cancellationToken).ConfigureAwait(false);
+        if (runtime.BlockReasonCode is not { } code || !DemandReleaseReasons.IsRefusalCode(code))
+        {
+            return;
+        }
+
+        runtime.SetBlockReason(null, timeProvider.GetUtcNow());
+        runtime.UpdatedAt = timeProvider.GetUtcNow();
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        LogRefusalCleared(logger, runtime.JourneyId, code, null);
     }
 
     private async Task<RiotVehicleObservation?> ReadVehicleAsync(JourneyRuntimeRow journey, CancellationToken cancellationToken)
