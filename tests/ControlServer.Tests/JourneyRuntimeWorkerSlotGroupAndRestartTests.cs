@@ -769,38 +769,43 @@ public sealed class JourneyRuntimeWorkerSlotGroupAndRestartTests
         string[] allowed = ["LOADING/", "CLOSED/PLANNED_LOADING_COMPLETE"];
         bool[] both = [false, true];
         bool?[] fullness = [null, false, true];
-        List<string> reached = [];
         // 起点只取一条从未持货的旅程能处在的状态：列落地之前的空值与 LOADING。WAIT 与 FULL 只有持货过的旅程才有，
         // 从 FULL 离站关为 VEHICLE_FULL 是对的，那不是「不持货的旅程」。
-        foreach (string? state in new string?[] { null, LoadingPhaseStates.Loading })
-        foreach (bool pending in both)
-        foreach (bool departed in both)
-        foreach (bool? full in fullness)
-        foreach (bool deadlinePassed in both)
-        foreach (bool batch in both)
-        foreach (bool underWay in both)
-        {
-            LoadingPhaseMachine.Decision decision = LoadingPhaseMachine.Decide(new LoadingPhaseMachine.Facts(
-                state, null, HoldingApplicable: false, pending, departed, full, deadlinePassed, batch, underWay));
-            reached.Add($"{decision.State}/{decision.ClosedReason}");
-        }
+        string?[] neverHeld = [null, LoadingPhaseStates.Loading];
+        string[] reached =
+        [
+            .. from state in neverHeld
+               from pending in both
+               from departed in both
+               from full in fullness
+               from deadlinePassed in both
+               from batch in both
+               from underWay in both
+               let decision = LoadingPhaseMachine.Decide(new LoadingPhaseMachine.Facts(
+                   state, null, HoldingApplicable: false, pending, departed, full, deadlinePassed, batch, underWay))
+               select $"{decision.State}/{decision.ClosedReason}",
+        ];
         Assert.Equal(allowed.Order(StringComparer.Ordinal), reached.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal));
 
         DateTimeOffset?[] starts = [null, new DateTimeOffset(2026, 8, 26, 1, 0, 0, TimeSpan.Zero)];
-        foreach ((string? state, string? reason) in new (string?, string?)[]
-                 {
-                     (null, null),
-                     (LoadingPhaseStates.Loading, null),
-                     (LoadingPhaseStates.Closed, LoadingClosedReasons.PlannedLoadingComplete),
-                 })
-        foreach (DateTimeOffset? started in starts)
+        (string? State, string? Reason)[] columns =
+        [
+            (null, null),
+            (LoadingPhaseStates.Loading, null),
+            (LoadingPhaseStates.Closed, LoadingClosedReasons.PlannedLoadingComplete),
+        ];
+        LoadingPhaseProjection[] projected =
+        [
+            .. from column in columns
+               from started in starts
+               select LoadingPhaseMachine.Project(
+                   column.State, column.Reason, started, TimeSpan.FromMinutes(30), holdingApplicable: false),
+        ];
+        Assert.All(projected, phase =>
         {
-            LoadingPhaseProjection phase = LoadingPhaseMachine.Project(
-                state, reason, started, TimeSpan.FromMinutes(30), holdingApplicable: false);
-
             Assert.NotNull(phase);
             Assert.Null(phase.CargoHoldingDeadlineAt);
             Assert.Contains($"{phase.State}/{phase.ClosedReason}", allowed);
-        }
+        });
     }
 }
