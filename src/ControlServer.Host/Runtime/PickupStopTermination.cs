@@ -1,5 +1,6 @@
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -65,12 +66,18 @@ namespace ControlServer.Host.Runtime;
 /// transaction (<see cref="DemandJourneyLookup.IsLastOpenDemandAsync"/>); every caller already holds one.
 /// </para>
 /// <para>
+/// <b>批次7-10（control-server#215）起，旅程还没关的那一支多一步：修订计划。</b>终结的需求在后面留下的停靠如果因此没有剩余作业，
+/// 就标成已删（REQ-0197），与终结同一次改动暂存。放在这里而不是各个调用方，是因为「任何终结来路之后都要删」：
+/// 调用方有四处、两处在引擎里，每处各记得调用一次就是四处会漏。<b>删对每个调用方都成立，换序不是</b>——换序要路网与每区参数，
+/// 只有构造时给了 <c>routing</c> 的调用方才换；引擎里那两处（离站超时与确定的装货失败）只 <c>new</c> 了 dbContext，只删不换。
+/// </para>
+/// <para>
 /// <b>It does not decide whether the stop may end.</b> Whether the deadline has passed, whether a slot
 /// operation was commanded, whether a door is open: those belong to the caller, because each caller
 /// answers them differently.
 /// </para>
 /// </remarks>
-public sealed class PickupStopTermination(ControlServerDbContext dbContext)
+public sealed class PickupStopTermination(ControlServerDbContext dbContext, PlanRevisionRouting? routing = null)
 {
     /// <summary>Ends the demand the journey row names, its anchor.</summary>
     public Task StageAsync(
@@ -104,6 +111,10 @@ public sealed class PickupStopTermination(ControlServerDbContext dbContext)
         {
             await StageJourneyClosureAsync(runtime, reasonCode, endedAt, cancellationToken).ConfigureAwait(false);
         }
+        else
+        {
+            await StagePlanRevisionAsync(runtime, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     /// <summary>
@@ -136,7 +147,16 @@ public sealed class PickupStopTermination(ControlServerDbContext dbContext)
             await StageJourneyClosureAsync(
                 runtime, currentSublotRequestMessageId, reasonCode, endedAt, cancellationToken).ConfigureAwait(false);
         }
+        else
+        {
+            await StagePlanRevisionAsync(runtime, cancellationToken).ConfigureAwait(false);
+        }
     }
+
+    /// <summary>旅程还带着别的需求时，删掉终结留下的空停靠（给了路网时还换序）。见类注释里批次7-10 那一段。</summary>
+    private Task<PlanRevisionResult> StagePlanRevisionAsync(JourneyRuntimeRow runtime, CancellationToken cancellationToken) =>
+        JourneyPlanRevisionStage.StageAsync(
+            dbContext, runtime.JourneyId, leavingDemandIds: [], currentStopMayGo: false, routing, cancellationToken);
 
     /// <summary>
     /// The first step: this demand, and nothing else, is terminated. Its membership in the journey is marked
