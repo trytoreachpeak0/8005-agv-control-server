@@ -284,6 +284,10 @@ jobs:
               # connection on ADR-cross-0027's six-second window, the in-flight journey carries ONBOARD_SESSION_LOST
               # so the blocked-journey card shows it, and nothing else about the journey moves (REQ-0287).
               @{ Name = 'onboard-silent-liveness-loss'; Runs = 1; BatchId = 'batch-7' }
+              # control-server#215: an operator cancels a STAGING_TO_WIRE demand before its sublot, and the unload stop only it
+              # used leaves the plan the vehicle holds, with the plan revision moving on (REQ-0197, ADR-cross-0053). It does
+              # not run the other demands to completion; that half is L1 (see the scenario's header and the pull request).
+              @{ Name = 'plan-reorder-and-drop-cancelled'; Runs = 1; BatchId = 'batch-7' }
           )
           # One run's usual length in seconds, for dealing scenarios out to lanes longest first. Medians of 31
           # CI jobs from 2026-09-17 (ci-research, control-server#130); normal-load's excludes the build it used
