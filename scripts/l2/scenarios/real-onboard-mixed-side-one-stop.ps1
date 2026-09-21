@@ -249,12 +249,25 @@ try {
             $want = if ([int]$_.slotNo -in $targetUnion) { 'OCCUPIED' } else { 'EMPTY' }
             [string]$_.cargoState -ne $want -or [string]$_.doorState -ne 'CLOSED' -or [int]$_.lockFeedbackRaw -ne 1 -or [int]$_.unlockOutputRaw -ne 0
         } | ForEach-Object { "$($_.slotNo)=$($_.doorState)/$($_.cargoState)/$($_.lockFeedbackRaw)/$($_.unlockOutputRaw)" })
+    # 「一致」有两半：物理状态等于服务端记下的目标仓，而目标仓又在这条需求的区域指派的那一组。只判前一半，服务端把丙的货
+    # 派进前侧组时物理与目标照样一致（都错在同一处），这条就白绿了。
+    $occupiedByGroup = @(@($physicalAfterLoads) | Where-Object { [string]$_.cargoState -eq 'OCCUPIED' } |
+        ForEach-Object { Get-Group ([int]$_.slotNo) } | Sort-Object)
+    $wrongGroup = [System.Collections.Generic.List[string]]::new()
+    foreach ($pair in @(@{ Demand = $a; Load = $loadA }, @{ Demand = $b; Load = $loadB }, @{ Demand = $c; Load = $loadC })) {
+        $want = $sideOf[$pair.Demand.Id]
+        $groupsOfTargets = @(@($pair.Load.TargetSlots) | ForEach-Object { Get-Group $_ })
+        if (@($groupsOfTargets | Where-Object { $_ -ne $want }).Count -gt 0) {
+            $wrongGroup.Add("$($pair.Demand.Label) 目标 $(Format-L2RealSlots $pair.Load.TargetSlots) 在 $($groupsOfTargets -join ',')，应在 $want")
+        }
+    }
     $assertions.Add(
         'L2-MSO-06',
-        '装完时模拟器每个仓的物理状态与三条需求的 TargetSlotsJson 一致：目标仓有货、其余全空，全部关门、锁上、开锁输出复位',
-        ($targetUnion.Count -eq 3 -and $physicalWrong.Count -eq 0),
-        "有货 [$($targetUnion -join ',')]，其余空，全部 CLOSED/1/0",
-        "目标 [$($targetUnion -join ',')] / 不一致 $($physicalWrong.Count) 仓$(if ($physicalWrong) { '：' + ($physicalWrong -join ' ') })")
+        '装完时模拟器每个仓的物理状态与三条需求的 TargetSlotsJson 一致：目标仓有货、其余全空，全部关门、锁上、开锁输出复位；每条需求的目标仓都在它区域指派的那一组（有货的是前侧两仓、后侧一仓）',
+        ($targetUnion.Count -eq 3 -and $physicalWrong.Count -eq 0 -and $wrongGroup.Count -eq 0 -and
+            ($occupiedByGroup -join ',') -eq 'FRONT,FRONT,REAR'),
+        "有货 [$($targetUnion -join ',')]，其余空，全部 CLOSED/1/0 / 有货的组 FRONT,FRONT,REAR",
+        "目标 [$($targetUnion -join ',')] / 不一致 $($physicalWrong.Count) 仓$(if ($physicalWrong) { '：' + ($physicalWrong -join ' ') }) / 有货的组 $($occupiedByGroup -join ',')$(if ($wrongGroup) { ' / ' + ($wrongGroup -join '; ') })")
 
     # --- 7. 判据：持货 -----------------------------------------------------------------------------------------
 
