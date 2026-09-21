@@ -117,7 +117,8 @@ $null = Wait-L2Condition -Description 'STAGING2 has a backlog row, judged while 
     -Probe { Get-L2PriorityBacklog $connection $staging2.Id } `
     -Until { param($v) $null -ne $v }
 
-Complete-L2PriorityJourney $Context $staging1
+# 走完第一遍接走的那一条（正确的版本里是 STAGING1；缺陷版本接走的是 HUNGRY，照样走完，让后面的判据落下来而不是等一趟不存在的旅程）。
+Complete-L2PriorityJourney $Context $(if ($first -ceq 'HUNGRY') { $hungry } else { $staging1 })
 $second = Wait-L2Condition -Description 'the freed vehicle accepted HUNGRY or STAGING2' `
     -Journal $journal -Criterion 'second-accepted' -TimeoutSeconds 90 `
     -Probe { Get-L2PriorityAccepted $connection @($hungry, $staging2) } `

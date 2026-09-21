@@ -61,22 +61,30 @@ $assertions.Add(
     ($first -ceq 'STAGING'), 'STAGING', $first)
 
 # 第二个事实：STAGING 受理之后，OLD 在之后的某一轮被重新判过（LastSeenAt 晚于 STAGING 的受理时刻）且仍未受理。
-# 两者不在同一次提交里，所以另等，不直读（README 第 14 条）。
-$stagingAcceptedAt = [DateTimeOffset]::Parse(
-    [string](Get-L2PriorityBacklog $connection $staging.Id).AcceptedAt, [Globalization.CultureInfo]::InvariantCulture)
-$oldAfter = Wait-L2ConditionOrLast -Description 'OLD was judged again after STAGING was accepted' `
-    -Journal $journal -Criterion 'old-rejudged' -TimeoutSeconds 60 `
-    -Probe { Get-L2PriorityBacklog $connection $old.Id } `
-    -Until { param($v) $null -ne $v -and
-        [DateTimeOffset]::Parse([string]$v.LastSeenAt, [Globalization.CultureInfo]::InvariantCulture) -gt $stagingAcceptedAt }
-$oldRejudged = $null -ne $oldAfter -and
-    [DateTimeOffset]::Parse([string]$oldAfter.LastSeenAt, [Globalization.CultureInfo]::InvariantCulture) -gt $stagingAcceptedAt
-$oldAccepted = $null -ne $oldAfter -and -not [string]::IsNullOrEmpty([string]$oldAfter.AcceptedAt)
-$assertions.Add(
-    'L2-TPB-02', 'STAGING 受理之后，OLD 被重新判过、仍未受理（车已经给了 STAGING）',
-    ($oldRejudged -and -not $oldAccepted),
-    "re-judged after $($stagingAcceptedAt.ToString('o')), not accepted",
-    "LastSeenAt $(if ($oldAfter) { $oldAfter.LastSeenAt } else { '(no row)' }), AcceptedAt '$(if ($oldAfter) { $oldAfter.AcceptedAt })', reason $(if ($oldAfter) { $oldAfter.ReasonCode })")
+# 两者不在同一次提交里，所以另等，不直读（README 第 14 条）。STAGING 没被受理时（缺陷版本就是这样）这一条直接判红，
+# 不去解析一个空的受理时刻——那会让场景在这里抛出，后面的判据一条都不落。
+$stagingBacklog = Get-L2PriorityBacklog $connection $staging.Id
+if ($null -eq $stagingBacklog -or [string]::IsNullOrEmpty([string]$stagingBacklog.AcceptedAt)) {
+    $assertions.Add(
+        'L2-TPB-02', 'STAGING 受理之后，OLD 被重新判过、仍未受理（车已经给了 STAGING）',
+        $false, 'STAGING accepted, OLD re-judged and not accepted', 'STAGING was not accepted')
+}
+else {
+    $stagingAcceptedAt = [DateTimeOffset]::Parse([string]$stagingBacklog.AcceptedAt, [Globalization.CultureInfo]::InvariantCulture)
+    $oldAfter = Wait-L2ConditionOrLast -Description 'OLD was judged again after STAGING was accepted' `
+        -Journal $journal -Criterion 'old-rejudged' -TimeoutSeconds 60 `
+        -Probe { Get-L2PriorityBacklog $connection $old.Id } `
+        -Until { param($v) $null -ne $v -and
+            [DateTimeOffset]::Parse([string]$v.LastSeenAt, [Globalization.CultureInfo]::InvariantCulture) -gt $stagingAcceptedAt }
+    $oldRejudged = $null -ne $oldAfter -and
+        [DateTimeOffset]::Parse([string]$oldAfter.LastSeenAt, [Globalization.CultureInfo]::InvariantCulture) -gt $stagingAcceptedAt
+    $oldAccepted = $null -ne $oldAfter -and -not [string]::IsNullOrEmpty([string]$oldAfter.AcceptedAt)
+    $assertions.Add(
+        'L2-TPB-02', 'STAGING 受理之后，OLD 被重新判过、仍未受理（车已经给了 STAGING）',
+        ($oldRejudged -and -not $oldAccepted),
+        "re-judged after $($stagingAcceptedAt.ToString('o')), not accepted",
+        "LastSeenAt $(if ($oldAfter) { $oldAfter.LastSeenAt } else { '(no row)' }), AcceptedAt '$(if ($oldAfter) { $oldAfter.AcceptedAt })', reason $(if ($oldAfter) { $oldAfter.ReasonCode })")
+}
 
 $escalated = @($old, $staging | Where-Object {
         $row = Get-L2PriorityBacklog $connection $_.Id
