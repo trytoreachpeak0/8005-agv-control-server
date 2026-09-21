@@ -1,0 +1,3 @@
+1. file in the ops root:     exit=0 gone=True | deploy-config.json: not on the server
+2. file already gone:        exit=0 | deploy-config.json: not on the server
+3. file somewhere else:      exit=3 kept=True | SECRET_FILE_LEFT_BEHIND: C:\Users\szy\AppData\Local\Temp\cs262-ops-v2-10588\sub\deploy-config.json without an accepted definition (a refused one, or the control host's after-check) only 'C:\Users\szy\AppData\Local\Temp\cs262-ops-v2-10588\deploy-config.json' may be deleted
