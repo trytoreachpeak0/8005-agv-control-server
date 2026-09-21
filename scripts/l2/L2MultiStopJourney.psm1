@@ -54,6 +54,28 @@ function Get-L2UiaTexts([object]$Element) {
 }
 
 <#
+One plan-leg row's sequence and ItemStatus from what UI Automation gave for it: the texts under its DataItem and the
+DataItem's Name. Its own function so that Test-L2MultiStopJourney.ps1 drives THIS parsing with the strings the rig
+actually produced -- the first version of the Name fallback had a word boundary that an editing tool decoded into a
+literal backspace (0x08), matched nothing, and nothing said so until a rig session read every row as '?'.
+Source is 'TEXT', 'NAME' or $null.
+#>
+function ConvertFrom-L2PlanLegRowReading([string[]]$Texts, [string]$Name) {
+    $sequence = $null
+    $source = $null
+    $numeric = @(@($Texts) | Where-Object { $_ -match '^\s*\d+\s*$' })
+    if ($numeric.Count -ge 1) {
+        $sequence = [int]$numeric[0].Trim()
+        $source = 'TEXT'
+    } elseif ($Name -match '(?:^|[{\s,])Sequence = (\d+)') {
+        $sequence = [int]$Matches[1]
+        $source = 'NAME'
+    }
+    $status = if ($Name -match 'ItemStatus = ([^,}\s]+)') { $Matches[1] } else { $null }
+    return [pscustomobject]@{ Sequence = $sequence; Source = $source; ItemStatus = $status }
+}
+
+<#
 The plan legs as the HMI shows them, in the order it shows them: one object per row with Sequence (the int in the row's
 first TextBlock, $null when that is not a number), ItemStatus (parsed out of the DataItem's Name, $null when absent) and
 Texts. $null when the list is not in the tree at all -- an HMI without onboard-hmi#134, or a window that is gone.
@@ -76,14 +98,8 @@ function Get-L2PlanLegRows([object]$Onboard) {
             # ToString ('JourneyPlanLegRow { Sequence = 2, ... }'). That is a print format, not a contract; SequenceSource
             # says which one a row came from, and the evidence keeps it. Either way the ORDER is the order of the DataItems,
             # which is the ItemsControl's own item order -- the thing NEVER_REORDER_LEGS_LOCALLY is about.
-            $sequence = $null
-            $source = $null
-            $numeric = @($texts | Where-Object { $_ -match '^\s*\d+\s*$' })
-            $name = [string]$item.Current.Name
-            if ($numeric.Count -ge 1) { $sequence = [int]$numeric[0].Trim(); $source = 'TEXT' }
-            elseif ($name -match 'Sequence = (\d+)') { $sequence = [int]$Matches[1]; $source = 'NAME' }
-            $status = if ($name -match 'ItemStatus = ([^,}\s]+)') { $Matches[1] } else { $null }
-            [pscustomobject]@{ Sequence = $sequence; SequenceSource = $source; ItemStatus = $status; Texts = @($texts | ForEach-Object { "[$_]" }) -join '' }
+            $parsed = ConvertFrom-L2PlanLegRowReading -Texts $texts -Name ([string]$item.Current.Name)
+            [pscustomobject]@{ Sequence = $parsed.Sequence; SequenceSource = $parsed.Source; ItemStatus = $parsed.ItemStatus; Texts = @($texts | ForEach-Object { "[$_]" }) -join '' }
         }
         return , @($rows)
     } catch [System.Windows.Automation.ElementNotAvailableException] {
@@ -228,5 +244,5 @@ function Stop-L2DoorSampler([object]$Job) {
     return , $changes
 }
 
-Export-ModuleMember -Function Get-L2PlanLegRows, Format-L2PlanLegRows, Get-L2WorklistRows, Format-L2WorklistRows,
+Export-ModuleMember -Function ConvertFrom-L2PlanLegRowReading, Get-L2PlanLegRows, Format-L2PlanLegRows, Get-L2WorklistRows, Format-L2WorklistRows,
     Get-L2LoadingPhaseLine, Get-L2JourneyWireSnapshots, Format-L2WireSnapshot, Start-L2DoorSampler, Stop-L2DoorSampler

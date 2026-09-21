@@ -76,6 +76,7 @@ function Test-RowsShowPlan([object]$rows, [object]$plan) {
 # --- 1. 甲被空闲车接走，计划两条腿 --------------------------------------------------------------------------------
 
 Initialize-L2CargoRig $Context
+Assert-L2RigBaselineSlots $Context 2
 Publish-L2CargoDemand $Context $a
 $journey = Wait-L2Condition -Description 'demand A was accepted and the vehicle set off' -Journal $journal -Criterion 'journey-a' `
     -TimeoutSeconds 120 -Probe { Get-L2CargoJourney $connection $a.Id } `

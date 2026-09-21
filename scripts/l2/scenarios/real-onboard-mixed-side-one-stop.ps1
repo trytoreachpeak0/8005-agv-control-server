@@ -101,6 +101,7 @@ function Get-Group([int]$slot) { if ($positions.Positions.ContainsKey($slot)) { 
 # --- 1. 甲被空闲车接走，车到 11 号站装甲 -----------------------------------------------------------------------------
 
 Initialize-L2CargoRig $Context
+Assert-L2RigBaselineSlots $Context 3
 Publish-L2CargoDemand $Context $a
 $journey = Wait-L2Condition -Description 'demand A was accepted and the vehicle set off' -Journal $journal -Criterion 'journey-a' `
     -TimeoutSeconds 120 -Probe { Get-L2CargoJourney $connection $a.Id } `

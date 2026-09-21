@@ -1,0 +1,13 @@
+# 注入：把名称兜底的正则换回 red-hmi-reorder-2 那一版（0x08 + "Sequence = (\d+)"）
+ok      the sequence TextBlock is read when present -> Sequence=2 Source=TEXT ItemStatus=2|BUSINESS|PLANNED
+ok      a whitespace text first does not hide the sequence text (g3-multi-stop-plan-001) -> Sequence=3 Source=TEXT ItemStatus=
+FAIL    no texts at all falls back to the Name (g3-multi-stop-plan-002, red-hmi-reorder-2) -> Sequence= Source= ItemStatus=2|BUSINESS|PLANNED
+ok      SequenceText alone is not taken for Sequence -> Sequence= Source= ItemStatus=3|BUSINESS|PLANNED
+FAIL    L2MultiStopJourney.psm1 carries no control character other than tab and line ends -> 1 found
+Exception: C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-15-8005-agv-control-server\scripts\l2\Test-L2MultiStopJourney.ps1:47
+Line |
+  47 |  �� nt -ne 0) { throw "L2MultiStopJourney self-check failed: $($problems  ��
+     |                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     | L2MultiStopJourney self-check failed: no texts at all falls back to the Name (g3-multi-stop-plan-002,
+     | red-hmi-reorder-2); control characters at byte offsets 3947
+exit=1

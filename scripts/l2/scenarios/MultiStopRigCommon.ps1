@@ -23,6 +23,28 @@
 Set-StrictMode -Version Latest
 
 . (Join-Path $PSScriptRoot 'CargoHoldingCommon.ps1')
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2SlotGroups.psm1')
+
+<#
+The rig precondition these scenarios need and cannot create: the session baseline must show enough available slots.
+
+Dispatch reads slot availability off the session's handshake snapshots only (OnboardDispatchFactsReader: slotStates live
+on CapabilitySnapshot/SafetyStateSnapshot, never on SafetyStateChanged). A real onboard that handshakes before it has read
+the simulator over Modbus reports every slot UNKNOWN, and the whole session then has no available slot: every demand
+waits as SLOT_GROUP_CAPACITY_TEMPORARILY_UNAVAILABLE and the scenario's first wait times out reading "(nothing)", which
+looks like dispatch is broken. Measured once (control-server#218, final-msp, 2026-09-22). Checked here so that such a
+run says what happened -- a rig start-up race, not a product result -- instead of timing out two minutes later.
+#>
+function Assert-L2RigBaselineSlots([object]$Context, [int]$Minimum) {
+    $available = Get-L2AvailableSlots -Connection $Context.Connection -AgvId $Context.AgvId
+    $Context.Journal.Note("Session baseline available slots: [$(@($available) -join ',')]")
+    if (@($available).Count -lt $Minimum) {
+        throw ("RIG_PRECONDITION: the onboard's session baseline shows $(@($available).Count) available slot(s) " +
+            "([$(@($available) -join ',')]), fewer than the $Minimum this scenario loads. The handshake snapshots are what " +
+            'dispatch reads availability from, so every demand would wait as SLOT_GROUP_CAPACITY_TEMPORARILY_UNAVAILABLE. ' +
+            'This is the onboard handshaking before it read the simulator, not a product result; rerun the scenario.')
+    }
+}
 
 # 这趟旅程的阶段：按旅程号读，不按需求号——追加进来的需求没有旅程行。
 function Get-L2JourneyStage([object]$Connection, [string]$JourneyId) {
