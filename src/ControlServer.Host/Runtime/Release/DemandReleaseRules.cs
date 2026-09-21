@@ -224,11 +224,12 @@ public static class DemandReleaseReasons
     public const string FaultHoldInEffect = "RELEASE_FAULT_HOLD_IN_EFFECT";
 
     /// <summary>
-    /// 车有故障，而取货单在 RIoT 上是 SUSPENDED 8：不取消、不释放，把「换车」还是「continue」留给故障协调器（调度 2026-09-21，
-    /// 与 <see cref="FaultHoldInEffect"/> 同一个逻辑）。按用户说明，8 是车故障等原因下的挂起，故障解除后这张单可以 continue；
-    /// 取消不可撤回，会把 continue 这条路拆掉。与 Hold 分开一个码，是因为操作员要看出单是 RIoT 自己挂起的、不是协调器 Hold 的。
+    /// 车有故障，而取货单在 RIoT 上是 HANG 9：不取消、不释放，把「换车」还是「continue」留给故障协调器（调度 2026-09-21，
+    /// 与 <see cref="FaultHoldInEffect"/> 同一个逻辑）。按用户说明与实验室 BC-ORDER-015，9 是执行中出异常后的挂起，
+    /// <c>CONTINUE_FROM_HANG</c> 可恢复；取消不可撤回，会把 continue 这条路拆掉。与 Hold 分开一个码，是因为操作员要看出
+    /// 单是 RIoT 自己挂起的、不是协调器 Hold 的。
     /// </summary>
-    public const string OrderSuspendedResumable = "RELEASE_ORDER_SUSPENDED_RESUMABLE";
+    public const string OrderHangResumable = "RELEASE_ORDER_HANG_RESUMABLE";
 
     /// <summary>
     /// 释放被拒时可能写在旅程阻断码上的那几个码（审查 M4）。只有这几个会被释放服务改写或清掉；引擎自己的码一个都不碰。
@@ -236,7 +237,7 @@ public static class DemandReleaseReasons
     /// </summary>
     public static bool IsRefusalCode(string? code) => code is
         AfterArrival or CurrentStopWithOtherDemands or AnchorWithOtherDemands or OrderCancelNotConfirmed or
-        OrderStateUnknown or PickupOrderAppeared or PickupOrderSucceeded or FaultHoldInEffect or OrderSuspendedResumable;
+        OrderStateUnknown or PickupOrderAppeared or PickupOrderSucceeded or FaultHoldInEffect or OrderHangResumable;
 
     /// <summary>写事务里发现取货停靠已经有了 RIoT 订单意图，与轮次开头读到的不同，这一轮不释放。</summary>
     public const string PickupOrderAppeared = "RELEASE_PICKUP_ORDER_APPEARED";

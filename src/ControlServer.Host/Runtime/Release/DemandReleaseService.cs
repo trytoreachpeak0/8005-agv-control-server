@@ -205,16 +205,17 @@ public sealed class DemandReleaseService(
     /// 对账为 Failed，之后每轮对已结的 Failed 只返回、不重读，永远停在「取消没确认」。
     /// </para>
     /// <para>
-    /// 其余取值一律按活单处理，发取消并对账、确认才释放：排队 1、执行 3、HANG 9、队列优先 10、任何没映射的未知值，还有
-    /// 没有故障时的 SUSPENDED 8。按用户 2026-09-21 的说明（不是实测），8 是订单挂起：起因是车故障没法继续，或单里某个动作被
-    /// 取消；单还在、挂在这辆车上，故障解除后可以 continue。当终态直接放，RIoT 上会留一张挂在原车上的活单而需求已改派。网关与
-    /// 订单命令服务仍把 8 归为终态，与这个说明不符，本票不改（cs#296）。PAUSED 7 在下面的故障 Hold 分支里另算。
+    /// 其余取值一律按活单处理，发取消并对账、确认才释放：排队 1、执行 3、队列优先 10、任何没映射的未知值、没有故障时的
+    /// HANG 9，还有 SUSPENDED 8——有没有故障都一样。8 在实验室零观测，SDK 标注为「已移除」，语义不明，按保守方向当活单：
+    /// 当终态直接放，若它其实是一张还活着的单，RIoT 上会留下它而需求已改派。网关与订单命令服务仍把 8 归为终态，本票不改
+    /// （cs#296）。PAUSED 7 在下面的故障 Hold 分支里另算。
     /// </para>
     /// <para>
-    /// <b>车有故障时的 SUSPENDED 8 不取消</b>（调度 2026-09-21，与 B 同一个逻辑）：这张单故障解除后可以 continue，取消不可撤回，
-    /// 会把 continue 这条路拆掉；「换车」还是「continue」留给故障协调器，写 <see cref="DemandReleaseReasons.OrderSuspendedResumable"/>。
-    /// 「有故障」与 B 用同一个判据（车当前有故障事实），不看这次释放由哪条判据触发：车既有故障又离开了本图时，单同样可以 continue。
-    /// B 的 Hold 判据看不见它——8 是 RIoT 自己挂起的，没有 Hold 尝试。
+    /// <b>车有故障时的 HANG 9 不取消</b>（调度 2026-09-21，与 B 同一个逻辑）：按用户说明与实验室 BC-ORDER-015，9 是执行中出异常后
+    /// 的挂起，<c>CONTINUE_FROM_HANG</c> 可恢复，continue 可能再次失败并保持挂起、永不自行变 FAILED，只能 continue 或取消。取消不可
+    /// 撤回，会把 continue 这条路拆掉；「换车」还是「continue」留给故障协调器，写 <see cref="DemandReleaseReasons.OrderHangResumable"/>。
+    /// 人在 RIoT 里取消后订单落到 2，下一轮照常释放。「有故障」与 B 用同一个判据（车当前有故障事实），不看这次释放由哪条判据触发。
+    /// B 的 Hold 判据看不见它——9 是 RIoT 自己挂起的，没有 Hold 尝试。
     /// </para>
     /// <para>
     /// <b>故障协调器 Hold 住的单不取消</b>（复审疑问，调度定 B）：故障唯一的清除路径 <c>VehicleFaultCoordinator.ResumeAsync</c>
@@ -254,14 +255,23 @@ public sealed class DemandReleaseService(
 
         RiotOrderObservation order = await vehicleFacts
             .ReconcileByUpperIdAsync(currentStop.UpperId, cancellationToken).ConfigureAwait(false);
+        // 上面的对账与这次读订单是两次独立读取（第三轮复审低 1）：对账那次读不到、或读到还在执行，而订单在两次之间变成了终态，
+        // 下面的终态分支会直接返回，那一次取消的审计行就停在 Pending/Unknown，再没人对账（ReconcileAsync 只有这里调用）。
+        // 所以订单已是终态、而取消发过时，先再对账一次；结果不影响这一轮的决定，终态分支照常。
+        if (attempts.Count > 0 && order.OrderState is
+                RiotOrderState.Cancelled or RiotOrderState.Failed or RiotOrderState.Deleted or RiotOrderState.Success)
+        {
+            await orderCommands.ReconcileAsync(attempts[^1], cancellationToken).ConfigureAwait(false);
+        }
+
         switch (order.OrderState)
         {
             case RiotOrderState.Cancelled or RiotOrderState.Failed or RiotOrderState.Deleted:
                 return (PickupOrderSettlement.Ended, null);
             case RiotOrderState.Success:
                 return (PickupOrderSettlement.None, DemandReleaseReasons.PickupOrderSucceeded);
-            case RiotOrderState.Suspended when fault is { Level: not VehicleFaultLevel.None }:
-                return (PickupOrderSettlement.None, DemandReleaseReasons.OrderSuspendedResumable);
+            case RiotOrderState.Hang when fault is { Level: not VehicleFaultLevel.None }:
+                return (PickupOrderSettlement.None, DemandReleaseReasons.OrderHangResumable);
         }
 
         if (fault is { Level: not VehicleFaultLevel.None } &&

@@ -2938,6 +2938,14 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
             .Where(row => row.DemandId == snapshot.DemandId)
             .ExecuteDeleteAsync(cancellationToken)
             .ConfigureAwait(false);
+        // ExecuteDelete bypasses the change tracker: rows this context froze earlier are still tracked and would collide
+        // with the same-key rows inserted below (third review, low 2). Same shape as ThawForRedispatchAsync.
+        foreach (var stale in dbContext.ChangeTracker.Entries<FrozenDemandStationRow>()
+                     .Where(entry => entry.State == EntityState.Unchanged && entry.Entity.DemandId == snapshot.DemandId)
+                     .ToArray())
+        {
+            stale.State = EntityState.Detached;
+        }
         await new CatalogAvailabilityStore(dbContext).FreezeDemandStationsAsync(
             snapshot.DemandId,
             snapshot.TransportDemandKey,
@@ -2975,6 +2983,39 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
     }
 
     /// <summary>
+    /// 释放改派的再受理之前，删掉这条需求的分区归属冻结与任务类型站点冻结（批次7-10，control-server#215，复审中 1）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 改派是一次新的派车决定，计划按当前配置建，冻结跟着这次受理走。三种冻结同一口径：先删这条需求的旧冻结，再按这次受理冻；
+    /// 端点那一种由 <see cref="FreezeEndpointsAsync"/> 自己先删。受理与途中追加两条写入路径都经过这里。
+    /// </para>
+    /// <para>
+    /// 按旧冻结判会在等改派期间导入过新版本时抛冲突。受理接不住它，冒到派车轮次整轮失败，而这条需求保留原等待年龄排在最前，
+    /// 每一轮都先挑中它、再失败；当成积压原因拒绝则让它永远派不出去——等待期间换过的版本不会再换回来。
+    /// 「冻结不被后来的版本改写」说的是同一次受理：仍在执行的需求不被重新解析；被释放出来的需求，旧冻结属于已经结束的那一趟。
+    /// </para>
+    /// <para>
+    /// 两个冻结存储用 <c>ExecuteDelete</c> 直接删库里的行，不经过变更跟踪器：同一个上下文里首次受理冻下的那几行仍被跟踪着，
+    /// 重冻插入同键的新行就撞上它们（第三轮复审低 2）。所以删完把这条需求被跟踪、未改动的冻结行 Detach 掉，
+    /// 同 <see cref="ForgetClaimsThisContextLastSaw"/>。生产上每个 tick 开新作用域，今天碰不到；跨轮存活的上下文会。
+    /// </para>
+    /// </remarks>
+    private async Task ThawForRedispatchAsync(string demandId, CancellationToken cancellationToken)
+    {
+        await new DemandAreaAssignmentFreezeStore(dbContext)
+            .ThawForRedispatchAsync(demandId, cancellationToken).ConfigureAwait(false);
+        await new DemandTaskTypeStationFreezeStore(dbContext)
+            .ThawForRedispatchAsync(demandId, cancellationToken).ConfigureAwait(false);
+        foreach (var stale in dbContext.ChangeTracker.Entries<ConfigurationConsumerBindingRow>()
+                     .Where(entry => entry.State == EntityState.Unchanged && entry.Entity.ConsumerId == demandId)
+                     .ToArray())
+        {
+            stale.State = EntityState.Detached;
+        }
+    }
+
+    /// <summary>
     /// Freezes the area assignment version the demand was evaluated against (REQ-0350), inside the acceptance
     /// transaction and ahead of the rows that accept it.
     /// </summary>
@@ -2991,28 +3032,6 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
     /// <see cref="AreaAssignmentVersionChangedException"/> sends intake back to judge it next round.
     /// </para>
     /// </remarks>
-    /// <summary>
-    /// 释放改派的再受理之前，删掉这条需求的分区归属冻结与任务类型站点冻结（批次7-10，control-server#215，复审中 1）。
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// 改派是一次新的派车决定，计划按当前配置建，冻结跟着这次受理走。三种冻结同一口径：先删这条需求的旧冻结，再按这次受理冻；
-    /// 端点那一种由 <see cref="FreezeEndpointsAsync"/> 自己先删。受理与途中追加两条写入路径都经过这里。
-    /// </para>
-    /// <para>
-    /// 按旧冻结判会在等改派期间导入过新版本时抛冲突。受理接不住它，冒到派车轮次整轮失败，而这条需求保留原等待年龄排在最前，
-    /// 每一轮都先挑中它、再失败；当成积压原因拒绝则让它永远派不出去——等待期间换过的版本不会再换回来。
-    /// 「冻结不被后来的版本改写」说的是同一次受理：仍在执行的需求不被重新解析；被释放出来的需求，旧冻结属于已经结束的那一趟。
-    /// </para>
-    /// </remarks>
-    private async Task ThawForRedispatchAsync(string demandId, CancellationToken cancellationToken)
-    {
-        await new DemandAreaAssignmentFreezeStore(dbContext)
-            .ThawForRedispatchAsync(demandId, cancellationToken).ConfigureAwait(false);
-        await new DemandTaskTypeStationFreezeStore(dbContext)
-            .ThawForRedispatchAsync(demandId, cancellationToken).ConfigureAwait(false);
-    }
-
     private async Task FreezeAreaAssignmentAsync(
         AcceptedDemandSnapshot snapshot,
         long evaluatedVersion,

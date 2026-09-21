@@ -307,6 +307,55 @@ public sealed class Batch7RedispatchIdentityTests
         Assert.Equal(v2.Version, (await new DemandAreaAssignmentFreezeStore(reading).ReadAsync(Released, token))!.Version);
     }
 
+    /// <summary>
+    /// 首次受理与改派在同一个 <see cref="ControlServerDbContext"/> 里（第三轮复审低 2）：解冻用 <c>ExecuteDelete</c> 直接删库里的行，
+    /// 变更跟踪器还记着首次受理冻下的那几行，重冻时插入同键的新行会撞上它们，抛
+    /// 「another instance with the same key value ... is already being tracked」。
+    /// </summary>
+    /// <remarks>
+    /// 生产上每个 tick 开新的作用域，所以今天不会发生；上下文跨轮存活的夹具会。这里故意不清跟踪器，并让分区归属与端点两种冻结都在。
+    /// </remarks>
+    [Fact]
+    public async Task ARedispatchInTheSameContextAsTheFirstAcceptanceRefreezesWithoutATrackingConflict()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        GovernanceStore governance = new(
+            fixture.Context, new GovernanceDeploymentIdentity("deployment:8005-controlserver@test"), AuditRetentionPolicy.Default);
+        AreaAssignmentStore areas = new(fixture.Context, new GovernedConfigurationPublisher(governance, governance));
+        AreaAssignmentTableVersion v1 = await areas.WriteVersionAsync(
+            [new("N01", "MAP-25-WIRE_TO_GATE", "FRONT")], Now.AddDays(-2), token);
+        JourneyExecutionPlan first = Batch7JourneyFixture.Plan(Released, "agv-01", "VK-01", Now) with
+        {
+            AreaAssignmentVersion = v1.Version,
+            StationCatalogRevision = 1,
+        };
+        WireToGateStore store = new(fixture.Context);
+        await store.AcceptWithOrderIntentAsync(
+            Batch7JourneyFixture.Snapshot(Released, Now), JourneyPlanBuilder.PickupIntent(first, Released, Now), first, token);
+        JourneyRuntimeRow runtime = await fixture.Context.JourneyRuntimes.AsNoTracking().SingleAsync(token);
+        await new JourneyMembershipStore(fixture.Context).RemoveDemandAsync(
+            runtime.JourneyId, Released, DemandJourneyLookup.ReleasedForRedispatchReason, Now.AddMinutes(1), token);
+
+        AreaAssignmentTableVersion v2 = await areas.WriteVersionAsync(
+            [new("N01", "MAP-25-WIRE_TO_GATE", "REAR")], Now.AddMinutes(2), token);
+        JourneyExecutionPlan again = RedispatchPlan(generation: 2) with
+        {
+            AreaAssignmentVersion = v2.Version,
+            StationCatalogRevision = 1,
+        };
+        await store.AcceptWithOrderIntentAsync(
+            Batch7JourneyFixture.Snapshot(Released, Now),
+            JourneyPlanBuilder.PickupIntent(again, Released, Now.AddMinutes(2)),
+            again,
+            token);
+
+        await using ControlServerDbContext reading = fixture.NewContext();
+        Assert.Equal(2, await reading.JourneyRuntimes.CountAsync(row => row.DemandId == Released, token));
+        Assert.Equal(v2.Version, (await new DemandAreaAssignmentFreezeStore(reading).ReadAsync(Released, token))!.Version);
+        Assert.Equal(2, await reading.FrozenDemandStations.CountAsync(row => row.DemandId == Released, token));
+    }
+
     /// <summary>以 <paramref name="plan"/> 首次受理 <c>Released</c>（它是锚需求），再把它的归属标成释放待改派。</summary>
     private static async Task AcceptFirstAndReleaseAsync(Batch7JourneyFixture fixture, JourneyExecutionPlan plan)
     {
