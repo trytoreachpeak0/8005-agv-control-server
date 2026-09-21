@@ -124,6 +124,9 @@ internal static class JourneyRuntimeWorkerTestKit
         /// <summary>What the round-end structural dispatch block summary logged.</summary>
         public RecordingLogger<StructuralDispatchBlockSink> StructuralBlockLog { get; } = new();
 
+        /// <summary>What the round-end starvation escalation logged (control-server#214).</summary>
+        public RecordingLogger<StarvationEscalationSink> StarvationLog { get; } = new();
+
         public JourneyRuntimeEngine Engine { get; private set; }
 
         /// <summary>
@@ -199,6 +202,25 @@ internal static class JourneyRuntimeWorkerTestKit
                 AuditRetentionPolicy.Default);
             return await new AreaAssignmentStore(importer, new GovernedConfigurationPublisher(governance, governance))
                 .WriteVersionAsync(assignments, Clock.GetUtcNow(), TestContext.Current.CancellationToken);
+        }
+
+        /// <summary>
+        /// Imports a new version of the per-zone dispatch parameters the way FieldOps does (control-server#216): each zone
+        /// with its anti-starvation threshold in seconds, null for "not configured".
+        /// </summary>
+        public async Task<DispatchZoneParameterTableVersion> ImportStarvationThresholdsAsync(
+            params (string Zone, long? ThresholdSeconds)[] zones)
+        {
+            await using ControlServerDbContext importer = new(DbOptions);
+            GovernanceStore governance = new(
+                importer,
+                new GovernanceDeploymentIdentity("deployment:8005-controlserver@test"),
+                AuditRetentionPolicy.Default);
+            return await new DispatchZoneParameterStore(importer, new GovernedConfigurationPublisher(governance, governance))
+                .WriteVersionAsync(
+                    [.. zones.Select(zone => new DispatchZoneParameters(zone.Zone, null, zone.ThresholdSeconds))],
+                    Clock.GetUtcNow(),
+                    TestContext.Current.CancellationToken);
         }
 
         public AcceptedDemandSnapshot Demand(
@@ -952,11 +974,13 @@ internal static class JourneyRuntimeWorkerTestKit
                 dispatchPolicy,
                 new AreaAssignmentStore(Context, CreateGovernedPublisher()),
                 new VehicleSlotPositionReader(Context),
-                new StructuralDispatchBlockSink(
-                    new StructuralDispatchBlockStore(Context),
-                    new VehicleSlotPositionReader(Context),
-                    new VehicleRoster(options),
-                    StructuralBlockLog),
+                new DispatchRoundOutcomeSinks(
+                    new StructuralDispatchBlockSink(
+                        new StructuralDispatchBlockStore(Context),
+                        new VehicleSlotPositionReader(Context),
+                        new VehicleRoster(options),
+                        StructuralBlockLog),
+                    new StarvationEscalationSink(Context, StarvationLog)),
                 SlotGroupFullness,
                 onboardFacts,
                 options,
@@ -1318,6 +1342,12 @@ internal static class JourneyRuntimeWorkerTestKit
         /// </summary>
         public List<string[]> Saves { get; } = [];
 
+        /// <summary>
+        /// A fault to inject: a save whose written properties satisfy this throws after being recorded, before anything
+        /// reaches the database -- a crash at that save, as far as the database can tell.
+        /// </summary>
+        public Func<string[], bool>? FailWhen { get; set; }
+
         public void Reset()
         {
             Count = 0;
@@ -1349,12 +1379,17 @@ internal static class JourneyRuntimeWorkerTestKit
             {
                 return;
             }
-            Saves.Add(eventData.Context.ChangeTracker.Entries()
+            string[] written = eventData.Context.ChangeTracker.Entries()
                 .Where(entry => entry.State is EntityState.Added or EntityState.Modified)
                 .SelectMany(entry => entry.Properties
                     .Where(property => entry.State == EntityState.Added || property.IsModified)
                     .Select(property => $"{entry.Metadata.ClrType.Name}.{property.Metadata.Name}"))
-                .ToArray());
+                .ToArray();
+            Saves.Add(written);
+            if (FailWhen?.Invoke(written) == true)
+            {
+                throw new InvalidOperationException("Injected failure at this save.");
+            }
         }
     }
 

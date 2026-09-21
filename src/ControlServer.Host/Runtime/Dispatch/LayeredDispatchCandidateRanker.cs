@@ -10,7 +10,14 @@ namespace ControlServer.Host.Runtime.Dispatch;
 /// ——所以排序的对象不能再是「某辆车的一条合格候选」。<c>FirstSeenAt</c> 取积压行，没有积压行的用本轮的钟：
 /// 一条刚出现在目录里的需求就是此刻第一次被看见。
 /// </remarks>
-public sealed record DispatchTask(AcceptedDemandSnapshot Snapshot, DateTimeOffset FirstSeenAt);
+public sealed record DispatchTask(AcceptedDemandSnapshot Snapshot, DateTimeOffset FirstSeenAt)
+{
+    /// <summary>
+    /// 这条任务在本轮的等待处境（批次7-09，control-server#214），由派车轮按本轮读一次的分区归属表与每区参数算出；
+    /// 没算过的任务（空）不在超时层。
+    /// </summary>
+    public TaskStarvationStanding? Starvation { get; init; }
+}
 
 /// <summary>
 /// 任务侧排序的一层：比较两条任务，只回答一个问题，别的都算平手。

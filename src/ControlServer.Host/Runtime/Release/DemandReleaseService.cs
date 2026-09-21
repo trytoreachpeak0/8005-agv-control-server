@@ -28,8 +28,8 @@ public sealed record DemandReleaseOutcome(string JourneyId, string DemandId, str
 /// Failed 与 Unknown 写阻断原因，需求与车保持原状。取消必须在暂存任何改动之前发：审计存储自己保存，会把上下文里暂存的一并提交。
 /// </para>
 /// <para>
-/// <b>释放与退回积压同一事务</b>：归属标移除、积压行清掉受理标记（<see cref="JourneyBacklogRow.FirstSeenAt"/> 不动，等待年龄因此
-/// 保留）、计划修订暂存，一次保存。旅程上没有别的未结需求时按批次7-02 关闭旅程与三套占用
+/// <b>释放与退回积压同一事务</b>：归属标移除、积压行清掉受理标记（等待年龄从目录项的 <c>CreatedAt</c> 算，释放不动它，年龄
+/// 因此保留，7-09）、计划修订暂存，一次保存。旅程上没有别的未结需求时按批次7-02 关闭旅程与三套占用
 /// （<see cref="PickupStopTermination.StageJourneyClosureAsync(JourneyRuntimeRow, string, DateTimeOffset, CancellationToken)"/>）。
 /// 仓位不用单独归还：占用由 <c>JourneyAwareSlotLedger</c> 按未移除的归属算。
 /// </para>
@@ -374,7 +374,7 @@ public sealed class DemandReleaseService(
             .SingleOrDefaultAsync(row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
         if (backlog is not null)
         {
-            // FirstSeenAt 不动：等待年龄从它算，释放不让一条需求重新排到队尾。
+            // CreatedAt 不动：等待年龄从它算（7-09），释放不让一条需求重新排到队尾。
             backlog.AcceptedAt = null;
             backlog.ReasonCode = DemandReleaseReasons.Released;
             backlog.LastSeenAt = now;

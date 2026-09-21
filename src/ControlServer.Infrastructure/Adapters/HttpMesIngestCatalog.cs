@@ -2,11 +2,37 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
+using Microsoft.Extensions.Logging;
 
 namespace ControlServer.Infrastructure.Adapters;
 
-public sealed class HttpMesIngestCatalog(HttpClient httpClient, TimeProvider timeProvider) : IMesIngestCatalog
+public sealed class HttpMesIngestCatalog(
+    HttpClient httpClient,
+    TimeProvider timeProvider,
+    ILogger<HttpMesIngestCatalog>? logger = null) : IMesIngestCatalog
 {
+    private static readonly Action<ILogger, string, Exception?> LogCreatedAtMissing =
+        LoggerMessage.Define<string>(
+            LogLevel.Warning,
+            new EventId(2162, nameof(LogCreatedAtMissing)),
+            "MesIngest catalog item {DemandId} carries no createdAt. Its waiting age counts as zero: it is ordered " +
+            "behind every demand whose local creation is known and never escalates for starvation until MesIngest " +
+            "supplies it.");
+
+    /// <summary>
+    /// 已经告警过缺 <c>createdAt</c> 的需求：目录每秒一轮，同一条需求只告警一次（进程内）。
+    /// </summary>
+    /// <remarks>
+    /// <b>静态是刻意的。</b>这个类经 <c>AddHttpClient</c> 注册为类型化客户端，是瞬态的：每一轮派车拿到一个新实例。
+    /// 实例字段会在每个新实例上重新为空，于是每一轮都告警一次，正是这里要避免的日志洪水。代价有两个：一是它只增不减，
+    /// 大小等于进程生命期内违约过的需求条数——违约本身就该被修，修好之后不再增长；二是整个进程共用，测试之间会互相看见，
+    /// 所以断言这条告警的用例必须用一个别处不用的 <c>DemandId</c>（见 <c>HttpMesIngestCatalogTests</c>）。
+    /// </remarks>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> WarnedCreatedAtMissing =
+        new(StringComparer.Ordinal);
+
+    private readonly ILogger<HttpMesIngestCatalog>? _logger = logger;
+
     public const string ContractVersion = "2026.08.new-mes-ingest.v2.4";
     public const int SchemaVersion = 29;
     public const string ContractPath = "/api/v2/contract";
@@ -58,6 +84,13 @@ public sealed class HttpMesIngestCatalog(HttpClient httpClient, TimeProvider tim
             historyEpoch,
             body.CatalogRevision,
             observedAt)).ToArray();
+        foreach (AcceptedDemandSnapshot item in items)
+        {
+            if (item.CreatedAt == default && _logger is not null && WarnedCreatedAtMissing.TryAdd(item.DemandId, 0))
+            {
+                LogCreatedAtMissing(_logger, item.DemandId, null);
+            }
+        }
         return new DemandCatalogSnapshot(historyEpoch, body.CatalogRevision, items);
     }
 
@@ -125,6 +158,8 @@ public sealed class HttpMesIngestCatalog(HttpClient httpClient, TimeProvider tim
             ?? throw new InvalidDataException("MesIngest demand is missing liveMesFields.");
         string workType = RequireText(key.WorkType, "transportDemandKey.workType");
         string sublot = RequireText(key.Sublot, "transportDemandKey.sublot");
+        // 缺 createdAt 时留成默认值，读作「MesIngest 没给」（批次7-09 审查低 3）：它决定派车次序与防饥饿告警，
+        // 不能悄悄变成一个真实的时刻。ReadCatalogAsync 为它告警一次；年龄按 0 算由服务端的 TaskStarvation 负责。
         return new AcceptedDemandSnapshot(
             RequireDemandId(item.DemandId),
             $"{sublot}|{workType}",
@@ -136,7 +171,7 @@ public sealed class HttpMesIngestCatalog(HttpClient httpClient, TimeProvider tim
             workType,
             sublot,
             item.Generation,
-            item.CreatedAt,
+            item.CreatedAt ?? default,
             item.ValueObservedAt,
             RequireText(item.ValuePollTraceId, "valuePollTraceId"),
             RequireText(item.ValueProjectionCommitId, "valueProjectionCommitId"),
@@ -180,7 +215,7 @@ public sealed class HttpMesIngestCatalog(HttpClient httpClient, TimeProvider tim
         TransportDemandKeyDto? TransportDemandKey,
         int Generation,
         long DemandRevision,
-        DateTimeOffset CreatedAt,
+        DateTimeOffset? CreatedAt,
         DateTimeOffset ValueObservedAt,
         string? ValuePollTraceId,
         string? ValueProjectionCommitId,
