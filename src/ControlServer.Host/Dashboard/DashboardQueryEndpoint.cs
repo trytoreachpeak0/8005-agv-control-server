@@ -33,7 +33,13 @@ internal sealed class DashboardQueryEndpointCatalog
 
     internal IReadOnlyList<IDashboardQueryEndpoint> Endpoints { get; }
 
-    internal static DashboardQueryEndpointCatalog Discover(Assembly assembly)
+    /// <param name="assembly">扫描的程序集。</param>
+    /// <param name="services">
+    /// 宿主的服务容器（批次7-12，control-server#217）。给了它，端点经 <see cref="ActivatorUtilities"/> 构造，可以取宿主的配置——
+    /// 持货等单端点要的是引擎判超时用的同一份 <c>JourneyRuntimeOptions</c>；没给（只列目录的测试），照旧用无参构造。
+    /// 端点仍然必须有无参构造：发现的规则不变，新增一个数据面仍然只加一个文件。
+    /// </param>
+    internal static DashboardQueryEndpointCatalog Discover(Assembly assembly, IServiceProvider? services = null)
     {
         ArgumentNullException.ThrowIfNull(assembly);
 
@@ -47,7 +53,9 @@ internal sealed class DashboardQueryEndpointCatalog
             {
                 continue;
             }
-            endpoints.Add((IDashboardQueryEndpoint)Activator.CreateInstance(type)!);
+            endpoints.Add((IDashboardQueryEndpoint)(services is null
+                ? Activator.CreateInstance(type)!
+                : ActivatorUtilities.CreateInstance(services, type)));
         }
         List<IDashboardQueryEndpoint> ordered = [.. endpoints.OrderBy(endpoint => endpoint.Path, StringComparer.Ordinal)];
         string[] duplicates = [.. ordered.GroupBy(endpoint => endpoint.Path, StringComparer.Ordinal)

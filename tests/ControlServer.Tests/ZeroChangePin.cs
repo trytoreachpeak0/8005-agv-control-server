@@ -43,6 +43,13 @@ namespace ControlServer.Tests;
 /// 对不上的是总行数：证据文件里 +18/−12 行，而 9 处改写加 6 行新增只能是 +15/−9。<b>先算出该是多少，再去对</b>——
 /// 否则一个漏了三处的统计看上去和对的一样。
 /// </para>
+/// <para>
+/// <b>批次7-12（control-server#217）给两份阻断旅程看板基线加了三个字段，其余逐字未动。</b>那一票让阻断旅程端点每一行多给
+/// <c>blockReasonDescription</c>、<c>journeyId</c>、<c>demands</c>（只加字段、不改名不删字段），所以
+/// <c>dashboard-blocked-journeys-*</c> 两份在这三个字段上必然变。判据是「把新输出里这三个字段删掉，与旧基线按键序逐字相同」：
+/// 两份各 3 行、7 行全部成立，删掉的是 9 个与 21 个字段，值只有 <c>null</c>、<c>[]</c> 与各行自己的旅程 id
+/// （<c>evidence/cs217/green/01-dashboard-pin-rerecord-additions-only.txt</c>，在工作区证据目录）。期待动作超时的两份基线不受影响。
+/// </para>
 /// </remarks>
 internal static class ZeroChangePin
 {

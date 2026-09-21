@@ -17,7 +17,7 @@ internal static class DashboardQueryModule
         ArgumentNullException.ThrowIfNull(app);
 
         DashboardQueryEndpointCatalog catalog =
-            DashboardQueryEndpointCatalog.Discover(typeof(DashboardQueryModule).Assembly);
+            DashboardQueryEndpointCatalog.Discover(typeof(DashboardQueryModule).Assembly, app.Services);
         foreach (IDashboardQueryEndpoint endpoint in catalog.Endpoints)
         {
             IDashboardQueryEndpoint captured = endpoint;

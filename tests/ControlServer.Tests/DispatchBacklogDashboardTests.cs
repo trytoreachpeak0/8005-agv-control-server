@@ -49,8 +49,9 @@ public sealed class DispatchBacklogDashboardTests
         Assert.Equal(
             DispatchReasonCodes.SlotGroupCapacityTemporarilyUnavailable, waiting.GetProperty("reasonCode").GetString());
         Assert.Equal(firstSeen, waiting.GetProperty("firstSeenAt").GetDateTimeOffset());
+        // 等待年龄从需求的建单时刻起算（control-server#217 起，与派车排序同口径），AddBacklog 把它放在首次看到之前 1 分钟。
         long waitingSeconds = waiting.GetProperty("waitingSeconds").GetInt64();
-        Assert.InRange(waitingSeconds, 90 * 60, (90 * 60) + 60);
+        Assert.InRange(waitingSeconds, 91 * 60, (91 * 60) + 60);
 
         // 受理过的需求不再是积压；结构性阻断不混进积压列表，积压也不混进阻断。
         JsonElement block = Assert.Single(fact.RootElement.GetProperty("structuralBlocks").EnumerateArray());
@@ -68,7 +69,7 @@ public sealed class DispatchBacklogDashboardTests
         Assert.DoesNotContain("TDK-D-WAIT", html[blocksAt..backlogAt], StringComparison.Ordinal);
         Assert.Contains("TDK-D-WAIT", html[backlogAt..], StringComparison.Ordinal);
         Assert.DoesNotContain("TDK-D-BIG", html[backlogAt..], StringComparison.Ordinal);
-        Assert.Contains("1 小时 30 分", html[backlogAt..], StringComparison.Ordinal);
+        Assert.Contains("1 小时 31 分", html[backlogAt..], StringComparison.Ordinal);
         Assert.DoesNotContain("D-DONE", html, StringComparison.Ordinal);
     }
 

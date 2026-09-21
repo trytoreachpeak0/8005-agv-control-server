@@ -260,6 +260,9 @@ jobs:
               # in one of its two ways; the holding timeout at 40 seconds; candidates that do not fit for any reason
               # other than the vehicle's own cargo never make a side full; and a full vehicle still taking an
               # appended demand until it leaves its last pickup.
+              # control-server#217: the dashboard reads the holding vehicle's deadline and time left from the database,
+              # and shows the yield once another vehicle is committed to the station.
+              @{ Name = 'cargo-holding-dashboard-projection'; Runs = 1; BatchId = 'batch-7' }
               @{ Name = 'cargo-holding-disabled-when-append-forbidden'; Runs = 1; BatchId = 'batch-7' }
               @{ Name = 'cargo-holding-side-full'; Runs = 1; BatchId = 'batch-7' }
               @{ Name = 'cargo-holding-timeout'; Runs = 1; BatchId = 'batch-7' }
@@ -348,6 +351,8 @@ jobs:
               'reassign-when-vehicle-ineligible' = 39; 'plan-reorder-and-drop-cancelled' = 23
               # control-server#210, one local run (2026-09-22), build included: the station deadline is 10 s of it.
               'transport-demand-key-suppressed' = 80
+              # control-server#217, one local run (2026-09-22): 41 s with the build cached; the yield rig is most of it.
+              'cargo-holding-dashboard-projection' = 60
           }
 
           # Registered before anything can fail, so the upload step below always has a path: without it
