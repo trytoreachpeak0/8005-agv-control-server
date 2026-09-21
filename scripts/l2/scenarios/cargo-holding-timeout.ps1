@@ -54,6 +54,10 @@ $assertions.Add(
     ([string]$waiting.LoadingPhaseState -eq 'CARGO_HOLDING_WAIT' -and $null -ne $waiting.CargoHoldingStartedAt -and
         [string]$waiting.CargoHoldingStartedAt -ne ''),
     'CARGO_HOLDING_WAIT, started', "$(Format-L2CargoJourney $waiting), started '$($waiting.CargoHoldingStartedAt)'")
+# 后面每一步都以起算点为基准，没有它就量不了。抛一句说明为什么停，而不是让解析空串的异常顶替 L2-CHT-01 的结论。
+if ($null -eq $waiting -or [string]::IsNullOrEmpty([string]$waiting.CargoHoldingStartedAt)) {
+    throw 'L2-CHT-01 did not hold: the journey has no CargoHoldingStartedAt, and every later criterion is measured from it.'
+}
 $startedAt = [DateTimeOffset]::Parse([string]$waiting.CargoHoldingStartedAt, [Globalization.CultureInfo]::InvariantCulture)
 $deadline = $startedAt + $timeout
 $journal.Note("Cargo holding started at $($startedAt.ToString('o')); the deadline is $($deadline.ToString('o')).")

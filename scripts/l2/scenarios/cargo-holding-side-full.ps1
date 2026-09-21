@@ -153,10 +153,13 @@ $firstWait = @($snapshots | Where-Object { $_.State -eq 'CARGO_HOLDING_WAIT' } |
 $deadlines = @(if ($firstWait.Count -gt 0) {
     $snapshots | Where-Object { $_.Revision -ge $firstWait[0].Revision } | ForEach-Object { if ($_.Deadline) { $_.Deadline.ToString('o') } else { '(null)' } } |
         Sort-Object -Unique })
-$expectedDeadline = [DateTimeOffset]::Parse($startedAt, [Globalization.CultureInfo]::InvariantCulture) + [TimeSpan]::FromMinutes(10)
+# 起算点为空（车从没进入持货等单，L2-CHS-01 已经红了）时照样判、判红，不让解析空串的异常顶替这一条的结论：
+# 「一侧满就算整车满」的注入（red-1）正是这样，第一版在这里抛。
+$expectedDeadline = if ([string]::IsNullOrEmpty($startedAt)) { '(no holding start, see L2-CHS-01)' } else {
+    ([DateTimeOffset]::Parse($startedAt, [Globalization.CultureInfo]::InvariantCulture) + [TimeSpan]::FromMinutes(10)).ToString('o') }
 $assertions.Add(
     'L2-CHS-10', '从第一张 WAIT 起，之后每一张快照（含 LOADING、FULL 与 CLOSED）都带同一个期限，等于第一次装货落定 + 持货超时（十分钟）',
-    ($deadlines.Count -eq 1 -and $deadlines[0] -eq $expectedDeadline.ToString('o')),
-    $expectedDeadline.ToString('o'), $(if ($deadlines.Count -eq 0) { '(no snapshot from the first WAIT on)' } else { $deadlines -join ', ' }))
+    ($deadlines.Count -eq 1 -and $deadlines[0] -eq $expectedDeadline),
+    $expectedDeadline, $(if ($deadlines.Count -eq 0) { '(no snapshot from the first WAIT on)' } else { $deadlines -join ', ' }))
 
 $journal.Note('两侧各以一种方式满：FRONT 无空仓、REAR 只因本车货物装不下；车从持货等单进整车满，离站即关闭。')
