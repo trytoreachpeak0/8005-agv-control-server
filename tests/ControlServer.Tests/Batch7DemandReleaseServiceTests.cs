@@ -123,6 +123,55 @@ public sealed class Batch7DemandReleaseServiceTests
     }
 
     /// <summary>
+    /// 释放与到站撞在一起：车在 RIoT 上已经到了取货站（订单 SUCCESS），引擎还没来得及记下到站，释放服务先跑。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 释放服务与引擎推进在同一个循环里串行跑（<c>JourneyRuntimeWorker</c>），所以两者不会交错写同一趟旅程；剩下的窗口
+    /// 只有这一个——「车到了」这件事在 RIoT 上已经成立、在库里还没有。这里把它确定性地造出来：
+    /// 取消撞上一张已经成功结束的订单，对账得到的不是 Confirmed，于是不释放；引擎下一轮记下到站之后，
+    /// 裁决改判「到站后不释放」，而且不会再发第二次取消。
+    /// </para>
+    /// <para>
+    /// 反过来的次序（引擎先记下到站、释放后跑）由 <see cref="OnceTheVehicleHasArrivedTheDemandIsNotReleasedAndNoOrderIsTouched"/> 覆盖。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task AReleaseThatRacesTheArrivalLosesAndTheArrivalStands()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
+        fixture.Riot.SetSuccessfulArrival("TO_PICKUP", before.PickupUpperId, before.PickupStationRiotId);
+        LeaveTheMap(fixture);
+        CancellingGateway gateway = new(fixture.Clock, _ => { });
+
+        IReadOnlyList<DemandReleaseOutcome> raced = await Service(fixture, gateway).RunOnceAsync(Token);
+
+        Assert.Equal(DemandReleaseReasons.OrderCancelNotConfirmed, Assert.Single(raced).Result);
+        await using (ControlServerDbContext reading = new(fixture.DbOptionsForTests))
+        {
+            Assert.Null((await reading.Set<JourneyDemandRow>().AsNoTracking().SingleAsync(Token)).RemovedAt);
+            Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival,
+                (await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token)).Stage);
+        }
+
+        // 引擎这一轮记下到站：阻断原因是释放服务写的「取消没确认」，它不妨碍到站被承认。
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with
+        {
+            CurrentMap = fixture.Options.MapIdentity,
+            CurrentStationId = before.PickupStationRiotId,
+        };
+        await TickAndRunAsync(fixture);
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync(FirstDemandId)).Stage);
+
+        LeaveTheMap(fixture);
+        IReadOnlyList<DemandReleaseOutcome> afterArrival = await Service(fixture, gateway).RunOnceAsync(Token);
+        Assert.Equal(DemandReleaseReasons.AfterArrival, Assert.Single(afterArrival).Result);
+        Assert.Equal(1, gateway.Cancels);
+    }
+
+    /// <summary>
     /// 取货停靠在后面的需求：它没有 RIoT 订单（追加的停靠到车离开上一站才建单），不碰任何订单直接释放；
     /// 它的取货停靠从计划里删掉，锚需求原样留在车上。
     /// </summary>

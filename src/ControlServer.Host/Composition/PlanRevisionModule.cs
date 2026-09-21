@@ -17,7 +17,6 @@ internal static class PlanRevisionModule
 
         services.AddScoped<PlanRevisionRoutingSource>();
         services.AddScoped<DemandReleaseService>();
-        services.AddHostedService<DemandReleaseWorker>();
         return services;
     }
 }
