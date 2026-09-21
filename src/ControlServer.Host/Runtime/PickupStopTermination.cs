@@ -106,6 +106,7 @@ public sealed class PickupStopTermination(ControlServerDbContext dbContext, Plan
         ArgumentException.ThrowIfNullOrWhiteSpace(reasonCode);
 
         await StageDemandTerminationAsync(demandId, cancellationToken).ConfigureAwait(false);
+        await StageKeySuppressionAsync(demandId, reasonCode, endedAt, cancellationToken).ConfigureAwait(false);
         if (await DemandJourneyLookup.IsLastOpenDemandAsync(dbContext, runtime.JourneyId, demandId, cancellationToken)
                 .ConfigureAwait(false))
         {
@@ -141,6 +142,7 @@ public sealed class PickupStopTermination(ControlServerDbContext dbContext, Plan
         ArgumentException.ThrowIfNullOrWhiteSpace(reasonCode);
 
         await StageDemandTerminationAsync(demandId, cancellationToken).ConfigureAwait(false);
+        await StageKeySuppressionAsync(demandId, reasonCode, endedAt, cancellationToken).ConfigureAwait(false);
         if (await DemandJourneyLookup.IsLastOpenDemandAsync(dbContext, runtime.JourneyId, demandId, cancellationToken)
                 .ConfigureAwait(false))
         {
@@ -157,6 +159,67 @@ public sealed class PickupStopTermination(ControlServerDbContext dbContext, Plan
     private Task<PlanRevisionResult> StagePlanRevisionAsync(JourneyRuntimeRow runtime, CancellationToken cancellationToken) =>
         JourneyPlanRevisionStage.StageAsync(
             dbContext, runtime.JourneyId, leavingDemandIds: [], currentStopMayGo: false, routing, cancellationToken);
+
+    /// <summary>
+    /// 本地取消的四个终态码（<c>REQ-0156</c>）。只有它们按业务键抑制；<c>Succeeded</c>、GONE（v2 没有这条路径）与
+    /// <c>TERMINATED_BY_FAULT_CARGO_HANDOFF</c> 不抑制——需求基线只列这四个，MVP 多写的第五个（<c>557644a6</c>）不移植。
+    /// </summary>
+    /// <remarks>
+    /// <c>CANCELLED_BY_STOP_COMPLETE</c> 今天在 <c>src/</c> 里没有生产者，放在这里是为了以后谁产生它谁就自动抑制，
+    /// 不必再有人记得回到这里加一行。
+    /// </remarks>
+    public static IReadOnlySet<string> KeySuppressingReasonCodes { get; } = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "CANCELLED_BY_OPERATOR",
+        "CANCELLED_BY_LOAD_COMPENSATION",
+        "CANCELLED_BY_STOP_COMPLETE",
+        "CANCELLED_BY_STATION_TIMEOUT",
+    };
+
+    /// <summary>
+    /// 终结的是本地取消时，按这条需求的业务键暂存一条抑制（批次7-05，control-server#210；REQ-0155、REQ-0156、REQ-0211）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>暂存、不保存</b>，与终态、租约、旅程收尾同一次保存：崩在两次保存之间会留下「已取消但键未抑制」，而那正是 MES 以新
+    /// <c>DemandId</c> 再发同一个键时会被再执行一次的样子。
+    /// </para>
+    /// <para>
+    /// <b>先写者胜、不覆盖、不抛。</b>键上已有抑制（本上下文暂存的，或库里已提交的）就什么也不做。这一读与「是不是最后一条」
+    /// 同样落在调用方的写事务里（见类注释），而这台服务端的写事务是 <c>BEGIN IMMEDIATE</c>：两个写者——站点期限与取消结果——
+    /// 串行，后者一定读到前者已提交的那一条。所以这里不靠主键冲突兜底：主键冲突发生在保存时，会把同一次保存里的终态一起拒掉。
+    /// </para>
+    /// <para>
+    /// 不经 <see cref="ITransportDemandSuppressionStore.SuppressIfAbsentAsync"/>：那个端口自己保存，而这里的全部事实必须等调用方
+    /// 那一次保存。行的形状与端口写的一致。
+    /// </para>
+    /// </remarks>
+    private async Task StageKeySuppressionAsync(
+        string demandId, string reasonCode, DateTimeOffset endedAt, CancellationToken cancellationToken)
+    {
+        if (!KeySuppressingReasonCodes.Contains(reasonCode))
+        {
+            return;
+        }
+
+        AcceptedDemandRow demand = await dbContext.AcceptedDemands
+            .SingleAsync(row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
+        string key = demand.TransportDemandKey;
+        if (dbContext.Set<TransportDemandSuppressionRow>().Local.Any(row => row.TransportDemandKey == key) ||
+            await dbContext.Set<TransportDemandSuppressionRow>().AsNoTracking()
+                .AnyAsync(row => row.TransportDemandKey == key, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        dbContext.Set<TransportDemandSuppressionRow>().Add(new TransportDemandSuppressionRow
+        {
+            TransportDemandKey = key,
+            DemandId = demandId,
+            ReasonCode = reasonCode,
+            SuppressedAt = endedAt,
+        });
+    }
 
     /// <summary>
     /// The first step: this demand, and nothing else, is terminated. Its membership in the journey is marked

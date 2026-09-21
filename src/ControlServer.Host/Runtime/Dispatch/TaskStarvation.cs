@@ -82,7 +82,8 @@ public static class TaskStarvation
     /// <param name="structurallyBlocked">
     /// 有未解除结构性派车阻断的需求 id（REQ-0210 的另一半）。它们照样计龄，但不进超时层、不做防饥饿升级：
     /// 票面说层只排判据全过的候选，而结构性阻断的需求没有任何车接得了；它是配置错误，已经有自己的告警，
-    /// 再报一次饥饿只是噪声，还会让人误以为是排队不公平。
+    /// 再报一次饥饿只是噪声，还会让人误以为是排队不公平。批次7-05（control-server#210）起调用方传的是
+    /// <see cref="StarvationExclusions"/> 算出的整份「连合格候选都不是」的集合，键被抑制与键已被别的 DemandId 受理的也在内。
     /// </param>
     public static TaskStarvationStanding Assess(
         AcceptedDemandSnapshot demand,

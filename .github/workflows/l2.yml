@@ -309,6 +309,10 @@ jobs:
               # overdue (REQ-0202, REQ-0203, REQ-0210).
               @{ Name = 'starvation-threshold-escalation'; Runs = 1; BatchId = 'batch-7' }
               @{ Name = 'task-type-priority-band'; Runs = 1; BatchId = 'batch-7' }
+              # control-server#210, specification 8.3 batch-7 criterion 7: a key suppressed by a local cancellation stays out
+              # under a new DemandId, the unrelated demand behind it is still taken, and a demand gone from the catalog
+              # before acceptance suppresses nothing.
+              @{ Name = 'transport-demand-key-suppressed'; Runs = 1; BatchId = 'batch-7' }
               # control-server#212, the two vehicle-full ones of the five above.
               @{ Name = 'vehicle-full-ignores-oversized-and-gated'; Runs = 1; BatchId = 'batch-7' }
               @{ Name = 'vehicle-full-still-appends-before-departure'; Runs = 1; BatchId = 'batch-7' }
@@ -345,6 +349,10 @@ jobs:
               'waiting-station-yield' = 60; 'waiting-station-yield-waits-for-door' = 60
               # control-server#215, one local run each (2026-09-21), build excluded.
               'reassign-when-vehicle-ineligible' = 39; 'plan-reorder-and-drop-cancelled' = 23
+              # control-server#210, one local run (2026-09-22), build included: the station deadline is 10 s of it.
+              'transport-demand-key-suppressed' = 80
+              # control-server#217, one local run (2026-09-22): 41 s with the build cached; the yield rig is most of it.
+              'cargo-holding-dashboard-projection' = 60
           }
 
           # Registered before anything can fail, so the upload step below always has a path: without it

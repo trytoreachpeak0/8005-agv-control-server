@@ -78,6 +78,8 @@ public sealed record DispatchReasonClassification(
 public static class StructuralDispatchClassification
 {
     private const int AlreadyAccepted = 10;
+    private const int TransportDemandKeySuppressed = 11;
+    private const int TransportDemandKeyAlreadyAccepted = 12;
     private const int FaultBlock = 15;
     private const int WorkTypeScope = 20;
     private const int VehicleTaskType = 25;
@@ -103,6 +105,14 @@ public static class StructuralDispatchClassification
         // ---- AlreadyAcceptedCriterion (10) --------------------------------------------------------------
         Backlog(AlreadyAcceptedCriterion.DemandAlreadyAccepted, AlreadyAccepted,
             "The demand is taken. Not a block at all; the summary clears any block on an accepted demand."),
+
+        // ---- TransportDemandKeySuppressedCriterion (11), TransportDemandKeyAlreadyAcceptedCriterion (12) ------------
+        Backlog(DispatchReasonCodes.TransportDemandKeySuppressed, TransportDemandKeySuppressed,
+            "control-server#210, REQ-0155: the business key was suppressed by a local cancellation, for good. Deliberately " +
+            "not executed rather than a fault: nobody has anything to fix, so never a structural alarm."),
+        Backlog(DispatchReasonCodes.TransportDemandKeyAlreadyAccepted, TransportDemandKeyAlreadyAccepted,
+            "control-server#210: another DemandId of the same business key was already accepted here. The same work is " +
+            "done or under way; not a fault, and refused here so intake never meets the key's unique index."),
 
         // ---- VehicleFaultBlockCriterion (15) ------------------------------------------------------------
         Backlog(VehicleFaultBlockCriterion.SuspectedReason, FaultBlock,
