@@ -292,6 +292,12 @@ jobs:
               # connection on ADR-cross-0027's six-second window, the in-flight journey carries ONBOARD_SESSION_LOST
               # so the blocked-journey card shows it, and nothing else about the journey moves (REQ-0287).
               @{ Name = 'onboard-silent-liveness-loss'; Runs = 1; BatchId = 'batch-7' }
+              # control-server#214: the task-side ranking. A new STAGING_TO_WIRE demand is taken before an older normal-band
+              # one (REQ-0202); with no anti-starvation threshold configured nothing escalates, and once one is imported
+              # the overdue normal-band demand is escalated exactly once and goes ahead of a STAGING_TO_WIRE that is not
+              # overdue (REQ-0202, REQ-0203, REQ-0210).
+              @{ Name = 'starvation-threshold-escalation'; Runs = 1; BatchId = 'batch-7' }
+              @{ Name = 'task-type-priority-band'; Runs = 1; BatchId = 'batch-7' }
               # control-server#212, the two vehicle-full ones of the five above.
               @{ Name = 'vehicle-full-ignores-oversized-and-gated'; Runs = 1; BatchId = 'batch-7' }
               @{ Name = 'vehicle-full-still-appends-before-departure'; Runs = 1; BatchId = 'batch-7' }
