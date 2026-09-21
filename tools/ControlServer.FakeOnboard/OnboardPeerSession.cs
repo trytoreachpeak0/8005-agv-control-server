@@ -62,16 +62,31 @@ public sealed class OnboardPeerSession(
         lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         closedByPeer = false;
         client = new TcpClient();
-        await client.ConnectAsync(options.Host, options.Port, lifetime.Token).ConfigureAwait(false);
-        NetworkStream stream = client.GetStream();
-        StreamReader reader = new(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
-        writer = new StreamWriter(stream, new UTF8Encoding(false), leaveOpen: true)
+        StreamReader reader;
+        long generation;
+        try
         {
-            AutoFlush = true,
-            NewLine = "\n"
-        };
-
-        long generation = await HandshakeAsync(reader, lifetime.Token).ConfigureAwait(false);
+            await client.ConnectAsync(options.Host, options.Port, lifetime.Token).ConfigureAwait(false);
+            NetworkStream stream = client.GetStream();
+            reader = new(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+            writer = new StreamWriter(stream, new UTF8Encoding(false), leaveOpen: true)
+            {
+                AutoFlush = true,
+                NewLine = "\n"
+            };
+            generation = await HandshakeAsync(reader, lifetime.Token).ConfigureAwait(false);
+        }
+        catch
+        {
+            // A failed handshake used to leave client, writer and lifetime assigned. IsConnected reads only
+            // client and closedByPeer, so the peer reported a session that never reached READY as connected,
+            // and PUT /connection {connected:true} answered "no change" without trying again: a scenario that
+            // retries after a failed reconnect would go on against a peer that is not there. The socket also
+            // stayed open and unread while the server kept writing into it (control-server#277). Torn down
+            // before rethrowing, so the caller still sees why the handshake failed.
+            await TearDownAsync("HANDSHAKE_FAILED").ConfigureAwait(false);
+            throw;
+        }
         engine.Mutate<object?>(state => (state with
         {
             SessionGeneration = generation,
@@ -665,7 +680,13 @@ public sealed class OnboardPeerSession(
     /// 把这条会话断掉，不自己重连——场景用它造出「车掉线」，读完服务端在掉线期间的状态再调
     /// <see cref="ReconnectAsync"/>。
     /// </summary>
-    public async Task DisconnectAsync()
+    public Task DisconnectAsync() => TearDownAsync("DISCONNECTED_BY_SCENARIO");
+
+    /// <summary>
+    /// Closes whatever session is open, finished or not, and records why. A scenario's disconnect and a
+    /// handshake that failed part-way leave the same fields behind.
+    /// </summary>
+    private async Task TearDownAsync(string readinessReasonCode)
     {
         CancellationTokenSource? current = lifetime;
         if (current is null)
@@ -708,7 +729,7 @@ public sealed class OnboardPeerSession(
         engine.Mutate<object?>(state => (state with
         {
             Readiness = "DISCONNECTED",
-            ReadinessReasonCode = "DISCONNECTED_BY_SCENARIO"
+            ReadinessReasonCode = readinessReasonCode
         }, null));
     }
 
