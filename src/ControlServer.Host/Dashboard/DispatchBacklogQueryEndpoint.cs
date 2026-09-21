@@ -62,6 +62,20 @@ internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
                 "这个任务类型已有绑定，但当前版本的服务端还不能执行它",
         };
 
+    private readonly TimeProvider _clock;
+
+    public DispatchBacklogQueryEndpoint()
+        : this(TimeProvider.System)
+    {
+    }
+
+    /// <summary>桩（批次7-12 测试先行）：只够测试注入时钟编译。</summary>
+    internal DispatchBacklogQueryEndpoint(TimeProvider clock)
+    {
+        ArgumentNullException.ThrowIfNull(clock);
+        _clock = clock;
+    }
+
     public string Path => DashboardQueryEndpointCatalog.QueryPrefix + "dispatch-backlog";
 
     public async Task<object> ReadAsync(ControlServerDbContext dbContext, CancellationToken cancellationToken)
@@ -69,6 +83,7 @@ internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
         ArgumentNullException.ThrowIfNull(dbContext);
 
         DateTimeOffset now = TimeProvider.System.GetUtcNow();
+        _ = _clock;
         JourneyBacklogRow[] pending = await dbContext.JourneyBacklog.AsNoTracking()
             .Where(row => row.AcceptedAt == null && row.ReasonCode != DispatchReasonCodes.DemandLeftCatalog)
             .ToArrayAsync(cancellationToken);

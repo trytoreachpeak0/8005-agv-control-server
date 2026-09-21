@@ -46,6 +46,10 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
     /// </summary>
     internal const string OwnMovementOrderInFlight = "OWN_MOVEMENT_ORDER_IN_FLIGHT";
 
+    /// <summary>桩（批次7-12 测试先行）：阻断码的中文说明，还是空的。</summary>
+    internal static IReadOnlyDictionary<string, string> Descriptions { get; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
     private readonly BlockedJourneyEscalationOptions _escalation;
     private readonly TimeProvider _clock;
 
