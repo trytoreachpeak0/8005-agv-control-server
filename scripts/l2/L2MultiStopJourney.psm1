@@ -68,12 +68,22 @@ function Get-L2PlanLegRows([object]$Onboard) {
             $texts = Get-L2UiaTexts $item
             # The sequence TextBlock is the one whose whole text is a number. Not "the first text": g3-multi-stop-plan-001
             # read a whitespace-only text first on the rows of a rebuilt list, and every row then had no sequence.
+            #
+            # And the TextBlocks are not always there. g3-multi-stop-plan-002: after the append rebuilt the list, every row's
+            # DataItem was in the tree with its Name, and not one Text under it (the list sits below the worklist inside a
+            # ScrollViewer; WPF does not always hand out the template's peers for rows it has not laid out on screen). So
+            # when no numeric text is found, the sequence is taken from the DataItem's Name, which is the row record's
+            # ToString ('JourneyPlanLegRow { Sequence = 2, ... }'). That is a print format, not a contract; SequenceSource
+            # says which one a row came from, and the evidence keeps it. Either way the ORDER is the order of the DataItems,
+            # which is the ItemsControl's own item order -- the thing NEVER_REORDER_LEGS_LOCALLY is about.
             $sequence = $null
+            $source = $null
             $numeric = @($texts | Where-Object { $_ -match '^\s*\d+\s*$' })
-            if ($numeric.Count -ge 1) { $sequence = [int]$numeric[0].Trim() }
             $name = [string]$item.Current.Name
+            if ($numeric.Count -ge 1) { $sequence = [int]$numeric[0].Trim(); $source = 'TEXT' }
+            elseif ($name -match 'Sequence = (\d+)') { $sequence = [int]$Matches[1]; $source = 'NAME' }
             $status = if ($name -match 'ItemStatus = ([^,}\s]+)') { $Matches[1] } else { $null }
-            [pscustomobject]@{ Sequence = $sequence; ItemStatus = $status; Texts = @($texts | ForEach-Object { "[$_]" }) -join '' }
+            [pscustomobject]@{ Sequence = $sequence; SequenceSource = $source; ItemStatus = $status; Texts = @($texts | ForEach-Object { "[$_]" }) -join '' }
         }
         return , @($rows)
     } catch [System.Windows.Automation.ElementNotAvailableException] {
@@ -88,7 +98,8 @@ function Format-L2PlanLegRows([object]$Rows) {
             $seq = if ($null -eq $_.Sequence) { '?' } else { $_.Sequence }
             $status = if ($null -eq $_.ItemStatus) { '' } else { "[$($_.ItemStatus)]" }
             $texts = if ($null -eq $_.Sequence) { "{$($_.Texts)}" } else { '' }
-            "$seq$status$texts"
+            $from = if ($_.SequenceSource -eq 'NAME') { '(name)' } else { '' }
+            "$seq$from$status$texts"
         }) -join ','
 }
 
