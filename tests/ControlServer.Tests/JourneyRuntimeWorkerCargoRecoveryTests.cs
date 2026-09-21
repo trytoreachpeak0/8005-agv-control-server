@@ -68,6 +68,7 @@ public sealed class JourneyRuntimeWorkerCargoRecoveryTests
                 Assert.Equal("TERMINATED_BY_FAULT_CARGO_HANDOFF", (await fixture.RuntimeAsync()).BlockReasonCode);
                 await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(fixture.Context);
                 await ZeroChangePin.AssertMatchesAsync(fixture.Context, "fault-cargo-handoff");
+                await SuppressionAssertions.AssertNothingSuppressedAsync(fixture.Context);
 
                 await fixture.RestoreSessionReadyAsync();
                 AcceptedDemandSnapshot next = await ListNextDemandBesideAsync(fixture, ended);
@@ -115,6 +116,7 @@ public sealed class JourneyRuntimeWorkerCargoRecoveryTests
                 Assert.Equal("TERMINATED_BY_FAULT_CARGO_HANDOFF", (await fixture.RuntimeAsync()).BlockReasonCode);
                 await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(fixture.Context);
                 await ZeroChangePin.AssertMatchesAsync(fixture.Context, "forced-mechanical-recovery");
+                await SuppressionAssertions.AssertNothingSuppressedAsync(fixture.Context);
 
                 // The vehicle reconnects having adopted the new generation and reports nothing open.
                 WireToGateStore store = new(connection);

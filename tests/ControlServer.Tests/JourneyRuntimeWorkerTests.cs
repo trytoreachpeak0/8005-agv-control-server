@@ -569,6 +569,7 @@ public sealed class JourneyRuntimeWorkerTests
         Assert.Equal(JourneyRuntimeStage.Completed, (await fixture.RuntimeAsync()).Stage);
         await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(fixture.Context);
         await ZeroChangePin.AssertMatchesAsync(fixture.Context, "station-deadline");
+        await SuppressionAssertions.AssertTheDemandSuppressedAsync(fixture.Context, "CANCELLED_BY_STATION_TIMEOUT");
 
         AcceptedDemandSnapshot next = fixture.Demand(
             "10000000-0000-4000-8000-000000000002", "SUBLOT-002", createdAt: Now.AddMinutes(-5));

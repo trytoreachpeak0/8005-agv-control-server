@@ -35,6 +35,8 @@ public static class DispatchAdmissionCriteria
         IVehicleFaultStore faultStore,
         ISublotBoxCountReader boxCountReader,
         ILogger<SlotCapacityCriterion> slotCapacityLogger,
+        ITransportDemandSuppressionStore suppressions,
+        ControlServerDbContext dbContext,
         RouteGraphAccess? routeGraph = null,
         CatalogAvailabilityAccess? catalog = null,
         PreCreateGate? createGate = null,
@@ -43,6 +45,10 @@ public static class DispatchAdmissionCriteria
         List<IDispatchAdmissionCriterion> criteria =
         [
             new AlreadyAcceptedCriterion(),
+            // 按业务键抑制（批次7-05，control-server#210）。必填、不是可选，理由同下面的故障阻断：同键新 DemandId 过了全部
+            // 判据就会在受理存储层撞唯一索引，一个漏传它们的调用方就是一个带着那个隐患的调用方。
+            new TransportDemandKeySuppressedCriterion(suppressions),
+            new TransportDemandKeyAlreadyAcceptedCriterion(dbContext),
             // Required rather than optional, unlike the three appended below: a safety block a
             // caller may leave out is a safety block that will be left out.
             new VehicleFaultBlockCriterion(faultStore),
@@ -126,6 +132,8 @@ public static class DispatchAdmissionCriteria
         ArgumentNullException.ThrowIfNull(services);
 
         services.AddScoped<IDispatchAdmissionCriterion, AlreadyAcceptedCriterion>();
+        services.AddScoped<IDispatchAdmissionCriterion, TransportDemandKeySuppressedCriterion>();
+        services.AddScoped<IDispatchAdmissionCriterion, TransportDemandKeyAlreadyAcceptedCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, VehicleFaultBlockCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, WorkTypeScopeCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, VehicleTaskTypeAdmissionCriterion>();

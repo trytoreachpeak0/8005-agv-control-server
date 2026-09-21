@@ -155,7 +155,9 @@ public sealed class TaskTypeAdmissionChainTests : IAsyncDisposable
             new WireToGateStore(_context),
             new VehicleFaultStore(_context),
             new JourneyRuntimeWorkerTestKit.RecordingBoxCounts(),
-            NullLogger<SlotCapacityCriterion>.Instance));
+            NullLogger<SlotCapacityCriterion>.Instance,
+            new TransportDemandSuppressionStore(_context),
+            _context));
     }
 
     private static DispatchRoundFacts Round(Func<string, FixedTaskStationResolution> resolve) => new(
