@@ -196,14 +196,16 @@ public sealed class Batch7TransportDemandKeyAdmissionTests : IAsyncDisposable
     }
 
     /// <summary>
-    /// 「不经 <c>blockingFacts</c> 下发」：下发给车的阻断事实只由车载端投影的两个发布者构造，它们一个都不认这两个码。
+    /// 「不经 <c>blockingFacts</c> 下发」：<c>Host/Transport/</c> 下（含子目录）没有任何文件认这两个码——下发给车的阻断事实都在那里构造。
     /// 这是按构造成立的——阻断事实来自恢复会话，不来自积压——这里钉的是有人把积压原因接过去的那一天。
     /// </summary>
     [Fact]
     public void NeitherKeyReasonIsWiredIntoWhatIsSentToTheVehicle()
     {
         string transport = Path.Combine(ProtocolIdentityArchitectureTests.RepositoryRoot(), "src", "ControlServer.Host", "Transport");
-        foreach (string file in Directory.GetFiles(transport, "*.cs"))
+        string[] files = Directory.GetFiles(transport, "*.cs", SearchOption.AllDirectories);
+        Assert.NotEmpty(files);
+        foreach (string file in files)
         {
             string source = File.ReadAllText(file);
             foreach (string name in new[]
