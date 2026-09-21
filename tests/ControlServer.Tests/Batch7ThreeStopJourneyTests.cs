@@ -640,6 +640,212 @@ public sealed class Batch7ThreeStopJourneyTests
         Assert.Empty(sequences.GroupBy(sequence => sequence).Where(group => group.Count() > 1).Select(group => group.Key));
     }
 
+    /// <summary>
+    /// 旅程还带着别的需求时终结一条，它身后因此没有剩余作业的停靠被删掉，剩下的连续重编号，车上的计划随之撤掉那两条腿
+    /// （批次7-10，control-server#215，REQ-0197）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>第二条需求要有自己的卸货停靠</b>，否则什么都删不掉：追加规划器会把同站的卸货并进既有停靠，那样它的卸货停靠上
+    /// 还挂着第一条，照样有剩余作业。所以这里与 <see cref="LeavingAnUnloadStopAuthorisesTheLegToTheNextStop"/> 一样在库里挂一个，
+    /// 并把第二条需求的归属指过去。
+    /// </para>
+    /// <para>
+    /// 终结直接调 <see cref="PickupStopTermination"/>、不带路网：这条用例守的是「删」对每个调用方都成立，
+    /// 包括引擎里那两处只 <c>new</c> 了 dbContext 的。终结在还没保存的改动里把归属标成已终结、需求标成已取消，修订要读到的
+    /// 正是这两个值。反向验证过：归属与需求<b>两处都</b>改成 <c>AsNoTracking</c> 读，这条红；<b>只改归属那一处不红</b>——
+    /// 需求行的已取消单独就足以判「已结束」，这是两条独立来源，不是判据漏了。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task EndingOneOfTwoDemandsRemovesTheStopsItLeavesEmptyAndWithdrawsThemFromThePlan()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        fixture.Catalog.Set(
+            fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)),
+            fixture.Demand(SecondDemandId, SecondSublot, Now.AddMinutes(-9), area: SecondPickupArea));
+        fixture.BoxCounts.Set(FirstSublot, 7);
+        fixture.BoxCounts.Set(SecondSublot, 7);
+        await TickAndRunAsync(fixture);
+        await AppendSecondDemandAsync(fixture);
+
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync(FirstDemandId);
+        JourneyStopRow secondPickup = await OpenStopAtAsync(fixture, SecondPickupStationRiotId);
+        string ownUnloadId = $"{runtime.JourneyId}|SECOND-OWN-UNLOAD";
+        fixture.Context.Set<JourneyStopRow>().Add(new JourneyStopRow
+        {
+            StopId = ownUnloadId,
+            JourneyId = runtime.JourneyId,
+            Sequence = 4,
+            StopRole = JourneyStopRoles.Unload,
+            StationId = runtime.GateStationId,
+            StationRiotId = runtime.GateStationRiotId,
+            DispatchZone = runtime.DispatchZone,
+            OperationSessionId = JourneyPlanBuilder.StableGuid(ownUnloadId, "session"),
+            MovementLegId = JourneyPlanBuilder.StableGuid(ownUnloadId, "leg"),
+            UpperId = $"W2G-{ownUnloadId}",
+            VehicleBusinessMessageId = JourneyPlanBuilder.StableGuid(ownUnloadId, "vehicle-state"),
+            WorklistMessageId = JourneyPlanBuilder.StableGuid(ownUnloadId, "worklist"),
+            PlanMessageId = JourneyPlanBuilder.StableGuid(ownUnloadId, "plan"),
+            Status = JourneyStopStatuses.Pending,
+            CreatedAt = runtime.CreatedAt
+        });
+        JourneyDemandRow second = await fixture.Context.Set<JourneyDemandRow>()
+            .SingleAsync(row => row.DemandId == SecondDemandId, token);
+        string sharedUnloadId = second.UnloadStopId;
+        second.UnloadStopId = ownUnloadId;
+        await fixture.Context.SaveChangesAsync(token);
+        fixture.Context.ChangeTracker.Clear();
+        await TickAndRunAsync(fixture);
+        // 前提：终结之前，车上的计划带着第二个取货站（没有这一条，「终结之后没有它」在追加根本没重发时也成立）。
+        Assert.Contains(SecondPickupArea, await LastPlanStationsAsync(fixture), StringComparer.Ordinal);
+
+        runtime = await fixture.RuntimeAsync(FirstDemandId);
+        await new PickupStopTermination(fixture.Context).StageAsync(
+            runtime, SecondDemandId, "CANCELLED_BY_OPERATOR", fixture.Clock.GetUtcNow(), token);
+        await fixture.Context.SaveChangesAsync(token);
+        fixture.Context.ChangeTracker.Clear();
+
+        JourneyStopRow[] stops = [.. (await fixture.Context.Set<JourneyStopRow>().AsNoTracking()
+                .Where(row => row.JourneyId == runtime.JourneyId)
+                .ToArrayAsync(token))
+            .OrderBy(row => row.Sequence)];
+        Assert.Equal(
+            new[] { secondPickup.StopId, ownUnloadId }.Order(StringComparer.Ordinal),
+            stops.Where(row => row.Status == JourneyStopStatuses.Removed).Select(row => row.StopId).Order(StringComparer.Ordinal));
+        // 第一条需求的两个停靠原样留着，接着连续编号——删掉的那两个不留空号。
+        Assert.Equal(
+            [(FirstPickupStationRiotId, 1), (TaskTypeStationRuntimeSeed.GateStationRiotId, 2)],
+            stops.Where(row => row.Status != JourneyStopStatuses.Removed).Select(row => (row.StationRiotId, row.Sequence)));
+        Assert.Equal(sharedUnloadId, stops.Single(row => row.Status != JourneyStopStatuses.Removed &&
+            row.StopRole == JourneyStopRoles.Unload).StopId);
+
+        await TickAndRunAsync(fixture);
+        string[] stations = await LastPlanStationsAsync(fixture);
+        Assert.DoesNotContain(SecondPickupArea, stations, StringComparer.Ordinal);
+        Assert.Equal(2, stations.Length);
+    }
+
+    /// <summary>
+    /// 终结一条需求、删掉它的空停靠之后，剩下的需求照常走完：到取货站、装货、离站、到卸货站、卸完，旅程正常结束
+    /// （批次7-10，control-server#215，票面「其余照常完成」的 L1 那一半）。
+    /// </summary>
+    /// <remarks>
+    /// 删停靠改了序位（连续重编号），而到站判定、清单修订号、离站后下一段腿都按序位与开放停靠走——一个只在「删了之后」
+    /// 才错的序位或修订号，会在这条路上的某一站让旅程停住或让车载端拒收。这里逐站推进并断言终态：每个没删的停靠都完成、
+    /// 删掉的停靠保持删掉，快照流的号严格递增。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AfterOneDemandEndsAndItsStopsAreRemovedTheOtherRunsToCompletion()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        fixture.Catalog.Set(
+            fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)),
+            fixture.Demand(SecondDemandId, SecondSublot, Now.AddMinutes(-9), area: SecondPickupArea));
+        fixture.BoxCounts.Set(FirstSublot, 7);
+        fixture.BoxCounts.Set(SecondSublot, 7);
+        await TickAndRunAsync(fixture);
+        await AppendSecondDemandAsync(fixture);
+        await TickAndRunAsync(fixture);
+
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync(FirstDemandId);
+        await new PickupStopTermination(fixture.Context).StageAsync(
+            runtime, SecondDemandId, "CANCELLED_BY_OPERATOR", fixture.Clock.GetUtcNow(), token);
+        await fixture.Context.SaveChangesAsync(token);
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Equal(JourneyStopStatuses.Removed,
+            (await fixture.Context.Set<JourneyStopRow>().AsNoTracking()
+                .SingleAsync(row => row.StationRiotId == SecondPickupStationRiotId, token)).Status);
+
+        await ArriveAtPickupAsync(fixture, FirstDemandId);
+        await EnterSublotAsync(fixture, FirstDemandId, FirstSublot, FirstSubmissionId);
+        await SettleLoadAsync(fixture, FirstDemandId);
+        await AnswerDepartureSafetyAsync(fixture, FirstDemandId, FirstSafetyResultId);
+        await ArriveAtCurrentStopAsync(fixture, FirstDemandId, "TO_GATE");
+        await ApplySafeResultAsync(fixture, FirstDemandId, SlotOperationType.Unload, SlotBusinessState.Empty);
+        await TickAndRunAsync(fixture);
+
+        Assert.Equal(JourneyRuntimeStage.Completed, (await fixture.RuntimeAsync(FirstDemandId)).Stage);
+        Assert.Equal(
+            [(FirstPickupStationRiotId, JourneyStopStatuses.Completed), (SecondPickupStationRiotId, JourneyStopStatuses.Removed),
+             (TaskTypeStationRuntimeSeed.GateStationRiotId, JourneyStopStatuses.Completed)],
+            (await fixture.Context.Set<JourneyStopRow>().AsNoTracking().ToArrayAsync(token))
+                .OrderBy(row => row.StationRiotId)
+                .Select(row => (row.StationRiotId, row.Status)));
+        foreach (string messageType in new[] { "VehicleBusinessStateSnapshot", "CurrentStopWorklistSnapshot", "UpcomingStopPlanSnapshot" })
+        {
+            long[] published = await PublishedRevisionsAsync(fixture, messageType);
+            Assert.Equal(published.Order().Distinct().ToArray(), published);
+        }
+    }
+
+    /// <summary>
+    /// 两条需求的旅程释放掉一条、只剩一条时，删掉的那个停靠要从车上的计划里撤下来（批次7-10，control-server#215）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 重发计划那一段（<c>RefreshUpcomingStopPlanAsync</c>）原来用「此刻挂着不止一条需求」判断这趟旅程是不是被追加过，
+    /// 好让单需求旅程一步都不进去。那个前提是「需求只会增加」：批次7-06 时成立，释放改派让它不成立了——释放之后
+    /// 归属行被移除，数出来是一条，而计划恰恰刚刚被改过。车于是继续拿着一张还有已删停靠的计划。
+    /// </para>
+    /// <para>
+    /// 这里直接在库里做释放的落库形状（归属移除、那个停靠标 <c>REMOVED</c>），不走释放服务：这条用例守的是
+    /// 引擎那一行判断，释放服务怎么落到这个形状由它自己的用例守。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task ReleasingOneOfTwoDemandsWithdrawsItsStopFromThePlanOnTheVehicle()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(
+            fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)),
+            fixture.Demand(SecondDemandId, SecondSublot, Now.AddMinutes(-9), area: SecondPickupArea));
+        fixture.BoxCounts.Set(FirstSublot, 7);
+        fixture.BoxCounts.Set(SecondSublot, 7);
+
+        await TickAndRunAsync(fixture);
+        await AppendSecondDemandAsync(fixture);
+        await TickAndRunAsync(fixture);
+        // 前提：追加之后车上那张计划确实带着第二个取货站。没有这一条，下面的断言在「追加根本没重发」时也会绿。
+        Assert.Contains(SecondPickupArea, await LastPlanStationsAsync(fixture), StringComparer.Ordinal);
+
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync(FirstDemandId);
+        JourneyStopRow secondPickup = await OpenStopAtAsync(fixture, SecondPickupStationRiotId);
+        await new JourneyMembershipStore(fixture.Context).RemoveDemandAsync(
+            runtime.JourneyId, SecondDemandId, "RELEASED_FOR_REDISPATCH", fixture.Clock.GetUtcNow(),
+            TestContext.Current.CancellationToken);
+        JourneyStopRow tracked = await fixture.Context.Set<JourneyStopRow>()
+            .SingleAsync(row => row.StopId == secondPickup.StopId, TestContext.Current.CancellationToken);
+        tracked.Status = JourneyStopStatuses.Removed;
+        await fixture.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        fixture.Context.ChangeTracker.Clear();
+
+        await TickAndRunAsync(fixture);
+
+        string[] stations = await LastPlanStationsAsync(fixture);
+        Assert.DoesNotContain(SecondPickupArea, stations, StringComparer.Ordinal);
+        Assert.Equal(2, stations.Length);
+    }
+
+    /// <summary>车最后收到的那张计划里，每条腿的 <c>stationId</c>，按腿的顺序。</summary>
+    private static async Task<string[]> LastPlanStationsAsync(RuntimeFixture fixture)
+    {
+        ProtocolOutboxRow last = (await fixture.Context.ProtocolOutbox.AsNoTracking()
+                .Where(row => row.MessageType == "UpcomingStopPlanSnapshot")
+                .ToArrayAsync(TestContext.Current.CancellationToken))
+            .OrderBy(row => row.CreatedAt)
+            .ThenBy(row => row.MessageId, StringComparer.Ordinal)
+            .Last();
+        using JsonDocument document = JsonDocument.Parse(last.PayloadJson);
+        return [.. document.RootElement.GetProperty("payload").GetProperty("legs").EnumerateArray()
+            .Select(leg => leg.GetProperty("stationId").GetString()!)];
+    }
+
     /// <summary>这个站上还没完成的那个停靠。</summary>
     private static Task<JourneyStopRow> OpenStopAtAsync(RuntimeFixture fixture, int stationRiotId) =>
         fixture.Context.Set<JourneyStopRow>().AsNoTracking()
@@ -664,7 +870,7 @@ public sealed class Batch7ThreeStopJourneyTests
     /// 把第二条需求追加进这趟旅程，插入位由 <see cref="EnRouteAppendPlanner"/> 真算，落库走
     /// <see cref="WireToGateStore.AppendToJourneyAsync"/>——与轮次走的是同一条落库路径。
     /// </summary>
-    private static Task AppendSecondDemandAsync(RuntimeFixture fixture) =>
+    internal static Task AppendSecondDemandAsync(RuntimeFixture fixture) =>
         AppendDemandAsync(fixture, SecondDemandId, SecondSublot, SecondPickupArea, SecondPickupStationRiotId);
 
     internal static async Task AppendDemandAsync(

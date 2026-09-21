@@ -512,6 +512,70 @@ public sealed partial class MultiVehicleExecutionTests
     }
 
     /// <summary>
+    /// 从一趟旅程释放出去的需求，不会被追加回同一趟旅程（批次7-10，control-server#215，审查 M5）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 归属表的主键是 (JourneyId, DemandId)，释放只把那一行标成移除、不删。车重新合格（分区准入恢复、疑似故障解除都会）
+    /// 而旅程还在跑时，轮次把这条待改派的需求当候选，追加回同一辆车的同一趟旅程，写入撞主键——每一轮都撞。
+    /// </para>
+    /// <para>
+    /// 释放的落库形状在这里直接写（归属标 RELEASED_FOR_REDISPATCH、它的取货停靠标 REMOVED、积压行清掉受理时刻），
+    /// 不走释放服务：这条守的是轮次挑候选，释放服务怎么落到这个形状由它自己的用例守。
+    /// 判据是「这趟旅程上它仍只有那一条已移除的归属」：它可以去别的车、别的旅程，只是不回这一趟。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task ADemandReleasedFromAJourneyIsNotAppendedBackToIt()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(
+            configure: options => options.Fleet = options.Fleet[..1], withRouteGraph: true);
+        await fixture.AllowEnRouteAppendAsync(1_000_000);
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
+        await fixture.RunRoundAsync();
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0), FleetFixture.Demand(1, "N1-2", 1)]);
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+        JourneyRuntimeRow journey = Assert.Single(await fixture.Context.JourneyRuntimes.AsNoTracking().ToArrayAsync(token));
+        JourneyDemandRow appended = await fixture.Context.Set<JourneyDemandRow>()
+            .SingleAsync(row => row.DemandId != journey.DemandId, token);
+
+        // 释放的落库形状。
+        appended.RemovedAt = fixture.Clock.GetUtcNow();
+        appended.RemovalReason = DemandJourneyLookup.ReleasedForRedispatchReason;
+        JourneyStopRow pickup = await fixture.Context.Set<JourneyStopRow>()
+            .SingleAsync(row => row.StopId == appended.PickupStopId, token);
+        pickup.Status = JourneyStopStatuses.Removed;
+        JourneyBacklogRow? backlog = await fixture.Context.JourneyBacklog
+            .SingleOrDefaultAsync(row => row.DemandId == appended.DemandId, token);
+        if (backlog is not null)
+        {
+            backlog.AcceptedAt = null;
+            backlog.ReasonCode = DemandJourneyLookup.ReleasedForRedispatchReason;
+        }
+
+        await fixture.Context.SaveChangesAsync(token);
+        fixture.Context.ChangeTracker.Clear();
+        Assert.True(await DemandJourneyLookup.ReleasedForRedispatch(fixture.Context)
+            .AnyAsync(row => row.DemandId == appended.DemandId, token));
+
+        fixture.EngineLog.Entries.Clear();
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+
+        // 修前每轮都是 2123：这辆车整轮没被服务（SQLite Error 19: UNIQUE constraint failed: JourneyDemands.JourneyId,
+        // JourneyDemands.DemandId）——撞主键的不只是这条需求，这辆车这一轮什么都接不了。
+        Assert.DoesNotContain(fixture.EngineLog.Entries, entry => entry.EventId.Id == 2123);
+        Assert.Equal(DispatchReasonCodes.EnRouteAppendDemandLeftThisJourney,
+            (await fixture.Context.JourneyBacklog.AsNoTracking().SingleAsync(row => row.DemandId == appended.DemandId, token))
+            .ReasonCode);
+        JourneyDemandRow[] rows = await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+            .Where(row => row.JourneyId == journey.JourneyId && row.DemandId == appended.DemandId)
+            .ToArrayAsync(token);
+        Assert.NotNull(Assert.Single(rows).RemovedAt);
+    }
+
+    /// <summary>
     /// 在途链漏装路网时，这一轮响亮地停在那辆车上——而不是把它当成空闲车去建第二趟旅程
     /// （批次7-06，control-server#211）。
     /// </summary>
@@ -1061,6 +1125,66 @@ public sealed partial class MultiVehicleExecutionTests
                 .ToArrayAsync(TestContext.Current.CancellationToken));
         Assert.Null(row.ClearedAt);
         Assert.Equal(raisedAt, row.LastSeenAt);
+    }
+
+    /// <summary>
+    /// 同上，被认领的是一条释放待改派的需求：它本来就有受理行，所以「受理行在」不能再当作「这一次受理了」
+    /// （批次7-10，control-server#215，复审低 1）。
+    /// </summary>
+    /// <remarks>
+    /// 旧的判据读 <c>AcceptedDemands</c> 有没有这一行，对第一次受理与「这一次受理成功」恒等；改派的需求复用第一次的受理行，
+    /// 这个等价就断了——段失败之后认领照样站着，轮次末尾的钩子把它当作已受理、清掉挡着它的结构性阻断，下一轮再作为新阻断报出来，
+    /// 本轮其余的车也拿不到它。改为读「有没有生效的归属」：受理事务与归属同一次写入，第一次受理两者仍然恒等。
+    /// </remarks>
+    [Fact]
+    public async Task AClaimOnARedispatchedDemandTheSegmentNeverMadeGoodOnIsWithdrawn()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(
+            configure: options => options.Fleet = options.Fleet[..1]);
+        AcceptedDemandSnapshot only = FleetFixture.Demand(0, "N1-1", 0);
+        fixture.Catalog.Set([only]);
+        await fixture.RunRoundAsync();
+
+        // 释放的落库形状：归属标 RELEASED_FOR_REDISPATCH，旅程按释放服务同一条路关闭（三套占用一起放），积压行清掉受理时刻。
+        JourneyRuntimeRow journey = await fixture.Context.JourneyRuntimes.SingleAsync(token);
+        JourneyDemandRow membership = await fixture.Context.Set<JourneyDemandRow>().SingleAsync(token);
+        membership.RemovedAt = fixture.Clock.GetUtcNow();
+        membership.RemovalReason = DemandJourneyLookup.ReleasedForRedispatchReason;
+        await new PickupStopTermination(fixture.Context)
+            .StageJourneyClosureAsync(journey, DemandJourneyLookup.ReleasedForRedispatchReason, fixture.Clock.GetUtcNow(), token);
+        JourneyBacklogRow? backlog = await fixture.Context.JourneyBacklog.SingleOrDefaultAsync(row => row.DemandId == only.DemandId, token);
+        if (backlog is not null)
+        {
+            backlog.AcceptedAt = null;
+            backlog.ReasonCode = DemandJourneyLookup.ReleasedForRedispatchReason;
+        }
+
+        await fixture.Context.SaveChangesAsync(token);
+        fixture.Context.ChangeTracker.Clear();
+        Assert.True(await DemandJourneyLookup.ReleasedForRedispatch(fixture.Context).AnyAsync(row => row.DemandId == only.DemandId, token));
+
+        StructuralDispatchBlockStore blocks = new(fixture.Context);
+        fixture.RoundOutcomes.Inner = new StructuralDispatchBlockSink(
+            blocks,
+            fixture.SlotPositions,
+            new VehicleRoster(Microsoft.Extensions.Options.Options.Create(fixture.Options)),
+            NullLogger<StructuralDispatchBlockSink>.Instance);
+        DateTimeOffset raisedAt = fixture.Clock.GetUtcNow().AddMinutes(-30);
+        await blocks.RaiseOrRefreshAsync(
+            only.DemandId, "ROUTE_GRAPH_PICKUP_UNREACHABLE", only.TransportDemandKey, "{}", raisedAt, token);
+        fixture.Context.ChangeTracker.Clear();
+        fixture.Acceptances.ThrowOnFirstAccept = new HttpRequestException("The acceptance could not be written.");
+
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+
+        // 前提：这一轮确实挑中了它、受理确实抛了——否则「阻断还在」只说明这一轮根本没轮到它。
+        Assert.Null(fixture.Acceptances.ThrowOnFirstAccept);
+        Assert.Equal(1, await fixture.Context.JourneyRuntimes.CountAsync(token));
+        fixture.Context.ChangeTracker.Clear();
+        StructuralDispatchBlockRow row = Assert.Single(
+            await fixture.Context.Set<StructuralDispatchBlockRow>().AsNoTracking().ToArrayAsync(token));
+        Assert.Null(row.ClearedAt);
     }
 
     /// <summary>

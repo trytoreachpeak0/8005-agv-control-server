@@ -156,6 +156,7 @@ builder.Services.AddGovernance(builder.Configuration);
 // 批次 6 建表票 control-server#159：任务类型规则、按图绑定集、暂停、目录变化与需求冻结的端口。
 builder.Services.AddTaskTypeStations();
 builder.Services.AddMultiDemandJourneys();
+builder.Services.AddPlanRevision();
 
 WebApplication app = builder.Build();
 app.UseSerilogRequestLogging();

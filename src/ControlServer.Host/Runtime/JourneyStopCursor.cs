@@ -39,11 +39,15 @@ internal sealed class JourneyStopCursor
     private JourneyStopCursor(
         JourneyRuntimeRow runtime,
         IReadOnlyList<JourneyStopRow> stops,
-        IReadOnlyList<JourneyStopDemand> allDemands)
+        IReadOnlyList<JourneyStopDemand> allDemands,
+        bool everCarriedMoreThanOneDemand,
+        IReadOnlySet<string> demandsThatLeft)
     {
+        DemandsThatLeft = demandsThatLeft;
         _runtime = runtime;
         Stops = stops;
         AllDemands = allDemands;
+        EverCarriedMoreThanOneDemand = everCarriedMoreThanOneDemand;
         Demands = [.. allDemands.Where(item =>
             item.Demand.Status is not (DemandExecutionStatus.Succeeded or DemandExecutionStatus.Cancelled))];
     }
@@ -57,6 +61,19 @@ internal sealed class JourneyStopCursor
     /// 而缩水之后那条命令的补发就断了。
     /// </summary>
     public IReadOnlyList<JourneyStopDemand> AllDemands { get; }
+
+    /// <summary>
+    /// 这趟旅程是否曾经挂过不止一条需求：数的是全部归属，<b>含已移除的</b>（批次7-10，control-server#215）。
+    /// </summary>
+    /// <remarks>
+    /// 引擎拿它判断「这趟旅程的计划可能被改写过」。只数未移除的那一份（<see cref="AllDemands"/>）等于假定需求只会增加
+    /// ——释放改派把一条需求从旅程上移走、删掉它的停靠之后，剩下的是一条，而计划恰恰刚被改过。这个前提由这里承担：
+    /// 归属行只会被标移除、从不删行（<c>JourneyMembershipStore.RemoveDemandAsync</c>），所以「曾经有过」按构造数得出来。
+    /// </remarks>
+    public bool EverCarriedMoreThanOneDemand { get; }
+
+    /// <summary>曾经挂在这趟旅程上、归属已被移除的需求（批次7-10，control-server#215）。</summary>
+    public IReadOnlySet<string> DemandsThatLeft { get; }
 
     /// <summary>
     /// 旅程此刻还带着的需求：归属未被移除，且需求本身还没终结（<see cref="DemandJourneyLookup.OpenDemands"/> 的那个定义）。
@@ -315,8 +332,9 @@ internal sealed class JourneyStopCursor
         // 归属连着需求行一起取：受理事务同一次保存写下归属与需求，所以这个内连接丢不了行。按加入旅程的先后排，
         // 同一刻加入的再按需求 id 定序；排序在客户端做，因为 SQLite 不接受 DateTimeOffset 的 ORDER BY，而一趟旅程的
         // 归属至多几条，取回来再排没有代价。
-        JourneyStopDemand[] demands = await dbContext.Set<JourneyDemandRow>().AsNoTracking()
-            .Where(row => row.JourneyId == runtime.JourneyId && row.RemovedAt == null)
+        // 已移除的归属一起取回来，只为数「曾经有过几条」；AllDemands 在客户端筛掉它们。
+        JourneyStopDemand[] everCarried = await dbContext.Set<JourneyDemandRow>().AsNoTracking()
+            .Where(row => row.JourneyId == runtime.JourneyId)
             .Join(
                 dbContext.AcceptedDemands.AsNoTracking(),
                 membership => membership.DemandId,
@@ -326,9 +344,14 @@ internal sealed class JourneyStopCursor
         return new JourneyStopCursor(
             runtime,
             stops,
-            [.. demands
+            [.. everCarried
+                .Where(row => row.Membership.RemovedAt == null)
                 .OrderBy(row => row.Membership.AddedAt)
-                .ThenBy(row => row.Membership.DemandId, StringComparer.Ordinal)]);
+                .ThenBy(row => row.Membership.DemandId, StringComparer.Ordinal)],
+            everCarried.Length > 1,
+            new HashSet<string>(
+                everCarried.Where(row => row.Membership.RemovedAt != null).Select(row => row.Membership.DemandId),
+                StringComparer.Ordinal));
     }
 
     /// <summary>

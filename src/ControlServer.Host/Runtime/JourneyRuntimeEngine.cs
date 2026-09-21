@@ -386,7 +386,9 @@ public sealed class JourneyRuntimeEngine(
         // The orphan check guards intake, so it runs when this round is about to take work on --
         // which with one vehicle is exactly when it ran before, since the single vehicle being
         // free is the same statement as no journey being active.
-        string[] unresolvedDemandIds = await DemandJourneyLookup.OpenDemands(dbContext)
+        // A demand released for redispatch has no membership in force by design (control-server#215); it waits for
+        // this very round to take it on again, so it is not an orphan.
+        string[] unresolvedDemandIds = await DemandJourneyLookup.OrphanCandidates(dbContext)
             .Select(row => row.DemandId)
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
         // A demand is carried by a journey when a membership in force says so (control-server#207), not when a journey
@@ -1608,7 +1610,9 @@ public sealed class JourneyRuntimeEngine(
 
         // 只有被追加过的旅程才需要整体重发，而追加必然带来第二条需求。单需求旅程——今天现场跑的全部——
         // 因此一步都不进这一段：既省掉每个 tick 读一次发件箱，也让这次改动在单需求那条路上完全不执行。
-        if (stops.AllDemands.Count <= 1)
+        // 数的是「曾经有过」而不是「此刻挂着」（批次7-10，control-server#215）：释放改派移走一条需求、删掉它的停靠之后，
+        // 此刻只剩一条，而计划恰恰刚被改过。前提「归属只标移除、不删行」由 JourneyStopCursor.EverCarriedMoreThanOneDemand 承担。
+        if (!stops.EverCarriedMoreThanOneDemand)
         {
             return;
         }
@@ -2864,8 +2868,16 @@ public sealed class JourneyRuntimeEngine(
         JourneyPlanBuilder.StableGuid(
             $"{stop.StopId}|{PlanRevisionAt(runtime.PlanRevision, stop, arrivedAtStop)}", "plan");
 
+    /// <remarks>
+    /// 按需求这一次受理的身份派生（批次7-10，control-server#215）。首次受理的旅程 <c>JourneyId</c> 就是
+    /// <c>ForAnchorDemand(DemandId)</c>，照旧按 <c>DemandId</c> 算，一个字节不变；改派出来的旅程
+    /// <c>JourneyId</c> 带代次、必与第一趟不同（<c>JourneyIdentity.DerivationKey</c>），按它算。只按
+    /// <c>DemandId</c> 算，改派那一趟的 id 与第一趟相同，发件箱里已有那一行，派车计划就一次都不发。
+    /// </remarks>
     private static string PickupDispatchPlanMessageId(JourneyRuntimeRow runtime) =>
-        JourneyPlanBuilder.StableGuid(runtime.DemandId, "pickup-dispatch-plan");
+        JourneyPlanBuilder.StableGuid(
+            runtime.JourneyId == JourneyIdentity.ForAnchorDemand(runtime.DemandId) ? runtime.DemandId : runtime.JourneyId,
+            "pickup-dispatch-plan");
 
     /// <summary>
     /// 车离开当前停靠之后要去的那一个：序位上紧接着的、还开着的停靠（批次7-06，control-server#211）。
@@ -3271,8 +3283,10 @@ public sealed class JourneyRuntimeEngine(
         await using IDbContextTransaction? transaction = dbContext.Database.CurrentTransaction is null
             ? await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
             : null;
+        // By journey, not by demand (control-server#215): a demand released for redispatch has one journey row per
+        // dispatch, and this asks about this journey.
         JourneyRuntimeStage? stageNow = await dbContext.JourneyRuntimes.AsNoTracking()
-            .Where(row => row.DemandId == runtime.DemandId)
+            .Where(row => row.JourneyId == runtime.JourneyId)
             .Select(row => (JourneyRuntimeStage?)row.Stage)
             .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
         // 取消要按<b>这个停靠</b>问，不是按锚需求（批次7-06，control-server#211）：一条需求的取消开着时，

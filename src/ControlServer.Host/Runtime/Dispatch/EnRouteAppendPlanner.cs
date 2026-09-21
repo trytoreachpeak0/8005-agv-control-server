@@ -193,7 +193,11 @@ public sealed class EnRouteAppendPlanner
                         [
                             .. completed.Select((stop, index) => new EnRouteStopSequence(stop.StopId, index + 1)),
                             .. inserted.Select((stop, index) =>
-                                new EnRouteStopSequence(stop.StopId, completed.Count + index + 1))
+                                new EnRouteStopSequence(stop.StopId, completed.Count + index + 1)),
+                            // 当前下一站之后已删的停靠不参与上面任何一步，只接在最后占号，好让重排仍覆盖整条旅程
+                            // （审查 M3；与 JourneyPlanRevision 的编号同一条规则：删掉的排在所有开放的之后）。
+                            .. (plan.TrailingRemovedStopIds ?? []).Select((stopId, index) =>
+                                new EnRouteStopSequence(stopId, completed.Count + inserted.Count + index + 1))
                         ]);
                 }
             }
@@ -436,12 +440,22 @@ public sealed record EnRouteStop(
 /// 这趟旅程的装货阶段已经结束（批次7-07，control-server#212）；<see cref="Criteria.LoadingPhaseOpenCriterion"/> 据此拒绝。
 /// 规划器自己不读它：插在哪与该不该接是两件事。
 /// </param>
+/// <param name="TrailingRemovedStopIds">
+/// 当前下一站之后已删（REMOVED）的停靠，按序位（批次7-10，control-server#215，审查 M3）。它们不在 <paramref name="Stops"/> 里：
+/// 车不会去，不该进路径代价、分区连续与腿数上限；只在给出的重排里接在最后占号。
+/// </param>
+/// <param name="DemandsThatLeft">
+/// 曾经挂在这趟旅程上、归属已被移除的需求（审查 M5）。<see cref="Criteria.EnRouteAppendCriterion"/> 不把它们追加回这一趟；
+/// 规划器自己不读它。
+/// </param>
 public sealed record EnRouteVehiclePlan(
     IReadOnlyList<EnRouteStop> Stops,
     int VehicleStationRiotId,
     int CurrentNextStopIndex,
     IReadOnlyDictionary<string, int> WorklistItemsByStopId,
-    bool LoadingPhaseClosed = false);
+    bool LoadingPhaseClosed = false,
+    IReadOnlyList<string>? TrailingRemovedStopIds = null,
+    IReadOnlySet<string>? DemandsThatLeft = null);
 
 /// <summary>要追加的那条需求：它会带来的两个停靠。</summary>
 public sealed record EnRouteAppendCandidate(EnRouteStop PickupStop, EnRouteStop UnloadStop, string DispatchZone);

@@ -88,12 +88,20 @@ public sealed class JourneyPlanBuilder(JourneyRuntimeOptions options)
     /// carried through untouched: the acceptance freezes them with the endpoints (REQ-0305, REQ-0344,
     /// control-server#160).
     /// </remarks>
+    /// <param name="redispatchGeneration">
+    /// 释放之后再派时的新代次（批次7-10，control-server#215），第一次受理为空。它进两个地方：id 派生的键
+    /// （<see cref="JourneyIdentity.DerivationKey"/>），以及 RIoT 订单号里的代次——同一条需求的两张订单号因此不撞
+    /// （<c>OrderIntents.UpperId</c> 是唯一索引）。为空时一切与改派出现之前逐字相同。
+    /// </param>
     public JourneyExecutionPlan CreatePlan(
         FleetVehicle fleetVehicle,
         EligibleDispatchCandidate candidate,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        long? redispatchGeneration = null)
     {
         string demandId = candidate.Snapshot.DemandId;
+        string key = JourneyIdentity.DerivationKey(demandId, redispatchGeneration);
+        long generation = redispatchGeneration ?? options.DispatchGeneration;
         return new JourneyExecutionPlan(
             fleetVehicle.AgvId,
             fleetVehicle.VehicleKey,
@@ -108,18 +116,19 @@ public sealed class JourneyPlanBuilder(JourneyRuntimeOptions options)
             candidate.Route.DropoffStationRiotId,
             candidate.ExpectedBasketCount,
             candidate.TargetSlots,
-            StableGuid(demandId, "operation-session"),
-            StableGuid(demandId, "pickup-leg"),
-            $"W2G-{demandId}-PICKUP-{options.DispatchGeneration}",
-            StableGuid(demandId, "gate-leg"),
-            $"W2G-{demandId}-GATE-{options.DispatchGeneration}",
-            options.DispatchGeneration,
+            StableGuid(key, "operation-session"),
+            StableGuid(key, "pickup-leg"),
+            $"W2G-{demandId}-PICKUP-{generation}",
+            StableGuid(key, "gate-leg"),
+            $"W2G-{demandId}-GATE-{generation}",
+            generation,
             now,
             candidate.AreaAssignmentVersion,
             candidate.RequiredSlotPosition,
             candidate.Route.FixedStation.RuleVersion,
             candidate.Route.FixedStation.BindingSetVersion,
-            candidate.CatalogRevision);
+            candidate.CatalogRevision,
+            redispatchGeneration is null ? null : key);
     }
 
     /// <summary>The first move order, which is created with the journey.</summary>
@@ -191,6 +200,11 @@ public sealed class JourneyPlanBuilder(JourneyRuntimeOptions options)
     /// 腿上的 <c>demandId</c> 取锚需求。协议允许它为空（<c>UpcomingStopPlanSnapshot.legs[].demandId</c>），一个停靠挂几条
     /// 需求时该填什么由 批次7-06（control-server#211）决定；本票不改它填什么。
     /// </para>
+    /// <para>
+    /// <see cref="JourneyStopStatuses.Removed"/> 的停靠不投影：计划修订只把停靠行标成已删、不删行（批次7-10，control-server#215），
+    /// 它仍在停靠表里、仍有序位（修订把它排到所有开放停靠之后，审查 M1），所以不能指望调用方替这里滤掉它；
+    /// 认它靠状态，不靠序位——序位只说明它排在哪，不说明它还要不要去。
+    /// </para>
     /// </remarks>
     public static UpcomingStopPlanProjection Plan(
         JourneyRuntimeRow runtime,
@@ -203,7 +217,7 @@ public sealed class JourneyPlanBuilder(JourneyRuntimeOptions options)
         ArgumentNullException.ThrowIfNull(current);
         return new UpcomingStopPlanProjection(
             revision,
-            [.. stops.Select(stop => PlanLeg(
+            [.. stops.Where(stop => stop.Status != JourneyStopStatuses.Removed).Select(stop => PlanLeg(
                 runtime,
                 stop.MovementLegId,
                 stop.StopRole == JourneyStopRoles.Pickup ? "TO_PICKUP" : "TO_DROPOFF",
