@@ -432,8 +432,30 @@ class L2Double {
                 # a class is compiled when the module is parsed, that type lives in an assembly pwsh loads
                 # lazily, and several pwsh processes starting at once (control-server#130's lanes) sometimes
                 # parse this before it is loaded -- ParserError, and the run dies before its scenario starts.
-                if ($_.Exception.GetType().FullName -ne 'Microsoft.PowerShell.Commands.HttpResponseException' -or
-                    $attempt -ge $attempts -or $_.Exception.Response.StatusCode -ne 409) { throw }
+                if ($_.Exception.GetType().FullName -ne 'Microsoft.PowerShell.Commands.HttpResponseException') { throw }
+                if ($attempt -lt $attempts -and $_.Exception.Response.StatusCode -eq 409) { continue }
+                # The response body is the only place a double says WHY it refused -- the fake onboard's
+                # /connection answers CONNECTION_CHANGE_FAILED with the exception it hit in `detail` -- and
+                # pwsh keeps that body in ErrorDetails, not in the exception message. The orchestrator writes
+                # the exception message into the evidence, so without this a refusal arrives there as a bare
+                # "409 (Conflict)": control-server#277 got two such reds and could not tell what failed.
+                # Rethrown as a new exception with the original as InnerException: an exception's message
+                # cannot be changed, and no caller reads this one's type or Response (checked for #277).
+                # Not `$body`: that is this method's own [hashtable] parameter, and assigning the text to it
+                # throws a conversion error in place of the refusal (the self-check caught exactly that).
+                # `?.` because ErrorDetails is null when the body is empty, and under StrictMode reading
+                # .Message off null throws -- replacing the refusal with an unrelated error (caught by the
+                # self-check's empty-body case).
+                $responseBody = [string]$_.ErrorDetails?.Message
+                if ($responseBody) {
+                    try { $responseBody = $responseBody | ConvertFrom-Json -Depth 16 | ConvertTo-Json -Depth 16 -Compress } catch { }
+                    if ($responseBody.Length -gt 4000) { $responseBody = $responseBody.Substring(0, 4000) + '...' }
+                } else {
+                    $responseBody = '(empty)'
+                }
+                throw [System.Exception]::new(
+                    "$($_.Exception.Message) [$($this.Name) $($method.ToUpperInvariant()) $($path.TrimStart('/'))] " +
+                    "Response body: $responseBody", $_.Exception)
             }
         }
         # Unreachable: the loop either returns or throws.
