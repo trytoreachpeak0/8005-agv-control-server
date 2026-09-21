@@ -286,7 +286,11 @@ public sealed class EnRouteAppendPlanner
     }
 
     /// <summary>本区允许的最大路径代价增量；未配置或配成 0 即本区禁止追加，返回 null。</summary>
-    private static long? MaxAllowedIncrease(DispatchZoneParameterTableVersion? zoneParameters, string dispatchZone)
+    /// <remarks>
+    /// 批次7-07（control-server#212）起公开：「车能服务的分区都禁止途中追加时不持货等单」（REQ-0354）判的是同一个
+    /// 「本区禁不禁追加」，从这里问而不是在装货阶段再写一遍——两处判法一旦走岔，就会出现「车在等一条永远追加不进来的单」。
+    /// </remarks>
+    public static long? MaxAllowedIncrease(DispatchZoneParameterTableVersion? zoneParameters, string dispatchZone)
     {
         if (zoneParameters is null ||
             !zoneParameters.Zones.TryGetValue(dispatchZone, out DispatchZoneParameters? zone) ||
@@ -428,11 +432,16 @@ public sealed record EnRouteStop(
 /// 是因为「当前下一站」是 REQ-0196 的概念，值得在调用处被显式地答一次。
 /// </param>
 /// <param name="WorklistItemsByStopId">每个停靠此刻的清单项数——并入会让其中一个加一，8 项上限按它判。</param>
+/// <param name="LoadingPhaseClosed">
+/// 这趟旅程的装货阶段已经结束（批次7-07，control-server#212）；<see cref="Criteria.LoadingPhaseOpenCriterion"/> 据此拒绝。
+/// 规划器自己不读它：插在哪与该不该接是两件事。
+/// </param>
 public sealed record EnRouteVehiclePlan(
     IReadOnlyList<EnRouteStop> Stops,
     int VehicleStationRiotId,
     int CurrentNextStopIndex,
-    IReadOnlyDictionary<string, int> WorklistItemsByStopId);
+    IReadOnlyDictionary<string, int> WorklistItemsByStopId,
+    bool LoadingPhaseClosed = false);
 
 /// <summary>要追加的那条需求：它会带来的两个停靠。</summary>
 public sealed record EnRouteAppendCandidate(EnRouteStop PickupStop, EnRouteStop UnloadStop, string DispatchZone);

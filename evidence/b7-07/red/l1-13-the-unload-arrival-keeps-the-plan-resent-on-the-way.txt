@@ -1,0 +1,22 @@
+# injection: 13-the-unload-arrival-keeps-the-plan-resent-on-the-way
+# file: src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+# diff:
+@@ -1817,9 +1817,6 @@
+         // The drop-off stop has no departure wait: ADR-cross-0055's wait is the pickup's.
+         await PublishStopWorklistAsync(
+             runtime, stops, session, stationDepartureDeadlineAt: null, cancellationToken).ConfigureAwait(false);
+-        // 与取货到站同一件事：车在路上收到的重发版被到站这一版取代，先退役，免得补发把车上的计划拨回去（批次7-07 审查）。
+-        await RetireSupersededSnapshotAsync(ReSentPlanMessageId(runtime, stop, arrivedAtStop: false), cancellationToken)
+-            .ConfigureAwait(false);
+         await publisher.PublishUpcomingStopPlanAsync(
+             stop.PlanMessageId,
+             runtime.AgvId,
+# build:
+    0 Error(s)
+# test run (filter: FullyQualifiedName~ReceivedOnTheWay):
+  Failed ControlServer.Tests.Batch7ThreeStopJourneyTests.AReSentPlanReceivedOnTheWayToTheUnloadStopIsRetiredWhenItsArrivalPlanSupersedesIt [6 s]
+  Error Message:
+   Assert.DoesNotContain() Failure: Filter matched in collection
+     at ControlServer.Tests.Batch7ThreeStopJourneyTests.AReSentPlanReceivedOnTheWayToTheUnloadStopIsRetiredWhenItsArrivalPlanSupersedesIt() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7ThreeStopJourneyTests.cs:line 522
+   at ControlServer.Tests.Batch7ThreeStopJourneyTests.AReSentPlanReceivedOnTheWayToTheUnloadStopIsRetiredWhenItsArrivalPlanSupersedesIt() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7ThreeStopJourneyTests.cs:line 524
+Failed!  - Failed:     1, Passed:     1, Skipped:     0, Total:     2, Duration: 16 s - ControlServer.Tests.dll (net8.0)

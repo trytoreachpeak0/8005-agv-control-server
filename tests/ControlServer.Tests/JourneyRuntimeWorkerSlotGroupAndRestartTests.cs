@@ -742,41 +742,70 @@ public sealed class JourneyRuntimeWorkerSlotGroupAndRestartTests
             dropoff.GetProperty("loadingPhase").GetProperty("closedReason").GetString());
     }
 
-    public static TheoryData<JourneyRuntimeStage, bool, string> LoadingPhaseOfEveryStage()
-    {
-        TheoryData<JourneyRuntimeStage, bool, string> data = [];
-        foreach (JourneyRuntimeStage stage in Enum.GetValues<JourneyRuntimeStage>())
-        {
-            foreach (bool loadBatchClosed in new[] { false, true })
-            {
-                bool closed = stage switch
-                {
-                    JourneyRuntimeStage.AwaitingPickupArrival or
-                    JourneyRuntimeStage.AwaitingSublot or
-                    JourneyRuntimeStage.AwaitingLoadResult => false,
-                    JourneyRuntimeStage.Blocked or JourneyRuntimeStage.Completed => loadBatchClosed,
-                    _ => true
-                };
-                data.Add(stage, loadBatchClosed, closed ? "CLOSED/PLANNED_LOADING_COMPLETE" : "LOADING/");
-            }
-        }
-        return data;
-    }
-
     /// <summary>
-    /// The one mapping from journey stage to loading phase, over every stage there is: none maps to
-    /// null, the stages before the load batch closes are <c>LOADING</c>, the ones after are
-    /// <c>CLOSED</c>, and the two a journey reaches from either side follow the load.
+    /// 不持货等单的旅程，发给车的 <c>loadingPhase</c> 永远非空、不带期限，而且只会是批次 5 定下的两种形状：
+    /// <c>LOADING</c>，或 <c>CLOSED</c>／<c>PLANNED_LOADING_COMPLETE</c>（program#94 批次 5 的填法）。
     /// </summary>
-    [Theory]
+    /// <remarks>
+    /// <para>
+    /// <b>它接替被批次7-07 删掉的 <c>EveryJourneyStageMapsToALoadingPhase</c></b>（本切片的同一性质，审查疑问 8）。那条对每个
+    /// 旅程阶段调「阶段 → 装货阶段」那张表；批次7-07 起装货阶段不再由阶段推，那个函数没有了，「每个阶段」这一维也随之没有了——
+    /// 现在发给车的只取决于旅程行上的三列。所以同一性质改在列这一层穷举：
+    /// </para>
+    /// <list type="number">
+    /// <item>状态机在「不适用持货」时，从一条从未持货的旅程能处在的状态出发，<b>任何</b>事实组合都只推出这两种结果；</item>
+    /// <item>这两种结果（以及列落地之前就在途、三列为空的旅程），配任意起算点，投影出来的都非空、期限为空、原因与状态对应。</item>
+    /// </list>
+    /// <para>
+    /// 两半合起来就是旧用例说的：不持货的旅程，不论走到哪一步，车上看到的与批次 7 之前逐条同形。线上逐字对照在
+    /// <c>Batch7CargoHoldingTests.WithoutHoldingEverySnapshotIsTheOneTheStageDerivedMappingGave</c>（FP-IS-08，用的正是那张
+    /// 旧表当判据）；这一条守的是「形状」这一半，不依赖某一趟旅程恰好走过哪些阶段。
+    /// </para>
+    /// </remarks>
+    [Fact]
     [Trait("IntegrationSlice", "FP-IS-02")]
-    [MemberData(nameof(LoadingPhaseOfEveryStage))]
-    public void EveryJourneyStageMapsToALoadingPhase(JourneyRuntimeStage stage, bool loadBatchClosed, string expected)
+    public void AJourneyThatDoesNotHoldIsOnlyEverSentTheTwoBatchFiveLoadingPhases()
     {
-        LoadingPhaseProjection phase = JourneyRuntimeEngine.LoadingPhase(stage, loadBatchClosed);
+        string[] allowed = ["LOADING/", "CLOSED/PLANNED_LOADING_COMPLETE"];
+        bool[] both = [false, true];
+        bool?[] fullness = [null, false, true];
+        // 起点只取一条从未持货的旅程能处在的状态：列落地之前的空值与 LOADING。WAIT 与 FULL 只有持货过的旅程才有，
+        // 从 FULL 离站关为 VEHICLE_FULL 是对的，那不是「不持货的旅程」。
+        string?[] neverHeld = [null, LoadingPhaseStates.Loading];
+        string[] reached =
+        [
+            .. from state in neverHeld
+               from pending in both
+               from departed in both
+               from full in fullness
+               from deadlinePassed in both
+               from batch in both
+               from underWay in both
+               let decision = LoadingPhaseMachine.Decide(new LoadingPhaseMachine.Facts(
+                   state, null, HoldingApplicable: false, pending, departed, full, deadlinePassed, batch, underWay))
+               select $"{decision.State}/{decision.ClosedReason}",
+        ];
+        Assert.Equal(allowed.Order(StringComparer.Ordinal), reached.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal));
 
-        Assert.NotNull(phase);
-        Assert.Null(phase.CargoHoldingDeadlineAt);
-        Assert.Equal(expected, $"{phase.State}/{phase.ClosedReason}");
+        DateTimeOffset?[] starts = [null, new DateTimeOffset(2026, 8, 26, 1, 0, 0, TimeSpan.Zero)];
+        (string? State, string? Reason)[] columns =
+        [
+            (null, null),
+            (LoadingPhaseStates.Loading, null),
+            (LoadingPhaseStates.Closed, LoadingClosedReasons.PlannedLoadingComplete),
+        ];
+        LoadingPhaseProjection[] projected =
+        [
+            .. from column in columns
+               from started in starts
+               select LoadingPhaseMachine.Project(
+                   column.State, column.Reason, started, TimeSpan.FromMinutes(30), holdingApplicable: false),
+        ];
+        Assert.All(projected, phase =>
+        {
+            Assert.NotNull(phase);
+            Assert.Null(phase.CargoHoldingDeadlineAt);
+            Assert.Contains($"{phase.State}/{phase.ClosedReason}", allowed);
+        });
     }
 }

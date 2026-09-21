@@ -1279,6 +1279,7 @@ public sealed partial class MultiVehicleExecutionTests
                 AreaAssignments,
                 SlotPositions,
                 RoundOutcomes,
+                SlotGroupFullness,
                 onboardFacts,
                 options,
                 Clock,
@@ -1306,10 +1307,15 @@ public sealed partial class MultiVehicleExecutionTests
                 CreateFaultCoordinator(),
                 dispatchRound,
                 onboardFacts,
+                new DispatchZoneParameterStore(Context, JourneyRuntimeWorkerTestKit.CreateGovernedPublisher(Context)),
+                SlotGroupFullness,
                 options,
                 Clock,
                 EngineLog);
         }
+
+        /// <summary>派车轮写、推进段读的那块板（批次7-07）：宿主里是单例，这里一个夹具一块，跨轮次保留。</summary>
+        public SlotGroupFullnessBoard SlotGroupFullness { get; } = new();
 
         private VehicleFaultCoordinator CreateFaultCoordinator()
         {

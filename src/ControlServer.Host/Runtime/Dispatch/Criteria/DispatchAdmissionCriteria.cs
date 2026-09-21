@@ -109,7 +109,9 @@ public static class DispatchAdmissionCriteria
         ArgumentNullException.ThrowIfNull(idleChain);
         List<IDispatchAdmissionCriterion> criteria =
             [.. idleChain.Where(criterion => criterion is not VehicleDynamicFactsCriterion),
-             new InTransitVehicleFactsCriterion(options)];
+             new InTransitVehicleFactsCriterion(options),
+             // 批次7-07（control-server#212）：装货阶段结束的车不再接追加。不依赖路网，所以不跟着下面那一条的条件走。
+             new LoadingPhaseOpenCriterion()];
         if (routeGraph is not null)
         {
             criteria.Add(new EnRouteAppendCriterion(routeGraph));
@@ -161,6 +163,9 @@ public static class DispatchAdmissionCriteria
         services.AddScoped<IDispatchCandidateRanker>(_ => DispatchCandidateOrdering.Ranker());
         // The structural dispatch block (control-server#74): what can only be concluded across every vehicle.
         services.AddScoped<IDispatchRoundOutcomeSink, StructuralDispatchBlockSink>();
+        // 上一轮每辆在途车被「本车货物占侧」判满的那几侧（批次7-07，control-server#212）。单例：这一轮的派车写、下一轮的推进段读，
+        // 每一轮是一个新的作用域。
+        services.AddSingleton<SlotGroupFullnessBoard>();
         // The round itself and the Onboard facts it shares with the advance side (control-server#209). Scoped, like
         // the engine: both must be handed the engine's own DbContext -- see DispatchRoundRunner.
         services.AddScoped<OnboardDispatchFactsReader>();

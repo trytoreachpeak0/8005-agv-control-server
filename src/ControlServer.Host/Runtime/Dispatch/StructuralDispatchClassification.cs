@@ -96,6 +96,7 @@ public static class StructuralDispatchClassification
     private const int SlotCapacity = 100;
     private const int SublotTaskTypeConflict = 35;
     private const int EnRouteAppend = 98;
+    private const int LoadingPhaseOpen = 99;
 
     private static readonly DispatchReasonClassification[] Rows =
     [
@@ -283,6 +284,12 @@ public static class StructuralDispatchClassification
         Backlog(DispatchReasonCodes.EnRouteAppendNoInsertionPoint, EnRouteAppend,
             "control-server#211, REQ-0196: the current next stop cannot be changed and nothing sits after it. This " +
             "vehicle's position in its plan."),
+
+        // ---- LoadingPhaseOpenCriterion (99) -------------------------------------------------------------
+        Backlog(DispatchReasonCodes.LoadingPhaseClosed, LoadingPhaseOpen,
+            "control-server#212, REQ-0354: this vehicle's loading phase has ended -- held past its cargo holding " +
+            "deadline, full and gone from its last pickup, or its plan loaded with appending forbidden. This " +
+            "vehicle's journey only: another vehicle takes the demand, and this one does after it unloads."),
 
         // ---- written by the engine after the chain ------------------------------------------------------
         Backlog("FINAL_DYNAMIC_FACTS_NOT_READY", null, "The pre-intake re-read of this vehicle's facts failed."),

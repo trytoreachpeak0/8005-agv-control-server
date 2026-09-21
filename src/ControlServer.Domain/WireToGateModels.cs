@@ -125,9 +125,16 @@ public static class VehicleActivePurposes
 /// stands.
 /// </summary>
 /// <remarks>
-/// While v2 carries one demand per journey only the two values below occur. Holding cargo to wait
-/// for more demands (<c>CARGO_HOLDING_WAIT</c>, <c>VEHICLE_FULL</c>, a holding deadline and the other
-/// three closed reasons) is batch 7.
+/// <para>
+/// 批次7-07（control-server#212）起四个状态都会出现，而且<b>从旅程行上的三列读，不再由阶段推</b>
+/// （<c>JourneyRuntimeRow.LoadingPhaseState</c>、<c>LoadingClosedReason</c>、<c>CargoHoldingStartedAt</c>）。
+/// 取值的语义是 program#94 那张表：<c>LOADING</c> 装货进行中、未等单；<c>CARGO_HOLDING_WAIT</c> 持货等单（REQ-0354）；
+/// <c>VEHICLE_FULL</c> 不再等单，但离开最后一个装货停靠之前仍可追加；<c>CLOSED</c> 装货阶段已结束。
+/// </para>
+/// <para>
+/// 分区都禁止途中追加的旅程（参数批准之前的全部旅程）仍然只出现下面两个值，与批次 7 之前逐条相同。
+/// <c>WAITING_STATION_YIELD</c> 只有让站才产生，归 control-server#213。
+/// </para>
 /// </remarks>
 public sealed record LoadingPhaseProjection(
     string State,
@@ -143,6 +150,24 @@ public sealed record LoadingPhaseProjection(
     /// </summary>
     public static LoadingPhaseProjection PlannedLoadingComplete { get; } =
         new("CLOSED", null, "PLANNED_LOADING_COMPLETE");
+}
+
+/// <summary><c>loadingPhase.state</c> 的四个取值（协议 <c>2.0.0</c>，program#94）。</summary>
+public static class LoadingPhaseStates
+{
+    public const string Loading = "LOADING";
+    public const string CargoHoldingWait = "CARGO_HOLDING_WAIT";
+    public const string VehicleFull = "VEHICLE_FULL";
+    public const string Closed = "CLOSED";
+}
+
+/// <summary><c>loadingPhase.closedReason</c> 的四个取值；只在 <see cref="LoadingPhaseStates.Closed"/> 时非空。</summary>
+public static class LoadingClosedReasons
+{
+    public const string VehicleFull = "VEHICLE_FULL";
+    public const string CargoHoldingTimeout = "CARGO_HOLDING_TIMEOUT";
+    public const string WaitingStationYield = "WAITING_STATION_YIELD";
+    public const string PlannedLoadingComplete = "PLANNED_LOADING_COMPLETE";
 }
 
 public sealed record CurrentStopWorklistItem(

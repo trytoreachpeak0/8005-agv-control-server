@@ -815,3 +815,9 @@ pwsh -NoProfile -File .\scripts\l2\Test-L2PortLockQueueing.ps1
     - **重连**：`BeginSessionRecoveryAsync` 把会话退回 `HANDSHAKE_INCOMPLETE` 的同一次保存里作废本车旅程的期限起点；
       重新计满是会话回到 Ready 之后引擎某一轮的另一次写入。所以「重连之后期限起点变了」要等，不能在
       重连命令返回时直读。
+    - **装货阶段**（批次7-07，`JourneyRuntimeEngine.ReconcileLoadingPhaseAsync`）：`JourneyRuntimes` 的
+      `LoadingPhaseState`、`LoadingClosedReason`、`FullSlotPositionsJson` 与它引出的那张车辆业务状态快照是同一次保存
+      （先改旅程行，发布把发件箱行与旅程行一起存；不发快照时单独保存旅程行）。等到列变了再读快照是安全的，反过来也一样。
+      持货起算点 `CargoHoldingStartedAt` 不在这一次里：它随装货落定那次保存（与归属 `LOADED` 同一次）落库，早于状态变成
+      `CARGO_HOLDING_WAIT`。`JourneyBacklog.ReasonCode` 是派车轮的另一次写入，与装货阶段没有先后保证——判「车关了之后
+      这条单被挡成 `LOADING_PHASE_CLOSED`」要另等一次（`cargo-holding-side-full` 与 `cargo-holding-timeout` 都这样写）。
