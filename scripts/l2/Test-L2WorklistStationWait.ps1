@@ -1,0 +1,207 @@
+#Requires -Version 7
+<#
+.SYNOPSIS
+Drives Wait-L2WorklistAcknowledgedAtOtherStation through the state the count-based criterion got wrong.
+
+.DESCRIPTION
+The shipped function, not a copy: Invoke-L2Query is replaced inside L2TaskTypeJourney's own module
+scope, so Get-L2DemandJourneySnapshots parses real payload JSON on the way through and everything
+above it runs as it runs on the rig.
+
+The case this exists for is the first one. control-server#204 wrote the second stop's wait as "at
+least 2 acknowledged worklists", which is a PROXY for "the second stop's worklist is acknowledged" --
+equal to it only while every stop emits exactly one worklist. Revise the first stop's worklist and
+the proxy is satisfied while the thing it stands for is not.
+
+So that case asserts BOTH halves on the SAME input: the old criterion is satisfied, and the new one
+is not. Asserting only the second half would not show the old one was ever wrong -- it would pass
+just as well against a criterion that had always been right (control-server#265).
+
+No real-rig round has ever been in any of these states: in both scenarios the callback that runs this
+wait only fires after the server has sent the operation command, by which time the worklist is long
+acknowledged. None of them can be reached by re-running a green scenario.
+#>
+[CmdletBinding()]
+param()
+
+$ErrorActionPreference = 'Stop'
+
+Import-Module (Join-Path $PSScriptRoot 'L2.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'L2RealOnboard.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'L2TaskTypeJourney.psm1') -Force
+$module = Get-Module L2TaskTypeJourney
+
+# Module scope, not global: L2TaskTypeJourney.psm1 imports its dependencies itself, so its own scope
+# wins over anything defined outside. Measured in control-server#203 -- a global stub is not reached.
+& $module {
+    function script:Invoke-L2Query {
+        param($Connection, $Sql)
+        $global:l2wsCalls++
+        return $global:l2wsRows
+    }
+}
+
+$results = [System.Collections.Generic.List[object]]::new()
+function Add-Case([string]$Name, [bool]$Ok, [string]$Actual) {
+    $results.Add([pscustomobject]@{ Name = $Name; Ok = $Ok; Actual = $Actual })
+}
+
+# A ProtocolOutbox row exactly as Get-L2DemandJourneySnapshots reads one, payload JSON included: the
+# station id has to survive the real parse, not be handed to the criterion directly.
+function Worklist([string]$id, [string]$station, [int]$revision, [bool]$acknowledged, [string]$demand = 'd-1') {
+    $payload = @{ payload = @{ stationId = $station; worklistRevision = $revision; items = @(@{ demandId = $demand }) } }
+    [pscustomobject]@{
+        MessageId      = $id
+        MessageType    = 'CurrentStopWorklistSnapshot'
+        PayloadJson    = ($payload | ConvertTo-Json -Depth 8 -Compress)
+        CreatedAt      = "2026-09-21T00:00:0$($id -replace '\D', '')Z"
+        AcknowledgedAt = $(if ($acknowledged) { '2026-09-21T00:00:30Z' } else { $null })
+        FencedAt       = $null
+    }
+}
+
+function Invoke-FirstWait([object[]]$Rows) {
+    $global:l2wsRows = $Rows
+    $global:l2wsCalls = 0
+    try {
+        $v = Wait-L2FirstAcknowledgedWorklistStation -Connection 'stub' -DemandId 'd-1' `
+            -Criterion 'origin-worklist-acknowledged' `
+            -Description 'the onboard acknowledged the worklist at the first stop' -TimeoutSeconds 2
+        return [pscustomobject]@{ Value = [string]$v; Error = $null; Calls = $global:l2wsCalls }
+    } catch {
+        return [pscustomobject]@{ Value = $null; Error = $_.Exception.Message; Calls = $global:l2wsCalls }
+    }
+}
+
+function Invoke-Wait([object[]]$Rows, [string]$Previous) {
+    $global:l2wsRows = $Rows
+    $global:l2wsCalls = 0
+    try {
+        $v = Wait-L2WorklistAcknowledgedAtOtherStation -Connection 'stub' -DemandId 'd-1' `
+            -PreviousStationId $Previous -Criterion 'destination-worklist-acknowledged' `
+            -Description 'the onboard acknowledged the worklist at the second stop' -TimeoutSeconds 2
+        return [pscustomobject]@{ Value = [string]$v; Error = $null; Calls = $global:l2wsCalls }
+    } catch {
+        return [pscustomobject]@{ Value = $null; Error = $_.Exception.Message; Calls = $global:l2wsCalls }
+    }
+}
+
+# The criterion the old code used, evaluated with the same parser on the same rows. Not a hand count:
+# the claim being made is about what the shipped reader would have produced.
+function Get-OldCountCriterion([object[]]$Rows) {
+    $global:l2wsRows = $Rows
+    $global:l2wsCalls = 0
+    # Parenthesised exactly as the shipped code was: the reader returns a single-layer array, and
+    # `f | Where` hands Where-Object the whole list as ONE object while `(f) | Where` unrolls it.
+    # Getting this wrong here would understate the old count and make the case below argue nothing.
+    return @((Get-L2DemandJourneySnapshots 'stub' 'd-1') |
+        Where-Object { $_.Type -eq 'CurrentStopWorklistSnapshot' -and $_.Acknowledged }).Count
+}
+
+# ---------------------------------------------------------------- the case this file exists for
+
+$firstStopRevised = @(
+    (Worklist '1' 'STATION-A' 1 $true),
+    (Worklist '2' 'STATION-A' 2 $true))
+
+$oldCount = Get-OldCountCriterion $firstStopRevised
+$new = Invoke-Wait -Rows $firstStopRevised -Previous 'STATION-A'
+Add-Case '第一站清单改版：旧的条数判据被满足（>= 2），说明代理指标在这里就会放过' `
+    ($oldCount -ge 2) "条数 = $oldCount"
+Add-Case '第一站清单改版：新的站点判据不满足，等待超时而不是放过' `
+    (($null -eq $new.Value -or $new.Value -eq '') -and $null -ne $new.Error -and $new.Error -like '*Timed out*') `
+    "值=$($new.Value) 错误=$($new.Error)"
+
+# ---------------------------------------------------------------- the ordinary states
+
+$secondStopArrived = @(
+    (Worklist '1' 'STATION-A' 1 $true),
+    (Worklist '2' 'STATION-B' 1 $true))
+$ok = Invoke-Wait -Rows $secondStopArrived -Previous 'STATION-A'
+Add-Case '第二站清单已确认：返回的是那一站的站点 id，不是布尔也不是条数' `
+    ($ok.Value -ceq 'STATION-B') "值=$($ok.Value) 错误=$($ok.Error)"
+
+$secondStopUnacknowledged = @(
+    (Worklist '1' 'STATION-A' 1 $true),
+    (Worklist '2' 'STATION-B' 1 $false))
+$pending = Invoke-Wait -Rows $secondStopUnacknowledged -Previous 'STATION-A'
+Add-Case '第二站清单发了但没被确认：不接受' `
+    ($null -ne $pending.Error -and $pending.Error -like '*Timed out*') "值=$($pending.Value) 错误=$($pending.Error)"
+
+# An empty station id on the OTHER worklist must not be read as "different from STATION-A". Without
+# the Test-L2RealPresent in the probe this row satisfies the criterion, because '' -ne 'STATION-A'.
+$otherStationEmpty = @(
+    (Worklist '1' 'STATION-A' 1 $true),
+    (Worklist '2' '' 1 $true))
+$empty = Invoke-Wait -Rows $otherStationEmpty -Previous 'STATION-A'
+Add-Case '另一份清单的站点 id 为空：不算「不同的站点」' `
+    ($null -ne $empty.Error -and $empty.Error -like '*Timed out*') "值=$($empty.Value) 错误=$($empty.Error)"
+
+# --------------------------------------- the FIRST stop's half, changed by the same ticket
+#
+# It went from "at least 1 acknowledged worklist" to "an acknowledged worklist WITH A STATION ID,
+# and answer which". That is a new red line, so it gets the same treatment as the second stop's half
+# rather than riding on it -- the argument for extracting one applies to the other (review of #269).
+
+$originStationEmpty = @((Worklist '1' '' 1 $true))
+$oldFirstCount = Get-OldCountCriterion $originStationEmpty
+$firstEmpty = Invoke-FirstWait -Rows $originStationEmpty
+Add-Case '第一站清单已确认但站点 id 为空：旧的「条数 >= 1」被满足，说明它会放过' `
+    ($oldFirstCount -ge 1) "条数 = $oldFirstCount"
+Add-Case '第一站清单已确认但站点 id 为空：新判据超时，不把空值交给第二站' `
+    ($null -ne $firstEmpty.Error -and $firstEmpty.Error -like '*Timed out*') `
+    "值=$($firstEmpty.Value) 错误=$($firstEmpty.Error)"
+
+$firstOk = Invoke-FirstWait -Rows @((Worklist '1' 'STATION-A' 1 $true))
+Add-Case '第一站清单已确认：返回它的站点 id' ($firstOk.Value -ceq 'STATION-A') `
+    "值=$($firstOk.Value) 错误=$($firstOk.Error)"
+
+# 「最早那一份」承重：它是让这个值等于「刚做完的那一站」的原因。取成最晚那一份时，第二站的等待会拿到
+# 自己的站点去比较，于是永远不可能被满足——而那种错在单看第一站时完全看不出来。
+$revisedAtOrigin = @((Worklist '1' 'STATION-A' 1 $true), (Worklist '2' 'STATION-B' 1 $true))
+$firstOfTwo = Invoke-FirstWait -Rows $revisedAtOrigin
+Add-Case '有两份已确认清单时：返回【最早】那一份的站点，不是最晚的' `
+    ($firstOfTwo.Value -ceq 'STATION-A') "值=$($firstOfTwo.Value)"
+
+$firstNone = Invoke-FirstWait -Rows @()
+Add-Case '还没有清单：普通超时' ($null -ne $firstNone.Error -and $firstNone.Error -like '*Timed out*') `
+    "错误=$($firstNone.Error)"
+
+$firstUnacked = Invoke-FirstWait -Rows @((Worklist '1' 'STATION-A' 1 $false))
+Add-Case '清单发了但没被确认：不接受' ($null -ne $firstUnacked.Error -and $firstUnacked.Error -like '*Timed out*') `
+    "错误=$($firstUnacked.Error)"
+
+# ---------------------------------------------------------------- the guard on the input itself
+
+# Two assertions, and which one rules out what is worth being exact about -- review of #269 measured
+# it, because the obvious reading of the second one is wrong:
+#
+#   - The MESSAGE assertion is what rules out writing the guard as the probe's first line. Thrown in
+#     there it is swallowed by Wait-L2Condition's poll and the caller sees "Timed out ...", not the
+#     guard's own words. That variant leaves the query count at 0 as well, so the count cannot tell
+#     the two placements apart.
+#   - The COUNT assertion rules out the other failure: the guard ran AND the database was read anyway,
+#     which is what a guard placed after the wait, or duplicated inside it, would look like.
+#
+# The count is used rather than elapsed time on purpose: a wall-clock bound is a different claim on a
+# slow machine, and slower only makes it pass. "The database was never read" is true by construction
+# or not at all.
+$vacuous = Invoke-Wait -Rows $secondStopArrived -Previous ''
+Add-Case '前一站的站点 id 为空：抛的是护栏自己那条错，而不是让判据退化成「任何清单都算」' `
+    ($null -ne $vacuous.Error -and $vacuous.Error -like '*would satisfy the criterion*') `
+    "错误=$($vacuous.Error)"
+Add-Case '而且没有发生任何数据库读（排除「护栏跑了但查询照样发生」）' `
+    ($vacuous.Calls -eq 0) "探针读了 $($vacuous.Calls) 次"
+
+Remove-Variable -Name l2wsRows, l2wsCalls -Scope Global -ErrorAction SilentlyContinue
+
+$bad = 0
+foreach ($r in $results) {
+    if (-not $r.Ok) { $bad++ }
+    Write-Host ("{0}  {1} -> {2}" -f $(if ($r.Ok) { 'ok  ' } else { 'BAD ' }), $r.Name, $r.Actual)
+}
+if ($bad -gt 0) {
+    Write-Host "L2WorklistStationWait self-check: $bad of $($results.Count) cases came out the wrong way."
+    exit 1
+}
+Write-Host "L2WorklistStationWait self-check: all $($results.Count) cases as expected."
