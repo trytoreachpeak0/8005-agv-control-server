@@ -94,11 +94,13 @@ public static class StructuralDispatchClassification
     private const int RouteGraphReachability = 95;
     private const int PreCreateGate = 96;
     private const int SlotCapacity = 100;
+    private const int SublotTaskTypeConflict = 35;
+    private const int EnRouteAppend = 98;
 
     private static readonly DispatchReasonClassification[] Rows =
     [
         // ---- AlreadyAcceptedCriterion (10) --------------------------------------------------------------
-        Backlog("DEMAND_ALREADY_ACCEPTED", AlreadyAccepted,
+        Backlog(AlreadyAcceptedCriterion.DemandAlreadyAccepted, AlreadyAccepted,
             "The demand is taken. Not a block at all; the summary clears any block on an accepted demand."),
 
         // ---- VehicleFaultBlockCriterion (15) ------------------------------------------------------------
@@ -250,6 +252,37 @@ public static class StructuralDispatchClassification
         Backlog(DispatchReasonCodes.SlotGroupCapacityTemporarilyUnavailable, SlotCapacity,
             "Too few usable free slots in the group right now, disabled ones included: REQ-0352 says a temporary " +
             "shortfall is not structural."),
+
+        Backlog(DispatchReasonCodes.SlotGroupOccupiedByOwnCargo, SlotCapacity,
+            "control-server#211: this side is full of the vehicle's own reserved or loaded cargo. The vehicle's own " +
+            "position, not the demand's: another vehicle takes it, and this one takes it once it has unloaded."),
+
+        // ---- SublotTaskTypeConflictCriterion (35) -------------------------------------------------------
+        Backlog(DispatchReasonCodes.SublotTaskTypeConflict, SublotTaskTypeConflict,
+            "control-server#211, REQ-0189: one Sublot hit by more than one task type in the same complete MES " +
+            "snapshot. MES's own data contradicting itself, which the next snapshot can fix -- and the thing to " +
+            "look at is MES, not the fleet, which is what a structural alarm would send someone to do."),
+
+        // ---- EnRouteAppendCriterion (98) ----------------------------------------------------------------
+        Backlog(DispatchReasonCodes.EnRouteAppendNotConfigured, EnRouteAppend,
+            "control-server#211, REQ-0198: no per-zone allowance is configured for this zone, so appending to a " +
+            "journey under way is forbidden there. A configured outcome and this vehicle's position both: an idle " +
+            "vehicle takes the demand by the ordinary path."),
+        Backlog(DispatchReasonCodes.EnRouteAppendDelayGateExceeded, EnRouteAppend,
+            "control-server#211, REQ-0198: the added path cost exceeds some demand's zone allowance. This vehicle's " +
+            "plan; another vehicle, or this one after it unloads, may take it."),
+        Backlog(DispatchReasonCodes.EnRouteAppendDelayUncomputable, EnRouteAppend,
+            "control-server#211: a leg's path cost could not be computed. Refused rather than treated as zero; the " +
+            "route graph refreshing can make it computable next round."),
+        Backlog(DispatchReasonCodes.EnRouteAppendBreaksZoneContiguity, EnRouteAppend,
+            "control-server#211, REQ-0195: no insertion point keeps each zone's demands in one contiguous run. This " +
+            "vehicle's current plan; it changes as the vehicle works through it."),
+        Backlog(DispatchReasonCodes.EnRouteAppendPlanLimitReached, EnRouteAppend,
+            "control-server#211: nine legs or eight worklist items would be exceeded. This vehicle's plan, which " +
+            "shrinks as it unloads."),
+        Backlog(DispatchReasonCodes.EnRouteAppendNoInsertionPoint, EnRouteAppend,
+            "control-server#211, REQ-0196: the current next stop cannot be changed and nothing sits after it. This " +
+            "vehicle's position in its plan."),
 
         // ---- written by the engine after the chain ------------------------------------------------------
         Backlog("FINAL_DYNAMIC_FACTS_NOT_READY", null, "The pre-intake re-read of this vehicle's facts failed."),

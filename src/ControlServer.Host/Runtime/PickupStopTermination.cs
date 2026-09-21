@@ -1,3 +1,4 @@
+using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -30,6 +31,21 @@ namespace ControlServer.Host.Runtime;
 /// command it answered, in the same unsaved change. A fault cargo handoff can happen at the gate as well as
 /// at the pickup; the tail is the same there, because the occupancy was claimed on the pickup order for the
 /// whole journey. It is now the only code that sets a demand <c>Cancelled</c>.
+/// </para>
+/// <para>
+/// <b>上面那句「交接在 gate 也会发生」，在批次7-06（control-server#211）里有一段时间是一条没人处理的预告。</b>
+/// 那一票把终结时要结算的录入请求 id 从旅程行改成读<b>当前停靠行</b>（为了清单升版后结算到对的那一条），
+/// 而受理只给取货停靠写那一列——于是 gate 上的交接不是被处理，是抛 <c>InvalidDataException</c>，
+/// 一条人工介入的恢复路径就此卡死。同一票内修掉了，靠的是
+/// <see cref="JourneyStopCursor.CurrentSublotRequestMessageIdOrNone"/>：卸货停靠没有录入请求，
+/// 也就没有要结算的那一条。
+/// </para>
+/// <para>
+/// 所以那句话今天的身份是<b>说明</b>而不是警告，判据是
+/// <c>RecoveryStateMachineG2Tests.AFaultCargoHandoffAtTheUnloadStopEndsTheDemandLikeOneAtThePickup</c>。
+/// 留着这一段，是因为它记着一件值得记的事：<b>那句预告和它的反例住在两个不同的文件里</b>——
+/// 这里写着「gate 也会发生」，<c>JourneyRuntimeEngine</c> 里写着「今天只有取货停靠会走到这里」，
+/// 单看任何一句都只是普通说明，并排放着才是警报。
 /// </para>
 /// <para>
 /// <b>It stages the changes and does not save.</b> Every fact here has to commit together with the
@@ -90,7 +106,42 @@ public sealed class PickupStopTermination(ControlServerDbContext dbContext)
         }
     }
 
-    /// <summary>The first step: this demand, and nothing else, is terminated.</summary>
+    /// <summary>
+    /// 同 <see cref="StageAsync(JourneyRuntimeRow, string, string, DateTimeOffset, CancellationToken)"/>，但结算的是
+    /// <paramref name="stops"/> 当前停靠上那一版录入请求（批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// <b>「同名不同源」在这里分岔。</b>旅程行与停靠行上都有一列 <c>SublotRequestMessageId</c>，受理时从前者搬到后者，
+    /// 此后一直恒等——直到清单升版：升版换一个新 id，写在<b>停靠行</b>上，而旅程行那一列还停在受理时那个。读旅程行的
+    /// 那一版会结算不到当前这条录入请求，于是它被补发进下一个会话，车载端把它当成内容已变的业务 id 而断会话。
+    /// 所以有游标时读游标；没有游标的那个重载留给调用方没有停靠上下文的路径，它读旅程行，而那条路径只在单需求旅程上
+    /// 走得到，两者恒等。
+    /// </remarks>
+    public async Task StageAsync(
+        JourneyRuntimeRow runtime,
+        string? currentSublotRequestMessageId,
+        string demandId,
+        string reasonCode,
+        DateTimeOffset endedAt,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(runtime);
+        ArgumentException.ThrowIfNullOrWhiteSpace(demandId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(reasonCode);
+
+        await StageDemandTerminationAsync(demandId, cancellationToken).ConfigureAwait(false);
+        if (await DemandJourneyLookup.IsLastOpenDemandAsync(dbContext, runtime.JourneyId, demandId, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            await StageJourneyClosureAsync(
+                runtime, currentSublotRequestMessageId, reasonCode, endedAt, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// The first step: this demand, and nothing else, is terminated. Its membership in the journey is marked
+    /// terminated too (control-server#211), which is what takes it off the stop's worklist.
+    /// </summary>
     public async Task StageDemandTerminationAsync(string demandId, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(demandId);
@@ -102,14 +153,37 @@ public sealed class PickupStopTermination(ControlServerDbContext dbContext)
                 "A completed demand cannot be terminated at its pickup stop.");
         }
         demand.Status = DemandExecutionStatus.Cancelled;
+        JourneyDemandRow? membership = await dbContext.Set<JourneyDemandRow>()
+            .SingleOrDefaultAsync(row => row.DemandId == demandId && row.RemovedAt == null, cancellationToken)
+            .ConfigureAwait(false);
+        if (membership is not null)
+        {
+            membership.Status = JourneyDemandStatuses.Terminated;
+        }
     }
 
     /// <summary>
     /// The second step, for a journey that carries no open demand any more: it completes under
     /// <paramref name="reasonCode"/>, and the lease, the order occupancy and the purpose claim are released together.
     /// </summary>
+    public Task StageJourneyClosureAsync(
+        JourneyRuntimeRow runtime,
+        string reasonCode,
+        DateTimeOffset endedAt,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(runtime);
+        return StageJourneyClosureAsync(
+            runtime, runtime.SublotRequestMessageId, reasonCode, endedAt, cancellationToken);
+    }
+
+    /// <inheritdoc cref="StageJourneyClosureAsync(JourneyRuntimeRow, string, DateTimeOffset, CancellationToken)"/>
+    /// <remarks>
+    /// <paramref name="currentSublotRequestMessageId"/> 是本停靠此刻那一版录入请求，见上面那段「同名不同源」。
+    /// </remarks>
     public async Task StageJourneyClosureAsync(
         JourneyRuntimeRow runtime,
+        string? currentSublotRequestMessageId,
         string reasonCode,
         DateTimeOffset endedAt,
         CancellationToken cancellationToken)
@@ -126,9 +200,13 @@ public sealed class PickupStopTermination(ControlServerDbContext dbContext)
         // Nobody is going to answer the entry request now. Left unsettled it is replayed into every
         // later session, where the peer refuses it as a business id whose content changed and tears
         // the session down -- the same failure the answered request is settled for.
-        ProtocolOutboxRow? entryRequest = await dbContext.ProtocolOutbox
-            .SingleOrDefaultAsync(row => row.MessageId == runtime.SublotRequestMessageId, cancellationToken)
-            .ConfigureAwait(false);
+        // null 的意思是「这个停靠本来就没有录入请求」，不是「读不到」——见
+        // JourneyStopCursor.CurrentSublotRequestMessageIdOrNone。空字符串则是调用方给错了，照常查、照常查不到。
+        ProtocolOutboxRow? entryRequest = currentSublotRequestMessageId is null
+            ? null
+            : await dbContext.ProtocolOutbox
+                .SingleOrDefaultAsync(row => row.MessageId == currentSublotRequestMessageId, cancellationToken)
+                .ConfigureAwait(false);
         if (entryRequest is not null)
         {
             entryRequest.AcknowledgedAt ??= endedAt;

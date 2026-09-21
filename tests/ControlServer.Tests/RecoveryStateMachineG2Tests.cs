@@ -4235,6 +4235,68 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     /// <summary>
+    /// 故障货物交接发生在<b>卸货停靠</b>上：货交出去了，需求照样终结，旅程照样关闭。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b><see cref="PickupStopTermination"/> 自己的注释写着这件事会发生</b>——「A fault cargo handoff can
+    /// happen at the gate as well as at the pickup」——而结果处理那一段<b>没有任何阶段护栏</b>：
+    /// 只要恢复会话认了一条需求、结果是 <c>HANDED_OFF</c> 且各仓位证空，它就走到终结那一步，
+    /// 与车此刻停在哪个停靠上无关。
+    /// </para>
+    /// <para>
+    /// <b>批次7-06 之前它是安全的，本票把它弄坏了。</b>之前那里读的是<b>旅程行</b>上的录入请求 id，
+    /// 受理时写下、此后一直在；本票改成读<b>当前停靠行</b>的那一版，好让清单升版之后结算到对的那一条
+    /// （「同名不同源」）。可是当前停靠在这里是卸货停靠，而受理只给取货停靠写那一列——
+    /// 于是取值器按它的设计「要录入却没有 id」抛了 <c>InvalidDataException</c>，
+    /// 一条人工介入的恢复路径就此卡死。
+    /// </para>
+    /// <para>
+    /// 跑这条用例之前，全量 1948 条里<b>没有一条</b>会在卸货停靠上调到那个取值器（拿探针量过），
+    /// 所以这不是「测试没跟上」，是这条路径从来没有被看过。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    public async Task AFaultCargoHandoffAtTheUnloadStopEndsTheDemandLikeOneAtThePickup()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_UNLOAD_HANDOFF";
+        const string proof = "unload-handoff-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            // 货已经装上、取货停靠走完，车此刻停在卸货停靠上——游标的「当前停靠」因此是它。
+            JourneyStopRow pickupStop = await context.Set<JourneyStopRow>()
+                .SingleAsync(row => row.StopRole == JourneyStopRoles.Pickup, token);
+            pickupStop.Status = JourneyStopStatuses.Completed;
+            await context.SaveChangesAsync(token);
+            OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), proofVariable);
+            OnboardConnectionState state = CurrentState();
+
+            string result = await ReachEndingResultAsync("FaultCargoRecoveryResult", processor, state, proof);
+            Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(result, state, token)));
+
+            Assert.Equal(RecoveryWorkflowState.Reconciled, (await context.RecoveryWorkflows
+                .SingleAsync(row => row.ResultMessageId != null, token)).State);
+            Assert.Equal(DemandExecutionStatus.Cancelled, (await context.AcceptedDemands.SingleAsync(token)).Status);
+            JourneyRuntimeRow runtime = await context.JourneyRuntimes.SingleAsync(token);
+            Assert.Equal(JourneyRuntimeStage.Completed, runtime.Stage);
+            Assert.Equal("TERMINATED_BY_FAULT_CARGO_HANDOFF", runtime.BlockReasonCode);
+            Assert.NotNull((await context.VehicleDispatchLeases.SingleAsync(token)).ReleasedAt);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
     /// Drives the seeded journey to the line the vehicle sends when the given recovery has proved every
     /// authorized slot empty, and returns that line unsent.
     /// </summary>
@@ -5304,7 +5366,7 @@ public sealed class RecoveryStateMachineG2Tests
         JourneyRuntimeRow runtime = Runtime();
         context.JourneyRuntimes.Add(runtime);
         // control-server#207: acceptance writes the demand's membership beside the journey row.
-        context.Set<JourneyDemandRow>().Add(JourneyMembershipSeed.For(runtime));
+        JourneyMembershipSeed.Seed(context, runtime);
         context.StationOperations.Add(new StationOperationRow
         {
             SlotOperationAttemptId = AttemptId,

@@ -1342,6 +1342,10 @@ try {
                              'StationOperations', 'SessionRecoveries', 'OperationResults',
                              'ExceptionRecoverySessions', 'RecoveryWorkflows',
                              'RouteGraphSnapshots', 'MapStationCatalogStates',
+                             # 多需求旅程的两张表（批次7-01，control-server#206）。它们是多停靠计划与一站多需求
+                             # 的全部状态所在——停靠序列、每条需求在这趟旅程里的进度——所以任何关于计划形状的
+                             # 判断都只能从这里读。批次7-01 建表时快照清单没跟上，批次7-06 的场景补上。
+                             'JourneyStops', 'JourneyDemands',
                              'FrozenDemandStations', 'CreateGateAudit',
                              'SlotConfigurationActivations', 'ActiveSlotConfigurations',
                              'OnboardAlarmSnapshots', 'BusinessAuditRecords',

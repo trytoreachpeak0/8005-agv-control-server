@@ -40,10 +40,16 @@ public sealed class JourneyStopRow
     /// <summary>取货停靠的批次录入请求；卸货停靠为空。</summary>
     public string? SublotRequestMessageId { get; set; }
 
-    /// <summary>离开本停靠之前的离站核验请求消息；今天只有取货停靠有。</summary>
+    /// <summary>
+    /// 离开本停靠之前的离站核验请求消息。受理时只给取货停靠写；卸货停靠在<b>第一次要离站时</b>由
+    /// <c>JourneyRuntimeEngine.EnsureDepartureCheckIdsAsync</c> 补上并落库（批次7-06，control-server#211）。
+    /// </summary>
     public string? DepartureSafetyCheckMessageId { get; set; }
 
-    /// <summary>离开本停靠之前的离站核验 id；今天只有取货停靠有。</summary>
+    /// <summary>
+    /// 离开本停靠之前的离站核验 id。受理时只给取货停靠写；卸货停靠在<b>第一次要离站时</b>补上并落库
+    /// ——在本票之前卸货停靠永远是旅程终点，没有「离开之前」可言（批次7-06，control-server#211）。
+    /// </summary>
     public string? DepartureSafetyCheckId { get; set; }
 
     public required string Status { get; set; }

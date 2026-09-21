@@ -1,5 +1,6 @@
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Host.Runtime.Fleet;
 
 namespace ControlServer.Host.Runtime.Dispatch;
 
@@ -57,6 +58,15 @@ public sealed record DispatchRoundFacts(
     bool AdmissionPolicyDrifted = false)
 {
     /// <summary>
+    /// 每区派车参数的当前版本（REQ-0198、REQ-0203），一版都没有时为空——那时每个分区都未配置，途中追加一律禁止。
+    /// </summary>
+    /// <remarks>
+    /// 与目录、策略、区域分配表同理读一次：一轮里每个候选都按同一版判，而每次追加决策记下的也正是这个版本号
+    /// （批次7-06，control-server#211）。
+    /// </remarks>
+    public DispatchZoneParameterTableVersion? ZoneParameters { get; init; }
+
+    /// <summary>
     /// The demands a vehicle claimed this round and intake then refused outright (control-server#242): they sit
     /// in <see cref="AcceptedDemandIds"/>, because the refusal leaves them bound to that attempt, but this server
     /// never accepted them and there is no <c>AcceptedDemands</c> row behind them.
@@ -112,13 +122,18 @@ public sealed record DispatchRoundFacts(
 /// own record of the vehicle's model, never from what the vehicle reports (program#70 decision 4) — which is
 /// why the onboard available-slot facts above stay as they are.
 /// </param>
+/// <param name="Plan">
+/// 这辆车此刻的计划，只有在途车有；空闲车为空（批次7-06，control-server#211）。它是两条资格链的分野本身：
+/// 有计划的车问「这条需求插得进你的计划吗」，没有的车问「你现在能不能接一趟新的」。
+/// </param>
 public sealed record DispatchVehicleFacts(
     string VehicleKey,
     string AgvId,
     OnboardDispatchFacts? Onboard,
     RiotVehicleObservation Vehicle,
     DateTimeOffset ObservedAt,
-    VehicleSlotPositions? SlotPositions = null);
+    VehicleSlotPositions? SlotPositions = null,
+    EnRouteVehiclePlan? Plan = null);
 
 /// <summary>Onboard-side facts a dispatch decision reads.</summary>
 public sealed record OnboardDispatchFacts(
@@ -222,6 +237,18 @@ public sealed class DispatchCandidateEvaluation(
     public long? GraphTraversalCostMm { get; set; }
 
     /// <summary>
+    /// 这条需求插进这辆在途车计划里的位置与边际成本，由 <see cref="Criteria.EnRouteAppendCriterion"/> 定；
+    /// 空闲车与被拒的追加都是空（批次7-06，control-server#211）。
+    /// </summary>
+    public EnRouteAppendPlacement? AppendPlacement { get; set; }
+
+    /// <summary>
+    /// 这次追加决策所依据的每区参数版本，写进 <c>JourneyDemands.DispatchZoneParameterVersion</c>；
+    /// 初始派车（不经追加门禁）为空。
+    /// </summary>
+    public long? DispatchZoneParameterVersion { get; set; }
+
+    /// <summary>
     /// The catalog revision this round's endpoints are being taken from, set by the catalog
     /// criterion. What REQ-0305 freezes alongside the station ids.
     /// </summary>
@@ -309,16 +336,42 @@ public sealed record EligibleDispatchCandidate(
     string? RequiredSlotPosition = null);
 
 /// <summary>
-/// Picks which eligible candidate a vehicle takes this round.
+/// 一辆车对<b>一条任务</b>给出的出价：它清了那条链，连同链为它算出的东西（批次7-06，control-server#211）。
 /// </summary>
 /// <remarks>
-/// Separated from the chain because they answer different questions: the chain decides whether a
-/// candidate may be taken at all, the ranker decides which of the survivors this vehicle takes.
-/// Its one implementation is <see cref="LayeredDispatchCandidateRanker"/> over the layers
-/// <see cref="DispatchCandidateOrdering"/> lists; a new ranking rule is a new layer, and this
-/// signature does not change when one is added.
+/// <para>
+/// 派车轮翻成任务优先之后（REQ-0200：先定任务、再只为该任务选车），要比较的对象从「这辆车的几条候选」变成了
+/// 「这条任务的几辆车」。<see cref="EligibleDispatchCandidate"/> 描述的是前者，没有车；这个类型描述后者。
+/// </para>
+/// <para>
+/// <see cref="MarginalCostMm"/> 是「加入之后相对原计划增加的行程代价」（REQ-0206，计划锚）：在途车是插入位带来的
+/// 增量，空闲车是从当前位置走完这一趟的全程——它的原计划是空的，所以增量就是全程。两者因此可以直接比大小，
+/// 空闲或在途的身份本身不加减分。
+/// </para>
+/// </remarks>
+/// <param name="LastDispatchedAt">
+/// 这辆车上一次成功接单的时刻，从既有旅程记录推出（<c>JourneyRuntimes</c> 按车取 <c>CreatedAt</c> 的最大值），
+/// 从未接过单为空。轮次一次查齐，不挂在名册上——名册说的是这辆车是谁，这是轮次此刻读到的事实。
+/// </param>
+public sealed record EligibleVehicleOffer(
+    FleetVehicle Vehicle,
+    DispatchVehicleFacts Facts,
+    EligibleDispatchCandidate Candidate,
+    long? MarginalCostMm,
+    EnRouteAppendPlacement? Placement,
+    long? DispatchZoneParameterVersion,
+    DateTimeOffset? LastDispatchedAt = null);
+
+/// <summary>
+/// 这一轮先派哪一条任务（REQ-0200；批次7-06，control-server#211 把它从「这辆车接哪一条」翻成了这个）。
+/// </summary>
+/// <remarks>
+/// 与资格链分开，因为两者回答不同的问题：链决定一条需求能不能被执行，这个决定先做哪一条。它的唯一实现是
+/// <see cref="LayeredDispatchCandidateRanker"/>，层在 <see cref="DispatchCandidateOrdering"/> 里列着；
+/// 加一条排序规则是加一层，这个签名不跟着变。
 /// </remarks>
 public interface IDispatchCandidateRanker
 {
-    EligibleDispatchCandidate SelectNext(IReadOnlyList<EligibleDispatchCandidate> eligible);
+    /// <summary>把这一轮的任务排出先后；每一条都要依次问一遍有没有车接得了。</summary>
+    IReadOnlyList<DispatchTask> Order(IReadOnlyList<DispatchTask> tasks);
 }

@@ -35,6 +35,14 @@ public sealed class Batch7MigrationDisciplineTests
         "20260919200353_AreaEndAdmissionRevokedSince",
         // control-server#199：两张审计表的 BEFORE UPDATE／BEFORE DELETE 触发器。只建触发器，不动任何表。
         "20260920001500_AuditImmutabilityTriggers",
+        // control-server#211：**data only, no schema change**——把升级那一刻正在装货的那条归属回填成 LOADING。
+        // 本票票面写的是「零 migration」，这一条是 Coordinator 7 于 2026-09-20 明确松开那条约束后加的例外，
+        // 理由连同它一起留在这里，而不是只留在当时的对话里：新代码在 AwaitingLoadResult 阶段按 LOADING 找需求，
+        // 找不到就抛（那个 throw 是「命令与状态要么都在、要么都不在」的护栏，有意为之），所以跨过本提交升级时，
+        // 一条正在装货的旅程会每一轮都抛、永久卡住。读取侧兜底能躲开它，代价是那条护栏在最该出声时沉默。
+        // 谓词无歧义：老数据里一趟旅程只有一条需求，「这趟旅程里那条 PENDING_LOAD」没有第二个候选。
+        // 自己的断言在 Batch7LoadingMembershipBackfillMigrationTests。
+        "20260920145604_Batch7LoadingMembershipBackfill",
     ];
 
     [Fact]
@@ -198,8 +206,11 @@ public sealed class Batch7MigrationDisciplineTests
         JourneyRuntimeRow toGate = await context.JourneyRuntimes.SingleAsync(row => row.DemandId == "D-C", cancellationToken);
         toGate.Stage = JourneyRuntimeStage.AwaitingGateArrival;
         await context.SaveChangesAsync(cancellationToken);
+        // 卸货停靠的行就是这一段腿的载体（control-server#211 把写死的 Gate* 四列换成了它）。
+        JourneyStopRow toGateStop = await context.Set<JourneyStopRow>()
+            .SingleAsync(row => row.StopId == JourneyIdentity.UnloadStopId(toGate.JourneyId), cancellationToken);
         await new WireToGateStore(context).AuthorizeMovementAsync(
-            JourneyPlanBuilder.GateIntent(toGate, now.AddMinutes(5)),
+            JourneyPlanBuilder.LegIntent(toGate, toGateStop, now.AddMinutes(5)),
             new SafetyCheckObservation(toGate.PreDepartureSafetyCheckId, 1, true, now.AddMinutes(5), now.AddMinutes(6)),
             now.AddMinutes(5),
             cancellationToken);

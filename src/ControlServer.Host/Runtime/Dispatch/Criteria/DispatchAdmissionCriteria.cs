@@ -53,6 +53,8 @@ public static class DispatchAdmissionCriteria
             new VehicleTaskTypeAdmissionCriterion(),
             new RequiredMesFactsCriterion(),
             // Required: it blocks nothing, and every batch 4 criterion behind it reads what it records.
+            // REQ-0189（批次7-06）：同一份完整快照里一个 Sublot 命中多种任务类型，该 Sublot 全部候选都挡。
+            new SublotTaskTypeConflictCriterion(),
             new AreaAssignmentLookupCriterion(),
             new AreaScopeCriterion(),
             new AreaEqpUniqueCriterion(),
@@ -92,6 +94,30 @@ public static class DispatchAdmissionCriteria
         return criteria;
     }
 
+    /// <summary>
+    /// 在途车那条链（REQ-0205，批次7-06，control-server#211）：从空闲链派生，换掉动态事实那一条，加上追加的四道门。
+    /// </summary>
+    /// <remarks>
+    /// <b>派生而不是另写一张表</b>，因为共用的那十几条判据是同一件事：一条需求能不能被这台服务器执行，与车在不在途无关。
+    /// 另写一张表，下一个人往空闲链加判据时不会知道在途链也该加——而那正是「在途车放行了一条空闲车挡下的需求」的样子。
+    /// </remarks>
+    public static IReadOnlyList<IDispatchAdmissionCriterion> InTransit(
+        IReadOnlyList<IDispatchAdmissionCriterion> idleChain,
+        IOptions<JourneyRuntimeOptions> options,
+        RouteGraphAccess? routeGraph = null)
+    {
+        ArgumentNullException.ThrowIfNull(idleChain);
+        List<IDispatchAdmissionCriterion> criteria =
+            [.. idleChain.Where(criterion => criterion is not VehicleDynamicFactsCriterion),
+             new InTransitVehicleFactsCriterion(options)];
+        if (routeGraph is not null)
+        {
+            criteria.Add(new EnRouteAppendCriterion(routeGraph));
+        }
+
+        return criteria;
+    }
+
     /// <summary>Registers the chain, its ranker and the dispatch round for the host.</summary>
     public static IServiceCollection AddDispatchAdmission(this IServiceCollection services)
     {
@@ -117,9 +143,18 @@ public static class DispatchAdmissionCriteria
         services.AddScoped<IDispatchAdmissionCriterion, SlotCapacityCriterion>();
 
         services.AddScoped<DispatchAdmissionChain>();
+        services.AddScoped<IDispatchAdmissionCriterion, SublotTaskTypeConflictCriterion>();
+        // 在途链从注册好的空闲链派生（批次7-06，control-server#211）：换掉动态事实那一条，加上追加的四道门。
+        services.AddScoped(provider => new InTransitDispatchAdmissionChain(
+            InTransit(
+                [.. provider.GetServices<IDispatchAdmissionCriterion>()],
+                provider.GetRequiredService<IOptions<JourneyRuntimeOptions>>(),
+                provider.GetService<RouteGraphAccess>())));
         // Which slots on a side are free (control-server#209): the session baseline, until control-server#211 takes
         // away what a vehicle under way has reserved or loaded.
-        services.AddScoped<IVehicleSlotLedger, SessionBaselineSlotLedger>();
+        // 会话基线减去本车自己已预留、已装的货（批次7-06，control-server#211）；空闲车没有旅程，减数是空集，
+        // 答案与会话基线逐字相同。
+        services.AddScoped<IVehicleSlotLedger, JourneyAwareSlotLedger>();
         // Cost-ranked, falling back to first-seen when nothing was priced — which is what
         // REQ-0207 asks for when a cost is missing rather than a reachability. The layers are listed in
         // DispatchCandidateOrdering (control-server#209); a new layer is a line there, not here.
@@ -129,8 +164,6 @@ public static class DispatchAdmissionCriteria
         // The round itself and the Onboard facts it shares with the advance side (control-server#209). Scoped, like
         // the engine: both must be handed the engine's own DbContext -- see DispatchRoundRunner.
         services.AddScoped<OnboardDispatchFactsReader>();
-        // A vehicle under way is refused until control-server#211 opens appending.
-        services.AddScoped<IInTransitDispatchQualification, InTransitAppendNotOpened>();
         services.AddScoped<DispatchRoundRunner>();
         return services;
     }

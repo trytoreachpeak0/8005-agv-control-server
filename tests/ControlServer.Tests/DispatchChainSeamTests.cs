@@ -100,9 +100,16 @@ public sealed class DispatchChainSeamTests
     }
 
     /// <summary>
-    /// The lookup sits right behind the check that AREA is present and ahead of the first criterion that
+    /// The lookup sits behind the check that AREA is present and immediately ahead of the first criterion that
     /// decides on AREA, in both the chain the tests assemble and the one the host registers.
     /// </summary>
+    /// <remarks>
+    /// 「紧跟在 <c>RequiredMesFactsCriterion</c> 后面」在批次7-06（control-server#211）之后不再成立，也不再是
+    /// 要守的东西：<c>SublotTaskTypeConflictCriterion</c>（Order 35）插在了两者之间。它判的是同一份快照里一个
+    /// Sublot 命中了几种任务类型，一个 AREA 的字都不读，所以这条接缝真正的保证——<b>AREA 存在性检查在前、
+    /// 第一个对 AREA 做决定的判据在后</b>——一字未变。下面因此改成比相对次序，再加一条「紧跟在它后面的仍是
+    /// <c>AreaScopeCriterion</c>」：那一头才是「第一个对 AREA 做决定的」这句话的所在。
+    /// </remarks>
     [Fact]
     public void TheLookupRunsAfterTheRequiredMesFactsAndBeforeTheFirstCriterionThatDecidesOnTheArea()
     {
@@ -122,7 +129,16 @@ public sealed class DispatchChainSeamTests
         int lookup = Array.IndexOf(order, nameof(AreaAssignmentLookupCriterion));
 
         Assert.True(lookup > 0, "The default chain does not contain the area assignment lookup.");
-        Assert.Equal(nameof(RequiredMesFactsCriterion), order[lookup - 1]);
+        int requiredMesFacts = Array.IndexOf(order, nameof(RequiredMesFactsCriterion));
+        Assert.True(
+            requiredMesFacts >= 0 && requiredMesFacts < lookup,
+            $"The AREA presence check must run before the lookup; the chain is {string.Join(" -> ", order)}.");
+        // 区间里装了什么，逐条点名。只断「在前面」的话，任何判据都可以插进这两者之间而不被发现——
+        // 包括一条读 AREA 的判据，而这条接缝守的恰恰是「第一个对 AREA 做决定的判据在查找之后」。
+        // 名单要变是正常的（批次7-06 就往里加了一条），变的时候有人看见才是这条用例的作用。
+        Assert.Equal(
+            [nameof(SublotTaskTypeConflictCriterion)],
+            order[(requiredMesFacts + 1)..lookup]);
         Assert.Equal(nameof(AreaScopeCriterion), order[lookup + 1]);
 
         ServiceCollection services = new();

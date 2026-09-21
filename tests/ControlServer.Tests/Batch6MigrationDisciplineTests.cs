@@ -53,6 +53,10 @@ public sealed class Batch6MigrationDisciplineTests
         // 批次 7 迁移通道第二张：control-server#199，两张审计表的 BEFORE UPDATE／BEFORE DELETE 触发器。
         // 自己的断言在 AuditDatabaseImmutabilityTests。
         "20260920001500_AuditImmutabilityTriggers",
+        // 批次 7 迁移通道第三张：control-server#211，**data only, no schema change**——把升级那一刻正在装货的
+        // 那条归属回填成 LOADING。为什么非它不可、谓词为什么无歧义，写在 Batch7MigrationDisciplineTests 的同一条上。
+        // 自己的断言在 Batch7LoadingMembershipBackfillMigrationTests。
+        "20260920145604_Batch7LoadingMembershipBackfill",
     ];
 
     [Fact]
