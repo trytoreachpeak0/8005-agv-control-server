@@ -68,6 +68,82 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2HmiPhraseWatch.ps1
 
+      # And once more, for the one piece of pwsh that has to agree with C# to be worth anything:
+      # L2RouteEvidence.psm1 recomputes a journey's route evidence id so that G3-11-07 and L2-S2W-08
+      # can tell the planned route from a swapped one. Nothing builds it and no C# test reads it, so
+      # without this step the two copies drift apart silently -- and a drifted copy does not go
+      # vacuous, it goes permanently red, on the rig, where that reads as a product fault
+      # (control-server#203).
+      - name: L2 scenario self-check (route evidence recompute)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/l2/Test-L2RouteEvidence.ps1
+
+      # And the real-rig run ledger, whose failure mode is the quietest of the three: a dropped line
+      # leaves the runs on either side of it looking accounted for. Two real processes appending at
+      # once, which is the case no real run exercises -- they are serialised by the desktop lock, so
+      # an unsafe append would pass every one of them (control-server#203).
+      - name: L2 scenario self-check (real-rig run ledger)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/l2/Test-L2RunLedger.ps1
+
+      # The quietest of the lot, and the one this ticket wrote by accident before catching it: a
+      # scriptblock that has been through .GetNewClosure() resolves command names globally, so it
+      # cannot call an unexported function of its own module -- and the failure is swallowed by
+      # Wait-L2Condition's poll and re-emerges as a timeout with the missing name nowhere in it. On
+      # the rig that reads as a product fault. The check re-measures the rule before applying it, so
+      # a PowerShell that changed this reports a finding rather than a quiet green (control-server#203).
+      - name: L2 scenario self-check (probe closures resolve)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/l2/Test-L2ProbeClosureResolvable.ps1
+
+      # Six seconds, four of which are deliberate timeouts. Wait-L2SecondLegIntent refuses to judge a
+      # demand that has more than one second leg, and every journey the rig has ever run had exactly
+      # one -- so no real-rig round, green or red, reaches any of this. It drives the shipped function
+      # with Invoke-L2Query replaced in that module's own scope rather than a copy of the control flow:
+      # the first attempt at a copy put the probe outside the module, which removed the very thing the
+      # test was for, and passed on broken code (control-server#203).
+      - name: L2 scenario self-check (second-leg intent wait)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/l2/Test-L2SecondLegIntentWait.ps1
+
+      # 13.3 seconds (measured, three runs, identical), 12 of which are six deliberate 2-second
+      # timeouts: every case where the criterion must NOT be satisfied has to run out its clock.
+      #
+      # Covers the two waits the real rig cannot put in the states that matter. The second stop's
+      # used to be "at least 2 acknowledged worklists", a proxy that equals "the second stop's
+      # worklist is acknowledged" only while every stop emits exactly one; the first stop's went
+      # from a count to "an acknowledged worklist WITH a station id". Each half's key case asserts
+      # BOTH sides on the same input -- the old criterion satisfied, the new one not -- because
+      # showing only that the new one holds would not show the old one ever failed
+      # (control-server#265).
+      - name: L2 scenario self-check (worklist station wait)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/l2/Test-L2WorklistStationWait.ps1
+
+      # 1.5 seconds, and the only thing that ever executes Get-G3EvidenceLocationDiagnostic: a G3
+      # runner calls it after it has already decided it found nothing, so no green run reaches it.
+      # It says WHERE nothing was found, which is what control-server#211 needed and did not have --
+      # its scenarios directory existed and was empty, because the children had written elsewhere,
+      # and the runner reported that as a protocol fault (control-server#264).
+      - name: G3 runner self-check (evidence location diagnostic)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/Test-G3EvidenceLocation.ps1
+
+      # About 12 seconds, most of it scanning the 123 scripts. It is the other half of the
+      # "probe closures resolve" step further up (they are not adjacent): that one catches a closure
+      # whose COMMAND names do not resolve, this one a closure whose VARIABLES come back $null. Both
+      # surface as a criterion that can never be satisfied, so neither is redundant
+      # (control-server#266).
+      #
+      # It is two-sided on purpose, and both sides have now caught something. An early version flagged
+      # 0 of the repository's 23 working sites AND 0 of 3 broken fixtures -- and the 0-of-23 on its own
+      # read as success. Review then found the opposite failure: the guard flagged every $global: read,
+      # which is a false positive by construction, and no fixture could have caught it because every
+      # qualified-read fixture used $script:.
+      - name: L2 scenario self-check (closure variable capture)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/l2/Test-L2ClosureCapture.ps1
+
       # Exit code is the contract — the guest is zh-CN and prints 已通过! not
       # Passed!, so no step here may match on English console text.
       - name: Test

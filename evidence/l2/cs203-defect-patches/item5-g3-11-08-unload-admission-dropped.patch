@@ -1,0 +1,15 @@
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+index 719fe30d..6d09b4ba 100644
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+@@ -1421,9 +1421,7 @@ public sealed class JourneyRuntimeEngine(
+             cancellationToken).ConfigureAwait(false);
+         int[] slots = JsonSerializer.Deserialize<int[]>(anchor.Membership.TargetSlotsJson) ?? [];
+         // The unload carries the admission where the AREA machine is the drop-off (STAGING_TO_WIRE).
+-        bool admission = await store.AreaEndOperationAsync(
+-                anchor.Demand.DemandId, anchor.Demand.WorkType, cancellationToken)
+-            .ConfigureAwait(false) == SlotOperationType.Unload;
++        bool admission = false;
+         await publisher.PublishSlotOperationCommandAsync(
+             anchor.Membership.UnloadCommandMessageId,
+             runtime.AgvId,

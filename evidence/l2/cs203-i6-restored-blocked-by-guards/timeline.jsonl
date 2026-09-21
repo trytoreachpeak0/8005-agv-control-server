@@ -1,0 +1,33 @@
+{"at":"2026-09-20T17:22:26.8111767+00:00","note":"L2 run 20260920T172226771Z starting for scenario 'staging-to-wire-reversed-journey'."}
+{"at":"2026-09-20T17:22:26.8793422+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-09-20T17:22:26.8819335+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-20T17:22:38.8852311+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-20T17:22:39.0910870+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-20T17:22:39.2472115+00:00","note":"Fake RIoT stations on map 25: 11=C15-13, 12=N1-3_N1-7, 210=关卡, 305=派工待送取货"}
+{"at":"2026-09-20T17:22:39.2878426+00:00","note":"Task type station preset: the scenario's own (2 binding(s))"}
+{"at":"2026-09-20T17:22:41.8807564+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-20T17:22:43.9951580+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-20T17:22:44.1470489+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-20T17:22:44.8062000+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-20T17:22:45.0771359+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-20T17:22:45.2703571+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-20T17:22:45.3365277+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260920T172226771Z\\controlserver.db"}
+{"at":"2026-09-20T17:22:47.9999597+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"1fd7b5be026b456c9b98470ed16edac4","version":1,"slotCount":8}}}
+{"at":"2026-09-20T17:22:48.0084100+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260920T172226771Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-20T17:22:49.3526232+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"1fd7b5be026b456c9b98470ed16edac4","boundSlots":8,"version":1}}}
+{"at":"2026-09-20T17:22:49.4197509+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-20T17:22:49.4229371+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260920T172226771Z\\controlserver.db --input C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005-workspace-v2\\219bea2d-e6dd-4ab5-bd8c-460d69afe327\\scratchpad\\i6-restored-synthetic\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-20T17:22:50.9656550+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005-workspace-v2\\219bea2d-e6dd-4ab5-bd8c-460d69afe327\\scratchpad\\i6-restored-synthetic\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"3cba02bf16a548b28649488415ed82a1","importedAt":"2026-09-21T01:22:49.6374664+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-20T17:22:50.9698582+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-09-20T17:22:50.9827385+00:00","note":"Environment is up; entering scenario 'staging-to-wire-reversed-journey'."}
+{"at":"2026-09-20T17:22:51.0343283+00:00","note":"Publishing STAGING_TO_WIRE demand b668e8ef679440449bcae1318c9b70e2 (sublot L2-S2W-REVERSE-20260920T172226771Z, area N1-3)."}
+{"at":"2026-09-20T17:22:51.0716865+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-20T17:22:52.1065343+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-20T17:22:52.1497681+00:00","criterion":"plan-snapshot","value":"(null)"}
+{"at":"2026-09-20T17:22:52.6767001+00:00","criterion":"plan-snapshot","value":"@{planRevision=1; legs=System.Object[]}"}
+{"at":"2026-09-20T17:22:52.6965940+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-b668e8ef-6794-4044-9bca-e1318c9b70e2-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED; DestinationStationId=305; TargetStationId=派工待送取货}"}
+{"at":"2026-09-20T17:22:52.7010716+00:00","note":"STAGING_TO_WIRE vehicle drives to station 305 and comes to rest."}
+{"at":"2026-09-20T17:22:53.7937750+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-20T17:24:52.8943748+00:00","note":"Run failed: Timed out after 120s waiting for: the STAGING_TO_WIRE load committed and the journey reached its second leg. Last observed: \"AwaitingSublot\""}
+{"at":"2026-09-20T17:24:52.8956726+00:00","note":"Failure at: at Wait-L2Condition, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b7-203-8005-agv-control-server\\scripts\\l2\\L2.psm1: line 103\r\nat Complete-Journey, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b7-203-8005-agv-control-server\\scripts\\l2\\scenarios\\staging-to-wire-reversed-journey.ps1: line 101\r\nat <ScriptBlock>, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b7-203-8005-agv-control-server\\scripts\\l2\\scenarios\\staging-to-wire-reversed-journey.ps1: line 172\r\nat <ScriptBlock>, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b7-203-8005-agv-control-server\\scripts\\l2\\Invoke-L2Scenario.ps1: line 1286"}
+{"at":"2026-09-20T17:24:53.1809356+00:00","note":"L2 port block lock released."}

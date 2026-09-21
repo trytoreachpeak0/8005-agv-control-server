@@ -1,0 +1,21 @@
+diff --git a/src/ControlServer.Host/Runtime/Fleet/VehicleDispatchPolicyAccess.cs b/src/ControlServer.Host/Runtime/Fleet/VehicleDispatchPolicyAccess.cs
+index 1266c03f..63e6478b 100644
+--- a/src/ControlServer.Host/Runtime/Fleet/VehicleDispatchPolicyAccess.cs
++++ b/src/ControlServer.Host/Runtime/Fleet/VehicleDispatchPolicyAccess.cs
+@@ -61,8 +61,15 @@ public sealed class VehicleDispatchPolicyAccess(
+     /// index ticket 06 put on <c>OrderIntents</c>, not by a read followed by a write, so two rounds
+     /// racing for one vehicle cannot both win.
+     /// </remarks>
++    // DEFECT (control-server#203 item 8 red evidence, local only): the first journey claims the
++    // vehicle, every later one is refused, so the next demand always hits VEHICLE_OCCUPANCY_CONFLICT
++    // while the release marker is still written as usual.
++    private static int defectClaimCount;
++
+     public Task<bool> TryClaimVehicleOccupancyAsync(string upperId, CancellationToken cancellationToken) =>
+-        store.TryClaimVehicleOccupancyAsync(upperId, timeProvider.GetUtcNow(), cancellationToken);
++        System.Threading.Interlocked.Increment(ref defectClaimCount) == 1
++            ? store.TryClaimVehicleOccupancyAsync(upperId, timeProvider.GetUtcNow(), cancellationToken)
++            : Task.FromResult(false);
+ 
+     /// <summary>Releases the claim, because the journey holding it has finished.</summary>
+     public Task ReleaseVehicleOccupancyAsync(string upperId, CancellationToken cancellationToken) =>

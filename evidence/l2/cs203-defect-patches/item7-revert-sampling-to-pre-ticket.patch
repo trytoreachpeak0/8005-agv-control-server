@@ -1,0 +1,17 @@
+diff --git a/scripts/l2/scenarios/g3-pickup-load-and-correction.ps1 b/scripts/l2/scenarios/g3-pickup-load-and-correction.ps1
+index 6d929f25..f23ca5f7 100644
+--- a/scripts/l2/scenarios/g3-pickup-load-and-correction.ps1
++++ b/scripts/l2/scenarios/g3-pickup-load-and-correction.ps1
+@@ -265,11 +265,7 @@ if ($loadStatus -eq 'Committed') {
+     # 判据表里连同阶段一起可读，而不是变成一行 60 秒超时异常。仍然卡在装货之前或之中，才是超时。
+     $null = Wait-L2Condition -Description 'the journey runtime consumed the load result and left the load' `
+         -Journal $journal -Criterion 'journey-stage' -TimeoutSeconds 60 `
+-        -Probe { Get-Stage } -Until {
+-            param($v)
+-            $v -in @('AwaitingStationDeparture', 'AwaitingDepartureSafety', 'AwaitingGateArrival',
+-                'AwaitingUnloadResult', 'Completed', 'Blocked')
+-        }
++        -Probe { Get-Stage } -Until { param($v) $v -ne 'AwaitingLoadResult' }
+ }
+ 
+ # 协议 2.0.0 第 2 项：两条消息都不再带 demandId。请求给出派车范围的 expectedSublots，提交只报扫到的 sublot，
