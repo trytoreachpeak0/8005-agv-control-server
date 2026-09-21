@@ -168,6 +168,12 @@ $cases = @(
         Mutate = { param($d) $d['installRoot'] = 'C:/Program Files/8005 AGV/ControlServer.V2'; $d }
     }
     @{
+        # The allowed parent compared with -ieq, which skips zero-width characters.
+        Name = 'installRoot under a lookalike of an allowed root (zero-width space)'
+        Expect = 'is not directly under one of'
+        Mutate = { param($d) $d['installRoot'] = "C:\Program Files\8005 AGV$([char]0x200B)\ControlServer.V2"; $d }
+    }
+    @{
         Name = "dataRoot through a '.' segment"
         Expect = "dataRoot ('C:\ProgramData\8005\.\ControlServer.V2') has a '.' segment"
         Mutate = { param($d) $d['dataRoot'] = 'C:\ProgramData\8005\.\ControlServer.V2'; $d }
@@ -460,6 +466,26 @@ $cases = @(
         Expect = "does not match the RIoT deviceName of agv02"
         Mutate = { param($d) $d['journeyRuntime']['agvId'] = '老厂前线新多仓位2 '; $d }
     }
+    # Zero-width lookalikes (found by the S1 re-review mutation check). PowerShell's -eq/-ceq/
+    # -ccontains are culture comparisons that skip zero-width characters, so each of these passed
+    # an allowlist it only looks like it is on -- evidence review3-string-equality.txt. The
+    # allowlists now compare Ordinal; each case goes red if its comparison is put back.
+    @{
+        Name = 'agvId with a zero-width space appended'
+        Expect = "does not match the RIoT deviceName of agv02"
+        Mutate = { param($d) $d['journeyRuntime']['agvId'] = "老厂前线新多仓位2$([char]0x200B)"; $d }
+    }
+    @{
+        Name = 'vehicleKey with a zero-width space appended'
+        Expect = 'is not a spare vehicle'
+        Mutate = { param($d) $d['journeyRuntime']['vehicleKey'] = "BROKERX-f38975561adf46ccb1d2f23833c7d0e4$([char]0x200B)"; $d }
+    }
+    @{
+        # -eq was case-insensitive as well as culture-aware; RIoT's deviceKey is exact.
+        Name = 'vehicleKey in lower case'
+        Expect = 'is not a spare vehicle'
+        Mutate = { param($d) $d['journeyRuntime']['vehicleKey'] = 'brokerx-f38975561adf46ccb1d2f23833c7d0e4'; $d }
+    }
     @{
         Name = "vehicleKey is agv01's"
         Expect = 'the vehicle the MVP service is driving in production'
@@ -542,6 +568,14 @@ $cases = @(
         Expect = 'listenAdress is not a key this deployment knows'
         Mutate = { param($d) $d['listenAdress'] = '0.0.0.0'; $d }
     }
+    @{
+        # A known key with a zero-width space appended: .NET binds it as a different, unknown key,
+        # so the setting it looks like is silently not set. It must read as unknown, not as the
+        # key it resembles and not as a case variant of it.
+        Name = 'a known key with a zero-width space appended'
+        Expect = "is not a key this deployment knows"
+        Mutate = { param($d) $d['journeyRuntime']["enabled$([char]0x200B)"] = $true; $d }
+    }
 
     # --- The gate that moves a car ------------------------------------------------------
     @{
@@ -562,7 +596,10 @@ foreach ($case in $cases) {
     # The injection must have changed something. Without this, a Mutate that silently did
     # nothing would still "pass" as long as some unrelated check happened to fire -- and a
     # case that asserts a failure the baseline already has asserts nothing at all.
-    if ((Get-Fingerprint $mutated) -eq $baselineFingerprint) {
+    # Ordinal: -eq is a culture comparison that ignores case and skips zero-width characters, so a
+    # mutation that only changes case or appends U+200B looked like no change at all -- found when
+    # the zero-width allowlist cases were added. Red rather than green, but red for the wrong reason.
+    if ([string]::Equals((Get-Fingerprint $mutated), $baselineFingerprint, [StringComparison]::Ordinal)) {
         Write-Result -Ok $false -Name $case.Name -Detail 'the mutation did not change the definition'
         continue
     }

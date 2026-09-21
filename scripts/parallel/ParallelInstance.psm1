@@ -307,7 +307,10 @@ function Test-OwnedPath {
     if ($canonical) { return $canonical }
     $parent = Split-Path -Parent $Path
     $leaf = Split-Path -Leaf $Path
-    if (-not ($script:AllowedParents | Where-Object { $_ -ieq $parent })) {
+    # OrdinalIgnoreCase, not -ieq: -ieq is a culture comparison that skips zero-width characters,
+    # so 'C:\Program Files\8005 AGV<U+200B>' would count as the root it only looks like. Windows
+    # paths are case-insensitive, so ignoring case is right; ignoring characters is not.
+    if (-not ($script:AllowedParents | Where-Object { [string]::Equals($_, $parent, [StringComparison]::OrdinalIgnoreCase) })) {
         return "is not directly under one of $($script:AllowedParents -join ', ')"
     }
     if ($leaf -notmatch $script:InstanceMarkerPattern) {
@@ -822,12 +825,15 @@ function Test-SectionKey {
     $allowed = $script:AllowedKeys[$Section]
     $prefix = $Section -eq '' ? '' : "$Section."
     foreach ($key in @($Node.Keys)) {
-        if ($allowed -ccontains $key) { continue }
+        # Ordinal: -ccontains is a culture comparison that skips zero-width characters, and would
+        # accept 'enabled<U+200B>' as 'enabled' while .NET configuration binds it as a different key
+        # (see the allowlist note on ConvertTo-MapComparisonKey; evidence review3-string-equality.txt).
+        if (@($allowed | Where-Object { [string]::Equals($_, $key, [StringComparison]::Ordinal) }).Count -gt 0) { continue }
         if ($Section -eq 'journeyRuntime' -and $key -ieq 'fleet') {
             $failures += "journeyRuntime.$key is a vehicle roster. The parallel instance drives one vehicle, and the agv02/agv03 pair check never looks inside a roster -- an agv01 entry there would pass."
             continue
         }
-        $twin = $allowed | Where-Object { $_ -ieq $key } | Select-Object -First 1
+        $twin = $allowed | Where-Object { [string]::Equals($_, $key, [StringComparison]::OrdinalIgnoreCase) } | Select-Object -First 1
         if ($twin) {
             $failures += "$prefix$key differs only in case from $prefix$twin. .NET configuration is case-insensitive, so the two would be bound as one setting while this check reads only '$twin'."
         } else {
@@ -880,12 +886,16 @@ function Test-VehicleIdentity {
         return @("journeyRuntime names agv01 ('$agvId' / '$vehicleKey'), the vehicle the MVP service is driving in production. The parallel instance may only drive agv02 or agv03.")
     }
 
-    $match = $script:AllowedVehicles | Where-Object { $_.VehicleKey -eq $vehicleKey } | Select-Object -First 1
+    # Both halves of the pair compare Ordinal -- exact, character for character. -eq here was a
+    # case-insensitive culture comparison: a lower-cased key and a key with a zero-width character
+    # appended both matched a spare vehicle, and went into the configuration as a string RIoT does
+    # not have. The agv01 refusal above keeps -eq on purpose: in a refusal, lenient refuses more.
+    $match = $script:AllowedVehicles | Where-Object { [string]::Equals($_.VehicleKey, $vehicleKey, [StringComparison]::Ordinal) } | Select-Object -First 1
     if ($null -eq $match) {
         $allowed = ($script:AllowedVehicles | ForEach-Object { "$($_.Alias)=$($_.VehicleKey)" }) -join ', '
         return @("journeyRuntime.vehicleKey '$vehicleKey' is not a spare vehicle. Allowed: $allowed.")
     }
-    if ($agvId -cne $match.AgvId) {
+    if (-not [string]::Equals($agvId, $match.AgvId, [StringComparison]::Ordinal)) {
         return @("journeyRuntime.agvId '$agvId' does not match the RIoT deviceName of $($match.Alias), which is '$($match.AgvId)'. The name and the key must describe the same car.")
     }
 
