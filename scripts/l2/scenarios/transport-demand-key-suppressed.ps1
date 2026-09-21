@@ -184,6 +184,9 @@ $d2Backlog = Get-Backlog $d2.Id
 $d2Accepted = Get-Count "SELECT COUNT(*) AS Total FROM AcceptedDemands WHERE DemandId = '$($d2.Id)'"
 $d2Intents = Get-Count "SELECT COUNT(*) AS Total FROM OrderIntents WHERE DemandId = '$($d2.Id)'"
 # 不得「不触发即通过」：积压行存在才说明 D2 真的出现在目录里并被判定过。
+# 这里直读而不另等，是因为 D2 的判定在因果上先于 D3 的受理落库：D3 发布时 D2 已在目录里，而且 D2 创建得更早、排在前面；
+# 同一轮里没人出价的 D2 那条判定，随 D3 受理之前那一次保存一起落库（DispatchRoundRunner：受理前先存积压行）。
+# 「车空下来之后仍被判为抑制」是另一次写入，那一条在下面用 Wait-L2ConditionOrLast 另等。
 $assertions.Add(
     'L2-TDK-02', 'D2（同一个 S1、新 DemandId）被判定过但从未受理：积压原因 TRANSPORT_DEMAND_KEY_SUPPRESSED，没有受理行、没有订单意图',
     ($null -ne $d2Backlog -and [string]$d2Backlog.ReasonCode -eq 'TRANSPORT_DEMAND_KEY_SUPPRESSED' -and
