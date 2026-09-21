@@ -240,8 +240,9 @@ public sealed class Batch7DemandReleaseServiceTests
     /// <para>
     /// 释放服务与引擎推进在同一个循环里串行跑（<c>JourneyRuntimeWorker</c>），所以两者不会交错写同一趟旅程；剩下的窗口
     /// 只有这一个——「车到了」这件事在 RIoT 上已经成立、在库里还没有。这里把它确定性地造出来：
-    /// 取消撞上一张已经成功结束的订单，对账得到的不是 Confirmed，于是不释放；引擎下一轮记下到站之后，
-    /// 裁决改判「到站后不释放」，而且不会再发第二次取消。
+    /// 释放取消之前先读订单（复审中 2），读到 SUCCESS 就不释放、也不发取消；引擎下一轮记下到站之后，
+    /// 裁决改判「到站后不释放」，整个过程一次取消都没发。复审之前这里是「取消撞上已成功的订单、对账不是 Confirmed」，
+    /// 对一张已完成的订单发过一次取消。
     /// </para>
     /// <para>
     /// 反过来的次序（引擎先记下到站、释放后跑）由 <see cref="OnceTheVehicleHasArrivedTheDemandIsNotReleasedAndNoOrderIsTouched"/> 覆盖。
@@ -258,7 +259,7 @@ public sealed class Batch7DemandReleaseServiceTests
 
         IReadOnlyList<DemandReleaseOutcome> raced = await Service(fixture, gateway).RunOnceAsync(Token);
 
-        Assert.Equal(DemandReleaseReasons.OrderCancelNotConfirmed, Assert.Single(raced).Result);
+        Assert.Equal(DemandReleaseReasons.PickupOrderSucceeded, Assert.Single(raced).Result);
         await using (ControlServerDbContext reading = new(fixture.DbOptionsForTests))
         {
             Assert.Null((await reading.Set<JourneyDemandRow>().AsNoTracking().SingleAsync(Token)).RemovedAt);
@@ -266,7 +267,7 @@ public sealed class Batch7DemandReleaseServiceTests
                 (await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token)).Stage);
         }
 
-        // 引擎这一轮记下到站：阻断原因是释放服务写的「取消没确认」，它不妨碍到站被承认。
+        // 引擎这一轮记下到站：阻断原因是释放服务写的拒绝码，它不妨碍到站被承认。
         fixture.Riot.Vehicle = fixture.Riot.Vehicle with
         {
             CurrentMap = fixture.Options.MapIdentity,
@@ -279,7 +280,7 @@ public sealed class Batch7DemandReleaseServiceTests
         LeaveTheMap(fixture);
         IReadOnlyList<DemandReleaseOutcome> afterArrival = await Service(fixture, gateway).RunOnceAsync(Token);
         Assert.Equal(DemandReleaseReasons.AfterArrival, Assert.Single(afterArrival).Result);
-        Assert.Equal(1, gateway.Cancels);
+        Assert.Equal(0, gateway.Cancels);
     }
 
     /// <summary>
@@ -364,6 +365,110 @@ public sealed class Batch7DemandReleaseServiceTests
         Assert.Equal([(VehicleFaultBlockCriterion.SuspectedReason, "RELEASED")],
             (await Service(fixture, gateway).RunOnceAsync(Token)).Select(outcome => (outcome.Trigger, outcome.Result)));
         Assert.Equal(1, gateway.Cancels);
+    }
+
+    /// <summary>
+    /// 取货单在 RIoT 上已是终态（取消、失败、删除、挂起）：没有活订单可取消，不发取消，直接释放（复审中 2）。
+    /// </summary>
+    /// <remarks>
+    /// 旧实现有订单号就发 CANCEL；对账把「终态但不是 CANCELLED」判 Failed，之后每轮对已结的 Failed 直接返回、不重读，
+    /// 于是永远停在 RELEASE_ORDER_CANCEL_NOT_CONFIRMED，还对一张终态订单发过一次取消。订单 FAILED 正是疑似故障的典型来路。
+    /// </remarks>
+    [Theory]
+    [InlineData(RiotOrderState.Cancelled)]
+    [InlineData(RiotOrderState.Failed)]
+    [InlineData(RiotOrderState.Deleted)]
+    [InlineData(RiotOrderState.Suspended)]
+    public async Task APickupOrderAlreadyEndedOnRiotIsReleasedWithoutACancel(int orderState)
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
+        fixture.Riot.SetOrderState(before.PickupUpperId, orderState, terminal: true);
+        LeaveTheMap(fixture);
+        CancellingGateway gateway = new(fixture.Clock, _ => { });
+
+        Assert.Equal("RELEASED", Assert.Single(await Service(fixture, gateway).RunOnceAsync(Token)).Result);
+        Assert.Equal(0, gateway.Cancels);
+    }
+
+    /// <summary>
+    /// 取货单在 RIoT 上已 SUCCESS：车已经到了取货站（引擎可能还没记下），这不是「没有活订单」，不释放、不取消（复审中 2）。
+    /// </summary>
+    [Fact]
+    public async Task APickupOrderThatSucceededOnRiotIsNotReleased()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
+        fixture.Riot.SetOrderState(before.PickupUpperId, RiotOrderState.Success, terminal: true);
+        LeaveTheMap(fixture);
+        CancellingGateway gateway = new(fixture.Clock, _ => { });
+
+        Assert.Equal(DemandReleaseReasons.PickupOrderSucceeded,
+            Assert.Single(await Service(fixture, gateway).RunOnceAsync(Token)).Result);
+        Assert.Equal(0, gateway.Cancels);
+    }
+
+    /// <summary>
+    /// 故障触发、而故障协调器已把这张单 Hold 住（本故障代次的 Hold 尝试没有失败）：不释放、不取消，把决定留给故障协调器
+    /// （复审疑问，调度定 B）。Pending／Unknown 的 Hold 算「可能 HELD」，同样不释放。
+    /// </summary>
+    /// <remarks>
+    /// 故障唯一的清除路径是 <c>VehicleFaultCoordinator.ResumeAsync</c>，它要求订单 HELD；释放取消这张单就把那条路拆了（cs#299）。
+    /// </remarks>
+    [Theory]
+    [InlineData(RiotOrderCommandOutcome.Confirmed)]
+    [InlineData(RiotOrderCommandOutcome.Pending)]
+    [InlineData(RiotOrderCommandOutcome.Unknown)]
+    public async Task AHeldOrderUnderAFaultIsLeftToTheFaultCoordinator(RiotOrderCommandOutcome holdOutcome)
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
+        await FaultWithHoldAsync(fixture, before, holdOutcome);
+        fixture.Riot.SetOrderState(before.PickupUpperId, RiotOrderState.Paused, terminal: false);
+        CancellingGateway gateway = new(fixture.Clock, _ => fixture.Riot.CancelOrder(before.PickupUpperId));
+
+        Assert.Equal(DemandReleaseReasons.FaultHoldInEffect,
+            Assert.Single(await Service(fixture, gateway).RunOnceAsync(Token)).Result);
+        Assert.Equal(0, gateway.Cancels);
+        await using ControlServerDbContext reading = new ControlServerDbContext(fixture.DbOptionsForTests);
+        Assert.Null((await reading.Set<JourneyDemandRow>().AsNoTracking().SingleAsync(Token)).RemovedAt);
+    }
+
+    /// <summary>
+    /// 故障由订单 FAILED 触发：对终态单的 Hold 必然失败，清除路径本来就不存在，照常释放、不发取消（调度定 B + 中 2）。
+    /// </summary>
+    [Fact]
+    public async Task AFailedOrderUnderAFaultIsReleasedWithoutACancel()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
+        await FaultWithHoldAsync(fixture, before, RiotOrderCommandOutcome.Failed);
+        fixture.Riot.SetOrderState(before.PickupUpperId, RiotOrderState.Failed, terminal: true);
+        CancellingGateway gateway = new(fixture.Clock, _ => fixture.Riot.CancelOrder(before.PickupUpperId));
+
+        Assert.Equal([(VehicleFaultBlockCriterion.SuspectedReason, "RELEASED")],
+            (await Service(fixture, gateway).RunOnceAsync(Token)).Select(outcome => (outcome.Trigger, outcome.Result)));
+        Assert.Equal(0, gateway.Cancels);
+    }
+
+    /// <summary>记一次疑似故障，并在这张取货单上记一次本故障代次的 Hold 尝试，结果为 <paramref name="holdOutcome"/>。</summary>
+    private static async Task FaultWithHoldAsync(
+        RuntimeFixture fixture, JourneyRuntimeRow journey, RiotOrderCommandOutcome holdOutcome)
+    {
+        VehicleFaultFact fault = await new VehicleFaultStore(fixture.Context).RecordLevelAsync(
+            journey.AgvId, VehicleFaultLevel.SuspectedBlocked, "VEHICLE_ORDER_FAILED", false, fixture.Clock.GetUtcNow(), Token);
+        string orderId = (await fixture.Context.OrderIntents.AsNoTracking()
+            .SingleAsync(row => row.UpperId == journey.PickupUpperId, Token)).OrderId!;
+        RiotOrderCommandAuditStore audit = new(fixture.Context);
+        RiotOrderCommandAttempt hold = await audit.ArmAttemptAsync(
+            RiotCommandTypeNames.OrderHold, journey.AgvId, journey.PickupUpperId, orderId, new string('0', 64),
+            fault.FaultGeneration, fixture.Clock.GetUtcNow(), Token);
+        if (holdOutcome != RiotOrderCommandOutcome.Pending)
+        {
+            await audit.RecordOutcomeAsync(hold.CommandAuditId, holdOutcome, null, fixture.Clock.GetUtcNow(), Token);
+        }
+
+        fixture.Context.ChangeTracker.Clear();
     }
 
     /// <summary>

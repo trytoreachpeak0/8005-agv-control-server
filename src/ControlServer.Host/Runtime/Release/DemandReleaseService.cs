@@ -127,7 +127,7 @@ public sealed class DemandReleaseService(
                 continue;
             }
 
-            outcomes.Add(await ReleaseOneAsync(journey, stops, item, trigger, cancellationToken).ConfigureAwait(false));
+            outcomes.Add(await ReleaseOneAsync(journey, stops, item, trigger, fault, cancellationToken).ConfigureAwait(false));
             // 释放改了这趟旅程的停靠与归属：下一条要按新的样子判，而不是按这一轮开头读到的。
             stops = await JourneyStopCursor.LoadAsync(dbContext, journey, cancellationToken).ConfigureAwait(false);
         }
@@ -147,6 +147,7 @@ public sealed class DemandReleaseService(
         JourneyStopCursor stops,
         JourneyStopDemand item,
         string trigger,
+        VehicleFaultFact? fault,
         CancellationToken cancellationToken)
     {
         string demandId = item.Membership.DemandId;
@@ -166,7 +167,7 @@ public sealed class DemandReleaseService(
                     .ConfigureAwait(false);
             case DemandReleaseAction.CancelPickupOrderThenRelease:
                 (PickupOrderSettlement settlement, string? notSettled) = await CancelPickupOrderAsync(
-                    journey, stops.Current, cancellationToken).ConfigureAwait(false);
+                    journey, stops.Current, fault, cancellationToken).ConfigureAwait(false);
                 if (notSettled is not null)
                 {
                     return await RefuseAsync(journey, demandId, trigger, notSettled, cancellationToken)
@@ -174,11 +175,12 @@ public sealed class DemandReleaseService(
                 }
 
                 return await ReleaseAsync(
-                        journey, demandId, trigger, pickupOrderCancelled: settlement == PickupOrderSettlement.Cancelled,
+                        journey, demandId, trigger,
+                        pickupOrderSettled: settlement is PickupOrderSettlement.Cancelled or PickupOrderSettlement.Ended,
                         cancellationToken)
                     .ConfigureAwait(false);
             case DemandReleaseAction.ReleaseWithoutOrder:
-                return await ReleaseAsync(journey, demandId, trigger, pickupOrderCancelled: false, cancellationToken)
+                return await ReleaseAsync(journey, demandId, trigger, pickupOrderSettled: false, cancellationToken)
                     .ConfigureAwait(false);
             default:
                 return new DemandReleaseOutcome(journey.JourneyId, demandId, trigger, "NOT_APPLICABLE");
@@ -186,7 +188,7 @@ public sealed class DemandReleaseService(
     }
 
     /// <summary>
-    /// 取消这趟旅程开往当前下一站的那张单并对账；确认取消了返回空，否则返回不释放的原因。
+    /// 了结这趟旅程开往当前下一站的那张单：没有活订单、或取消并对账确认了，返回怎么了结的；否则返回不释放的原因。
     /// </summary>
     /// <remarks>
     /// <para>
@@ -197,10 +199,22 @@ public sealed class DemandReleaseService(
     /// （<see cref="NeverDispatched"/>）。意图上没有订单号并不等于没有订单——创建已发出而回应丢了（CREATE_ATTEMPTED、
     /// RESULT_UNKNOWN）时 RIoT 上可能已经有一张活的，而没有订单号就发不了取消。那种情况不释放，等引擎把意图对账出结论。
     /// </para>
+    /// <para>
+    /// <b>取消之前先读订单</b>（复审中 2）：已经是终态的单没有东西可取消。取消、失败、删除、挂起算「没有活订单」，不发取消、
+    /// 直接释放；SUCCESS 说明车已经到了取货站（引擎可能还没记下），不释放。旧实现有订单号就发 CANCEL，对 FAILED 单的取消
+    /// 对账为 Failed，之后每轮对已结的 Failed 只返回、不重读，永远停在「取消没确认」。
+    /// </para>
+    /// <para>
+    /// <b>故障协调器 Hold 住的单不取消</b>（复审疑问，调度定 B）：故障唯一的清除路径 <c>VehicleFaultCoordinator.ResumeAsync</c>
+    /// 要求订单 HELD，释放取消它就把那条路拆了（cs#299）。判据只看审计：本故障代次在这张单上有一次 Hold 尝试，而且结果不是
+    /// Failed——Confirmed 是 HELD；Pending 与 Unknown 是「可能 HELD」，一律算在内，偏保守。它排在终态判断之后：终态单上没有
+    /// 东西能被 Hold 住（对 FAILED 单的 Hold 必然判 Failed），今天唯一自动产生故障的来源（订单 FAILED）因此照常释放。
+    /// </para>
     /// </remarks>
     private async Task<(PickupOrderSettlement Settlement, string? NotSettled)> CancelPickupOrderAsync(
         JourneyRuntimeRow journey,
         JourneyStopRow currentStop,
+        VehicleFaultFact? fault,
         CancellationToken cancellationToken)
     {
         OrderIntentRow? intent = await dbContext.OrderIntents.AsNoTracking()
@@ -213,6 +227,25 @@ public sealed class DemandReleaseService(
         if (intent!.OrderId is not { } orderId)
         {
             return (PickupOrderSettlement.None, DemandReleaseReasons.OrderStateUnknown);
+        }
+
+        RiotOrderObservation order = await vehicleFacts
+            .ReconcileByUpperIdAsync(currentStop.UpperId, cancellationToken).ConfigureAwait(false);
+        switch (order.OrderState)
+        {
+            case RiotOrderState.Cancelled or RiotOrderState.Failed or RiotOrderState.Deleted or RiotOrderState.Suspended:
+                return (PickupOrderSettlement.Ended, null);
+            case RiotOrderState.Success:
+                return (PickupOrderSettlement.None, DemandReleaseReasons.PickupOrderSucceeded);
+        }
+
+        if (fault is { Level: not VehicleFaultLevel.None } &&
+            (await commandAudit.ReadAttemptsAsync(RiotCommandTypeNames.OrderHold, currentStop.UpperId, cancellationToken)
+                .ConfigureAwait(false))
+            .Any(attempt => attempt.FaultGeneration == fault.FaultGeneration &&
+                            attempt.Outcome != RiotOrderCommandOutcome.Failed))
+        {
+            return (PickupOrderSettlement.None, DemandReleaseReasons.FaultHoldInEffect);
         }
 
         IReadOnlyList<RiotOrderCommandAttempt> attempts = await commandAudit
@@ -242,7 +275,7 @@ public sealed class DemandReleaseService(
         JourneyRuntimeRow journey,
         string demandId,
         string trigger,
-        bool pickupOrderCancelled,
+        bool pickupOrderSettled,
         CancellationToken cancellationToken)
     {
         DateTimeOffset now = timeProvider.GetUtcNow();
@@ -274,7 +307,7 @@ public sealed class DemandReleaseService(
                     cancellationToken).ConfigureAwait(false);
             }
 
-            if (!pickupOrderCancelled && !NeverDispatched(await dbContext.OrderIntents.AsNoTracking()
+            if (!pickupOrderSettled && !NeverDispatched(await dbContext.OrderIntents.AsNoTracking()
                     .SingleOrDefaultAsync(row => row.UpperId == pickup.UpperId, cancellationToken).ConfigureAwait(false)))
             {
                 return await RefuseInTransactionAsync(runtime, demandId, trigger, DemandReleaseReasons.PickupOrderAppeared,
@@ -453,4 +486,7 @@ internal enum PickupOrderSettlement
 
     /// <summary>取消已对账确认。</summary>
     Cancelled,
+
+    /// <summary>订单在 RIoT 上已是取消、失败、删除或挂起的终态：没有活订单，不发取消（复审中 2）。</summary>
+    Ended,
 }

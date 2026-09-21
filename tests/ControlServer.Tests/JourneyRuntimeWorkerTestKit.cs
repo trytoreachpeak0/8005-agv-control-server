@@ -1529,6 +1529,14 @@ internal static class JourneyRuntimeWorkerTestKit
             };
 
         /// <summary>Reports the order under <paramref name="upperId"/> as RIoT's terminal CANCELLED from now on (control-server#215).</summary>
+        /// <summary>把这张单在 RIoT 上的状态改成 <paramref name="orderState"/>（终态时观测种类随之为 Terminal）。</summary>
+        public void SetOrderState(string upperId, int orderState, bool terminal) =>
+            _orders[upperId] = _orders[upperId] with
+            {
+                Kind = terminal ? RiotOrderObservationKind.Terminal : RiotOrderObservationKind.Active,
+                OrderState = orderState,
+            };
+
         public void CancelOrder(string upperId) =>
             _orders[upperId] = _orders[upperId] with
             {
