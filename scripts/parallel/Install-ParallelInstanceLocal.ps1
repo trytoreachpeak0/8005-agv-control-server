@@ -128,14 +128,19 @@ $definition = Read-ParallelInstanceDefinition -Path $InstanceDefinitionPath
 $null = Assert-ParallelInstanceDefinition -Definition $definition -AllowRiotCreateDispatch:$AllowRiotCreateDispatch
 Write-Step "Instance definition accepted: $($definition['instanceId'])"
 
-$serviceName = [string] $definition['serviceName']
-$installRoot = [string] $definition['installRoot']
-$dataRoot = [string] $definition['dataRoot']
-$backupRoot = [string] $definition['backupRoot']
-$packageRoot = [string] $definition['packageRoot']
-$opsRoot = [string] $definition['opsRoot']
-$previousRoot = "$packageRoot.previous"
-$resultRoot = Join-Path $opsRoot 'results'
+# Every path and name below comes from Get-ParallelInstanceLayout -- the same source the
+# uninstaller's footprint is derived from, so what an install creates and what an uninstall
+# removes are one list by construction (control-server#262 re-review, M4). Do not read a path
+# or a service/task name out of $definition here: Test-ParallelInstance.ps1 fails on it.
+$layout = Get-ParallelInstanceLayout -Definition $definition
+$serviceName = $layout.ServiceName
+$installRoot = $layout.InstallRoot
+$dataRoot = $layout.DataRoot
+$backupRoot = $layout.BackupRoot
+$packageRoot = $layout.PackageRoot
+$opsRoot = $layout.OpsRoot
+$previousRoot = $layout.PreviousRoot
+$resultRoot = $layout.ResultRoot
 $onboardPort = [int] $definition['onboardPort']
 $healthPort = [int] $definition['healthPort']
 $listenAddress = [string] $definition['listenAddress']
@@ -145,8 +150,7 @@ $healthOrigin = "http://${healthBindAddress}:$healthPort"
 # This instance's own name, never the MVP's. Update-ControlServerLocal.ps1 deletes the
 # machine-scope variable it is told about; pointing it at a name only this instance uses is
 # what keeps that deletion from reaching the production deployment.
-$instanceNames = Get-ParallelInstanceName
-$certificatePasswordVariable = $instanceNames.CertificatePasswordVariable
+$certificatePasswordVariable = $layout.CertificatePasswordVariable
 
 New-Item -ItemType Directory -Path $resultRoot -Force | Out-Null
 $runId = Get-Date -Format 'yyyyMMdd-HHmmss'
@@ -155,6 +159,15 @@ $diagnosticPath = Join-Path $resultRoot "install-$runId.log"
 
 $mvpBefore = Get-MvpFingerprint
 Write-Step ("MVP service before: " + (Format-MvpFingerprint $mvpBefore))
+
+# The definition this install (or rollback) runs with, recorded before anything changes. The
+# uninstaller reads this copy in preference to instance.json, which the control host
+# overwrites on every deploy and every rollback: an uninstall must remove what was installed,
+# not what the control host's definition says today (control-server#262 re-review, M2). Written
+# first so that a half-finished first install -- the case the uninstaller is the recovery for --
+# has it too.
+Copy-Item -LiteralPath $InstanceDefinitionPath -Destination $layout.InstalledDefinitionPath -Force
+Write-Step "Installed definition recorded at $($layout.InstalledDefinitionPath)"
 
 function Invoke-ProductInstaller {
     <#
@@ -244,12 +257,11 @@ function Install-FakeMesIngest {
     #>
     param([string] $Zip)
 
-    $fake = $definition['fakeMesIngest']
-    $fakeInstallRoot = [string] $fake['installRoot']
-    $taskName = [string] $fake['taskName']
-    $seedPath = [string] $fake['seedPath']
-    $fakePort = [int] $fake['port']
-    $logPath = Join-Path $opsRoot 'logs\fake-mes-ingest.log'
+    $fakeInstallRoot = $layout.FakeInstallRoot
+    $taskName = $layout.TaskName
+    $seedPath = $layout.SeedPath
+    $fakePort = [int] $definition['fakeMesIngest']['port']
+    $logPath = $layout.FakeLogPath
 
     if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
         Write-Step "Stopping the existing $taskName"
@@ -329,7 +341,7 @@ if ($Rollback) {
     Write-Step "Rolling back $serviceName to the package in $previousRoot"
 
     # Swap rather than copy, so rolling back a rollback is the same operation again.
-    $swap = "$packageRoot.rollback-$runId"
+    $swap = Join-Path $layout.PackageParent ($layout.RollbackFilter.Replace('*', $runId))
     if (Test-Path -LiteralPath $packageRoot) { Move-Item -LiteralPath $packageRoot -Destination $swap }
     Move-Item -LiteralPath $previousRoot -Destination $packageRoot
     if (Test-Path -LiteralPath $swap) { Move-Item -LiteralPath $swap -Destination $previousRoot }
@@ -372,7 +384,7 @@ try {
 
     # ------------------------------------------------------------------ unpack ---
 
-    $staged = "$packageRoot.incoming-$runId"
+    $staged = Join-Path $layout.PackageParent ($layout.IncomingFilter.Replace('*', $runId))
     if (Test-Path -LiteralPath $staged) { Remove-Item -LiteralPath $staged -Recurse -Force }
     Expand-Archive -LiteralPath $PackageZip -DestinationPath $staged -Force
     Write-Step "Unpacked to $staged"
@@ -445,8 +457,10 @@ try {
 
     # Named after this instance, so that removing it later cannot remove the MVP's rules and so
     # that an operator listing the rules can tell which service each one opens.
-    foreach ($port in @($onboardPort, $healthPort)) {
-        $ruleName = $instanceNames.FirewallRuleFormat -f $port
+    $rulePorts = @($onboardPort, $healthPort)
+    for ($i = 0; $i -lt $rulePorts.Count; $i++) {
+        $port = $rulePorts[$i]
+        $ruleName = $layout.FirewallRules[$i]
         Remove-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue
         New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -Action Allow `
             -Protocol TCP -LocalPort $port -Profile Any | Out-Null
@@ -494,6 +508,6 @@ try {
     # (both live in D:\zhengyushao), so each deployment's cleanup deleted the other's staging
     # directory whenever their windows overlapped. The MVP twin, Install-ControlServerRemote.ps1,
     # had the same line and was fixed in the same change (control-server#262 review, finding 1).
-    Get-ChildItem -Path (Split-Path -Parent $packageRoot) -Directory -Filter "$(Split-Path -Leaf $packageRoot).incoming-*" -ErrorAction SilentlyContinue |
+    Get-ChildItem -Path $layout.PackageParent -Directory -Filter $layout.IncomingFilter -ErrorAction SilentlyContinue |
         ForEach-Object { Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
 }

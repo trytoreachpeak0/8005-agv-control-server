@@ -12,14 +12,42 @@
     decidable from the definition text alone, which is what lets Test-ParallelInstance.ps1
     assert that a given corruption produces exactly one named failure. The scripts that do
     touch a machine call Assert-ParallelInstanceDefinition first and then stop reasoning
-    about identity.
+    about identity. The one function that orchestrates side effects,
+    Invoke-ParallelRemovalSequence, performs none itself: the caller injects them, which is how
+    the self-test proves its stop conditions without a machine to delete things from.
 #>
 
 Set-StrictMode -Version 3.0
 
-# The production installation, named here so a parallel definition can be refused for
-# colliding with it. These are the defaults of Install-ControlServerLocal.ps1 and the values
-# remote-ops/factory-server/docs/wire-to-gate-cd.md section 5 records.
+<#
+    Paths: two layers, and the order matters.
+
+    FIRST LAYER -- an allowlist, and the one that decides. A path this instance may create or
+    delete must be (a) written canonically -- see Test-CanonicalWindowsPath -- (b) a direct
+    child of one of the three roots below, and (c) named with the instance marker, a 'V2'/'v2'
+    token delimited by '.', '-', '_', space or the ends of the name. Anything else is refused.
+
+    SECOND LAYER -- the production denylist below. It is a snapshot and cannot be complete: the
+    first version of this list missed five of the directories listed in this ticket's own survey
+    evidence (control-server#262 re-review, S1). It stays as a second opinion, and it fails
+    closed on anything it cannot resolve.
+
+    Why the allowlist leads: a gap in an allowlist means "cannot delete that", a gap in a
+    denylist means "deleted the wrong thing". On a server that holds the production SQLite,
+    only the first failure direction is acceptable.
+#>
+$script:AllowedParents = @(
+    'C:\Program Files\8005 AGV'
+    'C:\ProgramData\8005'
+    'D:\zhengyushao'
+)
+$script:InstanceMarkerPattern = '(?i)(^|[.\-_ ])v2([.\-_ ]|$)'
+
+# The production installation and its neighbours, named here so a parallel definition can be
+# refused for colliding with them. The ControlServer entries are the defaults of
+# Install-ControlServerLocal.ps1 and wire-to-gate-cd.md section 5; the rest are the siblings the
+# 2026-09-21 survey found in D:\zhengyushao (evidence/deploy/20260921-cs262-parallel-instance/
+# factory01-survey-paths.txt) plus the MesIngest Watch root on the same host.
 $script:ProductionServiceName = '8005 AGV ControlServer'
 $script:ProductionPaths = @(
     'C:\Program Files\8005 AGV\ControlServer'
@@ -27,9 +55,28 @@ $script:ProductionPaths = @(
     'C:\ProgramData\8005\ControlServer'
     'C:\ProgramData\8005\ControlServer-backups'
     'D:\zhengyushao\ControlServer'
+    'D:\zhengyushao\ControlServer.previous'
     'D:\zhengyushao\control-server-ops'
     'D:\zhengyushao\control-server-staging'
+    'D:\zhengyushao\MesIngest'
+    'D:\zhengyushao\MesIngest.previous'
+    'D:\zhengyushao\mes-ingest-ops'
+    'D:\zhengyushao\mes-ingest-staging'
+    'D:\zhengyushao\Hyper-V'
+    'D:\zhengyushao\installer'
+    'D:\zhengyushao\RabbitMQ'
+    'D:\zhengyushao\vm-staging'
+    'D:\zhengyushao\w1-20260913'
+    'C:\MesIngest-Watch'
 )
+
+# The MVP's map, from its own appsettings.json and the user's 2026-09-21 answer ("MVP runs on
+# 25, v2 on 26"). Refused outright: a definition still carrying these points the parallel
+# instance at the production vehicle's map, and nothing else in these checks would notice --
+# 25 is a perfectly valid positive integer.
+$script:ProductionMapId = 25
+$script:ProductionMapIdentity = '老厂前线new'
+$script:ProductionMapTokenPattern = '(?i)MAP-25(-|$)'
 # 58005/58007 are the MVP server, 58009 its dashboard port (unused today but reserved by
 # Install-ControlServerLocal.ps1's default), 5088 the production MesIngest.
 $script:ProductionPorts = @{
@@ -171,22 +218,212 @@ function ConvertTo-IntegerOrNull {
     return $null
 }
 
-function Test-NormalizedPath {
+function Test-CanonicalWindowsPath {
+    <#
+        .SYNOPSIS
+            $null when the path is written exactly one way; otherwise the reason it is not.
+
+        .DESCRIPTION
+            control-server#262 re-review, S1. The first version compared paths as strings after
+            trimming a trailing slash, so every other spelling of a production path passed as
+            "not production": forward slashes, '.\', 'x\..\', 8.3 short names ('PROGRA~1'),
+            '\\?\' and UNC prefixes. The re-review deleted a real directory on its own machine
+            through '<root>\.\Prod' and '<root>\x\..\Prod'. Forward slashes are also the most
+            natural way to write a Windows path in JSON.
+
+            Resolving every spelling to one would need the file system (short names, junctions),
+            and this module does no I/O. So the rule is the other way round: only one spelling
+            is accepted -- drive letter, backslashes, no empty/'.'/'..' segment, no '~', no
+            segment ending in '.' or ' ' (Windows strips those, so 'ControlServer.' IS
+            'ControlServer'), no characters Windows reserves -- and GetFullPath must hand it
+            back unchanged, as a final check that nothing was left for Windows to reinterpret.
+    #>
     param([string] $Path)
-    return $Path.TrimEnd('\', '/').ToLowerInvariant()
+    if ([string]::IsNullOrWhiteSpace($Path)) { return 'is empty' }
+    if ($Path.Contains('/')) { return "uses '/'; write the path with backslashes only" }
+    if ($Path.StartsWith('\\')) { return "is a UNC or device path ('\\...'); only a local drive path is accepted" }
+    if ($Path -notmatch '^[A-Za-z]:\\') { return 'is not an absolute path on a drive (X:\...)' }
+    if ($Path.Contains('~')) { return "contains '~' (an 8.3 short name spells some other path in a way nothing here can check)" }
+    $segments = $Path.Substring(3).Split('\')
+    foreach ($segment in $segments) {
+        if ($segment -eq '') { return 'has an empty segment (a doubled or trailing backslash)' }
+        if ($segment -in @('.', '..')) { return "has a '$segment' segment" }
+        if ($segment.EndsWith('.') -or $segment.EndsWith(' ') -or $segment.StartsWith(' ')) {
+            return "has a segment ('$segment') with a leading space or a trailing dot or space, which Windows silently strips"
+        }
+        if ($segment.IndexOfAny([char[]] '<>:"|?*') -ge 0 -or $segment -match '[\x00-\x1F]') {
+            return "has a segment ('$segment') with a character Windows reserves"
+        }
+    }
+    $full = $null
+    try { $full = [IO.Path]::GetFullPath($Path) } catch { return "is not a valid path: $($_.Exception.Message)" }
+    if ($full -cne $Path) { return "is not in canonical form (Windows reads it as '$full')" }
+    return $null
+}
+
+function Test-OwnedPath {
+    <#
+        .SYNOPSIS
+            $null when the path is one this instance may create and delete; otherwise why not.
+
+        .DESCRIPTION
+            The first layer. Canonical, a direct child of one of $script:AllowedParents, and named
+            with the instance marker. "Direct child" is deliberate: a V2-named directory nested
+            *inside* a production directory ('C:\ProgramData\8005\ControlServer\v2') would take
+            its parent's ACL and its parent's fate, and is refused here even though its leaf
+            carries the marker.
+    #>
+    param([string] $Path)
+    $canonical = Test-CanonicalWindowsPath $Path
+    if ($canonical) { return $canonical }
+    $parent = Split-Path -Parent $Path
+    $leaf = Split-Path -Leaf $Path
+    if (-not ($script:AllowedParents | Where-Object { $_ -ieq $parent })) {
+        return "is not directly under one of $($script:AllowedParents -join ', ')"
+    }
+    if ($leaf -notmatch $script:InstanceMarkerPattern) {
+        return "is named '$leaf', which does not carry the instance marker (a 'V2' token such as '.V2' or '-v2-')"
+    }
+    return $null
+}
+
+function Get-NormalizedForComparison {
+    <#
+        Lower-cased GetFullPath without a trailing separator, or $null when the path cannot be
+        resolved without the file system -- which the callers treat as a collision.
+    #>
+    param([string] $Path)
+    if ([string]::IsNullOrWhiteSpace($Path) -or $Path.Contains('~') -or $Path.StartsWith('\\')) { return $null }
+    try {
+        return [IO.Path]::GetFullPath($Path.Replace('/', '\')).TrimEnd('\').ToLowerInvariant()
+    } catch {
+        return $null
+    }
 }
 
 function Test-PathCollision {
     <#
-        Equal, or nested either way. A parallel data root placed *inside* the production data
-        root shares the production directory's fate on an uninstall, and one placed *around*
-        it hands the parallel instance's ACL tightening the production files.
+        Equal, or nested either way, after normalisation. A parallel data root placed *inside*
+        the production data root shares the production directory's fate on an uninstall, and one
+        placed *around* it hands the parallel instance's ACL tightening the production files.
+
+        Fails closed: a path that cannot be normalised without touching the disk (a short name,
+        a device path) counts as a collision. This is the second layer; the first
+        (Test-OwnedPath) never lets such a path through, but a second layer that says "fine"
+        about what it could not read is not a second layer.
     #>
     param([string] $Candidate, [string] $Production)
-    $a = Test-NormalizedPath $Candidate
-    $b = Test-NormalizedPath $Production
+    $a = Get-NormalizedForComparison $Candidate
+    $b = Get-NormalizedForComparison $Production
+    if ($null -eq $a -or $null -eq $b) { return $true }
     if ($a -eq $b) { return $true }
     return $a.StartsWith("$b\", [StringComparison]::Ordinal) -or $b.StartsWith("$a\", [StringComparison]::Ordinal)
+}
+
+function Test-InstanceName {
+    <#
+        $null when a Windows service or scheduled-task name is safe to hand to Get-Service,
+        Stop-Service, Get-ScheduledTask and Unregister-ScheduledTask; otherwise why not.
+
+        control-server#262 re-review, M1: those cmdlets take wildcards in -Name/-TaskName, and
+        Get-Service also matches display names. '8005 AGV ControlServer*' passed the old literal
+        "-eq production" check and would have stopped the MVP service; a task name of '*' matched
+        all 196 tasks on the host. Wildcard characters are refused, and the name must carry the
+        instance marker -- the same allowlist idea as the paths.
+    #>
+    param([string] $Name)
+    if ([string]::IsNullOrWhiteSpace($Name)) { return 'is empty' }
+    if ($Name -ne $Name.Trim()) { return 'has leading or trailing whitespace' }
+    if ($Name.IndexOfAny([char[]] '*?[]') -ge 0) { return "contains a wildcard character (* ? [ ]), which Get-Service and Get-ScheduledTask would expand" }
+    if ($Name -notmatch $script:InstanceMarkerPattern) { return "does not carry the instance marker (a 'V2' token)" }
+    return $null
+}
+
+function Test-InstancePath {
+    <#
+        .SYNOPSIS
+            Every directory and file path in the definition, through both layers.
+
+        .DESCRIPTION
+            Each directory yields at most one failure, from the first layer that refuses it:
+            allowlist (Test-OwnedPath), then the production denylist. Then the accepted ones are
+            checked against each other -- including the derived <packageRoot>.previous and the
+            staging globs, which the uninstaller deletes although the definition never names them
+            -- and seedPath must sit inside opsRoot, so that it is removed with it instead of
+            being left behind wherever someone pointed it.
+    #>
+    param([System.Collections.IDictionary] $Definition)
+
+    [string[]] $failures = @()
+    $fake = Get-Node -Root $Definition -Key 'fakeMesIngest'
+    $entries = [ordered]@{}
+    foreach ($key in @('installRoot', 'dataRoot', 'backupRoot', 'packageRoot', 'opsRoot', 'stagingRoot')) {
+        $entries[$key] = (Test-KeyPresent -Node $Definition -Key $key) ? [string] $Definition[$key] : $null
+    }
+    if ($null -ne $fake) {
+        $entries['fakeMesIngest.installRoot'] = (Test-KeyPresent -Node $fake -Key 'installRoot') ? [string] $fake['installRoot'] : $null
+    }
+
+    $accepted = [ordered]@{}
+    foreach ($label in $entries.Keys) {
+        $value = $entries[$label]
+        if ([string]::IsNullOrWhiteSpace($value)) {
+            $failures += "$label must be a non-empty path."
+            continue
+        }
+        $owned = Test-OwnedPath $value
+        if ($owned) {
+            $failures += "$label ('$value') $owned."
+            continue
+        }
+        $hits = @($script:ProductionPaths | Where-Object { Test-PathCollision -Candidate $value -Production $_ })
+        if ($hits.Count -gt 0) {
+            $failures += "$label ('$value') collides with the production path(s) $($hits -join ', ')."
+            continue
+        }
+        $accepted[$label] = $value
+    }
+
+    # Derived paths the uninstaller removes. They inherit the marker from packageRoot, and are
+    # compared with everything else so that no key can be named such that deleting a package
+    # generation deletes, say, the data root.
+    if ($accepted.Contains('packageRoot')) {
+        $accepted['packageRoot.previous (derived)'] = "$($accepted['packageRoot']).previous"
+    }
+    $labels = @($accepted.Keys)
+    for ($i = 0; $i -lt $labels.Count; $i++) {
+        for ($j = $i + 1; $j -lt $labels.Count; $j++) {
+            if (Test-PathCollision -Candidate $accepted[$labels[$i]] -Production $accepted[$labels[$j]]) {
+                $failures += "$($labels[$i]) ('$($accepted[$labels[$i]])') and $($labels[$j]) ('$($accepted[$labels[$j]])') are the same directory or nested; each must be its own directory, or removing one removes the other."
+            }
+        }
+    }
+    if ($accepted.Contains('packageRoot')) {
+        $leaf = Split-Path -Leaf $accepted['packageRoot']
+        foreach ($label in $labels) {
+            if ($label -like 'packageRoot*') { continue }
+            $other = Split-Path -Leaf $accepted[$label]
+            if ($other -like "$leaf.incoming-*" -or $other -like "$leaf.rollback-*") {
+                $failures += "$label ('$($accepted[$label])') matches packageRoot's staging glob, so an install's cleanup would delete it."
+            }
+        }
+    }
+
+    if ($null -ne $fake) {
+        $seed = (Test-KeyPresent -Node $fake -Key 'seedPath') ? [string] $fake['seedPath'] : $null
+        if ([string]::IsNullOrWhiteSpace($seed)) {
+            $failures += 'fakeMesIngest.seedPath must be a non-empty path.'
+        } else {
+            $canonical = Test-CanonicalWindowsPath $seed
+            if ($canonical) {
+                $failures += "fakeMesIngest.seedPath ('$seed') $canonical."
+            } elseif ($accepted.Contains('opsRoot') -and
+                -not $seed.StartsWith("$($accepted['opsRoot'])\", [StringComparison]::OrdinalIgnoreCase)) {
+                $failures += "fakeMesIngest.seedPath ('$seed') must be inside opsRoot ('$($accepted['opsRoot'])'), so that it is removed with it rather than left behind."
+            }
+        }
+    }
+    return $failures
 }
 
 function Test-BindableAddress {
@@ -271,26 +508,19 @@ function Test-ParallelInstanceDefinition {
     }
 
     if ((Test-KeyPresent -Node $Definition -Key 'serviceName') -and
-        ([string] $Definition['serviceName']).Trim() -eq $script:ProductionServiceName) {
-        $failures += "serviceName is the production service '$script:ProductionServiceName'; the parallel instance must not install over the MVP service."
+        -not [string]::IsNullOrWhiteSpace([string] $Definition['serviceName'])) {
+        $serviceName = [string] $Definition['serviceName']
+        if ($serviceName.Trim() -ieq $script:ProductionServiceName) {
+            $failures += "serviceName is the production service '$script:ProductionServiceName'; the parallel instance must not install over the MVP service."
+        } else {
+            $problem = Test-InstanceName $serviceName
+            if ($problem) { $failures += "serviceName '$serviceName' $problem." }
+        }
     }
 
     # ------------------------------------------------------------------- paths ---
 
-    $pathKeys = @('installRoot', 'dataRoot', 'backupRoot', 'packageRoot', 'opsRoot', 'stagingRoot')
-    foreach ($key in $pathKeys) {
-        if (-not (Test-KeyPresent -Node $Definition -Key $key) -or
-            [string]::IsNullOrWhiteSpace([string] $Definition[$key])) {
-            $failures += "$key must be a non-empty path."
-            continue
-        }
-        $candidate = [string] $Definition[$key]
-        foreach ($production in $script:ProductionPaths) {
-            if (Test-PathCollision -Candidate $candidate -Production $production) {
-                $failures += "$key ('$candidate') collides with the production path '$production'."
-            }
-        }
-    }
+    $failures += @(Test-InstancePath -Definition $Definition)
 
     # ------------------------------------------------------------------- ports ---
 
@@ -357,18 +587,13 @@ function Test-ParallelInstanceDefinition {
     if ($null -eq $fake) {
         $failures += 'fakeMesIngest must be an object describing the resident fake catalog.'
     } else {
-        foreach ($key in @('installRoot', 'taskName', 'seedPath')) {
-            if (-not (Test-KeyPresent -Node $fake -Key $key) -or
-                [string]::IsNullOrWhiteSpace([string] $fake[$key])) {
-                $failures += "fakeMesIngest.$key must be a non-empty string."
-            }
-        }
-        if ((Test-KeyPresent -Node $fake -Key 'installRoot')) {
-            foreach ($production in $script:ProductionPaths) {
-                if (Test-PathCollision -Candidate ([string] $fake['installRoot']) -Production $production) {
-                    $failures += "fakeMesIngest.installRoot ('$($fake['installRoot'])') collides with the production path '$production'."
-                }
-            }
+        # installRoot and seedPath are checked with the other paths (Test-InstancePath).
+        if (-not (Test-KeyPresent -Node $fake -Key 'taskName') -or
+            [string]::IsNullOrWhiteSpace([string] $fake['taskName'])) {
+            $failures += 'fakeMesIngest.taskName must be a non-empty string.'
+        } else {
+            $problem = Test-InstanceName ([string] $fake['taskName'])
+            if ($problem) { $failures += "fakeMesIngest.taskName '$($fake['taskName'])' $problem." }
         }
         if (-not (Test-KeyPresent -Node $fake -Key 'port')) {
             $failures += 'fakeMesIngest.port must be set explicitly.'
@@ -480,6 +705,36 @@ function Test-ParallelInstanceDefinition {
         $failures += @(Test-VehicleIdentity -Journey $journey)
     }
 
+    # ------------------------------------------------ the MVP's map; placeholders ---
+
+    # control-server#262 re-review, M3. The documentation used to say "as shipped, this points at
+    # the MVP's map, the checks cannot see it, do not install until fixed" -- a guarantee held by
+    # whoever reads the documentation. Now that the user has settled "MVP 25, v2 26", it is a
+    # check: map 25, its identity, and any MAP-25-* token are refused outright.
+    foreach ($section in @('routeGraph', 'journeyRuntime')) {
+        $node = Get-Node -Root $Definition -Key $section
+        if ($null -ne $node -and (Test-KeyPresent -Node $node -Key 'mapId') -and
+            (ConvertTo-IntegerOrNull $node['mapId']) -eq $script:ProductionMapId) {
+            $failures += "$section.mapId is $script:ProductionMapId, the MVP's map. The parallel instance runs on map 26."
+        }
+    }
+    if ($null -ne $journey) {
+        if ((Test-KeyPresent -Node $journey -Key 'mapIdentity') -and [string] $journey['mapIdentity'] -ceq $script:ProductionMapIdentity) {
+            $failures += "journeyRuntime.mapIdentity is '$script:ProductionMapIdentity', the MVP's map name."
+        }
+    }
+    foreach ($leaf in @(Get-StringLeaf -Node $Definition -Path '')) {
+        if ($leaf.Value -match $script:ProductionMapTokenPattern) {
+            $failures += "$($leaf.Path) is '$($leaf.Value)', an identifier of the MVP's map 25."
+        }
+        # The same refusal the onboard deployment makes of its site files: a value still marked
+        # as "fill me in" is refused, not guessed. The shipped definition carries these for the
+        # two map-26 values that have no source yet (see scripts/parallel/README.md).
+        if ($leaf.Value -match '(?i)REPLACE_') {
+            $failures += "$($leaf.Path) is still the placeholder '$($leaf.Value)'; fill in the value from the site before deploying."
+        }
+    }
+
     # ------------------------------------------------------ RIoT create dispatch ---
 
     # Separate from journeyRuntime by design (RiotCreateDispatchOptions): enabling the runtime
@@ -496,6 +751,27 @@ function Test-ParallelInstanceDefinition {
     }
 
     return $failures
+}
+
+function Get-StringLeaf {
+    <#
+        Every string value in the tree with its dotted path; array elements as path[i].
+    #>
+    param($Node, [string] $Path)
+    if ($Node -is [string]) {
+        return [pscustomobject]@{ Path = $Path; Value = $Node }
+    }
+    if ($Node -is [System.Collections.IDictionary]) {
+        foreach ($key in @($Node.Keys)) {
+            Get-StringLeaf -Node $Node[$key] -Path ($Path -eq '' ? [string] $key : "$Path.$key")
+        }
+        return
+    }
+    if ($Node -is [System.Collections.IList]) {
+        for ($i = 0; $i -lt $Node.Count; $i++) {
+            Get-StringLeaf -Node $Node[$i] -Path "$($Path)[$i]"
+        }
+    }
 }
 
 function Test-SectionKey {
@@ -584,12 +860,8 @@ function Test-VehicleIdentity {
 function Test-ParallelInstancePathIsProduction {
     <#
         .SYNOPSIS
-            True when the path equals, contains or sits inside a production path.
-
-        .DESCRIPTION
-            Exported for the uninstaller, which deletes derived paths (<packageRoot>.previous)
-            that the definition never names directly, and must not trust derivation to keep
-            them clear of the MVP's.
+            True when the path equals, contains or sits inside a production path -- or cannot be
+            normalised well enough to tell. The second layer; see Test-ParallelInstanceOwnedPath.
     #>
     [CmdletBinding()]
     [OutputType([bool])]
@@ -600,47 +872,113 @@ function Test-ParallelInstancePathIsProduction {
     return $false
 }
 
-function Get-ParallelInstanceFootprint {
+function Test-ParallelInstanceOwnedPath {
     <#
         .SYNOPSIS
-            Everything a deployment of this definition leaves on the machine.
+            $null when the path is one this instance may delete; otherwise the reason it is not.
 
         .DESCRIPTION
-            One list, read by both Install-ParallelInstanceLocal.ps1 and
-            Uninstall-ParallelInstanceLocal.ps1. The product uninstaller removes only the
-            service, the install root and optionally the data root; everything else here --
-            the double's task and directory, the firewall rules, the package generations,
-            the staging and ops directories, the backups -- had no removal path at all before
-            this list existed. A thing the installer creates and this list does not name is a
-            thing an uninstall silently leaves behind, which is why the installer takes its
-            names from here too.
+            The first layer, exported for the uninstaller: canonical spelling, a direct child of
+            one of the three known roots, named with the instance marker. The uninstaller asks
+            this before every deletion, including for paths the definition never names directly
+            (<packageRoot>.previous, the staging globs' matches).
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string] $Path)
+    return Test-OwnedPath $Path
+}
 
-            Data is marked so the uninstaller can keep it unless asked: the SQLite database,
-            the upgrade backups and the ops results are evidence of what the instance did.
+function Get-ParallelInstanceLayout {
+    <#
+        .SYNOPSIS
+            Every name and path this instance uses on the machine, from one place.
 
-            Not listed, deliberately: the user-scope CONTROL_SERVER_RIOT_CALL_API_KEY. The MVP
-            deployment reads the same variable on every install, so removing it with the
-            parallel instance would break the next MVP deployment.
+        .DESCRIPTION
+            control-server#262 re-review, M4. The installer used to read the definition's keys
+            itself while the footprint read them separately; they agreed only because the same
+            person wrote both. Now the installer takes every path and name from here, and the
+            footprint is derived from here, so the list of what an uninstall removes and the list
+            of what an install creates are the same list by construction. Test-ParallelInstance.ps1
+            checks the installer for reads that bypass this function.
+
+            Subdirectories created *inside* a layout directory (results\, logs\) are not listed
+            separately: they go with their parent.
     #>
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][System.Collections.IDictionary] $Definition)
 
     $packageRoot = [string] $Definition['packageRoot']
+    $opsRoot = [string] $Definition['opsRoot']
     $fake = $Definition['fakeMesIngest']
+    $packageLeaf = Split-Path -Leaf $packageRoot
+    # String concatenation, not Join-Path: Join-Path resolves the drive and fails on a machine
+    # without one (the control host has no D:), and this function must stay free of the file system.
+    return [pscustomobject]@{
+        ServiceName = [string] $Definition['serviceName']
+        TaskName = [string] $fake['taskName']
+        InstallRoot = [string] $Definition['installRoot']
+        DataRoot = [string] $Definition['dataRoot']
+        BackupRoot = [string] $Definition['backupRoot']
+        PackageRoot = $packageRoot
+        PreviousRoot = "$packageRoot.previous"
+        PackageParent = Split-Path -Parent $packageRoot
+        # Leaf globs in PackageParent. Prefixed with this instance's own leaf so they cannot match
+        # the MVP's package directories beside it (control-server#262 review, finding 1).
+        IncomingFilter = "$packageLeaf.incoming-*"
+        RollbackFilter = "$packageLeaf.rollback-*"
+        OpsRoot = $opsRoot
+        StagingRoot = [string] $Definition['stagingRoot']
+        ResultRoot = "$opsRoot\results"
+        FakeLogPath = "$opsRoot\logs\fake-mes-ingest.log"
+        InstalledDefinitionPath = "$opsRoot\installed-instance.json"
+        FakeInstallRoot = [string] $fake['installRoot']
+        SeedPath = [string] $fake['seedPath']
+        FirewallRules = @(
+            ($script:FirewallRuleFormat -f [int] $Definition['onboardPort'])
+            ($script:FirewallRuleFormat -f [int] $Definition['healthPort'])
+        )
+        CertificatePasswordVariable = $script:CertificatePasswordVariable
+    }
+}
+
+function Get-ParallelInstanceFootprint {
+    <#
+        .SYNOPSIS
+            Everything a deployment of this definition leaves on the machine, derived from
+            Get-ParallelInstanceLayout.
+
+        .DESCRIPTION
+            Data is marked so the uninstaller can keep it unless asked: the SQLite database, the
+            upgrade backups and the ops directory (results, logs, the seed file and the definition
+            the instance was installed from) are the record of what the instance did.
+
+            Not listed, deliberately: the user-scope CONTROL_SERVER_RIOT_CALL_API_KEY. The MVP
+            deployment reads the same variable on every install, so removing it with the parallel
+            instance would break the next MVP deployment.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][System.Collections.IDictionary] $Definition)
+
+    $layout = Get-ParallelInstanceLayout -Definition $Definition
     $items = @(
-        [pscustomobject]@{ Kind = 'ScheduledTask'; Name = [string] $fake['taskName']; Data = $false }
-        [pscustomobject]@{ Kind = 'Service'; Name = [string] $Definition['serviceName']; Data = $false }
-        [pscustomobject]@{ Kind = 'FirewallRule'; Name = ($script:FirewallRuleFormat -f [int] $Definition['onboardPort']); Data = $false }
-        [pscustomobject]@{ Kind = 'FirewallRule'; Name = ($script:FirewallRuleFormat -f [int] $Definition['healthPort']); Data = $false }
-        [pscustomobject]@{ Kind = 'Directory'; Name = [string] $fake['installRoot']; Data = $false }
-        [pscustomobject]@{ Kind = 'Directory'; Name = [string] $Definition['installRoot']; Data = $false }
-        [pscustomobject]@{ Kind = 'Directory'; Name = $packageRoot; Data = $false }
-        [pscustomobject]@{ Kind = 'Directory'; Name = "$packageRoot.previous"; Data = $false }
-        [pscustomobject]@{ Kind = 'Directory'; Name = [string] $Definition['stagingRoot']; Data = $false }
-        [pscustomobject]@{ Kind = 'Directory'; Name = [string] $Definition['dataRoot']; Data = $true }
-        [pscustomobject]@{ Kind = 'Directory'; Name = [string] $Definition['backupRoot']; Data = $true }
-        [pscustomobject]@{ Kind = 'Directory'; Name = [string] $Definition['opsRoot']; Data = $true }
-        [pscustomobject]@{ Kind = 'MachineEnvironment'; Name = $script:CertificatePasswordVariable; Data = $false }
+        [pscustomobject]@{ Kind = 'Service'; Name = $layout.ServiceName; Data = $false }
+        [pscustomobject]@{ Kind = 'ScheduledTask'; Name = $layout.TaskName; Data = $false }
+    )
+    foreach ($rule in $layout.FirewallRules) {
+        $items += [pscustomobject]@{ Kind = 'FirewallRule'; Name = $rule; Data = $false }
+    }
+    $items += @(
+        [pscustomobject]@{ Kind = 'MachineEnvironment'; Name = $layout.CertificatePasswordVariable; Data = $false }
+        [pscustomobject]@{ Kind = 'Directory'; Name = $layout.FakeInstallRoot; Data = $false }
+        [pscustomobject]@{ Kind = 'Directory'; Name = $layout.InstallRoot; Data = $false }
+        [pscustomobject]@{ Kind = 'Directory'; Name = $layout.PackageRoot; Data = $false }
+        [pscustomobject]@{ Kind = 'Directory'; Name = $layout.PreviousRoot; Data = $false }
+        [pscustomobject]@{ Kind = 'DirectoryPattern'; Name = "$($layout.PackageParent)\$($layout.IncomingFilter)"; Data = $false }
+        [pscustomobject]@{ Kind = 'DirectoryPattern'; Name = "$($layout.PackageParent)\$($layout.RollbackFilter)"; Data = $false }
+        [pscustomobject]@{ Kind = 'Directory'; Name = $layout.StagingRoot; Data = $false }
+        [pscustomobject]@{ Kind = 'Directory'; Name = $layout.DataRoot; Data = $true }
+        [pscustomobject]@{ Kind = 'Directory'; Name = $layout.BackupRoot; Data = $true }
+        [pscustomobject]@{ Kind = 'Directory'; Name = $layout.OpsRoot; Data = $true }
     )
     return $items
 }
@@ -657,6 +995,106 @@ function Get-ParallelInstanceName {
         ProductionCertificatePasswordVariable = $script:ProductionCertificatePasswordVariable
         FirewallRuleFormat = $script:FirewallRuleFormat
     }
+}
+
+function Invoke-ParallelRemovalSequence {
+    <#
+        .SYNOPSIS
+            Runs an uninstall over a footprint, in a fixed order, with the actions injected.
+
+        .DESCRIPTION
+            control-server#262 re-review, S1, root cause three. The first uninstaller wrapped every
+            step in the same catch-and-continue. When the product uninstaller refused -- correctly,
+            with "Refusing to uninstall the production deployment" -- that refusal was logged as one
+            failed item among many, and the directory loop that followed deleted the MVP's install
+            root anyway. The inner guard saw the danger; the outer loop treated its refusal as a
+            recoverable error and did the damage itself. Two guards together were weaker than the
+            inner one alone.
+
+            So the order and the stop conditions live here, where Test-ParallelInstance.ps1 can
+            drive them with injected actions, and not in the script that touches the machine:
+
+              1. Service first. ANY failure there aborts the whole uninstall before anything else
+                 is removed. A refusal from the product uninstaller is the single most important
+                 signal an uninstall can get; nothing after it runs.
+              2. Scheduled task, the double's process, firewall rules, the machine variable.
+                 Failures here are recorded and the sequence continues: none of these can reach
+                 the MVP, and one complete list of what did and did not go diagnoses a partial
+                 uninstall better than the first exception.
+              3. Directories last. Before EVERY deletion -- including each match of a staging glob --
+                 the path must pass the allowlist (Test-OwnedPath) and the production denylist.
+                 A refusal aborts the directory phase at that point. Data directories are skipped
+                 unless -RemoveData.
+
+        .PARAMETER Actions
+            Hashtable of scriptblocks, each taking one footprint item: Service, ScheduledTask,
+            Process, FirewallRule, MachineEnvironment, Directory, and DirectoryPattern (which must
+            return the matching directory paths; the sequence checks and deletes them through
+            Directory).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)] [object[]] $Footprint,
+        [Parameter(Mandatory = $true)] [hashtable] $Actions,
+        [switch] $RemoveData
+    )
+
+    $removed = [System.Collections.Generic.List[string]]::new()
+    $failed = [System.Collections.Generic.List[string]]::new()
+    $result = { param($aborted, $reason) [pscustomobject]@{
+            Removed = @($removed); Failed = @($failed); Aborted = $aborted; AbortReason = $reason } }
+
+    foreach ($item in @($Footprint | Where-Object Kind -eq 'Service')) {
+        try {
+            & $Actions.Service $item
+            $removed.Add("service '$($item.Name)'")
+        } catch {
+            return & $result $true "the service step failed, so nothing else was removed: $($_.Exception.Message)"
+        }
+    }
+
+    foreach ($kind in @('ScheduledTask', 'FirewallRule', 'MachineEnvironment')) {
+        foreach ($item in @($Footprint | Where-Object Kind -eq $kind)) {
+            try {
+                & $Actions[$kind] $item
+                $removed.Add("$kind '$($item.Name)'")
+            } catch {
+                $failed.Add("$kind '$($item.Name)': $($_.Exception.Message)")
+            }
+            if ($kind -eq 'ScheduledTask') {
+                try { & $Actions.Process $item } catch { $failed.Add("process of '$($item.Name)': $($_.Exception.Message)") }
+            }
+        }
+    }
+
+    foreach ($item in @($Footprint | Where-Object { $_.Kind -in @('Directory', 'DirectoryPattern') })) {
+        if ($item.Data -and -not $RemoveData) { continue }
+        $targets = if ($item.Kind -eq 'DirectoryPattern') {
+            try { @(& $Actions.DirectoryPattern $item) } catch {
+                $failed.Add("glob '$($item.Name)': $($_.Exception.Message)")
+                @()
+            }
+        } else {
+            @($item.Name)
+        }
+        foreach ($target in $targets) {
+            $owned = Test-OwnedPath $target
+            if ($owned) {
+                return & $result $true "refused to delete '$target': it $owned. Directory phase stopped here."
+            }
+            if (Test-ParallelInstancePathIsProduction -Path $target) {
+                return & $result $true "refused to delete '$target': it collides with a production path. Directory phase stopped here."
+            }
+            try {
+                & $Actions.Directory ([pscustomobject]@{ Kind = 'Directory'; Name = $target; Data = $item.Data })
+                $removed.Add("directory $target")
+            } catch {
+                $failed.Add("directory $($target): $($_.Exception.Message)")
+            }
+        }
+    }
+
+    return & $result $false $null
 }
 
 function Assert-ParallelInstanceDefinition {
@@ -755,6 +1193,9 @@ function Merge-ConfigurationTree {
 Export-ModuleMember -Function @(
     'Get-ParallelInstanceAllowedKey'
     'Get-ParallelInstanceFootprint'
+    'Get-ParallelInstanceLayout'
+    'Test-ParallelInstanceOwnedPath'
+    'Invoke-ParallelRemovalSequence'
     'Get-ParallelInstanceName'
     'Test-ParallelInstancePathIsProduction'
     'Get-ParallelInstanceAllowedVehicle'

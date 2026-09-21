@@ -51,7 +51,17 @@ function Write-Section { param([string] $Text) Write-Host ''; Write-Host "=== $T
 
 $backupPath = Join-Path ([IO.Path]::GetTempPath()) "instance-backup-$([guid]::NewGuid().ToString('N')).json"
 [IO.File]::Copy($resolved, $backupPath, $true)
-$baselineHash = Get-BlobHash
+$shippedHash = Get-BlobHash
+# What git says about the file before this run touches it. The teardown compares with THIS, not
+# with HEAD: a definition with uncommitted edits is legitimately " M" before the run, and "the run
+# left it modified" is a statement about the run.
+$statusBefore = (& git -C $repoRoot status --porcelain -- $relative) -join ''
+$baselineHash = $shippedHash
+
+# Everything from here to the teardown edits the real definition file. The original bytes go back
+# in the finally below however the run ends -- an exception half way through once left the file
+# in its filled-in state, because the only restore was at the end of a run that never got there.
+try {
 
 Write-Host "File      : $relative"
 Write-Host "Blob      : $baselineHash"
@@ -61,7 +71,7 @@ $failed = 0
 $passed = 0
 
 function Restore-Definition {
-    [IO.File]::Copy($backupPath, $resolved, $true)
+    [IO.File]::Copy($filledPath, $resolved, $true)
     $now = Get-BlobHash
     if ($now -ne $baselineHash) {
         throw "Restore failed: blob is $now, expected $baselineHash."
@@ -150,6 +160,32 @@ function Invoke-Case {
 # below could be passing because ConvertTo-Json reshaped the file, not because of the
 # injection -- and the whole run would prove nothing about the checks.
 # ---------------------------------------------------------------------------------
+Write-Section 'case -1: the shipped file, untouched, is refused for exactly its three map-26 placeholders'
+# control-server#262 re-review, M3. The deployment cannot run on the shipped file until the
+# two map-26 values with no source yet are filled in from the site; that is now a check. Exactly
+# three failures, all placeholders: more would mean something else is wrong with the file.
+$shippedFailures = @(Test-ParallelInstanceDefinition -Definition (Read-ParallelInstanceDefinition -Path $resolved))
+$shippedFailures | ForEach-Object { Write-Host "         - $_" }
+if ($shippedFailures.Count -eq 3 -and @($shippedFailures | Where-Object { $_ -like '*is still the placeholder*' }).Count -eq 3) {
+    Write-Host '  PASS   refused for exactly the three placeholders' -ForegroundColor Green
+    $passed++
+} else {
+    Write-Host "  FAIL   expected exactly the three placeholder failures, got $($shippedFailures.Count)" -ForegroundColor Red
+    $failed++
+}
+
+# Fill the placeholders IN THE REAL FILE with obviously-test values; that filled file is what every
+# case below edits and is restored to. The original bytes come back at the very end.
+$fillTree = Get-Content -LiteralPath $resolved -Raw -Encoding utf8 | ConvertFrom-Json -AsHashtable -Depth 12
+$fillTree['journeyRuntime']['dispatchZone'] = 'MAP-26-WIRE_TO_GATE'
+$fillTree['journeyRuntime']['allowedDispatchZones'] = @('MAP-26-WIRE_TO_GATE')
+$fillTree['journeyRuntime']['admissionPolicyDeploymentId'] = 'MAP-26-WIRE_TO_GATE-SELFTEST'
+Write-DefinitionFile $fillTree
+$filledPath = Join-Path ([IO.Path]::GetTempPath()) "instance-filled-$([guid]::NewGuid().ToString('N')).json"
+[IO.File]::Copy($resolved, $filledPath, $true)
+$baselineHash = Get-BlobHash
+Write-Host "  filled baseline blob: $baselineHash (shipped: $shippedHash)"
+
 Write-Section 'case 0: round-trip with no injection is still accepted'
 $tree = Get-Content -LiteralPath $resolved -Raw -Encoding utf8 | ConvertFrom-Json -AsHashtable -Depth 12
 Write-DefinitionFile $tree
@@ -252,18 +288,54 @@ Invoke-Case -Name "case 14: a second 'AgvId' naming agv01 beside the checked 'ag
     -Mutate { param($t) $t['journeyRuntime']['AgvId'] = '老厂前线新多仓位1'; $t } `
     -ExpectFragment 'differs only in case from journeyRuntime.agvId'
 
+# ------------------------ paths, names, map (control-server#262 re-review, S1 / M1 / M3) ---
+
+Invoke-Case -Name 'case 15: the re-review S1 reproduction, in the real file' `
+    -Observe 'installRoot, dataRoot, packageRoot, backupRoot' `
+    -Mutate {
+        param($t)
+        $t['installRoot'] = 'C:/Program Files/8005 AGV/ControlServer'
+        $t['dataRoot'] = 'C:/ProgramData/8005/ControlServer'
+        $t['packageRoot'] = 'D:\zhengyushao\ControlServer.previous'
+        $t['backupRoot'] = 'D:\zhengyushao\MesIngest'
+        $t
+    } `
+    -ExpectFragment "uses '/'"
+
+Invoke-Case -Name "case 16: dataRoot through a '..' segment onto the production database directory" `
+    -Observe 'dataRoot' `
+    -Mutate { param($t) $t['dataRoot'] = 'C:\ProgramData\8005\x\..\ControlServer'; $t } `
+    -ExpectFragment "has a '..' segment"
+
+Invoke-Case -Name 'case 17: a wildcard service name that Stop-Service would expand to the MVP' `
+    -Observe 'serviceName' `
+    -Mutate { param($t) $t['serviceName'] = '8005 AGV ControlServer*'; $t } `
+    -ExpectFragment 'contains a wildcard character'
+
+Invoke-Case -Name 'case 18: the MVP map 25 in both places' `
+    -Observe 'routeGraph.mapId, journeyRuntime.mapId' `
+    -Mutate { param($t) $t['routeGraph']['mapId'] = 25; $t['journeyRuntime']['mapId'] = 25; $t } `
+    -ExpectFragment 'is 25, the MVP''s map'
+
 # ---------------------------------------------------------------- teardown ---
 
+} finally {
+    [IO.File]::Copy($backupPath, $resolved, $true)
+    if (Test-Path variable:filledPath) { [IO.File]::Delete($filledPath) }
+}
+
 Write-Section 'final state'
+[IO.File]::Copy($backupPath, $resolved, $true)
+Remove-Item -LiteralPath $filledPath -Force -ErrorAction SilentlyContinue
 $finalHash = Get-BlobHash
+$baselineHash = $shippedHash
 $status = (& git -C $repoRoot status --porcelain -- $relative) -join ''
 Write-Host "  blob   : $finalHash (baseline $baselineHash)"
-Write-Host "  git status for this file: '$status'"
+Write-Host "  git status for this file: '$status' (before the run: '$statusBefore')"
 Remove-Item -LiteralPath $backupPath -Force -ErrorAction SilentlyContinue
 
-# '??' means untracked, which is what a definition looks like before its first commit -- it is
-# not a modification this run left behind. Anything else in the status is.
-$modified = $status -and -not $status.StartsWith('??')
+# Same bytes and the same git status as before the run -- whatever that status was.
+$modified = $status -ne $statusBefore
 if ($finalHash -ne $baselineHash -or $modified) {
     Write-Host '  FAIL   the file was left modified' -ForegroundColor Red
     $failed++
