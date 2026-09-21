@@ -96,6 +96,7 @@ public static class ControlPlane
         ArgumentNullException.ThrowIfNull(app);
         CommandEngine<FakeRiotState> engine = app.Services.GetRequiredService<CommandEngine<FakeRiotState>>();
         MapStationReadCounter mapStationReads = app.Services.GetRequiredService<MapStationReadCounter>();
+        FakeRiotSeed seed = app.Services.GetRequiredService<FakeRiotSeed>();
         RouteGroupBuilder control = app.MapGroup("/control/v1");
 
         control.MapGet("/openapi.json", ControlPlaneConventions.OpenApiDocument);
@@ -223,12 +224,14 @@ public static class ControlPlane
                     FakeStation[] stations;
                     try
                     {
-                        stations = command.Stations
-                            .Select(pair => new FakeStation(
-                                int.Parse(pair.Key, System.Globalization.CultureInfo.InvariantCulture),
-                                pair.Value))
-                            .OrderBy(station => station.Id)
-                            .ToArray();
+                        // seed 那张图上的站照 StationNodes 放到节点上（control-server#215）；别的图没有节点表，照旧不在路网上。
+                        KeyValuePair<int, string>[] requested = [.. command.Stations.Select(pair => KeyValuePair.Create(
+                            int.Parse(pair.Key, System.Globalization.CultureInfo.InvariantCulture), pair.Value))];
+                        stations = mapId == seed.MapId
+                            ? seed.PlaceStations(
+                                requested,
+                                state.EdgesByMapId.TryGetValue(mapId, out IReadOnlyList<FakeEdge>? edges) ? edges : [])
+                            : [.. requested.Select(pair => new FakeStation(pair.Key, pair.Value)).OrderBy(station => station.Id)];
                     }
                     catch (FormatException error)
                     {

@@ -221,6 +221,63 @@ public sealed class FakeRiotRouteGraphTests
         Assert.Equal(System.Net.HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    /// <summary>
+    /// 场景替换站表之后，seed 里给了节点的站仍在那个节点上，没给的站不在路网上（批次7-10，control-server#215，看板例外第 13 条）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 在这之前替换站表一律建出不带坐标的站，连原来那三个也一起掉出路网，于是「换了站表又开路网」的场景里任何路径代价都算不出。
+    /// STAGING_TO_WIRE 的多停靠场景两样都要：派工待送站 305 与第三个机台站 13 在表里，也在路网上。
+    /// </para>
+    /// <para>
+    /// 三类站各断一次：原有的站坐标与所挂的边与初始建表时一字不差（替换不改它们）；新挂上节点的站落在自己的节点上；
+    /// seed 里没有节点的站仍然不在路网上（坐标与边都是 0）——最后这一条防的是「替换时一律挂节点」那种写宽了的实现。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    public async Task ReplacingTheStationTableKeepsEveryStationThatHasANodeOnTheGraph()
+    {
+        await using RouteGraphFixture fixture = await RouteGraphFixture.StartAsync();
+        JsonElement snapshot = await fixture.Client.GetFromJsonAsync<JsonElement>(
+            new Uri("/control/v1/snapshot", UriKind.Relative), TestContext.Current.CancellationToken);
+        using HttpResponseMessage replaced = await fixture.Client.PutAsJsonAsync(
+            new Uri($"/control/v1/maps/{MapId}/stations", UriKind.Relative),
+            new
+            {
+                runId = snapshot.GetProperty("runId").GetString(),
+                commandId = "replace-stations",
+                stations = new Dictionary<string, string>
+                {
+                    ["210"] = "关卡",
+                    ["12"] = "N1-3_N1-7",
+                    ["11"] = "C15-13",
+                    ["305"] = "派工待送取货",
+                    ["13"] = "N1-5",
+                    ["99"] = "OFF-GRAPH",
+                },
+            },
+            TestContext.Current.CancellationToken);
+        replaced.EnsureSuccessStatusCode();
+        await using RiotSession session = fixture.Session();
+
+        IReadOnlyList<MapStationDetail> stations = await session.Maps.ListStationDetailsAsync(
+            MapId, TestContext.Current.CancellationToken);
+
+        (double X, double Y, int Edge) At(int id)
+        {
+            MapStationDetail station = Assert.Single(stations, item => item.StationId == id);
+            return (station.PosX, station.PosY, station.EdgeId);
+        }
+
+        Assert.Equal((20000d, 20000d, 4), At(210));
+        Assert.Equal((0d, 20000d, 2), At(12));
+        Assert.Equal((0d, 0d, 6), At(11));
+        Assert.Equal((0d, 10000d, 1), At(305));
+        Assert.Equal((10000d, 20000d, 3), At(13));
+        Assert.Equal((0d, 0d, 0), At(99));
+    }
+
     private sealed class RouteGraphFixture : IAsyncDisposable
     {
         private WebApplication app = null!;
