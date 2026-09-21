@@ -1,3 +1,4 @@
+using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Infrastructure.Persistence;
@@ -24,7 +25,7 @@ namespace ControlServer.Host.Runtime;
 /// <para>
 /// <b>「这个停靠此刻在装哪一条需求」也是落库的状态</b>：从属需求行的 <see cref="JourneyDemandStatuses.Loading"/>。
 /// 装货那一条需要状态，是因为装哪一条由操作员扫了什么决定，服务端事后推不出来；卸货那一条不需要，因为卸货是服务端
-/// 自己按顺序发的，「此刻在卸的」就是本停靠上第一条还没卸的已装需求（<see cref="NextToUnloadAtCurrentStop"/>）。
+/// 自己按顺序发的，「此刻在卸的」由已备好的卸货操作与侧的顺序推得出来（<see cref="NextToUnloadAtCurrentStop"/>）。
 /// 这个不对称是有理由的，不是漏了一半。
 /// </para>
 /// <para>
@@ -34,17 +35,28 @@ namespace ControlServer.Host.Runtime;
 /// </remarks>
 internal sealed class JourneyStopCursor
 {
+    /// <summary>
+    /// 一次停靠里跨需求卸货的侧的先后：先前侧、后后侧（规格第 20 节第 2 条按这两个分组名写）。不在里面的分组排在它们之后。
+    /// </summary>
+    private static readonly string[] UnloadSideOrder = ["FRONT", "REAR"];
+
     private readonly JourneyRuntimeRow _runtime;
+    private readonly IReadOnlyDictionary<int, string> _slotPositions;
+    private readonly IReadOnlySet<string> _unloadsPrepared;
 
     private JourneyStopCursor(
         JourneyRuntimeRow runtime,
         IReadOnlyList<JourneyStopRow> stops,
         IReadOnlyList<JourneyStopDemand> allDemands,
         bool everCarriedMoreThanOneDemand,
-        IReadOnlySet<string> demandsThatLeft)
+        IReadOnlySet<string> demandsThatLeft,
+        IReadOnlyDictionary<int, string> slotPositions,
+        IReadOnlySet<string> unloadsPrepared)
     {
         DemandsThatLeft = demandsThatLeft;
         _runtime = runtime;
+        _slotPositions = slotPositions;
+        _unloadsPrepared = unloadsPrepared;
         Stops = stops;
         AllDemands = allDemands;
         EverCarriedMoreThanOneDemand = everCarriedMoreThanOneDemand;
@@ -134,11 +146,40 @@ internal sealed class JourneyStopCursor
         .SingleOrDefault(item => item.Membership.Status == JourneyDemandStatuses.Loading);
 
     /// <summary>
-    /// 当前停靠此刻该卸的那一条：本停靠上第一条装了还没卸的。卸货逐条串行，顺序由归属先后定，所以不需要一个
-    /// 「正在卸」的状态——见类注释里那段不对称的理由。
+    /// 当前停靠此刻该卸的那一条：已经备好卸货操作的那一条，没有就按侧排在最前的那条装了还没卸的。卸货逐条串行，
+    /// 顺序由服务端定，所以不需要一个「正在卸」的状态——见类注释里那段不对称的理由。
     /// </summary>
-    public JourneyStopDemand? NextToUnloadAtCurrentStop => ProgressAtStop(Current)
-        .FirstOrDefault(item => item.Membership.Status == JourneyDemandStatuses.Loaded);
+    /// <remarks>
+    /// <para>
+    /// <b>顺序先前侧后后侧，同侧之间按加入旅程的先后</b>（control-server#303；规格第 20 节，REQ-0357、ADR-cross-0061，第 20.2 节表中
+    /// 「第 5.1 节第 4 条」一行）。同一条指令内的先后由车载端执行器保证；一次停靠里<b>跨需求</b>的先后只有服务端发命令的顺序决定，
+    /// 所以排在这里。侧从需求的目标仓位（卸货命令开的就是它们）经车的仓位分组读（<see cref="VehicleSlotPositionReader"/>，
+    /// 派车与按侧判满用的同一个取法），不按仓号区间推；一条需求的侧取它最先会开的那一扇。车的仓位模型解析不出来、或仓位不在
+    /// 前后两组里时排在最后，全都解析不出来就退回加入先后——那正是修之前的答案。
+    /// </para>
+    /// <para>
+    /// <b>已经备好仓位操作的那一条优先于排序。</b>「此刻在卸的」没有落库的状态，是每轮重算的；而排序依据（车的仓位分组）
+    /// 可以在一次停靠中途变，升级那一刻在卸的那条也是旧版本按加入先后挑的。只按排序取，重算出来的「第一条」可能不是已经
+    /// 发出去的那一条，推进段就去等一条从没发过的命令的结果——旅程静默停住，已发出那条的结果也没人结算。所以一次一条、
+    /// 前一条闭环才发下一条这个保证由构造承担：排序只决定<b>下一条</b>发给谁
+    /// （<c>Batch7UnloadSideOrderTests.AnUnloadAlreadyCommandedIsSeenThroughBeforeTheSideOrderPicksTheNextOne</c>）。
+    /// </para>
+    /// <para>
+    /// <b>装货没有对应的排序</b>：装哪一条由操作员扫了什么决定（<see cref="LoadingAtCurrentStop"/>），跨需求的先后是扫码的
+    /// 先后，服务端不改它。
+    /// </para>
+    /// </remarks>
+    public JourneyStopDemand? NextToUnloadAtCurrentStop
+    {
+        get
+        {
+            JourneyStopDemand[] loaded =
+                [.. ProgressAtStop(Current).Where(item => item.Membership.Status == JourneyDemandStatuses.Loaded)];
+            // OrderBy 是稳定排序：同一侧的保持 ProgressAtStop 给的加入先后。
+            return loaded.FirstOrDefault(item => _unloadsPrepared.Contains(item.Membership.UnloadSlotOperationAttemptId))
+                ?? loaded.OrderBy(UnloadSideRank).FirstOrDefault();
+        }
+    }
 
     /// <summary>这个停靠上挂着的全部归属（含已终结的），按加入旅程的先后。清单的版数按它数。</summary>
     public IReadOnlyList<JourneyStopDemand> AllAtStop(JourneyStopRow stop)
@@ -280,6 +321,18 @@ internal sealed class JourneyStopCursor
     private static Func<JourneyStopDemand, bool> IsOutstandingAt(JourneyStopRow stop) =>
         item => !IsDoneAt(stop, item);
 
+    /// <summary>一条需求卸货时最先开的那一扇在哪一侧，按 <see cref="UnloadSideOrder"/> 给出序号；说不出来的排在最后。</summary>
+    private int UnloadSideRank(JourneyStopDemand item) =>
+        (JsonSerializer.Deserialize<int[]>(item.Membership.TargetSlotsJson) ?? [])
+        .Select(SideRankOf)
+        .DefaultIfEmpty(UnloadSideOrder.Length)
+        .Min();
+
+    private int SideRankOf(int slot) =>
+        _slotPositions.TryGetValue(slot, out string? side) && Array.IndexOf(UnloadSideOrder, side) is var rank and >= 0
+            ? rank
+            : UnloadSideOrder.Length;
+
     public IReadOnlyList<JourneyStopDemand> AtStop(JourneyStopRow stop)
     {
         ArgumentNullException.ThrowIfNull(stop);
@@ -341,17 +394,46 @@ internal sealed class JourneyStopCursor
                 demand => demand.DemandId,
                 (membership, demand) => new JourneyStopDemand(membership, demand))
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        JourneyStopDemand[] carried =
+        [
+            .. everCarried
+                .Where(row => row.Membership.RemovedAt == null)
+                .OrderBy(row => row.Membership.AddedAt)
+                .ThenBy(row => row.Membership.DemandId, StringComparer.Ordinal)
+        ];
+
+        // 卸货的侧序（control-server#303）只在当前停靠是卸货停靠、上面有不止一条已装需求时才有东西可排，其余时候不多读一次库：
+        // 单需求停靠与取货停靠的答案按构造与修之前相同。
+        JourneyStopRow? current = stops.FirstOrDefault(IsOpen);
+        string[] toUnload = current?.StopRole == JourneyStopRoles.Unload
+            ? [.. carried
+                .Where(row => row.Membership.UnloadStopId == current.StopId &&
+                              row.Membership.Status == JourneyDemandStatuses.Loaded)
+                .Select(row => row.Membership.UnloadSlotOperationAttemptId)]
+            : [];
+        IReadOnlyDictionary<int, string> slotPositions = new Dictionary<int, string>();
+        HashSet<string> unloadsPrepared = new(StringComparer.Ordinal);
+        if (toUnload.Length > 1)
+        {
+            slotPositions = (await new VehicleSlotPositionReader(dbContext)
+                    .ReadAsync(runtime.AgvId, cancellationToken).ConfigureAwait(false))
+                ?.SlotPositionByPhysicalSlot ?? slotPositions;
+            unloadsPrepared.UnionWith(await dbContext.StationOperations.AsNoTracking()
+                .Where(row => toUnload.Contains(row.SlotOperationAttemptId))
+                .Select(row => row.SlotOperationAttemptId)
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false));
+        }
+
         return new JourneyStopCursor(
             runtime,
             stops,
-            [.. everCarried
-                .Where(row => row.Membership.RemovedAt == null)
-                .OrderBy(row => row.Membership.AddedAt)
-                .ThenBy(row => row.Membership.DemandId, StringComparer.Ordinal)],
+            carried,
             everCarried.Length > 1,
             new HashSet<string>(
                 everCarried.Where(row => row.Membership.RemovedAt != null).Select(row => row.Membership.DemandId),
-                StringComparer.Ordinal));
+                StringComparer.Ordinal),
+            slotPositions,
+            unloadsPrepared);
     }
 
     /// <summary>

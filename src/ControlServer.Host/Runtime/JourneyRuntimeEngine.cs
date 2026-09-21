@@ -888,8 +888,9 @@ public sealed class JourneyRuntimeEngine(
                 SetStage(runtime, JourneyRuntimeStage.AwaitingUnloadResult, now);
                 break;
             case JourneyRuntimeStage.AwaitingUnloadResult:
-                // 等的是本停靠此刻该卸的那一条（批次7-06）。卸货不需要一个「正在卸」的状态：卸是服务端自己按归属先后
-                // 发的，一条卸完才发下一条，所以「此刻在卸的」恒等于「第一条还没卸的已装需求」。
+                // 等的是本停靠此刻该卸的那一条（批次7-06）。卸货不需要一个「正在卸」的状态：卸是服务端自己按顺序发的
+                // （先前侧后后侧，control-server#303），一条卸完才发下一条，已经发出去的那一条由游标优先认出来
+                // （JourneyStopCursor.NextToUnloadAtCurrentStop）。
                 JourneyStopDemand unloading = stops.NextToUnloadAtCurrentStop
                     ?? throw new InvalidDataException(
                         $"Journey {runtime.JourneyId} waits for an unload result with nothing left to unload.");
@@ -1845,6 +1846,11 @@ public sealed class JourneyRuntimeEngine(
     /// 对本停靠该卸的那一条需求下卸货命令。一条卸完再下一条——同一站的几条需求逐条串行，一次只开一排仓门
     /// （规格第 22 节补记；一次只开一个仓门的现场口径见 8005-agv-program#111）。
     /// </summary>
+    /// <remarks>
+    /// 跨需求的先后是先前侧后后侧、同侧按加入先后（control-server#303，规格第 20 节），排序在
+    /// <see cref="JourneyStopCursor.NextToUnloadAtCurrentStop"/>。装货没有对应的排序：装哪一条、先装哪一条由操作员扫码的
+    /// 顺序决定，服务端不改它。
+    /// </remarks>
     private async Task PublishUnloadCommandAsync(
         JourneyRuntimeRow runtime,
         JourneyStopCursor stops,
@@ -3014,7 +3020,7 @@ public sealed class JourneyRuntimeEngine(
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        // attempt 取「此刻在做的那一条」的（批次7-06）：装的那条由录入决定，卸的那条由归属先后决定。
+        // attempt 取「此刻在做的那一条」的（批次7-06）：装的那条由录入决定，卸的那条由游标按侧与已发出的操作决定。
         JourneyStopCursor stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken)
             .ConfigureAwait(false);
         (string? attemptId, string reason) = runtime.Stage switch
