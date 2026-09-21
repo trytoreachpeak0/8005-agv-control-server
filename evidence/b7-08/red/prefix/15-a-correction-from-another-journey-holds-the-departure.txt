@@ -1,0 +1,21 @@
+# 修前红：离站判定查纠错只按需求号筛（cca61c80 的写法），新用例在这版代码上跑
+# build:
+    0 Error(s)
+# test run (filter: AnOpenCorrectionLeftByAnotherJourneyDoesNotHoldTheDeparture):
+[xUnit.net 00:00:09.89]     ControlServer.Tests.Batch7StationYieldTests.AnOpenCorrectionLeftByAnotherJourneyDoesNotHoldTheDeparture(why: "opened on another vehicle", agvId: "AGV-PREVIOUS", minutesFromJoining: 0) [FAIL]
+  Failed ControlServer.Tests.Batch7StationYieldTests.AnOpenCorrectionLeftByAnotherJourneyDoesNotHoldTheDeparture(why: "opened on another vehicle", agvId: "AGV-PREVIOUS", minutesFromJoining: 0) [6 s]
+  Error Message:
+   Assert.NotEqual() Failure: Strings are equal
+Expected: Not "LOAD_CORRECTION_IN_PROGRESS"
+Actual:       "LOAD_CORRECTION_IN_PROGRESS"
+  Stack Trace:
+--
+[xUnit.net 00:00:10.57]     ControlServer.Tests.Batch7StationYieldTests.AnOpenCorrectionLeftByAnotherJourneyDoesNotHoldTheDeparture(why: "opened before the demand joined this journey", agvId: null, minutesFromJoining: -60) [FAIL]
+  Failed ControlServer.Tests.Batch7StationYieldTests.AnOpenCorrectionLeftByAnotherJourneyDoesNotHoldTheDeparture(why: "opened before the demand joined this journey", agvId: null, minutesFromJoining: -60) [675 ms]
+  Error Message:
+   Assert.NotEqual() Failure: Strings are equal
+Expected: Not "LOAD_CORRECTION_IN_PROGRESS"
+Actual:       "LOAD_CORRECTION_IN_PROGRESS"
+  Stack Trace:
+--
+Failed!  - Failed:     2, Passed:     0, Skipped:     0, Total:     2, Duration: 6 s - ControlServer.Tests.dll (net8.0)

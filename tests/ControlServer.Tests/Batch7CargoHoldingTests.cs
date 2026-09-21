@@ -681,7 +681,7 @@ public sealed class Batch7CargoHoldingTests
     }
 
     /// <summary>把第一条需求目标仓位之外的每个仓位都禁用：前侧只剩它自己的货，后侧一个空仓都没有。</summary>
-    private static async Task LeaveOnlyTheFirstDemandsSlotsAsync(RuntimeFixture fixture)
+    internal static async Task LeaveOnlyTheFirstDemandsSlotsAsync(RuntimeFixture fixture)
     {
         CancellationToken token = TestContext.Current.CancellationToken;
         int[] own = JsonSerializer.Deserialize<int[]>((await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
@@ -705,7 +705,7 @@ public sealed class Batch7CargoHoldingTests
         fixture.Context.ChangeTracker.Clear();
     }
 
-    private static async Task<LoadingPhaseSnapshot[]> LoadingPhaseSnapshotsAsync(RuntimeFixture fixture)
+    internal static async Task<LoadingPhaseSnapshot[]> LoadingPhaseSnapshotsAsync(RuntimeFixture fixture)
     {
         ProtocolOutboxRow[] rows = await fixture.Context.ProtocolOutbox.AsNoTracking()
             .Where(row => row.MessageType == "VehicleBusinessStateSnapshot")
@@ -731,7 +731,7 @@ public sealed class Batch7CargoHoldingTests
         ];
     }
 
-    private static void AssertStrictlyIncreasing(LoadingPhaseSnapshot[] snapshots)
+    internal static void AssertStrictlyIncreasing(LoadingPhaseSnapshot[] snapshots)
     {
         long[] revisions = [.. snapshots.Select(snapshot => snapshot.Revision)];
         Assert.Equal(revisions.Distinct().Count(), revisions.Length);
@@ -806,10 +806,10 @@ public sealed class Batch7CargoHoldingTests
         }
     }
 
-    private static async Task<bool> DepartureCheckSentAsync(RuntimeFixture fixture) =>
+    internal static async Task<bool> DepartureCheckSentAsync(RuntimeFixture fixture) =>
         await DepartureChecksSentAsync(fixture) > 0;
 
-    private static Task<int> DepartureChecksSentAsync(RuntimeFixture fixture) =>
+    internal static Task<int> DepartureChecksSentAsync(RuntimeFixture fixture) =>
         fixture.Context.ProtocolOutbox.AsNoTracking()
             .CountAsync(row => row.MessageType == "PreDepartureSafetyCheck", TestContext.Current.CancellationToken);
 }

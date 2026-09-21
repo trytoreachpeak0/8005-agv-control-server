@@ -4,7 +4,7 @@ using ControlServer.Host.Runtime;
 namespace ControlServer.Tests;
 
 /// <summary>
-/// 装货阶段的判定表（批次7-07，control-server#212）：<see cref="LoadingPhaseMachine"/> 类注释那六条，每条至少一格，
+/// 装货阶段的判定表（批次7-07，control-server#212）：<see cref="LoadingPhaseMachine"/> 类注释那七条（第 2 条让站由批次7-08，control-server#213 加），每条至少一格，
 /// 以及它们之间的先后。
 /// </summary>
 /// <remarks>
@@ -14,8 +14,8 @@ namespace ControlServer.Tests;
 /// 规则，改动一条规则时能直接看出哪几行该变。
 /// </para>
 /// <para>
-/// <b>先后是判据的一半。</b>六条规则各自成立不等于合起来对：「持货期限到了」与「两侧都满」同时成立时该是哪一个，只有规则的
-/// 先后说得出。<see cref="PrecedenceIsTheRuleOrder"/> 那几格就是为此单列的——把第 4 条挪到第 6 条之后，满车会在期限到时
+/// <b>先后是判据的一半。</b>七条规则各自成立不等于合起来对：「持货期限到了」与「两侧都满」同时成立时该是哪一个，只有规则的
+/// 先后说得出。<see cref="PrecedenceIsTheRuleOrder"/> 那几格就是为此单列的——把第 5 条挪到第 7 条之后，满车会在期限到时
 /// 仍报 <c>VEHICLE_FULL</c>，别的每一行都还是绿的。
 /// </para>
 /// </remarks>
@@ -47,7 +47,17 @@ public sealed class LoadingPhaseMachineTests
         { "planned-complete stays closed when appending becomes allowed",
             Holding(Closed, LoadingClosedReasons.PlannedLoadingComplete) with { PendingLoadsRemain = false }, Closed, LoadingClosedReasons.PlannedLoadingComplete },
 
-        // ---- 第 2 条：离开最后一个装货停靠 -------------------------------------------------------------
+        // ---- 第 2 条：让站（批次7-08，control-server#213）：等单或满了尚未离开的车，被别的车以本站为下一停靠 ------------------
+        { "waiting vehicle yields",
+            Holding(Wait) with { PendingLoadsRemain = false, YieldTriggered = true }, Closed, LoadingClosedReasons.WaitingStationYield },
+        { "full vehicle still loading its committed demands yields at once (the loads carry on)",
+            Holding(Full) with { VehicleFull = true, YieldTriggered = true }, Closed, LoadingClosedReasons.WaitingStationYield },
+        { "yield does not wait for the executing load batch (it ends the phase, not the stop's work)",
+            Holding(Full) with { VehicleFull = true, LoadBatchInProgress = true, YieldTriggered = true }, Closed, LoadingClosedReasons.WaitingStationYield },
+        { "closed by yield stays closed though the triggering vehicle's plan changed",
+            Holding(Closed, LoadingClosedReasons.WaitingStationYield), Closed, LoadingClosedReasons.WaitingStationYield },
+
+        // ---- 第 3 条：离开最后一个装货停靠 -------------------------------------------------------------
         { "full vehicle leaving its last pickup closes as VEHICLE_FULL",
             Holding(Full) with { PendingLoadsRemain = false, LastLoadingStopDeparted = true, VehicleFull = true }, Closed, LoadingClosedReasons.VehicleFull },
         { "loading journey leaving its last pickup (not holding) closes as planned-complete",
@@ -55,7 +65,7 @@ public sealed class LoadingPhaseMachineTests
         { "a journey from before the columns (null) past its pickup closes as planned-complete",
             Holding(null) with { PendingLoadsRemain = false, LastLoadingStopDeparted = true }, Closed, LoadingClosedReasons.PlannedLoadingComplete },
 
-        // ---- 第 3 条：不适用持货等单 -------------------------------------------------------------------
+        // ---- 第 4 条：不适用持货等单 -------------------------------------------------------------------
         { "not holding, loads pending: LOADING",
             Holding(null) with { HoldingApplicable = false }, Loading, null },
         { "not holding, loads done: planned-complete",
@@ -67,7 +77,7 @@ public sealed class LoadingPhaseMachineTests
         { "waiting vehicle whose zones stop allowing appends closes as planned-complete",
             Holding(Wait) with { HoldingApplicable = false, PendingLoadsRemain = false }, Closed, LoadingClosedReasons.PlannedLoadingComplete },
 
-        // ---- 第 4 条：持货期限 -------------------------------------------------------------------------
+        // ---- 第 5 条：持货期限 -------------------------------------------------------------------------
         { "deadline passed while waiting: timeout",
             Holding(Wait) with { PendingLoadsRemain = false, HoldingDeadlinePassed = true }, Closed, LoadingClosedReasons.CargoHoldingTimeout },
         // 「到期时别的停靠上还有待装」不在这张表里，见 ADeadlinePassedWithLoadsPendingElsewhereClosesTodayPendingCs290。
@@ -76,13 +86,13 @@ public sealed class LoadingPhaseMachineTests
         { "deadline passed, batch executing, vehicle full: stays full until the batch closes",
             Holding(Full) with { HoldingDeadlinePassed = true, LoadBatchInProgress = true, VehicleFull = true }, Full, null },
 
-        // ---- 第 5 条：离站核验已发出 -------------------------------------------------------------------
+        // ---- 第 6 条：离站核验已发出 -------------------------------------------------------------------
         { "full with departure under way stays full though a side frees",
             Holding(Full) with { PendingLoadsRemain = false, VehicleFull = false, DepartureUnderWay = true }, Full, null },
         { "departure under way does not make a loading vehicle full",
             Holding(Loading) with { DepartureUnderWay = true }, Loading, null },
 
-        // ---- 第 6 条：满没满 ---------------------------------------------------------------------------
+        // ---- 第 7 条：满没满 ---------------------------------------------------------------------------
         { "both sides full while loads pending: VEHICLE_FULL mid-plan",
             Holding(Loading) with { VehicleFull = true }, Full, null },
         { "loading done, not full: CARGO_HOLDING_WAIT",
@@ -139,15 +149,30 @@ public sealed class LoadingPhaseMachineTests
 
     public static TheoryData<string, LoadingPhaseMachine.Facts, string, string?> Precedence() => new()
     {
-        // 第 2 条先于第 4 条：离开最后一个装货停靠时期限也过了，结束原因是「装满走了」，不是「超时」。
+        // 第 1 条先于第 2 条：已经因超时关闭，之后再被触发让站，原因不改写（不可撤回的另一面：先到的结论不被后到的替换）。
+        { "closed by timeout is not rewritten by a later yield",
+            Holding(Closed, LoadingClosedReasons.CargoHoldingTimeout) with { YieldTriggered = true },
+            Closed, LoadingClosedReasons.CargoHoldingTimeout },
+        // 第 2 条先于第 3、5、6、7 条：触发发生在车离开之前（只有站在停靠上的车会被触发），所以离站那一轮才判到的触发仍是让站；
+        // 期限、满、离站在途都不改变「是让站结束的」。触发晚于期限的，调用方不把它当触发（YieldTriggeredBeforeHoldingDeadline）。
+        { "yield beats departed-full",
+            Holding(Full) with { PendingLoadsRemain = false, LastLoadingStopDeparted = true, VehicleFull = true, YieldTriggered = true },
+            Closed, LoadingClosedReasons.WaitingStationYield },
+        { "yield beats deadline",
+            Holding(Wait) with { PendingLoadsRemain = false, HoldingDeadlinePassed = true, YieldTriggered = true },
+            Closed, LoadingClosedReasons.WaitingStationYield },
+        { "yield beats full with departure under way",
+            Holding(Full) with { PendingLoadsRemain = false, VehicleFull = true, DepartureUnderWay = true, YieldTriggered = true },
+            Closed, LoadingClosedReasons.WaitingStationYield },
+        // 第 3 条先于第 5 条：离开最后一个装货停靠时期限也过了，结束原因是「装满走了」，不是「超时」。
         { "departed full beats deadline",
             Holding(Full) with { PendingLoadsRemain = false, LastLoadingStopDeparted = true, HoldingDeadlinePassed = true, VehicleFull = true },
             Closed, LoadingClosedReasons.VehicleFull },
-        // 第 3 条先于第 4、6 条：不适用持货等单，期限与满都不算数。
+        // 第 4 条先于第 5、7 条：不适用持货等单，期限与满都不算数。
         { "not holding beats deadline and full",
             Holding(Loading) with { HoldingApplicable = false, PendingLoadsRemain = false, HoldingDeadlinePassed = true, VehicleFull = true },
             Closed, LoadingClosedReasons.PlannedLoadingComplete },
-        // 第 4 条先于第 5、6 条：期限到了，满车不再为「还在离站」保持 FULL——它结束，结束原因是超时。
+        // 第 5 条先于第 6、7 条：期限到了，满车不再为「还在离站」保持 FULL——它结束，结束原因是超时。
         { "deadline beats full",
             Holding(Full) with { PendingLoadsRemain = false, HoldingDeadlinePassed = true, VehicleFull = true },
             Closed, LoadingClosedReasons.CargoHoldingTimeout },
@@ -189,8 +214,9 @@ public sealed class LoadingPhaseMachineTests
                from deadline in flags
                from batch in flags
                from departing in flags
+               from yielded in flags
                select new LoadingPhaseMachine.Facts(
-                   state, null, applicable, pending, departed, full, deadline, batch, departing)
+                   state, null, applicable, pending, departed, full, deadline, batch, departing, yielded)
         ];
         foreach (LoadingPhaseMachine.Facts facts in combinations)
         {
@@ -198,8 +224,8 @@ public sealed class LoadingPhaseMachineTests
             Assert.Equal(decision.State == Closed, decision.ClosedReason is not null);
         }
 
-        // 4 种状态 × 6 个布尔（2⁶）× 3 种满没满：少一维就少一半，一个被悄悄删掉的循环在这里看得见。
-        Assert.Equal(4 * 64 * 3, combinations.Length);
+        // 4 种状态 × 7 个布尔（2⁷）× 3 种满没满：少一维就少一半，一个被悄悄删掉的循环在这里看得见。
+        Assert.Equal(4 * 128 * 3, combinations.Length);
     }
 
     /// <summary>
@@ -214,6 +240,8 @@ public sealed class LoadingPhaseMachineTests
     [InlineData(Full, null, Closed, LoadingClosedReasons.VehicleFull, true, true)]
     [InlineData(Wait, null, Closed, LoadingClosedReasons.CargoHoldingTimeout, true, true)]
     [InlineData(Loading, null, Closed, LoadingClosedReasons.CargoHoldingTimeout, true, true)]
+    [InlineData(Wait, null, Closed, LoadingClosedReasons.WaitingStationYield, true, true)]
+    [InlineData(Full, null, Closed, LoadingClosedReasons.WaitingStationYield, true, true)]
     // 适用持货等单的旅程装完之后进 WAIT 或 FULL，不会直接到 PLANNED；真到了（列落地之前在途的旅程离站）也发，因为那是持货的车。
     [InlineData(Loading, null, Closed, LoadingClosedReasons.PlannedLoadingComplete, true, true)]
     // 不适用持货等单：装完不发——与批次 7 之前逐条相同的那个保证。

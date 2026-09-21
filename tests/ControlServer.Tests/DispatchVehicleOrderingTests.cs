@@ -178,6 +178,58 @@ public sealed class DispatchVehicleOrderingTests
                 .ContainsKey("agv-03"));
     }
 
+    // ---- 持货等单与让站不进排序 ---------------------------------------------------------------
+
+    /// <summary>
+    /// 等单的车不取得派车优先权，让站也不给触发方加分（REQ-0355，规格第 5.1 节第 8 条；批次7-08，control-server#213）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 今天这是构造决定的：排序层能看到的整份出价里，持货等单只体现在 <c>Facts.Plan</c>（车在自己最后装货的站上、计划还开着），
+    /// 让站只体现在它的 <c>LoadingPhaseClosed</c>，而没有一层读这两样。这条把「没有一层读」钉成约束：哪天有人为了「让等着的车
+    /// 先接走这一单」在某一层里看了计划，这里红。
+    /// </para>
+    /// <para>
+    /// 每一层都断，而且正反两向：只断选出来的是谁，一层偏向等单车、另一层恰好偏回来，合起来仍是同一辆，看不出来。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void HoldingAndYieldingChangeNoLayersVerdict()
+    {
+        EligibleVehicleOffer idle = Offer("agv-02");
+        EligibleVehicleOffer holding = WithPlan(idle, HoldingPlan(loadingPhaseClosed: false));
+        EligibleVehicleOffer yielded = WithPlan(idle, HoldingPlan(loadingPhaseClosed: true));
+
+        foreach (IDispatchVehicleComparisonLayer layer in DispatchVehicleOrdering.Layers())
+        {
+            string name = layer.GetType().Name;
+            Assert.True(layer.Compare(holding, idle) == 0, $"{name} ranks a holding vehicle apart from an idle one.");
+            Assert.True(layer.Compare(idle, holding) == 0, $"{name} ranks an idle vehicle apart from a holding one.");
+            Assert.True(layer.Compare(holding, yielded) == 0, $"{name} ranks a yielded vehicle apart from a holding one.");
+            Assert.True(layer.Compare(yielded, holding) == 0, $"{name} ranks a holding vehicle apart from a yielded one.");
+        }
+
+        // 两辆别的都一样的车，谁在等单都不改变选谁：选中的始终是按车号兜底的那一辆。
+        EligibleVehicleOffer first = Offer("agv-02");
+        EligibleVehicleOffer second = Offer("agv-03");
+        Assert.Equal("agv-02", DispatchVehicleOrdering.SelectNext([second, WithPlan(first, HoldingPlan(false))]).Vehicle.AgvId);
+        Assert.Equal("agv-02", DispatchVehicleOrdering.SelectNext([WithPlan(second, HoldingPlan(false)), first]).Vehicle.AgvId);
+    }
+
+    private static EligibleVehicleOffer WithPlan(EligibleVehicleOffer offer, EnRouteVehiclePlan plan) =>
+        offer with { Facts = offer.Facts with { Plan = plan } };
+
+    /// <summary>车停在它最后装货的站（12）上，计划里还剩这个取货停靠与关卡卸货停靠。</summary>
+    private static EnRouteVehiclePlan HoldingPlan(bool loadingPhaseClosed) => new(
+        [
+            new EnRouteStop("pickup", "N1-3_N1-7", 12, "ZONE", JourneyStopRoles.Pickup),
+            new EnRouteStop("unload", "关卡", 210, "ZONE", JourneyStopRoles.Unload),
+        ],
+        VehicleStationRiotId: 12,
+        CurrentNextStopIndex: 0,
+        new Dictionary<string, int>(StringComparer.Ordinal),
+        loadingPhaseClosed);
+
     // ---- 一辆车对一条任务的出价，只填排序层读的那几样 -----------------------------------------
 
     private static EligibleVehicleOffer Offer(

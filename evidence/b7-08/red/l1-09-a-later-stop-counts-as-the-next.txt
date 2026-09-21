@@ -1,0 +1,33 @@
+# injection: l1-09-a-later-stop-counts-as-the-next
+# file: src/ControlServer.Infrastructure/Persistence/StationYield.cs
+--- 
++++ 
+@@ -61,3 +61,3 @@
+ 
+-        return StandsAtCurrentStop(stage) ? open.ElementAtOrDefault(1) : open[0];
++        return StandsAtCurrentStop(stage) ? open[^1] : open[0];
+     }
+# build:
+0 Error(s)
+# test run (filter: FullyQualifiedName~Batch7StationYield|FullyQualifiedName~LoadingPhaseMachineTests|FullyQualifiedName~DispatchVehicleOrderingTests):
+  Failed ControlServer.Tests.Batch7StationYieldTriggerTests.AnAppendThatPutsTheStationLaterThanTheNextStopTriggersNothing [714 ms]
+  Error Message:
+   Assert.Null() Failure: Value of type 'Nullable<DateTimeOffset>' has a value
+Expected: null
+Actual:   2026-09-19T09:04:00.0000000+00:00
+     at ControlServer.Tests.Batch7StationYieldTriggerTests.AnAppendThatPutsTheStationLaterThanTheNextStopTriggersNothing() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTriggerTests.cs:line 201
+   at ControlServer.Tests.Batch7StationYieldTriggerTests.AnAppendThatPutsTheStationLaterThanTheNextStopTriggersNothing() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTriggerTests.cs:line 201
+  Failed ControlServer.Tests.Batch7StationYieldTriggerTests.OnItsLastStopAVehicleHasNoNextStop [5 ms]
+  Error Message:
+   Assert.Null() Failure: Value is not null
+Expected: null
+Actual:   JourneyStopRow { CreatedAt = 0001-01-01T00:00:00.0000000+00:00, DepartureSafetyCheckId = null, DepartureSafetyCheckMessageId = null, DispatchZone = "ZONE", JourneyId = "journey", ··· }
+     at ControlServer.Tests.Batch7StationYieldTriggerTests.OnItsLastStopAVehicleHasNoNextStop() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTriggerTests.cs:line 275
+  Failed ControlServer.Tests.Batch7StationYieldTriggerTests.AnAppendThatMakesTheStationAnotherVehiclesNextStopMakesTheHolderYield [593 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 2026-09-19T09:04:00.0000000+00:00
+Actual:   null
+     at ControlServer.Tests.Batch7StationYieldTriggerTests.AnAppendThatMakesTheStationAnotherVehiclesNextStopMakesTheHolderYield() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTriggerTests.cs:line 178
+   at ControlServer.Tests.Batch7StationYieldTriggerTests.AnAppendThatMakesTheStationAnotherVehiclesNextStopMakesTheHolderYield() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTriggerTests.cs:line 179
+Failed!  - Failed:     3, Passed:   109, Skipped:     0, Total:   112, Duration: 45 s - ControlServer.Tests.dll (net8.0)

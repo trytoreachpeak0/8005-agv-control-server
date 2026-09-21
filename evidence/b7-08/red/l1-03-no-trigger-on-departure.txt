@@ -1,0 +1,28 @@
+# injection: l1-03-no-trigger-on-departure
+# file: src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+--- 
++++ 
+@@ -823,5 +823,2 @@
+                 // 与这个停靠完成落在同一次保存里被标记；装或卸都算（规格第 5.1 节第 8 条）。
+-                await StationYield.StageTriggerAsync(
+-                        dbContext, runtime.VehicleKey, nextStop.StationRiotId, now, cancellationToken)
+-                    .ConfigureAwait(false);
+                 SetStage(
+# build:
+0 Error(s)
+# test run (filter: FullyQualifiedName~Batch7StationYield|FullyQualifiedName~LoadingPhaseMachineTests|FullyQualifiedName~DispatchVehicleOrderingTests):
+  Failed ControlServer.Tests.Batch7StationYieldTests.ADepartureThatCrashesBeforeItsSaveLeavesNoTriggerAndTheRetryWritesBoth [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "BROKERX-0c20ff0600d644869a6a80c186065d85"
+Actual:   null
+     at ControlServer.Tests.Batch7StationYieldTests.ADepartureThatCrashesBeforeItsSaveLeavesNoTriggerAndTheRetryWritesBoth() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 635
+   at ControlServer.Tests.Batch7StationYieldTests.ADepartureThatCrashesBeforeItsSaveLeavesNoTriggerAndTheRetryWritesBoth() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 635
+  Failed ControlServer.Tests.Batch7StationYieldTests.AVehicleLeavingForTheStationMakesTheHolderThereYield [2 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 2026-08-26T01:00:05.0000000+00:00
+Actual:   null
+     at ControlServer.Tests.Batch7StationYieldTests.AVehicleLeavingForTheStationMakesTheHolderThereYield() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 596
+   at ControlServer.Tests.Batch7StationYieldTests.AVehicleLeavingForTheStationMakesTheHolderThereYield() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-08-8005-agv-control-server\tests\ControlServer.Tests\Batch7StationYieldTests.cs:line 598
+Failed!  - Failed:     2, Passed:   110, Skipped:     0, Total:   112, Duration: 49 s - ControlServer.Tests.dll (net8.0)

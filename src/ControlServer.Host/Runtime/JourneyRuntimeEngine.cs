@@ -727,7 +727,7 @@ public sealed class JourneyRuntimeEngine(
                 await ReconcileLoadingPhaseAsync(
                     runtime, stops, session, holdingApplicable, departingFrom: null, now, cancellationToken)
                     .ConfigureAwait(false);
-                if (!await StationDepartureWaitIsOverAsync(runtime, now, cancellationToken).ConfigureAwait(false))
+                if (!await StationDepartureWaitIsOverAsync(runtime, stops, now, cancellationToken).ConfigureAwait(false))
                 {
                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                     return;
@@ -819,6 +819,11 @@ public sealed class JourneyRuntimeEngine(
                 // 车开走了，这个停靠就完成了：当前停靠指针从此是落库的状态（批次7-06），下一轮加载游标读到的是下一个。
                 (await TrackedStopAsync(departedFrom.StopId, cancellationToken).ConfigureAwait(false)).Status =
                     JourneyStopStatuses.Completed;
+                // 让站（批次7-08，control-server#213）：车开走了，它的下一停靠从此是 nextStop。停在那个站持货等单的别的车，
+                // 与这个停靠完成落在同一次保存里被标记；装或卸都算（规格第 5.1 节第 8 条）。
+                await StationYield.StageTriggerAsync(
+                        dbContext, runtime.VehicleKey, nextStop.StationRiotId, now, cancellationToken)
+                    .ConfigureAwait(false);
                 SetStage(
                     runtime,
                     nextStop.StopRole == JourneyStopRoles.Pickup
@@ -1636,8 +1641,9 @@ public sealed class JourneyRuntimeEngine(
         // 而不是在算式里塞一个「已经重发过几次」的偏移量。
         runtime.PlanRevision = revision - (arrived ? stop.Sequence : stop.Sequence - 1);
         await RetireSupersededSnapshotAsync(last.MessageId, cancellationToken).ConfigureAwait(false);
+        // 基准抬过之后 PlanRevisionAt(基准, 停靠, arrived) 恰好等于 revision，所以这里与补发集合、到站退役取的是同一个 id。
         await publisher.PublishUpcomingStopPlanAsync(
-            JourneyPlanBuilder.StableGuid($"{stop.StopId}|{revision}", "plan"),
+            ReSentPlanMessageId(runtime, stop, arrived),
             runtime.AgvId,
             session.SessionGeneration,
             JourneyPlanBuilder.Plan(runtime, stops.Stops, stop, arrived, revision),
@@ -2564,7 +2570,7 @@ public sealed class JourneyRuntimeEngine(
             vehicleFull = await JudgeVehicleFullAsync(runtime, cancellationToken).ConfigureAwait(false);
         }
 
-        LoadingPhaseMachine.Decision decision = LoadingPhaseMachine.Decide(new LoadingPhaseMachine.Facts(
+        LoadingPhaseMachine.Facts facts = new(
             runtime.LoadingPhaseState,
             runtime.LoadingClosedReason,
             holdingApplicable,
@@ -2574,7 +2580,30 @@ public sealed class JourneyRuntimeEngine(
             HoldingDeadlinePassed: runtime.CargoHoldingStartedAt is { } startedAt &&
                                    now >= startedAt + runtimeOptions.CargoHoldingTimeout,
             LoadBatchInProgress: runtime.Stage == JourneyRuntimeStage.AwaitingLoadResult,
-            DepartureUnderWay: departingFrom is null && runtime.Stage == JourneyRuntimeStage.AwaitingDepartureSafety));
+            DepartureUnderWay: departingFrom is null && runtime.Stage == JourneyRuntimeStage.AwaitingDepartureSafety,
+            YieldTriggered: YieldTriggeredBeforeHoldingDeadline(runtime));
+        LoadingPhaseMachine.Decision decision = LoadingPhaseMachine.Decide(facts);
+
+        // 让站的补判（批次7-08，control-server#213）。触发本来由承诺方在它的事务里写（受理、追加、离站三处，StationYield），
+        // 但那只标记承诺<b>那一刻</b>已在等单的车。这辆车在别的车被承诺之后才进入等单——承诺时它还在装——就没有人标记它，
+        // 而那辆车照样要来：不补这一处，它会一直停在别的车要来的站上。只在「这一次判出来是等单」时问，
+        // 所以不持货等单的旅程（参数批准之前的全部旅程）一次也不多查。
+        if (departingFrom is null &&
+            !decision.IsClosed &&
+            !facts.HoldingDeadlinePassed &&
+            runtime.YieldTriggeredAt is null &&
+            StationYield.IsHolding(decision.State) &&
+            StationYield.StandsAtCurrentStop(runtime.Stage) &&
+            stops.Current.StopRole == JourneyStopRoles.Pickup &&
+            await StationYield.VehicleHeadingToAsync(
+                    dbContext, runtime.VehicleKey, stops.Current.StationRiotId, cancellationToken)
+                .ConfigureAwait(false) is { } headingHere)
+        {
+            runtime.YieldTriggeredAt = now;
+            runtime.YieldTriggeredByVehicleKey = headingHere;
+            runtime.UpdatedAt = now;
+            decision = LoadingPhaseMachine.Decide(facts with { YieldTriggered = true });
+        }
 
         string fromState = runtime.LoadingPhaseState ?? LoadingPhaseStates.Loading;
         string? fromReason = runtime.LoadingClosedReason;
@@ -2650,6 +2679,15 @@ public sealed class JourneyRuntimeEngine(
 
         return full.Count == positions.PhysicalSlotCountByGroup.Count;
     }
+
+    /// <summary>
+    /// 让站已触发，而且早于持货期限（批次7-08，control-server#213）。晚于期限的触发不算：期限先到，结束原因是持货超时。
+    /// 这种触发只会出现在期限已过、而这辆车还没来得及判的时候——断联期间推进段不判装货阶段。
+    /// </summary>
+    private bool YieldTriggeredBeforeHoldingDeadline(JourneyRuntimeRow runtime) =>
+        runtime.YieldTriggeredAt is { } triggeredAt &&
+        (runtime.CargoHoldingStartedAt is not { } startedAt ||
+         triggeredAt < startedAt + runtimeOptions.CargoHoldingTimeout);
 
     private static HashSet<string> PersistedFullSlotPositions(JourneyRuntimeRow runtime) =>
         runtime.FullSlotPositionsJson is { } json
@@ -2813,9 +2851,15 @@ public sealed class JourneyRuntimeEngine(
     }
 
     /// <summary>
-    /// 一个停靠上按修订号派生的那一版计划的 messageId（途中追加的整体重发，与到站发的那一版同一个算式）。
-    /// 补发集合与到站退役都从这里取，两处不会各算各的。
+    /// 途中追加整体重发（<see cref="RefreshUpcomingStopPlanAsync"/>）那一版计划的 messageId：停靠加修订号，修订号是
+    /// <see cref="PlanRevisionAt"/> 在当前基准上算出的那一号。重发、补发集合（<see cref="RuntimeMessageIds"/>）与到站退役
+    /// 三处都从这里取，不会各算各的。
     /// </summary>
+    /// <remarks>
+    /// <b>只管重发那一版。</b>派往取货站那一版用 <see cref="PickupDispatchPlanMessageId"/>，到站那一版用停靠行上的
+    /// <c>PlanMessageId</c>，都不是这个算式。id 不同，到站那一版就顶不掉路上收到、还没确认的这一版：补发会把它的旧号
+    /// 补到一辆已经采纳了新号的车上（<c>SNAPSHOT_REVISION_REGRESSION</c>），所以到站时要显式退役它（批次7-07 审查）。
+    /// </remarks>
     private static string ReSentPlanMessageId(JourneyRuntimeRow runtime, JourneyStopRow stop, bool arrivedAtStop) =>
         JourneyPlanBuilder.StableGuid(
             $"{stop.StopId}|{PlanRevisionAt(runtime.PlanRevision, stop, arrivedAtStop)}", "plan");
@@ -3078,15 +3122,39 @@ public sealed class JourneyRuntimeEngine(
     /// since the wait began starts the wait over from its full length (ADR-cross-0054) -- measured
     /// from when this server recorded it closed, not from the peer's clock. Updates the runtime's
     /// wait start and block reason; the caller saves.
+    /// <para>
+    /// 看的是这趟旅程的<b>每一条</b>需求的纠错，不只锚需求（批次7-08，control-server#213 实读发现）。纠错的授权按归属找旅程
+    /// （<c>OnboardRecoveryCoordinator.AuthorizeLoadCorrectionAsync</c> 经 <c>DemandJourneyLookup.JourneyOf</c>），追加进来的需求
+    /// 也能开纠错；这里原先只按旅程行上的 <c>DemandId</c> 查，那一条纠错开着，车照样离站——让站之后尤其如此，而票面第 3 条要求
+    /// 「进行中的纠错」挡住离站。判据是 <c>Batch7StationYieldTests.AnOpenCorrectionOnAnAppendedDemandHoldsTheDeparture</c>。
+    /// </para>
+    /// <para>
+    /// <b>只看还在车上的需求</b>（归属 <c>LOADING</c>、<c>LOADED</c>）。纠错的授权不看这条需求还在不在车上（那个口子归 cs#287），
+    /// 车停在后面某一站时能对一条早已卸掉的需求开出纠错；它要车载端对一排已经空了的仓位执行完才关，未必关得掉，算进来车就一直
+    /// 停在这里、没人解得开。已移除的归属本来就不在 <see cref="JourneyStopCursor.AllDemands"/> 里。判据是
+    /// <c>AnOpenCorrectionOnADemandAlreadyUnloadedDoesNotHoldTheDeparture</c>。
+    /// </para>
+    /// <para>
+    /// <b>而且只看这一趟旅程开的</b>（审查必修 3）。纠错行上没有旅程号，同一个需求号在 7-10 改派之后会先后属于两趟旅程，前一辆车上没结的
+    /// 纠错不该挡新车。所以按两样认：本车开的，而且不早于这条需求加入本旅程（归属的 <c>AddedAt</c>）。两样都是服务端自己的钟。
+    /// 时刻比较在内存里做：SQLite 不能在库里比较 <c>DateTimeOffset</c>。判据是 <c>AnOpenCorrectionLeftByAnotherJourneyDoesNotHoldTheDeparture</c>。
+    /// </para>
     /// </remarks>
     private async Task<bool> StationDepartureWaitIsOverAsync(
         JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        RecoveryWorkflowRow[] corrections = await dbContext.RecoveryWorkflows.AsNoTracking()
-            .Where(row => row.DemandId == runtime.DemandId && row.WorkflowType == "LOAD_CORRECTION")
-            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        Dictionary<string, DateTimeOffset> joinedAt = stops.AllDemands
+            .Where(item => item.Membership.Status is JourneyDemandStatuses.Loading or JourneyDemandStatuses.Loaded)
+            .ToDictionary(item => item.Demand.DemandId, item => item.Membership.AddedAt, StringComparer.Ordinal);
+        string[] demandIds = [.. joinedAt.Keys];
+        RecoveryWorkflowRow[] corrections = [.. (await dbContext.RecoveryWorkflows.AsNoTracking()
+                .Where(row => row.DemandId != null && demandIds.Contains(row.DemandId) &&
+                              row.WorkflowType == "LOAD_CORRECTION" && row.AgvId == runtime.AgvId)
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false))
+            .Where(row => row.CreatedAt >= joinedAt[row.DemandId!])];
         if (corrections.Any(row => row.State is not
                 (RecoveryWorkflowState.Reconciled or RecoveryWorkflowState.HistoricalOnly)))
         {
