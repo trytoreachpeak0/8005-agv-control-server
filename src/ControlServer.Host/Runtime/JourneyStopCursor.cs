@@ -40,8 +40,10 @@ internal sealed class JourneyStopCursor
         JourneyRuntimeRow runtime,
         IReadOnlyList<JourneyStopRow> stops,
         IReadOnlyList<JourneyStopDemand> allDemands,
-        bool everCarriedMoreThanOneDemand)
+        bool everCarriedMoreThanOneDemand,
+        IReadOnlySet<string> demandsThatLeft)
     {
+        DemandsThatLeft = demandsThatLeft;
         _runtime = runtime;
         Stops = stops;
         AllDemands = allDemands;
@@ -69,6 +71,9 @@ internal sealed class JourneyStopCursor
     /// 归属行只会被标移除、从不删行（<c>JourneyMembershipStore.RemoveDemandAsync</c>），所以「曾经有过」按构造数得出来。
     /// </remarks>
     public bool EverCarriedMoreThanOneDemand { get; }
+
+    /// <summary>曾经挂在这趟旅程上、归属已被移除的需求（批次7-10，control-server#215）。</summary>
+    public IReadOnlySet<string> DemandsThatLeft { get; }
 
     /// <summary>
     /// 旅程此刻还带着的需求：归属未被移除，且需求本身还没终结（<see cref="DemandJourneyLookup.OpenDemands"/> 的那个定义）。
@@ -343,7 +348,10 @@ internal sealed class JourneyStopCursor
                 .Where(row => row.Membership.RemovedAt == null)
                 .OrderBy(row => row.Membership.AddedAt)
                 .ThenBy(row => row.Membership.DemandId, StringComparer.Ordinal)],
-            everCarried.Length > 1);
+            everCarried.Length > 1,
+            new HashSet<string>(
+                everCarried.Where(row => row.Membership.RemovedAt != null).Select(row => row.Membership.DemandId),
+                StringComparer.Ordinal));
     }
 
     /// <summary>

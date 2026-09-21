@@ -38,6 +38,12 @@ public sealed class EnRouteAppendCriterion(RouteGraphAccess routeGraph) : IDispa
             return DispatchReasonCodes.EnRouteAppendNoInsertionPoint;
         }
 
+        // 从这趟旅程释放出去的需求不追加回这一趟（审查 M5）：被释放的归属行还在，追加会撞 (JourneyId, DemandId) 主键。
+        if (plan.DemandsThatLeft?.Contains(evaluation.Candidate.DemandId) == true)
+        {
+            return DispatchReasonCodes.EnRouteAppendDemandLeftThisJourney;
+        }
+
         RouteGraphAvailability availability = await routeGraph.ReadAsync(cancellationToken).ConfigureAwait(false);
         if (!availability.IsUsable)
         {

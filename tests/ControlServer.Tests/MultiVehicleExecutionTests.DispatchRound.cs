@@ -512,6 +512,70 @@ public sealed partial class MultiVehicleExecutionTests
     }
 
     /// <summary>
+    /// 从一趟旅程释放出去的需求，不会被追加回同一趟旅程（批次7-10，control-server#215，审查 M5）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 归属表的主键是 (JourneyId, DemandId)，释放只把那一行标成移除、不删。车重新合格（分区准入恢复、疑似故障解除都会）
+    /// 而旅程还在跑时，轮次把这条待改派的需求当候选，追加回同一辆车的同一趟旅程，写入撞主键——每一轮都撞。
+    /// </para>
+    /// <para>
+    /// 释放的落库形状在这里直接写（归属标 RELEASED_FOR_REDISPATCH、它的取货停靠标 REMOVED、积压行清掉受理时刻），
+    /// 不走释放服务：这条守的是轮次挑候选，释放服务怎么落到这个形状由它自己的用例守。
+    /// 判据是「这趟旅程上它仍只有那一条已移除的归属」：它可以去别的车、别的旅程，只是不回这一趟。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task ADemandReleasedFromAJourneyIsNotAppendedBackToIt()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(
+            configure: options => options.Fleet = options.Fleet[..1], withRouteGraph: true);
+        await fixture.AllowEnRouteAppendAsync(1_000_000);
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
+        await fixture.RunRoundAsync();
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0), FleetFixture.Demand(1, "N1-2", 1)]);
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+        JourneyRuntimeRow journey = Assert.Single(await fixture.Context.JourneyRuntimes.AsNoTracking().ToArrayAsync(token));
+        JourneyDemandRow appended = await fixture.Context.Set<JourneyDemandRow>()
+            .SingleAsync(row => row.DemandId != journey.DemandId, token);
+
+        // 释放的落库形状。
+        appended.RemovedAt = fixture.Clock.GetUtcNow();
+        appended.RemovalReason = DemandJourneyLookup.ReleasedForRedispatchReason;
+        JourneyStopRow pickup = await fixture.Context.Set<JourneyStopRow>()
+            .SingleAsync(row => row.StopId == appended.PickupStopId, token);
+        pickup.Status = JourneyStopStatuses.Removed;
+        JourneyBacklogRow? backlog = await fixture.Context.JourneyBacklog
+            .SingleOrDefaultAsync(row => row.DemandId == appended.DemandId, token);
+        if (backlog is not null)
+        {
+            backlog.AcceptedAt = null;
+            backlog.ReasonCode = DemandJourneyLookup.ReleasedForRedispatchReason;
+        }
+
+        await fixture.Context.SaveChangesAsync(token);
+        fixture.Context.ChangeTracker.Clear();
+        Assert.True(await DemandJourneyLookup.ReleasedForRedispatch(fixture.Context)
+            .AnyAsync(row => row.DemandId == appended.DemandId, token));
+
+        fixture.EngineLog.Entries.Clear();
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+
+        // 修前每轮都是 2123：这辆车整轮没被服务（SQLite Error 19: UNIQUE constraint failed: JourneyDemands.JourneyId,
+        // JourneyDemands.DemandId）——撞主键的不只是这条需求，这辆车这一轮什么都接不了。
+        Assert.DoesNotContain(fixture.EngineLog.Entries, entry => entry.EventId.Id == 2123);
+        Assert.Equal(DispatchReasonCodes.EnRouteAppendDemandLeftThisJourney,
+            (await fixture.Context.JourneyBacklog.AsNoTracking().SingleAsync(row => row.DemandId == appended.DemandId, token))
+            .ReasonCode);
+        JourneyDemandRow[] rows = await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+            .Where(row => row.JourneyId == journey.JourneyId && row.DemandId == appended.DemandId)
+            .ToArrayAsync(token);
+        Assert.NotNull(Assert.Single(rows).RemovedAt);
+    }
+
+    /// <summary>
     /// 在途链漏装路网时，这一轮响亮地停在那辆车上——而不是把它当成空闲车去建第二趟旅程
     /// （批次7-06，control-server#211）。
     /// </summary>

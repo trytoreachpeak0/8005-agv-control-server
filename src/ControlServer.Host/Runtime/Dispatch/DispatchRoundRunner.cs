@@ -534,7 +534,8 @@ public sealed class DispatchRoundRunner(
                 stop => stops.AllAtStop(stop).Count(item => !JourneyStopCursor.IsDoneAt(stop, item)),
                 StringComparer.Ordinal),
             LoadingPhaseClosed: loadingPhaseClosed,
-            TrailingRemovedStopIds: [.. trailingRemoved.Select(stop => stop.StopId)]);
+            TrailingRemovedStopIds: [.. trailingRemoved.Select(stop => stop.StopId)],
+            DemandsThatLeft: stops.DemandsThatLeft);
     }
 
     /// <summary>一辆车对一条任务的裁决：过了就成为一份出价，没过就只留下积压里的理由。</summary>

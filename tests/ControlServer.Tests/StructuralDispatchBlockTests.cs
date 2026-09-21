@@ -115,6 +115,7 @@ public sealed class StructuralDispatchBlockTests
     [InlineData("EN_ROUTE_APPEND_BREAKS_ZONE_CONTIGUITY", DispatchReasonClass.Backlog)]
     [InlineData("EN_ROUTE_APPEND_PLAN_LIMIT_REACHED", DispatchReasonClass.Backlog)]
     [InlineData("EN_ROUTE_APPEND_NO_INSERTION_POINT", DispatchReasonClass.Backlog)]
+    [InlineData("EN_ROUTE_APPEND_DEMAND_LEFT_THIS_JOURNEY", DispatchReasonClass.Backlog)]
     // 批次7-07（control-server#212）：装货阶段结束的在途车不再接追加。只是这一辆车的旅程，别的车照接。
     [InlineData("LOADING_PHASE_CLOSED", DispatchReasonClass.Backlog)]
     [InlineData("SUBLOT_TASK_TYPE_CONFLICT", DispatchReasonClass.Backlog)]

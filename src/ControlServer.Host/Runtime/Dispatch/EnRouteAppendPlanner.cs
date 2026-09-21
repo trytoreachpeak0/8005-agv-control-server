@@ -444,13 +444,18 @@ public sealed record EnRouteStop(
 /// 当前下一站之后已删（REMOVED）的停靠，按序位（批次7-10，control-server#215，审查 M3）。它们不在 <paramref name="Stops"/> 里：
 /// 车不会去，不该进路径代价、分区连续与腿数上限；只在给出的重排里接在最后占号。
 /// </param>
+/// <param name="DemandsThatLeft">
+/// 曾经挂在这趟旅程上、归属已被移除的需求（审查 M5）。<see cref="Criteria.EnRouteAppendCriterion"/> 不把它们追加回这一趟；
+/// 规划器自己不读它。
+/// </param>
 public sealed record EnRouteVehiclePlan(
     IReadOnlyList<EnRouteStop> Stops,
     int VehicleStationRiotId,
     int CurrentNextStopIndex,
     IReadOnlyDictionary<string, int> WorklistItemsByStopId,
     bool LoadingPhaseClosed = false,
-    IReadOnlyList<string>? TrailingRemovedStopIds = null);
+    IReadOnlyList<string>? TrailingRemovedStopIds = null,
+    IReadOnlySet<string>? DemandsThatLeft = null);
 
 /// <summary>要追加的那条需求：它会带来的两个停靠。</summary>
 public sealed record EnRouteAppendCandidate(EnRouteStop PickupStop, EnRouteStop UnloadStop, string DispatchZone);
