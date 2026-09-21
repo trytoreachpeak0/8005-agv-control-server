@@ -1,0 +1,189 @@
+File      : scripts/parallel/instance-factory01-v2.json
+Blob      : 971ee4d70ac1bccbd853c6171cddbbfaa6d22955
+Backup    : C:\Users\szy\AppData\Local\Temp\instance-backup-e298a25a851041b18482f3defb4da36f.json
+
+=== case -1: the shipped file, untouched, is refused for exactly its three map-26 placeholders ===
+         - journeyRuntime.dispatchZone is still the placeholder 'REPLACE_WITH_MAP26_DISPATCH_ZONE'; fill in the value from the site before deploying.
+         - journeyRuntime.allowedDispatchZones[0] is still the placeholder 'REPLACE_WITH_MAP26_DISPATCH_ZONE'; fill in the value from the site before deploying.
+         - journeyRuntime.admissionPolicyDeploymentId is still the placeholder 'REPLACE_WITH_MAP26_ADMISSION_POLICY_DEPLOYMENT_ID'; fill in the value from the site before deploying.
+  PASS   refused for exactly the three placeholders
+  filled baseline blob: ae711ade075c36385b9573881ac4cd17a26b1211 (shipped: 971ee4d70ac1bccbd853c6171cddbbfaa6d22955)
+
+=== case 0: round-trip with no injection is still accepted ===
+  blob   : ae711ade075c36385b9573881ac4cd17a26b1211 -> ae711ade075c36385b9573881ac4cd17a26b1211 (reformatted, same content)
+  PASS   the reformatted file is accepted
+
+=== case 1: the whole routeGraph section removed ===
+  key    : routeGraph
+  blob   : ae711ade075c36385b9573881ac4cd17a26b1211 -> 82f0d67d9804227d6212f69b48ff3ab65c7e2cd7
+  numstat: 13	11	scripts/parallel/instance-factory01-v2.json
+  refused with 1 reason(s):
+         - routeGraph must be an object; an absent section would leave the engine at its compiled default with nothing recording that anyone decided.
+  PASS   refused for the expected reason ('routeGraph must be an object')
+  restored, blob back to ae711ade075c36385b9573881ac4cd17a26b1211
+
+=== case 2: routeGraph present but empty -- the "configured" look without a decision ===
+  key    : routeGraph
+  blob   : ae711ade075c36385b9573881ac4cd17a26b1211 -> fab4c5ae223dfc454e3f02d09bbc6bd2d87d245c
+  numstat: 14	11	scripts/parallel/instance-factory01-v2.json
+  refused with 1 reason(s):
+         - routeGraph.enabled must be stated explicitly; inheriting the default leaves an environment nobody can diagnose.
+  PASS   refused for the expected reason ('routeGraph.enabled must be stated explicitly')
+  restored, blob back to ae711ade075c36385b9573881ac4cd17a26b1211
+
+=== case 3: routeGraph.enabled written as the string "false" ===
+  key    : routeGraph.enabled
+  blob   : ae711ade075c36385b9573881ac4cd17a26b1211 -> 7ffe17dadcc7c40e9fc5edc9094e00d00d372699
+  numstat: 14	5	scripts/parallel/instance-factory01-v2.json
+  refused with 1 reason(s):
+         - routeGraph.enabled must be a JSON boolean, got 'false'.
+  PASS   refused for the expected reason ('must be a JSON boolean')
+  restored, blob back to ae711ade075c36385b9573881ac4cd17a26b1211
+
+=== case 4: agvId is agv01, the vehicle the MVP is driving ===
+  key    : journeyRuntime.agvId
+  blob   : ae711ade075c36385b9573881ac4cd17a26b1211 -> be9812eefa2a3f714e46762c9210fbde7c9c89bf
+  numstat: 14	5	scripts/parallel/instance-factory01-v2.json
+  refused with 1 reason(s):
+         - journeyRuntime names agv01 ('老厂前线新多仓位1' / 'BROKERX-f38975561adf46ccb1d2f23833c7d0e4'), the vehicle the MVP service is driving in production. The parallel instance may only drive agv02 or agv03.
+  PASS   refused for the expected reason ('driving in production')
+  restored, blob back to ae711ade075c36385b9573881ac4cd17a26b1211
+
+=== case 5: vehicleKey is agv01's while agvId still says agv02 ===
+  key    : journeyRuntime.vehicleKey
+  blob   : ae711ade075c36385b9573881ac4cd17a26b1211 -> 9c6e83ee18a506e42f806a3fe5434bfacc0b6c12
+  numstat: 14	5	scripts/parallel/instance-factory01-v2.json
+  refused with 1 reason(s):
+         - journeyRuntime names agv01 ('老厂前线新多仓位2' / 'BROKERX-0c20ff0600d644869a6a80c186065d85'), the vehicle the MVP service is driving in production. The parallel instance may only drive agv02 or agv03.
+  PASS   refused for the expected reason ('driving in production')
+  restored, blob back to ae711ade075c36385b9573881ac4cd17a26b1211
+
+=== case 6: agvId is 'AGV02' -- plausible, and not any car's RIoT name ===
+  key    : journeyRuntime.agvId
+  blob   : ae711ade075c36385b9573881ac4cd17a26b1211 -> 0a5ca3d0bc684bfeedcdb401337f640165af7bba
+  numstat: 14	5	scripts/parallel/instance-factory01-v2.json
+  refused with 1 reason(s):
+         - journeyRuntime.agvId 'AGV02' does not match the RIoT deviceName of agv02, which is '老厂前线新多仓位2'. The name and the key must describe the same car.
+  PASS   refused for the expected reason ('does not match the RIoT deviceName of agv02')
+  restored, blob back to ae711ade075c36385b9573881ac4cd17a26b1211
+
+=== case 7: agvId is a list with agv01 mixed in ===
+  key    : journeyRuntime.agvId
+  blob   : ae711ade075c36385b9573881ac4cd17a26b1211 -> 17208894b35dcc4b69f57bd798b0b9fdd95ce09c
+  numstat: 17	5	scripts/parallel/instance-factory01-v2.json
+  refused with 1 reason(s):
+         - journeyRuntime.agvId must be a single string; JourneyRuntime drives one vehicle, not a list.
+  PASS   refused for the expected reason ('must be a single string')
+  restored, blob back to ae711ade075c36385b9573881ac4cd17a26b1211
+
+=== case 8: agvId names agv03 while vehicleKey still names agv02 ===
+  key    : journeyRuntime.agvId
+  blob   : ae711ade075c36385b9573881ac4cd17a26b1211 -> d088fb18149069a9fa3d3d2dd3fdcf217e6094a6
+  numstat: 14	5	scripts/parallel/instance-factory01-v2.json
+  refused with 1 reason(s):
+         - journeyRuntime.agvId '老厂前线新多仓位3' does not match the RIoT deviceName of agv02, which is '老厂前线新多仓位2'. The name and the key must describe the same car.
+  PASS   refused for the expected reason ('The name and the key must describe the same car')
+  restored, blob back to ae711ade075c36385b9573881ac4cd17a26b1211
+
+=== case 9: MesIngest pointed back at the production catalog ===
+  key    : mesIngest.baseUrl
+  blob   : ae711ade075c36385b9573881ac4cd17a26b1211 -> f7767e4588900e5296152db8d3d3d4d043aa0e89
+  numstat: 15	6	scripts/parallel/instance-factory01-v2.json
+  refused with 2 reason(s):
+         - mesIngest.baseUrl ('http://127.0.0.1:5088') points at port 5088, the production MesIngest; the parallel instance must never claim real demand.
+         - fakeMesIngest.port is 5088, which is the production MesIngest.
+  PASS   refused for the expected reason ('the production MesIngest')
+  restored, blob back to ae711ade075c36385b9573881ac4cd17a26b1211
+
+=== case 10: the service installs over the MVP ===
+  key    : serviceName
+  blob   : ae711ade075c36385b9573881ac4cd17a26b1211 -> 5cd10124581ef45753786755b3f8843e7b123765
+  numstat: 15	6	scripts/parallel/instance-factory01-v2.json
+  refused with 2 reason(s):
+         - serviceName is the production service '8005 AGV ControlServer'; the parallel instance must not install over the MVP service.
+         - installRoot ('C:\Program Files\8005 AGV\ControlServer') is named 'ControlServer', which does not carry the instance marker (a 'V2' token such as '.V2' or '-v2-').
+  PASS   refused for the expected reason ('must not install over the MVP service')
+  restored, blob back to ae711ade075c36385b9573881ac4cd17a26b1211
+
+=== case 11: the transport takes the MVP port ===
+  key    : onboardPort
+  blob   : ae711ade075c36385b9573881ac4cd17a26b1211 -> 36106a7b2274fc0cb85d1105f023ff6799bc9125
+  numstat: 14	5	scripts/parallel/instance-factory01-v2.json
+  refused with 1 reason(s):
+         - onboardPort is 58005, which is the MVP onboard NDJSON transport.
+  PASS   refused for the expected reason ('the MVP onboard NDJSON transport')
+  restored, blob back to ae711ade075c36385b9573881ac4cd17a26b1211
+
+=== case 12: the binding is the wildcard that reaches the CI runner subnet ===
+  key    : listenAddress
+  blob   : ae711ade075c36385b9573881ac4cd17a26b1211 -> d03ba55c45483fc0e26b88858ef6ae549262b488
+  numstat: 14	5	scripts/parallel/instance-factory01-v2.json
+  refused with 1 reason(s):
+         - listenAddress is the wildcard '0.0.0.0', which would also expose the service on the Hyper-V AGV-Internal switch where the CI runner lives.
+  PASS   refused for the expected reason ('AGV-Internal switch where the CI runner lives')
+  restored, blob back to ae711ade075c36385b9573881ac4cd17a26b1211
+
+=== case 13: a Fleet roster with agv01 mixed in, spelled as the C# property ===
+  key    : journeyRuntime.Fleet
+  blob   : ae711ade075c36385b9573881ac4cd17a26b1211 -> d2c0900e0600134027591c7b15e5d7649c506b6c
+  numstat: 19	4	scripts/parallel/instance-factory01-v2.json
+  refused with 1 reason(s):
+         - journeyRuntime.Fleet is a vehicle roster. The parallel instance drives one vehicle, and the agv02/agv03 pair check never looks inside a roster -- an agv01 entry there would pass.
+  PASS   refused for the expected reason ('journeyRuntime.Fleet is a vehicle roster')
+  restored, blob back to ae711ade075c36385b9573881ac4cd17a26b1211
+
+=== case 14: a second 'AgvId' naming agv01 beside the checked 'agvId' ===
+  key    : journeyRuntime.AgvId
+  blob   : ae711ade075c36385b9573881ac4cd17a26b1211 -> 6b248a7a623a69b4d374cec3620c4e9826af5140
+  numstat: 14	4	scripts/parallel/instance-factory01-v2.json
+  refused with 1 reason(s):
+         - journeyRuntime.AgvId differs only in case from journeyRuntime.agvId. .NET configuration is case-insensitive, so the two would be bound as one setting while this check reads only 'agvId'.
+  PASS   refused for the expected reason ('differs only in case from journeyRuntime.agvId')
+  restored, blob back to ae711ade075c36385b9573881ac4cd17a26b1211
+
+=== case 15: the re-review S1 reproduction, in the real file ===
+  key    : installRoot, dataRoot, packageRoot, backupRoot
+  blob   : ae711ade075c36385b9573881ac4cd17a26b1211 -> 04c5dc87f34155a9d8c04d18bcf3bee28a9ff9f7
+  numstat: 17	8	scripts/parallel/instance-factory01-v2.json
+  refused with 4 reason(s):
+         - installRoot ('C:/Program Files/8005 AGV/ControlServer') uses '/'; write the path with backslashes only.
+         - dataRoot ('C:/ProgramData/8005/ControlServer') uses '/'; write the path with backslashes only.
+         - backupRoot ('D:\zhengyushao\MesIngest') is named 'MesIngest', which does not carry the instance marker (a 'V2' token such as '.V2' or '-v2-').
+         - packageRoot ('D:\zhengyushao\ControlServer.previous') is named 'ControlServer.previous', which does not carry the instance marker (a 'V2' token such as '.V2' or '-v2-').
+  PASS   refused for the expected reason ('uses '/'')
+  restored, blob back to ae711ade075c36385b9573881ac4cd17a26b1211
+
+=== case 16: dataRoot through a '..' segment onto the production database directory ===
+  key    : dataRoot
+  blob   : ae711ade075c36385b9573881ac4cd17a26b1211 -> 5ac12b4e22693e2a51fabd3a4e82d8f3bad4f483
+  numstat: 14	5	scripts/parallel/instance-factory01-v2.json
+  refused with 1 reason(s):
+         - dataRoot ('C:\ProgramData\8005\x\..\ControlServer') has a '..' segment.
+  PASS   refused for the expected reason ('has a '..' segment')
+  restored, blob back to ae711ade075c36385b9573881ac4cd17a26b1211
+
+=== case 17: a wildcard service name that Stop-Service would expand to the MVP ===
+  key    : serviceName
+  blob   : ae711ade075c36385b9573881ac4cd17a26b1211 -> c65962a0681802ac6bbb5ff04bf69e9ff10bd6f3
+  numstat: 14	5	scripts/parallel/instance-factory01-v2.json
+  refused with 1 reason(s):
+         - serviceName '8005 AGV ControlServer*' contains a wildcard character (* ? [ ]), which Get-Service and Get-ScheduledTask would expand.
+  PASS   refused for the expected reason ('contains a wildcard character')
+  restored, blob back to ae711ade075c36385b9573881ac4cd17a26b1211
+
+=== case 18: the MVP map 25 in both places ===
+  key    : routeGraph.mapId, journeyRuntime.mapId
+  blob   : ae711ade075c36385b9573881ac4cd17a26b1211 -> e1c804b5f295a5146549d5a210357bf51e6231c4
+  numstat: 15	6	scripts/parallel/instance-factory01-v2.json
+  refused with 2 reason(s):
+         - routeGraph.mapId is 25, the MVP's map. The parallel instance runs on map 26.
+         - journeyRuntime.mapId is 25, the MVP's map. The parallel instance runs on map 26.
+  PASS   refused for the expected reason ('is 25, the MVP's map')
+  restored, blob back to ae711ade075c36385b9573881ac4cd17a26b1211
+
+=== final state ===
+  blob   : 971ee4d70ac1bccbd853c6171cddbbfaa6d22955 (baseline 971ee4d70ac1bccbd853c6171cddbbfaa6d22955)
+  git status for this file: '' (before the run: '')
+  PASS   the file is byte-identical to the baseline; git reports no modification
+
+21 passed, 0 failed
