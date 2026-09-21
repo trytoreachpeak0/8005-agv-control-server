@@ -37,6 +37,56 @@ public static class DemandJourneyLookup
             row.Status != DemandExecutionStatus.Succeeded && row.Status != DemandExecutionStatus.Cancelled);
     }
 
+    /// <summary>
+    /// 释放改派时写在归属行上的移除原因（REQ-0328，批次7-10，control-server#215）。
+    /// </summary>
+    public const string ReleasedForRedispatchReason = "RELEASED_FOR_REDISPATCH";
+
+    /// <summary>
+    /// 已释放、等着改派的需求：没终结、没有生效的归属、而且<b>最近一次</b>移除的原因是 <see cref="ReleasedForRedispatchReason"/>
+    /// （批次7-10，control-server#215）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>这是这个判据唯一的定义处</b>，两处共用：派车轮次的「已受理」集合要放它过去（它要能再被派一次），孤儿检查要把它排除
+    /// （它不属于任何旅程是应该的，不是库坏了）。两份拷贝会分叉成「放过去了却被当孤儿抛」或者反过来。
+    /// </para>
+    /// <para>
+    /// <b>「最近一次」按派车代次认，不按移除时间。</b>SQLite 不能在库里比较或排序 <see cref="DateTimeOffset"/>，而代次是整数：
+    /// 一条需求每被改派一次，新归属的 <see cref="JourneyDemandRow.DispatchGeneration"/> 比上一条大。<b>这个前提由释放改派服务承担</b>
+    /// ——它写新归属时代次必须严格递增；若有人让两条归属同代次，这里会把「更早那次是释放、后来那次是别的原因」也判成待改派。
+    /// </para>
+    /// <para>
+    /// 仍然是 open 的需求（<see cref="OpenDemands"/> 里有它）：它在业务上还没完成，只是暂时不在任何旅程上。
+    /// </para>
+    /// </remarks>
+    public static IQueryable<AcceptedDemandRow> ReleasedForRedispatch(ControlServerDbContext dbContext)
+    {
+        ArgumentNullException.ThrowIfNull(dbContext);
+        IQueryable<JourneyDemandRow> memberships = dbContext.Set<JourneyDemandRow>();
+        return OpenDemands(dbContext).Where(demand =>
+            !memberships.Any(row => row.DemandId == demand.DemandId && row.RemovedAt == null) &&
+            memberships.Any(released =>
+                released.DemandId == demand.DemandId &&
+                released.RemovedAt != null &&
+                released.RemovalReason == ReleasedForRedispatchReason &&
+                !memberships.Any(later =>
+                    later.DemandId == demand.DemandId && later.DispatchGeneration > released.DispatchGeneration)));
+    }
+
+    /// <summary>
+    /// 孤儿检查要看的那些需求：open，而且不是已释放待改派的（批次7-10，control-server#215）。
+    /// </summary>
+    /// <remarks>
+    /// 已释放待改派的需求没有生效的归属是设计如此；把它算进孤儿，释放一落库，引擎每一轮都在孤儿检查处抛
+    /// <see cref="BusinessIdentityConflictException"/>，整轮中止、车队不推进。
+    /// </remarks>
+    public static IQueryable<AcceptedDemandRow> OrphanCandidates(ControlServerDbContext dbContext)
+    {
+        IQueryable<AcceptedDemandRow> released = ReleasedForRedispatch(dbContext);
+        return OpenDemands(dbContext).Where(demand => !released.Any(row => row.DemandId == demand.DemandId));
+    }
+
     /// <summary>The memberships in force: not removed.</summary>
     public static IQueryable<JourneyDemandRow> Memberships(ControlServerDbContext dbContext)
     {
