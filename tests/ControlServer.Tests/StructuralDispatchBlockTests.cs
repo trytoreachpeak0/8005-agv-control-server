@@ -306,7 +306,14 @@ public sealed class StructuralDispatchBlockTests
         Assert.Equal(DispatchReasonClass.Backlog, StructuralDispatchClassification.ClassOf("SOME_CODE_NOBODY_REGISTERED"));
     }
 
-    /// <summary>主机注册的轮末钩子是本票的汇总；四个批次 4 端口仍只由 GovernanceModule 注册，这里不重复注册。</summary>
+    /// <summary>
+    /// 主机注册的轮末钩子里有本票的汇总；四个批次 4 端口仍只由 GovernanceModule 注册，这里不重复注册。
+    /// </summary>
+    /// <remarks>
+    /// 批次7-09（control-server#214）起轮末钩子是一个组合（<see cref="DispatchRoundOutcomeSinks"/>）：结构性阻断在前，
+    /// 防饥饿升级（<see cref="StarvationEscalationSink"/>）在后。钩子仍只注册一个——派车轮只认一个——由工厂从两个具体汇总组出来，
+    /// 所以这里断言的从「钩子的实现类型就是本票的汇总」改成「钩子只有一个、本票的汇总作为具体类型注册着」。
+    /// </remarks>
     [Fact]
     public void TheHostRegistersTheStructuralSummaryAsTheRoundEndHookAndNothingElseOfBatch4()
     {
@@ -314,7 +321,9 @@ public sealed class StructuralDispatchBlockTests
         services.AddDispatchAdmission();
 
         ServiceDescriptor hook = Assert.Single(services, descriptor => descriptor.ServiceType == typeof(IDispatchRoundOutcomeSink));
-        Assert.Equal(typeof(StructuralDispatchBlockSink), hook.ImplementationType);
+        Assert.NotNull(hook.ImplementationFactory);
+        Assert.Single(services, descriptor => descriptor.ServiceType == typeof(StructuralDispatchBlockSink));
+        Assert.Single(services, descriptor => descriptor.ServiceType == typeof(StarvationEscalationSink));
         Assert.DoesNotContain(services, descriptor =>
             descriptor.ServiceType == typeof(IStructuralDispatchBlockStore) ||
             descriptor.ServiceType == typeof(IVehicleSlotPositionReader));
