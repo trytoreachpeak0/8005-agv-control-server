@@ -135,6 +135,26 @@ public sealed class Batch7TaskPriorityOrderingTests
         Assert.Equal(1, standing.ThresholdSeconds);
     }
 
+    /// <summary>
+    /// MesIngest 没给建单时刻（目录项缺 <c>createdAt</c>，适配器留成默认值，审查低 3）：年龄按 0 算、不超时、不告警，
+    /// 也不因为 0001-01-01 排到最前——在同带里排在任何知道建单时刻的任务之后。
+    /// </summary>
+    [Fact]
+    public void ADemandWithoutALocalCreationStampCountsAsZeroAgeAndGoesBehindTheOnesThatHaveOne()
+    {
+        DispatchZoneParameterTableVersion parameters = Parameters(5, (Zone, 1));
+        AcceptedDemandSnapshot unknown = Snapshot("D-1", TransportTaskTypes.WireToGate, default);
+        DispatchTask unknownTask = new(unknown, Now.AddHours(-3))
+        {
+            Starvation = TaskStarvation.Assess(unknown, Now, Areas(), parameters),
+        };
+        DispatchTask known = Task("D-2", TransportTaskTypes.WireToGate, createdMinutesAgo: 0, parameters: parameters);
+
+        Assert.Equal(TimeSpan.Zero, unknownTask.Starvation!.WaitingAge);
+        Assert.False(unknownTask.Starvation.Overdue);
+        Assert.Equal(["D-2", "D-1"], Order(unknownTask, known));
+    }
+
     // ---- 超时层 --------------------------------------------------------------------------------------
 
     /// <summary>越过本区阈值的普通任务排在未超时的 <c>STAGING_TO_WIRE</c> 之前（REQ-0202）。</summary>

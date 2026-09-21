@@ -109,6 +109,36 @@ public sealed class Batch7StarvationCalibrationReportTests
         Assert.Equal((T0.AddMinutes(2), T0.AddMinutes(4)), (report.From, report.To));
     }
 
+    /// <summary>
+    /// 积压行上的建单时刻是默认值（MesIngest 没给，审查低 3）的需求照样算任务量，但不进「建单至绑车等待」的样本：
+    /// 从 0001-01-01 起算的等待是两千年，一条就把 P95 与最大值毁掉。
+    /// </summary>
+    [Fact]
+    public async Task ADemandWithoutALocalCreationStampCountsAsATaskButNotAsAWaitSample()
+    {
+        await using ReportDatabase database = await ReportDatabase.CreateAsync();
+        await SeedAsync(database.Context);
+        database.Context.JourneyBacklog.Add(new JourneyBacklogRow
+        {
+            DemandId = "d5",
+            TransportDemandKey = "SUBLOT-d5|WIRE_TO_GATE",
+            FirstSeenAt = T0.AddMinutes(5),
+            DemandCreatedAt = default,
+            DecisionFingerprint = "fp",
+            ReasonCode = "ACCEPTED",
+            LastSeenAt = T0.AddMinutes(5),
+            AcceptedAt = T0.AddMinutes(5),
+        });
+        await database.Context.SaveChangesAsync(Token);
+
+        StarvationCalibrationReport report = await StarvationCalibrationQuery.ReadAsync(
+            database.Context, T0, T0.AddHours(1), T0.AddDays(1), Token);
+
+        ZoneCalibrationEvidence a = report.Zones[0];
+        Assert.Equal(new DurationSummary(4, 150, 240, 240), a.WaitToBind);
+        Assert.Equal(6, a.TaskCount);
+    }
+
     [Fact]
     public async Task TheCsvIsOneRowPerZoneUnderAFixedHeader()
     {

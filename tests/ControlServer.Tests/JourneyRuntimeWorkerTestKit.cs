@@ -968,14 +968,12 @@ internal static class JourneyRuntimeWorkerTestKit
                 new AreaAssignmentStore(Context, CreateGovernedPublisher()),
                 new VehicleSlotPositionReader(Context),
                 new DispatchRoundOutcomeSinks(
-                [
                     new StructuralDispatchBlockSink(
                         new StructuralDispatchBlockStore(Context),
                         new VehicleSlotPositionReader(Context),
                         new VehicleRoster(options),
                         StructuralBlockLog),
-                    new StarvationEscalationSink(Context, StarvationLog),
-                ]),
+                    new StarvationEscalationSink(Context, StarvationLog)),
                 SlotGroupFullness,
                 onboardFacts,
                 options,

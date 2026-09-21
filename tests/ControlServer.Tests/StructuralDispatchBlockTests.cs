@@ -311,8 +311,11 @@ public sealed class StructuralDispatchBlockTests
     /// </summary>
     /// <remarks>
     /// 批次7-09（control-server#214）起轮末钩子是一个组合（<see cref="DispatchRoundOutcomeSinks"/>）：结构性阻断在前，
-    /// 防饥饿升级（<see cref="StarvationEscalationSink"/>）在后。钩子仍只注册一个——派车轮只认一个——由工厂从两个具体汇总组出来，
-    /// 所以这里断言的从「钩子的实现类型就是本票的汇总」改成「钩子只有一个、本票的汇总作为具体类型注册着」。
+    /// 防饥饿升级（<see cref="StarvationEscalationSink"/>）在后。钩子仍只注册一个——派车轮只认一个——实现类型就是那个组合；
+    /// 两个汇总是它的构造参数，先后写在它自己的 <c>RecordAsync</c> 里，注册处没有可以排反的列表
+    /// （审查中 1：原来的注册是一个工厂里的列表，两项对调后全部用例照样绿）。先后由
+    /// <see cref="Batch7StarvationEscalationTests.ADemandUnderAStructuralDispatchBlockIsNotEscalatedHoweverLongItWaits"/> 守着：
+    /// 测试夹具与宿主用的是同一个组合类。
     /// </remarks>
     [Fact]
     public void TheHostRegistersTheStructuralSummaryAsTheRoundEndHookAndNothingElseOfBatch4()
@@ -321,7 +324,7 @@ public sealed class StructuralDispatchBlockTests
         services.AddDispatchAdmission();
 
         ServiceDescriptor hook = Assert.Single(services, descriptor => descriptor.ServiceType == typeof(IDispatchRoundOutcomeSink));
-        Assert.NotNull(hook.ImplementationFactory);
+        Assert.Equal(typeof(DispatchRoundOutcomeSinks), hook.ImplementationType);
         Assert.Single(services, descriptor => descriptor.ServiceType == typeof(StructuralDispatchBlockSink));
         Assert.Single(services, descriptor => descriptor.ServiceType == typeof(StarvationEscalationSink));
         Assert.DoesNotContain(services, descriptor =>

@@ -12,6 +12,11 @@ public sealed class DispatchRoundOutcomeSinks(IReadOnlyList<IDispatchRoundOutcom
 {
     private readonly IDispatchRoundOutcomeSink[] _sinks = [.. sinks];
 
+    public DispatchRoundOutcomeSinks(StructuralDispatchBlockSink structural, StarvationEscalationSink starvation)
+        : this([starvation, structural])
+    {
+    }
+
     public async Task RecordAsync(DispatchRoundOutcome outcome, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(outcome);

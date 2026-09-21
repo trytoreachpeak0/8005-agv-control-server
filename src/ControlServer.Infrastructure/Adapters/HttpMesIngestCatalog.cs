@@ -2,11 +2,17 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
+using Microsoft.Extensions.Logging;
 
 namespace ControlServer.Infrastructure.Adapters;
 
-public sealed class HttpMesIngestCatalog(HttpClient httpClient, TimeProvider timeProvider) : IMesIngestCatalog
+public sealed class HttpMesIngestCatalog(
+    HttpClient httpClient,
+    TimeProvider timeProvider,
+    ILogger<HttpMesIngestCatalog>? logger = null) : IMesIngestCatalog
 {
+    private readonly ILogger<HttpMesIngestCatalog>? _logger = logger;
+
     public const string ContractVersion = "2026.08.new-mes-ingest.v2.4";
     public const int SchemaVersion = 29;
     public const string ContractPath = "/api/v2/contract";

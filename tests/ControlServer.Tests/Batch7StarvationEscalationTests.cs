@@ -1,3 +1,5 @@
+using ControlServer.Application;
+using ControlServer.Domain;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -58,6 +60,11 @@ public sealed class Batch7StarvationEscalationTests
     /// 结构性阻断的需求越过阈值也不告警、不进超时层（调度会话 2026-09-21 定）：分区归属表收录了它的 AREA、地图上没有站点，
     /// 立的是 <c>AREA_STATION_NOT_FOUND</c> 结构性阻断；它等了一天、跑了多轮，防饥饿标记与日志都没有。
     /// </summary>
+    /// <remarks>
+    /// 第一轮是最险的一轮（审查中 1）：服务端第一次看到这条需求时它已经越过阈值，同一轮第一次立结构性阻断。开轮时还没有阻断，
+    /// 排序把它放进了超时层；不告警只靠轮末两个汇总的先后——结构性的先写，防饥饿的才读得到这一轮的阻断。夹具与宿主用同一个
+    /// <see cref="DispatchRoundOutcomeSinks"/>，所以把那个先后排反，这一条就红。
+    /// </remarks>
     [Fact]
     public async Task ADemandUnderAStructuralDispatchBlockIsNotEscalatedHoweverLongItWaits()
     {
@@ -337,6 +344,51 @@ public sealed class Batch7StarvationEscalationTests
 
         Assert.Equal(fixture.Clock.GetUtcNow().AddMinutes(-1), (await BacklogAsync(fixture)).StarvationEscalatedAt);
         Assert.Equal(1, Escalations(fixture, Waiting));
+    }
+
+    /// <summary>
+    /// 超时层在整轮里真的起作用（审查中 2）：一辆车，一条已超时的普通带需求、一条更新而未超时的 <c>STAGING_TO_WIRE</c>，
+    /// 两条都接得了，先受理超时的那条。没有超时层时 <c>STAGING_TO_WIRE</c> 在最高带，会先被接走。
+    /// </summary>
+    /// <remarks>
+    /// 之前只有 <see cref="AnOverdueTaskStoppedByAHardGateIsNotDispatchedAndTheVehicleGoesToTheNextTask"/> 走整轮，
+    /// 而那里超时的需求本来就最老，加不加超时层排序都一样——派车轮里把处境置空，相关用例全绿。
+    /// </remarks>
+    [Fact]
+    public async Task InAWholeRoundAnOverdueNormalDemandIsTakenBeforeANewerStagingToWireThatIsNot()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.AllowedWorkTypes = [TransportTaskTypes.WireToGate, TransportTaskTypes.StagingToWire];
+        fixture.Riot.SetMapStations(
+            new RiotMapStation(12, "N1-1"),
+            new RiotMapStation(13, "N1-2_N1-3"),
+            new RiotMapStation(TaskTypeStationRuntimeSeed.GateStationRiotId, TaskTypeStationRuntimeSeed.GateStationName),
+            new RiotMapStation(300, "等待点"),
+            new RiotMapStation(305, "派工待送取货"));
+        await TaskTypeStationRuntimeSeed.ActivateAsync(
+            fixture.DbOptionsForTests,
+            JourneyRuntimeWorkerTestKit.Now,
+            requiredTaskTypes: [TransportTaskTypes.WireToGate, TransportTaskTypes.StagingToWire],
+            bindings:
+            [
+                TaskTypeStationRuntimeSeed.GateBinding,
+                new TaskTypeStationBinding(TransportTaskTypes.StagingToWire, 305, "派工待送取货", "SITE-CHECK-STAGING"),
+            ]);
+        await fixture.ImportStarvationThresholdsAsync((Zone, 600));
+        fixture.Catalog.Set(
+            fixture.Demand(Waiting, "SUBLOT-OVERDUE", JourneyRuntimeWorkerTestKit.Now.AddMinutes(-30)),
+            fixture.Demand(Takeable, "SUBLOT-STAGING", JourneyRuntimeWorkerTestKit.Now.AddMinutes(-1), "N1-3") with
+            {
+                WorkType = TransportTaskTypes.StagingToWire,
+                TransportDemandKey = $"SUBLOT-STAGING|{TransportTaskTypes.StagingToWire}",
+            });
+        fixture.BoxCounts.Set("SUBLOT-OVERDUE", 4);
+        fixture.BoxCounts.Set("SUBLOT-STAGING", 4);
+
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Equal([Waiting], await fixture.Context.AcceptedDemands.Select(row => row.DemandId).ToArrayAsync(Token));
+        Assert.NotEqual("ACCEPTED", (await fixture.BacklogAsync(Takeable)).ReasonCode);
     }
 
     // ---- helpers -------------------------------------------------------------------------------------
