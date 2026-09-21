@@ -1,6 +1,4 @@
-using ControlServer.Application;
 using ControlServer.Domain;
-using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Runtime.Dispatch.Criteria;
 using Microsoft.Extensions.DependencyInjection;
@@ -8,19 +6,24 @@ using Microsoft.Extensions.DependencyInjection;
 namespace ControlServer.Tests;
 
 /// <summary>
-/// Batch 7-04 (control-server#209): which eligible candidate a vehicle takes is decided exactly as it was before the
-/// ranking became a list of comparison layers.
+/// 任务侧的次序：<b>先见先派，再按需求创建时刻与需求 id 定序</b>——与批次7-06（control-server#211）把轮次翻成
+/// 任务优先之前逐条相同。
 /// </summary>
 /// <remarks>
 /// <para>
-/// <see cref="ReferenceRanker"/> is <c>RouteGraphCostRanker</c> and <c>FirstSeenDispatchCandidateRanker</c> as they
-/// stood on <c>fp/v2-impl@cc8e7992</c>, the same orderings written out here, so the comparison does not depend on
-/// anything the move touches; both classes are gone from the product since. Every generated set is ranked by both, and both the pick and the whole order (the pick
-/// taken again from what is left, until nothing is) must agree candidate for candidate.
+/// <b>这个类的比较对象换了，因为被比较的东西换了。</b>批次7-04（control-server#209）时它钉的是
+/// 「某辆车该接哪一条候选」，层里有两层比的是「这辆车到那个取货站多远」。翻成任务优先之后（REQ-0200：
+/// 先定任务、再只为该任务选车），任务要在<b>还没有车</b>的时候就排出先后，与车有关的量在这一侧无从取值——
+/// 那两层因此搬到了车辆侧，比的也从「到取货站的成本」换成了边际成本（REQ-0206）。
 /// </para>
 /// <para>
-/// The sets come from a fixed seed and are drawn from small value domains on purpose: ties are where two orderings
-/// part, and a corpus of distinct values would agree with almost any sort.
+/// <b>没搬走的三层，次序一字未动</b>，而这正是本票对任务次序的承诺（票面第 5 条：任务层沿用今天的次序，
+/// 优先级带与等待年龄由批次7-09（control-server#214）加在这一层上）。
+/// <see cref="ReferenceOrder"/> 是 <c>FirstSeenDispatchCandidateRanker</c> 在 <c>fp/v2-impl@cc8e7992</c> 上的那个
+/// 排序写出来的，所以对照不依赖本票动过的任何东西。
+/// </para>
+/// <para>
+/// 语料从固定种子来，取值域故意很小：两个排序分道扬镳的地方是平手，而一堆互不相同的值几乎跟任何排序都一致。
 /// </para>
 /// </remarks>
 public sealed class DispatchCandidateOrderingTests
@@ -31,72 +34,52 @@ public sealed class DispatchCandidateOrderingTests
 
     public enum Shape
     {
-        AllPriced,
-        NonePriced,
-        SomePriced,
-        EqualCosts,
+        AllDistinct,
         EqualFirstSeen,
+        EqualFirstSeenAndCreatedAt,
         OnlyDemandIdDiffers,
     }
 
     [Theory]
-    [InlineData(Shape.AllPriced)]
-    [InlineData(Shape.NonePriced)]
-    [InlineData(Shape.SomePriced)]
-    [InlineData(Shape.EqualCosts)]
+    [InlineData(Shape.AllDistinct)]
     [InlineData(Shape.EqualFirstSeen)]
+    [InlineData(Shape.EqualFirstSeenAndCreatedAt)]
     [InlineData(Shape.OnlyDemandIdDiffers)]
-    public void TheProductionRankerOrdersEveryGeneratedSetAsTheRankerBeforeTheMoveDid(Shape shape)
+    public void TheTaskOrderMatchesTheOneBeforeTheRoundWasInverted(Shape shape)
     {
         IDispatchCandidateRanker production = HostRanker();
-        ReferenceRanker reference = new(swapFirstSeenAndCreatedAt: false);
 
-        foreach (EligibleDispatchCandidate[] set in Generate(shape))
+        foreach (DispatchTask[] set in Generate(shape))
         {
-            Assert.Same(reference.SelectNext(set), production.SelectNext(set));
             Assert.Equal(
-                FullOrder(reference, set).Select(candidate => candidate.Snapshot.DemandId),
-                FullOrder(production, set).Select(candidate => candidate.Snapshot.DemandId));
+                ReferenceOrder(set, swapFirstSeenAndCreatedAt: false).Select(task => task.Snapshot.DemandId),
+                production.Order(set).Select(task => task.Snapshot.DemandId));
         }
     }
 
     /// <summary>
-    /// The corpus can tell two orderings apart: the reference with its first-seen and created-at layers swapped
-    /// picks differently on some generated set. Without this the equivalence above could pass on a corpus too
-    /// uniform to notice a reordered layer.
+    /// 语料分得出两个排序：把参照里的先见与创建两层对调，它在某些集合上排出不同的次序。没有这一条，
+    /// 上面那条等价可能只是因为语料太齐整，看不出一层被换了位置。
     /// </summary>
     [Fact]
-    public void TheCorpusSeparatesAnOrderingWithTwoLayersSwapped()
-    {
-        ReferenceRanker reference = new(swapFirstSeenAndCreatedAt: false);
-        ReferenceRanker swapped = new(swapFirstSeenAndCreatedAt: true);
-
+    public void TheCorpusSeparatesAnOrderingWithTwoLayersSwapped() =>
         Assert.Contains(
             Enum.GetValues<Shape>().SelectMany(Generate),
-            set => !ReferenceEquals(reference.SelectNext(set), swapped.SelectNext(set)));
-    }
+            set => !ReferenceOrder(set, swapFirstSeenAndCreatedAt: false)
+                .Select(task => task.Snapshot.DemandId)
+                .SequenceEqual(ReferenceOrder(set, swapFirstSeenAndCreatedAt: true)
+                    .Select(task => task.Snapshot.DemandId)));
 
-    /// <summary>
-    /// The layers in the order the registry lists them, one class each: the order the ranker before the move applied.
-    /// </summary>
+    /// <summary>注册表里就这三层，按这个次序——成本那两层已经在车辆侧。</summary>
     [Fact]
-    public void TheLayersAreRegisteredInOnePlaceInTheOrderTheRankerBeforeTheMoveApplied()
-    {
+    public void TheTaskSideRegistersExactlyTheThreeLayersThatDoNotNeedAVehicle() =>
         Assert.Equal(
-            [
-                typeof(PricedBeforeUnpricedLayer),
-                typeof(GraphTraversalCostLayer),
-                typeof(FirstSeenLayer),
-                typeof(DemandCreatedAtLayer),
-                typeof(DemandIdOrdinalLayer),
-            ],
+            [typeof(FirstSeenLayer), typeof(DemandCreatedAtLayer), typeof(DemandIdOrdinalLayer)],
             DispatchCandidateOrdering.Layers().Select(layer => layer.GetType()).ToArray());
-    }
 
     /// <summary>
-    /// The injected fault the ticket names: the registry's first-seen and created-at layers swapped. The layered
-    /// ranker built that way parts from the ranker before the move on the generated sets, so the equivalence above
-    /// goes red on exactly this mistake.
+    /// 票面点名的那个注入故障：把注册表里先见与创建两层对调。这样搭出来的分层排序在语料上与参照分道扬镳，
+    /// 所以上面那条等价正好在这个错误上变红。
     /// </summary>
     [Fact]
     public void SwappingTheFirstSeenAndCreatedAtLayersIsCaughtByTheCorpus()
@@ -106,11 +89,12 @@ public sealed class DispatchCandidateOrderingTests
         int createdAt = Array.FindIndex(layers, layer => layer is DemandCreatedAtLayer);
         (layers[firstSeen], layers[createdAt]) = (layers[createdAt], layers[firstSeen]);
         LayeredDispatchCandidateRanker swapped = new(layers);
-        ReferenceRanker reference = new(swapFirstSeenAndCreatedAt: false);
 
         Assert.Contains(
             Enum.GetValues<Shape>().SelectMany(Generate),
-            set => !ReferenceEquals(reference.SelectNext(set), swapped.SelectNext(set)));
+            set => !ReferenceOrder(set, swapFirstSeenAndCreatedAt: false)
+                .Select(task => task.Snapshot.DemandId)
+                .SequenceEqual(swapped.Order(set).Select(task => task.Snapshot.DemandId)));
     }
 
     /// <summary>The ranker the host resolves: whatever <c>AddDispatchAdmission</c> registers.</summary>
@@ -123,24 +107,18 @@ public sealed class DispatchCandidateOrderingTests
         return scope.ServiceProvider.GetRequiredService<IDispatchCandidateRanker>();
     }
 
-    /// <summary>Picks, then picks again from what is left, until every candidate has been picked.</summary>
-    private static List<EligibleDispatchCandidate> FullOrder(
-        IDispatchCandidateRanker ranker,
-        IEnumerable<EligibleDispatchCandidate> set)
+    /// <summary><c>FirstSeenDispatchCandidateRanker</c> 在轮次翻转之前的那个排序，原样写出来。</summary>
+    private static List<DispatchTask> ReferenceOrder(
+        IReadOnlyList<DispatchTask> set,
+        bool swapFirstSeenAndCreatedAt)
     {
-        List<EligibleDispatchCandidate> left = [.. set];
-        List<EligibleDispatchCandidate> order = [];
-        while (left.Count > 0)
-        {
-            EligibleDispatchCandidate next = ranker.SelectNext(left);
-            order.Add(next);
-            left.Remove(next);
-        }
-
-        return order;
+        IOrderedEnumerable<DispatchTask> ordered = swapFirstSeenAndCreatedAt
+            ? set.OrderBy(task => task.Snapshot.CreatedAt).ThenBy(task => task.FirstSeenAt)
+            : set.OrderBy(task => task.FirstSeenAt).ThenBy(task => task.Snapshot.CreatedAt);
+        return [.. ordered.ThenBy(task => task.Snapshot.DemandId, StringComparer.Ordinal)];
     }
 
-    private static IEnumerable<EligibleDispatchCandidate[]> Generate(Shape shape)
+    private static IEnumerable<DispatchTask[]> Generate(Shape shape)
     {
         Random random = new(Seed + (int)shape);
         for (int set = 0; set < SetsPerShape; set++)
@@ -151,29 +129,21 @@ public sealed class DispatchCandidateOrderingTests
             string[] ids = [.. Enumerable.Range(0, size)
                 .Select(index => $"D-{(char)(random.Next(2) == 0 ? 'a' + index : 'A' + index)}{index}")
                 .OrderBy(_ => random.Next())];
-            yield return [.. ids.Select(id => Candidate(shape, id, random))];
+            yield return [.. ids.Select(id => Task(shape, id, random))];
         }
     }
 
-    private static EligibleDispatchCandidate Candidate(Shape shape, string demandId, Random random)
+    private static DispatchTask Task(Shape shape, string demandId, Random random)
     {
-        long? cost = shape switch
+        DateTimeOffset firstSeen = shape is Shape.AllDistinct
+            ? Origin.AddMinutes(random.Next(0, 3))
+            : Origin;
+        DateTimeOffset createdAt = shape switch
         {
-            Shape.AllPriced => random.Next(1, 4) * 1000L,
-            Shape.NonePriced => null,
-            Shape.SomePriced => random.Next(2) == 0 ? null : random.Next(1, 4) * 1000L,
-            Shape.EqualCosts => 5000L,
-            Shape.EqualFirstSeen => random.Next(3) == 0 ? null : random.Next(1, 3) * 1000L,
-            Shape.OnlyDemandIdDiffers => 5000L,
-            _ => throw new ArgumentOutOfRangeException(nameof(shape)),
+            Shape.AllDistinct or Shape.EqualFirstSeen => Origin.AddHours(-1).AddMinutes(random.Next(0, 3)),
+            _ => Origin.AddHours(-1),
         };
-        DateTimeOffset firstSeen = shape is Shape.EqualFirstSeen or Shape.OnlyDemandIdDiffers
-            ? Origin
-            : Origin.AddMinutes(random.Next(0, 3));
-        DateTimeOffset createdAt = shape is Shape.OnlyDemandIdDiffers
-            ? Origin.AddHours(-1)
-            : Origin.AddHours(-1).AddMinutes(random.Next(0, 3));
-        return new EligibleDispatchCandidate(
+        return new DispatchTask(
             new AcceptedDemandSnapshot(
                 demandId,
                 $"{demandId}|WIRE_TO_GATE",
@@ -182,43 +152,6 @@ public sealed class DispatchCandidateOrderingTests
                 21,
                 Origin,
                 CreatedAt: createdAt),
-            new ResolvedJourneyRoute(
-                "MAP-25-WIRE_TO_GATE",
-                "MAPCAT-1",
-                "N1-1",
-                12,
-                "关卡",
-                210,
-                FixedTaskStationResolution.Resolved(
-                    "WIRE_TO_GATE", FixedStationEnd.Destination, new RiotMapStation(210, "关卡"))),
-            1,
-            [1],
-            firstSeen,
-            cost);
-    }
-
-    /// <summary>
-    /// <c>RouteGraphCostRanker</c> over <c>FirstSeenDispatchCandidateRanker</c> as they stood before the move.
-    /// </summary>
-    /// <param name="swapFirstSeenAndCreatedAt">
-    /// Orders by created-at before first-seen: the injected fault the corpus must be able to see.
-    /// </param>
-    private sealed class ReferenceRanker(bool swapFirstSeenAndCreatedAt) : IDispatchCandidateRanker
-    {
-        public EligibleDispatchCandidate SelectNext(IReadOnlyList<EligibleDispatchCandidate> eligible)
-        {
-            List<EligibleDispatchCandidate> priced =
-                eligible.Where(candidate => candidate.GraphTraversalCostMm.HasValue).ToList();
-            IEnumerable<EligibleDispatchCandidate> pool = priced.Count == 0 ? eligible : priced;
-            IOrderedEnumerable<EligibleDispatchCandidate> ordered = priced.Count == 0
-                ? pool.OrderBy(_ => 0)
-                : pool.OrderBy(candidate => candidate.GraphTraversalCostMm!.Value);
-            ordered = swapFirstSeenAndCreatedAt
-                ? ordered.ThenBy(candidate => candidate.Snapshot.CreatedAt).ThenBy(candidate => candidate.FirstSeenAt)
-                : ordered.ThenBy(candidate => candidate.FirstSeenAt).ThenBy(candidate => candidate.Snapshot.CreatedAt);
-            return ordered
-                .ThenBy(candidate => candidate.Snapshot.DemandId, StringComparer.Ordinal)
-                .First();
-        }
+            firstSeen);
     }
 }

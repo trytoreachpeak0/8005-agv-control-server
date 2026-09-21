@@ -11,8 +11,13 @@ namespace ControlServer.Host.Runtime.Dispatch;
 /// control-server#209, both would have edited the same expression.
 /// </para>
 /// <para>
-/// The order below is the order of <c>RouteGraphCostRanker</c> over <c>FirstSeenDispatchCandidateRanker</c>, which it
-/// replaced: priced candidates first, then by cost, then first seen, then created, then demand id.
+/// <b>成本那两层搬到车辆侧去了</b>（批次7-06，control-server#211）。它们比的是「这辆车到那个取货站多远」，
+/// 而任务侧在还没有车的时候就要把任务排出先后——一个与车有关的量在这一侧无从取值。车辆侧的对应两层是
+/// <see cref="PricedVehicleBeforeUnpricedLayer"/> 与 <see cref="MarginalTripCostLayer"/>，比的是边际成本而不是
+/// 到取货站的成本（REQ-0206）。
+/// </para>
+/// <para>
+/// 剩下的三层就是本票沿用的任务次序：先见先派，再按需求创建时刻与需求 id 定序。
 /// </para>
 /// </remarks>
 public static class DispatchCandidateOrdering
@@ -20,8 +25,6 @@ public static class DispatchCandidateOrdering
     /// <summary>Every layer, in the order it is asked.</summary>
     public static IReadOnlyList<IDispatchCandidateComparisonLayer> Layers() =>
     [
-        new PricedBeforeUnpricedLayer(),
-        new GraphTraversalCostLayer(),
         new FirstSeenLayer(),
         new DemandCreatedAtLayer(),
         new DemandIdOrdinalLayer(),

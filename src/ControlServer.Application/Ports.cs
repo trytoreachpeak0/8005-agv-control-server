@@ -87,6 +87,25 @@ public interface IJourneyAcceptanceStore : IDemandAcceptanceStore
         CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// 把一条需求追加进一辆在途车已有的旅程（票面第 3 条，批次7-06，control-server#211）。
+/// </summary>
+/// <remarks>
+/// <para>
+/// 与 <see cref="IJourneyAcceptanceStore"/> 的区别不在「写多少」，在「不写什么」：追加<b>不建旅程行、不取租约、
+/// 不认领车辆占用、不建移动订单</b>——那辆车已经被这趟旅程占着，而新的那一段腿要等前面的停靠走完才发。
+/// 它写的是需求行、归属、两个新停靠，以及既有停靠重排后的序位，<b>全部在同一个事务里</b>：
+/// 「占了仓位却不在计划里的需求」正是这四样分开写才会留下的东西。
+/// </para>
+/// </remarks>
+public interface IJourneyAppendStore : IDemandAcceptanceStore
+{
+    Task AppendToJourneyAsync(
+        AcceptedDemandSnapshot snapshot,
+        JourneyAppendPlan plan,
+        CancellationToken cancellationToken);
+}
+
 public interface IMovementIntentStore
 {
     Task<StoredMovementIntent?> GetByUpperIdAsync(string upperId, CancellationToken cancellationToken);

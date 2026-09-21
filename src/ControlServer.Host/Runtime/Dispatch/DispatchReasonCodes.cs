@@ -101,6 +101,55 @@ public static class DispatchReasonCodes
     public const string TaskTypeNotYetExecutable = "TASK_TYPE_NOT_YET_EXECUTABLE";
 
     /// <summary>
+    /// 这一侧的空仓位被<b>本车自己已预留或已装的货</b>占着，装不下（票面第 4 条，批次7-06，control-server#211）。
+    /// 与 <see cref="SlotGroupCapacityTemporarilyUnavailable"/> 分开登记：那一个是仓位被禁用，这一个是车自己满了。
+    /// </summary>
+    /// <remarks>
+    /// 批次7-07（control-server#212）判「这一侧装满」时唯一的依据就是它，所以它必须只在「其余准入全过、只卡在这一条」
+    /// 时出现——一个把两种情形合在一起的原因码，会让那一票分不出「车满了」和「仓位坏了」。
+    /// </remarks>
+    public const string SlotGroupOccupiedByOwnCargo = "SLOT_GROUP_OCCUPIED_BY_OWN_CARGO";
+
+    /// <summary>
+    /// 这条需求所在分区没有配置途中追加的上限，或配成了 0：本区禁止途中追加（REQ-0198）。
+    /// </summary>
+    /// <remarks>
+    /// 参数默认未配置，所以本票合入本身不会让线上产生多需求旅程——v2 的行为与今天完全相同，直到有人批准参数。
+    /// 它也是既有需求那一侧的答案：一条既有需求所在分区没有上限时，它不接受任何延迟。
+    /// </remarks>
+    public const string EnRouteAppendNotConfigured = "EN_ROUTE_APPEND_NOT_CONFIGURED";
+
+    /// <summary>追加会让某条需求到终点的计划路径代价增量超过它所在分区的上限（REQ-0198）。</summary>
+    public const string EnRouteAppendDelayGateExceeded = "EN_ROUTE_APPEND_DELAY_GATE_EXCEEDED";
+
+    /// <summary>
+    /// 任一增量算不出（路网给不出某一段的代价）。<b>算不出即拒</b>，不按零处理——一个算不出的增量与一个为零的增量
+    /// 是两回事，而把前者当后者用，正是「门禁形同虚设」的样子。
+    /// </summary>
+    public const string EnRouteAppendDelayUncomputable = "EN_ROUTE_APPEND_DELAY_UNCOMPUTABLE";
+
+    /// <summary>没有一个插入位能让各分区的需求保持连续区段（REQ-0195）：允许 A→A→B→B，禁止 A→B→A。</summary>
+    public const string EnRouteAppendBreaksZoneContiguity = "EN_ROUTE_APPEND_BREAKS_ZONE_CONTIGUITY";
+
+    /// <summary>追加会让计划超过 9 条腿，或让某一站的清单超过 8 项（protocol 2.0.0）。</summary>
+    public const string EnRouteAppendPlanLimitReached = "EN_ROUTE_APPEND_PLAN_LIMIT_REACHED";
+
+    /// <summary>
+    /// 当前下一站之后没有可用的插入位（REQ-0196）：车正驶向的那一站不能被插到前面去，而它之后已经没有位置了。
+    /// </summary>
+    public const string EnRouteAppendNoInsertionPoint = "EN_ROUTE_APPEND_NO_INSERTION_POINT";
+
+    /// <summary>
+    /// 同一份完整 MES 快照里，这个 Sublot 命中了多于一种任务类型（<c>REQ-0189</c>）。该 Sublot 的<b>全部</b>候选都挡，
+    /// 别的 Sublot 不受影响。
+    /// </summary>
+    /// <remarks>
+    /// 归普通积压而不是结构性告警：这是 MES 那一侧的数据自相矛盾，下一份快照就能改掉，而结构性告警说的是
+    /// 「整个车队都接不了」——换一辆车、等一等都没用。两者的处置也不同：这一条要人去看 MES，不是去看车队。
+    /// </remarks>
+    public const string SublotTaskTypeConflict = "SUBLOT_TASK_TYPE_CONFLICT";
+
+    /// <summary>
     /// The reasons that are a configured outcome rather than a problem: they reach the backlog and nothing
     /// else — no structural dispatch block, no alarm, no log at Warning or above.
     /// </summary>

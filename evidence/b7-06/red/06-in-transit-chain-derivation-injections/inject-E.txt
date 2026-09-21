@@ -1,0 +1,55 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-06-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:01.59]     ControlServer.Tests.DispatchAdmissionChainDerivationTests.TheTwoChainsDifferByExactlyThoseThreeCriteria [FAIL]
+[xUnit.net 00:00:01.60]     ControlServer.Tests.DispatchAdmissionChainDerivationTests.WithoutARouteGraphTheInTransitChainGainsNoAppendGate [FAIL]
+[xUnit.net 00:00:01.60]     ControlServer.Tests.DispatchAdmissionChainDerivationTests.EverythingTheTwoChainsShareRunsInTheSameOrder [FAIL]
+[xUnit.net 00:00:01.60]     ControlServer.Tests.DispatchAdmissionChainDerivationTests.ACriterionAddedToTheIdleChainReachesTheInTransitChainOnItsOwn [FAIL]
+  Failed ControlServer.Tests.DispatchAdmissionChainDerivationTests.TheTwoChainsDifferByExactlyThoseThreeCriteria [28 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ at index 0
+           ↓ (pos 0)
+Expected: "VehicleDynamicFactsCriterion"
+Actual:   "AreaScopeCriterion"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.DispatchAdmissionChainDerivationTests.TheTwoChainsDifferByExactlyThoseThreeCriteria() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-06-8005-agv-control-server\tests\ControlServer.Tests\DispatchAdmissionChainDerivationTests.cs:line 42
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  Failed ControlServer.Tests.DispatchAdmissionChainDerivationTests.WithoutARouteGraphTheInTransitChainGainsNoAppendGate [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ at index 0
+           ↓ (pos 0)
+Expected: "VehicleDynamicFactsCriterion"
+Actual:   "AreaScopeCriterion"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.DispatchAdmissionChainDerivationTests.WithoutARouteGraphTheInTransitChainGainsNoAppendGate() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-06-8005-agv-control-server\tests\ControlServer.Tests\DispatchAdmissionChainDerivationTests.cs:line 90
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  Failed ControlServer.Tests.DispatchAdmissionChainDerivationTests.EverythingTheTwoChainsShareRunsInTheSameOrder [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ at index 7
+               ↓ (pos 4)
+Expected: "AreaScopeCriterion"
+Actual:   "AreaEqpUniqueCriterion"
+               ↑ (pos 4)
+  Stack Trace:
+     at ControlServer.Tests.DispatchAdmissionChainDerivationTests.EverythingTheTwoChainsShareRunsInTheSameOrder() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-06-8005-agv-control-server\tests\ControlServer.Tests\DispatchAdmissionChainDerivationTests.cs:line 74
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  Failed ControlServer.Tests.DispatchAdmissionChainDerivationTests.ACriterionAddedToTheIdleChainReachesTheInTransitChainOnItsOwn [1 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ at index 0
+           ↓ (pos 0)
+Expected: "VehicleDynamicFactsCriterion"
+Actual:   "AreaScopeCriterion"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.DispatchAdmissionChainDerivationTests.ACriterionAddedToTheIdleChainReachesTheInTransitChainOnItsOwn() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-06-8005-agv-control-server\tests\ControlServer.Tests\DispatchAdmissionChainDerivationTests.cs:line 132
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+
+Failed!  - Failed:     4, Passed:     1, Skipped:     0, Total:     5, Duration: 61 ms - ControlServer.Tests.dll (net8.0)

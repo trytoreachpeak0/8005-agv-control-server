@@ -3,6 +3,7 @@ using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.Dispatch;
+using ControlServer.Host.Runtime.Fleet;
 using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Host.Runtime.RouteGraph;
 using ControlServer.Infrastructure.Persistence;
@@ -113,59 +114,63 @@ public sealed class RouteGraphDispatchTests
         Assert.Null(evaluation.GraphTraversalCostMm);
     }
 
-    // ---- the ranker is an ordering ------------------------------------------------------------
+    // ---- 成本是排序，不是门；批次7-06 起它在车辆侧 ------------------------------------------------
+
+    // 批次7-06（control-server#211）把轮次翻成任务优先之后，成本比的是「哪辆车接这条任务更便宜」，
+    // 所以这四条从任务侧搬到了车辆侧。REQ-0207 的两句话一字未变：可达性是门、成本是序，算不出成本的车不被淘汰。
+    // 比较的量也从「这辆车到取货站多远」换成了边际成本（REQ-0206），单趟候选下两者是同一个数。
 
     [Fact]
-    public void TheCheapestReachableCandidateWins()
+    public void TheCheapestReachableVehicleWins()
     {
-        LayeredDispatchCandidateRanker ranker = DispatchCandidateOrdering.Ranker();
-
-        EligibleDispatchCandidate near = Candidate("DEMAND-NEAR", Origin, cost: 10000);
-        EligibleDispatchCandidate far = Candidate("DEMAND-FAR", Origin.AddMinutes(-10), cost: 90000);
-
-        // The older demand loses to the nearer one: this is the cost layer doing its job. Without
-        // the engine the first-seen order would have picked DEMAND-FAR.
-        Assert.Equal("DEMAND-NEAR", ranker.SelectNext([far, near]).Snapshot.DemandId);
+        // 离得近的那辆车接走它：成本层在做它该做的事。没有路网引擎时，会由确定性的兜底层按车号定。
+        Assert.Equal(
+            "agv-near",
+            DispatchVehicleOrdering.SelectNext([Offer("agv-far", 90000), Offer("agv-near", 10000)]).Vehicle.AgvId);
     }
 
     [Fact]
-    public void AMissingCostDropsTheCostLayerRatherThanTheCandidate()
+    public void AMissingCostDropsTheCostLayerRatherThanTheVehicle()
     {
-        // REQ-0207's second half: 保留相关车辆、对该比较组跳过路径成本层。Nothing is priced here,
-        // so the round falls through to the deterministic first-seen order.
-        LayeredDispatchCandidateRanker ranker = DispatchCandidateOrdering.Ranker();
-
-        EligibleDispatchCandidate older = Candidate("DEMAND-OLD", Origin.AddMinutes(-10), cost: null);
-        EligibleDispatchCandidate newer = Candidate("DEMAND-NEW", Origin, cost: null);
-
-        Assert.Equal("DEMAND-OLD", ranker.SelectNext([newer, older]).Snapshot.DemandId);
+        // REQ-0207's second half: 保留相关车辆、对该比较组跳过路径成本层。两辆都算不出，于是落到确定性的兜底层。
+        Assert.Equal(
+            "agv-a",
+            DispatchVehicleOrdering.SelectNext([Offer("agv-b", null), Offer("agv-a", null)]).Vehicle.AgvId);
     }
 
     [Fact]
-    public void APricedCandidateIsPreferredOverAnUnpricedOne()
+    public void APricedVehicleIsPreferredOverAnUnpricedOne()
     {
-        LayeredDispatchCandidateRanker ranker = DispatchCandidateOrdering.Ranker();
-
-        EligibleDispatchCandidate priced = Candidate("DEMAND-PRICED", Origin, cost: 90000);
-        EligibleDispatchCandidate unpriced = Candidate("DEMAND-UNPRICED", Origin.AddMinutes(-10), cost: null);
-
-        // Every candidate here already passed the reachability gate, so an unpriced one is not
-        // unreachable — it is unmeasured, and a measured comparison beats an unmeasured one.
-        Assert.Equal("DEMAND-PRICED", ranker.SelectNext([unpriced, priced]).Snapshot.DemandId);
+        // 走到排序这一步的车都已经过了可达性那道门，所以算不出成本不等于到不了——只是没量出来，
+        // 而量出来的比没量出来的优先。
+        Assert.Equal(
+            "agv-priced",
+            DispatchVehicleOrdering.SelectNext([Offer("agv-unpriced", null), Offer("agv-priced", 90000)]).Vehicle.AgvId);
     }
 
     [Fact]
     public void EqualCostsFallThroughToTheDeterministicTieBreak()
     {
-        LayeredDispatchCandidateRanker ranker = DispatchCandidateOrdering.Ranker();
-
-        EligibleDispatchCandidate first = Candidate("DEMAND-B", Origin, cost: 10000);
-        EligibleDispatchCandidate second = Candidate("DEMAND-A", Origin, cost: 10000);
-
-        // Same cost, same timestamps: the demand id breaks it, so the decision is reproducible
-        // from the evidence rather than depending on enumeration order.
-        Assert.Equal("DEMAND-A", ranker.SelectNext([first, second]).Snapshot.DemandId);
+        // 成本相同、别的也分不出：按车号定，所以这个决定能从证据里复现，而不取决于枚举顺序。
+        Assert.Equal(
+            "agv-a",
+            DispatchVehicleOrdering.SelectNext([Offer("agv-b", 10000), Offer("agv-a", 10000)]).Vehicle.AgvId);
     }
+
+    /// <summary>一辆车对某条任务的出价，只填排序层读的那几样。</summary>
+    private static EligibleVehicleOffer Offer(string agvId, long? marginalCostMm) => new(
+        new FleetVehicle(agvId, $"VK-{agvId}", 1),
+        new DispatchVehicleFacts(
+            $"VK-{agvId}",
+            agvId,
+            new OnboardDispatchFacts(1, [1], true, true, true, true, false),
+            new RiotVehicleObservation(
+                $"VK-{agvId}", true, true, "IDLE", "MAP-25-WIRE_TO_GATE", 12, 90, "DISCHARGING", 0, Origin),
+            Origin),
+        Candidate("DEMAND-1", Origin, marginalCostMm),
+        marginalCostMm,
+        Placement: null,
+        DispatchZoneParameterVersion: null);
 
     // ---- the naming discipline -----------------------------------------------------------------
 
@@ -179,9 +184,12 @@ public sealed class RouteGraphDispatchTests
         [
             .. Directory.GetFiles(SourcePath("src/ControlServer.Domain"), "RouteGraph*.cs"),
             .. Directory.GetFiles(SourcePath("src/ControlServer.Host/Runtime/RouteGraph"), "*.cs"),
-            SourcePath("src/ControlServer.Host/Runtime/Dispatch/PricedBeforeUnpricedLayer.cs"),
-            SourcePath("src/ControlServer.Host/Runtime/Dispatch/GraphTraversalCostLayer.cs"),
+            // 批次7-06（control-server#211）把成本从任务侧搬到车辆侧：原来那两个任务侧的层
+            // （PricedBeforeUnpricedLayer、GraphTraversalCostLayer）删掉了，读遍历代价的代码现在在这两处。
+            SourcePath("src/ControlServer.Host/Runtime/Dispatch/DispatchVehicleOrdering.cs"),
+            SourcePath("src/ControlServer.Host/Runtime/Dispatch/EnRouteAppendPlanner.cs"),
             SourcePath("src/ControlServer.Host/Runtime/Dispatch/Criteria/RouteGraphReachabilityCriterion.cs"),
+            SourcePath("src/ControlServer.Host/Runtime/Dispatch/Criteria/EnRouteAppendCriterion.cs"),
         ];
 
         List<string> offenders = [];

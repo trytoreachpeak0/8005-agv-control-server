@@ -100,6 +100,22 @@ public sealed class StructuralDispatchBlockTests
     [InlineData("FINAL_JOURNEY_PLAN_INCOMPLETE", DispatchReasonClass.Backlog)]
     [InlineData("DEMAND_DECISION_FACT_CHANGED", DispatchReasonClass.Backlog)]
     [InlineData("DEMAND_LEFT_CATALOG", DispatchReasonClass.Backlog)]
+    // 批次7-06（control-server#211）。八条都归普通积压：仓位被本车自己的货占着会随卸货腾出来；
+    // 途中追加的六种拒绝会随参数批准、车开过那一站、别的需求卸完而在下一轮通过；一个 Sublot 命中多种任务类型
+    // 是 MES 那一侧的数据自相矛盾，下一份快照就能改掉。没有一条是「整个车队都接不了」。
+    [InlineData("SLOT_GROUP_OCCUPIED_BY_OWN_CARGO", DispatchReasonClass.Backlog)]
+    [InlineData("EN_ROUTE_APPEND_NOT_CONFIGURED", DispatchReasonClass.Backlog)]
+    [InlineData("EN_ROUTE_APPEND_DELAY_GATE_EXCEEDED", DispatchReasonClass.Backlog)]
+    [InlineData("EN_ROUTE_APPEND_DELAY_UNCOMPUTABLE", DispatchReasonClass.Backlog)]
+    // 这一行断的是「分类表里有这个码」，不是「它会被产出」。当前模型下没有任何输入能让它成为最终结论——
+    // 相邻插入总有合法位，而腿数一旦触发，撞上腿数的那个位置就 continue 掉、不会再贡献连续性理由
+    // （Batch7EnRouteAppendPlannerTests 里那段 remarks 有完整的两层机理，以及它为什么今天还没有判据）。
+    // 能通过它的错误实现：把规划器里 refusals.Add(EnRouteAppendBreaksZoneContiguity) 换成别的码，这一行照绿。
+    // 留着它是因为登记一个今天产不出的码，成本是一行，而将来模型一变就不必再新增码、改仪表盘文案。
+    [InlineData("EN_ROUTE_APPEND_BREAKS_ZONE_CONTIGUITY", DispatchReasonClass.Backlog)]
+    [InlineData("EN_ROUTE_APPEND_PLAN_LIMIT_REACHED", DispatchReasonClass.Backlog)]
+    [InlineData("EN_ROUTE_APPEND_NO_INSERTION_POINT", DispatchReasonClass.Backlog)]
+    [InlineData("SUBLOT_TASK_TYPE_CONFLICT", DispatchReasonClass.Backlog)]
     public void EveryReasonCodeHasItsClassAndARationale(string reasonCode, DispatchReasonClass expected)
     {
         DispatchReasonClassification row = Assert.Contains(reasonCode, StructuralDispatchClassification.ByCode);

@@ -360,7 +360,23 @@ public sealed class JourneyRuntimeEngine(
         FleetVehicle[] free = roster.Vehicles
             .Where(vehicle => !busy.Contains(vehicle.AgvId))
             .ToArray();
-        if (free.Length == 0)
+        // Blocked 的旅程占着车，却接不了追加：它等的是人介入，在途资格链无条件拒绝它。所以它让车算 busy
+        // （不能当空闲车派），但不进 underWay（不值得当可追加的车去问）。这个区分不是优化：underWay 的
+        // 含义是「可以考虑给它追加的车」，把一辆接不了追加的车放进去，会让轮次在一个本就没有活可派的局面下
+        // 照样把整张候选表判一遍。
+        HashSet<string> blocked = active
+            .Where(row => row.Stage == JourneyRuntimeStage.Blocked)
+            .Select(row => row.AgvId)
+            .ToHashSet(StringComparer.Ordinal);
+        FleetVehicle[] underWay = roster.Vehicles
+            .Where(vehicle => busy.Contains(vehicle.AgvId) && !blocked.Contains(vehicle.AgvId))
+            .ToArray();
+        // 空闲车与可追加的在途车都没有，才退（批次7-06，control-server#211）。在这之前判的是「没有空闲车」——
+        // 那时在途车走一条一律拒绝的占位路径，问它等于白问，所以提前退出是对的。本票让在途车与空闲车在同一张
+        // 候选表上竞争（REQ-0205），「全车队都在途」于是成了一种正常的、有活可派的局面：单车现场里它甚至是
+        // 常态——车一接单就不再空闲，此后到卸完货为止的每一条新需求都只能靠追加接。按空闲车判会让这些需求一条
+        // 都看不见，而这正是同区追加那条 L2 场景第一次跑出来的样子。
+        if (free.Length == 0 && underWay.Length == 0)
         {
             return;
         }
@@ -384,11 +400,6 @@ public sealed class JourneyRuntimeEngine(
                 $"Unresolved accepted demand has no production journey runtime: {string.Join(',', orphaned)}.");
         }
 
-        // The vehicles under way reach the round too, on their own path (control-server#209); a round with no free
-        // vehicle still ends above, before the catalog and the orphan check.
-        FleetVehicle[] underWay = roster.Vehicles
-            .Where(vehicle => busy.Contains(vehicle.AgvId))
-            .ToArray();
         await dispatchRound.RunAsync(
                 currentMap, fixedStations, free, underWay, admissionPolicyDrifted, cancellationToken)
             .ConfigureAwait(false);
@@ -479,21 +490,30 @@ public sealed class JourneyRuntimeEngine(
             }
             return;
         }
+        // 本轮推进读到的停靠与归属。每一个要发出去的 id 都从这里取，取货与关卡两段不再各读各的列。
+        //
+        // 读在失联判定「之前」（批次7-06 与 control-server#234 在这里相邻）：失联判定里那道
+        // control-server#228 的升级要按当前停靠判，而当前停靠只有游标说得出。读停靠是纯查询，不向车发
+        // 任何东西，所以把它挪到前面不碰 #234 那句「这一行以下不是发给对端就是在等对端」——发布仍然
+        // 一条都在失联判定之后。
+        JourneyStopCursor stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken)
+            .ConfigureAwait(false);
         // The session row says Ready, but does the vehicle still answer? Judged here, before anything is
         // published, because everything below this line either sends to the peer or waits on a fact only the
         // peer can supply (control-server#234).
-        if (await NameSilentOnboardSessionAsync(runtime, session, now, cancellationToken).ConfigureAwait(false))
+        if (await NameSilentOnboardSessionAsync(runtime, session, stops, now, cancellationToken)
+                .ConfigureAwait(false))
         {
             return;
         }
-        // 本轮推进读到的停靠与归属。每一个要发出去的 id 都从这里取，取货与关卡两段不再各读各的列。
-        JourneyStopCursor stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken)
-            .ConfigureAwait(false);
         await publisher.ReplayPendingForSessionAsync(
             runtime.AgvId,
             session.SessionGeneration,
             RuntimeMessageIds(runtime, stops),
             cancellationToken).ConfigureAwait(false);
+        // 计划整体替换下发（ADR-cross-0053）：途中追加会在序列中间插进新停靠，而车上手里那张计划是插入之前的。
+        // 补发在重放之后：重放先把没确认的旧行发完，新的那一版才不会被它顶回去。
+        await RefreshUpcomingStopPlanAsync(runtime, stops, session, cancellationToken).ConfigureAwait(false);
 
         // Set when this iteration has already asked a pre-departure check again, so the judgment that
         // follows neither asks a third time nor forgets why the vehicle is still waiting.
@@ -501,14 +521,16 @@ public sealed class JourneyRuntimeEngine(
         switch (runtime.Stage)
         {
             case JourneyRuntimeStage.AwaitingPickupArrival:
+                // 与关卡侧对称，取这个停靠自己的单号（批次7-06）：旅程行上的 PickupUpperId 是锚需求那一段的，
+                // 第二个取货停靠用它会去确认一段早已走完的移动。
                 if (!await EnsureMovementConfirmedAsync(
-                        runtime, runtime.PickupUpperId, "PICKUP", cancellationToken).ConfigureAwait(false))
+                        runtime, stops.Current.UpperId, "PICKUP", cancellationToken).ConfigureAwait(false))
                 {
                     return;
                 }
                 await PublishPickupDispatchPlanOnceAsync(runtime, stops, session, cancellationToken).ConfigureAwait(false);
                 ArrivalCheck pickupArrival = await CheckArrivalAsync(
-                    runtime, "TO_PICKUP", session, cancellationToken).ConfigureAwait(false);
+                    runtime, stops.Current, "TO_PICKUP", session, cancellationToken).ConfigureAwait(false);
                 if (!pickupArrival.Trusted)
                 {
                     if (await ObserveOrderFailureAsync(runtime, pickupArrival, cancellationToken)
@@ -534,8 +556,10 @@ public sealed class JourneyRuntimeEngine(
                 // An operator cancelling before any entry (ADR-cross-0046; control-server#83) holds the stop
                 // until the vehicle reports: no load starts and the deadline does not end it. Read after the
                 // inbox, so an entry seen here cannot have been persisted before the cancellation it loses to.
-                if (await LoadCancellationBeforeSublot.HasOpenCancellationAsync(
-                        dbContext, runtime.DemandId, cancellationToken).ConfigureAwait(false))
+                //
+                // 按「这个停靠上任一条需求」问（批次7-06）：取消要车证明那一排仓位是空的，而那是一次整排的证明，
+                // 不是对某一条需求的证明——所以一条需求的取消开着，这个停靠上的每一条都等着。
+                if (await OpenCancellationAtCurrentStopAsync(stops, cancellationToken).ConfigureAwait(false))
                 {
                     // What the entry read concluded does not stand while the cancellation decides the stop, so this
                     // iteration's unsaved change to the block is undone -- code and start time both, back to what the
@@ -556,7 +580,7 @@ public sealed class JourneyRuntimeEngine(
                 }
                 if (sublot is null)
                 {
-                    if (await TryEndStopAtStationDeadlineAsync(runtime, session, now, cancellationToken)
+                    if (await TryEndStopAtStationDeadlineAsync(runtime, stops, session, now, cancellationToken)
                             .ConfigureAwait(false))
                     {
                         return;
@@ -574,23 +598,33 @@ public sealed class JourneyRuntimeEngine(
                 // after the cancellation has had its chance to decide the stop: an entry that loses to
                 // one is neither loaded nor answered. A refusal is answered here, which is the point of
                 // BR-013's "give the operator the real reason", and leaves the stop exactly where it was.
-                if (!await RevalidateEnteredSublotAsync(runtime, stops, session, sublot, now, cancellationToken)
-                        .ConfigureAwait(false))
+                if (await RevalidateEnteredSublotAsync(runtime, stops, session, sublot, now, cancellationToken)
+                        .ConfigureAwait(false) is not { } entered)
                 {
                     return;
                 }
-                await PublishLoadAsync(runtime, stops, session, sublot.MessageId, cancellationToken).ConfigureAwait(false);
+                await PublishLoadAsync(runtime, stops, entered, session, sublot.MessageId, cancellationToken)
+                    .ConfigureAwait(false);
                 runtime.ConsumedSublotMessageId = sublot.MessageId;
+                // 「这个停靠此刻在装哪一条」从这里起是落库的状态（批次7-06）。写在发完命令之后、同一次保存里：
+                // 命令与状态要么都在，要么都不在，否则重启之后会对着一条没有命令的需求等结果。
+                (await TrackedMembershipAsync(runtime, entered.Demand.DemandId, cancellationToken)
+                    .ConfigureAwait(false)).Status = JourneyDemandStatuses.Loading;
                 // The submission is this command's answer. Leaving the command unsettled replayed it
                 // into every later session, where the peer refused it as a business id whose content
                 // had changed and tore the session down.
                 await store.SettleAnsweredCommandAsync(
-                    runtime.SublotRequestMessageId, now, cancellationToken).ConfigureAwait(false);
+                    stops.CurrentSublotRequestMessageId(runtime.WorklistRevision), now, cancellationToken).ConfigureAwait(false);
                 SetStage(runtime, JourneyRuntimeStage.AwaitingLoadResult, now);
                 break;
             case JourneyRuntimeStage.AwaitingLoadResult:
+                // 等的是「此刻在装的那一条」的 attempt（批次7-06）。批次7-03 查旅程行上锚需求的那一个，
+                // 而命令是按被录入那条发出去的——两者分岔的样子就是「发了 A 查 B」，旅程停在这里而且不报错。
+                JourneyStopDemand loading = stops.LoadingAtCurrentStop
+                    ?? throw new InvalidDataException(
+                        $"Journey {runtime.JourneyId} waits for a load result with no demand loading at its stop.");
                 StationOperationRow? load = await dbContext.StationOperations.SingleOrDefaultAsync(
-                    row => row.SlotOperationAttemptId == runtime.LoadSlotOperationAttemptId,
+                    row => row.SlotOperationAttemptId == loading.Membership.LoadSlotOperationAttemptId,
                     cancellationToken).ConfigureAwait(false);
                 if (load?.Status == StationOperationStatus.RecoveryRequired)
                 {
@@ -598,14 +632,35 @@ public sealed class JourneyRuntimeEngine(
                 }
                 else if (load?.Status == StationOperationStatus.Failed)
                 {
-                    await TrySettleDeterminateLoadFailureAsync(runtime, load, session, now, cancellationToken)
+                    await TrySettleDeterminateLoadFailureAsync(
+                            runtime, stops, loading, load, session, now, cancellationToken)
                         .ConfigureAwait(false);
                     return;
                 }
                 else if (load?.Status == StationOperationStatus.Committed)
                 {
                     await store.SettleAnsweredCommandAsync(
-                        runtime.LoadCommandMessageId, now, cancellationToken).ConfigureAwait(false);
+                        loading.Membership.LoadCommandMessageId, now, cancellationToken).ConfigureAwait(false);
+                    (await TrackedMembershipAsync(runtime, loading.Demand.DemandId, cancellationToken)
+                        .ConfigureAwait(false)).Status = JourneyDemandStatuses.Loaded;
+                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    // 这个停靠上还有没装的需求，就回到等录入等下一条（同一站逐条串行，规格第 22 节补记）：重新加载
+                    // 游标，因为刚写下的状态决定了清单该列谁、修订号该走到几。
+                    stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken)
+                        .ConfigureAwait(false);
+                    if (stops.OutstandingAtCurrentStop.Count > 0)
+                    {
+                        await PublishStopWorklistAsync(
+                            runtime,
+                            stops,
+                            session,
+                            StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout),
+                            cancellationToken).ConfigureAwait(false);
+                        await PublishEntryRequestAsync(runtime, stops, session, cancellationToken)
+                            .ConfigureAwait(false);
+                        SetStage(runtime, JourneyRuntimeStage.AwaitingSublot, now);
+                        break;
+                    }
                     // REQ-0237 / ADR-cross-0054: the load is committed and the vehicle is still at the
                     // pickup, which is the only time an ordinary mis-placement may be corrected. Asking
                     // for departure safety in this same iteration, as this server did until 2026-09-13,
@@ -623,7 +678,8 @@ public sealed class JourneyRuntimeEngine(
                     // alarm by.
                     bool loadWaitRefilled = runtime.StationDepartureWaitStartedAt is null;
                     runtime.StationDepartureWaitStartedAt ??= now;
-                    if (ReconcileStationTimeoutDoorNotClosed(runtime, session, now) || loadWaitRefilled)
+                    if (ReconcileStationTimeoutDoorNotClosed(runtime, stops.Current.StationId, session, now) ||
+                        loadWaitRefilled)
                     {
                         runtime.UpdatedAt = now;
                         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -638,8 +694,12 @@ public sealed class JourneyRuntimeEngine(
                     return;
                 }
                 runtime.StationDepartureWaitStartedAt = null;
-                // 核验的两个 id 取当前停靠。命令里的 demandId 取锚需求：协议只放得下一个，而离站安全本来就是
-                // 一次整车判断，不是对某一条需求的判断（票面第 7 条）。
+                // 卸货停靠的这两个 id 受理时没有写过——在本票之前它永远是旅程的终点，没有「离开之前」可言。
+                // 多停靠计划里它后面还能有停靠，所以第一次要离站时补上并落库。
+                await EnsureDepartureCheckIdsAsync(stops.Current, cancellationToken).ConfigureAwait(false);
+                // 核验的两个 id 取当前停靠。命令里的 demandId 取「第一条受理的需求」（锚需求），即使它已经在更早的
+                // 停靠卸完了：协议只放得下一个，而离站安全本来就是一次整车判断，不是对某一条需求的判断
+                // （票面第 10 条）。腿与目标站取「即将出发的那一段」，也就是下一个停靠。
                 await publisher.PublishPreDepartureSafetyCheckAsync(
                     DepartureCheckMessageId(stops.Current),
                     runtime.AgvId,
@@ -647,9 +707,9 @@ public sealed class JourneyRuntimeEngine(
                     new PreDepartureSafetyCheckCommand(
                         DepartureCheckId(stops.Current),
                         runtime.DemandId,
-                        runtime.GateMovementLegId,
+                        NextStopAfterCurrent(stops).MovementLegId,
                         session.SafetyRevision ?? throw new InvalidDataException("Safety revision is required."),
-                        runtime.GateStationId),
+                        NextStopAfterCurrent(stops).StationId),
                     cancellationToken).ConfigureAwait(false);
                 SetStage(runtime, JourneyRuntimeStage.AwaitingDepartureSafety, now);
                 await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -689,7 +749,9 @@ public sealed class JourneyRuntimeEngine(
                 // order created minutes after the demand was taken, and nothing about the first
                 // order's gate says the vehicle can still reach the gate station from where it now
                 // is.
-                CreateGateOutcome gateLeg = await GateLegAsync(runtime, currentMap, cancellationToken)
+                JourneyStopRow departedFrom = stops.Current;
+                JourneyStopRow nextStop = NextStopAfterCurrent(stops);
+                CreateGateOutcome gateLeg = await GateLegAsync(runtime, nextStop, currentMap, cancellationToken)
                     .ConfigureAwait(false);
                 if (!gateLeg.IsAllowed)
                 {
@@ -699,16 +761,24 @@ public sealed class JourneyRuntimeEngine(
                     return;
                 }
 
-                OrderIntent gateIntent = JourneyPlanBuilder.GateIntent(runtime, now);
+                OrderIntent gateIntent = JourneyPlanBuilder.LegIntent(runtime, nextStop, now);
                 await new WireToGateStore(dbContext).AuthorizeMovementAsync(
                     gateIntent, safety, now, cancellationToken).ConfigureAwait(false);
                 MovementDispatchResult dispatch = await movementDispatch.ReconcileOrCreateAsync(
-                    runtime.GateUpperId, cancellationToken).ConfigureAwait(false);
+                    nextStop.UpperId, cancellationToken).ConfigureAwait(false);
                 runtime.ConsumedSafetyResultMessageId = await FindSafetyResultMessageIdAsync(
-                    DepartureCheckId(stops.Current), cancellationToken).ConfigureAwait(false);
+                    DepartureCheckId(departedFrom), cancellationToken).ConfigureAwait(false);
                 await store.SettleAnsweredCommandAsync(
-                    DepartureCheckMessageId(stops.Current), now, cancellationToken).ConfigureAwait(false);
-                SetStage(runtime, JourneyRuntimeStage.AwaitingGateArrival, now);
+                    DepartureCheckMessageId(departedFrom), now, cancellationToken).ConfigureAwait(false);
+                // 车开走了，这个停靠就完成了：当前停靠指针从此是落库的状态（批次7-06），下一轮加载游标读到的是下一个。
+                (await TrackedStopAsync(departedFrom.StopId, cancellationToken).ConfigureAwait(false)).Status =
+                    JourneyStopStatuses.Completed;
+                SetStage(
+                    runtime,
+                    nextStop.StopRole == JourneyStopRoles.Pickup
+                        ? JourneyRuntimeStage.AwaitingPickupArrival
+                        : JourneyRuntimeStage.AwaitingGateArrival,
+                    now);
                 runtime.SetBlockReason(
                     dispatch.Outcome == MovementDispatchOutcome.Confirmed ? null : dispatch.Outcome.ToString(),
                     now);
@@ -720,19 +790,19 @@ public sealed class JourneyRuntimeEngine(
                 // is the admission returning, so neither stops or restarts this count. Escalating returns at once, so the
                 // order failure check never runs in the same round and cannot write its code over the escalation, and a
                 // Blocked journey is not observed for arrival again.
-                if (await EscalateAreaEndAdmissionRevokedPastTimeoutAsync(runtime, now, cancellationToken)
+                if (await EscalateAreaEndAdmissionRevokedPastTimeoutAsync(runtime, stops, now, cancellationToken)
                         .ConfigureAwait(false))
                 {
                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                     return;
                 }
                 if (!await EnsureMovementConfirmedAsync(
-                        runtime, runtime.GateUpperId, "GATE", cancellationToken).ConfigureAwait(false))
+                        runtime, stops.Current.UpperId, "GATE", cancellationToken).ConfigureAwait(false))
                 {
                     return;
                 }
                 ArrivalCheck gateArrival = await CheckArrivalAsync(
-                    runtime, "TO_GATE", session, cancellationToken).ConfigureAwait(false);
+                    runtime, stops.Current, "TO_GATE", session, cancellationToken).ConfigureAwait(false);
                 if (!gateArrival.Trusted)
                 {
                     if (await ObserveOrderFailureAsync(runtime, gateArrival, cancellationToken)
@@ -743,7 +813,7 @@ public sealed class JourneyRuntimeEngine(
                     await NameCheckpointWaitAsync(runtime, cancellationToken).ConfigureAwait(false);
                     return;
                 }
-                if (!await UnloadAdmittedAsync(runtime, cancellationToken).ConfigureAwait(false))
+                if (!await UnloadAdmittedAsync(runtime, stops, cancellationToken).ConfigureAwait(false))
                 {
                     // The first hold stores when the wait began, in this same save as the hold itself, so a crash leaves
                     // both or neither. The block is written from that start too: back from another code -- a failed
@@ -760,8 +830,13 @@ public sealed class JourneyRuntimeEngine(
                 SetStage(runtime, JourneyRuntimeStage.AwaitingUnloadResult, now);
                 break;
             case JourneyRuntimeStage.AwaitingUnloadResult:
+                // 等的是本停靠此刻该卸的那一条（批次7-06）。卸货不需要一个「正在卸」的状态：卸是服务端自己按归属先后
+                // 发的，一条卸完才发下一条，所以「此刻在卸的」恒等于「第一条还没卸的已装需求」。
+                JourneyStopDemand unloading = stops.NextToUnloadAtCurrentStop
+                    ?? throw new InvalidDataException(
+                        $"Journey {runtime.JourneyId} waits for an unload result with nothing left to unload.");
                 StationOperationRow? unload = await dbContext.StationOperations.SingleOrDefaultAsync(
-                    row => row.SlotOperationAttemptId == runtime.UnloadSlotOperationAttemptId,
+                    row => row.SlotOperationAttemptId == unloading.Membership.UnloadSlotOperationAttemptId,
                     cancellationToken).ConfigureAwait(false);
                 if (unload?.Status == StationOperationStatus.RecoveryRequired)
                 {
@@ -770,14 +845,58 @@ public sealed class JourneyRuntimeEngine(
                 else
                 {
                     AcceptedDemandRow demand = await dbContext.AcceptedDemands.SingleAsync(
-                        row => row.DemandId == runtime.DemandId, cancellationToken).ConfigureAwait(false);
+                        row => row.DemandId == unloading.Demand.DemandId, cancellationToken).ConfigureAwait(false);
                     if (unload?.Status != StationOperationStatus.Committed ||
                         demand.Status != DemandExecutionStatus.Succeeded)
                     {
                         return;
                     }
                     await store.SettleAnsweredCommandAsync(
-                        runtime.UnloadCommandMessageId, now, cancellationToken).ConfigureAwait(false);
+                        unloading.Membership.UnloadCommandMessageId, now, cancellationToken).ConfigureAwait(false);
+                    (await TrackedMembershipAsync(runtime, unloading.Demand.DemandId, cancellationToken)
+                        .ConfigureAwait(false)).Status = JourneyDemandStatuses.Unloaded;
+                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken)
+                        .ConfigureAwait(false);
+                    if (stops.OutstandingAtCurrentStop.Count > 0)
+                    {
+                        // 本停靠还有没卸的：发这一版清单与下一条卸货命令，留在等结果。
+                        await PublishStopWorklistAsync(
+                            runtime, stops, session, stationDepartureDeadlineAt: null, cancellationToken)
+                            .ConfigureAwait(false);
+                        await PublishUnloadCommandAsync(runtime, stops, session, cancellationToken)
+                            .ConfigureAwait(false);
+                        break;
+                    }
+
+                    if (stops.OpenStops.Count > 1)
+                    {
+                        // 卸完了这一站，计划里还有下一站：走与取货停靠<b>同一条</b>离站路——发离站安全核验、
+                        // 按答复过 REQ-0305 的创建门禁、建下一段腿的订单意图并授权移动、下 RIoT 订单，
+                        // 由那条路在车真开走之后才把本停靠标记完成。所以这里既不标记完成也不重载游标：
+                        // 离站段要的 stops.Current 正是「正要离开的这个停靠」。
+                        //
+                        // 先前这里直接 SetStage 到下一站的到站阶段，中间<b>什么都没做</b>。全仓只有
+                        // :761-762 建后续腿的订单意图，而那两行在离站安全分支里，卸货停靠走不到——于是
+                        // 下一轮按一个库里根本不存在的 UpperId 调 SingleAsync，抛 InvalidOperationException，
+                        // 冒到 JourneyRuntimeWorker 的<b>整轮</b> catch（记 Error 级事件 2002 LogIterationFailed），
+                        // 于是<b>这一轮整个中止</b>：推进循环里排在后面的车不再推进，派车轮次也不跑。每一轮重复。
+                        // （推进段<b>没有</b>逐车隔离——那是派车轮次才有的，事件 2123 属于 DispatchRoundRunner。）
+                        // 判据是 LeavingAnUnloadStopAuthorisesTheLegToTheNextStop：它断订单意图在不在，
+                        // 不断「推进没抛」——那个异常在测试这一侧什么都看不到。
+                        //
+                        // OpenStops 含当前停靠，所以判的是 > 1 不是 > 0。
+                        SetStage(runtime, JourneyRuntimeStage.AwaitingStationDeparture, now);
+                        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                        goto case JourneyRuntimeStage.AwaitingStationDeparture;
+                    }
+
+                    (await TrackedStopAsync(stops.Current.StopId, cancellationToken).ConfigureAwait(false)).Status =
+                        JourneyStopStatuses.Completed;
+                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken)
+                        .ConfigureAwait(false);
+
                     SetStage(runtime, JourneyRuntimeStage.Completed, now);
                     checkpointWaits.Clear(runtime.VehicleKey);
                     // The journey is over, so the vehicle stops being occupied by it. Released
@@ -818,18 +937,33 @@ public sealed class JourneyRuntimeEngine(
         OrderIntentRow Intent,
         RiotOrderObservation Order);
 
+    /// <param name="stop">车正驶向的那个停靠——这一次到站判定的全部依据（批次7-06，control-server#211）。</param>
+    /// <remarks>
+    /// <para>
+    /// <b>按 <c>MovementLegId</c> 取意图，因为那是主键。</b>这之前按 <c>(DemandId, Purpose)</c> 取，而那一对
+    /// 只在「一趟旅程两个停靠」时碰巧唯一：<see cref="JourneyPlanBuilder.LegIntent"/> 给每一段后续腿都建
+    /// <c>Purpose = "TO_GATE"</c>，所以第三个停靠一出现就有两行同键，<c>SingleAsync</c> 每一轮都抛。
+    /// 碰巧唯一的键，加一个停靠就不唯一；主键加多少个停靠都唯一。
+    /// </para>
+    /// <para>
+    /// 目标站同理取自停靠而不是旅程行。旅程行上的 <c>PickupStationRiotId</c> 与 <c>GateStationRiotId</c> 只描述
+    /// 锚需求那两个站，车开到第二个取货站之后它们指的还是第一个——到站判定因此永远不成立，而表现出来不是报错，
+    /// 是操作员在第二个站扫了码、服务端收下了、什么都不发生。
+    /// </para>
+    /// </remarks>
     private async Task<ArrivalCheck> CheckArrivalAsync(
         JourneyRuntimeRow runtime,
+        JourneyStopRow stop,
         string purpose,
         SessionRecoveryRow session,
         CancellationToken cancellationToken)
     {
         OrderIntentRow intent = await dbContext.OrderIntents.SingleAsync(
-            row => row.DemandId == runtime.DemandId && row.Purpose == purpose,
+            row => row.MovementLegId == stop.MovementLegId,
             cancellationToken).ConfigureAwait(false);
         RiotOrderObservation order = await vehicleFacts.ReconcileByUpperIdAsync(intent.UpperId, cancellationToken)
             .ConfigureAwait(false);
-        int targetStation = purpose == "TO_PICKUP" ? runtime.PickupStationRiotId : runtime.GateStationRiotId;
+        int targetStation = stop.StationRiotId;
         bool exactOrder = order.Kind == RiotOrderObservationKind.Terminal &&
                           order.OrderState == RiotOrderState.Success &&
                           !string.IsNullOrWhiteSpace(order.OrderId) &&
@@ -906,10 +1040,24 @@ public sealed class JourneyRuntimeEngine(
             .Where(row => row.DemandId == runtime.DemandId)
             .Select(row => row.TransportDemandKey)
             .SingleAsync(cancellationToken).ConfigureAwait(false);
-        FaultedVehicleCargoFacts? cargo = arrival.Purpose == "TO_GATE"
+        // 车上有没有货，问的是事实本身（批次7-06，control-server#211）。这之前判的是
+        // arrival.Purpose == "TO_GATE"，而 JourneyPlanBuilder.LegIntent 给每一段后续腿都建 "TO_GATE"，
+        // 所以那个判断真正表达的是「这不是第一段腿」——在只有取货和关卡两个停靠的旅程里，它与「装过货」
+        // 恰好等价；多一个取货停靠就不再等价，而这条链通向故障货物处置，等价关系断了不会有东西变红。
+        bool carryingCargo = await dbContext.Set<JourneyDemandRow>()
+            .AnyAsync(
+                row => row.JourneyId == runtime.JourneyId && row.Status == JourneyDemandStatuses.Loaded,
+                cancellationToken).ConfigureAwait(false);
+        // 腿取这一次失败的那一段，不取旅程行上锚需求的关卡腿。
+        //
+        // 需求与 transportDemandKey 仍然取锚需求，而多停靠下车上可能同时载着几条需求的货：这里说不出
+        // 「是哪一条的货出了事」。本票不改它——判断哪条需求的货需要按停靠归属去认，那是移除停靠与故障货物
+        // 归属一起要解决的事（批次7-10）。依赖的前提写在这里：**只要一趟旅程可能载多于一条需求的货，
+        // 这两个字段就只是「这趟旅程的锚」，不是「出事的那一批货」**。
+        FaultedVehicleCargoFacts? cargo = carryingCargo
             ? new FaultedVehicleCargoFacts(
                 runtime.DemandId,
-                runtime.GateMovementLegId,
+                arrival.Intent.MovementLegId,
                 transportDemandKey,
                 LoadingWitnessed: true,
                 CargoStateKnown: true)
@@ -1020,6 +1168,7 @@ public sealed class JourneyRuntimeEngine(
     private async Task<bool> NameSilentOnboardSessionAsync(
         JourneyRuntimeRow runtime,
         SessionRecoveryRow session,
+        JourneyStopCursor stops,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
@@ -1046,7 +1195,7 @@ public sealed class JourneyRuntimeEngine(
         // do with whether the vehicle is answering. So it is judged first and, when it fires, it decides the
         // round: a loaded stop whose station stopped admitting it goes to Blocked under its own code even
         // though the vehicle is also silent.
-        if (await EscalateAreaEndAdmissionRevokedPastTimeoutAsync(runtime, now, cancellationToken)
+        if (await EscalateAreaEndAdmissionRevokedPastTimeoutAsync(runtime, stops, now, cancellationToken)
                 .ConfigureAwait(false))
         {
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -1207,16 +1356,6 @@ public sealed class JourneyRuntimeEngine(
         CancellationToken cancellationToken)
     {
         JourneyStopRow stop = stops.Current;
-        IReadOnlyList<JourneyStopDemand> demands = stops.CurrentStopDemands;
-        if (demands.Count == 0)
-        {
-            // 走不到：一条需求都不剩的旅程在这一轮之前就已经关闭了。写在这里是因为「走不到」与「发出去也无所谓」
-            // 是两回事——录入请求的 expectedSublots 带 minItems: 1，空集合发出去就是一条违反 schema 的报文，
-            // 而车载端拿到一张空清单也不知道该扫什么。宁可在这里响亮地停下。
-            throw new InvalidDataException(
-                $"Stop '{stop.StopId}' has no open demand to publish a worklist for.");
-        }
-
         await publisher.PublishVehicleBusinessStateAsync(
             stop.VehicleBusinessMessageId,
             runtime.AgvId,
@@ -1229,15 +1368,11 @@ public sealed class JourneyRuntimeEngine(
         // worklist, whose save carries it, because the worklist is where the vehicle is told the
         // deadline -- a first snapshot sent before the seed would tell it there is none.
         runtime.StationDepartureWaitStartedAt ??= timeProvider.GetUtcNow();
-        await publisher.PublishCurrentStopWorklistAsync(
-            stop.WorklistMessageId,
-            runtime.AgvId,
-            session.SessionGeneration,
-            Worklist(
-                stop,
-                demands,
-                StopRevision(runtime.WorklistRevision, stop),
-                StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout)),
+        await PublishStopWorklistAsync(
+            runtime,
+            stops,
+            session,
+            StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout),
             cancellationToken).ConfigureAwait(false);
         await RetireSupersededSnapshotAsync(PickupDispatchPlanMessageId(runtime), cancellationToken)
             .ConfigureAwait(false);
@@ -1249,18 +1384,91 @@ public sealed class JourneyRuntimeEngine(
                 runtime, stops.Stops, stop, arrivedAtCurrent: true,
                 PlanRevisionAt(runtime.PlanRevision, stop, arrivedAtStop: true)),
             cancellationToken).ConfigureAwait(false);
-        // 期待子批 = 这个停靠上还没终结的需求（protocol 2.0.0 第 2 项）。今天一个停靠一条需求，所以就是那一条；
-        // 「未装」与「未终结」的区分要等装货闭环落到从属需求行上（批次7-06、7-07），本票不写那一列，也就还分不开。
+        await PublishEntryRequestAsync(runtime, stops, session, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 当前停靠此刻这一版的清单（批次7-06，control-server#211）。到站时发第一版，此后每做完一条需求再发一版。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>清单与录入请求载的是同一个集合</b>——「本停靠还没做完的需求」——修订号取 <see cref="WorklistRevisionAt"/>。
+    /// 集合少一条，号就加一，旧的那一版随 <c>expiresOnRevisionChange</c> 在车上作废。两条报文分成两个方法只是为了
+    /// 保住线序（到站那一次，计划夹在它们中间），它们仍在同一次保存里落库。
+    /// </para>
+    /// <para>
+    /// <b>旧的那一版在发件箱里也要退役。</b>重放按未确认的行补发，旧清单一旦被补发，车载端会把它当成修订号回退
+    /// （<c>SNAPSHOT_REVISION_REGRESSION</c>）而断会话；旧录入请求被补发，则是一条内容已变的业务 id。
+    /// </para>
+    /// <para>
+    /// 一条待做的需求都没有时什么也不发：那不是空清单该不该发的问题，<c>expectedSublots</c> 带 <c>minItems: 1</c>，
+    /// 空集合发出去就是一条违反 schema 的报文。本停靠做完了，调用方接着往下一个停靠推。
+    /// </para>
+    /// </remarks>
+    private async Task PublishStopWorklistAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
+        SessionRecoveryRow session,
+        DateTimeOffset? stationDepartureDeadlineAt,
+        CancellationToken cancellationToken)
+    {
+        JourneyStopRow stop = stops.Current;
+        IReadOnlyList<JourneyStopDemand> outstanding = stops.OutstandingAtCurrentStop;
+        if (outstanding.Count == 0)
+        {
+            return;
+        }
+
+        long revision = stops.WorklistRevisionAt(runtime.WorklistRevision, stop);
+        long baseRevision = stops.FirstWorklistRevisionAt(runtime.WorklistRevision, stop);
+        if (revision > baseRevision)
+        {
+            // 上一版：同一个停靠，偏移少一。
+            await RetireSupersededSnapshotAsync(
+                stops.WorklistMessageIdAt(runtime.WorklistRevision, stop, revision - 1), cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        await publisher.PublishCurrentStopWorklistAsync(
+            stops.WorklistMessageIdAt(runtime.WorklistRevision, stop, revision),
+            runtime.AgvId,
+            session.SessionGeneration,
+            Worklist(stop, outstanding, revision, stationDepartureDeadlineAt),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>取货停靠此刻这一版的录入请求，期待子批就是清单那一版列的那些。</summary>
+    private async Task PublishEntryRequestAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
+        SessionRecoveryRow session,
+        CancellationToken cancellationToken)
+    {
+        JourneyStopRow stop = stops.Current;
+        IReadOnlyList<JourneyStopDemand> outstanding = stops.OutstandingAtCurrentStop;
+        if (outstanding.Count == 0)
+        {
+            return;
+        }
+
+        long revision = stops.WorklistRevisionAt(runtime.WorklistRevision, stop);
+        long baseRevision = stops.FirstWorklistRevisionAt(runtime.WorklistRevision, stop);
+        if (revision > baseRevision)
+        {
+            await RetireSupersededSnapshotAsync(
+                stops.SublotRequestMessageIdAt(runtime.WorklistRevision, stop, revision - 1), cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         await publisher.PublishSublotEntryRequestAsync(
-            stop.SublotRequestMessageId
-                ?? throw new InvalidDataException($"Stop '{stop.StopId}' asks for an entry but has no request id."),
+            stops.SublotRequestMessageIdAt(runtime.WorklistRevision, stop, revision),
             runtime.AgvId,
             session.SessionGeneration,
             new SublotEntryRequest(
                 stop.OperationSessionId,
                 stop.StationId,
-                StopRevision(runtime.WorklistRevision, stop),
-                [.. demands.Select(item => item.Demand.Sublot)]),
+                revision,
+                [.. outstanding.Select(item => item.Demand.Sublot)]),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -1313,6 +1521,149 @@ public sealed class JourneyRuntimeEngine(
     }
 
     /// <summary>
+    /// 车上那张计划与此刻的停靠序列不一致时，发一张新的（ADR-cross-0053，批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>判据是内容，不是某个计数器。</b>途中追加在序列中间插进两个停靠，而当前停靠的序位没变——按序位算出来的
+    /// 计划修订号于是一字未动，靠它看不出该重发。所以这里把「现在应该是什么样」与「发件箱里最后发出去的那一张」
+    /// 逐条比：腿的身份、序位、站点、状态，任一条不同就换一版。
+    /// </para>
+    /// <para>
+    /// <b>到站那一次不走这里。</b>到站本来就要发一张新的计划，序位一到就换号；这里管的是两次到站<b>之间</b>计划被
+    /// 改写的那种情形，今天只有途中追加一种。没有可比的那一张（这个停靠还没发过计划）时什么也不做。
+    /// </para>
+    /// </remarks>
+    private async Task RefreshUpcomingStopPlanAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
+        SessionRecoveryRow session,
+        CancellationToken cancellationToken)
+    {
+        if (runtime.Stage is JourneyRuntimeStage.Completed or JourneyRuntimeStage.Blocked)
+        {
+            return;
+        }
+
+        // 只有被追加过的旅程才需要整体重发，而追加必然带来第二条需求。单需求旅程——今天现场跑的全部——
+        // 因此一步都不进这一段：既省掉每个 tick 读一次发件箱，也让这次改动在单需求那条路上完全不执行。
+        if (stops.AllDemands.Count <= 1)
+        {
+            return;
+        }
+
+        JourneyStopRow stop = stops.Current;
+        bool arrived = runtime.Stage is not
+            (JourneyRuntimeStage.AwaitingPickupArrival or JourneyRuntimeStage.AwaitingGateArrival);
+        if (await LastSentPlanAsync(runtime.AgvId, cancellationToken).ConfigureAwait(false) is not { } last)
+        {
+            return;
+        }
+
+        UpcomingStopPlanProjection current = JourneyPlanBuilder.Plan(
+            runtime, stops.Stops, stop, arrived, last.Revision);
+        if (PlanOnTheWireMatches(last.PayloadJson, current))
+        {
+            return;
+        }
+
+        long revision = last.Revision + 1;
+        // 重发把计划流的基准一并抬高，好让后面每一次到站按序位算出来的号仍然落在这一号之上
+        // （批次7-06，control-server#211）。
+        //
+        // <b>两条算式必须互相钳制，否则它们各走各的。</b>到站发的是「基准 + 序位」，重发发的是「上一号 + 1」：
+        // 基准不动的话，一次追加就让下一次到站算出与这一号相同的号——而内容不同——两次追加算出的号还会比它低。
+        // 车载端按消息类型记修订号，号同内容不同是 SNAPSHOT_REVISION_CONTENT_CONFLICT，号更低是
+        // SNAPSHOT_REVISION_REGRESSION，两种都当场拆会话。
+        //
+        // 抬高的量正好让 PlanRevisionAt(新基准, 当前停靠, arrived) 等于这一号：此后的序位差原样成立，
+        // 而不是在算式里塞一个「已经重发过几次」的偏移量。
+        runtime.PlanRevision = revision - (arrived ? stop.Sequence : stop.Sequence - 1);
+        await RetireSupersededSnapshotAsync(last.MessageId, cancellationToken).ConfigureAwait(false);
+        await publisher.PublishUpcomingStopPlanAsync(
+            JourneyPlanBuilder.StableGuid($"{stop.StopId}|{revision}", "plan"),
+            runtime.AgvId,
+            session.SessionGeneration,
+            JourneyPlanBuilder.Plan(runtime, stops.Stops, stop, arrived, revision),
+            cancellationToken).ConfigureAwait(false);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>这辆车最后收到的那一版计划：发件箱里最新的一条 <c>UpcomingStopPlanSnapshot</c>。</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>从发件箱读，而不是把消息 id 推算出来。</b>一张计划的第一版由三个地方发出，各有各的 id 来源——
+    /// 派往取货站那一版按锚需求算（<c>PickupDispatchPlanMessageId</c>），到站那两版按停靠行上的
+    /// <c>PlanMessageId</c>。推算要把这三种来源在这里再写一遍，而写漏一种的表现是「最后一版找不到，于是不重发」：
+    /// 静默地什么都不做，正是最难发现的那种错。实际写漏过一次，同区追加那条 L2 场景跑出来才看见。
+    /// </para>
+    /// <para>
+    /// 按载荷里的 <c>agvId</c> 筛，因为发件箱行本身没有这一列。整表读回来在内存里筛看着粗，但这个方法只在
+    /// 被追加过的旅程上调用（调用处第一道判断），而那在今天的现场是零。
+    /// </para>
+    /// </remarks>
+    private async Task<(long Revision, string MessageId, string PayloadJson)?> LastSentPlanAsync(
+        string agvId,
+        CancellationToken cancellationToken)
+    {
+        ProtocolOutboxRow[] rows = await dbContext.ProtocolOutbox.AsNoTracking()
+            .Where(row => row.MessageType == "UpcomingStopPlanSnapshot")
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        (long Revision, string MessageId, string PayloadJson)? last = null;
+        DateTimeOffset latest = DateTimeOffset.MinValue;
+        foreach (ProtocolOutboxRow row in rows)
+        {
+            using JsonDocument document = JsonDocument.Parse(row.PayloadJson);
+            JsonElement envelope = document.RootElement;
+            if (RequiredString(envelope, "agvId") != agvId)
+            {
+                continue;
+            }
+
+            if (row.CreatedAt < latest ||
+                (row.CreatedAt == latest && last is { } seen &&
+                 string.CompareOrdinal(row.MessageId, seen.MessageId) <= 0))
+            {
+                continue;
+            }
+
+            latest = row.CreatedAt;
+            last = (
+                envelope.GetProperty("payload").GetProperty("planRevision").GetInt64(),
+                row.MessageId,
+                row.PayloadJson);
+        }
+
+        return last;
+    }
+
+    /// <summary>车上那一版的腿，与现在应该发的那一份，是不是同一串。</summary>
+    private static bool PlanOnTheWireMatches(string payloadJson, UpcomingStopPlanProjection current)
+    {
+        using JsonDocument document = JsonDocument.Parse(payloadJson);
+        JsonElement legs = document.RootElement.GetProperty("payload").GetProperty("legs");
+        if (legs.GetArrayLength() != current.Legs.Count)
+        {
+            return false;
+        }
+
+        int index = 0;
+        foreach (JsonElement leg in legs.EnumerateArray())
+        {
+            UpcomingMovementLeg expected = current.Legs[index++];
+            if (RequiredString(leg, "movementLegId") != expected.MovementLegId ||
+                leg.GetProperty("sequence").GetInt32() != expected.Sequence ||
+                RequiredString(leg, "stationId") != expected.StationId ||
+                RequiredString(leg, "state") != expected.State)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// Retires a snapshot that the next revision of its stream supersedes, if it is still waiting
     /// for an acknowledgement.
     /// </summary>
@@ -1341,48 +1692,54 @@ public sealed class JourneyRuntimeEngine(
     }
 
     /// <summary>
-    /// 对录入所答复的那条需求下装货命令。attempt id、命令 id 与目标仓位取它在本旅程的归属行，作业会话与站点取当前停靠。
+    /// 对录入所答复的那条需求下装货命令。attempt id、命令 id 与目标仓位取<b>它自己</b>在本旅程的归属行，作业会话与
+    /// 站点取当前停靠。
     /// </summary>
+    /// <remarks>
+    /// <paramref name="entered"/> 是操作员扫出来的那一条，不是锚需求（批次7-06，control-server#211）。批次7-03 取锚需求，
+    /// 是因为那时录入范围被一句守卫退回了锚需求；守卫删掉之后再取锚需求，就是「操作员扫第二条、车上收到第一条的仓位」。
+    /// </remarks>
     private async Task PublishLoadAsync(
         JourneyRuntimeRow runtime,
         JourneyStopCursor stops,
+        JourneyStopDemand entered,
         SessionRecoveryRow session,
         string correlationId,
         CancellationToken cancellationToken)
     {
         JourneyStopRow stop = stops.Current;
-        JourneyStopDemand anchor = stops.Anchor(runtime.DemandId);
-        int[] slots = JsonSerializer.Deserialize<int[]>(anchor.Membership.TargetSlotsJson) ?? [];
-        string hash = BusinessHash(anchor.Demand.DemandId, anchor.Demand.Sublot, "LOAD", slots);
+        int[] slots = JsonSerializer.Deserialize<int[]>(entered.Membership.TargetSlotsJson) ?? [];
+        string hash = BusinessHash(entered.Demand.DemandId, entered.Demand.Sublot, "LOAD", slots);
         // The load carries the admission only where the AREA machine is the pickup (WIRE_TO_GATE); STAGING_TO_WIRE's
         // is carried by the unload at the machine (I6 overturned, scope specification 21.2 item 2).
         bool admission = await store.AreaEndOperationAsync(
-                anchor.Demand.DemandId, anchor.Demand.WorkType, cancellationToken)
+                entered.Demand.DemandId, entered.Demand.WorkType, cancellationToken)
             .ConfigureAwait(false) == SlotOperationType.Load;
         await publisher.PublishSlotOperationCommandAsync(
-            anchor.Membership.LoadCommandMessageId,
+            entered.Membership.LoadCommandMessageId,
             runtime.AgvId,
             session.SessionGeneration,
             new SlotOperationCommand(
                 correlationId,
-                anchor.Demand.DemandId,
-                anchor.Demand.Sublot,
+                entered.Demand.DemandId,
+                entered.Demand.Sublot,
                 stop.OperationSessionId,
-                anchor.Membership.LoadSlotOperationAttemptId,
+                entered.Membership.LoadSlotOperationAttemptId,
                 SlotOperationType.Load,
                 slots,
                 session.ForcedRecoveryGeneration,
                 hash),
             cancellationToken,
             admission ? stop.StationId : null,
-            admission ? anchor.Demand.WorkType : null).ConfigureAwait(false);
+            admission ? entered.Demand.WorkType : null).ConfigureAwait(false);
     }
 
     /// <summary>
-    /// 车到了卸货停靠：发这个停靠的三条快照，再对锚需求下卸货命令。
+    /// 车到了卸货停靠：发这个停靠的三条快照，再对本停靠该卸的第一条需求下卸货命令。
     /// </summary>
     /// <remarks>
-    /// 一个停靠上几条需求各下一条卸货命令，是 批次7-06（control-server#211）的事；本票仍是一条，取锚需求的归属行。
+    /// 清单与卸货命令都随本停靠的进度走（批次7-06，control-server#211）：清单列的是还没卸的，命令发给
+    /// <see cref="JourneyStopCursor.NextToUnloadAtCurrentStop"/>。单需求下这两者都只有那一条，与之前逐字相同。
     /// </remarks>
     private async Task PublishGateStateAndUnloadAsync(
         JourneyRuntimeRow runtime,
@@ -1391,7 +1748,6 @@ public sealed class JourneyRuntimeEngine(
         CancellationToken cancellationToken)
     {
         JourneyStopRow stop = stops.Current;
-        JourneyStopDemand anchor = stops.Anchor(runtime.DemandId);
         await publisher.PublishVehicleBusinessStateAsync(
             stop.VehicleBusinessMessageId,
             runtime.AgvId,
@@ -1401,16 +1757,8 @@ public sealed class JourneyRuntimeEngine(
                 LoadingPhase(runtime.Stage, loadBatchClosed: true)),
             cancellationToken).ConfigureAwait(false);
         // The drop-off stop has no departure wait: ADR-cross-0055's wait is the pickup's.
-        await publisher.PublishCurrentStopWorklistAsync(
-            stop.WorklistMessageId,
-            runtime.AgvId,
-            session.SessionGeneration,
-            Worklist(
-                stop,
-                stops.CurrentStopDemands,
-                StopRevision(runtime.WorklistRevision, stop),
-                stationDepartureDeadlineAt: null),
-            cancellationToken).ConfigureAwait(false);
+        await PublishStopWorklistAsync(
+            runtime, stops, session, stationDepartureDeadlineAt: null, cancellationToken).ConfigureAwait(false);
         await publisher.PublishUpcomingStopPlanAsync(
             stop.PlanMessageId,
             runtime.AgvId,
@@ -1419,28 +1767,47 @@ public sealed class JourneyRuntimeEngine(
                 runtime, stops.Stops, stop, arrivedAtCurrent: true,
                 PlanRevisionAt(runtime.PlanRevision, stop, arrivedAtStop: true)),
             cancellationToken).ConfigureAwait(false);
-        int[] slots = JsonSerializer.Deserialize<int[]>(anchor.Membership.TargetSlotsJson) ?? [];
+        await PublishUnloadCommandAsync(runtime, stops, session, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 对本停靠该卸的那一条需求下卸货命令。一条卸完再下一条——同一站的几条需求逐条串行，一次只开一排仓门
+    /// （规格第 22 节补记；一次只开一个仓门的现场口径见 8005-agv-program#111）。
+    /// </summary>
+    private async Task PublishUnloadCommandAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
+        SessionRecoveryRow session,
+        CancellationToken cancellationToken)
+    {
+        JourneyStopRow stop = stops.Current;
+        if (stops.NextToUnloadAtCurrentStop is not { } next)
+        {
+            return;
+        }
+
+        int[] slots = JsonSerializer.Deserialize<int[]>(next.Membership.TargetSlotsJson) ?? [];
         // The unload carries the admission where the AREA machine is the drop-off (STAGING_TO_WIRE).
         bool admission = await store.AreaEndOperationAsync(
-                anchor.Demand.DemandId, anchor.Demand.WorkType, cancellationToken)
+                next.Demand.DemandId, next.Demand.WorkType, cancellationToken)
             .ConfigureAwait(false) == SlotOperationType.Unload;
         await publisher.PublishSlotOperationCommandAsync(
-            anchor.Membership.UnloadCommandMessageId,
+            next.Membership.UnloadCommandMessageId,
             runtime.AgvId,
             session.SessionGeneration,
             new SlotOperationCommand(
                 null,
-                anchor.Demand.DemandId,
-                anchor.Demand.Sublot,
+                next.Demand.DemandId,
+                next.Demand.Sublot,
                 stop.OperationSessionId,
-                anchor.Membership.UnloadSlotOperationAttemptId,
+                next.Membership.UnloadSlotOperationAttemptId,
                 SlotOperationType.Unload,
                 slots,
                 session.ForcedRecoveryGeneration,
-                BusinessHash(anchor.Demand.DemandId, anchor.Demand.Sublot, "UNLOAD", slots)),
+                BusinessHash(next.Demand.DemandId, next.Demand.Sublot, "UNLOAD", slots)),
             cancellationToken,
             admission ? stop.StationId : null,
-            admission ? anchor.Demand.WorkType : null).ConfigureAwait(false);
+            admission ? next.Demand.WorkType : null).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -1449,15 +1816,22 @@ public sealed class JourneyRuntimeEngine(
     /// the unload is what stands (ADR-cross-0050/0051), so a restart that re-enters the arrival with the unload already
     /// prepared goes on to replay it rather than stopping here on the current policy.
     /// </summary>
-    private async Task<bool> UnloadAdmittedAsync(JourneyRuntimeRow runtime, CancellationToken cancellationToken)
+    private async Task<bool> UnloadAdmittedAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
+        CancellationToken cancellationToken)
     {
-        string workType = await dbContext.AcceptedDemands.AsNoTracking()
-            .Where(row => row.DemandId == runtime.DemandId)
-            .Select(row => row.WorkType)
-            .SingleAsync(cancellationToken).ConfigureAwait(false);
-        if (await store.AreaEndOperationAsync(runtime.DemandId, workType, cancellationToken).ConfigureAwait(false)
+        // 问的是本停靠此刻该卸的那一条（批次7-06）：准入是「这个站允许这条需求的任务类型吗」，而一站几条需求的
+        // 任务类型未必相同。没有该卸的就没有可问的，放行——调用方接着往下判。
+        if (stops.NextToUnloadAtCurrentStop is not { } next)
+        {
+            return true;
+        }
+
+        string workType = next.Demand.WorkType;
+        if (await store.AreaEndOperationAsync(next.Demand.DemandId, workType, cancellationToken).ConfigureAwait(false)
                 != SlotOperationType.Unload ||
-            await UnloadPreparedAsync(runtime, cancellationToken).ConfigureAwait(false))
+            await UnloadPreparedAsync(stops, cancellationToken).ConfigureAwait(false))
         {
             return true;
         }
@@ -1507,6 +1881,7 @@ public sealed class JourneyRuntimeEngine(
         // 预筛用当前停靠的作业会话（control-server#208）。下面 AnswersTheStop 读的仍是旅程行上的同源副本：
         // 那个判定被 LoadCancellationBeforeSublot 与取消那条入站链共用，本票不碰那条链，所以它随多停靠一起搬（批次7-06）。
         string operationSessionId = stops.Current.OperationSessionId;
+        StopEntryAddress address = stops.EntryAddressOfCurrentStop(runtime.WorklistRevision);
         ProtocolInboxRow[] rows = await dbContext.ProtocolInbox.AsNoTracking()
             .Where(row => row.MessageType == "SublotSubmitted" && row.RequestJson.Contains(operationSessionId))
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
@@ -1519,7 +1894,7 @@ public sealed class JourneyRuntimeEngine(
             // acts only on an answer of the session it is serving, while the cancellation refuses on an
             // entry of any generation (control-server#116 review).
             bool answersThisStop = root.GetProperty("sessionGeneration").GetInt64() == session.SessionGeneration &&
-                                   LoadCancellationBeforeSublot.AnswersTheStop(root, runtime);
+                                   LoadCancellationBeforeSublot.AnswersTheStop(root, address);
             if (answersThisStop)
             {
                 answers.Add(row);
@@ -1531,21 +1906,58 @@ public sealed class JourneyRuntimeEngine(
         HashSet<string> refused = await LoadCancellationBeforeSublot
             .RefusedSubmissionIdsAsync(dbContext, [.. answers.Select(row => row.MessageId)], cancellationToken)
             .ConfigureAwait(false);
-        return answers.Find(row => !refused.Contains(row.MessageId));
+        // 已经被一条装货命令答复过的录入不再读第二遍（批次7-06，control-server#211）。一个停靠上可以连着录入几条需求，
+        // 所以「消费过的」是一个集合；旅程行上那个单数的 ConsumedSublotMessageId 只记得住最后一条，第二次录入会
+        // 重新读到第一条、把已经装完的那条需求再判一次，结果是一条拒收而不是下一条装货命令。
+        //
+        // 证据取发件箱里那条装货命令的 correlationId，与 RefusedSubmissionIdsAsync 同构：那是「这条录入被答复过」
+        // 唯一的持久记录，重启之后仍在，而内存里的任何标记都不在。
+        HashSet<string> consumed = await ConsumedSubmissionIdsAsync(
+            [.. answers.Select(row => row.MessageId)], cancellationToken).ConfigureAwait(false);
+        return answers.Find(row => !refused.Contains(row.MessageId) && !consumed.Contains(row.MessageId));
+    }
+
+    /// <summary>这些录入里，哪些已经被一条装货命令答复过。</summary>
+    private async Task<HashSet<string>> ConsumedSubmissionIdsAsync(
+        IReadOnlyCollection<string> submissionIds,
+        CancellationToken cancellationToken)
+    {
+        HashSet<string> consumed = new(StringComparer.Ordinal);
+        foreach (string submissionId in submissionIds)
+        {
+            // 子串只是数据库能用的预筛，判定仍由下面的解析做——同 RefusedSubmissionIdsAsync 的理由。
+            string[] stored = await dbContext.ProtocolOutbox.AsNoTracking()
+                .Where(row => row.MessageType == "SlotOperationCommand" && row.PayloadJson.Contains(submissionId))
+                .Select(row => row.PayloadJson)
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+            foreach (string payload in stored)
+            {
+                using JsonDocument document = JsonDocument.Parse(payload);
+                if (document.RootElement.TryGetProperty("correlationId", out JsonElement correlationId) &&
+                    string.Equals(correlationId.GetString(), submissionId, StringComparison.Ordinal))
+                {
+                    consumed.Add(submissionId);
+                    break;
+                }
+            }
+        }
+
+        return consumed;
     }
 
     /// <summary>
     /// Judges the submission that answers this stop's open entry request, answering it when it may not
-    /// load. Returns whether the load may proceed.
+    /// load. Returns the demand the entry resolved to, or null when nothing may be loaded.
     /// </summary>
     /// <remarks>
     /// <para>
     /// <b>The demand is resolved here, from the sublot, inside the dispatch scope.</b> Protocol 2.0.0 took
     /// the demand off <c>SublotSubmitted</c>: which demand a sublot belongs to is the server's to work
     /// out, and the scope it works it out in is the demands this journey was dispatched for — not the
-    /// catalogue, which holds demands this vehicle was never given. One demand per journey makes that
-    /// scope one demand's sublot; it is written as the set it becomes once a journey carries a stop
-    /// sequence, because FR-001 AC-3 scopes entry to the whole range.
+    /// catalogue, which holds demands this vehicle was never given. FR-001 AC-3 scopes entry to the whole
+    /// stop, so the scope is the set of demands still outstanding there, and <b>the demand it resolves to is
+    /// the one that gets loaded</b> (control-server#211): every step below — the basket count it is compared
+    /// against, the slots the command opens, the attempt its result is looked up by — is that demand's own.
     /// </para>
     /// <para>
     /// <b>BR-013 section 2 makes the recomputed count authoritative after the entry.</b> The count was
@@ -1566,7 +1978,7 @@ public sealed class JourneyRuntimeEngine(
     /// <c>control-server#79</c> still runs, and a cancellation before any sublot is still available.
     /// </para>
     /// </remarks>
-    private async Task<bool> RevalidateEnteredSublotAsync(
+    private async Task<JourneyStopDemand?> RevalidateEnteredSublotAsync(
         JourneyRuntimeRow runtime,
         JourneyStopCursor stops,
         SessionRecoveryRow session,
@@ -1576,31 +1988,15 @@ public sealed class JourneyRuntimeEngine(
     {
         using JsonDocument document = JsonDocument.Parse(submission.RequestJson);
         string enteredSublot = RequiredString(document.RootElement.GetProperty("payload"), "sublot");
-        // 派车范围：这个停靠上还没终结的需求（control-server#208）。写成集合，是因为 FR-001 AC-3 把录入的范围定在
-        // 整个停靠序列上，而集合正是它长成的样子。
-        AcceptedDemandRow[] scope = [.. stops.CurrentStopDemands.Select(item => item.Demand)];
-        AcceptedDemandRow? demand = scope.SingleOrDefault(
-            row => string.Equals(row.Sublot, enteredSublot, StringComparison.Ordinal));
-        // 但本票只认锚需求，范围放宽到此为止——下面这一句是刻意的，不是漏改。
-        //
-        // 往下的每一步今天都按锚需求走：花篮数比对读 runtime.ExpectedBasketCount，装货命令取锚需求归属行上的
-        // attempt 与仓位，等装货结果时又按 runtime.LoadSlotOperationAttemptId 去查。**只放宽这里而不动那几步**，
-        // 结果是操作员扫第二条的子批、车上收到的却是第一条的开仓命令与仓位；**把那几步也改成按被录入的那条走**，
-        // AwaitingLoadResult 仍然只会去查锚需求的 attempt，于是查不到结果、旅程停在那里静默卡死——比前者更难查。
-        //
-        // 两条都不是「行为不变」该有的样子。让「这个停靠此刻在装哪一条需求」成为一个状态，是多需求推进语义本身，
-        // 归 批次7-06（control-server#211）。在那之前退回锚需求，拒绝的理由码与改动前逐字相同
-        // （改动前 scope 里本来就只有锚需求，扫别的子批同样落进下面这个 SublotNotInDispatchScope）。
-        // 7-06 放宽时，这一句是第一个该删的东西。
-        if (demand is not null && !string.Equals(demand.DemandId, runtime.DemandId, StringComparison.Ordinal))
+        // 派车范围：这个停靠上还没装完的需求（control-server#208 放宽成集合，control-server#211 让它真的生效）。
+        // 取「还没装完」而不是「还没终结」，是因为刚装完的那一条不该再被扫一次——它已经不在清单上了。
+        JourneyStopDemand? member = stops.OutstandingAtCurrentStop.SingleOrDefault(
+            item => string.Equals(item.Demand.Sublot, enteredSublot, StringComparison.Ordinal));
+        if (member is null)
         {
-            demand = null;
-        }
-
-        if (demand is null)
-        {
-            return await RefuseAsync(
+            await RefuseAsync(
                 runtime,
+                stops,
                 session,
                 submission,
                 demandId: null,
@@ -1609,7 +2005,10 @@ public sealed class JourneyRuntimeEngine(
                 $"子批 {enteredSublot} 不属于本次派车范围，不予开仓。",
                 now,
                 cancellationToken).ConfigureAwait(false);
+            return null;
         }
+
+        AcceptedDemandRow demand = member.Demand;
 
         // At the AREA machine station, not necessarily this one: STAGING_TO_WIRE loads at a staging station and is
         // admitted at the machine it unloads at (control-server#163). Asked here too, before anything is loaded for a
@@ -1620,15 +2019,16 @@ public sealed class JourneyRuntimeEngine(
             runtime.SetBlockReason(AreaEndAdmissionHeldReason, now);
             runtime.UpdatedAt = now;
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            return false;
+            return null;
         }
 
         LiveMesFieldSet? fields = JsonSerializer.Deserialize<LiveMesFieldSet>(
             demand.LiveMesFieldsJson, SerializerOptions);
         if (string.IsNullOrWhiteSpace(fields?.Package))
         {
-            return await RefuseAsync(
+            await RefuseAsync(
                 runtime,
+                stops,
                 session,
                 submission,
                 demand.DemandId,
@@ -1637,14 +2037,16 @@ public sealed class JourneyRuntimeEngine(
                 $"子批 {enteredSublot} 没有 PACKAGE 型号，算不出花篮数量，不予开仓。",
                 now,
                 cancellationToken).ConfigureAwait(false);
+            return null;
         }
 
         int? capacity = await packageCapacityStore.ResolveAndTrackAsync(fields.Package, now, cancellationToken)
             .ConfigureAwait(false);
         if (!AuthoritativeBasketCount.PackageCapacityIsUsable(capacity))
         {
-            return await RefuseAsync(
+            await RefuseAsync(
                 runtime,
+                stops,
                 session,
                 submission,
                 demand.DemandId,
@@ -1653,6 +2055,7 @@ public sealed class JourneyRuntimeEngine(
                 $"PACKAGE {fields.Package} 没有已批准的花篮容量对照，算不出花篮数量，不予开仓。",
                 now,
                 cancellationToken).ConfigureAwait(false);
+            return null;
         }
 
         int? maxBoxCount;
@@ -1663,14 +2066,15 @@ public sealed class JourneyRuntimeEngine(
         }
         catch (Exception error) when (error is HttpRequestException or InvalidDataException or JsonException)
         {
-            LogBoxCountFailed(logger, runtime.DemandId, error);
+            LogBoxCountFailed(logger, demand.DemandId, error);
             maxBoxCount = null;
         }
 
         if (!AuthoritativeBasketCount.BoxCountIsUsable(maxBoxCount))
         {
-            return await RefuseAsync(
+            await RefuseAsync(
                 runtime,
+                stops,
                 session,
                 submission,
                 demand.DemandId,
@@ -1679,32 +2083,37 @@ public sealed class JourneyRuntimeEngine(
                 $"查不到子批 {enteredSublot} 的箱数，算不出花篮数量，不予开仓。",
                 now,
                 cancellationToken).ConfigureAwait(false);
+            return null;
         }
 
         // Both inputs were checked usable just above, so a count is computable.
         int recomputed = AuthoritativeBasketCount.Compute(maxBoxCount, capacity)
             ?? throw new InvalidOperationException("Both inputs are usable, so a count is computable.");
-        if (recomputed != runtime.ExpectedBasketCount)
+        // 比的是「被录入那一条」自己冻结的花篮数（批次7-06）：仓位是按它预留的，而一站几条需求各有各的数。
+        // 批次7-03 比的是旅程行上的锚需求那一份，单需求下两者恒等。
+        if (recomputed != member.Membership.ExpectedBasketCount)
         {
-            return await RefuseAsync(
+            await RefuseAsync(
                 runtime,
+                stops,
                 session,
                 submission,
                 demand.DemandId,
                 enteredSublot,
                 ServerReasonCodes.ExpectedBasketCountMismatch,
-                $"子批 {enteredSublot} 的花篮数量由 {runtime.ExpectedBasketCount} 变为 {recomputed}，"
+                $"子批 {enteredSublot} 的花篮数量由 {member.Membership.ExpectedBasketCount} 变为 {recomputed}，"
                 + "与本次派车预留的仓位不符，不予开仓。",
                 now,
                 cancellationToken).ConfigureAwait(false);
+            return null;
         }
 
-        return true;
+        return member;
     }
 
     /// <summary>
     /// Answers one entry with a <c>SublotRejected</c> carrying the reason, and leaves the journey waiting
-    /// for the next one. Always returns <see langword="false"/> — the caller's "do not load".
+    /// for the next one.
     /// </summary>
     /// <remarks>
     /// The refusal is keyed on the submission it answers, which is the only correlation the operator's
@@ -1713,8 +2122,9 @@ public sealed class JourneyRuntimeEngine(
     /// The submission is deliberately not recorded as consumed: the stop is still the operator's to
     /// rescan, to cancel, or to run out at its deadline.
     /// </remarks>
-    private async Task<bool> RefuseAsync(
+    private async Task RefuseAsync(
         JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
         SessionRecoveryRow session,
         ProtocolInboxRow submission,
         string? demandId,
@@ -1724,6 +2134,8 @@ public sealed class JourneyRuntimeEngine(
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
+        // 作业会话与修订号取「当前停靠此刻这一版」（批次7-06）：拒收告诉操作员「你扫的那一版清单是第几号」，
+        // 而清单每装完一条就升一版，旅程行上那个受理时的值只在第一版上对得上。
         await publisher.PublishSublotRejectedAsync(
             JourneyPlanBuilder.StableGuid(submission.MessageId, "sublot-rejected"),
             submission.MessageId,
@@ -1731,15 +2143,14 @@ public sealed class JourneyRuntimeEngine(
             session.SessionGeneration,
             new SublotRejection(
                 demandId,
-                runtime.OperationSessionId,
+                stops.Current.OperationSessionId,
                 new WireProblem(reasonCode, "payload.sublot", displayMessage),
-                runtime.WorklistRevision,
+                stops.WorklistRevisionAt(runtime.WorklistRevision, stops.Current),
                 enteredSublot),
             cancellationToken).ConfigureAwait(false);
         runtime.UpdatedAt = now;
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        LogSublotRejected(logger, runtime.DemandId, reasonCode, null);
-        return false;
+        LogSublotRejected(logger, demandId ?? runtime.DemandId, reasonCode, null);
     }
 
     /// <summary>
@@ -1883,6 +2294,7 @@ public sealed class JourneyRuntimeEngine(
     /// </remarks>
     private async Task<CreateGateOutcome> GateLegAsync(
         JourneyRuntimeRow runtime,
+        JourneyStopRow targetStop,
         RiotMapStationCatalogSnapshot currentMap,
         CancellationToken cancellationToken)
     {
@@ -1923,7 +2335,8 @@ public sealed class JourneyRuntimeEngine(
         // runtime's own gate station keeps that journey moving under the same check rather than
         // blocking it on a record it never had a chance to write.
         int mapId = dropoff?.MapId ?? runtime.MapId;
-        int stationId = dropoff?.StationId ?? runtime.GateStationRiotId;
+        // 兜底取「这一段腿要去的那个停靠」（批次7-06），不是旅程行上写死的关卡站：多停靠计划里后者只是其中一个。
+        int stationId = dropoff?.StationId ?? targetStop.StationRiotId;
         string transportDemandKey = await dbContext.AcceptedDemands
             .Where(row => row.DemandId == runtime.DemandId)
             .Select(row => row.TransportDemandKey)
@@ -2043,26 +2456,48 @@ public sealed class JourneyRuntimeEngine(
     // demand is what the stored ones are anyway (WireToGateStore.ToRuntimeRow), without a migration.
 
     /// <summary>
-    /// 车辆业务状态与清单这两条流，在这个停靠上发的是第几号：每个停靠各发一张，所以是基准加序位。
+    /// 车辆业务状态这条流在这个停靠上发的是第几号：每个停靠各发一张，所以是基准加序位。
     /// </summary>
     /// <remarks>
-    /// 在批次7-03 之前这两个偏移写死在两个发布方法里——取货那段发基准，关卡那段发基准 +1。写死的 +1 就是「这趟只有两个
+    /// 在批次7-03 之前这个偏移写死在两个发布方法里——取货那段发基准，关卡那段发基准 +1。写死的 +1 就是「这趟只有两个
     /// 停靠」这个假设本身。单需求两停靠下这里算出来的还是基准与基准 +1。
+    /// <b>清单不走这条算式</b>（批次7-06）：一个停靠上的清单会发不止一版，见 <see cref="WorklistRevisionAt"/>。
     /// </remarks>
     private static long StopRevision(long journeyBase, JourneyStopRow stop) =>
         journeyBase + stop.Sequence - 1;
 
     /// <summary>
-    /// 计划流在这一刻发的是第几号。它比上面那条多一张：派车时先发一张「车还在路上」的计划（CV-DEMAND-ACCEPT-TO-PICKUP），
-    /// 之后每到一个停靠再发一张。所以号数就是「到站几次」——派车时零次，取货到站一次，卸货到站两次。
+    /// 计划流在这一刻发的是第几号。它比车辆业务状态那条多一张：派车时先发一张「车还在路上」的计划
+    /// （CV-DEMAND-ACCEPT-TO-PICKUP），之后每到一个停靠再发一张。所以号数就是「到站几次」——派车时零次，
+    /// 取货到站一次，卸货到站两次。
     /// </summary>
     private static long PlanRevisionAt(long journeyBase, JourneyStopRow stop, bool arrivedAtStop) =>
         journeyBase + (arrivedAtStop ? stop.Sequence : stop.Sequence - 1);
 
     /// <summary>
-    /// 一个停靠的离站核验身份。今天只有取货停靠有（卸货停靠是旅程的终点，没有「离开之前」可言），所以取不到就是
-    /// 在一个不该问离站安全的停靠上问了。
+    /// 一个停靠的离站核验身份：取货停靠从停靠行上取，卸货停靠按停靠 id 派生（批次7-06，control-server#211）。
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>这两个方法原本的注释说「卸货停靠是旅程的终点，没有『离开之前』可言」，而本票推翻的正是那个前提。</b>
+    /// 多停靠计划里卸货停靠后面还可以有停靠，车卸完这一站要继续走——那一次离站和取货停靠的离站没有任何区别：
+    /// 离站安全问的是「这辆车<b>现在</b>能不能安全开走」，与它在这一站是装了还是卸了无关，而车上可能还装着
+    /// 后面几站要卸的货，那正是更需要问的情形。（车载端那一侧实读过：<c>HandlePreDepartureSafetyCheckAsync</c>
+    /// 只比对安全状态版本、然后读 IO 模块当前快照作答，不看旅程阶段也不看上一站做了什么。）
+    /// </para>
+    /// <para>
+    /// <b>卸货停靠派生而不是落库，是为了不动迁移。</b>停靠行由 <c>SingleDemandJourneyShape.Stops</c> 写下，
+    /// 而它必须与批次7-01 迁移里的 SQL 回填<b>逐列一致</b>（<c>Batch7JourneyAcceptanceTests</c> 的
+    /// <c>ANewlyAcceptedJourneyCannotBeToldApartFromTheSameJourneyBackFilledByTheMigration</c> 盯着这件事）。
+    /// 在那里加两列就要改一个已经合入的迁移，而那比加一个新迁移更糟；派生则让<b>已经落库的卸货停靠行也直接可用</b>，
+    /// 升级边界上不留一格需要回填的数据。派生用 <c>StableGuid(stopId, …)</c>，同一个停靠每次算出同一个值，
+    /// 发出与结算读到的是同一个 id。
+    /// </para>
+    /// <para>
+    /// <b>取货停靠仍然抛，护栏一字未动</b>：它的这两个 id 是受理时写下的，取不到就是那一行坏了。
+    /// 只有卸货停靠这一支是新加的，而它「没有」不是缺陷，是那一列从设计上就没为它写过。
+    /// </para>
+    /// </remarks>
     private static string DepartureCheckId(JourneyStopRow stop) =>
         stop.DepartureSafetyCheckId
         ?? throw new InvalidDataException($"Stop '{stop.StopId}' has no pre-departure safety check id.");
@@ -2071,8 +2506,79 @@ public sealed class JourneyRuntimeEngine(
         stop.DepartureSafetyCheckMessageId
         ?? throw new InvalidDataException($"Stop '{stop.StopId}' has no pre-departure safety check message id.");
 
+    /// <summary>
+    /// 卸货停靠第一次要离站时，把它的离站核验 id 补上并落库（批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// <b>写回行，而不是每次派生</b>：停靠行是这两个 id 的唯一真相，读它的地方不止推进段一处
+    /// （测试驱动、结算、重连补发都读行），派生会让「行上的值」与「实际发出去的值」分家。写回之后
+    /// 上面两个取值器一字未动，取货停靠缺 id 照样响亮地抛。
+    /// </remarks>
+    private async Task EnsureDepartureCheckIdsAsync(JourneyStopRow stop, CancellationToken cancellationToken)
+    {
+        if (stop.DepartureSafetyCheckId is not null && stop.DepartureSafetyCheckMessageId is not null)
+        {
+            return;
+        }
+
+        JourneyStopRow tracked = await TrackedStopAsync(stop.StopId, cancellationToken).ConfigureAwait(false);
+        tracked.DepartureSafetyCheckId ??= JourneyPlanBuilder.StableGuid(stop.StopId, "unload-departure-safety-check");
+        tracked.DepartureSafetyCheckMessageId ??=
+            JourneyPlanBuilder.StableGuid(stop.StopId, "unload-departure-safety-request");
+        stop.DepartureSafetyCheckId = tracked.DepartureSafetyCheckId;
+        stop.DepartureSafetyCheckMessageId = tracked.DepartureSafetyCheckMessageId;
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     private static string PickupDispatchPlanMessageId(JourneyRuntimeRow runtime) =>
         JourneyPlanBuilder.StableGuid(runtime.DemandId, "pickup-dispatch-plan");
+
+    /// <summary>
+    /// 车离开当前停靠之后要去的那一个：序位上紧接着的、还开着的停靠（批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// 取不到就是在最后一个停靠上问了「下一段腿去哪」——那一刻旅程该结束而不是再开一张订单，所以响亮地停下。
+    /// </remarks>
+    private static JourneyStopRow NextStopAfterCurrent(JourneyStopCursor stops) =>
+        stops.OpenStops.FirstOrDefault(stop => stop.Sequence > stops.Current.Sequence)
+        ?? throw new InvalidDataException(
+            $"Stop {stops.Current.StopId} is the last one; there is no next leg to depart on.");
+
+    /// <summary>
+    /// 这个停靠上有没有一条还没结的扫码前取消。
+    /// </summary>
+    /// <remarks>
+    /// 按<b>停靠</b>问而不是按需求（批次7-06）：取消要车证明那一排仓位是空的，那是一次整排的证明，所以一条需求的取消
+    /// 开着，这个停靠上的每一条都等着——既不开仓，也不让站点期限结束这个停靠。
+    /// </remarks>
+    private async Task<bool> OpenCancellationAtCurrentStopAsync(
+        JourneyStopCursor stops,
+        CancellationToken cancellationToken)
+    {
+        foreach (JourneyStopDemand item in stops.CurrentStopDemands)
+        {
+            if (await LoadCancellationBeforeSublot
+                    .HasOpenCancellationAsync(dbContext, item.Demand.DemandId, cancellationToken)
+                    .ConfigureAwait(false))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>被跟踪的那一份归属行，用来写状态；游标读出来的是 <c>AsNoTracking</c> 的。</summary>
+    private Task<JourneyDemandRow> TrackedMembershipAsync(
+        JourneyRuntimeRow runtime,
+        string demandId,
+        CancellationToken cancellationToken) =>
+        dbContext.Set<JourneyDemandRow>()
+            .SingleAsync(row => row.JourneyId == runtime.JourneyId && row.DemandId == demandId, cancellationToken);
+
+    /// <summary>被跟踪的那一份停靠行，用来写状态。</summary>
+    private Task<JourneyStopRow> TrackedStopAsync(string stopId, CancellationToken cancellationToken) =>
+        dbContext.Set<JourneyStopRow>().SingleAsync(row => row.StopId == stopId, cancellationToken);
 
     /// <summary>
     /// 这趟旅程有权补发的消息，按停靠与归属枚举出来。
@@ -2098,11 +2604,24 @@ public sealed class JourneyRuntimeEngine(
         foreach (JourneyStopRow stop in stops.Stops)
         {
             ids.Add(stop.VehicleBusinessMessageId);
-            ids.Add(stop.WorklistMessageId);
             ids.Add(stop.PlanMessageId);
-            if (stop.SublotRequestMessageId is { } sublotRequest)
+            // 清单与录入请求在一个停靠上可能发不止一版（批次7-06）：挂几条需求就有几版，每一版一个 id。全部枚举出来
+            // ——少一个就是一条报文再也不补发，而这个集合的每一项在发件箱里不一定有行，多出来的项不会让任何东西发出去。
+            // 计划在一个停靠上也可能发不止一版（途中追加改写了序列）。重发版的 id 只与停靠和修订号有关，
+            // 枚举它们不需要知道第一版是从哪个发布点来的。
+            for (long revision = 1; revision <= EnRouteAppendPlanner.MaximumLegs * 2; revision++)
             {
-                ids.Add(sublotRequest);
+                ids.Add(JourneyPlanBuilder.StableGuid($"{stop.StopId}|{revision}", "plan"));
+            }
+
+            long baseRevision = stops.FirstWorklistRevisionAt(runtime.WorklistRevision, stop);
+            for (long offset = 0; offset < stops.WorklistVersionsOf(stop); offset++)
+            {
+                ids.Add(stops.WorklistMessageIdAt(runtime.WorklistRevision, stop, baseRevision + offset));
+                if (stop.SublotRequestMessageId is not null)
+                {
+                    ids.Add(stops.SublotRequestMessageIdAt(runtime.WorklistRevision, stop, baseRevision + offset));
+                }
             }
             if (stop.DepartureSafetyCheckMessageId is { } departureCheck)
             {
@@ -2141,12 +2660,16 @@ public sealed class JourneyRuntimeEngine(
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
+        // attempt 取「此刻在做的那一条」的（批次7-06）：装的那条由录入决定，卸的那条由归属先后决定。
+        JourneyStopCursor stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken)
+            .ConfigureAwait(false);
         (string? attemptId, string reason) = runtime.Stage switch
         {
             JourneyRuntimeStage.AwaitingLoadResult =>
-                (runtime.LoadSlotOperationAttemptId, "LOAD_RESULT_REQUIRES_RECOVERY"),
+                (stops.LoadingAtCurrentStop?.Membership.LoadSlotOperationAttemptId, "LOAD_RESULT_REQUIRES_RECOVERY"),
             JourneyRuntimeStage.AwaitingUnloadResult =>
-                (runtime.UnloadSlotOperationAttemptId, "UNLOAD_RESULT_REQUIRES_RECOVERY"),
+                (stops.NextToUnloadAtCurrentStop?.Membership.UnloadSlotOperationAttemptId,
+                    "UNLOAD_RESULT_REQUIRES_RECOVERY"),
             _ => (null, string.Empty)
         };
         if (attemptId is null)
@@ -2200,12 +2723,13 @@ public sealed class JourneyRuntimeEngine(
     /// </remarks>
     private async Task<bool> EscalateAreaEndAdmissionRevokedPastTimeoutAsync(
         JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
         if (runtime.AreaEndAdmissionRevokedSince is not DateTimeOffset revokedSince ||
             now - revokedSince < runtimeOptions.AreaEndAdmissionRevokedTimeout ||
-            await UnloadPreparedAsync(runtime, cancellationToken).ConfigureAwait(false))
+            await UnloadPreparedAsync(stops, cancellationToken).ConfigureAwait(false))
         {
             return false;
         }
@@ -2216,7 +2740,7 @@ public sealed class JourneyRuntimeEngine(
         LogAreaEndAdmissionRevokedTimeout(
             logger,
             runtime.AgvId,
-            runtime.GateStationId,
+            stops.Current.StationId,
             runtime.DemandId,
             runtimeOptions.AreaEndAdmissionRevokedTimeout,
             null);
@@ -2227,9 +2751,12 @@ public sealed class JourneyRuntimeEngine(
     /// Whether this journey's unload at the AREA machine has already been prepared: the attempt has a
     /// <c>StationOperations</c> row, which is written with the admission frozen on it (ADR-cross-0050/0051).
     /// </summary>
-    private Task<bool> UnloadPreparedAsync(JourneyRuntimeRow runtime, CancellationToken cancellationToken) =>
-        dbContext.StationOperations.AsNoTracking()
-            .AnyAsync(row => row.SlotOperationAttemptId == runtime.UnloadSlotOperationAttemptId, cancellationToken);
+    private Task<bool> UnloadPreparedAsync(JourneyStopCursor stops, CancellationToken cancellationToken) =>
+        stops.NextToUnloadAtCurrentStop is { } next
+            ? dbContext.StationOperations.AsNoTracking()
+                .AnyAsync(row => row.SlotOperationAttemptId == next.Membership.UnloadSlotOperationAttemptId,
+                    cancellationToken)
+            : Task.FromResult(false);
 
     private async Task<string?> FindSafetyResultMessageIdAsync(
         string checkId,
@@ -2334,6 +2861,7 @@ public sealed class JourneyRuntimeEngine(
     /// </remarks>
     private async Task<bool> TryEndStopAtStationDeadlineAsync(
         JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
         SessionRecoveryRow session,
         DateTimeOffset now,
         CancellationToken cancellationToken)
@@ -2381,14 +2909,35 @@ public sealed class JourneyRuntimeEngine(
             .Where(row => row.DemandId == runtime.DemandId)
             .Select(row => (JourneyRuntimeStage?)row.Stage)
             .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        // 取消要按<b>这个停靠</b>问，不是按锚需求（批次7-06，control-server#211）：一条需求的取消开着时，
+        // 这个停靠上的每一条都等着它——期限不能在那期间把停靠结束掉。先前这里只查锚需求，于是同站另一条
+        // 需求的扫码前取消正等着车证明空仓时，期限照样能结束这个停靠。
         if (stageNow != JourneyRuntimeStage.AwaitingSublot ||
-            await LoadCancellationBeforeSublot.HasOpenCancellationAsync(dbContext, runtime.DemandId, cancellationToken)
-                .ConfigureAwait(false))
+            await OpenCancellationAtCurrentStopAsync(stops, cancellationToken).ConfigureAwait(false))
         {
             return false;
         }
-        await new PickupStopTermination(dbContext)
-            .StageAsync(runtime, StationTimeoutCancellationReason, now, cancellationToken).ConfigureAwait(false);
+
+        // 终结的是<b>这个停靠上还没做完的那些</b>，不是旅程行点名的那条（批次7-06，control-server#211）。
+        //
+        // 先前这里走的是「终结旅程行点名的那条需求」那个重载，终结对象恒为锚需求。一站多需求之后那是错的，
+        // 而且错得静默：在第二个取货停靠上超时，被终结的是<b>早已在第一站装上车的锚需求</b>——它的归属行被写成
+        // Terminated，JourneyStopCursor.IsDoneAt 从此对它恒为 true，<b>车上已经装着的那批货从计划里消失、
+        // 永远不会被卸</b>，而真正超时的那条原封不动继续挂在清单上。
+        //
+        // 整个停靠上的待做项一起终结：期限是这个停靠的（「这一站的活没在期限内做完」），结束它就是让车走，
+        // 留下任何一条待做项都会让下一轮回到同一个停靠、同一个期限。
+        string sublotRequestMessageId = stops.CurrentSublotRequestMessageId(runtime.WorklistRevision);
+        foreach (JourneyStopDemand outstanding in stops.OutstandingAtCurrentStop)
+        {
+            await new PickupStopTermination(dbContext).StageAsync(
+                runtime,
+                sublotRequestMessageId,
+                outstanding.Demand.DemandId,
+                StationTimeoutCancellationReason,
+                now,
+                cancellationToken).ConfigureAwait(false);
+        }
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         if (transaction is not null)
         {
@@ -2421,6 +2970,7 @@ public sealed class JourneyRuntimeEngine(
     /// </remarks>
     private bool ReconcileStationTimeoutDoorNotClosed(
         JourneyRuntimeRow runtime,
+        string stationId,
         SessionRecoveryRow session,
         DateTimeOffset now)
     {
@@ -2434,7 +2984,7 @@ public sealed class JourneyRuntimeEngine(
             }
             runtime.SetBlockReason(StationTimeoutDoorNotClosedReason, now);
             LogStationTimeoutDoorNotClosed(
-                logger, runtime.AgvId, runtime.DemandId, runtime.PickupStationId, deadline, null);
+                logger, runtime.AgvId, runtime.DemandId, stationId, deadline, null);
             return true;
         }
         if (runtime.BlockReasonCode != StationTimeoutDoorNotClosedReason)
@@ -2479,6 +3029,8 @@ public sealed class JourneyRuntimeEngine(
     /// </remarks>
     private async Task<bool> TrySettleDeterminateLoadFailureAsync(
         JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
+        JourneyStopDemand loading,
         StationOperationRow load,
         SessionRecoveryRow session,
         DateTimeOffset now,
@@ -2493,7 +3045,7 @@ public sealed class JourneyRuntimeEngine(
         // The store makes a load Failed only for a result whose reason has a terminal state, and records
         // that result in the same transaction; a null here would be a store defect, left standing rather
         // than guessed at.
-        if (await DeterminateLoadFailureTerminalReasonAsync(runtime, cancellationToken).ConfigureAwait(false)
+        if (await DeterminateLoadFailureTerminalReasonAsync(loading, cancellationToken).ConfigureAwait(false)
             is not { } terminalReason)
         {
             return false;
@@ -2505,13 +3057,14 @@ public sealed class JourneyRuntimeEngine(
             await dbContext.Entry(runtime).ReloadAsync(cancellationToken).ConfigureAwait(false);
             await dbContext.Entry(load).ReloadAsync(cancellationToken).ConfigureAwait(false);
             AcceptedDemandRow demand = await dbContext.AcceptedDemands
-                .SingleAsync(row => row.DemandId == runtime.DemandId, cancellationToken).ConfigureAwait(false);
+                .SingleAsync(row => row.DemandId == loading.Demand.DemandId, cancellationToken).ConfigureAwait(false);
             await dbContext.Entry(demand).ReloadAsync(cancellationToken).ConfigureAwait(false);
             // The one definition the sublot deadline and the cancellation's authorization use too. A cancellation
             // that did not reconcile is not "open", but it has already put the demand in RecoveryRequired and
             // the journey in Blocked, which the checks below refuse on their own.
             bool cancellationOpen = await LoadCancellationBeforeSublot
-                .HasOpenCancellationAsync(dbContext, runtime.DemandId, cancellationToken).ConfigureAwait(false);
+                .HasOpenCancellationAsync(dbContext, loading.Demand.DemandId, cancellationToken)
+                .ConfigureAwait(false);
             if (runtime.Stage != JourneyRuntimeStage.AwaitingLoadResult ||
                 load.Status != StationOperationStatus.Failed ||
                 demand.Status != DemandExecutionStatus.Accepted ||
@@ -2523,19 +3076,24 @@ public sealed class JourneyRuntimeEngine(
             // The failure is the load command's answer. Left unsettled it would be replayed into every later
             // session, where the peer refuses it as a business id whose content changed.
             ProtocolOutboxRow? loadCommand = await dbContext.ProtocolOutbox
-                .SingleOrDefaultAsync(row => row.MessageId == runtime.LoadCommandMessageId, cancellationToken)
+                .SingleOrDefaultAsync(
+                    row => row.MessageId == loading.Membership.LoadCommandMessageId, cancellationToken)
                 .ConfigureAwait(false);
             if (loadCommand is not null)
             {
                 loadCommand.AcknowledgedAt ??= now;
             }
-            await new PickupStopTermination(dbContext)
-                .StageAsync(runtime, terminalReason, now, cancellationToken).ConfigureAwait(false);
+            // 终结的是「装失败的那一条」（批次7-06）。旅程还带着别的需求时，第二步（关闭旅程）不跑，下一轮回到
+            // 当前停靠继续推进。
+            await new PickupStopTermination(dbContext).StageAsync(
+                runtime, stops.CurrentSublotRequestMessageId(runtime.WorklistRevision), loading.Demand.DemandId, terminalReason, now,
+                cancellationToken).ConfigureAwait(false);
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
         checkpointWaits.Clear(runtime.VehicleKey);
-        LogDeterminateLoadFailureSettled(logger, runtime.AgvId, runtime.DemandId, terminalReason, null);
+        LogDeterminateLoadFailureSettled(
+            logger, runtime.AgvId, loading.Demand.DemandId, terminalReason, null);
         return true;
     }
 
@@ -2544,11 +3102,12 @@ public sealed class JourneyRuntimeEngine(
     /// sent it.
     /// </summary>
     private async Task<string?> DeterminateLoadFailureTerminalReasonAsync(
-        JourneyRuntimeRow runtime,
+        JourneyStopDemand loading,
         CancellationToken cancellationToken)
     {
+        string attemptId = loading.Membership.LoadSlotOperationAttemptId;
         string? resultId = await dbContext.OperationResults.AsNoTracking()
-            .Where(row => row.SlotOperationAttemptId == runtime.LoadSlotOperationAttemptId &&
+            .Where(row => row.SlotOperationAttemptId == attemptId &&
                           row.SupersededByResultId == null &&
                           !row.HistoricalOnly)
             .Select(row => row.ResultId)
@@ -2678,9 +3237,9 @@ public sealed class JourneyRuntimeEngine(
             new PreDepartureSafetyCheckCommand(
                 reissuedCheckId,
                 runtime.DemandId,
-                runtime.GateMovementLegId,
+                NextStopAfterCurrent(stops).MovementLegId,
                 currentRevision,
-                runtime.GateStationId),
+                NextStopAfterCurrent(stops).StationId),
             cancellationToken).ConfigureAwait(false);
         runtime.SetBlockReason("PREDEPARTURE_CHECK_EXPIRED", now);
         runtime.UpdatedAt = now;

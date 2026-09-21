@@ -291,7 +291,7 @@ public sealed class Batch7StopDrivenAdvanceTests
         fixture.BoxCounts.Set(FirstSublot, 4);
         await TickAndRunAsync(fixture);
         JourneyRuntimeRow runtime = await fixture.RuntimeAsync(FirstDemandId);
-        await AddSecondDemandToJourneyAsync(fixture, runtime);
+        await Batch7MultiDemandAdvanceTests.AddSecondDemandToJourneyAsync(fixture, runtime);
 
         fixture.Riot.SetSuccessfulArrival("TO_PICKUP", runtime.PickupUpperId, runtime.PickupStationRiotId);
         fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = runtime.PickupStationRiotId };
@@ -338,9 +338,9 @@ public sealed class Batch7StopDrivenAdvanceTests
     /// 当时<b>没有任何守卫</b>，下一个人「顺手统一一下」就能把它改回去而不被任何东西拦住。
     /// </para>
     /// <para>
-    /// 直接问 <see cref="JourneyStopCursor"/> 而不是绕一趟推进，是因为绕不过去：录入第二条子批会被
-    /// <see cref="EnteringTheSecondDemandsSublotIsRefusedRatherThanLoadingTheAnchor"/> 守的那一句退回拦下，走不到下命令
-    /// 的地方。判据也因此更直接——注入之后红的是 <c>Anchor</c> 本身，不是某个下游症状。
+    /// 直接问 <see cref="JourneyStopCursor"/> 而不是绕一趟推进，判据更直接——注入之后红的是 <c>Anchor</c> 本身，
+    /// 不是某个下游症状。批次7-03 里还有一层理由（录入第二条子批会被那句退回守卫拦下，走不到下命令的地方），
+    /// 批次7-06 删掉那句守卫之后不再成立，直接问的理由仍然成立。
     /// </para>
     /// </remarks>
     [Fact]
@@ -351,7 +351,7 @@ public sealed class Batch7StopDrivenAdvanceTests
         fixture.BoxCounts.Set(FirstSublot, 4);
         await TickAndRunAsync(fixture);
         JourneyRuntimeRow runtime = await fixture.RuntimeAsync(FirstDemandId);
-        await AddSecondDemandToJourneyAsync(fixture, runtime);
+        await Batch7MultiDemandAdvanceTests.AddSecondDemandToJourneyAsync(fixture, runtime);
         fixture.Riot.SetSuccessfulArrival("TO_PICKUP", runtime.PickupUpperId, runtime.PickupStationRiotId);
         fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = runtime.PickupStationRiotId };
         await TickAndRunAsync(fixture);
@@ -376,100 +376,6 @@ public sealed class Batch7StopDrivenAdvanceTests
         // 推进段下一轮照样走得动，不抛。
         await TickAndRunAsync(fixture);
         Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync(FirstDemandId)).Stage);
-    }
-
-    /// <summary>
-    /// 操作员扫的是<b>第二条</b>需求的子批时，服务端拒收，不下装货命令。
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// 本票把录入的派车范围从「锚需求这一条」放宽成「这个停靠上还没终结的需求」，形状是对的（FR-001 AC-3 把范围定在
-    /// 整个停靠序列上），**但只放宽这里会炸**：花篮数比对读的是 `runtime.ExpectedBasketCount`、装货命令取的是锚需求
-    /// 归属行上的 attempt 与仓位，于是扫第二条、车上收到第一条的开仓命令。所以 `RevalidateEnteredSublotAsync` 里有一句
-    /// 刻意的退回，把范围重新收到锚需求上，理由码与改动前逐字相同。
-    /// </para>
-    /// <para>
-    /// <b>这条测试守的就是那一句。</b>没有它，那句退回和它旁边那段注释一样——只能让读到的人知道，拦不住没读到的人
-    /// 删掉它。<see cref="ASecondDemandOnTheSameStopIsListedAndEndingItLeavesTheJourneyRunning"/> 看不见这一格，
-    /// 因为它扫的是第一条的子批。
-    /// </para>
-    /// <para>
-    /// 批次7-06（control-server#211）真正接上多需求推进时，这条会红——那时它该被改成「扫第二条就装第二条」，
-    /// 而不是被删掉。
-    /// </para>
-    /// </remarks>
-    [Fact]
-    public async Task EnteringTheSecondDemandsSublotIsRefusedRatherThanLoadingTheAnchor()
-    {
-        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
-        fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
-        fixture.BoxCounts.Set(FirstSublot, 4);
-        fixture.BoxCounts.Set(SecondSublot, 4);
-        await TickAndRunAsync(fixture);
-        JourneyRuntimeRow runtime = await fixture.RuntimeAsync(FirstDemandId);
-        await AddSecondDemandToJourneyAsync(fixture, runtime);
-        fixture.Riot.SetSuccessfulArrival("TO_PICKUP", runtime.PickupUpperId, runtime.PickupStationRiotId);
-        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = runtime.PickupStationRiotId };
-        await TickAndRunAsync(fixture);
-
-        await AddInboxAsync(
-            fixture, FirstSubmissionId, "SublotSubmitted", SublotSubmission(fixture, runtime, SecondSublot));
-        await TickAndRunAsync(fixture);
-
-        // 没有开仓命令发出去，旅程还停在等录入，车上收到的是一条拒收。
-        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync(FirstDemandId)).Stage);
-        Assert.Empty(await fixture.Context.ProtocolOutbox.AsNoTracking()
-            .Where(row => row.MessageType == "SlotOperationCommand")
-            .ToArrayAsync(TestContext.Current.CancellationToken));
-        ProtocolOutboxRow rejection = await fixture.Context.ProtocolOutbox.AsNoTracking()
-            .SingleAsync(row => row.MessageType == "SublotRejected", TestContext.Current.CancellationToken);
-        using JsonDocument document = JsonDocument.Parse(rejection.PayloadJson);
-        JsonElement payload = document.RootElement.GetProperty("payload");
-        Assert.Equal(
-            "SUBLOT_NOT_IN_DISPATCH_SCOPE",
-            payload.GetProperty("problem").GetProperty("reasonCode").GetString());
-        // 协议规定「子批在派车范围里解析不到需求」时 demandId 为空（SublotRejection 的类注释）。这一条连着
-        // 上面那句退回：退回是把第二条需求当成「不在范围内」，所以这里必须为空，而不是填那条被扫到的需求。
-        Assert.Equal(JsonValueKind.Null, payload.GetProperty("demandId").ValueKind);
-    }
-
-    /// <summary>
-    /// 往这趟旅程的两个停靠上再挂一条需求，直接写库——今天没有任何路径会这么做。
-    /// </summary>
-    private static async Task AddSecondDemandToJourneyAsync(RuntimeFixture fixture, JourneyRuntimeRow runtime)
-    {
-        CancellationToken token = TestContext.Current.CancellationToken;
-        AcceptedDemandRow anchor = await fixture.Context.AcceptedDemands.AsNoTracking()
-            .SingleAsync(row => row.DemandId == runtime.DemandId, token);
-        JourneyDemandRow anchorMembership = await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
-            .SingleAsync(row => row.JourneyId == runtime.JourneyId && row.DemandId == runtime.DemandId, token);
-
-        // AcceptedDemandRow 不是 record，字段又多，所以整行序列化再读回来当克隆用。
-        AcceptedDemandRow second = JsonSerializer.Deserialize<AcceptedDemandRow>(JsonSerializer.Serialize(anchor))!;
-        second.DemandId = SecondDemandId;
-        second.Sublot = SecondSublot;
-        second.TransportDemandKey = $"{SecondSublot}|WIRE_TO_GATE";
-        second.SeriesId = $"SERIES-{SecondDemandId}";
-        fixture.Context.AcceptedDemands.Add(second);
-
-        fixture.Context.Set<JourneyDemandRow>().Add(new JourneyDemandRow
-        {
-            JourneyId = anchorMembership.JourneyId,
-            DemandId = SecondDemandId,
-            PickupStopId = anchorMembership.PickupStopId,
-            UnloadStopId = anchorMembership.UnloadStopId,
-            ExpectedBasketCount = anchorMembership.ExpectedBasketCount,
-            TargetSlotsJson = anchorMembership.TargetSlotsJson,
-            LoadSlotOperationAttemptId = JourneyPlanBuilder.StableGuid(SecondDemandId, "load-attempt"),
-            LoadCommandMessageId = JourneyPlanBuilder.StableGuid(SecondDemandId, "load-command"),
-            UnloadSlotOperationAttemptId = JourneyPlanBuilder.StableGuid(SecondDemandId, "unload-attempt"),
-            UnloadCommandMessageId = JourneyPlanBuilder.StableGuid(SecondDemandId, "unload-command"),
-            DispatchZone = anchorMembership.DispatchZone,
-            DispatchGeneration = anchorMembership.DispatchGeneration,
-            Status = JourneyDemandStatuses.PendingLoad,
-            AddedAt = anchorMembership.AddedAt.AddSeconds(1)
-        });
-        await fixture.Context.SaveChangesAsync(token);
     }
 
     /// <summary>

@@ -74,8 +74,8 @@ public sealed partial class MultiVehicleExecutionTests
             backlog D1 DEMAND_ALREADY_ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
             backlog D2 ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0000000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
             outcome accepted=D1,D2
-              V1: D0=ELIGIBLE[1] D1=ELIGIBLE[1] D2=ELIGIBLE[1]
-              V2: D0=ELIGIBLE[1] D1=DEMAND_ALREADY_ACCEPTED D2=ELIGIBLE[1]
+              V1: D1=ELIGIBLE[1] D2=ELIGIBLE[1] D0=ELIGIBLE[1]
+              V2: D1=DEMAND_ALREADY_ACCEPTED[1] D2=ELIGIBLE[1] D0=ELIGIBLE[1]
             riot create BROKERX-0001 W2G-10000001-0000-4000-8000-000000000001-PICKUP-1 -> 13
             riot create BROKERX-0002 W2G-10000002-0000-4000-8000-000000000002-PICKUP-1 -> 14
             catalog reads 3
@@ -106,8 +106,8 @@ public sealed partial class MultiVehicleExecutionTests
             backlog D0 DEMAND_ALREADY_ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
             outcome accepted=D0
               V1: D0=ELIGIBLE[1]
-              V2: D0=DEMAND_ALREADY_ACCEPTED
-              V3: D0=DEMAND_ALREADY_ACCEPTED
+              V2: D0=DEMAND_ALREADY_ACCEPTED[1]
+              V3: D0=DEMAND_ALREADY_ACCEPTED[1]
             riot create BROKERX-0001 W2G-10000000-0000-4000-8000-000000000000-PICKUP-1 -> 12
             catalog reads 2
             """);
@@ -141,12 +141,12 @@ public sealed partial class MultiVehicleExecutionTests
                     FleetFixture.Demand(0, "N1-1", 0).DemandId).ReasonCode));
         await AssertTranscriptAsync(fixture, """
             journey V2 D1 AwaitingPickupArrival block=- pickup=13 slots=[1] baskets=1
-            backlog D0 DEMAND_ALREADY_ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=-
+            backlog D0 FINAL_CATALOG_CANDIDATE_GONE first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=-
             backlog D1 DEMAND_ALREADY_ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
             outcome accepted=D0,D1
               V1: D0=ELIGIBLE[1] D1=ELIGIBLE[1]
-              V2: D0=DEMAND_ALREADY_ACCEPTED D1=ELIGIBLE[1]
-              V3: D0=DEMAND_ALREADY_ACCEPTED D1=DEMAND_ALREADY_ACCEPTED
+              V2: D0=DEMAND_ALREADY_ACCEPTED[1] D1=ELIGIBLE[1]
+              V3: D0=DEMAND_ALREADY_ACCEPTED[1] D1=DEMAND_ALREADY_ACCEPTED[1]
             riot create BROKERX-0002 W2G-10000001-0000-4000-8000-000000000001-PICKUP-1 -> 13
             catalog reads 3
             """);
@@ -161,24 +161,30 @@ public sealed partial class MultiVehicleExecutionTests
     {
         await using FleetFixture fixture = await FleetFixture.CreateAsync(
             configure: options => options.Fleet[0].RoundTimeoutMilliseconds = CutOffBudgetMilliseconds);
-        fixture.BoxCounts.HangOnCall = 2;
+        // 第四次，不是第二次（批次7-06，control-server#211）。挂起点要落在「第一辆车的第二个候选」上，
+        // 而翻转把 box count 的调用序从「一辆车把候选走完再换下一辆」换成了「一条候选问完所有车再换下一条」：
+        // 三辆车判第一条候选用掉前三次，第一辆车的第二个候选因此是第四次。这个数字跟着调用序走，
+        // 不是断言的一部分——它下面那条对「哪辆车被切断」的断言才是。
+        fixture.BoxCounts.HangOnCall = 4;
 
         fixture.Clock.Tick = TimeSpan.FromMilliseconds(1);
         await fixture.RunRoundAsync();
 
         await AssertTranscriptAsync(fixture, """
-            journey V2 D0 AwaitingPickupArrival block=- pickup=12 slots=[1] baskets=1
-            journey V3 D1 AwaitingPickupArrival block=- pickup=13 slots=[1] baskets=1
+            journey V1 D0 AwaitingPickupArrival block=- pickup=12 slots=[1] baskets=1
+            journey V2 D1 AwaitingPickupArrival block=- pickup=13 slots=[1] baskets=1
+            journey V3 D2 AwaitingPickupArrival block=- pickup=14 slots=[1] baskets=1
             backlog D0 DEMAND_ALREADY_ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
-            backlog D1 ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0000000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
-            backlog D2 ELIGIBLE first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=-
-            outcome accepted=D0,D1
-              V2: D0=ELIGIBLE[1] D1=ELIGIBLE[1] D2=ELIGIBLE[1]
-              V3: D0=DEMAND_ALREADY_ACCEPTED D1=ELIGIBLE[1] D2=ELIGIBLE[1]
-            riot create BROKERX-0002 W2G-10000000-0000-4000-8000-000000000000-PICKUP-1 -> 12
-            riot create BROKERX-0003 W2G-10000001-0000-4000-8000-000000000001-PICKUP-1 -> 13
+            backlog D1 DEMAND_ALREADY_ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
+            backlog D2 ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0000000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
+            outcome accepted=D0,D1,D2
+              V2: D0=DEMAND_ALREADY_ACCEPTED[1] D1=ELIGIBLE[1] D2=ELIGIBLE[1]
+              V3: D0=DEMAND_ALREADY_ACCEPTED[1] D1=DEMAND_ALREADY_ACCEPTED[1] D2=ELIGIBLE[1]
+            riot create BROKERX-0001 W2G-10000000-0000-4000-8000-000000000000-PICKUP-1 -> 12
+            riot create BROKERX-0002 W2G-10000001-0000-4000-8000-000000000001-PICKUP-1 -> 13
+            riot create BROKERX-0003 W2G-10000002-0000-4000-8000-000000000002-PICKUP-1 -> 14
             log 2104 LogVehicleRoundBudgetExhausted Warning: Vehicle V1 exhausted its 1000 ms dispatch budget; the round moved on to the remaining vehicles.
-            catalog reads 3
+            catalog reads 4
             """);
     }
 
@@ -240,7 +246,11 @@ public sealed partial class MultiVehicleExecutionTests
         // its save would leave it.
         const string StagedReason = "STAGED-BY-THE-VEHICLE-CUT-OFF";
         List<object> staged = [];
-        fixture.BoxCounts.HangOnCall = 2;
+        // 第四次，不是第二次（批次7-06，control-server#211）。挂起点要落在「第一辆车的第二个候选」上，
+        // 而翻转把 box count 的调用序从「一辆车把候选走完再换下一辆」换成了「一条候选问完所有车再换下一条」：
+        // 三辆车判第一条候选用掉前三次，第一辆车的第二个候选因此是第四次。这个数字跟着调用序走，
+        // 不是断言的一部分——它下面那条对「哪辆车被切断」的断言才是。
+        fixture.BoxCounts.HangOnCall = 4;
         fixture.BoxCounts.OnHang = () =>
         {
             foreach (EntityEntry<JourneyBacklogRow> entry in fixture.Context.ChangeTracker.Entries<JourneyBacklogRow>())
@@ -298,16 +308,323 @@ public sealed partial class MultiVehicleExecutionTests
     }
 
     /// <summary>
-    /// With every vehicle under way the round ends before dispatch: the catalog is not read and the orphan check
-    /// does not run -- an accepted demand without a journey, which that check refuses, goes unnoticed this round.
+    /// 全车在途不再是「这一轮没什么可做」：目录照读，三辆车照样进轮次结局（REQ-0205；批次7-06，
+    /// control-server#211）。
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 这一条以前钉的是相反的事——全车在途时轮次在读目录之前就结束，连孤儿检查都不跑。那时在途车走一条
+    /// 一律拒绝的占位路径，问它等于白问，提前退出省下的是纯粹的浪费。本票让在途车与空闲车在同一张候选表上
+    /// 竞争，「全车在途」于是成了一种有活可派的局面。
+    /// </para>
+    /// <para>
+    /// <b>单车现场里这不是边角情形，而是常态</b>：车一接单就不再空闲，此后到卸完货为止的每一条新需求都只能
+    /// 靠追加接。按空闲车判会让这些需求一条都看不见——同区追加那条 L2 场景第一次跑出来正是这个样子，
+    /// 第二条需求连积压行都没有。
+    /// </para>
+    /// </remarks>
     [Fact]
-    public async Task WithEveryVehicleUnderWayTheRoundReadsNoCatalogAndRunsNoOrphanCheck()
+    public async Task WithEveryVehicleUnderWayTheRoundStillReadsTheCatalogAndReports()
     {
         await using FleetFixture fixture = await FleetFixture.CreateAsync();
         await fixture.RunRoundAsync();
         Assert.Equal(3, await fixture.Context.JourneyRuntimes.CountAsync(TestContext.Current.CancellationToken));
+        int catalogReads = fixture.Catalog.ReadCount;
+        fixture.RoundOutcomes.Outcomes.Clear();
+
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+
+        Assert.True(fixture.Catalog.ReadCount > catalogReads, "The round did not read the catalog.");
+        Assert.Equal(
+            FleetFixture.AgvIds.Order(StringComparer.Ordinal).ToArray(),
+            Assert.Single(fixture.RoundOutcomes.Outcomes).CompletedVehicles
+                .Select(vehicle => vehicle.AgvId).Order(StringComparer.Ordinal).ToArray());
+    }
+
+    /// <summary>
+    /// 一辆车的旅程 Blocked 时，这一轮连一条候选都不为它评估——<b>而这一轮确实开了</b>。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// ADR-cross-0006 与 ADR-cross-0015：仓位物理状态未经证实、dispatch lease 仍被持有时，不许把车派去干别的。
+    /// 「不派」不只是「拒绝」——连评估都不该发生，否则库里会留下一条说这辆车「会话没准备好」的记录，
+    /// 而真正的原因是它正等着人来处理。
+    /// </para>
+    /// <para>
+    /// <b>布局是混合的（一辆 Blocked、其余照跑），这一点是这条用例能不能成立的全部。</b>
+    /// 先前它把三辆车<b>全部</b> Blocked，而 <see cref="AFleetWhoseJourneysAreAllBlockedDoesNotOpenARound"/>
+    /// 已经证明那种布局下轮次<b>根本不开</b>（目录读数不变、轮次结局为空）。那时两条断言都成立，但成立的原因是
+    /// 「这一轮什么都没发生」，<b>不是名字承诺的「这辆 Blocked 车被排除在候选评估之外」</b>——判据测到的机制
+    /// 不是它声称测的那个。混合布局下轮次真的开了（下面第一条断言显式钉住这一点），断言为真的原因才变成
+    /// 「那辆车确实没参与」。
+    /// </para>
+    /// <para>
+    /// <b>这是本票一次判断错误的修正，值得连同原委留着。</b>我当初观察到「单独去掉任何一处 Blocked 排除都
+    /// 不红、两处一起去掉才红」，据此得出「两道是真的纵深防御，所以单点注入不红是对的」。<b>那个解释多余了。</b>
+    /// 真正的原因是上一段：全 Blocked 布局让断言恒由「轮次没开」满足。独立审查给的解释假设更少，而且有同文件
+    /// 另一条用例作为判别证据。<b>两个解释都能解释观测时，先找那个假设更少、而且能被现有证据判别的。</b>
+    /// </para>
+    /// <para>
+    /// 「两道排除一起去掉才红」这个事实本身没有变，但它的原因是<b>产品结构</b>：两道在机制上串联
+    /// （<c>JourneyRuntimeEngine</c> 不把 Blocked 的车放进 <c>underWay</c>；
+    /// <c>DispatchRoundRunner.ReadEnRoutePlanAsync</c> 对 Blocked 的旅程读不出计划，于是
+    /// <c>TryAdmitToRoundAsync</c> 把车整个剔出这一轮），任一道生效就足以阻断。那不是这条用例的判别力，
+    /// 是被测对象的形状。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task ABlockedJourneyKeepsItsVehicleOutOfTheRoundEntirely()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync();
+        await fixture.RunRoundAsync();
+        await fixture.BlockJourneysAsync(FleetFixture.AgvIds[0]);
+        // 车载端也断掉：L2-LR-10 那条场景里车是关了机的，而这一点不是布景。车载端事实读得到时，
+        // 在途链会走到更后面、被本票新加的「这辆车接不了，换下一个出价者」那一档静默跳过，什么都不写；
+        // 读不到时它停在 ONBOARD_FACTS_NOT_READY，那一档是要写进 JourneyBacklog、并触发事件 2131 的。
+        await fixture.DropSessionAsync(FleetFixture.AgvIds[0]);
+
+        // 目录里只留一条新需求，好让「谁评估了它」这件事没有别的噪音。
+        AcceptedDemandSnapshot next = FleetFixture.Demand(9, "N1-1", 0);
+        fixture.Catalog.Set([next]);
+        int catalogReads = fixture.Catalog.ReadCount;
+
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+
+        // 先钉住「这一轮确实开了」。没有这一条，下面那条会退回成「什么都没发生」的推论——那正是这条用例
+        // 先前的毛病。
+        Assert.True(fixture.Catalog.ReadCount > catalogReads, "The round did not open at all.");
+
+        // 判据只能是事件 2131，不能是「这条需求没有积压行」。<b>改成混合布局的那一刻，后者就不再为真了</b>：
+        // 另外两辆车仍在途、照常参与竞争，它们会评估这条新需求并落下自己的裁决，积压行本来就该出现。
+        // （改布局后第一次跑，红的正是那条 Assert.Empty——它红得对，而那说明全 Blocked 布局下它之所以绿，
+        // 靠的确实是「没有任何车评估过任何东西」。）
+        //
+        // 2131 带着 AgvId，每判完一条候选记一次、不会被别的车覆盖，所以它是这里唯一能指到<b>具体那一辆</b>
+        // 的判据：它一响就说明那辆 Blocked 的车进了候选评估。
+        Assert.DoesNotContain(fixture.EngineLog.Entries, entry => entry.EventId.Id == 2131);
+    }
+
+    /// <summary>
+    /// 孤儿检查跟着一起搬到了前面：全车在途时它照跑，一条没有旅程的已受理需求当场就被抓出来。
+    /// </summary>
+    /// <remarks>
+    /// 它守的是受理这道口子，所以它该在「这一轮要不要接活」之前跑。翻转之前全车在途时轮次提早结束，
+    /// 这个检查也就一并不跑——孤儿会被推到下一轮有车空出来时才发现。现在不会了。
+    /// </remarks>
+    [Fact]
+    public async Task WithEveryVehicleUnderWayTheOrphanCheckStillGuardsIntake()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync();
+        await fixture.RunRoundAsync();
         await fixture.AcceptOrphanAsync();
+
+        BusinessIdentityConflictException error =
+            await Assert.ThrowsAsync<BusinessIdentityConflictException>(
+                () => fixture.RunRoundAsync(TimeSpan.FromSeconds(1)));
+
+        Assert.Contains("no production journey runtime", error.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 被选中的那辆车接不了时，这条任务交给下一个出价者，而不是本轮被吃掉
+    /// （批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 出价循环里那句「受理把它拒掉是这条需求自己的结论，换一辆车再试一次只会得到同一个答案」，**对两种情形
+    /// 不成立**：租约是<b>这一辆</b>车的租约，最终动态事实读的是<b>这一辆</b>车的状态。翻转之前这两处从
+    /// 「这辆车自己那一段」返回，后面的车会重新判到这条需求；翻转之后它们落在同一个方法里，不区分就把这条
+    /// 任务在本轮吃掉了。
+    /// </para>
+    /// <para>
+    /// <b>还有一个操作员看得见的后果</b>：吃掉之后 <c>RecordVerdictsForCandidate</c> 把其余车的积压理由盖成
+    /// <c>DEMAND_ALREADY_ACCEPTED</c>，而这条需求根本没有任何人接受——看板上显示「已被接走」的是一条谁也没接的
+    /// 需求。所以这里同时断言它确实被接走了：判据是「有车接了」，不是「没红」。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task ADemandTheChosenVehicleCannotTakeGoesToTheNextBidder()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync();
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
+        // 先确认没有租约时这条需求归谁：下面那条租约要留给它，否则测不到「换一辆」。
+        await using (FleetFixture reference = await FleetFixture.CreateAsync())
+        {
+            reference.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
+            await reference.RunRoundAsync();
+            Assert.Equal(
+                FleetFixture.AgvIds[0],
+                (await reference.Context.JourneyRuntimes.SingleAsync(TestContext.Current.CancellationToken)).AgvId);
+        }
+
+        await fixture.LeaveUnreleasedLeaseAsync(FleetFixture.AgvIds[0]);
+        await fixture.RunRoundAsync();
+
+        // 先断言「有车接了」再断言「不是那一辆」：缺陷的样子正是一条旅程都没有，而 SingleAsync 在空集上抛的
+        // 异常读起来看不出这一点。
+        JourneyRuntimeRow[] journeys = await fixture.Context.JourneyRuntimes
+            .ToArrayAsync(TestContext.Current.CancellationToken);
+        JourneyRuntimeRow journey = Assert.Single(journeys);
+        Assert.NotEqual(FleetFixture.AgvIds[0], journey.AgvId);
+    }
+
+    /// <summary>
+    /// 在途车接走一条需求时，走的是追加——它进的是那辆车已有的那趟旅程，而不是新开一趟
+    /// （REQ-0205；批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>这一条守的是「在途与否」取自哪里。</b>受理那一段原先从「有没有插入位」反推在途，而插入位只有
+    /// <c>EnRouteAppendCriterion</c> 会填，那条判据在 <c>DispatchAdmissionCriteria.InTransit</c> 里是<b>可选</b>的
+    /// ——没有路网就不进链。反推因此在「装了路网」时恰好对，在没装时把一辆在途车当成空闲车，走完整条受理去
+    /// 建第二趟旅程、认领一辆已经被占着的车。
+    /// </para>
+    /// <para>
+    /// 判据是<b>归属落在同一趟旅程上</b>，不是「没红」：建了第二趟旅程一样不红，而那正是反推错掉的样子。
+    /// </para>
+    /// <para>
+    /// 车队裁成一辆：三辆车时第二条需求会被空闲车接走，那条路测不到追加。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task AnInTransitVehicleTakesAnAppendedDemandIntoItsExistingJourney()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(
+            configure: options => options.Fleet = options.Fleet[..1], withRouteGraph: true);
+        await fixture.AllowEnRouteAppendAsync(1_000_000);
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
+        await fixture.RunRoundAsync();
+        JourneyRuntimeRow first = Assert.Single(
+            await fixture.Context.JourneyRuntimes.ToArrayAsync(TestContext.Current.CancellationToken));
+
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0), FleetFixture.Demand(1, "N1-2", 1)]);
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+
+        // 还是那一趟旅程，两条需求都挂在它上面。
+        JourneyRuntimeRow only = Assert.Single(
+            await fixture.Context.JourneyRuntimes.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(first.JourneyId, only.JourneyId);
+        // 客户端排序：SQLite 的 ORDER BY 接不了 DateTimeOffset，这个仓库的生产库就是 SQLite。
+        JourneyDemandRow[] memberships = [.. (await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+                .ToArrayAsync(TestContext.Current.CancellationToken))
+            .OrderBy(row => row.AddedAt)];
+        Assert.Equal([first.JourneyId, first.JourneyId], memberships.Select(row => row.JourneyId));
+    }
+
+    /// <summary>
+    /// 在途链漏装路网时，这一轮响亮地停在那辆车上——而不是把它当成空闲车去建第二趟旅程
+    /// （批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 「在途与否」曾经从「有没有插入位」反推，而插入位只有 <c>EnRouteAppendCriterion</c> 会填，那条判据在
+    /// <c>DispatchAdmissionCriteria.InTransit</c> 里是可选的。<b>生产上 <c>Program.cs</c> 无条件注册路网，
+    /// 所以反推今天恰好对</b>——恰好对的东西不会在它不再对的那天发出声音。
+    /// </para>
+    /// <para>
+    /// 这条用例造的正是那个配置：空闲链有路网、在途链没有。反推会说这辆车「不在途」，于是它走完整条受理，
+    /// 建第二趟旅程、认领一辆已经被这趟旅程占着的车。现在取的是轮次给这辆车的那个事实，两者不一致就抛，
+    /// 轮次把它记成本服务端自己的不变量被破坏（事件 2124）并隔离这一辆车。
+    /// </para>
+    /// <para>
+    /// <b>判据是「还是那一趟旅程」加「记了 2124」</b>：只断言没建第二趟旅程的话，一个什么都不做的实现也能通过。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task AnInTransitChainWithoutItsRouteGraphStopsTheVehicleLoudly()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(
+            configure: options => options.Fleet = options.Fleet[..1],
+            withRouteGraph: true,
+            routeGraphOnInTransitChain: false);
+        await fixture.AllowEnRouteAppendAsync(1_000_000);
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
+        await fixture.RunRoundAsync();
+        JourneyRuntimeRow first = Assert.Single(
+            await fixture.Context.JourneyRuntimes.ToArrayAsync(TestContext.Current.CancellationToken));
+        fixture.EngineLog.Entries.Clear();
+
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0), FleetFixture.Demand(1, "N1-2", 1)]);
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+
+        JourneyRuntimeRow only = Assert.Single(
+            await fixture.Context.JourneyRuntimes.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(first.JourneyId, only.JourneyId);
+        Assert.Contains(
+            fixture.EngineLog.Entries,
+            entry => entry.EventId.Id == 2124 && entry.Error is BusinessIdentityConflictException);
+    }
+
+    /// <summary>
+    /// 一趟 Blocked 的旅程拿不到追加：新需求既不进它，也不会让这辆车被当成空闲车重新派一趟
+    /// （批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 追加进一趟等人介入的旅程，代价不是少接一条活：需求写进 <c>AcceptedDemands</c> 之后就不再是候选，
+    /// 绑死在这辆车上，而车上那张计划不会更新（<c>RefreshUpcomingStopPlanAsync</c> 对 Blocked 直接返回）。
+    /// 操作员看到的是一条派出去了、却永远不动的需求。
+    /// </para>
+    /// <para>
+    /// <b>这一条要有路网才测得到</b>：没有路网，在途追加那条判据根本不进链，这辆车连出价都不会出，
+    /// 用例会因为一个不相干的理由而绿。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task ABlockedJourneyTakesNoAppendedDemand()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(
+            configure: options => options.Fleet = options.Fleet[..1], withRouteGraph: true);
+        await fixture.AllowEnRouteAppendAsync(1_000_000);
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
+        await fixture.RunRoundAsync();
+        await fixture.BlockJourneysAsync(FleetFixture.AgvIds[0]);
+
+        fixture.EngineLog.Entries.Clear();
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0), FleetFixture.Demand(1, "N1-2", 1)]);
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+
+        // 还是那一条旅程、那一条归属：新需求没进去，也没有第二趟旅程被开出来。
+        Assert.Single(await fixture.Context.JourneyRuntimes.ToArrayAsync(TestContext.Current.CancellationToken));
+        // 而且是<b>安静地</b>没进去：没有任何东西被记成「本服务端自己的不变量被破坏」（事件 2124）。
+        // 一趟 Blocked 的旅程接不了追加是正常局面，不是缺陷，日志里不该出现 Error。
+        //
+        // <b>这一条守的是 JourneyRuntimeEngine 把 Blocked 的车排除出 underWay 那一步</b>，不是
+        // DispatchRoundRunner.ReadEnRoutePlanAsync 里那一处。后者在它之后，实测拆掉它这条用例照样绿——
+        // Blocked 的车压根不进 underWay，也就走不到那个查询。那一处因此是纵深的第二道，没有行为判据，
+        // 理由写在它自己的注释里。
+        Assert.DoesNotContain(fixture.EngineLog.Entries, entry => entry.EventId.Id == 2124);
+        JourneyDemandRow only = Assert.Single(
+            await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+                .ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(FleetFixture.Demand(0, "N1-1", 0).DemandId, only.DemandId);
+    }
+
+    /// <summary>
+    /// 一趟 Blocked 的旅程占着车，但不让这一轮开工：全车都 Blocked 时目录一次都不读（批次7-06，
+    /// control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>「在途」与「占着车」是两件事，这一条钉的就是这个区分。</b>本票让在途车参与竞争之后，最容易写错的
+    /// 形式是把「有未完成旅程的车」整个当成可追加的车——Blocked 的旅程也是未完成的。可它等的是人介入，
+    /// 在途资格链无条件拒绝它，所以把它算进去只会让轮次在一个本就没有活可派的局面下把整张候选表判一遍。
+    /// </para>
+    /// <para>
+    /// 这不是省几毫秒的事。那一遍判下来会给每条候选留一条积压记录，而
+    /// <c>load-result-requires-recovery</c> 那条 L2 场景的 <c>L2-LR-10</c> 正是靠「一条积压记录都没有」
+    /// 来证明仓位物理状态未经证实时没有任何新活被考虑——ADR-cross-0006 与 ADR-cross-0015 要求的就是这个。
+    /// 那条断言在这个改动的第一版下变红过，而红的原因不是安全规则被破坏（需求确实被拒了），是这里的集合
+    /// 定义与系统其余部分对「在途」的理解对不上。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task AFleetWhoseJourneysAreAllBlockedDoesNotOpenARound()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync();
+        await fixture.RunRoundAsync();
+        Assert.Equal(3, await fixture.Context.JourneyRuntimes.CountAsync(TestContext.Current.CancellationToken));
+        await fixture.BlockJourneysAsync(FleetFixture.AgvIds);
         int catalogReads = fixture.Catalog.ReadCount;
         fixture.RoundOutcomes.Outcomes.Clear();
 
@@ -315,22 +632,54 @@ public sealed partial class MultiVehicleExecutionTests
 
         Assert.Equal(catalogReads, fixture.Catalog.ReadCount);
         Assert.Empty(fixture.RoundOutcomes.Outcomes);
-        // Not even the in-transit path is asked: the round ended before there was a round to qualify for.
-        Assert.Empty(fixture.InTransit.Asked);
     }
 
     /// <summary>
-    /// A vehicle under way goes down the in-transit path, which refuses it with nothing to show for it: no verdict,
-    /// no slot group read, no backlog write, nothing handed to the round-end hook -- while the idle vehicles beside it
-    /// are served as before.
+    /// 一辆车的旅程 Blocked 不牵连车队其余：另外两辆照样进轮次，而 Blocked 的那辆既不被追加也不被当空闲车派。
     /// </summary>
     /// <remarks>
-    /// The path is asked once per vehicle under way, with the round's own facts, and says no; appending to a journey
-    /// under way is control-server#211's to open. The host's path is handed no database context at all, so its refusal
-    /// cannot write a backlog row; what this test watches is that the round adds nothing for that vehicle either.
+    /// 上一条单独存在时，「把可追加的车永远置空」也能让它绿——那会把本票要的在途竞争整个关掉。这一条补上
+    /// 另一侧：车队里还有车能接活时轮次照开。同时它钉住 Blocked 那辆的去向——它<b>仍然</b>占着车，所以也不会
+    /// 被当成空闲车重新派一趟，否则一趟等人介入的旅程会被第二趟盖掉。
     /// </remarks>
     [Fact]
-    public async Task AVehicleUnderWayIsLeftOutOfTheRoundItsIdleNeighboursAreServedIn()
+    public async Task OneBlockedJourneyDoesNotStopTheRestOfTheFleet()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync();
+        await fixture.RunRoundAsync();
+        await fixture.BlockJourneysAsync(FleetFixture.AgvIds[0]);
+        int catalogReads = fixture.Catalog.ReadCount;
+        fixture.RoundOutcomes.Outcomes.Clear();
+
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+
+        Assert.True(fixture.Catalog.ReadCount > catalogReads, "The round did not read the catalog.");
+        Assert.Equal(
+            FleetFixture.AgvIds.Skip(1).Order(StringComparer.Ordinal).ToArray(),
+            Assert.Single(fixture.RoundOutcomes.Outcomes).CompletedVehicles
+                .Select(vehicle => vehicle.AgvId).Order(StringComparer.Ordinal).ToArray());
+        Assert.Equal(1, await fixture.Context.JourneyRuntimes
+            .CountAsync(row => row.AgvId == FleetFixture.AgvIds[0], TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
+    /// 在途车与空闲车在同一张候选表上竞争（REQ-0205；批次7-06，control-server#211）：它进轮次结局，
+    /// 对每条候选都有自己的裁决，身份本身不产生优先级。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>这一条与它替换掉的那两条是同一件事的两面。</b>翻转之前在途车走一条占位路径
+    /// （<c>InTransitAppendNotOpened</c>），一律拒绝、不留痕迹，所以那时的用例断言的是「它不在轮次结局里」
+    /// 和「万一那条路径说了 yes，轮次要大声失败而不是静默忽略」。本票把那条路径换成真正的在途资格链，
+    /// 于是两条断言各自的前提都不存在了——占位类连同它的接口一起删掉了。
+    /// </para>
+    /// <para>
+    /// 换来的保证写在这里：在途车被问、被记、和空闲车比同一批候选。它接不接得下由链与插位规划决定
+    /// （<c>Batch7EnRouteAppendPlannerTests</c> 守那一半），这里只问它有没有被当成车队的一员。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task AVehicleUnderWayCompetesForTheSameCandidatesAsTheIdleOnes()
     {
         await using FleetFixture fixture = await FleetFixture.CreateAsync();
         fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
@@ -338,32 +687,16 @@ public sealed partial class MultiVehicleExecutionTests
         Assert.Equal(FleetFixture.AgvIds[0], (await fixture.JourneyOfAsync(FleetFixture.AgvIds[0])).AgvId);
         fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0), FleetFixture.Demand(1, "N1-2", 1)]);
         fixture.RoundOutcomes.Outcomes.Clear();
-        fixture.SlotPositions.Reads.Clear();
 
         await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
 
+        DispatchRoundOutcome outcome = Assert.Single(fixture.RoundOutcomes.Outcomes);
         Assert.Equal(
-            [FleetFixture.AgvIds[1], FleetFixture.AgvIds[2]],
-            Assert.Single(fixture.RoundOutcomes.Outcomes).CompletedVehicles.Select(vehicle => vehicle.AgvId).ToArray());
-        Assert.DoesNotContain(FleetFixture.AgvIds[0], fixture.SlotPositions.Reads);
-        (DispatchRoundFacts round, FleetVehicle asked) = Assert.Single(fixture.InTransit.Asked);
-        Assert.Equal(FleetFixture.AgvIds[0], asked.AgvId);
-        Assert.Same(Assert.Single(fixture.RoundOutcomes.Outcomes).Round, round);
-    }
-
-    /// <summary>
-    /// The in-transit path saying yes is not something this round can act on yet: it fails loudly rather than
-    /// quietly ignoring a vehicle it was told may take work.
-    /// </summary>
-    [Fact]
-    public async Task AnInTransitVehicleTheRoundCannotYetServeIsNotSilentlyDropped()
-    {
-        await using FleetFixture fixture = await FleetFixture.CreateAsync();
-        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
-        await fixture.RunRoundAsync();
-        fixture.InTransit.Answer = true;
-
-        await Assert.ThrowsAsync<NotSupportedException>(() => fixture.RunRoundAsync(TimeSpan.FromSeconds(1)));
+            FleetFixture.AgvIds.Order(StringComparer.Ordinal).ToArray(),
+            outcome.CompletedVehicles.Select(vehicle => vehicle.AgvId).Order(StringComparer.Ordinal).ToArray());
+        DispatchVehicleOutcome underWay = outcome.CompletedVehicles
+            .Single(vehicle => vehicle.AgvId == FleetFixture.AgvIds[0]);
+        Assert.NotEmpty(underWay.Verdicts);
     }
 
     // ---- per-vehicle failure isolation (control-server#231) -------------------------------------------------
@@ -400,7 +733,7 @@ public sealed partial class MultiVehicleExecutionTests
             backlog D2 ELIGIBLE first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=-
             outcome accepted=D0,D1
               V1: D0=ELIGIBLE[1] D1=ELIGIBLE[1] D2=ELIGIBLE[1]
-              V3: D0=DEMAND_ALREADY_ACCEPTED D1=ELIGIBLE[1] D2=ELIGIBLE[1]
+              V3: D0=DEMAND_ALREADY_ACCEPTED[1] D1=ELIGIBLE[1] D2=ELIGIBLE[1]
             riot create BROKERX-0001 W2G-10000000-0000-4000-8000-000000000000-PICKUP-1 -> 12
             riot create BROKERX-0003 W2G-10000001-0000-4000-8000-000000000001-PICKUP-1 -> 13
             log 2123 LogVehicleRoundFailed Warning: Vehicle V2 could not be served this round: HttpRequestException. The round moved on to the remaining vehicles.
@@ -585,11 +918,16 @@ public sealed partial class MultiVehicleExecutionTests
     }
 
     /// <summary>
-    /// The in-transit path throwing is isolated the same way, so the round-end hook still runs: it sits between the
-    /// idle vehicles and that hook, and control-server#211 replaces today's refuse-everything with a path that reads.
+    /// 问不动一辆在途车，与问不动一辆空闲车分开记，而且轮末钩子照样跑：在途车这一路是被隔离的。
     /// </summary>
+    /// <remarks>
+    /// 触发点随本票换了一个（control-server#211）：原来是那条占位在途路径自己抛，而它已经被真正的在途资格链
+    /// 取代；现在让这辆在途车的 RIoT 事实读抛，那是同一条链上真实存在的失败方式。<b>两个事件 id 的分工没变</b>——
+    /// 2125 是「这辆在途车问不动」，2123 是「这辆空闲车白闲了一轮」。对一辆正跑着自己旅程的车说
+    /// 「could not be served this round」是句错话，所以它不该出现。
+    /// </remarks>
     [Fact]
-    public async Task AnInTransitPathThatThrowsStillLeavesTheRoundEndHookCalled()
+    public async Task AnInTransitVehicleThatCannotBeAskedIsLoggedUnderItsOwnEventId()
     {
         await using FleetFixture fixture = await FleetFixture.CreateAsync();
         fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
@@ -598,7 +936,7 @@ public sealed partial class MultiVehicleExecutionTests
         fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0), FleetFixture.Demand(1, "N1-2", 1)]);
         fixture.RoundOutcomes.Outcomes.Clear();
         fixture.EngineLog.Entries.Clear();
-        fixture.InTransit.Throws = true;
+        fixture.Riot.FailOn = FleetFixture.VehicleKeys[0];
 
         await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
 
@@ -609,8 +947,6 @@ public sealed partial class MultiVehicleExecutionTests
         EventRecordingLogger<JourneyRuntimeEngine>.Entry warning =
             Assert.Single(fixture.EngineLog.Entries, entry => entry.EventId.Id == 2125);
         Assert.Contains(FleetFixture.AgvIds[0], warning.Message, StringComparison.Ordinal);
-        // Its own event id rather than the idle vehicles' 2123: nothing was dispatched for this vehicle and
-        // nothing could have been, so "could not be served this round" would say the wrong thing about it.
         Assert.DoesNotContain(fixture.EngineLog.Entries, entry => entry.EventId.Id == 2123);
     }
 
@@ -1299,7 +1635,8 @@ public sealed partial class MultiVehicleExecutionTests
 /// <summary>A logger that keeps every entry with its event id, so a test can pin both.</summary>
 internal sealed class EventRecordingLogger<T> : ILogger<T>
 {
-    public sealed record Entry(EventId EventId, LogLevel Level, string Message);
+    /// <summary>异常一并留着：轮次把每辆车的异常吞成一条日志，不存它就只能看到类型名。</summary>
+    public sealed record Entry(EventId EventId, LogLevel Level, string Message, Exception? Error = null);
 
     public List<Entry> Entries { get; } = [];
 
@@ -1317,7 +1654,7 @@ internal sealed class EventRecordingLogger<T> : ILogger<T>
     {
         lock (Entries)
         {
-            Entries.Add(new Entry(eventId, logLevel, formatter(state, exception)));
+            Entries.Add(new Entry(eventId, logLevel, formatter(state, exception), exception));
         }
     }
 }

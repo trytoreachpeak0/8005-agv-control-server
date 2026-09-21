@@ -315,6 +315,36 @@ public sealed record JourneyExecutionPlan(
     long? TaskTypeStationBindingSetVersion = null,
     long? StationCatalogRevision = null);
 
+/// <summary>
+/// 把一条需求追加进一辆在途车已有旅程时，要一次写下的全部（票面第 3 条，批次7-06，control-server#211）。
+/// </summary>
+/// <remarks>
+/// <para>
+/// 它<b>复用</b> <see cref="JourneyExecutionPlan"/> 来携带这条需求自己的那一份：端点、仓位、花篮数、
+/// 派车代次与三样冻结版本，因为追加受理要写的冻结与受理时一字不差——一条需求不会因为它是被追加进来的，
+/// 就少冻结一个版本。旅程层面的那几样（会话、订单、租约）在计划里仍然填着，但追加路径不读它们：
+/// 那辆车已经被这趟旅程占着。
+/// </para>
+/// <para>
+/// <see cref="Resequenced"/> 是插入之后<b>全部</b>停靠的新序位，包括没动的那些：序位是可变的序位，
+/// 身份是 <c>StopId</c>（MVP 拿序号当身份，一插队后面每个停靠的身份都跟着变）。整张表一起给，
+/// 是为了「插在哪」这个决定只由一处做出，而不是让写库的一方再推一遍。
+/// </para>
+/// </remarks>
+public sealed record JourneyAppendPlan(
+    string JourneyId,
+    string DemandId,
+    JourneyExecutionPlan Demand,
+    string PickupStopId,
+    string UnloadStopId,
+    string DispatchZone,
+    long? DispatchZoneParameterVersion,
+    IReadOnlyList<JourneyStopSequenceChange> Resequenced,
+    DateTimeOffset AddedAt);
+
+/// <summary>一个停靠插入之后的新序位。</summary>
+public sealed record JourneyStopSequenceChange(string StopId, int Sequence);
+
 public enum ConnectionRecoveryStatus
 {
     Connected,

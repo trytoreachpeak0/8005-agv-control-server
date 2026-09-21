@@ -136,23 +136,46 @@ public sealed class JourneyPlanBuilder(JourneyRuntimeOptions options)
         plan.AgvLifecycleGeneration,
         plan.DispatchGeneration);
 
-    /// <summary>The second move order, created once the vehicle is loaded and cleared to leave.</summary>
-    public static OrderIntent GateIntent(JourneyRuntimeRow runtime, DateTimeOffset now) => new(
-        runtime.GateMovementLegId,
-        runtime.DemandId,
-        runtime.GateUpperId,
-        "TO_GATE",
-        runtime.GateStationId,
-        now,
-        runtime.VehicleKey,
-        runtime.MapId,
-        runtime.GateStationRiotId,
-        runtime.AgvLifecycleGeneration,
-        runtime.DispatchGeneration);
+    /// <summary>
+    /// 开往下一个停靠的那张订单，在车装完、离站核验通过之后建（批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 腿、订单号与目标站都取<b>那个停靠的行</b>，不再取旅程行上写死的 <c>Gate*</c> 四列。写死的那四列就是
+    /// 「一趟只有取货、卸货两个停靠」这个假设本身：多停靠计划里第三段腿在旅程行上没有地方放。单需求两停靠下，
+    /// 停靠行的这四个值由受理时从旅程行原样搬入，所以建出来的订单逐字相同。
+    /// </para>
+    /// <para>
+    /// <c>demandId</c> 仍取锚需求：一张 RIoT 订单是一次整车移动，协议与 RIoT 那一侧都只放得下一个需求
+    /// （票面第 10 条）。
+    /// </para>
+    /// </remarks>
+    public static OrderIntent LegIntent(JourneyRuntimeRow runtime, JourneyStopRow stop, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(runtime);
+        ArgumentNullException.ThrowIfNull(stop);
+        return new OrderIntent(
+            stop.MovementLegId,
+            runtime.DemandId,
+            stop.UpperId,
+            "TO_GATE",
+            stop.StationId,
+            now,
+            runtime.VehicleKey,
+            runtime.MapId,
+            stop.StationRiotId,
+            runtime.AgvLifecycleGeneration,
+            runtime.DispatchGeneration);
+    }
 
-    // The plan stream advances three times per journey: before the pickup arrival at the stored
-    // revision, at the pickup one above it, at the gate two above it. WireToGateStore seeds the next
-    // journey on the vehicle three above, so the stream never steps back across journeys.
+    // 计划流每趟推进「到站次数 + 1」次：派车时先发一张「车还在路上」的（CV-DEMAND-ACCEPT-TO-PICKUP，用存着的
+    // 那个号），此后每到一个停靠再发一张。两个停靠的旅程因此是三次，这也正是 WireToGateStore 为下一趟预留的量
+    // （PlanRevisionsPerJourney）。
+    //
+    // 多停靠旅程会发得更多，途中追加引起的重发还会再多发几张——那时预留量不够（批次7-06，control-server#211）。
+    // 接住它的是两处，而不是把这个常量改大：JourneyRuntimeEngine.AdvanceSnapshotRevisionCountersAsync 在每次
+    // 发布之后把按车计数器抬到这一号之上，重发那一处同时把本趟的基准抬高，好让后面按序位算出来的号仍在其上。
+    // 常量改大治不了这件事——停靠数没有上界，而预留量是个常数。
 
     /// <summary>
     /// 旅程的停靠序列，投影成车载端看到的那张计划：每个停靠一条腿，腿的状态由它与当前停靠的先后关系给出

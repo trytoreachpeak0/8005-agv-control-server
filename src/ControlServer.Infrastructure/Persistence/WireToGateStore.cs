@@ -10,7 +10,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace ControlServer.Infrastructure.Persistence;
 
-public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourneyAcceptanceStore, IMovementIntentStore
+public sealed class WireToGateStore(ControlServerDbContext dbContext)
+    : IJourneyAcceptanceStore, IJourneyAppendStore, IMovementIntentStore
 {
     private const string ForcedMechanicalRecoveryWorkflowType = "FORCED_MECHANICAL_RECOVERY";
 
@@ -26,14 +27,83 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
     /// gate stop (JourneyRuntimeEngine publishes both stops), so the next journey on the same
     /// vehicle has to start two above the stored one.
     /// </summary>
-    private const long RevisionsPerJourney = 2;
+    /// <remarks>
+    /// Public since control-server#211, read by <c>JourneyRuntimeEngine.AdvanceWorklistRevisionCounterAsync</c>: a
+    /// journey carrying several demands publishes more worklist revisions than this reservation covers, and the engine
+    /// raises the counter so the next journey's base still clears what this one used. The value is unchanged -- what
+    /// changed is that the engine now has to know what the reservation is rather than assume it.
+    /// </remarks>
+    public const long RevisionsPerJourney = 2;
 
     /// <summary>
     /// The plan stream takes three per journey rather than two. Since 2026-09-13 the plan also goes
     /// out before the pickup arrival (CV-DEMAND-ACCEPT-TO-PICKUP) at the stored revision, so the
     /// pickup and the gate publish it one and two above that.
     /// </summary>
-    private const long PlanRevisionsPerJourney = 3;
+    /// <remarks>
+    /// 与 <see cref="RevisionsPerJourney"/> 同样在 control-server#211 转为公开，理由也相同：多停靠旅程发的
+    /// 计划版数超过这个预留，引擎要把按车计数器抬上去，而那要求它知道预留量是多少，不能假设。
+    /// </remarks>
+    public const long PlanRevisionsPerJourney = 3;
+
+    /// <summary>
+    /// 把这辆车某条快照流的下一趟基准抬到 <paramref name="revision"/> 之上（批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 下一趟的基准是按车计数器加上每趟的预留量，而预留量是照「一趟两个停靠」定的常数——停靠数没有上界，
+    /// 常数接不住。多停靠或多需求的旅程三条流都会发得更多，本趟的号于是可能越过下一趟的基准，而车载端
+    /// 只按消息类型记修订号，一次回退就是 <c>SNAPSHOT_REVISION_REGRESSION</c> 断会话。
+    /// </para>
+    /// <para>
+    /// <b>由发布快照那个原语调用，不由调用点调用。</b>「发了快照却没结清」因此在构造上不可能：三条流都只能
+    /// 经由 <c>OnboardJourneyPublisher</c> 的快照原语发出去，而那里每发一条就结清一条。放在调用点上则是纪律——
+    /// 漏掉一处要等下一趟才看得见，而新加的发布点往往正是测试走不到的那一处。
+    /// </para>
+    /// <para>
+    /// 不认识的消息类型不做事：只有这三条流按停靠发，别的出站消息没有按车的修订号。
+    /// </para>
+    /// </remarks>
+    public async Task RaiseSnapshotRevisionFloorAsync(
+        string messageType,
+        string agvId,
+        long revision,
+        CancellationToken cancellationToken)
+    {
+        long reserve = messageType switch
+        {
+            "VehicleBusinessStateSnapshot" or "CurrentStopWorklistSnapshot" => RevisionsPerJourney,
+            "UpcomingStopPlanSnapshot" => PlanRevisionsPerJourney,
+            _ => 0
+        };
+        if (reserve == 0)
+        {
+            return;
+        }
+
+        VehicleSnapshotRevisionRow? counter = await dbContext.Set<VehicleSnapshotRevisionRow>()
+            .SingleOrDefaultAsync(row => row.AgvId == agvId, cancellationToken).ConfigureAwait(false);
+        if (counter is null)
+        {
+            return;
+        }
+
+        // 这一号要求下一趟的基准至少是 revision - reserve + 1；已经更高就不动它。单需求旅程一次也不会推进
+        // 任何一条——那时最大的号正好落在预留里，条件不成立，修订号流逐字不变。
+        long required = revision - reserve + 1;
+        switch (messageType)
+        {
+            case "VehicleBusinessStateSnapshot":
+                if (counter.VehicleBusinessRevision < required) { counter.VehicleBusinessRevision = required; }
+                break;
+            case "CurrentStopWorklistSnapshot":
+                if (counter.WorklistRevision < required) { counter.WorklistRevision = required; }
+                break;
+            default:
+                if (counter.PlanRevision < required) { counter.PlanRevision = required; }
+                break;
+        }
+    }
 
     public async Task<long> GetNextSessionGenerationAsync(string agvId, CancellationToken cancellationToken)
     {
@@ -489,6 +559,340 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         JourneyExecutionPlan journey,
         CancellationToken cancellationToken) =>
         AcceptCoreAsync(snapshot, orderIntent, journey, cancellationToken);
+
+    /// <summary>
+    /// 把一条需求追加进一辆在途车已有的旅程（票面第 3 条，批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>与受理写的是同一套冻结，少的是旅程层面那几样。</b>需求行、三样冻结（区域分配、端点、任务类型站点版本）
+    /// 与受理一字不差——一条需求不会因为它是被追加进来的就少冻结一个版本。不写的是旅程行、租约、用途占有与移动订单：
+    /// 那辆车已经被这趟旅程占着（<c>OrderIntents</c> 的过滤唯一索引与 <c>VehiclePurposeClaims</c> 的主键都是一车一行，
+    /// 再认领一次会直接冲突），而新那一段腿要等前面的停靠走完才发。
+    /// </para>
+    /// <para>
+    /// <b>四样东西一个事务：</b>需求行、归属、两个新停靠、既有停靠的新序位。分开写会留下「占了仓位却不在计划里的需求」
+    /// ——仓位在归属上，计划在停靠上，中间崩一次就对不上了。事务失败时连同变更跟踪器一起还原，理由与受理那一处相同。
+    /// </para>
+    /// <para>
+    /// <b>重放判同。</b>同一条追加重放时，需求行已在、归属已在、两个停靠已在，且停靠序列与这一次要写的一致，就当它已经做过
+    /// （票面「重放与重连」：同一追加重放判同、序列不同判冲突）。
+    /// </para>
+    /// </remarks>
+    public async Task AppendToJourneyAsync(
+        AcceptedDemandSnapshot snapshot,
+        JourneyAppendPlan plan,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(plan);
+
+        AcceptedDemandRow? existing = await dbContext.AcceptedDemands
+            .SingleOrDefaultAsync(row => row.DemandId == snapshot.DemandId ||
+                                         row.TransportDemandKey == snapshot.TransportDemandKey, cancellationToken)
+            .ConfigureAwait(false);
+        if (existing is not null)
+        {
+            await AssertAppendReplayMatchesAsync(snapshot, plan, existing, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken)
+            .ConfigureAwait(false);
+        Dictionary<object, (EntityState State, Microsoft.EntityFrameworkCore.ChangeTracking.PropertyValues Values)> trackedBefore =
+            dbContext.ChangeTracker.Entries().ToDictionary(
+                entry => entry.Entity, entry => (entry.State, entry.CurrentValues.Clone()), ReferenceEqualityComparer.Instance);
+        try
+        {
+            await StageAndCommitAppendAsync(snapshot, plan, transaction, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception) when (ForgetStagedAcceptance(trackedBefore))
+        {
+            throw;
+        }
+    }
+
+    private async Task StageAndCommitAppendAsync(
+        AcceptedDemandSnapshot snapshot,
+        JourneyAppendPlan plan,
+        Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        JourneyExecutionPlan demand = plan.Demand;
+        if (demand is { StationCatalogRevision: null } &&
+            (demand.TaskTypeStationRuleVersion is not null || demand.TaskTypeStationBindingSetVersion is not null))
+        {
+            throw new JourneyPlanFreezeIncompleteException(FormattableString.Invariant(
+                $"Appended demand {snapshot.DemandId} carries task type station versions but no station catalog revision."));
+        }
+
+        // 这趟旅程此刻还接不接得下追加，在事务里再判一次（批次7-06，control-server#211）。
+        //
+        // <b>这不是第二道保险，这是那条路唯一的守卫。</b>轮次在开头读到旅程不是 Blocked，而从那一读到这一写
+        // 之间，车载端的一条入站消息可以把它置成 Blocked（<c>OnboardRecoveryCoordinator</c>，另一个连接、
+        // 另一个线程）——轮次那一侧在它自己的时刻是对的，所以挡不住这个竞态。判据放在事务外也挡不住：
+        // BEGIN IMMEDIATE 之前读到的仍是旧快照。
+        //
+        // 放行的代价不是少接一条活：需求会写进 AcceptedDemands 从此不再是候选，绑死在一辆等人介入的车上，
+        // 而车上那张计划不会更新（<c>RefreshUpcomingStopPlanAsync</c> 对 Blocked 直接返回）。Completed 一并判，
+        // 它是同一个竞态的另一头——旅程在这中间跑完了。
+        //
+        // <b>它和 DispatchRoundRunner.ReadEnRoutePlanAsync 里那一处不是重复的，别删掉任何一处。</b>
+        // 那里是准入口径（轮次开始时就已经 Blocked 的车不值得算插位），这里是写入一致性（轮次读过之后才
+        // 变成 Blocked）。判一道竞态守卫有没有用，看它和它守护的那次写入在不在同一个事务里——那一处不在，
+        // 所以它挡不住这个，也不该由它挡。
+        JourneyRuntimeRow journey = await dbContext.JourneyRuntimes
+            .SingleAsync(row => row.JourneyId == plan.JourneyId, cancellationToken).ConfigureAwait(false);
+        if (journey.Stage is JourneyRuntimeStage.Blocked or JourneyRuntimeStage.Completed)
+        {
+            throw new BusinessIdentityConflictException(
+                $"Journey '{plan.JourneyId}' is {journey.Stage} and cannot take an appended demand.");
+        }
+
+        if (demand.AreaAssignmentVersion is long areaAssignmentVersion)
+        {
+            await FreezeAreaAssignmentAsync(snapshot, areaAssignmentVersion, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (demand is { StationCatalogRevision: long catalogRevision })
+        {
+            await FreezeEndpointsAsync(snapshot, demand, catalogRevision, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (demand is { TaskTypeStationRuleVersion: long ruleVersion, TaskTypeStationBindingSetVersion: long bindingSetVersion })
+        {
+            await new DemandTaskTypeStationFreezeStore(dbContext)
+                .FreezeAsync(snapshot.DemandId, ruleVersion, demand.MapId, bindingSetVersion, snapshot.AcceptedAt, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        dbContext.AcceptedDemands.Add(new AcceptedDemandRow
+        {
+            DemandId = snapshot.DemandId,
+            SeriesId = snapshot.SeriesId,
+            TransportDemandKey = snapshot.TransportDemandKey,
+            WorkType = snapshot.WorkType,
+            Sublot = snapshot.Sublot,
+            Generation = snapshot.Generation,
+            DemandRevision = snapshot.DemandRevision,
+            HistoryEpoch = snapshot.HistoryEpoch,
+            CatalogRevision = snapshot.CatalogRevision,
+            CreatedAt = snapshot.CreatedAt,
+            ValueObservedAt = snapshot.ValueObservedAt,
+            ValuePollTraceId = snapshot.ValuePollTraceId,
+            ValueProjectionCommitId = snapshot.ValueProjectionCommitId,
+            LiveMesFieldsJson = JsonSerializer.Serialize(snapshot.LiveMesFields),
+            AcceptedAt = snapshot.AcceptedAt,
+            Status = DemandExecutionStatus.Accepted
+        });
+
+        foreach (JourneyStopRow stop in await NewStopsAsync(snapshot.DemandId, plan, cancellationToken)
+                     .ConfigureAwait(false))
+        {
+            dbContext.Set<JourneyStopRow>().Add(stop);
+        }
+
+        dbContext.Set<JourneyDemandRow>().Add(new JourneyDemandRow
+        {
+            JourneyId = plan.JourneyId,
+            DemandId = snapshot.DemandId,
+            PickupStopId = plan.PickupStopId,
+            UnloadStopId = plan.UnloadStopId,
+            ExpectedBasketCount = demand.ExpectedBasketCount,
+            TargetSlotsJson = JsonSerializer.Serialize(demand.TargetSlots),
+            LoadSlotOperationAttemptId = DeterministicGuid($"{snapshot.DemandId}|load-attempt"),
+            LoadCommandMessageId = DeterministicGuid($"{snapshot.DemandId}|load-command"),
+            UnloadSlotOperationAttemptId = DeterministicGuid($"{snapshot.DemandId}|unload-attempt"),
+            UnloadCommandMessageId = DeterministicGuid($"{snapshot.DemandId}|unload-command"),
+            DispatchZone = plan.DispatchZone,
+            DispatchGeneration = demand.DispatchGeneration,
+            Status = JourneyDemandStatuses.PendingLoad,
+            AddedAt = plan.AddedAt,
+            DispatchZoneParameterVersion = plan.DispatchZoneParameterVersion
+        });
+
+        await ApplyResequencingAsync(plan, cancellationToken).ConfigureAwait(false);
+
+        JourneyBacklogRow? backlog = await dbContext.JourneyBacklog
+            .SingleOrDefaultAsync(row => row.DemandId == snapshot.DemandId, cancellationToken).ConfigureAwait(false);
+        if (backlog is not null)
+        {
+            backlog.AcceptedAt = snapshot.AcceptedAt;
+            backlog.ReasonCode = "ACCEPTED";
+            backlog.LastSeenAt = snapshot.AcceptedAt;
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 这次追加要<b>新建</b>的停靠。并入既有停靠时不建——判据是那个 <c>StopId</c> 已经属于这趟旅程，
+    /// 这让重放与首次走同一条路：第二次跑到这里时两个停靠都已在库，一个也不会重复建。
+    /// </summary>
+    private async Task<IReadOnlyList<JourneyStopRow>> NewStopsAsync(
+        string demandId,
+        JourneyAppendPlan plan,
+        CancellationToken cancellationToken)
+    {
+        JourneyExecutionPlan demand = plan.Demand;
+        HashSet<string> alreadyThere = (await dbContext.Set<JourneyStopRow>().AsNoTracking()
+                .Where(row => row.JourneyId == plan.JourneyId)
+                .Select(row => row.StopId)
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false))
+            .ToHashSet(StringComparer.Ordinal);
+        int SequenceOf(string stopId) => plan.Resequenced.Single(stop => stop.StopId == stopId).Sequence;
+        string Id(string purpose) => DeterministicGuid($"{demandId}|{purpose}");
+        List<JourneyStopRow> created = [];
+        if (!alreadyThere.Contains(plan.PickupStopId))
+        {
+            created.Add(new JourneyStopRow
+            {
+                StopId = plan.PickupStopId,
+                JourneyId = plan.JourneyId,
+                Sequence = SequenceOf(plan.PickupStopId),
+                StopRole = JourneyStopRoles.Pickup,
+                StationId = demand.PickupStationId,
+                StationRiotId = demand.PickupStationRiotId,
+                DispatchZone = plan.DispatchZone,
+                OperationSessionId = demand.OperationSessionId,
+                MovementLegId = demand.PickupMovementLegId,
+                UpperId = demand.PickupUpperId,
+                VehicleBusinessMessageId = Id("appended-pickup-vehicle-state"),
+                WorklistMessageId = Id("appended-pickup-worklist"),
+                PlanMessageId = Id("appended-pickup-plan"),
+                SublotRequestMessageId = Id("appended-pickup-sublot-request"),
+                DepartureSafetyCheckMessageId = Id("appended-pickup-safety-request"),
+                DepartureSafetyCheckId = Id("appended-pickup-safety-check"),
+                Status = JourneyStopStatuses.Pending,
+                CreatedAt = plan.AddedAt
+            });
+        }
+
+        if (!alreadyThere.Contains(plan.UnloadStopId))
+        {
+            created.Add(new JourneyStopRow
+            {
+                StopId = plan.UnloadStopId,
+                JourneyId = plan.JourneyId,
+                Sequence = SequenceOf(plan.UnloadStopId),
+                StopRole = JourneyStopRoles.Unload,
+                StationId = demand.GateStationId,
+                StationRiotId = demand.GateStationRiotId,
+                DispatchZone = plan.DispatchZone,
+                // 每个停靠一个作业会话（规格第 22 节补记）：卸货停靠不复用取货停靠那一个。
+                OperationSessionId = Id("appended-unload-session"),
+                MovementLegId = demand.GateMovementLegId,
+                UpperId = demand.GateUpperId,
+                VehicleBusinessMessageId = Id("appended-unload-vehicle-state"),
+                WorklistMessageId = Id("appended-unload-worklist"),
+                PlanMessageId = Id("appended-unload-plan"),
+                Status = JourneyStopStatuses.Pending,
+                CreatedAt = plan.AddedAt
+            });
+        }
+
+        return created;
+    }
+
+    /// <summary>把插入之后的序位写到每个停靠上；序位可变，身份是 <c>StopId</c>。</summary>
+    private async Task ApplyResequencingAsync(JourneyAppendPlan plan, CancellationToken cancellationToken)
+    {
+        // 本次追加新开的停靠此刻还在变更跟踪器里、没有落库，而它也要被重排覆盖，所以这里把库里的和本地新加的
+        // 并在一起看。只查数据库会把新停靠判成「重排提到了一个不存在的停靠」，把正常路径打挂。
+        JourneyStopRow[] stored = [.. (await dbContext.Set<JourneyStopRow>()
+                .Where(row => row.JourneyId == plan.JourneyId)
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false))
+            .Concat(dbContext.Set<JourneyStopRow>().Local.Where(row => row.JourneyId == plan.JourneyId))
+            .DistinctBy(row => row.StopId, StringComparer.Ordinal)];
+
+        // 重排必须覆盖这趟旅程的每一个既有停靠（批次7-06，control-server#211）。
+        //
+        // 这是一道构造上的护栏，不是防御性编程：只覆盖一部分停靠的重排，写出来的是一份自相矛盾的序位——
+        // 没被覆盖的那些留着旧号，与新号撞在一起。规划器曾经只拿到未完成的停靠，算出的新号就正好从 1 开始
+        // 与已完成的撞号，而当时这里静默接受了它。下一次有人再把子集传进来，要响亮地停下。
+        string[] missing = [.. stored
+            .Select(row => row.StopId)
+            .Except(plan.Resequenced.Select(change => change.StopId), StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)];
+        if (missing.Length > 0)
+        {
+            throw new BusinessIdentityConflictException(
+                $"Resequencing does not cover every stop of journey '{plan.JourneyId}': {string.Join(',', missing)}.");
+        }
+
+        // 当前下一站不可变（REQ-0196），在<b>写入这一刻</b>再判一次。
+        //
+        // 轮次是先读计划、算插位，再进这个事务写。这中间车可能刚好到站：它原本驶向的那个停靠完成了，
+        // 当前下一站前移到下一个——而手上这份重排是按旧的当前下一站算的，它给那个新的当前下一站安排了一个
+        // 更靠后的序位，也就是把新需求的停靠插到了<b>车此刻正驶向的那一站之前</b>。车在路上，目的地被改了。
+        //
+        // 判据是「当前下一站的序位没有变」：合法的追加按 REQ-0196 本来就不会把任何东西插到它前面，
+        // 所以它的序位必然原样；一旦变大，就说明有东西插进去了。
+        //
+        // <b>它和上面那道覆盖检查、和 DispatchRoundRunner 的准入口径都不重复。</b>覆盖检查看的是重排说全了没有，
+        // 准入口径看的是轮次开始时这辆车值不值得算——只有这一处与它守护的那次写入在同一个事务里，
+        // 也只有它能看见「读完之后车到站了」。
+        JourneyStopRow? currentNextStop = stored
+            .Where(row => row.Status is not (JourneyStopStatuses.Completed or JourneyStopStatuses.Removed))
+            .OrderBy(row => row.Sequence)
+            .FirstOrDefault();
+        if (currentNextStop is not null &&
+            plan.Resequenced.Single(change => change.StopId == currentNextStop.StopId).Sequence
+                != currentNextStop.Sequence)
+        {
+            throw new BusinessIdentityConflictException(
+                $"Journey '{plan.JourneyId}' moved on to stop '{currentNextStop.StopId}' while this append was " +
+                "being planned; the plan would resequence the stop the vehicle is already heading for.");
+        }
+
+        foreach (JourneyStopSequenceChange change in plan.Resequenced)
+        {
+            // 认不出的 StopId 同样是矛盾：重排说的是一个这趟旅程里没有的停靠。静默跳过会让调用方以为它生效了。
+            JourneyStopRow row = stored.FirstOrDefault(stop => stop.StopId == change.StopId)
+                ?? throw new BusinessIdentityConflictException(
+                    $"Resequencing names stop '{change.StopId}', which journey '{plan.JourneyId}' does not have.");
+            row.Sequence = change.Sequence;
+        }
+    }
+
+    /// <summary>同一条追加重放：写下的东西必须与这一次要写的一样，否则是两次不同的追加用了同一个需求 id。</summary>
+    private async Task AssertAppendReplayMatchesAsync(
+        AcceptedDemandSnapshot snapshot,
+        JourneyAppendPlan plan,
+        AcceptedDemandRow existing,
+        CancellationToken cancellationToken)
+    {
+        bool sameDemand = existing.DemandId == snapshot.DemandId &&
+                          existing.TransportDemandKey == snapshot.TransportDemandKey &&
+                          existing.Sublot == snapshot.Sublot &&
+                          existing.WorkType == snapshot.WorkType;
+        JourneyDemandRow? membership = await dbContext.Set<JourneyDemandRow>().AsNoTracking()
+            .SingleOrDefaultAsync(row => row.DemandId == snapshot.DemandId && row.RemovedAt == null, cancellationToken)
+            .ConfigureAwait(false);
+        if (!sameDemand || membership is null ||
+            membership.JourneyId != plan.JourneyId ||
+            membership.PickupStopId != plan.PickupStopId ||
+            membership.UnloadStopId != plan.UnloadStopId)
+        {
+            throw new BusinessIdentityConflictException(
+                $"Demand '{snapshot.DemandId}' is already bound to different content or to another journey.");
+        }
+
+        // 序列不同判冲突（票面「重放与重连」）：同一条追加重放两次，第二次算出的插入位必须与第一次落下的一致。
+        JourneyStopRow[] stored = await dbContext.Set<JourneyStopRow>().AsNoTracking()
+            .Where(row => row.JourneyId == plan.JourneyId)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        foreach (JourneyStopSequenceChange change in plan.Resequenced)
+        {
+            JourneyStopRow? row = stored.FirstOrDefault(stop => stop.StopId == change.StopId);
+            if (row is null || row.Sequence != change.Sequence)
+            {
+                throw new BusinessIdentityConflictException(
+                    $"Replayed append of '{snapshot.DemandId}' does not match the stop sequence already stored.");
+            }
+        }
+    }
 
     private async Task AcceptCoreAsync(
         AcceptedDemandSnapshot snapshot,

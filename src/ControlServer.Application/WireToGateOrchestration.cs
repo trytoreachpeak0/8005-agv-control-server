@@ -49,10 +49,33 @@ public sealed class DemandIntakeService(IMesIngestCatalog catalog, IDemandAccept
         CancellationToken cancellationToken) =>
         AcceptCoreAsync(discovered, orderIntent, journey, finalAdmissionGate, cancellationToken);
 
-    private async Task<DemandIntakeOutcome> AcceptCoreAsync(
+    /// <summary>
+    /// 把一条需求追加进一辆在途车已有的旅程（票面第 3 条，批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// 与受理走同一道最后一刻的检查：目录重读、决策事实比对、最终准入门。追加与受理在「这条需求还是不是刚才判过的
+    /// 那一条」这件事上没有区别，而一条在最后一刻变了的需求，被追加进一辆已经在跑的车比被派给一辆空闲车更难收回。
+    /// </remarks>
+    public Task<DemandIntakeOutcome> AppendToJourneyAsync(
+        AcceptedDemandSnapshot discovered,
+        JourneyAppendPlan append,
+        Func<CancellationToken, Task<bool>> finalAdmissionGate,
+        CancellationToken cancellationToken) =>
+        AcceptCoreAsync(discovered, orderIntent: null, journey: null, append, finalAdmissionGate, cancellationToken);
+
+    private Task<DemandIntakeOutcome> AcceptCoreAsync(
         AcceptedDemandSnapshot discovered,
         OrderIntent orderIntent,
         JourneyExecutionPlan? journey,
+        Func<CancellationToken, Task<bool>>? finalAdmissionGate,
+        CancellationToken cancellationToken) =>
+        AcceptCoreAsync(discovered, orderIntent, journey, append: null, finalAdmissionGate, cancellationToken);
+
+    private async Task<DemandIntakeOutcome> AcceptCoreAsync(
+        AcceptedDemandSnapshot discovered,
+        OrderIntent? orderIntent,
+        JourneyExecutionPlan? journey,
+        JourneyAppendPlan? append,
         Func<CancellationToken, Task<bool>>? finalAdmissionGate,
         CancellationToken cancellationToken)
     {
@@ -81,16 +104,42 @@ public sealed class DemandIntakeService(IMesIngestCatalog catalog, IDemandAccept
             HistoryEpoch = finalCatalog.HistoryEpoch,
             CatalogRevision = finalCatalog.CatalogRevision
         };
-        if (journey is null)
+        if (append is not null)
         {
-            await store.AcceptWithOrderIntentAsync(accepted, orderIntent, cancellationToken).ConfigureAwait(false);
+            if (store is not IJourneyAppendStore appendStore)
+            {
+                throw new InvalidOperationException("The configured demand store cannot append to a journey.");
+            }
+
+            try
+            {
+                await appendStore.AppendToJourneyAsync(accepted, append, cancellationToken).ConfigureAwait(false);
+            }
+            catch (AreaAssignmentVersionChangedException)
+            {
+                return DemandIntakeOutcome.CandidateChanged;
+            }
+            catch (JourneyPlanFreezeIncompleteException)
+            {
+                return DemandIntakeOutcome.JourneyPlanIncomplete;
+            }
+        }
+        else if (journey is null)
+        {
+            await store.AcceptWithOrderIntentAsync(
+                accepted,
+                orderIntent ?? throw new InvalidOperationException("An acceptance needs its order intent."),
+                cancellationToken).ConfigureAwait(false);
         }
         else if (store is IJourneyAcceptanceStore journeyStore)
         {
             try
             {
-                await journeyStore.AcceptWithOrderIntentAsync(accepted, orderIntent, journey, cancellationToken)
-                    .ConfigureAwait(false);
+                await journeyStore.AcceptWithOrderIntentAsync(
+                    accepted,
+                    orderIntent ?? throw new InvalidOperationException("An acceptance needs its order intent."),
+                    journey,
+                    cancellationToken).ConfigureAwait(false);
             }
             catch (AreaAssignmentVersionChangedException)
             {
@@ -895,6 +944,20 @@ public sealed class JourneyIntakeCoordinator(
     DemandIntakeService intake,
     MovementDispatchService movementDispatch)
 {
+    /// <summary>
+    /// 把一条需求追加进一辆在途车已有的旅程（票面第 3 条，批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// 没有第二步：追加不建移动订单。那辆车正在走它自己的计划，新那一段腿要等前面的停靠走完、离站核验过了才发，
+    /// 由推进段在那一刻按停靠行建（<c>JourneyPlanBuilder.LegIntent</c>）。
+    /// </remarks>
+    public Task<DemandIntakeOutcome> AppendToJourneyAsync(
+        AcceptedDemandSnapshot prevalidatedCandidate,
+        JourneyAppendPlan append,
+        Func<CancellationToken, Task<bool>> finalAdmissionGate,
+        CancellationToken cancellationToken) =>
+        intake.AppendToJourneyAsync(prevalidatedCandidate, append, finalAdmissionGate, cancellationToken);
+
     public async Task<JourneyIntakeResult> AcceptAndDispatchToPickupAsync(
         AcceptedDemandSnapshot prevalidatedCandidate,
         OrderIntent pickupIntent,

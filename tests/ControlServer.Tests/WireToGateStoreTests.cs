@@ -740,7 +740,7 @@ public sealed class WireToGateStoreTests
             };
             Context.JourneyRuntimes.Add(journey);
             // control-server#207: acceptance writes the demand's membership beside the journey row.
-            Context.Set<JourneyDemandRow>().Add(JourneyMembershipSeed.For(journey));
+            JourneyMembershipSeed.Seed(Context, journey);
             await Context.SaveChangesAsync(CancellationToken);
         }
 

@@ -926,6 +926,21 @@ internal static class JourneyRuntimeWorkerTestKit
                     routeGraph: null,
                     catalog: CreateCatalogAccess(),
                     createGate: CreateGate())),
+                // 在途链从同一条空闲链派生（control-server#211）：换掉动态事实那一条，加上追加的四道门。
+                new InTransitDispatchAdmissionChain(DispatchAdmissionCriteria.InTransit(
+                    DispatchAdmissionCriteria.Default(
+                        options,
+                        new MapStationResolver(),
+                        packageCapacity,
+                        store,
+                        new VehicleFaultStore(Context),
+                        BoxCounts,
+                        SlotCapacityLog,
+                        routeGraph: null,
+                        catalog: CreateCatalogAccess(),
+                        createGate: CreateGate()),
+                    options)),
+                new DispatchZoneParameterStore(Context, CreateGovernedPublisher()),
                 DispatchCandidateOrdering.Ranker(),
                 dispatchPolicy,
                 new AreaAssignmentStore(Context, CreateGovernedPublisher()),
@@ -936,7 +951,6 @@ internal static class JourneyRuntimeWorkerTestKit
                     new VehicleRoster(options),
                     StructuralBlockLog),
                 onboardFacts,
-                new InTransitAppendNotOpened(),
                 options,
                 Clock,
                 EngineLog);
