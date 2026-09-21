@@ -88,7 +88,9 @@ public sealed class HttpMesIngestCatalogTests
     public async Task ACatalogItemWithoutCreatedAtIsKeptAsUnknownAndWarned()
     {
         Guid historyEpoch = new("11111111-1111-4111-8111-111111111111");
-        RecordingHandler handler = new(historyEpoch, omitCreatedAt: true);
+        // 这个 DemandId 只在这里用：已告警的需求记在适配器的静态字典里、整个测试进程共用，别的用例若也用同一个 id
+        // 且先跑，这里就看不到 Warning，结果取决于执行次序。
+        RecordingHandler handler = new(historyEpoch, omitCreatedAt: true, demandId: "c8e2a2f0-5d14-4b7e-9f0a-2140b7090214");
         HttpClient client = new(handler) { BaseAddress = new Uri("http://mes-ingest.test") };
         RecordingLogger<HttpMesIngestCatalog> log = new();
         HttpMesIngestCatalog catalog = new(client, TimeProvider.System, log);
@@ -98,14 +100,15 @@ public sealed class HttpMesIngestCatalogTests
         Assert.Equal(default, Assert.Single(snapshot.Items).CreatedAt);
         (LogLevel level, string message) = Assert.Single(log.Entries);
         Assert.Equal(LogLevel.Warning, level);
-        Assert.Contains("94993971-b362-4edf-81bc-712d160e444a", message, StringComparison.Ordinal);
+        Assert.Contains("c8e2a2f0-5d14-4b7e-9f0a-2140b7090214", message, StringComparison.Ordinal);
         Assert.Contains("createdAt", message, StringComparison.Ordinal);
     }
 
     private sealed class RecordingHandler(
         Guid historyEpoch,
         IReadOnlyList<(string Id, string Version)>? capabilities = null,
-        bool omitCreatedAt = false) : HttpMessageHandler
+        bool omitCreatedAt = false,
+        string demandId = "94993971b3624edf81bc712d160e444a") : HttpMessageHandler
     {
         public List<string> Paths { get; } = [];
         public List<HttpMethod> Methods { get; } = [];
@@ -148,7 +151,7 @@ public sealed class HttpMesIngestCatalogTests
                         new
                         {
                             // MesIngest reports the id unhyphenated, the way the field catalog does.
-                            demandId = "94993971b3624edf81bc712d160e444a",
+                            demandId,
                             seriesId = "SERIES-001",
                             transportDemandKey = new { workType = "WIRE_TO_GATE", sublot = "SUBLOT-001" },
                             generation = 1,

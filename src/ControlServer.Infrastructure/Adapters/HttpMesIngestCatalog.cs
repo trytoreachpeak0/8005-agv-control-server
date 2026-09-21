@@ -20,8 +20,14 @@ public sealed class HttpMesIngestCatalog(
             "supplies it.");
 
     /// <summary>
-    /// 已经告警过缺 <c>createdAt</c> 的需求：目录每秒一轮，同一条需求只告警一次（进程内）。只会因为违约的需求变大。
+    /// 已经告警过缺 <c>createdAt</c> 的需求：目录每秒一轮，同一条需求只告警一次（进程内）。
     /// </summary>
+    /// <remarks>
+    /// <b>静态是刻意的。</b>这个类经 <c>AddHttpClient</c> 注册为类型化客户端，是瞬态的：每一轮派车拿到一个新实例。
+    /// 实例字段会在每个新实例上重新为空，于是每一轮都告警一次，正是这里要避免的日志洪水。代价有两个：一是它只增不减，
+    /// 大小等于进程生命期内违约过的需求条数——违约本身就该被修，修好之后不再增长；二是整个进程共用，测试之间会互相看见，
+    /// 所以断言这条告警的用例必须用一个别处不用的 <c>DemandId</c>（见 <c>HttpMesIngestCatalogTests</c>）。
+    /// </remarks>
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> WarnedCreatedAtMissing =
         new(StringComparer.Ordinal);
 
