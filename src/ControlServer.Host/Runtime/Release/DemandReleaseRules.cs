@@ -23,10 +23,23 @@ public static class DemandReleaseRules
     /// <summary>这辆车对这条需求不再合格的理由；仍合格或说不清时为空——说不清不是释放的理由。</summary>
     /// <param name="observation">RIoT 上这辆车最近一次观测；读不到为空。只有新鲜的观测才能说「离开了本图」。</param>
     /// <remarks>
-    /// <b>入口的门：观测为空或车不在线时，任何判据都不判「不再合格」</b>（审查 S1）。失败的读取有两种形状——抛异常
-    /// （释放服务接住后传空），以及 <c>HttpRiotMovementGateway</c> 不抛、返回的 <c>UnknownVehicle</c>（离线、地图为空、
-    /// 观测时刻为此刻，按新鲜度它是新鲜的）。门挡在所有判据之前，所以「失败读取不能触发释放」不靠每条判据各自记着，
-    /// 以后新加的判据也在门后。代价是 RIoT 读不到期间，连已确认隔离的车也不释放需求：那是活性，安全方向。
+    /// <para>
+    /// <b>判据按来源分两类，门只挡观测派生的那一类</b>（审查 S1，调度 2026-09-21 定）。
+    /// </para>
+    /// <para>
+    /// <b>服务端自己持有的粘滞事实</b>照常判，RIoT 读不读得到都一样：车辆故障（<c>VehicleFaultCoordinator</c> 维护，「疑似」只在人确认
+    /// 继续后才清）、车辆任务类型准入与分区车辆准入（<see cref="VehicleDispatchPolicy"/>，来自服务端配置并落库，没有一个字段来自 RIoT）。
+    /// 车坏了往往 RIoT 也连不上；读不到就一律判「仍合格」，故障车恰恰在最需要释放的时候释放不了。
+    /// </para>
+    /// <para>
+    /// <b>从这次车辆观测推出来的判据</b>（今天只有「离开本图」）只在读到了、而且车在线时判：失败的读取有两种形状——抛异常（释放服务接住后
+    /// 传空），以及 <c>HttpRiotMovementGateway</c> 不抛、返回的 <c>UnknownVehicle</c>（离线、地图为空、观测时刻为此刻，按新鲜度它是新鲜的）。
+    /// 「失败读取不能触发释放」的意思是失败的读数本身不能成为释放理由，不是「读取一失败，其他理由也都不算」。
+    /// </para>
+    /// <para>
+    /// 门由构造承担：观测派生的判据住在 <see cref="ObservedTrigger"/> 里，它只收一份已经过门的在线观测。以后新加一条读观测字段的判据，
+    /// 写进那里就在门后；写进服务端事实那一段，它手上没有观测可读。
+    /// </para>
     /// </remarks>
     public static string? VehicleNoLongerEligible(
         VehicleFaultFact? fault,
@@ -40,11 +53,23 @@ public static class DemandReleaseRules
     {
         ArgumentNullException.ThrowIfNull(policy);
         ArgumentNullException.ThrowIfNull(options);
-        if (observation is not { Connected: true })
+
+        if (ServerHeldTrigger(fault, policy, agvId, taskType, dispatchZone) is { } serverHeld)
         {
-            return null;
+            return serverHeld;
         }
 
+        return observation is { Connected: true } online ? ObservedTrigger(online, now, options) : null;
+    }
+
+    /// <summary>服务端自己持有的事实：故障、车辆任务类型准入、分区车辆准入。不读 RIoT 观测。</summary>
+    private static string? ServerHeldTrigger(
+        VehicleFaultFact? fault,
+        VehicleDispatchPolicy policy,
+        string agvId,
+        string taskType,
+        string dispatchZone)
+    {
         switch (fault?.Level)
         {
             case VehicleFaultLevel.ConfirmedIsolated:
@@ -65,11 +90,18 @@ public static class DemandReleaseRules
             return DispatchZoneVehicleCriterion.VehicleNotInZoneReason;
         }
 
+        return null;
+    }
+
+    /// <summary>从一份读到了、车在线的观测推出来的判据（门后）。</summary>
+    private static string? ObservedTrigger(RiotVehicleObservation online, DateTimeOffset now, JourneyRuntimeOptions options)
+    {
         // 与在途判据同一个比较（InTransitVehicleFactsCriterion），只是多一道新鲜度：过期的观测说的是过去的地图。
-        if (!string.IsNullOrEmpty(observation.CurrentMap) &&
-            observation.ObservedAt <= now &&
-            now - observation.ObservedAt <= options.MaximumEvidenceAge &&
-            !string.Equals(observation.CurrentMap, options.MapIdentity, StringComparison.Ordinal))
+        // 地图为空不是「另一张图」：说不清不是释放的理由。
+        if (!string.IsNullOrEmpty(online.CurrentMap) &&
+            online.ObservedAt <= now &&
+            now - online.ObservedAt <= options.MaximumEvidenceAge &&
+            !string.Equals(online.CurrentMap, options.MapIdentity, StringComparison.Ordinal))
         {
             return MapMismatchReason;
         }

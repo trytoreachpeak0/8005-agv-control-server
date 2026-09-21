@@ -2,6 +2,7 @@ using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.Commands;
+using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Host.Runtime.Fleet;
 using ControlServer.Host.Runtime.Release;
 using ControlServer.Host.Runtime.RouteGraph;
@@ -315,8 +316,9 @@ public sealed class Batch7DemandReleaseServiceTests
     /// 一次网络抖动不许把车上的需求取消订单、释放掉（审查 S1）。
     /// </summary>
     /// <remarks>
-    /// 端到端守两层：释放服务把这个形状当作没读到（早退），规则入口的门对离线观测一律不判不合格（保证在这一层）。
+    /// 端到端守两层：释放服务把这个形状当作没读到（早退），规则里的门对离线观测不判观测派生的判据（保证在这一层）。
     /// 退掉任何一层这条都应当仍然绿，两层都退掉才红——这是有意的：保证只由门承担，早退只是省一次判定。
+    /// 门只挡观测派生的判据，服务端自己的事实照常判，见 <see cref="AFaultedVehicleRiotCannotReadStillHasItsDemandReleased"/>。
     /// </remarks>
     [Fact]
     public async Task AFailedVehicleReadReleasesNothingAndCancelsNothing()
@@ -335,6 +337,33 @@ public sealed class Batch7DemandReleaseServiceTests
         Assert.Equal(0, gateway.Cancels);
         await using ControlServerDbContext reading = new ControlServerDbContext(fixture.DbOptionsForTests);
         Assert.Null((await reading.Set<JourneyDemandRow>().AsNoTracking().SingleAsync(Token)).RemovedAt);
+    }
+
+    /// <summary>
+    /// 车被判疑似故障、RIoT 也读不到它：需求照常取消订单并释放（调度 2026-09-21 对 S1 的修正）。
+    /// </summary>
+    /// <remarks>
+    /// 车坏了往往 RIoT 也连不上。失败的读数本身不能成为释放理由，但也不能让服务端自己持有的事实（故障）跟着失效——
+    /// 否则故障车恰恰在最需要释放的时候释放不了，这张票最主要的场景就废了。
+    /// </remarks>
+    [Fact]
+    public async Task AFaultedVehicleRiotCannotReadStillHasItsDemandReleased()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
+        await new VehicleFaultStore(fixture.Context).RecordLevelAsync(
+            before.AgvId, VehicleFaultLevel.SuspectedBlocked, "COMMS_LOST", false, fixture.Clock.GetUtcNow(), Token);
+        fixture.Context.ChangeTracker.Clear();
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with
+        {
+            Connected = false, Enabled = false, ProcState = "UNKNOWN", CurrentMap = string.Empty,
+            CurrentStationId = null, BatteryPercent = null, BatteryState = null, Speed = null,
+        };
+        CancellingGateway gateway = new(fixture.Clock, _ => fixture.Riot.CancelOrder(before.PickupUpperId));
+
+        Assert.Equal([(VehicleFaultBlockCriterion.SuspectedReason, "RELEASED")],
+            (await Service(fixture, gateway).RunOnceAsync(Token)).Select(outcome => (outcome.Trigger, outcome.Result)));
+        Assert.Equal(1, gateway.Cancels);
     }
 
     /// <summary>

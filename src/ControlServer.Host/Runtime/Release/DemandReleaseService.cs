@@ -132,8 +132,8 @@ public sealed class DemandReleaseService(
             stops = await JourneyStopCursor.LoadAsync(dbContext, journey, cancellationToken).ConfigureAwait(false);
         }
 
-        // 车重新合格：之前被拒时写下的码清掉（审查 M4）。只在确实读到了在线的车时才判「重新合格」——读不到时每条判据
-        // 都说「仍合格」（规则入口的门），那不是车好了，清掉只会让下一轮再写一次、阻断开始时刻每轮重置。
+        // 车重新合格：之前被拒时写下的码清掉（审查 M4）。只在确实读到了在线的车时才判「重新合格」——读不到时观测派生的判据
+        // 不判（规则里的门），没触发不等于车好了，清掉只会让下一轮再写一次、阻断开始时刻每轮重置。
         if (outcomes.Count == 0 && observation is { Connected: true })
         {
             await ClearRefusalAsync(journey, cancellationToken).ConfigureAwait(false);
@@ -423,8 +423,8 @@ public sealed class DemandReleaseService(
             RiotVehicleObservation observation = await vehicleFacts
                 .ReadVehicleAsync(journey.VehicleKey, cancellationToken).ConfigureAwait(false);
             // 网关对 SDK 失败不抛，而是返回这个形状（HttpRiotMovementGateway.UnknownVehicle）。这里把它也当作「没读到」
-            // 早退，只为日志里记下一次读不到；<b>保证不在这里</b>：DemandReleaseRules.VehicleNoLongerEligible 入口的门
-            // 对任何离线观测都不判「不再合格」，这一行删掉或网关换了失败形状，释放照样不会被一次失败读取触发。
+            // 早退，只为日志里记下一次读不到；<b>保证不在这里</b>：DemandReleaseRules.VehicleNoLongerEligible 只在观测在线时
+            // 判观测派生的判据，这一行删掉或网关换了失败形状，一次失败读取照样不会成为释放理由（服务端自己的事实照常判）。
             if (observation is { Connected: false, ProcState: "UNKNOWN" } && string.IsNullOrEmpty(observation.CurrentMap))
             {
                 LogVehicleUnread(logger, journey.VehicleKey, journey.JourneyId, null);

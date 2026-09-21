@@ -95,30 +95,50 @@ public sealed class Batch7DemandReleaseRulesTests
         Assert.Null(Trigger(observation: null, observe: false));
 
     /// <summary>
-    /// 一次失败的读取不是车辆的事实（审查 S1）。<c>HttpRiotMovementGateway</c> 遇到任何 SDK 失败都不抛，而是返回
-    /// <c>UnknownVehicle</c>：离线、地图为空、观测时刻取「此刻」——按新鲜度它是新鲜的，按地图它与本图不同。
+    /// 一次失败的读取不是车辆的事实（审查 S1）：从观测推出来的判据（今天只有「离开本图」）在读不到或车离线时不判。
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// 保证放在规则的入口：观测读不到（为空）或车不在线时，<b>任何</b>判据都不判「不再合格」。所以这里让那个形状
-    /// 与每一条会触发的事实各配一次，而不是只测地图——只在地图判据里防，下一条新判据会把它忘掉。
-    /// </para>
-    /// <para>
-    /// 每一行的「触发事实」单独配一辆在线的车时确实会触发（下面 <see cref="EachBreakerTriggersWhileTheVehicleIsOnline"/>），
-    /// 否则这里的「不触发」可能只是那条事实本来就不触发。
-    /// </para>
+    /// <c>HttpRiotMovementGateway</c> 遇到任何 SDK 失败都不抛，而是返回 <c>UnknownVehicle</c>：离线、地图为空、观测时刻取「此刻」
+    /// ——按新鲜度它是新鲜的。这里让那个形状（与读取抛异常时的「没有观测」）各走一次观测派生的判据；
+    /// 同一条事实配一辆在线的车时确实会触发（<see cref="EachBreakerTriggersWhileTheVehicleIsOnline"/>），否则「不触发」可能只是它本来就不触发。
     /// </remarks>
     [Theory]
-    [MemberData(nameof(Breakers))]
-    public void AFailedReadNeverMakesTheVehicleIneligible(string breaker)
+    [MemberData(nameof(ObservedBreakers))]
+    public void AFailedReadIsNeverItselfAReasonToRelease(string breaker)
     {
         (VehicleFaultFact? fault, VehicleDispatchPolicy? policy, string? map) = Break(breaker);
         Assert.Null(Trigger(fault: fault, policy: policy, observation: UnknownVehicle(map)));
         Assert.Null(Trigger(fault: fault, policy: policy, observation: null, observe: false));
     }
 
+    /// <summary>
+    /// 服务端自己持有的事实不因 RIoT 读不到而失效（调度 2026-09-21）：车坏了往往 RIoT 也连不上，那正是最需要释放的时候。
+    /// </summary>
+    /// <remarks>
+    /// 故障（疑似与确认隔离）、车辆任务类型准入、分区车辆准入都来自服务端：<c>VehicleFaultCoordinator</c> 维护的故障事实，
+    /// 与服务端配置落库的 <see cref="VehicleDispatchPolicy"/>，没有一个字段来自 RIoT。读不到车时它们照常触发，码与在线时相同。
+    /// </remarks>
     [Theory]
-    [MemberData(nameof(Breakers))]
+    [MemberData(nameof(ServerHeldBreakers))]
+    public void AServerHeldFactStillReleasesWhenTheVehicleCannotBeRead(string breaker)
+    {
+        (VehicleFaultFact? fault, VehicleDispatchPolicy? policy, string? map) = Break(breaker);
+        string? online = Trigger(fault: fault, policy: policy, observation: Observation(map ?? Options.MapIdentity, Now.AddSeconds(-5)));
+        Assert.NotNull(online);
+        Assert.Equal(online, Trigger(fault: fault, policy: policy, observation: UnknownVehicle(map)));
+        Assert.Equal(online, Trigger(fault: fault, policy: policy, observation: null, observe: false));
+    }
+
+    /// <summary>调度点名的那一条：读不到车（UnknownVehicle）而故障疑似，照常判不合格。</summary>
+    [Fact]
+    public void ASuspectedFaultOnAVehicleRiotCannotReachIsStillATrigger() =>
+        Assert.Equal(
+            VehicleFaultBlockCriterion.SuspectedReason,
+            Trigger(fault: Fault(VehicleFaultLevel.SuspectedBlocked), observation: UnknownVehicle(null)));
+
+    [Theory]
+    [MemberData(nameof(ObservedBreakers))]
+    [MemberData(nameof(ServerHeldBreakers))]
     public void EachBreakerTriggersWhileTheVehicleIsOnline(string breaker)
     {
         (VehicleFaultFact? fault, VehicleDispatchPolicy? policy, string? map) = Break(breaker);
@@ -131,9 +151,13 @@ public sealed class Batch7DemandReleaseRulesTests
     public void AnEmptyMapIsNotAnotherMap() =>
         Assert.Null(Trigger(observation: Observation(string.Empty, Now.AddSeconds(-5))));
 
-    public static TheoryData<string> Breakers => new()
+    /// <summary>从 RIoT 观测推出来的触发事实。新加一条读观测字段的判据，要加在这里。</summary>
+    public static TheoryData<string> ObservedBreakers => new() { "another-map" };
+
+    /// <summary>服务端自己持有的触发事实。</summary>
+    public static TheoryData<string> ServerHeldBreakers => new()
     {
-        "fault-isolated", "fault-suspected", "task-type-withdrawn", "not-in-policy", "zone-withdrawn", "another-map",
+        "fault-isolated", "fault-suspected", "task-type-withdrawn", "not-in-policy", "zone-withdrawn",
     };
 
     private static (VehicleFaultFact? Fault, VehicleDispatchPolicy? Policy, string? Map) Break(string breaker) => breaker switch
