@@ -147,6 +147,32 @@ public sealed class Batch7RedispatchIdentityTests
     }
 
     /// <summary>
+    /// 被释放的是锚需求（第一趟旅程行就是它的）：改派之后同一次受理的重放照样判同（审查 M2，在 Store 里）。
+    /// </summary>
+    /// <remarks>
+    /// 上一条用例里被改派的是追加进来的需求，它在第一趟没有自己的旅程行，所以按 <c>DemandId</c> 找重放的旅程行只找到一行、
+    /// 碰巧对。锚需求改派之后同一个 <c>DemandId</c> 有两行，旧实现在重放判同那里 <c>SingleOrDefault</c> 抛出。
+    /// </remarks>
+    [Fact]
+    public async Task AReplayOfARedispatchedAnchorIsJudgedTheSame()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        await Batch7JourneyFixture.AcceptAsync(fixture.Context, Released, "agv-01", "VK-01", Now);
+        JourneyRuntimeRow first = await fixture.Context.JourneyRuntimes.AsNoTracking().SingleAsync(token);
+        Assert.Equal(Released, first.DemandId);
+        await new JourneyMembershipStore(fixture.Context).RemoveDemandAsync(
+            first.JourneyId, Released, DemandJourneyLookup.ReleasedForRedispatchReason, Now.AddMinutes(1), token);
+
+        JourneyExecutionPlan plan = RedispatchPlan(generation: 2);
+        await AcceptRedispatchAsync(fixture, plan);
+        await AcceptRedispatchAsync(fixture, plan);
+
+        await using ControlServerDbContext reading = fixture.NewContext();
+        Assert.Equal(2, await reading.JourneyRuntimes.CountAsync(row => row.DemandId == Released, token));
+    }
+
+    /// <summary>
     /// 没被释放的已受理需求，带着改派的计划来受理，仍然是冲突：复用受理行只给「已释放待改派」那一批。
     /// 判据写宽了，这条会在一趟还带着它的旅程之外，再给它建一趟。
     /// </summary>

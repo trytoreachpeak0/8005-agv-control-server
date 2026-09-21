@@ -253,13 +253,7 @@ public sealed class DemandAreaAssignmentFreezeStore(ControlServerDbContext conte
             .AsNoTracking()
             .ToArrayAsync(cancellationToken);
         string[] demandIds = [.. freezes.Select(row => row.ConsumerId)];
-        HashSet<string> completed = new(
-            await _context.Set<JourneyRuntimeRow>()
-                .AsNoTracking()
-                .Where(row => demandIds.Contains(row.DemandId) && row.Stage == JourneyRuntimeStage.Completed)
-                .Select(row => row.DemandId)
-                .ToArrayAsync(cancellationToken),
-            StringComparer.Ordinal);
+        HashSet<string> completed = await DemandJourneyLookup.EndedJourneyDemandIdsAsync(_context, demandIds, cancellationToken);
         return
         [
             .. freezes.Where(row => !completed.Contains(row.ConsumerId))

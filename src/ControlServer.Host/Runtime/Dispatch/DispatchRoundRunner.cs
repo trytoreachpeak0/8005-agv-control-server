@@ -877,13 +877,17 @@ public sealed class DispatchRoundRunner(
             return CandidateDispatchOutcome.Taken;
         }
 
+        // The journey row the acceptance just wrote, by the id it was written under (WireToGateStore derives it the same way):
+        // after a redispatch this demand has an older, Completed journey row too, so "the row for this demand" is two rows
+        // (control-server#215).
+        string createdJourneyId = JourneyIdentity.ForAnchorDemand(plan.DerivationKeyFor(demandId));
         // The vehicle is now carrying this journey's first order, and that is what the occupancy claim records.
         if (!await dispatchPolicy.TryClaimVehicleOccupancyAsync(plan.PickupUpperId, cancellationToken)
                 .ConfigureAwait(false))
         {
             LogVehicleOccupancyConflict(logger, selected.Vehicle.AgvId, plan.PickupUpperId, null);
             JourneyRuntimeRow conflicted = await dbContext.JourneyRuntimes
-                .SingleAsync(row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
+                .SingleAsync(row => row.JourneyId == createdJourneyId, cancellationToken).ConfigureAwait(false);
             Block(conflicted, "VEHICLE_OCCUPANCY_CONFLICT", timeProvider.GetUtcNow());
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             // 旅程已经建出来并且被 Block 了，这条需求这一轮有结论了。理由写在旅程的阻断码上，不在积压行上。
@@ -893,7 +897,7 @@ public sealed class DispatchRoundRunner(
         if (result.MovementDispatch?.Outcome != MovementDispatchOutcome.Confirmed)
         {
             JourneyRuntimeRow runtime = await dbContext.JourneyRuntimes
-                .SingleAsync(row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
+                .SingleAsync(row => row.JourneyId == createdJourneyId, cancellationToken).ConfigureAwait(false);
             runtime.SetBlockReason(
                 result.MovementDispatch?.Outcome.ToString() ?? "PICKUP_DISPATCH_NOT_CONFIRMED", now);
             runtime.UpdatedAt = now;

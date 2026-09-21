@@ -87,6 +87,37 @@ public static class DemandJourneyLookup
         return OpenDemands(dbContext).Where(demand => !released.Any(row => row.DemandId == demand.DemandId));
     }
 
+    /// <summary>
+    /// Of <paramref name="demandIds"/>, those whose journey has ended: a journey row naming the demand is Completed, no other
+    /// journey row naming it is still going, and it is not waiting to be dispatched again (control-server#215).
+    /// </summary>
+    /// <remarks>
+    /// "Its journey row is Completed" was the whole rule while a demand had exactly one journey row. A release for redispatch
+    /// closes the first journey with the demand still alive: it waits in the backlog, then rides a second journey. Both
+    /// exclusions are empty for every demand that was never released, so for those the answer is the old one by construction.
+    /// </remarks>
+    public static async Task<HashSet<string>> EndedJourneyDemandIdsAsync(
+        ControlServerDbContext dbContext,
+        IReadOnlyCollection<string> demandIds,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(dbContext);
+        ArgumentNullException.ThrowIfNull(demandIds);
+        var rows = await dbContext.JourneyRuntimes.AsNoTracking()
+            .Where(row => demandIds.Contains(row.DemandId))
+            .Select(row => new { row.DemandId, row.Stage })
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        string[] released = await ReleasedForRedispatch(dbContext).AsNoTracking()
+            .Where(row => demandIds.Contains(row.DemandId))
+            .Select(row => row.DemandId)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        HashSet<string> ended = new(
+            rows.Where(row => row.Stage == JourneyRuntimeStage.Completed).Select(row => row.DemandId), StringComparer.Ordinal);
+        ended.ExceptWith(rows.Where(row => row.Stage != JourneyRuntimeStage.Completed).Select(row => row.DemandId));
+        ended.ExceptWith(released);
+        return ended;
+    }
+
     /// <summary>The memberships in force: not removed.</summary>
     public static IQueryable<JourneyDemandRow> Memberships(ControlServerDbContext dbContext)
     {

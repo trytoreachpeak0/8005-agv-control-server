@@ -373,6 +373,108 @@ public sealed class Batch7DemandReleaseServiceTests
             .Select(row => row.PayloadJson)
             .ToArrayAsync(Token);
 
+    /// <summary>
+    /// 改派出来的锚需求建单没确认：新旅程记下阻断码，派车轮次不抛（审查 M2）。
+    /// </summary>
+    /// <remarks>
+    /// 轮次按 <c>DemandId</c> 取刚建的旅程行（<c>SingleAsync</c>），而改派之后同一条需求有两行——旧的 Completed 与新的。
+    /// 旧实现在这里抛，阻断码不写，整轮中止。
+    /// </remarks>
+    [Fact]
+    public async Task ARedispatchWhoseCreateIsNotConfirmedRecordsItsBlockOnTheNewJourney()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow first = await ReleaseTheAnchorAsync(fixture);
+
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentMap = fixture.Options.MapIdentity };
+        fixture.Riot.LoseNextCreateResponse = true;
+        await TickAndRunAsync(fixture);
+        fixture.Context.ChangeTracker.Clear();
+
+        JourneyRuntimeRow second = await NewJourneyAsync(fixture, first);
+        Assert.NotNull(second.BlockReasonCode);
+        Assert.Equal(DemandReleaseReasons.Released,
+            (await fixture.Context.JourneyRuntimes.AsNoTracking().SingleAsync(row => row.JourneyId == first.JourneyId, Token))
+            .BlockReasonCode);
+    }
+
+    /// <summary>
+    /// 改派出来的锚需求撞上这辆车已有的占用：新旅程被 Block（VEHICLE_OCCUPANCY_CONFLICT），不在没有占用认领的情况下往下走（审查 M2）。
+    /// </summary>
+    /// <remarks>
+    /// 占用冲突用「第一趟那张单又占着这辆车」造：释放时它的占用已放掉，这里把它重新挂上，唯一索引就会拒绝新单的认领。
+    /// </remarks>
+    [Fact]
+    public async Task ARedispatchThatFindsTheVehicleOccupiedBlocksTheNewJourney()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow first = await ReleaseTheAnchorAsync(fixture);
+        OrderIntentRow old = await fixture.Context.OrderIntents
+            .SingleAsync(row => row.UpperId == first.PickupUpperId, Token);
+        Assert.NotNull(old.VehicleOccupancyReleasedAt);
+        old.VehicleOccupancyReleasedAt = null;
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentMap = fixture.Options.MapIdentity };
+        await TickAndRunAsync(fixture);
+        fixture.Context.ChangeTracker.Clear();
+
+        JourneyRuntimeRow second = await NewJourneyAsync(fixture, first);
+        Assert.Equal((JourneyRuntimeStage.Blocked, "VEHICLE_OCCUPANCY_CONFLICT"), (second.Stage, second.BlockReasonCode));
+    }
+
+    /// <summary>
+    /// 被释放、等着改派的需求，以及改派之后又上了车的需求，都仍在「在途」清单上（审查 M2 的同形状，在 Store 里）。
+    /// </summary>
+    /// <remarks>
+    /// 分区归属与任务类型站点两张冻结的「在途」清单都用「它的旅程已 Completed」排除已结束的需求，按 <c>DemandId</c> 查旅程行。
+    /// 释放把第一趟关成 Completed，于是一条仍然活着的需求被当作已结束——新版本的导入预览与站点启用都会漏掉它。
+    /// </remarks>
+    [Fact]
+    public async Task AReleasedAndThenARedispatchedDemandStaysInFlight()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        Assert.Contains(FirstDemandId, await InFlightAsync(fixture));
+
+        JourneyRuntimeRow first = await ReleaseTheAnchorAsync(fixture);
+        Assert.Contains(FirstDemandId, await InFlightAsync(fixture));
+
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentMap = fixture.Options.MapIdentity };
+        await TickAndRunAsync(fixture);
+        fixture.Context.ChangeTracker.Clear();
+        _ = await NewJourneyAsync(fixture, first);
+        Assert.Contains(FirstDemandId, await InFlightAsync(fixture));
+    }
+
+    /// <summary>车离开本图，锚需求（这趟旅程唯一的一条）确认取消后被释放。返回第一趟旅程行。</summary>
+    private static async Task<JourneyRuntimeRow> ReleaseTheAnchorAsync(RuntimeFixture fixture)
+    {
+        JourneyRuntimeRow first = await fixture.RuntimeAsync(FirstDemandId);
+        LeaveTheMap(fixture);
+        CancellingGateway gateway = new(fixture.Clock, _ => fixture.Riot.CancelOrder(first.PickupUpperId));
+        Assert.Equal("RELEASED", Assert.Single(await Service(fixture, gateway).RunOnceAsync(Token)).Result);
+        fixture.Context.ChangeTracker.Clear();
+        return first;
+    }
+
+    /// <summary>这条需求的第二趟旅程行：按 <c>JourneyId</c> 取，不按 <c>DemandId</c>——后者正是被测的那种写法。</summary>
+    private static Task<JourneyRuntimeRow> NewJourneyAsync(RuntimeFixture fixture, JourneyRuntimeRow first) =>
+        fixture.Context.JourneyRuntimes.AsNoTracking()
+            .SingleAsync(row => row.DemandId == FirstDemandId && row.JourneyId != first.JourneyId, Token);
+
+    /// <summary>两张冻结清单都认为在途的需求：两者的交集，好让任何一张漏掉它都红。</summary>
+    private static async Task<string[]> InFlightAsync(RuntimeFixture fixture)
+    {
+        await using ControlServerDbContext reading = new ControlServerDbContext(fixture.DbOptionsForTests);
+        string[] area = [.. (await new DemandAreaAssignmentFreezeStore(reading).ListInFlightAsync(Token))
+            .Select(freeze => freeze.DemandId)];
+        string[] stations = [.. (await TaskTypeStationActivationHarness.StackOver(reading).Activations
+                .ListInFlightDemandsAsync(fixture.Options.MapId, Token))
+            .Select(demand => demand.DemandId)];
+        return [.. area.Intersect(stations, StringComparer.Ordinal)];
+    }
+
     /// <summary>受理第一条并派往取货站；需要时再把第二条追加进来。</summary>
     private static async Task<RuntimeFixture> DispatchedToPickupAsync(bool appendSecond = false)
     {

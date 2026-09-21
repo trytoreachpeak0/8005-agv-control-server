@@ -956,8 +956,11 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
 
             if (journey is not null)
             {
+                // By the id this acceptance derives, as the insert below does: a redispatched demand also has the journey
+                // row of its earlier dispatch (control-server#215).
+                string replayJourneyId = JourneyIdentity.ForAnchorDemand(journey.DerivationKeyFor(snapshot.DemandId));
                 JourneyRuntimeRow? runtime = await dbContext.JourneyRuntimes
-                    .SingleOrDefaultAsync(row => row.DemandId == snapshot.DemandId, cancellationToken)
+                    .SingleOrDefaultAsync(row => row.JourneyId == replayJourneyId, cancellationToken)
                     .ConfigureAwait(false);
                 if (runtime is null || !Matches(runtime, journey) ||
                     !await StopsAndDemandMatchAsync(runtime, cancellationToken).ConfigureAwait(false) ||
