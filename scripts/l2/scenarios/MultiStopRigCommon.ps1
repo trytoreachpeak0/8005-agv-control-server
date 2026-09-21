@@ -67,7 +67,8 @@ function Invoke-L2RigLoad([object]$Context, [string]$JourneyId, [hashtable]$Dema
     # 阶段此刻也是 AwaitingSublot，所以「阶段对了、能录入」不足以说明车载端已经换上新的那一版——在旧版上录入，
     # 车载端或服务端会按修订号拒掉它。等一版在 $WorklistAfter 之后建出、列着这条需求、已被确认的清单。
     if ($null -ne $WorklistAfter) {
-        $after = $WorklistAfter.Value
+        # PowerShell unwraps a Nullable on assignment, so there is no .Value to read.
+        $after = [DateTimeOffset]$WorklistAfter
         $null = Wait-L2Condition -Description "the onboard acknowledged the worklist issued after the previous load (for $($Demand.Label))" `
             -Journal $journal -Criterion "worklist-after-previous-load-$($Demand.Label)" -TimeoutSeconds 60 `
             -Probe {

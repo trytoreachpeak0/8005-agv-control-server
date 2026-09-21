@@ -1,6 +1,6 @@
-# 待判定：同一停靠跨需求的开门先后不按侧排，卸货按加入先后、装货按扫码先后
+# 缺陷：同一停靠多条需求卸货不按侧排，按加入先后（规格缺口，cs#303）
 
-Status: 待调度判定是否是规格缺口（control-server#218 开工时报调度）；本票不改产品代码，真装置场景按今天的加入顺序写
+Status: 调度 2026-09-22 判为规格缺口，修复票 trytoreachpeak0/8005-agv-control-server#303（挡批次 7 出口）：卸货按侧下发、前侧先于后侧；装货跨需求的先后仍由操作员扫码顺序决定，服务端不改。本票不改产品代码
 Owner repository: `8005-agv-control-server`（`JourneyStopCursor.NextToUnloadAtCurrentStop`、`JourneyRuntimeEngine` 的取货逐条串行；批次7-06，control-server#211）
 Found by: control-server#218 开工实读 `fp/v2-impl@8ee99549`，写 `real-onboard-mixed-side-one-stop` 时（`scripts/l2/scenarios/real-onboard-mixed-side-one-stop.ps1` 头注释）
 Product at discovery: control-server `8ee99549`
@@ -27,7 +27,11 @@ Product at discovery: control-server `8ee99549`
 `real-onboard-mixed-side-one-stop` 让前侧需求（乙）先于后侧需求（丙）追加、先扫乙，所以它的 `L2-MSO-04`、`L2-MSO-10` 今天是绿的；
 **这两条的绿不能读成「服务端按侧排序」**。它们的红证据用的是本地缺陷提交（把卸货的排序倒过来），证的是判据能分辨先后，不是产品有按侧的规则。
 
-## 待定
+## 处置
 
-「先前侧后后侧」是只约束同一指令内，还是也约束同一停靠内的跨需求先后？前者则今天的实现合规、这份记录可以关掉；后者则需要一张服务端票：
-卸货按侧（再按加入先后）挑下一条，装货要么按侧挑、要么拒绝先扫后侧，并写明操作员先扫后侧时怎样提示。
+调度判定（2026-09-22）：规格第 20 节的「先前侧后后侧」对**卸货**也约束同一停靠内的跨需求先后，今天的实现是缺口，由 control-server#303 修。
+**装货**跨需求的先后由操作员扫码顺序决定，服务端不改。
+
+`real-onboard-mixed-side-one-stop` 在 control-server#303 合入之前让前侧需求先追加，所以 `L2-MSO-10` 的绿不代表服务端有按侧的保证。
+control-server#303 合入后，场景要改成**后侧需求先追加**，「先前后后」才由保证撑住：control-server#218 转 ready 时若 #303 已合入就在本票改，
+否则由出口票 control-server#220 接手。
