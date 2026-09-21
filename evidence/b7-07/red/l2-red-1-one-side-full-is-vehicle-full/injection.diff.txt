@@ -1,0 +1,5 @@
+injection 1 (one-side-full-is-vehicle-full) in src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+2643c2643
+<         return full.Count == positions.PhysicalSlotCountByGroup.Count;
+---
+>         return full.Count >= 1;

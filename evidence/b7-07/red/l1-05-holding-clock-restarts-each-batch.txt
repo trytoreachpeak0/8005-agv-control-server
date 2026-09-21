@@ -1,0 +1,23 @@
+# injection: 05-holding-clock-restarts-each-batch
+# file: src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+# diff:
+@@ -675,7 +675,7 @@
+                         // 新停靠、断联、重启都不碰它（与站点离站等待那一列相反，那一列断联就作废）。取服务端此刻的时钟，
+                         // 而不是结果里车报的 observedAt：期限拿服务端的钟去比，起算点混进车上的钟，两边一偏（clock-skew 场景）
+                         // 期限就提前或推后同样的量。代价是晚于真实闭环至多一轮轮询。
+-                        runtime.CargoHoldingStartedAt ??= now;
++                        runtime.CargoHoldingStartedAt = now;
+                         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                     }
+                     // 这个停靠上还有没装的需求，就回到等录入等下一条（同一站逐条串行，规格第 22 节补记）：重新加载
+# build:
+    0 Error(s)
+# test run (filter: FullyQualifiedName~Batch7CargoHoldingTests):
+  Failed ControlServer.Tests.Batch7CargoHoldingTests.AnAppendWhileHoldingLoadsItAndTheDeadlineWaitsForThatBatchToClose [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "CLOSED"
+Actual:   "CARGO_HOLDING_WAIT"
+     at ControlServer.Tests.Batch7CargoHoldingTests.AnAppendWhileHoldingLoadsItAndTheDeadlineWaitsForThatBatchToClose() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 231
+   at ControlServer.Tests.Batch7CargoHoldingTests.AnAppendWhileHoldingLoadsItAndTheDeadlineWaitsForThatBatchToClose() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 233
+Failed!  - Failed:     1, Passed:    17, Skipped:     0, Total:    18, Duration: 35 s - ControlServer.Tests.dll (net8.0)

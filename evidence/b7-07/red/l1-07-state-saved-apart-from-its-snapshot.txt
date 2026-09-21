@@ -1,0 +1,22 @@
+# injection: 07-state-saved-apart-from-its-snapshot
+# file: src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+# diff:
+@@ -2582,6 +2582,7 @@
+ 
+         if (announces)
+         {
++            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+             // 车此刻停在哪个停靠：离站时是正要离开的那一个，否则是游标的当前停靠。
+             JourneyStopRow stop = departingFrom ?? stops.Current;
+             bool arrived = departingFrom is not null ||
+# build:
+    0 Error(s)
+# test run (filter: FullyQualifiedName~Batch7CargoHoldingTests):
+  Failed ControlServer.Tests.Batch7CargoHoldingTests.WhenTheSnapshotCannotBeStoredTheStateIsNotStoredEither [315 ms]
+  Error Message:
+   Assert.NotEqual() Failure: Strings are equal
+Expected: Not "CARGO_HOLDING_WAIT"
+Actual:       "CARGO_HOLDING_WAIT"
+     at ControlServer.Tests.Batch7CargoHoldingTests.WhenTheSnapshotCannotBeStoredTheStateIsNotStoredEither() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 487
+   at ControlServer.Tests.Batch7CargoHoldingTests.WhenTheSnapshotCannotBeStoredTheStateIsNotStoredEither() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 493
+Failed!  - Failed:     1, Passed:    17, Skipped:     0, Total:    18, Duration: 29 s - ControlServer.Tests.dll (net8.0)

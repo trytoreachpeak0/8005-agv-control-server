@@ -1,0 +1,23 @@
+# injection: 08-crash-between-the-two-load-saves-loops
+# file: src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+# diff:
+@@ -641,7 +641,7 @@
+                 // 同一段后续；这一站连一条 LOADED 都没有，才是这台服务器自己的不变量被破坏了，照旧抛。
+                 JourneyStopDemand? loading = stops.LoadingAtCurrentStop;
+                 bool resumingAfterCommit = loading is null;
+-                if (resumingAfterCommit &&
++                if (resumingAfterCommit || resumingAfterCommit &&
+                     !stops.CurrentStopDemands.Any(item => item.Membership.Status == JourneyDemandStatuses.Loaded))
+                 {
+                     throw new InvalidDataException(
+# build:
+    0 Error(s)
+# test run (filter: FullyQualifiedName~Batch7CargoHoldingTests):
+  Failed ControlServer.Tests.Batch7CargoHoldingTests.WhenTheSnapshotCannotBeStoredTheStateIsNotStoredEither [897 ms]
+  Error Message:
+   System.IO.InvalidDataException : Journey journey:10000000-0000-4000-8000-000000000001 waits for a load result with no demand loading at its stop.
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 358
+   at ControlServer.Tests.Batch7StopDrivenAdvanceDriver.TickAndRunAsync(RuntimeFixture fixture) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7StopDrivenAdvanceDriver.cs:line 62
+   at ControlServer.Tests.Batch7CargoHoldingTests.WhenTheSnapshotCannotBeStoredTheStateIsNotStoredEither() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 491
+   at ControlServer.Tests.Batch7CargoHoldingTests.WhenTheSnapshotCannotBeStoredTheStateIsNotStoredEither() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-07-8005-agv-control-server\tests\ControlServer.Tests\Batch7CargoHoldingTests.cs:line 493
+Failed!  - Failed:     1, Passed:    17, Skipped:     0, Total:    18, Duration: 40 s - ControlServer.Tests.dll (net8.0)
