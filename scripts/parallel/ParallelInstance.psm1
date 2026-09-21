@@ -83,7 +83,8 @@ $script:ProductionMapId = 25
 $script:ProductionMapIdentity = '老厂前线new'
 # Matched against ConvertTo-MapComparisonKey's output, which is lower case with '_' and
 # whitespace already turned into '-'.
-$script:ProductionMapTokenPattern = 'map-25(-|$)'
+# '25' not followed by another digit: 'map-25', 'map-25-x' and 'map-25.a' match, 'map-250' does not.
+$script:ProductionMapTokenPattern = 'map-25(?![0-9])'
 # 58005/58007 are the MVP server, 58009 its dashboard port (unused today but reserved by
 # Install-ControlServerLocal.ps1's default), 5088 the production MesIngest.
 $script:ProductionPorts = @{
@@ -231,7 +232,12 @@ function ConvertTo-MapComparisonKey {
         (full-width letters become ASCII), format characters such as zero-width spaces removed,
         trimmed, lower case, and every run of '_' or whitespace turned into '-'. '老厂前线new ',
         '老厂前线NEW' and '老厂前线ｎｅｗ' all become '老厂前线new'; 'MAP_25-X' becomes 'map-25-x'.
-        '老厂前线new_wk', the v2 map, becomes '老厂前线new-wk' and stays distinct.
+        '老厂前线new_wk', the v2 map, becomes '老厂前线new-wk' and stays distinct. 'map_-_25' and
+        'MAP<U+2013>25' (en dash) become 'map-25'.
+
+        Not handled on purpose: look-alike letters from other scripts (a Cyrillic 'а' in 'map').
+        The server compares the map identity ordinally against RIoT's real value, so such a string
+        names no map at all rather than the MVP's (S1 re-review, round 3).
 
         Why remove format characters when -ceq below would ignore them anyway: -ceq is a culture
         comparison, and culture comparisons skip zero-width characters ('a<U+200B>b' -ceq 'ab' is
@@ -244,7 +250,11 @@ function ConvertTo-MapComparisonKey {
     if ($null -eq $Value) { return '' }
     $key = $Value.Normalize([Text.NormalizationForm]::FormKC)
     $key = [regex]::Replace($key, '\p{Cf}', '').Trim().ToLowerInvariant()
-    return [regex]::Replace($key, '[\s_]+', '-')
+    # Every run of separators -- whitespace, '_', '-', and the Unicode hyphens and dashes NFKC
+    # leaves alone (U+2010 hyphen, U+2011 non-breaking hyphen, U+2012-U+2015 figure/en/em dash and
+    # bar, U+2212 minus) -- becomes ONE '-'. Collapsing matters: 'map_-_25' used to become
+    # 'map---25' and slip past the token pattern.
+    return [regex]::Replace($key, '[\s_\-\u2010-\u2015\u2212]+', '-')
 }
 
 function Test-CanonicalWindowsPath {
@@ -1010,6 +1020,47 @@ function Remove-ParallelInstanceDirectory {
     }
 }
 
+function Test-ParallelInstanceDeploymentConfigPath {
+    <#
+        .SYNOPSIS
+            $null when the installer's -DeploymentConfigPath is the one file it may read and later
+            delete; otherwise why not.
+
+        .DESCRIPTION
+            S1 re-review, round 3: the installer deleted whatever path it was handed, in its
+            finally, without checking it was a file or where it was. The control host always passes
+            <opsRoot>\deploy-config.json; anything else is refused before the install starts, and
+            the delete (Remove-ParallelInstanceDeploymentConfig) takes the path from the layout,
+            never from the caller.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string] $Path,
+        [Parameter(Mandatory = $true)] $Layout
+    )
+    if (-not [string]::Equals($Path, $Layout.DeploymentConfigPath, [StringComparison]::OrdinalIgnoreCase)) {
+        return "is '$Path'; the only accepted path is '$($Layout.DeploymentConfigPath)'"
+    }
+    if (Test-ParallelInstanceReparsePoint -Path $Path) { return 'is a symbolic link, not a file the control host copied' }
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return 'is not an existing file' }
+    return $null
+}
+
+function Remove-ParallelInstanceDeploymentConfig {
+    <#
+        .SYNOPSIS
+            Deletes the secrets file the control host copied -- the layout's path, only if it is a
+            plain file. The only other delete in this deployment besides
+            Remove-ParallelInstanceDirectory.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)] $Layout)
+    $path = $Layout.DeploymentConfigPath
+    if ((Test-Path -LiteralPath $path -PathType Leaf) -and -not (Test-ParallelInstanceReparsePoint -Path $path)) {
+        Remove-Item -LiteralPath $path -Force
+    }
+}
+
 function Get-ParallelInstanceLayout {
     <#
         .SYNOPSIS
@@ -1053,6 +1104,10 @@ function Get-ParallelInstanceLayout {
         ResultRoot = "$opsRoot\results"
         FakeLogPath = "$opsRoot\logs\fake-mes-ingest.log"
         InstalledDefinitionPath = "$opsRoot\installed-instance.json"
+        # Where the control host copies the secrets file (19-deploy-control-server-parallel.ps1
+        # writes "$opsRoot\deploy-config.json"). The installer accepts no other path and deletes
+        # only this one.
+        DeploymentConfigPath = "$opsRoot\deploy-config.json"
         FakeInstallRoot = [string] $fake['installRoot']
         SeedPath = [string] $fake['seedPath']
         FirewallRules = @(
@@ -1341,6 +1396,8 @@ Export-ModuleMember -Function @(
     'Get-ParallelInstanceDeleteRefusal'
     'Test-ParallelInstanceReparsePoint'
     'Remove-ParallelInstanceDirectory'
+    'Test-ParallelInstanceDeploymentConfigPath'
+    'Remove-ParallelInstanceDeploymentConfig'
     'Invoke-ParallelRemovalSequence'
     'Get-ParallelInstanceName'
     'Test-ParallelInstancePathIsProduction'

@@ -133,6 +133,16 @@ Write-Step "Instance definition accepted: $($definition['instanceId'])"
 # removes are one list by construction (control-server#262 re-review, M4). Do not read a path
 # or a service/task name out of $definition here: Test-ParallelInstance.ps1 fails on it.
 $layout = Get-ParallelInstanceLayout -Definition $definition
+
+# The secrets file. Only the layout's own path is accepted, and it must be a plain file: this
+# script deletes it when it finishes, and used to delete whatever path it was handed (S1
+# re-review, round 3). Checked before anything else happens, so a wrong path costs nothing.
+# Install only: -DeploymentConfigPath belongs to the Install parameter set, and -Rollback returns
+# before the try/finally that deletes it.
+if (-not $Rollback) {
+    $configRefusal = Test-ParallelInstanceDeploymentConfigPath -Path $DeploymentConfigPath -Layout $layout
+    if ($configRefusal) { throw "-DeploymentConfigPath $configRefusal." }
+}
 $serviceName = $layout.ServiceName
 $installRoot = $layout.InstallRoot
 $dataRoot = $layout.DataRoot
@@ -501,9 +511,10 @@ try {
         Write-Warning ("  MVP before: " + (Format-MvpFingerprint $mvpBefore))
         Write-Warning 'Then remove the partial instance with Uninstall-ParallelInstanceLocal.ps1 (see wire-to-gate-parallel-cd.md section 11).'
     }
-    if ($DeploymentConfigPath -and (Test-Path -LiteralPath $DeploymentConfigPath)) {
-        Remove-Item -LiteralPath $DeploymentConfigPath -Force -ErrorAction SilentlyContinue
-    }
+    # The layout's path, never the parameter's (they were checked equal above). A failure to
+    # delete is reported, not thrown: a throw here would replace the real failure, if any.
+    try { Remove-ParallelInstanceDeploymentConfig -Layout $layout }
+    catch { Write-Warning "Could not delete the deployment config $($layout.DeploymentConfigPath): $($_.Exception.Message)" }
     # Prefixed with this instance's own leaf name. The unprefixed '*.incoming-*' this used to
     # be matched every sibling of the package root -- and the MVP package root is a sibling
     # (both live in D:\zhengyushao), so each deployment's cleanup deleted the other's staging

@@ -123,30 +123,18 @@ $actions = @{
     Service = {
         param($item)
         if (-not (Get-Service -Name $item.Name -ErrorAction SilentlyContinue)) { return }
-        # Three places, in order. The installed package's own copy matches what is installed;
-        # but a first install that failed after the product installer succeeded has no package
-        # root -- the package was still in a staging directory the installer's finally block
-        # removed -- and that half-installed case is exactly the one this script is the
-        # recovery for. So the control host ships the product uninstaller beside this script too.
-        $candidates = @(
-            (Join-Path $layout.PackageRoot 'scripts\Uninstall-ControlServerLocal.ps1')
-            (Join-Path $layout.PreviousRoot 'scripts\Uninstall-ControlServerLocal.ps1')
-            (Join-Path $PSScriptRoot 'Uninstall-ControlServerLocal.ps1')
-        )
-        $productUninstaller = $candidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
-        if (-not $productUninstaller) {
-            throw "the product uninstaller was not found at any of: $($candidates -join '; ')"
-        }
-        Write-Step "  using product uninstaller $productUninstaller"
-        New-Item -ItemType Directory -Path $layout.ResultRoot -Force | Out-Null
-        $resultPath = Join-Path $layout.ResultRoot ("uninstall-{0:yyyyMMdd-HHmmss}.json" -f (Get-Date))
         # The data root is named so the product script can report on it; it is removed only with
-        # -RemoveData, later, through the same guards as every other directory. Never call the
-        # product script directly here: the sequence aborts only on a throw, and the product
-        # script can fail without one (exit 1, Write-Error under Continue). This function throws
-        # unless the product script positively confirms success -- see its help.
-        Invoke-ParallelProductUninstaller -UninstallerPath $productUninstaller -ServiceName $item.Name `
-            -InstallRoot $layout.InstallRoot -DataRoot $layout.DataRoot -ResultPath $resultPath
+        # -RemoveData, later, through the same guards as every other directory.
+        #
+        # This is the ONLY way this script reaches the product uninstaller, and the self-test holds
+        # it to that: no command here may be named by a variable, an expression or a string, no
+        # Invoke-Expression / Start-Process / pwsh / [scriptblock]::Create, and the product script's
+        # file name does not appear in this file at all (Get-ParallelProductUninstallerPath knows it).
+        # The removal sequence aborts only on a throw, and the product script can fail without one
+        # (exit 1, Write-Error under Continue); Invoke-ParallelProductUninstaller throws unless the
+        # product script positively confirms success -- see its help.
+        Invoke-ParallelProductUninstaller -UninstallerPath (Get-ParallelProductUninstallerPath -Layout $layout -ScriptRoot $PSScriptRoot) `
+            -ServiceName $item.Name -InstallRoot $layout.InstallRoot -DataRoot $layout.DataRoot -ResultDirectory $layout.ResultRoot
     }
     ScheduledTask = {
         param($item)

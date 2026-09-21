@@ -36,12 +36,25 @@ control-server#262 复审找到过一个严重缺陷：卸载脚本在一种很�
 「失败」不是靠识别各种失败方式判断的：产品卸载脚本可以不抛异常就失败（`exit 1`、`Continue` 下的
 `Write-Error`、原生命令的退出码），所以 `Invoke-ParallelProductUninstaller` 反过来要求**正面确认成功**——
 退出码为 0、这一次新写出的结果文件里是 `PASS` 且服务名对得上、服务确实已经不在了。缺一样就当失败。
+结果文件名带 GUID，别的进程猜不到。这个确认成立还有一个前提：产品卸载脚本开头就设了
+`$ErrorActionPreference = 'Stop'`，而且只在末尾写一次 `PASS`。自测把这个前提也钉住了，哪天产品脚本改了就会红。
+
+卸载脚本只能经由 `Invoke-ParallelProductUninstaller` 调用产品脚本。自测扫描卸载脚本：所有命令名都必须是写死的
+名字，不许用变量、表达式、字符串或点源当命令；不许出现 `Invoke-Expression`、`Start-Process`、`pwsh`、
+`[scriptblock]::Create` 这类「把文本当代码跑」的东西；连产品脚本的文件名都不许出现（只有
+`Get-ParallelProductUninstallerPath` 知道它）。每一种已知绕法都有一段合成代码证明扫描能认出来。
 
 **删目录只有一个入口 `Remove-ParallelInstanceDirectory`**，安装和卸载都用它。它每次删之前都重新检查那个
 具体路径：两道路径检查，外加「它本身不是 junction 或符号链接」。本机 pwsh 7.6.6 实测，`Remove-Item -Recurse`
 碰到目录里的 junction 只删链接、不顺着删进去；但这是某个 cmdlet 今天的行为，不是这里的代码保证的，所以要删的
-路径本身是链接就拒绝，并且自测把实测行为钉住。自测会扫描安装和卸载脚本，除了删一个配置文件，不允许出现别的
-`Remove-Item`。
+路径本身是链接就拒绝，并且自测把实测行为钉住。
+
+另一个删除入口是 `Remove-ParallelInstanceDeploymentConfig`，只删控制端拷来的那个装着密钥的配置文件。它只认布局里的
+路径 `<运维目录>\deploy-config.json`，而且必须是普通文件；安装脚本在开工前就拒绝别的路径。
+
+除了这两个函数，安装和卸载脚本自己一样都不删。自测会扫描这两个脚本：不许出现任何删除命令（包括别名和
+`Microsoft.PowerShell.Management\Remove-Item` 这种带模块名的写法）、不许 `cmd`、`robocopy`、不许调用任何
+`.Delete(`，也不许用变量或表达式当命令名。唯一的例外是安装脚本调用产品安装和升级脚本的那两处，按原文逐字列出。
 
 ## 文件
 

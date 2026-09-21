@@ -67,6 +67,38 @@ function Format-MvpFingerprint {
     return (($Fingerprint.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ' ')
 }
 
+function Get-ParallelProductUninstallerPath {
+    <#
+        .SYNOPSIS
+            The product uninstaller to use for this instance: the first of three that exists.
+
+        .DESCRIPTION
+            Three places, in order. The installed package's own copy matches what is installed;
+            but a first install that failed after the product installer succeeded has no package
+            root -- the package was still in a staging directory the installer's finally block
+            removed -- and that half-installed case is exactly the one the uninstaller is the
+            recovery for. So the control host ships the product uninstaller beside the parallel
+            scripts too ($ScriptRoot).
+
+            Here rather than in Uninstall-ParallelInstanceLocal.ps1 so that the product script's
+            name does not appear in the uninstaller at all: the self-test refuses it there, which
+            is how it knows the only way to the product script is Invoke-ParallelProductUninstaller.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)] $Layout,
+        [Parameter(Mandatory = $true)][string] $ScriptRoot
+    )
+    $candidates = @(
+        (Join-Path $Layout.PackageRoot 'scripts\Uninstall-ControlServerLocal.ps1')
+        (Join-Path $Layout.PreviousRoot 'scripts\Uninstall-ControlServerLocal.ps1')
+        (Join-Path $ScriptRoot 'Uninstall-ControlServerLocal.ps1')
+    )
+    $found = $candidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+    if (-not $found) { throw "the product uninstaller was not found at any of: $($candidates -join '; ')" }
+    return $found
+}
+
 function Invoke-ParallelProductUninstaller {
     <#
         .SYNOPSIS
@@ -104,11 +136,18 @@ function Invoke-ParallelProductUninstaller {
         [Parameter(Mandatory = $true)][string] $ServiceName,
         [Parameter(Mandatory = $true)][string] $InstallRoot,
         [Parameter(Mandatory = $true)][string] $DataRoot,
-        [Parameter(Mandatory = $true)][string] $ResultPath
+        [Parameter(Mandatory = $true)][string] $ResultDirectory
     )
+    # "Written by this run" rests on a name nobody can predict: a timestamp to the second was
+    # guessable, so another process could have put a PASS there during the call (S1 re-review,
+    # round 3). The GUID makes the pre-existence check below unreachable in practice; it stays
+    # because it costs nothing and says so if the impossible happens.
+    New-Item -ItemType Directory -Path $ResultDirectory -Force | Out-Null
+    $ResultPath = Join-Path $ResultDirectory ("uninstall-{0:yyyyMMdd-HHmmss}-{1}.json" -f (Get-Date), [guid]::NewGuid().ToString('N'))
     if (Test-Path -LiteralPath $ResultPath) {
         throw "The product uninstaller's result path already exists ($ResultPath); a stale PASS there could not be told from this run's."
     }
+    Write-Host "    product uninstaller $UninstallerPath, result $ResultPath"
     $global:LASTEXITCODE = 0
     $output = & $UninstallerPath -ServiceName $ServiceName -InstallRoot $InstallRoot `
         -DataRoot $DataRoot -ResultPath $ResultPath -ConfirmUninstall
@@ -134,4 +173,5 @@ function Invoke-ParallelProductUninstaller {
     }
 }
 
-Export-ModuleMember -Function @('Get-MvpFingerprint', 'Assert-MvpUntouched', 'Format-MvpFingerprint', 'Invoke-ParallelProductUninstaller')
+Export-ModuleMember -Function @('Get-MvpFingerprint', 'Assert-MvpUntouched', 'Format-MvpFingerprint',
+    'Get-ParallelProductUninstallerPath', 'Invoke-ParallelProductUninstaller')
