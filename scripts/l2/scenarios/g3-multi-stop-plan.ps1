@@ -83,9 +83,25 @@ $journey = Wait-L2Condition -Description 'demand A was accepted and the vehicle 
 $journeyId = [string]$journey.JourneyId
 $journal.Note("Journey $journeyId is under way to station $firstStationRiotId.")
 
-# 第二事实：派车那一版计划被车载端确认。确认与计划入发件箱不是同一次写入。
-$dispatchPlan = Wait-L2ConditionOrLast -Description 'the onboard acknowledged the dispatch plan' -Journal $journal `
-    -Criterion 'dispatch-plan-acknowledged' -TimeoutSeconds 60 `
+# --- 2. 车到 12 号站装甲，停在站上时乙追加进同一趟，计划变三条腿 ------------------------------------------------------
+
+# 追加只能在车停在站上时发生：真车载端在车有未结束的 RIoT 单时报「是否停车未知」（RIOT_NONFINAL_ORDER_PRESENT），
+# 会话 RecoveryRequired，在途判据以 ONBOARD_FACTS_NOT_READY 拒绝追加。这是预期行为：按用户 09-22 决定，途中追加只在停站时，
+# 不包括行驶中（control-server#286、program#133）。合成车载端恒报安全，所以合成场景能在车开往站点的路上追加，真车载端不能。
+# 甲装完之后车在 12 号站持货等单（setup 里 90 秒），乙在这段时间里追加：12 号站是当前下一站，乙的取货新开一个停靠排在它后面。
+$null = Move-L2CargoVehicleToCurrentStop $Context $journeyId $firstStationRiotId
+$loadA = Invoke-L2RigLoad $Context $journeyId $a
+
+# 追加之前的那一版计划：车停在 12 号站、甲装完之后读，不在车出发时读。
+#
+# 车出发那一刻读不稳：派车计划要赶在车载端报「有未结束的单、是否停车未知」之前发出——那之后会话 RecoveryRequired，
+# 快照一律压到会话回 Ready 才发，也就是车到站。g3-multi-stop-plan 的车载端缺陷那一遍（红证据 red-hmi-reorder）就是后者：
+# 第一版计划在车到 12 号站时才发，「派车那一版 60 秒内被确认」因此超时，判的是一场与本条无关的竞速。停在站上、会话 Ready
+# 时，最后一版两条腿的计划必然已发、已确认，这才是这条判据要的「追加之前」。
+#
+# 第二事实：那一版被车载端确认。确认与计划入发件箱不是同一次写入。
+$dispatchPlan = Wait-L2ConditionOrLast -Description 'the onboard acknowledged the last plan before the append' -Journal $journal `
+    -Criterion 'plan-before-append-acknowledged' -TimeoutSeconds 60 `
     -Probe { @((Get-Plans) | Where-Object { $_.Acknowledged }) | Select-Object -Last 1 } `
     -Until { param($v) $null -ne $v }
 # 第三事实：界面跟上了那一版。超时带最后读值交给判据。
@@ -95,18 +111,11 @@ $rowsBefore = Wait-L2ConditionOrLast -Description 'the HMI shows the dispatch pl
 $journal.Note("Plan rows before the append: $(Format-L2PlanLegRows $rowsBefore); server $(if ($dispatchPlan) { Format-L2WireSnapshot $dispatchPlan } else { '(no acknowledged plan)' })")
 $assertions.Add(
     'G3-08-05',
-    '追加之前：车载端确认了派车那一版计划之后，计划腿列表的行数与行序等于服务端那一版的 sequence（DISPLAY_FULL_JOURNEY_PLAN）',
+    '追加之前：车载端确认了追加前最后一版计划（两条腿，车在 12 号站装完甲之后）之后，计划腿列表的行数与行序等于服务端那一版的 sequence（DISPLAY_FULL_JOURNEY_PLAN）',
     ($null -ne $dispatchPlan -and @($dispatchPlan.Legs).Count -eq 2 -and (Test-RowsShowPlan $rowsBefore $dispatchPlan)),
     "两条腿，行序 $(if ($dispatchPlan) { (@($dispatchPlan.Legs) | ForEach-Object { $_.sequence }) -join ',' } else { '(无计划)' })",
     "服务端 $(if ($dispatchPlan) { Format-L2WireSnapshot $dispatchPlan } else { '(无已确认计划)' }) / 界面 $(Format-L2PlanLegRows $rowsBefore)")
 
-# --- 2. 车到 12 号站装甲，停在站上时乙追加进同一趟，计划变三条腿 ------------------------------------------------------
-
-# 追加只能在车停在站上时发生：真车载端在车有未结束的 RIoT 单时报「是否停车未知」（RIOT_NONFINAL_ORDER_PRESENT），
-# 会话 RecoveryRequired，在途判据以 ONBOARD_FACTS_NOT_READY 拒绝追加（real-onboard-mixed-side-one-stop 第一次跑实测）。
-# 甲装完之后车在 12 号站持货等单（setup 里 90 秒），乙在这段时间里追加：12 号站是当前下一站，乙的取货新开一个停靠排在它后面。
-$null = Move-L2CargoVehicleToCurrentStop $Context $journeyId $firstStationRiotId
-$loadA = Invoke-L2RigLoad $Context $journeyId $a
 Publish-L2CargoDemand $Context $b
 $appendedPlan = Wait-L2ConditionOrLast -Description 'the onboard acknowledged a plan of three or more legs' -Journal $journal `
     -Criterion 'appended-plan-acknowledged' -TimeoutSeconds 120 `
@@ -235,4 +244,4 @@ $assertions.Add(
     "Completed / $($expectedPerDemand -join ' ') / 两笔卸货两条需求 / 仓 CLOSED/EMPTY/1/0",
     "$stage / $(@($perDemand) -join ' ') / 卸货需求 $($unloads.Count) 笔 / $($slotReadings -join ' ')")
 
-$journal.Note("FP-IS-08: plan grew from $(@($dispatchPlan.Legs).Count) to $legCount legs on an en-route append, the HMI showed both in sequence order, and the journey ran to completion.")
+$journal.Note("FP-IS-08: plan grew from $(if ($null -ne $dispatchPlan) { @($dispatchPlan.Legs).Count } else { ? }) to $legCount legs on an en-route append, the HMI showed both in sequence order, and the journey ran to completion.")

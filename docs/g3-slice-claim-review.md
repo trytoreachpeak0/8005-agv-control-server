@@ -356,7 +356,7 @@ L2 id 与断言名的对应在 `$scenarioAssertions`（第 74–185 行）；运
 
 ### 逐条表
 
-场景：`scripts/l2/scenarios/g3-multi-stop-plan.ps1`（读取在 `scripts/l2/L2MultiStopJourney.psm1`，驱动在 `scripts/l2/scenarios/MultiStopRigCommon.ps1`）。一辆车、两条需求：甲在 12 号站 `N1-3_N1-7`、乙在 11 号站 `C15-13`，卸货都在关卡；乙在车开往 12 号站途中追加。追加后的计划按站名排会是 2,1,3，本地重排因此看得见。
+场景：`scripts/l2/scenarios/g3-multi-stop-plan.ps1`（读取在 `scripts/l2/L2MultiStopJourney.psm1`，驱动在 `scripts/l2/scenarios/MultiStopRigCommon.ps1`）。一辆车、两条需求：甲在 12 号站 `N1-3_N1-7`、乙在 11 号站 `C15-13`，卸货都在关卡；乙在车停在 12 号站、甲装完之后追加（按用户 09-22 决定途中追加只在停站时，control-server#286、program#133）。追加后的计划按站名排会是 2,1,3，本地重排因此看得见。
 
 车载端的计划腿行序读每行第一个 TextBlock（序位），不读行上的 `ItemStatus`：onboard-hmi#134 把它挂在模板里的 `Grid` 上，`Grid` 不进 UIA 树，读不到（`docs/defects/20260922-journey-plan-legs-item-status-not-in-uia-tree.md`）。所以 G3-08-05、G3-08-06 判的是行数与行序，不按原始码判每条腿的用途类别与状态——那两样由服务端一侧的 G3-08-01 判。
 
@@ -366,6 +366,6 @@ L2 id 与断言名的对应在 `$scenarioAssertions`（第 74–185 行）；运
 | journey | `appendedPlanAdvancesRevisionWithAtLeastThreeLegs`（G3-08-02） | FP-IS-08 | 同一向量（`PLAN_UP_TO_NINE_LEGS`） | 第一版三条腿以上的计划被车载端确认；它的 `planRevision` 大于此前每一版；腿数 3..9；乙进的是同一趟旅程（归属两条、`JourneyRuntimes` 一行） | 九条由两端 G2 证，见上 |
 | journey | `planLegsSentInSequenceOrder`（G3-08-03） | FP-IS-08 | 同一向量（`ORDER_LEGS_BY_SEQUENCE`） | 每一版计划发件箱原文里 `legs` 数组的先后就是 `sequence` 升序；读原文，不经排序 | |
 | journey | `multiStopSequenceMatchesVector`（G3-08-04） | FP-IS-08 | 同一向量 `orderedExpectedMessages` | 这趟旅程第一份快照是计划，第一份清单在它之后；每一份计划与清单都被真车载端确认，没有作废。旅程 `Completed` 之后先等全部确认再判 | |
-| journey | `onboardShowsTheDispatchPlanInSequenceOrder`（G3-08-05） | FP-IS-08 | 同一向量（`DISPLAY_FULL_JOURNEY_PLAN`） | 派车那一版（两条腿）被车载端确认之后，UIA `JourneyPlanLegs` 的行数与行序等于它的 `sequence` | 两条腿按站名排恰好不变，这一条判不出重排；重排由 G3-08-06 判 |
+| journey | `onboardShowsTheDispatchPlanInSequenceOrder`（G3-08-05） | FP-IS-08 | 同一向量（`DISPLAY_FULL_JOURNEY_PLAN`） | 追加前最后一版计划（两条腿，车停在 12 号站、甲装完之后读）被车载端确认之后，UIA `JourneyPlanLegs` 的行数与行序等于它的 `sequence`；不在车出发时读，那时计划是否已发要看它与车载端「有未结束的单」报告谁先到 | 两条腿按站名排恰好不变，这一条判不出重排；重排由 G3-08-06 判 |
 | journey | `onboardShowsTheAppendedPlanInSequenceOrder`（G3-08-06） | FP-IS-08 | 同一向量（`DISPLAY_FULL_JOURNEY_PLAN`、`NEVER_REORDER_LEGS_LOCALLY`） | 三条腿那一版被车载端确认之后，UIA 行数与行序等于它的 `sequence`（1,2,3）；按站名重排会读成 2,1,3 | |
 | journey | `multiStopJourneyEachDemandLoadedAndUnloadedOnce`（G3-08-07） | FP-IS-08 | 同一向量 finalState | 旅程 `Completed`；两条需求各一笔装、一笔卸，都 `Committed`，需求 `Succeeded`；关卡上两笔卸货各属一条需求；装过的两个仓最后 `CLOSED/EMPTY/1/0` | 持货等单在本场景会发生（允许追加就持货），不判；它的判据在 `real-onboard-mixed-side-one-stop` |
