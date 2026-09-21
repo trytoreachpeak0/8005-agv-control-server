@@ -296,6 +296,10 @@ jobs:
               # used leaves the plan the vehicle holds, with the plan revision moving on (REQ-0197, ADR-cross-0053). It does
               # not run the other demands to completion; that half is L1 (see the scenario's header and the pull request).
               @{ Name = 'plan-reorder-and-drop-cancelled'; Runs = 1; BatchId = 'batch-7' }
+              # control-server#215: a vehicle that leaves the map loses its not-yet-picked demand -- the pickup order is
+              # cancelled and reconciled, the demand goes back to the backlog with its age, and a second vehicle takes it
+              # under a new generation and upperId, its dispatch plan actually sent (REQ-0328).
+              @{ Name = 'reassign-when-vehicle-ineligible'; Runs = 1; BatchId = 'batch-7' }
               # control-server#212, the two vehicle-full ones of the five above.
               @{ Name = 'vehicle-full-ignores-oversized-and-gated'; Runs = 1; BatchId = 'batch-7' }
               @{ Name = 'vehicle-full-still-appends-before-departure'; Runs = 1; BatchId = 'batch-7' }
@@ -323,6 +327,8 @@ jobs:
               'vehicle-full-still-appends-before-departure' = 111; 'cargo-holding-side-full' = 98
               'cargo-holding-timeout' = 81; 'cargo-holding-disabled-when-append-forbidden' = 64
               'vehicle-full-ignores-oversized-and-gated' = 58
+              # control-server#215, one local run each (2026-09-21), build excluded.
+              'reassign-when-vehicle-ineligible' = 39; 'plan-reorder-and-drop-cancelled' = 23
           }
 
           # Registered before anything can fail, so the upload step below always has a path: without it
