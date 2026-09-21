@@ -1410,6 +1410,8 @@ public sealed class JourneyRuntimeWorkerTests
         // lease is still held, and admitting another demand would send the vehicle away on it. So
         // this is intended behaviour, recorded here so that no later change to Blocked quietly
         // turns it into a free vehicle. The way out is the recovery handshake, not discovery.
+        // The one errand a blocked journey does let through is charging, and only once the
+        // battery is nearly flat (#273, ABlockedJourneyLetsTheNearlyFlatVehicleDriveItselfToTheCharger).
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         fixture.Catalog.Set(fixture.Demand(
             "10000000-0000-4000-8000-000000000001",
@@ -1430,6 +1432,160 @@ public sealed class JourneyRuntimeWorkerTests
 
         Assert.Single(await fixture.Context.JourneyRuntimes.ToArrayAsync(TestContext.Current.CancellationToken));
         Assert.Single(await fixture.Context.AcceptedDemands.ToArrayAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    public async Task ABlockedJourneyLetsTheNearlyFlatVehicleDriveItselfToTheCharger()
+    {
+        // #273. A journey that blocks waits on a person for as long as that takes, and the vehicle
+        // stands still the whole time -- still drawing current. The charging errand used to run only
+        // on the branch taken when nothing is under way, so a block was the one state that both
+        // parked the vehicle indefinitely and stopped anyone reading its battery. On 2026-09-21 a
+        // load that needed recovery at 02:12 did exactly that: agv01 discharged where it stood, the
+        // onboard machine lost power twice, and the line was down for seven and a half hours.
+        //
+        // Everything the vehicle itself reported stayed good throughout. The field inbox shows
+        // departureSafe, vehicleStopped, allTargetSlotsLocked and allUnlockOutputsReset all true,
+        // unknownPresent false, and heartbeats at most 6.2 s apart for the thirty-seven minutes
+        // between the block and the first power cut. What refused the errand were the two business
+        // facts a block guarantees, and this test holds both: the journey still holds its dispatch
+        // lease, and the refused result that blocked it also moved the session to RecoveryRequired.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.EnableAutoCharging();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.AdvanceToLoadResultAsync();
+        await fixture.ApplyTimedOutResultAsync(
+            await fixture.OperationAsync(SlotOperationType.Load), SlotOperationType.Load);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        await fixture.MarkSessionRecoveryRequiredByOperationAsync();
+
+        SingleDemandJourneyView blocked = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.Blocked, blocked.Stage);
+        Assert.Equal("LOAD_RESULT_REQUIRES_RECOVERY", blocked.BlockReasonCode);
+        Assert.Equal(SessionReadiness.RecoveryRequired, (await fixture.Context.SessionRecoveries.AsNoTracking()
+            .SingleAsync(TestContext.Current.CancellationToken)).Readiness);
+        Assert.True(await fixture.Context.VehicleDispatchLeases.AsNoTracking().AnyAsync(
+            row => row.ReleasedAt == null, TestContext.Current.CancellationToken));
+
+        // Plainly healthy: a block is not by itself a reason to leave.
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 60 };
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Empty(await fixture.Context.AutoChargingRuns.AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+
+        // Below the ordinary trigger but above the rescue line: an idle vehicle would go to charge
+        // here, but driving a blocked one away from where whoever comes to clear the block expects
+        // to find it is not worth it yet.
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 25 };
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Empty(await fixture.Context.AutoChargingRuns.AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+
+        // Below the rescue line it is: running flat is now the nearer risk.
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 12 };
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        AutoChargingRunRow run = await fixture.ChargingRunAsync();
+        Assert.Equal(AutoChargingStage.AwaitingChargerArrival, run.Stage);
+        Assert.Equal(12, run.TriggeredAtBatteryPercent);
+        Assert.Equal("充电点1", run.ChargerStationId);
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_CHARGER"));
+        Assert.Equal("CONFIRMED", await fixture.IntentStatusAsync("TO_CHARGER"));
+
+        // The journey is not touched by any of this. The recovery somebody owes is the same
+        // recovery, named by the same reason code; only where the vehicle stands has changed.
+        SingleDemandJourneyView stillBlocked = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.Blocked, stillBlocked.Stage);
+        Assert.Equal("LOAD_RESULT_REQUIRES_RECOVERY", stillBlocked.BlockReasonCode);
+
+        fixture.Riot.SetSuccessfulArrival("TO_CHARGER", run.UpperId, run.ChargerStationRiotId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with
+        {
+            CurrentStationId = run.ChargerStationRiotId,
+            BatteryState = "CHARGING",
+            BatteryPercent = 20
+        };
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(AutoChargingStage.Charging, (await fixture.ChargingRunAsync()).Stage);
+
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 80 };
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        run = await fixture.ChargingRunAsync();
+        Assert.Equal(AutoChargingStage.Completed, run.Stage);
+        Assert.Equal(80, run.ReleasedAtBatteryPercent);
+        // A charged vehicle is still not a free one. The block outlives the errand and no other
+        // journey is discovered while it holds the lease -- the way out is still the recovery
+        // handshake, as ABlockedJourneyKeepsTheVehicleOutOfEveryOtherDemand records. Nor is it
+        // driven back: whoever clears the block finds it on the pad, which is the one place in
+        // the plant nobody has to guess at.
+        SingleDemandJourneyView afterCharging = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.Blocked, afterCharging.Stage);
+        Assert.Equal("LOAD_RESULT_REQUIRES_RECOVERY", afterCharging.BlockReasonCode);
+        Assert.Single(await fixture.Context.JourneyRuntimes.AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_CHARGER"));
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    public async Task ABlockedJourneyKeepsSayingSoInTheLogWhileItWaits()
+    {
+        // #273, the half that helps even with charging off. A blocked journey wrote nothing after
+        // the line that blocked it, so on 2026-09-21 the only sign anything was wrong was an absence
+        // of work, noticed seven and a half hours later. The reminder reads the battery for its own
+        // line, so counting those reads is counting reminders; charging is left off here so that no
+        // other path reads the vehicle while the journey is blocked.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.AdvanceToLoadResultAsync();
+        await fixture.ApplyTimedOutResultAsync(
+            await fixture.OperationAsync(SlotOperationType.Load), SlotOperationType.Load);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(JourneyRuntimeStage.Blocked, (await fixture.RuntimeAsync()).Stage);
+        int reminders = 0;
+        fixture.Riot.BeforeReadVehicle = () => reminders++;
+
+        // A block an operator is still in the middle of clearing is not news.
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(0, reminders);
+
+        // Once the interval has passed it says so -- once, not on every poll that follows.
+        fixture.Clock.Advance(TimeSpan.FromMinutes(5));
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(1, reminders);
+        fixture.Clock.Advance(fixture.Options.PollInterval);
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(1, reminders);
+
+        // And again one interval later, for as long as the block lasts.
+        fixture.Clock.Advance(TimeSpan.FromMinutes(5) - fixture.Options.PollInterval);
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(2, reminders);
+
+        // The reminder reports on the journey and changes nothing about it.
+        SingleDemandJourneyView blocked = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.Blocked, blocked.Stage);
+        Assert.Equal("LOAD_RESULT_REQUIRES_RECOVERY", blocked.BlockReasonCode);
     }
 
     [Fact]
@@ -3298,6 +3454,16 @@ public sealed class JourneyRuntimeWorkerTests
         Assert.Equal(JourneyRuntimeStage.AwaitingSublot, runtime.Stage);
 
         fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 15 };
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Empty(await fixture.Context.AutoChargingRuns.AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync()).Stage);
+
+        // Not even below the rescue line a blocked journey charges at (#273). A journey that is
+        // still moving has somewhere to be, and it releases the vehicle by finishing.
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 5 };
+        await fixture.RecreateEngineAsync();
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
 
         Assert.Empty(await fixture.Context.AutoChargingRuns.AsNoTracking()

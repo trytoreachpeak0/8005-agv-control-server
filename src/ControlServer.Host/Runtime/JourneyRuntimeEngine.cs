@@ -93,6 +93,23 @@ public sealed class JourneyRuntimeEngine(
             "map {MapId} now carries (added: {AddedStations}; removed: {RemovedStations}). Journeys and " +
             "charging already under way continue on the bound policy; no further demand is taken on until " +
             "admissionPolicyVersion is raised.");
+    private static readonly Action<ILogger, string, string, long, string, Exception?> LogBlockedJourneyWaiting =
+        LoggerMessage.Define<string, string, long, string>(
+            LogLevel.Warning,
+            new EventId(2113, nameof(LogBlockedJourneyWaiting)),
+            "Journey {JourneyId} has been blocked on {BlockReasonCode} for {BlockedForMinutes} minutes; " +
+            "battery is {BatteryPercent}. Nobody has yet resolved the recovery this block names.");
+
+    /// <summary>
+    /// How often a journey that is still Blocked says so in the log. A blocked journey otherwise
+    /// writes nothing at all after the line that blocked it -- on 2026-09-21 that left seven and a
+    /// half hours of silence while the vehicle discharged to a power cut (#273). Rate limiting is
+    /// derived from how long the journey has been blocked rather than kept in a field, because a
+    /// runtime iteration builds a fresh engine: the first line therefore appears one interval after
+    /// the block, which is also the point -- a block an operator clears within a minute is not news.
+    /// </summary>
+    private static readonly TimeSpan BlockedJourneyWarningInterval = TimeSpan.FromMinutes(5);
+
     /// <summary>
     /// Where the pickup stops sit in a journey's stop sequence, and where the gate sits.
     /// </summary>
@@ -210,12 +227,26 @@ public sealed class JourneyRuntimeEngine(
                 throw new BusinessIdentityConflictException(
                     $"Unresolved accepted demand has no production journey runtime: {string.Join(',', orphaned)}.");
             }
-            if (await AdvanceAutoChargingAsync(currentMap, cancellationToken).ConfigureAwait(false))
+            if (await AdvanceAutoChargingAsync(currentMap, null, cancellationToken).ConfigureAwait(false))
             {
                 return;
             }
             await DiscoverAndAcceptAsync(currentMap, gate, cancellationToken).ConfigureAwait(false);
             return;
+        }
+
+        // A Blocked journey is neither finished nor moving: it waits, for as long as it takes, on a
+        // recovery only a person can perform. Until #273 that state also froze the charging errand,
+        // because the errand only ever ran on the "nothing under way" branch -- so the one journey
+        // stage that parks the vehicle indefinitely was also the one stage that stopped reading its
+        // battery. On 2026-09-21 a load that needed recovery at 02:12 held agv01 in place until it
+        // discharged, cut power to the onboard machine twice, and took the line down for seven and a
+        // half hours. Charging is the only thing let through here: everything else about Blocked is
+        // unchanged, including that no further demand is admitted while it holds the vehicle.
+        if (active[0].Stage == JourneyRuntimeStage.Blocked)
+        {
+            await WarnBlockedJourneyAsync(active[0], cancellationToken).ConfigureAwait(false);
+            await AdvanceAutoChargingAsync(currentMap, active[0], cancellationToken).ConfigureAwait(false);
         }
 
         await AdvanceAsync(active[0], currentMap, gate, cancellationToken).ConfigureAwait(false);
@@ -343,7 +374,7 @@ public sealed class JourneyRuntimeEngine(
             return new CandidateScoring([], null, false);
         }
 
-        OnboardFacts? onboard = await ReadOnboardFactsAsync(cancellationToken).ConfigureAwait(false);
+        OnboardFacts? onboard = await ReadOnboardFactsAsync(requireReadySession: true, cancellationToken).ConfigureAwait(false);
         RiotVehicleObservation vehicle = await vehicleFacts.ReadVehicleAsync(
             runtimeOptions.VehicleKey, cancellationToken).ConfigureAwait(false);
         DateTimeOffset dynamicFactsNow = timeProvider.GetUtcNow();
@@ -1024,7 +1055,7 @@ public sealed class JourneyRuntimeEngine(
         IReadOnlyCollection<int> targetSlots,
         CancellationToken cancellationToken)
     {
-        OnboardFacts? onboard = await ReadOnboardFactsAsync(cancellationToken).ConfigureAwait(false);
+        OnboardFacts? onboard = await ReadOnboardFactsAsync(requireReadySession: true, cancellationToken).ConfigureAwait(false);
         if (onboard is null || onboard.SessionGeneration != expectedSessionGeneration ||
             targetSlots.Any(slot => !onboard.AvailableSlots.Contains(slot)))
         {
@@ -1100,7 +1131,7 @@ public sealed class JourneyRuntimeEngine(
         }
         RiotVehicleObservation vehicle = await vehicleFacts.ReadVehicleAsync(runtime.VehicleKey, cancellationToken)
             .ConfigureAwait(false);
-        OnboardFacts? onboard = await ReadOnboardFactsAsync(cancellationToken).ConfigureAwait(false);
+        OnboardFacts? onboard = await ReadOnboardFactsAsync(requireReadySession: true, cancellationToken).ConfigureAwait(false);
         // Read the clock after the observation, never before -- see IsTrustedChargerArrivalAsync.
         DateTimeOffset now = timeProvider.GetUtcNow();
         int? standingAt = vehicle.CurrentStationId;
@@ -1666,10 +1697,23 @@ public sealed class JourneyRuntimeEngine(
         return null;
     }
 
-    private async Task<OnboardFacts?> ReadOnboardFactsAsync(CancellationToken cancellationToken)
+    /// <param name="requireReadySession">
+    /// Whether the session has to be Ready for these facts to count. It does for everything that
+    /// commands the vehicle, because readiness is what says the peer will accept work. The charging
+    /// rescue for a Blocked journey passes false, and only it: a result the server refused moves the
+    /// session to RecoveryRequired in the same breath as it blocks the journey, so requiring Ready
+    /// there would refuse the rescue in exactly the case it was written for. Nothing below is
+    /// weakened by it -- the safety summary, its revision and the liveness window are all read from
+    /// the session's own generation either way, and a peer that has gone quiet still fails.
+    /// </param>
+    private async Task<OnboardFacts?> ReadOnboardFactsAsync(
+        bool requireReadySession,
+        CancellationToken cancellationToken)
     {
-        SessionRecoveryRow? session = await CurrentReadySessionAsync(runtimeOptions.AgvId, cancellationToken)
-            .ConfigureAwait(false);
+        SessionRecoveryRow? session = requireReadySession
+            ? await CurrentReadySessionAsync(runtimeOptions.AgvId, cancellationToken).ConfigureAwait(false)
+            : await dbContext.SessionRecoveries.SingleOrDefaultAsync(
+                row => row.AgvId == runtimeOptions.AgvId, cancellationToken).ConfigureAwait(false);
         if (session is null)
         {
             return null;
@@ -2009,19 +2053,70 @@ public sealed class JourneyRuntimeEngine(
     }
 
     /// <summary>
+    /// Says in the log, every <see cref="BlockedJourneyWarningInterval"/>, that a journey is still
+    /// blocked and what the battery is doing while it waits. It writes nothing to the journey --
+    /// the block reason names the recovery somebody owes, and only that somebody ends it.
+    /// </summary>
+    private async Task WarnBlockedJourneyAsync(
+        JourneyRuntimeRow runtime,
+        CancellationToken cancellationToken)
+    {
+        TimeSpan blockedFor = timeProvider.GetUtcNow() - runtime.UpdatedAt;
+        if (blockedFor < BlockedJourneyWarningInterval ||
+            Interval(blockedFor) == Interval(blockedFor - runtimeOptions.PollInterval))
+        {
+            return;
+        }
+
+        // Read only on the interval the line is actually written on: a blocked journey lasts hours
+        // and the poll is seconds, so asking RIoT every iteration for a number nothing acts on
+        // would multiply the call rate for no gain.
+        RiotVehicleObservation vehicle = await vehicleFacts.ReadVehicleAsync(
+            runtimeOptions.VehicleKey, cancellationToken).ConfigureAwait(false);
+        LogBlockedJourneyWaiting(
+            logger,
+            runtime.JourneyId,
+            runtime.BlockReasonCode ?? "unnamed",
+            (long)blockedFor.TotalMinutes,
+            vehicle.BatteryPercent is { } percent
+                ? $"{percent}% ({vehicle.BatteryState ?? "state unknown"})"
+                : "unknown",
+            null);
+
+        long Interval(TimeSpan elapsed) => (long)(elapsed / BlockedJourneyWarningInterval);
+    }
+
+    /// <summary>
     /// Advances the vehicle's charging errand, and reports whether it owns this iteration.
     /// Returning <c>true</c> keeps discovery from running: while the vehicle is driving to the pad
     /// or still below its resume level, every candidate would be refused for battery anyway, and
     /// the reads that decision costs are all remote.
     /// </summary>
     /// <remarks>
-    /// Only ever called with no unresolved journey, so the errand and a demand can never hold the
-    /// vehicle at the same time. The vehicle is left standing on the pad when the run completes:
-    /// the next demand moves it, and driving it to a separate idle spot would be one more
-    /// unattended movement bought for nothing.
+    /// Called with no unresolved journey, or with one that is Blocked -- and a Blocked journey
+    /// commands nothing, so the errand and a journey that is moving the vehicle can still never
+    /// hold it at the same time. On the Blocked path the return value decides nothing: discovery
+    /// never runs while any journey is unresolved. The vehicle is left standing on the pad when
+    /// the run completes: the next demand moves it, and driving it to a separate idle spot would be
+    /// one more unattended movement bought for nothing.
     /// </remarks>
+    /// <param name="blockedJourney">
+    /// The journey holding the vehicle in <see cref="JourneyRuntimeStage.Blocked"/>, or
+    /// <c>null</c> on the ordinary between-demands path. A blocked journey relaxes exactly three
+    /// things about starting a run, and nothing about running one (#273): the trigger drops to
+    /// <see cref="JourneyRuntimeOptions.BlockedJourneyChargeTriggerBatteryPercent"/>, that
+    /// journey's own dispatch lease stops counting as another errand, and the onboard facts are
+    /// read without requiring a Ready session. All three are business gates rather than safety
+    /// ones, and all three are what a blocked journey inevitably fails: it holds its lease until it
+    /// settles, and the refused result that blocked it is the same event that moves the session to
+    /// RecoveryRequired. What still has to hold is every physical fact -- the vehicle idle, stopped,
+    /// holding no order, every slot latched, nothing unexplained aboard -- because those are what
+    /// make an unattended movement safe, and on 2026-09-21 every one of them was true for the
+    /// thirty-seven minutes between the block and the first power cut.
+    /// </param>
     private async Task<bool> AdvanceAutoChargingAsync(
         RiotMapStationCatalogSnapshot currentMap,
+        JourneyRuntimeRow? blockedJourney,
         CancellationToken cancellationToken)
     {
         if (!runtimeOptions.AutoChargingEnabled)
@@ -2043,7 +2138,7 @@ public sealed class JourneyRuntimeEngine(
         DateTimeOffset now = timeProvider.GetUtcNow();
         if (run is null)
         {
-            return await TryStartAutoChargingAsync(currentMap, vehicle, now, cancellationToken)
+            return await TryStartAutoChargingAsync(currentMap, vehicle, blockedJourney, now, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -2123,11 +2218,19 @@ public sealed class JourneyRuntimeEngine(
     private async Task<bool> TryStartAutoChargingAsync(
         RiotMapStationCatalogSnapshot currentMap,
         RiotVehicleObservation vehicle,
+        JourneyRuntimeRow? blockedJourney,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
+        // The rescue line sits below the ordinary trigger on purpose. Driving a blocked vehicle to
+        // the pad moves it away from where whoever comes to repair it expects to find it, so it is
+        // worth doing only once running flat is the nearer risk -- not merely because the battery
+        // has dipped under the level at which a fresh errand would be refused.
+        int trigger = blockedJourney is null
+            ? runtimeOptions.ChargeTriggerBatteryPercent
+            : runtimeOptions.BlockedJourneyChargeTriggerBatteryPercent;
         if (vehicle.BatteryPercent is not { } percent ||
-            percent >= runtimeOptions.ChargeTriggerBatteryPercent ||
+            percent >= trigger ||
             string.Equals(vehicle.BatteryState, "CHARGING", StringComparison.Ordinal))
         {
             // Already charging means somebody parked it on the pad by hand. Dispatching it to the
@@ -2147,14 +2250,20 @@ public sealed class JourneyRuntimeEngine(
         {
             return false;
         }
-        OnboardFacts? onboard = await ReadOnboardFactsAsync(cancellationToken).ConfigureAwait(false);
+        OnboardFacts? onboard = await ReadOnboardFactsAsync(
+            requireReadySession: blockedJourney is null, cancellationToken).ConfigureAwait(false);
         if (onboard is null || !onboard.DepartureSafe || !onboard.VehicleStopped ||
             !onboard.AllTargetSlotsLocked || !onboard.AllUnlockOutputsReset || onboard.UnknownPresent)
         {
             return false;
         }
+        // Cargo aboard is deliberately not asked about, on either path. The baskets are latched in
+        // their slots and the pad is a station like any other, whereas the power cut this errand
+        // exists to prevent costs a cold start with the slot state unproven.
+        string? blockedJourneyId = blockedJourney?.JourneyId;
         if (await dbContext.VehicleDispatchLeases.AnyAsync(
-                row => row.VehicleKey == runtimeOptions.VehicleKey && row.ReleasedAt == null,
+                row => row.VehicleKey == runtimeOptions.VehicleKey && row.ReleasedAt == null &&
+                       (blockedJourneyId == null || row.JourneyId != blockedJourneyId),
                 cancellationToken).ConfigureAwait(false))
         {
             return false;

@@ -38,6 +38,16 @@ public sealed class JourneyRuntimeOptions
     public int ChargeTriggerBatteryPercent { get; set; } = 30;
 
     /// <summary>
+    /// The rescue trigger for a vehicle a Blocked journey is holding in place. It sits below
+    /// <see cref="ChargeTriggerBatteryPercent"/> because driving such a vehicle to the pad takes it
+    /// away from where whoever comes to clear the block expects to find it -- a cost worth paying
+    /// only once running flat is the nearer risk. Until #273 there was no level at all: the errand
+    /// was evaluated only between journeys, so a block left the battery unread until the onboard
+    /// machine lost power.
+    /// </summary>
+    public int BlockedJourneyChargeTriggerBatteryPercent { get; set; } = 15;
+
+    /// <summary>
     /// The level at which a charging vehicle becomes available for demands again. The vehicle stays
     /// physically on the charger and keeps reporting CHARGING, so this level -- not the charging
     /// state -- is what ends the refusal in ValidateDynamicFacts.
@@ -148,6 +158,14 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
                 failures.Add("ChargeResumeBatteryPercent must exceed ChargeTriggerBatteryPercent.");
             if (options.ChargeTriggerBatteryPercent < options.MinimumBatteryPercent)
                 failures.Add("ChargeTriggerBatteryPercent must be at least MinimumBatteryPercent.");
+            if (options.BlockedJourneyChargeTriggerBatteryPercent is < 1 or > 100)
+                failures.Add("BlockedJourneyChargeTriggerBatteryPercent must be in 1..100.");
+            // At or above the ordinary trigger it would stop being a rescue: a blocked vehicle
+            // would leave the spot it was stopped at on the same battery reading that merely makes
+            // a fresh errand wait, and the person walking over to clear the block would find it
+            // gone for no gain.
+            if (options.BlockedJourneyChargeTriggerBatteryPercent >= options.ChargeTriggerBatteryPercent)
+                failures.Add("BlockedJourneyChargeTriggerBatteryPercent must be below ChargeTriggerBatteryPercent.");
         }
         if (options.AdmissionPolicyVersion <= 0) failures.Add("AdmissionPolicyVersion must be positive.");
         RequireText(options.AdmissionPolicyDeploymentId, nameof(options.AdmissionPolicyDeploymentId), failures);

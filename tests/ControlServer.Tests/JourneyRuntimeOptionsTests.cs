@@ -91,6 +91,30 @@ public sealed class JourneyRuntimeOptionsTests
                     new JourneyRuntimeOptions().MinimumBatteryPercent);
     }
 
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public void TheBlockedJourneyRescueLineMustSitBelowTheOrdinaryTrigger()
+    {
+        // #273: at or above the ordinary trigger it would stop being a rescue, and a blocked
+        // vehicle would leave the spot it stopped at on a reading that merely makes a fresh errand
+        // wait. The shipped defaults have to satisfy it without any configuration.
+        IConfiguration configuration = new ConfigurationBuilder().Build();
+        JourneyRuntimeOptionsValidator validator = new(configuration);
+        JourneyRuntimeOptions options = ValidEnabledOptions();
+        options.AutoChargingEnabled = true;
+        options.ChargerStationId = "充电点1";
+        options.ChargerStationRiotId = 211;
+        const string refusal = "BlockedJourneyChargeTriggerBatteryPercent must be below ChargeTriggerBatteryPercent.";
+
+        Microsoft.Extensions.Options.ValidateOptionsResult shipped = validator.Validate(null, options);
+        options.BlockedJourneyChargeTriggerBatteryPercent = options.ChargeTriggerBatteryPercent;
+        Microsoft.Extensions.Options.ValidateOptionsResult atTrigger = validator.Validate(null, options);
+
+        Assert.DoesNotContain(refusal, shipped.Failures ?? [], StringComparer.Ordinal);
+        Assert.Contains(refusal, atTrigger.Failures ?? [], StringComparer.Ordinal);
+        Assert.Equal(15, new JourneyRuntimeOptions().BlockedJourneyChargeTriggerBatteryPercent);
+    }
+
     private static JourneyRuntimeOptions ValidEnabledOptions() => new()
     {
         Enabled = true,
