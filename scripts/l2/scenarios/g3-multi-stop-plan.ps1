@@ -149,7 +149,7 @@ $stage = Wait-L2ConditionOrLast -Description 'the journey completed' -Journal $j
 $snapshots = Wait-L2ConditionOrLast -Description 'every plan and worklist snapshot of this journey was acknowledged' `
     -Journal $journal -Criterion 'journey-snapshots-acknowledged' -TimeoutSeconds 30 `
     -Probe { Get-L2JourneyWireSnapshots $connection $demandIds } `
-    -Until { param($v) @($v).Count -ge 2 -and @(@($v) | Where-Object { $_.Fenced -or -not $_.Acknowledged }).Count -eq 0 }
+    -Until { param($v) @($v).Count -ge 2 -and @(@($v) | Where-Object { -not $_.Acknowledged }).Count -eq 0 }
 $snapshots = @($snapshots)
 $described = (@($snapshots | ForEach-Object { "$(Format-L2WireSnapshot $_) ack=$($_.Acknowledged) fenced=$($_.Fenced)" }) -join ' | ')
 $journal.Observe('journey-wire-snapshots', $described, $null)
@@ -196,13 +196,21 @@ $assertions.Add(
     "$($plans.Count) 版，乱序 $($unsorted.Count) 版$(if ($unsorted) { '：' + ((@($unsorted) | ForEach-Object { Format-L2WireSnapshot $_ }) -join ' | ') })")
 
 $firstWorklist = @($snapshots | Where-Object { $_.Type -eq 'CurrentStopWorklistSnapshot' }) | Select-Object -First 1
-$unacked = @($snapshots | Where-Object { $_.Fenced -or -not $_.Acknowledged })
+# 作废（FencedAt）本身不算错。多需求旅程离开最后一个装货站时，服务端先发「开往关卡」那一版计划，车一到站就发「已到关卡」那一版，
+# 并把前一版从补发集合里退役（JourneyRuntimeEngine.RetireSupersededSnapshotAsync：退役的是还没被确认的那一版，免得重连补发时
+# 旧号排在新号前面、车按 SNAPSHOT_REVISION_REGRESSION 拆会话）。场景里车是瞬移的，两版相隔几十毫秒，于是出现「先作废、后确认」
+# （g3-multi-stop-plan-001：r6 作废 18:29:56.609、确认 .698，r7 建于 .613）。判据要的是：每一份都被车载端确认；作废过的那份后面
+# 必须有同一流更高号的一份——否则就是真被丢掉了。
+$unacked = @($snapshots | Where-Object { -not $_.Acknowledged })
+$orphanFenced = @($snapshots | Where-Object {
+        $fenced = $_
+        $fenced.Fenced -and @($snapshots | Where-Object { $_.Type -eq $fenced.Type -and $_.Revision -gt $fenced.Revision }).Count -eq 0 })
 $assertions.Add(
     'G3-08-04',
-    '消息顺序与向量一致：这趟旅程第一份快照是计划，清单在它之后；每一份计划与清单都被真车载端确认（SnapshotAppliedAck），没有一份被作废',
+    '消息顺序与向量一致：这趟旅程第一份快照是计划，清单在它之后；每一份计划与清单都被真车载端确认（SnapshotAppliedAck）；作废过的只能是后面有同一流更高号一份的那种',
     ($snapshots.Count -ge 2 -and $snapshots[0].Type -eq 'UpcomingStopPlanSnapshot' -and $null -ne $firstWorklist -and
-        $firstWorklist.At -ge $snapshots[0].At -and $unacked.Count -eq 0),
-    '计划在前 / 全部确认、无作废',
+        $firstWorklist.At -ge $snapshots[0].At -and $unacked.Count -eq 0 -and $orphanFenced.Count -eq 0),
+    '计划在前 / 全部确认 / 没有无后继的作废',
     $described)
 
 # --- 5. 终态 ---------------------------------------------------------------------------------------------------

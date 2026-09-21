@@ -66,11 +66,14 @@ function Get-L2PlanLegRows([object]$Onboard) {
         if (-not $list) { return $null }
         $rows = foreach ($item in (Get-L2UiaChildren $list)) {
             $texts = Get-L2UiaTexts $item
+            # The sequence TextBlock is the one whose whole text is a number. Not "the first text": g3-multi-stop-plan-001
+            # read a whitespace-only text first on the rows of a rebuilt list, and every row then had no sequence.
             $sequence = $null
-            if ($texts.Count -ge 1 -and $texts[0] -match '^\s*(\d+)\s*$') { $sequence = [int]$Matches[1] }
+            $numeric = @($texts | Where-Object { $_ -match '^\s*\d+\s*$' })
+            if ($numeric.Count -ge 1) { $sequence = [int]$numeric[0].Trim() }
             $name = [string]$item.Current.Name
             $status = if ($name -match 'ItemStatus = ([^,}\s]+)') { $Matches[1] } else { $null }
-            [pscustomobject]@{ Sequence = $sequence; ItemStatus = $status; Texts = $texts }
+            [pscustomobject]@{ Sequence = $sequence; ItemStatus = $status; Texts = @($texts | ForEach-Object { "[$_]" }) -join '' }
         }
         return , @($rows)
     } catch [System.Windows.Automation.ElementNotAvailableException] {
@@ -84,7 +87,8 @@ function Format-L2PlanLegRows([object]$Rows) {
     return (@($Rows) | ForEach-Object {
             $seq = if ($null -eq $_.Sequence) { '?' } else { $_.Sequence }
             $status = if ($null -eq $_.ItemStatus) { '' } else { "[$($_.ItemStatus)]" }
-            "$seq$status"
+            $texts = if ($null -eq $_.Sequence) { "{$($_.Texts)}" } else { '' }
+            "$seq$status$texts"
         }) -join ','
 }
 
