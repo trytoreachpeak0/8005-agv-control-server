@@ -1,0 +1,207 @@
+
+=== r2 S1-3 service refusal no longer aborts   (anchor hits: 1 / -, landed: True)
+    summary: 207 passed, 2 failed
+    RED  a production refusal from the product uninstaller aborts before ANY other action
+    RED  ParallelInstance.psm1 without its allowances shows exactly the 12 allowed command(s)
+
+=== r2 S1 path layers removed from the sequence   (anchor hits: 1 / -, landed: True)
+    summary: 207 passed, 2 failed
+    RED  a glob match outside the allowlist is never deleted, and the directory phase stops
+    RED  a production directory in the footprint itself never reaches the delete action
+
+=== r2 S1-2 allowlist marker check removed   (anchor hits: 1 / -, landed: True)
+    summary: 203 passed, 6 failed
+    RED  installRoot is the production install root
+    RED  packageRoot is the MVP's previous package generation
+    RED  backupRoot is the production MesIngest directory
+    RED  fakeMesIngest.installRoot is the MVP's ops directory
+    RED  the re-review S1 reproduction definition
+    RED  a glob match outside the allowlist is never deleted, and the directory phase stops
+
+=== r2 M3 map-25 id refusal removed   (anchor hits: 1 / -, landed: True)
+    summary: 207 passed, 2 failed
+    RED  both mapIds are the MVP map 25
+    RED  only journeyRuntime.mapId is 25
+
+=== r3 M1 exit-code check removed   (anchor hits: 1 / -, landed: True)
+    summary: 206 passed, 3 failed
+    RED  product uninstaller 'exit-1' fails the service step
+    RED  product uninstaller 'native-fails-last' fails the service step
+    RED  product uninstaller 'pass-but-native-exit' fails the service step
+
+=== r3 M1 result-file existence check removed   (anchor hits: 1 / -, landed: True)
+    summary: 208 passed, 1 failed
+    RED  product uninstaller 'write-error-continue' fails the service step
+
+=== r3 M1 PASS check removed   (anchor hits: 1 / -, landed: True)
+    summary: 208 passed, 1 failed
+    RED  product uninstaller 'result-fail' fails the service step
+
+=== r3 action output leaks into the sequence result   (anchor hits: 1 / -, landed: True)
+    summary: 208 passed, 1 failed
+    RED  action output does not leak into the sequence result
+
+=== r3 Q2 sequence ignores the link probe   (anchor hits: 1 / -, landed: True)
+    summary: 206 passed, 3 failed
+    RED  a directory that is a junction is never deleted, and the directory phase stops there
+    RED  a link probe that throws is treated as a link: nothing is deleted
+    RED  ParallelInstance.psm1 without its allowances shows exactly the 12 allowed command(s)
+
+=== r3 Q2 a throwing link probe counts as "not a link"   (anchor hits: 1 / -, landed: True)
+    summary: 208 passed, 1 failed
+    RED  a link probe that throws is treated as a link: nothing is deleted
+
+=== r3 Q2 required-action check removed   (anchor hits: 1 / -, landed: True)
+    summary: 208 passed, 1 failed
+    RED  a removal sequence without its link probe refuses to start
+
+=== r3 Q2 Remove-ParallelInstanceDirectory skips the link check   (anchor hits: 1 / -, landed: True)
+    summary: 208 passed, 1 failed
+    RED  Remove-ParallelInstanceDirectory refuses a junction and removes nothing
+
+=== r3 Q4 installer deletes the previous generation with a bare Remove-Item   (anchor hits: 1 / -, landed: True)
+    summary: 207 passed, 2 failed
+    RED  Install-ParallelInstanceLocal.ps1 deletes nothing outside the two delete functions
+    RED  Install-ParallelInstanceLocal.ps1 without its allowances shows exactly the 2 allowed command(s)
+
+=== r3 Q3 map comparison key no longer normalises   (anchor hits: 1 / -, landed: True)
+    summary: 198 passed, 11 failed
+    RED  mapIdentity is the MVP map's name with a trailing space
+    RED  mapIdentity is the MVP map's name in capitals
+    RED  mapIdentity is the MVP map's name in full-width letters
+    RED  dispatchZone is a map-25 zone with a zero-width space inside the number
+    RED  dispatchZone is a map-25 zone written with an underscore
+    RED  dispatchZone is a map-25 zone in lower case with a space
+    RED  dispatchZone map_-_25 (separators mixed and repeated)
+    RED  dispatchZone with U+2010 hyphen
+    RED  dispatchZone with U+2011 non-breaking hyphen
+    RED  dispatchZone with U+2013 en dash
+    RED  dispatchZone with U+2014 em dash
+
+=== r4 config-key allowlist back to -ccontains   (anchor hits: 1 / -, landed: True)
+    summary: 207 passed, 2 failed
+    RED  a known key with a zero-width space appended
+    RED  a lookalike vehicleKey key carrying agv01's key
+
+=== r4 vehicleKey match back to -eq   (anchor hits: 1 / -, landed: True)
+    summary: 207 passed, 2 failed
+    RED  vehicleKey with a zero-width space appended
+    RED  vehicleKey in lower case
+
+=== r4 agvId pair check back to -cne   (anchor hits: 1 / -, landed: True)
+    summary: 208 passed, 1 failed
+    RED  agvId with a zero-width space appended
+
+=== r4 allowed-parent check back to -ieq   (anchor hits: 1 / -, landed: True)
+    summary: 208 passed, 1 failed
+    RED  installRoot under a lookalike of an allowed root (zero-width space)
+
+=== r4 self-test landed-guard back to -eq   (anchor hits: 1 / -, landed: True)
+    summary: 205 passed, 4 failed
+    RED  installRoot under a lookalike of an allowed root (zero-width space)
+    RED  agvId with a zero-width space appended
+    RED  vehicleKey with a zero-width space appended
+    RED  vehicleKey in lower case
+
+=== r5 uninstaller calls the product script through a dynamic command   (anchor hits: 1 / -, landed: True)
+    summary: 206 passed, 3 failed
+    RED  the uninstaller reaches the product script only through Invoke-ParallelProductUninstaller
+    RED  Uninstall-ParallelInstanceLocal.ps1 deletes nothing outside the two delete functions
+    RED  Uninstall-ParallelInstanceLocal.ps1 without its allowances shows exactly the 0 allowed command(s)
+
+=== r5 uninstaller names the product script   (anchor hits: 1 / -, landed: True)
+    summary: 208 passed, 1 failed
+    RED  the uninstaller reaches the product script only through Invoke-ParallelProductUninstaller
+
+=== r5 installer deletes the config with Remove-Item   (anchor hits: 1 / -, landed: True)
+    summary: 205 passed, 4 failed
+    RED  Install-ParallelInstanceLocal.ps1 deletes nothing outside the two delete functions
+    RED  Install-ParallelInstanceLocal.ps1 without its allowances shows exactly the 2 allowed command(s)
+    RED  the installer: outer try before the first check, path refusal inside it, cleanup in its finally
+    RED  installer exits early with a config it may not delete: SECRET_FILE_LEFT_BEHIND names it
+
+=== r5 installer deletes the previous generation with [IO.Directory]::Delete   (anchor hits: 1 / -, landed: True)
+    summary: 207 passed, 2 failed
+    RED  Install-ParallelInstanceLocal.ps1 deletes nothing outside the two delete functions
+    RED  Install-ParallelInstanceLocal.ps1 without its allowances shows exactly the 2 allowed command(s)
+
+=== r5 installer skips the config-path refusal   (anchor hits: 1 / -, landed: True)
+    summary: 208 passed, 1 failed
+    RED  the installer: outer try before the first check, path refusal inside it, cleanup in its finally
+
+=== r5 config path equality check removed   (anchor hits: 1 / -, landed: True)
+    summary: 207 passed, 2 failed
+    RED  any other config path is refused
+    RED  the MVP install root as the config path is refused
+
+=== r5 config plain-file check removed   (anchor hits: 1 / -, landed: True)
+    summary: 207 passed, 2 failed
+    RED  a directory at the config path is refused up front
+    RED  a config path with no file is refused up front
+
+=== r5 result names predictable again   (anchor hits: 1 / -, landed: True)
+    summary: 208 passed, 1 failed
+    RED  each run hands the product uninstaller a fresh, unguessable result path
+
+=== r5 map separators: dashes no longer folded   (anchor hits: 1 / -, landed: True)
+    summary: 204 passed, 5 failed
+    RED  dispatchZone map_-_25 (separators mixed and repeated)
+    RED  dispatchZone with U+2010 hyphen
+    RED  dispatchZone with U+2011 non-breaking hyphen
+    RED  dispatchZone with U+2013 en dash
+    RED  dispatchZone with U+2014 em dash
+
+=== r5 map token pattern back to (-|$)   (anchor hits: 1 / -, landed: True)
+    summary: 208 passed, 1 failed
+    RED  dispatchZone MAP-25.A (a '.' after the number)
+
+=== r6 installer finally no longer cleans up   (anchor hits: 1 / -, landed: True)
+    summary: 206 passed, 3 failed
+    RED  the installer: outer try before the first check, path refusal inside it, cleanup in its finally
+    RED  installer exits at its first check: the config beside it is deleted
+    RED  installer exits early with a config it may not delete: SECRET_FILE_LEFT_BEHIND names it
+
+=== r6 residue reported silently   (anchor hits: 1 / -, landed: True)
+    summary: 208 passed, 1 failed
+    RED  installer exits early with a config it may not delete: SECRET_FILE_LEFT_BEHIND names it
+
+=== r6 without a layout nothing may be deleted   (anchor hits: 1 / -, landed: True)
+    summary: 205 passed, 4 failed
+    RED  exit on a refused definition: deploy-config.json beside the installer is deleted
+    RED  a directory at the config path is kept and reported
+    RED  a junction at the config path is kept and reported
+    RED  installer exits at its first check: the config beside it is deleted
+
+=== r6 without a layout anything may be deleted   (anchor hits: 1 / -, landed: True)
+    summary: 207 passed, 2 failed
+    RED  exit on a refused definition: any other file is kept and reported
+    RED  installer exits early with a config it may not delete: SECRET_FILE_LEFT_BEHIND names it
+
+=== r6 with a layout any path may be deleted   (anchor hits: 1 / -, landed: True)
+    summary: 208 passed, 1 failed
+    RED  exit on a refused path: the file is kept and reported
+
+=== r6 config delete ignores links   (anchor hits: 1 / -, landed: True)
+    summary: 208 passed, 1 failed
+    RED  a junction at the config path is kept and reported
+
+=== r7 ParallelHost.psm1 deletes with ForEach-Object Delete   (anchor hits: 1 / -, landed: True)
+    summary: 207 passed, 2 failed
+    RED  ParallelHost.psm1 deletes nothing outside the two delete functions
+    RED  ParallelHost.psm1 without its allowances shows exactly the 1 allowed command(s)
+
+=== r7 the module deletes outside its two delete functions   (anchor hits: 1 / -, landed: True)
+    summary: 206 passed, 3 failed
+    RED  ParallelInstance.psm1 deletes nothing outside the two delete functions
+    RED  ParallelInstance.psm1 without its allowances shows exactly the 12 allowed command(s)
+    RED  the module deletes only in Remove-ParallelInstanceDirectory and Remove-ParallelInstanceDeploymentConfig
+
+=== r8 uninstall-time premise check removed   (anchor hits: 1 / -, landed: True)
+    summary: 208 passed, 1 failed
+    RED  a product uninstaller that breaks the premise is refused at uninstall time
+
+=== r8 map token separator required again   (anchor hits: 1 / -, landed: True)
+    summary: 208 passed, 1 failed
+    RED  dispatchZone MAP25 (no separator)
+
+real files unchanged: True   mutation dir removed: True
