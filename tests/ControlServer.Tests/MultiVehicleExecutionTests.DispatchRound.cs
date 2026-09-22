@@ -665,6 +665,92 @@ public sealed partial class MultiVehicleExecutionTests
     }
 
     /// <summary>
+    /// 在途单挂起（9 HANG）的车不接途中追加（control-server#316）：它没有 Blocked，却同样在等人。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 挂起的车停着不走，途中追加只在停站时接（用户 09-22 定），而停在站上挂起的车对插位规划看起来与一辆正常停站的车
+    /// 一模一样。追加进去的需求会绑死在一张不动的单后面，与 <see cref="ABlockedJourneyTakesNoAppendedDemand"/> 同一个后果。
+    /// </para>
+    /// <para>
+    /// 判别力由 <see cref="AnInTransitVehicleTakesAnAppendedDemandIntoItsExistingJourney"/> 承担：同一个夹具、同样两条需求，
+    /// 只差这一条把订单置成 9，那一条的第二条需求进了这趟旅程。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task AJourneyWhoseOrderHangsTakesNoAppendedDemand()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(
+            configure: options => options.Fleet = options.Fleet[..1], withRouteGraph: true);
+        await fixture.AllowEnRouteAppendAsync(1_000_000);
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
+        await fixture.RunRoundAsync();
+        JourneyRuntimeRow journey = await fixture.JourneyOfAsync(FleetFixture.AgvIds[0]);
+        fixture.Riot.HangOrder(journey.PickupUpperId);
+
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0), FleetFixture.Demand(1, "N1-2", 1)]);
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+
+        JourneyRuntimeRow only = Assert.Single(
+            await fixture.Context.JourneyRuntimes.AsNoTracking().ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal("ORDER_HANG", only.BlockReasonCode);
+        JourneyDemandRow membership = Assert.Single(
+            await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+                .ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(FleetFixture.Demand(0, "N1-1", 0).DemandId, membership.DemandId);
+    }
+
+    /// <summary>
+    /// 在途单被人在 RIoT 里取消的车不接新单：它不会被当成空闲车，再派一趟旅程出去（control-server#316）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>这一条钉的是一个构造，不是本票写的某一行。</b>本票没有为「不接新单」写任何代码：引擎把「有未完成旅程」的车一律算进
+    /// <c>busy</c>（<c>JourneyRuntimeEngine.ExecuteOnceAsync</c> 里 <c>busy = active.Select(row =&gt; row.AgvId)</c>，本票时在 <c>JourneyRuntimeEngine.cs</c> 约第 402 行，紧接着的 <c>free</c> 只取 <c>busy</c> 之外的车），空闲车只从
+    /// <c>busy</c> 之外取；被取消的旅程停在到站阶段、没有完成，所以这辆车天然不在空闲候选里。本票只需要另外挡住途中追加
+    /// （<see cref="AJourneyWhoseOrderHangsTakesNoAppendedDemand"/>）。
+    /// </para>
+    /// <para>
+    /// 所以将来谁要让「等人的旅程不算 busy」——比如为了让阻断的车能被重新派单——这一条会红，而它红的意思是：用户 2026-09-22 定的
+    /// 「取消后挡住、等人确认后为同一辆车重建」会被一张新旅程抢先，车在取消它的人身边开走。那样改之前，先给这类旅程另找一条挡法。
+    /// </para>
+    /// <para>
+    /// 不开路网：途中追加那条判据不在链上，这辆车只可能经空闲车那条路接单，判据测到的就是 <c>busy</c> 这一个构造。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task AVehicleWhoseOrderWasCancelledInRiotIsNotOfferedAsIdle()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(
+            configure: options => options.Fleet = options.Fleet[..1]);
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
+        await fixture.RunRoundAsync();
+        JourneyRuntimeRow journey = await fixture.JourneyOfAsync(FleetFixture.AgvIds[0]);
+        fixture.Riot.CancelOrder(journey.PickupUpperId);
+        fixture.Riot.MovementState = "MT_FINISHED";
+
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0), FleetFixture.Demand(1, "N1-2", 1)]);
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+
+        JourneyRuntimeRow only = Assert.Single(
+            await fixture.Context.JourneyRuntimes.AsNoTracking().ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal((journey.JourneyId, "ORDER_ENDED_WITHOUT_ARRIVAL"), (only.JourneyId, only.BlockReasonCode));
+        Assert.DoesNotContain(
+            await fixture.Context.AcceptedDemands.AsNoTracking().Select(row => row.DemandId)
+                .ToArrayAsync(TestContext.Current.CancellationToken),
+            demandId => demandId == FleetFixture.Demand(1, "N1-2", 1).DemandId);
+        // 判别力在这一条，不在上面两条：这辆车根本没有被拿去评估第二条需求。实测过（让等人的旅程不算 busy）——那样这条需求
+        // 被判 ELIGIBLE、出价给这辆车，然后在受理时被还没释放的派车租约挡下，于是「只有一趟旅程」「没受理」两条照样绿。
+        // 租约是第二道，挡住的是写入；这一条守的是第一道：车不进候选。
+        Assert.DoesNotContain(
+            await fixture.Context.JourneyBacklog.AsNoTracking()
+                .ToArrayAsync(TestContext.Current.CancellationToken),
+            row => row.DemandId == FleetFixture.Demand(1, "N1-2", 1).DemandId &&
+                   row.ReasonCode == DispatchAdmissionChain.Eligible);
+    }
+
+    /// <summary>
     /// 一趟 Blocked 的旅程占着车，但不让这一轮开工：全车都 Blocked 时目录一次都不读（批次7-06，
     /// control-server#211）。
     /// </summary>

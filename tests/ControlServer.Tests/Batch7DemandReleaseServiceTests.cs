@@ -960,6 +960,103 @@ public sealed class Batch7DemandReleaseServiceTests
                 entry.Message.Contains($"has waited {sinceCreated} s", StringComparison.Ordinal));
     }
 
+    // ---- 在途单被人在 RIoT 里取消或删除（control-server#316） ------------------------------------------------
+
+    /// <summary>
+    /// 开往取货站的单被人在 RIoT 里取消（或删除），车本身合格：<b>不释放、不改派、不发取消</b>，旅程留着引擎写的码等人。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 用户 2026-09-22 更正：RIoT 里取消订单不是正常操作，多半是误操作，该做的是重建订单而不是改派。怎么重建（自动还是等人、
+    /// 是否同车、已装货与未装货是否一样）待定，定之前这里的行为是「看得见、不动」——所以这一条要守的是释放服务<b>没有</b>
+    /// 把「订单已终结」当成释放理由，而那正是一个顺手的实现会做的事（本票第一版就这么做了）。
+    /// </para>
+    /// <para>
+    /// 先跑一轮引擎，与生产里 <c>JourneyRuntimeWorker</c> 先推进、后释放的次序一致：码已经写下，释放服务读得到它。
+    /// </para>
+    /// </remarks>
+    [Theory]
+    [InlineData(RiotOrderState.Cancelled)]
+    [InlineData(RiotOrderState.Deleted)]
+    public async Task APickupOrderEndedInRiotIsNeitherReleasedNorRedispatched(int orderState)
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
+        fixture.Riot.SetOrderState(before.PickupUpperId, orderState, terminal: true);
+        await TickAndRunAsync(fixture);
+        CancellingGateway gateway = new(fixture.Clock, _ => { });
+
+        Assert.Empty(await Service(fixture, gateway).RunOnceAsync(Token));
+        await TickAndRunAsync(fixture);
+        Assert.Empty(await Service(fixture, gateway).RunOnceAsync(Token));
+
+        Assert.Equal(0, gateway.Cancels);
+        await using ControlServerDbContext reading = new ControlServerDbContext(fixture.DbOptionsForTests);
+        JourneyRuntimeRow after = await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token);
+        Assert.Equal((JourneyRuntimeStage.AwaitingPickupArrival, "ORDER_ENDED_WITHOUT_ARRIVAL"), (after.Stage, after.BlockReasonCode));
+        Assert.Null((await reading.Set<JourneyDemandRow>().AsNoTracking().SingleAsync(Token)).RemovedAt);
+        Assert.False(await DemandJourneyLookup.ReleasedForRedispatch(reading).AnyAsync(row => row.DemandId == FirstDemandId, Token));
+        // 没有第二张单：不改派，也还没有重建。
+        Assert.Equal(1, await reading.OrderIntents.CountAsync(row => row.DemandId == FirstDemandId, Token));
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+    }
+
+    /// <summary>
+    /// 挂起（9）同样不释放、不取消。取消不可撤回，会拆掉 continue 这条路，而这张单今天只由人决定。
+    /// </summary>
+    [Fact]
+    public async Task AHangingPickupOrderIsNeitherReleasedNorCancelled()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
+        fixture.Riot.SetOrderState(before.PickupUpperId, RiotOrderState.Hang, terminal: false);
+        await TickAndRunAsync(fixture);
+        CancellingGateway gateway = new(fixture.Clock, _ => { });
+
+        Assert.Empty(await Service(fixture, gateway).RunOnceAsync(Token));
+        Assert.Equal(0, gateway.Cancels);
+        Assert.Equal("ORDER_HANG", (await fixture.RuntimeAsync(FirstDemandId)).BlockReasonCode);
+    }
+
+    /// <summary>
+    /// 旅程上还有第二条需求时，锚需求的取货单被取消：两条都不释放，看板上是引擎的码。
+    /// </summary>
+    [Fact]
+    public async Task AnEndedPickupOrderWithAnotherDemandOnTheJourneyReleasesNothing()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync(appendSecond: true);
+        JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
+        fixture.Riot.CancelOrder(before.PickupUpperId);
+        await TickAndRunAsync(fixture);
+        CancellingGateway gateway = new(fixture.Clock, _ => { });
+
+        Assert.Empty(await Service(fixture, gateway).RunOnceAsync(Token));
+        Assert.Equal(0, gateway.Cancels);
+        Assert.Equal("ORDER_ENDED_WITHOUT_ARRIVAL", (await fixture.RuntimeAsync(FirstDemandId)).BlockReasonCode);
+    }
+
+    /// <summary>
+    /// 装着货开往关卡的单被取消：没有待装的需求可释放，旅程留着码等人，不改派。
+    /// </summary>
+    [Fact]
+    public async Task AnEndedGateOrderReleasesNothingAndLeavesTheJourneyToAPerson()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set(FirstSublot, 7);
+        JourneyRuntimeRow atGate = await fixture.AdvanceToGateArrivalAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, atGate.Stage);
+        fixture.Riot.CancelOrder(atGate.GateUpperId);
+        await TickAndRunAsync(fixture);
+        fixture.Context.ChangeTracker.Clear();
+        CancellingGateway gateway = new(fixture.Clock, _ => { });
+
+        Assert.Empty(await Service(fixture, gateway).RunOnceAsync(Token));
+        Assert.Equal(0, gateway.Cancels);
+        JourneyRuntimeRow after = await fixture.RuntimeAsync(FirstDemandId);
+        Assert.Equal((JourneyRuntimeStage.AwaitingGateArrival, "ORDER_ENDED_WITHOUT_ARRIVAL"), (after.Stage, after.BlockReasonCode));
+    }
+
     private static async Task<RuntimeFixture> DispatchedToPickupAsync(bool appendSecond = false)
     {
         RuntimeFixture fixture = await RuntimeFixture.CreateAsync();

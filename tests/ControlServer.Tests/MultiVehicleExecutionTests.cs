@@ -1992,6 +1992,22 @@ public sealed partial class MultiVehicleExecutionTests
             };
         }
 
+        /// <summary>Moves an order to RIoT's terminal CANCELLED (2), the way a person cancelling it in RIoT does (control-server#316).</summary>
+        public void CancelOrder(string upperId) =>
+            _orders[upperId] = _orders[upperId] with
+            {
+                Kind = RiotOrderObservationKind.Terminal,
+                OrderState = RiotOrderState.Cancelled,
+            };
+
+        /// <summary>Moves an order to RIoT's HANG (9), which the gateway reads as Active (control-server#316).</summary>
+        public void HangOrder(string upperId) =>
+            _orders[upperId] = _orders[upperId] with
+            {
+                Kind = RiotOrderObservationKind.Active,
+                OrderState = RiotOrderState.Hang,
+            };
+
         public Task<RiotCommandCallResult> IssueOrderCommandAsync(
             RiotOrderCommandKind kind,
             string orderId,

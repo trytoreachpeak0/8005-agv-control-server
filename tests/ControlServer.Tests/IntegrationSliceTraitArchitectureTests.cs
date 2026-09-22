@@ -111,6 +111,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["FakeOnboardSlotStateSeedTests"] = "L2 synthetic peer's handshake slot state seed (control-server#71); a test double's startup configuration, not the product's wire surface",
             ["FixedTaskStationResolverTests"] = "batch 6-01 behaviour-preserving restructuring guard (control-server#158): the per-round fixed station resolver seam and the named route endpoints; server-internal, no wire message",
             ["GovernanceSnapshotAndAuditTests"] = "batch 3 FP-C7/FP-C5 shared snapshot and audit mechanism; server-internal, no wire message",
+            ["InTransitOrderStallTests"] = "control-server#316 an in-transit order RIoT reports HANG, SUSPENDED, CANCELLED or DELETED is named on the journey, and nothing is commanded; server-internal, no wire message",
             ["InTransitVehicleFactsTests"] = "batch 7-06 REQ-0205 the in-transit vehicle facts criterion against a vehicle actually under way, beside the idle chain's verdict on the same facts (control-server#211); server-internal, no wire message",
             ["IntegrationSliceTraitArchitectureTests"] = "cross-cutting architecture guard; hanging it off a slice would defer the guard with the slice",
             ["JourneyPlanCharacterizationTests"] = "batch 6-01 behaviour-preserving restructuring guard (control-server#158): the route evidence id and one acceptance's plan pinned byte for byte; characterization, it proves no slice's wire behaviour",

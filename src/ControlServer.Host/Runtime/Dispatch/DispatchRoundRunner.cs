@@ -494,7 +494,11 @@ public sealed class DispatchRoundRunner(
                 .ToArrayAsync(cancellationToken).ConfigureAwait(false))
             .OrderBy(row => row.CreatedAt)
             .FirstOrDefault();
-        if (runtime is null)
+        // An in-flight order that stopped in RIoT (control-server#316) is waiting on a person the way a Blocked journey is,
+        // without being Blocked. Same standing as the exclusion above: the engine keeps such vehicles out of underWay, and
+        // this is the query saying for itself what it will not plan into. It is filtered here rather than in the query
+        // because the predicate is a code set, not a column.
+        if (runtime is null || JourneyRuntimeEngine.IsStalledOrderReason(runtime.BlockReasonCode))
         {
             return null;
         }

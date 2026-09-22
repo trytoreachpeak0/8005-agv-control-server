@@ -468,6 +468,54 @@ public sealed class WaitingJourneyBatteryWatchTests
     }
 
     /// <summary>
+    /// 与 cs#316 衔接（调度 09-22 要求）：路上会话未就绪（<c>ONBOARD_SESSION_NOT_READY</c>，不算等人）开了 5 分钟，RIoT 把在途单挂起，
+    /// 引擎在闸门后面写 <c>ORDER_HANG</c>（cs#316 的 <c>NameStalledOrderBehindTheGateAsync</c>）——从这一刻起算等人，计时从挂起那一刻
+    /// 开始，不从出发、也不从会话未就绪开始。挂起前 5 分钟不计入：满 10 分钟才报，报的是「10 min」。之后单子被 continue，码回到
+    /// 会话未就绪，等人结束。
+    /// </summary>
+    [Fact]
+    public async Task AHangOnALegWithTheSessionNotReadyWaitsFromTheHang()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(DemandId, "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        JourneyRuntimeRow onTheWay = await fixture.AdvanceToGateArrivalAsync();
+        DateTimeOffset left = fixture.Clock.GetUtcNow();
+        SessionRecoveryRow session = await fixture.Context.SessionRecoveries.SingleAsync(TestContext.Current.CancellationToken);
+        session.Readiness = SessionReadiness.RecoveryRequired;
+        session.ReasonCode = "DEPARTURE_SAFETY_NOT_READY";
+        session.DepartureSafe = false;
+        session.SafetyReasonCodesJson = """["VEHICLE_NOT_READY"]""";
+        session.SafetyUnknownPresent = true;
+        session.UpdatedAt = fixture.Clock.GetUtcNow();
+        await fixture.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        await RoundAtAsync(fixture, left + TimeSpan.FromSeconds(2));
+        Assert.Equal(JourneyWaitClassification.SessionNotReadyReason, (await ReloadAsync(fixture)).BlockReasonCode);
+
+        fixture.Riot.SetOrderState(onTheWay.GateUpperId, RiotOrderState.Hang, terminal: false);
+        DateTimeOffset hung = left + TimeSpan.FromMinutes(5);
+        await RoundAtAsync(fixture, hung);
+        JourneyRuntimeRow hanging = await ReloadAsync(fixture);
+        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, hanging.Stage);
+        Assert.Equal(JourneyRuntimeEngine.OrderHangReason, hanging.BlockReasonCode);
+        Assert.Equal(hung, hanging.WaitingSince);
+
+        await RoundAtAsync(fixture, hung + fixture.Options.WaitingJourneyWarningAfter - TimeSpan.FromSeconds(1));
+        Assert.Empty(WatchEntries(fixture));
+        await RoundAtAsync(fixture, hung + fixture.Options.WaitingJourneyWarningAfter);
+        (_, string message) = Assert.Single(WatchEntries(fixture));
+        Assert.Contains("(reason ORDER_HANG)", message, StringComparison.Ordinal);
+        Assert.Contains("for 10 min", message, StringComparison.Ordinal);
+
+        fixture.Riot.SetOrderState(onTheWay.GateUpperId, RiotOrderState.Executing, terminal: false);
+        await RoundAtAsync(fixture, hung + fixture.Options.WaitingJourneyWarningAfter + TimeSpan.FromSeconds(2));
+        JourneyRuntimeRow continued = await ReloadAsync(fixture);
+        Assert.Equal(JourneyWaitClassification.SessionNotReadyReason, continued.BlockReasonCode);
+        Assert.Null(continued.WaitingSince);
+        Assert.Null(continued.WaitingWarnedAt);
+    }
+
+    /// <summary>
     /// 出发那一次保存里派车没有确认（这里是 RIoT 的建单应答丢了，引擎把 <c>ResultUnknown</c> 写成原因码）：调度定为「继续等」
     /// ——车多半没开走——所以等人起点沿用站内的那一个，不清零（#320 增量审查低项 L-a）。
     /// </summary>

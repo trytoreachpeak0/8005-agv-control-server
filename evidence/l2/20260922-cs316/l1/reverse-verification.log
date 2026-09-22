@@ -1,0 +1,45 @@
+== M1-engine-never-names diff: '1\t0\tsrc/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs'
+== M1-engine-never-names exit 1
+   Failed ControlServer.Tests.InTransitOrderStallTests.AContinuedOrderClearsTheReasonAndTheJourneyArrives [8 s]
+   Failed ControlServer.Tests.MultiVehicleExecutionTests.AJourneyWhoseOrderHangsTakesNoAppendedDemand [8 s]
+   Failed ControlServer.Tests.Batch7DemandReleaseServiceTests.AHangingPickupOrderIsNeitherReleasedNorCancelled [660 ms]
+   Failed ControlServer.Tests.InTransitOrderStallTests.AHangingGateOrderIsNamedAndNothingIsCommanded [4 s]
+   Failed ControlServer.Tests.InTransitOrderStallTests.ASilentSessionDoesNotOverwriteAHangingOrderAsTheReason [2 s]
+   Failed ControlServer.Tests.Batch7DemandReleaseServiceTests.AnEndedGateOrderReleasesNothingAndLeavesTheJourneyToAPerson [2 s]
+   Failed ControlServer.Tests.InTransitOrderStallTests.AnOrderEndedInRiotIsNamed(orderState: 6) [2 s]
+   Failed ControlServer.Tests.InTransitOrderStallTests.AnOrderEndedInRiotIsNamed(orderState: 2) [3 s]
+   Failed ControlServer.Tests.InTransitOrderStallTests.AHangingPickupOrderIsNamedAndNothingIsCommanded [487 ms]
+   Failed ControlServer.Tests.InTransitOrderStallTests.ASuspendedOrderIsNamedAsUnrecognizedAndNothingIsDone [386 ms]
+   Failed ControlServer.Tests.Batch7DemandReleaseServiceTests.APickupOrderEndedInRiotReleasesTheDemandWithoutACancel(orderState: 2) [485 ms]
+   Failed ControlServer.Tests.Batch7DemandReleaseServiceTests.APickupOrderEndedInRiotReleasesTheDemandWithoutACancel(orderState: 6) [437 ms]
+   Failed ControlServer.Tests.Batch7DemandReleaseServiceTests.AnEndedPickupOrderWithAnotherDemandOnTheJourneyIsRefusedAndTheEnginesReasonStands [371 ms]
+   Failed!  - Failed:    13, Passed:    46, Skipped:     0, Total:    59, Duration: 31 s - ControlServer.Tests.dll (net8.0)
+== M2-underway-only diff: '1\t1\tsrc/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs'
+== M2-underway-only exit 0
+   Passed!  - Failed:     0, Passed:    59, Skipped:     0, Total:    59, Duration: 37 s - ControlServer.Tests.dll (net8.0)
+== M3-plan-query-only diff: '5\t0\t.github/workflows/l2.yml\n1\t1\tsrc/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs'
+== M3-plan-query-only exit 0
+   Passed!  - Failed:     0, Passed:    59, Skipped:     0, Total:    59, Duration: 38 s - ControlServer.Tests.dll (net8.0)
+== M2+M3-both-exclusions diff: '5\t0\t.github/workflows/l2.yml\n1\t1\tsrc/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs\n1\t1\tsrc/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs'
+== M2+M3-both-exclusions exit 1
+   Failed ControlServer.Tests.MultiVehicleExecutionTests.AJourneyWhoseOrderHangsTakesNoAppendedDemand [8 s]
+   Failed!  - Failed:     1, Passed:    58, Skipped:     0, Total:    59, Duration: 30 s - ControlServer.Tests.dll (net8.0)
+== M4-no-release-trigger diff: '5\t0\t.github/workflows/l2.yml\n1\t1\tsrc/ControlServer.Host/Runtime/Release/DemandReleaseService.cs'
+== M4-no-release-trigger exit 1
+   Failed ControlServer.Tests.Batch7DemandReleaseServiceTests.APickupOrderEndedInRiotReleasesTheDemandWithoutACancel(orderState: 2) [311 ms]
+   Failed ControlServer.Tests.Batch7DemandReleaseServiceTests.APickupOrderEndedInRiotReleasesTheDemandWithoutACancel(orderState: 6) [333 ms]
+   Failed ControlServer.Tests.Batch7DemandReleaseServiceTests.AnEndedPickupOrderWithAnotherDemandOnTheJourneyIsRefusedAndTheEnginesReasonStands [307 ms]
+   Failed!  - Failed:     3, Passed:    56, Skipped:     0, Total:    59, Duration: 29 s - ControlServer.Tests.dll (net8.0)
+== M5-trust-the-code diff: '5\t0\t.github/workflows/l2.yml\n1\t0\tsrc/ControlServer.Host/Runtime/Release/DemandReleaseService.cs'
+== M5-trust-the-code exit 1
+   Failed ControlServer.Tests.Batch7DemandReleaseServiceTests.AnEndedReasonOverALiveOrderReleasesNothingAndCancelsNothing [343 ms]
+   Failed!  - Failed:     1, Passed:    58, Skipped:     0, Total:    59, Duration: 34 s - ControlServer.Tests.dll (net8.0)
+== M6-silence-overwrites diff: '5\t0\t.github/workflows/l2.yml\n0\t1\tsrc/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs'
+== M6-silence-overwrites exit 1
+   Failed ControlServer.Tests.InTransitOrderStallTests.ASilentSessionDoesNotOverwriteAHangingOrderAsTheReason [2 s]
+   Failed!  - Failed:     1, Passed:    58, Skipped:     0, Total:    59, Duration: 27 s - ControlServer.Tests.dll (net8.0)
+== M7-never-clears diff: '5\t0\t.github/workflows/l2.yml\n1\t1\tsrc/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs'
+== M7-never-clears exit 1
+   Failed ControlServer.Tests.InTransitOrderStallTests.AContinuedOrderClearsTheReasonAndTheJourneyArrives [7 s]
+   Failed!  - Failed:     1, Passed:    58, Skipped:     0, Total:    59, Duration: 25 s - ControlServer.Tests.dll (net8.0)
+== restored; git status: 'M .github/workflows/l2.yml\n?? scripts/l2/scenarios/in-transit-order-cancelled-redispatch.ps1\n?? scripts/l2/scenarios/in-transit-order-hang-continue.ps1'

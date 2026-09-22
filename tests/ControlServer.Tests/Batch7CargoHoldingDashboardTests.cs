@@ -605,6 +605,35 @@ public sealed class Batch7CargoHoldingDashboardTests
             StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// 在途单停住的三个码（control-server#316）上了阻断卡片：原码照旧显示，另给中文说明，告诉走到车前的人该做什么。
+    /// </summary>
+    /// <remarks>
+    /// 码写成字面量：它们是现场看得见的东西，改名应当让这里红，而不是跟着常量悄悄改。
+    /// </remarks>
+    [Theory]
+    [InlineData("ORDER_HANG")]
+    [InlineData("ORDER_STATE_UNRECOGNIZED")]
+    [InlineData("ORDER_ENDED_WITHOUT_ARRIVAL")]
+    public async Task AStalledInTransitOrderIsShownWithAChineseDescription(string code)
+    {
+        Assert.True(BlockedJourneysQueryEndpoint.Descriptions.ContainsKey(code), $"{code} has no description");
+
+        await using DashboardDatabase database = await DashboardDatabase.CreateAsync();
+        JourneyRuntimeRow journey = Journey("D-1", "AGV-01", JourneyRuntimeStage.AwaitingPickupArrival);
+        journey.SetBlockReason(code, Now.AddMinutes(-1));
+        await database.SeedAsync(journey);
+
+        using JsonDocument fact = await ReadBlockedAsync(database.NewContext());
+        JsonElement row = Assert.Single(fact.RootElement.GetProperty("journeys").EnumerateArray());
+        Assert.Equal(code, row.GetProperty("blockReasonCode").GetString());
+        Assert.Equal(BlockedJourneysQueryEndpoint.Descriptions[code], row.GetProperty("blockReasonDescription").GetString());
+        string html = new BlockedJourneyCard().RenderFact(fact.RootElement);
+        Assert.Contains(code, html, StringComparison.Ordinal);
+        Assert.Contains(
+            System.Net.WebUtility.HtmlEncode(BlockedJourneysQueryEndpoint.Descriptions[code]), html, StringComparison.Ordinal);
+    }
+
     // --- 积压卡片：层、阈值、等待年龄 -----------------------------------------------------------------------------------
 
     /// <summary>

@@ -1,0 +1,5 @@
+2026-09-22T20:08:38+08:00 预期（写于运行之前）：
+服务端 8ec088b1（修前），真车载端 86d42ce5，模拟器 fb5f7c59，场景 real-onboard-order-hang-continue（脚本副本，与分支 dab517d3 入库版逐字节相同）。
+预期 FAIL 于 L2-ROH-01 的等待：90 秒等不到 ORDER_HANG，Last observed 的 BlockReasonCode 为 ONBOARD_SESSION_NOT_READY；
+收尾快照 db-SessionRecoveries 里这辆车 Readiness 不是 Ready（DEPARTURE_SAFETY_NOT_READY 一类）——前提成立。
+若前提不成立或红在别处：停下报告，不换注入重跑。
