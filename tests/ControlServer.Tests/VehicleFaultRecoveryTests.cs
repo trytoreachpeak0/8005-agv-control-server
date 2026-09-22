@@ -95,6 +95,35 @@ public sealed class VehicleFaultRecoveryTests
         Assert.Equal((VehicleFaultLevel.None, 1L), (stillCleared.Level, stillCleared.FaultGeneration));
     }
 
+    /// <summary>
+    /// 来路 7（control-server#323，由 control-server#299 带来）：清除故障释放了旅程里最后一条需求、旅程收尾，车上那一站也要撤掉
+    /// ——收尾快照在清除提交之后当场发出，以车此刻的会话代次，不等车重连。
+    /// </summary>
+    /// <remarks>
+    /// 收尾经唯一出口 <c>JourneyClosure.StageAsync</c>，所以快照一定已经落库；修前红在「发」这一步：服务没有发布器，
+    /// 那几行只能等下一次重连补发，而车此刻是连着的，一直显示已经结束的那一站，正是 #323 要消灭的残留。
+    /// </remarks>
+    [Fact]
+    public async Task AClearedFaultThatReleasesTheLastDemandTellsTheVehicleTheJourneyIsOver()
+    {
+        await using RuntimeFixture fixture = await FaultedOnTheWayToPickupAsync();
+        SiteRiot site = new(fixture);
+        JourneyRuntimeRow faulted = await fixture.RuntimeAsync();
+
+        VehicleFaultRecoveryDecision decision = await Service(fixture, site).RecoverAsync(Clear(fixture), Token);
+
+        Assert.Equal(
+            (VehicleFaultRecoveryOutcome.Cleared, VehicleFaultRecoveryDispositions.Released),
+            (decision.Outcome, decision.Disposition));
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        Assert.Equal(
+            JourneyRuntimeStage.Completed,
+            (await reading.JourneyRuntimes.AsNoTracking().SingleAsync(row => row.JourneyId == faulted.JourneyId, Token)).Stage);
+        await ClosureSnapshotAssertions.AssertClosureSentAsync(
+            reading, faulted.AgvId, fixture.Peer.Lines.Select(line => System.Text.Encoding.UTF8.GetString(line)), 1,
+            faulted.PickupStationId);
+    }
+
     // ---- 判据：缺任何一项都拒绝，列出全部理由 ----------------------------------------------------------------
 
     /// <summary>
