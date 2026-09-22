@@ -172,7 +172,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["VehicleSlotPositionReaderTests"] = "batch 4 FP-C15 server-authoritative SlotPosition per vehicle, never the onboard's report (program#70 decision 4); no wire message",
             ["WaitingJourneyBatteryWatchTests"] = "control-server#273 the waiting journey watch: a vehicle standing waiting for a person has its battery read from RIoT, recorded and logged past a threshold, and nothing is ever sent to it; server log and the server's own rows only, no wire message",
             ["WaitingJourneyDashboardTests"] = "control-server#273 the dashboard's waiting journey card: read-only /api/dashboard/ over the server's own tables, nothing goes on the wire (spec 5.1 #10)",
-            ["WaitingJourneyStageSinceMigrationTests"] = "cross-cutting migration guard for control-server#273's one migration and its back-fill of the stage start of journeys under way; hanging it off a slice would defer the guard with the slice",
+            ["WaitingJourneyWatchMigrationTests"] = "cross-cutting migration guard for control-server#273's one migration and its back-fill of when journeys already waiting began to wait; hanging it off a slice would defer the guard with the slice",
         };
 
     /// <summary>

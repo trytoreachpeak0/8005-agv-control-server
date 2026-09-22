@@ -64,8 +64,8 @@ public sealed class Batch3MigrationDisciplineTests
         // 约束后加的例外；为什么非它不可、谓词为什么无歧义，写在 Batch7MigrationDisciplineTests 的同一条上。
         // 自己的断言在 Batch7LoadingMembershipBackfillMigrationTests。
         "20260920145604_Batch7LoadingMembershipBackfill",
-        // control-server#273：JourneyRuntimes 加 StageSince 与三列等人电量记录，StageSince 回填在途旅程。自己的断言在 WaitingJourneyBatteryWatchTests。
-        "20260922093614_WaitingJourneyStageSince"
+        // control-server#273：JourneyRuntimes 加等人起点 WaitingSince 与三列等人电量记录，WaitingSince 回填正在等人的旅程。自己的断言在 WaitingJourneyWatchMigrationTests。
+        "20260922120241_WaitingJourneyWatch"
     ];
 
     private static readonly string[] Batch3Tables =

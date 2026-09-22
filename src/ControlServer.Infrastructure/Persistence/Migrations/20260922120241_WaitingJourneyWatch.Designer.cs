@@ -11,8 +11,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ControlServer.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ControlServerDbContext))]
-    [Migration("20260922093614_WaitingJourneyStageSince")]
-    partial class WaitingJourneyStageSince
+    [Migration("20260922120241_WaitingJourneyWatch")]
+    partial class WaitingJourneyWatch
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -1156,9 +1156,6 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset?>("StageSince")
-                        .HasColumnType("TEXT");
-
                     b.Property<DateTimeOffset?>("StationDepartureWaitStartedAt")
                         .HasColumnType("TEXT");
 
@@ -1197,6 +1194,9 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
 
                     b.Property<int?>("WaitingBatteryPercent")
                         .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset?>("WaitingSince")
+                        .HasColumnType("TEXT");
 
                     b.Property<DateTimeOffset?>("WaitingWarnedAt")
                         .HasColumnType("TEXT");

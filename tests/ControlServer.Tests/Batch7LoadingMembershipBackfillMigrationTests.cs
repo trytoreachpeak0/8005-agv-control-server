@@ -85,7 +85,7 @@ public sealed class Batch7LoadingMembershipBackfillMigrationTests
     /// <para>
     /// 种在一个迁到最新的草稿库上，再按目标库此刻（<see cref="PreviousMigration"/>）有的列把行拷过去（control-server#273 起）。
     /// 在目标库上直接用 EF 种，等于拿今天的模型去写旧表：之后任何一张迁移给这几张表加了列，EF 就会去写一列旧表没有的列，
-    /// 这条用例便会在与它无关的地方红掉——cs#273 加 <c>JourneyRuntimes.StageSince</c> 时正是这样。
+    /// 这条用例便会在与它无关的地方红掉——cs#273 给 <c>JourneyRuntimes</c> 加列时正是这样。
     /// </para>
     /// </remarks>
     private static async Task SeedJourneysAsOldVersionLeftThemAsync(Batch7JourneyFixture fixture)

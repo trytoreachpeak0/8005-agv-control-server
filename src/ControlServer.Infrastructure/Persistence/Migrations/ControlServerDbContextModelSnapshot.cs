@@ -1153,9 +1153,6 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset?>("StageSince")
-                        .HasColumnType("TEXT");
-
                     b.Property<DateTimeOffset?>("StationDepartureWaitStartedAt")
                         .HasColumnType("TEXT");
 
@@ -1194,6 +1191,9 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
 
                     b.Property<int?>("WaitingBatteryPercent")
                         .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset?>("WaitingSince")
+                        .HasColumnType("TEXT");
 
                     b.Property<DateTimeOffset?>("WaitingWarnedAt")
                         .HasColumnType("TEXT");

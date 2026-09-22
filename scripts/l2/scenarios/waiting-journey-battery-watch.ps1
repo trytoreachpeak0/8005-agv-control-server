@@ -39,7 +39,7 @@ $sublot = "L2-SUBLOT-$($Context.RunId)"
 
 function Get-Runtime {
     $rows = Invoke-L2Query -Connection $connection `
-        -Sql "SELECT JourneyId, Stage, BlockReasonCode, StageSince, WaitingBatteryPercent FROM JourneyRuntimes WHERE DemandId = '$demandId'"
+        -Sql "SELECT JourneyId, Stage, BlockReasonCode, WaitingSince, WaitingBatteryPercent FROM JourneyRuntimes WHERE DemandId = '$demandId'"
     if ($rows.Count -eq 0) { return $null }
     return $rows[0]
 }

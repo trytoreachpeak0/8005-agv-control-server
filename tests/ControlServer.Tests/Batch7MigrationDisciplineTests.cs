@@ -43,8 +43,8 @@ public sealed class Batch7MigrationDisciplineTests
         // 谓词无歧义：老数据里一趟旅程只有一条需求，「这趟旅程里那条 PENDING_LOAD」没有第二个候选。
         // 自己的断言在 Batch7LoadingMembershipBackfillMigrationTests。
         "20260920145604_Batch7LoadingMembershipBackfill",
-        // control-server#273：JourneyRuntimes 加 StageSince 与三列等人电量记录，StageSince 回填在途旅程。自己的断言在 WaitingJourneyBatteryWatchTests。
-        "20260922093614_WaitingJourneyStageSince",
+        // control-server#273：JourneyRuntimes 加等人起点 WaitingSince 与三列等人电量记录，WaitingSince 回填正在等人的旅程。自己的断言在 WaitingJourneyWatchMigrationTests。
+        "20260922120241_WaitingJourneyWatch",
     ];
 
     [Fact]

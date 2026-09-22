@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 namespace ControlServer.Host.Dashboard;
 
 /// <summary>
-/// 车队视图「等人中的旅程」的数据面（control-server#273）：每趟车停着等人的旅程一行——车、阶段、原因码、阶段起点与已等多久、
+/// 车队视图「等人中的旅程」的数据面（control-server#273）：每趟车停着等人的旅程一行——车、阶段、原因码、开始等人的时刻与已等多久、
 /// 监看最后一次记下的电量与读数时间、按两道线判出的电量等级、过没过告警门槛。
 /// </summary>
 /// <remarks>
@@ -16,8 +16,8 @@ namespace ControlServer.Host.Dashboard;
 /// 路上的只在引擎说出了没到的原因时列，已完成的不列。这里不另写一份阶段清单。
 /// </para>
 /// <para>
-/// <b>只读落库的事实。</b>已等多久 = 请求时刻 − <see cref="JourneyRuntimeRow.StageSince"/>（保存换阶段时由上下文盖章），不从
-/// <c>UpdatedAt</c> 算——后者每写一次行就动。电量是 <see cref="WaitingJourneyWatch"/> 落库的那一次读数，连同读数时间原样给出；看板从不自己去问 RIoT。
+/// <b>只读落库的事实。</b>已等多久 = 请求时刻 − <see cref="JourneyRuntimeRow.WaitingSince"/>（保存时由上下文按同一个判法维护：
+/// 在等人阶段之间切换不重置，出发或完成才清掉；路上的从原因出现算），不从 <c>UpdatedAt</c> 算——后者每写一次行就动。电量是 <see cref="WaitingJourneyWatch"/> 落库的那一次读数，连同读数时间原样给出；看板从不自己去问 RIoT。
 /// 没读过、或读的那一刻 RIoT 没给百分比，百分比都是 null、等级是 <c>Unknown</c>，这一行照列。
 /// </para>
 /// <para>
@@ -67,7 +67,7 @@ internal sealed class WaitingJourneysQueryEndpoint : IDashboardQueryEndpoint
             minimumBatteryPercent = _options.MinimumBatteryPercent,
             rescueBatteryPercent = _options.WaitingJourneyRescueBatteryPercent,
             journeys = journeys
-                .Where(JourneyWaitClassification.IsWaiting)
+                .Where(row => JourneyWaitClassification.IsWaiting(row.Stage, row.BlockReasonCode))
                 .OrderBy(row => row.AgvId, StringComparer.Ordinal)
                 .ThenBy(row => row.JourneyId, StringComparer.Ordinal)
                 .Select(row => Fact(row, now))
@@ -77,7 +77,7 @@ internal sealed class WaitingJourneysQueryEndpoint : IDashboardQueryEndpoint
 
     private object Fact(JourneyRuntimeRow journey, DateTimeOffset now)
     {
-        DateTimeOffset? since = journey.StageSince;
+        DateTimeOffset? since = journey.WaitingSince;
         long? waitedSeconds = since is { } start ? (long)Math.Max(0, (now - start).TotalSeconds) : null;
         return new
         {
@@ -85,13 +85,13 @@ internal sealed class WaitingJourneysQueryEndpoint : IDashboardQueryEndpoint
             agvId = journey.AgvId,
             stage = journey.Stage.ToString(),
             blockReasonCode = journey.BlockReasonCode,
-            stageSince = since,
+            waitingSince = since,
             waitedSeconds,
             pastWarningThreshold = waitedSeconds is { } seconds &&
                 seconds >= (long)_options.WaitingJourneyWarningAfter.TotalSeconds,
             batteryPercent = journey.WaitingBatteryPercent,
             batteryObservedAt = journey.WaitingBatteryObservedAt,
-            batteryLevel = JourneyWaitClassification.BatteryLevel(journey.WaitingBatteryPercent, _options).ToString()
+            batteryLevel = WaitingJourneyBattery.Level(journey.WaitingBatteryPercent, _options).ToString()
         };
     }
 }

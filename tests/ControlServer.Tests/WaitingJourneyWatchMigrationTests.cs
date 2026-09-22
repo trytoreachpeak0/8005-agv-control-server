@@ -6,12 +6,16 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace ControlServer.Tests;
 
 /// <summary>
-/// control-server#273：<c>JourneyRuntimes</c> 加阶段起点 <c>StageSince</c> 与三列等人电量记录，由一个迁移落地。这里钉它对在途旅程的回填：
-/// 在迁到上一张迁移的库上用原始 SQL 种数据，再迁到最新。
+/// control-server#273：<c>JourneyRuntimes</c> 加等人起点 <c>WaitingSince</c> 与三列等人电量记录，由一个迁移落地。这里钉它对正在等人的
+/// 旅程的回填：在迁到上一张迁移的库上用原始 SQL 种数据，再迁到最新。
 /// </summary>
-public sealed class WaitingJourneyStageSinceMigrationTests
+/// <remarks>
+/// 迁移次序：这是批次 7 迁移通道之后的第一张，排在 <c>20260920145604_Batch7LoadingMembershipBackfill</c> 之后。它取代了本票
+/// PR #320 第一版里的 <c>20260922093614_WaitingJourneyStageSince</c>（那一张只在本票分支上存在过，从未合入，所以是替换而不是新增）。
+/// </remarks>
+public sealed class WaitingJourneyWatchMigrationTests
 {
-    private const string MigrationSuffix = "_WaitingJourneyStageSince";
+    private const string MigrationSuffix = "_WaitingJourneyWatch";
 
     private const string PreviousMigration = "20260920145604_Batch7LoadingMembershipBackfill";
 
@@ -26,8 +30,9 @@ public sealed class WaitingJourneyStageSinceMigrationTests
     }
 
     /// <summary>
-    /// 在途旅程取记下来的最好的起点：有原因码起点的取它（SetStage 会清掉原因码，所以它不会早于所属的阶段），没有的取最后一次写行的时刻。
-    /// 两者都只会晚于真实起点，所以已在等的旅程读起来比实际短、报得晚，从不提前报。已完成的旅程不回填；电量三列一律为空；别的列一个字节不动。
+    /// 正在等人的旅程取记下来的最好的起点：停着的阶段有原因码起点的取它，没有的取最后一次写行的时刻；路上的只在带着原因码时算等人，
+    /// 取原因码的起点。这些都只会晚于真实起点，所以已在等的旅程读起来比实际短、报得晚，从不提前报。正常在路上的与已完成的不回填；
+    /// 电量三列一律为空；别的列一个字节不动。
     /// </summary>
     [Fact]
     public async Task AJourneyUnderWayGetsTheBestStartThatWasRecordedAndACompletedOneGetsNone()
@@ -48,6 +53,7 @@ public sealed class WaitingJourneyStageSinceMigrationTests
                 "D-COMPLETED - - - -",
                 "D-GATE '2026-09-21 16:40:00+00:00' - - -",
                 "D-HANG '2026-09-21 17:05:00+00:00' - - -",
+                "D-MOVING - - - -",
             ],
             await NewColumnsByDemandAsync(fixture.Connection));
     }
@@ -64,7 +70,7 @@ public sealed class WaitingJourneyStageSinceMigrationTests
 
         await fixture.Context.GetService<IMigrator>().MigrateAsync(PreviousMigration, cancellationToken);
         string[] columns = await ColumnsAsync(fixture.Connection);
-        Assert.DoesNotContain("StageSince", columns);
+        Assert.DoesNotContain("WaitingSince", columns);
         Assert.DoesNotContain("WaitingBatteryPercent", columns);
         Assert.DoesNotContain("WaitingBatteryObservedAt", columns);
         Assert.DoesNotContain("WaitingWarnedAt", columns);
@@ -81,7 +87,7 @@ public sealed class WaitingJourneyStageSinceMigrationTests
         command.CommandText =
             """
             SELECT COUNT(*) FROM pragma_table_info('JourneyRuntimes')
-            WHERE name IN ('StageSince', 'WaitingBatteryPercent', 'WaitingBatteryObservedAt', 'WaitingWarnedAt')
+            WHERE name IN ('WaitingSince', 'WaitingBatteryPercent', 'WaitingBatteryObservedAt', 'WaitingWarnedAt')
               AND "notnull" = 0
             """;
 
@@ -89,11 +95,11 @@ public sealed class WaitingJourneyStageSinceMigrationTests
         Assert.False(fixture.Context.Database.HasPendingModelChanges());
     }
 
-    /// <summary>四趟旅程经真实受理路径在一个草稿库上建出，照上一张迁移的列拷过来，再用原始 SQL 放到生产能到的样子。</summary>
+    /// <summary>五趟旅程经真实受理路径在一个草稿库上建出，照上一张迁移的列拷过来，再用原始 SQL 放到生产能到的样子。</summary>
     private static async Task SeedJourneysAsync(Batch7JourneyFixture fixture)
     {
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
-        string[] demands = ["D-GATE", "D-BLOCKED", "D-HANG", "D-COMPLETED"];
+        string[] demands = ["D-GATE", "D-BLOCKED", "D-HANG", "D-COMPLETED", "D-MOVING"];
         await using Batch7JourneyFixture scratch = await Batch7JourneyFixture.CreateAsync();
         for (int index = 0; index < demands.Length; index++)
         {
@@ -119,6 +125,9 @@ public sealed class WaitingJourneyStageSinceMigrationTests
                 WHERE DemandId = 'D-HANG';
             UPDATE JourneyRuntimes SET Stage = 'Completed', UpdatedAt = '2026-09-21 12:00:00+00:00'
                 WHERE DemandId = 'D-COMPLETED';
+            -- 正常在路上，没有原因码：不是等人。
+            UPDATE JourneyRuntimes SET Stage = 'AwaitingGateArrival', BlockReasonCode = NULL, BlockReasonSince = NULL,
+                UpdatedAt = '2026-09-21 17:30:00+00:00' WHERE DemandId = 'D-MOVING';
             """;
         await raw.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -129,7 +138,7 @@ public sealed class WaitingJourneyStageSinceMigrationTests
         select.CommandText =
             """
             SELECT DemandId
-                || ' ' || CASE WHEN StageSince IS NULL THEN '-' ELSE quote(StageSince) END
+                || ' ' || CASE WHEN WaitingSince IS NULL THEN '-' ELSE quote(WaitingSince) END
                 || ' ' || CASE WHEN WaitingBatteryPercent IS NULL THEN '-' ELSE quote(WaitingBatteryPercent) END
                 || ' ' || CASE WHEN WaitingBatteryObservedAt IS NULL THEN '-' ELSE quote(WaitingBatteryObservedAt) END
                 || ' ' || CASE WHEN WaitingWarnedAt IS NULL THEN '-' ELSE quote(WaitingWarnedAt) END

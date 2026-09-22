@@ -1,7 +1,4 @@
-using ControlServer.Domain;
-using ControlServer.Infrastructure.Persistence;
-
-namespace ControlServer.Host.Runtime;
+namespace ControlServer.Domain;
 
 /// <summary>
 /// What a vehicle on a journey is doing in each <see cref="JourneyRuntimeStage"/>, from the one question the waiting
@@ -9,11 +6,12 @@ namespace ControlServer.Host.Runtime;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>This table is the only place that answers it.</b> The watch that logs a long wait and the dashboard card that shows
-/// it both read <see cref="Of(JourneyRuntimeStage)"/>; neither branches on stages of its own. A stage added to the enum
-/// and not to this table throws here on the first journey that reaches it, and
-/// <c>WaitingJourneyBatteryWatchTests.EveryStageIsClassifiedAndTheTableIsTheOneThatWasReviewed</c> fails before that:
-/// it pins the whole table against every value of the enum.
+/// <b>This table is the only place that answers it.</b> The database context that stamps when a wait began, the watch
+/// that logs a long wait and the dashboard card that shows it all read <see cref="IsWaiting"/>; none of them branches on
+/// stages of its own. It lives in the domain so that the persistence layer can use it too. A stage added to the enum and
+/// not to this table throws here on the first journey that reaches it, and
+/// <c>WaitingJourneyBatteryWatchTests.EveryStageIsClassifiedAndTheTableIsTheOneThatWasReviewed</c> fails before that: it
+/// pins the whole table against every value of the enum.
 /// </para>
 /// <para>
 /// The classification is from reading <c>JourneyRuntimeEngine.AdvanceAsync</c> at <c>fp/v2-impl@8ec088b1</c>. The
@@ -24,8 +22,9 @@ namespace ControlServer.Host.Runtime;
 /// </para>
 /// <para>
 /// A travelling stage is a wait only while the engine names a reason the leg is not arriving -- a checkpoint wait, an
-/// order RIoT suspended or failed, an AREA machine that no longer admits the stop. A leg that is simply under way is not
-/// a wait, however long it takes.
+/// order RIoT suspended or failed, a session gone quiet, an AREA machine that no longer admits the stop. A leg that is
+/// simply under way is not a wait, however long it takes, and its wait begins when the reason appears, not when the leg
+/// did.
 /// </para>
 /// </remarks>
 public static class JourneyWaitClassification
@@ -46,36 +45,15 @@ public static class JourneyWaitClassification
     };
 
     /// <summary>
-    /// Whether the journey is waiting right now: its vehicle stands still in a stationary stage, or a travelling stage
-    /// names why it is not arriving.
+    /// Whether a journey in <paramref name="stage"/> carrying <paramref name="blockReasonCode"/> is waiting right now: its
+    /// vehicle stands still in a stationary stage, or a travelling stage names why it is not arriving.
     /// </summary>
-    public static bool IsWaiting(JourneyRuntimeRow runtime)
+    public static bool IsWaiting(JourneyRuntimeStage stage, string? blockReasonCode) => Of(stage) switch
     {
-        ArgumentNullException.ThrowIfNull(runtime);
-        return Of(runtime.Stage) switch
-        {
-            JourneyStageActivity.Stationary => true,
-            JourneyStageActivity.Travelling => runtime.BlockReasonCode is not null,
-            _ => false
-        };
-    }
-
-    /// <summary>
-    /// How the battery of a waiting vehicle reads against the two lines (control-server#273): the dispatch minimum,
-    /// under which the vehicle takes no new work, and the rescue line, under which a person has to move it to a charger.
-    /// Nothing on this server moves it: REQ-0169 lets a falling battery raise the alarm and nothing else.
-    /// </summary>
-    public static WaitingBatteryLevel BatteryLevel(int? batteryPercent, JourneyRuntimeOptions options)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-        return batteryPercent switch
-        {
-            null => WaitingBatteryLevel.Unknown,
-            { } percent when percent < options.WaitingJourneyRescueBatteryPercent => WaitingBatteryLevel.BelowRescueLine,
-            { } percent when percent < options.MinimumBatteryPercent => WaitingBatteryLevel.BelowDispatchMinimum,
-            _ => WaitingBatteryLevel.Sufficient
-        };
-    }
+        JourneyStageActivity.Stationary => true,
+        JourneyStageActivity.Travelling => blockReasonCode is not null,
+        _ => false
+    };
 }
 
 public enum JourneyStageActivity
@@ -88,12 +66,4 @@ public enum JourneyStageActivity
 
     /// <summary>The journey has ended.</summary>
     Finished
-}
-
-public enum WaitingBatteryLevel
-{
-    Unknown,
-    Sufficient,
-    BelowDispatchMinimum,
-    BelowRescueLine
 }

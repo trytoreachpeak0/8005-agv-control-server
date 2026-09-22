@@ -117,6 +117,13 @@ public sealed class JourneyRuntimeOptions
     /// same log is already raised to an error.
     /// </summary>
     public int WaitingJourneyRescueBatteryPercent { get; set; } = 15;
+
+    /// <summary>
+    /// How long the waiting journey watch waits for one vehicle's battery from RIoT before it records "unknown"
+    /// (control-server#273, review of #320). Two seconds by default; must be positive and at most ten seconds. The gateway's
+    /// own timeout is thirty, and the watch reads one vehicle after another at the end of every round.
+    /// </summary>
+    public TimeSpan WaitingJourneyBatteryReadBudget { get; set; } = TimeSpan.FromSeconds(2);
 }
 
 /// <summary>One vehicle's identity and the policy slice configured for it.</summary>
@@ -201,6 +208,11 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
             options.WaitingJourneyRescueBatteryPercent >= options.MinimumBatteryPercent)
         {
             failures.Add("WaitingJourneyRescueBatteryPercent must be at least 1 and below MinimumBatteryPercent.");
+        }
+        if (options.WaitingJourneyBatteryReadBudget <= TimeSpan.Zero ||
+            options.WaitingJourneyBatteryReadBudget > TimeSpan.FromSeconds(10))
+        {
+            failures.Add("WaitingJourneyBatteryReadBudget must be positive and at most 10 s.");
         }
         if (options.AdmissionPolicyVersion <= 0) failures.Add("AdmissionPolicyVersion must be positive.");
         RequireText(options.AdmissionPolicyDeploymentId, nameof(options.AdmissionPolicyDeploymentId), failures);

@@ -15,11 +15,11 @@ namespace ControlServer.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>看板规则：只显示落库的事实或派车时算出的值。</b>已等多久从落库的 <c>StageSince</c> 算，不从 <c>UpdatedAt</c>——
-/// 这里的行都故意让 <c>UpdatedAt</c> 晚于阶段起点，谁拿错了列，数字就对不上。电量与读数时间是监看落库的那一次读数，看板从不自己去读 RIoT。
+/// <b>看板规则：只显示落库的事实或派车时算出的值。</b>已等多久从落库的 <c>WaitingSince</c> 算，不从 <c>UpdatedAt</c>——
+/// 这里的行都故意让 <c>UpdatedAt</c> 晚于开始等人的时刻，谁拿错了列，数字就对不上。电量与读数时间是监看落库的那一次读数，看板从不自己去读 RIoT。
 /// </para>
 /// <para>
-/// 库由迁移建出，所以读到的四列就是 <c>WaitingJourneyStageSince</c> 那个迁移加的。
+/// 库由迁移建出，所以读到的四列就是 <c>WaitingJourneyWatch</c> 那个迁移加的。
 /// </para>
 /// </remarks>
 public sealed class WaitingJourneyDashboardTests
@@ -28,7 +28,7 @@ public sealed class WaitingJourneyDashboardTests
 
     /// <summary>
     /// 停着等的都列：闸口等卸货（没有原因码）、阻断；路上的只在说出了原因时列；正常在路上的、已完成的不列。
-    /// 已等多久从阶段起点算，电量与读数时间照库里的写，等级按两道线判，过没过门槛一并给出。
+    /// 已等多久从开始等人的时刻算，电量与读数时间照库里的写，等级按两道线判，过没过门槛一并给出。
     /// </summary>
     [Fact]
     public async Task EveryWaitingJourneyIsListedWithHowLongItHasWaitedFromItsStageStartAndItsLastBatteryReading()
@@ -59,7 +59,7 @@ public sealed class WaitingJourneyDashboardTests
         Assert.Equal(JourneyIdentity.ForAnchorDemand("D-GATE"), gate.GetProperty("journeyId").GetString());
         Assert.Equal("AwaitingUnloadResult", gate.GetProperty("stage").GetString());
         Assert.Equal(JsonValueKind.Null, gate.GetProperty("blockReasonCode").ValueKind);
-        Assert.Equal(Now.AddMinutes(-125), gate.GetProperty("stageSince").GetDateTimeOffset());
+        Assert.Equal(Now.AddMinutes(-125), gate.GetProperty("waitingSince").GetDateTimeOffset());
         Assert.Equal(125 * 60, gate.GetProperty("waitedSeconds").GetInt64());
         Assert.True(gate.GetProperty("pastWarningThreshold").GetBoolean());
         Assert.Equal(9, gate.GetProperty("batteryPercent").GetInt32());
@@ -124,8 +124,25 @@ public sealed class WaitingJourneyDashboardTests
         AssertRowContains(html, "AGV-D-LOW", ["阻断", "LOAD_RESULT_REQUIRES_RECOVERY", "12 分", "22%", "低于接单线"]);
         AssertRowContains(html, "AGV-D-UNKNOWN", ["未知"]);
         AssertRowContains(html, "AGV-D-FINE", ["取货站等录入", "80%"]);
+        // 读数时间那一格：读过的写读的那一刻（本机时区，与卡片上其它时间同一个写法），读不到电量但读过的照写时刻，从没读过的写「未读到」。
+        string readAt = Now.AddSeconds(-2).ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
+        AssertRowContains(html, "AGV-D-RESCUE", [readAt]);
+        AssertRowContains(html, "AGV-D-UNKNOWN", [readAt]);
         Assert.DoesNotContain("需要人工挪车充电", RowOf(html, "AGV-D-LOW"), StringComparison.Ordinal);
         Assert.DoesNotContain("低于接单线", RowOf(html, "AGV-D-FINE"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AJourneyNeverReadSaysSoInTheReadingTimeCell()
+    {
+        await using DashboardDatabase database = await DashboardDatabase.CreateAsync();
+        await database.AddAsync("D-NEW", JourneyRuntimeStage.AwaitingSublot, stageStart: Now.AddSeconds(-5),
+            battery: null, readAt: null);
+        using JsonDocument fact = await ReadAsync(database);
+
+        string html = new WaitingJourneyCard().RenderFact(fact.RootElement);
+
+        AssertRowContains(html, "AGV-D-NEW", ["未知", "未读到"]);
     }
 
     [Fact]
@@ -201,8 +218,8 @@ public sealed class WaitingJourneyDashboardTests
             new(new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(_connection).Options);
 
         /// <summary>
-        /// 按生产的写法落一行：先以阶段起点那一刻新增（上下文据此盖 <c>StageSince</c>），再以一个更晚的 <c>UpdatedAt</c> 记下监看的读数——
-        /// 所以 <c>UpdatedAt</c> 与阶段起点必然不同。
+        /// 按生产的写法落一行：先以开始等人那一刻新增（上下文据此写 <c>WaitingSince</c>），再以一个更晚的 <c>UpdatedAt</c> 记下监看的读数——
+        /// 所以 <c>UpdatedAt</c> 与开始等人的时刻必然不同。
         /// </summary>
         public async Task AddAsync(
             string demandId,
@@ -223,7 +240,9 @@ public sealed class WaitingJourneyDashboardTests
             await using ControlServerDbContext update = NewContext();
             JourneyRuntimeRow saved = await update.JourneyRuntimes.SingleAsync(
                 row => row.DemandId == demandId, cancellationToken);
-            Assert.Equal(stageStart, saved.StageSince);
+            Assert.Equal(
+                JourneyWaitClassification.IsWaiting(stage, reason) ? stageStart : null,
+                saved.WaitingSince);
             saved.WaitingBatteryPercent = battery;
             saved.WaitingBatteryObservedAt = readAt;
             saved.UpdatedAt = Now.AddSeconds(-1);

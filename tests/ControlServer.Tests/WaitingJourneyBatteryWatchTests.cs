@@ -61,10 +61,20 @@ public sealed class WaitingJourneyBatteryWatchTests
         JourneyRuntimeRow runtime = await ReloadAsync(fixture);
         Assert.Equal(JourneyRuntimeStage.AwaitingUnloadResult, runtime.Stage);
         Assert.Null(runtime.BlockReasonCode);
-        Assert.Equal(arrived, runtime.StageSince);
+        Assert.Equal(arrived, runtime.WaitingSince);
         Assert.Equal(55, runtime.WaitingBatteryPercent);
         Assert.Equal(arrived + fixture.Options.WaitingJourneyWarningAfter, runtime.WaitingBatteryObservedAt);
         await quiet.AssertNothingWasSentAsync(fixture);
+
+        // The person takes the goods: the journey completes, and no later round says a word about it again -- not at the
+        // next repeat, not half an hour on.
+        StationOperationRow unload = await fixture.OperationAsync(SlotOperationType.Unload);
+        await fixture.ApplySafeResultAsync(unload, SlotOperationType.Unload, SlotBusinessState.Empty);
+        await RoundAtAsync(fixture, arrived + fixture.Options.WaitingJourneyWarningAfter + TimeSpan.FromSeconds(2));
+        Assert.Equal(JourneyRuntimeStage.Completed, (await ReloadAsync(fixture)).Stage);
+        await RoundAtAsync(fixture, arrived + fixture.Options.WaitingJourneyWarningAfter + fixture.Options.WaitingJourneyWarningRepeat);
+        await RoundAtAsync(fixture, arrived + TimeSpan.FromMinutes(45));
+        Assert.Single(WatchEntries(fixture));
     }
 
     /// <summary>
@@ -200,7 +210,7 @@ public sealed class WaitingJourneyBatteryWatchTests
     /// 车载会话未就绪（调度 09-22 转来，#316 审查坐实的坑）：<c>AdvanceAsync</c> 在 <c>session is null</c> 那一支写上
     /// <c>ONBOARD_SESSION_NOT_READY</c> 就返回，放在它后面的逻辑在真车上整段不跑；真车载端挂着本服务端的在途单时照例就是未就绪，
     /// 合成车载端永远报安全，合成 L2 看不出来。监看不在那一支后面——引擎在全部旅程推进之后另行调用它——所以闸口等人超过门槛时，
-    /// 电量照读、告警照打，原因码写的是会话未就绪，阶段与阶段起点不动。
+    /// 电量照读、告警照打，原因码写的是会话未就绪，阶段与等人起点不动。
     /// </summary>
     /// <remarks>会话掉线的形状照 <c>PickupDispatchPlanPastOwnOrderTests.DropSessionOnOwnOrderAsync</c>。</remarks>
     [Fact]
@@ -226,7 +236,7 @@ public sealed class WaitingJourneyBatteryWatchTests
         // The round did go through the not-ready branch: without this the test could pass on a session still Ready.
         Assert.Equal("ONBOARD_SESSION_NOT_READY", runtime.BlockReasonCode);
         Assert.Equal(JourneyRuntimeStage.AwaitingUnloadResult, runtime.Stage);
-        Assert.Equal(arrived, runtime.StageSince);
+        Assert.Equal(arrived, runtime.WaitingSince);
         Assert.Equal(21, runtime.WaitingBatteryPercent);
         Assert.Equal(due, runtime.WaitingBatteryObservedAt);
         (LogLevel level, string message) = Assert.Single(WatchEntries(fixture));
@@ -269,6 +279,80 @@ public sealed class WaitingJourneyBatteryWatchTests
         Assert.Equal(due + TimeSpan.FromSeconds(2), (await ReloadAsync(fixture)).WaitingWarnedAt);
     }
 
+    /// <summary>
+    /// RIoT 读车卡住（#320 审查中项 2）：读电量有自己的预算，超时即记「未知」，这一轮在预算量级内结束，不等网关自己的 30 秒。
+    /// 替身的读车要 20 秒才答，预算设 200 毫秒；没有预算的实现这一轮要 20 秒，判据给 5 秒。计时用真实时钟——预算的计时器就是真实的，
+    /// 与派车轮的按车预算同一种做法（<c>DispatchRoundRunner.TryAdmitToRoundAsync</c>）。
+    /// </summary>
+    [Fact]
+    public async Task ABatteryReadThatHangsIsCutOffAtItsBudgetAndRecordedAsUnknown()
+    {
+        await using RuntimeFixture fixture = await BlockedAtGateAsync();
+        fixture.Options.WaitingJourneyBatteryReadBudget = TimeSpan.FromMilliseconds(200);
+        DateTimeOffset blocked = fixture.Clock.GetUtcNow();
+        fixture.Riot.ReadVehicleDelay = token => Task.Delay(TimeSpan.FromSeconds(20), token);
+
+        System.Diagnostics.Stopwatch elapsed = System.Diagnostics.Stopwatch.StartNew();
+        await RoundAtAsync(fixture, blocked + fixture.Options.WaitingJourneyWarningAfter);
+        elapsed.Stop();
+
+        Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(5), $"The round took {elapsed.Elapsed}.");
+        (_, string message) = Assert.Single(WatchEntries(fixture));
+        Assert.Contains("battery unknown", message, StringComparison.Ordinal);
+        JourneyRuntimeRow runtime = await ReloadAsync(fixture);
+        Assert.Null(runtime.WaitingBatteryPercent);
+        Assert.Equal(blocked + fixture.Options.WaitingJourneyWarningAfter, runtime.WaitingBatteryObservedAt);
+    }
+
+    /// <summary>
+    /// 这一轮读地图目录失败、提前返回（#320 审查低项 5）：引擎在这种时候最该有人知道车停着，所以监看照跑。先断言这一轮确实走了
+    /// 目录失败那条路（日志里有那一条），再断言告警照打。
+    /// </summary>
+    [Fact]
+    public async Task TheWatchStillRunsInARoundWhoseMapCatalogReadFailed()
+    {
+        await using RuntimeFixture fixture = await BlockedAtGateAsync();
+        DateTimeOffset blocked = fixture.Clock.GetUtcNow();
+        fixture.Riot.FailNextMapRead = new HttpRequestException("RIoT map endpoint is down.");
+
+        await RoundAtAsync(fixture, blocked + fixture.Options.WaitingJourneyWarningAfter);
+
+        lock (fixture.EngineLog.Entries)
+        {
+            Assert.Contains(fixture.EngineLog.Entries, entry =>
+                entry.Message.Contains("RIoT Map station catalog failed closed", StringComparison.Ordinal));
+        }
+        (_, string message) = Assert.Single(WatchEntries(fixture));
+        Assert.Contains("UNLOAD_RESULT_REQUIRES_RECOVERY", message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 这一轮推进抛了异常（#320 审查低项 5）：这里用同一辆车挂两趟未完成旅程——引擎每一轮都在推进之前就抛
+    /// <see cref="BusinessIdentityConflictException"/>，是一台真卡住的引擎的样子。异常照样抛出这一轮，监看在它之前照跑，告警照打。
+    /// </summary>
+    [Fact]
+    public async Task TheWatchStillRunsInARoundThatThrew()
+    {
+        await using RuntimeFixture fixture = await BlockedAtGateAsync();
+        DateTimeOffset blocked = fixture.Clock.GetUtcNow();
+        JourneyRuntimeRow waiting = await ReloadAsync(fixture);
+        JourneyRuntimeRow second = Runtime("D-DOUBLE-BOOKED", JourneyRuntimeStage.AwaitingPickupArrival, blocked);
+        second.AgvId = waiting.AgvId;
+        second.VehicleKey = waiting.VehicleKey;
+        fixture.Context.JourneyRuntimes.Add(second);
+        await fixture.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        TimeSpan step = blocked + fixture.Options.WaitingJourneyWarningAfter - fixture.Clock.GetUtcNow();
+        fixture.Clock.Advance(step);
+        await fixture.HearFromPeerAsync();
+        BusinessIdentityConflictException thrown = await Assert.ThrowsAsync<BusinessIdentityConflictException>(
+            () => fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken));
+
+        Assert.Contains("More than one unresolved journey", thrown.Message, StringComparison.Ordinal);
+        (_, string message) = Assert.Single(WatchEntries(fixture));
+        Assert.Contains(waiting.JourneyId, message, StringComparison.Ordinal);
+    }
+
     // ---- 票面第 3 条：正常推进不变 --------------------------------------------------------------------------------
 
     /// <summary>
@@ -296,26 +380,135 @@ public sealed class WaitingJourneyBatteryWatchTests
     }
 
     /// <summary>
-    /// 同一条路上一旦引擎说出了「为什么没到」（这里是 RIoT 把单子挂起、引擎命名的那一类），它就是等人，照样按门槛报。
+    /// 同一条路上一旦引擎说出了「为什么没到」（这里是 RIoT 报单子失败、引擎命名的那一类），它就是等人——<b>从原因出现的那一刻算</b>，
+    /// 不从出发算（#320 审查中项 1）。车正常开了 12 分钟、到尾声才出事：出事后 9 分 59 秒一条不报，满 10 分钟才报，报的是「10 min」。
+    /// 从出发算的实现会在出事那一刻就报「已等 12 分钟」。
     /// </summary>
     [Fact]
-    public async Task ALegWhoseReasonForNotArrivingIsNamedIsAWaitLikeAnyOther()
+    public async Task ALegThatNamesAReasonLateWaitsFromTheReasonNotFromTheDeparture()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         fixture.Catalog.Set(fixture.Demand(DemandId, "SUBLOT-001", Now.AddMinutes(-10)));
         fixture.BoxCounts.Set("SUBLOT-001", 4);
         JourneyRuntimeRow onTheWay = await fixture.AdvanceToGateArrivalAsync();
         DateTimeOffset left = fixture.Clock.GetUtcNow();
+        await RoundAtAsync(fixture, left + TimeSpan.FromMinutes(12));
+        Assert.Null((await ReloadAsync(fixture)).WaitingSince);
+
         fixture.Riot.FailOrder(onTheWay.GateUpperId);
-        await RoundAtAsync(fixture, left + TimeSpan.FromSeconds(2));
-        JourneyRuntimeRow failed = await ReloadAsync(fixture);
-        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, failed.Stage);
-        Assert.NotNull(failed.BlockReasonCode);
+        DateTimeOffset failed = left + TimeSpan.FromMinutes(12) + TimeSpan.FromSeconds(2);
+        await RoundAtAsync(fixture, failed);
+        JourneyRuntimeRow named = await ReloadAsync(fixture);
+        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, named.Stage);
+        Assert.NotNull(named.BlockReasonCode);
+        Assert.Equal(named.BlockReasonSince, named.WaitingSince);
+        Assert.Equal(failed, named.WaitingSince);
+        Assert.Empty(WatchEntries(fixture));
 
-        await RoundAtAsync(fixture, left + fixture.Options.WaitingJourneyWarningAfter);
+        await RoundAtAsync(fixture, failed + fixture.Options.WaitingJourneyWarningAfter - TimeSpan.FromSeconds(1));
+        Assert.Empty(WatchEntries(fixture));
 
+        await RoundAtAsync(fixture, failed + fixture.Options.WaitingJourneyWarningAfter);
         (_, string message) = Assert.Single(WatchEntries(fixture));
-        Assert.Contains(failed.BlockReasonCode, message, StringComparison.Ordinal);
+        Assert.Contains(named.BlockReasonCode, message, StringComparison.Ordinal);
+        Assert.Contains("for 10 min", message, StringComparison.Ordinal);
+    }
+
+    // ---- 等人阶段之间切换不归零，离开等人才清零（#320 审查低项 4、6） --------------------------------------------------
+
+    /// <summary>
+    /// 闸口等了 12 分钟之后卸货结果回来是需恢复、旅程转成阻断：车没动过、电一直在掉，所以计时不归零。第一条在 10 分钟（闸口等卸货），
+    /// 第二条满一个重复间隔、在 15 分钟（此时已是阻断），写的是「15 min」。归零的实现会让第二条推迟到阻断后 10 分钟。
+    /// </summary>
+    [Fact]
+    public async Task MovingFromOneWaitingStageToAnotherDoesNotStartTheWaitOver()
+    {
+        await using RuntimeFixture fixture = await GateUnloadAsync();
+        DateTimeOffset arrived = fixture.Clock.GetUtcNow();
+
+        await RoundAtAsync(fixture, arrived + TimeSpan.FromMinutes(10));
+        Assert.Contains("AwaitingUnloadResult", Assert.Single(WatchEntries(fixture)).Message, StringComparison.Ordinal);
+
+        fixture.Clock.Advance(TimeSpan.FromMinutes(2));
+        StationOperationRow unload = await fixture.OperationAsync(SlotOperationType.Unload);
+        await fixture.ApplyTimedOutResultAsync(unload, SlotOperationType.Unload);
+        await RoundAtAsync(fixture, arrived + TimeSpan.FromMinutes(12));
+        JourneyRuntimeRow blocked = await ReloadAsync(fixture);
+        Assert.Equal(JourneyRuntimeStage.Blocked, blocked.Stage);
+        Assert.Equal(arrived, blocked.WaitingSince);
+
+        await RoundAtAsync(fixture, arrived + TimeSpan.FromMinutes(15));
+        (_, string second) = WatchEntries(fixture)[^1];
+        Assert.Equal(2, WatchEntries(fixture).Length);
+        Assert.Contains("Blocked", second, StringComparison.Ordinal);
+        Assert.Contains("for 15 min", second, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 离开等人（出发）清掉等人起点与上一次告警时刻；到下一站重新等人，就是一段新的等待，从它自己的门槛报。重复间隔故意设得比门槛长
+    /// （30 分钟对 10 分钟）：上一段的告警时刻若没清掉，新一段到门槛时「距上次告警」还不满间隔，就会一条不报。
+    /// 这是审查低项 6 的二选一：不禁止这种配置，删掉「告警早于本段起点」那一支，改由离开等人时把告警时刻一起清掉，
+    /// 让新一段在构造上就是没告警过的。
+    /// </summary>
+    [Fact]
+    public async Task DepartingEndsTheWaitAndTheNextStopWaitsFromItsOwnThreshold()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.WaitingJourneyWarningRepeat = TimeSpan.FromMinutes(30);
+        fixture.Catalog.Set(fixture.Demand(DemandId, "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        JourneyRuntimeRow loading = await fixture.AdvanceToLoadResultAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, loading.Stage);
+        DateTimeOffset atThePickup = fixture.Clock.GetUtcNow();
+
+        await RoundAtAsync(fixture, atThePickup + TimeSpan.FromMinutes(10));
+        Assert.Contains("AwaitingLoadResult", Assert.Single(WatchEntries(fixture)).Message, StringComparison.Ordinal);
+
+        StationOperationRow load = await fixture.OperationAsync(SlotOperationType.Load);
+        await fixture.ApplySafeResultAsync(load, SlotOperationType.Load, SlotBusinessState.Occupied);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        JourneyRuntimeRow checking = await ReloadAsync(fixture);
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, checking.Stage);
+        await fixture.AddInboxAsync(
+            Guid.NewGuid().ToString("D"),
+            "PreDepartureSafetyCheckResult",
+            new
+            {
+                preDepartureSafetyCheckId = checking.PreDepartureSafetyCheckId,
+                outcome = "SAFE",
+                observedAt = fixture.Clock.GetUtcNow(),
+                safetyStateVersion = 7,
+                validUntil = fixture.Clock.GetUtcNow().AddMinutes(1),
+                safety = new
+                {
+                    departureSafe = true,
+                    vehicleStopped = true,
+                    allTargetSlotsLocked = true,
+                    allUnlockOutputsReset = true,
+                    unknownPresent = false,
+                    reasonCodes = Array.Empty<string>()
+                }
+            },
+            checking.PreDepartureSafetyCheckMessageId);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        JourneyRuntimeRow departed = await ReloadAsync(fixture);
+        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, departed.Stage);
+        Assert.Null(departed.WaitingSince);
+        Assert.Null(departed.WaitingWarnedAt);
+
+        fixture.Riot.SetSuccessfulArrival("TO_GATE", TaskTypeStationRuntimeSeed.GateStationRiotId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = TaskTypeStationRuntimeSeed.GateStationRiotId };
+        await RoundAtAsync(fixture, atThePickup + TimeSpan.FromMinutes(11));
+        JourneyRuntimeRow atTheGate = await ReloadAsync(fixture);
+        Assert.Equal(JourneyRuntimeStage.AwaitingUnloadResult, atTheGate.Stage);
+        DateTimeOffset arrived = atThePickup + TimeSpan.FromMinutes(11);
+        Assert.Equal(arrived, atTheGate.WaitingSince);
+
+        await RoundAtAsync(fixture, arrived + TimeSpan.FromMinutes(10) - TimeSpan.FromSeconds(1));
+        Assert.Single(WatchEntries(fixture));
+        await RoundAtAsync(fixture, arrived + TimeSpan.FromMinutes(10));
+        Assert.Equal(2, WatchEntries(fixture).Length);
+        Assert.Contains("AwaitingUnloadResult", WatchEntries(fixture)[1].Message, StringComparison.Ordinal);
     }
 
     // ---- 等人阶段的集中定义 ----------------------------------------------------------------------------------------
@@ -350,14 +543,15 @@ public sealed class WaitingJourneyBatteryWatchTests
         Assert.Throws<InvalidDataException>(() => JourneyWaitClassification.Of((JourneyRuntimeStage)999));
     }
 
-    // ---- 阶段起点由上下文盖章 ----------------------------------------------------------------------------------------
+    // ---- 等人起点由上下文维护 ----------------------------------------------------------------------------------------
 
     /// <summary>
-    /// <c>StageSince</c> 由保存盖章：新增的行取它的 <c>UpdatedAt</c>；换阶段的那次保存取那次的 <c>UpdatedAt</c>；只动别的列、
-    /// 或者把阶段写成它已有的值（再阻断一次、换个原因码），起点不动。这是判据的前提——已等时长从这里算。
+    /// <c>WaitingSince</c> 由保存维护（#320 审查中项 1、低项 4）。逐步：新增一行闸口等卸货，起点是它的 <c>UpdatedAt</c>；只动别的列，不动；
+    /// 转成阻断、再换一个原因码，都不动——车没挪过；出发（去下一站、没有原因码），起点与告警时刻一起清掉；路上报出原因，起点是
+    /// <b>原因的起点</b>而不是这次写行的时刻；原因换了，不动；原因清掉（车又动了），清掉；完成，仍为空。
     /// </summary>
     [Fact]
-    public async Task TheStageStartIsStampedByTheSaveThatMovesTheStageAndNoOtherSave()
+    public async Task TheWaitStartIsKeptAcrossWaitingStagesAndClearedOnlyWhenTheJourneyStopsWaiting()
     {
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
         await using SqliteConnection connection = new("Data Source=:memory:");
@@ -372,13 +566,13 @@ public sealed class WaitingJourneyBatteryWatchTests
 
         await using (ControlServerDbContext add = new(options))
         {
-            add.JourneyRuntimes.Add(Runtime("D-STAMP", JourneyRuntimeStage.AwaitingUnloadResult, t0));
+            add.JourneyRuntimes.Add(Runtime("D-WAIT", JourneyRuntimeStage.AwaitingUnloadResult, t0));
             await add.SaveChangesAsync(cancellationToken);
         }
-        Assert.Equal(t0, await StageSinceAsync(options));
+        Assert.Equal(t0, (await ReadAsync(options)).WaitingSince);
 
-        await EditAsync(options, row => { row.WorklistRevision++; row.UpdatedAt = t0.AddMinutes(3); });
-        Assert.Equal(t0, await StageSinceAsync(options));
+        await EditAsync(options, row => { row.WorklistRevision++; row.WaitingWarnedAt = t0.AddMinutes(2); row.UpdatedAt = t0.AddMinutes(3); });
+        Assert.Equal(t0, (await ReadAsync(options)).WaitingSince);
 
         await EditAsync(options, row =>
         {
@@ -386,15 +580,46 @@ public sealed class WaitingJourneyBatteryWatchTests
             row.SetBlockReason("UNLOAD_RESULT_REQUIRES_RECOVERY", t0.AddMinutes(7));
             row.UpdatedAt = t0.AddMinutes(7);
         });
-        Assert.Equal(t0.AddMinutes(7), await StageSinceAsync(options));
+        Assert.Equal(t0, (await ReadAsync(options)).WaitingSince);
 
         await EditAsync(options, row =>
         {
-            row.Stage = JourneyRuntimeStage.Blocked;
             row.SetBlockReason("ONBOARD_SESSION_LOST", t0.AddMinutes(9));
             row.UpdatedAt = t0.AddMinutes(9);
         });
-        Assert.Equal(t0.AddMinutes(7), await StageSinceAsync(options));
+        JourneyRuntimeRow stillWaiting = await ReadAsync(options);
+        Assert.Equal(t0, stillWaiting.WaitingSince);
+        Assert.Equal(t0.AddMinutes(2), stillWaiting.WaitingWarnedAt);
+
+        await EditAsync(options, row =>
+        {
+            row.Stage = JourneyRuntimeStage.AwaitingGateArrival;
+            row.SetBlockReason(null, t0.AddMinutes(11));
+            row.UpdatedAt = t0.AddMinutes(11);
+        });
+        JourneyRuntimeRow departed = await ReadAsync(options);
+        Assert.Null(departed.WaitingSince);
+        Assert.Null(departed.WaitingWarnedAt);
+
+        await EditAsync(options, row =>
+        {
+            row.SetBlockReason("VEHICLE_WAITING_AT_CHECKPOINT", t0.AddMinutes(12));
+            row.UpdatedAt = t0.AddMinutes(13);
+        });
+        Assert.Equal(t0.AddMinutes(12), (await ReadAsync(options)).WaitingSince);
+
+        await EditAsync(options, row =>
+        {
+            row.SetBlockReason("VEHICLE_CHECKPOINT_WAIT_EXCEEDED", t0.AddMinutes(18));
+            row.UpdatedAt = t0.AddMinutes(18);
+        });
+        Assert.Equal(t0.AddMinutes(12), (await ReadAsync(options)).WaitingSince);
+
+        await EditAsync(options, row => { row.SetBlockReason(null, t0.AddMinutes(19)); row.UpdatedAt = t0.AddMinutes(19); });
+        Assert.Null((await ReadAsync(options)).WaitingSince);
+
+        await EditAsync(options, row => { row.Stage = JourneyRuntimeStage.Completed; row.UpdatedAt = t0.AddMinutes(30); });
+        Assert.Null((await ReadAsync(options)).WaitingSince);
     }
 
     // ---- 配置 ------------------------------------------------------------------------------------------------------
@@ -407,6 +632,7 @@ public sealed class WaitingJourneyBatteryWatchTests
         Assert.Equal(TimeSpan.FromMinutes(5), defaults.WaitingJourneyWarningRepeat);
         Assert.Equal(30, defaults.MinimumBatteryPercent);
         Assert.Equal(15, defaults.WaitingJourneyRescueBatteryPercent);
+        Assert.Equal(TimeSpan.FromSeconds(2), defaults.WaitingJourneyBatteryReadBudget);
     }
 
     [Theory]
@@ -414,6 +640,8 @@ public sealed class WaitingJourneyBatteryWatchTests
     [InlineData("WaitingJourneyWarningRepeat", "00:00:00", "WaitingJourneyWarningRepeat must be positive.")]
     [InlineData("WaitingJourneyRescueBatteryPercent", "0", "WaitingJourneyRescueBatteryPercent must be at least 1 and below MinimumBatteryPercent.")]
     [InlineData("WaitingJourneyRescueBatteryPercent", "40", "WaitingJourneyRescueBatteryPercent must be at least 1 and below MinimumBatteryPercent.")]
+    [InlineData("WaitingJourneyBatteryReadBudget", "00:00:00", "WaitingJourneyBatteryReadBudget must be positive and at most 10 s.")]
+    [InlineData("WaitingJourneyBatteryReadBudget", "00:00:11", "WaitingJourneyBatteryReadBudget must be positive and at most 10 s.")]
     public async Task ASettingThatCannotBeAWaitingLineIsRefused(string key, string value, string failure)
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
@@ -459,13 +687,14 @@ public sealed class WaitingJourneyBatteryWatchTests
     private static async Task<RuntimeFixture> BlockedAtGateAsync(DbCommandInterceptor? commands = null)
     {
         RuntimeFixture fixture = await GateUnloadAsync(commands);
+        DateTimeOffset arrived = fixture.Clock.GetUtcNow();
         StationOperationRow unload = await fixture.OperationAsync(SlotOperationType.Unload);
         await fixture.ApplyTimedOutResultAsync(unload, SlotOperationType.Unload);
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
         JourneyRuntimeRow runtime = await ReloadAsync(fixture);
         Assert.Equal(JourneyRuntimeStage.Blocked, runtime.Stage);
         Assert.Equal("UNLOAD_RESULT_REQUIRES_RECOVERY", runtime.BlockReasonCode);
-        Assert.Equal(fixture.Clock.GetUtcNow(), runtime.StageSince);
+        Assert.Equal(arrived, runtime.WaitingSince);
         return fixture;
     }
 
@@ -513,10 +742,10 @@ public sealed class WaitingJourneyBatteryWatchTests
                 .Order(StringComparer.Ordinal)];
     }
 
-    private static async Task<DateTimeOffset?> StageSinceAsync(DbContextOptions<ControlServerDbContext> options)
+    private static async Task<JourneyRuntimeRow> ReadAsync(DbContextOptions<ControlServerDbContext> options)
     {
         await using ControlServerDbContext read = new(options);
-        return (await read.JourneyRuntimes.AsNoTracking().SingleAsync(TestContext.Current.CancellationToken)).StageSince;
+        return await read.JourneyRuntimes.AsNoTracking().SingleAsync(TestContext.Current.CancellationToken);
     }
 
     private static async Task EditAsync(DbContextOptions<ControlServerDbContext> options, Action<JourneyRuntimeRow> edit)
