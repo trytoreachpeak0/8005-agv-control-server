@@ -50,6 +50,14 @@ namespace ControlServer.Tests;
 /// 两份各 3 行、7 行全部成立，删掉的是 9 个与 21 个字段，值只有 <c>null</c>、<c>[]</c> 与各行自己的旅程 id
 /// （<c>evidence/cs217/green/01-dashboard-pin-rerecord-additions-only.txt</c>，在工作区证据目录）。期待动作超时的两份基线不受影响。
 /// </para>
+/// <para>
+/// <b>control-server#273 给十份终结状态基线的 <c>JourneyRuntimes</c> 行加了四列，其余逐字未动。</b>那一票加了等人起点
+/// <c>WaitingSince</c> 与等人监看的三列（<c>WaitingBatteryPercent</c>、<c>WaitingBatteryObservedAt</c>、<c>WaitingWarnedAt</c>）。
+/// 判据与 cs#228、cs#217 同一个形状：把新输出里这四个字段删掉，与<b>集成分支上的</b>旧基线（<c>fp/v2-impl@8ec088b1</c>）逐字相同。
+/// 十份都成立，每份恰好删掉四个字段，而且都在 <c>JourneyRuntimes</c> 那一行上。十份的 <c>WaitingSince</c> 与
+/// <c>WaitingWarnedAt</c> 全为 <c>NULL</c>——终结之后的旅程不在等人；有七份记下了电量 80（夹具的默认值），三份
+/// <c>commanded-ending-*</c> 的电量两列为 <c>NULL</c>。看板四份基线不受影响。
+/// </para>
 /// </remarks>
 internal static class ZeroChangePin
 {

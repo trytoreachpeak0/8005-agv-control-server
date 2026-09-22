@@ -170,7 +170,10 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["Batch7RedispatchIdentityTests"] = "batch 7-10 REQ-0328 redispatch identity (control-server#215): id derivation and the acceptance store rows of a demand accepted a second time; no wire message is sent by either",
             ["VehicleFaultIsolationTests"] = "7.5 #8, FP-C11 fault isolation; single-ended server-to-RIoT",
             ["VehicleSlotLedgerTests"] = "batch 7-04 slot ledger port (control-server#209): an idle vehicle's free slots per side equal the session baseline; server-internal, no wire message",
-            ["VehicleSlotPositionReaderTests"] = "batch 4 FP-C15 server-authoritative SlotPosition per vehicle, never the onboard's report (program#70 decision 4); no wire message"
+            ["VehicleSlotPositionReaderTests"] = "batch 4 FP-C15 server-authoritative SlotPosition per vehicle, never the onboard's report (program#70 decision 4); no wire message",
+            ["WaitingJourneyBatteryWatchTests"] = "control-server#273 the waiting journey watch: a vehicle standing waiting for a person has its battery read from RIoT, recorded and logged past a threshold, and nothing is ever sent to it; server log and the server's own rows only, no wire message",
+            ["WaitingJourneyDashboardTests"] = "control-server#273 the dashboard's waiting journey card: read-only /api/dashboard/ over the server's own tables, nothing goes on the wire (spec 5.1 #10)",
+            ["WaitingJourneyWatchMigrationTests"] = "cross-cutting migration guard for control-server#273's one migration and its back-fill of when journeys already waiting began to wait; hanging it off a slice would defer the guard with the slice",
         };
 
     /// <summary>
