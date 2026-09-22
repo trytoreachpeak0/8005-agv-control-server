@@ -29,6 +29,7 @@
 | `green-fd41aa9e/`（7 条） | 现在的实现 `fd41aa9e` | 两条新场景 PASS；故障与急停 `command-surface-order-hold`（见下）、`emergency-stop-single-trigger`、`emergency-stop-operator-release` PASS；失联码 `onboard-silent-liveness-loss`、追加 `multi-stop-append-same-zone` PASS |
 | `green-c87196e5/`（3 条） | 最终实现 `c87196e5`（只比 `fd41aa9e` 多了注释、看板文案与一条钉构造的用例） | 两条新场景与 `command-surface-order-hold` PASS |
 | `green-dab517d3/`（7 条 + 1 次重跑） | 调度审查高项修复之后 `0d3717c4`/`dab517d3` | 七条 PASS，只有 `in-transit-order-cancelled-held-001` 例外，见下 |
+| `ci-real-rig-35726825314-918ef62a/` | **CI 真装置**（vm01 `cs-desktop`），run 35726825314：control-server `918ef62a`、车载端 `083fd9a7`、模拟器 `fb5f7c59`（取自 `Run real-onboard L2 scenarios` 那一步） | PASS，55 秒；L2-ROH-00～05 全部 PASS，含前提 ROH-00（闸门先写了码）、ROH-02 与 ROH-02b（会话两次读都是 `RecoveryRequired / DEPARTURE_SAFETY_NOT_READY`） |
 | `green-3cbae94d/`（8 条） | 第一版 `3cbae94d` | 全部 PASS，含已撤回的 `in-transit-order-cancelled-redispatch` |
 
 `green-fd41aa9e/command-surface-order-hold-001` 是红的，留着：三台车一辆都没派出去，积压原因是 `ONBOARD_FACTS_NOT_READY`，三条会话都是 Ready。根据机理可以排除本票：`3cbae94d`→`fd41aa9e` 之间 src 只改了三处——引擎在途分支（需要先有旅程才走得到）、看板文案，以及把释放服务改回 fp/v2-impl 原样。这一轮一趟旅程都没有，这三处一行都没执行。同一棵树立即重跑，`-002` PASS。
