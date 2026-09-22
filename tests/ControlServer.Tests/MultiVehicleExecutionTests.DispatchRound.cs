@@ -706,7 +706,7 @@ public sealed partial class MultiVehicleExecutionTests
     /// <remarks>
     /// <para>
     /// <b>这一条钉的是一个构造，不是本票写的某一行。</b>本票没有为「不接新单」写任何代码：引擎把「有未完成旅程」的车一律算进
-    /// <c>busy</c>（<c>JourneyRuntimeEngine.ExecuteOnceAsync</c> 里 <c>busy = active.Select(row =&gt; row.AgvId)</c>），空闲车只从
+    /// <c>busy</c>（<c>JourneyRuntimeEngine.ExecuteOnceAsync</c> 里 <c>busy = active.Select(row =&gt; row.AgvId)</c>，本票时在 <c>JourneyRuntimeEngine.cs</c> 约第 402 行，紧接着的 <c>free</c> 只取 <c>busy</c> 之外的车），空闲车只从
     /// <c>busy</c> 之外取；被取消的旅程停在到站阶段、没有完成，所以这辆车天然不在空闲候选里。本票只需要另外挡住途中追加
     /// （<see cref="AJourneyWhoseOrderHangsTakesNoAppendedDemand"/>）。
     /// </para>

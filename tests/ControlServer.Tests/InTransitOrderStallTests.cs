@@ -56,6 +56,7 @@ public sealed class InTransitOrderStallTests
 
         JourneyRuntimeRow after = await fixture.RuntimeAsync();
         Assert.Equal((JourneyRuntimeStage.AwaitingPickupArrival, OrderHang), (after.Stage, after.BlockReasonCode));
+        Assert.True(first.BlockReasonSince < fixture.Clock.GetUtcNow(), "the clock did not move, so keeping the start time proves nothing");
         Assert.Equal(first.BlockReasonSince, after.BlockReasonSince);
         Assert.NotNull(after.BlockReasonSince);
         await AssertNothingCommandedAsync(fixture);
@@ -75,11 +76,15 @@ public sealed class InTransitOrderStallTests
         JourneyRuntimeRow before = await fixture.RuntimeAsync();
         fixture.Riot.SetOrderState(before.GateUpperId, RiotOrderState.Hang, terminal: false);
 
-        await fixture.Engine.ExecuteOnceAsync(Token);
-        await fixture.Engine.ExecuteOnceAsync(Token);
+        await TickAndRunAsync(fixture);
+        JourneyRuntimeRow first = await fixture.RuntimeAsync();
+        await TickAndRunAsync(fixture);
 
         JourneyRuntimeRow after = await fixture.RuntimeAsync();
         Assert.Equal((JourneyRuntimeStage.AwaitingGateArrival, OrderHang), (after.Stage, after.BlockReasonCode));
+        Assert.NotNull(first.BlockReasonSince);
+        Assert.True(first.BlockReasonSince < fixture.Clock.GetUtcNow(), "the clock did not move, so keeping the start time proves nothing");
+        Assert.Equal(first.BlockReasonSince, after.BlockReasonSince);
         await AssertNothingCommandedAsync(fixture);
     }
 
@@ -102,6 +107,7 @@ public sealed class InTransitOrderStallTests
 
         // continue 了，但仍挂着：码与开始时刻都不动。
         await TickAndRunAsync(fixture);
+        Assert.True(since < fixture.Clock.GetUtcNow(), "the clock did not move, so keeping the start time proves nothing");
         JourneyRuntimeRow stillHanging = await fixture.RuntimeAsync();
         Assert.Equal((OrderHang, since), (stillHanging.BlockReasonCode, stillHanging.BlockReasonSince));
 
@@ -135,6 +141,7 @@ public sealed class InTransitOrderStallTests
         fixture.Riot.MakeOrderUnreadable(before.PickupUpperId);
         await TickAndRunAsync(fixture);
         JourneyRuntimeRow unread = await fixture.RuntimeAsync();
+        Assert.True(since < fixture.Clock.GetUtcNow(), "the clock did not move, so keeping the start time proves nothing");
         Assert.Equal((OrderHang, since), (unread.BlockReasonCode, unread.BlockReasonSince));
 
         fixture.Riot.SetOrderState(before.PickupUpperId, RiotOrderState.Hang, terminal: false);
@@ -233,7 +240,118 @@ public sealed class InTransitOrderStallTests
         await fixture.Engine.ExecuteOnceAsync(Token);
 
         JourneyRuntimeRow held = await fixture.RuntimeAsync();
+        Assert.True(since < fixture.Clock.GetUtcNow(), "the clock did not move, so keeping the start time proves nothing");
         Assert.Equal((OrderHang, since), (held.BlockReasonCode, held.BlockReasonSince));
+    }
+
+    // ---- 车载端因为本服务端自己的在途单而未就绪（独立审查高项） ------------------------------------------------
+
+    /// <summary>
+    /// 车在途挂起、车载端会话因本服务端自己的在途单而未就绪：旅程仍然写 <c>ORDER_HANG</c>，不被 <c>ONBOARD_SESSION_NOT_READY</c> 盖掉。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>这正是真车上的常态，不是边角。</b>9 在 <c>NonFinalOrderStates</c> 里，所以车在途时车载端读到的安全接口带
+    /// <c>RIOT_NONFINAL_ORDER_PRESENT</c>，报 <c>VEHICLE_NOT_READY</c>，会话落到 <c>DEPARTURE_SAFETY_NOT_READY</c>。
+    /// <c>AdvanceAsync</c> 的会话闸门在那种会话上写 <c>ONBOARD_SESSION_NOT_READY</c> 就返回，走不到在途分支——第一版在
+    /// 真车载端上一次 <c>ORDER_HANG</c> 都写不出来，2127 告警也一次都不打。合成车载端永远报安全，所以合成 L2 按构造看不见它。
+    /// </para>
+    /// <para>会话的形状照 <c>PickupDispatchPlanPastOwnOrderTests.DropSessionOnOwnOrderAsync</c>（失败现场的 <c>SessionRecoveries</c>）。</para>
+    /// </remarks>
+    [Fact]
+    public async Task AHangingOrderIsNamedWhileTheSessionIsNotReadyOnItsOwnOrder()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync();
+        fixture.Riot.SetOrderState(before.PickupUpperId, RiotOrderState.Hang, terminal: false);
+        await DropSessionOnOwnOrderAsync(fixture);
+
+        await TickAndRunAsync(fixture);
+        DateTimeOffset? since = (await fixture.RuntimeAsync()).BlockReasonSince;
+        await TickAndRunAsync(fixture);
+
+        JourneyRuntimeRow after = await fixture.RuntimeAsync();
+        Assert.Equal((JourneyRuntimeStage.AwaitingPickupArrival, OrderHang), (after.Stage, after.BlockReasonCode));
+        Assert.NotNull(since);
+        Assert.True(since < fixture.Clock.GetUtcNow(), "the clock did not move, so keeping the start time proves nothing");
+        Assert.Equal(since, after.BlockReasonSince);
+        await AssertNothingCommandedAsync(fixture);
+        Assert.Single(fixture.EngineLog.Entries, entry =>
+            entry.Level == LogLevel.Warning && entry.Message.Contains("ORDER_HANG", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// 未就绪期间人在 RIoT 里 continue：订单回到 3，停住码清掉，旅程回到会话闸门本来的码 <c>ONBOARD_SESSION_NOT_READY</c>。
+    /// </summary>
+    /// <remarks>清码必须能在闸门后面跑：否则一次挂起过后，看板永远说「挂起」，而车其实在走。</remarks>
+    [Fact]
+    public async Task AContinueWhileTheSessionIsNotReadyGivesTheReasonBackToTheGate()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync();
+        fixture.Riot.SetOrderState(before.PickupUpperId, RiotOrderState.Hang, terminal: false);
+        await DropSessionOnOwnOrderAsync(fixture);
+        await TickAndRunAsync(fixture);
+        Assert.Equal(OrderHang, (await fixture.RuntimeAsync()).BlockReasonCode);
+
+        fixture.Riot.SetOrderState(before.PickupUpperId, RiotOrderState.Executing, terminal: false);
+        await TickAndRunAsync(fixture);
+
+        Assert.Equal("ONBOARD_SESSION_NOT_READY", (await fixture.RuntimeAsync()).BlockReasonCode);
+    }
+
+    /// <summary>
+    /// 未就绪期间订单被人在 RIoT 里取消：同样写 <c>ORDER_ENDED_WITHOUT_ARRIVAL</c>，不被闸门盖掉。
+    /// </summary>
+    [Fact]
+    public async Task AnOrderEndedWhileTheSessionIsNotReadyIsNamed()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync();
+        fixture.Riot.CancelOrder(before.PickupUpperId);
+        await DropSessionOnOwnOrderAsync(fixture);
+
+        await TickAndRunAsync(fixture);
+        await TickAndRunAsync(fixture);
+
+        Assert.Equal(OrderEndedWithoutArrival, (await fixture.RuntimeAsync()).BlockReasonCode);
+        await AssertNothingCommandedAsync(fixture);
+    }
+
+    /// <summary>
+    /// 未就绪期间一次读不到订单：挂起码与开始时刻都不动（与闸门打开时同一条规则）。
+    /// </summary>
+    [Fact]
+    public async Task AnUnreadableOrderWhileTheSessionIsNotReadyKeepsTheHangReason()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync();
+        fixture.Riot.SetOrderState(before.PickupUpperId, RiotOrderState.Hang, terminal: false);
+        await DropSessionOnOwnOrderAsync(fixture);
+        await TickAndRunAsync(fixture);
+        DateTimeOffset? since = (await fixture.RuntimeAsync()).BlockReasonSince;
+        Assert.Equal(OrderHang, (await fixture.RuntimeAsync()).BlockReasonCode);
+
+        fixture.Riot.MakeOrderUnreadable(before.PickupUpperId);
+        await TickAndRunAsync(fixture);
+
+        JourneyRuntimeRow after = await fixture.RuntimeAsync();
+        Assert.True(since < fixture.Clock.GetUtcNow(), "the clock did not move, so keeping the start time proves nothing");
+        Assert.Equal((OrderHang, since), (after.BlockReasonCode, after.BlockReasonSince));
+    }
+
+    /// <summary>车载端读到车辆安全接口之后会话行变成的样子，照 <c>PickupDispatchPlanPastOwnOrderTests.DropSessionOnOwnOrderAsync</c>。</summary>
+    private static async Task DropSessionOnOwnOrderAsync(RuntimeFixture fixture)
+    {
+        SessionRecoveryRow session = await fixture.Context.SessionRecoveries.SingleAsync(Token);
+        session.Readiness = SessionReadiness.RecoveryRequired;
+        session.ReasonCode = "DEPARTURE_SAFETY_NOT_READY";
+        session.DepartureSafe = false;
+        session.SafetyReasonCodesJson = """["VEHICLE_NOT_READY"]""";
+        session.SafetyUnknownPresent = true;
+        session.UpdatedAt = fixture.Clock.GetUtcNow();
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
     }
 
     private static async Task AssertNothingCommandedAsync(RuntimeFixture fixture)
