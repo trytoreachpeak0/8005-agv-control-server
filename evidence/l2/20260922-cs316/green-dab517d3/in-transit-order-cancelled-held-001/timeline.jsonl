@@ -1,0 +1,34 @@
+{"at":"2026-09-22T11:52:34.3239262+00:00","note":"L2 run 20260922T115234210Z starting for scenario 'in-transit-order-cancelled-held'."}
+{"at":"2026-09-22T11:52:34.5103280+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-09-22T11:52:34.5173352+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-22T11:53:02.5267998+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-22T11:53:03.2443265+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-22T11:53:03.6951789+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-09-22T11:53:14.3114122+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-22T11:53:16.5077536+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-22T11:53:23.2277739+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-22T11:53:23.7797459+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-22T11:53:26.2396519+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-22T11:53:27.2976860+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-22T11:53:30.9148813+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-22T11:53:31.0543538+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260922T115234210Z\\controlserver.db"}
+{"at":"2026-09-22T11:53:50.5603379+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"285fc583164b466f8ecbbc672158c2f7","version":1,"slotCount":8}}}
+{"at":"2026-09-22T11:53:50.5901953+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260922T115234210Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-22T11:53:59.4706937+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"285fc583164b466f8ecbbc672158c2f7","boundSlots":8,"version":1}}}
+{"at":"2026-09-22T11:53:59.7422760+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-22T11:53:59.7493318+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260922T115234210Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs316-8005-agv-control-server\\evidence\\l2\\20260922-cs316\\green-dab517d3\\in-transit-order-cancelled-held-001\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-22T11:54:05.8062021+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs316-8005-agv-control-server\\evidence\\l2\\20260922-cs316\\green-dab517d3\\in-transit-order-cancelled-held-001\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"af80f47d27a34db6a225ad65a5e732ed","importedAt":"2026-09-22T19:54:00.2222889+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-22T11:54:05.9388662+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-09-22T11:54:05.9554802+00:00","note":"Environment is up; entering scenario 'in-transit-order-cancelled-held'."}
+{"at":"2026-09-22T11:54:06.1718622+00:00","note":"Publishing demand dd3da6495f264e6fb1b5892f2e016b73 (area N1-3)."}
+{"at":"2026-09-22T11:54:07.0528005+00:00","criterion":"first-journey","value":"(null)"}
+{"at":"2026-09-22T11:54:10.2644931+00:00","criterion":"first-journey","value":"@{JourneyId=journey:dd3da649-5f26-4e6f-b1b5-892f2e016b73; AgvId=AGV-L2-001; Stage=AwaitingPickupArrival; PickupUpperId=W2G-dd3da649-5f26-4e6f-b1b5-892f2e016b73-PICKUP-1; DispatchGeneration=1; OrderId=; Status=PENDING_RECONCILIATION}"}
+{"at":"2026-09-22T11:54:10.5856394+00:00","criterion":"first-journey","value":"@{JourneyId=journey:dd3da649-5f26-4e6f-b1b5-892f2e016b73; AgvId=AGV-L2-001; Stage=AwaitingPickupArrival; PickupUpperId=W2G-dd3da649-5f26-4e6f-b1b5-892f2e016b73-PICKUP-1; DispatchGeneration=1; OrderId=; Status=CREATE_ATTEMPTED}"}
+{"at":"2026-09-22T11:54:10.8629442+00:00","criterion":"first-journey","value":"@{JourneyId=journey:dd3da649-5f26-4e6f-b1b5-892f2e016b73; AgvId=AGV-L2-001; Stage=AwaitingPickupArrival; PickupUpperId=W2G-dd3da649-5f26-4e6f-b1b5-892f2e016b73-PICKUP-1; DispatchGeneration=1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-22T11:54:11.6839023+00:00","criterion":"runtime-iterations","value":"40"}
+{"at":"2026-09-22T11:54:12.2433451+00:00","criterion":"runtime-iterations","value":"41"}
+{"at":"2026-09-22T11:54:12.2473035+00:00","note":"A person cancels W2G-dd3da649-5f26-4e6f-b1b5-892f2e016b73-PICKUP-1 in RIoT."}
+{"at":"2026-09-22T11:54:12.3223678+00:00","criterion":"order-ended-named","value":"@{Stage=AwaitingPickupArrival; BlockReasonCode=ONBOARD_SESSION_LOST; BlockReasonSince=2026-09-22 11:54:10.9803468+00:00}"}
+{"at":"2026-09-22T11:55:12.3779221+00:00","note":"Run failed: Timed out after 60s waiting for: the journey names the order that ended without an arrival. Last observed: {\"Stage\":\"AwaitingPickupArrival\",\"BlockReasonCode\":\"ONBOARD_SESSION_LOST\",\"BlockReasonSince\":\"2026-09-22 11:54:10.9803468+00:00\"}"}
+{"at":"2026-09-22T11:55:12.3844449+00:00","note":"Failure at: at Wait-L2Condition, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs316-8005-agv-control-server\\scripts\\l2\\L2.psm1: line 103\r\nat <ScriptBlock>, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs316-8005-agv-control-server\\scripts\\l2\\scenarios\\in-transit-order-cancelled-held.ps1: line 69\r\nat <ScriptBlock>, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs316-8005-agv-control-server\\scripts\\l2\\Invoke-L2Scenario.ps1: line 1286"}
+{"at":"2026-09-22T11:55:13.3447513+00:00","note":"L2 port block lock released."}

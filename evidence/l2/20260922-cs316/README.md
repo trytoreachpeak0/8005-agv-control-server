@@ -13,6 +13,7 @@
 | `l1/red-hold-instead-of-release.txt` | 测试提交 `a744448a` 在第一版实现上 3 条红：释放服务把取消当成释放理由（`Trigger = ORDER_ENDED_WITHOUT_ARRIVAL, Result = RELEASED`） |
 | `l1/red-unreadable-order-clears-hang.txt` | 测试提交 `7687ffca` 上 1 条红（独立审查第 1 条）：挂起期间一次读不到订单，码被清成空 |
 | `l1/pin-busy-reverse-verification.txt` | 钉住「被取消的旅程这辆车不进空闲候选」的用例：让等人的旅程不算 busy 时它红（`DoesNotContain` 命中 ELIGIBLE 积压）；两行 DIAG 是改法下与原样下那条需求的积压原因，说明派车租约是第二道 |
+| `l1/red-session-not-ready-hides-hang.txt` | 测试提交 `a0eefdcc` 上 4 条红（调度独立审查高项，按审查探针的形状）：会话因本服务端在途单未就绪时，`Expected "ORDER_HANG"`／`Actual "ONBOARD_SESSION_NOT_READY"` |
 | `l1/reverse-verification.py`、`.log` | 在第一版修复之上逐项退回、各跑一遍相关用例。M4、M5 针对的释放触发已经撤回，其余各项仍适用于现在的代码 |
 
 ## 合成 L2（本机，经 `Invoke-HeavyLocal.ps1 -Ticket cs#316`）
@@ -26,8 +27,11 @@
 | `red-base-8ec088b1/in-transit-order-cancelled-redispatch-001` | 同上 | FAIL（第一版场景，已被上一行取代） |
 | `green-fd41aa9e/`（7 条） | 现在的实现 `fd41aa9e` | 两条新场景 PASS；故障与急停 `command-surface-order-hold`（见下）、`emergency-stop-single-trigger`、`emergency-stop-operator-release` PASS；失联码 `onboard-silent-liveness-loss`、追加 `multi-stop-append-same-zone` PASS |
 | `green-c87196e5/`（3 条） | 最终实现 `c87196e5`（只比 `fd41aa9e` 多了注释、看板文案与一条钉构造的用例） | 两条新场景与 `command-surface-order-hold` PASS |
+| `green-dab517d3/`（7 条 + 1 次重跑） | 调度审查高项修复之后 `0d3717c4`/`dab517d3` | 七条 PASS，只有 `in-transit-order-cancelled-held-001` 例外，见下 |
 | `green-3cbae94d/`（8 条） | 第一版 `3cbae94d` | 全部 PASS，含已撤回的 `in-transit-order-cancelled-redispatch` |
 
 `green-fd41aa9e/command-surface-order-hold-001` 是红的，留着：三台车一辆都没派出去，积压原因是 `ONBOARD_FACTS_NOT_READY`，三条会话都是 Ready。根据机理可以排除本票：`3cbae94d`→`fd41aa9e` 之间 src 只改了三处——引擎在途分支（需要先有旅程才走得到）、看板文案，以及把释放服务改回 fp/v2-impl 原样。这一轮一趟旅程都没有，这三处一行都没执行。同一棵树立即重跑，`-002` PASS。
 
 修前红证据取自 scratchpad 里的场景副本，与本分支入库的脚本逐字节相同（`git hash-object`：`in-transit-order-cancelled-held.ps1` `1d6d688f`，`in-transit-order-hang-continue.ps1` `66777f86`）。
+
+`green-dab517d3/in-transit-order-cancelled-held-001` 是红的，留着。旅程码是 `ONBOARD_SESSION_LOST`：合成车载端 32 秒没有入站（最后一次 11:53:39，11:54:11 判失联），于是整轮在失联判定处就停了，走不到在途分支——这正是 PR「剩余风险」里「先失联、后停住」那一格。按机理可以排除本票：`c87196e5`→`dab517d3` 只改了会话闸门（会话行不是 Ready 时才走），这一轮会话行是 Ready。同一棵树立即重跑，`-002` PASS。
