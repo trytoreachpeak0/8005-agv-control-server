@@ -185,8 +185,8 @@ public sealed class JourneyRuntimeEngine(
 
     /// <summary>
     /// RIoT reports this leg's in-flight order CANCELLED (2) or DELETED (6) although the vehicle never arrived:
-    /// someone ended it outside this server (control-server#316). Named, and nothing else is done until rebuilding the
-    /// order is decided: the demand is neither released nor redispatched.
+    /// someone ended it outside this server (control-server#316). Named, and nothing else is done: the demand is neither
+    /// released nor redispatched, and the order is rebuilt only on a person's confirmation (control-server#318).
     /// </summary>
     public const string OrderEndedWithoutArrivalReason = "ORDER_ENDED_WITHOUT_ARRIVAL";
 
@@ -1223,10 +1223,11 @@ public sealed class JourneyRuntimeEngine(
     /// </para>
     /// <para>
     /// <b>CANCELLED and DELETED mean someone ended the order outside this server</b>, which the user said on 2026-09-22 is
-    /// almost always a mistake, to be answered by rebuilding the order rather than by redispatching the demand. How to
-    /// rebuild -- automatically or on a person's word, on the same vehicle, the same way loaded and unloaded -- is still to be
-    /// decided, so until then this names it and nothing more: no release, no redispatch, no new order. The release service
-    /// does not read this code as a trigger.
+    /// almost always a mistake, to be answered by rebuilding the order rather than by redispatching the demand: held and
+    /// alarmed first, then rebuilt for the same vehicle and the same demand once a person confirms, because a rebuilt order
+    /// moves the vehicle and whoever cancelled it may be standing beside it. That confirmation is control-server#318, through
+    /// #299's endpoint, and does not exist yet; this names it and nothing more -- no release, no redispatch, no new order.
+    /// The release service does not read this code as a trigger.
     /// </para>
     /// <para>
     /// Ordered after <see cref="ObserveOrderFailureAsync"/>, so FAILED still reaches the fault model and keeps its own
