@@ -48,6 +48,15 @@ namespace ControlServer.Host.Transport;
 /// handshake did (review of control-server#309). Refused here, the line stays unacknowledged, and the replays
 /// that deliver held-back lines rewrite its generation to the current one.
 /// </para>
+/// <para>
+/// <b>"Stays unacknowledged and is delivered later" holds for senders outside the connection's own loop</b> --
+/// the runtime, the activation endpoint. A send from inside the loop, the deferred flush after a line
+/// (<c>OnboardMessageProcessor.FlushDeferredOutboundAsync</c>, which ends in
+/// <c>OnboardJourneyPublisher.SendPersistedAsync</c>), is not caught on the way out: a refusal there propagates
+/// to <c>OnboardTcpServer.HandleClientAsync</c> and the server ends the connection, and the line is replayed
+/// when the vehicle reconnects. Before the generation check such a line reached the vehicle and the vehicle
+/// ended the connection instead, so the outcome for the vehicle is the same; what changed is which end closes.
+/// </para>
 /// </remarks>
 public sealed class OnboardPeer : IOnboardPeer
 {
