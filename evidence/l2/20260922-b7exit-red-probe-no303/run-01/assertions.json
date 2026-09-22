@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-mixed-side-one-stop",
+  "runId": "20260922T051101085Z",
+  "outcome": "FAIL",
+  "failureReason": "",
+  "identity": {
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260922T051101085Z",
+    "onboardHmiCommit": "27a82b38af4921fdc967343ad0b8ce8e2cac5d9c",
+    "vehicleKey": "BROKERX-L2-0001",
+    "rig": "RealOnboard",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "batchId": "unspecified",
+    "agvId": "AGV-L2-001",
+    "controlServerCommit": "d259898d8766863c99d527f1029464c645e9064d"
+  },
+  "assertions": [
+    {
+      "id": "L2-MSO-01",
+      "description": "前置：乙丙都进了甲那一趟旅程，取货并成 12 号站的同一个停靠（归属三条、停靠 11→12→关卡）",
+      "outcome": "PASS",
+      "expected": "归属 3 / 乙丙同一个停靠 @12 / 1:PICKUP@11 2:PICKUP@12 3:UNLOAD@210",
+      "actual": "归属 3 / 乙丙同一个停靠 @12 / 1:PICKUP@11 2:PICKUP@12 3:UNLOAD@210"
+    },
+    {
+      "id": "L2-MSO-02",
+      "description": "服务端：12 号站被车载端确认的清单里有一版同时列着乙丙两条清单项（正事实，从发件箱读）",
+      "outcome": "PASS",
+      "expected": "L2-MSO-B-20260922T051101085Z,L2-MSO-C-20260922T051101085Z",
+      "actual": "worklist r2 @N1-3_N2-5 L2-MSO-C-20260922T051101085Z/PICKUP,L2-MSO-B-20260922T051101085Z/PICKUP"
+    },
+    {
+      "id": "L2-MSO-03",
+      "description": "车载端：清单确认之后，UIA 的本站清单列表（WorklistItems）同时有乙丙两行",
+      "outcome": "PASS",
+      "expected": "两行 L2-MSO-B-20260922T051101085Z,L2-MSO-C-20260922T051101085Z",
+      "actual": "L2-MSO-C-20260922T051101085Z/UNASSIGNED,L2-MSO-B-20260922T051101085Z/UNASSIGNED"
+    },
+    {
+      "id": "L2-MSO-04",
+      "description": "装货先前后后、第二条命令在第一条闭环之后才开锁：丙（后侧）的装货命令建在乙（前侧）的装货提交之后；模拟器采样里丙那一仓第一次未锁闭晚于乙那一仓最后一次未锁闭（REQ-0357）。这一条由驱动顺序保证（等乙提交、新清单确认后才扫丙），证不了车载端执行器串行，有判别力的是卸货的 10、11",
+      "outcome": "PASS",
+      "expected": "丙命令 ≥ 乙提交 / 采样 乙仓最后 < 丙仓最先",
+      "actual": "乙提交 2026-09-22T13:13:07.8707047+08:00 丙命令 2026-09-22T05:13:09.2603659+00:00 / 采样 乙仓 2 [3..3] 丙仓 5 [5..5]"
+    },
+    {
+      "id": "L2-MSO-05",
+      "description": "装货各开各组：乙的目标仓与开的仓在前侧组、丙的在后侧组、甲的在前侧组，开的仓就是目标仓（一条需求一仓）",
+      "outcome": "PASS",
+      "expected": "甲 FRONT / 乙 FRONT / 丙 REAR，开的仓 = 目标仓",
+      "actual": "甲 1→FRONT / 乙 2→FRONT / 丙 5→REAR"
+    },
+    {
+      "id": "L2-MSO-06",
+      "description": "装完时模拟器每个仓的物理状态与三条需求的 TargetSlotsJson 一致：目标仓有货、其余全空，全部关门、锁上、开锁输出复位；每条需求的目标仓都在它区域指派的那一组（有货的是前侧两仓、后侧一仓）",
+      "outcome": "PASS",
+      "expected": "有货 [1,2,5]，其余空，全部 CLOSED/1/0 / 有货的组 FRONT,FRONT,REAR",
+      "actual": "目标 [1,2,5] / 不一致 0 仓 / 有货的组 FRONT,FRONT,REAR"
+    },
+    {
+      "id": "L2-MSO-07",
+      "description": "持货等单确实发生过：12 号站装完后装货阶段是 CARGO_HOLDING_WAIT、发给车的快照里有它，车载端 UIA 读到持货倒计时 ACTIVE",
+      "outcome": "PASS",
+      "expected": "CARGO_HOLDING_WAIT / 快照有 WAIT / 倒计时 ACTIVE",
+      "actual": "AwaitingStationDeparture CARGO_HOLDING_WAIT / WAIT 快照 2 张 / 倒计时 ACTIVE"
+    },
+    {
+      "id": "L2-MSO-08",
+      "description": "持货收尾原因属于 {CARGO_HOLDING_TIMEOUT, VEHICLE_FULL}，不是让站 WAITING_STATION_YIELD（车队只有这一辆车）；发给车的关闭快照是同一个原因",
+      "outcome": "PASS",
+      "expected": "CLOSED/CARGO_HOLDING_TIMEOUT 或 CLOSED/VEHICLE_FULL，快照一致",
+      "actual": "AwaitingGateArrival CLOSED/CARGO_HOLDING_TIMEOUT / 快照原因 CARGO_HOLDING_TIMEOUT"
+    },
+    {
+      "id": "L2-MSO-09",
+      "description": "车载端：关卡清单确认之后，UIA 清单列表上乙那一行的侧标 FRONT、丙那一行 REAR（onboard-hmi#134 WorklistItemSide）",
+      "outcome": "PASS",
+      "expected": "L2-MSO-B-20260922T051101085Z/FRONT, L2-MSO-C-20260922T051101085Z/REAR",
+      "actual": "worklist r4 @关卡 L2-MSO-A-20260922T051101085Z/DROPOFF,L2-MSO-C-20260922T051101085Z/DROPOFF,L2-MSO-B-20260922T051101085Z/DROPOFF / 界面 L2-MSO-A-20260922T051101085Z/FRONT,L2-MSO-C-20260922T051101085Z/REAR,L2-MSO-B-20260922T051101085Z/FRONT"
+    },
+    {
+      "id": "L2-MSO-10",
+      "description": "卸货一次一扇、先前后后（规格第 20 节，不是第 8.3 节「两组同开」）：前侧两条都卸在后侧那一条之前；丙的卸货命令建在乙的卸货提交之后；采样里丙那一仓在乙那一仓最后一次未锁闭之后才开",
+      "outcome": "FAIL",
+      "expected": "FRONT,FRONT,REAR / 丙命令 ≥ 乙提交 / 采样 乙仓最后 < 丙仓最先",
+      "actual": "FRONT,REAR,FRONT / 乙提交 2026-09-22T13:15:10.9865676+08:00 丙命令 2026-09-22T05:15:06.2494331+00:00 / 采样 乙 [11..11] 丙 [9..9]"
+    },
+    {
+      "id": "L2-MSO-11",
+      "description": "全程一次一扇（REQ-0357）：从车到 11 号站起到旅程走完，模拟器每 100 ms 的采样里任一时刻至多一仓未锁闭；采样确实见过三条需求开过的三个仓",
+      "outcome": "PASS",
+      "expected": "至多 1 仓 / 采样错误 0 / 三个仓都见过",
+      "actual": "至多 1 仓 / 采样错误 0 / 没见过 [] / [] → [1] → [] → [2] → [] → [5] → [] → [1] → [] → [5] → [] → [2] → []"
+    },
+    {
+      "id": "L2-MSO-12",
+      "description": "终态：三条需求各一次装、一次卸、都 Committed、Succeeded，旅程 Completed，八个仓都关门、空、锁上、复位，会话回 Ready",
+      "outcome": "PASS",
+      "expected": "Completed / A:Succeeded/ops 2/load 1/unload 1 B:Succeeded/ops 2/load 1/unload 1 C:Succeeded/ops 2/load 1/unload 1 / 八仓 CLOSED/EMPTY/1/0 / Ready",
+      "actual": "Completed / A:Succeeded/ops 2/load 1/unload 1 B:Succeeded/ops 2/load 1/unload 1 C:Succeeded/ops 2/load 1/unload 1 / 不干净 0 仓 / gen 1 / Ready / READY"
+    }
+  ]
+}
