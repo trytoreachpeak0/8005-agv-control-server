@@ -74,12 +74,12 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
             // control-server#316：在途单在 RIoT 上停住，服务端不发任何命令，要人去 RIoT 或车前处理。
             [JourneyRuntimeEngine.OrderHangReason] =
                 "车正在执行的运单在 RIoT 上挂起（HANG）：服务端不暂停、不急停、不改派，这辆车也不接途中追加。请到现场确认原因，"
-                + "在 RIoT 里继续（continue，可以重复）或取消该运单；继续后旅程自动往下走，取消后未取货的需求会释放改派",
+                + "在 RIoT 里继续（continue，可以重复）；继续后旅程自动往下走。不要在 RIoT 里取消它：取消后服务端不会改派，也不会重建运单",
             [JourneyRuntimeEngine.OrderStateUnrecognizedReason] =
                 "车正在执行的运单在 RIoT 上处于未识别的状态（SUSPENDED 8）：服务端按仍在执行处理，不做任何自动动作，请人工到 RIoT 核实",
             [JourneyRuntimeEngine.OrderEndedWithoutArrivalReason] =
-                "车正在执行的运单在车到站之前被人在 RIoT 里取消或删除：只有一条未取货需求时会自动释放改派；车上已装货、"
-                + "或旅程上还有别的需求时不改派，请人工处置",
+                "车正在执行的运单在车到站之前被人在 RIoT 里取消或删除：服务端不释放、不改派、不重建运单，旅程停在原处，"
+                + "这辆车也不接途中追加。请人工处置",
         };
 
     private readonly BlockedJourneyEscalationOptions _escalation;

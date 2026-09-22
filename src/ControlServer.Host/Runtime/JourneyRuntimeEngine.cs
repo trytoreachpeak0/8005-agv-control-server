@@ -185,7 +185,8 @@ public sealed class JourneyRuntimeEngine(
 
     /// <summary>
     /// RIoT reports this leg's in-flight order CANCELLED (2) or DELETED (6) although the vehicle never arrived:
-    /// someone ended it outside this server (control-server#316). The release service reads this code as a trigger.
+    /// someone ended it outside this server (control-server#316). Named, and nothing else is done until rebuilding the
+    /// order is decided: the demand is neither released nor redispatched.
     /// </summary>
     public const string OrderEndedWithoutArrivalReason = "ORDER_ENDED_WITHOUT_ARRIVAL";
 
@@ -1221,9 +1222,11 @@ public sealed class JourneyRuntimeEngine(
     /// marks it removed. Whether the gateway should read it as terminal is cs#296's question.
     /// </para>
     /// <para>
-    /// <b>CANCELLED and DELETED mean someone ended the order outside this server.</b> This names it and nothing more; the
-    /// release service reads the code as its trigger and, under REQ-0328, releases a demand that has not been picked up.
-    /// A leg that is already carrying goods stays on its vehicle with the code, for a person.
+    /// <b>CANCELLED and DELETED mean someone ended the order outside this server</b>, which the user said on 2026-09-22 is
+    /// almost always a mistake, to be answered by rebuilding the order rather than by redispatching the demand. How to
+    /// rebuild -- automatically or on a person's word, on the same vehicle, the same way loaded and unloaded -- is still to be
+    /// decided, so until then this names it and nothing more: no release, no redispatch, no new order. The release service
+    /// does not read this code as a trigger.
     /// </para>
     /// <para>
     /// Ordered after <see cref="ObserveOrderFailureAsync"/>, so FAILED still reaches the fault model and keeps its own
@@ -1247,6 +1250,16 @@ public sealed class JourneyRuntimeEngine(
         DateTimeOffset now = timeProvider.GetUtcNow();
         if (reason is null)
         {
+            // An order that could not be read has not moved on. The gateway returns Unknown rather than throwing for a failed
+            // or indeterminate read, and treating that as a continue cleared the code for a round, restarted its clock,
+            // raised the warning again and let the vehicle back into underWay for that round (independent review, item 1).
+            // The round stops here with the code as it is: nothing below can judge an order it cannot see either.
+            if (order.Kind is not (RiotOrderObservationKind.Active or RiotOrderObservationKind.Terminal) &&
+                IsStalledOrderReason(runtime.BlockReasonCode))
+            {
+                return true;
+            }
+
             // The order moved on -- a continue in RIoT, most often. The code is this method's to clear: SetStage only
             // clears on a stage change, and a HANG that comes and goes inside one stage never reaches one.
             if (IsStalledOrderReason(runtime.BlockReasonCode))
