@@ -120,6 +120,48 @@ public sealed class Batch7DemandReleaseServiceTests
     }
 
     /// <summary>
+    /// 释放已经提交，发收尾快照时连接正在被拆掉：<c>OnboardPeerConnection</c> 的 <c>_sendGate</c> 已被释放，
+    /// <c>SendAsync</c> 抛 <see cref="ObjectDisposedException"/> 而不是 <see cref="IOException"/>。
+    /// </summary>
+    /// <remarks>
+    /// 这与「车不在线」是同一件事：那几行留在发件箱，由重连之后的补发送到。所以释放照样报 RELEASED，这一轮不算失败；
+    /// 收尾快照仍然落了库、没有被确认。修前 <c>JourneyClosure.SendAsync</c> 只吞 <see cref="IOException"/>，这个异常会冒出
+    /// <c>RunOnceAsync</c>，一次已经提交的释放在日志里变成一轮失败（PR #329 审查，低 2）。
+    /// </remarks>
+    [Fact]
+    public async Task AConnectionTornDownWhileTheClosureIsSentLeavesTheReleaseDoneAndTheClosurePending()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
+        LeaveTheMap(fixture);
+        CancellingGateway gateway = new(fixture.Clock, orderId => fixture.Riot.CancelOrder(before.PickupUpperId));
+        string[] closureIds = [.. JourneyClosure.SnapshotMessageIds(before.JourneyId)];
+        int refused = 0;
+        fixture.Peer.OnMessageSent = line =>
+        {
+            if (closureIds.Any(id => line.Contains(id, StringComparison.Ordinal)))
+            {
+                refused++;
+                throw new ObjectDisposedException("System.Threading.SemaphoreSlim");
+            }
+            return Task.CompletedTask;
+        };
+
+        IReadOnlyList<DemandReleaseOutcome> outcomes = await Service(fixture, gateway).RunOnceAsync(Token);
+
+        Assert.Equal("RELEASED", Assert.Single(outcomes).Result);
+        // 注入确实打在收尾快照上：否则这条用例在修前也是绿的。
+        Assert.True(refused >= 1, "No closure snapshot reached the peer, so the torn-down connection was never exercised.");
+        await using ControlServerDbContext reading = new ControlServerDbContext(fixture.DbOptionsForTests);
+        Assert.Equal(JourneyRuntimeStage.Completed, (await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token)).Stage);
+        await ClosureSnapshotAssertions.AssertClosureStagedAsync(reading, before.AgvId, before.PickupStationId);
+        Assert.Equal(
+            closureIds.Length,
+            await reading.ProtocolOutbox.AsNoTracking()
+                .CountAsync(row => closureIds.Contains(row.MessageId) && row.AcknowledgedAt == null, Token));
+    }
+
+    /// <summary>
     /// RIoT 没把订单置成 CANCELLED：结果不是 Confirmed 就不释放，写阻断原因；下一轮只对账那一次取消，不发第二次
     /// ——这就是「取消已发出而释放没落库时崩溃，重启后先对账」那条崩溃点，库里只有一条审计行是它的证据。
     /// </summary>
