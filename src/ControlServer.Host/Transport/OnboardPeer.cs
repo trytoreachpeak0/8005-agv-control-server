@@ -38,11 +38,22 @@ namespace ControlServer.Host.Transport;
 /// unacknowledged, and the replay that follows the recovery report or the runtime's next round delivers it,
 /// exactly as after a reconnect. <c>OnboardOutboundFunnelArchitectureTests</c> pins the "one way".
 /// </para>
+/// <para>
+/// <b>And only to the session it was built for.</b> Each connection is filed with the session generation its
+/// handshake established, and a line stamped with another generation is refused the same way. A sender reads
+/// the session, then sends: the runtime reads generation N at the top of a round and pushes some hundreds of
+/// milliseconds later, and if the vehicle reconnected in between, routing by <c>agvId</c> alone handed the new
+/// session a line for the old one. The onboard rejects such a line in its receive loop
+/// (<c>STALE_SESSION_GENERATION</c>) and the loop ends, which drops the connection just as a push into the
+/// handshake did (review of control-server#309). Refused here, the line stays unacknowledged, and the replays
+/// that deliver held-back lines rewrite its generation to the current one.
+/// </para>
 /// </remarks>
 public sealed class OnboardPeer : IOnboardPeer
 {
     private readonly object _gate = new();
-    private readonly Dictionary<string, OnboardPeerConnection> _connections = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (OnboardPeerConnection Connection, long SessionGeneration)> _connections =
+        new(StringComparer.Ordinal);
 
     /// <summary>Makes a connection routable. Refused unless its session has finished the handshake.</summary>
     internal void Attach(OnboardConnectionState session, OnboardPeerConnection connection)
@@ -57,18 +68,19 @@ public sealed class OnboardPeer : IOnboardPeer
                 "until then the vehicle would read a push as the answer it is waiting for.");
         }
         string agvId = session.AgvId;
+        long generation = session.SessionGeneration.Value;
         lock (_gate)
         {
             // One vehicle, one live connection. Two sockets claiming the same agvId is not a fleet,
             // it is the ambiguity the single-connection version refused, and it is still refused --
             // per vehicle now rather than for the server.
-            if (_connections.TryGetValue(agvId, out OnboardPeerConnection? existing) &&
-                !ReferenceEquals(existing, connection))
+            if (_connections.TryGetValue(agvId, out (OnboardPeerConnection Connection, long) existing) &&
+                !ReferenceEquals(existing.Connection, connection))
             {
                 throw new InvalidOperationException($"An Onboard peer is already attached for '{agvId}'.");
             }
 
-            _connections[agvId] = connection;
+            _connections[agvId] = (connection, generation);
         }
     }
 
@@ -77,8 +89,8 @@ public sealed class OnboardPeer : IOnboardPeer
         ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
         lock (_gate)
         {
-            if (_connections.TryGetValue(agvId, out OnboardPeerConnection? existing) &&
-                ReferenceEquals(existing, connection))
+            if (_connections.TryGetValue(agvId, out (OnboardPeerConnection Connection, long) existing) &&
+                ReferenceEquals(existing.Connection, connection))
             {
                 _connections.Remove(agvId);
             }
@@ -87,20 +99,26 @@ public sealed class OnboardPeer : IOnboardPeer
 
     public Task SendAsync(ReadOnlyMemory<byte> ndjsonLine, CancellationToken cancellationToken)
     {
-        string agvId = ReadAddressee(ndjsonLine.Span);
-        OnboardPeerConnection connection;
+        (string agvId, long generation) = ReadAddressee(ndjsonLine.Span);
+        (OnboardPeerConnection Connection, long SessionGeneration) attached;
         lock (_gate)
         {
-            connection = _connections.TryGetValue(agvId, out OnboardPeerConnection? attached)
-                ? attached
+            attached = _connections.TryGetValue(agvId, out (OnboardPeerConnection, long) found)
+                ? found
                 : throw new IOException($"No recovered Onboard peer is connected for '{agvId}'.");
         }
+        if (attached.SessionGeneration != generation)
+        {
+            throw new IOException(
+                $"The Onboard peer connected for '{agvId}' is in session generation {attached.SessionGeneration}; " +
+                $"this line was built for generation {generation}.");
+        }
 
-        return connection.SendAsync(ndjsonLine, cancellationToken);
+        return attached.Connection.SendAsync(ndjsonLine, cancellationToken);
     }
 
     /// <summary>
-    /// Reads the <c>agvId</c> the first envelope in this buffer is addressed to.
+    /// Reads the <c>agvId</c> and session generation the first envelope in this buffer is addressed to.
     /// </summary>
     /// <remarks>
     /// A buffer may hold several newline-terminated envelopes, and they are sent as one write, so
@@ -108,26 +126,32 @@ public sealed class OnboardPeer : IOnboardPeer
     /// caller builds a buffer for one session, and parsing each line to re-check would cost a JSON
     /// parse per message to detect a bug no caller can currently have.
     /// </remarks>
-    private static string ReadAddressee(ReadOnlySpan<byte> ndjsonLine)
+    private static (string AgvId, long SessionGeneration) ReadAddressee(ReadOnlySpan<byte> ndjsonLine)
     {
         int newline = ndjsonLine.IndexOf((byte)'\n');
         ReadOnlySpan<byte> first = newline < 0 ? ndjsonLine : ndjsonLine[..newline];
         try
         {
             using JsonDocument document = JsonDocument.Parse(Encoding.UTF8.GetString(first));
-            if (document.RootElement.TryGetProperty("agvId", out JsonElement agvId) &&
-                agvId.ValueKind == JsonValueKind.String &&
-                !string.IsNullOrWhiteSpace(agvId.GetString()))
+            JsonElement root = document.RootElement;
+            if (!root.TryGetProperty("agvId", out JsonElement agvId) ||
+                agvId.ValueKind != JsonValueKind.String ||
+                string.IsNullOrWhiteSpace(agvId.GetString()))
             {
-                return agvId.GetString()!;
+                throw new InvalidDataException("Onboard outbound envelope must name the agvId it is addressed to.");
             }
+            if (!root.TryGetProperty("sessionGeneration", out JsonElement generation) ||
+                !generation.TryGetInt64(out long sessionGeneration))
+            {
+                throw new InvalidDataException(
+                    "Onboard outbound envelope must name the session generation it was built for.");
+            }
+            return (agvId.GetString()!, sessionGeneration);
         }
         catch (JsonException error)
         {
             throw new InvalidDataException("Onboard outbound data must be a JSON envelope.", error);
         }
-
-        throw new InvalidDataException("Onboard outbound envelope must name the agvId it is addressed to.");
     }
 }
 

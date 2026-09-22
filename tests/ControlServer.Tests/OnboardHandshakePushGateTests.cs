@@ -428,14 +428,14 @@ public sealed class OnboardHandshakePushGateTests
     /// </summary>
     private static ReadOnlyMemory<byte> Push(string messageType, long sessionGeneration = 1) =>
         Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
-    {
-        messageType,
-        messageId = Guid.NewGuid().ToString("D"),
-        correlationId = (string?)null,
-        agvId = AgvId,
-        sessionGeneration,
-        payload = new { }
-    }) + "\n");
+        {
+            messageType,
+            messageId = Guid.NewGuid().ToString("D"),
+            correlationId = (string?)null,
+            agvId = AgvId,
+            sessionGeneration,
+            payload = new { }
+        }) + "\n");
 
     private static UpcomingStopPlanProjection Plan() => new(
         1,

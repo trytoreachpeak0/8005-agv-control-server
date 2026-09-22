@@ -26,6 +26,18 @@ namespace ControlServer.Tests;
 /// the vehicle is waiting for exactly that line.
 /// </para>
 /// <para>
+/// <b>What this class cannot see, by construction.</b> It reads names and counts calls; it does not follow
+/// bytes. So these would pass it: the listener writing to the socket without its <c>OnboardPeerConnection</c>
+/// (<c>stream.WriteAsync</c>, a second <c>StreamWriter</c>, <c>client.GetStream()</c>), and any class that
+/// opens or is handed a <c>NetworkStream</c>, <c>TcpClient</c> or <c>Socket</c> and writes to it without ever
+/// naming the wrapper. It is a regression guard against the one shape this defect had -- a sender that
+/// reaches a connection without going through the gate -- and not a proof. The guarantee rests on the
+/// construction it guards: the socket is accepted in <c>OnboardTcpServer</c>, its stream is opened in
+/// <c>HandleClientAsync</c>, no other product file names a <c>TcpClient</c> or <c>NetworkStream</c>, and every sender is handed an <see cref="IOnboardPeer"/> and nothing lower. A
+/// change that hands the stream or the client out of that method changes the construction, and should come with
+/// a change to this class.
+/// </para>
+/// <para>
 /// <b>No <c>IntegrationSlice</c> trait</b>, for the reason <see cref="RiotCallAllowlistArchitectureTests"/>
 /// gives: a cross-cutting guard hung off a slice goes unguarded whenever that slice is deferred.
 /// </para>

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Text.Json;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.Extensions.Options;
 
@@ -187,16 +188,17 @@ public sealed partial class OnboardTcpServer : BackgroundService
                 {
                     throw new InvalidDataException("Protocol line exceeds OnboardTransport:MaxLineBytes.");
                 }
-                string response = await processor.ProcessAsync(line, state, cancellationToken).ConfigureAwait(false);
                 // A SessionHello on a connection that was routable starts a new handshake, and the gate closes
-                // before its answer goes out, for the reason given at the attach below. No onboard does this
-                // today -- it opens a new socket per handshake -- but the gate is "this handshake is done", not
-                // "a handshake once finished here".
-                if (attachedAgvId is not null && !state.HandshakeCompleted)
+                // before the hello is even processed, for the reason given at the attach below: from the moment the
+                // processor begins the new session, a push for either session would land in the handshake. No
+                // onboard does this today -- it opens a new socket per handshake -- but the gate is "this handshake
+                // is done", not "a handshake once finished here".
+                if (attachedAgvId is not null && IsSessionHello(line))
                 {
                     _peer.Detach(attachedAgvId, connection);
                     attachedAgvId = null;
                 }
+                string response = await processor.ProcessAsync(line, state, cancellationToken).ConfigureAwait(false);
                 // Refreshed only once the message has been processed: ADR-cross-0027 counts legal protocol
                 // messages, and a line is not known to be one until the envelope and the session generation
                 // have been checked. A line that throws does not refresh, and it ends the connection anyway.
@@ -239,6 +241,26 @@ public sealed partial class OnboardTcpServer : BackgroundService
             {
                 _peer.Detach(attachedAgvId, connection);
             }
+        }
+    }
+
+    /// <summary>
+    /// Whether this line opens a handshake. A line that is not JSON is not one; the processor refuses it and
+    /// that ends the connection, as it always did.
+    /// </summary>
+    private static bool IsSessionHello(string line)
+    {
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(line);
+            return document.RootElement.ValueKind == JsonValueKind.Object &&
+                   document.RootElement.TryGetProperty("messageType", out JsonElement messageType) &&
+                   messageType.ValueKind == JsonValueKind.String &&
+                   messageType.GetString() == "SessionHello";
+        }
+        catch (JsonException)
+        {
+            return false;
         }
     }
 
