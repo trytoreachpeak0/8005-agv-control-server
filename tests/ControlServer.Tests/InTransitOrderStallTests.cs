@@ -283,7 +283,14 @@ public sealed class InTransitOrderStallTests
     /// <summary>
     /// 未就绪期间人在 RIoT 里 continue：订单回到 3，停住码清掉，旅程回到会话闸门本来的码 <c>ONBOARD_SESSION_NOT_READY</c>。
     /// </summary>
-    /// <remarks>清码必须能在闸门后面跑：否则一次挂起过后，看板永远说「挂起」，而车其实在走。</remarks>
+    /// <remarks>
+    /// <para>清码必须能在闸门后面跑：否则一次挂起过后，看板永远说「挂起」，而车其实在走。</para>
+    /// <para>
+    /// <b>这一条的判别力来自它的前置，不来自最后那一句断言。</b>修前闸门本来就写 <c>ONBOARD_SESSION_NOT_READY</c>，所以只看最后一句，
+    /// 修前修后都绿；它修前红，是红在中间那句「未就绪时先写出了 ORDER_HANG」。守「会清码」的是最后一句——闸门路径写出码之后若不清，
+    /// 它会读到 <c>ORDER_HANG</c>。两句要一起读（增量审查）。
+    /// </para>
+    /// </remarks>
     [Fact]
     public async Task AContinueWhileTheSessionIsNotReadyGivesTheReasonBackToTheGate()
     {

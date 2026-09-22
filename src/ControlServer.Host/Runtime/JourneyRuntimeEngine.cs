@@ -1254,7 +1254,8 @@ public sealed class JourneyRuntimeEngine(
         JourneyRuntimeRow runtime,
         string upperId,
         RiotOrderObservation order,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? reasonOnceMovedOn = null)
     {
         string? reason = (order.Kind, order.OrderState) switch
         {
@@ -1278,10 +1279,13 @@ public sealed class JourneyRuntimeEngine(
             }
 
             // The order moved on -- a continue in RIoT, most often. The code is this method's to clear: SetStage only
-            // clears on a stage change, and a HANG that comes and goes inside one stage never reaches one.
+            // clears on a stage change, and a HANG that comes and goes inside one stage never reaches one. Behind the
+            // readiness gate the code goes straight to the gate's own, in the same save: cleared to null first, the row
+            // would read "no block" for the moment between two saves, which is long enough for the dashboard to drop it
+            // (incremental review).
             if (IsStalledOrderReason(runtime.BlockReasonCode))
             {
-                runtime.SetBlockReason(null, now);
+                runtime.SetBlockReason(reasonOnceMovedOn, now);
                 runtime.UpdatedAt = now;
                 await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -1346,7 +1350,9 @@ public sealed class JourneyRuntimeEngine(
             return IsStalledOrderReason(runtime.BlockReasonCode);
         }
 
-        return await NameStalledOrderAsync(runtime, intent.UpperId, order, cancellationToken).ConfigureAwait(false);
+        return await NameStalledOrderAsync(
+                runtime, intent.UpperId, order, cancellationToken, reasonOnceMovedOn: "ONBOARD_SESSION_NOT_READY")
+            .ConfigureAwait(false);
     }
 
     /// <summary>

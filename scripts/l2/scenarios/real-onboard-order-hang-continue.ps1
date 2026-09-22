@@ -9,8 +9,9 @@ DEPARTURE_SAFETY_NOT_READY——9 属于未终结状态，挂起期间也一样�
 在真车载端上一次都没写出来；合成车载端永远报安全，合成 L2 按构造看不见这一点（调度独立审查高项）。
 
 判据：
-  1. 挂起期间旅程写 ORDER_HANG，且这件事发生在会话未就绪的时候（L2-ROH-02 把「会话确实没就绪」当成前提断言：
-     它不成立，这条场景就没证明它要证明的东西）；
+  0. 前提：车在途、挂起之前，闸门已经为旅程写过 ONBOARD_SESSION_NOT_READY（L2-ROH-00）；
+  1. 挂起期间旅程写 ORDER_HANG，且这件事发生在会话未就绪的时候（L2-ROH-02 与几轮之后的 L2-ROH-02b 把「会话确实没就绪」
+     当成前提断言：它不成立，这条场景就没证明它要证明的东西）；
   2. 挂起期间没有一条订单命令、急停，也没有故障事实；
   3. continue 之后码离开 ORDER_HANG，车到站后车载端允许录入 sublot——旅程照常往下走。
 
@@ -71,7 +72,18 @@ $null = $riot.Command('Put', 'vehicle', @{
     vehicleKey = $Context.VehicleKey; procState = 'RUNNING'; movementState = 'MT_RUNNING'; speed = 0.8
     processingOrder = $true; orderTaskId = $intent.OrderId; currentPosition = 0
 })
-$null = Wait-L2Iterations -Riot $riot -Count 2 -Journal $journal
+# 第二个事实：闸门已经为这趟旅程写过自己的码。只等几轮不够——真车载端掉出 Ready 要时间，挂起若在那之前就注入，
+# ORDER_HANG 是就绪那条路写的，而之后会话才掉出 Ready，L2-ROH-02 照样成立，这条场景就证明不了它要证明的东西（增量审查）。
+$gate = Wait-L2Condition -Description 'the readiness gate wrote its own code for the journey in transit' `
+    -Journal $journal -Criterion 'gate-closed-in-transit' -TimeoutSeconds 90 `
+    -Probe { Get-Runtime } `
+    -Until { param($v) $v -and [string]$v.BlockReasonCode -eq 'ONBOARD_SESSION_NOT_READY' }
+$assertions.Add(
+    'L2-ROH-00',
+    '前提：车在途时真车载端会话掉出 Ready，闸门先为旅程写了 ONBOARD_SESSION_NOT_READY（挂起在这之后才注入）',
+    ([string]$gate.BlockReasonCode -eq 'ONBOARD_SESSION_NOT_READY'),
+    'ONBOARD_SESSION_NOT_READY',
+    [string]$gate.BlockReasonCode)
 
 # --- 2. 两站之间挂起 ------------------------------------------------------------------------------------
 
@@ -106,6 +118,13 @@ $assertions.Add(
 $null = Wait-L2Iterations -Riot $riot -Count 4 -Journal $journal
 $during = Get-CommandCounts
 $held = Get-Runtime
+$sessionLater = Invoke-Scalar "SELECT Readiness, ReasonCode FROM SessionRecoveries WHERE AgvId = '$($Context.AgvId)'"
+$assertions.Add(
+    'L2-ROH-02b',
+    '前提仍然成立：几轮之后会话仍未就绪，ORDER_HANG 在这段时间里一直是闸门那条路维持的',
+    ([string]$sessionLater.Readiness -ne 'Ready'),
+    '非 Ready',
+    "$($sessionLater.Readiness) / $($sessionLater.ReasonCode)")
 $assertions.Add(
     'L2-ROH-03',
     '挂起期间没有订单命令、急停或故障事实；码与开始时刻不变',
@@ -127,11 +146,12 @@ $resumed = Wait-L2Condition -Description 'the hang reason is gone once the order
     -Journal $journal -Criterion 'order-hang-cleared' -TimeoutSeconds 60 `
     -Probe { Get-Runtime } `
     -Until { param($v) $v -and [string]$v.BlockReasonCode -ne 'ORDER_HANG' }
+# 断言等于闸门的码，而不是「不是 ORDER_HANG」：后一种写法对空码也成立，而空码正是清码写成两次保存时会漏出来的样子。
 $assertions.Add(
     'L2-ROH-04',
-    'continue 之后码离开 ORDER_HANG（会话仍未就绪时回到 ONBOARD_SESSION_NOT_READY），旅程仍在开往取货站',
-    ([string]$resumed.Stage -eq 'AwaitingPickupArrival' -and [string]$resumed.BlockReasonCode -ne 'ORDER_HANG'),
-    'AwaitingPickupArrival / 非 ORDER_HANG',
+    'continue 之后码回到闸门的 ONBOARD_SESSION_NOT_READY（会话仍未就绪），旅程仍在开往取货站',
+    ([string]$resumed.Stage -eq 'AwaitingPickupArrival' -and [string]$resumed.BlockReasonCode -eq 'ONBOARD_SESSION_NOT_READY'),
+    'AwaitingPickupArrival / ONBOARD_SESSION_NOT_READY',
     "$($resumed.Stage) / $($resumed.BlockReasonCode)")
 
 $journal.Note('Vehicle arrives at the pickup station and comes to rest.')

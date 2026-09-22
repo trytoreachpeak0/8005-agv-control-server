@@ -36,3 +36,7 @@
 修前红证据取自 scratchpad 里的场景副本，与本分支入库的脚本逐字节相同（`git hash-object`：`in-transit-order-cancelled-held.ps1` `1d6d688f`，`in-transit-order-hang-continue.ps1` `66777f86`）。
 
 `green-dab517d3/in-transit-order-cancelled-held-001` 是红的，留着。旅程码是 `ONBOARD_SESSION_LOST`：合成车载端 32 秒没有入站（最后一次 11:53:39，11:54:11 判失联），于是整轮在失联判定处就停了，走不到在途分支——这正是 PR「剩余风险」里「先失联、后停住」那一格。按机理可以排除本票：`c87196e5`→`dab517d3` 只改了会话闸门（会话行不是 Ready 时才走），这一轮会话行是 Ready。同一棵树立即重跑，`-002` PASS。
+
+真装置红探针（`red-base-8ec088b1/real-onboard-order-hang-continue-001`）用的是**加强前**的场景（`dab517d3` 版，还没有 L2-ROH-00 的「先等闸门写码」与 L2-ROH-02b 的二次读会话）。失败点在 L2-ROH-01（等不到 `ORDER_HANG`），在加强内容之前，所以不受加强影响；收尾快照另外证明了会话当时未就绪。
+
+本机真装置从桌面 App 会话里运行时，默认的对端缓存 `%LOCALAPPDATA%\8005-l2-peers` 会被应用包虚拟化重定向到 `AppData\Local\Packages\Claude_…\LocalCache\Local\…`：预发布车载端时 git 与 dotnet 看到的是同一目录的两个视图，`dotnet publish` 报 `MSB4025: The project file could not be loaded`（在 clone 里手动 `dotnet restore`，它打印出的就是被重定向后的路径，由此发现）。这次用 `-PeerCacheRoot C:/Users/szy/l2p316` 把缓存放到 AppData 之外绕过，跑完已删。
