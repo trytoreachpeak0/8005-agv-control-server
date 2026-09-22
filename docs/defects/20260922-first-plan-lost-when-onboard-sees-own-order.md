@@ -56,11 +56,24 @@ control-server#211 的 G3 自检（`evidence/g3/b7-06-journey-final-head/README.
 cs#307 是「握手完成后服务端停止应答、车载端 `TimeoutException` 自断」。这里连接一直活着（心跳每 2 秒照常到、服务端照常受理），
 车载端没有断线；服务端是**按闸门主动不发**。不是同一个形状。
 
-## 未查清的
+## 窗口什么时候就有（读到的与推出的分开）
 
-- 批次 6 出口 journey 14/14 全绿，而 `WireToGateOrchestration` 在受理时建单的结构在 `e74c0058` 上就已如此，所以这个窗口批次 6
-  也存在。批次 7 是否把它拉宽了（例如每轮推进更重、受理与第一轮推进之间更久）没有量过。
-- 现场真 RIoT 与车载端的轮询节奏下，这个窗口被撞上的概率没有量过。
+**读到的：**
+
+- 结构在批次 6 就是这样：`e74c0058` 的 `JourneyRuntimeEngine` 一轮里先推进已有旅程、再受理新需求（注释原文「a journey created this
+  round is not advanced until the next one」），受理时 `AcceptAndDispatchToPickupAsync` 就建单并确认。现在的代码同样如此。
+- 车载端车辆安全信号的轮询周期默认 1 秒（`ControlServerVehicleSafetySignalProvider`，`PollIntervalMs`），`44b3aa6e..ecdb3a0b` 之间
+  这个文件、`WireToGateSafetyEvaluator`、`OnboardAlarmEvaluator` 都没改过。
+- 库里全部 journey G3 证据，按「走到『等派往取货站的计划被确认』这一步」计的机会与命中（`evidence/g3/*/…/timeline.jsonl`）：
+  批次 5、6 的六轮（`052759bc`、`06b65688`、`c12f0498`、`d3003c2f`、`905ffd1d`、`85381ea2`）共 10 次机会、0 次命中，
+  从派出到确认 0.31～0.65 秒；批次 7 入库的是 cs#211 自检那轮（`fc144d0a`，入库只留了红的那个场景）、它的单跑重跑、本票这一轮，
+  共 5 次机会、2 次命中。
+
+**推出的（没有量过）：**
+
+- 被撞上的概率约等于「单确认 → 下一轮推进」的窗口长度除以车载端轮询周期。这次窗口约 200 毫秒，对 1 秒的轮询约两成。
+- 0/10 对 2/5 提示批次 7 把窗口拉宽了（例如每轮推进之前的工作变多），但机会数太少，不能据此下结论；也没有找到是哪一次合入。
+- 现场真 RIoT 与车载端的节奏下被撞上的概率没有量过。
 
 ## 修复去向
 
