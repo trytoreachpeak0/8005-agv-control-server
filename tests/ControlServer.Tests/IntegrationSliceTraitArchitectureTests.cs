@@ -118,6 +118,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["LoadingPhaseMachineTests"] = "batch 7-07 REQ-0354 the loading phase decision table and when it announces (control-server#212); a pure function over server-side facts, no wire message -- the snapshots it leads to are judged in the FP-IS-08 classes",
             ["MapStationResolverTests"] = "7.5 #6, RouteGraphSnapshot engine; single-ended server-to-RIoT",
             ["MultiVehicleExecutionTests"] = "7.5 #1, FP-C2 B2 multi-vehicle; the conformance vector format has no vehicle dimension",
+            ["OnboardOutboundFunnelArchitectureTests"] = "cross-cutting architecture guard (control-server#259): every server-originated line reaches a socket through OnboardPeer's handshake gate; hanging it off a slice would defer the guard with the slice",
             ["OnboardVehicleSafetyEndpointsTests"] = "server-side safety projection endpoint; not a protocol wire message",
             ["PackageCapacityStoreTests"] = "server-internal store; no wire message",
             ["ProtocolEnvelopeObserverArchitectureTests"] = "cross-cutting guard on the observation point every slice's outbound lines pass through (control-server#85); hanging it off one would defer the guard with that slice",

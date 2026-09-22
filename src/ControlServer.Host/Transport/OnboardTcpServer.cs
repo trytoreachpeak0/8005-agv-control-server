@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Text.Json;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.Extensions.Options;
 
@@ -187,29 +188,51 @@ public sealed partial class OnboardTcpServer : BackgroundService
                 {
                     throw new InvalidDataException("Protocol line exceeds OnboardTransport:MaxLineBytes.");
                 }
+                // A SessionHello on a connection that was routable starts a new handshake, and the gate closes
+                // before the hello is even processed, for the reason given at the attach below: from the moment the
+                // processor begins the new session, a push for either session would land in the handshake. No
+                // onboard does this today -- it opens a new socket per handshake -- but the gate is "this handshake
+                // is done", not "a handshake once finished here".
+                if (attachedAgvId is not null && IsSessionHello(line))
+                {
+                    _peer.Detach(attachedAgvId, connection);
+                    attachedAgvId = null;
+                }
                 string response = await processor.ProcessAsync(line, state, cancellationToken).ConfigureAwait(false);
                 // Refreshed only once the message has been processed: ADR-cross-0027 counts legal protocol
                 // messages, and a line is not known to be one until the envelope and the session generation
                 // have been checked. A line that throws does not refresh, and it ends the connection anyway.
                 // The window runs from when the line arrived, not from now -- see the stamp above.
                 liveness.RefreshTo(arrivedAt);
+                // The answer to the line just read. This write and OnboardPeer are the only two ways onto the
+                // socket (OnboardOutboundFunnelArchitectureTests), and this one needs no gate: the vehicle is
+                // waiting for exactly this line.
                 if (!string.IsNullOrWhiteSpace(response))
                 {
                     await connection.SendAsync(
                         OnboardPeerConnection.Encode(response),
                         cancellationToken).ConfigureAwait(false);
                 }
-                await processor.FlushDeferredOutboundAsync(state, cancellationToken).ConfigureAwait(false);
-                // The agvId is what files this connection, so both halves of the session identity
-                // have to be established before it can be attached. Until then nothing addressed to
-                // this vehicle can be routed to it, which is correct: it has no session yet.
-                if (attachedAgvId is null &&
-                    state.SessionGeneration is not null &&
-                    !string.IsNullOrWhiteSpace(state.AgvId))
+                // Routable only from here, once the recovery report's answer -- its DurableAck and
+                // SessionReadiness -- is on the wire (control-server#259). Before, the vehicle is in its handshake,
+                // reading one line per request, and a push would be read as the answer it is waiting for; it
+                // dropped the connection in real-rig run 35513390399 and synthetic runs 35553615265 and
+                // 35651373959. Attaching as soon as SessionHello was answered, as this did until then, covered only
+                // the lower bound: a connection has no session to route to before it. HandshakeCompleted alone is
+                // not the moment either: the processor sets it while handling the recovery report, before the
+                // answer is written, and a push in between would go out ahead of it.
+                //
+                // Before the deferred flush, not after: the recovery report's flush replays everything held back
+                // during the handshake -- recovery commands, recovery session snapshots, activation commands --
+                // through OnboardPeer, so it needs the connection routable. Anything a sender tried to push during
+                // the handshake was refused as "not connected" after its outbox row was written, so it is in what
+                // that replay or the runtime's next round reads.
+                if (attachedAgvId is null && state.HandshakeCompleted)
                 {
-                    _peer.Attach(state.AgvId, connection);
+                    _peer.Attach(state, connection);
                     attachedAgvId = state.AgvId;
                 }
+                await processor.FlushDeferredOutboundAsync(state, cancellationToken).ConfigureAwait(false);
             }
         }
         finally
@@ -218,6 +241,26 @@ public sealed partial class OnboardTcpServer : BackgroundService
             {
                 _peer.Detach(attachedAgvId, connection);
             }
+        }
+    }
+
+    /// <summary>
+    /// Whether this line opens a handshake. A line that is not JSON is not one; the processor refuses it and
+    /// that ends the connection, as it always did.
+    /// </summary>
+    private static bool IsSessionHello(string line)
+    {
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(line);
+            return document.RootElement.ValueKind == JsonValueKind.Object &&
+                   document.RootElement.TryGetProperty("messageType", out JsonElement messageType) &&
+                   messageType.ValueKind == JsonValueKind.String &&
+                   messageType.GetString() == "SessionHello";
+        }
+        catch (JsonException)
+        {
+            return false;
         }
     }
 
