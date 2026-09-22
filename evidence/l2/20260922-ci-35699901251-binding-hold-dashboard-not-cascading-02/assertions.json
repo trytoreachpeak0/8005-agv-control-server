@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 1,
+  "scenario": "binding-hold-dashboard-not-cascading",
+  "runId": "20260922T074822983Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\_stage\\l2-20260922T074822983Z-slot4",
+    "agvId": "AGV-L2-001",
+    "controlServerCommit": "f2ddd40522432925580d6048dca2d6d54171a7a8",
+    "fleet": [
+      "AGV-L2-001/BROKERX-L2-0001",
+      "AGV-L2-002/BROKERX-L2-0002"
+    ],
+    "vehicleKey": "BROKERX-L2-0001",
+    "rig": "SyntheticOnboard",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "batchId": "batch-6"
+  },
+  "assertions": [
+    {
+      "id": "L2-BH-01",
+      "description": "确认页不自动刷新，带着这一行的 Map 与任务类型；提交后 303 回到看板主页",
+      "outcome": "PASS",
+      "expected": "no refresh, taskType=STAGING_TO_WIRE, 303 → /",
+      "actual": "refresh=False, 303 → /"
+    },
+    {
+      "id": "L2-BH-02",
+      "description": "暂停只落在 Map 25 的 STAGING_TO_WIRE 上，来源看板人工；WIRE_TO_GATE 没有暂停",
+      "outcome": "PASS",
+      "expected": "STAGING_TO_WIRE/MANUAL/DASHBOARD_MANUAL_HOLD",
+      "actual": "STAGING_TO_WIRE/MANUAL/DASHBOARD_MANUAL_HOLD"
+    },
+    {
+      "id": "L2-BH-03",
+      "description": "STAGING_TO_WIRE 暂停期间，WIRE_TO_GATE 需求照常受理并走完两段（不连带）",
+      "outcome": "PASS",
+      "expected": "ACCEPTED or DEMAND_ALREADY_ACCEPTED → Completed",
+      "actual": "DEMAND_ALREADY_ACCEPTED → Completed"
+    },
+    {
+      "id": "L2-BH-04",
+      "description": "看板主页 STAGING_TO_WIRE 那一行显示已暂停、来源看板人工与理由；WIRE_TO_GATE 那一行正常",
+      "outcome": "PASS",
+      "expected": "STAGING_TO_WIRE: 已暂停 看板人工 …；WIRE_TO_GATE: 正常",
+      "actual": "STAGING_TO_WIRE 在本图需求集合 230 派工待送取货 已暂停 看板人工，自 2026-09-22T07:48:41.4722507+00:00，派工待送取货点被料车占住 暂停 | WIRE_TO_GATE 在本图需求集合 210 关卡 正常 无 暂停"
+    },
+    {
+      "id": "L2-BH-11",
+      "description": "暂停之前两趟都已受理、在两台不同的车上：second 已建关卡单，pending 在去取货点的路上、还没有关卡单",
+      "outcome": "PASS",
+      "expected": "two vehicles; pending has no TO_GATE intent",
+      "actual": "second on AGV-L2-002, pending on AGV-L2-001; pending TO_GATE: none"
+    },
+    {
+      "id": "L2-BH-05",
+      "description": "经看板再暂停 WIRE_TO_GATE：提交 303，两条人工暂停各落在自己的任务类型上",
+      "outcome": "PASS",
+      "expected": "303; STAGING_TO_WIRE/MANUAL, WIRE_TO_GATE/MANUAL",
+      "actual": "303; STAGING_TO_WIRE/MANUAL/DASHBOARD_MANUAL_HOLD, WIRE_TO_GATE/MANUAL/DASHBOARD_MANUAL_HOLD"
+    },
+    {
+      "id": "L2-BH-06",
+      "description": "暂停之后已建的关卡单不改单、不换站、不取消：同一个 UpperId 与 OrderId，仍是 CONFIRMED",
+      "outcome": "PASS",
+      "expected": "W2G-e8e0e4fc-324f-4934-a731-daabab7a7f11-GATE-1 / ORDER-000004 / CONFIRMED",
+      "actual": "W2G-e8e0e4fc-324f-4934-a731-daabab7a7f11-GATE-1 / ORDER-000004 / CONFIRMED"
+    },
+    {
+      "id": "L2-BH-07",
+      "description": "暂停前已建关卡单的那一趟照常走完",
+      "outcome": "PASS",
+      "expected": "Completed",
+      "actual": "Completed"
+    },
+    {
+      "id": "L2-BH-12",
+      "description": "暂停时尚未建单的关卡腿不建：没有 TO_GATE 单，旅程阻断原因为已暂停，这趟只在 RIoT 上建过取货单",
+      "outcome": "PASS",
+      "expected": "block TASK_TYPE_HELD, no TO_GATE intent, 1 RIoT order",
+      "actual": "block 'TASK_TYPE_HELD' at AwaitingDepartureSafety, TO_GATE: none, RIoT orders: 1"
+    },
+    {
+      "id": "L2-BH-08",
+      "description": "有空车时，WIRE_TO_GATE 暂停后的新需求不受理，JourneyBacklog 原因为已暂停",
+      "outcome": "PASS",
+      "expected": "no journey / TASK_TYPE_HELD",
+      "actual": "no journey / TASK_TYPE_HELD"
+    },
+    {
+      "id": "L2-BH-09",
+      "description": "看板主页没有表单、没有指向解除的链接，本票卡片里没有解除字样；看板与服务端的解除请求都不是成功响应，两条暂停仍然成立",
+      "outcome": "PASS",
+      "expected": "no form, no lifting link, no 解除 in the binding card; every release attempt >= 400; 2 holds standing",
+      "actual": "form: False; lifting links: ; 解除 in card: False; statuses 404, 405, 404; STAGING_TO_WIRE/MANUAL/DASHBOARD_MANUAL_HOLD, WIRE_TO_GATE/MANUAL/DASHBOARD_MANUAL_HOLD"
+    },
+    {
+      "id": "L2-BH-10",
+      "description": "暂停不改绑定：生效绑定集版本与每条绑定前后相同",
+      "outcome": "PASS",
+      "expected": "v1 STAGING_TO_WIRE=230/派工待送取货/L2-SYNTHETIC-SITE-CHECK; v1 WIRE_TO_GATE=210/关卡/L2-SYNTHETIC-SITE-CHECK",
+      "actual": "v1 STAGING_TO_WIRE=230/派工待送取货/L2-SYNTHETIC-SITE-CHECK; v1 WIRE_TO_GATE=210/关卡/L2-SYNTHETIC-SITE-CHECK"
+    }
+  ]
+}

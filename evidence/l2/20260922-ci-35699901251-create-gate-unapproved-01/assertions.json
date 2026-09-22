@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "scenario": "create-gate-unapproved",
+  "runId": "20260922T075753132Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "vehicleKey": "BROKERX-L2-0001",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\_stage\\l2-20260922T075753132Z-slot3",
+    "batchId": "batch-2",
+    "rig": "SyntheticOnboard",
+    "controlServerCommit": "f2ddd40522432925580d6048dca2d6d54171a7a8",
+    "agvId": "AGV-L2-001",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    }
+  },
+  "assertions": [
+    {
+      "id": "L2-CGU-01",
+      "description": "两个参数未批准时服务端照常启动（REQ-0303）",
+      "outcome": "PASS",
+      "expected": "已启动",
+      "actual": "已启动"
+    },
+    {
+      "id": "L2-CGU-02",
+      "description": "阻断原因是 CATALOG_PARAMETERS_NOT_APPROVED，能追到具体这道门禁",
+      "outcome": "PASS",
+      "expected": "CATALOG_PARAMETERS_NOT_APPROVED",
+      "actual": "CATALOG_PARAMETERS_NOT_APPROVED"
+    },
+    {
+      "id": "L2-CGU-03",
+      "description": "一个 JourneyRuntime 都没有",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "id": "L2-CGU-04",
+      "description": "一张 RIoT move 单都没建",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "id": "L2-CGU-05",
+      "description": "需求没有被接受",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "id": "L2-CGU-06",
+      "description": "没有冻结任何端点——站点解析压根没发生（REQ-0303）",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "id": "L2-CGU-07",
+      "description": "门禁审计是空的——目录级阻断不是关于任何一个需求端点的裁决",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    }
+  ]
+}

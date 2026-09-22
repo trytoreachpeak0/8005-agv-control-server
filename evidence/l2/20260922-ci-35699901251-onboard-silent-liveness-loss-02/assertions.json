@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "scenario": "onboard-silent-liveness-loss",
+  "runId": "20260922T074351848Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "controlServerCommit": "f2ddd40522432925580d6048dca2d6d54171a7a8",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\_stage\\l2-20260922T074351848Z-slot3",
+    "agvId": "AGV-L2-001",
+    "rig": "SyntheticOnboard",
+    "batchId": "batch-7",
+    "vehicleKey": "BROKERX-L2-0001",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    }
+  },
+  "assertions": [
+    {
+      "id": "L2-SL-01",
+      "description": "车在路上、会话正常时端点不列这条旅程",
+      "outcome": "PASS",
+      "expected": "(not listed)",
+      "actual": "(not listed)"
+    },
+    {
+      "id": "L2-SL-02",
+      "description": "车载端停发但不断线，服务端按 ADR-cross-0027 自己关掉这条连接（对端读到 EOF）",
+      "outcome": "PASS",
+      "expected": "READY -> DISCONNECTED",
+      "actual": "READY -> DISCONNECTED"
+    },
+    {
+      "id": "L2-SL-03",
+      "description": "静默期间车载端本该发出的报文被丢掉，不是「它本来就没话说」",
+      "outcome": "PASS",
+      "expected": "至少一条 dropped",
+      "actual": "3 条 dropped"
+    },
+    {
+      "id": "L2-SL-04",
+      "description": "失联期间在途旅程挂上 ONBOARD_SESSION_LOST，端点列出这条旅程、带开始时间，开始时间就是库里记下的那一个",
+      "outcome": "PASS",
+      "expected": "ONBOARD_SESSION_LOST since 2026-09-22 07:44:15.2294852+00:00",
+      "actual": "ONBOARD_SESSION_LOST since 2026-09-22T07:44:15.2294852+00:00 (0 s, MaintenanceAdministrator, AwaitingPickupArrival)"
+    },
+    {
+      "id": "L2-SL-05",
+      "description": "失联直接进最高档：会话行上的安全判定是车最后一次在线时的，说不了现在（REQ-0269）",
+      "outcome": "PASS",
+      "expected": "MaintenanceAdministrator",
+      "actual": "MaintenanceAdministrator"
+    },
+    {
+      "id": "L2-SL-06",
+      "description": "挂着期间又跑了几轮，阻断码与开始时间不变，阶段仍是 AwaitingPickupArrival",
+      "outcome": "PASS",
+      "expected": "ONBOARD_SESSION_LOST since 2026-09-22T07:44:15.2294852+00:00（AwaitingPickupArrival）",
+      "actual": "ONBOARD_SESSION_LOST since 2026-09-22T07:44:15.2294852+00:00 (4 s, MaintenanceAdministrator, AwaitingPickupArrival)（AwaitingPickupArrival）"
+    },
+    {
+      "id": "L2-SL-07",
+      "description": "失联不结束需求、不释放租约",
+      "outcome": "PASS",
+      "expected": "Accepted / 0 条已释放的租约",
+      "actual": "Accepted / 0 条已释放的租约"
+    },
+    {
+      "id": "L2-SL-08",
+      "description": "失联期间订单命令面一次都没被调过：本批不发 OrderHold（用户 2026-09-20 定）",
+      "outcome": "PASS",
+      "expected": "命令审计表仍是 0 行",
+      "actual": "0 行"
+    },
+    {
+      "id": "L2-SL-09",
+      "description": "车重连之后失联码被清掉（或落进「已重连、握手未完」那个窗口，换成会话未就绪），两种之外都算红",
+      "outcome": "PASS",
+      "expected": "ONBOARD_SESSION_LOST -> (not listed) 或 ONBOARD_SESSION_NOT_READY",
+      "actual": "ONBOARD_SESSION_LOST -> (not listed)"
+    },
+    {
+      "id": "L2-SL-10",
+      "description": "到站换段之后阻断码清空，端点不再列出这条旅程，旅程照常往下走",
+      "outcome": "PASS",
+      "expected": "AwaitingSublot / (not listed) / code null / since null",
+      "actual": "AwaitingSublot / (not listed) / code '' / since ''"
+    },
+    {
+      "id": "L2-SL-11",
+      "description": "全程订单命令面一次都没被调过",
+      "outcome": "PASS",
+      "expected": "命令审计表仍是 0 行",
+      "actual": "0 行"
+    }
+  ]
+}

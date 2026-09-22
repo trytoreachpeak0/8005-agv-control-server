@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "scenario": "dispatch-zone-parameters-import-rejects",
+  "runId": "20260922T075048406Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "controlServerCommit": "f2ddd40522432925580d6048dca2d6d54171a7a8",
+    "batchId": "batch-7",
+    "agvId": "AGV-L2-001",
+    "rig": "SyntheticOnboard",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\_stage\\l2-20260922T075048406Z-slot2",
+    "vehicleKey": "BROKERX-L2-0001"
+  },
+  "assertions": [
+    {
+      "id": "L2-DZP-01",
+      "description": "服务端以目标配置起过一次，调度策略里有分区 MAP-25-WIRE_TO_GATE；导入判「分区存在」就按这张表",
+      "outcome": "PASS",
+      "expected": ">= 1",
+      "actual": 1
+    },
+    {
+      "id": "L2-DZP-02",
+      "description": "默认前置是「每区参数未配置」：导入之前一版都没有，也没有快照与导入审计",
+      "outcome": "PASS",
+      "expected": "0/0/0",
+      "actual": "0/0/0"
+    },
+    {
+      "id": "L2-DZP-03",
+      "description": "表头把途中追加一列写成了秒——单位写在列名里，单位错的表在表头就被拦下：退出码 1、整份拒绝、原因码与行号精确，库里版本、快照、导入审计都没多",
+      "outcome": "PASS",
+      "expected": "1 / REJECTED / 1 DISPATCH_ZONE_PARAMETERS_CSV_HEADER_INVALID / 0/0/0",
+      "actual": "1 / REJECTED / 1 DISPATCH_ZONE_PARAMETERS_CSV_HEADER_INVALID / 0/0/0"
+    },
+    {
+      "id": "L2-DZP-04",
+      "description": "一行少了一个字段：退出码 1、整份拒绝、原因码与行号精确，库里版本、快照、导入审计都没多",
+      "outcome": "PASS",
+      "expected": "1 / REJECTED / 2 DISPATCH_ZONE_PARAMETERS_CSV_ROW_MALFORMED / 0/0/0",
+      "actual": "1 / REJECTED / 2 DISPATCH_ZONE_PARAMETERS_CSV_ROW_MALFORMED / 0/0/0"
+    },
+    {
+      "id": "L2-DZP-05",
+      "description": "同一个分区出现两次，两行的途中追加上限还不一样：退出码 1、整份拒绝、原因码与行号精确，库里版本、快照、导入审计都没多",
+      "outcome": "PASS",
+      "expected": "1 / REJECTED / 3 DISPATCH_ZONE_DUPLICATED / 0/0/0",
+      "actual": "1 / REJECTED / 3 DISPATCH_ZONE_DUPLICATED / 0/0/0"
+    },
+    {
+      "id": "L2-DZP-06",
+      "description": "分区不在库内当前调度策略里：退出码 1、整份拒绝、原因码与行号精确，库里版本、快照、导入审计都没多",
+      "outcome": "PASS",
+      "expected": "1 / REJECTED / 3 DISPATCH_ZONE_NOT_FOUND / 0/0/0",
+      "actual": "1 / REJECTED / 3 DISPATCH_ZONE_NOT_FOUND / 0/0/0"
+    },
+    {
+      "id": "L2-DZP-07",
+      "description": "途中追加上限写成负数：退出码 1、整份拒绝、原因码与行号精确，库里版本、快照、导入审计都没多",
+      "outcome": "PASS",
+      "expected": "1 / REJECTED / 2 DISPATCH_ZONE_PARAMETER_VALUE_INVALID / 0/0/0",
+      "actual": "1 / REJECTED / 2 DISPATCH_ZONE_PARAMETER_VALUE_INVALID / 0/0/0"
+    },
+    {
+      "id": "L2-DZP-08",
+      "description": "正确的表被收下：退出码 0，恰好形成第 1 版，快照一条、业务审计一条",
+      "outcome": "PASS",
+      "expected": "0 / OK / v1 / 1/1/1",
+      "actual": "0 / OK / v1 / 1/1/1"
+    },
+    {
+      "id": "L2-DZP-09",
+      "description": "只读动词读回的就是导入的那一版：途中追加上限 20000 毫米、防饥饿阈值 600 秒，内容哈希与导入时一致",
+      "outcome": "PASS",
+      "expected": "OK / v1 / 4dd3eb83b075a8fedf0aae083c88f18e2f1386653f468f0d0e9b17b35587067a / ALLOWED/20000 CONFIGURED/600",
+      "actual": "OK / v1 / 4dd3eb83b075a8fedf0aae083c88f18e2f1386653f468f0d0e9b17b35587067a / ALLOWED/20000 CONFIGURED/600"
+    },
+    {
+      "id": "L2-DZP-10",
+      "description": "不停车生效：导入前后是同一个服务端进程（PID 与启动时刻都相同），导入之后它仍然就绪",
+      "outcome": "PASS",
+      "expected": "pid 14472 ControlServer.Host started 2026-09-22T15:50:53.4632208+08:00 / 200",
+      "actual": "pid 14472 ControlServer.Host started 2026-09-22T15:50:53.4632208+08:00 / 200"
+    }
+  ]
+}
