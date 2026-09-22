@@ -142,6 +142,8 @@ public sealed class PickupDispatchPlanPastOwnOrderTests
     [InlineData("vehicle-faulted")]
     [InlineData("peer-silent")]
     [InlineData("order-not-confirmed")]
+    [InlineData("departure-unsafe-with-operation-recovery")]
+    [InlineData("departure-unsafe-with-forced-recovery-awaiting-record")]
     public async Task NoPlanGoesOutWhenTheUnreadinessIsNotExplainedByTheOwnOrder(string variant)
     {
         await using RuntimeFixture fixture = await AcceptedWithOrderConfirmedAsync();
@@ -177,6 +179,35 @@ public sealed class PickupDispatchPlanPastOwnOrderTests
                 OrderIntentRow intent = await fixture.Context.OrderIntents.SingleAsync(
                     row => row.Purpose == "TO_PICKUP", Token);
                 intent.Status = "RESULT_UNKNOWN";
+                break;
+            // 下面两格的会话行照旧写 DEPARTURE_SAFETY_NOT_READY：GetRecoveryReason 把出发安全排在作业待恢复与强制恢复待硬件记录
+            // 之前，这两者与出发不安全同时成立时，原因码只说出发安全。所以放行不能只看原因码。
+            case "departure-unsafe-with-operation-recovery":
+                fixture.Context.StationOperations.Add(new StationOperationRow
+                {
+                    SlotOperationAttemptId = "20000000-0000-4000-8000-000000000001",
+                    DemandId = DemandId,
+                    SublotId = "SUBLOT-001",
+                    TargetSlotsJson = "[1]",
+                    OperationType = SlotOperationType.Load,
+                    ContentHash = new string('a', 64),
+                    Status = StationOperationStatus.RecoveryRequired,
+                    CreatedAt = fixture.Clock.GetUtcNow()
+                });
+                break;
+            case "departure-unsafe-with-forced-recovery-awaiting-record":
+                fixture.Context.RecoveryWorkflows.Add(new RecoveryWorkflowRow
+                {
+                    WorkflowId = "30000000-0000-4000-8000-000000000001",
+                    WorkflowType = "FORCED_MECHANICAL_RECOVERY",
+                    AgvId = fixture.Options.AgvId,
+                    SlotsJson = "[1]",
+                    State = RecoveryWorkflowState.AwaitingResult,
+                    RequestMessageId = "30000000-0000-4000-8000-000000000002",
+                    RequestContentHash = new string('b', 64),
+                    CreatedAt = fixture.Clock.GetUtcNow(),
+                    UpdatedAt = fixture.Clock.GetUtcNow()
+                });
                 break;
             case "peer-silent":
                 fixture.Clock.Advance(SessionLiveness.Timeout + TimeSpan.FromSeconds(1));
