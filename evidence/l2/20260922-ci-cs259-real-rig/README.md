@@ -40,7 +40,7 @@ FAIL 丢一次 ack 只换来一次重连  实际: 3 connections, 1 open (#1: rel
 
 **读到的**（`real-onboard-durable-ack-lost-01/snapshots/protocol-fault-proxy.json`、服务端与车载端日志，时刻为 UTC+8）：
 
-- 第 2 条连接握手完成大约 20 秒后，服务端在 10:25:46.555 回完 `HeartbeatAck`，之后在这条连接上再没回过任何报文：`OperationResult`（46.792）、`Heartbeat`（48.095）、补发的同一条 `OperationResult`（49.319）都没有应答。
+- 第 2 条连接在 10:25:03.959 完成握手（回出 `SessionReadiness`），此后正常收发大约 42 秒。服务端在 10:25:46.555 回完 `HeartbeatAck`，之后在这条连接上再没回过任何报文：`OperationResult`（46.792）、`Heartbeat`（48.095）、补发的同一条 `OperationResult`（49.319）都没有应答。
 - 车载端 10:25:49.30 记 `OperationResult暂未收到DurableAck ... TimeoutException: The operation has timed out.`，随后自己断开（`#2: onboard closed`）。
 - 第 3 条连接上，同一条 `OperationResult` 的 `DurableAck` 用了 2.2 秒（53.836→56.036），`RecoveryStateReport` 的应答用了 1.3 秒。
 - 同一时段服务端日志里 `GET /api/onboard/v1/vehicle-safety` 要 0.5～1.2 秒。这一遍开始时，整机已提交内存 9.81 GiB。
