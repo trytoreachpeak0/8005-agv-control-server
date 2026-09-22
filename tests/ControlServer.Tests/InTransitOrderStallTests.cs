@@ -117,6 +117,35 @@ public sealed class InTransitOrderStallTests
     }
 
     /// <summary>
+    /// 挂起期间一次读不到订单（网关不抛、返回 Unknown）：码与开始时刻都不动，告警不重复。
+    /// </summary>
+    /// <remarks>
+    /// 读不到不是「订单继续了」。第一版把一切非停住的观测都当成继续、清掉码，于是一次读超时让码消失一轮、开始时刻重置、
+    /// 告警再打一次，而那一轮这辆车重新进 underWay，可以被追加（独立审查第 1 条）。只有读到明确的非停住状态才清。
+    /// </remarks>
+    [Fact]
+    public async Task AnUnreadableOrderKeepsTheHangReasonAndItsStart()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync();
+        fixture.Riot.SetOrderState(before.PickupUpperId, RiotOrderState.Hang, terminal: false);
+        await TickAndRunAsync(fixture);
+        DateTimeOffset? since = (await fixture.RuntimeAsync()).BlockReasonSince;
+
+        fixture.Riot.MakeOrderUnreadable(before.PickupUpperId);
+        await TickAndRunAsync(fixture);
+        JourneyRuntimeRow unread = await fixture.RuntimeAsync();
+        Assert.Equal((OrderHang, since), (unread.BlockReasonCode, unread.BlockReasonSince));
+
+        fixture.Riot.SetOrderState(before.PickupUpperId, RiotOrderState.Hang, terminal: false);
+        await TickAndRunAsync(fixture);
+        JourneyRuntimeRow again = await fixture.RuntimeAsync();
+        Assert.Equal((OrderHang, since), (again.BlockReasonCode, again.BlockReasonSince));
+        Assert.Single(fixture.EngineLog.Entries, entry =>
+            entry.Level == LogLevel.Warning && entry.Message.Contains("ORDER_HANG", StringComparison.Ordinal));
+    }
+
+    /// <summary>
     /// 8 SUSPENDED：写 <c>ORDER_STATE_UNRECOGNIZED</c>，不做任何自动动作。
     /// </summary>
     /// <remarks>

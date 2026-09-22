@@ -1585,6 +1585,13 @@ internal static class JourneyRuntimeWorkerTestKit
                 OrderState = orderState,
             };
 
+        /// <summary>
+        /// The order under <paramref name="upperId"/> reads Unknown from now on -- the shape the gateway returns for a failed
+        /// or indeterminate read instead of throwing (control-server#316).
+        /// </summary>
+        public void MakeOrderUnreadable(string upperId) =>
+            _orders[upperId] = _orders[upperId] with { Kind = RiotOrderObservationKind.Unknown };
+
         public void CancelOrder(string upperId) =>
             _orders[upperId] = _orders[upperId] with
             {
