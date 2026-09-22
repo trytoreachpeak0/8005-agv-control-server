@@ -1,6 +1,7 @@
 using ControlServer.Application;
 using ControlServer.Domain;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace ControlServer.Infrastructure.Persistence;
 
@@ -173,8 +174,41 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
     // Audit immutability lives here rather than in the stores that write audit, so that it is a
     // property of the context every caller already goes through instead of a rule each new caller
     // has to remember.
+    /// <summary>
+    /// Keeps <see cref="JourneyRuntimeRow.WaitingSince"/> in step with every journey row this save adds or changes
+    /// (control-server#273), by the one definition of waiting in <see cref="JourneyWaitClassification"/>. Here rather than
+    /// at the writers for the reason the audit guard below is: a rule each writer had to remember would be broken by the
+    /// next one.
+    /// </summary>
+    private void ReconcileJourneyWaits()
+    {
+        ChangeTracker.DetectChanges();
+        foreach (EntityEntry<JourneyRuntimeRow> entry in ChangeTracker.Entries<JourneyRuntimeRow>())
+        {
+            if (entry.State is not (EntityState.Added or EntityState.Modified))
+            {
+                continue;
+            }
+            JourneyRuntimeRow row = entry.Entity;
+            // Arriving is a new wait: the vehicle has moved since whatever wait the leg carried (incremental review of
+            // #320). Blocked is the exception -- a leg is blocked where it stands.
+            if (entry.State == EntityState.Modified &&
+                row.Stage != JourneyRuntimeStage.Blocked &&
+                JourneyWaitClassification.Of(row.Stage) == JourneyStageActivity.Stationary &&
+                JourneyWaitClassification.Of(entry.Property(item => item.Stage).OriginalValue) == JourneyStageActivity.Travelling)
+            {
+                row.ReconcileWait(waiting: false, row.UpdatedAt);
+            }
+            DateTimeOffset startedAt = JourneyWaitClassification.Of(row.Stage) == JourneyStageActivity.Travelling
+                ? row.BlockReasonSince ?? row.UpdatedAt
+                : row.UpdatedAt;
+            row.ReconcileWait(JourneyWaitClassification.IsWaiting(row.Stage, row.BlockReasonCode), startedAt);
+        }
+    }
+
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
+        ReconcileJourneyWaits();
         AuditImmutabilityGuard.Enforce(ChangeTracker, AuditRetention, AuditClock.GetUtcNow());
         PublishedVersionImmutabilityGuard.Enforce(ChangeTracker);
         return base.SaveChanges(acceptAllChangesOnSuccess);
@@ -184,6 +218,7 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
         bool acceptAllChangesOnSuccess,
         CancellationToken cancellationToken = default)
     {
+        ReconcileJourneyWaits();
         AuditImmutabilityGuard.Enforce(ChangeTracker, AuditRetention, AuditClock.GetUtcNow());
         PublishedVersionImmutabilityGuard.Enforce(ChangeTracker);
         return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
@@ -680,6 +715,73 @@ public sealed class JourneyRuntimeRow
 
     /// <summary>The vehicle whose acceptance triggered the yield, when <see cref="YieldTriggeredAt"/> is set.</summary>
     public string? YieldTriggeredByVehicleKey { get; set; }
+
+    /// <summary>
+    /// When this journey's vehicle began waiting for a person, by the clock of the write that made it so
+    /// (control-server#273): the waiting journey watch and the dashboard measure the wait from here. Null while the
+    /// journey is not waiting (<see cref="JourneyWaitClassification.IsWaiting"/>).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A wait, not a stage.</b> Moving from one stationary stage to another -- a gate that waited two hours for its unload
+    /// and is then blocked -- does not start it over: the vehicle has not moved and its battery has not stopped falling. It
+    /// ends when the journey stops waiting -- a departure whose order was confirmed, or the end of the journey -- and a new
+    /// one begins on arrival, from the arrival, because the vehicle has moved since.
+    /// </para>
+    /// <para>
+    /// <b>A departure whose order was not confirmed keeps waiting</b> (incremental review of #320, L-a). The engine moves the
+    /// stage onto the leg in the same save that writes the dispatch outcome as the reason (<c>ResultUnknown</c> and the like);
+    /// a travelling stage with a reason is a wait, so the start stays the station's. That is decided, not incidental: the
+    /// vehicle has most likely not left.
+    /// </para>
+    /// <para>
+    /// <b>The session gate is not a reason on a leg.</b> <c>ONBOARD_SESSION_NOT_READY</c> is what a real onboard reports on
+    /// nearly every leg while it carries this server's own order, so on a travelling stage it is not a wait (see
+    /// <see cref="JourneyWaitClassification"/>).
+    /// </para>
+    /// <para>
+    /// <b>A travelling stage's wait begins with its reason, not with the leg.</b> A twelve-minute drive whose session drops
+    /// in its last seconds has waited seconds, not twelve minutes, so the start is <see cref="BlockReasonSince"/>. A reason
+    /// that changes during the stop (a checkpoint wait escalated past its budget) does not start it over either.
+    /// </para>
+    /// <para>
+    /// Written by <see cref="ControlServerDbContext"/> on every save that adds or changes the row, never by the runtime:
+    /// seven places move a stage and more write a reason, and a column each of them had to remember would be wrong the first
+    /// time one forgot. A stationary stage's start is the <see cref="UpdatedAt"/> the same write carries; a writer that
+    /// forgot that column leaves an earlier time, so the wait reads longer and is reported sooner -- never later.
+    /// </para>
+    /// </remarks>
+    public DateTimeOffset? WaitingSince { get; private set; }
+
+    /// <summary>
+    /// The battery the waiting journey watch last read from RIoT for this journey's vehicle, in percent; null when that
+    /// read gave no percentage (control-server#273). Meaningful together with <see cref="WaitingBatteryObservedAt"/>:
+    /// a null here with a time there is "unknown at that time", not "never read".
+    /// </summary>
+    public int? WaitingBatteryPercent { get; set; }
+
+    /// <summary>When the watch made the read <see cref="WaitingBatteryPercent"/> holds, by this server's clock; null before the first.</summary>
+    public DateTimeOffset? WaitingBatteryObservedAt { get; set; }
+
+    /// <summary>When the watch last logged this journey's wait; kept so a restart neither repeats nor loses the cadence.</summary>
+    public DateTimeOffset? WaitingWarnedAt { get; set; }
+
+    /// <summary>
+    /// Brings <see cref="WaitingSince"/> in line with the row as it is about to be saved: a wait that began starts at
+    /// <paramref name="startedAt"/>, a wait that goes on keeps its start, and a journey no longer waiting has none -- nor a
+    /// time it was last warned about, so a wait that begins again is logged from its own threshold. Internal, and the
+    /// database context is its one caller, so no runtime writer can set the start beside the stage and drift from that.
+    /// </summary>
+    internal void ReconcileWait(bool waiting, DateTimeOffset startedAt)
+    {
+        if (!waiting)
+        {
+            WaitingSince = null;
+            WaitingWarnedAt = null;
+            return;
+        }
+        WaitingSince ??= startedAt;
+    }
 
     /// <summary>
     /// The one way to write <see cref="BlockReasonCode"/>: the first write of a code records when it

@@ -97,6 +97,33 @@ public sealed class JourneyRuntimeOptions
     /// procedure (T0 + 10 min). Must be positive; there is no switch to wait for ever.
     /// </remarks>
     public TimeSpan AreaEndAdmissionRevokedTimeout { get; set; } = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// How long a journey may stand waiting for a person in one stage before the waiting journey watch logs it, with the
+    /// vehicle's battery (control-server#273). Ten minutes by default, decided by the user on 2026-09-22.
+    /// </summary>
+    /// <remarks>
+    /// The watch only reports: REQ-0169 lets a falling battery raise the alarm and nothing else, so no threshold here ever
+    /// moves a vehicle. Must be positive.
+    /// </remarks>
+    public TimeSpan WaitingJourneyWarningAfter { get; set; } = TimeSpan.FromMinutes(10);
+
+    /// <summary>How often the watch logs a wait again while it lasts. Five minutes by default; must be positive.</summary>
+    public TimeSpan WaitingJourneyWarningRepeat { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// The rescue line (control-server#273): under it the watch's log says a person has to move the vehicle to a charger.
+    /// Fifteen percent by default; must be in 1..100 and below <see cref="MinimumBatteryPercent"/>, the line under which the
+    /// same log is already raised to an error.
+    /// </summary>
+    public int WaitingJourneyRescueBatteryPercent { get; set; } = 15;
+
+    /// <summary>
+    /// How long the waiting journey watch waits for one vehicle's battery from RIoT before it records "unknown"
+    /// (control-server#273, review of #320). Two seconds by default; must be positive and at most ten seconds. The gateway's
+    /// own timeout is thirty, and the watch reads one vehicle after another at the end of every round.
+    /// </summary>
+    public TimeSpan WaitingJourneyBatteryReadBudget { get; set; } = TimeSpan.FromSeconds(2);
 }
 
 /// <summary>One vehicle's identity and the policy slice configured for it.</summary>
@@ -175,6 +202,18 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
         if (options.MapId <= 0) failures.Add("MapId must be positive.");
         if (options.DispatchGeneration <= 0) failures.Add("DispatchGeneration must be positive.");
         if (options.MinimumBatteryPercent is < 1 or > 100) failures.Add("MinimumBatteryPercent must be in 1..100.");
+        if (options.WaitingJourneyWarningAfter <= TimeSpan.Zero) failures.Add("WaitingJourneyWarningAfter must be positive.");
+        if (options.WaitingJourneyWarningRepeat <= TimeSpan.Zero) failures.Add("WaitingJourneyWarningRepeat must be positive.");
+        if (options.WaitingJourneyRescueBatteryPercent < 1 ||
+            options.WaitingJourneyRescueBatteryPercent >= options.MinimumBatteryPercent)
+        {
+            failures.Add("WaitingJourneyRescueBatteryPercent must be at least 1 and below MinimumBatteryPercent.");
+        }
+        if (options.WaitingJourneyBatteryReadBudget <= TimeSpan.Zero ||
+            options.WaitingJourneyBatteryReadBudget > TimeSpan.FromSeconds(10))
+        {
+            failures.Add("WaitingJourneyBatteryReadBudget must be positive and at most 10 s.");
+        }
         if (options.AdmissionPolicyVersion <= 0) failures.Add("AdmissionPolicyVersion must be positive.");
         RequireText(options.AdmissionPolicyDeploymentId, nameof(options.AdmissionPolicyDeploymentId), failures);
         if (!options.AllowedDispatchZones.Contains(options.DispatchZone, StringComparer.Ordinal))

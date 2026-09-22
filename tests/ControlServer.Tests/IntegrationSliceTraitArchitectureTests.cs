@@ -172,7 +172,10 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["VehicleFaultRecoveryEndpointsTests"] = "control-server#299 the vehicle fault recovery HTTP entry point (REQ-0356's shape: off by default, shared bearer credential, named vehicle, every reason listed); single-ended server-to-RIoT, no wire message",
             ["VehicleFaultRecoveryTests"] = "control-server#299 a person clears a vehicle fault, continues a held order, or (reserved for #318) confirms a rebuild, with the journey disposed of in the same transaction; 7.5 #8, FP-C11 fault isolation, single-ended server-to-RIoT, no wire message",
             ["VehicleSlotLedgerTests"] = "batch 7-04 slot ledger port (control-server#209): an idle vehicle's free slots per side equal the session baseline; server-internal, no wire message",
-            ["VehicleSlotPositionReaderTests"] = "batch 4 FP-C15 server-authoritative SlotPosition per vehicle, never the onboard's report (program#70 decision 4); no wire message"
+            ["VehicleSlotPositionReaderTests"] = "batch 4 FP-C15 server-authoritative SlotPosition per vehicle, never the onboard's report (program#70 decision 4); no wire message",
+            ["WaitingJourneyBatteryWatchTests"] = "control-server#273 the waiting journey watch: a vehicle standing waiting for a person has its battery read from RIoT, recorded and logged past a threshold, and nothing is ever sent to it; server log and the server's own rows only, no wire message",
+            ["WaitingJourneyDashboardTests"] = "control-server#273 the dashboard's waiting journey card: read-only /api/dashboard/ over the server's own tables, nothing goes on the wire (spec 5.1 #10)",
+            ["WaitingJourneyWatchMigrationTests"] = "cross-cutting migration guard for control-server#273's one migration and its back-fill of when journeys already waiting began to wait; hanging it off a slice would defer the guard with the slice",
         };
 
     /// <summary>

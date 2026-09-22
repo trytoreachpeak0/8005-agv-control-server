@@ -670,6 +670,15 @@ try {
         $serverEnvironment['JourneyRuntime__cargoHoldingTimeout'] = $cargoHoldingTimeout
     }
 
+    # control-server#273's waiting journey watch: how long a journey may stand waiting for a person before it is logged,
+    # and how often again. Passed only when the setup file names them, so every other scenario keeps the server's own
+    # ten and five minutes.
+    foreach ($key in 'WaitingJourneyWarningAfter', 'WaitingJourneyWarningRepeat') {
+        if ($setup.ContainsKey($key)) {
+            $serverEnvironment["JourneyRuntime__$key"] = [string]$setup[$key]
+        }
+    }
+
     # FP-C13: the two REQ-0302 values, approved. A commissioned server has them, so every scenario
     # faces one. `CatalogApproved = $false` in a setup file takes them away, which is the negative
     # evidence specification 8.6 requires -- and there is no switch that turns the check off, only

@@ -1599,12 +1599,21 @@ internal static class JourneyRuntimeWorkerTestKit
                 OrderState = RiotOrderState.Cancelled,
             };
 
-        public Task<RiotVehicleObservation> ReadVehicleAsync(string vehicleKey, CancellationToken cancellationToken)
+        public async Task<RiotVehicleObservation> ReadVehicleAsync(string vehicleKey, CancellationToken cancellationToken)
         {
-            _ = cancellationToken;
             BeforeReadVehicle?.Invoke();
-            return Task.FromResult(Vehicle with { VehicleKey = vehicleKey, ObservedAt = _clock.GetUtcNow() });
+            if (ReadVehicleDelay is { } delay)
+            {
+                await delay(cancellationToken);
+            }
+            return Vehicle with { VehicleKey = vehicleKey, ObservedAt = _clock.GetUtcNow() };
         }
+
+        /// <summary>
+        /// Awaited inside every vehicle read, with the caller's token: a RIoT that answers late, or not at all until the
+        /// caller gives up (control-server#273's read budget).
+        /// </summary>
+        public Func<CancellationToken, Task>? ReadVehicleDelay { get; set; }
 
         public Task<VehicleMotionSample> SampleMotionAsync(string deviceKey, CancellationToken cancellationToken)
         {
