@@ -7,7 +7,7 @@
 
   A. 到站没人扫码：期限从到站起算，到期服务端自己结束本站——需求 Cancelled、理由
      CANCELLED_BY_STATION_TIMEOUT、租约与车辆占用释放、没人回答的录入请求被结算、没有任何仓位操作；
-     同一个 DemandId 不再被派。
+     车收到并确认一张空清单，车上那一站被撤掉（control-server#323）；同一个 DemandId 不再被派。
   B. 期限走到一半断联重连：重连（新的会话代）作废本轮期限，会话回到 Ready 之后从那一刻重新计满——
      原期限过了本站还在等，要等到新期限才结束。
 
@@ -23,6 +23,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2Change.psm1') -Force
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ConditionOrLast.psm1') -Force
 
 $journal = $Context.Journal
 $assertions = $Context.Assertions
@@ -81,6 +82,30 @@ function Publish-Demand([string]$wireId, [string]$suffix) {
         package     = 'L2-PACKAGE'
         maxBoxCount = 4
     })
+}
+
+<#
+这辆车收到过的清单快照（本装置只有一辆车，所以不按车筛）：列着 $DemandId 的那几版（到站时发的），与 items 为空的那几版
+（旅程收尾时发的，control-server#323）。收尾那一版不列任何需求，所以不能按需求认，只能按形状认。
+#>
+function Get-StopWorklists([string]$DemandId) {
+    $rows = Invoke-L2Query -Connection $connection -Sql (
+        "SELECT MessageId, PayloadJson, AcknowledgedAt FROM ProtocolOutbox WHERE MessageType = 'CurrentStopWorklistSnapshot'")
+    $listing = [Collections.Generic.List[object]]::new()
+    $empty = [Collections.Generic.List[object]]::new()
+    foreach ($row in $rows) {
+        $payload = ([string]$row.PayloadJson | ConvertFrom-Json -DateKind String).payload
+        $items = @($payload.items)
+        $snapshot = [pscustomobject]@{
+            MessageId    = [string]$row.MessageId
+            Revision     = [long]$payload.worklistRevision
+            StationId    = [string]$payload.stationId
+            Acknowledged = -not (Test-L2Null $row.AcknowledgedAt)
+        }
+        if ($items.Count -eq 0) { $empty.Add($snapshot) }
+        elseif (@($items | Where-Object { [string]$_.demandId -eq $DemandId }).Count -gt 0) { $listing.Add($snapshot) }
+    }
+    return [pscustomobject]@{ Listing = $listing.ToArray(); Empty = $empty.ToArray() }
 }
 
 # 车跑一条取货单：接单、行驶、停在取货点。第二段车本来就停在取货点，但那是一条新的运单，到站判定要重跑一遍。
@@ -192,6 +217,31 @@ $assertions.Add(
     'L2-SD-07', '超时不下发任何仓位操作，也不开恢复流程',
     ($operations -eq 0 -and $workflows -eq 0),
     '0 / 0', "$operations / $workflows")
+
+# 旅程收尾之后，车上那一站的清单要被撤掉（control-server#323，program#86 v2 的 A 形态）：服务端发一张 items 为空、号比到站
+# 那一版大的清单，车确认了它。修之前收尾不碰发件箱，车上一直留着这一站、录入请求与「取消装货」按钮。确认由车另起一次写库，
+# 与旅程转 Completed 不是同一次提交，所以等，而不是立刻读；等不到时把最后一次读数交给判据，红点落在判据表里。
+$closure = Wait-L2ConditionOrLast -Description 'the vehicle acknowledged an empty worklist above the arrival one' `
+    -Journal $journal -Criterion 'first-closure-worklist' -TimeoutSeconds 30 `
+    -Probe { Get-StopWorklists $firstId } `
+    -Until {
+        param($v)
+        $top = ($v.Listing | Measure-Object -Property Revision -Maximum).Maximum
+        @($v.Listing).Count -ge 1 -and
+            @($v.Empty | Where-Object { $_.Acknowledged -and $_.Revision -gt $top -and $_.StationId -eq [string]$arrived.PickupStationId }).Count -ge 1
+    }
+$arrivalTop = ($closure.Listing | Measure-Object -Property Revision -Maximum).Maximum
+$acknowledgedEmpty = @($closure.Empty | Where-Object { $_.Acknowledged -and $_.Revision -gt $arrivalTop -and $_.StationId -eq [string]$arrived.PickupStationId })
+$journal.Observe('first-stop-worklists',
+    ("到站 " + ((@($closure.Listing) | ForEach-Object { "r$($_.Revision)$(if ($_.Acknowledged) { '/ack' })" }) -join ',') +
+        "；空清单 " + ((@($closure.Empty) | ForEach-Object { "r$($_.Revision)@$($_.StationId)$(if ($_.Acknowledged) { '/ack' })" }) -join ',')),
+    @{ worklists = $closure })
+$assertions.Add(
+    'L2-SD-15', '本站结束之后，车收到并确认了一张空清单：同一个站、号比到站那一版大（control-server#323）',
+    (@($closure.Listing).Count -ge 1 -and $acknowledgedEmpty.Count -ge 1),
+    "空清单 @$([string]$arrived.PickupStationId) / r > $arrivalTop / 已确认",
+    $(if (@($closure.Empty).Count -eq 0) { '(一张空清单都没有)' } else {
+        (@($closure.Empty) | ForEach-Object { "r$($_.Revision)@$($_.StationId) ack=$($_.Acknowledged)" }) -join ', ' }))
 
 # --- A4. 同一个 DemandId 不再被派 ------------------------------------------------------------------
 

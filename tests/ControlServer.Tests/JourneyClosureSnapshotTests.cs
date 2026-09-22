@@ -81,6 +81,9 @@ public sealed class JourneyClosureSnapshotTests
         OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
             connection, new WireToGateStore(connection), fixture.Clock, new ConfigurationBuilder().Build(), fixture.Peer);
         OnboardConnectionState state = JourneyRuntimeWorkerLoadCancellationBeforeSublotTests.BeforeSublotConnection(fixture, 1);
+        // 会话中途的连接：握手已经结束。握手里服务端不推任何东西（control-server#202），协调器那条「答复之后再发」的链
+        // 只对握手之后的消息开，而取消的结果只会在那之后到。
+        state.HandshakeCompleted = true;
 
         await processor.ProcessAsync(
             JourneyRuntimeWorkerLoadCancellationBeforeSublotTests.CancellationBeforeSublotRequest(
@@ -136,6 +139,9 @@ public sealed class JourneyClosureSnapshotTests
             fixture.Context, first.AgvId, Sent(fixture), 1, first.GateStationId);
         peer.LoseBufferedAcks();
         int linesAtClosure = fixture.Peer.Lines.Count;
+        // 第一趟途中这个替身已经记过回退：用例一张确认都不投递，引擎每轮把没确认的旧版补发一遍。那是夹具的用法，与收尾无关，
+        // 所以只看收尾之后新增的。
+        int regressionsAtClosure = peer.Regressions.Count;
 
         AcceptedDemandSnapshot firstDemand = fixture.Demand(FirstDemandId, "SUBLOT-001", createdAt: Now.AddMinutes(-10));
         AcceptedDemandSnapshot next = fixture.Demand(NextDemandId, "SUBLOT-002", createdAt: Now.AddMinutes(-5));
@@ -162,7 +168,7 @@ public sealed class JourneyClosureSnapshotTests
         Assert.DoesNotContain(
             fixture.Peer.Lines.Skip(linesAtClosure).Select(Line),
             line => closureIds.Any(id => SentAs(line, id, 1)));
-        Assert.Empty(peer.Regressions);
+        Assert.Empty(peer.Regressions.Skip(regressionsAtClosure));
         Assert.Contains(peer.Adopted, item =>
             item.MessageType == "UpcomingStopPlanSnapshot" && item.Revision == second.PlanRevision);
     }
@@ -190,6 +196,44 @@ public sealed class JourneyClosureSnapshotTests
         fixture.Peer.OnMessageSent = null;
         await fixture.ReconnectAsync(2);
         await fixture.AdvanceSessionAsync(2);
+        int linesBeforeReplay = fixture.Peer.Lines.Count;
+        await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+        OnboardRecoveryCoordinator coordinator = TestOnboardProcessorFactory.CreateRecoveryCoordinator(
+            connection, new WireToGateStore(connection), fixture.Clock, new ConfigurationBuilder().Build(), fixture.Peer);
+        await coordinator.ReplayPendingCommandsAsync(runtime.AgvId, 2, Token);
+
+        await AssertClosureSentAsync(
+            fixture.Context, runtime.AgvId, fixture.Peer.Lines.Skip(linesBeforeReplay).Select(Line), 2, runtime.PickupStationId);
+    }
+
+    /// <summary>
+    /// 同上，但车重连回来时会话仍因本服务端自己的在途单而未就绪（<c>DEPARTURE_SAFETY_NOT_READY</c>，安全原因只有
+    /// <c>VEHICLE_NOT_READY</c>）——真车载端在车带着本服务端的单行驶时就是这个状态，合成车载端看不到（control-server#314）。
+    /// </summary>
+    /// <remarks>
+    /// 补发不看会话就不就绪：它挂在恢复报告的答复之后（握手已完成），而车载端收行程快照不看自己的就绪状态。
+    /// 等会话回到 <c>Ready</c> 再发没有意义——旅程已经收尾，引擎不再推进它，那时也没有谁会再发。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    public async Task AMissedClosureIsReplayedAfterAReconnectEvenWhileTheOwnOrderKeepsTheSessionNotReady()
+    {
+        await using RuntimeFixture fixture = await AtSublotWaitWithDeadlineAsync();
+        fixture.Peer.OnMessageSent = line => IsClosureShaped(line)
+            ? throw new IOException("The link dropped as the closure went out.")
+            : Task.CompletedTask;
+        fixture.Clock.Advance(TimeSpan.FromSeconds(10));
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.Completed, runtime.Stage);
+
+        fixture.Peer.OnMessageSent = null;
+        await fixture.ReconnectAsync(2);
+        await fixture.AdvanceSessionAsync(2);
+        await PickupDispatchPlanPastOwnOrderTests.DropSessionOnOwnOrderAsync(fixture);
+        Assert.Equal("DEPARTURE_SAFETY_NOT_READY",
+            (await fixture.Context.SessionRecoveries.AsNoTracking().SingleAsync(Token)).ReasonCode);
         int linesBeforeReplay = fixture.Peer.Lines.Count;
         await using ControlServerDbContext connection = fixture.OpenConnectionContext();
         OnboardRecoveryCoordinator coordinator = TestOnboardProcessorFactory.CreateRecoveryCoordinator(
