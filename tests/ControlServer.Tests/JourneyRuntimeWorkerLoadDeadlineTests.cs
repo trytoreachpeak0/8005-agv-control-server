@@ -137,7 +137,14 @@ public sealed class JourneyRuntimeWorkerLoadDeadlineTests
         Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, stillAlarmed.Stage);
         Assert.Equal("STATION_TIMEOUT_DOOR_NOT_CLOSED", stillAlarmed.BlockReasonCode);
         Assert.Equal(raisedAt, stillAlarmed.BlockReasonSince);
-        Assert.Single(fixture.EngineLog.Entries, entry => entry.Message.Contains("STATION_TIMEOUT_DOOR_NOT_CLOSED"));
+        // The door alarm itself is logged once, on the edge. Since control-server#273 the waiting journey watch also logs
+        // this wait -- twenty minutes is past its threshold -- and its line names the reason code the stage carries; that
+        // is a different line (event 2163, "has waited for a person"), so it is counted apart rather than filtered out.
+        Assert.Single(fixture.EngineLog.Entries, entry =>
+            entry.Message.Contains("with a slot door not closed", StringComparison.Ordinal));
+        Assert.Single(fixture.EngineLog.Entries, entry =>
+            entry.Message.Contains("has waited for a person", StringComparison.Ordinal) &&
+            entry.Message.Contains("(reason STATION_TIMEOUT_DOOR_NOT_CLOSED)", StringComparison.Ordinal));
 
         await fixture.ProveSlotDoorsClosedAsync();
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);

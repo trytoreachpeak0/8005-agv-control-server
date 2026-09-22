@@ -1,6 +1,7 @@
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Infrastructure.Persistence;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
@@ -77,14 +78,22 @@ public sealed class Batch7LoadingMembershipBackfillMigrationTests
     /// 三趟旧版留下的旅程：一趟正在装、一趟还在路上、一趟已经装完。三条归属此刻都带着旧版写下的状态。
     /// </summary>
     /// <remarks>
+    /// <para>
     /// 旧版从不写 <c>LOADING</c>，所以「正在装」那一趟的归属也是 <c>PENDING_LOAD</c>——这正是迁移要认出来的那一条，
     /// 而认出它靠的是旅程的阶段，不是归属本身。
+    /// </para>
+    /// <para>
+    /// 种在一个迁到最新的草稿库上，再按目标库此刻（<see cref="PreviousMigration"/>）有的列把行拷过去（control-server#273 起）。
+    /// 在目标库上直接用 EF 种，等于拿今天的模型去写旧表：之后任何一张迁移给这几张表加了列，EF 就会去写一列旧表没有的列，
+    /// 这条用例便会在与它无关的地方红掉——cs#273 加 <c>JourneyRuntimes.StageSince</c> 时正是这样。
+    /// </para>
     /// </remarks>
     private static async Task SeedJourneysAsOldVersionLeftThemAsync(Batch7JourneyFixture fixture)
     {
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
         DateTimeOffset now = Batch7JourneyFixture.Now;
-        ControlServerDbContext context = fixture.Context;
+        await using Batch7JourneyFixture scratch = await Batch7JourneyFixture.CreateAsync();
+        ControlServerDbContext context = scratch.Context;
         await Batch7JourneyFixture.AcceptAsync(context, LoadingDemandId, "agv-01", "VK-01", now);
         await Batch7JourneyFixture.AcceptAsync(context, OnTheWayDemandId, "agv-02", "VK-02", now);
         await Batch7JourneyFixture.AcceptAsync(context, LoadedDemandId, "agv-03", "VK-03", now);
@@ -98,13 +107,74 @@ public sealed class Batch7LoadingMembershipBackfillMigrationTests
                 .SingleAsync(row => row.DemandId == LoadedDemandId, cancellationToken))
             .Status = JourneyDemandStatuses.Loaded;
         await context.SaveChangesAsync(cancellationToken);
-        context.ChangeTracker.Clear();
+
+        foreach (string table in await TableNamesAsync(fixture.Connection))
+        {
+            if (await CountAsync(scratch.Connection, table) > 0 && await CountAsync(fixture.Connection, table) == 0)
+            {
+                await CopyRowsAsync(scratch.Connection, fixture.Connection, table, await ColumnsAsync(fixture.Connection, table));
+            }
+        }
     }
 
     private static async Task SetStageAsync(
         ControlServerDbContext context, string demandId, JourneyRuntimeStage stage) =>
         (await context.JourneyRuntimes.SingleAsync(
             row => row.DemandId == demandId, TestContext.Current.CancellationToken)).Stage = stage;
+
+    private static async Task<string[]> TableNamesAsync(SqliteConnection connection)
+    {
+        List<string> tables = [];
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name <> '__EFMigrationsHistory'";
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken);
+        while (await reader.ReadAsync(TestContext.Current.CancellationToken))
+        {
+            tables.Add(reader.GetString(0));
+        }
+        return [.. tables];
+    }
+
+    private static async Task<long> CountAsync(SqliteConnection connection, string table)
+    {
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = $"SELECT COUNT(*) FROM \"{table}\"";
+        return (long)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
+    }
+
+    private static async Task<string[]> ColumnsAsync(SqliteConnection connection, string table)
+    {
+        List<string> columns = [];
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = $"PRAGMA table_info('{table}')";
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken);
+        while (await reader.ReadAsync(TestContext.Current.CancellationToken))
+        {
+            columns.Add(reader.GetString(1));
+        }
+        return [.. columns];
+    }
+
+    private static async Task CopyRowsAsync(SqliteConnection from, SqliteConnection to, string table, string[] columns)
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        string list = string.Join(", ", columns.Select(column => $"\"{column}\""));
+        await using SqliteCommand select = from.CreateCommand();
+        select.CommandText = $"SELECT {list} FROM \"{table}\"";
+        await using SqliteDataReader reader = await select.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            await using SqliteCommand insert = to.CreateCommand();
+            insert.CommandText =
+                $"INSERT INTO \"{table}\" ({list}) VALUES ({string.Join(", ", columns.Select((_, index) => $"$p{index}"))})";
+            for (int index = 0; index < columns.Length; index++)
+            {
+                insert.Parameters.AddWithValue($"$p{index}", reader.GetValue(index));
+            }
+            await insert.ExecuteNonQueryAsync(cancellationToken);
+        }
+    }
 
     private static async Task<string> StatusAsync(Batch7JourneyFixture fixture, string demandId)
     {
