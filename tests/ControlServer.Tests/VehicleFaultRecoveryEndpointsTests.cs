@@ -138,6 +138,27 @@ public sealed class VehicleFaultRecoveryEndpointsTests
             Assert.IsAssignableFrom<IReadOnlyList<string>>(problem.ProblemDetails.Extensions["reasons"]));
     }
 
+    /// <summary>这一轮迟迟不结束：503，理由 <c>FAULT_RECOVERY_RUNTIME_BUSY</c>，稍后再试。</summary>
+    [Fact]
+    public async Task ARuntimeRoundThatDoesNotEndInTimeIsServiceUnavailable()
+    {
+        await using RuntimeFixture fixture = await FaultedOnTheWayToPickupAsync();
+        using CredentialScope scope = new();
+        using JourneyMutationGate gate = new();
+        using IDisposable stuckRound = await gate.EnterAsync(Token);
+
+        var result = await PostAsync(
+            fixture, scope.Variable, $"Bearer {Credential}", Request(fixture),
+            service: Service(fixture, new SiteRiot(fixture), gate: gate, gateTimeout: TimeSpan.FromMilliseconds(200)));
+
+        ProblemHttpResult problem = Assert.IsType<ProblemHttpResult>(result.Result);
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, problem.StatusCode);
+        Assert.Equal(
+            ["FAULT_RECOVERY_RUNTIME_BUSY"],
+            Assert.IsAssignableFrom<IReadOnlyList<string>>(problem.ProblemDetails.Extensions["reasons"]));
+        Assert.Equal(VehicleFaultLevel.SuspectedBlocked, (await FaultAsync(fixture)).Level);
+    }
+
     private static VehicleFaultRecoveryHttpRequest Request(RuntimeFixture fixture) =>
         new(fixture.Options.AgvId, "L1-OPERATOR-07", "CLEAR_FAULT", FaultRemedied: true, Note: "L1");
 
@@ -146,7 +167,8 @@ public sealed class VehicleFaultRecoveryEndpointsTests
         string credentialVariable,
         string authorization,
         VehicleFaultRecoveryHttpRequest request,
-        SiteRiot? site = null)
+        SiteRiot? site = null,
+        Host.Runtime.Faults.VehicleFaultRecoveryService? service = null)
     {
         DefaultHttpContext http = new();
         http.Request.Scheme = "http";
@@ -154,7 +176,7 @@ public sealed class VehicleFaultRecoveryEndpointsTests
         return VehicleFaultRecoveryEndpoints.HandleAsync(
             http,
             request,
-            Service(fixture, site ?? new SiteRiot(fixture)),
+            service ?? Service(fixture, site ?? new SiteRiot(fixture)),
             new VehicleRoster(Options.Create(fixture.Options)),
             Options.Create(new VehicleFaultRecoveryOptions
             {

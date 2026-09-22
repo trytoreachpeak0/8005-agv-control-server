@@ -51,6 +51,13 @@ M = [
   '            [Runtime.Faults.VehicleFaultRecoveryService.CargoOnBoardReason] =\n'
   '                "车辆故障已由人工清除，但车上可能有货：货物绑定保留，需求不改派，旅程停在这里等人处置"\n'
   '                + "（同车重建入口随 #318 提供，目前还没有）。这辆车不接新单",\n', '')]),
+ ('M14 a request that timed out on the gate goes ahead anyway', [(SVC,
+  '        if (round is null)\n', '        if (round is null && Environment.TickCount64 < 0)\n')]),
+ ('M15 a third type takes the gate', [(SVC,
+  'public sealed class VehicleFaultRecoveryService(',
+  'internal sealed class GateProbeHolder(JourneyMutationGate held)\n{\n    public JourneyMutationGate Held => held;\n}\n\npublic sealed class VehicleFaultRecoveryService(')]),
+ ('M16 cargo on board keeps its arrival stage and only changes the code', [(SVC,
+  '            runtime.Stage = JourneyRuntimeStage.Blocked;\n', '')]),
  ('M13 a stop still open is not checked', [(SVC,
   '        else if (situation.StopOpen)\n        {\n            yield return "FAULT_RECOVERY_EMERGENCY_STOP_OPEN";\n        }\n', '')]),
 ]

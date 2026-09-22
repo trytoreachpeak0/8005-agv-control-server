@@ -143,7 +143,8 @@ public sealed class VehicleFaultRecoveryService(
     VehicleMotionLedger ledger,
     JourneyMutationGate gate,
     TimeProvider timeProvider,
-    ILogger<VehicleFaultRecoveryService> logger)
+    ILogger<VehicleFaultRecoveryService> logger,
+    TimeSpan? gateTimeout = null)
 {
     /// <summary>The block a journey carries when its vehicle's fault was cleared with cargo possibly on board.</summary>
     public const string CargoOnBoardReason = "VEHICLE_FAULT_CLEARED_CARGO_ON_BOARD";
@@ -154,8 +155,19 @@ public sealed class VehicleFaultRecoveryService(
     /// <summary>The prefix of the reason a held order is continued under; the operator id follows the colon.</summary>
     public const string ResumedByOperatorReason = "FAULT_RESUMED_BY_OPERATOR";
 
-    /// <summary>How long a request waits for the runtime round in progress before it gives up.</summary>
-    internal static readonly TimeSpan GateTimeout = TimeSpan.FromSeconds(30);
+    /// <summary>
+    /// How long a request waits for the runtime round in progress before it gives up, answering
+    /// <c>FAULT_RECOVERY_RUNTIME_BUSY</c> (HTTP 503) and changing nothing.
+    /// </summary>
+    /// <remarks>
+    /// A round is normally well under the poll interval, so thirty seconds is a round that is stuck, not a busy one. The
+    /// wait cannot deadlock on this server's own account: nothing a round calls takes the gate, and nothing the recovery
+    /// calls while holding it does either -- <c>VehicleFaultRecoveryTests.OnlyTheRuntimeRoundAndTheRecoveryTakeTheGate</c>
+    /// fails the day a third holder appears, which is the day to look again.
+    /// </remarks>
+    public static readonly TimeSpan DefaultGateTimeout = TimeSpan.FromSeconds(30);
+
+    private readonly TimeSpan gateWait = gateTimeout ?? DefaultGateTimeout;
 
     private static readonly Action<ILogger, string, string, string, string, string, string, Exception?> LogRequest =
         LoggerMessage.Define<string, string, string, string, string, string>(
@@ -170,7 +182,7 @@ public sealed class VehicleFaultRecoveryService(
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(request.Subject);
 
-        using IDisposable? round = await gate.TryEnterAsync(GateTimeout, cancellationToken).ConfigureAwait(false);
+        using IDisposable? round = await gate.TryEnterAsync(gateWait, cancellationToken).ConfigureAwait(false);
         if (round is null)
         {
             return Record(request, Refused(["FAULT_RECOVERY_RUNTIME_BUSY"], null));

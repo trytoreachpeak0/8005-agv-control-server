@@ -392,6 +392,47 @@ public sealed class VehicleFaultRecoveryTests
         Assert.Equal(VehicleFaultRecoveryOutcome.Cleared, (await clearing).Outcome);
     }
 
+    /// <summary>
+    /// 这一轮迟迟不结束（锁一直被占着）：请求等满限时就放弃，答 <c>FAULT_RECOVERY_RUNTIME_BUSY</c>（HTTP 503），什么都不改。
+    /// 等待有上限，是这一条钉住的。
+    /// </summary>
+    [Fact]
+    public async Task ARequestThatCannotGetTheGateInTimeGivesUpAndChangesNothing()
+    {
+        await using RuntimeFixture fixture = await FaultedOnTheWayToPickupAsync();
+        using JourneyMutationGate gate = new();
+        using IDisposable stuckRound = await gate.EnterAsync(Token);
+
+        VehicleFaultRecoveryDecision decision = await Service(
+            fixture, new SiteRiot(fixture), gate: gate, gateTimeout: TimeSpan.FromMilliseconds(200)).RecoverAsync(Clear(fixture), Token);
+
+        Assert.Equal(VehicleFaultRecoveryOutcome.Refused, decision.Outcome);
+        Assert.Equal(["FAULT_RECOVERY_RUNTIME_BUSY"], decision.Reasons);
+        await AssertUntouchedAsync(fixture);
+    }
+
+    /// <summary>
+    /// 拿这把锁的只有两处：引擎循环（整轮持有）与故障恢复（整个请求持有）。锁不可重入，所以这一轮里调用的任何东西、以及恢复持锁期间
+    /// 调用的任何东西，只要也去拿它就会死锁——worker 那一侧等锁没有上限。今天两侧调用的东西都不拿锁；这一条在出现第三个持有者的那天红，
+    /// 那一天要重新看一遍会不会互等。
+    /// </summary>
+    /// <remarks>按构造函数参数认持有者：锁是宿主单例，拿到它的唯一途径是注入。</remarks>
+    [Fact]
+    public void OnlyTheRuntimeRoundAndTheRecoveryTakeTheGate()
+    {
+        string[] holders =
+        [
+            .. typeof(JourneyMutationGate).Assembly.GetTypes()
+                .Where(type => type.GetConstructors(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public |
+                                                    System.Reflection.BindingFlags.NonPublic)
+                    .Any(constructor => constructor.GetParameters().Any(parameter => parameter.ParameterType == typeof(JourneyMutationGate))))
+                .Select(type => type.Name)
+                .Order(StringComparer.Ordinal),
+        ];
+
+        Assert.Equal(["JourneyRuntimeWorker", "VehicleFaultRecoveryService"], holders);
+    }
+
     // ---- 会话因本服务端自己的在途单而未就绪 --------------------------------------------------------------------
 
     /// <summary>
@@ -424,6 +465,34 @@ public sealed class VehicleFaultRecoveryTests
             (await after.JourneyRuntimes.AsNoTracking().SingleAsync(row => row.JourneyId == faulted.JourneyId, Token)).Stage);
         VehicleFaultStateRow fault = await after.VehicleFaultStates.AsNoTracking().SingleAsync(Token);
         Assert.Equal((VehicleFaultLevel.None, 1L), (fault.Level, fault.FaultGeneration));
+        Assert.Equal(
+            SessionReadiness.RecoveryRequired,
+            (await after.SessionRecoveries.AsNoTracking().SingleAsync(Token)).Readiness);
+    }
+
+    /// <summary>
+    /// 已装货、会话因本服务端自己的在途单而未就绪时清除：旅程转阻断，码是 <c>VEHICLE_FAULT_CLEARED_CARGO_ON_BOARD</c>，
+    /// 之后几轮会话闸门不把它盖成 <c>ONBOARD_SESSION_NOT_READY</c>。
+    /// </summary>
+    /// <remarks>
+    /// 清除路径读的是旅程阶段，写的是阻断码；闸门那一支对不在阻断阶段的旅程每轮写自己的码。这一条钉住「转为阻断」这一步在真车常见的
+    /// 未就绪会话下也站得住：留在到站阶段、只改码的写法，下一轮就会被闸门盖掉，看板上再也看不出车上有货在等人。
+    /// </remarks>
+    [Fact]
+    public async Task ALoadedClearanceWhileTheSessionIsNotReadyKeepsItsReason()
+    {
+        await using RuntimeFixture fixture = await FaultedOnTheWayToGateAsync();
+        await DropSessionOnOwnOrderAsync(fixture);
+        await TickAndRunAsync(fixture);
+
+        VehicleFaultRecoveryDecision decision = await Service(fixture, new SiteRiot(fixture)).RecoverAsync(Clear(fixture), Token);
+        await TickAndRunAsync(fixture);
+        await TickAndRunAsync(fixture);
+
+        Assert.Equal(VehicleFaultRecoveryDispositions.HeldForPerson, decision.Disposition);
+        await using ControlServerDbContext after = new(fixture.DbOptionsForTests);
+        JourneyRuntimeRow held = await after.JourneyRuntimes.AsNoTracking().SingleAsync(Token);
+        Assert.Equal((JourneyRuntimeStage.Blocked, "VEHICLE_FAULT_CLEARED_CARGO_ON_BOARD"), (held.Stage, held.BlockReasonCode));
         Assert.Equal(
             SessionReadiness.RecoveryRequired,
             (await after.SessionRecoveries.AsNoTracking().SingleAsync(Token)).Readiness);
@@ -613,7 +682,8 @@ public sealed class VehicleFaultRecoveryTests
         SiteRiot site,
         ControlServerDbContext? context = null,
         IVehicleFaultStore? faultStore = null,
-        JourneyMutationGate? gate = null)
+        JourneyMutationGate? gate = null,
+        TimeSpan? gateTimeout = null)
     {
         context ??= new ControlServerDbContext(fixture.DbOptionsForTests);
         IVehicleFaultStore faults = faultStore ?? new VehicleFaultStore(context);
@@ -628,7 +698,7 @@ public sealed class VehicleFaultRecoveryTests
             ledger, faultOptions, fixture.Clock, NullLogger<VehicleFaultCoordinator>.Instance);
         return new VehicleFaultRecoveryService(
             context, faults, site, site, site, supervisor, coordinator, ledger, gate ?? new JourneyMutationGate(),
-            fixture.Clock, NullLogger<VehicleFaultRecoveryService>.Instance);
+            fixture.Clock, NullLogger<VehicleFaultRecoveryService>.Instance, gateTimeout);
     }
 
     /// <summary>
