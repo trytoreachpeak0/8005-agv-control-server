@@ -47,12 +47,16 @@ public sealed class VehicleFaultRecoveryEndpointsTests
         Assert.Equal(VehicleFaultLevel.SuspectedBlocked, (await FaultAsync(fixture)).Level);
     }
 
-    /// <summary>没有车号、或动作不是三个之一：没有东西可判，422，在读任何事实之前就拒。</summary>
+    /// <summary>
+    /// 没有车号、或动作不是两个之一：没有东西可判，422，在读任何事实之前就拒。<c>CONFIRM_REBUILD</c> 也在其中：本服务端自己的在途单在
+    /// RIoT 里被取消后由 #318 自动重建、不经人确认（用户 2026-09-22 定），这个入口不再为它留位置。
+    /// </summary>
     [Theory]
     [InlineData("", "CLEAR_FAULT")]
     [InlineData("agv", null)]
     [InlineData("agv", "clear_fault")]
     [InlineData("agv", "CANCEL_ORDER")]
+    [InlineData("agv", "CONFIRM_REBUILD")]
     public async Task ARequestWithoutAVehicleOrAKnownActionIsIncomplete(string agvId, string? action)
     {
         await using RuntimeFixture fixture = await FaultedOnTheWayToPickupAsync();
@@ -119,23 +123,6 @@ public sealed class VehicleFaultRecoveryEndpointsTests
         VehicleFaultRecoveryResponse again = Assert.IsType<Ok<VehicleFaultRecoveryResponse>>(second.Result).Value!;
         Assert.Equal(("AlreadyCleared", "NONE"), (again.Outcome, again.Disposition));
         Assert.Equal(VehicleFaultLevel.None, (await FaultAsync(fixture)).Level);
-    }
-
-    /// <summary>确认重建是 501：位置在、判据照核、理由照列，最后一条说明它还没有实现（#318）。</summary>
-    [Fact]
-    public async Task ARebuildIsNotImplementedAndStillNamesItsReasons()
-    {
-        await using RuntimeFixture fixture = await FaultedOnTheWayToPickupAsync();
-        using CredentialScope scope = new();
-
-        var result = await PostAsync(
-            fixture, scope.Variable, $"Bearer {Credential}", Request(fixture) with { Action = "CONFIRM_REBUILD" });
-
-        ProblemHttpResult problem = Assert.IsType<ProblemHttpResult>(result.Result);
-        Assert.Equal(StatusCodes.Status501NotImplemented, problem.StatusCode);
-        Assert.Equal(
-            ["FAULT_RECOVERY_FAULT_STILL_IN_EFFECT", "FAULT_RECOVERY_REBUILD_NOT_AVAILABLE"],
-            Assert.IsAssignableFrom<IReadOnlyList<string>>(problem.ProblemDetails.Extensions["reasons"]));
     }
 
     /// <summary>这一轮迟迟不结束：503，理由 <c>FAULT_RECOVERY_RUNTIME_BUSY</c>，稍后再试。</summary>

@@ -15,7 +15,8 @@ namespace ControlServer.Tests;
 
 /// <summary>
 /// 车辆故障的人工出口（control-server#299，#299 阶段一方案 T2，用户 2026-09-22 定 F-a）：人确认故障已排除，服务端自己核判据，
-/// 清除故障并处置旅程；订单被 Hold 成 PAUSED 的，续行原单；#318 的「确认重建」只预留。
+/// 清除故障并处置旅程；订单被 Hold 成 PAUSED 的，续行原单。本服务端自己的在途单在 RIoT 里被取消不归这里：#316 挡住报警，
+/// #318 自动重建，不经人确认（用户 2026-09-22 定）。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -176,35 +177,41 @@ public sealed class VehicleFaultRecoveryTests
     }
 
     /// <summary>
-    /// 「当前单已终结」只认 FAILED、CANCELLED、DELETED 三种。其余一律拒：还在跑的（1、3、10）、被 Hold 的（7，那是续行的事）、
-    /// 挂起的（9）、语义不明的（8）、已经成功的（5，车其实到了，不能按「没到」处置）。
+    /// 清除只认当前单 FAILED。其余一律拒：还在跑的（1、3、10）、被 Hold 的（7，那是续行的事）、挂起的（9）、语义不明的（8）、
+    /// 已经成功的（5，车其实到了，不能按「没到」处置）；被人在 RIoT 里取消或删除的（2、6）单独一个码。
     /// </summary>
+    /// <remarks>
+    /// <b>2 与 6 为什么不清除</b>（独立审查 M1）：清除之后无货的需求会被释放改派，而本服务端自己的在途单在 RIoT 里被取消，
+    /// 用户 2026-09-22 定的是「不改派，同车同需求重建」（#316 挡住报警，#318 自动重建）。今天故障只来自 FAILED，所以这一格在产品里
+    /// 走不到；但它不能靠「今天走不到」撑着——#317 或任何把故障记在一张已被取消的单上的路径，都会让它活过来。钉成拒绝，
+    /// 是把「被取消的单不改派」从现状搬到构造上。
+    /// </remarks>
     [Theory]
-    [InlineData(RiotOrderState.Failed, true, true)]
-    [InlineData(RiotOrderState.Cancelled, true, true)]
-    [InlineData(RiotOrderState.Deleted, true, true)]
-    [InlineData(RiotOrderState.Queueing, false, false)]
-    [InlineData(RiotOrderState.Executing, false, false)]
-    [InlineData(RiotOrderState.QueuePriority, false, false)]
-    [InlineData(RiotOrderState.Paused, false, false)]
-    [InlineData(RiotOrderState.Hang, false, false)]
-    [InlineData(RiotOrderState.Suspended, true, false)]
-    [InlineData(RiotOrderState.Success, true, false)]
-    public async Task OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(int orderState, bool terminal, bool clears)
+    [InlineData(RiotOrderState.Failed, true, null)]
+    [InlineData(RiotOrderState.Cancelled, true, "FAULT_RECOVERY_CURRENT_ORDER_CANCELLED_IN_RIOT")]
+    [InlineData(RiotOrderState.Deleted, true, "FAULT_RECOVERY_CURRENT_ORDER_CANCELLED_IN_RIOT")]
+    [InlineData(RiotOrderState.Queueing, false, "FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED")]
+    [InlineData(RiotOrderState.Executing, false, "FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED")]
+    [InlineData(RiotOrderState.QueuePriority, false, "FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED")]
+    [InlineData(RiotOrderState.Paused, false, "FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED")]
+    [InlineData(RiotOrderState.Hang, false, "FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED")]
+    [InlineData(RiotOrderState.Suspended, true, "FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED")]
+    [InlineData(RiotOrderState.Success, true, "FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED")]
+    public async Task OnlyAFailedOrderLetsTheFaultBeCleared(int orderState, bool terminal, string? refusal)
     {
         await using RuntimeFixture fixture = await FaultedOnTheWayToPickupAsync();
         fixture.Riot.SetOrderState((await fixture.RuntimeAsync()).PickupUpperId, orderState, terminal);
 
         VehicleFaultRecoveryDecision decision = await Service(fixture, new SiteRiot(fixture)).RecoverAsync(Clear(fixture), Token);
 
-        if (clears)
+        if (refusal is null)
         {
             Assert.Equal((VehicleFaultRecoveryOutcome.Cleared, 0), (decision.Outcome, decision.Reasons.Count));
         }
         else
         {
             Assert.Equal(VehicleFaultRecoveryOutcome.Refused, decision.Outcome);
-        Assert.Equal(["FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED"], decision.Reasons);
+            Assert.Equal([refusal], decision.Reasons);
             await AssertUntouchedAsync(fixture);
         }
     }
@@ -340,6 +347,112 @@ public sealed class VehicleFaultRecoveryTests
     }
 
     /// <summary>
+    /// 已经清过的车，再来一个没署名、或没确认故障已排除的请求：不答「已经清过」，照样按缺的判据拒绝（独立审查 L3）。
+    /// 「已经清过」是给同一个人重发同一个请求的，不是给任何人的免检通道。
+    /// </summary>
+    [Theory]
+    [InlineData("operator")]
+    [InlineData("remedy")]
+    public async Task AnAlreadyClearedVehicleStillNeedsANamedConfirmedRequest(string missing)
+    {
+        await using RuntimeFixture fixture = await FaultedOnTheWayToPickupAsync();
+        SiteRiot site = new(fixture);
+        Assert.Equal(VehicleFaultRecoveryOutcome.Cleared, (await Service(fixture, site).RecoverAsync(Clear(fixture), Token)).Outcome);
+
+        VehicleFaultRecoveryDecision again = await Service(fixture, site).RecoverAsync(
+            missing == "operator" ? Clear(fixture) with { OperatorId = null } : Clear(fixture) with { FaultRemedied = false },
+            Token);
+
+        Assert.Equal(VehicleFaultRecoveryOutcome.Refused, again.Outcome);
+        Assert.Equal(
+            [missing == "operator" ? "FAULT_RECOVERY_OPERATOR_UNIDENTIFIED" : "FAULT_RECOVERY_REMEDY_NOT_CONFIRMED"],
+            again.Reasons);
+    }
+
+    /// <summary>
+    /// 续行成功之后同一个续行请求又来一次：答「已经清过」，不再发第二次 <c>CONTINUE_FROM_HELD</c>（独立审查 L3）。
+    /// </summary>
+    [Fact]
+    public async Task TheSameResumeTwiceContinuesOnce()
+    {
+        await using RuntimeFixture fixture = await FaultedOnTheWayToPickupAsync();
+        JourneyRuntimeRow faulted = await fixture.RuntimeAsync();
+        fixture.Riot.SetOrderState(faulted.PickupUpperId, RiotOrderState.Paused, terminal: false);
+        SiteRiot site = new(fixture) { OnOrderCommand = ContinueResumes(fixture, faulted.PickupUpperId) };
+        Assert.Equal(VehicleFaultRecoveryOutcome.Resumed, (await Service(fixture, site).RecoverAsync(Resume(fixture), Token)).Outcome);
+
+        VehicleFaultRecoveryDecision again = await Service(fixture, site).RecoverAsync(Resume(fixture), Token);
+
+        Assert.Equal((VehicleFaultRecoveryOutcome.AlreadyCleared, 0), (again.Outcome, again.Reasons.Count));
+        Assert.Equal([RiotOrderCommandKind.ContinueFromHeld], site.OrderCommands);
+    }
+
+    /// <summary>
+    /// 持锁期间一次 RIoT 调用都不发（独立审查 M2）：清除的 RIoT 读取在拿锁之前做完，锁里只复核数据库、提交；续行整个不拿锁。
+    /// </summary>
+    /// <remarks>
+    /// 锁是整轮调度与这个请求共用的。RIoT 慢起来时——正是车出故障的时候——锁里的每次调用都可能等满 RIoT 的超时，一个请求就能
+    /// 把所有车的调度轮次（急停确认、REQ-0248 重触发、停车证明、派车、计划下发）拖住几分钟。替身在每次 RIoT 调用时试拿一下锁，
+    /// 拿不到就记下来；三条路各走一遍，并断言确实发生过 RIoT 调用，免得「一次都没调」也算过。
+    /// </remarks>
+    [Theory]
+    [InlineData("clear-empty")]
+    [InlineData("clear-loaded")]
+    [InlineData("resume")]
+    public async Task NoRiotCallIsMadeWhileTheGateIsHeld(string path)
+    {
+        await using RuntimeFixture fixture = path == "clear-loaded"
+            ? await FaultedOnTheWayToGateAsync()
+            : await FaultedOnTheWayToPickupAsync();
+        using JourneyMutationGate gate = new();
+        SiteRiot site = new(fixture) { Gate = gate };
+        VehicleFaultRecoveryRequest request = Clear(fixture);
+        if (path == "resume")
+        {
+            JourneyRuntimeRow faulted = await fixture.RuntimeAsync();
+            fixture.Riot.SetOrderState(faulted.PickupUpperId, RiotOrderState.Paused, terminal: false);
+            site.OnOrderCommand = ContinueResumes(fixture, faulted.PickupUpperId);
+            request = Resume(fixture);
+        }
+
+        VehicleFaultRecoveryDecision decision = await Service(fixture, site, gate: gate).RecoverAsync(request, Token);
+
+        Assert.Contains(decision.Outcome, new[] { VehicleFaultRecoveryOutcome.Cleared, VehicleFaultRecoveryOutcome.Resumed });
+        Assert.True(site.RiotCalls > 0, "no RIoT call was made at all, so this proves nothing about where they are made");
+        Assert.Empty(site.CallsUnderGate);
+    }
+
+    /// <summary>
+    /// 读完 RIoT、拿到锁之前，引擎这一轮把旅程往前推了（这里：订单被报成 SUCCESS，车到站）：锁里复核发现旅程变了，拒绝，请重试；
+    /// 什么都不改（独立审查 M2 的另一面：挪到锁外的读数可能过时，提交前必须对一遍）。
+    /// </summary>
+    [Fact]
+    public async Task AJourneyThatMovedOnBetweenTheReadAndTheGateIsNotDisposedOf()
+    {
+        await using RuntimeFixture fixture = await FaultedOnTheWayToPickupAsync();
+        JourneyRuntimeRow faulted = await fixture.RuntimeAsync();
+        using JourneyMutationGate gate = new();
+        SiteRiot site = new(fixture)
+        {
+            AfterUnfinishedOrdersRead = () =>
+            {
+                using ControlServerDbContext engine = new(fixture.DbOptionsForTests);
+                JourneyRuntimeRow row = engine.JourneyRuntimes.Single(journey => journey.JourneyId == faulted.JourneyId);
+                row.Stage = JourneyRuntimeStage.AwaitingSublot;
+                row.SetBlockReason(null, fixture.Clock.GetUtcNow());
+                engine.SaveChanges();
+            },
+        };
+
+        VehicleFaultRecoveryDecision decision = await Service(fixture, site, gate: gate).RecoverAsync(Clear(fixture), Token);
+
+        Assert.Equal(VehicleFaultRecoveryOutcome.Refused, decision.Outcome);
+        Assert.Equal(["FAULT_RECOVERY_STATE_CHANGED"], decision.Reasons);
+        Assert.Equal(VehicleFaultLevel.SuspectedBlocked, (await FaultAsync(fixture)).Level);
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync()).Stage);
+    }
+
+    /// <summary>
     /// 清除写到一半崩了——释放已经暂存、故障已经写下、提交之前进程没了：什么都不留下。库里仍是清除之前的样子
     /// （故障在效、旅程未关、需求未释放）；换一个进程重发同一个请求，完整地清除一次。
     /// </summary>
@@ -416,21 +529,94 @@ public sealed class VehicleFaultRecoveryTests
     /// 调用的任何东西，只要也去拿它就会死锁——worker 那一侧等锁没有上限。今天两侧调用的东西都不拿锁；这一条在出现第三个持有者的那天红，
     /// 那一天要重新看一遍会不会互等。
     /// </summary>
-    /// <remarks>按构造函数参数认持有者：锁是宿主单例，拿到它的唯一途径是注入。</remarks>
+    /// <remarks>
+    /// <para>
+    /// <b>按调用点认持有者，不按怎么拿到锁</b>（独立审查 L1）：扫宿主程序集每个方法体的 IL，找调用 <c>EnterAsync</c>／<c>TryEnterAsync</c>
+    /// 的指令，归到最外层的声明类型（async 方法的代码在编译器生成的嵌套状态机里）。构造注入、最小 API 处理函数的参数、
+    /// <c>[FromServices]</c>、<c>GetRequiredService&lt;JourneyMutationGate&gt;()</c>，拿到之后要用都得调这两个方法，所以都逃不过。
+    /// </para>
+    /// <para>
+    /// 按字节找 <c>call</c>／<c>callvirt</c>（0x28／0x6F）后的 4 字节令牌、解析失败就跳过，是启发式：操作数里偶然出现这两个字节、
+    /// 又恰好解析成这两个方法的可能极小，而一旦发生，结果是多报一个持有者（这里红），不是漏报。
+    /// <see cref="TheGateHolderScanSeesACallSite"/> 证明它认得出调用点。
+    /// </para>
+    /// </remarks>
     [Fact]
     public void OnlyTheRuntimeRoundAndTheRecoveryTakeTheGate()
     {
-        string[] holders =
-        [
-            .. typeof(JourneyMutationGate).Assembly.GetTypes()
-                .Where(type => type.GetConstructors(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public |
-                                                    System.Reflection.BindingFlags.NonPublic)
-                    .Any(constructor => constructor.GetParameters().Any(parameter => parameter.ParameterType == typeof(JourneyMutationGate))))
-                .Select(type => type.Name)
-                .Order(StringComparer.Ordinal),
-        ];
+        Assert.Equal(["JourneyRuntimeWorker", "VehicleFaultRecoveryService"], GateHolders(typeof(JourneyMutationGate).Assembly));
+    }
 
-        Assert.Equal(["JourneyRuntimeWorker", "VehicleFaultRecoveryService"], holders);
+    /// <summary>扫描器自己的正例：本测试程序集里的 <see cref="GateHolderProbe"/> 调了 <c>EnterAsync</c>，必须被认出来。</summary>
+    [Fact]
+    public void TheGateHolderScanSeesACallSite()
+    {
+        Assert.Contains(nameof(GateHolderProbe), GateHolders(typeof(GateHolderProbe).Assembly));
+    }
+
+    private static string[] GateHolders(System.Reflection.Assembly assembly)
+    {
+        System.Reflection.MethodInfo[] gateMethods =
+        [
+            typeof(JourneyMutationGate).GetMethod(nameof(JourneyMutationGate.EnterAsync))!,
+            typeof(JourneyMutationGate).GetMethod(nameof(JourneyMutationGate.TryEnterAsync))!,
+        ];
+        const System.Reflection.BindingFlags all = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Static |
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic |
+            System.Reflection.BindingFlags.DeclaredOnly;
+        HashSet<string> holders = new(StringComparer.Ordinal);
+        foreach (Type type in assembly.GetTypes())
+        {
+            IEnumerable<System.Reflection.MethodBase> methods =
+                type.GetMethods(all).Cast<System.Reflection.MethodBase>().Concat(type.GetConstructors(all));
+            foreach (System.Reflection.MethodBase method in methods)
+            {
+                byte[]? il = method.GetMethodBody()?.GetILAsByteArray();
+                if (il is null || !CallsAny(method, il, gateMethods))
+                {
+                    continue;
+                }
+
+                Type outer = type;
+                while (outer.DeclaringType is not null)
+                {
+                    outer = outer.DeclaringType;
+                }
+
+                holders.Add(outer.Name);
+            }
+        }
+
+        return [.. holders.Order(StringComparer.Ordinal)];
+    }
+
+    private static bool CallsAny(System.Reflection.MethodBase method, byte[] il, System.Reflection.MethodInfo[] targets)
+    {
+        for (int index = 0; index + 4 < il.Length; index++)
+        {
+            if (il[index] is not (0x28 or 0x6F))
+            {
+                continue;
+            }
+
+            try
+            {
+                System.Reflection.MethodBase? called = method.Module.ResolveMethod(
+                    BitConverter.ToInt32(il, index + 1),
+                    method.DeclaringType?.IsGenericType == true ? method.DeclaringType.GetGenericArguments() : null,
+                    method.IsGenericMethod ? method.GetGenericArguments() : null);
+                if (called is not null && targets.Contains(called))
+                {
+                    return true;
+                }
+            }
+            catch (Exception error) when (error is ArgumentException or BadImageFormatException or MissingMethodException or
+                                          TypeLoadException)
+            {
+            }
+        }
+
+        return false;
     }
 
     // ---- 会话因本服务端自己的在途单而未就绪 --------------------------------------------------------------------
@@ -553,35 +739,17 @@ public sealed class VehicleFaultRecoveryTests
         await AssertUntouchedAsync(fixture);
     }
 
-    // ---- 确认重建：预留给 #318 ----------------------------------------------------------------------------------
-
-    /// <summary>
-    /// 「确认重建」的位置已经在：判据照同一套服务端自核（署名、闩锁、车上无未完成订单、当前单已终结、故障已清），拒绝理由同样全列；
-    /// 答复永远是「还不可用」，什么都不做。实现是 #318。
-    /// </summary>
-    [Fact]
-    public async Task ARebuildIsJudgedButNotAvailableYet()
-    {
-        await using RuntimeFixture fixture = await FaultedOnTheWayToPickupAsync();
-        SiteRiot site = new(fixture) { HasUnfinishedOrder = true };
-
-        VehicleFaultRecoveryDecision decision = await Service(fixture, site).RecoverAsync(
-            Clear(fixture) with { Action = VehicleFaultRecoveryAction.ConfirmRebuild, OperatorId = null }, Token);
-
-        Assert.Equal(VehicleFaultRecoveryOutcome.NotAvailable, decision.Outcome);
-        Assert.Equal(
-            [
-                "FAULT_RECOVERY_OPERATOR_UNIDENTIFIED",
-                "FAULT_RECOVERY_FAULT_STILL_IN_EFFECT",
-                "FAULT_RECOVERY_VEHICLE_ORDER_NOT_FINISHED",
-                "FAULT_RECOVERY_REBUILD_NOT_AVAILABLE",
-            ],
-            decision.Reasons);
-        await AssertUntouchedAsync(fixture);
-        Assert.Empty(site.OrderCommands);
-    }
-
     // ---- 夹具 ----------------------------------------------------------------------------------------------
+
+    /// <summary>假 RIoT 收到 <c>CONTINUE_FROM_HELD</c> 时把那张单置回执行中，像真 RIoT 继续了它一样。</summary>
+    private static Action<RiotOrderCommandKind, string> ContinueResumes(RuntimeFixture fixture, string upperId) =>
+        (kind, _) =>
+        {
+            if (kind == RiotOrderCommandKind.ContinueFromHeld)
+            {
+                fixture.Riot.SetOrderState(upperId, RiotOrderState.Executing, terminal: false);
+            }
+        };
 
     private static VehicleFaultRecoveryRequest Clear(RuntimeFixture fixture) => new(
         new EmergencyStopSubject(fixture.Options.AgvId, fixture.Options.VehicleKey),
@@ -720,9 +888,20 @@ public sealed class VehicleFaultRecoveryTests
 
         public List<RiotEmergencyCommandKind> EmergencyCommands { get; } = [];
 
+        /// <summary>设了就在每次 RIoT 调用时试拿一下这把锁：拿不到，说明调用方正持着它（独立审查 M2）。</summary>
+        public JourneyMutationGate? Gate { get; set; }
+
+        public int RiotCalls { get; private set; }
+
+        public List<string> CallsUnderGate { get; } = [];
+
+        /// <summary>读完「车上有没有未完成订单」之后做的事：用来模拟读 RIoT 与拿锁之间引擎推进了一轮。</summary>
+        public Action? AfterUnfinishedOrdersRead { get; set; }
+
         public Task<RiotCommandCallResult> IssueOrderCommandAsync(
             RiotOrderCommandKind kind, string orderId, string? reason, CancellationToken cancellationToken)
         {
+            Called($"order command {kind}");
             OrderCommands.Add(kind);
             OnOrderCommand?.Invoke(kind, orderId);
             return Task.FromResult(new RiotCommandCallResult(
@@ -733,37 +912,70 @@ public sealed class VehicleFaultRecoveryTests
         public Task<RiotCommandCallResult> IssueEmergencyCommandAsync(
             RiotEmergencyCommandKind kind, string deviceKey, CancellationToken cancellationToken)
         {
+            Called($"emergency command {kind}");
             EmergencyCommands.Add(kind);
             return Task.FromResult(new RiotCommandCallResult(
                 RiotCommandCallDisposition.Accepted,
                 new RiotOrderCallReceipt(RiotCommandTypeNames.For(kind), "SdkAccepted", fixture.Clock.GetUtcNow())));
         }
 
-        public Task<RiotVehicleEmergencyObservation> ReadEmergencyStateAsync(string deviceKey, CancellationToken cancellationToken) =>
-            Task.FromResult(new RiotVehicleEmergencyObservation(
+        public Task<RiotVehicleEmergencyObservation> ReadEmergencyStateAsync(string deviceKey, CancellationToken cancellationToken)
+        {
+            Called("emergency read");
+            return Task.FromResult(new RiotVehicleEmergencyObservation(
                 deviceKey,
                 EmergencyUnreadable ? null
                     : fixture.EmergencyLatched ? RiotVehicleEmergencyObservation.CanRecover
                     : RiotVehicleEmergencyObservation.Ok,
                 fixture.Clock.GetUtcNow()));
+        }
 
-        public Task<RiotVehicleOrderObservation> ReadUnfinishedOrdersAsync(string deviceKey, CancellationToken cancellationToken) =>
-            Task.FromResult(new RiotVehicleOrderObservation(
-                deviceKey, HasUnfinishedOrder, HasUnfinishedOrder == true ? ["ORDER-UNFINISHED-1"] : [], fixture.Clock.GetUtcNow()));
+        public Task<RiotVehicleOrderObservation> ReadUnfinishedOrdersAsync(string deviceKey, CancellationToken cancellationToken)
+        {
+            Called("unfinished orders read");
+            RiotVehicleOrderObservation observation = new(
+                deviceKey, HasUnfinishedOrder, HasUnfinishedOrder == true ? ["ORDER-UNFINISHED-1"] : [], fixture.Clock.GetUtcNow());
+            AfterUnfinishedOrdersRead?.Invoke();
+            return Task.FromResult(observation);
+        }
 
-        public Task<RiotOrderObservation> ReconcileByUpperIdAsync(string upperId, CancellationToken cancellationToken) =>
-            OrderReadOverride is { } overridden && overridden.UpperId == upperId
+        public Task<RiotOrderObservation> ReconcileByUpperIdAsync(string upperId, CancellationToken cancellationToken)
+        {
+            Called("order read");
+            return OrderReadOverride is { } overridden && overridden.UpperId == upperId
                 ? Task.FromResult(overridden)
                 : fixture.Riot.ReconcileByUpperIdAsync(upperId, cancellationToken);
+        }
 
         public Task<RiotOrderObservation> CreateAsync(OrderIntent intent, CancellationToken cancellationToken) =>
             throw new InvalidOperationException("Recovering a fault never creates an order.");
 
-        public Task<RiotVehicleObservation> ReadVehicleAsync(string vehicleKey, CancellationToken cancellationToken) =>
-            fixture.Riot.ReadVehicleAsync(vehicleKey, cancellationToken);
+        public Task<RiotVehicleObservation> ReadVehicleAsync(string vehicleKey, CancellationToken cancellationToken)
+        {
+            Called("vehicle read");
+            return fixture.Riot.ReadVehicleAsync(vehicleKey, cancellationToken);
+        }
 
-        public Task<VehicleMotionSample> SampleMotionAsync(string deviceKey, CancellationToken cancellationToken) =>
-            fixture.Riot.SampleMotionAsync(deviceKey, cancellationToken);
+        public Task<VehicleMotionSample> SampleMotionAsync(string deviceKey, CancellationToken cancellationToken)
+        {
+            Called("motion sample");
+            return fixture.Riot.SampleMotionAsync(deviceKey, cancellationToken);
+        }
+
+        private void Called(string what)
+        {
+            RiotCalls++;
+            if (Gate is null)
+            {
+                return;
+            }
+
+            using IDisposable? free = Gate.TryEnterAsync(TimeSpan.Zero, CancellationToken.None).GetAwaiter().GetResult();
+            if (free is null)
+            {
+                CallsUnderGate.Add(what);
+            }
+        }
     }
 
     /// <summary>故障存储：清除写下之后、提交之前「进程没了」。</summary>
@@ -802,5 +1014,14 @@ public sealed class VehicleFaultRecoveryTests
 
         public Task ReleaseCargoAsync(string cargoBindingId, string reason, DateTimeOffset releasedAt, CancellationToken cancellationToken) =>
             inner.ReleaseCargoAsync(cargoBindingId, reason, releasedAt, cancellationToken);
+    }
+}
+
+/// <summary>持锁者扫描器的正例：它调了 <c>EnterAsync</c>，扫描本测试程序集时必须被认出来。</summary>
+internal static class GateHolderProbe
+{
+    internal static async Task HoldAsync(JourneyMutationGate gate)
+    {
+        using IDisposable held = await gate.EnterAsync(CancellationToken.None);
     }
 }
