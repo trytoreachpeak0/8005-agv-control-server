@@ -59,8 +59,33 @@ control-server#220（批次7-18）。本报告逐项对照规格 `8005-agv-progr
 
 **车载端 G2 证据能否沿用到第二轮（出口会话的判断，交调度核）**：能，前提是第二轮的车载端仍是 `ecdb3a0b`、协议仍是 `86575456`。
 `ONBOARD_HMI_G2` 只构建与测试车载端仓（`run-w2g-g2.ps1`：Release build、带 `IntegrationSlice=FP-IS-08` 的测试、`dotnet format`、在发布态重跑协议 G1），
-不启动也不连接服务端，`gate-result.json` 记的身份只有车载端提交与协议身份。服务端前移不改变它测的对象，所以结论不变。
-反过来，若 #314 或其它原因让车载端顶端变了（证据小 PR 合入除外，那只多 `evidence/`），就要重出。
+不启动也不连接服务端（它的 G2 夹具用车载端仓自己的替身 `FakeControlServer`），`gate-result.json` 记的身份只有车载端提交与协议身份。
+服务端前移不改变它测的对象，所以结论不变。反过来，若 #314 或其它原因让车载端产品变了（证据小 PR 合入除外，那只多 `evidence/`），就要重出。调度 2026-09-22 同意。
+
+`gate-result.json` 里全部记录身份的字段，原样列出（其余字段是时刻、计数、退出码与 schema 符合性，逐项读过，没有任何服务端提交）：
+
+| 字段 | 值 |
+| --- | --- |
+| `gate` | `ONBOARD_HMI_G2` |
+| `integrationSliceId` | `FP-IS-08` |
+| `implementationRepository` | `8005-agv-onboard-hmi` |
+| `implementationCommit` | `ecdb3a0be1d95ef51e7d40493808ba4659274f41` |
+| `implementationBranch` | `w2g/b7-18-g2-evidence` |
+| `protocolReleaseVersion` | `2.0.0` |
+| `protocolTag` | `protocol-v2.0.0` |
+| `protocolProfileId` | `AGV_FULL_PRODUCT` |
+| `protocolVersion` | `3` |
+| `protocolApprovalStatus` | `APPROVED_RELEASE` |
+| `protocolRepositoryCommit` | `86575456c847041515b7b75e8851a00e0d939804` |
+| `protocolManifestSha256` | `4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7` |
+| `protocolSchemaBundleSha256` | `9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221` |
+| `protocolVectorsSha256` | `391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a` |
+| `integrationSliceIndexSha256` | `268ce62be4e0ec8fe6d26e2048a59cf1732f02713415a0c5f41b6b009951b6fc` |
+
+同目录 `summary.json` 里唯一提到服务端的是一句说明文字（出站报文的两个产地是「车载端产品与 `FakeControlServer`」），也不是服务端提交。
+
+**证据小 PR**：onboard-hmi#194（调度定在第二轮之前合）。合入后 `w2g/fp-v2-impl` 顶端前移到它的合并提交，相对 `ecdb3a0b` 只多 `evidence/`；
+第二轮的 G3 `OnboardCommit` 与 CI 真装置的 `onboard_ref` 都取那个新顶端。第二轮开跑前核对：【车载端产品仍是 `ecdb3a0b`（新顶端相对它 `evidence/` 以外 diff 为空）、协议仍是 `86575456`】。
 
 ## 一、L1
 
@@ -181,7 +206,7 @@ control-server#220（批次7-18）。本报告逐项对照规格 `8005-agv-progr
 | --- | --- | --- | --- |
 | 1 | 移 G3 共享绑定 | `1419ab99` | — |
 | 2 | `CONTROL_SERVER_G2` × 1（`FP-IS-08`），经 `Invoke-HeavyLocal.ps1` | **PASS**：选中 62 个测试全过；出站 631 行、166 种、7 类消息，0 违约 | `evidence/g2/20260922-protocol-v2.0.0-f1286c29/` |
-| 3 | `ONBOARD_HMI_G2` × 1（`FP-IS-08`，`ecdb3a0b`），协议用 `86575456` 的普通克隆 | **PASS**：选中 2、记录 2，build／test／format 退出码 0，发布态重跑协议 G1 | 车载端仓 `evidence/g2/20260922-protocol-v2.0.0-ecdb3a0b/`（onboard-hmi `w2g/b7-18-g2-evidence@27a82b3`，小 PR 待 G3 定案后开） |
+| 3 | `ONBOARD_HMI_G2` × 1（`FP-IS-08`，`ecdb3a0b`），协议用 `86575456` 的普通克隆 | **PASS**：选中 2、记录 2，build／test／format 退出码 0，发布态重跑协议 G1 | 车载端仓 `evidence/g2/20260922-protocol-v2.0.0-ecdb3a0b/`（小 PR onboard-hmi#194，第二轮之前合） |
 | 4a | `run-staged-g3.ps1` | `STAGED_G3_RECOVERY_REPLAY_PASS` | `evidence/g3/20260922-protocol-v2.0.0-staged-517e1c7a/` |
 | 4b | `run-staged-g3-restart.ps1` | `STAGED_G3_PROCESS_RESTART_PASS` | `evidence/g3/20260922-protocol-v2.0.0-restart-517e1c7a/` |
 | 4c | `run-demand-bearing-g3-vectors.ps1` | `DEMAND_BEARING_G3_VECTORS_PASS` | `evidence/g3/20260922-protocol-v2.0.0-demand-bearing-517e1c7a/` |
@@ -244,7 +269,9 @@ control-server#220（批次7-18）。本报告逐项对照规格 `8005-agv-progr
 13. **`protocol-v3.0.0` 不在本批**：`REQ-0359`（人工判故障）等待办仍攒在 program#115，本批协议零改动；发布时会作废本批全部门禁与 L2 证据。
 14. **control-server#166**：人工票，不挡出口（「等用户拍板的人工项」）。
 15. **`REQ-0198` 的量纲**：按路径代价增量（毫米）实现，与基线文字「预计到达终点时间」有出入，属实施口径（规格第 22 节补记）。
-16. **本批 migration 四张**（票面预计「批次7-01 一张，另有 #199、#186 各一张」，实际与之不同，逐个列出，`e74c0058..517e1c7a` 在 `Migrations/` 下实读）：
+16. **本批 migration 四张，票面写的是三张。**票面预计「批次7-01 一张，另有 #199、#186 各一张」。实际（`e74c0058..517e1c7a` 在 `Migrations/` 下实读）：
+    #206、#199 两张与票面一致；#186 降级未合入，少了这一张；多出两张，一张是 #228（反向旅程准入被撤的独立起点，加一列），
+    一张是 #211 的数据回填迁移（票面没有预计到多停靠会为既有旅程回填装货从属行）。逐个列出：
     - `20260919154546_Batch7MultiDemandJourneyPersistence`（批次7-01，#206）：本批唯一建表票。
     - `20260919200353_AreaEndAdmissionRevokedSince`（#228）：反向旅程「准入被撤」的超时升级改用独立持久起点，加一列。
     - `20260920001500_AuditImmutabilityTriggers`（#199）：审计表在数据库层加 `BEFORE UPDATE/DELETE` 触发器。
