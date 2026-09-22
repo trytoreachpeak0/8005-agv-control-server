@@ -197,6 +197,46 @@ public sealed class WaitingJourneyBatteryWatchTests
     }
 
     /// <summary>
+    /// 车载会话未就绪（调度 09-22 转来，#316 审查坐实的坑）：<c>AdvanceAsync</c> 在 <c>session is null</c> 那一支写上
+    /// <c>ONBOARD_SESSION_NOT_READY</c> 就返回，放在它后面的逻辑在真车上整段不跑；真车载端挂着本服务端的在途单时照例就是未就绪，
+    /// 合成车载端永远报安全，合成 L2 看不出来。监看不在那一支后面——引擎在全部旅程推进之后另行调用它——所以闸口等人超过门槛时，
+    /// 电量照读、告警照打，原因码写的是会话未就绪，阶段与阶段起点不动。
+    /// </summary>
+    /// <remarks>会话掉线的形状照 <c>PickupDispatchPlanPastOwnOrderTests.DropSessionOnOwnOrderAsync</c>。</remarks>
+    [Fact]
+    public async Task AGateWaitWhileTheOnboardSessionIsNotReadyIsStillReadAndLogged()
+    {
+        await using RuntimeFixture fixture = await GateUnloadAsync();
+        DateTimeOffset arrived = fixture.Clock.GetUtcNow();
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 21 };
+        Quiet quiet = await Quiet.TakeAsync(fixture);
+        SessionRecoveryRow session = await fixture.Context.SessionRecoveries.SingleAsync(TestContext.Current.CancellationToken);
+        session.Readiness = SessionReadiness.RecoveryRequired;
+        session.ReasonCode = "DEPARTURE_SAFETY_NOT_READY";
+        session.DepartureSafe = false;
+        session.SafetyReasonCodesJson = """["VEHICLE_NOT_READY"]""";
+        session.SafetyUnknownPresent = true;
+        session.UpdatedAt = fixture.Clock.GetUtcNow();
+        await fixture.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        DateTimeOffset due = arrived + fixture.Options.WaitingJourneyWarningAfter;
+        await RoundAtAsync(fixture, due);
+
+        JourneyRuntimeRow runtime = await ReloadAsync(fixture);
+        // The round did go through the not-ready branch: without this the test could pass on a session still Ready.
+        Assert.Equal("ONBOARD_SESSION_NOT_READY", runtime.BlockReasonCode);
+        Assert.Equal(JourneyRuntimeStage.AwaitingUnloadResult, runtime.Stage);
+        Assert.Equal(arrived, runtime.StageSince);
+        Assert.Equal(21, runtime.WaitingBatteryPercent);
+        Assert.Equal(due, runtime.WaitingBatteryObservedAt);
+        (LogLevel level, string message) = Assert.Single(WatchEntries(fixture));
+        Assert.Equal(LogLevel.Error, level);
+        Assert.Contains("battery 21%", message, StringComparison.Ordinal);
+        Assert.Contains("(reason ONBOARD_SESSION_NOT_READY)", message, StringComparison.Ordinal);
+        Assert.Equal(quiet.Creates, fixture.Riot.TotalCreateCount);
+    }
+
+    /// <summary>
     /// 库拒绝监看的那次写（这里模拟 SQLite 忙，<c>SQLITE_BUSY</c>）：这一轮照常结束、不抛，日志照打，另记一条「这一轮没记下」；
     /// 旅程的阶段与原因码原样，下一轮库好了就补记上。监看的失败从不变成这一轮的失败。
     /// </summary>
