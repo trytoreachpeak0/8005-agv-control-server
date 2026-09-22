@@ -2,6 +2,7 @@ using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime.Commands;
 using ControlServer.Host.Runtime.Release;
+using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -157,6 +158,7 @@ public sealed class VehicleFaultRecoveryService(
     VehicleMotionLedger ledger,
     JourneyMutationGate gate,
     VehicleFaultResumeFlights resumeFlights,
+    OnboardJourneyPublisher publisher,
     TimeProvider timeProvider,
     ILogger<VehicleFaultRecoveryService> logger,
     TimeSpan? gateTimeout = null)
@@ -260,6 +262,13 @@ public sealed class VehicleFaultRecoveryService(
             now,
             cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        if (disposition == VehicleFaultRecoveryDispositions.Released)
+        {
+            // The journey closed through JourneyClosure inside that transaction, so its closure snapshots are on file; send
+            // them now rather than at the next reconnect, since the vehicle is connected and still shows the stop
+            // (control-server#323, path 7). A vehicle not on the line keeps them pending for the reconnect replay.
+            await JourneyClosure.SendAsync(publisher, dbContext, subject.AgvId, cancellationToken).ConfigureAwait(false);
+        }
 
         // A new episode starts from an empty window, as after a resumption.
         ledger.Forget(subject.DeviceKey);

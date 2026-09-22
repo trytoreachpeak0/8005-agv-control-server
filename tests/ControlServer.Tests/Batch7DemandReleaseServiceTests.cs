@@ -6,6 +6,7 @@ using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Host.Runtime.Fleet;
 using ControlServer.Host.Runtime.Release;
 using ControlServer.Host.Runtime.RouteGraph;
+using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -63,6 +64,101 @@ public sealed class Batch7DemandReleaseServiceTests
         Assert.Equal(DemandReleaseReasons.Released, backlog.ReasonCode);
         Assert.Equal(firstSeen, backlog.FirstSeenAt);
         Assert.True(firstSeen < fixture.Clock.GetUtcNow() - TimeSpan.FromMinutes(4), "the clock did not move, so the age check proves nothing");
+    }
+
+    /// <summary>
+    /// 来路 5（control-server#323）：到站之前释放了旅程里最后一条需求，旅程收尾。车上留着的是派往取货站的那一版计划，
+    /// 收尾之后要换成空计划（连同空清单与不带旅程的业务状态），而且在释放落库之后当场发出。
+    /// </summary>
+    [Fact]
+    public async Task ReleasingTheLastDemandOnItsWayToPickupTellsTheVehicleTheJourneyIsOver()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
+        LeaveTheMap(fixture);
+        CancellingGateway gateway = new(fixture.Clock, orderId => fixture.Riot.CancelOrder(before.PickupUpperId));
+
+        await Service(fixture, gateway).RunOnceAsync(Token);
+
+        await using ControlServerDbContext reading = new ControlServerDbContext(fixture.DbOptionsForTests);
+        Assert.Equal(JourneyRuntimeStage.Completed, (await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token)).Stage);
+        await ClosureSnapshotAssertions.AssertClosureSentAsync(
+            reading, before.AgvId, fixture.Peer.Lines.Select(line => System.Text.Encoding.UTF8.GetString(line)), 1,
+            before.PickupStationId);
+    }
+
+    /// <summary>
+    /// 同上，但会话此刻因本服务端自己的在途单而未就绪（<c>DEPARTURE_SAFETY_NOT_READY</c>，安全原因只有
+    /// <c>VEHICLE_NOT_READY</c>）——真车载端在车开往取货站的全程都是这个状态，合成车载端看不到（control-server#314）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>收尾快照照样当场发出，以会话此刻的那一代。</b>不等会话回到 <c>Ready</c>：车载端收行程快照不看自己的就绪状态
+    /// （onboard-hmi <c>WireToGateSessionClient</c> 在判就绪之前就把三种行程快照交给 <c>ApplyJourneySnapshotAsync</c>），
+    /// 而旅程已经收尾、引擎不再推进它，等到 <c>Ready</c> 也没有谁会再发。连接在握手中或代次不符时 <c>OnboardPeer</c> 拒收，
+    /// 那几行留在发件箱，由重连答复恢复报告之后的补发送到（<c>JourneyClosureSnapshotTests.AClosureTheVehicleMissedIsReplayedAfterItReconnects</c>）。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task ReleasingTheLastDemandWhileTheOwnOrderKeepsTheSessionNotReadyStillTellsTheVehicle()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
+        await PickupDispatchPlanPastOwnOrderTests.DropSessionOnOwnOrderAsync(fixture);
+        fixture.Context.ChangeTracker.Clear();
+        LeaveTheMap(fixture);
+        CancellingGateway gateway = new(fixture.Clock, orderId => fixture.Riot.CancelOrder(before.PickupUpperId));
+
+        await Service(fixture, gateway).RunOnceAsync(Token);
+
+        await using ControlServerDbContext reading = new ControlServerDbContext(fixture.DbOptionsForTests);
+        Assert.Equal(JourneyRuntimeStage.Completed, (await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token)).Stage);
+        Assert.Equal("DEPARTURE_SAFETY_NOT_READY", (await reading.SessionRecoveries.AsNoTracking().SingleAsync(Token)).ReasonCode);
+        await ClosureSnapshotAssertions.AssertClosureSentAsync(
+            reading, before.AgvId, fixture.Peer.Lines.Select(line => System.Text.Encoding.UTF8.GetString(line)), 1,
+            before.PickupStationId);
+    }
+
+    /// <summary>
+    /// 释放已经提交，发收尾快照时连接正在被拆掉：<c>OnboardPeerConnection</c> 的 <c>_sendGate</c> 已被释放，
+    /// <c>SendAsync</c> 抛 <see cref="ObjectDisposedException"/> 而不是 <see cref="IOException"/>。
+    /// </summary>
+    /// <remarks>
+    /// 这与「车不在线」是同一件事：那几行留在发件箱，由重连之后的补发送到。所以释放照样报 RELEASED，这一轮不算失败；
+    /// 收尾快照仍然落了库、没有被确认。修前 <c>JourneyClosure.SendAsync</c> 只吞 <see cref="IOException"/>，这个异常会冒出
+    /// <c>RunOnceAsync</c>，一次已经提交的释放在日志里变成一轮失败（PR #329 审查，低 2）。
+    /// </remarks>
+    [Fact]
+    public async Task AConnectionTornDownWhileTheClosureIsSentLeavesTheReleaseDoneAndTheClosurePending()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
+        LeaveTheMap(fixture);
+        CancellingGateway gateway = new(fixture.Clock, orderId => fixture.Riot.CancelOrder(before.PickupUpperId));
+        string[] closureIds = [.. JourneyClosure.SnapshotMessageIds(before.JourneyId)];
+        int refused = 0;
+        fixture.Peer.OnMessageSent = line =>
+        {
+            if (closureIds.Any(id => line.Contains(id, StringComparison.Ordinal)))
+            {
+                refused++;
+                throw new ObjectDisposedException("System.Threading.SemaphoreSlim");
+            }
+            return Task.CompletedTask;
+        };
+
+        IReadOnlyList<DemandReleaseOutcome> outcomes = await Service(fixture, gateway).RunOnceAsync(Token);
+
+        Assert.Equal("RELEASED", Assert.Single(outcomes).Result);
+        // 注入确实打在收尾快照上：否则这条用例在修前也是绿的。
+        Assert.True(refused >= 1, "No closure snapshot reached the peer, so the torn-down connection was never exercised.");
+        await using ControlServerDbContext reading = new ControlServerDbContext(fixture.DbOptionsForTests);
+        Assert.Equal(JourneyRuntimeStage.Completed, (await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token)).Stage);
+        await ClosureSnapshotAssertions.AssertClosureStagedAsync(reading, before.AgvId, before.PickupStationId);
+        Assert.Equal(
+            closureIds.Length,
+            await reading.ProtocolOutbox.AsNoTracking()
+                .CountAsync(row => closureIds.Contains(row.MessageId) && row.AcknowledgedAt == null, Token));
     }
 
     /// <summary>
@@ -796,11 +892,20 @@ public sealed class Batch7DemandReleaseServiceTests
                 .SingleAsync(Token));
     }
 
-    private static Task<string[]> PickupPlansAsync(RuntimeFixture fixture) =>
-        fixture.Context.ProtocolOutbox.AsNoTracking()
-            .Where(row => row.MessageType == "UpcomingStopPlanSnapshot")
-            .Select(row => row.PayloadJson)
-            .ToArrayAsync(Token);
+    // 不数 legs 为空的那几张：那是旅程收尾时撤掉车上计划的收尾快照（control-server#323），不是派往取货站的计划。
+    // 第一趟被释放时就会发一张，数进来这里就多一。
+    private static async Task<string[]> PickupPlansAsync(RuntimeFixture fixture) =>
+        [.. (await fixture.Context.ProtocolOutbox.AsNoTracking()
+                .Where(row => row.MessageType == "UpcomingStopPlanSnapshot")
+                .Select(row => row.PayloadJson)
+                .ToArrayAsync(Token))
+            .Where(HasLegs)];
+
+    private static bool HasLegs(string planPayloadJson)
+    {
+        using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(planPayloadJson);
+        return document.RootElement.GetProperty("payload").GetProperty("legs").GetArrayLength() > 0;
+    }
 
     /// <summary>
     /// 改派出来的锚需求建单没确认：新旅程记下阻断码，派车轮次不抛（审查 M2）。
@@ -1100,7 +1205,8 @@ public sealed class Batch7DemandReleaseServiceTests
                 new NoZoneParameters()),
             options,
             fixture.Clock,
-            NullLogger<DemandReleaseService>.Instance);
+            NullLogger<DemandReleaseService>.Instance,
+            new OnboardJourneyPublisher(new WireToGateStore(context), fixture.Peer, fixture.Clock));
     }
 
     /// <summary>RIoT 的订单命令面替身：数取消次数，收到取消时做用例交代的事（把订单置成 CANCELLED，或者什么都不做）。</summary>

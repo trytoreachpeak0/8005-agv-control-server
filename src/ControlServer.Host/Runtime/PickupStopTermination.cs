@@ -295,9 +295,8 @@ public sealed class PickupStopTermination(ControlServerDbContext dbContext, Plan
             entryRequest.AcknowledgedAt ??= endedAt;
         }
 
-        runtime.Stage = JourneyRuntimeStage.Completed;
-        runtime.SetBlockReason(reasonCode, endedAt);
         runtime.StationDepartureWaitStartedAt = null;
-        runtime.UpdatedAt = endedAt;
+        // 阶段、原因码与车要收的收尾快照，同一个出口（control-server#323）。
+        await JourneyClosure.StageAsync(dbContext, runtime, reasonCode, endedAt, cancellationToken).ConfigureAwait(false);
     }
 }

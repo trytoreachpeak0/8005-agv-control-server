@@ -58,6 +58,12 @@ namespace ControlServer.Tests;
 /// <c>WaitingWarnedAt</c> 全为 <c>NULL</c>——终结之后的旅程不在等人；有七份记下了电量 80（夹具的默认值），三份
 /// <c>commanded-ending-*</c> 的电量两列为 <c>NULL</c>。看板四份基线不受影响。
 /// </para>
+/// <para>
+/// <b>control-server#323 给十份终结状态基线的发件箱一节各加了三行，其余逐字未动。</b>那一票让旅程收尾时给车发三张收尾快照
+/// （空清单、空计划、不带旅程的业务状态），它们与收尾同一次保存落库、此刻还没被确认。判据：与<b>集成分支上的</b>旧基线
+/// （<c>fp/v2-impl@a98ae9be</c>）相比，删除 0 行，新增恰好 3 行，三行的类型恰好是那三种快照、全部 <c>AcknowledgedAt=NULL</c>。
+/// 十份都成立；七张表一列未动。同票重录的六份 <c>WirePins/</c> 另有判据，见 <c>evidence/cs323/green/01-pin-rerecord-vs-integration-tip.txt</c>。
+/// </para>
 /// </remarks>
 internal static class ZeroChangePin
 {

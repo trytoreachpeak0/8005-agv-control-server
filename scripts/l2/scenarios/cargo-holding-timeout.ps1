@@ -82,7 +82,7 @@ $assertions.Add(
 # --- 3. 期限到：CLOSED/CARGO_HOLDING_TIMEOUT，车离站 --------------------------------------------------------
 
 $closed = Wait-L2LoadingPhase -Context $Context -DemandId $a.Id -States @('CLOSED') -Criterion 'phase-closed' -TimeoutSeconds 90
-$closedSnapshot = @((Get-L2LoadingPhaseSnapshots $connection) | Where-Object { $_.State -eq 'CLOSED' }) | Select-Object -First 1
+$closedSnapshot = @((Get-L2LoadingPhaseSnapshots $connection $Context.AgvId) | Where-Object { $_.State -eq 'CLOSED' }) | Select-Object -First 1
 $closedRow = if ($null -eq $closedSnapshot) { $null } else {
     Invoke-L2Query -Connection $connection -Sql "SELECT CreatedAt FROM ProtocolOutbox WHERE MessageId = '$($closedSnapshot.MessageId)'" }
 $closedAt = if ($null -eq $closedRow -or $closedRow.Count -eq 0) { $null } else {
@@ -116,7 +116,7 @@ $assertions.Add(
 
 # --- 5. WAIT 快照带的期限 ---------------------------------------------------------------------------------
 
-$snapshots = Get-L2LoadingPhaseSnapshots $connection
+$snapshots = Get-L2LoadingPhaseSnapshots $connection $Context.AgvId
 $journal.Observe('loading-phase-snapshots', (Format-L2LoadingPhaseSnapshots $snapshots), @{ snapshots = $snapshots })
 # WAIT 与之后的 CLOSED 都带这个期限：进入 CLOSED 保留原值、不清空（program#94 语义表，审查 M1）——车载端在「等单已到期」
 # 那一行仍要显示它。

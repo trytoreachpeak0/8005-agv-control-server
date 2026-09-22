@@ -407,14 +407,46 @@ internal sealed class JourneyStopCursor
         AllDemands.SingleOrDefault(demand => demand.Membership.DemandId == demandId)
         ?? throw new InvalidDataException($"Demand '{demandId}' is not carried by this journey any more.");
 
-    public static async Task<JourneyStopCursor> LoadAsync(
+    public static Task<JourneyStopCursor> LoadAsync(
         ControlServerDbContext dbContext,
         JourneyRuntimeRow runtime,
+        CancellationToken cancellationToken) =>
+        LoadAsync(dbContext, runtime, includeUnsavedChanges: false, cancellationToken);
+
+    /// <summary>
+    /// 同 <see cref="LoadAsync(ControlServerDbContext, JourneyRuntimeRow, CancellationToken)"/>，但读到的是<b>本上下文还没保存的</b>
+    /// 那一份：终结刚暂存、归属行刚改成 <c>TERMINATED</c>、停靠刚标成已删（control-server#323）。
+    /// </summary>
+    /// <remarks>
+    /// 给旅程收尾算清单号用：收尾与终结同一次保存，而默认那一份 <c>AsNoTracking</c> 读库，看不见刚终结的那一条——按它算，
+    /// 本停靠的「已做完」少一条，算出来的正是车上那一版清单的号与 id，同号不同内容。做法是用跟踪查询：EF 对已跟踪的行返回
+    /// 被跟踪的那个实例、不拿库里的值覆盖它，游标在客户端做的筛选（未移除、未终结、停靠开没开）于是读到的是改过的值。
+    /// 代价是它会把读到的行一并挂进跟踪器（状态 Unchanged），调用方那一次保存不会因此多写任何一列。
+    /// </remarks>
+    public static async Task<JourneyStopCursor> LoadIncludingUnsavedChangesAsync(
+        ControlServerDbContext dbContext,
+        JourneyRuntimeRow runtime,
+        CancellationToken cancellationToken) =>
+        await LoadAsync(dbContext, runtime, includeUnsavedChanges: true, cancellationToken).ConfigureAwait(false);
+
+    private static async Task<JourneyStopCursor> LoadAsync(
+        ControlServerDbContext dbContext,
+        JourneyRuntimeRow runtime,
+        bool includeUnsavedChanges,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(dbContext);
         ArgumentNullException.ThrowIfNull(runtime);
-        JourneyStopRow[] stops = await dbContext.Set<JourneyStopRow>().AsNoTracking()
+        IQueryable<JourneyStopRow> stopRows = includeUnsavedChanges
+            ? dbContext.Set<JourneyStopRow>()
+            : dbContext.Set<JourneyStopRow>().AsNoTracking();
+        IQueryable<JourneyDemandRow> membershipRows = includeUnsavedChanges
+            ? dbContext.Set<JourneyDemandRow>()
+            : dbContext.Set<JourneyDemandRow>().AsNoTracking();
+        IQueryable<AcceptedDemandRow> demandRows = includeUnsavedChanges
+            ? dbContext.AcceptedDemands
+            : dbContext.AcceptedDemands.AsNoTracking();
+        JourneyStopRow[] stops = await stopRows
             .Where(row => row.JourneyId == runtime.JourneyId)
             .OrderBy(row => row.Sequence)
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
@@ -429,10 +461,10 @@ internal sealed class JourneyStopCursor
         // 同一刻加入的再按需求 id 定序；排序在客户端做，因为 SQLite 不接受 DateTimeOffset 的 ORDER BY，而一趟旅程的
         // 归属至多几条，取回来再排没有代价。
         // 已移除的归属一起取回来，只为数「曾经有过几条」；AllDemands 在客户端筛掉它们。
-        JourneyStopDemand[] everCarried = await dbContext.Set<JourneyDemandRow>().AsNoTracking()
+        JourneyStopDemand[] everCarried = await membershipRows
             .Where(row => row.JourneyId == runtime.JourneyId)
             .Join(
-                dbContext.AcceptedDemands.AsNoTracking(),
+                demandRows,
                 membership => membership.DemandId,
                 demand => demand.DemandId,
                 (membership, demand) => new JourneyStopDemand(membership, demand))

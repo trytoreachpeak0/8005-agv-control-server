@@ -269,7 +269,7 @@ public sealed class JourneyRuntimeWorkerLoadDeadlineTests
     }
 
     /// <summary>A ten-second station departure wait, and the journey carried to its outstanding load command.</summary>
-    private static async Task AdvanceToLoadWithStationDeadlineAsync(RuntimeFixture fixture)
+    internal static async Task AdvanceToLoadWithStationDeadlineAsync(RuntimeFixture fixture)
     {
         fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
         fixture.Catalog.Set(fixture.Demand(
@@ -284,7 +284,7 @@ public sealed class JourneyRuntimeWorkerLoadDeadlineTests
     /// ADR-cross-0058 decision 5's slots for this journey's load: the first target FAILED under
     /// <paramref name="failedSlotReasonCode"/>, the rest NOT_STARTED, every one empty, locked and reset.
     /// </summary>
-    private static object[] DeterminateFailureSlots(RuntimeFixture fixture, string failedSlotReasonCode)
+    internal static object[] DeterminateFailureSlots(RuntimeFixture fixture, string failedSlotReasonCode)
     {
         int[] slots = JsonSerializer.Deserialize<int[]>(
             fixture.Context.StationOperations.AsNoTracking().Single().TargetSlotsJson) ?? [];
@@ -306,7 +306,7 @@ public sealed class JourneyRuntimeWorkerLoadDeadlineTests
     /// The vehicle's OperationResult for this journey's load, through OnboardMessageProcessor on a connection
     /// context of its own, the way every result on a TCP connection arrives. Returns the server's answer.
     /// </summary>
-    private static async Task<string> ReportLoadResultAsync(RuntimeFixture fixture, object[] slotResults)
+    internal static async Task<string> ReportLoadResultAsync(RuntimeFixture fixture, object[] slotResults)
     {
         StationOperationRow load = await fixture.OperationAsync(SlotOperationType.Load);
         await using ControlServerDbContext connection = fixture.OpenConnectionContext();

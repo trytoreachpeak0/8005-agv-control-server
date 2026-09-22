@@ -2100,6 +2100,40 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         return row;
     }
 
+    /// <summary>
+    /// 同 <see cref="QueueOutboundEnvelopeAsync"/>，但只把这一行加进调用方那一次还没保存的改动，不保存（control-server#323）。
+    /// </summary>
+    /// <remarks>
+    /// 给旅程收尾用：收尾的每一样事实都等调用方那一次保存（<c>PickupStopTermination</c> 的类注释），收尾快照也不例外——
+    /// 旅程关了、快照没落库，或者反过来，都是崩在两次保存之间留下的样子。这一行已经在（本上下文暂存的或库里已提交的）就不再加，
+    /// 返回 false：同一个 id 在同一次保存里加两次，会在保存时以主键冲突把整次收尾一起拒掉。
+    /// </remarks>
+    public async Task<bool> StageOutboundEnvelopeAsync(
+        string messageId,
+        string messageType,
+        string wireJson,
+        DateTimeOffset createdAt,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(messageId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(messageType);
+        ArgumentException.ThrowIfNullOrWhiteSpace(wireJson);
+
+        if (await dbContext.ProtocolOutbox.FindAsync([messageId], cancellationToken).ConfigureAwait(false) is not null)
+        {
+            return false;
+        }
+
+        dbContext.ProtocolOutbox.Add(new ProtocolOutboxRow
+        {
+            MessageId = messageId,
+            MessageType = messageType,
+            PayloadJson = wireJson,
+            CreatedAt = createdAt
+        });
+        return true;
+    }
+
     public Task<ProtocolOutboxRow?> FindOutboundEnvelopeAsync(
         string messageId,
         CancellationToken cancellationToken) =>

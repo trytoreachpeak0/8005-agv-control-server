@@ -134,7 +134,7 @@ $assertions.Add(
     ($loadedE -eq 'LOADED' -and [string]$closed.LoadingPhaseState -eq 'CLOSED' -and [string]$closed.LoadingClosedReason -eq 'VEHICLE_FULL'),
     'E LOADED / CLOSED/VEHICLE_FULL', "E $loadedE / $(Format-L2CargoJourney $closed)")
 
-$snapshots = Get-L2LoadingPhaseSnapshots $connection
+$snapshots = Get-L2LoadingPhaseSnapshots $connection $Context.AgvId
 $journal.Observe('loading-phase-snapshots', (Format-L2LoadingPhaseSnapshots $snapshots), @{ snapshots = $snapshots })
 # 车那一侧看到的也一样：第一张 FULL 之后没有任何一张 WAIT 或 LOADING，直到关闭。
 $firstFull = @($snapshots | Where-Object { $_.State -eq 'VEHICLE_FULL' } | Select-Object -First 1)

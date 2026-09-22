@@ -21,8 +21,8 @@ namespace ControlServer.Tests;
 /// </remarks>
 public sealed class JourneyRuntimeWorkerLoadCancellationBeforeSublotTests
 {
-    private const string BeforeSublotDemandId = "10000000-0000-4000-8000-000000000001";
-    private const string BeforeSublotCancellationId = "c1000000-0000-4000-8000-000000000001";
+    internal const string BeforeSublotDemandId = "10000000-0000-4000-8000-000000000001";
+    internal const string BeforeSublotCancellationId = "c1000000-0000-4000-8000-000000000001";
 
     /// <summary>
     /// CV-LOAD-CANCELLATION-BEFORE-LOAD, all four steps. The authorization names no attempt and no slot,
@@ -768,7 +768,7 @@ public sealed class JourneyRuntimeWorkerLoadCancellationBeforeSublotTests
         return node.ToJsonString();
     }
 
-    private static async Task<RuntimeFixture> ReachSublotWaitAsync()
+    internal static async Task<RuntimeFixture> ReachSublotWaitAsync()
     {
         RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
@@ -807,7 +807,7 @@ public sealed class JourneyRuntimeWorkerLoadCancellationBeforeSublotTests
         TestOnboardProcessorFactory.Create(
             connection, new WireToGateStore(connection), fixture.Clock, new ConfigurationBuilder().Build());
 
-    private static OnboardConnectionState BeforeSublotConnection(RuntimeFixture fixture, long generation) => new()
+    internal static OnboardConnectionState BeforeSublotConnection(RuntimeFixture fixture, long generation) => new()
     {
         AgvId = fixture.Options.AgvId,
         SessionGeneration = generation,
@@ -816,7 +816,7 @@ public sealed class JourneyRuntimeWorkerLoadCancellationBeforeSublotTests
         Readiness = SessionReadiness.Ready
     };
 
-    private static string CancellationBeforeSublotRequest(RuntimeFixture fixture, string cancellationId, long generation) =>
+    internal static string CancellationBeforeSublotRequest(RuntimeFixture fixture, string cancellationId, long generation) =>
         BeforeSublotEnvelope(fixture, Guid.NewGuid().ToString("D"), "LoadCancellationStartRequested", generation, new
         {
             cancellationId,
@@ -826,7 +826,7 @@ public sealed class JourneyRuntimeWorkerLoadCancellationBeforeSublotTests
             reason = "Nothing to load at this stop."
         });
 
-    private static string CancellationBeforeSublotResult(
+    internal static string CancellationBeforeSublotResult(
         RuntimeFixture fixture,
         string messageId,
         long generation,

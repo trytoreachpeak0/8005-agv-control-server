@@ -125,7 +125,7 @@ $assertions.Add(
 
 # --- 5. 发给车的快照：经过的状态、同一个期限 -----------------------------------------------------------------
 
-$snapshots = Get-L2LoadingPhaseSnapshots $connection
+$snapshots = Get-L2LoadingPhaseSnapshots $connection $Context.AgvId
 $journal.Observe('loading-phase-snapshots', (Format-L2LoadingPhaseSnapshots $snapshots), @{ snapshots = $snapshots })
 
 # 车载端按修订号采纳，修订号严格递增、不重号。

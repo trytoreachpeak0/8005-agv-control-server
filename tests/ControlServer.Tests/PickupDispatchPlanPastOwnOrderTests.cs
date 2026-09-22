@@ -245,7 +245,7 @@ public sealed class PickupDispatchPlanPastOwnOrderTests
     /// 车载端读到车辆安全接口之后会话行变成的样子（失败现场 <c>SessionRecoveries</c>）：
     /// <c>RecoveryRequired</c> / <c>DEPARTURE_SAFETY_NOT_READY</c>，安全原因只有 <c>VEHICLE_NOT_READY</c>，证据里有未知。
     /// </summary>
-    private static async Task DropSessionOnOwnOrderAsync(RuntimeFixture fixture)
+    internal static async Task DropSessionOnOwnOrderAsync(RuntimeFixture fixture)
     {
         SessionRecoveryRow session = await fixture.Context.SessionRecoveries.SingleAsync(Token);
         session.Readiness = SessionReadiness.RecoveryRequired;

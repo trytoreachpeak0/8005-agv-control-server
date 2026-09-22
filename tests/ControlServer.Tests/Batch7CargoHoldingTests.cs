@@ -616,6 +616,14 @@ public sealed class Batch7CargoHoldingTests
         Assert.Equal(
             expected.Select(phase => new LoadingPhaseSnapshot(phase.State, phase.CargoHoldingDeadlineAt, phase.ClosedReason)),
             snapshots.Select(snapshot => snapshot with { Revision = 0 }));
+        // LoadingPhaseSnapshotsAsync 按 messageId 跳过旅程收尾那一张业务状态（control-server#323）。这里另断它确实在、
+        // 是这条流上唯一不带 loadingPhase 的一张、号最大：跳过的那一张不是凭空跳过的。
+        ClosureSnapshotAssertions.Snapshot skipped = Assert.Single(
+            await ClosureSnapshotAssertions.SnapshotsAsync(fixture.Context, fixture.Options.AgvId),
+            item => item.MessageType == "VehicleBusinessStateSnapshot" &&
+                    item.Payload.GetProperty("loadingPhase").ValueKind == JsonValueKind.Null);
+        Assert.Contains(skipped.MessageId, JourneyClosure.SnapshotMessageIds((await JourneyOfAsync(fixture, FirstDemandId)).JourneyId));
+        Assert.True(skipped.Revision > snapshots.Max(snapshot => snapshot.Revision));
 
         JourneyRuntimeRow completed = await JourneyOfAsync(fixture, FirstDemandId);
         Assert.Equal(LoadingPhaseStates.Closed, completed.LoadingPhaseState);
@@ -705,14 +713,26 @@ public sealed class Batch7CargoHoldingTests
         fixture.Context.ChangeTracker.Clear();
     }
 
+    /// <remarks>
+    /// 跳过的只有旅程收尾那一张业务状态，按它的 messageId 认（<see cref="JourneyClosure.SnapshotMessageIds"/>），
+    /// 不按「不带 loadingPhase」认（control-server#323；PR #329 审查，低 3）。别的业务状态不带 loadingPhase，
+    /// 照旧在 <c>GetProperty("state")</c> 上抛——旅程中途误发一张不带装货阶段的业务状态，不能被这个读取函数静默略过。
+    /// </remarks>
     internal static async Task<LoadingPhaseSnapshot[]> LoadingPhaseSnapshotsAsync(RuntimeFixture fixture)
     {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        HashSet<string> closureIds =
+        [
+            .. (await fixture.Context.JourneyRuntimes.AsNoTracking().Select(row => row.JourneyId).ToArrayAsync(token))
+                .SelectMany(JourneyClosure.SnapshotMessageIds)
+        ];
         ProtocolOutboxRow[] rows = await fixture.Context.ProtocolOutbox.AsNoTracking()
             .Where(row => row.MessageType == "VehicleBusinessStateSnapshot")
-            .ToArrayAsync(TestContext.Current.CancellationToken);
+            .ToArrayAsync(token);
         return
         [
-            .. rows.Select(row =>
+            .. rows.Where(row => !closureIds.Contains(row.MessageId))
+                .Select(row =>
                 {
                     using JsonDocument document = JsonDocument.Parse(row.PayloadJson);
                     JsonElement payload = document.RootElement.GetProperty("payload");

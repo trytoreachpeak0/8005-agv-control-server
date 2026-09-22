@@ -4302,6 +4302,59 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     /// <summary>
+    /// 来路 4（control-server#323）：已下命令之后的取消、补偿、故障货物交接，终结的是旅程里最后一条开着的需求。旅程收尾之后
+    /// 车上那一站的清单、计划与业务状态要被撤掉——收尾快照与结果同一次保存落库，在结果答复之后由协调器发出。
+    /// </summary>
+    /// <remarks>
+    /// 最后一格是卸货停靠上的故障货物交接：车停在卸货站，收尾清单说的是那个站，而不是取货站。
+    /// </remarks>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [InlineData("LoadCancellationResult", false)]
+    [InlineData("LoadCompensationResult", false)]
+    [InlineData("FaultCargoRecoveryResult", false)]
+    [InlineData("FaultCargoRecoveryResult", true)]
+    public async Task EachCommandedEndingOfTheLastDemandTellsTheVehicleTheJourneyIsOver(string messageType, bool atUnloadStop)
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_CLOSURE_SNAPSHOTS";
+        const string proof = "closure-snapshots-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            if (messageType == "LoadCancellationResult")
+                await SeedCancellableLoadAsync(context);
+            else
+                await SeedBlockedJourneyAsync(context);
+            if (atUnloadStop)
+            {
+                (await context.Set<JourneyStopRow>().SingleAsync(row => row.StopRole == JourneyStopRoles.Pickup, token))
+                    .Status = JourneyStopStatuses.Completed;
+                await context.SaveChangesAsync(token);
+            }
+            RecordingPeer peer = new(context);
+            OnboardMessageProcessor processor = Processor(context, peer, proofVariable);
+            OnboardConnectionState state = CurrentState();
+
+            string result = await ReachEndingResultAsync(messageType, processor, state, proof);
+            Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(result, state, token)));
+
+            JourneyRuntimeRow runtime = await context.JourneyRuntimes.AsNoTracking().SingleAsync(token);
+            Assert.Equal(JourneyRuntimeStage.Completed, runtime.Stage);
+            await ClosureSnapshotAssertions.AssertClosureSentAsync(
+                context, AgvId, peer.Lines, 3, atUnloadStop ? runtime.GateStationId : runtime.PickupStationId);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
     /// Drives the seeded journey to the line the vehicle sends when the given recovery has proved every
     /// authorized slot empty, and returns that line unsent.
     /// </summary>
