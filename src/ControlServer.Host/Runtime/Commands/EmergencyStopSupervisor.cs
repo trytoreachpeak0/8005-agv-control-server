@@ -522,6 +522,32 @@ public sealed class EmergencyStopSupervisor(
     }
 
     /// <summary>
+    /// Whether this server has a stop open on the vehicle: a trigger that no confirmed release has closed.
+    /// </summary>
+    /// <remarks>
+    /// For the fault recovery (control-server#299), which must not clear a fault while a stop it caused is still being
+    /// driven -- clearing would leave the episode with nobody to finish it, since only the fault flow evaluates it. A
+    /// caller that has just read the latch as <c>OK</c> settles a release that has taken effect first
+    /// (<see cref="SettleReleaseTakenEffectAsync"/>), or a stop REQ-0356 has already ended reads as still open.
+    /// </remarks>
+    public async Task<bool> HasOpenEpisodeAsync(
+        EmergencyStopSubject subject,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(subject);
+
+        IReadOnlyList<RiotOrderCommandAttempt> triggers = await audit.ReadAttemptsAsync(
+            RiotCommandTypeNames.TriggerEmergency,
+            VehicleTarget(subject.DeviceKey),
+            cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<RiotOrderCommandAttempt> releases = await audit.ReadAttemptsAsync(
+            RiotCommandTypeNames.CancelEmergency,
+            VehicleTarget(subject.DeviceKey),
+            cancellationToken).ConfigureAwait(false);
+        return OpenEpisode(triggers, releases) is not null;
+    }
+
+    /// <summary>
     /// Whether this fault generation has had a release issued on a person's confirmation take
     /// effect.
     /// </summary>

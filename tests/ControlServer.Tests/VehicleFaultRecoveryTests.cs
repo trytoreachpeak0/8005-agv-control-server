@@ -170,7 +170,8 @@ public sealed class VehicleFaultRecoveryTests
 
         VehicleFaultRecoveryDecision decision = await Service(fixture, site).RecoverAsync(request, Token);
 
-        Assert.Equal((VehicleFaultRecoveryOutcome.Refused, [expected]), (decision.Outcome, decision.Reasons.ToArray()));
+        Assert.Equal(VehicleFaultRecoveryOutcome.Refused, decision.Outcome);
+        Assert.Equal([expected], decision.Reasons);
         await AssertUntouchedAsync(fixture);
     }
 
@@ -202,9 +203,8 @@ public sealed class VehicleFaultRecoveryTests
         }
         else
         {
-            Assert.Equal(
-                (VehicleFaultRecoveryOutcome.Refused, ["FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED"]),
-                (decision.Outcome, decision.Reasons.ToArray()));
+            Assert.Equal(VehicleFaultRecoveryOutcome.Refused, decision.Outcome);
+        Assert.Equal(["FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED"], decision.Reasons);
             await AssertUntouchedAsync(fixture);
         }
     }
@@ -234,9 +234,8 @@ public sealed class VehicleFaultRecoveryTests
 
         VehicleFaultRecoveryDecision decision = await Service(fixture, site).RecoverAsync(Clear(fixture), Token);
 
-        Assert.Equal(
-            (VehicleFaultRecoveryOutcome.Refused, ["FAULT_RECOVERY_CURRENT_ORDER_UNKNOWN"]),
-            (decision.Outcome, decision.Reasons.ToArray()));
+        Assert.Equal(VehicleFaultRecoveryOutcome.Refused, decision.Outcome);
+        Assert.Equal(["FAULT_RECOVERY_CURRENT_ORDER_UNKNOWN"], decision.Reasons);
         await AssertUntouchedAsync(fixture);
     }
 
@@ -248,9 +247,8 @@ public sealed class VehicleFaultRecoveryTests
 
         VehicleFaultRecoveryDecision decision = await Service(fixture, new SiteRiot(fixture)).RecoverAsync(Clear(fixture), Token);
 
-        Assert.Equal(
-            (VehicleFaultRecoveryOutcome.Refused, ["FAULT_RECOVERY_FAULT_NOT_IN_EFFECT", "FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED"]),
-            (decision.Outcome, decision.Reasons.ToArray()));
+        Assert.Equal(VehicleFaultRecoveryOutcome.Refused, decision.Outcome);
+        Assert.Equal(["FAULT_RECOVERY_FAULT_NOT_IN_EFFECT", "FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED"], decision.Reasons);
         Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await fixture.RuntimeAsync()).Stage);
     }
 
@@ -272,9 +270,8 @@ public sealed class VehicleFaultRecoveryTests
 
         VehicleFaultRecoveryDecision decision = await Service(fixture, site).RecoverAsync(Clear(fixture), Token);
 
-        Assert.Equal(
-            (VehicleFaultRecoveryOutcome.Refused, ["FAULT_RECOVERY_EMERGENCY_STOP_OPEN"]),
-            (decision.Outcome, decision.Reasons.ToArray()));
+        Assert.Equal(VehicleFaultRecoveryOutcome.Refused, decision.Outcome);
+        Assert.Equal(["FAULT_RECOVERY_EMERGENCY_STOP_OPEN"], decision.Reasons);
         await AssertUntouchedAsync(fixture);
     }
 
