@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "scenario": "task-type-priority-band",
+  "runId": "20260922T080325048Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "controlServerCommit": "f2ddd40522432925580d6048dca2d6d54171a7a8",
+    "vehicleKey": "BROKERX-L2-0001",
+    "rig": "SyntheticOnboard",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\_stage\\l2-20260922T080325048Z-slot1",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "agvId": "AGV-L2-001",
+    "batchId": "batch-7"
+  },
+  "assertions": [
+    {
+      "id": "L2-TPB-01",
+      "description": "车空出来之后先受理刚建的 STAGING_TO_WIRE，而不是等了 20 分钟的 WIRE_TO_GATE（REQ-0202：STAGING_TO_WIRE 独占最高初始带）",
+      "outcome": "PASS",
+      "expected": "STAGING",
+      "actual": "STAGING"
+    },
+    {
+      "id": "L2-TPB-02",
+      "description": "STAGING 受理之后，OLD 被重新判过、仍未受理（车已经给了 STAGING）",
+      "outcome": "PASS",
+      "expected": "re-judged after 2026-09-22T08:04:18.6583990+00:00, not accepted",
+      "actual": "LastSeenAt 2026-09-22 08:04:19.6126234+00:00, AcceptedAt '', reason ROUTE_GRAPH_NEVER_REFRESHED"
+    },
+    {
+      "id": "L2-TPB-03",
+      "description": "本区阈值未配置：OLD 等了 20 分钟也不升级，两条都没有升级告警标记（REQ-0203 降级）",
+      "outcome": "PASS",
+      "expected": "(none)",
+      "actual": "(none)"
+    }
+  ]
+}

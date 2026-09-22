@@ -1,0 +1,43 @@
+{"at":"2026-09-22T07:47:58.8857026+00:00","note":"L2 run 20260922T074758845Z starting for scenario 'slot-group-selection'."}
+{"at":"2026-09-22T07:47:58.9278506+00:00","note":"L2 port block lock acquired (slot 1, Global\\W2G-L2PortBlock-slot1)."}
+{"at":"2026-09-22T07:47:58.9336900+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-09-22T07:47:59.8026108+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-22T07:48:00.1088697+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-22T07:48:00.2085676+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-09-22T07:48:03.9534447+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-22T07:48:06.0242668+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-22T07:48:06.9235717+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-22T07:48:07.0603638+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-22T07:48:07.7491507+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-22T07:48:08.0154854+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-22T07:48:08.1175990+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-22T07:48:08.2119504+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\_stage\\l2-20260922T074758845Z-slot1\\controlserver.db"}
+{"at":"2026-09-22T07:48:09.9356907+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"24d6e33292bc4b23b9059b3d23fe29c7","version":1,"slotCount":8}}}
+{"at":"2026-09-22T07:48:09.9437989+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\_stage\\l2-20260922T074758845Z-slot1\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-22T07:48:11.6351761+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"24d6e33292bc4b23b9059b3d23fe29c7","boundSlots":8,"version":1}}}
+{"at":"2026-09-22T07:48:11.6920680+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-22T07:48:11.6953801+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\_stage\\l2-20260922T074758845Z-slot1\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\slot-group-selection-01\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-22T07:48:13.4385502+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\slot-group-selection-01\\snapshots\\preseed-area-assignments.csv","entryCount":1,"version":1,"contentSha256":"2f76961c580c29588b3839fabe70d8606c5953812ccc228a69579a83d625b622","snapshotId":"3140a5dfb65f454dbda7ca07d43f5d87","importedAt":"2026-09-22T15:48:11.9417134+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-22T07:48:13.4438334+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-09-22T07:48:13.4601010+00:00","note":"Environment is up; entering scenario 'slot-group-selection'."}
+{"at":"2026-09-22T07:48:13.5512137+00:00","note":"Vehicle AGV-L2-001 slot model 24d6e33292bc4b23b9059b3d23fe29c7 via LatestPublishedIoBinding: 1=FRONT, 2=FRONT, 3=FRONT, 4=FRONT, 5=REAR, 6=REAR, 7=REAR, 8=REAR"}
+{"at":"2026-09-22T07:48:13.5551511+00:00","note":"Publishing demand 8042d70c1ade43709bf24ee33c9a45a1 (sublot L2-SGS-REAR-20260922T074758845Z, area N1-3, 12 boxes)."}
+{"at":"2026-09-22T07:48:13.6241727+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-22T07:48:15.3931744+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-22T07:48:15.4833059+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-8042d70c-1ade-4370-9bf2-4ee33c9a45a1-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-22T07:48:15.4870579+00:00","note":"Vehicle drives to the pickup station and comes to rest."}
+{"at":"2026-09-22T07:48:15.8681068+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-22T07:48:16.8963161+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-22T07:48:17.4158562+00:00","criterion":"journey-stage","value":"AwaitingStationDeparture"}
+{"at":"2026-09-22T07:48:47.6079435+00:00","criterion":"journey-stage","value":"AwaitingGateArrival"}
+{"at":"2026-09-22T07:48:47.6117568+00:00","criterion":"to-gate-intent","value":"@{UpperId=W2G-8042d70c-1ade-4370-9bf2-4ee33c9a45a1-GATE-1; OrderId=ORDER-000002; Status=CONFIRMED}"}
+{"at":"2026-09-22T07:48:47.6255884+00:00","note":"Vehicle drives to the gate and comes to rest."}
+{"at":"2026-09-22T07:48:48.9586376+00:00","criterion":"journey-stage","value":"AwaitingUnloadResult"}
+{"at":"2026-09-22T07:48:49.4962330+00:00","criterion":"journey-stage","value":"Completed"}
+{"at":"2026-09-22T07:48:49.5473623+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\_stage\\l2-20260922T074758845Z-slot1\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\slot-group-selection-01\\snapshots\\area-assignments-n1-3-front.csv"}
+{"at":"2026-09-22T07:48:51.3916788+00:00","criterion":"area-assignment-import","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\slot-group-selection-01\\snapshots\\area-assignments-n1-3-front.csv","entryCount":1,"version":2,"contentSha256":"8ab62504edb88283c1f89062bdec82316bfea9ff44c986b884a1ec00d5a5b50f","snapshotId":"2a29d963beb34c78ae84169dbe3d2aa8","importedAt":"2026-09-22T15:48:49.7973428+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-22T07:48:51.3952613+00:00","note":"Publishing demand 9006c1a9f1ce44f1b62320400028bce4 (sublot L2-SGS-FRONT-20260922T074758845Z, area N1-3, 12 boxes)."}
+{"at":"2026-09-22T07:48:51.4192315+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-22T07:48:51.6671499+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-22T07:48:51.6822937+00:00","note":"Scenario finished."}
+{"at":"2026-09-22T07:48:52.1211082+00:00","note":"L2 port block lock released."}

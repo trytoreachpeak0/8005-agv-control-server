@@ -1,0 +1,37 @@
+{"at":"2026-09-22T07:48:27.7148341+00:00","note":"L2 run 20260922T074827677Z starting for scenario 'en-route-append-delay-gate'."}
+{"at":"2026-09-22T07:48:27.7615675+00:00","note":"L2 port block lock acquired (slot 3, Global\\W2G-L2PortBlock-slot3)."}
+{"at":"2026-09-22T07:48:27.7644787+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-09-22T07:48:28.6392740+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-22T07:48:28.9397866+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-22T07:48:29.0175612+00:00","note":"Route graph engine enabled for map 25."}
+{"at":"2026-09-22T07:48:29.0446480+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-09-22T07:48:32.6930355+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-22T07:48:34.7787438+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-22T07:48:35.6787102+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-22T07:48:35.8147011+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-22T07:48:36.5032104+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-22T07:48:36.7677380+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-22T07:48:36.8500166+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-22T07:48:36.9251462+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\_stage\\l2-20260922T074827677Z-slot3\\controlserver.db"}
+{"at":"2026-09-22T07:48:38.5920460+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"d01da45c461f40cbb1f6b7dc0736d882","version":1,"slotCount":8}}}
+{"at":"2026-09-22T07:48:38.6002399+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\_stage\\l2-20260922T074827677Z-slot3\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-22T07:48:40.4428475+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"d01da45c461f40cbb1f6b7dc0736d882","boundSlots":8,"version":1}}}
+{"at":"2026-09-22T07:48:40.5347539+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-22T07:48:40.5369471+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\_stage\\l2-20260922T074827677Z-slot3\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\en-route-append-delay-gate-02\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-22T07:48:42.3552256+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\en-route-append-delay-gate-02\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"2877e9edb84f4c289200441b09576acb","importedAt":"2026-09-22T15:48:40.8035337+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-22T07:48:42.4169134+00:00","criterion":"preseed:dispatch-zone-parameters","value":"OK","detail":{"version":1,"source":"L2_PRESET","contentSha256":"0b83c7f10727f871dd6c2ac5e51ec65f4122a686dbc3c2cf2d114ba466302059","zones":[{"DispatchZone":"MAP-25-WIRE_TO_GATE","EnRouteAdditionMaxPathCostIncrease":1,"StarvationThresholdSeconds":null}]}}
+{"at":"2026-09-22T07:48:42.4210159+00:00","note":"Environment is up; entering scenario 'en-route-append-delay-gate'."}
+{"at":"2026-09-22T07:48:42.5371087+00:00","criterion":"route-graph-ready","value":"True"}
+{"at":"2026-09-22T07:48:42.5538559+00:00","note":"Publishing demand 9a3eed27b9d743d1a397a4e18f7c71e9 (sublot L2-EDG-A-20260922T074827677Z, area N1-3)."}
+{"at":"2026-09-22T07:48:42.6093432+00:00","criterion":"first-journey-stage","value":"(null)"}
+{"at":"2026-09-22T07:48:44.1198069+00:00","criterion":"first-journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-22T07:48:44.1272804+00:00","note":"Publishing demand 6ae0ef22c3f84c8ebb24d0a7c297c068 (sublot L2-EDG-B-20260922T074827677Z, area C15-13)."}
+{"at":"2026-09-22T07:48:44.1505038+00:00","criterion":"second-demand-reason","value":"(null)"}
+{"at":"2026-09-22T07:48:44.9145751+00:00","criterion":"second-demand-reason","value":"EN_ROUTE_APPEND_DELAY_GATE_EXCEEDED"}
+{"at":"2026-09-22T07:48:44.9417476+00:00","criterion":"runtime-iterations","value":"11"}
+{"at":"2026-09-22T07:48:45.2007394+00:00","criterion":"runtime-iterations","value":"12"}
+{"at":"2026-09-22T07:48:46.2163054+00:00","criterion":"runtime-iterations","value":"13"}
+{"at":"2026-09-22T07:48:47.2620962+00:00","criterion":"runtime-iterations","value":"14"}
+{"at":"2026-09-22T07:48:48.2742806+00:00","criterion":"runtime-iterations","value":"15"}
+{"at":"2026-09-22T07:48:48.2834520+00:00","note":"上限一毫米时，一次要折返的追加被延迟门禁挡下：旅程、停靠、计划三样一个字都没变。"}
+{"at":"2026-09-22T07:48:48.6815576+00:00","note":"L2 port block lock released."}

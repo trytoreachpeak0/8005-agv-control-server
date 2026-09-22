@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "scenario": "plan-reorder-and-drop-cancelled",
+  "runId": "20260922T080804964Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "controlServerCommit": "f2ddd40522432925580d6048dca2d6d54171a7a8",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "rig": "SyntheticOnboard",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\_stage\\l2-20260922T080804964Z-slot1",
+    "agvId": "AGV-L2-001",
+    "vehicleKey": "BROKERX-L2-0001",
+    "batchId": "batch-7"
+  },
+  "assertions": [
+    {
+      "id": "L2-PRD-01",
+      "description": "三条需求都在同一趟旅程上（A 受理、B 与 C 追加）",
+      "outcome": "PASS",
+      "expected": 3,
+      "actual": 3
+    },
+    {
+      "id": "L2-PRD-02",
+      "description": "A 终结（扫码前取消），它自己的卸货停靠（机台 12）因为没有剩余作业被删",
+      "outcome": "PASS",
+      "expected": "TERMINATED / REMOVED",
+      "actual": "TERMINATED / REMOVED"
+    },
+    {
+      "id": "L2-PRD-03",
+      "description": "车上最后一版计划里没有机台 12 那条腿，计划修订号前进（整体替换下发，ADR-cross-0053）",
+      "outcome": "PASS",
+      "expected": "无 N1-3_N1-7 / 修订号 > 4（到站那一版）",
+      "actual": "派工待送取货,派工待送取货,C15-13,N1-5 / 修订号 5"
+    },
+    {
+      "id": "L2-PRD-04",
+      "description": "当前下一站（A 的取货停靠）没有被删（REQ-0197：当前下一站不删不换）",
+      "outcome": "PASS",
+      "expected": "不是 REMOVED",
+      "actual": "PENDING"
+    },
+    {
+      "id": "L2-PRD-05",
+      "description": "B、C 的归属仍在，它们的卸货腿仍在最后一版计划里",
+      "outcome": "PASS",
+      "expected": "2 / 2",
+      "actual": "2 / 2"
+    }
+  ]
+}

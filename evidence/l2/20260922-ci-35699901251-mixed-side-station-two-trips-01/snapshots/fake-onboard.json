@@ -1,0 +1,1031 @@
+{
+  "schemaVersion": "1",
+  "instanceId": "l2-onboard",
+  "runId": "run-591dc8a8",
+  "revision": 18,
+  "observedAt": "2026-09-22T15:32:37.3709218+08:00",
+  "body": {
+    "agvId": "AGV-L2-001",
+    "sessionGeneration": 1,
+    "readiness": "READY",
+    "readinessReasonCode": "READY",
+    "silent": false,
+    "safetyStateVersion": 1,
+    "safety": {
+      "departureSafe": true,
+      "vehicleStopped": true,
+      "allTargetSlotsLocked": true,
+      "allUnlockOutputsReset": true,
+      "unknownPresent": false,
+      "reasonCodes": []
+    },
+    "policy": {
+      "sublot": 0,
+      "sublotScan": null,
+      "loadResult": 0,
+      "unloadResult": 0,
+      "safetyCheck": 0,
+      "slotConfigurationActivation": 0
+    },
+    "activeSlotConfigurationVersion": "fake-slot-config-v1",
+    "activeSlotConfigurationFingerprint": "0000000000000000000000000000000000000000000000000000000000000000",
+    "activationOutcomes": [],
+    "activationCommandMessageIds": [],
+    "activationResultsSent": 0,
+    "alarmSnapshotRevision": 1,
+    "alarms": [],
+    "pending": [],
+    "wire": [
+      {
+        "direction": "out",
+        "messageType": "SessionHello",
+        "messageId": "34a05cf6-f3e6-4fd1-abbe-1fc6e44655fc",
+        "at": "2026-09-22T15:31:11.8669987+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "SessionAccepted",
+        "messageId": "d1197ede-736d-4d6c-b6e9-ddb6bdeb7e7f",
+        "at": "2026-09-22T15:31:12.0113254+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "CapabilitySnapshot",
+        "messageId": "9510eb90-cf46-45b4-877a-9670452e84ff",
+        "at": "2026-09-22T15:31:12.026837+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "SnapshotAppliedAck",
+        "messageId": "61b50ab0-f8fa-4807-a055-5fe2358c7c9b",
+        "at": "2026-09-22T15:31:12.0695265+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "SafetyStateSnapshot",
+        "messageId": "250911ae-4fcb-4db8-8414-019579f2a714",
+        "at": "2026-09-22T15:31:12.0749526+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "SnapshotAppliedAck",
+        "messageId": "ae537178-83ff-4a1d-819a-74866095f778",
+        "at": "2026-09-22T15:31:12.0929352+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "OnboardAlarmSnapshot",
+        "messageId": "8d9cd811-df95-471d-882c-cf456e1dc266",
+        "at": "2026-09-22T15:31:12.0952384+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "SnapshotAppliedAck",
+        "messageId": "63555956-3f9b-4b8c-bd59-8613ed5f2cad",
+        "at": "2026-09-22T15:31:12.1379783+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "RecoveryStateReport",
+        "messageId": "41b509df-4c8a-4888-9973-8bd12197f8f1",
+        "at": "2026-09-22T15:31:12.14096+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "DurableAck",
+        "messageId": "65b5f5e4-6437-4300-a29e-136ca47c3374",
+        "at": "2026-09-22T15:31:12.2263619+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "SessionReadiness",
+        "messageId": "cc9b34d1-caed-474f-bd6e-6059c6177630",
+        "at": "2026-09-22T15:31:12.2264466+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "8dad1450-3727-48be-a86e-153466d5f528",
+        "at": "2026-09-22T15:31:14.2547614+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "06a6a626-8330-4edd-aa3b-9a365dadaa9a",
+        "at": "2026-09-22T15:31:14.2660381+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "fa776ae0-fcab-41ef-82fb-5b410be7f564",
+        "at": "2026-09-22T15:31:16.2396619+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "2f7b60c9-94ba-4e18-a601-feb55b57f5e2",
+        "at": "2026-09-22T15:31:16.2476743+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "8cfd3c98-00f0-48a2-9867-93076caa8fc2",
+        "at": "2026-09-22T15:31:18.2458249+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "74a8ad13-1bc8-4ad3-9d6c-f8e41860fd47",
+        "at": "2026-09-22T15:31:18.2529216+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "ebe62400-47c5-4174-bc86-bc9285a7633e",
+        "at": "2026-09-22T15:31:20.2395475+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "cee2c2c5-2ee5-4986-ac5d-8bba9341e4c8",
+        "at": "2026-09-22T15:31:20.2470355+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "UpcomingStopPlanSnapshot",
+        "messageId": "9054c829-cae9-ca51-a389-2aebac8ca60b",
+        "at": "2026-09-22T15:31:21.9290323+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "SnapshotAppliedAck",
+        "messageId": "1fcd987d-7fa3-4c5f-b1a6-af9baa3fd089",
+        "at": "2026-09-22T15:31:21.9400518+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "e08903ce-7931-4c1c-addf-546126ccc6cd",
+        "at": "2026-09-22T15:31:22.2384377+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "5681654e-622f-4a4f-9869-678bf5611f59",
+        "at": "2026-09-22T15:31:22.2442673+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "VehicleBusinessStateSnapshot",
+        "messageId": "5f950c13-fcd5-0f52-ae0f-644799432d0f",
+        "at": "2026-09-22T15:31:22.7425772+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "SnapshotAppliedAck",
+        "messageId": "bdda4741-4b25-493a-90a6-9c2cb3df5e44",
+        "at": "2026-09-22T15:31:22.742923+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "CurrentStopWorklistSnapshot",
+        "messageId": "b5f8f941-41b5-0451-99d8-36725a7964b3",
+        "at": "2026-09-22T15:31:22.7761169+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "SnapshotAppliedAck",
+        "messageId": "ca0af771-a6c0-4644-929f-9a2d34ab470e",
+        "at": "2026-09-22T15:31:22.7762695+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "UpcomingStopPlanSnapshot",
+        "messageId": "b34b3ba8-a344-e257-8125-964ec822687a",
+        "at": "2026-09-22T15:31:22.7900999+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "SnapshotAppliedAck",
+        "messageId": "0d569624-bb6e-4509-a21e-b7b310decf5b",
+        "at": "2026-09-22T15:31:22.7903092+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "SublotEntryRequested",
+        "messageId": "f51a0576-b157-4750-a554-889a7230787c",
+        "at": "2026-09-22T15:31:22.8074834+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "SublotSubmitted",
+        "messageId": "df6f039b-fbf0-4401-b95b-e68928ca59d3",
+        "at": "2026-09-22T15:31:22.8131437+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "DurableAck",
+        "messageId": "810e4b6f-fd5c-4290-a1a5-5d45e1653fff",
+        "at": "2026-09-22T15:31:22.8184292+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "SublotEntryRequested",
+        "messageId": "f51a0576-b157-4750-a554-889a7230787c",
+        "at": "2026-09-22T15:31:23.6915586+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "SublotSubmitted",
+        "messageId": "df6f039b-fbf0-4401-b95b-e68928ca59d3",
+        "at": "2026-09-22T15:31:23.6917461+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "DurableAck",
+        "messageId": "810e4b6f-fd5c-4290-a1a5-5d45e1653fff",
+        "at": "2026-09-22T15:31:23.695004+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "SlotOperationCommand",
+        "messageId": "baf3f445-2dd6-f75b-ae83-5130764c667b",
+        "at": "2026-09-22T15:31:23.8583614+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "OperationResult",
+        "messageId": "d4021de5-7384-4909-83ed-07a422353797",
+        "at": "2026-09-22T15:31:23.8706952+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "DurableAck",
+        "messageId": "42fb2771-9395-4d96-b5b7-1cc413b85cb5",
+        "at": "2026-09-22T15:31:23.9892616+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "6cdceb42-ea78-4e60-9f8b-258860d7417c",
+        "at": "2026-09-22T15:31:24.2316985+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "7c232666-86fd-4a23-9624-ef4ae4de3e31",
+        "at": "2026-09-22T15:31:24.2438353+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "SlotOperationCommand",
+        "messageId": "baf3f445-2dd6-f75b-ae83-5130764c667b",
+        "at": "2026-09-22T15:31:24.6797903+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "OperationResult",
+        "messageId": "d4021de5-7384-4909-83ed-07a422353797",
+        "at": "2026-09-22T15:31:24.6798608+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "DurableAck",
+        "messageId": "42fb2771-9395-4d96-b5b7-1cc413b85cb5",
+        "at": "2026-09-22T15:31:24.6830619+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "ad69d35b-cb5a-4fa6-8af1-6a1b17f27d31",
+        "at": "2026-09-22T15:31:26.2412059+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "672d9d42-daac-4594-8aaf-e569c54828d2",
+        "at": "2026-09-22T15:31:26.2498662+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "20e9d3e1-2796-4cc2-a8d1-8fdaaa4b1683",
+        "at": "2026-09-22T15:31:28.239138+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "6ea6aa7e-c50d-4248-bab9-e13580fb9dc7",
+        "at": "2026-09-22T15:31:28.249365+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "2fe42e44-17d9-4c47-b15a-217dbf54f9ed",
+        "at": "2026-09-22T15:31:30.2362902+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "107db4ab-895d-4f0b-8c99-54ee4f2f50e3",
+        "at": "2026-09-22T15:31:30.2456501+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "78f5ef1e-0eb1-442d-9c2d-48cc4476438a",
+        "at": "2026-09-22T15:31:32.2378875+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "b4209508-4fcd-4f88-a5d2-9ce92b4a51a2",
+        "at": "2026-09-22T15:31:32.2469595+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "28bec53f-aa64-4f3e-a80d-22443dc249ec",
+        "at": "2026-09-22T15:31:34.2395796+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "173e9e1f-1025-4446-9e04-713cbce7f412",
+        "at": "2026-09-22T15:31:34.2468653+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "0e4a6059-49d5-4f7c-8465-92a405a3c15f",
+        "at": "2026-09-22T15:31:36.2411834+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "9cfec5f2-7980-4cd5-af17-52ec9415c4a4",
+        "at": "2026-09-22T15:31:36.2512369+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "a21ddb7e-fbea-4e03-bd0d-6a4a9ebf1075",
+        "at": "2026-09-22T15:31:38.2407297+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "6d0a044f-24cc-4e1a-8528-34a1a4a26069",
+        "at": "2026-09-22T15:31:38.2533527+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "bfa5197d-2dab-4c1b-9e86-a9e21d9420ef",
+        "at": "2026-09-22T15:31:40.2437341+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "66495bcc-4039-4a37-87b6-a0079127a8b8",
+        "at": "2026-09-22T15:31:40.249959+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "06ff7b9e-de25-4d57-83e5-85eb51cbb191",
+        "at": "2026-09-22T15:31:42.2414658+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "720a877a-162c-42ec-9769-64fdfc67132d",
+        "at": "2026-09-22T15:31:42.2586798+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "366fa4d6-0a32-4bfa-a272-f8ff09abccf8",
+        "at": "2026-09-22T15:31:44.2374668+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "4f8580d1-d978-4ee1-8641-665bf96a39ef",
+        "at": "2026-09-22T15:31:44.2449732+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "d17726a6-a706-4047-817c-172382f8bd0f",
+        "at": "2026-09-22T15:31:46.2329413+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "3baeab2b-3725-4af0-8407-216184d826ed",
+        "at": "2026-09-22T15:31:46.239218+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "5672fc2b-a776-42a8-bc7a-93db4fc632d0",
+        "at": "2026-09-22T15:31:48.2460141+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "dcf662e6-b11d-4c30-a2be-54855220cbbf",
+        "at": "2026-09-22T15:31:48.2544993+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "53871800-9a2a-4e01-895f-b9378632c018",
+        "at": "2026-09-22T15:31:50.2316006+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "eb0a7885-89d3-4914-9832-955765aebfc5",
+        "at": "2026-09-22T15:31:50.2421263+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "5bf114c9-c6cb-4e12-8e21-0963578a1917",
+        "at": "2026-09-22T15:31:52.2466146+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "da8ee591-a14c-4849-a6c9-da123bad53f3",
+        "at": "2026-09-22T15:31:52.2547574+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "e9a5c63c-fb27-4bd5-af1d-741f2f1effb6",
+        "at": "2026-09-22T15:31:54.2387697+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "e0a5d666-baa7-4542-a7e3-18e308d0bd95",
+        "at": "2026-09-22T15:31:54.2486591+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "PreDepartureSafetyCheck",
+        "messageId": "99887f84-0836-dc50-8983-75c0b5e34f08",
+        "at": "2026-09-22T15:31:54.8181828+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "PreDepartureSafetyCheckResult",
+        "messageId": "301ecd1f-85b7-4ab6-a176-fe00c98e6b6a",
+        "at": "2026-09-22T15:31:54.8227197+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "DurableAck",
+        "messageId": "170506e0-44cd-4254-8a32-2025e5d73dad",
+        "at": "2026-09-22T15:31:54.829286+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "VehicleBusinessStateSnapshot",
+        "messageId": "578c99c0-99c5-c056-b972-0002396c9671",
+        "at": "2026-09-22T15:31:55.7522625+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "SnapshotAppliedAck",
+        "messageId": "5394de9f-0997-424a-a4c2-62288e989a33",
+        "at": "2026-09-22T15:31:55.7525072+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "CurrentStopWorklistSnapshot",
+        "messageId": "e172eae0-1349-eb50-b9a4-eca389109fa3",
+        "at": "2026-09-22T15:31:55.9246976+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "SnapshotAppliedAck",
+        "messageId": "d0af4c7c-e4c4-4c49-bdbb-7c23f4ff6d8f",
+        "at": "2026-09-22T15:31:55.9249415+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "UpcomingStopPlanSnapshot",
+        "messageId": "dc9afa17-fb0a-6b5e-b791-1492ee842683",
+        "at": "2026-09-22T15:31:56.0989264+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "SnapshotAppliedAck",
+        "messageId": "732ab06f-b5d8-4199-9f70-414a86063a1f",
+        "at": "2026-09-22T15:31:56.099124+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "SlotOperationCommand",
+        "messageId": "f58710c4-128a-925f-8850-168e462768da",
+        "at": "2026-09-22T15:31:56.1179298+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "OperationResult",
+        "messageId": "0c286124-adfd-45f8-a34d-7651cf1b2e67",
+        "at": "2026-09-22T15:31:56.1184752+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "8e7f6e28-3f90-497c-86ab-058125378b32",
+        "at": "2026-09-22T15:31:56.2374852+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "DurableAck",
+        "messageId": "3c3bf6ca-7ef7-4f4f-b969-39a3e74a25c7",
+        "at": "2026-09-22T15:31:56.2490898+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "a3b5ebea-5f59-4961-8534-4d6452da8aca",
+        "at": "2026-09-22T15:31:56.254958+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "SlotOperationCommand",
+        "messageId": "f58710c4-128a-925f-8850-168e462768da",
+        "at": "2026-09-22T15:31:56.6782553+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "OperationResult",
+        "messageId": "0c286124-adfd-45f8-a34d-7651cf1b2e67",
+        "at": "2026-09-22T15:31:56.6782745+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "DurableAck",
+        "messageId": "3c3bf6ca-7ef7-4f4f-b969-39a3e74a25c7",
+        "at": "2026-09-22T15:31:56.6805581+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "5fa64a14-41be-425e-984c-df0a82c60572",
+        "at": "2026-09-22T15:31:58.2400914+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "92b952ac-5364-4066-8d03-cb3e94bf84bf",
+        "at": "2026-09-22T15:31:58.2488188+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "UpcomingStopPlanSnapshot",
+        "messageId": "5b238c25-9491-ef5f-9f40-57b903347d76",
+        "at": "2026-09-22T15:31:58.6873572+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "SnapshotAppliedAck",
+        "messageId": "50123e1f-ec81-430c-ba38-48d11c4ce684",
+        "at": "2026-09-22T15:31:58.6875203+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "VehicleBusinessStateSnapshot",
+        "messageId": "827afd9c-8e1b-e857-8e94-9db1d6a8a064",
+        "at": "2026-09-22T15:31:58.7242596+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "SnapshotAppliedAck",
+        "messageId": "11dc2dbd-5616-4a47-bc4f-1f8dfefbac83",
+        "at": "2026-09-22T15:31:58.72442+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "CurrentStopWorklistSnapshot",
+        "messageId": "203c57f9-f292-9d52-81bb-fd293ed49760",
+        "at": "2026-09-22T15:31:58.8960271+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "SnapshotAppliedAck",
+        "messageId": "3dea0f55-3179-46bf-aca9-a7741b3ced3d",
+        "at": "2026-09-22T15:31:58.8961863+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "UpcomingStopPlanSnapshot",
+        "messageId": "c5bb8236-a6fc-f050-9bf8-7031652768c0",
+        "at": "2026-09-22T15:31:58.9127268+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "SnapshotAppliedAck",
+        "messageId": "ee6cc7b7-d7af-4980-b0b6-dd16d2ec3d15",
+        "at": "2026-09-22T15:31:58.9128291+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "SublotEntryRequested",
+        "messageId": "c4c42cbc-8100-505a-8b9a-85559d402c56",
+        "at": "2026-09-22T15:31:59.0840987+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "SublotSubmitted",
+        "messageId": "8f195e53-0edf-417e-9b49-60b567293b2f",
+        "at": "2026-09-22T15:31:59.0842796+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "DurableAck",
+        "messageId": "af75221c-85c4-4118-b22c-0c68723217a1",
+        "at": "2026-09-22T15:31:59.0952685+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "SublotEntryRequested",
+        "messageId": "c4c42cbc-8100-505a-8b9a-85559d402c56",
+        "at": "2026-09-22T15:31:59.6827242+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "SublotSubmitted",
+        "messageId": "8f195e53-0edf-417e-9b49-60b567293b2f",
+        "at": "2026-09-22T15:31:59.6827576+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "DurableAck",
+        "messageId": "af75221c-85c4-4118-b22c-0c68723217a1",
+        "at": "2026-09-22T15:31:59.6849364+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "SlotOperationCommand",
+        "messageId": "e1d8641d-82d5-345f-91f6-8d698f40da6a",
+        "at": "2026-09-22T15:31:59.7317848+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "OperationResult",
+        "messageId": "e56e325b-07ff-4a80-9c2f-4fef6e66588d",
+        "at": "2026-09-22T15:31:59.7320041+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "DurableAck",
+        "messageId": "37679e04-085e-4925-bb29-a30df2981dbb",
+        "at": "2026-09-22T15:31:59.7937738+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "41592616-9689-4233-8bc4-fe2e777035f7",
+        "at": "2026-09-22T15:32:00.2419903+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "9e9e0b10-9d24-4aba-8e79-c18463883165",
+        "at": "2026-09-22T15:32:00.2522354+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "SlotOperationCommand",
+        "messageId": "e1d8641d-82d5-345f-91f6-8d698f40da6a",
+        "at": "2026-09-22T15:32:00.6782291+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "OperationResult",
+        "messageId": "e56e325b-07ff-4a80-9c2f-4fef6e66588d",
+        "at": "2026-09-22T15:32:00.6782896+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "DurableAck",
+        "messageId": "37679e04-085e-4925-bb29-a30df2981dbb",
+        "at": "2026-09-22T15:32:00.6809008+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "5c8e98e3-28ef-4cb5-ae09-9319c01a0acb",
+        "at": "2026-09-22T15:32:02.2419347+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "63c4c47d-b8b7-44a2-a13f-1d08af7726c4",
+        "at": "2026-09-22T15:32:02.2477837+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "5a52f30e-3193-4298-8c2f-6d829db9f517",
+        "at": "2026-09-22T15:32:04.2404235+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "ba8bc403-97b6-4b48-94b3-f1f557c733ae",
+        "at": "2026-09-22T15:32:04.2502659+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "c2eaabdb-d23a-427f-9bcb-8e1c3b43c3c3",
+        "at": "2026-09-22T15:32:06.2338758+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "adc56d07-b491-4307-9176-c4eee3aa8da1",
+        "at": "2026-09-22T15:32:06.2408534+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "0f39dbda-31f6-44c0-81a2-2aa02f3d3a2d",
+        "at": "2026-09-22T15:32:08.2432588+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "0782258c-a5f9-4eda-90eb-36ce73adf95e",
+        "at": "2026-09-22T15:32:08.2474766+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "71811a5a-455d-471f-b0be-bf6d6db99a44",
+        "at": "2026-09-22T15:32:10.2383017+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "8d776f87-b724-44ea-836f-9b5ae0c812da",
+        "at": "2026-09-22T15:32:10.2439622+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "600a819a-178e-4597-a480-914e90c4eb5b",
+        "at": "2026-09-22T15:32:12.2385604+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "bc2a458f-527f-49b6-bacf-ae50ba43b84c",
+        "at": "2026-09-22T15:32:12.2483489+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "2d6a66ee-08ba-4a31-b209-0e85a6e8ae57",
+        "at": "2026-09-22T15:32:14.2334838+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "5671471f-bdda-410f-8077-63133f219e5f",
+        "at": "2026-09-22T15:32:14.2396296+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "6f28f37a-172e-4e90-81b5-e3d18d4af5a1",
+        "at": "2026-09-22T15:32:16.2433125+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "d5370931-ac92-45de-9ad1-16093de2e928",
+        "at": "2026-09-22T15:32:16.250113+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "52d7b62e-6bab-424a-8e71-b7295895ad4e",
+        "at": "2026-09-22T15:32:18.2425041+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "549aead5-24e5-47f2-8d17-39fa9d369ce1",
+        "at": "2026-09-22T15:32:18.2470231+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "f83b4896-1a89-498a-b2b1-0fc9f3270d98",
+        "at": "2026-09-22T15:32:20.238279+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "3a74c249-7413-4aa4-8d02-5032ad9d8903",
+        "at": "2026-09-22T15:32:20.2438297+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "f7589482-be05-4215-be16-92a16d16043b",
+        "at": "2026-09-22T15:32:22.2364369+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "22359ebc-3952-4059-b2e4-a8a5cf7c61e5",
+        "at": "2026-09-22T15:32:22.3670851+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "ad74265f-09ee-4d6f-b949-43e5b9e94dbb",
+        "at": "2026-09-22T15:32:24.2319307+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "262cab8d-837f-42fd-a0e0-466e8a7dbc0c",
+        "at": "2026-09-22T15:32:24.2367133+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "1c51d476-46f0-49ba-b9b4-cef59ea6f631",
+        "at": "2026-09-22T15:32:26.2462281+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "298328d7-fd73-41e8-b14a-7664c025e1c8",
+        "at": "2026-09-22T15:32:26.2514172+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "16fd4067-b08a-4859-84f7-1bf18ce50474",
+        "at": "2026-09-22T15:32:28.2462354+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "79c58685-c181-41db-ac76-dc1e9df7f48d",
+        "at": "2026-09-22T15:32:28.2512728+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "a282bbf9-327b-4a39-972b-a83811ca3029",
+        "at": "2026-09-22T15:32:30.2419439+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "0f35d122-e7fe-49b4-be48-24e4a2d96408",
+        "at": "2026-09-22T15:32:30.2475446+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "PreDepartureSafetyCheck",
+        "messageId": "efec137c-8d5e-9953-9b97-c2e91ac7f247",
+        "at": "2026-09-22T15:32:31.6806879+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "PreDepartureSafetyCheckResult",
+        "messageId": "fd487e27-9f0f-47d4-9cdb-56a92afeb457",
+        "at": "2026-09-22T15:32:31.6809518+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "DurableAck",
+        "messageId": "5ecc1a51-cf3e-4e2c-b1e6-f480e22faa0a",
+        "at": "2026-09-22T15:32:31.6894206+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "630853a4-4c49-4d09-be61-9c46599f48c0",
+        "at": "2026-09-22T15:32:32.2353061+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "9fe61fd9-e984-409d-ac74-093223d7745d",
+        "at": "2026-09-22T15:32:32.2409672+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "VehicleBusinessStateSnapshot",
+        "messageId": "938f0a0a-533b-4e56-b43a-7244b6c2a193",
+        "at": "2026-09-22T15:32:32.7157421+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "SnapshotAppliedAck",
+        "messageId": "db375c46-e114-47a7-8254-9dee7020e64c",
+        "at": "2026-09-22T15:32:32.7159129+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "CurrentStopWorklistSnapshot",
+        "messageId": "eddf2c77-fbd8-c351-84d1-91986c0eaf35",
+        "at": "2026-09-22T15:32:32.8878663+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "SnapshotAppliedAck",
+        "messageId": "4fd23bbe-6a96-46be-83a5-7c7ea99026b8",
+        "at": "2026-09-22T15:32:32.8880305+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "UpcomingStopPlanSnapshot",
+        "messageId": "a0ada016-da5f-bf59-819e-d1795d1f312f",
+        "at": "2026-09-22T15:32:33.0629526+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "SnapshotAppliedAck",
+        "messageId": "a21b4ff4-b279-48d7-89c4-f414cc5a620e",
+        "at": "2026-09-22T15:32:33.0631109+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "SlotOperationCommand",
+        "messageId": "87859bf3-678a-cf51-8eb6-891ad12e7cd0",
+        "at": "2026-09-22T15:32:33.2392556+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "OperationResult",
+        "messageId": "887ed02d-f3bc-44a4-9aa2-40ec500e9aa9",
+        "at": "2026-09-22T15:32:33.2395484+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "DurableAck",
+        "messageId": "49938eb0-cbb5-437a-b0cb-a84148997752",
+        "at": "2026-09-22T15:32:33.3328177+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "SlotOperationCommand",
+        "messageId": "87859bf3-678a-cf51-8eb6-891ad12e7cd0",
+        "at": "2026-09-22T15:32:33.6651029+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "OperationResult",
+        "messageId": "887ed02d-f3bc-44a4-9aa2-40ec500e9aa9",
+        "at": "2026-09-22T15:32:33.6651723+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "DurableAck",
+        "messageId": "49938eb0-cbb5-437a-b0cb-a84148997752",
+        "at": "2026-09-22T15:32:33.6677318+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "abbb0112-76ca-4a0c-b280-86e4bb89eed9",
+        "at": "2026-09-22T15:32:34.2470978+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "145fb825-34f1-43c2-aaad-779923b86c29",
+        "at": "2026-09-22T15:32:34.2533725+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "Heartbeat",
+        "messageId": "cf7d6128-1fd1-4c98-9f29-49b81d6d5a9a",
+        "at": "2026-09-22T15:32:36.2400306+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "HeartbeatAck",
+        "messageId": "2544cc76-6dd9-4a2c-847c-c711cf5c96ba",
+        "at": "2026-09-22T15:32:36.2469616+08:00"
+      }
+    ]
+  }
+}

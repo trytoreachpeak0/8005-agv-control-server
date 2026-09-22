@@ -80,10 +80,22 @@ param(
     #   Same day, $ControlServerCommit -> 85381ea2: the staged recovery probe and three forced-recovery judgments
     #     brought up to control-server#187 (one renamed, g3-slice-evidence.ps1 with it). Scripts only; src/ and
     #     tests/ are those of 905ffd1d. All four runners re-run on it (the claim table is shared).
-    [string]$ControlServerCommit = '85381ea2a37e46b4c720ff5f1843161ad6deb69d',
     #   $OnboardCommit -> 4d716340: onboard-hmi#133 merged the batch-6 G2 evidence onto w2g/fp-v2-impl, and
     #     New-ExactClone requires the tip. 44b3aa6e..4d716340 is evidence/ only; the product is that of 44b3aa6e.
-    [string]$OnboardCommit = '4d716340982de4e39339c2151c291efe1a21e1d1',
+    #
+    # 2026-09-22, batch 7 exit (control-server#220): FP-IS-08 gets its G3 surface (g3-multi-stop-plan, cs#218).
+    #   $ControlServerCommit -> 517e1c7a, the fp/v2-impl tip before the exit ticket: every batch-7 server ticket
+    #     (cs#206 to cs#218), cs#303 (unload by side), cs#306 (staged runner at the tip) and cs#259 (handshake gate).
+    #   $OnboardCommit -> ecdb3a0b, the w2g/fp-v2-impl tip: hmi#134, #135, #136 and the recovery chain through
+    #     hmi#132 (PR #193, tests/ and evidence/ only on top of deeba94c).
+    #   $SimulatorCommit and $ProtocolCommit unchanged: batch 7 changes no protocol.
+    #   Same day, second round after the first round's journey red (docs/defects/20260922-first-plan-lost-when-onboard-sees-own-order.md):
+    #   $ControlServerCommit -> 82bfa415, the fp/v2-impl tip with cs#314 (PR #315: the pickup dispatch plan reaches the onboard
+    #     although the session is not ready only because of this server's own order in flight).
+    #   $OnboardCommit -> 86d42ce5, the w2g/fp-v2-impl tip after onboard-hmi#194 merged the batch-7 G2 evidence;
+    #     ecdb3a0b..86d42ce5 is evidence/ only.
+    [string]$ControlServerCommit = '82bfa41511e515aa1063a9acfd900bd7b443d933',
+    [string]$OnboardCommit = '86d42ce5362a8273525b8ba1acb387e4331bcfed',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
     [string]$ProtocolCommit = '86575456c847041515b7b75e8851a00e0d939804',
     # The ref whose tip -OnboardCommit must equal. It is a parameter rather than a literal because the

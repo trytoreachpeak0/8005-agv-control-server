@@ -1,0 +1,47 @@
+{"at":"2026-09-22T05:25:25.2083409+00:00","note":"L2 run 20260922T052525168Z starting for scenario 'real-onboard-clock-skew'."}
+{"at":"2026-09-22T05:25:25.2465870+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-09-22T05:25:25.2493474+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-09-22T05:25:25.4458646+00:00","note":"Reusing cached onboard-hmi publish for ecdb3a0be1d95ef51e7d40493808ba4659274f41."}
+{"at":"2026-09-22T05:25:25.5815707+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-22T05:25:25.5899624+00:00","note":"Peers: onboard-hmi@ecdb3a0be1d95ef51e7d40493808ba4659274f41, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-22T05:25:25.6106440+00:00","note":"Interactive desktop lock acquired."}
+{"at":"2026-09-22T05:25:26.5709173+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-22T05:25:26.8101122+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-22T05:25:28.6653589+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-22T05:25:28.7753353+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-09-22T05:25:33.5200932+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-22T05:25:35.6017381+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-22T05:25:36.5104748+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-22T05:25:36.6076681+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-22T05:25:37.3397235+00:00","criterion":"skew-proxy-live","value":"live"}
+{"at":"2026-09-22T05:25:37.4195389+00:00","note":"Clock skew proxy forwarding vehicle-safety with observedAt +100ms."}
+{"at":"2026-09-22T05:25:39.3552345+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-22T05:25:39.3807638+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-22T05:25:39.8143463+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-22T05:25:41.2546470+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-22T05:25:41.3156015+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-35689381489-1\\_stage\\l2-20260922T052525168Z\\controlserver.db"}
+{"at":"2026-09-22T05:25:43.3304088+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"5a72942df1824d77adf696d5a17f014d","version":1,"slotCount":8}}}
+{"at":"2026-09-22T05:25:43.3365765+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-35689381489-1\\_stage\\l2-20260922T052525168Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-22T05:25:44.9917846+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"5a72942df1824d77adf696d5a17f014d","boundSlots":8,"version":1}}}
+{"at":"2026-09-22T05:25:45.1296787+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-22T05:25:45.1318095+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-35689381489-1\\_stage\\l2-20260922T052525168Z\\controlserver.db --input C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-35689381489-1\\real-onboard-clock-skew-01\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-22T05:25:46.9314893+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-35689381489-1\\real-onboard-clock-skew-01\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"96254adc666a491cb378e187f3739d71","importedAt":"2026-09-22T13:25:45.3741828+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-22T05:25:46.9362635+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-09-22T05:25:46.9465074+00:00","note":"Environment is up; entering scenario 'real-onboard-clock-skew'."}
+{"at":"2026-09-22T05:25:47.0748333+00:00","note":"Pushing observedAt skew to 3000ms, beyond the onboard's tolerance."}
+{"at":"2026-09-22T05:25:47.1454952+00:00","criterion":"session-readiness","value":"Ready/READY"}
+{"at":"2026-09-22T05:25:48.1856806+00:00","criterion":"session-readiness","value":"RecoveryRequired/DEPARTURE_SAFETY_NOT_READY"}
+{"at":"2026-09-22T05:25:48.1881098+00:00","note":"Publishing demand d7b11c91a2a847dfabce26cc2c3dd135 now that the session has degraded."}
+{"at":"2026-09-22T05:25:48.2512724+00:00","criterion":"backlog-reason","value":"(null)"}
+{"at":"2026-09-22T05:25:48.7561770+00:00","criterion":"backlog-reason","value":"ONBOARD_FACTS_NOT_READY"}
+{"at":"2026-09-22T05:25:48.8038470+00:00","criterion":"runtime-iterations","value":"13"}
+{"at":"2026-09-22T05:25:49.0599595+00:00","criterion":"runtime-iterations","value":"14"}
+{"at":"2026-09-22T05:25:50.1382231+00:00","criterion":"runtime-iterations","value":"15"}
+{"at":"2026-09-22T05:25:50.9447594+00:00","criterion":"runtime-iterations","value":"16"}
+{"at":"2026-09-22T05:25:52.0076045+00:00","criterion":"runtime-iterations","value":"17"}
+{"at":"2026-09-22T05:25:52.0107262+00:00","note":"Bringing the skew back to 100ms; the onboard must recover on its own."}
+{"at":"2026-09-22T05:25:53.8414999+00:00","criterion":"backlog-reason","value":"ELIGIBLE"}
+{"at":"2026-09-22T05:25:55.1051981+00:00","criterion":"backlog-reason","value":"ACCEPTED"}
+{"at":"2026-09-22T05:25:55.1125715+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-22T05:25:55.1250800+00:00","note":"Scenario finished."}
+{"at":"2026-09-22T05:25:55.6997949+00:00","note":"L2 port block lock released."}

@@ -1,0 +1,37 @@
+{"at":"2026-09-22T08:01:34.3687897+00:00","note":"L2 run 20260922T080134319Z starting for scenario 'slot-group-temporarily-full'."}
+{"at":"2026-09-22T08:01:34.4071351+00:00","note":"L2 port block lock acquired (slot 4, Global\\W2G-L2PortBlock-slot4)."}
+{"at":"2026-09-22T08:01:34.4098639+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-09-22T08:01:35.2737816+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-22T08:01:35.5395539+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-22T08:01:35.6299270+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-09-22T08:01:39.3210858+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-22T08:01:41.4004352+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-22T08:01:42.2753082+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-22T08:01:42.4119377+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-22T08:01:42.4200739+00:00","note":"Onboard slot states for fake-onboard: 0:slotNo=5, 0:physicalState=OCCUPIED, 1:slotNo=6, 1:physicalState=OCCUPIED, 2:slotNo=7, 2:physicalState=OCCUPIED, 3:slotNo=8, 3:physicalState=OCCUPIED"}
+{"at":"2026-09-22T08:01:43.1250781+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-22T08:01:43.3936240+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-22T08:01:43.4848484+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-22T08:01:43.5471732+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\_stage\\l2-20260922T080134319Z-slot4\\controlserver.db"}
+{"at":"2026-09-22T08:01:45.2385746+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"9e312051bc66461c8b07550bfed99d19","version":1,"slotCount":8}}}
+{"at":"2026-09-22T08:01:45.2460621+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\_stage\\l2-20260922T080134319Z-slot4\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-22T08:01:46.9627810+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"9e312051bc66461c8b07550bfed99d19","boundSlots":8,"version":1}}}
+{"at":"2026-09-22T08:01:47.0314423+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-22T08:01:47.0339410+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\_stage\\l2-20260922T080134319Z-slot4\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\slot-group-temporarily-full-01\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-22T08:01:48.8731531+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\slot-group-temporarily-full-01\\snapshots\\preseed-area-assignments.csv","entryCount":1,"version":1,"contentSha256":"2f76961c580c29588b3839fabe70d8606c5953812ccc228a69579a83d625b622","snapshotId":"1d787e34c70e48148e8f83fd39beb94c","importedAt":"2026-09-22T16:01:47.3167703+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-22T08:01:48.8837482+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-09-22T08:01:48.8911044+00:00","note":"Environment is up; entering scenario 'slot-group-temporarily-full'."}
+{"at":"2026-09-22T08:01:49.0390220+00:00","note":"Publishing demand e483f9c2d3a0412b8989b7ebc29ad638 (sublot L2-SGF-20260922T080134319Z, area N1-3, 8 boxes)."}
+{"at":"2026-09-22T08:01:49.1221473+00:00","criterion":"backlog-reason","value":"(null)"}
+{"at":"2026-09-22T08:01:50.1319350+00:00","criterion":"backlog-reason","value":"SLOT_GROUP_CAPACITY_TEMPORARILY_UNAVAILABLE"}
+{"at":"2026-09-22T08:01:50.1792826+00:00","criterion":"runtime-iterations","value":"9"}
+{"at":"2026-09-22T08:01:50.6870471+00:00","criterion":"runtime-iterations","value":"10"}
+{"at":"2026-09-22T08:01:51.7314800+00:00","criterion":"runtime-iterations","value":"11"}
+{"at":"2026-09-22T08:01:52.7432833+00:00","criterion":"runtime-iterations","value":"12"}
+{"at":"2026-09-22T08:01:52.7635905+00:00","note":"Reseeding the synthetic peer: slots [5,6] become EMPTY, [7,8] stay OCCUPIED."}
+{"at":"2026-09-22T08:01:52.7752081+00:00","note":"Stopping component 'fake-onboard'."}
+{"at":"2026-09-22T08:01:53.5437704+00:00","criterion":"available-slots","value":"1,2,3,4,5,6"}
+{"at":"2026-09-22T08:01:53.5505362+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-22T08:01:54.3162517+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-22T08:01:54.3470919+00:00","note":"Scenario finished."}
+{"at":"2026-09-22T08:01:54.7132357+00:00","note":"L2 port block lock released."}

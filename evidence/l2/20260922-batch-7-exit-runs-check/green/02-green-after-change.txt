@@ -1,0 +1,22 @@
+cargo-holding-dashboard-projection             Runs=3 DefaultRuns=- ok
+cargo-holding-disabled-when-append-forbidden   Runs=3 DefaultRuns=- ok
+cargo-holding-side-full                        Runs=3 DefaultRuns=- ok
+cargo-holding-timeout                          Runs=3 DefaultRuns=- ok
+dispatch-zone-parameters-import-rejects        Runs=3 DefaultRuns=- ok
+en-route-append-delay-gate                     Runs=3 DefaultRuns=- ok
+en-route-append-not-configured                 Runs=3 DefaultRuns=- ok
+idle-and-inflight-vehicles-compete             Runs=3 DefaultRuns=- ok
+multi-stop-append-same-zone                    Runs=3 DefaultRuns=- ok
+onboard-silent-liveness-loss                   Runs=3 DefaultRuns=- ok
+plan-reorder-and-drop-cancelled                Runs=3 DefaultRuns=- ok
+reassign-when-vehicle-ineligible               Runs=3 DefaultRuns=- ok
+starvation-threshold-escalation                Runs=3 DefaultRuns=- ok
+task-type-priority-band                        Runs=3 DefaultRuns=- ok
+transport-demand-key-suppressed                Runs=3 DefaultRuns=- ok
+vehicle-full-ignores-oversized-and-gated       Runs=3 DefaultRuns=- ok
+vehicle-full-still-appends-before-departure    Runs=3 DefaultRuns=- ok
+waiting-station-yield                          Runs=3 DefaultRuns=- ok
+waiting-station-yield-waits-for-door           Runs=3 DefaultRuns=- ok
+timeout-minutes: workflow_dispatch 180, otherwise 120
+expected batch-7: 19; batch-7 lines: 19; all scenarios: 55; synthetic scenario files: 55; unlisted files: 0
+PASS

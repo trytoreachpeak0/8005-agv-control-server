@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "scenario": "vehicle-full-ignores-oversized-and-gated",
+  "runId": "20260922T074203724Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "controlServerCommit": "f2ddd40522432925580d6048dca2d6d54171a7a8",
+    "agvId": "AGV-L2-001",
+    "vehicleKey": "BROKERX-L2-0001",
+    "batchId": "batch-7",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35699901251-1\\_stage\\l2-20260922T074203724Z-slot3",
+    "rig": "SyntheticOnboard"
+  },
+  "assertions": [
+    {
+      "id": "L2-VFI-01",
+      "description": "需求甲装满 FRONT、REAR 空着：车进入 CARGO_HOLDING_WAIT，满的一侧只有 FRONT",
+      "outcome": "PASS",
+      "expected": "CARGO_HOLDING_WAIT, [\"FRONT\"]",
+      "actual": "AwaitingStationDeparture CARGO_HOLDING_WAIT, [\"FRONT\"]"
+    },
+    {
+      "id": "L2-VFI-02",
+      "description": "需求乙（REAR 5 花篮，比整组还大）判 EXPECTED_BASKET_COUNT_EXCEEDS_SLOT_GROUP、没有进来；又转五轮，REAR 仍不算满，车仍在持货等单",
+      "outcome": "PASS",
+      "expected": "EXPECTED_BASKET_COUNT_EXCEEDS_SLOT_GROUP / not joined / CARGO_HOLDING_WAIT, full [\"FRONT\"]",
+      "actual": "EXPECTED_BASKET_COUNT_EXCEEDS_SLOT_GROUP / not joined / AwaitingStationDeparture CARGO_HOLDING_WAIT, full [\"FRONT\"]"
+    },
+    {
+      "id": "L2-VFI-03",
+      "description": "需求丙（FRONT 5 花篮）同样判结构性装不下；状态与满的一侧都不变",
+      "outcome": "PASS",
+      "expected": "EXPECTED_BASKET_COUNT_EXCEEDS_SLOT_GROUP / not joined / CARGO_HOLDING_WAIT, full [\"FRONT\"]",
+      "actual": "EXPECTED_BASKET_COUNT_EXCEEDS_SLOT_GROUP / not joined / AwaitingStationDeparture CARGO_HOLDING_WAIT, full [\"FRONT\"]"
+    },
+    {
+      "id": "L2-VFI-04",
+      "description": "经看板暂停 WIRE_TO_GATE：提交后 303 回到看板主页",
+      "outcome": "PASS",
+      "expected": 303,
+      "actual": 303
+    },
+    {
+      "id": "L2-VFI-05",
+      "description": "暂停之后的需求丁（REAR 1 花篮，本来放得下）判 TASK_TYPE_HELD、没有进来；REAR 仍不算满，车仍在持货等单",
+      "outcome": "PASS",
+      "expected": "TASK_TYPE_HELD / not joined / CARGO_HOLDING_WAIT, full [\"FRONT\"]",
+      "actual": "TASK_TYPE_HELD / not joined / AwaitingStationDeparture CARGO_HOLDING_WAIT, full [\"FRONT\"]"
+    }
+  ]
+}

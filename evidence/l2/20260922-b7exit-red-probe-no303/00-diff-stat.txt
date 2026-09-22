@@ -1,0 +1,19 @@
+$ git diff --stat b86d280a d259898d   # 分支上场景改动之后的提交 → 红探针提交
+ .../Runtime/JourneyRuntimeEngine.cs                |  54 +++------
+ .../Runtime/JourneyStopCursor.cs                   | 129 +--------------------
+ 2 files changed, 20 insertions(+), 163 deletions(-)
+
+$ git diff --stat 1419ab99 d259898d   # 第 1 步提交 → 红探针提交（多出的两项是场景改动本身）
+ scripts/l2/README.md                               |   2 +-
+ .../scenarios/real-onboard-mixed-side-one-stop.ps1 |  20 ++--
+ .../Runtime/JourneyRuntimeEngine.cs                |  54 +++------
+ .../Runtime/JourneyStopCursor.cs                   | 129 +--------------------
+ 4 files changed, 32 insertions(+), 173 deletions(-)
+
+$ git diff --stat c4b04bb2^1 d259898d -- src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs src/ControlServer.Host/Runtime/JourneyStopCursor.cs   # 两文件与 cs#303 合入前逐字相同（空输出）
+(end)
+
+$ git log --oneline -3 d259898d
+d259898d red-probe(local): 撤掉 cs#303 的卸货按侧排序（只在本地，不推送）
+b86d280a test(l2): 混挂站点真装置场景改为后侧先追加（cs#220，调度 09-22 评论第 1 条）
+1419ab99 chore(g3): 批次 7 出口移动 G3 共享绑定（cs#220 第 1 步）
