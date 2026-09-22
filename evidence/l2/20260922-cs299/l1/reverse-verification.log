@@ -1,0 +1,95 @@
+== M1 automatic release does not ask for unfinished orders
+   diff: 0	9	src/ControlServer.Host/Runtime/Commands/EmergencyStopSupervisor.cs
+   summary: [('Failed!', '3', '146')]
+   red (2):
+     EmergencyStopSupervisorTests.AnAutomaticReleaseIsRefusedWhileTheVehicleMayStillHaveAnOrder
+     EmergencyStopSupervisorTests.ReleaseObstaclesNamesEveryMissingFact
+== M2 no transaction around disposition and clearance
+   diff: 2	3	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+   summary: [('Failed!', '1', '148')]
+   red (1):
+     VehicleFaultRecoveryTests.AClearanceCutShortLeavesNothingBehindAndCanBeMadeAgain
+== M3 the journey is not disposed of
+   diff: 1	2	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+   summary: [('Failed!', '6', '143')]
+   red (6):
+     VehicleFaultRecoveryEndpointsTests.AClearanceIsOkAndTheSameOneAgainSaysItWasAlreadyMade
+     VehicleFaultRecoveryTests.AClearanceCutShortLeavesNothingBehindAndCanBeMadeAgain
+     VehicleFaultRecoveryTests.AClearanceWorksWhileTheSessionIsNotReadyOnItsOwnOrder
+     VehicleFaultRecoveryTests.AClearedFaultReleasesTheDemandAndTheVehicleTakesWorkAgain
+     VehicleFaultRecoveryTests.ALoadedVehicleKeepsItsCargoBindingAndWaitsForAPerson
+     VehicleFaultRecoveryTests.TheSameClearanceTwiceDoesNothingTheSecondTime
+== M4 an unreadable current order counts as ended
+   diff: 0	1	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+   summary: [('Failed!', '3', '146')]
+   red (2):
+     VehicleFaultRecoveryTests.AnOrderThatCannotBeReadIsNotTakenAsEnded
+     VehicleFaultRecoveryTests.EveryUnmetCriterionIsNamedAndNothingIsChanged
+== M5 SUCCESS counts as ended
+   diff: 1	1	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+   summary: [('Failed!', '1', '148')]
+   red (1):
+     VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared
+== M6 an engaged latch is not checked
+   diff: 0	4	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+   summary: [('Failed!', '4', '145')]
+   red (4):
+     VehicleFaultRecoveryEndpointsTests.ARefusalIsAConflictNamingEveryReason
+     VehicleFaultRecoveryTests.AResumeIsRefusedForEveryUnmetCriterionIncludingALatch
+     VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn
+     VehicleFaultRecoveryTests.EveryUnmetCriterionIsNamedAndNothingIsChanged
+M7 the runtime gate is not taken: BUILD FAILED, not a valid probe
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Dashboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\src\ControlServer.Dashboard\bin\Release\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Release\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\src\ControlServer.Application\bin\Release\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Release\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.ProtocolFaultProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Release\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Release\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Release\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FakeRiot -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Release\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.FieldOps -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Release\net8.0\win-x64\ControlServer.FieldOps.dll
+C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\src\ControlServer.Host\Runtime\Faults\VehicleFaultRecoveryService.cs(144,25): error CS9113: Parameter 'gate' is unread. [C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\src\ControlServer.Host\ControlServer.Host.csproj]
+
+Build FAILED.
+
+C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\src\ControlServer.Host\Runtime\Faults\VehicleFaultRecoveryService.cs(144,25): error CS9113: Parameter 'gate' is unread. [C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\src\ControlServer.Host\ControlServer.Host.csproj]
+    0 Warning(s)
+    1 Error(s)
+
+Time Elapsed 00:00:07.72
+
+== M8 no AlreadyCleared short cut
+   diff: 1	1	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+   summary: [('Failed!', '2', '147')]
+   red (2):
+     VehicleFaultRecoveryEndpointsTests.AClearanceIsOkAndTheSameOneAgainSaysItWasAlreadyMade
+     VehicleFaultRecoveryTests.TheSameClearanceTwiceDoesNothingTheSecondTime
+== M9 cargo on board is released like an empty vehicle
+   diff: 1	1	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+   summary: [('Failed!', '1', '148')]
+   red (1):
+     VehicleFaultRecoveryTests.ALoadedVehicleKeepsItsCargoBindingAndWaitsForAPerson
+== M10 the reserved rebuild answers 409 instead of 501
+   diff: 1	1	src/ControlServer.Host/Runtime/VehicleFaultRecoveryEndpoints.cs
+   summary: [('Failed!', '1', '148')]
+   red (1):
+     VehicleFaultRecoveryEndpointsTests.ARebuildIsNotImplementedAndStillNamesItsReasons
+== M11 the credential is not compared
+   diff: 1	1	src/ControlServer.Host/Runtime/VehicleFaultRecoveryEndpoints.cs
+   summary: [('Failed!', '1', '148')]
+   red (1):
+     VehicleFaultRecoveryEndpointsTests.AWrongBearerCredentialIsRejectedBeforeAnythingIsDone
+== M12 no dashboard description for the cargo-on-board code
+   diff: 0	3	src/ControlServer.Host/Dashboard/BlockedJourneysQueryEndpoint.cs
+   summary: [('Failed!', '1', '148')]
+   red (1):
+     Batch7CargoHoldingDashboardTests.AStalledInTransitOrderIsShownWithAChineseDescription
+== M13 a stop still open is not checked
+   diff: 0	4	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+   summary: [('Failed!', '1', '148')]
+   red (1):
+     VehicleFaultRecoveryTests.AnEmergencyStopStillOpenRefusesTheClearance
+restored clean: (clean)

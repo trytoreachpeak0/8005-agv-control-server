@@ -1,0 +1,28 @@
+== M12 no dashboard description for the cargo-on-board code
+   diff: 7	3	docs/vehicle-fault-clearance-field-guide.md
+0	3	src/ControlServer.Host/Dashboard/BlockedJourneysQueryEndpoint.cs
+1	0	src/ControlServer.Host/Program.cs
+13	1	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+3	2	src/ControlServer.Host/Runtime/JourneyMutationGate.cs
+51	2	tests/ControlServer.Tests/VehicleFaultRecoveryTests.cs
+   summary: [('Failed!', '1', '160')]
+   red (1):
+     Batch7CargoHoldingDashboardTests.AStalledInTransitOrderIsShownWithAChineseDescription
+== M21 two resumes of one vehicle may run at once (second review 1)
+   diff: 7	3	docs/vehicle-fault-clearance-field-guide.md
+1	1	src/ControlServer.Host/Dashboard/BlockedJourneysQueryEndpoint.cs
+1	0	src/ControlServer.Host/Program.cs
+13	1	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+3	2	src/ControlServer.Host/Runtime/JourneyMutationGate.cs
+51	2	tests/ControlServer.Tests/VehicleFaultRecoveryTests.cs
+   summary: [('Failed!', '1', '160')]
+   red (1):
+     VehicleFaultRecoveryTests.TwoResumesAtOnceContinueOnce
+restored clean: M docs/vehicle-fault-clearance-field-guide.md
+ M src/ControlServer.Host/Dashboard/BlockedJourneysQueryEndpoint.cs
+ M src/ControlServer.Host/Program.cs
+ M src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+ M src/ControlServer.Host/Runtime/JourneyMutationGate.cs
+ M tests/ControlServer.Tests/VehicleFaultRecoveryTests.cs
+?? evidence/l2/20260922-cs299/l1/red-04-concurrent-resume.txt
+?? src/ControlServer.Host/Runtime/Faults/VehicleFaultResumeFlights.cs

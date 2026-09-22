@@ -373,17 +373,7 @@ public sealed class DemandReleaseService(
                 .ConfigureAwait(false);
         }
 
-        membership.RemovedAt = now;
-        membership.RemovalReason = DemandReleaseReasons.Released;
-        JourneyBacklogRow? backlog = await dbContext.JourneyBacklog
-            .SingleOrDefaultAsync(row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
-        if (backlog is not null)
-        {
-            // CreatedAt 不动：等待年龄从它算（7-09），释放不让一条需求重新排到队尾。
-            backlog.AcceptedAt = null;
-            backlog.ReasonCode = DemandReleaseReasons.Released;
-            backlog.LastSeenAt = now;
-        }
+        await StageReleasedMembershipAsync(dbContext, membership, now, cancellationToken).ConfigureAwait(false);
 
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         if (transaction is not null)
@@ -399,6 +389,32 @@ public sealed class DemandReleaseService(
 
         LogReleased(logger, demandId, runtime.JourneyId, trigger, null);
         return new DemandReleaseOutcome(runtime.JourneyId, demandId, trigger, "RELEASED");
+    }
+
+    /// <summary>
+    /// 暂存「这条需求离开这趟旅程、退回积压等改派」：归属行记下移除，积压行清掉受理标记。不保存。
+    /// </summary>
+    /// <remarks>
+    /// 释放服务与故障人工清除（control-server#299，<c>VehicleFaultRecoveryService</c>）共用这一处，两者对「释放」写下的是同样的行，
+    /// 派车轮次与孤儿检查按同一个原因码认它（<see cref="DemandJourneyLookup.ReleasedForRedispatch"/>）。
+    /// </remarks>
+    internal static async Task StageReleasedMembershipAsync(
+        ControlServerDbContext dbContext,
+        JourneyDemandRow membership,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        membership.RemovedAt = now;
+        membership.RemovalReason = DemandReleaseReasons.Released;
+        JourneyBacklogRow? backlog = await dbContext.JourneyBacklog
+            .SingleOrDefaultAsync(row => row.DemandId == membership.DemandId, cancellationToken).ConfigureAwait(false);
+        if (backlog is not null)
+        {
+            // CreatedAt 不动：等待年龄从它算（7-09），释放不让一条需求重新排到队尾。
+            backlog.AcceptedAt = null;
+            backlog.ReasonCode = DemandReleaseReasons.Released;
+            backlog.LastSeenAt = now;
+        }
     }
 
     /// <summary>这个取货停靠有没有 RIoT 订单意图：追加的停靠要到车离开上一站才建单，所以有就是「这一轮开头之后刚建的」。</summary>

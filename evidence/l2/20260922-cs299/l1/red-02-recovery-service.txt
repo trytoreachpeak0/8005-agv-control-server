@@ -1,0 +1,308 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:11.54]     ControlServer.Tests.VehicleFaultRecoveryTests.AVehicleWithoutAFaultHasNothingToClear [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AVehicleWithoutAFaultHasNothingToClear [6 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (Refused, ["FAULT_RECOVERY_FAULT_NOT_IN_EFFECT", "FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED"])
+Actual:   Tuple (Refused, ["NOT_IMPLEMENTED"])
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.AVehicleWithoutAFaultHasNothingToClear() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 251
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AVehicleWithoutAFaultHasNothingToClear() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 254
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:12.87]     ControlServer.Tests.VehicleFaultRecoveryTests.AResumeIsRefusedForEveryUnmetCriterionIncludingALatch [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AResumeIsRefusedForEveryUnmetCriterionIncludingALatch [1 s]
+  Error Message:
+   Assert.Equal() Failure: Collections differ at index 0
+           ↓ (pos 0)
+Expected: "FAULT_RECOVERY_REMEDY_NOT_CONFIRMED"
+Actual:   "NOT_IMPLEMENTED"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.AResumeIsRefusedForEveryUnmetCriterionIncludingALatch() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 483
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AResumeIsRefusedForEveryUnmetCriterionIncludingALatch() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 487
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:13.22]     ControlServer.Tests.VehicleFaultRecoveryTests.AnOrderThatCannotBeReadIsNotTakenAsEnded(read: "not-found") [FAIL]
+[xUnit.net 00:00:13.51]     ControlServer.Tests.VehicleFaultRecoveryTests.AnOrderThatCannotBeReadIsNotTakenAsEnded(read: "unknown") [FAIL]
+[xUnit.net 00:00:13.94]     ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWorksWhileTheSessionIsNotReadyOnItsOwnOrder [FAIL]
+[xUnit.net 00:00:14.29]     ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(orderState: 4, terminal: True, clears: True) [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AnOrderThatCannotBeReadIsNotTakenAsEnded(read: "not-found") [344 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (Refused, ["FAULT_RECOVERY_CURRENT_ORDER_UNKNOWN"])
+Actual:   Tuple (Refused, ["NOT_IMPLEMENTED"])
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.AnOrderThatCannotBeReadIsNotTakenAsEnded(String read) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 237
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AnOrderThatCannotBeReadIsNotTakenAsEnded(String read) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 240
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AnOrderThatCannotBeReadIsNotTakenAsEnded(read: "unknown") [287 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (Refused, ["FAULT_RECOVERY_CURRENT_ORDER_UNKNOWN"])
+Actual:   Tuple (Refused, ["NOT_IMPLEMENTED"])
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.AnOrderThatCannotBeReadIsNotTakenAsEnded(String read) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 237
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AnOrderThatCannotBeReadIsNotTakenAsEnded(String read) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 240
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWorksWhileTheSessionIsNotReadyOnItsOwnOrder [430 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (Cleared, "RELEASED_FOR_REDISPATCH")
+Actual:   Tuple (Refused, "NONE")
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWorksWhileTheSessionIsNotReadyOnItsOwnOrder() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 421
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWorksWhileTheSessionIsNotReadyOnItsOwnOrder() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 430
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(orderState: 4, terminal: True, clears: True) [342 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (Cleared, 0)
+Actual:   Tuple (Refused, 1)
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(Int32 orderState, Boolean terminal, Boolean clears) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 201
+   at ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(Int32 orderState, Boolean terminal, Boolean clears) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 208
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:14.63]     ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(orderState: 10, terminal: False, clears: False) [FAIL]
+[xUnit.net 00:00:14.92]     ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(orderState: 6, terminal: True, clears: True) [FAIL]
+[xUnit.net 00:00:15.27]     ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(orderState: 5, terminal: True, clears: False) [FAIL]
+[xUnit.net 00:00:15.54]     ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(orderState: 2, terminal: True, clears: True) [FAIL]
+[xUnit.net 00:00:15.70]     ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(orderState: 8, terminal: True, clears: False) [FAIL]
+[xUnit.net 00:00:15.87]     ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(orderState: 7, terminal: False, clears: False) [FAIL]
+[xUnit.net 00:00:16.08]     ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(orderState: 9, terminal: False, clears: False) [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(orderState: 10, terminal: False, clears: False) [329 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (Refused, ["FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED"])
+Actual:   Tuple (Refused, ["NOT_IMPLEMENTED"])
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(Int32 orderState, Boolean terminal, Boolean clears) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 205
+   at ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(Int32 orderState, Boolean terminal, Boolean clears) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 208
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(orderState: 6, terminal: True, clears: True) [292 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (Cleared, 0)
+Actual:   Tuple (Refused, 1)
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(Int32 orderState, Boolean terminal, Boolean clears) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 201
+   at ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(Int32 orderState, Boolean terminal, Boolean clears) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 208
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(orderState: 5, terminal: True, clears: False) [342 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (Refused, ["FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED"])
+Actual:   Tuple (Refused, ["NOT_IMPLEMENTED"])
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(Int32 orderState, Boolean terminal, Boolean clears) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 205
+   at ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(Int32 orderState, Boolean terminal, Boolean clears) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 208
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(orderState: 2, terminal: True, clears: True) [262 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (Cleared, 0)
+Actual:   Tuple (Refused, 1)
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(Int32 orderState, Boolean terminal, Boolean clears) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 201
+   at ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(Int32 orderState, Boolean terminal, Boolean clears) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 208
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(orderState: 8, terminal: True, clears: False) [159 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (Refused, ["FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED"])
+Actual:   Tuple (Refused, ["NOT_IMPLEMENTED"])
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(Int32 orderState, Boolean terminal, Boolean clears) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 205
+   at ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(Int32 orderState, Boolean terminal, Boolean clears) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 208
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(orderState: 7, terminal: False, clears: False) [164 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (Refused, ["FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED"])
+Actual:   Tuple (Refused, ["NOT_IMPLEMENTED"])
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(Int32 orderState, Boolean terminal, Boolean clears) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 205
+   at ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(Int32 orderState, Boolean terminal, Boolean clears) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 208
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(orderState: 9, terminal: False, clears: False) [205 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (Refused, ["FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED"])
+Actual:   Tuple (Refused, ["NOT_IMPLEMENTED"])
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(Int32 orderState, Boolean terminal, Boolean clears) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 205
+   at ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(Int32 orderState, Boolean terminal, Boolean clears) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 208
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:16.22]     ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(orderState: 1, terminal: False, clears: False) [FAIL]
+[xUnit.net 00:00:16.37]     ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(orderState: 3, terminal: False, clears: False) [FAIL]
+[xUnit.net 00:00:16.51]     ControlServer.Tests.VehicleFaultRecoveryTests.EveryUnmetCriterionIsNamedAndNothingIsChanged [FAIL]
+[xUnit.net 00:00:16.67]     ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(missing: "emergency-unknown") [FAIL]
+[xUnit.net 00:00:16.84]     ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(missing: "orders-unknown") [FAIL]
+[xUnit.net 00:00:16.98]     ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(missing: "latched") [FAIL]
+[xUnit.net 00:00:17.15]     ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(missing: "operator") [FAIL]
+[xUnit.net 00:00:17.32]     ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(missing: "unfinished") [FAIL]
+[xUnit.net 00:00:17.50]     ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(missing: "remedy") [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(orderState: 1, terminal: False, clears: False) [141 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (Refused, ["FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED"])
+Actual:   Tuple (Refused, ["NOT_IMPLEMENTED"])
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(Int32 orderState, Boolean terminal, Boolean clears) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 205
+   at ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(Int32 orderState, Boolean terminal, Boolean clears) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 208
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(orderState: 3, terminal: False, clears: False) [142 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (Refused, ["FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED"])
+Actual:   Tuple (Refused, ["NOT_IMPLEMENTED"])
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(Int32 orderState, Boolean terminal, Boolean clears) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 205
+   at ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAnOrderThatEndedWithoutArrivingLetsTheFaultBeCleared(Int32 orderState, Boolean terminal, Boolean clears) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 208
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.EveryUnmetCriterionIsNamedAndNothingIsChanged [142 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ at index 0
+           ↓ (pos 0)
+Expected: "FAULT_RECOVERY_OPERATOR_UNIDENTIFIED"
+Actual:   "NOT_IMPLEMENTED"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.EveryUnmetCriterionIsNamedAndNothingIsChanged() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 115
+   at ControlServer.Tests.VehicleFaultRecoveryTests.EveryUnmetCriterionIsNamedAndNothingIsChanged() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 126
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(missing: "emergency-unknown") [153 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (Refused, ["FAULT_RECOVERY_EMERGENCY_STATE_UNKNOWN"])
+Actual:   Tuple (Refused, ["NOT_IMPLEMENTED"])
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(String missing) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 173
+   at ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(String missing) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 174
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(missing: "orders-unknown") [169 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (Refused, ["FAULT_RECOVERY_VEHICLE_ORDERS_UNKNOWN"])
+Actual:   Tuple (Refused, ["NOT_IMPLEMENTED"])
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(String missing) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 173
+   at ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(String missing) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 174
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(missing: "latched") [140 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (Refused, ["FAULT_RECOVERY_EMERGENCY_LATCHED"])
+Actual:   Tuple (Refused, ["NOT_IMPLEMENTED"])
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(String missing) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 173
+   at ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(String missing) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 174
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(missing: "operator") [167 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (Refused, ["FAULT_RECOVERY_OPERATOR_UNIDENTIFIED"])
+Actual:   Tuple (Refused, ["NOT_IMPLEMENTED"])
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(String missing) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 173
+   at ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(String missing) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 174
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(missing: "unfinished") [172 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (Refused, ["FAULT_RECOVERY_VEHICLE_ORDER_NOT_FINISHED"])
+Actual:   Tuple (Refused, ["NOT_IMPLEMENTED"])
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(String missing) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 173
+   at ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(String missing) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 174
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(missing: "remedy") [173 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (Refused, ["FAULT_RECOVERY_REMEDY_NOT_CONFIRMED"])
+Actual:   Tuple (Refused, ["NOT_IMPLEMENTED"])
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(String missing) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 173
+   at ControlServer.Tests.VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn(String missing) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 174
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:17.66]     ControlServer.Tests.VehicleFaultRecoveryTests.AHeldOrderIsContinuedAndTheFaultClearedOnlyAfterward [FAIL]
+[xUnit.net 00:00:18.13]     ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWaitsForTheRuntimeRoundInProgress [FAIL]
+[xUnit.net 00:00:18.34]     ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultReleasesTheDemandAndTheVehicleTakesWorkAgain [FAIL]
+[xUnit.net 00:00:18.51]     ControlServer.Tests.VehicleFaultRecoveryTests.AnEmergencyStopStillOpenRefusesTheClearance [FAIL]
+[xUnit.net 00:00:18.71]     ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceCutShortLeavesNothingBehindAndCanBeMadeAgain [FAIL]
+[xUnit.net 00:00:18.92]     ControlServer.Tests.VehicleFaultRecoveryTests.TheSameClearanceTwiceDoesNothingTheSecondTime [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AHeldOrderIsContinuedAndTheFaultClearedOnlyAfterward [160 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (Resumed, 0)
+Actual:   Tuple (Refused, 1)
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.AHeldOrderIsContinuedAndTheFaultClearedOnlyAfterward() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 459
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AHeldOrderIsContinuedAndTheFaultClearedOnlyAfterward() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 465
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWaitsForTheRuntimeRoundInProgress [457 ms]
+  Error Message:
+   the clearance ran while the runtime round held the gate
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWaitsForTheRuntimeRoundInProgress() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 391
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWaitsForTheRuntimeRoundInProgress() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 395
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultReleasesTheDemandAndTheVehicleTakesWorkAgain [207 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (Cleared, "RELEASED_FOR_REDISPATCH")
+Actual:   Tuple (Refused, "NONE")
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultReleasesTheDemandAndTheVehicleTakesWorkAgain() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 61
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultReleasesTheDemandAndTheVehicleTakesWorkAgain() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 94
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AnEmergencyStopStillOpenRefusesTheClearance [172 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (Refused, ["FAULT_RECOVERY_EMERGENCY_STOP_OPEN"])
+Actual:   Tuple (Refused, ["NOT_IMPLEMENTED"])
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.AnEmergencyStopStillOpenRefusesTheClearance() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 275
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AnEmergencyStopStillOpenRefusesTheClearance() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 278
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceCutShortLeavesNothingBehindAndCanBeMadeAgain [191 ms]
+  Error Message:
+   Assert.Throws() Failure: No exception was thrown
+Expected: typeof(System.IO.IOException)
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceCutShortLeavesNothingBehindAndCanBeMadeAgain() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 361
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceCutShortLeavesNothingBehindAndCanBeMadeAgain() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 371
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.TheSameClearanceTwiceDoesNothingTheSecondTime [207 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Cleared
+Actual:   Refused
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.TheSameClearanceTwiceDoesNothingTheSecondTime() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 329
+   at ControlServer.Tests.VehicleFaultRecoveryTests.TheSameClearanceTwiceDoesNothingTheSecondTime() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 342
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:19.16]     ControlServer.Tests.VehicleFaultRecoveryTests.ARebuildIsJudgedButNotAvailableYet [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.ARebuildIsJudgedButNotAvailableYet [232 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: NotAvailable
+Actual:   Refused
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.ARebuildIsJudgedButNotAvailableYet() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 505
+   at ControlServer.Tests.VehicleFaultRecoveryTests.ARebuildIsJudgedButNotAvailableYet() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 515
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:21.76]     ControlServer.Tests.VehicleFaultRecoveryTests.ALoadedVehicleKeepsItsCargoBindingAndWaitsForAPerson [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.ALoadedVehicleKeepsItsCargoBindingAndWaitsForAPerson [2 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (Cleared, "HELD_FOR_PERSON")
+Actual:   Tuple (Refused, "NONE")
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.ALoadedVehicleKeepsItsCargoBindingAndWaitsForAPerson() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 301
+   at ControlServer.Tests.VehicleFaultRecoveryTests.ALoadedVehicleKeepsItsCargoBindingAndWaitsForAPerson() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 314
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:    30, Passed:     0, Skipped:     0, Total:    30, Duration: 17 s - ControlServer.Tests.dll (net8.0)

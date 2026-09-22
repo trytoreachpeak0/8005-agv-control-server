@@ -1,0 +1,119 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Release\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\src\ControlServer.Dashboard\bin\Release\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\src\ControlServer.Application\bin\Release\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Release\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Release\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.ProtocolFaultProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Release\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.FakeRiot -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Release\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Release\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FieldOps -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Release\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.Host -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\src\ControlServer.Host\bin\Release\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.SchemaConformance -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Release\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.Tests -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:11.68]     ControlServer.Tests.VehicleFaultRecoveryEndpointsTests.ARequestWithoutAVehicleOrAKnownActionIsIncomplete(agvId: "agv", action: "CONFIRM_REBUILD") [FAIL]
+[xUnit.net 00:00:11.80]     ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(orderState: 6, terminal: True, refusal: "FAULT_RECOVERY_CURRENT_ORDER_CANCELLED_IN_RIOT") [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryEndpointsTests.ARequestWithoutAVehicleOrAKnownActionIsIncomplete(agvId: "agv", action: "CONFIRM_REBUILD") [436 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 422
+Actual:   501
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryEndpointsTests.ARequestWithoutAVehicleOrAKnownActionIsIncomplete(String agvId, String action) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryEndpointsTests.cs:line 72
+   at ControlServer.Tests.VehicleFaultRecoveryEndpointsTests.ARequestWithoutAVehicleOrAKnownActionIsIncomplete(String agvId, String action) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryEndpointsTests.cs:line 73
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(orderState: 6, terminal: True, refusal: "FAULT_RECOVERY_CURRENT_ORDER_CANCELLED_IN_RIOT") [561 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Refused
+Actual:   Cleared
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(Int32 orderState, Boolean terminal, String refusal) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 213
+   at ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(Int32 orderState, Boolean terminal, String refusal) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 215
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:12.61]     ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(orderState: 2, terminal: True, refusal: "FAULT_RECOVERY_CURRENT_ORDER_CANCELLED_IN_RIOT") [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(orderState: 2, terminal: True, refusal: "FAULT_RECOVERY_CURRENT_ORDER_CANCELLED_IN_RIOT") [400 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Refused
+Actual:   Cleared
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(Int32 orderState, Boolean terminal, String refusal) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 213
+   at ControlServer.Tests.VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared(Int32 orderState, Boolean terminal, String refusal) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 215
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:22.10]     ControlServer.Tests.VehicleFaultRecoveryTests.NoRiotCallIsMadeWhileTheGateIsHeld(path: "clear-empty") [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.NoRiotCallIsMadeWhileTheGateIsHeld(path: "clear-empty") [329 ms]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+Collection: ["emergency read", "unfinished orders read", "order read"]
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.NoRiotCallIsMadeWhileTheGateIsHeld(String path) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 422
+   at ControlServer.Tests.VehicleFaultRecoveryTests.NoRiotCallIsMadeWhileTheGateIsHeld(String path) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 422
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:25.13]     ControlServer.Tests.VehicleFaultRecoveryTests.NoRiotCallIsMadeWhileTheGateIsHeld(path: "clear-loaded") [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.NoRiotCallIsMadeWhileTheGateIsHeld(path: "clear-loaded") [3 s]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+Collection: ["emergency read", "unfinished orders read", "order read"]
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.NoRiotCallIsMadeWhileTheGateIsHeld(String path) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 422
+   at ControlServer.Tests.VehicleFaultRecoveryTests.NoRiotCallIsMadeWhileTheGateIsHeld(String path) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 422
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:25.50]     ControlServer.Tests.VehicleFaultRecoveryTests.NoRiotCallIsMadeWhileTheGateIsHeld(path: "resume") [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.NoRiotCallIsMadeWhileTheGateIsHeld(path: "resume") [362 ms]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+Collection: ["emergency read", "unfinished orders read", "order read", "order read", "order command ContinueFromHeld", ···]
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.NoRiotCallIsMadeWhileTheGateIsHeld(String path) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 422
+   at ControlServer.Tests.VehicleFaultRecoveryTests.NoRiotCallIsMadeWhileTheGateIsHeld(String path) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 422
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:26.76]     ControlServer.Tests.VehicleFaultRecoveryTests.AnAlreadyClearedVehicleStillNeedsANamedConfirmedRequest(missing: "operator") [FAIL]
+[xUnit.net 00:00:27.03]     ControlServer.Tests.VehicleFaultRecoveryTests.AnAlreadyClearedVehicleStillNeedsANamedConfirmedRequest(missing: "remedy") [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AnAlreadyClearedVehicleStillNeedsANamedConfirmedRequest(missing: "operator") [265 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Refused
+Actual:   AlreadyCleared
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.AnAlreadyClearedVehicleStillNeedsANamedConfirmedRequest(String missing) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 366
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AnAlreadyClearedVehicleStillNeedsANamedConfirmedRequest(String missing) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 367
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AnAlreadyClearedVehicleStillNeedsANamedConfirmedRequest(missing: "remedy") [258 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Refused
+Actual:   AlreadyCleared
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.AnAlreadyClearedVehicleStillNeedsANamedConfirmedRequest(String missing) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 366
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AnAlreadyClearedVehicleStillNeedsANamedConfirmedRequest(String missing) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 367
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:28.18]     ControlServer.Tests.VehicleFaultRecoveryTests.AJourneyThatMovedOnBetweenTheReadAndTheGateIsNotDisposedOf [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AJourneyThatMovedOnBetweenTheReadAndTheGateIsNotDisposedOf [172 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Refused
+Actual:   Cleared
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.AJourneyThatMovedOnBetweenTheReadAndTheGateIsNotDisposedOf() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 449
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AJourneyThatMovedOnBetweenTheReadAndTheGateIsNotDisposedOf() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 452
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:31.33]     ControlServer.Tests.VehicleFaultRecoveryTests.TheSameResumeTwiceContinuesOnce [FAIL]
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.TheSameResumeTwiceContinuesOnce [250 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (AlreadyCleared, 0)
+Actual:   Tuple (Refused, 2)
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.TheSameResumeTwiceContinuesOnce() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 386
+   at ControlServer.Tests.VehicleFaultRecoveryTests.TheSameResumeTwiceContinuesOnce() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 387
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:    10, Passed:    41, Skipped:     0, Total:    51, Duration: 29 s - ControlServer.Tests.dll (net8.0)
