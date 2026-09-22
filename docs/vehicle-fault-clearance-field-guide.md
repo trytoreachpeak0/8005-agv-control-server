@@ -50,10 +50,17 @@
 | `FAULT_RECOVERY_VEHICLE_ORDER_NOT_FINISHED` | RIoT 里这台车还有没结束的订单（排队、执行、暂停或 HANG） | 不是服务端建的单，直接在 RIoT 里取消；是服务端建的，找值班工程师。**清除之后车会重新接单**，RIoT 上还有活单时清除，车可能被那张单开走 |
 | `FAULT_RECOVERY_VEHICLE_ORDERS_UNKNOWN` | 读不到这台车的订单 | 等 RIoT 恢复后再试；读不到不当成「没有订单」 |
 | `FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED` | 旅程等的那张单还没结束：还在跑、被 Hold（PAUSED）、HANG、状态 8，或者其实已经 SUCCESS（车到了） | PAUSED 的走下面的「续行」；HANG 在 RIoT 里 continue；SUCCESS 说明车到了，旅程会自己往下走 |
+| `FAULT_RECOVERY_CURRENT_ORDER_CANCELLED_IN_RIOT` | 旅程等的那张单是服务端自己的，被人在 RIoT 里取消或删除了 | 不走本入口：这种单不改派，由服务端按同车同需求重建（见下面「要分清两种取消」） |
 | `FAULT_RECOVERY_CURRENT_ORDER_UNKNOWN` | 读不到那张单，或 RIoT 说没有这张单 | 等 RIoT 恢复后再试 |
+| `FAULT_RECOVERY_STATE_CHANGED` | 服务端读 RIoT 的这几秒里，调度把这趟旅程往前推了（比如车刚好到站），读到的东西已经不作数 | 重发同一个请求 |
 | `FAULT_RECOVERY_RUNTIME_BUSY` | 服务端这一轮调度 30 秒内没结束 | 稍后再试 |
 
-「那张单已结束」只认 **FAILED、CANCELLED、DELETED** 三种。
+「那张单已结束」**只认 FAILED**。CANCELLED、DELETED 也是结束，但清除之后需求会被释放改派，而服务端自己的单被
+取消要的是重建、不是改派，所以单独拒绝。
+
+服务端**先读 RIoT、再进调度锁**：调度每一轮都要拿同一把锁，RIoT 慢的时候（车出故障时往往正是这样）如果在锁里读，
+一个清除请求就能把所有车的调度拖住。代价是读到的东西可能在进锁之前就过时了，所以进锁后会再对一遍服务端自己的
+记录，对不上就回 `FAULT_RECOVERY_STATE_CHANGED`，什么都不改。
 
 ## 清除之后
 
@@ -64,12 +71,14 @@
   下一轮调度就可能接到新单——包括刚被释放的那条需求。返回里 `disposition = RELEASED_FOR_REDISPATCH`。
 - **车上可能有货**（已经装货、正在装货，或者服务端说不清）：**货物绑定保留，需求不释放**，旅程转为阻断，
   码是 `VEHICLE_FAULT_CLEARED_CARGO_ON_BOARD`。这台车不接新单，等人处置。按 `REQ-0328`，已经取货的需求不能改派；
-  同一辆车为同一条需求重建订单继续走，是 #318 的事，**目前还没有**。返回里 `disposition = HELD_FOR_PERSON`。
+  让这辆车带着货继续走，服务端**目前没有入口**，找值班工程师。返回里 `disposition = HELD_FOR_PERSON`。
 
 故障清除后，这台车的急停自动解除条件里「原因已消除」这一条就满足了；但本入口要求急停已经解除才清除，所以
 正常情况下清除时车上已经没有锁。
 
 **同一个请求点两次**：第二次返回 200，`outcome = AlreadyCleared`，什么都不做——不会碰清除之后这台车刚接的新单。
+续行也一样，第二次不会再发一次 continue。但「已经清过」之前**仍然先核对工号和「原因已排除」**：没填的照样拒绝，
+不因为车已经清过就放过。
 
 ## 续行被 Hold 的原单
 
@@ -106,17 +115,13 @@ FAILED 是终态，那张单不会再变成 HANG（按 RIoT 状态模型推，�
 3. 车上没有未结束的订单之后，按急停说明人工解除急停（`REQ-0356`）。
 4. 回到本入口清除故障。
 
-**要分清两种取消。**服务端**自己的**在途单在 RIoT 里被取消，仍然算误操作：服务端挡住、报警（`ORDER_ENDED_WITHOUT_ARRIVAL`），
-人确认后同车同需求重建（#318），不改派。只有**外来**订单才直接取消。
+**要分清两种取消。**服务端**自己的**在途单在 RIoT 里被取消，仍然算误操作，不改派：#318 合入之后，服务端会自己按
+同一辆车、同一条需求重建订单，**不需要人确认**（2026-09-22 用户定，原话「直接自己恢复好了，不用人确定，因为一般没人盯着系统」）。
+#318 合入之前，服务端只挡住、报警（`ORDER_ENDED_WITHOUT_ARRIVAL`，#316），旅程停在原处等它。本入口不处理这种单
+（`FAULT_RECOVERY_CURRENT_ORDER_CANCELLED_IN_RIOT`）。只有**外来**订单才由现场直接取消。
 
 不要改数据库，不要在 RIoT 里手动解锁（会被当成意外恢复立即重触发）。急停不是服务端发的（`EMERGENCY_NOT_RAISED_BY_8005`），
 仍然转 RIoT 人员。把 HANG 纳入故障模型、给服务端加闩锁下的续行顺序，是 #319。
-
-## 确认重建（预留）
-
-`action = CONFIRM_REBUILD` 是给 #318 预留的位置：在途单被取消、或 FAILED 且车上有货时，经人确认后同一辆车、
-同一条需求重建订单。**今天还不能用**：入口照样核对工号、急停、车上订单、当前单已结束、故障已清除，把没满足的
-全部列出来，最后一条永远是 `FAULT_RECOVERY_REBUILD_NOT_AVAILABLE`，状态码 501，什么都不做。
 
 ## 入口
 
@@ -137,7 +142,7 @@ FAILED 是终态，那张单不会再变成 HANG（按 RIoT 状态模型推，�
 $body = @{
     agvId         = 'agv02'
     operatorId    = '工号'
-    action        = 'CLEAR_FAULT'      # 或 RESUME_HELD_ORDER、CONFIRM_REBUILD
+    action        = 'CLEAR_FAULT'      # 或 RESUME_HELD_ORDER
     faultRemedied = $true
     note          = '现场说明，可不填'
 } | ConvertTo-Json
@@ -152,13 +157,12 @@ Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:58007/api/safety/v1/vehicl
 | --- | --- |
 | 200 | 已清除（`Cleared`，看 `disposition`）、已续行（`Resumed`），或这台车的故障早已由人工清除（`AlreadyCleared`） |
 | 409 | 拒绝，响应里的 `reasons` 列出全部原因码 |
-| 501 | `CONFIRM_REBUILD` 还没有实现；`reasons` 照样列出没满足的判据 |
 | 401 / 404 / 422 / 503 | 凭据不对 / 不是本服务端管的车 / 缺 `agvId` 或 `action` 不认识 / 入口没配凭据或服务端这一轮太久没结束 |
 
 ## 目前还做不到的，先说清楚
 
 - **故障期间的需求不会自动改派**，要等人清除之后才释放（cs#215 的规则，故障监看解耦后放开，见 #317）。
-- **车上有货时清除之后只能人工处置**，同车重建见 #318。
+- **车上有货时清除之后只能人工处置**，服务端没有让它继续的入口。
 - **HANG 不是故障**（#316 的做法 H-a），不经过本入口；纳入故障模型见 #319。
 - **车载端会话未就绪时，旅程码会被写成 `ONBOARD_SESSION_NOT_READY`，盖掉 `VEHICLE_ORDER_FAILED`**，引擎那时也不推进
   故障监看（停车证明、`REQ-0248` 重触发都挂在旅程上）。这是按代码推出来的（会话闸门对 FAILED 单不保留原码），

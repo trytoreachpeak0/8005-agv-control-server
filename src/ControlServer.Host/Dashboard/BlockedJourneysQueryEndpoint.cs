@@ -74,12 +74,12 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
             // control-server#316：在途单在 RIoT 上停住，服务端不发任何命令，要人去 RIoT 或车前处理。
             [JourneyRuntimeEngine.OrderHangReason] =
                 "车正在执行的运单在 RIoT 上挂起（HANG）：服务端不暂停、不急停、不改派，这辆车也不接途中追加。请到现场确认原因，"
-                + "在 RIoT 里继续（continue，可以重复）；继续后旅程自动往下走。不要在 RIoT 里取消它：取消后服务端不改派，要确认后重建（入口随 #299/#318 提供）",
+                + "在 RIoT 里继续（continue，可以重复）；继续后旅程自动往下走。不要在 RIoT 里取消它：取消后服务端不改派，由服务端按同车同需求重建（随 #318 提供，目前还没有）",
             [JourneyRuntimeEngine.OrderStateUnrecognizedReason] =
                 "车正在执行的运单在 RIoT 上处于未识别的状态（SUSPENDED 8）：服务端按仍在执行处理，不做任何自动动作，请人工到 RIoT 核实",
             [JourneyRuntimeEngine.OrderEndedWithoutArrivalReason] =
-                "订单在 RIoT 中被取消或删除，服务端不改派；确认后重建（重建入口随 #299/#318 提供，目前还没有）。"
-                + "在那之前旅程停在原处、需求不动，这辆车不接新单和途中追加",
+                "订单在 RIoT 中被取消或删除，服务端不改派；由服务端按同车同需求自动重建，不需要人确认（随 #318 提供，目前还没有）。"
+                + "在那之前旅程停在原处、需求不动，这辆车不接新单和途中追加；故障清除入口也不接这种单",
             // control-server#299：故障的人工出口。在途单 FAILED 记下的故障只能由人确认后经 /api/safety/v1/vehicle-fault-recoveries
             // 清除（docs/vehicle-fault-clearance-field-guide.md）；清除时车上可能有货的，旅程转为下面那个码等人。
             [Runtime.Faults.VehicleFaultEvidence.OrderFailed] =
@@ -87,7 +87,7 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 + "请到现场排除原因；若急停已锁住，先按急停人工解除；然后由现场人员经故障清除入口确认（见现场说明），服务端核对后清除故障",
             [Runtime.Faults.VehicleFaultRecoveryService.CargoOnBoardReason] =
                 "车辆故障已由人工清除，但车上可能有货：货物绑定保留，需求不改派，旅程停在这里等人处置"
-                + "（同车重建入口随 #318 提供，目前还没有）。这辆车不接新单",
+                + "（服务端目前没有让它继续的入口，找值班工程师）。这辆车不接新单",
         };
 
     private readonly BlockedJourneyEscalationOptions _escalation;

@@ -16,7 +16,7 @@ PAUSED，FAILED 永远不是。车一直不接单、需求一直不改派，唯�
 5. 条件齐全：200，故障清除，操作员记进 ClearedReason；需求释放改派，旧旅程关闭。
 6. 车重新接单：同一条需求在新旅程上再派出去；之后几轮不再记新的故障。
 7. 同一请求再来一次：200 AlreadyCleared，不碰新旅程。
-8. 确认重建（#318 预留）：501，理由照列，最后一条是 FAULT_RECOVERY_REBUILD_NOT_AVAILABLE。
+8. 已经清过的车，再来一个没署名的请求：409，理由只有 FAULT_RECOVERY_OPERATOR_UNIDENTIFIED，不答「已经清过」。
 
 **假 RIoT 不替服务端锁、解急停**，命令只记录，后果由场景照真实 RIoT 的样子摆出来。
 #>
@@ -101,7 +101,7 @@ function Invoke-Recovery([hashtable]$overrides, [string]$label) {
 }
 
 function Get-Reasons([object]$response) {
-    # `reasons` sits on the 409 / 501 problem body and on the 200 body alike. `return , @(...)` so that one reason stays a
+    # `reasons` sits on the 409 problem body and on the 200 body alike. `return , @(...)` so that one reason stays a
     # one-element array: unwrapped to a string, `[-1]` below would read its last character.
     if ($null -eq $response.Body) { return , @() }
     return , @($response.Body.reasons | ForEach-Object { [string]$_ })
@@ -271,16 +271,16 @@ $assertions.Add(
     '200 / AlreadyCleared / 旅程不变',
     "$($again.Status) / $([string]$again.Body.outcome) / $(if ((Get-JourneysJson) -eq $journeysBeforeRepeat) { '旅程不变' } else { '旅程变了' })")
 
-# --- 8. 确认重建：预留给 #318 -----------------------------------------------------------------------------------
+# --- 8. 「已经清过」不是免检通道：没署名的请求照样按缺的那一项拒绝（独立审查 L3） ------------------------------
 
-$rebuild = Invoke-Recovery @{ action = 'CONFIRM_REBUILD' } 'rebuild'
-$rebuildReasons = Get-Reasons $rebuild
+$unsigned = Invoke-Recovery @{ operatorId = '' } 'unsigned'
+$unsignedReasons = Get-Reasons $unsigned
 $assertions.Add(
     'L2-VFC-08',
-    '确认重建（#318 预留）：入口回 501，理由照列、最后一条是 FAULT_RECOVERY_REBUILD_NOT_AVAILABLE，什么都不做',
-    ($rebuild.Status -eq 501 -and $rebuildReasons.Count -ge 1 -and $rebuildReasons[-1] -eq 'FAULT_RECOVERY_REBUILD_NOT_AVAILABLE' -and
+    '已经清过的车，再来一个没署名的请求：409，理由只有 FAULT_RECOVERY_OPERATOR_UNIDENTIFIED，不答「已经清过」，旅程表一行不变',
+    ($unsigned.Status -eq 409 -and $unsignedReasons.Count -eq 1 -and $unsignedReasons[0] -eq 'FAULT_RECOVERY_OPERATOR_UNIDENTIFIED' -and
         (Get-JourneysJson) -eq $journeysBeforeRepeat),
-    '501 / ...,FAULT_RECOVERY_REBUILD_NOT_AVAILABLE / 旅程不变',
-    "$($rebuild.Status) / $($rebuildReasons -join ',')")
+    '409 / FAULT_RECOVERY_OPERATOR_UNIDENTIFIED / 旅程不变',
+    "$($unsigned.Status) / $($unsignedReasons -join ',') / $(if ((Get-JourneysJson) -eq $journeysBeforeRepeat) { '旅程不变' } else { '旅程变了' })")
 
-$journal.Note('故障人工清除：锁着清不了；解除急停后条件不全就拒并全列理由；齐全则清除、释放改派、车重新接单、不再记故障；重复请求不做事；重建预留答 501。')
+$journal.Note('故障人工清除：锁着清不了；解除急停后条件不全就拒并全列理由；齐全则清除、释放改派、车重新接单、不再记故障；重复请求不做事；没署名的重复请求照样被拒。')

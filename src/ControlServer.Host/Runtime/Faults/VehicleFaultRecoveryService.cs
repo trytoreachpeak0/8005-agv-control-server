@@ -16,12 +16,6 @@ public enum VehicleFaultRecoveryAction
 
     /// <summary>The order was held (PAUSED 7); continue it on the same vehicle (REQ-0239, first half).</summary>
     ResumeHeldOrder,
-
-    /// <summary>
-    /// Rebuild the ended order for the same vehicle and the same demand (control-server#318). Reserved: the criteria are
-    /// judged and reported, and the answer is always that the rebuild is not available yet.
-    /// </summary>
-    ConfirmRebuild,
 }
 
 /// <summary>A person's request about one explicitly named vehicle.</summary>
@@ -44,14 +38,11 @@ public enum VehicleFaultRecoveryOutcome
     /// <summary>The held order was continued and the fault cleared.</summary>
     Resumed,
 
-    /// <summary>The same clearance had already been made; nothing was done again.</summary>
+    /// <summary>A person had already cleared or resumed this fault; nothing was done again.</summary>
     AlreadyCleared,
 
     /// <summary>Refused; the reasons name every criterion that is not met.</summary>
     Refused,
-
-    /// <summary>The action is reserved and not implemented yet; the reasons still name every criterion not met.</summary>
-    NotAvailable,
 }
 
 /// <summary>What was done with the vehicle's journey when its fault was cleared.</summary>
@@ -63,7 +54,7 @@ public static class VehicleFaultRecoveryDispositions
     /// <summary>Nothing was loaded: every demand still to load was released for redispatch and the journey closed.</summary>
     public const string Released = "RELEASED_FOR_REDISPATCH";
 
-    /// <summary>Cargo may be on board: its binding stays, and the journey waits for a person (or #318's rebuild).</summary>
+    /// <summary>Cargo may be on board: its binding stays, nothing is released, and the journey waits for a person.</summary>
     public const string HeldForPerson = "HELD_FOR_PERSON";
 }
 
@@ -87,11 +78,19 @@ public sealed record VehicleFaultRecoveryDecision(
 /// <para>
 /// <b>The server judges every criterion itself and believes nothing in the request</b> (the user's decision of
 /// 2026-09-22, option F-a). What the person supplies is who they are and that the cause has been removed on site;
-/// everything else is read here: the fault is in effect, the order that raised it has ended (FAILED, CANCELLED or
-/// DELETED -- read, and an order that cannot be read has not ended), RIoT holds no unfinished order for the vehicle,
-/// and no latch is engaged and no stop of this server's is still open. <b>Clearing never releases a latch</b>: a
-/// latched vehicle is released first, by a person, through REQ-0356's entry point. Every unmet criterion is named,
-/// never only the first, for the reason REQ-0356's refusal names them all.
+/// everything else is read here: the fault is in effect, the order that raised it has FAILED (read, and an order that
+/// cannot be read has not), RIoT holds no unfinished order for the vehicle, and no latch is engaged and no stop of this
+/// server's is still open. <b>Clearing never releases a latch</b>: a latched vehicle is released first, by a person,
+/// through REQ-0356's entry point. Every unmet criterion is named, never only the first, for the reason REQ-0356's
+/// refusal names them all.
+/// </para>
+/// <para>
+/// <b>Only FAILED, never CANCELLED or DELETED</b> (independent review M1). A clearance releases the demand for another
+/// vehicle, and an order of this server's that someone cancelled or deleted in RIoT is, by the user's decision of
+/// 2026-09-22, rebuilt on the same vehicle for the same demand -- blocked and alarmed by control-server#316, rebuilt
+/// automatically by control-server#318 -- never redispatched. No fault is recorded on such an order today, so the
+/// refusal (<c>FAULT_RECOVERY_CURRENT_ORDER_CANCELLED_IN_RIOT</c>) is not reachable in the product; it is pinned so that
+/// "a cancelled order is not redispatched" does not rest on that.
 /// </para>
 /// <para>
 /// <b>Clearing the fault is not enough on its own, for two reasons found reading the code, and both decide the shape
@@ -102,7 +101,7 @@ public sealed record VehicleFaultRecoveryDecision(
 /// to load is released for redispatch (control-server#215's rows, written the same way) and the journey closes, which
 /// frees the vehicle; with cargo possibly on board the cargo binding stays, nothing is released, and the journey goes to
 /// <see cref="JourneyRuntimeStage.Blocked"/> under <see cref="CargoOnBoardReason"/> for a person -- REQ-0328 releases
-/// only what has not been picked up, and rebuilding the order on the same vehicle is control-server#318.
+/// only what has not been picked up.
 /// </para>
 /// <para>
 /// <b>One transaction, so a crash leaves nothing half done.</b> The fault store saves as it goes; inside the
@@ -111,20 +110,32 @@ public sealed record VehicleFaultRecoveryDecision(
 /// </para>
 /// <para>
 /// <b>Serialised with the runtime loop</b> through <see cref="JourneyMutationGate"/>; see there for the interleaving that
-/// would otherwise record a fresh fault on a vehicle whose journey was just closed.
+/// would otherwise record a fresh fault on a vehicle whose journey was just closed. <b>No RIoT call is made while the gate
+/// is held</b> (independent review M2): the gate is the whole fleet's runtime round, and RIoT is slowest exactly when
+/// vehicles fault, so a call under it could hold every vehicle's round -- stop confirmation, REQ-0248's re-trigger,
+/// dispatch -- for as long as RIoT's timeout. So a request reads this server's tables and then RIoT without the gate,
+/// takes it, reads its own tables again, and refuses with <c>FAULT_RECOVERY_STATE_CHANGED</c> if the fault generation,
+/// the journey's stage or the order it waits on moved in between; only then does it judge and commit, from the database
+/// alone. The tables are read before RIoT so that a round landing between the two is always seen by the second read.
 /// </para>
 /// <para>
-/// <b>A second request for a clearance already made does nothing</b> and says so: the fault fact records the operator
-/// clearance in <c>ClearedReason</c>, and a vehicle whose fault was cleared that way is answered
+/// <b>A second request for a clearance already made does nothing</b> and says so: the fault fact records a person's
+/// clearance or resumption in <c>ClearedReason</c>, and a vehicle whose fault was ended that way is answered
 /// <see cref="VehicleFaultRecoveryOutcome.AlreadyCleared"/> without a read of RIoT or a write -- above all without
-/// touching the journey the vehicle may have taken since.
+/// touching the journey the vehicle may have taken since. <b>The request is still judged for who made it first</b>
+/// (independent review L3): an unnamed or unconfirmed request is refused for that even on a cleared vehicle, because
+/// "already cleared" is an answer to the same person repeating a request, not a way round the two things a person must
+/// supply. The same holds for a repeated resume, which is not continued a second time.
 /// </para>
 /// <para>
 /// <b>A held order is continued, not cleared</b>: <see cref="VehicleFaultRecoveryAction.ResumeHeldOrder"/> is REQ-0239's
 /// first half, and goes to <see cref="VehicleFaultCoordinator.ResumeAsync"/>, which clears the fault only on a confirmed
 /// continue. It is refused while a latch is engaged: under a latch RIoT refuses the continue (100021, Round27), and a
 /// continued order is exactly what REQ-0356's release and the automatic release both refuse to release under -- a loop
-/// with no way out on this server.
+/// with no way out on this server. It is judged under the gate like a clearance, and the continue itself -- a RIoT
+/// command -- is issued after the gate is released: the coordinator reads the fault and the order again right before
+/// it and refuses unless the order is still HELD and the fault still in effect, and the fault store clears only the
+/// generation it was given, so a round that moved on in between cannot have the wrong fault cleared.
 /// </para>
 /// <para>
 /// <b>The operator's identity</b> goes on the fault fact's <c>ClearedReason</c> (and, for a resume, on the continue's
@@ -182,18 +193,11 @@ public sealed class VehicleFaultRecoveryService(
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(request.Subject);
 
-        using IDisposable? round = await gate.TryEnterAsync(gateWait, cancellationToken).ConfigureAwait(false);
-        if (round is null)
-        {
-            return Record(request, Refused(["FAULT_RECOVERY_RUNTIME_BUSY"], null));
-        }
-
         dbContext.ChangeTracker.Clear();
         VehicleFaultRecoveryDecision decision = request.Action switch
         {
             VehicleFaultRecoveryAction.ClearFault => await ClearAsync(request, cancellationToken).ConfigureAwait(false),
             VehicleFaultRecoveryAction.ResumeHeldOrder => await ResumeAsync(request, cancellationToken).ConfigureAwait(false),
-            VehicleFaultRecoveryAction.ConfirmRebuild => await JudgeRebuildAsync(request, cancellationToken).ConfigureAwait(false),
             _ => Refused(["FAULT_RECOVERY_ACTION_UNKNOWN"], null),
         };
         return Record(request, decision);
@@ -204,37 +208,50 @@ public sealed class VehicleFaultRecoveryService(
         CancellationToken cancellationToken)
     {
         EmergencyStopSubject subject = request.Subject;
+        List<string> person = [.. PersonReasons(request)];
         VehicleFaultFact? fault = await faults.ReadAsync(subject.AgvId, cancellationToken).ConfigureAwait(false);
-        if (fault is { Level: VehicleFaultLevel.None } &&
-            fault.ClearedReason?.StartsWith(ClearedByOperatorReason + ":", StringComparison.Ordinal) == true)
+        if (EndedByAPerson(fault))
         {
-            return new VehicleFaultRecoveryDecision(
-                VehicleFaultRecoveryOutcome.AlreadyCleared, [], VehicleFaultRecoveryDispositions.None, fault.FaultGeneration);
+            return person.Count > 0 ? Refused(person, fault!.FaultGeneration) : AlreadyCleared(fault!);
         }
 
-        Situation situation = await ReadSituationAsync(subject, cancellationToken).ConfigureAwait(false);
-        List<string> reasons = [.. PersonReasons(request, askRemedy: true)];
-        if (!InEffect(fault))
+        Reading reading = await ReadAsync(subject, fault, cancellationToken).ConfigureAwait(false);
+
+        using IDisposable? round = await gate.TryEnterAsync(gateWait, cancellationToken).ConfigureAwait(false);
+        if (round is null)
+        {
+            return Refused(["FAULT_RECOVERY_RUNTIME_BUSY"], fault?.FaultGeneration);
+        }
+
+        // From here on: this server's tables only, no RIoT.
+        Standing standing = await ReadStandingAsync(subject, reading.Emergency, cancellationToken).ConfigureAwait(false);
+        if (!standing.Agrees(reading))
+        {
+            return Refused(["FAULT_RECOVERY_STATE_CHANGED"], standing.Fault?.FaultGeneration);
+        }
+
+        List<string> reasons = [.. person];
+        if (!InEffect(standing.Fault))
         {
             reasons.Add("FAULT_RECOVERY_FAULT_NOT_IN_EFFECT");
         }
 
-        reasons.AddRange(EmergencyReasons(situation));
-        reasons.AddRange(VehicleOrderReasons(situation));
-        reasons.AddRange(CurrentOrderReasons(situation));
+        reasons.AddRange(EmergencyReasons(reading.Emergency, standing.StopOpen));
+        reasons.AddRange(VehicleOrderReasons(reading.Orders));
+        reasons.AddRange(CurrentOrderReasons(reading));
         if (reasons.Count > 0)
         {
-            return Refused(reasons, fault?.FaultGeneration);
+            return Refused(reasons, standing.Fault?.FaultGeneration);
         }
 
         DateTimeOffset now = timeProvider.GetUtcNow();
         await using IDbContextTransaction transaction =
             await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        string disposition = await DisposeOfTheJourneyAsync(subject.AgvId, situation.Journey, now, cancellationToken)
+        string disposition = await DisposeOfTheJourneyAsync(subject.AgvId, standing.Journey, now, cancellationToken)
             .ConfigureAwait(false);
         await faults.ClearAsync(
             subject.AgvId,
-            fault!.FaultGeneration,
+            standing.Fault!.FaultGeneration,
             $"{ClearedByOperatorReason}:{request.OperatorId}",
             now,
             cancellationToken).ConfigureAwait(false);
@@ -242,7 +259,8 @@ public sealed class VehicleFaultRecoveryService(
 
         // A new episode starts from an empty window, as after a resumption.
         ledger.Forget(subject.DeviceKey);
-        return new VehicleFaultRecoveryDecision(VehicleFaultRecoveryOutcome.Cleared, [], disposition, fault.FaultGeneration);
+        return new VehicleFaultRecoveryDecision(
+            VehicleFaultRecoveryOutcome.Cleared, [], disposition, standing.Fault.FaultGeneration);
     }
 
     private async Task<VehicleFaultRecoveryDecision> ResumeAsync(
@@ -250,98 +268,85 @@ public sealed class VehicleFaultRecoveryService(
         CancellationToken cancellationToken)
     {
         EmergencyStopSubject subject = request.Subject;
+        List<string> person = [.. PersonReasons(request)];
         VehicleFaultFact? fault = await faults.ReadAsync(subject.AgvId, cancellationToken).ConfigureAwait(false);
-        FaultedCargoBinding? cargo = await faults.ReadLiveCargoAsync(subject.AgvId, cancellationToken).ConfigureAwait(false);
-        Situation situation = await ReadSituationAsync(subject, cancellationToken).ConfigureAwait(false);
-
-        List<string> reasons = [.. PersonReasons(request, askRemedy: true)];
-        reasons.AddRange(EmergencyReasons(situation));
-        VehicleFaultResumption? resumption = null;
-        if (situation.Journey is not JourneyRuntimeRow journey || situation.Intent is not { OrderId: string orderId } intent ||
-            situation.Order is not RiotOrderObservation order)
+        if (EndedByAPerson(fault))
         {
-            reasons.Add("FAULT_RECOVERY_CURRENT_ORDER_UNKNOWN");
+            return person.Count > 0 ? Refused(person, fault!.FaultGeneration) : AlreadyCleared(fault!);
         }
-        else
+
+        Reading reading = await ReadAsync(subject, fault, cancellationToken).ConfigureAwait(false);
+
+        List<string> reasons = [.. person];
+        VehicleFaultResumption? resumption = null;
+        long? generation;
+        using (IDisposable? round = await gate.TryEnterAsync(gateWait, cancellationToken).ConfigureAwait(false))
         {
-            string transportDemandKey = await dbContext.AcceptedDemands.AsNoTracking()
-                .Where(row => row.DemandId == journey.DemandId)
-                .Select(row => row.TransportDemandKey)
-                .SingleAsync(cancellationToken).ConfigureAwait(false);
-            resumption = new VehicleFaultResumption(
-                new RiotOrderCommandTarget(subject.AgvId, intent.UpperId, orderId),
-                journey.DemandId,
-                transportDemandKey,
-                $"{ResumedByOperatorReason}:{request.OperatorId}");
-            reasons.AddRange(VehicleFaultCoordinator.ResumeRefusals(subject, resumption, fault, cargo, order));
+            if (round is null)
+            {
+                return Refused(["FAULT_RECOVERY_RUNTIME_BUSY"], fault?.FaultGeneration);
+            }
+
+            Standing standing = await ReadStandingAsync(subject, reading.Emergency, cancellationToken).ConfigureAwait(false);
+            generation = standing.Fault?.FaultGeneration;
+            if (!standing.Agrees(reading))
+            {
+                return Refused(["FAULT_RECOVERY_STATE_CHANGED"], generation);
+            }
+
+            reasons.AddRange(EmergencyReasons(reading.Emergency, standing.StopOpen));
+            FaultedCargoBinding? cargo = await faults.ReadLiveCargoAsync(subject.AgvId, cancellationToken).ConfigureAwait(false);
+            if (standing.Journey is not JourneyRuntimeRow journey ||
+                standing.Intent is not { OrderId: string orderId } intent ||
+                reading.Order is not RiotOrderObservation order)
+            {
+                reasons.Add("FAULT_RECOVERY_CURRENT_ORDER_UNKNOWN");
+            }
+            else
+            {
+                string transportDemandKey = await dbContext.AcceptedDemands.AsNoTracking()
+                    .Where(row => row.DemandId == journey.DemandId)
+                    .Select(row => row.TransportDemandKey)
+                    .SingleAsync(cancellationToken).ConfigureAwait(false);
+                resumption = new VehicleFaultResumption(
+                    new RiotOrderCommandTarget(subject.AgvId, intent.UpperId, orderId),
+                    journey.DemandId,
+                    transportDemandKey,
+                    $"{ResumedByOperatorReason}:{request.OperatorId}");
+                reasons.AddRange(VehicleFaultCoordinator.ResumeRefusals(subject, resumption, standing.Fault, cargo, order));
+            }
         }
 
         if (reasons.Count > 0)
         {
-            return Refused(reasons, fault?.FaultGeneration);
+            return Refused(reasons, generation);
         }
 
+        // The continue is a RIoT command, so it goes out after the gate is released; see the class remarks for why that
+        // cannot clear the wrong fault.
         VehicleFaultResumeDecision resumed = await coordinator.ResumeAsync(subject, resumption!, cancellationToken)
             .ConfigureAwait(false);
         return resumed.Resumed
             ? new VehicleFaultRecoveryDecision(
-                VehicleFaultRecoveryOutcome.Resumed, [], VehicleFaultRecoveryDispositions.None, fault?.FaultGeneration)
-            : Refused(resumed.Refusals, fault?.FaultGeneration);
+                VehicleFaultRecoveryOutcome.Resumed, [], VehicleFaultRecoveryDispositions.None, generation)
+            : Refused(resumed.Refusals, generation);
     }
 
     /// <summary>
-    /// control-server#318's confirmation, reserved: judged against the same criteria and answered with every one unmet,
-    /// and never carried out -- the rebuild itself is that ticket's.
+    /// Everything a request needs from RIoT, read without the gate. This server's tables are read first: a runtime round
+    /// that lands after them, while RIoT is being read, is then always seen by <see cref="ReadStandingAsync"/>.
     /// </summary>
-    private async Task<VehicleFaultRecoveryDecision> JudgeRebuildAsync(
-        VehicleFaultRecoveryRequest request,
+    private async Task<Reading> ReadAsync(
+        EmergencyStopSubject subject,
+        VehicleFaultFact? fault,
         CancellationToken cancellationToken)
     {
-        EmergencyStopSubject subject = request.Subject;
-        VehicleFaultFact? fault = await faults.ReadAsync(subject.AgvId, cancellationToken).ConfigureAwait(false);
-        Situation situation = await ReadSituationAsync(subject, cancellationToken).ConfigureAwait(false);
-
-        List<string> reasons = [.. PersonReasons(request, askRemedy: false)];
-        if (InEffect(fault))
-        {
-            reasons.Add("FAULT_RECOVERY_FAULT_STILL_IN_EFFECT");
-        }
-
-        reasons.AddRange(EmergencyReasons(situation));
-        reasons.AddRange(VehicleOrderReasons(situation));
-        reasons.AddRange(CurrentOrderReasons(situation));
-        reasons.Add("FAULT_RECOVERY_REBUILD_NOT_AVAILABLE");
-        return new VehicleFaultRecoveryDecision(
-            VehicleFaultRecoveryOutcome.NotAvailable, reasons, VehicleFaultRecoveryDispositions.None, fault?.FaultGeneration);
-    }
-
-    /// <summary>What RIoT and this server's own tables say about the vehicle right now, read once per request.</summary>
-    private async Task<Situation> ReadSituationAsync(EmergencyStopSubject subject, CancellationToken cancellationToken)
-    {
+        (JourneyRuntimeRow? journey, OrderIntentRow? intent) = await ReadJourneyAsync(subject, cancellationToken)
+            .ConfigureAwait(false);
         RiotVehicleEmergencyObservation emergency = await emergencyFacts
             .ReadEmergencyStateAsync(subject.DeviceKey, cancellationToken).ConfigureAwait(false);
-        // A release REQ-0356 issued, whose read-back still saw the latch, has taken effect once the latch reads OK; left
-        // unsettled it would read as a stop still open, and the person who has just released the vehicle would be told
-        // to release it again.
-        await emergencyStop.SettleReleaseTakenEffectAsync(subject, emergency, cancellationToken).ConfigureAwait(false);
-        bool stopOpen = await emergencyStop.HasOpenEpisodeAsync(subject, cancellationToken).ConfigureAwait(false);
         RiotVehicleOrderObservation orders = await orderFacts
             .ReadUnfinishedOrdersAsync(subject.DeviceKey, cancellationToken).ConfigureAwait(false);
-
-        JourneyRuntimeRow? journey = await dbContext.JourneyRuntimes.AsNoTracking()
-            .SingleOrDefaultAsync(
-                row => row.AgvId == subject.AgvId && row.Stage != JourneyRuntimeStage.Completed,
-                cancellationToken).ConfigureAwait(false);
-        if (journey is null || !WaitsOnAnOrder(journey))
-        {
-            // No order of this server's is in flight on the vehicle: nothing to have ended, and nothing to dispose of.
-            return new Situation(emergency, stopOpen, orders, journey, Intent: null, Order: null, InFlight: false);
-        }
-
-        JourneyStopCursor stops = await JourneyStopCursor.LoadAsync(dbContext, journey, cancellationToken).ConfigureAwait(false);
-        OrderIntentRow? intent = await dbContext.OrderIntents.AsNoTracking()
-            .SingleOrDefaultAsync(row => row.MovementLegId == stops.Current.MovementLegId, cancellationToken)
-            .ConfigureAwait(false);
         RiotOrderObservation? order = null;
         if (intent is { Status: "CONFIRMED", OrderId: not null })
         {
@@ -356,7 +361,47 @@ public sealed class VehicleFaultRecoveryService(
             }
         }
 
-        return new Situation(emergency, stopOpen, orders, journey, intent, order, InFlight: true);
+        return new Reading(fault, journey, intent, emergency, orders, order);
+    }
+
+    /// <summary>This server's own tables, read again under the gate: the facts a decision is committed on.</summary>
+    private async Task<Standing> ReadStandingAsync(
+        EmergencyStopSubject subject,
+        RiotVehicleEmergencyObservation emergency,
+        CancellationToken cancellationToken)
+    {
+        dbContext.ChangeTracker.Clear();
+        VehicleFaultFact? fault = await faults.ReadAsync(subject.AgvId, cancellationToken).ConfigureAwait(false);
+        (JourneyRuntimeRow? journey, OrderIntentRow? intent) = await ReadJourneyAsync(subject, cancellationToken)
+            .ConfigureAwait(false);
+        // A release REQ-0356 issued, whose read-back still saw the latch, has taken effect once the latch reads OK; left
+        // unsettled it would read as a stop still open, and the person who has just released the vehicle would be told
+        // to release it again. Settling writes this server's own audit, which is why it happens here and not before.
+        await emergencyStop.SettleReleaseTakenEffectAsync(subject, emergency, cancellationToken).ConfigureAwait(false);
+        bool stopOpen = await emergencyStop.HasOpenEpisodeAsync(subject, cancellationToken).ConfigureAwait(false);
+        return new Standing(fault, journey, intent, stopOpen);
+    }
+
+    /// <summary>The vehicle's journey, and -- only while it waits on a move order -- the intent of that order.</summary>
+    private async Task<(JourneyRuntimeRow? Journey, OrderIntentRow? Intent)> ReadJourneyAsync(
+        EmergencyStopSubject subject,
+        CancellationToken cancellationToken)
+    {
+        JourneyRuntimeRow? journey = await dbContext.JourneyRuntimes.AsNoTracking()
+            .SingleOrDefaultAsync(
+                row => row.AgvId == subject.AgvId && row.Stage != JourneyRuntimeStage.Completed,
+                cancellationToken).ConfigureAwait(false);
+        if (journey is null || !WaitsOnAnOrder(journey))
+        {
+            // No order of this server's is in flight on the vehicle: nothing to have ended, and nothing to dispose of.
+            return (journey, null);
+        }
+
+        JourneyStopCursor stops = await JourneyStopCursor.LoadAsync(dbContext, journey, cancellationToken).ConfigureAwait(false);
+        OrderIntentRow? intent = await dbContext.OrderIntents.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.MovementLegId == stops.Current.MovementLegId, cancellationToken)
+            .ConfigureAwait(false);
+        return (journey, intent);
     }
 
     /// <summary>
@@ -415,64 +460,70 @@ public sealed class VehicleFaultRecoveryService(
     private static bool WaitsOnAnOrder(JourneyRuntimeRow journey) =>
         journey.Stage is JourneyRuntimeStage.AwaitingPickupArrival or JourneyRuntimeStage.AwaitingGateArrival;
 
-    private static IEnumerable<string> PersonReasons(VehicleFaultRecoveryRequest request, bool askRemedy)
+    /// <summary>What the person has to supply: who they are, and that the cause has been removed on site.</summary>
+    private static IEnumerable<string> PersonReasons(VehicleFaultRecoveryRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.OperatorId))
         {
             yield return "FAULT_RECOVERY_OPERATOR_UNIDENTIFIED";
         }
 
-        if (askRemedy && !request.FaultRemedied)
+        if (!request.FaultRemedied)
         {
             yield return "FAULT_RECOVERY_REMEDY_NOT_CONFIRMED";
         }
     }
 
     /// <summary>No latch, and no stop of this server's still open. Clearing never releases a latch (REQ-0356 does).</summary>
-    private static IEnumerable<string> EmergencyReasons(Situation situation)
+    private static IEnumerable<string> EmergencyReasons(RiotVehicleEmergencyObservation emergency, bool stopOpen)
     {
-        if (!situation.Emergency.IsKnown)
+        if (!emergency.IsKnown)
         {
             yield return "FAULT_RECOVERY_EMERGENCY_STATE_UNKNOWN";
         }
-        else if (situation.Emergency.IsLatched)
+        else if (emergency.IsLatched)
         {
             yield return "FAULT_RECOVERY_EMERGENCY_LATCHED";
         }
-        else if (situation.StopOpen)
+        else if (stopOpen)
         {
             yield return "FAULT_RECOVERY_EMERGENCY_STOP_OPEN";
         }
     }
 
     /// <summary>RIoT holds no unfinished order for the vehicle -- REQ-0356's reading of the same question.</summary>
-    private static IEnumerable<string> VehicleOrderReasons(Situation situation)
+    private static IEnumerable<string> VehicleOrderReasons(RiotVehicleOrderObservation orders)
     {
-        if (!situation.Orders.IsKnown)
+        if (!orders.IsKnown)
         {
             yield return "FAULT_RECOVERY_VEHICLE_ORDERS_UNKNOWN";
         }
-        else if (situation.Orders.HasUnfinishedOrder == true)
+        else if (orders.HasUnfinishedOrder == true)
         {
             yield return "FAULT_RECOVERY_VEHICLE_ORDER_NOT_FINISHED";
         }
     }
 
     /// <summary>
-    /// The order the journey waits on has ended without arriving: FAILED, CANCELLED or DELETED, read as terminal. SUCCESS
-    /// is an arrival, not an ending, and everything else -- running, held, hanging, SUSPENDED -- has not ended. An order
-    /// that could not be read, or that RIoT does not know, has not been shown to have ended either.
+    /// The order the journey waits on has FAILED, read as terminal. CANCELLED and DELETED have ended too, but an order of
+    /// this server's that was cancelled in RIoT is rebuilt for the same demand, not released (see the class remarks), so
+    /// they get a code of their own. SUCCESS is an arrival, not an ending, and everything else -- running, held, hanging,
+    /// SUSPENDED -- has not ended. An order that could not be read, or that RIoT does not know, has not been shown to have
+    /// ended either.
     /// </summary>
-    private static IEnumerable<string> CurrentOrderReasons(Situation situation)
+    private static IEnumerable<string> CurrentOrderReasons(Reading reading)
     {
-        if (!situation.InFlight)
+        if (reading.Journey is not { } journey || !WaitsOnAnOrder(journey))
         {
             yield break;
         }
 
-        switch (situation.Order)
+        switch (reading.Order)
         {
-            case { Kind: RiotOrderObservationKind.Terminal, OrderState: RiotOrderState.Failed or RiotOrderState.Cancelled or RiotOrderState.Deleted }:
+            case { Kind: RiotOrderObservationKind.Terminal, OrderState: RiotOrderState.Failed }:
+                yield break;
+            case { Kind: RiotOrderObservationKind.Terminal, OrderState: RiotOrderState.Cancelled or RiotOrderState.Deleted }:
+                yield return "FAULT_RECOVERY_CURRENT_ORDER_CANCELLED_IN_RIOT";
                 yield break;
             case { Kind: RiotOrderObservationKind.Active or RiotOrderObservationKind.Terminal }:
                 yield return "FAULT_RECOVERY_CURRENT_ORDER_NOT_ENDED";
@@ -484,6 +535,15 @@ public sealed class VehicleFaultRecoveryService(
     }
 
     private static bool InEffect(VehicleFaultFact? fault) => fault is not null && fault.Level != VehicleFaultLevel.None;
+
+    /// <summary>The fault was ended here, by a person: cleared, or resumed on a confirmed continue.</summary>
+    private static bool EndedByAPerson(VehicleFaultFact? fault) =>
+        fault is { Level: VehicleFaultLevel.None, ClearedReason: string reason } &&
+        (reason.StartsWith(ClearedByOperatorReason + ":", StringComparison.Ordinal) ||
+         reason.StartsWith(ResumedByOperatorReason + ":", StringComparison.Ordinal));
+
+    private static VehicleFaultRecoveryDecision AlreadyCleared(VehicleFaultFact fault) =>
+        new(VehicleFaultRecoveryOutcome.AlreadyCleared, [], VehicleFaultRecoveryDispositions.None, fault.FaultGeneration);
 
     private static VehicleFaultRecoveryDecision Refused(IReadOnlyList<string> reasons, long? generation) =>
         new(VehicleFaultRecoveryOutcome.Refused, reasons, VehicleFaultRecoveryDispositions.None, generation);
@@ -503,12 +563,34 @@ public sealed class VehicleFaultRecoveryService(
         return decision;
     }
 
-    private sealed record Situation(
-        RiotVehicleEmergencyObservation Emergency,
-        bool StopOpen,
-        RiotVehicleOrderObservation Orders,
+    /// <summary>What was read before the gate: this server's tables, then RIoT.</summary>
+    private sealed record Reading(
+        VehicleFaultFact? Fault,
         JourneyRuntimeRow? Journey,
         OrderIntentRow? Intent,
-        RiotOrderObservation? Order,
-        bool InFlight);
+        RiotVehicleEmergencyObservation Emergency,
+        RiotVehicleOrderObservation Orders,
+        RiotOrderObservation? Order);
+
+    /// <summary>This server's tables as read again under the gate.</summary>
+    private sealed record Standing(
+        VehicleFaultFact? Fault,
+        JourneyRuntimeRow? Journey,
+        OrderIntentRow? Intent,
+        bool StopOpen)
+    {
+        /// <summary>
+        /// Nothing the RIoT readings were taken against has moved: the same fault generation, still in effect or not, the
+        /// same journey in the same stage, waiting on the same order in the same state. Anything else means a runtime
+        /// round landed between the two reads, and the readings may describe an order the journey no longer waits on.
+        /// </summary>
+        public bool Agrees(Reading reading) =>
+            Fault?.FaultGeneration == reading.Fault?.FaultGeneration &&
+            InEffect(Fault) == InEffect(reading.Fault) &&
+            Journey?.JourneyId == reading.Journey?.JourneyId &&
+            Journey?.Stage == reading.Journey?.Stage &&
+            Intent?.UpperId == reading.Intent?.UpperId &&
+            Intent?.OrderId == reading.Intent?.OrderId &&
+            Intent?.Status == reading.Intent?.Status;
+    }
 }

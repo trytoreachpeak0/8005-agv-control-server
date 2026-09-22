@@ -10,8 +10,7 @@ using Microsoft.Extensions.Options;
 namespace ControlServer.Host.Runtime;
 
 /// <summary>
-/// The person's entry point out of a vehicle fault (control-server#299): clear it, continue a held order, and -- reserved
-/// for control-server#318 -- confirm a rebuild.
+/// The person's entry point out of a vehicle fault (control-server#299): clear it, or continue a held order.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -21,9 +20,13 @@ namespace ControlServer.Host.Runtime;
 /// </para>
 /// <para>
 /// 200 when the fault was cleared or the order continued, and when the same clearance had already been made (the body
-/// says which). A refusal is 409 with every reason. The rebuild is 501 with every reason the criteria found, so the
-/// person sees what #318 will check before it exists. 503 when the entry point is not configured, or when the runtime
+/// says which). A refusal is 409 with every reason. 503 when the entry point is not configured, or when the runtime
 /// round in progress did not end in time.
+/// </para>
+/// <para>
+/// There is no action for rebuilding an order of this server's that was cancelled in RIoT: by the user's decision of
+/// 2026-09-22 control-server#318 rebuilds it on its own, without a person's confirmation, because usually nobody is
+/// watching the system. An unknown action is a 422.
 /// </para>
 /// </remarks>
 public static class VehicleFaultRecoveryEndpoints
@@ -36,7 +39,6 @@ public static class VehicleFaultRecoveryEndpoints
         {
             ["CLEAR_FAULT"] = VehicleFaultRecoveryAction.ClearFault,
             ["RESUME_HELD_ORDER"] = VehicleFaultRecoveryAction.ResumeHeldOrder,
-            ["CONFIRM_REBUILD"] = VehicleFaultRecoveryAction.ConfirmRebuild,
         };
 
     public static void MapVehicleFaultRecovery(this WebApplication app)
@@ -46,15 +48,14 @@ public static class VehicleFaultRecoveryEndpoints
             .WithSummary("Clear a vehicle fault, or continue its held order, on a person's confirmation (control-server#299)")
             .WithDescription(
                 "Checks the operator identity and the confirmation that the fault was removed, then reads for itself that the "
-                + "fault is in effect, the order it stopped on has ended (FAILED, CANCELLED or DELETED), RIoT holds no unfinished "
-                + "order for the vehicle and no emergency stop is latched or open. Clearing never releases a latch. "
-                + "CONFIRM_REBUILD is reserved for control-server#318 and answers 501 with the same criteria.")
+                + "fault is in effect, the order it stopped on has FAILED (an order cancelled or deleted in RIoT is refused: it "
+                + "is rebuilt, not redispatched), RIoT holds no unfinished order for the vehicle and no emergency stop is latched "
+                + "or open. Clearing never releases a latch.")
             .Produces<VehicleFaultRecoveryResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
-            .ProducesProblem(StatusCodes.Status501NotImplemented)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
     }
 
@@ -133,7 +134,6 @@ public static class VehicleFaultRecoveryEndpoints
         {
             VehicleFaultRecoveryOutcome.Cleared or VehicleFaultRecoveryOutcome.Resumed or VehicleFaultRecoveryOutcome.AlreadyCleared =>
                 TypedResults.Ok(body),
-            VehicleFaultRecoveryOutcome.NotAvailable => Problem(StatusCodes.Status501NotImplemented, "Not available yet", body),
             _ when decision.Reasons.Contains("FAULT_RECOVERY_RUNTIME_BUSY") =>
                 Problem(StatusCodes.Status503ServiceUnavailable, "Runtime busy, try again", body),
             _ => Problem(StatusCodes.Status409Conflict, "Vehicle fault recovery refused", body),
@@ -164,7 +164,7 @@ public static class VehicleFaultRecoveryEndpoints
 /// What a person submits. <c>faultRemedied</c> defaults to false, so a request that leaves it out is refused for it rather
 /// than read as confirming it.
 /// </summary>
-/// <param name="Action"><c>CLEAR_FAULT</c>, <c>RESUME_HELD_ORDER</c> or <c>CONFIRM_REBUILD</c>.</param>
+/// <param name="Action"><c>CLEAR_FAULT</c> or <c>RESUME_HELD_ORDER</c>.</param>
 public sealed record VehicleFaultRecoveryHttpRequest(
     string AgvId,
     string? OperatorId,
