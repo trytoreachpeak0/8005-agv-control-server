@@ -183,6 +183,12 @@ $emergencyStopRelease = ($setup.ContainsKey('EmergencyStopRelease') -and $setup.
 $emergencyReleaseCredentialVariable = 'CONTROL_SERVER_EMERGENCY_RELEASE_CREDENTIAL'
 # Not a secret either.
 $emergencyReleaseCredential = 'l2-emergency-release-credential-not-a-production-secret'
+# control-server#299's fault recovery entry point. Off in the product for the same reason: it clears a vehicle's fault
+# and hands its demands back for redispatch. Its own credential, as in the product.
+$vehicleFaultRecovery = ($setup.ContainsKey('VehicleFaultRecovery') -and $setup.VehicleFaultRecovery)
+$faultRecoveryCredentialVariable = 'CONTROL_SERVER_FAULT_RECOVERY_CREDENTIAL'
+# Not a secret either.
+$faultRecoveryCredential = 'l2-fault-recovery-credential-not-a-production-secret'
 # The onboard's protocol connection through tools/ControlServer.ProtocolFaultProxy (control-server#88), which
 # can lose a DurableAck, lose one answer, or drop the link on request. Real onboard only: what those faults
 # exercise is the onboard's journal replay and request retry, and the synthetic peer keeps neither.
@@ -697,6 +703,11 @@ try {
         $serverEnvironment['EmergencyStopRelease__credentialEnvironmentVariable'] = $emergencyReleaseCredentialVariable
         $serverEnvironment[$emergencyReleaseCredentialVariable] = $emergencyReleaseCredential
     }
+    if ($vehicleFaultRecovery) {
+        $serverEnvironment['VehicleFaultRecovery__enabled'] = 'true'
+        $serverEnvironment['VehicleFaultRecovery__credentialEnvironmentVariable'] = $faultRecoveryCredentialVariable
+        $serverEnvironment[$faultRecoveryCredentialVariable] = $faultRecoveryCredential
+    }
     Set-L2ExpectedActionOverdueServerSetting -Environment $serverEnvironment -Threshold $expectedActionOverdueThreshold
     if ($realOnboard) {
         # Only the real onboard polls this projection; the synthetic peer decides for itself what
@@ -1205,6 +1216,7 @@ try {
         GovernanceCredential = if ($slotConfigurationActivation) { $governanceCredential } else { $null }
         # Null unless the setup file turned the release-on-confirmation entry point on.
         EmergencyReleaseCredential = if ($emergencyStopRelease) { $emergencyReleaseCredential } else { $null }
+        FaultRecoveryCredential = if ($vehicleFaultRecovery) { $faultRecoveryCredential } else { $null }
         # Null unless the setup file asked for the dashboard.
         DashboardUrl        = $dashboardUrl
         # Null unless the setup file declared ExpectServerStartupRefusal: the refusing server's exit code, whether

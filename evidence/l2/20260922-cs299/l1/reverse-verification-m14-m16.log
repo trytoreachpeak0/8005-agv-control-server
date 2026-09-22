@@ -1,0 +1,26 @@
+== M14 a request that timed out on the gate goes ahead anyway
+   diff: 17	5	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+24	2	tests/ControlServer.Tests/VehicleFaultRecoveryEndpointsTests.cs
+72	2	tests/ControlServer.Tests/VehicleFaultRecoveryTests.cs
+   summary: [('Failed!', '2', '151')]
+   red (2):
+     VehicleFaultRecoveryEndpointsTests.ARuntimeRoundThatDoesNotEndInTimeIsServiceUnavailable
+     VehicleFaultRecoveryTests.ARequestThatCannotGetTheGateInTimeGivesUpAndChangesNothing
+== M15 a third type takes the gate
+   diff: 21	4	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+24	2	tests/ControlServer.Tests/VehicleFaultRecoveryEndpointsTests.cs
+72	2	tests/ControlServer.Tests/VehicleFaultRecoveryTests.cs
+   summary: [('Failed!', '1', '152')]
+   red (1):
+     VehicleFaultRecoveryTests.OnlyTheRuntimeRoundAndTheRecoveryTakeTheGate
+== M16 cargo on board keeps its arrival stage and only changes the code
+   diff: 16	5	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+24	2	tests/ControlServer.Tests/VehicleFaultRecoveryEndpointsTests.cs
+72	2	tests/ControlServer.Tests/VehicleFaultRecoveryTests.cs
+   summary: [('Failed!', '2', '151')]
+   red (2):
+     VehicleFaultRecoveryTests.ALoadedClearanceWhileTheSessionIsNotReadyKeepsItsReason
+     VehicleFaultRecoveryTests.ALoadedVehicleKeepsItsCargoBindingAndWaitsForAPerson
+restored clean: M src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+ M tests/ControlServer.Tests/VehicleFaultRecoveryEndpointsTests.cs
+ M tests/ControlServer.Tests/VehicleFaultRecoveryTests.cs

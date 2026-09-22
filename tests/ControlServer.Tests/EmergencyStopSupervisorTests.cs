@@ -588,6 +588,44 @@ public sealed class EmergencyStopSupervisorTests
     }
 
     /// <summary>
+    /// The automatic release asks RIoT the same question REQ-0356's release does: is anything left on this vehicle
+    /// for RIoT to drive it with (control-server#299)? Until then only the release on a person's confirmation asked,
+    /// so a fault cleared while an order was still live on the vehicle had the latch taken off on the next evaluation
+    /// and RIoT drove on.
+    /// </summary>
+    /// <remarks>
+    /// Everything else in <see cref="RecoveryReleasesTheLatchWhenEveryFactHolds"/> holds here -- the cause cleared on
+    /// this generation, the stop proven, a <c>CAN_RECOVER</c> latch -- so the reason list has exactly the one entry:
+    /// with any other obstacle present the refusal would not show that the order question is what refused it.
+    /// </remarks>
+    [Theory]
+    [InlineData(true, "EMERGENCY_VEHICLE_ORDER_NOT_FINISHED")]
+    [InlineData(null, "EMERGENCY_VEHICLE_ORDERS_UNKNOWN")]
+    public async Task AnAutomaticReleaseIsRefusedWhileTheVehicleMayStillHaveAnOrder(
+        bool? hasUnfinishedOrder,
+        string expectedReason)
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        fixture.Gateway.LatchAfterRelease = RiotVehicleEmergencyObservation.Ok;
+        long generation = await fixture.EnterFaultAsync();
+        await fixture.Supervisor.RequestStopAsync(
+            Request(EmergencyStopRequestSource.Automatic, null, generation),
+            TestContext.Current.CancellationToken);
+        await fixture.ProveStopAsync(generation);
+        await fixture.ClearFaultAsync(generation);
+        fixture.Riot.HasUnfinishedOrder = hasUnfinishedOrder;
+
+        EmergencyStopDecision decision = await fixture.Supervisor.EvaluateAsync(
+            Subject, TestContext.Current.CancellationToken);
+
+        Assert.Equal(EmergencyStopAction.RecoveryRefused, decision.Action);
+        Assert.Equal([expectedReason], decision.Reasons);
+        Assert.DoesNotContain(
+            fixture.Gateway.EmergencyCalls,
+            call => call.CommandType == RiotCommandTypeNames.CancelEmergency);
+    }
+
+    /// <summary>
     /// REQ-0167 requires the release to be checked back against <c>emergencyState=OK</c>. An
     /// accepted call that did not clear the latch has recovered nothing.
     /// </summary>
@@ -943,13 +981,15 @@ public sealed class EmergencyStopSupervisorTests
         IReadOnlyList<string> obstacles = EmergencyStopSupervisor.ReleaseObstacles(
             latchedButUnrecoverable,
             triggerFaultGeneration: 4,
-            fault: Fault(VehicleFaultLevel.SuspectedBlocked, generation: 5, stopProven: false, cleared: false));
+            fault: Fault(VehicleFaultLevel.SuspectedBlocked, generation: 5, stopProven: false, cleared: false),
+            orders: Orders(hasUnfinishedOrder: null));
 
         // No EMERGENCY_STOP_NOT_PROVEN: CAN_NOT_RECOVER is a latch, and a latch is the stop proof
         // (REQ-0247 as revised by CP-0003). It still refuses, on the latch itself.
         Assert.Equal(
             [
                 "EMERGENCY_NOT_CAN_RECOVER",
+                "EMERGENCY_VEHICLE_ORDERS_UNKNOWN",
                 "EMERGENCY_FAULT_GENERATION_MOVED",
                 "EMERGENCY_CAUSE_NOT_CLEARED",
             ],
@@ -969,7 +1009,8 @@ public sealed class EmergencyStopSupervisorTests
         IReadOnlyList<string> obstacles = EmergencyStopSupervisor.ReleaseObstacles(
             unlatched,
             triggerFaultGeneration: 5,
-            fault: Fault(VehicleFaultLevel.None, generation: 5, stopProven: false, cleared: true));
+            fault: Fault(VehicleFaultLevel.None, generation: 5, stopProven: false, cleared: true),
+            orders: Orders(hasUnfinishedOrder: false));
 
         Assert.Equal(["EMERGENCY_NOT_CAN_RECOVER", "EMERGENCY_STOP_NOT_PROVEN"], obstacles);
     }
@@ -983,8 +1024,12 @@ public sealed class EmergencyStopSupervisorTests
         Assert.Empty(EmergencyStopSupervisor.ReleaseObstacles(
             recoverable,
             triggerFaultGeneration: 5,
-            fault: Fault(VehicleFaultLevel.None, generation: 5, stopProven: true, cleared: true)));
+            fault: Fault(VehicleFaultLevel.None, generation: 5, stopProven: true, cleared: true),
+            orders: Orders(hasUnfinishedOrder: false)));
     }
+
+    private static RiotVehicleOrderObservation Orders(bool? hasUnfinishedOrder) =>
+        new(Subject.DeviceKey, hasUnfinishedOrder, hasUnfinishedOrder == true ? ["ORDER-UNFINISHED-1"] : [], Now);
 
     /// <summary>
     /// The audit target for a vehicle command says what it is, because the column it goes into is
