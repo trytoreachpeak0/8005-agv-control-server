@@ -2,6 +2,7 @@ using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime.Commands;
 using ControlServer.Host.Runtime.Fleet;
+using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -48,9 +49,13 @@ public sealed class DemandReleaseService(
     PlanRevisionRoutingSource routingSource,
     IOptions<JourneyRuntimeOptions> options,
     TimeProvider timeProvider,
-    ILogger<DemandReleaseService> logger)
+    ILogger<DemandReleaseService> logger,
+    OnboardJourneyPublisher publisher)
 {
     public const string CancelCommandType = "CANCEL";
+
+    // 收尾快照在释放落库之后由它发出（control-server#323）。
+    private readonly OnboardJourneyPublisher _publisher = publisher;
 
     private static readonly Action<ILogger, string, string, string, Exception?> LogReleased =
         LoggerMessage.Define<string, string, string>(

@@ -6,6 +6,7 @@ using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Host.Runtime.Fleet;
 using ControlServer.Host.Runtime.Release;
 using ControlServer.Host.Runtime.RouteGraph;
+using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -1100,7 +1101,8 @@ public sealed class Batch7DemandReleaseServiceTests
                 new NoZoneParameters()),
             options,
             fixture.Clock,
-            NullLogger<DemandReleaseService>.Instance);
+            NullLogger<DemandReleaseService>.Instance,
+            new OnboardJourneyPublisher(new WireToGateStore(context), fixture.Peer, fixture.Clock));
     }
 
     /// <summary>RIoT 的订单命令面替身：数取消次数，收到取消时做用例交代的事（把订单置成 CANCELLED，或者什么都不做）。</summary>
