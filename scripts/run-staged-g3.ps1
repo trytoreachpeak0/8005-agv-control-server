@@ -89,8 +89,13 @@ param(
     #   $OnboardCommit -> ecdb3a0b, the w2g/fp-v2-impl tip: hmi#134, #135, #136 and the recovery chain through
     #     hmi#132 (PR #193, tests/ and evidence/ only on top of deeba94c).
     #   $SimulatorCommit and $ProtocolCommit unchanged: batch 7 changes no protocol.
-    [string]$ControlServerCommit = '517e1c7a792936dd35037f1a1620de9f89411f20',
-    [string]$OnboardCommit = 'ecdb3a0be1d95ef51e7d40493808ba4659274f41',
+    #   Same day, second round after the first round's journey red (docs/defects/20260922-first-plan-lost-when-onboard-sees-own-order.md):
+    #   $ControlServerCommit -> 82bfa415, the fp/v2-impl tip with cs#314 (PR #315: the pickup dispatch plan reaches the onboard
+    #     although the session is not ready only because of this server's own order in flight).
+    #   $OnboardCommit -> 86d42ce5, the w2g/fp-v2-impl tip after onboard-hmi#194 merged the batch-7 G2 evidence;
+    #     ecdb3a0b..86d42ce5 is evidence/ only.
+    [string]$ControlServerCommit = '82bfa41511e515aa1063a9acfd900bd7b443d933',
+    [string]$OnboardCommit = '86d42ce5362a8273525b8ba1acb387e4331bcfed',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
     [string]$ProtocolCommit = '86575456c847041515b7b75e8851a00e0d939804',
     # The ref whose tip -OnboardCommit must equal. It is a parameter rather than a literal because the
