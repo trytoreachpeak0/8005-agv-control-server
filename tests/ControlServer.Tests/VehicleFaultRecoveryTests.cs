@@ -525,7 +525,7 @@ public sealed class VehicleFaultRecoveryTests
         Clear(fixture) with { Action = VehicleFaultRecoveryAction.ResumeHeldOrder };
 
     /// <summary>派往取货站；车停在已知站点、运动读数为停止，所以故障协调器不升级急停。然后在途单 FAILED，引擎记下故障。</summary>
-    private static async Task<RuntimeFixture> FaultedOnTheWayToPickupAsync(string? movementState = "MT_FINISHED")
+    internal static async Task<RuntimeFixture> FaultedOnTheWayToPickupAsync(string? movementState = "MT_FINISHED")
     {
         RuntimeFixture fixture = await DispatchedToPickupAsync();
         fixture.Riot.MovementState = movementState;
@@ -594,7 +594,7 @@ public sealed class VehicleFaultRecoveryTests
             backlog => Assert.NotNull(backlog.AcceptedAt));
     }
 
-    private static async Task<VehicleFaultStateRow> FaultAsync(RuntimeFixture fixture)
+    internal static async Task<VehicleFaultStateRow> FaultAsync(RuntimeFixture fixture)
     {
         await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
         return await reading.VehicleFaultStates.AsNoTracking().SingleAsync(Token);
@@ -608,7 +608,7 @@ public sealed class VehicleFaultRecoveryTests
 
     private static async Task<int> JourneyCountAsync(RuntimeFixture fixture) => (await JourneysAsync(fixture)).Length;
 
-    private static VehicleFaultRecoveryService Service(
+    internal static VehicleFaultRecoveryService Service(
         RuntimeFixture fixture,
         SiteRiot site,
         ControlServerDbContext? context = null,
@@ -635,7 +635,7 @@ public sealed class VehicleFaultRecoveryTests
     /// RIoT 的现场一侧：急停状态跟着夹具的 <see cref="RuntimeFixture.EmergencyLatched"/>（引擎里的故障协调器读的也是它），
     /// 车上有没有未完成订单由用例定，订单读法转给夹具的 RIoT 替身（可被用例覆盖成 NotFound），订单与急停命令只记录。
     /// </summary>
-    private sealed class SiteRiot(RuntimeFixture fixture)
+    internal sealed class SiteRiot(RuntimeFixture fixture)
         : IRiotOrderCommandGateway, IRiotVehicleEmergencyFacts, IRiotVehicleOrderFacts, IRiotMovementGateway, IVehicleMotionFacts
     {
         public bool? HasUnfinishedOrder { get; set; } = false;

@@ -169,6 +169,8 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["Batch7PlanRevisionTests"] = "batch 7-10 REQ-0197 plan revision (control-server#215): a pure stop removal and reorder calculation, no database and no wire message, plus one projection check that a removed stop yields no plan leg",
             ["Batch7RedispatchIdentityTests"] = "batch 7-10 REQ-0328 redispatch identity (control-server#215): id derivation and the acceptance store rows of a demand accepted a second time; no wire message is sent by either",
             ["VehicleFaultIsolationTests"] = "7.5 #8, FP-C11 fault isolation; single-ended server-to-RIoT",
+            ["VehicleFaultRecoveryEndpointsTests"] = "control-server#299 the vehicle fault recovery HTTP entry point (REQ-0356's shape: off by default, shared bearer credential, named vehicle, every reason listed); single-ended server-to-RIoT, no wire message",
+            ["VehicleFaultRecoveryTests"] = "control-server#299 a person clears a vehicle fault, continues a held order, or (reserved for #318) confirms a rebuild, with the journey disposed of in the same transaction; 7.5 #8, FP-C11 fault isolation, single-ended server-to-RIoT, no wire message",
             ["VehicleSlotLedgerTests"] = "batch 7-04 slot ledger port (control-server#209): an idle vehicle's free slots per side equal the session baseline; server-internal, no wire message",
             ["VehicleSlotPositionReaderTests"] = "batch 4 FP-C15 server-authoritative SlotPosition per vehicle, never the onboard's report (program#70 decision 4); no wire message"
         };

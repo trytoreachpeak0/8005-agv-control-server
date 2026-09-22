@@ -83,6 +83,10 @@ builder.Services.AddOptions<VehicleFaultOptions>()
 builder.Services.AddSingleton<IValidateOptions<VehicleFaultOptions>, VehicleFaultOptionsValidator>();
 builder.Services.AddSingleton<VehicleMotionLedger>();
 builder.Services.AddScoped<VehicleFaultCoordinator>();
+// control-server#299: a person's way out of a vehicle fault. The gate is a singleton because it is the one lock the
+// runtime loop and the HTTP request share; see JourneyMutationGate.
+builder.Services.AddSingleton<JourneyMutationGate>();
+builder.Services.AddScoped<VehicleFaultRecoveryService>();
 // B2 multi-vehicle: the roster is the identity register and is fixed for the life of the process;
 // the policy access keeps the three configured tables equal to the roster. The checkpoint ledger is
 // a singleton for the reason the motion ledger is -- how long a vehicle has been waiting is a
@@ -136,6 +140,10 @@ builder.Services.AddOptions<EmergencyStopReleaseOptions>()
     .Bind(builder.Configuration.GetSection(EmergencyStopReleaseOptions.SectionName))
     .ValidateOnStart();
 builder.Services.AddSingleton<IValidateOptions<EmergencyStopReleaseOptions>, EmergencyStopReleaseOptionsValidator>();
+builder.Services.AddOptions<VehicleFaultRecoveryOptions>()
+    .Bind(builder.Configuration.GetSection(VehicleFaultRecoveryOptions.SectionName))
+    .ValidateOnStart();
+builder.Services.AddSingleton<IValidateOptions<VehicleFaultRecoveryOptions>, VehicleFaultRecoveryOptionsValidator>();
 builder.Services.AddSingleton<MapStationResolver>();
 // 固定站按任务类型取得：规则表加本图生效绑定集（control-server#160）。
 builder.Services.AddScoped<IFixedTaskStationResolver, BoundFixedTaskStationResolver>();
@@ -248,6 +256,11 @@ app.MapTaskTypeHolds();
 if (app.Configuration.GetValue<bool>("EmergencyStopRelease:enabled"))
 {
     app.MapEmergencyStopRelease();
+}
+// 默认不挂。control-server#299 的故障人工清除：这个入口会清掉一台车的故障、把它的需求交回改派，要现场明确打开才提供。
+if (app.Configuration.GetValue<bool>("VehicleFaultRecovery:enabled"))
+{
+    app.MapVehicleFaultRecovery();
 }
 app.MapDashboardQueries();
 // 防饥饿阈值的标定证据（批次7-09，control-server#214）：只读，JSON 与 CSV。

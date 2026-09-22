@@ -615,6 +615,8 @@ public sealed class Batch7CargoHoldingDashboardTests
     [InlineData("ORDER_HANG")]
     [InlineData("ORDER_STATE_UNRECOGNIZED")]
     [InlineData("ORDER_ENDED_WITHOUT_ARRIVAL")]
+    [InlineData("VEHICLE_ORDER_FAILED")]
+    [InlineData("VEHICLE_FAULT_CLEARED_CARGO_ON_BOARD")]
     public async Task AStalledInTransitOrderIsShownWithAChineseDescription(string code)
     {
         Assert.True(BlockedJourneysQueryEndpoint.Descriptions.ContainsKey(code), $"{code} has no description");
