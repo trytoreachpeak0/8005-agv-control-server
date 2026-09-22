@@ -254,7 +254,7 @@ jobs:
               # types refuses start.
               @{ Name = 'task-type-binding-station-reused-refuses-start'; Runs = 3; BatchId = 'batch-6' }
               # Batch 7 (program#127). Each ticket adds its own scenario here from its own pull request, sorted by
-              # name, one run each; the batch-7 exit (control-server#220) makes every line three runs.
+              # name, one run each; the batch-7 exit (control-server#220) made every line three runs.
               # control-server#212: the loading phase. Holding for appends only where the zone allows appending (the
               # disabled one runs both ways of forbidding it, limit 0 and unconfigured, on one server); each side full
               # in one of its two ways; the holding timeout at 40 seconds; candidates that do not fit for any reason
@@ -262,13 +262,13 @@ jobs:
               # appended demand until it leaves its last pickup.
               # control-server#217: the dashboard reads the holding vehicle's deadline and time left from the database,
               # and shows the yield once another vehicle is committed to the station.
-              @{ Name = 'cargo-holding-dashboard-projection'; Runs = 1; BatchId = 'batch-7' }
-              @{ Name = 'cargo-holding-disabled-when-append-forbidden'; Runs = 1; BatchId = 'batch-7' }
-              @{ Name = 'cargo-holding-side-full'; Runs = 1; BatchId = 'batch-7' }
-              @{ Name = 'cargo-holding-timeout'; Runs = 1; BatchId = 'batch-7' }
+              @{ Name = 'cargo-holding-dashboard-projection'; Runs = 3; BatchId = 'batch-7' }
+              @{ Name = 'cargo-holding-disabled-when-append-forbidden'; Runs = 3; BatchId = 'batch-7' }
+              @{ Name = 'cargo-holding-side-full'; Runs = 3; BatchId = 'batch-7' }
+              @{ Name = 'cargo-holding-timeout'; Runs = 3; BatchId = 'batch-7' }
               # control-server#216: the five kinds of bad per-zone dispatch parameter table each rejected whole, and a
               # good one taking effect as one new version without restarting the server.
-              @{ Name = 'dispatch-zone-parameters-import-rejects'; Runs = 1; BatchId = 'batch-7' }
+              @{ Name = 'dispatch-zone-parameters-import-rejects'; Runs = 3; BatchId = 'batch-7' }
               # control-server#211, specification 8.3 batch-7 FP-IS-08. Four scenarios, and the first two are a pair
               # that only says anything together: with the zone's per-zone limit configured a vehicle under way takes
               # an appended demand into a three-stop plan (REQ-0196, REQ-0205, ADR-cross-0053), and with no limit
@@ -287,40 +287,40 @@ jobs:
               # within one zone, where the sequence is contiguous by construction. The trade was made because the route
               # graph engine ships disabled, so "with it off, appending does nothing at all" is the deployment premise
               # a silent failure would hide.
-              @{ Name = 'en-route-append-delay-gate'; Runs = 1; BatchId = 'batch-7' }
-              @{ Name = 'en-route-append-not-configured'; Runs = 1; BatchId = 'batch-7' }
-              @{ Name = 'idle-and-inflight-vehicles-compete'; Runs = 1; BatchId = 'batch-7' }
-              @{ Name = 'multi-stop-append-same-zone'; Runs = 1; BatchId = 'batch-7' }
+              @{ Name = 'en-route-append-delay-gate'; Runs = 3; BatchId = 'batch-7' }
+              @{ Name = 'en-route-append-not-configured'; Runs = 3; BatchId = 'batch-7' }
+              @{ Name = 'idle-and-inflight-vehicles-compete'; Runs = 3; BatchId = 'batch-7' }
+              @{ Name = 'multi-stop-append-same-zone'; Runs = 3; BatchId = 'batch-7' }
               # control-server#234: the onboard stops sending while leaving its socket open. The server closes the
               # connection on ADR-cross-0027's six-second window, the in-flight journey carries ONBOARD_SESSION_LOST
               # so the blocked-journey card shows it, and nothing else about the journey moves (REQ-0287).
-              @{ Name = 'onboard-silent-liveness-loss'; Runs = 1; BatchId = 'batch-7' }
+              @{ Name = 'onboard-silent-liveness-loss'; Runs = 3; BatchId = 'batch-7' }
               # control-server#215: an operator cancels a STAGING_TO_WIRE demand before its sublot, and the unload stop only it
               # used leaves the plan the vehicle holds, with the plan revision moving on (REQ-0197, ADR-cross-0053). It does
               # not run the other demands to completion; that half is L1 (see the scenario's header and the pull request).
-              @{ Name = 'plan-reorder-and-drop-cancelled'; Runs = 1; BatchId = 'batch-7' }
+              @{ Name = 'plan-reorder-and-drop-cancelled'; Runs = 3; BatchId = 'batch-7' }
               # control-server#215: a vehicle that leaves the map loses its not-yet-picked demand -- the pickup order is
               # cancelled and reconciled, the demand goes back to the backlog with its age, and a second vehicle takes it
               # under a new generation and upperId, its dispatch plan actually sent (REQ-0328).
-              @{ Name = 'reassign-when-vehicle-ineligible'; Runs = 1; BatchId = 'batch-7' }
+              @{ Name = 'reassign-when-vehicle-ineligible'; Runs = 3; BatchId = 'batch-7' }
               # control-server#214: the task-side ranking. A new STAGING_TO_WIRE demand is taken before an older normal-band
               # one (REQ-0202); with no anti-starvation threshold configured nothing escalates, and once one is imported
               # the overdue normal-band demand is escalated exactly once and goes ahead of a STAGING_TO_WIRE that is not
               # overdue (REQ-0202, REQ-0203, REQ-0210).
-              @{ Name = 'starvation-threshold-escalation'; Runs = 1; BatchId = 'batch-7' }
-              @{ Name = 'task-type-priority-band'; Runs = 1; BatchId = 'batch-7' }
+              @{ Name = 'starvation-threshold-escalation'; Runs = 3; BatchId = 'batch-7' }
+              @{ Name = 'task-type-priority-band'; Runs = 3; BatchId = 'batch-7' }
               # control-server#210, specification 8.3 batch-7 criterion 7: a key suppressed by a local cancellation stays out
               # under a new DemandId, the unrelated demand behind it is still taken, and a demand gone from the catalog
               # before acceptance suppresses nothing.
-              @{ Name = 'transport-demand-key-suppressed'; Runs = 1; BatchId = 'batch-7' }
+              @{ Name = 'transport-demand-key-suppressed'; Runs = 3; BatchId = 'batch-7' }
               # control-server#212, the two vehicle-full ones of the five above.
-              @{ Name = 'vehicle-full-ignores-oversized-and-gated'; Runs = 1; BatchId = 'batch-7' }
-              @{ Name = 'vehicle-full-still-appends-before-departure'; Runs = 1; BatchId = 'batch-7' }
+              @{ Name = 'vehicle-full-ignores-oversized-and-gated'; Runs = 3; BatchId = 'batch-7' }
+              @{ Name = 'vehicle-full-still-appends-before-departure'; Runs = 3; BatchId = 'batch-7' }
               # control-server#213, specification 8.3 batch-7 criterion 3: a vehicle holding at a station yields the moment
               # another vehicle is committed to that station as its next stop, and the yield does not break an open door
               # or a load under way -- the departure still waits for both to settle and for the pre-departure check.
-              @{ Name = 'waiting-station-yield'; Runs = 1; BatchId = 'batch-7' }
-              @{ Name = 'waiting-station-yield-waits-for-door'; Runs = 1; BatchId = 'batch-7' }
+              @{ Name = 'waiting-station-yield'; Runs = 3; BatchId = 'batch-7' }
+              @{ Name = 'waiting-station-yield-waits-for-door'; Runs = 3; BatchId = 'batch-7' }
           )
           # One run's usual length in seconds, for dealing scenarios out to lanes longest first. Medians of 31
           # CI jobs from 2026-09-17 (ci-research, control-server#130); normal-load's excludes the build it used
