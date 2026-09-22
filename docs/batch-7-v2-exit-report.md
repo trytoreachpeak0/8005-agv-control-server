@@ -4,12 +4,15 @@ control-server#220（批次7-18）。本报告逐项对照规格 `8005-agv-progr
 （按第 19～21 节补记与第 22 节补记读；第 8.3 节「卸货时两组同开」由第 20 节补记取代，卸货一次一扇、先前后后）。
 需求条目按基线 **`v1.4.0`**（tag `requirements-baseline-v1.4.0`）引用。本批不改协议，门禁与证据绑 `protocol-v2.0.0`。
 
-> **状态：第一轮出口跑批在 G3 journey 上红，修复票 control-server#314 在做；第二轮在 #314 合入后的新顶端上从头跑。**
-> 本文件先写入第一轮的全部结果（作为红证据与发现记录）与不依赖跑批结果的各节；第二轮的结果写进「第二轮」各处的待填位置。
+> **状态：出口达成（第二轮），待调度审查。**第一轮在 G3 journey 上红（产品缺陷，control-server#314 已修并合入）；第二轮在 `82bfa415`／`86d42ce5` 上
+> 从头跑，全部 PASS。第一轮结果全部保留，作为红证据与发现记录，不作出口证据。两段本机封锁与两段 CI 真装置持有都已跑完归还。
 
 ## 结论
 
-【第二轮后填】
+**批次 7 出口达成（第二轮）。**规格第 8.3 节批次 7 行（按第 20 节读）的每一项在 `protocol-v2.0.0` 发布身份上成立：
+`FP-IS-08` 四门禁全 PASS；G3 四个 runner 全绿，journey 15/15；CI 上 55 个合成场景各连续三次、共 165 次全 PASS（批次 7 的 19 个场景 57 次）；
+七条判据各有三份独立证据；真装置 15 次 PASS（混挂站点三连、`compensate-then-reconnect` 与其余 11 条回归）；两端全量 L1 全绿
+（服务端 2353/2353，车载端 938/938）。服务端产品 `82bfa415`（含 control-server#314），车载端 `86d42ce5`（产品即 `ecdb3a0b`），模拟器 `fb5f7c59`。
 
 第一轮（2026-09-22，服务端产品 `517e1c7a`、车载端 `ecdb3a0b`）：两端 G2 PASS；G3 四个 runner 里三个 PASS，journey
 `JOURNEY_G3_SLICE_FAIL`（14/15，`g3-multi-stop-plan` 即 `FP-IS-08` 本身 PASS，红在 `FP-IS-10` 的 `g3-task-type-admission-fail-closed`）；
@@ -21,17 +24,17 @@ control-server#220（批次7-18）。本报告逐项对照规格 `8005-agv-progr
 | 出口（规格 8.2／8.3 批次 7 行、本票验收） | 状态 | 依据 |
 | --- | --- | --- |
 | 前置核对逐项通过；七条判据与真装置场景对照表完整 | 前置已核（下一节）；对照表已列 | 「前置核对」「二、L2」 |
-| L1：两端测试套件在出口提交上全绿；新能力逐项有新增测试 | 【第二轮】；对照表已列 | 第一节 |
-| `FP-IS-08` 四门禁全 PASS，`gate-result.json` 绑 `protocol-v2.0.0` 精确身份 | 【第二轮】（第一轮两端 G2 PASS） | 第三节 |
-| G3 四个 runner 在出口绑定上各一轮全绿；journey 15/15 | **第一轮不成立**（14/15）；【第二轮】 | 第三节、第四节 |
-| `real-onboard-mixed-side-one-stop` 连续三遍 PASS；compensate 与回归清单全 PASS | 【第二轮】（第一轮 3/3、12/12） | 第二节 |
-| `l2.yml` 批次 7 区块 `Runs = 3`（先红后绿）；CI `consecutive-all` 全部 PASS，逐份核对 | `Runs = 3` 成立（`f1286c29`）；三连【第二轮】 | 第二节 |
-| 七条判据各有证据目录，持货等单与让站各指出断言正事实的 L2 id | 判据编号已列；证据目录【第二轮】 | 第二节 |
-| 出口冻结期间两端集成分支没有合入其它 PR；证据小 PR 合入时点 | 冻结自 2026-09-22 起；#314 由调度在冻结期内安排合入（用户定）；【第二轮】 | 「身份」 |
+| L1：两端测试套件在出口提交上全绿；新能力逐项有新增测试 | **成立**：服务端 2353/2353（CI run `35704027053`）；车载端 938/938（CI run onboard-hmi `35694184570`）；对照表已列 | 第一节 |
+| `FP-IS-08` 四门禁全 PASS，`gate-result.json` 绑 `protocol-v2.0.0` 精确身份 | **成立**：G1 协议侧发布证据；两端 G2 PASS；G3（journey）PASS | 第三节 |
+| G3 四个 runner 在出口绑定上各一轮全绿；journey 15/15 | **成立（第二轮）**：四个 runner 全绿，journey `JOURNEY_G3_PASS` 15/15，`FP-IS-08` `formalSlicePass true`；第一轮 14/15 的红见第四节 | 第三节、第四节 |
+| `real-onboard-mixed-side-one-stop` 连续三遍 PASS；compensate 与回归清单全 PASS | **成立（第二轮）**：3/3（run `35699978289`）；12/12（run `35699989410`） | 第二节 |
+| `l2.yml` 批次 7 区块 `Runs = 3`（先红后绿）；CI `consecutive-all` 全部 PASS，逐份核对 | **成立**：`Runs = 3`（`f1286c29`，核对脚本先红后绿）；run `35699901251` 165/165 PASS，逐份核对 | 第二节 |
+| 七条判据各有证据目录，持货等单与让站各指出断言正事实的 L2 id | **成立** | 第二节对照表 |
+| 出口冻结期间两端集成分支没有合入其它 PR；证据小 PR 合入时点 | **成立**：冻结自 2026-09-22 起，期间只合入了 control-server#314（PR #315，用户定先修再重跑，调度安排）与车载端证据小 PR onboard-hmi#194（第二轮 G3 开跑前合入） | 「身份」 |
 | 每次门禁新目录；红证据保留，`docs/defects/` 有记录 | 第一轮全部保留；缺陷单已入库 | 第四节 |
 | 「必须如实写明」各点，无第 8.8 节禁用表述 | 已写 | 第五节 |
 | 未切换 `C:\Users\szy\Desktop\8005-workspace\repos\` 下任何克隆 | 至今成立 | 全部操作在 `8005-workspace-v2` |
-| 本 PR 的 CI `test` 与 `l2` 两项绿 | 【第二轮后】 | PR 检查页 |
+| 本 PR 的 CI `test` 与 `l2` 两项绿 | 转 ready 后的默认一轮，见 PR 检查页（`l2` 核汇总标题无 `superseded`、场景数） | PR 检查页 |
 
 ## 前置核对（2026-09-22 实查）
 
@@ -42,7 +45,7 @@ control-server#220（批次7-18）。本报告逐项对照规格 `8005-agv-progr
 | 调度点名的出口阻塞 | control-server#303（PR #305 `c4b04bb2`，同停靠卸货按侧排序）、#306（PR #308 `8738919a`）、#259（PR #309 `517e1c7a`）已合入；#231、#234，onboard-hmi#139、#140、#142、#145、#146 已关闭 |
 | 批次 7 场景（`BatchId = 'batch-7'`）与七条判据逐条对上 | 成立：19 个合成场景，恰好是 `e74c0058..517e1c7a` 新增的全部合成场景文件（第二节）；七条判据的场景都在 |
 | 两端等待名单里没有 `CV-MULTI-STOP-PLAN-NINE-LEGS`，`FP-IS-08` 已进两端切片名单 | 成立（`517e1c7a`／`deeba94c` 实读；服务端 `ProtocolVectorTestBindingArchitectureTests.cs:95-96`，车载端同名文件 `:104`） |
-| v2 工作区仓在要绑定的提交上、工作树干净；本机没有其它真装置 L2 或 G3 在跑 | 第一轮成立：`repos/` 下克隆在基线分支、干净；本票自己的 worktree 与 detached worktree 当对端，跑完删除；调度核过桌面空闲后放行（持有者「cs#220 封锁」）。【第二轮再核】 |
+| v2 工作区仓在要绑定的提交上、工作树干净；本机没有其它真装置 L2 或 G3 在跑 | 第一轮成立：`repos/` 下克隆在基线分支、干净；本票自己的 worktree 与 detached worktree 当对端，跑完删除；调度核过桌面空闲后放行（持有者「cs#220 封锁」）。第二轮成立：本机只跑服务端 G2 与 G3（G3 自己克隆三端），没有建对端 worktree；跑完核过 `repos/` 下三个克隆在基线分支、干净 |
 | control-server#166、批次7-17（#219） | 人工票，open，不挡出口（「等用户拍板的人工项」） |
 
 ## 身份
@@ -55,7 +58,9 @@ control-server#220（批次7-18）。本报告逐项对照规格 `8005-agv-progr
 | 第一轮车载端 | `w2g/fp-v2-impl@ecdb3a0b` |
 | 模拟器 | `main@fb5f7c59`（不变） |
 | 第一轮 G3 共享绑定 | `1419ab99`（`chore(g3)`）：`ControlServerCommit 517e1c7a`、`OnboardCommit ecdb3a0b`、`SimulatorCommit fb5f7c59`、`ProtocolCommit 86575456`；tag 字面量已是 `protocol-v2.0.0`，未动 |
-| 第二轮 | 【#314 合入后的 `fp/v2-impl` 顶端；G3 绑定重移】 |
+| **第二轮（出口）服务端产品** | `fp/v2-impl@82bfa415`（PR #315 合并提交，control-server#314）；`517e1c7a..82bfa415` 只有 #314 的三个产品文件与一个测试文件。本分支 merge 进来（`27686034`，不变基），`src/`、`tests/` 与 `82bfa415` 零差异 |
+| **第二轮车载端** | `w2g/fp-v2-impl@86d42ce5`（onboard-hmi#194 合并提交）；相对 `ecdb3a0b` 在 `evidence/` 以外 0 个文件，产品即 `ecdb3a0b` |
+| **第二轮 G3 共享绑定** | `f2ddd405`（`chore(g3)`）：`ControlServerCommit 82bfa415`、`OnboardCommit 86d42ce5`、`SimulatorCommit fb5f7c59`、`ProtocolCommit 86575456` |
 
 **车载端 G2 证据能否沿用到第二轮（出口会话的判断，交调度核）**：能，前提是第二轮的车载端仍是 `ecdb3a0b`、协议仍是 `86575456`。
 `ONBOARD_HMI_G2` 只构建与测试车载端仓（`run-w2g-g2.ps1`：Release build、带 `IntegrationSlice=FP-IS-08` 的测试、`dotnet format`、在发布态重跑协议 G1），
@@ -85,7 +90,8 @@ control-server#220（批次7-18）。本报告逐项对照规格 `8005-agv-progr
 同目录 `summary.json` 里唯一提到服务端的是一句说明文字（出站报文的两个产地是「车载端产品与 `FakeControlServer`」），也不是服务端提交。
 
 **证据小 PR**：onboard-hmi#194（调度定在第二轮之前合）。合入后 `w2g/fp-v2-impl` 顶端前移到它的合并提交，相对 `ecdb3a0b` 只多 `evidence/`；
-第二轮的 G3 `OnboardCommit` 与 CI 真装置的 `onboard_ref` 都取那个新顶端。第二轮开跑前核对：【车载端产品仍是 `ecdb3a0b`（新顶端相对它 `evidence/` 以外 diff 为空）、协议仍是 `86575456`】。
+第二轮的 G3 `OnboardCommit` 与 CI 真装置的 `onboard_ref` 都取那个新顶端。第二轮开跑前核对（2026-09-22，`git ls-remote` 与 `git diff --name-only ecdb3a0b 86d42ce5 -- . ':!evidence'`）：车载端顶端 `86d42ce5`，
+相对 `ecdb3a0b` 在 `evidence/` 以外 0 个文件；协议仍是 `86575456`（tag `protocol-v2.0.0`）。**车载端与协议两端都没变，所以第一轮的 `ONBOARD_HMI_G2` 证据沿用。**
 
 ## 一、L1
 
@@ -93,8 +99,11 @@ control-server#220（批次7-18）。本报告逐项对照规格 `8005-agv-progr
 
 | 端 | 命令 | 结果 |
 | --- | --- | --- |
-| 服务端 | CI `test.yml`（第 7 步） | 【第二轮】 |
-| 车载端 | 全量 L1 经 `Invoke-HeavyLocal.ps1 -Ticket cs#220`（第 8 步） | 【第二轮】 |
+| 服务端 | CI `test.yml`，`workflow_dispatch` 于 `4f832a39`（run [`35704027053`](https://github.com/trytoreachpeak0/8005-agv-control-server/actions/runs/35704027053)） | **2353 / 2353 通过**，0 失败 0 跳过（日志原文 `已通过! - 失败: 0，通过: 2353，已跳过: 0，总计: 2353`）。`4f832a39` 之后本分支只改文档，`src/`、`tests/` 即 `82bfa415` |
+| 车载端 | 车载端 CI `test` workflow，**push 触发**（onboard-hmi#194 合入 `w2g/fp-v2-impl` 时），run [`35694184570`](https://github.com/trytoreachpeak0/8005-agv-onboard-hmi/actions/runs/35694184570)，`headSha 86d42ce5`，与第二轮绑定的提交完全相同 | **938 / 938 通过**，0 失败 0 跳过（`SQCD.Agv.UnitTests` 546、`SQCD.Agv.WireToGateG2Tests` 392，解决方案里只有这两个测试项目）；`run-w2g-g2.ps1 -SkipProtocolG1` 不带 `-Slice`，即全量；同一作业的 `ONBOARD_HMI_G2` 与 UI layout audit 都是 `Status: PASS` |
+
+第 8 步原定本机经 `Invoke-HeavyLocal.ps1` 跑。本机那一遍已启动后按调度要求停掉（09-20 起车载端全量只走 CI，本机内存吃紧），它的构建日志里 `MSB4166 Child node exited prematurely`
+是停止造成的，不是结果；残留目录已删。第 8 步的证据用上面那次 push 运行。
 
 ### 批次 7 每项新能力 ↔ 新增测试
 
@@ -145,13 +154,13 @@ control-server#220（批次7-18）。本报告逐项对照规格 `8005-agv-progr
 
 | 判据（规格 8.3 批次 7 行） | 场景（票） | 断言正事实的 L2 id | `CargoHoldingTimeout` | 证据（CI 三连） |
 | --- | --- | --- | --- | --- |
-| ① 前侧装满后后侧照常接单，两侧都装满才不再等单 | `cargo-holding-side-full`（#212） | `L2-CHS-01`（FRONT 满、REAR 空 → `CARGO_HOLDING_WAIT` 而非 `VEHICLE_FULL`）、`L2-CHS-02`（乙追加进来）、`L2-CHS-05`（两侧都满才 `VEHICLE_FULL`） | 10 分钟 | 【第二轮】 |
-| ② 零候选时原地持货等单直至持货超时 | `cargo-holding-timeout`（#212） | `L2-CHT-01`（进入 WAIT）、`L2-CHT-02`（约 30 秒时仍在站上持货、关卡腿未建单）、`L2-CHT-03`（期限一到以 `CARGO_HOLDING_TIMEOUT` 关闭） | **40 秒** | 【第二轮】 |
-| ③ 另一车以该站为下一停靠时立即让站，且不打断开门、录入 | `waiting-station-yield`、`waiting-station-yield-waits-for-door`（#213） | `L2-WSY-01`～`04`（持单车 WAIT → 另一车受理 → `CLOSED/WAITING_STATION_YIELD`，触发车记下 → 快照到车）；`L2-WSD-05`～`07`（门开着、装货未落定时不离站，门关后才离站） | 10 分钟 | 【第二轮】 |
-| ④ 能服务的分区都禁止途中追加时不等单（负向） | `cargo-holding-disabled-when-append-forbidden`（#212） | `L2-CHD-02`（上限 0）、`L2-CHD-04`（上限未配置），两种都直接离站、不持货 | 40 秒 | 【第二轮】 |
-| ⑤ 超大需求、被门禁挡住的候选不触发装满 | `vehicle-full-ignores-oversized-and-gated`（#212） | `L2-VFI-01`（前置 WAIT）、`L2-VFI-02`／`03`（超组需求判 `EXPECTED_BASKET_COUNT_EXCEEDS_SLOT_GROUP`、不算满）、`L2-VFI-05`（`TASK_TYPE_HELD` 不算满） | 10 分钟 | 【第二轮】 |
-| ⑥ 装满后到离开最后装货停靠前仍接能装入的候选；持货超时与让站之后不再接单 | `vehicle-full-still-appends-before-departure`（#212）＋ ②③ 的后半 | `L2-VFA-03`（`VEHICLE_FULL` 仍接追加）、`L2-VFA-07`（离开最后装货停靠时以 `VEHICLE_FULL` 关闭）；`L2-CHT-05`（超时后新需求不进）；`L2-WSY-06`（让站后新需求不进） | 10 分钟 | 【第二轮】 |
-| ⑦ 按业务键抑制 | `transport-demand-key-suppressed`（#210） | `L2-TDK-01`（取消时原子写抑制）、`L2-TDK-02`（同键新 DemandId 判 `TRANSPORT_DEMAND_KEY_SUPPRESSED`）、`L2-TDK-04`（后面的无关需求照常受理） | — | 【第二轮】 |
+| ① 前侧装满后后侧照常接单，两侧都装满才不再等单 | `cargo-holding-side-full`（#212） | `L2-CHS-01`（FRONT 满、REAR 空 → `CARGO_HOLDING_WAIT` 而非 `VEHICLE_FULL`）、`L2-CHS-02`（乙追加进来）、`L2-CHS-05`（两侧都满才 `VEHICLE_FULL`） | 10 分钟 | 3/3 PASS：`evidence/l2/20260922-ci-35699901251-cargo-holding-side-full-01`～`03/` |
+| ② 零候选时原地持货等单直至持货超时 | `cargo-holding-timeout`（#212） | `L2-CHT-01`（进入 WAIT）、`L2-CHT-02`（约 30 秒时仍在站上持货、关卡腿未建单）、`L2-CHT-03`（期限一到以 `CARGO_HOLDING_TIMEOUT` 关闭） | **40 秒** | 3/3 PASS：`evidence/l2/20260922-ci-35699901251-cargo-holding-timeout-01`～`03/` |
+| ③ 另一车以该站为下一停靠时立即让站，且不打断开门、录入 | `waiting-station-yield`、`waiting-station-yield-waits-for-door`（#213） | `L2-WSY-01`～`04`（持单车 WAIT → 另一车受理 → `CLOSED/WAITING_STATION_YIELD`，触发车记下 → 快照到车）；`L2-WSD-05`～`07`（门开着、装货未落定时不离站，门关后才离站） | 10 分钟 | 各 3/3 PASS：`evidence/l2/20260922-ci-35699901251-waiting-station-yield-01`～`03/`、`…-waiting-station-yield-waits-for-door-01`～`03/` |
+| ④ 能服务的分区都禁止途中追加时不等单（负向） | `cargo-holding-disabled-when-append-forbidden`（#212） | `L2-CHD-02`（上限 0）、`L2-CHD-04`（上限未配置），两种都直接离站、不持货 | 40 秒 | 3/3 PASS：`evidence/l2/20260922-ci-35699901251-cargo-holding-disabled-when-append-forbidden-01`～`03/` |
+| ⑤ 超大需求、被门禁挡住的候选不触发装满 | `vehicle-full-ignores-oversized-and-gated`（#212） | `L2-VFI-01`（前置 WAIT）、`L2-VFI-02`／`03`（超组需求判 `EXPECTED_BASKET_COUNT_EXCEEDS_SLOT_GROUP`、不算满）、`L2-VFI-05`（`TASK_TYPE_HELD` 不算满） | 10 分钟 | 3/3 PASS：`evidence/l2/20260922-ci-35699901251-vehicle-full-ignores-oversized-and-gated-01`～`03/` |
+| ⑥ 装满后到离开最后装货停靠前仍接能装入的候选；持货超时与让站之后不再接单 | `vehicle-full-still-appends-before-departure`（#212）＋ ②③ 的后半 | `L2-VFA-03`（`VEHICLE_FULL` 仍接追加）、`L2-VFA-07`（离开最后装货停靠时以 `VEHICLE_FULL` 关闭）；`L2-CHT-05`（超时后新需求不进）；`L2-WSY-06`（让站后新需求不进） | 10 分钟 | 3/3 PASS：`evidence/l2/20260922-ci-35699901251-vehicle-full-still-appends-before-departure-01`～`03/`（后半见 ②③ 的目录） |
+| ⑦ 按业务键抑制 | `transport-demand-key-suppressed`（#210） | `L2-TDK-01`（取消时原子写抑制）、`L2-TDK-02`（同键新 DemandId 判 `TRANSPORT_DEMAND_KEY_SUPPRESSED`）、`L2-TDK-04`（后面的无关需求照常受理） | — | 3/3 PASS：`evidence/l2/20260922-ci-35699901251-transport-demand-key-suppressed-01`～`03/` |
 
 持货等单与让站各场景都断言了正事实（上表「断言正事实的 L2 id」），不是「不触发即通过」（规格 8.3、8.5 节）。
 批次 7 区块另有 12 个场景：`cargo-holding-dashboard-projection`（#217）、`dispatch-zone-parameters-import-rejects`（#216）、`en-route-append-delay-gate`、
@@ -169,7 +178,12 @@ control-server#220（批次7-18）。本报告逐项对照规格 `8005-agv-progr
 - **作业超时不改。**第一轮的参考运行（下条）4 路 2357 秒，约 39 分钟，远低于 `workflow_dispatch` 的 180 分钟。
 - 第一轮参考运行：run [`35689298714`](https://github.com/trytoreachpeak0/8005-agv-control-server/actions/runs/35689298714)，`f1286c29`，`consecutive-all`，
   55 个场景各三遍共 165 次，全部 PASS。**只作参考，不算出口证据**（调度定：第二轮在新身份上从头跑），证据未入库。
-- 第二轮出口运行：【run 号、提交、165 次结果、逐份核对 `outcome`、`identity.protocolReleaseIdentity`、`identity.controlServerCommit`、`identity.batchId`】
+- **第二轮出口运行**：`gh workflow run l2.yml --ref b7-18/batch-7-exit -f mode=consecutive-all`，run [`35699901251`](https://github.com/trytoreachpeak0/8005-agv-control-server/actions/runs/35699901251)，
+  提交 `f2ddd405`（产品即 `82bfa415`），4 路 2361 秒，汇总标题 `L2 (consecutive-all, 4 lanes, 2361s)`，没有 `superseded`（日志里唯一一处是源码回显）。
+  55 个合成场景各三遍，**165 次全部 PASS，中途没有红**（批次 2～6 的 36 个随批次 7 代码回归，批次 7 的 19 个是本批三连）。
+- 下载后逐份核对：165 份 `assertions.json` 的 `outcome` 都是 `PASS`；`identity.protocolReleaseIdentity` 都是 `protocol-v2.0.0`、`APPROVED_RELEASE`；
+  `identity.controlServerCommit` 都是 `f2ddd405`；`identity.batchId` 按批次数与 `l2.yml` 逐行一致（`batch-2` 39、`batch-3` 6、`batch-4` 24、`batch-5` 15、`batch-6` 24、`batch-7` 57＝19×3）。
+- 入库：`evidence/l2/20260922-ci-35699901251-<场景>-NN/`，165 个目录，连同各自的 `.log`。
 
 ### 真装置
 
@@ -185,9 +199,9 @@ control-server#220（批次7-18）。本报告逐项对照规格 `8005-agv-progr
 
 | 场景 | 遍数 | 第一轮（run、结果） | 第二轮 |
 | --- | --- | --- | --- |
-| `real-onboard-mixed-side-one-stop`（后侧先追加） | 3 | 35689371865，3/3 PASS，各 12 条判据全过 | 【】 |
-| `real-onboard-compensate-then-reconnect` | 1 | 35689381489，PASS | 【】 |
-| `real-onboard-normal-load`、`-clock-skew`、`-load-door-closed-empty-reopens`、`-station-timeout-door-open`、`-unload-not-emptied`、`-restart-while-waiting-operator`、`-cancellation-authorization-lost`、`-durable-ack-lost`、`-expected-action-overdue`、`-restart-with-open-recovery-session`、`-restart-after-recovery-session-opened` | 各 1 | 35689381489，11/11 PASS（`durable-ack-lost` 未撞上 cs#307 形状） | 【】 |
+| `real-onboard-mixed-side-one-stop`（后侧先追加） | 3 | 35689371865，3/3 PASS，各 12 条判据全过 | **35699978289，3/3 PASS**，各 12 条判据全过 |
+| `real-onboard-compensate-then-reconnect` | 1 | 35689381489，PASS | **35699989410，PASS** |
+| `real-onboard-normal-load`、`-clock-skew`、`-load-door-closed-empty-reopens`、`-station-timeout-door-open`、`-unload-not-emptied`、`-restart-while-waiting-operator`、`-cancellation-authorization-lost`、`-durable-ack-lost`、`-expected-action-overdue`、`-restart-with-open-recovery-session`、`-restart-after-recovery-session-opened` | 各 1 | 35689381489，11/11 PASS（`durable-ack-lost` 未撞上 cs#307 形状） | **35699989410，11/11 PASS**（`durable-ack-lost` 未撞上 cs#307 形状） |
 
 第一轮四行核对（两个 run 相同）：`control-server @ f1286c29…`（产品即 `517e1c7a`）、`8005-agv-onboard-hmi @ ecdb3a0b…`、`slots-simulator @ fb5f7c59…`；
 `RIG_COMMIT_GUARD|RIG_DESKTOP_LOCK|RIG_DEADLINE` 各命中 1 次，都是源码回显。15 份 `assertions.json` 逐份核对 `outcome PASS`、三端提交、`batchId batch-7`、
@@ -196,7 +210,14 @@ control-server#220（批次7-18）。本报告逐项对照规格 `8005-agv-progr
 **真装置清单之外的两条**：`real-onboard-inflight-load-reconnect`（control-server#205 降级）与 `real-onboard-recovery-entry-missing`（control-server#250）都不在
 `l2.yml` 的 real-rig 清单里，本批没跑，见第六节。
 
-免跑判断（第 20、21 条）：【第二轮按三端逐端写】
+第二轮四行核对（两个 run 相同）：`control-server @ f2ddd40522432925580d6048dca2d6d54171a7a8`（产品即 `82bfa415`）、
+`8005-agv-onboard-hmi @ 86d42ce5362a8273525b8ba1acb387e4331bcfed`、`slots-simulator @ fb5f7c593742bf98bc3957b8729a38aad5321f28`；
+`RIG_COMMIT_GUARD|RIG_DESKTOP_LOCK|RIG_DEADLINE` 各命中 1 次，都是源码回显；汇总标题 `Real-onboard L2 (consecutive-all, 3 runs)`、`Real-onboard L2 (default, 12 runs)`。
+15 份 `assertions.json` 逐份核对 `outcome PASS`、三端提交如上、`batchId batch-7`、`protocol-v2.0.0`／`APPROVED_RELEASE`。
+**出口证据**：`evidence/l2/20260922-ci-35699978289-*`、`…-35699989410-*`。
+
+免跑判断（第 20、21 条）：**没有免跑**。第二轮的 15 次真装置三端都在出口身份上（服务端 `82bfa415`、车载端 `86d42ce5`、模拟器 `fb5f7c59`，从 run 日志读），
+第一轮那 15 次的结论不沿用：服务端从 `517e1c7a` 前移到 `82bfa415`，而 #314 改的是就绪闸门之后的派车计划下发，每个真装置场景的派车都会经过那里，逐端问「变的分支会不会被执行」答案是会。
 
 ## 三、门禁
 
@@ -218,9 +239,29 @@ control-server#220（批次7-18）。本报告逐项对照规格 `8005-agv-progr
 
 ### 第二轮
 
-【#314 合入后：第 1 步重移绑定，第 2～6 步从头跑；车载端 G2 是否沿用见「身份」】
+2026-09-22，control-server#314 合入后，本机第二段封锁（调度放行）。
 
-**`FP-IS-08` 的四道门禁**：G1 是协议侧发布证据（program#97，`protocol-v2.0.0` 在发布态通过），车载端 G2 每片在发布态重跑协议 G1；两端 G2 与 G3 见上。【第二轮后给结论】
+| 步 | 做什么 | 结果 | 证据目录 |
+| --- | --- | --- | --- |
+| 1 | 重移 G3 共享绑定（merge `82bfa415` 进本分支后） | `f2ddd405` | — |
+| 2 | `CONTROL_SERVER_G2` × 1（`FP-IS-08`），经 `Invoke-HeavyLocal.ps1` | **PASS**：选中 62 个测试全过；出站 631 行、166 种、7 类消息，0 违约；`implementationCommit f2ddd405` | `evidence/g2/20260922-protocol-v2.0.0-f2ddd405/` |
+| 3 | `ONBOARD_HMI_G2` | **沿用第一轮**（车载端与协议两端都没变，见「身份」） | 车载端仓 `evidence/g2/20260922-protocol-v2.0.0-ecdb3a0b/`（onboard-hmi#194 已合入） |
+| 4a | `run-staged-g3.ps1` | `STAGED_G3_RECOVERY_REPLAY_PASS` | `evidence/g3/20260922-protocol-v2.0.0-staged-82bfa415/` |
+| 4b | `run-staged-g3-restart.ps1` | `STAGED_G3_PROCESS_RESTART_PASS` | `evidence/g3/20260922-protocol-v2.0.0-restart-82bfa415/` |
+| 4c | `run-demand-bearing-g3-vectors.ps1` | `DEMAND_BEARING_G3_VECTORS_PASS` | `evidence/g3/20260922-protocol-v2.0.0-demand-bearing-82bfa415/` |
+| 4d | `run-journey-g3.ps1`（15 场景） | **`JOURNEY_G3_PASS`，15/15**；`FP-IS-01`／`02`／`03`／`07`／`08`／`10`／`11` 七片 `gate-result.json` 都是 `PASS`、`formalSlicePass true`，`commitSource SHARED_BINDING` | `evidence/g3/20260922-protocol-v2.0.0-journey-82bfa415/` |
+| 5 | CI 真装置 | 15/15 PASS | 第二节 |
+| 6 | CI `l2.yml` `consecutive-all` | run `35699901251`，165/165 PASS | 第二节 |
+| 7 | 服务端全量 L1（草稿上 `workflow_dispatch` `test.yml`）；本 PR 转 ready 后默认 CI | 2353/2353；默认一轮见检查页 | 第一节 |
+| 8 | 车载端全量 L1 | 938/938（push 运行，提交相同） | 第一节 |
+
+开跑前核过车载端顶端（`git ls-remote`）是 `86d42ce5`；四个 runner 的构建都没有遇到调度提醒的 `dotnet build-server shutdown`（日志里没有编译服务器断开或 MSBuild 节点退出）。
+
+**journey 这一轮绿不是修复成立的证据。**第一轮那一红是一个时间窗口，命中率推算约两成，这一轮没撞上本来就可能。修复成立的证据是 control-server#314 自己的
+确定性红用例（`PickupDispatchPlanPastOwnOrderTests`，修前红、修后绿）；这里的 15/15 证明的只是第二轮代码上各片 G3 不退化。
+
+**`FP-IS-08` 的四道门禁**：G1 是协议侧发布证据——`protocol-v2.0.0` 的 G1 在发布态通过（program#97），本批协议零改动，车载端 G2 在发布态重跑了一次（`logs/protocol-g1.log`）；
+两端 G2 PASS；G3 由 journey 的 `g3-multi-stop-plan` 认领（control-server#218 的归属表），PASS。**四道全 PASS。**
 
 ## 四、红证据与缺陷单
 
@@ -299,7 +340,7 @@ control-server#208 那次，服务端自己的 diff 核得没错（返工那四�
 其后车载端又合入了 onboard-hmi#145 与 #152 两张改恢复路径产品代码的票，而它跑的 `real-onboard-compensate-then-reconnect` 走的正是那条路。
 于是账变成：服务端新 × 车载端旧跑过、车载端新 × 服务端旧跑过、服务端新 × 车载端新从未跑过——而那恰恰是合入后集成分支的实际状态（Coordinator 7 自己踩过，免跑已收回、补跑）。
 做法：先从 run 日志 `Run real-onboard L2 scenarios` 步骤的 `control-server <40>, onboard <40>, simulator <40>` 那一行读出三端，再逐端比对各自集成分支的当前顶端，
-对每一端问一遍那个判据；只重跑被影响的场景。本票出口同样适用：第一轮真装置 15 次三端都在出口身份上，没有免跑；第二轮【】。
+对每一端问一遍那个判据；只重跑被影响的场景。本票出口同样适用：两轮真装置各 15 次，三端都在当轮身份上，没有免跑；第二轮服务端前移（#314），第一轮的真装置结论没有沿用。
 
 ### 经验：同一机理第二次撞上
 
@@ -312,7 +353,7 @@ journey 那一红（第四节）第一次出现在 control-server#211 的自检�
 | 票 | 要做什么 | 状态 |
 | --- | --- | --- |
 | control-server#166（批次6-10） | 在 `mapId 26` 上建派工待送取货站点、按 `mapId` + `STAGING_TO_WIRE` 绑定、做现场用途核对 | 需要现场操作，等用户安排。**从批次 6 挂到现在**。它不是任何会话能做的，要在真实设备上建站、绑定、现场核对 |
-| 批次7-17（control-server#219） | 每区途中追加最大允许增量（`REQ-0198`）与每区防饥饿阈值（`REQ-0203`）的标定与批准 | 批次 7 主票，出口前要有结论：【第二轮时的状态】；参数未批时 v2 行为与批次 6 相同（第五节第 2 点） |
+| 批次7-17（control-server#219） | 每区途中追加最大允许增量（`REQ-0198`）与每区防饥饿阈值（`REQ-0203`）的标定与批准 | 批次 7 主票，出口时仍 open（人工标定待批准）；参数未批时 v2 行为与批次 6 相同（第五节第 2 点） |
 | 故障代理是否支持丢上行 | 第五节第 19 点 | 出口时由用户定 |
 
 ## 六、剩余风险
@@ -324,13 +365,13 @@ journey 那一红（第四节）第一次出现在 control-server#211 的自检�
 
 ### 行为与现场
 
-- **control-server#314（派往取货站的计划可能发不出）**：第四节。【第二轮时的状态】
+- **control-server#314（派往取货站的计划可能发不出）**：第四节。已修并合入（PR #315，`82bfa415`），不再是剩余风险；留在这里是为了记下它在现场的后果窗口只到 #314 部署为止。
 - **control-server#290**：持货超时截断未开始装的停靠（第五节第 2 点），必须先于任何分区参数启用合入。open。
 - **control-server#291**：卸货侧「已卸」与阶段推进分两次保存，中间崩溃后车静默停住或整轮中止（U1～U3），**默认一车一单配置下即可触发**。open。
 - **control-server#310**：同车旧连接半开时，新连接握手完成后才被拒。open。
 - **control-server#311**：激活命令在握手换代的毫秒窗口里可能错过补发——修前靠一次断线送达，修后既不断也不送。open。
 - **cs#307 形状**：第 2 条连接握手完成约 42 秒后服务端停止应答、车载端 `TimeoutException` 自断；run 35679117127 `real-onboard-durable-ack-lost` 三连的 -01、修前 run 35516706603 都出现过。
-  第一轮真装置未撞上（`durable-ack-lost` 一遍 PASS）。【第二轮】
+  两轮真装置都未撞上（`durable-ack-lost` 各一遍 PASS）。只跑一遍，证不了它不存在。
 - **`REQ-0208` 电量半边未实施**（第五节第 12 点），多需求旅程下假设更弱。
 - **部署约束：车载端心跳必须已是 2 秒**（第五节第 21 点）。
 - 其余开着、票面写明不挡出口的：control-server#237（准入被撤升级后故障事实不记）、#243（多车夹具无限延时钩子）、#246（staged runner 自检覆盖只给服务端）、
