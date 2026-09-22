@@ -981,13 +981,15 @@ public sealed class EmergencyStopSupervisorTests
         IReadOnlyList<string> obstacles = EmergencyStopSupervisor.ReleaseObstacles(
             latchedButUnrecoverable,
             triggerFaultGeneration: 4,
-            fault: Fault(VehicleFaultLevel.SuspectedBlocked, generation: 5, stopProven: false, cleared: false));
+            fault: Fault(VehicleFaultLevel.SuspectedBlocked, generation: 5, stopProven: false, cleared: false),
+            orders: Orders(hasUnfinishedOrder: null));
 
         // No EMERGENCY_STOP_NOT_PROVEN: CAN_NOT_RECOVER is a latch, and a latch is the stop proof
         // (REQ-0247 as revised by CP-0003). It still refuses, on the latch itself.
         Assert.Equal(
             [
                 "EMERGENCY_NOT_CAN_RECOVER",
+                "EMERGENCY_VEHICLE_ORDERS_UNKNOWN",
                 "EMERGENCY_FAULT_GENERATION_MOVED",
                 "EMERGENCY_CAUSE_NOT_CLEARED",
             ],
@@ -1007,7 +1009,8 @@ public sealed class EmergencyStopSupervisorTests
         IReadOnlyList<string> obstacles = EmergencyStopSupervisor.ReleaseObstacles(
             unlatched,
             triggerFaultGeneration: 5,
-            fault: Fault(VehicleFaultLevel.None, generation: 5, stopProven: false, cleared: true));
+            fault: Fault(VehicleFaultLevel.None, generation: 5, stopProven: false, cleared: true),
+            orders: Orders(hasUnfinishedOrder: false));
 
         Assert.Equal(["EMERGENCY_NOT_CAN_RECOVER", "EMERGENCY_STOP_NOT_PROVEN"], obstacles);
     }
@@ -1021,8 +1024,12 @@ public sealed class EmergencyStopSupervisorTests
         Assert.Empty(EmergencyStopSupervisor.ReleaseObstacles(
             recoverable,
             triggerFaultGeneration: 5,
-            fault: Fault(VehicleFaultLevel.None, generation: 5, stopProven: true, cleared: true)));
+            fault: Fault(VehicleFaultLevel.None, generation: 5, stopProven: true, cleared: true),
+            orders: Orders(hasUnfinishedOrder: false)));
     }
+
+    private static RiotVehicleOrderObservation Orders(bool? hasUnfinishedOrder) =>
+        new(Subject.DeviceKey, hasUnfinishedOrder, hasUnfinishedOrder == true ? ["ORDER-UNFINISHED-1"] : [], Now);
 
     /// <summary>
     /// The audit target for a vehicle command says what it is, because the column it goes into is

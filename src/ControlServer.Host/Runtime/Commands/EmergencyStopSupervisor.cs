@@ -142,7 +142,8 @@ public sealed record EmergencyStopDecision(
 /// </para>
 /// <para>
 /// <b>Two ways out, both strict.</b> REQ-0167's automatic release is earned by the cause being
-/// cleared on the fault fact. REQ-0356's release is earned by a person's confirmation instead,
+/// cleared on the fault fact, and since control-server#299 by no unfinished order on the vehicle as
+/// well. REQ-0356's release is earned by a person's confirmation instead,
 /// together with an identity, a <c>CAN_RECOVER</c> latch and no unfinished order on the vehicle.
 /// Either way the server calls <c>cancelEmergency</c> itself, and a confirmed release closes the
 /// episode — which is what keeps REQ-0248 from reading the server's own release as an unexpected
@@ -681,15 +682,26 @@ public sealed class EmergencyStopSupervisor(
     /// for the combined evidence on the fault fact regardless, which a vehicle latched between
     /// stations could never supply.
     /// </para>
+    /// <para>
+    /// <b>And RIoT must hold no unfinished order for the vehicle</b>, the same question and the same two codes as
+    /// <see cref="ConfirmedReleaseObstacles"/> (control-server#299). A cleared fault says the server is done with its
+    /// cause; it does not say RIoT has nothing left to drive the vehicle with. Until this was added only the release on
+    /// a person's confirmation asked, so clearing a fault while an order was still live released the latch on the next
+    /// evaluation and RIoT drove on -- which a person clearing a fault from beside the vehicle is exactly who would
+    /// be in its way. An answer RIoT could not give refuses the same way.
+    /// </para>
     /// </remarks>
     internal static IReadOnlyList<string> ReleaseObstacles(
         RiotVehicleEmergencyObservation emergency,
         long? triggerFaultGeneration,
-        VehicleFaultFact? fault)
+        VehicleFaultFact? fault,
+        RiotVehicleOrderObservation orders)
     {
         ArgumentNullException.ThrowIfNull(emergency);
+        ArgumentNullException.ThrowIfNull(orders);
 
         List<string> obstacles = [];
+
         if (!string.Equals(
                 emergency.EmergencyState,
                 RiotVehicleEmergencyObservation.CanRecover,
@@ -698,6 +710,15 @@ public sealed class EmergencyStopSupervisor(
             // CAN_NOT_RECOVER forbids the call outright (allowlist 1.5); anything else is not a
             // recoverable latch either.
             obstacles.Add("EMERGENCY_NOT_CAN_RECOVER");
+        }
+
+        if (!orders.IsKnown)
+        {
+            obstacles.Add("EMERGENCY_VEHICLE_ORDERS_UNKNOWN");
+        }
+        else if (orders.HasUnfinishedOrder == true)
+        {
+            obstacles.Add("EMERGENCY_VEHICLE_ORDER_NOT_FINISHED");
         }
 
         if (fault is null)
@@ -908,8 +929,10 @@ public sealed class EmergencyStopSupervisor(
     {
         VehicleFaultFact? fault = await faults.ReadAsync(subject.AgvId, cancellationToken)
             .ConfigureAwait(false);
+        RiotVehicleOrderObservation orders = await orderFacts
+            .ReadUnfinishedOrdersAsync(subject.DeviceKey, cancellationToken).ConfigureAwait(false);
         IReadOnlyList<string> obstacles = ReleaseObstacles(
-            emergency, trigger.FaultGeneration, fault);
+            emergency, trigger.FaultGeneration, fault, orders);
         if (obstacles.Count > 0)
         {
             string? alarm = string.Equals(
