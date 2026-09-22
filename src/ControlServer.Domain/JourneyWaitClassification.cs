@@ -26,6 +26,17 @@ namespace ControlServer.Domain;
 /// simply under way is not a wait, however long it takes, and its wait begins when the reason appears, not when the leg
 /// did.
 /// </para>
+/// <para>
+/// <b>Except <see cref="SessionNotReadyReason"/>, which on a leg is never a wait</b> (incremental review of #320). A real
+/// onboard carrying this server's own order in flight reports RecoveryRequired by design until the order ends
+/// (control-server#314, #316), so the engine writes that code on the first round of nearly every leg and clears it only on
+/// arrival. Counted, it logged a twelve-minute drive as "waited 10 min" and carried the drive into the stop that followed.
+/// All of it is left out rather than only the own-order case <c>OwnMovementOrderExplanation</c> recognises: that judgement
+/// needs the session and order rows, and this table is read where there are none (the database context that stamps the
+/// wait). What it gives up is small: a leg that has really stopped is named on the RIoT side -- an order failed or hung, a
+/// checkpoint wait past its budget, a session gone silent -- and those still count. At a stop the code changes nothing: the
+/// stage is stationary and waits anyway.
+/// </para>
 /// </remarks>
 public static class JourneyWaitClassification
 {
@@ -51,9 +62,17 @@ public static class JourneyWaitClassification
     public static bool IsWaiting(JourneyRuntimeStage stage, string? blockReasonCode) => Of(stage) switch
     {
         JourneyStageActivity.Stationary => true,
-        JourneyStageActivity.Travelling => blockReasonCode is not null,
+        JourneyStageActivity.Travelling => blockReasonCode is not null &&
+            !string.Equals(blockReasonCode, SessionNotReadyReason, StringComparison.Ordinal),
         _ => false
     };
+
+    /// <summary>
+    /// The code <c>JourneyRuntimeEngine.AdvanceAsync</c> writes while the vehicle's session is not Ready. Spelled out here
+    /// because the domain cannot see the host; <c>WaitingJourneyBatteryWatchTests.ADriveWithTheSessionNotReadyIsNotAWaitAndTheStopWaitsFromArrival</c>
+    /// runs the engine's own write through this table, so a rename on either side turns it red.
+    /// </summary>
+    public const string SessionNotReadyReason = "ONBOARD_SESSION_NOT_READY";
 }
 
 public enum JourneyStageActivity

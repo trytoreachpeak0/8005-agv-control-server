@@ -30,8 +30,8 @@ public sealed class WaitingJourneyWatchMigrationTests
     }
 
     /// <summary>
-    /// 正在等人的旅程取记下来的最好的起点：停着的阶段有原因码起点的取它，没有的取最后一次写行的时刻；路上的只在带着原因码时算等人，
-    /// 取原因码的起点。这些都只会晚于真实起点，所以已在等的旅程读起来比实际短、报得晚，从不提前报。正常在路上的与已完成的不回填；
+    /// 正在等人的旅程取记下来的最好的起点：停着的阶段有原因码起点的取它，没有的取最后一次写行的时刻；路上的只在带着原因码时算等人
+    /// （会话未就绪那个码除外），取原因码的起点。这些都只会晚于真实起点，所以已在等的旅程读起来比实际短、报得晚，从不提前报。正常在路上的与已完成的不回填；
     /// 电量三列一律为空；别的列一个字节不动。
     /// </summary>
     [Fact]
@@ -54,6 +54,7 @@ public sealed class WaitingJourneyWatchMigrationTests
                 "D-GATE '2026-09-21 16:40:00+00:00' - - -",
                 "D-HANG '2026-09-21 17:05:00+00:00' - - -",
                 "D-MOVING - - - -",
+                "D-SESSION-GATE - - - -",
             ],
             await NewColumnsByDemandAsync(fixture.Connection));
     }
@@ -95,11 +96,11 @@ public sealed class WaitingJourneyWatchMigrationTests
         Assert.False(fixture.Context.Database.HasPendingModelChanges());
     }
 
-    /// <summary>五趟旅程经真实受理路径在一个草稿库上建出，照上一张迁移的列拷过来，再用原始 SQL 放到生产能到的样子。</summary>
+    /// <summary>六趟旅程经真实受理路径在一个草稿库上建出，照上一张迁移的列拷过来，再用原始 SQL 放到生产能到的样子。</summary>
     private static async Task SeedJourneysAsync(Batch7JourneyFixture fixture)
     {
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
-        string[] demands = ["D-GATE", "D-BLOCKED", "D-HANG", "D-COMPLETED", "D-MOVING"];
+        string[] demands = ["D-GATE", "D-BLOCKED", "D-HANG", "D-COMPLETED", "D-MOVING", "D-SESSION-GATE"];
         await using Batch7JourneyFixture scratch = await Batch7JourneyFixture.CreateAsync();
         for (int index = 0; index < demands.Length; index++)
         {
@@ -128,6 +129,10 @@ public sealed class WaitingJourneyWatchMigrationTests
             -- 正常在路上，没有原因码：不是等人。
             UPDATE JourneyRuntimes SET Stage = 'AwaitingGateArrival', BlockReasonCode = NULL, BlockReasonSince = NULL,
                 UpdatedAt = '2026-09-21 17:30:00+00:00' WHERE DemandId = 'D-MOVING';
+            -- 在路上，车载会话因本服务端自己的在途单而未就绪：真车上几乎每段路都这样，不是等人。
+            UPDATE JourneyRuntimes SET Stage = 'AwaitingGateArrival', BlockReasonCode = 'ONBOARD_SESSION_NOT_READY',
+                BlockReasonSince = '2026-09-21 17:31:00+00:00', UpdatedAt = '2026-09-21 17:40:00+00:00'
+                WHERE DemandId = 'D-SESSION-GATE';
             """;
         await raw.ExecuteNonQueryAsync(cancellationToken);
     }

@@ -414,6 +414,105 @@ public sealed class WaitingJourneyBatteryWatchTests
         Assert.Contains("for 10 min", message, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// 探针的形状（#320 增量审查中项 Q1，审查者在克隆里复现过）：出发 1 秒后车载会话进 RecoveryRequired——真车载端挂着本服务端的
+    /// 在途单时按设计就是这样（cs#314、#316）——引擎在路上写 <c>ONBOARD_SESSION_NOT_READY</c>；正常开 12 分钟，会话恢复 Ready、到站。
+    /// 修前：第 10 分钟误报「路上已等 10 分」，到站后等人起点还沿用出发时刻。修后：路上一条不报，到站从到站那一刻计时，满门槛才报。
+    /// 先断言引擎真的写了那个码——判据经过的是引擎自己那一笔写入，不是手写的原因码。
+    /// </summary>
+    [Fact]
+    public async Task ADriveWithTheSessionNotReadyIsNotAWaitAndTheStopWaitsFromArrival()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(DemandId, "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        JourneyRuntimeRow onTheWay = await fixture.AdvanceToGateArrivalAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, onTheWay.Stage);
+        DateTimeOffset left = fixture.Clock.GetUtcNow();
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        SessionRecoveryRow session = await fixture.Context.SessionRecoveries.SingleAsync(TestContext.Current.CancellationToken);
+        session.Readiness = SessionReadiness.RecoveryRequired;
+        session.ReasonCode = "DEPARTURE_SAFETY_NOT_READY";
+        session.DepartureSafe = false;
+        session.SafetyReasonCodesJson = """["VEHICLE_NOT_READY"]""";
+        session.SafetyUnknownPresent = true;
+        session.UpdatedAt = fixture.Clock.GetUtcNow();
+        await fixture.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        await RoundAtAsync(fixture, left + TimeSpan.FromSeconds(2));
+        JourneyRuntimeRow gated = await ReloadAsync(fixture);
+        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, gated.Stage);
+        Assert.Equal(JourneyWaitClassification.SessionNotReadyReason, gated.BlockReasonCode);
+        Assert.Null(gated.WaitingSince);
+
+        await RoundAtAsync(fixture, left + TimeSpan.FromMinutes(10));
+        await RoundAtAsync(fixture, left + TimeSpan.FromMinutes(12));
+        Assert.Empty(WatchEntries(fixture));
+
+        await fixture.RestoreSessionReadyAsync();
+        fixture.Riot.SetSuccessfulArrival("TO_GATE", TaskTypeStationRuntimeSeed.GateStationRiotId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = TaskTypeStationRuntimeSeed.GateStationRiotId };
+        DateTimeOffset arrived = left + TimeSpan.FromMinutes(12) + TimeSpan.FromSeconds(2);
+        await RoundAtAsync(fixture, arrived);
+        JourneyRuntimeRow atTheGate = await ReloadAsync(fixture);
+        Assert.Equal(JourneyRuntimeStage.AwaitingUnloadResult, atTheGate.Stage);
+        Assert.Equal(arrived, atTheGate.WaitingSince);
+        Assert.Null(atTheGate.WaitingWarnedAt);
+
+        await RoundAtAsync(fixture, arrived + fixture.Options.WaitingJourneyWarningAfter - TimeSpan.FromSeconds(1));
+        Assert.Empty(WatchEntries(fixture));
+        await RoundAtAsync(fixture, arrived + fixture.Options.WaitingJourneyWarningAfter);
+        (_, string message) = Assert.Single(WatchEntries(fixture));
+        Assert.Contains("AwaitingUnloadResult", message, StringComparison.Ordinal);
+        Assert.Contains("for 10 min", message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 出发那一次保存里派车没有确认（这里是 RIoT 的建单应答丢了，引擎把 <c>ResultUnknown</c> 写成原因码）：调度定为「继续等」
+    /// ——车多半没开走——所以等人起点沿用站内的那一个，不清零（#320 增量审查低项 L-a）。
+    /// </summary>
+    [Fact]
+    public async Task ADepartureWhoseOrderIsNotConfirmedKeepsWaitingFromTheStation()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(DemandId, "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        JourneyRuntimeRow checking = await fixture.AdvanceToDepartureSafetyAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, checking.Stage);
+        DateTimeOffset? atTheStation = checking.WaitingSince;
+        Assert.NotNull(atTheStation);
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(30));
+        fixture.Riot.LoseNextCreateResponse = true;
+        await fixture.AddInboxAsync(
+            Guid.NewGuid().ToString("D"),
+            "PreDepartureSafetyCheckResult",
+            new
+            {
+                preDepartureSafetyCheckId = checking.PreDepartureSafetyCheckId,
+                outcome = "SAFE",
+                observedAt = fixture.Clock.GetUtcNow(),
+                safetyStateVersion = 7,
+                validUntil = fixture.Clock.GetUtcNow().AddMinutes(1),
+                safety = new
+                {
+                    departureSafe = true,
+                    vehicleStopped = true,
+                    allTargetSlotsLocked = true,
+                    allUnlockOutputsReset = true,
+                    unknownPresent = false,
+                    reasonCodes = Array.Empty<string>()
+                }
+            },
+            checking.PreDepartureSafetyCheckMessageId);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyRuntimeRow unconfirmed = await ReloadAsync(fixture);
+        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, unconfirmed.Stage);
+        Assert.Equal(nameof(MovementDispatchOutcome.ResultUnknown), unconfirmed.BlockReasonCode);
+        Assert.Equal(atTheStation, unconfirmed.WaitingSince);
+    }
+
     // ---- 等人阶段之间切换不归零，离开等人才清零（#320 审查低项 4、6） --------------------------------------------------
 
     /// <summary>
@@ -541,6 +640,14 @@ public sealed class WaitingJourneyBatteryWatchTests
             Assert.Equal(activity, JourneyWaitClassification.Of(stage));
         }
         Assert.Throws<InvalidDataException>(() => JourneyWaitClassification.Of((JourneyRuntimeStage)999));
+
+        // The session gate: on a leg it is not a wait, at a stop it changes nothing (incremental review of #320, Q1 a).
+        Assert.False(JourneyWaitClassification.IsWaiting(JourneyRuntimeStage.AwaitingGateArrival, "ONBOARD_SESSION_NOT_READY"));
+        Assert.False(JourneyWaitClassification.IsWaiting(JourneyRuntimeStage.AwaitingPickupArrival, "ONBOARD_SESSION_NOT_READY"));
+        Assert.True(JourneyWaitClassification.IsWaiting(JourneyRuntimeStage.AwaitingGateArrival, "VEHICLE_ORDER_FAILED"));
+        Assert.True(JourneyWaitClassification.IsWaiting(JourneyRuntimeStage.AwaitingGateArrival, "ONBOARD_SESSION_LOST"));
+        Assert.True(JourneyWaitClassification.IsWaiting(JourneyRuntimeStage.AwaitingUnloadResult, "ONBOARD_SESSION_NOT_READY"));
+        Assert.False(JourneyWaitClassification.IsWaiting(JourneyRuntimeStage.AwaitingGateArrival, null));
     }
 
     // ---- 等人起点由上下文维护 ----------------------------------------------------------------------------------------
@@ -621,6 +728,52 @@ public sealed class WaitingJourneyBatteryWatchTests
         await EditAsync(options, row => { row.Stage = JourneyRuntimeStage.Completed; row.UpdatedAt = t0.AddMinutes(30); });
         Assert.Null((await ReadAsync(options)).WaitingSince);
     }
+
+    /// <summary>
+    /// 到站重新计时（#320 增量审查 Q1 b）：路上真停过（检查点等待，算等人）、之后到站，新的一段等待从到站那一刻算，告警时刻一并清掉——
+    /// 车动过了。阻断例外：路上被阻断是原地阻断，起点沿用。
+    /// </summary>
+    [Fact]
+    public async Task ArrivingStartsANewWaitButABlockOnTheLegKeepsItsStart()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(cancellationToken);
+        DbContextOptions<ControlServerDbContext> options =
+            new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options;
+        await using (ControlServerDbContext create = new(options))
+        {
+            await create.Database.EnsureCreatedAsync(cancellationToken);
+            JourneyRuntimeRow onTheLeg = Runtime("D-ARRIVE", JourneyRuntimeStage.AwaitingGateArrival, T0);
+            onTheLeg.SetBlockReason("VEHICLE_WAITING_AT_CHECKPOINT", T0);
+            create.JourneyRuntimes.Add(onTheLeg);
+            JourneyRuntimeRow blockedOnTheLeg = Runtime("D-BLOCK-ON-LEG", JourneyRuntimeStage.AwaitingGateArrival, T0);
+            blockedOnTheLeg.SetBlockReason("VEHICLE_ORDER_FAILED", T0);
+            create.JourneyRuntimes.Add(blockedOnTheLeg);
+            await create.SaveChangesAsync(cancellationToken);
+        }
+
+        await EditAsync(options, "D-ARRIVE", row => { row.WaitingWarnedAt = T0.AddMinutes(10); row.UpdatedAt = T0.AddMinutes(10); });
+        await EditAsync(options, "D-ARRIVE", row =>
+        {
+            row.Stage = JourneyRuntimeStage.AwaitingUnloadResult;
+            row.SetBlockReason(null, T0.AddMinutes(14));
+            row.UpdatedAt = T0.AddMinutes(14);
+        });
+        JourneyRuntimeRow arrived = await ReadAsync(options, "D-ARRIVE");
+        Assert.Equal(T0.AddMinutes(14), arrived.WaitingSince);
+        Assert.Null(arrived.WaitingWarnedAt);
+
+        await EditAsync(options, "D-BLOCK-ON-LEG", row =>
+        {
+            row.Stage = JourneyRuntimeStage.Blocked;
+            row.SetBlockReason("LOAD_RESULT_REQUIRES_RECOVERY", T0.AddMinutes(20));
+            row.UpdatedAt = T0.AddMinutes(20);
+        });
+        Assert.Equal(T0, (await ReadAsync(options, "D-BLOCK-ON-LEG")).WaitingSince);
+    }
+
+    private static readonly DateTimeOffset T0 = new(2026, 9, 22, 1, 0, 0, TimeSpan.Zero);
 
     // ---- 配置 ------------------------------------------------------------------------------------------------------
 
@@ -746,6 +899,23 @@ public sealed class WaitingJourneyBatteryWatchTests
     {
         await using ControlServerDbContext read = new(options);
         return await read.JourneyRuntimes.AsNoTracking().SingleAsync(TestContext.Current.CancellationToken);
+    }
+
+    private static async Task EditAsync(
+        DbContextOptions<ControlServerDbContext> options, string demandId, Action<JourneyRuntimeRow> edit)
+    {
+        await using ControlServerDbContext write = new(options);
+        JourneyRuntimeRow row = await write.JourneyRuntimes.SingleAsync(
+            item => item.DemandId == demandId, TestContext.Current.CancellationToken);
+        edit(row);
+        await write.SaveChangesAsync(TestContext.Current.CancellationToken);
+    }
+
+    private static async Task<JourneyRuntimeRow> ReadAsync(DbContextOptions<ControlServerDbContext> options, string demandId)
+    {
+        await using ControlServerDbContext read = new(options);
+        return await read.JourneyRuntimes.AsNoTracking().SingleAsync(
+            item => item.DemandId == demandId, TestContext.Current.CancellationToken);
     }
 
     private static async Task EditAsync(DbContextOptions<ControlServerDbContext> options, Action<JourneyRuntimeRow> edit)

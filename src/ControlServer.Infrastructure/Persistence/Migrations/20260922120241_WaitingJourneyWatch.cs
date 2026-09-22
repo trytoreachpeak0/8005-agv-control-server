@@ -38,8 +38,9 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
             // control-server#273: a journey already waiting when the column arrives gets the best start that was recorded, by
             // the same definition of waiting as JourneyWaitClassification (frozen here as it stood when this migration was
             // written; a migration does not change with the code after it). A stationary stage's wait began no later than its
-            // reason code's start, else than the row's last write; a travelling stage waits only while it names a reason, from
-            // that reason's start. Every such start can only be later than the truth, so a wait under way reads shorter and is
+            // reason code's start, else than the row's last write; a travelling stage waits only while it names a reason other
+            // than the session gate (ONBOARD_SESSION_NOT_READY, which a real onboard reports on nearly every leg), from that
+            // reason's start. Every such start can only be later than the truth, so a wait under way reads shorter and is
             // logged late, never early. No comparison between the two times: SQLite compares these columns as text.
             migrationBuilder.Sql(
                 """
@@ -49,7 +50,8 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                                   'AwaitingDepartureSafety', 'AwaitingUnloadResult', 'Blocked');
                 UPDATE "JourneyRuntimes"
                 SET "WaitingSince" = "BlockReasonSince"
-                WHERE "Stage" IN ('AwaitingPickupArrival', 'AwaitingGateArrival') AND "BlockReasonCode" IS NOT NULL;
+                WHERE "Stage" IN ('AwaitingPickupArrival', 'AwaitingGateArrival') AND "BlockReasonCode" IS NOT NULL
+                  AND "BlockReasonCode" <> 'ONBOARD_SESSION_NOT_READY';
                 """);
         }
 

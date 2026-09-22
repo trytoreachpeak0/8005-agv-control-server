@@ -40,3 +40,13 @@
 | N8 | 只有正常结束的一轮才跑监看（低项 5） | 1 | `TheWatchStillRunsInARoundThatThrew` |
 
 上面 L2 证据摘要的服务端提交是 `7fcdc6cf`，那是第一版。按审查修改之后的代码，由推送后 PR 自动跑的 l2 重新验证。
+
+## 按 #320 增量审查修改之后的反向验证（第三批变异）
+
+在按增量审查修改后的代码上跑，筛选条件同上，当时共 42 条用例。三个变异全部出现红：
+
+| 变异 | 改了什么（对应审查项） | 红的用例数 | 红的是哪几条 |
+| --- | --- | --- | --- |
+| Q1a | 路上的 `ONBOARD_SESSION_NOT_READY` 重新算作等人（中项 Q1 a） | 2 | `ADriveWithTheSessionNotReadyIsNotAWaitAndTheStopWaitsFromArrival`（出发后第一轮等人起点就有了值）、分类表用例 |
+| Q1b | 到站不重新计时（中项 Q1 b） | 1 | `ArrivingStartsANewWaitButABlockOnTheLegKeepsItsStart` |
+| L-a | 派车未确认的出发不再算作继续等人（低项 L-a） | 1 | `ADepartureWhoseOrderIsNotConfirmedKeepsWaitingFromTheStation` |

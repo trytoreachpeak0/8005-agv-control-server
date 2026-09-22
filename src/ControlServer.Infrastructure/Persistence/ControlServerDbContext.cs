@@ -190,6 +190,15 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
                 continue;
             }
             JourneyRuntimeRow row = entry.Entity;
+            // Arriving is a new wait: the vehicle has moved since whatever wait the leg carried (incremental review of
+            // #320). Blocked is the exception -- a leg is blocked where it stands.
+            if (entry.State == EntityState.Modified &&
+                row.Stage != JourneyRuntimeStage.Blocked &&
+                JourneyWaitClassification.Of(row.Stage) == JourneyStageActivity.Stationary &&
+                JourneyWaitClassification.Of(entry.Property(item => item.Stage).OriginalValue) == JourneyStageActivity.Travelling)
+            {
+                row.ReconcileWait(waiting: false, row.UpdatedAt);
+            }
             DateTimeOffset startedAt = JourneyWaitClassification.Of(row.Stage) == JourneyStageActivity.Travelling
                 ? row.BlockReasonSince ?? row.UpdatedAt
                 : row.UpdatedAt;
@@ -716,7 +725,19 @@ public sealed class JourneyRuntimeRow
     /// <para>
     /// <b>A wait, not a stage.</b> Moving from one stationary stage to another -- a gate that waited two hours for its unload
     /// and is then blocked -- does not start it over: the vehicle has not moved and its battery has not stopped falling. It
-    /// ends only when the journey stops waiting, which is a departure or the end of the journey.
+    /// ends when the journey stops waiting -- a departure whose order was confirmed, or the end of the journey -- and a new
+    /// one begins on arrival, from the arrival, because the vehicle has moved since.
+    /// </para>
+    /// <para>
+    /// <b>A departure whose order was not confirmed keeps waiting</b> (incremental review of #320, L-a). The engine moves the
+    /// stage onto the leg in the same save that writes the dispatch outcome as the reason (<c>ResultUnknown</c> and the like);
+    /// a travelling stage with a reason is a wait, so the start stays the station's. That is decided, not incidental: the
+    /// vehicle has most likely not left.
+    /// </para>
+    /// <para>
+    /// <b>The session gate is not a reason on a leg.</b> <c>ONBOARD_SESSION_NOT_READY</c> is what a real onboard reports on
+    /// nearly every leg while it carries this server's own order, so on a travelling stage it is not a wait (see
+    /// <see cref="JourneyWaitClassification"/>).
     /// </para>
     /// <para>
     /// <b>A travelling stage's wait begins with its reason, not with the leg.</b> A twelve-minute drive whose session drops
