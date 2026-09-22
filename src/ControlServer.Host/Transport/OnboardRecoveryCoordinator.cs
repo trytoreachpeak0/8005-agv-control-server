@@ -315,6 +315,9 @@ public sealed class OnboardRecoveryCoordinator(
         }
         await SendPendingSessionSnapshotsAsync(
             RequiredString(root, "agvId"), cancellationToken).ConfigureAwait(false);
+        // 这条结果若结束了旅程里最后一条需求，收尾快照已随它那次保存落库，在答复之后发（control-server#323）。
+        await JourneyClosure.SendAsync(publisher, dbContext, RequiredString(root, "agvId"), cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async Task ReplayPendingCommandsAsync(
@@ -335,7 +338,11 @@ public sealed class OnboardRecoveryCoordinator(
         // 补发的那种情况。
         IReadOnlyList<string> activationIds = await activationDispatcher
             .PendingCommandMessageIdsAsync(agvId, cancellationToken).ConfigureAwait(false);
-        string[] pendingIds = [.. commandIds, .. snapshotIds, .. activationIds];
+        // 车把旅程快照写进本地日志库、重连前恢复，所以收尾那一刻没送到的收尾快照要在这里补（control-server#323）；
+        // 这辆车一旦有了下一趟旅程，它们就不在这里面了。
+        IReadOnlyList<string> closureIds = await JourneyClosure
+            .ReplayIdsAsync(dbContext, agvId, cancellationToken).ConfigureAwait(false);
+        string[] pendingIds = [.. commandIds, .. snapshotIds, .. activationIds, .. closureIds];
         if (pendingIds.Length > 0)
             await publisher.ReplayPendingForSessionAsync(
                 agvId, sessionGeneration, pendingIds.ToHashSet(StringComparer.Ordinal), cancellationToken)

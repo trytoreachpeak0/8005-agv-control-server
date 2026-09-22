@@ -21,6 +21,12 @@
    payload={"items":[{"demandId":"10000000-0000-4000-8000-000000000001","expectedBasketCount":1,"stopRole":"DROPOFF","sublot":"SUBLOT-001","transportDemandKey":"SUBLOT-001|WIRE_TO_GATE","workType":"WIRE_TO_GATE"}],"operationSessionId":"7e7ee0e2-5b9f-0e52-a69a-df22d71c836a","stationDepartureDeadlineAt":null,"stationId":"\u5173\u5361","worklistRevision":2}
 11 t=+6s type=SlotOperationCommand messageId=bda91f23-3d70-575c-9b07-cba1ab412e8c correlationId=NULL sessionGeneration=1 revision=- acknowledged=yes fenced=no payloadSha256=1a98230944ce7bce1e68c7e2b8e0f24855352875e595d89abc5e7316686b7a01
    payload={"commandContentSha256":"e52fa962a3a0fced450190999e6c276d94e08340c6af7baf5ff6cb474f235c60","demandId":"10000000-0000-4000-8000-000000000001","expectedBasketCount":1,"expectedFinalPhysicalState":"EMPTY","operationSessionId":"7e7ee0e2-5b9f-0e52-a69a-df22d71c836a","operationType":"UNLOAD","slotOperationAttemptId":"0ff18f12-54dc-a654-8d6a-d1661b5c3d3d","slots":[1]}
+12 t=+7s type=CurrentStopWorklistSnapshot messageId=5fff94a2-166a-f95f-a59a-dd5f386f4973 correlationId=NULL sessionGeneration=1 revision=3 acknowledged=no fenced=no payloadSha256=bfabfb1b3982819921bece795138894a3d85054712ba39d8b1dd35c5b85fe082
+   payload={"items":[],"operationSessionId":null,"stationDepartureDeadlineAt":null,"stationId":"\u5173\u5361","worklistRevision":3}
+13 t=+7s type=VehicleBusinessStateSnapshot messageId=b533fd79-cb5a-a853-b04c-72dddc8a75e5 correlationId=NULL sessionGeneration=1 revision=3 acknowledged=no fenced=no payloadSha256=a6673c335d1a6ade0902d50b20f0be07f94bc4848114390c2bcc6aff29690022
+   payload={"activePurpose":null,"batteryState":"SUFFICIENT","blockingFacts":[],"chargingCycleState":"NOT_CHARGING","loadingPhase":null,"manualChargingHold":false,"observedAt":"2026-08-26T01:00:07\u002B00:00","readiness":"READY","vehicleBusinessStateRevision":3}
+14 t=+7s type=UpcomingStopPlanSnapshot messageId=de17d15f-e16c-7257-8228-a387fbf2fbd2 correlationId=NULL sessionGeneration=1 revision=4 acknowledged=no fenced=no payloadSha256=e9bab18bd1a60bb95ce2dde2dee8c8e9219e1075078df7e322d7e5532f1e4033
+   payload={"legs":[],"planRevision":4}
 ## Wire (as sent, in order)
 01 type=UpcomingStopPlanSnapshot messageId=2694bd09-7092-ef5c-886a-6cdba914299d correlationId=NULL sessionGeneration=1 revision=1 payloadSha256=e773de7ff0d6c3d47ec70611bb8320c83be59607bfe9e3dce1c7b8a6b4de0a5b
 02 type=VehicleBusinessStateSnapshot messageId=f5877668-3816-f752-a57a-15ecfe670401 correlationId=NULL sessionGeneration=1 revision=1 payloadSha256=05076b365153dbb1bba53516f99e5faecd6a577148c6772629ecb256804e4a61
@@ -55,6 +61,9 @@
 31 type=UpcomingStopPlanSnapshot messageId=b3a68bab-29c8-785a-b4a0-1fdda0a8c242 correlationId=NULL sessionGeneration=1 revision=3 payloadSha256=97fce0797788ecaa25d2f8784262e8f8bf018aa98519e7a26dbe453575a7a265
 32 type=CurrentStopWorklistSnapshot messageId=ba3af543-104d-625d-82b8-58960c81c566 correlationId=NULL sessionGeneration=1 revision=2 payloadSha256=bc5633279798977ac60c04989c6794c6e2b69d0224991813396250090dc4a091
 33 type=SlotOperationCommand messageId=bda91f23-3d70-575c-9b07-cba1ab412e8c correlationId=NULL sessionGeneration=1 revision=- payloadSha256=1a98230944ce7bce1e68c7e2b8e0f24855352875e595d89abc5e7316686b7a01
+34 type=CurrentStopWorklistSnapshot messageId=5fff94a2-166a-f95f-a59a-dd5f386f4973 correlationId=NULL sessionGeneration=1 revision=3 payloadSha256=bfabfb1b3982819921bece795138894a3d85054712ba39d8b1dd35c5b85fe082
+35 type=UpcomingStopPlanSnapshot messageId=de17d15f-e16c-7257-8228-a387fbf2fbd2 correlationId=NULL sessionGeneration=1 revision=4 payloadSha256=e9bab18bd1a60bb95ce2dde2dee8c8e9219e1075078df7e322d7e5532f1e4033
+36 type=VehicleBusinessStateSnapshot messageId=b533fd79-cb5a-a853-b04c-72dddc8a75e5 correlationId=NULL sessionGeneration=1 revision=3 payloadSha256=a6673c335d1a6ade0902d50b20f0be07f94bc4848114390c2bcc6aff29690022
 ## RIoT orders (CreatedAt, then UpperId)
 01 t=+1s purpose=TO_PICKUP upperId=W2G-10000000-0000-4000-8000-000000000001-PICKUP-1 status=CONFIRMED movementLegId=f13413b8-c674-ce57-a847-b4f653a98921 demandId=10000000-0000-4000-8000-000000000001 targetStationId=N1-1 destinationStationId=12 dispatchGeneration=1
 02 t=+5s purpose=TO_GATE upperId=W2G-10000000-0000-4000-8000-000000000001-GATE-1 status=CONFIRMED movementLegId=6418afc8-35b0-9b5b-95e5-5cea49ca7333 demandId=10000000-0000-4000-8000-000000000001 targetStationId=关卡 destinationStationId=210 dispatchGeneration=1

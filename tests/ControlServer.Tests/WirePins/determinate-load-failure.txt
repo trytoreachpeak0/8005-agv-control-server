@@ -11,6 +11,12 @@
    payload={"commandContentSha256":"edce5feb2617b2790e8ebb799db0e1144349fce3dc06608b6c99e4b0993d76fb","demandId":"10000000-0000-4000-8000-000000000001","expectedBasketCount":1,"expectedFinalPhysicalState":"OCCUPIED","operationSessionId":"7e7ee0e2-5b9f-0e52-a69a-df22d71c836a","operationType":"LOAD","slotOperationAttemptId":"f2044f20-4b25-c054-a4df-d358fb953162","slots":[1]}
 06 t=+0s type=VehicleBusinessStateSnapshot messageId=f5877668-3816-f752-a57a-15ecfe670401 correlationId=NULL sessionGeneration=1 revision=1 acknowledged=no fenced=no payloadSha256=e75720a4bbfc9b79af75d5be51d2bdc708d068384634eb2bc62ae59023e00f75
    payload={"activePurpose":"TRANSPORT","batteryState":"SUFFICIENT","blockingFacts":[],"chargingCycleState":"NOT_CHARGING","loadingPhase":{"cargoHoldingDeadlineAt":null,"closedReason":null,"state":"LOADING"},"manualChargingHold":false,"observedAt":"2026-08-26T01:00:00\u002B00:00","readiness":"READY","vehicleBusinessStateRevision":1}
+07 t=+11s type=CurrentStopWorklistSnapshot messageId=5fff94a2-166a-f95f-a59a-dd5f386f4973 correlationId=NULL sessionGeneration=1 revision=2 acknowledged=no fenced=no payloadSha256=a4e3e4585aa571b24e5b86c651b9945865c737dbe92621fb806710212f7b343a
+   payload={"items":[],"operationSessionId":null,"stationDepartureDeadlineAt":null,"stationId":"N1-1","worklistRevision":2}
+08 t=+11s type=VehicleBusinessStateSnapshot messageId=b533fd79-cb5a-a853-b04c-72dddc8a75e5 correlationId=NULL sessionGeneration=1 revision=2 acknowledged=no fenced=no payloadSha256=462c138b514ed263b3aa795ed89730c57342791f0ec79e6170ee37531f978a91
+   payload={"activePurpose":null,"batteryState":"SUFFICIENT","blockingFacts":[],"chargingCycleState":"NOT_CHARGING","loadingPhase":null,"manualChargingHold":false,"observedAt":"2026-08-26T01:00:11\u002B00:00","readiness":"READY","vehicleBusinessStateRevision":2}
+09 t=+11s type=UpcomingStopPlanSnapshot messageId=de17d15f-e16c-7257-8228-a387fbf2fbd2 correlationId=NULL sessionGeneration=1 revision=3 acknowledged=no fenced=no payloadSha256=88babf320b21b35d5fb4e8747a2d89051ded353f7c87e1a5bb485ce9d5ec87c6
+   payload={"legs":[],"planRevision":3}
 ## Wire (as sent, in order)
 01 type=UpcomingStopPlanSnapshot messageId=2694bd09-7092-ef5c-886a-6cdba914299d correlationId=NULL sessionGeneration=1 revision=1 payloadSha256=e773de7ff0d6c3d47ec70611bb8320c83be59607bfe9e3dce1c7b8a6b4de0a5b
 02 type=VehicleBusinessStateSnapshot messageId=f5877668-3816-f752-a57a-15ecfe670401 correlationId=NULL sessionGeneration=1 revision=1 payloadSha256=e75720a4bbfc9b79af75d5be51d2bdc708d068384634eb2bc62ae59023e00f75
@@ -26,5 +32,8 @@
 12 type=CurrentStopWorklistSnapshot messageId=362d6740-b2af-d653-a06b-dd961734f5cc correlationId=NULL sessionGeneration=1 revision=1 payloadSha256=91f91e97ed2304e0f20a95d236dddb9495c0b3296dd7d0bae5088472afb677b0
 13 type=SlotOperationCommand messageId=db1cf8be-c404-4156-962d-2318a0223306 correlationId=<volatile-1> sessionGeneration=1 revision=- payloadSha256=1d03c0a5d6d0e5eb5a4dfd79e13dc4a0147af5598d4585966fd5d919c49529eb
 14 type=VehicleBusinessStateSnapshot messageId=f5877668-3816-f752-a57a-15ecfe670401 correlationId=NULL sessionGeneration=1 revision=1 payloadSha256=e75720a4bbfc9b79af75d5be51d2bdc708d068384634eb2bc62ae59023e00f75
+15 type=CurrentStopWorklistSnapshot messageId=5fff94a2-166a-f95f-a59a-dd5f386f4973 correlationId=NULL sessionGeneration=1 revision=2 payloadSha256=a4e3e4585aa571b24e5b86c651b9945865c737dbe92621fb806710212f7b343a
+16 type=UpcomingStopPlanSnapshot messageId=de17d15f-e16c-7257-8228-a387fbf2fbd2 correlationId=NULL sessionGeneration=1 revision=3 payloadSha256=88babf320b21b35d5fb4e8747a2d89051ded353f7c87e1a5bb485ce9d5ec87c6
+17 type=VehicleBusinessStateSnapshot messageId=b533fd79-cb5a-a853-b04c-72dddc8a75e5 correlationId=NULL sessionGeneration=1 revision=2 payloadSha256=462c138b514ed263b3aa795ed89730c57342791f0ec79e6170ee37531f978a91
 ## RIoT orders (CreatedAt, then UpperId)
 01 t=+0s purpose=TO_PICKUP upperId=W2G-10000000-0000-4000-8000-000000000001-PICKUP-1 status=CONFIRMED movementLegId=f13413b8-c674-ce57-a847-b4f653a98921 demandId=10000000-0000-4000-8000-000000000001 targetStationId=N1-1 destinationStationId=12 dispatchGeneration=1

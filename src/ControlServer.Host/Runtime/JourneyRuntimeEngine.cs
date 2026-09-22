@@ -1051,7 +1051,9 @@ public sealed class JourneyRuntimeEngine(
                     stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken)
                         .ConfigureAwait(false);
 
-                    SetStage(runtime, JourneyRuntimeStage.Completed, now);
+                    // 与终结的五条来路同一个出口：写 Completed，并暂存车要收的收尾快照（control-server#323）。
+                    await JourneyClosure.StageAsync(dbContext, runtime, reasonCode: null, now, cancellationToken)
+                        .ConfigureAwait(false);
                     checkpointWaits.Clear(runtime.VehicleKey);
                     // The journey is over, so the vehicle stops being occupied by it. Released
                     // here rather than at the gate arrival because the claim covers the whole
@@ -1071,6 +1073,11 @@ public sealed class JourneyRuntimeEngine(
         }
 
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        // 正常卸完的那一轮：收尾快照随上面这次保存落库，保存之后才发（control-server#323）。
+        if (runtime.Stage == JourneyRuntimeStage.Completed)
+        {
+            await JourneyClosure.SendAsync(publisher, dbContext, runtime.AgvId, cancellationToken).ConfigureAwait(false);
+        }
     }
 
 
@@ -1710,8 +1717,10 @@ public sealed class JourneyRuntimeEngine(
     /// （<c>SNAPSHOT_REVISION_REGRESSION</c>）而断会话；旧录入请求被补发，则是一条内容已变的业务 id。
     /// </para>
     /// <para>
-    /// 一条待做的需求都没有时什么也不发：那不是空清单该不该发的问题，<c>expectedSublots</c> 带 <c>minItems: 1</c>，
-    /// 空集合发出去就是一条违反 schema 的报文。本停靠做完了，调用方接着往下一个停靠推。
+    /// 一条待做的需求都没有时这里什么也不发：本停靠做完了，调用方接着往下一个停靠推，下一个停靠到站时发它自己那一版。
+    /// 这是时机上的选择，不是协议不许——<b>这里曾写着空清单「违反 schema」，那是错的</b>（control-server#323）：<c>minItems: 1</c>
+    /// 只在录入请求的 <c>expectedSublots</c> 上，<c>CurrentStopWorklistSnapshot.items</c> 没有下限，空清单是合法报文。
+    /// 旅程收尾时的空清单就由 <see cref="JourneyClosure"/> 发；本站结束而旅程继续的那种（B 形态）由 control-server#324 接。
     /// </para>
     /// </remarks>
     private async Task PublishStopWorklistAsync(
@@ -3726,6 +3735,10 @@ public sealed class JourneyRuntimeEngine(
         {
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
+        if (runtime.Stage == JourneyRuntimeStage.Completed)
+        {
+            await JourneyClosure.SendAsync(publisher, dbContext, runtime.AgvId, cancellationToken).ConfigureAwait(false);
+        }
         checkpointWaits.Clear(runtime.VehicleKey);
         LogStationDeadlineEndedStop(logger, runtime.AgvId, runtime.DemandId, deadline, null);
         return true;
@@ -3873,6 +3886,10 @@ public sealed class JourneyRuntimeEngine(
                 cancellationToken).ConfigureAwait(false);
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        if (runtime.Stage == JourneyRuntimeStage.Completed)
+        {
+            await JourneyClosure.SendAsync(publisher, dbContext, runtime.AgvId, cancellationToken).ConfigureAwait(false);
         }
         checkpointWaits.Clear(runtime.VehicleKey);
         LogDeterminateLoadFailureSettled(

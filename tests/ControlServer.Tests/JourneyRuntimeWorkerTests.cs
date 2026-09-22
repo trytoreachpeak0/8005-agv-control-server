@@ -1008,8 +1008,11 @@ public sealed class JourneyRuntimeWorkerTests
             // also went out before each pickup arrival, so it has five: before, at the pickup and at
             // the gate on the first journey, before and at the pickup on the second. The sequence may
             // never step back.
+            // Since control-server#323 the first journey's completion also sends one closure snapshot on
+            // each stream (an empty worklist, an empty plan, a business state with no journey), between
+            // the first journey's gate and the second's first version: four, four and six, still monotonic.
             Assert.Equal(revisions.Order(), revisions);
-            Assert.Equal(stream.Key == "UpcomingStopPlanSnapshot" ? 5 : 3, revisions.Distinct().Count());
+            Assert.Equal(stream.Key == "UpcomingStopPlanSnapshot" ? 6 : 4, revisions.Distinct().Count());
         }
     }
 }

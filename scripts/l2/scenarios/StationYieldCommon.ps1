@@ -89,6 +89,8 @@ function Get-L2YieldSnapshotsOf([object]$Connection, [string]$AgvId) {
         $envelope = [string]$row.PayloadJson | ConvertFrom-Json -DateKind String
         if ([string]$envelope.agvId -ne $AgvId) { continue }
         $payload = $envelope.payload
+        # 不带 loadingPhase 的是旅程收尾那一张（control-server#323），不是装货阶段快照，理由同 Get-L2LoadingPhaseSnapshots。
+        if ($null -eq $payload.loadingPhase) { continue }
         [pscustomobject]@{
             Revision  = [long]$payload.vehicleBusinessStateRevision
             State     = [string]$payload.loadingPhase.state

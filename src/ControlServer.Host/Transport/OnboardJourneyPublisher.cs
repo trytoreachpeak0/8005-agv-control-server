@@ -78,6 +78,19 @@ public sealed class OnboardJourneyPublisher(
         VehicleBusinessProjection projection,
         CancellationToken cancellationToken)
     {
+        ValidateVehicleBusinessState(projection);
+        return PublishStampedSnapshotAsync(
+            "VehicleBusinessStateSnapshot",
+            messageId,
+            agvId,
+            sessionGeneration,
+            projection.Revision,
+            VehicleBusinessStatePayload(projection),
+            cancellationToken);
+    }
+
+    private static void ValidateVehicleBusinessState(VehicleBusinessProjection projection)
+    {
         ArgumentNullException.ThrowIfNull(projection);
         if (!ChargingCycleStates.Contains(projection.ChargingCycleState))
             throw new InvalidDataException("chargingCycleState is not allowed by the protocol.");
@@ -87,43 +100,38 @@ public sealed class OnboardJourneyPublisher(
         if ((projection.ActivePurpose == VehicleActivePurposes.Transport) != (projection.LoadingPhase is not null))
             throw new InvalidDataException(
                 "loadingPhase must be present exactly when activePurpose is TRANSPORT.");
-        return PublishStampedSnapshotAsync(
-            "VehicleBusinessStateSnapshot",
-            messageId,
-            agvId,
-            sessionGeneration,
-            projection.Revision,
-            // observedAt comes from the envelope's frozen sentAt rather than a fresh clock read.
-            // This snapshot keeps one deterministic messageId per journey stage, so a payload
-            // carrying the current time differs on every re-publish and is refused as a semantic
-            // conflict -- which left an arrived journey looping between reconnects, never able to
-            // re-send the snapshot the peer was waiting on.
-            sentAt => new
-            {
-                vehicleBusinessStateRevision = projection.Revision,
-                readiness = projection.Readiness,
-                projection.ActivePurpose,
-                projection.ManualChargingHold,
-                projection.BatteryState,
-                projection.ChargingCycleState,
-                loadingPhase = projection.LoadingPhase is not { } phase
-                    ? null
-                    : new
-                    {
-                        phase.State,
-                        phase.CargoHoldingDeadlineAt,
-                        phase.ClosedReason
-                    },
-                blockingFacts = projection.BlockingFacts.Select(fact => new
-                {
-                    fact.ReasonCode,
-                    fact.SubjectType,
-                    fact.SubjectId
-                }),
-                ObservedAt = sentAt
-            },
-            cancellationToken);
     }
+
+    // observedAt comes from the envelope's frozen sentAt rather than a fresh clock read.
+    // This snapshot keeps one deterministic messageId per journey stage, so a payload
+    // carrying the current time differs on every re-publish and is refused as a semantic
+    // conflict -- which left an arrived journey looping between reconnects, never able to
+    // re-send the snapshot the peer was waiting on.
+    private static Func<DateTimeOffset, object> VehicleBusinessStatePayload(VehicleBusinessProjection projection) =>
+        sentAt => new
+        {
+            vehicleBusinessStateRevision = projection.Revision,
+            readiness = projection.Readiness,
+            projection.ActivePurpose,
+            projection.ManualChargingHold,
+            projection.BatteryState,
+            projection.ChargingCycleState,
+            loadingPhase = projection.LoadingPhase is not { } phase
+                ? null
+                : new
+                {
+                    phase.State,
+                    phase.CargoHoldingDeadlineAt,
+                    phase.ClosedReason
+                },
+            blockingFacts = projection.BlockingFacts.Select(fact => new
+            {
+                fact.ReasonCode,
+                fact.SubjectType,
+                fact.SubjectId
+            }),
+            ObservedAt = sentAt
+        };
 
     private static readonly HashSet<string> ChargingCycleStates = new(StringComparer.Ordinal)
     {
@@ -553,22 +561,7 @@ public sealed class OnboardJourneyPublisher(
             agvId,
             sessionGeneration,
             projection.Revision,
-            new
-            {
-                projection.StationId,
-                worklistRevision = projection.Revision,
-                projection.OperationSessionId,
-                projection.StationDepartureDeadlineAt,
-                items = projection.Items.Select(item => new
-                {
-                    item.DemandId,
-                    item.TransportDemandKey,
-                    item.Sublot,
-                    item.WorkType,
-                    item.StopRole,
-                    item.ExpectedBasketCount
-                })
-            },
+            CurrentStopWorklistPayload(projection),
             cancellationToken);
 
     public Task PublishUpcomingStopPlanAsync(
@@ -583,23 +576,130 @@ public sealed class OnboardJourneyPublisher(
             agvId,
             sessionGeneration,
             projection.Revision,
-            new
-            {
-                planRevision = projection.Revision,
-                legs = projection.Legs.Select(leg => new
-                {
-                    leg.MovementLegId,
-                    leg.LegType,
-                    leg.StopPurposeCategory,
-                    leg.DemandId,
-                    leg.PublicStationFunction,
-                    leg.Sequence,
-                    leg.StationId,
-                    leg.MapId,
-                    leg.State
-                })
-            },
+            UpcomingStopPlanPayload(projection),
             cancellationToken);
+
+    private static object CurrentStopWorklistPayload(CurrentStopWorklistProjection projection) => new
+    {
+        projection.StationId,
+        worklistRevision = projection.Revision,
+        projection.OperationSessionId,
+        projection.StationDepartureDeadlineAt,
+        items = projection.Items.Select(item => new
+        {
+            item.DemandId,
+            item.TransportDemandKey,
+            item.Sublot,
+            item.WorkType,
+            item.StopRole,
+            item.ExpectedBasketCount
+        })
+    };
+
+    private static object UpcomingStopPlanPayload(UpcomingStopPlanProjection projection) => new
+    {
+        planRevision = projection.Revision,
+        legs = projection.Legs.Select(leg => new
+        {
+            leg.MovementLegId,
+            leg.LegType,
+            leg.StopPurposeCategory,
+            leg.DemandId,
+            leg.PublicStationFunction,
+            leg.Sequence,
+            leg.StationId,
+            leg.MapId,
+            leg.State
+        })
+    };
+
+    /// <summary>
+    /// 旅程收尾的三张快照之一（control-server#323）：与对应的发布方法同一个信封、同一套载荷，但只暂存进调用方那一次还没保存的
+    /// 改动——不保存、不发送。发送由调用方在保存之后做（<c>JourneyClosure.SendAsync</c>）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 静态、不带对端，因为收尾尾巴（<c>PickupStopTermination</c>）只拿得到上下文：它的五个调用方里有几个根本没有发布器。
+    /// 按车计数器照样由这里推高（<see cref="WireToGateStore.RaiseSnapshotRevisionFloorAsync"/>，同样不保存），
+    /// 所以「暂存了快照却没结清」与发布那条路一样在构造上不可能。
+    /// </para>
+    /// <para>
+    /// 信封经 <c>ProtocolEnvelope.Serialize</c> 生成，出站 schema 门禁照样看得见这几行。返回 false 表示这个 id 已经在发件箱里、
+    /// 这一次什么也没加。
+    /// </para>
+    /// </remarks>
+    public static Task<bool> StageVehicleBusinessStateAsync(
+        WireToGateStore store,
+        string messageId,
+        string agvId,
+        long sessionGeneration,
+        VehicleBusinessProjection projection,
+        DateTimeOffset createdAt,
+        CancellationToken cancellationToken)
+    {
+        ValidateVehicleBusinessState(projection);
+        return StageStampedSnapshotAsync(
+            store, "VehicleBusinessStateSnapshot", messageId, agvId, sessionGeneration, projection.Revision,
+            VehicleBusinessStatePayload(projection), createdAt, cancellationToken);
+    }
+
+    /// <inheritdoc cref="StageVehicleBusinessStateAsync"/>
+    public static Task<bool> StageCurrentStopWorklistAsync(
+        WireToGateStore store,
+        string messageId,
+        string agvId,
+        long sessionGeneration,
+        CurrentStopWorklistProjection projection,
+        DateTimeOffset createdAt,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(projection);
+        object payload = CurrentStopWorklistPayload(projection);
+        return StageStampedSnapshotAsync(
+            store, "CurrentStopWorklistSnapshot", messageId, agvId, sessionGeneration, projection.Revision,
+            _ => payload, createdAt, cancellationToken);
+    }
+
+    /// <inheritdoc cref="StageVehicleBusinessStateAsync"/>
+    public static Task<bool> StageUpcomingStopPlanAsync(
+        WireToGateStore store,
+        string messageId,
+        string agvId,
+        long sessionGeneration,
+        UpcomingStopPlanProjection projection,
+        DateTimeOffset createdAt,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(projection);
+        object payload = UpcomingStopPlanPayload(projection);
+        return StageStampedSnapshotAsync(
+            store, "UpcomingStopPlanSnapshot", messageId, agvId, sessionGeneration, projection.Revision,
+            _ => payload, createdAt, cancellationToken);
+    }
+
+    private static async Task<bool> StageStampedSnapshotAsync(
+        WireToGateStore store,
+        string messageType,
+        string messageId,
+        string agvId,
+        long sessionGeneration,
+        long revision,
+        Func<DateTimeOffset, object> payloadFactory,
+        DateTimeOffset createdAt,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(store);
+        ArgumentException.ThrowIfNullOrWhiteSpace(messageId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+        ValidateUuid(messageId, nameof(messageId));
+        ArgumentOutOfRangeException.ThrowIfNegative(sessionGeneration);
+        await store.RaiseSnapshotRevisionFloorAsync(messageType, agvId, revision, cancellationToken)
+            .ConfigureAwait(false);
+        string wire = SerializeWire(
+            messageType, messageId, correlationId: null, agvId, sessionGeneration, createdAt, payloadFactory(createdAt));
+        return await store.StageOutboundEnvelopeAsync(messageId, messageType, wire, createdAt, cancellationToken)
+            .ConfigureAwait(false);
+    }
 
     private async Task PublishSnapshotAsync(
         string messageType,

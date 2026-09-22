@@ -54,7 +54,7 @@ public sealed class DemandReleaseService(
 {
     public const string CancelCommandType = "CANCEL";
 
-    // 收尾快照在释放落库之后由它发出（control-server#323）。
+    // 收尾快照在释放落库之后由它发出（control-server#323，JourneyClosure）。
     private readonly OnboardJourneyPublisher _publisher = publisher;
 
     private static readonly Action<ILogger, string, string, string, Exception?> LogReleased =
@@ -389,6 +389,12 @@ public sealed class DemandReleaseService(
         if (transaction is not null)
         {
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        if (last)
+        {
+            // 收尾快照随上面那次保存落库，提交之后发。车此刻多半因为自己那张刚取消的单还没回到就绪，照样发（JourneyClosure）。
+            await JourneyClosure.SendAsync(_publisher, dbContext, runtime.AgvId, cancellationToken).ConfigureAwait(false);
         }
 
         LogReleased(logger, demandId, runtime.JourneyId, trigger, null);

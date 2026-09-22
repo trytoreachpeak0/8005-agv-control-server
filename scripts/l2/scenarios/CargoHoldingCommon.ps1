@@ -89,12 +89,15 @@ function Wait-L2LoadingPhase {
 }
 
 # 发件箱里全部车辆业务状态快照的 loadingPhase，按修订号。
+# 不带 loadingPhase 的那几张不算：只有不在运输旅程上的业务状态才不带它（发布器按 activePurpose 强制），今天就是旅程收尾时
+# 那一张（control-server#323）。算进来它会以一个空状态混进「经过了哪些状态」「期限只有一个值」这些判据。
 function Get-L2LoadingPhaseSnapshots([object]$Connection) {
     $rows = Invoke-L2Query -Connection $Connection -Sql (
         "SELECT MessageId, PayloadJson, CreatedAt FROM ProtocolOutbox WHERE MessageType = 'VehicleBusinessStateSnapshot'")
     $snapshots = foreach ($row in $rows) {
         # -DateKind String：否则 ConvertFrom-Json 把时刻转成 DateTime，偏移量随之丢掉，比较期限时差出时区那几个小时。
         $payload = ([string]$row.PayloadJson | ConvertFrom-Json -DateKind String).payload
+        if ($null -eq $payload.loadingPhase) { continue }
         [pscustomobject]@{
             Revision  = [long]$payload.vehicleBusinessStateRevision
             State     = [string]$payload.loadingPhase.state
