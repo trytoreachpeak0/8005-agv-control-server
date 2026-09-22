@@ -67,6 +67,59 @@ public sealed class Batch7DemandReleaseServiceTests
     }
 
     /// <summary>
+    /// 来路 5（control-server#323）：到站之前释放了旅程里最后一条需求，旅程收尾。车上留着的是派往取货站的那一版计划，
+    /// 收尾之后要换成空计划（连同空清单与不带旅程的业务状态），而且在释放落库之后当场发出。
+    /// </summary>
+    [Fact]
+    public async Task ReleasingTheLastDemandOnItsWayToPickupTellsTheVehicleTheJourneyIsOver()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
+        LeaveTheMap(fixture);
+        CancellingGateway gateway = new(fixture.Clock, orderId => fixture.Riot.CancelOrder(before.PickupUpperId));
+
+        await Service(fixture, gateway).RunOnceAsync(Token);
+
+        await using ControlServerDbContext reading = new ControlServerDbContext(fixture.DbOptionsForTests);
+        Assert.Equal(JourneyRuntimeStage.Completed, (await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token)).Stage);
+        await ClosureSnapshotAssertions.AssertClosureSentAsync(
+            reading, before.AgvId, fixture.Peer.Lines.Select(line => System.Text.Encoding.UTF8.GetString(line)), 1,
+            before.PickupStationId);
+    }
+
+    /// <summary>
+    /// 同上，但会话此刻因本服务端自己的在途单而未就绪（<c>DEPARTURE_SAFETY_NOT_READY</c>，安全原因只有
+    /// <c>VEHICLE_NOT_READY</c>）——真车载端在车开往取货站的全程都是这个状态，合成车载端看不到（control-server#314）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>收尾快照照样当场发出，以会话此刻的那一代。</b>不等会话回到 <c>Ready</c>：车载端收行程快照不看自己的就绪状态
+    /// （onboard-hmi <c>WireToGateSessionClient</c> 在判就绪之前就把三种行程快照交给 <c>ApplyJourneySnapshotAsync</c>），
+    /// 而旅程已经收尾、引擎不再推进它，等到 <c>Ready</c> 也没有谁会再发。连接在握手中或代次不符时 <c>OnboardPeer</c> 拒收，
+    /// 那几行留在发件箱，由重连答复恢复报告之后的补发送到（<c>JourneyClosureSnapshotTests.AClosureTheVehicleMissedIsReplayedAfterItReconnects</c>）。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task ReleasingTheLastDemandWhileTheOwnOrderKeepsTheSessionNotReadyStillTellsTheVehicle()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
+        await PickupDispatchPlanPastOwnOrderTests.DropSessionOnOwnOrderAsync(fixture);
+        fixture.Context.ChangeTracker.Clear();
+        LeaveTheMap(fixture);
+        CancellingGateway gateway = new(fixture.Clock, orderId => fixture.Riot.CancelOrder(before.PickupUpperId));
+
+        await Service(fixture, gateway).RunOnceAsync(Token);
+
+        await using ControlServerDbContext reading = new ControlServerDbContext(fixture.DbOptionsForTests);
+        Assert.Equal(JourneyRuntimeStage.Completed, (await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token)).Stage);
+        Assert.Equal("DEPARTURE_SAFETY_NOT_READY", (await reading.SessionRecoveries.AsNoTracking().SingleAsync(Token)).ReasonCode);
+        await ClosureSnapshotAssertions.AssertClosureSentAsync(
+            reading, before.AgvId, fixture.Peer.Lines.Select(line => System.Text.Encoding.UTF8.GetString(line)), 1,
+            before.PickupStationId);
+    }
+
+    /// <summary>
     /// RIoT 没把订单置成 CANCELLED：结果不是 Confirmed 就不释放，写阻断原因；下一轮只对账那一次取消，不发第二次
     /// ——这就是「取消已发出而释放没落库时崩溃，重启后先对账」那条崩溃点，库里只有一条审计行是它的证据。
     /// </summary>
