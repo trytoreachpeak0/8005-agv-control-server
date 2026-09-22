@@ -499,6 +499,8 @@ public sealed class JourneyRuntimeEngine(
                 runtime.UpdatedAt = now;
                 await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             }
+            // 闸门关着，但派往取货站的那一版计划可能正是因为闸门关着才一直发不出去（control-server#314）。
+            await PublishPickupDispatchPlanPastOwnOrderAsync(runtime, now, cancellationToken).ConfigureAwait(false);
             return;
         }
         // 本轮推进读到的停靠与归属。每一个要发出去的 id 都从这里取，取货与关卡两段不再各读各的列。
@@ -1590,6 +1592,137 @@ public sealed class JourneyRuntimeEngine(
                 runtime, stops.Stops, stops.Current, arrivedAtCurrent: false,
                 PlanRevisionAt(runtime.PlanRevision, stops.Current, arrivedAtStop: false)),
             cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 会话只因本服务端自己的在途单而未就绪时，仍把派往取货站的那一版计划送到车上（control-server#314）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为什么闸门外还要发这一版。</b>取货那一段的 RIoT 单在受理那一轮就建成、确认，这一版计划却要等下一轮推进才发。
+    /// 车上一挂着本服务端的未结束单，车辆安全接口就回 <c>motionState=Unknown</c>（control-server#138，按设计保留），
+    /// 车载端报 <c>VEHICLE_NOT_READY</c>，会话落到 <c>DEPARTURE_SAFETY_NOT_READY</c>——而那张单不结束它就回不到 <c>Ready</c>。
+    /// 所以车载端只要在两轮之间读一次安全接口，这一版计划就要等到站才能发：车在路上时车载端不知道这趟要去哪，
+    /// G3 里则是死锁（装置等计划确认才让车走）。批次 7 出口的 <c>g3-task-type-admission-fail-closed</c> 撞上的就是这个窗口，约 200 毫秒。
+    /// </para>
+    /// <para>
+    /// <b>放行的只有这一版，其余照旧挡在闸门后面。</b>它是一张「车要去哪」的投影，不推进任何停靠、不开锁、不建单；
+    /// 车载端对行程快照不看自己的就绪状态，照收照确认（8005-agv-onboard-hmi <c>WireToGateSessionClient</c> 的接收循环
+    /// 在判就绪之前就把三种行程快照交给 <c>ApplyJourneySnapshotAsync</c>）。
+    /// </para>
+    /// <para>
+    /// <b>条件一条都不能少，每一条都按失败关闭。</b>
+    /// </para>
+    /// <list type="bullet">
+    /// <item><description>
+    /// 会话的原因码是 <c>DEPARTURE_SAFETY_NOT_READY</c>，安全原因只有车本身（<see cref="Dashboard.OwnMovementOrderExplanation"/>，
+    /// 与阻塞看板 control-server#139 用同一个判据）。这个原因码在 <c>GetRecoveryReason</c> 里排在能力快照、安全快照、恢复报告、
+    /// 强制恢复代次、待对账事实<b>之后</b>，所以它说明这五样都已具备：握手已经完成、对账已经结清（control-server#259 的「握手完成前
+    /// 不下发」由此承担一半，另一半是 <c>OnboardPeer</c> 只路由握手完成的连接）。
+    /// </description></item>
+    /// <item><description>
+    /// <b>但它说明不了「只剩出发安全这一个原因」。</b>同一个函数把出发安全排在作业待恢复（<c>OPERATION_RECOVERY_REQUIRED</c>）与
+    /// 强制恢复待硬件记录<b>之前</b>，这两者与出发不安全同时成立时，原因码只写出发安全。挡它们的不是原因码，是这里再问一次
+    /// <see cref="WireToGateStore.OperationNeedsRecoveryAsync"/> 与 <see cref="WireToGateStore.ForcedRecoveryAwaitsHardwareRecordAsync"/>——
+    /// 与 <c>DecideReadinessAsync</c> 用的是同一个查询。<see cref="TryBlockOnRecordedRecoveryAsync"/> 帮不上：它只在等装货、
+    /// 卸货结果的两个阶段把旅程挪去 <c>Blocked</c>，这里的阶段是 <c>AwaitingPickupArrival</c>；而强制恢复可以在车在路上、
+    /// 会话正是 <c>RECOVERY_REQUIRED</c> 时由管理员发起。
+    /// </description></item>
+    /// <item><description>
+    /// 当前停靠那张单是本服务端建的、已确认、落在这辆车上，而车没有挂着故障——否则「未知」可能另有来源。
+    /// 与 <see cref="PublishPickupDispatchPlanOnceAsync"/> 的「不在单确认之前」是同一条线，这里只读库、不问 RIoT。
+    /// </description></item>
+    /// <item><description>
+    /// 这一代会话听得到（<see cref="SessionLiveness"/>）。听不到的车，发送会在 <c>OnboardPeer</c> 抛异常，
+    /// 每轮一次——control-server#234 刚消掉的那种刷屏。
+    /// </description></item>
+    /// </list>
+    /// <para>
+    /// <b>恰好一次。</b>发件箱行与就绪那条路是同一行：id 是 <see cref="PickupDispatchPlanMessageId"/>（锚需求或改派旅程的
+    /// <c>StableGuid</c>），<see cref="PublishPickupDispatchPlanOnceAsync"/> 见到已有这一行就不再写。会话回到 <c>Ready</c> 之后，
+    /// 顶上的补发只补没确认的行——车确认过就一次也不再发。
+    /// </para>
+    /// <para>
+    /// <b>重连。</b>这里也先补发这一行（只这一行），和就绪那条路的顺序一样。车断了又连上、仍因自己的单未就绪时，
+    /// 补发把它的代次改写成新的一代（<see cref="OnboardJourneyPublisher.ReplayPendingForSessionAsync"/>）；新一代还在握手时，
+    /// 原因码不是 <c>DEPARTURE_SAFETY_NOT_READY</c>，这里一行都不发。会话行的代次若落后于连接的代次，
+    /// <c>OnboardPeer</c> 拒收，这一行留在发件箱等下一轮改写——与 control-server#309 的代次比对是同一条路。
+    /// </para>
+    /// </remarks>
+    private async Task PublishPickupDispatchPlanPastOwnOrderAsync(
+        JourneyRuntimeRow runtime,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (runtime.Stage != JourneyRuntimeStage.AwaitingPickupArrival)
+        {
+            return;
+        }
+        SessionRecoveryRow? session = await dbContext.SessionRecoveries.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.AgvId == runtime.AgvId, cancellationToken).ConfigureAwait(false);
+        if (session is null)
+        {
+            return;
+        }
+        JourneyStopCursor stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken)
+            .ConfigureAwait(false);
+        bool ownOrderInFlight = await OwnMovementOrderInFlightAsync(runtime, stops.Current.UpperId, cancellationToken)
+            .ConfigureAwait(false);
+        if (!Dashboard.OwnMovementOrderExplanation.Explains(
+                runtime.BlockReasonCode,
+                session.ReasonCode,
+                session.SafetyReasonCodesJson,
+                session.SafetyUnknownPresent,
+                ownOrderInFlight))
+        {
+            return;
+        }
+        // 原因码把这两样藏在出发安全后面（见上面的注释），所以单独问。
+        if (await store.OperationNeedsRecoveryAsync(runtime.AgvId, cancellationToken).ConfigureAwait(false) ||
+            await store.ForcedRecoveryAwaitsHardwareRecordAsync(runtime.AgvId, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+        if (!await SessionLiveness.HeardFromAsync(
+                dbContext, runtime.AgvId, session.SessionGeneration, now, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        await publisher.ReplayPendingForSessionAsync(
+            runtime.AgvId,
+            session.SessionGeneration,
+            new HashSet<string>(StringComparer.Ordinal) { PickupDispatchPlanMessageId(runtime) },
+            cancellationToken).ConfigureAwait(false);
+        await PublishPickupDispatchPlanOnceAsync(runtime, stops, session, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 这一段移动的 RIoT 单是本服务端建的、已确认、落在这辆车上，而车没有挂着故障（control-server#314）。
+    /// </summary>
+    /// <remarks>
+    /// 与阻塞看板判「自己的在途单」同一组条件（<c>BlockedJourneysQueryEndpoint.OwnMovementOrdersInFlightAsync</c>），
+    /// 但按当前停靠的单号问，而不是旅程行上锚需求那一段的：第二个取货停靠用锚需求的单号，会拿一段早已走完的移动当证据。
+    /// </remarks>
+    private async Task<bool> OwnMovementOrderInFlightAsync(
+        JourneyRuntimeRow runtime,
+        string upperId,
+        CancellationToken cancellationToken)
+    {
+        bool confirmed = await dbContext.OrderIntents.AsNoTracking()
+            .AnyAsync(
+                row => row.UpperId == upperId &&
+                       row.Status == "CONFIRMED" &&
+                       row.OrderId != null && row.OrderId != "" &&
+                       row.VehicleKey == runtime.VehicleKey,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return confirmed &&
+               !await dbContext.VehicleFaultStates.AsNoTracking()
+                   .AnyAsync(
+                       row => row.AgvId == runtime.AgvId && row.Level != VehicleFaultLevel.None,
+                       cancellationToken)
+                   .ConfigureAwait(false);
     }
 
     /// <summary>

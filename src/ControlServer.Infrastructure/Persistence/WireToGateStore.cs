@@ -372,11 +372,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         // This can only move a session from Ready to RecoveryRequired, never the other way.
         // The operation's demand is found in its journey through the demand memberships (control-server#207): an
         // operation of any demand the vehicle carries holds it, not only one of the journey row's anchor demand.
-        bool operationNeedsRecovery = await OperationsOnJourneys()
-            .AnyAsync(
-                pair => pair.Runtime.AgvId == agvId &&
-                        pair.Operation.Status == StationOperationStatus.RecoveryRequired,
-                cancellationToken).ConfigureAwait(false);
+        bool operationNeedsRecovery = await OperationNeedsRecoveryAsync(agvId, cancellationToken)
+            .ConfigureAwait(false);
         // REQ-0241/0242 and ADR-cross-0036 (control-server#137). A forced mechanical recovery settles the
         // cargo's business and the operation it was about, and with that every input above can say "fine" --
         // yet what the result pinned false is still unproven: empty slots, safe doors, a recovered vehicle.
@@ -386,14 +383,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         // .RecordHardwareRecoveryAsync) -- and only together with every other judgement here: a record is an
         // audit fact, not a substitute for live signals, and it resumes nothing. A workflow a later forced
         // generation made history of is covered by the later one.
-        bool forcedRecoveryAwaitsHardwareRecord = await dbContext.RecoveryWorkflows
-            .AnyAsync(
-                workflow => workflow.AgvId == agvId &&
-                            workflow.WorkflowType == ForcedMechanicalRecoveryWorkflowType &&
-                            workflow.State != RecoveryWorkflowState.HistoricalOnly &&
-                            !dbContext.HardwareRecoveryRecords.Any(
-                                record => record.RecoveryActionId == workflow.WorkflowId),
-                cancellationToken).ConfigureAwait(false);
+        bool forcedRecoveryAwaitsHardwareRecord = await ForcedRecoveryAwaitsHardwareRecordAsync(agvId, cancellationToken)
+            .ConfigureAwait(false);
         // REQ-0316. The vehicle reported which slot configuration it is carrying; this server knows
         // which one it activated. Disagreement means nobody can say what the eight slots on that
         // vehicle will actually do, so it must not be given work -- but it stays connected, because
@@ -3358,6 +3349,37 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
                 cancellationToken)
             .ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Whether an operation of any demand this vehicle carries is held for recovery -- one of the readiness inputs
+    /// <see cref="DecideReadinessAsync"/> combines.
+    /// </summary>
+    /// <remarks>
+    /// Public because the session reason code cannot answer it: <c>GetRecoveryReason</c> ranks
+    /// <c>DEPARTURE_SAFETY_NOT_READY</c> ahead of <c>OPERATION_RECOVERY_REQUIRED</c>, so while the vehicle is also unsafe to
+    /// depart the reason code names departure safety alone. The journey runtime asks this directly before it lets the
+    /// pickup dispatch plan past a closed readiness gate (control-server#314).
+    /// </remarks>
+    public Task<bool> OperationNeedsRecoveryAsync(string agvId, CancellationToken cancellationToken) =>
+        OperationsOnJourneys()
+            .AnyAsync(
+                pair => pair.Runtime.AgvId == agvId &&
+                        pair.Operation.Status == StationOperationStatus.RecoveryRequired,
+                cancellationToken);
+
+    /// <summary>
+    /// Whether a forced mechanical recovery of this vehicle still waits for its hardware recovery record -- the other
+    /// readiness input the reason code hides behind departure safety (see <see cref="OperationNeedsRecoveryAsync"/>).
+    /// </summary>
+    public Task<bool> ForcedRecoveryAwaitsHardwareRecordAsync(string agvId, CancellationToken cancellationToken) =>
+        dbContext.RecoveryWorkflows
+            .AnyAsync(
+                workflow => workflow.AgvId == agvId &&
+                            workflow.WorkflowType == ForcedMechanicalRecoveryWorkflowType &&
+                            workflow.State != RecoveryWorkflowState.HistoricalOnly &&
+                            !dbContext.HardwareRecoveryRecords.Any(
+                                record => record.RecoveryActionId == workflow.WorkflowId),
+                cancellationToken);
 
     /// <summary>
     /// Every station operation with the journey that carries its demand, joined through the demand memberships
