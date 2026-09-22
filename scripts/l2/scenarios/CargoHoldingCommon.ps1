@@ -103,7 +103,11 @@ function Get-L2JourneyClosureMessageId([string]$JourneyId, [string]$Purpose) {
 # 库里每趟旅程收尾那张业务状态的 messageId。
 function Get-L2JourneyClosureBusinessStateIds([object]$Connection) {
     $ids = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
-    foreach ($row in @(Invoke-L2Query -Connection $Connection -Sql 'SELECT JourneyId FROM JourneyRuntimes')) {
+    # Invoke-L2Query returns the rows whole (return , $rows): assign, then loop. Wrapping the call in @() here loops once over
+    # the whole list, and with two journeys [string]$row.JourneyId joins both ids into one string, so the first trip's
+    # closure goes unrecognised (PR #329, l2 35758432647: cargo-holding-disabled-when-append-forbidden, second trip).
+    $journeys = Invoke-L2Query -Connection $Connection -Sql 'SELECT JourneyId FROM JourneyRuntimes'
+    foreach ($row in $journeys) {
         $null = $ids.Add((Get-L2JourneyClosureMessageId ([string]$row.JourneyId) 'closure-vehicle-business-state'))
     }
     return , $ids

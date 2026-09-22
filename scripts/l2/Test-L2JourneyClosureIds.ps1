@@ -49,6 +49,7 @@ function Check([string]$name, [bool]$ok, [string]$detail) {
 $script:Journeys = @()
 $script:Outbox = @()
 function Invoke-L2Query([object]$Connection, [string]$Sql) {
+    # Same return shape as the real Invoke-L2Query (return , $rows), or the fake would hide the very wrapping mistake case 2b is for.
     if ($Sql -like '*FROM JourneyRuntimes*') { return , @($script:Journeys | ForEach-Object { [pscustomobject]@{ JourneyId = $_ } }) }
     if ($Sql -like '*FROM ProtocolOutbox*') { return , @($script:Outbox) }
     throw "Unexpected query in the self-check: $Sql"
@@ -90,6 +91,21 @@ Check 'loading-phase reader skips the closure, filters by agvId, orders by revis
 $yield = Get-L2YieldSnapshotsOf $null 'AGV-L2-001'
 $seen = ($yield | ForEach-Object { "$($_.Revision):$($_.State)" }) -join ' '
 Check 'yield reader skips the closure the same way' ($seen -eq '1:LOADING 3:CLOSED') "read '$seen'"
+
+# 2b. Two journeys, the closure being the FIRST one's: the shape of a two-trip scenario read after its second trip.
+# One journey hid the defect above -- member enumeration over a one-row list still yields that one id -- and
+# cargo-holding-disabled-when-append-forbidden went red on it in CI (l2 35758432647).
+$first = 'journey:trip-a'
+$script:Journeys = @($first, 'journey:trip-b')
+$script:Outbox = @(
+    (Business 'm-1' 'AGV-L2-001' 1 (Phase 'LOADING')),
+    (Business 'm-2' 'AGV-L2-001' 2 (Phase 'CLOSED')),
+    (Business (Get-L2JourneyClosureMessageId $first 'closure-vehicle-business-state') 'AGV-L2-001' 3 $null),
+    (Business 'm-4' 'AGV-L2-001' 4 (Phase 'LOADING')))
+$thrown = $null
+try { $read = Get-L2LoadingPhaseSnapshots $null 'AGV-L2-001' } catch { $thrown = $_.Exception.Message }
+$seen = if ($thrown) { "threw '$thrown'" } else { ($read | ForEach-Object { "$($_.Revision):$($_.State)" }) -join ' ' }
+Check 'with two journeys the first journey''s closure is still skipped' ($seen -eq '1:LOADING 2:CLOSED 4:LOADING') $seen
 
 # 3. A null loadingPhase that is not the closure snapshot still fails, from both readers.
 $script:Outbox = @(
