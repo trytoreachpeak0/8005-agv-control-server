@@ -1,27 +1,18 @@
 # control-server#316 证据：在途单挂起、状态不明、被人工取消
 
-票：control-server#316（#299 拆出的 T1，上真车前）。修复提交 `8a1a840b`，L2 场景提交 `3cbae94d`。
+票：control-server#316（#299 拆出的 T1，上真车前）。
+
+**本票中途改过一次范围。**第一版（`8a1a840b`，证据 `green-3cbae94d/`）在人工取消在途单后会释放改派。用户 2026-09-22 更正：RIoT 里取消多半是误操作，该做的是重建订单，不是改派；怎么重建另行决定。在那之前，取消后的行为改成「写码、告警、不接追加，不释放、不改派、不建单」（`a744448a` 测试先红，`fd41aa9e` 实现）。第一版的证据留在原处，没有删，但它证明的是一个已经撤回的行为。
 
 ## L1
 
 | 文件 | 内容 |
 | --- | --- |
-| `l1/red-before-fix-runtime.txt` | 测试提交 `1ba63371`（fp/v2-impl@8ec088b1 加新用例、不含修复）上 13 条红，每条都是「码为空」「没有释放」「追加进去了」这一类，不是编译或夹具错误 |
+| `l1/red-before-fix-runtime.txt` | 测试提交 `1ba63371`（fp/v2-impl@8ec088b1 加新用例、不含修复）上 13 条红，都是「码为空」「追加进去了」「没有释放」这一类，不是编译或夹具错误。其中释放的几条属于第一版，已被下一行取代 |
 | `l1/red-before-fix-dashboard.txt` | 测试提交 `05a197e0` 上看板说明 3 条红：`... has no description` |
-| `l1/reverse-verification.py`、`.log` | 在修复之上逐项退回、各跑一遍相关用例（替换不是恰好 1 处就退出，打印 diff 行数）。结果见下表 |
-
-反向验证：
-
-| 退回什么 | 红几条 | 说明 |
-| --- | --- | --- |
-| M1 引擎从不写码 | 13 | 与修前相同的 13 条 |
-| M2 只去掉 underWay 那一道排除 | 0 | 预期内：`ReadEnRoutePlanAsync` 那一道仍在，挡住追加 |
-| M3 只去掉 `ReadEnRoutePlanAsync` 那一道 | 0 | 预期内：underWay 那一道仍在 |
-| M2+M3 两道都去掉 | 1 | `AJourneyWhoseOrderHangsTakesNoAppendedDemand`。两道是纵深，行为判据只守二者之和 |
-| M4 释放不用「当前单已终结」触发 | 3 | 取货单取消／删除后释放两条、多需求拒绝一条 |
-| M5 释放只信码、不再问 RIoT | 1 | `AnEndedReasonOverALiveOrderReleasesNothingAndCancelsNothing`：会对活单发取消 |
-| M6 车载端静默覆盖 ORDER_HANG | 1 | `ASilentSessionDoesNotOverwriteAHangingOrderAsTheReason` |
-| M7 订单继续后不清码 | 1 | `AContinuedOrderClearsTheReasonAndTheJourneyArrives` |
+| `l1/red-hold-instead-of-release.txt` | 测试提交 `a744448a` 在第一版实现上 3 条红：释放服务把取消当成释放理由（`Trigger = ORDER_ENDED_WITHOUT_ARRIVAL, Result = RELEASED`） |
+| `l1/red-unreadable-order-clears-hang.txt` | 测试提交 `7687ffca` 上 1 条红（独立审查第 1 条）：挂起期间一次读不到订单，码被清成空 |
+| `l1/reverse-verification.py`、`.log` | 在第一版修复之上逐项退回、各跑一遍相关用例。M4、M5 针对的释放触发已经撤回，其余各项仍适用于现在的代码 |
 
 ## 合成 L2（本机，经 `Invoke-HeavyLocal.ps1 -Ticket cs#316`）
 
@@ -30,5 +21,9 @@
 | 目录 | 代码 | 结论 |
 | --- | --- | --- |
 | `red-base-8ec088b1/in-transit-order-hang-continue-001` | fp/v2-impl@8ec088b1，场景脚本从 scratchpad 副本运行 | FAIL：60 秒等不到 `ORDER_HANG`，阻断码为空 |
-| `red-base-8ec088b1/in-transit-order-cancelled-redispatch-001` | 同上 | FAIL：60 秒等不到释放，旅程停在 `AwaitingPickupArrival`、码为空 |
-| `green-3cbae94d/`（8 条） | 本分支 `3cbae94d` | 全部 PASS：两条新场景，加上故障与急停路径 `command-surface-order-hold`、`emergency-stop-single-trigger`、`emergency-stop-operator-release`，释放路径 `reassign-when-vehicle-ineligible`，失联码 `onboard-silent-liveness-loss`，追加 `multi-stop-append-same-zone` |
+| `red-base-8ec088b1/in-transit-order-cancelled-held-001` | 同上 | FAIL：60 秒等不到 `ORDER_ENDED_WITHOUT_ARRIVAL`，阻断码为空 |
+| `red-base-8ec088b1/in-transit-order-cancelled-redispatch-001` | 同上 | FAIL（第一版场景，已被上一行取代） |
+| `green-fd41aa9e/`（7 条） | 现在的实现 `fd41aa9e` | 两条新场景 PASS；故障与急停 `command-surface-order-hold`（见下）、`emergency-stop-single-trigger`、`emergency-stop-operator-release` PASS；失联码 `onboard-silent-liveness-loss`、追加 `multi-stop-append-same-zone` PASS |
+| `green-3cbae94d/`（8 条） | 第一版 `3cbae94d` | 全部 PASS，含已撤回的 `in-transit-order-cancelled-redispatch` |
+
+`green-fd41aa9e/command-surface-order-hold-001` 是红的，留着：三台车一辆都没派出去，积压原因是 `ONBOARD_FACTS_NOT_READY`，三条会话都是 Ready。根据机理可以排除本票：`3cbae94d`→`fd41aa9e` 之间 src 只改了三处——引擎在途分支（需要先有旅程才走得到）、看板文案，以及把释放服务改回 fp/v2-impl 原样。这一轮一趟旅程都没有，这三处一行都没执行。同一棵树立即重跑，`-002` PASS。

@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "scenario": "in-transit-order-hang-continue",
+  "runId": "20260922T104910023Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "agvId": "AGV-L2-001",
+    "rig": "SyntheticOnboard",
+    "controlServerCommit": "fd41aa9e57102ba11c75f50532de4a2f949392ea",
+    "vehicleKey": "BROKERX-L2-0001",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260922T104910023Z",
+    "batchId": "unspecified"
+  },
+  "assertions": [
+    {
+      "id": "L2-OH-01",
+      "description": "订单挂起后旅程写 ORDER_HANG（看板阻断卡片据此列出这一行）",
+      "outcome": "PASS",
+      "expected": "ORDER_HANG",
+      "actual": "ORDER_HANG"
+    },
+    {
+      "id": "L2-OH-02",
+      "description": "挂起期间没有发出任何订单命令或急停：审计表零行、假 RIoT 零调用",
+      "outcome": "PASS",
+      "expected": "0 / 0",
+      "actual": "0 / 0"
+    },
+    {
+      "id": "L2-OH-03",
+      "description": "挂起不记车辆故障事实（H-a：不进两级故障模型）",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "id": "L2-OH-04",
+      "description": "旅程仍停在开往取货站，码与开始时刻不变（没有被重写、没有被清掉）",
+      "outcome": "PASS",
+      "expected": "AwaitingPickupArrival / ORDER_HANG / 2026-09-22 10:49:54.7513061+00:00",
+      "actual": "AwaitingPickupArrival / ORDER_HANG / 2026-09-22 10:49:54.7513061+00:00"
+    },
+    {
+      "id": "L2-OH-05",
+      "description": "continue 之后码清掉，旅程仍在开往取货站",
+      "outcome": "PASS",
+      "expected": "AwaitingPickupArrival / (无码)",
+      "actual": "AwaitingPickupArrival / "
+    },
+    {
+      "id": "L2-OH-06",
+      "description": "到站、装载、出发前检查照常走完，旅程进入去关卡那一段",
+      "outcome": "PASS",
+      "expected": "AwaitingGateArrival",
+      "actual": "AwaitingGateArrival"
+    },
+    {
+      "id": "L2-OH-07",
+      "description": "整个过程没有一条订单命令、急停或故障事实",
+      "outcome": "PASS",
+      "expected": "0 / 0 / 0",
+      "actual": "0 / 0 / 0"
+    }
+  ]
+}
