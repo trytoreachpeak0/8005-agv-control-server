@@ -23,6 +23,7 @@
 | 目录 | 代码 | 结论 |
 | --- | --- | --- |
 | `red-base-8ec088b1/in-transit-order-hang-continue-001` | fp/v2-impl@8ec088b1，场景脚本从 scratchpad 副本运行 | FAIL：60 秒等不到 `ORDER_HANG`，阻断码为空 |
+| `red-base-8ec088b1/real-onboard-order-hang-continue-001` | **真装置**：服务端 fp/v2-impl@8ec088b1，真车载端 86d42ce5，模拟器 fb5f7c59，本机时段（调度批准），场景副本与入库脚本逐字节相同（`9704e7d5`） | FAIL，与运行前写下的预期（`EXPECTATION-before-run.txt`）一致：90 秒等不到 `ORDER_HANG`，旅程码是 `ONBOARD_SESSION_NOT_READY`；收尾快照里会话 `RecoveryRequired / DEPARTURE_SAFETY_NOT_READY`、安全原因 `VEHICLE_NOT_READY`——前提成立。只留了会话与旅程两张快照 |
 | `red-base-8ec088b1/in-transit-order-cancelled-held-001` | 同上 | FAIL：60 秒等不到 `ORDER_ENDED_WITHOUT_ARRIVAL`，阻断码为空 |
 | `red-base-8ec088b1/in-transit-order-cancelled-redispatch-001` | 同上 | FAIL（第一版场景，已被上一行取代） |
 | `green-fd41aa9e/`（7 条） | 现在的实现 `fd41aa9e` | 两条新场景 PASS；故障与急停 `command-surface-order-hold`（见下）、`emergency-stop-single-trigger`、`emergency-stop-operator-release` PASS；失联码 `onboard-silent-liveness-loss`、追加 `multi-stop-append-same-zone` PASS |
