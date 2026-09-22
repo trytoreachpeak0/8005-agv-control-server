@@ -19,6 +19,10 @@
     kept only "Response status code does not indicate success: 409 (Conflict).": pwsh puts an HTTP error's
     body in ErrorDetails, not in the exception message. Nothing green ever reaches either path.
 
+    The loopback listener takes a port the system reports free and retries on another one if that port is
+    taken in the meantime; the first check holds a port and starts from it, so the retry is exercised on
+    every run rather than only when a collision happens to occur.
+
     The checks read the runner's own statements and functions out of its AST and run them, so they test
     the runner, not a copy of it:
 
@@ -78,6 +82,67 @@ function Get-RunnerFunction([string]$Name) {
                 $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $Name
             }, $true)) | Select-Object -First 1
 }
+
+# A loopback HttpListener on a port that is free, not a random one. A random pick in 49200-49900 sits in
+# Windows' ephemeral range and collides with outbound connections the other runners on the same guest hold:
+# on 2026-09-22 Test-L2DoubleCommandError.ps1, written that way, went red in CI with HttpListener.Start()
+# "The process cannot access the file because it is being used by another process." (ERROR_SHARING_VIOLATION,
+# 32). So: ask the system for a free port (bind 0, read it, release it), and if something takes it in the
+# moment between, take another one, a bounded number of times. -FirstPort exists for the check below that
+# makes the retry happen on purpose.
+function Start-LoopbackListener([int]$FirstPort = 0, [int]$Attempts = 5) {
+    $refused = [System.Collections.Generic.List[int]]::new()
+    for ($attempt = 0; $attempt -lt $Attempts; $attempt++) {
+        $port = if ($attempt -eq 0 -and $FirstPort -gt 0) { $FirstPort } else {
+            $probe = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+            $probe.Start()
+            try { $probe.LocalEndpoint.Port } finally { $probe.Stop() }
+        }
+        $candidate = [System.Net.HttpListener]::new()
+        $candidate.Prefixes.Add("http://localhost:$port/")
+        try {
+            $candidate.Start()
+            return [pscustomobject]@{ Listener = $candidate; Port = $port; Refused = @($refused) }
+        } catch {
+            $candidate.Close()
+            $base = $_.Exception.GetBaseException()
+            # Only a port someone else holds is worth another try; anything else is a real failure.
+            if (-not ($base -is [System.Net.HttpListenerException] -and $base.ErrorCode -eq 32)) { throw }
+            $refused.Add($port)
+        }
+    }
+    throw "No loopback port could be listened on in $Attempts attempts; refused: $($refused -join ', ')."
+}
+
+# --- the listener's own retry --------------------------------------------------------------------------
+# Hold a port, start from it, and require that the listener moved to another one and started. The premise
+# is pinned first: a held port does refuse, or the retry case below would pass without retrying anything.
+$held = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+$held.Start()
+try {
+    $heldPort = $held.LocalEndpoint.Port
+    $direct = [System.Net.HttpListener]::new()
+    $direct.Prefixes.Add("http://localhost:$heldPort/")
+    $directError = $null
+    try { $direct.Start() } catch { $directError = $_.Exception.GetBaseException() } finally { $direct.Close() }
+    Check 'premise: a held port refuses an HttpListener with error 32' `
+        ($directError -is [System.Net.HttpListenerException] -and $directError.ErrorCode -eq 32) "$directError"
+
+    $retried = $null
+    $retryError = $null
+    try { $retried = Start-LoopbackListener -FirstPort $heldPort } catch { $retryError = $_.Exception.Message }
+    try {
+        Check 'listener retry: starting from a held port moves to another port and starts' `
+            ($null -ne $retried -and $retried.Port -ne $heldPort -and $retried.Listener.IsListening -and
+                @($retried.Refused) -contains $heldPort) `
+            "$retryError port=$(${retried}?.Port) refused=$(@(${retried}?.Refused) -join ',')"
+    } finally { if ($null -ne $retried) { $retried.Listener.Close() } }
+
+    $exhausted = $null
+    try { $null = Start-LoopbackListener -FirstPort $heldPort -Attempts 1 } catch { $exhausted = $_.Exception.Message }
+    Check 'listener retry: with no attempt left it says so, naming the refused port' `
+        ($exhausted -like "*refused: $heldPort*") "$exhausted"
+} finally { $held.Stop() }
 
 # --- the reconnect sequence --------------------------------------------------------------------------
 $sequenceStatement = [scriptblock]::Create((Get-TopLevelAssignment 'supersedingMessages'))
@@ -179,11 +244,10 @@ if ($null -ne $writeError -and $null -ne $httpError) {
     . ([scriptblock]::Create($writeError.Extent.Text))
 
     $refusal = '{"type":"about:blank","title":"No session for this vehicle","status":409,"detail":"No session has ever been established for ''AGV-8005-STAGED-G3-01''."}'
-    $port = Get-Random -Minimum 49200 -Maximum 49900
-    $listener = [System.Net.HttpListener]::new()
-    $listener.Prefixes.Add("http://localhost:$port/")
-    $listener.Start()
-    $server = Start-ThreadJob -ArgumentList $listener, $refusal -ScriptBlock {
+    $started = Start-LoopbackListener
+    $listener = $started.Listener
+    $port = $started.Port
+    $server =Start-ThreadJob -ArgumentList $listener, $refusal -ScriptBlock {
         param($l, $body)
         while ($l.IsListening) {
             try { $ctx = $l.GetContext() } catch { break }

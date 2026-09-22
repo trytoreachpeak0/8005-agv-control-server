@@ -16,8 +16,8 @@
 | 目录 | 内容 |
 | --- | --- |
 | `red/error-path-selfcheck/` | `Test-StagedG3ErrorPath.ps1` 在未修的 runner（`3c930c8f`）上：6 条红 |
-| `green/error-path-selfcheck/` | 审查返工后 35 条全绿（初版 25 条，审查后补了激活观测三行与「车载端从没连上」护栏两组） |
-| `red/error-path-mutations/` | 对审查返工后 runner 的七处变异，各只红预期的那几条（见下） |
+| `green/error-path-selfcheck/` | 38 条全绿（初版 25 条；审查后补了激活观测三行与「车载端从没连上」护栏两组；CI 撞端口后补了回环 listener 的换端口重试三条） |
+| `red/error-path-mutations/` | 对 runner 的七处变异（m1～m7）与对自检自己的两处变异（m8、m9），各只红预期的那几条（见下） |
 | `staged/a-before-fix/` | A 轮：只带错误路径修复、未修过时，当前顶端复现 |
 | `staged/b-tip-fixed/` | B 轮：修后，当前顶端 |
 | `staged/c-shared-binding/` | C 轮：修后，共享绑定不动 |
@@ -33,6 +33,12 @@
 | `m5-activation-status-key` | 激活观测 `?.statusCode` 改成 `?.status` | 只红 `issueHttpStatusCode 409` |
 | `m6-guard-disabled` | 护栏条件改成 `if ($false)`（审查给的变异） | 红 `the runner has one never-connected guard`：定位不到护栏（条件里没有 `'connection-opened'` 了），行为用例随之不跑 |
 | `m7-guard-inverted` | 护栏条件 `-eq 0` 改成 `-ne 0` | 三条行为用例全红：两种无连接的都不抛了，有连接的反而抛——这一条证明行为用例本身有判别力，不只靠定位 |
+| `m8-no-retry`（改的是自检自己） | 回环 listener 撞端口不再换端口，直接抛 | 两条 `listener retry` 红，报错正是 CI 那句 `The process cannot access the file because it is being used by another process.` |
+| `m9-first-port-ignored`（改的是自检自己） | 忽略 `-FirstPort`，永远向系统要端口 | 两条 `listener retry` 红：没从被占端口起步、`Refused` 为空——证明「换了端口」那条断言确实要求重试路径被走到，而不是没撞上就算绿 |
+
+m8、m9 之后连跑 20 遍修后自检：20 遍全绿（只作稳定性参考；重试路径每遍都会被走到，不靠碰运气）。
+
+**CI 撞端口（run 35678975145）。**`Test-L2DoubleCommandError.ps1`（不是本票的文件，调度另开票）在 49200～49900 随机挑端口，HttpListener.Start 报错 32 端口被占，后面的步骤包括全量测试全被跳过。本票新加的自检原样抄了这种写法，按调度决定在本票改掉：先绑 0 端口拿系统分配的空闲端口、立刻释放再起 HttpListener；这期间端口若被别人抢走（错误码 32），换端口重试，最多 5 次。自检里先占住一个端口、让它从那个端口起步，断言它换了端口并起来了；同时先钉住前提「被占端口确实会拒绝」。
 
 审查后只动了 runner 本体一处空格（`$controlLog =if` → `= if`，d6df6fed 用编辑工具时吞掉的），其余全在自检脚本，所以 staged 三轮证据不受影响。
 

@@ -1,7 +1,7 @@
-# command: pwsh -NoProfile -File scripts/Test-StagedG3ErrorPath.ps1 (port fix, working tree on top of b3d62072)
+# mutation m8-no-retry of Test-StagedG3ErrorPath.ps1 itself (its listener retry), against the unchanged runner; command: pwsh -NoProfile -File <mutant> -RunnerPath scripts/run-staged-g3.ps1
 PASS premise: a held port refuses an HttpListener with error 32
-PASS listener retry: starting from a held port moves to another port and starts
-PASS listener retry: with no attempt left it says so, naming the refused port
+FAIL listener retry: starting from a held port moves to another port and starts -- Exception calling "Start" with "0" argument(s): "The process cannot access the file because it is being used by another process." port= refused=
+FAIL listener retry: with no attempt left it says so, naming the refused port -- Exception calling "Start" with "0" argument(s): "The process cannot access the file because it is being used by another process."
 PASS reconnect sequence, an observation with an empty sequence: the judgement does not throw
 PASS reconnect sequence, an observation with an empty sequence: the sequence is not $null
 PASS reconnect sequence, an observation with an empty sequence: 0 message(s), report at -1
@@ -37,5 +37,5 @@ PASS Write-StagedRunError prints the message
 PASS Write-StagedRunError prints the body
 PASS Write-StagedRunError writes runner-error.json with the body
 PASS Write-StagedRunError with no error: silent, no file
-StagedG3ErrorPath self-check: every check as expected.
-# exit=0
+StagedG3ErrorPath self-check: 2 check(s) came out the other way.
+# exit=1
