@@ -46,7 +46,17 @@ public sealed class JourneyClosureSnapshotTests
 
         JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
         Assert.Equal((JourneyRuntimeStage.Completed, "CANCELLED_BY_STATION_TIMEOUT"), (runtime.Stage, runtime.BlockReasonCode));
-        await AssertClosureSentAsync(fixture.Context, runtime.AgvId, Sent(fixture), 1, runtime.PickupStationId);
+        IReadOnlyList<Snapshot> closure = await AssertClosureSentAsync(
+            fixture.Context, runtime.AgvId, Sent(fixture), 1, runtime.PickupStationId);
+        // 清单号取 WorklistRevisionAt(基准, 这个停靠)：到站那一版是基准，本停靠刚终结的那一条算作做完，所以正好大一。
+        // 实现里另有一道「不低于这条流上已发最大号 + 1」的兜底，单需求时两者给出的也是这一个号，所以这里抓不到「公式低算了」
+        // （那种错被兜底接住，车上不会回退）；抓的是号的算法整体变了——例如照搬现场线的 WorklistRevision++ 挪了基准，
+        // 号会跳过一格，「比别的都大」照样成立而这里变红。
+        // 期待值取车收到的到站那一版，不取收尾之后的旅程行：挪了基准的实现会把旅程行上的那一列一起挪走，拿它当期待值就成了自证。
+        long arrival = (await SnapshotsAsync(fixture.Context, runtime.AgvId))
+            .Where(item => item.MessageType == "CurrentStopWorklistSnapshot" && item.Payload.GetProperty("items").GetArrayLength() > 0)
+            .Max(item => item.Revision);
+        Assert.Equal(arrival + 1, Revision(closure, "CurrentStopWorklistSnapshot"));
     }
 
     /// <summary>来路 2：站点期限之后到达的确定的装货失败。</summary>
