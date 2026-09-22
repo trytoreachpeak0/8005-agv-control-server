@@ -2901,7 +2901,7 @@ finally {
 # Test-StagedG3ErrorPath.ps1 asserts that this call directly follows the try.
 Write-StagedRunError -ErrorRecord $runError -EvidenceRoot $EvidenceRoot
 
-$controlLog =if (Test-Path -LiteralPath (Join-Path $logsRoot 'control.out.log')) {
+$controlLog = if (Test-Path -LiteralPath (Join-Path $logsRoot 'control.out.log')) {
     Get-Content -LiteralPath (Join-Path $logsRoot 'control.out.log') -Raw
 } else { '' }
 $controlErrorLog = if (Test-Path -LiteralPath (Join-Path $logsRoot 'control.err.log')) {

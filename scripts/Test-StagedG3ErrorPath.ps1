@@ -31,7 +31,11 @@
         would test the stub: what puts the body into ErrorDetails is the cmdlet itself):
           * Get-HttpErrorObservation reads the status and the body;
           * Write-StagedRunError prints the message and the body, and writes runner-error.json with both;
-      - the activation's catch records the refusal through Get-HttpErrorObservation.
+      - the activation's catch records the refusal through Get-HttpErrorObservation, and the runner's own
+        $activationObservation literal, built over that real refusal, carries its status, body and message
+        in issueHttpStatusCode / issueHttpResponseBody / issueHttpError (and nulls for an accepted issue);
+      - the runner's never-connected guard throws, naming the configuration to check, on a transcript with
+        no connection, and stays quiet on one with a connection.
 
     Exits 1 when any check comes out the other way, and prints every check either way.
 
@@ -135,6 +139,40 @@ Check 'the activation''s catch records the refusal through Get-HttpErrorObservat
     ($activationCatches.Count -eq 1 -and $activationCatches[0].Body.Extent.Text -match '\$activationIssueError\s*=\s*Get-HttpErrorObservation\b') `
     "$($activationCatches.Count) catch(es): $(@($activationCatches | ForEach-Object { $_.Body.Extent.Text.Trim() }) -join ' | ')"
 
+# --- the onboard peer never connected ----------------------------------------------------------------
+# The runner's own `if`, run on a transcript with no connection (the 2026-09-22 shape: one proxy-listening
+# line) and on one with a connection. Only a peer that failed to start reaches the first, so no green run
+# would notice the guard going quiet.
+$neverConnectedGuards = @($ast.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.IfStatementAst] -and
+            $node.Clauses[0].Item1.Extent.Text -match "'connection-opened'" -and
+            $node.Clauses[0].Item2.Extent.Text -match '\bthrow\b'
+        }, $true))
+Check 'the runner has one never-connected guard' ($neverConnectedGuards.Count -eq 1) "$($neverConnectedGuards.Count) found"
+if ($neverConnectedGuards.Count -eq 1) {
+    $guard = [scriptblock]::Create($neverConnectedGuards[0].Extent.Text)
+    $onboard = [pscustomobject]@{ HasExited = $false }
+    $onboardConfig = 'C:\stage\publish\onboard-hmi\appsettings.json'
+    $logsRoot = 'C:\evidence\logs'
+    $listening = [pscustomobject]@{ event = 'proxy-listening'; listenPort = 58215 }
+    $opened = [pscustomobject]@{ event = 'connection-opened'; connectionId = 1 }
+    foreach ($guardCase in @(
+            @{ Name = 'only proxy-listening'; Events = @($listening); Throws = $true },
+            @{ Name = 'an empty transcript'; Events = @(); Throws = $true },
+            @{ Name = 'a connection'; Events = @($listening, $opened); Throws = $false })) {
+        $events = $guardCase.Events
+        $thrown = $null
+        try { . $guard } catch { $thrown = $_.Exception.Message }
+        if ($guardCase.Throws) {
+            Check "never-connected guard, $($guardCase.Name): throws, naming the configuration" `
+                ($thrown -like '*never connected*' -and $thrown -like "*$onboardConfig*") "$thrown"
+        } else {
+            Check "never-connected guard, $($guardCase.Name): does not throw" ($null -eq $thrown) "$thrown"
+        }
+    }
+}
+
 # --- a real 409 --------------------------------------------------------------------------------------
 if ($null -ne $writeError -and $null -ne $httpError) {
     . ([scriptblock]::Create($httpError.Extent.Text))
@@ -168,6 +206,40 @@ if ($null -ne $writeError -and $null -ne $httpError) {
         # The premise this whole change rests on: the body is not in the message.
         Check 'premise: the exception message does not carry the body' `
             ($null -ne $refused -and $refused.Exception.Message -notlike '*No session for this vehicle*') "$(${refused}?.Exception.Message)"
+
+        # The activation observation's three issueHttp* entries, from the runner's own literal, over the same
+        # real refusal. A renamed key reads $null through `?.` and nothing else notices: the evidence file
+        # would lose the 409 body again, which is the symptom this ticket started from.
+        $activationStatement = [scriptblock]::Create((Get-TopLevelAssignment 'activationObservation'))
+        foreach ($activationCase in @(
+                @{ Name = 'a refused issue'; Error = (Get-HttpErrorObservation $refused) },
+                @{ Name = 'an accepted issue'; Error = $null })) {
+            $activationIssueError = $activationCase.Error
+            $activationResponse = $null
+            $slotModelVersionId = 'staged-model'
+            $activationCommandsSent = @()
+            $activationResultsReported = @()
+            $activationDbRows = @()
+            $activeConfigurationDbRows = @()
+            $activationObservation = $null
+            $thrown = $null
+            try { . $activationStatement } catch { $thrown = $_.Exception.Message }
+            Check "activation observation, $($activationCase.Name): builds" ($null -eq $thrown -and $null -ne $activationObservation) "$thrown"
+            if ($null -ne $thrown -or $null -eq $activationObservation) { continue }
+            if ($null -ne $activationCase.Error) {
+                Check 'activation observation, a refused issue: issueHttpStatusCode 409' `
+                    ($activationObservation.issueHttpStatusCode -eq 409) "$($activationObservation.issueHttpStatusCode)"
+                Check 'activation observation, a refused issue: issueHttpResponseBody carries the body' `
+                    ($activationObservation.issueHttpResponseBody -like '*No session for this vehicle*') "$($activationObservation.issueHttpResponseBody)"
+                Check 'activation observation, a refused issue: issueHttpError carries the message' `
+                    ($activationObservation.issueHttpError -like '*409*') "$($activationObservation.issueHttpError)"
+            } else {
+                Check 'activation observation, an accepted issue: the three issueHttp* entries are null' `
+                    ($null -eq $activationObservation.issueHttpStatusCode -and $null -eq $activationObservation.issueHttpResponseBody -and
+                        $null -eq $activationObservation.issueHttpError) `
+                    "$($activationObservation.issueHttpStatusCode) / $($activationObservation.issueHttpResponseBody) / $($activationObservation.issueHttpError)"
+            }
+        }
 
         $observation = Get-HttpErrorObservation $refused
         Check 'Get-HttpErrorObservation: status 409' ($observation.statusCode -eq 409) "$($observation.statusCode)"

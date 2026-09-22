@@ -16,11 +16,25 @@
 | 目录 | 内容 |
 | --- | --- |
 | `red/error-path-selfcheck/` | `Test-StagedG3ErrorPath.ps1` 在未修的 runner（`3c930c8f`）上：6 条红 |
-| `green/error-path-selfcheck/` | 修后 25 条全绿 |
-| `red/error-path-mutations/` | 对修后 runner 的三处变异，各只红预期的那一两条 |
+| `green/error-path-selfcheck/` | 审查返工后 35 条全绿（初版 25 条，审查后补了激活观测三行与「车载端从没连上」护栏两组） |
+| `red/error-path-mutations/` | 对审查返工后 runner 的七处变异，各只红预期的那几条（见下） |
 | `staged/a-before-fix/` | A 轮：只带错误路径修复、未修过时，当前顶端复现 |
 | `staged/b-tip-fixed/` | B 轮：修后，当前顶端 |
 | `staged/c-shared-binding/` | C 轮：修后，共享绑定不动 |
+
+## 变异（`red/error-path-mutations/`，每个文件一处变异，自检用 `-RunnerPath` 指向变异副本）
+
+| 变异 | 改了什么 | 红了哪几条 |
+| --- | --- | --- |
+| `m1-no-body-print` | `Write-StagedRunError` 不打响应正文 | 只红 `prints the body` |
+| `m2-body-from-message` | `Get-HttpErrorObservation` 的正文改取异常消息 | 红 `Get-HttpErrorObservation: the body` 与激活观测的 `issueHttpResponseBody`——后者经这个函数取值，两条同源，属预期 |
+| `m3-old-sequence` | 恢复旧的重连序列写法 | 只红两条 `does not throw`（空序列、无观测） |
+| `m4-activation-body-key` | 激活观测 `?.responseBody` 改成 `?.body`（审查给的变异） | 只红 `issueHttpResponseBody carries the body` |
+| `m5-activation-status-key` | 激活观测 `?.statusCode` 改成 `?.status` | 只红 `issueHttpStatusCode 409` |
+| `m6-guard-disabled` | 护栏条件改成 `if ($false)`（审查给的变异） | 红 `the runner has one never-connected guard`：定位不到护栏（条件里没有 `'connection-opened'` 了），行为用例随之不跑 |
+| `m7-guard-inverted` | 护栏条件 `-eq 0` 改成 `-ne 0` | 三条行为用例全红：两种无连接的都不抛了，有连接的反而抛——这一条证明行为用例本身有判别力，不只靠定位 |
+
+审查后只动了 runner 本体一处空格（`$controlLog =if` → `= if`，d6df6fed 用编辑工具时吞掉的），其余全在自检脚本，所以 staged 三轮证据不受影响。
 
 ## staged 三轮（本机时段 2026-09-22 08:42–08:55，各一遍）
 

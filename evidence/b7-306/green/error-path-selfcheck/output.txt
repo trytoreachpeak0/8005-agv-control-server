@@ -1,4 +1,4 @@
-# command: pwsh -NoProfile -File scripts/Test-StagedG3ErrorPath.ps1 (fixed runner, working tree on top of e5b122ff)
+# command: pwsh -NoProfile -File scripts/Test-StagedG3ErrorPath.ps1 (review fix, working tree on top of e5068a18)
 PASS reconnect sequence, an observation with an empty sequence: the judgement does not throw
 PASS reconnect sequence, an observation with an empty sequence: the sequence is not $null
 PASS reconnect sequence, an observation with an empty sequence: 0 message(s), report at -1
@@ -15,8 +15,18 @@ PASS the first statement after the run's try is Write-StagedRunError
 PASS the runner defines Write-StagedRunError
 PASS the runner defines Get-HttpErrorObservation
 PASS the activation's catch records the refusal through Get-HttpErrorObservation
+PASS the runner has one never-connected guard
+PASS never-connected guard, only proxy-listening: throws, naming the configuration
+PASS never-connected guard, an empty transcript: throws, naming the configuration
+PASS never-connected guard, a connection: does not throw
 PASS the listener refused with an HTTP error
 PASS premise: the exception message does not carry the body
+PASS activation observation, a refused issue: builds
+PASS activation observation, a refused issue: issueHttpStatusCode 409
+PASS activation observation, a refused issue: issueHttpResponseBody carries the body
+PASS activation observation, a refused issue: issueHttpError carries the message
+PASS activation observation, an accepted issue: builds
+PASS activation observation, an accepted issue: the three issueHttp* entries are null
 PASS Get-HttpErrorObservation: status 409
 PASS Get-HttpErrorObservation: the body
 PASS Get-HttpErrorObservation: the cmdlet's own message
