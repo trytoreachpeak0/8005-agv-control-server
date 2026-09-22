@@ -428,10 +428,14 @@ public sealed class Batch7StopDrivenAdvanceTests
                     ObservedBatteryPercent: 55),
                 TestContext.Current.CancellationToken);
 
-        // 两趟跑满，所以这个数是第二趟的基准——不是「已经发出去的最高一号」（那会多一）。
-        Assert.Equal(highestOnJourneys, decision.VehicleBusinessStateRevision);
+        // control-server#323 之前：两趟跑满，这个数是第二趟的基准，恒等于 MAX(JourneyRuntimes.VehicleBusinessRevision)。
+        // 之后：每趟收尾多发一张业务状态快照（不带旅程），号是这条流上已发的最大一号 + 1，落在这一趟两号预留之外；
+        // 暂存原语因此把按车计数器推高一格，否则下一趟的首号会与收尾号同号不同内容（车载端 SNAPSHOT_REVISION_CONTENT_CONFLICT）。
+        // 所以跑满之后计数器比最后一趟的基准大一，这个发给车的数跟着大一。这是有意的变化，不是这条用例原来要防的
+        // 「计数器语义悄悄改了」——语义没改（仍是「下一趟基准减预留」），是多了一张快照。车载端只校验它不为负、不拿它比较。
         VehicleSnapshotRevisionRow counter = await CounterAsync(fixture);
         Assert.Equal(counter.VehicleBusinessRevision, decision.VehicleBusinessStateRevision);
+        Assert.Equal(highestOnJourneys + 1, decision.VehicleBusinessStateRevision);
     }
 
     /// <summary>崩在写到线上的那一刻：报文已经进了发件箱，车却没收到。</summary>

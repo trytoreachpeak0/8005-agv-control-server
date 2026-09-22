@@ -616,6 +616,13 @@ public sealed class Batch7CargoHoldingTests
         Assert.Equal(
             expected.Select(phase => new LoadingPhaseSnapshot(phase.State, phase.CargoHoldingDeadlineAt, phase.ClosedReason)),
             snapshots.Select(snapshot => snapshot with { Revision = 0 }));
+        // LoadingPhaseSnapshotsAsync 跳过不带 loadingPhase 的业务状态（control-server#323）。跳过的只许是收尾那一张：
+        // 恰好一张、号在这条流上最大。否则旅程中途误发一张不带旅程的业务状态，会被那个读取函数静默略过、这条用例照样绿。
+        ClosureSnapshotAssertions.Snapshot skipped = Assert.Single(
+            await ClosureSnapshotAssertions.SnapshotsAsync(fixture.Context, fixture.Options.AgvId),
+            item => item.MessageType == "VehicleBusinessStateSnapshot" &&
+                    item.Payload.GetProperty("loadingPhase").ValueKind == JsonValueKind.Null);
+        Assert.True(skipped.Revision > snapshots.Max(snapshot => snapshot.Revision));
 
         JourneyRuntimeRow completed = await JourneyOfAsync(fixture, FirstDemandId);
         Assert.Equal(LoadingPhaseStates.Closed, completed.LoadingPhaseState);
@@ -717,6 +724,11 @@ public sealed class Batch7CargoHoldingTests
                     using JsonDocument document = JsonDocument.Parse(row.PayloadJson);
                     JsonElement payload = document.RootElement.GetProperty("payload");
                     JsonElement phase = payload.GetProperty("loadingPhase");
+                    // 不带 loadingPhase 的是旅程收尾那一张（control-server#323）：不在运输旅程上，不是装货阶段快照。
+                    if (phase.ValueKind == JsonValueKind.Null)
+                    {
+                        return null;
+                    }
                     JsonElement deadline = phase.GetProperty("cargoHoldingDeadlineAt");
                     JsonElement reason = phase.GetProperty("closedReason");
                     return new LoadingPhaseSnapshot(
@@ -727,6 +739,7 @@ public sealed class Batch7CargoHoldingTests
                         Revision = payload.GetProperty("vehicleBusinessStateRevision").GetInt64()
                     };
                 })
+                .OfType<LoadingPhaseSnapshot>()
                 .OrderBy(snapshot => snapshot.Revision)
         ];
     }

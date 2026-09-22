@@ -850,11 +850,20 @@ public sealed class Batch7DemandReleaseServiceTests
                 .SingleAsync(Token));
     }
 
-    private static Task<string[]> PickupPlansAsync(RuntimeFixture fixture) =>
-        fixture.Context.ProtocolOutbox.AsNoTracking()
-            .Where(row => row.MessageType == "UpcomingStopPlanSnapshot")
-            .Select(row => row.PayloadJson)
-            .ToArrayAsync(Token);
+    // 不数 legs 为空的那几张：那是旅程收尾时撤掉车上计划的收尾快照（control-server#323），不是派往取货站的计划。
+    // 第一趟被释放时就会发一张，数进来这里就多一。
+    private static async Task<string[]> PickupPlansAsync(RuntimeFixture fixture) =>
+        [.. (await fixture.Context.ProtocolOutbox.AsNoTracking()
+                .Where(row => row.MessageType == "UpcomingStopPlanSnapshot")
+                .Select(row => row.PayloadJson)
+                .ToArrayAsync(Token))
+            .Where(HasLegs)];
+
+    private static bool HasLegs(string planPayloadJson)
+    {
+        using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(planPayloadJson);
+        return document.RootElement.GetProperty("payload").GetProperty("legs").GetArrayLength() > 0;
+    }
 
     /// <summary>
     /// 改派出来的锚需求建单没确认：新旅程记下阻断码，派车轮次不抛（审查 M2）。
