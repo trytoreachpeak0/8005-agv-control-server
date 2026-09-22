@@ -1,0 +1,16 @@
+  Failed ControlServer.Tests.Batch7DemandReleaseServiceTests.APickupOrderEndedInRiotIsNeitherReleasedNorRedispatched(orderState: 2) [250 ms]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+Collection: [DemandReleaseOutcome { JourneyId = journey:10000000-0000-4000-8000-000000000001, DemandId = 10000000-0000-4000-8000-000000000001, Trigger = ORDER_ENDED_WITHOUT_ARRIVAL, Result = RELEASED }]
+  Stack Trace:
+     at ControlServer.Tests.Batch7DemandReleaseServiceTests.APickupOrderEndedInRiotIsNeitherReleasedNorRedispatched(Int32 orderState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs316-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandReleaseServiceTests.cs:line 989
+   at ControlServer.Tests.Batch7DemandReleaseServiceTests.APickupOrderEndedInRiotIsNeitherReleasedNorRedispatched(Int32 orderState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs316-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandReleaseServiceTests.cs:line 1001
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.Batch7DemandReleaseServiceTests.AnEndedPickupOrderWithAnotherDemandOnTheJourneyReleasesNothing [244 ms]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+Collection: [DemandReleaseOutcome { JourneyId = journey:10000000-0000-4000-8000-000000000001, DemandId = 10000000-0000-4000-8000-000000000001, Trigger = ORDER_ENDED_WITHOUT_ARRIVAL, Result = RELEASE_CURRENT_STOP_WITH_OTHER_DEMANDS }]
+  Failed ControlServer.Tests.Batch7DemandReleaseServiceTests.APickupOrderEndedInRiotIsNeitherReleasedNorRedispatched(orderState: 6) [259 ms]
+  Failed ControlServer.Tests.Batch7DemandReleaseServiceTests.APickupOrderEndedInRiotIsNeitherReleasedNorRedispatched(orderState: 2) [250 ms]
+  Failed ControlServer.Tests.Batch7DemandReleaseServiceTests.AnEndedPickupOrderWithAnotherDemandOnTheJourneyReleasesNothing [244 ms]
+Failed!  - Failed:     3, Passed:    50, Skipped:     0, Total:    53, Duration: 19 s - ControlServer.Tests.dll (net8.0)

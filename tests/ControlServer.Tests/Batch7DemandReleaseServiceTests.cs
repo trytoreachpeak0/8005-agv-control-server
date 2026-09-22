@@ -963,23 +963,22 @@ public sealed class Batch7DemandReleaseServiceTests
     // ---- 在途单被人在 RIoT 里取消或删除（control-server#316） ------------------------------------------------
 
     /// <summary>
-    /// 车本身合格，开往取货站的单被人在 RIoT 里取消（或删除）：这条需求释放改派，不发取消。
+    /// 开往取货站的单被人在 RIoT 里取消（或删除），车本身合格：<b>不释放、不改派、不发取消</b>，旅程留着引擎写的码等人。
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>修之前这里什么都不发生。</b>释放的触发只有车辆级事实（故障、任务类型准入、分区准入、地图不符），「订单被取消」不在其中，
-    /// 而引擎读到在途单 CANCELLED 既不算到站也不算失败，旅程永远停在开往取货站。#299 评论里「取消后释放照常改派」
-    /// 与代码相反，这一条就是那句话要成立所需的东西。
+    /// 用户 2026-09-22 更正：RIoT 里取消订单不是正常操作，多半是误操作，该做的是重建订单而不是改派。怎么重建（自动还是等人、
+    /// 是否同车、已装货与未装货是否一样）待定，定之前这里的行为是「看得见、不动」——所以这一条要守的是释放服务<b>没有</b>
+    /// 把「订单已终结」当成释放理由，而那正是一个顺手的实现会做的事（本票第一版就这么做了）。
     /// </para>
     /// <para>
-    /// 触发取引擎写下的 <c>ORDER_ENDED_WITHOUT_ARRIVAL</c>，所以先跑一轮引擎——与生产里 <c>JourneyRuntimeWorker</c>
-    /// 先推进、后释放的次序一致。
+    /// 先跑一轮引擎，与生产里 <c>JourneyRuntimeWorker</c> 先推进、后释放的次序一致：码已经写下，释放服务读得到它。
     /// </para>
     /// </remarks>
     [Theory]
     [InlineData(RiotOrderState.Cancelled)]
     [InlineData(RiotOrderState.Deleted)]
-    public async Task APickupOrderEndedInRiotReleasesTheDemandWithoutACancel(int orderState)
+    public async Task APickupOrderEndedInRiotIsNeitherReleasedNorRedispatched(int orderState)
     {
         await using RuntimeFixture fixture = await DispatchedToPickupAsync();
         JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
@@ -987,18 +986,23 @@ public sealed class Batch7DemandReleaseServiceTests
         await TickAndRunAsync(fixture);
         CancellingGateway gateway = new(fixture.Clock, _ => { });
 
-        IReadOnlyList<DemandReleaseOutcome> outcomes = await Service(fixture, gateway).RunOnceAsync(Token);
+        Assert.Empty(await Service(fixture, gateway).RunOnceAsync(Token));
+        await TickAndRunAsync(fixture);
+        Assert.Empty(await Service(fixture, gateway).RunOnceAsync(Token));
 
-        Assert.Equal([(FirstDemandId, "ORDER_ENDED_WITHOUT_ARRIVAL", "RELEASED")],
-            outcomes.Select(outcome => (outcome.DemandId, outcome.Trigger, outcome.Result)));
         Assert.Equal(0, gateway.Cancels);
         await using ControlServerDbContext reading = new ControlServerDbContext(fixture.DbOptionsForTests);
-        Assert.Equal(JourneyRuntimeStage.Completed, (await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token)).Stage);
-        Assert.True(await DemandJourneyLookup.ReleasedForRedispatch(reading).AnyAsync(row => row.DemandId == FirstDemandId, Token));
+        JourneyRuntimeRow after = await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token);
+        Assert.Equal((JourneyRuntimeStage.AwaitingPickupArrival, "ORDER_ENDED_WITHOUT_ARRIVAL"), (after.Stage, after.BlockReasonCode));
+        Assert.Null((await reading.Set<JourneyDemandRow>().AsNoTracking().SingleAsync(Token)).RemovedAt);
+        Assert.False(await DemandJourneyLookup.ReleasedForRedispatch(reading).AnyAsync(row => row.DemandId == FirstDemandId, Token));
+        // 没有第二张单：不改派，也还没有重建。
+        Assert.Equal(1, await reading.OrderIntents.CountAsync(row => row.DemandId == FirstDemandId, Token));
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
     }
 
     /// <summary>
-    /// 挂起（9）不是「已终结」：不释放、不取消。取消不可撤回，会拆掉 continue 这条路，而这张单今天只由人决定。
+    /// 挂起（9）同样不释放、不取消。取消不可撤回，会拆掉 continue 这条路，而这张单今天只由人决定。
     /// </summary>
     [Fact]
     public async Task AHangingPickupOrderIsNeitherReleasedNorCancelled()
@@ -1015,32 +1019,10 @@ public sealed class Batch7DemandReleaseServiceTests
     }
 
     /// <summary>
-    /// 旅程上挂着「已终结」的码，而 RIoT 此刻读到的订单还活着：不释放，更不发取消。
-    /// </summary>
-    /// <remarks>
-    /// 码是引擎上一轮写的，释放服务读到的是库里的它；两者之间订单不可能从 CANCELLED 回到活单，但码可能是别的原因留下的
-    /// （旧版本、人手改库）。拿一个码当「车上没有活订单」的证据，会对一张正在跑的单发出取消——这里要求释放前 RIoT 自己再说一次。
-    /// </remarks>
-    [Fact]
-    public async Task AnEndedReasonOverALiveOrderReleasesNothingAndCancelsNothing()
-    {
-        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
-        JourneyRuntimeRow row = await fixture.Context.JourneyRuntimes.SingleAsync(item => item.DemandId == FirstDemandId, Token);
-        row.SetBlockReason("ORDER_ENDED_WITHOUT_ARRIVAL", fixture.Clock.GetUtcNow());
-        await fixture.Context.SaveChangesAsync(Token);
-        fixture.Context.ChangeTracker.Clear();
-        CancellingGateway gateway = new(fixture.Clock, _ => { });
-
-        Assert.Empty(await Service(fixture, gateway).RunOnceAsync(Token));
-        Assert.Equal(0, gateway.Cancels);
-    }
-
-    /// <summary>
-    /// 开往锚需求取货站的单被取消，而旅程上还有第二条需求：按 cs#215 的限度不释放（取消之后得有人把车派往下一站），
-    /// 看板上留引擎的码，不被释放的拒绝码盖掉；第二条需求不因为别人的单被取消而被释放。
+    /// 旅程上还有第二条需求时，锚需求的取货单被取消：两条都不释放，看板上是引擎的码。
     /// </summary>
     [Fact]
-    public async Task AnEndedPickupOrderWithAnotherDemandOnTheJourneyIsRefusedAndTheEnginesReasonStands()
+    public async Task AnEndedPickupOrderWithAnotherDemandOnTheJourneyReleasesNothing()
     {
         await using RuntimeFixture fixture = await DispatchedToPickupAsync(appendSecond: true);
         JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
@@ -1048,16 +1030,13 @@ public sealed class Batch7DemandReleaseServiceTests
         await TickAndRunAsync(fixture);
         CancellingGateway gateway = new(fixture.Clock, _ => { });
 
-        IReadOnlyList<DemandReleaseOutcome> outcomes = await Service(fixture, gateway).RunOnceAsync(Token);
-
-        Assert.Equal([(FirstDemandId, DemandReleaseReasons.CurrentStopWithOtherDemands)],
-            outcomes.Select(outcome => (outcome.DemandId, outcome.Result)));
+        Assert.Empty(await Service(fixture, gateway).RunOnceAsync(Token));
         Assert.Equal(0, gateway.Cancels);
         Assert.Equal("ORDER_ENDED_WITHOUT_ARRIVAL", (await fixture.RuntimeAsync(FirstDemandId)).BlockReasonCode);
     }
 
     /// <summary>
-    /// 装着货开往关卡的单被取消：没有待装的需求可释放（REQ-0328 只管未取货），旅程留着码等人，不改派。
+    /// 装着货开往关卡的单被取消：没有待装的需求可释放，旅程留着码等人，不改派。
     /// </summary>
     [Fact]
     public async Task AnEndedGateOrderReleasesNothingAndLeavesTheJourneyToAPerson()

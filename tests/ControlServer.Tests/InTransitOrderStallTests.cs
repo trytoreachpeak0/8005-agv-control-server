@@ -140,9 +140,12 @@ public sealed class InTransitOrderStallTests
     }
 
     /// <summary>
-    /// 在途单被人在 RIoT 里取消或删除：旅程写 <c>ORDER_ENDED_WITHOUT_ARRIVAL</c>。引擎自己不结束旅程、不释放——
-    /// 释放由释放服务按 REQ-0328 判（<see cref="Batch7DemandReleaseServiceTests"/>）。
+    /// 在途单被人在 RIoT 里取消或删除：旅程写 <c>ORDER_ENDED_WITHOUT_ARRIVAL</c>，不结束旅程、不释放、不重建。
     /// </summary>
+    /// <remarks>
+    /// 用户 2026-09-22：RIoT 里取消多半是误操作，该重建而不是改派；怎么重建待定，定之前只让它被看见。释放服务一侧同样不动它
+    /// （<see cref="Batch7DemandReleaseServiceTests.APickupOrderEndedInRiotIsNeitherReleasedNorRedispatched"/>）。
+    /// </remarks>
     [Theory]
     [InlineData(RiotOrderState.Cancelled)]
     [InlineData(RiotOrderState.Deleted)]
