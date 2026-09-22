@@ -29,7 +29,8 @@ namespace ControlServer.Tests;
 public sealed class WaitingJourneyBatteryWatchTests
 {
     private const string WatchMarker = "has waited for a person";
-    private const string RescueAdvice = "需要人工挪车充电";
+    // The log's rescue advice. The dashboard card says it in Chinese; the log stays English (see WaitingJourneyWatch).
+    private const string RescueAdvice = "a person has to move the vehicle to a charger";
     private const string DemandId = "10000000-0000-4000-8000-000000000001";
 
     // ---- 票面补测试第 1 条与评论里闸口那条 -------------------------------------------------------------------------

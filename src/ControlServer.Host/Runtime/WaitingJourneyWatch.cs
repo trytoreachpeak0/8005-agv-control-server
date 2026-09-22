@@ -16,7 +16,7 @@ namespace ControlServer.Host.Runtime;
 /// <remarks>
 /// <para>
 /// <b>It reports and nothing else.</b> v2 has no automatic charging before batch 9, and REQ-0169 lets a falling battery
-/// raise the alarm and its urgency, never cancel, reassign to charging or rebuild an order. So this class writes four
+/// raise the alarm and its urgency, never cancel, reassign to charging or rebuild an order. So this class writes three
 /// columns of its own and a log line; it never writes a stage, a reason code, an order or an outbound message. Under the
 /// dispatch minimum the line is an error; under the rescue line it says a person has to move the vehicle to a charger.
 /// Whether a vehicle should instead go and charge on its own is program#134, a batch 9 question.
@@ -29,7 +29,7 @@ namespace ControlServer.Host.Runtime;
 /// <para>
 /// <b>Its writes go around the engine's change tracker.</b> The context is shared with the round, and a tracked save here
 /// would also write whatever the advance left pending -- including values an advance deliberately put back without
-/// saving. So the four columns are written with one <c>ExecuteUpdate</c>, and the tracked row is brought level without
+/// saving. So the three columns are written with one <c>ExecuteUpdate</c>, and the tracked row is brought level without
 /// being marked modified, which is what the next round's reading of <see cref="JourneyRuntimeRow.WaitingWarnedAt"/> relies
 /// on while the same context lives.
 /// </para>
@@ -71,6 +71,10 @@ internal sealed class WaitingJourneyWatch(
             "next round tries again.");
 
     private const string NothingMovesIt = "Nothing on this server will move it (REQ-0169).";
+
+    // The line stays in English, like every other line this server logs: it goes to a console that a service wrapper
+    // redirects, and the first L2 run of this watch showed a Chinese phrase in it arriving as code page 936 mojibake. The
+    // dashboard card says it in Chinese ("需要人工挪车充电"), where the page is served as UTF-8.
 
     public async Task ObserveAsync(IReadOnlyList<JourneyRuntimeRow> journeys, CancellationToken cancellationToken)
     {
@@ -174,7 +178,7 @@ internal sealed class WaitingJourneyWatch(
             WaitingBatteryLevel.BelowRescueLine => string.Create(
                 CultureInfo.InvariantCulture,
                 $"The battery is below the rescue line of {options.WaitingJourneyRescueBatteryPercent}%: a person has to " +
-                $"move the vehicle to a charger (需要人工挪车充电). {NothingMovesIt}"),
+                $"move the vehicle to a charger. {NothingMovesIt}"),
             _ => NothingMovesIt
         };
         long minutes = (long)waited.TotalMinutes;

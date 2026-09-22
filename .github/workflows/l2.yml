@@ -321,6 +321,10 @@ jobs:
               # or a load under way -- the departure still waits for both to settle and for the pre-departure check.
               @{ Name = 'waiting-station-yield'; Runs = 3; BatchId = 'batch-7' }
               @{ Name = 'waiting-station-yield-waits-for-door'; Runs = 3; BatchId = 'batch-7' }
+              # control-server#273, after the batch-7 exit: a loaded vehicle standing at the gate waiting for a person
+              # has its battery read from RIoT and logged past the (shortened) threshold -- an error under the rescue line
+              # -- the dashboard card shows it, and not one order is created for it (REQ-0169).
+              @{ Name = 'waiting-journey-battery-watch'; Runs = 1; BatchId = 'batch-8' }
           )
           # One run's usual length in seconds, for dealing scenarios out to lanes longest first. Medians of 31
           # CI jobs from 2026-09-17 (ci-research, control-server#130); normal-load's excludes the build it used
@@ -353,6 +357,8 @@ jobs:
               'transport-demand-key-suppressed' = 80
               # control-server#217, one local run (2026-09-22): 41 s with the build cached; the yield rig is most of it.
               'cargo-holding-dashboard-projection' = 60
+              # control-server#273, one local run (2026-09-22): 83 s with the build.
+              'waiting-journey-battery-watch' = 60
           }
 
           # Registered before anything can fail, so the upload step below always has a path: without it
