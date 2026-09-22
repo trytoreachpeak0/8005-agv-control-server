@@ -1,9 +1,11 @@
+using System.Data.Common;
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using static ControlServer.Tests.JourneyRuntimeWorkerTestKit;
@@ -193,10 +195,43 @@ public sealed class WaitingJourneyBatteryWatchTests
         Assert.Equal(JourneyRuntimeStage.Completed, (await ReloadAsync(fixture)).Stage);
     }
 
+    /// <summary>
+    /// 库拒绝监看的那次写（这里模拟 SQLite 忙，<c>SQLITE_BUSY</c>）：这一轮照常结束、不抛，日志照打，另记一条「这一轮没记下」；
+    /// 旅程的阶段与原因码原样，下一轮库好了就补记上。监看的失败从不变成这一轮的失败。
+    /// </summary>
+    [Fact]
+    public async Task AWatchWriteTheDatabaseRefusesNeitherEndsTheRoundNorTouchesTheJourney()
+    {
+        RefuseWatchWrites refuse = new();
+        await using RuntimeFixture fixture = await BlockedAtGateAsync(refuse);
+        DateTimeOffset blocked = fixture.Clock.GetUtcNow();
+        refuse.Armed = true;
+
+        DateTimeOffset due = blocked + fixture.Options.WaitingJourneyWarningAfter;
+        await RoundAtAsync(fixture, due);
+
+        Assert.True(refuse.Fired);
+        Assert.Single(WatchEntries(fixture));
+        lock (fixture.EngineLog.Entries)
+        {
+            Assert.Contains(fixture.EngineLog.Entries, entry =>
+                entry.Level == LogLevel.Warning &&
+                entry.Message.Contains("could not record journey", StringComparison.Ordinal));
+        }
+        JourneyRuntimeRow runtime = await ReloadAsync(fixture);
+        Assert.Equal(JourneyRuntimeStage.Blocked, runtime.Stage);
+        Assert.Equal("UNLOAD_RESULT_REQUIRES_RECOVERY", runtime.BlockReasonCode);
+        Assert.Null(runtime.WaitingWarnedAt);
+
+        refuse.Armed = false;
+        await RoundAtAsync(fixture, due + TimeSpan.FromSeconds(2));
+        Assert.Equal(due + TimeSpan.FromSeconds(2), (await ReloadAsync(fixture)).WaitingWarnedAt);
+    }
+
     // ---- 票面第 3 条：正常推进不变 --------------------------------------------------------------------------------
 
     /// <summary>
-    /// 票面第 3 条：正在路上、没有任何原因码的旅程不是等人，走多久都不报；监看也不去读它的电量（读的只是等着的车）。
+    /// 票面第 3 条：正在路上、没有任何原因码的旅程不是等人，走多久都不报；监看也不给它记新的读数（在取货站停着时记的那一次原样留着）。
     /// </summary>
     [Fact]
     public async Task AJourneyUnderWayOnALegIsNotAWaitHoweverLongItTakes()
@@ -207,6 +242,8 @@ public sealed class WaitingJourneyBatteryWatchTests
         JourneyRuntimeRow onTheWay = await fixture.AdvanceToGateArrivalAsync();
         Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, onTheWay.Stage);
         DateTimeOffset left = fixture.Clock.GetUtcNow();
+        // The reading taken while it stood at the pickup; a leg under way must not add one.
+        DateTimeOffset? lastReadAtThePickup = (await ReloadAsync(fixture)).WaitingBatteryObservedAt;
 
         await RoundAtAsync(fixture, left + TimeSpan.FromMinutes(30));
 
@@ -214,7 +251,7 @@ public sealed class WaitingJourneyBatteryWatchTests
         Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, runtime.Stage);
         Assert.Null(runtime.BlockReasonCode);
         Assert.Empty(WatchEntries(fixture));
-        Assert.Null(runtime.WaitingBatteryObservedAt);
+        Assert.Equal(lastReadAtThePickup, runtime.WaitingBatteryObservedAt);
     }
 
     /// <summary>
@@ -367,9 +404,9 @@ public sealed class WaitingJourneyBatteryWatchTests
     // ---- helpers ---------------------------------------------------------------------------------------------------
 
     /// <summary>一趟单需求旅程停在闸口、卸货命令已发、等人取货。</summary>
-    private static async Task<RuntimeFixture> GateUnloadAsync()
+    private static async Task<RuntimeFixture> GateUnloadAsync(DbCommandInterceptor? commands = null)
     {
-        RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        RuntimeFixture fixture = await RuntimeFixture.CreateAsync(commands: commands);
         fixture.Catalog.Set(fixture.Demand(DemandId, "SUBLOT-001", Now.AddMinutes(-10)));
         fixture.BoxCounts.Set("SUBLOT-001", 4);
         JourneyRuntimeRow runtime = await fixture.RunToGateUnloadAsync();
@@ -378,9 +415,9 @@ public sealed class WaitingJourneyBatteryWatchTests
     }
 
     /// <summary>同一趟旅程，卸货结果回来是需恢复，引擎把它阻断成 <c>UNLOAD_RESULT_REQUIRES_RECOVERY</c>——生产上会走的那条路。</summary>
-    private static async Task<RuntimeFixture> BlockedAtGateAsync()
+    private static async Task<RuntimeFixture> BlockedAtGateAsync(DbCommandInterceptor? commands = null)
     {
-        RuntimeFixture fixture = await GateUnloadAsync();
+        RuntimeFixture fixture = await GateUnloadAsync(commands);
         StationOperationRow unload = await fixture.OperationAsync(SlotOperationType.Unload);
         await fixture.ApplyTimedOutResultAsync(unload, SlotOperationType.Unload);
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
@@ -447,6 +484,28 @@ public sealed class WaitingJourneyBatteryWatchTests
         JourneyRuntimeRow row = await write.JourneyRuntimes.SingleAsync(TestContext.Current.CancellationToken);
         edit(row);
         await write.SaveChangesAsync(TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>Refuses the watch's one write -- the UPDATE that records a battery reading -- the way a busy database does.</summary>
+    private sealed class RefuseWatchWrites : DbCommandInterceptor
+    {
+        public bool Armed { get; set; }
+
+        public bool Fired { get; private set; }
+
+        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (Armed &&
+                command.CommandText.TrimStart().StartsWith("UPDATE", StringComparison.OrdinalIgnoreCase) &&
+                command.CommandText.Contains("\"WaitingBatteryObservedAt\"", StringComparison.Ordinal))
+            {
+                Fired = true;
+                throw new SqliteException("database is locked", 5);
+            }
+            return base.NonQueryExecutingAsync(command, eventData, result, cancellationToken);
+        }
     }
 
     internal static JourneyRuntimeRow Runtime(string demandId, JourneyRuntimeStage stage, DateTimeOffset updatedAt) => new()

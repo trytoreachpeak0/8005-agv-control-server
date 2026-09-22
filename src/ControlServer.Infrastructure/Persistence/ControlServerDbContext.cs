@@ -1,6 +1,7 @@
 using ControlServer.Application;
 using ControlServer.Domain;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace ControlServer.Infrastructure.Persistence;
 
@@ -173,8 +174,31 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
     // Audit immutability lives here rather than in the stores that write audit, so that it is a
     // property of the context every caller already goes through instead of a rule each new caller
     // has to remember.
+    /// <summary>
+    /// Writes <see cref="JourneyRuntimeRow.StageSince"/> for every journey row this save adds or moves to another stage,
+    /// from the <see cref="JourneyRuntimeRow.UpdatedAt"/> the same write carries (control-server#273). Here rather than at
+    /// the writers for the reason the audit guard below is: seven places move a stage, and a rule each of them had to
+    /// remember would be broken by the eighth. A writer that forgets <c>UpdatedAt</c> leaves an earlier time, so the wait
+    /// reads longer and is reported sooner -- never later.
+    /// </summary>
+    private void StampJourneyStageStarts()
+    {
+        ChangeTracker.DetectChanges();
+        foreach (EntityEntry<JourneyRuntimeRow> entry in ChangeTracker.Entries<JourneyRuntimeRow>())
+        {
+            bool stageMoved = entry.State == EntityState.Added ||
+                (entry.State == EntityState.Modified &&
+                 entry.Property(row => row.Stage).OriginalValue != entry.Entity.Stage);
+            if (stageMoved)
+            {
+                entry.Entity.StampStageSince(entry.Entity.UpdatedAt);
+            }
+        }
+    }
+
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
+        StampJourneyStageStarts();
         AuditImmutabilityGuard.Enforce(ChangeTracker, AuditRetention, AuditClock.GetUtcNow());
         PublishedVersionImmutabilityGuard.Enforce(ChangeTracker);
         return base.SaveChanges(acceptAllChangesOnSuccess);
@@ -184,6 +208,7 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
         bool acceptAllChangesOnSuccess,
         CancellationToken cancellationToken = default)
     {
+        StampJourneyStageStarts();
         AuditImmutabilityGuard.Enforce(ChangeTracker, AuditRetention, AuditClock.GetUtcNow());
         PublishedVersionImmutabilityGuard.Enforce(ChangeTracker);
         return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
