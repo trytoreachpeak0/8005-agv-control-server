@@ -1,0 +1,41 @@
+{"at":"2026-09-22T12:08:58.9721747+00:00","note":"L2 run 20260922T120858784Z starting for scenario 'real-onboard-order-hang-continue'."}
+{"at":"2026-09-22T12:08:59.3217369+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-09-22T12:08:59.3364268+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-22T12:11:05.7415688+00:00","note":"Building onboard-hmi at 86d42ce5362a8273525b8ba1acb387e4331bcfed from a throwaway clone."}
+{"at":"2026-09-22T12:12:00.7587069+00:00","note":"Building slots-simulator at fb5f7c593742bf98bc3957b8729a38aad5321f28 from a throwaway clone."}
+{"at":"2026-09-22T12:12:23.7941522+00:00","note":"Peers: onboard-hmi@86d42ce5362a8273525b8ba1acb387e4331bcfed, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-22T12:12:23.8443904+00:00","note":"Interactive desktop lock acquired."}
+{"at":"2026-09-22T12:12:32.7958971+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-22T12:12:33.4565815+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-22T12:12:37.0283715+00:00","criterion":"simulator-ready","value":"(null)"}
+{"at":"2026-09-22T12:12:38.1439568+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-22T12:12:38.4525626+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-09-22T12:12:48.8793062+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-22T12:12:51.1394224+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-22T12:12:55.9709330+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-22T12:12:56.2867304+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-22T12:13:03.4432878+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-22T12:13:03.4893967+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-22T12:13:03.6018683+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-22T12:13:04.1803223+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-22T12:13:04.4528415+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260922T120858784Z\\controlserver.db"}
+{"at":"2026-09-22T12:13:07.2280736+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"ee196ff609a7440d8ab5b6dad024e14d","version":1,"slotCount":8}}}
+{"at":"2026-09-22T12:13:07.2387958+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260922T120858784Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-22T12:13:09.3331904+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"ee196ff609a7440d8ab5b6dad024e14d","boundSlots":8,"version":1}}}
+{"at":"2026-09-22T12:13:09.7002907+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-22T12:13:09.7163492+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260922T120858784Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs316-8005-agv-control-server\\evidence\\l2\\20260922-cs316\\red-base-8ec088b1\\real-onboard-order-hang-continue-001\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-22T12:13:12.3592483+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs316-8005-agv-control-server\\evidence\\l2\\20260922-cs316\\red-base-8ec088b1\\real-onboard-order-hang-continue-001\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"d8810b9eec8c49c898e97535026ef63f","importedAt":"2026-09-22T20:13:10.0962113+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-22T12:13:12.3657818+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-09-22T12:13:12.3914404+00:00","note":"Environment is up; entering scenario 'real-onboard-order-hang-continue'."}
+{"at":"2026-09-22T12:13:12.5382503+00:00","note":"Publishing demand ed9609dc847a47e4b85ec26e2d290a77 (area N1-3)."}
+{"at":"2026-09-22T12:13:12.7136062+00:00","criterion":"to-pickup-intent","value":"(null)"}
+{"at":"2026-09-22T12:13:16.1867652+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-ed9609dc-847a-47e4-b85e-c26e2d290a77-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-22T12:13:16.2156270+00:00","note":"Vehicle departs for the pickup station."}
+{"at":"2026-09-22T12:13:16.3566140+00:00","criterion":"runtime-iterations","value":"20"}
+{"at":"2026-09-22T12:13:16.6489667+00:00","criterion":"runtime-iterations","value":"21"}
+{"at":"2026-09-22T12:13:17.7108082+00:00","criterion":"runtime-iterations","value":"22"}
+{"at":"2026-09-22T12:13:17.7131711+00:00","note":"RIoT reports W2G-ed9609dc-847a-47e4-b85e-c26e2d290a77-PICKUP-1 HANG between stations."}
+{"at":"2026-09-22T12:13:17.7709712+00:00","criterion":"order-hang-named","value":"@{Stage=AwaitingPickupArrival; BlockReasonCode=ONBOARD_SESSION_NOT_READY; BlockReasonSince=2026-09-22 12:13:17.5252239+00:00}"}
+{"at":"2026-09-22T12:14:47.8688057+00:00","note":"Run failed: Timed out after 90s waiting for: the journey names the hanging order. Last observed: {\"Stage\":\"AwaitingPickupArrival\",\"BlockReasonCode\":\"ONBOARD_SESSION_NOT_READY\",\"BlockReasonSince\":\"2026-09-22 12:13:17.5252239+00:00\"}"}
+{"at":"2026-09-22T12:14:47.8733594+00:00","note":"Failure at: at Wait-L2Condition, C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005-workspace-v2\\9f53d2d3-c6da-483d-a3b3-80ec8dc2c94b\\scratchpad\\rig-base\\scripts\\l2\\L2.psm1: line 103\r\nat <ScriptBlock>, C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005-workspace-v2\\9f53d2d3-c6da-483d-a3b3-80ec8dc2c94b\\scratchpad\\rig-base\\scripts\\l2\\scenarios\\real-onboard-order-hang-continue.ps1: line 85\r\nat <ScriptBlock>, C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005-workspace-v2\\9f53d2d3-c6da-483d-a3b3-80ec8dc2c94b\\scratchpad\\rig-base\\scripts\\l2\\Invoke-L2Scenario.ps1: line 1286"}
+{"at":"2026-09-22T12:14:56.6713002+00:00","note":"L2 port block lock released."}

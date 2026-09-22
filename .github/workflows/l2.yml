@@ -303,6 +303,12 @@ jobs:
               # cancelled and reconciled, the demand goes back to the backlog with its age, and a second vehicle takes it
               # under a new generation and upperId, its dispatch plan actually sent (REQ-0328).
               @{ Name = 'reassign-when-vehicle-ineligible'; Runs = 3; BatchId = 'batch-7' }
+              # control-server#316 (#299's T1, before the v2 vehicle trial): an in-flight order RIoT reports HANG is named
+              # ORDER_HANG with no order command, emergency stop or fault, and a continue in RIoT resumes the journey; an
+              # in-flight pickup order a person cancels in RIoT is named ORDER_ENDED_WITHOUT_ARRIVAL and left alone: no release,
+              # no redispatch, no rebuilt order (the user's correction of 2026-09-22; rebuilding is decided separately).
+              @{ Name = 'in-transit-order-hang-continue'; Runs = 1 }
+              @{ Name = 'in-transit-order-cancelled-held'; Runs = 1 }
               # control-server#214: the task-side ranking. A new STAGING_TO_WIRE demand is taken before an older normal-band
               # one (REQ-0202); with no anti-starvation threshold configured nothing escalates, and once one is imported
               # the overdue normal-band demand is escalated exactly once and goes ahead of a STAGING_TO_WIRE that is not
@@ -580,6 +586,9 @@ jobs:
               @{ Name = 'real-onboard-cancellation-authorization-lost';       Runs = 1 }
               @{ Name = 'real-onboard-durable-ack-lost';                      Runs = 3 }
               @{ Name = 'real-onboard-expected-action-overdue';               Runs = 3 }
+              # control-server#316: an in-flight order RIoT reports HANG is named ORDER_HANG while the real onboard's session is
+              # not Ready on this server's own order, which is the normal state in transit and invisible to the synthetic peer.
+              @{ Name = 'real-onboard-order-hang-continue';                   Runs = 1 }
               @{ Name = 'real-onboard-restart-with-open-recovery-session';    Runs = 1 }
               @{ Name = 'real-onboard-restart-after-recovery-session-opened'; Runs = 1 }
               # Batch 7 (control-server#218): the specification 8.3 batch-7 real-rig L2, a mixed-side station with a front

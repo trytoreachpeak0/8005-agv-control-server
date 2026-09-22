@@ -94,6 +94,12 @@ public sealed class JourneyRuntimeEngine(
             new EventId(2107, nameof(LogOrderFailedSymptom)),
             "RIoT reports order {UpperId} FAILED on vehicle {AgvId}; journey {DemandId} recorded the " +
             "symptom with the fault model and stopped advancing on its own.");
+    private static readonly Action<ILogger, string, string, string, int?, string, Exception?> LogInTransitOrderStalled =
+        LoggerMessage.Define<string, string, string, int?, string>(
+            LogLevel.Warning,
+            new EventId(2127, nameof(LogInTransitOrderStalled)),
+            "RIoT reports order {UpperId} of journey {DemandId} on vehicle {AgvId} in state {OrderState}; the journey " +
+            "names {ReasonCode} and waits for a person. No order command, emergency stop or fault is issued for it.");
     private static readonly Action<ILogger, string, string, DateTimeOffset, Exception?> LogStationDeadlineEndedStop =
         LoggerMessage.Define<string, string, DateTimeOffset>(
             LogLevel.Warning,
@@ -164,6 +170,34 @@ public sealed class JourneyRuntimeEngine(
 
     /// <summary>The checkpoint wait has lasted longer than the configured budget.</summary>
     public const string CheckpointWaitExceededReason = "VEHICLE_CHECKPOINT_WAIT_EXCEEDED";
+
+    /// <summary>
+    /// RIoT reports this leg's in-flight order HANG (9): it stopped executing it, and only a person can move it on, by
+    /// continuing or cancelling it in RIoT (control-server#316; riot-behavior-lab BC-ORDER-015).
+    /// </summary>
+    public const string OrderHangReason = "ORDER_HANG";
+
+    /// <summary>
+    /// RIoT reports this leg's in-flight order in SUSPENDED (8), a state never observed in the lab and of unknown
+    /// meaning. Named, and nothing else is done: it is treated as a live order (control-server#316, cs#296).
+    /// </summary>
+    public const string OrderStateUnrecognizedReason = "ORDER_STATE_UNRECOGNIZED";
+
+    /// <summary>
+    /// RIoT reports this leg's in-flight order CANCELLED (2) or DELETED (6) although the vehicle never arrived:
+    /// someone ended it outside this server (control-server#316). Named, and nothing else is done: the demand is neither
+    /// released nor redispatched, and the order is rebuilt only on a person's confirmation (control-server#318).
+    /// </summary>
+    public const string OrderEndedWithoutArrivalReason = "ORDER_ENDED_WITHOUT_ARRIVAL";
+
+    /// <summary>Whether <paramref name="reasonCode"/> is one of the three codes an in-transit order that stopped writes.</summary>
+    /// <remarks>
+    /// A journey carrying one of them is not <see cref="JourneyRuntimeStage.Blocked"/> -- it stays in its arrival stage so
+    /// that a continue in RIoT resumes it without anything else -- but it is waiting on a person all the same, so it takes
+    /// no appended demand (see where <c>underWay</c> is built, and <c>DispatchRoundRunner.ReadEnRoutePlanAsync</c>).
+    /// </remarks>
+    public static bool IsStalledOrderReason(string? reasonCode) => reasonCode is
+        OrderHangReason or OrderStateUnrecognizedReason or OrderEndedWithoutArrivalReason;
 
     /// <summary>
     /// The journey is waiting on a fact only the vehicle can supply, and the vehicle has gone quiet: no legal inbound
@@ -373,8 +407,12 @@ public sealed class JourneyRuntimeEngine(
         // （不能当空闲车派），但不进 underWay（不值得当可追加的车去问）。这个区分不是优化：underWay 的
         // 含义是「可以考虑给它追加的车」，把一辆接不了追加的车放进去，会让轮次在一个本就没有活可派的局面下
         // 照样把整张候选表判一遍。
+        // A journey whose in-flight order stopped in RIoT (HANG, SUSPENDED, ended without arrival) is left in its arrival
+        // stage on purpose, so that a continue resumes it untouched, but it is waiting on a person just the same: an appended
+        // demand would be bound behind an order that does not move (control-server#316). Its code was written by the
+        // advance above, in this same round.
         HashSet<string> blocked = active
-            .Where(row => row.Stage == JourneyRuntimeStage.Blocked)
+            .Where(row => row.Stage == JourneyRuntimeStage.Blocked || IsStalledOrderReason(row.BlockReasonCode))
             .Select(row => row.AgvId)
             .ToHashSet(StringComparer.Ordinal);
         FleetVehicle[] underWay = roster.Vehicles
@@ -488,7 +526,21 @@ public sealed class JourneyRuntimeEngine(
             // down, and the reason is what control-server#198 counts the wait from: overwritten here, every reconnect
             // started the count again, and a link dropping more often than the threshold kept the loaded vehicle waiting
             // for ever.
-            if (runtime.Stage != JourneyRuntimeStage.Blocked && !IsHeldForAreaEndAdmission(runtime))
+            // An in-flight order RIoT has stopped is named ahead of the gate's own code (control-server#316, review high
+            // item). This is not a corner: a real onboard reads RIoT's safety interface while its vehicle has this
+            // server's order in flight, reports VEHICLE_NOT_READY, and the session sits at DEPARTURE_SAFETY_NOT_READY for
+            // the whole leg -- HANG included, since 9 is a non-final state. Left to the gate, ORDER_HANG was never written
+            // on a real onboard and 2127 never raised. Only the two arrival stages have an in-flight order to read.
+            if (runtime.Stage != JourneyRuntimeStage.Blocked && !IsHeldForAreaEndAdmission(runtime) &&
+                await NameStalledOrderBehindTheGateAsync(runtime, cancellationToken).ConfigureAwait(false))
+            {
+                if (waitVoided)
+                {
+                    runtime.UpdatedAt = now;
+                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                }
+            }
+            else if (runtime.Stage != JourneyRuntimeStage.Blocked && !IsHeldForAreaEndAdmission(runtime))
             {
                 runtime.SetBlockReason("ONBOARD_SESSION_NOT_READY", now);
                 runtime.UpdatedAt = now;
@@ -558,6 +610,11 @@ public sealed class JourneyRuntimeEngine(
                 if (!pickupArrival.Trusted)
                 {
                     if (await ObserveOrderFailureAsync(runtime, pickupArrival, cancellationToken)
+                            .ConfigureAwait(false))
+                    {
+                        return;
+                    }
+                    if (await NameStalledOrderAsync(runtime, pickupArrival.Intent.UpperId, pickupArrival.Order, cancellationToken)
                             .ConfigureAwait(false))
                     {
                         return;
@@ -877,6 +934,11 @@ public sealed class JourneyRuntimeEngine(
                     {
                         return;
                     }
+                    if (await NameStalledOrderAsync(runtime, gateArrival.Intent.UpperId, gateArrival.Order, cancellationToken)
+                            .ConfigureAwait(false))
+                    {
+                        return;
+                    }
                     await NameCheckpointWaitAsync(runtime, cancellationToken).ConfigureAwait(false);
                     return;
                 }
@@ -1152,6 +1214,148 @@ public sealed class JourneyRuntimeEngine(
     }
 
     /// <summary>
+    /// Names an in-flight order RIoT has stopped without it being FAILED or arrived, and says whether this round stops
+    /// here (control-server#316). Returns false, having cleared any code of its own, when the order is not stalled.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Until this ticket all three were silent.</b> The gateway reads 9 as Active and 2, 6 and 8 as Terminal; the arrival
+    /// branches accept Terminal SUCCESS as an arrival and Terminal FAILED as a fault, and handed everything else to
+    /// <see cref="NameCheckpointWaitAsync"/>, which clears the code when the vehicle is not at a checkpoint. The journey
+    /// stood in its arrival stage with no code at all, so the dashboard did not list it.
+    /// </para>
+    /// <para>
+    /// <b>HANG is named and nothing else is done</b> (the user's decision of 2026-09-22 on #299, option H-a). Not a hold,
+    /// not an emergency stop, not a fault fact: handed to <c>VehicleFaultCoordinator</c> as it stands, a HANG between
+    /// stations escalates to an emergency stop, after which RIoT refuses the continue (100021 under a latch) and
+    /// REQ-0356's release refuses too, because HANG counts as an unfinished order -- a loop with no way out on this server.
+    /// During a HANG RIoT is not driving the order; what can still move the vehicle is its own onboard controls, which
+    /// need a person at it. A continue in RIoT puts the order back to 3 and the next round clears the code here. A
+    /// continue that leaves the order in HANG, which BC-ORDER-018 has seen, keeps the code and its start time.
+    /// </para>
+    /// <para>
+    /// <b>SUSPENDED (8) is named as unrecognised</b> and treated as a live order: the lab has never seen it and the SDK
+    /// marks it removed. Whether the gateway should read it as terminal is cs#296's question.
+    /// </para>
+    /// <para>
+    /// <b>CANCELLED and DELETED mean someone ended the order outside this server</b>, which the user said on 2026-09-22 is
+    /// almost always a mistake, to be answered by rebuilding the order rather than by redispatching the demand: held and
+    /// alarmed first, then rebuilt for the same vehicle and the same demand once a person confirms, because a rebuilt order
+    /// moves the vehicle and whoever cancelled it may be standing beside it. That confirmation is control-server#318, through
+    /// #299's endpoint, and does not exist yet; this names it and nothing more -- no release, no redispatch, no new order.
+    /// The release service does not read this code as a trigger.
+    /// </para>
+    /// <para>
+    /// Ordered after <see cref="ObserveOrderFailureAsync"/>, so FAILED still reaches the fault model and keeps its own
+    /// code; the two cannot both hold for one observation.
+    /// </para>
+    /// </remarks>
+    private async Task<bool> NameStalledOrderAsync(
+        JourneyRuntimeRow runtime,
+        string upperId,
+        RiotOrderObservation order,
+        CancellationToken cancellationToken,
+        string? reasonOnceMovedOn = null)
+    {
+        string? reason = (order.Kind, order.OrderState) switch
+        {
+            (RiotOrderObservationKind.Active, RiotOrderState.Hang) => OrderHangReason,
+            (RiotOrderObservationKind.Terminal, RiotOrderState.Suspended) => OrderStateUnrecognizedReason,
+            (RiotOrderObservationKind.Terminal, RiotOrderState.Cancelled or RiotOrderState.Deleted) =>
+                OrderEndedWithoutArrivalReason,
+            _ => null,
+        };
+        DateTimeOffset now = timeProvider.GetUtcNow();
+        if (reason is null)
+        {
+            // An order that could not be read has not moved on. The gateway returns Unknown rather than throwing for a failed
+            // or indeterminate read, and treating that as a continue cleared the code for a round, restarted its clock,
+            // raised the warning again and let the vehicle back into underWay for that round (independent review, item 1).
+            // The round stops here with the code as it is: nothing below can judge an order it cannot see either.
+            if (order.Kind is not (RiotOrderObservationKind.Active or RiotOrderObservationKind.Terminal) &&
+                IsStalledOrderReason(runtime.BlockReasonCode))
+            {
+                return true;
+            }
+
+            // The order moved on -- a continue in RIoT, most often. The code is this method's to clear: SetStage only
+            // clears on a stage change, and a HANG that comes and goes inside one stage never reaches one. Behind the
+            // readiness gate the code goes straight to the gate's own, in the same save: cleared to null first, the row
+            // would read "no block" for the moment between two saves, which is long enough for the dashboard to drop it
+            // (incremental review).
+            if (IsStalledOrderReason(runtime.BlockReasonCode))
+            {
+                runtime.SetBlockReason(reasonOnceMovedOn, now);
+                runtime.UpdatedAt = now;
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            }
+            return false;
+        }
+
+        checkpointWaits.Clear(runtime.VehicleKey);
+        if (!string.Equals(runtime.BlockReasonCode, reason, StringComparison.Ordinal))
+        {
+            LogInTransitOrderStalled(
+                logger, upperId, runtime.DemandId, runtime.AgvId, order.OrderState, reason, null);
+            runtime.SetBlockReason(reason, now);
+            runtime.UpdatedAt = now;
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// <see cref="NameStalledOrderAsync"/> for a journey behind a closed readiness gate: reads the in-flight order of the
+    /// current stop and says whether a stalled-order code now stands, which the gate then leaves in place of its own.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Same rules as in the arrival branches, because it is the same method: a stalled order is named, an order that has
+    /// definitely moved on clears the code (and the gate writes <c>ONBOARD_SESSION_NOT_READY</c> after it), and an order
+    /// that cannot be read keeps whatever code stands. The read is a pure query -- nothing is sent to the peer, which is
+    /// what the gate is there to prevent.
+    /// </para>
+    /// <para>
+    /// Only the two arrival stages, and only a confirmed intent: anywhere else there is no in-flight move order this
+    /// server is waiting on, and nothing to read. A read that throws counts as unreadable, so a RIoT hiccup cannot take the
+    /// gate's write away from a journey that had no stalled code to begin with.
+    /// </para>
+    /// </remarks>
+    private async Task<bool> NameStalledOrderBehindTheGateAsync(
+        JourneyRuntimeRow runtime,
+        CancellationToken cancellationToken)
+    {
+        if (runtime.Stage is not (JourneyRuntimeStage.AwaitingPickupArrival or JourneyRuntimeStage.AwaitingGateArrival))
+        {
+            return false;
+        }
+
+        JourneyStopCursor stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken)
+            .ConfigureAwait(false);
+        OrderIntentRow? intent = await dbContext.OrderIntents.SingleOrDefaultAsync(
+            row => row.MovementLegId == stops.Current.MovementLegId, cancellationToken).ConfigureAwait(false);
+        if (intent is not { Status: "CONFIRMED", OrderId: not null })
+        {
+            return false;
+        }
+
+        RiotOrderObservation order;
+        try
+        {
+            order = await vehicleFacts.ReconcileByUpperIdAsync(intent.UpperId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
+                                      !cancellationToken.IsCancellationRequested)
+        {
+            return IsStalledOrderReason(runtime.BlockReasonCode);
+        }
+
+        return await NameStalledOrderAsync(
+                runtime, intent.UpperId, order, cancellationToken, reasonOnceMovedOn: "ONBOARD_SESSION_NOT_READY")
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Names the vehicle having gone quiet, and says whether this round should stop here
     /// (control-server#234). Returns true when the journey is left where it is for this round.
     /// </summary>
@@ -1211,7 +1415,7 @@ public sealed class JourneyRuntimeEngine(
     /// batch 9 on 2026-09-20.
     /// </para>
     /// <para>
-    /// <b>Three codes this must not overwrite.</b> Two are the ones the readiness gate above also leaves
+    /// <b>Three codes this must not overwrite, and a family of three more.</b> Two are the ones the readiness gate above also leaves
     /// alone: a <see cref="JourneyRuntimeStage.Blocked"/> journey's code names the recovery it is waiting on
     /// and nothing rebuilds it, and a stop held at its AREA machine carries the code control-server#198 counts
     /// its escalation from. A silent session is judged for them too — control-server#228's escalation is on
@@ -1226,6 +1430,13 @@ public sealed class JourneyRuntimeEngine(
     /// the person walking up to the vehicle has to know. Writing "the vehicle stopped talking" over it would
     /// replace the reason they need with a symptom of it, and reset <see cref="JourneyRuntimeRow.BlockReasonSince"/>
     /// while doing so. A failed order and a silent session are usually the same event seen from two sides.
+    /// </para>
+    /// <para>
+    /// The three codes <see cref="NameStalledOrderAsync"/> writes join it for the same reason (control-server#316): a power
+    /// cycle mid-order is one of the ways into HANG (BC-ORDER-015 P), so a hanging order and a silent session are often one
+    /// event too, and the person has to be told the order is waiting for a continue or a cancel in RIoT. The limit runs the
+    /// other way as well: a session that went silent first stops the round before the arrival branches, so an order that
+    /// stalls during the silence is named only once the vehicle is heard from again -- the same as a FAILED one.
     /// </para>
     /// <para>
     /// The two checkpoint codes are deliberately <b>not</b> on this list, which keeps the existing convention:
@@ -1277,6 +1488,7 @@ public sealed class JourneyRuntimeEngine(
         // Blocked journey's recovery code. Redundant today, load-bearing the day someone widens it.
         if (runtime.Stage != JourneyRuntimeStage.Blocked && !IsHeldForAreaEndAdmission(runtime) &&
             !string.Equals(runtime.BlockReasonCode, VehicleFaultEvidence.OrderFailed, StringComparison.Ordinal) &&
+            !IsStalledOrderReason(runtime.BlockReasonCode) &&
             !string.Equals(runtime.BlockReasonCode, OnboardSessionLostReason, StringComparison.Ordinal))
         {
             DateTimeOffset? lastInboundAt = await LatestInboundAtForSessionAsync(

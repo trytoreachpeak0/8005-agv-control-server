@@ -1,0 +1,37 @@
+[xUnit.net 00:00:08.86]     ControlServer.Tests.InTransitOrderStallTests.AnUnreadableOrderWhileTheSessionIsNotReadyKeepsTheHangReason [FAIL]
+[xUnit.net 00:00:09.15]     ControlServer.Tests.InTransitOrderStallTests.AHangingOrderIsNamedWhileTheSessionIsNotReadyOnItsOwnOrder [FAIL]
+  Failed ControlServer.Tests.InTransitOrderStallTests.AnUnreadableOrderWhileTheSessionIsNotReadyKeepsTheHangReason [358 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+            ↓ (pos 1)
+Expected: "ORDER_HANG"
+Actual:   "ONBOARD_SESSION_NOT_READY"
+            ↑ (pos 1)
+--
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.InTransitOrderStallTests.AHangingOrderIsNamedWhileTheSessionIsNotReadyOnItsOwnOrder [292 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (AwaitingPickupArrival, "ORDER_HANG")
+Actual:   Tuple (AwaitingPickupArrival, "ONBOARD_SESSION_NOT_READY")
+  Stack Trace:
+--
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:12.52]     ControlServer.Tests.InTransitOrderStallTests.AnOrderEndedWhileTheSessionIsNotReadyIsNamed [FAIL]
+  Failed ControlServer.Tests.InTransitOrderStallTests.AnOrderEndedWhileTheSessionIsNotReadyIsNamed [307 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+            ↓ (pos 1)
+Expected: "ORDER_ENDED_WITHOUT_ARRIVAL"
+Actual:   "ONBOARD_SESSION_NOT_READY"
+            ↑ (pos 1)
+--
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:14.99]     ControlServer.Tests.InTransitOrderStallTests.AContinueWhileTheSessionIsNotReadyGivesTheReasonBackToTheGate [FAIL]
+  Failed ControlServer.Tests.InTransitOrderStallTests.AContinueWhileTheSessionIsNotReadyGivesTheReasonBackToTheGate [109 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+            ↓ (pos 1)
+Expected: "ORDER_HANG"
+Actual:   "ONBOARD_SESSION_NOT_READY"
+            ↑ (pos 1)
