@@ -21,6 +21,12 @@ namespace ControlServer.Host.Dashboard;
 /// own-order fact is decided by the caller from this server's own records, because the dashboard reads the database and never
 /// calls RIoT.
 /// </para>
+/// <para>
+/// <b>The journey runtime reads this too</b> (control-server#314): <c>JourneyRuntimeEngine.PublishPickupDispatchPlanPastOwnOrderAsync</c>
+/// lets the pickup dispatch plan through the closed readiness gate only when this returns true. Widening the allow-list
+/// therefore also widens which unready sessions receive that plan; <c>PickupDispatchPlanPastOwnOrderTests</c> pins one
+/// refusing case per condition.
+/// </para>
 /// </remarks>
 internal static class OwnMovementOrderExplanation
 {

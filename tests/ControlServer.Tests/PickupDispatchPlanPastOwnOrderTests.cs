@@ -141,6 +141,7 @@ public sealed class PickupDispatchPlanPastOwnOrderTests
     [InlineData("operation-recovery")]
     [InlineData("vehicle-faulted")]
     [InlineData("peer-silent")]
+    [InlineData("order-not-confirmed")]
     public async Task NoPlanGoesOutWhenTheUnreadinessIsNotExplainedByTheOwnOrder(string variant)
     {
         await using RuntimeFixture fixture = await AcceptedWithOrderConfirmedAsync();
@@ -170,6 +171,12 @@ public sealed class PickupDispatchPlanPastOwnOrderTests
                     EvidenceCode = "RIOT_ALARM",
                     EnteredAt = fixture.Clock.GetUtcNow()
                 });
+                break;
+            case "order-not-confirmed":
+                // 单还没确认（例如建单结果未知、等下一轮对账）：计划不能指向一段没人派出去的移动。
+                OrderIntentRow intent = await fixture.Context.OrderIntents.SingleAsync(
+                    row => row.Purpose == "TO_PICKUP", Token);
+                intent.Status = "RESULT_UNKNOWN";
                 break;
             case "peer-silent":
                 fixture.Clock.Advance(SessionLiveness.Timeout + TimeSpan.FromSeconds(1));
