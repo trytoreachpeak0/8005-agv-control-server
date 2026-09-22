@@ -526,7 +526,21 @@ public sealed class JourneyRuntimeEngine(
             // down, and the reason is what control-server#198 counts the wait from: overwritten here, every reconnect
             // started the count again, and a link dropping more often than the threshold kept the loaded vehicle waiting
             // for ever.
-            if (runtime.Stage != JourneyRuntimeStage.Blocked && !IsHeldForAreaEndAdmission(runtime))
+            // An in-flight order RIoT has stopped is named ahead of the gate's own code (control-server#316, review high
+            // item). This is not a corner: a real onboard reads RIoT's safety interface while its vehicle has this
+            // server's order in flight, reports VEHICLE_NOT_READY, and the session sits at DEPARTURE_SAFETY_NOT_READY for
+            // the whole leg -- HANG included, since 9 is a non-final state. Left to the gate, ORDER_HANG was never written
+            // on a real onboard and 2127 never raised. Only the two arrival stages have an in-flight order to read.
+            if (runtime.Stage != JourneyRuntimeStage.Blocked && !IsHeldForAreaEndAdmission(runtime) &&
+                await NameStalledOrderBehindTheGateAsync(runtime, cancellationToken).ConfigureAwait(false))
+            {
+                if (waitVoided)
+                {
+                    runtime.UpdatedAt = now;
+                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                }
+            }
+            else if (runtime.Stage != JourneyRuntimeStage.Blocked && !IsHeldForAreaEndAdmission(runtime))
             {
                 runtime.SetBlockReason("ONBOARD_SESSION_NOT_READY", now);
                 runtime.UpdatedAt = now;
@@ -600,7 +614,8 @@ public sealed class JourneyRuntimeEngine(
                     {
                         return;
                     }
-                    if (await NameStalledOrderAsync(runtime, pickupArrival, cancellationToken).ConfigureAwait(false))
+                    if (await NameStalledOrderAsync(runtime, pickupArrival.Intent.UpperId, pickupArrival.Order, cancellationToken)
+                            .ConfigureAwait(false))
                     {
                         return;
                     }
@@ -919,7 +934,8 @@ public sealed class JourneyRuntimeEngine(
                     {
                         return;
                     }
-                    if (await NameStalledOrderAsync(runtime, gateArrival, cancellationToken).ConfigureAwait(false))
+                    if (await NameStalledOrderAsync(runtime, gateArrival.Intent.UpperId, gateArrival.Order, cancellationToken)
+                            .ConfigureAwait(false))
                     {
                         return;
                     }
@@ -1236,10 +1252,10 @@ public sealed class JourneyRuntimeEngine(
     /// </remarks>
     private async Task<bool> NameStalledOrderAsync(
         JourneyRuntimeRow runtime,
-        ArrivalCheck arrival,
+        string upperId,
+        RiotOrderObservation order,
         CancellationToken cancellationToken)
     {
-        RiotOrderObservation order = arrival.Order;
         string? reason = (order.Kind, order.OrderState) switch
         {
             (RiotOrderObservationKind.Active, RiotOrderState.Hang) => OrderHangReason,
@@ -1276,12 +1292,61 @@ public sealed class JourneyRuntimeEngine(
         if (!string.Equals(runtime.BlockReasonCode, reason, StringComparison.Ordinal))
         {
             LogInTransitOrderStalled(
-                logger, arrival.Intent.UpperId, runtime.DemandId, runtime.AgvId, order.OrderState, reason, null);
+                logger, upperId, runtime.DemandId, runtime.AgvId, order.OrderState, reason, null);
             runtime.SetBlockReason(reason, now);
             runtime.UpdatedAt = now;
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
         return true;
+    }
+
+    /// <summary>
+    /// <see cref="NameStalledOrderAsync"/> for a journey behind a closed readiness gate: reads the in-flight order of the
+    /// current stop and says whether a stalled-order code now stands, which the gate then leaves in place of its own.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Same rules as in the arrival branches, because it is the same method: a stalled order is named, an order that has
+    /// definitely moved on clears the code (and the gate writes <c>ONBOARD_SESSION_NOT_READY</c> after it), and an order
+    /// that cannot be read keeps whatever code stands. The read is a pure query -- nothing is sent to the peer, which is
+    /// what the gate is there to prevent.
+    /// </para>
+    /// <para>
+    /// Only the two arrival stages, and only a confirmed intent: anywhere else there is no in-flight move order this
+    /// server is waiting on, and nothing to read. A read that throws counts as unreadable, so a RIoT hiccup cannot take the
+    /// gate's write away from a journey that had no stalled code to begin with.
+    /// </para>
+    /// </remarks>
+    private async Task<bool> NameStalledOrderBehindTheGateAsync(
+        JourneyRuntimeRow runtime,
+        CancellationToken cancellationToken)
+    {
+        if (runtime.Stage is not (JourneyRuntimeStage.AwaitingPickupArrival or JourneyRuntimeStage.AwaitingGateArrival))
+        {
+            return false;
+        }
+
+        JourneyStopCursor stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken)
+            .ConfigureAwait(false);
+        OrderIntentRow? intent = await dbContext.OrderIntents.SingleOrDefaultAsync(
+            row => row.MovementLegId == stops.Current.MovementLegId, cancellationToken).ConfigureAwait(false);
+        if (intent is not { Status: "CONFIRMED", OrderId: not null })
+        {
+            return false;
+        }
+
+        RiotOrderObservation order;
+        try
+        {
+            order = await vehicleFacts.ReconcileByUpperIdAsync(intent.UpperId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
+                                      !cancellationToken.IsCancellationRequested)
+        {
+            return IsStalledOrderReason(runtime.BlockReasonCode);
+        }
+
+        return await NameStalledOrderAsync(runtime, intent.UpperId, order, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
