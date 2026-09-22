@@ -365,6 +365,11 @@ public sealed class JourneyRuntimeEngine(
             await AdvanceAsync(runtime, currentMap, cancellationToken).ConfigureAwait(false);
         }
 
+        // After every journey has had its advance, so nothing here can hold one back (control-server#273). It reads,
+        // records and logs; it never writes a stage, a reason or an order.
+        await new WaitingJourneyWatch(dbContext, vehicleFacts, runtimeOptions, timeProvider, logger)
+            .ObserveAsync(active, cancellationToken).ConfigureAwait(false);
+
         HashSet<string> busy = active.Select(row => row.AgvId).ToHashSet(StringComparer.Ordinal);
         FleetVehicle[] free = roster.Vehicles
             .Where(vehicle => !busy.Contains(vehicle.AgvId))

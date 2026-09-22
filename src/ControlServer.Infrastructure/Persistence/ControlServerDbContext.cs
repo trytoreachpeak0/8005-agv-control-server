@@ -682,6 +682,40 @@ public sealed class JourneyRuntimeRow
     public string? YieldTriggeredByVehicleKey { get; set; }
 
     /// <summary>
+    /// When <see cref="Stage"/> took its current value, by the clock of whoever moved it (control-server#273): the waiting
+    /// journey watch and the dashboard measure how long a vehicle has stood waiting for a person from here.
+    /// <see cref="UpdatedAt"/> could not say it -- every later write moves that one -- and <see cref="BlockReasonSince"/>
+    /// is null for a wait that names no reason, such as a gate waiting for its unload.
+    /// </summary>
+    /// <remarks>
+    /// Stamped by <see cref="ControlServerDbContext"/> on every save that adds the row or changes its stage, from the
+    /// <see cref="UpdatedAt"/> the same write carries -- never by the writers themselves. Seven places move a stage today,
+    /// and a column each of them had to remember would be wrong the first time an eighth forgot. Writing the same stage
+    /// again keeps the time: a block that is written again is the same wait. Null only for a row that was already
+    /// completed when the column was added.
+    /// </remarks>
+    public DateTimeOffset? StageSince { get; private set; }
+
+    /// <summary>
+    /// The battery the waiting journey watch last read from RIoT for this journey's vehicle, in percent; null when that
+    /// read gave no percentage (control-server#273). Meaningful together with <see cref="WaitingBatteryObservedAt"/>:
+    /// a null here with a time there is "unknown at that time", not "never read".
+    /// </summary>
+    public int? WaitingBatteryPercent { get; set; }
+
+    /// <summary>When the watch made the read <see cref="WaitingBatteryPercent"/> holds, by this server's clock; null before the first.</summary>
+    public DateTimeOffset? WaitingBatteryObservedAt { get; set; }
+
+    /// <summary>When the watch last logged this journey's wait; kept so a restart neither repeats nor loses the cadence.</summary>
+    public DateTimeOffset? WaitingWarnedAt { get; set; }
+
+    /// <summary>
+    /// The one way to write <see cref="StageSince"/>, and the database context is its one caller. Internal so no
+    /// runtime writer can set it beside the stage and drift from the rule above.
+    /// </summary>
+    internal void StampStageSince(DateTimeOffset at) => StageSince = at;
+
+    /// <summary>
     /// The one way to write <see cref="BlockReasonCode"/>: the first write of a code records when it
     /// began, writing the code it already holds keeps that time, a different code starts it over, and
     /// clearing the code clears it.
