@@ -69,13 +69,15 @@ RIoT 会一直报 `MT_RUNNING` 加车速 0；停在两站之间的车，站点�
 | 这次急停是 8005 自己触发的 | 命令审计里有本次急停的 `triggerEmergency`；人工、外部或来源不明的急停不在自动解除范围内 |
 | 原因已经消除 | 故障事实被清除（`VehicleFaultStates` 的 `Level=None` 且 `ClearedAt` 有值） |
 | 停稳 | 急停锁住即视为停稳，上一条已经读到锁住（`REQ-0247`） |
+| RIoT 里这台车没有未结束的订单 | 与人工确认解除同一个读法（2026-09-22 起，control-server#299）：原因消除不等于 RIoT 手里没有能开走这台车的单 |
 
 任何一条不满足，服务端会拒绝自动解除并给出具体的原因码（`EMERGENCY_NOT_CAN_RECOVER`、
-`EMERGENCY_FAULT_FACT_ABSENT`、`EMERGENCY_CAUSE_NOT_CLEARED`、`EMERGENCY_FAULT_GENERATION_MOVED`；
-`EMERGENCY_STOP_NOT_PROVEN` 只会出现在没读到锁住的时候）。
+`EMERGENCY_FAULT_FACT_ABSENT`、`EMERGENCY_CAUSE_NOT_CLEARED`、`EMERGENCY_FAULT_GENERATION_MOVED`、
+`EMERGENCY_VEHICLE_ORDER_NOT_FINISHED`、`EMERGENCY_VEHICLE_ORDERS_UNKNOWN`；`EMERGENCY_STOP_NOT_PROVEN` 只会出现在没读到锁住的时候）。
 
-今天清除故障事实只有一个入口：修复续行，它要求原订单确认为 HELD。**被 RIoT 报成 FAILED 的单永远不满足**，所以这类
-急停不会自动解除，要走路径二。
+清除故障事实有两个入口：修复续行（原订单确认为 HELD），和人工清除（control-server#299，
+[`vehicle-fault-clearance-field-guide.md`](vehicle-fault-clearance-field-guide.md)）。**人工清除要求急停已经解除**，
+所以被 RIoT 报成 FAILED 的单引起的急停仍然走路径二：先人工确认解除急停，再人工清除故障。
 
 ### 路径二：人工确认解除（`REQ-0356`）
 
@@ -133,7 +135,8 @@ Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:58007/api/safety/v1/emerge
 
 ### 解除之后
 
-- **解除只结束这一次急停。**车辆故障阻断还在，这台车照样不派新单；清除故障有自己的规则。
+- **解除只结束这一次急停。**车辆故障阻断还在，这台车照样不派新单；清除故障有自己的规则，见
+  [`vehicle-fault-clearance-field-guide.md`](vehicle-fault-clearance-field-guide.md)。
 - **服务端不会因为车停在两站之间就再急停它。**对同一次故障，解除后只有读到车在动、读不到车的状态、读数过期，
   或者车出现在另一个站点时，服务端才会再次急停，这算新的一次（2026-09-15 用户裁定）。
 - **不要在 RIoT 里手动解锁。**服务端没有解除过的急停变回 `OK`，会被当成意外恢复，立即重新急停并报
