@@ -1,0 +1,22 @@
+$ git diff --stat 8a4d98f9 fb66b523
+ scripts/run-staged-g3.ps1 | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+$ git diff 8a4d98f9 fb66b523
+diff --git a/scripts/run-staged-g3.ps1 b/scripts/run-staged-g3.ps1
+index 76da6266..e1349dff 100644
+--- a/scripts/run-staged-g3.ps1
++++ b/scripts/run-staged-g3.ps1
+@@ -80,10 +80,10 @@ param(
+     #   Same day, $ControlServerCommit -> 85381ea2: the staged recovery probe and three forced-recovery judgments
+     #     brought up to control-server#187 (one renamed, g3-slice-evidence.ps1 with it). Scripts only; src/ and
+     #     tests/ are those of 905ffd1d. All four runners re-run on it (the claim table is shared).
+-    [string]$ControlServerCommit = '85381ea2a37e46b4c720ff5f1843161ad6deb69d',
++    [string]$ControlServerCommit = '8a4d98f90f708563f41f90a35d98cd9e932ca94c',
+     #   $OnboardCommit -> 4d716340: onboard-hmi#133 merged the batch-6 G2 evidence onto w2g/fp-v2-impl, and
+     #     New-ExactClone requires the tip. 44b3aa6e..4d716340 is evidence/ only; the product is that of 44b3aa6e.
+-    [string]$OnboardCommit = '4d716340982de4e39339c2151c291efe1a21e1d1',
++    [string]$OnboardCommit = 'deeba94c42c51561621634194d3c9f6582737486',
+     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
+     [string]$ProtocolCommit = '86575456c847041515b7b75e8851a00e0d939804',
+     # The ref whose tip -OnboardCommit must equal. It is a parameter rather than a literal because the
