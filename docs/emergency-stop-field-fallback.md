@@ -96,7 +96,7 @@ RIoT 会一直报 `MT_RUNNING` 加车速 0；停在两站之间的车，站点�
 | `EMERGENCY_DOORS_CLOSED_NOT_CONFIRMED` | 没确认「仓门已关」 | 关好仓门后再确认 |
 | `EMERGENCY_NOT_CAN_RECOVER` | RIoT 不是报 `CAN_RECOVER` | `CAN_NOT_RECOVER` 转 RIoT 人员；`OK` 说明已经没锁 |
 | `EMERGENCY_NOT_RAISED_BY_8005` | 这个急停不是 8005 触发的，或服务端已经解除过、又被别人锁上 | 不归 8005 解，转 RIoT 人员 |
-| `EMERGENCY_VEHICLE_ORDER_NOT_FINISHED` | RIoT 里这台车还有没结束的订单（排队、执行、暂停或 HANG） | **先在 RIoT 取消该订单，再确认。**订单还在执行时一解锁，车可能接着开走，而确认的人可能就在车旁 |
+| `EMERGENCY_VEHICLE_ORDER_NOT_FINISHED` | RIoT 里这台车还有没结束的订单（排队、执行、暂停或 HANG） | **先让这张单结束，再确认。**订单还在执行时一解锁，车可能接着开走，而确认的人可能就在车旁。先看是谁建的：服务端建的（`upperId` 以 `W2G-` 开头）不要取消，找值班工程师；不是服务端建的，按 [`vehicle-fault-clearance-field-guide.md`](vehicle-fault-clearance-field-guide.md) 「急停锁着、车上还挂着一张 HANG 的单」一节，核实它在我们的车上（RIoT `deviceKey`／`id`）后只取消这一张（2026-09-22 用户定） |
 | `EMERGENCY_VEHICLE_ORDERS_UNKNOWN` | 读不到这台车的订单状态 | 等 RIoT 恢复后再试；读不到不当成「没有订单」 |
 
 **入口**：`POST /api/safety/v1/emergency-stop-releases`，在服务端的健康端口上（默认 `127.0.0.1:58007`）。
