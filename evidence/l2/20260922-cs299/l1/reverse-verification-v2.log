@@ -1,0 +1,140 @@
+== M1 automatic release does not ask for unfinished orders
+   diff: 0	9	src/ControlServer.Host/Runtime/Commands/EmergencyStopSupervisor.cs
+   summary: [('Failed!', '3', '157')]
+   red (2):
+     EmergencyStopSupervisorTests.AnAutomaticReleaseIsRefusedWhileTheVehicleMayStillHaveAnOrder
+     EmergencyStopSupervisorTests.ReleaseObstaclesNamesEveryMissingFact
+== M2 no transaction around disposition and clearance
+   diff: 2	3	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+   summary: [('Failed!', '1', '159')]
+   red (1):
+     VehicleFaultRecoveryTests.AClearanceCutShortLeavesNothingBehindAndCanBeMadeAgain
+== M3 the journey is not disposed of
+   diff: 1	2	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+   summary: [('Failed!', '7', '153')]
+   red (7):
+     VehicleFaultRecoveryEndpointsTests.AClearanceIsOkAndTheSameOneAgainSaysItWasAlreadyMade
+     VehicleFaultRecoveryTests.AClearanceCutShortLeavesNothingBehindAndCanBeMadeAgain
+     VehicleFaultRecoveryTests.AClearanceWorksWhileTheSessionIsNotReadyOnItsOwnOrder
+     VehicleFaultRecoveryTests.AClearedFaultReleasesTheDemandAndTheVehicleTakesWorkAgain
+     VehicleFaultRecoveryTests.ALoadedClearanceWhileTheSessionIsNotReadyKeepsItsReason
+     VehicleFaultRecoveryTests.ALoadedVehicleKeepsItsCargoBindingAndWaitsForAPerson
+     VehicleFaultRecoveryTests.TheSameClearanceTwiceDoesNothingTheSecondTime
+== M4 an unreadable current order counts as ended
+   diff: 0	1	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+   summary: [('Failed!', '3', '157')]
+   red (2):
+     VehicleFaultRecoveryTests.AnOrderThatCannotBeReadIsNotTakenAsEnded
+     VehicleFaultRecoveryTests.EveryUnmetCriterionIsNamedAndNothingIsChanged
+== M5 SUCCESS counts as ended
+   diff: 1	1	docs/emergency-stop-field-fallback.md
+19	10	docs/vehicle-fault-clearance-field-guide.md
+1	1	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+   summary: [('Failed!', '1', '159')]
+   red (1):
+     VehicleFaultRecoveryTests.OnlyAFailedOrderLetsTheFaultBeCleared
+== M6 an engaged latch is not checked
+   diff: 0	4	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+   summary: [('Failed!', '4', '156')]
+   red (4):
+     VehicleFaultRecoveryEndpointsTests.ARefusalIsAConflictNamingEveryReason
+     VehicleFaultRecoveryTests.AResumeIsRefusedForEveryUnmetCriterionIncludingALatch
+     VehicleFaultRecoveryTests.EachCriterionRefusesOnItsOwn
+     VehicleFaultRecoveryTests.EveryUnmetCriterionIsNamedAndNothingIsChanged
+== M7 the runtime gate is not taken for a clearance
+   diff: 1	1	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+   summary: [('Failed!', '3', '157')]
+   red (3):
+     VehicleFaultRecoveryEndpointsTests.ARuntimeRoundThatDoesNotEndInTimeIsServiceUnavailable
+     VehicleFaultRecoveryTests.AClearanceWaitsForTheRuntimeRoundInProgress
+     VehicleFaultRecoveryTests.ARequestThatCannotGetTheGateInTimeGivesUpAndChangesNothing
+== M8 no AlreadyCleared short cut
+   diff: 1	1	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+   summary: [('Failed!', '5', '155')]
+   red (4):
+     VehicleFaultRecoveryEndpointsTests.AClearanceIsOkAndTheSameOneAgainSaysItWasAlreadyMade
+     VehicleFaultRecoveryTests.AnAlreadyClearedVehicleStillNeedsANamedConfirmedRequest
+     VehicleFaultRecoveryTests.TheSameClearanceTwiceDoesNothingTheSecondTime
+     VehicleFaultRecoveryTests.TheSameResumeTwiceContinuesOnce
+== M9 cargo on board is released like an empty vehicle
+   diff: 1	1	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+   summary: [('Failed!', '2', '158')]
+   red (2):
+     VehicleFaultRecoveryTests.ALoadedClearanceWhileTheSessionIsNotReadyKeepsItsReason
+     VehicleFaultRecoveryTests.ALoadedVehicleKeepsItsCargoBindingAndWaitsForAPerson
+M10 CANCELLED and DELETED count as FAILED again (review M1): BUILD FAILED, not a valid probe
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Release\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\src\ControlServer.Dashboard\bin\Release\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\src\ControlServer.Application\bin\Release\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.FakeRiot -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Release\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.ProtocolFaultProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Release\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Release\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Release\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Release\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FieldOps -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Release\net8.0\win-x64\ControlServer.FieldOps.dll
+C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\src\ControlServer.Host\Runtime\Faults\VehicleFaultRecoveryService.cs(525,18): error CS8120: The switch case is unreachable. It has already been handled by a previous case or it is impossible to match. [C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\src\ControlServer.Host\ControlServer.Host.csproj]
+
+Build FAILED.
+
+C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\src\ControlServer.Host\Runtime\Faults\VehicleFaultRecoveryService.cs(525,18): error CS8120: The switch case is unreachable. It has already been handled by a previous case or it is impossible to match. [C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs299-8005-agv-control-server\src\ControlServer.Host\ControlServer.Host.csproj]
+    0 Warning(s)
+    1 Error(s)
+
+Time Elapsed 00:00:03.68
+
+== M11 the credential is not compared
+   diff: 1	1	src/ControlServer.Host/Runtime/VehicleFaultRecoveryEndpoints.cs
+   summary: [('Failed!', '1', '159')]
+   red (1):
+     VehicleFaultRecoveryEndpointsTests.AWrongBearerCredentialIsRejectedBeforeAnythingIsDone
+== M12 no dashboard description for the cargo-on-board code
+   diff: 0	3	src/ControlServer.Host/Dashboard/BlockedJourneysQueryEndpoint.cs
+   summary: [('Failed!', '1', '159')]
+   red (1):
+     Batch7CargoHoldingDashboardTests.AStalledInTransitOrderIsShownWithAChineseDescription
+== M14 a request that timed out on the gate goes ahead anyway
+   diff: 1	1	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+   summary: [('Failed!', '2', '158')]
+   red (2):
+     VehicleFaultRecoveryEndpointsTests.ARuntimeRoundThatDoesNotEndInTimeIsServiceUnavailable
+     VehicleFaultRecoveryTests.ARequestThatCannotGetTheGateInTimeGivesUpAndChangesNothing
+== M15 a third type takes the gate
+   diff: 5	0	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+   summary: [('Failed!', '1', '159')]
+   red (1):
+     VehicleFaultRecoveryTests.OnlyTheRuntimeRoundAndTheRecoveryTakeTheGate
+== M16 cargo on board keeps its arrival stage and only changes the code
+   diff: 0	1	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+   summary: [('Failed!', '2', '158')]
+   red (2):
+     VehicleFaultRecoveryTests.ALoadedClearanceWhileTheSessionIsNotReadyKeepsItsReason
+     VehicleFaultRecoveryTests.ALoadedVehicleKeepsItsCargoBindingAndWaitsForAPerson
+== M13 a stop still open is not checked
+   diff: 0	4	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+   summary: [('Failed!', '1', '159')]
+   red (1):
+     VehicleFaultRecoveryTests.AnEmergencyStopStillOpenRefusesTheClearance
+== M17 the state is not compared under the gate (review M2)
+   diff: 0	4	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+   summary: [('Failed!', '1', '159')]
+   red (1):
+     VehicleFaultRecoveryTests.AJourneyThatMovedOnBetweenTheReadAndTheGateIsNotDisposedOf
+== M18 already-cleared answers before the person is judged (review L3)
+   diff: 2	2	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+   summary: [('Failed!', '2', '158')]
+   red (1):
+     VehicleFaultRecoveryTests.AnAlreadyClearedVehicleStillNeedsANamedConfirmedRequest
+== M19 RIoT is read under the gate (review M2)
+   diff: 1	0	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+   summary: [('Failed!', '3', '157')]
+   red (1):
+     VehicleFaultRecoveryTests.NoRiotCallIsMadeWhileTheGateIsHeld
+== M20 the resume issues its continue under the gate (review M2)
+   diff: 2	1	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+   summary: [('Failed!', '1', '159')]
+   red (1):
+     VehicleFaultRecoveryTests.NoRiotCallIsMadeWhileTheGateIsHeld
+restored clean: ?? evidence/l2/20260922-cs299/red-base-34fba83b/
