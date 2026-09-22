@@ -1616,9 +1616,17 @@ public sealed class JourneyRuntimeEngine(
     /// <list type="bullet">
     /// <item><description>
     /// 会话的原因码是 <c>DEPARTURE_SAFETY_NOT_READY</c>，安全原因只有车本身（<see cref="Dashboard.OwnMovementOrderExplanation"/>，
-    /// 与阻塞看板 control-server#139 用同一个判据）。这个原因码在 <c>GetRecoveryReason</c> 里排在握手、恢复报告、强制恢复代次、
-    /// 待对账事实之后，所以它本身就说明握手已经完成、对账已经结清（control-server#259 的「握手完成前不下发」由此承担一半，
-    /// 另一半是 <c>OnboardPeer</c> 只路由握手完成的连接）。
+    /// 与阻塞看板 control-server#139 用同一个判据）。这个原因码在 <c>GetRecoveryReason</c> 里排在能力快照、安全快照、恢复报告、
+    /// 强制恢复代次、待对账事实<b>之后</b>，所以它说明这五样都已具备：握手已经完成、对账已经结清（control-server#259 的「握手完成前
+    /// 不下发」由此承担一半，另一半是 <c>OnboardPeer</c> 只路由握手完成的连接）。
+    /// </description></item>
+    /// <item><description>
+    /// <b>但它说明不了「只剩出发安全这一个原因」。</b>同一个函数把出发安全排在作业待恢复（<c>OPERATION_RECOVERY_REQUIRED</c>）与
+    /// 强制恢复待硬件记录<b>之前</b>，这两者与出发不安全同时成立时，原因码只写出发安全。挡它们的不是原因码，是这里再问一次
+    /// <see cref="WireToGateStore.OperationNeedsRecoveryAsync"/> 与 <see cref="WireToGateStore.ForcedRecoveryAwaitsHardwareRecordAsync"/>——
+    /// 与 <c>DecideReadinessAsync</c> 用的是同一个查询。<see cref="TryBlockOnRecordedRecoveryAsync"/> 帮不上：它只在等装货、
+    /// 卸货结果的两个阶段把旅程挪去 <c>Blocked</c>，这里的阶段是 <c>AwaitingPickupArrival</c>；而强制恢复可以在车在路上、
+    /// 会话正是 <c>RECOVERY_REQUIRED</c> 时由管理员发起。
     /// </description></item>
     /// <item><description>
     /// 当前停靠那张单是本服务端建的、已确认、落在这辆车上，而车没有挂着故障——否则「未知」可能另有来源。
@@ -1666,6 +1674,12 @@ public sealed class JourneyRuntimeEngine(
                 session.SafetyReasonCodesJson,
                 session.SafetyUnknownPresent,
                 ownOrderInFlight))
+        {
+            return;
+        }
+        // 原因码把这两样藏在出发安全后面（见上面的注释），所以单独问。
+        if (await store.OperationNeedsRecoveryAsync(runtime.AgvId, cancellationToken).ConfigureAwait(false) ||
+            await store.ForcedRecoveryAwaitsHardwareRecordAsync(runtime.AgvId, cancellationToken).ConfigureAwait(false))
         {
             return;
         }
