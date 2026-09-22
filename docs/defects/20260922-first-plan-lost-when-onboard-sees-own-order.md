@@ -1,7 +1,7 @@
 # 缺陷：派往取货站的那一版计划在车载端看到本服务端的 RIoT 单之后就再也发不出去
 
 Found by: 批次 7 出口 G3（control-server#220 第 4 步），[`evidence/g3/20260922-protocol-v2.0.0-journey-517e1c7a/scenarios/g3-task-type-admission-fail-closed/SUMMARY.md`](../../evidence/g3/20260922-protocol-v2.0.0-journey-517e1c7a/scenarios/g3-task-type-admission-fail-closed/SUMMARY.md)
-Status: 已登记，修复去向待调度定（出口票不改产品代码）
+Status: resolved——control-server#314（PR #315，合并提交 `82bfa415`，2026-09-22）
 Owner repository: `8005-agv-control-server`（`JourneyRuntimeEngine` 的就绪闸门与 `PublishPickupDispatchPlanOnceAsync`）
 Product at discovery: control-server `517e1c7a`，onboard-hmi `ecdb3a0b`，slots-simulator `fb5f7c59`，protocol `protocol-v2.0.0`（`86575456`）
 
@@ -75,7 +75,16 @@ cs#307 是「握手完成后服务端停止应答、车载端 `TimeoutException`
 - 0/10 对 2/5 提示批次 7 把窗口拉宽了（例如每轮推进之前的工作变多），但机会数太少，不能据此下结论；也没有找到是哪一次合入。
 - 现场真 RIoT 与车载端的节奏下被撞上的概率没有量过。
 
-## 修复去向
+## 修复
 
-出口票不改产品代码（票面「冲突边界」）。修法候选（供开票时取舍，不在这里定）：派往取货站的计划随受理那一刻一起写进发件箱
-（在建单之前或同一事务里），或让就绪闸门对「只因本服务端自己的在途单而未就绪」放行这一版计划的下发。
+出口票不改产品代码（票面「冲突边界」），修复另开 control-server#314，用户 2026-09-22 定先修再从头重跑出口。
+
+- 修复票 control-server#314，PR #315，合并提交 `82bfa415`（`fp/v2-impl`）。做法：会话只因本服务端自己的在途单而未就绪时，派往取货站的计划照样送达车载端；
+  审查后又改为放行前单独核「作业待恢复」与「强制恢复待硬件记录」，不只看原因码（`aa678a4d`）。
+- **证明用例** `tests/ControlServer.Tests/PickupDispatchPlanPastOwnOrderTests.cs`：
+  - `ThePickupPlanReachesTheVehicleWhoseSessionDroppedOnTheOwnOrderBeforeTheFirstAdvance` 是确定性复现，修前红（`18ace8ba`）、修后绿（`071e3776`）；
+  - 负向 `NoPlanGoesOutWhenTheUnreadinessIsNotExplainedByTheOwnOrder` 六格，其中审查补的两格（`departure-unsafe-with-operation-recovery`、
+    `departure-unsafe-with-forced-recovery-awaiting-record`）先红（`4a77c8da`）后绿（`aa678a4d`）；
+  - 另有 `TheFirstReadyAdvanceDoesNotSendTheAcknowledgedPlanAgain`、`AReconnectStillOnTheOwnOrderGetsThePlanReplayedOnlyOnceItsHandshakeIsDone`。
+- **第二轮出口 journey 15/15（`evidence/g3/20260922-protocol-v2.0.0-journey-82bfa415/`）不作为修复证据**：这个缺陷是时间窗口，命中率推算约两成，
+  一轮没撞上本来就可能。修复成立的证据是上面那条确定性用例的红绿；15/15 只说明第二轮代码上各片 G3 不退化。
