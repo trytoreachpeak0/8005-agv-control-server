@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -93,6 +94,115 @@ public sealed class OnboardHandshakePushGateTests
         // Held back the way an unreachable vehicle is: the caller is told nothing was sent, which every
         // outbound path already handles, rather than being told it was sent.
         Assert.IsAssignableFrom<IOException>(pushOutcome);
+    }
+
+    /// <summary>
+    /// The same, one step later: a push attempted just before the recovery report reaches the server.
+    /// </summary>
+    /// <remarks>
+    /// The step-3 push above cannot tell "routable once the recovery report is answered" from "routable once the
+    /// alarm snapshot is answered". This one can: it is the last moment of the handshake, so a server that
+    /// considered the handshake done any earlier -- <c>HandshakeCompleted</c> set on an earlier message, or an
+    /// attach tied to something other than it -- puts the push where the vehicle expects the report's DurableAck.
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    public async Task APushJustBeforeTheRecoveryReportDoesNotReachTheVehicle()
+    {
+        await using Rig rig = await Rig.StartAsync();
+        Exception? pushOutcome = null;
+        bool pushed = false;
+        rig.Relay.BeforeForwarding = async messageType =>
+        {
+            if (messageType != "RecoveryStateReport" || pushed)
+            {
+                return;
+            }
+            pushed = true;
+            try
+            {
+                await rig.Peer.SendAsync(Push("FaultCargoRecoveryCommand"), CancellationToken.None);
+            }
+            catch (Exception error)
+            {
+                pushOutcome = error;
+            }
+        };
+
+        await rig.Onboard.StartAsync(rig.Lifetime.Token).WaitAsync(Guard, TestContext.Current.CancellationToken);
+
+        Assert.True(pushed, "The relay never reached the handshake step it pushes at.");
+        Assert.Equal("READY", rig.Engine.Snapshot().State.Readiness);
+        string[] expected =
+            ["SessionAccepted", "SnapshotAppliedAck", "SnapshotAppliedAck", "SnapshotAppliedAck", "DurableAck", "SessionReadiness"];
+        Assert.Equal(expected, rig.Inbound().Take(expected.Length).Select(item => item.MessageType));
+        Assert.IsAssignableFrom<IOException>(pushOutcome);
+    }
+
+    /// <summary>
+    /// A push built for the session before a reconnect does not reach the session after it, and the replay
+    /// delivers it rebound to the new one.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The other half of "what was meant for before must not leak into after" (review of control-server#309). The
+    /// runtime reads the session as Ready for generation N at the top of a round and pushes a few hundred
+    /// milliseconds later; if the vehicle reconnected in between, the new connection is attached for N+1, and a
+    /// peer that routes by agvId alone hands it a line stamped N. The onboard rejects that line in its receive
+    /// loop (<c>STALE_SESSION_GENERATION</c>, <c>WireToGateProtocol.cs</c>) and the loop ends -- the connection
+    /// drops, like the handshake case. The synthetic vehicle does not check generations, so this is asserted on
+    /// the wire, where the relay reads every line's <c>sessionGeneration</c>.
+    /// </para>
+    /// <para>
+    /// Refused, the line is what a vehicle that is not connected gets: the outbox row stays unacknowledged, and
+    /// the replay rewrites its generation (<c>ReplayPendingForSessionAsync</c> rebinds a row stored for an older
+    /// generation) and sends it once.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    public async Task APushForThePreviousSessionDoesNotReachTheNextOneAndIsReplayedIntoIt()
+    {
+        await using Rig rig = await Rig.StartAsync();
+        await rig.Onboard.StartAsync(rig.Lifetime.Token).WaitAsync(Guard, TestContext.Current.CancellationToken);
+        await rig.SendWhenRoutableAsync(Push("FaultCargoRecoveryCommand", sessionGeneration: 1));
+        await rig.Onboard.DisconnectAsync();
+        await rig.Onboard.ReconnectAsync().WaitAsync(Guard, TestContext.Current.CancellationToken);
+        Assert.Equal(2L, rig.Engine.Snapshot().State.SessionGeneration);
+        await rig.SendWhenRoutableAsync(Push("FaultCargoRecoveryCommand", sessionGeneration: 2));
+
+        const string planId = "00000000-0000-4000-8000-000000000262";
+        Exception? pushOutcome = null;
+        await using (ControlServerDbContext context = rig.NewContext())
+        {
+            OnboardJourneyPublisher publisher = new(new WireToGateStore(context), rig.Peer, TimeProvider.System);
+            try
+            {
+                // Built for generation 1, as a round that read the session before the reconnect would.
+                await publisher.PublishUpcomingStopPlanAsync(
+                    planId, AgvId, sessionGeneration: 1, Plan(), TestContext.Current.CancellationToken);
+            }
+            catch (Exception error)
+            {
+                pushOutcome = error;
+            }
+        }
+
+        ServerLine[] stale = [.. rig.Relay.ToVehicle().Where(line => line.Connection == 2 && line.SessionGeneration != 2)];
+        Assert.True(stale.Length == 0, "Lines of another session reached the new connection: " + string.Join(", ", stale.Select(line => line.ToString())));
+        Assert.IsAssignableFrom<IOException>(pushOutcome);
+
+        await using (ControlServerDbContext context = rig.NewContext())
+        {
+            OnboardJourneyPublisher publisher = new(new WireToGateStore(context), rig.Peer, TimeProvider.System);
+            await publisher.ReplayPendingForSessionAsync(
+                AgvId, 2, new HashSet<string>(StringComparer.Ordinal) { planId }, TestContext.Current.CancellationToken);
+        }
+        await rig.WaitForInboundAsync("UpcomingStopPlanSnapshot");
+
+        ServerLine delivered = Assert.Single(rig.Relay.ToVehicle(), line => line.MessageId == planId);
+        Assert.Equal(2, delivered.Connection);
+        Assert.Equal(2L, delivered.SessionGeneration);
     }
 
     /// <summary>
@@ -316,13 +426,14 @@ public sealed class OnboardHandshakePushGateTests
     /// <summary>
     /// A server-originated line the synthetic vehicle takes no action on, so it can only show up in its wire log.
     /// </summary>
-    private static ReadOnlyMemory<byte> Push(string messageType) => Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
+    private static ReadOnlyMemory<byte> Push(string messageType, long sessionGeneration = 1) =>
+        Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
     {
         messageType,
         messageId = Guid.NewGuid().ToString("D"),
         correlationId = (string?)null,
         agvId = AgvId,
-        sessionGeneration = 1L,
+        sessionGeneration,
         payload = new { }
     }) + "\n");
 
@@ -524,8 +635,9 @@ public sealed class OnboardHandshakePushGateTests
     }
 
     /// <summary>
-    /// Forwards one connection line by line, lets a test act before a vehicle line reaches the server, and lets
-    /// it write a line to the server as if the vehicle had.
+    /// Forwards the vehicle's connections line by line, one after another, and records every server line it
+    /// forwards. A test can act before a vehicle line reaches the server, and can write a line to the server as
+    /// if the vehicle had.
     /// </summary>
     private sealed class LineRelay : IAsyncDisposable
     {
@@ -533,9 +645,10 @@ public sealed class OnboardHandshakePushGateTests
         private readonly int _serverPort;
         private readonly CancellationTokenSource _stopping = new();
         private readonly SemaphoreSlim _toServerGate = new(1, 1);
-        private readonly TaskCompletionSource<StreamWriter> _toServer =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private readonly List<IDisposable> _owned = [];
+        private readonly ConcurrentQueue<ServerLine> _toVehicle = new();
+        private readonly ConcurrentBag<IDisposable> _owned = [];
+        private volatile StreamWriter? _toServer;
+        private int _connections;
         private Task _running = Task.CompletedTask;
 
         private LineRelay(TcpListener listener, int serverPort)
@@ -549,37 +662,70 @@ public sealed class OnboardHandshakePushGateTests
         /// <summary>Runs before each vehicle line is forwarded, with that line's messageType.</summary>
         public Func<string, Task>? BeforeForwarding { get; set; }
 
+        /// <summary>Every line the server wrote, in order, with the relay connection it went out on.</summary>
+        public ServerLine[] ToVehicle() => [.. _toVehicle];
+
         public static LineRelay Start(int serverPort)
         {
             TcpListener listener = new(IPAddress.Loopback, 0);
             listener.Start();
             LineRelay relay = new(listener, serverPort);
-            relay._running = relay.RunAsync();
+            relay._running = relay.AcceptAsync();
             return relay;
         }
 
         public async Task InjectToServerAsync(string line)
         {
-            StreamWriter writer = await _toServer.Task.WaitAsync(Guard);
+            StreamWriter writer = _toServer ?? throw new InvalidOperationException("No vehicle connection is open.");
             await WriteToServerAsync(writer, line, _stopping.Token);
         }
 
-        private async Task RunAsync()
+        private async Task AcceptAsync()
+        {
+            List<Task> serving = [];
+            try
+            {
+                while (!_stopping.IsCancellationRequested)
+                {
+                    TcpClient vehicle = await _listener.AcceptTcpClientAsync(_stopping.Token);
+                    serving.Add(ServeAsync(vehicle, Interlocked.Increment(ref _connections)));
+                }
+            }
+            finally
+            {
+                await Task.WhenAll(serving);
+            }
+        }
+
+        private async Task ServeAsync(TcpClient vehicle, int connection)
         {
             CancellationToken token = _stopping.Token;
-            TcpClient vehicle = await _listener.AcceptTcpClientAsync(token);
             TcpClient server = new();
             _owned.Add(vehicle);
             _owned.Add(server);
-            await server.ConnectAsync(IPAddress.Loopback, _serverPort, token);
-            await using StreamWriter toServer = NewWriter(server.GetStream());
-            await using StreamWriter toVehicle = NewWriter(vehicle.GetStream());
-            _toServer.TrySetResult(toServer);
-            await Task.WhenAny(
-                PumpAsync(vehicle.GetStream(), line => ToServerAsync(toServer, line, token), token),
-                PumpAsync(server.GetStream(), line => toVehicle.WriteLineAsync(line.AsMemory(), token), token));
-            vehicle.Dispose();
-            server.Dispose();
+            try
+            {
+                await server.ConnectAsync(IPAddress.Loopback, _serverPort, token);
+                await using StreamWriter toServer = NewWriter(server.GetStream());
+                await using StreamWriter toVehicle = NewWriter(vehicle.GetStream());
+                _toServer = toServer;
+                await Task.WhenAny(
+                    PumpAsync(vehicle.GetStream(), line => ToServerAsync(toServer, line, token), token),
+                    PumpAsync(server.GetStream(), line =>
+                    {
+                        _toVehicle.Enqueue(ServerLine.Parse(connection, line));
+                        return toVehicle.WriteLineAsync(line.AsMemory(), token);
+                    }, token));
+            }
+            catch (Exception error) when (error is IOException or OperationCanceledException or SocketException or ObjectDisposedException)
+            {
+                // Either side closing ends this connection.
+            }
+            finally
+            {
+                vehicle.Dispose();
+                server.Dispose();
+            }
         }
 
         private async Task ToServerAsync(StreamWriter writer, string line, CancellationToken token)
@@ -642,6 +788,24 @@ public sealed class OnboardHandshakePushGateTests
             }
             _stopping.Dispose();
             _toServerGate.Dispose();
+        }
+    }
+
+    /// <summary>One line the server wrote, as the relay saw it on the wire.</summary>
+    private sealed record ServerLine(int Connection, string MessageType, string MessageId, long? SessionGeneration)
+    {
+        public static ServerLine Parse(int connection, string line)
+        {
+            using JsonDocument document = JsonDocument.Parse(line);
+            JsonElement root = document.RootElement;
+            return new ServerLine(
+                connection,
+                root.GetProperty("messageType").GetString() ?? string.Empty,
+                root.GetProperty("messageId").GetString() ?? string.Empty,
+                root.TryGetProperty("sessionGeneration", out JsonElement generation) &&
+                generation.ValueKind == JsonValueKind.Number
+                    ? generation.GetInt64()
+                    : null);
         }
     }
 }
