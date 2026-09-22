@@ -309,6 +309,11 @@ jobs:
               # no redispatch, no rebuilt order (the user's correction of 2026-09-22; rebuilding is decided separately).
               @{ Name = 'in-transit-order-hang-continue'; Runs = 1 }
               @{ Name = 'in-transit-order-cancelled-held'; Runs = 1 }
+              # control-server#299 (#299's T2, before the v2 vehicle trial): a person clears the fault an in-flight FAILED order
+              # raised. A latched vehicle is refused (clearing never releases a latch); after REQ-0356's release an incomplete
+              # request is refused with every reason; a complete one clears the fault, releases the not-yet-picked demand and
+              # the vehicle takes it again; the same request twice does nothing; the rebuild reserved for #318 answers 501.
+              @{ Name = 'vehicle-fault-operator-clearance'; Runs = 1 }
               # control-server#214: the task-side ranking. A new STAGING_TO_WIRE demand is taken before an older normal-band
               # one (REQ-0202); with no anti-starvation threshold configured nothing escalates, and once one is imported
               # the overdue normal-band demand is escalated exactly once and goes ahead of a STAGING_TO_WIRE that is not

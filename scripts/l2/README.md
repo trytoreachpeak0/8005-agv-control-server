@@ -535,6 +535,10 @@ DispatchZoneParameters = @{
   配一份本装置用的调用凭据，经 `Context.EmergencyReleaseCredential` 交给场景。产品里入口默认不挂；
   `emergency-stop-operator-release` 用它。
 
+- `VehicleFaultRecovery = $true` —— 打开 control-server#299 的故障人工清除入口（`VehicleFaultRecovery__enabled`），并给它
+  配一份本装置用的调用凭据，经 `Context.FaultRecoveryCredential` 交给场景。产品里入口默认不挂，凭据与急停解除的分开；
+  `vehicle-fault-operator-clearance` 用它（它同时打开 `EmergencyStopRelease`：先人工解除急停，才能清除故障）。
+
 - `StationDepartureWaitTimeout` —— 服务端 `JourneyRuntime:stationDepartureWaitTimeout`，装载提交后车在取货点
   等多久才请求出发前安全检查（ADR-cross-0055，产品默认 5 分钟）。这段时间是普通放错唯一的修正窗口
   （`REQ-0237`）。本装置不给这个键时用 `00:00:30`（control-server#71 起；原来是 `00:00:05`，为什么改见下面「真装置场景」一段）；
