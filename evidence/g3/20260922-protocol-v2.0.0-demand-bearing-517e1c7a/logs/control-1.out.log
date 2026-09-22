@@ -1,0 +1,1406 @@
+[13:21:53 INF] Executed DbCommand (25ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT COUNT(*) FROM "sqlite_master" WHERE "name" = '__EFMigrationsHistory' AND "type" = 'table';
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT COUNT(*) FROM "sqlite_master" WHERE "name" = '__EFMigrationsHistory' AND "type" = 'table';
+[13:21:53 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "MigrationId", "ProductVersion"
+FROM "__EFMigrationsHistory"
+ORDER BY "MigrationId";
+[13:21:53 INF] Applying migration '20260903110052_ResumeReplacementOperationResult'.
+[13:21:53 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+DROP INDEX "IX_OperationResults_SlotOperationAttemptId_ForcedRecoveryGeneration";
+[13:21:53 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "OperationResults" ADD "SupersededByResultId" TEXT NULL;
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE UNIQUE INDEX "IX_OperationResults_SlotOperationAttemptId_ForcedRecoveryGeneration" ON "OperationResults" ("SlotOperationAttemptId", "ForcedRecoveryGeneration") WHERE SupersededByResultId IS NULL;
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+VALUES ('20260903110052_ResumeReplacementOperationResult', '8.0.30');
+[13:21:53 INF] Applying migration '20260904094629_ManualChargingReturnToService'.
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "ManualChargingReturnToServiceRequests" (
+    "RequestId" TEXT NOT NULL CONSTRAINT "PK_ManualChargingReturnToServiceRequests" PRIMARY KEY,
+    "AgvId" TEXT NOT NULL,
+    "SessionGeneration" INTEGER NOT NULL,
+    "RequestMessageId" TEXT NOT NULL,
+    "RequestContentHash" TEXT NOT NULL,
+    "AdministratorId" TEXT NOT NULL,
+    "AdministratorRole" TEXT NOT NULL,
+    "Reason" TEXT NOT NULL,
+    "ObservedBatteryPercent" REAL NULL,
+    "Outcome" TEXT NOT NULL,
+    "ProblemReasonCode" TEXT NULL,
+    "ProblemFieldPath" TEXT NULL,
+    "ProblemDisplayMessage" TEXT NULL,
+    "VehicleBusinessStateRevision" INTEGER NOT NULL,
+    "DecidedAt" TEXT NOT NULL
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE UNIQUE INDEX "IX_ManualChargingReturnToServiceRequests_RequestMessageId" ON "ManualChargingReturnToServiceRequests" ("RequestMessageId");
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+VALUES ('20260904094629_ManualChargingReturnToService', '8.0.30');
+[13:21:53 INF] Applying migration '20260907133250_Batch2CapabilityFoundation'.
+[13:21:53 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "OrderIntents" ADD "VehicleOccupancyClaimedAt" TEXT NULL;
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "OrderIntents" ADD "VehicleOccupancyReleasedAt" TEXT NULL;
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "CreateGateAudit" (
+    "GateAuditId" TEXT NOT NULL CONSTRAINT "PK_CreateGateAudit" PRIMARY KEY,
+    "DemandId" TEXT NOT NULL,
+    "TransportDemandKey" TEXT NOT NULL,
+    "AgvId" TEXT NOT NULL,
+    "MapId" INTEGER NOT NULL,
+    "TargetStationId" INTEGER NOT NULL,
+    "Verdict" TEXT NOT NULL,
+    "RiotRouteCostMm" INTEGER NULL,
+    "GraphTraversalCostMm" INTEGER NULL,
+    "GraphReachable" INTEGER NOT NULL,
+    "ConflictDetail" TEXT NULL,
+    "EvaluatedAt" TEXT NOT NULL
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "DispatchZoneVehicles" (
+    "Zone" TEXT NOT NULL,
+    "AgvId" TEXT NOT NULL,
+    "ConfigurationVersion" TEXT NOT NULL,
+    "UpdatedAt" TEXT NOT NULL,
+    CONSTRAINT "PK_DispatchZoneVehicles" PRIMARY KEY ("Zone", "AgvId")
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "FaultedVehicleCargo" (
+    "CargoBindingId" TEXT NOT NULL CONSTRAINT "PK_FaultedVehicleCargo" PRIMARY KEY,
+    "AgvId" TEXT NOT NULL,
+    "FaultGeneration" INTEGER NOT NULL,
+    "DemandId" TEXT NOT NULL,
+    "MovementLegId" TEXT NULL,
+    "TransportDemandKey" TEXT NOT NULL,
+    "LoadingWitnessed" INTEGER NOT NULL,
+    "BoundAt" TEXT NOT NULL,
+    "ReleasedAt" TEXT NULL,
+    "ReleasedReason" TEXT NULL
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "FrozenDemandStations" (
+    "DemandId" TEXT NOT NULL,
+    "Role" TEXT NOT NULL,
+    "TransportDemandKey" TEXT NOT NULL,
+    "MapId" INTEGER NOT NULL,
+    "StationId" INTEGER NOT NULL,
+    "StationName" TEXT NOT NULL,
+    "CatalogRevision" INTEGER NOT NULL,
+    "FrozenAt" TEXT NOT NULL,
+    CONSTRAINT "PK_FrozenDemandStations" PRIMARY KEY ("DemandId", "Role")
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "MapStationCatalogStates" (
+    "MapId" INTEGER NOT NULL CONSTRAINT "PK_MapStationCatalogStates" PRIMARY KEY,
+    "State" TEXT NOT NULL,
+    "LastCompleteConfirmationAt" TEXT NULL,
+    "LastAttemptAt" TEXT NULL,
+    "LastFailureReason" TEXT NULL,
+    "CatalogRevision" INTEGER NOT NULL,
+    "ApprovedSyncPeriodSeconds" INTEGER NULL,
+    "ApprovedMaxUnconfirmedSeconds" INTEGER NULL,
+    "UpdatedAt" TEXT NOT NULL
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "RiotOrderCommandAudit" (
+    "CommandAuditId" TEXT NOT NULL CONSTRAINT "PK_RiotOrderCommandAudit" PRIMARY KEY,
+    "CommandType" TEXT NOT NULL,
+    "AgvId" TEXT NOT NULL,
+    "TargetUpperId" TEXT NOT NULL,
+    "TargetOrderId" TEXT NULL,
+    "AttemptNumber" INTEGER NOT NULL,
+    "RequestSemanticSha256" TEXT NOT NULL,
+    "IssuedAt" TEXT NOT NULL,
+    "Outcome" TEXT NOT NULL,
+    "ReconciledAt" TEXT NULL,
+    "ReceiptJson" TEXT NULL,
+    "FaultGeneration" INTEGER NULL
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "RouteGraphEdgeGroups" (
+    "MapId" INTEGER NOT NULL,
+    "GroupName" TEXT NOT NULL,
+    "EdgeId" INTEGER NOT NULL,
+    "GroupType" TEXT NOT NULL,
+    "ObservedAt" TEXT NOT NULL,
+    CONSTRAINT "PK_RouteGraphEdgeGroups" PRIMARY KEY ("MapId", "GroupName", "EdgeId")
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "RouteGraphEdges" (
+    "MapId" INTEGER NOT NULL,
+    "EdgeId" INTEGER NOT NULL,
+    "StartNode" INTEGER NOT NULL,
+    "EndNode" INTEGER NOT NULL,
+    "CostMm" REAL NOT NULL,
+    "StartX" INTEGER NOT NULL,
+    "StartY" INTEGER NOT NULL,
+    "EndX" INTEGER NOT NULL,
+    "EndY" INTEGER NOT NULL,
+    "Direction" INTEGER NOT NULL,
+    "IsBackEdge" INTEGER NOT NULL,
+    "DesignRevision" INTEGER NOT NULL,
+    CONSTRAINT "PK_RouteGraphEdges" PRIMARY KEY ("MapId", "EdgeId")
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "RouteGraphRemovedEdges" (
+    "MapId" INTEGER NOT NULL,
+    "EdgeId" INTEGER NOT NULL,
+    "ObservedAt" TEXT NOT NULL,
+    CONSTRAINT "PK_RouteGraphRemovedEdges" PRIMARY KEY ("MapId", "EdgeId")
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "RouteGraphRemovedStations" (
+    "MapId" INTEGER NOT NULL,
+    "StationId" INTEGER NOT NULL,
+    "ObservedAt" TEXT NOT NULL,
+    CONSTRAINT "PK_RouteGraphRemovedStations" PRIMARY KEY ("MapId", "StationId")
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "RouteGraphSnapshots" (
+    "MapId" INTEGER NOT NULL CONSTRAINT "PK_RouteGraphSnapshots" PRIMARY KEY,
+    "DesignRevision" INTEGER NOT NULL,
+    "DesignRefreshedAt" TEXT NULL,
+    "DesignSourceGmtUpdate" TEXT NULL,
+    "DesignEdgeCount" INTEGER NOT NULL,
+    "DesignStationCount" INTEGER NOT NULL,
+    "RuntimeRefreshedAt" TEXT NULL,
+    "RuntimeRemovedEdgeCount" INTEGER NOT NULL,
+    "RuntimeRemovedStationCount" INTEGER NOT NULL,
+    "EdgeGroupFingerprint" TEXT NOT NULL,
+    "EdgeGroupRefreshedAt" TEXT NULL,
+    "DynamicRouteCostPresent" INTEGER NOT NULL,
+    "DynamicRouteCostObservedAt" TEXT NULL,
+    "StaleReason" TEXT NULL,
+    "StaleSince" TEXT NULL
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "RouteGraphStations" (
+    "MapId" INTEGER NOT NULL,
+    "StationId" INTEGER NOT NULL,
+    "Name" TEXT NOT NULL,
+    "EdgeId" INTEGER NOT NULL,
+    "PosX" REAL NOT NULL,
+    "PosY" REAL NOT NULL,
+    "ResolvedNode" INTEGER NOT NULL,
+    "ResolutionResidualMm" REAL NOT NULL,
+    "DesignRevision" INTEGER NOT NULL,
+    CONSTRAINT "PK_RouteGraphStations" PRIMARY KEY ("MapId", "StationId")
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "VehicleDispatchBudgets" (
+    "AgvId" TEXT NOT NULL CONSTRAINT "PK_VehicleDispatchBudgets" PRIMARY KEY,
+    "RoundTimeoutMilliseconds" INTEGER NOT NULL,
+    "ConfigurationVersion" TEXT NOT NULL,
+    "UpdatedAt" TEXT NOT NULL
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "VehicleFaultStates" (
+    "AgvId" TEXT NOT NULL CONSTRAINT "PK_VehicleFaultStates" PRIMARY KEY,
+    "Level" TEXT NOT NULL,
+    "FaultGeneration" INTEGER NOT NULL,
+    "EvidenceCode" TEXT NULL,
+    "EvidenceOnAutoConfirmWhitelist" INTEGER NOT NULL,
+    "EnteredAt" TEXT NULL,
+    "LastEvaluatedAt" TEXT NULL,
+    "StopProven" INTEGER NOT NULL,
+    "StopProvenAt" TEXT NULL,
+    "EscalatedAt" TEXT NULL,
+    "ClearedAt" TEXT NULL,
+    "ClearedReason" TEXT NULL
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "VehicleTaskTypeAdmissions" (
+    "AgvId" TEXT NOT NULL,
+    "TaskType" TEXT NOT NULL,
+    "Allowed" INTEGER NOT NULL,
+    "ConfigurationVersion" TEXT NOT NULL,
+    "UpdatedAt" TEXT NOT NULL,
+    CONSTRAINT "PK_VehicleTaskTypeAdmissions" PRIMARY KEY ("AgvId", "TaskType")
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE UNIQUE INDEX "IX_OrderIntents_VehicleKey" ON "OrderIntents" ("VehicleKey") WHERE VehicleOccupancyClaimedAt IS NOT NULL AND VehicleOccupancyReleasedAt IS NULL;
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE INDEX "IX_CreateGateAudit_DemandId_EvaluatedAt" ON "CreateGateAudit" ("DemandId", "EvaluatedAt");
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE UNIQUE INDEX "IX_FaultedVehicleCargo_AgvId_FaultGeneration" ON "FaultedVehicleCargo" ("AgvId", "FaultGeneration") WHERE ReleasedAt IS NULL;
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE INDEX "IX_FaultedVehicleCargo_DemandId" ON "FaultedVehicleCargo" ("DemandId");
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE INDEX "IX_FrozenDemandStations_TransportDemandKey" ON "FrozenDemandStations" ("TransportDemandKey");
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE INDEX "IX_RiotOrderCommandAudit_AgvId_IssuedAt" ON "RiotOrderCommandAudit" ("AgvId", "IssuedAt");
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE UNIQUE INDEX "IX_RiotOrderCommandAudit_CommandType_TargetUpperId_AttemptNumber" ON "RiotOrderCommandAudit" ("CommandType", "TargetUpperId", "AttemptNumber");
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE INDEX "IX_RouteGraphEdges_MapId_EndNode" ON "RouteGraphEdges" ("MapId", "EndNode");
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE INDEX "IX_RouteGraphEdges_MapId_StartNode" ON "RouteGraphEdges" ("MapId", "StartNode");
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE INDEX "IX_RouteGraphStations_MapId_ResolvedNode" ON "RouteGraphStations" ("MapId", "ResolvedNode");
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+VALUES ('20260907133250_Batch2CapabilityFoundation', '8.0.30');
+[13:21:53 INF] Applying migration '20260909124757_Batch3GovernanceAndSlotConfiguration'.
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "ActiveSlotConfigurations" (
+    "AgvId" TEXT NOT NULL CONSTRAINT "PK_ActiveSlotConfigurations" PRIMARY KEY,
+    "SlotModelVersionId" TEXT NOT NULL,
+    "ConfigurationVersion" INTEGER NOT NULL,
+    "Fingerprint" TEXT NOT NULL,
+    "ActivatedAt" TEXT NOT NULL,
+    "ActivationId" TEXT NOT NULL,
+    "SnapshotId" TEXT NOT NULL
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "AdministratorAuditRecords" (
+    "AuditRecordId" TEXT NOT NULL CONSTRAINT "PK_AdministratorAuditRecords" PRIMARY KEY,
+    "RecordedAt" TEXT NOT NULL,
+    "RecordedAtUtcTicks" INTEGER NOT NULL,
+    "ActorIdentity" TEXT NOT NULL,
+    "ActorAttribution" TEXT NOT NULL,
+    "ClaimedAdministratorRole" TEXT NULL,
+    "Action" TEXT NOT NULL,
+    "ObjectKind" TEXT NOT NULL,
+    "ObjectId" TEXT NOT NULL,
+    "Version" INTEGER NULL,
+    "Outcome" TEXT NOT NULL,
+    "SnapshotId" TEXT NULL,
+    "DetailJson" TEXT NOT NULL
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "AgvArchives" (
+    "AgvId" TEXT NOT NULL CONSTRAINT "PK_AgvArchives" PRIMARY KEY,
+    "ArchivedAt" TEXT NOT NULL,
+    "ArchiveReason" TEXT NOT NULL,
+    "ArchivedLifecycleGeneration" INTEGER NOT NULL,
+    "ArchivedActiveSlotConfigurationFingerprint" TEXT NULL
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "AgvLifecycles" (
+    "AgvId" TEXT NOT NULL CONSTRAINT "PK_AgvLifecycles" PRIMARY KEY,
+    "LifecycleGeneration" INTEGER NOT NULL,
+    "Archived" INTEGER NOT NULL,
+    "Commissioned" INTEGER NOT NULL,
+    "CandidateRiotBindingJson" TEXT NULL,
+    "UpdatedAt" TEXT NOT NULL
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "AgvRestorationAttempts" (
+    "RestorationAttemptId" TEXT NOT NULL CONSTRAINT "PK_AgvRestorationAttempts" PRIMARY KEY,
+    "AgvId" TEXT NOT NULL,
+    "StartedAt" TEXT NOT NULL,
+    "SettledAt" TEXT NULL,
+    "Outcome" TEXT NULL,
+    "ArchiveReason" TEXT NOT NULL,
+    "RestoredLifecycleGeneration" INTEGER NOT NULL,
+    "AuditRecordId" TEXT NULL
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "BusinessAuditRecords" (
+    "AuditRecordId" TEXT NOT NULL CONSTRAINT "PK_BusinessAuditRecords" PRIMARY KEY,
+    "RecordedAt" TEXT NOT NULL,
+    "RecordedAtUtcTicks" INTEGER NOT NULL,
+    "ActorIdentity" TEXT NOT NULL,
+    "ActorAttribution" TEXT NOT NULL,
+    "Action" TEXT NOT NULL,
+    "ObjectKind" TEXT NOT NULL,
+    "ObjectId" TEXT NOT NULL,
+    "Version" INTEGER NULL,
+    "Outcome" TEXT NOT NULL,
+    "SnapshotId" TEXT NULL,
+    "DetailJson" TEXT NOT NULL
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "ConfigurationConsumerBindings" (
+    "ConsumerKind" TEXT NOT NULL,
+    "ConsumerId" TEXT NOT NULL,
+    "ObjectKind" TEXT NOT NULL,
+    "ObjectId" TEXT NOT NULL,
+    "FrozenVersion" INTEGER NOT NULL,
+    "FrozenAt" TEXT NOT NULL,
+    "SnapshotId" TEXT NOT NULL,
+    CONSTRAINT "PK_ConfigurationConsumerBindings" PRIMARY KEY ("ConsumerKind", "ConsumerId", "ObjectKind", "ObjectId")
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "GovernedConfigurationSnapshots" (
+    "SnapshotId" TEXT NOT NULL CONSTRAINT "PK_GovernedConfigurationSnapshots" PRIMARY KEY,
+    "ObjectKind" TEXT NOT NULL,
+    "ObjectId" TEXT NOT NULL,
+    "Version" INTEGER NOT NULL,
+    "ContentJson" TEXT NOT NULL,
+    "ContentSha256" TEXT NOT NULL,
+    "FrozenAt" TEXT NOT NULL
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "OnboardAlarmSnapshots" (
+    "AgvId" TEXT NOT NULL CONSTRAINT "PK_OnboardAlarmSnapshots" PRIMARY KEY,
+    "SnapshotSequence" INTEGER NOT NULL,
+    "CapturedAt" TEXT NOT NULL,
+    "ReceivedAt" TEXT NOT NULL,
+    "AlarmsJson" TEXT NOT NULL
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "SlotConfigurationActivations" (
+    "ActivationId" TEXT NOT NULL CONSTRAINT "PK_SlotConfigurationActivations" PRIMARY KEY,
+    "AgvId" TEXT NOT NULL,
+    "SlotModelVersionId" TEXT NOT NULL,
+    "ConfigurationVersion" INTEGER NOT NULL,
+    "Fingerprint" TEXT NOT NULL,
+    "Kind" TEXT NOT NULL,
+    "RolledBackToVersion" INTEGER NULL,
+    "State" TEXT NOT NULL,
+    "RecoveryRole" TEXT NOT NULL,
+    "CommandMessageId" TEXT NULL,
+    "IssuedAt" TEXT NOT NULL,
+    "ResultReceivedAt" TEXT NULL,
+    "ResultJson" TEXT NULL,
+    "SnapshotId" TEXT NULL
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "SlotConfigurationReadiness" (
+    "AgvId" TEXT NOT NULL CONSTRAINT "PK_SlotConfigurationReadiness" PRIMARY KEY,
+    "SlotModelVersionId" TEXT NOT NULL,
+    "Ready" INTEGER NOT NULL,
+    "ReasonCode" TEXT NOT NULL,
+    "UpdatedAt" TEXT NOT NULL,
+    "InvalidatedAt" TEXT NULL
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "SlotConfigurationVerifications" (
+    "VerificationId" TEXT NOT NULL CONSTRAINT "PK_SlotConfigurationVerifications" PRIMARY KEY,
+    "AgvId" TEXT NOT NULL,
+    "SlotModelVersionId" TEXT NOT NULL,
+    "PhysicalSlotNumber" INTEGER NOT NULL,
+    "OpenSignalConfirmed" INTEGER NOT NULL,
+    "CloseSignalConfirmed" INTEGER NOT NULL,
+    "InPlaceSignalConfirmed" INTEGER NOT NULL,
+    "VerifiedAt" TEXT NOT NULL,
+    "FieldRecordReference" TEXT NULL
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "SlotIoBindings" (
+    "SlotIoBindingId" TEXT NOT NULL CONSTRAINT "PK_SlotIoBindings" PRIMARY KEY,
+    "AgvId" TEXT NOT NULL,
+    "SlotModelVersionId" TEXT NOT NULL,
+    "PhysicalSlotNumber" INTEGER NOT NULL,
+    "UnlockOutputPoint" TEXT NOT NULL,
+    "LockFeedbackInputPoint" TEXT NOT NULL,
+    "LightCurtainInputPoint" TEXT NOT NULL,
+    "SignalPolarity" TEXT NOT NULL,
+    "PulseResetMilliseconds" INTEGER NOT NULL,
+    "Version" INTEGER NOT NULL,
+    "Status" TEXT NOT NULL,
+    "CreatedAt" TEXT NOT NULL,
+    "SnapshotId" TEXT NULL
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "SlotModelSlots" (
+    "SlotModelVersionId" TEXT NOT NULL,
+    "PhysicalSlotNumber" INTEGER NOT NULL,
+    "SlotPosition" TEXT NOT NULL,
+    "SlotTemplateId" TEXT NOT NULL,
+    CONSTRAINT "PK_SlotModelSlots" PRIMARY KEY ("SlotModelVersionId", "PhysicalSlotNumber")
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "SlotModelVersions" (
+    "SlotModelVersionId" TEXT NOT NULL CONSTRAINT "PK_SlotModelVersions" PRIMARY KEY,
+    "ModelKey" TEXT NOT NULL,
+    "Version" INTEGER NOT NULL,
+    "Status" TEXT NOT NULL,
+    "SlotCount" INTEGER NOT NULL,
+    "CreatedAt" TEXT NOT NULL,
+    "PublishedAt" TEXT NULL,
+    "SnapshotId" TEXT NULL
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "SlotTemplates" (
+    "SlotTemplateId" TEXT NOT NULL CONSTRAINT "PK_SlotTemplates" PRIMARY KEY,
+    "TemplateKey" TEXT NOT NULL,
+    "Version" INTEGER NOT NULL,
+    "LengthMm" INTEGER NOT NULL,
+    "WidthMm" INTEGER NOT NULL,
+    "HeightMm" INTEGER NOT NULL,
+    "CompatibleBasketTypesJson" TEXT NOT NULL,
+    "Status" TEXT NOT NULL,
+    "CreatedAt" TEXT NOT NULL,
+    "PublishedAt" TEXT NULL,
+    "SnapshotId" TEXT NULL
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE INDEX "IX_ActiveSlotConfigurations_Fingerprint" ON "ActiveSlotConfigurations" ("Fingerprint");
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE INDEX "IX_AdministratorAuditRecords_ObjectKind_ObjectId" ON "AdministratorAuditRecords" ("ObjectKind", "ObjectId");
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE INDEX "IX_AdministratorAuditRecords_RecordedAtUtcTicks" ON "AdministratorAuditRecords" ("RecordedAtUtcTicks");
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE INDEX "IX_AgvRestorationAttempts_AgvId_StartedAt" ON "AgvRestorationAttempts" ("AgvId", "StartedAt");
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE INDEX "IX_BusinessAuditRecords_ObjectKind_ObjectId" ON "BusinessAuditRecords" ("ObjectKind", "ObjectId");
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE INDEX "IX_BusinessAuditRecords_RecordedAtUtcTicks" ON "BusinessAuditRecords" ("RecordedAtUtcTicks");
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE INDEX "IX_ConfigurationConsumerBindings_FrozenAt" ON "ConfigurationConsumerBindings" ("FrozenAt");
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE INDEX "IX_GovernedConfigurationSnapshots_ContentSha256" ON "GovernedConfigurationSnapshots" ("ContentSha256");
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE UNIQUE INDEX "IX_GovernedConfigurationSnapshots_ObjectKind_ObjectId_Version" ON "GovernedConfigurationSnapshots" ("ObjectKind", "ObjectId", "Version");
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE INDEX "IX_SlotConfigurationActivations_AgvId_IssuedAt" ON "SlotConfigurationActivations" ("AgvId", "IssuedAt");
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE UNIQUE INDEX "IX_SlotConfigurationActivations_CommandMessageId" ON "SlotConfigurationActivations" ("CommandMessageId") WHERE CommandMessageId IS NOT NULL;
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE UNIQUE INDEX "IX_SlotConfigurationVerifications_AgvId_SlotModelVersionId_PhysicalSlotNumber" ON "SlotConfigurationVerifications" ("AgvId", "SlotModelVersionId", "PhysicalSlotNumber");
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE UNIQUE INDEX "IX_SlotIoBindings_AgvId_SlotModelVersionId_PhysicalSlotNumber_Version" ON "SlotIoBindings" ("AgvId", "SlotModelVersionId", "PhysicalSlotNumber", "Version");
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE INDEX "IX_SlotModelSlots_SlotTemplateId" ON "SlotModelSlots" ("SlotTemplateId");
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE UNIQUE INDEX "IX_SlotModelVersions_ModelKey_Version" ON "SlotModelVersions" ("ModelKey", "Version");
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE UNIQUE INDEX "IX_SlotTemplates_TemplateKey_Version" ON "SlotTemplates" ("TemplateKey", "Version");
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+VALUES ('20260909124757_Batch3GovernanceAndSlotConfiguration', '8.0.30');
+[13:21:53 INF] Applying migration '20260910031132_AlarmSnapshotSessionGeneration'.
+[13:21:53 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "OnboardAlarmSnapshots" ADD "SessionGeneration" INTEGER NOT NULL DEFAULT 0;
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+VALUES ('20260910031132_AlarmSnapshotSessionGeneration', '8.0.30');
+[13:21:53 INF] Applying migration '20260910063725_ReportedSlotConfigurationFingerprint'.
+[13:21:53 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "SessionRecoveries" ADD "ReportedSlotConfigurationFingerprint" TEXT NULL;
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+VALUES ('20260910063725_ReportedSlotConfigurationFingerprint', '8.0.30');
+[13:21:53 INF] Applying migration '20260913131725_StationDepartureWait'.
+[13:21:53 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "JourneyRuntimes" ADD "StationDepartureWaitStartedAt" TEXT NULL;
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+VALUES ('20260913131725_StationDepartureWait', '8.0.30');
+[13:21:53 INF] Applying migration '20260915135043_Batch4AreaAssignmentAndStructuralDispatchBlock'.
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "DispatchZoneAreaAssignments" (
+    "Version" INTEGER NOT NULL,
+    "Area" TEXT NOT NULL,
+    "DispatchZone" TEXT NOT NULL,
+    "SlotPosition" TEXT NOT NULL,
+    CONSTRAINT "PK_DispatchZoneAreaAssignments" PRIMARY KEY ("Version", "Area")
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "DispatchZoneAreaAssignmentVersions" (
+    "Version" INTEGER NOT NULL CONSTRAINT "PK_DispatchZoneAreaAssignmentVersions" PRIMARY KEY,
+    "ContentSha256" TEXT NOT NULL,
+    "SnapshotId" TEXT NOT NULL,
+    "EntryCount" INTEGER NOT NULL,
+    "ImportedAt" TEXT NOT NULL
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "StructuralDispatchBlocks" (
+    "DemandId" TEXT NOT NULL,
+    "ReasonCode" TEXT NOT NULL,
+    "TransportDemandKey" TEXT NOT NULL,
+    "FirstRaisedAt" TEXT NOT NULL,
+    "LastSeenAt" TEXT NOT NULL,
+    "ClearedAt" TEXT NULL,
+    "DetailJson" TEXT NOT NULL,
+    CONSTRAINT "PK_StructuralDispatchBlocks" PRIMARY KEY ("DemandId", "ReasonCode")
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE UNIQUE INDEX "IX_DispatchZoneAreaAssignmentVersions_SnapshotId" ON "DispatchZoneAreaAssignmentVersions" ("SnapshotId");
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE INDEX "IX_StructuralDispatchBlocks_ClearedAt" ON "StructuralDispatchBlocks" ("ClearedAt");
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE INDEX "IX_StructuralDispatchBlocks_TransportDemandKey" ON "StructuralDispatchBlocks" ("TransportDemandKey");
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+UPDATE SlotModelSlots SET SlotPosition = 'FRONT' WHERE SlotPosition = 'LEFT';
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+UPDATE SlotModelSlots SET SlotPosition = 'REAR' WHERE SlotPosition = 'RIGHT';
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+VALUES ('20260915135043_Batch4AreaAssignmentAndStructuralDispatchBlock', '8.0.30');
+[13:21:53 INF] Applying migration '20260917015519_Batch5JourneyBlockReasonSince'.
+[13:21:53 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "JourneyRuntimes" ADD "BlockReasonSince" TEXT NULL;
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+VALUES ('20260917015519_Batch5JourneyBlockReasonSince', '8.0.30');
+[13:21:53 INF] Applying migration '20260919021150_Batch6TaskTypeStationBindings'.
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "TaskTypeStationActiveBindingSets" (
+    "MapId" INTEGER NOT NULL CONSTRAINT "PK_TaskTypeStationActiveBindingSets" PRIMARY KEY,
+    "ActiveVersion" INTEGER NULL,
+    "State" TEXT NOT NULL,
+    "PendingVersion" INTEGER NULL,
+    "UpdatedAt" TEXT NOT NULL
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "TaskTypeStationBindings" (
+    "MapId" INTEGER NOT NULL,
+    "Version" INTEGER NOT NULL,
+    "TaskType" TEXT NOT NULL,
+    "StationRiotId" INTEGER NOT NULL,
+    "StationName" TEXT NOT NULL,
+    "SiteVerificationRef" TEXT NOT NULL,
+    CONSTRAINT "PK_TaskTypeStationBindings" PRIMARY KEY ("MapId", "Version", "TaskType")
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "TaskTypeStationBindingSetVersions" (
+    "MapId" INTEGER NOT NULL,
+    "Version" INTEGER NOT NULL,
+    "RuleVersion" INTEGER NOT NULL,
+    "ContentSha256" TEXT NOT NULL,
+    "SnapshotId" TEXT NOT NULL,
+    "CatalogRevision" INTEGER NULL,
+    "LoadedAt" TEXT NOT NULL,
+    "Source" TEXT NOT NULL,
+    CONSTRAINT "PK_TaskTypeStationBindingSetVersions" PRIMARY KEY ("MapId", "Version")
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "TaskTypeStationCatalogChanges" (
+    "ChangeId" TEXT NOT NULL CONSTRAINT "PK_TaskTypeStationCatalogChanges" PRIMARY KEY,
+    "MapId" INTEGER NOT NULL,
+    "StationRiotId" INTEGER NOT NULL,
+    "PreviousStationName" TEXT NOT NULL,
+    "CurrentStationName" TEXT NULL,
+    "ChangeKind" TEXT NOT NULL,
+    "RiskClass" TEXT NOT NULL,
+    "CatalogRevision" INTEGER NOT NULL,
+    "ObservedAt" TEXT NOT NULL,
+    "AffectedTaskTypesJson" TEXT NOT NULL,
+    "HoldId" TEXT NULL
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "TaskTypeStationHolds" (
+    "HoldId" TEXT NOT NULL CONSTRAINT "PK_TaskTypeStationHolds" PRIMARY KEY,
+    "MapId" INTEGER NOT NULL,
+    "TaskType" TEXT NOT NULL,
+    "Source" TEXT NOT NULL,
+    "ReasonCode" TEXT NOT NULL,
+    "DetailJson" TEXT NOT NULL,
+    "RaisedAt" TEXT NOT NULL,
+    "RaisedBy" TEXT NOT NULL,
+    "ReleasedAt" TEXT NULL,
+    "ReleasedBy" TEXT NULL
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "TaskTypeStationRequirements" (
+    "MapId" INTEGER NOT NULL,
+    "Version" INTEGER NOT NULL,
+    "TaskType" TEXT NOT NULL,
+    CONSTRAINT "PK_TaskTypeStationRequirements" PRIMARY KEY ("MapId", "Version", "TaskType")
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "TaskTypeStationRules" (
+    "Version" INTEGER NOT NULL,
+    "TaskType" TEXT NOT NULL,
+    "FixedEnd" TEXT NOT NULL,
+    CONSTRAINT "PK_TaskTypeStationRules" PRIMARY KEY ("Version", "TaskType")
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "TaskTypeStationRuleVersions" (
+    "Version" INTEGER NOT NULL CONSTRAINT "PK_TaskTypeStationRuleVersions" PRIMARY KEY,
+    "ContentSha256" TEXT NOT NULL,
+    "SnapshotId" TEXT NOT NULL,
+    "LoadedAt" TEXT NOT NULL,
+    "Source" TEXT NOT NULL
+);
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE UNIQUE INDEX "IX_TaskTypeStationBindings_MapId_Version_StationRiotId" ON "TaskTypeStationBindings" ("MapId", "Version", "StationRiotId");
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE UNIQUE INDEX "IX_TaskTypeStationBindingSetVersions_SnapshotId" ON "TaskTypeStationBindingSetVersions" ("SnapshotId");
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE UNIQUE INDEX "IX_TaskTypeStationCatalogChanges_MapId_StationRiotId_CatalogRevision" ON "TaskTypeStationCatalogChanges" ("MapId", "StationRiotId", "CatalogRevision");
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE INDEX "IX_TaskTypeStationHolds_MapId_TaskType_ReleasedAt" ON "TaskTypeStationHolds" ("MapId", "TaskType", "ReleasedAt");
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE UNIQUE INDEX "IX_TaskTypeStationRuleVersions_SnapshotId" ON "TaskTypeStationRuleVersions" ("SnapshotId");
+[13:21:53 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+VALUES ('20260919021150_Batch6TaskTypeStationBindings', '8.0.30');
+[13:21:53 INF] Applying migration '20260919154546_Batch7MultiDemandJourneyPersistence'.
+[13:21:53 WRN] An operation of type 'SqlOperation' will be attempted while a rebuild of table 'VehicleDispatchLeases' is pending. The database may not be in an expected state. Review the SQL generated by this migration to help diagnose any failures. Consider moving these operations to a subsequent migration.
+[13:21:53 WRN] An operation of type 'SqlOperation' will be attempted while a rebuild of table 'VehicleDispatchLeases' is pending. The database may not be in an expected state. Review the SQL generated by this migration to help diagnose any failures. Consider moving these operations to a subsequent migration.
+[13:21:53 WRN] An operation of type 'SqlOperation' will be attempted while a rebuild of table 'VehicleDispatchLeases' is pending. The database may not be in an expected state. Review the SQL generated by this migration to help diagnose any failures. Consider moving these operations to a subsequent migration.
+[13:21:53 WRN] An operation of type 'SqlOperation' will be attempted while a rebuild of table 'VehicleDispatchLeases' is pending. The database may not be in an expected state. Review the SQL generated by this migration to help diagnose any failures. Consider moving these operations to a subsequent migration.
+[13:21:53 WRN] An operation of type 'SqlOperation' will be attempted while a rebuild of table 'VehicleDispatchLeases' is pending. The database may not be in an expected state. Review the SQL generated by this migration to help diagnose any failures. Consider moving these operations to a subsequent migration.
+[13:21:53 WRN] An operation of type 'SqlOperation' will be attempted while a rebuild of table 'JourneyRuntimes' is pending. The database may not be in an expected state. Review the SQL generated by this migration to help diagnose any failures. Consider moving these operations to a subsequent migration.
+[13:21:53 WRN] An operation of type 'SqlOperation' will be attempted while a rebuild of table 'JourneyRuntimes' is pending. The database may not be in an expected state. Review the SQL generated by this migration to help diagnose any failures. Consider moving these operations to a subsequent migration.
+[13:21:53 WRN] An operation of type 'SqlOperation' will be attempted while a rebuild of table 'JourneyRuntimes' is pending. The database may not be in an expected state. Review the SQL generated by this migration to help diagnose any failures. Consider moving these operations to a subsequent migration.
+[13:21:53 WRN] An operation of type 'SqlOperation' will be attempted while a rebuild of table 'JourneyRuntimes' is pending. The database may not be in an expected state. Review the SQL generated by this migration to help diagnose any failures. Consider moving these operations to a subsequent migration.
+[13:21:53 WRN] An operation of type 'SqlOperation' will be attempted while a rebuild of table 'JourneyRuntimes' is pending. The database may not be in an expected state. Review the SQL generated by this migration to help diagnose any failures. Consider moving these operations to a subsequent migration.
+[13:21:54 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "VehicleDispatchLeases" ADD "JourneyId" TEXT NOT NULL DEFAULT '';
+[13:21:54 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "JourneyRuntimes" ADD "JourneyId" TEXT NOT NULL DEFAULT '';
+[13:21:54 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "JourneyRuntimes" ADD "CargoHoldingStartedAt" TEXT NULL;
+[13:21:54 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "JourneyRuntimes" ADD "FullSlotPositionsJson" TEXT NULL;
+[13:21:54 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "JourneyRuntimes" ADD "LoadingClosedReason" TEXT NULL;
+[13:21:54 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "JourneyRuntimes" ADD "LoadingPhaseState" TEXT NULL;
+[13:21:54 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "JourneyRuntimes" ADD "YieldTriggeredAt" TEXT NULL;
+[13:21:54 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "JourneyRuntimes" ADD "YieldTriggeredByVehicleKey" TEXT NULL;
+[13:21:54 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "JourneyBacklog" ADD "StarvationEscalatedAt" TEXT NULL;
+[13:21:54 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "JourneyBacklog" ADD "StarvationEscalationParameterVersion" INTEGER NULL;
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+UPDATE JourneyRuntimes SET JourneyId = 'journey:' || DemandId;
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+UPDATE VehicleDispatchLeases SET JourneyId = 'journey:' || DemandId;
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "DispatchZoneParameters" (
+    "Version" INTEGER NOT NULL,
+    "DispatchZone" TEXT NOT NULL,
+    "EnRouteAdditionMaxPathCostIncrease" INTEGER NULL,
+    "StarvationThresholdSeconds" INTEGER NULL,
+    CONSTRAINT "PK_DispatchZoneParameters" PRIMARY KEY ("Version", "DispatchZone")
+);
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "DispatchZoneParameterVersions" (
+    "Version" INTEGER NOT NULL CONSTRAINT "PK_DispatchZoneParameterVersions" PRIMARY KEY,
+    "ContentSha256" TEXT NOT NULL,
+    "SnapshotId" TEXT NULL,
+    "LoadedAt" TEXT NOT NULL,
+    "Source" TEXT NOT NULL
+);
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "JourneyDemands" (
+    "JourneyId" TEXT NOT NULL,
+    "DemandId" TEXT NOT NULL,
+    "PickupStopId" TEXT NOT NULL,
+    "UnloadStopId" TEXT NOT NULL,
+    "ExpectedBasketCount" INTEGER NOT NULL,
+    "TargetSlotsJson" TEXT NOT NULL,
+    "LoadedSlotsJson" TEXT NULL,
+    "LoadSlotOperationAttemptId" TEXT NOT NULL,
+    "LoadCommandMessageId" TEXT NOT NULL,
+    "UnloadSlotOperationAttemptId" TEXT NOT NULL,
+    "UnloadCommandMessageId" TEXT NOT NULL,
+    "DispatchZone" TEXT NOT NULL,
+    "DispatchGeneration" INTEGER NOT NULL,
+    "Status" TEXT NOT NULL,
+    "AddedAt" TEXT NOT NULL,
+    "RemovedAt" TEXT NULL,
+    "RemovalReason" TEXT NULL,
+    "DispatchZoneParameterVersion" INTEGER NULL,
+    CONSTRAINT "PK_JourneyDemands" PRIMARY KEY ("JourneyId", "DemandId")
+);
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "JourneyStops" (
+    "StopId" TEXT NOT NULL CONSTRAINT "PK_JourneyStops" PRIMARY KEY,
+    "JourneyId" TEXT NOT NULL,
+    "Sequence" INTEGER NOT NULL,
+    "StopRole" TEXT NOT NULL,
+    "StationId" TEXT NOT NULL,
+    "StationRiotId" INTEGER NOT NULL,
+    "DispatchZone" TEXT NOT NULL,
+    "OperationSessionId" TEXT NOT NULL,
+    "MovementLegId" TEXT NOT NULL,
+    "UpperId" TEXT NOT NULL,
+    "VehicleBusinessMessageId" TEXT NOT NULL,
+    "WorklistMessageId" TEXT NOT NULL,
+    "PlanMessageId" TEXT NOT NULL,
+    "SublotRequestMessageId" TEXT NULL,
+    "DepartureSafetyCheckMessageId" TEXT NULL,
+    "DepartureSafetyCheckId" TEXT NULL,
+    "Status" TEXT NOT NULL,
+    "CreatedAt" TEXT NOT NULL
+);
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "TransportDemandSuppressions" (
+    "TransportDemandKey" TEXT NOT NULL CONSTRAINT "PK_TransportDemandSuppressions" PRIMARY KEY,
+    "DemandId" TEXT NOT NULL,
+    "ReasonCode" TEXT NOT NULL,
+    "SuppressedAt" TEXT NOT NULL
+);
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "VehiclePurposeClaims" (
+    "VehicleKey" TEXT NOT NULL CONSTRAINT "PK_VehiclePurposeClaims" PRIMARY KEY,
+    "Purpose" TEXT NOT NULL,
+    "JourneyId" TEXT NOT NULL,
+    "ClaimedAt" TEXT NOT NULL
+);
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "VehicleSnapshotRevisions" (
+    "AgvId" TEXT NOT NULL CONSTRAINT "PK_VehicleSnapshotRevisions" PRIMARY KEY,
+    "VehicleBusinessRevision" INTEGER NOT NULL,
+    "WorklistRevision" INTEGER NOT NULL,
+    "PlanRevision" INTEGER NOT NULL
+);
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE INDEX "IX_VehicleDispatchLeases_DemandId" ON "VehicleDispatchLeases" ("DemandId");
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE INDEX "IX_JourneyRuntimes_DemandId" ON "JourneyRuntimes" ("DemandId");
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE UNIQUE INDEX "IX_JourneyDemands_DemandId" ON "JourneyDemands" ("DemandId") WHERE RemovedAt IS NULL;
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE INDEX "IX_JourneyStops_JourneyId_Sequence" ON "JourneyStops" ("JourneyId", "Sequence");
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE INDEX "IX_TransportDemandSuppressions_DemandId" ON "TransportDemandSuppressions" ("DemandId");
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE INDEX "IX_VehiclePurposeClaims_JourneyId" ON "VehiclePurposeClaims" ("JourneyId");
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+INSERT INTO JourneyStops
+    (StopId, JourneyId, Sequence, StopRole, StationId, StationRiotId, DispatchZone, OperationSessionId,
+     MovementLegId, UpperId, VehicleBusinessMessageId, WorklistMessageId, PlanMessageId,
+     SublotRequestMessageId, DepartureSafetyCheckMessageId, DepartureSafetyCheckId, Status, CreatedAt)
+SELECT j.JourneyId || '|PICKUP', j.JourneyId, 1, 'PICKUP', j.PickupStationId, j.PickupStationRiotId,
+       j.DispatchZone, j.OperationSessionId, j.PickupMovementLegId, j.PickupUpperId,
+       j.VehicleBusinessMessageId, j.WorklistMessageId, j.PlanMessageId,
+       j.SublotRequestMessageId, j.PreDepartureSafetyCheckMessageId, j.PreDepartureSafetyCheckId,
+       CASE
+           WHEN j.Stage IN ('AwaitingGateArrival', 'AwaitingUnloadResult', 'Completed') THEN 'COMPLETED'
+           WHEN EXISTS (SELECT 1 FROM OrderIntents o WHERE o.MovementLegId = j.GateMovementLegId)
+               THEN 'COMPLETED'
+           WHEN d.Status = 'Cancelled' THEN 'REMOVED'
+           WHEN j.Stage = 'AwaitingPickupArrival' THEN 'PENDING'
+           ELSE 'ACTIVE'
+       END,
+       j.CreatedAt
+FROM JourneyRuntimes j
+LEFT JOIN AcceptedDemands d ON d.DemandId = j.DemandId;
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+INSERT INTO JourneyStops
+    (StopId, JourneyId, Sequence, StopRole, StationId, StationRiotId, DispatchZone, OperationSessionId,
+     MovementLegId, UpperId, VehicleBusinessMessageId, WorklistMessageId, PlanMessageId,
+     SublotRequestMessageId, DepartureSafetyCheckMessageId, DepartureSafetyCheckId, Status, CreatedAt)
+SELECT j.JourneyId || '|UNLOAD', j.JourneyId, 2, 'UNLOAD', j.GateStationId, j.GateStationRiotId,
+       j.DispatchZone, j.OperationSessionId, j.GateMovementLegId, j.GateUpperId,
+       j.GateVehicleBusinessMessageId, j.GateWorklistMessageId, j.GatePlanMessageId,
+       NULL, NULL, NULL,
+       CASE
+           WHEN d.Status = 'Succeeded' THEN 'COMPLETED'
+           WHEN j.Stage = 'Completed' OR d.Status = 'Cancelled' THEN 'REMOVED'
+           WHEN j.Stage = 'AwaitingUnloadResult' THEN 'ACTIVE'
+           WHEN EXISTS (SELECT 1 FROM StationOperations s
+                        WHERE s.SlotOperationAttemptId = j.UnloadSlotOperationAttemptId) THEN 'ACTIVE'
+           ELSE 'PENDING'
+       END,
+       j.CreatedAt
+FROM JourneyRuntimes j
+LEFT JOIN AcceptedDemands d ON d.DemandId = j.DemandId;
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+INSERT INTO JourneyDemands
+    (JourneyId, DemandId, PickupStopId, UnloadStopId, ExpectedBasketCount, TargetSlotsJson, LoadedSlotsJson,
+     LoadSlotOperationAttemptId, LoadCommandMessageId, UnloadSlotOperationAttemptId, UnloadCommandMessageId,
+     DispatchZone, DispatchGeneration, Status, AddedAt, RemovedAt, RemovalReason, DispatchZoneParameterVersion)
+SELECT j.JourneyId, j.DemandId, j.JourneyId || '|PICKUP', j.JourneyId || '|UNLOAD',
+       j.ExpectedBasketCount, j.TargetSlotsJson, NULL,
+       j.LoadSlotOperationAttemptId, j.LoadCommandMessageId, j.UnloadSlotOperationAttemptId, j.UnloadCommandMessageId,
+       j.DispatchZone, j.DispatchGeneration,
+       CASE
+           WHEN d.Status = 'Succeeded' THEN 'UNLOADED'
+           WHEN d.Status = 'Cancelled' OR j.Stage = 'Completed' THEN 'TERMINATED'
+           WHEN j.Stage IN ('AwaitingStationDeparture', 'AwaitingDepartureSafety',
+                            'AwaitingGateArrival', 'AwaitingUnloadResult') THEN 'LOADED'
+           WHEN EXISTS (SELECT 1 FROM StationOperations s
+                        WHERE s.SlotOperationAttemptId = j.LoadSlotOperationAttemptId
+                          AND s.Status = 'Committed') THEN 'LOADED'
+           ELSE 'PENDING_LOAD'
+       END,
+       j.CreatedAt, NULL, NULL, NULL
+FROM JourneyRuntimes j
+LEFT JOIN AcceptedDemands d ON d.DemandId = j.DemandId;
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+INSERT INTO VehiclePurposeClaims (VehicleKey, Purpose, JourneyId, ClaimedAt)
+SELECT VehicleKey, 'TRANSPORT', JourneyId, AcquiredAt
+FROM VehicleDispatchLeases
+WHERE ReleasedAt IS NULL;
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+INSERT INTO VehicleSnapshotRevisions (AgvId, VehicleBusinessRevision, WorklistRevision, PlanRevision)
+SELECT AgvId, MAX(VehicleBusinessRevision), MAX(WorklistRevision), MAX(PlanRevision)
+FROM JourneyRuntimes
+GROUP BY AgvId;
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "ef_temp_VehicleDispatchLeases" (
+    "JourneyId" TEXT NOT NULL CONSTRAINT "PK_VehicleDispatchLeases" PRIMARY KEY,
+    "AcquiredAt" TEXT NOT NULL,
+    "DemandId" TEXT NOT NULL,
+    "ReleasedAt" TEXT NULL,
+    "VehicleKey" TEXT NOT NULL
+);
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+INSERT INTO "ef_temp_VehicleDispatchLeases" ("JourneyId", "AcquiredAt", "DemandId", "ReleasedAt", "VehicleKey")
+SELECT "JourneyId", "AcquiredAt", "DemandId", "ReleasedAt", "VehicleKey"
+FROM "VehicleDispatchLeases";
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "ef_temp_JourneyRuntimes" (
+    "JourneyId" TEXT NOT NULL CONSTRAINT "PK_JourneyRuntimes" PRIMARY KEY,
+    "AgvId" TEXT NOT NULL,
+    "AgvLifecycleGeneration" INTEGER NOT NULL,
+    "BlockReasonCode" TEXT NULL,
+    "BlockReasonSince" TEXT NULL,
+    "CargoHoldingStartedAt" TEXT NULL,
+    "ConsumedSafetyResultMessageId" TEXT NULL,
+    "ConsumedSublotMessageId" TEXT NULL,
+    "CreatedAt" TEXT NOT NULL,
+    "DemandId" TEXT NOT NULL,
+    "DispatchGeneration" INTEGER NOT NULL,
+    "DispatchZone" TEXT NOT NULL,
+    "ExpectedBasketCount" INTEGER NOT NULL,
+    "FullSlotPositionsJson" TEXT NULL,
+    "GateMovementLegId" TEXT NOT NULL,
+    "GatePlanMessageId" TEXT NOT NULL,
+    "GateStationId" TEXT NOT NULL,
+    "GateStationRiotId" INTEGER NOT NULL,
+    "GateUpperId" TEXT NOT NULL,
+    "GateVehicleBusinessMessageId" TEXT NOT NULL,
+    "GateWorklistMessageId" TEXT NOT NULL,
+    "LoadCommandMessageId" TEXT NOT NULL,
+    "LoadSlotOperationAttemptId" TEXT NOT NULL,
+    "LoadingClosedReason" TEXT NULL,
+    "LoadingPhaseState" TEXT NULL,
+    "MapId" INTEGER NOT NULL,
+    "MapIdentity" TEXT NOT NULL,
+    "OperationSessionId" TEXT NOT NULL,
+    "PickupMovementLegId" TEXT NOT NULL,
+    "PickupStationId" TEXT NOT NULL,
+    "PickupStationRiotId" INTEGER NOT NULL,
+    "PickupUpperId" TEXT NOT NULL,
+    "PlanMessageId" TEXT NOT NULL,
+    "PlanRevision" INTEGER NOT NULL,
+    "PreDepartureSafetyCheckId" TEXT NOT NULL,
+    "PreDepartureSafetyCheckMessageId" TEXT NOT NULL,
+    "RouteEvidenceId" TEXT NOT NULL,
+    "Stage" TEXT NOT NULL,
+    "StationDepartureWaitStartedAt" TEXT NULL,
+    "SublotRequestMessageId" TEXT NOT NULL,
+    "TargetSlotsJson" TEXT NOT NULL,
+    "UnloadCommandMessageId" TEXT NOT NULL,
+    "UnloadSlotOperationAttemptId" TEXT NOT NULL,
+    "UpdatedAt" TEXT NOT NULL,
+    "VehicleBusinessMessageId" TEXT NOT NULL,
+    "VehicleBusinessRevision" INTEGER NOT NULL,
+    "VehicleKey" TEXT NOT NULL,
+    "WorklistMessageId" TEXT NOT NULL,
+    "WorklistRevision" INTEGER NOT NULL,
+    "YieldTriggeredAt" TEXT NULL,
+    "YieldTriggeredByVehicleKey" TEXT NULL
+);
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+INSERT INTO "ef_temp_JourneyRuntimes" ("JourneyId", "AgvId", "AgvLifecycleGeneration", "BlockReasonCode", "BlockReasonSince", "CargoHoldingStartedAt", "ConsumedSafetyResultMessageId", "ConsumedSublotMessageId", "CreatedAt", "DemandId", "DispatchGeneration", "DispatchZone", "ExpectedBasketCount", "FullSlotPositionsJson", "GateMovementLegId", "GatePlanMessageId", "GateStationId", "GateStationRiotId", "GateUpperId", "GateVehicleBusinessMessageId", "GateWorklistMessageId", "LoadCommandMessageId", "LoadSlotOperationAttemptId", "LoadingClosedReason", "LoadingPhaseState", "MapId", "MapIdentity", "OperationSessionId", "PickupMovementLegId", "PickupStationId", "PickupStationRiotId", "PickupUpperId", "PlanMessageId", "PlanRevision", "PreDepartureSafetyCheckId", "PreDepartureSafetyCheckMessageId", "RouteEvidenceId", "Stage", "StationDepartureWaitStartedAt", "SublotRequestMessageId", "TargetSlotsJson", "UnloadCommandMessageId", "UnloadSlotOperationAttemptId", "UpdatedAt", "VehicleBusinessMessageId", "VehicleBusinessRevision", "VehicleKey", "WorklistMessageId", "WorklistRevision", "YieldTriggeredAt", "YieldTriggeredByVehicleKey")
+SELECT "JourneyId", "AgvId", "AgvLifecycleGeneration", "BlockReasonCode", "BlockReasonSince", "CargoHoldingStartedAt", "ConsumedSafetyResultMessageId", "ConsumedSublotMessageId", "CreatedAt", "DemandId", "DispatchGeneration", "DispatchZone", "ExpectedBasketCount", "FullSlotPositionsJson", "GateMovementLegId", "GatePlanMessageId", "GateStationId", "GateStationRiotId", "GateUpperId", "GateVehicleBusinessMessageId", "GateWorklistMessageId", "LoadCommandMessageId", "LoadSlotOperationAttemptId", "LoadingClosedReason", "LoadingPhaseState", "MapId", "MapIdentity", "OperationSessionId", "PickupMovementLegId", "PickupStationId", "PickupStationRiotId", "PickupUpperId", "PlanMessageId", "PlanRevision", "PreDepartureSafetyCheckId", "PreDepartureSafetyCheckMessageId", "RouteEvidenceId", "Stage", "StationDepartureWaitStartedAt", "SublotRequestMessageId", "TargetSlotsJson", "UnloadCommandMessageId", "UnloadSlotOperationAttemptId", "UpdatedAt", "VehicleBusinessMessageId", "VehicleBusinessRevision", "VehicleKey", "WorklistMessageId", "WorklistRevision", "YieldTriggeredAt", "YieldTriggeredByVehicleKey"
+FROM "JourneyRuntimes";
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+PRAGMA foreign_keys = 0;
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+DROP TABLE "VehicleDispatchLeases";
+[13:21:54 INF] Executed DbCommand (3ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "ef_temp_VehicleDispatchLeases" RENAME TO "VehicleDispatchLeases";
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+DROP TABLE "JourneyRuntimes";
+[13:21:54 INF] Executed DbCommand (3ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "ef_temp_JourneyRuntimes" RENAME TO "JourneyRuntimes";
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+PRAGMA foreign_keys = 1;
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE INDEX "IX_VehicleDispatchLeases_DemandId" ON "VehicleDispatchLeases" ("DemandId");
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE UNIQUE INDEX "IX_VehicleDispatchLeases_VehicleKey" ON "VehicleDispatchLeases" ("VehicleKey") WHERE ReleasedAt IS NULL;
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE INDEX "IX_JourneyRuntimes_DemandId" ON "JourneyRuntimes" ("DemandId");
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+VALUES ('20260919154546_Batch7MultiDemandJourneyPersistence', '8.0.30');
+[13:21:54 INF] Applying migration '20260919200353_AreaEndAdmissionRevokedSince'.
+[13:21:54 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "JourneyRuntimes" ADD "AreaEndAdmissionRevokedSince" TEXT NULL;
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyRuntimes"
+SET "AreaEndAdmissionRevokedSince" = "BlockReasonSince"
+WHERE ("Stage" = 'AwaitingGateArrival' AND "BlockReasonCode" = 'TASK_TYPE_NOT_ALLOWED_AT_STATION')
+   OR ("Stage" = 'Blocked' AND "BlockReasonCode" = 'TASK_TYPE_NOT_ALLOWED_AT_STATION_TIMEOUT');
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+VALUES ('20260919200353_AreaEndAdmissionRevokedSince', '8.0.30');
+[13:21:54 INF] Applying migration '20260920001500_AuditImmutabilityTriggers'.
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TRIGGER "TR_BusinessAuditRecords_NoUpdate"
+BEFORE UPDATE ON "BusinessAuditRecords"
+FOR EACH ROW
+BEGIN
+    SELECT RAISE(ABORT, 'BusinessAuditRecords is write-once: an audit record cannot be updated.');
+END;
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TRIGGER "TR_BusinessAuditRecords_NoReplace"
+BEFORE INSERT ON "BusinessAuditRecords"
+FOR EACH ROW
+WHEN EXISTS (SELECT 1 FROM "BusinessAuditRecords" WHERE "AuditRecordId" = NEW."AuditRecordId")
+BEGIN
+    SELECT RAISE(ABORT, 'BusinessAuditRecords is write-once: an existing audit record cannot be replaced.');
+END;
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TRIGGER "TR_BusinessAuditRecords_NoDeleteWithinRetentionFloor"
+BEFORE DELETE ON "BusinessAuditRecords"
+FOR EACH ROW
+WHEN OLD."RecordedAtUtcTicks" >
+    CAST((julianday('now') - 1721425.5) * 864000000000 AS INTEGER) - 155520000000000
+BEGIN
+    SELECT RAISE(ABORT, 'BusinessAuditRecords is write-once: a record inside the 180 day retention floor cannot be deleted.');
+END;
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TRIGGER "TR_AdministratorAuditRecords_NoUpdate"
+BEFORE UPDATE ON "AdministratorAuditRecords"
+FOR EACH ROW
+BEGIN
+    SELECT RAISE(ABORT, 'AdministratorAuditRecords is write-once: an audit record cannot be updated.');
+END;
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TRIGGER "TR_AdministratorAuditRecords_NoReplace"
+BEFORE INSERT ON "AdministratorAuditRecords"
+FOR EACH ROW
+WHEN EXISTS (SELECT 1 FROM "AdministratorAuditRecords" WHERE "AuditRecordId" = NEW."AuditRecordId")
+BEGIN
+    SELECT RAISE(ABORT, 'AdministratorAuditRecords is write-once: an existing audit record cannot be replaced.');
+END;
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TRIGGER "TR_AdministratorAuditRecords_NoDeleteWithinRetentionFloor"
+BEFORE DELETE ON "AdministratorAuditRecords"
+FOR EACH ROW
+WHEN OLD."RecordedAtUtcTicks" >
+    CAST((julianday('now') - 1721425.5) * 864000000000 AS INTEGER) - 155520000000000
+BEGIN
+    SELECT RAISE(ABORT, 'AdministratorAuditRecords is write-once: a record inside the 180 day retention floor cannot be deleted.');
+END;
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+VALUES ('20260920001500_AuditImmutabilityTriggers', '8.0.30');
+[13:21:54 INF] Applying migration '20260920145604_Batch7LoadingMembershipBackfill'.
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyDemands"
+SET "Status" = 'LOADING'
+WHERE "Status" = 'PENDING_LOAD'
+  AND "RemovedAt" IS NULL
+  AND "JourneyId" IN (
+      SELECT "JourneyId" FROM "JourneyRuntimes" WHERE "Stage" = 'AwaitingLoadResult')
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+VALUES ('20260920145604_Batch7LoadingMembershipBackfill', '8.0.30');
+[13:21:54 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "a"."AuditRecordId", "a"."Action", "a"."ActorAttribution", "a"."ActorIdentity", "a"."ClaimedAdministratorRole", "a"."DetailJson", "a"."ObjectId", "a"."ObjectKind", "a"."Outcome", "a"."RecordedAt", "a"."RecordedAtUtcTicks", "a"."SnapshotId", "a"."Version"
+FROM "AdministratorAuditRecords" AS "a"
+WHERE "a"."Action" = 'AUDIT_RETENTION_POLICY_CONFIGURED'
+ORDER BY "a"."RecordedAtUtcTicks" DESC, "a"."AuditRecordId" DESC
+LIMIT 1
+[13:21:54 INF] Executed DbCommand (7ms) [Parameters=[@p0='?' (Size = 32), @p1='?' (Size = 33), @p2='?' (Size = 34), @p3='?' (Size = 40), @p4='?', @p5='?' (Size = 117), @p6='?' (Size = 15), @p7='?' (Size = 14), @p8='?' (Size = 9), @p9='?' (DbType = DateTimeOffset), @p10='?' (DbType = Int64), @p11='?', @p12='?' (DbType = Int64)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "AdministratorAuditRecords" ("AuditRecordId", "Action", "ActorAttribution", "ActorIdentity", "ClaimedAdministratorRole", "DetailJson", "ObjectId", "ObjectKind", "Outcome", "RecordedAt", "RecordedAtUtcTicks", "SnapshotId", "Version")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10, @p11, @p12);
+[13:21:54 INF] Onboard NDJSON listener started on 127.0.0.1:58305; transport=plaintext
+[13:21:54 WRN] Journey runtime is disabled; MesIngest polling and movement dispatch are fail-closed.
+[13:21:54 INF] Now listening on: http://127.0.0.1:58307
+[13:21:54 INF] Application started. Press Ctrl+C to shut down.
+[13:21:54 INF] Hosting environment: Production
+[13:21:54 INF] Content root path: C:\g3b7\s3\publish\control-server
+[13:21:55 INF] HTTP GET /version responded 200 in 9.2318 ms
+[13:21:57 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[13:21:57 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 9)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."SessionGeneration"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0
+LIMIT 2
+[13:21:57 INF] Executed DbCommand (0ms) [Parameters=[@__identity_AgvId_0='?' (Size = 9)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."ReportedSlotConfigurationFingerprint", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__identity_AgvId_0
+LIMIT 2
+[13:21:57 INF] Executed DbCommand (0ms) [Parameters=[@__identity_AgvId_0='?' (Size = 9)], CommandType='Text', CommandTimeout='30']
+SELECT "j"."JourneyId", "j"."AgvId", "j"."AgvLifecycleGeneration", "j"."AreaEndAdmissionRevokedSince", "j"."BlockReasonCode", "j"."BlockReasonSince", "j"."CargoHoldingStartedAt", "j"."ConsumedSafetyResultMessageId", "j"."ConsumedSublotMessageId", "j"."CreatedAt", "j"."DemandId", "j"."DispatchGeneration", "j"."DispatchZone", "j"."ExpectedBasketCount", "j"."FullSlotPositionsJson", "j"."GateMovementLegId", "j"."GatePlanMessageId", "j"."GateStationId", "j"."GateStationRiotId", "j"."GateUpperId", "j"."GateVehicleBusinessMessageId", "j"."GateWorklistMessageId", "j"."LoadCommandMessageId", "j"."LoadSlotOperationAttemptId", "j"."LoadingClosedReason", "j"."LoadingPhaseState", "j"."MapId", "j"."MapIdentity", "j"."OperationSessionId", "j"."PickupMovementLegId", "j"."PickupStationId", "j"."PickupStationRiotId", "j"."PickupUpperId", "j"."PlanMessageId", "j"."PlanRevision", "j"."PreDepartureSafetyCheckId", "j"."PreDepartureSafetyCheckMessageId", "j"."RouteEvidenceId", "j"."Stage", "j"."StationDepartureWaitStartedAt", "j"."SublotRequestMessageId", "j"."TargetSlotsJson", "j"."UnloadCommandMessageId", "j"."UnloadSlotOperationAttemptId", "j"."UpdatedAt", "j"."VehicleBusinessMessageId", "j"."VehicleBusinessRevision", "j"."VehicleKey", "j"."WorklistMessageId", "j"."WorklistRevision", "j"."YieldTriggeredAt", "j"."YieldTriggeredByVehicleKey"
+FROM "JourneyRuntimes" AS "j"
+WHERE "j"."AgvId" = @__identity_AgvId_0 AND "j"."StationDepartureWaitStartedAt" IS NOT NULL
+[13:21:57 INF] Executed DbCommand (0ms) [Parameters=[@p14='?' (Size = 9), @p0='?', @p1='?' (DbType = Int64), @p2='?' (DbType = Boolean), @p3='?' (Size = 64), @p4='?' (Size = 16), @p5='?' (Size = 40), @p6='?' (DbType = Int32), @p7='?' (Size = 16), @p8='?' (Size = 20), @p9='?', @p10='?', @p11='?' (DbType = Int64), @p12='?' (DbType = Int64), @p13='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "SessionRecoveries" SET "CapabilityHash" = @p0, "CapabilityRevision" = @p1, "DepartureSafe" = @p2, "ManifestSha256" = @p3, "ProfileId" = @p4, "ProtocolCommit" = @p5, "ProtocolVersion" = @p6, "Readiness" = @p7, "ReasonCode" = @p8, "RecoveryReportId" = @p9, "SafetyHash" = @p10, "SafetyRevision" = @p11, "SessionGeneration" = @p12, "UpdatedAt" = @p13
+WHERE "AgvId" = @p14
+RETURNING 1;
+[13:21:57 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 64), @p2='?' (Size = 1130), @p3='?' (Size = 12), @p4='?' (DbType = DateTimeOffset), @p5='?' (Size = 1096)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "ProtocolInbox" ("MessageId", "ContentHash", "FirstResponseJson", "MessageType", "ReceivedAt", "RequestJson")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+[13:21:57 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[13:21:57 INF] Executed DbCommand (0ms) [Parameters=[@__slotOperationAttemptId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."ForcedRecoveryGeneration"
+FROM "StationOperations" AS "s"
+WHERE "s"."SlotOperationAttemptId" = @__slotOperationAttemptId_0
+LIMIT 2
+[13:21:57 INF] Executed DbCommand (0ms) [Parameters=[@__demandId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "j"."JourneyId", "j"."AgvId", "j"."AgvLifecycleGeneration", "j"."AreaEndAdmissionRevokedSince", "j"."BlockReasonCode", "j"."BlockReasonSince", "j"."CargoHoldingStartedAt", "j"."ConsumedSafetyResultMessageId", "j"."ConsumedSublotMessageId", "j"."CreatedAt", "j"."DemandId", "j"."DispatchGeneration", "j"."DispatchZone", "j"."ExpectedBasketCount", "j"."FullSlotPositionsJson", "j"."GateMovementLegId", "j"."GatePlanMessageId", "j"."GateStationId", "j"."GateStationRiotId", "j"."GateUpperId", "j"."GateVehicleBusinessMessageId", "j"."GateWorklistMessageId", "j"."LoadCommandMessageId", "j"."LoadSlotOperationAttemptId", "j"."LoadingClosedReason", "j"."LoadingPhaseState", "j"."MapId", "j"."MapIdentity", "j"."OperationSessionId", "j"."PickupMovementLegId", "j"."PickupStationId", "j"."PickupStationRiotId", "j"."PickupUpperId", "j"."PlanMessageId", "j"."PlanRevision", "j"."PreDepartureSafetyCheckId", "j"."PreDepartureSafetyCheckMessageId", "j"."RouteEvidenceId", "j"."Stage", "j"."StationDepartureWaitStartedAt", "j"."SublotRequestMessageId", "j"."TargetSlotsJson", "j"."UnloadCommandMessageId", "j"."UnloadSlotOperationAttemptId", "j"."UpdatedAt", "j"."VehicleBusinessMessageId", "j"."VehicleBusinessRevision", "j"."VehicleKey", "j"."WorklistMessageId", "j"."WorklistRevision", "j"."YieldTriggeredAt", "j"."YieldTriggeredByVehicleKey"
+FROM "JourneyRuntimes" AS "j"
+WHERE EXISTS (
+    SELECT 1
+    FROM "JourneyDemands" AS "j0"
+    WHERE "j0"."RemovedAt" IS NULL AND "j0"."JourneyId" = "j"."JourneyId" AND "j0"."DemandId" = @__demandId_0)
+LIMIT 2
+[13:21:57 INF] Executed DbCommand (0ms) [Parameters=[@__result_ResultId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "o"."ResultId", "o"."AgvId", "o"."ContentHash", "o"."EvidenceJson", "o"."ForcedRecoveryGeneration", "o"."HistoricalOnly", "o"."ObservedAt", "o"."OverallOutcome", "o"."ReceivedAt", "o"."ResultContentSha256", "o"."SlotOperationAttemptId", "o"."SupersededByResultId"
+FROM "OperationResults" AS "o"
+WHERE "o"."ResultId" = @__result_ResultId_0
+LIMIT 2
+[13:21:57 INF] Executed DbCommand (0ms) [Parameters=[@__result_SlotOperationAttemptId_0='?' (Size = 36), @__forcedRecoveryGeneration_1='?' (DbType = Int64)], CommandType='Text', CommandTimeout='30']
+SELECT "o"."ResultId", "o"."AgvId", "o"."ContentHash", "o"."EvidenceJson", "o"."ForcedRecoveryGeneration", "o"."HistoricalOnly", "o"."ObservedAt", "o"."OverallOutcome", "o"."ReceivedAt", "o"."ResultContentSha256", "o"."SlotOperationAttemptId", "o"."SupersededByResultId"
+FROM "OperationResults" AS "o"
+WHERE "o"."SlotOperationAttemptId" = @__result_SlotOperationAttemptId_0 AND "o"."ForcedRecoveryGeneration" = @__forcedRecoveryGeneration_1 AND "o"."SupersededByResultId" IS NULL
+[13:21:57 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 9)], CommandType='Text', CommandTimeout='30']
+SELECT "v"."ForcedRecoveryGeneration"
+FROM "VehicleRecoveryGenerations" AS "v"
+WHERE "v"."AgvId" = @__agvId_0
+LIMIT 2
+[13:21:57 INF] Executed DbCommand (0ms) [Parameters=[@__result_SlotOperationAttemptId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."SlotOperationAttemptId", "s"."CommittedAt", "s"."ContentHash", "s"."CreatedAt", "s"."DemandId", "s"."EvidenceJson", "s"."ForcedRecoveryGeneration", "s"."OperationType", "s"."Status", "s"."SublotId", "s"."TargetSlotsJson"
+FROM "StationOperations" AS "s"
+WHERE "s"."SlotOperationAttemptId" = @__result_SlotOperationAttemptId_0
+LIMIT 2
+[13:21:57 INF] Executed DbCommand (0ms) [Parameters=[@__result_DemandId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "a"."DemandId", "a"."AcceptedAt", "a"."CatalogRevision", "a"."CreatedAt", "a"."DemandRevision", "a"."Generation", "a"."HistoryEpoch", "a"."LiveMesFieldsJson", "a"."SeriesId", "a"."Status", "a"."Sublot", "a"."TransportDemandKey", "a"."ValueObservedAt", "a"."ValuePollTraceId", "a"."ValueProjectionCommitId", "a"."WorkType"
+FROM "AcceptedDemands" AS "a"
+WHERE "a"."DemandId" = @__result_DemandId_0
+LIMIT 2
+[13:21:57 INF] Executed DbCommand (0ms) [Parameters=[@__demand_TransportDemandKey_0='?' (Size = 24)], CommandType='Text', CommandTimeout='30']
+SELECT "t"."TransportDemandKey", "t"."CompletedAt", "t"."DemandId", "t"."DemandRevision", "t"."Evidence"
+FROM "TransportDemandCompletions" AS "t"
+WHERE "t"."TransportDemandKey" = @__demand_TransportDemandKey_0
+LIMIT 2
+[13:21:57 INF] Executed DbCommand (0ms) [Parameters=[@__demandId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "j"."JourneyId"
+FROM "JourneyDemands" AS "j"
+WHERE "j"."RemovedAt" IS NULL AND "j"."DemandId" = @__demandId_0
+LIMIT 2
+[13:21:57 INF] Executed DbCommand (0ms) [Parameters=[@__journeyId_0='?' (Size = 44), @__demandId_1='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+-- control-server#207 last open demand of journey
+
+SELECT EXISTS (
+    SELECT 1
+    FROM "JourneyDemands" AS "j"
+    INNER JOIN (
+        SELECT "a"."DemandId", "a"."AcceptedAt", "a"."CatalogRevision", "a"."CreatedAt", "a"."DemandRevision", "a"."Generation", "a"."HistoryEpoch", "a"."LiveMesFieldsJson", "a"."SeriesId", "a"."Status", "a"."Sublot", "a"."TransportDemandKey", "a"."ValueObservedAt", "a"."ValuePollTraceId", "a"."ValueProjectionCommitId", "a"."WorkType"
+        FROM "AcceptedDemands" AS "a"
+        WHERE "a"."Status" NOT IN ('Succeeded', 'Cancelled')
+    ) AS "t" ON "j"."DemandId" = "t"."DemandId"
+    WHERE "j"."RemovedAt" IS NULL AND "j"."JourneyId" = @__journeyId_0 AND "j"."DemandId" <> @__demandId_1)
+[13:21:57 INF] Executed DbCommand (0ms) [Parameters=[@__journeyId_0='?' (Size = 44)], CommandType='Text', CommandTimeout='30']
+SELECT "v"."JourneyId", "v"."AcquiredAt", "v"."DemandId", "v"."ReleasedAt", "v"."VehicleKey"
+FROM "VehicleDispatchLeases" AS "v"
+WHERE "v"."JourneyId" = @__journeyId_0
+LIMIT 2
+[13:21:57 INF] Executed DbCommand (0ms) [Parameters=[@__lease_VehicleKey_0='?' (Size = 40), @__lease_JourneyId_1='?' (Size = 44)], CommandType='Text', CommandTimeout='30']
+SELECT "v"."VehicleKey", "v"."ClaimedAt", "v"."JourneyId", "v"."Purpose"
+FROM "VehiclePurposeClaims" AS "v"
+WHERE "v"."VehicleKey" = @__lease_VehicleKey_0 AND "v"."JourneyId" = @__lease_JourneyId_1
+LIMIT 2
+[13:21:57 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (Size = 9)], CommandType='Text', CommandTimeout='30']
+UPDATE "AcceptedDemands" SET "Status" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[13:21:57 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 9), @p2='?' (Size = 64), @p3='?' (Size = 71), @p4='?' (DbType = Int64), @p5='?' (DbType = Boolean), @p6='?' (DbType = DateTimeOffset), @p7='?' (Size = 9), @p8='?' (DbType = DateTimeOffset), @p9='?' (Size = 64), @p10='?' (Size = 36), @p11='?'], CommandType='Text', CommandTimeout='30']
+INSERT INTO "OperationResults" ("ResultId", "AgvId", "ContentHash", "EvidenceJson", "ForcedRecoveryGeneration", "HistoricalOnly", "ObservedAt", "OverallOutcome", "ReceivedAt", "ResultContentSha256", "SlotOperationAttemptId", "SupersededByResultId")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10, @p11);
+[13:21:57 INF] Executed DbCommand (0ms) [Parameters=[@p3='?' (Size = 36), @p0='?' (DbType = DateTimeOffset), @p1='?' (Size = 71), @p2='?' (Size = 9)], CommandType='Text', CommandTimeout='30']
+UPDATE "StationOperations" SET "CommittedAt" = @p0, "EvidenceJson" = @p1, "Status" = @p2
+WHERE "SlotOperationAttemptId" = @p3
+RETURNING 1;
+[13:21:57 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "StopClosures" ("DemandId", "CommittedAt")
+VALUES (@p0, @p1);
+[13:21:57 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 24), @p1='?' (DbType = DateTimeOffset), @p2='?' (Size = 36), @p3='?' (DbType = Int64), @p4='?' (Size = 64)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "TransportDemandCompletions" ("TransportDemandKey", "CompletedAt", "DemandId", "DemandRevision", "Evidence")
+VALUES (@p0, @p1, @p2, @p3, @p4);
+[13:21:57 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (DbType = DateTimeOffset), @p2='?' (Size = 36), @p3='?' (Size = 71)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "UnloadBatches" ("UnloadBatchId", "CompletedAt", "DemandId", "EvidenceJson")
+VALUES (@p0, @p1, @p2, @p3);
+[13:21:57 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 44), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "VehicleDispatchLeases" SET "ReleasedAt" = @p0
+WHERE "JourneyId" = @p1
+RETURNING 1;
+[13:21:57 INF] Executed DbCommand (1ms) [Parameters=[@p0='?' (Size = 40)], CommandType='Text', CommandTimeout='30']
+DELETE FROM "VehiclePurposeClaims"
+WHERE "VehicleKey" = @p0
+RETURNING 1;
+[13:21:57 INF] Executed DbCommand (0ms) [Parameters=[@__slotOperationAttemptId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "r"."WorkflowId", "r"."AgvId", "r"."CommandContentHash", "r"."CommandMessageId", "r"."CommandMessageType", "r"."CreatedAt", "r"."DemandId", "r"."ExceptionRecoverySessionId", "r"."ForcedRecoveryGeneration", "r"."HandoffId", "r"."Outcome", "r"."RequestContentHash", "r"."RequestMessageId", "r"."ResultContentHash", "r"."ResultMessageId", "r"."SlotOperationAttemptId", "r"."SlotsJson", "r"."State", "r"."UpdatedAt", "r"."WorkflowType"
+FROM "RecoveryWorkflows" AS "r"
+WHERE "r"."WorkflowType" = 'RESUME_AFTER_REPAIR' AND "r"."SlotOperationAttemptId" = @__slotOperationAttemptId_0 AND "r"."State" IN ('CommandPending', 'AwaitingResult')
+LIMIT 2
+[13:21:57 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 9)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."ReportedSlotConfigurationFingerprint", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0
+LIMIT 2
+[13:21:57 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 9)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."ReportedSlotConfigurationFingerprint", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0
+LIMIT 2
+[13:21:57 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 9)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."ReportedSlotConfigurationFingerprint", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0
+LIMIT 2
+[13:21:57 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 9)], CommandType='Text', CommandTimeout='30']
+SELECT EXISTS (
+    SELECT 1
+    FROM "StationOperations" AS "s"
+    INNER JOIN (
+        SELECT "j"."JourneyId", "j"."DemandId", "j"."AddedAt", "j"."DispatchGeneration", "j"."DispatchZone", "j"."DispatchZoneParameterVersion", "j"."ExpectedBasketCount", "j"."LoadCommandMessageId", "j"."LoadSlotOperationAttemptId", "j"."LoadedSlotsJson", "j"."PickupStopId", "j"."RemovalReason", "j"."RemovedAt", "j"."Status", "j"."TargetSlotsJson", "j"."UnloadCommandMessageId", "j"."UnloadSlotOperationAttemptId", "j"."UnloadStopId"
+        FROM "JourneyDemands" AS "j"
+        WHERE "j"."RemovedAt" IS NULL
+    ) AS "t" ON "s"."DemandId" = "t"."DemandId"
+    INNER JOIN "JourneyRuntimes" AS "j0" ON "t"."JourneyId" = "j0"."JourneyId"
+    WHERE "j0"."AgvId" = @__agvId_0 AND "s"."Status" = 'RecoveryRequired')
+[13:21:57 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 9)], CommandType='Text', CommandTimeout='30']
+SELECT EXISTS (
+    SELECT 1
+    FROM "RecoveryWorkflows" AS "r"
+    WHERE "r"."AgvId" = @__agvId_0 AND "r"."WorkflowType" = 'FORCED_MECHANICAL_RECOVERY' AND "r"."State" <> 'HistoricalOnly' AND NOT EXISTS (
+        SELECT 1
+        FROM "HardwareRecoveryRecords" AS "h"
+        WHERE "h"."RecoveryActionId" = "r"."WorkflowId"))
+[13:21:57 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 9)], CommandType='Text', CommandTimeout='30']
+SELECT "a"."AgvId", "a"."ActivatedAt", "a"."ActivationId", "a"."ConfigurationVersion", "a"."Fingerprint", "a"."SlotModelVersionId", "a"."SnapshotId"
+FROM "ActiveSlotConfigurations" AS "a"
+WHERE "a"."AgvId" = @__agvId_0
+LIMIT 1
+[13:21:57 INF] Executed DbCommand (0ms) [Parameters=[@p2='?' (Size = 9), @p0='?' (Size = 28), @p1='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "SessionRecoveries" SET "ReasonCode" = @p0, "UpdatedAt" = @p1
+WHERE "AgvId" = @p2
+RETURNING 1;
+[13:21:57 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 64), @p2='?' (Size = 703), @p3='?' (Size = 15), @p4='?' (DbType = DateTimeOffset), @p5='?' (Size = 909)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "ProtocolInbox" ("MessageId", "ContentHash", "FirstResponseJson", "MessageType", "ReceivedAt", "RequestJson")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+[13:21:57 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 9)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."SessionGeneration"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0
+LIMIT 2
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@__identity_AgvId_0='?' (Size = 9)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."ReportedSlotConfigurationFingerprint", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__identity_AgvId_0
+LIMIT 2
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@__identity_AgvId_0='?' (Size = 9)], CommandType='Text', CommandTimeout='30']
+SELECT "j"."JourneyId", "j"."AgvId", "j"."AgvLifecycleGeneration", "j"."AreaEndAdmissionRevokedSince", "j"."BlockReasonCode", "j"."BlockReasonSince", "j"."CargoHoldingStartedAt", "j"."ConsumedSafetyResultMessageId", "j"."ConsumedSublotMessageId", "j"."CreatedAt", "j"."DemandId", "j"."DispatchGeneration", "j"."DispatchZone", "j"."ExpectedBasketCount", "j"."FullSlotPositionsJson", "j"."GateMovementLegId", "j"."GatePlanMessageId", "j"."GateStationId", "j"."GateStationRiotId", "j"."GateUpperId", "j"."GateVehicleBusinessMessageId", "j"."GateWorklistMessageId", "j"."LoadCommandMessageId", "j"."LoadSlotOperationAttemptId", "j"."LoadingClosedReason", "j"."LoadingPhaseState", "j"."MapId", "j"."MapIdentity", "j"."OperationSessionId", "j"."PickupMovementLegId", "j"."PickupStationId", "j"."PickupStationRiotId", "j"."PickupUpperId", "j"."PlanMessageId", "j"."PlanRevision", "j"."PreDepartureSafetyCheckId", "j"."PreDepartureSafetyCheckMessageId", "j"."RouteEvidenceId", "j"."Stage", "j"."StationDepartureWaitStartedAt", "j"."SublotRequestMessageId", "j"."TargetSlotsJson", "j"."UnloadCommandMessageId", "j"."UnloadSlotOperationAttemptId", "j"."UpdatedAt", "j"."VehicleBusinessMessageId", "j"."VehicleBusinessRevision", "j"."VehicleKey", "j"."WorklistMessageId", "j"."WorklistRevision", "j"."YieldTriggeredAt", "j"."YieldTriggeredByVehicleKey"
+FROM "JourneyRuntimes" AS "j"
+WHERE "j"."AgvId" = @__identity_AgvId_0 AND "j"."StationDepartureWaitStartedAt" IS NOT NULL
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@p3='?' (Size = 9), @p0='?' (Size = 20), @p1='?' (DbType = Int64), @p2='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "SessionRecoveries" SET "ReasonCode" = @p0, "SessionGeneration" = @p1, "UpdatedAt" = @p2
+WHERE "AgvId" = @p3
+RETURNING 1;
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 64), @p2='?' (Size = 1131), @p3='?' (Size = 12), @p4='?' (DbType = DateTimeOffset), @p5='?' (Size = 1096)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "ProtocolInbox" ("MessageId", "ContentHash", "FirstResponseJson", "MessageType", "ReceivedAt", "RequestJson")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 9)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."SessionGeneration"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0
+LIMIT 2
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@__identity_AgvId_0='?' (Size = 9)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."ReportedSlotConfigurationFingerprint", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__identity_AgvId_0
+LIMIT 2
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@__identity_AgvId_0='?' (Size = 9)], CommandType='Text', CommandTimeout='30']
+SELECT "j"."JourneyId", "j"."AgvId", "j"."AgvLifecycleGeneration", "j"."AreaEndAdmissionRevokedSince", "j"."BlockReasonCode", "j"."BlockReasonSince", "j"."CargoHoldingStartedAt", "j"."ConsumedSafetyResultMessageId", "j"."ConsumedSublotMessageId", "j"."CreatedAt", "j"."DemandId", "j"."DispatchGeneration", "j"."DispatchZone", "j"."ExpectedBasketCount", "j"."FullSlotPositionsJson", "j"."GateMovementLegId", "j"."GatePlanMessageId", "j"."GateStationId", "j"."GateStationRiotId", "j"."GateUpperId", "j"."GateVehicleBusinessMessageId", "j"."GateWorklistMessageId", "j"."LoadCommandMessageId", "j"."LoadSlotOperationAttemptId", "j"."LoadingClosedReason", "j"."LoadingPhaseState", "j"."MapId", "j"."MapIdentity", "j"."OperationSessionId", "j"."PickupMovementLegId", "j"."PickupStationId", "j"."PickupStationRiotId", "j"."PickupUpperId", "j"."PlanMessageId", "j"."PlanRevision", "j"."PreDepartureSafetyCheckId", "j"."PreDepartureSafetyCheckMessageId", "j"."RouteEvidenceId", "j"."Stage", "j"."StationDepartureWaitStartedAt", "j"."SublotRequestMessageId", "j"."TargetSlotsJson", "j"."UnloadCommandMessageId", "j"."UnloadSlotOperationAttemptId", "j"."UpdatedAt", "j"."VehicleBusinessMessageId", "j"."VehicleBusinessRevision", "j"."VehicleKey", "j"."WorklistMessageId", "j"."WorklistRevision", "j"."YieldTriggeredAt", "j"."YieldTriggeredByVehicleKey"
+FROM "JourneyRuntimes" AS "j"
+WHERE "j"."AgvId" = @__identity_AgvId_0 AND "j"."StationDepartureWaitStartedAt" IS NOT NULL
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@p2='?' (Size = 9), @p0='?' (DbType = Int64), @p1='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "SessionRecoveries" SET "SessionGeneration" = @p0, "UpdatedAt" = @p1
+WHERE "AgvId" = @p2
+RETURNING 1;
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 64), @p2='?' (Size = 1131), @p3='?' (Size = 12), @p4='?' (DbType = DateTimeOffset), @p5='?' (Size = 1096)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "ProtocolInbox" ("MessageId", "ContentHash", "FirstResponseJson", "MessageType", "ReceivedAt", "RequestJson")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+[13:21:58 WRN] Onboard connection ended with a protocol or transport error.
+ControlServer.Domain.ProtocolContentConflictException: MessageId was replayed with different normalized content.
+   at ControlServer.Infrastructure.Persistence.WireToGateStore.CaptureFirstResponseAsync(String messageId, String messageType, String requestJson, String contentHash, Func`1 responseFactory, DateTimeOffset receivedAt, CancellationToken cancellationToken, Func`2 replayEquivalenceHash, Action`1 equivalentReplayObserved, Func`2 equivalentReplayResponse) in C:\g3b7\s3\sources\control-server\src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs:line 2036
+   at ControlServer.Host.Transport.OnboardMessageProcessor.ProcessAsync(String line, OnboardConnectionState state, CancellationToken cancellationToken) in C:\g3b7\s3\sources\control-server\src\ControlServer.Host\Transport\OnboardMessageProcessor.cs:line 135
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\g3b7\s3\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 201
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\g3b7\s3\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 242
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\g3b7\s3\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 242
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\g3b7\s3\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 242
+   at ControlServer.Host.Transport.OnboardTcpServer.ServeAsync(TcpClient client, SemaphoreSlim slots, CancellationToken cancellationToken) in C:\g3b7\s3\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 117
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@__slotOperationAttemptId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."ForcedRecoveryGeneration"
+FROM "StationOperations" AS "s"
+WHERE "s"."SlotOperationAttemptId" = @__slotOperationAttemptId_0
+LIMIT 2
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@__demandId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "j"."JourneyId", "j"."AgvId", "j"."AgvLifecycleGeneration", "j"."AreaEndAdmissionRevokedSince", "j"."BlockReasonCode", "j"."BlockReasonSince", "j"."CargoHoldingStartedAt", "j"."ConsumedSafetyResultMessageId", "j"."ConsumedSublotMessageId", "j"."CreatedAt", "j"."DemandId", "j"."DispatchGeneration", "j"."DispatchZone", "j"."ExpectedBasketCount", "j"."FullSlotPositionsJson", "j"."GateMovementLegId", "j"."GatePlanMessageId", "j"."GateStationId", "j"."GateStationRiotId", "j"."GateUpperId", "j"."GateVehicleBusinessMessageId", "j"."GateWorklistMessageId", "j"."LoadCommandMessageId", "j"."LoadSlotOperationAttemptId", "j"."LoadingClosedReason", "j"."LoadingPhaseState", "j"."MapId", "j"."MapIdentity", "j"."OperationSessionId", "j"."PickupMovementLegId", "j"."PickupStationId", "j"."PickupStationRiotId", "j"."PickupUpperId", "j"."PlanMessageId", "j"."PlanRevision", "j"."PreDepartureSafetyCheckId", "j"."PreDepartureSafetyCheckMessageId", "j"."RouteEvidenceId", "j"."Stage", "j"."StationDepartureWaitStartedAt", "j"."SublotRequestMessageId", "j"."TargetSlotsJson", "j"."UnloadCommandMessageId", "j"."UnloadSlotOperationAttemptId", "j"."UpdatedAt", "j"."VehicleBusinessMessageId", "j"."VehicleBusinessRevision", "j"."VehicleKey", "j"."WorklistMessageId", "j"."WorklistRevision", "j"."YieldTriggeredAt", "j"."YieldTriggeredByVehicleKey"
+FROM "JourneyRuntimes" AS "j"
+WHERE EXISTS (
+    SELECT 1
+    FROM "JourneyDemands" AS "j0"
+    WHERE "j0"."RemovedAt" IS NULL AND "j0"."JourneyId" = "j"."JourneyId" AND "j0"."DemandId" = @__demandId_0)
+LIMIT 2
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@__result_ResultId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "o"."ResultId", "o"."AgvId", "o"."ContentHash", "o"."EvidenceJson", "o"."ForcedRecoveryGeneration", "o"."HistoricalOnly", "o"."ObservedAt", "o"."OverallOutcome", "o"."ReceivedAt", "o"."ResultContentSha256", "o"."SlotOperationAttemptId", "o"."SupersededByResultId"
+FROM "OperationResults" AS "o"
+WHERE "o"."ResultId" = @__result_ResultId_0
+LIMIT 2
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@__result_SlotOperationAttemptId_0='?' (Size = 36), @__forcedRecoveryGeneration_1='?' (DbType = Int64)], CommandType='Text', CommandTimeout='30']
+SELECT "o"."ResultId", "o"."AgvId", "o"."ContentHash", "o"."EvidenceJson", "o"."ForcedRecoveryGeneration", "o"."HistoricalOnly", "o"."ObservedAt", "o"."OverallOutcome", "o"."ReceivedAt", "o"."ResultContentSha256", "o"."SlotOperationAttemptId", "o"."SupersededByResultId"
+FROM "OperationResults" AS "o"
+WHERE "o"."SlotOperationAttemptId" = @__result_SlotOperationAttemptId_0 AND "o"."ForcedRecoveryGeneration" = @__forcedRecoveryGeneration_1 AND "o"."SupersededByResultId" IS NULL
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@__result_SlotOperationAttemptId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "r"."WorkflowId", "r"."AgvId", "r"."CommandContentHash", "r"."CommandMessageId", "r"."CommandMessageType", "r"."CreatedAt", "r"."DemandId", "r"."ExceptionRecoverySessionId", "r"."ForcedRecoveryGeneration", "r"."HandoffId", "r"."Outcome", "r"."RequestContentHash", "r"."RequestMessageId", "r"."ResultContentHash", "r"."ResultMessageId", "r"."SlotOperationAttemptId", "r"."SlotsJson", "r"."State", "r"."UpdatedAt", "r"."WorkflowType"
+FROM "RecoveryWorkflows" AS "r"
+WHERE "r"."WorkflowType" = 'RESUME_AFTER_REPAIR' AND "r"."SlotOperationAttemptId" = @__result_SlotOperationAttemptId_0 AND "r"."State" = 'AwaitingResult'
+LIMIT 2
+[13:21:58 WRN] Onboard connection ended with a protocol or transport error.
+ControlServer.Domain.ProtocolContentConflictException: Operation result identity was replayed with different message or content.
+   at ControlServer.Infrastructure.Persistence.WireToGateStore.RequireResumeAuthorizationAsync(StationOperationResult result, Int32[] actualSlots, Int64 forcedRecoveryGeneration, CancellationToken cancellationToken) in C:\g3b7\s3\sources\control-server\src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs:line 2548
+   at ControlServer.Infrastructure.Persistence.WireToGateStore.ApplyOperationResultAsync(StationOperationResult result, String agvId, Int64 forcedRecoveryGeneration, CancellationToken cancellationToken, OperationResultReceipt receipt) in C:\g3b7\s3\sources\control-server\src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs:line 2356
+   at ControlServer.Host.Transport.OnboardMessageProcessor.ProcessCurrentSessionMessageAsync(JsonElement root, OnboardConnectionState state, String messageType, String messageId, String contentHash, CancellationToken cancellationToken) in C:\g3b7\s3\sources\control-server\src\ControlServer.Host\Transport\OnboardMessageProcessor.cs:line 462
+   at ControlServer.Infrastructure.Persistence.WireToGateStore.CaptureFirstResponseAsync(String messageId, String messageType, String requestJson, String contentHash, Func`1 responseFactory, DateTimeOffset receivedAt, CancellationToken cancellationToken, Func`2 replayEquivalenceHash, Action`1 equivalentReplayObserved, Func`2 equivalentReplayResponse) in C:\g3b7\s3\sources\control-server\src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs:line 2064
+   at ControlServer.Infrastructure.Persistence.WireToGateStore.CaptureFirstResponseAsync(String messageId, String messageType, String requestJson, String contentHash, Func`1 responseFactory, DateTimeOffset receivedAt, CancellationToken cancellationToken, Func`2 replayEquivalenceHash, Action`1 equivalentReplayObserved, Func`2 equivalentReplayResponse) in C:\g3b7\s3\sources\control-server\src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs:line 2076
+   at ControlServer.Host.Transport.OnboardMessageProcessor.ProcessAsync(String line, OnboardConnectionState state, CancellationToken cancellationToken) in C:\g3b7\s3\sources\control-server\src\ControlServer.Host\Transport\OnboardMessageProcessor.cs:line 135
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\g3b7\s3\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 201
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\g3b7\s3\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 242
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\g3b7\s3\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 242
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\g3b7\s3\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 242
+   at ControlServer.Host.Transport.OnboardTcpServer.ServeAsync(TcpClient client, SemaphoreSlim slots, CancellationToken cancellationToken) in C:\g3b7\s3\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 117
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 9)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."SessionGeneration"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0
+LIMIT 2
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@__identity_AgvId_0='?' (Size = 9)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."ReportedSlotConfigurationFingerprint", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__identity_AgvId_0
+LIMIT 2
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@__identity_AgvId_0='?' (Size = 9)], CommandType='Text', CommandTimeout='30']
+SELECT "j"."JourneyId", "j"."AgvId", "j"."AgvLifecycleGeneration", "j"."AreaEndAdmissionRevokedSince", "j"."BlockReasonCode", "j"."BlockReasonSince", "j"."CargoHoldingStartedAt", "j"."ConsumedSafetyResultMessageId", "j"."ConsumedSublotMessageId", "j"."CreatedAt", "j"."DemandId", "j"."DispatchGeneration", "j"."DispatchZone", "j"."ExpectedBasketCount", "j"."FullSlotPositionsJson", "j"."GateMovementLegId", "j"."GatePlanMessageId", "j"."GateStationId", "j"."GateStationRiotId", "j"."GateUpperId", "j"."GateVehicleBusinessMessageId", "j"."GateWorklistMessageId", "j"."LoadCommandMessageId", "j"."LoadSlotOperationAttemptId", "j"."LoadingClosedReason", "j"."LoadingPhaseState", "j"."MapId", "j"."MapIdentity", "j"."OperationSessionId", "j"."PickupMovementLegId", "j"."PickupStationId", "j"."PickupStationRiotId", "j"."PickupUpperId", "j"."PlanMessageId", "j"."PlanRevision", "j"."PreDepartureSafetyCheckId", "j"."PreDepartureSafetyCheckMessageId", "j"."RouteEvidenceId", "j"."Stage", "j"."StationDepartureWaitStartedAt", "j"."SublotRequestMessageId", "j"."TargetSlotsJson", "j"."UnloadCommandMessageId", "j"."UnloadSlotOperationAttemptId", "j"."UpdatedAt", "j"."VehicleBusinessMessageId", "j"."VehicleBusinessRevision", "j"."VehicleKey", "j"."WorklistMessageId", "j"."WorklistRevision", "j"."YieldTriggeredAt", "j"."YieldTriggeredByVehicleKey"
+FROM "JourneyRuntimes" AS "j"
+WHERE "j"."AgvId" = @__identity_AgvId_0 AND "j"."StationDepartureWaitStartedAt" IS NOT NULL
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@p2='?' (Size = 9), @p0='?' (DbType = Int64), @p1='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "SessionRecoveries" SET "SessionGeneration" = @p0, "UpdatedAt" = @p1
+WHERE "AgvId" = @p2
+RETURNING 1;
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 64), @p2='?' (Size = 1131), @p3='?' (Size = 12), @p4='?' (DbType = DateTimeOffset), @p5='?' (Size = 1096)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "ProtocolInbox" ("MessageId", "ContentHash", "FirstResponseJson", "MessageType", "ReceivedAt", "RequestJson")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@__slotOperationAttemptId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."ForcedRecoveryGeneration"
+FROM "StationOperations" AS "s"
+WHERE "s"."SlotOperationAttemptId" = @__slotOperationAttemptId_0
+LIMIT 2
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@__demandId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "j"."JourneyId", "j"."AgvId", "j"."AgvLifecycleGeneration", "j"."AreaEndAdmissionRevokedSince", "j"."BlockReasonCode", "j"."BlockReasonSince", "j"."CargoHoldingStartedAt", "j"."ConsumedSafetyResultMessageId", "j"."ConsumedSublotMessageId", "j"."CreatedAt", "j"."DemandId", "j"."DispatchGeneration", "j"."DispatchZone", "j"."ExpectedBasketCount", "j"."FullSlotPositionsJson", "j"."GateMovementLegId", "j"."GatePlanMessageId", "j"."GateStationId", "j"."GateStationRiotId", "j"."GateUpperId", "j"."GateVehicleBusinessMessageId", "j"."GateWorklistMessageId", "j"."LoadCommandMessageId", "j"."LoadSlotOperationAttemptId", "j"."LoadingClosedReason", "j"."LoadingPhaseState", "j"."MapId", "j"."MapIdentity", "j"."OperationSessionId", "j"."PickupMovementLegId", "j"."PickupStationId", "j"."PickupStationRiotId", "j"."PickupUpperId", "j"."PlanMessageId", "j"."PlanRevision", "j"."PreDepartureSafetyCheckId", "j"."PreDepartureSafetyCheckMessageId", "j"."RouteEvidenceId", "j"."Stage", "j"."StationDepartureWaitStartedAt", "j"."SublotRequestMessageId", "j"."TargetSlotsJson", "j"."UnloadCommandMessageId", "j"."UnloadSlotOperationAttemptId", "j"."UpdatedAt", "j"."VehicleBusinessMessageId", "j"."VehicleBusinessRevision", "j"."VehicleKey", "j"."WorklistMessageId", "j"."WorklistRevision", "j"."YieldTriggeredAt", "j"."YieldTriggeredByVehicleKey"
+FROM "JourneyRuntimes" AS "j"
+WHERE EXISTS (
+    SELECT 1
+    FROM "JourneyDemands" AS "j0"
+    WHERE "j0"."RemovedAt" IS NULL AND "j0"."JourneyId" = "j"."JourneyId" AND "j0"."DemandId" = @__demandId_0)
+LIMIT 2
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@__result_ResultId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "o"."ResultId", "o"."AgvId", "o"."ContentHash", "o"."EvidenceJson", "o"."ForcedRecoveryGeneration", "o"."HistoricalOnly", "o"."ObservedAt", "o"."OverallOutcome", "o"."ReceivedAt", "o"."ResultContentSha256", "o"."SlotOperationAttemptId", "o"."SupersededByResultId"
+FROM "OperationResults" AS "o"
+WHERE "o"."ResultId" = @__result_ResultId_0
+LIMIT 2
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@__result_SlotOperationAttemptId_0='?' (Size = 36), @__forcedRecoveryGeneration_1='?' (DbType = Int64)], CommandType='Text', CommandTimeout='30']
+SELECT "o"."ResultId", "o"."AgvId", "o"."ContentHash", "o"."EvidenceJson", "o"."ForcedRecoveryGeneration", "o"."HistoricalOnly", "o"."ObservedAt", "o"."OverallOutcome", "o"."ReceivedAt", "o"."ResultContentSha256", "o"."SlotOperationAttemptId", "o"."SupersededByResultId"
+FROM "OperationResults" AS "o"
+WHERE "o"."SlotOperationAttemptId" = @__result_SlotOperationAttemptId_0 AND "o"."ForcedRecoveryGeneration" = @__forcedRecoveryGeneration_1 AND "o"."SupersededByResultId" IS NULL
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@__result_SlotOperationAttemptId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "r"."WorkflowId", "r"."AgvId", "r"."CommandContentHash", "r"."CommandMessageId", "r"."CommandMessageType", "r"."CreatedAt", "r"."DemandId", "r"."ExceptionRecoverySessionId", "r"."ForcedRecoveryGeneration", "r"."HandoffId", "r"."Outcome", "r"."RequestContentHash", "r"."RequestMessageId", "r"."ResultContentHash", "r"."ResultMessageId", "r"."SlotOperationAttemptId", "r"."SlotsJson", "r"."State", "r"."UpdatedAt", "r"."WorkflowType"
+FROM "RecoveryWorkflows" AS "r"
+WHERE "r"."WorkflowType" = 'RESUME_AFTER_REPAIR' AND "r"."SlotOperationAttemptId" = @__result_SlotOperationAttemptId_0 AND "r"."State" = 'AwaitingResult'
+LIMIT 2
+[13:21:58 WRN] Onboard connection ended with a protocol or transport error.
+ControlServer.Domain.ProtocolContentConflictException: Operation result identity was replayed with different message or content.
+   at ControlServer.Infrastructure.Persistence.WireToGateStore.RequireResumeAuthorizationAsync(StationOperationResult result, Int32[] actualSlots, Int64 forcedRecoveryGeneration, CancellationToken cancellationToken) in C:\g3b7\s3\sources\control-server\src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs:line 2548
+   at ControlServer.Infrastructure.Persistence.WireToGateStore.ApplyOperationResultAsync(StationOperationResult result, String agvId, Int64 forcedRecoveryGeneration, CancellationToken cancellationToken, OperationResultReceipt receipt) in C:\g3b7\s3\sources\control-server\src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs:line 2356
+   at ControlServer.Host.Transport.OnboardMessageProcessor.ProcessCurrentSessionMessageAsync(JsonElement root, OnboardConnectionState state, String messageType, String messageId, String contentHash, CancellationToken cancellationToken) in C:\g3b7\s3\sources\control-server\src\ControlServer.Host\Transport\OnboardMessageProcessor.cs:line 462
+   at ControlServer.Infrastructure.Persistence.WireToGateStore.CaptureFirstResponseAsync(String messageId, String messageType, String requestJson, String contentHash, Func`1 responseFactory, DateTimeOffset receivedAt, CancellationToken cancellationToken, Func`2 replayEquivalenceHash, Action`1 equivalentReplayObserved, Func`2 equivalentReplayResponse) in C:\g3b7\s3\sources\control-server\src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs:line 2064
+   at ControlServer.Infrastructure.Persistence.WireToGateStore.CaptureFirstResponseAsync(String messageId, String messageType, String requestJson, String contentHash, Func`1 responseFactory, DateTimeOffset receivedAt, CancellationToken cancellationToken, Func`2 replayEquivalenceHash, Action`1 equivalentReplayObserved, Func`2 equivalentReplayResponse) in C:\g3b7\s3\sources\control-server\src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs:line 2076
+   at ControlServer.Host.Transport.OnboardMessageProcessor.ProcessAsync(String line, OnboardConnectionState state, CancellationToken cancellationToken) in C:\g3b7\s3\sources\control-server\src\ControlServer.Host\Transport\OnboardMessageProcessor.cs:line 135
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\g3b7\s3\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 201
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\g3b7\s3\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 242
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\g3b7\s3\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 242
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\g3b7\s3\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 242
+   at ControlServer.Host.Transport.OnboardTcpServer.ServeAsync(TcpClient client, SemaphoreSlim slots, CancellationToken cancellationToken) in C:\g3b7\s3\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 117
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 9)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."SessionGeneration"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0
+LIMIT 2
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@__identity_AgvId_0='?' (Size = 9)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."ReportedSlotConfigurationFingerprint", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__identity_AgvId_0
+LIMIT 2
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@__identity_AgvId_0='?' (Size = 9)], CommandType='Text', CommandTimeout='30']
+SELECT "j"."JourneyId", "j"."AgvId", "j"."AgvLifecycleGeneration", "j"."AreaEndAdmissionRevokedSince", "j"."BlockReasonCode", "j"."BlockReasonSince", "j"."CargoHoldingStartedAt", "j"."ConsumedSafetyResultMessageId", "j"."ConsumedSublotMessageId", "j"."CreatedAt", "j"."DemandId", "j"."DispatchGeneration", "j"."DispatchZone", "j"."ExpectedBasketCount", "j"."FullSlotPositionsJson", "j"."GateMovementLegId", "j"."GatePlanMessageId", "j"."GateStationId", "j"."GateStationRiotId", "j"."GateUpperId", "j"."GateVehicleBusinessMessageId", "j"."GateWorklistMessageId", "j"."LoadCommandMessageId", "j"."LoadSlotOperationAttemptId", "j"."LoadingClosedReason", "j"."LoadingPhaseState", "j"."MapId", "j"."MapIdentity", "j"."OperationSessionId", "j"."PickupMovementLegId", "j"."PickupStationId", "j"."PickupStationRiotId", "j"."PickupUpperId", "j"."PlanMessageId", "j"."PlanRevision", "j"."PreDepartureSafetyCheckId", "j"."PreDepartureSafetyCheckMessageId", "j"."RouteEvidenceId", "j"."Stage", "j"."StationDepartureWaitStartedAt", "j"."SublotRequestMessageId", "j"."TargetSlotsJson", "j"."UnloadCommandMessageId", "j"."UnloadSlotOperationAttemptId", "j"."UpdatedAt", "j"."VehicleBusinessMessageId", "j"."VehicleBusinessRevision", "j"."VehicleKey", "j"."WorklistMessageId", "j"."WorklistRevision", "j"."YieldTriggeredAt", "j"."YieldTriggeredByVehicleKey"
+FROM "JourneyRuntimes" AS "j"
+WHERE "j"."AgvId" = @__identity_AgvId_0 AND "j"."StationDepartureWaitStartedAt" IS NOT NULL
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@p2='?' (Size = 9), @p0='?' (DbType = Int64), @p1='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "SessionRecoveries" SET "SessionGeneration" = @p0, "UpdatedAt" = @p1
+WHERE "AgvId" = @p2
+RETURNING 1;
+[13:21:58 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 64), @p2='?' (Size = 1131), @p3='?' (Size = 12), @p4='?' (DbType = DateTimeOffset), @p5='?' (Size = 1096)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "ProtocolInbox" ("MessageId", "ContentHash", "FirstResponseJson", "MessageType", "ReceivedAt", "RequestJson")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+[13:21:58 WRN] Onboard connection ended with a protocol or transport error.
+ControlServer.Domain.StaleSessionGenerationException: Message does not belong to the current connection session.
+   at ControlServer.Host.Transport.OnboardMessageProcessor.RequireCurrentSession(JsonElement root, OnboardConnectionState state, String agvId) in C:\g3b7\s3\sources\control-server\src\ControlServer.Host\Transport\OnboardMessageProcessor.cs:line 881
+   at ControlServer.Host.Transport.OnboardMessageProcessor.ProcessAsync(String line, OnboardConnectionState state, CancellationToken cancellationToken) in C:\g3b7\s3\sources\control-server\src\ControlServer.Host\Transport\OnboardMessageProcessor.cs:line 122
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\g3b7\s3\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 201
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\g3b7\s3\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 242
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\g3b7\s3\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 242
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\g3b7\s3\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 242
+   at ControlServer.Host.Transport.OnboardTcpServer.ServeAsync(TcpClient client, SemaphoreSlim slots, CancellationToken cancellationToken) in C:\g3b7\s3\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 117
