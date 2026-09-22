@@ -1081,6 +1081,23 @@ public static class StagedG3TlsHarness
                     ["observedReasonCode"] = NestedProperty(compensation, "payload", "problem", "reasonCode")
                 }));
 
+            // Complete the handshake before the action whose command is to be lost. Since control-server#202
+            // (1e404804) the server sends a recovery command only on a connection whose handshake is done, and
+            // the recovery report is what completes it. Without this the command never went out: nothing was
+            // dropped, the connection sat idle until the server closed it as silent six seconds later
+            // (control-server#234, f9a4e372; ADR-cross-0027), and the rule armed below fired on the replay on
+            // the next connection instead (control-server#306). The refusals above do not need it: they are
+            // answers, not commands.
+            string handshakeReportAck = await ExchangeAsync(
+                connection,
+                RecoveryReport(agvId, StableGuid("recovery:report-zero"), generation,
+                    StableGuid("recovery:report-zero-id"), 0),
+                "DurableAck", cancellationToken).ConfigureAwait(false);
+            if (NestedProperty(handshakeReportAck, "payload", "acceptedMessageType") != "RecoveryStateReport")
+            {
+                throw new InvalidOperationException("The recovery probe's handshake report was not acknowledged.");
+            }
+
             // Armed only now, so none of the refused actions above can consume the one-shot rule.
             AddFault("server-to-client", "ForcedMechanicalRecoveryCommand", null, "drop-and-close", 0);
             string accepted = await ExchangeAsync(
@@ -2456,7 +2473,12 @@ try {
         $settings.wireToGate.PSObject.Properties.Remove('serverCertificateSha256')
     }
     $settings.wireToGate.connectTimeoutMs = 3000
-    $settings.wireToGate.messageTimeoutMs = 3000
+    # messageTimeoutMs is left at the build's own value. It used to be pinned to 3000 here, which was the
+    # factory value until onboard-hmi#142 (429e0ff) made the onboard end refuse anything not strictly below
+    # half the ADR-cross-0027 silence threshold (3000 ms) and lowered the factory value to 2500. A build with
+    # that check refused this file at startup -- before its logger existed, behind a message box on a hidden
+    # window -- so on 2026-09-22 the onboard peer never connected and every real-peer observation came back
+    # empty (control-server#306). Whatever that bound is in the bound build, its own appsettings.json meets it.
     $settings.wireToGate.journalPath = Join-Path $runtimeRoot 'onboard-journal.db'
     $settings.logging.directory = Join-Path $runtimeRoot 'onboard-logs'
     $settings.logging.writeToConsole = $true
@@ -2588,6 +2610,17 @@ try {
             $reports.Count -ge 2 -and $reportConnections.Count -ge 2) { break }
         Start-Sleep -Milliseconds 250
     } while ([DateTimeOffset]::UtcNow -lt $replayDeadline)
+    # A peer that never connected leaves every real-peer observation below empty and the one-shot rule armed
+    # above unconsumed, to fire on a probe's report later and read as that probe failing. Stop here and say
+    # so instead: on 2026-09-22 an onboard build refused this run's configuration at startup and nothing
+    # said so (control-server#306).
+    if (@($events | Where-Object event -EQ 'connection-opened').Count -eq 0) {
+        $neverConnected = ("The onboard peer never connected to the fault proxy within 60 s (process exited: {0}). " +
+            "An onboard build refuses a configuration it rejects at startup, before its log exists and behind " +
+            "a message box: check {1} against that build, and onboard.out.log / onboard.err.log in {2}.") -f
+            $onboard.HasExited, $onboardConfig, $logsRoot
+        throw $neverConnected
+    }
 
     Start-Sleep -Seconds 3
     $sessionsJson = (Invoke-WebRequest -Uri "http://127.0.0.1:$healthPort/api/runtime/sessions" -TimeoutSec 5).Content
