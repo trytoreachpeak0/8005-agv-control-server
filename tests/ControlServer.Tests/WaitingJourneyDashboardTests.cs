@@ -31,7 +31,7 @@ public sealed class WaitingJourneyDashboardTests
     /// 已等多久从开始等人的时刻算，电量与读数时间照库里的写，等级按两道线判，过没过门槛一并给出。
     /// </summary>
     [Fact]
-    public async Task EveryWaitingJourneyIsListedWithHowLongItHasWaitedFromItsStageStartAndItsLastBatteryReading()
+    public async Task EveryWaitingJourneyIsListedWithHowLongItHasWaitedSinceItBeganWaitingAndItsLastBatteryReading()
     {
         await using DashboardDatabase database = await DashboardDatabase.CreateAsync();
         await database.AddAsync("D-GATE", JourneyRuntimeStage.AwaitingUnloadResult, stageStart: Now.AddMinutes(-125),

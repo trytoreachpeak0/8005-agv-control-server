@@ -23,3 +23,20 @@
 | M08 | 看板的已等时长改为从 `UpdatedAt` 算 | 2 | 看板端点用例、卡片用例 |
 | M09 | 引擎不调用监看 | 12 | 所有走引擎的监看用例 |
 | M10 | 在路上一律算等人 | 2 | `AJourneyUnderWayOnALegIsNotAWaitHoweverLongItTakes`、看板端点用例 |
+
+## 按 #320 审查修改之后的反向验证（第二批变异）
+
+变异在提交 `de0f394f` 上跑，筛选条件同上，当时共 39 条用例。做法与第一批相同：每次只改一处（N7 为了还原旧的放法改了两处），改完先确认 `0 Error(s)`，跑完按备份还原。八个变异全部出现红：
+
+| 变异 | 改了什么（对应审查项） | 红的用例数 | 红的是哪几条 |
+| --- | --- | --- | --- |
+| N1 | 在路上一律算等人，也就是从出发起算（中项 1） | 6 | 迟到原因用例、在途用例、出发清零用例、等人起点维护用例、推进抛异常用例、看板端点用例 |
+| N2 | 在路上的等人起点改取写行时刻，不取原因起点（中项 1） | 1 | `TheWaitStartIsKeptAcrossWaitingStagesAndClearedOnlyWhenTheJourneyStopsWaiting` |
+| N3 | 读电量不用预算，直接用本轮的 token（中项 2） | 1 | `ABatteryReadThatHangsIsCutOffAtItsBudgetAndRecordedAsUnknown` |
+| N4 | 换阶段就重新计时（低项 4） | 2 | `MovingFromOneWaitingStageToAnotherDoesNotStartTheWaitOver`、等人起点维护用例 |
+| N5 | 离开等人时不清等人起点（低项 4） | 3 | 迟到原因用例、出发清零用例、等人起点维护用例 |
+| N6 | 离开等人时不清告警时刻（低项 6） | 2 | `DepartingEndsTheWaitAndTheNextStopWaitsFromItsOwnThreshold`、等人起点维护用例 |
+| N7 | 监看放回推进循环之后（第一版的位置，低项 5） | 2 | `TheWatchStillRunsInARoundThatThrew`、`TheWatchStillRunsInARoundWhoseMapCatalogReadFailed` |
+| N8 | 只有正常结束的一轮才跑监看（低项 5） | 1 | `TheWatchStillRunsInARoundThatThrew` |
+
+上面 L2 证据摘要的服务端提交是 `7fcdc6cf`，那是第一版。按审查修改之后的代码，由推送后 PR 自动跑的 l2 重新验证。
