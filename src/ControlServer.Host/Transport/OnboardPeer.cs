@@ -27,15 +27,36 @@ namespace ControlServer.Host.Transport;
 /// failure the single-connection version reported when nothing was attached, and the caller
 /// already treats it as one.
 /// </para>
+/// <para>
+/// <b>Only a connection whose handshake is done is in here</b> (control-server#259). Until the vehicle has
+/// read the answer to its recovery report it reads one line per request and takes the next line as the
+/// answer, so anything pushed in that window is read in place of an answer and the vehicle drops the
+/// connection. This class is the one way server-originated traffic reaches a socket -- every sender holds an
+/// <see cref="IOnboardPeer"/>, and this is its only implementation -- so keeping unfinished handshakes out of
+/// the routing table gates every sender at once, including the next one somebody writes. To a sender, a
+/// vehicle in its handshake is a vehicle that is not connected yet: the send throws, the outbox row stays
+/// unacknowledged, and the replay that follows the recovery report or the runtime's next round delivers it,
+/// exactly as after a reconnect. <c>OnboardOutboundFunnelArchitectureTests</c> pins the "one way".
+/// </para>
 /// </remarks>
 public sealed class OnboardPeer : IOnboardPeer
 {
     private readonly object _gate = new();
     private readonly Dictionary<string, OnboardPeerConnection> _connections = new(StringComparer.Ordinal);
 
-    internal void Attach(string agvId, OnboardPeerConnection connection)
+    /// <summary>Makes a connection routable. Refused unless its session has finished the handshake.</summary>
+    internal void Attach(OnboardConnectionState session, OnboardPeerConnection connection)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+        ArgumentNullException.ThrowIfNull(session);
+        if (!session.HandshakeCompleted ||
+            session.SessionGeneration is null ||
+            string.IsNullOrWhiteSpace(session.AgvId))
+        {
+            throw new InvalidOperationException(
+                "An Onboard connection is routable only once its handshake is done; " +
+                "until then the vehicle would read a push as the answer it is waiting for.");
+        }
+        string agvId = session.AgvId;
         lock (_gate)
         {
             // One vehicle, one live connection. Two sockets claiming the same agvId is not a fleet,

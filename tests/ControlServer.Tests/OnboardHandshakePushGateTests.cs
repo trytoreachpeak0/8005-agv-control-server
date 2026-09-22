@@ -41,10 +41,11 @@ namespace ControlServer.Tests;
 /// </para>
 /// <para>
 /// <b>What each test rules out.</b> The first proves the push is held back. It would also pass for a server
-/// that never pushes at all, so the second proves that a push held back during the handshake is on the
-/// vehicle afterwards, delivered by the server with nobody asking again, and the third that pushing works
-/// normally once the handshake is done. The fourth keeps the gate tied to the handshake in progress rather
-/// than to one that finished earlier on the same connection.
+/// that never pushes at all, so the next two prove that a push held back during the handshake is on the
+/// vehicle afterwards -- a recovery push through the replay that follows the recovery report, a runtime push
+/// through the runtime's per-round replay -- and another that pushing works normally once the handshake is
+/// done. The rest keep the gate tied to the handshake in progress rather than to one that finished earlier on
+/// the same connection, and keep it in the routing table itself rather than in its one caller.
 /// </para>
 /// </remarks>
 public sealed class OnboardHandshakePushGateTests
@@ -150,6 +151,82 @@ public sealed class OnboardHandshakePushGateTests
             "The held-back snapshot must arrive after the handshake's last answer: " + string.Join(", ", types));
     }
 
+    /// <summary>
+    /// The journey runtime's plan push, attempted mid-handshake, is refused and left in the outbox, and the
+    /// runtime's per-round replay delivers it once the handshake is done.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The shape of control-server#277's sample: <c>PublishPickupDispatchPlanOnceAsync</c> pushed an
+    /// <c>UpcomingStopPlanSnapshot</c> into a reconnect handshake. The runtime does that when it read the
+    /// session as Ready just before the vehicle's <c>SessionHello</c> started a new generation.
+    /// </para>
+    /// <para>
+    /// The replay is called here by hand, with the arguments <c>JourneyRuntimeEngine</c> passes at the top of
+    /// every round whose session is Ready (<c>ReplayPendingForSessionAsync(agvId, generation, RuntimeMessageIds)</c>),
+    /// because running a whole journey round would add a RIoT double and a dispatched journey to prove one call.
+    /// That the runtime makes this call every round, and that its id set names every message it publishes, is
+    /// pinned by <c>Batch7StopDrivenAdvanceWireParityTests.AReconnectReplaysExactlyTheUnacknowledgedLinesOfThisJourney</c>. What this test adds is the part that is new: the
+    /// refused push leaves the row unacknowledged, and the replay rebinds and delivers it after the handshake.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    public async Task ARuntimePushHeldBackDuringTheHandshakeIsDeliveredByTheNextRoundsReplay()
+    {
+        await using Rig rig = await Rig.StartAsync();
+        const string planId = "00000000-0000-4000-8000-000000000259";
+        Exception? pushOutcome = null;
+        bool pushed = false;
+        rig.Relay.BeforeForwarding = async messageType =>
+        {
+            if (messageType != "SafetyStateSnapshot" || pushed)
+            {
+                return;
+            }
+            pushed = true;
+            await using ControlServerDbContext context = rig.NewContext();
+            OnboardJourneyPublisher publisher = new(new WireToGateStore(context), rig.Peer, TimeProvider.System);
+            try
+            {
+                await publisher.PublishUpcomingStopPlanAsync(planId, AgvId, sessionGeneration: 1, Plan(), CancellationToken.None);
+            }
+            catch (Exception error)
+            {
+                pushOutcome = error;
+            }
+        };
+
+        await rig.Onboard.StartAsync(rig.Lifetime.Token).WaitAsync(Guard, TestContext.Current.CancellationToken);
+
+        Assert.True(pushed, "The relay never reached the handshake step it pushes at.");
+        Assert.IsAssignableFrom<IOException>(pushOutcome);
+        await using (ControlServerDbContext context = rig.NewContext())
+        {
+            ProtocolOutboxRow held = await context.ProtocolOutbox.AsNoTracking()
+                .SingleAsync(row => row.MessageId == planId, TestContext.Current.CancellationToken);
+            Assert.Null(held.AcknowledgedAt);
+        }
+        Assert.DoesNotContain(rig.Inbound(), item => item.MessageId == planId);
+
+        await Rig.WhenRoutableAsync(async () =>
+        {
+            await using ControlServerDbContext context = rig.NewContext();
+            OnboardJourneyPublisher publisher = new(new WireToGateStore(context), rig.Peer, TimeProvider.System);
+            await publisher.ReplayPendingForSessionAsync(
+                AgvId, rig.Engine.Snapshot().State.SessionGeneration,
+                new HashSet<string>(StringComparer.Ordinal) { planId }, TestContext.Current.CancellationToken);
+        });
+        WireEvent[] inbound = await rig.WaitForInboundAsync("UpcomingStopPlanSnapshot");
+
+        string[] types = [.. inbound.Select(item => item.MessageType)];
+        WireEvent delivered = Assert.Single(inbound, item => item.MessageType == "UpcomingStopPlanSnapshot");
+        Assert.Equal(planId, delivered.MessageId);
+        Assert.True(
+            Array.IndexOf(types, "UpcomingStopPlanSnapshot") > Array.IndexOf(types, "SessionReadiness"),
+            "The held-back plan must arrive after the handshake's last answer: " + string.Join(", ", types));
+    }
+
     /// <summary>Once the handshake is done a push goes straight through, with no replay involved.</summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-00")]
@@ -192,6 +269,33 @@ public sealed class OnboardHandshakePushGateTests
             rig.Peer.SendAsync(Push("FaultCargoRecoveryCommand"), TestContext.Current.CancellationToken));
     }
 
+    /// <summary>
+    /// The routing table itself refuses a connection whose handshake is not done, so a second caller of
+    /// <c>Attach</c> cannot open the gate early by forgetting to check.
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [InlineData(false, 1L, AgvId)]
+    [InlineData(true, null, AgvId)]
+    [InlineData(true, 1L, null)]
+    public async Task ThePeerRefusesAConnectionWhoseHandshakeIsNotDone(bool handshakeCompleted, long? generation, string? agvId)
+    {
+        OnboardPeer peer = new();
+        using MemoryStream stream = new();
+        await using OnboardPeerConnection connection = new(stream);
+        OnboardConnectionState session = new()
+        {
+            AgvId = agvId,
+            SessionGeneration = generation,
+            HandshakeCompleted = handshakeCompleted
+        };
+
+        Assert.Throws<InvalidOperationException>(() => peer.Attach(session, connection));
+        await Assert.ThrowsAsync<IOException>(() =>
+            peer.SendAsync(Push("FaultCargoRecoveryCommand"), TestContext.Current.CancellationToken));
+        Assert.Empty(stream.ToArray());
+    }
+
     private static string SessionHello() => ProtocolEnvelope.Serialize(
         "SessionHello",
         Guid.NewGuid().ToString("D"),
@@ -221,6 +325,19 @@ public sealed class OnboardHandshakePushGateTests
         sessionGeneration = 1L,
         payload = new { }
     }) + "\n");
+
+    private static UpcomingStopPlanProjection Plan() => new(
+        1,
+        [new UpcomingMovementLeg(
+            "00000000-0000-4000-8000-000000000260",
+            "TO_PICKUP",
+            "BUSINESS",
+            "00000000-0000-4000-8000-000000000261",
+            null,
+            1,
+            "PICKUP-01",
+            "26",
+            "PLANNED")]);
 
     private static ExceptionRecoverySessionProjection RecoverySession() => new(
         ExceptionRecoverySessionId: Guid.NewGuid().ToString("D"),
@@ -352,14 +469,21 @@ public sealed class OnboardHandshakePushGateTests
             }
         }
 
-        public async Task SendWhenRoutableAsync(ReadOnlyMemory<byte> line)
+        public Task SendWhenRoutableAsync(ReadOnlyMemory<byte> line) =>
+            WhenRoutableAsync(() => Peer.SendAsync(line, CancellationToken.None));
+
+        /// <summary>
+        /// Retries a send until the connection is routable. The vehicle reads SessionReadiness a moment before
+        /// the server files the connection, so the first attempt may still be refused as not connected.
+        /// </summary>
+        public static async Task WhenRoutableAsync(Func<Task> send)
         {
             using CancellationTokenSource guard = new(Guard);
             while (true)
             {
                 try
                 {
-                    await Peer.SendAsync(line, guard.Token);
+                    await send();
                     return;
                 }
                 catch (IOException)

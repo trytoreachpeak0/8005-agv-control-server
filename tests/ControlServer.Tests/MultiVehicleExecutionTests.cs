@@ -765,8 +765,8 @@ public sealed partial class MultiVehicleExecutionTests
         using MemoryStream second = new();
         await using OnboardPeerConnection firstConnection = new(first);
         await using OnboardPeerConnection secondConnection = new(second);
-        peer.Attach("AGV-1", firstConnection);
-        peer.Attach("AGV-2", secondConnection);
+        peer.Attach(Handshaken("AGV-1"), firstConnection);
+        peer.Attach(Handshaken("AGV-2"), secondConnection);
 
         await peer.SendAsync(Envelope("AGV-2"), TestContext.Current.CancellationToken);
 
@@ -783,7 +783,7 @@ public sealed partial class MultiVehicleExecutionTests
         OnboardPeer peer = new();
         using MemoryStream stream = new();
         await using OnboardPeerConnection connection = new(stream);
-        peer.Attach("AGV-1", connection);
+        peer.Attach(Handshaken("AGV-1"), connection);
 
         await Assert.ThrowsAsync<IOException>(() =>
             peer.SendAsync(Envelope("AGV-2"), TestContext.Current.CancellationToken));
@@ -802,9 +802,9 @@ public sealed partial class MultiVehicleExecutionTests
         using MemoryStream second = new();
         await using OnboardPeerConnection firstConnection = new(first);
         await using OnboardPeerConnection secondConnection = new(second);
-        peer.Attach("AGV-1", firstConnection);
+        peer.Attach(Handshaken("AGV-1"), firstConnection);
 
-        Assert.Throws<InvalidOperationException>(() => peer.Attach("AGV-1", secondConnection));
+        Assert.Throws<InvalidOperationException>(() => peer.Attach(Handshaken("AGV-1"), secondConnection));
 
         // Detaching the one that is attached frees the vehicle for the next connection; detaching a
         // stale one must not, or a reconnect would evict the session that replaced it.
@@ -825,6 +825,14 @@ public sealed partial class MultiVehicleExecutionTests
             agvId,
             sessionGeneration = 1,
         }, SerializerOptions) + "\n");
+
+    /// <summary>A session past its handshake, which is the only kind the peer routes to (control-server#259).</summary>
+    private static OnboardConnectionState Handshaken(string agvId) => new()
+    {
+        AgvId = agvId,
+        SessionGeneration = 1,
+        HandshakeCompleted = true
+    };
 
     private static VehicleDispatchPolicy Policy(string agvId, params string[] taskTypes) => new(
         [new VehicleDispatchProfile(agvId, taskTypes.ToHashSet(StringComparer.Ordinal), 30_000)],
