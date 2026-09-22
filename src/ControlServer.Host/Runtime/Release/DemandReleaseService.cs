@@ -116,12 +116,18 @@ public sealed class DemandReleaseService(
 
         VehicleFaultFact? fault = await faults.ReadAsync(journey.AgvId, cancellationToken).ConfigureAwait(false);
         RiotVehicleObservation? observation = await ReadVehicleAsync(journey, cancellationToken).ConfigureAwait(false);
+        string? currentOrderEnded = await CurrentOrderEndedAsync(journey, stops, cancellationToken).ConfigureAwait(false);
         DateTimeOffset now = timeProvider.GetUtcNow();
         List<DemandReleaseOutcome> outcomes = [];
         foreach (JourneyStopDemand item in waiting)
         {
+            // 车辆级判据在先：车有故障时仍按故障判、按故障拒（FAULT_SUPERVISION_IN_EFFECT），取消不越过它。
+            // 「当前单已终结」只对取货停靠正是当前下一站的那一条需求成立——别的需求没有因为这张单被取消而不合格。
             string? trigger = DemandReleaseRules.VehicleNoLongerEligible(
-                fault, policy, journey.AgvId, item.Demand.WorkType, item.Membership.DispatchZone, observation, now, _options);
+                    fault, policy, journey.AgvId, item.Demand.WorkType, item.Membership.DispatchZone, observation, now, _options)
+                ?? (string.Equals(item.Membership.PickupStopId, stops.Current.StopId, StringComparison.Ordinal)
+                    ? currentOrderEnded
+                    : null);
             if (trigger is null)
             {
                 continue;
@@ -475,6 +481,51 @@ public sealed class DemandReleaseService(
         runtime.UpdatedAt = timeProvider.GetUtcNow();
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         LogRefusalCleared(logger, runtime.JourneyId, code, null);
+    }
+
+    /// <summary>
+    /// 当前下一站那张单被人在 RIoT 里取消或删除、车没到（control-server#316）：返回触发码 <c>ORDER_ENDED_WITHOUT_ARRIVAL</c>，否则为空。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>两样都要：引擎写下的码，和 RIoT 此刻亲口说的终态。</b>码是引擎读到 CANCELLED／DELETED 时写的（<c>NameStalledOrderAsync</c>），
+    /// 但码是库里的一个字符串，可能是旧版本或人手留下的；只凭它判「车上没有活订单」，<see cref="CancelPickupOrderAsync"/> 读到一张还活着的单时
+    /// 会对它发出取消。所以这里再读一次订单，只认 CANCELLED 与 DELETED。两者在 RIoT 上不会回到活单，两次读之间不存在反转的窗口。
+    /// </para>
+    /// <para>
+    /// 只在开往取货站时判：到站之后裁决本来就拒绝（<see cref="DemandReleaseReasons.AfterArrival"/>），装着货开往关卡的腿上没有待装的需求。
+    /// FAILED 不在这里：它是故障症状，走故障模型，车有故障时释放一律被拒。
+    /// </para>
+    /// <para>
+    /// 读订单失败不触发：失败的读数不是释放理由（与 <see cref="ReadVehicleAsync"/> 同一条规则）。
+    /// </para>
+    /// </remarks>
+    private async Task<string?> CurrentOrderEndedAsync(
+        JourneyRuntimeRow journey,
+        JourneyStopCursor stops,
+        CancellationToken cancellationToken)
+    {
+        if (journey.Stage != JourneyRuntimeStage.AwaitingPickupArrival ||
+            !string.Equals(journey.BlockReasonCode, JourneyRuntimeEngine.OrderEndedWithoutArrivalReason, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        RiotOrderObservation order;
+        try
+        {
+            order = await vehicleFacts.ReconcileByUpperIdAsync(stops.Current.UpperId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
+                                      !cancellationToken.IsCancellationRequested)
+        {
+            return null;
+        }
+
+        return order.Kind == RiotOrderObservationKind.Terminal &&
+               order.OrderState is RiotOrderState.Cancelled or RiotOrderState.Deleted
+            ? JourneyRuntimeEngine.OrderEndedWithoutArrivalReason
+            : null;
     }
 
     private async Task<RiotVehicleObservation?> ReadVehicleAsync(JourneyRuntimeRow journey, CancellationToken cancellationToken)
