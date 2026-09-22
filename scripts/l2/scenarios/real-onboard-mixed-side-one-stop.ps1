@@ -8,15 +8,16 @@ REQ-0189、REQ-0196、REQ-0354、REQ-0357，ADR-cross-0061）。真车载端 WPF
 下一站不并」（EnRouteAppendPlanner：并进当前下一站等于改它，REQ-0196 禁止）。初始派车那一条的取货停靠从一开始就是当前下一站，
 永远并不进去；车在最后装货站持货等单时同站来的需求也另开停靠。所以要一条需求先把车引向别处：
 - 需求甲（`C15-13`，11 号站，前侧）被停在关卡上的空闲车接走，11 号站是当前下一站；
-- 车停在 11 号站、甲装完之后追加乙（`N1-3`，前侧）与丙（`N2-5`，后侧），两者的取货都在 12 号站 `N1-3_N2-5`：乙新开 12 号站的停靠，
-  丙并进乙那一个——12 号站此刻不是当前下一站，可以并。三条的卸货都并进关卡那一个停靠。追加只在停站时发生（用户 09-22 决定，
+- 车停在 11 号站、甲装完之后先追加丙（`N2-5`，后侧）、再追加乙（`N1-3`，前侧），两者的取货都在 12 号站 `N1-3_N2-5`：丙新开
+  12 号站的停靠，乙并进丙那一个——12 号站此刻不是当前下一站，可以并。三条的卸货都并进关卡那一个停靠。追加只在停站时发生（用户 09-22 决定，
   control-server#286、program#133）。
 
 **服务端怎样逐条做**（MultiStopRigCommon.ps1 头注释）：12 号站到站发一条录入请求、列出乙丙两个子批，操作员扫哪一条就装哪一条，
 装完一条才发下一版清单与录入请求。所以跨需求的装货先后就是扫码先后——场景先扫乙（前侧）。卸货一次只下一条。
-cs#303（fp/v2-impl@c4b04bb2）起卸货按侧下发、前侧先于后侧；本场景仍让前侧的乙先追加，写于 cs#303 之前，「先前后后」在这里靠加入
-顺序也成立。改成后侧先追加、让顺序由 cs#303 的保证撑住，由出口票 control-server#220 调整
-（docs/defects/20260922-cross-demand-side-order-follows-arrival.md）。
+**后侧的丙先追加。**cs#303（fp/v2-impl@c4b04bb2）起卸货按侧下发、前侧先于后侧。场景写于 cs#303 之前时让前侧的乙先追加，
+「先前后后」靠加入顺序也成立，卸货那一半的绿证不了服务端按侧排。出口票 control-server#220 把追加顺序倒过来：按加入先后卸货会先开
+丙（后侧）那一扇，所以 L2-MSO-10 现在只有按侧排序才绿（docs/defects/20260922-cross-demand-side-order-follows-arrival.md）。
+装货仍先扫乙：跨需求的装货先后由操作员扫码顺序决定，服务端不改。
 
 判据（`L2-MSO-*`）：
 - 本站清单曾同时有两条清单项：服务端发出并被确认的一版 12 号站清单是乙丙两条（01、02），车载端 UIA 的清单列表读到这两行（03）。
@@ -125,11 +126,12 @@ try {
     # ONBOARD_FACTS_NOT_READY 拒绝追加。这是预期行为：按用户 09-22 决定，途中追加只在停站时，不包括行驶中（control-server#286、
     # program#133）。本场景第一遍（证据 mso-001）按行驶中追加写，乙丙积压两分钟未进旅程；合成车载端恒报安全，看不到这一点。
     # 所以等甲装完、车停在 11 号站的修正窗口里再发：11 号站此刻是当前下一站（不能并），12 号站是新开的、可以并。
-    Publish-L2CargoDemand $Context $b
-    $null = Wait-L2ConditionOrLast -Description 'demand B joined the journey' -Journal $journal -Criterion 'members-2' -TimeoutSeconds 45 `
-        -Probe { (Get-L2JourneyMembers $connection $journeyId).Count } -Until { param($v) $v -ge 2 }
+    # 后侧的丙先追加、前侧的乙后追加（control-server#220）：卸货若按加入先后，关卡上会先开丙那一扇，L2-MSO-10 靠这一点才有判别力。
     Publish-L2CargoDemand $Context $c
-    $members = Wait-L2ConditionOrLast -Description 'demand C joined the journey' -Journal $journal -Criterion 'members-3' -TimeoutSeconds 45 `
+    $null = Wait-L2ConditionOrLast -Description 'demand C joined the journey' -Journal $journal -Criterion 'members-2' -TimeoutSeconds 45 `
+        -Probe { (Get-L2JourneyMembers $connection $journeyId).Count } -Until { param($v) $v -ge 2 }
+    Publish-L2CargoDemand $Context $b
+    $members = Wait-L2ConditionOrLast -Description 'demand B joined the journey' -Journal $journal -Criterion 'members-3' -TimeoutSeconds 45 `
         -Probe { Get-L2JourneyMembers $connection $journeyId } -Until { param($v) @($v).Count -ge 3 }
     $members = @($members)
     $stops = Get-L2JourneyStops $connection $journeyId
