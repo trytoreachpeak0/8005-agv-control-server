@@ -665,6 +665,42 @@ public sealed partial class MultiVehicleExecutionTests
     }
 
     /// <summary>
+    /// 在途单挂起（9 HANG）的车不接途中追加（control-server#316）：它没有 Blocked，却同样在等人。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 挂起的车停着不走，途中追加只在停站时接（用户 09-22 定），而停在站上挂起的车对插位规划看起来与一辆正常停站的车
+    /// 一模一样。追加进去的需求会绑死在一张不动的单后面，与 <see cref="ABlockedJourneyTakesNoAppendedDemand"/> 同一个后果。
+    /// </para>
+    /// <para>
+    /// 判别力由 <see cref="AnInTransitVehicleTakesAnAppendedDemandIntoItsExistingJourney"/> 承担：同一个夹具、同样两条需求，
+    /// 只差这一条把订单置成 9，那一条的第二条需求进了这趟旅程。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task AJourneyWhoseOrderHangsTakesNoAppendedDemand()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(
+            configure: options => options.Fleet = options.Fleet[..1], withRouteGraph: true);
+        await fixture.AllowEnRouteAppendAsync(1_000_000);
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
+        await fixture.RunRoundAsync();
+        JourneyRuntimeRow journey = await fixture.JourneyOfAsync(FleetFixture.AgvIds[0]);
+        fixture.Riot.HangOrder(journey.PickupUpperId);
+
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0), FleetFixture.Demand(1, "N1-2", 1)]);
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+
+        JourneyRuntimeRow only = Assert.Single(
+            await fixture.Context.JourneyRuntimes.AsNoTracking().ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal("ORDER_HANG", only.BlockReasonCode);
+        JourneyDemandRow membership = Assert.Single(
+            await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+                .ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(FleetFixture.Demand(0, "N1-1", 0).DemandId, membership.DemandId);
+    }
+
+    /// <summary>
     /// 一趟 Blocked 的旅程占着车，但不让这一轮开工：全车都 Blocked 时目录一次都不读（批次7-06，
     /// control-server#211）。
     /// </summary>
