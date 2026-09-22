@@ -64,6 +64,47 @@ public sealed class JourneyClosureSingleExitArchitectureTests
     }
 
     /// <summary>
+    /// 能让旅程收尾的每个文件，提交之后也要把收尾快照发出去：出现 <c>new PickupStopTermination(</c> 或
+    /// <c>JourneyClosure.StageAsync(</c> 的产品文件（这两个类型自己的文件除外），同一文件里必须有 <c>JourneyClosure.SendAsync(</c>。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 上面那条守「只有一个出口写 Completed」，所以收尾快照一定落库；它守不住「落了库却没发」。control-server#299 带来的
+    /// 故障人工清除（<c>VehicleFaultRecoveryService</c>）就是这样：经出口收尾、快照在发件箱里，但提交之后没发，连着的车要等到下一次
+    /// 重连才收到（#323 来路 7，<c>VehicleFaultRecoveryTests.AClearedFaultThatReleasesTheLastDemandTellsTheVehicleTheJourneyIsOver</c>）。
+    /// </para>
+    /// <para>
+    /// <b>它按构造看不见什么</b>：发送在同一文件里但不在那次提交之后、不在那条分支上；经别的文件间接调用收尾尾巴。
+    /// 这是按文件的防回归信号，不是逐条路径的证明——逐条路径由各来路的用例断「车收到了」。
+    /// 将来某个文件只用 <c>PickupStopTermination.StageDemandTerminationAsync</c>、从不收尾，这里会误报；那时把它连同理由列进
+    /// <see cref="ConstructsTerminationWithoutClosing"/>，不要删这条。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void EveryFileThatCanCloseAJourneySendsTheClosure()
+    {
+        Regex closes = new(@"new\s+PickupStopTermination\s*\(|JourneyClosure\.StageAsync\s*\(", RegexOptions.CultureInvariant);
+        Regex sends = new(@"JourneyClosure\.SendAsync\s*\(", RegexOptions.CultureInvariant);
+        string[] closers = [.. ProductSourceFiles()
+            .Where(file => !Relative(file).EndsWith("/PickupStopTermination.cs", StringComparison.Ordinal)
+                && Relative(file) != SingleExit
+                && !ConstructsTerminationWithoutClosing.Contains(Relative(file)))
+            .Where(file => closes.IsMatch(CodeOnly(File.ReadAllText(file))))];
+
+        string[] silent = [.. closers.Where(file => !sends.IsMatch(CodeOnly(File.ReadAllText(file)))).Select(Relative)];
+
+        Assert.Empty(silent);
+        // 判据要有东西可判：今天是引擎、释放服务、协调器与故障人工清除四个文件。
+        Assert.True(closers.Length >= 4, $"Only {closers.Length} closing files found; the scan is looking in the wrong place.");
+    }
+
+    /// <summary>构造了收尾尾巴、却从不让旅程收尾的文件。今天没有。</summary>
+    private static readonly HashSet<string> ConstructsTerminationWithoutClosing = new(StringComparer.Ordinal);
+
+    private static string CodeOnly(string source) =>
+        string.Join('\n', source.ReplaceLineEndings("\n").Split('\n').Select(StripComment));
+
+    /// <summary>
     /// 判法自己的正反例：修之前那两处写法必须被认成写入，全仓今天那些读法必须不被认成写入。
     /// </summary>
     /// <remarks>

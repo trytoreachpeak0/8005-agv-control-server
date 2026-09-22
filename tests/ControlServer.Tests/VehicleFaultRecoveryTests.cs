@@ -3,6 +3,7 @@ using ControlServer.Domain;
 using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.Commands;
 using ControlServer.Host.Runtime.Faults;
+using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -944,7 +945,8 @@ public sealed class VehicleFaultRecoveryTests
             ledger, faultOptions, fixture.Clock, NullLogger<VehicleFaultCoordinator>.Instance);
         return new VehicleFaultRecoveryService(
             context, faults, site, site, site, supervisor, coordinator, ledger, gate ?? new JourneyMutationGate(),
-            flights ?? new VehicleFaultResumeFlights(), fixture.Clock, NullLogger<VehicleFaultRecoveryService>.Instance, gateTimeout);
+            flights ?? new VehicleFaultResumeFlights(), new OnboardJourneyPublisher(new WireToGateStore(context), fixture.Peer, fixture.Clock),
+            fixture.Clock, NullLogger<VehicleFaultRecoveryService>.Instance, gateTimeout);
     }
 
     /// <summary>
