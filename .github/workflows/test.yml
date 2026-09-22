@@ -146,6 +146,13 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2MultiStopJourney.ps1
 
+      # A few seconds against a real loopback listener, no rig. run-staged-g3.ps1's error path: only an errored
+      # run reaches it, and on 2026-09-22 it replaced such a run's own error with an IndexOf on $null and kept
+      # a refused activation's reason out of the evidence (control-server#306).
+      - name: G3 runner self-check (staged error path)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/Test-StagedG3ErrorPath.ps1
+
       # 1.5 seconds, and the only thing that ever executes Get-G3EvidenceLocationDiagnostic: a G3
       # runner calls it after it has already decided it found nothing, so no green run reaches it.
       # It says WHERE nothing was found, which is what control-server#211 needed and did not have --

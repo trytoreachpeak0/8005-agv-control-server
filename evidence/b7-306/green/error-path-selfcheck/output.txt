@@ -1,0 +1,41 @@
+# command: pwsh -NoProfile -File scripts/Test-StagedG3ErrorPath.ps1 (port fix, working tree on top of b3d62072)
+PASS premise: a held port refuses an HttpListener with error 32
+PASS listener retry: starting from a held port moves to another port and starts
+PASS listener retry: with no attempt left it says so, naming the refused port
+PASS reconnect sequence, an observation with an empty sequence: the judgement does not throw
+PASS reconnect sequence, an observation with an empty sequence: the sequence is not $null
+PASS reconnect sequence, an observation with an empty sequence: 0 message(s), report at -1
+PASS reconnect sequence, no observation at all: the judgement does not throw
+PASS reconnect sequence, no observation at all: the sequence is not $null
+PASS reconnect sequence, no observation at all: 0 message(s), report at -1
+PASS reconnect sequence, a one-message sequence: the judgement does not throw
+PASS reconnect sequence, a one-message sequence: the sequence is not $null
+PASS reconnect sequence, a one-message sequence: 1 message(s), report at 0
+PASS reconnect sequence, a full handshake: the judgement does not throw
+PASS reconnect sequence, a full handshake: the sequence is not $null
+PASS reconnect sequence, a full handshake: 7 message(s), report at 4
+PASS the first statement after the run's try is Write-StagedRunError
+PASS the runner defines Write-StagedRunError
+PASS the runner defines Get-HttpErrorObservation
+PASS the activation's catch records the refusal through Get-HttpErrorObservation
+PASS the runner has one never-connected guard
+PASS never-connected guard, only proxy-listening: throws, naming the configuration
+PASS never-connected guard, an empty transcript: throws, naming the configuration
+PASS never-connected guard, a connection: does not throw
+PASS the listener refused with an HTTP error
+PASS premise: the exception message does not carry the body
+PASS activation observation, a refused issue: builds
+PASS activation observation, a refused issue: issueHttpStatusCode 409
+PASS activation observation, a refused issue: issueHttpResponseBody carries the body
+PASS activation observation, a refused issue: issueHttpError carries the message
+PASS activation observation, an accepted issue: builds
+PASS activation observation, an accepted issue: the three issueHttp* entries are null
+PASS Get-HttpErrorObservation: status 409
+PASS Get-HttpErrorObservation: the body
+PASS Get-HttpErrorObservation: the cmdlet's own message
+PASS Write-StagedRunError prints the message
+PASS Write-StagedRunError prints the body
+PASS Write-StagedRunError writes runner-error.json with the body
+PASS Write-StagedRunError with no error: silent, no file
+StagedG3ErrorPath self-check: every check as expected.
+# exit=0

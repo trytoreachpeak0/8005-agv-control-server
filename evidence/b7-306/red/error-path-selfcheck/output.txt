@@ -1,0 +1,20 @@
+# runner: 3c930c8f26a9ef8ecee209deeef2497d1319a1d5 (origin/fp/v2-impl, unfixed)
+# command: pwsh -NoProfile -File scripts/Test-StagedG3ErrorPath.ps1
+FAIL reconnect sequence, an observation with an empty sequence: the judgement does not throw -- Exception calling "IndexOf" with "2" argument(s): "Value cannot be null. (Parameter 'array')"
+FAIL reconnect sequence, no observation at all: the judgement does not throw -- Exception calling "IndexOf" with "2" argument(s): "Value cannot be null. (Parameter 'array')"
+PASS reconnect sequence, a one-message sequence: the judgement does not throw
+PASS reconnect sequence, a one-message sequence: the sequence is not $null
+PASS reconnect sequence, a one-message sequence: 1 message(s), report at 0
+PASS reconnect sequence, a full handshake: the judgement does not throw
+PASS reconnect sequence, a full handshake: the sequence is not $null
+PASS reconnect sequence, a full handshake: 7 message(s), report at 4
+FAIL the first statement after the run's try is Write-StagedRunError -- it is: $controlLog = if (Test-Path -LiteralPath (Join-Path $logsRoot 'control.out.log')) {
+FAIL the runner defines Write-StagedRunError -- not found
+FAIL the runner defines Get-HttpErrorObservation -- not found
+FAIL the activation's catch records the refusal through Get-HttpErrorObservation -- 1 catch(es): {
+        # Recorded, not thrown: a refused issue is a FAIL for this slice, not a reason to abandon the
+        # run and lose every other slice's evidence.
+        $activationIssueError = $_.Exception.Message
+    }
+StagedG3ErrorPath self-check: 6 check(s) came out the other way.
+# exit=1

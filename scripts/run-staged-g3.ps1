@@ -334,6 +334,54 @@ function Read-Ndjson {
         ForEach-Object { $_ | ConvertFrom-Json })
 }
 
+# An HTTP error as evidence. pwsh keeps the response body in ErrorDetails, not in the exception message, so a
+# refusal read from the message alone arrives as a bare "409 (Conflict)" and the reason the server gave is
+# lost (control-server#306; control-server#277 for the L2 doubles). `?.` because ErrorDetails is null when the
+# body is empty.
+function Get-HttpErrorObservation {
+    param([Management.Automation.ErrorRecord]$ErrorRecord)
+    return [ordered]@{
+        message = $ErrorRecord.Exception.Message
+        statusCode = if ($ErrorRecord.Exception -is [Microsoft.PowerShell.Commands.HttpResponseException]) {
+            [int]$ErrorRecord.Exception.Response.StatusCode
+        } else { $null }
+        responseBody = $ErrorRecord.ErrorDetails?.Message
+    }
+}
+
+# The error the run itself hit, printed and saved as runner-error.json. Called directly after the run's
+# try/catch/finally, before any judgement: the judgements read observations an errored run never filled in,
+# and on 2026-09-22 one of them throwing was all such a run printed (control-server#306). Never throws.
+function Write-StagedRunError {
+    param([Management.Automation.ErrorRecord]$ErrorRecord, [string]$EvidenceRoot)
+    if ($null -eq $ErrorRecord) { return }
+    try {
+        $exceptions = [Collections.Generic.List[object]]::new()
+        for ($exception = $ErrorRecord.Exception; $null -ne $exception; $exception = $exception.InnerException) {
+            $exceptions.Add([ordered]@{ type = $exception.GetType().FullName; message = $exception.Message })
+        }
+        $record = [ordered]@{
+            exceptions = $exceptions
+            responseBody = $ErrorRecord.ErrorDetails?.Message
+            position = $ErrorRecord.InvocationInfo?.PositionMessage
+            scriptStackTrace = $ErrorRecord.ScriptStackTrace
+        }
+        Write-Warning "Staged G3 run errored: $($exceptions[0].type): $($exceptions[0].message)"
+        foreach ($inner in @($exceptions | Select-Object -Skip 1)) {
+            Write-Warning "  inner: $($inner.type): $($inner.message)"
+        }
+        if (-not [string]::IsNullOrEmpty($record.responseBody)) { Write-Warning "  response body: $($record.responseBody)" }
+        if (-not [string]::IsNullOrEmpty($record.position)) { Write-Warning "  at: $($record.position)" }
+        [IO.File]::WriteAllText(
+            (Join-Path $EvidenceRoot 'runner-error.json'),
+            ($record | ConvertTo-Json -Depth 5),
+            [Text.UTF8Encoding]::new($false))
+    }
+    catch {
+        Write-Warning "Staged G3 run errored ($($ErrorRecord.Exception.Message)), and recording that failed too: $($_.Exception.Message)"
+    }
+}
+
 $harnessSource = @'
 #nullable enable
 using System;
@@ -1032,6 +1080,23 @@ public static class StagedG3TlsHarness
                     ["messageType"] = "LoadCompensationRequested",
                     ["observedReasonCode"] = NestedProperty(compensation, "payload", "problem", "reasonCode")
                 }));
+
+            // Complete the handshake before the action whose command is to be lost. Since control-server#202
+            // (1e404804) the server sends a recovery command only on a connection whose handshake is done, and
+            // the recovery report is what completes it. Without this the command never went out: nothing was
+            // dropped, the connection sat idle until the server closed it as silent six seconds later
+            // (control-server#234, f9a4e372; ADR-cross-0027), and the rule armed below fired on the replay on
+            // the next connection instead (control-server#306). The refusals above do not need it: they are
+            // answers, not commands.
+            string handshakeReportAck = await ExchangeAsync(
+                connection,
+                RecoveryReport(agvId, StableGuid("recovery:report-zero"), generation,
+                    StableGuid("recovery:report-zero-id"), 0),
+                "DurableAck", cancellationToken).ConfigureAwait(false);
+            if (NestedProperty(handshakeReportAck, "payload", "acceptedMessageType") != "RecoveryStateReport")
+            {
+                throw new InvalidOperationException("The recovery probe's handshake report was not acknowledged.");
+            }
 
             // Armed only now, so none of the refused actions above can consume the one-shot rule.
             AddFault("server-to-client", "ForcedMechanicalRecoveryCommand", null, "drop-and-close", 0);
@@ -2408,7 +2473,12 @@ try {
         $settings.wireToGate.PSObject.Properties.Remove('serverCertificateSha256')
     }
     $settings.wireToGate.connectTimeoutMs = 3000
-    $settings.wireToGate.messageTimeoutMs = 3000
+    # messageTimeoutMs is left at the build's own value. It used to be pinned to 3000 here, which was the
+    # factory value until onboard-hmi#142 (429e0ff) made the onboard end refuse anything not strictly below
+    # half the ADR-cross-0027 silence threshold (3000 ms) and lowered the factory value to 2500. A build with
+    # that check refused this file at startup -- before its logger existed, behind a message box on a hidden
+    # window -- so on 2026-09-22 the onboard peer never connected and every real-peer observation came back
+    # empty (control-server#306). Whatever that bound is in the bound build, its own appsettings.json meets it.
     $settings.wireToGate.journalPath = Join-Path $runtimeRoot 'onboard-journal.db'
     $settings.logging.directory = Join-Path $runtimeRoot 'onboard-logs'
     $settings.logging.writeToConsole = $true
@@ -2540,6 +2610,17 @@ try {
             $reports.Count -ge 2 -and $reportConnections.Count -ge 2) { break }
         Start-Sleep -Milliseconds 250
     } while ([DateTimeOffset]::UtcNow -lt $replayDeadline)
+    # A peer that never connected leaves every real-peer observation below empty and the one-shot rule armed
+    # above unconsumed, to fire on a probe's report later and read as that probe failing. Stop here and say
+    # so instead: on 2026-09-22 an onboard build refused this run's configuration at startup and nothing
+    # said so (control-server#306).
+    if (@($events | Where-Object event -EQ 'connection-opened').Count -eq 0) {
+        $neverConnected = ("The onboard peer never connected to the fault proxy within 60 s (process exited: {0}). " +
+            "An onboard build refuses a configuration it rejects at startup, before its log exists and behind " +
+            "a message box: check {1} against that build, and onboard.out.log / onboard.err.log in {2}.") -f
+            $onboard.HasExited, $onboardConfig, $logsRoot
+        throw $neverConnected
+    }
 
     Start-Sleep -Seconds 3
     $sessionsJson = (Invoke-WebRequest -Uri "http://127.0.0.1:$healthPort/api/runtime/sessions" -TimeoutSec 5).Content
@@ -2653,8 +2734,9 @@ try {
     }
     catch {
         # Recorded, not thrown: a refused issue is a FAIL for this slice, not a reason to abandon the
-        # run and lose every other slice's evidence.
-        $activationIssueError = $_.Exception.Message
+        # run and lose every other slice's evidence. With the response body: the server says why it
+        # refused there, and nowhere else (control-server#306).
+        $activationIssueError = Get-HttpErrorObservation $_
     }
 
     $activationDeadline = [DateTimeOffset]::UtcNow.AddSeconds(45)
@@ -2813,6 +2895,11 @@ finally {
     # repository while this run's WPF windows were still closing.
     Exit-DesktopLock -Handle $desktopLock
 }
+
+# First, before any judgement: the judgements below read observations an errored run never filled in, and
+# one of them throwing must not be the only thing such a run prints (control-server#306).
+# Test-StagedG3ErrorPath.ps1 asserts that this call directly follows the try.
+Write-StagedRunError -ErrorRecord $runError -EvidenceRoot $EvidenceRoot
 
 $controlLog = if (Test-Path -LiteralPath (Join-Path $logsRoot 'control.out.log')) {
     Get-Content -LiteralPath (Join-Path $logsRoot 'control.out.log') -Raw
@@ -3127,7 +3214,9 @@ if ($null -ne $databaseObservation) {
         Where-Object { $_.agvId -ceq $agvId })
 }
 $activationObservation = [ordered]@{
-    issueHttpError = $activationIssueError
+    issueHttpError = ${activationIssueError}?.message
+    issueHttpStatusCode = ${activationIssueError}?.statusCode
+    issueHttpResponseBody = ${activationIssueError}?.responseBody
     issuedActivationId = if ($null -ne $activationResponse) { $activationResponse.activationId } else { $null }
     issuedState = if ($null -ne $activationResponse) { $activationResponse.state } else { $null }
     issuedRecoveryRole = if ($null -ne $activationResponse) { $activationResponse.recoveryRole } else { $null }
@@ -3244,7 +3333,12 @@ $alarmGenerationPass = $alarmSingletonPass -and
 # asserted the opposite -- the same messageId replayed on the new connection -- which the v2 onboard end
 # deliberately no longer does; that form went red on 2026-09-18 and is recorded in
 # docs/defects/20260918-journey-g3-scenarios-assume-empty-close-fails-the-load.md.
-$supersedingMessages = if ($null -ne $runtimeObservation) { @($runtimeObservation.supersedingConnectionMessages) } else { @() }
+# Wrapped outside the `if`, never inside its branches: `$x = if (...) { @(...) } else { @() }` assigns $null
+# whenever the branch yields an empty array, because a statement's output is enumerated, and
+# [array]::IndexOf($null, ...) throws. On 2026-09-22 a run whose onboard peer never connected printed that
+# IndexOf error in place of its own (control-server#306). Test-StagedG3ErrorPath.ps1 runs these two
+# statements on an empty observation and on none.
+$supersedingMessages = [string[]]@(if ($null -ne $runtimeObservation) { $runtimeObservation.supersedingConnectionMessages })
 $supersedingReportIndex = [array]::IndexOf($supersedingMessages, 'client-to-server:RecoveryStateReport')
 $recoveryResubmitPass = $null -ne $runtimeObservation -and
     $runtimeObservation.droppedAckCount -eq 1 -and
@@ -3651,7 +3745,14 @@ $result = [ordered]@{
     database = $databaseObservation
     simulatorHealth = $simulatorHealth
     controlServerVersion = $version
-    error = if ($null -ne $runError) { [ordered]@{ type = $runError.Exception.GetType().FullName; message = $runError.Exception.Message } } else { $null }
+    error = if ($null -ne $runError) {
+        [ordered]@{
+            type = $runError.Exception.GetType().FullName
+            message = $runError.Exception.Message
+            responseBody = $runError.ErrorDetails?.Message
+            position = $runError.InvocationInfo?.PositionMessage
+        }
+    } else { $null }
     secretLeakFiles = @($secretLeakFiles)
     evidenceFiles = $artifactFiles
 }
