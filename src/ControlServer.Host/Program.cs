@@ -86,6 +86,7 @@ builder.Services.AddScoped<VehicleFaultCoordinator>();
 // control-server#299: a person's way out of a vehicle fault. The gate is a singleton because it is the one lock the
 // runtime loop and the HTTP request share; see JourneyMutationGate.
 builder.Services.AddSingleton<JourneyMutationGate>();
+builder.Services.AddSingleton<ControlServer.Host.Runtime.Faults.VehicleFaultResumeFlights>();
 builder.Services.AddScoped<VehicleFaultRecoveryService>();
 // B2 multi-vehicle: the roster is the identity register and is fixed for the life of the process;
 // the policy access keeps the three configured tables equal to the roster. The checkpoint ledger is

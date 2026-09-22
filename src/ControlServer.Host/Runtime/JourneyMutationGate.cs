@@ -15,8 +15,9 @@ namespace ControlServer.Host.Runtime;
 /// hold, its stop proof and possibly an emergency stop.
 /// </para>
 /// <para>
-/// The loop takes it for a whole round (engine and release service together); a request takes it for the whole of its
-/// read, decide and write. A singleton in the host, so there is exactly one.
+/// The loop takes it for a whole round (engine and release service together). A request reads RIoT before it and takes
+/// it to re-read this server's tables, decide and write -- no RIoT call is made under it (see
+/// <see cref="Faults.VehicleFaultRecoveryService"/>). A singleton in the host, so there is exactly one.
 /// </para>
 /// </remarks>
 public sealed class JourneyMutationGate : IDisposable

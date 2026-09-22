@@ -87,7 +87,7 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 + "请到现场排除原因；若急停已锁住，先按急停人工解除；然后由现场人员经故障清除入口确认（见现场说明），服务端核对后清除故障",
             [Runtime.Faults.VehicleFaultRecoveryService.CargoOnBoardReason] =
                 "车辆故障已由人工清除，但车上可能有货：货物绑定保留，需求不改派，旅程停在这里等人处置"
-                + "（服务端目前没有让它继续的入口，找值班工程师）。这辆车不接新单",
+                + "（#318 合入后服务端自动重建订单送完这趟，目前还没有，找值班工程师）。这辆车不接新单",
         };
 
     private readonly BlockedJourneyEscalationOptions _escalation;

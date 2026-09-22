@@ -135,7 +135,10 @@ public sealed record VehicleFaultRecoveryDecision(
 /// with no way out on this server. It is judged under the gate like a clearance, and the continue itself -- a RIoT
 /// command -- is issued after the gate is released: the coordinator reads the fault and the order again right before
 /// it and refuses unless the order is still HELD and the fault still in effect, and the fault store clears only the
-/// generation it was given, so a round that moved on in between cannot have the wrong fault cleared.
+/// generation it was given, so a round that moved on in between cannot have the wrong fault cleared. The gate cannot
+/// stop a second resume of the same vehicle from being judged while the first one's continue is in flight, so a resume
+/// also holds the vehicle's <see cref="VehicleFaultResumeFlights"/> flight from before its first read until the continue
+/// is confirmed or refused; a concurrent one is refused with <c>FAULT_RECOVERY_RESUME_IN_PROGRESS</c>.
 /// </para>
 /// <para>
 /// <b>The operator's identity</b> goes on the fault fact's <c>ClearedReason</c> (and, for a resume, on the continue's
@@ -153,6 +156,7 @@ public sealed class VehicleFaultRecoveryService(
     VehicleFaultCoordinator coordinator,
     VehicleMotionLedger ledger,
     JourneyMutationGate gate,
+    VehicleFaultResumeFlights resumeFlights,
     TimeProvider timeProvider,
     ILogger<VehicleFaultRecoveryService> logger,
     TimeSpan? gateTimeout = null)
@@ -273,6 +277,14 @@ public sealed class VehicleFaultRecoveryService(
         if (EndedByAPerson(fault))
         {
             return person.Count > 0 ? Refused(person, fault!.FaultGeneration) : AlreadyCleared(fault!);
+        }
+
+        // Held until the continue is confirmed or refused: the continue goes out after the gate is released, so the gate
+        // alone would let a second request judge the order still HELD and continue it again (see VehicleFaultResumeFlights).
+        using IDisposable? flight = resumeFlights.TryBegin(subject.AgvId);
+        if (flight is null)
+        {
+            return Refused(["FAULT_RECOVERY_RESUME_IN_PROGRESS"], fault?.FaultGeneration);
         }
 
         Reading reading = await ReadAsync(subject, fault, cancellationToken).ConfigureAwait(false);

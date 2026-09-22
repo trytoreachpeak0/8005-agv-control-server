@@ -388,6 +388,54 @@ public sealed class VehicleFaultRecoveryTests
     }
 
     /// <summary>
+    /// 两个续行请求同时到（人连点两下、两个人同时点）：只发一次 <c>CONTINUE_FROM_HELD</c>，另一个答
+    /// <c>FAULT_RECOVERY_RESUME_IN_PROGRESS</c>（二轮审查第 1 条）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// continue 在放锁之后才发（M2），所以锁挡不住这种并发：第一个请求的 continue 正在去 RIoT 的路上时，第二个请求照样能拿到锁，
+    /// 读到订单仍是 HELD、故障仍在效，判定全部通过，再发一次。命令服务每次尝试写一行审计，不去重。上一条
+    /// <see cref="TheSameResumeTwiceContinuesOnce"/> 只管一先一后。
+    /// </para>
+    /// <para>
+    /// 并发点造在第一个请求的 continue 发出之时：替身在那一刻同步跑完第二个请求，之后才把订单改成执行中。这是确定性的，不靠时序碰运气。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task TwoResumesAtOnceContinueOnce()
+    {
+        await using RuntimeFixture fixture = await FaultedOnTheWayToPickupAsync();
+        JourneyRuntimeRow faulted = await fixture.RuntimeAsync();
+        fixture.Riot.SetOrderState(faulted.PickupUpperId, RiotOrderState.Paused, terminal: false);
+        using JourneyMutationGate gate = new();
+        VehicleFaultResumeFlights flights = new();
+        SiteRiot site = new(fixture);
+        bool secondStarted = false;
+        VehicleFaultRecoveryDecision? second = null;
+        site.OnOrderCommand = (kind, _) =>
+        {
+            if (kind != RiotOrderCommandKind.ContinueFromHeld || secondStarted)
+            {
+                return;
+            }
+
+            secondStarted = true;
+            second = Service(fixture, site, gate: gate, flights: flights).RecoverAsync(Resume(fixture), Token)
+                .GetAwaiter().GetResult();
+            fixture.Riot.SetOrderState(faulted.PickupUpperId, RiotOrderState.Executing, terminal: false);
+        };
+
+        VehicleFaultRecoveryDecision first =
+            await Service(fixture, site, gate: gate, flights: flights).RecoverAsync(Resume(fixture), Token);
+
+        Assert.True(secondStarted, "the second request never ran while the first one's continue was in flight");
+        Assert.Equal(VehicleFaultRecoveryOutcome.Resumed, first.Outcome);
+        Assert.Equal(VehicleFaultRecoveryOutcome.Refused, second!.Outcome);
+        Assert.Equal(["FAULT_RECOVERY_RESUME_IN_PROGRESS"], second.Reasons);
+        Assert.Equal([RiotOrderCommandKind.ContinueFromHeld], site.OrderCommands);
+    }
+
+    /// <summary>
     /// 持锁期间一次 RIoT 调用都不发（独立审查 M2）：清除的 RIoT 读取在拿锁之前做完，锁里只复核数据库、提交；续行整个不拿锁。
     /// </summary>
     /// <remarks>
@@ -851,7 +899,8 @@ public sealed class VehicleFaultRecoveryTests
         ControlServerDbContext? context = null,
         IVehicleFaultStore? faultStore = null,
         JourneyMutationGate? gate = null,
-        TimeSpan? gateTimeout = null)
+        TimeSpan? gateTimeout = null,
+        VehicleFaultResumeFlights? flights = null)
     {
         context ??= new ControlServerDbContext(fixture.DbOptionsForTests);
         IVehicleFaultStore faults = faultStore ?? new VehicleFaultStore(context);
@@ -866,7 +915,7 @@ public sealed class VehicleFaultRecoveryTests
             ledger, faultOptions, fixture.Clock, NullLogger<VehicleFaultCoordinator>.Instance);
         return new VehicleFaultRecoveryService(
             context, faults, site, site, site, supervisor, coordinator, ledger, gate ?? new JourneyMutationGate(),
-            fixture.Clock, NullLogger<VehicleFaultRecoveryService>.Instance, gateTimeout);
+            flights ?? new VehicleFaultResumeFlights(), fixture.Clock, NullLogger<VehicleFaultRecoveryService>.Instance, gateTimeout);
     }
 
     /// <summary>
