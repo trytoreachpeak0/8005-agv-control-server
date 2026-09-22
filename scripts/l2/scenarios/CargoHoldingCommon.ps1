@@ -88,16 +88,46 @@ function Wait-L2LoadingPhase {
         }
 }
 
-# 发件箱里全部车辆业务状态快照的 loadingPhase，按修订号。
-# 不带 loadingPhase 的那几张不算：只有不在运输旅程上的业务状态才不带它（发布器按 activePurpose 强制），今天就是旅程收尾时
-# 那一张（control-server#323）。算进来它会以一个空状态混进「经过了哪些状态」「期限只有一个值」这些判据。
-function Get-L2LoadingPhaseSnapshots([object]$Connection) {
+# 旅程收尾时那几张快照的 messageId，与服务端 JourneyClosure.SnapshotMessageIds 同一算法：
+# JourneyPlanBuilder.StableGuid(journeyId, purpose)，即 SHA-256("<journeyId>|<purpose>") 的前 16 字节，按 UUID v5 的样子
+# 改版本位与变体位，再按 .NET Guid 的字节序读成字符串。两边写死同一组向量（Test-L2JourneyClosureIds.ps1 与
+# JourneyClosureSnapshotTests.TheClosureMessageIdsAreStableAcrossTheServerAndTheL2Scripts），改一边另一边就红。
+function Get-L2JourneyClosureMessageId([string]$JourneyId, [string]$Purpose) {
+    $bytes = [Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes("$JourneyId|$Purpose"))
+    [byte[]]$guidBytes = $bytes[0..15]
+    $guidBytes[6] = ($guidBytes[6] -band 0x0f) -bor 0x50
+    $guidBytes[8] = ($guidBytes[8] -band 0x3f) -bor 0x80
+    return ([Guid]::new($guidBytes)).ToString('D')
+}
+
+# 库里每趟旅程收尾那张业务状态的 messageId。
+function Get-L2JourneyClosureBusinessStateIds([object]$Connection) {
+    $ids = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($row in @(Invoke-L2Query -Connection $Connection -Sql 'SELECT JourneyId FROM JourneyRuntimes')) {
+        $null = $ids.Add((Get-L2JourneyClosureMessageId ([string]$row.JourneyId) 'closure-vehicle-business-state'))
+    }
+    return , $ids
+}
+
+# 一台车发件箱里的车辆业务状态快照的 loadingPhase，按修订号。车辆业务状态的载荷里没有车号，按信封上的 agvId 分。
+# 旅程收尾那一张不算（control-server#323）：算进来它会以一个空状态混进「经过了哪些状态」「期限只有一个值」这些判据。
+# 它按 messageId 认，不按「不带 loadingPhase」认（PR #329 审查，低 3）：别的业务状态不带 loadingPhase 是缺陷，照旧抛出，
+# 不能被这个读取函数静默略过。
+function Get-L2LoadingPhaseSnapshots([object]$Connection, [string]$AgvId) {
+    if ([string]::IsNullOrWhiteSpace($AgvId)) { throw 'Get-L2LoadingPhaseSnapshots needs the agvId whose snapshots to read.' }
+    $closureIds = Get-L2JourneyClosureBusinessStateIds $Connection
     $rows = Invoke-L2Query -Connection $Connection -Sql (
         "SELECT MessageId, PayloadJson, CreatedAt FROM ProtocolOutbox WHERE MessageType = 'VehicleBusinessStateSnapshot'")
     $snapshots = foreach ($row in $rows) {
+        if ($closureIds.Contains([string]$row.MessageId)) { continue }
         # -DateKind String：否则 ConvertFrom-Json 把时刻转成 DateTime，偏移量随之丢掉，比较期限时差出时区那几个小时。
-        $payload = ([string]$row.PayloadJson | ConvertFrom-Json -DateKind String).payload
-        if ($null -eq $payload.loadingPhase) { continue }
+        $envelope = [string]$row.PayloadJson | ConvertFrom-Json -DateKind String
+        if ([string]$envelope.agvId -ne $AgvId) { continue }
+        $payload = $envelope.payload
+        if ($null -eq $payload.loadingPhase) {
+            throw ("VehicleBusinessStateSnapshot $($row.MessageId) (revision $($payload.vehicleBusinessStateRevision)) for $AgvId " +
+                'has no loadingPhase and is not a journey closure snapshot.')
+        }
         [pscustomobject]@{
             Revision  = [long]$payload.vehicleBusinessStateRevision
             State     = [string]$payload.loadingPhase.state

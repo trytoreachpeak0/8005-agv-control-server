@@ -83,7 +83,7 @@ function Invoke-Trip([string]$Label, [string]$IdPrefix, [string]$What) {
         -TimeoutSeconds 120 -Probe { Get-L2CargoJourney $connection $demand.Id } `
         -Until { param($v) $null -ne $v -and [string]$v.Stage -eq 'Completed' }
 
-    $all = Get-L2LoadingPhaseSnapshots $connection
+    $all = Get-L2LoadingPhaseSnapshots $connection $Context.AgvId
     $mine = @($all | Where-Object { -not $seenSnapshots.Contains($_.MessageId) })
     foreach ($snapshot in $all) { $null = $seenSnapshots.Add($snapshot.MessageId) }
     $journal.Observe("loading-phase-snapshots-$Label", (Format-L2LoadingPhaseSnapshots $mine), @{ snapshots = $mine })

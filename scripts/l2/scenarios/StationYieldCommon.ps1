@@ -83,14 +83,19 @@ function Get-L2YieldJourney([object]$Connection, [string]$DemandId) {
 
 # 某一台车的装货阶段快照。车辆业务状态快照的载荷里没有车号，按信封上的 agvId 分。
 function Get-L2YieldSnapshotsOf([object]$Connection, [string]$AgvId) {
+    $closureIds = Get-L2JourneyClosureBusinessStateIds $Connection
     $rows = Invoke-L2Query -Connection $Connection -Sql (
         "SELECT MessageId, PayloadJson, CreatedAt FROM ProtocolOutbox WHERE MessageType = 'VehicleBusinessStateSnapshot'")
     $snapshots = foreach ($row in $rows) {
+        # 旅程收尾那一张按 messageId 跳过，别的不带 loadingPhase 照旧抛，理由同 Get-L2LoadingPhaseSnapshots。
+        if ($closureIds.Contains([string]$row.MessageId)) { continue }
         $envelope = [string]$row.PayloadJson | ConvertFrom-Json -DateKind String
         if ([string]$envelope.agvId -ne $AgvId) { continue }
         $payload = $envelope.payload
-        # 不带 loadingPhase 的是旅程收尾那一张（control-server#323），不是装货阶段快照，理由同 Get-L2LoadingPhaseSnapshots。
-        if ($null -eq $payload.loadingPhase) { continue }
+        if ($null -eq $payload.loadingPhase) {
+            throw ("VehicleBusinessStateSnapshot $($row.MessageId) (revision $($payload.vehicleBusinessStateRevision)) for $AgvId " +
+                'has no loadingPhase and is not a journey closure snapshot.')
+        }
         [pscustomobject]@{
             Revision  = [long]$payload.vehicleBusinessStateRevision
             State     = [string]$payload.loadingPhase.state

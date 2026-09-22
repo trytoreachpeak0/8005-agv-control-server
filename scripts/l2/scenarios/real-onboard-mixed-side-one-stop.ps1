@@ -197,7 +197,7 @@ try {
     # 物理状态在装完、离站之前读：三笔装货都已提交（Invoke-L2RigLoad 等到 Committed 才返回）。
     $physicalAfterLoads = $simulator.Snapshot().slots
     $closed = Wait-L2LoadingPhase -Context $Context -DemandId $a.Id -States @('CLOSED') -Criterion 'phase-closed' -TimeoutSeconds 240
-    $phaseSnapshots = Get-L2LoadingPhaseSnapshots $connection
+    $phaseSnapshots = Get-L2LoadingPhaseSnapshots $connection $Context.AgvId
     $journal.Observe('loading-phase-snapshots', (Format-L2LoadingPhaseSnapshots $phaseSnapshots), $null)
 
     # --- 5. 关卡：卸三条 ----------------------------------------------------------------------------------------

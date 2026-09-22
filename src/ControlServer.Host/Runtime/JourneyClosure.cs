@@ -86,6 +86,8 @@ internal static class JourneyClosure
     /// <remarks>
     /// 送不到只意味着「这一刻车不在线上」：<c>OnboardPeer</c> 对没连着、握手中、代次对不上的车一律抛 <see cref="IOException"/>，
     /// 而那三种情形都由重连之后的补发接着送（<see cref="ReplayIdsAsync"/>）。所以这里吞掉它，不让一次已经提交的收尾在事后变成一轮失败。
+    /// 连接恰好正在被拆掉时，它的发送闸门或底层流已经释放，抛的是 <see cref="ObjectDisposedException"/>：
+    /// 那也是「这一刻车不在线上」，同样吞掉（PR #329 审查，低 2）。别的异常照常冒出去。
     /// </remarks>
     public static async Task SendAsync(
         OnboardJourneyPublisher publisher,
@@ -100,7 +102,7 @@ internal static class JourneyClosure
             {
                 await publisher.SendPersistedAsync(messageId, cancellationToken).ConfigureAwait(false);
             }
-            catch (IOException)
+            catch (Exception error) when (error is IOException or ObjectDisposedException)
             {
                 // 见 remarks：留在发件箱里，等重连补发。
             }

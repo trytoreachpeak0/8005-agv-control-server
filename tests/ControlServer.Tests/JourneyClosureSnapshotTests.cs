@@ -1,5 +1,6 @@
 using System.Text.Json;
 using ControlServer.Domain;
+using ControlServer.Host.Runtime;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -32,6 +33,21 @@ public sealed class JourneyClosureSnapshotTests
     private const string FirstDemandId = "10000000-0000-4000-8000-000000000001";
     private const string NextDemandId = "10000000-0000-4000-8000-000000000002";
     private static CancellationToken Token => TestContext.Current.CancellationToken;
+
+    /// <summary>
+    /// 收尾快照的 messageId 在服务端与 L2 脚本里是两份实现：L2 的 <c>Get-L2JourneyClosureMessageId</c>
+    /// （<c>scripts/l2/scenarios/CargoHoldingCommon.ps1</c>）按这个号认出收尾那张业务状态并跳过它，别的不带
+    /// <c>loadingPhase</c> 的一律抛（PR #329 审查，低 3）。这里与 <c>scripts/l2/Test-L2JourneyClosureIds.ps1</c>
+    /// 写死同一组向量：服务端改了派生方式而脚本没跟上，这里红；脚本改了，那一边红。两边都改成新值，才是有意的改动。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    public void TheClosureMessageIdsAreStableAcrossTheServerAndTheL2Scripts()
+    {
+        Assert.Equal(
+            ["50480606-8dea-0a5f-b263-f1431116b778", "69b06cfd-7405-c157-a2f8-7509fec4491f", "cc104e51-9899-d15e-9363-b24f0337ca04"],
+            JourneyClosure.SnapshotMessageIds("cs323-vector-journey"));
+    }
 
     /// <summary>来路 1：站点期限到期，结束的是旅程里最后一条开着的需求。</summary>
     [Fact]

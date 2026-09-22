@@ -138,6 +138,14 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2DoubleCommandError.ps1
 
+      # Under a second, no rig. The two loading-phase readers skip a journey's closure business state by its
+      # messageId and still throw on any other business state without a loadingPhase (control-server#323,
+      # PR #329 review). That messageId is derived twice, by the server and by CargoHoldingCommon.ps1; this
+      # pins the script side to the vector JourneyClosureSnapshotTests pins on the server side.
+      - name: L2 scenario self-check (journey closure ids)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/l2/Test-L2JourneyClosureIds.ps1
+
       # Under a second, no rig. The plan-leg row parsing the two batch-7 real-rig scenarios read the HMI with
       # (control-server#218). Its fallback once carried a regex word boundary that an editing tool decoded into a
       # literal backspace: it parsed, matched nothing, and a whole real-rig session read every plan row as '?'.
