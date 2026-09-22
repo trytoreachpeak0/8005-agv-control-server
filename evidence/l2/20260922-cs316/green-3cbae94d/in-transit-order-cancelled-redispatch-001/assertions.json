@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "scenario": "in-transit-order-cancelled-redispatch",
+  "runId": "20260922T102246337Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "vehicleKey": "BROKERX-L2-0001",
+    "rig": "SyntheticOnboard",
+    "batchId": "unspecified",
+    "agvId": "AGV-L2-001",
+    "controlServerCommit": "3cbae94d0ec5b98a1c0d4b37cc2b42b546434313",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260922T102246337Z"
+  },
+  "assertions": [
+    {
+      "id": "L2-OC-01",
+      "description": "释放：归属标 RELEASED_FOR_REDISPATCH，那趟旅程关闭（Completed / RELEASED_FOR_REDISPATCH）",
+      "outcome": "PASS",
+      "expected": "RELEASED_FOR_REDISPATCH / Completed / RELEASED_FOR_REDISPATCH",
+      "actual": "RELEASED_FOR_REDISPATCH / Completed / RELEASED_FOR_REDISPATCH"
+    },
+    {
+      "id": "L2-OC-02",
+      "description": "订单已经终结，服务端没有再发取消：审计表与假 RIoT 上都是零条",
+      "outcome": "PASS",
+      "expected": "0 / 0",
+      "actual": "0 / 0"
+    },
+    {
+      "id": "L2-OC-03",
+      "description": "需求重新受理成新旅程：新代次、新 upperId（旧 upperId 不复用）",
+      "outcome": "PASS",
+      "expected": "upperId ≠ W2G-a5258f3b-3d6d-47fb-9c7e-1c3e60ed3103-PICKUP-1 / 代次 > 1",
+      "actual": "W2G-a5258f3b-3d6d-47fb-9c7e-1c3e60ed3103-PICKUP-2 / 代次 2"
+    }
+  ]
+}
