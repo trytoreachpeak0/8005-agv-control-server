@@ -334,6 +334,54 @@ function Read-Ndjson {
         ForEach-Object { $_ | ConvertFrom-Json })
 }
 
+# An HTTP error as evidence. pwsh keeps the response body in ErrorDetails, not in the exception message, so a
+# refusal read from the message alone arrives as a bare "409 (Conflict)" and the reason the server gave is
+# lost (control-server#306; control-server#277 for the L2 doubles). `?.` because ErrorDetails is null when the
+# body is empty.
+function Get-HttpErrorObservation {
+    param([Management.Automation.ErrorRecord]$ErrorRecord)
+    return [ordered]@{
+        message = $ErrorRecord.Exception.Message
+        statusCode = if ($ErrorRecord.Exception -is [Microsoft.PowerShell.Commands.HttpResponseException]) {
+            [int]$ErrorRecord.Exception.Response.StatusCode
+        } else { $null }
+        responseBody = $ErrorRecord.ErrorDetails?.Message
+    }
+}
+
+# The error the run itself hit, printed and saved as runner-error.json. Called directly after the run's
+# try/catch/finally, before any judgement: the judgements read observations an errored run never filled in,
+# and on 2026-09-22 one of them throwing was all such a run printed (control-server#306). Never throws.
+function Write-StagedRunError {
+    param([Management.Automation.ErrorRecord]$ErrorRecord, [string]$EvidenceRoot)
+    if ($null -eq $ErrorRecord) { return }
+    try {
+        $exceptions = [Collections.Generic.List[object]]::new()
+        for ($exception = $ErrorRecord.Exception; $null -ne $exception; $exception = $exception.InnerException) {
+            $exceptions.Add([ordered]@{ type = $exception.GetType().FullName; message = $exception.Message })
+        }
+        $record = [ordered]@{
+            exceptions = $exceptions
+            responseBody = $ErrorRecord.ErrorDetails?.Message
+            position = $ErrorRecord.InvocationInfo?.PositionMessage
+            scriptStackTrace = $ErrorRecord.ScriptStackTrace
+        }
+        Write-Warning "Staged G3 run errored: $($exceptions[0].type): $($exceptions[0].message)"
+        foreach ($inner in @($exceptions | Select-Object -Skip 1)) {
+            Write-Warning "  inner: $($inner.type): $($inner.message)"
+        }
+        if (-not [string]::IsNullOrEmpty($record.responseBody)) { Write-Warning "  response body: $($record.responseBody)" }
+        if (-not [string]::IsNullOrEmpty($record.position)) { Write-Warning "  at: $($record.position)" }
+        [IO.File]::WriteAllText(
+            (Join-Path $EvidenceRoot 'runner-error.json'),
+            ($record | ConvertTo-Json -Depth 5),
+            [Text.UTF8Encoding]::new($false))
+    }
+    catch {
+        Write-Warning "Staged G3 run errored ($($ErrorRecord.Exception.Message)), and recording that failed too: $($_.Exception.Message)"
+    }
+}
+
 $harnessSource = @'
 #nullable enable
 using System;
@@ -2653,8 +2701,9 @@ try {
     }
     catch {
         # Recorded, not thrown: a refused issue is a FAIL for this slice, not a reason to abandon the
-        # run and lose every other slice's evidence.
-        $activationIssueError = $_.Exception.Message
+        # run and lose every other slice's evidence. With the response body: the server says why it
+        # refused there, and nowhere else (control-server#306).
+        $activationIssueError = Get-HttpErrorObservation $_
     }
 
     $activationDeadline = [DateTimeOffset]::UtcNow.AddSeconds(45)
@@ -2814,7 +2863,12 @@ finally {
     Exit-DesktopLock -Handle $desktopLock
 }
 
-$controlLog = if (Test-Path -LiteralPath (Join-Path $logsRoot 'control.out.log')) {
+# First, before any judgement: the judgements below read observations an errored run never filled in, and
+# one of them throwing must not be the only thing such a run prints (control-server#306).
+# Test-StagedG3ErrorPath.ps1 asserts that this call directly follows the try.
+Write-StagedRunError -ErrorRecord $runError -EvidenceRoot $EvidenceRoot
+
+$controlLog =if (Test-Path -LiteralPath (Join-Path $logsRoot 'control.out.log')) {
     Get-Content -LiteralPath (Join-Path $logsRoot 'control.out.log') -Raw
 } else { '' }
 $controlErrorLog = if (Test-Path -LiteralPath (Join-Path $logsRoot 'control.err.log')) {
@@ -3127,7 +3181,9 @@ if ($null -ne $databaseObservation) {
         Where-Object { $_.agvId -ceq $agvId })
 }
 $activationObservation = [ordered]@{
-    issueHttpError = $activationIssueError
+    issueHttpError = ${activationIssueError}?.message
+    issueHttpStatusCode = ${activationIssueError}?.statusCode
+    issueHttpResponseBody = ${activationIssueError}?.responseBody
     issuedActivationId = if ($null -ne $activationResponse) { $activationResponse.activationId } else { $null }
     issuedState = if ($null -ne $activationResponse) { $activationResponse.state } else { $null }
     issuedRecoveryRole = if ($null -ne $activationResponse) { $activationResponse.recoveryRole } else { $null }
@@ -3244,7 +3300,12 @@ $alarmGenerationPass = $alarmSingletonPass -and
 # asserted the opposite -- the same messageId replayed on the new connection -- which the v2 onboard end
 # deliberately no longer does; that form went red on 2026-09-18 and is recorded in
 # docs/defects/20260918-journey-g3-scenarios-assume-empty-close-fails-the-load.md.
-$supersedingMessages = if ($null -ne $runtimeObservation) { @($runtimeObservation.supersedingConnectionMessages) } else { @() }
+# Wrapped outside the `if`, never inside its branches: `$x = if (...) { @(...) } else { @() }` assigns $null
+# whenever the branch yields an empty array, because a statement's output is enumerated, and
+# [array]::IndexOf($null, ...) throws. On 2026-09-22 a run whose onboard peer never connected printed that
+# IndexOf error in place of its own (control-server#306). Test-StagedG3ErrorPath.ps1 runs these two
+# statements on an empty observation and on none.
+$supersedingMessages = [string[]]@(if ($null -ne $runtimeObservation) { $runtimeObservation.supersedingConnectionMessages })
 $supersedingReportIndex = [array]::IndexOf($supersedingMessages, 'client-to-server:RecoveryStateReport')
 $recoveryResubmitPass = $null -ne $runtimeObservation -and
     $runtimeObservation.droppedAckCount -eq 1 -and
@@ -3651,7 +3712,14 @@ $result = [ordered]@{
     database = $databaseObservation
     simulatorHealth = $simulatorHealth
     controlServerVersion = $version
-    error = if ($null -ne $runError) { [ordered]@{ type = $runError.Exception.GetType().FullName; message = $runError.Exception.Message } } else { $null }
+    error = if ($null -ne $runError) {
+        [ordered]@{
+            type = $runError.Exception.GetType().FullName
+            message = $runError.Exception.Message
+            responseBody = $runError.ErrorDetails?.Message
+            position = $runError.InvocationInfo?.PositionMessage
+        }
+    } else { $null }
     secretLeakFiles = @($secretLeakFiles)
     evidenceFiles = $artifactFiles
 }
