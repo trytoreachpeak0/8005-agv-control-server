@@ -10,6 +10,18 @@
 | `real-onboard-rebuild-stopped-cargo-handoff`（新） | `bb71e356`（本地变异，不推送） | `20260923T182047691Z` | FAIL | 01～06 PASS；07、08 FAIL；09～11 未到达 |
 | `g3-fault-cargo-handoff`（回归） | `ab52333f`（分支） | `20260923T182450216Z` | PASS | G3-07-31～36 全 PASS |
 
+## 独立审查修改之后，在新 head 上重跑
+
+审查 M1 改了衔接 b 的就绪判据与转交接（`f848101c..494cf51e`，含一次合入集成分支），所以调度要求在新 head 上重跑新场景与 CI 回归。
+车载端换成 `w2g/fp-v2-impl` 新顶端 `f31ca2b76f72692b63a69b015858eb661d3cdb65`（hmi#204 合入，改了恢复与补发路径），模拟器不变。
+对端缓存放在 `C:/w2g/cs345-peers`（`-PeerCacheRoot`）：本会话里 `%LOCALAPPDATA%` 被桌面应用虚拟化，在那里编车载端报 CS2001
+（找不到分明存在的 `.editorconfig`）。
+
+| 场景 | 服务端提交 | runId | 结论 | 判据 |
+| --- | --- | --- | --- | --- |
+| `real-onboard-rebuild-stopped-cargo-handoff`（本机时段，调度 09-24 04:16 放行） | `494cf51e` | `20260923T201726824Z` | PASS | L2-RH-01～11 全 PASS（`green/real-rig-real-onboard-rebuild-stopped-cargo-handoff-494cf51e/`） |
+| `real-onboard-compensate-then-reconnect`（CI 真装置） | `494cf51e` | run 35914899283 | PASS（79 秒） | 场景那一步读到三端 `494cf51e`／`f31ca2b7`／`fb5f7c59`；`RIG_*` 停机码只在源码回显里；没有停机（汇总 1 runs） |
+
 ## 红证据：衔接 b 的变异
 
 变异只改一处：`WireToGateStore.DecideReadinessAsync` 里「这辆车有 Blocked、码为 `OWN_ORDER_REBUILD_AWAITING_CARGO_HANDOFF`
