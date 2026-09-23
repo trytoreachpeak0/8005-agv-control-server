@@ -4718,6 +4718,46 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     /// <summary>
+    /// control-server#340, the one site the field reached (onboard-hmi#204, run <c>hmi-7cf1dcba</c>). A safety change
+    /// the vehicle made in the last session and never got to the server is resent in the reconnect handshake, after
+    /// SessionHello and before the capability snapshot, and is accepted here for the first time. Its answer is the
+    /// DurableAck the vehicle reads for it and nothing else: the SessionReadiness it carried until #340 was read in
+    /// place of the capability snapshot's SnapshotAppliedAck, and the vehicle dropped the connection. The same rule and
+    /// the same test as control-server#202: until the recovery report is answered, one line in, one line out.
+    /// </summary>
+    /// <remarks>
+    /// This site appended readiness unconditionally, so it is red before the fix in the field's own order with no
+    /// help. The other four sites append only on a change of readiness, which the handshake cannot produce -- see
+    /// <c>InsideTheReconnectHandshakeReadinessCannotChangeBeforeTheRecoveryReport</c>.
+    /// </remarks>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ASafetyChangeFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledged(bool deferOutbound)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(token);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        RecordingPeer peer = new(context);
+        OnboardMessageProcessor processor = Processor(context, peer, UnusedProofVariable);
+
+        OnboardConnectionState reconnected = new() { DeferOutboundUntilResponseWritten = deferOutbound };
+        List<string> wire = [.. await ReconnectAsync(processor, peer, reconnected)];
+        long generation = reconnected.SessionGeneration!.Value;
+        string[] resent = await ExchangeAsync(processor, peer, reconnected, InSession(
+            SafetyChange("e0000000-0000-4000-8000-000000003401", safetyStateVersion: 7, departureSafe: false),
+            generation));
+        wire.AddRange(resent);
+        int reportAt = await FinishHandshakeAsync(processor, peer, reconnected, wire);
+
+        Assert.Equal(["DurableAck"], resent.Select(MessageType).ToArray());
+        AssertNothingSentInsideTheHandshake(wire, reportAt, reconnected);
+    }
+
+    /// <summary>
     /// Everything the server wrote in a reconnect before the recovery report is an answer to the line the vehicle had
     /// just sent, one per line: no recovery command and no recovery session snapshot while the vehicle reads one
     /// answer at a time (control-server#202). Where sends wait for the answer to be written, as they do on
@@ -5693,6 +5733,27 @@ public sealed class RecoveryStateMachineG2Tests
             [$"{OnboardTransportOptions.SectionName}:CredentialEnvironmentVariable"] = HandshakeCredentialVariable
         })
         .Build();
+
+    /// <summary>For a test whose processor takes no recovery request: the variable is never set.</summary>
+    private const string UnusedProofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_UNUSED";
+
+    private static string SafetyChange(string messageId, long safetyStateVersion, bool departureSafe) => Envelope(
+        messageId,
+        "SafetyStateChanged",
+        new
+        {
+            safetyStateVersion,
+            observedAt = Now,
+            safety = new
+            {
+                departureSafe,
+                vehicleStopped = departureSafe,
+                allTargetSlotsLocked = true,
+                allUnlockOutputsReset = true,
+                unknownPresent = !departureSafe,
+                reasonCodes = departureSafe ? Array.Empty<string>() : ["VEHICLE_MOTION_UNKNOWN"]
+            }
+        });
 
     private static string WireContentHash(string line) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(line))).ToLowerInvariant();
