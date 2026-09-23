@@ -17,6 +17,7 @@
 | `62d5c560` | cs#331 第一版修复（PR #338 的第一个实现提交） |
 | `18172346` | cs#331 合入（PR #338 合入提交），cs#340 修复前 |
 | `9966beca`、`38318ef9` | 本分支，含 `384b9b69`（cs#340 合入）。`38318ef9` 只比 `9966beca` 多改了注释 |
+| `63b397e9` | 本分支 merge 了 `fp/v2-impl` 顶端 `b6be32d5`（cs#318，改了引擎：自建单取消／故障清除后重建）之后。模型的等人码表补上 cs#318 加的十个码 |
 | `506b6f11` | 本分支上一轮 |
 | `cb44fb60` | PR #343 头，产品代码与本分支相同（`git diff cb44fb60 HEAD -- src` 为空）。只用来做变异，每个变异跑完都 `git checkout` 还原、`src` 零改动 |
 
@@ -27,6 +28,8 @@
 - `*/measure-<提交>.txt`：`ReconnectModelTests.PrototypeMeasurement` 的报告。固定种子 300 个组合：每个组合的耗时；每一类违规的次数、种子与序列（一个组合里出现的每一类都计数）；等人码出事的机会按码分开数；恢复健康到录入请求用了几轮的分布；`DifferentMessageAccepted` 在握手中与会话中途各几次；第一个违规组合的逐步记录；CsCheck 化简与确定性删减的结果。
 - `final/regression-<提交>.log`：`ReconnectModelRegressionTests` 在各提交上的输出，修前红、修后绿。
 - `final/measure-rounds-to-entry-constant-1-probe.txt`：`RoundsFromRecoveryToEntry` 定值之前的一次测量，常量还是 1（提交 `9966beca` 之前的工作树，模型判定与 `9966beca` 相同，只差这个常量与后来加的按码计数）。报 `EntryLateAfterRecovery` 的恰好是分布里「2 轮」的那 8 个，这就是这条新不变量的反向验证；读完 cs#331 那条用例之后定成 2。
+- `final/measure-63b397e9.txt`、`final/regression-63b397e9.log`：merge cs#318 之后在同样 300 个种子上重跑。违规的种子与序列和 `9966beca` 完全相同（hmi#206 129 个，别的类 0 个），恢复健康到录入请求的轮数分布也相同；回归用例全绿。cs#318 没有改变这个模型看得见的任何结果。
+- `final/wait-on-person-sync-reverse-on-63b397e9.log`：新护栏 `TheModelsWaitOnPersonCodesAreExactlyTheProductsSet` 的反向验证。模型的等人码表里删掉 `OWN_ORDER_REBUILD_STOPPED`、加一个假码，报出缺了哪个、多了哪个；跑完已还原。
 - `final/ci-batch-test-local-38318ef9.log`：CI 那一批用例（200 个组合）在本机单独跑一次的耗时。
 - `final/*mutant-guard-on-cb44fb60*`：去掉 `NameFailedAdvanceAsync` 里的 `CarriesACodeThatNamesAWaitOnAPerson` 守卫（cs#331 第二轮审查补的「推进失败不覆盖等人码」）。
 - `final/*mutant-silent*-on-cb44fb60*`：失联码那一格的反向验证（第二轮审查必修 M2）。`silent` 是把「失联判定让这一轮返回」改成判完照样往下发；`silent-guard` 再加上去掉守卫；`new-model` / `old-model` 是模型里失联码豁免有没有存活窗口上限。`full-trace` 与 `with-ack` 两份是逐步记录，说明失联码在这个变异下是在同一轮之内被覆盖的。
