@@ -33,6 +33,18 @@ public sealed partial class VehicleFaultRecoveryService
     /// <summary>The journey is not waiting on a rebuild the third guard stopped; there is nothing to rebuild on request.</summary>
     public const string ExitNotStoppedReason = "OWN_ORDER_REBUILD_EXIT_NOT_STOPPED";
 
+    /// <summary>
+    /// The rebuild stopped because a snapshot showed the cargo not in its slots: REQ-0238 leaves only taking it out, handing it
+    /// over and ending the demand in an exception recovery session, never carrying on (REQ-0362).
+    /// </summary>
+    public const string ExitCargoNotInPlaceReason = "OWN_ORDER_REBUILD_EXIT_CARGO_NOT_IN_PLACE";
+
+    /// <summary>
+    /// The rebuild stopped because the vehicle is no longer admitted for a demand still to be loaded: the release service
+    /// releases that demand for redispatch (REQ-0328), and a rebuild would only be cancelled by it again.
+    /// </summary>
+    public const string ExitVehicleIneligibleReason = "OWN_ORDER_REBUILD_EXIT_VEHICLE_INELIGIBLE";
+
     private async Task<VehicleFaultRecoveryDecision> RebuildStoppedAsync(
         VehicleFaultRecoveryRequest request,
         CancellationToken cancellationToken)
@@ -57,9 +69,27 @@ public sealed partial class VehicleFaultRecoveryService
             stopped = await OwnOrderRebuilds.ForStopAsync(dbContext, stop, cancellationToken).ConfigureAwait(false);
         }
 
-        if (stopped is not { State: OwnOrderRebuildStates.Stopped })
+        string? state = stopped switch
         {
-            reasons.Add(ExitNotStoppedReason);
+            { State: OwnOrderRebuildStates.Stopped, StoppedReason: OwnOrderRebuilds.CargoNotProvenInOriginalSlots } =>
+                ExitCargoNotInPlaceReason,
+            { State: OwnOrderRebuildStates.Stopped, StoppedReason: OwnOrderRebuilds.VehicleNoLongerEligible } =>
+                ExitVehicleIneligibleReason,
+            { State: OwnOrderRebuildStates.Stopped } => null,
+            _ => ExitNotStoppedReason,
+        };
+        if (state == ExitNotStoppedReason && reasons.Count == 0 && runtime is not null &&
+            await LastRebuildWasAPersonsAsync(runtime, cancellationToken).ConfigureAwait(false))
+        {
+            // The same request again, after the first was carried out -- an HTTP retry, or a second person: answered, not
+            // done twice. Judged only for a request that names its person and confirms, as #299's "already cleared" is.
+            return new VehicleFaultRecoveryDecision(
+                VehicleFaultRecoveryOutcome.AlreadyDone, [], VehicleFaultRecoveryDispositions.None, null);
+        }
+
+        if (state is not null)
+        {
+            reasons.Add(state);
         }
 
         if (reasons.Count > 0)
@@ -76,6 +106,19 @@ public sealed partial class VehicleFaultRecoveryService
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return new VehicleFaultRecoveryDecision(
             VehicleFaultRecoveryOutcome.RebuildRequested, [], VehicleFaultRecoveryDispositions.RebuildScheduled, null);
+    }
+
+    /// <summary>
+    /// Whether the journey's latest rebuild record -- by when it was recorded, compared in memory, as SQLite cannot order a
+    /// <see cref="DateTimeOffset"/> -- is one a person asked for. Anything recorded since, an automatic rebuild or a stop,
+    /// makes a later request a new one.
+    /// </summary>
+    private async Task<bool> LastRebuildWasAPersonsAsync(JourneyRuntimeRow runtime, CancellationToken cancellationToken)
+    {
+        OwnOrderRebuildRow[] records = await dbContext.OwnOrderRebuilds.AsNoTracking()
+            .Where(row => row.JourneyId == runtime.JourneyId)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        return records.MaxBy(row => row.RecordedAt) is { } last && OwnOrderRebuilds.IsPersonsRebuild(last, records);
     }
 
     /// <summary>
