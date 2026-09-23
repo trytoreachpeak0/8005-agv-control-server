@@ -19,6 +19,9 @@
      停住的重建记录 ENDED，全程只有一张 TO_GATE 单，会话回到 Ready。
   8. 同一台车接得了下一单。
 
+红证据（evidence/cs345/red/real-rig-real-onboard-rebuild-stopped-cargo-handoff-mutation-b-bb71e356/）：去掉 DecideReadinessAsync 里
+认交接码的那一项，L2-RH-01～06 PASS，L2-RH-07 FAIL（就绪停在 Ready/READY）、L2-RH-08 FAIL（入口 90 秒内没出现），其余未到达。
+
 **读取函数的写法。**`Invoke-L2Query` 与 `Get-G3Inbound`／`Get-G3Outbound` 都以 `return , @(...)` 返回：一律先赋值再用，
 不写 `@(f)`，也不写 `@(f) | ...`；要走管道时写 `(f) | ...`。夹具里一条需求装一仓，所以这里没有「至少两行」可凑的表；
 按条件筛的地方都在判据里把筛出的条数一并断言（筛成空会红，而不是在空集上恒真）。

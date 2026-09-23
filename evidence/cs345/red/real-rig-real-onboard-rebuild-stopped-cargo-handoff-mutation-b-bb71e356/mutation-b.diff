@@ -1,0 +1,19 @@
+diff --git a/src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs b/src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs
+index 6b30f160..64264e6a 100644
+--- a/src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs
++++ b/src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs
+@@ -402,12 +402,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
+         // offers the fault cargo handoff only while the session says RECOVERY_REQUIRED, and nothing else here says so for a
+         // vehicle standing still, fault cleared, doors locked. Held on the one journey code, never on Blocked as such, and only
+         // for this vehicle; it lets go as soon as the journey closes or leaves the code.
+-        bool cargoHandoffAwaited = await dbContext.JourneyRuntimes.AsNoTracking()
+-            .AnyAsync(
+-                journey => journey.AgvId == agvId && journey.Stage == JourneyRuntimeStage.Blocked &&
+-                           journey.BlockReasonCode == AwaitingCargoHandoffJourneyReason,
+-                cancellationToken)
+-            .ConfigureAwait(false);
++        // MUTATION (cs#345 real-rig reverse check, local only): readiness no longer holds on the handoff code.
++        bool cargoHandoffAwaited = false;
+         // REQ-0316. The vehicle reported which slot configuration it is carrying; this server knows
+         // which one it activated. Disagreement means nobody can say what the eight slots on that
+         // vehicle will actually do, so it must not be given work -- but it stays connected, because
