@@ -1,0 +1,3 @@
+HEAD af995c34c8bf3ae33442c418460cf039fa177eee
+M6-combinator-never-appends: diff '1\t1\tsrc/ControlServer.Host/Transport/OnboardMessageProcessor.cs'; []; red: ControlServer.Tests.RecoveryStateMachineG2Tests.AVehicleNotReadyOnItsOwnOrderHandshakesWithoutAnExtraReadinessAndIsStillToldAfterwards, ControlServer.Tests.RecoveryStateMachineG2Tests.AfterTheReconnectHandshakeTheSameMessagesStillCarryReadiness
+P1-ready-without-recovery-report: diff '1\t1\tsrc/ControlServer.Infrastructure/Persistence/WireToGateStore.cs'; []; red: ControlServer.Tests.RecoveryStateMachineG2Tests.InsideTheReconnectHandshakeReadinessCannotChangeBeforeTheRecoveryReport

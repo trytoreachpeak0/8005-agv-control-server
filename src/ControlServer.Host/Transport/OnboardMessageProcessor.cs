@@ -366,8 +366,8 @@ public sealed partial class OnboardMessageProcessor(
                     }
                     SessionReadinessDecision snapshotDecision = await store.DecideReadinessAsync(
                         agvId, generation, cancellationToken).ConfigureAwait(false);
-                    state.Readiness = snapshotDecision.Readiness;
-                    return $"{snapshotAck}\n{SerializeReadiness(agvId, generation, state, snapshotDecision)}";
+                    return AnswerWithReadiness(
+                        snapshotAck, snapshotDecision, agvId, generation, state, announceUnchanged: true);
                 }
             case "RecoveryStateReport":
                 {
@@ -518,12 +518,8 @@ public sealed partial class OnboardMessageProcessor(
                     // RecoveryStateReport after a resume commits, so the READY a settled attempt
                     // produces reached nobody and the vehicle stayed out of work (G3 FP-IS-07
                     // resume-007). This is the widening the earlier note here asked for.
-                    if (resultDecision.Readiness == state.Readiness)
-                    {
-                        return resultAck;
-                    }
-                    state.Readiness = resultDecision.Readiness;
-                    return $"{resultAck}\n{SessionReadinessLine(resultDecision, agvId, generation, state)}";
+                    return AnswerWithReadiness(
+                        resultAck, resultDecision, agvId, generation, state, announceUnchanged: false);
                 }
             case "HardwareRecoveryRecordSubmitted":
                 {
@@ -534,12 +530,8 @@ public sealed partial class OnboardMessageProcessor(
                     // change, as after a recovery result. The record resumes nothing by itself.
                     SessionReadinessDecision recordDecision = await store.DecideReadinessAsync(
                         agvId, generation, cancellationToken).ConfigureAwait(false);
-                    if (recordDecision.Readiness == state.Readiness)
-                    {
-                        return recordResult;
-                    }
-                    state.Readiness = recordDecision.Readiness;
-                    return $"{recordResult}\n{SessionReadinessLine(recordDecision, agvId, generation, state)}";
+                    return AnswerWithReadiness(
+                        recordResult, recordDecision, agvId, generation, state, announceUnchanged: false);
                 }
             case "ExceptionRecoverySessionRequested":
             case "RecoveryActionSubmitted":
@@ -564,12 +556,8 @@ public sealed partial class OnboardMessageProcessor(
                         .ConfigureAwait(false);
                     SessionReadinessDecision recoveryDecision = await store.DecideReadinessAsync(
                         agvId, generation, cancellationToken).ConfigureAwait(false);
-                    if (recoveryDecision.Readiness == state.Readiness)
-                    {
-                        return recoveryAck;
-                    }
-                    state.Readiness = recoveryDecision.Readiness;
-                    return $"{recoveryAck}\n{SessionReadinessLine(recoveryDecision, agvId, generation, state)}";
+                    return AnswerWithReadiness(
+                        recoveryAck, recoveryDecision, agvId, generation, state, announceUnchanged: false);
                 }
             case "ManualChargingReturnToServiceRequested":
                 {
@@ -620,14 +608,12 @@ public sealed partial class OnboardMessageProcessor(
                     state.SafetyRevision = revision;
                     SessionReadinessDecision decision = await store.DecideReadinessAsync(
                         agvId, generation, cancellationToken).ConfigureAwait(false);
-                    state.Readiness = decision.Readiness;
                     if (await AffectsAnOverdueSlotAsync(agvId, payload, cancellationToken).ConfigureAwait(false))
                     {
                         state.SafetySnapshotRequestDue = true;
                     }
                     string ack = DurableAck(messageType, messageId, agvId, generation, contentHash);
-                    string readiness = SerializeReadiness(agvId, generation, state, decision);
-                    return $"{ack}\n{readiness}";
+                    return AnswerWithReadiness(ack, decision, agvId, generation, state, announceUnchanged: true);
                 }
             case "SnapshotAppliedAck":
                 {
@@ -693,9 +679,57 @@ public sealed partial class OnboardMessageProcessor(
     }
 
     /// <summary>
+    /// An answer, followed by a SessionReadiness line when this connection may be told its readiness now: the one
+    /// place an answer takes a readiness line after it (control-server#340). <paramref name="state"/>'s readiness is
+    /// always brought up to <paramref name="decision"/>; the line goes out when <paramref name="announceUnchanged"/>
+    /// or when that readiness changed, and never before the handshake is done.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Never inside the handshake</b>, for the reason <see cref="AppendSafetySnapshotRequest"/> and the triggered
+    /// recovery sends give (control-server#202): until its recovery report is answered, the vehicle reads exactly one
+    /// answer for each line it sends. A readiness line after the DurableAck of a message it resent there is read in
+    /// place of the answer to its next line -- onboard-hmi#204 saw it after a SafetyStateChanged, read where the
+    /// capability snapshot's SnapshotAppliedAck belonged, and the vehicle dropped the connection. Five sites appended
+    /// readiness themselves until #340, none of them looking at the handshake; they go through here now, and
+    /// <c>OnboardHandshakeReadinessArchitectureTests</c> keeps a sixth from appending one on its own.
+    /// </para>
+    /// <para>
+    /// <b>Nothing held back is lost.</b> The recovery report's answer ends the handshake and always carries readiness,
+    /// decided then, so it covers whatever a message resent inside the handshake did to it. That answer is built
+    /// where the report is taken, after it sets <c>HandshakeCompleted</c>, and is the one readiness line this class
+    /// sends without coming through here.
+    /// </para>
+    /// <para>
+    /// <b>The connection's readiness is still brought up to date inside the handshake.</b> It is only read here, to
+    /// tell a change from none, and the recovery report overwrites it and announces unconditionally, so inside the
+    /// handshake the choice changes no line on the wire. Keeping it current is the choice that leaves it meaning one
+    /// thing -- the latest decision -- rather than two.
+    /// </para>
+    /// </remarks>
+    private string AnswerWithReadiness(
+        string answer,
+        SessionReadinessDecision decision,
+        string agvId,
+        long generation,
+        OnboardConnectionState state,
+        bool announceUnchanged)
+    {
+        bool changed = decision.Readiness != state.Readiness;
+        state.Readiness = decision.Readiness;
+        if (!state.HandshakeCompleted || !(changed || announceUnchanged))
+        {
+            return answer;
+        }
+        return $"{answer}\n{SessionReadinessLine(decision, agvId, generation, state)}";
+    }
+
+    /// <summary>
     /// One SessionReadiness line, built the same way wherever readiness changes. The envelope used to
     /// be written out at each site; two of those copies were putting a reason code on the wire that
-    /// the protocol's closed ErrorCode enum does not contain.
+    /// the protocol's closed ErrorCode enum does not contain. The last other copy, byte for byte the same
+    /// line, went with control-server#340. Its callers are <see cref="AnswerWithReadiness"/> and the
+    /// recovery report's answer, and nothing else (<c>OnboardHandshakeReadinessArchitectureTests</c>).
     /// </summary>
     private string SessionReadinessLine(
         SessionReadinessDecision decision,
@@ -782,39 +816,8 @@ public sealed partial class OnboardMessageProcessor(
             firstAck.GetProperty("durablyAcceptedAt").GetDateTimeOffset());
         SessionReadinessDecision decision = await store.DecideReadinessAsync(
             agvId, generation, cancellationToken).ConfigureAwait(false);
-        if (decision.Readiness == state.Readiness)
-        {
-            return ack;
-        }
-        state.Readiness = decision.Readiness;
-        return $"{ack}\n{SessionReadinessLine(decision, agvId, generation, state)}";
+        return AnswerWithReadiness(ack, decision, agvId, generation, state, announceUnchanged: false);
     }
-
-    private string SerializeReadiness(
-        string agvId,
-        long generation,
-        OnboardConnectionState state,
-        SessionReadinessDecision decision) =>
-        SerializeEnvelope(
-            "SessionReadiness",
-            correlationId: null,
-            agvId,
-            generation,
-            new
-            {
-                readiness = decision.Readiness == SessionReadiness.Ready ? "READY" : "RECOVERY_REQUIRED",
-                decidedAt = timeProvider.GetUtcNow(),
-                reasonCodes = decision.Readiness == SessionReadiness.Ready
-                    ? Array.Empty<string>()
-                    : [ProtocolErrorCodes.ToSessionReadinessReasonCode(decision.ReasonCode)],
-                acceptedCapabilityVersion = state.CapabilityRevision ?? 0,
-                acceptedSafetyStateVersion = state.SafetyRevision ?? 0,
-                // NOTE: this third copy differs from SessionReadinessLine only in indentation; it is
-                // left alone because it is on the handshake path and takes its revisions from a
-                // different source. Three copies is how the illegal reasonCodes survived in two of
-                // them for as long as they did.
-                vehicleBusinessStateRevision = 1
-            });
 
     private static void RestoreAcceptedSnapshotVersions(
         string firstResponse,

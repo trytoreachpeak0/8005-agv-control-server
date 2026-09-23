@@ -1,0 +1,73 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 8.0.31)
+[xUnit.net 00:00:01.98]   Discovering: ControlServer.Tests
+[xUnit.net 00:00:05.33]   Discovered:  ControlServer.Tests
+[xUnit.net 00:00:06.38]   Starting:    ControlServer.Tests
+  Passed ControlServer.Tests.OnboardHandshakeReadinessArchitectureTests.AReadinessEnvelopeIsBuiltInOneMethodOnly [3 s]
+[xUnit.net 00:00:10.41]       Assert.Equal() Failure: Collections differ at index 1
+[xUnit.net 00:00:10.41]                  ↓ (pos 0)
+[xUnit.net 00:00:10.41]       Expected: "AnswerWithReadiness"
+[xUnit.net 00:00:10.41]       Actual:   "ProcessCurrentSessionMessageAsync"
+[xUnit.net 00:00:10.41]                  ↑ (pos 0)
+[xUnit.net 00:00:10.41]       Stack Trace:
+[xUnit.net 00:00:10.41]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\OnboardHandshakeReadinessArchitectureTests.cs(77,0): at ControlServer.Tests.OnboardHandshakeReadinessArchitectureTests.OnlyTheCombiningFunctionAndTheRecoveryReportsAnswerAppendAReadinessLine()
+[xUnit.net 00:00:10.41]            at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+[xUnit.net 00:00:10.41]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  Failed ControlServer.Tests.OnboardHandshakeReadinessArchitectureTests.OnlyTheCombiningFunctionAndTheRecoveryReportsAnswerAppendAReadinessLine [116 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ at index 1
+           ↓ (pos 0)
+Expected: "AnswerWithReadiness"
+Actual:   "ProcessCurrentSessionMessageAsync"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.OnboardHandshakeReadinessArchitectureTests.OnlyTheCombiningFunctionAndTheRecoveryReportsAnswerAppendAReadinessLine() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\OnboardHandshakeReadinessArchitectureTests.cs:line 77
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ASafetyChangeFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledged(deferOutbound: True) [6 s]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ASafetyChangeFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledged(deferOutbound: False) [393 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AnOperationResultInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(deferOutbound: False) [1 s]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AnOperationResultInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(deferOutbound: True) [252 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.InsideTheReconnectHandshakeReadinessCannotChangeBeforeTheRecoveryReport [233 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AMessageArrivingASecondTimeInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(deferOutbound: False) [216 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AMessageArrivingASecondTimeInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(deferOutbound: True) [198 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ARecoveryResultFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(deferOutbound: False) [849 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ARecoveryResultFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(deferOutbound: True) [247 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AVehicleNotReadyOnItsOwnOrderHandshakesWithoutAnExtraReadinessAndIsStillToldAfterwards [212 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AfterTheReconnectHandshakeTheSameMessagesStillCarryReadiness(messageType: "OperationResult") [228 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AfterTheReconnectHandshakeTheSameMessagesStillCarryReadiness(messageType: "SafetyStateChanged") [221 ms]
+[xUnit.net 00:00:18.79]       Assert.Equal() Failure: Collections differ
+[xUnit.net 00:00:18.79]       Expected: ["HardwareRecoveryRecordResult"]
+[xUnit.net 00:00:18.79]       Actual:   ["HardwareRecoveryRecordResult", "SessionReadiness"]
+[xUnit.net 00:00:18.79]                                                  ↑ (pos 1)
+[xUnit.net 00:00:18.79]       Stack Trace:
+[xUnit.net 00:00:18.79]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(4932,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.AHardwareRecoveryRecordInsideTheReconnectHandshakeIsAnsweredWithoutReadinessEvenWhenItChangesReadiness()
+[xUnit.net 00:00:18.79]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(4933,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.AHardwareRecoveryRecordInsideTheReconnectHandshakeIsAnsweredWithoutReadinessEvenWhenItChangesReadiness()
+[xUnit.net 00:00:18.79]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(4933,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.AHardwareRecoveryRecordInsideTheReconnectHandshakeIsAnsweredWithoutReadinessEvenWhenItChangesReadiness()
+[xUnit.net 00:00:18.79]         --- End of stack trace from previous location ---
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.TheRecoveryReportAnnouncesTheReadinessAResendInsideTheHandshakeLeftBehind(resendsUnknownResult: False, reported: "READY") [206 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.TheRecoveryReportAnnouncesTheReadinessAResendInsideTheHandshakeLeftBehind(resendsUnknownResult: True, reported: "RECOVERY_REQUIRED") [217 ms]
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AHardwareRecoveryRecordInsideTheReconnectHandshakeIsAnsweredWithoutReadinessEvenWhenItChangesReadiness [352 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+Expected: ["HardwareRecoveryRecordResult"]
+Actual:   ["HardwareRecoveryRecordResult", "SessionReadiness"]
+                                           ↑ (pos 1)
+  Stack Trace:
+     at ControlServer.Tests.RecoveryStateMachineG2Tests.AHardwareRecoveryRecordInsideTheReconnectHandshakeIsAnsweredWithoutReadinessEvenWhenItChangesReadiness() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4932
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.AHardwareRecoveryRecordInsideTheReconnectHandshakeIsAnsweredWithoutReadinessEvenWhenItChangesReadiness() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4933
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.AHardwareRecoveryRecordInsideTheReconnectHandshakeIsAnsweredWithoutReadinessEvenWhenItChangesReadiness() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4933
+--- End of stack trace from previous location ---
+[xUnit.net 00:01:04.76]   Finished:    ControlServer.Tests (ID = '9fb9a4ab0d84790bc3c068db6d32933a49ead250b57fcfa71669a5fbed036549')
+
+Total tests: 17
+     Passed: 15
+     Failed: 2
+ Total time: 1.1116 Minutes
+[xUnit.net 00:00:10.41]     ControlServer.Tests.OnboardHandshakeReadinessArchitectureTests.OnlyTheCombiningFunctionAndTheRecoveryReportsAnswerAppendAReadinessLine [FAIL]
+[xUnit.net 00:00:18.79]     ControlServer.Tests.RecoveryStateMachineG2Tests.AHardwareRecoveryRecordInsideTheReconnectHandshakeIsAnsweredWithoutReadinessEvenWhenItChangesReadiness [FAIL]
+Test Run Failed.

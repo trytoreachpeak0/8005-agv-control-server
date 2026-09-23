@@ -4718,6 +4718,433 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     /// <summary>
+    /// control-server#340, the one site the field reached (onboard-hmi#204, run <c>hmi-7cf1dcba</c>). A safety change
+    /// the vehicle made in the last session and never got to the server is resent in the reconnect handshake, after
+    /// SessionHello and before the capability snapshot, and is accepted here for the first time. Its answer is the
+    /// DurableAck the vehicle reads for it and nothing else: the SessionReadiness it carried until #340 was read in
+    /// place of the capability snapshot's SnapshotAppliedAck, and the vehicle dropped the connection. The same rule and
+    /// the same test as control-server#202: until the recovery report is answered, one line in, one line out.
+    /// </summary>
+    /// <remarks>
+    /// This site appended readiness unconditionally, so it is red before the fix in the field's own order with no
+    /// help. The other four sites append only on a change of readiness, which the handshake cannot produce -- see
+    /// <c>InsideTheReconnectHandshakeReadinessCannotChangeBeforeTheRecoveryReport</c>.
+    /// </remarks>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ASafetyChangeFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledged(bool deferOutbound)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(token);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        RecordingPeer peer = new(context);
+        OnboardMessageProcessor processor = Processor(context, peer, UnusedProofVariable);
+
+        OnboardConnectionState reconnected = new() { DeferOutboundUntilResponseWritten = deferOutbound };
+        List<string> wire = [.. await ReconnectAsync(processor, peer, reconnected)];
+        long generation = reconnected.SessionGeneration!.Value;
+        string[] resent = await ExchangeAsync(processor, peer, reconnected, InSession(
+            SafetyChange("e0000000-0000-4000-8000-000000003401", safetyStateVersion: 7, departureSafe: false),
+            generation));
+        wire.AddRange(resent);
+        int reportAt = await FinishHandshakeAsync(processor, peer, reconnected, wire);
+
+        Assert.Equal(["DurableAck"], resent.Select(MessageType).ToArray());
+        AssertNothingSentInsideTheHandshake(wire, reportAt, reconnected);
+    }
+
+    /// <summary>
+    /// control-server#340, a site the field cannot reach today. An OperationResult resent in the reconnect handshake
+    /// appended readiness whenever deciding it again changed the connection's readiness, without looking at the
+    /// handshake. Inside the handshake that change does not happen (see
+    /// <c>InsideTheReconnectHandshakeReadinessCannotChangeBeforeTheRecoveryReport</c>), so this test makes it happen:
+    /// the connection is set to READY after SessionHello, which no real handshake leaves it at. That is the
+    /// precondition under which this site's own append is reached; what is asserted is that the handshake still wins.
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AnOperationResultInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(
+        bool deferOutbound)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(token);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        await SeedLoadAwaitingResultAsync(context, Now);
+        RecordingPeer peer = new(context);
+        OnboardMessageProcessor processor = Processor(context, peer, UnusedProofVariable);
+
+        OnboardConnectionState reconnected = new() { DeferOutboundUntilResponseWritten = deferOutbound };
+        List<string> wire = [.. await ReconnectAsync(processor, peer, reconnected)];
+        long generation = reconnected.SessionGeneration!.Value;
+        reconnected.Readiness = SessionReadiness.Ready;
+        string[] resent = await ExchangeAsync(processor, peer, reconnected, InSession(Envelope(
+            "e0000000-0000-4000-8000-000000003402",
+            "OperationResult",
+            OperationResultPayload(completed: false, journalCheckpoint: "RESULT_UNKNOWN_RECORDED")), generation));
+        // Held back from the wire, not from the connection: its readiness still follows the decision.
+        Assert.Equal(SessionReadiness.RecoveryRequired, reconnected.Readiness);
+        wire.AddRange(resent);
+        int reportAt = await FinishHandshakeAsync(processor, peer, reconnected, wire);
+
+        Assert.Equal(["DurableAck"], resent.Select(MessageType).ToArray());
+        AssertNothingSentInsideTheHandshake(wire, reportAt, reconnected);
+    }
+
+    /// <summary>
+    /// control-server#340, the recovery results' site, not reachable in the field today for the reason the
+    /// OperationResult's is not. The vehicle ran the authorized compensation while the connection was down and
+    /// resends its result in the reconnect handshake, where the server takes it for the first time. The connection is
+    /// set to READY after SessionHello so that deciding readiness again changes it, which is what reaches the site's
+    /// own append.
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-COMPENSATE")]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ARecoveryResultFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(
+        bool deferOutbound)
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_RESULT_FIRST_IN_HANDSHAKE";
+        const string proof = "result-first-in-handshake-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            RecordingPeer peer = new(context);
+            OnboardMessageProcessor processor = Processor(context, peer, proofVariable);
+            string result = AllEmptyCompensationResult(
+                await ReachCompensationResultAsync(processor, CurrentState(deferOutbound: true), proof));
+
+            OnboardConnectionState reconnected = new() { DeferOutboundUntilResponseWritten = deferOutbound };
+            List<string> wire = [.. await ReconnectAsync(processor, peer, reconnected)];
+            long generation = reconnected.SessionGeneration!.Value;
+            reconnected.Readiness = SessionReadiness.Ready;
+            string[] resent = await ExchangeAsync(processor, peer, reconnected, InSession(result, generation));
+            Assert.Equal(SessionReadiness.RecoveryRequired, reconnected.Readiness);
+            wire.AddRange(resent);
+            int reportAt = await FinishHandshakeAsync(processor, peer, reconnected, wire);
+
+            Assert.Equal(["DurableAck"], resent.Select(MessageType).ToArray());
+            AssertNothingSentInsideTheHandshake(wire, reportAt, reconnected);
+            Assert.Equal(
+                RecoveryWorkflowState.Reconciled,
+                (await context.RecoveryWorkflows.AsNoTracking().SingleAsync(token)).State);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// control-server#340, the site that answers a durable message arriving a second time, from its first acceptance.
+    /// The server took this safety change in session 3 and its DurableAck never reached the vehicle, which resends it
+    /// in the reconnect handshake: the resend is answered by rebinding that first DurableAck to the new session, and
+    /// readiness, decided again there, used to follow it whenever it changed. Not reachable in the field today; the
+    /// connection is set to READY after SessionHello so that the change happens.
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AMessageArrivingASecondTimeInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(
+        bool deferOutbound)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(token);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        await SeedBlockedJourneyAsync(context);
+        RecordingPeer peer = new(context);
+        OnboardMessageProcessor processor = Processor(context, peer, UnusedProofVariable);
+        string change = SafetyChange("e0000000-0000-4000-8000-000000003404", safetyStateVersion: 8, departureSafe: true);
+        string[] first = await ExchangeAsync(processor, peer, CurrentState(deferOutbound: true), change);
+        Assert.Equal("DurableAck", MessageType(first[0]));
+
+        OnboardConnectionState reconnected = new() { DeferOutboundUntilResponseWritten = deferOutbound };
+        List<string> wire = [.. await ReconnectAsync(processor, peer, reconnected)];
+        long generation = reconnected.SessionGeneration!.Value;
+        reconnected.Readiness = SessionReadiness.Ready;
+        string[] resent = await ExchangeAsync(processor, peer, reconnected, InSession(change, generation));
+        Assert.Equal(SessionReadiness.RecoveryRequired, reconnected.Readiness);
+        // It went the rebinding way: answered from the first acceptance, not applied a second time, which would have
+        // taken its safety version into the new session.
+        Assert.Null(reconnected.SafetyRevision);
+        wire.AddRange(resent);
+        int reportAt = await FinishHandshakeAsync(processor, peer, reconnected, wire);
+
+        Assert.Equal(["DurableAck"], resent.Select(MessageType).ToArray());
+        AssertNothingSentInsideTheHandshake(wire, reportAt, reconnected);
+    }
+
+    /// <summary>
+    /// control-server#340, the hardware recovery record's site. The vehicle does not send this request inside a
+    /// handshake at all -- it is a REQUEST, never journalled, so there is nothing to resend -- and the connection is
+    /// set to READY after SessionHello so that deciding readiness again changes it. What this pins is that the site
+    /// goes through the same rule as the other four, whichever message reaches it inside the handshake.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-FORCED-MECHANICAL-RECOVERY")]
+    public async Task AHardwareRecoveryRecordInsideTheReconnectHandshakeIsAnsweredWithoutReadinessEvenWhenItChangesReadiness()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_RECORD_IN_HANDSHAKE";
+        const string proof = "record-in-handshake-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context, productionShapedSession: true);
+            RecordingPeer peer = new(context);
+            OnboardMessageProcessor processor = Processor(context, peer, proofVariable);
+            OnboardConnectionState state = CurrentState(deferOutbound: true);
+            await ExchangeAsync(processor, peer, state, RecoverySessionRequest(proof));
+            await ExchangeAsync(processor, peer, state, RecoveryAction("FORCED_MECHANICAL_RECOVERY"));
+            await ExchangeAsync(processor, peer, state, MechanicallyIsolatedResult(generation: 1));
+
+            OnboardConnectionState reconnected = new() { DeferOutboundUntilResponseWritten = true };
+            List<string> wire = [.. await ReconnectAsync(processor, peer, reconnected)];
+            long generation = reconnected.SessionGeneration!.Value;
+            reconnected.Readiness = SessionReadiness.Ready;
+            string[] answered = await ExchangeAsync(processor, peer, reconnected, InSession(
+                HardwareRecoveryRecord("e1000000-0000-4000-8000-000000003405", slots: RecoverySlots), generation));
+            Assert.Equal(SessionReadiness.RecoveryRequired, reconnected.Readiness);
+            wire.AddRange(answered);
+            int reportAt = await FinishHandshakeAsync(processor, peer, reconnected, wire);
+
+            Assert.Equal(["HardwareRecoveryRecordResult"], answered.Select(MessageType).ToArray());
+            Assert.Equal(
+                ["SessionAccepted", "HardwareRecoveryRecordResult", "SnapshotAppliedAck", "SnapshotAppliedAck",
+                    "SnapshotAppliedAck"],
+                wire.Take(reportAt).Select(MessageType).ToArray());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// control-server#340, the premise that made four of the five sites unreachable in the field, pinned so that the day
+    /// it stops holding is a red and not a surprise. From SessionHello to the recovery report, in the field's order and
+    /// with a resend that moves a ready session to RecoveryRequired mid-session, the connection's readiness and every
+    /// decision taken are RecoveryRequired: SessionHello sets the connection there and clears the session's recovery
+    /// report, which READY cannot be decided without. A site that appends readiness only on a change therefore has no
+    /// change to append inside the handshake.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// What stands behind the four sites when this goes red is <c>AnswerWithReadiness</c>, not this test: it refuses
+    /// the line inside the handshake whether or not readiness changed, and the tests that set the connection to READY
+    /// after SessionHello prove it does so at each site. So a red here means the reasoning in #340's PR about which
+    /// sites the field reaches has to be redone, not that a vehicle is at risk.
+    /// </para>
+    /// <para>
+    /// The decision is taken again after each step here, the way each of those sites takes it. Both directions of a
+    /// resent load result: an unknown one, which mid-session moves a ready session to RecoveryRequired, and a completed
+    /// one, which leaves nothing for recovery -- the case in which only the missing recovery report stands between
+    /// the session and READY once both snapshots are in, and so the case that goes red if READY stops needing it.
+    /// </para>
+    /// </remarks>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task InsideTheReconnectHandshakeReadinessCannotChangeBeforeTheRecoveryReport(bool resentResultCompleted)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(token);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        await SeedLoadAwaitingResultAsync(context, Now);
+        WireToGateStore store = new(context);
+        RecordingPeer peer = new(context);
+        OnboardMessageProcessor processor = Processor(context, peer, UnusedProofVariable);
+        Assert.Equal(SessionReadiness.Ready, (await store.DecideReadinessAsync(AgvId, 3, token)).Readiness);
+
+        OnboardConnectionState reconnected = new() { DeferOutboundUntilResponseWritten = true };
+        await ReconnectAsync(processor, peer, reconnected);
+        long generation = reconnected.SessionGeneration!.Value;
+        List<SessionReadiness> seen = [];
+        async Task Observe()
+        {
+            seen.Add(reconnected.Readiness);
+            seen.Add((await store.DecideReadinessAsync(AgvId, generation, token)).Readiness);
+        }
+
+        await Observe();
+        await ExchangeAsync(processor, peer, reconnected, InSession(Envelope(
+            "e0000000-0000-4000-8000-000000003406",
+            "OperationResult",
+            resentResultCompleted
+                ? OperationResultPayload()
+                : OperationResultPayload(completed: false, journalCheckpoint: "RESULT_UNKNOWN_RECORDED")), generation));
+        await Observe();
+        await FinishHandshakeAsync(processor, peer, reconnected, [], Observe);
+
+        Assert.Equal(10, seen.Count);
+        Assert.All(seen, readiness => Assert.Equal(SessionReadiness.RecoveryRequired, readiness));
+        Assert.Equal(
+            resentResultCompleted ? StationOperationStatus.Committed : StationOperationStatus.RecoveryRequired,
+            (await context.StationOperations.SingleAsync(token)).Status);
+        // The report is what ends it: with the completed result, the session is READY from its answer on.
+        Assert.Equal(
+            resentResultCompleted ? SessionReadiness.Ready : SessionReadiness.RecoveryRequired,
+            reconnected.Readiness);
+    }
+
+    /// <summary>
+    /// control-server#340, the other half of holding readiness back: nothing is lost by it. The recovery report's answer
+    /// ends the handshake with a readiness decided then, so what a message resent inside the handshake did to readiness
+    /// reaches the vehicle there. Here an unknown load result resent in the handshake leaves the session needing recovery,
+    /// and the report says so; the same handshake without it reports READY, which is what makes the difference the
+    /// resend's.
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
+    [InlineData(true, "RECOVERY_REQUIRED")]
+    [InlineData(false, "READY")]
+    public async Task TheRecoveryReportAnnouncesTheReadinessAResendInsideTheHandshakeLeftBehind(
+        bool resendsUnknownResult,
+        string reported)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(token);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        await SeedLoadAwaitingResultAsync(context, Now);
+        RecordingPeer peer = new(context);
+        OnboardMessageProcessor processor = Processor(context, peer, UnusedProofVariable);
+
+        OnboardConnectionState reconnected = new() { DeferOutboundUntilResponseWritten = true };
+        List<string> wire = [.. await ReconnectAsync(processor, peer, reconnected)];
+        long generation = reconnected.SessionGeneration!.Value;
+        if (resendsUnknownResult)
+        {
+            wire.AddRange(await ExchangeAsync(processor, peer, reconnected, InSession(Envelope(
+                "e0000000-0000-4000-8000-000000003407",
+                "OperationResult",
+                OperationResultPayload(completed: false, journalCheckpoint: "RESULT_UNKNOWN_RECORDED")), generation)));
+        }
+        int reportAt = await FinishHandshakeAsync(processor, peer, reconnected, wire);
+
+        AssertNothingSentInsideTheHandshake(wire, reportAt, reconnected);
+        string readiness = wire[reportAt + 1];
+        Assert.Equal("SessionReadiness", MessageType(readiness));
+        Assert.Equal(reported, FirstPayload(readiness).GetProperty("readiness").GetString());
+    }
+
+    /// <summary>
+    /// control-server#340 keeps the session's own behaviour. Once the recovery report is answered, the same messages
+    /// still carry readiness: a safety change always, a load result when readiness changes -- here an unknown result
+    /// on a ready session.
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
+    [InlineData("SafetyStateChanged")]
+    [InlineData("OperationResult")]
+    public async Task AfterTheReconnectHandshakeTheSameMessagesStillCarryReadiness(string messageType)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(token);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        await SeedLoadAwaitingResultAsync(context, Now);
+        RecordingPeer peer = new(context);
+        OnboardMessageProcessor processor = Processor(context, peer, UnusedProofVariable);
+        OnboardConnectionState reconnected = new() { DeferOutboundUntilResponseWritten = true };
+        await ReconnectAsync(processor, peer, reconnected);
+        long generation = reconnected.SessionGeneration!.Value;
+        await FinishHandshakeAsync(processor, peer, reconnected, []);
+        Assert.Equal(SessionReadiness.Ready, reconnected.Readiness);
+
+        string line = messageType == "SafetyStateChanged"
+            ? SafetyChange("e0000000-0000-4000-8000-000000003408", safetyStateVersion: 9, departureSafe: true)
+            : Envelope(
+                "e0000000-0000-4000-8000-000000003409",
+                "OperationResult",
+                OperationResultPayload(completed: false, journalCheckpoint: "RESULT_UNKNOWN_RECORDED"));
+        string[] answered = await ExchangeAsync(processor, peer, reconnected, InSession(line, generation));
+
+        Assert.Equal(["DurableAck", "SessionReadiness"], answered.Take(2).Select(MessageType).ToArray());
+        Assert.Equal(
+            messageType == "SafetyStateChanged" ? "READY" : "RECOVERY_REQUIRED",
+            FirstPayload(answered[1]).GetProperty("readiness").GetString());
+    }
+
+    /// <summary>
+    /// control-server#340 in the state a real vehicle is in for its whole drive: not ready because it carries a movement
+    /// order of this server's, reported as a departure it cannot make (VEHICLE_NOT_READY). It reconnects on the way, and
+    /// resends a safety change saying the same thing. Inside the handshake that change is only acknowledged, although
+    /// the session is and stays RecoveryRequired; the recovery report answers RECOVERY_REQUIRED for the departure; and
+    /// after the handshake a further safety change still carries readiness, RECOVERY_REQUIRED again, while one that
+    /// does not change readiness -- a progress report -- is only acknowledged.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
+    public async Task AVehicleNotReadyOnItsOwnOrderHandshakesWithoutAnExtraReadinessAndIsStillToldAfterwards()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(token);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        await SeedLoadAwaitingResultAsync(context, Now);
+        WireToGateStore store = new(context);
+        RecordingPeer peer = new(context);
+        OnboardMessageProcessor processor = Processor(context, peer, UnusedProofVariable);
+
+        OnboardConnectionState reconnected = new() { DeferOutboundUntilResponseWritten = true };
+        List<string> wire = [.. await ReconnectAsync(processor, peer, reconnected)];
+        long generation = reconnected.SessionGeneration!.Value;
+        string[] resent = await ExchangeAsync(processor, peer, reconnected, InSession(SafetyChange(
+            "e0000000-0000-4000-8000-000000003410",
+            safetyStateVersion: 7,
+            departureSafe: false,
+            unsafeReason: OwnOrderNotReadyReason), generation));
+        wire.AddRange(resent);
+        int reportAt = await FinishHandshakeAsync(processor, peer, reconnected, wire, departureSafe: false);
+
+        Assert.Equal(["DurableAck"], resent.Select(MessageType).ToArray());
+        AssertNothingSentInsideTheHandshake(wire, reportAt, reconnected);
+        Assert.Equal("RECOVERY_REQUIRED", FirstPayload(wire[reportAt + 1]).GetProperty("readiness").GetString());
+        Assert.Equal("DEPARTURE_SAFETY_NOT_READY", (await store.GetReadinessAsync(AgvId, token)).ReasonCode);
+
+        string[] stillDriving = await ExchangeAsync(processor, peer, reconnected, InSession(SafetyChange(
+            "e0000000-0000-4000-8000-000000003411",
+            safetyStateVersion: 9,
+            departureSafe: false,
+            unsafeReason: OwnOrderNotReadyReason), generation));
+        Assert.Equal(["DurableAck", "SessionReadiness"], stillDriving.Take(2).Select(MessageType).ToArray());
+        Assert.Equal("RECOVERY_REQUIRED", FirstPayload(stillDriving[1]).GetProperty("readiness").GetString());
+        string[] progress = await ExchangeAsync(processor, peer, reconnected, InSession(Envelope(
+            "e0000000-0000-4000-8000-000000003412",
+            "OperationProgress",
+            new { slotOperationAttemptId = AttemptId, observedAt = Now }), generation));
+        Assert.Equal(["DurableAck"], progress.Select(MessageType).ToArray());
+    }
+
+    /// <summary>
     /// Everything the server wrote in a reconnect before the recovery report is an answer to the line the vehicle had
     /// just sent, one per line: no recovery command and no recovery session snapshot while the vehicle reads one
     /// answer at a time (control-server#202). Where sends wait for the answer to be written, as they do on
@@ -4816,13 +5243,17 @@ public sealed class RecoveryStateMachineG2Tests
         OnboardMessageProcessor processor,
         RecordingPeer peer,
         OnboardConnectionState state,
-        List<string> wire)
+        List<string> wire,
+        Func<Task>? afterEachSnapshot = null,
+        bool departureSafe = true)
     {
         long generation = state.SessionGeneration!.Value;
+        afterEachSnapshot ??= () => Task.CompletedTask;
         wire.AddRange(await ExchangeAsync(processor, peer, state, InSession(Envelope(
             Guid.NewGuid().ToString("D"),
             "CapabilitySnapshot",
             new { capabilityVersion = 6, activeSlotConfigurationFingerprint = new string('0', 64) }), generation)));
+        await afterEachSnapshot();
         wire.AddRange(await ExchangeAsync(processor, peer, state, InSession(Envelope(
             Guid.NewGuid().ToString("D"),
             "SafetyStateSnapshot",
@@ -4831,18 +5262,20 @@ public sealed class RecoveryStateMachineG2Tests
                 safetyStateVersion = 8,
                 safety = new
                 {
-                    departureSafe = true,
-                    vehicleStopped = true,
+                    departureSafe,
+                    vehicleStopped = departureSafe,
                     allTargetSlotsLocked = true,
                     allUnlockOutputsReset = true,
-                    unknownPresent = false,
-                    reasonCodes = Array.Empty<string>()
+                    unknownPresent = !departureSafe,
+                    reasonCodes = departureSafe ? Array.Empty<string>() : [OwnOrderNotReadyReason]
                 }
             }), generation)));
+        await afterEachSnapshot();
         wire.AddRange(await ExchangeAsync(processor, peer, state, InSession(Envelope(
             Guid.NewGuid().ToString("D"),
             "OnboardAlarmSnapshot",
             new { alarmSnapshotRevision = 1, observedAt = Now, alarms = Array.Empty<object>() }), generation)));
+        await afterEachSnapshot();
         int reportAt = wire.Count;
         wire.AddRange(await ExchangeAsync(
             processor, peer, state, RecoveryStateReport(generation, unsettledAttemptId: null)));
@@ -5693,6 +6126,38 @@ public sealed class RecoveryStateMachineG2Tests
             [$"{OnboardTransportOptions.SectionName}:CredentialEnvironmentVariable"] = HandshakeCredentialVariable
         })
         .Build();
+
+    /// <summary>For a test whose processor takes no recovery request: the variable is never set.</summary>
+    private const string UnusedProofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_UNUSED";
+
+    /// <summary>
+    /// What a real onboard reports for the whole drive while it carries a movement order of this server's: the
+    /// vehicle-safety endpoint says the motion is unknown, and the vehicle is not ready (cs#138; the session then reads
+    /// DEPARTURE_SAFETY_NOT_READY, as <c>PickupDispatchPlanPastOwnOrderTests.DropSessionOnOwnOrderAsync</c> seeds it).
+    /// </summary>
+    private const string OwnOrderNotReadyReason = "VEHICLE_NOT_READY";
+
+    private static string SafetyChange(
+        string messageId,
+        long safetyStateVersion,
+        bool departureSafe,
+        string unsafeReason = "VEHICLE_MOTION_UNKNOWN") => Envelope(
+        messageId,
+        "SafetyStateChanged",
+        new
+        {
+            safetyStateVersion,
+            observedAt = Now,
+            safety = new
+            {
+                departureSafe,
+                vehicleStopped = departureSafe,
+                allTargetSlotsLocked = true,
+                allUnlockOutputsReset = true,
+                unknownPresent = !departureSafe,
+                reasonCodes = departureSafe ? Array.Empty<string>() : [unsafeReason]
+            }
+        });
 
     private static string WireContentHash(string line) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(line))).ToLowerInvariant();

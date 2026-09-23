@@ -1,0 +1,14 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs b/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
+index 713a369e..209f3eee 100644
+--- a/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
++++ b/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
+@@ -613,7 +613,8 @@ public sealed partial class OnboardMessageProcessor(
+                         state.SafetySnapshotRequestDue = true;
+                     }
+                     string ack = DurableAck(messageType, messageId, agvId, generation, contentHash);
+-                    return AnswerWithReadiness(ack, decision, agvId, generation, state, announceUnchanged: true);
++                    state.Readiness = decision.Readiness;
++                    return $"{ack}\n{SessionReadinessLine(decision, agvId, generation, state)}";
+                 }
+             case "SnapshotAppliedAck":
+                 {
