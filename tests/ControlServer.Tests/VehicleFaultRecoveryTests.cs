@@ -1560,7 +1560,8 @@ public sealed class VehicleFaultRecoveryTests
         IVehicleFaultStore? faultStore = null,
         JourneyMutationGate? gate = null,
         TimeSpan? gateTimeout = null,
-        VehicleFaultResumeFlights? flights = null)
+        VehicleFaultResumeFlights? flights = null,
+        ILogger<VehicleFaultRecoveryService>? logger = null)
     {
         context ??= new ControlServerDbContext(fixture.DbOptionsForTests);
         IVehicleFaultStore faults = faultStore ?? new VehicleFaultStore(context);
@@ -1576,7 +1577,7 @@ public sealed class VehicleFaultRecoveryTests
         return new VehicleFaultRecoveryService(
             context, faults, site, site, site, supervisor, coordinator, ledger, gate ?? new JourneyMutationGate(),
             flights ?? new VehicleFaultResumeFlights(), Options.Create(fixture.Options),
-            fixture.Clock, NullLogger<VehicleFaultRecoveryService>.Instance, gateTimeout);
+            fixture.Clock, logger ?? NullLogger<VehicleFaultRecoveryService>.Instance, gateTimeout);
     }
 
     /// <summary>

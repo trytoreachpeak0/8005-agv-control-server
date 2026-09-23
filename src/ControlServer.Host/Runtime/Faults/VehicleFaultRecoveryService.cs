@@ -18,6 +18,12 @@ public enum VehicleFaultRecoveryAction
 
     /// <summary>The order was held (PAUSED 7); continue it on the same vehicle (REQ-0239, first half).</summary>
     ResumeHeldOrder,
+
+    /// <summary>
+    /// The automatic rebuild stopped at its third guard (REQ-0361); rebuild once more, now, for the same vehicle and demand
+    /// (control-server#345).
+    /// </summary>
+    RebuildStoppedOrder,
 }
 
 /// <summary>A person's request about one explicitly named vehicle.</summary>
@@ -45,6 +51,9 @@ public enum VehicleFaultRecoveryOutcome
 
     /// <summary>Refused; the reasons name every criterion that is not met.</summary>
     Refused,
+
+    /// <summary>A stopped rebuild was handed back to the engine to be made once more (control-server#345).</summary>
+    RebuildRequested,
 }
 
 /// <summary>What was done with the vehicle's journey when its fault was cleared.</summary>
