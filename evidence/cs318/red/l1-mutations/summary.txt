@@ -339,3 +339,32 @@ M44 review S4: withdrawing the request changes nothing, so no second request goe
 M45 review S2: an ending that cannot be read again stops the rebuild
   totals: Failed! 1 320
   red: ControlServer.Tests.OwnOrderRebuildTests.ARebuiltOrderWhoseEndingCannotBeReadIsReadAgainNextRound
+
+# sixth run, on dd3b49f0 (incremental review B1, B2, low 2 and 4): M05, M06, M26, M27, M32, M37 rerun (M06, M32, M37 re-pointed); M46-M49 new
+# (entries for M05-M37 below were written from their logs: the run stopped at M46, whose injection did not compile, before it wrote the summary)
+M05 no rebuild behind the readiness gate
+  totals: Failed! 7 317
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsBehindTheGateWhenTheSessionIsHeldForMoreThanTheVehicle(held:
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuiltOrderSentBeforeTheSessionDroppedIsConfirmedBehindTheGate
+  red: ControlServer.Tests.OwnOrderRebuildTests.AnOrderCancelledWhileTheSessionIsNotReadyOnItsOwnOrderWaitsForTheSessionBeforeItIsRebuilt
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderRebuildsOnceTheSessionIsReady(cargo:
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ALoadedClearanceWhoseSessionNeverBecomesReadyWaitsForTheSnapshot
+M06 behind the readiness gate, the rebuild may create
+  totals: Failed! 5 319
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsBehindTheGateWhenTheSessionIsHeldForMoreThanTheVehicle(held:
+  red: ControlServer.Tests.OwnOrderRebuildTests.AnOrderCancelledWhileTheSessionIsNotReadyOnItsOwnOrderWaitsForTheSessionBeforeItIsRebuilt
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderRebuildsOnceTheSessionIsReady(cargo:
+M26 review M1: a rebuild decided before a crash is created without asking the vehicle and the gate again
+  totals: Failed! 2 322
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuildDecidedBeforeACrashChecksTheVehicleAndTheGateAgainAfterTheRestart(closedBy:
+M27 review M2: Onboard's departure summary is not read
+  totals: Failed! 6 318
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuildToTheUnloadStopWaitsWhileTheOnboardSaysASlotIsUnlocked
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsUntilTheOnboardSaysTheVehicleMayDepart(unsafeBy:
+M32 review S2: the clearance does not read a terminal-reconciled intent
+  totals: Failed! 1 323
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0361ARebuiltOrderThatFailsBeforeItIsConfirmedIsAFaultAPersonCanClear
+M37 review S4: an inconclusive snapshot is never asked for again
+  totals: Failed! 1 323
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362AnInconclusiveSnapshotIsAskedForAgainAfterAWhile
+# M46 as first written ("TickCount64 >= 0 || await ...") did not compile (CS8602, intent may be null on that side); log kept as M46-miswritten.log. Rewritten to keep the intent check on the left:

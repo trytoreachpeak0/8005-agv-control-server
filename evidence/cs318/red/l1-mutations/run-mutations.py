@@ -204,8 +204,8 @@ MUTATIONS = [
      '        if (' + OFF + 'order.Kind != RiotOrderObservationKind.Terminal)\n'),
     # sixth run: the incremental review's B1, B2 and low 4
     ('M46', 'incremental low 4: an ordinary leg\'s terminal-reconciled intent is read too', RECOVERY,
-     '             await dbContext.OwnOrderRebuilds.AsNoTracking()\n',
-     '             Environment.TickCount64 >= 0 || await dbContext.OwnOrderRebuilds.AsNoTracking()\n'),
+     '             await dbContext.OwnOrderRebuilds.AsNoTracking()\n                 .AnyAsync(\n                     row => row.NewUpperId == intent.UpperId && row.State == OwnOrderRebuildStates.Failed,\n                     cancellationToken)\n                 .ConfigureAwait(false)))\n',
+     '             (Environment.TickCount64 >= 0 || await dbContext.OwnOrderRebuilds.AsNoTracking()\n                 .AnyAsync(\n                     row => row.NewUpperId == intent.UpperId && row.State == OwnOrderRebuildStates.Failed,\n                     cancellationToken)\n                 .ConfigureAwait(false))))\n'),
     ('M47', 'incremental B1: the re-ask counts from the snapshot alone, not from the last request', ENGINE,
      '                    DateTimeOffset since = rebuild.CargoEvidenceRequestedAt is { } requestedAt && requestedAt > evidence.ReceivedAt\n',
      '                    DateTimeOffset since = rebuild.CargoEvidenceRequestedAt is { } requestedAt && Environment.TickCount64 < 0 && requestedAt > evidence.ReceivedAt\n'),
@@ -262,9 +262,9 @@ def main():
         totals = re.findall(r'(Failed!|Passed!)\s+-\s+Failed:\s+(\d+), Passed:\s+(\d+)', test.stdout)
         summary.append((key, what, totals[-1] if totals else ('?', '?', '?'), failed))
         print(f'{key}: {totals[-1] if totals else "no totals"} -> {len(failed)} red')
-    with open(OUT / 'summary.txt', 'a', encoding='utf-8', newline='\n') as out:
-        for key, what, totals, failed in summary:
-            out.write(f'{key} {what}\n  totals: {" ".join(totals)}\n')
+        # written as each mutation finishes, so a run that stops later keeps what it has (the sixth run lost six entries)
+        with open(OUT / 'summary.txt', 'a', encoding='utf-8', newline='\n') as out:
+            out.write(f'{key} {what}\n  totals: {" ".join(summary[-1][2])}\n')
             for name in failed:
                 out.write(f'  red: {name}\n')
             if not failed:
