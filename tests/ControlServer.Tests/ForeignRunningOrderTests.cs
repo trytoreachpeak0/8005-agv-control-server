@@ -357,6 +357,62 @@ public sealed class ForeignRunningOrderTests
     }
 
     /// <summary>
+    /// 两次读之间，它换到了另一辆我们的车上：这一轮不发（不是「同一辆」），但记录跟着车走，新的那辆车照样挡着；
+    /// 下一轮在新车上再读一次，仍在，才发——只发一次。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0164")]
+    public async Task Req0164AnOrderThatMovesToAnotherOfOurVehiclesBetweenTheReadsIsFollowedAndCancelledAfterAFreshReRead()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        const string SecondAgvId = "AGV-8005-SECOND";
+        const string SecondVehicleKey = "BROKERX-00000000000000000000000000000002";
+        fixture.Options.Fleet =
+        [
+            new FleetVehicleOptions
+            {
+                AgvId = fixture.Options.AgvId,
+                VehicleKey = fixture.Options.VehicleKey,
+                AgvLifecycleGeneration = fixture.Options.AgvLifecycleGeneration,
+            },
+            new FleetVehicleOptions
+            {
+                AgvId = SecondAgvId,
+                VehicleKey = SecondVehicleKey,
+                AgvLifecycleGeneration = 1,
+            },
+        ];
+        await fixture.RecreateEngineAsync();
+        fixture.Riot.PlaceOrder(ForeignOrderId, ForeignUpperId, RiotOrderState.Executing, fixture.Options.VehicleKey);
+        fixture.Riot.BeforeListing = read =>
+        {
+            if (read == 2)
+            {
+                fixture.Riot.PlaceOrder(ForeignOrderId, ForeignUpperId, RiotOrderState.Executing, SecondVehicleKey);
+            }
+        };
+
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Empty(fixture.Riot.OrderCommands);
+        ForeignRiotOrderRow followed = await RowAsync(fixture);
+        Assert.Equal(
+            (ForeignRiotOrderStates.Detected, SecondAgvId, SecondVehicleKey),
+            (followed.State, followed.AgvId, followed.DeviceKey));
+        Assert.Equal([SecondAgvId], await HeldAsync(fixture));
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(2));
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Equal(
+            [(RiotOrderCommandKind.Cancel, ForeignOrderId)],
+            fixture.Riot.OrderCommands.Select(command => (command.Kind, command.OrderId)));
+        ForeignRiotOrderRow ended = await RowAsync(fixture);
+        Assert.Equal((ForeignRiotOrderStates.Ended, SecondAgvId), (ended.State, ended.AgvId));
+        Assert.Equal(SecondAgvId, Assert.Single(await AuditAsync(fixture)).AgvId);
+    }
+
+    /// <summary>
     /// 发前那一次再读没读全：这一轮不发，记录留在已认出、车照样挡着；下一轮读全了、它仍在我们车上跑，才发——而且只发一次。
     /// </summary>
     [Fact]
