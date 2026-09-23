@@ -4850,6 +4850,48 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     /// <summary>
+    /// control-server#340, the site that answers a durable message arriving a second time, from its first acceptance.
+    /// The server took this safety change in session 3 and its DurableAck never reached the vehicle, which resends it
+    /// in the reconnect handshake: the resend is answered by rebinding that first DurableAck to the new session, and
+    /// readiness, decided again there, used to follow it whenever it changed. Not reachable in the field today; the
+    /// connection is set to READY after SessionHello so that the change happens.
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AMessageArrivingASecondTimeInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(
+        bool deferOutbound)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(token);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        await SeedBlockedJourneyAsync(context);
+        RecordingPeer peer = new(context);
+        OnboardMessageProcessor processor = Processor(context, peer, UnusedProofVariable);
+        string change = SafetyChange("e0000000-0000-4000-8000-000000003404", safetyStateVersion: 8, departureSafe: true);
+        string[] first = await ExchangeAsync(processor, peer, CurrentState(deferOutbound: true), change);
+        Assert.Equal("DurableAck", MessageType(first[0]));
+
+        OnboardConnectionState reconnected = new() { DeferOutboundUntilResponseWritten = deferOutbound };
+        List<string> wire = [.. await ReconnectAsync(processor, peer, reconnected)];
+        long generation = reconnected.SessionGeneration!.Value;
+        reconnected.Readiness = SessionReadiness.Ready;
+        string[] resent = await ExchangeAsync(processor, peer, reconnected, InSession(change, generation));
+        Assert.Equal(SessionReadiness.RecoveryRequired, reconnected.Readiness);
+        // It went the rebinding way: answered from the first acceptance, not applied a second time, which would have
+        // taken its safety version into the new session.
+        Assert.Null(reconnected.SafetyRevision);
+        wire.AddRange(resent);
+        int reportAt = await FinishHandshakeAsync(processor, peer, reconnected, wire);
+
+        Assert.Equal(["DurableAck"], resent.Select(MessageType).ToArray());
+        AssertNothingSentInsideTheHandshake(wire, reportAt, reconnected);
+    }
+
+    /// <summary>
     /// Everything the server wrote in a reconnect before the recovery report is an answer to the line the vehicle had
     /// just sent, one per line: no recovery command and no recovery session snapshot while the vehicle reads one
     /// answer at a time (control-server#202). Where sends wait for the answer to be written, as they do on
