@@ -111,8 +111,8 @@ public sealed partial class JourneyRuntimeEngine
     public const string OwnOrderRebuildVehicleIneligibleReason = "OWN_ORDER_REBUILD_VEHICLE_INELIGIBLE";
 
     /// <summary>
-    /// How old a snapshot that could not settle where the cargo is has to be before the vehicle is asked for another (review
-    /// S4). Long enough that a door someone is closing is not polled every message, short enough that the rebuild follows
+    /// How old a snapshot that could not settle where the cargo is, and the last request for one, both have to be before the
+    /// vehicle is asked for another (review S4, incremental review B1). Long enough that a door someone is closing is not polled every message, short enough that the rebuild follows
     /// within seconds of the slot being secured.
     /// </summary>
     private static readonly TimeSpan CargoEvidenceReaskInterval = TimeSpan.FromSeconds(10);
@@ -213,17 +213,21 @@ public sealed partial class JourneyRuntimeEngine
                 if (evidence.NotShown is null && evidence.Unproven is not null)
                 {
                     // Review S4: a snapshot that cannot settle where the cargo is waits for the next one -- and the next one
-                    // has to be asked for: Onboard sends a SafetyStateSnapshot only in the handshake and when asked. Once the
-                    // inconclusive one is old enough the request is withdrawn, so the Host asks again on the vehicle's next
-                    // message; at most once per interval, however long the slot stays unsecured.
+                    // has to be asked for: Onboard sends a SafetyStateSnapshot only in the handshake and when asked. Once both
+                    // the inconclusive snapshot and the last request are an interval old, the request is withdrawn, so the Host
+                    // asks again on the vehicle's next message: at most once per interval, however long the slot stays
+                    // unsecured. The last request counts too (incremental review B1): a vehicle that does not answer leaves the
+                    // snapshot old for ever, and counting from the snapshot alone asked on every round.
                     //
                     // No cap on how often, on purpose (agreed with the coordinator). Stopping the asking adds no safety: the
                     // vehicle is not sent off either way. It would instead turn a state that clears by itself, once the slot is
                     // secured, into one only an engineer can clear -- a stopped rebuild has no way out. And a person can see it
                     // from the first inconclusive snapshot on: the journey carries OWN_ORDER_REBUILD_CARGO_UNPROVEN, described
                     // on the dashboard, and event 2172 is logged at Warning once per waiting reason.
-                    if (rebuild.CargoEvidenceRequestedGeneration is not null &&
-                        now - evidence.ReceivedAt >= CargoEvidenceReaskInterval)
+                    DateTimeOffset since = rebuild.CargoEvidenceRequestedAt is { } requestedAt && requestedAt > evidence.ReceivedAt
+                        ? requestedAt
+                        : evidence.ReceivedAt;
+                    if (rebuild.CargoEvidenceRequestedGeneration is not null && now - since >= CargoEvidenceReaskInterval)
                     {
                         OwnOrderRebuilds.WithdrawCargoEvidenceRequest(rebuild);
                         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
