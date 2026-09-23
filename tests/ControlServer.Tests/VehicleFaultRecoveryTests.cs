@@ -422,15 +422,17 @@ public sealed class VehicleFaultRecoveryTests
     }
 
     /// <summary>
-    /// REQ-0362：清除之后的快照到了，却证明不了货还完整留在原仓——某个目标仓是空的、门没锁、开锁输出没复位，或车报有未知——
-    /// 不重建，挡住并报错误级告警，旅程码 <c>OWN_ORDER_REBUILD_CARGO_NOT_IN_PLACE</c>，看板让现场知道货可能不在原仓；之后再来一份
-    /// 好的快照也不再自动建（等人处理）。
+    /// REQ-0362：清除之后的快照到了，确证货不在原仓——目标仓读到 EMPTY，全部是空的，或两个目标仓里有一个是空的——不重建，挡住并报
+    /// 错误级告警，旅程码 <c>OWN_ORDER_REBUILD_CARGO_NOT_IN_PLACE</c>，看板让现场知道货可能不在原仓；之后再来一份好的快照也不再自动建
+    /// （等人处理）。
     /// </summary>
+    /// <remarks>
+    /// 审查 S4 翻转：第一版把门没锁、开锁输出没复位、车报有未知也归到这里停住。那些是「判不了」，不是「货不在」，改为继续等
+    /// （<see cref="Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting"/>）。
+    /// </remarks>
     [Theory]
     [InlineData("empty")]
-    [InlineData("unlocked")]
-    [InlineData("output-not-reset")]
-    [InlineData("unknown-present")]
+    [InlineData("one-of-two-empty")]
     [Trait("Requirement", "REQ-0362")]
     public async Task Req0362AFreshSnapshotThatDoesNotShowTheCargoInPlaceStopsTheRebuild(string shows)
     {
@@ -441,13 +443,19 @@ public sealed class VehicleFaultRecoveryTests
             (await Service(fixture, new SiteRiot(fixture)).RecoverAsync(Clear(fixture), Token)).Disposition);
         fixture.Context.ChangeTracker.Clear();
         fixture.Clock.Advance(TimeSpan.FromSeconds(5));
-        await (shows switch
+        if (shows == "one-of-two-empty")
+        {
+            await SecondCargoSlotAsync(fixture);
+        }
+
+        int[] cargo = await (shows switch
         {
             "empty" => fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow(), physicalState: "EMPTY"),
-            "unlocked" => fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow(), lockState: "UNLOCKED"),
-            "output-not-reset" => fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow(), unlockOutputState: "ACTIVE"),
-            _ => fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow(), unknownPresent: true),
+            _ => fixture.AddCargoSnapshotAsync(
+                fixture.Clock.GetUtcNow(),
+                cargoSlot: index => index == 0 ? ("OCCUPIED", "LOCKED", "RESET") : ("EMPTY", "LOCKED", "RESET")),
         });
+        Assert.True(shows == "empty" || cargo.Length == 2, $"cargo slots: {string.Join(',', cargo)}");
         await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
         await fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow());
         await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
@@ -463,6 +471,129 @@ public sealed class VehicleFaultRecoveryTests
         Assert.Contains(fixture.EngineLog.Entries, entry =>
             entry.Level == LogLevel.Error &&
             entry.Message.Contains("CARGO_NOT_PROVEN_IN_ORIGINAL_SLOTS", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// REQ-0362：清除之后的快照到了，但判不了货在不在原仓——门没锁、开锁输出没复位（货还在、只是没锁好）、车报有未知、目标仓读到
+    /// UNKNOWN、目标仓没在快照里、装货批次还没落定、没有一个已提交的装货——不停，继续等，旅程码
+    /// <c>OWN_ORDER_REBUILD_CARGO_UNPROVEN</c>（看板另写文案），记录写明卡在哪一项；之后来一份能证明的快照，照常重建。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 审查 S4：只有确证货不在（EMPTY）才停住告警；判不了的等下一份快照。第一版把前三种停住，后四种里有的停、有的没测到。
+    /// </para>
+    /// <para>
+    /// <b>门没锁、开锁输出没复位归「判不了」，理由</b>：货在（OCCUPIED），只是仓没锁好。这是一个会变的状态——有人在门边，或者开锁输出
+    /// 还没回落——不是「货不在」。它不会让车带着没锁好的仓出发：建单还要过车载端的离站判定（审查 M2，要求目标仓全锁、开锁输出全复位）。
+    /// 货真被拿走了，下一份快照读到的是 EMPTY，那时停住。
+    /// </para>
+    /// </remarks>
+    [Theory]
+    [InlineData("unlocked")]
+    [InlineData("output-not-reset")]
+    [InlineData("unknown-present")]
+    [InlineData("physical-unknown")]
+    [InlineData("slot-not-reported")]
+    [InlineData("load-not-settled")]
+    [InlineData("no-committed-load")]
+    [Trait("Requirement", "REQ-0362")]
+    public async Task Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(string shows)
+    {
+        await using RuntimeFixture fixture = await FaultedOnTheWayToGateAsync();
+        int gateCreates = fixture.Riot.CreateCount("TO_GATE");
+        Assert.Equal(
+            VehicleFaultRecoveryDispositions.RebuildScheduled,
+            (await Service(fixture, new SiteRiot(fixture)).RecoverAsync(Clear(fixture), Token)).Disposition);
+        fixture.Context.ChangeTracker.Clear();
+        fixture.Clock.Advance(TimeSpan.FromSeconds(5));
+        await (shows switch
+        {
+            "unlocked" => fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow(), lockState: "UNLOCKED"),
+            "output-not-reset" => fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow(), unlockOutputState: "ACTIVE"),
+            "unknown-present" => fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow(), unknownPresent: true),
+            "physical-unknown" => fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow(), physicalState: "UNKNOWN"),
+            "slot-not-reported" => fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow(), cargoSlot: _ => null),
+            _ => fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow()),
+        });
+        StationOperationRow load = await fixture.Context.StationOperations
+            .SingleAsync(row => row.OperationType == SlotOperationType.Load, Token);
+        if (shows == "load-not-settled")
+        {
+            fixture.Context.StationOperations.Add(new StationOperationRow
+            {
+                SlotOperationAttemptId = "LOAD-NOT-SETTLED",
+                DemandId = load.DemandId,
+                SublotId = load.SublotId,
+                TargetSlotsJson = load.TargetSlotsJson,
+                OperationType = SlotOperationType.Load,
+                ContentHash = load.ContentHash,
+                Status = StationOperationStatus.Prepared,
+            });
+        }
+        else if (shows == "no-committed-load")
+        {
+            load.Status = StationOperationStatus.Cancelled;
+        }
+
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+
+        Assert.Equal(gateCreates, fixture.Riot.CreateCount("TO_GATE"));
+        Assert.Equal("OWN_ORDER_REBUILD_CARGO_UNPROVEN", (await fixture.RuntimeAsync()).BlockReasonCode);
+        await using (ControlServerDbContext waiting = new(fixture.DbOptionsForTests))
+        {
+            OwnOrderRebuildRow record = await waiting.OwnOrderRebuilds.AsNoTracking().SingleAsync(Token);
+            Assert.Equal((OwnOrderRebuildStates.Pending, null), (record.State, record.CargoProvenAt));
+            Assert.StartsWith(
+                shows switch
+                {
+                    "unknown-present" => "UNKNOWN_PRESENT",
+                    "slot-not-reported" => "SLOT_",
+                    "load-not-settled" => "LOAD_NOT_SETTLED:LOAD-NOT-SETTLED",
+                    "no-committed-load" => "CARGO_SLOTS_UNKNOWN",
+                    _ => "SLOT_",
+                },
+                record.WaitingReason);
+        }
+
+        if (shows is "load-not-settled" or "no-committed-load")
+        {
+            return;
+        }
+
+        await fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow());
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Equal(gateCreates + 1, fixture.Riot.CreateCount("TO_GATE"));
+    }
+
+    /// <summary>
+    /// REQ-0362 的「本车的快照」：清除之后别的车发来的快照不算，哪怕它读到货不在——旅程仍停在
+    /// <c>OWN_ORDER_REBUILD_WAITING_CARGO_EVIDENCE</c>（没收到本车的快照），不停住、不建单。
+    /// </summary>
+    /// <remarks>审查 S3：收件箱没有车号列，按信封里的 <c>agvId</c> 过滤；这一条钉住那个过滤。</remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0362")]
+    public async Task Req0362ASnapshotFromAnotherVehicleSaysNothingAboutThisOnesCargo()
+    {
+        await using RuntimeFixture fixture = await FaultedOnTheWayToGateAsync();
+        int gateCreates = fixture.Riot.CreateCount("TO_GATE");
+        Assert.Equal(
+            VehicleFaultRecoveryDispositions.RebuildScheduled,
+            (await Service(fixture, new SiteRiot(fixture)).RecoverAsync(Clear(fixture), Token)).Disposition);
+        fixture.Context.ChangeTracker.Clear();
+        fixture.Clock.Advance(TimeSpan.FromSeconds(5));
+        await fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow(), physicalState: "EMPTY", agvId: "另一辆车");
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+
+        Assert.Equal(gateCreates, fixture.Riot.CreateCount("TO_GATE"));
+        Assert.Equal("OWN_ORDER_REBUILD_WAITING_CARGO_EVIDENCE", (await fixture.RuntimeAsync()).BlockReasonCode);
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        Assert.Equal(OwnOrderRebuildStates.Pending, (await reading.OwnOrderRebuilds.AsNoTracking().SingleAsync(Token)).State);
     }
 
     /// <summary>
@@ -1182,6 +1313,24 @@ public sealed class VehicleFaultRecoveryTests
         Assert.Equal("VEHICLE_ORDER_FAILED", (await fixture.RuntimeAsync()).BlockReasonCode);
         fixture.Context.ChangeTracker.Clear();
         return fixture;
+    }
+
+    /// <summary>
+    /// Gives the committed load a second target slot, so a snapshot can show one slot of the cargo and not the other. The
+    /// fixture loads into one slot; the check reads the load batch's own target slots, so this is all it takes.
+    /// </summary>
+    private static async Task SecondCargoSlotAsync(RuntimeFixture fixture)
+    {
+        StationOperationRow load = await fixture.Context.StationOperations
+            .SingleAsync(row => row.OperationType == SlotOperationType.Load && row.Status == StationOperationStatus.Committed, Token);
+        int[] slots = System.Text.Json.JsonSerializer.Deserialize<int[]>(load.TargetSlotsJson)!;
+        if (slots.Length < 2)
+        {
+            load.TargetSlotsJson = System.Text.Json.JsonSerializer.Serialize(new[] { slots[0], slots[0] == 8 ? 7 : slots[0] + 1 }.Order());
+            await fixture.Context.SaveChangesAsync(Token);
+        }
+
+        fixture.Context.ChangeTracker.Clear();
     }
 
     private static async Task<RuntimeFixture> DispatchedToPickupAsync()

@@ -774,12 +774,19 @@ internal static class JourneyRuntimeWorkerTestKit
         /// session's safety summary. Returns the cargo slots, and fails when there are none: a snapshot about no slots proves
         /// nothing either way.
         /// </summary>
+        /// <param name="cargoSlot">
+        /// Per cargo slot, by its position among the cargo slots: the three states it reads as, or null to leave it out of the
+        /// snapshot. Overrides the three single states when given.
+        /// </param>
+        /// <param name="agvId">The vehicle the snapshot is from; this fixture's own when not given.</param>
         public async Task<int[]> AddCargoSnapshotAsync(
             DateTimeOffset receivedAt,
             string physicalState = "OCCUPIED",
             string lockState = "LOCKED",
             string unlockOutputState = "RESET",
-            bool unknownPresent = false)
+            bool unknownPresent = false,
+            Func<int, (string Physical, string Lock, string Output)?>? cargoSlot = null,
+            string? agvId = null)
         {
             StationOperationRow[] loads = await Context.StationOperations.AsNoTracking()
                 .Where(row => row.OperationType == SlotOperationType.Load && row.Status == StationOperationStatus.Committed)
@@ -790,6 +797,10 @@ internal static class JourneyRuntimeWorkerTestKit
                 .SingleAsync(TestContext.Current.CancellationToken);
             int earlier = await Context.ProtocolInbox.CountAsync(
                 row => row.MessageType == "SafetyStateSnapshot", TestContext.Current.CancellationToken);
+            cargoSlot ??= _ => (physicalState, lockState, unlockOutputState);
+            (int Slot, (string Physical, string Lock, string Output)? States)[] reported = [.. Enumerable.Range(1, 8)
+                .Select(slot => (slot, cargo.Contains(slot) ? cargoSlot(Array.IndexOf(cargo, slot)) : ("EMPTY", "LOCKED", "RESET")))
+                .Where(item => item.Item2 is not null)];
             await AddRawInboxAsync("SafetyStateSnapshot", new
             {
                 safetyStateVersion = (session.SafetyRevision ?? 0) + 1000 + earlier,
@@ -803,17 +814,17 @@ internal static class JourneyRuntimeWorkerTestKit
                     unknownPresent,
                     reasonCodes = Array.Empty<string>()
                 },
-                slotStates = Enumerable.Range(1, 8).Select(slot => new
+                slotStates = reported.Select(item => new
                 {
-                    slotNo = slot,
+                    slotNo = item.Slot,
                     operability = "OPERABLE",
                     administrativeAvailability = "ENABLED",
-                    physicalState = cargo.Contains(slot) ? physicalState : "EMPTY",
-                    lockState = cargo.Contains(slot) ? lockState : "LOCKED",
-                    unlockOutputState = cargo.Contains(slot) ? unlockOutputState : "RESET",
+                    physicalState = item.States!.Value.Physical,
+                    lockState = item.States!.Value.Lock,
+                    unlockOutputState = item.States!.Value.Output,
                     reasonCodes = Array.Empty<string>()
                 })
-            }, session.SessionGeneration, receivedAt);
+            }, session.SessionGeneration, receivedAt, agvId);
             return cargo;
         }
 
@@ -1367,14 +1378,15 @@ internal static class JourneyRuntimeWorkerTestKit
             string messageType,
             object payload,
             long generation,
-            DateTimeOffset? receivedAt = null)
+            DateTimeOffset? receivedAt = null,
+            string? agvId = null)
         {
             string messageId = Guid.NewGuid().ToString("D");
             string json = JsonSerializer.Serialize(new
             {
                 messageType,
                 messageId,
-                agvId = Options.AgvId,
+                agvId = agvId ?? Options.AgvId,
                 sessionGeneration = generation,
                 sentAt = Now,
                 payload
