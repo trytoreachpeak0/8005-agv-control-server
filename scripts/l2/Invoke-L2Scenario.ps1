@@ -671,9 +671,10 @@ try {
     }
 
     # control-server#273's waiting journey watch: how long a journey may stand waiting for a person before it is logged,
-    # and how often again. Passed only when the setup file names them, so every other scenario keeps the server's own
-    # ten and five minutes.
-    foreach ($key in 'WaitingJourneyWarningAfter', 'WaitingJourneyWarningRepeat') {
+    # and how often again; control-server#318's delay before an ended order of this server's is rebuilt, and the window
+    # within which a second ending stops it. Passed only when the setup file names them, so every other scenario keeps the
+    # server's own defaults.
+    foreach ($key in 'WaitingJourneyWarningAfter', 'WaitingJourneyWarningRepeat', 'OwnOrderRebuildDelay', 'OwnOrderRebuildRepeatWindow') {
         if ($setup.ContainsKey($key)) {
             $serverEnvironment["JourneyRuntime__$key"] = [string]$setup[$key]
         }
@@ -1368,6 +1369,8 @@ try {
                              # 判断都只能从这里读。批次7-01 建表时快照清单没跟上，批次7-06 的场景补上。
                              'JourneyStops', 'JourneyDemands',
                              'FrozenDemandStations', 'CreateGateAudit',
+                             # control-server#318: every ending of this server's own order being rebuilt, and how far each got.
+                             'OwnOrderRebuilds', 'RiotOrderCommandAudit',
                              'SlotConfigurationActivations', 'ActiveSlotConfigurations',
                              'OnboardAlarmSnapshots', 'BusinessAuditRecords',
                              # What the slot model preseed wrote, and what batch 4's dispatch reads off it.
