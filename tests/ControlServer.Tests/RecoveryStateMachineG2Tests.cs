@@ -4892,6 +4892,56 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     /// <summary>
+    /// control-server#340, the hardware recovery record's site. The vehicle does not send this request inside a
+    /// handshake at all -- it is a REQUEST, never journalled, so there is nothing to resend -- and the connection is
+    /// set to READY after SessionHello so that deciding readiness again changes it. What this pins is that the site
+    /// goes through the same rule as the other four, whichever message reaches it inside the handshake.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-FORCED-MECHANICAL-RECOVERY")]
+    public async Task AHardwareRecoveryRecordInsideTheReconnectHandshakeIsAnsweredWithoutReadinessEvenWhenItChangesReadiness()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_RECORD_IN_HANDSHAKE";
+        const string proof = "record-in-handshake-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context, productionShapedSession: true);
+            RecordingPeer peer = new(context);
+            OnboardMessageProcessor processor = Processor(context, peer, proofVariable);
+            OnboardConnectionState state = CurrentState(deferOutbound: true);
+            await ExchangeAsync(processor, peer, state, RecoverySessionRequest(proof));
+            await ExchangeAsync(processor, peer, state, RecoveryAction("FORCED_MECHANICAL_RECOVERY"));
+            await ExchangeAsync(processor, peer, state, MechanicallyIsolatedResult(generation: 1));
+
+            OnboardConnectionState reconnected = new() { DeferOutboundUntilResponseWritten = true };
+            List<string> wire = [.. await ReconnectAsync(processor, peer, reconnected)];
+            long generation = reconnected.SessionGeneration!.Value;
+            reconnected.Readiness = SessionReadiness.Ready;
+            string[] answered = await ExchangeAsync(processor, peer, reconnected, InSession(
+                HardwareRecoveryRecord("e1000000-0000-4000-8000-000000003405", slots: RecoverySlots), generation));
+            Assert.Equal(SessionReadiness.RecoveryRequired, reconnected.Readiness);
+            wire.AddRange(answered);
+            int reportAt = await FinishHandshakeAsync(processor, peer, reconnected, wire);
+
+            Assert.Equal(["HardwareRecoveryRecordResult"], answered.Select(MessageType).ToArray());
+            Assert.Equal(
+                ["SessionAccepted", "HardwareRecoveryRecordResult", "SnapshotAppliedAck", "SnapshotAppliedAck",
+                    "SnapshotAppliedAck"],
+                wire.Take(reportAt).Select(MessageType).ToArray());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
     /// Everything the server wrote in a reconnect before the recovery report is an answer to the line the vehicle had
     /// just sent, one per line: no recovery command and no recovery session snapshot while the vehicle reads one
     /// answer at a time (control-server#202). Where sends wait for the answer to be written, as they do on
