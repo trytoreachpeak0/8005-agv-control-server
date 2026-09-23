@@ -1,0 +1,20 @@
+['0 Error(s)']
+Failed ControlServer.Tests.StoppedRebuildExitTests.AHandoffIsPreparedOnlyForAStoppedTripWithCargoOnBoard(state: "rebuild-waiting", refusal: "OWN_ORDER_REBUILD_EXIT_NOT_STOPPED") [2 s]
+    Assert.Equal() Failure: Collections differ at index 0
+Failed ControlServer.Tests.StoppedRebuildExitTests.AHandoffIsPreparedOnlyForAStoppedTripWithCargoOnBoard(state: "under-way", refusal: "OWN_ORDER_REBUILD_EXIT_NOT_STOPPED") [181 ms]
+    Assert.Equal() Failure: Collections differ at index 0
+Failed ControlServer.Tests.StoppedRebuildExitTests.GivingUpAJourneyNotStoppedByTheThirdGuardIsRefusedAndChangesNothing(state: "rebuild-waiting", refusal: "OWN_ORDER_REBUILD_EXIT_NOT_STOPPED") [327 ms]
+    Assert.Equal() Failure: Values differ
+Failed ControlServer.Tests.StoppedRebuildExitTests.GivingUpAJourneyNotStoppedByTheThirdGuardIsRefusedAndChangesNothing(state: "under-way", refusal: "OWN_ORDER_REBUILD_EXIT_NOT_STOPPED") [165 ms]
+    System.NullReferenceException : Object reference not set to an instance of an object.
+Failed ControlServer.Tests.StoppedRebuildExitTests.ARequestForAJourneyNotStoppedByTheThirdGuardIsRefusedAndChangesNothing(state: "under-way", refusal: "OWN_ORDER_REBUILD_EXIT_NOT_STOPPED") [143 ms]
+    System.NullReferenceException : Object reference not set to an instance of an object.
+Failed ControlServer.Tests.StoppedRebuildExitTests.ARequestForAJourneyNotStoppedByTheThirdGuardIsRefusedAndChangesNothing(state: "rebuild-waiting", refusal: "OWN_ORDER_REBUILD_EXIT_NOT_STOPPED") [160 
+    Assert.Equal() Failure: Values differ
+Failed ControlServer.Tests.StoppedRebuildExitTests.TheSameGiveUpTwiceTerminatesOnce [83 ms]
+    System.InvalidOperationException : An exception was thrown while attempting to evaluate a LINQ query parameter expression. See the inner exception for more information. To show additional information 
+Failed ControlServer.Tests.StoppedRebuildExitTests.TheSameRequestTwiceRebuildsOnce [79 ms]
+    Assert.Equal() Failure: Values differ
+Failed!  - Failed:     8, Passed:    34, Skipped:     0, Total:    42, Duration: 39 s - ControlServer.Tests.dll (net8.0)
+ M evidence/cs345/red/l1-mutations/mutate.py
+

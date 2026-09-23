@@ -65,6 +65,13 @@ M = [
   'trip.Refusal is ExitCargoNotInPlaceReason or ExitAwaitingHandoffReason ? null', 'trip.Refusal is ExitCargoNotInPlaceReason ? null', 'FullyQualifiedName~StoppedRebuildExitTests'),
  ('M1d-handoff-record-not-read', 'src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs',
   '        else if (runtime is { Stage: JourneyRuntimeStage.Blocked })\n', '        else if (agvId.Length < 0)\n', 'FullyQualifiedName~StoppedRebuildExitTests'),
+ # M1d 的第一种写法（把 else if 条件换成恒假）让 runtime 在 lambda 里被判为可能为 null，编译失败（CS8602），那一轮作废；
+ # 改成让查询本身找不到那条记录。
+ ('M1d2-handoff-record-not-found', 'src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs',
+  'row => row.JourneyId == runtime.JourneyId && row.State == OwnOrderRebuildStates.AwaitingCargoHandoff,', 'row => row.JourneyId == runtime.JourneyId && row.State == OwnOrderRebuildStates.AwaitingCargoHandoff && agvId.Length < 0,', 'FullyQualifiedName~StoppedRebuildExitTests'),
+ # M3 的替换原文对应 4fafb17b（那时参数名是 runtime），最终代码写成 trip.Runtime；同一个变异按最终代码重写。
+ ('M3b-no-idempotency', 'src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs',
+  '            await LastRebuildWasAPersonsAsync(trip.Runtime, cancellationToken).ConfigureAwait(false))', '            request.Subject.AgvId.Length < 0)', 'FullyQualifiedName~StoppedRebuildExitTests'),
  ('M1e-rebuild-accepts-handoff-state', 'src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs',
   '            { State: OwnOrderRebuildStates.AwaitingCargoHandoff } => ExitAwaitingHandoffReason,\n', '            { State: OwnOrderRebuildStates.AwaitingCargoHandoff } => null,\n', 'FullyQualifiedName~StoppedRebuildExitTests'),
  # 放弃只给窗口内二次出问题（S1），急停与故障（S5）。
