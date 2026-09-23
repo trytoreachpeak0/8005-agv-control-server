@@ -658,6 +658,8 @@ public sealed partial class VehicleFaultRecoveryService(
 
     private VehicleFaultRecoveryDecision Record(VehicleFaultRecoveryRequest request, VehicleFaultRecoveryDecision decision)
     {
+        // Six is LoggerMessage's limit, so the note -- and the demands a give-up ended -- ride with the reasons rather than
+        // being dropped.
         LogRequest(
             logger,
             request.Action.ToString(),
@@ -665,8 +667,6 @@ public sealed partial class VehicleFaultRecoveryService(
             string.IsNullOrWhiteSpace(request.OperatorId) ? "-" : request.OperatorId,
             decision.Outcome.ToString(),
             decision.Disposition,
-            // Six is LoggerMessage's limit, so the note -- and the demands a give-up ended -- ride with the reasons rather
-            // than being dropped.
             $"{(decision.Reasons.Count == 0 ? "-" : string.Join(',', decision.Reasons))}" +
             $"{(decision.TerminatedDemandIds is { Count: > 0 } ended ? $"; terminated: {string.Join(',', ended)}" : "")}" +
             $"; note: {(string.IsNullOrWhiteSpace(request.Note) ? "-" : request.Note)}",
