@@ -1,0 +1,81 @@
+# M27: review M2: Onboard's departure summary is not read
+# file: src/ControlServer.Host/Runtime/JourneyRuntimeEngine.OwnOrderRebuild.cs
+# diff lines changed: 1 -> 1
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Release\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\src\ControlServer.Dashboard\bin\Release\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\src\ControlServer.Application\bin\Release\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.FakeRiot -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Release\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.ProtocolFaultProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Release\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Release\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Release\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Release\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FieldOps -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Release\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.Host -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\src\ControlServer.Host\bin\Release\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.SchemaConformance -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Release\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.Tests -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll
+
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:05.41
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+  Failed ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsUntilTheOnboardSaysTheVehicleMayDepart(unsafeBy: "not-departure-safe") [1 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   2
+  Stack Trace:
+     at ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsUntilTheOnboardSaysTheVehicleMayDepart(String unsafeBy) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildTests.cs:line 255
+   at ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsUntilTheOnboardSaysTheVehicleMayDepart(String unsafeBy) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildTests.cs:line 264
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsUntilTheOnboardSaysTheVehicleMayDepart(unsafeBy: "unknown-present") [1 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   2
+  Stack Trace:
+     at ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsUntilTheOnboardSaysTheVehicleMayDepart(String unsafeBy) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildTests.cs:line 255
+   at ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsUntilTheOnboardSaysTheVehicleMayDepart(String unsafeBy) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildTests.cs:line 264
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsUntilTheOnboardSaysTheVehicleMayDepart(unsafeBy: "output-not-reset") [741 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   2
+  Stack Trace:
+     at ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsUntilTheOnboardSaysTheVehicleMayDepart(String unsafeBy) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildTests.cs:line 255
+   at ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsUntilTheOnboardSaysTheVehicleMayDepart(String unsafeBy) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildTests.cs:line 264
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsUntilTheOnboardSaysTheVehicleMayDepart(unsafeBy: "slot-unlocked") [717 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   2
+  Stack Trace:
+     at ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsUntilTheOnboardSaysTheVehicleMayDepart(String unsafeBy) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildTests.cs:line 255
+   at ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsUntilTheOnboardSaysTheVehicleMayDepart(String unsafeBy) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildTests.cs:line 264
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsUntilTheOnboardSaysTheVehicleMayDepart(unsafeBy: "moving") [770 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   2
+  Stack Trace:
+     at ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsUntilTheOnboardSaysTheVehicleMayDepart(String unsafeBy) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildTests.cs:line 255
+   at ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsUntilTheOnboardSaysTheVehicleMayDepart(String unsafeBy) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildTests.cs:line 264
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     5, Passed:   312, Skipped:     0, Total:   317, Duration: 2 m 21 s - ControlServer.Tests.dll (net8.0)
+[xUnit.net 00:00:24.30]     ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsUntilTheOnboardSaysTheVehicleMayDepart(unsafeBy: "not-departure-safe") [FAIL]
+[xUnit.net 00:00:25.34]     ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsUntilTheOnboardSaysTheVehicleMayDepart(unsafeBy: "unknown-present") [FAIL]
+[xUnit.net 00:00:26.09]     ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsUntilTheOnboardSaysTheVehicleMayDepart(unsafeBy: "output-not-reset") [FAIL]
+[xUnit.net 00:00:26.81]     ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsUntilTheOnboardSaysTheVehicleMayDepart(unsafeBy: "slot-unlocked") [FAIL]
+[xUnit.net 00:00:27.58]     ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsUntilTheOnboardSaysTheVehicleMayDepart(unsafeBy: "moving") [FAIL]

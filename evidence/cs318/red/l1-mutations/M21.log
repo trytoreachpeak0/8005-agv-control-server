@@ -9,8 +9,8 @@
   ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\src\ControlServer.Application\bin\Release\net8.0\win-x64\ControlServer.Application.dll
   ControlServer.FakeRiot -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Release\net8.0\win-x64\ControlServer.FakeRiot.dll
   ControlServer.ProtocolFaultProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Release\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
-  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Release\net8.0\win-x64\ControlServer.FakeOnboard.dll
   ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Release\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Release\net8.0\win-x64\ControlServer.FakeOnboard.dll
   ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Release\net8.0\win-x64\ControlServer.Infrastructure.dll
   ControlServer.FieldOps -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Release\net8.0\win-x64\ControlServer.FieldOps.dll
   ControlServer.Host -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\src\ControlServer.Host\bin\Release\net8.0\win-x64\ControlServer.Host.dll
@@ -21,13 +21,13 @@ Build succeeded.
     0 Warning(s)
     0 Error(s)
 
-Time Elapsed 00:00:03.76
+Time Elapsed 00:00:08.13
 Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
 VSTest version 17.11.1 (x64)
 
 Starting test execution, please wait...
 A total of 1 test files matched the specified pattern.
-  Failed ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362ACargoRebuildWaitingForEvidenceAsksTheVehicleOncePerSession [2 s]
+  Failed ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362ACargoRebuildWaitingForEvidenceAsksTheVehicleOncePerSession [5 s]
   Error Message:
    Assert.Equal() Failure: Values differ
 Expected: Tuple (1, True)
@@ -36,7 +36,7 @@ Actual:   Tuple (null, True)
      at ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362ACargoRebuildWaitingForEvidenceAsksTheVehicleOncePerSession() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildCargoEvidenceRequestTests.cs:line 57
    at ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362ACargoRebuildWaitingForEvidenceAsksTheVehicleOncePerSession() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildCargoEvidenceRequestTests.cs:line 64
 --- End of stack trace from previous location ---
-  Failed ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362NoRequestInsideTheHandshakeAndOneAgainInTheNextSession [230 ms]
+  Failed ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362NoRequestInsideTheHandshakeAndOneAgainInTheNextSession [645 ms]
   Error Message:
    Assert.Equal() Failure: Values differ
 Expected: Tuple (1, True)
@@ -45,7 +45,7 @@ Actual:   Tuple (null, True)
      at ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362NoRequestInsideTheHandshakeAndOneAgainInTheNextSession() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildCargoEvidenceRequestTests.cs:line 86
    at ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362NoRequestInsideTheHandshakeAndOneAgainInTheNextSession() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildCargoEvidenceRequestTests.cs:line 97
 --- End of stack trace from previous location ---
-  Failed ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362ARequestMadeWhileNotReadyIsMadeOnceMoreWhenTheSessionBecomesReady [218 ms]
+  Failed ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362ARequestMadeWhileNotReadyIsMadeOnceMoreWhenTheSessionBecomesReady [619 ms]
   Error Message:
    Assert.Equal() Failure: Values differ
 Expected: Tuple (1, False)
@@ -54,8 +54,18 @@ Actual:   Tuple (null, False)
      at ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362ARequestMadeWhileNotReadyIsMadeOnceMoreWhenTheSessionBecomesReady() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildCargoEvidenceRequestTests.cs:line 112
    at ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362ARequestMadeWhileNotReadyIsMadeOnceMoreWhenTheSessionBecomesReady() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildCargoEvidenceRequestTests.cs:line 124
 --- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.Req0362AnInconclusiveSnapshotIsAskedForAgainAfterAWhile [3 s]
+  Error Message:
+   Assert.False() Failure
+Expected: False
+Actual:   True
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.Req0362AnInconclusiveSnapshotIsAskedForAgainAfterAWhile() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 592
+   at ControlServer.Tests.VehicleFaultRecoveryTests.Req0362AnInconclusiveSnapshotIsAskedForAgainAfterAWhile() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 610
+--- End of stack trace from previous location ---
 
-Failed!  - Failed:     3, Passed:   291, Skipped:     0, Total:   294, Duration: 1 m 29 s - ControlServer.Tests.dll (net8.0)
-[xUnit.net 00:00:05.34]     ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362ACargoRebuildWaitingForEvidenceAsksTheVehicleOncePerSession [FAIL]
-[xUnit.net 00:00:06.55]     ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362NoRequestInsideTheHandshakeAndOneAgainInTheNextSession [FAIL]
-[xUnit.net 00:00:06.78]     ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362ARequestMadeWhileNotReadyIsMadeOnceMoreWhenTheSessionBecomesReady [FAIL]
+Failed!  - Failed:     4, Passed:   313, Skipped:     0, Total:   317, Duration: 1 m 59 s - ControlServer.Tests.dll (net8.0)
+[xUnit.net 00:00:14.68]     ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362ACargoRebuildWaitingForEvidenceAsksTheVehicleOncePerSession [FAIL]
+[xUnit.net 00:00:17.70]     ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362NoRequestInsideTheHandshakeAndOneAgainInTheNextSession [FAIL]
+[xUnit.net 00:00:18.34]     ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362ARequestMadeWhileNotReadyIsMadeOnceMoreWhenTheSessionBecomesReady [FAIL]
+[xUnit.net 00:01:27.40]     ControlServer.Tests.VehicleFaultRecoveryTests.Req0362AnInconclusiveSnapshotIsAskedForAgainAfterAWhile [FAIL]
