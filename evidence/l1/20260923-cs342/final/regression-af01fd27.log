@@ -21,7 +21,7 @@ xUnit.net v3 In-Process Runner v3.2.2+728c1dce01 (64-bit .NET 8.0.31)
         tests\ControlServer.Tests\ReconnectModelRegressionTests.cs(248,0): at ControlServer.Tests.ReconnectModelRegressionTests.AnImmediateReconnectWithTheStationDepartureWaitOnStillSendsTheEntryRequest()
         --- End of stack trace from previous location ---
     ControlServer.Tests.ReconnectModelRegressionTests.ASafetyChangeLostInFlightIsResentInTheHandshakeAndAnsweredOnce(unsafeChange: True) [FAIL]
-      final: stage=AwaitingSublot block=null generation=3 entryReachedVehicle=True ackConflicts=0 regressions=0
+      final: onboard=synthetic stage=AwaitingSublot block=null session=Ready/READY generation=3 entryReachedVehicle=True ackConflicts=0 regressions=0
       violation OneInboundManyAnswers: SafetyStateChanged in the handshake of generation 2 was answered with DurableAck+SessionReadiness, expected DurableAck
       trace:
         Safety(NotSafe,LostInFlight) -> v8 lost in flight, connection dropped
@@ -29,7 +29,6 @@ xUnit.net v3 In-Process Runner v3.2.2+728c1dce01 (64-bit .NET 8.0.31)
           handshake SafetyStateChanged -> DurableAck+SessionReadiness
         !! OneInboundManyAnswers: SafetyStateChanged in the handshake of generation 2 was answered with DurableAck+SessionReadiness, expected DurableAck
         tail BeginHandshake -> handshake broke after the resent SafetyStateChanged
-        tail Ready -> no-op
         tail Arrive
         tail Round(2s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
         tail Ack
@@ -48,7 +47,7 @@ xUnit.net v3 In-Process Runner v3.2.2+728c1dce01 (64-bit .NET 8.0.31)
         tests\ControlServer.Tests\ReconnectModelRegressionTests.cs(149,0): at ControlServer.Tests.ReconnectModelRegressionTests.ASafetyChangeLostInFlightIsResentInTheHandshakeAndAnsweredOnce(Boolean unsafeChange)
         --- End of stack trace from previous location ---
     ControlServer.Tests.ReconnectModelRegressionTests.ASafetyChangeLostInFlightIsResentInTheHandshakeAndAnsweredOnce(unsafeChange: False) [FAIL]
-      final: stage=AwaitingSublot block=null generation=3 entryReachedVehicle=True ackConflicts=0 regressions=0
+      final: onboard=synthetic stage=AwaitingSublot block=null session=Ready/READY generation=3 entryReachedVehicle=True ackConflicts=0 regressions=0
       violation OneInboundManyAnswers: SafetyStateChanged in the handshake of generation 2 was answered with DurableAck+SessionReadiness, expected DurableAck
       trace:
         Safety(Safe,LostInFlight) -> v8 lost in flight, connection dropped
@@ -56,7 +55,6 @@ xUnit.net v3 In-Process Runner v3.2.2+728c1dce01 (64-bit .NET 8.0.31)
           handshake SafetyStateChanged -> DurableAck+SessionReadiness
         !! OneInboundManyAnswers: SafetyStateChanged in the handshake of generation 2 was answered with DurableAck+SessionReadiness, expected DurableAck
         tail BeginHandshake -> handshake broke after the resent SafetyStateChanged
-        tail Ready -> no-op
         tail Arrive
         tail Round(2s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
         tail Ack
@@ -75,9 +73,9 @@ xUnit.net v3 In-Process Runner v3.2.2+728c1dce01 (64-bit .NET 8.0.31)
         --- End of stack trace from previous location ---
     ControlServer.Tests.ReconnectModelRegressionTests.ASequenceTheModelOnceFoundStuckNowReachesTheEntryRequest(name: "cut-after-the-business-state-nothing-acknowledged") [FAIL]
       cut-after-the-business-state-nothing-acknowledged [Arrive, CutAfter(2), Round(1s)] violated StuckAtPickup:
-final: stage=AwaitingPickupArrival block=null generation=2 entryReachedVehicle=False ackConflicts=0 regressions=0
+final: onboard=synthetic stage=AwaitingPickupArrival block=null session=Ready/READY generation=2 entryReachedVehicle=False ackConflicts=0 regressions=0
       last tail rounds: threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=- wait=-
-      violation StuckAtPickup: stage=AwaitingPickupArrival block=null last tail rounds: threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=- wait=-
+      violation StuckAtPickup: stage=AwaitingPickupArrival block=null session=Ready/READY generation=2 last tail rounds: threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=- wait=-
       trace:
         Arrive
         CutAfter(2)
@@ -89,7 +87,6 @@ final: stage=AwaitingPickupArrival block=null generation=2 entryReachedVehicle=F
           handshake OnboardAlarmSnapshot -> SnapshotAppliedAck
           handshake RecoveryStateReport -> DurableAck+SessionReadiness
         tail CompleteHandshake
-        tail Ready
         tail Arrive -> no-op
         tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=- wait=-; delivered Plan@2,Worklist@2,VBS@2,VBS@2
         tail Ack
@@ -113,9 +110,9 @@ final: stage=AwaitingPickupArrival block=null generation=2 entryReachedVehicle=F
         --- End of stack trace from previous location ---
     ControlServer.Tests.ReconnectModelRegressionTests.ASequenceTheModelOnceFoundStuckNowReachesTheEntryRequest(name: "field-shape-immediate-reconnect") [FAIL]
       field-shape-immediate-reconnect [Arrive, CutAfter(3), Round(1s), Ack] violated StuckAtPickup:
-final: stage=AwaitingPickupArrival block=null generation=2 entryReachedVehicle=False ackConflicts=0 regressions=0
+final: onboard=synthetic stage=AwaitingPickupArrival block=null session=Ready/READY generation=2 entryReachedVehicle=False ackConflicts=0 regressions=0
       last tail rounds: threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=- wait=-
-      violation StuckAtPickup: stage=AwaitingPickupArrival block=null last tail rounds: threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=- wait=-
+      violation StuckAtPickup: stage=AwaitingPickupArrival block=null session=Ready/READY generation=2 last tail rounds: threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=- wait=-
       trace:
         Arrive
         CutAfter(3)
@@ -128,7 +125,6 @@ final: stage=AwaitingPickupArrival block=null generation=2 entryReachedVehicle=F
           handshake OnboardAlarmSnapshot -> SnapshotAppliedAck
           handshake RecoveryStateReport -> DurableAck+SessionReadiness
         tail CompleteHandshake
-        tail Ready
         tail Arrive -> no-op
         tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=- wait=-; delivered Plan@2
         tail Ack
@@ -152,9 +148,9 @@ final: stage=AwaitingPickupArrival block=null generation=2 entryReachedVehicle=F
         --- End of stack trace from previous location ---
     ControlServer.Tests.ReconnectModelRegressionTests.ASequenceTheModelOnceFoundStuckNowReachesTheEntryRequest(name: "field-shape-round-inside-the-handshake") [FAIL]
       field-shape-round-inside-the-handshake [Arrive, CutAfter(3), Round(1s), Ack, BeginHandshake, Round(7s)] violated StuckAtPickup:
-final: stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY generation=2 entryReachedVehicle=False ackConflicts=0 regressions=0
+final: onboard=synthetic stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY session=Ready/READY generation=2 entryReachedVehicle=False ackConflicts=0 regressions=0
       last tail rounds: threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
-      violation StuckAtPickup: stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY last tail rounds: threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+      violation StuckAtPickup: stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY session=Ready/READY generation=2 last tail rounds: threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
       trace:
         Arrive
         CutAfter(3)
@@ -168,7 +164,6 @@ final: stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY generation=2 
           handshake OnboardAlarmSnapshot -> SnapshotAppliedAck
           handshake RecoveryStateReport -> DurableAck+SessionReadiness
         tail CompleteHandshake
-        tail Ready
         tail Arrive -> no-op
         tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-; delivered Plan@2
         tail Ack
@@ -192,9 +187,9 @@ final: stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY generation=2 
         --- End of stack trace from previous location ---
     ControlServer.Tests.ReconnectModelRegressionTests.ASequenceTheModelOnceFoundStuckNowReachesTheEntryRequest(name: "field-shape-not-ready-round-before-the-reconnect") [FAIL]
       field-shape-not-ready-round-before-the-reconnect [Arrive, CutAfter(3), Round(1s), Ack, NotReady, Round(7s)] violated StuckAtPickup:
-final: stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY generation=2 entryReachedVehicle=False ackConflicts=0 regressions=0
+final: onboard=synthetic stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY session=Ready/READY generation=2 entryReachedVehicle=False ackConflicts=0 regressions=0
       last tail rounds: threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
-      violation StuckAtPickup: stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY last tail rounds: threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+      violation StuckAtPickup: stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY session=Ready/READY generation=2 last tail rounds: threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
       trace:
         Arrive
         CutAfter(3)
@@ -209,7 +204,6 @@ final: stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY generation=2 
           handshake OnboardAlarmSnapshot -> SnapshotAppliedAck
           handshake RecoveryStateReport -> DurableAck+SessionReadiness
         tail CompleteHandshake
-        tail Ready
         tail Arrive -> no-op
         tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-; delivered Plan@2
         tail Ack
@@ -233,4 +227,4 @@ final: stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY generation=2 
         --- End of stack trace from previous location ---
   Finished:    ControlServer.Tests (ID = '9d633b1727b511f11bdf1c6b589ba5f868b6d22205d8862bf5f0b972c5aa1694')
 === TEST EXECUTION SUMMARY ===
-   ControlServer.Tests  Total: 10, Errors: 0, Failed: 7, Skipped: 1, Not Run: 0, Time: 12.549s
+   ControlServer.Tests  Total: 10, Errors: 0, Failed: 7, Skipped: 1, Not Run: 0, Time: 5.927s
