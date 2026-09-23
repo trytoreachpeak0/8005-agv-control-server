@@ -71,12 +71,14 @@ public sealed class OnboardJourneyPublisher(
         }
     }
 
+    /// <param name="keepAcknowledgedIgnoring">见 <see cref="QueueEnvelopeAsync"/> 的同名参数。</param>
     public Task PublishVehicleBusinessStateAsync(
         string messageId,
         string agvId,
         long sessionGeneration,
         VehicleBusinessProjection projection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlySet<string>? keepAcknowledgedIgnoring = null)
     {
         ValidateVehicleBusinessState(projection);
         return PublishStampedSnapshotAsync(
@@ -86,7 +88,8 @@ public sealed class OnboardJourneyPublisher(
             sessionGeneration,
             projection.Revision,
             VehicleBusinessStatePayload(projection),
-            cancellationToken);
+            cancellationToken,
+            keepAcknowledgedIgnoring);
     }
 
     private static void ValidateVehicleBusinessState(VehicleBusinessProjection projection)
@@ -138,12 +141,14 @@ public sealed class OnboardJourneyPublisher(
         "NOT_CHARGING", "ALLOCATED", "EN_ROUTE", "CHARGING", "COMPLETE", "UNABLE_TO_CHARGE", "UNKNOWN"
     };
 
+    /// <param name="keepAcknowledgedIgnoring">见 <see cref="QueueEnvelopeAsync"/> 的同名参数。</param>
     public Task PublishSublotEntryRequestAsync(
         string messageId,
         string agvId,
         long sessionGeneration,
         SublotEntryRequest request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlySet<string>? keepAcknowledgedIgnoring = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         ValidateUuid(request.OperationSessionId, nameof(request.OperationSessionId));
@@ -171,7 +176,8 @@ public sealed class OnboardJourneyPublisher(
                 entryMethods = SublotEntryMethods,
                 expiresOnRevisionChange = true
             },
-            cancellationToken);
+            cancellationToken,
+            keepAcknowledgedIgnoring);
     }
 
     /// <summary>
@@ -549,12 +555,14 @@ public sealed class OnboardJourneyPublisher(
             .ConfigureAwait(false);
     }
 
+    /// <param name="keepAcknowledgedIgnoring">见 <see cref="QueueEnvelopeAsync"/> 的同名参数。</param>
     public Task PublishCurrentStopWorklistAsync(
         string messageId,
         string agvId,
         long sessionGeneration,
         CurrentStopWorklistProjection projection,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        IReadOnlySet<string>? keepAcknowledgedIgnoring = null) =>
         PublishSnapshotAsync(
             "CurrentStopWorklistSnapshot",
             messageId,
@@ -562,14 +570,17 @@ public sealed class OnboardJourneyPublisher(
             sessionGeneration,
             projection.Revision,
             CurrentStopWorklistPayload(projection),
-            cancellationToken);
+            cancellationToken,
+            keepAcknowledgedIgnoring);
 
+    /// <param name="keepAcknowledgedIgnoring">见 <see cref="QueueEnvelopeAsync"/> 的同名参数。</param>
     public Task PublishUpcomingStopPlanAsync(
         string messageId,
         string agvId,
         long sessionGeneration,
         UpcomingStopPlanProjection projection,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        IReadOnlySet<string>? keepAcknowledgedIgnoring = null) =>
         PublishSnapshotAsync(
             "UpcomingStopPlanSnapshot",
             messageId,
@@ -577,7 +588,8 @@ public sealed class OnboardJourneyPublisher(
             sessionGeneration,
             projection.Revision,
             UpcomingStopPlanPayload(projection),
-            cancellationToken);
+            cancellationToken,
+            keepAcknowledgedIgnoring);
 
     private static object CurrentStopWorklistPayload(CurrentStopWorklistProjection projection) => new
     {
@@ -708,9 +720,11 @@ public sealed class OnboardJourneyPublisher(
         long sessionGeneration,
         long revision,
         object payload,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        IReadOnlySet<string>? keepAcknowledgedIgnoring = null) =>
         await PublishStampedSnapshotAsync(
-            messageType, messageId, agvId, sessionGeneration, revision, _ => payload, cancellationToken)
+            messageType, messageId, agvId, sessionGeneration, revision, _ => payload, cancellationToken,
+            keepAcknowledgedIgnoring)
             .ConfigureAwait(false);
 
     /// <summary>Builds the payload from the envelope's frozen sentAt, so re-publishes reproduce it.</summary>
@@ -729,7 +743,8 @@ public sealed class OnboardJourneyPublisher(
         long sessionGeneration,
         long revision,
         Func<DateTimeOffset, object> payloadFactory,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlySet<string>? keepAcknowledgedIgnoring = null)
     {
         await store.RaiseSnapshotRevisionFloorAsync(messageType, agvId, revision, cancellationToken)
             .ConfigureAwait(false);
@@ -740,7 +755,8 @@ public sealed class OnboardJourneyPublisher(
             agvId,
             sessionGeneration,
             payloadFactory,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            keepAcknowledgedIgnoring).ConfigureAwait(false);
     }
 
     private async Task PublishEnvelopeAsync(
@@ -750,9 +766,11 @@ public sealed class OnboardJourneyPublisher(
         string agvId,
         long sessionGeneration,
         object payload,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        IReadOnlySet<string>? keepAcknowledgedIgnoring = null) =>
         await PublishStampedEnvelopeAsync(
-            messageType, messageId, correlationId, agvId, sessionGeneration, _ => payload, cancellationToken)
+            messageType, messageId, correlationId, agvId, sessionGeneration, _ => payload, cancellationToken,
+            keepAcknowledgedIgnoring)
             .ConfigureAwait(false);
 
     private async Task PublishStampedEnvelopeAsync(
@@ -762,10 +780,12 @@ public sealed class OnboardJourneyPublisher(
         string agvId,
         long sessionGeneration,
         Func<DateTimeOffset, object> payloadFactory,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlySet<string>? keepAcknowledgedIgnoring = null)
     {
         ProtocolOutboxRow stored = await QueueEnvelopeAsync(
-            messageType, messageId, correlationId, agvId, sessionGeneration, payloadFactory, cancellationToken)
+            messageType, messageId, correlationId, agvId, sessionGeneration, payloadFactory, cancellationToken,
+            keepAcknowledgedIgnoring)
             .ConfigureAwait(false);
         if (stored.AcknowledgedAt is null && stored.FencedAt is null)
             await peer.SendAsync(
@@ -784,6 +804,26 @@ public sealed class OnboardJourneyPublisher(
         QueueEnvelopeAsync(
             messageType, messageId, correlationId, agvId, sessionGeneration, _ => payload, cancellationToken);
 
+    /// <summary>把这一条报文落进发件箱（或认出已经在那里的那一行），返回落着的那一行。</summary>
+    /// <param name="keepAcknowledgedIgnoring">
+    /// <para>
+    /// 给了它、而发件箱里这一行车已经确认过时：候选报文与那一行去掉信封的 <c>sessionGeneration</c>、<c>sentAt</c> 以及
+    /// payload 里这几个字段之后一字不差，就原样返回那一行——不改写、不入队，调用方也就不发（已确认的行本来就不发）。
+    /// 有任何别的不同，照常交给 <see cref="WireToGateStore.QueueOutboundEnvelopeAsync"/>，由它的重放校验按原样拒绝。
+    /// 不给这个参数时行为与之前完全相同。
+    /// </para>
+    /// <para>
+    /// <b>为什么需要它（control-server#331）。</b>到站那一段发布是好几条报文，做完的标志是阶段前移。断线把它打断在中间时，
+    /// 重连后整段从头重跑，而前半段车早已确认。其中清单的 <c>stationDepartureDeadlineAt</c> 会合法地变：断线那一轮作废了站点离站
+    /// 等待，重连后从此刻重填（ADR-cross-0055）。车手上那一版此后就是本站的对账基准——与等录入阶段断线重连之后一样，车载端不作废
+    /// 期限、照最新一版执行；重填的期限送不到车上这件事归 control-server#339。
+    /// </para>
+    /// <para>
+    /// <b>按内容比，不按「确认过」这一件事。</b>判据若只是「已确认」，同一 messageId 下内容真的变了的那一版会被静默吞掉，
+    /// 车永远收不到——持货等单的旅程在断线窗口里进出装货阶段时，车辆业务状态就会这样（修订号与 <c>loadingPhase</c> 都变）。
+    /// 按内容比，那一种照旧被护栏拒，在看板上显示推进失败，而不是悄悄消失。
+    /// </para>
+    /// </param>
     private async Task<ProtocolOutboxRow> QueueEnvelopeAsync(
         string messageType,
         string messageId,
@@ -791,7 +831,8 @@ public sealed class OnboardJourneyPublisher(
         string agvId,
         long sessionGeneration,
         Func<DateTimeOffset, object> payloadFactory,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlySet<string>? keepAcknowledgedIgnoring = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(messageId);
         ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
@@ -802,8 +843,57 @@ public sealed class OnboardJourneyPublisher(
         DateTimeOffset sentAt = existing?.CreatedAt ?? timeProvider.GetUtcNow();
         string candidateWire = SerializeWire(
             messageType, messageId, correlationId, agvId, sessionGeneration, sentAt, payloadFactory(sentAt));
+        if (keepAcknowledgedIgnoring is not null &&
+            existing is { AcknowledgedAt: not null } &&
+            string.Equals(existing.MessageType, messageType, StringComparison.Ordinal) &&
+            SaysTheSameIgnoring(existing.PayloadJson, candidateWire, keepAcknowledgedIgnoring))
+        {
+            return existing;
+        }
         return await store.QueueOutboundEnvelopeAsync(
             messageId, messageType, candidateWire, sentAt, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 两行报文去掉信封的 <c>sessionGeneration</c>、<c>sentAt</c> 与 payload 里 <paramref name="ignoredPayloadFields"/> 之后是否一字不差，
+    /// 且候选的代次不比已存的旧（control-server#331）。其余每一个字段——信封的身份、类型、messageId，payload 里的修订号与每一项——
+    /// 都参与比较。
+    /// </summary>
+    private static bool SaysTheSameIgnoring(
+        string storedWire,
+        string candidateWire,
+        IReadOnlySet<string> ignoredPayloadFields)
+    {
+        // 代次不许倒退：比较里去掉代次，是为了放过「重连后同一件事在新的一代再说一次」，不是放过一次发进旧一代的重发——
+        // 那是重放校验本来就拒的形状，这里不替它开口子。代次相同是允许的：会话掉到未就绪、没有换代就回来时，离站等待
+        // 一样被作废重填（ADR-cross-0055），期限变了而代次没变。
+        if (Generation(candidateWire) < Generation(storedWire))
+        {
+            return false;
+        }
+        return JsonNode.DeepEquals(Stripped(storedWire), Stripped(candidateWire));
+
+        static long Generation(string wire)
+        {
+            using JsonDocument document = JsonDocument.Parse(wire);
+            return document.RootElement.GetProperty("sessionGeneration").GetInt64();
+        }
+
+        JsonObject Stripped(string wire)
+        {
+            JsonObject envelope = JsonNode.Parse(wire)?.AsObject()
+                ?? throw new InvalidDataException("Outbound envelope is empty.");
+            envelope.Remove("sessionGeneration");
+            envelope.Remove("sentAt");
+            if (envelope["payload"] is JsonObject payload)
+            {
+                foreach (string field in ignoredPayloadFields)
+                {
+                    payload.Remove(field);
+                }
+            }
+            return envelope;
+        }
     }
 
     /// <summary>

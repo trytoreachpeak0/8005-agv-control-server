@@ -85,6 +85,10 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
             [Runtime.Faults.VehicleFaultEvidence.OrderFailed] =
                 "车正在执行的运单在 RIoT 上失败（FAILED），服务端已把车判为疑似故障：不派新单，需求不改派。"
                 + "请到现场排除原因；若急停已锁住，先按急停人工解除；然后由现场人员经故障清除入口确认（见现场说明），服务端核对后清除故障",
+            // control-server#331：推进每一轮都抛异常，旅程一步不动。在这之前看板上只剩最后一次写下的码，说的是一件已经不成立的事。
+            [JourneyRuntimeEngine.AdvanceFailedReason] =
+                "服务端推进这趟旅程时出错，旅程停在原处、一步没动（不改派、不发命令）。每一轮都会重试，走通后这个码自动消失；"
+                + "一直不消失请找值班工程师看服务端日志里的事件 2002（「Journey runtime iteration failed closed」），那里有具体的异常",
             [Runtime.Faults.VehicleFaultRecoveryService.CargoOnBoardReason] =
                 "车辆故障已由人工清除，但车上可能有货：货物绑定保留，需求不改派，旅程停在这里等人处置"
                 + "（#318 合入后服务端自动重建订单送完这趟，目前还没有，找值班工程师）。这辆车不接新单",

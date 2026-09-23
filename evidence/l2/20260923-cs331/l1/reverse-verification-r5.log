@@ -1,0 +1,62 @@
+R1: IsTransportFailure no longer counts ObjectDisposedException
+  exit=1 summary=[('Failed!', '1', '30')]
+  expected red=['OnTheOwnOrderATransportFailureInAnyShapeKeepsTheSessionNotReadyCode(shape: "disposed-connection")']
+  actual red=['OnTheOwnOrderATransportFailureInAnyShapeKeepsTheSessionNotReadyCode(shape: "disposed-connection")']
+  matches expectation: True
+  restored byte-identical: True
+R2: IsTransportFailure looks at the top-level exception only
+  exit=1 summary=[('Failed!', '1', '30')]
+  expected red=['OnTheOwnOrderATransportFailureInAnyShapeKeepsTheSessionNotReadyCode(shape: "wrapped-io")']
+  actual red=['OnTheOwnOrderATransportFailureInAnyShapeKeepsTheSessionNotReadyCode(shape: "wrapped-io")']
+  matches expectation: True
+  restored byte-identical: True
+R3: the shared judgement drops PRE_DEPARTURE_SAFETY_NOT_VALID
+  exit=1 summary=[('Failed!', '2', '29')]
+  expected red=['AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(code: "PRE_DEPARTURE_SAFETY_NOT_VALID", stage: AwaitingDepartureSafety)', 'ASilentSessionDoesNotOverwriteACodeThatNamesAWaitOnAPerson(code: "PRE_DEPARTURE_SAFETY_NOT_VALID")']
+  actual red=['AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(code: "PRE_DEPARTURE_SAFETY_NOT_VALID", stage: AwaitingDepartureSafety)', 'ASilentSessionDoesNotOverwriteACodeThatNamesAWaitOnAPerson(code: "PRE_DEPARTURE_SAFETY_NOT_VALID")']
+  matches expectation: True
+  restored byte-identical: True
+ALL AS EXPECTED: True
+
+=== R1 failure text ===
+  Failed ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.OnTheOwnOrderATransportFailureInAnyShapeKeepsTheSessionNotReadyCode(shape: "disposed-connection") [471 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "ONBOARD_SESSION_NOT_READY"
+Actual:   "JOURNEY_ADVANCE_FAILED"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.OnTheOwnOrderATransportFailureInAnyShapeKeepsTheSessionNotReadyCode(String shape) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 596
+
+=== R2 failure text ===
+  Failed ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.OnTheOwnOrderATransportFailureInAnyShapeKeepsTheSessionNotReadyCode(shape: "wrapped-io") [429 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "ONBOARD_SESSION_NOT_READY"
+Actual:   "JOURNEY_ADVANCE_FAILED"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.OnTheOwnOrderATransportFailureInAnyShapeKeepsTheSessionNotReadyCode(String shape) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 596
+
+=== R3 failure text ===
+  Failed ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(code: "PRE_DEPARTURE_SAFETY_NOT_VALID", stage: AwaitingDepartureSafety) [707 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "PRE_DEPARTURE_SAFETY_NOT_VALID"
+Actual:   "JOURNEY_ADVANCE_FAILED"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(String code, JourneyRuntimeStage stage) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 446
+--
+  Failed ControlServer.Tests.OnboardSessionLostBlockTests.ASilentSessionDoesNotOverwriteACodeThatNamesAWaitOnAPerson(code: "PRE_DEPARTURE_SAFETY_NOT_VALID") [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "PRE_DEPARTURE_SAFETY_NOT_VALID"
+Actual:   "ONBOARD_SESSION_LOST"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.OnboardSessionLostBlockTests.ASilentSessionDoesNotOverwriteACodeThatNamesAWaitOnAPerson(String code) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\OnboardSessionLostBlockTests.cs:line 174

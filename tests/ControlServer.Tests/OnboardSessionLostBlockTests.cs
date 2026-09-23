@@ -136,6 +136,46 @@ public sealed class OnboardSessionLostBlockTests
     }
 
     /// <summary>
+    /// 门没关的站点超时告警与纠错进行中，失联时也不被「车停止说话」盖掉（control-server#331 第三轮审查建议 2）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 这两个码加进了失联写码与推进失败写码共用的那个判定（<c>JourneyRuntimeEngine.CarriesACodeThatNamesAWaitOnAPerson</c>）。
+    /// 它们都指名了在等谁——一个在等人去关门，一个在等纠错走完——被覆盖后下一轮按「码不同」重写，开始时间归零，
+    /// program#55 的升级档位清零。
+    /// </para>
+    /// <para>
+    /// 第四轮审查又加了 <c>PRE_DEPARTURE_SAFETY_NOT_VALID</c>：车载端答了「不安全」，等人去车前处理。
+    /// </para>
+    /// <para>
+    /// <b>这里的阶段与码的组合是造出来的。</b>失联写码只在两个到站阶段起作用，而这几个码只在停站阶段写入（等装货结果、等离站、等离站安全答复），
+    /// 阶段一变 <c>SetStage</c> 就把码清掉——产品代码里走不到「到站阶段带着这两个码」。这条钉的是「这份清单是两处共用的」：
+    /// 哪天有人从判定里拿掉其中一个，推进失败那一侧的用例会红，这一侧也会红。
+    /// </para>
+    /// </remarks>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    [InlineData("STATION_TIMEOUT_DOOR_NOT_CLOSED")]
+    [InlineData("LOAD_CORRECTION_IN_PROGRESS")]
+    // 第四轮审查建议 2 加进判定的码，同样只在停站阶段（等离站安全答复）写入。
+    [InlineData("PRE_DEPARTURE_SAFETY_NOT_VALID")]
+    public async Task ASilentSessionDoesNotOverwriteACodeThatNamesAWaitOnAPerson(string code)
+    {
+        await using RuntimeFixture fixture = await ArrivalWaitAsync();
+        JourneyRuntimeRow waiting = await fixture.Context.JourneyRuntimes.SingleAsync(TestContext.Current.CancellationToken);
+        waiting.SetBlockReason(code, fixture.Clock.GetUtcNow());
+        await fixture.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        DateTimeOffset? since = waiting.BlockReasonSince;
+
+        await GoSilentAsync(fixture);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyRuntimeRow held = await fixture.RuntimeAsync();
+        Assert.Equal(code, held.BlockReasonCode);
+        Assert.Equal(since, held.BlockReasonSince);
+    }
+
+    /// <summary>
     /// 失联期间只亮卡、只升级告警：不换阶段、不结束需求、不释放租约、不碰订单命令面（REQ-0287）。
     /// </summary>
     /// <remarks>
