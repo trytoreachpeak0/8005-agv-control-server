@@ -31,3 +31,15 @@
 S3 变异在其余用例里不改变结果，因为它们的升版都发生在重填那一轮；S2 变异只在同一停靠第二次重填时起作用。
 
 录入请求那一侧的退役没有改成只打标记：崩在它与新一张入队之间，留下的正是补发那条判据接得住的样子，改了也没有用例能区分，所以不动。
+
+## 断线重连模型（cs#342）
+
+在 `210ac78a` 的产品代码上（与 `d742f0ae` 相同）：
+
+- `reconnect-model-classes-at-210ac78a.txt`：`ReconnectModelTests`、`ReconnectModelRegressionTests` 两个类 19 条通过、1 条 Skip（onboard-hmi#206 那条），
+  另三条只在显式要求时跑的没有执行。
+- `reconnect-model-fixed-seed-at-210ac78a.txt`：固定种子那条通过，打印 `known defect onboard-hmi#206: 96 violation(s) in 200 sequences`，与修改前相同，已知缺陷表那一行没有零命中。
+- `prototype-1000-at-210ac78a.txt`：1000 个组合，与 `../20260923-cs339-model/prototype-1000-at-6013c0da.txt` 汇总段逐行比，除三行耗时外全部相同：录入请求到车 1000/1000、
+  恢复后 1 轮到 1000 个、车拒收与号回退 0、`LegitimateMessageRefused` 399，首例种子 `0000000005p1` 与首条违规相同。没有新类别。
+
+模型只有合成车载端、没有注入保存失败，所以它看不见本次修的崩溃窗口；它在这里只说明本次修改没有把别的改坏。
