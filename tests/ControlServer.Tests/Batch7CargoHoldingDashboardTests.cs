@@ -617,6 +617,8 @@ public sealed class Batch7CargoHoldingDashboardTests
     [InlineData("ORDER_ENDED_WITHOUT_ARRIVAL")]
     [InlineData("VEHICLE_ORDER_FAILED")]
     [InlineData("VEHICLE_FAULT_CLEARED_CARGO_ON_BOARD")]
+    // control-server#331：推进每轮抛异常时写的码。之前这种情况看板上只剩上一次写下的旧码。
+    [InlineData("JOURNEY_ADVANCE_FAILED")]
     public async Task AStalledInTransitOrderIsShownWithAChineseDescription(string code)
     {
         Assert.True(BlockedJourneysQueryEndpoint.Descriptions.ContainsKey(code), $"{code} has no description");

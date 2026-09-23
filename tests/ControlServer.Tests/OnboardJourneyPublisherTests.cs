@@ -217,6 +217,158 @@ public sealed class OnboardJourneyPublisherTests
             stored.RootElement.GetProperty("payload").GetProperty("observedAt").GetDateTimeOffset());
     }
 
+    // control-server#331 在 RefreshOutboundEnvelopeAsync 的校验之前加了一处提前返回：行已确认、语义一字不差、代次前移时
+    // 什么也不做。提前返回最容易被读成「放宽了校验」，所以下面四条各钉一边：第一条是放行的那一种（不改写、不发），
+    // 后三条是放行条件各缺一项的样子，每一条都必须仍然被拒。未确认、语义相同、代次前移时照旧改写代次并发送，
+    // 那一种由 UnchangedSnapshotRepublishesIntoAnAdvancingSessionGeneration 钉着，本票没有碰它。
+
+    /// <summary>
+    /// 已确认的快照在新的一代以同样的内容再发一次：不改写那一行、不再发送，也不抛（control-server#331）。
+    /// 修前这里抛 <c>ProtocolContentConflictException</c>，到站那一段发布因此每轮都死在这里。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("ProtocolVector", "CV-RELIABLE-RETRY-SAME-CONTENT")]
+    public async Task AnAcknowledgedSnapshotRepublishedUnchangedIntoANewGenerationIsLeftAsAcknowledged()
+    {
+        await using AcknowledgedSnapshot snapshot = await AcknowledgedSnapshot.CreateAsync();
+
+        await snapshot.RepublishAsync(generation: 3, snapshot.Projection);
+
+        snapshot.AssertLeftAsAcknowledged();
+    }
+
+    /// <summary>已确认的快照在新的一代换了内容：仍然拒绝，那一行不动（control-server#331 的放行不包括这一种）。</summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("ProtocolVector", "CV-RELIABLE-RETRY-DIFFERENT-CONTENT")]
+    public async Task AnAcknowledgedSnapshotRepublishedWithDifferentContentIsStillRefused()
+    {
+        await using AcknowledgedSnapshot snapshot = await AcknowledgedSnapshot.CreateAsync();
+
+        await Assert.ThrowsAsync<ProtocolContentConflictException>(() =>
+            snapshot.RepublishAsync(generation: 3, snapshot.Projection with { BatteryState = "LOW" }));
+
+        snapshot.AssertLeftAsAcknowledged();
+    }
+
+    /// <summary>已确认的快照以同样的内容发进更旧的一代：仍然拒绝，那一行不动（control-server#331 的放行不包括这一种）。</summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("ProtocolVector", "CV-RELIABLE-RETRY-SAME-CONTENT")]
+    public async Task AnAcknowledgedSnapshotRepublishedIntoAnOlderGenerationIsStillRefused()
+    {
+        await using AcknowledgedSnapshot snapshot = await AcknowledgedSnapshot.CreateAsync();
+
+        await Assert.ThrowsAsync<ProtocolContentConflictException>(() =>
+            snapshot.RepublishAsync(generation: 1, snapshot.Projection));
+
+        snapshot.AssertLeftAsAcknowledged();
+    }
+
+    /// <summary>
+    /// 没确认的快照在新的一代换了内容：仍然拒绝，那一行不动（control-server#331 的放行只看已确认的行）。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("ProtocolVector", "CV-RELIABLE-RETRY-DIFFERENT-CONTENT")]
+    public async Task AnUnacknowledgedSnapshotRepublishedWithDifferentContentIsStillRefused()
+    {
+        await using AcknowledgedSnapshot snapshot = await AcknowledgedSnapshot.CreateAsync(acknowledge: false);
+
+        await Assert.ThrowsAsync<ProtocolContentConflictException>(() =>
+            snapshot.RepublishAsync(generation: 3, snapshot.Projection with { BatteryState = "LOW" }));
+
+        ProtocolOutboxRow row = await snapshot.Context.ProtocolOutbox.AsNoTracking()
+            .SingleAsync(TestContext.Current.CancellationToken);
+        Assert.Null(row.AcknowledgedAt);
+        Assert.Equal(snapshot.StoredWire, row.PayloadJson);
+        Assert.Single(snapshot.Peer.Lines);
+    }
+
+    /// <summary>
+    /// 第 2 代发出的一张车辆业务状态快照，默认已被车确认；上面四条都从这里开始。
+    /// </summary>
+    private sealed class AcknowledgedSnapshot : IAsyncDisposable
+    {
+        private const string MessageId = "00000000-0000-4000-8000-000000000332";
+
+        private readonly SqliteConnection _connection;
+
+        private AcknowledgedSnapshot(
+            SqliteConnection connection, ControlServerDbContext context, RecordingPeer peer, OnboardJourneyPublisher publisher)
+        {
+            _connection = connection;
+            Context = context;
+            Peer = peer;
+            Publisher = publisher;
+        }
+
+        public ControlServerDbContext Context { get; }
+
+        public RecordingPeer Peer { get; }
+
+        public OnboardJourneyPublisher Publisher { get; }
+
+        public VehicleBusinessProjection Projection { get; } =
+            new(2, "READY", "TRANSPORT", false, "SUFFICIENT", "NOT_CHARGING", LoadingPhaseProjection.Loading, []);
+
+        public string StoredWire { get; private set; } = "";
+
+        public static async Task<AcknowledgedSnapshot> CreateAsync(bool acknowledge = true)
+        {
+            SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(TestContext.Current.CancellationToken);
+            DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+                .UseSqlite(connection)
+                .Options;
+            ControlServerDbContext context = new(options);
+            await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+            WireToGateStore store = new(context);
+            RecordingPeer peer = new(context);
+            AdvancingTimeProvider clock = new();
+            AcknowledgedSnapshot snapshot = new(connection, context, peer, new OnboardJourneyPublisher(store, peer, clock));
+            await snapshot.RepublishAsync(generation: 2, snapshot.Projection);
+            snapshot.StoredWire = (await context.ProtocolOutbox.SingleAsync(TestContext.Current.CancellationToken))
+                .PayloadJson;
+            if (acknowledge)
+            {
+                await store.AcknowledgeOutboundEnvelopeAsync(
+                    MessageId,
+                    "VehicleBusinessStateSnapshot",
+                    Sha256(snapshot.StoredWire),
+                    appliedRevision: 2,
+                    clock.GetUtcNow(),
+                    TestContext.Current.CancellationToken);
+            }
+
+            return snapshot;
+        }
+
+        public Task RepublishAsync(long generation, VehicleBusinessProjection projection) =>
+            Publisher.PublishVehicleBusinessStateAsync(
+                MessageId, "AGV-001", generation, projection, TestContext.Current.CancellationToken);
+
+        /// <summary>那一行仍是车确认过的那几个字节、仍记着已确认，车也没有再收到第二行。</summary>
+        public void AssertLeftAsAcknowledged()
+        {
+            ProtocolOutboxRow row = Context.ProtocolOutbox.AsNoTracking().Single();
+            Assert.NotNull(row.AcknowledgedAt);
+            Assert.Equal(StoredWire, row.PayloadJson);
+            Assert.Single(Peer.Lines);
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await Context.DisposeAsync();
+            await _connection.DisposeAsync();
+        }
+    }
+
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-00")]
     [Trait("IntegrationSlice", "FP-IS-06")]
