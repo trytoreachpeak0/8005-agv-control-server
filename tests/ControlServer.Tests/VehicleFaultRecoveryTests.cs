@@ -979,7 +979,8 @@ public sealed class VehicleFaultRecoveryTests
     [Theory]
     [InlineData("empty")]
     [InlineData("loaded")]
-    public async Task AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderStillRebuilds(string cargo)
+    [Trait("Requirement", "REQ-0362")]
+    public async Task AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderRebuildsOnceTheSessionIsReady(string cargo)
     {
         await using RuntimeFixture fixture = cargo == "loaded"
             ? await FaultedOnTheWayToGateAsync()
@@ -1010,13 +1011,26 @@ public sealed class VehicleFaultRecoveryTests
             await fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow());
         }
         await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
 
+        // 会话未就绪：不在闸门后面建（审查 M2），记录写明在等会话。
+        int createsBefore = fixture.Riot.CreateCount(cargo == "loaded" ? "TO_GATE" : "TO_PICKUP");
+        await using (ControlServerDbContext held = new(fixture.DbOptionsForTests))
+        {
+            OwnOrderRebuildRow waitingRecord = await held.OwnOrderRebuilds.AsNoTracking().SingleAsync(Token);
+            Assert.Equal((OwnOrderRebuildStates.Pending, "ONBOARD_SESSION_NOT_READY"), (waitingRecord.State, waitingRecord.WaitingReason));
+            Assert.Equal(
+                SessionReadiness.RecoveryRequired,
+                (await held.SessionRecoveries.AsNoTracking().SingleAsync(Token)).Readiness);
+        }
+
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.RestoreSessionReadyAsync();
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+
+        Assert.Equal(createsBefore + 1, fixture.Riot.CreateCount(cargo == "loaded" ? "TO_GATE" : "TO_PICKUP"));
         await OwnOrderRebuildTests.AssertRebuiltAsync(fixture, faulted, stopsBefore, current);
         await using ControlServerDbContext after = new(fixture.DbOptionsForTests);
-        Assert.Equal(
-            SessionReadiness.RecoveryRequired,
-            (await after.SessionRecoveries.AsNoTracking().SingleAsync(Token)).Readiness);
-        Assert.Equal("ONBOARD_SESSION_NOT_READY", (await after.JourneyRuntimes.AsNoTracking().SingleAsync(Token)).BlockReasonCode);
         VehicleFaultStateRow fault = await after.VehicleFaultStates.AsNoTracking().SingleAsync(Token);
         Assert.Equal((VehicleFaultLevel.None, 1L), (fault.Level, fault.FaultGeneration));
     }

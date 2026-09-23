@@ -650,6 +650,41 @@ internal static class JourneyRuntimeWorkerTestKit
             await scope.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
+        /// <summary>
+        /// Onboard's safety summary moves on: a SafetyStateChanged at the session's next safetyStateVersion carrying exactly
+        /// these five facts, the ones dispatch admission reads (<c>VehicleDynamicFactsCriterion</c>). The session stays Ready;
+        /// what changes is only what it vouches for.
+        /// </summary>
+        public async Task SetDepartureSummaryAsync(
+            bool departureSafe = true,
+            bool vehicleStopped = true,
+            bool allTargetSlotsLocked = true,
+            bool allUnlockOutputsReset = true,
+            bool unknownPresent = false)
+        {
+            SessionRecoveryRow session = await Context.SessionRecoveries.SingleAsync(TestContext.Current.CancellationToken);
+            long next = (session.SafetyRevision ?? 0) + 1;
+            await AddRawInboxAsync("SafetyStateChanged", new
+            {
+                safetyStateVersion = next,
+                observedAt = Clock.GetUtcNow(),
+                safety = new
+                {
+                    departureSafe,
+                    vehicleStopped,
+                    allTargetSlotsLocked,
+                    allUnlockOutputsReset,
+                    unknownPresent,
+                    reasonCodes = Array.Empty<string>()
+                },
+                affectedSlots = Array.Empty<int>()
+            }, session.SessionGeneration, Clock.GetUtcNow());
+            session.SafetyRevision = next;
+            session.DepartureSafe = departureSafe;
+            await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+            Context.ChangeTracker.Clear();
+        }
+
         public async Task AddSafetyStateChangedAsync(
             long safetyStateVersion,
             bool departureSafe,
