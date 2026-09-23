@@ -518,12 +518,8 @@ public sealed partial class OnboardMessageProcessor(
                     // RecoveryStateReport after a resume commits, so the READY a settled attempt
                     // produces reached nobody and the vehicle stayed out of work (G3 FP-IS-07
                     // resume-007). This is the widening the earlier note here asked for.
-                    if (resultDecision.Readiness == state.Readiness)
-                    {
-                        return resultAck;
-                    }
-                    state.Readiness = resultDecision.Readiness;
-                    return $"{resultAck}\n{SessionReadinessLine(resultDecision, agvId, generation, state)}";
+                    return AnswerWithReadiness(
+                        resultAck, resultDecision, agvId, generation, state, announceUnchanged: false);
                 }
             case "HardwareRecoveryRecordSubmitted":
                 {
