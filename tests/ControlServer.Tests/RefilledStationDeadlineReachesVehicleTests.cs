@@ -43,8 +43,9 @@ public sealed class RefilledStationDeadlineReachesVehicleTests
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
     /// <summary>
-    /// 等录入时断线重连：重填的期限随新的一版清单送到车上，录入请求跟着那一版重发——旧的一张在车上随修订号变化作废
-    /// （<c>expiresOnRevisionChange</c>），不重发操作员就没有可答的请求。
+    /// 等录入时断线重连：重填的期限随新的一版清单送到车上，录入请求跟着那一版重发——车在会话离开 <c>Ready</c> 时已经清掉了
+    /// 手上的录入请求（车载端 <c>1184bb07</c> 的 <c>WireToGateBusinessService.OnSessionStateChanged</c>），不重发操作员就没有可答的请求。
+    /// 升版本身并不让车上的录入请求作废：同一站、同一作业会话、还有待录入时，更高的号不算本站结束（同文件 <c>EndsStopOf</c>）。
     /// </summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-00")]
@@ -162,6 +163,204 @@ public sealed class RefilledStationDeadlineReachesVehicleTests
         Assert.Equal(worklistsSent, SentLines(fixture, "CurrentStopWorklistSnapshot").Length);
         Assert.Equal(refilled, VehicleDeadline(vehicle));
         Assert.Equal(refilled, ServerDeadline(await fixture.RuntimeAsync(), fixture));
+    }
+
+    /// <summary>
+    /// 旧的那一版清单车还没确认时重填：升版的次数、旧一版的退役与新的一版在同一次保存里落库。崩在新的一版入队的那一次保存上，
+    /// 就什么都没落库，重启之后的下一轮照样认出车上的期限是旧的、照样升版。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 反过来的样子（PR #353 审查 M1）：旧的一版还没确认时，发件箱按库里的值查得到它，退役那一步自己先保存一次，把升版的次数
+    /// 一起带进了库，新的一版却还没入队。崩在两次保存之间，此后按新的号在发件箱里找不到排给车的那一版，「车上的期限是不是旧的」
+    /// 就再也判不出来，车停在旧期限上。
+    /// </para>
+    /// <para>
+    /// 崩溃用 <see cref="SaveChangesCounter.FailWhen"/> 注入在这一轮第一次往发件箱插行的那次保存上——新的一版清单。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
+    [Trait("ProtocolVector", "CV-PICKUP-SUBLOT-LOAD")]
+    public async Task ARefillOverAnUnconfirmedWorklistLandsInOneSaveAndSurvivesACrashAtIt()
+    {
+        await using RuntimeFixture fixture = await DeadlineFixtureAsync();
+        AdoptingPeer vehicle = Attach(fixture);
+        JourneyRuntimeRow atPickup = await fixture.AdvanceToSublotWaitAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, atPickup.Stage);
+        // 不送确认：车手上有到站那一版，服务端发件箱里它还没被确认。
+        vehicle.LoseBufferedAcks();
+        DateTimeOffset before = VehicleDeadline(vehicle);
+        Assert.Null((await ArrivalWorklistRowAsync(fixture)).AcknowledgedAt);
+
+        await DisconnectThroughAnUnreadyRoundThenReconnectAsync(fixture);
+        fixture.SaveChanges.Reset();
+        int outboxInserts = 0;
+        fixture.SaveChanges.FailWhen = written =>
+            written.Contains("ProtocolOutboxRow.MessageId") && ++outboxInserts == 1;
+        Exception? crash = await Record.ExceptionAsync(() => fixture.Engine.ExecuteOnceAsync(Token));
+        fixture.SaveChanges.FailWhen = null;
+        await fixture.RecreateEngineAsync();
+
+        TestContext.Current.TestOutputHelper?.WriteLine(
+            $"crash: {crash?.Message}; saves in the crashed round: " +
+            string.Join(" / ", fixture.SaveChanges.Saves.Select(save => string.Join(",", save))));
+        Assert.NotNull(crash);
+        Assert.Equal(0, (await PickupStopAsync(fixture)).WorklistRefills);
+        Assert.Null((await ArrivalWorklistRowAsync(fixture)).FencedAt);
+
+        fixture.SaveChanges.Reset();
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        await vehicle.DeliverBufferedAcksAsync();
+
+        await AssertTheVehicleHoldsTheServersDeadlineAsync(fixture, vehicle, before);
+        AssertTheLastEntryRequestAnswersTheHeldWorklist(fixture, vehicle);
+        Assert.Equal(1, (await PickupStopAsync(fixture)).WorklistRefills);
+        Assert.NotNull((await ArrivalWorklistRowAsync(fixture)).FencedAt);
+        string[] refill = Assert.Single(
+            fixture.SaveChanges.Saves, save => save.Contains("JourneyStopRow.WorklistRefills"));
+        Assert.Contains("ProtocolOutboxRow.FencedAt", refill);
+        Assert.Contains("ProtocolOutboxRow.MessageId", refill);
+    }
+
+    /// <summary>
+    /// 等录入时重填，新的一版清单已经落库、跟着它的录入请求还没入队时崩了：下一轮补发录入请求。车在会话离开 <c>Ready</c> 时
+    /// 已经清掉了手上的录入请求，不补发，操作员这一站就没有可答的请求。
+    /// </summary>
+    /// <remarks>
+    /// 清单与录入请求是两条报文、两次保存，中间崩掉时清单那一侧已经对上了，「车上的期限是不是旧的」判不出任何事，
+    /// 所以补发靠的是另一条判据：这一版清单已排、这一版的录入请求却没有。崩溃注入在这一轮第二次往发件箱插行的那次保存上。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
+    [Trait("ProtocolVector", "CV-PICKUP-SUBLOT-LOAD")]
+    public async Task ACrashBetweenTheRefilledWorklistAndItsEntryRequestIsHealedOnTheNextRound()
+    {
+        await using RuntimeFixture fixture = await DeadlineFixtureAsync();
+        AdoptingPeer vehicle = Attach(fixture);
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.AdvanceToSublotWaitAsync()).Stage);
+        await vehicle.DeliverBufferedAcksAsync();
+        DateTimeOffset before = VehicleDeadline(vehicle);
+
+        await DisconnectThroughAnUnreadyRoundThenReconnectAsync(fixture);
+        int outboxInserts = 0;
+        fixture.SaveChanges.FailWhen = written =>
+            written.Contains("ProtocolOutboxRow.MessageId") && ++outboxInserts == 2;
+        Exception? crash = await Record.ExceptionAsync(() => fixture.Engine.ExecuteOnceAsync(Token));
+        fixture.SaveChanges.FailWhen = null;
+        await fixture.RecreateEngineAsync();
+        await vehicle.DeliverBufferedAcksAsync();
+
+        TestContext.Current.TestOutputHelper?.WriteLine($"crash: {crash?.Message}");
+        Assert.NotNull(crash);
+        Assert.Equal(1, (await PickupStopAsync(fixture)).WorklistRefills);
+        int entryRequestsBefore = SentLines(fixture, "SublotEntryRequested").Length;
+
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        await vehicle.DeliverBufferedAcksAsync();
+
+        await AssertTheVehicleHoldsTheServersDeadlineAsync(fixture, vehicle, before);
+        Assert.Equal(entryRequestsBefore + 1, SentLines(fixture, "SublotEntryRequested").Length);
+        AssertTheLastEntryRequestAnswersTheHeldWorklist(fixture, vehicle);
+        Assert.Equal(1, (await PickupStopAsync(fixture)).WorklistRefills);
+
+        // 补发一次就够：之后就绪的几轮不再发。
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(entryRequestsBefore + 1, SentLines(fixture, "SublotEntryRequested").Length);
+    }
+
+    /// <summary>
+    /// 断两次、中间那一版车收到了却没来得及确认：第二次重填再升一版，车上的期限跟着第二次的走，号严格前进，车没有拒收任何一张。
+    /// </summary>
+    /// <remarks>
+    /// 第一次重填发出的那一版（N+1）没被确认，第二次重连后它会被重放，而它带的是第一次重填的期限。车已经采纳了它，
+    /// 同号同内容照收；随后第二次重填按「排给车的那一版与服务端此刻不一致」认出它，退役、发 N+2。若重填改在同一个号上改期限，
+    /// 车就会按 <c>SNAPSHOT_REVISION_CONTENT_CONFLICT</c> 拒收——模型测试看不见这一种（<see cref="AdoptingPeer.Conflicts"/>
+    /// 没有接进 <c>ReconnectModel</c> 的违规），所以在这里单独钉住。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
+    [Trait("ProtocolVector", "CV-PICKUP-SUBLOT-LOAD")]
+    public async Task TwoDisconnectsWithNoConfirmationBetweenThemEachReachTheVehicle()
+    {
+        await using RuntimeFixture fixture = await DeadlineFixtureAsync();
+        AdoptingPeer vehicle = Attach(fixture);
+        long first = (await fixture.AdvanceToSublotWaitAsync()).WorklistRevision;
+        await vehicle.DeliverBufferedAcksAsync();
+
+        await DisconnectThroughAnUnreadyRoundThenReconnectAsync(fixture);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        DateTimeOffset firstRefill = VehicleDeadline(vehicle);
+        Assert.Equal(firstRefill, ServerDeadline(await fixture.RuntimeAsync(), fixture));
+        // 第一次重填那一版的确认在路上丢了。
+        vehicle.LoseBufferedAcks();
+
+        await DisconnectThroughAnUnreadyRoundThenReconnectAsync(fixture, generation: 3);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        await vehicle.DeliverBufferedAcksAsync();
+
+        await AssertTheVehicleHoldsTheServersDeadlineAsync(fixture, vehicle, firstRefill);
+        Assert.Equal([first, first + 1, first + 2], AdoptedWorklists(vehicle));
+        Assert.Equal(2, (await PickupStopAsync(fixture)).WorklistRefills);
+        AssertTheLastEntryRequestAnswersTheHeldWorklist(fixture, vehicle);
+    }
+
+    /// <summary>
+    /// 重填那一轮走了「取消开着」的出口：起点在那一轮保存了，清单没发。取消之后不再开着（这里直接把它改成 <c>HistoricalOnly</c>，
+    /// 等同于撤回），下一轮照样升版，车上的期限对上服务端。
+    /// </summary>
+    /// <remarks>
+    /// 钉的是 <c>AdvanceWorklistPastAStaleDeadlineAsync</c> 的判据本身：按「排给车的那一版与服务端此刻的期限是否一致」判，
+    /// 而不是「这一轮重填了」。后者只在重填那一轮成立一次，而那一轮从取消的出口走了，之后每一轮都读不到它。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
+    [Trait("ProtocolVector", "CV-PICKUP-SUBLOT-LOAD")]
+    public async Task ARefillSavedThroughTheOpenCancellationExitStillReachesTheVehicleOnceItCloses()
+    {
+        await using RuntimeFixture fixture = await DeadlineFixtureAsync();
+        AdoptingPeer vehicle = Attach(fixture);
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.AdvanceToSublotWaitAsync()).Stage);
+        await vehicle.DeliverBufferedAcksAsync();
+        DateTimeOffset before = VehicleDeadline(vehicle);
+
+        await DisconnectThroughAnUnreadyRoundThenReconnectAsync(fixture);
+        string workflowId = await OpenALoadCancellationAsync(fixture);
+        int worklistsSent = SentLines(fixture, "CurrentStopWorklistSnapshot").Length;
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        JourneyRuntimeRow held = await fixture.RuntimeAsync();
+        Assert.NotNull(held.StationDepartureWaitStartedAt);
+        Assert.Equal(worklistsSent, SentLines(fixture, "CurrentStopWorklistSnapshot").Length);
+        Assert.Equal(0, (await PickupStopAsync(fixture)).WorklistRefills);
+
+        await using (ControlServerDbContext connection = fixture.OpenConnectionContext())
+        {
+            RecoveryWorkflowRow workflow = await connection.RecoveryWorkflows.SingleAsync(
+                row => row.WorkflowId == workflowId, Token);
+            workflow.State = RecoveryWorkflowState.HistoricalOnly;
+            await connection.SaveChangesAsync(Token);
+        }
+        fixture.Context.ChangeTracker.Clear();
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        await vehicle.DeliverBufferedAcksAsync();
+
+        await AssertTheVehicleHoldsTheServersDeadlineAsync(fixture, vehicle, before);
+        Assert.Equal(held.StationDepartureWaitStartedAt, (await fixture.RuntimeAsync()).StationDepartureWaitStartedAt);
+        AssertTheLastEntryRequestAnswersTheHeldWorklist(fixture, vehicle);
     }
 
     /// <summary>
@@ -429,7 +628,7 @@ public sealed class RefilledStationDeadlineReachesVehicleTests
     /// 断线（会话离开 <c>Ready</c>）→ 钟走 <see cref="Gap"/> → 引擎在闸门关着时跑一轮，断言这一轮清空了期限起点 → 新的一代握手完成、
     /// 车听得到。
     /// </summary>
-    private static async Task DisconnectThroughAnUnreadyRoundThenReconnectAsync(RuntimeFixture fixture)
+    private static async Task DisconnectThroughAnUnreadyRoundThenReconnectAsync(RuntimeFixture fixture, long generation = 2)
     {
         await fixture.DropOnboardSessionAsync();
         fixture.Clock.Advance(Gap);
@@ -437,7 +636,52 @@ public sealed class RefilledStationDeadlineReachesVehicleTests
         JourneyRuntimeRow voided = await fixture.RuntimeAsync();
         Assert.Null(voided.StationDepartureWaitStartedAt);
         Assert.Equal("ONBOARD_SESSION_NOT_READY", voided.BlockReasonCode);
-        await ArrivalPublishInterruptedThenReconnectedTests.ReconnectAtGenerationAsync(fixture, generation: 2);
+        await ArrivalPublishInterruptedThenReconnectedTests.ReconnectAtGenerationAsync(fixture, generation);
+    }
+
+    /// <summary>取货停靠那一行，从库里读。</summary>
+    private static async Task<JourneyStopRow> PickupStopAsync(RuntimeFixture fixture)
+    {
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        return await fixture.Context.Set<JourneyStopRow>().AsNoTracking()
+            .SingleAsync(row => row.JourneyId == runtime.JourneyId && row.StopRole == JourneyStopRoles.Pickup, Token);
+    }
+
+    /// <summary>到站那一版清单在发件箱里的那一行（取货停靠的第一版）。</summary>
+    private static async Task<ProtocolOutboxRow> ArrivalWorklistRowAsync(RuntimeFixture fixture)
+    {
+        string messageId = (await PickupStopAsync(fixture)).WorklistMessageId;
+        return await fixture.Context.ProtocolOutbox.AsNoTracking().SingleAsync(row => row.MessageId == messageId, Token);
+    }
+
+    /// <summary>
+    /// 这条需求的一次装货取消，开着（等车的结果）。形状同 <c>JourneyRuntimeWorkerLoadDeadlineTests</c> 里那一条，从另一个上下文写，
+    /// 像入站处理器那样。
+    /// </summary>
+    private static async Task<string> OpenALoadCancellationAsync(RuntimeFixture fixture)
+    {
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        string workflowId = Guid.NewGuid().ToString("D");
+        await using (ControlServerDbContext connection = fixture.OpenConnectionContext())
+        {
+            connection.RecoveryWorkflows.Add(new RecoveryWorkflowRow
+            {
+                WorkflowId = workflowId,
+                WorkflowType = LoadCancellationBeforeSublot.WorkflowType,
+                AgvId = runtime.AgvId,
+                DemandId = DemandId,
+                SlotOperationAttemptId = runtime.LoadSlotOperationAttemptId,
+                SlotsJson = runtime.TargetSlotsJson,
+                State = RecoveryWorkflowState.AwaitingResult,
+                RequestMessageId = Guid.NewGuid().ToString("D"),
+                RequestContentHash = new string('c', 64),
+                CreatedAt = fixture.Clock.GetUtcNow(),
+                UpdatedAt = fixture.Clock.GetUtcNow()
+            });
+            await connection.SaveChangesAsync(Token);
+        }
+        fixture.Context.ChangeTracker.Clear();
+        return workflowId;
     }
 
     /// <summary>
