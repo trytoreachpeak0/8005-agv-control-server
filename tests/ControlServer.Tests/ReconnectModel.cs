@@ -512,9 +512,12 @@ internal static class ReconnectModel
                     : ReconnectViolation.EntryNeverReachedVehicle;
 
             // 录入请求没到车上时，分清是模型的收尾预算用完了（最后也没恢复健康），还是恢复之后停住了。
-            string budget = healthyAtTailRound is int since
-                ? $" tail: healthy since tail round {since}, {_tailOutcomes.Count - since} round(s) since without the entry request"
-                : $" tail: budget exhausted, never healthy again: {tailReconnects} reconnect(s) used, {_unacknowledged.Count} resend(s) still journalled";
+            // 恢复之后剩下的轮数不够 RoundsFromRecoveryToEntry 也算预算用完：最后一次重连恰好在收尾最后一轮成功时，一轮都没留给引擎。
+            int? roundsSinceHealthy = healthyAtTailRound is int since ? _tailOutcomes.Count - since : null;
+            string budget = roundsSinceHealthy is int left && left >= RoundsFromRecoveryToEntry
+                ? $" tail: stalled after recovery: healthy since tail round {healthyAtTailRound}, {left} round(s) since without the entry request"
+                : $" tail: budget exhausted: {(roundsSinceHealthy is int few ? $"healthy again only {few} round(s) before the end" : "never healthy again")}, " +
+                  $"{tailReconnects} reconnect(s) used of {TailRounds} tail rounds, {_unacknowledged.Count} resend(s) still journalled";
 
             List<(ReconnectViolation Violation, string Detail)> violations = [.. _violations];
             if (journeyViolation is { } found)
