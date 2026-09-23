@@ -198,6 +198,43 @@ public sealed class Batch7DemandReleaseServiceTests
             .SingleAsync(row => row.TargetUpperId == before.PickupUpperId, Token)).Outcome);
     }
 
+    /// <summary>
+    /// 释放服务自己发出的那次取消，引擎先一步读到了 CANCELLED，旅程写上 <c>ORDER_ENDED_WITHOUT_ARRIVAL</c>（本服务端自己取消的，
+    /// 不记重建）：释放服务下一轮照常对账、确认、释放。这不是「在途单停住」，是它自己这次释放走到一半。
+    /// </summary>
+    /// <remarks>
+    /// control-server#318 的第一版把停住码族一律当成释放拒绝（<c>RELEASE_ORDER_STALLED_OR_REBUILDING</c>），于是服务端自己发起的改派
+    /// 卡在半路：取消发了、单也取消了，需求却永远不释放。单元用例没有抓到，是合成 L2 <c>reassign-when-vehicle-ineligible</c> 抓到的——
+    /// 那里释放与引擎在两个循环里交替跑，取消确认之前夹着一轮引擎。这一条把那一轮引擎放进来。
+    /// 判「是不是自己取消的」用的是引擎判「不重建」的同一个事实：命令审计里有本服务端对这张单的 CANCEL。
+    /// </remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0360")]
+    public async Task TheReleasesOwnCancellationReadByTheEngineFirstStillEndsInTheRelease()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
+        LeaveTheMap(fixture);
+        CancellingGateway gateway = new(fixture.Clock, _ => { });
+        Assert.Equal(
+            DemandReleaseReasons.OrderCancelNotConfirmed,
+            Assert.Single(await Service(fixture, gateway).RunOnceAsync(Token)).Result);
+
+        fixture.Riot.CancelOrder(before.PickupUpperId);
+        await TickAndRunAsync(fixture);
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Equal("ORDER_ENDED_WITHOUT_ARRIVAL", (await fixture.RuntimeAsync(FirstDemandId)).BlockReasonCode);
+
+        IReadOnlyList<DemandReleaseOutcome> second = await Service(fixture, gateway).RunOnceAsync(Token);
+
+        Assert.Equal("RELEASED", Assert.Single(second).Result);
+        Assert.Equal(1, gateway.Cancels);
+        await using ControlServerDbContext reading = new ControlServerDbContext(fixture.DbOptionsForTests);
+        JourneyRuntimeRow after = await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token);
+        Assert.Equal((JourneyRuntimeStage.Completed, DemandReleaseReasons.Released), (after.Stage, after.BlockReasonCode));
+        Assert.Empty(await reading.OwnOrderRebuilds.AsNoTracking().ToArrayAsync(Token));
+    }
+
     [Fact]
     public async Task AnEligibleVehicleKeepsItsDemands()
     {
