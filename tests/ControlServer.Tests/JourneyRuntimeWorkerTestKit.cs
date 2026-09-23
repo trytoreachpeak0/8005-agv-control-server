@@ -1849,6 +1849,13 @@ internal static class JourneyRuntimeWorkerTestKit
             _endedOtherOrders[orderId] = orderState;
         }
 
+        /// <summary>The placed order <paramref name="orderId"/> leaves the listing and its own read answers nothing.</summary>
+        public void ForgetPlacedOrder(string orderId)
+        {
+            _otherOrders.RemoveAll(order => order.OrderId == orderId);
+            _endedOtherOrders.Remove(orderId);
+        }
+
         /// <summary>Whether the by-state listing answers completely. False is the page that does not cover every record.</summary>
         public bool ListingComplete { get; set; } = true;
 

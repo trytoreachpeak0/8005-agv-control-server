@@ -679,6 +679,90 @@ public sealed class ForeignRunningOrderTests
     }
 
     /// <summary>
+    /// 进程崩在审计尝试已经武装、还没记到外来单那一行上之间：从武装那一刻起，这次取消就算「可能已经发出」。重启后认出那次尝试，
+    /// 不再发；它若其实没发出去，订单照旧在跑，过了落定时间转人工——宁可让人看一眼，也不冒发第二次的险。
+    /// </summary>
+    /// <remarks>
+    /// 这是「决定取消、未发出」与「已发出、未记账」之间的第三个点，也是唯一一个可能「没发出也不补发」的点：武装与真正发出之间
+    /// 只隔一次调用，服务端无从知道调用出没出去，只能二选一。选「不补发、转人工」，与本服务端自己的订单命令同一个取舍
+    /// （<c>RiotOrderCommandService</c>：Pending 的尝试就是「可能已发出」）。
+    /// </remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0164")]
+    public async Task Req0164ACrashAfterTheAttemptWasArmedIsNeverFollowedByASecondArmingOrSend()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Riot.PlaceOrder(ForeignOrderId, ForeignUpperId, RiotOrderState.Executing, fixture.Options.VehicleKey);
+        // The save that links the armed attempt to the row: it writes that column on a row already there. A new row writes every
+        // column, its key among them, so the recognising save is told apart by the key.
+        fixture.SaveChanges.FailWhen = written =>
+            written.Contains("ForeignRiotOrderRow.CancelCommandAuditId") && !written.Contains("ForeignRiotOrderRow.RiotOrderId");
+
+        await CrashingRoundAsync(fixture);
+        Assert.Empty(fixture.Riot.OrderCommands);
+        Assert.Single(await AuditAsync(fixture));
+        Assert.Equal(ForeignRiotOrderStates.CancelDecided, (await RowAsync(fixture)).State);
+
+        for (int round = 0; round < 3; round++)
+        {
+            fixture.Clock.Advance(ForeignRunningOrderSupervisor.CancelSettleTime);
+            await fixture.Engine.ExecuteOnceAsync(Token);
+        }
+
+        Assert.Empty(fixture.Riot.OrderCommands);
+        RiotOrderCommandAuditRow audit = Assert.Single(await AuditAsync(fixture));
+        ForeignRiotOrderRow row = await RowAsync(fixture);
+        Assert.Equal(
+            (ForeignRiotOrderStates.StillRunningAfterCancel, (string?)audit.CommandAuditId),
+            (row.State, row.CancelCommandAuditId));
+        Assert.Equal([fixture.Options.AgvId], await HeldAsync(fixture));
+    }
+
+    /// <summary>
+    /// 只有明确终结才放车：回查读到 CANCELLED、FAILED、SUCCESS、DELETED 放；SUSPENDED（8，REQ-0164 里它占着名额）或读不到，都不放。
+    /// </summary>
+    [Theory]
+    [InlineData(RiotOrderState.Cancelled, true)]
+    [InlineData(RiotOrderState.Failed, true)]
+    [InlineData(RiotOrderState.Success, true)]
+    [InlineData(RiotOrderState.Deleted, true)]
+    [InlineData(RiotOrderState.Suspended, false)]
+    [InlineData(null, false)]
+    [Trait("Requirement", "REQ-0164")]
+    public async Task Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(int? readBack, bool released)
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Riot.CancelTakesEffect = false;
+        fixture.Riot.PlaceOrder(ForeignOrderId, ForeignUpperId, RiotOrderState.Executing, fixture.Options.VehicleKey);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(ForeignRiotOrderStates.CancelSent, (await RowAsync(fixture)).State);
+
+        if (readBack is { } state)
+        {
+            fixture.Riot.EndPlacedOrder(ForeignOrderId, state);
+        }
+        else
+        {
+            fixture.Riot.ForgetPlacedOrder(ForeignOrderId);
+        }
+        fixture.Clock.Advance(TimeSpan.FromSeconds(2));
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Single(fixture.Riot.OrderCommands);
+        ForeignRiotOrderRow row = await RowAsync(fixture);
+        if (released)
+        {
+            Assert.Equal((ForeignRiotOrderStates.Ended, readBack), (row.State, row.EndedOrderState));
+            Assert.Empty(await HeldAsync(fixture));
+        }
+        else
+        {
+            Assert.Equal((ForeignRiotOrderStates.CancelSent, (int?)null), (row.State, row.EndedOrderState));
+            Assert.Equal([fixture.Options.AgvId], await HeldAsync(fixture));
+        }
+    }
+
+    /// <summary>
     /// 进程崩在取消已经到了 RIoT、应答还没记账之间：重启后不再发。回查读到 CANCELLED 就记终结、审计对账为 Confirmed；
     /// 读到仍在跑，按「发出后仍在运行」等过落定时间转人工——无论哪种，取消都只有那一次。
     /// </summary>
