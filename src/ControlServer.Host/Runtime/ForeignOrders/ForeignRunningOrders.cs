@@ -29,6 +29,12 @@ public static class ForeignRunningOrders
     /// <summary>Whether this server created the running order cannot be proven: held and alarmed, never cancelled.</summary>
     public const string OwnershipUnprovenReason = "FOREIGN_RUNNING_ORDER_OWNERSHIP_UNPROVEN";
 
+    /// <summary>Proven foreign, but this deployment is not authorized to cancel it: held and alarmed for a person.</summary>
+    public const string CancelNotAuthorizedReason = "FOREIGN_RUNNING_ORDER_CANCEL_NOT_AUTHORIZED";
+
+    /// <summary>Gone from the running listing without RIoT reading it back ended: held, and a person has to find out why.</summary>
+    public const string UnsettledReason = "FOREIGN_RUNNING_ORDER_UNSETTLED";
+
     /// <summary>The reason the cancel is issued with, carried in its audit attempt's semantic hash and receipt.</summary>
     public const string CancelReason = "FOREIGN_RUNNING_ORDER_ON_MANAGED_VEHICLE";
 
@@ -62,6 +68,8 @@ public static class ForeignRunningOrders
             CancellingReason,
         ForeignRiotOrderStates.StillRunningAfterCancel => StillRunningAfterCancelReason,
         ForeignRiotOrderStates.HeldUnproven => OwnershipUnprovenReason,
+        ForeignRiotOrderStates.HeldCancelNotAuthorized => CancelNotAuthorizedReason,
+        ForeignRiotOrderStates.Unsettled => UnsettledReason,
         _ => null,
     };
 

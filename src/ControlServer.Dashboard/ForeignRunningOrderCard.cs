@@ -28,14 +28,16 @@ public sealed class ForeignRunningOrderCard : IDashboardCard
             return "<p>没有外来订单挡着车。</p>";
         }
 
-        html.Append("<table><tr><th>agvId</th><th>RIoT 订单</th><th>upperId</th><th>原因码</th><th>说明</th>")
-            .Append("<th>认出时刻</th><th>取消发出时刻</th><th>取消结果</th></tr>");
+        html.Append("<table><tr><th>agvId</th><th>deviceKey</th><th>RIoT 订单</th><th>upperId</th><th>归属依据</th>")
+            .Append("<th>原因码</th><th>说明</th><th>认出时刻</th><th>取消发出时刻</th><th>取消结果</th></tr>");
         foreach (JsonElement order in fact.EnumerateArray())
         {
             html.Append("<tr>")
                 .Append(DashboardPageRenderer.Cell(DashboardPageRenderer.Text(order, "agvId")))
+                .Append(DashboardPageRenderer.Cell(DashboardPageRenderer.Text(order, "deviceKey")))
                 .Append(DashboardPageRenderer.Cell(DashboardPageRenderer.Text(order, "riotOrderId")))
                 .Append(DashboardPageRenderer.Cell(DashboardPageRenderer.Text(order, "upperId")))
+                .Append(DashboardPageRenderer.Cell(DashboardPageRenderer.Text(order, "ownershipBasis")))
                 .Append(DashboardPageRenderer.Cell(DashboardPageRenderer.Text(order, "reasonCode")))
                 .Append(DashboardPageRenderer.Cell(DashboardPageRenderer.Text(order, "reasonDescription")))
                 .Append(DashboardPageRenderer.Cell(DashboardPageRenderer.Text(order, "detectedAt")))

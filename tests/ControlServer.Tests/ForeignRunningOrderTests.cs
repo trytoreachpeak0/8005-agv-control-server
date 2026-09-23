@@ -7,7 +7,10 @@ using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.ForeignOrders;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using static ControlServer.Tests.JourneyRuntimeWorkerTestKit;
 
 namespace ControlServer.Tests;
@@ -491,6 +494,8 @@ public sealed class ForeignRunningOrderTests
         Assert.Single(fixture.Riot.OrderCommands);
         ForeignRiotOrderRow ended = await RowAsync(fixture);
         Assert.Equal((ForeignRiotOrderStates.Ended, (int?)RiotOrderState.Cancelled), (ended.State, ended.EndedOrderState));
+        // 取消结果如实改写成最后读到的（审查 L5）：转人工那一刻的 STILL_RUNNING 不留在终结了的行上；转人工本身在 2184 告警里。
+        Assert.Equal(ForeignRiotOrderCancelResults.Cancelled, ended.CancelResult);
         Assert.Empty(await HeldAsync(fixture));
     }
 
@@ -533,6 +538,7 @@ public sealed class ForeignRunningOrderTests
     [Theory]
     [InlineData("cancel-not-yet-effective")]
     [InlineData("ownership-unproven")]
+    [InlineData("cancel-not-authorized")]
     [Trait("Requirement", "REQ-0164")]
     public async Task Req0164AVehicleAForeignOrderRunsOnTakesNoNewDispatchUntilTheOrderIsReadBackEnded(string variant)
     {
@@ -540,6 +546,7 @@ public sealed class ForeignRunningOrderTests
         fixture.Catalog.Set(fixture.Demand(DemandId, "SUBLOT-001", Now.AddMinutes(-10)));
         fixture.BoxCounts.Set("SUBLOT-001", 4);
         fixture.Riot.CancelTakesEffect = false;
+        fixture.ForeignOrderCancel.Enabled = variant != "cancel-not-authorized";
         fixture.Riot.PlaceOrder(
             ForeignOrderId,
             variant == "ownership-unproven" ? "W2G-99999999-9999-4999-8999-999999999999-PICKUP-1" : ForeignUpperId,
@@ -619,6 +626,10 @@ public sealed class ForeignRunningOrderTests
 
         Assert.Equal([fixture.Options.AgvId], await HeldAsync(fixture));
         Assert.Empty(PlanLinesSent(fixture));
+        // 阻断卡片上这一行指向外来单（审查 S3）：旅程码照旧，说明后面加一句指到「车上的外来订单」，「未知」不归给自己的单。
+        (string? description, string? explainedBy) = await BlockedJourneyAsync(fixture);
+        Assert.EndsWith(BlockedJourneysQueryEndpoint.ForeignOrderHoldsVehicleNote, description, StringComparison.Ordinal);
+        Assert.Null(explainedBy);
 
         fixture.Riot.EndPlacedOrder(ForeignOrderId, RiotOrderState.Cancelled);
         fixture.Clock.Advance(TimeSpan.FromSeconds(2));
@@ -627,6 +638,181 @@ public sealed class ForeignRunningOrderTests
 
         Assert.Empty(await HeldAsync(fixture));
         Assert.Single(PlanLinesSent(fixture));
+    }
+
+    /// <summary>
+    /// 阻断卡片的那一句只在外来单挡着车时出现：同一个现场没有外来单，说明里没有它，「未知」照旧归给自己的在途单（#314）。
+    /// 这是上一条的对照——没有它，那条的 <c>EndsWith</c> 也可能是说明本来就这么写。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0164")]
+    public async Task TheBlockedJourneyNotePointsAtAForeignOrderOnlyWhileOneHoldsTheVehicle()
+    {
+        await using RuntimeFixture fixture = await AcceptedWithOrderConfirmedAsync();
+        await PickupDispatchPlanPastOwnOrderTests.DropSessionOnOwnOrderAsync(fixture);
+
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Empty(await HeldAsync(fixture));
+        (string? description, string? explainedBy) = await BlockedJourneyAsync(fixture);
+        Assert.DoesNotContain(
+            BlockedJourneysQueryEndpoint.ForeignOrderHoldsVehicleNote, description ?? "", StringComparison.Ordinal);
+        Assert.NotNull(explainedBy);
+    }
+
+    // ---- 取消开关（审查 M1）：默认关；关着时只认出、挡车、告警，一条命令都不发 ---------------------------------------------
+
+    /// <summary>
+    /// 这套部署没被授权取消外来订单（<c>RiotForeignOrderCancel:Enabled</c> 为 false）：外来单照样认出、照样挡车，记
+    /// <c>HELD_CANCEL_NOT_AUTHORIZED</c> 并告警一次（Error），连跑几轮、过了落定时间，零取消命令、零审计行、没有武装过的尝试。
+    /// 之后打开开关（重新部署，引擎重建）：同一张单还在跑，经发前再读后取消一次，回查终结才放车。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0164")]
+    [Trait("Requirement", "REQ-0148")]
+    public async Task Req0164WithTheCancelGateClosedAForeignOrderIsHeldAndAlarmedAndNeverCancelledUntilTheGateIsOpened()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.ForeignOrderCancel.Enabled = false;
+        await fixture.RecreateEngineAsync();
+        fixture.Riot.PlaceOrder(ForeignOrderId, ForeignUpperId, RiotOrderState.Executing, fixture.Options.VehicleKey);
+
+        for (int round = 0; round < 3; round++)
+        {
+            await fixture.Engine.ExecuteOnceAsync(Token);
+            fixture.Clock.Advance(ForeignRunningOrderSupervisor.CancelSettleTime);
+        }
+
+        Assert.True(fixture.Riot.ListingReads >= 3, $"The listing was read {fixture.Riot.ListingReads} times.");
+        Assert.Empty(fixture.Riot.OrderCommands);
+        Assert.Empty(await AuditAsync(fixture));
+        ForeignRiotOrderRow held = await RowAsync(fixture);
+        Assert.Equal(
+            (ForeignRiotOrderOwnership.Foreign, ForeignRiotOrderStates.HeldCancelNotAuthorized, (string?)null, (DateTimeOffset?)null),
+            (held.Ownership, held.State, held.CancelCommandAuditId, held.CancelSentAt));
+        Assert.Equal([fixture.Options.AgvId], await HeldAsync(fixture));
+        (LogLevel _, string message) = Assert.Single(fixture.ForeignOrderLog.Entries, entry => entry.Level == LogLevel.Error);
+        Assert.Contains(ForeignOrderId, message, StringComparison.Ordinal);
+        Assert.Contains("not authorized to cancel", message, StringComparison.Ordinal);
+        Assert.Equal(
+            [(ForeignOrderId, ForeignRunningOrders.CancelNotAuthorizedReason)],
+            await DashboardReasonsAsync(fixture));
+
+        fixture.ForeignOrderCancel.Enabled = true;
+        await fixture.RecreateEngineAsync();
+        int readsBefore = fixture.Riot.ListingReads;
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Equal(
+            [(RiotOrderCommandKind.Cancel, ForeignOrderId)],
+            fixture.Riot.OrderCommands.Select(command => (command.Kind, command.OrderId)));
+        Assert.True(
+            fixture.Riot.ListingReads >= readsBefore + 2,
+            $"Expected the round's read and the re-read before the cancel, got {fixture.Riot.ListingReads - readsBefore}.");
+        ForeignRiotOrderRow ended = await RowAsync(fixture);
+        Assert.Equal(
+            (ForeignRiotOrderStates.Ended, ForeignRiotOrderCancelResults.Cancelled),
+            (ended.State, ended.CancelResult));
+        Assert.Single(await AuditAsync(fixture));
+        Assert.Empty(await HeldAsync(fixture));
+    }
+
+    /// <summary>
+    /// 开关默认关：选项的默认值、配置里没有这一节、显式写 false，都是关；只有显式写 true 才开。随包的 <c>appsettings.json</c>
+    /// 把这一节写成 false，放在那里是让人看得见。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0164")]
+    public void TheCancelGateIsClosedUnlessADeploymentOpensIt()
+    {
+        Assert.False(new RiotForeignOrderCancelOptions().Enabled);
+        Assert.False(ResolveCancelGate([]).Enabled);
+        Assert.False(ResolveCancelGate(new() { [$"{RiotForeignOrderCancelOptions.SectionName}:enabled"] = "false" }).Enabled);
+        Assert.True(ResolveCancelGate(new() { [$"{RiotForeignOrderCancelOptions.SectionName}:enabled"] = "true" }).Enabled);
+
+        string path = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+        Assert.True(File.Exists(path), $"Expected Host appsettings at '{path}'.");
+        using JsonDocument document = JsonDocument.Parse(File.ReadAllText(path));
+        Assert.False(document.RootElement.GetProperty(RiotForeignOrderCancelOptions.SectionName).GetProperty("enabled").GetBoolean());
+    }
+
+    // ---- 落不了定：离开运行列表却读不到终结（审查 S1） -------------------------------------------------------------------
+
+    /// <summary>
+    /// 挡着车的外来单离开了 RIoT 的运行列表，按订单号回查却读不到明确终结（SUSPENDED，或者查不到）：没到落定时间照旧；
+    /// 从最后一次看见它在跑起过了落定时间，转 <c>UNSETTLED</c>、Error 级告警一次，车照样挡着，不发任何命令（取消已发过的也不再发）。
+    /// 之后 RIoT 读回它明确终结，才放车。四种起点：取消已发出、取消已发出后查不到、认不准、没被授权取消。
+    /// </summary>
+    /// <remarks>时钟每一步都真的拨了，并断言拨过：判据测到的是离开运行列表之后的时间。</remarks>
+    [Theory]
+    [InlineData("cancel-sent-then-suspended")]
+    [InlineData("cancel-sent-then-not-found")]
+    [InlineData("unproven-then-not-found")]
+    [InlineData("cancel-not-authorized-then-suspended")]
+    [Trait("Requirement", "REQ-0164")]
+    public async Task Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(
+        string variant)
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Riot.CancelTakesEffect = false;
+        fixture.ForeignOrderCancel.Enabled = variant != "cancel-not-authorized-then-suspended";
+        fixture.Riot.PlaceOrder(
+            ForeignOrderId,
+            variant == "unproven-then-not-found" ? "W2G-99999999-9999-4999-8999-999999999999-PICKUP-1" : ForeignUpperId,
+            RiotOrderState.Executing,
+            fixture.Options.VehicleKey);
+        DateTimeOffset lastSeenRunning = fixture.Clock.GetUtcNow();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        string before = (await RowAsync(fixture)).State;
+        Assert.Equal(
+            variant switch
+            {
+                "unproven-then-not-found" => ForeignRiotOrderStates.HeldUnproven,
+                "cancel-not-authorized-then-suspended" => ForeignRiotOrderStates.HeldCancelNotAuthorized,
+                _ => ForeignRiotOrderStates.CancelSent,
+            },
+            before);
+        int commands = fixture.Riot.OrderCommands.Count;
+        int errors = fixture.ForeignOrderLog.Entries.Count(entry => entry.Level == LogLevel.Error);
+
+        if (variant.EndsWith("suspended", StringComparison.Ordinal))
+        {
+            fixture.Riot.EndPlacedOrder(ForeignOrderId, RiotOrderState.Suspended);
+        }
+        else
+        {
+            fixture.Riot.ForgetPlacedOrder(ForeignOrderId);
+        }
+
+        fixture.Clock.Advance(ForeignRunningOrderSupervisor.CancelSettleTime - TimeSpan.FromSeconds(1));
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(before, (await RowAsync(fixture)).State);
+        Assert.Equal(errors, fixture.ForeignOrderLog.Entries.Count(entry => entry.Level == LogLevel.Error));
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        Assert.Equal(ForeignRunningOrderSupervisor.CancelSettleTime, fixture.Clock.GetUtcNow() - lastSeenRunning);
+        for (int round = 0; round < 3; round++)
+        {
+            await fixture.Engine.ExecuteOnceAsync(Token);
+            fixture.Clock.Advance(TimeSpan.FromSeconds(5));
+        }
+
+        Assert.Equal(ForeignRiotOrderStates.Unsettled, (await RowAsync(fixture)).State);
+        Assert.Equal([fixture.Options.AgvId], await HeldAsync(fixture));
+        Assert.Equal(commands, fixture.Riot.OrderCommands.Count);
+        (LogLevel _, string message) = Assert.Single(
+            fixture.ForeignOrderLog.Entries.Where(entry => entry.Level == LogLevel.Error).Skip(errors));
+        Assert.Contains(ForeignOrderId, message, StringComparison.Ordinal);
+        Assert.Contains("has left RIoT's running listing", message, StringComparison.Ordinal);
+        Assert.Equal([(ForeignOrderId, ForeignRunningOrders.UnsettledReason)], await DashboardReasonsAsync(fixture));
+
+        fixture.Riot.EndPlacedOrder(ForeignOrderId, RiotOrderState.Cancelled);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Equal(ForeignRiotOrderStates.Ended, (await RowAsync(fixture)).State);
+        Assert.Empty(await HeldAsync(fixture));
+        Assert.Equal(commands, fixture.Riot.OrderCommands.Count);
     }
 
     // ---- 告警与审计的内容 ------------------------------------------------------------------------------------------------
@@ -903,7 +1089,9 @@ public sealed class ForeignRunningOrderTests
             Row("order-still-running", "AGV-B", ForeignRiotOrderOwnership.Foreign, ForeignRiotOrderStates.StillRunningAfterCancel, now),
             Row("order-unproven", "AGV-C", ForeignRiotOrderOwnership.Unproven, ForeignRiotOrderStates.HeldUnproven, now),
             Row("order-ended", "AGV-D", ForeignRiotOrderOwnership.Foreign, ForeignRiotOrderStates.Ended, now),
-            Row("order-left", "AGV-E", ForeignRiotOrderOwnership.Foreign, ForeignRiotOrderStates.LeftVehicle, now));
+            Row("order-left", "AGV-E", ForeignRiotOrderOwnership.Foreign, ForeignRiotOrderStates.LeftVehicle, now),
+            Row("order-not-authorized", "AGV-F", ForeignRiotOrderOwnership.Foreign, ForeignRiotOrderStates.HeldCancelNotAuthorized, now),
+            Row("order-unsettled", "AGV-G", ForeignRiotOrderOwnership.Foreign, ForeignRiotOrderStates.Unsettled, now));
         await fixture.Context.SaveChangesAsync(Token);
 
         object result = await new ForeignRunningOrdersQueryEndpoint().ReadAsync(fixture.Context, Token);
@@ -911,11 +1099,20 @@ public sealed class ForeignRunningOrderTests
 
         Dictionary<string, JsonElement> byOrder = fact.RootElement.EnumerateArray()
             .ToDictionary(item => item.GetProperty("riotOrderId").GetString()!, StringComparer.Ordinal);
-        Assert.Equal(["order-cancelling", "order-still-running", "order-unproven"], byOrder.Keys.Order(StringComparer.Ordinal));
+        Assert.Equal(
+            ["order-cancelling", "order-not-authorized", "order-still-running", "order-unproven", "order-unsettled"],
+            byOrder.Keys.Order(StringComparer.Ordinal));
         Assert.Equal(ForeignRunningOrders.CancellingReason, byOrder["order-cancelling"].GetProperty("reasonCode").GetString());
         Assert.Equal(
             ForeignRunningOrders.StillRunningAfterCancelReason, byOrder["order-still-running"].GetProperty("reasonCode").GetString());
         Assert.Equal(ForeignRunningOrders.OwnershipUnprovenReason, byOrder["order-unproven"].GetProperty("reasonCode").GetString());
+        Assert.Equal(
+            ForeignRunningOrders.CancelNotAuthorizedReason, byOrder["order-not-authorized"].GetProperty("reasonCode").GetString());
+        Assert.Equal(ForeignRunningOrders.UnsettledReason, byOrder["order-unsettled"].GetProperty("reasonCode").GetString());
+        // 五个原因码的说明各不相同：共用一句话的码，看板上分不出人该做什么。
+        Assert.Equal(
+            byOrder.Count,
+            byOrder.Values.Select(item => item.GetProperty("reasonDescription").GetString()).Distinct(StringComparer.Ordinal).Count());
         Assert.All(byOrder.Values, item =>
         {
             Assert.False(string.IsNullOrWhiteSpace(item.GetProperty("reasonDescription").GetString()));
@@ -925,6 +1122,7 @@ public sealed class ForeignRunningOrderTests
 
         string html = new ForeignRunningOrderCard().RenderFact(fact.RootElement);
         Assert.Contains("AGV-B", html, StringComparison.Ordinal);
+        Assert.Contains("KEY-AGV-B", html, StringComparison.Ordinal);
         Assert.Contains("order-still-running", html, StringComparison.Ordinal);
         Assert.Contains(ForeignRunningOrders.StillRunningAfterCancelReason, html, StringComparison.Ordinal);
         Assert.DoesNotContain("order-ended", html, StringComparison.Ordinal);
@@ -951,7 +1149,9 @@ public sealed class ForeignRunningOrderTests
         OrderStateAtDetection = RiotOrderState.Executing,
         DetectedAt = at,
         LastSeenRunningAt = at,
-        CancelSentAt = ownership == ForeignRiotOrderOwnership.Foreign ? at : null,
+        CancelSentAt = ownership == ForeignRiotOrderOwnership.Foreign && state != ForeignRiotOrderStates.HeldCancelNotAuthorized
+            ? at
+            : null,
         CancelResult = state == ForeignRiotOrderStates.StillRunningAfterCancel ? ForeignRiotOrderCancelResults.StillRunning : null,
         UpdatedAt = at,
     };
@@ -998,6 +1198,36 @@ public sealed class ForeignRunningOrderTests
         Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await fixture.RuntimeAsync()).Stage);
         Assert.Equal("CONFIRMED", await fixture.IntentStatusAsync("TO_PICKUP"));
         return fixture;
+    }
+
+    /// <summary>看板「车上的外来订单」此刻列出的每一行：订单号与原因码。</summary>
+    private static async Task<(string OrderId, string? ReasonCode)[]> DashboardReasonsAsync(RuntimeFixture fixture)
+    {
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        object result = await new ForeignRunningOrdersQueryEndpoint().ReadAsync(reading, Token);
+        using JsonDocument fact = JsonDocument.Parse(JsonSerializer.Serialize(result));
+        return [.. fact.RootElement.EnumerateArray()
+            .Select(item => (item.GetProperty("riotOrderId").GetString()!, item.GetProperty("reasonCode").GetString()))];
+    }
+
+    /// <summary>阻断卡片上这辆车唯一那趟旅程的说明，和它的「未知」归给了什么（null 是没归给自己的在途单）。</summary>
+    private static async Task<(string? Description, string? ExplainedBy)> BlockedJourneyAsync(RuntimeFixture fixture)
+    {
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        object result = await new BlockedJourneysQueryEndpoint(BlockedJourneyEscalationOptions.Default, fixture.Clock)
+            .ReadAsync(reading, Token);
+        using JsonDocument fact = JsonDocument.Parse(JsonSerializer.Serialize(result));
+        JsonElement journey = Assert.Single(fact.RootElement.GetProperty("journeys").EnumerateArray().ToArray());
+        return (journey.GetProperty("blockReasonDescription").GetString(), journey.GetProperty("unknownExplainedBy").GetString());
+    }
+
+    private static RiotForeignOrderCancelOptions ResolveCancelGate(Dictionary<string, string?> configured)
+    {
+        IConfiguration configuration = new ConfigurationBuilder().AddInMemoryCollection(configured).Build();
+        ServiceCollection services = new();
+        services.AddRiotForeignOrderCancelGate(configuration);
+        using ServiceProvider provider = services.BuildServiceProvider();
+        return provider.GetRequiredService<IOptions<RiotForeignOrderCancelOptions>>().Value;
     }
 
     private static JsonElement[] PlanLinesSent(RuntimeFixture fixture) =>

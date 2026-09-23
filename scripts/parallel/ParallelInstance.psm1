@@ -141,11 +141,13 @@ $script:ProductionVehicle = [pscustomobject]@{
 $script:AllowedKeys = [ordered]@{
     '' = @('instanceId', 'serviceName', 'installRoot', 'dataRoot', 'backupRoot', 'packageRoot',
         'opsRoot', 'stagingRoot', 'listenAddress', 'healthBindAddress', 'onboardPort', 'healthPort',
-        'dashboardPort', 'mesIngest', 'fakeMesIngest', 'routeGraph', 'riotCreateDispatch', 'journeyRuntime')
+        'dashboardPort', 'mesIngest', 'fakeMesIngest', 'routeGraph', 'riotCreateDispatch', 'riotForeignOrderCancel',
+        'journeyRuntime')
     'mesIngest' = @('baseUrl')
     'fakeMesIngest' = @('installRoot', 'port', 'taskName', 'seedPath')
     'routeGraph' = @('enabled', 'mapId', 'designStateTtl', 'runtimeRefreshPeriod', 'runtimeStateMaxAge')
     'riotCreateDispatch' = @('enabled')
+    'riotForeignOrderCancel' = @('enabled')
     'journeyRuntime' = @('enabled', 'pollInterval', 'agvId', 'vehicleKey', 'agvLifecycleGeneration',
         'mapId', 'mapIdentity', 'dispatchZone', 'dispatchGeneration', 'minimumBatteryPercent',
         'maximumEvidenceAge', 'departureSafetyResultWait', 'stationDepartureWaitTimeout',
@@ -522,12 +524,20 @@ function Test-ParallelInstanceDefinition {
             vehicle, which the workspace CLAUDE.md authorizes one run at a time with somebody
             on site; the parallel deployment path is not that authorization, so the switch
             exists to make opening the gate a visible argument rather than a config edit.
+
+        .PARAMETER AllowRiotForeignOrderCancel
+            Permits riotForeignOrderCancel.enabled = true (control-server#330). Cancelling an
+            order RIoT shows running on one of this instance's vehicles stops a vehicle someone
+            else set moving -- a person moving it in RIoT, an experiment -- so it is a RIoT write
+            authorized on its own, apart from placing orders, and made a visible argument for the
+            same reason as -AllowRiotCreateDispatch.
     #>
     [CmdletBinding()]
     [OutputType([string[]])]
     param(
         [Parameter(Mandatory = $true)] $Definition,
-        [switch] $AllowRiotCreateDispatch
+        [switch] $AllowRiotCreateDispatch,
+        [switch] $AllowRiotForeignOrderCancel
     )
 
     [string[]] $failures = @()
@@ -799,6 +809,23 @@ function Test-ParallelInstanceDefinition {
         $failures += "riotCreateDispatch.enabled must be a JSON boolean, got '$($createDispatch['enabled'])'."
     } elseif ($createDispatch['enabled'] -and -not $AllowRiotCreateDispatch) {
         $failures += 'riotCreateDispatch.enabled is true. Placing RIoT orders moves a vehicle and is authorized one run at a time with somebody on site; pass -AllowRiotCreateDispatch to deploy such a configuration deliberately.'
+    }
+
+    # ------------------------------------------------ RIoT foreign order cancel ---
+
+    # Separate from journeyRuntime and from riotCreateDispatch (RiotForeignOrderCancelOptions,
+    # control-server#330): the runtime cancels an order someone else put on one of this
+    # instance's vehicles only while this gate is open, and a cancel stops a vehicle that is
+    # moving for somebody else. Closed, the order is only held and alarmed.
+    $foreignCancel = Get-Node -Root $Definition -Key 'riotForeignOrderCancel'
+    if ($null -eq $foreignCancel) {
+        $failures += 'riotForeignOrderCancel must be an object; the gate that decides whether this instance cancels orders on its vehicles is not something to inherit.'
+    } elseif (-not (Test-KeyPresent -Node $foreignCancel -Key 'enabled')) {
+        $failures += 'riotForeignOrderCancel.enabled must be stated explicitly.'
+    } elseif ($foreignCancel['enabled'] -isnot [bool]) {
+        $failures += "riotForeignOrderCancel.enabled must be a JSON boolean, got '$($foreignCancel['enabled'])'."
+    } elseif ($foreignCancel['enabled'] -and -not $AllowRiotForeignOrderCancel) {
+        $failures += 'riotForeignOrderCancel.enabled is true. Cancelling an order running on one of this instance''s vehicles stops a vehicle someone else set moving; pass -AllowRiotForeignOrderCancel to deploy such a configuration deliberately.'
     }
 
     return $failures
@@ -1351,14 +1378,16 @@ function Assert-ParallelInstanceDefinition {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)] $Definition,
-        [switch] $AllowRiotCreateDispatch
+        [switch] $AllowRiotCreateDispatch,
+        [switch] $AllowRiotForeignOrderCancel
     )
 
     # @() around the call, not just the [string[]] cast: PowerShell unwraps an empty array to
     # $null on return, and [string[]] $null is $null rather than an empty array -- so under
     # StrictMode the .Count below threw on exactly the input this function is supposed to
     # accept. The self-test only exercised Test-, which its own callers already wrapped.
-    [string[]] $failures = @(Test-ParallelInstanceDefinition -Definition $Definition -AllowRiotCreateDispatch:$AllowRiotCreateDispatch)
+    [string[]] $failures = @(Test-ParallelInstanceDefinition -Definition $Definition -AllowRiotCreateDispatch:$AllowRiotCreateDispatch `
+            -AllowRiotForeignOrderCancel:$AllowRiotForeignOrderCancel)
     if ($failures.Count -gt 0) {
         $listed = ($failures | ForEach-Object { "  - $_" }) -join [Environment]::NewLine
         throw ("The parallel instance definition was refused ($($failures.Count) reason(s)):" +
@@ -1404,6 +1433,7 @@ function New-ParallelInstanceConfigurationOverlay {
         JourneyRuntime = $journeyOverlay
         RouteGraph = $routeGraphOverlay
         RiotCreateDispatch = [ordered]@{ enabled = $Definition['riotCreateDispatch']['enabled'] }
+        RiotForeignOrderCancel = [ordered]@{ enabled = $Definition['riotForeignOrderCancel']['enabled'] }
     }
 }
 

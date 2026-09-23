@@ -16,7 +16,7 @@ from pathlib import Path
 ROOT = Path.cwd()
 OUT = ROOT / 'evidence/cs330/red/l1-mutations'
 FILTER = '|'.join('FullyQualifiedName~' + name for name in [
-    'ForeignRunningOrderTests', 'BlockedJourneyDashboardTests', 'PickupDispatchPlanPastOwnOrderTests',
+    'ForeignRunningOrderTests', 'BlockedJourneyDashboardTests', 'PickupDispatchPlanPastOwnOrderTests', 'OwnOrderRebuildTests',
     'MultiVehicleExecutionTests.AVehicleAForeignOrderHoldsTakesNoAppendedDemandUntilTheOrderHasEnded'])
 
 SUP = 'src/ControlServer.Host/Runtime/ForeignOrders/ForeignRunningOrderSupervisor.cs'
@@ -25,6 +25,7 @@ ENG = 'src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs'
 EXPL = 'src/ControlServer.Host/Dashboard/OwnMovementOrderExplanation.cs'
 BLOCKED = 'src/ControlServer.Host/Dashboard/BlockedJourneysQueryEndpoint.cs'
 DASH = 'src/ControlServer.Host/Dashboard/ForeignRunningOrdersQueryEndpoint.cs'
+ROWS = 'src/ControlServer.Infrastructure/Persistence/Rows/ForeignRiotOrderRows.cs'
 
 ON = 'Environment.TickCount64 >= 0'
 OFF = 'Environment.TickCount64 < 0'
@@ -108,6 +109,24 @@ MUTATIONS = [
     ('M28', 'ending: an explicit ending does not release the vehicle',
      [(SUP, '        row.State = ForeignRiotOrderStates.Ended;\n',
        f'        row.State = {ON} ? row.State : ForeignRiotOrderStates.Ended;\n')]),
+    # ---- added with the independent review's fixes (M1, S1, S3, L5) ----
+    ('M29', 'cancel gate: ignored (a cancel sent while the gate is closed)',
+     [(SUP, '        if (!cancelGate.Value.Enabled)\n', f'        if ({OFF} && !cancelGate.Value.Enabled)\n')]),
+    ('M30', 'cancel gate: an order held for a closed gate never taken up once it is opened',
+     [(SUP, '(mayCancel && row.State == ForeignRiotOrderStates.HeldCancelNotAuthorized)',
+       f'({OFF} && mayCancel && row.State == ForeignRiotOrderStates.HeldCancelNotAuthorized)')]),
+    ('M31', 'cancel gate: HELD_CANCEL_NOT_AUTHORIZED does not hold the vehicle',
+     [(ROWS, 'HeldUnproven, HeldCancelNotAuthorized, Unsettled];', 'HeldUnproven, Unsettled];')]),
+    ('M32', 'unsettled: an order that left the listing without ending never goes to a person',
+     [(SUP, '            if (row.State != ForeignRiotOrderStates.Unsettled && now - row.LastSeenRunningAt >= CancelSettleTime)\n',
+       f'            if ({OFF} && row.State != ForeignRiotOrderStates.Unsettled && now - row.LastSeenRunningAt >= CancelSettleTime)\n')]),
+    ('M33', 'unsettled: UNSETTLED does not hold the vehicle',
+     [(ROWS, 'HeldUnproven, HeldCancelNotAuthorized, Unsettled];', 'HeldUnproven, HeldCancelNotAuthorized];')]),
+    ('M34', 'cancel result: not rewritten when the order ends (a hand-over stays STILL_RUNNING)',
+     [(SUP, '            row.CancelResult = orderState == RiotOrderState.Cancelled\n',
+       '            row.CancelResult ??= orderState == RiotOrderState.Cancelled\n')]),
+    ('M35', 'blocked-journey card: no note pointing at the foreign order',
+     [(BLOCKED, '        if (!foreignOrderHoldsVehicle)\n', f'        if ({ON} || !foreignOrderHoldsVehicle)\n')]),
 ]
 
 

@@ -64,7 +64,9 @@ public sealed class ForeignRiotOrderRow
     public string? CancelCallDisposition { get; set; }
 
     /// <summary>
-    /// The result of the cancel as read back: <see cref="ForeignRiotOrderCancelResults"/>. Null until there is one.
+    /// The result of the cancel as read back: <see cref="ForeignRiotOrderCancelResults"/>. Null until there is one. Rewritten
+    /// when the order ends, so it always says the latest: a cancel handed to a person and read back cancelled later ends as
+    /// <see cref="ForeignRiotOrderCancelResults.Cancelled"/> (the hand-over itself is in event 2184).
     /// </summary>
     public string? CancelResult { get; set; }
 
@@ -83,7 +85,8 @@ public static class ForeignRiotOrderOwnership
 {
     /// <summary>
     /// Proven not this server's: no <c>OrderIntent</c> and no order command audit of this server's names it, and its
-    /// <c>upperId</c> does not look like one of this server's either. Cancelled (REQ-0148, REQ-0164).
+    /// <c>upperId</c> does not look like one of this server's either. Cancelled (REQ-0148, REQ-0164) where the deployment's
+    /// cancel gate is open; held and alarmed like an unprovable one where it is not.
     /// </summary>
     public const string Foreign = "FOREIGN";
 
@@ -118,6 +121,19 @@ public static class ForeignRiotOrderStates
     /// <summary>Ownership not provable: never cancelled, held and alarmed for a person until the order ends.</summary>
     public const string HeldUnproven = "HELD_UNPROVEN";
 
+    /// <summary>
+    /// Proven foreign, but this deployment's cancel gate (<c>RiotForeignOrderCancel:Enabled</c>) is closed: not cancelled, held
+    /// and alarmed for a person until the order ends. Taken up for the cancel if the gate is opened while it still runs.
+    /// </summary>
+    public const string HeldCancelNotAuthorized = "HELD_CANCEL_NOT_AUTHORIZED";
+
+    /// <summary>
+    /// No longer in RIoT's running listing, and RIoT does not read it back explicitly ended -- SUSPENDED, or not found at all --
+    /// for longer than the settle time. It still holds the vehicle (REQ-0164 releases only on a confirmed ending), and a person
+    /// has to find out in RIoT what became of it.
+    /// </summary>
+    public const string Unsettled = "UNSETTLED";
+
     /// <summary>RIoT read the order back in an explicit final state (2, 4, 5 or 6). The vehicle is no longer held for it.</summary>
     public const string Ended = "ENDED";
 
@@ -130,7 +146,7 @@ public static class ForeignRiotOrderStates
 
     /// <summary>The states that hold the vehicle: no new dispatch, no appended demand, not "this server's own order in flight".</summary>
     public static IReadOnlyList<string> Holding { get; } =
-        [Detected, CancelDecided, CancelSent, StillRunningAfterCancel, HeldUnproven];
+        [Detected, CancelDecided, CancelSent, StillRunningAfterCancel, HeldUnproven, HeldCancelNotAuthorized, Unsettled];
 }
 
 /// <summary>What reading the order back after its cancel showed.</summary>

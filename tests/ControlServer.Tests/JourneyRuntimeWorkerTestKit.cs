@@ -1119,6 +1119,7 @@ internal static class JourneyRuntimeWorkerTestKit
                     Riot,
                     new RiotOrderCommandAuditStore(Context),
                     new VehicleRoster(options),
+                    Microsoft.Extensions.Options.Options.Create(ForeignOrderCancel),
                     Clock,
                     ForeignOrderLog),
                 options,
@@ -1128,6 +1129,13 @@ internal static class JourneyRuntimeWorkerTestKit
 
         /// <summary>What the foreign running order supervisor logged (control-server#330): its alarms are log events.</summary>
         public RecordingLogger<ForeignRunningOrderSupervisor> ForeignOrderLog { get; } = new();
+
+        /// <summary>
+        /// The foreign order cancel gate the engine is built with. Open here, because most #330 cases are about the cancel
+        /// itself; a deployment ships it closed (appsettings.json, RiotForeignOrderCancelOptions), and the cases about the
+        /// closed gate close it and rebuild the engine.
+        /// </summary>
+        public RiotForeignOrderCancelOptions ForeignOrderCancel { get; } = new() { Enabled = true };
 
         /// <summary>
         /// 派车轮写、推进段读的那块板（批次7-07）：宿主里是单例，这里一个夹具一块，跨轮次保留。换一块新的再
@@ -2028,6 +2036,7 @@ internal static class JourneyRuntimeWorkerTestKit
                 riot,
                 new RiotOrderCommandAuditStore(context),
                 new VehicleRoster(Microsoft.Extensions.Options.Options.Create(options)),
+                Microsoft.Extensions.Options.Options.Create(new RiotForeignOrderCancelOptions()),
                 clock,
                 NullLogger<ForeignRunningOrderSupervisor>.Instance);
         }

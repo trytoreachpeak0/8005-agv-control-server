@@ -6,6 +6,7 @@ using ControlServer.Domain;
 using ControlServer.Host.Runtime.Fleet;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace ControlServer.Host.Runtime.ForeignOrders;
 
@@ -38,13 +39,22 @@ namespace ControlServer.Host.Runtime.ForeignOrders;
 /// foreign order (REQ-0148).
 /// </para>
 /// <para>
+/// <b>Only where the deployment is authorized to cancel</b> (<see cref="RiotForeignOrderCancelOptions"/>, closed by default).
+/// Where it is not, a proven foreign order is recognised, recorded, alarmed and holds its vehicle all the same
+/// (<see cref="ForeignRiotOrderStates.HeldCancelNotAuthorized"/>), and nothing is sent -- the rule before REQ-0164's revision.
+/// The gate is read after the armed-attempt check: a cancel that may already have gone out is never re-decided by it.
+/// </para>
+/// <para>
 /// <b>The 0/1 gate is not relaxed.</b> While a row is in one of <see cref="ForeignRiotOrderStates.Holding"/> its vehicle takes
 /// no new dispatch or appended demand, and its session's unknown is not this server's own order
 /// (<see cref="ForeignRunningOrders.HeldAgvIdsAsync"/>). A row stops holding only when RIoT reads the order back in an explicit
 /// ending -- CANCELLED, FAILED, SUCCESS or DELETED; SUSPENDED is not one -- or shows it running somewhere other than a vehicle
 /// of ours. An order this server cancelled ends in CANCELLED (BC-ORDER-003 for EXECUTING, BC-ORDER-006 for HELD); one cancelled
 /// on the vehicle itself goes to HANG (BC-ORDER-015), which is not an ending. What an API cancel does to a HANG order the lab
-/// has not recorded, so nothing here assumes it works: it is read back like any other.
+/// has not recorded, so nothing here assumes it works: it is read back like any other. An order that leaves the running
+/// listing without being read back ended -- SUSPENDED, or not found at all -- goes to a person after
+/// <see cref="CancelSettleTime"/> (<see cref="ForeignRiotOrderStates.Unsettled"/>) and keeps holding: there is no release but a
+/// confirmed ending, and no manual one in this server.
 /// </para>
 /// <para>
 /// <b>An ending here is never this server's own order ending.</b> Nothing a foreign order does reaches a journey: the journey
@@ -58,6 +68,7 @@ public sealed class ForeignRunningOrderSupervisor(
     IRiotOrderCommandGateway commands,
     IRiotOrderCommandAuditStore audit,
     VehicleRoster roster,
+    IOptions<RiotForeignOrderCancelOptions> cancelGate,
     TimeProvider timeProvider,
     ILogger<ForeignRunningOrderSupervisor> logger)
 {
@@ -73,7 +84,7 @@ public sealed class ForeignRunningOrderSupervisor(
             LogLevel.Warning,
             new EventId(2180, nameof(LogForeignOrderFound)),
             "RIoT order {OrderId} (upperId {UpperId}) is running on vehicle {AgvId} ({DeviceKey}) in state {OrderState} and was " +
-            "not created by this server ({Basis}). It is cancelled once; the vehicle takes no new work until it has ended.");
+            "not created by this server ({Basis}). The vehicle takes no new work until it has ended.");
 
     private static readonly Action<ILogger, string, string?, string, string, int?, string, Exception?> LogForeignOrderUnproven =
         LoggerMessage.Define<string, string?, string, string, int?, string>(
@@ -111,6 +122,21 @@ public sealed class ForeignRunningOrderSupervisor(
             "Foreign order {OrderId} is no longer running on vehicle {AgvId} ({Where}); nothing is sent to it, and the vehicle " +
             "is no longer held for it.");
 
+    private static readonly Action<ILogger, string, string, string, Exception?> LogForeignOrderCancelNotAuthorized =
+        LoggerMessage.Define<string, string, string>(
+            LogLevel.Error,
+            new EventId(2186, nameof(LogForeignOrderCancelNotAuthorized)),
+            "Foreign order {OrderId} is running on vehicle {AgvId} ({DeviceKey}), and this deployment is not authorized to cancel " +
+            "it (RiotForeignOrderCancel:Enabled is false). It is not cancelled; the vehicle takes no new work until it has " +
+            "ended. A person has to end it in RIoT or at the vehicle.");
+
+    private static readonly Action<ILogger, string, string, string, DateTimeOffset, Exception?> LogForeignOrderUnsettled =
+        LoggerMessage.Define<string, string, string, DateTimeOffset>(
+            LogLevel.Error,
+            new EventId(2187, nameof(LogForeignOrderUnsettled)),
+            "Foreign order {OrderId} on vehicle {AgvId} has left RIoT's running listing, but RIoT reads it back as {ReadBack}, " +
+            "not as ended, since {LastSeenRunningAt}. The vehicle stays held; a person has to find out in RIoT what became of it.");
+
     /// <summary>One round: follow what is known, recognise what is new, and take each proven foreign order one step further.</summary>
     public async Task SuperviseAsync(CancellationToken cancellationToken)
     {
@@ -140,9 +166,11 @@ public sealed class ForeignRunningOrderSupervisor(
             }
         }
 
+        bool mayCancel = cancelGate.Value.Enabled;
         foreach (ForeignRiotOrderRow row in rows.Where(row =>
                      row.Ownership == ForeignRiotOrderOwnership.Foreign &&
-                     row.State is ForeignRiotOrderStates.Detected or ForeignRiotOrderStates.CancelDecided))
+                     (row.State is ForeignRiotOrderStates.Detected or ForeignRiotOrderStates.CancelDecided ||
+                      (mayCancel && row.State == ForeignRiotOrderStates.HeldCancelNotAuthorized))))
         {
             await CancelAsync(row, ours, cancellationToken).ConfigureAwait(false);
         }
@@ -187,9 +215,9 @@ public sealed class ForeignRunningOrderSupervisor(
             row.LastSeenRunningAt = now;
             row.AgvId = vehicle.AgvId;
             row.DeviceKey = vehicle.VehicleKey;
-            if (row.State is ForeignRiotOrderStates.LeftVehicle or ForeignRiotOrderStates.Ended)
+            if (row.State is ForeignRiotOrderStates.LeftVehicle or ForeignRiotOrderStates.Ended or ForeignRiotOrderStates.Unsettled)
             {
-                // Back on a vehicle of ours. A cancel that already went out is not sent again.
+                // Back on a vehicle of ours, or back in the running listing. A cancel that already went out is not sent again.
                 row.State = row.CancelCommandAuditId is not null
                     ? ForeignRiotOrderStates.CancelSent
                     : row.Ownership == ForeignRiotOrderOwnership.Foreign
@@ -224,7 +252,19 @@ public sealed class ForeignRunningOrderSupervisor(
                 return;
             }
 
-            HandOverIfTheCancelDidNotTake(row, now);
+            // Neither running nor ended -- SUSPENDED, or RIoT cannot find it (deleted, for one). Nothing releases the vehicle but
+            // a confirmed ending (REQ-0164), so past the settle time it goes to a person rather than waiting unseen (independent
+            // review S1).
+            if (row.State != ForeignRiotOrderStates.Unsettled && now - row.LastSeenRunningAt >= CancelSettleTime)
+            {
+                row.State = ForeignRiotOrderStates.Unsettled;
+                row.UpdatedAt = now;
+                LogForeignOrderUnsettled(
+                    logger, row.RiotOrderId, row.AgvId,
+                    reading.OrderState?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "UNREAD",
+                    row.LastSeenRunningAt, null);
+            }
+
             return;
         }
 
@@ -369,6 +409,20 @@ public sealed class ForeignRunningOrderSupervisor(
             return;
         }
 
+        // The cancel gate (independent review M1): a deployment not authorized to cancel only recognises, holds and alarms.
+        if (!cancelGate.Value.Enabled)
+        {
+            if (row.State != ForeignRiotOrderStates.HeldCancelNotAuthorized)
+            {
+                row.State = ForeignRiotOrderStates.HeldCancelNotAuthorized;
+                row.UpdatedAt = timeProvider.GetUtcNow();
+                LogForeignOrderCancelNotAuthorized(logger, row.RiotOrderId, row.AgvId, row.DeviceKey, null);
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            return;
+        }
+
         // The re-read before the cancel: still running, on the same vehicle, and that vehicle still ours.
         RiotUnfinishedOrderListing reread = await orders.ListUnfinishedOrdersAsync(cancellationToken).ConfigureAwait(false);
         if (!reread.IsComplete)
@@ -476,13 +530,12 @@ public sealed class ForeignRunningOrderSupervisor(
         row.UpdatedAt = now;
         if (row.CancelCommandAuditId is { } auditId)
         {
-            if (row.CancelResult is null)
-            {
-                row.CancelResult = orderState == RiotOrderState.Cancelled
-                    ? ForeignRiotOrderCancelResults.Cancelled
-                    : ForeignRiotOrderCancelResults.EndedOtherwise;
-                row.CancelResultAt = now;
-            }
+            // Rewritten, not only filled in (review L5): a cancel handed to a person and read back cancelled later ends as
+            // CANCELLED; that it was handed over is event 2184.
+            row.CancelResult = orderState == RiotOrderState.Cancelled
+                ? ForeignRiotOrderCancelResults.Cancelled
+                : ForeignRiotOrderCancelResults.EndedOtherwise;
+            row.CancelResultAt = now;
 
             RiotOrderCommandAttempt? attempt = (await audit.ReadAttemptsAsync(
                     RiotCommandTypeNames.CancelOrder, AuditTarget(row), cancellationToken).ConfigureAwait(false))
