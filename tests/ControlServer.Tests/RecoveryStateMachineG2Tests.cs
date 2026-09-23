@@ -5080,6 +5080,58 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     /// <summary>
+    /// control-server#340 in the state a real vehicle is in for its whole drive: not ready because it carries a movement
+    /// order of this server's, reported as a departure it cannot make (VEHICLE_NOT_READY). It reconnects on the way, and
+    /// resends a safety change saying the same thing. Inside the handshake that change is only acknowledged, although
+    /// the session is and stays RecoveryRequired; the recovery report answers RECOVERY_REQUIRED for the departure; and
+    /// after the handshake a further safety change still carries readiness, RECOVERY_REQUIRED again, while one that
+    /// does not change readiness -- a progress report -- is only acknowledged.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
+    public async Task AVehicleNotReadyOnItsOwnOrderHandshakesWithoutAnExtraReadinessAndIsStillToldAfterwards()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(token);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        await SeedLoadAwaitingResultAsync(context, Now);
+        WireToGateStore store = new(context);
+        RecordingPeer peer = new(context);
+        OnboardMessageProcessor processor = Processor(context, peer, UnusedProofVariable);
+
+        OnboardConnectionState reconnected = new() { DeferOutboundUntilResponseWritten = true };
+        List<string> wire = [.. await ReconnectAsync(processor, peer, reconnected)];
+        long generation = reconnected.SessionGeneration!.Value;
+        string[] resent = await ExchangeAsync(processor, peer, reconnected, InSession(SafetyChange(
+            "e0000000-0000-4000-8000-000000003410",
+            safetyStateVersion: 7,
+            departureSafe: false,
+            unsafeReason: OwnOrderNotReadyReason), generation));
+        wire.AddRange(resent);
+        int reportAt = await FinishHandshakeAsync(processor, peer, reconnected, wire, departureSafe: false);
+
+        Assert.Equal(["DurableAck"], resent.Select(MessageType).ToArray());
+        AssertNothingSentInsideTheHandshake(wire, reportAt, reconnected);
+        Assert.Equal("RECOVERY_REQUIRED", FirstPayload(wire[reportAt + 1]).GetProperty("readiness").GetString());
+        Assert.Equal("DEPARTURE_SAFETY_NOT_READY", (await store.GetReadinessAsync(AgvId, token)).ReasonCode);
+
+        string[] stillDriving = await ExchangeAsync(processor, peer, reconnected, InSession(SafetyChange(
+            "e0000000-0000-4000-8000-000000003411",
+            safetyStateVersion: 9,
+            departureSafe: false,
+            unsafeReason: OwnOrderNotReadyReason), generation));
+        Assert.Equal(["DurableAck", "SessionReadiness"], stillDriving.Take(2).Select(MessageType).ToArray());
+        Assert.Equal("RECOVERY_REQUIRED", FirstPayload(stillDriving[1]).GetProperty("readiness").GetString());
+        string[] progress = await ExchangeAsync(processor, peer, reconnected, InSession(Envelope(
+            "e0000000-0000-4000-8000-000000003412",
+            "OperationProgress",
+            new { slotOperationAttemptId = AttemptId, observedAt = Now }), generation));
+        Assert.Equal(["DurableAck"], progress.Select(MessageType).ToArray());
+    }
+
+    /// <summary>
     /// Everything the server wrote in a reconnect before the recovery report is an answer to the line the vehicle had
     /// just sent, one per line: no recovery command and no recovery session snapshot while the vehicle reads one
     /// answer at a time (control-server#202). Where sends wait for the answer to be written, as they do on
@@ -5179,7 +5231,8 @@ public sealed class RecoveryStateMachineG2Tests
         RecordingPeer peer,
         OnboardConnectionState state,
         List<string> wire,
-        Func<Task>? afterEachSnapshot = null)
+        Func<Task>? afterEachSnapshot = null,
+        bool departureSafe = true)
     {
         long generation = state.SessionGeneration!.Value;
         afterEachSnapshot ??= () => Task.CompletedTask;
@@ -5196,12 +5249,12 @@ public sealed class RecoveryStateMachineG2Tests
                 safetyStateVersion = 8,
                 safety = new
                 {
-                    departureSafe = true,
-                    vehicleStopped = true,
+                    departureSafe,
+                    vehicleStopped = departureSafe,
                     allTargetSlotsLocked = true,
                     allUnlockOutputsReset = true,
-                    unknownPresent = false,
-                    reasonCodes = Array.Empty<string>()
+                    unknownPresent = !departureSafe,
+                    reasonCodes = departureSafe ? Array.Empty<string>() : [OwnOrderNotReadyReason]
                 }
             }), generation)));
         await afterEachSnapshot();
@@ -6064,7 +6117,18 @@ public sealed class RecoveryStateMachineG2Tests
     /// <summary>For a test whose processor takes no recovery request: the variable is never set.</summary>
     private const string UnusedProofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_UNUSED";
 
-    private static string SafetyChange(string messageId, long safetyStateVersion, bool departureSafe) => Envelope(
+    /// <summary>
+    /// What a real onboard reports for the whole drive while it carries a movement order of this server's: the
+    /// vehicle-safety endpoint says the motion is unknown, and the vehicle is not ready (cs#138; the session then reads
+    /// DEPARTURE_SAFETY_NOT_READY, as <c>PickupDispatchPlanPastOwnOrderTests.DropSessionOnOwnOrderAsync</c> seeds it).
+    /// </summary>
+    private const string OwnOrderNotReadyReason = "VEHICLE_NOT_READY";
+
+    private static string SafetyChange(
+        string messageId,
+        long safetyStateVersion,
+        bool departureSafe,
+        string unsafeReason = "VEHICLE_MOTION_UNKNOWN") => Envelope(
         messageId,
         "SafetyStateChanged",
         new
@@ -6078,7 +6142,7 @@ public sealed class RecoveryStateMachineG2Tests
                 allTargetSlotsLocked = true,
                 allUnlockOutputsReset = true,
                 unknownPresent = !departureSafe,
-                reasonCodes = departureSafe ? Array.Empty<string>() : ["VEHICLE_MOTION_UNKNOWN"]
+                reasonCodes = departureSafe ? Array.Empty<string>() : [unsafeReason]
             }
         });
 
