@@ -108,9 +108,10 @@ internal static class OwnOrderRebuilds
     }
 
     /// <summary>
-    /// The record the stop is waiting on: its ended order's, while that is still to be rebuilt or was stopped, or the one
-    /// whose new order the stop already points at and which is not yet confirmed. A confirmed rebuild is not returned -- the
-    /// stop then waits on its new order like on any other.
+    /// The record the stop is waiting on: its ended order's, while that is still to be rebuilt; the one whose new order the
+    /// stop already points at and which is not yet confirmed; or a stopped one, whichever of the two orders the stop points at
+    /// -- a rebuild stopped because its new order ended before it was confirmed leaves the stop on that new order. A confirmed
+    /// rebuild is not returned: the stop then waits on its new order like on any other.
     /// </summary>
     public static Task<OwnOrderRebuildRow?> ForStopAsync(
         ControlServerDbContext dbContext,
@@ -118,8 +119,9 @@ internal static class OwnOrderRebuilds
         CancellationToken cancellationToken) =>
         dbContext.OwnOrderRebuilds.SingleOrDefaultAsync(
             row => row.StopId == stop.StopId &&
-                   ((row.EndedUpperId == stop.UpperId &&
-                     (row.State == OwnOrderRebuildStates.Pending || row.State == OwnOrderRebuildStates.Stopped)) ||
-                    (row.NewUpperId == stop.UpperId && row.State == OwnOrderRebuildStates.Ordering)),
+                   ((row.EndedUpperId == stop.UpperId && row.State == OwnOrderRebuildStates.Pending) ||
+                    (row.NewUpperId == stop.UpperId && row.State == OwnOrderRebuildStates.Ordering) ||
+                    (row.State == OwnOrderRebuildStates.Stopped &&
+                     (row.EndedUpperId == stop.UpperId || row.NewUpperId == stop.UpperId))),
             cancellationToken);
 }
