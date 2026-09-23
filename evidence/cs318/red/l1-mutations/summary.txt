@@ -63,3 +63,43 @@ M16 an unconfirmed create is taken as rebuilt
   totals: Failed! 2 198
   red: ControlServer.Tests.OwnOrderRebuildTests.ARebuildWhoseCreateAnswerIsLostIsConfirmedNextRoundWithoutASecondCreate
   red: ControlServer.Tests.OwnOrderRebuildTests.ARebuiltOrderThatEndsBeforeItIsConfirmedStopsTheRebuilding
+
+# second run, on 49cb6de8 (after REQ-0361 window and REQ-0362 cargo evidence): M03 and M14 re-pointed at the current code, M17-M23 new
+M03 guard 3 (a second problem within the window, REQ-0361) off
+  totals: Failed! 3 291
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuiltOrderCancelledAgainSoonIsNotRebuiltASecondTime(withinTheWindow:
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AFaultClearedAgainSoonAfterTheRebuildStopsTheRebuilding
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0361ACancellationSoonAfterAFaultRebuildStopsTheRebuilding
+M14 the rebuild codes are not in the stalled-order family
+  totals: Failed! 2 292
+  red: ControlServer.Tests.MultiVehicleExecutionTests.AVehicleWaitingForItsOrderToBeRebuiltTakesNoAppendedDemand(waiting:
+  red: ControlServer.Tests.OwnOrderRebuildTests.ASilentSessionDoesNotOverwriteARebuildThatWaitsForTheVehicle
+M17 REQ-0361 source rule off: any later problem repeats a cancellation
+  totals: Failed! 1 293
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0361AFailureSoonAfterACancellationRebuildIsNotARepeat
+M18 REQ-0362 a snapshot from before the clearance counts
+  totals: Passed! 0 294
+  red: (none)
+M19 REQ-0362 a cargo slot need not read OCCUPIED
+  totals: Failed! 1 293
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362AFreshSnapshotThatDoesNotShowTheCargoInPlaceStopsTheRebuild(shows:
+M20 REQ-0362 unknownPresent is not read
+  totals: Failed! 1 293
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362AFreshSnapshotThatDoesNotShowTheCargoInPlaceStopsTheRebuild(shows:
+M21 REQ-0362 the request is never recorded, so it is not throttled
+  totals: Failed! 3 291
+  red: ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362ACargoRebuildWaitingForEvidenceAsksTheVehicleOncePerSession
+  red: ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362ARequestMadeWhileNotReadyIsMadeOnceMoreWhenTheSessionBecomesReady
+  red: ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362NoRequestInsideTheHandshakeAndOneAgainInTheNextSession
+M22 REQ-0362 the recovery report that ends the handshake may carry the request
+  totals: Failed! 1 293
+  red: ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362NoRequestInsideTheHandshakeAndOneAgainInTheNextSession
+M23 REQ-0362 the request is claimed inside the handshake too
+  totals: Failed! 1 293
+  red: ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362NoRequestInsideTheHandshakeAndOneAgainInTheNextSession
+# M18 above was miswritten ("TickCount64 < 0 ||" leaves the freshness check in force), so its green means nothing; its log is kept as M18-miswritten.log. Rerun with "TickCount64 >= 0 ||":
+M18 REQ-0362 a snapshot from before the clearance counts
+  totals: Failed! 3 291
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultWithCargoOnBoardRebuildsTheOrderToDeliverIt
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ALoadedClearanceWhoseSessionNeverBecomesReadyWaitsForTheSnapshot
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotFromBeforeTheClearanceDoesNotProveTheCargo

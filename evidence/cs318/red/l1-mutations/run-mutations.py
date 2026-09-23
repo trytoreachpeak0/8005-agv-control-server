@@ -15,7 +15,7 @@ ROOT = Path.cwd()
 OUT = ROOT / 'evidence/cs318/red/l1-mutations'
 FILTER = '|'.join('FullyQualifiedName~' + name for name in [
     'OwnOrderRebuildTests', 'VehicleFaultRecovery', 'Batch7DemandReleaseServiceTests', 'InTransitOrderStallTests',
-    'Batch7CargoHoldingDashboardTests'])
+    'Batch7CargoHoldingDashboardTests', 'OwnOrderRebuildCargoEvidenceRequestTests', 'MultiVehicleExecutionTests'])
 
 ENGINE = 'src/ControlServer.Host/Runtime/JourneyRuntimeEngine.OwnOrderRebuild.cs'
 MAIN = 'src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs'
@@ -23,6 +23,7 @@ STORE = 'src/ControlServer.Host/Runtime/OwnOrderRebuilds.cs'
 RECOVERY = 'src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs'
 RELEASE = 'src/ControlServer.Host/Runtime/Release/DemandReleaseService.cs'
 DASHBOARD = 'src/ControlServer.Host/Dashboard/BlockedJourneysQueryEndpoint.cs'
+PROCESSOR = 'src/ControlServer.Host/Transport/OnboardMessageProcessor.cs'
 
 OFF = 'Environment.TickCount64 < 0 && '
 
@@ -33,9 +34,9 @@ MUTATIONS = [
     ('M02', 'guard 2 (vehicle condition) off', ENGINE,
      '            if (vehicle.Length > 0)\n',
      '            if (' + OFF + 'vehicle.Length > 0)\n'),
-    ('M03', 'guard 3 (second ending within the window) off', STORE,
-     '        bool rebuiltRecently = (await dbContext.OwnOrderRebuilds.AsNoTracking()\n',
-     '        bool rebuiltRecently = ' + OFF + '(await dbContext.OwnOrderRebuilds.AsNoTracking()\n'),
+    ('M03', 'guard 3 (a second problem within the window, REQ-0361) off', STORE,
+     '            .Any(earlier => earlier.IncidentAt >= since && earlier.IncidentAt <= incidentAt &&\n',
+     '            .Any(earlier => Environment.TickCount64 < 0 && earlier.IncidentAt >= since && earlier.IncidentAt <= incidentAt &&\n'),
     ('M04', "#299's release on clearance restored (nothing on board: release and close; cargo: Blocked for a person)", RECOVERY,
      '''        JourneyStopRow stop = (await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken).ConfigureAwait(false))
             .Current;
@@ -99,7 +100,7 @@ MUTATIONS = [
      '            [JourneyRuntimeEngine.OwnOrderRebuildStoppedReason] =\n',
      '            ["MUTATION_REMOVED_DESCRIPTION"] =\n'),
     ('M14', 'the rebuild codes are not in the stalled-order family', MAIN,
-     '        OwnOrderRebuildWaitingVehicleReason or OwnOrderRebuildBlockedByCreateGateReason or\n        OwnOrderRebuildOrderUnconfirmedReason or OwnOrderRebuildStoppedReason;\n',
+     '        OwnOrderRebuildWaitingVehicleReason or OwnOrderRebuildBlockedByCreateGateReason or\n        OwnOrderRebuildOrderUnconfirmedReason or OwnOrderRebuildStoppedReason or\n        OwnOrderRebuildWaitingCargoEvidenceReason or OwnOrderRebuildCargoNotInPlaceReason;\n',
      '        "MUTATION_NOT_A_CODE";\n'),
     ('M15', 'the rebuilt order skips the create gate', ENGINE,
      '            if (!gate.IsAllowed)\n',
@@ -107,6 +108,27 @@ MUTATIONS = [
     ('M16', 'an unconfirmed create is taken as rebuilt', ENGINE,
      '        if (result.Outcome != MovementDispatchOutcome.Confirmed)\n',
      '        if (' + OFF + 'result.Outcome != MovementDispatchOutcome.Confirmed)\n'),
+    ('M17', 'REQ-0361 source rule off: any later problem repeats a cancellation', STORE,
+     '        first != OwnOrderRebuildSources.CancelledInRiot || again == OwnOrderRebuildSources.CancelledInRiot;\n',
+     '        Environment.TickCount64 >= 0 || first != OwnOrderRebuildSources.CancelledInRiot || again == OwnOrderRebuildSources.CancelledInRiot;\n'),
+    ('M18', 'REQ-0362 a snapshot from before the clearance counts', ENGINE,
+     '            .Where(row => row.ReceivedAt > rebuild.RecordedAt && SnapshotOf(row) == runtime.AgvId)\n',
+     '            .Where(row => (Environment.TickCount64 >= 0 || row.ReceivedAt > rebuild.RecordedAt) && SnapshotOf(row) == runtime.AgvId)\n'),
+    ('M19', 'REQ-0362 a cargo slot need not read OCCUPIED', ENGINE,
+     '            if (physical != "OCCUPIED" || locked != "LOCKED" || output != "RESET")\n',
+     '            if ((Environment.TickCount64 < 0 && physical != "OCCUPIED") || locked != "LOCKED" || output != "RESET")\n'),
+    ('M20', 'REQ-0362 unknownPresent is not read', ENGINE,
+     '        if (!payload.GetProperty("safety").TryGetProperty("unknownPresent", out JsonElement unknown) ||\n            unknown.ValueKind != JsonValueKind.False)\n',
+     '        if (Environment.TickCount64 < 0 && (!payload.GetProperty("safety").TryGetProperty("unknownPresent", out JsonElement unknown) ||\n            unknown.ValueKind != JsonValueKind.False))\n'),
+    ('M21', 'REQ-0362 the request is never recorded, so it is not throttled', STORE,
+     '                    .SetProperty(row => row.CargoEvidenceRequestedGeneration, generation)\n',
+     '                    .SetProperty(row => row.CargoEvidenceRequestedGeneration, (long?)null)\n'),
+    ('M22', 'REQ-0362 the recovery report that ends the handshake may carry the request', PROCESSOR,
+     '        if (state.HandshakeCompleted && messageType != "RecoveryStateReport" &&\n',
+     '        if (state.HandshakeCompleted && (Environment.TickCount64 >= 0 || messageType != "RecoveryStateReport") &&\n'),
+    ('M23', 'REQ-0362 the request is claimed inside the handshake too', PROCESSOR,
+     '        if (state.HandshakeCompleted && messageType != "RecoveryStateReport" &&\n',
+     '        if ((Environment.TickCount64 >= 0 || state.HandshakeCompleted) && messageType != "RecoveryStateReport" &&\n'),
 ]
 
 
