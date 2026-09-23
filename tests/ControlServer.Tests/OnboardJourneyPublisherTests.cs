@@ -217,14 +217,29 @@ public sealed class OnboardJourneyPublisherTests
             stored.RootElement.GetProperty("payload").GetProperty("observedAt").GetDateTimeOffset());
     }
 
-    // control-server#331 在 RefreshOutboundEnvelopeAsync 的校验之前加了一处提前返回：行已确认、语义一字不差、代次前移时
-    // 什么也不做。提前返回最容易被读成「放宽了校验」，所以下面四条各钉一边：第一条是放行的那一种（不改写、不发），
-    // 后三条是放行条件各缺一项的样子，每一条都必须仍然被拒。未确认、语义相同、代次前移时照旧改写代次并发送，
-    // 那一种由 UnchangedSnapshotRepublishesIntoAnAdvancingSessionGeneration 钉着，本票没有碰它。
+    // control-server#331：到站那一段重跑时，车辆业务状态与清单带 keepAcknowledgedIgnoring 发——车确认过的那一版除信封（与清单的
+    // 期限）外一字不差就沿用它，不入队、不发。重放校验本身（WireToGateStore.RefreshOutboundEnvelopeAsync）一字未改，第一条钉住这一点。
+    // 后面几条各钉放行条件的一边：放行的那一种一条；条件各缺一项的三种各一条，每一条都必须仍然被拒。
 
     /// <summary>
-    /// 已确认的快照在新的一代以同样的内容再发一次：不改写那一行、不再发送，也不抛（control-server#331）。
-    /// 修前这里抛 <c>ProtocolContentConflictException</c>，到站那一段发布因此每轮都死在这里。
+    /// 不带 <c>keepAcknowledgedIgnoring</c> 时，已确认的快照即使内容不变、代次前移也照旧被拒：重放校验与 af01fd27 一样，本票没有放宽它。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("ProtocolVector", "CV-RELIABLE-RETRY-SAME-CONTENT")]
+    public async Task WithoutTheOptInAnAcknowledgedSnapshotIsStillNeverRewritten()
+    {
+        await using AcknowledgedSnapshot snapshot = await AcknowledgedSnapshot.CreateAsync();
+
+        await Assert.ThrowsAsync<ProtocolContentConflictException>(() =>
+            snapshot.RepublishAsync(generation: 3, snapshot.Projection, keepAcknowledgedIgnoring: null));
+
+        snapshot.AssertLeftAsAcknowledged();
+    }
+
+    /// <summary>
+    /// 带 <c>keepAcknowledgedIgnoring</c>、已确认的快照在新的一代以同样的内容再发一次：沿用那一行，不改写、不再发送，也不抛。
     /// </summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-00")]
@@ -234,12 +249,14 @@ public sealed class OnboardJourneyPublisherTests
     {
         await using AcknowledgedSnapshot snapshot = await AcknowledgedSnapshot.CreateAsync();
 
-        await snapshot.RepublishAsync(generation: 3, snapshot.Projection);
+        await snapshot.RepublishAsync(generation: 3, snapshot.Projection, EnvelopeOnly);
 
         snapshot.AssertLeftAsAcknowledged();
     }
 
-    /// <summary>已确认的快照在新的一代换了内容：仍然拒绝，那一行不动（control-server#331 的放行不包括这一种）。</summary>
+    /// <summary>
+    /// 带 <c>keepAcknowledgedIgnoring</c>、已确认的快照在新的一代换了内容：仍然拒绝，那一行不动。放行按内容比，不按「确认过」。
+    /// </summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-00")]
     [Trait("IntegrationSlice", "FP-IS-06")]
@@ -249,12 +266,15 @@ public sealed class OnboardJourneyPublisherTests
         await using AcknowledgedSnapshot snapshot = await AcknowledgedSnapshot.CreateAsync();
 
         await Assert.ThrowsAsync<ProtocolContentConflictException>(() =>
-            snapshot.RepublishAsync(generation: 3, snapshot.Projection with { BatteryState = "LOW" }));
+            snapshot.RepublishAsync(generation: 3, snapshot.Projection with { BatteryState = "LOW" }, EnvelopeOnly));
 
         snapshot.AssertLeftAsAcknowledged();
     }
 
-    /// <summary>已确认的快照以同样的内容发进更旧的一代：仍然拒绝，那一行不动（control-server#331 的放行不包括这一种）。</summary>
+    /// <summary>
+    /// 带 <c>keepAcknowledgedIgnoring</c>、已确认的快照以同样的内容发进更旧的一代：仍然拒绝，那一行不动。
+    /// 比较去掉代次是为了放过「新的一代再说一次」，不是放过倒退。
+    /// </summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-00")]
     [Trait("IntegrationSlice", "FP-IS-06")]
@@ -264,13 +284,13 @@ public sealed class OnboardJourneyPublisherTests
         await using AcknowledgedSnapshot snapshot = await AcknowledgedSnapshot.CreateAsync();
 
         await Assert.ThrowsAsync<ProtocolContentConflictException>(() =>
-            snapshot.RepublishAsync(generation: 1, snapshot.Projection));
+            snapshot.RepublishAsync(generation: 1, snapshot.Projection, EnvelopeOnly));
 
         snapshot.AssertLeftAsAcknowledged();
     }
 
     /// <summary>
-    /// 没确认的快照在新的一代换了内容：仍然拒绝，那一行不动（control-server#331 的放行只看已确认的行）。
+    /// 带 <c>keepAcknowledgedIgnoring</c>、没确认的快照在新的一代换了内容：仍然拒绝，那一行不动。放行只看已确认的行。
     /// </summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-00")]
@@ -281,7 +301,7 @@ public sealed class OnboardJourneyPublisherTests
         await using AcknowledgedSnapshot snapshot = await AcknowledgedSnapshot.CreateAsync(acknowledge: false);
 
         await Assert.ThrowsAsync<ProtocolContentConflictException>(() =>
-            snapshot.RepublishAsync(generation: 3, snapshot.Projection with { BatteryState = "LOW" }));
+            snapshot.RepublishAsync(generation: 3, snapshot.Projection with { BatteryState = "LOW" }, EnvelopeOnly));
 
         ProtocolOutboxRow row = await snapshot.Context.ProtocolOutbox.AsNoTracking()
             .SingleAsync(TestContext.Current.CancellationToken);
@@ -290,8 +310,11 @@ public sealed class OnboardJourneyPublisherTests
         Assert.Single(snapshot.Peer.Lines);
     }
 
+    /// <summary>只放过信封：车辆业务状态在到站那一段重跑时用的就是它。</summary>
+    private static readonly IReadOnlySet<string> EnvelopeOnly = new HashSet<string>(StringComparer.Ordinal);
+
     /// <summary>
-    /// 第 2 代发出的一张车辆业务状态快照，默认已被车确认；上面四条都从这里开始。
+    /// 第 2 代发出的一张车辆业务状态快照，默认已被车确认；上面几条都从这里开始。
     /// </summary>
     private sealed class AcknowledgedSnapshot : IAsyncDisposable
     {
@@ -332,7 +355,7 @@ public sealed class OnboardJourneyPublisherTests
             RecordingPeer peer = new(context);
             AdvancingTimeProvider clock = new();
             AcknowledgedSnapshot snapshot = new(connection, context, peer, new OnboardJourneyPublisher(store, peer, clock));
-            await snapshot.RepublishAsync(generation: 2, snapshot.Projection);
+            await snapshot.RepublishAsync(generation: 2, snapshot.Projection, keepAcknowledgedIgnoring: null);
             snapshot.StoredWire = (await context.ProtocolOutbox.SingleAsync(TestContext.Current.CancellationToken))
                 .PayloadJson;
             if (acknowledge)
@@ -349,9 +372,11 @@ public sealed class OnboardJourneyPublisherTests
             return snapshot;
         }
 
-        public Task RepublishAsync(long generation, VehicleBusinessProjection projection) =>
+        public Task RepublishAsync(
+            long generation, VehicleBusinessProjection projection, IReadOnlySet<string>? keepAcknowledgedIgnoring) =>
             Publisher.PublishVehicleBusinessStateAsync(
-                MessageId, "AGV-001", generation, projection, TestContext.Current.CancellationToken);
+                MessageId, "AGV-001", generation, projection, TestContext.Current.CancellationToken,
+                keepAcknowledgedIgnoring);
 
         /// <summary>那一行仍是车确认过的那几个字节、仍记着已确认，车也没有再收到第二行。</summary>
         public void AssertLeftAsAcknowledged()

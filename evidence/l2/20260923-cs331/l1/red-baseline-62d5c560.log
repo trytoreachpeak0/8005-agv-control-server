@@ -1,0 +1,112 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Domain\bin\Debug\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.Dashboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Dashboard\bin\Debug\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Debug\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Application\bin\Debug\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.FakeRiot -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Debug\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Debug\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.ProtocolFaultProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Debug\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Debug\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Debug\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FieldOps -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Debug\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.Host -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\bin\Debug\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.SchemaConformance -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Debug\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.Tests -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+A total of 1 test files matched the specified pattern.
+  Failed ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(code: "ORDER_HANG", stage: AwaitingPickupArrival) [379 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "ORDER_HANG"
+Actual:   "JOURNEY_ADVANCE_FAILED"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(String code, JourneyRuntimeStage stage) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 336
+   at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(String code, JourneyRuntimeStage stage) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 337
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(code: "TASK_TYPE_NOT_ALLOWED_AT_STATION", stage: AwaitingGateArrival) [351 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "TASK_TYPE_NOT_ALLOWED_AT_STATION"
+Actual:   "JOURNEY_ADVANCE_FAILED"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(String code, JourneyRuntimeStage stage) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 336
+   at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(String code, JourneyRuntimeStage stage) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 337
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(code: "VEHICLE_ORDER_FAILED", stage: AwaitingPickupArrival) [326 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "VEHICLE_ORDER_FAILED"
+Actual:   "JOURNEY_ADVANCE_FAILED"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(String code, JourneyRuntimeStage stage) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 336
+   at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(String code, JourneyRuntimeStage stage) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 337
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(code: "ORDER_ENDED_WITHOUT_ARRIVAL", stage: AwaitingPickupArrival) [334 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "ORDER_ENDED_WITHOUT_ARRIVAL"
+Actual:   "JOURNEY_ADVANCE_FAILED"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(String code, JourneyRuntimeStage stage) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 336
+   at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(String code, JourneyRuntimeStage stage) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 337
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(code: "ORDER_STATE_UNRECOGNIZED", stage: AwaitingPickupArrival) [365 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "ORDER_STATE_UNRECOGNIZED"
+Actual:   "JOURNEY_ADVANCE_FAILED"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(String code, JourneyRuntimeStage stage) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 336
+   at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(String code, JourneyRuntimeStage stage) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 337
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.TheEntryRequestReachesTheVehicleWhenARoundBehindTheClosedGateVoidedTheWaitBeforeTheReconnect [413 ms]
+  Error Message:
+   ControlServer.Domain.ProtocolContentConflictException : Outbound MessageId was replayed with different semantics or a non-advancing session generation.
+  Stack Trace:
+     at ControlServer.Infrastructure.Persistence.WireToGateStore.RefreshOutboundEnvelopeAsync(ProtocolOutboxRow existing, String messageType, String candidateWire, DateTimeOffset candidateCreatedAt, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs:line 3308
+   at ControlServer.Infrastructure.Persistence.WireToGateStore.QueueOutboundEnvelopeAsync(String messageId, String messageType, String wireJson, DateTimeOffset createdAt, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs:line 2086
+   at ControlServer.Host.Transport.OnboardJourneyPublisher.QueueEnvelopeAsync(String messageType, String messageId, String correlationId, String agvId, Int64 sessionGeneration, Func`2 payloadFactory, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardJourneyPublisher.cs:line 805
+   at ControlServer.Host.Transport.OnboardJourneyPublisher.PublishStampedEnvelopeAsync(String messageType, String messageId, String correlationId, String agvId, Int64 sessionGeneration, Func`2 payloadFactory, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardJourneyPublisher.cs:line 767
+   at ControlServer.Host.Transport.OnboardJourneyPublisher.PublishStampedSnapshotAsync(String messageType, String messageId, String agvId, Int64 sessionGeneration, Int64 revision, Func`2 payloadFactory, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardJourneyPublisher.cs:line 736
+   at ControlServer.Host.Transport.OnboardJourneyPublisher.PublishSnapshotAsync(String messageType, String messageId, String agvId, Int64 sessionGeneration, Int64 revision, Object payload, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardJourneyPublisher.cs:line 712
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.PublishStopWorklistAsync(JourneyRuntimeRow runtime, JourneyStopCursor stops, SessionRecoveryRow session, Nullable`1 stationDepartureDeadlineAt, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 1872
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.PublishPickupStateAsync(JourneyRuntimeRow runtime, JourneyStopCursor stops, SessionRecoveryRow session, Boolean holdingApplicable, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 1806
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.AdvanceAsync(JourneyRuntimeRow runtime, RiotMapStationCatalogSnapshot currentMap, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 770
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteRoundAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 451
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteRoundAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 459
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 308
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 322
+   at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.TheEntryRequestReachesTheVehicleWhenARoundBehindTheClosedGateVoidedTheWaitBeforeTheReconnect() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 112
+   at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.TheEntryRequestReachesTheVehicleWhenARoundBehindTheClosedGateVoidedTheWaitBeforeTheReconnect() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 117
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.OnTheOwnOrderThreeFailedReplaysKeepTheSessionNotReadyCodeAndItsStart [466 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "ONBOARD_SESSION_NOT_READY"
+Actual:   "JOURNEY_ADVANCE_FAILED"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.OnTheOwnOrderThreeFailedReplaysKeepTheSessionNotReadyCodeAndItsStart() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 380
+   at ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.OnTheOwnOrderThreeFailedReplaysKeepTheSessionNotReadyCodeAndItsStart() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs331-8005-agv-control-server\tests\ControlServer.Tests\ArrivalPublishInterruptedThenReconnectedTests.cs:line 392
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     7, Passed:     6, Skipped:     0, Total:    13, Duration: 10 s - ControlServer.Tests.dll (net8.0)
+[xUnit.net 00:00:09.64]     ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(code: "ORDER_HANG", stage: AwaitingPickupArrival) [FAIL]
+[xUnit.net 00:00:09.99]     ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(code: "TASK_TYPE_NOT_ALLOWED_AT_STATION", stage: AwaitingGateArrival) [FAIL]
+[xUnit.net 00:00:10.32]     ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(code: "VEHICLE_ORDER_FAILED", stage: AwaitingPickupArrival) [FAIL]
+[xUnit.net 00:00:10.66]     ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(code: "ORDER_ENDED_WITHOUT_ARRIVAL", stage: AwaitingPickupArrival) [FAIL]
+[xUnit.net 00:00:11.03]     ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(code: "ORDER_STATE_UNRECOGNIZED", stage: AwaitingPickupArrival) [FAIL]
+[xUnit.net 00:00:12.13]     ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.TheEntryRequestReachesTheVehicleWhenARoundBehindTheClosedGateVoidedTheWaitBeforeTheReconnect [FAIL]
+[xUnit.net 00:00:12.60]     ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.OnTheOwnOrderThreeFailedReplaysKeepTheSessionNotReadyCodeAndItsStart [FAIL]
