@@ -1,0 +1,27 @@
+== synthetic [Ack, CutAfter(0), Round(7s), BeginHandshake, CompleteHandshake, Arrive, CutAfter(0), Round(8s)] violation=none
+final: onboard=synthetic stage=AwaitingSublot block=null session=Ready/READY generation=3 entryReachedVehicle=True roundsFromRecoveryToEntry=1 ackConflicts=0 regressions=0
+trace:
+  Ack
+  CutAfter(0)
+  Round(7s) -> threw IOException: No recovered Onboard peer is connected for the model vehicle.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED wait=-
+    handshake SessionHello -> SessionAccepted
+  BeginHandshake
+    handshake CapabilitySnapshot -> SnapshotAppliedAck
+    handshake SafetyStateSnapshot -> SnapshotAppliedAck
+    handshake OnboardAlarmSnapshot -> SnapshotAppliedAck
+    handshake RecoveryStateReport -> DurableAck+SessionReadiness
+  CompleteHandshake
+  Arrive
+  CutAfter(0)
+  Round(8s) -> threw IOException: No recovered Onboard peer is connected for the model vehicle.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED wait=-
+    handshake SessionHello -> SessionAccepted
+  tail BeginHandshake
+    handshake CapabilitySnapshot -> SnapshotAppliedAck
+    handshake SafetyStateSnapshot -> SnapshotAppliedAck
+    handshake OnboardAlarmSnapshot -> SnapshotAppliedAck
+    handshake RecoveryStateReport -> DurableAck+SessionReadiness
+  tail CompleteHandshake
+  tail Arrive -> no-op
+  tail Round(2s) -> ok; stage=AwaitingSublot block=- wait=+17s; delivered Plan@3,VBS@3,Worklist@3,Plan@3,Entry@3
+  tail Ack
+

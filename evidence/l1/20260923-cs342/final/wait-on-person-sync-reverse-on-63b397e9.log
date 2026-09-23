@@ -1,0 +1,13 @@
+xUnit.net v3 In-Process Runner v3.2.2+728c1dce01 (64-bit .NET 8.0.31)
+  Discovering: ControlServer.Tests
+  Discovered:  ControlServer.Tests
+  Starting:    ControlServer.Tests
+    ControlServer.Tests.ReconnectModelTests.TheModelsWaitOnPersonCodesAreExactlyTheProductsSet [FAIL]
+      ReconnectModel.WaitOnPersonCodes differs from JourneyRuntimeEngine.CarriesACodeThatNamesAWaitOnAPerson (191 candidate constants asked). Missing from the model: [OWN_ORDER_REBUILD_STOPPED]. Only in the model: [OWN_ORDER_REBUILD_NOT_A_REAL_CODE].
+      Stack Trace:
+        tests\ControlServer.Tests\ReconnectModelTests.cs(125,0): at ControlServer.Tests.ReconnectModelTests.TheModelsWaitOnPersonCodesAreExactlyTheProductsSet()
+        tests\ControlServer.Tests\ReconnectModelTests.cs(125,0): at ControlServer.Tests.ReconnectModelTests.TheModelsWaitOnPersonCodesAreExactlyTheProductsSet()
+        --- End of stack trace from previous location ---
+  Finished:    ControlServer.Tests (ID = '24be22b1ff0602d32d18da9e353d6ec3cf99c8f2f6624e06faffc0bdc7f63084')
+=== TEST EXECUTION SUMMARY ===
+   ControlServer.Tests  Total: 1, Errors: 0, Failed: 1, Skipped: 0, Not Run: 0, Time: 4.797s
