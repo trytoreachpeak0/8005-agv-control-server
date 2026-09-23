@@ -1,0 +1,310 @@
+# M28: ending: an explicit ending does not release the vehicle
+# file: src/ControlServer.Host/Runtime/ForeignOrders/ForeignRunningOrderSupervisor.cs
+# - '        row.State = ForeignRiotOrderStates.Ended;\n'
+# + '        row.State = Environment.TickCount64 >= 0 ? row.State : ForeignRiotOrderStates.Ended;\n'
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Release\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\src\ControlServer.Dashboard\bin\Release\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\src\ControlServer.Application\bin\Release\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ProtocolFaultProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Release\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.FakeRiot -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Release\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Release\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Release\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Release\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FieldOps -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Release\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.Host -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\src\ControlServer.Host\bin\Release\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.SchemaConformance -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Release\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.Tests -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll
+
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:03.91
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelIsSentOnceAndAnOrderStillRunningAfterItIsHandedToAPerson(disposition: Failed) [3 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("ENDED", 2)
+Actual:   Tuple ("STILL_RUNNING_AFTER_CANCEL", 2)
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelIsSentOnceAndAnOrderStillRunningAfterItIsHandedToAPerson(RiotCommandCallDisposition disposition) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 496
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelIsSentOnceAndAnOrderStillRunningAfterItIsHandedToAPerson(RiotCommandCallDisposition disposition) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 499
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelIsSentOnceAndAnOrderStillRunningAfterItIsHandedToAPerson(disposition: Unknown) [285 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("ENDED", 2)
+Actual:   Tuple ("STILL_RUNNING_AFTER_CANCEL", 2)
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelIsSentOnceAndAnOrderStillRunningAfterItIsHandedToAPerson(RiotCommandCallDisposition disposition) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 496
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelIsSentOnceAndAnOrderStillRunningAfterItIsHandedToAPerson(RiotCommandCallDisposition disposition) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 499
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelIsSentOnceAndAnOrderStillRunningAfterItIsHandedToAPerson(disposition: Accepted) [272 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("ENDED", 2)
+Actual:   Tuple ("STILL_RUNNING_AFTER_CANCEL", 2)
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelIsSentOnceAndAnOrderStillRunningAfterItIsHandedToAPerson(RiotCommandCallDisposition disposition) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 496
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelIsSentOnceAndAnOrderStillRunningAfterItIsHandedToAPerson(RiotCommandCallDisposition disposition) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 499
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheCancelWentOutAndBeforeItWasRecordedDoesNotSendItAgain(cancelTakesEffect: True) [416 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("ENDED", "CANCELLED")
+Actual:   Tuple ("CANCEL_SENT", "CANCELLED")
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheCancelWentOutAndBeforeItWasRecordedDoesNotSendItAgain(Boolean cancelTakesEffect) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 1036
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheCancelWentOutAndBeforeItWasRecordedDoesNotSendItAgain(Boolean cancelTakesEffect) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 1042
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164TheOrderIsReadAgainBeforeTheCancelAndLeftAloneWhenItNoLongerRunsOnOurVehicle(change: "ended", expectedState: "ENDED") [265 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("ENDED", null)
+Actual:   Tuple ("DETECTED", null)
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164TheOrderIsReadAgainBeforeTheCancelAndLeftAloneWhenItNoLongerRunsOnOurVehicle(String change, String expectedState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 358
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164TheOrderIsReadAgainBeforeTheCancelAndLeftAloneWhenItNoLongerRunsOnOurVehicle(String change, String expectedState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 359
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(variant: "cancel-sent-then-not-found") [408 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "ENDED"
+Actual:   "UNSETTLED"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 813
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 815
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(variant: "unproven-then-not-found") [423 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "ENDED"
+Actual:   "UNSETTLED"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 813
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 815
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(variant: "cancel-sent-then-suspended") [303 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "ENDED"
+Actual:   "UNSETTLED"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 813
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 815
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(variant: "cancel-not-authorized-then-suspended") [361 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "ENDED"
+Actual:   "UNSETTLED"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 813
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 815
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164WithTheCancelGateClosedAForeignOrderIsHeldAndAlarmedAndNeverCancelledUntilTheGateIsOpened [456 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("ENDED", "CANCELLED")
+Actual:   Tuple ("CANCEL_SENT", "CANCELLED")
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164WithTheCancelGateClosedAForeignOrderIsHeldAndAlarmedAndNeverCancelledUntilTheGateIsOpened() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 713
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164WithTheCancelGateClosedAForeignOrderIsHeldAndAlarmedAndNeverCancelledUntilTheGateIsOpened() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 717
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(readBack: 2, released: True) [324 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("ENDED", 2)
+Actual:   Tuple ("CANCEL_SENT", 2)
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(Nullable`1 readBack, Boolean released) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 997
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(Nullable`1 readBack, Boolean released) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 1003
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(readBack: 6, released: True) [331 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("ENDED", 6)
+Actual:   Tuple ("CANCEL_SENT", 6)
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(Nullable`1 readBack, Boolean released) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 997
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(Nullable`1 readBack, Boolean released) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 1003
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(readBack: 5, released: True) [322 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("ENDED", 5)
+Actual:   Tuple ("CANCEL_SENT", 5)
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(Nullable`1 readBack, Boolean released) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 997
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(Nullable`1 readBack, Boolean released) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 1003
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(readBack: 4, released: True) [248 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("ENDED", 4)
+Actual:   Tuple ("CANCEL_SENT", 4)
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(Nullable`1 readBack, Boolean released) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 997
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(Nullable`1 readBack, Boolean released) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 1003
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AVehicleAForeignOrderRunsOnTakesNoNewDispatchUntilTheOrderIsReadBackEnded(variant: "cancel-not-yet-effective") [273 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "ENDED"
+Actual:   "CANCEL_SENT"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164AVehicleAForeignOrderRunsOnTakesNoNewDispatchUntilTheOrderIsReadBackEnded(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 567
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AVehicleAForeignOrderRunsOnTakesNoNewDispatchUntilTheOrderIsReadBackEnded(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 569
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AVehicleAForeignOrderRunsOnTakesNoNewDispatchUntilTheOrderIsReadBackEnded(variant: "ownership-unproven") [215 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "ENDED"
+Actual:   "HELD_UNPROVEN"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164AVehicleAForeignOrderRunsOnTakesNoNewDispatchUntilTheOrderIsReadBackEnded(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 567
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AVehicleAForeignOrderRunsOnTakesNoNewDispatchUntilTheOrderIsReadBackEnded(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 569
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AVehicleAForeignOrderRunsOnTakesNoNewDispatchUntilTheOrderIsReadBackEnded(variant: "cancel-not-authorized") [198 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "ENDED"
+Actual:   "HELD_CANCEL_NOT_AUTHORIZED"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164AVehicleAForeignOrderRunsOnTakesNoNewDispatchUntilTheOrderIsReadBackEnded(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 567
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AVehicleAForeignOrderRunsOnTakesNoNewDispatchUntilTheOrderIsReadBackEnded(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 569
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderThatMovesToAnotherOfOurVehiclesBetweenTheReadsIsFollowedAndCancelledAfterAFreshReRead [243 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("ENDED", "AGV-8005-SECOND")
+Actual:   Tuple ("CANCEL_SENT", "AGV-8005-SECOND")
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderThatMovesToAnotherOfOurVehiclesBetweenTheReadsIsFollowedAndCancelledAfterAFreshReRead() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 414
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderThatMovesToAnotherOfOurVehiclesBetweenTheReadsIsFollowedAndCancelledAfterAFreshReRead() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 415
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderOnTheVehicleIsNotExplainedAsTheOwnOrderInFlight(variant: "cancel-not-yet-effective") [512 ms]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+Collection: ["老厂前线新多仓位1"]
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderOnTheVehicleIsNotExplainedAsTheOwnOrderInFlight(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 639
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderOnTheVehicleIsNotExplainedAsTheOwnOrderInFlight(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 640
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderOnTheVehicleIsNotExplainedAsTheOwnOrderInFlight(variant: "ownership-unproven") [430 ms]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+Collection: ["老厂前线新多仓位1"]
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderOnTheVehicleIsNotExplainedAsTheOwnOrderInFlight(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 639
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderOnTheVehicleIsNotExplainedAsTheOwnOrderInFlight(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 640
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderRunningOnOurVehicleIsCancelledOnceAndOnlyCancelled(orderState: 7) [223 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("FOREIGN", "ENDED", "CANCELLED", 2)
+Actual:   Tuple ("FOREIGN", "CANCEL_SENT", "CANCELLED", 2)
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderRunningOnOurVehicleIsCancelledOnceAndOnlyCancelled(Int32 orderState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 67
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderRunningOnOurVehicleIsCancelledOnceAndOnlyCancelled(Int32 orderState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 75
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderRunningOnOurVehicleIsCancelledOnceAndOnlyCancelled(orderState: 9) [196 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("FOREIGN", "ENDED", "CANCELLED", 2)
+Actual:   Tuple ("FOREIGN", "CANCEL_SENT", "CANCELLED", 2)
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderRunningOnOurVehicleIsCancelledOnceAndOnlyCancelled(Int32 orderState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 67
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderRunningOnOurVehicleIsCancelledOnceAndOnlyCancelled(Int32 orderState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 75
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderRunningOnOurVehicleIsCancelledOnceAndOnlyCancelled(orderState: 3) [220 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("FOREIGN", "ENDED", "CANCELLED", 2)
+Actual:   Tuple ("FOREIGN", "CANCEL_SENT", "CANCELLED", 2)
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderRunningOnOurVehicleIsCancelledOnceAndOnlyCancelled(Int32 orderState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 67
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderRunningOnOurVehicleIsCancelledOnceAndOnlyCancelled(Int32 orderState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 75
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AReReadThatDoesNotAnswerDefersTheCancelToARoundWhoseReReadDoes [266 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "ENDED"
+Actual:   "CANCEL_SENT"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164AReReadThatDoesNotAnswerDefersTheCancelToARoundWhoseReReadDoes() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 441
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AReReadThatDoesNotAnswerDefersTheCancelToARoundWhoseReReadDoes() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 441
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheCancelWasDecidedAndBeforeItWentOutSendsItOnceAfterTheRestart [217 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "ENDED"
+Actual:   "CANCEL_SENT"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheCancelWasDecidedAndBeforeItWentOutSendsItOnceAfterTheRestart() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 899
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheCancelWasDecidedAndBeforeItWentOutSendsItOnceAfterTheRestart() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 900
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderIsRecognisedWhileTheSessionIsNotReadyOnTheOwnOrderAndOnlyItIsCancelled [405 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "ENDED"
+Actual:   "CANCEL_SENT"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderIsRecognisedWhileTheSessionIsNotReadyOnTheOwnOrderAndOnlyItIsCancelled() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 596
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderIsRecognisedWhileTheSessionIsNotReadyOnTheOwnOrderAndOnlyItIsCancelled() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 603
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:    26, Passed:   139, Skipped:     0, Total:   165, Duration: 25 s - ControlServer.Tests.dll (net8.0)
+[xUnit.net 00:00:06.25]     ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelIsSentOnceAndAnOrderStillRunningAfterItIsHandedToAPerson(disposition: Failed) [FAIL]
+[xUnit.net 00:00:06.53]     ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelIsSentOnceAndAnOrderStillRunningAfterItIsHandedToAPerson(disposition: Unknown) [FAIL]
+[xUnit.net 00:00:06.80]     ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelIsSentOnceAndAnOrderStillRunningAfterItIsHandedToAPerson(disposition: Accepted) [FAIL]
+[xUnit.net 00:00:07.57]     ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheCancelWentOutAndBeforeItWasRecordedDoesNotSendItAgain(cancelTakesEffect: True) [FAIL]
+[xUnit.net 00:00:08.17]     ControlServer.Tests.ForeignRunningOrderTests.Req0164TheOrderIsReadAgainBeforeTheCancelAndLeftAloneWhenItNoLongerRunsOnOurVehicle(change: "ended", expectedState: "ENDED") [FAIL]
+[xUnit.net 00:00:10.29]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(variant: "cancel-sent-then-not-found") [FAIL]
+[xUnit.net 00:00:10.71]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(variant: "unproven-then-not-found") [FAIL]
+[xUnit.net 00:00:11.03]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(variant: "cancel-sent-then-suspended") [FAIL]
+[xUnit.net 00:00:11.39]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(variant: "cancel-not-authorized-then-suspended") [FAIL]
+[xUnit.net 00:00:11.85]     ControlServer.Tests.ForeignRunningOrderTests.Req0164WithTheCancelGateClosedAForeignOrderIsHeldAndAlarmedAndNeverCancelledUntilTheGateIsOpened [FAIL]
+[xUnit.net 00:00:12.18]     ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(readBack: 2, released: True) [FAIL]
+[xUnit.net 00:00:13.06]     ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(readBack: 6, released: True) [FAIL]
+[xUnit.net 00:00:13.38]     ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(readBack: 5, released: True) [FAIL]
+[xUnit.net 00:00:13.63]     ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(readBack: 4, released: True) [FAIL]
+[xUnit.net 00:00:13.93]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AVehicleAForeignOrderRunsOnTakesNoNewDispatchUntilTheOrderIsReadBackEnded(variant: "cancel-not-yet-effective") [FAIL]
+[xUnit.net 00:00:14.14]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AVehicleAForeignOrderRunsOnTakesNoNewDispatchUntilTheOrderIsReadBackEnded(variant: "ownership-unproven") [FAIL]
+[xUnit.net 00:00:14.34]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AVehicleAForeignOrderRunsOnTakesNoNewDispatchUntilTheOrderIsReadBackEnded(variant: "cancel-not-authorized") [FAIL]
+[xUnit.net 00:00:15.43]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderThatMovesToAnotherOfOurVehiclesBetweenTheReadsIsFollowedAndCancelledAfterAFreshReRead [FAIL]
+[xUnit.net 00:00:17.92]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderOnTheVehicleIsNotExplainedAsTheOwnOrderInFlight(variant: "cancel-not-yet-effective") [FAIL]
+[xUnit.net 00:00:18.35]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderOnTheVehicleIsNotExplainedAsTheOwnOrderInFlight(variant: "ownership-unproven") [FAIL]
+[xUnit.net 00:00:18.57]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderRunningOnOurVehicleIsCancelledOnceAndOnlyCancelled(orderState: 7) [FAIL]
+[xUnit.net 00:00:18.77]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderRunningOnOurVehicleIsCancelledOnceAndOnlyCancelled(orderState: 9) [FAIL]
+[xUnit.net 00:00:19.00]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderRunningOnOurVehicleIsCancelledOnceAndOnlyCancelled(orderState: 3) [FAIL]
+[xUnit.net 00:00:19.27]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AReReadThatDoesNotAnswerDefersTheCancelToARoundWhoseReReadDoes [FAIL]
+[xUnit.net 00:00:19.92]     ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheCancelWasDecidedAndBeforeItWentOutSendsItOnceAfterTheRestart [FAIL]
+[xUnit.net 00:00:20.80]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderIsRecognisedWhileTheSessionIsNotReadyOnTheOwnOrderAndOnlyItIsCancelled [FAIL]

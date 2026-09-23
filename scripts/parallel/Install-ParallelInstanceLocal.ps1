@@ -76,6 +76,13 @@
     Deploy a definition whose riotCreateDispatch gate is open. Placing RIoT orders moves a
     vehicle; that is authorized one run at a time with somebody on site, never by a deployment.
 
+.PARAMETER AllowRiotForeignOrderCancel
+    Deploy a definition whose riotForeignOrderCancel gate is open (control-server#330). The
+    instance then cancels any order RIoT shows running on one of its vehicles that it did not
+    create -- including a person's manual move or charge order, or an experiment's -- which
+    stops that vehicle where it is. Authorized on its own, apart from placing orders, and never
+    by a deployment. With the gate closed such an order is only held and alarmed.
+
 .PARAMETER Rollback
     Reinstall the previous generation from <packageRoot>.previous. Downloads nothing.
 #>
@@ -99,7 +106,9 @@ param(
     [Parameter(Mandatory = $true)]
     [string] $InstanceDefinitionPath,
 
-    [switch] $AllowRiotCreateDispatch
+    [switch] $AllowRiotCreateDispatch,
+
+    [switch] $AllowRiotForeignOrderCancel
 )
 
 $ErrorActionPreference = 'Stop'
@@ -138,7 +147,8 @@ try {
     # ------------------------------------------------------- definition and layout ---
 
     $definition = Read-ParallelInstanceDefinition -Path $InstanceDefinitionPath
-    $null = Assert-ParallelInstanceDefinition -Definition $definition -AllowRiotCreateDispatch:$AllowRiotCreateDispatch
+    $null = Assert-ParallelInstanceDefinition -Definition $definition -AllowRiotCreateDispatch:$AllowRiotCreateDispatch `
+        -AllowRiotForeignOrderCancel:$AllowRiotForeignOrderCancel
     Write-Step "Instance definition accepted: $($definition['instanceId'])"
 
     # Every path and name below comes from Get-ParallelInstanceLayout -- the same source the

@@ -634,6 +634,28 @@ $cases = @(
         Expect = 'Placing RIoT orders moves a vehicle'
         Mutate = { param($d) $d['riotCreateDispatch']['enabled'] = $true; $d }
     }
+
+    # --- The gate that cancels an order on our vehicle (control-server#330) ---------------
+    @{
+        Name = 'riotForeignOrderCancel section removed'
+        Expect = 'riotForeignOrderCancel must be an object'
+        Mutate = { param($d) $d.Remove('riotForeignOrderCancel'); $d }
+    }
+    @{
+        Name = 'riotForeignOrderCancel.enabled not stated'
+        Expect = 'riotForeignOrderCancel.enabled must be stated explicitly'
+        Mutate = { param($d) $d['riotForeignOrderCancel'].Remove('enabled'); $d }
+    }
+    @{
+        Name = 'riotForeignOrderCancel.enabled a string'
+        Expect = 'riotForeignOrderCancel.enabled must be a JSON boolean'
+        Mutate = { param($d) $d['riotForeignOrderCancel']['enabled'] = 'false'; $d }
+    }
+    @{
+        Name = 'riotForeignOrderCancel opened without the explicit switch'
+        Expect = 'stops a vehicle someone else set moving'
+        Mutate = { param($d) $d['riotForeignOrderCancel']['enabled'] = $true; $d }
+    }
 )
 
 foreach ($case in $cases) {
@@ -691,6 +713,30 @@ $stillRefused = @(Test-ParallelInstanceDefinition -Definition $openedAndWrong -A
 Write-Result -Ok ($stillRefused.Count -eq 1 -and $stillRefused[0] -like '*driving in production*') `
     -Name '-AllowRiotCreateDispatch still refuses agv01' `
     -Detail ("expected the agv01 refusal alone, got: " + ($stillRefused -join ' | '))
+
+# The foreign order cancel gate has a switch of its own (control-server#330), and neither
+# switch opens the other gate.
+$cancelOpened = Copy-Definition $baseline
+$cancelOpened['riotForeignOrderCancel']['enabled'] = $true
+$withCancelSwitch = @(Test-ParallelInstanceDefinition -Definition $cancelOpened -AllowRiotForeignOrderCancel)
+Write-Result -Ok ($withCancelSwitch.Count -eq 0) `
+    -Name '-AllowRiotForeignOrderCancel accepts the definition the default run refused' `
+    -Detail ("expected no failures, got: " + ($withCancelSwitch -join ' | '))
+$wrongSwitch = @(Test-ParallelInstanceDefinition -Definition $cancelOpened -AllowRiotCreateDispatch)
+Write-Result -Ok ($wrongSwitch.Count -eq 1 -and $wrongSwitch[0].Contains('-AllowRiotForeignOrderCancel')) `
+    -Name '-AllowRiotCreateDispatch does not open the foreign order cancel gate' `
+    -Detail ("expected the cancel gate's refusal alone, got: " + ($wrongSwitch -join ' | '))
+$cancelOpenedAndWrong = Copy-Definition $baseline
+$cancelOpenedAndWrong['riotForeignOrderCancel']['enabled'] = $true
+$cancelOpenedAndWrong['journeyRuntime']['vehicleKey'] = 'BROKERX-0c20ff0600d644869a6a80c186065d85'
+$cancelStillRefused = @(Test-ParallelInstanceDefinition -Definition $cancelOpenedAndWrong -AllowRiotForeignOrderCancel)
+Write-Result -Ok ($cancelStillRefused.Count -eq 1 -and $cancelStillRefused[0] -like '*driving in production*') `
+    -Name '-AllowRiotForeignOrderCancel still refuses agv01' `
+    -Detail ("expected the agv01 refusal alone, got: " + ($cancelStillRefused -join ' | '))
+$shippedOverlay = New-ParallelInstanceConfigurationOverlay -Definition $baseline
+Write-Result -Ok ($shippedOverlay['RiotForeignOrderCancel']['enabled'] -eq $false) `
+    -Name 'the shipped definition deploys with the foreign order cancel gate closed' `
+    -Detail ("RiotForeignOrderCancel.enabled = $($shippedOverlay['RiotForeignOrderCancel']['enabled'])")
 
 Write-Host ''
 Write-Host 'Second layer on its own: the production denylist normalises and fails closed' -ForegroundColor Cyan
@@ -1477,6 +1523,7 @@ $optionSources = @(
     @{ Section = 'journeyRuntime'; Path = 'src/ControlServer.Host/Runtime/JourneyRuntimeOptions.cs'; Class = 'JourneyRuntimeOptions'; Excluded = @('Fleet') }
     @{ Section = 'routeGraph'; Path = 'src/ControlServer.Host/Runtime/RouteGraph/RouteGraphOptions.cs'; Class = 'RouteGraphOptions'; Excluded = @() }
     @{ Section = 'riotCreateDispatch'; Path = 'src/ControlServer.Host/Runtime/RiotCreateDispatchOptions.cs'; Class = 'RiotCreateDispatchOptions'; Excluded = @() }
+    @{ Section = 'riotForeignOrderCancel'; Path = 'src/ControlServer.Host/Runtime/ForeignOrders/RiotForeignOrderCancelOptions.cs'; Class = 'RiotForeignOrderCancelOptions'; Excluded = @() }
 )
 foreach ($source in $optionSources) {
     $properties = Get-OptionProperty -RelativePath $source.Path -ClassName $source.Class

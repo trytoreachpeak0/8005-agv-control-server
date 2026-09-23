@@ -9,7 +9,7 @@ namespace ControlServer.Dashboard;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>只报不动。</b>v2 在批次 9 之前没有自动充电，REQ-0169 只许电量下降提高告警等级，所以这张卡片没有按钮：救命线下写「需要人工挪车充电」，
+/// <b>只报不动。</b>v2 在批次 9 之前没有自动充电，REQ-0169 只许电量下降提高告警等级，所以这张卡片没有按钮：救命线下写「需要人工挪车充电」（control-server#330 起写明用车上单机方式，不在 RIoT 里下单），
 /// 接单线下写「低于接单线」，决定挪不挪车的是人。
 /// </para>
 /// <para>
@@ -80,7 +80,10 @@ public sealed class WaitingJourneyCard : IDashboardCard
 
     private static string Advice(string level, bool pastThreshold) => level switch
     {
-        "BelowRescueLine" => "需要人工挪车充电",
+        // control-server#330: a vehicle-local (单机) move creates no RIoT order, while an order a person places in RIoT on a
+        // vehicle of ours -- a move or a charge -- is a foreign order, which a deployment authorized to cancel cancels. The
+        // user decided on 2026-09-23 that such orders are not exempted, so this wording is the lasting one.
+        "BelowRescueLine" => "需要人工挪车充电：在车上用单机方式挪车、充电，不要在 RIoT 里给这辆车下单",
         "BelowDispatchMinimum" => "低于接单线，尽快处理",
         "Unknown" => "读不到电量，到现场查看",
         "Sufficient" => pastThreshold ? "等人已超过告警门槛" : string.Empty,

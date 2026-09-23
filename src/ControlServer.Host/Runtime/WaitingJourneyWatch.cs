@@ -77,7 +77,7 @@ internal sealed class WaitingJourneyWatch(
 
     // The line stays in English, like every other line this server logs: it goes to a console that a service wrapper
     // redirects, and the first L2 run of this watch showed a Chinese phrase in it arriving as code page 936 mojibake. The
-    // dashboard card says it in Chinese ("需要人工挪车充电"), where the page is served as UTF-8.
+    // dashboard card says it in Chinese ("需要人工挪车充电：在车上用单机方式挪车、充电，不要在 RIoT 里给这辆车下单"), where the page is served as UTF-8.
 
     /// <summary>
     /// Observes every journey that is waiting now, read fresh from the database. Never throws but for a shutdown

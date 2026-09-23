@@ -66,6 +66,8 @@ internal static class RiotSdkRegistration
         // Also the movement gateway's: the unfinished-order read is the one its safety read makes.
         services.AddScoped<IRiotVehicleOrderFacts>(services =>
             services.GetRequiredService<HttpRiotMovementGateway>());
+        services.AddScoped<IRiotOrderListingFacts>(services =>
+            services.GetRequiredService<HttpRiotMovementGateway>());
         services.AddScoped<HttpRiotOrderCommandGateway>();
         services.AddScoped<IRiotOrderCommandGateway>(services =>
             services.GetRequiredService<HttpRiotOrderCommandGateway>());

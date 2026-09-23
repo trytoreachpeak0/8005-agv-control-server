@@ -110,6 +110,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["FakeOnboardRequestAnswerTests"] = "L2 synthetic peer's per-request answer cache (control-server#75 review); a test double's replay behaviour, not the product's wire surface",
             ["FakeOnboardSlotStateSeedTests"] = "L2 synthetic peer's handshake slot state seed (control-server#71); a test double's startup configuration, not the product's wire surface",
             ["FixedTaskStationResolverTests"] = "batch 6-01 behaviour-preserving restructuring guard (control-server#158): the per-round fixed station resolver seam and the named route endpoints; server-internal, no wire message",
+            ["ForeignRunningOrderTests"] = "control-server#330 an order RIoT shows running on a vehicle of this server's that this server did not create is cancelled once and the vehicle held until it is read back ended (REQ-0148, REQ-0164 as revised in v1.5.0); single-ended server-to-RIoT, no wire message",
             ["GovernanceSnapshotAndAuditTests"] = "batch 3 FP-C7/FP-C5 shared snapshot and audit mechanism; server-internal, no wire message",
             ["InTransitOrderStallTests"] = "control-server#316 an in-transit order RIoT reports HANG, SUSPENDED, CANCELLED or DELETED is named on the journey, and nothing is commanded; server-internal, no wire message",
             ["InTransitVehicleFactsTests"] = "batch 7-06 REQ-0205 the in-transit vehicle facts criterion against a vehicle actually under way, beside the idle chain's verdict on the same facts (control-server#211); server-internal, no wire message",
@@ -205,7 +206,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
         new(StringComparer.Ordinal)
         {
             ["FakeRiotTests"] = (8, "the fake's own control plane and conflict behaviour; the traited tests are the shapes the production adapter parses"),
-            ["HttpRiotMovementGatewayTests"] = (23, "RIoT adapter fail-closed and sanitisation behaviour; the traited tests are the ones a wire message depends on"),
+            ["HttpRiotMovementGatewayTests"] = (26, "RIoT adapter fail-closed and sanitisation behaviour (control-server#330 added the unfiltered order listing and the by-orderId state read); the traited tests are the ones a wire message depends on"),
             ["JourneyRuntimeOptionsTests"] = (4, "option defaults, and the cargo holding timeout (control-server#206; read by the loading phase since control-server#212); the traited tests are the validations that fail a deployment closed"),
             ["OnboardAlarmProjectionTests"] = (1, "the dashboard self-registration convention #12 set up; the traited tests are the ones standing behind OnboardAlarmSnapshot")
         };

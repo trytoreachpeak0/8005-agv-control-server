@@ -89,9 +89,10 @@ Write-Step "Definition: $InstanceDefinitionPath"
 
 # Asserted even though nothing is being installed: the checks that refuse a definition naming
 # the MVP's service, paths or ports are exactly the checks an uninstall most needs. The create
-# gate is not a question for an uninstall, hence the switch.
+# gate is not a question for an uninstall, hence the switch; nor is the foreign order cancel
+# gate (control-server#330).
 $definition = Read-ParallelInstanceDefinition -Path $InstanceDefinitionPath
-$null = Assert-ParallelInstanceDefinition -Definition $definition -AllowRiotCreateDispatch
+$null = Assert-ParallelInstanceDefinition -Definition $definition -AllowRiotCreateDispatch -AllowRiotForeignOrderCancel
 $layout = Get-ParallelInstanceLayout -Definition $definition
 $footprint = @(Get-ParallelInstanceFootprint -Definition $definition)
 

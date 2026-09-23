@@ -120,7 +120,7 @@ public sealed class WaitingJourneyDashboardTests
 
         string html = new WaitingJourneyCard().RenderFact(fact.RootElement);
 
-        AssertRowContains(html, "AGV-D-RESCUE", ["闸口等卸货", "2 小时 5 分", "9%", "需要人工挪车充电"]);
+        AssertRowContains(html, "AGV-D-RESCUE", ["闸口等卸货", "2 小时 5 分", "9%", "需要人工挪车充电：在车上用单机方式挪车、充电，不要在 RIoT 里给这辆车下单"]);
         AssertRowContains(html, "AGV-D-LOW", ["阻断", "LOAD_RESULT_REQUIRES_RECOVERY", "12 分", "22%", "低于接单线"]);
         AssertRowContains(html, "AGV-D-UNKNOWN", ["未知"]);
         AssertRowContains(html, "AGV-D-FINE", ["取货站等录入", "80%"]);
