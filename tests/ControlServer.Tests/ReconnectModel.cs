@@ -40,7 +40,20 @@ internal static class ReconnectModel
     /// <summary>收尾时连续几轮都抛异常算「每轮都抛」。</summary>
     private const int FailingTailRounds = 3;
 
+    /// <summary>
+    /// 收尾最多给几次「跑一轮、车确认」。它是模型的预算，不是产品的：每次握手只消掉车日志里一条补发时（cs#340 修前），
+    /// 攒下的补发多于这个数就会用完，所以录入请求没到车上时，说明里要分清「预算用完、从没恢复」还是「恢复之后停住」。
+    /// </summary>
     private const int TailRounds = 8;
+
+    /// <summary>
+    /// 不变量：收尾里车最后一次恢复健康（握手完成、连着、已到站）之后，录入请求最多几轮送到车上（第二轮审查建议 1）。
+    /// 通常一轮就到；断在清单那一张、车还没确认过任何一版清单时，第一轮由重放校验拒绝一次，车确认补发的旧清单之后下一轮走通——
+    /// 这是 cs#331 第三轮审查有意定的，失败轮数上限为一（<c>ArrivalPublishInterruptedThenReconnectedTests.ACutOnTheWorklistFailsOneRoundThenRecoversOnceTheVehicleConfirmsTheReplayedWorklist</c>；
+    /// 写成文本不写 cref：那条用例在 cs#331 修复前的提交上不存在，这个文件要在那上面也编得过）。
+    /// 所以是二：一轮失败加一轮走通。本分支 300 个固定种子里实测 1 轮 292 个、2 轮 8 个。
+    /// </summary>
+    internal const int RoundsFromRecoveryToEntry = 2;
 
     /// <summary>
     /// 指名了在等谁的阻断码：与 <c>JourneyRuntimeEngine.CarriesACodeThatNamesAWaitOnAPerson</c> 同一组，写成字面量——看板上现场看得见
@@ -308,6 +321,12 @@ internal static class ReconnectModel
         private bool _arrived;
         private int _ackConflicts;
         private int _rounds;
+
+        /// <summary>
+        /// 连接最近一次断开时已经跑了几轮。断线之后、下一轮之前车还能送回确认——那是断线前已经发出、服务端还没发现断线时收到的，
+        /// cs#331 的现场形状靠它；再往后的确认现实中到不了，<see cref="AckAsync"/> 让它们随旧连接丢掉（第二轮审查建议 4）。
+        /// </summary>
+        private int? _roundsAtDrop;
         private bool _orderHung;
         private readonly bool _realOnboard;
 
@@ -323,6 +342,9 @@ internal static class ReconnectModel
         /// <summary>服务端已经收下的安全变化，原样：<see cref="ConflictingResendAsync"/> 拿它们的 messageId 造语义不同的重放。</summary>
         private readonly List<(string MessageId, string Line)> _processedSafetyChanges = [];
         private int _waitOnPersonChances;
+
+        /// <summary>出事的机会按码分开数，外加失联码豁免生效的次数：一格没有机会，这一格的判据就没被考过。</summary>
+        private readonly Dictionary<string, int> _waitOnPersonChancesByCode = new(StringComparer.Ordinal);
 
         /// <summary>
         /// 服务端最后一次在当前这一代上<b>处理成功</b>一条车的入站的时刻与代次（心跳、握手里除 <c>SessionHello</c> 外的每一条、会话中途的
@@ -440,6 +462,10 @@ internal static class ReconnectModel
             }
 
             await ApplyAsync(new ReconnectStep.Arrive(), tail: true);
+            // 车健康的那一刻（握手完成、连着、已到站）收尾跑了几轮；断了就作废，重连成功再记。
+            int? healthyAtTailRound = _connected && !_handshakeOpen ? 0 : null;
+            int tailReconnects = 0;
+            int? roundsFromRecoveryToEntry = null;
             for (int round = 0; round < TailRounds; round++)
             {
                 await ApplyAsync(new ReconnectStep.Round(2), tail: true);
@@ -447,9 +473,12 @@ internal static class ReconnectModel
                 if (!_connected)
                 {
                     // 确认被拒、握手被拒或答复不对时连接断了；车会再连上来。
+                    healthyAtTailRound = null;
+                    tailReconnects++;
                     await ApplyAsync(new ReconnectStep.BeginHandshake(), tail: true);
                     await ApplyAsync(new ReconnectStep.CompleteHandshake(), tail: true);
                     await RestoreHealthySafetyAsync();
+                    healthyAtTailRound = _connected && !_handshakeOpen ? round + 1 : null;
                 }
 
                 // 走到了就不再多跑：这一轮没抛、录入请求已以当前这一代送到车上、阶段在等录入。
@@ -458,6 +487,7 @@ internal static class ReconnectModel
                     _delivered.Any(line => line.MessageType == "SublotEntryRequested" && line.Generation == _generation) &&
                     (await _fixture.RuntimeAsync()).Stage == JourneyRuntimeStage.AwaitingSublot)
                 {
+                    roundsFromRecoveryToEntry = healthyAtTailRound is int healthy ? round + 1 - healthy : null;
                     break;
                 }
             }
@@ -481,12 +511,23 @@ internal static class ReconnectModel
                     ? null
                     : ReconnectViolation.EntryNeverReachedVehicle;
 
+            // 录入请求没到车上时，分清是模型的收尾预算用完了（最后也没恢复健康），还是恢复之后停住了。
+            string budget = healthyAtTailRound is int since
+                ? $" tail: healthy since tail round {since}, {_tailOutcomes.Count - since} round(s) since without the entry request"
+                : $" tail: budget exhausted, never healthy again: {tailReconnects} reconnect(s) used, {_unacknowledged.Count} resend(s) still journalled";
+
             List<(ReconnectViolation Violation, string Detail)> violations = [.. _violations];
             if (journeyViolation is { } found)
             {
                 violations.Add((found, $"stage={runtime.Stage} block={runtime.BlockReasonCode ?? "null"} " +
                     $"session={session.Readiness}/{session.ReasonCode} generation={session.SessionGeneration}" +
-                    (everyRoundThrows ? " last tail rounds: " + string.Join(" | ", lastFailures.Distinct(StringComparer.Ordinal)) : string.Empty)));
+                    (everyRoundThrows ? " last tail rounds: " + string.Join(" | ", lastFailures.Distinct(StringComparer.Ordinal)) : string.Empty) +
+                    (found == ReconnectViolation.EntryNeverReachedVehicle ? budget : string.Empty)));
+            }
+            else if (roundsFromRecoveryToEntry is int late && late > RoundsFromRecoveryToEntry)
+            {
+                violations.Add((ReconnectViolation.EntryLateAfterRecovery,
+                    $"the entry request reached the vehicle {late} round(s) after it was last healthy; at most {RoundsFromRecoveryToEntry} allowed"));
             }
 
             // 车拒收了一版快照（修订号比车已有的低）：以前只计数，这里算违规——几千个组合里都是 0，没有代价。
@@ -501,7 +542,8 @@ internal static class ReconnectModel
                 CultureInfo.InvariantCulture,
                 $"final: onboard={(_realOnboard ? "real" : "synthetic")} stage={runtime.Stage} block={runtime.BlockReasonCode ?? "null"} " +
                 $"session={session.Readiness}/{session.ReasonCode} generation={_generation} " +
-                $"entryReachedVehicle={entryReachedVehicle} ackConflicts={_ackConflicts} regressions={_vehicle.Regressions.Count}");
+                $"entryReachedVehicle={entryReachedVehicle} roundsFromRecoveryToEntry={roundsFromRecoveryToEntry?.ToString(CultureInfo.InvariantCulture) ?? "-"} " +
+                $"ackConflicts={_ackConflicts} regressions={_vehicle.Regressions.Count}");
             if (everyRoundThrows)
             {
                 detail.AppendLine("last tail rounds: " + string.Join(" | ", lastFailures.Distinct(StringComparer.Ordinal)));
@@ -521,6 +563,8 @@ internal static class ReconnectModel
             return new ReconnectVerdict(violations, detail.ToString(), _ackConflicts, _vehicle.Regressions.Count, TimeSpan.Zero, default, _rounds)
             {
                 WaitOnPersonChances = _waitOnPersonChances,
+                WaitOnPersonChancesByCode = _waitOnPersonChancesByCode,
+                RoundsFromRecoveryToEntry = roundsFromRecoveryToEntry,
             };
         }
 
@@ -558,6 +602,7 @@ internal static class ReconnectModel
             {
                 _sendsBeforeCut = null;
                 _connected = false;
+                _roundsAtDrop = _rounds;
                 throw new IOException("The model connection dropped while this line was being sent.");
             }
 
@@ -640,12 +685,28 @@ internal static class ReconnectModel
             // 失联码说的是「车不说话」：写下它之后车在当前这一代上又被听到过（处理成功的入站），它就不再成立，引擎先把它清掉是对的，
             // 之后这一轮再失败、写推进失败，不是覆盖（cs#331 的 PR 剩余风险：车一被听到就先清掉这个码）。只豁免「换成推进失败」这一支；
             // 「码没变、起点却变了」照判（审查必修 M2）。被拒的入站、别的代次上的入站、SessionHello 都不算听到。
+            // 「听到过」还要落在产品自己的存活窗口里：引擎只在此刻往前 SessionLiveness.Timeout 之内听到当前这一代才清码
+            // （NameSilentOnboardSessionAsync → SessionLiveness.InsideWindow，边界相同），车已沉默更久时码不会被清，
+            // 换成推进失败就是覆盖。没有这道上限，去掉 CarriesACodeThatNamesAWaitOnAPerson 那道守卫的回归在失联码这一格会被豁免掉
+            // （第二轮审查必修 M2）。
+            // 今天这一格在产品里走不到：车沉默超过窗口时，失联判定在任何发送之前就让这一轮返回（JourneyRuntimeEngine 里
+            // NameSilentOnboardSessionAsync 的调用处），闸门关着的那一支又先把失联码换成 ONBOARD_SESSION_NOT_READY 再发计划，
+            // 所以没有「带着失联码、这一轮又失败」的机会，这道上限眼下没有东西可抓。这个前提由
+            // ReconnectModelRegressionTests.ARoundAfterTheVehicleWentSilentPastTheLivenessWindowPublishesNothing 钉住：
+            // 产品哪天改成先发再判，那条会红，那时要回来证这道上限真能抓到。
+            DateTimeOffset now = _fixture.Clock.GetUtcNow();
             bool sessionLostLegitimatelyCleared =
                 string.Equals(code, "ONBOARD_SESSION_LOST", StringComparison.Ordinal) &&
-                _lastHeard is { } heard && heard.Generation == _generation && heard.At >= before.BlockReasonSince;
+                _lastHeard is { } heard && heard.Generation == _generation && heard.At >= before.BlockReasonSince &&
+                heard.At <= now && now - heard.At <= SessionLiveness.Timeout;
 
             // 这条不变量有过几次出事的机会：带着等人码进来、这一轮又失败了。没有这样的轮次，它不出违规也说明不了什么。
             _waitOnPersonChances += threw && !sessionLostLegitimatelyCleared ? 1 : 0;
+            if (threw)
+            {
+                string cell = sessionLostLegitimatelyCleared ? code + " (exempt: heard inside the liveness window)" : code;
+                _waitOnPersonChancesByCode[cell] = _waitOnPersonChancesByCode.GetValueOrDefault(cell) + 1;
+            }
 
             if (string.Equals(after.BlockReasonCode, AdvanceFailedReason, StringComparison.Ordinal) && !sessionLostLegitimatelyCleared)
             {
@@ -678,6 +739,8 @@ internal static class ReconnectModel
             }
 
             (string messageId, string original) = _processedSafetyChanges[^1];
+            // 说明里带上是在哪一段被放过的：握手中（补发的重复到达）与会话中途，判别力要分开证（第二轮审查建议 3）。
+            string where = _handshakeOpen ? "handshake open" : "handshake done";
             JsonNode forged = JsonNode.Parse(Rebind(original, _generation))!;
             JsonNode safety = forged["payload"]!["safety"]!;
             bool departureSafe = safety["departureSafe"]!.GetValue<bool>();
@@ -694,7 +757,7 @@ internal static class ReconnectModel
             {
                 Violate(
                     ReconnectViolation.DifferentMessageAccepted,
-                    $"SafetyStateChanged {messageId} resent with different safety content was answered with {string.Join("+", types)}");
+                    $"SafetyStateChanged {messageId} resent with different safety content ({where}) was answered with {string.Join("+", types)}");
             }
 
             return $"resend of {messageId[..8]} with different content answered {string.Join("+", types)}";
@@ -756,6 +819,12 @@ internal static class ReconnectModel
 
         private async Task<string?> AckAsync()
         {
+            if (!_connected && _roundsAtDrop is int dropped && _rounds > dropped)
+            {
+                _vehicle.LoseBufferedAcks();
+                return "no-op: the connection has been gone since before the last round";
+            }
+
             try
             {
                 await _vehicle.DeliverBufferedAcksAsync();
@@ -770,6 +839,7 @@ internal static class ReconnectModel
                 _vehicle.LoseBufferedAcks();
                 _fixture.Context.ChangeTracker.Clear();
                 _connected = false;
+                _roundsAtDrop = _rounds;
                 _sendsBeforeCut = null;
                 return "ack refused, connection closed: " + FirstLine(error.Message);
             }
@@ -785,6 +855,7 @@ internal static class ReconnectModel
             if (sends == 0)
             {
                 _connected = false;
+                _roundsAtDrop = _rounds;
                 _sendsBeforeCut = null;
                 return null;
             }
@@ -805,6 +876,7 @@ internal static class ReconnectModel
         private async Task<string?> BeginHandshakeAsync()
         {
             _connected = false;
+            _roundsAtDrop = _rounds;
             _sendsBeforeCut = null;
             _vehicle.LoseBufferedAcks();
             await OpenConnectionAsync();
@@ -883,6 +955,15 @@ internal static class ReconnectModel
         /// </remarks>
         private async Task<string?> SafetyChangeAsync(SafetyKind kind, SafetyDelivery delivery)
         {
+            // 真车载端挂着本服务端的在途单、还没到站时报不出「安全」：生成器给的 Safe 在这里换成在途单形状，否则约三分之一的
+            // 真车载端组合在到站前就变回合成车载端（第二轮审查建议 2）。到站那一条由 ArriveAsync 在 _arrived 置位之后发，不受影响。
+            string mapped = string.Empty;
+            if (_realOnboard && !_arrived && kind == SafetyKind.Safe)
+            {
+                kind = SafetyKind.OwnOrder;
+                mapped = " (real onboard before arrival: own-order shape)";
+            }
+
             _safety = kind;
             long version = ++_acceptedSafetyVersion;
             string messageId = NextId("safety-change");
@@ -900,19 +981,19 @@ internal static class ReconnectModel
             _unacknowledged.Add((messageId, line));
             if (!_connected || _handshakeOpen)
             {
-                return $"v{version} journalled, not sent";
+                return $"v{version} journalled, not sent{mapped}";
             }
 
             if (delivery == SafetyDelivery.LostInFlight)
             {
                 DropConnection();
-                return $"v{version} lost in flight, connection dropped";
+                return $"v{version} lost in flight, connection dropped{mapped}";
             }
 
             string[]? answers = await ExchangeAsync(line, "SafetyStateChanged");
             if (answers is null)
             {
-                return $"v{version} refused";
+                return $"v{version} refused{mapped}";
             }
 
             _processedSafetyChanges.Add((messageId, line));
@@ -920,7 +1001,7 @@ internal static class ReconnectModel
             if (delivery == SafetyDelivery.AckLost)
             {
                 DropConnection();
-                return $"v{version} taken, its ack lost, connection dropped";
+                return $"v{version} taken, its ack lost, connection dropped{mapped}";
             }
 
             if (answers.FirstOrDefault() is { } first && MessageTypeOf(first) == "DurableAck")
@@ -928,7 +1009,7 @@ internal static class ReconnectModel
                 _unacknowledged.RemoveAll(entry => entry.MessageId == messageId);
             }
 
-            return $"v{version} answered {string.Join("+", answers.Select(MessageTypeOf))}";
+            return $"v{version} answered {string.Join("+", answers.Select(MessageTypeOf))}{mapped}";
         }
 
         private async Task OpenConnectionAsync()
@@ -953,6 +1034,7 @@ internal static class ReconnectModel
         private void DropConnection()
         {
             _connected = false;
+            _roundsAtDrop = _rounds;
             _handshakeOpen = false;
             _sendsBeforeCut = null;
         }
@@ -1015,6 +1097,7 @@ internal static class ReconnectModel
                 {
                     _handshakeOpen = false;
                     _connected = true;
+                    _roundsAtDrop = null;
                 }
 
                 await _processor.FlushDeferredOutboundAsync(_connection!, Token);
@@ -1215,9 +1298,13 @@ internal static class ReconnectModel
         }
 
         /// <summary>
-        /// 撤销模型自己写的「未就绪」（<see cref="VehicleNotReadyAsync"/>）。只撤销它：会话就绪与否其余都由产品按车的报文自己算，
-        /// 模型不替它写——否则「合法握手、车报安全之后服务端不回就绪」这类缺陷会被一次写库盖住（审查建议 5）。车不在线时什么也不做。
+        /// 撤销模型自己写的「未就绪」（<see cref="VehicleNotReadyAsync"/>），只在模型写过时做（审查建议 5）。车不在线时什么也不做。
         /// </summary>
+        /// <remarks>
+        /// 撤销的写法是夹具那一套：就绪、离站安全。这只对「车此刻报安全」成立；车此刻报的不是安全（真车载端在途、或者报了不安全）时，
+        /// 这一写把会话抹成了车到不了的样子。所以写完让车经真实处理器把它此刻的安全状态再报一次，会话的形状由产品自己按那一条算
+        /// （第二轮审查建议 2：以前只写库，真车载端在途时被恢复成了离站安全）。
+        /// </remarks>
         private async Task<string?> VehicleReadyAsync()
         {
             if (_handshakeOpen || !_connected || !_modelWroteNotReady)
@@ -1234,7 +1321,9 @@ internal static class ReconnectModel
             ResetSafety(session);
             session.UpdatedAt = _fixture.Clock.GetUtcNow();
             await _fixture.Context.SaveChangesAsync(Token);
-            return null;
+            return _safety == SafetyKind.Safe
+                ? null
+                : "vehicle re-reports its safety: " + await SafetyChangeAsync(_safety, SafetyDelivery.Delivered);
         }
 
         /// <summary>回到夹具播种时的安全摘要：离站安全、没有原因码、没有未知。</summary>
@@ -1382,6 +1471,12 @@ internal sealed record ReconnectVerdict(
     /// <summary>带着「等人」码进来、这一轮又失败了的轮数：<see cref="ReconnectViolation.WaitOnPersonOverwritten"/> 出事的机会。</summary>
     public int WaitOnPersonChances { get; init; }
 
+    /// <summary><see cref="WaitOnPersonChances"/> 按码分开；失联码豁免生效的那几次单独成一格。</summary>
+    public IReadOnlyDictionary<string, int> WaitOnPersonChancesByCode { get; init; } = new Dictionary<string, int>();
+
+    /// <summary>收尾里车最后一次恢复健康之后，录入请求用了几轮送到车上；没送到或那之前没恢复过时为 null。</summary>
+    public int? RoundsFromRecoveryToEntry { get; init; }
+
     /// <summary>第一条违规，没有时为 null。</summary>
     public ReconnectViolation? Violation => Violations.Count == 0 ? null : Violations[0].Violation;
 
@@ -1396,8 +1491,11 @@ internal enum ReconnectViolation
     /// <summary>收尾那几轮每轮都抛异常，但不在取货站。</summary>
     EveryRoundThrows,
 
-    /// <summary>引擎不再抛异常，录入请求却从没到车上，看板上也没有说明在等什么的码。</summary>
+    /// <summary>收尾把车恢复健康之后，引擎不再抛异常，录入请求却没以当前这一代到车上。说明里写明是收尾预算用完还是恢复之后停住。</summary>
     EntryNeverReachedVehicle,
+
+    /// <summary>录入请求到了车上，但离车最后一次恢复健康超过 <see cref="ReconnectModel.RoundsFromRecoveryToEntry"/> 轮（第二轮审查建议 1）。</summary>
+    EntryLateAfterRecovery,
 
     /// <summary>握手期间一条入站回了不止一条答复：车每发一条只读一条，多出来的会被当成下一条的答复——cs#340 的形状。</summary>
     OneInboundManyAnswers,

@@ -20,9 +20,11 @@ public sealed class ReconnectModelRegressionTests
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
     /// <summary>
-    /// 化简出的序列与校准序列，每一条收尾之后都要把录入请求以当前这一代送到车上。
+    /// 化简出的序列与校准序列，每一条收尾之后都要把录入请求以当前这一代送到车上。每一条都跑合成车载端与真车载端两种：
+    /// cs#331 的现场是真车载端（挂着本服务端的在途单时整段报未就绪），模型化简出的是合成的那一种（第二轮审查）。
     /// </summary>
-    public static TheoryData<string> Sequences => [.. SequencesByName.Keys];
+    public static TheoryData<string, bool> Sequences =>
+        [.. SequencesByName.Keys.SelectMany(name => new[] { (name, false), (name, true) })];
 
     private static readonly Dictionary<string, ReconnectStep[]> SequencesByName = new(StringComparer.Ordinal)
     {
@@ -57,15 +59,15 @@ public sealed class ReconnectModelRegressionTests
     [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
     [Trait("ProtocolVector", "CV-PICKUP-SUBLOT-LOAD")]
     [MemberData(nameof(Sequences))]
-    public async Task ASequenceTheModelOnceFoundStuckNowReachesTheEntryRequest(string name)
+    public async Task ASequenceTheModelOnceFoundStuckNowReachesTheEntryRequest(string name, bool realOnboard)
     {
-        ReconnectStep[] steps = SequencesByName[name];
+        ReconnectScenario scenario = new(realOnboard, SequencesByName[name]);
 
-        ReconnectVerdict verdict = await ReconnectModel.RunAsync(steps);
+        ReconnectVerdict verdict = await ReconnectModel.RunAsync(scenario);
 
         Assert.True(
             verdict.Violation is null,
-            $"{name} {ReconnectModel.Print(steps)} violated {verdict.Violation}:\n{verdict.Detail}");
+            $"{name} {ReconnectModel.Print(scenario)} violated {verdict.Violation}:\n{verdict.Detail}");
         Assert.Contains("entryReachedVehicle=True", verdict.Detail, StringComparison.Ordinal);
     }
 
@@ -97,6 +99,42 @@ public sealed class ReconnectModelRegressionTests
 
         Assert.Contains("block=ORDER_HANG", verdict.Detail, StringComparison.Ordinal);
         Assert.True(verdict.WaitOnPersonChances >= 1, verdict.Detail);
+        Assert.Empty(verdict.Violations);
+    }
+
+    /// <summary>
+    /// 车沉默超过存活窗口（<c>SessionLiveness.Timeout</c>）的那一轮什么都不发，所以不会失败：带着 <c>ONBOARD_SESSION_LOST</c> 的推进失败
+    /// 在今天的产品里走不到。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 这是一条钉前提的用例，不是缺陷回归。第二轮审查必修 M2 给模型里失联码的豁免加了时间上限（车在窗口内说过话才豁免），并要求反向验证
+    /// 「去掉 <c>CarriesACodeThatNamesAWaitOnAPerson</c> 守卫，失联码这一格要红」。实测那一格红不了：守卫去掉之后 300 个组合里挂起码那一格红了
+    /// 4 个，失联码只有 1 次机会且落在窗口内（产品先清码，豁免是对的）；把豁免改回没有上限，结果一模一样。原因在产品：沉默超过窗口时，
+    /// 失联判定在任何发送之前就让这一轮返回；闸门关着那一支先把失联码换成 <c>ONBOARD_SESSION_NOT_READY</c> 再发计划。
+    /// </para>
+    /// <para>
+    /// 序列就是审查设想的失败现场：沉默写下失联码、握手完成（车在第 7 秒说过话）、到站、再断、沉默 8 秒跑一轮。这一轮 ok、失联码还在、
+    /// 失联码那一格没有出事的机会。产品哪天改成先发再判，这一轮会抛异常，这条就红——那时模型里那道上限第一次有东西可抓，要回来证它。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    [Trait("ProtocolVector", "CV-DEMAND-ACCEPT-TO-PICKUP")]
+    public async Task ARoundAfterTheVehicleWentSilentPastTheLivenessWindowPublishesNothing()
+    {
+        ReconnectStep[] steps =
+        [
+            new ReconnectStep.CutAfter(0), new ReconnectStep.Round(7), new ReconnectStep.BeginHandshake(), new ReconnectStep.CompleteHandshake(),
+            new ReconnectStep.Arrive(), new ReconnectStep.CutAfter(0), new ReconnectStep.Round(8),
+        ];
+
+        ReconnectVerdict verdict = await ReconnectModel.RunAsync(steps);
+
+        // 第一轮沉默 7 秒写下失联码；握手之后又沉默 8 秒，这一轮没抛、码还在。两行都要在：只断言第二行，失联码根本没写上时它也可能成立。
+        Assert.Contains("  Round(7s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_LOST", verdict.Detail, StringComparison.Ordinal);
+        Assert.Contains("  Round(8s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_LOST", verdict.Detail, StringComparison.Ordinal);
+        Assert.DoesNotContain(verdict.WaitOnPersonChancesByCode.Keys, code => code.StartsWith("ONBOARD_SESSION_LOST", StringComparison.Ordinal));
         Assert.Empty(verdict.Violations);
     }
 

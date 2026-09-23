@@ -88,14 +88,26 @@ public sealed class ReconnectModelTests
     public async Task EverySeededSequenceEndsWithTheEntryRequestOnTheVehicle()
     {
         List<(string Seed, ReconnectScenario Scenario, ReconnectVerdict Verdict)> runs = [];
+        List<string> crashes = [];
         for (int index = 0; index < CiCombinations; index++)
         {
             (string seed, ReconnectScenario scenario) = ReconnectModel.Fixed(MasterSeed, index);
-            runs.Add((seed, scenario, await ReconnectModel.RunAsync(scenario)));
+            try
+            {
+                runs.Add((seed, scenario, await ReconnectModel.RunAsync(scenario)));
+            }
+            catch (Exception error) when (error is not OperationCanceledException)
+            {
+                // 模型或夹具本身出错：记下种子接着跑，别让一个组合的异常把前面攒下的违规清单一起丢掉（第二轮审查）。
+                crashes.Add($"seed {seed} threw {error.GetType().Name}: {error.Message}{Environment.NewLine}    {ReconnectModel.Print(scenario)}");
+            }
         }
 
-        (string? failure, Dictionary<string, int> hits, (string Seed, ReconnectScenario Scenario, ReconnectViolation Violation)? firstUnknown) =
+        (string? judged, Dictionary<string, int> hits, (string Seed, ReconnectScenario Scenario, ReconnectViolation Violation)? firstUnknown) =
             JudgeAgainstKnownDefects(runs, ReconnectModel.KnownDefects);
+        string? failure = crashes.Count == 0
+            ? judged
+            : $"{crashes.Count} sequence(s) could not be run:{Environment.NewLine}{string.Join(Environment.NewLine, crashes)}{Environment.NewLine}{judged}";
 
         // 已知未修的照样报出来：修复票合入之前，它们在这里出现几次是有用的信息。
         foreach ((string ticket, int count) in hits)
@@ -138,6 +150,7 @@ public sealed class ReconnectModelTests
     {
         KnownDefect real = new("onboard-hmi#206", ReconnectViolation.LegitimateMessageRefused, ["has conflicting content"]);
         KnownDefect neverHit = new("control-server#0", ReconnectViolation.OneInboundManyAnswers, ["a fragment no run ever prints"]);
+        KnownDefect deadRowOfALiveTicket = new("onboard-hmi#206", ReconnectViolation.UnexpectedAnswer, ["a fragment no run ever prints"]);
         ReconnectScenario scenario = new(false, [new ReconnectStep.Arrive()]);
         (string, ReconnectScenario, ReconnectVerdict)[] runs =
         [
@@ -147,6 +160,7 @@ public sealed class ReconnectModelTests
 
         (string? clean, Dictionary<string, int> hits, _) = JudgeAgainstKnownDefects(runs, [real]);
         (string? stale, _, _) = JudgeAgainstKnownDefects(runs, [real, neverHit]);
+        (string? staleRow, _, _) = JudgeAgainstKnownDefects(runs, [real, deadRowOfALiveTicket]);
         (string? unknown, _, var firstUnknown) = JudgeAgainstKnownDefects(
             [.. runs, ("seed-c", scenario, Verdict((ReconnectViolation.StuckAtPickup, "stage=AwaitingPickupArrival")))],
             [real]);
@@ -157,6 +171,10 @@ public sealed class ReconnectModelTests
         Assert.Contains("control-server#0", stale, StringComparison.Ordinal);
         Assert.Contains("matched nothing", stale, StringComparison.Ordinal);
         Assert.DoesNotContain("onboard-hmi#206", stale, StringComparison.Ordinal);
+        // 同一张票的另一行命中了，这一行照样判死：按行判，不按票号。
+        Assert.NotNull(staleRow);
+        Assert.Contains("UnexpectedAnswer", staleRow, StringComparison.Ordinal);
+        Assert.DoesNotContain("LegitimateMessageRefused", staleRow, StringComparison.Ordinal);
         Assert.NotNull(unknown);
         Assert.Contains("seed-c", unknown, StringComparison.Ordinal);
         Assert.Equal("seed-c", firstUnknown?.Seed);
@@ -172,6 +190,8 @@ public sealed class ReconnectModelTests
             IReadOnlyList<KnownDefect> table)
     {
         Dictionary<string, int> hits = new(StringComparer.Ordinal);
+        // 零命中按行判，不按票号：同一张票两行时，一行命中会把另一行死掉的盖住（第二轮审查）。
+        HashSet<KnownDefect> rowsHit = new(ReferenceEqualityComparer.Instance);
         List<(string Seed, ReconnectScenario Scenario, ReconnectViolation Violation, string Detail)> unknown = [];
         foreach ((string seed, ReconnectScenario scenario, ReconnectVerdict verdict) in runs)
         {
@@ -180,6 +200,7 @@ public sealed class ReconnectModelTests
                 if (ReconnectModel.KnownDefectFor(table, violation, detail) is { } defect)
                 {
                     hits[defect.Ticket] = hits.GetValueOrDefault(defect.Ticket) + 1;
+                    rowsHit.Add(defect);
                 }
                 else
                 {
@@ -188,7 +209,7 @@ public sealed class ReconnectModelTests
             }
         }
 
-        KnownDefect[] stale = [.. table.Where(defect => !hits.ContainsKey(defect.Ticket))];
+        KnownDefect[] stale = [.. table.Where(defect => !rowsHit.Contains(defect))];
         if (unknown.Count == 0 && stale.Length == 0)
         {
             return (null, hits, null);
@@ -246,6 +267,10 @@ public sealed class ReconnectModelTests
         int regressions = 0;
         int entryReached = 0;
         int waitOnPersonChances = 0;
+        SortedDictionary<string, int> recoveryToEntry = new(StringComparer.Ordinal);
+        SortedDictionary<string, int> chancesByCode = new(StringComparer.Ordinal);
+        int acceptedInHandshake = 0;
+        int acceptedMidSession = 0;
         Stopwatch total = Stopwatch.StartNew();
         for (int index = 0; index < iterations; index++)
         {
@@ -258,6 +283,22 @@ public sealed class ReconnectModelTests
             regressions += verdict.Regressions;
             entryReached += verdict.Detail.Contains("entryReachedVehicle=True", StringComparison.Ordinal) ? 1 : 0;
             waitOnPersonChances += verdict.WaitOnPersonChances;
+            foreach ((string code, int count) in verdict.WaitOnPersonChancesByCode)
+            {
+                chancesByCode[code] = chancesByCode.GetValueOrDefault(code) + count;
+            }
+
+            string bucket = verdict.RoundsFromRecoveryToEntry?.ToString(CultureInfo.InvariantCulture) ?? "-";
+            recoveryToEntry[bucket] = recoveryToEntry.GetValueOrDefault(bucket) + 1;
+            foreach ((ReconnectViolation violation, string detail) in verdict.Violations)
+            {
+                if (violation == ReconnectViolation.DifferentMessageAccepted)
+                {
+                    acceptedInHandshake += detail.Contains("(handshake open)", StringComparison.Ordinal) ? 1 : 0;
+                    acceptedMidSession += detail.Contains("(handshake done)", StringComparison.Ordinal) ? 1 : 0;
+                }
+            }
+
             // 每一类都记，不只记第一条：一个组合里先撞上的那一类会把后面的挡住，按第一条分组会少数别的类。
             foreach (ReconnectViolation violation in verdict.Violations.Select(item => item.Violation).Distinct())
             {
@@ -288,9 +329,18 @@ public sealed class ReconnectModelTests
             $"setup mean={setups.Average(span => span.TotalMilliseconds):F1}ms; engine rounds per combination mean={rounds.Average():F1}; " +
             $"per round (excluding setup) mean={(elapsed.Sum(span => span.TotalMilliseconds) - setups.Sum(span => span.TotalMilliseconds)) / rounds.Sum():F1}ms");
         report.AppendLine(CultureInfo.InvariantCulture, $"ack conflicts={ackConflicts} vehicle regressions={regressions}");
-        // 不变量成立的组合里，有多少是真的把录入请求送到了车上，而不是靠「看板上有码」过关的。
         report.AppendLine(CultureInfo.InvariantCulture, $"entry request reached the vehicle in {entryReached} of {iterations}");
+        // 收尾里车最后一次恢复健康之后，录入请求用了几轮（「-」是没送到，或收尾里从没恢复健康）；RoundsFromRecoveryToEntry 按它定。
+        report.AppendLine(
+            CultureInfo.InvariantCulture,
+            $"rounds from the last recovery to the entry request: {string.Join(", ", recoveryToEntry.Select(pair => $"{pair.Key}: {pair.Value}"))}");
+        report.AppendLine(
+            CultureInfo.InvariantCulture,
+            $"DifferentMessageAccepted by where: handshake open {acceptedInHandshake}, handshake done {acceptedMidSession}");
         report.AppendLine(CultureInfo.InvariantCulture, $"rounds that failed while carrying a wait-on-person code: {waitOnPersonChances}");
+        report.AppendLine(
+            CultureInfo.InvariantCulture,
+            $"  by code: {(chancesByCode.Count == 0 ? "none" : string.Join(", ", chancesByCode.Select(pair => $"{pair.Key}: {pair.Value}")))}");
         foreach ((ReconnectViolation violation, List<(string Seed, ReconnectScenario Scenario)> found) in byViolation)
         {
             report.AppendLine(CultureInfo.InvariantCulture, $"{violation}: {found.Count} of {iterations}");
