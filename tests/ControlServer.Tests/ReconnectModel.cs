@@ -970,7 +970,29 @@ internal static class ReconnectModel
             _modelWroteNotReady = false;
             await _fixture.HearFromPeerAsync();
             MarkHeard();
+            string republished = await RepublishAfterHandshakeAsync();
+            _trace.Add("    republish after the handshake: " + republished);
             return null;
+        }
+
+        /// <summary>
+        /// 会话就绪之后车按此刻的安全状态补发一条 <c>SafetyStateChanged</c>，号是已接受版本的下一版，所以比刚被确认的握手快照大。
+        /// </summary>
+        /// <remarks>
+        /// 真车载端每换一代都这样做，不管握手期间安全状态变没变：会话一变为 <c>Ready</c> 或 <c>RecoveryRequired</c>，
+        /// <c>WireToGateBusinessService.OnSessionStateChanged</c> 就请求一次上报，<c>QueueSafetyStateChangeAsync</c> 见代次变了
+        /// 清掉去重签名，照发，版本取 <c>max(_nextSafetyStateVersion, 已接受 + 1)</c>
+        /// （测试 <c>BusinessResendsSafetyStateAfterSessionGenerationChangeWhileVehicleIdle</c>；bisect-cs323 库里第 1、3 代握手之后
+        /// 各有一条，v2 与 v6）。握手中发生的变化也就在这时报出去。
+        /// </remarks>
+        private async Task<string> RepublishAfterHandshakeAsync()
+        {
+            if (!_connected || _handshakeOpen)
+            {
+                return "no-op: the handshake did not end in a publishable session";
+            }
+
+            return await SafetyChangeAsync(_safety, SafetyDelivery.Delivered) ?? "no answer";
         }
 
         /// <summary>
@@ -980,7 +1002,13 @@ internal static class ReconnectModel
         /// <remarks>
         /// <see cref="SafetyDelivery.Delivered"/>：服务端收到、车收到确认。<see cref="SafetyDelivery.LostInFlight"/>：连接在这一条
         /// 送到之前断了。<see cref="SafetyDelivery.AckLost"/>：服务端收下了，确认没回到车上，连接随即断了——下一次握手补发它，
-        /// 服务端按重复到达回答。连接不在或握手没完成时，这一条只进日志，等下一次握手补发。
+        /// 服务端按重复到达回答。
+        /// <para>
+        /// 连接不在或握手没完成时，车这一刻什么都不发、也不记日志，只记下新的安全状态：真车载端的业务服务只在
+        /// <c>CanPublishSafetyRevision</c> 为真时才发（连着、会话 <c>Ready</c> 或 <c>RecoveryRequired</c>；握手中是 <c>Recovering</c>），
+        /// 不发就不建待发项、不占版本号。会话就绪之后由 <see cref="RepublishAfterHandshakeAsync"/> 按此刻的状态补发。
+        /// 这里原先写成「只进日志、等下一次握手补发」，与真车对不上（hmi#206 期间调度指出，control-server PR #347）。
+        /// </para>
         /// </remarks>
         private async Task<string?> SafetyChangeAsync(SafetyKind kind, SafetyDelivery delivery)
         {
@@ -994,6 +1022,11 @@ internal static class ReconnectModel
             }
 
             _safety = kind;
+            if (!_connected || _handshakeOpen)
+            {
+                return $"not published: session not publishable, state kept for the republish after the next handshake{mapped}";
+            }
+
             long version = ++_acceptedSafetyVersion;
             string messageId = NextId("safety-change");
             string line = VehicleLine(
@@ -1008,10 +1041,6 @@ internal static class ReconnectModel
                 _generation,
                 messageId);
             _unacknowledged.Add((messageId, line));
-            if (!_connected || _handshakeOpen)
-            {
-                return $"v{version} journalled, not sent{mapped}";
-            }
 
             if (delivery == SafetyDelivery.LostInFlight)
             {
