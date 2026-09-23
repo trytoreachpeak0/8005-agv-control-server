@@ -118,6 +118,59 @@ internal static class OwnOrderRebuilds
     }
 
     /// <summary>
+    /// Whether the Host should ask <paramref name="agvId"/>'s vehicle for a <c>SafetyStateSnapshot</c> now, for a rebuild after a
+    /// cleared fault with cargo on board that is still waiting for the vehicle to show the cargo in its slots (REQ-0362); when
+    /// it should, the request is recorded here and the caller must send it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The throttle</b>: once per session generation; once more in the same generation when the session has become ready
+    /// since -- a vehicle whose session was not ready may not have answered; none once the cargo is proven, the rebuild is
+    /// stopped, or it is not a cargo rebuild at all. So a session that never becomes ready is asked once, not on every
+    /// message, and a reconnection asks again.
+    /// </para>
+    /// <para>
+    /// <b>Cheap when nothing waits.</b> Every inbound message after the handshake comes through here. The question is a read on
+    /// the <c>(AgvId, State)</c> index first, and only a due request becomes a write: one conditional update, so two
+    /// connections of the same vehicle racing here claim the request once between them. The update touches only the request
+    /// columns, not <see cref="OwnOrderRebuildRow.State"/>, the row's concurrency token, so it never conflicts with the
+    /// engine's round.
+    /// </para>
+    /// </remarks>
+    public static async Task<bool> ClaimCargoEvidenceRequestAsync(
+        ControlServerDbContext dbContext,
+        string agvId,
+        long generation,
+        bool ready,
+        CancellationToken cancellationToken)
+    {
+        string[] due = await dbContext.OwnOrderRebuilds.AsNoTracking()
+            .Where(row => row.AgvId == agvId && row.State == OwnOrderRebuildStates.Pending &&
+                          row.Source == OwnOrderRebuildSources.FaultClearedCargoOnBoard && row.CargoProvenAt == null &&
+                          (row.CargoEvidenceRequestedGeneration != generation ||
+                           (ready && !row.CargoEvidenceRequestedWhileReady)))
+            .Select(row => row.RebuildId)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        if (due.Length == 0)
+        {
+            return false;
+        }
+
+        int claimed = await dbContext.OwnOrderRebuilds
+            .Where(row => due.Contains(row.RebuildId) && row.State == OwnOrderRebuildStates.Pending &&
+                          row.CargoProvenAt == null &&
+                          (row.CargoEvidenceRequestedGeneration != generation ||
+                           (ready && !row.CargoEvidenceRequestedWhileReady)))
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(row => row.CargoEvidenceRequestedGeneration, generation)
+                    .SetProperty(row => row.CargoEvidenceRequestedWhileReady, ready),
+                cancellationToken)
+            .ConfigureAwait(false);
+        return claimed > 0;
+    }
+
+    /// <summary>
     /// Whether a problem from <paramref name="again"/> repeats one from <paramref name="first"/> (REQ-0361): after a
     /// cancellation only another cancellation or deletion does; after a cleared fault, anything does -- another FAILED, which
     /// is recorded once it is cleared, or a cancellation.
