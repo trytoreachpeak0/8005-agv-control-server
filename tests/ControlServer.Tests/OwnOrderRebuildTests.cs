@@ -574,6 +574,64 @@ public sealed class OwnOrderRebuildTests
     }
 
     /// <summary>
+    /// 崩在「已决定重建、未建单」之后，重启之前车进了急停（或建单门禁关了）：重启之后不建单，旅程码说出在等什么；车恢复（门禁放行）之后才建，
+    /// 仍只建一张。
+    /// </summary>
+    /// <remarks>
+    /// 独立审查（调度提级为必修 M1）：「已决定」那次保存把记录转成 Ordering，下一轮原本直接按新单号对账建单、不再读车况与门禁——
+    /// 上面那条崩溃用例在重启前没改车况，看不出。意图从没发出过（<c>CreateAttemptCount == 0</c>）时，Ordering 与 Pending 一样要过全部建单前检查。
+    /// </remarks>
+    [Theory]
+    [InlineData("emergency")]
+    [InlineData("create-gate")]
+    [Trait("Requirement", "REQ-0360")]
+    public async Task ARebuildDecidedBeforeACrashChecksTheVehicleAndTheGateAgainAfterTheRestart(string closedBy)
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync();
+        JourneyStopRow[] stopsBefore = await StopsAsync(fixture, before.JourneyId);
+        JourneyStopRow pickup = stopsBefore.Single(stop => stop.StopRole == JourneyStopRoles.Pickup);
+        fixture.Riot.CancelOrder(pickup.UpperId);
+        await TickAndRunAsync(fixture);
+        string newUpperId = (await SingleRebuildAsync(fixture, pickup.UpperId)).NewUpperId;
+        fixture.Riot.CrashOnNextReconcileOf = newUpperId;
+        fixture.Clock.Advance(fixture.Options.OwnOrderRebuildDelay);
+        await fixture.HearFromPeerAsync();
+        await Assert.ThrowsAsync<IOException>(() => fixture.Engine.ExecuteOnceAsync(Token));
+        Assert.Null(fixture.Riot.CrashOnNextReconcileOf);
+        Assert.Equal(OwnOrderRebuildStates.Ordering, (await SingleRebuildAsync(fixture, pickup.UpperId)).State);
+
+        if (closedBy == "emergency")
+        {
+            fixture.Riot.SafetyReasons = ["RIOT_EMERGENCY_NOT_OK"];
+        }
+        else
+        {
+            fixture.RouteCosts.FailFor(pickup.StationRiotId);
+        }
+
+        await fixture.RecreateEngineAsync();
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+        Assert.Equal(
+            closedBy == "emergency" ? "OWN_ORDER_REBUILD_WAITING_VEHICLE" : "OWN_ORDER_REBUILD_BLOCKED_BY_CREATE_GATE",
+            (await fixture.RuntimeAsync()).BlockReasonCode);
+        Assert.Equal(OwnOrderRebuildStates.Ordering, (await SingleRebuildAsync(fixture, pickup.UpperId)).State);
+
+        fixture.Riot.SafetyReasons = [];
+        fixture.RouteCosts.Set(pickup.StationRiotId, 9000);
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+
+        Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+        await AssertRebuiltAsync(fixture, before, stopsBefore, pickup);
+    }
+
+    /// <summary>
     /// 新单建出去之后、还没对账确认之前，它在 RIoT 里就又被取消了：这本身就是「短时二次出问题」，不再重建，
     /// 旅程码 <c>OWN_ORDER_REBUILD_STOPPED</c>，记录写 <c>REBUILT_ORDER_ENDED_BEFORE_CONFIRMATION</c>。
     /// </summary>
