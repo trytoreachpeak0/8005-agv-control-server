@@ -95,6 +95,52 @@ public sealed class OwnOrderRebuildTests
         Assert.Equal((before.JourneyId, JourneyRuntimeStage.AwaitingUnloadResult), (arrived.JourneyId, arrived.Stage));
     }
 
+    /// <summary>
+    /// 这张单是本服务端自己取消的（释放服务在车不再合格时经订单命令面发过 <c>CANCEL</c>）：不是「在 RIoT 里被人取消」，不重建。
+    /// 旅程照 #316 说出原因、等人，不建新单，也不记重建。
+    /// </summary>
+    /// <remarks>
+    /// 取消是服务端有意做的决定——那一刻它判定这辆车不该再跑这一趟——把它当成误操作重建，等于撤销自己的决定。
+    /// 今天释放服务取消成功之后在同一轮就关闭旅程，走到这里要靠「取消成了、释放没落库」这类中断；这一条把「自己取消的不重建」
+    /// 从「今天走不到」搬到构造上。
+    /// </remarks>
+    [Fact]
+    public async Task AnOrderThisServerCancelledItselfIsNotRebuilt()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync();
+        await using (ControlServerDbContext writing = new(fixture.DbOptionsForTests))
+        {
+            writing.RiotOrderCommandAudit.Add(new RiotOrderCommandAuditRow
+            {
+                CommandAuditId = "L1-OWN-CANCEL-1",
+                CommandType = RiotCommandTypeNames.CancelOrder,
+                AgvId = before.AgvId,
+                TargetUpperId = before.PickupUpperId,
+                TargetOrderId = "ORDER-TO_PICKUP",
+                AttemptNumber = 1,
+                RequestSemanticSha256 = new string('a', 64),
+                IssuedAt = fixture.Clock.GetUtcNow(),
+                Outcome = RiotOrderCommandOutcome.Confirmed,
+                ReconciledAt = fixture.Clock.GetUtcNow(),
+            });
+            await writing.SaveChangesAsync(Token);
+        }
+
+        fixture.Riot.CancelOrder(before.PickupUpperId);
+        await TickAndRunAsync(fixture);
+        await PassTheDelayAsync(fixture);
+        await PassTheDelayAsync(fixture);
+
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+        Assert.Equal("ORDER_ENDED_WITHOUT_ARRIVAL", (await fixture.RuntimeAsync()).BlockReasonCode);
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        Assert.Empty(await reading.OwnOrderRebuilds.AsNoTracking().ToArrayAsync(Token));
+        Assert.Contains(fixture.EngineLog.Entries, entry =>
+            entry.Message.Contains(before.PickupUpperId, StringComparison.Ordinal) &&
+            entry.Message.Contains("cancelled by this server", StringComparison.Ordinal));
+    }
+
     // ---- 护栏二：车况不允许就不建 ------------------------------------------------------------------------------
 
     /// <summary>
