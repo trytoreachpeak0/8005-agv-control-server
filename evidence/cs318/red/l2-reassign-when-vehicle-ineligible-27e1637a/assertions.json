@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "scenario": "reassign-when-vehicle-ineligible",
+  "runId": "20260923T052000870Z",
+  "outcome": "FAIL",
+  "failureReason": "Timed out after 60s waiting for: the demand was released from the primary vehicle. Last observed: {\"RemovedAt\":null,\"RemovalReason\":null,\"Stage\":\"AwaitingPickupArrival\",\"BlockReasonCode\":\"ORDER_ENDED_WITHOUT_ARRIVAL\"}",
+  "identity": {
+    "rig": "SyntheticOnboard",
+    "batchId": "unspecified",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260923T052000870Z",
+    "fleet": [
+      "AGV-L2-001/BROKERX-L2-0001",
+      "AGV-L2-002/BROKERX-L2-0002"
+    ],
+    "vehicleKey": "BROKERX-L2-0001",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "controlServerCommit": "27e1637a892bd59acafd62f22bdc4e4a4e333754",
+    "agvId": "AGV-L2-001"
+  },
+  "assertions": [
+    {
+      "id": "L2-RVI-01",
+      "description": "主车接下需求，正开往取货站（取货单已确认）",
+      "outcome": "PASS",
+      "expected": "AGV-L2-001",
+      "actual": "AGV-L2-001"
+    },
+    {
+      "id": "L2-RVI-02",
+      "description": "线上收到一条 CMD_ORDER_CANCEL，打在主车那张取货单上",
+      "outcome": "PASS",
+      "expected": "CMD_ORDER_CANCEL @ ORDER-000001",
+      "actual": "1 条"
+    }
+  ]
+}

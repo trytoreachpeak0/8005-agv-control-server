@@ -1601,6 +1601,117 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                     b.ToTable("OrderIntents");
                 });
 
+            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.OwnOrderRebuildRow", b =>
+                {
+                    b.Property<string>("RebuildId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AgvId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CargoEvidenceMessageId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("CargoEvidenceRequestedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("CargoEvidenceRequestedGeneration")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("CargoEvidenceRequestedWhileReady")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset?>("CargoProvenAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DemandId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("DueAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EndedOrderId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("EndedOrderState")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("EndedUpperId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("IncidentAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("JourneyId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("NewMovementLegId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("NewUpperId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OperatorId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("RebuiltAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("RecordedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("State")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("StopId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("StoppedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("StoppedReason")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("VehicleKey")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("WaitingReason")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("WaitingSince")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("RebuildId");
+
+                    b.HasIndex("DemandId");
+
+                    b.HasIndex("EndedUpperId")
+                        .IsUnique();
+
+                    b.HasIndex("NewUpperId")
+                        .IsUnique();
+
+                    b.HasIndex("AgvId", "State");
+
+                    b.HasIndex("JourneyId", "StopId");
+
+                    b.ToTable("OwnOrderRebuilds", (string)null);
+                });
+
             modelBuilder.Entity("ControlServer.Infrastructure.Persistence.PackageCapacityRuleRow", b =>
                 {
                     b.Property<string>("RuleId")

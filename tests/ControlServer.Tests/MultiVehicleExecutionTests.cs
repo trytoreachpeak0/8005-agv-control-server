@@ -1321,6 +1321,7 @@ public sealed partial class MultiVehicleExecutionTests
                 onboardFacts,
                 new DispatchZoneParameterStore(Context, JourneyRuntimeWorkerTestKit.CreateGovernedPublisher(Context)),
                 SlotGroupFullness,
+                Riot,
                 options,
                 Clock,
                 EngineLog);
@@ -1836,9 +1837,28 @@ public sealed partial class MultiVehicleExecutionTests
     /// </summary>
     private sealed class FleetRiot(MovableClock clock, JourneyRuntimeOptions options)
         : IRiotMovementGateway, IRiotVehicleFacts, IRiotMapStationCatalog, IVehicleMotionFacts,
-          IRiotRouteCostProbe, IRiotOrderCommandGateway, IRiotVehicleEmergencyFacts, IRiotVehicleOrderFacts
+          IRiotRouteCostProbe, IRiotOrderCommandGateway, IRiotVehicleEmergencyFacts, IRiotVehicleOrderFacts,
+          IRiotVehicleSafetyFacts
     {
         private readonly Dictionary<string, RiotOrderObservation> _orders = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// RIoT's vehicle safety read (control-server#318's second guard): every vehicle stopped and nothing in the way, unless
+        /// <see cref="SafetyReasons"/> names something.
+        /// </summary>
+        public Task<RiotVehicleSafetyObservation> ReadVehicleSafetyAsync(string vehicleKey, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult(new RiotVehicleSafetyObservation(
+                vehicleKey,
+                SafetyReasons.Length == 0 ? RiotVehicleMotionState.Stopped : RiotVehicleMotionState.Unknown,
+                clock.GetUtcNow(),
+                "L1",
+                SafetyReasons));
+        }
+
+        /// <summary>What the safety read names for every vehicle; empty means stopped with nothing in the way.</summary>
+        public string[] SafetyReasons { get; set; } = [];
 
         /// <summary>The vehicle key whose reads never come back, or null.</summary>
         public string? HangOn { get; set; }

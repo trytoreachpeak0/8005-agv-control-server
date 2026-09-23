@@ -94,9 +94,19 @@ public sealed class JourneyClosureSingleExitArchitectureTests
         string[] silent = [.. closers.Where(file => !sends.IsMatch(CodeOnly(File.ReadAllText(file)))).Select(Relative)];
 
         Assert.Empty(silent);
-        // 判据要有东西可判：今天是引擎、释放服务、协调器与故障人工清除四个文件。
-        Assert.True(closers.Length >= 4, $"Only {closers.Length} closing files found; the scan is looking in the wrong place.");
+        // 判据要有东西可判：点名今天会收尾的三个文件，扫描必须认出每一个——比只数个数更硬，数够了也可能是认错了文件。
+        // 故障人工清除（VehicleFaultRecoveryService）原是第四个；control-server#318 起清除之后不收尾、留在本车重建，
+        // 那个文件里已没有收尾也没有发送，它离开这张表是行为变了，不是扫描漏了。哪天它又收尾，上面的 silent 会先替它说话。
+        Assert.Superset(KnownClosers, new HashSet<string>(closers.Select(Relative), StringComparer.Ordinal));
     }
+
+    /// <summary>今天会让旅程收尾的产品文件（出口与收尾尾巴自己的文件除外）。</summary>
+    private static readonly HashSet<string> KnownClosers = new(StringComparer.Ordinal)
+    {
+        "src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs",
+        "src/ControlServer.Host/Runtime/Release/DemandReleaseService.cs",
+        "src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs",
+    };
 
     /// <summary>构造了收尾尾巴、却从不让旅程收尾的文件。今天没有。</summary>
     private static readonly HashSet<string> ConstructsTerminationWithoutClosing = new(StringComparer.Ordinal);

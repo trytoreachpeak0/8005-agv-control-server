@@ -179,6 +179,17 @@ public sealed partial class OnboardMessageProcessor(
                 state.SessionGeneration!.Value,
                 cancellationToken).ConfigureAwait(false);
         }
+        // A rebuild after a cleared fault with cargo on board waits for the vehicle to show the cargo in its slots (REQ-0362,
+        // control-server#318): ask for a snapshot. Recorded only here, where AppendSafetySnapshotRequest is sure to send it --
+        // past the handshake, and not on the recovery report that ends it, whose answer the vehicle still reads as the handshake's.
+        if (state.HandshakeCompleted && messageType != "RecoveryStateReport" &&
+            await OwnOrderRebuilds.ClaimCargoEvidenceRequestAsync(
+                dbContext, agvId, state.SessionGeneration!.Value, state.Readiness == SessionReadiness.Ready,
+                timeProvider.GetUtcNow(), cancellationToken)
+                .ConfigureAwait(false))
+        {
+            state.SafetySnapshotRequestDue = true;
+        }
         return AppendSafetySnapshotRequest(capturedResponse, state);
     }
 

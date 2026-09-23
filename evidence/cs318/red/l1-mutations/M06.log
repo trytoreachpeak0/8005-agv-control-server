@@ -1,0 +1,83 @@
+# M06: behind the readiness gate, the rebuild may create
+# file: src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+# diff lines changed: 1 -> 1
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Release\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\src\ControlServer.Dashboard\bin\Release\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\src\ControlServer.Application\bin\Release\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Release\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.ProtocolFaultProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Release\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.FakeRiot -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Release\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Release\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Release\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FieldOps -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Release\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.Host -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\src\ControlServer.Host\bin\Release\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.SchemaConformance -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Release\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.Tests -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll
+
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:05.51
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+  Failed ControlServer.Tests.OwnOrderRebuildTests.AnOrderCancelledWhileTheSessionIsNotReadyOnItsOwnOrderWaitsForTheSessionBeforeItIsRebuilt [534 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("PENDING", "ONBOARD_SESSION_NOT_READY")
+Actual:   Tuple ("PENDING", "ONBOARD_FACTS_NOT_READY")
+  Stack Trace:
+     at ControlServer.Tests.OwnOrderRebuildTests.AnOrderCancelledWhileTheSessionIsNotReadyOnItsOwnOrderWaitsForTheSessionBeforeItIsRebuilt() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildTests.cs:line 930
+   at ControlServer.Tests.OwnOrderRebuildTests.AnOrderCancelledWhileTheSessionIsNotReadyOnItsOwnOrderWaitsForTheSessionBeforeItIsRebuilt() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildTests.cs:line 938
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderRebuildsOnceTheSessionIsReady(cargo: "empty") [630 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("PENDING", "ONBOARD_SESSION_NOT_READY")
+Actual:   Tuple ("PENDING", "ONBOARD_FACTS_NOT_READY")
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderRebuildsOnceTheSessionIsReady(String cargo) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1360
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderRebuildsOnceTheSessionIsReady(String cargo) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1361
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderRebuildsOnceTheSessionIsReady(String cargo) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1374
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderRebuildsOnceTheSessionIsReady(cargo: "loaded") [3 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("PENDING", "ONBOARD_SESSION_NOT_READY")
+Actual:   Tuple ("PENDING", "ONBOARD_FACTS_NOT_READY")
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderRebuildsOnceTheSessionIsReady(String cargo) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1360
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderRebuildsOnceTheSessionIsReady(String cargo) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1361
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderRebuildsOnceTheSessionIsReady(String cargo) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 1374
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsBehindTheGateWhenTheSessionIsHeldForMoreThanTheVehicle(held: "operation-recovery") [457 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("PENDING", "ONBOARD_SESSION_NOT_READY")
+Actual:   Tuple ("PENDING", "ONBOARD_FACTS_NOT_READY")
+  Stack Trace:
+     at ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsBehindTheGateWhenTheSessionIsHeldForMoreThanTheVehicle(String held) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildTests.cs:line 975
+   at ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsBehindTheGateWhenTheSessionIsHeldForMoreThanTheVehicle(String held) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildTests.cs:line 982
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsBehindTheGateWhenTheSessionIsHeldForMoreThanTheVehicle(held: "silent") [413 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("PENDING", "ONBOARD_SESSION_NOT_READY")
+Actual:   Tuple ("PENDING", "ONBOARD_FACTS_NOT_READY")
+  Stack Trace:
+     at ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsBehindTheGateWhenTheSessionIsHeldForMoreThanTheVehicle(String held) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildTests.cs:line 975
+   at ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsBehindTheGateWhenTheSessionIsHeldForMoreThanTheVehicle(String held) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildTests.cs:line 982
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     5, Passed:   319, Skipped:     0, Total:   324, Duration: 1 m 50 s - ControlServer.Tests.dll (net8.0)
+[xUnit.net 00:00:27.04]     ControlServer.Tests.OwnOrderRebuildTests.AnOrderCancelledWhileTheSessionIsNotReadyOnItsOwnOrderWaitsForTheSessionBeforeItIsRebuilt [FAIL]
+[xUnit.net 00:00:29.46]     ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderRebuildsOnceTheSessionIsReady(cargo: "empty") [FAIL]
+[xUnit.net 00:00:32.49]     ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderRebuildsOnceTheSessionIsReady(cargo: "loaded") [FAIL]
+[xUnit.net 00:00:41.02]     ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsBehindTheGateWhenTheSessionIsHeldForMoreThanTheVehicle(held: "operation-recovery") [FAIL]
+[xUnit.net 00:00:41.44]     ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsBehindTheGateWhenTheSessionIsHeldForMoreThanTheVehicle(held: "silent") [FAIL]

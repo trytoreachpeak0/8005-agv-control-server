@@ -2,9 +2,11 @@
 
 <#
 车辆故障的人工清除：在途单 FAILED 的车被判为疑似故障、被急停锁住；人工解除急停、确认故障已排除之后，服务端自己核对判据、
-清除故障，没取货的需求释放改派，车重新接单。
+清除故障；需求留在本车，延迟之后为同一辆车、同一条需求重建运单，车接着走。
 
-载体是 control-server#299（#299 阶段一方案 T2，用户 2026-09-22 定 F-a 与 HTTP 入口）。
+载体是 control-server#299（#299 阶段一方案 T2，用户 2026-09-22 定 F-a 与 HTTP 入口）；清除之后的处置由 control-server#318 改写：
+原来是「没取货的需求释放改派、车重新接单」，用户 2026-09-23 推翻（issuecomment-5787511271：「不改派啊，留在本车上」），
+改为同车重建。L2-VFC-04～06 的判据随之翻转，依据就是这一条。
 
 **为什么要有这条场景。**修之前，订单 FAILED 引起的故障没有任何办法清掉：唯一的清除路径 `ResumeAsync` 要求订单被 Hold 成
 PAUSED，FAILED 永远不是。车一直不接单、需求一直不改派，唯一的出口是改库。这条场景按现场的顺序走一遍新出口：
@@ -13,9 +15,11 @@ PAUSED，FAILED 永远不是。车一直不接单、需求一直不改派，唯�
 2. 锁着的车清不了故障：入口回 409，理由点名 FAULT_RECOVERY_EMERGENCY_LATCHED。清除不解除急停。
 3. 按 REQ-0356 人工解除急停，RIoT 解锁。
 4. 没确认「故障已排除」：409；RIoT 里这台车还有未结束的订单：409，理由把两项都列出来。什么都不改。
-5. 条件齐全：200，故障清除，操作员记进 ClearedReason；需求释放改派，旧旅程关闭。
-6. 车重新接单：同一条需求在新旅程上再派出去；之后几轮不再记新的故障。
-7. 同一请求再来一次：200 AlreadyCleared，不碰新旅程。
+5. 条件齐全：200，故障清除，操作员记进 ClearedReason；处置 REBUILD_SCHEDULED：需求不释放，旅程不关闭、停在原阶段，
+   码 VEHICLE_FAULT_CLEARED_NOTHING_ON_BOARD。
+6. 延迟之后（setup 调成 8 秒）：取货停靠改指向一张服务端自己的新单，同车、同需求、同一站，RIoT 上有这张单；仍是同一趟旅程，
+   之后几轮不再记新的故障、不再急停。
+7. 同一请求再来一次：200 AlreadyCleared，旅程表一行不变。
 8. 已经清过的车，再来一个没署名的请求：409，理由只有 FAULT_RECOVERY_OPERATOR_UNIDENTIFIED，不答「已经清过」。
 
 **假 RIoT 不替服务端锁、解急停**，命令只记录，后果由场景照真实 RIoT 的样子摆出来。
@@ -218,31 +222,45 @@ $cleared = Invoke-Recovery @{} 'complete'
 $fault = Get-Fault
 $journeysAfterClear = Get-Journeys
 $old = @($journeysAfterClear | Where-Object { [string]$_.JourneyId -eq [string]$journey.JourneyId })
+$membership = Invoke-L2Query -Connection $connection `
+    -Sql "SELECT RemovedAt FROM JourneyDemands WHERE JourneyId = '$([string]$journey.JourneyId)'"
 $assertions.Add(
     'L2-VFC-04',
-    '条件齐全：入口回 200，结果 Cleared、处置 RELEASED_FOR_REDISPATCH；故障 Level None，ClearedReason 记着操作员 L2-OPERATOR-07；旧旅程关闭',
+    '条件齐全：入口回 200，结果 Cleared、处置 REBUILD_SCHEDULED；故障 Level None，ClearedReason 记着操作员 L2-OPERATOR-07；旧旅程不关闭、停在开往取货站，码 VEHICLE_FAULT_CLEARED_NOTHING_ON_BOARD，需求不释放（翻转自 #299 的「释放改派、旧旅程关闭」，依据 issuecomment-5787511271）',
     ($cleared.Status -eq 200 -and [string]$cleared.Body.outcome -eq 'Cleared' -and
-        [string]$cleared.Body.disposition -eq 'RELEASED_FOR_REDISPATCH' -and
+        [string]$cleared.Body.disposition -eq 'REBUILD_SCHEDULED' -and
         [string]$fault[0].Level -eq 'None' -and [string]$fault[0].ClearedReason -like '*L2-OPERATOR-07*' -and
-        $old.Count -eq 1 -and [string]$old[0].Stage -eq 'Completed'),
-    '200 / Cleared / RELEASED_FOR_REDISPATCH / None / L2-OPERATOR-07 / Completed',
-    "$($cleared.Status) / $([string]$cleared.Body.outcome) / $([string]$cleared.Body.disposition) / $([string]$fault[0].Level) / $([string]$fault[0].ClearedReason) / $(if ($old.Count) { [string]$old[0].Stage } else { '(没有旧旅程)' })")
+        $journeysAfterClear.Count -eq 1 -and $old.Count -eq 1 -and [string]$old[0].Stage -eq 'AwaitingPickupArrival' -and
+        [string]$old[0].BlockReasonCode -eq 'VEHICLE_FAULT_CLEARED_NOTHING_ON_BOARD' -and
+        $membership.Count -eq 1 -and ($null -eq $membership[0].RemovedAt -or [string]$membership[0].RemovedAt -eq '')),
+    '200 / Cleared / REBUILD_SCHEDULED / None / L2-OPERATOR-07 / 1 趟 AwaitingPickupArrival VEHICLE_FAULT_CLEARED_NOTHING_ON_BOARD / 需求未移除',
+    "$($cleared.Status) / $([string]$cleared.Body.outcome) / $([string]$cleared.Body.disposition) / $([string]$fault[0].Level) / $([string]$fault[0].ClearedReason) / $($journeysAfterClear.Count) 趟 $(if ($old.Count) { "$([string]$old[0].Stage) $([string]$old[0].BlockReasonCode)" } else { '(没有旧旅程)' }) / $(if ($membership.Count -eq 1 -and ($null -eq $membership[0].RemovedAt -or [string]$membership[0].RemovedAt -eq '')) { '需求未移除' } else { '需求已移除' })")
 
-# --- 6. 车重新接单，同一条需求再派出去 --------------------------------------------------------------------------
+# --- 6. 延迟之后：同车同需求重建，车接着走 ----------------------------------------------------------------------
 
-$redispatched = Wait-L2ConditionOrLast -Description 'the same demand was dispatched again on a new journey' `
-    -Journal $journal -Criterion 'redispatched' -TimeoutSeconds 90 `
+# 停靠改指向新单与新意图在一次保存里，RIoT 上的单与意图的确认在之后：等后一个，读不到就把最后一次读到的样子交给判据
+# （README 第 14 条）。
+$rebuilt = Wait-L2ConditionOrLast -Description 'the order was rebuilt for the same vehicle and demand, and confirmed' `
+    -Journal $journal -Criterion 'order-rebuilt' -TimeoutSeconds 60 `
     -Probe {
-        $rows = Get-Journeys
-        , @($rows | Where-Object { [string]$_.JourneyId -ne [string]$journey.JourneyId -and [string]$_.Stage -ne 'Completed' })
+        $rows = Invoke-L2Query -Connection $connection -Sql (
+            "SELECT s.UpperId, o.DemandId, o.VehicleKey, o.Status, o.DestinationStationId, r.JourneyId, r.Stage FROM JourneyStops s " +
+            "JOIN OrderIntents o ON o.UpperId = s.UpperId JOIN JourneyRuntimes r ON r.JourneyId = s.JourneyId " +
+            "WHERE s.JourneyId = '$([string]$journey.JourneyId)' AND s.StopRole = 'PICKUP'")
+        if ($rows.Count -ge 1) { $rows[0] } else { $null }
     } `
-    -Until { param($rows) @($rows).Count -eq 1 }
+    -Until { param($v) $v -and [string]$v.UpperId -ne [string]$intent.UpperId -and [string]$v.Status -eq 'CONFIRMED' }
+$riotOrder = @($riot.Snapshot().body.orders | Where-Object { $rebuilt -and [string]$_.upperId -eq [string]$rebuilt.UpperId })
 $assertions.Add(
     'L2-VFC-05',
-    '车重新接单：同一条需求在一趟新旅程上再派给这台车（需求改派、车恢复可派）',
-    (@($redispatched).Count -eq 1 -and [string]@($redispatched)[0].DemandId -eq [string]$journey.DemandId),
-    "1 趟新旅程 / 需求 $([string]$journey.DemandId)",
-    "$(@($redispatched).Count) 趟 / $(@($redispatched | ForEach-Object { [string]$_.DemandId }) -join ',')")
+    '延迟之后重建：同一趟旅程的取货停靠改指向一张服务端自己的新单（W2G-…），意图已确认，同一条需求、同一辆车；RIoT 上有这张单、指派给这辆车；没有新旅程',
+    ($null -ne $rebuilt -and [string]$rebuilt.UpperId -ne [string]$intent.UpperId -and [string]$rebuilt.UpperId -like 'W2G-*' -and
+        [string]$rebuilt.Status -eq 'CONFIRMED' -and [string]$rebuilt.DemandId -eq [string]$journey.DemandId -and
+        [string]$rebuilt.VehicleKey -eq $vehicleKey -and [string]$rebuilt.JourneyId -eq [string]$journey.JourneyId -and
+        $riotOrder.Count -eq 1 -and [string]$riotOrder[0].appointVehicleKey -eq $vehicleKey -and (Get-Journeys).Count -eq 1),
+    "新单号 W2G-… / CONFIRMED / 需求 $([string]$journey.DemandId) / $vehicleKey / RIoT 1 张 / 1 趟旅程",
+    $(if ($null -eq $rebuilt) { '(取货停靠读不到)' } else {
+        "$($rebuilt.UpperId) / $($rebuilt.Status) / 需求 $($rebuilt.DemandId) / $($rebuilt.VehicleKey) / RIoT $($riotOrder.Count) 张 / $((Get-Journeys).Count) 趟旅程" }))
 
 $null = Wait-L2Iterations -Riot $riot -Count 4 -TimeoutSeconds 60 -Journal $journal
 $fault = Get-Fault
@@ -265,7 +283,7 @@ $journeysBeforeRepeat = Get-JourneysJson
 $again = Invoke-Recovery @{} 'repeat'
 $assertions.Add(
     'L2-VFC-07',
-    '同一个清除请求再来一次：200、AlreadyCleared，旅程表一行不变（不碰清除之后接的新旅程）',
+    '同一个清除请求再来一次：200、AlreadyCleared，旅程表一行不变（不碰清除之后重建出来接着走的这趟旅程）',
     ($again.Status -eq 200 -and [string]$again.Body.outcome -eq 'AlreadyCleared' -and
         (Get-JourneysJson) -eq $journeysBeforeRepeat),
     '200 / AlreadyCleared / 旅程不变',
@@ -283,4 +301,4 @@ $assertions.Add(
     '409 / FAULT_RECOVERY_OPERATOR_UNIDENTIFIED / 旅程不变',
     "$($unsigned.Status) / $($unsignedReasons -join ',') / $(if ((Get-JourneysJson) -eq $journeysBeforeRepeat) { '旅程不变' } else { '旅程变了' })")
 
-$journal.Note('故障人工清除：锁着清不了；解除急停后条件不全就拒并全列理由；齐全则清除、释放改派、车重新接单、不再记故障；重复请求不做事；没署名的重复请求照样被拒。')
+$journal.Note('故障人工清除：锁着清不了；解除急停后条件不全就拒并全列理由；齐全则清除、需求留在本车、延迟后同车重建、不再记故障；重复请求不做事；没署名的重复请求照样被拒。')

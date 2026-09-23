@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "scenario": "reassign-when-vehicle-ineligible",
+  "runId": "20260923T052607546Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260923T052607546Z",
+    "controlServerCommit": "38dc7f194ed57d17829828412ec49d49074dbc4c",
+    "vehicleKey": "BROKERX-L2-0001",
+    "fleet": [
+      "AGV-L2-001/BROKERX-L2-0001",
+      "AGV-L2-002/BROKERX-L2-0002"
+    ],
+    "rig": "SyntheticOnboard",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "agvId": "AGV-L2-001",
+    "batchId": "unspecified"
+  },
+  "assertions": [
+    {
+      "id": "L2-RVI-01",
+      "description": "主车接下需求，正开往取货站（取货单已确认）",
+      "outcome": "PASS",
+      "expected": "AGV-L2-001",
+      "actual": "AGV-L2-001"
+    },
+    {
+      "id": "L2-RVI-02",
+      "description": "线上收到一条 CMD_ORDER_CANCEL，打在主车那张取货单上",
+      "outcome": "PASS",
+      "expected": "CMD_ORDER_CANCEL @ ORDER-000001",
+      "actual": "1 条"
+    },
+    {
+      "id": "L2-RVI-03",
+      "description": "释放：归属标 RELEASED_FOR_REDISPATCH，主车的旅程关闭（Completed / RELEASED_FOR_REDISPATCH）",
+      "outcome": "PASS",
+      "expected": "RELEASED_FOR_REDISPATCH / Completed / RELEASED_FOR_REDISPATCH",
+      "actual": "RELEASED_FOR_REDISPATCH / Completed / RELEASED_FOR_REDISPATCH"
+    },
+    {
+      "id": "L2-RVI-04",
+      "description": "取消只发了一次，审计行对账结果是 Confirmed（结果未知不释放）",
+      "outcome": "PASS",
+      "expected": "1 / Confirmed",
+      "actual": "1 / Confirmed"
+    },
+    {
+      "id": "L2-RVI-05",
+      "description": "需求回到调度后由第二台车受理：新旅程、新代次、新 upperId（旧 upperId 不复用）",
+      "outcome": "PASS",
+      "expected": "AGV-L2-002 / upperId ≠ W2G-16392efb-32c6-4564-8894-b4a6648e7cac-PICKUP-1 / 代次 > 1",
+      "actual": "AGV-L2-002 / W2G-16392efb-32c6-4564-8894-b4a6648e7cac-PICKUP-2 / 代次 2"
+    },
+    {
+      "id": "L2-RVI-06",
+      "description": "旧 upperId 只属于第一趟那一张订单，没有出现在任何新订单上",
+      "outcome": "PASS",
+      "expected": 1,
+      "actual": 1
+    },
+    {
+      "id": "L2-RVI-07",
+      "description": "等待年龄没有重置：积压行的 FirstSeenAt 与释放之前相同，再受理后又带上受理时刻",
+      "outcome": "PASS",
+      "expected": "2026-09-23 05:26:45.4668869+00:00 / 有受理时刻",
+      "actual": "2026-09-23 05:26:45.4668869+00:00 / 有受理时刻"
+    },
+    {
+      "id": "L2-RVI-08",
+      "description": "第二趟派往取货站的那一版计划发出了，带着新取货腿（没有被「已发过」吞掉）",
+      "outcome": "PASS",
+      "expected": "≥ 1",
+      "actual": 1
+    }
+  ]
+}
