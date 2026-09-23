@@ -162,6 +162,12 @@ public sealed class JourneyRuntimeEngine(
     public const string StationTimeoutDoorNotClosedReason = "STATION_TIMEOUT_DOOR_NOT_CLOSED";
 
     /// <summary>
+    /// 本停靠有一次装货纠错还没走完：离站等待停在这里，等纠错结清（ADR-cross-0054）。这之前它只以字面量写在判定处，
+    /// control-server#331 把它提成常量，因为「推进失败不覆盖它」要从同一处引用它。
+    /// </summary>
+    public const string LoadCorrectionInProgressReason = "LOAD_CORRECTION_IN_PROGRESS";
+
+    /// <summary>
     /// A loaded journey at its AREA machine station waited longer than
     /// <see cref="JourneyRuntimeOptions.AreaEndAdmissionRevokedTimeout"/> for the station to admit its task type again
     /// (control-server#198). The journey is <see cref="JourneyRuntimeStage.Blocked"/>: the goods on the vehicle are an
@@ -455,7 +461,7 @@ public sealed class JourneyRuntimeEngine(
             {
                 // 先让这辆车在看板上说出「这一轮推进失败了」，再把异常原样抛出去：轮次仍然 fail-closed，
                 // 2002 仍然记的是原来那一个异常（control-server#331）。
-                await NameFailedAdvanceAsync(runtime, cancellationToken).ConfigureAwait(false);
+                await NameFailedAdvanceAsync(runtime, error, cancellationToken).ConfigureAwait(false);
                 throw;
             }
 
@@ -566,18 +572,22 @@ public sealed class JourneyRuntimeEngine(
     /// <c>NameStalledOrderAsync</c> 下一轮写回原码时开始时间归零、升级档位清零、告警重发（control-server#331 审查必修 2）。
     /// </para>
     /// <para>
-    /// <b><c>ONBOARD_SESSION_NOT_READY</c> 要分真假。</b>会话此刻确实没就绪时它是真的，而这一轮的失败多半就是它造成的
-    /// （连接不在，发送抛 <c>IOException</c>），这时不覆盖：真车载端挂着本服务端在途单时整段路都是这个码，覆盖掉会让两个码
+    /// <b><c>ONBOARD_SESSION_NOT_READY</c> 要分真假。</b>会话此刻确实没就绪、这一轮又是传输类失败时（连接不在，发送抛
+    /// <c>IOException</c>，见 <see cref="IsTransportFailure"/>），它是真的，失败就是它造成的，这时不覆盖：真车载端挂着本服务端在途单时整段路都是这个码，覆盖掉会让两个码
     /// 每轮来回切——开始时间每轮归零，<c>ControlServerDbContext.ReconcileJourneyWaits</c> 里在路上这个码不算「在等」，
     /// 等待起点与告警也每轮清零重来（审查建议 3）。会话已经回到 <c>Ready</c> 而码还留着，它就是过时的——control-server#331
-    /// 的现场正是这样，从断线那一刻留到最后——这时才换成「推进失败」。
+    /// 的现场正是这样，从断线那一刻留到最后——这时才换成「推进失败」。与传输无关的失败，会话未就绪也照样换成推进失败（第三轮审查
+    /// 建议 3）：那种失败不是未就绪造成的，归给它会让看板一路说一件不相干的事。
     /// </para>
     /// <para>
     /// <b>写码失败不许顶替原异常。</b>原异常才是这一轮真正出的事；这里再抛一个（比如数据库也不可用）会让 2002 记下
     /// 一个与病因无关的错误。所以这里自己吞掉并单独记一条 2128。
     /// </para>
     /// </remarks>
-    private async Task NameFailedAdvanceAsync(JourneyRuntimeRow runtime, CancellationToken cancellationToken)
+    private async Task NameFailedAdvanceAsync(
+        JourneyRuntimeRow runtime,
+        Exception failure,
+        CancellationToken cancellationToken)
     {
         string journeyId = runtime.JourneyId;
         try
@@ -590,6 +600,7 @@ public sealed class JourneyRuntimeEngine(
                 string.Equals(current.BlockReasonCode, AdvanceFailedReason, StringComparison.Ordinal) ||
                 CarriesACodeThatNamesAWaitOnAPerson(current) ||
                 (string.Equals(current.BlockReasonCode, JourneyWaitClassification.SessionNotReadyReason, StringComparison.Ordinal) &&
+                 IsTransportFailure(failure) &&
                  await CurrentReadySessionAsync(current.AgvId, cancellationToken).ConfigureAwait(false) is null))
             {
                 return;
@@ -1798,10 +1809,14 @@ public sealed class JourneyRuntimeEngine(
     /// </para>
     /// <para>
     /// <b>这一段可能从头重跑（control-server#331）。</b>它做完的标志是调用方随后那次阶段前移；断线打断在中间时阶段不动，
-    /// 重连后整段再来一遍，而前半段车早已确认。车辆业务状态与清单两张因此带 <c>keepAcknowledgedIgnoring</c>：车确认过的那一版，
+    /// 重连后整段再来一遍，而前半段车早已确认。四张因此都带 <c>keepAcknowledgedIgnoring</c>：车确认过的那一版，
     /// 除清单的期限外一字不差就沿用它，不再入队（期限会因 ADR-cross-0055 的断联重填合法地变；送不到车上归 control-server#339）。
     /// 任何别的不同照旧交给重放校验去拒——那说明同一 messageId 下内容真的变了，看板会显示 <see cref="AdvanceFailedReason"/>。
-    /// 到站计划与录入请求不带：前者在失败现场里正是没确认的那一行，由重放按新的一代补发；后者车从没确认过。
+    /// </para>
+    /// <para>
+    /// <b>到站计划与录入请求也带，因为断线不止一次</b>（第三轮审查必修 1）。只断一次时它们是没确认的行，由每轮开头的补发按新的一代
+    /// 改写，用不上沿用；断第二次时，上一代补发的计划可能已经被确认，下一代重跑时就撞上「已确认即拒」，与第一次断线时车辆业务状态
+    /// 那一张是同一个形状。没确认的行不受影响：沿用只看已确认的行。
     /// </para>
     /// </remarks>
     private async Task PublishPickupStateAsync(
@@ -1845,8 +1860,11 @@ public sealed class JourneyRuntimeEngine(
             JourneyPlanBuilder.Plan(
                 runtime, stops.Stops, stop, arrivedAtCurrent: true,
                 PlanRevisionAt(runtime.PlanRevision, stop, arrivedAtStop: true)),
-            cancellationToken).ConfigureAwait(false);
-        await PublishEntryRequestAsync(runtime, stops, session, cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            keepAcknowledgedIgnoring: NothingButTheEnvelope).ConfigureAwait(false);
+        await PublishEntryRequestAsync(
+            runtime, stops, session, cancellationToken, keepAcknowledgedIgnoring: NothingButTheEnvelope)
+            .ConfigureAwait(false);
     }
 
     /// <summary>
@@ -1904,7 +1922,8 @@ public sealed class JourneyRuntimeEngine(
     }
 
     /// <summary>
-    /// 到站那一段重跑时，车辆业务状态沿用车已确认那一版的条件：只有信封的代次与发送时间可以不同（control-server#331）。
+    /// 到站那一段重跑时，车辆业务状态、到站计划与录入请求沿用车已确认那一版的条件：只有信封的代次与发送时间可以不同
+    /// （control-server#331）。
     /// </summary>
     private static readonly IReadOnlySet<string> NothingButTheEnvelope = new HashSet<string>(StringComparer.Ordinal);
 
@@ -1920,7 +1939,8 @@ public sealed class JourneyRuntimeEngine(
         JourneyRuntimeRow runtime,
         JourneyStopCursor stops,
         SessionRecoveryRow session,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlySet<string>? keepAcknowledgedIgnoring = null)
     {
         JourneyStopRow stop = stops.Current;
         IReadOnlyList<JourneyStopDemand> outstanding = stops.OutstandingAtCurrentStop;
@@ -1947,7 +1967,8 @@ public sealed class JourneyRuntimeEngine(
                 stop.StationId,
                 revision,
                 [.. outstanding.Select(item => item.Demand.Sublot)]),
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            keepAcknowledgedIgnoring).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -3607,6 +3628,26 @@ public sealed class JourneyRuntimeEngine(
     }
 
     /// <summary>
+    /// 这一轮的失败是不是传输类的：连接不在或断在半路（<see cref="IOException"/> 一族，含 <c>OnboardPeer</c> 在没有已恢复的对端时抛的
+    /// 那一种，以及 <see cref="System.Net.Sockets.SocketException"/>），沿内层异常一路找（control-server#331 第三轮审查建议 3）。
+    /// </summary>
+    /// <remarks>
+    /// 只有这一类失败可以说「是会话未就绪造成的」。别的异常与会话无关，会话恰好也未就绪时仍要写推进失败——真车挂着本服务端在途单时
+    /// 整段路都未就绪，把与会话无关、每轮都抛的异常也归给未就绪，看板一路说的就是一件不相干的事。
+    /// </remarks>
+    private static bool IsTransportFailure(Exception failure)
+    {
+        for (Exception? current = failure; current is not null; current = current.InnerException)
+        {
+            if (current is IOException or System.Net.Sockets.SocketException)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
     /// 旅程的码指名了它在等谁、从何时起在等，别的写入不许改掉它（control-server#331 审查必修 2 把这份清单从
     /// <see cref="NameSilentOnboardSessionAsync"/> 的条件里抽出来，推进失败写码与失联写码共用）。
     /// </summary>
@@ -3615,13 +3656,21 @@ public sealed class JourneyRuntimeEngine(
     /// AREA 站等准入的码是 control-server#198 升级的起点；<see cref="VehicleFaultEvidence.OrderFailed"/> 与三个在途单停住的码
     /// 告诉走到车前的人该做什么；<see cref="OnboardSessionLostReason"/> 有自己的升级时钟。检查点等待的两个码有意不在里面，
     /// 那是运行中随等随清的旁白。加一项就是加一处「不许覆盖」，两个调用方同时生效。
+    /// <para>
+    /// <see cref="StationTimeoutDoorNotClosedReason"/> 与 <see cref="LoadCorrectionInProgressReason"/> 是第三轮审查补进来的：
+    /// 一个在等人去关门（ADR-cross-0058 决策 4），一个在等纠错走完，都是 program#55 按开始时间升级的等人码。被覆盖之后，写它的那一段
+    /// 下一轮按「码不同」重写，开始时间归零、升级档位清零。加进来也改变了失联那一段对它们的做法——失联不再盖掉它们——这是对的，
+    /// 理由与上面几项相同；而实际上失联写码只在两个到站阶段起作用，这两个码只在停站阶段写入，阶段一变就被清掉，产品代码里碰不到一起。
+    /// </para>
     /// </remarks>
     private static bool CarriesACodeThatNamesAWaitOnAPerson(JourneyRuntimeRow runtime) =>
         runtime.Stage == JourneyRuntimeStage.Blocked ||
         IsHeldForAreaEndAdmission(runtime) ||
         string.Equals(runtime.BlockReasonCode, VehicleFaultEvidence.OrderFailed, StringComparison.Ordinal) ||
         IsStalledOrderReason(runtime.BlockReasonCode) ||
-        string.Equals(runtime.BlockReasonCode, OnboardSessionLostReason, StringComparison.Ordinal);
+        string.Equals(runtime.BlockReasonCode, OnboardSessionLostReason, StringComparison.Ordinal) ||
+        string.Equals(runtime.BlockReasonCode, StationTimeoutDoorNotClosedReason, StringComparison.Ordinal) ||
+        string.Equals(runtime.BlockReasonCode, LoadCorrectionInProgressReason, StringComparison.Ordinal);
 
     private static bool IsHeldForAreaEndAdmission(JourneyRuntimeRow runtime) =>
         runtime.Stage == JourneyRuntimeStage.AwaitingGateArrival &&
@@ -3748,9 +3797,9 @@ public sealed class JourneyRuntimeEngine(
         if (corrections.Any(row => row.State is not
                 (RecoveryWorkflowState.Reconciled or RecoveryWorkflowState.HistoricalOnly)))
         {
-            if (runtime.BlockReasonCode != "LOAD_CORRECTION_IN_PROGRESS")
+            if (runtime.BlockReasonCode != LoadCorrectionInProgressReason)
             {
-                runtime.SetBlockReason("LOAD_CORRECTION_IN_PROGRESS", now);
+                runtime.SetBlockReason(LoadCorrectionInProgressReason, now);
                 runtime.UpdatedAt = now;
             }
             return false;

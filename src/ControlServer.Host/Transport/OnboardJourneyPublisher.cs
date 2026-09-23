@@ -141,12 +141,14 @@ public sealed class OnboardJourneyPublisher(
         "NOT_CHARGING", "ALLOCATED", "EN_ROUTE", "CHARGING", "COMPLETE", "UNABLE_TO_CHARGE", "UNKNOWN"
     };
 
+    /// <param name="keepAcknowledgedIgnoring">见 <see cref="QueueEnvelopeAsync"/> 的同名参数。</param>
     public Task PublishSublotEntryRequestAsync(
         string messageId,
         string agvId,
         long sessionGeneration,
         SublotEntryRequest request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlySet<string>? keepAcknowledgedIgnoring = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         ValidateUuid(request.OperationSessionId, nameof(request.OperationSessionId));
@@ -174,7 +176,8 @@ public sealed class OnboardJourneyPublisher(
                 entryMethods = SublotEntryMethods,
                 expiresOnRevisionChange = true
             },
-            cancellationToken);
+            cancellationToken,
+            keepAcknowledgedIgnoring);
     }
 
     /// <summary>
@@ -570,12 +573,14 @@ public sealed class OnboardJourneyPublisher(
             cancellationToken,
             keepAcknowledgedIgnoring);
 
+    /// <param name="keepAcknowledgedIgnoring">见 <see cref="QueueEnvelopeAsync"/> 的同名参数。</param>
     public Task PublishUpcomingStopPlanAsync(
         string messageId,
         string agvId,
         long sessionGeneration,
         UpcomingStopPlanProjection projection,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        IReadOnlySet<string>? keepAcknowledgedIgnoring = null) =>
         PublishSnapshotAsync(
             "UpcomingStopPlanSnapshot",
             messageId,
@@ -583,7 +588,8 @@ public sealed class OnboardJourneyPublisher(
             sessionGeneration,
             projection.Revision,
             UpcomingStopPlanPayload(projection),
-            cancellationToken);
+            cancellationToken,
+            keepAcknowledgedIgnoring);
 
     private static object CurrentStopWorklistPayload(CurrentStopWorklistProjection projection) => new
     {
@@ -760,9 +766,11 @@ public sealed class OnboardJourneyPublisher(
         string agvId,
         long sessionGeneration,
         object payload,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        IReadOnlySet<string>? keepAcknowledgedIgnoring = null) =>
         await PublishStampedEnvelopeAsync(
-            messageType, messageId, correlationId, agvId, sessionGeneration, _ => payload, cancellationToken)
+            messageType, messageId, correlationId, agvId, sessionGeneration, _ => payload, cancellationToken,
+            keepAcknowledgedIgnoring)
             .ConfigureAwait(false);
 
     private async Task PublishStampedEnvelopeAsync(
