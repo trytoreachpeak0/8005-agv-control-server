@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using ControlServer.Domain;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -36,12 +37,19 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
     /// <summary>
-    /// 失败现场本身：重连到第 2 代之后，到站那一段发完，录入请求以第 2 代送到车上，阶段进入等录入。
+    /// 断线之后立刻重连（中间没有一轮看到会话未就绪）：到站那一段发完，录入请求以第 2 代送到车上，阶段进入等录入。
     /// 修前这一轮在第一张已确认的快照上抛 <c>ProtocolContentConflictException</c>。
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// 这不是失败现场的完整时序——现场在重连之前还跑过一轮闸门关着的推进，那一条见
+    /// <see cref="TheEntryRequestReachesTheVehicleWhenARoundBehindTheClosedGateVoidedTheWaitBeforeTheReconnect"/>。
+    /// 这一种也会发生：引擎一秒一轮，断线与重连落在同一个间隔里时，没有哪一轮看见会话未就绪。
+    /// </para>
+    /// <para>
     /// 已确认的两张快照不再发第二遍：车已经确认过它们，重发没有用处；而那一条如果真被重发，
     /// 车会以同一个修订号再收一次，这不是本票修正该有的副作用。
+    /// </para>
     /// </remarks>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-00")]
@@ -64,6 +72,95 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
         Assert.Single(SentLines(fixture, "VehicleBusinessStateSnapshot"));
         Assert.Single(SentLines(fixture, "CurrentStopWorklistSnapshot"));
         Assert.Null((await fixture.RuntimeAsync()).BlockReasonCode);
+    }
+
+    /// <summary>
+    /// 现场的完整时序：断线之后、重连之前，引擎先在就绪闸门关着的状态下跑了一轮。录入请求仍然要以新的一代写出并发到车上。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 这一轮是审查指出、调度按行号核实的（control-server#331 审查必修 1），上面那条用例没有它。闸门关着的那一轮把站点离站等待清空
+    /// （ADR-cross-0055「断联使本轮截止失效」，<c>AdvanceAsync</c> 会话为空那一段），重连后到站那一段重跑时从此刻重填，
+    /// 清单于是带着一个新的期限——与车已确认的那一版内容不同。失败现场的库里正是这样：<c>StationDepartureWaitStartedAt</c> 为空，
+    /// 已确认的清单行期限是到站时刻加 30 秒。
+    /// </para>
+    /// <para>
+    /// 两个条件缺一个这条就测不出来，所以都写在这里：期限要开着（夹具默认关，关着时清单的期限永远是 null），两轮之间钟要走
+    /// （钟不走时重填出来的还是原来那个时刻）。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
+    [Trait("ProtocolVector", "CV-PICKUP-SUBLOT-LOAD")]
+    public async Task TheEntryRequestReachesTheVehicleWhenARoundBehindTheClosedGateVoidedTheWaitBeforeTheReconnect()
+    {
+        (RuntimeFixture fixture, ConnectionCut _) =
+            await ArrivalPublishCutAfterTheWorklistAsync(stationDepartureWait: TimeSpan.FromSeconds(30));
+        await using RuntimeFixture disposing = fixture;
+        Assert.NotNull((await fixture.RuntimeAsync()).StationDepartureWaitStartedAt);
+
+        await fixture.DropOnboardSessionAsync();
+        fixture.Clock.Advance(TimeSpan.FromSeconds(7));
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        JourneyRuntimeRow voided = await fixture.RuntimeAsync();
+        Assert.Null(voided.StationDepartureWaitStartedAt);
+        Assert.Equal("ONBOARD_SESSION_NOT_READY", voided.BlockReasonCode);
+
+        await ReconnectAtGenerationAsync(fixture, generation: 2);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Contains("SublotEntryRequested", await OutboxTypesAsync(fixture, acknowledged: false));
+        JsonElement entry = Assert.Single(SentLines(fixture, "SublotEntryRequested"));
+        Assert.Equal(2, entry.GetProperty("sessionGeneration").GetInt64());
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync()).Stage);
+    }
+
+    /// <summary>
+    /// 车已确认的那一版清单与重跑算出的这一版，除期限外还有别的不同：不沿用、照旧被重放校验拒绝，看板显示推进失败。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 到站那一段重跑时，清单只在「除期限外一字不差」时沿用车已确认的那一版（control-server#331）。别的字段不同，说明同一 messageId
+    /// 下内容真的变了——车没收到的东西不能被当成已经收到。这条钉住「按内容比、不按确认过」：把判据换成「只要确认过就沿用」，
+    /// 这里会变成录入请求照发、测试变红。
+    /// </para>
+    /// <para>
+    /// <b>「内容真的变了」是改写发件箱那一行造出来的</b>，不是走一条真实路径：读代码时，当前停靠的清单项在这个窗口里不会变
+    /// （取消会升修订号、途中追加不并进当前下一站、释放在取货单已成功时被拒），会变的真实例子在车辆业务状态上（持货等单的旅程
+    /// 进出装货阶段），造起来要整套持货参数，那一格记在 PR 的剩余风险与 control-server#339 里。这里要钉的是比较本身。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
+    [Trait("ProtocolVector", "CV-PICKUP-SUBLOT-LOAD")]
+    public async Task AnAcknowledgedWorklistThatDiffersBeyondItsDeadlineIsStillRefusedAndTheBoardSaysSo()
+    {
+        (RuntimeFixture fixture, ConnectionCut _) =
+            await ArrivalPublishCutAfterTheWorklistAsync(stationDepartureWait: TimeSpan.FromSeconds(30));
+        await using RuntimeFixture disposing = fixture;
+        ProtocolOutboxRow worklist = await fixture.Context.ProtocolOutbox.SingleAsync(
+            row => row.MessageType == "CurrentStopWorklistSnapshot", Token);
+        Assert.NotNull(worklist.AcknowledgedAt);
+        JsonObject acknowledged = JsonNode.Parse(worklist.PayloadJson)!.AsObject();
+        JsonObject item = acknowledged["payload"]!["items"]![0]!.AsObject();
+        item["expectedBasketCount"] = item["expectedBasketCount"]!.GetValue<int>() + 1;
+        worklist.PayloadJson = acknowledged.ToJsonString();
+        await fixture.Context.SaveChangesAsync(Token);
+
+        await fixture.DropOnboardSessionAsync();
+        fixture.Clock.Advance(TimeSpan.FromSeconds(7));
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        await ReconnectAtGenerationAsync(fixture, generation: 2);
+        await Assert.ThrowsAsync<ProtocolContentConflictException>(() => fixture.Engine.ExecuteOnceAsync(Token));
+
+        JourneyRuntimeRow runtime = await ReadRuntimeAfterFailedRoundAsync(fixture);
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, runtime.Stage);
+        Assert.Equal(AdvanceFailedReason, runtime.BlockReasonCode);
+        Assert.Empty(SentLines(fixture, "SublotEntryRequested"));
     }
 
     /// <summary>
@@ -196,17 +293,68 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
     }
 
     /// <summary>
-    /// 真车载端在路上的常态：会话因本服务端自己的在途单而未就绪（control-server#314 的形状）。这时补发失败，码换成
-    /// 「推进失败」；下一轮补发走通，码回到会话未就绪——清掉的只有「推进失败」，不是把旅程的码一并清空。
+    /// 旅程的码指名了它在等谁时，推进失败不改码、不动开始时间（control-server#331 审查必修 2）。每类一行。
     /// </summary>
     /// <remarks>
-    /// 这条走的是就绪闸门关着的那条路（<c>PublishPickupDispatchPlanPastOwnOrderAsync</c>），与上面几条走的
-    /// 闸门开着的那条路不是同一段代码。合成台上的车载端不会因为自己的单未就绪，只有这里造得出来。
+    /// <para>
+    /// 这几个码与失联写码不许覆盖的是同一组（<c>JourneyRuntimeEngine.CarriesACodeThatNamesAWaitOnAPerson</c>）。覆盖掉的代价：
+    /// 在途单停住的码一换，派单轮次挡途中追加的闸就开了；下一轮写回原码时开始时间归零、升级档位清零、告警重发。
+    /// </para>
+    /// <para>
+    /// 码写成字面量，理由同 <see cref="AdvanceFailedReason"/>。AREA 站等准入的码只在去关卡那一段成立，所以那一行连阶段一起设。
+    /// 两轮之间钟走了一分钟：钟不走时「开始时间没变」恒真，看不出被重写成此刻。
+    /// </para>
+    /// </remarks>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
+    [Trait("ProtocolVector", "CV-PICKUP-SUBLOT-LOAD")]
+    [InlineData("VEHICLE_ORDER_FAILED", JourneyRuntimeStage.AwaitingPickupArrival)]
+    [InlineData("ORDER_HANG", JourneyRuntimeStage.AwaitingPickupArrival)]
+    [InlineData("ORDER_STATE_UNRECOGNIZED", JourneyRuntimeStage.AwaitingPickupArrival)]
+    [InlineData("ORDER_ENDED_WITHOUT_ARRIVAL", JourneyRuntimeStage.AwaitingPickupArrival)]
+    [InlineData("TASK_TYPE_NOT_ALLOWED_AT_STATION", JourneyRuntimeStage.AwaitingGateArrival)]
+    public async Task AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(string code, JourneyRuntimeStage stage)
+    {
+        (RuntimeFixture fixture, ConnectionCut cut) = await ArrivalPublishCutAfterTheWorklistAsync();
+        await using RuntimeFixture disposing = fixture;
+        JourneyRuntimeRow waiting = await fixture.Context.JourneyRuntimes.SingleAsync(Token);
+        waiting.Stage = stage;
+        waiting.SetBlockReason(null, fixture.Clock.GetUtcNow());
+        waiting.SetBlockReason(code, fixture.Clock.GetUtcNow());
+        await fixture.Context.SaveChangesAsync(Token);
+        DateTimeOffset since = waiting.BlockReasonSince!.Value;
+        fixture.Clock.Advance(TimeSpan.FromMinutes(1));
+        await fixture.HearFromPeerAsync();
+
+        cut.On(IsArrivedPickupPlan);
+        await Assert.ThrowsAsync<IOException>(() => fixture.Engine.ExecuteOnceAsync(Token));
+
+        JourneyRuntimeRow runtime = await ReadRuntimeAfterFailedRoundAsync(fixture);
+        Assert.Equal(stage, runtime.Stage);
+        Assert.Equal(code, runtime.BlockReasonCode);
+        Assert.Equal(since, runtime.BlockReasonSince);
+    }
+
+    /// <summary>
+    /// 真车载端在路上的常态：会话因本服务端自己的在途单而未就绪（control-server#314 的形状）。这时补发连续失败三轮，
+    /// 码一直是 <c>ONBOARD_SESSION_NOT_READY</c>、开始时间停在第一次；走通之后仍是它（审查建议 3）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 会话此刻确实没就绪，这个码就是真的，而补发失败多半就是它造成的（连接不在）。修前这里每轮先写会话未就绪、随后抛异常
+    /// 改写成推进失败，两个码来回切：开始时间每轮归零，在路上的阶段会话未就绪又不算「在等」，等待起点与告警也每轮清零重来。
+    /// </para>
+    /// <para>
+    /// 这条走的是就绪闸门关着的那条路（<c>PublishPickupDispatchPlanPastOwnOrderAsync</c>），与上面几条走的闸门开着的那条路
+    /// 不是同一段代码。合成台上的车载端不会因为自己的单未就绪，只有这里造得出来。
+    /// </para>
     /// </remarks>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-01")]
     [Trait("ProtocolVector", "CV-DEMAND-ACCEPT-TO-PICKUP")]
-    public async Task OnTheOwnOrderAFailedReplayNamesItselfAndTheNextRoundGoesBackToSessionNotReady()
+    public async Task OnTheOwnOrderThreeFailedReplaysKeepTheSessionNotReadyCodeAndItsStart()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         ConnectionCut cut = ConnectionCut.Attach(fixture);
@@ -215,15 +363,24 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
         await fixture.Engine.ExecuteOnceAsync(Token);
         await PickupDispatchPlanPastOwnOrderTests.DropSessionOnOwnOrderAsync(fixture);
         await fixture.Engine.ExecuteOnceAsync(Token);
-        Assert.Equal("ONBOARD_SESSION_NOT_READY", (await fixture.RuntimeAsync()).BlockReasonCode);
+        JourneyRuntimeRow first = await fixture.RuntimeAsync();
+        Assert.Equal("ONBOARD_SESSION_NOT_READY", first.BlockReasonCode);
+        DateTimeOffset since = first.BlockReasonSince!.Value;
         Assert.Single(SentLines(fixture, "UpcomingStopPlanSnapshot"));
 
-        // 车在收到之前断了，重连后仍因自己的单未就绪；补发那一版计划时连接又断了。
+        // 车在收到之前断了，重连后仍因自己的单未就绪；此后每一轮补发那一版计划时连接都又断了。
         await ReconnectStillOnOwnOrderAsync(fixture, generation: 2);
         cut.On(line => MessageType(line) == "UpcomingStopPlanSnapshot");
-        await Assert.ThrowsAsync<IOException>(() => fixture.Engine.ExecuteOnceAsync(Token));
-        Assert.Equal(
-            AdvanceFailedReason, (await ReadRuntimeAfterFailedRoundAsync(fixture)).BlockReasonCode);
+        for (int round = 1; round <= 3; round++)
+        {
+            fixture.Clock.Advance(TimeSpan.FromSeconds(10));
+            await fixture.HearFromPeerAsync();
+            await Assert.ThrowsAsync<IOException>(() => fixture.Engine.ExecuteOnceAsync(Token));
+            JourneyRuntimeRow failed = await ReadRuntimeAfterFailedRoundAsync(fixture);
+            Assert.Equal("ONBOARD_SESSION_NOT_READY", failed.BlockReasonCode);
+            Assert.Equal(since, failed.BlockReasonSince);
+        }
+        Assert.NotEqual(since, fixture.Clock.GetUtcNow());
 
         cut.Heal();
         await fixture.Engine.ExecuteOnceAsync(Token);
@@ -231,18 +388,22 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
         JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
         Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, runtime.Stage);
         Assert.Equal("ONBOARD_SESSION_NOT_READY", runtime.BlockReasonCode);
-        Assert.Equal(
-            [1L, 2L, 2L],
-            SentLines(fixture, "UpcomingStopPlanSnapshot").Select(line => line.GetProperty("sessionGeneration").GetInt64()));
+        Assert.Equal(since, runtime.BlockReasonSince);
+        Assert.Equal(2, SentLines(fixture, "UpcomingStopPlanSnapshot").Last().GetProperty("sessionGeneration").GetInt64());
     }
 
     /// <summary>
     /// 现场的前半段：车到取货站，到站发布把车辆业务状态与清单发出去并被确认，到站那一版计划在发送时断线。
     /// 返回的夹具停在「阶段仍是 <c>AwaitingPickupArrival</c>、发件箱里前两张已确认、连接已恢复」的那一刻。
     /// </summary>
-    private static async Task<(RuntimeFixture Fixture, ConnectionCut Cut)> ArrivalPublishCutAfterTheWorklistAsync()
+    private static async Task<(RuntimeFixture Fixture, ConnectionCut Cut)> ArrivalPublishCutAfterTheWorklistAsync(
+        TimeSpan? stationDepartureWait = null)
     {
         RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        if (stationDepartureWait is { } wait)
+        {
+            fixture.Options.StationDepartureWaitTimeout = wait;
+        }
         ConnectionCut cut = ConnectionCut.Attach(fixture);
         fixture.Catalog.Set(fixture.Demand(DemandId, "SUBLOT-001", Now.AddMinutes(-10)));
         fixture.BoxCounts.Set("SUBLOT-001", 4);
