@@ -1,3 +1,4 @@
+using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.Commands;
@@ -157,6 +158,12 @@ public sealed class StoppedRebuildExitTests
     /// 同一个请求到达两次（HTTP 重试、两个人前后点了一下）：第二次答 <c>AlreadyDone</c>，什么都不改；新单建成之后再来一次，仍是
     /// <c>AlreadyDone</c>。前后只多建了一张单。
     /// </summary>
+    /// <remarks>
+    /// 原行重开之后记录已经不是 <c>STOPPED</c>，所以第二次请求必须：答 <c>AlreadyDone</c> 而不是「不在停住状态」的拒绝；不再改写
+    /// 出问题时刻、到期时刻与署名（比较的快照里都有）；新单已经发出之后不被重置回 <c>PENDING</c>（调度 2026-09-23 的补充要求）。
+    /// 反向验证：去掉幂等判断，这一条红在第二次请求的结果上（PR 正文记录）。重开后又被护栏三停住、再来一次请求要当新的一次处理，
+    /// 见 <see cref="AfterAPersonsRebuildTheWindowRunsFromTheRequest"/> 的第二次请求。
+    /// </remarks>
     [Fact]
     public async Task TheSameRequestTwiceRebuildsOnce()
     {
@@ -177,18 +184,228 @@ public sealed class StoppedRebuildExitTests
         await fixture.HearFromPeerAsync();
         await fixture.Engine.ExecuteOnceAsync(Token);
         Assert.Equal(3, fixture.Riot.CreateCount("TO_PICKUP"));
+        Snapshot afterRebuilt = await SnapshotAsync(fixture);
+        Assert.Contains($"|{OwnOrderRebuildStates.Rebuilt}|", afterRebuilt.Rebuilds, StringComparison.Ordinal);
+        fixture.Clock.Advance(TimeSpan.FromSeconds(2));
 
         VehicleFaultRecoveryDecision third = await VehicleFaultRecoveryTests.Service(fixture, new(fixture))
             .RecoverAsync(Rebuild(fixture), Token);
+
+        // Not put back to PENDING, and neither the time nor the person rewritten, once the new order is out.
+        Assert.Equal((VehicleFaultRecoveryOutcome.AlreadyDone, 0), (third.Outcome, third.Reasons.Count));
+        Assert.Equal(afterRebuilt, await SnapshotAsync(fixture));
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(3, fixture.Riot.CreateCount("TO_PICKUP"));
+    }
+
+    /// <summary>
+    /// 人工重建之后 REQ-0361 的窗口从人工请求那一刻重新算（调度 2026-09-23 定）：请求时离第一次出问题已经过了窗口，人工重建的单
+    /// 2 分钟后又被取消——照样停住等人（从请求算在窗口内）；再人工重建一次，这次过了窗口才被取消——照常自动重建。
+    /// </summary>
+    /// <remarks>
+    /// 前半段区分「重新算」与「不重新算」：先断言这次取消离停住那次出问题已过窗口（不重新算就会自动重建），离请求在窗口内。
+    /// 理由写进 PR：人工重建之后再出问题照样停住等人，更保守。
+    /// </remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0361")]
+    public async Task AfterAPersonsRebuildTheWindowRunsFromTheRequest()
+    {
+        await using RuntimeFixture fixture = await StoppedByTheThirdGuardAsync();
+        TimeSpan window = fixture.Options.OwnOrderRebuildRepeatWindow;
+        JourneyStopRow stop = await CurrentStopAsync(fixture, FirstDemandId);
+        DateTimeOffset stoppedIncident = (await RebuildForAsync(fixture, stop.UpperId)).IncidentAt;
+        fixture.Clock.Advance(window);
+        DateTimeOffset requestedAt = fixture.Clock.GetUtcNow();
+        await RequestAndRunAsync(fixture);
+        Assert.Equal(3, fixture.Riot.CreateCount("TO_PICKUP"));
+
+        fixture.Clock.Advance(TimeSpan.FromMinutes(2));
+        string manualOrder = (await CurrentStopAsync(fixture, FirstDemandId)).UpperId;
+        await fixture.HearFromPeerAsync();
+        fixture.Riot.CancelOrder(manualOrder);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+
+        OwnOrderRebuildRow again = await RebuildForAsync(fixture, manualOrder);
+        Assert.True(again.IncidentAt - stoppedIncident > window, "the ending must fall outside the window from the stopped incident");
+        Assert.True(again.IncidentAt - requestedAt < window, "the ending must fall inside the window from the request");
+        Assert.Equal(
+            (OwnOrderRebuildStates.Stopped, "REBUILT_ORDER_ENDED_AGAIN_WITHIN_WINDOW"),
+            (again.State, again.StoppedReason));
+        Assert.Equal("OWN_ORDER_REBUILD_STOPPED", (await fixture.RuntimeAsync()).BlockReasonCode);
+        Assert.Equal(3, fixture.Riot.CreateCount("TO_PICKUP"));
+
+        await RequestAndRunAsync(fixture);
+        Assert.Equal(4, fixture.Riot.CreateCount("TO_PICKUP"));
+        fixture.Clock.Advance(window + TimeSpan.FromMinutes(1));
+        string secondManualOrder = (await CurrentStopAsync(fixture, FirstDemandId)).UpperId;
+        await fixture.HearFromPeerAsync();
+        fixture.Riot.CancelOrder(secondManualOrder);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+
+        Assert.Equal(OwnOrderRebuildStates.Rebuilt, (await RebuildForAsync(fixture, secondManualOrder)).State);
+        Assert.Equal(5, fixture.Riot.CreateCount("TO_PICKUP"));
+        Assert.Null((await fixture.RuntimeAsync()).BlockReasonCode);
+    }
+
+    /// <summary>
+    /// 真车载端的常态：车带着本服务端的单时会话整段未就绪（形状照 <c>PickupDispatchPlanPastOwnOrderTests.DropSessionOnOwnOrderAsync</c>）。
+    /// 人工重建照样受理、照样记下，但不在闸门后面建单——记录写明在等会话，旅程码 <c>OWN_ORDER_REBUILD_WAITING_VEHICLE</c>；会话回到就绪
+    /// 之后才建，只建一张。与 #318 自动重建的那一格一致。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0360")]
+    public async Task APersonsRebuildWhileTheSessionIsNotReadyOnItsOwnOrderWaitsForTheSession()
+    {
+        await using RuntimeFixture fixture = await StoppedByTheThirdGuardAsync();
+        await OwnOrderRebuildTests.DropSessionOnOwnOrderAsync(fixture);
+        JourneyStopRow stop = await CurrentStopAsync(fixture, FirstDemandId);
+
+        VehicleFaultRecoveryDecision decision = await VehicleFaultRecoveryTests.Service(fixture, new(fixture))
+            .RecoverAsync(Rebuild(fixture), Token);
+        fixture.Context.ChangeTracker.Clear();
+        await TickAndRunAsync(fixture);
+        await TickAndRunAsync(fixture);
+
+        Assert.Equal(VehicleFaultRecoveryOutcome.RebuildRequested, decision.Outcome);
+        Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+        OwnOrderRebuildRow waiting = await RebuildForAsync(fixture, stop.UpperId);
+        Assert.Equal((OwnOrderRebuildStates.Pending, "ONBOARD_SESSION_NOT_READY"), (waiting.State, waiting.WaitingReason));
+        Assert.Equal("OWN_ORDER_REBUILD_WAITING_VEHICLE", (await fixture.RuntimeAsync()).BlockReasonCode);
+        Assert.Equal(SessionReadiness.RecoveryRequired, (await fixture.Context.SessionRecoveries.AsNoTracking().SingleAsync(Token)).Readiness);
+
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.RestoreSessionReadyAsync();
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+        await TickAndRunAsync(fixture);
+
+        Assert.Equal(3, fixture.Riot.CreateCount("TO_PICKUP"));
+        Assert.Equal(OwnOrderRebuildStates.Rebuilt, (await RebuildForAsync(fixture, stop.UpperId)).State);
+    }
+
+    /// <summary>
+    /// 故障来源、车上有货的护栏三停住（清除后重建出来的去卸货站的单，窗口内又 FAILED、人又清除一次）：人工重建之后，照 REQ-0362 仍要
+    /// 一份<b>请求之后</b>收到的、显示货完整在原仓的快照——请求之前那份不算，旅程等在 <c>OWN_ORDER_REBUILD_WAITING_CARGO_EVIDENCE</c>；
+    /// 新快照到了才建去卸货站的单。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0362")]
+    public async Task APersonsRebuildWithCargoOnBoardStillNeedsAFreshSnapshotOfTheCargo()
+    {
+        await using RuntimeFixture fixture = await VehicleFaultRecoveryTests.FaultedOnTheWayToGateAsync();
+        VehicleFaultRecoveryTests.SiteRiot site = new(fixture);
+        await VehicleFaultRecoveryTests.Service(fixture, site).RecoverAsync(VehicleFaultRecoveryTests.Clear(fixture), Token);
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow() + TimeSpan.FromSeconds(1));
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        int gateCreates = fixture.Riot.CreateCount("TO_GATE");
+        string rebuiltOrder = (await CurrentStopAsync(fixture, FirstDemandId)).UpperId;
+        Assert.Equal(OwnOrderRebuildStates.Rebuilt, (await RebuildForAsync(fixture, (await fixture.RuntimeAsync()).GateUpperId)).State);
+
+        fixture.Clock.Advance(TimeSpan.FromMinutes(1));
+        await fixture.HearFromPeerAsync();
+        fixture.Riot.FailOrder(rebuiltOrder);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(
+            VehicleFaultRecoveryDispositions.RebuildStopped,
+            (await VehicleFaultRecoveryTests.Service(fixture, site).RecoverAsync(VehicleFaultRecoveryTests.Clear(fixture), Token)).Disposition);
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow() + TimeSpan.FromSeconds(1));
+        fixture.Clock.Advance(TimeSpan.FromSeconds(5));
+        Assert.Equal(
+            (OwnOrderRebuildStates.Stopped, OwnOrderRebuildSources.FaultClearedCargoOnBoard),
+            ((await RebuildForAsync(fixture, rebuiltOrder)).State, (await RebuildForAsync(fixture, rebuiltOrder)).Source));
+
+        Assert.Equal(
+            VehicleFaultRecoveryOutcome.RebuildRequested,
+            (await VehicleFaultRecoveryTests.Service(fixture, site).RecoverAsync(Rebuild(fixture), Token)).Outcome);
+        fixture.Context.ChangeTracker.Clear();
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+
+        Assert.Equal(gateCreates, fixture.Riot.CreateCount("TO_GATE"));
+        Assert.Equal("OWN_ORDER_REBUILD_WAITING_CARGO_EVIDENCE", (await fixture.RuntimeAsync()).BlockReasonCode);
+
+        await fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow());
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Equal(gateCreates + 1, fixture.Riot.CreateCount("TO_GATE"));
+        Assert.Equal(OwnOrderRebuildStates.Rebuilt, (await RebuildForAsync(fixture, rebuiltOrder)).State);
+    }
+
+    /// <summary>
+    /// 另一种护栏三停住：重建出来的新单确认前就被 RIoT 报成状态 8（SUSPENDED），停靠此时指着那张新单。人工重建另落一条接手记录
+    /// （以那张新单为终结单、署名、立即到期），停住那条转 <c>ENDED</c>、停住原因原样；引擎下一轮建第三张单。
+    /// </summary>
+    /// <remarks>
+    /// 两种形状的另一半：<see cref="AStoppedRebuildIsRebuiltOnceOnAPersonsRequest"/> 是原行重开。这一格不能原行重开——停住那条的新单号
+    /// 已经用掉了，停靠指着的也不是它的终结单。
+    /// </remarks>
+    [Fact]
+    public async Task ARebuildStoppedOnItsSuspendedNewOrderIsTakenOverByAPersonsRecord()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync();
+        fixture.Riot.CancelOrder(before.PickupUpperId);
+        await TickAndRunAsync(fixture);
+        fixture.Riot.LoseNextCreateResponse = true;
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        OwnOrderRebuildRow ordering = await RebuildForAsync(fixture, before.PickupUpperId);
+        fixture.Riot.SetOrderState(ordering.NewUpperId, RiotOrderState.Suspended, terminal: true);
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+        Assert.Equal("OWN_ORDER_REBUILD_STOPPED", (await fixture.RuntimeAsync()).BlockReasonCode);
+        Assert.Equal(ordering.NewUpperId, (await CurrentStopAsync(fixture, FirstDemandId)).UpperId);
+        fixture.Context.ChangeTracker.Clear();
+
+        VehicleFaultRecoveryDecision decision = await VehicleFaultRecoveryTests.Service(fixture, new(fixture))
+            .RecoverAsync(Rebuild(fixture), Token);
+        DateTimeOffset requestedAt = fixture.Clock.GetUtcNow();
+
+        Assert.Equal(VehicleFaultRecoveryOutcome.RebuildRequested, decision.Outcome);
+        OwnOrderRebuildRow ended = await RebuildForAsync(fixture, before.PickupUpperId);
+        Assert.Equal(
+            (OwnOrderRebuildStates.Ended, "REBUILT_ORDER_ENDED_BEFORE_CONFIRMATION"),
+            (ended.State, ended.StoppedReason));
+        OwnOrderRebuildRow takenOver = await RebuildForAsync(fixture, ordering.NewUpperId);
+        Assert.Equal(
+            (OwnOrderRebuilds.ManualRebuildIdFor(ended.RebuildId), OwnOrderRebuildStates.Pending, OperatorId, requestedAt, "ORDER-TO_PICKUP"),
+            (takenOver.RebuildId, takenOver.State, takenOver.OperatorId, takenOver.DueAt, takenOver.EndedOrderId));
+
         fixture.Context.ChangeTracker.Clear();
         await fixture.HearFromPeerAsync();
         await fixture.Engine.ExecuteOnceAsync(Token);
 
-        Assert.Equal(VehicleFaultRecoveryOutcome.AlreadyDone, third.Outcome);
         Assert.Equal(3, fixture.Riot.CreateCount("TO_PICKUP"));
+        OwnOrderRebuildRow rebuilt = await RebuildForAsync(fixture, ordering.NewUpperId);
+        Assert.Equal(OwnOrderRebuildStates.Rebuilt, rebuilt.State);
+        Assert.Equal(rebuilt.NewUpperId, (await CurrentStopAsync(fixture, FirstDemandId)).UpperId);
+        Assert.Null((await fixture.RuntimeAsync()).BlockReasonCode);
     }
 
     // ---- 夹具 ----------------------------------------------------------------------------------------------
+
+    /// <summary>人工重建一次并跑一轮引擎（车载端刚说过话）。</summary>
+    private static async Task RequestAndRunAsync(RuntimeFixture fixture)
+    {
+        Assert.Equal(
+            VehicleFaultRecoveryOutcome.RebuildRequested,
+            (await VehicleFaultRecoveryTests.Service(fixture, new(fixture)).RecoverAsync(Rebuild(fixture), Token)).Outcome);
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+    }
+
+    private static async Task<OwnOrderRebuildRow> RebuildForAsync(RuntimeFixture fixture, string endedUpperId)
+    {
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        return await reading.OwnOrderRebuilds.AsNoTracking().SingleAsync(row => row.EndedUpperId == endedUpperId, Token);
+    }
 
     /// <summary>「什么都没改」比的东西：每条重建记录的状态、署名与时刻，旅程的阶段与码，建过几张取货单、卸货单。</summary>
     private sealed record Snapshot(string Rebuilds, JourneyRuntimeStage Stage, string? Code, int PickupCreates, int GateCreates);
