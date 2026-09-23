@@ -660,6 +660,7 @@ public sealed class StoppedRebuildExitTests
                 (await reading.AcceptedDemands.AsNoTracking().SingleAsync(row => row.DemandId == FirstDemandId, Token)).Status);
             FaultedVehicleCargoRow binding = await reading.FaultedVehicleCargo.AsNoTracking().SingleAsync(Token);
             Assert.Equal("HANDED_OFF_IN_EXCEPTION_SESSION", binding.ReleasedReason);
+            Assert.NotNull(binding.ReleasedAt);
             Assert.Equal(OwnOrderRebuildStates.Ended, (await RebuildForAsync(fixture, stopped.GateUpperId)).State);
             await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(reading);
             if (session == "ready")
