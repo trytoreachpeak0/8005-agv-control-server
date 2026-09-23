@@ -4,6 +4,7 @@ using ControlServer.Domain;
 using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using static ControlServer.Tests.JourneyRuntimeWorkerTestKit;
 
 namespace ControlServer.Tests;
@@ -186,16 +187,15 @@ public sealed class RefilledStationDeadlineReachesVehicleTests
         Assert.Equal(LoadingPhaseStates.Loading, HeldLoadingPhase(vehicle));
 
         await DisconnectThroughAnUnreadyRoundThenReconnectAsync(fixture);
-        // 写在未就绪那一轮之后：每一轮的派车都用自己的裁决整张替换读口，写早了会被那一轮盖掉。
-        Batch7CargoHoldingTests.RecordRound(
-            fixture,
-            (DispatchReasonCodes.SlotGroupOccupiedByOwnCargo, "FRONT"),
-            (DispatchReasonCodes.SlotGroupOccupiedByOwnCargo, "REAR"));
+        // 每一轮之前都写一次：每一轮的派车都用自己的裁决整张替换读口（夹具里没有真候选，它的裁决是「哪一侧都不满」），
+        // 只写一次，下一轮就会被上一轮的派车盖掉、判回不满。这里要的是「两侧一直都满」这一个事实。
+        StillFullOnBothSides(fixture);
         Exception? first = await Record.ExceptionAsync(() => fixture.Engine.ExecuteOnceAsync(Token));
         await fixture.RecreateEngineAsync();
         await vehicle.DeliverBufferedAcksAsync();
         fixture.Clock.Advance(TimeSpan.FromSeconds(1));
         await fixture.HearFromPeerAsync();
+        StillFullOnBothSides(fixture);
         Exception? second = await Record.ExceptionAsync(() => fixture.Engine.ExecuteOnceAsync(Token));
         await fixture.RecreateEngineAsync();
         await vehicle.DeliverBufferedAcksAsync();
@@ -214,7 +214,22 @@ public sealed class RefilledStationDeadlineReachesVehicleTests
         Assert.Equal(JourneyRuntimeStage.AwaitingSublot, runtime.Stage);
         Assert.Null(runtime.BlockReasonCode);
         Assert.Equal(LoadingPhaseStates.VehicleFull, HeldLoadingPhase(vehicle));
+        // 车手上的业务状态是按严格前进的号一张张换上去的，并且最后那一张车确认了。
+        long[] adopted = [.. vehicle.Adopted
+            .Where(item => item.MessageType == "VehicleBusinessStateSnapshot")
+            .Select(item => item.Revision)];
+        Assert.Equal(adopted.Order().Distinct(), adopted);
+        Assert.Equal(2, adopted.Length);
+        Assert.NotNull((await fixture.Context.ProtocolOutbox.AsNoTracking().SingleAsync(
+            row => row.MessageType == "VehicleBusinessStateSnapshot" &&
+                   row.PayloadJson.Contains("\"VEHICLE_FULL\""), Token)).AcknowledgedAt);
     }
+
+    private static void StillFullOnBothSides(RuntimeFixture fixture) =>
+        Batch7CargoHoldingTests.RecordRound(
+            fixture,
+            (DispatchReasonCodes.SlotGroupOccupiedByOwnCargo, "FRONT"),
+            (DispatchReasonCodes.SlotGroupOccupiedByOwnCargo, "REAR"));
 
     private static async Task<RuntimeFixture> DeadlineFixtureAsync()
     {
