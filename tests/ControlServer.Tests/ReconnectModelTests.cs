@@ -13,6 +13,9 @@ public sealed class ReconnectModelTests
     /// <summary>固定种子的起点。改它等于换一批组合，旧的失败输出就对不上了。</summary>
     private const ulong MasterSeed = 342;
 
+    /// <summary>CI 里每次跑的组合数，理由见 <see cref="EverySeededSequenceEndsWithTheEntryRequestOnTheVehicle"/>。</summary>
+    private const int CiCombinations = 200;
+
     /// <summary>
     /// 种子串能原样复现同一个序列：失败输出里打印的种子，交给 CsCheck 的 <c>seed</c> 参数就是这一串，否则化简无从谈起。
     /// </summary>
@@ -29,6 +32,57 @@ public sealed class ReconnectModelTests
             ReconnectStep[] again = ReconnectModel.Sequence.Generate(PCG.Parse(seed), null, out _);
             Assert.Equal(ReconnectModel.Print(steps), ReconnectModel.Print(again));
         }
+    }
+
+    /// <summary>
+    /// CI 里跑的那一批：固定种子的 <see cref="CiCombinations"/> 个组合，每一个收尾之后都要满足不变量。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 失败时打印每个违规组合的种子与序列，并把第一个确定性地删减到最短再打印一遍：复现只要种子，看懂只要最短的那一串。
+    /// 用 <see cref="ReplaySeeds"/>（<c>CS342_SEEDS</c>）在别的提交上复跑同样的种子。
+    /// </para>
+    /// <para>
+    /// 组合数的取舍：本机稳态每个组合 0.14～0.23 秒（control-server#342 原型量测），200 个约 30～50 秒，在「测试步最多多 2 分钟」以内。
+    /// 更多的组合用 <see cref="PrototypeMeasurement"/> 手动跑（<c>CS342_ITER</c>）。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
+    [Trait("ProtocolVector", "CV-PICKUP-SUBLOT-LOAD")]
+    public async Task EverySeededSequenceEndsWithTheEntryRequestOnTheVehicle()
+    {
+        List<(string Seed, ReconnectStep[] Steps, ReconnectVerdict Verdict)> violations = [];
+        for (int index = 0; index < CiCombinations; index++)
+        {
+            (string seed, ReconnectStep[] steps) = ReconnectModel.Fixed(MasterSeed, index);
+            ReconnectVerdict verdict = await ReconnectModel.RunAsync(steps);
+            if (verdict.Violation is not null)
+            {
+                violations.Add((seed, steps, verdict));
+            }
+        }
+
+        if (violations.Count == 0)
+        {
+            return;
+        }
+
+        StringBuilder message = new();
+        message.AppendLine(CultureInfo.InvariantCulture, $"{violations.Count} of {CiCombinations} seeded sequences violated the invariant:");
+        foreach ((string seed, ReconnectStep[] steps, ReconnectVerdict verdict) in violations)
+        {
+            message.AppendLine(CultureInfo.InvariantCulture, $"  seed {seed} {verdict.Violation} {ReconnectModel.Print(steps)}");
+        }
+
+        (string firstSeed, ReconnectStep[] firstSteps, ReconnectVerdict firstVerdict) = violations[0];
+        (ReconnectStep[] minimal, ReconnectVerdict minimalVerdict) =
+            await ReconnectModel.MinimizeAsync(firstSteps, firstVerdict.Violation!.Value);
+        message.AppendLine(CultureInfo.InvariantCulture, $"shortest form of seed {firstSeed}: {ReconnectModel.Print(minimal)}");
+        message.AppendLine(minimalVerdict.Detail);
+        Assert.Fail(message.ToString());
     }
 
     /// <summary>
@@ -149,49 +203,6 @@ public sealed class ReconnectModelTests
             report.AppendLine(minimalVerdict.Detail);
         }
 
-        await File.WriteAllTextAsync(reportPath, report.ToString(), TestContext.Current.CancellationToken);
-    }
-
-    /// <summary>
-    /// 校准（只在显式要求时跑）：手写几串已知答案的序列，看模型在三个提交上给出的红绿是否与 PR #338 记下的一致。
-    /// 报告写到 <c>CS342_REPORT</c>。
-    /// </summary>
-    [Fact(Explicit = true)]
-    [Trait("IntegrationSlice", "FP-IS-00")]
-    [Trait("IntegrationSlice", "FP-IS-02")]
-    [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
-    [Trait("ProtocolVector", "CV-PICKUP-SUBLOT-LOAD")]
-    public async Task Calibration()
-    {
-        (string Name, ReconnectStep[] Steps)[] sequences =
-        [
-            ("cut-after-vbs-no-ack", [new ReconnectStep.Arrive(), new ReconnectStep.CutAfter(2), new ReconnectStep.Round(1)]),
-            ("field-immediate-reconnect", [
-                new ReconnectStep.Arrive(), new ReconnectStep.CutAfter(3), new ReconnectStep.Round(1), new ReconnectStep.Ack()]),
-            ("field-not-ready-round-in-handshake", [
-                new ReconnectStep.Arrive(), new ReconnectStep.CutAfter(3), new ReconnectStep.Round(1), new ReconnectStep.Ack(),
-                new ReconnectStep.BeginHandshake(), new ReconnectStep.Round(7)]),
-            ("field-not-ready-round-before-reconnect", [
-                new ReconnectStep.Arrive(), new ReconnectStep.CutAfter(3), new ReconnectStep.Round(1), new ReconnectStep.Ack(),
-                new ReconnectStep.VehicleNotReady(false), new ReconnectStep.Round(7)]),
-        ];
-        string reportPath = Environment.GetEnvironmentVariable("CS342_REPORT") is { Length: > 0 } path
-            ? path
-            : Path.Combine(Path.GetTempPath(), "cs342-calibration.txt");
-        StringBuilder report = new();
-        StringBuilder details = new();
-        foreach ((string name, ReconnectStep[] steps) in sequences)
-        {
-            ReconnectVerdict verdict = await ReconnectModel.RunAsync(steps);
-            report.AppendLine(
-                CultureInfo.InvariantCulture,
-                $"{name} violation={verdict.Violation?.ToString() ?? "none"} {ReconnectModel.Print(steps)}");
-            details.AppendLine(CultureInfo.InvariantCulture, $"== {name}");
-            details.AppendLine(verdict.Detail);
-        }
-
-        report.AppendLine();
-        report.Append(details);
         await File.WriteAllTextAsync(reportPath, report.ToString(), TestContext.Current.CancellationToken);
     }
 
