@@ -95,6 +95,66 @@ public sealed class OwnOrderRebuildTests
         Assert.Equal((before.JourneyId, JourneyRuntimeStage.AwaitingUnloadResult), (arrived.JourneyId, arrived.Stage));
     }
 
+    // ---- 护栏二：车况不允许就不建 ------------------------------------------------------------------------------
+
+    /// <summary>
+    /// 延迟到点时车处在急停、手动（下线、未启用、解抱闸）或故障里：不建，旅程码换成 <c>OWN_ORDER_REBUILD_WAITING_VEHICLE</c>，
+    /// 记录上写明在等什么，告警只打一次；车恢复之后下一轮就建。
+    /// </summary>
+    /// <remarks>
+    /// 车况读的是 RIoT 的车辆安全读取（车载端安全投影用的同一次读、同一组原因码）与服务端自己的故障事实。
+    /// 拿掉这道护栏，第一轮就建了单，这一条红在「一张都没建」上。
+    /// </remarks>
+    [Theory]
+    [InlineData("RIOT_EMERGENCY_NOT_OK")]
+    [InlineData("RIOT_VEHICLE_NOT_ENABLED")]
+    [InlineData("RIOT_VEHICLE_NOT_ONLINE")]
+    [InlineData("RIOT_BRAKE_NOT_MOVABLE")]
+    [InlineData("RIOT_CONTROL_NOT_OK")]
+    [InlineData("VEHICLE_FAULT_IN_EFFECT")]
+    public async Task ARebuildWaitsWhileTheVehicleMayNotMoveAndIsMadeOnceItMay(string condition)
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync();
+        JourneyStopRow[] stopsBefore = await StopsAsync(fixture, before.JourneyId);
+        JourneyStopRow pickup = stopsBefore.Single(stop => stop.StopRole == JourneyStopRoles.Pickup);
+        fixture.Riot.CancelOrder(pickup.UpperId);
+        await TickAndRunAsync(fixture);
+        if (condition == "VEHICLE_FAULT_IN_EFFECT")
+        {
+            await RecordFaultAsync(fixture);
+        }
+        else
+        {
+            fixture.Riot.SafetyReasons = [condition];
+        }
+
+        await PassTheDelayAsync(fixture);
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+        Assert.Equal("OWN_ORDER_REBUILD_WAITING_VEHICLE", (await fixture.RuntimeAsync()).BlockReasonCode);
+        await using (ControlServerDbContext reading = new(fixture.DbOptionsForTests))
+        {
+            OwnOrderRebuildRow waiting = await reading.OwnOrderRebuilds.AsNoTracking().SingleAsync(Token);
+            Assert.Equal(OwnOrderRebuildStates.Pending, waiting.State);
+            Assert.Contains(condition, waiting.WaitingReason, StringComparison.Ordinal);
+        }
+        Assert.Single(fixture.EngineLog.Entries, entry =>
+            entry.Message.Contains("is held back", StringComparison.Ordinal) &&
+            entry.Message.Contains(condition, StringComparison.Ordinal));
+
+        fixture.Riot.SafetyReasons = [];
+        await ClearFaultAsync(fixture);
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+
+        Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+        await AssertRebuiltAsync(fixture, before, stopsBefore, pickup);
+        Assert.Null((await fixture.RuntimeAsync()).BlockReasonCode);
+    }
+
     // ---- 夹具 ----------------------------------------------------------------------------------------------
 
     /// <summary>
@@ -160,6 +220,24 @@ public sealed class OwnOrderRebuildTests
         Assert.True(fixture.Clock.GetUtcNow() > before, "the clock did not move past the delay");
         await fixture.HearFromPeerAsync();
         await fixture.Engine.ExecuteOnceAsync(Token);
+    }
+
+    /// <summary>服务端自己的故障事实：这辆车被记为疑似故障（与在途单 FAILED 记下的同一级）。</summary>
+    private static async Task RecordFaultAsync(RuntimeFixture fixture)
+    {
+        await using ControlServerDbContext writing = new(fixture.DbOptionsForTests);
+        await new VehicleFaultStore(writing).RecordLevelAsync(
+            fixture.Options.AgvId, VehicleFaultLevel.SuspectedBlocked, "L1_FAULT", false, fixture.Clock.GetUtcNow(), Token);
+    }
+
+    private static async Task ClearFaultAsync(RuntimeFixture fixture)
+    {
+        await using ControlServerDbContext writing = new(fixture.DbOptionsForTests);
+        VehicleFaultStore faults = new(writing);
+        if (await faults.ReadAsync(fixture.Options.AgvId, Token) is { Level: not VehicleFaultLevel.None } fault)
+        {
+            await faults.ClearAsync(fixture.Options.AgvId, fault.FaultGeneration, "L1", fixture.Clock.GetUtcNow(), Token);
+        }
     }
 
     internal static async Task<JourneyStopRow[]> StopsAsync(RuntimeFixture fixture, string journeyId)
