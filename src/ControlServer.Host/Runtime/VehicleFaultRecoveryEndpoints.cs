@@ -10,7 +10,9 @@ using Microsoft.Extensions.Options;
 namespace ControlServer.Host.Runtime;
 
 /// <summary>
-/// The person's entry point out of a vehicle fault (control-server#299): clear it, or continue a held order.
+/// The person's entry point out of a vehicle fault (control-server#299): clear it, or continue a held order; and, since
+/// control-server#345, out of an automatic rebuild that stopped: rebuild it once more, give the trip up, or hand a loaded trip
+/// to the vehicle's exception recovery session.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -19,14 +21,18 @@ namespace ControlServer.Host.Runtime;
 /// is named, never inferred, and a vehicle this server does not drive is a 404.
 /// </para>
 /// <para>
-/// 200 when the fault was cleared or the order continued, and when the same clearance had already been made (the body
-/// says which). A refusal is 409 with every reason. 503 when the entry point is not configured, or when the runtime
-/// round in progress did not end in time.
+/// 200 when the fault was cleared, the order continued, a stopped rebuild handed back, a stopped trip given up or handed to
+/// its session, and when the same request had already been carried out (the body says which). A refusal is 409 with every
+/// reason. 503 when the entry point is not configured, or when the runtime round in progress did not end in time.
 /// </para>
 /// <para>
-/// There is no action for rebuilding an order of this server's that was cancelled in RIoT: by the user's decision of
-/// 2026-09-22 control-server#318 rebuilds it on its own, without a person's confirmation, because usually nobody is
-/// watching the system. An unknown action is a 422.
+/// There is still no action for rebuilding an order of this server's that was cancelled in RIoT and is waiting to be rebuilt:
+/// by the user's decision of 2026-09-22 control-server#318 rebuilds it on its own, without a person's confirmation, because
+/// usually nobody is watching the system. The three actions of control-server#345 apply only once that automatic rebuild has
+/// stopped, which REQ-0361 leaves to a person. They sit on this entry point, not a new one, because they are the same kind of
+/// act -- a named person on site deciding what a stuck vehicle does next -- and so take the same credential, the same operator
+/// identity, the same runtime gate and the same event 9203 (scope specification 5.7: recovery goes through a controlled
+/// entry point with an audit, never an unauthorised dashboard button). An unknown action is a 422.
 /// </para>
 /// </remarks>
 public static class VehicleFaultRecoveryEndpoints
@@ -39,18 +45,26 @@ public static class VehicleFaultRecoveryEndpoints
         {
             ["CLEAR_FAULT"] = VehicleFaultRecoveryAction.ClearFault,
             ["RESUME_HELD_ORDER"] = VehicleFaultRecoveryAction.ResumeHeldOrder,
+            ["REBUILD_STOPPED_ORDER"] = VehicleFaultRecoveryAction.RebuildStoppedOrder,
+            ["TERMINATE_STOPPED_TRIP"] = VehicleFaultRecoveryAction.TerminateStoppedTrip,
+            ["PREPARE_CARGO_HANDOFF"] = VehicleFaultRecoveryAction.PrepareCargoHandoff,
         };
 
     public static void MapVehicleFaultRecovery(this WebApplication app)
     {
         app.MapPost(Route, HandleAsync)
             .WithName("RecoverVehicleFault")
-            .WithSummary("Clear a vehicle fault, or continue its held order, on a person's confirmation (control-server#299)")
+            .WithSummary(
+                "Clear a vehicle fault, continue its held order, or take a stopped rebuild out of its stop, on a person's "
+                + "confirmation (control-server#299, #345)")
             .WithDescription(
                 "Checks the operator identity and the confirmation that the fault was removed, then reads for itself that the "
                 + "fault is in effect, the order it stopped on has FAILED (an order cancelled or deleted in RIoT is refused: it "
                 + "is rebuilt, not redispatched), RIoT holds no unfinished order for the vehicle and no emergency stop is latched "
-                + "or open. Clearing never releases a latch.")
+                + "or open. Clearing never releases a latch. REBUILD_STOPPED_ORDER, TERMINATE_STOPPED_TRIP and "
+                + "PREPARE_CARGO_HANDOFF (control-server#345) apply only to a journey whose automatic rebuild stopped: rebuild "
+                + "once more, give a trip with nothing on board up, or hand a loaded one to the vehicle's exception recovery "
+                + "session.")
             .Produces<VehicleFaultRecoveryResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status404NotFound)
@@ -132,7 +146,9 @@ public static class VehicleFaultRecoveryEndpoints
             decision.FaultGeneration);
         return decision.Outcome switch
         {
-            VehicleFaultRecoveryOutcome.Cleared or VehicleFaultRecoveryOutcome.Resumed or VehicleFaultRecoveryOutcome.AlreadyCleared =>
+            VehicleFaultRecoveryOutcome.Cleared or VehicleFaultRecoveryOutcome.Resumed or VehicleFaultRecoveryOutcome.AlreadyCleared or
+                VehicleFaultRecoveryOutcome.RebuildRequested or VehicleFaultRecoveryOutcome.TripTerminated or
+                VehicleFaultRecoveryOutcome.HandoffPrepared or VehicleFaultRecoveryOutcome.AlreadyDone =>
                 TypedResults.Ok(body),
             _ when decision.Reasons.Contains("FAULT_RECOVERY_RUNTIME_BUSY") =>
                 Problem(StatusCodes.Status503ServiceUnavailable, "Runtime busy, try again", body),
@@ -164,7 +180,13 @@ public static class VehicleFaultRecoveryEndpoints
 /// What a person submits. <c>faultRemedied</c> defaults to false, so a request that leaves it out is refused for it rather
 /// than read as confirming it.
 /// </summary>
-/// <param name="Action"><c>CLEAR_FAULT</c> or <c>RESUME_HELD_ORDER</c>.</param>
+/// <param name="Action">
+/// <c>CLEAR_FAULT</c>, <c>RESUME_HELD_ORDER</c>, <c>REBUILD_STOPPED_ORDER</c>, <c>TERMINATE_STOPPED_TRIP</c> or
+/// <c>PREPARE_CARGO_HANDOFF</c>.
+/// </param>
+/// <param name="FaultRemedied">
+/// The person confirms the cause has been removed on site: of the fault, or of what stopped the rebuild again and again.
+/// </param>
 public sealed record VehicleFaultRecoveryHttpRequest(
     string AgvId,
     string? OperatorId,
