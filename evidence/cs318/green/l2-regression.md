@@ -19,3 +19,19 @@
 | `reassign-when-vehicle-ineligible` | `27e1637a` | `20260923T052000870Z` | FAIL | 2 / 0 |
 | `reassign-when-vehicle-ineligible` | `38dc7f19` | `20260923T052607546Z` | PASS | 8 / 0 |
 | `in-transit-order-cancelled-rebuilt` | `38dc7f19` | `20260923T052653076Z` | PASS | 5 / 0 |
+
+## 审查修改之后（`8ba67144`，已合并 `fp/v2-impl` `384b9b69`）
+
+审查 M2 之后重建要车载端会话就绪、安全摘要说可以离站才建单，可能改变合成场景里的时序，所以同一组七条全部重跑。
+全部 PASS。完整证据只入库本票自己的两条（`green/l2-in-transit-order-cancelled-rebuilt-8ba67144/`、
+`green/l2-vehicle-fault-operator-clearance-8ba67144/`），其余五条只记 runId。
+
+| 场景 | 服务端提交 | runId | 结论 | 判据 PASS / FAIL |
+| --- | --- | --- | --- | --- |
+| `in-transit-order-cancelled-rebuilt` | `8ba67144` | `20260923T092913906Z` | PASS | 5 / 0 |
+| `vehicle-fault-operator-clearance` | `8ba67144` | `20260923T093001440Z` | PASS | 8 / 0 |
+| `command-surface-order-hold` | `8ba67144` | `20260923T093043462Z` | PASS | 20 / 0 |
+| `emergency-stop-single-trigger` | `8ba67144` | `20260923T093155394Z` | PASS | 14 / 0 |
+| `emergency-stop-operator-release` | `8ba67144` | `20260923T093243030Z` | PASS | 10 / 0 |
+| `in-transit-order-hang-continue` | `8ba67144` | `20260923T093312387Z` | PASS | 7 / 0 |
+| `reassign-when-vehicle-ineligible` | `8ba67144` | `20260923T093413708Z` | PASS | 8 / 0 |
