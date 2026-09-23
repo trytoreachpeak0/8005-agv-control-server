@@ -252,8 +252,10 @@ internal static class OwnOrderRebuilds
 
     /// <summary>
     /// Whether the Host should ask <paramref name="agvId"/>'s vehicle for a <c>SafetyStateSnapshot</c> now, for a rebuild after a
-    /// cleared fault with cargo on board that is still waiting for the vehicle to show the cargo in its slots (REQ-0362); when
-    /// it should, the request is recorded here and the caller must send it.
+    /// cleared fault with cargo on board that is still waiting for the vehicle to show the cargo in its slots (REQ-0362), or for
+    /// a stopped trip a person has just handed to the exception recovery session (control-server#345: the snapshot is what gets
+    /// readiness judged again and announced, so that the onboard offers its fault cargo handoff); when it should, the request is
+    /// recorded here and the caller must send it.
     /// </summary>
     /// <remarks>
     /// <para>

@@ -23,10 +23,12 @@ namespace ControlServer.Host.Runtime.Faults;
 /// waiting on a rebuild at all.
 /// </para>
 /// <para>
-/// <b>Nothing is released and nothing is sent.</b> The request stages a new rebuild, due at once, and gives the journey back
-/// its transitional code; the engine's next round takes it from there through every check #318 put before a create
-/// (<see cref="OwnOrderRebuilds.StageManualRebuildAsync"/>). No RIoT call is made at all, so the request reads and writes this
-/// server's tables only, under <see cref="JourneyMutationGate"/> like a clearance.
+/// <b>Three ways out, chosen by a person.</b> A rebuild once more, due at once, which the engine's next round takes through
+/// every check #318 put before a create (<see cref="OwnOrderRebuilds.StageManualRebuildAsync"/>); giving a trip with nothing
+/// on board up (<see cref="TerminateStoppedAsync"/>); or handing a loaded one to the vehicle's exception recovery session
+/// (<see cref="PrepareCargoHandoffAsync"/>). None of them releases anything for redispatch, and none sends RIoT a command:
+/// giving up reads RIoT once, before the gate, and the others do not call it at all. Every write is this server's own, made
+/// under <see cref="JourneyMutationGate"/> like a clearance.
 /// </para>
 /// </remarks>
 public sealed partial class VehicleFaultRecoveryService
