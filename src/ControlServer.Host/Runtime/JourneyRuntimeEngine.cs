@@ -168,6 +168,12 @@ public sealed class JourneyRuntimeEngine(
     public const string LoadCorrectionInProgressReason = "LOAD_CORRECTION_IN_PROGRESS";
 
     /// <summary>
+    /// 车载端对离站安全询问答了「不安全」：车停在站里，等有人在车前把不安全的那一项处理掉。control-server#331 第四轮审查把它
+    /// 提成常量，理由同 <see cref="LoadCorrectionInProgressReason"/>。
+    /// </summary>
+    public const string PreDepartureSafetyNotValidReason = "PRE_DEPARTURE_SAFETY_NOT_VALID";
+
+    /// <summary>
     /// A loaded journey at its AREA machine station waited longer than
     /// <see cref="JourneyRuntimeOptions.AreaEndAdmissionRevokedTimeout"/> for the station to admit its task type again
     /// (control-server#198). The journey is <see cref="JourneyRuntimeStage.Blocked"/>: the goods on the vehicle are an
@@ -2838,7 +2844,7 @@ public sealed class JourneyRuntimeEngine(
                 // Written once, as the wait ends. Clearing the code before every attempt and writing it
                 // back, as this did before control-server#80, would restart BlockReasonSince on every
                 // poll of a journey that stays PRE_DEPARTURE_SAFETY_NOT_VALID.
-                runtime.SetBlockReason(invalid ? "PRE_DEPARTURE_SAFETY_NOT_VALID" : null, now);
+                runtime.SetBlockReason(invalid ? PreDepartureSafetyNotValidReason : null, now);
                 return safety;
             }
             await Task.Delay(step, cancellationToken).ConfigureAwait(false);
@@ -3632,14 +3638,21 @@ public sealed class JourneyRuntimeEngine(
     /// 那一种，以及 <see cref="System.Net.Sockets.SocketException"/>），沿内层异常一路找（control-server#331 第三轮审查建议 3）。
     /// </summary>
     /// <remarks>
+    /// <para>
     /// 只有这一类失败可以说「是会话未就绪造成的」。别的异常与会话无关，会话恰好也未就绪时仍要写推进失败——真车挂着本服务端在途单时
     /// 整段路都未就绪，把与会话无关、每轮都抛的异常也归给未就绪，看板一路说的就是一件不相干的事。
+    /// </para>
+    /// <para>
+    /// <see cref="ObjectDisposedException"/> 也算（第四轮审查建议 1）：连接被释放时 <c>OnboardPeer.DisposeAsync</c> 释放发送闸门，
+    /// 与之赛跑的发送在等闸门时抛的就是它，那也是「连接不在了」。先例是 <see cref="JourneyClosure"/> 补发时的
+    /// <c>error is IOException or ObjectDisposedException</c>。
+    /// </para>
     /// </remarks>
     private static bool IsTransportFailure(Exception failure)
     {
         for (Exception? current = failure; current is not null; current = current.InnerException)
         {
-            if (current is IOException or System.Net.Sockets.SocketException)
+            if (current is IOException or System.Net.Sockets.SocketException or ObjectDisposedException)
             {
                 return true;
             }
@@ -3662,6 +3675,17 @@ public sealed class JourneyRuntimeEngine(
     /// 下一轮按「码不同」重写，开始时间归零、升级档位清零。加进来也改变了失联那一段对它们的做法——失联不再盖掉它们——这是对的，
     /// 理由与上面几项相同；而实际上失联写码只在两个到站阶段起作用，这两个码只在停站阶段写入，阶段一变就被清掉，产品代码里碰不到一起。
     /// </para>
+    /// <para>
+    /// <see cref="PreDepartureSafetyNotValidReason"/> 是第四轮审查补进来的：车载端答了「不安全」，车停在站里等人去车前处理。它的写入处
+    /// （<c>AwaitSafeDepartureResultAsync</c>）按 control-server#80 只在等待结束时写一次，就是为了不让开始时间每轮重启；推进失败把它
+    /// 换成推进失败，下一轮走通时它按「码不同」重写，开始时间照样归零，program#55 的升级档位清零。与上面两个停站码一样，
+    /// 失联写码在产品代码里碰不到它（它只在 <c>AwaitingDepartureSafety</c> 写入）。
+    /// </para>
+    /// <para>
+    /// 有意不在里面的：检查点等待的两个码（见上）；<c>PREDEPARTURE_CHECK_EXPIRED</c>，那是服务端重新询问之后、等新答复的短暂状态，
+    /// 等的是车载端不是人。<see cref="CheckpointWaitExceededReason"/> 也不在里面：检查点等待本身随等随清，超时码被推进失败换掉的代价
+    /// 小，记在 control-server#331 的 PR 剩余风险里。
+    /// </para>
     /// </remarks>
     private static bool CarriesACodeThatNamesAWaitOnAPerson(JourneyRuntimeRow runtime) =>
         runtime.Stage == JourneyRuntimeStage.Blocked ||
@@ -3670,7 +3694,8 @@ public sealed class JourneyRuntimeEngine(
         IsStalledOrderReason(runtime.BlockReasonCode) ||
         string.Equals(runtime.BlockReasonCode, OnboardSessionLostReason, StringComparison.Ordinal) ||
         string.Equals(runtime.BlockReasonCode, StationTimeoutDoorNotClosedReason, StringComparison.Ordinal) ||
-        string.Equals(runtime.BlockReasonCode, LoadCorrectionInProgressReason, StringComparison.Ordinal);
+        string.Equals(runtime.BlockReasonCode, LoadCorrectionInProgressReason, StringComparison.Ordinal) ||
+        string.Equals(runtime.BlockReasonCode, PreDepartureSafetyNotValidReason, StringComparison.Ordinal);
 
     private static bool IsHeldForAreaEndAdmission(JourneyRuntimeRow runtime) =>
         runtime.Stage == JourneyRuntimeStage.AwaitingGateArrival &&
