@@ -27,7 +27,7 @@ public sealed class ReconnectModelRegressionTests
     private static readonly Dictionary<string, ReconnectStep[]> SequencesByName = new(StringComparer.Ordinal)
     {
         // 原型模型在 af01fd27 上 300 个组合里 17 个卡在取货站，确定性删减到这三步（最终模型动作多了，同样的种子生成的序列不同，
-        // 300 个里 6 个，删减结果相同只是前两步顺序对调）：到站那一轮派车计划与车辆业务状态发出去了，
+        // 300 个里 8 个，首个种子 0000000005_1，删减结果与这里相同）：到站那一轮派车计划与车辆业务状态发出去了，
         // 清单那一条发送时断线，车一张都没确认；收尾重连后每一轮都在重放校验上抛异常。62d5c560 上同样卡住。
         ["cut-after-the-business-state-nothing-acknowledged"] =
             [new ReconnectStep.Arrive(), new ReconnectStep.CutAfter(2), new ReconnectStep.Round(1)],
@@ -74,7 +74,8 @@ public sealed class ReconnectModelRegressionTests
     /// </summary>
     /// <remarks>
     /// <para>
-    /// 模型在 cs#331 第一版修复 <c>62d5c560</c> 上找到（300 个组合里 5 个，种子 <c>0000000005_1</c>，13 步删减到这 4 步）：单挂起、连接在下一条
+    /// 模型在 cs#331 第一版修复 <c>62d5c560</c> 上找到（300 个组合里 6 个，首个种子 <c>0000000005_1</c>，最短的 10 步删减到 4 步；
+    /// 模型删出的顺序是先断线后挂起，这里写成先挂起，两种顺序在 <c>62d5c560</c> 上都红）：单挂起、连接在下一条
     /// 发送时断；挂起那一轮写上 <c>ORDER_HANG</c>，下一轮开头补发没确认的计划时抛 <see cref="IOException"/>，那一版把 <c>ORDER_HANG</c>
     /// 换成了 <c>JOURNEY_ADVANCE_FAILED</c>——「不覆盖指名在等谁的码」是 cs#331 第二轮审查才补的。
     /// </para>
@@ -128,7 +129,7 @@ public sealed class ReconnectModelRegressionTests
     /// </summary>
     /// <remarks>
     /// <para>
-    /// 模型在 <c>18172346</c> 上 300 个组合里找到 135 个，确定性删减到这一步（种子 <c>0000000005q1</c>，化简前 11 步）。补发的
+    /// 模型在 <c>18172346</c> 上 300 个组合里找到 157 个，最短的一个（2 步）确定性删减到这一步。补发的
     /// <c>SafetyStateChanged</c> 回的是 <c>DurableAck</c> 加一行 <c>SessionReadiness</c>，车每发一条只读一条答复，把多出的那一行当成
     /// 能力快照的答复，断开重连——control-server#340，由 PR #343 修复（合入提交 <c>384b9b69</c>），同一个种子在那上面不再报这一类。
     /// </para>
@@ -156,8 +157,7 @@ public sealed class ReconnectModelRegressionTests
     /// </summary>
     /// <remarks>
     /// <para>
-    /// 模型在 cs#340 的 PR #343 头 <c>cb44fb60</c> 上（cs#340 修好之后）300 个组合里找到 91 个，确定性删减到这一步，种子与上面那条
-    /// 相同。服务端按整行报文的哈希判「同号不同内容」，补发的变化通知与握手快照哪怕安全内容逐字相同，整行也必然不同，于是
+    /// 模型在含 cs#340 修复的本分支上 300 个组合里找到 129 个，最短的一个（2 步）确定性删减到这一步，与上面那条相同。服务端按整行报文的哈希判「同号不同内容」，补发的变化通知与握手快照哪怕安全内容逐字相同，整行也必然不同，于是
     /// <c>safety revision N has conflicting content</c>，握手被拒——onboard-hmi#206。
     /// </para>
     /// <para>

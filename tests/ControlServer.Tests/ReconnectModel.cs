@@ -96,12 +96,29 @@ internal static class ReconnectModel
         (1, Gen.Const<ReconnectStep>(new ReconnectStep.OrderContinue())),
         (1, Gen.Const<ReconnectStep>(new ReconnectStep.ConflictingResend())));
 
-    internal static readonly Gen<ReconnectStep[]> Sequence = Step.Array[1, 24];
+    /// <summary>
+    /// 一个组合：整轮的车载端是「真」还是「合成」，加一串动作。真车载端挂着本服务端的在途单时整段报未就绪（<see cref="SafetyKind.OwnOrder"/>），
+    /// 到站那一刻才报安全；合成车载端一直报安全。这个常态咬过我们四次（cs#314、cs#316、cs#273、cs#331），模型里必须是真的。
+    /// </summary>
+    internal static readonly Gen<ReconnectScenario> Sequence =
+        Gen.Select(Gen.Bool, Step.Array[1, 24], (realOnboard, steps) => new ReconnectScenario(realOnboard, steps));
 
     internal static string Print(ReconnectStep[] steps) => "[" + string.Join(", ", steps.Select(step => step.ToString())) + "]";
 
-    /// <summary><see cref="Print"/> 的反向：把失败输出里打印的那一串原样读回来，用来在别的提交上复跑化简后的序列。</summary>
-    internal static ReconnectStep[] Parse(string printed)
+    internal static string Print(ReconnectScenario scenario) =>
+        (scenario.RealOnboard ? "real " : "synthetic ") + Print(scenario.Steps);
+
+    /// <summary><see cref="Print(ReconnectScenario)"/> 的反向：把失败输出里打印的那一串原样读回来，用来在别的提交上复跑化简后的序列。</summary>
+    /// <remarks>前缀 <c>real</c>／<c>synthetic</c> 可省，省了按合成车载端。</remarks>
+    internal static ReconnectScenario Parse(string printed)
+    {
+        string text = printed.Trim();
+        bool realOnboard = text.StartsWith("real", StringComparison.Ordinal);
+        text = text[text.IndexOf('[', StringComparison.Ordinal)..];
+        return new ReconnectScenario(realOnboard, ParseSteps(text));
+    }
+
+    private static ReconnectStep[] ParseSteps(string printed)
     {
         string body = printed.Trim().TrimStart('[').TrimEnd(']');
         List<ReconnectStep> steps = [];
@@ -169,9 +186,9 @@ internal static class ReconnectModel
             ["SafetyStateSnapshot (generation", "handshake open", "ProtocolContentConflictException: safety revision", "has conflicting content"]),
     ];
 
-    /// <summary>这一条违规对应的已知未修缺陷，没有时为 null。</summary>
-    internal static KnownDefect? KnownDefectFor(ReconnectViolation violation, string detail) =>
-        KnownDefects.FirstOrDefault(defect =>
+    /// <summary>这一条违规在 <paramref name="table"/> 里对应的已知未修缺陷，没有时为 null。</summary>
+    internal static KnownDefect? KnownDefectFor(IReadOnlyList<KnownDefect> table, ReconnectViolation violation, string detail) =>
+        table.FirstOrDefault(defect =>
             defect.Violation == violation &&
             defect.DetailFragments.All(fragment => detail.Contains(fragment, StringComparison.Ordinal)));
 
@@ -179,21 +196,24 @@ internal static class ReconnectModel
     /// 第 <paramref name="index"/> 个固定种子与它生成的序列。种子串用 <see cref="Check.SampleAsync{T}(Gen{T}, Func{T, Task}, Action{string}?, string?, long, int, int, Func{T, string}?, ILogger?)"/>
     /// 的 <c>seed</c> 参数就能复现同一个序列，再由 CsCheck 化简。
     /// </summary>
-    internal static (string Seed, ReconnectStep[] Steps) Fixed(ulong masterSeed, int index)
+    internal static (string Seed, ReconnectScenario Scenario) Fixed(ulong masterSeed, int index)
     {
         PCG pcg = new(1, masterSeed + (ulong)index);
         string seed = pcg.ToString();
-        ReconnectStep[] steps = Sequence.Generate(pcg, null, out _);
-        return (seed, steps);
+        ReconnectScenario scenario = Sequence.Generate(pcg, null, out _);
+        return (seed, scenario);
     }
 
-    /// <summary>跑一串动作，收尾，判不变量。返回判定与这一串的逐步记录。</summary>
-    internal static async Task<ReconnectVerdict> RunAsync(ReconnectStep[] steps)
+    /// <summary>合成车载端跑一串动作（回归用例手写的那些）。</summary>
+    internal static Task<ReconnectVerdict> RunAsync(ReconnectStep[] steps) => RunAsync(new ReconnectScenario(false, steps));
+
+    /// <summary>跑一个组合，收尾，判不变量。返回判定与这一串的逐步记录。</summary>
+    internal static async Task<ReconnectVerdict> RunAsync(ReconnectScenario scenario)
     {
         Stopwatch watch = Stopwatch.StartNew();
-        await using ReconnectModelRun run = await ReconnectModelRun.StartAsync();
+        await using ReconnectModelRun run = await ReconnectModelRun.StartAsync(scenario.RealOnboard);
         TimeSpan setup = watch.Elapsed;
-        foreach (ReconnectStep step in steps)
+        foreach (ReconnectStep step in scenario.Steps)
         {
             await run.ApplyAsync(step, tail: false);
         }
@@ -210,14 +230,22 @@ internal static class ReconnectModel
     /// CsCheck 的化简是随机搜索更小的样本，违规组合只占几个百分点时，几百次里往往一个更小的都碰不到。这一遍确定性、
     /// 可复现，结果就是固定成回归用例的那一串。
     /// </remarks>
-    internal static async Task<(ReconnectStep[] Steps, ReconnectVerdict Verdict)> MinimizeAsync(
-        ReconnectStep[] steps,
+    internal static async Task<(ReconnectScenario Scenario, ReconnectVerdict Verdict)> MinimizeAsync(
+        ReconnectScenario scenario,
         ReconnectViolation target)
     {
-        ReconnectVerdict current = await RunAsync(steps);
+        ReconnectVerdict current = await RunAsync(scenario);
         if (!current.Has(target))
         {
-            throw new InvalidOperationException($"The sequence to minimise does not violate {target}: {Print(steps)}");
+            throw new InvalidOperationException($"The sequence to minimise does not violate {target}: {Print(scenario)}");
+        }
+
+        bool realOnboard = scenario.RealOnboard;
+        ReconnectStep[] steps = scenario.Steps;
+        // 真车载端换成合成车载端也算化简：还违规，说明那一条与「在途单整段未就绪」无关。
+        if (realOnboard && await RunAsync(new ReconnectScenario(false, steps)) is { } synthetic && synthetic.Has(target))
+        {
+            (realOnboard, current) = (false, synthetic);
         }
 
         bool changed = true;
@@ -227,7 +255,7 @@ internal static class ReconnectModel
             for (int index = 0; index < steps.Length; index++)
             {
                 ReconnectStep[] without = [.. steps[..index], .. steps[(index + 1)..]];
-                if (await RunAsync(without) is { } verdict && verdict.Has(target))
+                if (await RunAsync(new ReconnectScenario(realOnboard, without)) is { } verdict && verdict.Has(target))
                 {
                     (steps, current, changed) = (without, verdict, true);
                     break;
@@ -252,14 +280,14 @@ internal static class ReconnectModel
 
                 ReconnectStep[] simpler = [.. steps];
                 simpler[index] = smaller;
-                if (await RunAsync(simpler) is { } verdict && verdict.Has(target))
+                if (await RunAsync(new ReconnectScenario(realOnboard, simpler)) is { } verdict && verdict.Has(target))
                 {
                     (steps, current, changed) = (simpler, verdict, true);
                 }
             }
         }
 
-        return (steps, current);
+        return (new ReconnectScenario(realOnboard, steps), current);
     }
 
     /// <summary>
@@ -281,13 +309,27 @@ internal static class ReconnectModel
         private int _ackConflicts;
         private int _rounds;
         private bool _orderHung;
+        private readonly bool _realOnboard;
+
+        /// <summary>模型自己往会话行里写过「未就绪」、还没被真实握手或 <see cref="VehicleReadyAsync"/> 撤销。收尾只撤销这个。</summary>
+        private bool _modelWroteNotReady;
+
+        /// <summary>挂起的单第一次写上 <c>ORDER_HANG</c> 的起点；整个挂起期间都不该变（审查建议 8）。</summary>
+        private DateTimeOffset? _hangSince;
+
+        /// <summary>模型里造出来的 id 的计数：id 由它派生，同一个组合每次跑出同样的 id。</summary>
+        private int _idCounter;
 
         /// <summary>服务端已经收下的安全变化，原样：<see cref="ConflictingResendAsync"/> 拿它们的 messageId 造语义不同的重放。</summary>
         private readonly List<(string MessageId, string Line)> _processedSafetyChanges = [];
         private int _waitOnPersonChances;
 
-        /// <summary>服务端最后一次收到车的任何一条入站的时刻（心跳、握手里的每一条、会话中途的安全变化）。</summary>
-        private DateTimeOffset? _lastInboundAt;
+        /// <summary>
+        /// 服务端最后一次在当前这一代上<b>处理成功</b>一条车的入站的时刻与代次（心跳、握手里除 <c>SessionHello</c> 外的每一条、会话中途的
+        /// 安全变化）。产品只在处理成功之后刷新活性（<c>OnboardTcpServer</c>：「A line that throws does not refresh」），
+        /// 引擎按当前这一代的入站判活性，<c>SessionHello</c> 没有代次、不算。
+        /// </summary>
+        private (DateTimeOffset At, long Generation)? _lastHeard;
 
         /// <summary>车的持久日志里还没等到确认的报文，按发出的顺序；下一次握手原样补发（只换代次）。</summary>
         private readonly List<(string MessageId, string Line)> _unacknowledged = [];
@@ -299,8 +341,9 @@ internal static class ReconnectModel
         private OnboardMessageProcessor? _processor;
         private OnboardConnectionState? _connection;
 
-        private ReconnectModelRun(RuntimeFixture fixture)
+        private ReconnectModelRun(RuntimeFixture fixture, bool realOnboard)
         {
+            _realOnboard = realOnboard;
             _fixture = fixture;
             _vehicle = new AdoptingPeer(fixture.Context, fixture.Clock);
             fixture.Peer.OnMessageSent = Deliver;
@@ -308,12 +351,14 @@ internal static class ReconnectModel
 
         private static CancellationToken Token => TestContext.Current.CancellationToken;
 
-        public static async Task<ReconnectModelRun> StartAsync()
+        public static async Task<ReconnectModelRun> StartAsync(bool realOnboard)
         {
             RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
             // 期限要开着：关着时清单里的期限永远是 null，cs#331 现场那一层（期限作废后重填、与车已确认的那一版不同）就不存在。
-            fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(30);
-            ReconnectModelRun run = new(fixture);
+            // 长度取十分钟：比一个组合能走的最长时间（24 步各 8 秒，加收尾）长得多，这一站不会因为没人扫码而按期限结束——模型里没有
+            // 操作员，那样结束的一站不是这个模型要判的。重填出来的期限照样与车确认过的那一版不同，cs#331 那一层照样在。
+            fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromMinutes(10);
+            ReconnectModelRun run = new(fixture, realOnboard);
             // 第 1 代是夹具直接播种的，握手已经完成；给它一条经真实处理器的连接，会话中途的安全变化走这一条。
             await run.OpenConnectionAsync();
             run._connection!.AgvId = fixture.Options.AgvId;
@@ -332,6 +377,13 @@ internal static class ReconnectModel
                 throw new InvalidOperationException($"The model starts on a dispatched journey, got {runtime.Stage}.");
             }
 
+            if (realOnboard)
+            {
+                // 真车载端一看到本服务端的在途单就报未就绪（现场 SessionRecoveries 的形状），一直到到站。
+                string? outcome = await run.SafetyChangeAsync(SafetyKind.OwnOrder, SafetyDelivery.Delivered);
+                run._trace.Add("  start real onboard: Safety(OwnOrder,Delivered) -> " + outcome);
+            }
+
             return run;
         }
 
@@ -340,7 +392,7 @@ internal static class ReconnectModel
             string? outcome = step switch
             {
                 ReconnectStep.Round round => await RoundAsync(round.Seconds),
-                ReconnectStep.Arrive => Arrive(),
+                ReconnectStep.Arrive => await ArriveAsync(),
                 ReconnectStep.Ack => await AckAsync(),
                 ReconnectStep.CutAfter cut => CutAfter(cut.Sends),
                 ReconnectStep.BeginHandshake => await BeginHandshakeAsync(),
@@ -376,12 +428,12 @@ internal static class ReconnectModel
                 await ApplyAsync(new ReconnectStep.CompleteHandshake(), tail: true);
             }
 
-            if (_connected && _safety != SafetyKind.Safe)
+            await RestoreHealthySafetyAsync();
+            if (_modelWroteNotReady)
             {
-                await ApplyAsync(new ReconnectStep.SafetyChange(SafetyKind.Safe, SafetyDelivery.Delivered), tail: true);
+                await ApplyAsync(new ReconnectStep.VehicleReady(), tail: true);
             }
 
-            await ApplyAsync(new ReconnectStep.VehicleReady(), tail: true);
             if (_orderHung)
             {
                 await ApplyAsync(new ReconnectStep.OrderContinue(), tail: true);
@@ -397,10 +449,7 @@ internal static class ReconnectModel
                     // 确认被拒、握手被拒或答复不对时连接断了；车会再连上来。
                     await ApplyAsync(new ReconnectStep.BeginHandshake(), tail: true);
                     await ApplyAsync(new ReconnectStep.CompleteHandshake(), tail: true);
-                    if (_connected && _safety != SafetyKind.Safe)
-                    {
-                        await ApplyAsync(new ReconnectStep.SafetyChange(SafetyKind.Safe, SafetyDelivery.Delivered), tail: true);
-                    }
+                    await RestoreHealthySafetyAsync();
                 }
 
                 // 走到了就不再多跑：这一轮没抛、录入请求已以当前这一代送到车上、阶段在等录入。
@@ -417,31 +466,40 @@ internal static class ReconnectModel
             JourneyRuntimeRow runtime = await _fixture.RuntimeAsync();
             string[] lastFailures = [.. _tailOutcomes.TakeLast(FailingTailRounds).Where(outcome => outcome is not null).Select(outcome => outcome!)];
             bool everyRoundThrows = lastFailures.Length == FailingTailRounds;
-            bool entryReachedVehicle = runtime.Stage == JourneyRuntimeStage.AwaitingSublot
-                ? _delivered.Any(line => line.MessageType == "SublotEntryRequested" && line.Generation == _generation)
-                : _delivered.Any(line => line.MessageType == "SublotEntryRequested");
-            bool waitsVisibly = runtime.BlockReasonCode is { } code &&
-                                !string.Equals(code, AdvanceFailedReason, StringComparison.Ordinal);
+            // 收尾已经把车弄成健康的：连着、握手完成、安全状态是它此刻该报的、挂起的单继续了、车在站。正确的产品在这之后只有一个结局：
+            // 阶段在等录入，录入请求以当前这一代送到了车上。以前这里还放行「看板上有码」，审查指出它只剩放行作用——重连后该清的码没清、
+            // 旅程停着不动也会被它放过——所以去掉了。
+            bool entryReachedVehicle = runtime.Stage == JourneyRuntimeStage.AwaitingSublot &&
+                                       _delivered.Any(line => line.MessageType == "SublotEntryRequested" && line.Generation == _generation);
+            SessionRecoveryRow session = await _fixture.Context.SessionRecoveries.AsNoTracking().SingleAsync(Token);
 
             ReconnectViolation? journeyViolation = everyRoundThrows
                 ? runtime.Stage == JourneyRuntimeStage.AwaitingPickupArrival
                     ? ReconnectViolation.StuckAtPickup
                     : ReconnectViolation.EveryRoundThrows
-                : entryReachedVehicle || waitsVisibly
+                : entryReachedVehicle
                     ? null
                     : ReconnectViolation.EntryNeverReachedVehicle;
 
             List<(ReconnectViolation Violation, string Detail)> violations = [.. _violations];
             if (journeyViolation is { } found)
             {
-                violations.Add((found, $"stage={runtime.Stage} block={runtime.BlockReasonCode ?? "null"}" +
+                violations.Add((found, $"stage={runtime.Stage} block={runtime.BlockReasonCode ?? "null"} " +
+                    $"session={session.Readiness}/{session.ReasonCode} generation={session.SessionGeneration}" +
                     (everyRoundThrows ? " last tail rounds: " + string.Join(" | ", lastFailures.Distinct(StringComparer.Ordinal)) : string.Empty)));
+            }
+
+            // 车拒收了一版快照（修订号倒退），或服务端拒收了车的确认：以前只计数，这里算违规——几千个组合里都是 0，没有代价。
+            foreach ((string messageType, long delivered, long held) in _vehicle.Regressions)
+            {
+                violations.Add((ReconnectViolation.VehicleRefusedRegression, $"{messageType} revision {delivered} delivered while the vehicle held {held}"));
             }
 
             StringBuilder detail = new();
             detail.AppendLine(
                 CultureInfo.InvariantCulture,
-                $"final: stage={runtime.Stage} block={runtime.BlockReasonCode ?? "null"} generation={_generation} " +
+                $"final: onboard={(_realOnboard ? "real" : "synthetic")} stage={runtime.Stage} block={runtime.BlockReasonCode ?? "null"} " +
+                $"session={session.Readiness}/{session.ReasonCode} generation={_generation} " +
                 $"entryReachedVehicle={entryReachedVehicle} ackConflicts={_ackConflicts} regressions={_vehicle.Regressions.Count}");
             if (everyRoundThrows)
             {
@@ -463,6 +521,19 @@ internal static class ReconnectModel
             {
                 WaitOnPersonChances = _waitOnPersonChances,
             };
+        }
+
+        /// <summary>
+        /// 收尾里把车的安全状态弄成它此刻「健康时」该报的：真车载端没到站时是在途单形状，其余时候是安全。车不在线时什么也不做
+        /// （下一次握手的快照会带上它）。
+        /// </summary>
+        private async Task RestoreHealthySafetyAsync()
+        {
+            SafetyKind healthy = _realOnboard && !_arrived ? SafetyKind.OwnOrder : SafetyKind.Safe;
+            if (_connected && !_handshakeOpen && _safety != healthy)
+            {
+                await ApplyAsync(new ReconnectStep.SafetyChange(healthy, SafetyDelivery.Delivered), tail: true);
+            }
         }
 
         public async ValueTask DisposeAsync()
@@ -518,7 +589,7 @@ internal static class ReconnectModel
             {
                 _fixture.Context.ChangeTracker.Clear();
                 await _fixture.HearFromPeerAsync();
-                _lastInboundAt = _fixture.Clock.GetUtcNow();
+                MarkHeard();
             }
 
             _rounds++;
@@ -539,6 +610,7 @@ internal static class ReconnectModel
             await _fixture.RecreateEngineAsync();
             JourneyRuntimeRow runtime = await _fixture.RuntimeAsync();
             CheckWaitOnPersonKept(beforeRound, runtime, threw: outcome is not null);
+            CheckHangKeepsItsStart(runtime);
             string sent = string.Join(
                 ",",
                 _delivered.Skip(sentBefore).Select(line => ShortName(line.MessageType) + "@" + line.Generation));
@@ -564,19 +636,17 @@ internal static class ReconnectModel
                 return;
             }
 
-            // 失联码说的是「车不说话」：写下它之后车又被听到过（心跳、握手、任何一条入站），它就不再成立，引擎先把它清掉是对的，
-            // 之后这一轮再失败、写推进失败，不是覆盖。只在写下之后车一直没说话时判它（cs#331 的 PR 剩余风险里写的正是这一点：
-            // 车一被听到就先清掉这个码）。只看「这一轮开头连没连着」不够：握手完成之后没跑一轮就又断了，车说过话，却不算连着。
-            if (string.Equals(code, "ONBOARD_SESSION_LOST", StringComparison.Ordinal) &&
-                _lastInboundAt is { } heard && heard >= before.BlockReasonSince)
-            {
-                return;
-            }
+            // 失联码说的是「车不说话」：写下它之后车在当前这一代上又被听到过（处理成功的入站），它就不再成立，引擎先把它清掉是对的，
+            // 之后这一轮再失败、写推进失败，不是覆盖（cs#331 的 PR 剩余风险：车一被听到就先清掉这个码）。只豁免「换成推进失败」这一支；
+            // 「码没变、起点却变了」照判（审查必修 M2）。被拒的入站、别的代次上的入站、SessionHello 都不算听到。
+            bool sessionLostLegitimatelyCleared =
+                string.Equals(code, "ONBOARD_SESSION_LOST", StringComparison.Ordinal) &&
+                _lastHeard is { } heard && heard.Generation == _generation && heard.At >= before.BlockReasonSince;
 
             // 这条不变量有过几次出事的机会：带着等人码进来、这一轮又失败了。没有这样的轮次，它不出违规也说明不了什么。
-            _waitOnPersonChances += threw ? 1 : 0;
+            _waitOnPersonChances += threw && !sessionLostLegitimatelyCleared ? 1 : 0;
 
-            if (string.Equals(after.BlockReasonCode, AdvanceFailedReason, StringComparison.Ordinal))
+            if (string.Equals(after.BlockReasonCode, AdvanceFailedReason, StringComparison.Ordinal) && !sessionLostLegitimatelyCleared)
             {
                 Violate(
                     ReconnectViolation.WaitOnPersonOverwritten,
@@ -595,9 +665,13 @@ internal static class ReconnectModel
         /// 不变量「防重放护栏不放过语义不同的消息」：拿一条服务端已经收下的安全变化，messageId 不变、安全内容改掉，在当前这一代再发一次。
         /// 服务端必须拒绝（抛异常、连接随之结束，或者不回 <c>DurableAck</c>）；回了 <c>DurableAck</c> 就是把两件不同的事当成了同一件。
         /// </summary>
+        /// <remarks>
+        /// 握手进行中也做：那时这一条是当成「上一个会话留下、这次补发」的重复到达来答的（<c>RebindDurableAckAsync</c>），
+        /// 与会话中途走的不是同一段（审查建议 7）。
+        /// </remarks>
         private async Task<string?> ConflictingResendAsync()
         {
-            if (!_connected || _handshakeOpen || _processedSafetyChanges.Count == 0)
+            if (!(_connected || _handshakeOpen) || _processedSafetyChanges.Count == 0)
             {
                 return "no-op";
             }
@@ -648,6 +722,7 @@ internal static class ReconnectModel
 
             _fixture.Riot.SetOrderState(await PickupUpperIdAsync(), OrderRunning, terminal: false);
             _orderHung = false;
+            _hangSince = null;
             return null;
         }
 
@@ -657,7 +732,11 @@ internal static class ReconnectModel
         private async Task<string> PickupUpperIdAsync() =>
             (await _fixture.Context.OrderIntents.AsNoTracking().SingleAsync(row => row.Purpose == "TO_PICKUP", Token)).UpperId;
 
-        private string? Arrive()
+        /// <summary>
+        /// RIoT 报告车到了取货站。真车载端这时在途单走完，报一条安全（cs#331 的时序正在这一跳上）；车不在线时这一条进日志，
+        /// 下一次握手补发。
+        /// </summary>
+        private async Task<string?> ArriveAsync()
         {
             if (_arrived)
             {
@@ -666,11 +745,12 @@ internal static class ReconnectModel
 
             // 到站就是那张单走完了：挂着的也算有人继续过了。
             _orderHung = false;
+            _hangSince = null;
             JourneyRuntimeRow runtime = _fixture.Context.JourneyRuntimes.AsNoTracking().Single();
             _fixture.Riot.SetSuccessfulArrival("TO_PICKUP", runtime.PickupStationRiotId);
             _fixture.Riot.Vehicle = _fixture.Riot.Vehicle with { CurrentStationId = runtime.PickupStationRiotId };
             _arrived = true;
-            return null;
+            return _realOnboard ? "vehicle reports safe: " + await SafetyChangeAsync(SafetyKind.Safe, SafetyDelivery.Delivered) : null;
         }
 
         private async Task<string?> AckAsync()
@@ -682,8 +762,10 @@ internal static class ReconnectModel
             }
             catch (ProtocolContentConflictException error)
             {
-                // 真实处理器在这里抛出，连接随之结束；剩下的确认跟着连接一起丢了。
+                // 真实处理器在这里抛出，连接随之结束；剩下的确认跟着连接一起丢了。车确认的是它收到的那一行，服务端拒收就是
+                // 防重放护栏拒了合法消息。
                 _ackConflicts++;
+                Violate(ReconnectViolation.LegitimateMessageRefused, "the vehicle's snapshot acknowledgement was refused: " + FirstLine(error.Message));
                 _vehicle.LoseBufferedAcks();
                 _fixture.Context.ChangeTracker.Clear();
                 _connected = false;
@@ -783,7 +865,9 @@ internal static class ReconnectModel
                 }
             }
 
+            _modelWroteNotReady = false;
             await _fixture.HearFromPeerAsync();
+            MarkHeard();
             return null;
         }
 
@@ -800,7 +884,7 @@ internal static class ReconnectModel
         {
             _safety = kind;
             long version = ++_acceptedSafetyVersion;
-            string messageId = Guid.NewGuid().ToString("D");
+            string messageId = NextId("safety-change");
             string line = VehicleLine(
                 "SafetyStateChanged",
                 new
@@ -917,12 +1001,15 @@ internal static class ReconnectModel
             bool attachOnHandshakeDone = false,
             bool refusalExpected = false)
         {
-            // 服务端读到了这一行，不论它随后怎么答：车被听到了。
-            _lastInboundAt = _fixture.Clock.GetUtcNow();
             try
             {
                 string response = await _processor!.ProcessAsync(line, _connection!, Token);
                 string[] answers = response.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+                if (messageType != "SessionHello")
+                {
+                    MarkHeard();
+                }
+
                 if (attachOnHandshakeDone && _connection!.HandshakeCompleted && _handshakeOpen)
                 {
                     _handshakeOpen = false;
@@ -950,6 +1037,48 @@ internal static class ReconnectModel
             }
         }
 
+        /// <summary>同一个组合每次跑出同样的 id：由计数与用途派生，不用 <see cref="Guid.NewGuid"/>。</summary>
+        private string NextId(string purpose)
+        {
+            byte[] hash = System.Security.Cryptography.SHA256.HashData(
+                Encoding.UTF8.GetBytes($"cs342|{purpose}|{++_idCounter}"));
+            hash[6] = (byte)((hash[6] & 0x0f) | 0x50);
+            hash[8] = (byte)((hash[8] & 0x3f) | 0x80);
+            return new Guid(hash.AsSpan(0, 16)).ToString("D");
+        }
+
+        private void MarkHeard() => _lastHeard = (_fixture.Clock.GetUtcNow(), _generation);
+
+        /// <summary>
+        /// 审查建议 8：挂起期间 <c>ORDER_HANG</c> 的起点从第一次写上起就不该变，不只比一轮前后——中间被别的码顶掉再写回来，
+        /// 起点也不能重置。有人在 RIoT 里让单继续（或者到站）之后重新计起。
+        /// </summary>
+        private void CheckHangKeepsItsStart(JourneyRuntimeRow after)
+        {
+            if (!_orderHung)
+            {
+                _hangSince = null;
+                return;
+            }
+
+            if (!string.Equals(after.BlockReasonCode, "ORDER_HANG", StringComparison.Ordinal) || after.BlockReasonSince is not { } since)
+            {
+                return;
+            }
+
+            if (_hangSince is null)
+            {
+                _hangSince = since;
+            }
+            else if (since != _hangSince)
+            {
+                Violate(
+                    ReconnectViolation.WaitOnPersonOverwritten,
+                    $"ORDER_HANG came back with its start at {since:O}, but the order has been hung since {_hangSince:O}");
+                _hangSince = since;
+            }
+        }
+
         private void Violate(ReconnectViolation violation, string detail)
         {
             _violations.Add((violation, detail));
@@ -964,7 +1093,7 @@ internal static class ReconnectModel
                 protocolReleaseVersion = ProtocolCandidateIdentity.ReleaseVersion,
                 protocolReleaseManifestSha256 = ProtocolCandidateIdentity.ManifestSha256,
                 messageType,
-                messageId = messageId ?? Guid.NewGuid().ToString("D"),
+                messageId = messageId ?? NextId(messageType),
                 correlationId = (string?)null,
                 agvId = _fixture.Options.AgvId,
                 sessionGeneration = generation,
@@ -1015,9 +1144,9 @@ internal static class ReconnectModel
             slotStates = SlotStates(),
         };
 
-        private static object RecoveryReportPayload() => new
+        private object RecoveryReportPayload() => new
         {
-            reportId = Guid.NewGuid().ToString("D"),
+            reportId = NextId("recovery-report"),
             unsettledSlotOperationAttemptId = (string?)null,
             provenRecoveryCheckpoint = "NONE",
             activeUnlockSlots = Array.Empty<int>(),
@@ -1080,16 +1209,22 @@ internal static class ReconnectModel
                 await _fixture.DropOnboardSessionAsync();
             }
 
+            _modelWroteNotReady = true;
             return null;
         }
 
-        /// <summary>车在当前这一代上回到就绪。车不在线（断了、握手没完成）时报不了，什么也不做。</summary>
+        /// <summary>
+        /// 撤销模型自己写的「未就绪」（<see cref="VehicleNotReadyAsync"/>）。只撤销它：会话就绪与否其余都由产品按车的报文自己算，
+        /// 模型不替它写——否则「合法握手、车报安全之后服务端不回就绪」这类缺陷会被一次写库盖住（审查建议 5）。车不在线时什么也不做。
+        /// </summary>
         private async Task<string?> VehicleReadyAsync()
         {
-            if (_handshakeOpen || !_connected)
+            if (_handshakeOpen || !_connected || !_modelWroteNotReady)
             {
                 return "no-op";
             }
+
+            _modelWroteNotReady = false;
 
             _fixture.Context.ChangeTracker.Clear();
             SessionRecoveryRow session = await _fixture.Context.SessionRecoveries.SingleAsync(Token);
@@ -1208,6 +1343,15 @@ internal abstract record ReconnectStep
     }
 }
 
+/// <summary>一个组合：整轮的车载端真不真，加一串动作。</summary>
+internal sealed record ReconnectScenario(bool RealOnboard, ReconnectStep[] Steps)
+{
+    public bool Equals(ReconnectScenario? other) =>
+        other is not null && other.RealOnboard == RealOnboard && other.Steps.SequenceEqual(Steps);
+
+    public override int GetHashCode() => HashCode.Combine(RealOnboard, Steps.Length);
+}
+
 internal enum SafetyKind
 {
     Safe,
@@ -1265,6 +1409,9 @@ internal enum ReconnectViolation
 
     /// <summary>同一个 messageId、语义不同的一条被当成已收下的那一条回了确认——防重放护栏放过了不该放的。</summary>
     DifferentMessageAccepted,
+
+    /// <summary>车收到了一版修订号比它手上那一版低的快照，按真车载端的做法拒收（<c>SNAPSHOT_REVISION_REGRESSION</c>）。</summary>
+    VehicleRefusedRegression,
 
     /// <summary>「等人」类阻断码被推进失败覆盖，或码没变而开始时间重置了（control-server#331 审查必修 2）。</summary>
     WaitOnPersonOverwritten,
