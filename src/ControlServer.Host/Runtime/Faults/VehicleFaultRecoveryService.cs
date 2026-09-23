@@ -193,6 +193,7 @@ public sealed partial class VehicleFaultRecoveryService(
     VehicleMotionLedger ledger,
     JourneyMutationGate gate,
     VehicleFaultResumeFlights resumeFlights,
+    OnboardJourneyPublisher publisher,
     IOptions<JourneyRuntimeOptions> runtimeOptions,
     TimeProvider timeProvider,
     ILogger<VehicleFaultRecoveryService> logger,
@@ -250,6 +251,8 @@ public sealed partial class VehicleFaultRecoveryService(
             VehicleFaultRecoveryAction.ResumeHeldOrder => await ResumeAsync(request, cancellationToken).ConfigureAwait(false),
             VehicleFaultRecoveryAction.RebuildStoppedOrder =>
                 await RebuildStoppedAsync(request, cancellationToken).ConfigureAwait(false),
+            VehicleFaultRecoveryAction.TerminateStoppedTrip =>
+                await TerminateStoppedAsync(request, cancellationToken).ConfigureAwait(false),
             _ => Refused(["FAULT_RECOVERY_ACTION_UNKNOWN"], null),
         };
         return Record(request, decision);

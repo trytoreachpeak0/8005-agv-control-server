@@ -1576,7 +1576,8 @@ public sealed class VehicleFaultRecoveryTests
             ledger, faultOptions, fixture.Clock, NullLogger<VehicleFaultCoordinator>.Instance);
         return new VehicleFaultRecoveryService(
             context, faults, site, site, site, supervisor, coordinator, ledger, gate ?? new JourneyMutationGate(),
-            flights ?? new VehicleFaultResumeFlights(), Options.Create(fixture.Options),
+            flights ?? new VehicleFaultResumeFlights(),
+            new OnboardJourneyPublisher(new WireToGateStore(context), fixture.Peer, fixture.Clock), Options.Create(fixture.Options),
             fixture.Clock, logger ?? NullLogger<VehicleFaultRecoveryService>.Instance, gateTimeout);
     }
 
