@@ -1842,13 +1842,23 @@ public sealed partial class MultiVehicleExecutionTests
     {
         private readonly Dictionary<string, RiotOrderObservation> _orders = new(StringComparer.Ordinal);
 
-        /// <summary>RIoT's vehicle safety read (control-server#318's second guard): every vehicle stopped, nothing in the way.</summary>
+        /// <summary>
+        /// RIoT's vehicle safety read (control-server#318's second guard): every vehicle stopped and nothing in the way, unless
+        /// <see cref="SafetyReasons"/> names something.
+        /// </summary>
         public Task<RiotVehicleSafetyObservation> ReadVehicleSafetyAsync(string vehicleKey, CancellationToken cancellationToken)
         {
             _ = cancellationToken;
             return Task.FromResult(new RiotVehicleSafetyObservation(
-                vehicleKey, RiotVehicleMotionState.Stopped, clock.GetUtcNow(), "L1", []));
+                vehicleKey,
+                SafetyReasons.Length == 0 ? RiotVehicleMotionState.Stopped : RiotVehicleMotionState.Unknown,
+                clock.GetUtcNow(),
+                "L1",
+                SafetyReasons));
         }
+
+        /// <summary>What the safety read names for every vehicle; empty means stopped with nothing in the way.</summary>
+        public string[] SafetyReasons { get; set; } = [];
 
         /// <summary>The vehicle key whose reads never come back, or null.</summary>
         public string? HangOn { get; set; }

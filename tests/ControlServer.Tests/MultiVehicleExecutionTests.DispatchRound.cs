@@ -701,6 +701,62 @@ public sealed partial class MultiVehicleExecutionTests
     }
 
     /// <summary>
+    /// 等着重建的车不接途中追加（REQ-0360：重建之前这辆车保持阻断，不接新的派车与途中追加）：延迟之内（旅程码仍是取消的
+    /// <c>ORDER_ENDED_WITHOUT_ARRIVAL</c>），和延迟过了却因车况在等（<c>OWN_ORDER_REBUILD_WAITING_VEHICLE</c>），第二条需求都不进这趟旅程。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 不是本票新写的挡法：派单轮次按 <see cref="JourneyRuntimeEngine.IsStalledOrderReason"/> 挡途中追加（#316），本票把重建相关的码
+    /// 放进了那一族。这一条钉的是「放进去了」——把重建码移出那一族，第二格红。判别力同 <see cref="AJourneyWhoseOrderHangsTakesNoAppendedDemand"/>：
+    /// <see cref="AnInTransitVehicleTakesAnAppendedDemandIntoItsExistingJourney"/> 是同一个夹具、同样两条需求下追加进来的那一面。
+    /// </para>
+    /// <para>不接新的派车由 <see cref="AVehicleWhoseOrderWasCancelledInRiotIsNotOfferedAsIdle"/> 守：有未完成旅程的车一律算 busy。</para>
+    /// </remarks>
+    [Theory]
+    [InlineData("within-the-delay")]
+    [InlineData("waiting-for-the-vehicle")]
+    [Trait("Requirement", "REQ-0360")]
+    public async Task AVehicleWaitingForItsOrderToBeRebuiltTakesNoAppendedDemand(string waiting)
+    {
+        // Waiting for the vehicle needs the delay over while the synthetic session is still fresh: this fixture has no way to
+        // hear from the peer again, and a session silent past SessionLiveness.Timeout ends the round before the rebuild.
+        bool forTheVehicle = waiting == "waiting-for-the-vehicle";
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(
+            configure: options =>
+            {
+                options.Fleet = options.Fleet[..1];
+                options.OwnOrderRebuildDelay = forTheVehicle ? TimeSpan.Zero : options.OwnOrderRebuildDelay;
+            },
+            withRouteGraph: true);
+        await fixture.AllowEnRouteAppendAsync(1_000_000);
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
+        await fixture.RunRoundAsync();
+        JourneyRuntimeRow journey = await fixture.JourneyOfAsync(FleetFixture.AgvIds[0]);
+        fixture.Riot.CancelOrder(journey.PickupUpperId);
+        fixture.Riot.MovementState = "MT_FINISHED";
+        string expected = "ORDER_ENDED_WITHOUT_ARRIVAL";
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+        if (forTheVehicle)
+        {
+            fixture.Riot.SafetyReasons = ["RIOT_EMERGENCY_NOT_OK"];
+            await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+            expected = "OWN_ORDER_REBUILD_WAITING_VEHICLE";
+        }
+        Assert.Equal(expected, (await fixture.JourneyOfAsync(FleetFixture.AgvIds[0])).BlockReasonCode);
+
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0), FleetFixture.Demand(1, "N1-2", 1)]);
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+
+        JourneyRuntimeRow only = Assert.Single(
+            await fixture.Context.JourneyRuntimes.AsNoTracking().ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal((journey.JourneyId, expected), (only.JourneyId, only.BlockReasonCode));
+        JourneyDemandRow membership = Assert.Single(
+            await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+                .ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(FleetFixture.Demand(0, "N1-1", 0).DemandId, membership.DemandId);
+    }
+
+    /// <summary>
     /// 在途单被人在 RIoT 里取消的车不接新单：它不会被当成空闲车，再派一趟旅程出去（control-server#316）。
     /// </summary>
     /// <remarks>
