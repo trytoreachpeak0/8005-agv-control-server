@@ -307,9 +307,23 @@ $assertions.Add(
     ">= $($reconnectRequestedAt.ToString('o'))（原起点 $($secondStart.ToString('o'))）",
     "$($refilledStart.ToString('o'))（基线 $(if ($refill.Baseline) { $refill.Baseline.ToString('o') } else { '(null)' })）")
 
+# --- B3. 原期限过了，本站还在等；到新期限才结束 -----------------------------------------------------
+
+$pastOriginal = Wait-L2Condition -Description 'the original deadline has passed' `
+    -Journal $journal -Criterion 'second-past-original-deadline' -TimeoutSeconds 60 `
+    -Probe { [pscustomobject]@{ At = [DateTimeOffset]::UtcNow; Runtime = Get-Runtime $secondId } } `
+    -Until { param($v) $v.At -ge $originalDeadline.AddSeconds(3) }
+$assertions.Add(
+    'L2-SD-12', '原期限过去 3 秒，本站仍在等录入（断联那一轮的截止已作废）',
+    ([string]$pastOriginal.Runtime.Stage -eq 'AwaitingSublot' -and $pastOriginal.At -lt $refilledStart.Add($window)),
+    "AwaitingSublot（读于 $($originalDeadline.AddSeconds(3).ToString('o')) 之后、新期限之前）",
+    "$($pastOriginal.Runtime.Stage)（读于 $($pastOriginal.At.ToString('o'))）")
+
 # 重填的期限要送到车上（control-server#339）：车载端不作废也不重新计满期限，永远照最新一版清单显示倒计时，只在服务端重填，
 # 车上就会在原期限显示「已到期」，而服务端刚重新计满。重填与新的一版清单是同一次保存，车的确认是之后的另一次写入，所以等。
 # 判据要的是「号比到站那一版大、期限等于重填后的期限、车确认了」三样都在同一行上；等不到时把最后一次读数交给判据。
+# 放在 L2-SD-12 之后：修前这里要等满 30 秒，放在前面会把 L2-SD-12「原期限过去 3 秒、新期限之前」那一读推到新期限之后，
+# 让一条与本票无关的判据跟着红。
 $refilledDeadline = $refilledStart.Add($window)
 $secondWorklists = Wait-L2ConditionOrLast -Description 'the vehicle acknowledged a newer worklist carrying the refilled deadline' `
     -Journal $journal -Criterion 'second-refilled-worklist' -TimeoutSeconds 30 `
@@ -334,18 +348,6 @@ $assertions.Add(
     ((@($secondWorklists.Listing) | ForEach-Object {
                 "r$($_.Revision) $(if ($_.Deadline) { $_.Deadline.ToString('o') } else { '(null)' }) ack=$($_.Acknowledged)"
             }) -join ', '))
-
-# --- B3. 原期限过了，本站还在等；到新期限才结束 -----------------------------------------------------
-
-$pastOriginal = Wait-L2Condition -Description 'the original deadline has passed' `
-    -Journal $journal -Criterion 'second-past-original-deadline' -TimeoutSeconds 60 `
-    -Probe { [pscustomobject]@{ At = [DateTimeOffset]::UtcNow; Runtime = Get-Runtime $secondId } } `
-    -Until { param($v) $v.At -ge $originalDeadline.AddSeconds(3) }
-$assertions.Add(
-    'L2-SD-12', '原期限过去 3 秒，本站仍在等录入（断联那一轮的截止已作废）',
-    ([string]$pastOriginal.Runtime.Stage -eq 'AwaitingSublot' -and $pastOriginal.At -lt $refilledStart.Add($window)),
-    "AwaitingSublot（读于 $($originalDeadline.AddSeconds(3).ToString('o')) 之后、新期限之前）",
-    "$($pastOriginal.Runtime.Stage)（读于 $($pastOriginal.At.ToString('o'))）")
 
 $secondEnded = Wait-L2Condition -Description 'the refilled deadline ended the second stop' `
     -Journal $journal -Criterion 'second-ended' -TimeoutSeconds 90 `
