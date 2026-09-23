@@ -35,6 +35,30 @@ public sealed class ReconnectModelTests
     }
 
     /// <summary>
+    /// 打印出来的序列能原样读回：失败输出里的最短序列交给 <see cref="ReplaySequences"/>（<c>CS342_SEQUENCES</c>）就能在别的提交上复跑。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
+    [Trait("ProtocolVector", "CV-PICKUP-SUBLOT-LOAD")]
+    public void APrintedSequenceParsesBackToItself()
+    {
+        HashSet<Type> seen = [];
+        for (int index = 0; index < 50; index++)
+        {
+            (_, ReconnectStep[] steps) = ReconnectModel.Fixed(MasterSeed, index);
+            Assert.Equal(steps, ReconnectModel.Parse(ReconnectModel.Print(steps)));
+            seen.UnionWith(steps.Select(step => step.GetType()));
+        }
+
+        // 五十串里每一种动作都出现过，否则没出现的那一种读回来对不对没被核对过。
+        Assert.Equal(
+            typeof(ReconnectStep).GetNestedTypes(System.Reflection.BindingFlags.NonPublic).Where(type => type.IsSubclassOf(typeof(ReconnectStep))).Order(TypeNameComparer.Instance),
+            seen.Order(TypeNameComparer.Instance));
+    }
+
+    /// <summary>
     /// CI 里跑的那一批：固定种子的 <see cref="CiCombinations"/> 个组合，每一个收尾之后都要满足不变量。
     /// </summary>
     /// <remarks>
@@ -128,6 +152,7 @@ public sealed class ReconnectModelTests
         int ackConflicts = 0;
         int regressions = 0;
         int entryReached = 0;
+        int waitOnPersonChances = 0;
         Stopwatch total = Stopwatch.StartNew();
         for (int index = 0; index < iterations; index++)
         {
@@ -139,7 +164,9 @@ public sealed class ReconnectModelTests
             ackConflicts += verdict.AckConflicts;
             regressions += verdict.Regressions;
             entryReached += verdict.Detail.Contains("entryReachedVehicle=True", StringComparison.Ordinal) ? 1 : 0;
-            if (verdict.Violation is { } violation)
+            waitOnPersonChances += verdict.WaitOnPersonChances;
+            // 每一类都记，不只记第一条：一个组合里先撞上的那一类会把后面的挡住，按第一条分组会少数别的类。
+            foreach (ReconnectViolation violation in verdict.Violations.Select(item => item.Violation).Distinct())
             {
                 if (!byViolation.TryGetValue(violation, out List<(string Seed, ReconnectStep[] Steps)>? found))
                 {
@@ -170,6 +197,7 @@ public sealed class ReconnectModelTests
         report.AppendLine(CultureInfo.InvariantCulture, $"ack conflicts={ackConflicts} vehicle regressions={regressions}");
         // 不变量成立的组合里，有多少是真的把录入请求送到了车上，而不是靠「看板上有码」过关的。
         report.AppendLine(CultureInfo.InvariantCulture, $"entry request reached the vehicle in {entryReached} of {iterations}");
+        report.AppendLine(CultureInfo.InvariantCulture, $"rounds that failed while carrying a wait-on-person code: {waitOnPersonChances}");
         foreach ((ReconnectViolation violation, List<(string Seed, ReconnectStep[] Steps)> found) in byViolation)
         {
             report.AppendLine(CultureInfo.InvariantCulture, $"{violation}: {found.Count} of {iterations}");
@@ -259,6 +287,45 @@ public sealed class ReconnectModelTests
         report.Append(details);
         await File.WriteAllTextAsync(reportPath, report.ToString(), TestContext.Current.CancellationToken);
     }
+
+    /// <summary>
+    /// 复跑打印出来的序列（只在显式要求时跑）：<c>CS342_SEQUENCES</c> 里用竖线分开的每一串，原样是失败输出里 <c>[...]</c> 的样子。
+    /// 判定与逐步记录写到 <c>CS342_REPORT</c>。
+    /// </summary>
+    [Fact(Explicit = true)]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
+    [Trait("ProtocolVector", "CV-PICKUP-SUBLOT-LOAD")]
+    public async Task ReplaySequences()
+    {
+        string[] printed = (Environment.GetEnvironmentVariable("CS342_SEQUENCES")
+                ?? throw new InvalidOperationException("CS342_SEQUENCES is not set."))
+            .Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        Assert.NotEmpty(printed);
+        string reportPath = Environment.GetEnvironmentVariable("CS342_REPORT") is { Length: > 0 } path
+            ? path
+            : Path.Combine(Path.GetTempPath(), "cs342-replay-sequences.txt");
+        StringBuilder report = new();
+        foreach (string sequence in printed)
+        {
+            ReconnectStep[] steps = ReconnectModel.Parse(sequence);
+            ReconnectVerdict verdict = await ReconnectModel.RunAsync(steps);
+            report.AppendLine(
+                CultureInfo.InvariantCulture,
+                $"== {ReconnectModel.Print(steps)} violation={verdict.Violation?.ToString() ?? "none"}");
+            report.AppendLine(verdict.Detail);
+        }
+
+        await File.WriteAllTextAsync(reportPath, report.ToString(), TestContext.Current.CancellationToken);
+    }
+}
+
+internal sealed class TypeNameComparer : IComparer<Type>
+{
+    public static readonly TypeNameComparer Instance = new();
+
+    public int Compare(Type? x, Type? y) => string.CompareOrdinal(x?.Name, y?.Name);
 }
 
 /// <summary>不变量不成立时抛出，消息里带着判定与逐步记录，CsCheck 化简时原样打印。</summary>

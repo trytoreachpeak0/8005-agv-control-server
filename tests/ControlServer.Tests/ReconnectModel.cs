@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
@@ -42,6 +43,22 @@ internal static class ReconnectModel
     private const int TailRounds = 8;
 
     /// <summary>
+    /// 指名了在等谁的阻断码：与 <c>JourneyRuntimeEngine.CarriesACodeThatNamesAWaitOnAPerson</c> 同一组，写成字面量——看板上现场看得见
+    /// 的东西，改名应当让这里对不上而不是跟着常量悄悄改。<c>Blocked</c> 阶段与 AREA 站等准入要连阶段一起判，这个模型走不到，没列。
+    /// </summary>
+    private static readonly HashSet<string> WaitOnPersonCodes = new(StringComparer.Ordinal)
+    {
+        "VEHICLE_ORDER_FAILED",
+        "ORDER_HANG",
+        "ORDER_STATE_UNRECOGNIZED",
+        "ORDER_ENDED_WITHOUT_ARRIVAL",
+        "ONBOARD_SESSION_LOST",
+        "STATION_TIMEOUT_DOOR_NOT_CLOSED",
+        "LOAD_CORRECTION_IN_PROGRESS",
+        "PRE_DEPARTURE_SAFETY_NOT_VALID",
+    };
+
+    /// <summary>
     /// 握手凭据用一个本类独占的环境变量名：别的测试类在自己的用例里设、清它们自己的那一个，并行跑时互不影响。
     /// 设一次、不清：进程里只有这里读它。
     /// </summary>
@@ -74,11 +91,66 @@ internal static class ReconnectModel
         (3, Gen.Select(
             Gen.OneOfConst(SafetyKind.Safe, SafetyKind.NotSafe, SafetyKind.OwnOrder),
             Gen.OneOfConst(SafetyDelivery.Delivered, SafetyDelivery.LostInFlight, SafetyDelivery.AckLost),
-            (kind, delivery) => (ReconnectStep)new ReconnectStep.SafetyChange(kind, delivery))));
+            (kind, delivery) => (ReconnectStep)new ReconnectStep.SafetyChange(kind, delivery))),
+        (1, Gen.Const<ReconnectStep>(new ReconnectStep.OrderHang())),
+        (1, Gen.Const<ReconnectStep>(new ReconnectStep.OrderContinue())),
+        (1, Gen.Const<ReconnectStep>(new ReconnectStep.ConflictingResend())));
 
     internal static readonly Gen<ReconnectStep[]> Sequence = Step.Array[1, 24];
 
     internal static string Print(ReconnectStep[] steps) => "[" + string.Join(", ", steps.Select(step => step.ToString())) + "]";
+
+    /// <summary><see cref="Print"/> 的反向：把失败输出里打印的那一串原样读回来，用来在别的提交上复跑化简后的序列。</summary>
+    internal static ReconnectStep[] Parse(string printed)
+    {
+        string body = printed.Trim().TrimStart('[').TrimEnd(']');
+        List<ReconnectStep> steps = [];
+        foreach (string token in SplitTopLevel(body))
+        {
+            string name = token.Split('(')[0];
+            string argument = token.Contains('(', StringComparison.Ordinal) ? token[(name.Length + 1)..^1] : string.Empty;
+            steps.Add(name switch
+            {
+                "Round" => new ReconnectStep.Round(int.Parse(argument.TrimEnd('s'), CultureInfo.InvariantCulture)),
+                "Arrive" => new ReconnectStep.Arrive(),
+                "Ack" => new ReconnectStep.Ack(),
+                "CutAfter" => new ReconnectStep.CutAfter(int.Parse(argument, CultureInfo.InvariantCulture)),
+                "BeginHandshake" => new ReconnectStep.BeginHandshake(),
+                "CompleteHandshake" => new ReconnectStep.CompleteHandshake(),
+                "NotReady" => new ReconnectStep.VehicleNotReady(argument == "ownOrder"),
+                "Ready" => new ReconnectStep.VehicleReady(),
+                "Safety" => new ReconnectStep.SafetyChange(
+                    Enum.Parse<SafetyKind>(argument.Split(',')[0]),
+                    Enum.Parse<SafetyDelivery>(argument.Split(',')[1])),
+                "OrderHang" => new ReconnectStep.OrderHang(),
+                "OrderContinue" => new ReconnectStep.OrderContinue(),
+                "ConflictingResend" => new ReconnectStep.ConflictingResend(),
+                _ => throw new FormatException($"Unknown step '{token}' in {printed}"),
+            });
+        }
+
+        return [.. steps];
+    }
+
+    private static IEnumerable<string> SplitTopLevel(string body)
+    {
+        int depth = 0;
+        int start = 0;
+        for (int index = 0; index < body.Length; index++)
+        {
+            depth += body[index] switch { '(' => 1, ')' => -1, _ => 0 };
+            if (body[index] == ',' && depth == 0)
+            {
+                yield return body[start..index].Trim();
+                start = index + 1;
+            }
+        }
+
+        if (body[start..].Trim() is { Length: > 0 } last)
+        {
+            yield return last;
+        }
+    }
 
     /// <summary>
     /// 已经开了票、还没修的违规，按「类别 + 说明里必须出现的几段原文」认。CI 那一批遇到它们照样打印，但不判失败；每一条都有一个
@@ -213,6 +285,14 @@ internal static class ReconnectModel
         private bool _arrived;
         private int _ackConflicts;
         private int _rounds;
+        private bool _orderHung;
+
+        /// <summary>服务端已经收下的安全变化，原样：<see cref="ConflictingResendAsync"/> 拿它们的 messageId 造语义不同的重放。</summary>
+        private readonly List<(string MessageId, string Line)> _processedSafetyChanges = [];
+        private int _waitOnPersonChances;
+
+        /// <summary>服务端最后一次收到车的任何一条入站的时刻（心跳、握手里的每一条、会话中途的安全变化）。</summary>
+        private DateTimeOffset? _lastInboundAt;
 
         /// <summary>车的持久日志里还没等到确认的报文，按发出的顺序；下一次握手原样补发（只换代次）。</summary>
         private readonly List<(string MessageId, string Line)> _unacknowledged = [];
@@ -273,6 +353,9 @@ internal static class ReconnectModel
                 ReconnectStep.VehicleNotReady notReady => await VehicleNotReadyAsync(notReady.OwnOrder),
                 ReconnectStep.VehicleReady => await VehicleReadyAsync(),
                 ReconnectStep.SafetyChange change => await SafetyChangeAsync(change.Kind, change.Delivery),
+                ReconnectStep.OrderHang => await OrderHangAsync(),
+                ReconnectStep.OrderContinue => await OrderContinueAsync(),
+                ReconnectStep.ConflictingResend => await ConflictingResendAsync(),
                 _ => throw new ArgumentOutOfRangeException(nameof(step), step, null),
             };
             _trace.Add((tail ? "  tail " : "  ") + step + (outcome is null ? string.Empty : " -> " + outcome));
@@ -304,6 +387,11 @@ internal static class ReconnectModel
             }
 
             await ApplyAsync(new ReconnectStep.VehicleReady(), tail: true);
+            if (_orderHung)
+            {
+                await ApplyAsync(new ReconnectStep.OrderContinue(), tail: true);
+            }
+
             await ApplyAsync(new ReconnectStep.Arrive(), tail: true);
             for (int round = 0; round < TailRounds; round++)
             {
@@ -376,7 +464,10 @@ internal static class ReconnectModel
                 detail.AppendLine(line);
             }
 
-            return new ReconnectVerdict(violations, detail.ToString(), _ackConflicts, _vehicle.Regressions.Count, TimeSpan.Zero, default, _rounds);
+            return new ReconnectVerdict(violations, detail.ToString(), _ackConflicts, _vehicle.Regressions.Count, TimeSpan.Zero, default, _rounds)
+            {
+                WaitOnPersonChances = _waitOnPersonChances,
+            };
         }
 
         public async ValueTask DisposeAsync()
@@ -432,10 +523,12 @@ internal static class ReconnectModel
             {
                 _fixture.Context.ChangeTracker.Clear();
                 await _fixture.HearFromPeerAsync();
+                _lastInboundAt = _fixture.Clock.GetUtcNow();
             }
 
             _rounds++;
             int sentBefore = _delivered.Count;
+            JourneyRuntimeRow beforeRound = await _fixture.RuntimeAsync();
             string? outcome;
             try
             {
@@ -450,6 +543,7 @@ internal static class ReconnectModel
             // 宿主每一轮开一个新的作用域，失败那一轮没保存的改动不会带到下一轮。
             await _fixture.RecreateEngineAsync();
             JourneyRuntimeRow runtime = await _fixture.RuntimeAsync();
+            CheckWaitOnPersonKept(beforeRound, runtime, threw: outcome is not null);
             string sent = string.Join(
                 ",",
                 _delivered.Skip(sentBefore).Select(line => ShortName(line.MessageType) + "@" + line.Generation));
@@ -461,6 +555,113 @@ internal static class ReconnectModel
                    (sent.Length == 0 ? string.Empty : "; delivered " + sent);
         }
 
+        /// <summary>
+        /// 不变量：「等人」类阻断码不被推进失败覆盖，码没变时起点不重置（control-server#331 审查必修 2）。每一轮都判，不等收尾。
+        /// </summary>
+        /// <remarks>
+        /// 只判这两件：换成 <c>JOURNEY_ADVANCE_FAILED</c>，以及码没变、开始时间却变了。等人码被别的码换掉、或者清掉（人在 RIoT 里继续了），
+        /// 这里不判——那是别的规则管的，混进来会把合法的清码也算成违规。
+        /// </remarks>
+        private void CheckWaitOnPersonKept(JourneyRuntimeRow before, JourneyRuntimeRow after, bool threw)
+        {
+            if (before.BlockReasonCode is not { } code || !WaitOnPersonCodes.Contains(code))
+            {
+                return;
+            }
+
+            // 失联码说的是「车不说话」：写下它之后车又被听到过（心跳、握手、任何一条入站），它就不再成立，引擎先把它清掉是对的，
+            // 之后这一轮再失败、写推进失败，不是覆盖。只在写下之后车一直没说话时判它（cs#331 的 PR 剩余风险里写的正是这一点：
+            // 车一被听到就先清掉这个码）。只看「这一轮开头连没连着」不够：握手完成之后没跑一轮就又断了，车说过话，却不算连着。
+            if (string.Equals(code, "ONBOARD_SESSION_LOST", StringComparison.Ordinal) &&
+                _lastInboundAt is { } heard && heard >= before.BlockReasonSince)
+            {
+                return;
+            }
+
+            // 这条不变量有过几次出事的机会：带着等人码进来、这一轮又失败了。没有这样的轮次，它不出违规也说明不了什么。
+            _waitOnPersonChances += threw ? 1 : 0;
+
+            if (string.Equals(after.BlockReasonCode, AdvanceFailedReason, StringComparison.Ordinal))
+            {
+                Violate(
+                    ReconnectViolation.WaitOnPersonOverwritten,
+                    $"{code} (since {before.BlockReasonSince:O}) was overwritten by {AdvanceFailedReason} at stage {after.Stage}");
+            }
+            else if (string.Equals(after.BlockReasonCode, code, StringComparison.Ordinal) &&
+                     after.BlockReasonSince != before.BlockReasonSince)
+            {
+                Violate(
+                    ReconnectViolation.WaitOnPersonOverwritten,
+                    $"{code} kept its code but its start moved from {before.BlockReasonSince:O} to {after.BlockReasonSince:O}");
+            }
+        }
+
+        /// <summary>
+        /// 不变量「防重放护栏不放过语义不同的消息」：拿一条服务端已经收下的安全变化，messageId 不变、安全内容改掉，在当前这一代再发一次。
+        /// 服务端必须拒绝（抛异常、连接随之结束，或者不回 <c>DurableAck</c>）；回了 <c>DurableAck</c> 就是把两件不同的事当成了同一件。
+        /// </summary>
+        private async Task<string?> ConflictingResendAsync()
+        {
+            if (!_connected || _handshakeOpen || _processedSafetyChanges.Count == 0)
+            {
+                return "no-op";
+            }
+
+            (string messageId, string original) = _processedSafetyChanges[^1];
+            JsonNode forged = JsonNode.Parse(Rebind(original, _generation))!;
+            JsonNode safety = forged["payload"]!["safety"]!;
+            bool departureSafe = safety["departureSafe"]!.GetValue<bool>();
+            safety["departureSafe"] = !departureSafe;
+            safety["reasonCodes"] = departureSafe ? new JsonArray("SLOT_LOCK_UNKNOWN") : new JsonArray();
+            string[]? answers = await ExchangeAsync(forged.ToJsonString(), "SafetyStateChanged", refusalExpected: true);
+            if (answers is null)
+            {
+                return $"resend of {messageId[..8]} with different content refused";
+            }
+
+            string[] types = [.. answers.Select(MessageTypeOf)];
+            if (types.FirstOrDefault() == "DurableAck")
+            {
+                Violate(
+                    ReconnectViolation.DifferentMessageAccepted,
+                    $"SafetyStateChanged {messageId} resent with different safety content was answered with {string.Join("+", types)}");
+            }
+
+            return $"resend of {messageId[..8]} with different content answered {string.Join("+", types)}";
+        }
+
+        /// <summary>RIoT 报告去取货站的那张单 HANG（9）：车停住了，只有人能在 RIoT 里继续或取消它。到站之后没有在途单，什么也不做。</summary>
+        private async Task<string?> OrderHangAsync()
+        {
+            if (_arrived || _orderHung)
+            {
+                return "no-op";
+            }
+
+            _fixture.Riot.SetOrderState(await PickupUpperIdAsync(), RiotOrderState.Hang, terminal: false);
+            _orderHung = true;
+            return null;
+        }
+
+        /// <summary>有人在 RIoT 里让那张单继续：回到执行中（3）。</summary>
+        private async Task<string?> OrderContinueAsync()
+        {
+            if (!_orderHung)
+            {
+                return "no-op";
+            }
+
+            _fixture.Riot.SetOrderState(await PickupUpperIdAsync(), OrderRunning, terminal: false);
+            _orderHung = false;
+            return null;
+        }
+
+        /// <summary>执行中：夹具建单时报的那个状态（<c>RecordingRiot.CreateAsync</c>）。</summary>
+        private const int OrderRunning = 3;
+
+        private async Task<string> PickupUpperIdAsync() =>
+            (await _fixture.Context.OrderIntents.AsNoTracking().SingleAsync(row => row.Purpose == "TO_PICKUP", Token)).UpperId;
+
         private string? Arrive()
         {
             if (_arrived)
@@ -468,6 +669,8 @@ internal static class ReconnectModel
                 return "no-op";
             }
 
+            // 到站就是那张单走完了：挂着的也算有人继续过了。
+            _orderHung = false;
             JourneyRuntimeRow runtime = _fixture.Context.JourneyRuntimes.AsNoTracking().Single();
             _fixture.Riot.SetSuccessfulArrival("TO_PICKUP", runtime.PickupStationRiotId);
             _fixture.Riot.Vehicle = _fixture.Riot.Vehicle with { CurrentStationId = runtime.PickupStationRiotId };
@@ -632,6 +835,8 @@ internal static class ReconnectModel
                 return $"v{version} refused";
             }
 
+            _processedSafetyChanges.Add((messageId, line));
+
             if (delivery == SafetyDelivery.AckLost)
             {
                 DropConnection();
@@ -711,8 +916,14 @@ internal static class ReconnectModel
         /// 一条入站经处理器，答复按 <c>OnboardTcpServer</c> 的顺序：先写答复，再冲掉延后的发送。恢复报告答复之后连接挂上
         /// （<paramref name="attachOnHandshakeDone"/>），延后的发送因此送得出去。
         /// </summary>
-        private async Task<string[]?> ExchangeAsync(string line, string messageType, bool attachOnHandshakeDone = false)
+        private async Task<string[]?> ExchangeAsync(
+            string line,
+            string messageType,
+            bool attachOnHandshakeDone = false,
+            bool refusalExpected = false)
         {
+            // 服务端读到了这一行，不论它随后怎么答：车被听到了。
+            _lastInboundAt = _fixture.Clock.GetUtcNow();
             try
             {
                 string response = await _processor!.ProcessAsync(line, _connection!, Token);
@@ -725,6 +936,13 @@ internal static class ReconnectModel
 
                 await _processor.FlushDeferredOutboundAsync(_connection!, Token);
                 return answers;
+            }
+            catch (Exception error) when (error is not OperationCanceledException && refusalExpected)
+            {
+                _trace.Add($"    refused as expected: {error.GetType().Name}: {FirstLine(error.Message)}");
+                _connectionContext!.ChangeTracker.Clear();
+                DropConnection();
+                return null;
             }
             catch (Exception error) when (error is not OperationCanceledException)
             {
@@ -970,6 +1188,24 @@ internal abstract record ReconnectStep
         public override string ToString() => "Ready";
     }
 
+    /// <summary>RIoT 报告去取货站的那张单挂起（HANG）。</summary>
+    internal sealed record OrderHang : ReconnectStep
+    {
+        public override string ToString() => "OrderHang";
+    }
+
+    /// <summary>车（或别的什么）拿一条服务端已收下的安全变化的 messageId，改掉内容再发一次。</summary>
+    internal sealed record ConflictingResend : ReconnectStep
+    {
+        public override string ToString() => "ConflictingResend";
+    }
+
+    /// <summary>有人在 RIoT 里让挂起的那张单继续。</summary>
+    internal sealed record OrderContinue : ReconnectStep
+    {
+        public override string ToString() => "OrderContinue";
+    }
+
     /// <summary>车的安全状态变了，经真实处理器发一条 <c>SafetyStateChanged</c>；<paramref name="Delivery"/> 决定它与它的确认到没到。</summary>
     internal sealed record SafetyChange(SafetyKind Kind, SafetyDelivery Delivery) : ReconnectStep
     {
@@ -1003,6 +1239,9 @@ internal sealed record ReconnectVerdict(
     TimeSpan Setup = default,
     int Rounds = 0)
 {
+    /// <summary>带着「等人」码进来、这一轮又失败了的轮数：<see cref="ReconnectViolation.WaitOnPersonOverwritten"/> 出事的机会。</summary>
+    public int WaitOnPersonChances { get; init; }
+
     /// <summary>第一条违规，没有时为 null。</summary>
     public ReconnectViolation? Violation => Violations.Count == 0 ? null : Violations[0].Violation;
 
@@ -1028,6 +1267,12 @@ internal enum ReconnectViolation
 
     /// <summary>一条合法的入站被服务端拒绝（抛异常，真实连接随之结束）——防重放护栏拒了不该拒的。</summary>
     LegitimateMessageRefused,
+
+    /// <summary>同一个 messageId、语义不同的一条被当成已收下的那一条回了确认——防重放护栏放过了不该放的。</summary>
+    DifferentMessageAccepted,
+
+    /// <summary>「等人」类阻断码被推进失败覆盖，或码没变而开始时间重置了（control-server#331 审查必修 2）。</summary>
+    WaitOnPersonOverwritten,
 }
 
 /// <summary>一张已经开了、还没修的票，以及认出它的违规的办法。</summary>

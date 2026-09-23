@@ -69,6 +69,62 @@ public sealed class ReconnectModelRegressionTests
     }
 
     /// <summary>
+    /// RIoT 报告去取货站的那张单挂起（<c>ORDER_HANG</c>，等人去 RIoT 里处理）时，这一轮推进因为连接不在而失败：码与开始时间都不变。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 这一串<b>不是随机探索找到的</b>，是用模型的动作手写的：300 个随机组合里带着等人码又失败的轮次只有 1～2 次，这条不变量在随机
+    /// 探索里几乎没有出事的机会。写成确定性用例，给它一个肯定会出现的机会，并断言机会确实出现过。
+    /// </para>
+    /// <para>
+    /// 第一轮把派车计划发出去（车没确认）；挂起那一轮写上 <c>ORDER_HANG</c>；连接断了之后，下一轮开头补发那一版计划时抛
+    /// <see cref="IOException"/>。在 cs#331 第一版修复 <c>62d5c560</c> 上，这一轮会把 <c>ORDER_HANG</c> 换成
+    /// <c>JOURNEY_ADVANCE_FAILED</c>（那一版还没有「不覆盖指名在等谁的码」，是第二轮审查补的）。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    [Trait("ProtocolVector", "CV-DEMAND-ACCEPT-TO-PICKUP")]
+    public async Task AHungOrderKeepsItsCodeAndStartWhenARoundFailsOnTheLostConnection()
+    {
+        ReconnectStep[] steps =
+        [
+            new ReconnectStep.Round(1), new ReconnectStep.OrderHang(), new ReconnectStep.Round(1),
+            new ReconnectStep.CutAfter(0), new ReconnectStep.Round(2),
+        ];
+
+        ReconnectVerdict verdict = await ReconnectModel.RunAsync(steps);
+
+        Assert.Contains("block=ORDER_HANG", verdict.Detail, StringComparison.Ordinal);
+        Assert.True(verdict.WaitOnPersonChances >= 1, verdict.Detail);
+        Assert.Empty(verdict.Violations);
+    }
+
+    /// <summary>
+    /// 一条已被收下的安全变化，同一个 messageId、安全内容不同，再发一次：服务端拒绝，不回 <c>DurableAck</c>。
+    /// </summary>
+    /// <remarks>
+    /// 不变量「防重放护栏不放过语义不同的消息」的确定性用例，手写的，给它一个肯定会出现的机会；判别力靠对护栏的变异证明
+    /// （control-server#342 的 PR 正文）。断言「拒绝」真的发生了：不然「没有违规」在那一条根本没发出去时也成立。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
+    public async Task ASafetyChangeResentWithDifferentContentUnderItsMessageIdIsRefused()
+    {
+        ReconnectStep[] steps =
+        [
+            new ReconnectStep.SafetyChange(SafetyKind.NotSafe, SafetyDelivery.Delivered),
+            new ReconnectStep.ConflictingResend(),
+        ];
+
+        ReconnectVerdict verdict = await ReconnectModel.RunAsync(steps);
+
+        Assert.Contains("with different content refused", verdict.Detail, StringComparison.Ordinal);
+        Assert.Empty(verdict.Violations);
+    }
+
+    /// <summary>
     /// 车的一条安全变化在路上丢了（连接在它送到之前断了），下一次握手补发它：服务端对它只回一条 <c>DurableAck</c>。
     /// </summary>
     /// <remarks>
