@@ -1,5 +1,6 @@
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Host.Runtime.Commands;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -79,6 +80,14 @@ public sealed partial class VehicleFaultRecoveryService
     /// </summary>
     public const string ExitAwaitingHandoffReason = "OWN_ORDER_REBUILD_EXIT_AWAITING_CARGO_HANDOFF";
 
+    /// <summary>
+    /// Giving up was asked for a rebuild that stopped because its new order read as ended before it was confirmed
+    /// (<see cref="OwnOrderRebuilds.EndedBeforeConfirmation"/>, a SUSPENDED 8 among them). That order may still stand in RIoT,
+    /// and the unfinished-order read the give-up relies on counts 1, 3, 7 and 9, not 8, so it cannot show the vehicle free
+    /// (independent review S1). A person rebuild still applies.
+    /// </summary>
+    public const string ExitNewOrderUnsettledReason = "OWN_ORDER_REBUILD_EXIT_NEW_ORDER_UNSETTLED";
+
     private async Task<VehicleFaultRecoveryDecision> RebuildStoppedAsync(
         VehicleFaultRecoveryRequest request,
         CancellationToken cancellationToken)
@@ -136,7 +145,12 @@ public sealed partial class VehicleFaultRecoveryService
     /// <b>Only with nothing on board</b> (<see cref="ExitCargoOnBoardReason"/>), and only when RIoT says the vehicle holds no
     /// unfinished order: a journey that closes while its vehicle still runs an order hands out a vehicle that is not free. RIoT
     /// is read before the gate is taken, as every RIoT read of this service is (independent review M2 of control-server#299);
-    /// the journey is judged again under the gate, and a trip stopped by the third guard creates no order meanwhile.
+    /// the journey is judged again under the gate, and a trip stopped by the third guard creates no order meanwhile. That read
+    /// cannot see a SUSPENDED 8, so the stop whose new order read as ended before it was confirmed is refused
+    /// (<see cref="ExitNewOrderUnsettledReason"/>): the one left to give up is the order ending again within the window.
+    /// </para>
+    /// <para>
+    /// <b>Not under a latch, not with a fault in effect</b>, as for a clearance: the journey carries the fault supervision.
     /// </para>
     /// <para>
     /// The closure snapshot goes to the vehicle once it is committed (control-server#323); a vehicle that is not connected gets
@@ -147,10 +161,13 @@ public sealed partial class VehicleFaultRecoveryService
         VehicleFaultRecoveryRequest request,
         CancellationToken cancellationToken)
     {
-        string agvId = request.Subject.AgvId;
+        EmergencyStopSubject subject = request.Subject;
+        string agvId = subject.AgvId;
         List<string> reasons = [.. PersonReasons(request)];
+        RiotVehicleEmergencyObservation emergency = await emergencyFacts
+            .ReadEmergencyStateAsync(subject.DeviceKey, cancellationToken).ConfigureAwait(false);
         RiotVehicleOrderObservation orders = await orderFacts
-            .ReadUnfinishedOrdersAsync(request.Subject.DeviceKey, cancellationToken).ConfigureAwait(false);
+            .ReadUnfinishedOrdersAsync(subject.DeviceKey, cancellationToken).ConfigureAwait(false);
         using (IDisposable? round = await gate.TryEnterAsync(gateWait, cancellationToken).ConfigureAwait(false))
         {
             if (round is null)
@@ -173,6 +190,11 @@ public sealed partial class VehicleFaultRecoveryService
             // A trip handed to the exception recovery session may be given up too, once nothing is left on board: after a
             // partial handoff, what remains is demands still to load, which no session can end (independent review M1 (b)).
             string? refusal = trip.Refusal == ExitAwaitingHandoffReason ? null : trip.Refusal;
+            if (refusal is null && trip.Stopped is { StoppedReason: OwnOrderRebuilds.EndedBeforeConfirmation })
+            {
+                refusal = ExitNewOrderUnsettledReason;
+            }
+
             if (refusal is not null)
             {
                 reasons.Add(refusal);
@@ -182,6 +204,17 @@ public sealed partial class VehicleFaultRecoveryService
                 reasons.Add(ExitCargoOnBoardReason);
             }
 
+            // As for a clearance (independent review S5): closing the journey ends the fault supervision that rides on it --
+            // the stop confirmation, REQ-0248's re-trigger -- so a latched vehicle, or one whose fault is still in effect, is
+            // not let go this way. Judged from this server's tables and the latch read before the gate.
+            if (InEffect(await faults.ReadAsync(agvId, cancellationToken).ConfigureAwait(false)))
+            {
+                reasons.Add("FAULT_RECOVERY_FAULT_IN_EFFECT");
+            }
+
+            await emergencyStop.SettleReleaseTakenEffectAsync(subject, emergency, cancellationToken).ConfigureAwait(false);
+            reasons.AddRange(EmergencyReasons(
+                emergency, await emergencyStop.HasOpenEpisodeAsync(subject, cancellationToken).ConfigureAwait(false)));
             reasons.AddRange(VehicleOrderReasons(orders));
             if (reasons.Count > 0)
             {
