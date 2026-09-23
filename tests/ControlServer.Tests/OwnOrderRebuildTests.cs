@@ -316,6 +316,113 @@ public sealed class OwnOrderRebuildTests
         await AssertRebuiltAsync(fixture, before, stopsBefore, stopsBefore.Single(stop => stop.StopRole == JourneyStopRoles.Pickup));
     }
 
+    /// <summary>
+    /// 新单建出去之后、还没对账确认之前，它在 RIoT 里就又被取消了：这本身就是「短时二次出问题」，不再重建，
+    /// 旅程码 <c>OWN_ORDER_REBUILD_STOPPED</c>，记录写 <c>REBUILT_ORDER_ENDED_BEFORE_CONFIRMATION</c>。
+    /// </summary>
+    /// <remarks>对账会把那张单判成「终态、要人对账」（<c>TerminalReconciliationRequired</c>）；把它当成「没确认、下一轮再说」会每轮原地打转。</remarks>
+    [Fact]
+    public async Task ARebuiltOrderThatEndsBeforeItIsConfirmedStopsTheRebuilding()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync();
+        fixture.Riot.CancelOrder(before.PickupUpperId);
+        await TickAndRunAsync(fixture);
+        fixture.Riot.LoseNextCreateResponse = true;
+        await PassTheDelayAsync(fixture);
+        OwnOrderRebuildRow ordering = await SingleRebuildAsync(fixture, before.PickupUpperId);
+        Assert.Equal(OwnOrderRebuildStates.Ordering, ordering.State);
+
+        fixture.Riot.CancelOrder(ordering.NewUpperId);
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+        await PassTheDelayAsync(fixture);
+
+        OwnOrderRebuildRow stopped = await SingleRebuildAsync(fixture, before.PickupUpperId);
+        Assert.Equal(
+            (OwnOrderRebuildStates.Stopped, "REBUILT_ORDER_ENDED_BEFORE_CONFIRMATION"),
+            (stopped.State, stopped.StoppedReason));
+        Assert.Equal("OWN_ORDER_REBUILD_STOPPED", (await fixture.RuntimeAsync()).BlockReasonCode);
+        Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+    }
+
+    // ---- 会话因本服务端自己的在途单而未就绪（真车载端行驶全程的样子） ---------------------------------------------
+
+    /// <summary>
+    /// 来源一在真车载端上的样子：车在途、会话因本服务端自己的单停在 <c>DEPARTURE_SAFETY_NOT_READY</c>，单在这时被取消。
+    /// 闸门后面照样记下、照样说出原因（不被 <c>ONBOARD_SESSION_NOT_READY</c> 盖掉）；延迟之后在闸门后面照样重建，
+    /// 重建之后码交还给闸门。
+    /// </summary>
+    /// <remarks>
+    /// 形状照 <c>PickupDispatchPlanPastOwnOrderTests.DropSessionOnOwnOrderAsync</c>。合成车载端永远报安全，合成 L2 按构造看不见这种会话；
+    /// 把重建只挂在引擎的到站分支，这一条红。
+    /// </remarks>
+    [Fact]
+    public async Task AnOrderCancelledWhileTheSessionIsNotReadyOnItsOwnOrderIsRebuiltBehindTheGate()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync();
+        JourneyStopRow[] stopsBefore = await StopsAsync(fixture, before.JourneyId);
+        await DropSessionOnOwnOrderAsync(fixture);
+        fixture.Riot.CancelOrder(before.PickupUpperId);
+
+        await TickAndRunAsync(fixture);
+        await TickAndRunAsync(fixture);
+        Assert.Equal("ORDER_ENDED_WITHOUT_ARRIVAL", (await fixture.RuntimeAsync()).BlockReasonCode);
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+
+        await PassTheDelayAsync(fixture);
+
+        Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+        await AssertRebuiltAsync(fixture, before, stopsBefore, stopsBefore.Single(stop => stop.StopRole == JourneyStopRoles.Pickup));
+        Assert.Equal("ONBOARD_SESSION_NOT_READY", (await fixture.RuntimeAsync()).BlockReasonCode);
+        Assert.Equal(SessionReadiness.RecoveryRequired, (await fixture.Context.SessionRecoveries.AsNoTracking().SingleAsync(Token)).Readiness);
+    }
+
+    /// <summary>
+    /// 闸门后面的另一面：会话不是因为车本身未就绪，而是在等一次作业恢复（仓门这一侧的事没有人担保），或者听不到车——
+    /// 这时不建单，记录写明在等会话；会话回到就绪之后照常重建。
+    /// </summary>
+    /// <remarks>放宽成「闸门后面一律可以建」，这一条红在「一张都没建」上。</remarks>
+    [Theory]
+    [InlineData("operation-recovery")]
+    [InlineData("silent")]
+    public async Task ARebuildWaitsBehindTheGateWhenTheSessionIsHeldForMoreThanTheVehicle(string held)
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync();
+        JourneyStopRow[] stopsBefore = await StopsAsync(fixture, before.JourneyId);
+        fixture.Riot.CancelOrder(before.PickupUpperId);
+        await TickAndRunAsync(fixture);
+        if (held == "operation-recovery")
+        {
+            await fixture.MarkSessionRecoveryRequiredByOperationAsync();
+        }
+        else
+        {
+            await DropSessionOnOwnOrderAsync(fixture);
+        }
+
+        fixture.Clock.Advance(fixture.Options.OwnOrderRebuildDelay);
+        if (held != "silent")
+        {
+            await fixture.HearFromPeerAsync();
+        }
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        await TickAndRunAsync(fixture);
+
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+        OwnOrderRebuildRow waiting = await SingleRebuildAsync(fixture, before.PickupUpperId);
+        Assert.Equal((OwnOrderRebuildStates.Pending, "ONBOARD_SESSION_NOT_READY"), (waiting.State, waiting.WaitingReason));
+
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.RestoreSessionReadyAsync();
+        await PassTheDelayAsync(fixture);
+
+        Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+        await AssertRebuiltAsync(fixture, before, stopsBefore, stopsBefore.Single(stop => stop.StopRole == JourneyStopRoles.Pickup));
+    }
+
     // ---- 夹具 ----------------------------------------------------------------------------------------------
 
     /// <summary>
@@ -405,6 +512,20 @@ public sealed class OwnOrderRebuildTests
     {
         await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
         return await reading.OwnOrderRebuilds.AsNoTracking().SingleAsync(row => row.EndedUpperId == endedUpperId, Token);
+    }
+
+    /// <summary>车载端读到车辆安全接口之后会话行变成的样子，照 <c>PickupDispatchPlanPastOwnOrderTests.DropSessionOnOwnOrderAsync</c>。</summary>
+    internal static async Task DropSessionOnOwnOrderAsync(RuntimeFixture fixture)
+    {
+        SessionRecoveryRow session = await fixture.Context.SessionRecoveries.SingleAsync(Token);
+        session.Readiness = SessionReadiness.RecoveryRequired;
+        session.ReasonCode = "DEPARTURE_SAFETY_NOT_READY";
+        session.DepartureSafe = false;
+        session.SafetyReasonCodesJson = """["VEHICLE_NOT_READY"]""";
+        session.SafetyUnknownPresent = true;
+        session.UpdatedAt = fixture.Clock.GetUtcNow();
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
     }
 
     internal static async Task<JourneyStopRow[]> StopsAsync(RuntimeFixture fixture, string journeyId)
