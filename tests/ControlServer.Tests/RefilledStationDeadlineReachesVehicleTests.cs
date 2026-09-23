@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.Dispatch;
@@ -223,6 +224,178 @@ public sealed class RefilledStationDeadlineReachesVehicleTests
         Assert.NotNull((await fixture.Context.ProtocolOutbox.AsNoTracking().SingleAsync(
             row => row.MessageType == "VehicleBusinessStateSnapshot" &&
                    row.PayloadJson.Contains("\"VEHICLE_FULL\""), Token)).AcknowledgedAt);
+    }
+
+    /// <summary>
+    /// 重填升版之后这趟旅程照常走完取货、到关卡：录入答旧的那一版（升版之前就上路的提交）与答新的那一版都照常受理，
+    /// 清单修订号在车上严格前进，卸货停靠的首号跟着后移一号。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 单需求两停靠下，没有重填时取货停靠发一版（号 N）、卸货停靠从 N+1 起；重填一次之后取货停靠发两版（N、N+1），卸货停靠从 N+2 起。
+    /// 期望值按这条算式手算，不从游标取——从游标取就是拿实现去验实现。
+    /// </para>
+    /// <para>
+    /// 答旧的那一版能受理，靠的是录入地址区间 <c>[首号, 首号 + 版本数 − 1]</c> 把重填那一版也算进版本数；
+    /// 同一个停靠的号在车上不会回退，靠的是卸货停靠的首号也把它算进去。把重填次数从这两处任一处拿掉，这里都会红。
+    /// </para>
+    /// </remarks>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
+    [Trait("ProtocolVector", "CV-PICKUP-SUBLOT-LOAD")]
+    [InlineData(0)]
+    [InlineData(1)]
+    public async Task AfterARefillTheJourneyReachesTheGateWithTheWorklistRevisionStrictlyAdvancing(long enteredAgainst)
+    {
+        await using RuntimeFixture fixture = await DeadlineFixtureAsync();
+        AdoptingPeer vehicle = Attach(fixture);
+        JourneyRuntimeRow atPickup = await fixture.AdvanceToSublotWaitAsync();
+        long first = atPickup.WorklistRevision;
+        await vehicle.DeliverBufferedAcksAsync();
+        await DisconnectThroughAnUnreadyRoundThenReconnectAsync(fixture);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        await vehicle.DeliverBufferedAcksAsync();
+        Assert.Equal([first, first + 1], AdoptedWorklists(vehicle));
+
+        await SubmitSublotAgainstAsync(fixture, first + enteredAgainst);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, (await fixture.RuntimeAsync()).Stage);
+        await fixture.ApplySafeResultAsync(
+            await fixture.OperationAsync(SlotOperationType.Load), SlotOperationType.Load, SlotBusinessState.Occupied);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, (await fixture.RuntimeAsync()).Stage);
+        fixture.Clock.Advance(Wait);
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        await AnswerDepartureSafetyAsync(fixture, await fixture.RuntimeAsync());
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, (await fixture.RuntimeAsync()).Stage);
+        fixture.Riot.SetSuccessfulArrival("TO_GATE", TaskTypeStationRuntimeSeed.GateStationRiotId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = TaskTypeStationRuntimeSeed.GateStationRiotId };
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        await vehicle.DeliverBufferedAcksAsync();
+
+        Assert.Equal(JourneyRuntimeStage.AwaitingUnloadResult, (await fixture.RuntimeAsync()).Stage);
+        Assert.Equal([first, first + 1, first + 2], AdoptedWorklists(vehicle));
+        Assert.Empty(vehicle.Conflicts);
+        Assert.Empty(vehicle.Regressions);
+    }
+
+    /// <summary>
+    /// 没有断线的一次到站：到站那一张车辆业务状态照常发、车照常确认——「被更高号的快照取代就不再发」只在重跑时成立，
+    /// 不能在正常的到站里误触发。装货阶段在路上就变了（车两侧都满）那一格一并走：到站那一张按抬过的基准发，同样照常发、照常确认。
+    /// </summary>
+    /// <remarks>
+    /// 把 <c>JourneyRuntimeEngine.ArrivalBusinessStateSupersededAsync</c> 改成恒真，两行都红：到站那一张一行都不会有。
+    /// </remarks>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    [Trait("ProtocolVector", "CV-PICKUP-SUBLOT-LOAD")]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AnUninterruptedArrivalStillSendsItsBusinessStateAndTheVehicleConfirmsIt(bool fullOnTheWay)
+    {
+        await using RuntimeFixture fixture = await Batch7CargoHoldingTests.HoldingFixtureAsync();
+        AdoptingPeer vehicle = Attach(fixture);
+        fixture.Catalog.Set(fixture.Demand(DemandId, "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        if (fullOnTheWay)
+        {
+            StillFullOnBothSides(fixture);
+            await fixture.Engine.ExecuteOnceAsync(Token);
+            Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await fixture.RuntimeAsync()).Stage);
+            Assert.Equal(LoadingPhaseStates.VehicleFull, (await fixture.RuntimeAsync()).LoadingPhaseState);
+        }
+        await vehicle.DeliverBufferedAcksAsync();
+
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        fixture.Riot.SetSuccessfulArrival("TO_PICKUP", runtime.PickupStationRiotId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = runtime.PickupStationRiotId };
+        if (fullOnTheWay)
+        {
+            StillFullOnBothSides(fixture);
+        }
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        await vehicle.DeliverBufferedAcksAsync();
+
+        runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, runtime.Stage);
+        string arrivalStateId = (await fixture.Context.Set<JourneyStopRow>().AsNoTracking()
+            .SingleAsync(row => row.JourneyId == runtime.JourneyId && row.StopRole == JourneyStopRoles.Pickup, Token))
+            .VehicleBusinessMessageId;
+        ProtocolOutboxRow arrivalState = await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .SingleAsync(row => row.MessageId == arrivalStateId, Token);
+        Assert.NotNull(arrivalState.AcknowledgedAt);
+        Assert.Empty(vehicle.Conflicts);
+        Assert.Empty(vehicle.Regressions);
+        Assert.Equal(runtime.LoadingPhaseState ?? LoadingPhaseStates.Loading, HeldLoadingPhase(vehicle));
+        long[] adopted = [.. vehicle.Adopted
+            .Where(item => item.MessageType == "VehicleBusinessStateSnapshot")
+            .Select(item => item.Revision)];
+        Assert.Equal(fullOnTheWay ? 2 : 1, adopted.Length);
+        Assert.Equal(adopted.Order().Distinct(), adopted);
+    }
+
+    private static long[] AdoptedWorklists(AdoptingPeer vehicle) =>
+        [.. vehicle.Adopted.Where(item => item.MessageType == "CurrentStopWorklistSnapshot").Select(item => item.Revision)];
+
+    /// <summary>
+    /// 操作员的录入，按车上那一刻手里那一版清单的号提交——与 <see cref="RuntimeFixture.SubmitSublotAsync"/> 同形，只是号由用例给，
+    /// 代次是重连之后的第 2 代（推进段只认当前这一代的录入）。
+    /// </summary>
+    private static async Task SubmitSublotAgainstAsync(RuntimeFixture fixture, long worklistRevision)
+    {
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        await fixture.AddInboxAsync(
+            Guid.NewGuid().ToString("D"),
+            "SublotSubmitted",
+            new
+            {
+                operationSessionId = runtime.OperationSessionId,
+                stationId = runtime.PickupStationId,
+                worklistRevision,
+                sublot = "SUBLOT-001",
+                entryMethod = "SCANNER",
+                @operator = new
+                {
+                    operatorId = "OP-001",
+                    verificationMethod = "BADGE",
+                    verifiedAt = fixture.Clock.GetUtcNow()
+                }
+            },
+            sessionGeneration: 2);
+    }
+
+    /// <summary>车载端答离站核验：安全。与 <see cref="RuntimeFixture.AdvanceToGateArrivalAsync"/> 里那一条同形，代次是第 2 代。</summary>
+    private static async Task AnswerDepartureSafetyAsync(RuntimeFixture fixture, JourneyRuntimeRow runtime)
+    {
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, runtime.Stage);
+        await fixture.AddInboxAsync(
+            Guid.NewGuid().ToString("D"),
+            "PreDepartureSafetyCheckResult",
+            new
+            {
+                preDepartureSafetyCheckId = runtime.PreDepartureSafetyCheckId,
+                outcome = "SAFE",
+                observedAt = fixture.Clock.GetUtcNow(),
+                safetyStateVersion = 7,
+                validUntil = fixture.Clock.GetUtcNow().AddMinutes(1),
+                safety = new
+                {
+                    departureSafe = true,
+                    vehicleStopped = true,
+                    allTargetSlotsLocked = true,
+                    allUnlockOutputsReset = true,
+                    unknownPresent = false,
+                    reasonCodes = Array.Empty<string>()
+                }
+            },
+            runtime.PreDepartureSafetyCheckMessageId,
+            sessionGeneration: 2);
     }
 
     private static void StillFullOnBothSides(RuntimeFixture fixture) =>

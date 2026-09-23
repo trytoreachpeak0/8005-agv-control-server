@@ -893,7 +893,8 @@ internal static class JourneyRuntimeWorkerTestKit
             string messageId,
             string messageType,
             object payload,
-            string? correlationId = null)
+            string? correlationId = null,
+            long sessionGeneration = 1)
         {
             JourneyRuntimeRow runtime = await RuntimeAsync();
             string json = JsonSerializer.Serialize(new
@@ -906,7 +907,7 @@ internal static class JourneyRuntimeWorkerTestKit
                 messageId,
                 correlationId,
                 agvId = Options.AgvId,
-                sessionGeneration = 1,
+                sessionGeneration,
                 sentAt = Now,
                 payload
             }, SerializerOptions);
