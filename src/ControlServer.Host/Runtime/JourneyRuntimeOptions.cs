@@ -129,7 +129,7 @@ public sealed class JourneyRuntimeOptions
     /// How long after one of this server's own orders ended -- cancelled or deleted in RIoT, or its FAILED fault cleared by a
     /// person -- the server waits before it rebuilds the order for the same vehicle and the same demand (control-server#318,
     /// the first of its three guards). Thirty seconds by default, the user's decision of 2026-09-22: time for whoever is by
-    /// the vehicle to step away, or to stop it. Zero or more, at most ten minutes.
+    /// the vehicle to step away, or to stop it. Positive -- zero would be no guard at all (review S6) -- and at most ten minutes.
     /// </summary>
     public TimeSpan OwnOrderRebuildDelay { get; set; } = TimeSpan.FromSeconds(30);
 
@@ -230,9 +230,9 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
         {
             failures.Add("WaitingJourneyBatteryReadBudget must be positive and at most 10 s.");
         }
-        if (options.OwnOrderRebuildDelay < TimeSpan.Zero || options.OwnOrderRebuildDelay > TimeSpan.FromMinutes(10))
+        if (options.OwnOrderRebuildDelay <= TimeSpan.Zero || options.OwnOrderRebuildDelay > TimeSpan.FromMinutes(10))
         {
-            failures.Add("OwnOrderRebuildDelay must be zero or more and at most 10 min.");
+            failures.Add("OwnOrderRebuildDelay must be positive and at most 10 min.");
         }
         if (options.OwnOrderRebuildRepeatWindow <= TimeSpan.Zero) failures.Add("OwnOrderRebuildRepeatWindow must be positive.");
         if (options.AdmissionPolicyVersion <= 0) failures.Add("AdmissionPolicyVersion must be positive.");
