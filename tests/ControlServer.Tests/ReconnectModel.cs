@@ -489,7 +489,8 @@ internal static class ReconnectModel
                     (everyRoundThrows ? " last tail rounds: " + string.Join(" | ", lastFailures.Distinct(StringComparer.Ordinal)) : string.Empty)));
             }
 
-            // 车拒收了一版快照（修订号倒退），或服务端拒收了车的确认：以前只计数，这里算违规——几千个组合里都是 0，没有代价。
+            // 车拒收了一版快照（修订号比车已有的低）：以前只计数，这里算违规——几千个组合里都是 0，没有代价。
+            // 服务端拒收车的确认是另一回事，在 AckAsync 里记成 LegitimateMessageRefused。
             foreach ((string messageType, long delivered, long held) in _vehicle.Regressions)
             {
                 violations.Add((ReconnectViolation.VehicleRefusedRegression, $"{messageType} revision {delivered} delivered while the vehicle held {held}"));
