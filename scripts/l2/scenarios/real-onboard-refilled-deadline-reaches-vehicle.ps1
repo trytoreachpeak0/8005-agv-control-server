@@ -200,7 +200,10 @@ $assertions.Add(
     ($null -ne $held -and [string]$entryRevision -eq [string]$held.Revision -and $stage -eq 'AwaitingSublot'),
     "录入请求 r$(if ($held) { $held.Revision }) / AwaitingSublot", "录入请求 r$entryRevision / $stage")
 
+# 先赋值再用：Get-ServerWorklists 是 `return , @(...)`，`@(Get-ServerWorklists) | ForEach-Object` 会把整张列表当成一个元素，
+# 两版清单时 `$_.Deadline` 是数组（本场景 c0c5aa81 上的预检就是这样在最后一行抛的，只有一版时成员枚举恰好给出标量）。
+$finalWorklists = Get-ServerWorklists
 $journal.Observe('worklists',
-    ((@(Get-ServerWorklists) | ForEach-Object { "r$($_.Revision) $(Format-Instant $_.Deadline) ack=$($_.Acknowledged)" }) -join '；'),
+    (($finalWorklists | ForEach-Object { "r$($_.Revision) $(Format-Instant $_.Deadline) ack=$($_.Acknowledged)" }) -join '；'),
     @{ held = $held; server = $agreement.Server; arrival = $arrival })
 $journal.Note('Scenario finished.')
