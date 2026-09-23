@@ -995,8 +995,23 @@ public sealed partial class JourneyRuntimeEngine(
                     // alarm by.
                     bool loadWaitRefilled = runtime.StationDepartureWaitStartedAt is null;
                     runtime.StationDepartureWaitStartedAt ??= now;
-                    if (ReconcileStationTimeoutDoorNotClosed(runtime, stops.Current.StationId, session, now) ||
-                        loadWaitRefilled)
+                    bool loadWaitChanged =
+                        ReconcileStationTimeoutDoorNotClosed(runtime, stops.Current.StationId, session, now) ||
+                        loadWaitRefilled;
+                    // 重填的期限同样送到车上（control-server#339），与等录入那一处同一个判据。录入请求不重发：这一站此刻在装，
+                    // 没有开着的录入；下一条的录入请求在这一批落定之后随下一版清单发出，号接着这一版往上走。
+                    if (await AdvanceWorklistPastAStaleDeadlineAsync(runtime, stops, cancellationToken)
+                            .ConfigureAwait(false) is { } reissued)
+                    {
+                        runtime.UpdatedAt = now;
+                        await PublishStopWorklistAsync(
+                            runtime,
+                            reissued,
+                            session,
+                            StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout),
+                            cancellationToken).ConfigureAwait(false);
+                    }
+                    else if (loadWaitChanged)
                     {
                         runtime.UpdatedAt = now;
                         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
