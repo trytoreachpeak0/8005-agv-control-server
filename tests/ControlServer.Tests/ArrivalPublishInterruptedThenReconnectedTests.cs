@@ -168,19 +168,19 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
     }
 
     /// <summary>
-    /// 断在清单那一张、随后闸门关着跑一轮（期限作废）、再重连：第一轮失败一次，车确认补发的那一版旧清单之后，下一轮就走通，
-    /// 录入请求发出（control-server#331 第三轮审查建议 1）。
+    /// 断在清单那一张、随后闸门关着跑一轮（期限作废）、再重连：重跑不再失败，重填的期限作为新的一版清单发出，录入请求跟着那一版发出
+    /// （control-server#339；cs#331 时这里是「第一轮失败一次、车确认补发的旧清单之后下一轮走通」）。
     /// </summary>
     /// <remarks>
     /// <para>
-    /// 这一回车没确认过任何一版清单，所以没有「车手上那一版」可以对账：第 2 代那一轮开头补发旧清单（旧期限），随后到站那一段重跑
-    /// 算出新期限，而那一行没确认、不在沿用范围内，内容又不同，由重放校验拒绝——这一轮失败，看板显示推进失败。车确认了补发的旧清单，
-    /// 它就成了车手上那一版，下一轮除期限外一字不差，沿用，往下走。
+    /// 这一回车没确认过任何一版清单。第 2 代那一轮开头补发旧清单（旧期限），随后到站那一段重跑算出新期限。cs#331 时那一行没确认、不在沿用
+    /// 范围内、内容又不同，由重放校验拒绝，这一轮失败。现在排给车的那一版期限与服务端此刻不一致，清单升一版：新号、新 id，旧的那一行
+    /// 退役，重放校验不会被问到——它没有被放宽，只是这里不再拿同一个 id 去发不同的内容。
     /// </para>
     /// <para>
-    /// <b>这条同时钉住「只沿用已确认的行」</b>（<c>OnboardJourneyPublisher.QueueEnvelopeAsync</c> 里 <c>AcknowledgedAt</c> 那一项）。
-    /// 把它拿掉，没确认的旧清单也会被沿用，第一轮不再失败——看上去更顺，但那是把一行车还没说收到的报文当成对账基准。
-    /// 失败轮数的上限是一：车一确认就恢复，不会卡死。
+    /// cs#331 时这条还钉着「只沿用已确认的行」：那时清单沿用会忽略期限，没确认的旧清单若被沿用，车上就留着一个车还没说收到的旧期限。
+    /// 现在沿用不再忽略任何 payload 字段，期限变了就一定是新的一版，那个风险在构造上不存在了。车先收到补发的旧版、再收到新的一版，
+    /// 号严格前进，车没有拒收任何一张，这里一并断言。
     /// </para>
     /// </remarks>
     [Fact]
@@ -188,7 +188,7 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
     [Trait("IntegrationSlice", "FP-IS-02")]
     [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
     [Trait("ProtocolVector", "CV-PICKUP-SUBLOT-LOAD")]
-    public async Task ACutOnTheWorklistFailsOneRoundThenRecoversOnceTheVehicleConfirmsTheReplayedWorklist()
+    public async Task ACutOnTheWorklistThenARefillSendsANewerWorklistInsteadOfFailingARound()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(30);
@@ -210,26 +210,36 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
         Assert.Null((await fixture.RuntimeAsync()).StationDepartureWaitStartedAt);
         await ReconnectAtGenerationAsync(fixture, generation: 2);
 
-        await Assert.ThrowsAsync<ProtocolContentConflictException>(() => fixture.Engine.ExecuteOnceAsync(Token));
-        Assert.Equal(AdvanceFailedReason, (await ReadRuntimeAfterFailedRoundAsync(fixture)).BlockReasonCode);
-
-        await cut.Peer.DeliverBufferedAcksAsync();
         await fixture.Engine.ExecuteOnceAsync(Token);
+        await cut.Peer.DeliverBufferedAcksAsync();
 
         JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
         Assert.Equal(JourneyRuntimeStage.AwaitingSublot, runtime.Stage);
         Assert.Null(runtime.BlockReasonCode);
-        Assert.Equal(2, Assert.Single(SentLines(fixture, "SublotEntryRequested")).GetProperty("sessionGeneration").GetInt64());
+        long[] worklists = [.. cut.Peer.Adopted
+            .Where(item => item.MessageType == "CurrentStopWorklistSnapshot")
+            .Select(item => item.Revision)];
+        Assert.Equal([worklists[0], worklists[0] + 1], worklists);
+        Assert.Empty(cut.Peer.Conflicts);
+        Assert.Empty(cut.Peer.Regressions);
+        JsonElement entry = Assert.Single(SentLines(fixture, "SublotEntryRequested"));
+        Assert.Equal(2, entry.GetProperty("sessionGeneration").GetInt64());
+        Assert.Equal(worklists[^1], entry.GetProperty("payload").GetProperty("worklistRevision").GetInt64());
     }
 
     /// <summary>
-    /// 车已确认的那一版清单与重跑算出的这一版，除期限外还有别的不同：不沿用、照旧被重放校验拒绝，看板显示推进失败。
+    /// 车已确认的那一版清单与重跑算出的这一版，期限相同而别的字段不同：不沿用、照旧被重放校验拒绝，看板显示推进失败。
     /// </summary>
     /// <remarks>
     /// <para>
-    /// 到站那一段重跑时，清单只在「除期限外一字不差」时沿用车已确认的那一版（control-server#331）。别的字段不同，说明同一 messageId
-    /// 下内容真的变了——车没收到的东西不能被当成已经收到。这条钉住「按内容比、不按确认过」：把判据换成「只要确认过就沿用」，
-    /// 这里会变成录入请求照发、测试变红。
+    /// 到站那一段重跑时，清单只在除信封外一字不差时沿用车已确认的那一版（control-server#331；control-server#339 起期限也不再忽略）。
+    /// 别的字段不同，说明同一 messageId 下内容真的变了——车没收到的东西不能被当成已经收到。这条钉住「按内容比、不按确认过」：
+    /// 把判据换成「只要确认过就沿用」，这里会变成录入请求照发、测试变红。
+    /// </para>
+    /// <para>
+    /// <b>期限要相同</b>，所以这里不跑闸门关着的那一轮、钟也不走：重连照样作废离站等待，但重填落在同一个时刻，期限与车手上那一版一样。
+    /// 期限一变，清单就作为新的一版发出（control-server#339），不会走到这个比较——cs#331 时这条用的是「断线、未就绪一轮、钟走 7 秒」，
+    /// 那样造出来的现在测的是升版，不是比较。
     /// </para>
     /// <para>
     /// <b>「内容真的变了」是改写发件箱那一行造出来的</b>，不是走一条真实路径：读代码时，当前停靠的清单项在这个窗口里不会变
@@ -256,10 +266,9 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
         worklist.PayloadJson = acknowledged.ToJsonString();
         await fixture.Context.SaveChangesAsync(Token);
 
-        await fixture.DropOnboardSessionAsync();
-        fixture.Clock.Advance(TimeSpan.FromSeconds(7));
-        await fixture.Engine.ExecuteOnceAsync(Token);
         await ReconnectAtGenerationAsync(fixture, generation: 2);
+        // 重连确实作废了等待（重填是真的发生了），只是落在同一个时刻。
+        Assert.Null((await fixture.RuntimeAsync()).StationDepartureWaitStartedAt);
         await Assert.ThrowsAsync<ProtocolContentConflictException>(() => fixture.Engine.ExecuteOnceAsync(Token));
 
         JourneyRuntimeRow runtime = await ReadRuntimeAfterFailedRoundAsync(fixture);
