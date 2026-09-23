@@ -70,7 +70,8 @@ public sealed class ReconnectModelTests
     /// 用 <see cref="ReplaySeeds"/>（<c>CS342_SEEDS</c>）在别的提交上复跑同样的种子。
     /// </para>
     /// <para>
-    /// 组合数的取舍：本机稳态每个组合 0.14～0.23 秒（control-server#342 原型量测），200 个约 30～50 秒，在「测试步最多多 2 分钟」以内。
+    /// 组合数的取舍：握手经真实处理器之后，本机稳态每个组合 0.20～0.29 秒（control-server#342 量测，四个提交各 300 个），200 个约 40～60 秒，
+    /// 在「测试步最多多 2 分钟」以内；它与别的测试类并行跑，占的测试步墙钟比这更少。
     /// 更多的组合用 <see cref="PrototypeMeasurement"/> 手动跑（<c>CS342_ITER</c>）。
     /// </para>
     /// </remarks>

@@ -26,7 +26,8 @@ public sealed class ReconnectModelRegressionTests
 
     private static readonly Dictionary<string, ReconnectStep[]> SequencesByName = new(StringComparer.Ordinal)
     {
-        // af01fd27 上 300 个组合里 17 个卡在取货站，确定性删减到这三步：到站那一轮派车计划与车辆业务状态发出去了，
+        // 原型模型在 af01fd27 上 300 个组合里 17 个卡在取货站，确定性删减到这三步（最终模型动作多了，同样的种子生成的序列不同，
+        // 300 个里 6 个，删减结果相同只是前两步顺序对调）：到站那一轮派车计划与车辆业务状态发出去了，
         // 清单那一条发送时断线，车一张都没确认；收尾重连后每一轮都在重放校验上抛异常。62d5c560 上同样卡住。
         ["cut-after-the-business-state-nothing-acknowledged"] =
             [new ReconnectStep.Arrive(), new ReconnectStep.CutAfter(2), new ReconnectStep.Round(1)],
@@ -73,13 +74,12 @@ public sealed class ReconnectModelRegressionTests
     /// </summary>
     /// <remarks>
     /// <para>
-    /// 这一串<b>不是随机探索找到的</b>，是用模型的动作手写的：300 个随机组合里带着等人码又失败的轮次只有 1～2 次，这条不变量在随机
-    /// 探索里几乎没有出事的机会。写成确定性用例，给它一个肯定会出现的机会，并断言机会确实出现过。
+    /// 模型在 cs#331 第一版修复 <c>62d5c560</c> 上找到（300 个组合里 5 个，种子 <c>0000000005_1</c>，13 步删减到这 4 步）：单挂起、连接在下一条
+    /// 发送时断；挂起那一轮写上 <c>ORDER_HANG</c>，下一轮开头补发没确认的计划时抛 <see cref="IOException"/>，那一版把 <c>ORDER_HANG</c>
+    /// 换成了 <c>JOURNEY_ADVANCE_FAILED</c>——「不覆盖指名在等谁的码」是 cs#331 第二轮审查才补的。
     /// </para>
     /// <para>
-    /// 第一轮把派车计划发出去（车没确认）；挂起那一轮写上 <c>ORDER_HANG</c>；连接断了之后，下一轮开头补发那一版计划时抛
-    /// <see cref="IOException"/>。在 cs#331 第一版修复 <c>62d5c560</c> 上，这一轮会把 <c>ORDER_HANG</c> 换成
-    /// <c>JOURNEY_ADVANCE_FAILED</c>（那一版还没有「不覆盖指名在等谁的码」，是第二轮审查补的）。
+    /// 断言机会确实出现过（<see cref="ReconnectVerdict.WaitOnPersonChances"/>）：带着等人码进来的那一轮要真的失败，否则「没有违规」恒真。
     /// </para>
     /// </remarks>
     [Fact]
@@ -89,8 +89,7 @@ public sealed class ReconnectModelRegressionTests
     {
         ReconnectStep[] steps =
         [
-            new ReconnectStep.Round(1), new ReconnectStep.OrderHang(), new ReconnectStep.Round(1),
-            new ReconnectStep.CutAfter(0), new ReconnectStep.Round(2),
+            new ReconnectStep.OrderHang(), new ReconnectStep.CutAfter(1), new ReconnectStep.Round(1), new ReconnectStep.Round(1),
         ];
 
         ReconnectVerdict verdict = await ReconnectModel.RunAsync(steps);
