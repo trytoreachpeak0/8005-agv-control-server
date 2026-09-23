@@ -69,6 +69,32 @@ public sealed class OwnOrderRebuildTests
         Assert.Equal((before.JourneyId, JourneyRuntimeStage.AwaitingSublot), (arrived.JourneyId, arrived.Stage));
     }
 
+    /// <summary>
+    /// 装着货开往卸货站的单被取消：同样延迟后给同一辆车、同一条需求重建，去的是同一个卸货停靠——车上的货送完这一趟；
+    /// 车到了照常卸货。
+    /// </summary>
+    [Fact]
+    public async Task ALoadedOrderCancelledInRiotIsRebuiltToTheSameUnloadStop()
+    {
+        await using RuntimeFixture fixture = await GateArrivalWaitAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync();
+        JourneyStopRow[] stopsBefore = await StopsAsync(fixture, before.JourneyId);
+        JourneyStopRow unload = stopsBefore.Single(stop => stop.StopRole == JourneyStopRoles.Unload);
+        fixture.Riot.CancelOrder(unload.UpperId);
+        int gateCreates = fixture.Riot.CreateCount("TO_GATE");
+
+        await TickAndRunAsync(fixture);
+        Assert.Equal("ORDER_ENDED_WITHOUT_ARRIVAL", (await fixture.RuntimeAsync()).BlockReasonCode);
+        await PassTheDelayAsync(fixture);
+
+        Assert.Equal(gateCreates + 1, fixture.Riot.CreateCount("TO_GATE"));
+        await AssertRebuiltAsync(fixture, before, stopsBefore, unload);
+        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, (await fixture.RuntimeAsync()).Stage);
+
+        JourneyRuntimeRow arrived = await ArriveAtCurrentStopAsync(fixture, FirstDemandId, "TO_GATE");
+        Assert.Equal((before.JourneyId, JourneyRuntimeStage.AwaitingUnloadResult), (arrived.JourneyId, arrived.Stage));
+    }
+
     // ---- 夹具 ----------------------------------------------------------------------------------------------
 
     /// <summary>
@@ -118,6 +144,16 @@ public sealed class OwnOrderRebuildTests
             backlog => Assert.NotNull(backlog.AcceptedAt));
     }
 
+    /// <summary>延迟到点的那一轮：拨过延迟、车载端刚说过话，跑一轮。</summary>
+    private static async Task PassTheDelayAsync(RuntimeFixture fixture)
+    {
+        DateTimeOffset before = fixture.Clock.GetUtcNow();
+        fixture.Clock.Advance(fixture.Options.OwnOrderRebuildDelay);
+        Assert.True(fixture.Clock.GetUtcNow() > before, "the clock did not move past the delay");
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+    }
+
     private static async Task<JourneyStopRow[]> StopsAsync(RuntimeFixture fixture, string journeyId)
     {
         await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
@@ -131,6 +167,18 @@ public sealed class OwnOrderRebuildTests
     {
         await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
         return await reading.OrderIntents.AsNoTracking().CountAsync(row => row.DemandId == FirstDemandId, Token);
+    }
+
+    private static async Task<RuntimeFixture> GateArrivalWaitAsync()
+    {
+        RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, createdAt: Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set(FirstSublot, 7);
+        await fixture.AdvanceToGateArrivalAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, (await fixture.RuntimeAsync()).Stage);
+        fixture.Riot.MovementState = "MT_FINISHED";
+        fixture.Context.ChangeTracker.Clear();
+        return fixture;
     }
 
     private static async Task<RuntimeFixture> DispatchedToPickupAsync()
