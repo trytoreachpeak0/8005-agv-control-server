@@ -620,14 +620,12 @@ public sealed partial class OnboardMessageProcessor(
                     state.SafetyRevision = revision;
                     SessionReadinessDecision decision = await store.DecideReadinessAsync(
                         agvId, generation, cancellationToken).ConfigureAwait(false);
-                    state.Readiness = decision.Readiness;
                     if (await AffectsAnOverdueSlotAsync(agvId, payload, cancellationToken).ConfigureAwait(false))
                     {
                         state.SafetySnapshotRequestDue = true;
                     }
                     string ack = DurableAck(messageType, messageId, agvId, generation, contentHash);
-                    string readiness = SerializeReadiness(agvId, generation, state, decision);
-                    return $"{ack}\n{readiness}";
+                    return AnswerWithReadiness(ack, decision, agvId, generation, state, announceUnchanged: true);
                 }
             case "SnapshotAppliedAck":
                 {
@@ -690,6 +688,52 @@ public sealed partial class OnboardMessageProcessor(
             default:
                 throw new InvalidDataException($"Message type '{messageType}' is not supported by ControlServer.");
         }
+    }
+
+    /// <summary>
+    /// An answer, followed by a SessionReadiness line when this connection may be told its readiness now: the one
+    /// place an answer takes a readiness line after it (control-server#340). <paramref name="state"/>'s readiness is
+    /// always brought up to <paramref name="decision"/>; the line goes out when <paramref name="announceUnchanged"/>
+    /// or when that readiness changed, and never before the handshake is done.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Never inside the handshake</b>, for the reason <see cref="AppendSafetySnapshotRequest"/> and the triggered
+    /// recovery sends give (control-server#202): until its recovery report is answered, the vehicle reads exactly one
+    /// answer for each line it sends. A readiness line after the DurableAck of a message it resent there is read in
+    /// place of the answer to its next line -- onboard-hmi#204 saw it after a SafetyStateChanged, read where the
+    /// capability snapshot's SnapshotAppliedAck belonged, and the vehicle dropped the connection. Five sites appended
+    /// readiness themselves until #340, none of them looking at the handshake; they go through here now, and
+    /// <c>OnboardHandshakeReadinessArchitectureTests</c> keeps a sixth from appending one on its own.
+    /// </para>
+    /// <para>
+    /// <b>Nothing held back is lost.</b> The recovery report's answer ends the handshake and always carries readiness,
+    /// decided then, so it covers whatever a message resent inside the handshake did to it. That answer is built
+    /// where the report is taken, after it sets <c>HandshakeCompleted</c>, and is the one readiness line this class
+    /// sends without coming through here.
+    /// </para>
+    /// <para>
+    /// <b>The connection's readiness is still brought up to date inside the handshake.</b> It is only read here, to
+    /// tell a change from none, and the recovery report overwrites it and announces unconditionally, so inside the
+    /// handshake the choice changes no line on the wire. Keeping it current is the choice that leaves it meaning one
+    /// thing -- the latest decision -- rather than two.
+    /// </para>
+    /// </remarks>
+    private string AnswerWithReadiness(
+        string answer,
+        SessionReadinessDecision decision,
+        string agvId,
+        long generation,
+        OnboardConnectionState state,
+        bool announceUnchanged)
+    {
+        bool changed = decision.Readiness != state.Readiness;
+        state.Readiness = decision.Readiness;
+        if (!state.HandshakeCompleted || !(changed || announceUnchanged))
+        {
+            return answer;
+        }
+        return $"{answer}\n{SessionReadinessLine(decision, agvId, generation, state)}";
     }
 
     /// <summary>
