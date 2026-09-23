@@ -601,10 +601,11 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
     /// 现场的前半段：车到取货站，到站发布把车辆业务状态与清单发出去并被确认，到站那一版计划在发送时断线。
     /// 返回的夹具停在「阶段仍是 <c>AwaitingPickupArrival</c>、发件箱里前两张已确认、连接已恢复」的那一刻。
     /// </summary>
-    private static async Task<(RuntimeFixture Fixture, ConnectionCut Cut)> ArrivalPublishCutAfterTheWorklistAsync(
-        TimeSpan? stationDepartureWait = null)
+    internal static async Task<(RuntimeFixture Fixture, ConnectionCut Cut)> ArrivalPublishCutAfterTheWorklistAsync(
+        TimeSpan? stationDepartureWait = null,
+        Func<Task<RuntimeFixture>>? create = null)
     {
-        RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        RuntimeFixture fixture = await (create ?? (() => RuntimeFixture.CreateAsync()))();
         if (stationDepartureWait is { } wait)
         {
             fixture.Options.StationDepartureWaitTimeout = wait;
@@ -661,7 +662,7 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
     /// 所以它能执行，就说明此刻没有未结束的事务，读到的是已经提交的值。
     /// </para>
     /// </remarks>
-    private static async Task<JourneyRuntimeRow> ReadRuntimeAfterFailedRoundAsync(RuntimeFixture fixture)
+    internal static async Task<JourneyRuntimeRow> ReadRuntimeAfterFailedRoundAsync(RuntimeFixture fixture)
     {
         await fixture.RecreateEngineAsync();
         Assert.Null(fixture.Context.Database.CurrentTransaction);
@@ -671,7 +672,7 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
     }
 
     /// <summary>车断开又连上：新的一代握手完成、会话回到 <c>Ready</c>，车此刻是听得到的。</summary>
-    private static async Task ReconnectAtGenerationAsync(RuntimeFixture fixture, long generation)
+    internal static async Task ReconnectAtGenerationAsync(RuntimeFixture fixture, long generation)
     {
         await fixture.ReconnectAsync(generation);
         await fixture.AdvanceSessionAsync(generation);
@@ -733,7 +734,7 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
     /// 默认抛 <see cref="IOException"/>——真实 <c>OnboardPeer</c> 在连接不在时抛的就是它。要造「与连接无关的失败」时，
     /// 给 <see cref="On"/> 传别的异常（审查建议 3 那一条）。
     /// </remarks>
-    private sealed class ConnectionCut
+    internal sealed class ConnectionCut
     {
         private Func<string, bool>? _cutOn;
 
