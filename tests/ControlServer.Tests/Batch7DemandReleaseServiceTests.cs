@@ -235,6 +235,49 @@ public sealed class Batch7DemandReleaseServiceTests
         Assert.Empty(await reading.OwnOrderRebuilds.AsNoTracking().ToArrayAsync(Token));
     }
 
+    /// <summary>
+    /// 单被人取消、等着重建的这段时间里，这辆车对这条需求已经不合格了（任务类型准入被收回）：到点时不重建——车不会白走一段、
+    /// 又被释放服务取消——记录停在 <c>VEHICLE_NO_LONGER_ELIGIBLE</c>，旅程码 <c>OWN_ORDER_REBUILD_VEHICLE_INELIGIBLE</c>；释放服务照常
+    /// 释放改派，那张单已经终结，不再发取消。
+    /// </summary>
+    /// <remarks>
+    /// 独立审查 S1（A3）。判据与释放服务同一个（<see cref="DemandReleaseRules.VehicleNoLongerEligible"/> 的服务端事实部分：任务类型准入、
+    /// 分区准入），只对取货腿：REQ-0328 只释放尚未取货的需求，车上有货的那一段本来也不会被释放。
+    /// </remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0360")]
+    public async Task AVehicleNoLongerEligibleWhileItsOrderWaitsToBeRebuiltIsNotSentAgainAndTheDemandIsReleased()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
+        fixture.Riot.CancelOrder(before.PickupUpperId);
+        await TickAndRunAsync(fixture);
+        fixture.Options.AllowedWorkTypes = ["STAGING_TO_WIRE"];
+
+        fixture.Clock.Advance(fixture.Options.OwnOrderRebuildDelay);
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+        Assert.Equal("OWN_ORDER_REBUILD_VEHICLE_INELIGIBLE", (await fixture.RuntimeAsync(FirstDemandId)).BlockReasonCode);
+        await using (ControlServerDbContext held = new ControlServerDbContext(fixture.DbOptionsForTests))
+        {
+            OwnOrderRebuildRow record = await held.OwnOrderRebuilds.AsNoTracking().SingleAsync(Token);
+            Assert.Equal((OwnOrderRebuildStates.Stopped, "VEHICLE_NO_LONGER_ELIGIBLE"), (record.State, record.StoppedReason));
+        }
+
+        CancellingGateway gateway = new(fixture.Clock, _ => { });
+        IReadOnlyList<DemandReleaseOutcome> outcomes = await Service(fixture, gateway).RunOnceAsync(Token);
+
+        Assert.Equal("RELEASED", Assert.Single(outcomes).Result);
+        Assert.Equal(0, gateway.Cancels);
+        await using ControlServerDbContext reading = new ControlServerDbContext(fixture.DbOptionsForTests);
+        JourneyRuntimeRow after = await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token);
+        Assert.Equal((JourneyRuntimeStage.Completed, DemandReleaseReasons.Released), (after.Stage, after.BlockReasonCode));
+        Assert.True(await DemandJourneyLookup.ReleasedForRedispatch(reading).AnyAsync(row => row.DemandId == FirstDemandId, Token));
+    }
+
     [Fact]
     public async Task AnEligibleVehicleKeepsItsDemands()
     {
