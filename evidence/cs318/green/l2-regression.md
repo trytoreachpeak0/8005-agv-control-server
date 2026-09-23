@@ -35,3 +35,18 @@
 | `emergency-stop-operator-release` | `8ba67144` | `20260923T093243030Z` | PASS | 10 / 0 |
 | `in-transit-order-hang-continue` | `8ba67144` | `20260923T093312387Z` | PASS | 7 / 0 |
 | `reassign-when-vehicle-ineligible` | `8ba67144` | `20260923T093413708Z` | PASS | 8 / 0 |
+
+## 增量审查修改之后（`fb897296`）
+
+增量审查 B2 改了闸门后的重建推进（已发出的新单照常对账），同一组七条全部重跑，全部 PASS。本票两条的完整证据在
+`green/l2-in-transit-order-cancelled-rebuilt-fb897296/`、`green/l2-vehicle-fault-operator-clearance-fb897296/`，其余记 runId。
+
+| 场景 | 服务端提交 | runId | 结论 | 判据 PASS / FAIL |
+| --- | --- | --- | --- | --- |
+| `in-transit-order-cancelled-rebuilt` | `fb897296` | `20260923T103241841Z` | PASS | 5 / 0 |
+| `vehicle-fault-operator-clearance` | `fb897296` | `20260923T103338902Z` | PASS | 8 / 0 |
+| `command-surface-order-hold` | `fb897296` | `20260923T103417126Z` | PASS | 20 / 0 |
+| `emergency-stop-single-trigger` | `fb897296` | `20260923T103539804Z` | PASS | 14 / 0 |
+| `emergency-stop-operator-release` | `fb897296` | `20260923T103632471Z` | PASS | 10 / 0 |
+| `in-transit-order-hang-continue` | `fb897296` | `20260923T103721380Z` | PASS | 7 / 0 |
+| `reassign-when-vehicle-ineligible` | `fb897296` | `20260923T103829484Z` | PASS | 8 / 0 |
