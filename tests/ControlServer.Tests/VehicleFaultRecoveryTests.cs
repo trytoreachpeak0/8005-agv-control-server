@@ -613,7 +613,7 @@ public sealed class VehicleFaultRecoveryTests
         {
             await using ControlServerDbContext claiming = new(fixture.DbOptionsForTests);
             return await OwnOrderRebuilds.ClaimCargoEvidenceRequestAsync(
-                claiming, fixture.Options.AgvId, generation, ready: true, Token);
+                claiming, fixture.Options.AgvId, generation, ready: true, fixture.Clock.GetUtcNow(), Token);
         }
     }
 

@@ -68,6 +68,8 @@ public sealed class Batch3MigrationDisciplineTests
         "20260922120241_WaitingJourneyWatch",
         // control-server#318：新建 OwnOrderRebuilds 表，本服务端自建单终结后同车同需求重建的记录与审计；不动任何既有表与行。
         "20260923043049_OwnOrderRebuilds",
+        // control-server#318 增量审查 B1：OwnOrderRebuilds 加最近一次要快照的时刻 CargoEvidenceRequestedAt（可空，不回填）；不动任何既有行。
+        "20260923094511_OwnOrderRebuildCargoEvidenceRequestedAt",
     ];
 
     private static readonly string[] Batch3Tables =

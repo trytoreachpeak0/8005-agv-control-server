@@ -173,6 +173,7 @@ internal static class OwnOrderRebuilds
         string agvId,
         long generation,
         bool ready,
+        DateTimeOffset now,
         CancellationToken cancellationToken)
     {
         string[] due = await dbContext.OwnOrderRebuilds.AsNoTracking()
@@ -195,7 +196,8 @@ internal static class OwnOrderRebuilds
             .ExecuteUpdateAsync(
                 setters => setters
                     .SetProperty(row => row.CargoEvidenceRequestedGeneration, generation)
-                    .SetProperty(row => row.CargoEvidenceRequestedWhileReady, ready),
+                    .SetProperty(row => row.CargoEvidenceRequestedWhileReady, ready)
+                    .SetProperty(row => row.CargoEvidenceRequestedAt, now),
                 cancellationToken)
             .ConfigureAwait(false);
         return claimed > 0;

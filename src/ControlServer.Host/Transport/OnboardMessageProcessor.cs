@@ -184,7 +184,8 @@ public sealed partial class OnboardMessageProcessor(
         // past the handshake, and not on the recovery report that ends it, whose answer the vehicle still reads as the handshake's.
         if (state.HandshakeCompleted && messageType != "RecoveryStateReport" &&
             await OwnOrderRebuilds.ClaimCargoEvidenceRequestAsync(
-                dbContext, agvId, state.SessionGeneration!.Value, state.Readiness == SessionReadiness.Ready, cancellationToken)
+                dbContext, agvId, state.SessionGeneration!.Value, state.Readiness == SessionReadiness.Ready,
+                timeProvider.GetUtcNow(), cancellationToken)
                 .ConfigureAwait(false))
         {
             state.SafetySnapshotRequestDue = true;

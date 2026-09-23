@@ -86,6 +86,12 @@ public sealed class OwnOrderRebuildRow
 
     /// <summary>那一次请求发出时会话是不是就绪。未就绪时要过的，会话在同一代次里变成就绪后可以再要一次。</summary>
     public bool CargoEvidenceRequestedWhileReady { get; set; }
+
+    /// <summary>
+    /// 最近一次向车要快照的时刻（服务端时钟）。判不了之后再要一次的节流从它和那份快照的收到时刻里较晚的一个算起：车不回应时，
+    /// 旧快照一直够老，只看快照会每轮都再要（审查增量 B1）。
+    /// </summary>
+    public DateTimeOffset? CargoEvidenceRequestedAt { get; set; }
 }
 
 /// <summary>重建由哪一种终结引起（control-server#318 票面「三个触发来源」）。</summary>
