@@ -168,6 +168,7 @@ public sealed partial class VehicleFaultRecoveryService
             .ReadEmergencyStateAsync(subject.DeviceKey, cancellationToken).ConfigureAwait(false);
         RiotVehicleOrderObservation orders = await orderFacts
             .ReadUnfinishedOrdersAsync(subject.DeviceKey, cancellationToken).ConfigureAwait(false);
+        string[] terminated;
         using (IDisposable? round = await gate.TryEnterAsync(gateWait, cancellationToken).ConfigureAwait(false))
         {
             if (round is null)
@@ -224,12 +225,18 @@ public sealed partial class VehicleFaultRecoveryService
             DateTimeOffset now = timeProvider.GetUtcNow();
             JourneyRuntimeRow runtime = trip.Runtime!;
             PickupStopTermination termination = new(dbContext);
-            foreach (JourneyDemandRow membership in memberships.Where(row => row.Status == JourneyDemandStatuses.PendingLoad))
+            terminated = [.. memberships
+                .Where(row => row.Status == JourneyDemandStatuses.PendingLoad)
+                .Select(row => row.DemandId)
+                .Order(StringComparer.Ordinal)];
+            foreach (string demandId in terminated)
             {
-                await termination.StageDemandTerminationAsync(membership.DemandId, cancellationToken).ConfigureAwait(false);
+                await termination.StageDemandTerminationAsync(demandId, cancellationToken).ConfigureAwait(false);
             }
 
-            trip.Stopped!.State = OwnOrderRebuildStates.Ended;
+            // Who gave it up, on the record the trip was stopped under (independent review S2); event 9203 names them too.
+            trip.Stopped!.OperatorId = request.OperatorId;
+            trip.Stopped.State = OwnOrderRebuildStates.Ended;
             JourneyStopCursor stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken).ConfigureAwait(false);
             await termination.StageJourneyClosureAsync(
                     runtime, stops.CurrentSublotRequestMessageIdOrNone(runtime.WorklistRevision), TripTerminatedReason, now,
@@ -240,7 +247,7 @@ public sealed partial class VehicleFaultRecoveryService
 
         await JourneyClosure.SendAsync(publisher, dbContext, agvId, cancellationToken).ConfigureAwait(false);
         return new VehicleFaultRecoveryDecision(
-            VehicleFaultRecoveryOutcome.TripTerminated, [], VehicleFaultRecoveryDispositions.TripTerminated, null);
+            VehicleFaultRecoveryOutcome.TripTerminated, [], VehicleFaultRecoveryDispositions.TripTerminated, null, terminated);
     }
 
     /// <summary>
@@ -315,7 +322,9 @@ public sealed partial class VehicleFaultRecoveryService
         runtime.Stage = JourneyRuntimeStage.Blocked;
         runtime.SetBlockReason(AwaitingCargoHandoffReason, now);
         runtime.UpdatedAt = now;
-        trip.Stopped!.State = OwnOrderRebuildStates.AwaitingCargoHandoff;
+        // Who handed it over, on the record (independent review S2); event 9203 names them too.
+        trip.Stopped!.OperatorId = request.OperatorId;
+        trip.Stopped.State = OwnOrderRebuildStates.AwaitingCargoHandoff;
         OwnOrderRebuilds.WithdrawCargoEvidenceRequest(trip.Stopped);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return new VehicleFaultRecoveryDecision(

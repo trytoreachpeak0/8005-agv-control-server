@@ -143,7 +143,8 @@ public static class VehicleFaultRecoveryEndpoints
             decision.Outcome.ToString(),
             decision.Disposition,
             decision.Reasons,
-            decision.FaultGeneration);
+            decision.FaultGeneration,
+            decision.TerminatedDemandIds ?? []);
         return decision.Outcome switch
         {
             VehicleFaultRecoveryOutcome.Cleared or VehicleFaultRecoveryOutcome.Resumed or VehicleFaultRecoveryOutcome.AlreadyCleared or
@@ -195,10 +196,15 @@ public sealed record VehicleFaultRecoveryHttpRequest(
     string? Note);
 
 /// <summary>What the request came to.</summary>
+/// <param name="TerminatedDemandIds">
+/// The demands a <c>TERMINATE_STOPPED_TRIP</c> ended, for the people who close them in MES; empty for everything else,
+/// a repeat included (control-server#345).
+/// </param>
 public sealed record VehicleFaultRecoveryResponse(
     string AgvId,
     string Action,
     string Outcome,
     string Disposition,
     IReadOnlyList<string> Reasons,
-    long? FaultGeneration);
+    long? FaultGeneration,
+    IReadOnlyList<string> TerminatedDemandIds);

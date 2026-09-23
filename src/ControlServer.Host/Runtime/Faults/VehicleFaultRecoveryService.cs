@@ -108,12 +108,16 @@ public static class VehicleFaultRecoveryDispositions
     public const string AwaitingCargoHandoff = "AWAITING_CARGO_HANDOFF";
 }
 
-/// <summary>The answer to one request.</summary>
+/// <summary>
+/// The answer to one request. <paramref name="TerminatedDemandIds"/> names the demands a person's giving up ended
+/// (control-server#345, independent review S2): MES still lists them and people close them there.
+/// </summary>
 public sealed record VehicleFaultRecoveryDecision(
     VehicleFaultRecoveryOutcome Outcome,
     IReadOnlyList<string> Reasons,
     string Disposition,
-    long? FaultGeneration);
+    long? FaultGeneration,
+    IReadOnlyList<string>? TerminatedDemandIds = null);
 
 /// <summary>
 /// The person's way out of a vehicle fault (control-server#299).
@@ -658,8 +662,11 @@ public sealed partial class VehicleFaultRecoveryService(
             string.IsNullOrWhiteSpace(request.OperatorId) ? "-" : request.OperatorId,
             decision.Outcome.ToString(),
             decision.Disposition,
-            // Six is LoggerMessage's limit, so the note rides with the reasons rather than being dropped.
-            $"{(decision.Reasons.Count == 0 ? "-" : string.Join(',', decision.Reasons))}; note: {(string.IsNullOrWhiteSpace(request.Note) ? "-" : request.Note)}",
+            // Six is LoggerMessage's limit, so the note -- and the demands a give-up ended -- ride with the reasons rather
+            // than being dropped.
+            $"{(decision.Reasons.Count == 0 ? "-" : string.Join(',', decision.Reasons))}" +
+            $"{(decision.TerminatedDemandIds is { Count: > 0 } ended ? $"; terminated: {string.Join(',', ended)}" : "")}" +
+            $"; note: {(string.IsNullOrWhiteSpace(request.Note) ? "-" : request.Note)}",
             null);
         return decision;
     }
