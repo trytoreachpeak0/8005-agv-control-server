@@ -1,0 +1,21 @@
+mutation M1-worklist-retire-saves-on-its-own: JourneyRuntimeEngine.cs matches=[1]
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+index a1178c08..a3be8533 100644
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+@@ -2089,7 +2089,7 @@ public sealed partial class JourneyRuntimeEngine(
+         if (revision > baseRevision)
+         {
+             // 上一版：同一个停靠，偏移少一。
+-            await FenceSupersededSnapshotAsync(
++            await RetireSupersededSnapshotAsync(
+                 stops.WorklistMessageIdAt(runtime.WorklistRevision, stop, revision - 1), cancellationToken)
+                 .ConfigureAwait(false);
+         }
+  Failed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.ARefillOverAnUnconfirmedWorklistLandsInOneSaveAndSurvivesACrashAtIt [464 ms]
+  Error Message:
+Expected: 0
+Actual:   1
+     at ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.ARefillOverAnUnconfirmedWorklistLandsInOneSaveAndSurvivesACrashAtIt() in tests\ControlServer.Tests\RefilledStationDeadlineReachesVehicleTests.cs:line 211
+   at ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.ARefillOverAnUnconfirmedWorklistLandsInOneSaveAndSurvivesACrashAtIt() in tests\ControlServer.Tests\RefilledStationDeadlineReachesVehicleTests.cs:line 226
+Failed!  - Failed:     1, Passed:    33, Skipped:     0, Total:    34, Duration: 14 s - ControlServer.Tests.dll (net8.0)

@@ -64,6 +64,13 @@ namespace ControlServer.Tests;
 /// （<c>fp/v2-impl@a98ae9be</c>）相比，删除 0 行，新增恰好 3 行，三行的类型恰好是那三种快照、全部 <c>AcknowledgedAt=NULL</c>。
 /// 十份都成立；七张表一列未动。同票重录的六份 <c>WirePins/</c> 另有判据，见 <c>evidence/cs323/green/01-pin-rerecord-vs-integration-tip.txt</c>。
 /// </para>
+/// <para>
+/// <b>control-server#339 给十份终结状态基线的 <c>JourneyStops</c> 行各加了一列 <c>WorklistRefills=0</c>，其余逐字未动。</b>那一票加了
+/// 「本停靠的清单因离站期限重填多发了几版」，这十条路径都没有断线重连，所以全为 0。判据与 cs#273 同一个形状：把新基线里的
+/// <c>|WorklistRefills=0</c> 删掉，与<b>集成分支上的</b>旧基线（<c>fp/v2-impl@012c31b2</c>）逐字相同——十四份全部成立（没有
+/// <c>JourneyStops</c> 行的四份看板基线本来就没动）。先算出该是多少再去对：十份各两行停靠，应有 20 处，实数 20 处
+/// （<c>evidence/l1/20260923-cs339-pins/SUMMARY.md</c>）。列插在 <c>Status</c> 之前，是 <c>EnsureCreated</c> 按属性声明顺序建表的结果。
+/// </para>
 /// </remarks>
 internal static class ZeroChangePin
 {

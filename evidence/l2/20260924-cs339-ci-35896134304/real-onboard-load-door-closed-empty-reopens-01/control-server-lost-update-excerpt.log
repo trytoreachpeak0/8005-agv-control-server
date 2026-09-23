@@ -1,0 +1,14 @@
+WHERE "DemandId" = @p1 AND "JourneyId" = @p2
+RETURNING 1;
+[01:34:16 INF] Executed DbCommand (0ms) [Parameters=[@p6='?' (Size = 44), @p0='?' (Size = 21), @p1='?' (DbType = DateTimeOffset), @p2='?' (Size = 9), @p3='?' (DbType = DateTimeOffset), @p4='?' (DbType = DateTimeOffset), @p5='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyRuntimes" SET "BlockReasonCode" = @p0, "BlockReasonSince" = @p1, "Stage" = @p2, "StationDepartureWaitStartedAt" = @p3, "UpdatedAt" = @p4, "WaitingSince" = @p5
+WHERE "JourneyId" = @p6
+RETURNING 1;
+[01:34:16 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p2='?' (DbType = Int32), @p3='?' (DbType = Int64), @p5='?', @p4='?' (Size = 9), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+LIMIT 2
+[01:34:16 INF] Executed DbCommand (797ms) [Parameters=[@p3='?' (Size = 44), @p0='?', @p1='?' (DbType = DateTimeOffset), @p2='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyRuntimes" SET "BlockReasonCode" = @p0, "BlockReasonSince" = @p1, "UpdatedAt" = @p2
+WHERE "JourneyId" = @p3
+RETURNING 1;
+[01:34:16 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/task/v1/task/getVehicleInfo/BROKERX-L2-0001
+[01:34:16 INF] Sending HTTP request GET http://127.0.0.1:48408/api/task/v1/task/getVehicleInfo/BROKERX-L2-0001

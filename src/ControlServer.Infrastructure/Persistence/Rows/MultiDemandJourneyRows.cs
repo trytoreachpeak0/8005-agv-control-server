@@ -52,6 +52,21 @@ public sealed class JourneyStopRow
     /// </summary>
     public string? DepartureSafetyCheckId { get; set; }
 
+    /// <summary>
+    /// 本停靠的清单因离站期限重填而多发了几版（control-server#339）。受理时为零，只增不减。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 断联使离站等待作废、恢复后从此刻重填（ADR-cross-0055）。重填出来的期限与车手上那一版不同时，它要作为新的一版送到车上：
+    /// 车载端按消息类型与修订号采纳清单，同号不同内容当场拒收（<c>SNAPSHOT_REVISION_CONTENT_CONFLICT</c>），也从不自己作废或重新计满期限。
+    /// 所以重填必须让修订号前进，而修订号是从停靠推出来的（<c>JourneyStopCursor.WorklistRevisionAt</c>），这一列就是推导里「重填」那一项。
+    /// </para>
+    /// <para>
+    /// <b>落库而不是每轮现算</b>：重填的次数是历史，不是此刻的事实能重新推出来的——推不出来，重启之后修订号就会退回车已经采纳过的号。
+    /// </para>
+    /// </remarks>
+    public long WorklistRefills { get; set; }
+
     public required string Status { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 }

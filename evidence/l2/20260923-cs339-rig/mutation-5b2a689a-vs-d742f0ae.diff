@@ -1,0 +1,150 @@
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+index a1178c08..47b6aea9 100644
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+@@ -922,13 +922,12 @@ public sealed partial class JourneyRuntimeEngine(
+                     {
+                         return;
+                     }
+-                    // 重填的期限送到车上（control-server#339）：清单升一版，录入请求跟着那一版重发。重发不是因为升版让旧的那张作废——
+-                    // 同一站、同一作业会话、还有待录入时，车不把更高的号当成本站结束（车载端 EndsStopOf）——而是车在会话离开 Ready 时
+-                    // 已经清掉了手上的录入请求，不重发，操作员就没有可答的请求。升版之前发出的录入仍在本停靠的地址区间里，照常受理。
++                    // 重填的期限送到车上（control-server#339）：清单升一版，录入请求跟着那一版重发——旧的一张随修订号变化在车上作废
++                    // （expiresOnRevisionChange），不重发，操作员就没有可答的请求。升版之前发出的录入仍在本停靠的地址区间里，照常受理。
+                     if (await AdvanceWorklistPastAStaleDeadlineAsync(runtime, stops, cancellationToken)
+                             .ConfigureAwait(false) is { } reissued)
+                     {
+-                        // 发布把这个上下文里未保存的改动一起保存：重填的起点、升版的次数、旧一版的退役与新的一版同在或同不在。
++                        // 发布把这个上下文里未保存的改动一起保存：重填的起点、升版的次数与新的一版同在或同不在。
+                         runtime.UpdatedAt = now;
+                         await PublishStopWorklistAsync(
+                             runtime,
+@@ -939,13 +938,6 @@ public sealed partial class JourneyRuntimeEngine(
+                         await PublishEntryRequestAsync(runtime, reissued, session, cancellationToken).ConfigureAwait(false);
+                         return;
+                     }
+-                    // 上面两条报文是两次保存，崩在两次之间时清单已对上、录入请求还没有：补发录入请求。
+-                    if (await EntryRequestMissingBehindTheWorklistAsync(runtime, stops, cancellationToken).ConfigureAwait(false))
+-                    {
+-                        runtime.UpdatedAt = now;
+-                        await PublishEntryRequestAsync(runtime, stops, session, cancellationToken).ConfigureAwait(false);
+-                        return;
+-                    }
+                     // The one quiet exit of this stage. A wait refilled above and not saved here would be
+                     // refilled again on every later iteration, which is the same as never running out.
+                     if (runtime.BlockReasonCode is not null || waitRefilled)
+@@ -2024,7 +2016,7 @@ public sealed partial class JourneyRuntimeEngine(
+             session,
+             StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout),
+             cancellationToken,
+-            keepAcknowledgedIgnoring: NothingButTheEnvelope).ConfigureAwait(false);
++            keepAcknowledgedIgnoring: new HashSet<string>(["stationDepartureDeadlineAt"], StringComparer.Ordinal)).ConfigureAwait(false);
+         await RetireSupersededSnapshotAsync(PickupDispatchPlanMessageId(runtime), cancellationToken)
+             .ConfigureAwait(false);
+         // 车在路上收到的那张重发版（途中追加整体重发，号按「还没到站」算）同样被到站这一版取代（批次7-07 审查）。
+@@ -2058,11 +2050,6 @@ public sealed partial class JourneyRuntimeEngine(
+     /// （<c>SNAPSHOT_REVISION_REGRESSION</c>）而断会话；旧录入请求被补发，则是一条内容已变的业务 id。
+     /// </para>
+     /// <para>
+-    /// <b>退役只打标记，与新的一版同一次保存</b>（<see cref="FenceSupersededSnapshotAsync"/>；入队那一步保存）。退役若自己先保存一次，
+-    /// 这个上下文里此前没保存的改动会被一起带进库——重填升版时就是升版的次数——而新的一版还没入队：崩在两次保存之间，
+-    /// 下一轮按新的号找不到排给车的那一版，再也认不出车上的期限是旧的（control-server#339，PR #353 审查 M1）。
+-    /// </para>
+-    /// <para>
+     /// 一条待做的需求都没有时这里什么也不发：本停靠做完了，调用方接着往下一个停靠推，下一个停靠到站时发它自己那一版。
+     /// 这是时机上的选择，不是协议不许——<b>这里曾写着空清单「违反 schema」，那是错的</b>（control-server#323）：<c>minItems: 1</c>
+     /// 只在录入请求的 <c>expectedSublots</c> 上，<c>CurrentStopWorklistSnapshot.items</c> 没有下限，空清单是合法报文。
+@@ -2089,7 +2076,7 @@ public sealed partial class JourneyRuntimeEngine(
+         if (revision > baseRevision)
+         {
+             // 上一版：同一个停靠，偏移少一。
+-            await FenceSupersededSnapshotAsync(
++            await RetireSupersededSnapshotAsync(
+                 stops.WorklistMessageIdAt(runtime.WorklistRevision, stop, revision - 1), cancellationToken)
+                 .ConfigureAwait(false);
+         }
+@@ -2110,10 +2097,6 @@ public sealed partial class JourneyRuntimeEngine(
+     private static readonly IReadOnlySet<string> NothingButTheEnvelope = new HashSet<string>(StringComparer.Ordinal);
+ 
+     /// <summary>取货停靠此刻这一版的录入请求，期待子批就是清单那一版列的那些。</summary>
+-    /// <remarks>
+-    /// 上一张的退役在这里仍自己保存一次，与清单那一侧不同：崩在它与这一张入队之间，留下的是「这一版清单已排、录入请求没有」，
+-    /// 等录入那一段按 <see cref="EntryRequestMissingBehindTheWorklistAsync"/> 补发，不会停住。
+-    /// </remarks>
+     private async Task PublishEntryRequestAsync(
+         JourneyRuntimeRow runtime,
+         JourneyStopCursor stops,
+@@ -2193,66 +2176,27 @@ public sealed partial class JourneyRuntimeEngine(
+             return null;
+         }
+ 
+-        // 这一行是本服务端自己写的清单，字段按构造一定在；缺了就当期限为空，与「期限开关关着」同样处理——不会因此升版。
+-        DateTimeOffset? sent = null;
++        DateTimeOffset? sent;
+         using (JsonDocument document = JsonDocument.Parse(queued))
+         {
+-            if (document.RootElement.TryGetProperty("payload", out JsonElement payload) &&
+-                payload.TryGetProperty("stationDepartureDeadlineAt", out JsonElement deadline) &&
+-                deadline.ValueKind != JsonValueKind.Null)
+-            {
+-                sent = deadline.GetDateTimeOffset();
+-            }
++            JsonElement deadline = document.RootElement.GetProperty("payload").GetProperty("stationDepartureDeadlineAt");
++            sent = deadline.ValueKind == JsonValueKind.Null ? null : deadline.GetDateTimeOffset();
+         }
+-        if (sent == StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout))
++        if (queued is not null)
+         {
+             return null;
+         }
+ 
+-        // 只在这个上下文里改，不保存：旧的那一版由 PublishStopWorklistAsync 退役，升版的次数、退役与新的一版在入队那一次保存里
+-        // 一起落库。崩在那之前就什么都没落库，下一轮照样认出车上的期限是旧的、照样升版（PR #353 审查 M1）。
+         JourneyStopRow tracked = await dbContext.Set<JourneyStopRow>()
+             .SingleAsync(row => row.StopId == stop.StopId, cancellationToken).ConfigureAwait(false);
+         tracked.WorklistRefills += 1;
++        // 旧的那一版在这里退役而不是交给 PublishStopWorklistAsync：那里的退役自己保存一次，会把升版的次数先落库、新的一版还没入队——
++        // 崩在两者之间，下一轮按新的号找不到排给车的那一版，这里就再也认不出车上的期限是旧的。这里只打标记，与新的一版同一次保存。
++        await FenceSupersededSnapshotAsync(messageId, cancellationToken).ConfigureAwait(false);
+         return await JourneyStopCursor.LoadIncludingUnsavedChangesAsync(dbContext, runtime, cancellationToken)
+             .ConfigureAwait(false);
+     }
+ 
+-    /// <summary>
+-    /// 本停靠此刻这一版清单已经排给了车，同一版的录入请求却不在发件箱里（control-server#339）。
+-    /// </summary>
+-    /// <remarks>
+-    /// <para>
+-    /// 等录入时重填升版，清单与录入请求是两条报文、两次保存。崩在两次之间，清单那一侧已经对上了服务端的期限，
+-    /// <see cref="AdvanceWorklistPastAStaleDeadlineAsync"/> 认不出任何事；而车在会话离开 <c>Ready</c> 时已经清掉了手上的录入请求
+-    /// （车载端 <c>WireToGateBusinessService.OnSessionStateChanged</c>），不补发，这一站操作员就没有可答的请求。
+-    /// </para>
+-    /// <para>
+-    /// 正常推进里不会出现这种样子：进入等录入的两处（到站、上一条装完还有下一条）都是清单与录入请求一起发，等录入期间号只因重填而变，
+-    /// 而重填同样两条一起发。装货中重填只发清单，但那时阶段不是等录入，下一次回到等录入之前号必然随装完的那一条再升一次。
+-    /// </para>
+-    /// </remarks>
+-    private async Task<bool> EntryRequestMissingBehindTheWorklistAsync(
+-        JourneyRuntimeRow runtime,
+-        JourneyStopCursor stops,
+-        CancellationToken cancellationToken)
+-    {
+-        JourneyStopRow stop = stops.Current;
+-        if (stops.OutstandingAtCurrentStop.Count == 0)
+-        {
+-            return false;
+-        }
+-
+-        long revision = stops.WorklistRevisionAt(runtime.WorklistRevision, stop);
+-        string worklistId = stops.WorklistMessageIdAt(runtime.WorklistRevision, stop, revision);
+-        string entryId = stops.SublotRequestMessageIdAt(runtime.WorklistRevision, stop, revision);
+-        List<string> queued = await dbContext.ProtocolOutbox.AsNoTracking()
+-            .Where(row => row.MessageId == worklistId || row.MessageId == entryId)
+-            .Select(row => row.MessageId)
+-            .ToListAsync(cancellationToken).ConfigureAwait(false);
+-        return queued.Contains(worklistId) && !queued.Contains(entryId);
+-    }
+-
+     /// <summary>
+     /// CV-DEMAND-ACCEPT-TO-PICKUP's first snapshot: the plan as it stands once the TO_PICKUP order
+     /// exists and before the vehicle is at the pickup -- the pickup leg ACTIVE, the drop-off leg

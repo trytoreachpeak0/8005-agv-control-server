@@ -1,0 +1,40 @@
+[xUnit.net 00:00:11.09]         before the disconnect 2026-08-26T01:00:30.0000000+00:00; server now 2026-08-26T01:00:37.0000000+00:00; vehicle holds 2026-08-26T01:00:30.0000000+00:00; vehicle refused , regressions 0
+  Failed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.ARefillOnTheArrivalRerunReachesTheVehicle [7 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 2026-08-26T01:00:37.0000000+00:00
+Actual:   2026-08-26T01:00:30.0000000+00:00
+--- End of stack trace from previous location ---
+ before the disconnect 2026-08-26T01:00:30.0000000+00:00; server now 2026-08-26T01:00:37.0000000+00:00; vehicle holds 2026-08-26T01:00:30.0000000+00:00; vehicle refused , regressions 0
+[xUnit.net 00:00:11.90]         before the disconnect 2026-08-26T01:00:30.0000000+00:00; server now 2026-08-26T01:00:37.0000000+00:00; vehicle holds 2026-08-26T01:00:30.0000000+00:00; vehicle refused , regressions 0
+[xUnit.net 00:00:12.49]         before the disconnect 2026-08-26T01:00:30.0000000+00:00; server now 2026-08-26T01:00:37.0000000+00:00; vehicle holds 2026-08-26T01:00:30.0000000+00:00; vehicle refused , regressions 0
+  Failed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.ARefillWhileAwaitingTheEntryReachesTheVehicle [809 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 2026-08-26T01:00:37.0000000+00:00
+Actual:   2026-08-26T01:00:30.0000000+00:00
+--- End of stack trace from previous location ---
+ before the disconnect 2026-08-26T01:00:30.0000000+00:00; server now 2026-08-26T01:00:37.0000000+00:00; vehicle holds 2026-08-26T01:00:30.0000000+00:00; vehicle refused , regressions 0
+  Failed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.TheRealOnboardsUnreadyShapeRefillsOnceAndTheVehicleHoldsIt [579 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 2026-08-26T01:00:37.0000000+00:00
+Actual:   2026-08-26T01:00:30.0000000+00:00
+--- End of stack trace from previous location ---
+ before the disconnect 2026-08-26T01:00:30.0000000+00:00; server now 2026-08-26T01:00:37.0000000+00:00; vehicle holds 2026-08-26T01:00:30.0000000+00:00; vehicle refused , regressions 0
+[xUnit.net 00:00:13.20]         first round: ProtocolContentConflictException Outbound MessageId was replayed with different semantics or a non-advancing session generation.; second round: ProtocolContentConflictException Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage AwaitingPickupArrival, code JOURNEY_ADVANCE_FAILED, server phase VEHICLE_FULL, vehicle phase LOADING, vehicle refused (VehicleBusinessStateSnapshot, 1),(VehicleBusinessStateSnapshot, 1), regressions 0
+[xUnit.net 00:00:14.13]         before the disconnect 2026-08-26T01:00:30.0000000+00:00; server now 2026-08-26T01:00:37.0000000+00:00; vehicle holds 2026-08-26T01:00:30.0000000+00:00; vehicle refused , regressions 0
+  Failed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.AHoldingJourneyWhoseLoadingPhaseChangedAcrossTheInterruptedArrivalStillAdvances [707 ms]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+Collection: [Tuple ("VehicleBusinessStateSnapshot", 1), Tuple ("VehicleBusinessStateSnapshot", 1)]
+--- End of stack trace from previous location ---
+ first round: ProtocolContentConflictException Outbound MessageId was replayed with different semantics or a non-advancing session generation.; second round: ProtocolContentConflictException Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage AwaitingPickupArrival, code JOURNEY_ADVANCE_FAILED, server phase VEHICLE_FULL, vehicle phase LOADING, vehicle refused (VehicleBusinessStateSnapshot, 1),(VehicleBusinessStateSnapshot, 1), regressions 0
+  Failed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.ARefillWhileTheLoadResultIsOutstandingReachesTheVehicle [926 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 2026-08-26T01:00:37.0000000+00:00
+Actual:   2026-08-26T01:00:30.0000000+00:00
+--- End of stack trace from previous location ---
+ before the disconnect 2026-08-26T01:00:30.0000000+00:00; server now 2026-08-26T01:00:37.0000000+00:00; vehicle holds 2026-08-26T01:00:30.0000000+00:00; vehicle refused , regressions 0
+Total tests: 5
