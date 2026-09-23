@@ -37,6 +37,12 @@ internal static class OwnOrderRebuilds
     /// <summary>Why a rebuild was not made: the demand had a problem again within the window after an earlier one (REQ-0361).</summary>
     public const string EndedAgainWithinWindow = "REBUILT_ORDER_ENDED_AGAIN_WITHIN_WINDOW";
 
+    /// <summary>
+    /// Why a rebuild was not made: a snapshot received after a clearance with cargo on board did not show the cargo whole in
+    /// its slots (REQ-0362). The record's waiting reason says which slot read what.
+    /// </summary>
+    public const string CargoNotProvenInOriginalSlots = "CARGO_NOT_PROVEN_IN_ORIGINAL_SLOTS";
+
     /// <summary>Why a rebuild was not made: the new order ended in RIoT before it was ever confirmed -- a second ending.</summary>
     public const string EndedBeforeConfirmation = "REBUILT_ORDER_ENDED_BEFORE_CONFIRMATION";
 

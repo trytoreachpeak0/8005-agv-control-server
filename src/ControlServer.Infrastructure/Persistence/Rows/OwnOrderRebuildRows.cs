@@ -60,12 +60,29 @@ public sealed class OwnOrderRebuildRow
     public string? WaitingReason { get; set; }
     public DateTimeOffset? WaitingSince { get; set; }
 
-    /// <summary>新单在 RIoT 上确认建成的时刻。下一次出问题按它算「短时」。</summary>
+    /// <summary>新单在 RIoT 上确认建成的时刻（审计用；REQ-0361 的窗口按 <see cref="IncidentAt"/> 算，不按它）。</summary>
     public DateTimeOffset? RebuiltAt { get; set; }
 
-    /// <summary>为什么不再自动重建（护栏三）；只在 <see cref="OwnOrderRebuildStates.Stopped"/> 时有值。</summary>
+    /// <summary>为什么不再自动重建（护栏三，或有货时快照证明不了货在原仓）；只在 <see cref="OwnOrderRebuildStates.Stopped"/> 时有值。</summary>
     public string? StoppedReason { get; set; }
     public DateTimeOffset? StoppedAt { get; set; }
+
+    /// <summary>
+    /// 有货来源（REQ-0362）：清除之后车报的快照证明了货还完整留在原仓、门锁闭、开锁输出复位的时刻；为空时不建。其余来源始终为空。
+    /// </summary>
+    public DateTimeOffset? CargoProvenAt { get; set; }
+
+    /// <summary>证明（或证明不了）货在原仓的那份 <c>SafetyStateSnapshot</c> 的 messageId，审计用。</summary>
+    public string? CargoEvidenceMessageId { get; set; }
+
+    /// <summary>
+    /// 有货来源：服务端最近一次向车要快照（<c>SafetyStateSnapshotRequested</c>）时的会话代次；为空时还没要过。节流见
+    /// <c>OwnOrderRebuilds.ClaimCargoEvidenceRequestAsync</c>。
+    /// </summary>
+    public long? CargoEvidenceRequestedGeneration { get; set; }
+
+    /// <summary>那一次请求发出时会话是不是就绪。未就绪时要过的，会话在同一代次里变成就绪后可以再要一次。</summary>
+    public bool CargoEvidenceRequestedWhileReady { get; set; }
 }
 
 /// <summary>重建由哪一种终结引起（control-server#318 票面「三个触发来源」）。</summary>

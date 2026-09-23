@@ -1,3 +1,4 @@
+using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime.CreateGate;
@@ -43,6 +44,17 @@ namespace ControlServer.Host.Runtime;
 /// held back for a slot operation to recover, a forced recovery or an unfinished handshake keeps the rebuild waiting, because
 /// the vehicle's doors are exactly what such a session has not vouched for.
 /// </para>
+/// <para>
+/// <b>A cleared fault with cargo on board is rebuilt only on fresh evidence</b> (REQ-0362, which keeps REQ-0238's premise for
+/// continuing after a repair: the cargo still whole in its original slots, and the safety loop closed again). The evidence is
+/// a <c>SafetyStateSnapshot</c> the server received after the clearance -- the only message that carries each slot's state --
+/// in which every slot the committed loads targeted reads OCCUPIED, LOCKED and RESET and nothing is unknown
+/// (<see cref="CargoEvidenceAsync"/>). Until one arrives the journey waits under
+/// <see cref="OwnOrderRebuildWaitingCargoEvidenceReason"/>; the Host asks the vehicle for one
+/// (<c>OwnOrderRebuilds.ClaimCargoEvidenceRequestAsync</c>). One that arrives and does not show the cargo in place stops
+/// the rebuild for a person (<see cref="OwnOrderRebuildCargoNotInPlaceReason"/>): the cargo may not be where it was. The
+/// user chose this over an operator's tick-box (cs#318, scope comment of 2026-09-23, relayed by the coordinator).
+/// </para>
 /// </remarks>
 public sealed partial class JourneyRuntimeEngine
 {
@@ -56,10 +68,26 @@ public sealed partial class JourneyRuntimeEngine
     public const string OwnOrderRebuildOrderUnconfirmedReason = "OWN_ORDER_REBUILD_ORDER_UNCONFIRMED";
 
     /// <summary>
-    /// The demand's rebuilt order ended again soon after it was built: no further automatic rebuild, held and alarmed for a
-    /// person (control-server#318's third guard).
+    /// The demand had a problem again within the window after its first: no further automatic rebuild, held and alarmed for a
+    /// person (control-server#318's third guard, REQ-0361).
     /// </summary>
     public const string OwnOrderRebuildStoppedReason = "OWN_ORDER_REBUILD_STOPPED";
+
+    /// <summary>
+    /// A fault with cargo on board was cleared and the rebuild is due, but the vehicle has not yet sent a snapshot, received
+    /// after the clearance, that shows the cargo in its slots (REQ-0362). A wait on the vehicle, not on a person; it is in the
+    /// stalled-order family all the same, so nothing overwrites it and the vehicle takes no appended demand meanwhile.
+    /// </summary>
+    public const string OwnOrderRebuildWaitingCargoEvidenceReason = "OWN_ORDER_REBUILD_WAITING_CARGO_EVIDENCE";
+
+    /// <summary>
+    /// A snapshot received after the clearance did not show the cargo whole in its slots -- a slot empty, unlocked or with its
+    /// unlock output active, or something unknown: no automatic rebuild, held and alarmed for a person (REQ-0362).
+    /// </summary>
+    public const string OwnOrderRebuildCargoNotInPlaceReason = "OWN_ORDER_REBUILD_CARGO_NOT_IN_PLACE";
+
+    /// <summary>What <see cref="OwnOrderRebuildRow.WaitingReason"/> says while no snapshot after the clearance has arrived.</summary>
+    private const string CargoEvidenceNotReceived = "CARGO_EVIDENCE_NOT_RECEIVED";
 
     /// <summary>What a fault cleared with a cargo binding leaves on the vehicle once the rebuilt order is confirmed.</summary>
     public const string CargoRebuiltOnOriginalVehicleReason = "REBUILT_ON_ORIGINAL_VEHICLE";
@@ -119,7 +147,7 @@ public sealed partial class JourneyRuntimeEngine
         DateTimeOffset now = timeProvider.GetUtcNow();
         if (rebuild.State == OwnOrderRebuildStates.Stopped)
         {
-            await NameRebuildAsync(runtime, OwnOrderRebuildStoppedReason, now, cancellationToken).ConfigureAwait(false);
+            await NameRebuildAsync(runtime, StoppedCode(rebuild), now, cancellationToken).ConfigureAwait(false);
             return true;
         }
 
@@ -128,6 +156,41 @@ public sealed partial class JourneyRuntimeEngine
             if (now < rebuild.DueAt)
             {
                 return true;
+            }
+
+            // REQ-0362: cargo is carried on only once the vehicle has shown it whole in its slots since the clearance. Before
+            // the session's readiness is looked at: the snapshot is what is missing whichever way the session stands.
+            if (rebuild.Source == OwnOrderRebuildSources.FaultClearedCargoOnBoard && rebuild.CargoProvenAt is null)
+            {
+                CargoEvidence evidence = await CargoEvidenceAsync(runtime, rebuild, cancellationToken).ConfigureAwait(false);
+                if (evidence.MessageId is null)
+                {
+                    await WaitForRebuildAsync(
+                        runtime, rebuild, CargoEvidenceNotReceived, OwnOrderRebuildWaitingCargoEvidenceReason, now,
+                        cancellationToken).ConfigureAwait(false);
+                    return true;
+                }
+
+                rebuild.CargoEvidenceMessageId = evidence.MessageId;
+                if (evidence.NotShown is not null)
+                {
+                    rebuild.State = OwnOrderRebuildStates.Stopped;
+                    rebuild.StoppedReason = OwnOrderRebuilds.CargoNotProvenInOriginalSlots;
+                    rebuild.StoppedAt = now;
+                    rebuild.WaitingReason = evidence.NotShown;
+                    rebuild.WaitingSince = now;
+                    LogOwnOrderRebuildStopped(
+                        logger, rebuild.EndedUpperId, runtime.JourneyId, runtime.AgvId,
+                        $"{OwnOrderRebuilds.CargoNotProvenInOriginalSlots}: {evidence.NotShown}", null);
+                    // Saved here, not left to NameRebuildAsync: that one saves only when the journey's code changes.
+                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    await NameRebuildAsync(runtime, OwnOrderRebuildCargoNotInPlaceReason, now, cancellationToken)
+                        .ConfigureAwait(false);
+                    return true;
+                }
+
+                rebuild.CargoProvenAt = now;
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             }
 
             if (!mayCreate)
@@ -240,6 +303,114 @@ public sealed partial class JourneyRuntimeEngine
         LogOwnOrderRebuilt(logger, rebuild.EndedUpperId, runtime.JourneyId, runtime.AgvId, rebuild.NewUpperId, null);
         return true;
     }
+
+    /// <summary>The journey's code for a stopped rebuild: the cargo one when the snapshot did not show the cargo in place.</summary>
+    private static string StoppedCode(OwnOrderRebuildRow rebuild) =>
+        rebuild.StoppedReason == OwnOrderRebuilds.CargoNotProvenInOriginalSlots
+            ? OwnOrderRebuildCargoNotInPlaceReason
+            : OwnOrderRebuildStoppedReason;
+
+    /// <summary>
+    /// What the vehicle has shown about its cargo since the clearance (REQ-0362): no snapshot yet (<c>MessageId</c> null), or
+    /// the freshest snapshot received after <see cref="OwnOrderRebuildRow.RecordedAt"/> and, when it does not show the cargo
+    /// in place, why not.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Which slots.</b> Those the committed loads of the journey's demands still on board targeted -- the load batch's own
+    /// <see cref="StationOperationRow.TargetSlotsJson"/>. A load of theirs that is neither committed nor settled (prepared, or
+    /// waiting on recovery) leaves where the cargo is an open question, and so does having no committed load at all; both are
+    /// "not shown", never "shown".
+    /// </para>
+    /// <para>
+    /// <b>After the clearance, by the server's receive clock.</b> The clearance time and the receive time are both this
+    /// server's; the snapshot's own <c>observedAt</c> is the vehicle's clock. A server clock stepped back can make a fresh
+    /// snapshot look old, which only makes the rebuild wait -- the safe way round.
+    /// </para>
+    /// </remarks>
+    private async Task<CargoEvidence> CargoEvidenceAsync(
+        JourneyRuntimeRow runtime,
+        OwnOrderRebuildRow rebuild,
+        CancellationToken cancellationToken)
+    {
+        ProtocolInboxRow[] snapshots = await dbContext.ProtocolInbox.AsNoTracking()
+            .Where(row => row.MessageType == "SafetyStateSnapshot")
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        // Compared in memory: SQLite cannot order or compare DateTimeOffset columns in the store.
+        ProtocolInboxRow? fresh = snapshots
+            .Where(row => row.ReceivedAt > rebuild.RecordedAt && SnapshotOf(row) == runtime.AgvId)
+            .OrderByDescending(row => row.ReceivedAt)
+            .FirstOrDefault();
+        if (fresh is null)
+        {
+            return new CargoEvidence(null, null);
+        }
+
+        string[] onBoard = await dbContext.Set<JourneyDemandRow>().AsNoTracking()
+            .Where(row => row.JourneyId == runtime.JourneyId && row.RemovedAt == null &&
+                          row.Status != JourneyDemandStatuses.PendingLoad &&
+                          row.Status != JourneyDemandStatuses.Unloaded &&
+                          row.Status != JourneyDemandStatuses.Terminated)
+            .Select(row => row.DemandId)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        StationOperationRow[] loads = await dbContext.StationOperations.AsNoTracking()
+            .Where(row => onBoard.Contains(row.DemandId) && row.OperationType == SlotOperationType.Load)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        if (loads.FirstOrDefault(row => row.Status is StationOperationStatus.Prepared or StationOperationStatus.RecoveryRequired)
+            is { } unsettled)
+        {
+            return new CargoEvidence(fresh.MessageId, $"LOAD_NOT_SETTLED:{unsettled.SlotOperationAttemptId}");
+        }
+
+        int[] cargoSlots = [.. loads
+            .Where(row => row.Status == StationOperationStatus.Committed)
+            .SelectMany(row => JsonSerializer.Deserialize<int[]>(row.TargetSlotsJson) ?? [])
+            .Distinct()
+            .Order()];
+        if (cargoSlots.Length == 0)
+        {
+            return new CargoEvidence(fresh.MessageId, "CARGO_SLOTS_UNKNOWN");
+        }
+
+        using JsonDocument document = JsonDocument.Parse(fresh.RequestJson);
+        JsonElement payload = document.RootElement.GetProperty("payload");
+        List<string> notShown = [];
+        if (!payload.GetProperty("safety").TryGetProperty("unknownPresent", out JsonElement unknown) ||
+            unknown.ValueKind != JsonValueKind.False)
+        {
+            notShown.Add("UNKNOWN_PRESENT");
+        }
+
+        Dictionary<int, JsonElement> slots = payload.GetProperty("slotStates").EnumerateArray()
+            .ToDictionary(item => item.GetProperty("slotNo").GetInt32());
+        foreach (int slot in cargoSlots)
+        {
+            if (!slots.TryGetValue(slot, out JsonElement state))
+            {
+                notShown.Add($"SLOT_{slot}:NOT_REPORTED");
+                continue;
+            }
+
+            string physical = state.GetProperty("physicalState").GetString() ?? "";
+            string locked = state.GetProperty("lockState").GetString() ?? "";
+            string output = state.GetProperty("unlockOutputState").GetString() ?? "";
+            if (physical != "OCCUPIED" || locked != "LOCKED" || output != "RESET")
+            {
+                notShown.Add($"SLOT_{slot}:{physical},{locked},{output}");
+            }
+        }
+
+        return new CargoEvidence(fresh.MessageId, notShown.Count == 0 ? null : string.Join(';', notShown));
+
+        static string SnapshotOf(ProtocolInboxRow row)
+        {
+            using JsonDocument envelope = JsonDocument.Parse(row.RequestJson);
+            return envelope.RootElement.GetProperty("agvId").GetString() ?? "";
+        }
+    }
+
+    /// <summary>The snapshot that answered the cargo question, if any, and what it did not show (null when it showed it all).</summary>
+    private sealed record CargoEvidence(string? MessageId, string? NotShown);
 
     /// <summary>
     /// Records that the order under <paramref name="upperId"/> -- the one <paramref name="runtime"/> waits on -- was cancelled

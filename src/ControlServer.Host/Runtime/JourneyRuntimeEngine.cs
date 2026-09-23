@@ -208,7 +208,8 @@ public sealed partial class JourneyRuntimeEngine(
         OrderHangReason or OrderStateUnrecognizedReason or OrderEndedWithoutArrivalReason or
         VehicleFaultRecoveryService.CargoOnBoardReason or VehicleFaultRecoveryService.NothingOnBoardReason or
         OwnOrderRebuildWaitingVehicleReason or OwnOrderRebuildBlockedByCreateGateReason or
-        OwnOrderRebuildOrderUnconfirmedReason or OwnOrderRebuildStoppedReason;
+        OwnOrderRebuildOrderUnconfirmedReason or OwnOrderRebuildStoppedReason or
+        OwnOrderRebuildWaitingCargoEvidenceReason or OwnOrderRebuildCargoNotInPlaceReason;
 
     /// <summary>
     /// The journey is waiting on a fact only the vehicle can supply, and the vehicle has gone quiet: no legal inbound

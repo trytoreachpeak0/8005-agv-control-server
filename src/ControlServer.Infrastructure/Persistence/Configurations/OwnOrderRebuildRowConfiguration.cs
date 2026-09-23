@@ -14,6 +14,9 @@ public sealed class OwnOrderRebuildRowConfiguration : IEntityTypeConfiguration<O
         builder.HasIndex(row => row.NewUpperId).IsUnique();
         builder.HasIndex(row => new { row.JourneyId, row.StopId });
         builder.HasIndex(row => row.DemandId);
+        // Every inbound onboard message asks whether this vehicle has a cargo snapshot to request (REQ-0362); this index keeps
+        // that question a lookup when, as almost always, nothing waits.
+        builder.HasIndex(row => new { row.AgvId, row.State });
         builder.Property(row => row.State).IsConcurrencyToken();
     }
 }

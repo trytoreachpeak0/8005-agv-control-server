@@ -67,7 +67,7 @@ public sealed class Batch3MigrationDisciplineTests
         // control-server#273：JourneyRuntimes 加等人起点 WaitingSince 与三列等人电量记录，WaitingSince 回填正在等人的旅程。自己的断言在 WaitingJourneyWatchMigrationTests。
         "20260922120241_WaitingJourneyWatch",
         // control-server#318：新建 OwnOrderRebuilds 表，本服务端自建单终结后同车同需求重建的记录与审计；不动任何既有表与行。
-        "20260923022824_OwnOrderRebuilds",
+        "20260923043049_OwnOrderRebuilds",
     ];
 
     private static readonly string[] Batch3Tables =

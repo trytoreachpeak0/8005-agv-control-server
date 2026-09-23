@@ -1610,6 +1610,18 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("CargoEvidenceMessageId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("CargoEvidenceRequestedGeneration")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("CargoEvidenceRequestedWhileReady")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset?>("CargoProvenAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("DemandId")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -1689,6 +1701,8 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("NewUpperId")
                         .IsUnique();
+
+                    b.HasIndex("AgvId", "State");
 
                     b.HasIndex("JourneyId", "StopId");
 

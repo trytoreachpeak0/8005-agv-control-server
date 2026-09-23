@@ -38,12 +38,21 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                     WaitingSince = table.Column<DateTimeOffset>(type: "TEXT", nullable: true),
                     RebuiltAt = table.Column<DateTimeOffset>(type: "TEXT", nullable: true),
                     StoppedReason = table.Column<string>(type: "TEXT", nullable: true),
-                    StoppedAt = table.Column<DateTimeOffset>(type: "TEXT", nullable: true)
+                    StoppedAt = table.Column<DateTimeOffset>(type: "TEXT", nullable: true),
+                    CargoProvenAt = table.Column<DateTimeOffset>(type: "TEXT", nullable: true),
+                    CargoEvidenceMessageId = table.Column<string>(type: "TEXT", nullable: true),
+                    CargoEvidenceRequestedGeneration = table.Column<long>(type: "INTEGER", nullable: true),
+                    CargoEvidenceRequestedWhileReady = table.Column<bool>(type: "INTEGER", nullable: false)
                 },
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_OwnOrderRebuilds", x => x.RebuildId);
                 });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_OwnOrderRebuilds_AgvId_State",
+                table: "OwnOrderRebuilds",
+                columns: new[] { "AgvId", "State" });
 
             migrationBuilder.CreateIndex(
                 name: "IX_OwnOrderRebuilds_DemandId",
