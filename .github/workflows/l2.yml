@@ -316,6 +316,11 @@ jobs:
               # demand on the vehicle and rebuilds its order after the delay; the same request twice does nothing, and an
               # unsigned one is still refused.
               @{ Name = 'vehicle-fault-operator-clearance'; Runs = 1 }
+              # control-server#345 (before the v2 vehicle trial): an own order rebuilt after a cancellation is cancelled again
+              # within REQ-0361's window and the rebuilding stops; an unconfirmed request through #299's entry point is refused,
+              # a confirmed REBUILD_STOPPED_ORDER rebuilds it once for the same vehicle and demand, and the same request again
+              # answers AlreadyDone.
+              @{ Name = 'in-transit-rebuild-stopped-person-rebuilds'; Runs = 1 }
               # control-server#214: the task-side ranking. A new STAGING_TO_WIRE demand is taken before an older normal-band
               # one (REQ-0202); with no anti-starvation threshold configured nothing escalates, and once one is imported
               # the overdue normal-band demand is escalated exactly once and goes ahead of a STAGING_TO_WIRE that is not
