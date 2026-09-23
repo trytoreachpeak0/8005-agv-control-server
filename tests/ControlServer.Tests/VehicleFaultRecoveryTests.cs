@@ -834,6 +834,59 @@ public sealed class VehicleFaultRecoveryTests
             (record.Source, record.State));
     }
 
+    /// <summary>
+    /// 确认前 FAILED 的新单每一轮都还在喂故障模型，与确认过的单 FAILED 时一样：车还在动，第一轮升级急停、触发停在 Pending；RIoT 上锁、
+    /// 钟走一秒后的第二轮，触发对账成 Confirmed，故障的 <c>LastEvaluatedAt</c> 推到那一刻。
+    /// </summary>
+    /// <remarks>
+    /// 变异 M43（只喂一次）在第四轮全绿：那时没有用例断言第一轮之后还在喂。形状照
+    /// <c>Batch7DemandReleaseServiceTests.AFaultedVehicleStaysUnderSupervisionWhileItsReleaseCriteriaHold</c>：上锁放在第一轮之后，
+    /// 触发才必然停在 Pending，第二轮有没有喂才分得出来。
+    /// </remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0361")]
+    public async Task ARebuiltOrderThatFailedBeforeConfirmationStaysUnderFaultSupervision()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        fixture.Riot.MovementState = "MT_FINISHED";
+        fixture.Riot.CancelOrder((await fixture.RuntimeAsync()).PickupUpperId);
+        await TickAndRunAsync(fixture);
+        fixture.Riot.LoseNextCreateResponse = true;
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        string newUpperId = (await CurrentStopAsync(fixture, FirstDemandId)).UpperId;
+
+        fixture.Riot.MovementState = "MT_RUNNING";
+        fixture.Riot.FailOrder(newUpperId);
+        await fixture.HearFromPeerAsync();
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Equal(RiotOrderCommandOutcome.Pending, await EmergencyTriggerOutcomeAsync(fixture));
+
+        fixture.EmergencyLatched = true;
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        DateTimeOffset secondRound = fixture.Clock.GetUtcNow();
+        await fixture.HearFromPeerAsync();
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.Equal(RiotOrderCommandOutcome.Confirmed, await EmergencyTriggerOutcomeAsync(fixture));
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        Assert.Equal(secondRound, (await reading.VehicleFaultStates.AsNoTracking().SingleAsync(Token)).LastEvaluatedAt);
+        Assert.Equal("VEHICLE_ORDER_FAILED", (await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token)).BlockReasonCode);
+    }
+
+    /// <summary>最近一次急停触发尝试的对账结果；没有触发过时为 null。</summary>
+    private static async Task<RiotOrderCommandOutcome?> EmergencyTriggerOutcomeAsync(RuntimeFixture fixture)
+    {
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        RiotOrderCommandAuditRow[] triggers = await reading.RiotOrderCommandAudit.AsNoTracking()
+            .Where(row => row.CommandType == RiotCommandTypeNames.TriggerEmergency)
+            .ToArrayAsync(Token);
+        return triggers.OrderBy(row => row.AttemptNumber).LastOrDefault()?.Outcome;
+    }
+
     // ---- 幂等与崩溃 ------------------------------------------------------------------------------------------
 
     /// <summary>

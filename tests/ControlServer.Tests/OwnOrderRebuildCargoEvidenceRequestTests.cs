@@ -64,6 +64,46 @@ public sealed class OwnOrderRebuildCargoEvidenceRequestTests
         Assert.Equal((fixture.State.SessionGeneration, true), await fixture.RequestedAsync());
     }
 
+    /// <summary>
+    /// 判不了的快照之后再要一次（审查 S4）：引擎撤回请求之后，同一代次里下一条消息的应答真的带上第二次请求，之后照旧不再带；
+    /// 撤回之后若赶上重连，握手里仍然一条都不带，握手之后才要。
+    /// </summary>
+    /// <remarks>
+    /// 引擎一侧（<c>VehicleFaultRecoveryTests.Req0362AnInconclusiveSnapshotIsAskedForAgainAfterAWhile</c>）只断到「请求被撤回、又能领到」；
+    /// 这一条断「应答里真有第二次请求」。两侧调同一个 <see cref="OwnOrderRebuilds.WithdrawCargoEvidenceRequest"/>，哪几列让请求到期只有一处定义。
+    /// </remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0362")]
+    public async Task Req0362AWithdrawnRequestIsSentOnceMoreInTheSameSession()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        await fixture.ReachReadyAsync();
+        await fixture.AddCargoRebuildAsync();
+        long generation = fixture.State.SessionGeneration!.Value;
+
+        Assert.Equal(Requested, MessageType(Lines(await fixture.HeartbeatAsync())[^1]));
+        Assert.DoesNotContain(Requested, Lines(await fixture.HeartbeatAsync()).Select(MessageType));
+
+        await fixture.WithdrawRequestAsync();
+        string[] again = Lines(await fixture.HeartbeatAsync());
+        Assert.Equal(Requested, MessageType(again[^1]));
+        using (JsonDocument request = JsonDocument.Parse(again[^1]))
+        {
+            Assert.Equal(generation, request.RootElement.GetProperty("sessionGeneration").GetInt64());
+        }
+        Assert.Equal((generation, true), await fixture.RequestedAsync());
+        Assert.DoesNotContain(Requested, Lines(await fixture.HeartbeatAsync()).Select(MessageType));
+
+        // 撤回之后赶上重连：握手的每一条应答仍不带，握手之后的第一条消息才带。
+        await fixture.WithdrawRequestAsync();
+        Assert.DoesNotContain(Requested, Lines(await fixture.HelloAsync()).Select(MessageType));
+        Assert.DoesNotContain(Requested, Lines(await fixture.CapabilityAsync()).Select(MessageType));
+        Assert.DoesNotContain(Requested, Lines(await fixture.SafetySnapshotAsync(1)).Select(MessageType));
+        Assert.DoesNotContain(Requested, Lines(await fixture.RecoveryReportAsync()).Select(MessageType));
+        Assert.Equal((null, false), await fixture.RequestedAsync());
+        Assert.Equal(Requested, MessageType(Lines(await fixture.HeartbeatAsync())[^1]));
+    }
+
     [Fact]
     [Trait("Requirement", "REQ-0362")]
     public async Task Req0362NoRequestInsideTheHandshakeAndOneAgainInTheNextSession()
@@ -290,6 +330,16 @@ public sealed class OwnOrderRebuildCargoEvidenceRequestTests
             };
             adjust?.Invoke(row);
             writing.OwnOrderRebuilds.Add(row);
+            await writing.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        /// <summary>What the engine does after a snapshot that could not settle where the cargo is (review S4).</summary>
+        public async Task WithdrawRequestAsync()
+        {
+            await using ControlServerDbContext writing = new(
+                new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(Connection).Options);
+            OwnOrderRebuildRow row = await writing.OwnOrderRebuilds.SingleAsync(TestContext.Current.CancellationToken);
+            OwnOrderRebuilds.WithdrawCargoEvidenceRequest(row);
             await writing.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 

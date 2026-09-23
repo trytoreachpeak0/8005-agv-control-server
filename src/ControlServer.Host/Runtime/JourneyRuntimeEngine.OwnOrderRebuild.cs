@@ -214,13 +214,18 @@ public sealed partial class JourneyRuntimeEngine
                 {
                     // Review S4: a snapshot that cannot settle where the cargo is waits for the next one -- and the next one
                     // has to be asked for: Onboard sends a SafetyStateSnapshot only in the handshake and when asked. Once the
-                    // inconclusive one is old enough the request marker is withdrawn, so the Host asks again on the vehicle's
-                    // next message; at most once per interval, however long the slot stays unsecured.
+                    // inconclusive one is old enough the request is withdrawn, so the Host asks again on the vehicle's next
+                    // message; at most once per interval, however long the slot stays unsecured.
+                    //
+                    // No cap on how often, on purpose (agreed with the coordinator). Stopping the asking adds no safety: the
+                    // vehicle is not sent off either way. It would instead turn a state that clears by itself, once the slot is
+                    // secured, into one only an engineer can clear -- a stopped rebuild has no way out. And a person can see it
+                    // from the first inconclusive snapshot on: the journey carries OWN_ORDER_REBUILD_CARGO_UNPROVEN, described
+                    // on the dashboard, and event 2172 is logged at Warning once per waiting reason.
                     if (rebuild.CargoEvidenceRequestedGeneration is not null &&
                         now - evidence.ReceivedAt >= CargoEvidenceReaskInterval)
                     {
-                        rebuild.CargoEvidenceRequestedGeneration = null;
-                        rebuild.CargoEvidenceRequestedWhileReady = false;
+                        OwnOrderRebuilds.WithdrawCargoEvidenceRequest(rebuild);
                         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                     }
 

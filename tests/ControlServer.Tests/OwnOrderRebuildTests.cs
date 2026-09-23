@@ -718,6 +718,88 @@ public sealed class OwnOrderRebuildTests
     }
 
     /// <summary>
+    /// 新单确认前读到的终态既不是取消／删除，也不是 FAILED——RIoT 的状态 8（SUSPENDED，网关按终态读，实验室里从没观测到过）：
+    /// 说不清车怎么了，停住等人，记录 <c>Stopped / REBUILT_ORDER_ENDED_BEFORE_CONFIRMATION</c>；此后每一轮都还认得这条记录
+    /// （停靠此时指着新单），旅程码一直是 <c>OWN_ORDER_REBUILD_STOPPED</c>，不被普通路径的对账码盖掉。
+    /// </summary>
+    /// <remarks>
+    /// 变异 M11（停止记录只按旧单号认）在第四轮全绿：它原来唯一的红用例在审查 S2 之后改走 ENDED＋新记录。这一条是剩下的那种形状。
+    /// SUCCESS 不在这里：对账把确认前的 SUCCESS 直接认作确认建成（<c>WireToGateOrchestration.ReconcileOrCreateAsync</c>）。
+    /// </remarks>
+    [Fact]
+    public async Task ARebuiltOrderSuspendedBeforeItIsConfirmedStaysStoppedForAPerson()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync();
+        fixture.Riot.CancelOrder(before.PickupUpperId);
+        await TickAndRunAsync(fixture);
+        fixture.Riot.LoseNextCreateResponse = true;
+        await PassTheDelayAsync(fixture);
+        OwnOrderRebuildRow ordering = await SingleRebuildAsync(fixture, before.PickupUpperId);
+        Assert.Equal(OwnOrderRebuildStates.Ordering, ordering.State);
+
+        fixture.Riot.SetOrderState(ordering.NewUpperId, RiotOrderState.Suspended, terminal: true);
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+        Assert.Equal("OWN_ORDER_REBUILD_STOPPED", (await fixture.RuntimeAsync()).BlockReasonCode);
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+
+        OwnOrderRebuildRow stopped = await SingleRebuildAsync(fixture, before.PickupUpperId);
+        Assert.Equal(
+            (OwnOrderRebuildStates.Stopped, "REBUILT_ORDER_ENDED_BEFORE_CONFIRMATION"),
+            (stopped.State, stopped.StoppedReason));
+        Assert.Equal("OWN_ORDER_REBUILD_STOPPED", (await fixture.RuntimeAsync()).BlockReasonCode);
+        Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+    }
+
+    /// <summary>
+    /// 新单确认前终结了，而紧接着再读它时没读到（读失败）：不据此停住——一次读失败说明不了车怎么了——记录留在 <c>Ordering</c>，
+    /// 旅程码 <c>OWN_ORDER_REBUILD_ORDER_UNCONFIRMED</c>，下一轮再读；读到是取消，就照取消处理。
+    /// </summary>
+    /// <remarks>审查 S2 的实现里我自己发现的：第一版读不到也落到「其余」那一支，被永久停住。</remarks>
+    [Fact]
+    public async Task ARebuiltOrderWhoseEndingCannotBeReadIsReadAgainNextRound()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        fixture.Options.OwnOrderRebuildRepeatWindow = TimeSpan.FromSeconds(10);
+        JourneyRuntimeRow before = await fixture.RuntimeAsync();
+        fixture.Riot.CancelOrder(before.PickupUpperId);
+        await TickAndRunAsync(fixture);
+        fixture.Riot.LoseNextCreateResponse = true;
+        await PassTheDelayAsync(fixture);
+        OwnOrderRebuildRow ordering = await SingleRebuildAsync(fixture, before.PickupUpperId);
+
+        fixture.Riot.CancelOrder(ordering.NewUpperId);
+        fixture.Riot.AfterReconcile = upperId =>
+        {
+            if (upperId == ordering.NewUpperId)
+            {
+                fixture.Riot.MakeOrderUnreadable(upperId);
+            }
+        };
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+
+        Assert.Equal(OwnOrderRebuildStates.Ordering, (await SingleRebuildAsync(fixture, before.PickupUpperId)).State);
+        Assert.Equal("OWN_ORDER_REBUILD_ORDER_UNCONFIRMED", (await fixture.RuntimeAsync()).BlockReasonCode);
+
+        fixture.Riot.AfterReconcile = null;
+        fixture.Riot.CancelOrder(ordering.NewUpperId);
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+        await PassTheDelayAsync(fixture);
+
+        Assert.Equal(OwnOrderRebuildStates.Ended, (await SingleRebuildAsync(fixture, before.PickupUpperId)).State);
+        Assert.Equal(OwnOrderRebuildStates.Rebuilt, (await SingleRebuildAsync(fixture, ordering.NewUpperId)).State);
+        Assert.Equal(3, fixture.Riot.CreateCount("TO_PICKUP"));
+    }
+
+    /// <summary>
     /// 同样是新单确认前被取消，但离第一次出问题已经超出 REQ-0361 的窗口：这不算「再次」，照常再重建一次，第三张单建出去并确认。
     /// </summary>
     /// <remarks>审查 S2 的另一半：第一版在确认前终结时一律停，窗口外的这种也被错停。</remarks>

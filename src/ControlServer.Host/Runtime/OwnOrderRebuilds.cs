@@ -201,6 +201,21 @@ internal static class OwnOrderRebuilds
     }
 
     /// <summary>
+    /// Withdraws the snapshot request recorded on <paramref name="rebuild"/>, so <see cref="ClaimCargoEvidenceRequestAsync"/>
+    /// finds it due again and the Host asks the vehicle once more on its next message -- inside the same session generation,
+    /// which the per-generation throttle would otherwise refuse (review S4: a snapshot that could not settle where the cargo is).
+    /// Tracked; the caller saves. The one way a request is withdrawn: the engine calls it, and the Host-side case that pins
+    /// "the second request is really sent" calls the same method, so the two sides cannot come to disagree about which columns
+    /// make a request due. The request still goes out only where the claim is made, past the handshake.
+    /// </summary>
+    public static void WithdrawCargoEvidenceRequest(OwnOrderRebuildRow rebuild)
+    {
+        ArgumentNullException.ThrowIfNull(rebuild);
+        rebuild.CargoEvidenceRequestedGeneration = null;
+        rebuild.CargoEvidenceRequestedWhileReady = false;
+    }
+
+    /// <summary>
     /// Whether a problem from <paramref name="again"/> repeats one from <paramref name="first"/> (REQ-0361): after a
     /// cancellation only another cancellation or deletion does; after a cleared fault, anything does -- another FAILED, which
     /// is recorded once it is cleared, or a cancellation.

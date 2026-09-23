@@ -1754,6 +1754,12 @@ internal static class JourneyRuntimeWorkerTestKit
         public string? CrashOnNextReconcileOf { get; set; }
 
         /// <summary>
+        /// Called with the upperId after every read of an order has been answered: lets a test change what the next read
+        /// says, such as a read that fails right after the one that found the order terminal (control-server#318, review S2).
+        /// </summary>
+        public Action<string>? AfterReconcile { get; set; }
+
+        /// <summary>
         /// The next create reaches RIoT -- the order exists there from now on -- and then the process stops before the answer
         /// is recorded, once (the "created, not recorded" crash point of control-server#318).
         /// </summary>
@@ -1767,9 +1773,11 @@ internal static class JourneyRuntimeWorkerTestKit
                 CrashOnNextReconcileOf = null;
                 throw new IOException($"The process stopped before RIoT was asked about {upperId}.");
             }
-            return Task.FromResult(_orders.TryGetValue(upperId, out RiotOrderObservation? order)
+            RiotOrderObservation answer = _orders.TryGetValue(upperId, out RiotOrderObservation? order)
                 ? order
-                : new RiotOrderObservation(upperId, RiotOrderObservationKind.NotFound, null));
+                : new RiotOrderObservation(upperId, RiotOrderObservationKind.NotFound, null);
+            AfterReconcile?.Invoke(upperId);
+            return Task.FromResult(answer);
         }
 
         public Task<RiotOrderObservation> CreateAsync(OrderIntent intent, CancellationToken cancellationToken)
