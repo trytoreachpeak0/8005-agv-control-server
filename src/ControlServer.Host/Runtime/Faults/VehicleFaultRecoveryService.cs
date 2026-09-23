@@ -67,7 +67,10 @@ public enum VehicleFaultRecoveryOutcome
     /// <summary>A stopped rebuild was handed back to the engine to be made once more (control-server#345).</summary>
     RebuildRequested,
 
-    /// <summary>The same request had already been carried out (control-server#345); nothing was done again.</summary>
+    /// <summary>
+    /// The same way out had already been taken on this vehicle (control-server#345); nothing was done again. Requests carry no
+    /// id, so this does not say it was this request that did it, nor how long ago.
+    /// </summary>
     AlreadyDone,
 
     /// <summary>A stopped trip with nothing on board was given up: its demands ended and its journey closed (control-server#345).</summary>

@@ -22,7 +22,8 @@ namespace ControlServer.Host.Runtime;
 /// </para>
 /// <para>
 /// 200 when the fault was cleared, the order continued, a stopped rebuild handed back, a stopped trip given up or handed to
-/// its session, and when the same request had already been carried out (the body says which). A refusal is 409 with every
+/// its session, and when the same way out had already been taken on the vehicle (the body says which; a request carries no
+/// id, so <c>AlreadyDone</c> does not say this request did it). A refusal is 409 with every
 /// reason. 503 when the entry point is not configured, or when the runtime round in progress did not end in time.
 /// </para>
 /// <para>
