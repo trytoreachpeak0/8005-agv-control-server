@@ -1322,6 +1322,7 @@ public sealed partial class MultiVehicleExecutionTests
                 new DispatchZoneParameterStore(Context, JourneyRuntimeWorkerTestKit.CreateGovernedPublisher(Context)),
                 SlotGroupFullness,
                 Riot,
+                JourneyRuntimeWorkerTestKit.QuietForeignOrderRiot.Supervisor(Context, options.Value, Clock),
                 options,
                 Clock,
                 EngineLog);

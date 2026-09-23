@@ -773,6 +773,80 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                     b.ToTable("FaultedVehicleCargo");
                 });
 
+            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.ForeignRiotOrderRow", b =>
+                {
+                    b.Property<string>("RiotOrderId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AgvId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CancelCallDisposition")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CancelCommandAuditId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("CancelDecidedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CancelResult")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("CancelResultAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("CancelSentAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("DetectedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeviceKey")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("EndedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("EndedOrderState")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset>("LastSeenRunningAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("OrderStateAtDetection")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Ownership")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OwnershipBasis")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpperId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("RiotOrderId");
+
+                    b.HasIndex("CancelCommandAuditId")
+                        .IsUnique();
+
+                    b.HasIndex("AgvId", "State");
+
+                    b.ToTable("ForeignRiotOrders", (string)null);
+                });
+
             modelBuilder.Entity("ControlServer.Infrastructure.Persistence.FrozenDemandStationRow", b =>
                 {
                     b.Property<string>("DemandId")

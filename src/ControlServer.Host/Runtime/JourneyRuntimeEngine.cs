@@ -45,6 +45,7 @@ public sealed partial class JourneyRuntimeEngine(
     IDispatchZoneParameterStore zoneParameters,
     SlotGroupFullnessBoard slotGroupFullness,
     IRiotVehicleSafetyFacts vehicleSafety,
+    ForeignOrders.ForeignRunningOrderSupervisor foreignOrders,
     IOptions<JourneyRuntimeOptions> options,
     TimeProvider timeProvider,
     ILogger<JourneyRuntimeEngine> logger)
@@ -322,6 +323,51 @@ public sealed partial class JourneyRuntimeEngine(
         }
     }
 
+    /// <summary>
+    /// Runs the foreign running order supervision (control-server#330) without letting its failure end the round, the way
+    /// <see cref="ConvergeCatalogBindingHoldsAsync"/> runs the catalog convergence.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Carrying on opens nothing. The vehicles already held stay held -- the round reads them from the store afterwards, not
+    /// from the supervision -- and a foreign order this attempt did not get to record is still caught by the 0/1 gate every
+    /// dispatch goes through: RIoT's vehicle safety read reports <c>RIOT_NONFINAL_ORDER_PRESENT</c> for any unfinished order on
+    /// the vehicle. What is lost is one round of recognising and cancelling, which the next round redoes from the store: a
+    /// decided cancel is re-read and sent, an armed one is never sent again.
+    /// </para>
+    /// <para>
+    /// What the attempt left tracked is detached, as for the convergence: a half-staged row or audit attempt must not ride out
+    /// on the round's next save. A shutdown cancellation still ends the round.
+    /// </para>
+    /// </remarks>
+    private async Task SuperviseForeignOrdersAsync(CancellationToken cancellationToken)
+    {
+        HashSet<object> trackedBefore = dbContext.ChangeTracker.Entries()
+            .Select(entry => entry.Entity)
+            .ToHashSet(ReferenceEqualityComparer.Instance);
+        try
+        {
+            await foreignOrders.SuperviseAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            foreach (EntityEntry left in dbContext.ChangeTracker.Entries()
+                .Where(entry => !trackedBefore.Contains(entry.Entity)
+                    || entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+                .ToArray())
+            {
+                left.State = EntityState.Detached;
+            }
+            LogForeignOrderSupervisionFailed(logger, error);
+        }
+    }
+
+    private static readonly Action<ILogger, Exception?> LogForeignOrderSupervisionFailed = LoggerMessage.Define(
+        LogLevel.Error,
+        new EventId(2189, nameof(LogForeignOrderSupervisionFailed)),
+        "The supervision of foreign orders running on this server's vehicles failed; this round goes on without it, vehicles " +
+        "already held stay held, and the next round takes it up again from what is recorded.");
+
     public async Task ExecuteOnceAsync(CancellationToken cancellationToken)
     {
         if (!runtimeOptions.Enabled)
@@ -350,6 +396,10 @@ public sealed partial class JourneyRuntimeEngine(
 
     private async Task ExecuteRoundAsync(CancellationToken cancellationToken)
     {
+        // control-server#330: first, before anything reads which vehicles are free -- a foreign order found running on a
+        // vehicle of ours this round holds that vehicle this round. Not behind the Map catalog read: cancelling an order that
+        // is not ours does not depend on the Map.
+        await SuperviseForeignOrdersAsync(cancellationToken).ConfigureAwait(false);
 
         RiotMapStationCatalogSnapshot currentMap;
         IFixedTaskStationView fixedStations;
@@ -490,8 +540,14 @@ public sealed partial class JourneyRuntimeEngine(
 
 
         HashSet<string> busy = active.Select(row => row.AgvId).ToHashSet(StringComparer.Ordinal);
+        // control-server#330 (REQ-0164, the 0/1 gate not relaxed): a vehicle a foreign order is running on takes no new
+        // dispatch and no appended demand until RIoT reads that order back ended -- whether its cancel is on the way, went out
+        // and did not take, or ownership could not be proven and nothing is cancelled. Read after this round's supervision, so
+        // an order found this round holds its vehicle this round.
+        HashSet<string> heldByForeignOrder = await ForeignOrders.ForeignRunningOrders
+            .HeldAgvIdsAsync(dbContext, cancellationToken).ConfigureAwait(false);
         FleetVehicle[] free = roster.Vehicles
-            .Where(vehicle => !busy.Contains(vehicle.AgvId))
+            .Where(vehicle => !busy.Contains(vehicle.AgvId) && !heldByForeignOrder.Contains(vehicle.AgvId))
             .ToArray();
         // Blocked 的旅程占着车，却接不了追加：它等的是人介入，在途资格链无条件拒绝它。所以它让车算 busy
         // （不能当空闲车派），但不进 underWay（不值得当可追加的车去问）。这个区分不是优化：underWay 的
@@ -506,7 +562,8 @@ public sealed partial class JourneyRuntimeEngine(
             .Select(row => row.AgvId)
             .ToHashSet(StringComparer.Ordinal);
         FleetVehicle[] underWay = roster.Vehicles
-            .Where(vehicle => busy.Contains(vehicle.AgvId) && !blocked.Contains(vehicle.AgvId))
+            .Where(vehicle => busy.Contains(vehicle.AgvId) && !blocked.Contains(vehicle.AgvId) &&
+                              !heldByForeignOrder.Contains(vehicle.AgvId))
             .ToArray();
         // 空闲车与可追加的在途车都没有，才退（批次7-06，control-server#211）。在这之前判的是「没有空闲车」——
         // 那时在途车走一条一律拒绝的占位路径，问它等于白问，所以提前退出是对的。本票让在途车与空闲车在同一张
@@ -2227,6 +2284,10 @@ public sealed partial class JourneyRuntimeEngine(
     /// 与 <see cref="PublishPickupDispatchPlanOnceAsync"/> 的「不在单确认之前」是同一条线，这里只读库、不问 RIoT。
     /// </description></item>
     /// <item><description>
+    /// 这辆车没有被外来订单挡着（control-server#330）：RIoT 的车辆安全读取对车上任何未终结的单都报
+    /// <c>RIOT_NONFINAL_ORDER_PRESENT</c>，外来单同样造成这个「未知」，不能归给自己的单。
+    /// </description></item>
+    /// <item><description>
     /// 这一代会话听得到（<see cref="SessionLiveness"/>）。听不到的车，发送会在 <c>OnboardPeer</c> 抛异常，
     /// 每轮一次——control-server#234 刚消掉的那种刷屏。
     /// </description></item>
@@ -2262,12 +2323,17 @@ public sealed partial class JourneyRuntimeEngine(
             .ConfigureAwait(false);
         bool ownOrderInFlight = await OwnMovementOrderInFlightAsync(runtime, stops.Current.UpperId, cancellationToken)
             .ConfigureAwait(false);
+        // control-server#330：同一辆车上还挂着一张外来订单时，「未知」可能是它造成的，放行不适用。
+        bool foreignOrderHoldsVehicle = (await ForeignOrders.ForeignRunningOrders
+                .HeldAgvIdsAsync(dbContext, cancellationToken).ConfigureAwait(false))
+            .Contains(runtime.AgvId);
         if (!Dashboard.OwnMovementOrderExplanation.Explains(
                 runtime.BlockReasonCode,
                 session.ReasonCode,
                 session.SafetyReasonCodesJson,
                 session.SafetyUnknownPresent,
-                ownOrderInFlight))
+                ownOrderInFlight,
+                foreignOrderHoldsVehicle))
         {
             return;
         }

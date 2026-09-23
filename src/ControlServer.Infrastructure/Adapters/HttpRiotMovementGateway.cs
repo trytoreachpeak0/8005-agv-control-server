@@ -17,7 +17,7 @@ namespace ControlServer.Infrastructure.Adapters;
 /// owns only ControlServer observation semantics.
 /// </summary>
 public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicleFacts, IRiotMapStationCatalog,
-    IRiotVehicleSafetyFacts, IVehicleMotionFacts, IRiotVehicleOrderFacts
+    IRiotVehicleSafetyFacts, IVehicleMotionFacts, IRiotVehicleOrderFacts, IRiotOrderListingFacts
 {
     private static readonly int[] NonFinalOrderStates = [1, 3, 7, 9];
 
@@ -358,6 +358,78 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         catch (Exception error) when (RiotCallFailureClassification.IsSdkFailure(error))
         {
             return new RiotVehicleOrderObservation(deviceKey, null, [], timeProvider.GetUtcNow());
+        }
+    }
+
+    /// <summary>
+    /// Every order RIoT holds in states 1, 3, 7 and 9, whichever vehicle it is for (control-server#330).
+    /// </summary>
+    /// <remarks>
+    /// The same read and the same state list as <see cref="ReadUnfinishedOrdersAsync"/> and the safety read's
+    /// <c>RIOT_NONFINAL_ORDER_PRESENT</c>, but unfiltered and with each order's own fields: which of them is running on a
+    /// vehicle of this server's, and whose it is, is the caller's question. A page that does not cover every record, and
+    /// every failure, is an incomplete listing rather than an exception or an empty one.
+    /// </remarks>
+    public async Task<RiotUnfinishedOrderListing> ListUnfinishedOrdersAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            OrderStatePage orders = await riotSession.Order.ListOrdersByStatesAsync(
+                NonFinalOrderStates,
+                pageNum: 1,
+                pageSize: 100,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (!orders.CoversAllRecords)
+            {
+                return new RiotUnfinishedOrderListing(false, [], timeProvider.GetUtcNow());
+            }
+
+            RiotListedOrder[] listed = [.. orders.Records
+                .Where(order => !string.IsNullOrWhiteSpace(order.OrderId))
+                .Select(order => new RiotListedOrder(
+                    order.OrderId!,
+                    order.UpperId,
+                    order.OrderState,
+                    order.AppointVehicleKey,
+                    order.ExecuteVehicleKey))];
+            // A record without an orderId cannot be addressed, re-read or cancelled; one that is there all the same makes the
+            // listing something this server cannot fully account for.
+            return new RiotUnfinishedOrderListing(
+                listed.Length == orders.Records.Count, listed, timeProvider.GetUtcNow());
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception error) when (RiotCallFailureClassification.IsSdkFailure(error))
+        {
+            return new RiotUnfinishedOrderListing(false, [], timeProvider.GetUtcNow());
+        }
+    }
+
+    /// <summary>
+    /// One order's state by its RIoT <c>orderId</c>, through <c>detailByOrderId</c> (control-server#330). Null state on every
+    /// failure: a read that did not answer says nothing about whether the order ended.
+    /// </summary>
+    public async Task<RiotOrderStateReading> ReadOrderStateAsync(string orderId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(orderId);
+        try
+        {
+            OrderRef order = await riotSession.Order.GetOrderByOrderIdAsync(orderId, cancellationToken)
+                .ConfigureAwait(false);
+            return new RiotOrderStateReading(
+                orderId,
+                string.Equals(order.OrderId, orderId, StringComparison.Ordinal) ? order.OrderState : null,
+                timeProvider.GetUtcNow());
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception error) when (RiotCallFailureClassification.IsSdkFailure(error))
+        {
+            return new RiotOrderStateReading(orderId, null, timeProvider.GetUtcNow());
         }
     }
 
