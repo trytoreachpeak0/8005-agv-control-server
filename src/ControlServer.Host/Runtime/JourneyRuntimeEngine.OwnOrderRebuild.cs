@@ -82,6 +82,13 @@ public sealed partial class JourneyRuntimeEngine
             new EventId(2172, nameof(LogOwnOrderRebuildWaiting)),
             "The rebuild of order {EndedUpperId} of journey {JourneyId} on {AgvId} is held back: {WaitingReason}.");
 
+    private static readonly Action<ILogger, string, string, string, Exception?> LogOwnCancellationNotRebuilt =
+        LoggerMessage.Define<string, string, string>(
+            LogLevel.Warning,
+            new EventId(2174, nameof(LogOwnCancellationNotRebuilt)),
+            "Order {EndedUpperId} of journey {JourneyId} on {AgvId} was cancelled by this server itself; it is not rebuilt, and " +
+            "the journey waits for a person.");
+
     private static readonly Action<ILogger, string, string, string, string, Exception?> LogOwnOrderRebuildStopped =
         LoggerMessage.Define<string, string, string, string>(
             LogLevel.Error,
@@ -236,7 +243,8 @@ public sealed partial class JourneyRuntimeEngine
     /// <summary>
     /// Records that the order under <paramref name="upperId"/> -- the one <paramref name="runtime"/> waits on -- was cancelled
     /// or deleted in RIoT, and returns the code the journey carries for it: the transitional one while the rebuild waits, or
-    /// the stopped one when the third guard refuses it. Staged; the caller saves.
+    /// the stopped one when the third guard refuses it. Staged; the caller saves. An order this server cancelled itself is not
+    /// recorded at all.
     /// </summary>
     private async Task<string> RecordOrderEndedInRiotAsync(
         JourneyRuntimeRow runtime,
@@ -249,6 +257,22 @@ public sealed partial class JourneyRuntimeEngine
             .ConfigureAwait(false);
         if (stop is null)
         {
+            return OrderEndedWithoutArrivalReason;
+        }
+
+        // An order this server cancelled itself -- the release service does, through the order command surface, when the
+        // vehicle is no longer eligible -- was ended on purpose, not by mistake in RIoT. Rebuilding it would undo that decision.
+        if (await dbContext.RiotOrderCommandAudit.AsNoTracking()
+                .AnyAsync(
+                    row => row.TargetUpperId == upperId && row.CommandType == RiotCommandTypeNames.CancelOrder,
+                    cancellationToken)
+                .ConfigureAwait(false))
+        {
+            if (!string.Equals(runtime.BlockReasonCode, OrderEndedWithoutArrivalReason, StringComparison.Ordinal))
+            {
+                LogOwnCancellationNotRebuilt(logger, upperId, runtime.JourneyId, runtime.AgvId, null);
+            }
+
             return OrderEndedWithoutArrivalReason;
         }
 
