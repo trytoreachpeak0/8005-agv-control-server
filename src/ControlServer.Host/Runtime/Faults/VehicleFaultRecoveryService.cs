@@ -24,6 +24,12 @@ public enum VehicleFaultRecoveryAction
     /// (control-server#345).
     /// </summary>
     RebuildStoppedOrder,
+
+    /// <summary>
+    /// The automatic rebuild stopped at its third guard and nothing is on board; give the trip up: its demands end and the
+    /// journey closes (control-server#345, the user's decision of 2026-09-23).
+    /// </summary>
+    TerminateStoppedTrip,
 }
 
 /// <summary>A person's request about one explicitly named vehicle.</summary>
@@ -57,6 +63,9 @@ public enum VehicleFaultRecoveryOutcome
 
     /// <summary>The same request had already been carried out (control-server#345); nothing was done again.</summary>
     AlreadyDone,
+
+    /// <summary>A stopped trip with nothing on board was given up: its demands ended and its journey closed (control-server#345).</summary>
+    TripTerminated,
 }
 
 /// <summary>What was done with the vehicle's journey when its fault was cleared.</summary>
@@ -76,6 +85,12 @@ public static class VehicleFaultRecoveryDispositions
     /// within the window (control-server#318's third guard), and the journey waits for a person.
     /// </summary>
     public const string RebuildStopped = "REBUILD_STOPPED";
+
+    /// <summary>
+    /// A person gave a stopped trip up (control-server#345): every demand still open on it ended, never to be dispatched again,
+    /// and the journey closed. Nothing was released for redispatch.
+    /// </summary>
+    public const string TripTerminated = "TRIP_TERMINATED";
 }
 
 /// <summary>The answer to one request.</summary>
