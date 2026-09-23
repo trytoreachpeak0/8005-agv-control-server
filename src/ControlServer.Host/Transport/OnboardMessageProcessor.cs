@@ -366,8 +366,8 @@ public sealed partial class OnboardMessageProcessor(
                     }
                     SessionReadinessDecision snapshotDecision = await store.DecideReadinessAsync(
                         agvId, generation, cancellationToken).ConfigureAwait(false);
-                    state.Readiness = snapshotDecision.Readiness;
-                    return $"{snapshotAck}\n{SerializeReadiness(agvId, generation, state, snapshotDecision)}";
+                    return AnswerWithReadiness(
+                        snapshotAck, snapshotDecision, agvId, generation, state, announceUnchanged: true);
                 }
             case "RecoveryStateReport":
                 {
@@ -727,7 +727,9 @@ public sealed partial class OnboardMessageProcessor(
     /// <summary>
     /// One SessionReadiness line, built the same way wherever readiness changes. The envelope used to
     /// be written out at each site; two of those copies were putting a reason code on the wire that
-    /// the protocol's closed ErrorCode enum does not contain.
+    /// the protocol's closed ErrorCode enum does not contain. The last other copy, byte for byte the same
+    /// line, went with control-server#340. Its callers are <see cref="AnswerWithReadiness"/> and the
+    /// recovery report's answer, and nothing else (<c>OnboardHandshakeReadinessArchitectureTests</c>).
     /// </summary>
     private string SessionReadinessLine(
         SessionReadinessDecision decision,
@@ -816,32 +818,6 @@ public sealed partial class OnboardMessageProcessor(
             agvId, generation, cancellationToken).ConfigureAwait(false);
         return AnswerWithReadiness(ack, decision, agvId, generation, state, announceUnchanged: false);
     }
-
-    private string SerializeReadiness(
-        string agvId,
-        long generation,
-        OnboardConnectionState state,
-        SessionReadinessDecision decision) =>
-        SerializeEnvelope(
-            "SessionReadiness",
-            correlationId: null,
-            agvId,
-            generation,
-            new
-            {
-                readiness = decision.Readiness == SessionReadiness.Ready ? "READY" : "RECOVERY_REQUIRED",
-                decidedAt = timeProvider.GetUtcNow(),
-                reasonCodes = decision.Readiness == SessionReadiness.Ready
-                    ? Array.Empty<string>()
-                    : [ProtocolErrorCodes.ToSessionReadinessReasonCode(decision.ReasonCode)],
-                acceptedCapabilityVersion = state.CapabilityRevision ?? 0,
-                acceptedSafetyStateVersion = state.SafetyRevision ?? 0,
-                // NOTE: this third copy differs from SessionReadinessLine only in indentation; it is
-                // left alone because it is on the handshake path and takes its revisions from a
-                // different source. Three copies is how the illegal reasonCodes survived in two of
-                // them for as long as they did.
-                vehicleBusinessStateRevision = 1
-            });
 
     private static void RestoreAcceptedSnapshotVersions(
         string firstResponse,
