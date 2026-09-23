@@ -38,6 +38,20 @@ public sealed class VehicleDynamicFactsCriterion(IOptions<JourneyRuntimeOptions>
     }
 
     /// <summary>
+    /// Whether Onboard's safety summary vouches for sending this vehicle off: departure safe by its own judgement, stopped,
+    /// every target slot locked, every unlock output reset, and nothing unknown. One definition for dispatch admission and for
+    /// the rebuild of an order that ended (control-server#318, REQ-0239's "normal dispatch and safety gates"), so the two cannot
+    /// come to disagree about what "may depart" means.
+    /// </summary>
+    public static bool SaysTheVehicleMayDepart(OnboardDispatchFacts onboard)
+    {
+        ArgumentNullException.ThrowIfNull(onboard);
+        return onboard.DepartureSafe && onboard.VehicleStopped &&
+               onboard.AllTargetSlotsLocked && onboard.AllUnlockOutputsReset &&
+               !onboard.UnknownPresent;
+    }
+
+    /// <summary>
     /// The same verdict, callable outside the chain. The final pre-intake re-check needs exactly
     /// this decision against freshly read facts, and it must not be able to drift from the chain's.
     /// </summary>
@@ -51,9 +65,7 @@ public sealed class VehicleDynamicFactsCriterion(IOptions<JourneyRuntimeOptions>
             return "ONBOARD_FACTS_NOT_READY";
         }
 
-        if (!facts.Onboard.DepartureSafe || !facts.Onboard.VehicleStopped ||
-            !facts.Onboard.AllTargetSlotsLocked || !facts.Onboard.AllUnlockOutputsReset ||
-            facts.Onboard.UnknownPresent)
+        if (!SaysTheVehicleMayDepart(facts.Onboard))
         {
             return "ONBOARD_DEPARTURE_UNSAFE";
         }

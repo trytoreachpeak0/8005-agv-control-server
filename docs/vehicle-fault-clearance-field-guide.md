@@ -113,8 +113,10 @@ continue，另一个回 409 `FAULT_RECOVERY_RESUME_IN_PROGRESS`，过一会儿�
 2. **车况不允许就不建**：服务端读 RIoT 的车辆安全读取——车载端安全投影用的同一次读、同一组原因码——再加服务端自己的
    故障事实与车所在的图。车在急停（`RIOT_EMERGENCY_NOT_OK`）、手动或下线（`RIOT_VEHICLE_NOT_ENABLED`、
    `RIOT_VEHICLE_NOT_ONLINE`、解抱闸 `RIOT_BRAKE_NOT_MOVABLE`）、故障（`RIOT_CONTROL_NOT_OK`、服务端的
-   `VEHICLE_FAULT_IN_EFFECT`）、不在本图（`RIOT_VEHICLE_MAP_MISMATCH`）、车上还挂着别的单或还在动时，都不建，旅程码
-   `OWN_ORDER_REBUILD_WAITING_VEHICLE`，日志事件 2172 写明在等什么。车恢复之后下一轮自动建。
+   `VEHICLE_FAULT_IN_EFFECT`）、不在本图（`RIOT_VEHICLE_MAP_MISMATCH`）、车上还挂着别的单或还在动时，都不建。
+   **车载端也要说这辆车可以走**：会话已就绪，且车载端的安全摘要是可离站、车已停、目标仓全锁、开锁输出全复位、没有未知——
+   与一趟旅程派第一张单时同一组判据（记录上写 `ONBOARD_FACTS_NOT_READY` 或 `ONBOARD_DEPARTURE_UNSAFE`）。车载端会话没就绪时
+   也只记下、不建单。这些情况旅程码都是 `OWN_ORDER_REBUILD_WAITING_VEHICLE`，日志事件 2172 写明在等什么，都恢复之后下一轮自动建。
 3. **短时二次出问题即停**（`REQ-0361`）：同一条需求第一次出问题之后的一段时间内（默认 10 分钟，配置项
    `JourneyRuntime:OwnOrderRebuildRepeatWindow`，**从第一次出问题的时刻算起**，不是从重建建成算起）又出问题，就**不再自动重建**，
    旅程码 `OWN_ORDER_REBUILD_STOPPED`，错误级日志事件 2173。「又出问题」按第一次的来源认：第一次是被取消的，只有再被取消或删除才算；

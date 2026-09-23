@@ -1555,17 +1555,12 @@ public sealed partial class JourneyRuntimeEngine(
 
         JourneyStopCursor stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken)
             .ConfigureAwait(false);
-        // A rebuild under way runs behind the gate too (control-server#318): a real onboard is not ready for most of a leg.
-        // It leaves the gate's own code once the new order is confirmed, as a continued order does below.
+        // A rebuild under way is kept and named behind the gate too (control-server#318): a real onboard is not ready for most
+        // of a leg. It creates nothing here -- a new order waits for a Ready session that vouches for the vehicle (review M2).
         if (await OwnOrderRebuilds.ForStopAsync(dbContext, stops.Current, cancellationToken).ConfigureAwait(false) is not null)
         {
             return await AdvanceOwnOrderRebuildAsync(
-                    runtime,
-                    stops.Current,
-                    currentMap,
-                    await MayCreateBehindTheGateAsync(runtime, cancellationToken).ConfigureAwait(false),
-                    reasonOnceRebuilt: "ONBOARD_SESSION_NOT_READY",
-                    cancellationToken)
+                    runtime, stops.Current, currentMap, mayCreate: false, reasonOnceRebuilt: null, cancellationToken)
                 .ConfigureAwait(false);
         }
         OrderIntentRow? intent = await dbContext.OrderIntents.SingleOrDefaultAsync(

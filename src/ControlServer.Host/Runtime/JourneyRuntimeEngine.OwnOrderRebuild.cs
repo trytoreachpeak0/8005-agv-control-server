@@ -2,6 +2,8 @@ using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime.CreateGate;
+using ControlServer.Host.Runtime.Dispatch;
+using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Host.Runtime.Faults;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -37,12 +39,18 @@ namespace ControlServer.Host.Runtime;
 /// through REQ-0305's create gate (<see cref="OwnOrderRebuildBlockedByCreateGateReason"/>).
 /// </para>
 /// <para>
-/// <b>Both sides of the readiness gate.</b> A real onboard reports its session not ready for the whole of a leg that carries
-/// this server's order, so the ending is usually read, and the rebuild often made, behind the gate. Creating the order sends
-/// nothing to the peer, so it is allowed there -- but only when the session is not ready for the vehicle's own sake alone
-/// (<see cref="Dashboard.OwnMovementOrderExplanation.OnlyTheVehicleKeepsItNotReady"/>) and the peer is heard from; a session
-/// held back for a slot operation to recover, a forced recovery or an unfinished handshake keeps the rebuild waiting, because
-/// the vehicle's doors are exactly what such a session has not vouched for.
+/// <b>Both sides of the readiness gate, but an order only in front of it.</b> A real onboard reports its session not ready
+/// for the whole of a leg that carries this server's order, so the ending is usually read behind the gate, and the record is
+/// kept and named there. The new order, though, is created only when the session is Ready and Onboard's safety summary says
+/// the vehicle may depart -- the same five facts dispatch admission requires before a journey's first order
+/// (<see cref="VehicleDynamicFactsCriterion.SaysTheVehicleMayDepart"/>): departure safe, stopped, target slots locked, unlock
+/// outputs reset, nothing unknown. That is REQ-0239's "normal dispatch and safety gates" on the vehicle's side, and it is what
+/// the independent review asked for (M2): a rebuild does not go through the gate leg's pre-departure check and authorisation,
+/// so it has to show the facts that check would. The first version also created behind the gate when the session was not ready
+/// for the vehicle's own sake alone; it no longer does, because Onboard reports exactly <c>unknownPresent=true</c> in that
+/// state and nothing then vouches for the doors. The state does not last: once the ended order is final, the server's
+/// vehicle-safety read drops <c>RIOT_NONFINAL_ORDER_PRESENT</c> (only states 1, 3, 7 and 9 count), and a stopped vehicle's
+/// session becomes Ready again.
 /// </para>
 /// <para>
 /// <b>A cleared fault with cargo on board is rebuilt only on fresh evidence</b> (REQ-0362, which keeps REQ-0238's premise for
@@ -242,7 +250,8 @@ public sealed partial class JourneyRuntimeEngine
         }
         else if (!mayCreate)
         {
-            await WaitForRebuildAsync(runtime, rebuild, "ONBOARD_SESSION_NOT_READY", null, now, cancellationToken)
+            await WaitForRebuildAsync(
+                runtime, rebuild, "ONBOARD_SESSION_NOT_READY", OwnOrderRebuildWaitingVehicleReason, now, cancellationToken)
                 .ConfigureAwait(false);
             return true;
         }
@@ -312,7 +321,8 @@ public sealed partial class JourneyRuntimeEngine
     {
         if (!mayCreate)
         {
-            await WaitForRebuildAsync(runtime, rebuild, "ONBOARD_SESSION_NOT_READY", null, now, cancellationToken)
+            await WaitForRebuildAsync(
+                runtime, rebuild, "ONBOARD_SESSION_NOT_READY", OwnOrderRebuildWaitingVehicleReason, now, cancellationToken)
                 .ConfigureAwait(false);
             return true;
         }
@@ -525,6 +535,17 @@ public sealed partial class JourneyRuntimeEngine
     private async Task<string[]> VehicleConditionReasonsAsync(JourneyRuntimeRow runtime, CancellationToken cancellationToken)
     {
         List<string> reasons = [];
+        // Onboard's half (review M2): a Ready session whose safety summary vouches for sending the vehicle off.
+        OnboardDispatchFacts? onboard = await ReadOnboardFactsAsync(runtime.AgvId, cancellationToken).ConfigureAwait(false);
+        if (onboard is null)
+        {
+            reasons.Add("ONBOARD_FACTS_NOT_READY");
+        }
+        else if (!VehicleDynamicFactsCriterion.SaysTheVehicleMayDepart(onboard))
+        {
+            reasons.Add("ONBOARD_DEPARTURE_UNSAFE");
+        }
+
         if (await dbContext.VehicleFaultStates.AsNoTracking()
                 .AnyAsync(row => row.AgvId == runtime.AgvId && row.Level != VehicleFaultLevel.None, cancellationToken)
                 .ConfigureAwait(false))
@@ -558,19 +579,6 @@ public sealed partial class JourneyRuntimeEngine
         }
 
         return [.. reasons];
-    }
-
-    /// <summary>Whether a rebuild may create an order behind the readiness gate; see the class remarks.</summary>
-    private async Task<bool> MayCreateBehindTheGateAsync(JourneyRuntimeRow runtime, CancellationToken cancellationToken)
-    {
-        SessionRecoveryRow? session = await dbContext.SessionRecoveries.AsNoTracking()
-            .SingleOrDefaultAsync(row => row.AgvId == runtime.AgvId, cancellationToken).ConfigureAwait(false);
-        return session is not null &&
-               Dashboard.OwnMovementOrderExplanation.OnlyTheVehicleKeepsItNotReady(
-                   session.ReasonCode, session.SafetyReasonCodesJson, session.SafetyUnknownPresent) &&
-               await SessionLiveness.HeardFromAsync(
-                   dbContext, runtime.AgvId, session.SessionGeneration, timeProvider.GetUtcNow(), cancellationToken)
-                   .ConfigureAwait(false);
     }
 
     /// <summary>Holds a due rebuild back, writing what it waits for on the record and, when given, the journey's code.</summary>

@@ -101,8 +101,9 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 + "同一条需求重建运单继续这一趟，车会再动。这辆车不接新单",
             // control-server#318：本服务端自建单终结之后的自动重建，被三道护栏之一或建单门禁拦下时的码。
             [JourneyRuntimeEngine.OwnOrderRebuildWaitingVehicleReason] =
-                "要为同一辆车、同一条需求重建运单，但车此刻不能动（急停、手动或下线、解抱闸、故障、不在本图，或车上有别的单）："
-                + "服务端等车恢复后自动重建，不需要人确认。请到现场查看车的状态",
+                "要为同一辆车、同一条需求重建运单，但车此刻不能动（急停、手动或下线、解抱闸、故障、不在本图，或车上有别的单），"
+                + "或者车载端还没确认可以离站（会话没就绪、仓门没锁、开锁输出没复位、有未知）：服务端等这些都恢复后自动重建，"
+                + "不需要人确认。请到现场查看车与车载端的状态",
             [JourneyRuntimeEngine.OwnOrderRebuildBlockedByCreateGateReason] =
                 "要为同一辆车、同一条需求重建运单，但建单门禁此刻不放行（地图目录不新鲜、任务类型被挂起、目标站不可达等）："
                 + "门禁放行后自动重建。具体原因见服务端日志事件 2172",
