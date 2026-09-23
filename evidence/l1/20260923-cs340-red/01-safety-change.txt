@@ -1,0 +1,31 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:07.55]     ControlServer.Tests.RecoveryStateMachineG2Tests.ASafetyChangeFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledged(deferOutbound: True) [FAIL]
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.ASafetyChangeFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledged(deferOutbound: True) [4 s]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+Expected: ["DurableAck"]
+Actual:   ["DurableAck", "SessionReadiness"]
+                         ↑ (pos 1)
+  Stack Trace:
+     at ControlServer.Tests.RecoveryStateMachineG2Tests.ASafetyChangeFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledged(Boolean deferOutbound) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4756
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.ASafetyChangeFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledged(Boolean deferOutbound) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4757
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.ASafetyChangeFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledged(Boolean deferOutbound) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4757
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:07.93]     ControlServer.Tests.RecoveryStateMachineG2Tests.ASafetyChangeFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledged(deferOutbound: False) [FAIL]
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.ASafetyChangeFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledged(deferOutbound: False) [363 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+Expected: ["DurableAck"]
+Actual:   ["DurableAck", "SessionReadiness"]
+                         ↑ (pos 1)
+  Stack Trace:
+     at ControlServer.Tests.RecoveryStateMachineG2Tests.ASafetyChangeFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledged(Boolean deferOutbound) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4756
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.ASafetyChangeFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledged(Boolean deferOutbound) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4757
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.ASafetyChangeFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledged(Boolean deferOutbound) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4757
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     2, Passed:     0, Skipped:     0, Total:     2, Duration: 4 s - ControlServer.Tests.dll (net8.0)

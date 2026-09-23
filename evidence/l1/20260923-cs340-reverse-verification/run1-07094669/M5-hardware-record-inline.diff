@@ -1,0 +1,19 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs b/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
+index 713a369e..eedf72db 100644
+--- a/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
++++ b/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
+@@ -530,8 +530,12 @@ public sealed partial class OnboardMessageProcessor(
+                     // change, as after a recovery result. The record resumes nothing by itself.
+                     SessionReadinessDecision recordDecision = await store.DecideReadinessAsync(
+                         agvId, generation, cancellationToken).ConfigureAwait(false);
+-                    return AnswerWithReadiness(
+-                        recordResult, recordDecision, agvId, generation, state, announceUnchanged: false);
++                    if (recordDecision.Readiness == state.Readiness)
++                    {
++                        return recordResult;
++                    }
++                    state.Readiness = recordDecision.Readiness;
++                    return $"{recordResult}\n{SessionReadinessLine(recordDecision, agvId, generation, state)}";
+                 }
+             case "ExceptionRecoverySessionRequested":
+             case "RecoveryActionSubmitted":

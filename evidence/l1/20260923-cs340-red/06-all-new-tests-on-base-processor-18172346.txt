@@ -1,0 +1,1648 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 8.0.31)
+[xUnit.net 00:00:00.64]   Discovering: ControlServer.Tests
+[xUnit.net 00:00:02.48]   Discovered:  ControlServer.Tests
+[xUnit.net 00:00:02.78]   Starting:    ControlServer.Tests
+[xUnit.net 00:00:03.57]     ControlServer.Tests.OnboardHandshakeReadinessArchitectureTests.AReadinessEnvelopeIsBuiltInOneMethodOnly [FAIL]
+[xUnit.net 00:00:03.57]       Assert.Equal() Failure: Collections differ at index 1
+[xUnit.net 00:00:03.57]                                              ↓ (pos 60)
+[xUnit.net 00:00:03.57]       Expected: ···"boardMessageProcessor.cs#RestoreAcceptedSnapshotVe"···
+[xUnit.net 00:00:03.57]       Actual:   ···"boardMessageProcessor.cs#SerializeReadiness"
+[xUnit.net 00:00:03.57]                                              ↑ (pos 60)
+[xUnit.net 00:00:03.57]       Stack Trace:
+[xUnit.net 00:00:03.57]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\OnboardHandshakeReadinessArchitectureTests.cs(58,0): at ControlServer.Tests.OnboardHandshakeReadinessArchitectureTests.AReadinessEnvelopeIsBuiltInOneMethodOnly()
+[xUnit.net 00:00:03.57]            at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+[xUnit.net 00:00:03.57]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+[xUnit.net 00:00:03.59]     ControlServer.Tests.OnboardHandshakeReadinessArchitectureTests.OnlyTheCombiningFunctionAndTheRecoveryReportsAnswerAppendAReadinessLine [FAIL]
+[xUnit.net 00:00:03.59]       Assert.Contains() Failure: Filter not matched in collection
+[xUnit.net 00:00:03.59]       Collection: [Member { Name = ProcessAsync, Body =     public async Task<string> ProcessAsync(
+        string line,
+        OnboardConnectionState state,
+        CancellationToken cancellationToken)
+    {
+
+
+
+
+
+
+
+
+
+        dbContext.ChangeTracker.Clear();
+        using JsonDocument document = JsonDocument.Parse(line);
+        JsonElement root = document.RootElement;
+        string messageType = RequiredString(root, "messageType");
+        string messageId = RequiredString(root, "messageId");
+        string agvId = RequiredString(root, "agvId");
+        string contentHash = WireContentHash.Sha256(line);
+
+        if (messageType == "SessionHello")
+        {
+            string response;
+            try
+            {
+                ValidateSessionHello(root);
+                response = await store.CaptureFirstResponseAsync(
+                    messageId,
+                    messageType,
+                    RedactSessionCredential(line),
+                    contentHash,
+                    async () =>
+                    {
+                        long generation = await store.GetNextSessionGenerationAsync(agvId, cancellationToken)
+                            .ConfigureAwait(false);
+                        await store.BeginSessionRecoveryAsync(
+                            new SessionIdentity(
+                                agvId,
+                                generation,
+                                ProtocolCandidateIdentity.RepositoryCommit,
+                                ProtocolCandidateIdentity.ManifestSha256,
+                                ProtocolCandidateIdentity.ProfileId,
+                                ProtocolCandidateIdentity.ProtocolVersion),
+                            cancellationToken).ConfigureAwait(false);
+                        state.Readiness = SessionReadiness.RecoveryRequired;
+                        return SerializeEnvelope(
+                            "SessionAccepted",
+                            messageId,
+                            agvId,
+                            generation,
+                            new
+                            {
+                                sessionGeneration = generation,
+                                serverInstanceId = _serverInstanceId,
+                                serverBuildCommit = configuration["ControlServerBuild:commit"] ?? "WORKTREE_BUILD",
+                                acceptedProtocolReleaseIdentity = ProtocolEnvelope.ReleaseIdentity(),
+                                acceptedAt = timeProvider.GetUtcNow()
+                            });
+                    },
+                    timeProvider.GetUtcNow(),
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (ProtocolIdentityMismatchException error)
+            {
+                return SerializeEnvelope(
+                    "SessionRejected",
+                    messageId,
+                    agvId,
+                    sessionGeneration: null,
+                    new
+                    {
+                        problem = new
+                        {
+                            reasonCode = ServerReasonCodes.ProtocolReleaseIdentityMismatch,
+                            fieldPath = "payload.protocolReleaseIdentity",
+                            displayMessage = error.Message
+                        },
+                        expectedProtocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
+                        expectedProtocolReleaseIdentity = ProtocolEnvelope.ReleaseIdentity()
+                    });
+            }
+
+            using JsonDocument accepted = JsonDocument.Parse(response);
+            state.AgvId = agvId;
+            state.SessionGeneration = accepted.RootElement.GetProperty("sessionGeneration").GetInt64();
+            state.HandshakeCompleted = false;
+            state.SafetySnapshotRequestDue = false;
+            return response;
+        }
+
+        ValidateEnvelopeIdentity(root);
+        RequireCurrentSession(root, state, agvId);
+        string persistedRequest = messageType == "ExceptionRecoverySessionRequested"
+            ? RedactRecoveryAuthenticationProof(line)
+            : line;
+
+
+
+
+
+
+
+
+        bool reprocessedInTheNewSession = messageType is "RecoveryStateReport" or "OperationResult";
+        string capturedResponse = await store.CaptureFirstResponseAsync(
+            messageId,
+            messageType,
+            persistedRequest,
+            contentHash,
+            () => ProcessCurrentSessionMessageAsync(
+                root, state, messageType, messageId, contentHash, cancellationToken),
+            timeProvider.GetUtcNow(),
+            cancellationToken,
+            GenerationRebindReplayHash,
+            messageType == "RecoveryStateReport"
+                ? response => RestoreAcceptedSnapshotVersions(response, state)
+                : null,
+            reprocessedInTheNewSession
+                ? null
+                : firstResponse => RebindDurableAckAsync(
+                    firstResponse, messageType, messageId, agvId, contentHash, state, cancellationToken))
+            .ConfigureAwait(false);
+
+
+
+
+
+
+
+
+        bool triggersRecoverySend = state.HandshakeCompleted &&
+                                    (OnboardRecoveryCoordinator.IsRecoveryRequest(messageType) ||
+                                     OnboardRecoveryCoordinator.IsRecoveryResult(messageType) ||
+                                     messageType == "OperationResult" ||
+                                     messageType == "SlotOperationCommandRejected");
+        bool replaysPendingRecovery = messageType == "RecoveryStateReport";
+        if ((triggersRecoverySend || replaysPendingRecovery) && state.DeferOutboundUntilResponseWritten)
+        {
+            state.DeferredRecoveryLine = line;
+        }
+        else if (triggersRecoverySend)
+        {
+            await recoveryCoordinator.SendTriggeredCommandAsync(root, cancellationToken).ConfigureAwait(false);
+        }
+        else if (replaysPendingRecovery)
+        {
+            await recoveryCoordinator.ReplayPendingCommandsAsync(
+                agvId,
+                state.SessionGeneration!.Value,
+                cancellationToken).ConfigureAwait(false);
+        }
+        return AppendSafetySnapshotRequest(capturedResponse, state);
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ }, Member { Name = AppendSafetySnapshotRequest, Body =     private string AppendSafetySnapshotRequest(string response, OnboardConnectionState state)
+    {
+        if (!state.SafetySnapshotRequestDue)
+        {
+            return response;
+        }
+        state.SafetySnapshotRequestDue = false;
+        if (!state.HandshakeCompleted)
+        {
+            return response;
+        }
+        string request = SerializeEnvelope(
+            "SafetyStateSnapshotRequested",
+            correlationId: null,
+            state.AgvId!,
+            state.SessionGeneration,
+            new
+            {
+                requestedSafetyStateVersion = (long?)null,
+                reason = "VERSION_GAP"
+            });
+        return string.IsNullOrWhiteSpace(response) ? request : $"{response}\n{request}";
+    }
+
+ }, Member { Name = FlushDeferredOutboundAsync, Body =     public async Task FlushDeferredOutboundAsync(
+        OnboardConnectionState state,
+        CancellationToken cancellationToken)
+    {
+        string? line = state.DeferredRecoveryLine;
+        state.DeferredRecoveryLine = null;
+        if (line is null) return;
+        using JsonDocument document = JsonDocument.Parse(line);
+        JsonElement root = document.RootElement;
+        string messageType = RequiredString(root, "messageType");
+        if (OnboardRecoveryCoordinator.IsRecoveryRequest(messageType) ||
+            OnboardRecoveryCoordinator.IsRecoveryResult(messageType) ||
+            messageType == "OperationResult" ||
+            messageType == "SlotOperationCommandRejected")
+        {
+            await recoveryCoordinator.SendTriggeredCommandAsync(root, cancellationToken).ConfigureAwait(false);
+        }
+        else if (messageType == "RecoveryStateReport")
+        {
+            await recoveryCoordinator.ReplayPendingCommandsAsync(
+                RequiredString(root, "agvId"),
+                root.GetProperty("sessionGeneration").GetInt64(),
+                cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+ }, Member { Name = ProcessCurrentSessionMessageAsync, Body =     private async Task<string> ProcessCurrentSessionMessageAsync(
+        JsonElement root,
+        OnboardConnectionState state,
+        string messageType,
+        string messageId,
+        string contentHash,
+        CancellationToken cancellationToken)
+    {
+        JsonElement payload = root.GetProperty("payload");
+        string agvId = state.AgvId!;
+        long generation = state.SessionGeneration!.Value;
+        switch (messageType)
+        {
+            case "Heartbeat":
+                return SerializeEnvelope(
+                    "HeartbeatAck", messageId, agvId, generation,
+                    new { receivedHeartbeatMessageId = messageId, serverTime = timeProvider.GetUtcNow() });
+            case "CapabilitySnapshot":
+                {
+                    long revision = payload.GetProperty("capabilityVersion").GetInt64();
+                    string reportedFingerprint = RequiredString(
+                        payload, SlotConfigurationActivationDelivery.CapabilityFingerprintField);
+
+
+
+
+
+
+
+
+
+
+
+                    await activationDispatcher.ReconcileReportedFingerprintAsync(
+                        agvId,
+                        reportedFingerprint,
+                        timeProvider.GetUtcNow(),
+                        cancellationToken).ConfigureAwait(false);
+                    await store.ApplyCapabilitySnapshotAsync(
+                        agvId, generation, revision, contentHash, reportedFingerprint,
+                        cancellationToken).ConfigureAwait(false);
+                    state.CapabilityRevision = revision;
+                    return SnapshotAck(messageId, agvId, generation, "CAPABILITY", revision, contentHash);
+                }
+
+
+
+            case "SlotConfigurationActivationResult":
+                {
+                    await activationDispatcher.RecordResultAsync(
+                        SlotConfigurationActivationWire.Result(payload),
+                        cancellationToken).ConfigureAwait(false);
+                    return DurableAck(messageType, messageId, agvId, generation, contentHash);
+                }
+
+
+
+            case "OnboardAlarmSnapshot":
+                {
+                    long revision = OnboardAlarmSnapshotWire.Revision(payload);
+                    HashSet<string> overdueBefore = OverdueIdentities(
+                        await alarmStore.ReadExpectedActionOverdueAsync(agvId, cancellationToken).ConfigureAwait(false));
+                    await alarmStore.RecordSnapshotAsync(
+                        OnboardAlarmSnapshotWire.Read(agvId, payload),
+                        generation,
+                        timeProvider.GetUtcNow(),
+                        cancellationToken).ConfigureAwait(false);
+
+                    HashSet<string> overdueAfter = OverdueIdentities(
+                        await alarmStore.ReadExpectedActionOverdueAsync(agvId, cancellationToken).ConfigureAwait(false));
+                    if (!overdueAfter.IsSubsetOf(overdueBefore))
+                    {
+                        state.SafetySnapshotRequestDue = true;
+                    }
+                    return SnapshotAck(messageId, agvId, generation, "ONBOARD_ALARM", revision, contentHash);
+                }
+            case "SafetyStateSnapshot":
+                {
+                    long revision = payload.GetProperty("safetyStateVersion").GetInt64();
+                    JsonElement safety = payload.GetProperty("safety");
+                    bool departureSafe = safety.GetProperty("departureSafe").GetBoolean();
+
+
+
+
+
+
+
+
+
+
+
+
+                    bool midSession = state.HandshakeCompleted &&
+                                      await store.HasSafetyBaselineAsync(agvId, generation, cancellationToken)
+                                          .ConfigureAwait(false);
+                    await store.ApplySafetySnapshotAsync(
+                        agvId, generation, revision, departureSafe, contentHash, cancellationToken,
+                        SafetyReasonCodes(safety), SafetyUnknownPresent(safety)).ConfigureAwait(false);
+                    state.SafetyRevision = revision;
+                    string snapshotAck = SnapshotAck(messageId, agvId, generation, "SAFETY_STATE", revision, contentHash);
+                    if (!midSession)
+                    {
+                        return snapshotAck;
+                    }
+                    SessionReadinessDecision snapshotDecision = await store.DecideReadinessAsync(
+                        agvId, generation, cancellationToken).ConfigureAwait(false);
+                    state.Readiness = snapshotDecision.Readiness;
+                    return $"{snapshotAck}\n{SerializeReadiness(agvId, generation, state, snapshotDecision)}";
+                }
+            case "RecoveryStateReport":
+                {
+                    string reportId = RequiredString(payload, "reportId");
+                    long forcedGeneration = payload.GetProperty("forcedRecoveryGeneration").GetInt64();
+                    List<string> pendingAttempts = [];
+                    if (payload.TryGetProperty("unsettledSlotOperationAttemptId", out JsonElement attempt) &&
+                        attempt.ValueKind == JsonValueKind.String)
+                    {
+                        pendingAttempts.Add(attempt.GetString()!);
+                    }
+                    string[] pendingResults = payload.GetProperty("pendingResults")
+                        .EnumerateArray()
+                        .Select(item => RequiredString(item, "messageId"))
+                        .ToArray();
+                    string? unsettledAttemptId = payload.GetProperty("unsettledSlotOperationAttemptId").ValueKind == JsonValueKind.Null
+                        ? null
+                        : RequiredString(payload, "unsettledSlotOperationAttemptId");
+                    string? checkpoint = payload.GetProperty("provenRecoveryCheckpoint").ValueKind == JsonValueKind.Null
+                        ? null
+                        : RequiredString(payload, "provenRecoveryCheckpoint");
+                    int[] activeUnlockSlots = payload.GetProperty("activeUnlockSlots")
+                        .EnumerateArray().Select(item => item.GetInt32()).ToArray();
+                    await store.ApplyRecoveryReportAsync(
+                        agvId, generation, reportId, forcedGeneration,
+                        unsettledAttemptId, checkpoint, activeUnlockSlots,
+                        pendingAttempts, pendingResults, cancellationToken).ConfigureAwait(false);
+                    SessionReadinessDecision decision = await store.DecideReadinessAsync(
+                        agvId, generation, cancellationToken).ConfigureAwait(false);
+                    state.Readiness = decision.Readiness;
+
+
+                    state.HandshakeCompleted = true;
+                    string ack = SerializeEnvelope(
+                        "DurableAck", messageId, agvId, generation,
+                        new
+                        {
+                            acceptedMessageId = messageId,
+                            acceptedMessageType = messageType,
+                            acceptedContentSha256 = contentHash,
+                            durablyAcceptedAt = timeProvider.GetUtcNow()
+                        });
+                    return $"{ack}\n{SessionReadinessLine(decision, agvId, generation, state)}";
+                }
+            case "OperationProgress":
+            case "PreDepartureSafetyCheckResult":
+            case "SublotSubmitted":
+                return DurableAck(messageType, messageId, agvId, generation, contentHash);
+            case "SlotOperationCommandRejected":
+
+
+
+                await recoveryCoordinator.ObserveCommandRejectedAsync(root, cancellationToken).ConfigureAwait(false);
+                return DurableAck(messageType, messageId, agvId, generation, contentHash);
+            case "OperationResult":
+                {
+                    string attemptId = RequiredString(payload, "slotOperationAttemptId");
+                    string demandId = RequiredString(payload, "demandId");
+                    SlotOperationType operationType = RequiredString(payload, "operationType") switch
+                    {
+                        "LOAD" => SlotOperationType.Load,
+                        "UNLOAD" => SlotOperationType.Unload,
+                        _ => throw new InvalidDataException("OperationResult operationType is not supported.")
+                    };
+                    string overallOutcome = RequiredString(payload, "overallOutcome");
+                    JsonElement[] slotResults = payload.GetProperty("slotResults").EnumerateArray().ToArray();
+                    SlotPhysicalEvidence[] evidence = slotResults
+                        .Select(item => new SlotPhysicalEvidence(
+                            item.GetProperty("slotNo").GetInt32(),
+                            RequiredString(item, "finalPhysicalState") switch
+                            {
+                                "EMPTY" => SlotBusinessState.Empty,
+                                "OCCUPIED" => SlotBusinessState.Occupied,
+                                "UNKNOWN" => SlotBusinessState.Unknown,
+                                _ => throw new InvalidDataException(
+                                    "OperationResult finalPhysicalState is not supported.")
+                            },
+                            RequiredString(item, "lockState") == "LOCKED",
+                            RequiredString(item, "unlockOutputState") == "RESET"))
+                        .ToArray();
+                    string resultContentSha256 = RequiredString(payload, "resultContentSha256");
+                    string computedResultHash = ComputeOperationResultContentHash(payload);
+                    if (!string.Equals(resultContentSha256, computedResultHash, StringComparison.Ordinal))
+                    {
+                        throw new ProtocolContentConflictException(
+                            "OperationResult resultContentSha256 does not match its business content.");
+                    }
+                    long forcedGeneration = await store.GetOperationForcedRecoveryGenerationAsync(
+                        attemptId, cancellationToken).ConfigureAwait(false);
+                    OperationResultReceipt receipt = await ReceiptAsync(demandId, cancellationToken)
+                        .ConfigureAwait(false);
+                    OperationResultDisposition disposition = await store.ApplyOperationResultAsync(
+                        new StationOperationResult(
+                            messageId,
+                            attemptId,
+                            demandId,
+                            operationType,
+                            overallOutcome,
+                            evidence,
+                            slotResults.All(item => RequiredString(item, "outcome") == "COMPLETED"),
+                            payload.GetProperty("observedAt").GetDateTimeOffset(),
+                            resultContentSha256,
+                            contentHash,
+                            SlotOutcomeReport.FromSlotResults(payload.GetProperty("slotResults"))),
+                        agvId,
+                        forcedGeneration,
+                        cancellationToken,
+                        receipt).ConfigureAwait(false);
+                    if (disposition is OperationResultDisposition.FailedBeforeStationDeadline
+                        or OperationResultDisposition.FailureReasonWithoutTerminalState)
+                    {
+
+
+
+                        LogUnsettleableDeterminateFailure(
+                            logger,
+                            agvId,
+                            demandId,
+                            attemptId,
+                            disposition == OperationResultDisposition.FailedBeforeStationDeadline
+                                ? DeterminateLoadFailure.FailedBeforeStationDeadline
+                                : DeterminateLoadFailure.ReasonWithoutTerminalState,
+                            receipt.ReceivedAt,
+                            receipt.StationDepartureDeadline);
+                    }
+                    await recoveryCoordinator.ObserveOperationResultAsync(
+                        attemptId, disposition, cancellationToken).ConfigureAwait(false);
+
+
+                    await store.ReconcileReportedPendingResultAsync(
+                        agvId, generation, messageId, cancellationToken).ConfigureAwait(false);
+                    await store.SettleReportedAttemptsAsync(agvId, generation, cancellationToken)
+                        .ConfigureAwait(false);
+
+
+
+
+
+
+                    SessionReadinessDecision resultDecision = await store.DecideReadinessAsync(
+                        agvId, generation, cancellationToken).ConfigureAwait(false);
+                    string resultAck = DurableAck(messageType, messageId, agvId, generation, contentHash);
+
+
+
+
+
+
+
+
+                    if (resultDecision.Readiness == state.Readiness)
+                    {
+                        return resultAck;
+                    }
+                    state.Readiness = resultDecision.Readiness;
+                    return $"{resultAck}\n{SessionReadinessLine(resultDecision, agvId, generation, state)}";
+                }
+            case "HardwareRecoveryRecordSubmitted":
+                {
+                    string recordResult = await recoveryCoordinator.ProcessRequestAsync(root, contentHash, cancellationToken)
+                        .ConfigureAwait(false);
+
+
+
+                    SessionReadinessDecision recordDecision = await store.DecideReadinessAsync(
+                        agvId, generation, cancellationToken).ConfigureAwait(false);
+                    if (recordDecision.Readiness == state.Readiness)
+                    {
+                        return recordResult;
+                    }
+                    state.Readiness = recordDecision.Readiness;
+                    return $"{recordResult}\n{SessionReadinessLine(recordDecision, agvId, generation, state)}";
+                }
+            case "ExceptionRecoverySessionRequested":
+            case "RecoveryActionSubmitted":
+            case "LoadCancellationStartRequested":
+            case "LoadCompensationRequested":
+            case "LoadCorrectionRequested":
+                return await recoveryCoordinator.ProcessRequestAsync(root, contentHash, cancellationToken)
+                    .ConfigureAwait(false);
+            case "FaultCargoRecoveryResult":
+            case "ForcedMechanicalRecoveryResult":
+            case "LoadCancellationResult":
+            case "LoadCompensationResult":
+            case "LoadCorrectionResult":
+                {
+                    string recoveryAck = await recoveryCoordinator.ProcessResultAsync(root, contentHash, cancellationToken)
+                        .ConfigureAwait(false);
+
+
+
+
+                    await store.SettleReportedAttemptsAsync(agvId, generation, cancellationToken)
+                        .ConfigureAwait(false);
+                    SessionReadinessDecision recoveryDecision = await store.DecideReadinessAsync(
+                        agvId, generation, cancellationToken).ConfigureAwait(false);
+                    if (recoveryDecision.Readiness == state.Readiness)
+                    {
+                        return recoveryAck;
+                    }
+                    state.Readiness = recoveryDecision.Readiness;
+                    return $"{recoveryAck}\n{SessionReadinessLine(recoveryDecision, agvId, generation, state)}";
+                }
+            case "ManualChargingReturnToServiceRequested":
+                {
+
+
+
+
+                    string requestId = RequiredUuid(payload, "requestId");
+                    ManualChargingReturnToServiceDecision decision =
+                        await store.DecideManualChargingReturnToServiceAsync(
+                            new ManualChargingReturnToServiceRequest(
+                                requestId,
+                                agvId,
+                                generation,
+                                messageId,
+                                WireContentHash.Sha256(payload.GetRawText()),
+                                RequiredString(payload.GetProperty("administrator"), "operatorId"),
+                                RequiredString(payload, "administratorRole"),
+                                RequiredString(payload, "reason"),
+                                NullableDouble(payload, "observedBatteryPercent")),
+                            cancellationToken).ConfigureAwait(false);
+                    return SerializeEnvelope(
+                        "ManualChargingReturnToServiceResult", messageId, agvId, generation,
+                        new
+                        {
+                            requestId,
+                            outcome = decision.Outcome,
+                            problem = decision.ProblemReasonCode is null
+                                ? null
+                                : new
+                                {
+                                    reasonCode = decision.ProblemReasonCode,
+                                    fieldPath = decision.ProblemFieldPath,
+                                    displayMessage = decision.ProblemDisplayMessage
+                                },
+                            vehicleBusinessStateRevision = decision.VehicleBusinessStateRevision
+                        });
+                }
+            case "SafetyStateChanged":
+                {
+                    long revision = payload.GetProperty("safetyStateVersion").GetInt64();
+                    JsonElement safety = payload.GetProperty("safety");
+                    bool departureSafe = safety.GetProperty("departureSafe").GetBoolean();
+                    await store.ApplySafetySnapshotAsync(
+                        agvId, generation, revision, departureSafe, contentHash, cancellationToken,
+                        SafetyReasonCodes(safety), SafetyUnknownPresent(safety))
+                        .ConfigureAwait(false);
+                    state.SafetyRevision = revision;
+                    SessionReadinessDecision decision = await store.DecideReadinessAsync(
+                        agvId, generation, cancellationToken).ConfigureAwait(false);
+                    state.Readiness = decision.Readiness;
+                    if (await AffectsAnOverdueSlotAsync(agvId, payload, cancellationToken).ConfigureAwait(false))
+                    {
+                        state.SafetySnapshotRequestDue = true;
+                    }
+                    string ack = DurableAck(messageType, messageId, agvId, generation, contentHash);
+                    string readiness = SerializeReadiness(agvId, generation, state, decision);
+                    return $"{ack}\n{readiness}";
+                }
+            case "SnapshotAppliedAck":
+                {
+                    string snapshotMessageId = RequiredString(payload, "snapshotMessageId");
+                    if (RequiredString(root, "correlationId") != snapshotMessageId)
+                    {
+                        throw new InvalidDataException("SnapshotAppliedAck correlationId must identify the snapshot.");
+                    }
+                    string snapshotMessageType = RequiredString(payload, "snapshotKind") switch
+                    {
+                        "VEHICLE_BUSINESS_STATE" => "VehicleBusinessStateSnapshot",
+                        "CURRENT_STOP_WORKLIST" => "CurrentStopWorklistSnapshot",
+                        "UPCOMING_STOP_PLAN" => "UpcomingStopPlanSnapshot",
+                        "EXCEPTION_RECOVERY_SESSION" => "ExceptionRecoverySessionSnapshot",
+                        _ => throw new InvalidDataException("SnapshotAppliedAck snapshotKind is not supported.")
+                    };
+                    await store.AcknowledgeOutboundEnvelopeAsync(
+                        snapshotMessageId,
+                        snapshotMessageType,
+                        RequiredString(payload, "appliedContentSha256"),
+                        payload.GetProperty("appliedRevision").GetInt64(),
+                        timeProvider.GetUtcNow(),
+                        cancellationToken).ConfigureAwait(false);
+                    return string.Empty;
+                }
+            case "DurableAck":
+                {
+                    string acceptedMessageId = RequiredString(payload, "acceptedMessageId");
+                    if (RequiredString(root, "correlationId") != acceptedMessageId)
+                    {
+                        throw new InvalidDataException("DurableAck correlationId must identify the accepted message.");
+                    }
+                    await store.AcknowledgeOutboundEnvelopeAsync(
+                        acceptedMessageId,
+                        RequiredString(payload, "acceptedMessageType"),
+                        RequiredString(payload, "acceptedContentSha256"),
+                        appliedRevision: null,
+                        timeProvider.GetUtcNow(),
+                        cancellationToken).ConfigureAwait(false);
+                    return string.Empty;
+                }
+            case "ProtocolProblem":
+                {
+
+
+
+
+
+
+                    JsonElement problem = payload.GetProperty("problem");
+                    LogOnboardRejection(
+                        logger,
+                        NullableString(payload, "rejectedMessageType") ?? "(unstated)",
+                        RequiredString(payload, "rejectedMessageId"),
+                        RequiredString(problem, "reasonCode"),
+                        NullableString(problem, "fieldPath") ?? "(none)",
+                        NullableString(problem, "displayMessage") ?? "(none)");
+                    return string.Empty;
+                }
+            default:
+                throw new InvalidDataException($"Message type '{messageType}' is not supported by ControlServer.");
+        }
+    }
+
+
+
+
+
+
+ }, Member { Name = SessionReadinessLine, Body =     private string SessionReadinessLine(
+        SessionReadinessDecision decision,
+        string agvId,
+        long generation,
+        OnboardConnectionState state) =>
+        SerializeEnvelope(
+            "SessionReadiness", correlationId: null, agvId, generation,
+            new
+            {
+                readiness = decision.Readiness == SessionReadiness.Ready ? "READY" : "RECOVERY_REQUIRED",
+                decidedAt = timeProvider.GetUtcNow(),
+                reasonCodes = decision.Readiness == SessionReadiness.Ready
+                    ? Array.Empty<string>()
+                    : [ProtocolErrorCodes.ToSessionReadinessReasonCode(decision.ReasonCode)],
+                acceptedCapabilityVersion = state.CapabilityRevision ?? 0,
+                acceptedSafetyStateVersion = state.SafetyRevision ?? 0,
+                vehicleBusinessStateRevision = 1
+            });
+
+ }, ···]
+[xUnit.net 00:00:03.59]       Stack Trace:
+[xUnit.net 00:00:03.59]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\OnboardHandshakeReadinessArchitectureTests.cs(72,0): at ControlServer.Tests.OnboardHandshakeReadinessArchitectureTests.OnlyTheCombiningFunctionAndTheRecoveryReportsAnswerAppendAReadinessLine()
+[xUnit.net 00:00:03.59]            at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+[xUnit.net 00:00:03.59]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  Failed ControlServer.Tests.OnboardHandshakeReadinessArchitectureTests.AReadinessEnvelopeIsBuiltInOneMethodOnly [662 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ at index 1
+                                       ↓ (pos 60)
+Expected: ···"boardMessageProcessor.cs#RestoreAcceptedSnapshotVe"···
+Actual:   ···"boardMessageProcessor.cs#SerializeReadiness"
+                                       ↑ (pos 60)
+  Stack Trace:
+     at ControlServer.Tests.OnboardHandshakeReadinessArchitectureTests.AReadinessEnvelopeIsBuiltInOneMethodOnly() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\OnboardHandshakeReadinessArchitectureTests.cs:line 58
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  Failed ControlServer.Tests.OnboardHandshakeReadinessArchitectureTests.OnlyTheCombiningFunctionAndTheRecoveryReportsAnswerAppendAReadinessLine [6 ms]
+  Error Message:
+   Assert.Contains() Failure: Filter not matched in collection
+Collection: [Member { Name = ProcessAsync, Body =     public async Task<string> ProcessAsync(
+        string line,
+        OnboardConnectionState state,
+        CancellationToken cancellationToken)
+    {
+
+
+
+
+
+
+
+
+
+        dbContext.ChangeTracker.Clear();
+        using JsonDocument document = JsonDocument.Parse(line);
+        JsonElement root = document.RootElement;
+        string messageType = RequiredString(root, "messageType");
+        string messageId = RequiredString(root, "messageId");
+        string agvId = RequiredString(root, "agvId");
+        string contentHash = WireContentHash.Sha256(line);
+
+        if (messageType == "SessionHello")
+        {
+            string response;
+            try
+            {
+                ValidateSessionHello(root);
+                response = await store.CaptureFirstResponseAsync(
+                    messageId,
+                    messageType,
+                    RedactSessionCredential(line),
+                    contentHash,
+                    async () =>
+                    {
+                        long generation = await store.GetNextSessionGenerationAsync(agvId, cancellationToken)
+                            .ConfigureAwait(false);
+                        await store.BeginSessionRecoveryAsync(
+                            new SessionIdentity(
+                                agvId,
+                                generation,
+                                ProtocolCandidateIdentity.RepositoryCommit,
+                                ProtocolCandidateIdentity.ManifestSha256,
+                                ProtocolCandidateIdentity.ProfileId,
+                                ProtocolCandidateIdentity.ProtocolVersion),
+                            cancellationToken).ConfigureAwait(false);
+                        state.Readiness = SessionReadiness.RecoveryRequired;
+                        return SerializeEnvelope(
+                            "SessionAccepted",
+                            messageId,
+                            agvId,
+                            generation,
+                            new
+                            {
+                                sessionGeneration = generation,
+                                serverInstanceId = _serverInstanceId,
+                                serverBuildCommit = configuration["ControlServerBuild:commit"] ?? "WORKTREE_BUILD",
+                                acceptedProtocolReleaseIdentity = ProtocolEnvelope.ReleaseIdentity(),
+                                acceptedAt = timeProvider.GetUtcNow()
+                            });
+                    },
+                    timeProvider.GetUtcNow(),
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (ProtocolIdentityMismatchException error)
+            {
+                return SerializeEnvelope(
+                    "SessionRejected",
+                    messageId,
+                    agvId,
+                    sessionGeneration: null,
+                    new
+                    {
+                        problem = new
+                        {
+                            reasonCode = ServerReasonCodes.ProtocolReleaseIdentityMismatch,
+                            fieldPath = "payload.protocolReleaseIdentity",
+                            displayMessage = error.Message
+                        },
+                        expectedProtocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
+                        expectedProtocolReleaseIdentity = ProtocolEnvelope.ReleaseIdentity()
+                    });
+            }
+
+            using JsonDocument accepted = JsonDocument.Parse(response);
+            state.AgvId = agvId;
+            state.SessionGeneration = accepted.RootElement.GetProperty("sessionGeneration").GetInt64();
+            state.HandshakeCompleted = false;
+            state.SafetySnapshotRequestDue = false;
+            return response;
+        }
+
+        ValidateEnvelopeIdentity(root);
+        RequireCurrentSession(root, state, agvId);
+        string persistedRequest = messageType == "ExceptionRecoverySessionRequested"
+            ? RedactRecoveryAuthenticationProof(line)
+            : line;
+
+
+
+
+
+
+
+
+        bool reprocessedInTheNewSession = messageType is "RecoveryStateReport" or "OperationResult";
+        string capturedResponse = await store.CaptureFirstResponseAsync(
+            messageId,
+            messageType,
+            persistedRequest,
+            contentHash,
+            () => ProcessCurrentSessionMessageAsync(
+                root, state, messageType, messageId, contentHash, cancellationToken),
+            timeProvider.GetUtcNow(),
+            cancellationToken,
+            GenerationRebindReplayHash,
+            messageType == "RecoveryStateReport"
+                ? response => RestoreAcceptedSnapshotVersions(response, state)
+                : null,
+            reprocessedInTheNewSession
+                ? null
+                : firstResponse => RebindDurableAckAsync(
+                    firstResponse, messageType, messageId, agvId, contentHash, state, cancellationToken))
+            .ConfigureAwait(false);
+
+
+
+
+
+
+
+
+        bool triggersRecoverySend = state.HandshakeCompleted &&
+                                    (OnboardRecoveryCoordinator.IsRecoveryRequest(messageType) ||
+                                     OnboardRecoveryCoordinator.IsRecoveryResult(messageType) ||
+                                     messageType == "OperationResult" ||
+                                     messageType == "SlotOperationCommandRejected");
+        bool replaysPendingRecovery = messageType == "RecoveryStateReport";
+        if ((triggersRecoverySend || replaysPendingRecovery) && state.DeferOutboundUntilResponseWritten)
+        {
+            state.DeferredRecoveryLine = line;
+        }
+        else if (triggersRecoverySend)
+        {
+            await recoveryCoordinator.SendTriggeredCommandAsync(root, cancellationToken).ConfigureAwait(false);
+        }
+        else if (replaysPendingRecovery)
+        {
+            await recoveryCoordinator.ReplayPendingCommandsAsync(
+                agvId,
+                state.SessionGeneration!.Value,
+                cancellationToken).ConfigureAwait(false);
+        }
+        return AppendSafetySnapshotRequest(capturedResponse, state);
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ }, Member { Name = AppendSafetySnapshotRequest, Body =     private string AppendSafetySnapshotRequest(string response, OnboardConnectionState state)
+    {
+        if (!state.SafetySnapshotRequestDue)
+        {
+            return response;
+        }
+        state.SafetySnapshotRequestDue = false;
+        if (!state.HandshakeCompleted)
+        {
+            return response;
+        }
+        string request = SerializeEnvelope(
+            "SafetyStateSnapshotRequested",
+            correlationId: null,
+            state.AgvId!,
+            state.SessionGeneration,
+            new
+            {
+                requestedSafetyStateVersion = (long?)null,
+                reason = "VERSION_GAP"
+            });
+        return string.IsNullOrWhiteSpace(response) ? request : $"{response}\n{request}";
+    }
+
+ }, Member { Name = FlushDeferredOutboundAsync, Body =     public async Task FlushDeferredOutboundAsync(
+        OnboardConnectionState state,
+        CancellationToken cancellationToken)
+    {
+        string? line = state.DeferredRecoveryLine;
+        state.DeferredRecoveryLine = null;
+        if (line is null) return;
+        using JsonDocument document = JsonDocument.Parse(line);
+        JsonElement root = document.RootElement;
+        string messageType = RequiredString(root, "messageType");
+        if (OnboardRecoveryCoordinator.IsRecoveryRequest(messageType) ||
+            OnboardRecoveryCoordinator.IsRecoveryResult(messageType) ||
+            messageType == "OperationResult" ||
+            messageType == "SlotOperationCommandRejected")
+        {
+            await recoveryCoordinator.SendTriggeredCommandAsync(root, cancellationToken).ConfigureAwait(false);
+        }
+        else if (messageType == "RecoveryStateReport")
+        {
+            await recoveryCoordinator.ReplayPendingCommandsAsync(
+                RequiredString(root, "agvId"),
+                root.GetProperty("sessionGeneration").GetInt64(),
+                cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+ }, Member { Name = ProcessCurrentSessionMessageAsync, Body =     private async Task<string> ProcessCurrentSessionMessageAsync(
+        JsonElement root,
+        OnboardConnectionState state,
+        string messageType,
+        string messageId,
+        string contentHash,
+        CancellationToken cancellationToken)
+    {
+        JsonElement payload = root.GetProperty("payload");
+        string agvId = state.AgvId!;
+        long generation = state.SessionGeneration!.Value;
+        switch (messageType)
+        {
+            case "Heartbeat":
+                return SerializeEnvelope(
+                    "HeartbeatAck", messageId, agvId, generation,
+                    new { receivedHeartbeatMessageId = messageId, serverTime = timeProvider.GetUtcNow() });
+            case "CapabilitySnapshot":
+                {
+                    long revision = payload.GetProperty("capabilityVersion").GetInt64();
+                    string reportedFingerprint = RequiredString(
+                        payload, SlotConfigurationActivationDelivery.CapabilityFingerprintField);
+
+
+
+
+
+
+
+
+
+
+
+                    await activationDispatcher.ReconcileReportedFingerprintAsync(
+                        agvId,
+                        reportedFingerprint,
+                        timeProvider.GetUtcNow(),
+                        cancellationToken).ConfigureAwait(false);
+                    await store.ApplyCapabilitySnapshotAsync(
+                        agvId, generation, revision, contentHash, reportedFingerprint,
+                        cancellationToken).ConfigureAwait(false);
+                    state.CapabilityRevision = revision;
+                    return SnapshotAck(messageId, agvId, generation, "CAPABILITY", revision, contentHash);
+                }
+
+
+
+            case "SlotConfigurationActivationResult":
+                {
+                    await activationDispatcher.RecordResultAsync(
+                        SlotConfigurationActivationWire.Result(payload),
+                        cancellationToken).ConfigureAwait(false);
+                    return DurableAck(messageType, messageId, agvId, generation, contentHash);
+                }
+
+
+
+            case "OnboardAlarmSnapshot":
+                {
+                    long revision = OnboardAlarmSnapshotWire.Revision(payload);
+                    HashSet<string> overdueBefore = OverdueIdentities(
+                        await alarmStore.ReadExpectedActionOverdueAsync(agvId, cancellationToken).ConfigureAwait(false));
+                    await alarmStore.RecordSnapshotAsync(
+                        OnboardAlarmSnapshotWire.Read(agvId, payload),
+                        generation,
+                        timeProvider.GetUtcNow(),
+                        cancellationToken).ConfigureAwait(false);
+
+                    HashSet<string> overdueAfter = OverdueIdentities(
+                        await alarmStore.ReadExpectedActionOverdueAsync(agvId, cancellationToken).ConfigureAwait(false));
+                    if (!overdueAfter.IsSubsetOf(overdueBefore))
+                    {
+                        state.SafetySnapshotRequestDue = true;
+                    }
+                    return SnapshotAck(messageId, agvId, generation, "ONBOARD_ALARM", revision, contentHash);
+                }
+            case "SafetyStateSnapshot":
+                {
+                    long revision = payload.GetProperty("safetyStateVersion").GetInt64();
+                    JsonElement safety = payload.GetProperty("safety");
+                    bool departureSafe = safety.GetProperty("departureSafe").GetBoolean();
+
+
+
+
+
+
+
+
+
+
+
+
+                    bool midSession = state.HandshakeCompleted &&
+                                      await store.HasSafetyBaselineAsync(agvId, generation, cancellationToken)
+                                          .ConfigureAwait(false);
+                    await store.ApplySafetySnapshotAsync(
+                        agvId, generation, revision, departureSafe, contentHash, cancellationToken,
+                        SafetyReasonCodes(safety), SafetyUnknownPresent(safety)).ConfigureAwait(false);
+                    state.SafetyRevision = revision;
+                    string snapshotAck = SnapshotAck(messageId, agvId, generation, "SAFETY_STATE", revision, contentHash);
+                    if (!midSession)
+                    {
+                        return snapshotAck;
+                    }
+                    SessionReadinessDecision snapshotDecision = await store.DecideReadinessAsync(
+                        agvId, generation, cancellationToken).ConfigureAwait(false);
+                    state.Readiness = snapshotDecision.Readiness;
+                    return $"{snapshotAck}\n{SerializeReadiness(agvId, generation, state, snapshotDecision)}";
+                }
+            case "RecoveryStateReport":
+                {
+                    string reportId = RequiredString(payload, "reportId");
+                    long forcedGeneration = payload.GetProperty("forcedRecoveryGeneration").GetInt64();
+                    List<string> pendingAttempts = [];
+                    if (payload.TryGetProperty("unsettledSlotOperationAttemptId", out JsonElement attempt) &&
+                        attempt.ValueKind == JsonValueKind.String)
+                    {
+                        pendingAttempts.Add(attempt.GetString()!);
+                    }
+                    string[] pendingResults = payload.GetProperty("pendingResults")
+                        .EnumerateArray()
+                        .Select(item => RequiredString(item, "messageId"))
+                        .ToArray();
+                    string? unsettledAttemptId = payload.GetProperty("unsettledSlotOperationAttemptId").ValueKind == JsonValueKind.Null
+                        ? null
+                        : RequiredString(payload, "unsettledSlotOperationAttemptId");
+                    string? checkpoint = payload.GetProperty("provenRecoveryCheckpoint").ValueKind == JsonValueKind.Null
+                        ? null
+                        : RequiredString(payload, "provenRecoveryCheckpoint");
+                    int[] activeUnlockSlots = payload.GetProperty("activeUnlockSlots")
+                        .EnumerateArray().Select(item => item.GetInt32()).ToArray();
+                    await store.ApplyRecoveryReportAsync(
+                        agvId, generation, reportId, forcedGeneration,
+                        unsettledAttemptId, checkpoint, activeUnlockSlots,
+                        pendingAttempts, pendingResults, cancellationToken).ConfigureAwait(false);
+                    SessionReadinessDecision decision = await store.DecideReadinessAsync(
+                        agvId, generation, cancellationToken).ConfigureAwait(false);
+                    state.Readiness = decision.Readiness;
+
+
+                    state.HandshakeCompleted = true;
+                    string ack = SerializeEnvelope(
+                        "DurableAck", messageId, agvId, generation,
+                        new
+                        {
+                            acceptedMessageId = messageId,
+                            acceptedMessageType = messageType,
+                            acceptedContentSha256 = contentHash,
+                            durablyAcceptedAt = timeProvider.GetUtcNow()
+                        });
+                    return $"{ack}\n{SessionReadinessLine(decision, agvId, generation, state)}";
+                }
+            case "OperationProgress":
+            case "PreDepartureSafetyCheckResult":
+            case "SublotSubmitted":
+                return DurableAck(messageType, messageId, agvId, generation, contentHash);
+            case "SlotOperationCommandRejected":
+
+
+
+                await recoveryCoordinator.ObserveCommandRejectedAsync(root, cancellationToken).ConfigureAwait(false);
+                return DurableAck(messageType, messageId, agvId, generation, contentHash);
+            case "OperationResult":
+                {
+                    string attemptId = RequiredString(payload, "slotOperationAttemptId");
+                    string demandId = RequiredString(payload, "demandId");
+                    SlotOperationType operationType = RequiredString(payload, "operationType") switch
+                    {
+                        "LOAD" => SlotOperationType.Load,
+                        "UNLOAD" => SlotOperationType.Unload,
+                        _ => throw new InvalidDataException("OperationResult operationType is not supported.")
+                    };
+                    string overallOutcome = RequiredString(payload, "overallOutcome");
+                    JsonElement[] slotResults = payload.GetProperty("slotResults").EnumerateArray().ToArray();
+                    SlotPhysicalEvidence[] evidence = slotResults
+                        .Select(item => new SlotPhysicalEvidence(
+                            item.GetProperty("slotNo").GetInt32(),
+                            RequiredString(item, "finalPhysicalState") switch
+                            {
+                                "EMPTY" => SlotBusinessState.Empty,
+                                "OCCUPIED" => SlotBusinessState.Occupied,
+                                "UNKNOWN" => SlotBusinessState.Unknown,
+                                _ => throw new InvalidDataException(
+                                    "OperationResult finalPhysicalState is not supported.")
+                            },
+                            RequiredString(item, "lockState") == "LOCKED",
+                            RequiredString(item, "unlockOutputState") == "RESET"))
+                        .ToArray();
+                    string resultContentSha256 = RequiredString(payload, "resultContentSha256");
+                    string computedResultHash = ComputeOperationResultContentHash(payload);
+                    if (!string.Equals(resultContentSha256, computedResultHash, StringComparison.Ordinal))
+                    {
+                        throw new ProtocolContentConflictException(
+                            "OperationResult resultContentSha256 does not match its business content.");
+                    }
+                    long forcedGeneration = await store.GetOperationForcedRecoveryGenerationAsync(
+                        attemptId, cancellationToken).ConfigureAwait(false);
+                    OperationResultReceipt receipt = await ReceiptAsync(demandId, cancellationToken)
+                        .ConfigureAwait(false);
+                    OperationResultDisposition disposition = await store.ApplyOperationResultAsync(
+                        new StationOperationResult(
+                            messageId,
+                            attemptId,
+                            demandId,
+                            operationType,
+                            overallOutcome,
+                            evidence,
+                            slotResults.All(item => RequiredString(item, "outcome") == "COMPLETED"),
+                            payload.GetProperty("observedAt").GetDateTimeOffset(),
+                            resultContentSha256,
+                            contentHash,
+                            SlotOutcomeReport.FromSlotResults(payload.GetProperty("slotResults"))),
+                        agvId,
+                        forcedGeneration,
+                        cancellationToken,
+                        receipt).ConfigureAwait(false);
+                    if (disposition is OperationResultDisposition.FailedBeforeStationDeadline
+                        or OperationResultDisposition.FailureReasonWithoutTerminalState)
+                    {
+
+
+
+                        LogUnsettleableDeterminateFailure(
+                            logger,
+                            agvId,
+                            demandId,
+                            attemptId,
+                            disposition == OperationResultDisposition.FailedBeforeStationDeadline
+                                ? DeterminateLoadFailure.FailedBeforeStationDeadline
+                                : DeterminateLoadFailure.ReasonWithoutTerminalState,
+                            receipt.ReceivedAt,
+                            receipt.StationDepartureDeadline);
+                    }
+                    await recoveryCoordinator.ObserveOperationResultAsync(
+                        attemptId, disposition, cancellationToken).ConfigureAwait(false);
+
+
+                    await store.ReconcileReportedPendingResultAsync(
+                        agvId, generation, messageId, cancellationToken).ConfigureAwait(false);
+                    await store.SettleReportedAttemptsAsync(agvId, generation, cancellationToken)
+                        .ConfigureAwait(false);
+
+
+
+
+
+
+                    SessionReadinessDecision resultDecision = await store.DecideReadinessAsync(
+                        agvId, generation, cancellationToken).ConfigureAwait(false);
+                    string resultAck = DurableAck(messageType, messageId, agvId, generation, contentHash);
+
+
+
+
+
+
+
+
+                    if (resultDecision.Readiness == state.Readiness)
+                    {
+                        return resultAck;
+                    }
+                    state.Readiness = resultDecision.Readiness;
+                    return $"{resultAck}\n{SessionReadinessLine(resultDecision, agvId, generation, state)}";
+                }
+            case "HardwareRecoveryRecordSubmitted":
+                {
+                    string recordResult = await recoveryCoordinator.ProcessRequestAsync(root, contentHash, cancellationToken)
+                        .ConfigureAwait(false);
+
+
+
+                    SessionReadinessDecision recordDecision = await store.DecideReadinessAsync(
+                        agvId, generation, cancellationToken).ConfigureAwait(false);
+                    if (recordDecision.Readiness == state.Readiness)
+                    {
+                        return recordResult;
+                    }
+                    state.Readiness = recordDecision.Readiness;
+                    return $"{recordResult}\n{SessionReadinessLine(recordDecision, agvId, generation, state)}";
+                }
+            case "ExceptionRecoverySessionRequested":
+            case "RecoveryActionSubmitted":
+            case "LoadCancellationStartRequested":
+            case "LoadCompensationRequested":
+            case "LoadCorrectionRequested":
+                return await recoveryCoordinator.ProcessRequestAsync(root, contentHash, cancellationToken)
+                    .ConfigureAwait(false);
+            case "FaultCargoRecoveryResult":
+            case "ForcedMechanicalRecoveryResult":
+            case "LoadCancellationResult":
+            case "LoadCompensationResult":
+            case "LoadCorrectionResult":
+                {
+                    string recoveryAck = await recoveryCoordinator.ProcessResultAsync(root, contentHash, cancellationToken)
+                        .ConfigureAwait(false);
+
+
+
+
+                    await store.SettleReportedAttemptsAsync(agvId, generation, cancellationToken)
+                        .ConfigureAwait(false);
+                    SessionReadinessDecision recoveryDecision = await store.DecideReadinessAsync(
+                        agvId, generation, cancellationToken).ConfigureAwait(false);
+                    if (recoveryDecision.Readiness == state.Readiness)
+                    {
+                        return recoveryAck;
+                    }
+                    state.Readiness = recoveryDecision.Readiness;
+                    return $"{recoveryAck}\n{SessionReadinessLine(recoveryDecision, agvId, generation, state)}";
+                }
+            case "ManualChargingReturnToServiceRequested":
+                {
+
+
+
+
+                    string requestId = RequiredUuid(payload, "requestId");
+                    ManualChargingReturnToServiceDecision decision =
+                        await store.DecideManualChargingReturnToServiceAsync(
+                            new ManualChargingReturnToServiceRequest(
+                                requestId,
+                                agvId,
+                                generation,
+                                messageId,
+                                WireContentHash.Sha256(payload.GetRawText()),
+                                RequiredString(payload.GetProperty("administrator"), "operatorId"),
+                                RequiredString(payload, "administratorRole"),
+                                RequiredString(payload, "reason"),
+                                NullableDouble(payload, "observedBatteryPercent")),
+                            cancellationToken).ConfigureAwait(false);
+                    return SerializeEnvelope(
+                        "ManualChargingReturnToServiceResult", messageId, agvId, generation,
+                        new
+                        {
+                            requestId,
+                            outcome = decision.Outcome,
+                            problem = decision.ProblemReasonCode is null
+                                ? null
+                                : new
+                                {
+                                    reasonCode = decision.ProblemReasonCode,
+                                    fieldPath = decision.ProblemFieldPath,
+                                    displayMessage = decision.ProblemDisplayMessage
+                                },
+                            vehicleBusinessStateRevision = decision.VehicleBusinessStateRevision
+                        });
+                }
+            case "SafetyStateChanged":
+                {
+                    long revision = payload.GetProperty("safetyStateVersion").GetInt64();
+                    JsonElement safety = payload.GetProperty("safety");
+                    bool departureSafe = safety.GetProperty("departureSafe").GetBoolean();
+                    await store.ApplySafetySnapshotAsync(
+                        agvId, generation, revision, departureSafe, contentHash, cancellationToken,
+                        SafetyReasonCodes(safety), SafetyUnknownPresent(safety))
+                        .ConfigureAwait(false);
+                    state.SafetyRevision = revision;
+                    SessionReadinessDecision decision = await store.DecideReadinessAsync(
+                        agvId, generation, cancellationToken).ConfigureAwait(false);
+                    state.Readiness = decision.Readiness;
+                    if (await AffectsAnOverdueSlotAsync(agvId, payload, cancellationToken).ConfigureAwait(false))
+                    {
+                        state.SafetySnapshotRequestDue = true;
+                    }
+                    string ack = DurableAck(messageType, messageId, agvId, generation, contentHash);
+                    string readiness = SerializeReadiness(agvId, generation, state, decision);
+                    return $"{ack}\n{readiness}";
+                }
+            case "SnapshotAppliedAck":
+                {
+                    string snapshotMessageId = RequiredString(payload, "snapshotMessageId");
+                    if (RequiredString(root, "correlationId") != snapshotMessageId)
+                    {
+                        throw new InvalidDataException("SnapshotAppliedAck correlationId must identify the snapshot.");
+                    }
+                    string snapshotMessageType = RequiredString(payload, "snapshotKind") switch
+                    {
+                        "VEHICLE_BUSINESS_STATE" => "VehicleBusinessStateSnapshot",
+                        "CURRENT_STOP_WORKLIST" => "CurrentStopWorklistSnapshot",
+                        "UPCOMING_STOP_PLAN" => "UpcomingStopPlanSnapshot",
+                        "EXCEPTION_RECOVERY_SESSION" => "ExceptionRecoverySessionSnapshot",
+                        _ => throw new InvalidDataException("SnapshotAppliedAck snapshotKind is not supported.")
+                    };
+                    await store.AcknowledgeOutboundEnvelopeAsync(
+                        snapshotMessageId,
+                        snapshotMessageType,
+                        RequiredString(payload, "appliedContentSha256"),
+                        payload.GetProperty("appliedRevision").GetInt64(),
+                        timeProvider.GetUtcNow(),
+                        cancellationToken).ConfigureAwait(false);
+                    return string.Empty;
+                }
+            case "DurableAck":
+                {
+                    string acceptedMessageId = RequiredString(payload, "acceptedMessageId");
+                    if (RequiredString(root, "correlationId") != acceptedMessageId)
+                    {
+                        throw new InvalidDataException("DurableAck correlationId must identify the accepted message.");
+                    }
+                    await store.AcknowledgeOutboundEnvelopeAsync(
+                        acceptedMessageId,
+                        RequiredString(payload, "acceptedMessageType"),
+                        RequiredString(payload, "acceptedContentSha256"),
+                        appliedRevision: null,
+                        timeProvider.GetUtcNow(),
+                        cancellationToken).ConfigureAwait(false);
+                    return string.Empty;
+                }
+            case "ProtocolProblem":
+                {
+
+
+
+
+
+
+                    JsonElement problem = payload.GetProperty("problem");
+                    LogOnboardRejection(
+                        logger,
+                        NullableString(payload, "rejectedMessageType") ?? "(unstated)",
+                        RequiredString(payload, "rejectedMessageId"),
+                        RequiredString(problem, "reasonCode"),
+                        NullableString(problem, "fieldPath") ?? "(none)",
+                        NullableString(problem, "displayMessage") ?? "(none)");
+                    return string.Empty;
+                }
+            default:
+                throw new InvalidDataException($"Message type '{messageType}' is not supported by ControlServer.");
+        }
+    }
+
+
+
+
+
+
+ }, Member { Name = SessionReadinessLine, Body =     private string SessionReadinessLine(
+        SessionReadinessDecision decision,
+        string agvId,
+        long generation,
+        OnboardConnectionState state) =>
+        SerializeEnvelope(
+            "SessionReadiness", correlationId: null, agvId, generation,
+            new
+            {
+                readiness = decision.Readiness == SessionReadiness.Ready ? "READY" : "RECOVERY_REQUIRED",
+                decidedAt = timeProvider.GetUtcNow(),
+                reasonCodes = decision.Readiness == SessionReadiness.Ready
+                    ? Array.Empty<string>()
+                    : [ProtocolErrorCodes.ToSessionReadinessReasonCode(decision.ReasonCode)],
+                acceptedCapabilityVersion = state.CapabilityRevision ?? 0,
+                acceptedSafetyStateVersion = state.SafetyRevision ?? 0,
+                vehicleBusinessStateRevision = 1
+            });
+
+ }, ···]
+  Stack Trace:
+     at ControlServer.Tests.OnboardHandshakeReadinessArchitectureTests.OnlyTheCombiningFunctionAndTheRecoveryReportsAnswerAppendAReadinessLine() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\OnboardHandshakeReadinessArchitectureTests.cs:line 72
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+[xUnit.net 00:00:05.80]     ControlServer.Tests.RecoveryStateMachineG2Tests.ASafetyChangeFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledged(deferOutbound: True) [FAIL]
+[xUnit.net 00:00:05.80]       Assert.Equal() Failure: Collections differ
+[xUnit.net 00:00:05.80]       Expected: ["DurableAck"]
+[xUnit.net 00:00:05.80]       Actual:   ["DurableAck", "SessionReadiness"]
+[xUnit.net 00:00:05.80]                                ↑ (pos 1)
+[xUnit.net 00:00:05.80]       Stack Trace:
+[xUnit.net 00:00:05.80]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(4756,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.ASafetyChangeFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledged(Boolean deferOutbound)
+[xUnit.net 00:00:05.80]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(4757,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.ASafetyChangeFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledged(Boolean deferOutbound)
+[xUnit.net 00:00:05.80]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(4757,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.ASafetyChangeFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledged(Boolean deferOutbound)
+[xUnit.net 00:00:05.80]         --- End of stack trace from previous location ---
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.ASafetyChangeFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledged(deferOutbound: True) [2 s]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+Expected: ["DurableAck"]
+Actual:   ["DurableAck", "SessionReadiness"]
+                         ↑ (pos 1)
+  Stack Trace:
+     at ControlServer.Tests.RecoveryStateMachineG2Tests.ASafetyChangeFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledged(Boolean deferOutbound) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4756
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.ASafetyChangeFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledged(Boolean deferOutbound) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4757
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.ASafetyChangeFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledged(Boolean deferOutbound) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4757
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:06.03]     ControlServer.Tests.RecoveryStateMachineG2Tests.ASafetyChangeFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledged(deferOutbound: False) [FAIL]
+[xUnit.net 00:00:06.03]       Assert.Equal() Failure: Collections differ
+[xUnit.net 00:00:06.03]       Expected: ["DurableAck"]
+[xUnit.net 00:00:06.03]       Actual:   ["DurableAck", "SessionReadiness"]
+[xUnit.net 00:00:06.03]                                ↑ (pos 1)
+[xUnit.net 00:00:06.03]       Stack Trace:
+[xUnit.net 00:00:06.03]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(4756,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.ASafetyChangeFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledged(Boolean deferOutbound)
+[xUnit.net 00:00:06.03]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(4757,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.ASafetyChangeFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledged(Boolean deferOutbound)
+[xUnit.net 00:00:06.03]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(4757,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.ASafetyChangeFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledged(Boolean deferOutbound)
+[xUnit.net 00:00:06.03]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:06.86]     ControlServer.Tests.RecoveryStateMachineG2Tests.AnOperationResultInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(deferOutbound: False) [FAIL]
+[xUnit.net 00:00:06.86]       Assert.Equal() Failure: Collections differ
+[xUnit.net 00:00:06.86]       Expected: ["DurableAck"]
+[xUnit.net 00:00:06.87]       Actual:   ["DurableAck", "SessionReadiness"]
+[xUnit.net 00:00:06.87]                                ↑ (pos 1)
+[xUnit.net 00:00:06.87]       Stack Trace:
+[xUnit.net 00:00:06.87]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(4797,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.AnOperationResultInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound)
+[xUnit.net 00:00:06.87]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(4798,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.AnOperationResultInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound)
+[xUnit.net 00:00:06.87]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(4798,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.AnOperationResultInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound)
+[xUnit.net 00:00:06.87]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:07.07]     ControlServer.Tests.RecoveryStateMachineG2Tests.AnOperationResultInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(deferOutbound: True) [FAIL]
+[xUnit.net 00:00:07.07]       Assert.Equal() Failure: Collections differ
+[xUnit.net 00:00:07.07]       Expected: ["DurableAck"]
+[xUnit.net 00:00:07.07]       Actual:   ["DurableAck", "SessionReadiness"]
+[xUnit.net 00:00:07.07]                                ↑ (pos 1)
+[xUnit.net 00:00:07.07]       Stack Trace:
+[xUnit.net 00:00:07.07]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(4797,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.AnOperationResultInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound)
+[xUnit.net 00:00:07.07]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(4798,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.AnOperationResultInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound)
+[xUnit.net 00:00:07.07]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(4798,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.AnOperationResultInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound)
+[xUnit.net 00:00:07.07]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:07.28]     ControlServer.Tests.RecoveryStateMachineG2Tests.AMessageArrivingASecondTimeInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(deferOutbound: False) [FAIL]
+[xUnit.net 00:00:07.28]       Assert.Equal() Failure: Collections differ
+[xUnit.net 00:00:07.28]       Expected: ["DurableAck"]
+[xUnit.net 00:00:07.28]       Actual:   ["DurableAck", "SessionReadiness"]
+[xUnit.net 00:00:07.28]                                ↑ (pos 1)
+[xUnit.net 00:00:07.28]       Stack Trace:
+[xUnit.net 00:00:07.28]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(4890,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.AMessageArrivingASecondTimeInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound)
+[xUnit.net 00:00:07.28]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(4891,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.AMessageArrivingASecondTimeInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound)
+[xUnit.net 00:00:07.28]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(4891,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.AMessageArrivingASecondTimeInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound)
+[xUnit.net 00:00:07.28]         --- End of stack trace from previous location ---
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.ASafetyChangeFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledged(deferOutbound: False) [219 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+Expected: ["DurableAck"]
+Actual:   ["DurableAck", "SessionReadiness"]
+                         ↑ (pos 1)
+  Stack Trace:
+     at ControlServer.Tests.RecoveryStateMachineG2Tests.ASafetyChangeFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledged(Boolean deferOutbound) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4756
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.ASafetyChangeFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledged(Boolean deferOutbound) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4757
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.ASafetyChangeFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledged(Boolean deferOutbound) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4757
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AnOperationResultInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(deferOutbound: False) [828 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+Expected: ["DurableAck"]
+Actual:   ["DurableAck", "SessionReadiness"]
+                         ↑ (pos 1)
+  Stack Trace:
+     at ControlServer.Tests.RecoveryStateMachineG2Tests.AnOperationResultInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4797
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.AnOperationResultInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4798
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.AnOperationResultInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4798
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AnOperationResultInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(deferOutbound: True) [197 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+Expected: ["DurableAck"]
+Actual:   ["DurableAck", "SessionReadiness"]
+                         ↑ (pos 1)
+  Stack Trace:
+     at ControlServer.Tests.RecoveryStateMachineG2Tests.AnOperationResultInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4797
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.AnOperationResultInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4798
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.AnOperationResultInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4798
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AMessageArrivingASecondTimeInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(deferOutbound: False) [202 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+Expected: ["DurableAck"]
+Actual:   ["DurableAck", "SessionReadiness"]
+                         ↑ (pos 1)
+  Stack Trace:
+     at ControlServer.Tests.RecoveryStateMachineG2Tests.AMessageArrivingASecondTimeInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4890
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.AMessageArrivingASecondTimeInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4891
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.AMessageArrivingASecondTimeInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4891
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:07.47]     ControlServer.Tests.RecoveryStateMachineG2Tests.AMessageArrivingASecondTimeInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(deferOutbound: True) [FAIL]
+[xUnit.net 00:00:07.47]       Assert.Equal() Failure: Collections differ
+[xUnit.net 00:00:07.47]       Expected: ["DurableAck"]
+[xUnit.net 00:00:07.47]       Actual:   ["DurableAck", "SessionReadiness"]
+[xUnit.net 00:00:07.47]                                ↑ (pos 1)
+[xUnit.net 00:00:07.47]       Stack Trace:
+[xUnit.net 00:00:07.47]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(4890,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.AMessageArrivingASecondTimeInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound)
+[xUnit.net 00:00:07.47]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(4891,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.AMessageArrivingASecondTimeInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound)
+[xUnit.net 00:00:07.47]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(4891,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.AMessageArrivingASecondTimeInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound)
+[xUnit.net 00:00:07.47]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:08.18]     ControlServer.Tests.RecoveryStateMachineG2Tests.ARecoveryResultFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(deferOutbound: False) [FAIL]
+[xUnit.net 00:00:08.18]       Assert.Equal() Failure: Collections differ
+[xUnit.net 00:00:08.18]       Expected: ["DurableAck"]
+[xUnit.net 00:00:08.18]       Actual:   ["DurableAck", "SessionReadiness"]
+[xUnit.net 00:00:08.18]                                ↑ (pos 1)
+[xUnit.net 00:00:08.18]       Stack Trace:
+[xUnit.net 00:00:08.19]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(4840,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.ARecoveryResultFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound)
+[xUnit.net 00:00:08.19]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(4842,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.ARecoveryResultFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound)
+[xUnit.net 00:00:08.19]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(4842,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.ARecoveryResultFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound)
+[xUnit.net 00:00:08.19]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:08.40]     ControlServer.Tests.RecoveryStateMachineG2Tests.ARecoveryResultFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(deferOutbound: True) [FAIL]
+[xUnit.net 00:00:08.40]       Assert.Equal() Failure: Collections differ
+[xUnit.net 00:00:08.40]       Expected: ["DurableAck"]
+[xUnit.net 00:00:08.40]       Actual:   ["DurableAck", "SessionReadiness"]
+[xUnit.net 00:00:08.40]                                ↑ (pos 1)
+[xUnit.net 00:00:08.40]       Stack Trace:
+[xUnit.net 00:00:08.40]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(4840,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.ARecoveryResultFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound)
+[xUnit.net 00:00:08.40]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(4842,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.ARecoveryResultFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound)
+[xUnit.net 00:00:08.40]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(4842,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.ARecoveryResultFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound)
+[xUnit.net 00:00:08.40]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:08.55]     ControlServer.Tests.RecoveryStateMachineG2Tests.AVehicleNotReadyOnItsOwnOrderHandshakesWithoutAnExtraReadinessAndIsStillToldAfterwards [FAIL]
+[xUnit.net 00:00:08.55]       Assert.Equal() Failure: Collections differ
+[xUnit.net 00:00:08.55]       Expected: ["DurableAck"]
+[xUnit.net 00:00:08.55]       Actual:   ["DurableAck", "SessionReadiness"]
+[xUnit.net 00:00:08.55]                                ↑ (pos 1)
+[xUnit.net 00:00:08.55]       Stack Trace:
+[xUnit.net 00:00:08.55]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(5128,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.AVehicleNotReadyOnItsOwnOrderHandshakesWithoutAnExtraReadinessAndIsStillToldAfterwards()
+[xUnit.net 00:00:08.55]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(5144,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.AVehicleNotReadyOnItsOwnOrderHandshakesWithoutAnExtraReadinessAndIsStillToldAfterwards()
+[xUnit.net 00:00:08.55]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(5144,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.AVehicleNotReadyOnItsOwnOrderHandshakesWithoutAnExtraReadinessAndIsStillToldAfterwards()
+[xUnit.net 00:00:08.55]         --- End of stack trace from previous location ---
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AMessageArrivingASecondTimeInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(deferOutbound: True) [181 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+Expected: ["DurableAck"]
+Actual:   ["DurableAck", "SessionReadiness"]
+                         ↑ (pos 1)
+  Stack Trace:
+     at ControlServer.Tests.RecoveryStateMachineG2Tests.AMessageArrivingASecondTimeInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4890
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.AMessageArrivingASecondTimeInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4891
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.AMessageArrivingASecondTimeInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4891
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.ARecoveryResultFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(deferOutbound: False) [712 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+Expected: ["DurableAck"]
+Actual:   ["DurableAck", "SessionReadiness"]
+                         ↑ (pos 1)
+  Stack Trace:
+     at ControlServer.Tests.RecoveryStateMachineG2Tests.ARecoveryResultFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4840
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.ARecoveryResultFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4842
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.ARecoveryResultFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4842
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.ARecoveryResultFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(deferOutbound: True) [210 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+Expected: ["DurableAck"]
+Actual:   ["DurableAck", "SessionReadiness"]
+                         ↑ (pos 1)
+  Stack Trace:
+     at ControlServer.Tests.RecoveryStateMachineG2Tests.ARecoveryResultFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4840
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.ARecoveryResultFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4842
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.ARecoveryResultFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(Boolean deferOutbound) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4842
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AVehicleNotReadyOnItsOwnOrderHandshakesWithoutAnExtraReadinessAndIsStillToldAfterwards [141 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+Expected: ["DurableAck"]
+Actual:   ["DurableAck", "SessionReadiness"]
+                         ↑ (pos 1)
+  Stack Trace:
+     at ControlServer.Tests.RecoveryStateMachineG2Tests.AVehicleNotReadyOnItsOwnOrderHandshakesWithoutAnExtraReadinessAndIsStillToldAfterwards() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 5128
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.AVehicleNotReadyOnItsOwnOrderHandshakesWithoutAnExtraReadinessAndIsStillToldAfterwards() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 5144
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.AVehicleNotReadyOnItsOwnOrderHandshakesWithoutAnExtraReadinessAndIsStillToldAfterwards() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 5144
+--- End of stack trace from previous location ---
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.InsideTheReconnectHandshakeReadinessCannotChangeBeforeTheRecoveryReport(resentResultCompleted: False) [187 ms]
+[xUnit.net 00:00:09.89]     ControlServer.Tests.RecoveryStateMachineG2Tests.AHardwareRecoveryRecordInsideTheReconnectHandshakeIsAnsweredWithoutReadinessEvenWhenItChangesReadiness [FAIL]
+[xUnit.net 00:00:09.89]       Assert.Equal() Failure: Collections differ
+[xUnit.net 00:00:09.89]       Expected: ["HardwareRecoveryRecordResult"]
+[xUnit.net 00:00:09.89]       Actual:   ["HardwareRecoveryRecordResult", "SessionReadiness"]
+[xUnit.net 00:00:09.89]                                                  ↑ (pos 1)
+[xUnit.net 00:00:09.89]       Stack Trace:
+[xUnit.net 00:00:09.89]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(4932,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.AHardwareRecoveryRecordInsideTheReconnectHandshakeIsAnsweredWithoutReadinessEvenWhenItChangesReadiness()
+[xUnit.net 00:00:09.89]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(4933,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.AHardwareRecoveryRecordInsideTheReconnectHandshakeIsAnsweredWithoutReadinessEvenWhenItChangesReadiness()
+[xUnit.net 00:00:09.89]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs(4933,0): at ControlServer.Tests.RecoveryStateMachineG2Tests.AHardwareRecoveryRecordInsideTheReconnectHandshakeIsAnsweredWithoutReadinessEvenWhenItChangesReadiness()
+[xUnit.net 00:00:09.89]         --- End of stack trace from previous location ---
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.InsideTheReconnectHandshakeReadinessCannotChangeBeforeTheRecoveryReport(resentResultCompleted: True) [197 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AfterTheReconnectHandshakeTheSameMessagesStillCarryReadiness(messageType: "OperationResult") [174 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AfterTheReconnectHandshakeTheSameMessagesStillCarryReadiness(messageType: "SafetyStateChanged") [143 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.TheRecoveryReportAnnouncesTheReadinessAResendInsideTheHandshakeLeftBehind(resendsUnknownResult: False, reported: "READY") [147 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.TheRecoveryReportAnnouncesTheReadinessAResendInsideTheHandshakeLeftBehind(resendsUnknownResult: True, reported: "RECOVERY_REQUIRED") [162 ms]
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AHardwareRecoveryRecordInsideTheReconnectHandshakeIsAnsweredWithoutReadinessEvenWhenItChangesReadiness [305 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+Expected: ["HardwareRecoveryRecordResult"]
+Actual:   ["HardwareRecoveryRecordResult", "SessionReadiness"]
+                                           ↑ (pos 1)
+  Stack Trace:
+     at ControlServer.Tests.RecoveryStateMachineG2Tests.AHardwareRecoveryRecordInsideTheReconnectHandshakeIsAnsweredWithoutReadinessEvenWhenItChangesReadiness() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4932
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.AHardwareRecoveryRecordInsideTheReconnectHandshakeIsAnsweredWithoutReadinessEvenWhenItChangesReadiness() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4933
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.AHardwareRecoveryRecordInsideTheReconnectHandshakeIsAnsweredWithoutReadinessEvenWhenItChangesReadiness() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs340-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 4933
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:40.82]   Finished:    ControlServer.Tests (ID = '9fb9a4ab0d84790bc3c068db6d32933a49ead250b57fcfa71669a5fbed036549')
+
+Test Run Failed.
+Total tests: 18
+     Passed: 6
+     Failed: 12
+ Total time: 41.3537 Seconds
