@@ -1,0 +1,65 @@
+M01 guard 1 (delay) off
+  totals: Failed! 9 191
+  red: ControlServer.Tests.Batch7DemandReleaseServiceTests.APickupOrderEndedInRiotIsNeitherReleasedNorRedispatched(orderState:
+  red: ControlServer.Tests.InTransitOrderStallTests.AnOrderEndedWhileTheSessionIsNotReadyIsNamed
+  red: ControlServer.Tests.OwnOrderRebuildTests.AnOrderCancelledInRiotIsRebuiltForTheSameVehicleAndDemandOnceTheDelayIsOver
+  red: ControlServer.Tests.OwnOrderRebuildTests.AnOrderCancelledWhileTheSessionIsNotReadyOnItsOwnOrderIsRebuiltBehindTheGate
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderStillRebuilds(cargo:
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultOnAnEmptyVehicleKeepsTheDemandAndRebuildsTheOrder
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultWithCargoOnBoardRebuildsTheOrderToDeliverIt
+M02 guard 2 (vehicle condition) off
+  totals: Failed! 8 192
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsWhileTheVehicleMayNotMoveAndIsMadeOnceItMay(condition:
+  red: ControlServer.Tests.OwnOrderRebuildTests.ASilentSessionDoesNotOverwriteARebuildThatWaitsForTheVehicle
+M03 guard 3 (second ending within the window) off
+  totals: Failed! 2 198
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuiltOrderCancelledAgainSoonIsNotRebuiltASecondTime(withinTheWindow:
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AFaultClearedAgainSoonAfterTheRebuildStopsTheRebuilding
+M04 #299's release on clearance restored (nothing on board: release and close; cargo: Blocked for a person)
+  totals: Failed! 8 192
+  red: ControlServer.Tests.VehicleFaultRecoveryEndpointsTests.AClearanceIsOkAndTheSameOneAgainSaysItWasAlreadyMade
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceCutShortLeavesNothingBehindAndCanBeMadeAgain
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderStillRebuilds(cargo:
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultKeepsTheJourneySoNoClosureIsSentAndTheOrderIsRebuilt
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultOnAnEmptyVehicleKeepsTheDemandAndRebuildsTheOrder
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultWithCargoOnBoardRebuildsTheOrderToDeliverIt
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AFaultClearedAgainSoonAfterTheRebuildStopsTheRebuilding
+M05 no rebuild behind the readiness gate
+  totals: Failed! 5 195
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsBehindTheGateWhenTheSessionIsHeldForMoreThanTheVehicle(held:
+  red: ControlServer.Tests.OwnOrderRebuildTests.AnOrderCancelledWhileTheSessionIsNotReadyOnItsOwnOrderIsRebuiltBehindTheGate
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderStillRebuilds(cargo:
+M06 behind the gate, any not-ready session may create
+  totals: Failed! 2 198
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsBehindTheGateWhenTheSessionIsHeldForMoreThanTheVehicle(held:
+M07 record key random instead of derived from the ended upperId
+  totals: Failed! 1 199
+  red: ControlServer.Tests.OwnOrderRebuildTests.TheSameEndingRecordedFromTwoScopesIsOneRecordWithOneNewOrder
+M08 an order this server cancelled itself is rebuilt like any other
+  totals: Failed! 1 199
+  red: ControlServer.Tests.OwnOrderRebuildTests.AnOrderThisServerCancelledItselfIsNotRebuilt
+M09 release service releases or cancels a stalled or rebuilding journey
+  totals: Failed! 2 198
+  red: ControlServer.Tests.Batch7DemandReleaseServiceTests.AJourneyWhoseOrderStalledIsNotReleasedWhenTheVehicleBecomesIneligible(stalled:
+M10 guard 2 does not read the vehicle map
+  totals: Failed! 1 199
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsWhileTheVehicleMayNotMoveAndIsMadeOnceItMay(condition:
+M11 a stopped record is found only by its ended order
+  totals: Failed! 1 199
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuiltOrderThatEndsBeforeItIsConfirmedStopsTheRebuilding
+M12 the cargo binding is not settled when the rebuilt order is confirmed
+  totals: Failed! 1 199
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultWithCargoOnBoardRebuildsTheOrderToDeliverIt
+M13 the stopped code has no dashboard description
+  totals: Failed! 1 199
+  red: ControlServer.Tests.Batch7CargoHoldingDashboardTests.AStalledInTransitOrderIsShownWithAChineseDescription(code:
+M14 the rebuild codes are not in the stalled-order family
+  totals: Failed! 1 199
+  red: ControlServer.Tests.OwnOrderRebuildTests.ASilentSessionDoesNotOverwriteARebuildThatWaitsForTheVehicle
+M15 the rebuilt order skips the create gate
+  totals: Failed! 1 199
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuildGoesThroughTheCreateGateForTheStationItGoesTo
+M16 an unconfirmed create is taken as rebuilt
+  totals: Failed! 2 198
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuildWhoseCreateAnswerIsLostIsConfirmedNextRoundWithoutASecondCreate
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuiltOrderThatEndsBeforeItIsConfirmedStopsTheRebuilding

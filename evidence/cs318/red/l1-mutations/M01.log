@@ -1,0 +1,128 @@
+# M01: guard 1 (delay) off
+# file: src/ControlServer.Host/Runtime/JourneyRuntimeEngine.OwnOrderRebuild.cs
+# diff lines changed: 1 -> 1
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Release\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.Dashboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\src\ControlServer.Dashboard\bin\Release\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Release\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.FakeRiot -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Release\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.ProtocolFaultProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Release\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\src\ControlServer.Application\bin\Release\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Release\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Release\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FieldOps -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Release\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.Host -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\src\ControlServer.Host\bin\Release\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.SchemaConformance -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Release\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.Tests -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll
+
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:16.94
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+  Failed ControlServer.Tests.InTransitOrderStallTests.AnOrderEndedWhileTheSessionIsNotReadyIsNamed [582 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+            ↓ (pos 1)
+Expected: "ORDER_ENDED_WITHOUT_ARRIVAL"
+Actual:   "ONBOARD_SESSION_NOT_READY"
+            ↑ (pos 1)
+  Stack Trace:
+     at ControlServer.Tests.InTransitOrderStallTests.AnOrderEndedWhileTheSessionIsNotReadyIsNamed() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\InTransitOrderStallTests.cs:line 325
+   at ControlServer.Tests.InTransitOrderStallTests.AnOrderEndedWhileTheSessionIsNotReadyIsNamed() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\InTransitOrderStallTests.cs:line 326
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.Batch7DemandReleaseServiceTests.APickupOrderEndedInRiotIsNeitherReleasedNorRedispatched(orderState: 6) [795 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (AwaitingPickupArrival, "ORDER_ENDED_WITHOUT_ARRIVAL")
+Actual:   Tuple (AwaitingPickupArrival, null)
+  Stack Trace:
+     at ControlServer.Tests.Batch7DemandReleaseServiceTests.APickupOrderEndedInRiotIsNeitherReleasedNorRedispatched(Int32 orderState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandReleaseServiceTests.cs:line 1101
+   at ControlServer.Tests.Batch7DemandReleaseServiceTests.APickupOrderEndedInRiotIsNeitherReleasedNorRedispatched(Int32 orderState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandReleaseServiceTests.cs:line 1106
+   at ControlServer.Tests.Batch7DemandReleaseServiceTests.APickupOrderEndedInRiotIsNeitherReleasedNorRedispatched(Int32 orderState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandReleaseServiceTests.cs:line 1106
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.Batch7DemandReleaseServiceTests.APickupOrderEndedInRiotIsNeitherReleasedNorRedispatched(orderState: 2) [1 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (AwaitingPickupArrival, "ORDER_ENDED_WITHOUT_ARRIVAL")
+Actual:   Tuple (AwaitingPickupArrival, null)
+  Stack Trace:
+     at ControlServer.Tests.Batch7DemandReleaseServiceTests.APickupOrderEndedInRiotIsNeitherReleasedNorRedispatched(Int32 orderState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandReleaseServiceTests.cs:line 1101
+   at ControlServer.Tests.Batch7DemandReleaseServiceTests.APickupOrderEndedInRiotIsNeitherReleasedNorRedispatched(Int32 orderState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandReleaseServiceTests.cs:line 1106
+   at ControlServer.Tests.Batch7DemandReleaseServiceTests.APickupOrderEndedInRiotIsNeitherReleasedNorRedispatched(Int32 orderState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandReleaseServiceTests.cs:line 1106
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.OwnOrderRebuildTests.AnOrderCancelledInRiotIsRebuiltForTheSameVehicleAndDemandOnceTheDelayIsOver [783 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   2
+  Stack Trace:
+     at ControlServer.Tests.OwnOrderRebuildTests.AnOrderCancelledInRiotIsRebuiltForTheSameVehicleAndDemandOnceTheDelayIsOver() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildTests.cs:line 55
+   at ControlServer.Tests.OwnOrderRebuildTests.AnOrderCancelledInRiotIsRebuiltForTheSameVehicleAndDemandOnceTheDelayIsOver() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildTests.cs:line 69
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.OwnOrderRebuildTests.AnOrderCancelledWhileTheSessionIsNotReadyOnItsOwnOrderIsRebuiltBehindTheGate [503 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+            ↓ (pos 1)
+Expected: "ORDER_ENDED_WITHOUT_ARRIVAL"
+Actual:   "ONBOARD_SESSION_NOT_READY"
+            ↑ (pos 1)
+  Stack Trace:
+     at ControlServer.Tests.OwnOrderRebuildTests.AnOrderCancelledWhileTheSessionIsNotReadyOnItsOwnOrderIsRebuiltBehindTheGate() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildTests.cs:line 537
+   at ControlServer.Tests.OwnOrderRebuildTests.AnOrderCancelledWhileTheSessionIsNotReadyOnItsOwnOrderIsRebuiltBehindTheGate() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildTests.cs:line 545
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderStillRebuilds(cargo: "empty") [541 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("journey:10000000-0000-4000-8000-000000000001", AwaitingPickupArrival, "VEHICLE_FAULT_CLEARED_NOTHING_ON_BOARD")
+Actual:   Tuple ("journey:10000000-0000-4000-8000-000000000001", AwaitingPickupArrival, "ONBOARD_SESSION_NOT_READY")
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderStillRebuilds(String cargo) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 822
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderStillRebuilds(String cargo) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 833
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderStillRebuilds(cargo: "loaded") [2 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("journey:10000000-0000-4000-8000-000000000001", AwaitingGateArrival, "VEHICLE_FAULT_CLEARED_CARGO_ON_BOARD")
+Actual:   Tuple ("journey:10000000-0000-4000-8000-000000000001", AwaitingGateArrival, "ONBOARD_SESSION_NOT_READY")
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderStillRebuilds(String cargo) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 822
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderStillRebuilds(String cargo) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 833
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultOnAnEmptyVehicleKeepsTheDemandAndRebuildsTheOrder [366 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   2
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultOnAnEmptyVehicleKeepsTheDemandAndRebuildsTheOrder() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 97
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultOnAnEmptyVehicleKeepsTheDemandAndRebuildsTheOrder() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 106
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultWithCargoOnBoardRebuildsTheOrderToDeliverIt [2 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("journey:10000000-0000-4000-8000-000000000001", AwaitingGateArrival, "VEHICLE_FAULT_CLEARED_CARGO_ON_BOARD")
+Actual:   Tuple ("journey:10000000-0000-4000-8000-000000000001", AwaitingGateArrival, null)
+  Stack Trace:
+     at ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultWithCargoOnBoardRebuildsTheOrderToDeliverIt() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 368
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultWithCargoOnBoardRebuildsTheOrderToDeliverIt() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 371
+   at ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultWithCargoOnBoardRebuildsTheOrderToDeliverIt() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\VehicleFaultRecoveryTests.cs:line 385
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     9, Passed:   191, Skipped:     0, Total:   200, Duration: 54 s - ControlServer.Tests.dll (net8.0)
+[xUnit.net 00:00:10.53]     ControlServer.Tests.InTransitOrderStallTests.AnOrderEndedWhileTheSessionIsNotReadyIsNamed [FAIL]
+[xUnit.net 00:00:14.63]     ControlServer.Tests.Batch7DemandReleaseServiceTests.APickupOrderEndedInRiotIsNeitherReleasedNorRedispatched(orderState: 6) [FAIL]
+[xUnit.net 00:00:16.24]     ControlServer.Tests.Batch7DemandReleaseServiceTests.APickupOrderEndedInRiotIsNeitherReleasedNorRedispatched(orderState: 2) [FAIL]
+[xUnit.net 00:00:19.76]     ControlServer.Tests.OwnOrderRebuildTests.AnOrderCancelledInRiotIsRebuiltForTheSameVehicleAndDemandOnceTheDelayIsOver [FAIL]
+[xUnit.net 00:00:20.84]     ControlServer.Tests.OwnOrderRebuildTests.AnOrderCancelledWhileTheSessionIsNotReadyOnItsOwnOrderIsRebuiltBehindTheGate [FAIL]
+[xUnit.net 00:00:32.11]     ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderStillRebuilds(cargo: "empty") [FAIL]
+[xUnit.net 00:00:34.82]     ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderStillRebuilds(cargo: "loaded") [FAIL]
+[xUnit.net 00:00:39.41]     ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultOnAnEmptyVehicleKeepsTheDemandAndRebuildsTheOrder [FAIL]
+[xUnit.net 00:00:41.86]     ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultWithCargoOnBoardRebuildsTheOrderToDeliverIt [FAIL]

@@ -1,0 +1,111 @@
+# M02: guard 2 (vehicle condition) off
+# file: src/ControlServer.Host/Runtime/JourneyRuntimeEngine.OwnOrderRebuild.cs
+# diff lines changed: 1 -> 1
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Release\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\src\ControlServer.Dashboard\bin\Release\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\src\ControlServer.Application\bin\Release\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.FakeRiot -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Release\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Release\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.ProtocolFaultProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Release\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Release\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Release\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FieldOps -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Release\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.Host -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\src\ControlServer.Host\bin\Release\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.SchemaConformance -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Release\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.Tests -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll
+
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:04.83
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+  Failed ControlServer.Tests.OwnOrderRebuildTests.ASilentSessionDoesNotOverwriteARebuildThatWaitsForTheVehicle [6 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "OWN_ORDER_REBUILD_WAITING_VEHICLE"
+Actual:   null
+  Stack Trace:
+     at ControlServer.Tests.OwnOrderRebuildTests.ASilentSessionDoesNotOverwriteARebuildThatWaitsForTheVehicle() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildTests.cs:line 229
+   at ControlServer.Tests.OwnOrderRebuildTests.ASilentSessionDoesNotOverwriteARebuildThatWaitsForTheVehicle() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildTests.cs:line 243
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsWhileTheVehicleMayNotMoveAndIsMadeOnceItMay(condition: "RIOT_EMERGENCY_NOT_OK") [809 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   2
+  Stack Trace:
+     at ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsWhileTheVehicleMayNotMoveAndIsMadeOnceItMay(String condition) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildTests.cs:line 188
+   at ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsWhileTheVehicleMayNotMoveAndIsMadeOnceItMay(String condition) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildTests.cs:line 208
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsWhileTheVehicleMayNotMoveAndIsMadeOnceItMay(condition: "RIOT_CONTROL_NOT_OK") [717 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   2
+  Stack Trace:
+     at ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsWhileTheVehicleMayNotMoveAndIsMadeOnceItMay(String condition) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildTests.cs:line 188
+   at ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsWhileTheVehicleMayNotMoveAndIsMadeOnceItMay(String condition) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildTests.cs:line 208
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsWhileTheVehicleMayNotMoveAndIsMadeOnceItMay(condition: "VEHICLE_FAULT_IN_EFFECT") [721 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   2
+  Stack Trace:
+     at ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsWhileTheVehicleMayNotMoveAndIsMadeOnceItMay(String condition) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildTests.cs:line 188
+   at ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsWhileTheVehicleMayNotMoveAndIsMadeOnceItMay(String condition) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildTests.cs:line 208
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsWhileTheVehicleMayNotMoveAndIsMadeOnceItMay(condition: "RIOT_VEHICLE_NOT_ENABLED") [702 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   2
+  Stack Trace:
+     at ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsWhileTheVehicleMayNotMoveAndIsMadeOnceItMay(String condition) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildTests.cs:line 188
+   at ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsWhileTheVehicleMayNotMoveAndIsMadeOnceItMay(String condition) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildTests.cs:line 208
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsWhileTheVehicleMayNotMoveAndIsMadeOnceItMay(condition: "RIOT_VEHICLE_NOT_ONLINE") [725 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   2
+  Stack Trace:
+     at ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsWhileTheVehicleMayNotMoveAndIsMadeOnceItMay(String condition) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildTests.cs:line 188
+   at ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsWhileTheVehicleMayNotMoveAndIsMadeOnceItMay(String condition) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildTests.cs:line 208
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsWhileTheVehicleMayNotMoveAndIsMadeOnceItMay(condition: "RIOT_VEHICLE_MAP_MISMATCH") [739 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   2
+  Stack Trace:
+     at ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsWhileTheVehicleMayNotMoveAndIsMadeOnceItMay(String condition) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildTests.cs:line 188
+   at ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsWhileTheVehicleMayNotMoveAndIsMadeOnceItMay(String condition) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildTests.cs:line 208
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsWhileTheVehicleMayNotMoveAndIsMadeOnceItMay(condition: "RIOT_BRAKE_NOT_MOVABLE") [703 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   2
+  Stack Trace:
+     at ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsWhileTheVehicleMayNotMoveAndIsMadeOnceItMay(String condition) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildTests.cs:line 188
+   at ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsWhileTheVehicleMayNotMoveAndIsMadeOnceItMay(String condition) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildTests.cs:line 208
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     8, Passed:   192, Skipped:     0, Total:   200, Duration: 54 s - ControlServer.Tests.dll (net8.0)
+[xUnit.net 00:00:09.61]     ControlServer.Tests.OwnOrderRebuildTests.ASilentSessionDoesNotOverwriteARebuildThatWaitsForTheVehicle [FAIL]
+[xUnit.net 00:00:10.42]     ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsWhileTheVehicleMayNotMoveAndIsMadeOnceItMay(condition: "RIOT_EMERGENCY_NOT_OK") [FAIL]
+[xUnit.net 00:00:11.14]     ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsWhileTheVehicleMayNotMoveAndIsMadeOnceItMay(condition: "RIOT_CONTROL_NOT_OK") [FAIL]
+[xUnit.net 00:00:11.86]     ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsWhileTheVehicleMayNotMoveAndIsMadeOnceItMay(condition: "VEHICLE_FAULT_IN_EFFECT") [FAIL]
+[xUnit.net 00:00:12.57]     ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsWhileTheVehicleMayNotMoveAndIsMadeOnceItMay(condition: "RIOT_VEHICLE_NOT_ENABLED") [FAIL]
+[xUnit.net 00:00:13.30]     ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsWhileTheVehicleMayNotMoveAndIsMadeOnceItMay(condition: "RIOT_VEHICLE_NOT_ONLINE") [FAIL]
+[xUnit.net 00:00:14.04]     ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsWhileTheVehicleMayNotMoveAndIsMadeOnceItMay(condition: "RIOT_VEHICLE_MAP_MISMATCH") [FAIL]
+[xUnit.net 00:00:14.75]     ControlServer.Tests.OwnOrderRebuildTests.ARebuildWaitsWhileTheVehicleMayNotMoveAndIsMadeOnceItMay(condition: "RIOT_BRAKE_NOT_MOVABLE") [FAIL]
