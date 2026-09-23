@@ -607,6 +607,9 @@ jobs:
               # Batch 7 (control-server#218): the specification 8.3 batch-7 real-rig L2, a mixed-side station with a front
               # and a rear demand at one stop. Listed so the batch exit (control-server#220) can run it here.
               @{ Name = 'real-onboard-mixed-side-one-stop';                  Runs = 1 }
+              # control-server#339: a link dropped while the journey waits for a sublot; the deadline the runtime refills
+              # after the reconnect has to reach the real onboard, read back from its own journal.
+              @{ Name = 'real-onboard-refilled-deadline-reaches-vehicle';     Runs = 1 }
           )
 
           # Registered before anything can fail, so the upload step always has a path.
