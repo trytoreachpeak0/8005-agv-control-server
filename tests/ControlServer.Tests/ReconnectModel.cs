@@ -963,6 +963,10 @@ internal static class ReconnectModel
 
                 if (type == "SafetyStateSnapshot")
                 {
+                    // 取号的两半都要看得见：补发过取已接受 + 1，没补发取已接受（ReconnectModelRegressionTests 按这一行断两格）。
+                    _trace.Add(
+                        $"    handshake safety snapshot at v{safetySnapshotVersion} " +
+                        $"(accepted before v{_acceptedSafetyVersion}, resent a change: {_resentSafetyChangeThisHandshake})");
                     // 快照被确认之后，车把已接受的版本推进到快照的号（onboard-hmi PR #207 的 AdvanceSafetyStateVersion）。
                     _acceptedSafetyVersion = Math.Max(_acceptedSafetyVersion, safetySnapshotVersion);
                 }

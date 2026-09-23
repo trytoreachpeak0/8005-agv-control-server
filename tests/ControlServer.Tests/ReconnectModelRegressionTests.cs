@@ -223,6 +223,43 @@ public sealed class ReconnectModelRegressionTests
     }
 
     /// <summary>
+    /// 模型里的车给握手安全快照取号的两半都钉住：这一次握手补发过 <c>SafetyStateChanged</c> 时取已接受版本的下一版，没补发时取已接受
+    /// 的那一版——与 onboard-hmi PR #207 的车载端规则逐条一致。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 只断「没有违规」守不住后一半：独立审查把取号改成「一律 +1」，<c>ReconnectModel*</c> 全部与 200 种子那一批照样全绿——版本号
+    /// 多跳一格服务端不拒。可那样模型测的就是一台与真车不同的车，所以这里直接断轨迹里打出的快照号。期望值是按起点手算的：夹具播种的
+    /// 第 1 代已接受 v7；补发那一格先发 v8、送到之前断线，下一次握手补发 v8，快照取 v9；没补发那一格直接重连，快照取 v7。
+    /// </para>
+    /// <para>
+    /// 反向验证见 control-server PR #347：取号改成「一律 +1」，没补发那一格红；改成「一律用已接受版本」，补发那一格红（同代冲突）。
+    /// </para>
+    /// </remarks>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
+    [InlineData(true, "handshake safety snapshot at v9 (accepted before v8, resent a change: True)")]
+    [InlineData(false, "handshake safety snapshot at v7 (accepted before v7, resent a change: False)")]
+    public async Task TheHandshakeSnapshotTakesTheNextRevisionOnlyWhenTheHandshakeResentASafetyChange(bool resend, string expected)
+    {
+        ReconnectStep[] steps = resend
+            ? [new ReconnectStep.SafetyChange(SafetyKind.NotSafe, SafetyDelivery.LostInFlight), new ReconnectStep.BeginHandshake()]
+            : [new ReconnectStep.BeginHandshake()];
+        ReconnectVerdict verdict = await ReconnectModel.RunAsync(steps);
+
+        Assert.Empty(verdict.Violations);
+        string[] snapshots =
+        [
+            .. verdict.Detail.Split('\n')
+                .Select(line => line.Trim())
+                .Where(line => line.StartsWith("handshake safety snapshot at ", StringComparison.Ordinal)),
+        ];
+        // 恰好一次握手：序列里只有一次重连，收尾不该再重连（第一个元素之外的都说明收尾出了事）。
+        Assert.Equal([expected], snapshots);
+    }
+
+    /// <summary>
     /// 离站等待期限开着时，到站那一段被断线打断之后立刻重连（中间没有任何一轮看见会话未就绪），录入请求照样以第 2 代发出。
     /// </summary>
     /// <remarks>
