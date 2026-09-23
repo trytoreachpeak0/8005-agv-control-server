@@ -8,6 +8,10 @@
          Corvus.Json.Validator 4.6.7 for an "isolated .NET conformance process". Only
          tools/ControlServer.SchemaConformance may reference it; see that project for why. -->
     <PackageVersion Include="Corvus.Json.Validator" Version="4.6.7" />
+    <!-- Property-based and model-based test generation with shrinking (control-server#342). Test projects
+         only; registered in 8005-agv-program ADR-cross-0056. FsCheck.Xunit.v3 was not an option: it needs
+         xunit.v3 4.x, and the baseline pins 3.2.2. -->
+    <PackageVersion Include="CsCheck" Version="4.9.1" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.30" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.30" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.30" />
