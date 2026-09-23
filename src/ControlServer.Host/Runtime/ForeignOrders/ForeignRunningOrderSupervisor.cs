@@ -378,8 +378,20 @@ public sealed class ForeignRunningOrderSupervisor(
 
         RiotListedOrder? order = reread.Orders.FirstOrDefault(
             listed => string.Equals(listed.OrderId, row.RiotOrderId, StringComparison.Ordinal));
-        if (RunningOnOurs(order, ours) is not { } vehicle ||
-            !string.Equals(vehicle.VehicleKey, row.DeviceKey, StringComparison.Ordinal))
+        if (RunningOnOurs(order, ours) is { } elsewhere &&
+            !string.Equals(elsewhere.VehicleKey, row.DeviceKey, StringComparison.Ordinal))
+        {
+            // Moved to another vehicle of ours between the two reads: not "the same vehicle", so nothing is sent now. The row
+            // follows it -- that vehicle is held from now on -- and the next round reads again before sending.
+            row.AgvId = elsewhere.AgvId;
+            row.DeviceKey = elsewhere.VehicleKey;
+            row.LastSeenRunningAt = timeProvider.GetUtcNow();
+            row.UpdatedAt = row.LastSeenRunningAt;
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        if (RunningOnOurs(order, ours) is null)
         {
             if (order is null)
             {
