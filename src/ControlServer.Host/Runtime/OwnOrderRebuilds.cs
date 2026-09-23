@@ -279,8 +279,10 @@ internal static class OwnOrderRebuilds
         CancellationToken cancellationToken)
     {
         string[] due = await dbContext.OwnOrderRebuilds.AsNoTracking()
-            .Where(row => row.AgvId == agvId && row.State == OwnOrderRebuildStates.Pending &&
-                          row.Source == OwnOrderRebuildSources.FaultClearedCargoOnBoard && row.CargoProvenAt == null &&
+            .Where(row => row.AgvId == agvId &&
+                          ((row.State == OwnOrderRebuildStates.Pending &&
+                            row.Source == OwnOrderRebuildSources.FaultClearedCargoOnBoard && row.CargoProvenAt == null) ||
+                           row.State == OwnOrderRebuildStates.AwaitingCargoHandoff) &&
                           (row.CargoEvidenceRequestedGeneration != generation ||
                            (ready && !row.CargoEvidenceRequestedWhileReady)))
             .Select(row => row.RebuildId)
@@ -291,8 +293,9 @@ internal static class OwnOrderRebuilds
         }
 
         int claimed = await dbContext.OwnOrderRebuilds
-            .Where(row => due.Contains(row.RebuildId) && row.State == OwnOrderRebuildStates.Pending &&
-                          row.CargoProvenAt == null &&
+            .Where(row => due.Contains(row.RebuildId) &&
+                          ((row.State == OwnOrderRebuildStates.Pending && row.CargoProvenAt == null) ||
+                           row.State == OwnOrderRebuildStates.AwaitingCargoHandoff) &&
                           (row.CargoEvidenceRequestedGeneration != generation ||
                            (ready && !row.CargoEvidenceRequestedWhileReady)))
             .ExecuteUpdateAsync(

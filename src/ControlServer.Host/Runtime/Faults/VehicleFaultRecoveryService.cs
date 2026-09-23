@@ -268,6 +268,8 @@ public sealed partial class VehicleFaultRecoveryService(
                 await RebuildStoppedAsync(request, cancellationToken).ConfigureAwait(false),
             VehicleFaultRecoveryAction.TerminateStoppedTrip =>
                 await TerminateStoppedAsync(request, cancellationToken).ConfigureAwait(false),
+            VehicleFaultRecoveryAction.PrepareCargoHandoff =>
+                await PrepareCargoHandoffAsync(request, cancellationToken).ConfigureAwait(false),
             _ => Refused(["FAULT_RECOVERY_ACTION_UNKNOWN"], null),
         };
         return Record(request, decision);

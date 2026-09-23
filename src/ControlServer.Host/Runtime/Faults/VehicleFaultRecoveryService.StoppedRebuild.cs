@@ -60,6 +60,15 @@ public sealed partial class VehicleFaultRecoveryService
     /// </summary>
     public const string ExitCargoOnBoardReason = "OWN_ORDER_REBUILD_EXIT_CARGO_ON_BOARD";
 
+    /// <summary>
+    /// Handing the trip to the exception recovery session was asked with nothing on board: there is no cargo to take out. A
+    /// person rebuilds it or gives it up instead.
+    /// </summary>
+    public const string ExitNothingOnBoardReason = "OWN_ORDER_REBUILD_EXIT_NOTHING_ON_BOARD";
+
+    /// <summary>The block a journey carries while it waits for its exception recovery session (control-server#345).</summary>
+    public const string AwaitingCargoHandoffReason = WireToGateStore.AwaitingCargoHandoffJourneyReason;
+
     private async Task<VehicleFaultRecoveryDecision> RebuildStoppedAsync(
         VehicleFaultRecoveryRequest request,
         CancellationToken cancellationToken)
@@ -155,9 +164,7 @@ public sealed partial class VehicleFaultRecoveryService
             {
                 reasons.Add(trip.Refusal);
             }
-            else if (memberships.Any(row => row.Status is not
-                         (JourneyDemandStatuses.PendingLoad or JourneyDemandStatuses.Unloaded or JourneyDemandStatuses.Terminated)) ||
-                     await faults.ReadLiveCargoAsync(agvId, cancellationToken).ConfigureAwait(false) is not null)
+            else if (await MayCarryAsync(agvId, trip.Runtime!, cancellationToken).ConfigureAwait(false))
             {
                 reasons.Add(ExitCargoOnBoardReason);
             }
@@ -189,6 +196,94 @@ public sealed partial class VehicleFaultRecoveryService
         return new VehicleFaultRecoveryDecision(
             VehicleFaultRecoveryOutcome.TripTerminated, [], VehicleFaultRecoveryDispositions.TripTerminated, null);
     }
+
+    /// <summary>
+    /// Hands a stopped trip with cargo, or possibly cargo, on board to the vehicle's exception recovery session
+    /// (control-server#345): REQ-0238's other way for a loaded trip -- the cargo taken out, handed over and its demand ended --
+    /// and, when a snapshot has shown the cargo not in its slots, the only one.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>What was missing.</b> The session has existed all along; a stopped trip could not reach it. The server opens a session
+    /// on a demand only while its journey is <see cref="JourneyRuntimeStage.Blocked"/>, and a stopped rebuild keeps its journey
+    /// in its arrival stage; and the onboard offers the handoff only while the session reads RECOVERY_REQUIRED, which nothing
+    /// said for a vehicle standing still with its fault cleared. So the journey is blocked under
+    /// <see cref="AwaitingCargoHandoffReason"/>, which <c>WireToGateStore.DecideReadinessAsync</c> holds the session for, and
+    /// the record turns <see cref="OwnOrderRebuildStates.AwaitingCargoHandoff"/>, for which the Host asks the vehicle for a
+    /// snapshot once (<see cref="OwnOrderRebuilds.ClaimCargoEvidenceRequestAsync"/>), so that readiness is judged again and
+    /// announced without waiting for the vehicle to report on its own.
+    /// </para>
+    /// <para>
+    /// <b>A person's step, not the engine's</b> (the coordinator's decision of 2026-09-23): REQ-0238 does not let a path be
+    /// chosen automatically, a stopped trip with cargo on board has two -- a person's rebuild or this -- and every hand-over
+    /// then carries a named person and event 9203. The engine's stop is left as it was. From here the session's own rules
+    /// govern: its administrator proof, its actions, and the settlement of their results, which ends the demand.
+    /// </para>
+    /// </remarks>
+    private async Task<VehicleFaultRecoveryDecision> PrepareCargoHandoffAsync(
+        VehicleFaultRecoveryRequest request,
+        CancellationToken cancellationToken)
+    {
+        string agvId = request.Subject.AgvId;
+        List<string> reasons = [.. PersonReasons(request)];
+        using IDisposable? round = await gate.TryEnterAsync(gateWait, cancellationToken).ConfigureAwait(false);
+        if (round is null)
+        {
+            return Refused(["FAULT_RECOVERY_RUNTIME_BUSY"], null);
+        }
+
+        StoppedTrip trip = await ReadStoppedTripAsync(agvId, cancellationToken).ConfigureAwait(false);
+        if (reasons.Count == 0 &&
+            trip.Runtime is { Stage: JourneyRuntimeStage.Blocked, BlockReasonCode: AwaitingCargoHandoffReason })
+        {
+            return AlreadyDone();
+        }
+
+        string? refusal = trip.Refusal;
+        if (refusal == ExitCargoNotInPlaceReason)
+        {
+            refusal = null;
+        }
+        else if (refusal is null && !await MayCarryAsync(agvId, trip.Runtime!, cancellationToken).ConfigureAwait(false))
+        {
+            refusal = ExitNothingOnBoardReason;
+        }
+
+        if (refusal is not null)
+        {
+            reasons.Add(refusal);
+        }
+
+        if (reasons.Count > 0)
+        {
+            return Refused(reasons, null);
+        }
+
+        DateTimeOffset now = timeProvider.GetUtcNow();
+        JourneyRuntimeRow runtime = trip.Runtime!;
+        runtime.Stage = JourneyRuntimeStage.Blocked;
+        runtime.SetBlockReason(AwaitingCargoHandoffReason, now);
+        runtime.UpdatedAt = now;
+        trip.Stopped!.State = OwnOrderRebuildStates.AwaitingCargoHandoff;
+        OwnOrderRebuilds.WithdrawCargoEvidenceRequest(trip.Stopped);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return new VehicleFaultRecoveryDecision(
+            VehicleFaultRecoveryOutcome.HandoffPrepared, [], VehicleFaultRecoveryDispositions.AwaitingCargoHandoff, null);
+    }
+
+    /// <summary>
+    /// Whether something is, or may be, on the vehicle: a demand of the journey past "still to load" and not ended, or a live
+    /// cargo binding -- the same reading as a clearance's (<see cref="DisposeOfTheJourneyAsync"/>).
+    /// </summary>
+    private async Task<bool> MayCarryAsync(string agvId, JourneyRuntimeRow runtime, CancellationToken cancellationToken) =>
+        await dbContext.Set<JourneyDemandRow>().AsNoTracking()
+            .AnyAsync(
+                row => row.JourneyId == runtime.JourneyId && row.RemovedAt == null &&
+                       row.Status != JourneyDemandStatuses.PendingLoad && row.Status != JourneyDemandStatuses.Unloaded &&
+                       row.Status != JourneyDemandStatuses.Terminated,
+                cancellationToken)
+            .ConfigureAwait(false) ||
+        await faults.ReadLiveCargoAsync(agvId, cancellationToken).ConfigureAwait(false) is not null;
 
     /// <summary>
     /// The vehicle's journey, the stop it waits at and the rebuild record that stop waits on, read afresh; and why a person's
