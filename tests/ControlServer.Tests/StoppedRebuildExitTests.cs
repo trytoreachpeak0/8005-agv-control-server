@@ -352,19 +352,8 @@ public sealed class StoppedRebuildExitTests
     [Fact]
     public async Task ARebuildStoppedOnItsSuspendedNewOrderIsTakenOverByAPersonsRecord()
     {
-        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
-        JourneyRuntimeRow before = await fixture.RuntimeAsync();
-        fixture.Riot.CancelOrder(before.PickupUpperId);
-        await TickAndRunAsync(fixture);
-        fixture.Riot.LoseNextCreateResponse = true;
-        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
-        OwnOrderRebuildRow ordering = await RebuildForAsync(fixture, before.PickupUpperId);
-        fixture.Riot.SetOrderState(ordering.NewUpperId, RiotOrderState.Suspended, terminal: true);
-        await fixture.HearFromPeerAsync();
-        await TickAndRunAsync(fixture);
-        Assert.Equal("OWN_ORDER_REBUILD_STOPPED", (await fixture.RuntimeAsync()).BlockReasonCode);
-        Assert.Equal(ordering.NewUpperId, (await CurrentStopAsync(fixture, FirstDemandId)).UpperId);
-        fixture.Context.ChangeTracker.Clear();
+        (RuntimeFixture fixture, JourneyRuntimeRow before, OwnOrderRebuildRow ordering) = await StoppedOnASuspendedNewOrderAsync();
+        await using RuntimeFixture owned = fixture;
 
         VehicleFaultRecoveryDecision decision = await VehicleFaultRecoveryTests.Service(fixture, new(fixture))
             .RecoverAsync(Rebuild(fixture), Token);
@@ -546,6 +535,78 @@ public sealed class StoppedRebuildExitTests
 
         Assert.Equal(VehicleFaultRecoveryOutcome.Refused, decision.Outcome);
         Assert.Equal([refusal], decision.Reasons);
+        Assert.Equal(before, await SnapshotAsync(fixture));
+    }
+
+    /// <summary>
+    /// 新单确认前就被读成 SUSPENDED（8）而停住的那一种（<c>REBUILT_ORDER_ENDED_BEFORE_CONFIRMATION</c>）不许放弃（独立审查 S1）：那张 8
+    /// 的单可能还挂在 RIoT 上，而放弃之前复核「这辆车有没有未终结的单」只看 1、3、7、9，看不见它——与用户给乙的条件（读 RIoT 确认没有
+    /// 未终结的单）对不上。拒绝原因 <c>OWN_ORDER_REBUILD_EXIT_NEW_ORDER_UNSETTLED</c>，什么都不改；这一种仍可以人工重建。
+    /// </summary>
+    [Fact]
+    public async Task GivingUpARebuildStoppedBeforeItsNewOrderWasConfirmedIsRefused()
+    {
+        (RuntimeFixture fixture, _, _) = await StoppedOnASuspendedNewOrderAsync();
+        await using RuntimeFixture owned = fixture;
+        Snapshot before = await SnapshotAsync(fixture);
+
+        VehicleFaultRecoveryDecision decision = await VehicleFaultRecoveryTests.Service(fixture, new(fixture))
+            .RecoverAsync(GiveUp(fixture), Token);
+
+        Assert.Equal(VehicleFaultRecoveryOutcome.Refused, decision.Outcome);
+        Assert.Equal(["OWN_ORDER_REBUILD_EXIT_NEW_ORDER_UNSETTLED"], decision.Reasons);
+        Assert.Equal(before, await SnapshotAsync(fixture));
+    }
+
+    /// <summary>
+    /// 与 <c>CLEAR_FAULT</c> 对称（独立审查 S5）：车被急停锁着、或者还挂着一次没清除的故障，放弃这趟一律拒绝，什么都不改——收尾旅程会停掉
+    /// 挂在旅程上的故障监看（急停确认与 REQ-0248 的重触发），锁着或故障中的车不能这样被放出去接新活。
+    /// </summary>
+    [Theory]
+    [InlineData("latched", "FAULT_RECOVERY_EMERGENCY_LATCHED")]
+    [InlineData("fault-in-effect", "FAULT_RECOVERY_FAULT_IN_EFFECT")]
+    public async Task AStoppedTripIsNotGivenUpUnderALatchOrAFault(string state, string refusal)
+    {
+        await using RuntimeFixture fixture = await StoppedByTheThirdGuardAsync();
+        if (state == "latched")
+        {
+            fixture.EmergencyLatched = true;
+        }
+        else
+        {
+            await using ControlServerDbContext writing = new(fixture.DbOptionsForTests);
+            await new VehicleFaultStore(writing).RecordLevelAsync(
+                fixture.Options.AgvId, VehicleFaultLevel.SuspectedBlocked, "L1_FAULT_IN_EFFECT", false, fixture.Clock.GetUtcNow(), Token);
+        }
+
+        Snapshot before = await SnapshotAsync(fixture);
+
+        VehicleFaultRecoveryDecision decision = await VehicleFaultRecoveryTests.Service(fixture, new(fixture))
+            .RecoverAsync(GiveUp(fixture), Token);
+
+        Assert.Equal(VehicleFaultRecoveryOutcome.Refused, decision.Outcome);
+        Assert.Equal([refusal], decision.Reasons);
+        Assert.Equal(before, await SnapshotAsync(fixture));
+    }
+
+    /// <summary>
+    /// 已经转进异常处置会话的这一趟不能人工重建（独立审查 M1 引出的新状态）：拒绝原因 <c>OWN_ORDER_REBUILD_EXIT_AWAITING_CARGO_HANDOFF</c>，
+    /// 什么都不改。它的出口是交接、再转一次交接或（没货时）放弃。
+    /// </summary>
+    [Fact]
+    public async Task AHandedOverTripIsNotRebuiltByAPerson()
+    {
+        await using RuntimeFixture fixture = await StoppedWithCargoNotInPlaceAsync();
+        Assert.Equal(
+            VehicleFaultRecoveryOutcome.HandoffPrepared,
+            (await VehicleFaultRecoveryTests.Service(fixture, new(fixture)).RecoverAsync(Prepare(fixture), Token)).Outcome);
+        Snapshot before = await SnapshotAsync(fixture);
+
+        VehicleFaultRecoveryDecision decision = await VehicleFaultRecoveryTests.Service(fixture, new(fixture))
+            .RecoverAsync(Rebuild(fixture), Token);
+
+        Assert.Equal(VehicleFaultRecoveryOutcome.Refused, decision.Outcome);
+        Assert.Equal(["OWN_ORDER_REBUILD_EXIT_AWAITING_CARGO_HANDOFF"], decision.Reasons);
         Assert.Equal(before, await SnapshotAsync(fixture));
     }
 
@@ -1255,6 +1316,31 @@ public sealed class StoppedRebuildExitTests
         fixture.Riot.MovementState = "MT_FINISHED";
         fixture.Context.ChangeTracker.Clear();
         return fixture;
+    }
+
+    /// <summary>
+    /// 护栏三的另一种停住：重建出来的新单确认前就被 RIoT 报成状态 8（SUSPENDED），停靠此时指着那张新单，记录停在
+    /// <c>REBUILT_ORDER_ENDED_BEFORE_CONFIRMATION</c>。返回夹具、停住前的旅程和那条记录（停住前读的，新单号在上面）。
+    /// </summary>
+    private static async Task<(RuntimeFixture Fixture, JourneyRuntimeRow Before, OwnOrderRebuildRow Ordering)> StoppedOnASuspendedNewOrderAsync()
+    {
+        RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync();
+        fixture.Riot.CancelOrder(before.PickupUpperId);
+        await TickAndRunAsync(fixture);
+        fixture.Riot.LoseNextCreateResponse = true;
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        OwnOrderRebuildRow ordering = await RebuildForAsync(fixture, before.PickupUpperId);
+        fixture.Riot.SetOrderState(ordering.NewUpperId, RiotOrderState.Suspended, terminal: true);
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+        Assert.Equal("OWN_ORDER_REBUILD_STOPPED", (await fixture.RuntimeAsync()).BlockReasonCode);
+        Assert.Equal(ordering.NewUpperId, (await CurrentStopAsync(fixture, FirstDemandId)).UpperId);
+        Assert.Equal(
+            (OwnOrderRebuildStates.Stopped, "REBUILT_ORDER_ENDED_BEFORE_CONFIRMATION"),
+            ((await RebuildForAsync(fixture, before.PickupUpperId)).State, (await RebuildForAsync(fixture, before.PickupUpperId)).StoppedReason));
+        fixture.Context.ChangeTracker.Clear();
+        return (fixture, before, ordering);
     }
 
     /// <summary>单被取消、重建记下了，还在等延迟：记录 PENDING，旅程码是过渡码。</summary>
