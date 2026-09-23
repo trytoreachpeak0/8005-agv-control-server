@@ -1,7 +1,7 @@
 # 旅程终结原因被引擎的旧读数覆盖（丢失更新）：确定性探针
 
 **只作证据，不进测试工程。**`LostUpdateProbeTests.cs` 放在这里不会被编译；要重跑时把它拷进 `tests/ControlServer.Tests/`，
-跑 `--filter FullyQualifiedName~LostUpdateProbeTests`，跑完删掉。这个缺陷另开票修，本票（control-server#339）不修。
+跑 `--filter FullyQualifiedName~LostUpdateProbeTests`，跑完删掉。这个缺陷另开票修（control-server#357），本票（control-server#339）不修。
 
 **来由。**CI 真装置 run `35896134304` 里 `real-onboard-load-door-closed-empty-reopens` 只红 `L2-DC-08`：取消收尾之后需求 `Cancelled`、
 旅程 `Completed`，终结原因码却是空的（`../../l2/20260924-cs339-ci-35896134304/`）。服务端日志（同目录 `control-server-lost-update-excerpt.log`）：
