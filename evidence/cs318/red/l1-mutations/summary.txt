@@ -103,3 +103,14 @@ M18 REQ-0362 a snapshot from before the clearance counts
   red: ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultWithCargoOnBoardRebuildsTheOrderToDeliverIt
   red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ALoadedClearanceWhoseSessionNeverBecomesReadyWaitsForTheSnapshot
   red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotFromBeforeTheClearanceDoesNotProveTheCargo
+
+# third run, on 7f4de19d (after the release fix and the multi-demand guard): M09 re-pointed at the new call, M24 and M25 new
+M09 release service releases or cancels a stalled or rebuilding journey
+  totals: Failed! 2 294
+  red: ControlServer.Tests.Batch7DemandReleaseServiceTests.AJourneyWhoseOrderStalledIsNotReleasedWhenTheVehicleBecomesIneligible(stalled:
+M24 the release's own cancellation, read by the engine first, counts as a stalled order
+  totals: Failed! 1 295
+  red: ControlServer.Tests.Batch7DemandReleaseServiceTests.TheReleasesOwnCancellationReadByTheEngineFirstStillEndsInTheRelease
+M25 REQ-0360 the rebuild revives the journey's terminated demands
+  totals: Failed! 1 295
+  red: ControlServer.Tests.OwnOrderRebuildTests.Req0360ARebuildCarriesTheStopsOpenDemandsAndRevivesNoTerminatedOne

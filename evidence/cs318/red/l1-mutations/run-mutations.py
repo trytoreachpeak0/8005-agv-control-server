@@ -85,8 +85,8 @@ MUTATIONS = [
      '                    row => row.TargetUpperId == upperId && row.CommandType == RiotCommandTypeNames.CancelOrder,\n',
      '                    row => ' + OFF + 'row.TargetUpperId == upperId && row.CommandType == RiotCommandTypeNames.CancelOrder,\n'),
     ('M09', 'release service releases or cancels a stalled or rebuilding journey', RELEASE,
-     '            await OrderStalledOrRebuildingAsync(journey, cancellationToken).ConfigureAwait(false))\n',
-     '            ' + OFF + 'await OrderStalledOrRebuildingAsync(journey, cancellationToken).ConfigureAwait(false))\n'),
+     '            await OrderStalledOrRebuildingAsync(journey, stops.Current, cancellationToken).ConfigureAwait(false))\n',
+     '            Environment.TickCount64 < 0 && await OrderStalledOrRebuildingAsync(journey, stops.Current, cancellationToken).ConfigureAwait(false))\n'),
     ('M10', 'guard 2 does not read the vehicle map', ENGINE,
      '                !string.Equals(vehicle.CurrentMap, runtime.MapIdentity, StringComparison.Ordinal))\n',
      '                ' + OFF + '!string.Equals(vehicle.CurrentMap, runtime.MapIdentity, StringComparison.Ordinal))\n'),
@@ -129,6 +129,12 @@ MUTATIONS = [
     ('M23', 'REQ-0362 the request is claimed inside the handshake too', PROCESSOR,
      '        if (state.HandshakeCompleted && messageType != "RecoveryStateReport" &&\n',
      '        if ((Environment.TickCount64 >= 0 || state.HandshakeCompleted) && messageType != "RecoveryStateReport" &&\n'),
+    ('M24', "the release's own cancellation, read by the engine first, counts as a stalled order", RELEASE,
+     '        if (string.Equals(journey.BlockReasonCode, JourneyRuntimeEngine.OrderEndedWithoutArrivalReason, StringComparison.Ordinal) &&\n',
+     '        if (Environment.TickCount64 < 0 && string.Equals(journey.BlockReasonCode, JourneyRuntimeEngine.OrderEndedWithoutArrivalReason, StringComparison.Ordinal) &&\n'),
+    ('M25', "REQ-0360 the rebuild revives the journey's terminated demands", ENGINE,
+     '            rebuild.State = OwnOrderRebuildStates.Ordering;\n',
+     '            foreach (JourneyDemandRow revived in await dbContext.Set<JourneyDemandRow>().Where(row => row.JourneyId == runtime.JourneyId).ToArrayAsync(cancellationToken)) { revived.Status = JourneyDemandStatuses.PendingLoad; }\n            rebuild.State = OwnOrderRebuildStates.Ordering;\n'),
 ]
 
 
