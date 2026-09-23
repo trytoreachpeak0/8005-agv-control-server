@@ -571,6 +571,53 @@ public sealed class VehicleFaultRecoveryTests
     }
 
     /// <summary>
+    /// REQ-0362：判不了的快照之后要再问一次。车载端只在握手时和被要时才发 <c>SafetyStateSnapshot</c>，所以「继续等」要有人再要：
+    /// 判不了的那份快照收到满 10 秒还判不了，服务端撤掉这一代的请求记号，下一条入站消息时再要一次；不满 10 秒不再要。
+    /// </summary>
+    /// <remarks>
+    /// 审查 S4 的另一半。只改成「继续等」而不再要，会话一直就绪时这一代再也收不到快照，旅程会停在
+    /// <c>OWN_ORDER_REBUILD_CARGO_UNPROVEN</c> 直到重连——看起来在等，实际在等一件不会来的事。
+    /// </remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0362")]
+    public async Task Req0362AnInconclusiveSnapshotIsAskedForAgainAfterAWhile()
+    {
+        await using RuntimeFixture fixture = await FaultedOnTheWayToGateAsync();
+        Assert.Equal(
+            VehicleFaultRecoveryDispositions.RebuildScheduled,
+            (await Service(fixture, new SiteRiot(fixture)).RecoverAsync(Clear(fixture), Token)).Disposition);
+        fixture.Context.ChangeTracker.Clear();
+        long generation = (await fixture.Context.SessionRecoveries.AsNoTracking().SingleAsync(Token)).SessionGeneration;
+        Assert.True(await ClaimAsync(fixture, generation));
+        Assert.False(await ClaimAsync(fixture, generation));
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+
+        await fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow(), lockState: "UNLOCKED");
+        fixture.Clock.Advance(TimeSpan.FromSeconds(9));
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.Equal("OWN_ORDER_REBUILD_CARGO_UNPROVEN", (await fixture.RuntimeAsync()).BlockReasonCode);
+        Assert.False(await ClaimAsync(fixture, generation));
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.True(await ClaimAsync(fixture, generation));
+        Assert.False(await ClaimAsync(fixture, generation));
+
+        static async Task<bool> ClaimAsync(RuntimeFixture fixture, long generation)
+        {
+            await using ControlServerDbContext claiming = new(fixture.DbOptionsForTests);
+            return await OwnOrderRebuilds.ClaimCargoEvidenceRequestAsync(
+                claiming, fixture.Options.AgvId, generation, ready: true, Token);
+        }
+    }
+
+    /// <summary>
     /// REQ-0362 的「本车的快照」：清除之后别的车发来的快照不算，哪怕它读到货不在——旅程仍停在
     /// <c>OWN_ORDER_REBUILD_WAITING_CARGO_EVIDENCE</c>（没收到本车的快照），不停住、不建单。
     /// </summary>
