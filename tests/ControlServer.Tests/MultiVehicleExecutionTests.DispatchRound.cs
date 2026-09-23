@@ -763,7 +763,9 @@ public sealed partial class MultiVehicleExecutionTests
     /// </summary>
     /// <remarks>
     /// 挡着车的那一行直接写进库，不经监管器：这里守的是轮次怎么读它，监管器怎么写出它由 <c>ForeignRunningOrderTests</c> 守。
-    /// 这个夹具的 RIoT 列单是空的，读不到那张单时监管器按对它说不出终结处理，那一行原样留着。
+    /// 这个夹具的 RIoT 列单是空的、按单号也读不到那张单，而那一行的 <c>LastSeenRunningAt</c> 是纪元时刻，早已过了落定时间，
+    /// 所以第一轮监管就把它改成 <c>UNSETTLED</c>（Error 告警，照样挡车）——这条用例实际守的是「挡车状态」这一族，
+    /// 不专守 <c>STILL_RUNNING_AFTER_CANCEL</c>：变异把 <c>UNSETTLED</c> 移出挡车状态时（M33），这条会红。
     /// </remarks>
     [Fact]
     [Trait("Requirement", "REQ-0164")]

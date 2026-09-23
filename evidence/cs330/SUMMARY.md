@@ -15,14 +15,35 @@
 
 ## 变异反向验证
 
-`red/l1-mutations/`：`run-mutations.py` 每次拿掉一条护栏或一个判断，重建，跑相关测试（`ForeignRunningOrderTests`、`BlockedJourneyDashboardTests`、`PickupDispatchPlanPastOwnOrderTests`、车队夹具的途中追加用例），记录变红的用例，再从备份还原并核对哈希。替换文本必须恰好出现一次，构建必须 `0 Error(s)`，否则整轮停下。在 `9f7b3ccb` 上跑，逐条日志 `M01.log`～`M28.log`，汇总 `summary.txt`。
+`red/l1-mutations/run-mutations.py` 每次拿掉一条护栏或一个判断，重建，跑相关测试，记录变红的用例，再从备份还原并核对哈希。替换文本必须恰好出现一次，构建必须 `0 Error(s)`，否则整轮停下。跑了两轮：
 
-28 条里 25 条有用例变红。票上点名要的两条：
+| 轮次 | 在哪个提交上跑 | 变异 | 测试范围 | 位置 |
+| --- | --- | --- | --- | --- |
+| 第一轮 | `9f7b3ccb` | M01～M28 | `ForeignRunningOrderTests`、`BlockedJourneyDashboardTests`、`PickupDispatchPlanPastOwnOrderTests`、车队夹具的途中追加用例（119 条） | `round1/summary.txt`、`round1/M01.log`～`M28.log` |
+| 第二轮（独立审查修改之后） | `1b341afd` | M01～M35（新增 M29～M35） | 上面四处加 `OwnOrderRebuildTests`（165 条） | `summary.txt`、`M01.log`～`M35.log` |
 
-- **外来单被当成自己的而放行**（M01，所有在跑的单都当自己的）：19 个用例变红，包括取消、0/1 门禁、#314 放行、看板。
-- **自己的单被当成外来而取消**（M02，拿掉 `OrderIntent` 判据）：6 个变红。其中本服务端自己的在途单（`W2G-` 开头）并没有被取消，而是落到「认不准、只挡不取消」——upperId 前缀在这里是第二道防线；upperId 不像自己的、只靠意图认出的那张（`by-upper-id`）被取消了，所以红。
+下面按第二轮说。35 条里 32 条有用例变红。
 
-没有变红的三条，都是预先写明「预期被另一道护栏兜住」的：
+票上点名的两个方向：
+
+- **外来单被当成自己的而放行**（M01，所有在跑的单都当自己的）：21 个用例变红，包括取消、0/1 门禁、#314 放行、看板、取消开关。
+- **自己的单被当成外来单**（M02，拿掉 `OrderIntent` 判据）：9 个用例变红。本服务端自己的在途单（`W2G-` 开头）这时没有被取消，而是落到「认不准、只挡不取消」，upperId 前缀在这里是第二道防线；只靠意图认出的那张（upperId 不像自己的）被取消了，所以 `by-upper-id` 那格红。**审查 S2 要求的前提钉在这里生效**：`OwnOrderRebuildTests` 里加了断言的两条（取货单重建、GATE 腿及其重建）都变红——自己的单一旦失去意图依据，监管就给它记一行。
+
+审查修改新增的七条：
+
+| 变异 | 拿掉了什么 | 变红的用例 |
+| --- | --- | --- |
+| M29 | 取消开关不起作用（关着也发取消） | 开关关着那条；「落不了定」没被授权那一格 |
+| M30 | 开关打开后，因开关关着而挡着的单不再被接着取消 | 开关关着那条（打开后那一段） |
+| M31 | `HELD_CANCEL_NOT_AUTHORIZED` 不挡车 | 开关关着那条、0/1 门禁「没被授权」那一格、看板 |
+| M32 | 离开运行列表又读不到终结的单永不转人工 | 「落不了定」四格 |
+| M33 | `UNSETTLED` 不挡车 | 「落不了定」、看板、车队夹具的途中追加用例（见下） |
+| M34 | 终结时不改写取消结果 | 「取消后仍在运行转人工」三格（最后断言 `CANCELLED`） |
+| M35 | 阻断卡片不加指向外来单的那句 | 「外来单不算作本车在途单」两格 |
+
+M33 让车队夹具的途中追加用例也红了，要解释一下：那条用例直接往库里写一行 `STILL_RUNNING_AFTER_CANCEL`，`LastSeenRunningAt` 是纪元时刻；那个夹具的 RIoT 列单为空、按单号也读不到，第一轮监管就按审查 S1 的规则把它改成 `UNSETTLED`，照样挡车。所以那条用例守的是「挡车状态」这一族，拿掉 `UNSETTLED` 它就红，是对的。用例注释已照此改写（`1b341afd` 之后的提交，只改注释）。
+
+没有变红的三条，与第一轮相同，都是预先写明「预期被另一道护栏兜住」的：
 
 | 变异 | 拿掉了什么 | 为什么不红 |
 | --- | --- | --- |
@@ -32,5 +53,7 @@
 
 ## 绿
 
-- `green/l1-9f7b3ccb.txt`：本票相关的十个测试类，346 条全部通过。
-- CI 全量测试 run [35862118890](https://github.com/trytoreachpeak0/8005-agv-control-server/actions/runs/35862118890)（`59e145e2`，手动触发）：`已通过! - 失败: 0，通过: 2703，已跳过: 1，总计: 2704`。这一轮早于 `d3790f6f`、`cbe0434e`、`9f7b3ccb`。
+- `green/l1-9f7b3ccb.txt`：本票相关的十个测试类，346 条全部通过（审查之前）。
+- `green/l1-1b341afd.txt`：独立审查修改之后，相关的十一个测试类（加了 `OwnOrderRebuildTests`、`VehicleFaultRecoveryTests`、`RiotCreateDispatchGateOptionsTests`、`WaitingJourneyDashboardTests`），392 条全部通过。
+- 并行实例自检 `scripts/parallel/Test-ParallelInstance.ps1`：218 条全部通过，其中 9 条是新开关的（缺节、没写 `enabled`、写成字符串、打开却没传开关；传了开关接受、另一个开关打不开它、传了开关仍拒 agv01、随包定义里是关的、键名对得上 C# 选项）。
+- CI 全量测试 run [35862118890](https://github.com/trytoreachpeak0/8005-agv-control-server/actions/runs/35862118890)（`59e145e2`，手动触发）：`已通过! - 失败: 0，通过: 2703，已跳过: 1，总计: 2704`；ready 之后一轮（`a22f0c03`）：test run [35865760658](https://github.com/trytoreachpeak0/8005-agv-control-server/actions/runs/35865760658) 通过 2711。审查修改之后的一轮见 PR 正文「进度」。

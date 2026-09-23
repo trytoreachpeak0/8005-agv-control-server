@@ -1,0 +1,96 @@
+# M23: explanation: a foreign order on the vehicle ignored
+# file: src/ControlServer.Host/Dashboard/OwnMovementOrderExplanation.cs
+# - '            foreignRunningOrderHoldsVehicle ||\n'
+# + '            (Environment.TickCount64 < 0 && foreignRunningOrderHoldsVehicle) ||\n'
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Release\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\src\ControlServer.Dashboard\bin\Release\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\src\ControlServer.Application\bin\Release\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ProtocolFaultProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Release\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.FakeRiot -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Release\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Release\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Release\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Release\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FieldOps -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Release\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.Host -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\src\ControlServer.Host\bin\Release\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.SchemaConformance -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Release\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.Tests -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll
+
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:05.08
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+  Failed ControlServer.Tests.BlockedJourneyDashboardTests.AForeignOrderHoldingTheVehicleIsNotExplainedAsItsOwnMoveOrder(foreignState: "STILL_RUNNING_AFTER_CANCEL", expectedLevel: "MaintenanceAdministrator", explained: False) [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "MaintenanceAdministrator"
+Actual:   "Operator"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.BlockedJourneyDashboardTests.AForeignOrderHoldingTheVehicleIsNotExplainedAsItsOwnMoveOrder(String foreignState, String expectedLevel, Boolean explained) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\BlockedJourneyDashboardTests.cs:line 524
+   at ControlServer.Tests.BlockedJourneyDashboardTests.AForeignOrderHoldingTheVehicleIsNotExplainedAsItsOwnMoveOrder(String foreignState, String expectedLevel, Boolean explained) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\BlockedJourneyDashboardTests.cs:line 531
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.BlockedJourneyDashboardTests.AForeignOrderHoldingTheVehicleIsNotExplainedAsItsOwnMoveOrder(foreignState: "CANCEL_SENT", expectedLevel: "MaintenanceAdministrator", explained: False) [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "MaintenanceAdministrator"
+Actual:   "Operator"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.BlockedJourneyDashboardTests.AForeignOrderHoldingTheVehicleIsNotExplainedAsItsOwnMoveOrder(String foreignState, String expectedLevel, Boolean explained) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\BlockedJourneyDashboardTests.cs:line 524
+   at ControlServer.Tests.BlockedJourneyDashboardTests.AForeignOrderHoldingTheVehicleIsNotExplainedAsItsOwnMoveOrder(String foreignState, String expectedLevel, Boolean explained) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\BlockedJourneyDashboardTests.cs:line 531
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.BlockedJourneyDashboardTests.AForeignOrderHoldingTheVehicleIsNotExplainedAsItsOwnMoveOrder(foreignState: "HELD_UNPROVEN", expectedLevel: "MaintenanceAdministrator", explained: False) [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "MaintenanceAdministrator"
+Actual:   "Operator"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.BlockedJourneyDashboardTests.AForeignOrderHoldingTheVehicleIsNotExplainedAsItsOwnMoveOrder(String foreignState, String expectedLevel, Boolean explained) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\BlockedJourneyDashboardTests.cs:line 524
+   at ControlServer.Tests.BlockedJourneyDashboardTests.AForeignOrderHoldingTheVehicleIsNotExplainedAsItsOwnMoveOrder(String foreignState, String expectedLevel, Boolean explained) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\BlockedJourneyDashboardTests.cs:line 531
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.BlockedJourneyDashboardTests.AnUnknownIsNotExplainedWhileAForeignOrderHoldsTheVehicle [3 ms]
+  Error Message:
+   Assert.False() Failure
+Expected: False
+Actual:   True
+  Stack Trace:
+     at ControlServer.Tests.BlockedJourneyDashboardTests.AnUnknownIsNotExplainedWhileAForeignOrderHoldsTheVehicle() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\BlockedJourneyDashboardTests.cs:line 186
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderOnTheVehicleIsNotExplainedAsTheOwnOrderInFlight(variant: "cancel-not-yet-effective") [562 ms]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+Collection: [{"protocolVersion":3,"profileId":"AGV_FULL_PRODUCT","protocolReleaseVersion":"2.0.0","protocolReleaseManifestSha256":"4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7","messageType":"UpcomingStopPlanSnapshot","messageId":"2694bd09-7092-ef5c-886a-6cdba914299d","correlationId":null,"agvId":"\u8001\u5382\u524D\u7EBF\u65B0\u591A\u4ED3\u4F4D1","sessionGeneration":1,"sentAt":"2026-08-26T01:00:00+00:00","payload":{"planRevision":1,"legs":[{"movementLegId":"f13413b8-c674-ce57-a847-b4f653a98921","legType":"TO_PICKUP","stopPurposeCategory":"BUSINESS","demandId":"10000000-0000-4000-8000-000000000001","publicStationFunction":null,"sequence":1,"stationId":"N1-1","mapId":"MAP-25","state":"ACTIVE"},{"movementLegId":"6418afc8-35b0-9b5b-95e5-5cea49ca7333","legType":"TO_DROPOFF","stopPurposeCategory":"BUSINESS","demandId":"10000000-0000-4000-8000-000000000001","publicStationFunction":null,"sequence":2,"stationId":"\u5173\u5361","mapId":"MAP-25","state":"PLANNED"}]}}]
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderOnTheVehicleIsNotExplainedAsTheOwnOrderInFlight(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 628
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderOnTheVehicleIsNotExplainedAsTheOwnOrderInFlight(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 640
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderOnTheVehicleIsNotExplainedAsTheOwnOrderInFlight(variant: "ownership-unproven") [630 ms]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+Collection: [{"protocolVersion":3,"profileId":"AGV_FULL_PRODUCT","protocolReleaseVersion":"2.0.0","protocolReleaseManifestSha256":"4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7","messageType":"UpcomingStopPlanSnapshot","messageId":"2694bd09-7092-ef5c-886a-6cdba914299d","correlationId":null,"agvId":"\u8001\u5382\u524D\u7EBF\u65B0\u591A\u4ED3\u4F4D1","sessionGeneration":1,"sentAt":"2026-08-26T01:00:00+00:00","payload":{"planRevision":1,"legs":[{"movementLegId":"f13413b8-c674-ce57-a847-b4f653a98921","legType":"TO_PICKUP","stopPurposeCategory":"BUSINESS","demandId":"10000000-0000-4000-8000-000000000001","publicStationFunction":null,"sequence":1,"stationId":"N1-1","mapId":"MAP-25","state":"ACTIVE"},{"movementLegId":"6418afc8-35b0-9b5b-95e5-5cea49ca7333","legType":"TO_DROPOFF","stopPurposeCategory":"BUSINESS","demandId":"10000000-0000-4000-8000-000000000001","publicStationFunction":null,"sequence":2,"stationId":"\u5173\u5361","mapId":"MAP-25","state":"PLANNED"}]}}]
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderOnTheVehicleIsNotExplainedAsTheOwnOrderInFlight(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 628
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderOnTheVehicleIsNotExplainedAsTheOwnOrderInFlight(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 640
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     6, Passed:   159, Skipped:     0, Total:   165, Duration: 37 s - ControlServer.Tests.dll (net8.0)
+[xUnit.net 00:00:11.70]     ControlServer.Tests.BlockedJourneyDashboardTests.AForeignOrderHoldingTheVehicleIsNotExplainedAsItsOwnMoveOrder(foreignState: "STILL_RUNNING_AFTER_CANCEL", expectedLevel: "MaintenanceAdministrator", explained: False) [FAIL]
+[xUnit.net 00:00:13.95]     ControlServer.Tests.BlockedJourneyDashboardTests.AForeignOrderHoldingTheVehicleIsNotExplainedAsItsOwnMoveOrder(foreignState: "CANCEL_SENT", expectedLevel: "MaintenanceAdministrator", explained: False) [FAIL]
+[xUnit.net 00:00:16.04]     ControlServer.Tests.BlockedJourneyDashboardTests.AForeignOrderHoldingTheVehicleIsNotExplainedAsItsOwnMoveOrder(foreignState: "HELD_UNPROVEN", expectedLevel: "MaintenanceAdministrator", explained: False) [FAIL]
+[xUnit.net 00:00:23.47]     ControlServer.Tests.BlockedJourneyDashboardTests.AnUnknownIsNotExplainedWhileAForeignOrderHoldsTheVehicle [FAIL]
+[xUnit.net 00:00:27.04]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderOnTheVehicleIsNotExplainedAsTheOwnOrderInFlight(variant: "cancel-not-yet-effective") [FAIL]
+[xUnit.net 00:00:27.69]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderOnTheVehicleIsNotExplainedAsTheOwnOrderInFlight(variant: "ownership-unproven") [FAIL]

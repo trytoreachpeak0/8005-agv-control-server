@@ -1,0 +1,66 @@
+# M19: ending: SUSPENDED read as an explicit ending
+# file: src/ControlServer.Host/Runtime/ForeignOrders/ForeignRunningOrders.cs
+# - 'RiotOrderState.Cancelled or RiotOrderState.Failed or RiotOrderState.Success or RiotOrderState.Deleted;'
+# + 'RiotOrderState.Cancelled or RiotOrderState.Failed or RiotOrderState.Success or RiotOrderState.Deleted or RiotOrderState.Suspended;'
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Release\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\src\ControlServer.Dashboard\bin\Release\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\src\ControlServer.Application\bin\Release\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.FakeRiot -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Release\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.ProtocolFaultProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Release\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Release\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Release\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Release\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FieldOps -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Release\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.Host -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\src\ControlServer.Host\bin\Release\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.SchemaConformance -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Release\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.Tests -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll
+
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:05.07
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(variant: "cancel-sent-then-suspended") [412 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "CANCEL_SENT"
+Actual:   "ENDED"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 790
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 815
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(variant: "cancel-not-authorized-then-suspended") [403 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "HELD_CANCEL_NOT_AUTHORIZED"
+Actual:   "ENDED"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 790
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 815
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(readBack: 8, released: False) [363 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("CANCEL_SENT", null)
+Actual:   Tuple ("ENDED", 8)
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(Nullable`1 readBack, Boolean released) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 1002
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(Nullable`1 readBack, Boolean released) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 1003
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     3, Passed:   162, Skipped:     0, Total:   165, Duration: 35 s - ControlServer.Tests.dll (net8.0)
+[xUnit.net 00:00:16.89]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(variant: "cancel-sent-then-suspended") [FAIL]
+[xUnit.net 00:00:17.29]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(variant: "cancel-not-authorized-then-suspended") [FAIL]
+[xUnit.net 00:00:18.47]     ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(readBack: 8, released: False) [FAIL]
