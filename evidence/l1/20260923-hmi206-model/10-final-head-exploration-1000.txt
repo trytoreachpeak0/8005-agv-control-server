@@ -1,0 +1,13 @@
+head 48976185e99108716e43a6c5f7d103a058300018
+   ControlServer.Tests  Total: 1, Errors: 0, Failed: 0, Skipped: 0, Not Run: 0, Time: 131.523s
+--- report
+iterations=1000 masterSeed=342
+per combination (ms): n=1000 mean=131.1 p50=106.6 p90=224.2 max=2935.4; wall total 131.4s
+per combination excluding the first (ms): n=999 mean=128.3; first=2935.4
+setup mean=73.8ms; engine rounds per combination mean=4.0; per round (excluding setup) mean=14.4ms
+ack conflicts=0 vehicle regressions=0
+entry request reached the vehicle in 1000 of 1000
+rounds from the last recovery to the entry request: 1: 1000
+DifferentMessageAccepted by where: handshake open 0, handshake done 0
+rounds that failed while carrying a wait-on-person code: 13
+  by code: ORDER_HANG: 13

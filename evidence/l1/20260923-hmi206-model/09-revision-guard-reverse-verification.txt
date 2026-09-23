@@ -1,0 +1,97 @@
+head 48976185e99108716e43a6c5f7d103a058300018; N=10
+=== FIXED
+build:     0 Error(s)
+run 1:    ControlServer.Tests  Total: 2, Errors: 0, Failed: 0, Skipped: 0, Not Run: 0
+run 2:    ControlServer.Tests  Total: 2, Errors: 0, Failed: 0, Skipped: 0, Not Run: 0
+run 3:    ControlServer.Tests  Total: 2, Errors: 0, Failed: 0, Skipped: 0, Not Run: 0
+run 4:    ControlServer.Tests  Total: 2, Errors: 0, Failed: 0, Skipped: 0, Not Run: 0
+run 5:    ControlServer.Tests  Total: 2, Errors: 0, Failed: 0, Skipped: 0, Not Run: 0
+run 6:    ControlServer.Tests  Total: 2, Errors: 0, Failed: 0, Skipped: 0, Not Run: 0
+run 7:    ControlServer.Tests  Total: 2, Errors: 0, Failed: 0, Skipped: 0, Not Run: 0
+run 8:    ControlServer.Tests  Total: 2, Errors: 0, Failed: 0, Skipped: 0, Not Run: 0
+run 9:    ControlServer.Tests  Total: 2, Errors: 0, Failed: 0, Skipped: 0, Not Run: 0
+run 10:    ControlServer.Tests  Total: 2, Errors: 0, Failed: 0, Skipped: 0, Not Run: 0
+all ReconnectModel* classes once:
+   ControlServer.Tests  Total: 26, Errors: 0, Failed: 0, Skipped: 0, Not Run: 3, Time: 31.178s
+restored OK
+=== G1 always the next revision
+-            _resentSafetyChangeThisHandshake ? checked(_acceptedSafetyVersion + 1) : _acceptedSafetyVersion;
++            checked(_acceptedSafetyVersion + 1);
+build:     0 Error(s)
+run 1:    ControlServer.Tests  Total: 2, Errors: 0, Failed: 1, Skipped: 0, Not Run: 0
+  ControlServer.Tests.ReconnectModelRegressionTests.TheHandshakeSnapshotTakesTheNextRevisionOnlyWhenTheHandshakeResentASafetyChange(resend: False, expected: "handshake safety snapshot at v7 (accepted before v"···) [FAIL]
+  Expected: ···"hake safety snapshot at v7 (accepted before v7, re"···
+  Actual:   ···"hake safety snapshot at v8 (accepted before v7, re"···
+run 2:    ControlServer.Tests  Total: 2, Errors: 0, Failed: 1, Skipped: 0, Not Run: 0
+  ControlServer.Tests.ReconnectModelRegressionTests.TheHandshakeSnapshotTakesTheNextRevisionOnlyWhenTheHandshakeResentASafetyChange(resend: False, expected: "handshake safety snapshot at v7 (accepted before v"···) [FAIL]
+  Expected: ···"hake safety snapshot at v7 (accepted before v7, re"···
+  Actual:   ···"hake safety snapshot at v8 (accepted before v7, re"···
+run 3:    ControlServer.Tests  Total: 2, Errors: 0, Failed: 1, Skipped: 0, Not Run: 0
+  ControlServer.Tests.ReconnectModelRegressionTests.TheHandshakeSnapshotTakesTheNextRevisionOnlyWhenTheHandshakeResentASafetyChange(resend: False, expected: "handshake safety snapshot at v7 (accepted before v"···) [FAIL]
+  Expected: ···"hake safety snapshot at v7 (accepted before v7, re"···
+  Actual:   ···"hake safety snapshot at v8 (accepted before v7, re"···
+run 4:    ControlServer.Tests  Total: 2, Errors: 0, Failed: 1, Skipped: 0, Not Run: 0
+  ControlServer.Tests.ReconnectModelRegressionTests.TheHandshakeSnapshotTakesTheNextRevisionOnlyWhenTheHandshakeResentASafetyChange(resend: False, expected: "handshake safety snapshot at v7 (accepted before v"···) [FAIL]
+  Expected: ···"hake safety snapshot at v7 (accepted before v7, re"···
+  Actual:   ···"hake safety snapshot at v8 (accepted before v7, re"···
+run 5:    ControlServer.Tests  Total: 2, Errors: 0, Failed: 1, Skipped: 0, Not Run: 0
+  ControlServer.Tests.ReconnectModelRegressionTests.TheHandshakeSnapshotTakesTheNextRevisionOnlyWhenTheHandshakeResentASafetyChange(resend: False, expected: "handshake safety snapshot at v7 (accepted before v"···) [FAIL]
+  Expected: ···"hake safety snapshot at v7 (accepted before v7, re"···
+  Actual:   ···"hake safety snapshot at v8 (accepted before v7, re"···
+run 6:    ControlServer.Tests  Total: 2, Errors: 0, Failed: 1, Skipped: 0, Not Run: 0
+  ControlServer.Tests.ReconnectModelRegressionTests.TheHandshakeSnapshotTakesTheNextRevisionOnlyWhenTheHandshakeResentASafetyChange(resend: False, expected: "handshake safety snapshot at v7 (accepted before v"···) [FAIL]
+  Expected: ···"hake safety snapshot at v7 (accepted before v7, re"···
+  Actual:   ···"hake safety snapshot at v8 (accepted before v7, re"···
+run 7:    ControlServer.Tests  Total: 2, Errors: 0, Failed: 1, Skipped: 0, Not Run: 0
+  ControlServer.Tests.ReconnectModelRegressionTests.TheHandshakeSnapshotTakesTheNextRevisionOnlyWhenTheHandshakeResentASafetyChange(resend: False, expected: "handshake safety snapshot at v7 (accepted before v"···) [FAIL]
+  Expected: ···"hake safety snapshot at v7 (accepted before v7, re"···
+  Actual:   ···"hake safety snapshot at v8 (accepted before v7, re"···
+run 8:    ControlServer.Tests  Total: 2, Errors: 0, Failed: 1, Skipped: 0, Not Run: 0
+  ControlServer.Tests.ReconnectModelRegressionTests.TheHandshakeSnapshotTakesTheNextRevisionOnlyWhenTheHandshakeResentASafetyChange(resend: False, expected: "handshake safety snapshot at v7 (accepted before v"···) [FAIL]
+  Expected: ···"hake safety snapshot at v7 (accepted before v7, re"···
+  Actual:   ···"hake safety snapshot at v8 (accepted before v7, re"···
+run 9:    ControlServer.Tests  Total: 2, Errors: 0, Failed: 1, Skipped: 0, Not Run: 0
+  ControlServer.Tests.ReconnectModelRegressionTests.TheHandshakeSnapshotTakesTheNextRevisionOnlyWhenTheHandshakeResentASafetyChange(resend: False, expected: "handshake safety snapshot at v7 (accepted before v"···) [FAIL]
+  Expected: ···"hake safety snapshot at v7 (accepted before v7, re"···
+  Actual:   ···"hake safety snapshot at v8 (accepted before v7, re"···
+run 10:    ControlServer.Tests  Total: 2, Errors: 0, Failed: 1, Skipped: 0, Not Run: 0
+  ControlServer.Tests.ReconnectModelRegressionTests.TheHandshakeSnapshotTakesTheNextRevisionOnlyWhenTheHandshakeResentASafetyChange(resend: False, expected: "handshake safety snapshot at v7 (accepted before v"···) [FAIL]
+  Expected: ···"hake safety snapshot at v7 (accepted before v7, re"···
+  Actual:   ···"hake safety snapshot at v8 (accepted before v7, re"···
+all ReconnectModel* classes once:
+    ControlServer.Tests.ReconnectModelRegressionTests.TheHandshakeSnapshotTakesTheNextRevisionOnlyWhenTheHandshakeResentASafetyChange(resend: False, expected: "handshake safety snapshot at v7 (accepted before v"···) [FAIL]
+   ControlServer.Tests  Total: 26, Errors: 0, Failed: 1, Skipped: 0, Not Run: 3, Time: 43.243s
+restored OK
+=== G2 always the accepted revision (the old onboard rule)
+-            _resentSafetyChangeThisHandshake ? checked(_acceptedSafetyVersion + 1) : _acceptedSafetyVersion;
++            _acceptedSafetyVersion;
+build:     0 Error(s)
+run 1:    ControlServer.Tests  Total: 2, Errors: 0, Failed: 1, Skipped: 0, Not Run: 0
+  ControlServer.Tests.ReconnectModelRegressionTests.TheHandshakeSnapshotTakesTheNextRevisionOnlyWhenTheHandshakeResentASafetyChange(resend: True, expected: "handshake safety snapshot at v9 (accepted before v"···) [FAIL]
+run 2:    ControlServer.Tests  Total: 2, Errors: 0, Failed: 1, Skipped: 0, Not Run: 0
+  ControlServer.Tests.ReconnectModelRegressionTests.TheHandshakeSnapshotTakesTheNextRevisionOnlyWhenTheHandshakeResentASafetyChange(resend: True, expected: "handshake safety snapshot at v9 (accepted before v"···) [FAIL]
+run 3:    ControlServer.Tests  Total: 2, Errors: 0, Failed: 1, Skipped: 0, Not Run: 0
+  ControlServer.Tests.ReconnectModelRegressionTests.TheHandshakeSnapshotTakesTheNextRevisionOnlyWhenTheHandshakeResentASafetyChange(resend: True, expected: "handshake safety snapshot at v9 (accepted before v"···) [FAIL]
+run 4:    ControlServer.Tests  Total: 2, Errors: 0, Failed: 1, Skipped: 0, Not Run: 0
+  ControlServer.Tests.ReconnectModelRegressionTests.TheHandshakeSnapshotTakesTheNextRevisionOnlyWhenTheHandshakeResentASafetyChange(resend: True, expected: "handshake safety snapshot at v9 (accepted before v"···) [FAIL]
+run 5:    ControlServer.Tests  Total: 2, Errors: 0, Failed: 1, Skipped: 0, Not Run: 0
+  ControlServer.Tests.ReconnectModelRegressionTests.TheHandshakeSnapshotTakesTheNextRevisionOnlyWhenTheHandshakeResentASafetyChange(resend: True, expected: "handshake safety snapshot at v9 (accepted before v"···) [FAIL]
+run 6:    ControlServer.Tests  Total: 2, Errors: 0, Failed: 1, Skipped: 0, Not Run: 0
+  ControlServer.Tests.ReconnectModelRegressionTests.TheHandshakeSnapshotTakesTheNextRevisionOnlyWhenTheHandshakeResentASafetyChange(resend: True, expected: "handshake safety snapshot at v9 (accepted before v"···) [FAIL]
+run 7:    ControlServer.Tests  Total: 2, Errors: 0, Failed: 1, Skipped: 0, Not Run: 0
+  ControlServer.Tests.ReconnectModelRegressionTests.TheHandshakeSnapshotTakesTheNextRevisionOnlyWhenTheHandshakeResentASafetyChange(resend: True, expected: "handshake safety snapshot at v9 (accepted before v"···) [FAIL]
+run 8:    ControlServer.Tests  Total: 2, Errors: 0, Failed: 1, Skipped: 0, Not Run: 0
+  ControlServer.Tests.ReconnectModelRegressionTests.TheHandshakeSnapshotTakesTheNextRevisionOnlyWhenTheHandshakeResentASafetyChange(resend: True, expected: "handshake safety snapshot at v9 (accepted before v"···) [FAIL]
+run 9:    ControlServer.Tests  Total: 2, Errors: 0, Failed: 1, Skipped: 0, Not Run: 0
+  ControlServer.Tests.ReconnectModelRegressionTests.TheHandshakeSnapshotTakesTheNextRevisionOnlyWhenTheHandshakeResentASafetyChange(resend: True, expected: "handshake safety snapshot at v9 (accepted before v"···) [FAIL]
+run 10:    ControlServer.Tests  Total: 2, Errors: 0, Failed: 1, Skipped: 0, Not Run: 0
+  ControlServer.Tests.ReconnectModelRegressionTests.TheHandshakeSnapshotTakesTheNextRevisionOnlyWhenTheHandshakeResentASafetyChange(resend: True, expected: "handshake safety snapshot at v9 (accepted before v"···) [FAIL]
+all ReconnectModel* classes once:
+    ControlServer.Tests.ReconnectModelRegressionTests.ASafetyChangeLostInFlightDoesNotGetTheNextHandshakeRefused(unsafeChange: True) [FAIL]
+    ControlServer.Tests.ReconnectModelRegressionTests.ASafetyChangeLostInFlightDoesNotGetTheNextHandshakeRefused(unsafeChange: False) [FAIL]
+    ControlServer.Tests.ReconnectModelRegressionTests.TheHandshakeSnapshotTakesTheNextRevisionOnlyWhenTheHandshakeResentASafetyChange(resend: True, expected: "handshake safety snapshot at v9 (accepted before v"···) [FAIL]
+    ControlServer.Tests.ReconnectModelTests.EverySeededSequenceEndsWithTheEntryRequestOnTheVehicle [FAIL]
+   ControlServer.Tests  Total: 26, Errors: 0, Failed: 4, Skipped: 0, Not Run: 3, Time: 52.034s
+restored OK
+    0 Error(s)
+done

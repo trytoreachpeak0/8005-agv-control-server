@@ -39,3 +39,15 @@
 | `08-after-merging-012c31b2-exploration-1000.txt` | 1000 个组合，没有任何一类违规；录入请求 1000/1000 |
 
 模型规则与车载端最终版逐条核对过（读到的，`8005-agv-onboard-hmi` 的 `bde31a1`，合并了 #205 即 `f31ca2b7` 之后）：握手补发循环在 `WireToGateSessionClient.cs:748-762`，遇到 `SafetyStateChanged` 置位；`:792-806` 置位时快照取已接受 + 1 并在确认后推进。#205 新增的旧代重发 `RequestStaleResend` 在 `:1278` 跳过 `SafetyStateChanged`，且只在接收循环起来之后（`:827`，握手快照之后）触发，模型不用为它改。
+
+## 第四轮：审查 A2——取号两半的护栏（`48976185`，已 merge 集成分支顶端 `433364dc`）
+
+独立审查实测：把模型取号改成「一律 +1」，`ReconnectModel*` 与 200 种子那一批全绿。`48976185` 让模型在快照被确认时往轨迹里打一行 `handshake safety snapshot at vN (accepted before vM, resent a change: X)`，新回归用例 `TheHandshakeSnapshotTakesTheNextRevisionOnlyWhenTheHandshakeResentASafetyChange` 断两格（期望值按起点手算：补发那一格 v9，没补发那一格 v7）。
+
+| 文件 | 代码状态 | 结果 |
+| --- | --- | --- |
+| `09-revision-guard-reverse-verification.txt`（脚本 `cs347-guard.sh`：只替换取号那一行、`--no-incremental` 重编、新用例 10 遍、`ReconnectModel*` 全部一遍、还原核 SHA-256） | 不改 | 新用例 10/10 绿；`ReconnectModel*` 26 条全过 |
+| 同上 | G1 取号一律 +1 | 新用例 10/10 红在没补发那一格：`Expected: ···"hake safety snapshot at v7 (accepted before v7, re"···`、`Actual: ···"hake safety snapshot at v8 (accepted before v7, re"···`；`ReconnectModel*` 26 条里**只有这一条红**，印证审查的发现 |
+| 同上 | G2 取号一律用已接受版本（旧车载端规则） | 新用例 10/10 红在补发那一格；`ReconnectModel*` 另有 `ASafetyChangeLostInFlightDoesNotGetTheNextHandshakeRefused` 两格与 CI 那一批红 |
+| `10-final-head-model-and-architecture-tests.txt` | `48976185` | `ReconnectModel*` 加 `*ArchitectureTests` 94 条全过，3 条只在显式要求时跑 |
+| `10-final-head-exploration-1000.txt` | `48976185` | 1000 个组合没有任何一类违规；录入请求 1000/1000，全部 1 轮送到（cs#339 之后） |
