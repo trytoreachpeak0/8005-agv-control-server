@@ -693,7 +693,8 @@ internal static class ReconnectModel
             // NameSilentOnboardSessionAsync 的调用处），闸门关着的那一支又先把失联码换成 ONBOARD_SESSION_NOT_READY 再发计划，
             // 所以没有「带着失联码、这一轮又失败」的机会，这道上限眼下没有东西可抓。这个前提由
             // ReconnectModelRegressionTests.ARoundAfterTheVehicleWentSilentPastTheLivenessWindowPublishesNothing 钉住：
-            // 产品哪天改成先发再判，那条会红，那时要回来证这道上限真能抓到。
+            // 产品哪天改成先发再判，那条会红。实测把「失联判定让这一轮返回」变异掉之后，失联码是在同一轮之内被覆盖的，按轮前后比看不见——
+            // 那时要回来决定模型是否改成能看见一轮之内的覆盖（第二轮审查必修 M2 的反向验证，见 PR 正文）。
             DateTimeOffset now = _fixture.Clock.GetUtcNow();
             bool sessionLostLegitimatelyCleared =
                 string.Equals(code, "ONBOARD_SESSION_LOST", StringComparison.Ordinal) &&
