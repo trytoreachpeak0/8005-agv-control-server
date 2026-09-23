@@ -155,6 +155,64 @@ public sealed class OwnOrderRebuildTests
         Assert.Null((await fixture.RuntimeAsync()).BlockReasonCode);
     }
 
+    // ---- 护栏三：短时二次出问题即停 --------------------------------------------------------------------------
+
+    /// <summary>
+    /// 重建出来的单在窗口之内又被取消：不再重建，旅程码 <c>OWN_ORDER_REBUILD_STOPPED</c>，打错误级告警，记录写明原因；
+    /// 再过多久都不建。窗口之外再被取消：照常再重建一次（新单号与第一次不同）。
+    /// </summary>
+    /// <remarks>
+    /// 用户原话：连续取消说明有人确实想让它停下。窗口从上一次重建确认建成算到这一次出问题。拿掉这道护栏，窗口内那一行红在
+    /// 「建了第三张」上。窗口外那一行守的是反方向：护栏不能把「一次重建之后永远不再重建」当成挡法。
+    /// </remarks>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ARebuiltOrderCancelledAgainSoonIsNotRebuiltASecondTime(bool withinTheWindow)
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync();
+        fixture.Riot.CancelOrder(before.PickupUpperId);
+        await TickAndRunAsync(fixture);
+        await PassTheDelayAsync(fixture);
+        JourneyStopRow rebuiltStop = await CurrentStopAsync(fixture, FirstDemandId);
+        Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+        OwnOrderRebuildRow first = await SingleRebuildAsync(fixture, before.PickupUpperId);
+        Assert.NotNull(first.RebuiltAt);
+
+        TimeSpan window = fixture.Options.OwnOrderRebuildRepeatWindow;
+        fixture.Clock.Advance(withinTheWindow ? window - TimeSpan.FromMinutes(1) : window + TimeSpan.FromMinutes(1));
+        await fixture.HearFromPeerAsync();
+        fixture.Riot.CancelOrder(rebuiltStop.UpperId);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        await PassTheDelayAsync(fixture);
+        await PassTheDelayAsync(fixture);
+
+        OwnOrderRebuildRow second = await SingleRebuildAsync(fixture, rebuiltStop.UpperId);
+        JourneyRuntimeRow after = await fixture.RuntimeAsync();
+        if (withinTheWindow)
+        {
+            Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+            Assert.Equal(
+                (OwnOrderRebuildStates.Stopped, "REBUILT_ORDER_ENDED_AGAIN_WITHIN_WINDOW"),
+                (second.State, second.StoppedReason));
+            Assert.Equal((JourneyRuntimeStage.AwaitingPickupArrival, "OWN_ORDER_REBUILD_STOPPED"), (after.Stage, after.BlockReasonCode));
+            Assert.Equal(rebuiltStop.UpperId, (await CurrentStopAsync(fixture, FirstDemandId)).UpperId);
+            Assert.Single(fixture.EngineLog.Entries, entry =>
+                entry.Level == Microsoft.Extensions.Logging.LogLevel.Error &&
+                entry.Message.Contains(rebuiltStop.UpperId, StringComparison.Ordinal) &&
+                entry.Message.Contains("REBUILT_ORDER_ENDED_AGAIN_WITHIN_WINDOW", StringComparison.Ordinal));
+        }
+        else
+        {
+            Assert.Equal(3, fixture.Riot.CreateCount("TO_PICKUP"));
+            Assert.Equal(OwnOrderRebuildStates.Rebuilt, second.State);
+            Assert.NotEqual(first.NewUpperId, second.NewUpperId);
+            Assert.Equal(second.NewUpperId, (await CurrentStopAsync(fixture, FirstDemandId)).UpperId);
+            Assert.Null(after.BlockReasonCode);
+        }
+    }
+
     // ---- 夹具 ----------------------------------------------------------------------------------------------
 
     /// <summary>
@@ -238,6 +296,12 @@ public sealed class OwnOrderRebuildTests
         {
             await faults.ClearAsync(fixture.Options.AgvId, fault.FaultGeneration, "L1", fixture.Clock.GetUtcNow(), Token);
         }
+    }
+
+    private static async Task<OwnOrderRebuildRow> SingleRebuildAsync(RuntimeFixture fixture, string endedUpperId)
+    {
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        return await reading.OwnOrderRebuilds.AsNoTracking().SingleAsync(row => row.EndedUpperId == endedUpperId, Token);
     }
 
     internal static async Task<JourneyStopRow[]> StopsAsync(RuntimeFixture fixture, string journeyId)
