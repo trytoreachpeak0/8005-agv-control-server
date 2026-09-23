@@ -427,6 +427,77 @@ public sealed class VehicleFaultRecoveryTests
             (record.Source, record.State, record.StoppedReason, record.OperatorId));
     }
 
+    /// <summary>
+    /// REQ-0361 按第一次出问题的来源认「再次」：取消来源的再次出问题只认再次被取消或删除。单被取消、同车重建之后不久，新单 FAILED、
+    /// 人清除——这不是取消来源的再次出问题，照常重建。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0361")]
+    public async Task Req0361AFailureSoonAfterACancellationRebuildIsNotARepeat()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        SiteRiot site = new(fixture);
+        fixture.Riot.MovementState = "MT_FINISHED";
+        fixture.Riot.CancelOrder((await fixture.RuntimeAsync()).PickupUpperId);
+        await TickAndRunAsync(fixture);
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+        string rebuiltUpperId = (await CurrentStopAsync(fixture, FirstDemandId)).UpperId;
+
+        fixture.Clock.Advance(TimeSpan.FromMinutes(2));
+        await fixture.HearFromPeerAsync();
+        fixture.Riot.FailOrder(rebuiltUpperId);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(VehicleFaultLevel.SuspectedBlocked, (await FaultAsync(fixture)).Level);
+        fixture.Context.ChangeTracker.Clear();
+
+        VehicleFaultRecoveryDecision decision = await Service(fixture, site).RecoverAsync(Clear(fixture), Token);
+        fixture.Context.ChangeTracker.Clear();
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+
+        Assert.Equal(
+            (VehicleFaultRecoveryOutcome.Cleared, VehicleFaultRecoveryDispositions.RebuildScheduled),
+            (decision.Outcome, decision.Disposition));
+        Assert.Equal(3, fixture.Riot.CreateCount("TO_PICKUP"));
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        OwnOrderRebuildRow record = await reading.OwnOrderRebuilds.AsNoTracking().SingleAsync(row => row.EndedUpperId == rebuiltUpperId, Token);
+        Assert.Equal(
+            (OwnOrderRebuildSources.FaultClearedNothingOnBoard, OwnOrderRebuildStates.Rebuilt),
+            (record.Source, record.State));
+    }
+
+    /// <summary>
+    /// REQ-0361 反方向：故障清除来源的再次出问题包括被取消、删除。清除后重建出来的单，窗口之内被人在 RIoT 里取消——不再重建，
+    /// 旅程码 <c>OWN_ORDER_REBUILD_STOPPED</c>。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0361")]
+    public async Task Req0361ACancellationSoonAfterAFaultRebuildStopsTheRebuilding()
+    {
+        await using RuntimeFixture fixture = await FaultedOnTheWayToPickupAsync();
+        SiteRiot site = new(fixture);
+        Assert.Equal(VehicleFaultRecoveryDispositions.RebuildScheduled, (await Service(fixture, site).RecoverAsync(Clear(fixture), Token)).Disposition);
+        fixture.Context.ChangeTracker.Clear();
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+        string rebuiltUpperId = (await CurrentStopAsync(fixture, FirstDemandId)).UpperId;
+
+        fixture.Clock.Advance(fixture.Options.OwnOrderRebuildRepeatWindow - TimeSpan.FromMinutes(2));
+        await fixture.HearFromPeerAsync();
+        fixture.Riot.CancelOrder(rebuiltUpperId);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+
+        Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+        Assert.Equal("OWN_ORDER_REBUILD_STOPPED", (await fixture.RuntimeAsync()).BlockReasonCode);
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        OwnOrderRebuildRow record = await reading.OwnOrderRebuilds.AsNoTracking().SingleAsync(row => row.EndedUpperId == rebuiltUpperId, Token);
+        Assert.Equal(
+            (OwnOrderRebuildSources.CancelledInRiot, OwnOrderRebuildStates.Stopped, "REBUILT_ORDER_ENDED_AGAIN_WITHIN_WINDOW"),
+            (record.Source, record.State, record.StoppedReason));
+    }
+
     // ---- 幂等与崩溃 ------------------------------------------------------------------------------------------
 
     /// <summary>

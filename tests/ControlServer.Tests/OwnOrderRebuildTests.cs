@@ -285,12 +285,15 @@ public sealed class OwnOrderRebuildTests
     /// 再过多久都不建。窗口之外再被取消：照常再重建一次（新单号与第一次不同）。
     /// </summary>
     /// <remarks>
-    /// 用户原话：连续取消说明有人确实想让它停下。窗口从上一次重建确认建成算到这一次出问题。拿掉这道护栏，窗口内那一行红在
+    /// REQ-0361：同一 <c>DemandId</c> 在第一次出问题之后的窗口内再次出问题，就不再自动重建。窗口的起点是第一次出问题的时刻
+    /// （CP-0006 新增项二说明 5），不是重建建成的时刻——两者之差见 <see cref="Req0361TheWindowRunsFromTheFirstProblemNotFromTheRebuild"/>。
+    /// 「连续取消说明有人确实想让它停下」是调度转述的理由，不是用户原话（同一份提案说明 2）。拿掉这道护栏，窗口内那一行红在
     /// 「建了第三张」上。窗口外那一行守的是反方向：护栏不能把「一次重建之后永远不再重建」当成挡法。
     /// </remarks>
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
+    [Trait("Requirement", "REQ-0361")]
     public async Task ARebuiltOrderCancelledAgainSoonIsNotRebuiltASecondTime(bool withinTheWindow)
     {
         await using RuntimeFixture fixture = await DispatchedToPickupAsync();
@@ -334,6 +337,49 @@ public sealed class OwnOrderRebuildTests
             Assert.Equal(second.NewUpperId, (await CurrentStopAsync(fixture, FirstDemandId)).UpperId);
             Assert.Null(after.BlockReasonCode);
         }
+    }
+
+    /// <summary>
+    /// REQ-0361 的窗口从同一需求第一次出问题的时刻起算：第一次取消之后车况挡了 9 分钟才建成，第一次取消之后 12 分钟新单又被取消——
+    /// 离第一次出问题已过窗口（10 分钟），照常再重建，哪怕离重建建成只有 3 分钟。
+    /// </summary>
+    /// <remarks>
+    /// 这一条专门区分两种起点：从「重建建成」算，3 分钟在窗口内，会停；从「第一次出问题」算，12 分钟在窗口外，要建。用例里先断言
+    /// 两个间隔确实落在窗口两侧，否则这条分不出两种实现。
+    /// </remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0361")]
+    public async Task Req0361TheWindowRunsFromTheFirstProblemNotFromTheRebuild()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync();
+        fixture.Riot.CancelOrder(before.PickupUpperId);
+        await TickAndRunAsync(fixture);
+        fixture.Riot.SafetyReasons = ["RIOT_EMERGENCY_NOT_OK"];
+        fixture.Clock.Advance(TimeSpan.FromMinutes(9));
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+        fixture.Riot.SafetyReasons = [];
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+        OwnOrderRebuildRow first = await SingleRebuildAsync(fixture, before.PickupUpperId);
+        JourneyStopRow rebuiltStop = await CurrentStopAsync(fixture, FirstDemandId);
+
+        fixture.Clock.Advance(TimeSpan.FromMinutes(3));
+        await fixture.HearFromPeerAsync();
+        fixture.Riot.CancelOrder(rebuiltStop.UpperId);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        await PassTheDelayAsync(fixture);
+
+        OwnOrderRebuildRow second = await SingleRebuildAsync(fixture, rebuiltStop.UpperId);
+        TimeSpan window = fixture.Options.OwnOrderRebuildRepeatWindow;
+        Assert.True(second.IncidentAt - first.IncidentAt > window, "the second problem must fall outside the window from the first");
+        Assert.True(second.IncidentAt - first.RebuiltAt!.Value < window, "the second problem must fall inside the window from the rebuild");
+        Assert.Equal((OwnOrderRebuildStates.Rebuilt, (string?)null), (second.State, second.StoppedReason));
+        Assert.Equal(3, fixture.Riot.CreateCount("TO_PICKUP"));
+        Assert.Equal(second.NewUpperId, (await CurrentStopAsync(fixture, FirstDemandId)).UpperId);
     }
 
     // ---- 幂等、失败与崩溃 --------------------------------------------------------------------------------------
