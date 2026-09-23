@@ -1876,11 +1876,21 @@ internal static class JourneyRuntimeWorkerTestKit
         /// </summary>
         public bool CrashAfterNextOrderCommand { get; set; }
 
+        /// <summary>
+        /// When set, every listing read throws it: a defect somewhere in the supervision, since the real gateway never throws
+        /// for a RIoT failure (control-server#330).
+        /// </summary>
+        public Exception? ListingThrows { get; set; }
+
         public Task<RiotUnfinishedOrderListing> ListUnfinishedOrdersAsync(CancellationToken cancellationToken)
         {
             _ = cancellationToken;
             ListingReads++;
             BeforeListing?.Invoke(ListingReads);
+            if (ListingThrows is { } failure)
+            {
+                return Task.FromException<RiotUnfinishedOrderListing>(failure);
+            }
             if (!ListingComplete)
             {
                 return Task.FromResult(new RiotUnfinishedOrderListing(false, [], _clock.GetUtcNow()));
@@ -1966,18 +1976,23 @@ internal static class JourneyRuntimeWorkerTestKit
     /// A RIoT that lists no unfinished order and is never sent an order command (control-server#330), for the fixtures whose
     /// tests are not about foreign orders. A command reaching it is a failure, not something to answer.
     /// </summary>
-    internal sealed class QuietForeignOrderRiot(TimeProvider clock) : IRiotOrderListingFacts, IRiotOrderCommandGateway
+    /// <remarks>
+    /// Its answers carry a fixed observation time and never read the fixture's clock: the fleet fixture's transcript tests move
+    /// their clock on every read, so a read made by this double would shift every timestamp after it and look like a change in
+    /// what the round decided (control-server#330 found that out the first time).
+    /// </remarks>
+    internal sealed class QuietForeignOrderRiot : IRiotOrderListingFacts, IRiotOrderCommandGateway
     {
         public Task<RiotUnfinishedOrderListing> ListUnfinishedOrdersAsync(CancellationToken cancellationToken)
         {
             _ = cancellationToken;
-            return Task.FromResult(new RiotUnfinishedOrderListing(true, [], clock.GetUtcNow()));
+            return Task.FromResult(new RiotUnfinishedOrderListing(true, [], DateTimeOffset.UnixEpoch));
         }
 
         public Task<RiotOrderStateReading> ReadOrderStateAsync(string orderId, CancellationToken cancellationToken)
         {
             _ = cancellationToken;
-            return Task.FromResult(new RiotOrderStateReading(orderId, null, clock.GetUtcNow()));
+            return Task.FromResult(new RiotOrderStateReading(orderId, null, DateTimeOffset.UnixEpoch));
         }
 
         public Task<RiotCommandCallResult> IssueOrderCommandAsync(
@@ -1999,7 +2014,7 @@ internal static class JourneyRuntimeWorkerTestKit
             JourneyRuntimeOptions options,
             TimeProvider clock)
         {
-            QuietForeignOrderRiot riot = new(clock);
+            QuietForeignOrderRiot riot = new();
             return new ForeignRunningOrderSupervisor(
                 context,
                 riot,

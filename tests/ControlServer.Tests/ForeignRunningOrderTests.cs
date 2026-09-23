@@ -627,6 +627,10 @@ public sealed class ForeignRunningOrderTests
     }
 
     // ---- 重启：「决定取消、未发出」与「已发出、未记账」 -------------------------------------------------------------------
+    //
+    // 崩溃用一次异常来代：保存失败（夹具的 SaveChanges 拦截），或假 RIoT 收下命令之后抛异常。引擎把监管的失败隔离在这一轮之内
+    // （丢掉这次尝试留下的改动、记 2189、这一轮其余照常），崩溃点之后什么都没落库，与进程死掉在那里对库来说是同一件事；
+    // 之后换一个新引擎（重启）接着跑。
 
     /// <summary>
     /// 进程崩在「决定取消」保存之后、审计尝试武装之前：取消一次都没发。重启后先再读一次，它仍在我们车上跑，发一次——不漏发。
@@ -639,10 +643,8 @@ public sealed class ForeignRunningOrderTests
         fixture.Riot.PlaceOrder(ForeignOrderId, ForeignUpperId, RiotOrderState.Executing, fixture.Options.VehicleKey);
         fixture.SaveChanges.FailWhen = written => written.Contains("RiotOrderCommandAuditRow.CommandAuditId");
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Engine.ExecuteOnceAsync(Token));
+        await CrashingRoundAsync(fixture);
 
-        fixture.SaveChanges.FailWhen = null;
-        await fixture.RecreateEngineAsync();
         Assert.Empty(fixture.Riot.OrderCommands);
         Assert.Equal(ForeignRiotOrderStates.CancelDecided, (await RowAsync(fixture)).State);
         Assert.Empty(await AuditAsync(fixture));
@@ -666,9 +668,7 @@ public sealed class ForeignRunningOrderTests
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         fixture.Riot.PlaceOrder(ForeignOrderId, ForeignUpperId, RiotOrderState.Executing, fixture.Options.VehicleKey);
         fixture.SaveChanges.FailWhen = written => written.Contains("RiotOrderCommandAuditRow.CommandAuditId");
-        await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Engine.ExecuteOnceAsync(Token));
-        fixture.SaveChanges.FailWhen = null;
-        await fixture.RecreateEngineAsync();
+        await CrashingRoundAsync(fixture);
         Assert.Equal(ForeignRiotOrderStates.CancelDecided, (await RowAsync(fixture)).State);
 
         fixture.Riot.PlaceOrder(ForeignOrderId, ForeignUpperId, RiotOrderState.Executing, OtherVehicleKey);
@@ -693,8 +693,7 @@ public sealed class ForeignRunningOrderTests
         fixture.Riot.CrashAfterNextOrderCommand = true;
         fixture.Riot.PlaceOrder(ForeignOrderId, ForeignUpperId, RiotOrderState.Executing, fixture.Options.VehicleKey);
 
-        await Assert.ThrowsAsync<IOException>(() => fixture.Engine.ExecuteOnceAsync(Token));
-        await fixture.RecreateEngineAsync();
+        await CrashingRoundAsync(fixture);
         Assert.Single(fixture.Riot.OrderCommands);
 
         for (int round = 0; round < 3; round++)
@@ -716,6 +715,35 @@ public sealed class ForeignRunningOrderTests
             Assert.Equal(ForeignRiotOrderStates.StillRunningAfterCancel, row.State);
             Assert.Equal([fixture.Options.AgvId], await HeldAsync(fixture));
         }
+    }
+
+    /// <summary>
+    /// 监管自己出了缺陷、每一轮都抛：这一轮其余照常——在途旅程照样到站往下走；已经挡着的车照样挡着（挡车读的是库，不是这一次监管）。
+    /// </summary>
+    /// <remarks>
+    /// 真网关对 RIoT 的失败从不抛异常，所以这里的异常代表一个代码缺陷。它不能让所有车的旅程一起停下：外来单在这一轮没认出来，
+    /// 派车照样过车辆安全读取里的 <c>RIOT_NONFINAL_ORDER_PRESENT</c>（0/1 门禁本身）。
+    /// </remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0164")]
+    public async Task AFailingSupervisionDoesNotStopTheRoundAndAHeldVehicleStaysHeld()
+    {
+        await using RuntimeFixture fixture = await AcceptedWithOrderConfirmedAsync();
+        fixture.Riot.CancelTakesEffect = false;
+        fixture.Riot.PlaceOrder(ForeignOrderId, ForeignUpperId, RiotOrderState.Executing, fixture.Options.VehicleKey);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal([fixture.Options.AgvId], await HeldAsync(fixture));
+
+        fixture.Riot.ListingThrows = new InvalidOperationException("A defect in the supervision of foreign orders.");
+        JourneyRuntimeRow arrived = await fixture.AdvanceToSublotWaitAsync();
+
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, arrived.Stage);
+        Assert.Equal([fixture.Options.AgvId], await HeldAsync(fixture));
+        Assert.Single(fixture.Riot.OrderCommands);
+        Assert.Contains(
+            fixture.EngineLog.Entries,
+            entry => entry.Level == LogLevel.Error &&
+                     entry.Message.Contains("supervision of foreign orders", StringComparison.Ordinal));
     }
 
     // ---- 看板 ------------------------------------------------------------------------------------------------------------
@@ -799,6 +827,21 @@ public sealed class ForeignRunningOrderTests
     {
         await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
         return await reading.RiotOrderCommandAudit.AsNoTracking().ToArrayAsync(Token);
+    }
+
+    /// <summary>
+    /// 跑一轮，其中外来订单监管在注入的崩溃点失败：这一轮本身不被拖垮，失败记为 2189 的 Error 日志，之后重启引擎。
+    /// </summary>
+    private static async Task CrashingRoundAsync(RuntimeFixture fixture)
+    {
+        int before = fixture.EngineLog.Entries.Count;
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Contains(
+            fixture.EngineLog.Entries.Skip(before),
+            entry => entry.Level == LogLevel.Error &&
+                     entry.Message.Contains("supervision of foreign orders", StringComparison.Ordinal));
+        fixture.SaveChanges.FailWhen = null;
+        await fixture.RecreateEngineAsync();
     }
 
     /// <summary>

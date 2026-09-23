@@ -132,13 +132,15 @@ public sealed class BlockedJourneyDashboardTests
             "DEPARTURE_SAFETY_NOT_READY",
             """["ACTION_NOT_ALLOWED_IN_STATE","VEHICLE_NOT_READY"]""",
             safetyUnknownPresent: true,
-            ownMovementOrderInFlight: true));
+            ownMovementOrderInFlight: true,
+            foreignRunningOrderHoldsVehicle: false));
         Assert.True(OwnMovementOrderExplanation.Explains(
             "ONBOARD_SESSION_NOT_READY",
             "DEPARTURE_SAFETY_NOT_READY",
             """["VEHICLE_NOT_READY"]""",
             safetyUnknownPresent: true,
-            ownMovementOrderInFlight: true));
+            ownMovementOrderInFlight: true,
+            foreignRunningOrderHoldsVehicle: false));
     }
 
     [Theory]
@@ -170,7 +172,24 @@ public sealed class BlockedJourneyDashboardTests
         bool ownMovementOrderInFlight)
     {
         Assert.False(OwnMovementOrderExplanation.Explains(
-            blockReasonCode, sessionReasonCode, safetyReasonCodesJson, safetyUnknownPresent, ownMovementOrderInFlight));
+            blockReasonCode, sessionReasonCode, safetyReasonCodesJson, safetyUnknownPresent, ownMovementOrderInFlight,
+            foreignRunningOrderHoldsVehicle: false));
+    }
+
+    /// <summary>
+    /// control-server#330：其余条件全都成立、只多一张外来订单挡着这辆车时，不解释。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0164")]
+    public void AnUnknownIsNotExplainedWhileAForeignOrderHoldsTheVehicle()
+    {
+        Assert.False(OwnMovementOrderExplanation.Explains(
+            "ONBOARD_SESSION_NOT_READY",
+            "DEPARTURE_SAFETY_NOT_READY",
+            """["VEHICLE_NOT_READY"]""",
+            safetyUnknownPresent: true,
+            ownMovementOrderInFlight: true,
+            foreignRunningOrderHoldsVehicle: true));
     }
 
     [Theory]

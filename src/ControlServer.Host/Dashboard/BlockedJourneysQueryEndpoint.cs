@@ -165,6 +165,9 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 .ToArrayAsync(cancellationToken),
             StringComparer.Ordinal);
         HashSet<string> ownOrderInFlight = await OwnMovementOrdersInFlightAsync(dbContext, blocked, cancellationToken);
+        // control-server#330: a vehicle a foreign order holds has an unknown that order may be causing.
+        HashSet<string> heldByForeignOrder =
+            await Runtime.ForeignOrders.ForeignRunningOrders.HeldAgvIdsAsync(dbContext, cancellationToken);
         JourneyDemandList demands =
             await JourneyDemandList.ReadAsync(dbContext, [.. blocked.Select(row => row.JourneyId)], cancellationToken);
 
@@ -182,6 +185,7 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                     sessions.GetValueOrDefault(row.AgvId),
                     departedForGate.Contains(row.GateUpperId),
                     ownOrderInFlight.Contains(row.JourneyId),
+                    heldByForeignOrder.Contains(row.AgvId),
                     demands.FactsOf(row.JourneyId),
                     now))
                 .ToArray()
@@ -193,6 +197,7 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
         SessionRecoveryRow? session,
         bool departedForGate,
         bool ownOrderInFlight,
+        bool foreignOrderHoldsVehicle,
         object[] demands,
         DateTimeOffset now)
     {
@@ -208,7 +213,8 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
             session?.ReasonCode,
             session?.SafetyReasonCodesJson,
             session?.SafetyUnknownPresent,
-            ownOrderInFlight);
+            ownOrderInFlight,
+            foreignOrderHoldsVehicle);
         // 失联那一种，会话行上的安全判定是车最后一次在线时的，说不了现在——按「说不清」传，也就是最高档。
         BlockedJourneyEscalationLevel level = _escalation.Classify(
             blockedFor, carriesSession, sessionLost ? null : session?.SafetyUnknownPresent, explained);

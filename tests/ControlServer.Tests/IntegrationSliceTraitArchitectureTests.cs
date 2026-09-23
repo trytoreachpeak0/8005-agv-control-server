@@ -206,7 +206,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
         new(StringComparer.Ordinal)
         {
             ["FakeRiotTests"] = (8, "the fake's own control plane and conflict behaviour; the traited tests are the shapes the production adapter parses"),
-            ["HttpRiotMovementGatewayTests"] = (23, "RIoT adapter fail-closed and sanitisation behaviour; the traited tests are the ones a wire message depends on"),
+            ["HttpRiotMovementGatewayTests"] = (26, "RIoT adapter fail-closed and sanitisation behaviour (control-server#330 added the unfiltered order listing and the by-orderId state read); the traited tests are the ones a wire message depends on"),
             ["JourneyRuntimeOptionsTests"] = (4, "option defaults, and the cargo holding timeout (control-server#206; read by the loading phase since control-server#212); the traited tests are the validations that fail a deployment closed"),
             ["OnboardAlarmProjectionTests"] = (1, "the dashboard self-registration convention #12 set up; the traited tests are the ones standing behind OnboardAlarmSnapshot")
         };
