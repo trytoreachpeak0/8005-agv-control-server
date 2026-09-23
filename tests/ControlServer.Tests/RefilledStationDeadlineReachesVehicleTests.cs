@@ -259,22 +259,27 @@ public sealed class RefilledStationDeadlineReachesVehicleTests
         TestContext.Current.TestOutputHelper?.WriteLine($"crash: {crash?.Message}");
         Assert.NotNull(crash);
         Assert.Equal(1, (await PickupStopAsync(fixture)).WorklistRefills);
-        int entryRequestsBefore = SentLines(fixture, "SublotEntryRequested").Length;
+        long refilledRevision = (vehicle.HeldPayload("CurrentStopWorklistSnapshot")
+            ?? throw new InvalidOperationException("The vehicle holds no worklist.")).GetProperty("worklistRevision").GetInt64();
+        Assert.DoesNotContain(SentLines(fixture, "SublotEntryRequested"), line => EntryRevision(line) == refilledRevision);
 
         await fixture.HearFromPeerAsync();
         await fixture.Engine.ExecuteOnceAsync(Token);
         await vehicle.DeliverBufferedAcksAsync();
 
         await AssertTheVehicleHoldsTheServersDeadlineAsync(fixture, vehicle, before);
-        Assert.Equal(entryRequestsBefore + 1, SentLines(fixture, "SublotEntryRequested").Length);
         AssertTheLastEntryRequestAnswersTheHeldWorklist(fixture, vehicle);
+        Assert.Single(SentLines(fixture, "SublotEntryRequested"), line => EntryRevision(line) == refilledRevision);
         Assert.Equal(1, (await PickupStopAsync(fixture)).WorklistRefills);
 
-        // 补发一次就够：之后就绪的几轮不再发。
+        // 补发一次就够：之后的几轮不再有新的录入请求入队。按 messageId 数而不是按发出的行数：本类的车不确认命令，
+        // 没确认的那几张每一轮都会被原样重放，行数会涨，id 不会。
+        string[] afterTheHeal = EntryRequestIds(fixture);
         fixture.Clock.Advance(TimeSpan.FromSeconds(1));
         await fixture.HearFromPeerAsync();
         await fixture.Engine.ExecuteOnceAsync(Token);
-        Assert.Equal(entryRequestsBefore + 1, SentLines(fixture, "SublotEntryRequested").Length);
+        Assert.Equal(afterTheHeal, EntryRequestIds(fixture));
+        Assert.Equal(2, afterTheHeal.Length);
     }
 
     /// <summary>
@@ -538,6 +543,12 @@ public sealed class RefilledStationDeadlineReachesVehicleTests
         Assert.Equal(fullOnTheWay ? 2 : 1, adopted.Length);
         Assert.Equal(adopted.Order().Distinct(), adopted);
     }
+
+    private static string[] EntryRequestIds(RuntimeFixture fixture) =>
+        [.. SentLines(fixture, "SublotEntryRequested").Select(line => line.GetProperty("messageId").GetString()!).Distinct()];
+
+    private static long EntryRevision(JsonElement line) =>
+        line.GetProperty("payload").GetProperty("worklistRevision").GetInt64();
 
     private static long[] AdoptedWorklists(AdoptingPeer vehicle) =>
         [.. vehicle.Adopted.Where(item => item.MessageType == "CurrentStopWorklistSnapshot").Select(item => item.Revision)];
