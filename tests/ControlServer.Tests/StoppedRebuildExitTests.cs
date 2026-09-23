@@ -141,16 +141,22 @@ public sealed class StoppedRebuildExitTests
     }
 
     /// <summary>
-    /// 与 #299 同样的两件人要给的东西：没署名、没确认已查明原因——停住的旅程也拒绝，两条原因都列出，什么都不改。
+    /// 与 #299 同样的两件人要给的东西：没署名、没确认已查明原因——停住的旅程也拒绝，两条原因都列出，什么都不改。三个出口都一样
+    /// （独立审查 S4：原来只测了人工重建）；每个出口用一个它本来会受理的停住形态，这样拒绝只能来自缺的那两样。
     /// </summary>
-    [Fact]
-    public async Task AnUnnamedOrUnconfirmedRequestIsRefusedForBoth()
+    [Theory]
+    [InlineData(VehicleFaultRecoveryAction.RebuildStoppedOrder)]
+    [InlineData(VehicleFaultRecoveryAction.TerminateStoppedTrip)]
+    [InlineData(VehicleFaultRecoveryAction.PrepareCargoHandoff)]
+    public async Task AnUnnamedOrUnconfirmedRequestIsRefusedForBoth(VehicleFaultRecoveryAction action)
     {
-        await using RuntimeFixture fixture = await StoppedByTheThirdGuardAsync();
+        await using RuntimeFixture fixture = action == VehicleFaultRecoveryAction.PrepareCargoHandoff
+            ? await StoppedWithCargoNotInPlaceAsync()
+            : await StoppedByTheThirdGuardAsync();
         Snapshot before = await SnapshotAsync(fixture);
 
         VehicleFaultRecoveryDecision decision = await VehicleFaultRecoveryTests.Service(fixture, new(fixture))
-            .RecoverAsync(Rebuild(fixture) with { OperatorId = " ", FaultRemedied = false }, Token);
+            .RecoverAsync(Rebuild(fixture) with { Action = action, OperatorId = " ", FaultRemedied = false }, Token);
 
         Assert.Equal(VehicleFaultRecoveryOutcome.Refused, decision.Outcome);
         Assert.Equal(["FAULT_RECOVERY_OPERATOR_UNIDENTIFIED", "FAULT_RECOVERY_REMEDY_NOT_CONFIRMED"], decision.Reasons);
@@ -388,13 +394,27 @@ public sealed class StoppedRebuildExitTests
     /// 发任何东西；收尾快照当场发给车；每次调用记告警（事件 9203）。之后这辆车照常接新活，终结的那条需求 MES 还列着也不再被接。
     /// </summary>
     /// <remarks>
+    /// <para>
     /// 用户 2026-09-23 允许（issuecomment-5798100435，原话「允许」）：乙属于 REQ-0361 说的「由人员处理」，不是条文禁止的释放或改派。
+    /// </para>
+    /// <para>
+    /// 被终结的 DemandId 写进响应与事件 9203（MES 那边要人手工收尾，现场要知道收哪几条），放弃的人落在那条重建记录上（独立审查 S2）。
+    /// 真车载端在途未就绪那一格（独立审查 S4，形状照 <c>PickupDispatchPlanPastOwnOrderTests.DropSessionOnOwnOrderAsync</c>）：放弃不看会话
+    /// 就绪，照样终结与收尾。
+    /// </para>
     /// </remarks>
-    [Fact]
+    [Theory]
+    [InlineData("ready")]
+    [InlineData("not-ready-on-own-order")]
     [Trait("Requirement", "REQ-0361")]
-    public async Task AStoppedTripWithNothingOnBoardIsGivenUpOnAPersonsRequest()
+    public async Task AStoppedTripWithNothingOnBoardIsGivenUpOnAPersonsRequest(string session)
     {
         await using RuntimeFixture fixture = await StoppedByTheThirdGuardAsync();
+        if (session == "not-ready-on-own-order")
+        {
+            await OwnOrderRebuildTests.DropSessionOnOwnOrderAsync(fixture);
+        }
+
         JourneyRuntimeRow stopped = await fixture.RuntimeAsync();
         JourneyStopRow stop = await CurrentStopAsync(fixture, FirstDemandId);
         VehicleFaultRecoveryTests.SiteRiot site = new(fixture);
@@ -426,8 +446,8 @@ public sealed class StoppedRebuildExitTests
             OwnOrderRebuildRow record = await reading.OwnOrderRebuilds.AsNoTracking()
                 .SingleAsync(row => row.EndedUpperId == stop.UpperId, Token);
             Assert.Equal(
-                (OwnOrderRebuildStates.Ended, "REBUILT_ORDER_ENDED_AGAIN_WITHIN_WINDOW"),
-                (record.State, record.StoppedReason));
+                (OwnOrderRebuildStates.Ended, "REBUILT_ORDER_ENDED_AGAIN_WITHIN_WINDOW", OperatorId),
+                (record.State, record.StoppedReason, record.OperatorId));
             await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(reading);
             await ClosureSnapshotAssertions.AssertClosureSentAsync(
                 reading, stopped.AgvId, fixture.Peer.Lines.Select(line => System.Text.Encoding.UTF8.GetString(line)), 1,
@@ -438,9 +458,16 @@ public sealed class StoppedRebuildExitTests
             entry.Level == Microsoft.Extensions.Logging.LogLevel.Warning &&
             entry.Message.Contains("TerminateStoppedTrip", StringComparison.Ordinal) &&
             entry.Message.Contains(OperatorId, StringComparison.Ordinal) &&
-            entry.Message.Contains("TripTerminated", StringComparison.Ordinal));
+            entry.Message.Contains("TripTerminated", StringComparison.Ordinal) &&
+            entry.Message.Contains($"terminated: {FirstDemandId}", StringComparison.Ordinal));
 
         // 之后这辆车照常接新活；终结的那条 MES 还列着，也不再被接。
+        if (session == "not-ready-on-own-order")
+        {
+            fixture.Context.ChangeTracker.Clear();
+            await fixture.RestoreSessionReadyAsync();
+        }
+
         AcceptedDemandSnapshot next = fixture.Demand(SecondDemandId, "SUBLOT-002", createdAt: Now.AddMinutes(-5));
         fixture.Catalog.Set([ended, next]);
         fixture.BoxCounts.Set("SUBLOT-002", 4);
@@ -737,15 +764,18 @@ public sealed class StoppedRebuildExitTests
     }
 
     /// <summary>
-    /// 护栏三停住而车上有货（去卸货站那条腿上反复被取消）：人可以选人工重建，也可以选交接；选交接时同样转进异常处置会话。
+    /// 护栏三停住而车上有货（去卸货站那条腿上反复被取消）：人可以选人工重建，也可以选交接；选交接时同样转进异常处置会话。转交接的人
+    /// 落在那条重建记录上，每次调用记告警（事件 9203，写明动作与人；独立审查 S2、S4）。
     /// </summary>
     [Fact]
     [Trait("Requirement", "REQ-0238")]
     public async Task AStoppedTripWithCargoOnBoardCanBeHandedToTheExceptionSession()
     {
         await using RuntimeFixture fixture = await StoppedOnTheWayToGateAsync();
+        string stoppedOrder = (await CurrentStopAsync(fixture, FirstDemandId)).UpperId;
+        RecordingLogger<VehicleFaultRecoveryService> log = new();
 
-        VehicleFaultRecoveryDecision decision = await VehicleFaultRecoveryTests.Service(fixture, new(fixture))
+        VehicleFaultRecoveryDecision decision = await VehicleFaultRecoveryTests.Service(fixture, new(fixture), logger: log)
             .RecoverAsync(Prepare(fixture), Token);
 
         Assert.Equal(VehicleFaultRecoveryOutcome.HandoffPrepared, decision.Outcome);
@@ -753,6 +783,56 @@ public sealed class StoppedRebuildExitTests
         Assert.Equal(
             (JourneyRuntimeStage.Blocked, "OWN_ORDER_REBUILD_AWAITING_CARGO_HANDOFF"),
             (blocked.Stage, blocked.BlockReasonCode));
+        OwnOrderRebuildRow record = await RebuildForAsync(fixture, stoppedOrder);
+        Assert.Equal((OwnOrderRebuildStates.AwaitingCargoHandoff, OperatorId), (record.State, record.OperatorId));
+        Assert.Single(log.Entries, entry =>
+            entry.Level == Microsoft.Extensions.Logging.LogLevel.Warning &&
+            entry.Message.Contains("PrepareCargoHandoff", StringComparison.Ordinal) &&
+            entry.Message.Contains(OperatorId, StringComparison.Ordinal) &&
+            entry.Message.Contains("HandoffPrepared", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// 转进会话之后走的是强制机械恢复（货由人手动取走，<c>MECHANICALLY_ISOLATED</c>）而不是交接：同样了结这条需求的故障货物绑定、
+    /// 旅程收尾时停住那条记录转 <c>ENDED</c>（独立审查 S4：这一支之前没有用例，删掉它全部照绿）。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0242")]
+    public async Task AForcedMechanicalRecoveryOfAHandedOverTripSettlesItsBinding()
+    {
+        Environment.SetEnvironmentVariable(ProofVariable, Proof);
+        try
+        {
+            await using RuntimeFixture fixture = await StoppedWithCargoNotInPlaceAsync();
+            JourneyRuntimeRow stopped = await fixture.RuntimeAsync();
+            int[] slots = await CargoSlotsAsync(fixture);
+            Assert.Equal(
+                VehicleFaultRecoveryOutcome.HandoffPrepared,
+                (await VehicleFaultRecoveryTests.Service(fixture, new(fixture)).RecoverAsync(Prepare(fixture), Token)).Outcome);
+            await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+            OnboardMessageProcessor processor = RecoveryProcessor(fixture, connection);
+            OnboardConnectionState state = Connection(fixture);
+            string sessionId = FirstLinePayload(
+                await AssertOpenedAsync(processor.ProcessAsync(OpenSession(fixture, SessionRequest, slots), state, Token)))
+                .GetProperty("exceptionRecoverySessionId").GetString()!;
+            Assert.Equal("RecoveryActionAccepted", FirstLineType(
+                await processor.ProcessAsync(Action(fixture, sessionId, "FORCED_MECHANICAL_RECOVERY", slots), state, Token)));
+
+            Assert.Equal("DurableAck", FirstLineType(
+                await processor.ProcessAsync(MechanicallyIsolated(fixture, sessionId, slots), state, Token)));
+
+            await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+            JourneyRuntimeRow closed = await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token);
+            Assert.Equal((JourneyRuntimeStage.Completed, "TERMINATED_BY_FAULT_CARGO_HANDOFF"), (closed.Stage, closed.BlockReasonCode));
+            FaultedVehicleCargoRow binding = await reading.FaultedVehicleCargo.AsNoTracking().SingleAsync(Token);
+            Assert.NotNull(binding.ReleasedAt);
+            Assert.Equal("HANDED_OFF_IN_EXCEPTION_SESSION", binding.ReleasedReason);
+            Assert.Equal(OwnOrderRebuildStates.Ended, (await RebuildForAsync(fixture, stopped.GateUpperId)).State);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(ProofVariable, null);
+        }
     }
 
     /// <summary>
@@ -1006,12 +1086,15 @@ public sealed class StoppedRebuildExitTests
                 (VehicleFaultRecoveryOutcome.Refused, "OWN_ORDER_REBUILD_EXIT_NOTHING_ON_BOARD"),
                 (again.Outcome, string.Join(',', again.Reasons)));
 
-            VehicleFaultRecoveryDecision givenUp = await VehicleFaultRecoveryTests.Service(fixture, new(fixture))
+            RecordingLogger<VehicleFaultRecoveryService> log = new();
+            VehicleFaultRecoveryDecision givenUp = await VehicleFaultRecoveryTests.Service(fixture, new(fixture), logger: log)
                 .RecoverAsync(GiveUp(fixture), Token);
 
             Assert.Equal(
                 (VehicleFaultRecoveryOutcome.TripTerminated, VehicleFaultRecoveryDispositions.TripTerminated),
                 (givenUp.Outcome, givenUp.Disposition));
+            // Only B is ended here: A was ended by its handoff, and the audit names the ones this request ended.
+            Assert.Single(log.Entries, entry => entry.Message.Contains($"terminated: {SecondDemandId};", StringComparison.Ordinal));
             await using ControlServerDbContext after = new(fixture.DbOptionsForTests);
             JourneyRuntimeRow closed = await after.JourneyRuntimes.AsNoTracking().SingleAsync(Token);
             Assert.Equal(
@@ -1223,6 +1306,20 @@ public sealed class StoppedRebuildExitTests
             observedAt = Now
         });
 
+    private static string MechanicallyIsolated(RuntimeFixture fixture, string sessionId, int[] slots) =>
+        Envelope(fixture, "ForcedMechanicalRecoveryResult", new
+        {
+            exceptionRecoverySessionId = sessionId,
+            recoveryActionId = ActionId,
+            forcedRecoveryGeneration = 1,
+            outcome = "MECHANICALLY_ISOLATED",
+            slots,
+            @operator = BeforeSublotOperator(fixture),
+            observedAt = Now,
+            electronicEmptyProven = false,
+            vehicleReadyProven = false
+        });
+
     private static string Envelope(RuntimeFixture fixture, string messageType, object payload) =>
         BeforeSublotEnvelope(fixture, Guid.NewGuid().ToString("D"), messageType, generation: 1, payload);
 
@@ -1306,7 +1403,7 @@ public sealed class StoppedRebuildExitTests
             fixture.Riot.CreateCount("TO_GATE"));
     }
 
-    private static async Task<RuntimeFixture> DispatchedToPickupAsync()
+    internal static async Task<RuntimeFixture> DispatchedToPickupAsync()
     {
         RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));

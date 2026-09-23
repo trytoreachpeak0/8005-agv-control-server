@@ -199,16 +199,33 @@ public sealed class VehicleFaultRecoveryEndpointsTests
         Assert.Equal((action, outcome, disposition, 0), (done.Action, done.Outcome, done.Disposition, done.Reasons.Count));
         VehicleFaultRecoveryResponse again = Assert.IsType<Ok<VehicleFaultRecoveryResponse>>(second.Result).Value!;
         Assert.Equal(("AlreadyDone", "NONE"), (again.Outcome, again.Disposition));
+
+        // Giving up names the demands it ended, for the people who close them in MES (independent review S2); nothing else
+        // ends one, and a repeat ends nothing. Read through the serialized body: that is what the caller gets.
+        Assert.Equal(
+            action == "TERMINATE_STOPPED_TRIP" ? [Batch7StopDrivenAdvanceDriver.FirstDemandId] : [],
+            TerminatedDemandIds(done));
+        Assert.Empty(TerminatedDemandIds(again));
+
+        static string[] TerminatedDemandIds(VehicleFaultRecoveryResponse body) =>
+            System.Text.Json.JsonSerializer.SerializeToElement(body).GetProperty("TerminatedDemandIds")
+                .EnumerateArray().Select(item => item.GetString()!).ToArray();
     }
 
-    [Fact]
-    public async Task AnExitForAJourneyThatIsNotStoppedIsAConflict()
+    /// <summary>
+    /// 三个出口在不是停住的旅程上（正常在途）一律 409，理由 <c>OWN_ORDER_REBUILD_EXIT_NOT_STOPPED</c>（独立审查 S4：原来只测了人工重建）。
+    /// </summary>
+    [Theory]
+    [InlineData("REBUILD_STOPPED_ORDER")]
+    [InlineData("TERMINATE_STOPPED_TRIP")]
+    [InlineData("PREPARE_CARGO_HANDOFF")]
+    public async Task AnExitForAJourneyThatIsNotStoppedIsAConflict(string action)
     {
-        await using RuntimeFixture fixture = await FaultedOnTheWayToPickupAsync();
+        await using RuntimeFixture fixture = await StoppedRebuildExitTests.DispatchedToPickupAsync();
         using CredentialScope scope = new();
 
         var result = await PostAsync(
-            fixture, scope.Variable, $"Bearer {Credential}", Request(fixture) with { Action = "REBUILD_STOPPED_ORDER" });
+            fixture, scope.Variable, $"Bearer {Credential}", Request(fixture) with { Action = action });
 
         ProblemHttpResult problem = Assert.IsType<ProblemHttpResult>(result.Result);
         Assert.Equal(StatusCodes.Status409Conflict, problem.StatusCode);
