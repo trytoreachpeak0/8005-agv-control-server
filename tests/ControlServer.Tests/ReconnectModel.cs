@@ -204,14 +204,7 @@ internal static class ReconnectModel
     /// <b>修复票合入时，这里的那一行与那条 Skip 要一起去掉</b>，否则修复之后同一种违规再出现也不会有人知道。认法故意收得窄：
     /// 同一类别里说明对不上的，照样判失败——那是新问题，交分票王开票。
     /// </remarks>
-    internal static readonly KnownDefect[] KnownDefects =
-    [
-        // 同一代握手里补发 SafetyStateChanged vN 之后，同为 vN 的安全快照按整行哈希判冲突，握手被拒。
-        new(
-            "onboard-hmi#206",
-            ReconnectViolation.LegitimateMessageRefused,
-            ["SafetyStateSnapshot (generation", "handshake open", "ProtocolContentConflictException: safety revision", "has conflicting content"]),
-    ];
+    internal static readonly KnownDefect[] KnownDefects = [];
 
     /// <summary>这一条违规在 <paramref name="table"/> 里对应的已知未修缺陷，没有时为 null。</summary>
     internal static KnownDefect? KnownDefectFor(IReadOnlyList<KnownDefect> table, ReconnectViolation violation, string detail) =>

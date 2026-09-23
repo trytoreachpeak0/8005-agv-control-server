@@ -202,10 +202,13 @@ public sealed class ReconnectModelRegressionTests
     /// <c>safety revision N has conflicting content</c>，握手被拒——onboard-hmi#206。
     /// </para>
     /// <para>
-    /// 在 cs#340 修好之前走不到这里：握手在补发那一条的答复上就断了。所以这一条要等 cs#340 与 hmi#206 都修好才会绿。
+    /// 在 cs#340 修好之前走不到这里：握手在补发那一条的答复上就断了。hmi#206 修在车载端（onboard-hmi PR #207）：本次握手补发过
+    /// <c>SafetyStateChanged</c> 时，握手快照取已接受版本的下一版，所以这一条绿的前提是模型里的车照那条新规则发快照
+    /// （<see cref="ReconnectModel"/> 的 <c>SafetySnapshotPayload</c>）。把模拟的车改回「一律用已接受的版本」，这一条会重新红在
+    /// <c>has conflicting content</c>。
     /// </para>
     /// </remarks>
-    [Theory(Skip = "known defect: onboard-hmi#206 https://github.com/trytoreachpeak0/8005-agv-onboard-hmi/issues/206")]
+    [Theory]
     [Trait("IntegrationSlice", "FP-IS-00")]
     [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
     [InlineData(true)]
