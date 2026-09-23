@@ -9,6 +9,7 @@ using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Runtime.Faults;
 using ControlServer.Host.Runtime.Fleet;
+using ControlServer.Host.Runtime.ForeignOrders;
 using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.TaskTypeStations;
 using ControlServer.Host.Transport;
@@ -1112,10 +1113,21 @@ internal static class JourneyRuntimeWorkerTestKit
                 new DispatchZoneParameterStore(Context, CreateGovernedPublisher()),
                 SlotGroupFullness,
                 Riot,
+                new ForeignRunningOrderSupervisor(
+                    Context,
+                    Riot,
+                    Riot,
+                    new RiotOrderCommandAuditStore(Context),
+                    new VehicleRoster(options),
+                    Clock,
+                    ForeignOrderLog),
                 options,
                 Clock,
                 EngineLog);
         }
+
+        /// <summary>What the foreign running order supervisor logged (control-server#330): its alarms are log events.</summary>
+        public RecordingLogger<ForeignRunningOrderSupervisor> ForeignOrderLog { get; } = new();
 
         /// <summary>
         /// 派车轮写、推进段读的那块板（批次7-07）：宿主里是单例，这里一个夹具一块，跨轮次保留。换一块新的再
@@ -1577,7 +1589,8 @@ internal static class JourneyRuntimeWorkerTestKit
     }
 
     internal sealed class RecordingRiot
-        : IRiotMovementGateway, IRiotVehicleFacts, IRiotMapStationCatalog, IVehicleMotionFacts, IRiotVehicleSafetyFacts
+        : IRiotMovementGateway, IRiotVehicleFacts, IRiotMapStationCatalog, IVehicleMotionFacts, IRiotVehicleSafetyFacts,
+            IRiotOrderListingFacts, IRiotOrderCommandGateway
     {
         private readonly JourneyRuntimeOptions _options;
         private readonly FixedTimeProvider _clock;
@@ -1807,12 +1820,195 @@ internal static class JourneyRuntimeWorkerTestKit
             return Task.FromResult(active);
         }
 
+        // ---- control-server#330: the by-state order listing, the by-orderId read, and the order command endpoint ----
+
+        private readonly List<RiotListedOrder> _otherOrders = [];
+        private readonly Dictionary<string, int> _endedOtherOrders = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// Puts an order into RIoT that this server did not create through <see cref="CreateAsync"/>: listed from now on in
+        /// state <paramref name="orderState"/>, on <paramref name="executeVehicleKey"/> (null for RIoT's <c>"--"</c>).
+        /// </summary>
+        public void PlaceOrder(
+            string orderId,
+            string? upperId,
+            int orderState,
+            string? executeVehicleKey,
+            string? appointVehicleKey = null)
+        {
+            _otherOrders.RemoveAll(order => order.OrderId == orderId);
+            _endedOtherOrders.Remove(orderId);
+            _otherOrders.Add(new RiotListedOrder(
+                orderId, upperId, orderState, appointVehicleKey ?? executeVehicleKey, executeVehicleKey ?? "--"));
+        }
+
+        /// <summary>The placed order <paramref name="orderId"/> leaves the listing in the final state <paramref name="orderState"/>.</summary>
+        public void EndPlacedOrder(string orderId, int orderState)
+        {
+            _otherOrders.RemoveAll(order => order.OrderId == orderId);
+            _endedOtherOrders[orderId] = orderState;
+        }
+
+        /// <summary>Whether the by-state listing answers completely. False is the page that does not cover every record.</summary>
+        public bool ListingComplete { get; set; } = true;
+
+        /// <summary>How many times the by-state listing was read.</summary>
+        public int ListingReads { get; private set; }
+
+        /// <summary>
+        /// Called with the number of the listing read about to be answered (1 for the first): lets a test change what RIoT
+        /// holds between two reads, such as between the read that found an order and the re-read before its cancel.
+        /// </summary>
+        public Action<int>? BeforeListing { get; set; }
+
+        /// <summary>Every order command that reached this RIoT, in order.</summary>
+        public List<(RiotOrderCommandKind Kind, string OrderId, string? Reason)> OrderCommands { get; } = [];
+
+        /// <summary>Whether a cancel moves the order to CANCELLED (BC-ORDER-003). False is a RIoT that accepts and does nothing.</summary>
+        public bool CancelTakesEffect { get; set; } = true;
+
+        /// <summary>What the next order command call answers.</summary>
+        public RiotCommandCallDisposition OrderCommandDisposition { get; set; } = RiotCommandCallDisposition.Accepted;
+
+        /// <summary>
+        /// The next order command reaches RIoT -- and takes whatever effect it takes -- then the process stops before the answer
+        /// is recorded, once (the "sent, not recorded" crash point of control-server#330).
+        /// </summary>
+        public bool CrashAfterNextOrderCommand { get; set; }
+
+        public Task<RiotUnfinishedOrderListing> ListUnfinishedOrdersAsync(CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            ListingReads++;
+            BeforeListing?.Invoke(ListingReads);
+            if (!ListingComplete)
+            {
+                return Task.FromResult(new RiotUnfinishedOrderListing(false, [], _clock.GetUtcNow()));
+            }
+
+            // This server's own orders are listed too, the way RIoT lists them: a live one in its state, on the vehicle it was
+            // created for once it is past QUEUEING. So every test that drives a journey also has its own orders go through the
+            // ownership check -- one taken for foreign would be cancelled, and would show.
+            RiotListedOrder[] own = [.. _orders.Values
+                .Where(order => order.Kind == RiotOrderObservationKind.Active &&
+                                order.OrderState is 1 or 3 or 7 or 9 &&
+                                !string.IsNullOrWhiteSpace(order.OrderId))
+                .Select(order => new RiotListedOrder(
+                    order.OrderId!,
+                    order.UpperId,
+                    order.OrderState,
+                    order.VehicleKey,
+                    order.OrderState == 1 ? "--" : order.VehicleKey))];
+            return Task.FromResult(new RiotUnfinishedOrderListing(
+                true, [.. own, .. _otherOrders], _clock.GetUtcNow()));
+        }
+
+        public Task<RiotOrderStateReading> ReadOrderStateAsync(string orderId, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            int? state = _otherOrders.FirstOrDefault(order => order.OrderId == orderId)?.OrderState
+                         ?? (_endedOtherOrders.TryGetValue(orderId, out int ended) ? ended : (int?)null)
+                         ?? _orders.Values.FirstOrDefault(order => order.OrderId == orderId)?.OrderState;
+            return Task.FromResult(new RiotOrderStateReading(orderId, state, _clock.GetUtcNow()));
+        }
+
+        public Task<RiotCommandCallResult> IssueOrderCommandAsync(
+            RiotOrderCommandKind kind,
+            string orderId,
+            string? reason,
+            CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            OrderCommands.Add((kind, orderId, reason));
+            if (kind == RiotOrderCommandKind.Cancel && CancelTakesEffect &&
+                OrderCommandDisposition == RiotCommandCallDisposition.Accepted)
+            {
+                if (_otherOrders.Any(order => order.OrderId == orderId))
+                {
+                    EndPlacedOrder(orderId, RiotOrderState.Cancelled);
+                }
+                foreach (string upperId in _orders.Where(entry => entry.Value.OrderId == orderId).Select(entry => entry.Key)
+                             .ToArray())
+                {
+                    CancelOrder(upperId);
+                }
+            }
+            if (CrashAfterNextOrderCommand)
+            {
+                CrashAfterNextOrderCommand = false;
+                throw new IOException($"The process stopped after RIoT received {kind} for {orderId} and before the answer was recorded.");
+            }
+            return Task.FromResult(new RiotCommandCallResult(
+                OrderCommandDisposition,
+                new RiotOrderCallReceipt(RiotCommandTypeNames.For(kind), OrderCommandDisposition.ToString(), _clock.GetUtcNow())));
+        }
+
+        public Task<RiotCommandCallResult> IssueEmergencyCommandAsync(
+            RiotEmergencyCommandKind kind,
+            string deviceKey,
+            CancellationToken cancellationToken)
+        {
+            _ = deviceKey;
+            _ = cancellationToken;
+            throw new InvalidOperationException(
+                $"No emergency command is expected from the foreign running order supervision; {kind} was issued.");
+        }
+
         private static string UpperId(string purpose) => purpose switch
         {
             "TO_PICKUP" => "W2G-10000000-0000-4000-8000-000000000001-PICKUP-1",
             "TO_GATE" => "W2G-10000000-0000-4000-8000-000000000001-GATE-1",
             _ => throw new ArgumentOutOfRangeException(nameof(purpose))
         };
+    }
+
+    /// <summary>
+    /// A RIoT that lists no unfinished order and is never sent an order command (control-server#330), for the fixtures whose
+    /// tests are not about foreign orders. A command reaching it is a failure, not something to answer.
+    /// </summary>
+    internal sealed class QuietForeignOrderRiot(TimeProvider clock) : IRiotOrderListingFacts, IRiotOrderCommandGateway
+    {
+        public Task<RiotUnfinishedOrderListing> ListUnfinishedOrdersAsync(CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult(new RiotUnfinishedOrderListing(true, [], clock.GetUtcNow()));
+        }
+
+        public Task<RiotOrderStateReading> ReadOrderStateAsync(string orderId, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult(new RiotOrderStateReading(orderId, null, clock.GetUtcNow()));
+        }
+
+        public Task<RiotCommandCallResult> IssueOrderCommandAsync(
+            RiotOrderCommandKind kind,
+            string orderId,
+            string? reason,
+            CancellationToken cancellationToken) =>
+            throw new InvalidOperationException($"No order command is expected here; {kind} for {orderId} was issued.");
+
+        public Task<RiotCommandCallResult> IssueEmergencyCommandAsync(
+            RiotEmergencyCommandKind kind,
+            string deviceKey,
+            CancellationToken cancellationToken) =>
+            throw new InvalidOperationException($"No emergency command is expected here; {kind} for {deviceKey} was issued.");
+
+        /// <summary>The supervisor these fixtures run, over this quiet RIoT.</summary>
+        public static ForeignRunningOrderSupervisor Supervisor(
+            ControlServerDbContext context,
+            JourneyRuntimeOptions options,
+            TimeProvider clock)
+        {
+            QuietForeignOrderRiot riot = new(clock);
+            return new ForeignRunningOrderSupervisor(
+                context,
+                riot,
+                riot,
+                new RiotOrderCommandAuditStore(context),
+                new VehicleRoster(Microsoft.Extensions.Options.Options.Create(options)),
+                clock,
+                NullLogger<ForeignRunningOrderSupervisor>.Instance);
+        }
     }
 
     internal sealed class RecordingPeer : IOnboardPeer

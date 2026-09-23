@@ -45,6 +45,7 @@ public sealed partial class JourneyRuntimeEngine(
     IDispatchZoneParameterStore zoneParameters,
     SlotGroupFullnessBoard slotGroupFullness,
     IRiotVehicleSafetyFacts vehicleSafety,
+    ForeignOrders.ForeignRunningOrderSupervisor foreignOrders,
     IOptions<JourneyRuntimeOptions> options,
     TimeProvider timeProvider,
     ILogger<JourneyRuntimeEngine> logger)
@@ -350,6 +351,10 @@ public sealed partial class JourneyRuntimeEngine(
 
     private async Task ExecuteRoundAsync(CancellationToken cancellationToken)
     {
+        // control-server#330: first, before anything reads which vehicles are free -- a foreign order found running on a
+        // vehicle of ours this round holds that vehicle this round. Not behind the Map catalog read: cancelling an order that
+        // is not ours does not depend on the Map.
+        await foreignOrders.SuperviseAsync(cancellationToken).ConfigureAwait(false);
 
         RiotMapStationCatalogSnapshot currentMap;
         IFixedTaskStationView fixedStations;

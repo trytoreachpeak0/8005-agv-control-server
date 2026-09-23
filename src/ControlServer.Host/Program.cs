@@ -42,6 +42,7 @@ builder.Services.AddScoped<DemandIntakeService>();
 builder.Services.AddScoped<MovementDispatchService>();
 builder.Services.AddScoped<JourneyIntakeCoordinator>();
 builder.Services.AddScoped<JourneyRuntimeEngine>();
+builder.Services.AddScoped<ControlServer.Host.Runtime.ForeignOrders.ForeignRunningOrderSupervisor>();
 builder.Services.AddDispatchAdmission();
 builder.Services.AddOptions<RouteGraphOptions>()
     .Bind(builder.Configuration.GetSection(RouteGraphOptions.SectionName))
