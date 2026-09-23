@@ -56,6 +56,7 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
     public DbSet<MapStationCatalogStateRow> MapStationCatalogStates => Set<MapStationCatalogStateRow>();
     public DbSet<FrozenDemandStationRow> FrozenDemandStations => Set<FrozenDemandStationRow>();
     public DbSet<CreateGateAuditRow> CreateGateAudit => Set<CreateGateAuditRow>();
+    public DbSet<OwnOrderRebuildRow> OwnOrderRebuilds => Set<OwnOrderRebuildRow>();
 
     /// <summary>
     /// How long audit records are protected from deletion. Defaults to the REQ-0271 floor of 180

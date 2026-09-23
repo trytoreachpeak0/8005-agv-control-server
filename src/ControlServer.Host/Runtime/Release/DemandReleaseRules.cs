@@ -241,7 +241,20 @@ public static class DemandReleaseReasons
     /// </summary>
     public static bool IsRefusalCode(string? code) => code is
         AfterArrival or CurrentStopWithOtherDemands or AnchorWithOtherDemands or OrderCancelNotConfirmed or
-        OrderStateUnknown or PickupOrderAppeared or PickupOrderSucceeded or FaultSupervisionInEffect;
+        OrderStateUnknown or PickupOrderAppeared or PickupOrderSucceeded or FaultSupervisionInEffect or
+        OrderStalledOrRebuilding;
+
+    /// <summary>
+    /// 这趟旅程开往当前停靠的那张单停住了——挂起、语义不明、被人在 RIoT 里取消而正等着同车重建、故障清除后等着重建、
+    /// 或重建已被挡住等人（<c>JourneyRuntimeEngine.IsStalledOrderReason</c>）——或者它有一次还没建成的重建
+    /// （control-server#318）：不释放，也不取消那张单（#318 票面的设计问题，来自 #321 独立审查低项）。
+    /// </summary>
+    /// <remarks>
+    /// 释放一条被取消的单的需求就是改派，而用户定的是同车同需求重建（issuecomment-5787511271：「不改派啊，留在本车上」）；
+    /// 挂起的单按 #316 的 H-a 只由人 continue 或取消，服务端替人取消会拆掉 continue 这条路。车况变了，由重建的第二道护栏
+    /// 与人来处理。这个码只在旅程上没有引擎的码时才写（<see cref="IsRefusalCode"/> 那一套规则），所以实际上几乎总是只进日志。
+    /// </remarks>
+    public const string OrderStalledOrRebuilding = "RELEASE_ORDER_STALLED_OR_REBUILDING";
 
     /// <summary>写事务里发现取货停靠已经有了 RIoT 订单意图，与轮次开头读到的不同，这一轮不释放。</summary>
     public const string PickupOrderAppeared = "RELEASE_PICKUP_ORDER_APPEARED";

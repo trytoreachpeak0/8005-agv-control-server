@@ -650,6 +650,41 @@ internal static class JourneyRuntimeWorkerTestKit
             await scope.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
+        /// <summary>
+        /// Onboard's safety summary moves on: a SafetyStateChanged at the session's next safetyStateVersion carrying exactly
+        /// these five facts, the ones dispatch admission reads (<c>VehicleDynamicFactsCriterion</c>). The session stays Ready;
+        /// what changes is only what it vouches for.
+        /// </summary>
+        public async Task SetDepartureSummaryAsync(
+            bool departureSafe = true,
+            bool vehicleStopped = true,
+            bool allTargetSlotsLocked = true,
+            bool allUnlockOutputsReset = true,
+            bool unknownPresent = false)
+        {
+            SessionRecoveryRow session = await Context.SessionRecoveries.SingleAsync(TestContext.Current.CancellationToken);
+            long next = (session.SafetyRevision ?? 0) + 1;
+            await AddRawInboxAsync("SafetyStateChanged", new
+            {
+                safetyStateVersion = next,
+                observedAt = Clock.GetUtcNow(),
+                safety = new
+                {
+                    departureSafe,
+                    vehicleStopped,
+                    allTargetSlotsLocked,
+                    allUnlockOutputsReset,
+                    unknownPresent,
+                    reasonCodes = Array.Empty<string>()
+                },
+                affectedSlots = Array.Empty<int>()
+            }, session.SessionGeneration, Clock.GetUtcNow());
+            session.SafetyRevision = next;
+            session.DepartureSafe = departureSafe;
+            await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+            Context.ChangeTracker.Clear();
+        }
+
         public async Task AddSafetyStateChangedAsync(
             long safetyStateVersion,
             bool departureSafe,
@@ -730,6 +765,67 @@ internal static class JourneyRuntimeWorkerTestKit
             session.SafetyRevision = safetyStateVersion;
             session.DepartureSafe = true;
             await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        /// <summary>
+        /// Records the SafetyStateSnapshot Onboard sends answering SafetyStateSnapshotRequested after a fault with cargo on board
+        /// was cleared (control-server#318, REQ-0362): the slots the committed loads targeted read as given, every other slot
+        /// empty, locked and reset. The session row is left as it is -- this snapshot is evidence about the cargo, not the
+        /// session's safety summary. Returns the cargo slots, and fails when there are none: a snapshot about no slots proves
+        /// nothing either way.
+        /// </summary>
+        /// <param name="cargoSlot">
+        /// Per cargo slot, by its position among the cargo slots: the three states it reads as, or null to leave it out of the
+        /// snapshot. Overrides the three single states when given.
+        /// </param>
+        /// <param name="agvId">The vehicle the snapshot is from; this fixture's own when not given.</param>
+        public async Task<int[]> AddCargoSnapshotAsync(
+            DateTimeOffset receivedAt,
+            string physicalState = "OCCUPIED",
+            string lockState = "LOCKED",
+            string unlockOutputState = "RESET",
+            bool unknownPresent = false,
+            Func<int, (string Physical, string Lock, string Output)?>? cargoSlot = null,
+            string? agvId = null)
+        {
+            StationOperationRow[] loads = await Context.StationOperations.AsNoTracking()
+                .Where(row => row.OperationType == SlotOperationType.Load && row.Status == StationOperationStatus.Committed)
+                .ToArrayAsync(TestContext.Current.CancellationToken);
+            int[] cargo = [.. loads.SelectMany(row => JsonSerializer.Deserialize<int[]>(row.TargetSlotsJson)!).Distinct().Order()];
+            Assert.NotEmpty(cargo);
+            SessionRecoveryRow session = await Context.SessionRecoveries.AsNoTracking()
+                .SingleAsync(TestContext.Current.CancellationToken);
+            int earlier = await Context.ProtocolInbox.CountAsync(
+                row => row.MessageType == "SafetyStateSnapshot", TestContext.Current.CancellationToken);
+            cargoSlot ??= _ => (physicalState, lockState, unlockOutputState);
+            (int Slot, (string Physical, string Lock, string Output)? States)[] reported = [.. Enumerable.Range(1, 8)
+                .Select(slot => (slot, cargo.Contains(slot) ? cargoSlot(Array.IndexOf(cargo, slot)) : ("EMPTY", "LOCKED", "RESET")))
+                .Where(item => item.Item2 is not null)];
+            await AddRawInboxAsync("SafetyStateSnapshot", new
+            {
+                safetyStateVersion = (session.SafetyRevision ?? 0) + 1000 + earlier,
+                observedAt = receivedAt,
+                safety = new
+                {
+                    departureSafe = !unknownPresent,
+                    vehicleStopped = true,
+                    allTargetSlotsLocked = true,
+                    allUnlockOutputsReset = true,
+                    unknownPresent,
+                    reasonCodes = Array.Empty<string>()
+                },
+                slotStates = reported.Select(item => new
+                {
+                    slotNo = item.Slot,
+                    operability = "OPERABLE",
+                    administrativeAvailability = "ENABLED",
+                    physicalState = item.States!.Value.Physical,
+                    lockState = item.States!.Value.Lock,
+                    unlockOutputState = item.States!.Value.Output,
+                    reasonCodes = Array.Empty<string>()
+                })
+            }, session.SessionGeneration, receivedAt, agvId);
+            return cargo;
         }
 
         public async Task SetOnboardUnknownAsync()
@@ -1015,6 +1111,7 @@ internal static class JourneyRuntimeWorkerTestKit
                 onboardFacts,
                 new DispatchZoneParameterStore(Context, CreateGovernedPublisher()),
                 SlotGroupFullness,
+                Riot,
                 options,
                 Clock,
                 EngineLog);
@@ -1281,14 +1378,15 @@ internal static class JourneyRuntimeWorkerTestKit
             string messageType,
             object payload,
             long generation,
-            DateTimeOffset? receivedAt = null)
+            DateTimeOffset? receivedAt = null,
+            string? agvId = null)
         {
             string messageId = Guid.NewGuid().ToString("D");
             string json = JsonSerializer.Serialize(new
             {
                 messageType,
                 messageId,
-                agvId = Options.AgvId,
+                agvId = agvId ?? Options.AgvId,
                 sessionGeneration = generation,
                 sentAt = Now,
                 payload
@@ -1479,7 +1577,7 @@ internal static class JourneyRuntimeWorkerTestKit
     }
 
     internal sealed class RecordingRiot
-        : IRiotMovementGateway, IRiotVehicleFacts, IRiotMapStationCatalog, IVehicleMotionFacts
+        : IRiotMovementGateway, IRiotVehicleFacts, IRiotMapStationCatalog, IVehicleMotionFacts, IRiotVehicleSafetyFacts
     {
         private readonly JourneyRuntimeOptions _options;
         private readonly FixedTimeProvider _clock;
@@ -1628,12 +1726,58 @@ internal static class JourneyRuntimeWorkerTestKit
                 _clock.GetUtcNow()));
         }
 
+        /// <summary>
+        /// The reason codes RIoT's vehicle safety read reports for this vehicle (control-server#318's second guard reads it).
+        /// Empty -- stopped, nothing in the way -- by default; a test names what it wants the vehicle to be in, such as
+        /// <c>RIOT_EMERGENCY_NOT_OK</c> or <c>RIOT_VEHICLE_NOT_ONLINE</c>.
+        /// </summary>
+        public string[] SafetyReasons { get; set; } = [];
+
+        public int SafetyReads { get; private set; }
+
+        public Task<RiotVehicleSafetyObservation> ReadVehicleSafetyAsync(string vehicleKey, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            SafetyReads++;
+            return Task.FromResult(new RiotVehicleSafetyObservation(
+                vehicleKey,
+                SafetyReasons.Length == 0 ? RiotVehicleMotionState.Stopped : RiotVehicleMotionState.Unknown,
+                _clock.GetUtcNow(),
+                "L1",
+                SafetyReasons));
+        }
+
+        /// <summary>
+        /// The next read of the order under this upperId throws instead of answering, once: the process stopping before it
+        /// asked RIoT anything about that order (the "decided, not created" crash point of control-server#318).
+        /// </summary>
+        public string? CrashOnNextReconcileOf { get; set; }
+
+        /// <summary>
+        /// Called with the upperId after every read of an order has been answered: lets a test change what the next read
+        /// says, such as a read that fails right after the one that found the order terminal (control-server#318, review S2).
+        /// </summary>
+        public Action<string>? AfterReconcile { get; set; }
+
+        /// <summary>
+        /// The next create reaches RIoT -- the order exists there from now on -- and then the process stops before the answer
+        /// is recorded, once (the "created, not recorded" crash point of control-server#318).
+        /// </summary>
+        public bool CrashAfterNextCreate { get; set; }
+
         public Task<RiotOrderObservation> ReconcileByUpperIdAsync(string upperId, CancellationToken cancellationToken)
         {
             _ = cancellationToken;
-            return Task.FromResult(_orders.TryGetValue(upperId, out RiotOrderObservation? order)
+            if (CrashOnNextReconcileOf is { } crashing && crashing == upperId)
+            {
+                CrashOnNextReconcileOf = null;
+                throw new IOException($"The process stopped before RIoT was asked about {upperId}.");
+            }
+            RiotOrderObservation answer = _orders.TryGetValue(upperId, out RiotOrderObservation? order)
                 ? order
-                : new RiotOrderObservation(upperId, RiotOrderObservationKind.NotFound, null));
+                : new RiotOrderObservation(upperId, RiotOrderObservationKind.NotFound, null);
+            AfterReconcile?.Invoke(upperId);
+            return Task.FromResult(answer);
         }
 
         public Task<RiotOrderObservation> CreateAsync(OrderIntent intent, CancellationToken cancellationToken)
@@ -1649,6 +1793,11 @@ internal static class JourneyRuntimeWorkerTestKit
                 MapId: intent.MapId,
                 DestinationStationId: intent.DestinationStationId);
             _orders[intent.UpperId] = active;
+            if (CrashAfterNextCreate)
+            {
+                CrashAfterNextCreate = false;
+                throw new IOException($"The process stopped after RIoT created {intent.UpperId} and before the answer was recorded.");
+            }
             if (LoseNextCreateResponse)
             {
                 LoseNextCreateResponse = false;

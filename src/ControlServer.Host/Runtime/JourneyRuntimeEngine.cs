@@ -19,7 +19,7 @@ using ControlServer.Host.Runtime.TaskTypeStations;
 
 namespace ControlServer.Host.Runtime;
 
-public sealed class JourneyRuntimeEngine(
+public sealed partial class JourneyRuntimeEngine(
     ControlServerDbContext dbContext,
     IRiotVehicleFacts vehicleFacts,
     IRiotMapStationCatalog mapStationCatalog,
@@ -44,6 +44,7 @@ public sealed class JourneyRuntimeEngine(
     OnboardDispatchFactsReader onboardFacts,
     IDispatchZoneParameterStore zoneParameters,
     SlotGroupFullnessBoard slotGroupFullness,
+    IRiotVehicleSafetyFacts vehicleSafety,
     IOptions<JourneyRuntimeOptions> options,
     TimeProvider timeProvider,
     ILogger<JourneyRuntimeEngine> logger)
@@ -204,19 +205,32 @@ public sealed class JourneyRuntimeEngine(
 
     /// <summary>
     /// RIoT reports this leg's in-flight order CANCELLED (2) or DELETED (6) although the vehicle never arrived:
-    /// someone ended it outside this server (control-server#316). Named, and nothing else is done: the demand is neither
-    /// released nor redispatched, and the order is rebuilt only on a person's confirmation (control-server#318).
+    /// someone ended it outside this server (control-server#316). Named and alarmed; since control-server#318 this is the
+    /// transitional code while the order waits to be rebuilt for the same vehicle and demand -- never released, never
+    /// redispatched, nobody asked.
     /// </summary>
     public const string OrderEndedWithoutArrivalReason = "ORDER_ENDED_WITHOUT_ARRIVAL";
 
-    /// <summary>Whether <paramref name="reasonCode"/> is one of the three codes an in-transit order that stopped writes.</summary>
+    /// <summary>
+    /// Whether <paramref name="reasonCode"/> says the journey's in-transit order is not moving: one of the three codes an order
+    /// RIoT stopped writes (control-server#316), or one of the codes of an ended order of this server's being rebuilt
+    /// (control-server#318).
+    /// </summary>
     /// <remarks>
     /// A journey carrying one of them is not <see cref="JourneyRuntimeStage.Blocked"/> -- it stays in its arrival stage so
-    /// that a continue in RIoT resumes it without anything else -- but it is waiting on a person all the same, so it takes
-    /// no appended demand (see where <c>underWay</c> is built, and <c>DispatchRoundRunner.ReadEnRoutePlanAsync</c>).
+    /// that a continue in RIoT, or the rebuilt order, moves it on without anything else -- but its vehicle is not under way,
+    /// so it takes no appended demand (see where <c>underWay</c> is built, and <c>DispatchRoundRunner.ReadEnRoutePlanAsync</c>),
+    /// a silent session does not overwrite the code (<see cref="NameSilentOnboardSessionAsync"/>), and the release service
+    /// neither releases its demand nor cancels its order (<c>DemandReleaseService</c>).
     /// </remarks>
     public static bool IsStalledOrderReason(string? reasonCode) => reasonCode is
-        OrderHangReason or OrderStateUnrecognizedReason or OrderEndedWithoutArrivalReason;
+        OrderHangReason or OrderStateUnrecognizedReason or OrderEndedWithoutArrivalReason or
+        VehicleFaultRecoveryService.CargoOnBoardReason or VehicleFaultRecoveryService.NothingOnBoardReason or
+        OwnOrderRebuildWaitingVehicleReason or OwnOrderRebuildBlockedByCreateGateReason or
+        OwnOrderRebuildOrderUnconfirmedReason or OwnOrderRebuildStoppedReason or
+        OwnOrderRebuildWaitingCargoEvidenceReason or OwnOrderRebuildCargoNotInPlaceReason or
+        OwnOrderRebuildCargoUnprovenReason or
+        OwnOrderRebuildVehicleIneligibleReason;
 
     /// <summary>
     /// The journey is waiting on a fact only the vehicle can supply, and the vehicle has gone quiet: no legal inbound
@@ -710,7 +724,7 @@ public sealed class JourneyRuntimeEngine(
             // the whole leg -- HANG included, since 9 is a non-final state. Left to the gate, ORDER_HANG was never written
             // on a real onboard and 2127 never raised. Only the two arrival stages have an in-flight order to read.
             if (runtime.Stage != JourneyRuntimeStage.Blocked && !IsHeldForAreaEndAdmission(runtime) &&
-                await NameStalledOrderBehindTheGateAsync(runtime, cancellationToken).ConfigureAwait(false))
+                await NameStalledOrderBehindTheGateAsync(runtime, currentMap, cancellationToken).ConfigureAwait(false))
             {
                 if (waitVoided)
                 {
@@ -775,6 +789,13 @@ public sealed class JourneyRuntimeEngine(
         switch (runtime.Stage)
         {
             case JourneyRuntimeStage.AwaitingPickupArrival:
+                // 这一站的单终结过、正在按同车同需求重建（control-server#318）：旧单不再读，重建自己走完这一轮。
+                if (await AdvanceOwnOrderRebuildAsync(
+                        runtime, stops.Current, currentMap, mayCreate: true, reasonOnceRebuilt: null, cancellationToken)
+                        .ConfigureAwait(false))
+                {
+                    return;
+                }
                 // 与关卡侧对称，取这个停靠自己的单号（批次7-06）：旅程行上的 PickupUpperId 是锚需求那一段的，
                 // 第二个取货停靠用它会去确认一段早已走完的移动。
                 if (!await EnsureMovementConfirmedAsync(
@@ -1098,6 +1119,12 @@ public sealed class JourneyRuntimeEngine(
                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                     return;
                 }
+                if (await AdvanceOwnOrderRebuildAsync(
+                        runtime, stops.Current, currentMap, mayCreate: true, reasonOnceRebuilt: null, cancellationToken)
+                        .ConfigureAwait(false))
+                {
+                    return;
+                }
                 if (!await EnsureMovementConfirmedAsync(
                         runtime, stops.Current.UpperId, "GATE", cancellationToken).ConfigureAwait(false))
                 {
@@ -1340,14 +1367,25 @@ public sealed class JourneyRuntimeEngine(
     /// carrying this demand's product and the binding has to hold.
     /// </para>
     /// </remarks>
-    private async Task<bool> ObserveOrderFailureAsync(
+    private Task<bool> ObserveOrderFailureAsync(
         JourneyRuntimeRow runtime,
         ArrivalCheck arrival,
+        CancellationToken cancellationToken) =>
+        ObserveOrderFailureAsync(runtime, arrival.Intent, arrival.Order, cancellationToken);
+
+    /// <summary>
+    /// The same, for an order read outside an arrival check: a rebuilt order that FAILED before it was confirmed
+    /// (control-server#318, review S2).
+    /// </summary>
+    private async Task<bool> ObserveOrderFailureAsync(
+        JourneyRuntimeRow runtime,
+        OrderIntentRow intent,
+        RiotOrderObservation order,
         CancellationToken cancellationToken)
     {
-        if (arrival.Order.Kind != RiotOrderObservationKind.Terminal ||
-            arrival.Order.OrderState != RiotOrderState.Failed ||
-            arrival.Intent.OrderId is not string orderId)
+        if (order.Kind != RiotOrderObservationKind.Terminal ||
+            order.OrderState != RiotOrderState.Failed ||
+            intent.OrderId is not string orderId)
         {
             return false;
         }
@@ -1373,7 +1411,7 @@ public sealed class JourneyRuntimeEngine(
         FaultedVehicleCargoFacts? cargo = carryingCargo
             ? new FaultedVehicleCargoFacts(
                 runtime.DemandId,
-                arrival.Intent.MovementLegId,
+                intent.MovementLegId,
                 transportDemandKey,
                 LoadingWitnessed: true,
                 CargoStateKnown: true)
@@ -1383,11 +1421,11 @@ public sealed class JourneyRuntimeEngine(
             new EmergencyStopSubject(runtime.AgvId, runtime.VehicleKey),
             VehicleFaultEvidence.OrderFailed,
             new FaultedVehicleContext(
-                new RiotOrderCommandTarget(runtime.AgvId, arrival.Intent.UpperId, orderId),
+                new RiotOrderCommandTarget(runtime.AgvId, intent.UpperId, orderId),
                 cargo),
             cancellationToken).ConfigureAwait(false);
 
-        LogOrderFailedSymptom(logger, arrival.Intent.UpperId, runtime.AgvId, runtime.DemandId, null);
+        LogOrderFailedSymptom(logger, intent.UpperId, runtime.AgvId, runtime.DemandId, null);
         checkpointWaits.Clear(runtime.VehicleKey);
         if (!string.Equals(runtime.BlockReasonCode, VehicleFaultEvidence.OrderFailed, StringComparison.Ordinal))
         {
@@ -1424,11 +1462,12 @@ public sealed class JourneyRuntimeEngine(
     /// </para>
     /// <para>
     /// <b>CANCELLED and DELETED mean someone ended the order outside this server</b>, which the user said on 2026-09-22 is
-    /// almost always a mistake, to be answered by rebuilding the order rather than by redispatching the demand: held and
-    /// alarmed first, then rebuilt for the same vehicle and the same demand once a person confirms, because a rebuilt order
-    /// moves the vehicle and whoever cancelled it may be standing beside it. That confirmation is control-server#318, through
-    /// #299's endpoint, and does not exist yet; this names it and nothing more -- no release, no redispatch, no new order.
-    /// The release service does not read this code as a trigger.
+    /// almost always a mistake, to be answered by rebuilding the order rather than by redispatching the demand. The code is
+    /// written and alarmed as before, and since control-server#318 the ending is recorded in the same save to be rebuilt for
+    /// the same vehicle and the same demand once the delay is over -- no person's confirmation, by the user's later decision
+    /// the same day, because usually nobody is watching the system (see <c>JourneyRuntimeEngine.OwnOrderRebuild.cs</c>). The
+    /// delay is the time for whoever cancelled it, who may be standing beside the vehicle, to stop it. An order this server
+    /// cancelled itself is named and not recorded. The release service neither releases nor cancels while the code stands.
     /// </para>
     /// <para>
     /// Ordered after <see cref="ObserveOrderFailureAsync"/>, so FAILED still reaches the fault model and keeps its own
@@ -1478,12 +1517,23 @@ public sealed class JourneyRuntimeEngine(
         }
 
         checkpointWaits.Clear(runtime.VehicleKey);
-        if (!string.Equals(runtime.BlockReasonCode, reason, StringComparison.Ordinal))
+        string code = reason;
+        if (reason == OrderEndedWithoutArrivalReason)
+        {
+            // control-server#318: the ending is recorded to be rebuilt, in the save that names it.
+            code = await RecordOrderEndedInRiotAsync(runtime, upperId, order, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (!string.Equals(runtime.BlockReasonCode, code, StringComparison.Ordinal))
         {
             LogInTransitOrderStalled(
                 logger, upperId, runtime.DemandId, runtime.AgvId, order.OrderState, reason, null);
-            runtime.SetBlockReason(reason, now);
+            runtime.SetBlockReason(code, now);
             runtime.UpdatedAt = now;
+        }
+
+        if (dbContext.ChangeTracker.HasChanges())
+        {
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
         return true;
@@ -1508,6 +1558,7 @@ public sealed class JourneyRuntimeEngine(
     /// </remarks>
     private async Task<bool> NameStalledOrderBehindTheGateAsync(
         JourneyRuntimeRow runtime,
+        RiotMapStationCatalogSnapshot currentMap,
         CancellationToken cancellationToken)
     {
         if (runtime.Stage is not (JourneyRuntimeStage.AwaitingPickupArrival or JourneyRuntimeStage.AwaitingGateArrival))
@@ -1517,6 +1568,17 @@ public sealed class JourneyRuntimeEngine(
 
         JourneyStopCursor stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken)
             .ConfigureAwait(false);
+        // A rebuild under way is kept and named behind the gate too (control-server#318): a real onboard is not ready for most
+        // of a leg. It creates nothing here -- a new order waits for a Ready session that vouches for the vehicle (review M2) --
+        // but an order already sent is reconciled, which only reads (incremental review B2); once it is confirmed the journey
+        // carries the gate's own code again, and the next round names a HANG like any other.
+        if (await OwnOrderRebuilds.ForStopAsync(dbContext, stops.Current, cancellationToken).ConfigureAwait(false) is not null)
+        {
+            return await AdvanceOwnOrderRebuildAsync(
+                    runtime, stops.Current, currentMap, mayCreate: false, reasonOnceRebuilt: "ONBOARD_SESSION_NOT_READY",
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
         OrderIntentRow? intent = await dbContext.OrderIntents.SingleOrDefaultAsync(
             row => row.MovementLegId == stops.Current.MovementLegId, cancellationToken).ConfigureAwait(false);
         if (intent is not { Status: "CONFIRMED", OrderId: not null })
@@ -2950,11 +3012,16 @@ public sealed class JourneyRuntimeEngine(
     /// here — the destination was fixed when the demand was taken.
     /// </para>
     /// </remarks>
+    /// <param name="toTheStopItself">
+    /// Gate the order to <paramref name="targetStop"/>'s own station rather than to the demand's frozen drop-off: a rebuilt
+    /// pickup order (control-server#318) goes to the pickup, and the frozen row names only the drop-off.
+    /// </param>
     private async Task<CreateGateOutcome> GateLegAsync(
         JourneyRuntimeRow runtime,
         JourneyStopRow targetStop,
         RiotMapStationCatalogSnapshot currentMap,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool toTheStopItself = false)
     {
         CatalogAvailability availability = await catalogAvailability
             .ReadAsync(runtime.MapId, cancellationToken).ConfigureAwait(false);
@@ -2986,8 +3053,9 @@ public sealed class JourneyRuntimeEngine(
 
         IReadOnlyList<FrozenStationFact> frozen = await catalogStore
             .ReadFrozenStationsAsync(runtime.DemandId, cancellationToken).ConfigureAwait(false);
-        FrozenStationFact? dropoff = frozen
-            .FirstOrDefault(station => station.Role == FrozenStationRole.Dropoff);
+        FrozenStationFact? dropoff = toTheStopItself
+            ? null
+            : frozen.FirstOrDefault(station => station.Role == FrozenStationRole.Dropoff);
 
         // A journey created before this gate existed has no frozen row. Falling back to the
         // runtime's own gate station keeps that journey moving under the same check rather than

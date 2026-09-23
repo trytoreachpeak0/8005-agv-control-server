@@ -1,0 +1,43 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:05.47]     ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362ACargoRebuildWaitingForEvidenceAsksTheVehicleOncePerSession [FAIL]
+[xUnit.net 00:00:06.08]     ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362NoRequestInsideTheHandshakeAndOneAgainInTheNextSession [FAIL]
+  Failed ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362ACargoRebuildWaitingForEvidenceAsksTheVehicleOncePerSession [2 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "SafetyStateSnapshotRequested"
+Actual:   "HeartbeatAck"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362ACargoRebuildWaitingForEvidenceAsksTheVehicleOncePerSession() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildCargoEvidenceRequestTests.cs:line 52
+   at ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362ACargoRebuildWaitingForEvidenceAsksTheVehicleOncePerSession() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildCargoEvidenceRequestTests.cs:line 64
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362NoRequestInsideTheHandshakeAndOneAgainInTheNextSession [116 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "SafetyStateSnapshotRequested"
+Actual:   "HeartbeatAck"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362NoRequestInsideTheHandshakeAndOneAgainInTheNextSession() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildCargoEvidenceRequestTests.cs:line 85
+   at ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362NoRequestInsideTheHandshakeAndOneAgainInTheNextSession() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildCargoEvidenceRequestTests.cs:line 97
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:06.20]     ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362ARequestMadeWhileNotReadyIsMadeOnceMoreWhenTheSessionBecomesReady [FAIL]
+  Failed ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362ARequestMadeWhileNotReadyIsMadeOnceMoreWhenTheSessionBecomesReady [118 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "SafetyStateSnapshotRequested"
+Actual:   "HeartbeatAck"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362ARequestMadeWhileNotReadyIsMadeOnceMoreWhenTheSessionBecomesReady() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildCargoEvidenceRequestTests.cs:line 111
+   at ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362ARequestMadeWhileNotReadyIsMadeOnceMoreWhenTheSessionBecomesReady() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs318-8005-agv-control-server\tests\ControlServer.Tests\OwnOrderRebuildCargoEvidenceRequestTests.cs:line 124
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     3, Passed:     9, Skipped:     0, Total:    12, Duration: 3 s - ControlServer.Tests.dll (net8.0)

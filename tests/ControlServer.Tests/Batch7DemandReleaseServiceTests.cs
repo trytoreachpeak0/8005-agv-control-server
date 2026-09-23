@@ -198,6 +198,130 @@ public sealed class Batch7DemandReleaseServiceTests
             .SingleAsync(row => row.TargetUpperId == before.PickupUpperId, Token)).Outcome);
     }
 
+    /// <summary>
+    /// 释放服务自己发出的那次取消，引擎先一步读到了 CANCELLED，旅程写上 <c>ORDER_ENDED_WITHOUT_ARRIVAL</c>（本服务端自己取消的，
+    /// 不记重建）：释放服务下一轮照常对账、确认、释放。这不是「在途单停住」，是它自己这次释放走到一半。
+    /// </summary>
+    /// <remarks>
+    /// control-server#318 的第一版把停住码族一律当成释放拒绝（<c>RELEASE_ORDER_STALLED_OR_REBUILDING</c>），于是服务端自己发起的改派
+    /// 卡在半路：取消发了、单也取消了，需求却永远不释放。单元用例没有抓到，是合成 L2 <c>reassign-when-vehicle-ineligible</c> 抓到的——
+    /// 那里释放与引擎在两个循环里交替跑，取消确认之前夹着一轮引擎。这一条把那一轮引擎放进来。
+    /// 判「是不是自己取消的」用的是引擎判「不重建」的同一个事实：命令审计里有本服务端对这张单的 CANCEL。
+    /// </remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0360")]
+    public async Task TheReleasesOwnCancellationReadByTheEngineFirstStillEndsInTheRelease()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
+        LeaveTheMap(fixture);
+        CancellingGateway gateway = new(fixture.Clock, _ => { });
+        Assert.Equal(
+            DemandReleaseReasons.OrderCancelNotConfirmed,
+            Assert.Single(await Service(fixture, gateway).RunOnceAsync(Token)).Result);
+
+        fixture.Riot.CancelOrder(before.PickupUpperId);
+        await TickAndRunAsync(fixture);
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Equal("ORDER_ENDED_WITHOUT_ARRIVAL", (await fixture.RuntimeAsync(FirstDemandId)).BlockReasonCode);
+
+        IReadOnlyList<DemandReleaseOutcome> second = await Service(fixture, gateway).RunOnceAsync(Token);
+
+        Assert.Equal("RELEASED", Assert.Single(second).Result);
+        Assert.Equal(1, gateway.Cancels);
+        await using ControlServerDbContext reading = new ControlServerDbContext(fixture.DbOptionsForTests);
+        JourneyRuntimeRow after = await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token);
+        Assert.Equal((JourneyRuntimeStage.Completed, DemandReleaseReasons.Released), (after.Stage, after.BlockReasonCode));
+        Assert.Empty(await reading.OwnOrderRebuilds.AsNoTracking().ToArrayAsync(Token));
+    }
+
+    /// <summary>
+    /// 单被人取消、等着重建的这段时间里，这辆车对这条需求已经不合格了（任务类型准入被收回）：到点时不重建——车不会白走一段、
+    /// 又被释放服务取消——记录停在 <c>VEHICLE_NO_LONGER_ELIGIBLE</c>，旅程码 <c>OWN_ORDER_REBUILD_VEHICLE_INELIGIBLE</c>；释放服务照常
+    /// 释放改派，那张单已经终结，不再发取消。
+    /// </summary>
+    /// <remarks>
+    /// 独立审查 S1（A3）。判据与释放服务同一个（<see cref="DemandReleaseRules.VehicleNoLongerEligible"/> 的服务端事实部分：任务类型准入、
+    /// 分区准入），只对取货腿：REQ-0328 只释放尚未取货的需求，车上有货的那一段本来也不会被释放。
+    /// </remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0360")]
+    public async Task AVehicleNoLongerEligibleWhileItsOrderWaitsToBeRebuiltIsNotSentAgainAndTheDemandIsReleased()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
+        fixture.Riot.CancelOrder(before.PickupUpperId);
+        await TickAndRunAsync(fixture);
+        fixture.Options.AllowedWorkTypes = ["STAGING_TO_WIRE"];
+
+        fixture.Clock.Advance(fixture.Options.OwnOrderRebuildDelay);
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+        Assert.Equal("OWN_ORDER_REBUILD_VEHICLE_INELIGIBLE", (await fixture.RuntimeAsync(FirstDemandId)).BlockReasonCode);
+        await using (ControlServerDbContext held = new ControlServerDbContext(fixture.DbOptionsForTests))
+        {
+            OwnOrderRebuildRow record = await held.OwnOrderRebuilds.AsNoTracking().SingleAsync(Token);
+            Assert.Equal((OwnOrderRebuildStates.Stopped, "VEHICLE_NO_LONGER_ELIGIBLE"), (record.State, record.StoppedReason));
+        }
+
+        CancellingGateway gateway = new(fixture.Clock, _ => { });
+        IReadOnlyList<DemandReleaseOutcome> outcomes = await Service(fixture, gateway).RunOnceAsync(Token);
+
+        Assert.Equal("RELEASED", Assert.Single(outcomes).Result);
+        Assert.Equal(0, gateway.Cancels);
+        await using ControlServerDbContext reading = new ControlServerDbContext(fixture.DbOptionsForTests);
+        JourneyRuntimeRow after = await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token);
+        Assert.Equal((JourneyRuntimeStage.Completed, DemandReleaseReasons.Released), (after.Stage, after.BlockReasonCode));
+        Assert.True(await DemandJourneyLookup.ReleasedForRedispatch(reading).AnyAsync(row => row.DemandId == FirstDemandId, Token));
+    }
+
+    /// <summary>
+    /// 一次重建的新单确认前被取消，接手的那一次重建建成了：前一条记录转 <c>ENDED</c>，只留作历史。之后车对需求不合格了，释放服务照常
+    /// 取消在途单、释放改派——那条 <c>ENDED</c> 记录不算「这趟旅程还在等同车重建」。
+    /// </summary>
+    /// <remarks>
+    /// 审查 S2 加了 <c>ENDED</c>（与确认前 FAILED 时的 <c>FAILED</c>，清除后同样转 <c>ENDED</c>）。释放服务按「这趟旅程有没有非 REBUILT 的记录」
+    /// 判重建中，不把 <c>ENDED</c> 排除，这趟旅程之后就永远释放不了。
+    /// </remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0328")]
+    public async Task ARebuildThatEndedBeforeConfirmationAndWasTakenOverDoesNotHoldALaterRelease()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        fixture.Options.OwnOrderRebuildRepeatWindow = TimeSpan.FromSeconds(10);
+        JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
+        fixture.Riot.CancelOrder(before.PickupUpperId);
+        await TickAndRunAsync(fixture);
+        fixture.Riot.LoseNextCreateResponse = true;
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        fixture.Context.ChangeTracker.Clear();
+        string firstRebuilt = (await fixture.Context.OwnOrderRebuilds.AsNoTracking().SingleAsync(Token)).NewUpperId;
+        fixture.Riot.CancelOrder(firstRebuilt);
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        fixture.Context.ChangeTracker.Clear();
+        await using (ControlServerDbContext rebuilt = new ControlServerDbContext(fixture.DbOptionsForTests))
+        {
+            Assert.Equal(
+                [OwnOrderRebuildStates.Ended, OwnOrderRebuildStates.Rebuilt],
+                (await rebuilt.OwnOrderRebuilds.AsNoTracking().Select(row => row.State).ToArrayAsync(Token)).Order());
+        }
+
+        string current = (await fixture.RuntimeAsync(FirstDemandId)).PickupUpperId;
+        string live = (await fixture.Context.Set<JourneyStopRow>().AsNoTracking().SingleAsync(row => row.StopRole == JourneyStopRoles.Pickup, Token)).UpperId;
+        LeaveTheMap(fixture);
+        CancellingGateway gateway = new(fixture.Clock, _ => fixture.Riot.CancelOrder(live));
+        IReadOnlyList<DemandReleaseOutcome> outcomes = await Service(fixture, gateway).RunOnceAsync(Token);
+
+        Assert.Equal("RELEASED", Assert.Single(outcomes).Result);
+        Assert.Equal(1, gateway.Cancels);
+        Assert.NotEqual(current, live);
+    }
+
     [Fact]
     public async Task AnEligibleVehicleKeepsItsDemands()
     {
@@ -1072,9 +1196,9 @@ public sealed class Batch7DemandReleaseServiceTests
     /// </summary>
     /// <remarks>
     /// <para>
-    /// 用户 2026-09-22 更正：RIoT 里取消订单不是正常操作，多半是误操作，该做的是重建订单而不是改派。怎么重建（自动还是等人、
-    /// 是否同车、已装货与未装货是否一样）待定，定之前这里的行为是「看得见、不动」——所以这一条要守的是释放服务<b>没有</b>
-    /// 把「订单已终结」当成释放理由，而那正是一个顺手的实现会做的事（本票第一版就这么做了）。
+    /// 用户 2026-09-22 更正：RIoT 里取消订单不是正常操作，多半是误操作，该做的是重建订单而不是改派——同车同需求、延迟之后
+    /// 自动重建（control-server#318）。这一条要守的是释放服务<b>没有</b>把「订单已终结」当成释放理由，而那正是一个顺手的实现会做的事
+    /// （#316 第一版就这么做了）；车不合格时的那一半见 <see cref="AJourneyWhoseOrderStalledIsNotReleasedWhenTheVehicleBecomesIneligible"/>。
     /// </para>
     /// <para>
     /// 先跑一轮引擎，与生产里 <c>JourneyRuntimeWorker</c> 先推进、后释放的次序一致：码已经写下，释放服务读得到它。
@@ -1160,6 +1284,51 @@ public sealed class Batch7DemandReleaseServiceTests
         Assert.Equal(0, gateway.Cancels);
         JourneyRuntimeRow after = await fixture.RuntimeAsync(FirstDemandId);
         Assert.Equal((JourneyRuntimeStage.AwaitingGateArrival, "ORDER_ENDED_WITHOUT_ARRIVAL"), (after.Stage, after.BlockReasonCode));
+    }
+
+    /// <summary>
+    /// 车不再合格（这里是离开了本图），而它这一段的在途单停住了——被人在 RIoT 里取消、正等着同车重建（control-server#318），
+    /// 或者挂起（9 HANG）等人 continue：释放服务不释放、不改派，<b>也不发取消</b>；旅程上仍是引擎的码。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 这是 #318 票面要回答的设计问题（来自 #321 独立审查低项，issuecomment-5775447032）：既有释放触发（任务类型、分区、地图不符）
+    /// 该不该作用于带停住码或待重建的旅程。结论是不该：被取消的单按用户规则同车重建，释放它的需求就是改派；挂起的单按 #316 的
+    /// H-a 只等人 continue 或取消，服务端替人取消它会拆掉 continue 这条路。车况变了的事由重建的第二道护栏与人来处理，不由释放处理。
+    /// </para>
+    /// <para>修之前：被取消的那一行对「已终结」直接释放、关旅程；挂起的那一行对活单发 <c>CANCEL</c>。</para>
+    /// </remarks>
+    [Theory]
+    [InlineData("cancelled")]
+    [InlineData("hang")]
+    public async Task AJourneyWhoseOrderStalledIsNotReleasedWhenTheVehicleBecomesIneligible(string stalled)
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
+        if (stalled == "cancelled")
+        {
+            fixture.Riot.CancelOrder(before.PickupUpperId);
+        }
+        else
+        {
+            fixture.Riot.SetOrderState(before.PickupUpperId, RiotOrderState.Hang, terminal: false);
+        }
+        await TickAndRunAsync(fixture);
+        string engineCode = (await fixture.RuntimeAsync(FirstDemandId)).BlockReasonCode!;
+        Assert.Equal(stalled == "cancelled" ? "ORDER_ENDED_WITHOUT_ARRIVAL" : "ORDER_HANG", engineCode);
+        LeaveTheMap(fixture);
+        CancellingGateway gateway = new(fixture.Clock, _ => fixture.Riot.CancelOrder(before.PickupUpperId));
+
+        IReadOnlyList<DemandReleaseOutcome> outcomes = await Service(fixture, gateway).RunOnceAsync(Token);
+
+        Assert.Equal(
+            [(FirstDemandId, DemandReleaseRules.MapMismatchReason, "RELEASE_ORDER_STALLED_OR_REBUILDING")],
+            outcomes.Select(outcome => (outcome.DemandId, outcome.Trigger, outcome.Result)));
+        Assert.Equal(0, gateway.Cancels);
+        await using ControlServerDbContext reading = new ControlServerDbContext(fixture.DbOptionsForTests);
+        Assert.Null((await reading.Set<JourneyDemandRow>().AsNoTracking().SingleAsync(Token)).RemovedAt);
+        JourneyRuntimeRow after = await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token);
+        Assert.Equal((JourneyRuntimeStage.AwaitingPickupArrival, engineCode), (after.Stage, after.BlockReasonCode));
     }
 
     private static async Task<RuntimeFixture> DispatchedToPickupAsync(bool appendSecond = false)

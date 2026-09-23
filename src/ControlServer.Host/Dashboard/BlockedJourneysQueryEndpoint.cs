@@ -71,17 +71,21 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 "开往取货站的运单在 RIoT 上已经成功，车已经到了取货站，不释放",
             [DemandReleaseReasons.FaultSupervisionInEffect] =
                 "车有未清除的故障，需求不释放也不取消，车留给故障处理（急停与故障监看跟着这趟旅程走）",
+            [DemandReleaseReasons.OrderStalledOrRebuilding] =
+                "这一段的运单停住了（挂起、被取消后等着同车重建、故障清除后等着重建），需求不释放也不取消，车况变了由重建的护栏与人处理",
             // control-server#316：在途单在 RIoT 上停住，服务端不发任何命令，要人去 RIoT 或车前处理。
             [JourneyRuntimeEngine.OrderHangReason] =
                 "车正在执行的运单在 RIoT 上挂起（HANG）：服务端不暂停、不急停、不改派，这辆车也不接途中追加。请到现场确认原因，"
-                + "在 RIoT 里继续（continue，可以重复）；继续后旅程自动往下走。不要在 RIoT 里取消它：取消后服务端不改派，由服务端按同车同需求重建（随 #318 提供，目前还没有）",
+                + "在 RIoT 里继续（continue，可以重复）；继续后旅程自动往下走。不要在 RIoT 里取消它：取消后服务端不改派，"
+                + "延迟一段时间（默认 30 秒）后自动为同一辆车、同一条需求重建运单，车会再动",
             [JourneyRuntimeEngine.OrderStateUnrecognizedReason] =
                 "车正在执行的运单在 RIoT 上处于未识别的状态（SUSPENDED 8）：服务端按仍在执行处理，不做任何自动动作，请人工到 RIoT 核实",
             [JourneyRuntimeEngine.OrderEndedWithoutArrivalReason] =
-                "订单在 RIoT 中被取消或删除，服务端不改派；由服务端按同车同需求自动重建，不需要人确认（随 #318 提供，目前还没有）。"
-                + "在那之前旅程停在原处、需求不动，这辆车不接新单和途中追加；故障清除入口也不接这种单",
+                "订单在 RIoT 中被取消或删除，服务端不改派：延迟一段时间（默认 30 秒）后自动为同一辆车、同一条需求重建运单，"
+                + "不需要人确认，车会再动；要让它停下，请在这段时间里让车急停或切到手动。重建之前旅程停在原处、需求不动，"
+                + "这辆车不接新单和途中追加。若是本服务端自己取消的单（释放改派时），不重建，等人处置",
             // control-server#299：故障的人工出口。在途单 FAILED 记下的故障只能由人确认后经 /api/safety/v1/vehicle-fault-recoveries
-            // 清除（docs/vehicle-fault-clearance-field-guide.md）；清除时车上可能有货的，旅程转为下面那个码等人。
+            // 清除（docs/vehicle-fault-clearance-field-guide.md）；清除之后旅程按车上有没有货写下面两个码之一，等同车重建（control-server#318）。
             [Runtime.Faults.VehicleFaultEvidence.OrderFailed] =
                 "车正在执行的运单在 RIoT 上失败（FAILED），服务端已把车判为疑似故障：不派新单，需求不改派。"
                 + "请到现场排除原因；若急停已锁住，先按急停人工解除；然后由现场人员经故障清除入口确认（见现场说明），服务端核对后清除故障",
@@ -90,8 +94,37 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 "服务端推进这趟旅程时出错，旅程停在原处、一步没动（不改派、不发命令）。每一轮都会重试，走通后这个码自动消失；"
                 + "一直不消失请找值班工程师看服务端日志里的事件 2002（「Journey runtime iteration failed closed」），那里有具体的异常",
             [Runtime.Faults.VehicleFaultRecoveryService.CargoOnBoardReason] =
-                "车辆故障已由人工清除，但车上可能有货：货物绑定保留，需求不改派，旅程停在这里等人处置"
-                + "（#318 合入后服务端自动重建订单送完这趟，目前还没有，找值班工程师）。这辆车不接新单",
+                "车辆故障已由人工清除，车上可能有货：需求不改派，货物绑定保留到重建。延迟一段时间（默认 30 秒）后服务端"
+                + "自动为同一辆车、同一条需求重建开往卸货站的运单，把这趟送完，车会再动。这辆车不接新单",
+            [Runtime.Faults.VehicleFaultRecoveryService.NothingOnBoardReason] =
+                "车辆故障已由人工清除，车上没有货：需求留在本车，不改派。延迟一段时间（默认 30 秒）后服务端自动为同一辆车、"
+                + "同一条需求重建运单继续这一趟，车会再动。这辆车不接新单",
+            // control-server#318：本服务端自建单终结之后的自动重建，被三道护栏之一或建单门禁拦下时的码。
+            [JourneyRuntimeEngine.OwnOrderRebuildWaitingVehicleReason] =
+                "要为同一辆车、同一条需求重建运单，但车此刻不能动（急停、手动或下线、解抱闸、故障、不在本图，或车上有别的单），"
+                + "或者车载端还没确认可以离站（会话没就绪、仓门没锁、开锁输出没复位、有未知）：服务端等这些都恢复后自动重建，"
+                + "不需要人确认。请到现场查看车与车载端的状态",
+            [JourneyRuntimeEngine.OwnOrderRebuildVehicleIneligibleReason] =
+                "这辆车的单被取消后、重建之前，它对这条需求已不再合格（任务类型或分区准入被收回）：不再给它重建，"
+                + "需求随即由释放服务释放、改派给别的车。持续不消失请看释放服务写下的拒绝原因",
+            [JourneyRuntimeEngine.OwnOrderRebuildBlockedByCreateGateReason] =
+                "要为同一辆车、同一条需求重建运单，但建单门禁此刻不放行（地图目录不新鲜、任务类型被挂起、目标站不可达等）："
+                + "门禁放行后自动重建。具体原因见服务端日志事件 2172",
+            [JourneyRuntimeEngine.OwnOrderRebuildOrderUnconfirmedReason] =
+                "重建的运单已向 RIoT 发出，还没确认建成：服务端每一轮按同一个单号对账，不会建第二张。持续不消失请到 RIoT 核对",
+            [JourneyRuntimeEngine.OwnOrderRebuildStoppedReason] =
+                "这条需求第一次出问题之后不久又出问题了（又被取消、删除，或又失败）：服务端不再自动重建，挡住并报警，等人处理。"
+                + "请到现场与 RIoT 查明为什么反复停下；需求不改派，这辆车不接新单",
+            [JourneyRuntimeEngine.OwnOrderRebuildWaitingCargoEvidenceReason] =
+                "车上有货的故障已清除，服务端在等车报一份新的仓位读数，证明货还在原仓、门锁着、开锁输出已复位，证明了才自动重建去卸货站。"
+                + "持续不消失通常是车载端没连上或没就绪：请检查车载端连接；需求不改派，这辆车不接新单",
+            [JourneyRuntimeEngine.OwnOrderRebuildCargoNotInPlaceReason] =
+                "车上有货的故障清除之后，车报的仓位读数显示装货的仓是空的，货可能已经不在原仓："
+                + "服务端不再自动重建，挡住并报警。请到车前核对货物与仓门，找值班工程师；需求不改派，这辆车不接新单",
+            [JourneyRuntimeEngine.OwnOrderRebuildCargoUnprovenReason] =
+                "车上有货的故障清除之后，车报的仓位读数还证明不了货在原仓（仓门没锁好、开锁输出没复位、仓位读数未知或没上报、"
+                + "车报有未知，或装货还没落定）：服务端不停也不建单，等车下一次报仓位读数。门锁好、读数恢复后会自动重建；"
+                + "持续不消失请到车前核对仓门与货物。需求不改派，这辆车不接新单",
         };
 
     private readonly BlockedJourneyEscalationOptions _escalation;

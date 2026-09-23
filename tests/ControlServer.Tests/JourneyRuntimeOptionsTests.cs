@@ -229,7 +229,7 @@ public sealed class JourneyRuntimeOptionsTests
         return directory?.FullName ?? throw new InvalidOperationException("No repository root above the test output.");
     }
 
-    private static JourneyRuntimeOptions ValidEnabledOptions() => new()
+    internal static JourneyRuntimeOptions ValidEnabledOptions() => new()
     {
         Enabled = true,
         PollInterval = TimeSpan.FromSeconds(1),
