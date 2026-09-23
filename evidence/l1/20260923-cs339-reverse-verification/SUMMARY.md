@@ -17,3 +17,9 @@
 
 R1 第一次跑时变异写成 `if (true)`，编译器报 CS0162（不可达代码）没跑成；R4、R6 第一次写成 `Task.FromResult(true/false)`，报 CA1822。
 三处都改写成编译器看不穿的形式后重跑，这里留的是重跑那一次。
+
+**R4 为什么红 19 条（审查低优先级项，2026-09-24 补记，读 `R4-superseded-always-true.log` 数出来的）。**「到站那一张已被取代」恒真，等于到站时
+永远不发车辆业务状态，所以凡是走过一次到站、并断言到站发了哪几类快照的用例都红：17 条是同一个断言——到站发出的快照类型期望
+`["CurrentStopWorklistSnapshot", "UpcomingStopPlanSnapshot", "VehicleBusinessStateSnapshot"]`、实际少了最后一类；另 2 条是
+`AnUninterruptedArrivalStillSendsItsBusinessStateAndTheVehicleConfirmsIt` 两行，按到站那一张的 messageId 查发件箱，`Sequence contains no elements`。
+预期就是「每条经过到站的用例都红」，数目大不是因为变异打偏了，而是这条判据在每次到站上都起作用。

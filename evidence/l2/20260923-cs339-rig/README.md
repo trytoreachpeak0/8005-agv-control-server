@@ -9,3 +9,6 @@
 | `red-d64a15c1` | 本地变异 `d64a15c1`（本分支场景脚本 + 去掉升版、清单沿用改回忽略期限；只留本地，未推送，跑完已删） | FAIL，红证据。前提 `L2-RD-01`～`03` 全 PASS；`L2-RD-04` FAIL，预期「车上 = 服务端 = 2026-09-23T16:20:32.1642209+00:00（到站那一个是 2026-09-23T16:20:24.4281831+00:00）」，实际「车上 r1 2026-09-23T16:20:24.4281831+00:00 / 服务端 2026-09-23T16:20:32.1642209+00:00」；`L2-RD-05` FAIL（r1，预期 > r1）；`L2-RD-06` PASS（变异下录入请求也没升版，与车上那一版一致） |
 | `precheck-c0c5aa81-script-threw` | `c0c5aa81`（分支顶端） | 六条断言全 PASS，结论 FAIL：场景脚本最后一行 `@(Get-ServerWorklists) \| ForEach-Object` 把整张列表当一个元素，两版清单时抛 `Cannot find an overload for "ToString" and the argument count: "1"`。只有一版时成员枚举恰好给出标量，所以第一遍没抛。`33f7e7ac` 改为先赋值再遍历，判据未动 |
 | `precheck-33f7e7ac` | `33f7e7ac` | PASS，六条全过；`L2-RD-04` 车上 r2 `16:25:57.6568715` = 服务端 `16:25:57.6568715`。只是预检，不算绿证据——绿证据是最终 head 上的 CI 真装置 |
+
+变异 `d64a15c1` 改了什么存在 `mutation-d64a15c1-vs-d01e68c6.diff`（PR #353 审查 S5，2026-09-24 从本机仍在的对象导出）：`git diff d01e68c6 d64a15c1 -- src tools scripts .github`，只动
+`JourneyRuntimeEngine.cs` 两行，与合成 L2 那一份变异（`../20260923-cs339/mutation-55f861d3-vs-523d0723.diff`）改动行逐行相同。
