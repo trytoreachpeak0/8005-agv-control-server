@@ -354,13 +354,17 @@ public sealed class JourneyRuntimeWorkerLoadDeadlineTests
         }, SerializerOptions);
         string response = await processor.ProcessAsync(
             line,
+            // A connection in the middle of its session, its handshake long done: the result is reported from the
+            // receive loop. Until control-server#340 the handshake flag was left at its default here and nothing
+            // noticed; a readiness line is now held back inside a handshake, so the flag says which one this is.
             new OnboardConnectionState
             {
                 AgvId = fixture.Options.AgvId,
                 SessionGeneration = 1,
                 CapabilityRevision = 1,
                 SafetyRevision = 7,
-                Readiness = SessionReadiness.Ready
+                Readiness = SessionReadiness.Ready,
+                HandshakeCompleted = true
             },
             TestContext.Current.CancellationToken);
         // The runtime reads each iteration in a scope of its own; the fixture's engine keeps one context, so
