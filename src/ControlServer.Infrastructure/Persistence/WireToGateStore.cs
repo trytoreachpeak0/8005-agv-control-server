@@ -3286,6 +3286,23 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
                                    JsonNode.DeepEquals(
                                        JsonNode.Parse(stored.GetProperty("payload").GetRawText()),
                                        JsonNode.Parse(candidate.GetProperty("payload").GetRawText()));
+        // 已确认的一行不改写，但那是「什么也不做」，不是「出错」(control-server#331)。
+        //
+        // 不改写的理由在确认本身：AcknowledgeOutboundEnvelopeAsync 按 ContentSha256 对账车报回来的字节，
+        // 改掉这一行的 payload 就让库里的字节与车确认过的那一份对不上。下面那道护栏拒绝改写已确认的行，
+        // 拒的正是这个。
+        //
+        // 但重来这一遍并不是一次改写请求。到站那一段发布是好几条报文，它「做完了」的标志是阶段前移；
+        // 断线把它打断在中间时阶段留在原处，重连到新的一代之后整段从头重跑，而前半段的快照车早已确认。
+        // 代次前移、语义一字不差，说的就是同一件事——它不会再被送出去（PublishStampedEnvelopeAsync
+        // 与 ReplayPendingForSessionAsync 都只发未确认的行），所以什么也不用做。在这里抛异常，会让这一段
+        // 每一轮都死在第一张已确认的快照上，后面的录入请求一次也发不出去，旅程永远停在取货站。
+        //
+        // 收窄到这一种：语义不同仍然拒（那是重放攻击的形状），代次不前移仍然拒，未确认的行仍然照旧改写。
+        if (existing.AcknowledgedAt is not null && sameSemanticMessage && candidateGeneration > storedGeneration)
+        {
+            return;
+        }
         if (!sameSemanticMessage || candidateGeneration <= storedGeneration || existing.AcknowledgedAt is not null)
         {
             throw new ProtocolContentConflictException(
