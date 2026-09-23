@@ -213,6 +213,109 @@ public sealed class OwnOrderRebuildTests
         }
     }
 
+    // ---- 幂等、失败与崩溃 --------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// 同一次取消被处理了不止一次——延迟之内每一轮都读到它，中间还重启了一次：只记一行，只建一张新单；建成之后再跑几轮、再重启，
+    /// 也不再建。
+    /// </summary>
+    /// <remarks>记录的主键由终结那张单的 upperId 派生，一张 RIoT 单只会终结一次，所以「第二次处理」落到的是同一行。</remarks>
+    [Fact]
+    public async Task TheSameCancellationHandledAgainAndAcrossARestartRebuildsOnce()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync();
+        JourneyStopRow[] stopsBefore = await StopsAsync(fixture, before.JourneyId);
+        fixture.Riot.CancelOrder(before.PickupUpperId);
+        await TickAndRunAsync(fixture);
+        await TickAndRunAsync(fixture);
+        await fixture.RecreateEngineAsync();
+        await TickAndRunAsync(fixture);
+
+        await PassTheDelayAsync(fixture);
+        await fixture.RecreateEngineAsync();
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+
+        Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        Assert.Single(await reading.OwnOrderRebuilds.AsNoTracking().ToArrayAsync(Token));
+        Assert.Equal(2, await reading.OrderIntents.AsNoTracking().CountAsync(row => row.DemandId == FirstDemandId, Token));
+        await AssertRebuiltAsync(fixture, before, stopsBefore, stopsBefore.Single(stop => stop.StopRole == JourneyStopRoles.Pickup));
+    }
+
+    /// <summary>
+    /// 建新单那一次的回应丢了（RIoT 那边其实建成了）：这一轮不当成建成，也不当成失败，码是 <c>OWN_ORDER_REBUILD_ORDER_UNCONFIRMED</c>；
+    /// 下一轮按同一个 upperId 对账，认出那张单，确认建成——前后只向 RIoT 发过一次创建。
+    /// </summary>
+    [Fact]
+    public async Task ARebuildWhoseCreateAnswerIsLostIsConfirmedNextRoundWithoutASecondCreate()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync();
+        JourneyStopRow[] stopsBefore = await StopsAsync(fixture, before.JourneyId);
+        fixture.Riot.CancelOrder(before.PickupUpperId);
+        await TickAndRunAsync(fixture);
+        fixture.Riot.LoseNextCreateResponse = true;
+
+        await PassTheDelayAsync(fixture);
+
+        Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+        Assert.Equal("OWN_ORDER_REBUILD_ORDER_UNCONFIRMED", (await fixture.RuntimeAsync()).BlockReasonCode);
+        Assert.Equal(OwnOrderRebuildStates.Ordering, (await SingleRebuildAsync(fixture, before.PickupUpperId)).State);
+
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+
+        Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+        await AssertRebuiltAsync(fixture, before, stopsBefore, stopsBefore.Single(stop => stop.StopRole == JourneyStopRoles.Pickup));
+        Assert.Null((await fixture.RuntimeAsync()).BlockReasonCode);
+    }
+
+    /// <summary>
+    /// 两个崩溃点：「已决定重建、未建单」（新单的意图与停靠的指向已落库，还没问 RIoT，进程没了）与「已建单、未记账」
+    /// （RIoT 已经建成，回应还没记下，进程没了）。重启之后两种都只建成一张新单，并把这次重建记成已建成。
+    /// </summary>
+    [Theory]
+    [InlineData("decided-not-created")]
+    [InlineData("created-not-recorded")]
+    public async Task ARebuildCutShortResumesAfterARestartWithExactlyOneNewOrder(string crashPoint)
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync();
+        JourneyStopRow[] stopsBefore = await StopsAsync(fixture, before.JourneyId);
+        fixture.Riot.CancelOrder(before.PickupUpperId);
+        await TickAndRunAsync(fixture);
+        string newUpperId = (await SingleRebuildAsync(fixture, before.PickupUpperId)).NewUpperId;
+        if (crashPoint == "decided-not-created")
+        {
+            fixture.Riot.CrashOnNextReconcileOf = newUpperId;
+        }
+        else
+        {
+            fixture.Riot.CrashAfterNextCreate = true;
+        }
+
+        fixture.Clock.Advance(fixture.Options.OwnOrderRebuildDelay);
+        await fixture.HearFromPeerAsync();
+        await Assert.ThrowsAsync<IOException>(() => fixture.Engine.ExecuteOnceAsync(Token));
+        Assert.True(fixture.Riot.CrashOnNextReconcileOf is null && !fixture.Riot.CrashAfterNextCreate, "the crash point was never reached");
+        Assert.Equal(crashPoint == "decided-not-created" ? 1 : 2, fixture.Riot.CreateCount("TO_PICKUP"));
+        Assert.Equal(newUpperId, (await StopsAsync(fixture, before.JourneyId)).Single(stop => stop.StopRole == JourneyStopRoles.Pickup).UpperId);
+        Assert.Equal(OwnOrderRebuildStates.Ordering, (await SingleRebuildAsync(fixture, before.PickupUpperId)).State);
+
+        await fixture.RecreateEngineAsync();
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+
+        Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+        await AssertRebuiltAsync(fixture, before, stopsBefore, stopsBefore.Single(stop => stop.StopRole == JourneyStopRoles.Pickup));
+    }
+
     // ---- 夹具 ----------------------------------------------------------------------------------------------
 
     /// <summary>

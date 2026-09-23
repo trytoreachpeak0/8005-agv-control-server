@@ -1650,9 +1650,26 @@ internal static class JourneyRuntimeWorkerTestKit
                 SafetyReasons));
         }
 
+        /// <summary>
+        /// The next read of the order under this upperId throws instead of answering, once: the process stopping before it
+        /// asked RIoT anything about that order (the "decided, not created" crash point of control-server#318).
+        /// </summary>
+        public string? CrashOnNextReconcileOf { get; set; }
+
+        /// <summary>
+        /// The next create reaches RIoT -- the order exists there from now on -- and then the process stops before the answer
+        /// is recorded, once (the "created, not recorded" crash point of control-server#318).
+        /// </summary>
+        public bool CrashAfterNextCreate { get; set; }
+
         public Task<RiotOrderObservation> ReconcileByUpperIdAsync(string upperId, CancellationToken cancellationToken)
         {
             _ = cancellationToken;
+            if (CrashOnNextReconcileOf is { } crashing && crashing == upperId)
+            {
+                CrashOnNextReconcileOf = null;
+                throw new IOException($"The process stopped before RIoT was asked about {upperId}.");
+            }
             return Task.FromResult(_orders.TryGetValue(upperId, out RiotOrderObservation? order)
                 ? order
                 : new RiotOrderObservation(upperId, RiotOrderObservationKind.NotFound, null));
@@ -1671,6 +1688,11 @@ internal static class JourneyRuntimeWorkerTestKit
                 MapId: intent.MapId,
                 DestinationStationId: intent.DestinationStationId);
             _orders[intent.UpperId] = active;
+            if (CrashAfterNextCreate)
+            {
+                CrashAfterNextCreate = false;
+                throw new IOException($"The process stopped after RIoT created {intent.UpperId} and before the answer was recorded.");
+            }
             if (LoseNextCreateResponse)
             {
                 LoseNextCreateResponse = false;
