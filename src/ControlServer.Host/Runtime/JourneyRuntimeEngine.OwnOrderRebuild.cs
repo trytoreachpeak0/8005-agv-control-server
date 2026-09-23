@@ -110,6 +110,13 @@ public sealed partial class JourneyRuntimeEngine
     /// </summary>
     public const string OwnOrderRebuildVehicleIneligibleReason = "OWN_ORDER_REBUILD_VEHICLE_INELIGIBLE";
 
+    /// <summary>
+    /// How old a snapshot that could not settle where the cargo is has to be before the vehicle is asked for another (review
+    /// S4). Long enough that a door someone is closing is not polled every message, short enough that the rebuild follows
+    /// within seconds of the slot being secured.
+    /// </summary>
+    private static readonly TimeSpan CargoEvidenceReaskInterval = TimeSpan.FromSeconds(10);
+
     /// <summary>What <see cref="OwnOrderRebuildRow.WaitingReason"/> says while no snapshot after the clearance has arrived.</summary>
     private const string CargoEvidenceNotReceived = "CARGO_EVIDENCE_NOT_RECEIVED";
 
@@ -205,7 +212,18 @@ public sealed partial class JourneyRuntimeEngine
 
                 if (evidence.NotShown is null && evidence.Unproven is not null)
                 {
-                    // Review S4: a snapshot that cannot settle where the cargo is waits for the next one.
+                    // Review S4: a snapshot that cannot settle where the cargo is waits for the next one -- and the next one
+                    // has to be asked for: Onboard sends a SafetyStateSnapshot only in the handshake and when asked. Once the
+                    // inconclusive one is old enough the request marker is withdrawn, so the Host asks again on the vehicle's
+                    // next message; at most once per interval, however long the slot stays unsecured.
+                    if (rebuild.CargoEvidenceRequestedGeneration is not null &&
+                        now - evidence.ReceivedAt >= CargoEvidenceReaskInterval)
+                    {
+                        rebuild.CargoEvidenceRequestedGeneration = null;
+                        rebuild.CargoEvidenceRequestedWhileReady = false;
+                        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    }
+
                     await WaitForRebuildAsync(
                         runtime, rebuild, evidence.Unproven, OwnOrderRebuildCargoUnprovenReason, now, cancellationToken)
                         .ConfigureAwait(false);
@@ -553,15 +571,15 @@ public sealed partial class JourneyRuntimeEngine
         CancellationToken cancellationToken)
     {
         // Compared in memory: SQLite cannot order or compare DateTimeOffset columns in the store.
-        string[] newestFirst = [.. (await dbContext.ProtocolInbox.AsNoTracking()
+        (string MessageId, DateTimeOffset ReceivedAt)[] newestFirst = [.. (await dbContext.ProtocolInbox.AsNoTracking()
                 .Where(row => row.MessageType == "SafetyStateSnapshot")
                 .Select(row => new { row.MessageId, row.ReceivedAt })
                 .ToArrayAsync(cancellationToken).ConfigureAwait(false))
             .Where(row => row.ReceivedAt > rebuild.RecordedAt)
             .OrderByDescending(row => row.ReceivedAt)
-            .Select(row => row.MessageId)];
-        (string MessageId, string Json)? fresh = null;
-        foreach (string messageId in newestFirst)
+            .Select(row => (row.MessageId, row.ReceivedAt))];
+        (string MessageId, string Json, DateTimeOffset ReceivedAt)? fresh = null;
+        foreach ((string messageId, DateTimeOffset receivedAt) in newestFirst)
         {
             string json = await dbContext.ProtocolInbox.AsNoTracking()
                 .Where(row => row.MessageId == messageId)
@@ -569,14 +587,14 @@ public sealed partial class JourneyRuntimeEngine
                 .SingleAsync(cancellationToken).ConfigureAwait(false);
             if (SnapshotOf(json) == runtime.AgvId)
             {
-                fresh = (messageId, json);
+                fresh = (messageId, json, receivedAt);
                 break;
             }
         }
 
         if (fresh is not { } snapshot)
         {
-            return new CargoEvidence(null, null, null);
+            return new CargoEvidence(null, default, null, null);
         }
 
         string[] onBoard = await dbContext.Set<JourneyDemandRow>().AsNoTracking()
@@ -592,7 +610,8 @@ public sealed partial class JourneyRuntimeEngine
         if (loads.FirstOrDefault(row => row.Status is StationOperationStatus.Prepared or StationOperationStatus.RecoveryRequired)
             is { } unsettled)
         {
-            return new CargoEvidence(snapshot.MessageId, null, $"LOAD_NOT_SETTLED:{unsettled.SlotOperationAttemptId}");
+            return new CargoEvidence(
+                snapshot.MessageId, snapshot.ReceivedAt, null, $"LOAD_NOT_SETTLED:{unsettled.SlotOperationAttemptId}");
         }
 
         int[] cargoSlots = [.. loads
@@ -602,7 +621,7 @@ public sealed partial class JourneyRuntimeEngine
             .Order()];
         if (cargoSlots.Length == 0)
         {
-            return new CargoEvidence(snapshot.MessageId, null, "CARGO_SLOTS_UNKNOWN");
+            return new CargoEvidence(snapshot.MessageId, snapshot.ReceivedAt, null, "CARGO_SLOTS_UNKNOWN");
         }
 
         using JsonDocument document = JsonDocument.Parse(snapshot.Json);
@@ -639,8 +658,9 @@ public sealed partial class JourneyRuntimeEngine
         }
 
         return notShown.Count > 0
-            ? new CargoEvidence(snapshot.MessageId, string.Join(';', notShown), null)
-            : new CargoEvidence(snapshot.MessageId, null, unproven.Count == 0 ? null : string.Join(';', unproven));
+            ? new CargoEvidence(snapshot.MessageId, snapshot.ReceivedAt, string.Join(';', notShown), null)
+            : new CargoEvidence(
+                snapshot.MessageId, snapshot.ReceivedAt, null, unproven.Count == 0 ? null : string.Join(';', unproven));
 
         static string SnapshotOf(string json)
         {
@@ -653,7 +673,7 @@ public sealed partial class JourneyRuntimeEngine
     /// The snapshot that answered the cargo question, if any; what it showed missing (a slot read EMPTY), or else what it left
     /// open. Both null when it showed the cargo whole.
     /// </summary>
-    private sealed record CargoEvidence(string? MessageId, string? NotShown, string? Unproven);
+    private sealed record CargoEvidence(string? MessageId, DateTimeOffset ReceivedAt, string? NotShown, string? Unproven);
 
     /// <summary>
     /// Records that the order under <paramref name="upperId"/> -- the one <paramref name="runtime"/> waits on -- was cancelled
