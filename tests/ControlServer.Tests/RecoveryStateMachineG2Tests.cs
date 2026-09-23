@@ -4799,6 +4799,57 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     /// <summary>
+    /// control-server#340, the recovery results' site, not reachable in the field today for the reason the
+    /// OperationResult's is not. The vehicle ran the authorized compensation while the connection was down and
+    /// resends its result in the reconnect handshake, where the server takes it for the first time. The connection is
+    /// set to READY after SessionHello so that deciding readiness again changes it, which is what reaches the site's
+    /// own append.
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-COMPENSATE")]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ARecoveryResultFirstDeliveredInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness(
+        bool deferOutbound)
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_RESULT_FIRST_IN_HANDSHAKE";
+        const string proof = "result-first-in-handshake-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            RecordingPeer peer = new(context);
+            OnboardMessageProcessor processor = Processor(context, peer, proofVariable);
+            string result = AllEmptyCompensationResult(
+                await ReachCompensationResultAsync(processor, CurrentState(deferOutbound: true), proof));
+
+            OnboardConnectionState reconnected = new() { DeferOutboundUntilResponseWritten = deferOutbound };
+            List<string> wire = [.. await ReconnectAsync(processor, peer, reconnected)];
+            long generation = reconnected.SessionGeneration!.Value;
+            reconnected.Readiness = SessionReadiness.Ready;
+            string[] resent = await ExchangeAsync(processor, peer, reconnected, InSession(result, generation));
+            Assert.Equal(SessionReadiness.RecoveryRequired, reconnected.Readiness);
+            wire.AddRange(resent);
+            int reportAt = await FinishHandshakeAsync(processor, peer, reconnected, wire);
+
+            Assert.Equal(["DurableAck"], resent.Select(MessageType).ToArray());
+            AssertNothingSentInsideTheHandshake(wire, reportAt, reconnected);
+            Assert.Equal(
+                RecoveryWorkflowState.Reconciled,
+                (await context.RecoveryWorkflows.AsNoTracking().SingleAsync(token)).State);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
     /// Everything the server wrote in a reconnect before the recovery report is an answer to the line the vehicle had
     /// just sent, one per line: no recovery command and no recovery session snapshot while the vehicle reads one
     /// answer at a time (control-server#202). Where sends wait for the answer to be written, as they do on
