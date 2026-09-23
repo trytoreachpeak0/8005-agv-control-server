@@ -26,6 +26,7 @@
 
 - `*/measure-<提交>.txt`：`ReconnectModelTests.PrototypeMeasurement` 的报告。固定种子 300 个组合：每个组合的耗时；每一类违规的次数、种子与序列（一个组合里出现的每一类都计数）；等人码出事的机会按码分开数；恢复健康到录入请求用了几轮的分布；`DifferentMessageAccepted` 在握手中与会话中途各几次；第一个违规组合的逐步记录；CsCheck 化简与确定性删减的结果。
 - `final/regression-<提交>.log`：`ReconnectModelRegressionTests` 在各提交上的输出，修前红、修后绿。
+- `final/measure-rounds-to-entry-constant-1-probe.txt`：`RoundsFromRecoveryToEntry` 定值之前的一次测量，常量还是 1（提交 `9966beca` 之前的工作树，模型判定与 `9966beca` 相同，只差这个常量与后来加的按码计数）。报 `EntryLateAfterRecovery` 的恰好是分布里「2 轮」的那 8 个，这就是这条新不变量的反向验证；读完 cs#331 那条用例之后定成 2。
 - `final/ci-batch-test-local-38318ef9.log`：CI 那一批用例（200 个组合）在本机单独跑一次的耗时。
 - `final/*mutant-guard-on-cb44fb60*`：去掉 `NameFailedAdvanceAsync` 里的 `CarriesACodeThatNamesAWaitOnAPerson` 守卫（cs#331 第二轮审查补的「推进失败不覆盖等人码」）。
 - `final/*mutant-silent*-on-cb44fb60*`：失联码那一格的反向验证（第二轮审查必修 M2）。`silent` 是把「失联判定让这一轮返回」改成判完照样往下发；`silent-guard` 再加上去掉守卫；`new-model` / `old-model` 是模型里失联码豁免有没有存活窗口上限。`full-trace` 与 `with-ack` 两份是逐步记录，说明失联码在这个变异下是在同一轮之内被覆盖的。
