@@ -77,7 +77,7 @@ public sealed class ReconnectModelRegressionTests
     /// <remarks>
     /// <para>
     /// 模型在 cs#331 第一版修复 <c>62d5c560</c> 上找到（300 个组合里 4～6 个，随模型版本略变，首个种子 <c>0000000005_1</c>，删减到 4 步；
-    /// 模型删出的顺序是先断线后挂起，这里写成先挂起，两种顺序在 <c>62d5c560</c> 上都红）：单挂起、连接在下一条
+    /// 本轮模型删出的就是这一串；上一轮删出过先断线后挂起，两种顺序在 <c>62d5c560</c> 上都红）：单挂起、连接在下一条
     /// 发送时断；挂起那一轮写上 <c>ORDER_HANG</c>，下一轮开头补发没确认的计划时抛 <see cref="IOException"/>，那一版把 <c>ORDER_HANG</c>
     /// 换成了 <c>JOURNEY_ADVANCE_FAILED</c>——「不覆盖指名在等谁的码」是 cs#331 第二轮审查才补的。
     /// </para>
