@@ -382,10 +382,18 @@ public sealed class VehicleFaultRecoveryService(
         RiotVehicleOrderObservation orders = await orderFacts
             .ReadUnfinishedOrdersAsync(subject.DeviceKey, cancellationToken).ConfigureAwait(false);
         RiotOrderObservation? order = null;
-        // A terminal-reconciled intent is read too: a rebuilt order that FAILED before it was confirmed is left that way, and
-        // its fault is cleared here like any other (control-server#318, review S2). Its orderId is RIoT's, matched against the
-        // frozen intent when it was reconciled.
-        if (intent is { Status: "CONFIRMED" or "TERMINAL_RECONCILIATION_REQUIRED", OrderId: not null })
+        // A terminal-reconciled intent is read too, but only a rebuilt order's: one that FAILED before it was confirmed is left
+        // that way, and its fault is cleared here like any other (control-server#318, review S2). Its orderId is RIoT's,
+        // matched against the frozen intent when it was reconciled. An ordinary leg in that state is not read (incremental
+        // review, low 4): the engine records no fault for it, so a fault standing there came some other way, and clearing it
+        // here would open a path #318 never argued for.
+        if (intent is { Status: "CONFIRMED", OrderId: not null } ||
+            (intent is { Status: "TERMINAL_RECONCILIATION_REQUIRED", OrderId: not null } &&
+             await dbContext.OwnOrderRebuilds.AsNoTracking()
+                 .AnyAsync(
+                     row => row.NewUpperId == intent.UpperId && row.State == OwnOrderRebuildStates.Failed,
+                     cancellationToken)
+                 .ConfigureAwait(false)))
         {
             try
             {
