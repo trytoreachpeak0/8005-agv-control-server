@@ -50,8 +50,9 @@ internal static class OwnOrderRebuilds
     public const string VehicleNoLongerEligible = "VEHICLE_NO_LONGER_ELIGIBLE";
 
     /// <summary>
-    /// Why a rebuild was not made: the new order ended in RIoT before it was ever confirmed, neither cancelled nor FAILED --
-    /// SUCCESS, or a state this was not written for. Nothing then says what happened to the vehicle, so a person looks.
+    /// Why a rebuild was not made: the new order ended in RIoT before it was ever confirmed, in a terminal state that is neither
+    /// a cancellation nor FAILED -- RIoT's 8, SUSPENDED, which the gateway reads as terminal. Nothing then says what happened to
+    /// the vehicle, so a person looks. (A SUCCESS before confirmation is taken as the order confirmed, and never ends here.)
     /// </summary>
     public const string EndedBeforeConfirmation = "REBUILT_ORDER_ENDED_BEFORE_CONFIRMATION";
 

@@ -358,8 +358,10 @@ public sealed partial class JourneyRuntimeEngine
     /// The new order ended in RIoT before it was ever confirmed (review S2). How it ended decides what that is, exactly as it
     /// would for an order that had been confirmed: a cancellation or deletion is recorded as a problem of its own under the new
     /// order, and REQ-0361's window judges it -- it repeats a cancellation, not a cleared fault's FAILED; a FAILED is an
-    /// ordinary FAILED, recorded as a fault the clearance entry can clear. Anything else -- SUCCESS, or a state this was not
-    /// written for -- says nothing about what happened to the vehicle, and stops the rebuild for a person.
+    /// ordinary FAILED, recorded as a fault the clearance entry can clear. A read that does not answer is read again next round.
+    /// Any other terminal state -- RIoT's 8, SUSPENDED, which the gateway reads as terminal and the lab has never observed --
+    /// says nothing about what happened to the vehicle, and stops the rebuild for a person. SUCCESS never reaches here:
+    /// reconciliation takes a SUCCESS before confirmation as the order confirmed.
     /// </summary>
     /// <remarks>
     /// The first version stopped the rebuild in every case (<c>REBUILT_ORDER_ENDED_BEFORE_CONFIRMATION</c>). For a FAILED that
@@ -398,6 +400,17 @@ public sealed partial class JourneyRuntimeEngine
                 .ConfigureAwait(false);
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             await NameRebuildAsync(runtime, code, now, cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+
+        if (order.Kind != RiotOrderObservationKind.Terminal)
+        {
+            // Reconciliation found the order terminal a moment ago; this read did not answer that. A failed read says nothing
+            // about the vehicle, so it is read again next round: the intent stays terminal-reconciled, so the next round comes
+            // straight back here.
+            await WaitForRebuildAsync(
+                runtime, rebuild, $"ENDING_UNREAD:{order.Kind}", OwnOrderRebuildOrderUnconfirmedReason, now, cancellationToken)
+                .ConfigureAwait(false);
             return true;
         }
 

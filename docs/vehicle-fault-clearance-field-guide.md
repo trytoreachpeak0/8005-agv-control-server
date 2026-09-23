@@ -134,7 +134,8 @@ continue，另一个回 409 `FAULT_RECOVERY_RESUME_IN_PROGRESS`，过一会儿�
 `OWN_ORDER_REBUILD_ORDER_UNCONFIRMED`，服务端每一轮按同一个单号对账，不会建第二张。新单**还没确认建成就终结了**，按它怎么
 终结处理，与确认过的单一样：被取消或删除的，算一次新的出问题，按上面第 3 条的窗口判（窗口内停住、窗口外再重建）；FAILED 的，
 按普通 FAILED 记故障（旅程码 `VEHICLE_ORDER_FAILED`），照本文前面的步骤清除即可，清除后照常重建——第一次是取消时，FAILED
-不算「又出问题」。其余情况（RIoT 报这张单已经成功、或状态说不清）停住等人，旅程码 `OWN_ORDER_REBUILD_STOPPED`。每一次终结、每一次被拦下、每一次重建，
+不算「又出问题」。RIoT 报状态 8（SUSPENDED，实验室里从没见过）时停住等人，旅程码 `OWN_ORDER_REBUILD_STOPPED`；
+紧接着再读没读到的，旅程码 `OWN_ORDER_REBUILD_ORDER_UNCONFIRMED`，下一轮再读。确认前就已成功的单直接算建成。每一次终结、每一次被拦下、每一次重建，
 都记在表 `OwnOrderRebuilds` 的同一行上（来源、谁清除的、终结的单、新单、在等什么、何时建成或为何停下），并打告警日志
 （事件 2170～2174）。
 
