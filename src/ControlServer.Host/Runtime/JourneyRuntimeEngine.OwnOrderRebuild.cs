@@ -94,6 +94,13 @@ public sealed partial class JourneyRuntimeEngine
     /// </summary>
     public const string OwnOrderRebuildCargoNotInPlaceReason = "OWN_ORDER_REBUILD_CARGO_NOT_IN_PLACE";
 
+    /// <summary>
+    /// While the order waited to be rebuilt, the vehicle stopped being eligible for a demand still to be loaded at the stop --
+    /// its task-type or zone admission was withdrawn: no rebuild, and the release service releases the demand for redispatch
+    /// (REQ-0328), as it would have if the order had still been running (independent review S1).
+    /// </summary>
+    public const string OwnOrderRebuildVehicleIneligibleReason = "OWN_ORDER_REBUILD_VEHICLE_INELIGIBLE";
+
     /// <summary>What <see cref="OwnOrderRebuildRow.WaitingReason"/> says while no snapshot after the clearance has arrived.</summary>
     private const string CargoEvidenceNotReceived = "CARGO_EVIDENCE_NOT_RECEIVED";
 
@@ -319,6 +326,25 @@ public sealed partial class JourneyRuntimeEngine
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
+        // Review S1: a vehicle no longer admitted for a demand still to be loaded here is not sent off again only to have the
+        // release service cancel the new order a round later. Asked first, and on either side of the gate: it does not wait on
+        // anything the vehicle can supply, and nothing about it gets better by waiting.
+        if (stop.StopRole == JourneyStopRoles.Pickup &&
+            await NoLongerEligibleAsync(runtime, stop, now, cancellationToken).ConfigureAwait(false) is { } trigger)
+        {
+            rebuild.State = OwnOrderRebuildStates.Stopped;
+            rebuild.StoppedReason = OwnOrderRebuilds.VehicleNoLongerEligible;
+            rebuild.StoppedAt = now;
+            rebuild.WaitingReason = trigger;
+            rebuild.WaitingSince = now;
+            LogOwnOrderRebuildStopped(
+                logger, rebuild.EndedUpperId, runtime.JourneyId, runtime.AgvId,
+                $"{OwnOrderRebuilds.VehicleNoLongerEligible}: {trigger}", null);
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            await NameRebuildAsync(runtime, OwnOrderRebuildVehicleIneligibleReason, now, cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+
         if (!mayCreate)
         {
             await WaitForRebuildAsync(
@@ -351,11 +377,43 @@ public sealed partial class JourneyRuntimeEngine
         return false;
     }
 
-    /// <summary>The journey's code for a stopped rebuild: the cargo one when the snapshot did not show the cargo in place.</summary>
-    private static string StoppedCode(OwnOrderRebuildRow rebuild) =>
-        rebuild.StoppedReason == OwnOrderRebuilds.CargoNotProvenInOriginalSlots
-            ? OwnOrderRebuildCargoNotInPlaceReason
-            : OwnOrderRebuildStoppedReason;
+    /// <summary>The journey's code for a stopped rebuild, by why it stopped.</summary>
+    private static string StoppedCode(OwnOrderRebuildRow rebuild) => rebuild.StoppedReason switch
+    {
+        OwnOrderRebuilds.CargoNotProvenInOriginalSlots => OwnOrderRebuildCargoNotInPlaceReason,
+        OwnOrderRebuilds.VehicleNoLongerEligible => OwnOrderRebuildVehicleIneligibleReason,
+        _ => OwnOrderRebuildStoppedReason,
+    };
+
+    /// <summary>
+    /// Why the vehicle is no longer eligible for one of the demands still to be loaded at <paramref name="stop"/>, or null. The
+    /// release service's own verdict (<see cref="Release.DemandReleaseRules.VehicleNoLongerEligible"/>) on the facts this server
+    /// holds -- task-type and zone admission. The fault and the Map are the second guard's, so they are left out here.
+    /// </summary>
+    private async Task<string?> NoLongerEligibleAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopRow stop,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var waiting = await (
+                from membership in dbContext.Set<JourneyDemandRow>().AsNoTracking()
+                join demand in dbContext.AcceptedDemands.AsNoTracking() on membership.DemandId equals demand.DemandId
+                where membership.JourneyId == runtime.JourneyId && membership.PickupStopId == stop.StopId &&
+                      membership.RemovedAt == null && membership.Status == JourneyDemandStatuses.PendingLoad
+                select new { demand.WorkType, membership.DispatchZone })
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        if (waiting.Length == 0)
+        {
+            return null;
+        }
+
+        VehicleDispatchPolicy policy = await dispatchPolicy.EnsureCurrentAsync(cancellationToken).ConfigureAwait(false);
+        return waiting
+            .Select(item => Release.DemandReleaseRules.VehicleNoLongerEligible(
+                fault: null, policy, runtime.AgvId, item.WorkType, item.DispatchZone, observation: null, now, runtimeOptions))
+            .FirstOrDefault(trigger => trigger is not null);
+    }
 
     /// <summary>
     /// What the vehicle has shown about its cargo since the clearance (REQ-0362): no snapshot yet (<c>MessageId</c> null), or

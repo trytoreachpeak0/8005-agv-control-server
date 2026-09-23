@@ -331,10 +331,24 @@ public sealed class DemandReleaseService(
             return false;
         }
 
+        // The engine gave the rebuild up because the vehicle is no longer eligible for a demand still to be loaded here (review
+        // S1): releasing it for redispatch is exactly what that record hands over. The order it waited on has ended, so the
+        // release's settlement reads it as ended and sends no cancel.
+        if (await dbContext.OwnOrderRebuilds.AsNoTracking()
+                .AnyAsync(
+                    row => row.StopId == current.StopId && row.State == OwnOrderRebuildStates.Stopped &&
+                           row.StoppedReason == OwnOrderRebuilds.VehicleNoLongerEligible,
+                    cancellationToken)
+                .ConfigureAwait(false))
+        {
+            return false;
+        }
+
         return JourneyRuntimeEngine.IsStalledOrderReason(journey.BlockReasonCode) ||
                await dbContext.OwnOrderRebuilds.AsNoTracking()
                    .AnyAsync(
-                       row => row.JourneyId == journey.JourneyId && row.State != OwnOrderRebuildStates.Rebuilt,
+                       row => row.JourneyId == journey.JourneyId && row.State != OwnOrderRebuildStates.Rebuilt &&
+                       !(row.State == OwnOrderRebuildStates.Stopped && row.StoppedReason == OwnOrderRebuilds.VehicleNoLongerEligible),
                        cancellationToken)
                    .ConfigureAwait(false);
     }

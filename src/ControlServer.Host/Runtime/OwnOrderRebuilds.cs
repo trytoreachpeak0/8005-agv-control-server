@@ -43,6 +43,12 @@ internal static class OwnOrderRebuilds
     /// </summary>
     public const string CargoNotProvenInOriginalSlots = "CARGO_NOT_PROVEN_IN_ORIGINAL_SLOTS";
 
+    /// <summary>
+    /// Why a rebuild was not made: the vehicle is no longer admitted for a demand still to be loaded at the stop (review S1).
+    /// The record's waiting reason names the admission criterion. The release service releases the demand for redispatch.
+    /// </summary>
+    public const string VehicleNoLongerEligible = "VEHICLE_NO_LONGER_ELIGIBLE";
+
     /// <summary>Why a rebuild was not made: the new order ended in RIoT before it was ever confirmed -- a second ending.</summary>
     public const string EndedBeforeConfirmation = "REBUILT_ORDER_ENDED_BEFORE_CONFIRMATION";
 
