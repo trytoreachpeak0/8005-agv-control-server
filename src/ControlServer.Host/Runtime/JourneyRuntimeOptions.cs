@@ -134,8 +134,9 @@ public sealed class JourneyRuntimeOptions
     public TimeSpan OwnOrderRebuildDelay { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
-    /// The third guard of control-server#318: a demand whose rebuilt order ends again -- cancelled again, or FAILED again --
-    /// within this long of the rebuild is not rebuilt a second time; the journey is held and alarmed for a person. Ten
+    /// The third guard of control-server#318 (REQ-0361): a demand that has a problem again within this long of its first
+    /// problem -- counted from that problem, not from the rebuild it led to -- is not rebuilt again; the journey is held and
+    /// alarmed for a person. What counts as "again" depends on the first problem's source (<c>OwnOrderRebuilds</c>). Ten
     /// minutes by default; must be positive.
     /// </summary>
     public TimeSpan OwnOrderRebuildRepeatWindow { get; set; } = TimeSpan.FromMinutes(10);

@@ -107,9 +107,10 @@ continue，另一个回 409 `FAULT_RECOVERY_RESUME_IN_PROGRESS`，过一会儿�
    `RIOT_VEHICLE_NOT_ONLINE`、解抱闸 `RIOT_BRAKE_NOT_MOVABLE`）、故障（`RIOT_CONTROL_NOT_OK`、服务端的
    `VEHICLE_FAULT_IN_EFFECT`）、不在本图（`RIOT_VEHICLE_MAP_MISMATCH`）、车上还挂着别的单或还在动时，都不建，旅程码
    `OWN_ORDER_REBUILD_WAITING_VEHICLE`，日志事件 2172 写明在等什么。车恢复之后下一轮自动建。
-3. **短时二次出问题即停**：重建出来的单在一段时间内（默认 10 分钟，配置项 `JourneyRuntime:OwnOrderRebuildRepeatWindow`，
-   从重建建成算起）又被取消、或又 FAILED 并被清除，就**不再自动重建**，旅程码 `OWN_ORDER_REBUILD_STOPPED`，错误级日志
-   事件 2173。清除时遇到这种情况，返回 `disposition = REBUILD_STOPPED`。这时要人到现场与 RIoT 查明为什么反复停下；
+3. **短时二次出问题即停**（`REQ-0361`）：同一条需求第一次出问题之后的一段时间内（默认 10 分钟，配置项
+   `JourneyRuntime:OwnOrderRebuildRepeatWindow`，**从第一次出问题的时刻算起**，不是从重建建成算起）又出问题，就**不再自动重建**，
+   旅程码 `OWN_ORDER_REBUILD_STOPPED`，错误级日志事件 2173。「又出问题」按第一次的来源认：第一次是被取消的，只有再被取消或删除才算；
+   第一次是故障清除的，再 FAILED（清除时判）或被取消、删除都算。清除时遇到这种情况，返回 `disposition = REBUILD_STOPPED`。这时要人到现场与 RIoT 查明为什么反复停下；
    **服务端目前没有给这种旅程的出口**（没有「人工重建」或「放弃这趟」的入口），需求不改派、这台车不接新单，找值班工程师。
 
 新单和每一张还不存在的移动单一样，建之前还要过建单门禁（`REQ-0305`：地图目录新鲜、任务类型没被挂起、目标站可达）；

@@ -22,16 +22,19 @@ namespace ControlServer.Host.Runtime;
 /// BC-ORDER-004) and a crash between deciding and creating, or between creating and recording, neither doubles nor loses it.
 /// </para>
 /// <para>
-/// <b>The third guard is decided here</b>, when the ending is recorded: a demand whose previous rebuild was confirmed within
-/// <see cref="JourneyRuntimeOptions.OwnOrderRebuildRepeatWindow"/> before this ending is not rebuilt again, and the row is
-/// staged already <see cref="OwnOrderRebuildStates.Stopped"/>. The window runs from the previous rebuild's confirmation to
-/// this ending: "the rebuilt order ended again soon after it was built", which is what the user called someone really
-/// meaning it to stop.
+/// <b>The third guard is decided here</b>, when the ending is recorded (REQ-0361, CP-0006): a demand that already had a
+/// problem within <see cref="JourneyRuntimeOptions.OwnOrderRebuildRepeatWindow"/> before this one is not rebuilt again, and
+/// the row is staged already <see cref="OwnOrderRebuildStates.Stopped"/>. The window starts at the earlier problem -- its
+/// <see cref="OwnOrderRebuildRow.IncidentAt"/> -- not at the rebuild it led to: a rebuild the vehicle's condition held back
+/// for minutes does not stretch the window. The earlier problem's source decides what counts as "again": after a
+/// cancellation only another cancellation or deletion does; after a cleared fault, another FAILED or a cancellation does.
+/// The reason the guard exists ("repeated cancelling means someone wants the vehicle to stop") is the coordinator's
+/// wording, not the user's (CP-0006, item two, note 2).
 /// </para>
 /// </remarks>
 internal static class OwnOrderRebuilds
 {
-    /// <summary>Why a rebuild was not made: the demand's rebuilt order ended again within the window (the third guard).</summary>
+    /// <summary>Why a rebuild was not made: the demand had a problem again within the window after an earlier one (REQ-0361).</summary>
     public const string EndedAgainWithinWindow = "REBUILT_ORDER_ENDED_AGAIN_WITHIN_WINDOW";
 
     /// <summary>Why a rebuild was not made: the new order ended in RIoT before it was ever confirmed -- a second ending.</summary>
@@ -76,10 +79,11 @@ internal static class OwnOrderRebuilds
         DateTimeOffset since = incidentAt - options.OwnOrderRebuildRepeatWindow;
         // Compared in memory: SQLite cannot order or compare DateTimeOffset columns in the store.
         bool rebuiltRecently = (await dbContext.OwnOrderRebuilds.AsNoTracking()
-                .Where(row => row.DemandId == runtime.DemandId && row.State == OwnOrderRebuildStates.Rebuilt)
-                .Select(row => row.RebuiltAt)
+                .Where(row => row.DemandId == runtime.DemandId)
+                .Select(row => new { row.Source, row.IncidentAt })
                 .ToArrayAsync(cancellationToken).ConfigureAwait(false))
-            .Any(rebuiltAt => rebuiltAt is { } at && at >= since && at <= incidentAt);
+            .Any(earlier => earlier.IncidentAt >= since && earlier.IncidentAt <= incidentAt &&
+                            CountsAsAgain(earlier.Source, source));
 
         OwnOrderRebuildRow row = new()
         {
@@ -106,6 +110,14 @@ internal static class OwnOrderRebuilds
         dbContext.OwnOrderRebuilds.Add(row);
         return row;
     }
+
+    /// <summary>
+    /// Whether a problem from <paramref name="again"/> repeats one from <paramref name="first"/> (REQ-0361): after a
+    /// cancellation only another cancellation or deletion does; after a cleared fault, anything does -- another FAILED, which
+    /// is recorded once it is cleared, or a cancellation.
+    /// </summary>
+    private static bool CountsAsAgain(string first, string again) =>
+        first != OwnOrderRebuildSources.CancelledInRiot || again == OwnOrderRebuildSources.CancelledInRiot;
 
     /// <summary>
     /// The record the stop is waiting on: its ended order's, while that is still to be rebuilt; the one whose new order the

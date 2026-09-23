@@ -29,7 +29,8 @@ namespace ControlServer.Host.Runtime;
 /// <b>The three guards</b>, each with its own code on the journey while it holds: the delay
 /// (<see cref="JourneyRuntimeOptions.OwnOrderRebuildDelay"/>, the transitional code of the source stays meanwhile); the
 /// vehicle's condition (<see cref="OwnOrderRebuildWaitingVehicleReason"/>, read in <see cref="VehicleConditionReasonsAsync"/>);
-/// and a second ending within <see cref="JourneyRuntimeOptions.OwnOrderRebuildRepeatWindow"/>, decided when the ending is
+/// and a second problem of the demand within <see cref="JourneyRuntimeOptions.OwnOrderRebuildRepeatWindow"/> of its first
+/// (REQ-0361), decided when the ending is
 /// recorded (<see cref="OwnOrderRebuilds"/>), which stops the automatic rebuild for good
 /// (<see cref="OwnOrderRebuildStoppedReason"/>). Like every other move order that does not exist yet, the new one also goes
 /// through REQ-0305's create gate (<see cref="OwnOrderRebuildBlockedByCreateGateReason"/>).

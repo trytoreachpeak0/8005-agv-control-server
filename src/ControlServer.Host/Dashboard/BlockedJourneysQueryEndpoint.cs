@@ -105,7 +105,7 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
             [JourneyRuntimeEngine.OwnOrderRebuildOrderUnconfirmedReason] =
                 "重建的运单已向 RIoT 发出，还没确认建成：服务端每一轮按同一个单号对账，不会建第二张。持续不消失请到 RIoT 核对",
             [JourneyRuntimeEngine.OwnOrderRebuildStoppedReason] =
-                "这条需求重建出来的运单短时间内又被取消或又失败了：服务端不再自动重建，挡住并报警，等人处理。"
+                "这条需求第一次出问题之后不久又出问题了（又被取消、删除，或又失败）：服务端不再自动重建，挡住并报警，等人处理。"
                 + "请到现场与 RIoT 查明为什么反复停下；需求不改派，这辆车不接新单",
         };
 
