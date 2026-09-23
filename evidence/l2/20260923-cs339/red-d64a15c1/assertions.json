@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "scenario": "station-deadline-sublot-timeout",
+  "runId": "20260923T154927209Z",
+  "outcome": "FAIL",
+  "failureReason": "",
+  "identity": {
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260923T154927209Z",
+    "agvId": "AGV-L2-001",
+    "batchId": "unspecified",
+    "rig": "SyntheticOnboard",
+    "vehicleKey": "BROKERX-L2-0001",
+    "controlServerCommit": "d64a15c136eeb9f084d151fa66402d8e5888b755",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    }
+  },
+  "assertions": [
+    {
+      "id": "L2-SD-01",
+      "description": "车到取货站就开始计本站期限（不是等装货提交才开始）",
+      "outcome": "PASS",
+      "expected": "AwaitingSublot / 起点有值",
+      "actual": "AwaitingSublot / 09/23/2026 15:50:07 +00:00"
+    },
+    {
+      "id": "L2-SD-02",
+      "description": "期限未到：旅程原地等，录入请求还挂着没人回答",
+      "outcome": "PASS",
+      "expected": "读于期限前 / AwaitingSublot / 请求未结算",
+      "actual": "读于期限前 16.9 s / AwaitingSublot / AcknowledgedAt="
+    },
+    {
+      "id": "L2-SD-03",
+      "description": "到期结束本站：Completed / CANCELLED_BY_STATION_TIMEOUT，且不早于到站起算的期限",
+      "outcome": "PASS",
+      "expected": "Completed / CANCELLED_BY_STATION_TIMEOUT / >= 2026-09-23T15:50:27.3519555+00:00",
+      "actual": "Completed / CANCELLED_BY_STATION_TIMEOUT / 2026-09-23T15:50:27.7385469+00:00"
+    },
+    {
+      "id": "L2-SD-04",
+      "description": "需求终态为 Cancelled",
+      "outcome": "PASS",
+      "expected": "Cancelled",
+      "actual": "Cancelled"
+    },
+    {
+      "id": "L2-SD-05",
+      "description": "调度租约与车辆占用都释放了",
+      "outcome": "PASS",
+      "expected": "租约已释放 / 占用已释放",
+      "actual": "ReleasedAt=2026-09-23 15:50:27.7385469+00:00 / VehicleOccupancyReleasedAt=2026-09-23 15:50:27.7385469+00:00"
+    },
+    {
+      "id": "L2-SD-06",
+      "description": "那条没人回答的录入请求被结算了（不会再重放进后面的会话）",
+      "outcome": "PASS",
+      "expected": "已结算",
+      "actual": "AcknowledgedAt=2026-09-23 15:50:27.7385469+00:00"
+    },
+    {
+      "id": "L2-SD-07",
+      "description": "超时不下发任何仓位操作，也不开恢复流程",
+      "outcome": "PASS",
+      "expected": "0 / 0",
+      "actual": "0 / 0"
+    },
+    {
+      "id": "L2-SD-15",
+      "description": "本站结束之后，车收到并确认了一张空清单：同一个站、号比到站那一版大（control-server#323）",
+      "outcome": "PASS",
+      "expected": "空清单 @N1-3_N1-7 / r > 1 / 已确认",
+      "actual": "r2@N1-3_N1-7 ack=True"
+    },
+    {
+      "id": "L2-SD-08",
+      "description": "目录里仍有这一单，但它没有被再派：只有一条旅程、一条 RIoT 单",
+      "outcome": "PASS",
+      "expected": "目录仍列出 / 1 条旅程 / 1 条 RIoT 单",
+      "actual": "目录列出 1 / 1 条旅程 / 1 条 RIoT 单"
+    },
+    {
+      "id": "L2-SD-09",
+      "description": "本站结束之后，车接了下一单",
+      "outcome": "PASS",
+      "expected": "0 → AwaitingPickupArrival",
+      "actual": "0 → AwaitingPickupArrival"
+    },
+    {
+      "id": "L2-SD-10",
+      "description": "重连走完完整握手，会话代前进",
+      "outcome": "PASS",
+      "expected": "READY / > 1",
+      "actual": "READY / 2"
+    },
+    {
+      "id": "L2-SD-11",
+      "description": "期限起点换成了重连之后的时刻（不是断联前那个起点接着走）",
+      "outcome": "PASS",
+      "expected": ">= 2026-09-23T15:50:45.2825267+00:00（原起点 2026-09-23T15:50:35.7394137+00:00）",
+      "actual": "2026-09-23T15:50:46.2912140+00:00（基线 2026-09-23T15:50:35.7394137+00:00）"
+    },
+    {
+      "id": "L2-SD-12",
+      "description": "原期限过去 3 秒，本站仍在等录入（断联那一轮的截止已作废）",
+      "outcome": "PASS",
+      "expected": "AwaitingSublot（读于 2026-09-23T15:50:58.7394137+00:00 之后、新期限之前）",
+      "actual": "AwaitingSublot（读于 2026-09-23T15:50:58.7820577+00:00）"
+    },
+    {
+      "id": "L2-SD-16",
+      "description": "重连之后，车收到并确认了一版号更大的清单，带的正是重填后的期限（control-server#339）",
+      "outcome": "FAIL",
+      "expected": "r > 3 / 期限 2026-09-23T15:51:06.2912140+00:00 / 已确认",
+      "actual": "r3 2026-09-23T15:50:55.7394137+00:00 ack=True"
+    },
+    {
+      "id": "L2-SD-13",
+      "description": "按重连后重新计满的期限结束：不早于新起点加整段时长",
+      "outcome": "PASS",
+      "expected": "CANCELLED_BY_STATION_TIMEOUT / >= 2026-09-23T15:51:06.2912140+00:00",
+      "actual": "CANCELLED_BY_STATION_TIMEOUT / 2026-09-23T15:51:06.6883138+00:00"
+    },
+    {
+      "id": "L2-SD-14",
+      "description": "全程两条 RIoT 单（两单各一条取货），没有关卡单",
+      "outcome": "PASS",
+      "expected": "2 / 0",
+      "actual": "2 / 0"
+    }
+  ]
+}
