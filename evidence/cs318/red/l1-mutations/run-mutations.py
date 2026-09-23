@@ -193,6 +193,13 @@ MUTATIONS = [
     ('M43', 'review S2: the FAILED new order is fed to the fault model only once', ENGINE,
      '            await ObserveRebuiltOrderFailureAsync(runtime, rebuild, cancellationToken).ConfigureAwait(false);\n',
      '            _ = rebuild;\n'),
+    # fifth run, after merging fp/v2-impl (cs#340) and closing M11 and M43
+    ('M44', 'review S4: withdrawing the request changes nothing, so no second request goes out', STORE,
+     '        rebuild.CargoEvidenceRequestedGeneration = null;\n        rebuild.CargoEvidenceRequestedWhileReady = false;\n',
+     '        _ = rebuild.CargoEvidenceRequestedGeneration;\n'),
+    ('M45', 'review S2: an ending that cannot be read again stops the rebuild', ENGINE,
+     '        if (order.Kind != RiotOrderObservationKind.Terminal)\n',
+     '        if (' + OFF + 'order.Kind != RiotOrderObservationKind.Terminal)\n'),
 ]
 
 
