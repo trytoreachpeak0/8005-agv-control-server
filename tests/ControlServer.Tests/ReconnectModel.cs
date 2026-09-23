@@ -205,14 +205,7 @@ internal static class ReconnectModel
     /// <b>修复票合入时，这里的那一行与那条 Skip 要一起去掉</b>，否则修复之后同一种违规再出现也不会有人知道。认法故意收得窄：
     /// 同一类别里说明对不上的，照样判失败——那是新问题，交分票王开票。
     /// </remarks>
-    internal static readonly KnownDefect[] KnownDefects =
-    [
-        // 同一代握手里补发 SafetyStateChanged vN 之后，同为 vN 的安全快照按整行哈希判冲突，握手被拒。
-        new(
-            "onboard-hmi#206",
-            ReconnectViolation.LegitimateMessageRefused,
-            ["SafetyStateSnapshot (generation", "handshake open", "ProtocolContentConflictException: safety revision", "has conflicting content"]),
-    ];
+    internal static readonly KnownDefect[] KnownDefects = [];
 
     /// <summary>这一条违规在 <paramref name="table"/> 里对应的已知未修缺陷，没有时为 null。</summary>
     internal static KnownDefect? KnownDefectFor(IReadOnlyList<KnownDefect> table, ReconnectViolation violation, string detail) =>
@@ -372,6 +365,12 @@ internal static class ReconnectModel
         private readonly List<(string MessageId, string Line)> _unacknowledged = [];
         private readonly List<(ReconnectViolation Violation, string Detail)> _violations = [];
         private long _acceptedSafetyVersion = 7;
+
+        /// <summary>
+        /// 这一次握手补发过 <c>SafetyStateChanged</c>：真车载端的 <c>resentSafetyStateChange</c>（onboard-hmi#206，PR #207），
+        /// 在 <see cref="BeginHandshakeAsync"/> 开头清掉、补发那一条之前置位，<see cref="SafetySnapshotPayload"/> 按它取号。
+        /// </summary>
+        private bool _resentSafetyChangeThisHandshake;
         private SafetyKind _safety = SafetyKind.Safe;
         private long _alarmRevision;
         private ControlServerDbContext? _connectionContext;
@@ -897,6 +896,7 @@ internal static class ReconnectModel
             _connected = false;
             _roundsAtDrop = _rounds;
             _sendsBeforeCut = null;
+            _resentSafetyChangeThisHandshake = false;
             _vehicle.LoseBufferedAcks();
             await OpenConnectionAsync();
             string hello = VehicleLine(
@@ -914,6 +914,7 @@ internal static class ReconnectModel
             foreach ((string messageId, string line) in _unacknowledged.ToArray())
             {
                 string resent = Rebind(line, _generation);
+                _resentSafetyChangeThisHandshake |= MessageTypeOf(line) == "SafetyStateChanged";
                 string[]? answers = await HandshakeExchangeAsync(resent, MessageTypeOf(line), ["DurableAck"]);
                 if (answers is null)
                 {
@@ -931,7 +932,10 @@ internal static class ReconnectModel
             return _unacknowledged.Count == 0 ? null : "resends left";
         }
 
-        /// <summary>握手的其余部分：能力快照、安全快照（版本号取车已接受的那一版）、告警快照、恢复报告。</summary>
+        /// <summary>
+        /// 握手的其余部分：能力快照、安全快照（版本号见 <see cref="HandshakeSafetySnapshotVersion"/>，确认之后车把已接受的版本推进到它）、
+        /// 告警快照、恢复报告。
+        /// </summary>
         private async Task<string?> CompleteHandshakeAsync()
         {
             if (!_handshakeOpen)
@@ -939,10 +943,11 @@ internal static class ReconnectModel
                 return "no-op";
             }
 
+            long safetySnapshotVersion = HandshakeSafetySnapshotVersion();
             (string Type, string Line, string[] Expected)[] rest =
             [
                 ("CapabilitySnapshot", VehicleLine("CapabilitySnapshot", CapabilityPayload(), _generation), ["SnapshotAppliedAck"]),
-                ("SafetyStateSnapshot", VehicleLine("SafetyStateSnapshot", SafetySnapshotPayload(), _generation), ["SnapshotAppliedAck"]),
+                ("SafetyStateSnapshot", VehicleLine("SafetyStateSnapshot", SafetySnapshotPayload(safetySnapshotVersion), _generation), ["SnapshotAppliedAck"]),
                 ("OnboardAlarmSnapshot", VehicleLine(
                     "OnboardAlarmSnapshot",
                     new { alarmSnapshotRevision = ++_alarmRevision, observedAt = _fixture.Clock.GetUtcNow(), alarms = Array.Empty<object>() },
@@ -955,12 +960,44 @@ internal static class ReconnectModel
                 {
                     return $"handshake broke at {type}";
                 }
+
+                if (type == "SafetyStateSnapshot")
+                {
+                    // 取号的两半都要看得见：补发过取已接受 + 1，没补发取已接受（ReconnectModelRegressionTests 按这一行断两格）。
+                    _trace.Add(
+                        $"    handshake safety snapshot at v{safetySnapshotVersion} " +
+                        $"(accepted before v{_acceptedSafetyVersion}, resent a change: {_resentSafetyChangeThisHandshake})");
+                    // 快照被确认之后，车把已接受的版本推进到快照的号（onboard-hmi PR #207 的 AdvanceSafetyStateVersion）。
+                    _acceptedSafetyVersion = Math.Max(_acceptedSafetyVersion, safetySnapshotVersion);
+                }
             }
 
             _modelWroteNotReady = false;
             await _fixture.HearFromPeerAsync();
             MarkHeard();
+            string republished = await RepublishAfterHandshakeAsync();
+            _trace.Add("    republish after the handshake: " + republished);
             return null;
+        }
+
+        /// <summary>
+        /// 会话就绪之后车按此刻的安全状态补发一条 <c>SafetyStateChanged</c>，号是已接受版本的下一版，所以比刚被确认的握手快照大。
+        /// </summary>
+        /// <remarks>
+        /// 真车载端每换一代都这样做，不管握手期间安全状态变没变：会话一变为 <c>Ready</c> 或 <c>RecoveryRequired</c>，
+        /// <c>WireToGateBusinessService.OnSessionStateChanged</c> 就请求一次上报，<c>QueueSafetyStateChangeAsync</c> 见代次变了
+        /// 清掉去重签名，照发，版本取 <c>max(_nextSafetyStateVersion, 已接受 + 1)</c>
+        /// （测试 <c>BusinessResendsSafetyStateAfterSessionGenerationChangeWhileVehicleIdle</c>；bisect-cs323 库里第 1、3 代握手之后
+        /// 各有一条，v2 与 v6）。握手中发生的变化也就在这时报出去。
+        /// </remarks>
+        private async Task<string> RepublishAfterHandshakeAsync()
+        {
+            if (!_connected || _handshakeOpen)
+            {
+                return "no-op: the handshake did not end in a publishable session";
+            }
+
+            return await SafetyChangeAsync(_safety, SafetyDelivery.Delivered) ?? "no answer";
         }
 
         /// <summary>
@@ -970,7 +1007,13 @@ internal static class ReconnectModel
         /// <remarks>
         /// <see cref="SafetyDelivery.Delivered"/>：服务端收到、车收到确认。<see cref="SafetyDelivery.LostInFlight"/>：连接在这一条
         /// 送到之前断了。<see cref="SafetyDelivery.AckLost"/>：服务端收下了，确认没回到车上，连接随即断了——下一次握手补发它，
-        /// 服务端按重复到达回答。连接不在或握手没完成时，这一条只进日志，等下一次握手补发。
+        /// 服务端按重复到达回答。
+        /// <para>
+        /// 连接不在或握手没完成时，车这一刻什么都不发、也不记日志，只记下新的安全状态：真车载端的业务服务只在
+        /// <c>CanPublishSafetyRevision</c> 为真时才发（连着、会话 <c>Ready</c> 或 <c>RecoveryRequired</c>；握手中是 <c>Recovering</c>），
+        /// 不发就不建待发项、不占版本号。会话就绪之后由 <see cref="RepublishAfterHandshakeAsync"/> 按此刻的状态补发。
+        /// 这里原先写成「只进日志、等下一次握手补发」，与真车对不上（hmi#206 期间调度指出，control-server PR #347）。
+        /// </para>
         /// </remarks>
         private async Task<string?> SafetyChangeAsync(SafetyKind kind, SafetyDelivery delivery)
         {
@@ -984,6 +1027,11 @@ internal static class ReconnectModel
             }
 
             _safety = kind;
+            if (!_connected || _handshakeOpen)
+            {
+                return $"not published: session not publishable, state kept for the republish after the next handshake{mapped}";
+            }
+
             long version = ++_acceptedSafetyVersion;
             string messageId = NextId("safety-change");
             string line = VehicleLine(
@@ -998,10 +1046,6 @@ internal static class ReconnectModel
                 _generation,
                 messageId);
             _unacknowledged.Add((messageId, line));
-            if (!_connected || _handshakeOpen)
-            {
-                return $"v{version} journalled, not sent{mapped}";
-            }
 
             if (delivery == SafetyDelivery.LostInFlight)
             {
@@ -1238,10 +1282,23 @@ internal static class ReconnectModel
             onboardJournalFormatVersion = 1,
         };
 
-        /// <summary>握手里的安全快照：内容取车此刻的安全状态，版本号取已接受的那一版（<c>WireToGateSessionClient.cs:756-757</c>）。</summary>
-        private object SafetySnapshotPayload() => new
+        /// <summary>
+        /// 握手安全快照的版本号，照车载端 onboard-hmi#206 修复之后的规则（PR #207）：这一次握手补发过 <c>SafetyStateChanged</c> 时取
+        /// 已接受版本的下一版，否则取已接受的那一版。补发的那一条已经把它的号记在服务端这一代上，而服务端按整行哈希比，快照再用同一个号
+        /// 必判冲突；没补发时服务端这一代从零开始，已接受的号在这一代还没对应任何内容。
+        /// </summary>
+        /// <remarks>
+        /// 修复之前车一律用已接受的版本。改回那样，已知缺陷那一类（同代握手快照 <c>has conflicting content</c>）会重新出现，
+        /// <see cref="ReconnectModelRegressionTests.ASafetyChangeLostInFlightDoesNotGetTheNextHandshakeRefused"/> 红。
+        /// 这里要与车载端的规则逐条一致：车载端改了，这里跟着改，否则模型测的是一台不存在的车。
+        /// </remarks>
+        private long HandshakeSafetySnapshotVersion() =>
+            _resentSafetyChangeThisHandshake ? checked(_acceptedSafetyVersion + 1) : _acceptedSafetyVersion;
+
+        /// <summary>握手里的安全快照：内容取车此刻的安全状态，版本号由 <see cref="HandshakeSafetySnapshotVersion"/> 给。</summary>
+        private object SafetySnapshotPayload(long safetyStateVersion) => new
         {
-            safetyStateVersion = _acceptedSafetyVersion,
+            safetyStateVersion,
             observedAt = _fixture.Clock.GetUtcNow(),
             safety = SafetySummary(_safety),
             slotStates = SlotStates(),
