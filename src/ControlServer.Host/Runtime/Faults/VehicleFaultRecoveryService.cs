@@ -57,6 +57,12 @@ public static class VehicleFaultRecoveryDispositions
 
     /// <summary>Cargo may be on board: its binding stays, nothing is released, and the journey waits for a person.</summary>
     public const string HeldForPerson = "HELD_FOR_PERSON";
+
+    /// <summary>
+    /// The demand stays with the vehicle and nothing is released: the order is rebuilt for the same vehicle and the same demand
+    /// once the delay is over and the vehicle may move (control-server#318).
+    /// </summary>
+    public const string RebuildScheduled = "REBUILD_SCHEDULED";
 }
 
 /// <summary>The answer to one request.</summary>

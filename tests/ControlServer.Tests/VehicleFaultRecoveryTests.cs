@@ -38,21 +38,30 @@ public sealed class VehicleFaultRecoveryTests
 
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
-    // ---- 清除：未取货的需求释放改派，车重新接单 ---------------------------------------------------------------
+    // ---- 清除：车上没货，不释放，给本车重建（control-server#318） ---------------------------------------------
 
     /// <summary>
-    /// 开往取货站的单 FAILED、车停稳、闩锁不在、RIoT 上没有未完成订单：清除故障，这条需求释放改派，旅程关闭；
-    /// 下一轮车重新接单，同一条需求在新旅程上再派出去，不再记新的故障。
+    /// 开往取货站的单 FAILED、车停稳、闩锁不在、RIoT 上没有未完成订单：清除故障，需求<b>不释放</b>、留在本车；旅程停在原阶段，
+    /// 码是 <c>VEHICLE_FAULT_CLEARED_NOTHING_ON_BOARD</c>；延迟到点之后给同一辆车、同一条需求建一张开往同一个取货站的新单。
+    /// 之后不再记新的故障。
     /// </summary>
     /// <remarks>
-    /// 前两轮是对照：不清除时车一直带着故障、需求一直挂在旧旅程上。修前红就红在清除这一步。
+    /// <para>
+    /// <b>翻转断言，依据是 issuecomment-5787511271</b>（用户 2026-09-23：「不改派啊，留在本车上」）。这一条原来是 #299 的
+    /// <c>AClearedFaultReleasesTheDemandAndTheVehicleTakesWorkAgain</c>，钉的是「无货即释放改派、旅程关闭、车重新接单」。
+    /// 新判据同时断两件事：没有释放（归属未移除、积压仍是已受理、旅程还是这一趟），<b>并且</b>重建出了正确的那一张单
+    /// （<see cref="OwnOrderRebuildTests.AssertRebuiltAsync"/>）——只断前者，什么都不做也能过。
+    /// </para>
+    /// <para>前两轮是对照：不清除时车一直带着故障。修前红就红在清除这一步的处置上。</para>
     /// </remarks>
     [Fact]
-    public async Task AClearedFaultReleasesTheDemandAndTheVehicleTakesWorkAgain()
+    public async Task AClearedFaultOnAnEmptyVehicleKeepsTheDemandAndRebuildsTheOrder()
     {
         await using RuntimeFixture fixture = await FaultedOnTheWayToPickupAsync();
         SiteRiot site = new(fixture);
         JourneyRuntimeRow faulted = await fixture.RuntimeAsync();
+        JourneyStopRow[] stopsBefore = await OwnOrderRebuildTests.StopsAsync(fixture, faulted.JourneyId);
+        JourneyStopRow pickup = stopsBefore.Single(stop => stop.StopRole == JourneyStopRoles.Pickup);
         await TickAndRunAsync(fixture);
         await TickAndRunAsync(fixture);
         Assert.Equal(1, await JourneyCountAsync(fixture));
@@ -61,7 +70,7 @@ public sealed class VehicleFaultRecoveryTests
         VehicleFaultRecoveryDecision decision = await Service(fixture, site).RecoverAsync(Clear(fixture), Token);
 
         Assert.Equal(
-            (VehicleFaultRecoveryOutcome.Cleared, VehicleFaultRecoveryDispositions.Released),
+            (VehicleFaultRecoveryOutcome.Cleared, VehicleFaultRecoveryDispositions.RebuildScheduled),
             (decision.Outcome, decision.Disposition));
         Assert.Empty(decision.Reasons);
         await using (ControlServerDbContext reading = new(fixture.DbOptionsForTests))
@@ -69,30 +78,30 @@ public sealed class VehicleFaultRecoveryTests
             VehicleFaultStateRow fault = await reading.VehicleFaultStates.AsNoTracking().SingleAsync(Token);
             Assert.Equal(VehicleFaultLevel.None, fault.Level);
             Assert.Contains(OperatorId, fault.ClearedReason, StringComparison.Ordinal);
-            JourneyRuntimeRow closed = await reading.JourneyRuntimes.AsNoTracking()
-                .SingleAsync(row => row.JourneyId == faulted.JourneyId, Token);
-            Assert.Equal(JourneyRuntimeStage.Completed, closed.Stage);
-            JourneyDemandRow membership = await reading.Set<JourneyDemandRow>().AsNoTracking()
-                .SingleAsync(row => row.JourneyId == faulted.JourneyId, Token);
-            Assert.Equal("RELEASED_FOR_REDISPATCH", membership.RemovalReason);
-            JourneyBacklogRow backlog = await reading.JourneyBacklog.AsNoTracking()
-                .SingleAsync(row => row.DemandId == FirstDemandId, Token);
-            Assert.Null(backlog.AcceptedAt);
+            JourneyRuntimeRow kept = await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token);
+            Assert.Equal(
+                (faulted.JourneyId, JourneyRuntimeStage.AwaitingPickupArrival, "VEHICLE_FAULT_CLEARED_NOTHING_ON_BOARD"),
+                (kept.JourneyId, kept.Stage, kept.BlockReasonCode));
+            Assert.Null((await reading.Set<JourneyDemandRow>().AsNoTracking().SingleAsync(Token)).RemovedAt);
+            Assert.NotNull((await reading.JourneyBacklog.AsNoTracking().SingleAsync(row => row.DemandId == FirstDemandId, Token)).AcceptedAt);
         }
 
-        // 清除不向 RIoT 发任何东西：那张单已经 FAILED，没有可取消的。
+        // 清除不向 RIoT 发任何东西：那张单已经 FAILED，没有可取消的；新单由引擎在延迟之后建。
         Assert.Empty(site.OrderCommands);
         Assert.Empty(site.EmergencyCommands);
 
+        // 延迟之内：不记新故障、不建单，码不变。
         await TickAndRunAsync(fixture);
         await TickAndRunAsync(fixture);
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+        Assert.Equal("VEHICLE_FAULT_CLEARED_NOTHING_ON_BOARD", (await fixture.RuntimeAsync()).BlockReasonCode);
 
-        await using ControlServerDbContext after = new(fixture.DbOptionsForTests);
-        JourneyRuntimeRow redispatched = await after.JourneyRuntimes.AsNoTracking()
-            .SingleAsync(row => row.Stage != JourneyRuntimeStage.Completed, Token);
-        Assert.NotEqual(faulted.JourneyId, redispatched.JourneyId);
-        Assert.Equal((FirstDemandId, fixture.Options.AgvId), (redispatched.DemandId, redispatched.AgvId));
-        VehicleFaultStateRow stillCleared = await after.VehicleFaultStates.AsNoTracking().SingleAsync(Token);
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+
+        Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+        await OwnOrderRebuildTests.AssertRebuiltAsync(fixture, faulted, stopsBefore, pickup);
+        Assert.Equal(1, await JourneyCountAsync(fixture));
+        VehicleFaultStateRow stillCleared = await FaultAsync(fixture);
         Assert.Equal((VehicleFaultLevel.None, 1L), (stillCleared.Level, stillCleared.FaultGeneration));
     }
 

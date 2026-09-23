@@ -101,7 +101,7 @@ public sealed class OwnOrderRebuildTests
     /// 重建出了正确的那一张单：同车、同 <c>DemandId</c>、去终结那张单要去的那个停靠；停靠指向新单，其余停靠原样；
     /// 旅程还是这一趟，归属一条都没被移除，旧单的意图原样留着。
     /// </summary>
-    private static async Task AssertRebuiltAsync(
+    internal static async Task AssertRebuiltAsync(
         RuntimeFixture fixture,
         JourneyRuntimeRow before,
         JourneyStopRow[] stopsBefore,
@@ -145,7 +145,7 @@ public sealed class OwnOrderRebuildTests
     }
 
     /// <summary>延迟到点的那一轮：拨过延迟、车载端刚说过话，跑一轮。</summary>
-    private static async Task PassTheDelayAsync(RuntimeFixture fixture)
+    internal static async Task PassTheDelayAsync(RuntimeFixture fixture)
     {
         DateTimeOffset before = fixture.Clock.GetUtcNow();
         fixture.Clock.Advance(fixture.Options.OwnOrderRebuildDelay);
@@ -154,7 +154,7 @@ public sealed class OwnOrderRebuildTests
         await fixture.Engine.ExecuteOnceAsync(Token);
     }
 
-    private static async Task<JourneyStopRow[]> StopsAsync(RuntimeFixture fixture, string journeyId)
+    internal static async Task<JourneyStopRow[]> StopsAsync(RuntimeFixture fixture, string journeyId)
     {
         await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
         JourneyStopRow[] stops = await reading.Set<JourneyStopRow>().AsNoTracking()
