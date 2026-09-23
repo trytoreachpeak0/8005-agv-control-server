@@ -304,3 +304,36 @@ M43 review S2: the FAILED new order is fed to the fault model only once
 # remaining shape (the new order reads SUCCESS before confirmation). M43: nothing asserted that the FAILED new order keeps
 # being fed to the fault model after the first round -- a case is added on the emergency-stop trigger reconciled in a later
 # round. Both are rerun below after the fix.
+
+# fifth run, on 8f3a32a3 (fp/v2-impl 384b9b69 merged, M11 and M43 closed): M11, M21-M23, M37, M43 rerun; M44, M45 new
+M11 a stopped record is found only by its ended order
+  totals: Failed! 1 320
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuiltOrderSuspendedBeforeItIsConfirmedStaysStoppedForAPerson
+M21 REQ-0362 the request is never recorded, so it is not throttled
+  totals: Failed! 5 316
+  red: ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362ACargoRebuildWaitingForEvidenceAsksTheVehicleOncePerSession
+  red: ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362ARequestMadeWhileNotReadyIsMadeOnceMoreWhenTheSessionBecomesReady
+  red: ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362AWithdrawnRequestIsSentOnceMoreInTheSameSession
+  red: ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362NoRequestInsideTheHandshakeAndOneAgainInTheNextSession
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362AnInconclusiveSnapshotIsAskedForAgainAfterAWhile
+M22 REQ-0362 the recovery report that ends the handshake may carry the request
+  totals: Failed! 2 319
+  red: ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362AWithdrawnRequestIsSentOnceMoreInTheSameSession
+  red: ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362NoRequestInsideTheHandshakeAndOneAgainInTheNextSession
+M23 REQ-0362 the request is claimed inside the handshake too
+  totals: Failed! 2 319
+  red: ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362AWithdrawnRequestIsSentOnceMoreInTheSameSession
+  red: ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362NoRequestInsideTheHandshakeAndOneAgainInTheNextSession
+M37 review S4: an inconclusive snapshot is never asked for again
+  totals: Failed! 1 320
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362AnInconclusiveSnapshotIsAskedForAgainAfterAWhile
+M43 review S2: the FAILED new order is fed to the fault model only once
+  totals: Failed! 1 320
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.ARebuiltOrderThatFailedBeforeConfirmationStaysUnderFaultSupervision
+M44 review S4: withdrawing the request changes nothing, so no second request goes out
+  totals: Failed! 2 319
+  red: ControlServer.Tests.OwnOrderRebuildCargoEvidenceRequestTests.Req0362AWithdrawnRequestIsSentOnceMoreInTheSameSession
+  red: ControlServer.Tests.VehicleFaultRecoveryTests.Req0362AnInconclusiveSnapshotIsAskedForAgainAfterAWhile
+M45 review S2: an ending that cannot be read again stops the rebuild
+  totals: Failed! 1 320
+  red: ControlServer.Tests.OwnOrderRebuildTests.ARebuiltOrderWhoseEndingCannotBeReadIsReadAgainNextRound
