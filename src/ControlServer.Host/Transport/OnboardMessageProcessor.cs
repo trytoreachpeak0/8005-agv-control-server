@@ -530,12 +530,8 @@ public sealed partial class OnboardMessageProcessor(
                     // change, as after a recovery result. The record resumes nothing by itself.
                     SessionReadinessDecision recordDecision = await store.DecideReadinessAsync(
                         agvId, generation, cancellationToken).ConfigureAwait(false);
-                    if (recordDecision.Readiness == state.Readiness)
-                    {
-                        return recordResult;
-                    }
-                    state.Readiness = recordDecision.Readiness;
-                    return $"{recordResult}\n{SessionReadinessLine(recordDecision, agvId, generation, state)}";
+                    return AnswerWithReadiness(
+                        recordResult, recordDecision, agvId, generation, state, announceUnchanged: false);
                 }
             case "ExceptionRecoverySessionRequested":
             case "RecoveryActionSubmitted":
