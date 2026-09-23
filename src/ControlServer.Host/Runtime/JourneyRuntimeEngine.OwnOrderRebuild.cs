@@ -303,12 +303,14 @@ public sealed partial class JourneyRuntimeEngine
     /// safety read -- the same read, the same reason codes, the onboard's safety projection is built from
     /// (<see cref="IRiotVehicleSafetyFacts"/>: <c>emergencyState</c>, <c>breakSwitchState</c>, <c>controlState</c>,
     /// <c>enable</c>/<c>integrationLevel</c>, <c>procState</c>, <c>locationState</c>, speed and movement, and no unfinished order on
-    /// the vehicle) -- and from this server's own fault fact (<c>VehicleFaultStates.Level</c>).
+    /// the vehicle) -- from RIoT's vehicle read for the Map it stands on, and from this server's own fault fact
+    /// (<c>VehicleFaultStates.Level</c>).
     /// </summary>
     /// <remarks>
     /// An emergency stop reads <c>RIOT_EMERGENCY_NOT_OK</c>; manual or offline reads <c>RIOT_VEHICLE_NOT_ENABLED</c>,
     /// <c>RIOT_VEHICLE_NOT_ONLINE</c> or <c>RIOT_BRAKE_NOT_MOVABLE</c>; a fault reads <c>RIOT_CONTROL_NOT_OK</c> on RIoT's side and
-    /// <c>VEHICLE_FAULT_IN_EFFECT</c> on this server's. Anything the read cannot vouch for counts against it: a vehicle is sent
+    /// <c>VEHICLE_FAULT_IN_EFFECT</c> on this server's; another Map reads <c>RIOT_VEHICLE_MAP_MISMATCH</c>. Anything the read
+    /// cannot vouch for counts against it: a vehicle is sent
     /// off only when RIoT says it is standing still with nothing in the way.
     /// </remarks>
     private async Task<string[]> VehicleConditionReasonsAsync(JourneyRuntimeRow runtime, CancellationToken cancellationToken)
@@ -323,6 +325,16 @@ public sealed partial class JourneyRuntimeEngine
 
         try
         {
+            // A move order names a station of this journey's Map; a vehicle standing on another one cannot be sent there. Only a
+            // read that saw the vehicle online and on some map says so: a failed read reports neither.
+            RiotVehicleObservation vehicle = await vehicleFacts.ReadVehicleAsync(runtime.VehicleKey, cancellationToken)
+                .ConfigureAwait(false);
+            if (vehicle is { Connected: true } && !string.IsNullOrEmpty(vehicle.CurrentMap) &&
+                !string.Equals(vehicle.CurrentMap, runtime.MapIdentity, StringComparison.Ordinal))
+            {
+                reasons.Add(Release.DemandReleaseRules.MapMismatchReason);
+            }
+
             RiotVehicleSafetyObservation safety = await vehicleSafety
                 .ReadVehicleSafetyAsync(runtime.VehicleKey, cancellationToken).ConfigureAwait(false);
             if (safety.MotionState != RiotVehicleMotionState.Stopped)
