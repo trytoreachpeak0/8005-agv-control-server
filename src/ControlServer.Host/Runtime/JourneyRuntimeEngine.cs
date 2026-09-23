@@ -229,6 +229,7 @@ public sealed partial class JourneyRuntimeEngine(
         OwnOrderRebuildWaitingVehicleReason or OwnOrderRebuildBlockedByCreateGateReason or
         OwnOrderRebuildOrderUnconfirmedReason or OwnOrderRebuildStoppedReason or
         OwnOrderRebuildWaitingCargoEvidenceReason or OwnOrderRebuildCargoNotInPlaceReason or
+        OwnOrderRebuildCargoUnprovenReason or
         OwnOrderRebuildVehicleIneligibleReason;
 
     /// <summary>

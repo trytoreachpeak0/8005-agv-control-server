@@ -89,10 +89,19 @@ public sealed partial class JourneyRuntimeEngine
     public const string OwnOrderRebuildWaitingCargoEvidenceReason = "OWN_ORDER_REBUILD_WAITING_CARGO_EVIDENCE";
 
     /// <summary>
-    /// A snapshot received after the clearance did not show the cargo whole in its slots -- a slot empty, unlocked or with its
-    /// unlock output active, or something unknown: no automatic rebuild, held and alarmed for a person (REQ-0362).
+    /// A snapshot received after the clearance showed a slot of the cargo EMPTY: no automatic rebuild, held and alarmed for a
+    /// person (REQ-0362). Only an EMPTY slot settles it; anything else a snapshot falls short with is
+    /// <see cref="OwnOrderRebuildCargoUnprovenReason"/> (review S4).
     /// </summary>
     public const string OwnOrderRebuildCargoNotInPlaceReason = "OWN_ORDER_REBUILD_CARGO_NOT_IN_PLACE";
+
+    /// <summary>
+    /// A snapshot received after the clearance can settle neither way where the cargo is -- a slot UNKNOWN, unreported,
+    /// unlocked or with its unlock output active, something unknown on the vehicle, or the load itself not settled: the rebuild
+    /// waits for the next snapshot (REQ-0362, review S4). The record's waiting reason says which. In the stalled-order family,
+    /// as the wait for the first snapshot is.
+    /// </summary>
+    public const string OwnOrderRebuildCargoUnprovenReason = "OWN_ORDER_REBUILD_CARGO_UNPROVEN";
 
     /// <summary>
     /// While the order waited to be rebuilt, the vehicle stopped being eligible for a demand still to be loaded at the stop --
@@ -191,6 +200,15 @@ public sealed partial class JourneyRuntimeEngine
                     await WaitForRebuildAsync(
                         runtime, rebuild, CargoEvidenceNotReceived, OwnOrderRebuildWaitingCargoEvidenceReason, now,
                         cancellationToken).ConfigureAwait(false);
+                    return true;
+                }
+
+                if (evidence.NotShown is null && evidence.Unproven is not null)
+                {
+                    // Review S4: a snapshot that cannot settle where the cargo is waits for the next one.
+                    await WaitForRebuildAsync(
+                        runtime, rebuild, evidence.Unproven, OwnOrderRebuildCargoUnprovenReason, now, cancellationToken)
+                        .ConfigureAwait(false);
                     return true;
                 }
 
@@ -496,21 +514,37 @@ public sealed partial class JourneyRuntimeEngine
     }
 
     /// <summary>
-    /// What the vehicle has shown about its cargo since the clearance (REQ-0362): no snapshot yet (<c>MessageId</c> null), or
-    /// the freshest snapshot received after <see cref="OwnOrderRebuildRow.RecordedAt"/> and, when it does not show the cargo
-    /// in place, why not.
+    /// What the vehicle has shown about its cargo since the clearance (REQ-0362): no snapshot yet (<c>MessageId</c> null); or
+    /// the freshest snapshot of this vehicle received after <see cref="OwnOrderRebuildRow.RecordedAt"/>, and what it settles --
+    /// the cargo shown whole in its slots (both reasons null), shown not to be there (<c>NotShown</c>), or neither
+    /// (<c>Unproven</c>).
     /// </summary>
     /// <remarks>
     /// <para>
+    /// <b>Only a slot read EMPTY settles that the cargo is not there</b> (independent review S4). Everything else a snapshot can
+    /// fall short with leaves the question open, and the rebuild waits for the next snapshot rather than stopping for a person:
+    /// a slot UNKNOWN or left out of the snapshot, <c>unknownPresent</c> not false, a slot OCCUPIED but not LOCKED or with its
+    /// unlock output not RESET, a load of the demands still on board neither committed nor settled, or no committed load at all
+    /// to say which slots to look at. An unlocked or active slot is the one of these a person might expect to stop: the cargo is
+    /// there, the slot is not secured -- a state that changes as soon as whoever is at the door is done, not evidence that the
+    /// cargo went. It cannot send the vehicle off unsecured either: the new order is still created only when Onboard's summary
+    /// says every target slot is locked and every unlock output reset (review M2). A slot read EMPTY settles it even beside an
+    /// open question about another slot, or <c>unknownPresent</c>: what is known to be missing does not wait for the rest.
+    /// </para>
+    /// <para>
     /// <b>Which slots.</b> Those the committed loads of the journey's demands still on board targeted -- the load batch's own
-    /// <see cref="StationOperationRow.TargetSlotsJson"/>. A load of theirs that is neither committed nor settled (prepared, or
-    /// waiting on recovery) leaves where the cargo is an open question, and so does having no committed load at all; both are
-    /// "not shown", never "shown".
+    /// <see cref="StationOperationRow.TargetSlotsJson"/>.
     /// </para>
     /// <para>
     /// <b>After the clearance, by the server's receive clock.</b> The clearance time and the receive time are both this
     /// server's; the snapshot's own <c>observedAt</c> is the vehicle's clock. A server clock stepped back can make a fresh
     /// snapshot look old, which only makes the rebuild wait -- the safe way round.
+    /// </para>
+    /// <para>
+    /// <b>Read in two steps</b> (review S5): the ids and receive times of the snapshots first, then the body of one snapshot at a
+    /// time, freshest first, until one is this vehicle's. The inbox keeps no vehicle column -- the vehicle is in the envelope --
+    /// so the vehicle cannot be filtered in the store, and SQLite cannot compare the receive time there either; what is read in
+    /// full is the snapshots after the clearance down to this vehicle's newest, not every snapshot ever received.
     /// </para>
     /// </remarks>
     private async Task<CargoEvidence> CargoEvidenceAsync(
@@ -518,17 +552,31 @@ public sealed partial class JourneyRuntimeEngine
         OwnOrderRebuildRow rebuild,
         CancellationToken cancellationToken)
     {
-        ProtocolInboxRow[] snapshots = await dbContext.ProtocolInbox.AsNoTracking()
-            .Where(row => row.MessageType == "SafetyStateSnapshot")
-            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
         // Compared in memory: SQLite cannot order or compare DateTimeOffset columns in the store.
-        ProtocolInboxRow? fresh = snapshots
-            .Where(row => row.ReceivedAt > rebuild.RecordedAt && SnapshotOf(row) == runtime.AgvId)
+        string[] newestFirst = [.. (await dbContext.ProtocolInbox.AsNoTracking()
+                .Where(row => row.MessageType == "SafetyStateSnapshot")
+                .Select(row => new { row.MessageId, row.ReceivedAt })
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false))
+            .Where(row => row.ReceivedAt > rebuild.RecordedAt)
             .OrderByDescending(row => row.ReceivedAt)
-            .FirstOrDefault();
-        if (fresh is null)
+            .Select(row => row.MessageId)];
+        (string MessageId, string Json)? fresh = null;
+        foreach (string messageId in newestFirst)
         {
-            return new CargoEvidence(null, null);
+            string json = await dbContext.ProtocolInbox.AsNoTracking()
+                .Where(row => row.MessageId == messageId)
+                .Select(row => row.RequestJson)
+                .SingleAsync(cancellationToken).ConfigureAwait(false);
+            if (SnapshotOf(json) == runtime.AgvId)
+            {
+                fresh = (messageId, json);
+                break;
+            }
+        }
+
+        if (fresh is not { } snapshot)
+        {
+            return new CargoEvidence(null, null, null);
         }
 
         string[] onBoard = await dbContext.Set<JourneyDemandRow>().AsNoTracking()
@@ -544,7 +592,7 @@ public sealed partial class JourneyRuntimeEngine
         if (loads.FirstOrDefault(row => row.Status is StationOperationStatus.Prepared or StationOperationStatus.RecoveryRequired)
             is { } unsettled)
         {
-            return new CargoEvidence(fresh.MessageId, $"LOAD_NOT_SETTLED:{unsettled.SlotOperationAttemptId}");
+            return new CargoEvidence(snapshot.MessageId, null, $"LOAD_NOT_SETTLED:{unsettled.SlotOperationAttemptId}");
         }
 
         int[] cargoSlots = [.. loads
@@ -554,16 +602,17 @@ public sealed partial class JourneyRuntimeEngine
             .Order()];
         if (cargoSlots.Length == 0)
         {
-            return new CargoEvidence(fresh.MessageId, "CARGO_SLOTS_UNKNOWN");
+            return new CargoEvidence(snapshot.MessageId, null, "CARGO_SLOTS_UNKNOWN");
         }
 
-        using JsonDocument document = JsonDocument.Parse(fresh.RequestJson);
+        using JsonDocument document = JsonDocument.Parse(snapshot.Json);
         JsonElement payload = document.RootElement.GetProperty("payload");
         List<string> notShown = [];
+        List<string> unproven = [];
         if (!payload.GetProperty("safety").TryGetProperty("unknownPresent", out JsonElement unknown) ||
             unknown.ValueKind != JsonValueKind.False)
         {
-            notShown.Add("UNKNOWN_PRESENT");
+            unproven.Add("UNKNOWN_PRESENT");
         }
 
         Dictionary<int, JsonElement> slots = payload.GetProperty("slotStates").EnumerateArray()
@@ -572,30 +621,39 @@ public sealed partial class JourneyRuntimeEngine
         {
             if (!slots.TryGetValue(slot, out JsonElement state))
             {
-                notShown.Add($"SLOT_{slot}:NOT_REPORTED");
+                unproven.Add($"SLOT_{slot}:NOT_REPORTED");
                 continue;
             }
 
             string physical = state.GetProperty("physicalState").GetString() ?? "";
             string locked = state.GetProperty("lockState").GetString() ?? "";
             string output = state.GetProperty("unlockOutputState").GetString() ?? "";
-            if (physical != "OCCUPIED" || locked != "LOCKED" || output != "RESET")
+            if (physical == "EMPTY")
             {
                 notShown.Add($"SLOT_{slot}:{physical},{locked},{output}");
             }
+            else if (physical != "OCCUPIED" || locked != "LOCKED" || output != "RESET")
+            {
+                unproven.Add($"SLOT_{slot}:{physical},{locked},{output}");
+            }
         }
 
-        return new CargoEvidence(fresh.MessageId, notShown.Count == 0 ? null : string.Join(';', notShown));
+        return notShown.Count > 0
+            ? new CargoEvidence(snapshot.MessageId, string.Join(';', notShown), null)
+            : new CargoEvidence(snapshot.MessageId, null, unproven.Count == 0 ? null : string.Join(';', unproven));
 
-        static string SnapshotOf(ProtocolInboxRow row)
+        static string SnapshotOf(string json)
         {
-            using JsonDocument envelope = JsonDocument.Parse(row.RequestJson);
+            using JsonDocument envelope = JsonDocument.Parse(json);
             return envelope.RootElement.GetProperty("agvId").GetString() ?? "";
         }
     }
 
-    /// <summary>The snapshot that answered the cargo question, if any, and what it did not show (null when it showed it all).</summary>
-    private sealed record CargoEvidence(string? MessageId, string? NotShown);
+    /// <summary>
+    /// The snapshot that answered the cargo question, if any; what it showed missing (a slot read EMPTY), or else what it left
+    /// open. Both null when it showed the cargo whole.
+    /// </summary>
+    private sealed record CargoEvidence(string? MessageId, string? NotShown, string? Unproven);
 
     /// <summary>
     /// Records that the order under <paramref name="upperId"/> -- the one <paramref name="runtime"/> waits on -- was cancelled
