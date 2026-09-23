@@ -1,0 +1,14 @@
+xUnit.net v3 In-Process Runner v3.2.2+728c1dce01 (64-bit .NET 8.0.31)
+  Discovering: ControlServer.Tests
+  Discovered:  ControlServer.Tests
+  Starting:    ControlServer.Tests
+    ControlServer.Tests.ReconnectModelRegressionTests.ASafetyChangeResentWithDifferentContentUnderItsMessageIdIsRefused [FAIL]
+      Assert.Contains() Failure: Sub-string not found
+      String:    "final: stage=AwaitingSublot block=null generation="···
+      Not found: "with different content refused"
+      Stack Trace:
+        tests\ControlServer.Tests\ReconnectModelRegressionTests.cs(123,0): at ControlServer.Tests.ReconnectModelRegressionTests.ASafetyChangeResentWithDifferentContentUnderItsMessageIdIsRefused()
+        --- End of stack trace from previous location ---
+  Finished:    ControlServer.Tests (ID = '86471beb18f28669ce9af0c9818f4a43a31c9b2523918616686cc3080055c8e3')
+=== TEST EXECUTION SUMMARY ===
+   ControlServer.Tests  Total: 1, Errors: 0, Failed: 1, Skipped: 0, Not Run: 0, Time: 7.068s

@@ -1,0 +1,184 @@
+iterations=300 masterSeed=342
+first LegitimateMessageRefused: index=0 seed=0000000005p1 steps=7
+final: stage=AwaitingSublot block=null generation=3 entryReachedVehicle=True ackConflicts=0 regressions=0
+violation LegitimateMessageRefused: SafetyStateSnapshot (generation 2, handshake open) refused: ProtocolContentConflictException: safety revision 10 has conflicting content.
+trace:
+  NotReady
+  NotReady
+  OrderContinue -> no-op
+  Safety(OwnOrder,LostInFlight) -> v8 lost in flight, connection dropped
+  Safety(Safe,Delivered) -> v9 journalled, not sent
+  Safety(NotSafe,AckLost) -> v10 journalled, not sent
+  Round(4s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+    handshake SessionHello -> SessionAccepted
+    handshake SafetyStateChanged -> DurableAck
+    handshake SafetyStateChanged -> DurableAck
+    handshake SafetyStateChanged -> DurableAck
+  tail BeginHandshake
+    handshake CapabilitySnapshot -> SnapshotAppliedAck
+  !! LegitimateMessageRefused: SafetyStateSnapshot (generation 2, handshake open) refused: ProtocolContentConflictException: safety revision 10 has conflicting content.
+  tail CompleteHandshake -> handshake broke at SafetyStateSnapshot
+  tail Ready -> no-op
+  tail Arrive
+  tail Round(2s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+  tail Ack
+    handshake SessionHello -> SessionAccepted
+  tail BeginHandshake
+    handshake CapabilitySnapshot -> SnapshotAppliedAck
+    handshake SafetyStateSnapshot -> SnapshotAppliedAck
+    handshake OnboardAlarmSnapshot -> SnapshotAppliedAck
+    handshake RecoveryStateReport -> DurableAck+SessionReadiness
+  tail CompleteHandshake
+  tail Safety(Safe,Delivered) -> v11 answered DurableAck+SessionReadiness
+  tail Round(2s) -> ok; stage=AwaitingSublot block=- wait=+8s; delivered Plan@3,VBS@3,Worklist@3,Plan@3,Entry@3
+  tail Ack
+
+per combination (ms): n=300 mean=280.5 p50=234.0 p90=429.9 max=5846.3; wall total 84.4s
+per combination excluding the first (ms): n=299 mean=261.9; first=5846.3
+setup mean=160.2ms; engine rounds per combination mean=4.2; per round (excluding setup) mean=28.8ms
+ack conflicts=0 vehicle regressions=0
+entry request reached the vehicle in 300 of 300
+rounds that failed while carrying a wait-on-person code: 8
+LegitimateMessageRefused: 109 of 300
+  0000000005p1 [NotReady, NotReady, OrderContinue, Safety(OwnOrder,LostInFlight), Safety(Safe,Delivered), Safety(NotSafe,AckLost), Round(4s)]
+  0000000005q1 [Arrive, Safety(NotSafe,Delivered), OrderContinue, Safety(Safe,LostInFlight), Ack, OrderHang, Round(4s), ConflictingResend, Safety(OwnOrder,LostInFlight), Ack, Ack]
+  0000000005r1 [CutAfter(4), Ack, Safety(Safe,Delivered), Ack, Safety(NotSafe,AckLost), Ack, CutAfter(3), OrderHang, Arrive, Round(8s), CompleteHandshake, Ack, Round(3s), Ack, ConflictingResend, Round(5s), Safety(OwnOrder,AckLost), Round(8s), Round(4s)]
+  0000000005s1 [CutAfter(3), Round(5s), NotReady, OrderHang, Ack, OrderHang, Ack, Safety(NotSafe,AckLost), OrderContinue, Round(4s), CompleteHandshake, Safety(Safe,AckLost), Round(4s), Safety(Safe,AckLost), CompleteHandshake, Round(2s), Safety(Safe,LostInFlight), Ready, Ready, Round(8s), CompleteHandshake, Round(8s), Safety(NotSafe,AckLost)]
+  0000000005v1 [Round(8s), Ack, CutAfter(0), Round(1s), Round(2s), BeginHandshake, CompleteHandshake, Safety(Safe,AckLost), Ack, OrderContinue, Arrive, Safety(OwnOrder,Delivered), NotReady(ownOrder), Round(8s), Ready, ConflictingResend, Ack, Ack, Round(3s), Ack, Round(3s), OrderContinue]
+  0000000005x1 [Round(8s), Safety(Safe,AckLost), ConflictingResend, NotReady(ownOrder), CompleteHandshake, CutAfter(2), CutAfter(4), Ack, Ack, Ack, Round(4s), CompleteHandshake, Round(4s), Safety(Safe,AckLost), ConflictingResend, Round(5s), Ack]
+  0000000005z1 [Safety(NotSafe,LostInFlight), CutAfter(0)]
+  0000000005D1 [CutAfter(4), Safety(Safe,LostInFlight), CutAfter(2), Round(6s), OrderHang, OrderHang, CutAfter(0), BeginHandshake, CompleteHandshake, Round(6s), CutAfter(1), Ack]
+  0000000005O1 [CompleteHandshake, Ack, OrderHang, Safety(OwnOrder,LostInFlight), ConflictingResend, Safety(NotSafe,LostInFlight), Ack, CutAfter(3), OrderHang, ConflictingResend, Round(5s), Safety(NotSafe,AckLost), CutAfter(2), Ack]
+  0000000005P1 [CompleteHandshake, Safety(NotSafe,LostInFlight), Ready, Round(6s)]
+  0000000005S1 [CutAfter(1), Safety(NotSafe,LostInFlight)]
+  0000000005Y1 [Safety(NotSafe,AckLost), Safety(NotSafe,LostInFlight), Arrive, Round(5s), CutAfter(0), Safety(NotSafe,AckLost), Ack, CutAfter(1), NotReady]
+  0000000005-1 [OrderContinue, CutAfter(0), Ack, NotReady(ownOrder), CompleteHandshake, Safety(Safe,LostInFlight), NotReady, Ack, Safety(Safe,Delivered), BeginHandshake, Arrive, Round(6s), OrderContinue, Ack]
+  000000000681 [Round(3s), NotReady, OrderHang, OrderHang, OrderHang, Round(1s), Safety(Safe,LostInFlight), Ready, Arrive]
+  000000000691 [Round(2s), BeginHandshake, CompleteHandshake, Round(8s), NotReady(ownOrder), Round(5s), Safety(NotSafe,AckLost), Safety(NotSafe,AckLost)]
+  0000000006g1 [CompleteHandshake, ConflictingResend, CompleteHandshake, Safety(NotSafe,Delivered), Safety(Safe,LostInFlight), Safety(OwnOrder,LostInFlight), Round(3s), Round(6s), Round(1s), Round(7s)]
+  0000000006h1 [CutAfter(1), CutAfter(0), CutAfter(2), Round(3s), NotReady, Safety(OwnOrder,Delivered), Ack, Safety(Safe,AckLost), Round(5s), Arrive, Safety(NotSafe,LostInFlight), ConflictingResend]
+  0000000006j1 [Arrive, Ack, ConflictingResend, Round(2s), CompleteHandshake, CompleteHandshake, Ack, Round(4s), CutAfter(4), Round(8s), Round(6s), Round(3s), Round(7s), Safety(NotSafe,LostInFlight)]
+  0000000006m1 [OrderContinue, OrderContinue, Ack, Round(7s), NotReady(ownOrder), Safety(OwnOrder,LostInFlight), Arrive, ConflictingResend, CutAfter(2), ConflictingResend]
+  0000000006o1 [NotReady, Safety(OwnOrder,Delivered), ConflictingResend, Safety(Safe,AckLost)]
+  0000000006s1 [ConflictingResend, Round(4s), CompleteHandshake, Safety(NotSafe,LostInFlight), Ack, CompleteHandshake, Ack, NotReady(ownOrder), Safety(NotSafe,LostInFlight), Round(8s), NotReady, NotReady(ownOrder), CutAfter(2)]
+  0000000006t1 [CutAfter(2), OrderHang, Arrive, Round(4s), Safety(OwnOrder,Delivered)]
+  0000000006u1 [Safety(NotSafe,AckLost), Ack, Safety(OwnOrder,Delivered), Safety(NotSafe,AckLost), Arrive, Round(4s), Round(7s), Ack, CompleteHandshake, OrderContinue, Round(2s), Arrive, BeginHandshake]
+  0000000006v1 [Ack, Arrive, Arrive, CutAfter(0), Round(2s), Round(1s), Ack, Safety(Safe,LostInFlight), NotReady(ownOrder), CutAfter(2), CompleteHandshake, Arrive, Round(3s), Safety(Safe,LostInFlight), NotReady(ownOrder), Safety(Safe,AckLost), Round(5s), Round(6s)]
+  0000000006w1 [CompleteHandshake, BeginHandshake, Safety(Safe,LostInFlight), Safety(NotSafe,AckLost), CutAfter(1), ConflictingResend, Arrive, CompleteHandshake, Round(3s), Ack, Round(7s), Round(2s), BeginHandshake, Arrive]
+  0000000006y1 [NotReady(ownOrder), Round(6s), Safety(Safe,AckLost), Ack, OrderHang, Safety(Safe,Delivered), Round(8s), BeginHandshake, ConflictingResend, CompleteHandshake]
+  0000000006D1 [Round(3s), Safety(OwnOrder,AckLost), Safety(OwnOrder,Delivered), Ack, NotReady(ownOrder), ConflictingResend, CutAfter(0), Round(5s), CutAfter(0), CompleteHandshake, CompleteHandshake, Ready, Round(7s), Round(7s), Round(1s), BeginHandshake, CompleteHandshake, ConflictingResend, Arrive, CutAfter(0), CutAfter(1), Round(1s), Safety(OwnOrder,Delivered), Round(5s)]
+  0000000006E1 [Arrive, Round(6s), OrderContinue, NotReady, OrderContinue, Safety(NotSafe,LostInFlight), BeginHandshake, Arrive, Ack, Round(6s), Round(6s), Safety(NotSafe,Delivered), Round(7s), Round(4s), Round(7s), Safety(Safe,AckLost), CompleteHandshake, BeginHandshake, Round(3s), CompleteHandshake, NotReady(ownOrder), Ack]
+  0000000006G1 [Ack, Round(7s), Safety(Safe,LostInFlight), Round(2s), Safety(NotSafe,AckLost), Ack, CompleteHandshake, BeginHandshake, CutAfter(1)]
+  0000000006I1 [Ack, Safety(Safe,Delivered), Safety(NotSafe,Delivered), OrderHang, Round(6s), Round(5s), Round(3s), CutAfter(0), BeginHandshake, CutAfter(0), Round(7s), Safety(NotSafe,Delivered), CompleteHandshake, OrderContinue, NotReady, NotReady, CompleteHandshake, ConflictingResend, ConflictingResend, Arrive, CutAfter(2)]
+  0000000006J1 [NotReady, Safety(NotSafe,AckLost), Ready, Arrive, Safety(NotSafe,Delivered), Ready, Ack, Round(6s), Ack, NotReady, Safety(Safe,Delivered), Round(2s)]
+  0000000006L1 [Round(1s), CutAfter(2), Round(4s), Round(8s), CompleteHandshake, Safety(NotSafe,AckLost), NotReady, Round(5s), Safety(Safe,Delivered), CutAfter(0), Ack, Arrive, Safety(NotSafe,Delivered), Round(2s), Ack, NotReady(ownOrder), Ready, Round(4s), Ack, Safety(Safe,Delivered), Ack, Round(8s)]
+  0000000006M1 [Ready, CompleteHandshake, ConflictingResend, Round(2s), Safety(NotSafe,LostInFlight), OrderContinue, OrderContinue, OrderContinue, NotReady(ownOrder), Ack, NotReady, Safety(OwnOrder,LostInFlight)]
+  0000000006Q1 [Safety(NotSafe,AckLost), Round(7s), CutAfter(2), Round(4s), Ready, Round(6s), CutAfter(4), Ready, Arrive, ConflictingResend, NotReady(ownOrder), ConflictingResend, Safety(Safe,AckLost), BeginHandshake, CompleteHandshake, Safety(Safe,LostInFlight), Round(3s), Round(7s), Round(5s), OrderHang, NotReady, OrderHang, Arrive, Safety(NotSafe,LostInFlight)]
+  0000000006T1 [OrderContinue, Round(2s), Arrive, NotReady(ownOrder), Round(5s), Round(6s), OrderHang, Safety(Safe,LostInFlight), Round(5s), Arrive, Round(7s), NotReady(ownOrder), BeginHandshake, CompleteHandshake, Round(5s), ConflictingResend, CompleteHandshake, NotReady, ConflictingResend]
+  000000000711 [OrderContinue, Ack, Round(5s), Arrive, Ack, Safety(NotSafe,AckLost), Safety(Safe,LostInFlight), NotReady(ownOrder), Safety(OwnOrder,AckLost), CutAfter(3), Safety(NotSafe,LostInFlight), Ready, Safety(NotSafe,LostInFlight), Ack, BeginHandshake, OrderContinue]
+  000000000721 [ConflictingResend, Arrive, CompleteHandshake, NotReady, CompleteHandshake, Round(5s), CompleteHandshake, Round(1s), BeginHandshake, Safety(NotSafe,Delivered), OrderHang, BeginHandshake, CompleteHandshake]
+  000000000761 [Round(7s), Arrive, Round(4s), Round(4s), OrderHang, NotReady, CutAfter(0), Safety(Safe,Delivered), Round(4s), ConflictingResend, OrderHang, Round(2s), Safety(OwnOrder,AckLost), BeginHandshake, NotReady]
+  000000000771 [Safety(Safe,LostInFlight), Ack, OrderHang, CutAfter(2), NotReady, Safety(Safe,Delivered), Round(6s), Round(4s), Safety(Safe,Delivered), Round(8s), NotReady, Ready, Safety(OwnOrder,Delivered), Ack, BeginHandshake, NotReady(ownOrder), CutAfter(3)]
+  000000000791 [Ready, Safety(NotSafe,LostInFlight), CompleteHandshake, Ack, NotReady(ownOrder), CutAfter(3), Ack, Round(7s), Round(7s), Safety(OwnOrder,LostInFlight), Ack, NotReady, OrderHang]
+  0000000007b1 [NotReady(ownOrder), Round(5s), Ack, Safety(Safe,Delivered), ConflictingResend, Round(1s), Ready, Safety(NotSafe,Delivered), OrderHang, OrderHang, Safety(Safe,LostInFlight), CutAfter(1), Safety(NotSafe,Delivered), Ack, Round(4s)]
+  0000000007d1 [CutAfter(0), CutAfter(4), Arrive, Safety(Safe,Delivered), Ack, CompleteHandshake, CompleteHandshake, Ack, CutAfter(4), ConflictingResend, Round(1s), Round(7s), CutAfter(2)]
+  0000000007g1 [Round(1s), Safety(Safe,LostInFlight), Safety(Safe,LostInFlight), Arrive]
+  0000000007i1 [CutAfter(0), CompleteHandshake, CutAfter(3), NotReady(ownOrder), NotReady, ConflictingResend, Safety(NotSafe,LostInFlight), OrderContinue, CompleteHandshake, ConflictingResend, BeginHandshake, Round(3s), Round(7s), Round(6s)]
+  0000000007m1 [Safety(NotSafe,LostInFlight), Round(1s), Round(2s), Round(2s), BeginHandshake, Round(2s), CompleteHandshake]
+  0000000007q1 [Round(8s), Ack, Arrive, Arrive, Ready, Ack, Round(1s), Round(6s), Ack, Ack, CutAfter(1), CompleteHandshake, Safety(NotSafe,AckLost), Ack, Safety(OwnOrder,AckLost), Round(8s)]
+  0000000007t1 [Round(5s), ConflictingResend, Safety(NotSafe,AckLost), Ready, Arrive, Safety(NotSafe,Delivered), BeginHandshake]
+  0000000007w1 [Ready, Safety(OwnOrder,LostInFlight), CompleteHandshake, ConflictingResend, Arrive, Safety(Safe,Delivered), Round(8s), Safety(NotSafe,LostInFlight), Round(1s), Round(4s), NotReady, OrderContinue, NotReady(ownOrder), CompleteHandshake, BeginHandshake, Round(7s)]
+  0000000007x1 [NotReady, Round(5s), Round(1s), ConflictingResend, Safety(Safe,AckLost), NotReady(ownOrder), Round(3s), Safety(OwnOrder,Delivered), CutAfter(3), Arrive, CutAfter(2), Safety(Safe,AckLost), Safety(NotSafe,Delivered), CompleteHandshake, NotReady, Ack, CompleteHandshake]
+  0000000007C1 [BeginHandshake, CutAfter(0), Round(4s), CutAfter(3), CutAfter(3), Safety(OwnOrder,AckLost), OrderHang, CompleteHandshake, Ready, Arrive, Ack, Ack, OrderContinue, Safety(NotSafe,AckLost), CompleteHandshake, Round(5s), Round(3s), Safety(Safe,Delivered), Round(6s), Round(4s), Arrive, OrderContinue]
+  0000000007E1 [ConflictingResend, BeginHandshake, ConflictingResend, Round(1s), Round(8s), OrderContinue, Round(7s), CutAfter(0), NotReady, Arrive, Arrive, CompleteHandshake, Round(1s), Arrive, Arrive, CompleteHandshake, Round(5s), Round(7s), Safety(Safe,Delivered), Round(6s), CutAfter(1), Safety(Safe,LostInFlight)]
+  0000000007H1 [Round(3s), Safety(Safe,Delivered), Ready, CutAfter(3), Round(3s), ConflictingResend, Ack, Safety(NotSafe,AckLost), Round(1s), Safety(OwnOrder,Delivered), Ack, CutAfter(0), NotReady, Arrive, Round(1s), Ready]
+  0000000007M1 [Arrive, BeginHandshake, CompleteHandshake, NotReady, Safety(NotSafe,AckLost), Round(8s), Safety(OwnOrder,Delivered), ConflictingResend, Ack, CompleteHandshake, Ready, BeginHandshake, Safety(NotSafe,AckLost), ConflictingResend, Safety(Safe,Delivered), BeginHandshake, CompleteHandshake]
+  0000000007P1 [Ready, CompleteHandshake, Round(7s), BeginHandshake, OrderHang, Round(1s), Safety(Safe,LostInFlight), Ack, Ack, CompleteHandshake, CompleteHandshake, Arrive, Ack, BeginHandshake, OrderContinue, Round(5s)]
+  0000000007T1 [NotReady(ownOrder), Arrive, Ack, Ready, Round(3s), CutAfter(0), NotReady, BeginHandshake, Ready, Ready, Ack, Arrive, Safety(NotSafe,LostInFlight), Round(2s), Round(2s), Round(4s), BeginHandshake, Round(3s), NotReady(ownOrder), NotReady, Round(4s), Ready, Round(7s)]
+  0000000007U1 [Ack, CompleteHandshake, Round(8s), Round(6s), Round(3s), Round(6s), Round(8s), CompleteHandshake, Round(6s), OrderHang, Safety(OwnOrder,Delivered), CutAfter(3), CompleteHandshake, Ack, Arrive, OrderContinue, Round(7s), Arrive, Safety(OwnOrder,LostInFlight)]
+  0000000007W1 [NotReady, Ack, CompleteHandshake, Safety(OwnOrder,AckLost), Arrive, Round(8s), CompleteHandshake, Safety(NotSafe,AckLost), Round(4s), Safety(OwnOrder,AckLost), Round(8s), Round(7s), Arrive]
+  0000000007-1 [Round(1s), Safety(NotSafe,AckLost), Ready, Round(1s), OrderContinue, CutAfter(1), Ready, NotReady, CompleteHandshake, Arrive, OrderHang, Safety(OwnOrder,LostInFlight), CompleteHandshake, Arrive, Safety(OwnOrder,AckLost), Arrive, OrderHang]
+  000000000811 [Safety(Safe,Delivered), Ack, Ready, Arrive, NotReady(ownOrder), Safety(NotSafe,Delivered), CutAfter(0), Ack, Safety(OwnOrder,Delivered), NotReady(ownOrder), Round(6s), Arrive, Ready, Ack, Round(3s), Ack, Ack, NotReady]
+  000000000831 [OrderContinue, Ack, Ack, Arrive, NotReady(ownOrder), Safety(Safe,AckLost), Arrive, Safety(Safe,LostInFlight), CutAfter(0), CompleteHandshake, Round(5s), Round(7s), Ack, CompleteHandshake, Round(2s)]
+  000000000841 [Safety(NotSafe,LostInFlight), NotReady, NotReady(ownOrder), Safety(Safe,AckLost), BeginHandshake, Round(6s), Safety(NotSafe,Delivered), Round(4s), Round(5s), CompleteHandshake, NotReady, OrderHang, Ack, Safety(OwnOrder,LostInFlight), CutAfter(2), Safety(OwnOrder,Delivered), Round(2s), OrderHang, Round(6s)]
+  000000000861 [Round(3s), CompleteHandshake, CompleteHandshake, Safety(NotSafe,Delivered), Round(6s), Safety(OwnOrder,LostInFlight), OrderContinue, Ack, OrderContinue, BeginHandshake, Round(8s)]
+  000000000891 [Arrive, Arrive, BeginHandshake, Round(3s), Round(2s), CompleteHandshake, Arrive, Round(6s), Ack, Round(4s), CutAfter(4), BeginHandshake, Safety(Safe,AckLost), BeginHandshake, Ready, Ack, CompleteHandshake, Round(8s), Round(7s)]
+  0000000008a1 [Ready, Round(2s), CompleteHandshake, Safety(NotSafe,AckLost), Safety(NotSafe,LostInFlight), CutAfter(2), Round(6s), Arrive, Round(3s), OrderHang, Round(3s), Safety(NotSafe,Delivered), ConflictingResend, Round(4s), Ack]
+  0000000008b1 [Round(4s), Round(8s), OrderHang, Ack, CutAfter(2), ConflictingResend, CompleteHandshake, ConflictingResend, Round(1s), CutAfter(3), Arrive, Ack, OrderHang, NotReady(ownOrder), Safety(OwnOrder,LostInFlight), Ack, BeginHandshake, Ack, Arrive, Round(6s)]
+  0000000008c1 [Round(2s), Round(2s), CompleteHandshake, NotReady(ownOrder), Ack, Round(3s), OrderContinue, Arrive, BeginHandshake, Round(1s), OrderHang, OrderHang, OrderContinue, Safety(NotSafe,LostInFlight), CompleteHandshake, Ack, BeginHandshake, NotReady, Ready, Ready, Safety(Safe,Delivered), Arrive, Round(1s), BeginHandshake]
+  0000000008d1 [NotReady, Safety(Safe,LostInFlight), Round(5s), Arrive, Safety(Safe,LostInFlight)]
+  0000000008f1 [OrderHang, Round(8s), Arrive, Safety(Safe,Delivered), Arrive, Safety(Safe,AckLost), CompleteHandshake, NotReady, NotReady(ownOrder), Round(2s), Safety(OwnOrder,AckLost), NotReady, Safety(Safe,LostInFlight), Safety(OwnOrder,LostInFlight)]
+  0000000008j1 [Safety(NotSafe,AckLost), Safety(NotSafe,Delivered), Arrive, CutAfter(0), Round(7s), CompleteHandshake]
+  0000000008k1 [Round(6s), Round(8s), Round(4s), BeginHandshake, Ack, Round(7s), CompleteHandshake, Ack, Safety(Safe,LostInFlight), Ack, Round(2s), CompleteHandshake, Round(6s), Arrive, BeginHandshake, Safety(OwnOrder,LostInFlight), Ack, Arrive, NotReady, CutAfter(3), BeginHandshake]
+  0000000008p1 [Safety(OwnOrder,AckLost), Safety(NotSafe,Delivered), Round(6s), Round(1s), Ack, BeginHandshake, Ready, Ack]
+  0000000008q1 [Ack, Safety(Safe,LostInFlight), Round(6s), Round(3s), Round(4s), Round(6s), Arrive, Arrive, CompleteHandshake, CompleteHandshake, Ack, OrderHang, NotReady, NotReady, OrderContinue, NotReady(ownOrder), Round(1s), Ack, CompleteHandshake, BeginHandshake, Arrive]
+  0000000008u1 [Safety(Safe,Delivered), Safety(OwnOrder,LostInFlight), NotReady(ownOrder), Safety(Safe,AckLost), Ack, NotReady(ownOrder), Ready, Arrive, Ack, OrderHang, CompleteHandshake, Round(5s), OrderContinue, BeginHandshake, ConflictingResend, Ready, NotReady, Round(3s), Round(5s), Round(7s), OrderContinue, Round(1s), NotReady(ownOrder), Ready]
+  0000000008x1 [Safety(OwnOrder,AckLost), Ready, NotReady, Arrive, Arrive, CompleteHandshake, Safety(OwnOrder,LostInFlight), ConflictingResend, Safety(OwnOrder,AckLost), OrderHang, Ack, Round(7s), Safety(NotSafe,AckLost), Round(3s), BeginHandshake, Arrive]
+  0000000008y1 [Round(8s), OrderHang, Ack, ConflictingResend, Safety(NotSafe,LostInFlight), Round(6s), Safety(Safe,LostInFlight), Safety(NotSafe,LostInFlight), Ack, Arrive, Round(4s), Round(8s), Round(5s)]
+  0000000008D1 [NotReady, Arrive, Safety(Safe,LostInFlight), Round(3s), BeginHandshake, CompleteHandshake, Safety(Safe,LostInFlight), Arrive, Safety(NotSafe,AckLost), Ack, NotReady, Round(5s)]
+  0000000008E1 [Round(2s), Ack, Ack, Safety(OwnOrder,AckLost), Round(8s), Ack, Safety(NotSafe,AckLost), BeginHandshake, OrderHang, CutAfter(2), Round(8s), Ready, Arrive, Round(1s), OrderContinue]
+  0000000008I1 [CompleteHandshake, Round(4s), BeginHandshake, Safety(Safe,AckLost), BeginHandshake, Round(2s), Round(2s), Ready]
+  0000000008N1 [Safety(Safe,LostInFlight), Ack, NotReady, CutAfter(2), Round(5s), Arrive, CutAfter(3), Round(6s), Round(1s), BeginHandshake, CompleteHandshake, Ack]
+  0000000008Q1 [Round(5s), Arrive, CutAfter(0), Round(8s), Round(6s), Round(3s), BeginHandshake, CompleteHandshake, OrderContinue, CompleteHandshake, Arrive, Safety(OwnOrder,LostInFlight), Round(5s), Safety(Safe,AckLost), Round(7s)]
+  0000000008S1 [Round(8s), OrderHang, Round(1s), ConflictingResend, Round(8s), CutAfter(0), Safety(NotSafe,LostInFlight), Arrive, Ready, Arrive, Round(3s), Arrive, Ack, Round(5s)]
+  0000000008T1 [BeginHandshake, Safety(OwnOrder,Delivered), OrderHang, Round(4s), NotReady(ownOrder), Ready, CompleteHandshake, Safety(OwnOrder,LostInFlight), Safety(OwnOrder,Delivered), Round(2s), CompleteHandshake, Ready, OrderContinue, Round(5s), Round(4s), Ack, BeginHandshake, CompleteHandshake, Round(7s), OrderContinue, CompleteHandshake, Ack, Round(7s), CutAfter(2)]
+  000000000991 [Round(5s), Round(5s), Safety(Safe,Delivered), ConflictingResend, BeginHandshake, Round(5s), NotReady, Safety(Safe,Delivered), Round(5s), BeginHandshake, Arrive, CompleteHandshake, CutAfter(0), Arrive, Safety(Safe,Delivered), Safety(Safe,AckLost), Ack, BeginHandshake, Safety(Safe,AckLost)]
+  0000000009e1 [Safety(OwnOrder,Delivered), Ack, ConflictingResend, Safety(OwnOrder,Delivered), Round(2s), Round(7s), Ack, Ack, OrderContinue, Safety(NotSafe,LostInFlight), Ack, CompleteHandshake, OrderContinue, CutAfter(0), Safety(Safe,Delivered)]
+  0000000009f1 [CompleteHandshake, Round(8s), CompleteHandshake, NotReady(ownOrder), Arrive, NotReady, Safety(OwnOrder,AckLost), NotReady, Ready, CompleteHandshake, Safety(NotSafe,LostInFlight)]
+  0000000009i1 [Round(3s), CutAfter(2), CompleteHandshake, CompleteHandshake, Round(7s), Ack, Round(4s), NotReady(ownOrder), Ready, Arrive, Round(8s), Ack, Arrive, Safety(Safe,Delivered), Round(2s), CompleteHandshake, Ready, Ready, Safety(NotSafe,Delivered), CompleteHandshake, Round(6s), CompleteHandshake, Round(6s)]
+  0000000009o1 [BeginHandshake, CompleteHandshake, Round(1s), OrderHang, Arrive, Safety(NotSafe,LostInFlight)]
+  0000000009q1 [Safety(OwnOrder,LostInFlight), NotReady(ownOrder), Arrive, BeginHandshake, Round(3s), Round(7s), Round(1s), CompleteHandshake, CompleteHandshake, Arrive, OrderHang, Round(2s), Arrive, Arrive, Round(2s), Ack, CutAfter(0), Arrive, CutAfter(3), CompleteHandshake, OrderHang]
+  0000000009r1 [Round(3s), BeginHandshake, CompleteHandshake, Safety(Safe,LostInFlight), Safety(OwnOrder,AckLost), Round(3s), Round(3s), Safety(Safe,LostInFlight), Round(1s), ConflictingResend, Safety(OwnOrder,AckLost), Ack, Safety(NotSafe,AckLost), Arrive, ConflictingResend, CutAfter(2), Ack, BeginHandshake, CompleteHandshake, Arrive, Ready, BeginHandshake, Round(6s)]
+  0000000009t1 [BeginHandshake, Arrive, BeginHandshake, Round(2s), ConflictingResend, CompleteHandshake, CutAfter(0), Round(7s), CompleteHandshake, Round(7s), ConflictingResend, Ack, CompleteHandshake, Safety(OwnOrder,LostInFlight), NotReady, Round(7s), CutAfter(3), Ack, Safety(NotSafe,Delivered), Ack]
+  0000000009x1 [CompleteHandshake, CutAfter(0), Ack, BeginHandshake, Round(1s), Round(2s), Safety(Safe,LostInFlight), Round(1s), BeginHandshake, CutAfter(1)]
+  0000000009B1 [CompleteHandshake, Round(8s), CutAfter(3), CutAfter(3), Safety(OwnOrder,Delivered), Safety(OwnOrder,LostInFlight), BeginHandshake, CompleteHandshake, Ack, Round(5s), CutAfter(1), Round(3s), NotReady, Safety(Safe,AckLost), Round(6s), Ack, CompleteHandshake, OrderContinue, Arrive, Ack]
+  0000000009C1 [Round(2s), ConflictingResend, Safety(Safe,LostInFlight), CompleteHandshake, Arrive, Safety(NotSafe,AckLost), ConflictingResend, CutAfter(0), CompleteHandshake, Round(1s), Safety(Safe,Delivered), Ack, CompleteHandshake, CompleteHandshake, NotReady(ownOrder), CutAfter(4), Round(6s), Ack, Round(5s), Ack, Safety(OwnOrder,Delivered)]
+  0000000009D1 [Arrive, OrderHang, Safety(Safe,LostInFlight), ConflictingResend, CutAfter(1), Ack, BeginHandshake, CompleteHandshake, Round(1s), NotReady, Arrive, Ack, Round(2s), NotReady, BeginHandshake, CutAfter(4), CompleteHandshake, BeginHandshake, Ack]
+  0000000009H1 [Safety(Safe,AckLost), CompleteHandshake, Safety(Safe,LostInFlight), Round(1s), CutAfter(3)]
+  0000000009J1 [BeginHandshake, Round(4s), CutAfter(4), CompleteHandshake, CutAfter(0), CutAfter(3), Safety(OwnOrder,AckLost), Safety(OwnOrder,AckLost), CompleteHandshake, Round(6s), Round(6s), Round(6s), Round(8s), CompleteHandshake, Round(2s), CutAfter(1), Safety(NotSafe,Delivered), Arrive, Arrive, ConflictingResend, Ack]
+  0000000009K1 [Ack, Ready, NotReady(ownOrder), Safety(Safe,Delivered), OrderHang, CutAfter(4), Ack, ConflictingResend, Round(4s), Ready, Round(3s), Safety(Safe,AckLost)]
+  0000000009L1 [CompleteHandshake, OrderHang, CutAfter(4), Ack, Safety(NotSafe,Delivered), Ack, Ack, Safety(OwnOrder,LostInFlight), OrderContinue, Safety(NotSafe,Delivered), Round(7s), Ack, Safety(OwnOrder,Delivered), NotReady(ownOrder), Round(6s), OrderHang, CompleteHandshake, Arrive, NotReady(ownOrder), Ack, CutAfter(4), CutAfter(2), OrderContinue, Arrive]
+  0000000009M1 [CompleteHandshake, Safety(OwnOrder,AckLost), Arrive, Safety(Safe,Delivered), CompleteHandshake, Safety(NotSafe,Delivered), Ack, Round(3s), Ack, OrderContinue, Ready, OrderContinue, OrderHang, Round(5s), ConflictingResend, OrderContinue, Round(4s), Safety(Safe,AckLost), Round(7s), Safety(OwnOrder,LostInFlight)]
+  0000000009P1 [NotReady, Round(4s), ConflictingResend, Round(1s), CompleteHandshake, Arrive, CutAfter(1), Round(5s), OrderHang, ConflictingResend, Ready, BeginHandshake, Safety(OwnOrder,Delivered), Ack, BeginHandshake]
+  0000000009R1 [OrderHang, CompleteHandshake, Safety(OwnOrder,Delivered), Ready, Round(6s), Arrive, NotReady, Safety(NotSafe,LostInFlight), Arrive, OrderContinue, Round(1s), Safety(NotSafe,Delivered), Safety(Safe,AckLost), ConflictingResend, Round(2s), OrderHang, Round(2s), Ack, BeginHandshake]
+  0000000009U1 [Round(5s), CutAfter(4), Safety(OwnOrder,LostInFlight), Round(7s), CutAfter(1), CompleteHandshake, Safety(NotSafe,AckLost), OrderContinue, BeginHandshake, Round(3s), Ack]
+  0000000009W1 [Round(8s), CutAfter(0), Arrive, CutAfter(4), CutAfter(4), ConflictingResend, Round(1s), ConflictingResend, Ack, Safety(OwnOrder,AckLost), NotReady, Safety(Safe,LostInFlight), Safety(OwnOrder,AckLost), Ack]
+  0000000009Z1 [ConflictingResend, Round(7s), Safety(Safe,AckLost), Round(7s), Ack, Round(3s), Safety(NotSafe,AckLost), Safety(NotSafe,Delivered), OrderContinue, OrderContinue, Safety(Safe,Delivered), CompleteHandshake, Ack, BeginHandshake]
+  0000000009_1 [BeginHandshake, CompleteHandshake, Round(3s), ConflictingResend, Round(5s), Round(6s), CompleteHandshake, NotReady(ownOrder), CompleteHandshake, Ack, Ack, OrderContinue, Arrive, ConflictingResend, CutAfter(4), Safety(OwnOrder,AckLost), OrderContinue, Round(7s), Safety(Safe,AckLost), Arrive, Round(6s), ConflictingResend]
+  0000000009-1 [Ready, Round(8s), NotReady(ownOrder), Safety(OwnOrder,LostInFlight), Round(4s), Safety(OwnOrder,LostInFlight), Round(5s), Ack, BeginHandshake]
+  000000000a01 [BeginHandshake, Round(3s), Ack, Round(8s), Round(7s), BeginHandshake, Round(6s), Safety(NotSafe,LostInFlight), Ready, CutAfter(0), Round(7s), OrderHang, Ready, ConflictingResend, Safety(NotSafe,Delivered), Round(8s), BeginHandshake, NotReady(ownOrder), Ack, Ack, CutAfter(1), Round(1s), Round(4s)]
+  000000000a11 [Round(1s), Safety(Safe,LostInFlight), Round(7s), Ack]
+  000000000a31 [NotReady, Round(5s), Safety(Safe,LostInFlight), Round(7s), Ack, Round(6s), Safety(Safe,AckLost), OrderContinue, Ready, Ack, Ack, Safety(Safe,LostInFlight), CutAfter(3), Round(7s), Ack, Round(6s), CompleteHandshake, Ack, Safety(OwnOrder,Delivered), CompleteHandshake, OrderContinue, Round(2s), Safety(Safe,LostInFlight)]
+
+CsCheck shrinking LegitimateMessageRefused from seed 0000000005p1, iter=1000
+shrink took 4.8s
+Set seed: "ec02ZOMY9688" or -e CsCheck_Seed=ec02ZOMY9688 to reproduce (5 shrinks, 898 skipped, 1,000 total).
+[Safety(OwnOrder,LostInFlight)]
+deterministic minimisation of the shortest LegitimateMessageRefused (2 steps) took 1.0s:
+  from [Safety(NotSafe,LostInFlight), CutAfter(0)]
+  to   [Safety(NotSafe,LostInFlight)]
+final: stage=AwaitingSublot block=null generation=3 entryReachedVehicle=True ackConflicts=0 regressions=0
+violation LegitimateMessageRefused: SafetyStateSnapshot (generation 2, handshake open) refused: ProtocolContentConflictException: safety revision 8 has conflicting content.
+trace:
+  Safety(NotSafe,LostInFlight) -> v8 lost in flight, connection dropped
+    handshake SessionHello -> SessionAccepted
+    handshake SafetyStateChanged -> DurableAck
+  tail BeginHandshake
+    handshake CapabilitySnapshot -> SnapshotAppliedAck
+  !! LegitimateMessageRefused: SafetyStateSnapshot (generation 2, handshake open) refused: ProtocolContentConflictException: safety revision 8 has conflicting content.
+  tail CompleteHandshake -> handshake broke at SafetyStateSnapshot
+  tail Ready -> no-op
+  tail Arrive
+  tail Round(2s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+  tail Ack
+    handshake SessionHello -> SessionAccepted
+  tail BeginHandshake
+    handshake CapabilitySnapshot -> SnapshotAppliedAck
+    handshake SafetyStateSnapshot -> SnapshotAppliedAck
+    handshake OnboardAlarmSnapshot -> SnapshotAppliedAck
+    handshake RecoveryStateReport -> DurableAck+SessionReadiness
+  tail CompleteHandshake
+  tail Safety(Safe,Delivered) -> v9 answered DurableAck+SessionReadiness
+  tail Round(2s) -> ok; stage=AwaitingSublot block=- wait=+4s; delivered Plan@3,VBS@3,Worklist@3,Plan@3,Entry@3
+  tail Ack
+

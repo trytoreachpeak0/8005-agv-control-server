@@ -1,0 +1,119 @@
+iterations=300 masterSeed=342
+first StuckAtPickup: index=49 seed=0000000006a1 steps=7
+final: stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED generation=2 entryReachedVehicle=False ackConflicts=0 regressions=0
+last tail rounds: threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED wait=-
+trace:
+  Arrive
+  CutAfter(2)
+  Round(6s) -> threw IOException: The model connection dropped while this line was being sent.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED wait=+6s; delivered Plan@1,VBS@1
+  NotReady
+  Round(8s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+  Round(4s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+  BeginHandshake
+  tail CompleteHandshake
+  tail Ready
+  tail Arrive -> no-op
+  tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED wait=-; delivered Plan@2,Worklist@2,VBS@2,VBS@2
+  tail Ack
+  tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED wait=-
+  tail Ack
+  tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED wait=-
+  tail Ack
+  tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED wait=-
+  tail Ack
+  tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED wait=-
+  tail Ack
+  tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED wait=-
+  tail Ack
+  tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED wait=-
+  tail Ack
+  tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED wait=-
+  tail Ack
+
+per combination (ms): n=300 mean=190.2 p50=157.3 p90=286.0 max=3903.8; wall total 57.2s
+per combination excluding the first (ms): n=299 mean=177.8; first=3903.8
+setup mean=115.9ms; engine rounds per combination mean=5.0; per round (excluding setup) mean=14.9ms
+ack conflicts=0 vehicle regressions=0
+entry request reached the vehicle in 286 of 300
+StuckAtPickup: 17 of 300
+  0000000006a1 [Arrive, CutAfter(2), Round(6s), NotReady, Round(8s), Round(4s), BeginHandshake]
+  0000000006h1 [Arrive, CutAfter(3), CompleteHandshake, Round(2s), Ack, BeginHandshake, NotReady, NotReady, Round(4s), BeginHandshake, CompleteHandshake, CutAfter(1)]
+  0000000006J1 [CutAfter(3), Arrive, Ack, Ack, Arrive, Round(6s), Round(1s), CutAfter(0), BeginHandshake, Round(6s), Arrive, Round(7s)]
+  0000000006O1 [Arrive, CutAfter(1), CutAfter(2), Ack, Round(5s), Ack, BeginHandshake, Ack, NotReady, NotReady(ownOrder), Round(8s), CompleteHandshake]
+  0000000006R1 [Ack, Arrive, CutAfter(2), Round(6s), CompleteHandshake]
+  0000000007e1 [Arrive, CutAfter(2), Round(4s)]
+  0000000007u1 [Arrive, Arrive, CutAfter(3), Round(3s), CompleteHandshake, NotReady(ownOrder), CutAfter(1), Round(3s), Arrive, Arrive]
+  0000000007O1 [Ack, CutAfter(0), CutAfter(4), Round(3s), Round(2s), BeginHandshake, Arrive, CompleteHandshake, CutAfter(3), Ack, Round(6s), CutAfter(2), Ack, CutAfter(4), Ack]
+  0000000007Y1 [Round(5s), CutAfter(2), Ack, Round(5s), Ack, Arrive, Arrive, Round(7s), Round(3s), BeginHandshake]
+  0000000007-1 [CutAfter(3), Ack, Round(3s), Arrive, Round(1s), BeginHandshake, CutAfter(1), Arrive, Round(7s), Round(8s), CutAfter(0), Ack, Ack, BeginHandshake, Arrive, BeginHandshake, BeginHandshake]
+  0000000008A1 [Round(5s), CutAfter(3), Arrive, Round(7s), Round(2s), BeginHandshake]
+  0000000008R1 [Round(3s), BeginHandshake, Arrive, Round(1s), Round(7s), Ready, CompleteHandshake, CutAfter(1), CutAfter(4), Round(4s), Ack, Round(5s), Round(2s)]
+  0000000008V1 [Ready, CompleteHandshake, CutAfter(3), Round(1s), CutAfter(4), Arrive, Round(4s), BeginHandshake, CutAfter(3), CompleteHandshake, Round(6s), Ack, Round(4s), Round(1s), Arrive, NotReady, Round(8s), Round(5s), Round(7s)]
+  0000000008-1 [NotReady(ownOrder), CompleteHandshake, Arrive, Ack, Ready, Arrive, CompleteHandshake, CutAfter(3), Round(3s), Arrive, Round(6s), CompleteHandshake, Round(8s), CompleteHandshake, NotReady(ownOrder), CutAfter(0), CompleteHandshake, BeginHandshake, CompleteHandshake, CutAfter(4)]
+  0000000009r1 [CompleteHandshake, Ack, Arrive, CutAfter(3), Round(8s), Arrive, Ack, NotReady(ownOrder), BeginHandshake, Round(3s), NotReady, BeginHandshake, CompleteHandshake, CutAfter(0), Ack, NotReady(ownOrder), CompleteHandshake, NotReady(ownOrder), Round(2s), NotReady(ownOrder), CutAfter(4), CutAfter(4), BeginHandshake]
+  0000000009U1 [Ready, Round(5s), Ready, CompleteHandshake, Arrive, CutAfter(3), Round(6s), CutAfter(0), Round(5s), Arrive, NotReady]
+  000000000a31 [Ack, Arrive, Ready, Ack, CutAfter(4), Ack, Arrive, Arrive, Round(3s), NotReady, CompleteHandshake, NotReady, Arrive, Ack, CompleteHandshake, CompleteHandshake, CutAfter(4), CutAfter(3), Round(7s), BeginHandshake, Round(6s), CompleteHandshake, Round(4s)]
+
+CsCheck shrinking StuckAtPickup from seed 0000000006a1, iter=1000
+shrink took 5.4s
+Set seed: "0InM60sF5GJ5" or -e CsCheck_Seed=0InM60sF5GJ5 to reproduce (1 shrinks, 877 skipped, 1,000 total).
+[CutAfter(3), Arrive, Round(1s)]
+StuckAtPickup
+final: stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED generation=2 entryReachedVehicle=False ackConflicts=0 regressions=0
+last tail rounds: threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED wait=-
+trace:
+  CutAfter(3)
+  Arrive
+  Round(1s) -> threw IOException: The model connection dropped while this line was being sent.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED wait=+1s; delivered Plan@1,VBS@1,Worklist@1
+  tail BeginHandshake
+  tail CompleteHandshake
+  tail Ready
+  tail Arrive -> no-op
+  tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED wait=-; delivered Plan@2,Worklist@2,VBS@2,VBS@2
+  tail Ack
+  tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED wait=-
+  tail Ack
+  tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED wait=-
+  tail Ack
+  tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED wait=-
+  tail Ack
+  tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED wait=-
+  tail Ack
+  tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED wait=-
+  tail Ack
+  tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED wait=-
+  tail Ack
+  tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED wait=-
+  tail Ack
+
+
+deterministic minimisation of the shortest StuckAtPickup (3 steps) took 2.1s:
+  from [Arrive, CutAfter(2), Round(4s)]
+  to   [Arrive, CutAfter(2), Round(1s)]
+final: stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED generation=2 entryReachedVehicle=False ackConflicts=0 regressions=0
+last tail rounds: threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED wait=-
+trace:
+  Arrive
+  CutAfter(2)
+  Round(1s) -> threw IOException: The model connection dropped while this line was being sent.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED wait=+1s; delivered Plan@1,VBS@1
+  tail BeginHandshake
+  tail CompleteHandshake
+  tail Ready
+  tail Arrive -> no-op
+  tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED wait=-; delivered Plan@2,Worklist@2,VBS@2,VBS@2
+  tail Ack
+  tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED wait=-
+  tail Ack
+  tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED wait=-
+  tail Ack
+  tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED wait=-
+  tail Ack
+  tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED wait=-
+  tail Ack
+  tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED wait=-
+  tail Ack
+  tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED wait=-
+  tail Ack
+  tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=JOURNEY_ADVANCE_FAILED wait=-
+  tail Ack
+

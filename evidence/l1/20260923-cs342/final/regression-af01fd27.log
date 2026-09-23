@@ -1,0 +1,236 @@
+xUnit.net v3 In-Process Runner v3.2.2+728c1dce01 (64-bit .NET 8.0.31)
+  Discovering: ControlServer.Tests
+  Discovered:  ControlServer.Tests
+  Starting:    ControlServer.Tests
+    ControlServer.Tests.ReconnectModelRegressionTests.ASafetyChangeLostInFlightDoesNotGetTheNextHandshakeRefused [SKIP]
+      known defect: onboard-hmi#206 https://github.com/trytoreachpeak0/8005-agv-onboard-hmi/issues/206
+    ControlServer.Tests.ReconnectModelRegressionTests.AnImmediateReconnectWithTheStationDepartureWaitOnStillSendsTheEntryRequest [FAIL]
+      ControlServer.Domain.ProtocolContentConflictException : Outbound MessageId was replayed with different semantics or a non-advancing session generation.
+      Stack Trace:
+        src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs(3291,0): at ControlServer.Infrastructure.Persistence.WireToGateStore.RefreshOutboundEnvelopeAsync(ProtocolOutboxRow existing, String messageType, String candidateWire, DateTimeOffset candidateCreatedAt, CancellationToken cancellationToken)
+        src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs(2086,0): at ControlServer.Infrastructure.Persistence.WireToGateStore.QueueOutboundEnvelopeAsync(String messageId, String messageType, String wireJson, DateTimeOffset createdAt, CancellationToken cancellationToken)
+        src\ControlServer.Host\Transport\OnboardJourneyPublisher.cs(805,0): at ControlServer.Host.Transport.OnboardJourneyPublisher.QueueEnvelopeAsync(String messageType, String messageId, String correlationId, String agvId, Int64 sessionGeneration, Func`2 payloadFactory, CancellationToken cancellationToken)
+        src\ControlServer.Host\Transport\OnboardJourneyPublisher.cs(767,0): at ControlServer.Host.Transport.OnboardJourneyPublisher.PublishStampedEnvelopeAsync(String messageType, String messageId, String correlationId, String agvId, Int64 sessionGeneration, Func`2 payloadFactory, CancellationToken cancellationToken)
+        src\ControlServer.Host\Transport\OnboardJourneyPublisher.cs(736,0): at ControlServer.Host.Transport.OnboardJourneyPublisher.PublishStampedSnapshotAsync(String messageType, String messageId, String agvId, Int64 sessionGeneration, Int64 revision, Func`2 payloadFactory, CancellationToken cancellationToken)
+        src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs(1672,0): at ControlServer.Host.Runtime.JourneyRuntimeEngine.PublishPickupStateAsync(JourneyRuntimeRow runtime, JourneyStopCursor stops, SessionRecoveryRow session, Boolean holdingApplicable, CancellationToken cancellationToken)
+        src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs(648,0): at ControlServer.Host.Runtime.JourneyRuntimeEngine.AdvanceAsync(JourneyRuntimeRow runtime, RiotMapStationCatalogSnapshot currentMap, CancellationToken cancellationToken)
+        src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs(421,0): at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteRoundAsync(CancellationToken cancellationToken)
+        src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs(280,0): at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken)
+        src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs(291,0): at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken)
+        tests\ControlServer.Tests\ReconnectModelRegressionTests.cs(244,0): at ControlServer.Tests.ReconnectModelRegressionTests.AnImmediateReconnectWithTheStationDepartureWaitOnStillSendsTheEntryRequest()
+        tests\ControlServer.Tests\ReconnectModelRegressionTests.cs(248,0): at ControlServer.Tests.ReconnectModelRegressionTests.AnImmediateReconnectWithTheStationDepartureWaitOnStillSendsTheEntryRequest()
+        --- End of stack trace from previous location ---
+    ControlServer.Tests.ReconnectModelRegressionTests.ASafetyChangeLostInFlightIsResentInTheHandshakeAndAnsweredOnce(unsafeChange: True) [FAIL]
+      final: stage=AwaitingSublot block=null generation=3 entryReachedVehicle=True ackConflicts=0 regressions=0
+      violation OneInboundManyAnswers: SafetyStateChanged in the handshake of generation 2 was answered with DurableAck+SessionReadiness, expected DurableAck
+      trace:
+        Safety(NotSafe,LostInFlight) -> v8 lost in flight, connection dropped
+          handshake SessionHello -> SessionAccepted
+          handshake SafetyStateChanged -> DurableAck+SessionReadiness
+        !! OneInboundManyAnswers: SafetyStateChanged in the handshake of generation 2 was answered with DurableAck+SessionReadiness, expected DurableAck
+        tail BeginHandshake -> handshake broke after the resent SafetyStateChanged
+        tail Ready -> no-op
+        tail Arrive
+        tail Round(2s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+        tail Ack
+          handshake SessionHello -> SessionAccepted
+        tail BeginHandshake
+          handshake CapabilitySnapshot -> SnapshotAppliedAck
+          handshake SafetyStateSnapshot -> SnapshotAppliedAck
+          handshake OnboardAlarmSnapshot -> SnapshotAppliedAck
+          handshake RecoveryStateReport -> DurableAck+SessionReadiness
+        tail CompleteHandshake
+        tail Safety(Safe,Delivered) -> v9 answered DurableAck+SessionReadiness
+        tail Round(2s) -> ok; stage=AwaitingSublot block=- wait=+4s; delivered Plan@3,VBS@3,Worklist@3,Plan@3,Entry@3
+        tail Ack
+      
+      Stack Trace:
+        tests\ControlServer.Tests\ReconnectModelRegressionTests.cs(149,0): at ControlServer.Tests.ReconnectModelRegressionTests.ASafetyChangeLostInFlightIsResentInTheHandshakeAndAnsweredOnce(Boolean unsafeChange)
+        --- End of stack trace from previous location ---
+    ControlServer.Tests.ReconnectModelRegressionTests.ASafetyChangeLostInFlightIsResentInTheHandshakeAndAnsweredOnce(unsafeChange: False) [FAIL]
+      final: stage=AwaitingSublot block=null generation=3 entryReachedVehicle=True ackConflicts=0 regressions=0
+      violation OneInboundManyAnswers: SafetyStateChanged in the handshake of generation 2 was answered with DurableAck+SessionReadiness, expected DurableAck
+      trace:
+        Safety(Safe,LostInFlight) -> v8 lost in flight, connection dropped
+          handshake SessionHello -> SessionAccepted
+          handshake SafetyStateChanged -> DurableAck+SessionReadiness
+        !! OneInboundManyAnswers: SafetyStateChanged in the handshake of generation 2 was answered with DurableAck+SessionReadiness, expected DurableAck
+        tail BeginHandshake -> handshake broke after the resent SafetyStateChanged
+        tail Ready -> no-op
+        tail Arrive
+        tail Round(2s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+        tail Ack
+          handshake SessionHello -> SessionAccepted
+        tail BeginHandshake
+          handshake CapabilitySnapshot -> SnapshotAppliedAck
+          handshake SafetyStateSnapshot -> SnapshotAppliedAck
+          handshake OnboardAlarmSnapshot -> SnapshotAppliedAck
+          handshake RecoveryStateReport -> DurableAck+SessionReadiness
+        tail CompleteHandshake
+        tail Round(2s) -> ok; stage=AwaitingSublot block=- wait=+4s; delivered Plan@3,VBS@3,Worklist@3,Plan@3,Entry@3
+        tail Ack
+      
+      Stack Trace:
+        tests\ControlServer.Tests\ReconnectModelRegressionTests.cs(149,0): at ControlServer.Tests.ReconnectModelRegressionTests.ASafetyChangeLostInFlightIsResentInTheHandshakeAndAnsweredOnce(Boolean unsafeChange)
+        --- End of stack trace from previous location ---
+    ControlServer.Tests.ReconnectModelRegressionTests.ASequenceTheModelOnceFoundStuckNowReachesTheEntryRequest(name: "cut-after-the-business-state-nothing-acknowledged") [FAIL]
+      cut-after-the-business-state-nothing-acknowledged [Arrive, CutAfter(2), Round(1s)] violated StuckAtPickup:
+final: stage=AwaitingPickupArrival block=null generation=2 entryReachedVehicle=False ackConflicts=0 regressions=0
+      last tail rounds: threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=- wait=-
+      violation StuckAtPickup: stage=AwaitingPickupArrival block=null last tail rounds: threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=- wait=-
+      trace:
+        Arrive
+        CutAfter(2)
+        Round(1s) -> threw IOException: The model connection dropped while this line was being sent.; stage=AwaitingPickupArrival block=- wait=+1s; delivered Plan@1,VBS@1
+          handshake SessionHello -> SessionAccepted
+        tail BeginHandshake
+          handshake CapabilitySnapshot -> SnapshotAppliedAck
+          handshake SafetyStateSnapshot -> SnapshotAppliedAck
+          handshake OnboardAlarmSnapshot -> SnapshotAppliedAck
+          handshake RecoveryStateReport -> DurableAck+SessionReadiness
+        tail CompleteHandshake
+        tail Ready
+        tail Arrive -> no-op
+        tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=- wait=-; delivered Plan@2,Worklist@2,VBS@2,VBS@2
+        tail Ack
+        tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=- wait=-
+        tail Ack
+        tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=- wait=-
+        tail Ack
+        tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=- wait=-
+        tail Ack
+        tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=- wait=-
+        tail Ack
+        tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=- wait=-
+        tail Ack
+        tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=- wait=-
+        tail Ack
+        tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=- wait=-
+        tail Ack
+      
+      Stack Trace:
+        tests\ControlServer.Tests\ReconnectModelRegressionTests.cs(66,0): at ControlServer.Tests.ReconnectModelRegressionTests.ASequenceTheModelOnceFoundStuckNowReachesTheEntryRequest(String name)
+        --- End of stack trace from previous location ---
+    ControlServer.Tests.ReconnectModelRegressionTests.ASequenceTheModelOnceFoundStuckNowReachesTheEntryRequest(name: "field-shape-immediate-reconnect") [FAIL]
+      field-shape-immediate-reconnect [Arrive, CutAfter(3), Round(1s), Ack] violated StuckAtPickup:
+final: stage=AwaitingPickupArrival block=null generation=2 entryReachedVehicle=False ackConflicts=0 regressions=0
+      last tail rounds: threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=- wait=-
+      violation StuckAtPickup: stage=AwaitingPickupArrival block=null last tail rounds: threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=- wait=-
+      trace:
+        Arrive
+        CutAfter(3)
+        Round(1s) -> threw IOException: The model connection dropped while this line was being sent.; stage=AwaitingPickupArrival block=- wait=+1s; delivered Plan@1,VBS@1,Worklist@1
+        Ack
+          handshake SessionHello -> SessionAccepted
+        tail BeginHandshake
+          handshake CapabilitySnapshot -> SnapshotAppliedAck
+          handshake SafetyStateSnapshot -> SnapshotAppliedAck
+          handshake OnboardAlarmSnapshot -> SnapshotAppliedAck
+          handshake RecoveryStateReport -> DurableAck+SessionReadiness
+        tail CompleteHandshake
+        tail Ready
+        tail Arrive -> no-op
+        tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=- wait=-; delivered Plan@2
+        tail Ack
+        tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=- wait=-
+        tail Ack
+        tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=- wait=-
+        tail Ack
+        tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=- wait=-
+        tail Ack
+        tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=- wait=-
+        tail Ack
+        tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=- wait=-
+        tail Ack
+        tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=- wait=-
+        tail Ack
+        tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=- wait=-
+        tail Ack
+      
+      Stack Trace:
+        tests\ControlServer.Tests\ReconnectModelRegressionTests.cs(66,0): at ControlServer.Tests.ReconnectModelRegressionTests.ASequenceTheModelOnceFoundStuckNowReachesTheEntryRequest(String name)
+        --- End of stack trace from previous location ---
+    ControlServer.Tests.ReconnectModelRegressionTests.ASequenceTheModelOnceFoundStuckNowReachesTheEntryRequest(name: "field-shape-round-inside-the-handshake") [FAIL]
+      field-shape-round-inside-the-handshake [Arrive, CutAfter(3), Round(1s), Ack, BeginHandshake, Round(7s)] violated StuckAtPickup:
+final: stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY generation=2 entryReachedVehicle=False ackConflicts=0 regressions=0
+      last tail rounds: threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+      violation StuckAtPickup: stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY last tail rounds: threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+      trace:
+        Arrive
+        CutAfter(3)
+        Round(1s) -> threw IOException: The model connection dropped while this line was being sent.; stage=AwaitingPickupArrival block=- wait=+1s; delivered Plan@1,VBS@1,Worklist@1
+        Ack
+          handshake SessionHello -> SessionAccepted
+        BeginHandshake
+        Round(7s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+          handshake CapabilitySnapshot -> SnapshotAppliedAck
+          handshake SafetyStateSnapshot -> SnapshotAppliedAck
+          handshake OnboardAlarmSnapshot -> SnapshotAppliedAck
+          handshake RecoveryStateReport -> DurableAck+SessionReadiness
+        tail CompleteHandshake
+        tail Ready
+        tail Arrive -> no-op
+        tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-; delivered Plan@2
+        tail Ack
+        tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+        tail Ack
+        tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+        tail Ack
+        tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+        tail Ack
+        tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+        tail Ack
+        tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+        tail Ack
+        tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+        tail Ack
+        tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+        tail Ack
+      
+      Stack Trace:
+        tests\ControlServer.Tests\ReconnectModelRegressionTests.cs(66,0): at ControlServer.Tests.ReconnectModelRegressionTests.ASequenceTheModelOnceFoundStuckNowReachesTheEntryRequest(String name)
+        --- End of stack trace from previous location ---
+    ControlServer.Tests.ReconnectModelRegressionTests.ASequenceTheModelOnceFoundStuckNowReachesTheEntryRequest(name: "field-shape-not-ready-round-before-the-reconnect") [FAIL]
+      field-shape-not-ready-round-before-the-reconnect [Arrive, CutAfter(3), Round(1s), Ack, NotReady, Round(7s)] violated StuckAtPickup:
+final: stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY generation=2 entryReachedVehicle=False ackConflicts=0 regressions=0
+      last tail rounds: threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+      violation StuckAtPickup: stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY last tail rounds: threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+      trace:
+        Arrive
+        CutAfter(3)
+        Round(1s) -> threw IOException: The model connection dropped while this line was being sent.; stage=AwaitingPickupArrival block=- wait=+1s; delivered Plan@1,VBS@1,Worklist@1
+        Ack
+        NotReady
+        Round(7s) -> ok; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+          handshake SessionHello -> SessionAccepted
+        tail BeginHandshake
+          handshake CapabilitySnapshot -> SnapshotAppliedAck
+          handshake SafetyStateSnapshot -> SnapshotAppliedAck
+          handshake OnboardAlarmSnapshot -> SnapshotAppliedAck
+          handshake RecoveryStateReport -> DurableAck+SessionReadiness
+        tail CompleteHandshake
+        tail Ready
+        tail Arrive -> no-op
+        tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-; delivered Plan@2
+        tail Ack
+        tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+        tail Ack
+        tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+        tail Ack
+        tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+        tail Ack
+        tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+        tail Ack
+        tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+        tail Ack
+        tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+        tail Ack
+        tail Round(2s) -> threw ProtocolContentConflictException: Outbound MessageId was replayed with different semantics or a non-advancing session generation.; stage=AwaitingPickupArrival block=ONBOARD_SESSION_NOT_READY wait=-
+        tail Ack
+      
+      Stack Trace:
+        tests\ControlServer.Tests\ReconnectModelRegressionTests.cs(66,0): at ControlServer.Tests.ReconnectModelRegressionTests.ASequenceTheModelOnceFoundStuckNowReachesTheEntryRequest(String name)
+        --- End of stack trace from previous location ---
+  Finished:    ControlServer.Tests (ID = '9d633b1727b511f11bdf1c6b589ba5f868b6d22205d8862bf5f0b972c5aa1694')
+=== TEST EXECUTION SUMMARY ===
+   ControlServer.Tests  Total: 10, Errors: 0, Failed: 7, Skipped: 1, Not Run: 0, Time: 12.549s
