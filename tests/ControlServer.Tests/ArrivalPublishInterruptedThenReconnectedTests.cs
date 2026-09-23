@@ -118,6 +118,110 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
     }
 
     /// <summary>
+    /// 断两次：第一次断在到站计划上；重连到第 2 代，那一轮开头补发的计划被车确认；第二次断在录入请求上；
+    /// 重连到第 3 代之后，录入请求仍要写出并以第 3 代发出（control-server#331 第三轮审查必修 1）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 只断一次时，到站计划是没确认的那一行，由每轮开头的补发按新的一代改写，不需要沿用。断第二次时它已经在第 2 代被确认，
+    /// 第 3 代重跑时代次不同，若不带 <c>keepAcknowledgedIgnoring</c>，就在「已确认即拒」上每轮失败——和第一次断线时车辆业务状态那一张
+    /// 一模一样的形状，只是换了一张。
+    /// </para>
+    /// <para>
+    /// 确认是在第二次断线之后才送回的：审查推的时序是计划的确认在同一轮的两次 RIoT 请求之间回来，这里把它放在那一轮结束之后，
+    /// 对第 3 代那一轮看到的库是一样的——计划已确认、录入请求没确认。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
+    [Trait("ProtocolVector", "CV-PICKUP-SUBLOT-LOAD")]
+    public async Task TheEntryRequestReachesTheVehicleAfterASecondDisconnectLandsOnItOnceThePlanWasAcknowledged()
+    {
+        (RuntimeFixture fixture, ConnectionCut cut) = await ArrivalPublishCutAfterTheWorklistAsync();
+        await using RuntimeFixture disposing = fixture;
+
+        await ReconnectAtGenerationAsync(fixture, generation: 2);
+        cut.On(line => MessageType(line) == "SublotEntryRequested");
+        await Assert.ThrowsAsync<IOException>(() => fixture.Engine.ExecuteOnceAsync(Token));
+        await fixture.RecreateEngineAsync();
+        cut.Heal();
+        await cut.Peer.DeliverBufferedAcksAsync();
+        ProtocolOutboxRow plan = await fixture.Context.ProtocolOutbox.AsNoTracking().SingleAsync(
+            row => row.MessageType == "UpcomingStopPlanSnapshot" && row.FencedAt == null, Token);
+        Assert.NotNull(plan.AcknowledgedAt);
+        Assert.Equal(["SublotEntryRequested"], await OutboxTypesAsync(fixture, acknowledged: false));
+
+        await ReconnectAtGenerationAsync(fixture, generation: 3);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync()).Stage);
+        Assert.Equal(3, SentLines(fixture, "SublotEntryRequested").Last().GetProperty("sessionGeneration").GetInt64());
+        Assert.Equal(
+            [2L, 2L],
+            SentLines(fixture, "UpcomingStopPlanSnapshot")
+                .Where(line => IsArrivedPickupPlan(line.GetRawText()))
+                .Skip(1)
+                .Select(line => line.GetProperty("sessionGeneration").GetInt64()));
+    }
+
+    /// <summary>
+    /// 断在清单那一张、随后闸门关着跑一轮（期限作废）、再重连：第一轮失败一次，车确认补发的那一版旧清单之后，下一轮就走通，
+    /// 录入请求发出（control-server#331 第三轮审查建议 1）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 这一回车没确认过任何一版清单，所以没有「车手上那一版」可以对账：第 2 代那一轮开头补发旧清单（旧期限），随后到站那一段重跑
+    /// 算出新期限，而那一行没确认、不在沿用范围内，内容又不同，由重放校验拒绝——这一轮失败，看板显示推进失败。车确认了补发的旧清单，
+    /// 它就成了车手上那一版，下一轮除期限外一字不差，沿用，往下走。
+    /// </para>
+    /// <para>
+    /// <b>这条同时钉住「只沿用已确认的行」</b>（<c>OnboardJourneyPublisher.QueueEnvelopeAsync</c> 里 <c>AcknowledgedAt</c> 那一项）。
+    /// 把它拿掉，没确认的旧清单也会被沿用，第一轮不再失败——看上去更顺，但那是把一行车还没说收到的报文当成对账基准。
+    /// 失败轮数的上限是一：车一确认就恢复，不会卡死。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
+    [Trait("ProtocolVector", "CV-PICKUP-SUBLOT-LOAD")]
+    public async Task ACutOnTheWorklistFailsOneRoundThenRecoversOnceTheVehicleConfirmsTheReplayedWorklist()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(30);
+        ConnectionCut cut = ConnectionCut.Attach(fixture);
+        fixture.Catalog.Set(fixture.Demand(DemandId, "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        await ArriveAtPickupAsync(fixture);
+        cut.On(line => MessageType(line) == "CurrentStopWorklistSnapshot");
+        await Assert.ThrowsAsync<IOException>(() => fixture.Engine.ExecuteOnceAsync(Token));
+        await fixture.RecreateEngineAsync();
+        cut.Heal();
+        await cut.Peer.DeliverBufferedAcksAsync();
+        Assert.Equal(["CurrentStopWorklistSnapshot"], await OutboxTypesAsync(fixture, acknowledged: false));
+
+        await fixture.DropOnboardSessionAsync();
+        fixture.Clock.Advance(TimeSpan.FromSeconds(7));
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Null((await fixture.RuntimeAsync()).StationDepartureWaitStartedAt);
+        await ReconnectAtGenerationAsync(fixture, generation: 2);
+
+        await Assert.ThrowsAsync<ProtocolContentConflictException>(() => fixture.Engine.ExecuteOnceAsync(Token));
+        Assert.Equal(AdvanceFailedReason, (await ReadRuntimeAfterFailedRoundAsync(fixture)).BlockReasonCode);
+
+        await cut.Peer.DeliverBufferedAcksAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, runtime.Stage);
+        Assert.Null(runtime.BlockReasonCode);
+        Assert.Equal(2, Assert.Single(SentLines(fixture, "SublotEntryRequested")).GetProperty("sessionGeneration").GetInt64());
+    }
+
+    /// <summary>
     /// 车已确认的那一版清单与重跑算出的这一版，除期限外还有别的不同：不沿用、照旧被重放校验拒绝，看板显示推进失败。
     /// </summary>
     /// <remarks>
@@ -315,6 +419,9 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
     [InlineData("ORDER_STATE_UNRECOGNIZED", JourneyRuntimeStage.AwaitingPickupArrival)]
     [InlineData("ORDER_ENDED_WITHOUT_ARRIVAL", JourneyRuntimeStage.AwaitingPickupArrival)]
     [InlineData("TASK_TYPE_NOT_ALLOWED_AT_STATION", JourneyRuntimeStage.AwaitingGateArrival)]
+    // 第三轮审查建议 2：门没关的站点超时告警与纠错进行中，各在它们自己的停站阶段。
+    [InlineData("STATION_TIMEOUT_DOOR_NOT_CLOSED", JourneyRuntimeStage.AwaitingLoadResult)]
+    [InlineData("LOAD_CORRECTION_IN_PROGRESS", JourneyRuntimeStage.AwaitingStationDeparture)]
     public async Task AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(string code, JourneyRuntimeStage stage)
     {
         (RuntimeFixture fixture, ConnectionCut cut) = await ArrivalPublishCutAfterTheWorklistAsync();
@@ -390,6 +497,48 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
         Assert.Equal("ONBOARD_SESSION_NOT_READY", runtime.BlockReasonCode);
         Assert.Equal(since, runtime.BlockReasonSince);
         Assert.Equal(2, SentLines(fixture, "UpcomingStopPlanSnapshot").Last().GetProperty("sessionGeneration").GetInt64());
+    }
+
+    /// <summary>
+    /// 会话因本服务端自己的在途单而未就绪，但这一轮失败与连接无关：看板显示推进失败，不被「会话未就绪」遮住
+    /// （control-server#331 第三轮审查建议 3）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 保留 <c>ONBOARD_SESSION_NOT_READY</c> 的理由是「这一轮的失败多半就是它造成的」，而那只对传输类失败成立（<c>OnboardPeer</c>
+    /// 在连接不在时抛 <see cref="IOException"/>）。真车一路都挂着本服务端在途单、整段未就绪，一个与会话无关、每轮都抛的异常若也被
+    /// 当成未就绪，整段路上看板说的都是一件不相干的事。所以只有传输类失败且会话确实未就绪时才保留，其余照样写推进失败。
+    /// </para>
+    /// <para>
+    /// 用 <see cref="InvalidOperationException"/> 代表「与连接无关的失败」：它从发送这一步抛出，只是为了让失败落在同一个位置上，
+    /// 断言关心的是异常的类型，不是它从哪里来。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    [Trait("ProtocolVector", "CV-DEMAND-ACCEPT-TO-PICKUP")]
+    public async Task OnTheOwnOrderAFailureUnrelatedToTheConnectionStillNamesItself()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        ConnectionCut cut = ConnectionCut.Attach(fixture);
+        fixture.Catalog.Set(fixture.Demand(DemandId, "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        await PickupDispatchPlanPastOwnOrderTests.DropSessionOnOwnOrderAsync(fixture);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal("ONBOARD_SESSION_NOT_READY", (await fixture.RuntimeAsync()).BlockReasonCode);
+
+        await ReconnectStillOnOwnOrderAsync(fixture, generation: 2);
+        cut.On(
+            line => MessageType(line) == "UpcomingStopPlanSnapshot",
+            () => new InvalidOperationException("A failure that has nothing to do with the connection."));
+        fixture.Clock.Advance(TimeSpan.FromSeconds(10));
+        await fixture.HearFromPeerAsync();
+        await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Engine.ExecuteOnceAsync(Token));
+
+        JourneyRuntimeRow runtime = await ReadRuntimeAfterFailedRoundAsync(fixture);
+        Assert.Equal(AdvanceFailedReason, runtime.BlockReasonCode);
+        Assert.Equal(fixture.Clock.GetUtcNow(), runtime.BlockReasonSince);
     }
 
     /// <summary>
@@ -524,9 +673,15 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
     /// 在指定的那一条报文上断线：那一条照旧进发件箱、进发送，然后抛出 <c>OnboardPeer</c> 在连接不在时抛的那种异常。
     /// 其余报文交给 <see cref="AdoptingPeer"/>，确认由用例决定何时送回。
     /// </summary>
+    /// <remarks>
+    /// 默认抛 <see cref="IOException"/>——真实 <c>OnboardPeer</c> 在连接不在时抛的就是它。要造「与连接无关的失败」时，
+    /// 给 <see cref="On"/> 传别的异常（审查建议 3 那一条）。
+    /// </remarks>
     private sealed class ConnectionCut
     {
         private Func<string, bool>? _cutOn;
+
+        private Func<Exception> _fault = TransportFault;
 
         private ConnectionCut(AdoptingPeer peer) => Peer = peer;
 
@@ -539,7 +694,7 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
             {
                 if (cut._cutOn?.Invoke(line) == true)
                 {
-                    throw new IOException("No recovered Onboard peer is connected for the test vehicle.");
+                    throw cut._fault();
                 }
 
                 cut.Peer.Receive(line);
@@ -548,8 +703,15 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
             return cut;
         }
 
-        public void On(Func<string, bool> predicate) => _cutOn = predicate;
+        public void On(Func<string, bool> predicate, Func<Exception>? fault = null)
+        {
+            _cutOn = predicate;
+            _fault = fault ?? TransportFault;
+        }
 
         public void Heal() => _cutOn = null;
+
+        private static Exception TransportFault() =>
+            new IOException("No recovered Onboard peer is connected for the test vehicle.");
     }
 }
