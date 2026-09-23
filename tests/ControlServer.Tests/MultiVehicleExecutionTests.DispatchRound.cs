@@ -758,6 +758,60 @@ public sealed partial class MultiVehicleExecutionTests
     }
 
     /// <summary>
+    /// 一张外来订单正挡着这辆在途车（control-server#330，REQ-0164：外来单经回查确认明确终结之前，这辆车不接新的派车与途中追加）：
+    /// 第二条需求不进它的旅程；外来单的记录落到 ENDED 之后，同样两条需求，第二条照常追加进来——判别力在同一条用例里。
+    /// </summary>
+    /// <remarks>
+    /// 挡着车的那一行直接写进库，不经监管器：这里守的是轮次怎么读它，监管器怎么写出它由 <c>ForeignRunningOrderTests</c> 守。
+    /// 这个夹具的 RIoT 列单是空的，读不到那张单时监管器按对它说不出终结处理，那一行原样留着。
+    /// </remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0164")]
+    public async Task AVehicleAForeignOrderHoldsTakesNoAppendedDemandUntilTheOrderHasEnded()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(
+            configure: options => options.Fleet = options.Fleet[..1], withRouteGraph: true);
+        await fixture.AllowEnRouteAppendAsync(1_000_000);
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
+        await fixture.RunRoundAsync();
+        JourneyRuntimeRow journey = await fixture.JourneyOfAsync(FleetFixture.AgvIds[0]);
+        fixture.Context.ForeignRiotOrders.Add(new ForeignRiotOrderRow
+        {
+            RiotOrderId = "order-foreign-0001",
+            UpperId = "MES-FIELD-7788",
+            AgvId = FleetFixture.AgvIds[0],
+            DeviceKey = FleetFixture.VehicleKeys[0],
+            Ownership = ForeignRiotOrderOwnership.Foreign,
+            OwnershipBasis = "TEST",
+            State = ForeignRiotOrderStates.StillRunningAfterCancel,
+            DetectedAt = DateTimeOffset.UnixEpoch,
+            LastSeenRunningAt = DateTimeOffset.UnixEpoch,
+            UpdatedAt = DateTimeOffset.UnixEpoch,
+        });
+        await fixture.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0), FleetFixture.Demand(1, "N1-2", 1)]);
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+
+        JourneyDemandRow membership = Assert.Single(
+            await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+                .ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(FleetFixture.Demand(0, "N1-1", 0).DemandId, membership.DemandId);
+
+        ForeignRiotOrderRow held = await fixture.Context.ForeignRiotOrders
+            .SingleAsync(TestContext.Current.CancellationToken);
+        held.State = ForeignRiotOrderStates.Ended;
+        held.EndedOrderState = RiotOrderState.Cancelled;
+        await fixture.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+
+        Assert.Equal(
+            [journey.JourneyId, journey.JourneyId],
+            (await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+                .ToArrayAsync(TestContext.Current.CancellationToken)).Select(row => row.JourneyId));
+    }
+
+    /// <summary>
     /// 在途单被人在 RIoT 里取消的车不接新单：它不会被当成空闲车，再派一趟旅程出去（control-server#316）。
     /// </summary>
     /// <remarks>

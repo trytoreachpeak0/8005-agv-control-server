@@ -757,6 +757,103 @@ public sealed class HttpRiotMovementGatewayTests
         Assert.Null(result.HasUnfinishedOrder);
     }
 
+    /// <summary>
+    /// control-server#330: the unfiltered listing carries every unfinished order with the fields ownership is judged on --
+    /// orderId, upperId, state, and both vehicle keys as RIoT sent them, the <c>"--"</c> placeholder included.
+    /// </summary>
+    [Fact]
+    public async Task TheUnfinishedOrderListingCarriesEveryOrderWithItsKeys()
+    {
+        const string orders = """
+            {"code":"0","result":{"current":1,"size":100,"total":3,"records":[
+              {"id":1,"orderId":"ORDER-QUEUED","upperId":"UPPER-1","orderState":1,
+               "appointVehicleKey":"VEHICLE-KEY-01","executeVehicleKey":"--"},
+              {"id":2,"orderId":"ORDER-OTHER","upperId":null,"orderState":3,
+               "appointVehicleKey":"VEHICLE-KEY-02","executeVehicleKey":"VEHICLE-KEY-02"},
+              {"id":3,"orderId":"ORDER-HANG","upperId":"UPPER-3","orderState":9,
+               "appointVehicleKey":null,"executeVehicleKey":"VEHICLE-KEY-01"}]}}
+            """;
+        RecordingHandler handler = new((request, _) =>
+            request.RequestUri?.AbsolutePath == "/api/order/v1/orderRecord"
+                ? JsonResponse(orders)
+                : new HttpResponseMessage(HttpStatusCode.NotFound));
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
+
+        RiotUnfinishedOrderListing result = await gateway.ListUnfinishedOrdersAsync(TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsComplete);
+        Assert.Equal(
+        [
+            new RiotListedOrder("ORDER-QUEUED", "UPPER-1", 1, "VEHICLE-KEY-01", "--"),
+            new RiotListedOrder("ORDER-OTHER", null, 3, "VEHICLE-KEY-02", "VEHICLE-KEY-02"),
+            new RiotListedOrder("ORDER-HANG", "UPPER-3", 9, null, "VEHICLE-KEY-01"),
+        ], result.Orders);
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    /// <summary>
+    /// A page that does not cover every record, a failed read, and a record with no orderId to address it by, all make the
+    /// listing incomplete -- never an empty "no foreign order".
+    /// </summary>
+    [Theory]
+    [InlineData("partial-page")]
+    [InlineData("read-failed")]
+    [InlineData("record-without-order-id")]
+    public async Task TheUnfinishedOrderListingIsIncompleteWhenRiotDoesNotAccountForEveryOrder(string answer)
+    {
+        RecordingHandler handler = new((_, _) => answer switch
+        {
+            "partial-page" => JsonResponse("""{"code":"0","result":{"current":1,"size":100,"total":101,"records":[]}}"""),
+            "record-without-order-id" => JsonResponse("""
+                {"code":"0","result":{"current":1,"size":100,"total":1,"records":[
+                  {"id":1,"orderId":null,"upperId":"UPPER-1","orderState":3,
+                   "appointVehicleKey":"VEHICLE-KEY-01","executeVehicleKey":"VEHICLE-KEY-01"}]}}
+                """),
+            _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+            {
+                Content = new StringContent("{}", Encoding.UTF8, "application/json")
+            },
+        });
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
+
+        RiotUnfinishedOrderListing result = await gateway.ListUnfinishedOrdersAsync(TestContext.Current.CancellationToken);
+
+        Assert.False(result.IsComplete);
+    }
+
+    /// <summary>
+    /// control-server#330: one order's state by its RIoT orderId through <c>detailByOrderId</c>; a failed read, or an answer
+    /// about another order, is no state at all.
+    /// </summary>
+    [Theory]
+    [InlineData("found", 2)]
+    [InlineData("another-order", null)]
+    [InlineData("read-failed", null)]
+    public async Task AnOrderStateIsReadByItsRiotOrderId(string answer, int? expected)
+    {
+        RecordingHandler handler = new((request, _) =>
+        {
+            Assert.Equal("/api/order/v1/orderRecord/detailByOrderId/ORDER-001", request.RequestUri?.AbsolutePath);
+            return answer switch
+            {
+                "found" => JsonResponse(FoundOrderJson(orderState: 2)),
+                "another-order" => JsonResponse(FoundOrderJson(orderState: 2).Replace("\"ORDER-001\"", "\"ORDER-999\"", StringComparison.Ordinal)),
+                _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+                {
+                    Content = new StringContent("{}", Encoding.UTF8, "application/json")
+                },
+            };
+        });
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
+
+        RiotOrderStateReading result = await gateway.ReadOrderStateAsync("ORDER-001", TestContext.Current.CancellationToken);
+
+        Assert.Equal(("ORDER-001", expected), (result.OrderId, result.OrderState));
+    }
+
     private static RecordingHandler SafetyHandler(
         MutableTimeProvider? clock,
         DateTimeOffset? afterVehicle,

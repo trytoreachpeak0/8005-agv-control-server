@@ -20,6 +20,9 @@ public sealed class ForeignRunningOrderSupervisor(
     TimeProvider timeProvider,
     ILogger<ForeignRunningOrderSupervisor> logger)
 {
+    /// <summary>How long after its cancel went out an order still running is handed to a person.</summary>
+    public static readonly TimeSpan CancelSettleTime = TimeSpan.FromSeconds(10);
+
     /// <summary>One round of supervision.</summary>
     public Task SuperviseAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }

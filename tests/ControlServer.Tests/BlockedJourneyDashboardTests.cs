@@ -459,6 +459,60 @@ public sealed class BlockedJourneyDashboardTests
         }
     }
 
+    /// <summary>
+    /// control-server#330：同一辆车上还跑着一张外来订单、此刻正挡着这辆车（取消没见效，或归属认不准）时，会话的「未知」不能归给
+    /// 本服务端自己的在途单——直接进最高档，不写「自己的单在途」。那张外来单一旦回查确认终结（记录落 ENDED），就照旧归给自己的单。
+    /// </summary>
+    [Theory]
+    [InlineData(ForeignRiotOrderStates.CancelSent, "MaintenanceAdministrator", false)]
+    [InlineData(ForeignRiotOrderStates.StillRunningAfterCancel, "MaintenanceAdministrator", false)]
+    [InlineData(ForeignRiotOrderStates.HeldUnproven, "MaintenanceAdministrator", false)]
+    [InlineData(ForeignRiotOrderStates.Ended, "Operator", true)]
+    [Trait("Requirement", "REQ-0164")]
+    public async Task AForeignOrderHoldingTheVehicleIsNotExplainedAsItsOwnMoveOrder(
+        string foreignState,
+        string expectedLevel,
+        bool explained)
+    {
+        await using DashboardDatabase database = await DashboardDatabase.CreateAsync();
+        JourneyRuntimeRow toGate = Runtime("D-TO-GATE", "AGV-01");
+        toGate.Stage = JourneyRuntimeStage.AwaitingGateArrival;
+        toGate.SetBlockReason("ONBOARD_SESSION_NOT_READY", Now.AddMinutes(-2));
+        database.Context.JourneyRuntimes.Add(toGate);
+        database.Context.OrderIntents.Add(ConfirmedIntent(toGate, "TO_GATE"));
+        database.Context.SessionRecoveries.Add(Session(
+            "AGV-01", "DEPARTURE_SAFETY_NOT_READY", """["VEHICLE_NOT_READY"]""", safetyUnknownPresent: true));
+        database.Context.ForeignRiotOrders.Add(new ForeignRiotOrderRow
+        {
+            RiotOrderId = "order-foreign-0001",
+            UpperId = "MES-FIELD-7788",
+            AgvId = "AGV-01",
+            DeviceKey = "KEY-AGV-01",
+            Ownership = foreignState == ForeignRiotOrderStates.HeldUnproven
+                ? ForeignRiotOrderOwnership.Unproven
+                : ForeignRiotOrderOwnership.Foreign,
+            OwnershipBasis = "TEST",
+            State = foreignState,
+            DetectedAt = Now.AddMinutes(-1),
+            LastSeenRunningAt = Now.AddMinutes(-1),
+            UpdatedAt = Now.AddMinutes(-1),
+        });
+        await database.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        using JsonDocument fact = await ReadAsync(database);
+        JsonElement journey = Assert.Single(fact.RootElement.GetProperty("journeys").EnumerateArray());
+
+        Assert.Equal(expectedLevel, journey.GetProperty("escalationLevel").GetString());
+        if (explained)
+        {
+            Assert.Equal("OWN_MOVEMENT_ORDER_IN_FLIGHT", journey.GetProperty("unknownExplainedBy").GetString());
+        }
+        else
+        {
+            Assert.Equal(JsonValueKind.Null, journey.GetProperty("unknownExplainedBy").ValueKind);
+        }
+    }
+
     [Fact]
     public async Task ABlockAlreadyHeldWhenTheColumnWasAddedSaysItsStartIsUnknown()
     {
