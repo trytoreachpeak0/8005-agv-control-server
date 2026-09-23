@@ -106,32 +106,42 @@ public sealed class VehicleFaultRecoveryTests
     }
 
     /// <summary>
-    /// 来路 7（control-server#323，由 control-server#299 带来）：清除故障释放了旅程里最后一条需求、旅程收尾，车上那一站也要撤掉
-    /// ——收尾快照在清除提交之后当场发出，以车此刻的会话代次，不等车重连。
+    /// 清除之后旅程不收尾，所以不给车发收尾快照（control-server#323 的来路 7 随之消失）：车上那一站正是重建的单要去的那一站，
+    /// 撤掉它反而错了。延迟之后车收到的是同一趟旅程接着走，不是「旅程结束」。
     /// </summary>
     /// <remarks>
-    /// 收尾经唯一出口 <c>JourneyClosure.StageAsync</c>，所以快照一定已经落库；修前红在「发」这一步：服务没有发布器，
-    /// 那几行只能等下一次重连补发，而车此刻是连着的，一直显示已经结束的那一站，正是 #323 要消灭的残留。
+    /// <b>翻转断言，依据是 issuecomment-5787511271</b>（用户 2026-09-23：「不改派啊，留在本车上」）。这一条原来是 #323 的
+    /// <c>AClearedFaultThatReleasesTheLastDemandTellsTheVehicleTheJourneyIsOver</c>，钉的是「无货清除释放了最后一条需求，
+    /// 当场发收尾快照」。新判据断三件事：三张收尾快照一张都没有落库、线上一行都没有；旅程没有收尾；并且重建出了正确的那一张单
+    /// ——前两件空动作也满足，第三件不满足。文件级护栏 <c>EveryFileThatCanCloseAJourneySendsTheClosure</c> 照旧：
+    /// 清除路径不再能收尾，所以不在它的名单里，而不是放宽了它。
     /// </remarks>
     [Fact]
-    public async Task AClearedFaultThatReleasesTheLastDemandTellsTheVehicleTheJourneyIsOver()
+    public async Task AClearedFaultKeepsTheJourneySoNoClosureIsSentAndTheOrderIsRebuilt()
     {
         await using RuntimeFixture fixture = await FaultedOnTheWayToPickupAsync();
         SiteRiot site = new(fixture);
         JourneyRuntimeRow faulted = await fixture.RuntimeAsync();
+        JourneyStopRow[] stopsBefore = await OwnOrderRebuildTests.StopsAsync(fixture, faulted.JourneyId);
+        int linesBefore = fixture.Peer.Lines.Count;
 
         VehicleFaultRecoveryDecision decision = await Service(fixture, site).RecoverAsync(Clear(fixture), Token);
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
 
         Assert.Equal(
-            (VehicleFaultRecoveryOutcome.Cleared, VehicleFaultRecoveryDispositions.Released),
+            (VehicleFaultRecoveryOutcome.Cleared, VehicleFaultRecoveryDispositions.RebuildScheduled),
             (decision.Outcome, decision.Disposition));
         await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
-        Assert.Equal(
+        IReadOnlyList<string> closureIds = JourneyClosure.SnapshotMessageIds(faulted.JourneyId);
+        Assert.Empty(await reading.ProtocolOutbox.AsNoTracking().Where(row => closureIds.Contains(row.MessageId)).ToArrayAsync(Token));
+        Assert.DoesNotContain(
+            fixture.Peer.Lines.Skip(linesBefore).Select(line => System.Text.Encoding.UTF8.GetString(line)),
+            line => closureIds.Any(id => line.Contains(id, StringComparison.Ordinal)));
+        Assert.NotEqual(
             JourneyRuntimeStage.Completed,
             (await reading.JourneyRuntimes.AsNoTracking().SingleAsync(row => row.JourneyId == faulted.JourneyId, Token)).Stage);
-        await ClosureSnapshotAssertions.AssertClosureSentAsync(
-            reading, faulted.AgvId, fixture.Peer.Lines.Select(line => System.Text.Encoding.UTF8.GetString(line)), 1,
-            faulted.PickupStationId);
+        await OwnOrderRebuildTests.AssertRebuiltAsync(
+            fixture, faulted, stopsBefore, stopsBefore.Single(stop => stop.StopRole == JourneyStopRoles.Pickup));
     }
 
     // ---- 判据：缺任何一项都拒绝，列出全部理由 ----------------------------------------------------------------
@@ -321,17 +331,24 @@ public sealed class VehicleFaultRecoveryTests
         await AssertUntouchedAsync(fixture);
     }
 
-    // ---- 已装货：保留货物绑定，转人工 ----------------------------------------------------------------------------
+    // ---- 已装货：给本车重建，把这趟送完（control-server#318） ------------------------------------------------
 
     /// <summary>
-    /// 装着货开往关卡的单 FAILED：清除故障，但货物绑定保留、需求不动；旅程转为阻断，码说明「故障已清、车上有货、等人处理」。
-    /// 之后几轮不再记故障，也不派新单（车上有货）。同车重建由 #318 做。
+    /// 装着货开往卸货站的单 FAILED：清除故障，需求不动、货物绑定保留到重建；旅程<b>不</b>转阻断，停在原阶段，码是
+    /// <c>VEHICLE_FAULT_CLEARED_CARGO_ON_BOARD</c>；延迟之后给同一辆车、同一条需求重建开往同一个卸货站的单，货物绑定随之以
+    /// <c>REBUILT_ON_ORIGINAL_VEHICLE</c> 了结（货在原车上继续走，与确认续行之后同一个道理）。之后几轮不再记故障。
     /// </summary>
+    /// <remarks>
+    /// <b>翻转断言，依据是 issuecomment-5780408158 与 issuecomment-5787511271。</b>这一条原来是 #299 的
+    /// <c>ALoadedVehicleKeepsItsCargoBindingAndWaitsForAPerson</c>，钉的是「转阻断、等人处置」。新判据断「没有释放」与「重建出了去卸货站的那一张单」。
+    /// </remarks>
     [Fact]
-    public async Task ALoadedVehicleKeepsItsCargoBindingAndWaitsForAPerson()
+    public async Task AClearedFaultWithCargoOnBoardRebuildsTheOrderToDeliverIt()
     {
         await using RuntimeFixture fixture = await FaultedOnTheWayToGateAsync();
         JourneyRuntimeRow faulted = await fixture.RuntimeAsync();
+        JourneyStopRow[] stopsBefore = await OwnOrderRebuildTests.StopsAsync(fixture, faulted.JourneyId);
+        int gateCreates = fixture.Riot.CreateCount("TO_GATE");
         await using (ControlServerDbContext reading = new(fixture.DbOptionsForTests))
         {
             Assert.Single(await reading.FaultedVehicleCargo.AsNoTracking().Where(row => row.ReleasedAt == null).ToArrayAsync(Token));
@@ -342,17 +359,27 @@ public sealed class VehicleFaultRecoveryTests
         await TickAndRunAsync(fixture);
 
         Assert.Equal(
-            (VehicleFaultRecoveryOutcome.Cleared, VehicleFaultRecoveryDispositions.HeldForPerson),
+            (VehicleFaultRecoveryOutcome.Cleared, VehicleFaultRecoveryDispositions.RebuildScheduled),
             (decision.Outcome, decision.Disposition));
+        await using (ControlServerDbContext held = new(fixture.DbOptionsForTests))
+        {
+            JourneyRuntimeRow waiting = await held.JourneyRuntimes.AsNoTracking().SingleAsync(Token);
+            Assert.Equal(
+                (faulted.JourneyId, JourneyRuntimeStage.AwaitingGateArrival, "VEHICLE_FAULT_CLEARED_CARGO_ON_BOARD"),
+                (waiting.JourneyId, waiting.Stage, waiting.BlockReasonCode));
+            Assert.Single(await held.FaultedVehicleCargo.AsNoTracking().Where(row => row.ReleasedAt == null).ToArrayAsync(Token));
+        }
+
+        Assert.Equal(gateCreates, fixture.Riot.CreateCount("TO_GATE"));
+
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+
+        Assert.Equal(gateCreates + 1, fixture.Riot.CreateCount("TO_GATE"));
+        await OwnOrderRebuildTests.AssertRebuiltAsync(
+            fixture, faulted, stopsBefore, stopsBefore.Single(stop => stop.StopRole == JourneyStopRoles.Unload));
         await using ControlServerDbContext after = new(fixture.DbOptionsForTests);
-        JourneyRuntimeRow held = await after.JourneyRuntimes.AsNoTracking().SingleAsync(Token);
-        Assert.Equal(
-            (faulted.JourneyId, JourneyRuntimeStage.Blocked, "VEHICLE_FAULT_CLEARED_CARGO_ON_BOARD"),
-            (held.JourneyId, held.Stage, held.BlockReasonCode));
-        Assert.Single(await after.FaultedVehicleCargo.AsNoTracking().Where(row => row.ReleasedAt == null).ToArrayAsync(Token));
-        Assert.All(
-            await after.Set<JourneyDemandRow>().AsNoTracking().ToArrayAsync(Token),
-            membership => Assert.Null(membership.RemovedAt));
+        FaultedVehicleCargoRow cargo = await after.FaultedVehicleCargo.AsNoTracking().SingleAsync(Token);
+        Assert.Equal("REBUILT_ON_ORIGINAL_VEHICLE", cargo.ReleasedReason);
         VehicleFaultStateRow fault = await after.VehicleFaultStates.AsNoTracking().SingleAsync(Token);
         Assert.Equal((VehicleFaultLevel.None, 1L), (fault.Level, fault.FaultGeneration));
     }
@@ -563,8 +590,10 @@ public sealed class VehicleFaultRecoveryTests
 
         VehicleFaultRecoveryDecision retried = await Service(fixture, site).RecoverAsync(Clear(fixture), Token);
         Assert.Equal(
-            (VehicleFaultRecoveryOutcome.Cleared, VehicleFaultRecoveryDispositions.Released),
+            (VehicleFaultRecoveryOutcome.Cleared, VehicleFaultRecoveryDispositions.RebuildScheduled),
             (retried.Outcome, retried.Disposition));
+        await using ControlServerDbContext retriedReading = new(fixture.DbOptionsForTests);
+        Assert.Single(await retriedReading.OwnOrderRebuilds.AsNoTracking().ToArrayAsync(Token));
         Assert.Equal(VehicleFaultLevel.None, (await FaultAsync(fixture)).Level);
     }
 
@@ -710,65 +739,55 @@ public sealed class VehicleFaultRecoveryTests
 
     /// <summary>
     /// 真车载端在车带着本服务端的单时读到 <c>RIOT_NONFINAL_ORDER_PRESENT</c>，会话停在 <c>DEPARTURE_SAFETY_NOT_READY</c>，
-    /// 引擎在闸门处就返回。清除不依赖引擎走到在途分支：会话未就绪时照样清除、照样处置旅程，之后几轮不复活旅程、不再记故障。
+    /// 引擎在闸门处就返回。清除不依赖引擎走到在途分支：会话未就绪时照样清除、照样记下重建；闸门不把码盖成
+    /// <c>ONBOARD_SESSION_NOT_READY</c>，不再记故障；延迟之后在闸门后面照样重建，重建之后码交还给闸门。
     /// </summary>
     /// <remarks>
+    /// <para>
     /// 形状照 <c>PickupDispatchPlanPastOwnOrderTests.DropSessionOnOwnOrderAsync</c>。合成车载端永远报安全，合成 L2 按构造看不见这种会话。
-    /// 若把处置挪进引擎的到站分支，这条会红：闸门后面那段代码在真车上走不到。
+    /// 若把重建只挂在引擎的到站分支，这条会红：闸门后面那段代码在真车上走得到，到站分支走不到。
+    /// </para>
+    /// <para><b>翻转断言</b>（原 <c>AClearanceWorksWhileTheSessionIsNotReadyOnItsOwnOrder</c> 断旅程关闭），依据 issuecomment-5787511271。</para>
     /// </remarks>
-    [Fact]
-    public async Task AClearanceWorksWhileTheSessionIsNotReadyOnItsOwnOrder()
+    [Theory]
+    [InlineData("empty")]
+    [InlineData("loaded")]
+    public async Task AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderStillRebuilds(string cargo)
     {
-        await using RuntimeFixture fixture = await FaultedOnTheWayToPickupAsync();
+        await using RuntimeFixture fixture = cargo == "loaded"
+            ? await FaultedOnTheWayToGateAsync()
+            : await FaultedOnTheWayToPickupAsync();
         JourneyRuntimeRow faulted = await fixture.RuntimeAsync();
+        JourneyStopRow[] stopsBefore = await OwnOrderRebuildTests.StopsAsync(fixture, faulted.JourneyId);
+        JourneyStopRow current = stopsBefore.Single(stop =>
+            stop.StopRole == (cargo == "loaded" ? JourneyStopRoles.Unload : JourneyStopRoles.Pickup));
+        string code = cargo == "loaded" ? "VEHICLE_FAULT_CLEARED_CARGO_ON_BOARD" : "VEHICLE_FAULT_CLEARED_NOTHING_ON_BOARD";
         await DropSessionOnOwnOrderAsync(fixture);
         await TickAndRunAsync(fixture);
-        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await fixture.RuntimeAsync()).Stage);
+        Assert.Equal(faulted.Stage, (await fixture.RuntimeAsync()).Stage);
 
         VehicleFaultRecoveryDecision decision = await Service(fixture, new SiteRiot(fixture)).RecoverAsync(Clear(fixture), Token);
+        // The clearance wrote through a context of its own, as the HTTP request does in the host; the engine's next round
+        // opens a new scope there, so it does here too -- the fixture keeps one context across rounds, and an instance it
+        // tracked from before the clearance would still read the gate's code as the one on file.
+        fixture.Context.ChangeTracker.Clear();
         await TickAndRunAsync(fixture);
         await TickAndRunAsync(fixture);
 
-        Assert.Equal(
-            (VehicleFaultRecoveryOutcome.Cleared, VehicleFaultRecoveryDispositions.Released),
-            (decision.Outcome, decision.Disposition));
+        Assert.Equal(VehicleFaultRecoveryDispositions.RebuildScheduled, decision.Disposition);
+        JourneyRuntimeRow waiting = await fixture.RuntimeAsync();
+        Assert.Equal((faulted.JourneyId, faulted.Stage, code), (waiting.JourneyId, waiting.Stage, waiting.BlockReasonCode));
+
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+
+        await OwnOrderRebuildTests.AssertRebuiltAsync(fixture, faulted, stopsBefore, current);
         await using ControlServerDbContext after = new(fixture.DbOptionsForTests);
         Assert.Equal(
-            JourneyRuntimeStage.Completed,
-            (await after.JourneyRuntimes.AsNoTracking().SingleAsync(row => row.JourneyId == faulted.JourneyId, Token)).Stage);
+            SessionReadiness.RecoveryRequired,
+            (await after.SessionRecoveries.AsNoTracking().SingleAsync(Token)).Readiness);
+        Assert.Equal("ONBOARD_SESSION_NOT_READY", (await after.JourneyRuntimes.AsNoTracking().SingleAsync(Token)).BlockReasonCode);
         VehicleFaultStateRow fault = await after.VehicleFaultStates.AsNoTracking().SingleAsync(Token);
         Assert.Equal((VehicleFaultLevel.None, 1L), (fault.Level, fault.FaultGeneration));
-        Assert.Equal(
-            SessionReadiness.RecoveryRequired,
-            (await after.SessionRecoveries.AsNoTracking().SingleAsync(Token)).Readiness);
-    }
-
-    /// <summary>
-    /// 已装货、会话因本服务端自己的在途单而未就绪时清除：旅程转阻断，码是 <c>VEHICLE_FAULT_CLEARED_CARGO_ON_BOARD</c>，
-    /// 之后几轮会话闸门不把它盖成 <c>ONBOARD_SESSION_NOT_READY</c>。
-    /// </summary>
-    /// <remarks>
-    /// 清除路径读的是旅程阶段，写的是阻断码；闸门那一支对不在阻断阶段的旅程每轮写自己的码。这一条钉住「转为阻断」这一步在真车常见的
-    /// 未就绪会话下也站得住：留在到站阶段、只改码的写法，下一轮就会被闸门盖掉，看板上再也看不出车上有货在等人。
-    /// </remarks>
-    [Fact]
-    public async Task ALoadedClearanceWhileTheSessionIsNotReadyKeepsItsReason()
-    {
-        await using RuntimeFixture fixture = await FaultedOnTheWayToGateAsync();
-        await DropSessionOnOwnOrderAsync(fixture);
-        await TickAndRunAsync(fixture);
-
-        VehicleFaultRecoveryDecision decision = await Service(fixture, new SiteRiot(fixture)).RecoverAsync(Clear(fixture), Token);
-        await TickAndRunAsync(fixture);
-        await TickAndRunAsync(fixture);
-
-        Assert.Equal(VehicleFaultRecoveryDispositions.HeldForPerson, decision.Disposition);
-        await using ControlServerDbContext after = new(fixture.DbOptionsForTests);
-        JourneyRuntimeRow held = await after.JourneyRuntimes.AsNoTracking().SingleAsync(Token);
-        Assert.Equal((JourneyRuntimeStage.Blocked, "VEHICLE_FAULT_CLEARED_CARGO_ON_BOARD"), (held.Stage, held.BlockReasonCode));
-        Assert.Equal(
-            SessionReadiness.RecoveryRequired,
-            (await after.SessionRecoveries.AsNoTracking().SingleAsync(Token)).Readiness);
     }
 
     // ---- 续行：PAUSED（7）接到同一个入口 ---------------------------------------------------------------------
@@ -954,7 +973,7 @@ public sealed class VehicleFaultRecoveryTests
             ledger, faultOptions, fixture.Clock, NullLogger<VehicleFaultCoordinator>.Instance);
         return new VehicleFaultRecoveryService(
             context, faults, site, site, site, supervisor, coordinator, ledger, gate ?? new JourneyMutationGate(),
-            flights ?? new VehicleFaultResumeFlights(), new OnboardJourneyPublisher(new WireToGateStore(context), fixture.Peer, fixture.Clock),
+            flights ?? new VehicleFaultResumeFlights(), Options.Create(fixture.Options),
             fixture.Clock, NullLogger<VehicleFaultRecoveryService>.Instance, gateTimeout);
     }
 

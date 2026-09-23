@@ -142,6 +142,14 @@ public sealed class OwnOrderRebuildTests
         Assert.All(
             await reading.JourneyBacklog.AsNoTracking().ToArrayAsync(Token),
             backlog => Assert.NotNull(backlog.AcceptedAt));
+
+        // 记账：这一次重建的记录说它建成了，指向的正是停靠此刻指向的那张新单。
+        OwnOrderRebuildRow record = await reading.OwnOrderRebuilds.AsNoTracking()
+            .SingleAsync(row => row.EndedUpperId == endedStop.UpperId, Token);
+        Assert.Equal(
+            (OwnOrderRebuildStates.Rebuilt, repointed.UpperId, repointed.MovementLegId, before.DemandId),
+            (record.State, record.NewUpperId, record.NewMovementLegId, record.DemandId));
+        Assert.NotNull(record.RebuiltAt);
     }
 
     /// <summary>延迟到点的那一轮：拨过延迟、车载端刚说过话，跑一轮。</summary>

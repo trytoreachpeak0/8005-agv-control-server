@@ -118,7 +118,7 @@ public sealed class VehicleFaultRecoveryEndpointsTests
 
         VehicleFaultRecoveryResponse cleared = Assert.IsType<Ok<VehicleFaultRecoveryResponse>>(first.Result).Value!;
         Assert.Equal(
-            (fixture.Options.AgvId, "CLEAR_FAULT", "Cleared", "RELEASED_FOR_REDISPATCH", 0, (long?)1),
+            (fixture.Options.AgvId, "CLEAR_FAULT", "Cleared", "REBUILD_SCHEDULED", 0, (long?)1),
             (cleared.AgvId, cleared.Action, cleared.Outcome, cleared.Disposition, cleared.Reasons.Count, cleared.FaultGeneration));
         VehicleFaultRecoveryResponse again = Assert.IsType<Ok<VehicleFaultRecoveryResponse>>(second.Result).Value!;
         Assert.Equal(("AlreadyCleared", "NONE"), (again.Outcome, again.Disposition));

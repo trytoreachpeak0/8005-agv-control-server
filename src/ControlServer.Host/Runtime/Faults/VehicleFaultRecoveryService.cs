@@ -6,6 +6,7 @@ using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Options;
 
 namespace ControlServer.Host.Runtime.Faults;
 
@@ -52,17 +53,17 @@ public static class VehicleFaultRecoveryDispositions
     /// <summary>No journey was waiting on the order, or nothing was cleared, so there was nothing to dispose of.</summary>
     public const string None = "NONE";
 
-    /// <summary>Nothing was loaded: every demand still to load was released for redispatch and the journey closed.</summary>
-    public const string Released = "RELEASED_FOR_REDISPATCH";
-
-    /// <summary>Cargo may be on board: its binding stays, nothing is released, and the journey waits for a person.</summary>
-    public const string HeldForPerson = "HELD_FOR_PERSON";
-
     /// <summary>
-    /// The demand stays with the vehicle and nothing is released: the order is rebuilt for the same vehicle and the same demand
-    /// once the delay is over and the vehicle may move (control-server#318).
+    /// The demand stays with the vehicle and nothing is released, cargo on board or not: the order is rebuilt for the same
+    /// vehicle and the same demand once the delay is over and the vehicle may move (control-server#318).
     /// </summary>
     public const string RebuildScheduled = "REBUILD_SCHEDULED";
+
+    /// <summary>
+    /// The demand stays with the vehicle and nothing is released, but the order is not rebuilt: its rebuilt order ended again
+    /// within the window (control-server#318's third guard), and the journey waits for a person.
+    /// </summary>
+    public const string RebuildStopped = "REBUILD_STOPPED";
 }
 
 /// <summary>The answer to one request.</summary>
@@ -92,23 +93,24 @@ public sealed record VehicleFaultRecoveryDecision(
 /// refusal names them all.
 /// </para>
 /// <para>
-/// <b>Only FAILED, never CANCELLED or DELETED</b> (independent review M1). A clearance releases the demand for another
-/// vehicle, and an order of this server's that someone cancelled or deleted in RIoT is, by the user's decision of
-/// 2026-09-22, rebuilt on the same vehicle for the same demand -- blocked and alarmed by control-server#316, rebuilt
-/// automatically by control-server#318 -- never redispatched. No fault is recorded on such an order today, so the
-/// refusal (<c>FAULT_RECOVERY_CURRENT_ORDER_CANCELLED_IN_RIOT</c>) is not reachable in the product; it is pinned so that
-/// "a cancelled order is not redispatched" does not rest on that.
+/// <b>Only FAILED, never CANCELLED or DELETED</b> (independent review M1). An order of this server's that someone cancelled
+/// or deleted in RIoT is rebuilt by the engine on its own, as its first source of control-server#318, with no fault and no
+/// person; a clearance must not be a second way into that. No fault is recorded on such an order today, so the refusal
+/// (<c>FAULT_RECOVERY_CURRENT_ORDER_CANCELLED_IN_RIOT</c>) is not reachable in the product; it is pinned so that the two
+/// sources cannot come to handle one ending twice.
 /// </para>
 /// <para>
-/// <b>Clearing the fault is not enough on its own, for two reasons found reading the code, and both decide the shape
-/// here.</b> The journey still waits in its arrival stage on the FAILED order, so the engine's next round would observe
-/// that order again and record a new fault. And the release service releases a demand only while its vehicle is not
-/// eligible for it -- a cleared fault takes the one trigger away, so nothing would ever release the demand either. So the
-/// journey is disposed of in the same transaction as the fault is cleared: with nothing on board, every demand still
-/// to load is released for redispatch (control-server#215's rows, written the same way) and the journey closes, which
-/// frees the vehicle; with cargo possibly on board the cargo binding stays, nothing is released, and the journey goes to
-/// <see cref="JourneyRuntimeStage.Blocked"/> under <see cref="CargoOnBoardReason"/> for a person -- REQ-0328 releases
-/// only what has not been picked up.
+/// <b>Clearing the fault is not enough on its own.</b> The journey still waits in its arrival stage on the FAILED order,
+/// so the engine's next round would observe that order again and record a new fault. So the journey is disposed of in the
+/// same transaction as the fault is cleared -- and since control-server#318 (the user's decision of 2026-09-23,
+/// issuecomment-5787511271: "不改派啊，留在本车上"), disposing of it means keeping it: nothing is released, nothing is
+/// redispatched and the journey does not close, cargo on board or not. The ending is recorded to be rebuilt for the same
+/// vehicle and the same demand (<see cref="OwnOrderRebuilds"/>), which the engine does once the delay is over and the
+/// vehicle may move; the journey stays in its arrival stage meanwhile, under <see cref="CargoOnBoardReason"/> or
+/// <see cref="NothingOnBoardReason"/>, and the engine reads the record instead of the FAILED order from then on. A person on
+/// site clearing the fault is that person saying the vehicle may move. Until control-server#318 this released every demand
+/// still to load for redispatch and closed the journey when nothing was on board, and held a loaded journey
+/// <see cref="JourneyRuntimeStage.Blocked"/> for a person.
 /// </para>
 /// <para>
 /// <b>One transaction, so a crash leaves nothing half done.</b> The fault store saves as it goes; inside the
@@ -164,15 +166,21 @@ public sealed class VehicleFaultRecoveryService(
     VehicleMotionLedger ledger,
     JourneyMutationGate gate,
     VehicleFaultResumeFlights resumeFlights,
-    OnboardJourneyPublisher publisher,
+    IOptions<JourneyRuntimeOptions> runtimeOptions,
     TimeProvider timeProvider,
     ILogger<VehicleFaultRecoveryService> logger,
     TimeSpan? gateTimeout = null)
 {
-    /// <summary>The block a journey carries when its vehicle's fault was cleared with cargo possibly on board.</summary>
+    /// <summary>
+    /// The block a journey carries when its vehicle's fault was cleared with cargo possibly on board, until its order is
+    /// rebuilt to deliver it (control-server#318).
+    /// </summary>
     public const string CargoOnBoardReason = "VEHICLE_FAULT_CLEARED_CARGO_ON_BOARD";
 
-    /// <summary>The block a journey carries when its vehicle's fault was cleared with nothing on board, until the rebuild.</summary>
+    /// <summary>
+    /// The block a journey carries when its vehicle's fault was cleared with nothing on board, until its order is rebuilt
+    /// (control-server#318).
+    /// </summary>
     public const string NothingOnBoardReason = "VEHICLE_FAULT_CLEARED_NOTHING_ON_BOARD";
 
     /// <summary>The prefix of <c>ClearedReason</c> for a fault a person cleared here; the operator id follows the colon.</summary>
@@ -262,7 +270,8 @@ public sealed class VehicleFaultRecoveryService(
         DateTimeOffset now = timeProvider.GetUtcNow();
         await using IDbContextTransaction transaction =
             await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        string disposition = await DisposeOfTheJourneyAsync(subject.AgvId, standing.Journey, now, cancellationToken)
+        string disposition = await DisposeOfTheJourneyAsync(
+                subject.AgvId, standing.Journey, standing.Intent, standing.Fault!, request.OperatorId!, now, cancellationToken)
             .ConfigureAwait(false);
         await faults.ClearAsync(
             subject.AgvId,
@@ -271,13 +280,8 @@ public sealed class VehicleFaultRecoveryService(
             now,
             cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-        if (disposition == VehicleFaultRecoveryDispositions.Released)
-        {
-            // The journey closed through JourneyClosure inside that transaction, so its closure snapshots are on file; send
-            // them now rather than at the next reconnect, since the vehicle is connected and still shows the stop
-            // (control-server#323, path 7). A vehicle not on the line keeps them pending for the reconnect replay.
-            await JourneyClosure.SendAsync(publisher, dbContext, subject.AgvId, cancellationToken).ConfigureAwait(false);
-        }
+        // Nothing is sent to the vehicle: the journey goes on, so it has no closure to be told of (control-server#323's path 7
+        // was the release this replaced), and the stop it shows is the one the rebuilt order goes to.
 
         // A new episode starts from an empty window, as after a resumption.
         ledger.Forget(subject.DeviceKey);
@@ -435,15 +439,23 @@ public sealed class VehicleFaultRecoveryService(
     }
 
     /// <summary>
-    /// What is done with the journey that waited on the ended order, staged and saved inside the caller's transaction.
+    /// What is done with the journey that waited on the ended order, staged and saved inside the caller's transaction: it is
+    /// kept, and the ending recorded to be rebuilt for the same vehicle and demand (control-server#318).
     /// </summary>
+    /// <remarks>
+    /// Cargo decides only the code the journey waits under, and which of the two fault sources the record names: with cargo
+    /// possibly on board the rebuilt order delivers it, with none it goes on to the pickup. Neither releases anything.
+    /// </remarks>
     private async Task<string> DisposeOfTheJourneyAsync(
         string agvId,
         JourneyRuntimeRow? read,
+        OrderIntentRow? intent,
+        VehicleFaultFact fault,
+        string operatorId,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        if (read is null || !WaitsOnAnOrder(read))
+        if (read is null || !WaitsOnAnOrder(read) || intent is null)
         {
             return VehicleFaultRecoveryDispositions.None;
         }
@@ -456,34 +468,33 @@ public sealed class VehicleFaultRecoveryService(
         bool cargoBound = await faults.ReadLiveCargoAsync(agvId, cancellationToken).ConfigureAwait(false) is not null;
 
         // Anything other than "still to load" or "already ended" may be on the vehicle: loading, loaded, or a status this
-        // was not written for. All of those keep the demand with the vehicle. The direction is deliberate -- a demand
-        // released while its product is on board is a product nobody is looking for.
+        // was not written for. All of those count as cargo on board.
         bool mayCarry = cargoBound || memberships.Any(row => row.Status is not
             (JourneyDemandStatuses.PendingLoad or JourneyDemandStatuses.Unloaded or JourneyDemandStatuses.Terminated));
-        if (mayCarry)
-        {
-            runtime.Stage = JourneyRuntimeStage.Blocked;
-            runtime.SetBlockReason(CargoOnBoardReason, now);
-            runtime.UpdatedAt = now;
-            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            return VehicleFaultRecoveryDispositions.HeldForPerson;
-        }
-
-        JourneyDemandRow[] waiting = [.. memberships.Where(row => row.Status == JourneyDemandStatuses.PendingLoad)];
-        await JourneyPlanRevisionStage.StageAsync(
-            dbContext, runtime.JourneyId, [.. waiting.Select(row => row.DemandId)], currentStopMayGo: true, routing: null,
+        JourneyStopRow stop = (await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken).ConfigureAwait(false))
+            .Current;
+        OwnOrderRebuildRow rebuild = await OwnOrderRebuilds.StageAsync(
+            dbContext,
+            runtime,
+            stop,
+            intent.UpperId,
+            intent.OrderId,
+            RiotOrderState.Failed,
+            mayCarry ? OwnOrderRebuildSources.FaultClearedCargoOnBoard : OwnOrderRebuildSources.FaultClearedNothingOnBoard,
+            incidentAt: fault.EnteredAt ?? now,
+            now,
+            operatorId,
+            runtimeOptions.Value,
             cancellationToken).ConfigureAwait(false);
-        await new PickupStopTermination(dbContext)
-            .StageJourneyClosureAsync(runtime, DemandReleaseReasons.Released, now, cancellationToken)
-            .ConfigureAwait(false);
-        foreach (JourneyDemandRow membership in waiting)
-        {
-            await DemandReleaseService.StageReleasedMembershipAsync(dbContext, membership, now, cancellationToken)
-                .ConfigureAwait(false);
-        }
-
+        bool stopped = rebuild.State == OwnOrderRebuildStates.Stopped;
+        runtime.SetBlockReason(
+            stopped ? JourneyRuntimeEngine.OwnOrderRebuildStoppedReason
+            : mayCarry ? CargoOnBoardReason
+            : NothingOnBoardReason,
+            now);
+        runtime.UpdatedAt = now;
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        return VehicleFaultRecoveryDispositions.Released;
+        return stopped ? VehicleFaultRecoveryDispositions.RebuildStopped : VehicleFaultRecoveryDispositions.RebuildScheduled;
     }
 
     /// <summary>The two stages in which the journey waits on a move order in flight -- the only ones a FAILED order stops.</summary>
