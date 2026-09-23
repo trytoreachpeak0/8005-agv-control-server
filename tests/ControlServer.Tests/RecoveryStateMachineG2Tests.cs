@@ -4957,13 +4957,18 @@ public sealed class RecoveryStateMachineG2Tests
     /// sites the field reaches has to be redone, not that a vehicle is at risk.
     /// </para>
     /// <para>
-    /// The decision is taken again after each step here, the way each of those sites takes it.
+    /// The decision is taken again after each step here, the way each of those sites takes it. Both directions of a
+    /// resent load result: an unknown one, which mid-session moves a ready session to RecoveryRequired, and a completed
+    /// one, which leaves nothing for recovery -- the case in which only the missing recovery report stands between
+    /// the session and READY once both snapshots are in, and so the case that goes red if READY stops needing it.
     /// </para>
     /// </remarks>
-    [Fact]
+    [Theory]
     [Trait("IntegrationSlice", "FP-IS-00")]
     [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
-    public async Task InsideTheReconnectHandshakeReadinessCannotChangeBeforeTheRecoveryReport()
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task InsideTheReconnectHandshakeReadinessCannotChangeBeforeTheRecoveryReport(bool resentResultCompleted)
     {
         CancellationToken token = TestContext.Current.CancellationToken;
         await using SqliteConnection connection = new("Data Source=:memory:");
@@ -4989,13 +4994,21 @@ public sealed class RecoveryStateMachineG2Tests
         await ExchangeAsync(processor, peer, reconnected, InSession(Envelope(
             "e0000000-0000-4000-8000-000000003406",
             "OperationResult",
-            OperationResultPayload(completed: false, journalCheckpoint: "RESULT_UNKNOWN_RECORDED")), generation));
+            resentResultCompleted
+                ? OperationResultPayload()
+                : OperationResultPayload(completed: false, journalCheckpoint: "RESULT_UNKNOWN_RECORDED")), generation));
         await Observe();
         await FinishHandshakeAsync(processor, peer, reconnected, [], Observe);
 
         Assert.Equal(10, seen.Count);
         Assert.All(seen, readiness => Assert.Equal(SessionReadiness.RecoveryRequired, readiness));
-        Assert.Equal(StationOperationStatus.RecoveryRequired, (await context.StationOperations.SingleAsync(token)).Status);
+        Assert.Equal(
+            resentResultCompleted ? StationOperationStatus.Committed : StationOperationStatus.RecoveryRequired,
+            (await context.StationOperations.SingleAsync(token)).Status);
+        // The report is what ends it: with the completed result, the session is READY from its answer on.
+        Assert.Equal(
+            resentResultCompleted ? SessionReadiness.Ready : SessionReadiness.RecoveryRequired,
+            reconnected.Readiness);
     }
 
     /// <summary>
