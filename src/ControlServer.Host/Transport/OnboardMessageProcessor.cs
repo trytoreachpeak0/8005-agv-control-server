@@ -818,12 +818,7 @@ public sealed partial class OnboardMessageProcessor(
             firstAck.GetProperty("durablyAcceptedAt").GetDateTimeOffset());
         SessionReadinessDecision decision = await store.DecideReadinessAsync(
             agvId, generation, cancellationToken).ConfigureAwait(false);
-        if (decision.Readiness == state.Readiness)
-        {
-            return ack;
-        }
-        state.Readiness = decision.Readiness;
-        return $"{ack}\n{SessionReadinessLine(decision, agvId, generation, state)}";
+        return AnswerWithReadiness(ack, decision, agvId, generation, state, announceUnchanged: false);
     }
 
     private string SerializeReadiness(
