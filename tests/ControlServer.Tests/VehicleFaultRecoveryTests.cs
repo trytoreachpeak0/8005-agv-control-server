@@ -860,6 +860,44 @@ public sealed class VehicleFaultRecoveryTests
     }
 
     /// <summary>
+    /// 普通的腿（不是重建出来的单）确认前就 FAILED、意图停在终结对账状态：清除入口照旧不读它，以
+    /// <c>FAULT_RECOVERY_CURRENT_ORDER_UNKNOWN</c> 拒绝，不清故障、不记重建。读终结对账过的意图只为重建出来的那张单放开。
+    /// </summary>
+    /// <remarks>
+    /// 增量审查低项 4：审查 S2 放开读 <c>TERMINAL_RECONCILIATION_REQUIRED</c> 时对所有腿生效，只有重建腿有用例。普通腿这种状态下引擎不记故障
+    /// （确认对账先挡住，走不到故障观测），它身上的故障是别的来路，这里读到 FAILED 就清掉、再记一次重建，是把一条本票没有论证过的路打开了。
+    /// 所以收窄到「有一条 FAILED 状态的重建记录指着这张单」。
+    /// </remarks>
+    [Fact]
+    public async Task AnOrdinaryLegThatFailedBeforeConfirmationIsNotClearedThroughItsTerminalIntent()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set(FirstSublot, 7);
+        fixture.Riot.LoseNextCreateResponse = true;
+        await TickAndRunAsync(fixture);
+        JourneyRuntimeRow journey = await fixture.RuntimeAsync();
+        fixture.Riot.MovementState = "MT_FINISHED";
+        fixture.Riot.FailOrder(journey.PickupUpperId);
+        await TickAndRunAsync(fixture);
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Equal(
+            "TERMINAL_RECONCILIATION_REQUIRED",
+            (await fixture.Context.OrderIntents.AsNoTracking().SingleAsync(row => row.UpperId == journey.PickupUpperId, Token)).Status);
+        await new VehicleFaultStore(fixture.Context).RecordLevelAsync(
+            journey.AgvId, VehicleFaultLevel.SuspectedBlocked, "VEHICLE_ORDER_FAILED", false, fixture.Clock.GetUtcNow(), Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        VehicleFaultRecoveryDecision decision = await Service(fixture, new SiteRiot(fixture)).RecoverAsync(Clear(fixture), Token);
+
+        Assert.Equal(VehicleFaultRecoveryOutcome.Refused, decision.Outcome);
+        Assert.Contains("FAULT_RECOVERY_CURRENT_ORDER_UNKNOWN", decision.Reasons);
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        Assert.Equal(VehicleFaultLevel.SuspectedBlocked, (await reading.VehicleFaultStates.AsNoTracking().SingleAsync(Token)).Level);
+        Assert.Empty(await reading.OwnOrderRebuilds.AsNoTracking().ToArrayAsync(Token));
+    }
+
+    /// <summary>
     /// 确认前 FAILED 的新单每一轮都还在喂故障模型，与确认过的单 FAILED 时一样：车还在动，第一轮升级急停、触发停在 Pending；RIoT 上锁、
     /// 钟走一秒后的第二轮，触发对账成 Confirmed，故障的 <c>LastEvaluatedAt</c> 推到那一刻。
     /// </summary>

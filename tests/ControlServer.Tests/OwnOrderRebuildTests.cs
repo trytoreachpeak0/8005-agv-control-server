@@ -264,6 +264,39 @@ public sealed class OwnOrderRebuildTests
         await AssertRebuiltAsync(fixture, before, stopsBefore, stopsBefore.Single(stop => stop.StopRole == JourneyStopRoles.Pickup));
     }
 
+    /// <summary>
+    /// 同一条判据在去卸货站那条腿上（车上有货）：装货仓没锁好，重建等着、不建去卸货站的单；锁好之后才建。
+    /// </summary>
+    /// <remarks>增量审查低项 2：上面五格都在取货腿，车上有货的腿才是仓门没锁好真正要紧的地方。</remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0360")]
+    public async Task ARebuildToTheUnloadStopWaitsWhileTheOnboardSaysASlotIsUnlocked()
+    {
+        await using RuntimeFixture fixture = await GateArrivalWaitAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync();
+        JourneyStopRow[] stopsBefore = await StopsAsync(fixture, before.JourneyId);
+        JourneyStopRow unload = stopsBefore.Single(stop => stop.StopRole == JourneyStopRoles.Unload);
+        int gateCreates = fixture.Riot.CreateCount("TO_GATE");
+        fixture.Riot.CancelOrder(unload.UpperId);
+        await TickAndRunAsync(fixture);
+        await fixture.SetDepartureSummaryAsync(allTargetSlotsLocked: false);
+
+        await PassTheDelayAsync(fixture);
+        await PassTheDelayAsync(fixture);
+
+        Assert.Equal(gateCreates, fixture.Riot.CreateCount("TO_GATE"));
+        Assert.Equal("OWN_ORDER_REBUILD_WAITING_VEHICLE", (await fixture.RuntimeAsync()).BlockReasonCode);
+        OwnOrderRebuildRow waiting = await SingleRebuildAsync(fixture, unload.UpperId);
+        Assert.Equal(OwnOrderRebuildStates.Pending, waiting.State);
+        Assert.Contains("ONBOARD_DEPARTURE_UNSAFE", waiting.WaitingReason, StringComparison.Ordinal);
+
+        await fixture.SetDepartureSummaryAsync();
+        await PassTheDelayAsync(fixture);
+
+        Assert.Equal(gateCreates + 1, fixture.Riot.CreateCount("TO_GATE"));
+        await AssertRebuiltAsync(fixture, before, stopsBefore, unload);
+    }
+
     [Fact]
     public async Task ASilentSessionDoesNotOverwriteARebuildThatWaitsForTheVehicle()
     {
