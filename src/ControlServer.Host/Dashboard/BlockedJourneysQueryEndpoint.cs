@@ -107,6 +107,12 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
             [JourneyRuntimeEngine.OwnOrderRebuildStoppedReason] =
                 "这条需求第一次出问题之后不久又出问题了（又被取消、删除，或又失败）：服务端不再自动重建，挡住并报警，等人处理。"
                 + "请到现场与 RIoT 查明为什么反复停下；需求不改派，这辆车不接新单",
+            [JourneyRuntimeEngine.OwnOrderRebuildWaitingCargoEvidenceReason] =
+                "车上有货的故障已清除，服务端在等车报一份新的仓位读数，证明货还在原仓、门锁着、开锁输出已复位，证明了才自动重建去卸货站。"
+                + "持续不消失通常是车载端没连上或没就绪：请检查车载端连接；需求不改派，这辆车不接新单",
+            [JourneyRuntimeEngine.OwnOrderRebuildCargoNotInPlaceReason] =
+                "车上有货的故障清除之后，车报的仓位读数显示货可能已经不在原仓（仓空、门没锁、开锁输出没复位，或读数未知）："
+                + "服务端不再自动重建，挡住并报警。请到车前核对货物与仓门，找值班工程师；需求不改派，这辆车不接新单",
         };
 
     private readonly BlockedJourneyEscalationOptions _escalation;
