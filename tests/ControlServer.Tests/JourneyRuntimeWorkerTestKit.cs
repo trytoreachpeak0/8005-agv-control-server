@@ -1479,7 +1479,7 @@ internal static class JourneyRuntimeWorkerTestKit
     }
 
     internal sealed class RecordingRiot
-        : IRiotMovementGateway, IRiotVehicleFacts, IRiotMapStationCatalog, IVehicleMotionFacts
+        : IRiotMovementGateway, IRiotVehicleFacts, IRiotMapStationCatalog, IVehicleMotionFacts, IRiotVehicleSafetyFacts
     {
         private readonly JourneyRuntimeOptions _options;
         private readonly FixedTimeProvider _clock;
@@ -1626,6 +1626,27 @@ internal static class JourneyRuntimeWorkerTestKit
                 Vehicle.CurrentMap,
                 Vehicle.CurrentStationId,
                 _clock.GetUtcNow()));
+        }
+
+        /// <summary>
+        /// The reason codes RIoT's vehicle safety read reports for this vehicle (control-server#318's second guard reads it).
+        /// Empty -- stopped, nothing in the way -- by default; a test names what it wants the vehicle to be in, such as
+        /// <c>RIOT_EMERGENCY_NOT_OK</c> or <c>RIOT_VEHICLE_NOT_ONLINE</c>.
+        /// </summary>
+        public string[] SafetyReasons { get; set; } = [];
+
+        public int SafetyReads { get; private set; }
+
+        public Task<RiotVehicleSafetyObservation> ReadVehicleSafetyAsync(string vehicleKey, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            SafetyReads++;
+            return Task.FromResult(new RiotVehicleSafetyObservation(
+                vehicleKey,
+                SafetyReasons.Length == 0 ? RiotVehicleMotionState.Stopped : RiotVehicleMotionState.Unknown,
+                _clock.GetUtcNow(),
+                "L1",
+                SafetyReasons));
         }
 
         public Task<RiotOrderObservation> ReconcileByUpperIdAsync(string upperId, CancellationToken cancellationToken)
