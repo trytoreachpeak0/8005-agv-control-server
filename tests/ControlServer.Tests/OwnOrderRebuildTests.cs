@@ -382,6 +382,51 @@ public sealed class OwnOrderRebuildTests
         Assert.Equal(second.NewUpperId, (await CurrentStopAsync(fixture, FirstDemandId)).UpperId);
     }
 
+    /// <summary>
+    /// REQ-0360：一张移动单服务几条需求时，重建承载的是这一站上尚未终止的需求，已终止的不复活。开往取货站途中，这一站挂着两条需求、
+    /// 其中一条已终止；单被取消、延迟后重建，新单去的还是这一站，两条需求的归属行一字不变——已终止的仍是已终止（移除时刻、停靠都不变），
+    /// 另一条仍是待装。
+    /// </summary>
+    /// <remarks>
+    /// 已终止那一条是直接写库造的：开往取货站途中的扫码前取消会被拒绝（<c>Batch7MultiDemandCancellationTests</c>），能让一站上一条终止、
+    /// 一条不终止的真实路径发生在到站之后。这里钉的是重建这条路从不写归属行——它换的是停靠指向哪张单，不是停靠上挂着谁。
+    /// </remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0360")]
+    public async Task Req0360ARebuildCarriesTheStopsOpenDemandsAndRevivesNoTerminatedOne()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
+        await Batch7MultiDemandAdvanceTests.AddSecondDemandToJourneyAsync(fixture, before);
+        await using (ControlServerDbContext writing = new(fixture.DbOptionsForTests))
+        {
+            JourneyDemandRow second = await writing.Set<JourneyDemandRow>().SingleAsync(row => row.DemandId == SecondDemandId, Token);
+            second.Status = JourneyDemandStatuses.Terminated;
+            await writing.SaveChangesAsync(Token);
+        }
+
+        fixture.Context.ChangeTracker.Clear();
+        JourneyDemandRow[] membersBefore = await MembersAsync(fixture);
+        Assert.Equal(
+            [(FirstDemandId, JourneyDemandStatuses.PendingLoad), (SecondDemandId, JourneyDemandStatuses.Terminated)],
+            membersBefore.Select(row => (row.DemandId, row.Status)));
+        JourneyStopRow[] stopsBefore = await StopsAsync(fixture, before.JourneyId);
+        JourneyStopRow pickup = stopsBefore.Single(stop => stop.StopRole == JourneyStopRoles.Pickup);
+        fixture.Riot.CancelOrder(pickup.UpperId);
+        await TickAndRunAsync(fixture);
+        await PassTheDelayAsync(fixture);
+
+        Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+        await AssertRebuiltAsync(fixture, before, stopsBefore, pickup);
+        JourneyDemandRow[] membersAfter = await MembersAsync(fixture);
+        Assert.Equal(
+            membersBefore.Select(row => (row.DemandId, row.Status, row.RemovedAt, row.RemovalReason, row.PickupStopId, row.UnloadStopId)),
+            membersAfter.Select(row => (row.DemandId, row.Status, row.RemovedAt, row.RemovalReason, row.PickupStopId, row.UnloadStopId)));
+    }
+
+    private static Task<JourneyDemandRow[]> MembersAsync(RuntimeFixture fixture) =>
+        fixture.Context.Set<JourneyDemandRow>().AsNoTracking().OrderBy(row => row.DemandId).ToArrayAsync(Token);
+
     // ---- 幂等、失败与崩溃 --------------------------------------------------------------------------------------
 
     /// <summary>
