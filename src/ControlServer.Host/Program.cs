@@ -17,6 +17,7 @@ using ControlServer.Host.Runtime.CreateGate;
 using ControlServer.Host.Runtime.Commands;
 using ControlServer.Host.Runtime.Faults;
 using ControlServer.Host.Runtime.Fleet;
+using ControlServer.Host.Runtime.ForeignOrders;
 using ControlServer.Host.Runtime.TaskTypeStations;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
@@ -42,6 +43,7 @@ builder.Services.AddScoped<DemandIntakeService>();
 builder.Services.AddScoped<MovementDispatchService>();
 builder.Services.AddScoped<JourneyIntakeCoordinator>();
 builder.Services.AddScoped<JourneyRuntimeEngine>();
+builder.Services.AddScoped<ForeignRunningOrderSupervisor>();
 builder.Services.AddDispatchAdmission();
 builder.Services.AddOptions<RouteGraphOptions>()
     .Bind(builder.Configuration.GetSection(RouteGraphOptions.SectionName))
@@ -116,6 +118,7 @@ builder.Services.AddSingleton<IValidateOptions<JourneyRuntimeOptions>, JourneyRu
 builder.Services.AddHostedService<JourneyRuntimeWorker>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddRiotCreateDispatchGate(builder.Configuration);
+builder.Services.AddRiotForeignOrderCancelGate(builder.Configuration);
 builder.Services.AddRiotAbsentAtObservationCreateExperiment(builder.Configuration);
 builder.Services.AddHttpClient<IMesIngestCatalog, HttpMesIngestCatalog>((services, client) =>
 {

@@ -65,6 +65,8 @@ public sealed class OwnOrderRebuildTests
         await AssertRebuiltAsync(fixture, before, stopsBefore, pickup);
         JourneyRuntimeRow rebuilt = await fixture.RuntimeAsync();
         Assert.Equal((JourneyRuntimeStage.AwaitingPickupArrival, (string?)null), (rebuilt.Stage, rebuilt.BlockReasonCode));
+        await AssertOwnOrderIsNotTakenForForeignAsync(
+            fixture, (await StopsAsync(fixture, before.JourneyId)).Single(stop => stop.StopId == pickup.StopId).UpperId);
 
         JourneyRuntimeRow arrived = await ArriveAtCurrentStopAsync(fixture, FirstDemandId, "TO_PICKUP");
         Assert.Equal((before.JourneyId, JourneyRuntimeStage.AwaitingSublot), (arrived.JourneyId, arrived.Stage));
@@ -81,6 +83,8 @@ public sealed class OwnOrderRebuildTests
         JourneyRuntimeRow before = await fixture.RuntimeAsync();
         JourneyStopRow[] stopsBefore = await StopsAsync(fixture, before.JourneyId);
         JourneyStopRow unload = stopsBefore.Single(stop => stop.StopRole == JourneyStopRoles.Unload);
+        // The GATE leg as created the ordinary way, before anything is cancelled (control-server#330, review S2).
+        await AssertOwnOrderIsNotTakenForForeignAsync(fixture, unload.UpperId);
         fixture.Riot.CancelOrder(unload.UpperId);
         int gateCreates = fixture.Riot.CreateCount("TO_GATE");
 
@@ -91,6 +95,8 @@ public sealed class OwnOrderRebuildTests
         Assert.Equal(gateCreates + 1, fixture.Riot.CreateCount("TO_GATE"));
         await AssertRebuiltAsync(fixture, before, stopsBefore, unload);
         Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, (await fixture.RuntimeAsync()).Stage);
+        await AssertOwnOrderIsNotTakenForForeignAsync(
+            fixture, (await StopsAsync(fixture, before.JourneyId)).Single(stop => stop.StopId == unload.StopId).UpperId);
 
         JourneyRuntimeRow arrived = await ArriveAtCurrentStopAsync(fixture, FirstDemandId, "TO_GATE");
         Assert.Equal((before.JourneyId, JourneyRuntimeStage.AwaitingUnloadResult), (arrived.JourneyId, arrived.Stage));
@@ -1074,6 +1080,31 @@ public sealed class OwnOrderRebuildTests
             (OwnOrderRebuildStates.Rebuilt, repointed.UpperId, repointed.MovementLegId, before.DemandId),
             (record.State, record.NewUpperId, record.NewMovementLegId, record.DemandId));
         Assert.NotNull(record.RebuiltAt);
+    }
+
+    /// <summary>
+    /// 前提钉（control-server#330，审查 S2）：外来订单监管认「自己的单」只凭 <c>OrderIntent</c> 与订单命令审计，所以「本服务端建的每一张单
+    /// 都先写 <c>OrderIntent</c>」是它不去取消自己的单的前提。这里先断言 <paramref name="upperId"/> 那张自己的单确实在 RIoT 的运行列表里、
+    /// 跑在自己的车上（不在列表里，下面的「空」什么也证明不了），再跑一轮，断言监管一行没记、一句没报。
+    /// </summary>
+    /// <remarks>
+    /// 假 RIoT 给同一用途的单同一个 orderId（<c>ORDER-TO_PICKUP</c>），这里的「认得出」可能落在旧单的意图上；新单自己的意图由
+    /// <see cref="AssertRebuiltAsync"/> 断言，两条合起来才是前提本身。
+    /// </remarks>
+    internal static async Task AssertOwnOrderIsNotTakenForForeignAsync(RuntimeFixture fixture, string upperId)
+    {
+        RiotUnfinishedOrderListing listing = await fixture.Riot.ListUnfinishedOrdersAsync(Token);
+        Assert.True(listing.IsComplete);
+        RiotListedOrder listed = Assert.Single(listing.Orders, order => order.UpperId == upperId);
+        Assert.True(Host.Runtime.ForeignOrders.ForeignRunningOrders.IsRunningWithItsVehicle(listed));
+        Assert.Equal(fixture.Options.VehicleKey, listed.ExecuteVehicleKey);
+
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        Assert.Empty(await reading.ForeignRiotOrders.AsNoTracking().ToArrayAsync(Token));
+        Assert.Empty(fixture.ForeignOrderLog.Entries);
     }
 
     /// <summary>延迟到点的那一轮：拨过延迟、车载端刚说过话，跑一轮。</summary>

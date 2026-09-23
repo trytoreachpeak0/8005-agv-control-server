@@ -165,6 +165,9 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 .ToArrayAsync(cancellationToken),
             StringComparer.Ordinal);
         HashSet<string> ownOrderInFlight = await OwnMovementOrdersInFlightAsync(dbContext, blocked, cancellationToken);
+        // control-server#330: a vehicle a foreign order holds has an unknown that order may be causing.
+        HashSet<string> heldByForeignOrder =
+            await Runtime.ForeignOrders.ForeignRunningOrders.HeldAgvIdsAsync(dbContext, cancellationToken);
         JourneyDemandList demands =
             await JourneyDemandList.ReadAsync(dbContext, [.. blocked.Select(row => row.JourneyId)], cancellationToken);
 
@@ -182,6 +185,7 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                     sessions.GetValueOrDefault(row.AgvId),
                     departedForGate.Contains(row.GateUpperId),
                     ownOrderInFlight.Contains(row.JourneyId),
+                    heldByForeignOrder.Contains(row.AgvId),
                     demands.FactsOf(row.JourneyId),
                     now))
                 .ToArray()
@@ -193,6 +197,7 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
         SessionRecoveryRow? session,
         bool departedForGate,
         bool ownOrderInFlight,
+        bool foreignOrderHoldsVehicle,
         object[] demands,
         DateTimeOffset now)
     {
@@ -208,7 +213,8 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
             session?.ReasonCode,
             session?.SafetyReasonCodesJson,
             session?.SafetyUnknownPresent,
-            ownOrderInFlight);
+            ownOrderInFlight,
+            foreignOrderHoldsVehicle);
         // 失联那一种，会话行上的安全判定是车最后一次在线时的，说不了现在——按「说不清」传，也就是最高档。
         BlockedJourneyEscalationLevel level = _escalation.Classify(
             blockedFor, carriesSession, sessionLost ? null : session?.SafetyUnknownPresent, explained);
@@ -221,7 +227,7 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
             pickupStationId = row.PickupStationId,
             gateStationId = row.GateStationId,
             blockReasonCode = row.BlockReasonCode,
-            blockReasonDescription = row.BlockReasonCode is { } code ? Descriptions.GetValueOrDefault(code) : null,
+            blockReasonDescription = Describe(row.BlockReasonCode, foreignOrderHoldsVehicle),
             blockReasonSince = row.BlockReasonSince,
             blockedSeconds = blockedFor is TimeSpan elapsed ? (long?)elapsed.TotalSeconds : null,
             escalationLevel = level.ToString(),
@@ -252,6 +258,30 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
             demands
         };
     }
+
+    /// <summary>
+    /// 旅程阻断码的中文说明；车被外来订单挡着时（control-server#330）后面再加一句指过去，因为这时会话的「未知」可能是那张单造成的，
+    /// 而旅程自己的码说不出这件事。
+    /// </summary>
+    /// <remarks>
+    /// 只加在说明上，不改码：旅程码由引擎按自己的事实写，改它会牵动停住码族、失联码与推进失败码的判定。外来单本身在车队视图
+    /// 「车上的外来订单」里，一张单一行。
+    /// </remarks>
+    private static string? Describe(string? blockReasonCode, bool foreignOrderHoldsVehicle)
+    {
+        string? description = blockReasonCode is { } code ? Descriptions.GetValueOrDefault(code) : null;
+        if (!foreignOrderHoldsVehicle)
+        {
+            return description;
+        }
+
+        return (description is null ? "" : description + "。") + ForeignOrderHoldsVehicleNote;
+    }
+
+    /// <summary>车被外来订单挡着时加在阻断说明后面的那一句（control-server#330）。</summary>
+    internal const string ForeignOrderHoldsVehicleNote =
+        "这辆车上另有一张不是本服务端建的订单挡着：这辆车不接新单、不接途中追加，会话的「未知」也可能是它造成的。"
+        + "那张单的情况见车队视图「车上的外来订单」";
 
     /// <summary>
     /// A loaded stop held at its AREA machine for the station's admission while the vehicle's session is not Ready (or has

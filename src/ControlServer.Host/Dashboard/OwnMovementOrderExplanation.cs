@@ -19,7 +19,8 @@ namespace ControlServer.Host.Dashboard;
 /// Every condition has to hold, and each one fails closed. The session reason codes must name the vehicle and nothing but the
 /// vehicle — an allow-list, not a deny-list, so a slot-side code this file has never heard of keeps the block at the top. The
 /// own-order fact is decided by the caller from this server's own records, because the dashboard reads the database and never
-/// calls RIoT.
+/// calls RIoT. So is the foreign-order fact (control-server#330): a foreign order running on the same vehicle explains the
+/// unknown just as well, so while one holds the vehicle nothing here is explained.
 /// </para>
 /// <para>
 /// <b>The journey runtime reads this too</b> (control-server#314): <c>JourneyRuntimeEngine.PublishPickupDispatchPlanPastOwnOrderAsync</c>
@@ -40,14 +41,22 @@ internal static class OwnMovementOrderExplanation
     private static readonly HashSet<string> VehicleOnlyReasons =
         new([VehicleNotReady, "ACTION_NOT_ALLOWED_IN_STATE"], StringComparer.Ordinal);
 
+    /// <param name="foreignRunningOrderHoldsVehicle">
+    /// Whether an order this server did not create is running on the vehicle and holds it (control-server#330,
+    /// <c>ForeignRunningOrders.HeldAgvIdsAsync</c>). RIoT's safety read reports <c>RIOT_NONFINAL_ORDER_PRESENT</c> for any
+    /// unfinished order on the vehicle, so the unknown may be that order's: it is never taken for this server's own
+    /// (REQ-0164, "OwnMovementOrderExplanation 不把外来单算作本车在途单").
+    /// </param>
     internal static bool Explains(
         string? blockReasonCode,
         string? sessionReasonCode,
         string? safetyReasonCodesJson,
         bool? safetyUnknownPresent,
-        bool ownMovementOrderInFlight)
+        bool ownMovementOrderInFlight,
+        bool foreignRunningOrderHoldsVehicle)
     {
         if (!ownMovementOrderInFlight ||
+            foreignRunningOrderHoldsVehicle ||
             safetyUnknownPresent != true ||
             !string.Equals(blockReasonCode, SessionNotReadyBlock, StringComparison.Ordinal) ||
             !string.Equals(sessionReasonCode, DepartureSafetyNotReady, StringComparison.Ordinal))
