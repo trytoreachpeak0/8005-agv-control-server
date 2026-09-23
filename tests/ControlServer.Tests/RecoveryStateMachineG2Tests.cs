@@ -4731,7 +4731,7 @@ public sealed class RecoveryStateMachineG2Tests
     /// <c>InsideTheReconnectHandshakeReadinessCannotChangeBeforeTheRecoveryReport</c>.
     /// </remarks>
     [Theory]
-    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
     [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
     [InlineData(true)]
     [InlineData(false)]
@@ -4766,7 +4766,7 @@ public sealed class RecoveryStateMachineG2Tests
     /// precondition under which this site's own append is reached; what is asserted is that the handshake still wins.
     /// </summary>
     [Theory]
-    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
     [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
     [InlineData(true)]
     [InlineData(false)]
@@ -4857,7 +4857,7 @@ public sealed class RecoveryStateMachineG2Tests
     /// connection is set to READY after SessionHello so that the change happens.
     /// </summary>
     [Theory]
-    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
     [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
     [InlineData(true)]
     [InlineData(false)]
@@ -4961,7 +4961,7 @@ public sealed class RecoveryStateMachineG2Tests
     /// </para>
     /// </remarks>
     [Fact]
-    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
     [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
     public async Task InsideTheReconnectHandshakeReadinessCannotChangeBeforeTheRecoveryReport()
     {
@@ -5006,7 +5006,7 @@ public sealed class RecoveryStateMachineG2Tests
     /// resend's.
     /// </summary>
     [Theory]
-    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
     [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
     [InlineData(true, "RECOVERY_REQUIRED")]
     [InlineData(false, "READY")]
@@ -5046,7 +5046,7 @@ public sealed class RecoveryStateMachineG2Tests
     /// on a ready session.
     /// </summary>
     [Theory]
-    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
     [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
     [InlineData("SafetyStateChanged")]
     [InlineData("OperationResult")]
@@ -5088,7 +5088,7 @@ public sealed class RecoveryStateMachineG2Tests
     /// does not change readiness -- a progress report -- is only acknowledged.
     /// </summary>
     [Fact]
-    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
     [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
     public async Task AVehicleNotReadyOnItsOwnOrderHandshakesWithoutAnExtraReadinessAndIsStillToldAfterwards()
     {
