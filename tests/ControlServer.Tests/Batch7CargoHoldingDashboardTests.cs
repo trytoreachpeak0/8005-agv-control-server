@@ -623,6 +623,8 @@ public sealed class Batch7CargoHoldingDashboardTests
     [InlineData("OWN_ORDER_REBUILD_BLOCKED_BY_CREATE_GATE")]
     [InlineData("OWN_ORDER_REBUILD_ORDER_UNCONFIRMED")]
     [InlineData("OWN_ORDER_REBUILD_STOPPED")]
+    [InlineData("OWN_ORDER_REBUILD_WAITING_CARGO_EVIDENCE")]
+    [InlineData("OWN_ORDER_REBUILD_CARGO_NOT_IN_PLACE")]
     public async Task AStalledInTransitOrderIsShownWithAChineseDescription(string code)
     {
         Assert.True(BlockedJourneysQueryEndpoint.Descriptions.ContainsKey(code), $"{code} has no description");
