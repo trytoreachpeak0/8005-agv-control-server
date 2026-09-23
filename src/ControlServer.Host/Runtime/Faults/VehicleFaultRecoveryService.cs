@@ -164,7 +164,7 @@ public sealed record VehicleFaultRecoveryDecision(
 /// account until the server has logins, the arrangement the user accepted for REQ-0356 on 2026-09-15.
 /// </para>
 /// </remarks>
-public sealed class VehicleFaultRecoveryService(
+public sealed partial class VehicleFaultRecoveryService(
     ControlServerDbContext dbContext,
     IVehicleFaultStore faults,
     IRiotVehicleEmergencyFacts emergencyFacts,
@@ -230,6 +230,8 @@ public sealed class VehicleFaultRecoveryService(
         {
             VehicleFaultRecoveryAction.ClearFault => await ClearAsync(request, cancellationToken).ConfigureAwait(false),
             VehicleFaultRecoveryAction.ResumeHeldOrder => await ResumeAsync(request, cancellationToken).ConfigureAwait(false),
+            VehicleFaultRecoveryAction.RebuildStoppedOrder =>
+                await RebuildStoppedAsync(request, cancellationToken).ConfigureAwait(false),
             _ => Refused(["FAULT_RECOVERY_ACTION_UNKNOWN"], null),
         };
         return Record(request, decision);

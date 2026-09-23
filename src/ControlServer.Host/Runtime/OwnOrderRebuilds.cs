@@ -148,6 +148,108 @@ internal static class OwnOrderRebuilds
         return row;
     }
 
+    /// <summary>The stable key of the rebuild a person asked for in place of the stopped one keyed <paramref name="stoppedRebuildId"/>.</summary>
+    public static string ManualRebuildIdFor(string stoppedRebuildId) =>
+        JourneyPlanBuilder.StableGuid(stoppedRebuildId, "manual-rebuild");
+
+    /// <summary>
+    /// Stages a person's rebuild of <paramref name="stopped"/>, a rebuild the third guard stopped (control-server#345), and
+    /// returns the record the engine now drives. Not saved.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Due at once, and from there like any other.</b> The engine takes it through the vehicle's condition, the create
+    /// gate, the session and Onboard's departure facts, and, for a cleared fault with cargo on board, a snapshot received after
+    /// this request that shows the cargo in place: the record keeps the stopped one's <see cref="OwnOrderRebuildRow.Source"/>,
+    /// and its <see cref="OwnOrderRebuildRow.RecordedAt"/> is now. Only the delay is not waited: a person has just looked at
+    /// the vehicle and asked for it.
+    /// </para>
+    /// <para>
+    /// <b>The window starts again from the request</b> (the coordinator's decision of 2026-09-23): the record's
+    /// <see cref="OwnOrderRebuildRow.IncidentAt"/> is the moment the person asked, so the next ending of the demand within
+    /// the window from then is judged "again" by <see cref="StageAsync"/> and stops for a person once more.
+    /// </para>
+    /// <para>
+    /// <b>Two shapes, because one RIoT order has one record</b> (the unique index on
+    /// <see cref="OwnOrderRebuildRow.EndedUpperId"/>). Stopped when the ending was recorded, the record still waits on the
+    /// order that ended, and its new order was never decided: it is reopened in place, keeping why and when it stopped
+    /// (<see cref="OwnOrderRebuildRow.StoppedReason"/> and <see cref="OwnOrderRebuildRow.StoppedAt"/> stay set on a record
+    /// that is no longer stopped only this way). Stopped because its new order ended before it was confirmed, the stop points
+    /// at that new order, which has no record of its own yet: a new record takes over for it, keyed on the stopped one
+    /// (<see cref="ManualRebuildIdFor"/>), and the stopped one turns <see cref="OwnOrderRebuildStates.Ended"/>.
+    /// </para>
+    /// <para>
+    /// Either way <see cref="OwnOrderRebuildRow.OperatorId"/> names the person who asked -- for a cleared fault that replaces
+    /// the person who cleared it, who stays on the fault fact and in event 9203 -- and <see cref="IsPersonsRebuild"/> tells the
+    /// record apart from an automatic one.
+    /// </para>
+    /// </remarks>
+    public static async Task<OwnOrderRebuildRow> StageManualRebuildAsync(
+        ControlServerDbContext dbContext,
+        JourneyRuntimeRow runtime,
+        JourneyStopRow stop,
+        OwnOrderRebuildRow stopped,
+        string operatorId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (stop.UpperId == stopped.EndedUpperId)
+        {
+            stopped.State = OwnOrderRebuildStates.Pending;
+            stopped.IncidentAt = now;
+            stopped.RecordedAt = now;
+            stopped.DueAt = now;
+            stopped.OperatorId = operatorId;
+            stopped.WaitingReason = null;
+            stopped.WaitingSince = null;
+            stopped.CargoProvenAt = null;
+            stopped.CargoEvidenceMessageId = null;
+            WithdrawCargoEvidenceRequest(stopped);
+            stopped.CargoEvidenceRequestedAt = null;
+            return stopped;
+        }
+
+        string rebuildId = ManualRebuildIdFor(stopped.RebuildId);
+        stopped.State = OwnOrderRebuildStates.Ended;
+        int ordinal = await dbContext.OwnOrderRebuilds
+            .CountAsync(row => row.JourneyId == runtime.JourneyId, cancellationToken).ConfigureAwait(false) + 1;
+        string? endedOrderId = await dbContext.OrderIntents.AsNoTracking()
+            .Where(row => row.UpperId == stop.UpperId)
+            .Select(row => row.OrderId)
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        OwnOrderRebuildRow row = new()
+        {
+            RebuildId = rebuildId,
+            JourneyId = runtime.JourneyId,
+            DemandId = runtime.DemandId,
+            AgvId = runtime.AgvId,
+            VehicleKey = runtime.VehicleKey,
+            StopId = stop.StopId,
+            Source = stopped.Source,
+            EndedUpperId = stop.UpperId,
+            EndedOrderId = endedOrderId,
+            IncidentAt = now,
+            RecordedAt = now,
+            DueAt = now,
+            OperatorId = operatorId,
+            NewUpperId = $"W2G-{runtime.DemandId}-REBUILD-{runtime.DispatchGeneration}-{ordinal}",
+            NewMovementLegId = JourneyPlanBuilder.StableGuid(rebuildId, "rebuilt-leg"),
+            State = OwnOrderRebuildStates.Pending,
+        };
+        dbContext.OwnOrderRebuilds.Add(row);
+        return row;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="row"/> is a rebuild a person asked for (<see cref="StageManualRebuildAsync"/>): a stopped
+    /// record reopened in place, which alone carries a stop reason while it is waiting, being ordered or rebuilt; or the record
+    /// that took over from a stopped one, keyed on it.
+    /// </summary>
+    public static bool IsPersonsRebuild(OwnOrderRebuildRow row, IEnumerable<OwnOrderRebuildRow> journeysRecords) =>
+        (row.StoppedReason is not null &&
+         row.State is OwnOrderRebuildStates.Pending or OwnOrderRebuildStates.Ordering or OwnOrderRebuildStates.Rebuilt) ||
+        journeysRecords.Any(other => ManualRebuildIdFor(other.RebuildId) == row.RebuildId);
+
     /// <summary>
     /// Whether the Host should ask <paramref name="agvId"/>'s vehicle for a <c>SafetyStateSnapshot</c> now, for a rebuild after a
     /// cleared fault with cargo on board that is still waiting for the vehicle to show the cargo in its slots (REQ-0362); when

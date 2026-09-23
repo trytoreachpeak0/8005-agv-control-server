@@ -60,18 +60,17 @@ public sealed class StoppedRebuildExitTests
         Assert.Empty(site.EmergencyCommands);
         await using (ControlServerDbContext reading = new(fixture.DbOptionsForTests))
         {
-            OwnOrderRebuildRow[] rows = await reading.OwnOrderRebuilds.AsNoTracking()
-                .Where(row => row.EndedUpperId == stop.UpperId).ToArrayAsync(Token);
-            Assert.Equal(2, rows.Length);
-            OwnOrderRebuildRow ended = Assert.Single(rows, row => row.RebuildId == OwnOrderRebuilds.RebuildIdFor(stop.UpperId));
-            Assert.Equal(
-                (OwnOrderRebuildStates.Ended, "REBUILT_ORDER_ENDED_AGAIN_WITHIN_WINDOW"),
-                (ended.State, ended.StoppedReason));
-            OwnOrderRebuildRow manual = Assert.Single(rows, row => row.RebuildId != ended.RebuildId);
+            // One RIoT order has one record (unique EndedUpperId): the stopped record is reopened in place, keeping why and
+            // when it stopped, now naming the person who asked.
+            OwnOrderRebuildRow reopened = await reading.OwnOrderRebuilds.AsNoTracking()
+                .SingleAsync(row => row.EndedUpperId == stop.UpperId, Token);
             Assert.Equal(
                 (OwnOrderRebuildSources.CancelledInRiot, OwnOrderRebuildStates.Pending, OperatorId, stop.StopId),
-                (manual.Source, manual.State, manual.OperatorId, manual.StopId));
-            Assert.Equal((requestedAt, requestedAt, requestedAt), (manual.IncidentAt, manual.RecordedAt, manual.DueAt));
+                (reopened.Source, reopened.State, reopened.OperatorId, reopened.StopId));
+            Assert.Equal("REBUILT_ORDER_ENDED_AGAIN_WITHIN_WINDOW", reopened.StoppedReason);
+            Assert.NotNull(reopened.StoppedAt);
+            Assert.True(reopened.StoppedAt < requestedAt, "the clock did not move between the stop and the request");
+            Assert.Equal((requestedAt, requestedAt, requestedAt), (reopened.IncidentAt, reopened.RecordedAt, reopened.DueAt));
             JourneyRuntimeRow kept = await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token);
             Assert.Equal((stopped.JourneyId, JourneyRuntimeStage.AwaitingPickupArrival), (kept.JourneyId, kept.Stage));
             Assert.Null((await reading.Set<JourneyDemandRow>().AsNoTracking().SingleAsync(Token)).RemovedAt);
