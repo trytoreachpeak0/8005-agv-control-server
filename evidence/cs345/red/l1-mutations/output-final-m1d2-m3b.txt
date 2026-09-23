@@ -1,0 +1,14 @@
+== M1d2-handoff-record-not-found: applied (1	1	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs)
+  build: ['0 Error(s)']
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AFailedHandoffLeavesTheTripAWayOut [2 s]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.AHandedOverTripIsNotRebuiltByAPerson [2 s]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.APartialHandoffLetsThePersonGiveTheRestUp [2 s]
+  Failed ControlServer.Tests.StoppedRebuildExitTests.TheSameHandoffPreparationTwiceIsDoneOnce [2 s]
+  Failed!  - Failed:     4, Passed:    38, Skipped:     0, Total:    42, Duration: 42 s - ControlServer.Tests.dll (net8.0)
+== M3b-no-idempotency: applied (1	1	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs)
+  build: ['0 Error(s)']
+  Failed ControlServer.Tests.StoppedRebuildExitTests.TheSameRequestTwiceRebuildsOnce [78 ms]
+  Failed!  - Failed:     1, Passed:    41, Skipped:     0, Total:    42, Duration: 42 s - ControlServer.Tests.dll (net8.0)
+ M evidence/cs345/red/l1-mutations/mutate.py
+
+exit=0

@@ -23,6 +23,20 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
     public const string ForcedRecoveryHardwareRecoveryRequired = "FORCED_RECOVERY_HARDWARE_RECOVERY_REQUIRED";
 
     /// <summary>
+    /// The block a journey carries while a person has handed its stopped trip to the vehicle's exception recovery session, for
+    /// the cargo to be taken out, handed over and its demand ended (REQ-0238, control-server#345). What holds the session is
+    /// the rebuild record waiting for the handoff, not this code (<see cref="DecideReadinessAsync"/>): a failed handoff rewrites
+    /// the code and the trip still waits.
+    /// </summary>
+    public const string AwaitingCargoHandoffJourneyReason = "OWN_ORDER_REBUILD_AWAITING_CARGO_HANDOFF";
+
+    /// <summary>
+    /// The readiness reason while one of this vehicle's <c>Blocked</c> journeys has a rebuild record waiting for a cargo handoff.
+    /// On the wire it is SESSION_RECOVERY_REQUIRED, which is what makes the onboard offer its fault cargo handoff entry.
+    /// </summary>
+    public const string CargoHandoffRequired = "CARGO_HANDOFF_REQUIRED";
+
+    /// <summary>
     /// A journey publishes its stored revision at the pickup stop and that value plus one at the
     /// gate stop (JourneyRuntimeEngine publishes both stops), so the next journey on the same
     /// vehicle has to start two above the stored one.
@@ -385,6 +399,20 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         // generation made history of is covered by the later one.
         bool forcedRecoveryAwaitsHardwareRecord = await ForcedRecoveryAwaitsHardwareRecordAsync(agvId, cancellationToken)
             .ConfigureAwait(false);
+        // control-server#345. A person handed a stopped trip with cargo on board to the exception recovery session: the onboard
+        // offers the fault cargo handoff only while the session says RECOVERY_REQUIRED, and nothing else here says so for a
+        // vehicle standing still, fault cleared, doors locked. Held while this vehicle has a Blocked journey whose rebuild record
+        // waits for the handoff -- on the record, not on the journey code (independent review M1): a handoff that fails has
+        // the recovery coordinator rewrite the code, and a journey that still carries another demand after one was handed off
+        // keeps it, and in neither case is the trip done with. It lets go once the record is ended or the journey leaves
+        // Blocked; never on Blocked as such, and never for another vehicle.
+        bool cargoHandoffAwaited = await dbContext.OwnOrderRebuilds.AsNoTracking()
+            .AnyAsync(
+                record => record.AgvId == agvId && record.State == OwnOrderRebuildStates.AwaitingCargoHandoff &&
+                          dbContext.JourneyRuntimes.Any(
+                              journey => journey.JourneyId == record.JourneyId && journey.Stage == JourneyRuntimeStage.Blocked),
+                cancellationToken)
+            .ConfigureAwait(false);
         // REQ-0316. The vehicle reported which slot configuration it is carrying; this server knows
         // which one it activated. Disagreement means nobody can say what the eight slots on that
         // vehicle will actually do, so it must not be given work -- but it stays connected, because
@@ -414,6 +442,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
                      row.RecoveryReportId is not null && departureUsable && noPendingFacts &&
                      !operationNeedsRecovery &&
                      !forcedRecoveryAwaitsHardwareRecord &&
+                     !cargoHandoffAwaited &&
                      row.ReportedForcedRecoveryGeneration == row.ForcedRecoveryGeneration;
         row.Readiness = ready ? SessionReadiness.Ready : SessionReadiness.RecoveryRequired;
         // The slot configuration mismatch is named first when it applies: every other reason here is about this
@@ -423,7 +452,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
             ? "READY"
             : slotConfigurationAgrees
                 ? GetRecoveryReason(
-                    row, noPendingFacts, departureUsable, operationNeedsRecovery, forcedRecoveryAwaitsHardwareRecord)
+                    row, noPendingFacts, departureUsable, operationNeedsRecovery, forcedRecoveryAwaitsHardwareRecord,
+                    cargoHandoffAwaited)
                 : SlotConfigurationFingerprintVerdict.MismatchCode;
         row.UpdatedAt = DateTimeOffset.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -3442,7 +3472,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         bool noPendingFacts,
         bool departureUsable,
         bool operationNeedsRecovery,
-        bool forcedRecoveryAwaitsHardwareRecord)
+        bool forcedRecoveryAwaitsHardwareRecord,
+        bool cargoHandoffAwaited)
     {
         if (row.CapabilityRevision is null) return "CAPABILITY_SNAPSHOT_REQUIRED";
         if (row.SafetyRevision is null) return "SAFETY_SNAPSHOT_REQUIRED";
@@ -3456,6 +3487,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         // complete would point the operator at the wrong thing.
         if (operationNeedsRecovery) return "OPERATION_RECOVERY_REQUIRED";
         if (forcedRecoveryAwaitsHardwareRecord) return ForcedRecoveryHardwareRecoveryRequired;
+        if (cargoHandoffAwaited) return CargoHandoffRequired;
         return "RECOVERY_REQUIRED";
     }
 

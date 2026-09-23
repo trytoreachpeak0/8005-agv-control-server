@@ -83,7 +83,11 @@ public sealed class JourneyClosureSingleExitArchitectureTests
     [Fact]
     public void EveryFileThatCanCloseAJourneySendsTheClosure()
     {
-        Regex closes = new(@"new\s+PickupStopTermination\s*\(|JourneyClosure\.StageAsync\s*\(", RegexOptions.CultureInvariant);
+        // The target-typed form ("PickupStopTermination x = new(...)") counts too: control-server#345 wrote the first one, and
+        // the scan did not see it.
+        Regex closes = new(
+            @"new\s+PickupStopTermination\s*\(|PickupStopTermination\s+\w+\s*=\s*new\s*\(|JourneyClosure\.StageAsync\s*\(",
+            RegexOptions.CultureInvariant);
         Regex sends = new(@"JourneyClosure\.SendAsync\s*\(", RegexOptions.CultureInvariant);
         string[] closers = [.. ProductSourceFiles()
             .Where(file => !Relative(file).EndsWith("/PickupStopTermination.cs", StringComparison.Ordinal)
@@ -94,7 +98,7 @@ public sealed class JourneyClosureSingleExitArchitectureTests
         string[] silent = [.. closers.Where(file => !sends.IsMatch(CodeOnly(File.ReadAllText(file)))).Select(Relative)];
 
         Assert.Empty(silent);
-        // 判据要有东西可判：点名今天会收尾的三个文件，扫描必须认出每一个——比只数个数更硬，数够了也可能是认错了文件。
+        // 判据要有东西可判：点名今天会收尾的四个文件，扫描必须认出每一个——比只数个数更硬，数够了也可能是认错了文件。
         // 故障人工清除（VehicleFaultRecoveryService）原是第四个；control-server#318 起清除之后不收尾、留在本车重建，
         // 那个文件里已没有收尾也没有发送，它离开这张表是行为变了，不是扫描漏了。哪天它又收尾，上面的 silent 会先替它说话。
         Assert.Superset(KnownClosers, new HashSet<string>(closers.Select(Relative), StringComparer.Ordinal));
@@ -106,6 +110,8 @@ public sealed class JourneyClosureSingleExitArchitectureTests
         "src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs",
         "src/ControlServer.Host/Runtime/Release/DemandReleaseService.cs",
         "src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs",
+        // A person giving a stopped trip up (control-server#345).
+        "src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs",
     };
 
     /// <summary>构造了收尾尾巴、却从不让旅程收尾的文件。今天没有。</summary>

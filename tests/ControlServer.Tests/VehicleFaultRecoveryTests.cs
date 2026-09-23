@@ -1441,7 +1441,7 @@ public sealed class VehicleFaultRecoveryTests
             }
         };
 
-    private static VehicleFaultRecoveryRequest Clear(RuntimeFixture fixture) => new(
+    internal static VehicleFaultRecoveryRequest Clear(RuntimeFixture fixture) => new(
         new EmergencyStopSubject(fixture.Options.AgvId, fixture.Options.VehicleKey),
         VehicleFaultRecoveryAction.ClearFault,
         OperatorId,
@@ -1464,7 +1464,7 @@ public sealed class VehicleFaultRecoveryTests
         return fixture;
     }
 
-    private static async Task<RuntimeFixture> FaultedOnTheWayToGateAsync()
+    internal static async Task<RuntimeFixture> FaultedOnTheWayToGateAsync()
     {
         RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, createdAt: Now.AddMinutes(-10)));
@@ -1560,7 +1560,8 @@ public sealed class VehicleFaultRecoveryTests
         IVehicleFaultStore? faultStore = null,
         JourneyMutationGate? gate = null,
         TimeSpan? gateTimeout = null,
-        VehicleFaultResumeFlights? flights = null)
+        VehicleFaultResumeFlights? flights = null,
+        ILogger<VehicleFaultRecoveryService>? logger = null)
     {
         context ??= new ControlServerDbContext(fixture.DbOptionsForTests);
         IVehicleFaultStore faults = faultStore ?? new VehicleFaultStore(context);
@@ -1575,8 +1576,9 @@ public sealed class VehicleFaultRecoveryTests
             ledger, faultOptions, fixture.Clock, NullLogger<VehicleFaultCoordinator>.Instance);
         return new VehicleFaultRecoveryService(
             context, faults, site, site, site, supervisor, coordinator, ledger, gate ?? new JourneyMutationGate(),
-            flights ?? new VehicleFaultResumeFlights(), Options.Create(fixture.Options),
-            fixture.Clock, NullLogger<VehicleFaultRecoveryService>.Instance, gateTimeout);
+            flights ?? new VehicleFaultResumeFlights(),
+            new OnboardJourneyPublisher(new WireToGateStore(context), fixture.Peer, fixture.Clock), Options.Create(fixture.Options),
+            fixture.Clock, logger ?? NullLogger<VehicleFaultRecoveryService>.Instance, gateTimeout);
     }
 
     /// <summary>

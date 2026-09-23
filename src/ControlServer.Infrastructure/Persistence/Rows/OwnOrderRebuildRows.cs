@@ -133,4 +133,10 @@ public static class OwnOrderRebuildStates
     /// 确认前 FAILED 的，人清除故障时另记。这一条只留作历史，不再有人等它。
     /// </summary>
     public const string Ended = "ENDED";
+
+    /// <summary>
+    /// 停住之后，人把这一趟转进了车载端的异常处置会话（control-server#345）：旅程 <c>Blocked</c>，等在会话里把货取出、交接、终结需求。
+    /// 交接成功、旅程收尾时转 <see cref="Ended"/>。
+    /// </summary>
+    public const string AwaitingCargoHandoff = "AWAITING_CARGO_HANDOFF";
 }

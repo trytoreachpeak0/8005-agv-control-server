@@ -62,6 +62,9 @@ public sealed class OnboardRecoveryCoordinator(
     /// </summary>
     internal const string ResumeCommandRejectedOutcome = "COMMAND_REJECTED";
 
+    /// <summary>Why a fault's cargo binding ended when its cargo was handed off in an exception recovery session.</summary>
+    public const string HandedOffInExceptionSessionReason = "HANDED_OFF_IN_EXCEPTION_SESSION";
+
     private static readonly string[] RecoveryRequestTypes =
     [
         "ExceptionRecoverySessionRequested",
@@ -1344,6 +1347,54 @@ public sealed class OnboardRecoveryCoordinator(
                 timeProvider.GetUtcNow(),
                 cancellationToken)
             .ConfigureAwait(false);
+        if (messageType is "FaultCargoRecoveryResult" or "ForcedMechanicalRecoveryResult")
+        {
+            await SettleHandedOffCargoAsync(runtime, workflow.DemandId, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// The cargo of <paramref name="demandId"/> left the vehicle by hand: the fault's cargo binding for it has done its work, and
+    /// a stopped rebuild handed to this session is over once the journey has closed (control-server#345). Staged with the
+    /// settlement; the caller saves.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The binding was never released here before</b>, a defect older than #345: a FAILED order with cargo on board binds it
+    /// (REQ-0238), and only a confirmed resumption or a rebuild confirmed on the same vehicle released it. Handed off in a session,
+    /// it stayed live, and the fault coordinator binds once per vehicle -- a live binding is taken as the cargo of whatever fault
+    /// comes next -- so the vehicle's next FAILED order was held, and cleared, as a vehicle with cargo on board.
+    /// </para>
+    /// <para>
+    /// Only the binding of the demand handed off: a binding names one demand, and another demand's cargo is still on board until
+    /// its own session hands it off.
+    /// </para>
+    /// </remarks>
+    private async Task SettleHandedOffCargoAsync(
+        JourneyRuntimeRow runtime,
+        string demandId,
+        CancellationToken cancellationToken)
+    {
+        DateTimeOffset now = timeProvider.GetUtcNow();
+        foreach (FaultedVehicleCargoRow cargo in await dbContext.FaultedVehicleCargo
+                     .Where(row => row.AgvId == runtime.AgvId && row.DemandId == demandId && row.ReleasedAt == null)
+                     .ToArrayAsync(cancellationToken).ConfigureAwait(false))
+        {
+            cargo.ReleasedAt = now;
+            cargo.ReleasedReason = HandedOffInExceptionSessionReason;
+        }
+
+        if (runtime.Stage != JourneyRuntimeStage.Completed)
+        {
+            return;
+        }
+
+        foreach (OwnOrderRebuildRow handedOver in await dbContext.OwnOrderRebuilds
+                     .Where(row => row.JourneyId == runtime.JourneyId && row.State == OwnOrderRebuildStates.AwaitingCargoHandoff)
+                     .ToArrayAsync(cancellationToken).ConfigureAwait(false))
+        {
+            handedOver.State = OwnOrderRebuildStates.Ended;
+        }
     }
 
     private async Task KeepDemandAndJourneyBlockedAsync(

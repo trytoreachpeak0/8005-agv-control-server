@@ -18,6 +18,24 @@ public enum VehicleFaultRecoveryAction
 
     /// <summary>The order was held (PAUSED 7); continue it on the same vehicle (REQ-0239, first half).</summary>
     ResumeHeldOrder,
+
+    /// <summary>
+    /// The automatic rebuild stopped at its third guard (REQ-0361); rebuild once more, now, for the same vehicle and demand
+    /// (control-server#345).
+    /// </summary>
+    RebuildStoppedOrder,
+
+    /// <summary>
+    /// The automatic rebuild stopped at its third guard and nothing is on board; give the trip up: its demands end and the
+    /// journey closes (control-server#345, the user's decision of 2026-09-23).
+    /// </summary>
+    TerminateStoppedTrip,
+
+    /// <summary>
+    /// The automatic rebuild stopped with cargo, or possibly cargo, on board; hand the trip to the vehicle's exception recovery
+    /// session, where the cargo is taken out, handed over and its demand ended (REQ-0238, control-server#345).
+    /// </summary>
+    PrepareCargoHandoff,
 }
 
 /// <summary>A person's request about one explicitly named vehicle.</summary>
@@ -45,6 +63,21 @@ public enum VehicleFaultRecoveryOutcome
 
     /// <summary>Refused; the reasons name every criterion that is not met.</summary>
     Refused,
+
+    /// <summary>A stopped rebuild was handed back to the engine to be made once more (control-server#345).</summary>
+    RebuildRequested,
+
+    /// <summary>
+    /// The same way out had already been taken on this vehicle (control-server#345); nothing was done again. Requests carry no
+    /// id, so this does not say it was this request that did it, nor how long ago.
+    /// </summary>
+    AlreadyDone,
+
+    /// <summary>A stopped trip with nothing on board was given up: its demands ended and its journey closed (control-server#345).</summary>
+    TripTerminated,
+
+    /// <summary>A stopped trip with cargo on board now waits for its exception recovery session (control-server#345).</summary>
+    HandoffPrepared,
 }
 
 /// <summary>What was done with the vehicle's journey when its fault was cleared.</summary>
@@ -64,14 +97,30 @@ public static class VehicleFaultRecoveryDispositions
     /// within the window (control-server#318's third guard), and the journey waits for a person.
     /// </summary>
     public const string RebuildStopped = "REBUILD_STOPPED";
+
+    /// <summary>
+    /// A person gave a stopped trip up (control-server#345): every demand still open on it ended, never to be dispatched again,
+    /// and the journey closed. Nothing was released for redispatch.
+    /// </summary>
+    public const string TripTerminated = "TRIP_TERMINATED";
+
+    /// <summary>
+    /// The stopped trip is blocked for its cargo to be taken out, handed over and its demand ended in the vehicle's exception
+    /// recovery session (REQ-0238, control-server#345). Nothing was released.
+    /// </summary>
+    public const string AwaitingCargoHandoff = "AWAITING_CARGO_HANDOFF";
 }
 
-/// <summary>The answer to one request.</summary>
+/// <summary>
+/// The answer to one request. <paramref name="TerminatedDemandIds"/> names the demands a person's giving up ended
+/// (control-server#345, independent review S2): MES still lists them and people close them there.
+/// </summary>
 public sealed record VehicleFaultRecoveryDecision(
     VehicleFaultRecoveryOutcome Outcome,
     IReadOnlyList<string> Reasons,
     string Disposition,
-    long? FaultGeneration);
+    long? FaultGeneration,
+    IReadOnlyList<string>? TerminatedDemandIds = null);
 
 /// <summary>
 /// The person's way out of a vehicle fault (control-server#299).
@@ -155,7 +204,7 @@ public sealed record VehicleFaultRecoveryDecision(
 /// account until the server has logins, the arrangement the user accepted for REQ-0356 on 2026-09-15.
 /// </para>
 /// </remarks>
-public sealed class VehicleFaultRecoveryService(
+public sealed partial class VehicleFaultRecoveryService(
     ControlServerDbContext dbContext,
     IVehicleFaultStore faults,
     IRiotVehicleEmergencyFacts emergencyFacts,
@@ -166,6 +215,7 @@ public sealed class VehicleFaultRecoveryService(
     VehicleMotionLedger ledger,
     JourneyMutationGate gate,
     VehicleFaultResumeFlights resumeFlights,
+    OnboardJourneyPublisher publisher,
     IOptions<JourneyRuntimeOptions> runtimeOptions,
     TimeProvider timeProvider,
     ILogger<VehicleFaultRecoveryService> logger,
@@ -221,6 +271,12 @@ public sealed class VehicleFaultRecoveryService(
         {
             VehicleFaultRecoveryAction.ClearFault => await ClearAsync(request, cancellationToken).ConfigureAwait(false),
             VehicleFaultRecoveryAction.ResumeHeldOrder => await ResumeAsync(request, cancellationToken).ConfigureAwait(false),
+            VehicleFaultRecoveryAction.RebuildStoppedOrder =>
+                await RebuildStoppedAsync(request, cancellationToken).ConfigureAwait(false),
+            VehicleFaultRecoveryAction.TerminateStoppedTrip =>
+                await TerminateStoppedAsync(request, cancellationToken).ConfigureAwait(false),
+            VehicleFaultRecoveryAction.PrepareCargoHandoff =>
+                await PrepareCargoHandoffAsync(request, cancellationToken).ConfigureAwait(false),
             _ => Refused(["FAULT_RECOVERY_ACTION_UNKNOWN"], null),
         };
         return Record(request, decision);
@@ -602,6 +658,8 @@ public sealed class VehicleFaultRecoveryService(
 
     private VehicleFaultRecoveryDecision Record(VehicleFaultRecoveryRequest request, VehicleFaultRecoveryDecision decision)
     {
+        // Six is LoggerMessage's limit, so the note -- and the demands a give-up ended -- ride with the reasons rather than
+        // being dropped.
         LogRequest(
             logger,
             request.Action.ToString(),
@@ -609,8 +667,9 @@ public sealed class VehicleFaultRecoveryService(
             string.IsNullOrWhiteSpace(request.OperatorId) ? "-" : request.OperatorId,
             decision.Outcome.ToString(),
             decision.Disposition,
-            // Six is LoggerMessage's limit, so the note rides with the reasons rather than being dropped.
-            $"{(decision.Reasons.Count == 0 ? "-" : string.Join(',', decision.Reasons))}; note: {(string.IsNullOrWhiteSpace(request.Note) ? "-" : request.Note)}",
+            $"{(decision.Reasons.Count == 0 ? "-" : string.Join(',', decision.Reasons))}" +
+            $"{(decision.TerminatedDemandIds is { Count: > 0 } ended ? $"; terminated: {string.Join(',', ended)}" : "")}" +
+            $"; note: {(string.IsNullOrWhiteSpace(request.Note) ? "-" : request.Note)}",
             null);
         return decision;
     }

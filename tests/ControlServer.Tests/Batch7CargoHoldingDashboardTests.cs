@@ -626,6 +626,8 @@ public sealed class Batch7CargoHoldingDashboardTests
     [InlineData("OWN_ORDER_REBUILD_WAITING_CARGO_EVIDENCE")]
     [InlineData("OWN_ORDER_REBUILD_CARGO_NOT_IN_PLACE")]
     [InlineData("OWN_ORDER_REBUILD_VEHICLE_INELIGIBLE")]
+    // control-server#345：停住且车上有货的旅程转进异常处置会话之后的码。
+    [InlineData("OWN_ORDER_REBUILD_AWAITING_CARGO_HANDOFF")]
     // control-server#331：推进每轮抛异常时写的码。之前这种情况看板上只剩上一次写下的旧码。
     [InlineData("JOURNEY_ADVANCE_FAILED")]
     public async Task AStalledInTransitOrderIsShownWithAChineseDescription(string code)
@@ -645,6 +647,23 @@ public sealed class Batch7CargoHoldingDashboardTests
         Assert.Contains(code, html, StringComparison.Ordinal);
         Assert.Contains(
             System.Net.WebUtility.HtmlEncode(BlockedJourneysQueryEndpoint.Descriptions[code]), html, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 自动重建停住的两个码，卡片上要说出人能做什么（control-server#345）：点名入口上的动作，不再只说「找值班工程师」。
+    /// 放弃这趟要写明业务后果——MES 那边需求还挂着，8005 不再接，货要人另外搬（调度 2026-09-23 转达的要求）。
+    /// 窗口写成「默认 10 分钟」并点名配置项，不写死（独立审查低项）；等交接的卡片要说出交接没有一次成功时的两个出口（审查 M1）。
+    /// </summary>
+    [Theory]
+    [InlineData("OWN_ORDER_REBUILD_STOPPED", "REBUILD_STOPPED_ORDER", "TERMINATE_STOPPED_TRIP", "PREPARE_CARGO_HANDOFF", "MES")]
+    [InlineData("OWN_ORDER_REBUILD_STOPPED", "默认 10 分钟", "OwnOrderRebuildRepeatWindow", "MES", "PREPARE_CARGO_HANDOFF")]
+    [InlineData("OWN_ORDER_REBUILD_CARGO_NOT_IN_PLACE", "PREPARE_CARGO_HANDOFF", "异常处置", "recoveryResumeEnabled", "交接")]
+    [InlineData("OWN_ORDER_REBUILD_AWAITING_CARGO_HANDOFF", "异常处置", "FAULT_CARGO_HANDOFF", "recoveryResumeEnabled", "交接")]
+    [InlineData("OWN_ORDER_REBUILD_AWAITING_CARGO_HANDOFF", "交接失败", "PREPARE_CARGO_HANDOFF", "TERMINATE_STOPPED_TRIP", "MES")]
+    public void AStoppedRebuildCardNamesTheWayOut(string code, string first, string second, string third, string fourth)
+    {
+        string description = BlockedJourneysQueryEndpoint.Descriptions[code];
+        Assert.All([first, second, third, fourth], part => Assert.Contains(part, description, StringComparison.Ordinal));
     }
 
     // --- 积压卡片：层、阈值、等待年龄 -----------------------------------------------------------------------------------

@@ -223,7 +223,7 @@ public sealed partial class JourneyRuntimeEngine
                     //
                     // No cap on how often, on purpose (agreed with the coordinator). Stopping the asking adds no safety: the
                     // vehicle is not sent off either way. It would instead turn a state that clears by itself, once the slot is
-                    // secured, into one only an engineer can clear -- a stopped rebuild has no way out. And a person can see it
+                    // secured, into one that needs a person (control-server#345's exits). And a person can see it
                     // from the first inconclusive snapshot on: the journey carries OWN_ORDER_REBUILD_CARGO_UNPROVEN, described
                     // on the dashboard, and event 2172 is logged at Warning once per waiting reason.
                     DateTimeOffset since = rebuild.CargoEvidenceRequestedAt is { } requestedAt && requestedAt > evidence.ReceivedAt

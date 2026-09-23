@@ -24,6 +24,7 @@ public sealed class SessionReadinessReasonCodesTests
         "DEPARTURE_SAFETY_NOT_READY",
         "OPERATION_RECOVERY_REQUIRED",
         "FORCED_RECOVERY_HARDWARE_RECOVERY_REQUIRED",
+        "CARGO_HANDOFF_REQUIRED",
         "RECOVERY_REQUIRED"
     ];
 

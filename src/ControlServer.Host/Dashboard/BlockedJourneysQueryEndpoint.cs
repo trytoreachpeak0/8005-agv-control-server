@@ -112,15 +112,32 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 + "门禁放行后自动重建。具体原因见服务端日志事件 2172",
             [JourneyRuntimeEngine.OwnOrderRebuildOrderUnconfirmedReason] =
                 "重建的运单已向 RIoT 发出，还没确认建成：服务端每一轮按同一个单号对账，不会建第二张。持续不消失请到 RIoT 核对",
+            // control-server#345：停住之后人的三个出口，都经故障清除同一个入口（/api/safety/v1/vehicle-fault-recoveries）。
             [JourneyRuntimeEngine.OwnOrderRebuildStoppedReason] =
                 "这条需求第一次出问题之后不久又出问题了（又被取消、删除，或又失败）：服务端不再自动重建，挡住并报警，等人处理。"
-                + "请到现场与 RIoT 查明为什么反复停下；需求不改派，这辆车不接新单",
+                + "请到现场与 RIoT 查明为什么反复停下，然后由现场人员经故障清除入口选一个出口（见现场说明）："
+                + "REBUILD_STOPPED_ORDER 人工重建一次（照样过车况与安全检查，之后在重复出问题的窗口内——默认 10 分钟，"
+                + "配置项 JourneyRuntime:OwnOrderRebuildRepeatWindow——再出问题仍会停住）；"
+                + "车上没货时可以 TERMINATE_STOPPED_TRIP 放弃这趟：需求终结，MES 那边这条需求还挂着、8005 以后不会再接它，"
+                + "货要人另外搬、MES 要人手工收尾（返回里列出被终结的需求）；新单还没确认就停住的那一种不能放弃，只能人工重建；"
+                + "车上有货时用 PREPARE_CARGO_HANDOFF 转进车载端的异常处置会话取货交接。"
+                + "在那之前需求不改派，这辆车不接新单",
             [JourneyRuntimeEngine.OwnOrderRebuildWaitingCargoEvidenceReason] =
                 "车上有货的故障已清除，服务端在等车报一份新的仓位读数，证明货还在原仓、门锁着、开锁输出已复位，证明了才自动重建去卸货站。"
                 + "持续不消失通常是车载端没连上或没就绪：请检查车载端连接；需求不改派，这辆车不接新单",
             [JourneyRuntimeEngine.OwnOrderRebuildCargoNotInPlaceReason] =
                 "车上有货的故障清除之后，车报的仓位读数显示装货的仓是空的，货可能已经不在原仓："
-                + "服务端不再自动重建，挡住并报警。请到车前核对货物与仓门，找值班工程师；需求不改派，这辆车不接新单",
+                + "服务端不再自动重建，挡住并报警。这一趟只能在车载端的异常处置会话里取出、交接并终止："
+                + "请到车前核对货物与仓门，由现场人员经故障清除入口发 PREPARE_CARGO_HANDOFF（见现场说明），"
+                + "之后在车载端做故障货物交接。车载端要打开 recoveryResumeEnabled（出厂是关的）才会出现交接入口。"
+                + "需求不改派，这辆车不接新单",
+            [Runtime.Faults.VehicleFaultRecoveryService.AwaitingCargoHandoffReason] =
+                "这一趟已由人转进车载端的异常处置会话：请在车载端打开异常处置、选故障货物交接（FAULT_CARGO_HANDOFF），"
+                + "把货取出、交接，需求随之终结、旅程收尾，车恢复接单。车载端要打开 recoveryResumeEnabled（出厂是关的）"
+                + "并配好恢复凭据，交接入口才会出现。交接失败时旅程码会换成 FaultCargoRecoveryResult_NOT_RECONCILED，"
+                + "交接入口仍在：再经故障清除入口发 PREPARE_CARGO_HANDOFF 把这一趟挂回来重新交接；"
+                + "若车上已经没货（例如一趟里只交接掉一部分，剩下的还没装），发 TERMINATE_STOPPED_TRIP 放弃剩下的，"
+                + "MES 那边要人手工收尾。在那之前需求不改派，这辆车不接新单",
             [JourneyRuntimeEngine.OwnOrderRebuildCargoUnprovenReason] =
                 "车上有货的故障清除之后，车报的仓位读数还证明不了货在原仓（仓门没锁好、开锁输出没复位、仓位读数未知或没上报、"
                 + "车报有未知，或装货还没落定）：服务端不停也不建单，等车下一次报仓位读数。门锁好、读数恢复后会自动重建；"
