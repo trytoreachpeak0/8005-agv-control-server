@@ -1,0 +1,30 @@
+  Passed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.ARefillOnTheArrivalRerunReachesTheVehicle [6 s]
+[xUnit.net 00:00:14.31]         crash: Injected failure at this save.
+  Failed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.ACrashBetweenTheRefilledWorklistAndItsEntryRequestIsHealedOnTheNextRound [702 ms]
+   Assert.Equal() Failure: Values differ
+Expected: 3
+Actual:   2
+     at ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.ACrashBetweenTheRefilledWorklistAndItsEntryRequestIsHealedOnTheNextRound() in tests\ControlServer.Tests\RefilledStationDeadlineReachesVehicleTests.cs:line 269
+   at ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.ACrashBetweenTheRefilledWorklistAndItsEntryRequestIsHealedOnTheNextRound() in tests\ControlServer.Tests\RefilledStationDeadlineReachesVehicleTests.cs:line 277
+ crash: Injected failure at this save.
+  Passed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.AfterARefillTheJourneyReachesTheGateWithTheWorklistRevisionStrictlyAdvancing(enteredAgainst: 1) [3 s]
+  Passed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.AfterARefillTheJourneyReachesTheGateWithTheWorklistRevisionStrictlyAdvancing(enteredAgainst: 0) [2 s]
+[xUnit.net 00:00:20.46]         crash: Injected failure at this save.; saves in the crashed round:  / ProtocolOutboxRow.PayloadJson / ProtocolOutboxRow.PayloadJson / ProtocolOutboxRow.PayloadJson / ProtocolOutboxRow.PayloadJson / JourneyStopRow.WorklistRefills,ProtocolOutboxRow.FencedAt,JourneyRuntimeRow.StationDepartureWaitStartedAt / ProtocolOutboxRow.MessageId,ProtocolOutboxRow.AcknowledgedAt,ProtocolOutboxRow.CreatedAt,ProtocolOutboxRow.FencedAt,ProtocolOutboxRow.MessageType,ProtocolOutboxRow.PayloadJson / JourneyRuntimeRow.BlockReasonCode
+  Failed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.ARefillOverAnUnconfirmedWorklistLandsInOneSaveAndSurvivesACrashAtIt [175 ms]
+   Assert.Equal() Failure: Values differ
+Expected: 0
+Actual:   1
+     at ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.ARefillOverAnUnconfirmedWorklistLandsInOneSaveAndSurvivesACrashAtIt() in tests\ControlServer.Tests\RefilledStationDeadlineReachesVehicleTests.cs:line 211
+   at ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.ARefillOverAnUnconfirmedWorklistLandsInOneSaveAndSurvivesACrashAtIt() in tests\ControlServer.Tests\RefilledStationDeadlineReachesVehicleTests.cs:line 226
+ crash: Injected failure at this save.; saves in the crashed round:  / ProtocolOutboxRow.PayloadJson / ProtocolOutboxRow.PayloadJson / ProtocolOutboxRow.PayloadJson / ProtocolOutboxRow.PayloadJson / JourneyStopRow.WorklistRefills,ProtocolOutboxRow.FencedAt,JourneyRuntimeRow.StationDepartureWaitStartedAt / ProtocolOutboxRow.MessageId,ProtocolOutboxRow.AcknowledgedAt,ProtocolOutboxRow.CreatedAt,ProtocolOutboxRow.FencedAt,ProtocolOutboxRow.MessageType,ProtocolOutboxRow.PayloadJson / JourneyRuntimeRow.BlockReasonCode
+  Passed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.ARefillWhileAwaitingTheEntryReachesTheVehicle [167 ms]
+  Passed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.AnUninterruptedArrivalStillSendsItsBusinessStateAndTheVehicleConfirmsIt(fullOnTheWay: False) [222 ms]
+  Passed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.AnUninterruptedArrivalStillSendsItsBusinessStateAndTheVehicleConfirmsIt(fullOnTheWay: True) [208 ms]
+  Passed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.TheRealOnboardsUnreadyShapeRefillsOnceAndTheVehicleHoldsIt [218 ms]
+  Passed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.ARefillSavedThroughTheOpenCancellationExitStillReachesTheVehicleOnceItCloses [329 ms]
+  Passed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.TwoDisconnectsWithNoConfirmationBetweenThemEachReachTheVehicle [353 ms]
+  Passed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.AHoldingJourneyWhoseLoadingPhaseChangedAcrossTheInterruptedArrivalStillAdvances [350 ms]
+  Passed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.ARefillWhileTheLoadResultIsOutstandingReachesTheVehicle [559 ms]
+Total tests: 13
+     Passed: 11
+     Failed: 2

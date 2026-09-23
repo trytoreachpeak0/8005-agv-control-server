@@ -72,6 +72,8 @@ public sealed class Batch3MigrationDisciplineTests
         "20260923094511_OwnOrderRebuildCargoEvidenceRequestedAt",
         // control-server#330：新建 ForeignRiotOrders 表，我们车上运行中的外来订单的告警、审计与取消记录；不动任何既有表与行。
         "20260923115051_ForeignRiotOrders",
+        // control-server#339：JourneyStops 加 WorklistRefills（本停靠的清单因离站期限重填多发了几版），默认 0；不动任何既有行。
+        "20260923152943_JourneyStopWorklistRefills",
     ];
 
     private static readonly string[] Batch3Tables =

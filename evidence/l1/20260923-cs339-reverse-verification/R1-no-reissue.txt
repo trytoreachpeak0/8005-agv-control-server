@@ -1,0 +1,50 @@
+mutation R1-no-reissue: JourneyRuntimeEngine.cs matches=1
+    0 Error(s)
+  Failed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.ARefillOnTheArrivalRerunReachesTheVehicle [5 s]
+  Error Message:
+   ControlServer.Domain.ProtocolContentConflictException : Outbound MessageId was replayed with different semantics or a non-advancing session generation.
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.AfterARefillTheJourneyReachesTheGateWithTheWorklistRevisionStrictlyAdvancing(enteredAgainst: 1) [652 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+              ↓ (pos 1)
+Expected: [1, 2]
+Actual:   [1]
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.AfterARefillTheJourneyReachesTheGateWithTheWorklistRevisionStrictlyAdvancing(enteredAgainst: 0) [474 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+              ↓ (pos 1)
+Expected: [1, 2]
+Actual:   [1]
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.ARefillWhileAwaitingTheEntryReachesTheVehicle [536 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 2026-08-26T01:00:37.0000000+00:00
+Actual:   2026-08-26T01:00:30.0000000+00:00
+--- End of stack trace from previous location ---
+ before the disconnect 2026-08-26T01:00:30.0000000+00:00; server now 2026-08-26T01:00:37.0000000+00:00; vehicle holds 2026-08-26T01:00:30.0000000+00:00; vehicle refused , regressions 0
+  Failed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.TheRealOnboardsUnreadyShapeRefillsOnceAndTheVehicleHoldsIt [612 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 2026-08-26T01:00:37.0000000+00:00
+Actual:   2026-08-26T01:00:30.0000000+00:00
+--- End of stack trace from previous location ---
+ before the disconnect 2026-08-26T01:00:30.0000000+00:00; server now 2026-08-26T01:00:37.0000000+00:00; vehicle holds 2026-08-26T01:00:30.0000000+00:00; vehicle refused , regressions 0
+  Failed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.ARefillWhileTheLoadResultIsOutstandingReachesTheVehicle [985 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 2026-08-26T01:00:37.0000000+00:00
+Actual:   2026-08-26T01:00:30.0000000+00:00
+--- End of stack trace from previous location ---
+ before the disconnect 2026-08-26T01:00:30.0000000+00:00; server now 2026-08-26T01:00:37.0000000+00:00; vehicle holds 2026-08-26T01:00:30.0000000+00:00; vehicle refused , regressions 0
+  Failed ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.TheEntryRequestReachesTheVehicleWhenARoundBehindTheClosedGateVoidedTheWaitBeforeTheReconnect [587 ms]
+  Error Message:
+   ControlServer.Domain.ProtocolContentConflictException : Outbound MessageId was replayed with different semantics or a non-advancing session generation.
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.ACutOnTheWorklistThenARefillSendsANewerWorklistInsteadOfFailingARound [396 ms]
+  Error Message:
+   ControlServer.Domain.ProtocolContentConflictException : Outbound MessageId was replayed with different semantics or a non-advancing session generation.
+--- End of stack trace from previous location ---
+Failed!  - Failed:     8, Passed:    22, Skipped:     0, Total:    30, Duration: 14 s - ControlServer.Tests.dll (net8.0)

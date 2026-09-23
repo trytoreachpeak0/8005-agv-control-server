@@ -1359,6 +1359,9 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<long>("WorklistRefills")
+                        .HasColumnType("INTEGER");
+
                     b.HasKey("StopId");
 
                     b.HasIndex("JourneyId", "Sequence");
