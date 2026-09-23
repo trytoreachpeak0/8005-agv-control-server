@@ -176,10 +176,11 @@ public sealed class InTransitOrderStallTests
     }
 
     /// <summary>
-    /// 在途单被人在 RIoT 里取消或删除：旅程写 <c>ORDER_ENDED_WITHOUT_ARRIVAL</c>，不结束旅程、不释放、不重建。
+    /// 在途单被人在 RIoT 里取消或删除：旅程写 <c>ORDER_ENDED_WITHOUT_ARRIVAL</c>，不结束旅程、不释放，也不发命令。
     /// </summary>
     /// <remarks>
-    /// 用户 2026-09-22：RIoT 里取消多半是误操作，该重建而不是改派；怎么重建待定，定之前只让它被看见。释放服务一侧同样不动它
+    /// 用户 2026-09-22：RIoT 里取消多半是误操作，该重建而不是改派。重建由 control-server#318 在延迟之后做
+    /// （<see cref="OwnOrderRebuildTests"/>），这里只跑一轮，守的是「先说出原因、不释放」这一半。释放服务一侧同样不动它
     /// （<see cref="Batch7DemandReleaseServiceTests.APickupOrderEndedInRiotIsNeitherReleasedNorRedispatched"/>）。
     /// </remarks>
     [Theory]

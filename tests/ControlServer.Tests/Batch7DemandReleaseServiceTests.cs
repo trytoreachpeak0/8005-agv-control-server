@@ -1072,9 +1072,9 @@ public sealed class Batch7DemandReleaseServiceTests
     /// </summary>
     /// <remarks>
     /// <para>
-    /// 用户 2026-09-22 更正：RIoT 里取消订单不是正常操作，多半是误操作，该做的是重建订单而不是改派。怎么重建（自动还是等人、
-    /// 是否同车、已装货与未装货是否一样）待定，定之前这里的行为是「看得见、不动」——所以这一条要守的是释放服务<b>没有</b>
-    /// 把「订单已终结」当成释放理由，而那正是一个顺手的实现会做的事（本票第一版就这么做了）。
+    /// 用户 2026-09-22 更正：RIoT 里取消订单不是正常操作，多半是误操作，该做的是重建订单而不是改派——同车同需求、延迟之后
+    /// 自动重建（control-server#318）。这一条要守的是释放服务<b>没有</b>把「订单已终结」当成释放理由，而那正是一个顺手的实现会做的事
+    /// （#316 第一版就这么做了）；车不合格时的那一半见 <see cref="AJourneyWhoseOrderStalledIsNotReleasedWhenTheVehicleBecomesIneligible"/>。
     /// </para>
     /// <para>
     /// 先跑一轮引擎，与生产里 <c>JourneyRuntimeWorker</c> 先推进、后释放的次序一致：码已经写下，释放服务读得到它。

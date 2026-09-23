@@ -208,6 +208,41 @@ public sealed class OwnOrderRebuildTests
         Assert.Null((await fixture.RuntimeAsync()).BlockReasonCode);
     }
 
+    /// <summary>
+    /// 重建在等车况时车载端不说话了：看板上仍是 <c>OWN_ORDER_REBUILD_WAITING_VEHICLE</c>，不被「车不说话」（<c>ONBOARD_SESSION_LOST</c>）
+    /// 盖掉；车恢复、车载端重新说话之后照常重建。
+    /// </summary>
+    /// <remarks>
+    /// 与 #316 的停住码同一个理由：走到车前的人要知道的是「这趟在等车恢复就会自己重建」，不是它的一个症状。重建这一族码都在
+    /// <c>JourneyRuntimeEngine.IsStalledOrderReason</c> 里，失联判定照那一族让路；把它们从族里拿掉，这一条红。
+    /// </remarks>
+    [Fact]
+    public async Task ASilentSessionDoesNotOverwriteARebuildThatWaitsForTheVehicle()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync();
+        fixture.Riot.CancelOrder(before.PickupUpperId);
+        await TickAndRunAsync(fixture);
+        fixture.Riot.SafetyReasons = ["RIOT_EMERGENCY_NOT_OK"];
+        await PassTheDelayAsync(fixture);
+        JourneyRuntimeRow waiting = await fixture.RuntimeAsync();
+        Assert.Equal("OWN_ORDER_REBUILD_WAITING_VEHICLE", waiting.BlockReasonCode);
+
+        fixture.Clock.Advance(SessionLiveness.Timeout + TimeSpan.FromSeconds(4));
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        JourneyRuntimeRow silent = await fixture.RuntimeAsync();
+        Assert.True(waiting.BlockReasonSince < fixture.Clock.GetUtcNow(), "the clock did not move, so keeping the start time proves nothing");
+        Assert.Equal(("OWN_ORDER_REBUILD_WAITING_VEHICLE", waiting.BlockReasonSince), (silent.BlockReasonCode, silent.BlockReasonSince));
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+
+        fixture.Riot.SafetyReasons = [];
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+        Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+    }
+
     // ---- 建单门禁（REQ-0305） ------------------------------------------------------------------------------------
 
     /// <summary>
@@ -332,6 +367,49 @@ public sealed class OwnOrderRebuildTests
         Assert.Single(await reading.OwnOrderRebuilds.AsNoTracking().ToArrayAsync(Token));
         Assert.Equal(2, await reading.OrderIntents.AsNoTracking().CountAsync(row => row.DemandId == FirstDemandId, Token));
         await AssertRebuiltAsync(fixture, before, stopsBefore, stopsBefore.Single(stop => stop.StopRole == JourneyStopRoles.Pickup));
+    }
+
+    /// <summary>
+    /// 去重键本身：同一次终结被两个作用域各记一次（两轮引擎、或引擎与清除请求，各自一个上下文），落到的是同一行，
+    /// 第二次拿到的就是第一次记下的那一行——同一个新单号、同一条腿——不会有第二行，也就建不出第二张单。
+    /// </summary>
+    /// <remarks>
+    /// 上面那条走的是引擎：停靠上已有这条记录时引擎根本不再读那张旧单，所以它守不到键。这一条直接对着键：记录主键由终结那张单的
+    /// upperId 派生（<c>StableGuid(EndedUpperId, ...)</c>），一张 RIoT 单只会终结一次。把主键换成随机值，第二个作用域就会再记一行。
+    /// </remarks>
+    [Fact]
+    public async Task TheSameEndingRecordedFromTwoScopesIsOneRecordWithOneNewOrder()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        JourneyStopRow pickup = (await StopsAsync(fixture, runtime.JourneyId)).Single(stop => stop.StopRole == JourneyStopRoles.Pickup);
+
+        OwnOrderRebuildRow first;
+        await using (ControlServerDbContext one = new(fixture.DbOptionsForTests))
+        {
+            first = await OwnOrderRebuilds.StageAsync(
+                one, runtime, pickup, pickup.UpperId, "ORDER-TO_PICKUP", RiotOrderState.Cancelled,
+                OwnOrderRebuildSources.CancelledInRiot, fixture.Clock.GetUtcNow(), fixture.Clock.GetUtcNow(), null,
+                fixture.Options, Token);
+            await one.SaveChangesAsync(Token);
+        }
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(5));
+        OwnOrderRebuildRow second;
+        await using (ControlServerDbContext two = new(fixture.DbOptionsForTests))
+        {
+            second = await OwnOrderRebuilds.StageAsync(
+                two, runtime, pickup, pickup.UpperId, "ORDER-TO_PICKUP", RiotOrderState.Cancelled,
+                OwnOrderRebuildSources.CancelledInRiot, fixture.Clock.GetUtcNow(), fixture.Clock.GetUtcNow(), null,
+                fixture.Options, Token);
+            await two.SaveChangesAsync(Token);
+        }
+
+        Assert.Equal(
+            (first.RebuildId, first.NewUpperId, first.NewMovementLegId, first.DueAt),
+            (second.RebuildId, second.NewUpperId, second.NewMovementLegId, second.DueAt));
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        Assert.Single(await reading.OwnOrderRebuilds.AsNoTracking().ToArrayAsync(Token));
     }
 
     /// <summary>

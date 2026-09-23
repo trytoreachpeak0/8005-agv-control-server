@@ -1293,11 +1293,12 @@ public sealed partial class JourneyRuntimeEngine(
     /// </para>
     /// <para>
     /// <b>CANCELLED and DELETED mean someone ended the order outside this server</b>, which the user said on 2026-09-22 is
-    /// almost always a mistake, to be answered by rebuilding the order rather than by redispatching the demand: held and
-    /// alarmed first, then rebuilt for the same vehicle and the same demand once a person confirms, because a rebuilt order
-    /// moves the vehicle and whoever cancelled it may be standing beside it. That confirmation is control-server#318, through
-    /// #299's endpoint, and does not exist yet; this names it and nothing more -- no release, no redispatch, no new order.
-    /// The release service does not read this code as a trigger.
+    /// almost always a mistake, to be answered by rebuilding the order rather than by redispatching the demand. The code is
+    /// written and alarmed as before, and since control-server#318 the ending is recorded in the same save to be rebuilt for
+    /// the same vehicle and the same demand once the delay is over -- no person's confirmation, by the user's later decision
+    /// the same day, because usually nobody is watching the system (see <c>JourneyRuntimeEngine.OwnOrderRebuild.cs</c>). The
+    /// delay is the time for whoever cancelled it, who may be standing beside the vehicle, to stop it. An order this server
+    /// cancelled itself is named and not recorded. The release service neither releases nor cancels while the code stands.
     /// </para>
     /// <para>
     /// Ordered after <see cref="ObserveOrderFailureAsync"/>, so FAILED still reaches the fault model and keeps its own
