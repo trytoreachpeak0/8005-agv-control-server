@@ -679,11 +679,15 @@ public sealed class OwnOrderRebuildTests
     }
 
     /// <summary>
-    /// 新单建出去之后、还没对账确认之前，它在 RIoT 里就又被取消了：这本身就是「短时二次出问题」，不再重建，
-    /// 旅程码 <c>OWN_ORDER_REBUILD_STOPPED</c>，记录写 <c>REBUILT_ORDER_ENDED_BEFORE_CONFIRMATION</c>。
+    /// 新单建出去之后、还没对账确认之前，它在 RIoT 里就又被取消了：旧记录转 <c>ENDED</c>（写明是确认前被取消），这次取消按一次新的出问题
+    /// 记一条记录，由 REQ-0361 的窗口判——离第一次出问题只有几十秒，是「再次出问题」，不再重建，旅程码 <c>OWN_ORDER_REBUILD_STOPPED</c>。
     /// </summary>
-    /// <remarks>对账会把那张单判成「终态、要人对账」（<c>TerminalReconciliationRequired</c>）；把它当成「没确认、下一轮再说」会每轮原地打转。</remarks>
+    /// <remarks>
+    /// 对账会把那张单判成「终态、要人对账」（<c>TerminalReconciliationRequired</c>）；把它当成「没确认、下一轮再说」会每轮原地打转。
+    /// 第一版在这里一律直接停（<c>REBUILT_ORDER_ENDED_BEFORE_CONFIRMATION</c>），窗口外的那种情况会被错停；审查 S2 之后按条文走窗口。
+    /// </remarks>
     [Fact]
+    [Trait("Requirement", "REQ-0361")]
     public async Task ARebuiltOrderThatEndsBeforeItIsConfirmedStopsTheRebuilding()
     {
         await using RuntimeFixture fixture = await DispatchedToPickupAsync();
@@ -700,10 +704,14 @@ public sealed class OwnOrderRebuildTests
         await TickAndRunAsync(fixture);
         await PassTheDelayAsync(fixture);
 
-        OwnOrderRebuildRow stopped = await SingleRebuildAsync(fixture, before.PickupUpperId);
+        OwnOrderRebuildRow ended = await SingleRebuildAsync(fixture, before.PickupUpperId);
         Assert.Equal(
-            (OwnOrderRebuildStates.Stopped, "REBUILT_ORDER_ENDED_BEFORE_CONFIRMATION"),
-            (stopped.State, stopped.StoppedReason));
+            (OwnOrderRebuildStates.Ended, "REBUILT_ORDER_CANCELLED_BEFORE_CONFIRMATION"),
+            (ended.State, ended.StoppedReason));
+        OwnOrderRebuildRow stopped = await SingleRebuildAsync(fixture, ordering.NewUpperId);
+        Assert.Equal(
+            (OwnOrderRebuildSources.CancelledInRiot, OwnOrderRebuildStates.Stopped, "REBUILT_ORDER_ENDED_AGAIN_WITHIN_WINDOW"),
+            (stopped.Source, stopped.State, stopped.StoppedReason));
         Assert.Equal("OWN_ORDER_REBUILD_STOPPED", (await fixture.RuntimeAsync()).BlockReasonCode);
         Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
     }

@@ -112,4 +112,10 @@ public static class OwnOrderRebuildStates
 
     /// <summary>不再自动重建，挡住并报警，等人处理（护栏三）。</summary>
     public const string Stopped = "STOPPED";
+
+    /// <summary>
+    /// 新单在确认建成之前就终结了；那次终结按一次独立的出问题处理——被取消的另记一条记录（由 REQ-0361 的窗口判），FAILED 的交给故障模型
+    /// （人清除之后另记一条）。<see cref="OwnOrderRebuildRow.StoppedReason"/> 写明是哪一种。
+    /// </summary>
+    public const string Ended = "ENDED";
 }

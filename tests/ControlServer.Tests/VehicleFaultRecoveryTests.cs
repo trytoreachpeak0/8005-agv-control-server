@@ -611,6 +611,51 @@ public sealed class VehicleFaultRecoveryTests
             (record.Source, record.State, record.StoppedReason));
     }
 
+    /// <summary>
+    /// 重建出来的新单还没确认就 FAILED（审查 S2）：按普通 FAILED 记故障——疑似阻断、旅程码 <c>VEHICLE_ORDER_FAILED</c>——#299 的清除入口
+    /// 接得住；第一次出问题是取消，FAILED 不算取消来源的「再次」（REQ-0361），人清除之后照常再重建一次。
+    /// </summary>
+    /// <remarks>第一版把它记成 <c>Stopped / REBUILT_ORDER_ENDED_BEFORE_CONFIRMATION</c>：不记故障，清除入口因此无事可清，这趟旅程再也动不了。</remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0361")]
+    public async Task Req0361ARebuiltOrderThatFailsBeforeItIsConfirmedIsAFaultAPersonCanClear()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        SiteRiot site = new(fixture);
+        fixture.Riot.MovementState = "MT_FINISHED";
+        fixture.Riot.CancelOrder((await fixture.RuntimeAsync()).PickupUpperId);
+        await TickAndRunAsync(fixture);
+        fixture.Riot.LoseNextCreateResponse = true;
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        string newUpperId = (await CurrentStopAsync(fixture, FirstDemandId)).UpperId;
+        Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+
+        fixture.Riot.FailOrder(newUpperId);
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+        await TickAndRunAsync(fixture);
+
+        VehicleFaultStateRow fault = await FaultAsync(fixture);
+        Assert.Equal((VehicleFaultLevel.SuspectedBlocked, 1L), (fault.Level, fault.FaultGeneration));
+        Assert.Equal("VEHICLE_ORDER_FAILED", (await fixture.RuntimeAsync()).BlockReasonCode);
+        Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+        fixture.Context.ChangeTracker.Clear();
+
+        VehicleFaultRecoveryDecision decision = await Service(fixture, site).RecoverAsync(Clear(fixture), Token);
+        fixture.Context.ChangeTracker.Clear();
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+
+        Assert.Equal(
+            (VehicleFaultRecoveryOutcome.Cleared, VehicleFaultRecoveryDispositions.RebuildScheduled),
+            (decision.Outcome, decision.Disposition));
+        Assert.Equal(3, fixture.Riot.CreateCount("TO_PICKUP"));
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        OwnOrderRebuildRow record = await reading.OwnOrderRebuilds.AsNoTracking().SingleAsync(row => row.EndedUpperId == newUpperId, Token);
+        Assert.Equal(
+            (OwnOrderRebuildSources.FaultClearedNothingOnBoard, OwnOrderRebuildStates.Rebuilt),
+            (record.Source, record.State));
+    }
+
     // ---- 幂等与崩溃 ------------------------------------------------------------------------------------------
 
     /// <summary>
