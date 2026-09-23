@@ -39,6 +39,9 @@ public sealed class ReconnectModelTests
     /// </summary>
     /// <remarks>
     /// <para>
+    /// 已开票未修的违规（<see cref="ReconnectModel.KnownDefects"/>）打印次数、不判失败；其余任何一条都判失败。
+    /// </para>
+    /// <para>
     /// 失败时打印每个违规组合的种子与序列，并把第一个确定性地删减到最短再打印一遍：复现只要种子，看懂只要最短的那一串。
     /// 用 <see cref="ReplaySeeds"/>（<c>CS342_SEEDS</c>）在别的提交上复跑同样的种子。
     /// </para>
@@ -54,33 +57,47 @@ public sealed class ReconnectModelTests
     [Trait("ProtocolVector", "CV-PICKUP-SUBLOT-LOAD")]
     public async Task EverySeededSequenceEndsWithTheEntryRequestOnTheVehicle()
     {
-        List<(string Seed, ReconnectStep[] Steps, ReconnectVerdict Verdict)> violations = [];
+        List<(string Seed, ReconnectStep[] Steps, ReconnectViolation Violation, string Detail)> unknown = [];
+        Dictionary<string, int> known = new(StringComparer.Ordinal);
         for (int index = 0; index < CiCombinations; index++)
         {
             (string seed, ReconnectStep[] steps) = ReconnectModel.Fixed(MasterSeed, index);
             ReconnectVerdict verdict = await ReconnectModel.RunAsync(steps);
-            if (verdict.Violation is not null)
+            foreach ((ReconnectViolation violation, string detail) in verdict.Violations)
             {
-                violations.Add((seed, steps, verdict));
+                if (ReconnectModel.KnownDefectFor(violation, detail) is { } defect)
+                {
+                    known[defect.Ticket] = known.GetValueOrDefault(defect.Ticket) + 1;
+                }
+                else
+                {
+                    unknown.Add((seed, steps, violation, detail));
+                }
             }
         }
 
-        if (violations.Count == 0)
+        // 已知未修的照样报出来：修复票合入之前，它们在这里出现几次是有用的信息。
+        foreach ((string ticket, int count) in known)
+        {
+            TestContext.Current.TestOutputHelper?.WriteLine($"known defect {ticket}: {count} violation(s) in {CiCombinations} sequences");
+        }
+
+        if (unknown.Count == 0)
         {
             return;
         }
 
         StringBuilder message = new();
-        message.AppendLine(CultureInfo.InvariantCulture, $"{violations.Count} of {CiCombinations} seeded sequences violated the invariant:");
-        foreach ((string seed, ReconnectStep[] steps, ReconnectVerdict verdict) in violations)
+        message.AppendLine(CultureInfo.InvariantCulture, $"{unknown.Count} violation(s) in {CiCombinations} seeded sequences that no known defect accounts for:");
+        foreach ((string seed, ReconnectStep[] steps, ReconnectViolation violation, string detail) in unknown)
         {
-            message.AppendLine(CultureInfo.InvariantCulture, $"  seed {seed} {verdict.Violation} {ReconnectModel.Print(steps)}");
+            message.AppendLine(CultureInfo.InvariantCulture, $"  seed {seed} {violation}: {detail}");
+            message.AppendLine(CultureInfo.InvariantCulture, $"    {ReconnectModel.Print(steps)}");
         }
 
-        (string firstSeed, ReconnectStep[] firstSteps, ReconnectVerdict firstVerdict) = violations[0];
-        (ReconnectStep[] minimal, ReconnectVerdict minimalVerdict) =
-            await ReconnectModel.MinimizeAsync(firstSteps, firstVerdict.Violation!.Value);
-        message.AppendLine(CultureInfo.InvariantCulture, $"shortest form of seed {firstSeed}: {ReconnectModel.Print(minimal)}");
+        (string firstSeed, ReconnectStep[] firstSteps, ReconnectViolation firstViolation, _) = unknown[0];
+        (ReconnectStep[] minimal, ReconnectVerdict minimalVerdict) = await ReconnectModel.MinimizeAsync(firstSteps, firstViolation);
+        message.AppendLine(CultureInfo.InvariantCulture, $"shortest form of seed {firstSeed} for {firstViolation}: {ReconnectModel.Print(minimal)}");
         message.AppendLine(minimalVerdict.Detail);
         Assert.Fail(message.ToString());
     }
@@ -162,10 +179,10 @@ public sealed class ReconnectModelTests
             }
         }
 
-        if (byViolation.TryGetValue(ReconnectViolation.StuckAtPickup, out List<(string Seed, ReconnectStep[] Steps)>? stuck))
+        foreach ((ReconnectViolation target, List<(string Seed, ReconnectStep[] Steps)> found) in byViolation)
         {
             report.AppendLine();
-            report.AppendLine(CultureInfo.InvariantCulture, $"CsCheck shrinking StuckAtPickup from seed {stuck[0].Seed}, iter={shrinkIterations}");
+            report.AppendLine(CultureInfo.InvariantCulture, $"CsCheck shrinking {target} from seed {found[0].Seed}, iter={shrinkIterations}");
             Stopwatch shrinkWatch = Stopwatch.StartNew();
             try
             {
@@ -174,12 +191,12 @@ public sealed class ReconnectModelTests
                     async steps =>
                     {
                         ReconnectVerdict verdict = await ReconnectModel.RunAsync(steps);
-                        if (verdict.Violation == ReconnectViolation.StuckAtPickup)
+                        if (verdict.Has(target))
                         {
                             throw new ReconnectInvariantException(verdict);
                         }
                     },
-                    seed: stuck[0].Seed,
+                    seed: found[0].Seed,
                     iter: shrinkIterations,
                     print: ReconnectModel.Print);
                 report.AppendLine("shrink: the seed did not fail again (not reproducible)");
@@ -187,17 +204,15 @@ public sealed class ReconnectModelTests
             catch (CsCheckException error)
             {
                 report.AppendLine(CultureInfo.InvariantCulture, $"shrink took {shrinkWatch.Elapsed.TotalSeconds:F1}s");
-                report.AppendLine(error.Message);
+                report.AppendLine(FirstLines(error.Message, 2));
             }
 
-            ReconnectStep[] shortest = [.. stuck.Select(item => item.Steps).OrderBy(steps => steps.Length).First()];
+            ReconnectStep[] shortest = [.. found.Select(item => item.Steps).OrderBy(steps => steps.Length).First()];
             Stopwatch minimizeWatch = Stopwatch.StartNew();
-            (ReconnectStep[] minimal, ReconnectVerdict minimalVerdict) =
-                await ReconnectModel.MinimizeAsync(shortest, ReconnectViolation.StuckAtPickup);
-            report.AppendLine();
+            (ReconnectStep[] minimal, ReconnectVerdict minimalVerdict) = await ReconnectModel.MinimizeAsync(shortest, target);
             report.AppendLine(
                 CultureInfo.InvariantCulture,
-                $"deterministic minimisation of the shortest StuckAtPickup ({shortest.Length} steps) took {minimizeWatch.Elapsed.TotalSeconds:F1}s:");
+                $"deterministic minimisation of the shortest {target} ({shortest.Length} steps) took {minimizeWatch.Elapsed.TotalSeconds:F1}s:");
             report.AppendLine(CultureInfo.InvariantCulture, $"  from {ReconnectModel.Print(shortest)}");
             report.AppendLine(CultureInfo.InvariantCulture, $"  to   {ReconnectModel.Print(minimal)}");
             report.AppendLine(minimalVerdict.Detail);
@@ -205,6 +220,9 @@ public sealed class ReconnectModelTests
 
         await File.WriteAllTextAsync(reportPath, report.ToString(), TestContext.Current.CancellationToken);
     }
+
+    private static string FirstLines(string text, int count) =>
+        string.Join(Environment.NewLine, text.ReplaceLineEndings().Split(Environment.NewLine).Take(count));
 
     /// <summary>
     /// 复跑种子（只在显式要求时跑）：<c>CS342_SEEDS</c>（空格分隔）里每个种子生成的那一串各跑一遍，判定与逐步记录写到

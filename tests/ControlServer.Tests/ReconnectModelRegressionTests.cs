@@ -69,6 +69,61 @@ public sealed class ReconnectModelRegressionTests
     }
 
     /// <summary>
+    /// 车的一条安全变化在路上丢了（连接在它送到之前断了），下一次握手补发它：服务端对它只回一条 <c>DurableAck</c>。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 模型在 <c>18172346</c> 上 300 个组合里找到 135 个，确定性删减到这一步（种子 <c>0000000005q1</c>，化简前 11 步）。补发的
+    /// <c>SafetyStateChanged</c> 回的是 <c>DurableAck</c> 加一行 <c>SessionReadiness</c>，车每发一条只读一条答复，把多出的那一行当成
+    /// 能力快照的答复，断开重连——control-server#340。
+    /// </para>
+    /// <para>
+    /// 安全内容相同与不同各一行：补发的那一条与握手快照的内容是否相同，对这一条不该有影响。
+    /// </para>
+    /// </remarks>
+    [Theory(Skip = "known defect: control-server#340 https://github.com/trytoreachpeak0/8005-agv-control-server/issues/340")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ASafetyChangeLostInFlightIsResentInTheHandshakeAndAnsweredOnce(bool unsafeChange)
+    {
+        SafetyKind kind = unsafeChange ? SafetyKind.NotSafe : SafetyKind.Safe;
+        ReconnectVerdict verdict = await ReconnectModel.RunAsync([new ReconnectStep.SafetyChange(kind, SafetyDelivery.LostInFlight)]);
+
+        Assert.False(verdict.Has(ReconnectViolation.OneInboundManyAnswers), verdict.Detail);
+        // 补发真的发生了、只回了一条：没有这一行，上面那条断言在「根本没补发」时也成立。
+        Assert.Contains("handshake SafetyStateChanged -> DurableAck" + Environment.NewLine, verdict.Detail, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 同上，而且整个握手要走完：同一代里补发 <c>SafetyStateChanged</c> vN 之后，同为 vN 的安全快照不被拒。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 模型在 cs#340 的 PR #343 头 <c>cb44fb60</c> 上（cs#340 修好之后）300 个组合里找到 91 个，确定性删减到这一步，种子与上面那条
+    /// 相同。服务端按整行报文的哈希判「同号不同内容」，补发的变化通知与握手快照哪怕安全内容逐字相同，整行也必然不同，于是
+    /// <c>safety revision N has conflicting content</c>，握手被拒——onboard-hmi#206。
+    /// </para>
+    /// <para>
+    /// 在 cs#340 修好之前走不到这里：握手在补发那一条的答复上就断了。所以这一条要等 cs#340 与 hmi#206 都修好才会绿。
+    /// </para>
+    /// </remarks>
+    [Theory(Skip = "known defect: onboard-hmi#206 https://github.com/trytoreachpeak0/8005-agv-onboard-hmi/issues/206")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ASafetyChangeLostInFlightDoesNotGetTheNextHandshakeRefused(bool unsafeChange)
+    {
+        SafetyKind kind = unsafeChange ? SafetyKind.NotSafe : SafetyKind.Safe;
+        ReconnectVerdict verdict = await ReconnectModel.RunAsync([new ReconnectStep.SafetyChange(kind, SafetyDelivery.LostInFlight)]);
+
+        Assert.Empty(verdict.Violations);
+        Assert.Contains("entryReachedVehicle=True", verdict.Detail, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// 离站等待期限开着时，到站那一段被断线打断之后立刻重连（中间没有任何一轮看见会话未就绪），录入请求照样以第 2 代发出。
     /// </summary>
     /// <remarks>
