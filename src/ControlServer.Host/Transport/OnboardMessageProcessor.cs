@@ -560,12 +560,8 @@ public sealed partial class OnboardMessageProcessor(
                         .ConfigureAwait(false);
                     SessionReadinessDecision recoveryDecision = await store.DecideReadinessAsync(
                         agvId, generation, cancellationToken).ConfigureAwait(false);
-                    if (recoveryDecision.Readiness == state.Readiness)
-                    {
-                        return recoveryAck;
-                    }
-                    state.Readiness = recoveryDecision.Readiness;
-                    return $"{recoveryAck}\n{SessionReadinessLine(recoveryDecision, agvId, generation, state)}";
+                    return AnswerWithReadiness(
+                        recoveryAck, recoveryDecision, agvId, generation, state, announceUnchanged: false);
                 }
             case "ManualChargingReturnToServiceRequested":
                 {
