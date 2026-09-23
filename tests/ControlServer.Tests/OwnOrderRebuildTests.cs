@@ -3,6 +3,7 @@ using ControlServer.Domain;
 using ControlServer.Host.Runtime;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using static ControlServer.Tests.Batch7StopDrivenAdvanceDriver;
 using static ControlServer.Tests.JourneyRuntimeWorkerTestKit;
 
@@ -746,6 +747,31 @@ public sealed class OwnOrderRebuildTests
         Assert.Equal(OwnOrderRebuildStates.Ended, (await SingleRebuildAsync(fixture, before.PickupUpperId)).State);
         Assert.Equal(3, fixture.Riot.CreateCount("TO_PICKUP"));
         Assert.Null((await fixture.RuntimeAsync()).BlockReasonCode);
+    }
+
+    /// <summary>
+    /// 延迟是第一条护栏，必须大于零、至多 10 分钟：配成 0 就等于没有这条护栏——取消它的人还没来得及让车停下，新单已经发出去了。
+    /// </summary>
+    /// <remarks>审查 S6。第一版的校验放行 0（「zero or more」），默认 30 秒是用户 2026-09-22 定的。</remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0360")]
+    public void TheRebuildDelayDefaultsToThirtySecondsAndMustBePositive()
+    {
+        const string failure = "OwnOrderRebuildDelay must be positive and at most 10 min.";
+        Assert.Equal(TimeSpan.FromSeconds(30), new JourneyRuntimeOptions().OwnOrderRebuildDelay);
+        JourneyRuntimeOptionsValidator validator = new(new ConfigurationBuilder().Build());
+        JourneyRuntimeOptions options = JourneyRuntimeOptionsTests.ValidEnabledOptions();
+
+        foreach (TimeSpan accepted in new[] { TimeSpan.FromSeconds(1), TimeSpan.FromMinutes(10) })
+        {
+            options.OwnOrderRebuildDelay = accepted;
+            Assert.DoesNotContain(failure, validator.Validate(null, options).Failures ?? [], StringComparer.Ordinal);
+        }
+        foreach (TimeSpan refused in new[] { TimeSpan.Zero, TimeSpan.FromSeconds(-1), TimeSpan.FromMinutes(10) + TimeSpan.FromTicks(1) })
+        {
+            options.OwnOrderRebuildDelay = refused;
+            Assert.Contains(failure, validator.Validate(null, options).Failures ?? [], StringComparer.Ordinal);
+        }
     }
 
     // ---- 会话因本服务端自己的在途单而未就绪（真车载端行驶全程的样子） ---------------------------------------------

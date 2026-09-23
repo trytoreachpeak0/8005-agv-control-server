@@ -719,13 +719,14 @@ public sealed partial class MultiVehicleExecutionTests
     public async Task AVehicleWaitingForItsOrderToBeRebuiltTakesNoAppendedDemand(string waiting)
     {
         // Waiting for the vehicle needs the delay over while the synthetic session is still fresh: this fixture has no way to
-        // hear from the peer again, and a session silent past SessionLiveness.Timeout ends the round before the rebuild.
+        // hear from the peer again, and a session silent past SessionLiveness.Timeout ends the round before the rebuild. The
+        // shortest delay the options accept, one second, is one round of this fixture (review S6: zero is refused).
         bool forTheVehicle = waiting == "waiting-for-the-vehicle";
         await using FleetFixture fixture = await FleetFixture.CreateAsync(
             configure: options =>
             {
                 options.Fleet = options.Fleet[..1];
-                options.OwnOrderRebuildDelay = forTheVehicle ? TimeSpan.Zero : options.OwnOrderRebuildDelay;
+                options.OwnOrderRebuildDelay = forTheVehicle ? TimeSpan.FromSeconds(1) : options.OwnOrderRebuildDelay;
             },
             withRouteGraph: true);
         await fixture.AllowEnRouteAppendAsync(1_000_000);
