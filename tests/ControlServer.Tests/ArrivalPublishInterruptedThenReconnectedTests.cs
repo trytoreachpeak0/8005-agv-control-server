@@ -158,11 +158,12 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
 
         Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync()).Stage);
         Assert.Equal(3, SentLines(fixture, "SublotEntryRequested").Last().GetProperty("sessionGeneration").GetInt64());
-        Assert.Equal(
-            [2L, 2L],
+        // 车已确认的计划不再以第 3 代发出。只断这一条：第 2 代里它发过几次是现有行为，不是本票要的性质，
+        // 钉成期望会让以后去掉那次多余的发送的人撞红（第四轮审查低 3）。
+        Assert.DoesNotContain(
+            3L,
             SentLines(fixture, "UpcomingStopPlanSnapshot")
                 .Where(line => IsArrivedPickupPlan(line.GetRawText()))
-                .Skip(1)
                 .Select(line => line.GetProperty("sessionGeneration").GetInt64()));
     }
 
@@ -422,6 +423,8 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
     // 第三轮审查建议 2：门没关的站点超时告警与纠错进行中，各在它们自己的停站阶段。
     [InlineData("STATION_TIMEOUT_DOOR_NOT_CLOSED", JourneyRuntimeStage.AwaitingLoadResult)]
     [InlineData("LOAD_CORRECTION_IN_PROGRESS", JourneyRuntimeStage.AwaitingStationDeparture)]
+    // 第四轮审查建议 2：车载端答了「不安全」，等人去车前处理；写入处按 control-server#80 不许开始时间重启。
+    [InlineData("PRE_DEPARTURE_SAFETY_NOT_VALID", JourneyRuntimeStage.AwaitingDepartureSafety)]
     public async Task AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(string code, JourneyRuntimeStage stage)
     {
         (RuntimeFixture fixture, ConnectionCut cut) = await ArrivalPublishCutAfterTheWorklistAsync();
@@ -539,6 +542,59 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
         JourneyRuntimeRow runtime = await ReadRuntimeAfterFailedRoundAsync(fixture);
         Assert.Equal(AdvanceFailedReason, runtime.BlockReasonCode);
         Assert.Equal(fixture.Clock.GetUtcNow(), runtime.BlockReasonSince);
+    }
+
+    /// <summary>
+    /// 传输类失败不只长成顶层的 <see cref="IOException"/>：被包了一层，或者连接已经释放，会话确实未就绪时同样保留
+    /// <c>ONBOARD_SESSION_NOT_READY</c> 与它的开始时间（control-server#331 第四轮审查建议 1）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 两行各守一处：<c>wrapped-io</c> 守「沿内层异常找」——把查找改成只看顶层，只有这一行会红，上面几条抛的都是顶层
+    /// <see cref="IOException"/>；<c>disposed-connection</c> 守 <see cref="ObjectDisposedException"/>，那是连接释放时
+    /// <c>OnboardPeer.DisposeAsync</c> 释放发送闸门、与之赛跑的发送在等闸门时抛的。
+    /// </para>
+    /// <para>
+    /// 注意 <see cref="ObjectDisposedException"/> 派生自 <see cref="InvalidOperationException"/>，而上一条用后者代表「与连接无关」。
+    /// 两条的判据相反，靠的是判定按具体类型认它，所以这里断言抛出的正是造出来的那个类型，不是它的基类。
+    /// </para>
+    /// </remarks>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    [Trait("ProtocolVector", "CV-DEMAND-ACCEPT-TO-PICKUP")]
+    [InlineData("wrapped-io")]
+    [InlineData("disposed-connection")]
+    public async Task OnTheOwnOrderATransportFailureInAnyShapeKeepsTheSessionNotReadyCode(string shape)
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        ConnectionCut cut = ConnectionCut.Attach(fixture);
+        fixture.Catalog.Set(fixture.Demand(DemandId, "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        await PickupDispatchPlanPastOwnOrderTests.DropSessionOnOwnOrderAsync(fixture);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        JourneyRuntimeRow first = await fixture.RuntimeAsync();
+        Assert.Equal("ONBOARD_SESSION_NOT_READY", first.BlockReasonCode);
+        DateTimeOffset since = first.BlockReasonSince!.Value;
+
+        Exception Fault() => shape switch
+        {
+            "wrapped-io" => new InvalidOperationException(
+                "The send failed.", new IOException("No recovered Onboard peer is connected for the test vehicle.")),
+            "disposed-connection" => new ObjectDisposedException("SemaphoreSlim"),
+            _ => throw new ArgumentOutOfRangeException(nameof(shape), shape, null),
+        };
+        await ReconnectStillOnOwnOrderAsync(fixture, generation: 2);
+        cut.On(line => MessageType(line) == "UpcomingStopPlanSnapshot", Fault);
+        fixture.Clock.Advance(TimeSpan.FromSeconds(10));
+        await fixture.HearFromPeerAsync();
+        Exception thrown = await Assert.ThrowsAnyAsync<Exception>(() => fixture.Engine.ExecuteOnceAsync(Token));
+        Assert.IsType(Fault().GetType(), thrown, exactMatch: true);
+
+        JourneyRuntimeRow runtime = await ReadRuntimeAfterFailedRoundAsync(fixture);
+        Assert.NotEqual(since, fixture.Clock.GetUtcNow());
+        Assert.Equal("ONBOARD_SESSION_NOT_READY", runtime.BlockReasonCode);
+        Assert.Equal(since, runtime.BlockReasonSince);
     }
 
     /// <summary>

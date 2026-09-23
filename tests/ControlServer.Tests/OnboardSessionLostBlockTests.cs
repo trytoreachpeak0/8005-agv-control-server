@@ -145,7 +145,10 @@ public sealed class OnboardSessionLostBlockTests
     /// program#55 的升级档位清零。
     /// </para>
     /// <para>
-    /// <b>这里的阶段与码的组合是造出来的。</b>失联写码只在两个到站阶段起作用，而这两个码只在停站阶段写入（等装货结果、等离站），
+    /// 第四轮审查又加了 <c>PRE_DEPARTURE_SAFETY_NOT_VALID</c>：车载端答了「不安全」，等人去车前处理。
+    /// </para>
+    /// <para>
+    /// <b>这里的阶段与码的组合是造出来的。</b>失联写码只在两个到站阶段起作用，而这几个码只在停站阶段写入（等装货结果、等离站、等离站安全答复），
     /// 阶段一变 <c>SetStage</c> 就把码清掉——产品代码里走不到「到站阶段带着这两个码」。这条钉的是「这份清单是两处共用的」：
     /// 哪天有人从判定里拿掉其中一个，推进失败那一侧的用例会红，这一侧也会红。
     /// </para>
@@ -154,6 +157,8 @@ public sealed class OnboardSessionLostBlockTests
     [Trait("IntegrationSlice", "FP-IS-05")]
     [InlineData("STATION_TIMEOUT_DOOR_NOT_CLOSED")]
     [InlineData("LOAD_CORRECTION_IN_PROGRESS")]
+    // 第四轮审查建议 2 加进判定的码，同样只在停站阶段（等离站安全答复）写入。
+    [InlineData("PRE_DEPARTURE_SAFETY_NOT_VALID")]
     public async Task ASilentSessionDoesNotOverwriteACodeThatNamesAWaitOnAPerson(string code)
     {
         await using RuntimeFixture fixture = await ArrivalWaitAsync();
