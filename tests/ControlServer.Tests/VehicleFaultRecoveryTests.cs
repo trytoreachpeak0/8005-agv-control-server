@@ -384,6 +384,48 @@ public sealed class VehicleFaultRecoveryTests
         Assert.Equal((VehicleFaultLevel.None, 1L), (fault.Level, fault.FaultGeneration));
     }
 
+    /// <summary>
+    /// 护栏三在故障来源上：清除后重建出来的单，窗口之内又 FAILED、人又清除一次——这一次不再重建，处置是
+    /// <c>REBUILD_STOPPED</c>，旅程码 <c>OWN_ORDER_REBUILD_STOPPED</c>，需求仍不释放；之后几轮既不建单，也不对那张 FAILED 单再记故障。
+    /// </summary>
+    [Fact]
+    public async Task AFaultClearedAgainSoonAfterTheRebuildStopsTheRebuilding()
+    {
+        await using RuntimeFixture fixture = await FaultedOnTheWayToPickupAsync();
+        SiteRiot site = new(fixture);
+        Assert.Equal(VehicleFaultRecoveryDispositions.RebuildScheduled, (await Service(fixture, site).RecoverAsync(Clear(fixture), Token)).Disposition);
+        fixture.Context.ChangeTracker.Clear();
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+        string rebuiltUpperId = (await CurrentStopAsync(fixture, FirstDemandId)).UpperId;
+
+        fixture.Clock.Advance(fixture.Options.OwnOrderRebuildRepeatWindow - TimeSpan.FromMinutes(2));
+        await fixture.HearFromPeerAsync();
+        fixture.Riot.FailOrder(rebuiltUpperId);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal((VehicleFaultLevel.SuspectedBlocked, 2L), ((await FaultAsync(fixture)).Level, (await FaultAsync(fixture)).FaultGeneration));
+
+        VehicleFaultRecoveryDecision again = await Service(fixture, site).RecoverAsync(Clear(fixture), Token);
+        fixture.Context.ChangeTracker.Clear();
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+
+        Assert.Equal(
+            (VehicleFaultRecoveryOutcome.Cleared, VehicleFaultRecoveryDispositions.RebuildStopped),
+            (again.Outcome, again.Disposition));
+        Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+        JourneyRuntimeRow stopped = await fixture.RuntimeAsync();
+        Assert.Equal((JourneyRuntimeStage.AwaitingPickupArrival, "OWN_ORDER_REBUILD_STOPPED"), (stopped.Stage, stopped.BlockReasonCode));
+        VehicleFaultStateRow fault = await FaultAsync(fixture);
+        Assert.Equal((VehicleFaultLevel.None, 2L), (fault.Level, fault.FaultGeneration));
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        Assert.Null((await reading.Set<JourneyDemandRow>().AsNoTracking().SingleAsync(Token)).RemovedAt);
+        OwnOrderRebuildRow record = await reading.OwnOrderRebuilds.AsNoTracking().SingleAsync(row => row.EndedUpperId == rebuiltUpperId, Token);
+        Assert.Equal(
+            (OwnOrderRebuildSources.FaultClearedNothingOnBoard, OwnOrderRebuildStates.Stopped, "REBUILT_ORDER_ENDED_AGAIN_WITHIN_WINDOW", OperatorId),
+            (record.Source, record.State, record.StoppedReason, record.OperatorId));
+    }
+
     // ---- 幂等与崩溃 ------------------------------------------------------------------------------------------
 
     /// <summary>
