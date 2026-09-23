@@ -50,7 +50,9 @@ namespace ControlServer.Host.Runtime;
 /// for the vehicle's own sake alone; it no longer does, because Onboard reports exactly <c>unknownPresent=true</c> in that
 /// state and nothing then vouches for the doors. The state does not last: once the ended order is final, the server's
 /// vehicle-safety read drops <c>RIOT_NONFINAL_ORDER_PRESENT</c> (only states 1, 3, 7 and 9 count), and a stopped vehicle's
-/// session becomes Ready again.
+/// session becomes Ready again. A new order already sent is a different matter: reconciling it only reads, so it is
+/// reconciled behind the gate as well, and confirmed there when the create answer was lost and the vehicle is already
+/// driving it (incremental review B2).
 /// </para>
 /// <para>
 /// <b>A cleared fault with cargo on board is rebuilt only on fresh evidence</b> (REQ-0362, which keeps REQ-0238's premise for
@@ -308,14 +310,11 @@ public sealed partial class JourneyRuntimeEngine
                 return true;
             }
         }
-        else if (!mayCreate)
-        {
-            await WaitForRebuildAsync(
-                runtime, rebuild, "ONBOARD_SESSION_NOT_READY", OwnOrderRebuildWaitingVehicleReason, now, cancellationToken)
-                .ConfigureAwait(false);
-            return true;
-        }
 
+        // Here the new order has been sent at least once (incremental review B2): reconciling it only reads -- with a create
+        // already attempted, ReconcileOrCreateAsync never creates again -- so it goes on behind the gate too. A vehicle that
+        // lost the create answer and is driving the new order, with its session not ready for exactly that reason, is then
+        // named for what it is doing, and a HANG on the way is named ORDER_HANG, not "waiting for the vehicle".
         // Ordering: ask RIoT for the order under the upperId fixed in the record. Idempotent there, so a create already made
         // before a crash -- the "created, not recorded" point -- is found and confirmed, never made twice.
         MovementDispatchResult result = await movementDispatch.ReconcileOrCreateAsync(rebuild.NewUpperId, cancellationToken)

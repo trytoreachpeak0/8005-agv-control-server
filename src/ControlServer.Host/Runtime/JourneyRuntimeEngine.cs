@@ -1569,11 +1569,14 @@ public sealed partial class JourneyRuntimeEngine(
         JourneyStopCursor stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken)
             .ConfigureAwait(false);
         // A rebuild under way is kept and named behind the gate too (control-server#318): a real onboard is not ready for most
-        // of a leg. It creates nothing here -- a new order waits for a Ready session that vouches for the vehicle (review M2).
+        // of a leg. It creates nothing here -- a new order waits for a Ready session that vouches for the vehicle (review M2) --
+        // but an order already sent is reconciled, which only reads (incremental review B2); once it is confirmed the journey
+        // carries the gate's own code again, and the next round names a HANG like any other.
         if (await OwnOrderRebuilds.ForStopAsync(dbContext, stops.Current, cancellationToken).ConfigureAwait(false) is not null)
         {
             return await AdvanceOwnOrderRebuildAsync(
-                    runtime, stops.Current, currentMap, mayCreate: false, reasonOnceRebuilt: null, cancellationToken)
+                    runtime, stops.Current, currentMap, mayCreate: false, reasonOnceRebuilt: "ONBOARD_SESSION_NOT_READY",
+                    cancellationToken)
                 .ConfigureAwait(false);
         }
         OrderIntentRow? intent = await dbContext.OrderIntents.SingleOrDefaultAsync(
