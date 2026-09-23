@@ -202,10 +202,13 @@ public sealed class ReconnectModelRegressionTests
     /// <c>safety revision N has conflicting content</c>，握手被拒——onboard-hmi#206。
     /// </para>
     /// <para>
-    /// 在 cs#340 修好之前走不到这里：握手在补发那一条的答复上就断了。所以这一条要等 cs#340 与 hmi#206 都修好才会绿。
+    /// 在 cs#340 修好之前走不到这里：握手在补发那一条的答复上就断了。hmi#206 修在车载端（onboard-hmi PR #207）：本次握手补发过
+    /// <c>SafetyStateChanged</c> 时，握手快照取已接受版本的下一版，所以这一条绿的前提是模型里的车照那条新规则发快照
+    /// （<see cref="ReconnectModel"/> 的 <c>SafetySnapshotPayload</c>）。把模拟的车改回「一律用已接受的版本」，这一条会重新红在
+    /// <c>has conflicting content</c>。
     /// </para>
     /// </remarks>
-    [Theory(Skip = "known defect: onboard-hmi#206 https://github.com/trytoreachpeak0/8005-agv-onboard-hmi/issues/206")]
+    [Theory]
     [Trait("IntegrationSlice", "FP-IS-00")]
     [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
     [InlineData(true)]
@@ -217,6 +220,43 @@ public sealed class ReconnectModelRegressionTests
 
         Assert.Empty(verdict.Violations);
         Assert.Contains("entryReachedVehicle=True", verdict.Detail, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 模型里的车给握手安全快照取号的两半都钉住：这一次握手补发过 <c>SafetyStateChanged</c> 时取已接受版本的下一版，没补发时取已接受
+    /// 的那一版——与 onboard-hmi PR #207 的车载端规则逐条一致。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 只断「没有违规」守不住后一半：独立审查把取号改成「一律 +1」，<c>ReconnectModel*</c> 全部与 200 种子那一批照样全绿——版本号
+    /// 多跳一格服务端不拒。可那样模型测的就是一台与真车不同的车，所以这里直接断轨迹里打出的快照号。期望值是按起点手算的：夹具播种的
+    /// 第 1 代已接受 v7；补发那一格先发 v8、送到之前断线，下一次握手补发 v8，快照取 v9；没补发那一格直接重连，快照取 v7。
+    /// </para>
+    /// <para>
+    /// 反向验证见 control-server PR #347：取号改成「一律 +1」，没补发那一格红；改成「一律用已接受版本」，补发那一格红（同代冲突）。
+    /// </para>
+    /// </remarks>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
+    [InlineData(true, "handshake safety snapshot at v9 (accepted before v8, resent a change: True)")]
+    [InlineData(false, "handshake safety snapshot at v7 (accepted before v7, resent a change: False)")]
+    public async Task TheHandshakeSnapshotTakesTheNextRevisionOnlyWhenTheHandshakeResentASafetyChange(bool resend, string expected)
+    {
+        ReconnectStep[] steps = resend
+            ? [new ReconnectStep.SafetyChange(SafetyKind.NotSafe, SafetyDelivery.LostInFlight), new ReconnectStep.BeginHandshake()]
+            : [new ReconnectStep.BeginHandshake()];
+        ReconnectVerdict verdict = await ReconnectModel.RunAsync(steps);
+
+        Assert.Empty(verdict.Violations);
+        string[] snapshots =
+        [
+            .. verdict.Detail.Split('\n')
+                .Select(line => line.Trim())
+                .Where(line => line.StartsWith("handshake safety snapshot at ", StringComparison.Ordinal)),
+        ];
+        // 恰好一次握手：序列里只有一次重连，收尾不该再重连（第一个元素之外的都说明收尾出了事）。
+        Assert.Equal([expected], snapshots);
     }
 
     /// <summary>
