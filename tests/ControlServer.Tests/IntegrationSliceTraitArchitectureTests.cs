@@ -122,6 +122,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["MultiVehicleExecutionTests"] = "7.5 #1, FP-C2 B2 multi-vehicle; the conformance vector format has no vehicle dimension",
             ["OnboardOutboundFunnelArchitectureTests"] = "cross-cutting architecture guard (control-server#259): every server-originated line reaches a socket through OnboardPeer's handshake gate; hanging it off a slice would defer the guard with the slice",
             ["OnboardVehicleSafetyEndpointsTests"] = "server-side safety projection endpoint; not a protocol wire message",
+            ["OwnOrderRebuildCargoEvidenceRequestTests"] = "control-server#318 REQ-0362 after a fault with cargo on board is cleared the Host asks the vehicle for a SafetyStateSnapshot (the #142 request, VERSION_GAP), once per session and once more on becoming ready, never inside the handshake; the request line is the existing message, no new wire message",
             ["OwnOrderRebuildTests"] = "control-server#318 an order of this server's that was cancelled in RIoT, or whose FAILED fault a person cleared, is rebuilt for the same vehicle and demand behind three guards; single-ended server-to-RIoT, no wire message",
             ["PackageCapacityStoreTests"] = "server-internal store; no wire message",
             ["ProtocolEnvelopeObserverArchitectureTests"] = "cross-cutting guard on the observation point every slice's outbound lines pass through (control-server#85); hanging it off one would defer the guard with that slice",
