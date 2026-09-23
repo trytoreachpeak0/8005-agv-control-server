@@ -949,6 +949,43 @@ public sealed class OwnOrderRebuildTests
         await AssertRebuiltAsync(fixture, before, stopsBefore, stopsBefore.Single(stop => stop.StopRole == JourneyStopRoles.Pickup));
     }
 
+    /// <summary>
+    /// 新单已经发给 RIoT、建单应答丢了（还没确认），接着车载端因为这张本车在途单整段未就绪：闸门后面照样按同一个单号对账（只读，
+    /// 一次创建都发过了，不会再建），确认之后记录转 <c>REBUILT</c>、旅程码是闸门的 <c>ONBOARD_SESSION_NOT_READY</c>——车确实在按新单走，
+    /// 看板不该说「车此刻不能动」；新单途中 HANG，闸门后面照常命名成 <c>ORDER_HANG</c>。
+    /// </summary>
+    /// <remarks>
+    /// 增量审查 B2。第一版（审查 M2 之后）闸门后一律不推进，这一格停在 <c>OWN_ORDER_REBUILD_WAITING_VEHICLE</c>，与实际相反；
+    /// 记录一直是 <c>ORDERING</c>，HANG 也就一直不会被说出来。M2 挡的是「建单」，这一格没有单要建。
+    /// </remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0360")]
+    public async Task ARebuiltOrderSentBeforeTheSessionDroppedIsConfirmedBehindTheGate()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync();
+        fixture.Riot.CancelOrder(before.PickupUpperId);
+        await TickAndRunAsync(fixture);
+        fixture.Riot.LoseNextCreateResponse = true;
+        await PassTheDelayAsync(fixture);
+        OwnOrderRebuildRow ordering = await SingleRebuildAsync(fixture, before.PickupUpperId);
+        Assert.Equal(OwnOrderRebuildStates.Ordering, ordering.State);
+        Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+
+        await DropSessionOnOwnOrderAsync(fixture);
+        await TickAndRunAsync(fixture);
+
+        Assert.Equal(OwnOrderRebuildStates.Rebuilt, (await SingleRebuildAsync(fixture, before.PickupUpperId)).State);
+        Assert.Equal("ONBOARD_SESSION_NOT_READY", (await fixture.RuntimeAsync()).BlockReasonCode);
+        Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+
+        fixture.Riot.SetOrderState(ordering.NewUpperId, RiotOrderState.Hang, terminal: false);
+        await TickAndRunAsync(fixture);
+
+        Assert.Equal("ORDER_HANG", (await fixture.RuntimeAsync()).BlockReasonCode);
+        Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+    }
+
     // ---- 夹具 ----------------------------------------------------------------------------------------------
 
     /// <summary>
