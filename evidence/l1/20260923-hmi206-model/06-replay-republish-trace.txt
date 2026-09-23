@@ -1,0 +1,35 @@
+== synthetic [Safety(NotSafe,LostInFlight), BeginHandshake] violation=none
+final: onboard=synthetic stage=AwaitingSublot block=null session=Ready/READY generation=2 entryReachedVehicle=True roundsFromRecoveryToEntry=1 ackConflicts=0 regressions=0
+trace:
+  Safety(NotSafe,LostInFlight) -> v8 lost in flight, connection dropped
+    handshake SessionHello -> SessionAccepted
+    handshake SafetyStateChanged -> DurableAck
+  BeginHandshake
+    handshake CapabilitySnapshot -> SnapshotAppliedAck
+    handshake SafetyStateSnapshot -> SnapshotAppliedAck
+    handshake OnboardAlarmSnapshot -> SnapshotAppliedAck
+    handshake RecoveryStateReport -> DurableAck+SessionReadiness
+    republish after the handshake: v10 answered DurableAck+SessionReadiness
+  tail CompleteHandshake
+  tail Safety(Safe,Delivered) -> v11 answered DurableAck+SessionReadiness
+  tail Arrive
+  tail Round(2s) -> ok; stage=AwaitingSublot block=- wait=+2s; delivered Plan@2,VBS@2,Worklist@2,Plan@2,Entry@2
+  tail Ack
+
+== real [BeginHandshake, Safety(Safe,Delivered), CompleteHandshake] violation=none
+final: onboard=real stage=AwaitingSublot block=null session=Ready/READY generation=2 entryReachedVehicle=True roundsFromRecoveryToEntry=1 ackConflicts=0 regressions=0
+trace:
+  start real onboard: Safety(OwnOrder,Delivered) -> v8 answered DurableAck+SessionReadiness
+    handshake SessionHello -> SessionAccepted
+  BeginHandshake
+  Safety(Safe,Delivered) -> not published: session not publishable, state kept for the republish after the next handshake (real onboard before arrival: own-order shape)
+    handshake CapabilitySnapshot -> SnapshotAppliedAck
+    handshake SafetyStateSnapshot -> SnapshotAppliedAck
+    handshake OnboardAlarmSnapshot -> SnapshotAppliedAck
+    handshake RecoveryStateReport -> DurableAck+SessionReadiness
+    republish after the handshake: v9 answered DurableAck+SessionReadiness
+  CompleteHandshake
+  tail Arrive -> vehicle reports safe: v10 answered DurableAck+SessionReadiness
+  tail Round(2s) -> ok; stage=AwaitingSublot block=- wait=+2s; delivered Plan@2,VBS@2,Worklist@2,Plan@2,Entry@2
+  tail Ack
+
