@@ -1,0 +1,15 @@
+xUnit.net v3 In-Process Runner v3.2.2+728c1dce01 (64-bit .NET 8.0.31)
+  Discovering: ControlServer.Tests
+  Discovered:  ControlServer.Tests
+  Starting:    ControlServer.Tests
+    ControlServer.Tests.ReconnectModelRegressionTests.AHungOrderKeepsItsCodeAndStartWhenARoundFailsOnTheLostConnection [FAIL]
+      Assert.Empty() Failure: Collection was not empty
+      Collection: [Tuple (WaitOnPersonOverwritten, "ORDER_HANG (since 2026-08-26T01:00:01.0000000+00:0"···)]
+      Stack Trace:
+        tests\ControlServer.Tests\ReconnectModelRegressionTests.cs(102,0): at ControlServer.Tests.ReconnectModelRegressionTests.AHungOrderKeepsItsCodeAndStartWhenARoundFailsOnTheLostConnection()
+        --- End of stack trace from previous location ---
+    ControlServer.Tests.ReconnectModelRegressionTests.ASafetyChangeLostInFlightDoesNotGetTheNextHandshakeRefused [SKIP]
+      known defect: onboard-hmi#206 https://github.com/trytoreachpeak0/8005-agv-onboard-hmi/issues/206
+  Finished:    ControlServer.Tests (ID = '86471beb18f28669ce9af0c9818f4a43a31c9b2523918616686cc3080055c8e3')
+=== TEST EXECUTION SUMMARY ===
+   ControlServer.Tests  Total: 15, Errors: 0, Failed: 1, Skipped: 1, Not Run: 0, Time: 9.453s
