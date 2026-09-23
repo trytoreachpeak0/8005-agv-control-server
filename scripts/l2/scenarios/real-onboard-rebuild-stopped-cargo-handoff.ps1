@@ -50,7 +50,7 @@ if (-not $Context.FaultRecoveryCredential) {
 $demandGuid = [guid]::NewGuid()
 $demandId = $demandGuid.ToString('D')
 $sublot = "L2-RH-$($Context.RunId)"
-$ids = @('L2-RH-01', 'L2-RH-02', 'L2-RH-03', 'L2-RH-04', 'L2-RH-05', 'L2-RH-06', 'L2-RH-07', 'L2-RH-08', 'L2-RH-09')
+$ids = @('L2-RH-01', 'L2-RH-02', 'L2-RH-03', 'L2-RH-04', 'L2-RH-05', 'L2-RH-06', 'L2-RH-07', 'L2-RH-08', 'L2-RH-09', 'L2-RH-10', 'L2-RH-11')
 
 function Get-Journey {
     # 先赋值再用（见文件头）。
@@ -278,28 +278,29 @@ $assertions.Add(
     '409 OWN_ORDER_REBUILD_EXIT_CARGO_NOT_IN_PLACE / OWN_ORDER_REBUILD_CARGO_NOT_IN_PLACE / TO_GATE 1',
     "$($rebuildRefused.Status) $((Get-Reasons $rebuildRefused) -join ',') / $(if ($afterRefusal) { [string]$afterRefusal.BlockReasonCode } else { '(无旅程)' }) / TO_GATE $(Get-G3Count $connection "SELECT COUNT(*) AS Total FROM OrderIntents WHERE DemandId = '$demandId' AND Purpose = 'TO_GATE'")")
 
+# 转交接之后的三件事分三条判据，红能指到一端（衔接 b 的变异只该红在 L2-RH-07、L2-RH-08）：
+#   L2-RH-05 服务端把这一趟挂起（旅程与记录，入口一次保存就写完）；
+#   L2-RH-07 服务端向车宣布会话要恢复（就绪，DecideReadinessAsync 的那一项，要等车来一条消息、服务端要一次快照之后才判）；
+#   L2-RH-08 车载端给出「故障交接」入口（它只在 RECOVERY_REQUIRED 时给）。
 $prepared = Invoke-Exit 'PREPARE_CARGO_HANDOFF' 'handoff'
-$handoffState = Wait-L2ConditionOrLast -Description 'the journey is held for the handoff and the session asks for it' `
-    -Journal $journal -Criterion 'handoff-prepared' -TimeoutSeconds 60 `
+$held = Wait-L2ConditionOrLast -Description 'the journey is held for the handoff' `
+    -Journal $journal -Criterion 'handoff-prepared' -TimeoutSeconds 30 `
     -Probe {
         $journey = Get-Journey
         $record = Get-Rebuild ([string]$gate.UpperId)
-        $session = Get-G3Session $connection
         [pscustomobject]@{
-            Journey   = if ($journey) { "$($journey.Stage)/$($journey.BlockReasonCode)" } else { '' }
-            Record    = if ($record) { [string]$record.State } else { '' }
-            Readiness = if ($session) { "$($session.Readiness)/$($session.ReasonCode)" } else { '' }
+            Journey = if ($journey) { "$($journey.Stage)/$($journey.BlockReasonCode)" } else { '' }
+            Record  = if ($record) { [string]$record.State } else { '' }
         }
     } `
-    -Until { param($v) $v.Journey -eq 'Blocked/OWN_ORDER_REBUILD_AWAITING_CARGO_HANDOFF' -and $v.Readiness -eq 'RecoveryRequired/CARGO_HANDOFF_REQUIRED' }
+    -Until { param($v) $v.Journey -eq 'Blocked/OWN_ORDER_REBUILD_AWAITING_CARGO_HANDOFF' -and $v.Record -eq 'AWAITING_CARGO_HANDOFF' }
 $assertions.Add(
     'L2-RH-05',
-    '人工转交接被受理（200 HandoffPrepared / AWAITING_CARGO_HANDOFF）：旅程转 Blocked、码 OWN_ORDER_REBUILD_AWAITING_CARGO_HANDOFF，重建记录 AWAITING_CARGO_HANDOFF；向车要快照之后会话转 RecoveryRequired / CARGO_HANDOFF_REQUIRED',
+    '人工转交接被受理（200 HandoffPrepared / AWAITING_CARGO_HANDOFF）：旅程转 Blocked、码 OWN_ORDER_REBUILD_AWAITING_CARGO_HANDOFF，重建记录 AWAITING_CARGO_HANDOFF',
     ($prepared.Status -eq 200 -and (Get-Field $prepared 'outcome') -eq 'HandoffPrepared' -and (Get-Field $prepared 'disposition') -eq 'AWAITING_CARGO_HANDOFF' -and
-        $handoffState.Journey -eq 'Blocked/OWN_ORDER_REBUILD_AWAITING_CARGO_HANDOFF' -and $handoffState.Record -eq 'AWAITING_CARGO_HANDOFF' -and
-        $handoffState.Readiness -eq 'RecoveryRequired/CARGO_HANDOFF_REQUIRED'),
-    '200 HandoffPrepared AWAITING_CARGO_HANDOFF / Blocked/OWN_ORDER_REBUILD_AWAITING_CARGO_HANDOFF / AWAITING_CARGO_HANDOFF / RecoveryRequired/CARGO_HANDOFF_REQUIRED',
-    "$($prepared.Status) $(Get-Field $prepared 'outcome') $(Get-Field $prepared 'disposition') / $($handoffState.Journey) / $($handoffState.Record) / $($handoffState.Readiness)")
+        $held.Journey -eq 'Blocked/OWN_ORDER_REBUILD_AWAITING_CARGO_HANDOFF' -and $held.Record -eq 'AWAITING_CARGO_HANDOFF'),
+    '200 HandoffPrepared AWAITING_CARGO_HANDOFF / Blocked/OWN_ORDER_REBUILD_AWAITING_CARGO_HANDOFF / AWAITING_CARGO_HANDOFF',
+    "$($prepared.Status) $(Get-Field $prepared 'outcome') $(Get-Field $prepared 'disposition') / $($held.Journey) / $($held.Record)")
 
 $preparedAgain = Invoke-Exit 'PREPARE_CARGO_HANDOFF' 'handoff again'
 $recordAgain = Get-Rebuild ([string]$gate.UpperId)
@@ -311,11 +312,29 @@ $assertions.Add(
     '200 AlreadyDone / AWAITING_CARGO_HANDOFF',
     "$($preparedAgain.Status) $(Get-Field $preparedAgain 'outcome') / $(if ($recordAgain) { [string]$recordAgain.State } else { '(没有记录)' })")
 
-# --- 7. 车载端给出「故障交接」入口，维护人员交接 --------------------------------------------------------------------
+# --- 7. 服务端宣布会话要恢复；车载端给出「故障交接」入口，维护人员交接 ------------------------------------------------
+
+# 就绪要等车来一条消息（心跳也算）、服务端借它要一次快照、快照到了才重判，所以是等，不是读一次。
+$announced = Wait-L2ConditionOrLast -Description 'the session asks for the cargo handoff' `
+    -Journal $journal -Criterion 'handoff-readiness' -TimeoutSeconds 60 `
+    -Probe {
+        $session = Get-G3Session $connection
+        if ($session) { "$($session.Readiness)/$($session.ReasonCode)" } else { '' }
+    } `
+    -Until { param($v) $v -eq 'RecoveryRequired/CARGO_HANDOFF_REQUIRED' }
+$assertions.Add(
+    'L2-RH-07',
+    '转交接之后服务端向车宣布会话要恢复：就绪 RecoveryRequired / CARGO_HANDOFF_REQUIRED（衔接 b，WireToGateStore.DecideReadinessAsync 只认这一个旅程码）',
+    ($announced -eq 'RecoveryRequired/CARGO_HANDOFF_REQUIRED'),
+    'RecoveryRequired/CARGO_HANDOFF_REQUIRED', $announced)
 
 $offered = Wait-G3ButtonOffered $onboard $journal '故障交接' 'onboard-fault-cargo-entry' 90
+$assertions.Add(
+    'L2-RH-08',
+    '车载端给出「故障交接」入口（它只在会话 RECOVERY_REQUIRED 时给；修前就绪是 READY，这里不出现）',
+    [bool]$offered, 'offered', $(if ($offered) { 'offered' } else { '90 秒内没出现' }))
 if (-not $offered) {
-    Add-G3NotReached $assertions ($ids | Select-Object -Skip 6) '车载端没有给出「故障交接」入口'
+    Add-G3NotReached $assertions ($ids | Select-Object -Skip 8) '车载端没有给出「故障交接」入口'
     return
 }
 $requestedAt = [DateTimeOffset]::UtcNow
@@ -333,7 +352,7 @@ $result = Wait-L2Condition -Description 'the server received FaultCargoRecoveryR
         else { $null }
     } -Until { param($v) $null -ne $v }
 if ($result -is [string]) {
-    Add-G3NotReached $assertions ($ids | Select-Object -Skip 6) '故障交接未被接受（车载端弹出「故障交接失败」）'
+    Add-G3NotReached $assertions ($ids | Select-Object -Skip 8) '故障交接未被接受（车载端弹出「故障交接失败」）'
     return
 }
 $actionId = [string]$result.Payload.recoveryActionId
@@ -348,7 +367,7 @@ $outboundCommands = Get-G3Outbound $connection 'FaultCargoRecoveryCommand'
 $commands = @($outboundCommands | Where-Object { [string]$_.Payload.recoveryActionId -eq $actionId })
 $workflow = Invoke-L2Query -Connection $connection -Sql "SELECT State, Outcome FROM RecoveryWorkflows WHERE WorkflowId = '$actionId'"
 $assertions.Add(
-    'L2-RH-07',
+    'L2-RH-09',
     '车载端的交接走完 CV-FAULT-CARGO-HANDOFF：RecoveryActionSubmitted(FAULT_CARGO_HANDOFF) 被接受，一条 FaultCargoRecoveryCommand，结果 HANDED_OFF；工作流 Reconciled / HANDED_OFF',
     ($actions.Count -eq 1 -and $actions[0].Response -eq 'RecoveryActionAccepted' -and
         [string]$actions[0].ResponsePayload.acceptedAction -eq 'FAULT_CARGO_HANDOFF' -and $actions[0].At -ge $requestedAt.AddSeconds(-1) -and
@@ -378,14 +397,14 @@ $settled = Wait-L2ConditionOrLast -Description 'the handoff settled on the serve
     } `
     -Until { param($v) $v.Journey -eq 'Completed/TERMINATED_BY_FAULT_CARGO_HANDOFF' -and $v.Readiness -eq 'Ready' -and $v.Record -eq 'ENDED' }
 $assertions.Add(
-    'L2-RH-08',
+    'L2-RH-10',
     '交接收敛：需求 Cancelled，旅程 Completed / TERMINATED_BY_FAULT_CARGO_HANDOFF，这条需求唯一的故障货物绑定以 HANDED_OFF_IN_EXCEPTION_SESSION 了结，停住的重建记录 ENDED，全程只有一张 TO_GATE 单，会话回到 Ready',
     ($settled.Demand -eq 'Cancelled' -and $settled.Journey -eq 'Completed/TERMINATED_BY_FAULT_CARGO_HANDOFF' -and
         $settled.Bindings -eq 1 -and $settled.Released -eq 1 -and $settled.Record -eq 'ENDED' -and $settled.Gates -eq 1 -and $settled.Readiness -eq 'Ready'),
     'Cancelled / Completed/TERMINATED_BY_FAULT_CARGO_HANDOFF / 绑定 1 了结 1 / ENDED / TO_GATE 1 / Ready',
     "$($settled.Demand) / $($settled.Journey) / 绑定 $($settled.Bindings) 了结 $($settled.Released) / $($settled.Record) / TO_GATE $($settled.Gates) / $($settled.Readiness)")
 
-Add-G3VehicleReleasedForNextDemand $Context 'L2-RH-09' `
+Add-G3VehicleReleasedForNextDemand $Context 'L2-RH-11' `
     '交接收敛之后车放出来了：这条需求的 TO_PICKUP 占用已释放，同一台车在 60 秒内接了下一单（旅程到 AwaitingPickupArrival、意图 CONFIRMED、没有停摆原因码）' `
     $demandId 'L2-RH'
 
