@@ -208,6 +208,41 @@ public sealed class OwnOrderRebuildTests
         Assert.Null((await fixture.RuntimeAsync()).BlockReasonCode);
     }
 
+    // ---- 建单门禁（REQ-0305） ------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// 重建的单和每一张还不存在的移动单一样，建之前过 REQ-0305 的建单门禁，问的是<b>它要去的那一站</b>（重建的取货单问取货站，
+    /// 不是需求冻结的卸货站）。门禁不放行时不建，码 <c>OWN_ORDER_REBUILD_BLOCKED_BY_CREATE_GATE</c>，记录写明门禁的原因；放行之后照常建。
+    /// </summary>
+    [Fact]
+    public async Task ARebuildGoesThroughTheCreateGateForTheStationItGoesTo()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync();
+        JourneyStopRow[] stopsBefore = await StopsAsync(fixture, before.JourneyId);
+        JourneyStopRow pickup = stopsBefore.Single(stop => stop.StopRole == JourneyStopRoles.Pickup);
+        fixture.Riot.CancelOrder(pickup.UpperId);
+        await TickAndRunAsync(fixture);
+        fixture.RouteCosts.FailFor(pickup.StationRiotId);
+        fixture.RouteCosts.Calls.Clear();
+
+        await PassTheDelayAsync(fixture);
+
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+        Assert.Equal("OWN_ORDER_REBUILD_BLOCKED_BY_CREATE_GATE", (await fixture.RuntimeAsync()).BlockReasonCode);
+        Assert.Equal(
+            "CREATE_GATE:CREATE_GATE_ROUTE_COST_UNAVAILABLE",
+            (await SingleRebuildAsync(fixture, pickup.UpperId)).WaitingReason);
+        Assert.Equal([(fixture.Options.MapId, pickup.StationRiotId, before.VehicleKey)], fixture.RouteCosts.Calls);
+
+        fixture.RouteCosts.Set(pickup.StationRiotId, 9000);
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+
+        Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+        await AssertRebuiltAsync(fixture, before, stopsBefore, pickup);
+    }
+
     // ---- 护栏三：短时二次出问题即停 --------------------------------------------------------------------------
 
     /// <summary>
