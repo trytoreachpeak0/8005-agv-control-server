@@ -1,3 +1,4 @@
+using ControlServer.Domain;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -262,7 +263,9 @@ internal static class OwnOrderRebuilds
     /// <b>The throttle</b>: once per session generation; once more in the same generation when the session has become ready
     /// since -- a vehicle whose session was not ready may not have answered; none once the cargo is proven, the rebuild is
     /// stopped, or it is not a cargo rebuild at all. So a session that never becomes ready is asked once, not on every
-    /// message, and a reconnection asks again.
+    /// message, and a reconnection asks again. A record waiting for a handoff counts only while its journey is still
+    /// <c>Blocked</c> (independent review S3): one whose journey has closed some other way is an orphan, and would otherwise
+    /// have the vehicle asked in every generation for good.
     /// </para>
     /// <para>
     /// <b>Cheap when nothing waits.</b> Every inbound message after the handshake comes through here. The question is a read on
@@ -284,7 +287,9 @@ internal static class OwnOrderRebuilds
             .Where(row => row.AgvId == agvId &&
                           ((row.State == OwnOrderRebuildStates.Pending &&
                             row.Source == OwnOrderRebuildSources.FaultClearedCargoOnBoard && row.CargoProvenAt == null) ||
-                           row.State == OwnOrderRebuildStates.AwaitingCargoHandoff) &&
+                           (row.State == OwnOrderRebuildStates.AwaitingCargoHandoff &&
+                            dbContext.JourneyRuntimes.Any(
+                                journey => journey.JourneyId == row.JourneyId && journey.Stage == JourneyRuntimeStage.Blocked))) &&
                           (row.CargoEvidenceRequestedGeneration != generation ||
                            (ready && !row.CargoEvidenceRequestedWhileReady)))
             .Select(row => row.RebuildId)
@@ -297,7 +302,9 @@ internal static class OwnOrderRebuilds
         int claimed = await dbContext.OwnOrderRebuilds
             .Where(row => due.Contains(row.RebuildId) &&
                           ((row.State == OwnOrderRebuildStates.Pending && row.CargoProvenAt == null) ||
-                           row.State == OwnOrderRebuildStates.AwaitingCargoHandoff) &&
+                           (row.State == OwnOrderRebuildStates.AwaitingCargoHandoff &&
+                            dbContext.JourneyRuntimes.Any(
+                                journey => journey.JourneyId == row.JourneyId && journey.Stage == JourneyRuntimeStage.Blocked))) &&
                           (row.CargoEvidenceRequestedGeneration != generation ||
                            (ready && !row.CargoEvidenceRequestedWhileReady)))
             .ExecuteUpdateAsync(

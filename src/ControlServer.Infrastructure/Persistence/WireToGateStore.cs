@@ -24,14 +24,15 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
 
     /// <summary>
     /// The block a journey carries while a person has handed its stopped trip to the vehicle's exception recovery session, for
-    /// the cargo to be taken out, handed over and its demand ended (REQ-0238, control-server#345). The one code
-    /// <see cref="DecideReadinessAsync"/> holds the session for; no other <c>Blocked</c> journey does.
+    /// the cargo to be taken out, handed over and its demand ended (REQ-0238, control-server#345). What holds the session is
+    /// the rebuild record waiting for the handoff, not this code (<see cref="DecideReadinessAsync"/>): a failed handoff rewrites
+    /// the code and the trip still waits.
     /// </summary>
     public const string AwaitingCargoHandoffJourneyReason = "OWN_ORDER_REBUILD_AWAITING_CARGO_HANDOFF";
 
     /// <summary>
-    /// The readiness reason while one of this vehicle's journeys carries <see cref="AwaitingCargoHandoffJourneyReason"/>. On the
-    /// wire it is SESSION_RECOVERY_REQUIRED, which is what makes the onboard offer its fault cargo handoff entry.
+    /// The readiness reason while one of this vehicle's <c>Blocked</c> journeys has a rebuild record waiting for a cargo handoff.
+    /// On the wire it is SESSION_RECOVERY_REQUIRED, which is what makes the onboard offer its fault cargo handoff entry.
     /// </summary>
     public const string CargoHandoffRequired = "CARGO_HANDOFF_REQUIRED";
 
@@ -400,12 +401,16 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
             .ConfigureAwait(false);
         // control-server#345. A person handed a stopped trip with cargo on board to the exception recovery session: the onboard
         // offers the fault cargo handoff only while the session says RECOVERY_REQUIRED, and nothing else here says so for a
-        // vehicle standing still, fault cleared, doors locked. Held on the one journey code, never on Blocked as such, and only
-        // for this vehicle; it lets go as soon as the journey closes or leaves the code.
-        bool cargoHandoffAwaited = await dbContext.JourneyRuntimes.AsNoTracking()
+        // vehicle standing still, fault cleared, doors locked. Held while this vehicle has a Blocked journey whose rebuild record
+        // waits for the handoff -- on the record, not on the journey code (independent review M1): a handoff that fails has
+        // the recovery coordinator rewrite the code, and a journey that still carries another demand after one was handed off
+        // keeps it, and in neither case is the trip done with. It lets go once the record is ended or the journey leaves
+        // Blocked; never on Blocked as such, and never for another vehicle.
+        bool cargoHandoffAwaited = await dbContext.OwnOrderRebuilds.AsNoTracking()
             .AnyAsync(
-                journey => journey.AgvId == agvId && journey.Stage == JourneyRuntimeStage.Blocked &&
-                           journey.BlockReasonCode == AwaitingCargoHandoffJourneyReason,
+                record => record.AgvId == agvId && record.State == OwnOrderRebuildStates.AwaitingCargoHandoff &&
+                          dbContext.JourneyRuntimes.Any(
+                              journey => journey.JourneyId == record.JourneyId && journey.Stage == JourneyRuntimeStage.Blocked),
                 cancellationToken)
             .ConfigureAwait(false);
         // REQ-0316. The vehicle reported which slot configuration it is carrying; this server knows

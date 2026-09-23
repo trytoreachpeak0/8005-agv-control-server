@@ -20,7 +20,9 @@ namespace ControlServer.Host.Runtime.Faults;
 /// <b>Only a stopped journey.</b> The action is judged on the record the journey's current stop waits on
 /// (<see cref="OwnOrderRebuilds.ForStopAsync"/>): it has to be <see cref="OwnOrderRebuildStates.Stopped"/>, and stopped by the
 /// third guard. A journey whose rebuild is merely waiting is refused -- the engine will make it -- and so is one that is not
-/// waiting on a rebuild at all.
+/// waiting on a rebuild at all. The one other state accepted is a trip already handed to the exception recovery session
+/// whose handoff did not end it, by failing or by handing off only some of its demands: giving it up and handing it over
+/// again apply to it, so that it never falls back to needing an engineer (independent review M1).
 /// </para>
 /// <para>
 /// <b>Three ways out, chosen by a person.</b> A rebuild once more, due at once, which the engine's next round takes through
@@ -70,6 +72,12 @@ public sealed partial class VehicleFaultRecoveryService
 
     /// <summary>The block a journey carries while it waits for its exception recovery session (control-server#345).</summary>
     public const string AwaitingCargoHandoffReason = WireToGateStore.AwaitingCargoHandoffJourneyReason;
+
+    /// <summary>
+    /// The trip was handed to the exception recovery session and waits there: a person rebuild is not one of its ways on. Giving
+    /// it up (nothing left on board) or handing it over again (cargo still on board) are (independent review M1).
+    /// </summary>
+    public const string ExitAwaitingHandoffReason = "OWN_ORDER_REBUILD_EXIT_AWAITING_CARGO_HANDOFF";
 
     private async Task<VehicleFaultRecoveryDecision> RebuildStoppedAsync(
         VehicleFaultRecoveryRequest request,
@@ -162,9 +170,12 @@ public sealed partial class VehicleFaultRecoveryService
                 : await dbContext.Set<JourneyDemandRow>()
                     .Where(row => row.JourneyId == trip.Runtime.JourneyId && row.RemovedAt == null)
                     .ToListAsync(cancellationToken).ConfigureAwait(false);
-            if (trip.Refusal is not null)
+            // A trip handed to the exception recovery session may be given up too, once nothing is left on board: after a
+            // partial handoff, what remains is demands still to load, which no session can end (independent review M1 (b)).
+            string? refusal = trip.Refusal == ExitAwaitingHandoffReason ? null : trip.Refusal;
+            if (refusal is not null)
             {
-                reasons.Add(trip.Refusal);
+                reasons.Add(refusal);
             }
             else if (await MayCarryAsync(agvId, trip.Runtime!, cancellationToken).ConfigureAwait(false))
             {
@@ -221,6 +232,12 @@ public sealed partial class VehicleFaultRecoveryService
     /// then carries a named person and event 9203. The engine's stop is left as it was. From here the session's own rules
     /// govern: its administrator proof, its actions, and the settlement of their results, which ends the demand.
     /// </para>
+    /// <para>
+    /// <b>Again, after a handoff that did not end the trip</b> (independent review M1 (a)): a session whose result does not
+    /// reconcile has the recovery coordinator block the journey under its own code, with the cargo still on board. Asked again
+    /// then, the trip is put back under <see cref="AwaitingCargoHandoffReason"/> and the vehicle asked for a snapshot once
+    /// more; readiness never let go meanwhile, because it holds on the record, not on the code.
+    /// </para>
     /// </remarks>
     private async Task<VehicleFaultRecoveryDecision> PrepareCargoHandoffAsync(
         VehicleFaultRecoveryRequest request,
@@ -235,20 +252,19 @@ public sealed partial class VehicleFaultRecoveryService
         }
 
         StoppedTrip trip = await ReadStoppedTripAsync(agvId, cancellationToken).ConfigureAwait(false);
-        if (reasons.Count == 0 &&
-            trip.Runtime is { Stage: JourneyRuntimeStage.Blocked, BlockReasonCode: AwaitingCargoHandoffReason })
+        bool handedOver = trip.Refusal == ExitAwaitingHandoffReason;
+        string? refusal = trip.Refusal is ExitCargoNotInPlaceReason or ExitAwaitingHandoffReason ? null : trip.Refusal;
+        if (refusal is null && !await MayCarryAsync(agvId, trip.Runtime!, cancellationToken).ConfigureAwait(false))
         {
-            return AlreadyDone();
+            // Nothing on board: nothing to take out. After a partial handoff that leaves only demands still to load, the
+            // person gives the rest up instead (independent review M1 (b)).
+            refusal = ExitNothingOnBoardReason;
         }
 
-        string? refusal = trip.Refusal;
-        if (refusal == ExitCargoNotInPlaceReason)
+        if (refusal is null && reasons.Count == 0 && handedOver && trip.Runtime!.BlockReasonCode == AwaitingCargoHandoffReason)
         {
-            refusal = null;
-        }
-        else if (refusal is null && !await MayCarryAsync(agvId, trip.Runtime!, cancellationToken).ConfigureAwait(false))
-        {
-            refusal = ExitNothingOnBoardReason;
+            // The same request again while the trip still waits for its session: answered, not done twice.
+            return AlreadyDone();
         }
 
         if (refusal is not null)
@@ -289,9 +305,14 @@ public sealed partial class VehicleFaultRecoveryService
 
     /// <summary>
     /// The vehicle's journey, the stop it waits at and the rebuild record that stop waits on, read afresh; and why a person's
-    /// way out does not apply to it, or null when the rebuild was stopped by the third guard -- the one state both ways out
-    /// are for.
+    /// way out does not apply to it, or null when the rebuild was stopped by the third guard -- the one state all three ways
+    /// out are for.
     /// </summary>
+    /// <remarks>
+    /// A <c>Blocked</c> journey waits on no stop's order; its record is the one handed to the exception recovery session, if
+    /// any, found by its state (<see cref="ExitAwaitingHandoffReason"/>). Only the handoff's own ways on -- giving up, handing
+    /// over again -- accept that one, whatever code the journey carries by then (independent review M1).
+    /// </remarks>
     private async Task<StoppedTrip> ReadStoppedTripAsync(string agvId, CancellationToken cancellationToken)
     {
         dbContext.ChangeTracker.Clear();
@@ -305,9 +326,18 @@ public sealed partial class VehicleFaultRecoveryService
             stop = (await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken).ConfigureAwait(false)).Current;
             stopped = await OwnOrderRebuilds.ForStopAsync(dbContext, stop, cancellationToken).ConfigureAwait(false);
         }
+        else if (runtime is { Stage: JourneyRuntimeStage.Blocked })
+        {
+            stopped = await dbContext.OwnOrderRebuilds
+                .FirstOrDefaultAsync(
+                    row => row.JourneyId == runtime.JourneyId && row.State == OwnOrderRebuildStates.AwaitingCargoHandoff,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
 
         string? refusal = stopped switch
         {
+            { State: OwnOrderRebuildStates.AwaitingCargoHandoff } => ExitAwaitingHandoffReason,
             { State: OwnOrderRebuildStates.Stopped, StoppedReason: OwnOrderRebuilds.CargoNotProvenInOriginalSlots } =>
                 ExitCargoNotInPlaceReason,
             { State: OwnOrderRebuildStates.Stopped, StoppedReason: OwnOrderRebuilds.VehicleNoLongerEligible } =>
