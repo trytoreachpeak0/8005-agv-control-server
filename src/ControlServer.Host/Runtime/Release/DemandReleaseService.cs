@@ -177,6 +177,15 @@ public sealed class DemandReleaseService(
                 .ConfigureAwait(false);
         }
 
+        // 这一段的在途单停住了，或者正等着同车重建（control-server#318）：不释放，也不取消（见 OrderStalledOrRebuilding）。
+        // 同样排在 Refuse 之后，到站后的拒绝照旧不写码。
+        if (decision.Action is DemandReleaseAction.CancelPickupOrderThenRelease or DemandReleaseAction.ReleaseWithoutOrder &&
+            await OrderStalledOrRebuildingAsync(journey, cancellationToken).ConfigureAwait(false))
+        {
+            return await RefuseAsync(journey, demandId, trigger, DemandReleaseReasons.OrderStalledOrRebuilding, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         switch (decision.Action)
         {
             case DemandReleaseAction.Refuse:
@@ -297,6 +306,18 @@ public sealed class DemandReleaseService(
     }
 
     /// <summary>
+    /// 旅程开往当前停靠的那张单停住了（引擎写下的停住码），或者这趟旅程有一次还没建成的重建。两样都问：码是给人看的，
+    /// 引擎在别的时候可能写别的码盖过它（到站判定之外的轮次），重建记录才是「这趟旅程正等着同车重建」的落库事实。
+    /// </summary>
+    private async Task<bool> OrderStalledOrRebuildingAsync(JourneyRuntimeRow journey, CancellationToken cancellationToken) =>
+        JourneyRuntimeEngine.IsStalledOrderReason(journey.BlockReasonCode) ||
+        await dbContext.OwnOrderRebuilds.AsNoTracking()
+            .AnyAsync(
+                row => row.JourneyId == journey.JourneyId && row.State != OwnOrderRebuildStates.Rebuilt,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+    /// <summary>
     /// 这张单确定从没向 RIoT 发出过创建：意图不在，或者还在初始的待对账状态、创建次数为零、没有订单号。
     /// 其余一切状态都可能在 RIoT 上有一张活的订单。
     /// </summary>
@@ -395,8 +416,8 @@ public sealed class DemandReleaseService(
     /// 暂存「这条需求离开这趟旅程、退回积压等改派」：归属行记下移除，积压行清掉受理标记。不保存。
     /// </summary>
     /// <remarks>
-    /// 释放服务与故障人工清除（control-server#299，<c>VehicleFaultRecoveryService</c>）共用这一处，两者对「释放」写下的是同样的行，
-    /// 派车轮次与孤儿检查按同一个原因码认它（<see cref="DemandJourneyLookup.ReleasedForRedispatch"/>）。
+    /// 派车轮次与孤儿检查按这个原因码认它（<see cref="DemandJourneyLookup.ReleasedForRedispatch"/>）。control-server#299 的故障人工清除
+    /// 曾经也用它释放无货的需求；control-server#318 起清除不再释放（留在本车重建），这里只剩释放服务一个调用方。
     /// </remarks>
     internal static async Task StageReleasedMembershipAsync(
         ControlServerDbContext dbContext,
