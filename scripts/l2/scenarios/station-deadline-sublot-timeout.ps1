@@ -100,6 +100,7 @@ function Get-StopWorklists([string]$DemandId) {
             MessageId    = [string]$row.MessageId
             Revision     = [long]$payload.worklistRevision
             StationId    = [string]$payload.stationId
+            Deadline     = ConvertTo-Instant $payload.stationDepartureDeadlineAt
             Acknowledged = -not (Test-L2Null $row.AcknowledgedAt)
         }
         if ($items.Count -eq 0) { $empty.Add($snapshot) }
@@ -317,6 +318,36 @@ $assertions.Add(
     ([string]$pastOriginal.Runtime.Stage -eq 'AwaitingSublot' -and $pastOriginal.At -lt $refilledStart.Add($window)),
     "AwaitingSublot（读于 $($originalDeadline.AddSeconds(3).ToString('o')) 之后、新期限之前）",
     "$($pastOriginal.Runtime.Stage)（读于 $($pastOriginal.At.ToString('o'))）")
+
+# 重填的期限要送到车上（control-server#339）：车载端不作废也不重新计满期限，永远照最新一版清单显示倒计时，只在服务端重填，
+# 车上就会在原期限显示「已到期」，而服务端刚重新计满。重填与新的一版清单是同一次保存，车的确认是之后的另一次写入，所以等。
+# 判据要的是「号比到站那一版大、期限等于重填后的期限、车确认了」三样都在同一行上；等不到时把最后一次读数交给判据。
+# 放在 L2-SD-12 之后：修前这里要等满 30 秒，放在前面会把 L2-SD-12「原期限过去 3 秒、新期限之前」那一读推到新期限之后，
+# 让一条与本票无关的判据跟着红。
+$refilledDeadline = $refilledStart.Add($window)
+$secondWorklists = Wait-L2ConditionOrLast -Description 'the vehicle acknowledged a newer worklist carrying the refilled deadline' `
+    -Journal $journal -Criterion 'second-refilled-worklist' -TimeoutSeconds 30 `
+    -Probe { Get-StopWorklists $secondId } `
+    -Until {
+        param($v)
+        $arrival = ($v.Listing | Measure-Object -Property Revision -Minimum).Minimum
+        @($v.Listing | Where-Object { $_.Acknowledged -and $_.Revision -gt $arrival -and $_.Deadline -eq $refilledDeadline }).Count -ge 1
+    }
+$secondArrivalRevision = ($secondWorklists.Listing | Measure-Object -Property Revision -Minimum).Minimum
+$carriesRefill = @($secondWorklists.Listing | Where-Object {
+        $_.Acknowledged -and $_.Revision -gt $secondArrivalRevision -and $_.Deadline -eq $refilledDeadline })
+$journal.Observe('second-stop-worklists',
+    ((@($secondWorklists.Listing) | ForEach-Object {
+                "r$($_.Revision) 期限 $(if ($_.Deadline) { $_.Deadline.ToString('o') } else { '(null)' })$(if ($_.Acknowledged) { '/ack' })"
+            }) -join '；'),
+    @{ worklists = $secondWorklists })
+$assertions.Add(
+    'L2-SD-16', '重连之后，车收到并确认了一版号更大的清单，带的正是重填后的期限（control-server#339）',
+    ($carriesRefill.Count -ge 1),
+    "r > $secondArrivalRevision / 期限 $($refilledDeadline.ToString('o')) / 已确认",
+    ((@($secondWorklists.Listing) | ForEach-Object {
+                "r$($_.Revision) $(if ($_.Deadline) { $_.Deadline.ToString('o') } else { '(null)' }) ack=$($_.Acknowledged)"
+            }) -join ', '))
 
 $secondEnded = Wait-L2Condition -Description 'the refilled deadline ended the second stop' `
     -Journal $journal -Criterion 'second-ended' -TimeoutSeconds 90 `

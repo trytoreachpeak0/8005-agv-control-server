@@ -49,9 +49,10 @@ internal static class ReconnectModel
     /// <summary>
     /// 不变量：收尾里车最后一次恢复健康（握手完成、连着、已到站）之后，录入请求最多几轮送到车上（第二轮审查建议 1）。
     /// 通常一轮就到；断在清单那一张、车还没确认过任何一版清单时，第一轮由重放校验拒绝一次，车确认补发的旧清单之后下一轮走通——
-    /// 这是 cs#331 第三轮审查有意定的，失败轮数上限为一（<c>ArrivalPublishInterruptedThenReconnectedTests.ACutOnTheWorklistFailsOneRoundThenRecoversOnceTheVehicleConfirmsTheReplayedWorklist</c>；
-    /// 写成文本不写 cref：那条用例在 cs#331 修复前的提交上不存在，这个文件要在那上面也编得过）。
-    /// 所以是二：一轮失败加一轮走通。本分支 300 个固定种子里实测 1 轮 292 个、2 轮 8 个。
+    /// 这是 cs#331 第三轮审查有意定的，失败轮数上限为一。
+    /// 所以是二：一轮失败加一轮走通。cs#342 分支 300 个固定种子里实测 1 轮 292 个、2 轮 8 个。
+    /// control-server#339 起期限变了的清单作为新的一版发出，那一轮不再失败（<c>ArrivalPublishInterruptedThenReconnectedTests.ACutOnTheWorklistThenARefillSendsANewerWorklistInsteadOfFailingARound</c>；
+    /// 写成文本不写 cref：那条用例在 cs#331 修复前的提交上不存在，这个文件要在那上面也编得过）；二仍是上限，不收紧——收紧是另一件要单独量的事。
     /// </summary>
     internal const int RoundsFromRecoveryToEntry = 2;
 

@@ -894,7 +894,8 @@ internal static class JourneyRuntimeWorkerTestKit
             string messageId,
             string messageType,
             object payload,
-            string? correlationId = null)
+            string? correlationId = null,
+            long sessionGeneration = 1)
         {
             JourneyRuntimeRow runtime = await RuntimeAsync();
             string json = JsonSerializer.Serialize(new
@@ -907,7 +908,7 @@ internal static class JourneyRuntimeWorkerTestKit
                 messageId,
                 correlationId,
                 agvId = Options.AgvId,
-                sessionGeneration = 1,
+                sessionGeneration,
                 sentAt = Now,
                 payload
             }, SerializerOptions);
@@ -2075,15 +2076,31 @@ internal static class JourneyRuntimeWorkerTestKit
     /// write and the acknowledgement are sequential statements with no early exit between them.
     /// Acknowledgements are buffered rather than applied on receipt so that a test can lose exactly
     /// the ones a peer had in flight when its connection dropped.
+    /// <para>
+    /// A snapshot at the revision it already holds but with a different payload is refused as
+    /// SNAPSHOT_REVISION_CONTENT_CONFLICT and never acknowledged, the way the v2 onboard
+    /// (<c>w2g/fp-v2-impl</c>, <c>WireToGateSessionClient.ApplyJourneyRevision</c> and
+    /// <c>SqliteWireToGateJournal</c>) compares the payload content hash before adopting (control-server#339).
+    /// </para>
     /// </remarks>
     internal sealed class AdoptingPeer(ControlServerDbContext context, TimeProvider clock)
     {
         private readonly Dictionary<string, long> _journal = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, string> _heldPayloads = new(StringComparer.Ordinal);
         private readonly List<(string MessageId, string MessageType, string ContentSha256, long Revision)> _buffered = [];
 
         public List<(string MessageType, long Delivered, long Held)> Regressions { get; } = [];
 
+        /// <summary>Snapshots refused because the revision the peer holds came back with another payload.</summary>
+        public List<(string MessageType, long Revision)> Conflicts { get; } = [];
+
         public List<(string MessageType, long Revision)> Adopted { get; } = [];
+
+        /// <summary>The payload of the snapshot of this type the peer holds now, or null when it holds none.</summary>
+        public JsonElement? HeldPayload(string messageType) =>
+            _heldPayloads.TryGetValue(messageType, out string? payload)
+                ? JsonDocument.Parse(payload).RootElement.Clone()
+                : null;
 
         public void Receive(string ndjsonLine)
         {
@@ -2098,9 +2115,17 @@ internal static class JourneyRuntimeWorkerTestKit
             }
 
             long revision = root.GetProperty("payload").GetProperty(revisionProperty).GetInt64();
+            string payload = root.GetProperty("payload").GetRawText();
             if (_journal.TryGetValue(messageType, out long held) && revision < held)
             {
                 Regressions.Add((messageType, revision, held));
+                return;
+            }
+
+            if (_journal.TryGetValue(messageType, out held) && revision == held &&
+                !string.Equals(_heldPayloads[messageType], payload, StringComparison.Ordinal))
+            {
+                Conflicts.Add((messageType, revision));
                 return;
             }
 
@@ -2110,6 +2135,7 @@ internal static class JourneyRuntimeWorkerTestKit
             }
 
             _journal[messageType] = revision;
+            _heldPayloads[messageType] = payload;
             _buffered.Add((
                 root.GetProperty("messageId").GetString()!,
                 messageType,

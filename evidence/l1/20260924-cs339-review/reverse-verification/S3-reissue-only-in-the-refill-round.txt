@@ -1,0 +1,22 @@
+mutation S3-reissue-only-in-the-refill-round: JourneyRuntimeEngine.cs matches=[1]
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+index a1178c08..753caeda 100644
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+@@ -925,7 +925,7 @@ public sealed partial class JourneyRuntimeEngine(
+                     // 重填的期限送到车上（control-server#339）：清单升一版，录入请求跟着那一版重发。重发不是因为升版让旧的那张作废——
+                     // 同一站、同一作业会话、还有待录入时，车不把更高的号当成本站结束（车载端 EndsStopOf）——而是车在会话离开 Ready 时
+                     // 已经清掉了手上的录入请求，不重发，操作员就没有可答的请求。升版之前发出的录入仍在本停靠的地址区间里，照常受理。
+-                    if (await AdvanceWorklistPastAStaleDeadlineAsync(runtime, stops, cancellationToken)
++                    if (waitRefilled && await AdvanceWorklistPastAStaleDeadlineAsync(runtime, stops, cancellationToken)
+                             .ConfigureAwait(false) is { } reissued)
+                     {
+                         // 发布把这个上下文里未保存的改动一起保存：重填的起点、升版的次数、旧一版的退役与新的一版同在或同不在。
+  Failed ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.ARefillSavedThroughTheOpenCancellationExitStillReachesTheVehicleOnceItCloses [503 ms]
+  Error Message:
+Expected: 2026-08-26T01:00:37.0000000+00:00
+Actual:   2026-08-26T01:00:30.0000000+00:00
+     at ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.AssertTheVehicleHoldsTheServersDeadlineAsync(RuntimeFixture fixture, AdoptingPeer vehicle, DateTimeOffset before) in tests\ControlServer.Tests\RefilledStationDeadlineReachesVehicleTests.cs:line 714
+   at ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.ARefillSavedThroughTheOpenCancellationExitStillReachesTheVehicleOnceItCloses() in tests\ControlServer.Tests\RefilledStationDeadlineReachesVehicleTests.cs:line 366
+   at ControlServer.Tests.RefilledStationDeadlineReachesVehicleTests.ARefillSavedThroughTheOpenCancellationExitStillReachesTheVehicleOnceItCloses() in tests\ControlServer.Tests\RefilledStationDeadlineReachesVehicleTests.cs:line 368
+Failed!  - Failed:     1, Passed:    33, Skipped:     0, Total:    34, Duration: 14 s - ControlServer.Tests.dll (net8.0)

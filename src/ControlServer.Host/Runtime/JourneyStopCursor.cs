@@ -281,9 +281,14 @@ internal sealed class JourneyStopCursor
     /// 单需求两停靠下：取货停靠一条需求、发一版，号数是基准；卸货停靠前面一版、号数是基准 +1。与批次7-03 的
     /// <c>基准 + 序位 - 1</c> 逐字相同。
     /// </para>
+    /// <para>
+    /// <b>离站期限重填也让号前进</b>（control-server#339）：再加上本停靠的 <see cref="JourneyStopRow.WorklistRefills"/>。重填出来的期限
+    /// 与车手上那一版不同，同号发出去车会拒收；做完一条与重填各让号加一，号于是随清单的每一次变化严格前进，一个号只对应一种内容。
+    /// 没有重填过的停靠这一项是零，号与之前逐字相同。
+    /// </para>
     /// </remarks>
     public long WorklistRevisionAt(long journeyBase, JourneyStopRow stop) =>
-        FirstWorklistRevisionAt(journeyBase, stop) + DoneAt(stop);
+        FirstWorklistRevisionAt(journeyBase, stop) + DoneAt(stop) + stop.WorklistRefills;
 
     /// <summary>这个停靠的第一版清单是第几号。</summary>
     public long FirstWorklistRevisionAt(long journeyBase, JourneyStopRow stop)
@@ -292,8 +297,11 @@ internal sealed class JourneyStopCursor
         return journeyBase + Stops.Where(earlier => earlier.Sequence < stop.Sequence).Sum(WorklistVersionsOf);
     }
 
-    /// <summary>一个停靠上清单一共发几版：挂在它上面的需求有几条就几版，至少一版。</summary>
-    public long WorklistVersionsOf(JourneyStopRow stop) => Math.Max(1, AllAtStop(stop).Count);
+    /// <summary>
+    /// 一个停靠上清单一共发几版：挂在它上面的需求有几条就几版，至少一版；离站期限每重填一次再多一版（control-server#339）。
+    /// 后面停靠的首号、录入地址的区间都从这里取，所以重填之后它们跟着移动。
+    /// </summary>
+    public long WorklistVersionsOf(JourneyStopRow stop) => Math.Max(1, AllAtStop(stop).Count) + stop.WorklistRefills;
 
     /// <summary>这个停靠上已经做完本停靠作业的需求有几条。</summary>
     public long DoneAt(JourneyStopRow stop) => AllAtStop(stop).Count(item => IsDoneAt(stop, item));

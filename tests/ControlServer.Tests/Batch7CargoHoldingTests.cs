@@ -768,7 +768,7 @@ public sealed class Batch7CargoHoldingTests
     /// 把「上一轮派车对这辆车的裁决」写进读口：每一项是一条候选的原因码与它落在哪一侧。一项都不给就是「这一轮问到了这辆车，
     /// 没有任何一侧被占满」——与这辆车不在表里（说不出来）不是一回事。
     /// </summary>
-    private static void RecordRound(RuntimeFixture fixture, params (string Reason, string Side)[] verdicts) =>
+    internal static void RecordRound(RuntimeFixture fixture, params (string Reason, string Side)[] verdicts) =>
         fixture.SlotGroupFullness.Record(new DispatchRoundOutcome(
             Round: null!,
             [
