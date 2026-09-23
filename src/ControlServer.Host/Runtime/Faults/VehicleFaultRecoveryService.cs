@@ -382,7 +382,10 @@ public sealed class VehicleFaultRecoveryService(
         RiotVehicleOrderObservation orders = await orderFacts
             .ReadUnfinishedOrdersAsync(subject.DeviceKey, cancellationToken).ConfigureAwait(false);
         RiotOrderObservation? order = null;
-        if (intent is { Status: "CONFIRMED", OrderId: not null })
+        // A terminal-reconciled intent is read too: a rebuilt order that FAILED before it was confirmed is left that way, and
+        // its fault is cleared here like any other (control-server#318, review S2). Its orderId is RIoT's, matched against the
+        // frozen intent when it was reconciled.
+        if (intent is { Status: "CONFIRMED" or "TERMINAL_RECONCILIATION_REQUIRED", OrderId: not null })
         {
             try
             {

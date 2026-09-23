@@ -166,6 +166,14 @@ public sealed partial class JourneyRuntimeEngine
             return true;
         }
 
+        if (rebuild.State == OwnOrderRebuildStates.Failed)
+        {
+            // The new order FAILED before it was confirmed (review S2): fed to the fault model every round, as a confirmed
+            // order's FAILED is from the arrival check, until a person clears the fault and the next record takes over.
+            await ObserveRebuiltOrderFailureAsync(runtime, rebuild, cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+
         if (rebuild.State == OwnOrderRebuildStates.Pending)
         {
             if (now < rebuild.DueAt)
@@ -270,14 +278,7 @@ public sealed partial class JourneyRuntimeEngine
         now = timeProvider.GetUtcNow();
         if (result.Outcome == MovementDispatchOutcome.TerminalReconciliationRequired)
         {
-            // The new order ended in RIoT before it was ever confirmed: a second ending, and the plainest one there is.
-            rebuild.State = OwnOrderRebuildStates.Stopped;
-            rebuild.StoppedReason = OwnOrderRebuilds.EndedBeforeConfirmation;
-            rebuild.StoppedAt = now;
-            LogOwnOrderRebuildStopped(
-                logger, rebuild.EndedUpperId, runtime.JourneyId, runtime.AgvId, OwnOrderRebuilds.EndedBeforeConfirmation, null);
-            await NameRebuildAsync(runtime, OwnOrderRebuildStoppedReason, now, cancellationToken).ConfigureAwait(false);
-            return true;
+            return await EndedBeforeConfirmationAsync(runtime, rebuild, now, cancellationToken).ConfigureAwait(false);
         }
 
         if (result.Outcome != MovementDispatchOutcome.Confirmed)
@@ -311,6 +312,85 @@ public sealed partial class JourneyRuntimeEngine
         LogOwnOrderRebuilt(logger, rebuild.EndedUpperId, runtime.JourneyId, runtime.AgvId, rebuild.NewUpperId, null);
         return true;
     }
+
+    /// <summary>
+    /// The new order ended in RIoT before it was ever confirmed (review S2). How it ended decides what that is, exactly as it
+    /// would for an order that had been confirmed: a cancellation or deletion is recorded as a problem of its own under the new
+    /// order, and REQ-0361's window judges it -- it repeats a cancellation, not a cleared fault's FAILED; a FAILED is an
+    /// ordinary FAILED, recorded as a fault the clearance entry can clear. Anything else -- SUCCESS, or a state this was not
+    /// written for -- says nothing about what happened to the vehicle, and stops the rebuild for a person.
+    /// </summary>
+    /// <remarks>
+    /// The first version stopped the rebuild in every case (<c>REBUILT_ORDER_ENDED_BEFORE_CONFIRMATION</c>). For a FAILED that
+    /// recorded no fault, so the clearance entry of control-server#299 had nothing to clear and the journey could not move again;
+    /// for a cancellation outside the window it stopped what REQ-0361 says to rebuild.
+    /// </remarks>
+    private async Task<bool> EndedBeforeConfirmationAsync(
+        JourneyRuntimeRow runtime,
+        OwnOrderRebuildRow rebuild,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        RiotOrderObservation order = await vehicleFacts.ReconcileByUpperIdAsync(rebuild.NewUpperId, cancellationToken)
+            .ConfigureAwait(false);
+        if (order is { Kind: RiotOrderObservationKind.Terminal, OrderState: RiotOrderState.Failed })
+        {
+            rebuild.State = OwnOrderRebuildStates.Failed;
+            rebuild.StoppedReason = OwnOrderRebuilds.FailedBeforeConfirmation;
+            rebuild.StoppedAt = now;
+            rebuild.WaitingReason = null;
+            rebuild.WaitingSince = null;
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            await ObserveOrderFailureAsync(runtime, await RebuiltIntentAsync(rebuild, cancellationToken).ConfigureAwait(false),
+                order, cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+
+        if (order is { Kind: RiotOrderObservationKind.Terminal, OrderState: RiotOrderState.Cancelled or RiotOrderState.Deleted })
+        {
+            rebuild.State = OwnOrderRebuildStates.Ended;
+            rebuild.StoppedReason = OwnOrderRebuilds.CancelledBeforeConfirmation;
+            rebuild.StoppedAt = now;
+            rebuild.WaitingReason = null;
+            rebuild.WaitingSince = null;
+            string code = await RecordOrderEndedInRiotAsync(runtime, rebuild.NewUpperId, order, cancellationToken)
+                .ConfigureAwait(false);
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            await NameRebuildAsync(runtime, code, now, cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+
+        rebuild.State = OwnOrderRebuildStates.Stopped;
+        rebuild.StoppedReason = OwnOrderRebuilds.EndedBeforeConfirmation;
+        rebuild.StoppedAt = now;
+        LogOwnOrderRebuildStopped(
+            logger, rebuild.EndedUpperId, runtime.JourneyId, runtime.AgvId, OwnOrderRebuilds.EndedBeforeConfirmation, null);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await NameRebuildAsync(runtime, OwnOrderRebuildStoppedReason, now, cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
+    /// <summary>Feeds the FAILED new order of <paramref name="rebuild"/> to the fault model once more.</summary>
+    private async Task ObserveRebuiltOrderFailureAsync(
+        JourneyRuntimeRow runtime,
+        OwnOrderRebuildRow rebuild,
+        CancellationToken cancellationToken)
+    {
+        RiotOrderObservation order = await vehicleFacts.ReconcileByUpperIdAsync(rebuild.NewUpperId, cancellationToken)
+            .ConfigureAwait(false);
+        if (!await ObserveOrderFailureAsync(
+                runtime, await RebuiltIntentAsync(rebuild, cancellationToken).ConfigureAwait(false), order, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            // A terminal FAILED does not change; a read that no longer says so is not trusted to mean anything else.
+            await NameRebuildAsync(runtime, VehicleFaultEvidence.OrderFailed, timeProvider.GetUtcNow(), cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private Task<OrderIntentRow> RebuiltIntentAsync(OwnOrderRebuildRow rebuild, CancellationToken cancellationToken) =>
+        dbContext.OrderIntents.AsNoTracking()
+            .SingleAsync(row => row.MovementLegId == rebuild.NewMovementLegId, cancellationToken);
 
     /// <summary>
     /// Everything that has to hold before the new order may be asked of RIoT: the session, the vehicle's condition (the second

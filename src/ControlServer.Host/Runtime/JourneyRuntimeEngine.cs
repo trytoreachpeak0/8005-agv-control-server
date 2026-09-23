@@ -1366,14 +1366,25 @@ public sealed partial class JourneyRuntimeEngine(
     /// carrying this demand's product and the binding has to hold.
     /// </para>
     /// </remarks>
-    private async Task<bool> ObserveOrderFailureAsync(
+    private Task<bool> ObserveOrderFailureAsync(
         JourneyRuntimeRow runtime,
         ArrivalCheck arrival,
+        CancellationToken cancellationToken) =>
+        ObserveOrderFailureAsync(runtime, arrival.Intent, arrival.Order, cancellationToken);
+
+    /// <summary>
+    /// The same, for an order read outside an arrival check: a rebuilt order that FAILED before it was confirmed
+    /// (control-server#318, review S2).
+    /// </summary>
+    private async Task<bool> ObserveOrderFailureAsync(
+        JourneyRuntimeRow runtime,
+        OrderIntentRow intent,
+        RiotOrderObservation order,
         CancellationToken cancellationToken)
     {
-        if (arrival.Order.Kind != RiotOrderObservationKind.Terminal ||
-            arrival.Order.OrderState != RiotOrderState.Failed ||
-            arrival.Intent.OrderId is not string orderId)
+        if (order.Kind != RiotOrderObservationKind.Terminal ||
+            order.OrderState != RiotOrderState.Failed ||
+            intent.OrderId is not string orderId)
         {
             return false;
         }
@@ -1399,7 +1410,7 @@ public sealed partial class JourneyRuntimeEngine(
         FaultedVehicleCargoFacts? cargo = carryingCargo
             ? new FaultedVehicleCargoFacts(
                 runtime.DemandId,
-                arrival.Intent.MovementLegId,
+                intent.MovementLegId,
                 transportDemandKey,
                 LoadingWitnessed: true,
                 CargoStateKnown: true)
@@ -1409,11 +1420,11 @@ public sealed partial class JourneyRuntimeEngine(
             new EmergencyStopSubject(runtime.AgvId, runtime.VehicleKey),
             VehicleFaultEvidence.OrderFailed,
             new FaultedVehicleContext(
-                new RiotOrderCommandTarget(runtime.AgvId, arrival.Intent.UpperId, orderId),
+                new RiotOrderCommandTarget(runtime.AgvId, intent.UpperId, orderId),
                 cargo),
             cancellationToken).ConfigureAwait(false);
 
-        LogOrderFailedSymptom(logger, arrival.Intent.UpperId, runtime.AgvId, runtime.DemandId, null);
+        LogOrderFailedSymptom(logger, intent.UpperId, runtime.AgvId, runtime.DemandId, null);
         checkpointWaits.Clear(runtime.VehicleKey);
         if (!string.Equals(runtime.BlockReasonCode, VehicleFaultEvidence.OrderFailed, StringComparison.Ordinal))
         {

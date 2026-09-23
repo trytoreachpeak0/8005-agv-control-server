@@ -278,6 +278,50 @@ public sealed class Batch7DemandReleaseServiceTests
         Assert.True(await DemandJourneyLookup.ReleasedForRedispatch(reading).AnyAsync(row => row.DemandId == FirstDemandId, Token));
     }
 
+    /// <summary>
+    /// 一次重建的新单确认前被取消，接手的那一次重建建成了：前一条记录转 <c>ENDED</c>，只留作历史。之后车对需求不合格了，释放服务照常
+    /// 取消在途单、释放改派——那条 <c>ENDED</c> 记录不算「这趟旅程还在等同车重建」。
+    /// </summary>
+    /// <remarks>
+    /// 审查 S2 加了 <c>ENDED</c>（与确认前 FAILED 时的 <c>FAILED</c>，清除后同样转 <c>ENDED</c>）。释放服务按「这趟旅程有没有非 REBUILT 的记录」
+    /// 判重建中，不把 <c>ENDED</c> 排除，这趟旅程之后就永远释放不了。
+    /// </remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0328")]
+    public async Task ARebuildThatEndedBeforeConfirmationAndWasTakenOverDoesNotHoldALaterRelease()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        fixture.Options.OwnOrderRebuildRepeatWindow = TimeSpan.FromSeconds(10);
+        JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
+        fixture.Riot.CancelOrder(before.PickupUpperId);
+        await TickAndRunAsync(fixture);
+        fixture.Riot.LoseNextCreateResponse = true;
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        fixture.Context.ChangeTracker.Clear();
+        string firstRebuilt = (await fixture.Context.OwnOrderRebuilds.AsNoTracking().SingleAsync(Token)).NewUpperId;
+        fixture.Riot.CancelOrder(firstRebuilt);
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        fixture.Context.ChangeTracker.Clear();
+        await using (ControlServerDbContext rebuilt = new ControlServerDbContext(fixture.DbOptionsForTests))
+        {
+            Assert.Equal(
+                [OwnOrderRebuildStates.Ended, OwnOrderRebuildStates.Rebuilt],
+                (await rebuilt.OwnOrderRebuilds.AsNoTracking().Select(row => row.State).ToArrayAsync(Token)).Order());
+        }
+
+        string current = (await fixture.RuntimeAsync(FirstDemandId)).PickupUpperId;
+        string live = (await fixture.Context.Set<JourneyStopRow>().AsNoTracking().SingleAsync(row => row.StopRole == JourneyStopRoles.Pickup, Token)).UpperId;
+        LeaveTheMap(fixture);
+        CancellingGateway gateway = new(fixture.Clock, _ => fixture.Riot.CancelOrder(live));
+        IReadOnlyList<DemandReleaseOutcome> outcomes = await Service(fixture, gateway).RunOnceAsync(Token);
+
+        Assert.Equal("RELEASED", Assert.Single(outcomes).Result);
+        Assert.Equal(1, gateway.Cancels);
+        Assert.NotEqual(current, live);
+    }
+
     [Fact]
     public async Task AnEligibleVehicleKeepsItsDemands()
     {

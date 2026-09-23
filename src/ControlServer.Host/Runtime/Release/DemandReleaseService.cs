@@ -348,7 +348,9 @@ public sealed class DemandReleaseService(
                await dbContext.OwnOrderRebuilds.AsNoTracking()
                    .AnyAsync(
                        row => row.JourneyId == journey.JourneyId && row.State != OwnOrderRebuildStates.Rebuilt &&
-                       !(row.State == OwnOrderRebuildStates.Stopped && row.StoppedReason == OwnOrderRebuilds.VehicleNoLongerEligible),
+                              row.State != OwnOrderRebuildStates.Ended &&
+                              !(row.State == OwnOrderRebuildStates.Stopped &&
+                                row.StoppedReason == OwnOrderRebuilds.VehicleNoLongerEligible),
                        cancellationToken)
                    .ConfigureAwait(false);
     }

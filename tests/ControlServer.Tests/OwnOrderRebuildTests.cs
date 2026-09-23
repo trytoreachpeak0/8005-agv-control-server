@@ -716,6 +716,38 @@ public sealed class OwnOrderRebuildTests
         Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
     }
 
+    /// <summary>
+    /// 同样是新单确认前被取消，但离第一次出问题已经超出 REQ-0361 的窗口：这不算「再次」，照常再重建一次，第三张单建出去并确认。
+    /// </summary>
+    /// <remarks>审查 S2 的另一半：第一版在确认前终结时一律停，窗口外的这种也被错停。</remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0361")]
+    public async Task ARebuiltOrderCancelledBeforeItIsConfirmedOutsideTheWindowIsRebuiltAgain()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        fixture.Options.OwnOrderRebuildRepeatWindow = TimeSpan.FromSeconds(10);
+        JourneyRuntimeRow before = await fixture.RuntimeAsync();
+        fixture.Riot.CancelOrder(before.PickupUpperId);
+        await TickAndRunAsync(fixture);
+        fixture.Riot.LoseNextCreateResponse = true;
+        await PassTheDelayAsync(fixture);
+        OwnOrderRebuildRow ordering = await SingleRebuildAsync(fixture, before.PickupUpperId);
+        Assert.Equal(OwnOrderRebuildStates.Ordering, ordering.State);
+
+        fixture.Riot.CancelOrder(ordering.NewUpperId);
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+        await PassTheDelayAsync(fixture);
+
+        OwnOrderRebuildRow again = await SingleRebuildAsync(fixture, ordering.NewUpperId);
+        Assert.Equal(
+            (OwnOrderRebuildSources.CancelledInRiot, OwnOrderRebuildStates.Rebuilt),
+            (again.Source, again.State));
+        Assert.Equal(OwnOrderRebuildStates.Ended, (await SingleRebuildAsync(fixture, before.PickupUpperId)).State);
+        Assert.Equal(3, fixture.Riot.CreateCount("TO_PICKUP"));
+        Assert.Null((await fixture.RuntimeAsync()).BlockReasonCode);
+    }
+
     // ---- 会话因本服务端自己的在途单而未就绪（真车载端行驶全程的样子） ---------------------------------------------
 
     /// <summary>

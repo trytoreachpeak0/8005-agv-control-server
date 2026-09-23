@@ -49,8 +49,23 @@ internal static class OwnOrderRebuilds
     /// </summary>
     public const string VehicleNoLongerEligible = "VEHICLE_NO_LONGER_ELIGIBLE";
 
-    /// <summary>Why a rebuild was not made: the new order ended in RIoT before it was ever confirmed -- a second ending.</summary>
+    /// <summary>
+    /// Why a rebuild was not made: the new order ended in RIoT before it was ever confirmed, neither cancelled nor FAILED --
+    /// SUCCESS, or a state this was not written for. Nothing then says what happened to the vehicle, so a person looks.
+    /// </summary>
     public const string EndedBeforeConfirmation = "REBUILT_ORDER_ENDED_BEFORE_CONFIRMATION";
+
+    /// <summary>
+    /// How a rebuild ended when its new order was cancelled or deleted in RIoT before it was confirmed: that cancellation is
+    /// recorded as a problem of its own, under the new order, and REQ-0361's window judges it (review S2).
+    /// </summary>
+    public const string CancelledBeforeConfirmation = "REBUILT_ORDER_CANCELLED_BEFORE_CONFIRMATION";
+
+    /// <summary>
+    /// How a rebuild ended when its new order FAILED before it was confirmed: an ordinary FAILED, recorded as a fault, whose
+    /// clearance by a person records the next rebuild (review S2).
+    /// </summary>
+    public const string FailedBeforeConfirmation = "REBUILT_ORDER_FAILED_BEFORE_CONFIRMATION";
 
     /// <summary>The stable key of the rebuild of the order under <paramref name="endedUpperId"/>.</summary>
     public static string RebuildIdFor(string endedUpperId) =>
@@ -83,6 +98,15 @@ internal static class OwnOrderRebuilds
         if (existing is not null)
         {
             return existing;
+        }
+
+        // A rebuild whose new order FAILED before it was confirmed waited on this order's fault; the record staged here takes
+        // over from it, so it ends (review S2). Tracked, so the caller's save writes both.
+        foreach (OwnOrderRebuildRow failed in await dbContext.OwnOrderRebuilds
+                     .Where(row => row.NewUpperId == endedUpperId && row.State == OwnOrderRebuildStates.Failed)
+                     .ToArrayAsync(cancellationToken).ConfigureAwait(false))
+        {
+            failed.State = OwnOrderRebuildStates.Ended;
         }
 
         // The ordinal only has to keep this journey's rebuilt upperIds apart; the row keeps the value it was given.
@@ -186,9 +210,10 @@ internal static class OwnOrderRebuilds
 
     /// <summary>
     /// The record the stop is waiting on: its ended order's, while that is still to be rebuilt; the one whose new order the
-    /// stop already points at and which is not yet confirmed; or a stopped one, whichever of the two orders the stop points at
-    /// -- a rebuild stopped because its new order ended before it was confirmed leaves the stop on that new order. A confirmed
-    /// rebuild is not returned: the stop then waits on its new order like on any other.
+    /// stop already points at and which is not yet confirmed, or which FAILED before it was; or a stopped one, whichever of the
+    /// two orders the stop points at -- a rebuild stopped because its new order ended before it was confirmed leaves the stop
+    /// on that new order. A confirmed rebuild is not returned: the stop then waits on its new order like on any other. Nor is
+    /// an ended one: the record that took over from it is.
     /// </summary>
     public static Task<OwnOrderRebuildRow?> ForStopAsync(
         ControlServerDbContext dbContext,
@@ -197,7 +222,8 @@ internal static class OwnOrderRebuilds
         dbContext.OwnOrderRebuilds.SingleOrDefaultAsync(
             row => row.StopId == stop.StopId &&
                    ((row.EndedUpperId == stop.UpperId && row.State == OwnOrderRebuildStates.Pending) ||
-                    (row.NewUpperId == stop.UpperId && row.State == OwnOrderRebuildStates.Ordering) ||
+                    (row.NewUpperId == stop.UpperId &&
+                     (row.State == OwnOrderRebuildStates.Ordering || row.State == OwnOrderRebuildStates.Failed)) ||
                     (row.State == OwnOrderRebuildStates.Stopped &&
                      (row.EndedUpperId == stop.UpperId || row.NewUpperId == stop.UpperId))),
             cancellationToken);

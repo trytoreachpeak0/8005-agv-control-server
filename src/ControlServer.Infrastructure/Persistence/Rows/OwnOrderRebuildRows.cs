@@ -63,7 +63,10 @@ public sealed class OwnOrderRebuildRow
     /// <summary>新单在 RIoT 上确认建成的时刻（审计用；REQ-0361 的窗口按 <see cref="IncidentAt"/> 算，不按它）。</summary>
     public DateTimeOffset? RebuiltAt { get; set; }
 
-    /// <summary>为什么不再自动重建（护栏三，或有货时快照证明不了货在原仓）；只在 <see cref="OwnOrderRebuildStates.Stopped"/> 时有值。</summary>
+    /// <summary>
+    /// 为什么不再自动重建（护栏三，或有货时快照证明不了货在原仓）；在 <see cref="OwnOrderRebuildStates.Stopped"/> 时有值。
+    /// <see cref="OwnOrderRebuildStates.Failed"/> 与 <see cref="OwnOrderRebuildStates.Ended"/> 时写的是新单确认前怎么终结的。
+    /// </summary>
     public string? StoppedReason { get; set; }
     public DateTimeOffset? StoppedAt { get; set; }
 
@@ -114,8 +117,14 @@ public static class OwnOrderRebuildStates
     public const string Stopped = "STOPPED";
 
     /// <summary>
-    /// 新单在确认建成之前就终结了；那次终结按一次独立的出问题处理——被取消的另记一条记录（由 REQ-0361 的窗口判），FAILED 的交给故障模型
-    /// （人清除之后另记一条）。<see cref="OwnOrderRebuildRow.StoppedReason"/> 写明是哪一种。
+    /// 新单在确认建成之前就 FAILED 了（审查 S2）：按普通 FAILED 记故障，停靠留在这张新单上，引擎每轮照常把它喂给故障模型。
+    /// 人清除故障时另记一条以新单为终结单的记录，这一条随即转 <see cref="Ended"/>。
+    /// </summary>
+    public const string Failed = "FAILED";
+
+    /// <summary>
+    /// 新单在确认建成之前就终结了，而那次终结已经另记了一条记录接手：确认前被取消的，当场另记一条（由 REQ-0361 的窗口判）；
+    /// 确认前 FAILED 的，人清除故障时另记。这一条只留作历史，不再有人等它。
     /// </summary>
     public const string Ended = "ENDED";
 }
