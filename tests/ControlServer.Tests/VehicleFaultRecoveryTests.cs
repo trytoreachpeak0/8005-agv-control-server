@@ -1441,7 +1441,7 @@ public sealed class VehicleFaultRecoveryTests
             }
         };
 
-    private static VehicleFaultRecoveryRequest Clear(RuntimeFixture fixture) => new(
+    internal static VehicleFaultRecoveryRequest Clear(RuntimeFixture fixture) => new(
         new EmergencyStopSubject(fixture.Options.AgvId, fixture.Options.VehicleKey),
         VehicleFaultRecoveryAction.ClearFault,
         OperatorId,
@@ -1464,7 +1464,7 @@ public sealed class VehicleFaultRecoveryTests
         return fixture;
     }
 
-    private static async Task<RuntimeFixture> FaultedOnTheWayToGateAsync()
+    internal static async Task<RuntimeFixture> FaultedOnTheWayToGateAsync()
     {
         RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, createdAt: Now.AddMinutes(-10)));

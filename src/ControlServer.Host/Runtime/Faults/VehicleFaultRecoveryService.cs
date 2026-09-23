@@ -54,6 +54,9 @@ public enum VehicleFaultRecoveryOutcome
 
     /// <summary>A stopped rebuild was handed back to the engine to be made once more (control-server#345).</summary>
     RebuildRequested,
+
+    /// <summary>The same request had already been carried out (control-server#345); nothing was done again.</summary>
+    AlreadyDone,
 }
 
 /// <summary>What was done with the vehicle's journey when its fault was cleared.</summary>
