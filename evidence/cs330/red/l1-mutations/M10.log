@@ -1,0 +1,71 @@
+# M10: scope: an order on a vehicle that is not ours taken for one on ours
+# file: src/ControlServer.Host/Runtime/ForeignOrders/ForeignRunningOrderSupervisor.cs
+# - '        ours.TryGetValue(order.ExecuteVehicleKey!.Trim(), out FleetVehicle? vehicle)\n'
+# + '        (ours.TryGetValue(order.ExecuteVehicleKey!.Trim(), out FleetVehicle? vehicle) || (vehicle = ours.Values.First()) is not null)\n'
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.Dashboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\src\ControlServer.Dashboard\bin\Release\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Release\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\src\ControlServer.Application\bin\Release\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ProtocolFaultProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Release\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Release\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Release\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Release\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FakeRiot -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Release\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.FieldOps -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Release\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.Host -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\src\ControlServer.Host\bin\Release\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.SchemaConformance -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Release\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.Tests -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll
+
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:09.80
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164TheOrderIsReadAgainBeforeTheCancelAndLeftAloneWhenItNoLongerRunsOnOurVehicle(change: "moved-to-another-vehicle", expectedState: "LEFT_VEHICLE") [320 ms]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+Collection: [Tuple (Cancel, "order-foreign-0001", "FOREIGN_RUNNING_ORDER_ON_MANAGED_VEHICLE")]
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164TheOrderIsReadAgainBeforeTheCancelAndLeftAloneWhenItNoLongerRunsOnOurVehicle(String change, String expectedState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 352
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164TheOrderIsReadAgainBeforeTheCancelAndLeftAloneWhenItNoLongerRunsOnOurVehicle(String change, String expectedState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 356
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderThatDoesNotShowItRunsOnOurVehicleIsNeitherRecordedNorAlarmedNorCommanded(variant: "running-on-another-vehicle") [193 ms]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+Collection: [Tuple (Cancel, "order-foreign-0001", "FOREIGN_RUNNING_ORDER_ON_MANAGED_VEHICLE")]
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderThatDoesNotShowItRunsOnOurVehicleIsNeitherRecordedNorAlarmedNorCommanded(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 130
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderThatDoesNotShowItRunsOnOurVehicleIsNeitherRecordedNorAlarmedNorCommanded(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 133
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderCancelledOnceThatComesBackToOurVehicleIsNotCancelledAgain [161 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "LEFT_VEHICLE"
+Actual:   "CANCEL_SENT"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderCancelledOnceThatComesBackToOurVehicleIsNotCancelledAgain() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 513
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderCancelledOnceThatComesBackToOurVehicleIsNotCancelledAgain() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 524
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelDecidedBeforeACrashIsNotSentWhenTheOrderLeftOurVehicleMeanwhile [184 ms]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+Collection: [Tuple (Cancel, "order-foreign-0001", "FOREIGN_RUNNING_ORDER_ON_MANAGED_VEHICLE")]
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelDecidedBeforeACrashIsNotSentWhenTheOrderLeftOurVehicleMeanwhile() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 733
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelDecidedBeforeACrashIsNotSentWhenTheOrderLeftOurVehicleMeanwhile() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 734
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     4, Passed:   115, Skipped:     0, Total:   119, Duration: 19 s - ControlServer.Tests.dll (net8.0)
+[xUnit.net 00:00:06.62]     ControlServer.Tests.ForeignRunningOrderTests.Req0164TheOrderIsReadAgainBeforeTheCancelAndLeftAloneWhenItNoLongerRunsOnOurVehicle(change: "moved-to-another-vehicle", expectedState: "LEFT_VEHICLE") [FAIL]
+[xUnit.net 00:00:10.94]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderThatDoesNotShowItRunsOnOurVehicleIsNeitherRecordedNorAlarmedNorCommanded(variant: "running-on-another-vehicle") [FAIL]
+[xUnit.net 00:00:14.75]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderCancelledOnceThatComesBackToOurVehicleIsNotCancelledAgain [FAIL]
+[xUnit.net 00:00:16.36]     ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelDecidedBeforeACrashIsNotSentWhenTheOrderLeftOurVehicleMeanwhile [FAIL]

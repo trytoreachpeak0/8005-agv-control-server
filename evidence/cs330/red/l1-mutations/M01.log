@@ -1,0 +1,425 @@
+# M01: ownership: every running order taken for this server's own (a foreign order let through)
+# file: src/ControlServer.Host/Runtime/ForeignOrders/ForeignRunningOrderSupervisor.cs
+# - '        if (await dbContext.OrderIntents.AsNoTracking()\n'
+# + '        if (Environment.TickCount64 >= 0 || await dbContext.OrderIntents.AsNoTracking()\n'
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Release\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.Dashboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\src\ControlServer.Dashboard\bin\Release\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.FakeRiot -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Release\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\src\ControlServer.Application\bin\Release\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ProtocolFaultProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Release\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Release\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Release\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Release\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FieldOps -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Release\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.Host -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\src\ControlServer.Host\bin\Release\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.SchemaConformance -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Release\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.Tests -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll
+
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:12.76
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelIsSentOnceAndAnOrderStillRunningAfterItIsHandedToAPerson(disposition: Failed) [3 s]
+  Error Message:
+   System.InvalidOperationException : Sequence contains no elements.
+  Stack Trace:
+     at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelIsSentOnceAndAnOrderStillRunningAfterItIsHandedToAPerson(RiotCommandCallDisposition disposition) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 463
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelIsSentOnceAndAnOrderStillRunningAfterItIsHandedToAPerson(RiotCommandCallDisposition disposition) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 494
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelIsSentOnceAndAnOrderStillRunningAfterItIsHandedToAPerson(disposition: Unknown) [229 ms]
+  Error Message:
+   System.InvalidOperationException : Sequence contains no elements.
+  Stack Trace:
+     at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelIsSentOnceAndAnOrderStillRunningAfterItIsHandedToAPerson(RiotCommandCallDisposition disposition) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 463
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelIsSentOnceAndAnOrderStillRunningAfterItIsHandedToAPerson(RiotCommandCallDisposition disposition) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 494
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelIsSentOnceAndAnOrderStillRunningAfterItIsHandedToAPerson(disposition: Accepted) [227 ms]
+  Error Message:
+   System.InvalidOperationException : Sequence contains no elements.
+  Stack Trace:
+     at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelIsSentOnceAndAnOrderStillRunningAfterItIsHandedToAPerson(RiotCommandCallDisposition disposition) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 463
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelIsSentOnceAndAnOrderStillRunningAfterItIsHandedToAPerson(RiotCommandCallDisposition disposition) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 494
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheCancelWentOutAndBeforeItWasRecordedDoesNotSendItAgain(cancelTakesEffect: True) [233 ms]
+  Error Message:
+   Assert.Contains() Failure: Filter not matched in collection
+Collection: []
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.CrashingRoundAsync(RuntimeFixture fixture) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 979
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheCancelWentOutAndBeforeItWasRecordedDoesNotSendItAgain(Boolean cancelTakesEffect) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 836
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheCancelWentOutAndBeforeItWasRecordedDoesNotSendItAgain(Boolean cancelTakesEffect) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 856
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheCancelWentOutAndBeforeItWasRecordedDoesNotSendItAgain(cancelTakesEffect: False) [198 ms]
+  Error Message:
+   Assert.Contains() Failure: Filter not matched in collection
+Collection: []
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.CrashingRoundAsync(RuntimeFixture fixture) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 979
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheCancelWentOutAndBeforeItWasRecordedDoesNotSendItAgain(Boolean cancelTakesEffect) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 836
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheCancelWentOutAndBeforeItWasRecordedDoesNotSendItAgain(Boolean cancelTakesEffect) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 856
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164TheOrderIsReadAgainBeforeTheCancelAndLeftAloneWhenItNoLongerRunsOnOurVehicle(change: "ended", expectedState: "ENDED") [263 ms]
+  Error Message:
+   System.InvalidOperationException : Sequence contains no elements.
+  Stack Trace:
+     at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164TheOrderIsReadAgainBeforeTheCancelAndLeftAloneWhenItNoLongerRunsOnOurVehicle(String change, String expectedState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 354
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164TheOrderIsReadAgainBeforeTheCancelAndLeftAloneWhenItNoLongerRunsOnOurVehicle(String change, String expectedState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 356
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164TheOrderIsReadAgainBeforeTheCancelAndLeftAloneWhenItNoLongerRunsOnOurVehicle(change: "back-in-the-queue", expectedState: "LEFT_VEHICLE") [353 ms]
+  Error Message:
+   System.InvalidOperationException : Sequence contains no elements.
+  Stack Trace:
+     at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164TheOrderIsReadAgainBeforeTheCancelAndLeftAloneWhenItNoLongerRunsOnOurVehicle(String change, String expectedState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 354
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164TheOrderIsReadAgainBeforeTheCancelAndLeftAloneWhenItNoLongerRunsOnOurVehicle(String change, String expectedState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 356
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164TheOrderIsReadAgainBeforeTheCancelAndLeftAloneWhenItNoLongerRunsOnOurVehicle(change: "moved-to-another-vehicle", expectedState: "LEFT_VEHICLE") [304 ms]
+  Error Message:
+   System.InvalidOperationException : Sequence contains no elements.
+  Stack Trace:
+     at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164TheOrderIsReadAgainBeforeTheCancelAndLeftAloneWhenItNoLongerRunsOnOurVehicle(String change, String expectedState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 354
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164TheOrderIsReadAgainBeforeTheCancelAndLeftAloneWhenItNoLongerRunsOnOurVehicle(String change, String expectedState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 356
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheAttemptWasArmedIsNeverFollowedByASecondArmingOrSend [275 ms]
+  Error Message:
+   Assert.Contains() Failure: Filter not matched in collection
+Collection: []
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.CrashingRoundAsync(RuntimeFixture fixture) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 979
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheAttemptWasArmedIsNeverFollowedByASecondArmingOrSend() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 757
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheAttemptWasArmedIsNeverFollowedByASecondArmingOrSend() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 774
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(readBack: 2, released: True) [236 ms]
+  Error Message:
+   System.InvalidOperationException : Sequence contains no elements.
+  Stack Trace:
+     at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(Nullable`1 readBack, Boolean released) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 794
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(Nullable`1 readBack, Boolean released) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 817
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(readBack: 8, released: False) [197 ms]
+  Error Message:
+   System.InvalidOperationException : Sequence contains no elements.
+  Stack Trace:
+     at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(Nullable`1 readBack, Boolean released) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 794
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(Nullable`1 readBack, Boolean released) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 817
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(readBack: null, released: False) [247 ms]
+  Error Message:
+   System.InvalidOperationException : Sequence contains no elements.
+  Stack Trace:
+     at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(Nullable`1 readBack, Boolean released) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 794
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(Nullable`1 readBack, Boolean released) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 817
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(readBack: 6, released: True) [221 ms]
+  Error Message:
+   System.InvalidOperationException : Sequence contains no elements.
+  Stack Trace:
+     at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(Nullable`1 readBack, Boolean released) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 794
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(Nullable`1 readBack, Boolean released) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 817
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(readBack: 5, released: True) [244 ms]
+  Error Message:
+   System.InvalidOperationException : Sequence contains no elements.
+  Stack Trace:
+     at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(Nullable`1 readBack, Boolean released) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 794
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(Nullable`1 readBack, Boolean released) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 817
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(readBack: 4, released: True) [228 ms]
+  Error Message:
+   System.InvalidOperationException : Sequence contains no elements.
+  Stack Trace:
+     at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(Nullable`1 readBack, Boolean released) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 794
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(Nullable`1 readBack, Boolean released) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 817
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AVehicleAForeignOrderRunsOnTakesNoNewDispatchUntilTheOrderIsReadBackEnded(variant: "cancel-not-yet-effective") [437 ms]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+Collection: [JourneyRuntimeRow { AgvId = "老厂前线新多仓位1", AgvLifecycleGeneration = 1, AreaEndAdmissionRevokedSince = null, BlockReasonCode = null, BlockReasonSince = null, ··· }]
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164AVehicleAForeignOrderRunsOnTakesNoNewDispatchUntilTheOrderIsReadBackEnded(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 553
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AVehicleAForeignOrderRunsOnTakesNoNewDispatchUntilTheOrderIsReadBackEnded(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 562
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AVehicleAForeignOrderRunsOnTakesNoNewDispatchUntilTheOrderIsReadBackEnded(variant: "ownership-unproven") [313 ms]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+Collection: [JourneyRuntimeRow { AgvId = "老厂前线新多仓位1", AgvLifecycleGeneration = 1, AreaEndAdmissionRevokedSince = null, BlockReasonCode = null, BlockReasonSince = null, ··· }]
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164AVehicleAForeignOrderRunsOnTakesNoNewDispatchUntilTheOrderIsReadBackEnded(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 553
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AVehicleAForeignOrderRunsOnTakesNoNewDispatchUntilTheOrderIsReadBackEnded(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 562
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderThisServerHasCommandedButHasNoIntentForIsNotProvablyForeign [283 ms]
+  Error Message:
+   System.InvalidOperationException : Sequence contains no elements.
+  Stack Trace:
+     at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderThisServerHasCommandedButHasNoIntentForIsNotProvablyForeign() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 268
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderThisServerHasCommandedButHasNoIntentForIsNotProvablyForeign() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 269
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AnUpperIdShapedLikeOursWithoutAnIntentIsHeldAndAlarmedButNeverCancelled(upperId: "w2g-99999999-9999-4999-8999-999999999999-GATE-1") [260 ms]
+  Error Message:
+   System.InvalidOperationException : Sequence contains no elements.
+  Stack Trace:
+     at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AnUpperIdShapedLikeOursWithoutAnIntentIsHeldAndAlarmedButNeverCancelled(String upperId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 191
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AnUpperIdShapedLikeOursWithoutAnIntentIsHeldAndAlarmedButNeverCancelled(String upperId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 199
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AnUpperIdShapedLikeOursWithoutAnIntentIsHeldAndAlarmedButNeverCancelled(upperId: "  W2G-99999999-9999-4999-8999-999999999999-REBUILD"···) [218 ms]
+  Error Message:
+   System.InvalidOperationException : Sequence contains no elements.
+  Stack Trace:
+     at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AnUpperIdShapedLikeOursWithoutAnIntentIsHeldAndAlarmedButNeverCancelled(String upperId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 191
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AnUpperIdShapedLikeOursWithoutAnIntentIsHeldAndAlarmedButNeverCancelled(String upperId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 199
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AnUpperIdShapedLikeOursWithoutAnIntentIsHeldAndAlarmedButNeverCancelled(upperId: "W2G-99999999-9999-4999-8999-999999999999-PICKUP-1") [286 ms]
+  Error Message:
+   System.InvalidOperationException : Sequence contains no elements.
+  Stack Trace:
+     at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AnUpperIdShapedLikeOursWithoutAnIntentIsHeldAndAlarmedButNeverCancelled(String upperId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 191
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AnUpperIdShapedLikeOursWithoutAnIntentIsHeldAndAlarmedButNeverCancelled(String upperId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 199
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderThatMovesToAnotherOfOurVehiclesBetweenTheReadsIsFollowedAndCancelledAfterAFreshReRead [198 ms]
+  Error Message:
+   System.InvalidOperationException : Sequence contains no elements.
+  Stack Trace:
+     at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderThatMovesToAnotherOfOurVehiclesBetweenTheReadsIsFollowedAndCancelledAfterAFreshReRead() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 398
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderThatMovesToAnotherOfOurVehiclesBetweenTheReadsIsFollowedAndCancelledAfterAFreshReRead() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 412
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.AFailingSupervisionDoesNotStopTheRoundAndAHeldVehicleStaysHeld [310 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+           ↓ (pos 0)
+Expected: ["老厂前线新多仓位1"]
+Actual:   []
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.AFailingSupervisionDoesNotStopTheRoundAndAHeldVehicleStaysHeld() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 875
+   at ControlServer.Tests.ForeignRunningOrderTests.AFailingSupervisionDoesNotStopTheRoundAndAHeldVehicleStaysHeld() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 883
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderOnTheVehicleIsNotExplainedAsTheOwnOrderInFlight(variant: "cancel-not-yet-effective") [301 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+           ↓ (pos 0)
+Expected: ["老厂前线新多仓位1"]
+Actual:   []
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderOnTheVehicleIsNotExplainedAsTheOwnOrderInFlight(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 620
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderOnTheVehicleIsNotExplainedAsTheOwnOrderInFlight(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 629
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderOnTheVehicleIsNotExplainedAsTheOwnOrderInFlight(variant: "ownership-unproven") [246 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+           ↓ (pos 0)
+Expected: ["老厂前线新多仓位1"]
+Actual:   []
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderOnTheVehicleIsNotExplainedAsTheOwnOrderInFlight(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 620
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderOnTheVehicleIsNotExplainedAsTheOwnOrderInFlight(String variant) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 629
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderRunningOnOurVehicleIsCancelledOnceAndOnlyCancelled(orderState: 7) [202 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+                                                                                                                          ↓ (pos 0)
+Expected: <>z__ReadOnlySingleElementList<ValueTuple<RiotOrderCommandKind, string>>                                       [Tuple (Cancel, "order-foreign-0001")]
+Actual:   SelectListIterator<ValueTuple<RiotOrderCommandKind, string, string>, ValueTuple<RiotOrderCommandKind, string>> []
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderRunningOnOurVehicleIsCancelledOnceAndOnlyCancelled(Int32 orderState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 60
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderRunningOnOurVehicleIsCancelledOnceAndOnlyCancelled(Int32 orderState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 72
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderRunningOnOurVehicleIsCancelledOnceAndOnlyCancelled(orderState: 9) [254 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+                                                                                                                          ↓ (pos 0)
+Expected: <>z__ReadOnlySingleElementList<ValueTuple<RiotOrderCommandKind, string>>                                       [Tuple (Cancel, "order-foreign-0001")]
+Actual:   SelectListIterator<ValueTuple<RiotOrderCommandKind, string, string>, ValueTuple<RiotOrderCommandKind, string>> []
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderRunningOnOurVehicleIsCancelledOnceAndOnlyCancelled(Int32 orderState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 60
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderRunningOnOurVehicleIsCancelledOnceAndOnlyCancelled(Int32 orderState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 72
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderRunningOnOurVehicleIsCancelledOnceAndOnlyCancelled(orderState: 3) [169 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+                                                                                                                          ↓ (pos 0)
+Expected: <>z__ReadOnlySingleElementList<ValueTuple<RiotOrderCommandKind, string>>                                       [Tuple (Cancel, "order-foreign-0001")]
+Actual:   SelectListIterator<ValueTuple<RiotOrderCommandKind, string, string>, ValueTuple<RiotOrderCommandKind, string>> []
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderRunningOnOurVehicleIsCancelledOnceAndOnlyCancelled(Int32 orderState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 60
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderRunningOnOurVehicleIsCancelledOnceAndOnlyCancelled(Int32 orderState) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 72
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AReReadThatDoesNotAnswerDefersTheCancelToARoundWhoseReReadDoes [222 ms]
+  Error Message:
+   System.InvalidOperationException : Sequence contains no elements.
+  Stack Trace:
+     at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AReReadThatDoesNotAnswerDefersTheCancelToARoundWhoseReReadDoes() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 429
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AReReadThatDoesNotAnswerDefersTheCancelToARoundWhoseReReadDoes() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 438
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheCancelWasDecidedAndBeforeItWentOutSendsItOnceAfterTheRestart [155 ms]
+  Error Message:
+   Assert.Contains() Failure: Filter not matched in collection
+Collection: []
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.CrashingRoundAsync(RuntimeFixture fixture) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 979
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheCancelWasDecidedAndBeforeItWentOutSendsItOnceAfterTheRestart() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 702
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheCancelWasDecidedAndBeforeItWentOutSendsItOnceAfterTheRestart() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 714
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164TheAlarmAndTheAuditRecordNameTheOrderTheVehicleTheTimeAndTheCancelResult [196 ms]
+  Error Message:
+   System.InvalidOperationException : Sequence contains no elements.
+  Stack Trace:
+     at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164TheAlarmAndTheAuditRecordNameTheOrderTheVehicleTheTimeAndTheCancelResult() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 655
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164TheAlarmAndTheAuditRecordNameTheOrderTheVehicleTheTimeAndTheCancelResult() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 682
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderCancelledOnceThatComesBackToOurVehicleIsNotCancelledAgain [162 ms]
+  Error Message:
+   Assert.Single() Failure: The collection was empty
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderCancelledOnceThatComesBackToOurVehicleIsNotCancelledAgain() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 508
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderCancelledOnceThatComesBackToOurVehicleIsNotCancelledAgain() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 524
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderIsRecognisedWhileTheSessionIsNotReadyOnTheOwnOrderAndOnlyItIsCancelled [245 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+                                                                                                                          ↓ (pos 0)
+Expected: <>z__ReadOnlySingleElementList<ValueTuple<RiotOrderCommandKind, string>>                                       [Tuple (Cancel, "order-foreign-0001")]
+Actual:   SelectListIterator<ValueTuple<RiotOrderCommandKind, string, string>, ValueTuple<RiotOrderCommandKind, string>> []
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderIsRecognisedWhileTheSessionIsNotReadyOnTheOwnOrderAndOnlyItIsCancelled() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 586
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderIsRecognisedWhileTheSessionIsNotReadyOnTheOwnOrderAndOnlyItIsCancelled() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 596
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164AnIncompleteListingConcludesNothing [185 ms]
+  Error Message:
+   System.InvalidOperationException : Sequence contains no elements.
+  Stack Trace:
+     at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.RowAsync(RuntimeFixture fixture, String orderId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 963
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AnIncompleteListingConcludesNothing() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 157
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164AnIncompleteListingConcludesNothing() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 164
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelDecidedBeforeACrashIsNotSentWhenTheOrderLeftOurVehicleMeanwhile [177 ms]
+  Error Message:
+   Assert.Contains() Failure: Filter not matched in collection
+Collection: []
+  Stack Trace:
+     at ControlServer.Tests.ForeignRunningOrderTests.CrashingRoundAsync(RuntimeFixture fixture) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 979
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelDecidedBeforeACrashIsNotSentWhenTheOrderLeftOurVehicleMeanwhile() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 727
+   at ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelDecidedBeforeACrashIsNotSentWhenTheOrderLeftOurVehicleMeanwhile() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs330-8005-agv-control-server\tests\ControlServer.Tests\ForeignRunningOrderTests.cs:line 734
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:    35, Passed:    84, Skipped:     0, Total:   119, Duration: 18 s - ControlServer.Tests.dll (net8.0)
+[xUnit.net 00:00:05.51]     ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelIsSentOnceAndAnOrderStillRunningAfterItIsHandedToAPerson(disposition: Failed) [FAIL]
+[xUnit.net 00:00:05.73]     ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelIsSentOnceAndAnOrderStillRunningAfterItIsHandedToAPerson(disposition: Unknown) [FAIL]
+[xUnit.net 00:00:05.96]     ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelIsSentOnceAndAnOrderStillRunningAfterItIsHandedToAPerson(disposition: Accepted) [FAIL]
+[xUnit.net 00:00:06.49]     ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheCancelWentOutAndBeforeItWasRecordedDoesNotSendItAgain(cancelTakesEffect: True) [FAIL]
+[xUnit.net 00:00:06.69]     ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheCancelWentOutAndBeforeItWasRecordedDoesNotSendItAgain(cancelTakesEffect: False) [FAIL]
+[xUnit.net 00:00:06.96]     ControlServer.Tests.ForeignRunningOrderTests.Req0164TheOrderIsReadAgainBeforeTheCancelAndLeftAloneWhenItNoLongerRunsOnOurVehicle(change: "ended", expectedState: "ENDED") [FAIL]
+[xUnit.net 00:00:07.32]     ControlServer.Tests.ForeignRunningOrderTests.Req0164TheOrderIsReadAgainBeforeTheCancelAndLeftAloneWhenItNoLongerRunsOnOurVehicle(change: "back-in-the-queue", expectedState: "LEFT_VEHICLE") [FAIL]
+[xUnit.net 00:00:07.63]     ControlServer.Tests.ForeignRunningOrderTests.Req0164TheOrderIsReadAgainBeforeTheCancelAndLeftAloneWhenItNoLongerRunsOnOurVehicle(change: "moved-to-another-vehicle", expectedState: "LEFT_VEHICLE") [FAIL]
+[xUnit.net 00:00:07.91]     ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheAttemptWasArmedIsNeverFollowedByASecondArmingOrSend [FAIL]
+[xUnit.net 00:00:08.74]     ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(readBack: 2, released: True) [FAIL]
+[xUnit.net 00:00:08.94]     ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(readBack: 8, released: False) [FAIL]
+[xUnit.net 00:00:09.19]     ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(readBack: null, released: False) [FAIL]
+[xUnit.net 00:00:09.42]     ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(readBack: 6, released: True) [FAIL]
+[xUnit.net 00:00:09.67]     ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(readBack: 5, released: True) [FAIL]
+[xUnit.net 00:00:09.90]     ControlServer.Tests.ForeignRunningOrderTests.Req0164OnlyAnExplicitEndingReadBackReleasesTheVehicle(readBack: 4, released: True) [FAIL]
+[xUnit.net 00:00:10.34]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AVehicleAForeignOrderRunsOnTakesNoNewDispatchUntilTheOrderIsReadBackEnded(variant: "cancel-not-yet-effective") [FAIL]
+[xUnit.net 00:00:10.65]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AVehicleAForeignOrderRunsOnTakesNoNewDispatchUntilTheOrderIsReadBackEnded(variant: "ownership-unproven") [FAIL]
+[xUnit.net 00:00:10.94]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderThisServerHasCommandedButHasNoIntentForIsNotProvablyForeign [FAIL]
+[xUnit.net 00:00:11.21]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AnUpperIdShapedLikeOursWithoutAnIntentIsHeldAndAlarmedButNeverCancelled(upperId: "w2g-99999999-9999-4999-8999-999999999999-GATE-1") [FAIL]
+[xUnit.net 00:00:11.43]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AnUpperIdShapedLikeOursWithoutAnIntentIsHeldAndAlarmedButNeverCancelled(upperId: "  W2G-99999999-9999-4999-8999-999999999999-REBUILD"···) [FAIL]
+[xUnit.net 00:00:11.72]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AnUpperIdShapedLikeOursWithoutAnIntentIsHeldAndAlarmedButNeverCancelled(upperId: "W2G-99999999-9999-4999-8999-999999999999-PICKUP-1") [FAIL]
+[xUnit.net 00:00:11.92]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderThatMovesToAnotherOfOurVehiclesBetweenTheReadsIsFollowedAndCancelledAfterAFreshReRead [FAIL]
+[xUnit.net 00:00:13.45]     ControlServer.Tests.ForeignRunningOrderTests.AFailingSupervisionDoesNotStopTheRoundAndAHeldVehicleStaysHeld [FAIL]
+[xUnit.net 00:00:13.76]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderOnTheVehicleIsNotExplainedAsTheOwnOrderInFlight(variant: "cancel-not-yet-effective") [FAIL]
+[xUnit.net 00:00:14.01]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderOnTheVehicleIsNotExplainedAsTheOwnOrderInFlight(variant: "ownership-unproven") [FAIL]
+[xUnit.net 00:00:14.21]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderRunningOnOurVehicleIsCancelledOnceAndOnlyCancelled(orderState: 7) [FAIL]
+[xUnit.net 00:00:14.47]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderRunningOnOurVehicleIsCancelledOnceAndOnlyCancelled(orderState: 9) [FAIL]
+[xUnit.net 00:00:14.64]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderRunningOnOurVehicleIsCancelledOnceAndOnlyCancelled(orderState: 3) [FAIL]
+[xUnit.net 00:00:14.86]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AReReadThatDoesNotAnswerDefersTheCancelToARoundWhoseReReadDoes [FAIL]
+[xUnit.net 00:00:15.02]     ControlServer.Tests.ForeignRunningOrderTests.Req0164ACrashAfterTheCancelWasDecidedAndBeforeItWentOutSendsItOnceAfterTheRestart [FAIL]
+[xUnit.net 00:00:15.22]     ControlServer.Tests.ForeignRunningOrderTests.Req0164TheAlarmAndTheAuditRecordNameTheOrderTheVehicleTheTimeAndTheCancelResult [FAIL]
+[xUnit.net 00:00:15.39]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AnOrderCancelledOnceThatComesBackToOurVehicleIsNotCancelledAgain [FAIL]
+[xUnit.net 00:00:15.64]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AForeignOrderIsRecognisedWhileTheSessionIsNotReadyOnTheOwnOrderAndOnlyItIsCancelled [FAIL]
+[xUnit.net 00:00:16.39]     ControlServer.Tests.ForeignRunningOrderTests.Req0164AnIncompleteListingConcludesNothing [FAIL]
+[xUnit.net 00:00:16.57]     ControlServer.Tests.ForeignRunningOrderTests.Req0164ACancelDecidedBeforeACrashIsNotSentWhenTheOrderLeftOurVehicleMeanwhile [FAIL]
