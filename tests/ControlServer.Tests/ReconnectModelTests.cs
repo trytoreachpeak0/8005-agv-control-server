@@ -1,7 +1,12 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Reflection;
 using System.Text;
+using ControlServer.Domain;
+using ControlServer.Host.Runtime;
+using ControlServer.Infrastructure.Persistence;
 using CsCheck;
+using static ControlServer.Tests.JourneyRuntimeWorkerTestKit;
 
 namespace ControlServer.Tests;
 
@@ -59,6 +64,69 @@ public sealed class ReconnectModelTests
             typeof(ReconnectStep).GetNestedTypes(System.Reflection.BindingFlags.NonPublic).Where(type => type.IsSubclassOf(typeof(ReconnectStep))).Order(TypeNameComparer.Instance),
             seen.Order(TypeNameComparer.Instance));
         Assert.Equal([false, true], onboards.Order());
+    }
+
+    /// <summary>
+    /// 模型里的等人码表与产品的 <c>CarriesACodeThatNamesAWaitOnAPerson</c> 一字不差：产品加了码、改了名、删了码，这里都红。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 模型把这组码写成字面量是有意的（看板上现场看得见的字，改名应当让这里对不上），代价是产品加码时没有任何东西报警——cs#318 合入时加了十个，
+    /// 这张表一度没跟上，是调度提醒了才发现。这条把「对不上」从靠人记得变成构造上会红。
+    /// </para>
+    /// <para>
+    /// 做法：取产品三个程序集里全部字符串常量中形如 <c>UPPER_SNAKE</c> 的值，挨个写进一行真实的旅程（阶段 <c>AwaitingPickupArrival</c>，
+    /// 与模型走的阶段相同），问产品的谓词。<c>Blocked</c> 阶段与 AREA 站等准入按阶段判，这里不问，模型也不列。先断言问出来的集合里有 <c>ORDER_HANG</c>：
+    /// 反射取不到方法、或者候选一个都没取到时，两边都是空集，「相等」会误绿。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    [Trait("ProtocolVector", "CV-DEMAND-ACCEPT-TO-PICKUP")]
+    public async Task TheModelsWaitOnPersonCodesAreExactlyTheProductsSet()
+    {
+        MethodInfo carries = typeof(JourneyRuntimeEngine).GetMethod(
+                "CarriesACodeThatNamesAWaitOnAPerson", BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException(
+                "JourneyRuntimeEngine.CarriesACodeThatNamesAWaitOnAPerson is gone: find what replaced it and compare ReconnectModel.WaitOnPersonCodes with that.");
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand("10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        JourneyRuntimeRow row = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, row.Stage);
+
+        string[] candidates =
+        [
+            .. new[] { typeof(JourneyRuntimeEngine).Assembly, typeof(JourneyRuntimeRow).Assembly, typeof(ProtocolContentConflictException).Assembly }
+                .Distinct()
+                .SelectMany(assembly => assembly.GetTypes())
+                .SelectMany(type => type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly))
+                .Where(field => field.IsLiteral && field.FieldType == typeof(string))
+                .Select(field => (string)field.GetRawConstantValue()!)
+                .Where(value => value.Contains('_', StringComparison.Ordinal) &&
+                                value.All(character => character is (>= 'A' and <= 'Z') or (>= '0' and <= '9') or '_'))
+                .Distinct(StringComparer.Ordinal),
+        ];
+        SortedSet<string> product = new(StringComparer.Ordinal);
+        foreach (string code in candidates)
+        {
+            row.SetBlockReason(code, Now);
+            if ((bool)carries.Invoke(null, [row])!)
+            {
+                product.Add(code);
+            }
+        }
+
+        Assert.Contains("ORDER_HANG", product);
+        // 说出是哪几个码对不上：整组比较时 xunit 把两边都截成「···」，读不出差在哪。
+        string[] missingFromModel = [.. product.Where(code => !ReconnectModel.WaitOnPersonCodes.Contains(code))];
+        string[] onlyInModel = [.. ReconnectModel.WaitOnPersonCodes.Where(code => !product.Contains(code)).Order(StringComparer.Ordinal)];
+        Assert.True(
+            missingFromModel.Length == 0 && onlyInModel.Length == 0,
+            $"ReconnectModel.WaitOnPersonCodes differs from JourneyRuntimeEngine.CarriesACodeThatNamesAWaitOnAPerson " +
+            $"({candidates.Length} candidate constants asked). Missing from the model: [{string.Join(", ", missingFromModel)}]. " +
+            $"Only in the model: [{string.Join(", ", onlyInModel)}].");
     }
 
     /// <summary>

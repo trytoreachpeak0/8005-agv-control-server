@@ -58,8 +58,10 @@ internal static class ReconnectModel
     /// <summary>
     /// 指名了在等谁的阻断码：与 <c>JourneyRuntimeEngine.CarriesACodeThatNamesAWaitOnAPerson</c> 同一组，写成字面量——看板上现场看得见
     /// 的东西，改名应当让这里对不上而不是跟着常量悄悄改。<c>Blocked</c> 阶段与 AREA 站等准入要连阶段一起判，这个模型走不到，没列。
+    /// 产品加码或改名时这里对不上，由 <see cref="ReconnectModelTests.TheModelsWaitOnPersonCodesAreExactlyTheProductsSet"/> 报出来
+    /// （cs#318 合入时加了后十个，这张表一度没跟上，而没有任何东西报警）。
     /// </summary>
-    private static readonly HashSet<string> WaitOnPersonCodes = new(StringComparer.Ordinal)
+    internal static readonly HashSet<string> WaitOnPersonCodes = new(StringComparer.Ordinal)
     {
         "VEHICLE_ORDER_FAILED",
         "ORDER_HANG",
@@ -69,6 +71,18 @@ internal static class ReconnectModel
         "STATION_TIMEOUT_DOOR_NOT_CLOSED",
         "LOAD_CORRECTION_IN_PROGRESS",
         "PRE_DEPARTURE_SAFETY_NOT_VALID",
+        // cs#318：自建单被取消后自动重建、故障清除后同车重建，等人处理的那几种停法。这个模型没有取消与故障动作，走不到它们；
+        // 列在这里是为了与产品同一组，模型哪天加了那些动作，判据不用再补。
+        "VEHICLE_FAULT_CLEARED_CARGO_ON_BOARD",
+        "VEHICLE_FAULT_CLEARED_NOTHING_ON_BOARD",
+        "OWN_ORDER_REBUILD_WAITING_VEHICLE",
+        "OWN_ORDER_REBUILD_BLOCKED_BY_CREATE_GATE",
+        "OWN_ORDER_REBUILD_ORDER_UNCONFIRMED",
+        "OWN_ORDER_REBUILD_STOPPED",
+        "OWN_ORDER_REBUILD_WAITING_CARGO_EVIDENCE",
+        "OWN_ORDER_REBUILD_CARGO_NOT_IN_PLACE",
+        "OWN_ORDER_REBUILD_CARGO_UNPROVEN",
+        "OWN_ORDER_REBUILD_VEHICLE_INELIGIBLE",
     };
 
     /// <summary>
