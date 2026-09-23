@@ -162,11 +162,6 @@ internal static class ReconnectModel
     /// </remarks>
     internal static readonly KnownDefect[] KnownDefects =
     [
-        // 握手里补发的 SafetyStateChanged 回了确认又附一行就绪，车把那一行当成下一条的答复。修复在 PR #343。
-        new(
-            "control-server#340",
-            ReconnectViolation.OneInboundManyAnswers,
-            ["SafetyStateChanged in the handshake of generation", "answered with DurableAck+SessionReadiness"]),
         // 同一代握手里补发 SafetyStateChanged vN 之后，同为 vN 的安全快照按整行哈希判冲突，握手被拒。
         new(
             "onboard-hmi#206",

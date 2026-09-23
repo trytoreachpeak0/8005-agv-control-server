@@ -131,13 +131,13 @@ public sealed class ReconnectModelRegressionTests
     /// <para>
     /// 模型在 <c>18172346</c> 上 300 个组合里找到 135 个，确定性删减到这一步（种子 <c>0000000005q1</c>，化简前 11 步）。补发的
     /// <c>SafetyStateChanged</c> 回的是 <c>DurableAck</c> 加一行 <c>SessionReadiness</c>，车每发一条只读一条答复，把多出的那一行当成
-    /// 能力快照的答复，断开重连——control-server#340。
+    /// 能力快照的答复，断开重连——control-server#340，由 PR #343 修复（合入提交 <c>384b9b69</c>），同一个种子在那上面不再报这一类。
     /// </para>
     /// <para>
     /// 安全内容相同与不同各一行：补发的那一条与握手快照的内容是否相同，对这一条不该有影响。
     /// </para>
     /// </remarks>
-    [Theory(Skip = "known defect: control-server#340 https://github.com/trytoreachpeak0/8005-agv-control-server/issues/340")]
+    [Theory]
     [Trait("IntegrationSlice", "FP-IS-00")]
     [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
     [InlineData(true)]
