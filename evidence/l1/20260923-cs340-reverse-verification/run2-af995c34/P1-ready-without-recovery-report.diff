@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs b/src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs
+index bc232195..99479d12 100644
+--- a/src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs
++++ b/src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs
+@@ -411,7 +411,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
+                 StringComparison.Ordinal);
+         bool ready = slotConfigurationAgrees &&
+                      row.CapabilityRevision is not null && row.SafetyRevision is not null &&
+-                     row.RecoveryReportId is not null && departureUsable && noPendingFacts &&
++                     departureUsable && noPendingFacts &&
+                      !operationNeedsRecovery &&
+                      !forcedRecoveryAwaitsHardwareRecord &&
+                      row.ReportedForcedRecoveryGeneration == row.ForcedRecoveryGeneration;

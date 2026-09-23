@@ -1009,11 +1009,12 @@ public sealed class OnboardMessageProcessorTests
             state,
             TestContext.Current.CancellationToken);
 
-        // First line, not the whole response: a result the server refuses now carries a
+        // First line, not the whole response: a result that changes readiness can carry a
         // SessionReadiness line after the ack. This fixture's stored session is not ready
-        // (BeginSessionRecoveryAsync leaves no recovery report), so it gets one even though
-        // the unload itself succeeded. What this test is about is that the demand closed
-        // before the ack, which the first line is.
+        // (BeginSessionRecoveryAsync leaves no recovery report), and until control-server#340 it
+        // got one even though the unload itself succeeded; its connection has not finished a
+        // handshake, so since #340 the line is held back. What this test is about is that the
+        // demand closed before the ack, which the first line is either way.
         using JsonDocument acknowledgement = JsonDocument.Parse(
             response.Split('\n', StringSplitOptions.RemoveEmptyEntries)[0]);
         Assert.Equal("DurableAck", acknowledgement.RootElement.GetProperty("messageType").GetString());

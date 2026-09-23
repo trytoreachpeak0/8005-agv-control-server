@@ -352,6 +352,11 @@ public sealed class JourneyRuntimeWorkerLoadDeadlineTests
                 resultContentSha256
             }
         }, SerializerOptions);
+        // This models a connection in the middle of its session: the result is reported from the receive loop,
+        // and a real connection is always HandshakeCompleted = true once its recovery report has been answered.
+        // Since control-server#340 an answer carries no SessionReadiness while the handshake is not done, so
+        // leaving the flag at its default (as this did until then) turns the test into one about a handshake
+        // and drops the readiness line it asserts. Not redundant: do not remove it.
         string response = await processor.ProcessAsync(
             line,
             new OnboardConnectionState
@@ -360,7 +365,8 @@ public sealed class JourneyRuntimeWorkerLoadDeadlineTests
                 SessionGeneration = 1,
                 CapabilityRevision = 1,
                 SafetyRevision = 7,
-                Readiness = SessionReadiness.Ready
+                Readiness = SessionReadiness.Ready,
+                HandshakeCompleted = true
             },
             TestContext.Current.CancellationToken);
         // The runtime reads each iteration in a scope of its own; the fixture's engine keeps one context, so
