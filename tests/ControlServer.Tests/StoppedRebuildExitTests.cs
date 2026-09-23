@@ -744,11 +744,16 @@ public sealed class StoppedRebuildExitTests
     }
 
     /// <summary>
-    /// 就绪这一项只认 <c>OWN_ORDER_REBUILD_AWAITING_CARGO_HANDOFF</c> 这一个码，只管这辆车：同一辆车的 <c>Blocked</c> 旅程换成别的码，
-    /// 就绪回到 <c>READY</c>；另一辆车的就绪不受这辆车的交接影响。
+    /// 就绪这一项只管「这辆车的 <c>Blocked</c> 旅程上有一条在等交接（<c>AWAITING_CARGO_HANDOFF</c>）的重建记录」：码换成别的（交接失败时
+    /// 恢复协调器会改写它）照样要恢复；另一辆车不受影响；记录不再等交接、或者旅程不再 <c>Blocked</c>，就绪回到 <c>READY</c>。
     /// </summary>
+    /// <remarks>
+    /// 独立审查 M1 翻转了这一条：第一版只认旅程码 <c>OWN_ORDER_REBUILD_AWAITING_CARGO_HANDOFF</c>，交接失败后码被改写，就绪回到
+    /// <c>READY</c>、车载端交接入口消失，这一趟又回到只能改库。判据换成记录，负例也跟着换：原来「换个码就放行」，现在是「记录了结、
+    /// 旅程离开 Blocked 才放行」。任何 Blocked 旅程都算（不看记录）、不分车，这两种错法都会在下面某一步红。
+    /// </remarks>
     [Fact]
-    public async Task OnlyTheHandoffCodeOnThisVehiclesJourneyHoldsItsSession()
+    public async Task OnlyThisVehiclesBlockedJourneyAwaitingAHandoffHoldsItsSession()
     {
         await using RuntimeFixture fixture = await StoppedWithCargoNotInPlaceAsync();
         Assert.Equal(
@@ -770,12 +775,220 @@ public sealed class StoppedRebuildExitTests
         JourneyRuntimeRow journey = await connection.JourneyRuntimes.SingleAsync(Token);
         journey.SetBlockReason("SOME_OTHER_BLOCK", fixture.Clock.GetUtcNow());
         await connection.SaveChangesAsync(Token);
+        Assert.Equal(
+            (SessionReadiness.RecoveryRequired, "CARGO_HANDOFF_REQUIRED"),
+            ToTuple(await store.DecideReadinessAsync(fixture.Options.AgvId, mine.SessionGeneration, Token)));
 
+        OwnOrderRebuildRow record = await connection.OwnOrderRebuilds.SingleAsync(
+            row => row.State == OwnOrderRebuildStates.AwaitingCargoHandoff, Token);
+        record.State = OwnOrderRebuildStates.Ended;
+        await connection.SaveChangesAsync(Token);
+        Assert.Equal(
+            (SessionReadiness.Ready, "READY"),
+            ToTuple(await store.DecideReadinessAsync(fixture.Options.AgvId, mine.SessionGeneration, Token)));
+
+        record.State = OwnOrderRebuildStates.AwaitingCargoHandoff;
+        journey.Stage = JourneyRuntimeStage.AwaitingGateArrival;
+        await connection.SaveChangesAsync(Token);
         Assert.Equal(
             (SessionReadiness.Ready, "READY"),
             ToTuple(await store.DecideReadinessAsync(fixture.Options.AgvId, mine.SessionGeneration, Token)));
 
         static (SessionReadiness, string) ToTuple(SessionReadinessDecision decision) => (decision.Readiness, decision.ReasonCode);
+    }
+
+    /// <summary>
+    /// 交接失败（车报 <c>FAILED</c>）之后这一趟不能回到「只能改库」（独立审查 M1 (a)）：恢复协调器把旅程码改写成
+    /// <c>FaultCargoRecoveryResult_NOT_RECONCILED</c>、需求置 <c>RecoveryRequired</c>，货还在车上、故障货物绑定不了结；会话仍要恢复
+    /// （车载端交接入口还在）；放弃被拒的理由是「车上有货」而不是「不在停住状态」；再转一次交接被受理、码挂回来、再向车要一次快照；
+    /// 第二个会话交接成功之后照常收尾。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0238")]
+    public async Task AFailedHandoffLeavesTheTripAWayOut()
+    {
+        Environment.SetEnvironmentVariable(ProofVariable, Proof);
+        try
+        {
+            await using RuntimeFixture fixture = await StoppedWithCargoNotInPlaceAsync();
+            JourneyRuntimeRow stopped = await fixture.RuntimeAsync();
+            int[] slots = await CargoSlotsAsync(fixture);
+            Assert.Equal(
+                VehicleFaultRecoveryOutcome.HandoffPrepared,
+                (await VehicleFaultRecoveryTests.Service(fixture, new(fixture)).RecoverAsync(Prepare(fixture), Token)).Outcome);
+            await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+            OnboardMessageProcessor processor = RecoveryProcessor(fixture, connection);
+            OnboardConnectionState state = Connection(fixture);
+            long generation = (await connection.SessionRecoveries.AsNoTracking().SingleAsync(Token)).SessionGeneration;
+            WireToGateStore store = new(connection);
+
+            string firstSession = FirstLinePayload(
+                await AssertOpenedAsync(processor.ProcessAsync(OpenSession(fixture, SessionRequest, slots), state, Token)))
+                .GetProperty("exceptionRecoverySessionId").GetString()!;
+            Assert.Equal("RecoveryActionAccepted", FirstLineType(
+                await processor.ProcessAsync(Action(fixture, firstSession, "FAULT_CARGO_HANDOFF", slots), state, Token)));
+            string firstHandoff = (await connection.RecoveryWorkflows.AsNoTracking().SingleAsync(Token)).HandoffId!;
+            Assert.Equal("DurableAck", FirstLineType(await processor.ProcessAsync(
+                HandedOff(fixture, firstSession, firstHandoff, slots, failed: true), state, Token)));
+
+            // The failure, as the recovery coordinator leaves it: the code rewritten, the cargo still on board and bound.
+            JourneyRuntimeRow failed = await fixture.RuntimeAsync();
+            Assert.Equal(
+                (stopped.JourneyId, JourneyRuntimeStage.Blocked, "FaultCargoRecoveryResult_NOT_RECONCILED"),
+                (failed.JourneyId, failed.Stage, failed.BlockReasonCode));
+            await using (ControlServerDbContext reading = new(fixture.DbOptionsForTests))
+            {
+                FaultedVehicleCargoRow binding = await reading.FaultedVehicleCargo.AsNoTracking().SingleAsync(Token);
+                Assert.Equal((null, null), (binding.ReleasedAt, binding.ReleasedReason));
+            }
+
+            Assert.Equal(OwnOrderRebuildStates.AwaitingCargoHandoff, (await RebuildForAsync(fixture, stopped.GateUpperId)).State);
+            SessionReadinessDecision afterFailure = await store.DecideReadinessAsync(fixture.Options.AgvId, generation, Token);
+            Assert.Equal((SessionReadiness.RecoveryRequired, "CARGO_HANDOFF_REQUIRED"), (afterFailure.Readiness, afterFailure.ReasonCode));
+
+            VehicleFaultRecoveryDecision giveUp = await VehicleFaultRecoveryTests.Service(fixture, new(fixture))
+                .RecoverAsync(GiveUp(fixture), Token);
+            Assert.Equal(
+                (VehicleFaultRecoveryOutcome.Refused, "OWN_ORDER_REBUILD_EXIT_CARGO_ON_BOARD"),
+                (giveUp.Outcome, string.Join(',', giveUp.Reasons)));
+
+            Assert.Equal(
+                (VehicleFaultRecoveryOutcome.HandoffPrepared, VehicleFaultRecoveryDispositions.AwaitingCargoHandoff),
+                ToTuple(await VehicleFaultRecoveryTests.Service(fixture, new(fixture)).RecoverAsync(Prepare(fixture), Token)));
+            Assert.Equal(
+                (JourneyRuntimeStage.Blocked, "OWN_ORDER_REBUILD_AWAITING_CARGO_HANDOFF"),
+                ((await fixture.RuntimeAsync()).Stage, (await fixture.RuntimeAsync()).BlockReasonCode));
+            Assert.True(await ClaimAsync(fixture, generation, ready: false));
+
+            string secondSession = FirstLinePayload(
+                await AssertOpenedAsync(processor.ProcessAsync(OpenSession(fixture, SecondSessionRequest, slots), state, Token)))
+                .GetProperty("exceptionRecoverySessionId").GetString()!;
+            Assert.Equal("RecoveryActionAccepted", FirstLineType(await processor.ProcessAsync(
+                Action(fixture, secondSession, "FAULT_CARGO_HANDOFF", slots, SecondActionId), state, Token)));
+            string secondHandoff = (await connection.RecoveryWorkflows.AsNoTracking()
+                .SingleAsync(row => row.WorkflowId == SecondActionId, Token)).HandoffId!;
+            Assert.Equal("DurableAck", FirstLineType(await processor.ProcessAsync(
+                HandedOff(fixture, secondSession, secondHandoff, slots, SecondActionId), state, Token)));
+
+            await using ControlServerDbContext after = new(fixture.DbOptionsForTests);
+            JourneyRuntimeRow closed = await after.JourneyRuntimes.AsNoTracking().SingleAsync(Token);
+            Assert.Equal((JourneyRuntimeStage.Completed, "TERMINATED_BY_FAULT_CARGO_HANDOFF"), (closed.Stage, closed.BlockReasonCode));
+            Assert.Equal("HANDED_OFF_IN_EXCEPTION_SESSION", (await after.FaultedVehicleCargo.AsNoTracking().SingleAsync(Token)).ReleasedReason);
+            Assert.Equal(OwnOrderRebuildStates.Ended, (await RebuildForAsync(fixture, stopped.GateUpperId)).State);
+            Assert.Equal(SessionReadiness.Ready, (await store.DecideReadinessAsync(fixture.Options.AgvId, generation, Token)).Readiness);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(ProofVariable, null);
+        }
+
+        static (VehicleFaultRecoveryOutcome, string) ToTuple(VehicleFaultRecoveryDecision decision) =>
+            (decision.Outcome, decision.Disposition);
+    }
+
+    /// <summary>
+    /// 一趟上两条需求、只交接了一部分（独立审查 M1 (b)）：A 已装、B 待装时停住，A 在会话里交接掉之后旅程还带着 B，不收尾，仍
+    /// <c>Blocked</c>、会话仍要恢复；B 没有装货操作，开不出会话。这时车上没货了：再转交接被拒（没货），放弃这趟被受理——B 终结、
+    /// 旅程收尾、停住那条记录了结、会话回到就绪。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0238")]
+    public async Task APartialHandoffLetsThePersonGiveTheRestUp()
+    {
+        Environment.SetEnvironmentVariable(ProofVariable, Proof);
+        try
+        {
+            await using RuntimeFixture fixture = await StoppedWithCargoNotInPlaceAsync();
+            JourneyRuntimeRow stopped = await fixture.RuntimeAsync();
+            await using (ControlServerDbContext seeding = new(fixture.DbOptionsForTests))
+            {
+                await JourneyMembershipSeed.AddFurtherDemandAsync(seeding, stopped, SecondDemandId);
+            }
+
+            int[] slots = await CargoSlotsAsync(fixture);
+            Assert.Equal(
+                VehicleFaultRecoveryOutcome.HandoffPrepared,
+                (await VehicleFaultRecoveryTests.Service(fixture, new(fixture)).RecoverAsync(Prepare(fixture), Token)).Outcome);
+            await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+            OnboardMessageProcessor processor = RecoveryProcessor(fixture, connection);
+            OnboardConnectionState state = Connection(fixture);
+            long generation = (await connection.SessionRecoveries.AsNoTracking().SingleAsync(Token)).SessionGeneration;
+            WireToGateStore store = new(connection);
+            string sessionId = FirstLinePayload(
+                await AssertOpenedAsync(processor.ProcessAsync(OpenSession(fixture, SessionRequest, slots), state, Token)))
+                .GetProperty("exceptionRecoverySessionId").GetString()!;
+            await processor.ProcessAsync(Action(fixture, sessionId, "FAULT_CARGO_HANDOFF", slots), state, Token);
+            string handoffId = (await connection.RecoveryWorkflows.AsNoTracking().SingleAsync(Token)).HandoffId!;
+            Assert.Equal("DurableAck", FirstLineType(
+                await processor.ProcessAsync(HandedOff(fixture, sessionId, handoffId, slots), state, Token)));
+
+            // A handed off; the journey still carries B, so it does not close, and the session still asks for recovery.
+            await using (ControlServerDbContext reading = new(fixture.DbOptionsForTests))
+            {
+                Assert.Equal(
+                    DemandExecutionStatus.Cancelled,
+                    (await reading.AcceptedDemands.AsNoTracking().SingleAsync(row => row.DemandId == FirstDemandId, Token)).Status);
+                Assert.NotEqual(
+                    DemandExecutionStatus.Cancelled,
+                    (await reading.AcceptedDemands.AsNoTracking().SingleAsync(row => row.DemandId == SecondDemandId, Token)).Status);
+                Assert.Equal(JourneyRuntimeStage.Blocked, (await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token)).Stage);
+                Assert.NotNull((await reading.FaultedVehicleCargo.AsNoTracking().SingleAsync(Token)).ReleasedAt);
+            }
+
+            Assert.Equal(
+                SessionReadiness.RecoveryRequired,
+                (await store.DecideReadinessAsync(fixture.Options.AgvId, generation, Token)).Readiness);
+
+            VehicleFaultRecoveryDecision again = await VehicleFaultRecoveryTests.Service(fixture, new(fixture))
+                .RecoverAsync(Prepare(fixture), Token);
+            Assert.Equal(
+                (VehicleFaultRecoveryOutcome.Refused, "OWN_ORDER_REBUILD_EXIT_NOTHING_ON_BOARD"),
+                (again.Outcome, string.Join(',', again.Reasons)));
+
+            VehicleFaultRecoveryDecision givenUp = await VehicleFaultRecoveryTests.Service(fixture, new(fixture))
+                .RecoverAsync(GiveUp(fixture), Token);
+
+            Assert.Equal(
+                (VehicleFaultRecoveryOutcome.TripTerminated, VehicleFaultRecoveryDispositions.TripTerminated),
+                (givenUp.Outcome, givenUp.Disposition));
+            await using ControlServerDbContext after = new(fixture.DbOptionsForTests);
+            JourneyRuntimeRow closed = await after.JourneyRuntimes.AsNoTracking().SingleAsync(Token);
+            Assert.Equal(
+                (JourneyRuntimeStage.Completed, "TERMINATED_BY_OPERATOR_AFTER_REBUILD_STOP"),
+                (closed.Stage, closed.BlockReasonCode));
+            Assert.Equal(
+                DemandExecutionStatus.Cancelled,
+                (await after.AcceptedDemands.AsNoTracking().SingleAsync(row => row.DemandId == SecondDemandId, Token)).Status);
+            Assert.Equal(OwnOrderRebuildStates.Ended, (await RebuildForAsync(fixture, stopped.GateUpperId)).State);
+            await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(after);
+            Assert.Equal(SessionReadiness.Ready, (await store.DecideReadinessAsync(fixture.Options.AgvId, generation, Token)).Readiness);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(ProofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// 旅程已经不在 <c>Blocked</c> 的「等交接」记录（孤儿记录）不再让服务端向这辆车要快照（独立审查 S3）：否则这辆车以后每个会话代次都会
+    /// 被要一次。
+    /// </summary>
+    [Fact]
+    public async Task AHandoffRecordWhoseJourneyIsNoLongerBlockedAsksTheVehicleForNothing()
+    {
+        await using RuntimeFixture fixture = await StoppedWithCargoNotInPlaceAsync();
+        long generation = (await fixture.Context.SessionRecoveries.AsNoTracking().SingleAsync(Token)).SessionGeneration;
+        Assert.Equal(
+            VehicleFaultRecoveryOutcome.HandoffPrepared,
+            (await VehicleFaultRecoveryTests.Service(fixture, new(fixture)).RecoverAsync(Prepare(fixture), Token)).Outcome);
+        await using (ControlServerDbContext writing = new(fixture.DbOptionsForTests))
+        {
+            JourneyRuntimeRow journey = await writing.JourneyRuntimes.SingleAsync(Token);
+            journey.Stage = JourneyRuntimeStage.Completed;
+            await writing.SaveChangesAsync(Token);
+        }
+
+        Assert.False(await ClaimAsync(fixture, generation, ready: true));
     }
 
     /// <summary>
@@ -842,6 +1055,8 @@ public sealed class StoppedRebuildExitTests
     private const string SessionRequest = "43450000-0000-4000-8000-000000000002";
     private const string SessionEventId = "33450000-0000-4000-8000-000000000001";
     private const string ActionId = "53450000-0000-4000-8000-000000000001";
+    private const string SecondSessionRequest = "43450000-0000-4000-8000-000000000003";
+    private const string SecondActionId = "53450000-0000-4000-8000-000000000002";
 
     internal static VehicleFaultRecoveryRequest Prepare(RuntimeFixture fixture) =>
         Rebuild(fixture) with { Action = VehicleFaultRecoveryAction.PrepareCargoHandoff };
@@ -912,10 +1127,10 @@ public sealed class StoppedRebuildExitTests
         return opened;
     }
 
-    private static string Action(RuntimeFixture fixture, string sessionId, string action, int[] slots) =>
+    private static string Action(RuntimeFixture fixture, string sessionId, string action, int[] slots, string actionId = ActionId) =>
         Envelope(fixture, "RecoveryActionSubmitted", new
         {
-            recoveryActionId = ActionId,
+            recoveryActionId = actionId,
             exceptionRecoverySessionId = sessionId,
             action,
             eventId = SessionEventId,
@@ -925,19 +1140,20 @@ public sealed class StoppedRebuildExitTests
             reason = "Take the cargo out by hand."
         });
 
-    private static string HandedOff(RuntimeFixture fixture, string sessionId, string handoffId, int[] slots) =>
+    private static string HandedOff(
+        RuntimeFixture fixture, string sessionId, string handoffId, int[] slots, string actionId = ActionId, bool failed = false) =>
         Envelope(fixture, "FaultCargoRecoveryResult", new
         {
             exceptionRecoverySessionId = sessionId,
-            recoveryActionId = ActionId,
+            recoveryActionId = actionId,
             demandId = FirstDemandId,
             handoffId,
-            overallOutcome = "HANDED_OFF",
+            overallOutcome = failed ? "FAILED" : "HANDED_OFF",
             slotResults = slots.Select(slot => new
             {
                 slotNo = slot,
-                outcome = "COMPLETED",
-                finalPhysicalState = "EMPTY",
+                outcome = failed ? "FAILED" : "COMPLETED",
+                finalPhysicalState = failed ? "OCCUPIED" : "EMPTY",
                 lockState = "LOCKED",
                 unlockOutputState = "RESET",
                 reasonCodes = Array.Empty<string>()
