@@ -301,7 +301,9 @@ M43 review S2: the FAILED new order is fed to the fault model only once
   red: (none)
 # fourth run: two mutations stayed green. M11: its only red case (a new order ending before confirmation) now becomes ENDED
 # plus a new record (review S2), so no test left reaches a stopped record found by its new order -- a case is added for the
-# remaining shape (the new order reads SUCCESS before confirmation). M43: nothing asserted that the FAILED new order keeps
+# remaining shape: the new order reads RIoT's state 8, SUSPENDED, before confirmation
+# (ARebuiltOrderSuspendedBeforeItIsConfirmedStaysStoppedForAPerson). This note first said "reads SUCCESS"; that was wrong --
+# reconciliation takes a SUCCESS before confirmation as the order confirmed, and it never stops. M43: nothing asserted that the FAILED new order keeps
 # being fed to the fault model after the first round -- a case is added on the emergency-stop trigger reconciled in a later
 # round. Both are rerun below after the fix.
 

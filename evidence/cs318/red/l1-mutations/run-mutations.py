@@ -79,8 +79,8 @@ MUTATIONS = [
      '        if (' + OFF + 'await OwnOrderRebuilds.ForStopAsync(dbContext, stops.Current, cancellationToken).ConfigureAwait(false) is not null)\n'),
     # M06 re-pointed in the fourth run: MayCreateBehindTheGateAsync is gone (review M2), the rebuild behind the gate creates nothing
     ('M06', 'behind the readiness gate, the rebuild may create', MAIN,
-     '                    runtime, stops.Current, currentMap, mayCreate: false, reasonOnceRebuilt: null, cancellationToken)\n',
-     '                    runtime, stops.Current, currentMap, mayCreate: Environment.TickCount64 >= 0, reasonOnceRebuilt: null, cancellationToken)\n'),
+     '                    runtime, stops.Current, currentMap, mayCreate: false, reasonOnceRebuilt: "ONBOARD_SESSION_NOT_READY",\n',
+     '                    runtime, stops.Current, currentMap, mayCreate: Environment.TickCount64 >= 0, reasonOnceRebuilt: "ONBOARD_SESSION_NOT_READY",\n'),
     ('M07', 'record key random instead of derived from the ended upperId', STORE,
      '        JourneyPlanBuilder.StableGuid(endedUpperId, "own-order-rebuild");\n',
      '        Guid.NewGuid().ToString("D");\n'),
@@ -157,9 +157,11 @@ MUTATIONS = [
     ('M31', 'review S2: a cancellation before confirmation stops without the window (the first version)', ENGINE,
      '        if (order is { Kind: RiotOrderObservationKind.Terminal, OrderState: RiotOrderState.Cancelled or RiotOrderState.Deleted })\n',
      '        if (' + OFF + 'order is { Kind: RiotOrderObservationKind.Terminal, OrderState: RiotOrderState.Cancelled or RiotOrderState.Deleted })\n'),
+    # M32 and M37 re-pointed in the sixth run: the clearance read was narrowed (incremental review, low 4) and the re-ask
+    # throttle now counts from the later of the snapshot and the last request (incremental review B1)
     ('M32', 'review S2: the clearance does not read a terminal-reconciled intent', RECOVERY,
-     '        if (intent is { Status: "CONFIRMED" or "TERMINAL_RECONCILIATION_REQUIRED", OrderId: not null })\n',
-     '        if (intent is { Status: "CONFIRMED", OrderId: not null })\n'),
+     '            (intent is { Status: "TERMINAL_RECONCILIATION_REQUIRED", OrderId: not null } &&\n',
+     '            (Environment.TickCount64 < 0 && intent is { Status: "TERMINAL_RECONCILIATION_REQUIRED", OrderId: not null } &&\n'),
     ('M33', 'review S2: the next record does not end the FAILED one', STORE,
      '                     .Where(row => row.NewUpperId == endedUpperId && row.State == OwnOrderRebuildStates.Failed)\n',
      '                     .Where(row => Environment.TickCount64 < 0 && row.NewUpperId == endedUpperId && row.State == OwnOrderRebuildStates.Failed)\n'),
@@ -173,8 +175,8 @@ MUTATIONS = [
      '            if (physical == "EMPTY")\n',
      '            if (' + OFF + 'physical == "EMPTY")\n'),
     ('M37', 'review S4: an inconclusive snapshot is never asked for again', ENGINE,
-     '                        now - evidence.ReceivedAt >= CargoEvidenceReaskInterval)\n',
-     '                        ' + OFF + 'now - evidence.ReceivedAt >= CargoEvidenceReaskInterval)\n'),
+     '                    if (rebuild.CargoEvidenceRequestedGeneration is not null && now - since >= CargoEvidenceReaskInterval)\n',
+     '                    if (' + OFF + 'rebuild.CargoEvidenceRequestedGeneration is not null && now - since >= CargoEvidenceReaskInterval)\n'),
     ('M38', "review S3: another vehicle's snapshot counts", ENGINE,
      '            if (SnapshotOf(json) == runtime.AgvId)\n',
      '            if (Environment.TickCount64 >= 0 || SnapshotOf(json) == runtime.AgvId)\n'),
@@ -200,6 +202,19 @@ MUTATIONS = [
     ('M45', 'review S2: an ending that cannot be read again stops the rebuild', ENGINE,
      '        if (order.Kind != RiotOrderObservationKind.Terminal)\n',
      '        if (' + OFF + 'order.Kind != RiotOrderObservationKind.Terminal)\n'),
+    # sixth run: the incremental review's B1, B2 and low 4
+    ('M46', 'incremental low 4: an ordinary leg\'s terminal-reconciled intent is read too', RECOVERY,
+     '             await dbContext.OwnOrderRebuilds.AsNoTracking()\n',
+     '             Environment.TickCount64 >= 0 || await dbContext.OwnOrderRebuilds.AsNoTracking()\n'),
+    ('M47', 'incremental B1: the re-ask counts from the snapshot alone, not from the last request', ENGINE,
+     '                    DateTimeOffset since = rebuild.CargoEvidenceRequestedAt is { } requestedAt && requestedAt > evidence.ReceivedAt\n',
+     '                    DateTimeOffset since = rebuild.CargoEvidenceRequestedAt is { } requestedAt && Environment.TickCount64 < 0 && requestedAt > evidence.ReceivedAt\n'),
+    ('M48', 'incremental B2: behind the gate an order already sent waits for the vehicle instead of being reconciled', ENGINE,
+     '        // Here the new order has been sent at least once (incremental review B2): reconciling it only reads -- with a create\n',
+     '        else if (!mayCreate) { await WaitForRebuildAsync(runtime, rebuild, "ONBOARD_SESSION_NOT_READY", OwnOrderRebuildWaitingVehicleReason, now, cancellationToken).ConfigureAwait(false); return true; }\n        // Here the new order has been sent at least once (incremental review B2): reconciling it only reads -- with a create\n'),
+    ('M49', 'incremental B2: a rebuild confirmed behind the gate leaves the journey with no code', MAIN,
+     '                    runtime, stops.Current, currentMap, mayCreate: false, reasonOnceRebuilt: "ONBOARD_SESSION_NOT_READY",\n',
+     '                    runtime, stops.Current, currentMap, mayCreate: false, reasonOnceRebuilt: null,\n'),
 ]
 
 
