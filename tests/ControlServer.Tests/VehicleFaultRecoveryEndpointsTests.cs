@@ -1,8 +1,10 @@
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.Fleet;
+using ControlServer.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using static ControlServer.Tests.JourneyRuntimeWorkerTestKit;
 using static ControlServer.Tests.VehicleFaultRecoveryTests;
@@ -144,6 +146,75 @@ public sealed class VehicleFaultRecoveryEndpointsTests
             ["FAULT_RECOVERY_RUNTIME_BUSY"],
             Assert.IsAssignableFrom<IReadOnlyList<string>>(problem.ProblemDetails.Extensions["reasons"]));
         Assert.Equal(VehicleFaultLevel.SuspectedBlocked, (await FaultAsync(fixture)).Level);
+    }
+
+    // ---- 自动重建停住之后的三个出口（control-server#345） ----------------------------------------------------------
+
+    /// <summary>
+    /// 三个出口与清除共用同一道凭据：凭据不对 401，停住的旅程、它的重建记录、需求一样都不动。
+    /// </summary>
+    [Theory]
+    [InlineData("REBUILD_STOPPED_ORDER")]
+    [InlineData("TERMINATE_STOPPED_TRIP")]
+    [InlineData("PREPARE_CARGO_HANDOFF")]
+    public async Task AnExitFromAStoppedRebuildNeedsTheCredential(string action)
+    {
+        await using RuntimeFixture fixture = action == "PREPARE_CARGO_HANDOFF"
+            ? await StoppedRebuildExitTests.StoppedWithCargoNotInPlaceAsync()
+            : await StoppedRebuildExitTests.StoppedByTheThirdGuardAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync();
+        using CredentialScope scope = new();
+
+        var result = await PostAsync(fixture, scope.Variable, "Bearer wrong-credential", Request(fixture) with { Action = action });
+
+        Assert.IsType<UnauthorizedHttpResult>(result.Result);
+        JourneyRuntimeRow after = await fixture.RuntimeAsync();
+        Assert.Equal((before.Stage, before.BlockReasonCode), (after.Stage, after.BlockReasonCode));
+        Assert.Equal(
+            OwnOrderRebuildStates.Stopped,
+            Assert.Single(await fixture.Context.OwnOrderRebuilds.AsNoTracking()
+                .Where(row => row.State != OwnOrderRebuildStates.Rebuilt)
+                .ToArrayAsync(Token)).State);
+    }
+
+    /// <summary>
+    /// 三个出口各自成功时是 200，正文写明结果与处置；同一请求再来一次仍是 200，结果 <c>AlreadyDone</c>；不在停住状态时是 409，
+    /// 理由列在 <c>reasons</c> 里。
+    /// </summary>
+    [Theory]
+    [InlineData("REBUILD_STOPPED_ORDER", "RebuildRequested", "REBUILD_SCHEDULED")]
+    [InlineData("TERMINATE_STOPPED_TRIP", "TripTerminated", "TRIP_TERMINATED")]
+    [InlineData("PREPARE_CARGO_HANDOFF", "HandoffPrepared", "AWAITING_CARGO_HANDOFF")]
+    public async Task AnExitFromAStoppedRebuildIsOkOnceAndAlreadyDoneAfterwards(string action, string outcome, string disposition)
+    {
+        await using RuntimeFixture fixture = action == "PREPARE_CARGO_HANDOFF"
+            ? await StoppedRebuildExitTests.StoppedWithCargoNotInPlaceAsync()
+            : await StoppedRebuildExitTests.StoppedByTheThirdGuardAsync();
+        using CredentialScope scope = new();
+
+        var first = await PostAsync(fixture, scope.Variable, $"Bearer {Credential}", Request(fixture) with { Action = action });
+        var second = await PostAsync(fixture, scope.Variable, $"Bearer {Credential}", Request(fixture) with { Action = action });
+
+        VehicleFaultRecoveryResponse done = Assert.IsType<Ok<VehicleFaultRecoveryResponse>>(first.Result).Value!;
+        Assert.Equal((action, outcome, disposition, 0), (done.Action, done.Outcome, done.Disposition, done.Reasons.Count));
+        VehicleFaultRecoveryResponse again = Assert.IsType<Ok<VehicleFaultRecoveryResponse>>(second.Result).Value!;
+        Assert.Equal(("AlreadyDone", "NONE"), (again.Outcome, again.Disposition));
+    }
+
+    [Fact]
+    public async Task AnExitForAJourneyThatIsNotStoppedIsAConflict()
+    {
+        await using RuntimeFixture fixture = await FaultedOnTheWayToPickupAsync();
+        using CredentialScope scope = new();
+
+        var result = await PostAsync(
+            fixture, scope.Variable, $"Bearer {Credential}", Request(fixture) with { Action = "REBUILD_STOPPED_ORDER" });
+
+        ProblemHttpResult problem = Assert.IsType<ProblemHttpResult>(result.Result);
+        Assert.Equal(StatusCodes.Status409Conflict, problem.StatusCode);
+        Assert.Equal(
+            ["OWN_ORDER_REBUILD_EXIT_NOT_STOPPED"],
+            Assert.IsAssignableFrom<IReadOnlyList<string>>(problem.ProblemDetails.Extensions["reasons"]));
     }
 
     private static VehicleFaultRecoveryHttpRequest Request(RuntimeFixture fixture) =>
