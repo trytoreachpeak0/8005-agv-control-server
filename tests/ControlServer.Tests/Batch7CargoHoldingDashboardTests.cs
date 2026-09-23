@@ -606,7 +606,8 @@ public sealed class Batch7CargoHoldingDashboardTests
     }
 
     /// <summary>
-    /// 在途单停住的三个码（control-server#316）上了阻断卡片：原码照旧显示，另给中文说明，告诉走到车前的人该做什么。
+    /// 在途单停住的三个码（control-server#316）与自建单重建的几个码（control-server#318）上了阻断卡片：原码照旧显示，
+    /// 另给中文说明，告诉走到车前的人该做什么。
     /// </summary>
     /// <remarks>
     /// 码写成字面量：它们是现场看得见的东西，改名应当让这里红，而不是跟着常量悄悄改。
@@ -617,6 +618,11 @@ public sealed class Batch7CargoHoldingDashboardTests
     [InlineData("ORDER_ENDED_WITHOUT_ARRIVAL")]
     [InlineData("VEHICLE_ORDER_FAILED")]
     [InlineData("VEHICLE_FAULT_CLEARED_CARGO_ON_BOARD")]
+    [InlineData("VEHICLE_FAULT_CLEARED_NOTHING_ON_BOARD")]
+    [InlineData("OWN_ORDER_REBUILD_WAITING_VEHICLE")]
+    [InlineData("OWN_ORDER_REBUILD_BLOCKED_BY_CREATE_GATE")]
+    [InlineData("OWN_ORDER_REBUILD_ORDER_UNCONFIRMED")]
+    [InlineData("OWN_ORDER_REBUILD_STOPPED")]
     public async Task AStalledInTransitOrderIsShownWithAChineseDescription(string code)
     {
         Assert.True(BlockedJourneysQueryEndpoint.Descriptions.ContainsKey(code), $"{code} has no description");
