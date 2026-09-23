@@ -1,0 +1,19 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs b/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
+index 713a369e..9b086927 100644
+--- a/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
++++ b/src/ControlServer.Host/Transport/OnboardMessageProcessor.cs
+@@ -556,8 +556,12 @@ public sealed partial class OnboardMessageProcessor(
+                         .ConfigureAwait(false);
+                     SessionReadinessDecision recoveryDecision = await store.DecideReadinessAsync(
+                         agvId, generation, cancellationToken).ConfigureAwait(false);
+-                    return AnswerWithReadiness(
+-                        recoveryAck, recoveryDecision, agvId, generation, state, announceUnchanged: false);
++                    if (recoveryDecision.Readiness == state.Readiness)
++                    {
++                        return recoveryAck;
++                    }
++                    state.Readiness = recoveryDecision.Readiness;
++                    return $"{recoveryAck}\n{SessionReadinessLine(recoveryDecision, agvId, generation, state)}";
+                 }
+             case "ManualChargingReturnToServiceRequested":
+                 {
