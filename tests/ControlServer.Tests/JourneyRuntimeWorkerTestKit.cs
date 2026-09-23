@@ -1015,6 +1015,7 @@ internal static class JourneyRuntimeWorkerTestKit
                 onboardFacts,
                 new DispatchZoneParameterStore(Context, CreateGovernedPublisher()),
                 SlotGroupFullness,
+                Riot,
                 options,
                 Clock,
                 EngineLog);

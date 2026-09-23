@@ -48,8 +48,29 @@ internal static class OwnMovementOrderExplanation
         bool ownMovementOrderInFlight)
     {
         if (!ownMovementOrderInFlight ||
-            safetyUnknownPresent != true ||
-            !string.Equals(blockReasonCode, SessionNotReadyBlock, StringComparison.Ordinal) ||
+            !string.Equals(blockReasonCode, SessionNotReadyBlock, StringComparison.Ordinal))
+        {
+            return false;
+        }
+        return OnlyTheVehicleKeepsItNotReady(sessionReasonCode, safetyReasonCodesJson, safetyUnknownPresent);
+    }
+
+    /// <summary>
+    /// Whether the session is not ready for the vehicle's own signals and nothing else: the departure-safety reason, an
+    /// unknown in the safety evidence, and only vehicle-side safety codes. The same allow-list as <see cref="Explains"/>, without
+    /// asking why the vehicle reads that way.
+    /// </summary>
+    /// <remarks>
+    /// control-server#318 reads it behind the readiness gate: an order of this server's that ended mid-leg is rebuilt there
+    /// only when the session is held back by the vehicle alone, which the rebuild's own read of the vehicle then judges. A
+    /// session held back for anything slot-side, an operation to recover or a handshake not finished keeps it waiting.
+    /// </remarks>
+    internal static bool OnlyTheVehicleKeepsItNotReady(
+        string? sessionReasonCode,
+        string? safetyReasonCodesJson,
+        bool? safetyUnknownPresent)
+    {
+        if (safetyUnknownPresent != true ||
             !string.Equals(sessionReasonCode, DepartureSafetyNotReady, StringComparison.Ordinal))
         {
             return false;

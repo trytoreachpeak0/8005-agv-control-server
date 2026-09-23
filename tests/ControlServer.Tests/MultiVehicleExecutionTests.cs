@@ -1321,6 +1321,7 @@ public sealed partial class MultiVehicleExecutionTests
                 onboardFacts,
                 new DispatchZoneParameterStore(Context, JourneyRuntimeWorkerTestKit.CreateGovernedPublisher(Context)),
                 SlotGroupFullness,
+                Riot,
                 options,
                 Clock,
                 EngineLog);
@@ -1836,9 +1837,18 @@ public sealed partial class MultiVehicleExecutionTests
     /// </summary>
     private sealed class FleetRiot(MovableClock clock, JourneyRuntimeOptions options)
         : IRiotMovementGateway, IRiotVehicleFacts, IRiotMapStationCatalog, IVehicleMotionFacts,
-          IRiotRouteCostProbe, IRiotOrderCommandGateway, IRiotVehicleEmergencyFacts, IRiotVehicleOrderFacts
+          IRiotRouteCostProbe, IRiotOrderCommandGateway, IRiotVehicleEmergencyFacts, IRiotVehicleOrderFacts,
+          IRiotVehicleSafetyFacts
     {
         private readonly Dictionary<string, RiotOrderObservation> _orders = new(StringComparer.Ordinal);
+
+        /// <summary>RIoT's vehicle safety read (control-server#318's second guard): every vehicle stopped, nothing in the way.</summary>
+        public Task<RiotVehicleSafetyObservation> ReadVehicleSafetyAsync(string vehicleKey, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult(new RiotVehicleSafetyObservation(
+                vehicleKey, RiotVehicleMotionState.Stopped, clock.GetUtcNow(), "L1", []));
+        }
 
         /// <summary>The vehicle key whose reads never come back, or null.</summary>
         public string? HangOn { get; set; }

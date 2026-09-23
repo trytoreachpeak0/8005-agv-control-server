@@ -166,6 +166,9 @@ public sealed class VehicleFaultRecoveryService(
     /// <summary>The block a journey carries when its vehicle's fault was cleared with cargo possibly on board.</summary>
     public const string CargoOnBoardReason = "VEHICLE_FAULT_CLEARED_CARGO_ON_BOARD";
 
+    /// <summary>The block a journey carries when its vehicle's fault was cleared with nothing on board, until the rebuild.</summary>
+    public const string NothingOnBoardReason = "VEHICLE_FAULT_CLEARED_NOTHING_ON_BOARD";
+
     /// <summary>The prefix of <c>ClearedReason</c> for a fault a person cleared here; the operator id follows the colon.</summary>
     public const string ClearedByOperatorReason = "FAULT_CLEARED_BY_OPERATOR";
 
