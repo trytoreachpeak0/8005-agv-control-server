@@ -336,14 +336,17 @@ public sealed class VehicleFaultRecoveryTests
 
     /// <summary>
     /// 装着货开往卸货站的单 FAILED：清除故障，需求不动、货物绑定保留到重建；旅程<b>不</b>转阻断，停在原阶段，码是
-    /// <c>VEHICLE_FAULT_CLEARED_CARGO_ON_BOARD</c>；延迟之后给同一辆车、同一条需求重建开往同一个卸货站的单，货物绑定随之以
-    /// <c>REBUILT_ON_ORIGINAL_VEHICLE</c> 了结（货在原车上继续走，与确认续行之后同一个道理）。之后几轮不再记故障。
+    /// <c>VEHICLE_FAULT_CLEARED_CARGO_ON_BOARD</c>。延迟过了还不建：先等车报一份清除之后的快照，证明货还完整留在原仓、门锁闭、
+    /// 开锁输出复位（REQ-0362 保留的 REQ-0238 修复续行前提），这期间旅程码 <c>OWN_ORDER_REBUILD_WAITING_CARGO_EVIDENCE</c>。快照到了、
+    /// 证明成立，才给同一辆车、同一条需求重建开往同一个卸货站的单，货物绑定随之以 <c>REBUILT_ON_ORIGINAL_VEHICLE</c> 了结。之后几轮不再记故障。
     /// </summary>
     /// <remarks>
     /// <b>翻转断言，依据是 issuecomment-5780408158 与 issuecomment-5787511271。</b>这一条原来是 #299 的
     /// <c>ALoadedVehicleKeepsItsCargoBindingAndWaitsForAPerson</c>，钉的是「转阻断、等人处置」。新判据断「没有释放」与「重建出了去卸货站的那一张单」。
+    /// 快照这一步是 cs#318 票上 2026-09-23 的范围补充（用户选 A，经调度转达）。
     /// </remarks>
     [Fact]
+    [Trait("Requirement", "REQ-0362")]
     public async Task AClearedFaultWithCargoOnBoardRebuildsTheOrderToDeliverIt()
     {
         await using RuntimeFixture fixture = await FaultedOnTheWayToGateAsync();
@@ -374,6 +377,14 @@ public sealed class VehicleFaultRecoveryTests
         Assert.Equal(gateCreates, fixture.Riot.CreateCount("TO_GATE"));
 
         await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+
+        Assert.Equal(gateCreates, fixture.Riot.CreateCount("TO_GATE"));
+        Assert.Equal("OWN_ORDER_REBUILD_WAITING_CARGO_EVIDENCE", (await fixture.RuntimeAsync()).BlockReasonCode);
+
+        await fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow());
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
 
         Assert.Equal(gateCreates + 1, fixture.Riot.CreateCount("TO_GATE"));
         await OwnOrderRebuildTests.AssertRebuiltAsync(
@@ -383,6 +394,108 @@ public sealed class VehicleFaultRecoveryTests
         Assert.Equal("REBUILT_ON_ORIGINAL_VEHICLE", cargo.ReleasedReason);
         VehicleFaultStateRow fault = await after.VehicleFaultStates.AsNoTracking().SingleAsync(Token);
         Assert.Equal((VehicleFaultLevel.None, 1L), (fault.Level, fault.FaultGeneration));
+    }
+
+    /// <summary>
+    /// REQ-0362 的「清除之后」：清除之前收到的快照不算，哪怕它显示货好好地在原仓——那是故障前的样子，证明不了清除时货还在。
+    /// 旅程一直停在 <c>OWN_ORDER_REBUILD_WAITING_CARGO_EVIDENCE</c>，不建单。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0362")]
+    public async Task Req0362ASnapshotFromBeforeTheClearanceDoesNotProveTheCargo()
+    {
+        await using RuntimeFixture fixture = await FaultedOnTheWayToGateAsync();
+        int gateCreates = fixture.Riot.CreateCount("TO_GATE");
+        await fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow() - TimeSpan.FromSeconds(1));
+
+        Assert.Equal(
+            VehicleFaultRecoveryDispositions.RebuildScheduled,
+            (await Service(fixture, new SiteRiot(fixture)).RecoverAsync(Clear(fixture), Token)).Disposition);
+        fixture.Context.ChangeTracker.Clear();
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+
+        Assert.Equal(gateCreates, fixture.Riot.CreateCount("TO_GATE"));
+        Assert.Equal("OWN_ORDER_REBUILD_WAITING_CARGO_EVIDENCE", (await fixture.RuntimeAsync()).BlockReasonCode);
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        Assert.Equal(OwnOrderRebuildStates.Pending, (await reading.OwnOrderRebuilds.AsNoTracking().SingleAsync(Token)).State);
+    }
+
+    /// <summary>
+    /// REQ-0362：清除之后的快照到了，却证明不了货还完整留在原仓——某个目标仓是空的、门没锁、开锁输出没复位，或车报有未知——
+    /// 不重建，挡住并报错误级告警，旅程码 <c>OWN_ORDER_REBUILD_CARGO_NOT_IN_PLACE</c>，看板让现场知道货可能不在原仓；之后再来一份
+    /// 好的快照也不再自动建（等人处理）。
+    /// </summary>
+    [Theory]
+    [InlineData("empty")]
+    [InlineData("unlocked")]
+    [InlineData("output-not-reset")]
+    [InlineData("unknown-present")]
+    [Trait("Requirement", "REQ-0362")]
+    public async Task Req0362AFreshSnapshotThatDoesNotShowTheCargoInPlaceStopsTheRebuild(string shows)
+    {
+        await using RuntimeFixture fixture = await FaultedOnTheWayToGateAsync();
+        int gateCreates = fixture.Riot.CreateCount("TO_GATE");
+        Assert.Equal(
+            VehicleFaultRecoveryDispositions.RebuildScheduled,
+            (await Service(fixture, new SiteRiot(fixture)).RecoverAsync(Clear(fixture), Token)).Disposition);
+        fixture.Context.ChangeTracker.Clear();
+        fixture.Clock.Advance(TimeSpan.FromSeconds(5));
+        await (shows switch
+        {
+            "empty" => fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow(), physicalState: "EMPTY"),
+            "unlocked" => fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow(), lockState: "UNLOCKED"),
+            "output-not-reset" => fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow(), unlockOutputState: "ACTIVE"),
+            _ => fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow(), unknownPresent: true),
+        });
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        await fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow());
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+
+        Assert.Equal(gateCreates, fixture.Riot.CreateCount("TO_GATE"));
+        Assert.Equal("OWN_ORDER_REBUILD_CARGO_NOT_IN_PLACE", (await fixture.RuntimeAsync()).BlockReasonCode);
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        OwnOrderRebuildRow record = await reading.OwnOrderRebuilds.AsNoTracking().SingleAsync(Token);
+        Assert.Equal(
+            (OwnOrderRebuildStates.Stopped, "CARGO_NOT_PROVEN_IN_ORIGINAL_SLOTS"),
+            (record.State, record.StoppedReason));
+        Assert.Single(await reading.FaultedVehicleCargo.AsNoTracking().Where(row => row.ReleasedAt == null).ToArrayAsync(Token));
+        Assert.Contains(fixture.EngineLog.Entries, entry =>
+            entry.Level == LogLevel.Error &&
+            entry.Message.Contains("CARGO_NOT_PROVEN_IN_ORIGINAL_SLOTS", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// REQ-0362，真车载端的另一种常态：清除之后会话一直没回到就绪（本车在途单所致的那种未就绪），车也一直没回快照——旅程停在
+    /// <c>OWN_ORDER_REBUILD_WAITING_CARGO_EVIDENCE</c>，不被闸门的码盖掉，也不建单；等待只告警一次，不是每轮一次。
+    /// </summary>
+    /// <remarks>快照请求本身在 Host 收消息那一侧，节流用例在 <c>OwnOrderRebuildCargoEvidenceRequestTests</c>。</remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0362")]
+    public async Task Req0362ALoadedClearanceWhoseSessionNeverBecomesReadyWaitsForTheSnapshot()
+    {
+        await using RuntimeFixture fixture = await FaultedOnTheWayToGateAsync();
+        int gateCreates = fixture.Riot.CreateCount("TO_GATE");
+        await DropSessionOnOwnOrderAsync(fixture);
+        await TickAndRunAsync(fixture);
+        Assert.Equal(
+            VehicleFaultRecoveryDispositions.RebuildScheduled,
+            (await Service(fixture, new SiteRiot(fixture)).RecoverAsync(Clear(fixture), Token)).Disposition);
+        fixture.Context.ChangeTracker.Clear();
+
+        for (int round = 0; round < 4; round++)
+        {
+            await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        }
+
+        Assert.Equal(gateCreates, fixture.Riot.CreateCount("TO_GATE"));
+        Assert.Equal("OWN_ORDER_REBUILD_WAITING_CARGO_EVIDENCE", (await fixture.RuntimeAsync()).BlockReasonCode);
+        Assert.Single(fixture.EngineLog.Entries, entry =>
+            entry.Message.Contains("is held back: CARGO_EVIDENCE_NOT_RECEIVED", StringComparison.Ordinal));
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        Assert.Equal(
+            SessionReadiness.RecoveryRequired,
+            (await reading.SessionRecoveries.AsNoTracking().SingleAsync(Token)).Readiness);
     }
 
     /// <summary>
@@ -892,6 +1005,10 @@ public sealed class VehicleFaultRecoveryTests
         JourneyRuntimeRow waiting = await fixture.RuntimeAsync();
         Assert.Equal((faulted.JourneyId, faulted.Stage, code), (waiting.JourneyId, waiting.Stage, waiting.BlockReasonCode));
 
+        if (cargo == "loaded")
+        {
+            await fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow());
+        }
         await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
 
         await OwnOrderRebuildTests.AssertRebuiltAsync(fixture, faulted, stopsBefore, current);

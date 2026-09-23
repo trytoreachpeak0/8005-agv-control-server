@@ -732,6 +732,56 @@ internal static class JourneyRuntimeWorkerTestKit
             await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
+        /// <summary>
+        /// Records the SafetyStateSnapshot Onboard sends answering SafetyStateSnapshotRequested after a fault with cargo on board
+        /// was cleared (control-server#318, REQ-0362): the slots the committed loads targeted read as given, every other slot
+        /// empty, locked and reset. The session row is left as it is -- this snapshot is evidence about the cargo, not the
+        /// session's safety summary. Returns the cargo slots, and fails when there are none: a snapshot about no slots proves
+        /// nothing either way.
+        /// </summary>
+        public async Task<int[]> AddCargoSnapshotAsync(
+            DateTimeOffset receivedAt,
+            string physicalState = "OCCUPIED",
+            string lockState = "LOCKED",
+            string unlockOutputState = "RESET",
+            bool unknownPresent = false)
+        {
+            StationOperationRow[] loads = await Context.StationOperations.AsNoTracking()
+                .Where(row => row.OperationType == SlotOperationType.Load && row.Status == StationOperationStatus.Committed)
+                .ToArrayAsync(TestContext.Current.CancellationToken);
+            int[] cargo = [.. loads.SelectMany(row => JsonSerializer.Deserialize<int[]>(row.TargetSlotsJson)!).Distinct().Order()];
+            Assert.NotEmpty(cargo);
+            SessionRecoveryRow session = await Context.SessionRecoveries.AsNoTracking()
+                .SingleAsync(TestContext.Current.CancellationToken);
+            int earlier = await Context.ProtocolInbox.CountAsync(
+                row => row.MessageType == "SafetyStateSnapshot", TestContext.Current.CancellationToken);
+            await AddRawInboxAsync("SafetyStateSnapshot", new
+            {
+                safetyStateVersion = (session.SafetyRevision ?? 0) + 1000 + earlier,
+                observedAt = receivedAt,
+                safety = new
+                {
+                    departureSafe = !unknownPresent,
+                    vehicleStopped = true,
+                    allTargetSlotsLocked = true,
+                    allUnlockOutputsReset = true,
+                    unknownPresent,
+                    reasonCodes = Array.Empty<string>()
+                },
+                slotStates = Enumerable.Range(1, 8).Select(slot => new
+                {
+                    slotNo = slot,
+                    operability = "OPERABLE",
+                    administrativeAvailability = "ENABLED",
+                    physicalState = cargo.Contains(slot) ? physicalState : "EMPTY",
+                    lockState = cargo.Contains(slot) ? lockState : "LOCKED",
+                    unlockOutputState = cargo.Contains(slot) ? unlockOutputState : "RESET",
+                    reasonCodes = Array.Empty<string>()
+                })
+            }, session.SessionGeneration, receivedAt);
+            return cargo;
+        }
+
         public async Task SetOnboardUnknownAsync()
         {
             ProtocolInboxRow row = await Context.ProtocolInbox.SingleAsync(
