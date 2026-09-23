@@ -1,0 +1,14 @@
+mutation R7-kept-when-acknowledged-regardless-of-content: OnboardJourneyPublisher.cs matches=[1]
+diff --git a/src/ControlServer.Host/Transport/OnboardJourneyPublisher.cs b/src/ControlServer.Host/Transport/OnboardJourneyPublisher.cs
+--- a/src/ControlServer.Host/Transport/OnboardJourneyPublisher.cs
++++ b/src/ControlServer.Host/Transport/OnboardJourneyPublisher.cs
+@@ -846,7 +846,7 @@ public sealed class OnboardJourneyPublisher(
+-            SaysTheSameIgnoring(existing.PayloadJson, candidateWire, keepAcknowledgedIgnoring))
++            keepAcknowledgedIgnoring.Count >= 0)
+    0 Error(s)
+  Failed ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AnAcknowledgedWorklistThatDiffersBeyondItsDeadlineIsStillRefusedAndTheBoardSaysSo [301 ms]
+  Error Message:
+   Assert.Throws() Failure: No exception was thrown
+Expected: typeof(ControlServer.Domain.ProtocolContentConflictException)
+--- End of stack trace from previous location ---
+Failed!  - Failed:     1, Passed:    29, Skipped:     0, Total:    30, Duration: 15 s - ControlServer.Tests.dll (net8.0)
