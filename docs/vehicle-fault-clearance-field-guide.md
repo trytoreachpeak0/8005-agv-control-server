@@ -161,8 +161,8 @@ continue，另一个回 409 `FAULT_RECOVERY_RESUME_IN_PROGRESS`，过一会儿�
 **人工重建 `REBUILD_STOPPED_ORDER`**（要 `faultRemedied = true`，意思是「反复停下的原因已查明」）。服务端立即给同一辆车、
 同一条需求重建一次，去原来那一站；**不等延迟**，但车况、建单门禁、车载端会话就绪与离站判定照样要过，车上有货的故障来源
 还要车在这次请求**之后**报一份仓位读数证明货在原仓，和自动重建完全一样（上一节第 2 条、上一节「车上可能有货」）。
-**`REQ-0361` 的窗口从这次请求的时刻重新算**（调度 2026-09-23 定）：人工重建之后 10 分钟内这条需求再出问题，照样停住等人；
-过了 10 分钟才恢复自动重建。返回 `outcome = RebuildRequested`、`disposition = REBUILD_SCHEDULED`。停住的那条重建记录
+**`REQ-0361` 的窗口从这次请求的时刻重新算**（调度 2026-09-23 定）：人工重建之后在窗口内（默认 10 分钟，配置项
+`JourneyRuntime:OwnOrderRebuildRepeatWindow`）这条需求再出问题，照样停住等人；过了窗口才恢复自动重建。返回 `outcome = RebuildRequested`、`disposition = REBUILD_SCHEDULED`。停住的那条重建记录
 原行重开，`OperatorId` 改成发起人工重建的人；故障来源那一行原来记的清除人被覆盖，清除人仍在故障事实的 `ClearedReason`
 与当时的事件 9203 里查得到。
 
@@ -170,19 +170,36 @@ continue，另一个回 409 `FAULT_RECOVERY_RESUME_IN_PROGRESS`，过一会儿�
 订单时生效：这趟旅程上还没装的需求全部终结，旅程以 `TERMINATED_BY_OPERATOR_AFTER_REBUILD_STOP` 收尾，车辆占用释放，
 车恢复接单，收尾快照当场发给车。**不释放、不改派**：用户的读法是它属于 `REQ-0361` 说的「由人员处理」。
 **业务后果要知道**：终结按 `DemandId` 算，**MES 那边这条需求还挂着，8005 以后不会再接它**；货要人另外搬，MES 要人手工收尾。
-返回 `outcome = TripTerminated`、`disposition = TRIP_TERMINATED`。车上有货或可能有货时拒绝（`OWN_ORDER_REBUILD_EXIT_CARGO_ON_BOARD`），
-RIoT 上有未结束的单或读不到时拒绝（与清除时同样的 `FAULT_RECOVERY_VEHICLE_ORDER_NOT_FINISHED`、`FAULT_RECOVERY_VEHICLE_ORDERS_UNKNOWN`）。
+返回 `outcome = TripTerminated`、`disposition = TRIP_TERMINATED`，`terminatedDemandIds` 列出这次终结的需求（事件 9203 里同样有
+`terminated: …`），**MES 收尾照这张单子做**；放弃的人记在那条重建记录的 `OperatorId` 上。以下情况拒绝，什么都不改：
+
+- 车上有货或可能有货（`OWN_ORDER_REBUILD_EXIT_CARGO_ON_BOARD`）；
+- RIoT 上有未结束的单或读不到（与清除时同样的 `FAULT_RECOVERY_VEHICLE_ORDER_NOT_FINISHED`、`FAULT_RECOVERY_VEHICLE_ORDERS_UNKNOWN`）；
+- 车被急停锁着或急停还没收尾（`FAULT_RECOVERY_EMERGENCY_*`），或者还挂着一次没清除的故障（`FAULT_RECOVERY_FAULT_IN_EFFECT`）：
+  旅程收尾会停掉挂在旅程上的故障监看，先解除急停、清除故障；
+- 停住的是「重建出来的新单还没确认就被读成终结」那一种（`OWN_ORDER_REBUILD_EXIT_NEW_ORDER_UNSETTLED`）：那张单在 RIoT 上可能
+  还挂在状态 8（SUSPENDED），而放弃前服务端核对「这辆车有没有未结束的单」时看不见状态 8，所以不许放弃，只能人工重建。
+  能放弃的只有「重建出来的单在窗口内又出问题」的那一种。
 
 **转交接 `PREPARE_CARGO_HANDOFF`**。把这一趟转进**车载端**的异常处置会话，在那里取出、交接并终止（`REQ-0238`）：
 
 1. 经本入口发 `PREPARE_CARGO_HANDOFF`。旅程转为阻断，旅程码 `OWN_ORDER_REBUILD_AWAITING_CARGO_HANDOFF`；服务端向车要一次
    仓位读数，车载端会话随之判为需要恢复（原因 `CARGO_HANDOFF_REQUIRED`），车载端才会出现故障货物交接的入口。
    返回 `outcome = HandoffPrepared`、`disposition = AWAITING_CARGO_HANDOFF`。车上没货时拒绝（`OWN_ORDER_REBUILD_EXIT_NOTHING_ON_BOARD`）。
+   转交接的人记在那条重建记录的 `OperatorId` 上。转交接之后这一趟不能再人工重建（`OWN_ORDER_REBUILD_EXIT_AWAITING_CARGO_HANDOFF`）。
 2. **车载端要事先打开 `wireToGate.recoveryResumeEnabled`（出厂是 `false`）**，并配好恢复认证凭据与操作员工号；不然交接入口
    不会出现。服务端这边的恢复管理员凭据（`Recovery:AuthenticationProofEnvironmentVariable` 指的那个变量）也要配好。
 3. 在车载端打开异常处置、选故障货物交接（`FAULT_CARGO_HANDOFF`），按车载端提示把货取出、交接。车报交接完成、放货的仓读空之后，
    需求以 `TERMINATED_BY_FAULT_CARGO_HANDOFF` 终结、旅程收尾，故障时留下的货物绑定以 `HANDED_OFF_IN_EXCEPTION_SESSION` 了结，
    车恢复接单。
+
+**交接没有一次成功时**，这一趟不会回到只能改库（独立审查 M1）：
+
+- **交接失败**（车报 `FAILED`）：旅程码换成 `FaultCargoRecoveryResult_NOT_RECONCILED`，货还在车上、货物绑定不了结，车载端会话
+  仍是需要恢复、交接入口还在。可以直接在车载端再交接一次；要把旅程码挂回来、让服务端再向车要一次仓位读数，就再发一次
+  `PREPARE_CARGO_HANDOFF`。这时放弃会以「车上有货」被拒。
+- **一趟里只交接掉一部分**（例如一条已装的交接了，另一条还没装）：旅程不收尾、仍阻断，还没装的那条开不出会话。这时车上没货了，
+  发 `TERMINATE_STOPPED_TRIP` 放弃剩下的：它们终结、旅程收尾、车恢复接单，MES 那边照 `terminatedDemandIds` 手工收尾。
 
 **已知限制**：车上装着**两条及以上**已装需求时，车载端只能对**最后装的那一条**发起交接，更早装的那条交接不了——这是车载端的
 限制，另开车载端票处理。遇到这种情况找值班工程师。
@@ -289,6 +306,10 @@ Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:58007/api/safety/v1/vehicl
 | --- | --- |
 | 200 | 已清除（`Cleared`，看 `disposition`）、已续行（`Resumed`），或这台车的故障早已由人工清除（`AlreadyCleared`）；重建停住之后的三个出口：已交还重建（`RebuildRequested`）、已放弃这趟（`TripTerminated`）、已转交接（`HandoffPrepared`），或同一请求早已办过（`AlreadyDone`） |
 | 409 | 拒绝，响应里的 `reasons` 列出全部原因码 |
+
+`AlreadyDone` 的意思是「这台车上一次同样的出口已经办过」，**不是**「你这一次请求办成了」：请求没有编号，服务端分不清是
+同一个请求重发，还是另一个人隔了一会儿又点了一次，也不看隔了多久。拿到 `AlreadyDone` 时以看板上旅程的当前状态为准。
+放弃这趟的 200 响应里 `terminatedDemandIds` 列出这次终结的需求，`AlreadyDone` 时它是空的。
 | 401 / 404 / 422 / 503 | 凭据不对 / 不是本服务端管的车 / 缺 `agvId` 或 `action` 不认识 / 入口没配凭据或服务端这一轮太久没结束 |
 
 ## 目前还做不到的，先说清楚
