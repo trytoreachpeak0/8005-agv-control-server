@@ -573,10 +573,17 @@ public sealed class VehicleFaultRecoveryTests
     /// <summary>
     /// REQ-0362：判不了的快照之后要再问一次。车载端只在握手时和被要时才发 <c>SafetyStateSnapshot</c>，所以「继续等」要有人再要：
     /// 判不了的那份快照收到满 10 秒还判不了，服务端撤掉这一代的请求记号，下一条入站消息时再要一次；不满 10 秒不再要。
+    /// 车没回应第二次请求时，下一次再要从那次请求起算满 10 秒——不是每轮都要。
     /// </summary>
     /// <remarks>
+    /// <para>
     /// 审查 S4 的另一半。只改成「继续等」而不再要，会话一直就绪时这一代再也收不到快照，旅程会停在
     /// <c>OWN_ORDER_REBUILD_CARGO_UNPROVEN</c> 直到重连——看起来在等，实际在等一件不会来的事。
+    /// </para>
+    /// <para>
+    /// 后半段是增量审查 B1：第一版的节流只看那份判不了的快照收到了多久。车不回应时（车载端有两条明确不回应的分支：有未确认的
+    /// <c>SafetyStateChanged</c>，或会话此刻不能发）旧快照一直够老，引擎每轮都撤回、Host 每条入站都再要，实际接近心跳频率。
+    /// </para>
     /// </remarks>
     [Fact]
     [Trait("Requirement", "REQ-0362")]
@@ -608,6 +615,24 @@ public sealed class VehicleFaultRecoveryTests
 
         Assert.True(await ClaimAsync(fixture, generation));
         Assert.False(await ClaimAsync(fixture, generation));
+
+        // 车没回应这第二次请求：那份判不了的快照仍是最新的，早已满 10 秒，但离上一次请求不满 10 秒——不再撤。
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+        Assert.False(await ClaimAsync(fixture, generation));
+        fixture.Clock.Advance(TimeSpan.FromSeconds(9));
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+        Assert.False(await ClaimAsync(fixture, generation));
+
+        // 离上一次请求满 10 秒：再要一次。
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+        Assert.True(await ClaimAsync(fixture, generation));
 
         static async Task<bool> ClaimAsync(RuntimeFixture fixture, long generation)
         {
