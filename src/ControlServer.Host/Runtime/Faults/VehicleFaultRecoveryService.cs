@@ -30,6 +30,12 @@ public enum VehicleFaultRecoveryAction
     /// journey closes (control-server#345, the user's decision of 2026-09-23).
     /// </summary>
     TerminateStoppedTrip,
+
+    /// <summary>
+    /// The automatic rebuild stopped with cargo, or possibly cargo, on board; hand the trip to the vehicle's exception recovery
+    /// session, where the cargo is taken out, handed over and its demand ended (REQ-0238, control-server#345).
+    /// </summary>
+    PrepareCargoHandoff,
 }
 
 /// <summary>A person's request about one explicitly named vehicle.</summary>
@@ -66,6 +72,9 @@ public enum VehicleFaultRecoveryOutcome
 
     /// <summary>A stopped trip with nothing on board was given up: its demands ended and its journey closed (control-server#345).</summary>
     TripTerminated,
+
+    /// <summary>A stopped trip with cargo on board now waits for its exception recovery session (control-server#345).</summary>
+    HandoffPrepared,
 }
 
 /// <summary>What was done with the vehicle's journey when its fault was cleared.</summary>
@@ -91,6 +100,12 @@ public static class VehicleFaultRecoveryDispositions
     /// and the journey closed. Nothing was released for redispatch.
     /// </summary>
     public const string TripTerminated = "TRIP_TERMINATED";
+
+    /// <summary>
+    /// The stopped trip is blocked for its cargo to be taken out, handed over and its demand ended in the vehicle's exception
+    /// recovery session (REQ-0238, control-server#345). Nothing was released.
+    /// </summary>
+    public const string AwaitingCargoHandoff = "AWAITING_CARGO_HANDOFF";
 }
 
 /// <summary>The answer to one request.</summary>
