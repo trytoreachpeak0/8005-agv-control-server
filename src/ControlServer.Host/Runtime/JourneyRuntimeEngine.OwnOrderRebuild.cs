@@ -193,31 +193,9 @@ public sealed partial class JourneyRuntimeEngine
                 await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            if (!mayCreate)
+            if (await HeldBeforeCreateAsync(runtime, rebuild, stop, currentMap, mayCreate, now, cancellationToken)
+                    .ConfigureAwait(false))
             {
-                await WaitForRebuildAsync(runtime, rebuild, "ONBOARD_SESSION_NOT_READY", null, now, cancellationToken)
-                    .ConfigureAwait(false);
-                return true;
-            }
-
-            string[] vehicle = await VehicleConditionReasonsAsync(runtime, cancellationToken).ConfigureAwait(false);
-            if (vehicle.Length > 0)
-            {
-                await WaitForRebuildAsync(
-                    runtime, rebuild, string.Join(',', vehicle), OwnOrderRebuildWaitingVehicleReason, now, cancellationToken)
-                    .ConfigureAwait(false);
-                return true;
-            }
-
-            CreateGateOutcome gate = await GateLegAsync(
-                    runtime, stop, currentMap, cancellationToken,
-                    toTheStopItself: stop.StopRole == JourneyStopRoles.Pickup)
-                .ConfigureAwait(false);
-            if (!gate.IsAllowed)
-            {
-                await WaitForRebuildAsync(
-                    runtime, rebuild, $"CREATE_GATE:{gate.BlockReason}", OwnOrderRebuildBlockedByCreateGateReason, now,
-                    cancellationToken).ConfigureAwait(false);
                 return true;
             }
 
@@ -247,6 +225,20 @@ public sealed partial class JourneyRuntimeEngine
             rebuild.WaitingReason = null;
             rebuild.WaitingSince = null;
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        else if (await dbContext.OrderIntents.AsNoTracking()
+                     .Where(row => row.MovementLegId == rebuild.NewMovementLegId)
+                     .Select(row => row.CreateAttemptCount)
+                     .SingleAsync(cancellationToken).ConfigureAwait(false) == 0)
+        {
+            // Decided but never sent -- a crash between the "decided" save and RIoT, then a restart (independent review,
+            // made required as M1). The vehicle and the gate are asked again exactly as before deciding: nothing about the
+            // decision still says the vehicle may move now.
+            if (await HeldBeforeCreateAsync(runtime, rebuild, stop, currentMap, mayCreate, now, cancellationToken)
+                    .ConfigureAwait(false))
+            {
+                return true;
+            }
         }
         else if (!mayCreate)
         {
@@ -302,6 +294,51 @@ public sealed partial class JourneyRuntimeEngine
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         LogOwnOrderRebuilt(logger, rebuild.EndedUpperId, runtime.JourneyId, runtime.AgvId, rebuild.NewUpperId, null);
         return true;
+    }
+
+    /// <summary>
+    /// Everything that has to hold before the new order may be asked of RIoT: the session, the vehicle's condition (the second
+    /// guard) and REQ-0305's create gate. True when one of them holds the rebuild back, which is then recorded and named on the
+    /// journey. Asked before the decision and again after it for as long as the order has never been sent (M1).
+    /// </summary>
+    private async Task<bool> HeldBeforeCreateAsync(
+        JourneyRuntimeRow runtime,
+        OwnOrderRebuildRow rebuild,
+        JourneyStopRow stop,
+        RiotMapStationCatalogSnapshot currentMap,
+        bool mayCreate,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (!mayCreate)
+        {
+            await WaitForRebuildAsync(runtime, rebuild, "ONBOARD_SESSION_NOT_READY", null, now, cancellationToken)
+                .ConfigureAwait(false);
+            return true;
+        }
+
+        string[] vehicle = await VehicleConditionReasonsAsync(runtime, cancellationToken).ConfigureAwait(false);
+        if (vehicle.Length > 0)
+        {
+            await WaitForRebuildAsync(
+                runtime, rebuild, string.Join(',', vehicle), OwnOrderRebuildWaitingVehicleReason, now, cancellationToken)
+                .ConfigureAwait(false);
+            return true;
+        }
+
+        CreateGateOutcome gate = await GateLegAsync(
+                runtime, stop, currentMap, cancellationToken,
+                toTheStopItself: stop.StopRole == JourneyStopRoles.Pickup)
+            .ConfigureAwait(false);
+        if (!gate.IsAllowed)
+        {
+            await WaitForRebuildAsync(
+                runtime, rebuild, $"CREATE_GATE:{gate.BlockReason}", OwnOrderRebuildBlockedByCreateGateReason, now,
+                cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>The journey's code for a stopped rebuild: the cargo one when the snapshot did not show the cargo in place.</summary>
