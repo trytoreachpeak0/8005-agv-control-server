@@ -144,7 +144,7 @@ public sealed class OwnOrderRebuildTests
     // ---- 护栏二：车况不允许就不建 ------------------------------------------------------------------------------
 
     /// <summary>
-    /// 延迟到点时车处在急停、手动（下线、未启用、解抱闸）或故障里：不建，旅程码换成 <c>OWN_ORDER_REBUILD_WAITING_VEHICLE</c>，
+    /// 延迟到点时车处在急停、手动（下线、未启用、解抱闸）、故障里，或者不在本图上：不建，旅程码换成 <c>OWN_ORDER_REBUILD_WAITING_VEHICLE</c>，
     /// 记录上写明在等什么，告警只打一次；车恢复之后下一轮就建。
     /// </summary>
     /// <remarks>
@@ -158,6 +158,7 @@ public sealed class OwnOrderRebuildTests
     [InlineData("RIOT_BRAKE_NOT_MOVABLE")]
     [InlineData("RIOT_CONTROL_NOT_OK")]
     [InlineData("VEHICLE_FAULT_IN_EFFECT")]
+    [InlineData("RIOT_VEHICLE_MAP_MISMATCH")]
     public async Task ARebuildWaitsWhileTheVehicleMayNotMoveAndIsMadeOnceItMay(string condition)
     {
         await using RuntimeFixture fixture = await DispatchedToPickupAsync();
@@ -166,9 +167,14 @@ public sealed class OwnOrderRebuildTests
         JourneyStopRow pickup = stopsBefore.Single(stop => stop.StopRole == JourneyStopRoles.Pickup);
         fixture.Riot.CancelOrder(pickup.UpperId);
         await TickAndRunAsync(fixture);
+        RiotVehicleObservation onTheMap = fixture.Riot.Vehicle;
         if (condition == "VEHICLE_FAULT_IN_EFFECT")
         {
             await RecordFaultAsync(fixture);
+        }
+        else if (condition == "RIOT_VEHICLE_MAP_MISMATCH")
+        {
+            fixture.Riot.Vehicle = onTheMap with { CurrentMap = "MAP-ELSEWHERE" };
         }
         else
         {
@@ -192,6 +198,7 @@ public sealed class OwnOrderRebuildTests
             entry.Message.Contains(condition, StringComparison.Ordinal));
 
         fixture.Riot.SafetyReasons = [];
+        fixture.Riot.Vehicle = onTheMap;
         await ClearFaultAsync(fixture);
         await fixture.HearFromPeerAsync();
         await TickAndRunAsync(fixture);
