@@ -7,6 +7,7 @@ using ControlServer.Domain;
 using ControlServer.Infrastructure.Security;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace ControlServer.Infrastructure.Persistence;
 
@@ -1824,7 +1825,11 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
                 "Outbound MessageId is already bound without the matching slot operation.");
         }
 
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        // Joins the caller's write transaction when there is one: the runtime stages a load inside its own, re-checks the
+        // demand there and sends only after committing (control-server#362).
+        await using IDbContextTransaction? transaction = dbContext.Database.CurrentTransaction is null
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
+            : null;
         if (hasAdmissionIdentity)
         {
             AdmissionPolicyStateRow policy = await dbContext.AdmissionPolicyState
@@ -1867,7 +1872,10 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         };
         dbContext.ProtocolOutbox.Add(outbox);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
         return outbox;
     }
 

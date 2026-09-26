@@ -16,10 +16,13 @@ namespace ControlServer.Host.Runtime;
 /// <b>Exclusive with the entry, the first persisted winning.</b> The entry and the cancellation request
 /// arrive on the same connection and are made durable one after the other, so their order in the store is
 /// their order on the wire. The coordinator refuses a cancellation once an entry for the stop is durable
-/// (<see cref="IsEntryForStop"/>); the runtime reads the inbox first and the open cancellation second
-/// (<see cref="HasOpenCancellationAsync"/>), so an entry it can see was persisted after a cancellation it
-/// can see as well. Reading them the other way round would leave a window in which both a load and the
-/// cancellation go ahead.
+/// (<see cref="IsEntryForStop"/>). The runtime reads the inbox and then the open cancellation
+/// (<see cref="HasOpenCancellationAsync"/>) without a lock, which only saves it an iteration: a cancellation
+/// can open -- or settle -- between those two reads, since the coordinator writes it inbound, outside the
+/// runtime's gate. What keeps a load and the cancellation from both going ahead is the runtime asking again,
+/// under the write lock and in the transaction that stages the command (control-server#362,
+/// <c>JourneyRuntimeEngine.EnteredDemandStillLoadableAsync</c>). Until then the order of the two reads was
+/// taken as the guarantee, and it is not one.
 /// </para>
 /// <para>
 /// <b>Exclusive with an entry that was refused, and there the entry loses.</b> Since

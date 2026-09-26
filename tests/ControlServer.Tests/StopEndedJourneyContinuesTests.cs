@@ -494,7 +494,7 @@ public sealed class StopEndedJourneyContinuesTests
         Assert.Equal("WORKLIST_REVISION_STALE", rejection.GetProperty("problem").GetProperty("reasonCode").GetString());
     }
 
-    private static string CancellationRequest(RuntimeFixture fixture, string cancellationId) =>
+    internal static string CancellationRequest(RuntimeFixture fixture, string cancellationId) =>
         Envelope(fixture, JourneyPlanBuilder.StableGuid(cancellationId, "request"), "LoadCancellationStartRequested", new
         {
             cancellationId,
@@ -504,7 +504,7 @@ public sealed class StopEndedJourneyContinuesTests
             reason = "Nothing to load at this stop."
         });
 
-    private static string CancellationResult(RuntimeFixture fixture, string cancellationId) =>
+    internal static string CancellationResult(RuntimeFixture fixture, string cancellationId) =>
         Envelope(fixture, JourneyPlanBuilder.StableGuid(cancellationId, "result"), "LoadCancellationResult", new
         {
             cancellationId,
@@ -516,7 +516,7 @@ public sealed class StopEndedJourneyContinuesTests
         });
 
     /// <summary>对第二个取货站此刻那一版清单的一条录入，扫的是乙的子批。</summary>
-    private static object SecondStopEntry(
+    internal static object SecondStopEntry(
         RuntimeFixture fixture, JourneyStopRow secondPickup, JourneyRuntimeRow runtime, string sublot = SecondSublot) => new
     {
         operationSessionId = secondPickup.OperationSessionId,
@@ -663,7 +663,7 @@ public sealed class StopEndedJourneyContinuesTests
     /// <summary>
     /// 受理两条需求（第二条在另一个取货站）、第一条在第一站装上车，车到第二个取货站等录入。返回第二个取货停靠。
     /// </summary>
-    private static async Task<JourneyStopRow> ArriveAtTheSecondPickupAsync(
+    internal static async Task<JourneyStopRow> ArriveAtTheSecondPickupAsync(
         RuntimeFixture fixture, bool secondUnloadsAtItsOwnStop = false, bool thirdAtTheSecondPickup = false)
     {
         fixture.Catalog.Set(
@@ -694,8 +694,8 @@ public sealed class StopEndedJourneyContinuesTests
         return secondPickup;
     }
 
-    private const string ThirdDemandId = "10000000-0000-4000-8000-000000000003";
-    private const string ThirdSublot = "SUBLOT-003";
+    internal const string ThirdDemandId = "10000000-0000-4000-8000-000000000003";
+    internal const string ThirdSublot = "SUBLOT-003";
     private const string InterleavedSubmissionId = "e1000000-0000-4000-8000-000000000001";
 
     /// <summary>
@@ -823,7 +823,7 @@ public sealed class StopEndedJourneyContinuesTests
     }
 
     /// <summary>这条录入是否被一条装货命令答复了（命令的 correlationId 就是它）。</summary>
-    private static async Task<bool> AnsweredByALoadCommandAsync(RuntimeFixture fixture, string submissionId)
+    internal static async Task<bool> AnsweredByALoadCommandAsync(RuntimeFixture fixture, string submissionId)
     {
         string[] commands = await fixture.Context.ProtocolOutbox.AsNoTracking()
             .Where(row => row.MessageType == "SlotOperationCommand")
@@ -839,14 +839,14 @@ public sealed class StopEndedJourneyContinuesTests
     private static async Task<Snapshot[]> WorklistsAsync(RuntimeFixture fixture) =>
         [.. (await SnapshotsAsync(fixture.Context, fixture.Options.AgvId)).Where(item => item.MessageType == WorklistType)];
 
-    private static Task<JourneyDemandRow> MembershipAsync(RuntimeFixture fixture, string demandId) =>
+    internal static Task<JourneyDemandRow> MembershipAsync(RuntimeFixture fixture, string demandId) =>
         fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
             .SingleAsync(row => row.DemandId == demandId, TestContext.Current.CancellationToken);
 
     private static string Line(byte[] bytes) => System.Text.Encoding.UTF8.GetString(bytes);
 
     /// <summary>握手已完成的连接：真实连接在恢复报告被答复之后恒为如此，答复只在那之后发。</summary>
-    private static OnboardConnectionState Connection(RuntimeFixture fixture)
+    internal static OnboardConnectionState Connection(RuntimeFixture fixture)
     {
         OnboardConnectionState state =
             JourneyRuntimeWorkerLoadCancellationBeforeSublotTests.BeforeSublotConnection(fixture, generation: 1);
@@ -861,10 +861,10 @@ public sealed class StopEndedJourneyContinuesTests
         verifiedAt = fixture.Clock.GetUtcNow()
     };
 
-    private static string Envelope(RuntimeFixture fixture, string messageId, string messageType, object payload) =>
+    internal static string Envelope(RuntimeFixture fixture, string messageId, string messageType, object payload) =>
         BeforeSublotEnvelope(fixture, messageId, messageType, generation: 1, payload);
 
-    private static JsonElement FirstLinePayload(string wire)
+    internal static JsonElement FirstLinePayload(string wire)
     {
         string first = wire.Split('\n', StringSplitOptions.RemoveEmptyEntries).First();
         using JsonDocument document = JsonDocument.Parse(first);

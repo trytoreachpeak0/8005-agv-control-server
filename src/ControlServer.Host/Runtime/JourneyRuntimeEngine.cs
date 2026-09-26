@@ -115,6 +115,13 @@ public sealed partial class JourneyRuntimeEngine(
             new EventId(2108, nameof(LogStationDeadlineEndedStop)),
             "Nobody entered a sublot at vehicle {AgvId}'s pickup before the station departure deadline " +
             "{Deadline}; demand {DemandId} ended as CANCELLED_BY_STATION_TIMEOUT and the vehicle was released.");
+    private static readonly Action<ILogger, string, string, string, Exception?> LogLoadYieldedToEndedDemand =
+        LoggerMessage.Define<string, string, string>(
+            LogLevel.Information,
+            new EventId(2190, nameof(LogLoadYieldedToEndedDemand)),
+            "Vehicle {AgvId}'s sublot entry {SubmissionId} for demand {DemandId} lost to a change made while the iteration " +
+            "read it (the demand ended or was held for recovery, or a cancellation opened at its stop); no load was " +
+            "commanded, and the next iteration judges the entry afresh.");
     private static readonly Action<ILogger, string, string, string, DateTimeOffset, Exception?> LogStationTimeoutDoorNotClosed =
         LoggerMessage.Define<string, string, string, DateTimeOffset>(
             LogLevel.Warning,
@@ -891,8 +898,12 @@ public sealed partial class JourneyRuntimeEngine(
                 ProtocolInboxRow? sublot = await FindMatchingSublotAsync(runtime, stops, session, cancellationToken)
                     .ConfigureAwait(false);
                 // An operator cancelling before any entry (ADR-cross-0046; control-server#83) holds the stop
-                // until the vehicle reports: no load starts and the deadline does not end it. Read after the
-                // inbox, so an entry seen here cannot have been persisted before the cancellation it loses to.
+                // until the vehicle reports: no load starts and the deadline does not end it. This check only
+                // saves an iteration: it reads outside any lock, and the cancellation's result is processed
+                // inbound, where it can settle -- close -- between the inbox read above and this one. What keeps
+                // a load from being commanded for a demand that has lost to a cancellation is the re-check under
+                // the write lock just before the command (EnteredDemandStillLoadableAsync, control-server#362);
+                // the order of these two reads guarantees nothing. It used to be read as the guarantee.
                 //
                 // 按「这个停靠上任一条需求」问（批次7-06）：取消要车证明那一排仓位是空的，而那是一次整排的证明，
                 // 不是对某一条需求的证明——所以一条需求的取消开着，这个停靠上的每一条都等着。
@@ -964,20 +975,67 @@ public sealed partial class JourneyRuntimeEngine(
                 {
                     return;
                 }
-                await PublishLoadAsync(runtime, stops, entered, session, sublot.MessageId, cancellationToken)
+                // 下命令之前在写锁里再判一次（control-server#362）。上面读收件箱、查取消、按游标认需求都是锁外读，
+                // 取消的结果走入站、不拿 JourneyMutationGate，可以落在这几次读之间：车报 ALL_EMPTY，需求已 Cancelled、取消已
+                // Reconciled、归属已 TERMINATED，而这一轮手里的游标还说它待装。照旧读下命令，车会给一条已取消的需求开仓，装上的货
+                // 需求记着取消、业务键已抑制，关卡也不给它下卸货命令——货留在车上。所以判断挪到命令落库的同一个写事务里：这个库的
+                // BeginTransaction 是 BEGIN IMMEDIATE，下面读到的是此前提交的一切，入站那次写要么在前（这里读到、让开），要么在后
+                // （它读到命令已下，照已下命令处理）。
+                //
+                // 输的一方这一轮不装也不答，下一轮按新读重判：本站已被那次终结结束时，它已一并答了这条录入 STALE
+                // （control-server#324），下一轮按「已拒收」跳过；本站还有别的待做项时，下一轮按新游标判它不在派车范围。
+                // 两条都是没有竞态时这条录入本来会得到的答复。同站另一条需求的扫码前取消在这期间开了的，下一轮由上面锁外那次
+                // 查取消扣住本站，直到车报结果。
+                //
+                // 这一支自己开写事务，而且必须是它自己的：命令在提交之后才上线，有外层事务就意味着上线早于外层提交，车可能照一条
+                // 最后没落库的命令开仓。今天没有这样的调用者，所以直接拒绝，而不是悄悄加入。
+                if (dbContext.Database.CurrentTransaction is not null)
+                {
+                    throw new InvalidOperationException(
+                        "A load is commanded only from a write transaction of its own: the command goes out after that " +
+                        "transaction commits, which an outer transaction would postpone past the send.");
+                }
+                await using (IDbContextTransaction transaction = await dbContext.Database
+                                 .BeginTransactionAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    if (!await EnteredDemandStillLoadableAsync(runtime, stops, entered, cancellationToken)
+                            .ConfigureAwait(false))
+                    {
+                        // 同上面取消开着的那一支：这一轮对阻塞码的改动不成立，退回库里的值；重填的离站等待照存。
+                        EntityEntry<JourneyRuntimeRow> tracked = dbContext.Entry(runtime);
+                        tracked.Property(row => row.BlockReasonCode).CurrentValue =
+                            tracked.Property(row => row.BlockReasonCode).OriginalValue;
+                        tracked.Property(row => row.BlockReasonSince).CurrentValue =
+                            tracked.Property(row => row.BlockReasonSince).OriginalValue;
+                        if (waitRefilled)
+                        {
+                            runtime.UpdatedAt = now;
+                            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                        }
+                        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                        LogLoadYieldedToEndedDemand(logger, runtime.AgvId, sublot.MessageId, entered.Demand.DemandId, null);
+                        return;
+                    }
+                    await StageLoadAsync(runtime, stops, entered, session, sublot.MessageId, cancellationToken)
+                        .ConfigureAwait(false);
+                    runtime.ConsumedSublotMessageId = sublot.MessageId;
+                    // 「这个停靠此刻在装哪一条」从这里起是落库的状态（批次7-06）。与命令同一个事务：
+                    // 命令与状态要么都在，要么都不在，否则重启之后会对着一条没有命令的需求等结果。
+                    (await TrackedMembershipAsync(runtime, entered.Demand.DemandId, cancellationToken)
+                        .ConfigureAwait(false)).Status = JourneyDemandStatuses.Loading;
+                    // The submission is this command's answer. Leaving the command unsettled replayed it
+                    // into every later session, where the peer refused it as a business id whose content
+                    // had changed and tore the session down.
+                    await store.SettleAnsweredCommandAsync(
+                        stops.CurrentSublotRequestMessageId(runtime.WorklistRevision), now, cancellationToken).ConfigureAwait(false);
+                    SetStage(runtime, JourneyRuntimeStage.AwaitingLoadResult, now);
+                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                }
+                // 提交之后才上线：车只照已落库的命令开仓。
+                await publisher.SendPersistedAsync(entered.Membership.LoadCommandMessageId, cancellationToken)
                     .ConfigureAwait(false);
-                runtime.ConsumedSublotMessageId = sublot.MessageId;
-                // 「这个停靠此刻在装哪一条」从这里起是落库的状态（批次7-06）。写在发完命令之后、同一次保存里：
-                // 命令与状态要么都在，要么都不在，否则重启之后会对着一条没有命令的需求等结果。
-                (await TrackedMembershipAsync(runtime, entered.Demand.DemandId, cancellationToken)
-                    .ConfigureAwait(false)).Status = JourneyDemandStatuses.Loading;
-                // The submission is this command's answer. Leaving the command unsettled replayed it
-                // into every later session, where the peer refused it as a business id whose content
-                // had changed and tore the session down.
-                await store.SettleAnsweredCommandAsync(
-                    stops.CurrentSublotRequestMessageId(runtime.WorklistRevision), now, cancellationToken).ConfigureAwait(false);
-                SetStage(runtime, JourneyRuntimeStage.AwaitingLoadResult, now);
-                break;
+                return;
             case JourneyRuntimeStage.AwaitingLoadResult:
                 // 等的是「此刻在装的那一条」的 attempt（批次7-06）。批次7-03 查旅程行上锚需求的那一个，
                 // 而命令是按被录入那条发出去的——两者分岔的样子就是「发了 A 查 B」，旅程停在这里而且不报错。
@@ -2671,14 +2729,14 @@ public sealed partial class JourneyRuntimeEngine(
     }
 
     /// <summary>
-    /// 对录入所答复的那条需求下装货命令。attempt id、命令 id 与目标仓位取<b>它自己</b>在本旅程的归属行，作业会话与
-    /// 站点取当前停靠。
+    /// 对录入所答复的那条需求下装货命令：只落库，调用方提交之后再发（control-server#362）。attempt id、命令 id 与目标仓位取
+    /// <b>它自己</b>在本旅程的归属行，作业会话与站点取当前停靠。
     /// </summary>
     /// <remarks>
     /// <paramref name="entered"/> 是操作员扫出来的那一条，不是锚需求（批次7-06，control-server#211）。批次7-03 取锚需求，
     /// 是因为那时录入范围被一句守卫退回了锚需求；守卫删掉之后再取锚需求，就是「操作员扫第二条、车上收到第一条的仓位」。
     /// </remarks>
-    private async Task PublishLoadAsync(
+    private async Task StageLoadAsync(
         JourneyRuntimeRow runtime,
         JourneyStopCursor stops,
         JourneyStopDemand entered,
@@ -2694,7 +2752,7 @@ public sealed partial class JourneyRuntimeEngine(
         bool admission = await store.AreaEndOperationAsync(
                 entered.Demand.DemandId, entered.Demand.WorkType, cancellationToken)
             .ConfigureAwait(false) == SlotOperationType.Load;
-        await publisher.PublishSlotOperationCommandAsync(
+        await publisher.StageSlotOperationCommandAsync(
             entered.Membership.LoadCommandMessageId,
             runtime.AgvId,
             session.SessionGeneration,
@@ -3900,6 +3958,62 @@ public sealed partial class JourneyRuntimeEngine(
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// 在写锁里重读：被录入的那条需求此刻还能不能装（control-server#362）。旅程仍在这个停靠等录入、需求仍是 Accepted、
+    /// 它的归属仍是游标读到的那个状态、这个停靠上没有开着的扫码前取消——四条都成立才下命令。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 调用方在 BEGIN IMMEDIATE 里调用，所以这里全部读库、不读被跟踪的实体：被跟踪的那一份是这一轮开头读的，正是要复核的旧读。
+    /// </para>
+    /// <para>
+    /// 入站能插进来、这四条要挡的写法有三种：
+    /// </para>
+    /// <list type="bullet">
+    /// <item>乙自己的终结（<see cref="PickupStopTermination"/>，扫码前取消的 ALL_EMPTY 走它）：需求 Cancelled、归属 TERMINATED，阶段不动。</item>
+    /// <item>乙的取消结果证明不了空（<c>OnboardRecoveryCoordinator.KeepDemandAndJourneyBlockedAsync</c>）：需求 RecoveryRequired、旅程 Blocked，
+    /// 归属不动。</item>
+    /// <item>同站另一条需求的扫码前取消在锁外查过之后被授权（它只用那条需求自己的录入去挡）：乙的需求、归属、阶段<b>都不动</b>，
+    /// 只有第四条挡得住——取消要车证明整排仓位是空的，这时给乙开仓就是在证明进行中往里装。</item>
+    /// </list>
+    /// <para>
+    /// 各条的护栏（evidence/cs362 反向验证）：第四条单删就红（R5）。需求一条单独就挡得住前两种；归属、阶段两条只在组合层面有护栏——
+    /// 单删不红，与需求一起删才红（R23、R24）。它们留着，是为了不把正确性押在「终结与转阻塞总是连带写需求」上。
+    /// </para>
+    /// </remarks>
+    private async Task<bool> EnteredDemandStillLoadableAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
+        JourneyStopDemand entered,
+        CancellationToken cancellationToken)
+    {
+        JourneyRuntimeStage? stageNow = await dbContext.JourneyRuntimes.AsNoTracking()
+            .Where(row => row.JourneyId == runtime.JourneyId)
+            .Select(row => (JourneyRuntimeStage?)row.Stage)
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        if (stageNow != JourneyRuntimeStage.AwaitingSublot)
+        {
+            return false;
+        }
+        DemandExecutionStatus? demandNow = await dbContext.AcceptedDemands.AsNoTracking()
+            .Where(row => row.DemandId == entered.Demand.DemandId)
+            .Select(row => (DemandExecutionStatus?)row.Status)
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        if (demandNow != DemandExecutionStatus.Accepted)
+        {
+            return false;
+        }
+        string? membershipNow = await dbContext.Set<JourneyDemandRow>().AsNoTracking()
+            .Where(row => row.JourneyId == runtime.JourneyId && row.DemandId == entered.Demand.DemandId)
+            .Select(row => row.Status)
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        if (!string.Equals(membershipNow, entered.Membership.Status, StringComparison.Ordinal))
+        {
+            return false;
+        }
+        return !await OpenCancellationAtCurrentStopAsync(stops, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>被跟踪的那一份归属行，用来写状态；游标读出来的是 <c>AsNoTracking</c> 的。</summary>
