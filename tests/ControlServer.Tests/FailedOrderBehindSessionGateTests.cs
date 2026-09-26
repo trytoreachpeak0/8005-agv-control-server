@@ -140,6 +140,57 @@ public sealed class FailedOrderBehindSessionGateTests
     }
 
     /// <summary>
+    /// 同一机理的第二个位置：会话行仍是 <c>Ready</c>，但车载端 6 秒没有任何入站（失联，<c>ONBOARD_SESSION_LOST</c>）。
+    /// 这时单 FAILED、车在动：同一轮记故障、Hold、急停；闩锁上的那一轮确认，闩锁掉了的那一轮按 REQ-0248 重触发；
+    /// 车载端一条都没收到。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 修前 <c>JourneyRuntimeEngine.NameSilentOnboardSessionAsync</c> 在到站分支之前就截停整轮，FAILED 要等车重新说话才进故障模型
+    /// （它自己的注释写着 "the same as a FAILED one"）。会话闸门看不到它：会话行是 Ready。调度 2026-09-26 定并入本票。
+    /// </para>
+    /// <para>
+    /// 前提先断：注入 FAILED 之前的那一轮旅程写的是 <c>ONBOARD_SESSION_LOST</c>，会话行是 Ready——这条走的确实是失联那条路，
+    /// 不是会话闸门。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0232")]
+    [Trait("Requirement", "REQ-0246")]
+    [Trait("Requirement", "REQ-0248")]
+    public async Task AFailedOrderIsRecordedAndStoppedWhileTheReadySessionHasGoneSilent()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow dispatched = await fixture.RuntimeAsync();
+        await fixture.HearFromPeerAsync();
+        fixture.Clock.Advance(SessionLiveness.Timeout + TimeSpan.FromSeconds(2));
+        await TickSilentAsync(fixture);
+        Assert.Equal(JourneyRuntimeEngine.OnboardSessionLostReason, (await fixture.RuntimeAsync()).BlockReasonCode);
+        await AssertSessionStillReadyAsync(fixture);
+
+        fixture.Riot.MovementState = "MT_RUNNING";
+        fixture.Riot.FailOrder(dispatched.PickupUpperId);
+        Outbound before = await OutboundAsync(fixture);
+        await TickSilentAsync(fixture);
+
+        await AssertSessionStillReadyAsync(fixture);
+        await AssertRecordedHeldAndStoppedAsync(fixture, dispatched.PickupUpperId);
+
+        Latch(fixture);
+        fixture.Riot.MovementState = "MT_FINISHED";
+        await TickSilentAsync(fixture);
+        Assert.Equal(RiotOrderCommandOutcome.Confirmed, await LatestTriggerOutcomeAsync(fixture));
+
+        Unlatch(fixture);
+        await TickSilentAsync(fixture);
+        Assert.Equal(2, await TriggerCountAsync(fixture));
+        Assert.Equal(VehicleFaultEvidence.OrderFailed, (await fixture.RuntimeAsync()).BlockReasonCode);
+        await AssertSessionStillReadyAsync(fixture);
+
+        Assert.Equal(before, await OutboundAsync(fixture));
+    }
+
+    /// <summary>
     /// 闸门后记下故障之后，一轮读不到这张单（RIoT 不回答）：码仍是 <c>VEHICLE_ORDER_FAILED</c>，开始时刻不动——
     /// 读不到不等于单已继续，而 FAILED 是终态。
     /// </summary>
@@ -255,6 +306,26 @@ public sealed class FailedOrderBehindSessionGateTests
     {
         fixture.EmergencyLatched = false;
         fixture.Riot.SafetyReasons = [];
+    }
+
+    /// <summary>会话行仍是 Ready：这一轮没有走会话闸门。</summary>
+    private static async Task AssertSessionStillReadyAsync(RuntimeFixture fixture)
+    {
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        Assert.Equal(
+            SessionReadiness.Ready,
+            (await reading.SessionRecoveries.AsNoTracking().SingleAsync(Token)).Readiness);
+    }
+
+    /// <summary>钟走一秒、车载端不说话，跑一轮：失联一直持续。</summary>
+    private static async Task TickSilentAsync(RuntimeFixture fixture)
+    {
+        DateTimeOffset before = fixture.Clock.GetUtcNow();
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        Assert.True(fixture.Clock.GetUtcNow() > before, "the clock did not move");
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
     }
 
     private static async Task TickAndHearAsync(RuntimeFixture fixture)
