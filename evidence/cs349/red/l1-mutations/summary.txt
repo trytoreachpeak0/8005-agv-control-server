@@ -1,0 +1,43 @@
+=== M1-no-delay diff: 1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.OwnOrderRebuild.cs
+    build:     0 Error(s)
+    [xUnit.net 00:00:09.91]     ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.OnTheWayToPickupTheReleaseAloneBuildsNothingAndOnlyTheClearanceRebuildsAfterTheDelay [FAIL]
+    at ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.OnTheWayToPickupTheReleaseAloneBuildsNothingAndOnlyTheClearanceRebuildsAfterTheDelay() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs349-8005-agv-control-server\tests\ControlServer.Tests\EmergencyReleaseVersusOwnOrderRebuildTests.cs:line 118
+    at ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.OnTheWayToPickupTheReleaseAloneBuildsNothingAndOnlyTheClearanceRebuildsAfterTheDelay() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs349-8005-agv-control-server\tests\ControlServer.Tests\EmergencyReleaseVersusOwnOrderRebuildTests.cs:line 128
+    Failed!  - Failed:     1, Passed:     4, Skipped:     0, Total:     5, Duration: 10 s - ControlServer.Tests.dll (net8.0)
+=== M2-fault-not-a-vehicle-condition diff: 1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.OwnOrderRebuild.cs
+    build:     0 Error(s)
+    [xUnit.net 00:00:04.61]     ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.ConstructedALatchOverALiveOwnOrderThatAPersonCancelsInRiotNeverRebuildsBecauseTheFaultCannotBeCleared [FAIL]
+    at ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.ConstructedALatchOverALiveOwnOrderThatAPersonCancelsInRiotNeverRebuildsBecauseTheFaultCannotBeCleared() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs349-8005-agv-control-server\tests\ControlServer.Tests\EmergencyReleaseVersusOwnOrderRebuildTests.cs:line 355
+    at ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.ConstructedALatchOverALiveOwnOrderThatAPersonCancelsInRiotNeverRebuildsBecauseTheFaultCannotBeCleared() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs349-8005-agv-control-server\tests\ControlServer.Tests\EmergencyReleaseVersusOwnOrderRebuildTests.cs:line 386
+    Failed!  - Failed:     1, Passed:     4, Skipped:     0, Total:     5, Duration: 8 s - ControlServer.Tests.dll (net8.0)
+=== M3-no-cargo-evidence diff: 1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.OwnOrderRebuild.cs
+    build:     0 Error(s)
+    [xUnit.net 00:00:08.92]     ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.OnTheWayToTheGateAnEmptiedVehicleIsReleasedButItsDeliveryIsNeverRebuilt [FAIL]
+    at ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.OnTheWayToTheGateAnEmptiedVehicleIsReleasedButItsDeliveryIsNeverRebuilt() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs349-8005-agv-control-server\tests\ControlServer.Tests\EmergencyReleaseVersusOwnOrderRebuildTests.cs:line 174
+    at ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.OnTheWayToTheGateAnEmptiedVehicleIsReleasedButItsDeliveryIsNeverRebuilt() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs349-8005-agv-control-server\tests\ControlServer.Tests\EmergencyReleaseVersusOwnOrderRebuildTests.cs:line 192
+    Failed!  - Failed:     1, Passed:     4, Skipped:     0, Total:     5, Duration: 10 s - ControlServer.Tests.dll (net8.0)
+=== M4-no-session-gate diff: 1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.OwnOrderRebuild.cs
+    build:     0 Error(s)
+    [xUnit.net 00:00:09.75]     ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.WithTheRealOnboardsSessionNotReadyTheRebuildWaitsForTheSessionAsWellAsTheDelay [FAIL]
+    at ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.WithTheRealOnboardsSessionNotReadyTheRebuildWaitsForTheSessionAsWellAsTheDelay() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs349-8005-agv-control-server\tests\ControlServer.Tests\EmergencyReleaseVersusOwnOrderRebuildTests.cs:line 271
+    at ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.WithTheRealOnboardsSessionNotReadyTheRebuildWaitsForTheSessionAsWellAsTheDelay() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs349-8005-agv-control-server\tests\ControlServer.Tests\EmergencyReleaseVersusOwnOrderRebuildTests.cs:line 281
+    Failed!  - Failed:     1, Passed:     4, Skipped:     0, Total:     5, Duration: 10 s - ControlServer.Tests.dll (net8.0)
+=== M5-release-ignores-unfinished-orders diff: 1	1	src/ControlServer.Host/Runtime/Commands/EmergencyStopSupervisor.cs
+    build:     0 Error(s)
+    [xUnit.net 00:00:04.59]     ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.ConstructedALatchOverALiveOwnOrderThatAPersonCancelsInRiotNeverRebuildsBecauseTheFaultCannotBeCleared [FAIL]
+    at ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.ConstructedALatchOverALiveOwnOrderThatAPersonCancelsInRiotNeverRebuildsBecauseTheFaultCannotBeCleared() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs349-8005-agv-control-server\tests\ControlServer.Tests\EmergencyReleaseVersusOwnOrderRebuildTests.cs:line 337
+    at ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.ConstructedALatchOverALiveOwnOrderThatAPersonCancelsInRiotNeverRebuildsBecauseTheFaultCannotBeCleared() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs349-8005-agv-control-server\tests\ControlServer.Tests\EmergencyReleaseVersusOwnOrderRebuildTests.cs:line 386
+    [xUnit.net 00:00:10.52]     ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.UnderSomeoneElsesStopAnEmptiedVehicleWhoseOwnOrderIsCancelledIsRebuiltToDeliverAnyway [FAIL]
+    at ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.UnderSomeoneElsesStopAnEmptiedVehicleWhoseOwnOrderIsCancelledIsRebuiltToDeliverAnyway() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs349-8005-agv-control-server\tests\ControlServer.Tests\EmergencyReleaseVersusOwnOrderRebuildTests.cs:line 429
+    at ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.UnderSomeoneElsesStopAnEmptiedVehicleWhoseOwnOrderIsCancelledIsRebuiltToDeliverAnyway() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs349-8005-agv-control-server\tests\ControlServer.Tests\EmergencyReleaseVersusOwnOrderRebuildTests.cs:line 451
+    Failed!  - Failed:     2, Passed:     3, Skipped:     0, Total:     5, Duration: 8 s - ControlServer.Tests.dll (net8.0)
+=== M6-cancel-source-needs-cargo-evidence diff: 1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.OwnOrderRebuild.cs
+    build:     0 Error(s)
+    [xUnit.net 00:00:04.61]     ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.ConstructedALatchOverALiveOwnOrderThatAPersonCancelsInRiotNeverRebuildsBecauseTheFaultCannotBeCleared [FAIL]
+    at ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.ConstructedALatchOverALiveOwnOrderThatAPersonCancelsInRiotNeverRebuildsBecauseTheFaultCannotBeCleared() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs349-8005-agv-control-server\tests\ControlServer.Tests\EmergencyReleaseVersusOwnOrderRebuildTests.cs:line 355
+    at ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.ConstructedALatchOverALiveOwnOrderThatAPersonCancelsInRiotNeverRebuildsBecauseTheFaultCannotBeCleared() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs349-8005-agv-control-server\tests\ControlServer.Tests\EmergencyReleaseVersusOwnOrderRebuildTests.cs:line 386
+    [xUnit.net 00:00:10.35]     ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.UnderSomeoneElsesStopAnEmptiedVehicleWhoseOwnOrderIsCancelledIsRebuiltToDeliverAnyway [FAIL]
+    at ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.UnderSomeoneElsesStopAnEmptiedVehicleWhoseOwnOrderIsCancelledIsRebuiltToDeliverAnyway() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs349-8005-agv-control-server\tests\ControlServer.Tests\EmergencyReleaseVersusOwnOrderRebuildTests.cs:line 441
+    at ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.UnderSomeoneElsesStopAnEmptiedVehicleWhoseOwnOrderIsCancelledIsRebuiltToDeliverAnyway() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs349-8005-agv-control-server\tests\ControlServer.Tests\EmergencyReleaseVersusOwnOrderRebuildTests.cs:line 451
+    Failed!  - Failed:     2, Passed:     3, Skipped:     0, Total:     5, Duration: 8 s - ControlServer.Tests.dll (net8.0)
+=== src clean after restore: ''
