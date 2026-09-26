@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
@@ -5,6 +6,7 @@ using ControlServer.Host.Runtime;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using static ControlServer.Tests.Batch7StopDrivenAdvanceDriver;
 using static ControlServer.Tests.ClosureSnapshotAssertions;
@@ -326,31 +328,192 @@ public sealed class StopEndedJourneyContinuesTests
     }
 
     /// <summary>
+    /// 第二个取货站被<b>扫码前取消</b>结束（不是期限）：协调器当场把空清单发上线，阶段带着 0 个待做项仍是等录入；这时来的迟到扫码
+    /// 答 <c>WORKLIST_REVISION_STALE</c>，号就是那张空清单的号（PR #361 两路审查的必修）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 修之前入站那一侧看到阶段是等录入就交给引擎，引擎按地址区间认出它，却在待做项里找不到，答 <c>SUBLOT_NOT_IN_DISPATCH_SCOPE</c>，
+    /// 号是车从没收到过的 r+1——车载端显示「子批号不在本次派车范围内」。先前「那一行是多余防御」的判断只走了期限那一路，而期限会把阶段推走。
+    /// </para>
+    /// <para>
+    /// 空清单在<b>结果那条报文的应答之后、引擎任何一轮之前</b>就上线：断的是协调器当场发送，不是引擎下一轮补发。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AfterACancellationEndsTheStopALateEntryIsRejectedAsStaleAtTheEmptyWorklistsRevision()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyStopRow secondPickup = await ArriveAtTheSecondPickupAsync(fixture);
+        JourneyRuntimeRow runtime = await JourneyOfAsync(fixture, FirstDemandId);
+        await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+        OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+            connection, new WireToGateStore(connection), fixture.Clock, new ConfigurationBuilder().Build(), fixture.Peer);
+        OnboardConnectionState state = Connection(fixture);
+        const string cancellationId = "d2000000-0000-4000-8000-000000000001";
+
+        string authorization = await processor.ProcessAsync(
+            Envelope(fixture, "d2000000-0000-4000-8000-000000000002", "LoadCancellationStartRequested", new
+            {
+                cancellationId,
+                demandId = SecondDemandId,
+                slotOperationAttemptId = (string?)null,
+                @operator = Operator(fixture),
+                reason = "Nothing to load at this stop."
+            }),
+            state,
+            token);
+        Assert.Equal("AUTHORIZED", FirstLinePayload(authorization).GetProperty("decision").GetString());
+        int linesBeforeResult = fixture.Peer.Lines.Count;
+        await processor.ProcessAsync(
+            Envelope(fixture, "d2000000-0000-4000-8000-000000000003", "LoadCancellationResult", new
+            {
+                cancellationId,
+                demandId = SecondDemandId,
+                slotOperationAttemptId = (string?)null,
+                overallOutcome = "ALL_EMPTY",
+                slotResults = Array.Empty<object>(),
+                observedAt = Now
+            }),
+            state,
+            token);
+
+        // 前提：乙被取消终结，旅程继续，阶段仍是等录入——审查说的那个形状。
+        Assert.Equal(JourneyDemandStatuses.Terminated, (await MembershipAsync(fixture, SecondDemandId)).Status);
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
+        Snapshot empty = Assert.Single(
+            await WorklistsAsync(fixture), item => item.Payload.GetProperty("items").GetArrayLength() == 0);
+        Assert.Equal(secondPickup.StationId, empty.Payload.GetProperty("stationId").GetString());
+        Assert.Contains(fixture.Peer.Lines.Skip(linesBeforeResult), bytes => SentAs(Line(bytes), empty.MessageId, 1));
+
+        const string lateId = "d2000000-0000-4000-8000-000000000004";
+        await processor.ProcessAsync(
+            Envelope(fixture, lateId, "SublotSubmitted", new
+            {
+                operationSessionId = secondPickup.OperationSessionId,
+                stationId = secondPickup.StationId,
+                worklistRevision = runtime.WorklistRevision + 1,
+                sublot = SecondSublot,
+                entryMethod = "SCANNER",
+                @operator = Operator(fixture)
+            }),
+            state,
+            token);
+        JsonElement rejection = await RejectionOfAsync(fixture, lateId);
+        Assert.Equal("WORKLIST_REVISION_STALE", rejection.GetProperty("problem").GetProperty("reasonCode").GetString());
+        Assert.Equal(empty.Revision, rejection.GetProperty("currentWorklistRevision").GetInt64());
+
+        // 引擎之后再转一轮也不会补答另一条：它认得这条录入已被拒收。
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+        Assert.Single(await RejectionsOfAsync(fixture, lateId));
+    }
+
+    /// <summary>
+    /// 期限那一轮里，引擎读完收件箱之后、期限写锁之前落库的一条扫码（审查 S1 的窗口）：本站结束的那一次改动一并答它
+    /// <c>WORKLIST_REVISION_STALE</c>，号是空清单的号，并发上线。修之前它既不装也不拒。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AnEntryLandingBetweenTheInboxReadAndTheDeadlineLockIsAnsweredWhenTheStopEnds()
+    {
+        EntryInterleaver interleaver = new();
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync(commands: interleaver);
+        await EndTheSecondPickupByItsDeadlineAsync(fixture, interleaver: interleaver);
+
+        // 前提：它确实落在窗口里——触发了一次，而且没被当成这一站的录入装货。
+        Assert.Equal(1, interleaver.Fired);
+        Assert.False(await AnsweredByALoadCommandAsync(fixture, InterleavedSubmissionId));
+
+        JsonElement rejection = await RejectionOfAsync(fixture, InterleavedSubmissionId);
+        Assert.Equal("WORKLIST_REVISION_STALE", rejection.GetProperty("problem").GetProperty("reasonCode").GetString());
+        Snapshot empty = Assert.Single(
+            await WorklistsAsync(fixture), item => item.Payload.GetProperty("items").GetArrayLength() == 0);
+        Assert.Equal(empty.Revision, rejection.GetProperty("currentWorklistRevision").GetInt64());
+        string rejectionId = LateSublotSubmission.RejectionMessageId(InterleavedSubmissionId);
+        Assert.Contains(fixture.Peer.Lines, bytes => SentAs(Line(bytes), rejectionId, 1));
+    }
+
+    /// <summary>
+    /// 同一个窗口，但这一站是整趟旅程唯一的一站、期限直接收尾（A 形态）：收尾那一次改动一并答它，号是收尾清单的号。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AnEntryLandingInTheWindowIsAnsweredWhenTheDeadlineClosesTheJourney()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        EntryInterleaver interleaver = new();
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync(commands: interleaver);
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+        fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set(FirstSublot, 7);
+        JourneyRuntimeRow waiting = await ArriveAtPickupAsync(fixture, FirstDemandId);
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, waiting.Stage);
+        await fixture.ProveSlotDoorsClosedAsync();
+        fixture.Clock.Advance(TimeSpan.FromSeconds(10));
+        await fixture.HearFromPeerAsync();
+        interleaver.Arm(fixture, InterleavedSubmissionId, await SublotSubmissionAsync(fixture, waiting, FirstSublot));
+        await TickAndRunAsync(fixture);
+
+        Assert.Equal(1, interleaver.Fired);
+        JourneyRuntimeRow closed = await JourneyOfAsync(fixture, FirstDemandId);
+        Assert.Equal((JourneyRuntimeStage.Completed, "CANCELLED_BY_STATION_TIMEOUT"), (closed.Stage, closed.BlockReasonCode));
+        Assert.Equal(0, await fixture.Context.StationOperations.CountAsync(token));
+
+        JsonElement rejection = await RejectionOfAsync(fixture, InterleavedSubmissionId);
+        Assert.Equal("WORKLIST_REVISION_STALE", rejection.GetProperty("problem").GetProperty("reasonCode").GetString());
+        IReadOnlyList<Snapshot> closure =
+            await AssertClosureStagedAsync(fixture.Context, closed.AgvId, closed.PickupStationId);
+        Assert.Equal(
+            closure.Single(item => item.MessageType == WorklistType).Revision,
+            rejection.GetProperty("currentWorklistRevision").GetInt64());
+        string rejectionId = LateSublotSubmission.RejectionMessageId(InterleavedSubmissionId);
+        Assert.Contains(fixture.Peer.Lines, bytes => SentAs(Line(bytes), rejectionId, 1));
+    }
+
+    /// <summary>
+    /// 第二个取货站挂着两条待做项（乙、丙），一次期限一起结束：两次终结只有最后一次暂存空清单，这一站此前发给车的每一版都退役。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task OneDeadlineEndingTwoEntriesAtTheStopSendsOneEmptyWorklistAndRetiresEveryEarlierVersion()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyStopRow secondPickup = await EndTheSecondPickupByItsDeadlineAsync(fixture, thirdAtTheSecondPickup: true);
+
+        // 前提：丙与乙挂在同一个停靠上，两条都被这一次期限终结。
+        JourneyDemandRow third = await MembershipAsync(fixture, ThirdDemandId);
+        Assert.Equal(secondPickup.StopId, third.PickupStopId);
+        Assert.Equal(JourneyDemandStatuses.Terminated, third.Status);
+
+        Snapshot[] atStop = [.. (await WorklistsAsync(fixture))
+            .Where(item => item.Payload.GetProperty("stationId").GetString() == secondPickup.StationId)
+            .OrderBy(item => item.Revision)];
+        Snapshot empty = Assert.Single(atStop, item => item.Payload.GetProperty("items").GetArrayLength() == 0);
+        Assert.Equal(atStop[^1].MessageId, empty.MessageId);
+        string[] earlier = [.. atStop.Where(item => item.MessageId != empty.MessageId).Select(item => item.MessageId)];
+        Assert.NotEmpty(earlier);
+        Assert.All(
+            await fixture.Context.ProtocolOutbox.AsNoTracking().Where(row => earlier.Contains(row.MessageId)).ToArrayAsync(token),
+            row => Assert.True(row.FencedAt is not null || row.AcknowledgedAt is not null, $"{row.MessageId} 还会被补发。"));
+    }
+
+    /// <summary>
     /// 受理两条需求（第二条在另一个取货站）、第一条在第一站装上车，车到第二个取货站等录入，期限到期那一轮跑完。
     /// 返回第二个取货停靠。
     /// </summary>
     private static async Task<JourneyStopRow> EndTheSecondPickupByItsDeadlineAsync(
-        RuntimeFixture fixture, bool secondUnloadsAtItsOwnStop = false, bool refillFirst = false)
+        RuntimeFixture fixture,
+        bool secondUnloadsAtItsOwnStop = false,
+        bool refillFirst = false,
+        bool thirdAtTheSecondPickup = false,
+        EntryInterleaver? interleaver = null)
     {
-        fixture.Catalog.Set(
-            fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)),
-            fixture.Demand(SecondDemandId, SecondSublot, Now.AddMinutes(-9), area: SecondPickupArea));
-        fixture.BoxCounts.Set(FirstSublot, 7);
-        fixture.BoxCounts.Set(SecondSublot, 7);
-
-        await TickAndRunAsync(fixture);
-        await Batch7ThreeStopJourneyTests.AppendSecondDemandAsync(fixture);
-        if (secondUnloadsAtItsOwnStop)
-        {
-            await GiveTheSecondDemandItsOwnUnloadStopAsync(fixture);
-        }
-        await ArriveAtPickupAsync(fixture, FirstDemandId);
-        await EnterSublotAsync(fixture, FirstDemandId, FirstSublot, FirstSubmissionId);
-        await SettleLoadAsync(fixture, FirstDemandId);
-        await AnswerDepartureSafetyAsync(fixture, FirstDemandId, FirstSafetyResultId);
-        await ArriveAtCurrentStopAsync(fixture, SecondDemandId, "TO_GATE");
-        JourneyStopRow secondPickup = await CurrentStopAsync(fixture, SecondDemandId);
-        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
+        JourneyStopRow secondPickup = await ArriveAtTheSecondPickupAsync(
+            fixture, secondUnloadsAtItsOwnStop, thirdAtTheSecondPickup);
 
         fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
         if (refillFirst)
@@ -368,11 +531,102 @@ public sealed class StopEndedJourneyContinuesTests
         await fixture.ProveSlotDoorsClosedAsync();
         fixture.Clock.Advance(TimeSpan.FromSeconds(10));
         await fixture.HearFromPeerAsync();
+        if (interleaver is not null)
+        {
+            // 录入地址按这一刻的当前停靠算好再武装：拦截器在引擎那一轮里触发，那时不能再用引擎的上下文。
+            object entry = await SublotSubmissionAsync(fixture, await JourneyOfAsync(fixture, FirstDemandId), SecondSublot);
+            interleaver.Arm(fixture, InterleavedSubmissionId, entry);
+        }
         await TickAndRunAsync(fixture);
         Assert.Equal(
             JourneyDemandStatuses.Terminated,
             (await MembershipAsync(fixture, SecondDemandId)).Status);
         return secondPickup;
+    }
+
+    /// <summary>
+    /// 受理两条需求（第二条在另一个取货站）、第一条在第一站装上车，车到第二个取货站等录入。返回第二个取货停靠。
+    /// </summary>
+    private static async Task<JourneyStopRow> ArriveAtTheSecondPickupAsync(
+        RuntimeFixture fixture, bool secondUnloadsAtItsOwnStop = false, bool thirdAtTheSecondPickup = false)
+    {
+        fixture.Catalog.Set(
+            fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)),
+            fixture.Demand(SecondDemandId, SecondSublot, Now.AddMinutes(-9), area: SecondPickupArea),
+            fixture.Demand(ThirdDemandId, ThirdSublot, Now.AddMinutes(-8), area: SecondPickupArea));
+        fixture.BoxCounts.Set(FirstSublot, 7);
+        fixture.BoxCounts.Set(SecondSublot, 7);
+        fixture.BoxCounts.Set(ThirdSublot, 7);
+
+        await TickAndRunAsync(fixture);
+        await Batch7ThreeStopJourneyTests.AppendSecondDemandAsync(fixture);
+        if (thirdAtTheSecondPickup)
+        {
+            await Batch7ThreeStopJourneyTests.AppendDemandAsync(fixture, ThirdDemandId, ThirdSublot, SecondPickupArea, 13);
+        }
+        if (secondUnloadsAtItsOwnStop)
+        {
+            await GiveTheSecondDemandItsOwnUnloadStopAsync(fixture);
+        }
+        await ArriveAtPickupAsync(fixture, FirstDemandId);
+        await EnterSublotAsync(fixture, FirstDemandId, FirstSublot, FirstSubmissionId);
+        await SettleLoadAsync(fixture, FirstDemandId);
+        await AnswerDepartureSafetyAsync(fixture, FirstDemandId, FirstSafetyResultId);
+        await ArriveAtCurrentStopAsync(fixture, SecondDemandId, "TO_GATE");
+        JourneyStopRow secondPickup = await CurrentStopAsync(fixture, SecondDemandId);
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
+        return secondPickup;
+    }
+
+    private const string ThirdDemandId = "10000000-0000-4000-8000-000000000003";
+    private const string ThirdSublot = "SUBLOT-003";
+    private const string InterleavedSubmissionId = "e1000000-0000-4000-8000-000000000001";
+
+    /// <summary>
+    /// 在引擎读完收件箱里的录入之后、期限写锁之前，从另一个上下文落一条录入——审查 S1 说的那个窗口。武装之后只触发一次。
+    /// </summary>
+    /// <remarks>
+    /// 认的是那条读收件箱里 <c>SublotSubmitted</c> 的命令的读取器关闭那一刻：读已经完成、引擎还没进期限事务。插入用另一个上下文
+    /// （同一条内存连接），不碰引擎正在用的那一个。
+    /// </remarks>
+    internal sealed class EntryInterleaver : DbCommandInterceptor
+    {
+        private Func<Task>? _pending;
+
+        public int Fired { get; private set; }
+
+        public void Arm(RuntimeFixture fixture, string messageId, object payload) =>
+            _pending = () => InsertInboxAsync(fixture, messageId, payload);
+
+        public override async ValueTask<InterceptionResult> DataReaderClosingAsync(
+            DbCommand command, DataReaderClosingEventData eventData, InterceptionResult result)
+        {
+            if (_pending is { } insert &&
+                command.CommandText.Contains("ProtocolInbox", StringComparison.Ordinal) &&
+                command.CommandText.Contains("SublotSubmitted", StringComparison.Ordinal))
+            {
+                _pending = null;
+                Fired++;
+                await insert();
+            }
+            return result;
+        }
+    }
+
+    /// <summary>同 <c>Batch7StopDrivenAdvanceDriver.AddInboxAsync</c>，但走另一个上下文。</summary>
+    internal static async Task InsertInboxAsync(RuntimeFixture fixture, string messageId, object payload)
+    {
+        await using ControlServerDbContext other = fixture.OpenConnectionContext();
+        other.ProtocolInbox.Add(new ProtocolInboxRow
+        {
+            MessageId = messageId,
+            MessageType = "SublotSubmitted",
+            RequestJson = BeforeSublotEnvelope(fixture, messageId, "SublotSubmitted", generation: 1, payload),
+            ContentHash = new string('a', 64),
+            FirstResponseJson = "{}",
+            ReceivedAt = fixture.Clock.GetUtcNow()
+        });
+        await other.SaveChangesAsync(TestContext.Current.CancellationToken);
     }
 
     private static string SecondUnloadStopId(JourneyRuntimeRow runtime) => $"{runtime.JourneyId}|SECOND-UNLOAD";
@@ -410,6 +664,46 @@ public sealed class StopEndedJourneyContinuesTests
             .SingleAsync(row => row.DemandId == SecondDemandId, token);
         second.UnloadStopId = stopId;
         await fixture.Context.SaveChangesAsync(token);
+    }
+
+    /// <summary>对这条录入的拒收报文：恰好一条，返回它的载荷。</summary>
+    private static async Task<JsonElement> RejectionOfAsync(RuntimeFixture fixture, string submissionId)
+    {
+        JsonElement[] rejections = await RejectionsOfAsync(fixture, submissionId);
+        return Assert.Single(rejections);
+    }
+
+    /// <summary>发件箱里 correlationId 是这条录入的全部 SublotRejected 的载荷。</summary>
+    private static async Task<JsonElement[]> RejectionsOfAsync(RuntimeFixture fixture, string submissionId)
+    {
+        string[] rows = await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .Where(row => row.MessageType == "SublotRejected")
+            .Select(row => row.PayloadJson)
+            .ToArrayAsync(TestContext.Current.CancellationToken);
+        List<JsonElement> matching = [];
+        foreach (string json in rows)
+        {
+            using JsonDocument document = JsonDocument.Parse(json);
+            if (document.RootElement.GetProperty("correlationId").GetString() == submissionId)
+            {
+                matching.Add(document.RootElement.GetProperty("payload").Clone());
+            }
+        }
+        return [.. matching];
+    }
+
+    /// <summary>这条录入是否被一条装货命令答复了（命令的 correlationId 就是它）。</summary>
+    private static async Task<bool> AnsweredByALoadCommandAsync(RuntimeFixture fixture, string submissionId)
+    {
+        string[] commands = await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .Where(row => row.MessageType == "SlotOperationCommand")
+            .Select(row => row.PayloadJson)
+            .ToArrayAsync(TestContext.Current.CancellationToken);
+        return commands.Any(json =>
+        {
+            using JsonDocument document = JsonDocument.Parse(json);
+            return document.RootElement.GetProperty("correlationId").GetString() == submissionId;
+        });
     }
 
     private static async Task<Snapshot[]> WorklistsAsync(RuntimeFixture fixture) =>

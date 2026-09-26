@@ -18,3 +18,33 @@ M1 diff=1	1	src/ControlServer.Host/Runtime/StopEndWorklist.cs build=ok ['Failed!
   Failed ControlServer.Tests.StopEndedJourneyContinuesTests.AnEndedStopTheJourneyLeavesWithCargoSendsTheVehicleAnEmptyWorklist [2 s]
   Failed ControlServer.Tests.StopEndedJourneyContinuesTests.WhenTheNextStopCarriesNoneOfTheEndedDemandsItStillStartsAboveTheEmptyWorklist [4 s]
   Failed ControlServer.Tests.StopEndedJourneyContinuesTests.AfterAReconnectTheEmptyWorklistIsReplayedAndTheOldOneIsNot [2 s]
+
+## 审查之后的一轮（M5 重做、M6～M9、M1 重跑）
+M5 diff=189	6	src/ControlServer.Host/Runtime/LateSublotSubmission.cs build=ok ['Failed!  - Failed:     1, Passed:    37, Skipped:     0, Total:    38, Duration: 28 s - ControlServer.Tests.dll (net8.0)']
+  Failed ControlServer.Tests.StopEndedJourneyContinuesTests.AfterACancellationEndsTheStopALateEntryIsRejectedAsStaleAtTheEmptyWorklistsRevision [2 s]
+      Assert.Single() Failure: The collection was empty
+M6 diff=4	0	src/ControlServer.Host/Runtime/StopEndWorklist.cs build=ok ['Failed!  - Failed:     1, Passed:    37, Skipped:     0, Total:    38, Duration: 28 s - ControlServer.Tests.dll (net8.0)']
+  Failed ControlServer.Tests.StopEndedJourneyContinuesTests.AnEntryLandingBetweenTheInboxReadAndTheDeadlineLockIsAnsweredWhenTheStopEnds [2 s]
+      Assert.Single() Failure: The collection was empty
+M7 diff=8	0	src/ControlServer.Host/Runtime/JourneyClosure.cs build=ok ['Failed!  - Failed:     1, Passed:    37, Skipped:     0, Total:    38, Duration: 27 s - ControlServer.Tests.dll (net8.0)']
+  Failed ControlServer.Tests.StopEndedJourneyContinuesTests.AnEntryLandingInTheWindowIsAnsweredWhenTheDeadlineClosesTheJourney [87 ms]
+      Assert.Single() Failure: The collection was empty
+M8 diff=6	0	src/ControlServer.Host/Runtime/StopEndWorklist.cs build=ok ['Failed!  - Failed:     1, Passed:    37, Skipped:     0, Total:    38, Duration: 28 s - ControlServer.Tests.dll (net8.0)']
+  Failed ControlServer.Tests.StopEndedJourneyContinuesTests.AnEntryLandingBetweenTheInboxReadAndTheDeadlineLockIsAnsweredWhenTheStopEnds [2 s]
+      Assert.Contains() Failure: Filter not matched in collection
+M9 diff=1	2	src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs build=ok ['Failed!  - Failed:     1, Passed:    37, Skipped:     0, Total:    38, Duration: 28 s - ControlServer.Tests.dll (net8.0)']
+  Failed ControlServer.Tests.StopEndedJourneyContinuesTests.AfterACancellationEndsTheStopALateEntryIsRejectedAsStaleAtTheEmptyWorklistsRevision [2 s]
+      Assert.Contains() Failure: Filter not matched in collection
+M1 diff=7	1	src/ControlServer.Host/Runtime/StopEndWorklist.cs build=ok ['Failed!  - Failed:     6, Passed:    32, Skipped:     0, Total:    38, Duration: 28 s - ControlServer.Tests.dll (net8.0)']
+  Failed ControlServer.Tests.StopEndedJourneyContinuesTests.AfterACancellationEndsTheStopALateEntryIsRejectedAsStaleAtTheEmptyWorklistsRevision [2 s]
+      Assert.Contains() Failure: Filter not matched in collection
+  Failed ControlServer.Tests.StopEndedJourneyContinuesTests.AnEndedStopTheJourneyLeavesWithCargoSendsTheVehicleAnEmptyWorklist [2 s]
+      Assert.Contains() Failure: Filter not matched in collection
+  Failed ControlServer.Tests.StopEndedJourneyContinuesTests.WhenTheNextStopCarriesNoneOfTheEndedDemandsItStillStartsAboveTheEmptyWorklist [3 s]
+      卸货站清单第 3 号没有越过空清单的第 3 号。
+  Failed ControlServer.Tests.StopEndedJourneyContinuesTests.AfterAReconnectTheEmptyWorklistIsReplayedAndTheOldOneIsNot [2 s]
+      Assert.Contains() Failure: Filter not matched in collection
+  Failed ControlServer.Tests.StopEndedJourneyContinuesTests.AnEntryLandingBetweenTheInboxReadAndTheDeadlineLockIsAnsweredWhenTheStopEnds [2 s]
+      Assert.Contains() Failure: Filter not matched in collection
+  Failed ControlServer.Tests.StopEndedJourneyContinuesTests.ARefillBeforeTheStopEndsAndTheEmptyWorklistStackAndTheRevisionsStillOnlyAdvance [2 s]
+      下一站首号 4 没有越过空清单的第 4 号。

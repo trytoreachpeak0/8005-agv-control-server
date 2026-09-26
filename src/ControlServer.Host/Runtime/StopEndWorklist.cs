@@ -119,6 +119,10 @@ internal static class StopEndWorklist
             new CurrentStopWorklistProjection(stop.StationId, revision, null, null, []),
             endedAt,
             cancellationToken).ConfigureAwait(false);
+        // 这一站上已经落库、却没人答的扫码（引擎读收件箱与这把写锁之间到的，或输给了扫码前取消的），同一次改动里答过时。
+        await LateSublotSubmission.StageForUnansweredEntriesAsync(
+            dbContext, LateSublotSubmission.AddressOf(staged, runtime, stop), revision, session.SessionGeneration, endedAt,
+            cancellationToken).ConfigureAwait(false);
         return true;
     }
 
@@ -145,6 +149,8 @@ internal static class StopEndWorklist
         {
             // 留在发件箱里：引擎每轮顶上的补发按白名单送它。
         }
+        // 空清单之后：同一次改动里答过时的那些扫码。
+        await LateSublotSubmission.SendStaleAnswersAsync(publisher, dbContext, agvId, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<string?> PendingIdAsync(
