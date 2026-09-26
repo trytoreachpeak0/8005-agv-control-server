@@ -321,7 +321,14 @@ public sealed class OnboardRecoveryCoordinator(
         // 这条结果若结束了旅程里最后一条需求，收尾快照已随它那次保存落库，在答复之后发（control-server#323）。
         await JourneyClosure.SendAsync(publisher, dbContext, RequiredString(root, "agvId"), cancellationToken)
             .ConfigureAwait(false);
+        // 这条结果若结束了一站而旅程继续，那张空清单同样随它那次保存落库（control-server#324）。
+        await StopEndWorklist.SendAsync(publisher, dbContext, RequiredString(root, "agvId"), cancellationToken)
+            .ConfigureAwait(false);
     }
+
+    /// <summary>迟到扫码若得到了过时答复（control-server#324），在本条应答之后发出去。</summary>
+    public Task SendLateSublotRejectionAsync(JsonElement root, CancellationToken cancellationToken) =>
+        LateSublotSubmission.SendAsync(publisher, dbContext, RequiredString(root, "messageId"), cancellationToken);
 
     public async Task ReplayPendingCommandsAsync(
         string agvId,
@@ -669,9 +676,8 @@ public sealed class OnboardRecoveryCoordinator(
             demandId,
             slotOperationAttemptId = attemptId,
             slots,
-            problem = authorized ? null : Problem(
-                ServerReasonCodes.ActionNotAllowedInState, "payload.demandId",
-                "Load cancellation is not safe in the current state.")
+            problem = authorized ? null : RefusedCancellationProblem(
+                demand, "payload.demandId", "Load cancellation is not safe in the current state.")
         });
     }
 
@@ -715,6 +721,8 @@ public sealed class OnboardRecoveryCoordinator(
         bool authorized = recorded is not null
             ? recorded.AgvId == agvId
             : await CancellationBeforeSublotAllowedAsync(demandId, agvId, cancellationToken).ConfigureAwait(false);
+        AcceptedDemandRow? demand = authorized ? null : await dbContext.AcceptedDemands.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
         if (authorized)
         {
             await UpsertSimpleWorkflowAsync(
@@ -728,11 +736,33 @@ public sealed class OnboardRecoveryCoordinator(
             demandId,
             slotOperationAttemptId = (string?)null,
             slots = Array.Empty<int>(),
-            problem = authorized ? null : Problem(
-                ServerReasonCodes.ActionNotAllowedInState, "payload.slotOperationAttemptId",
+            problem = authorized ? null : RefusedCancellationProblem(
+                demand, "payload.slotOperationAttemptId",
                 "Load cancellation before a sublot entry is not allowed in the current state.")
         });
     }
+
+    /// <summary>
+    /// 拒绝一次装货取消时给车的原因（control-server#324）：这条需求已经结束——它所在的那一站被期限、取消或补偿结束了，
+    /// 或者整趟已经收尾——就是 <c>WORKLIST_REVISION_STALE</c>；其余照旧 <c>ACTION_NOT_ALLOWED_IN_STATE</c>。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 车上按的是它手里那一版清单上的「取消装货」。需求已经结束，说明那一版清单过时了：服务端此后发过更高号的清单（空清单或收尾快照），
+    /// 原因码据实说「你那一版过时了」。先前一律答 <c>ACTION_NOT_ALLOWED_IN_STATE</c>，车载端据此显示「请检查授权、车辆停稳信号和
+    /// 服务端状态」，把操作员引去查三样都没问题的东西。
+    /// </para>
+    /// <para>
+    /// <b>判据是「需求已终结」，不是「期限到了」或阶段。</b>车还在路上时这一站还没开始，谈不上过时，仍是
+    /// <c>ACTION_NOT_ALLOWED_IN_STATE</c>；需求还开着而这一刻不能取消（已下装货命令、已有一条取消开着）同样如此。
+    /// </para>
+    /// </remarks>
+    private static object RefusedCancellationProblem(AcceptedDemandRow? demand, string fieldPath, string displayMessage) =>
+        demand?.Status is DemandExecutionStatus.Cancelled or DemandExecutionStatus.Succeeded
+            ? Problem(
+                ServerReasonCodes.WorklistRevisionStale, fieldPath,
+                "The worklist this cancellation was made from is no longer current: the demand has already ended.")
+            : Problem(ServerReasonCodes.ActionNotAllowedInState, fieldPath, displayMessage);
 
     /// <summary>
     /// 操作员指名的那一条需求，此刻能不能在扫码之前取消（票面第 9 条，批次7-06，control-server#211）。

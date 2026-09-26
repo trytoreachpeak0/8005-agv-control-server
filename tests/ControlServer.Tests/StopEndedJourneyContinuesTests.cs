@@ -187,7 +187,6 @@ public sealed class StopEndedJourneyContinuesTests
             }),
             Connection(fixture),
             token);
-        await processor.FlushDeferredOutboundAsync(Connection(fixture), token);
 
         Assert.Equal("DurableAck", FirstLineType(response));
         ProtocolOutboxRow[] rejections = await fixture.Context.ProtocolOutbox.AsNoTracking()
@@ -281,8 +280,14 @@ public sealed class StopEndedJourneyContinuesTests
 
     private static string Line(byte[] bytes) => System.Text.Encoding.UTF8.GetString(bytes);
 
-    private static OnboardConnectionState Connection(RuntimeFixture fixture) =>
-        JourneyRuntimeWorkerLoadCancellationBeforeSublotTests.BeforeSublotConnection(fixture, generation: 1);
+    /// <summary>握手已完成的连接：真实连接在恢复报告被答复之后恒为如此，答复只在那之后发。</summary>
+    private static OnboardConnectionState Connection(RuntimeFixture fixture)
+    {
+        OnboardConnectionState state =
+            JourneyRuntimeWorkerLoadCancellationBeforeSublotTests.BeforeSublotConnection(fixture, generation: 1);
+        state.HandshakeCompleted = true;
+        return state;
+    }
 
     private static object Operator(RuntimeFixture fixture) => new
     {

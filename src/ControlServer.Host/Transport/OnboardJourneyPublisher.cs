@@ -239,6 +239,56 @@ public sealed class OnboardJourneyPublisher(
             cancellationToken);
     }
 
+    /// <summary>
+    /// 同 <see cref="PublishSublotRejectedAsync"/> 的信封与载荷，但只暂存进调用方那一次还没保存的改动——不保存、不发送（control-server#324）。
+    /// </summary>
+    /// <remarks>
+    /// 给入站那一侧答迟到的扫码用：它在收件箱的写事务里判「这一站已经结束」，答复必须与那次判定一起提交，而发送要等本条报文自己的应答
+    /// 写出去之后（握手之外、应答之后，同触发发送那条链）。静态、不带对端，理由同收尾快照的暂存方法。
+    /// </remarks>
+    public static Task<bool> StageSublotRejectedAsync(
+        WireToGateStore store,
+        string messageId,
+        string submittedMessageId,
+        string agvId,
+        long sessionGeneration,
+        SublotRejection rejection,
+        DateTimeOffset createdAt,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(store);
+        ArgumentNullException.ThrowIfNull(rejection);
+        ValidateUuid(messageId, nameof(messageId));
+        ValidateUuid(submittedMessageId, nameof(submittedMessageId));
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+        ArgumentOutOfRangeException.ThrowIfNegative(sessionGeneration);
+        if (rejection.DemandId is not null)
+        {
+            ValidateUuid(rejection.DemandId, nameof(rejection.DemandId));
+        }
+        ValidateUuid(rejection.OperationSessionId, nameof(rejection.OperationSessionId));
+        ArgumentException.ThrowIfNullOrWhiteSpace(rejection.RejectedSublot);
+        ArgumentOutOfRangeException.ThrowIfNegative(rejection.CurrentWorklistRevision);
+        ArgumentNullException.ThrowIfNull(rejection.Problem);
+
+        string wire = SerializeWire(
+            "SublotRejected",
+            messageId,
+            submittedMessageId,
+            agvId,
+            sessionGeneration,
+            createdAt,
+            new
+            {
+                rejection.DemandId,
+                rejection.OperationSessionId,
+                rejection.Problem,
+                rejection.CurrentWorklistRevision,
+                rejection.RejectedSublot
+            });
+        return store.StageOutboundEnvelopeAsync(messageId, "SublotRejected", wire, createdAt, cancellationToken);
+    }
+
     public Task PublishSlotOperationCommandAsync(
         string messageId,
         string agvId,

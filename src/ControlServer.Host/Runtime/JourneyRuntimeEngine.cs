@@ -2066,7 +2066,8 @@ public sealed partial class JourneyRuntimeEngine(
     /// 一条待做的需求都没有时这里什么也不发：本停靠做完了，调用方接着往下一个停靠推，下一个停靠到站时发它自己那一版。
     /// 这是时机上的选择，不是协议不许——<b>这里曾写着空清单「违反 schema」，那是错的</b>（control-server#323）：<c>minItems: 1</c>
     /// 只在录入请求的 <c>expectedSublots</c> 上，<c>CurrentStopWorklistSnapshot.items</c> 没有下限，空清单是合法报文。
-    /// 旅程收尾时的空清单就由 <see cref="JourneyClosure"/> 发；本站结束而旅程继续的那种（B 形态）由 control-server#324 接。
+    /// 旅程收尾时的空清单就由 <see cref="JourneyClosure"/> 发；本站被期限、取消或补偿结束而旅程继续的那种（B 形态）由
+    /// <see cref="StopEndWorklist"/> 发（control-server#324）。正常装完最后一条、车直接离站的那一刻仍然不发。
     /// </para>
     /// </remarks>
     private async Task PublishStopWorklistAsync(
@@ -4328,6 +4329,11 @@ public sealed partial class JourneyRuntimeEngine(
         {
             await JourneyClosure.SendAsync(publisher, dbContext, runtime.AgvId, cancellationToken).ConfigureAwait(false);
         }
+        else
+        {
+            // 旅程继续而这一站结束了：那张空清单随上面那次保存落库，提交之后发（control-server#324）。
+            await StopEndWorklist.SendAsync(publisher, dbContext, runtime.AgvId, cancellationToken).ConfigureAwait(false);
+        }
         checkpointWaits.Clear(runtime.VehicleKey);
         LogStationDeadlineEndedStop(logger, runtime.AgvId, runtime.DemandId, deadline, null);
         return true;
@@ -4479,6 +4485,11 @@ public sealed partial class JourneyRuntimeEngine(
         if (runtime.Stage == JourneyRuntimeStage.Completed)
         {
             await JourneyClosure.SendAsync(publisher, dbContext, runtime.AgvId, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            // 旅程继续而这一站结束了：那张空清单随上面那次保存落库，提交之后发（control-server#324）。
+            await StopEndWorklist.SendAsync(publisher, dbContext, runtime.AgvId, cancellationToken).ConfigureAwait(false);
         }
         checkpointWaits.Clear(runtime.VehicleKey);
         LogDeterminateLoadFailureSettled(

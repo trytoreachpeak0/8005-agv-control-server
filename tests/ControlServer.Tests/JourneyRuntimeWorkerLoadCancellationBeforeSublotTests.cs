@@ -491,6 +491,7 @@ public sealed class JourneyRuntimeWorkerLoadCancellationBeforeSublotTests
         OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
             connection, new WireToGateStore(connection), fixture.Clock, new ConfigurationBuilder().Build(), fixture.Peer);
         OnboardConnectionState state = BeforeSublotConnection(fixture, generation: 1);
+        state.HandshakeCompleted = true;
         JourneyRuntimeRow waiting = await fixture.RuntimeAsync();
         fixture.Clock.Advance(TimeSpan.FromSeconds(30));
         await fixture.HearFromPeerAsync();
@@ -500,7 +501,6 @@ public sealed class JourneyRuntimeWorkerLoadCancellationBeforeSublotTests
         string entry = SublotEntry(fixture, waiting, "SUBLOT-001");
         string submissionId = JsonDocument.Parse(entry).RootElement.GetProperty("messageId").GetString()!;
         string ack = await processor.ProcessAsync(entry, state, token);
-        await processor.FlushDeferredOutboundAsync(state, token);
 
         Assert.Equal("DurableAck", FirstLineType(ack));
         ProtocolOutboxRow rejection = Assert.Single(await fixture.Context.ProtocolOutbox.AsNoTracking()
@@ -538,11 +538,11 @@ public sealed class JourneyRuntimeWorkerLoadCancellationBeforeSublotTests
         OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
             connection, new WireToGateStore(connection), fixture.Clock, new ConfigurationBuilder().Build(), fixture.Peer);
         OnboardConnectionState state = BeforeSublotConnection(fixture, generation: 1);
+        state.HandshakeCompleted = true;
         JourneyRuntimeRow waiting = await fixture.RuntimeAsync();
         fixture.Clock.Advance(TimeSpan.FromSeconds(30));
 
         string ack = await processor.ProcessAsync(SublotEntry(fixture, waiting, "SUBLOT-001"), state, token);
-        await processor.FlushDeferredOutboundAsync(state, token);
         Assert.Equal("DurableAck", FirstLineType(ack));
         Assert.DoesNotContain("SublotRejected", await fixture.OutboxTypesAsync());
 

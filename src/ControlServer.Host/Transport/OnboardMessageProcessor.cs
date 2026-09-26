@@ -164,9 +164,15 @@ public sealed partial class OnboardMessageProcessor(
                                      messageType == "OperationResult" ||
                                      messageType == "SlotOperationCommandRejected");
         bool replaysPendingRecovery = messageType == "RecoveryStateReport";
-        if ((triggersRecoverySend || replaysPendingRecovery) && state.DeferOutboundUntilResponseWritten)
+        // 迟到扫码的过时答复（control-server#324）走同一个时机：握手之外、本条应答之后。
+        bool answersLateSublot = state.HandshakeCompleted && messageType == "SublotSubmitted";
+        if ((triggersRecoverySend || replaysPendingRecovery || answersLateSublot) && state.DeferOutboundUntilResponseWritten)
         {
             state.DeferredRecoveryLine = line;
+        }
+        else if (answersLateSublot)
+        {
+            await recoveryCoordinator.SendLateSublotRejectionAsync(root, cancellationToken).ConfigureAwait(false);
         }
         else if (triggersRecoverySend)
         {
@@ -260,6 +266,10 @@ public sealed partial class OnboardMessageProcessor(
             messageType == "SlotOperationCommandRejected")
         {
             await recoveryCoordinator.SendTriggeredCommandAsync(root, cancellationToken).ConfigureAwait(false);
+        }
+        else if (messageType == "SublotSubmitted")
+        {
+            await recoveryCoordinator.SendLateSublotRejectionAsync(root, cancellationToken).ConfigureAwait(false);
         }
         else if (messageType == "RecoveryStateReport")
         {
@@ -425,7 +435,12 @@ public sealed partial class OnboardMessageProcessor(
                 }
             case "OperationProgress":
             case "PreDepartureSafetyCheckResult":
+                return DurableAck(messageType, messageId, agvId, generation, contentHash);
             case "SublotSubmitted":
+                // 这一站已经结束之后才到的扫码，在这里答过时，否则永远没人回答（control-server#324）；答复在应答之后发。
+                // 这一站仍在等录入时什么也不做，留给引擎——见 LateSublotSubmission。
+                await LateSublotSubmission.StageRejectionIfStopEndedAsync(
+                    dbContext, root, timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
                 return DurableAck(messageType, messageId, agvId, generation, contentHash);
             case "SlotOperationCommandRejected":
                 // A refused resume command closes its recovery session (control-server#187); every other

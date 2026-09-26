@@ -237,7 +237,7 @@ internal static class JourneyClosure
     /// 代价是每次收尾把这三类快照整表读一遍。一趟旅程只收尾一次；引擎的 <c>LastSentPlanAsync</c> 对追加过的旅程每轮都这么读。
     /// </para>
     /// </remarks>
-    private static async Task<long?> HighestSentRevisionAsync(
+    internal static async Task<long?> HighestSentRevisionAsync(
         ControlServerDbContext dbContext,
         string agvId,
         string messageType,
