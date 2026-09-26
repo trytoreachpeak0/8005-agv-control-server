@@ -106,6 +106,7 @@ public sealed class CancelledDemandLoadCommandTests
         Assert.Equal(
             ["WORKLIST_REVISION_STALE"],
             rejections.Select(item => item.GetProperty("problem").GetProperty("reasonCode").GetString()!).ToArray());
+        AssertTheRuntimeYieldedOnceFor(fixture, SecondDemandId);
     }
 
     /// <summary>
@@ -144,6 +145,7 @@ public sealed class CancelledDemandLoadCommandTests
         Assert.Equal(
             ["SUBLOT_NOT_IN_DISPATCH_SCOPE"],
             rejections.Select(item => item.GetProperty("problem").GetProperty("reasonCode").GetString()!).ToArray());
+        AssertTheRuntimeYieldedOnceFor(fixture, SecondDemandId);
     }
 
     /// <summary>
@@ -183,6 +185,89 @@ public sealed class CancelledDemandLoadCommandTests
                     .Status));
         Assert.Null(await fixture.Context.StationOperations.AsNoTracking()
             .SingleOrDefaultAsync(row => row.DemandId == SecondDemandId, token));
+        AssertTheRuntimeYieldedOnceFor(fixture, SecondDemandId);
+    }
+
+    /// <summary>
+    /// 同一个窗口，插进来的是同站<b>丙</b>的扫码前取消被授权（它只用丙自己子批的录入去挡，乙的录入挡不住它）。乙的需求、归属、
+    /// 阶段都不动，只有「本站没有开着的扫码前取消」这一条挡得住：取消要车证明整排仓位是空的，这时给乙开仓就是在证明进行中往里装。
+    /// 这一轮不给乙下命令，本站被扣住直到车报结果。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task ACancellationOfAnotherDemandAtTheStopAuthorizedInTheWindowHoldsTheStopAndNothingIsLoaded()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        // 触发点比另外几条晚：取消是「开」而不是「结」，落在锁外那次查取消之前，就被那次查取消挡掉，走不到写锁里的复核
+        // （第一版这样写，前提断言红在「引擎没有让开」上）。所以挂在复核录入那一步读花篮容量表的那条查询上——它在锁外查取消之后、
+        // 进写锁之前。
+        EntryInterleaver interleaver = new(text => text.Contains("PackageCapacityRules", StringComparison.Ordinal));
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync(commands: interleaver);
+        JourneyStopRow secondPickup = await ArriveAtTheSecondPickupAsync(fixture, thirdAtTheSecondPickup: true);
+        JourneyRuntimeRow runtime = await JourneyOfAsync(fixture, FirstDemandId);
+        await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+        OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+            connection, new WireToGateStore(connection), fixture.Clock, new ConfigurationBuilder().Build(), fixture.Peer);
+        OnboardConnectionState state = Connection(fixture);
+        await processor.ProcessAsync(
+            Envelope(fixture, EntryId, "SublotSubmitted", SecondStopEntry(fixture, secondPickup, runtime, SecondSublot)),
+            state,
+            token);
+        string? authorization = null;
+        interleaver.Arm(async () => authorization = await processor.ProcessAsync(
+            Envelope(fixture, JourneyPlanBuilder.StableGuid(ThirdCancellationId, "request"), "LoadCancellationStartRequested", new
+            {
+                cancellationId = ThirdCancellationId,
+                demandId = ThirdDemandId,
+                slotOperationAttemptId = (string?)null,
+                @operator = new { operatorId = "OP-001", verificationMethod = "BADGE", verifiedAt = fixture.Clock.GetUtcNow() },
+                reason = "Nothing to load at this stop."
+            }),
+            state,
+            token));
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+        fixture.Context.ChangeTracker.Clear();
+
+        // 前提：交错发生了，丙的取消确实在窗口里被授权。
+        Assert.Equal(1, interleaver.Fired);
+        Assert.Equal("AUTHORIZED", FirstLinePayload(authorization!).GetProperty("decision").GetString());
+        Assert.False(await AnsweredByALoadCommandAsync(fixture, EntryId), "丙的取消开着时，乙被下了装货命令。");
+        // 本站被扣住：再跑一轮仍不装，乙仍待装、丙的取消仍开着，旅程仍在等录入。
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+        fixture.Context.ChangeTracker.Clear();
+        Assert.False(await AnsweredByALoadCommandAsync(fixture, EntryId), "取消开着的第二轮，乙被下了装货命令。");
+        Assert.Equal(
+            (JourneyRuntimeStage.AwaitingSublot, JourneyDemandStatuses.PendingLoad, RecoveryWorkflowState.AwaitingResult),
+            ((await JourneyOfAsync(fixture, FirstDemandId)).Stage,
+                (await MembershipAsync(fixture, SecondDemandId)).Status,
+                (await fixture.Context.RecoveryWorkflows.AsNoTracking().SingleAsync(row => row.WorkflowId == ThirdCancellationId, token))
+                    .State));
+        AssertTheRuntimeYieldedOnceFor(fixture, SecondDemandId);
+    }
+
+    private const string ThirdCancellationId = "d6000000-0000-4000-8000-000000000021";
+
+    /// <summary>
+    /// 前提断言，防空真：引擎确实在复核那一步让开了一次、让的是乙（事件 2190，<c>LogLoadYieldedToEndedDemand</c>）。
+    /// </summary>
+    /// <remarks>
+    /// 拦截器认的是这一轮里第一条同时含 <c>ProtocolOutbox</c> 与 <c>SlotOperationCommand</c> 的读取。哪天这一轮更早处多出一条同样的查询，
+    /// 触发点前移到引擎认定录入之前，「没下命令」就会因为引擎读到了新状态而恒真，这条断言则会因为没有让开而红。
+    /// 放在各用例末尾而不是触发之后：去掉修复时，每一格要先红在它自己的后果上。
+    /// <c>RuntimeFixture.EngineLog</c> 只记级别与正文、不记事件号，所以按正文认；源码里只有这一个事件说「no load was commanded」。
+    /// </remarks>
+    private static void AssertTheRuntimeYieldedOnceFor(RuntimeFixture fixture, string demandId)
+    {
+        string[] yields =
+        [
+            .. fixture.EngineLog.Entries
+                .Select(entry => entry.Message)
+                .Where(message => message.Contains("no load was commanded", StringComparison.Ordinal))
+        ];
+        string single = Assert.Single(yields);
+        Assert.Contains(demandId, single, StringComparison.Ordinal);
     }
 
     /// <summary>

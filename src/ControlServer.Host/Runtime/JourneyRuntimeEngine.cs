@@ -119,8 +119,9 @@ public sealed partial class JourneyRuntimeEngine(
         LoggerMessage.Define<string, string, string>(
             LogLevel.Information,
             new EventId(2190, nameof(LogLoadYieldedToEndedDemand)),
-            "Vehicle {AgvId}'s sublot entry {SubmissionId} was read before demand {DemandId} ended or its stop's " +
-            "cancellation settled; no load was commanded, and the next iteration judges the entry afresh.");
+            "Vehicle {AgvId}'s sublot entry {SubmissionId} for demand {DemandId} lost to a change made while the iteration " +
+            "read it (the demand ended or was held for recovery, or a cancellation opened at its stop); no load was " +
+            "commanded, and the next iteration judges the entry afresh.");
     private static readonly Action<ILogger, string, string, string, DateTimeOffset, Exception?> LogStationTimeoutDoorNotClosed =
         LoggerMessage.Define<string, string, string, DateTimeOffset>(
             LogLevel.Warning,
@@ -983,10 +984,19 @@ public sealed partial class JourneyRuntimeEngine(
                 //
                 // 输的一方这一轮不装也不答，下一轮按新读重判：本站已被那次终结结束时，它已一并答了这条录入 STALE
                 // （control-server#324），下一轮按「已拒收」跳过；本站还有别的待做项时，下一轮按新游标判它不在派车范围。
-                // 两条都是没有竞态时这条录入本来会得到的答复。
-                await using (IDbContextTransaction? transaction = dbContext.Database.CurrentTransaction is null
-                                 ? await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
-                                 : null)
+                // 两条都是没有竞态时这条录入本来会得到的答复。同站另一条需求的扫码前取消在这期间开了的，下一轮由上面锁外那次
+                // 查取消扣住本站，直到车报结果。
+                //
+                // 这一支自己开写事务，而且必须是它自己的：命令在提交之后才上线，有外层事务就意味着上线早于外层提交，车可能照一条
+                // 最后没落库的命令开仓。今天没有这样的调用者，所以直接拒绝，而不是悄悄加入。
+                if (dbContext.Database.CurrentTransaction is not null)
+                {
+                    throw new InvalidOperationException(
+                        "A load is commanded only from a write transaction of its own: the command goes out after that " +
+                        "transaction commits, which an outer transaction would postpone past the send.");
+                }
+                await using (IDbContextTransaction transaction = await dbContext.Database
+                                 .BeginTransactionAsync(cancellationToken).ConfigureAwait(false))
                 {
                     if (!await EnteredDemandStillLoadableAsync(runtime, stops, entered, cancellationToken)
                             .ConfigureAwait(false))
@@ -1002,10 +1012,7 @@ public sealed partial class JourneyRuntimeEngine(
                             runtime.UpdatedAt = now;
                             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                         }
-                        if (transaction is not null)
-                        {
-                            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-                        }
+                        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
                         LogLoadYieldedToEndedDemand(logger, runtime.AgvId, sublot.MessageId, entered.Demand.DemandId, null);
                         return;
                     }
@@ -1023,10 +1030,7 @@ public sealed partial class JourneyRuntimeEngine(
                         stops.CurrentSublotRequestMessageId(runtime.WorklistRevision), now, cancellationToken).ConfigureAwait(false);
                     SetStage(runtime, JourneyRuntimeStage.AwaitingLoadResult, now);
                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-                    if (transaction is not null)
-                    {
-                        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-                    }
+                    await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
                 }
                 // 提交之后才上线：车只照已落库的命令开仓。
                 await publisher.SendPersistedAsync(entered.Membership.LoadCommandMessageId, cancellationToken)
@@ -3902,7 +3906,6 @@ public sealed partial class JourneyRuntimeEngine(
         return false;
     }
 
-    /// <summary>被跟踪的那一份归属行，用来写状态；游标读出来的是 <c>AsNoTracking</c> 的。</summary>
     /// <summary>
     /// 在写锁里重读：被录入的那条需求此刻还能不能装（control-server#362）。旅程仍在这个停靠等录入、需求仍是 Accepted、
     /// 它的归属仍是游标读到的那个状态、这个停靠上没有开着的扫码前取消——四条都成立才下命令。
@@ -3912,10 +3915,18 @@ public sealed partial class JourneyRuntimeEngine(
     /// 调用方在 BEGIN IMMEDIATE 里调用，所以这里全部读库、不读被跟踪的实体：被跟踪的那一份是这一轮开头读的，正是要复核的旧读。
     /// </para>
     /// <para>
-    /// <b>四条单去一条都有用例仍绿，那不是多余。</b>入站能插进来的写法有两种，各被不止一条挡住：终结
-    /// （<see cref="PickupStopTermination"/>，扫码前取消的 ALL_EMPTY 走它）同写需求 Cancelled 与归属 TERMINATED、阶段不动；取消结果证明
-    /// 不了空（<c>OnboardRecoveryCoordinator.KeepDemandAndJourneyBlockedAsync</c>）只写需求 RecoveryRequired 并把旅程转 Blocked、归属不动。
-    /// 所以终结靠「需求或归属」，证明不了空靠「需求或阶段」；删掉任意两条，就有一种写法漏过去（evidence/cs362 反向验证 R23、R24）。
+    /// 入站能插进来、这四条要挡的写法有三种：
+    /// </para>
+    /// <list type="bullet">
+    /// <item>乙自己的终结（<see cref="PickupStopTermination"/>，扫码前取消的 ALL_EMPTY 走它）：需求 Cancelled、归属 TERMINATED，阶段不动。</item>
+    /// <item>乙的取消结果证明不了空（<c>OnboardRecoveryCoordinator.KeepDemandAndJourneyBlockedAsync</c>）：需求 RecoveryRequired、旅程 Blocked，
+    /// 归属不动。</item>
+    /// <item>同站另一条需求的扫码前取消在锁外查过之后被授权（它只用那条需求自己的录入去挡）：乙的需求、归属、阶段<b>都不动</b>，
+    /// 只有第四条挡得住——取消要车证明整排仓位是空的，这时给乙开仓就是在证明进行中往里装。</item>
+    /// </list>
+    /// <para>
+    /// 各条的护栏（evidence/cs362 反向验证）：第四条单删就红（R5）。需求一条单独就挡得住前两种；归属、阶段两条只在组合层面有护栏——
+    /// 单删不红，与需求一起删才红（R23、R24）。它们留着，是为了不把正确性押在「终结与转阻塞总是连带写需求」上。
     /// </para>
     /// </remarks>
     private async Task<bool> EnteredDemandStillLoadableAsync(
@@ -3951,6 +3962,7 @@ public sealed partial class JourneyRuntimeEngine(
         return !await OpenCancellationAtCurrentStopAsync(stops, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>被跟踪的那一份归属行，用来写状态；游标读出来的是 <c>AsNoTracking</c> 的。</summary>
     private Task<JourneyDemandRow> TrackedMembershipAsync(
         JourneyRuntimeRow runtime,
         string demandId,

@@ -27,7 +27,10 @@ namespace ControlServer.Tests;
 /// commits (<c>OnboardJourneyPublisher.StageSlotOperationCommandAsync</c>, then <c>SendPersistedAsync</c>). The
 /// window is closed: whatever reaches the vehicle, every other scope already reads. What #193 established still
 /// holds and the second test keeps it: a cancellation before a sublot that arrives while the line goes out is
-/// refused, because the load it checks for is durable.
+/// refused. Which check refuses it moved with the fix: it used to be the durable load command
+/// (<c>OnboardRecoveryCoordinator.LoadCommandedAsync</c>), read while the stage still said AwaitingSublot; now the
+/// demand's membership is already LOADING, and the check before that one (a demand no longer pending load) refuses it
+/// first. The durable command is still checked, it is just no longer the one that decides here.
 /// </para>
 /// </remarks>
 public sealed class JourneyRuntimeWorkerLoadCommandCommitOrderTests
