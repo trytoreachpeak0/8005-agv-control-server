@@ -412,6 +412,122 @@ public sealed class StopEndedJourneyContinuesTests
     }
 
     /// <summary>
+    /// 扫码前取消已授权、结果还没到时落了一条扫码（这一站还有待做项，此刻不答它）；车随后报 ALL_EMPTY，本站结束——那条扫码在
+    /// 同一次改动里被答 <c>WORKLIST_REVISION_STALE</c>，号是空清单的号，并上线（PR #361 增量复核：输给扫码前取消的在途扫码）。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AnEntryThatLosesToAnAuthorizedCancellationIsAnsweredStaleWhenTheResultEndsTheStop()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyStopRow secondPickup = await ArriveAtTheSecondPickupAsync(fixture);
+        JourneyRuntimeRow runtime = await JourneyOfAsync(fixture, FirstDemandId);
+        await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+        OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+            connection, new WireToGateStore(connection), fixture.Clock, new ConfigurationBuilder().Build(), fixture.Peer);
+        OnboardConnectionState state = Connection(fixture);
+        const string cancellationId = "d3000000-0000-4000-8000-000000000001";
+        string authorization = await processor.ProcessAsync(CancellationRequest(fixture, cancellationId), state, token);
+        Assert.Equal("AUTHORIZED", FirstLinePayload(authorization).GetProperty("decision").GetString());
+
+        const string entryId = "d3000000-0000-4000-8000-000000000004";
+        await processor.ProcessAsync(
+            Envelope(fixture, entryId, "SublotSubmitted", SecondStopEntry(fixture, secondPickup, runtime)), state, token);
+        Assert.Empty(await RejectionsOfAsync(fixture, entryId));
+
+        await processor.ProcessAsync(CancellationResult(fixture, cancellationId), state, token);
+
+        Assert.Equal(JourneyDemandStatuses.Terminated, (await MembershipAsync(fixture, SecondDemandId)).Status);
+        JsonElement rejection = await RejectionOfAsync(fixture, entryId);
+        Assert.Equal("WORKLIST_REVISION_STALE", rejection.GetProperty("problem").GetProperty("reasonCode").GetString());
+        Snapshot empty = Assert.Single(
+            await WorklistsAsync(fixture), item => item.Payload.GetProperty("items").GetArrayLength() == 0);
+        Assert.Equal(empty.Revision, rejection.GetProperty("currentWorklistRevision").GetInt64());
+        Assert.Contains(
+            fixture.Peer.Lines, bytes => SentAs(Line(bytes), LateSublotSubmission.RejectionMessageId(entryId), 1));
+    }
+
+    /// <summary>
+    /// 同一个在途扫码，但引擎已经在锁外读到了它：读完收件箱之后 ALL_EMPTY 才落定、结束本站（本站结束那一次改动已为它暂存 STALE），
+    /// 引擎接着按旧游标判它不在范围。这一轮<b>不抛</b>，这条扫码只有一条答复、仍是 STALE（PR #361 增量复核的必修）。
+    /// </summary>
+    /// <remarks>
+    /// 修之前引擎用同一个派生 id 写一份内容不同的 <c>SUBLOT_NOT_IN_DISPATCH_SCOPE</c> 拒收，发件箱的重放校验抛
+    /// <c>ProtocolContentConflictException</c>，推进段没有逐车隔离，这一轮对所有车 fail-closed。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task WhenTheCancellationEndsTheStopAfterTheRuntimeReadTheEntryTheRoundDoesNotThrowAndAnswersOnce()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        // 在引擎认定「这条录入没被拒收、没被消费」之后才让结果落定：早一步（例如读收件箱那一刻）引擎会接着读到 STALE 拒收而跳过，
+        // 走不到写拒收，这条用例就什么都没测（第一版就是这样，去掉修复的变异 M11 存活）。
+        EntryInterleaver interleaver = new(EntryInterleaver.AfterTheEntryWasJudgedUnanswered);
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync(commands: interleaver);
+        JourneyStopRow secondPickup = await ArriveAtTheSecondPickupAsync(fixture);
+        JourneyRuntimeRow runtime = await JourneyOfAsync(fixture, FirstDemandId);
+        await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+        OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+            connection, new WireToGateStore(connection), fixture.Clock, new ConfigurationBuilder().Build(), fixture.Peer);
+        OnboardConnectionState state = Connection(fixture);
+        const string cancellationId = "d4000000-0000-4000-8000-000000000001";
+        string authorization = await processor.ProcessAsync(CancellationRequest(fixture, cancellationId), state, token);
+        Assert.Equal("AUTHORIZED", FirstLinePayload(authorization).GetProperty("decision").GetString());
+        // 扫的是一个不在派车范围里的子批（扫错了）：引擎按旧游标判它 SUBLOT_NOT_IN_DISPATCH_SCOPE，这正是会与 STALE 撞 id 的那一种。
+        // 扫的若是乙本身，旧游标里乙仍待装，引擎走的是装货而不是拒收——那是另一个问题，另报（见 PR 正文）。
+        const string entryId = "d4000000-0000-4000-8000-000000000004";
+        await processor.ProcessAsync(
+            Envelope(fixture, entryId, "SublotSubmitted", SecondStopEntry(fixture, secondPickup, runtime, "SUBLOT-NOT-HERE")),
+            state,
+            token);
+        Assert.Empty(await RejectionsOfAsync(fixture, entryId));
+
+        // 引擎读完收件箱的那一刻，车报 ALL_EMPTY、本站结束。
+        interleaver.Arm(() => processor.ProcessAsync(CancellationResult(fixture, cancellationId), state, token));
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+
+        Assert.Equal(1, interleaver.Fired);
+        Assert.Equal(JourneyDemandStatuses.Terminated, (await MembershipAsync(fixture, SecondDemandId)).Status);
+        JsonElement rejection = await RejectionOfAsync(fixture, entryId);
+        Assert.Equal("WORKLIST_REVISION_STALE", rejection.GetProperty("problem").GetProperty("reasonCode").GetString());
+    }
+
+    private static string CancellationRequest(RuntimeFixture fixture, string cancellationId) =>
+        Envelope(fixture, JourneyPlanBuilder.StableGuid(cancellationId, "request"), "LoadCancellationStartRequested", new
+        {
+            cancellationId,
+            demandId = SecondDemandId,
+            slotOperationAttemptId = (string?)null,
+            @operator = Operator(fixture),
+            reason = "Nothing to load at this stop."
+        });
+
+    private static string CancellationResult(RuntimeFixture fixture, string cancellationId) =>
+        Envelope(fixture, JourneyPlanBuilder.StableGuid(cancellationId, "result"), "LoadCancellationResult", new
+        {
+            cancellationId,
+            demandId = SecondDemandId,
+            slotOperationAttemptId = (string?)null,
+            overallOutcome = "ALL_EMPTY",
+            slotResults = Array.Empty<object>(),
+            observedAt = Now
+        });
+
+    /// <summary>对第二个取货站此刻那一版清单的一条录入，扫的是乙的子批。</summary>
+    private static object SecondStopEntry(
+        RuntimeFixture fixture, JourneyStopRow secondPickup, JourneyRuntimeRow runtime, string sublot = SecondSublot) => new
+    {
+        operationSessionId = secondPickup.OperationSessionId,
+        stationId = secondPickup.StationId,
+        worklistRevision = runtime.WorklistRevision + 1,
+        sublot,
+        entryMethod = "SCANNER",
+        @operator = Operator(fixture)
+    };
+
+    /// <summary>
     /// 期限那一轮里，引擎读完收件箱之后、期限写锁之前落库的一条扫码（审查 S1 的窗口）：本站结束的那一次改动一并答它
     /// <c>WORKLIST_REVISION_STALE</c>，号是空清单的号，并发上线。修之前它既不装也不拒。
     /// </summary>
@@ -589,8 +705,21 @@ public sealed class StopEndedJourneyContinuesTests
     /// 认的是那条读收件箱里 <c>SublotSubmitted</c> 的命令的读取器关闭那一刻：读已经完成、引擎还没进期限事务。插入用另一个上下文
     /// （同一条内存连接），不碰引擎正在用的那一个。
     /// </remarks>
-    internal sealed class EntryInterleaver : DbCommandInterceptor
+    internal sealed class EntryInterleaver(Func<string, bool>? matches = null) : DbCommandInterceptor
     {
+        /// <summary>默认：读收件箱里 <c>SublotSubmitted</c> 的那条命令。</summary>
+        private readonly Func<string, bool> _matches = matches ?? (text =>
+            text.Contains("ProtocolInbox", StringComparison.Ordinal) &&
+            text.Contains("SublotSubmitted", StringComparison.Ordinal));
+
+        /// <summary>
+        /// 引擎找录入那一段的<b>最后一条</b>读取：按 correlationId 查这条录入有没有被装货命令答复过
+        /// （<c>JourneyRuntimeEngine.ConsumedSubmissionIdsAsync</c>）。在它之后触发，引擎已经按锁外读到的「没被拒收、没被消费」认定了录入。
+        /// </summary>
+        public static bool AfterTheEntryWasJudgedUnanswered(string text) =>
+            text.Contains("ProtocolOutbox", StringComparison.Ordinal) &&
+            text.Contains("SlotOperationCommand", StringComparison.Ordinal);
+
         private Func<Task>? _pending;
 
         public int Fired { get; private set; }
@@ -598,12 +727,13 @@ public sealed class StopEndedJourneyContinuesTests
         public void Arm(RuntimeFixture fixture, string messageId, object payload) =>
             _pending = () => InsertInboxAsync(fixture, messageId, payload);
 
+        /// <summary>在那一刻做任意一件事（例如让一条取消结果落定），同样只一次。</summary>
+        public void Arm(Func<Task> action) => _pending = action;
+
         public override async ValueTask<InterceptionResult> DataReaderClosingAsync(
             DbCommand command, DataReaderClosingEventData eventData, InterceptionResult result)
         {
-            if (_pending is { } insert &&
-                command.CommandText.Contains("ProtocolInbox", StringComparison.Ordinal) &&
-                command.CommandText.Contains("SublotSubmitted", StringComparison.Ordinal))
+            if (_pending is { } insert && _matches(command.CommandText))
             {
                 _pending = null;
                 Fired++;

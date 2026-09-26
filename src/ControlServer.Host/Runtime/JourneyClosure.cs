@@ -96,7 +96,8 @@ internal static class JourneyClosure
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(publisher);
-        foreach (string messageId in await ReplayIdsAsync(dbContext, agvId, cancellationToken).ConfigureAwait(false))
+        IReadOnlyList<string> closureIds = await ReplayIdsAsync(dbContext, agvId, cancellationToken).ConfigureAwait(false);
+        foreach (string messageId in closureIds)
         {
             try
             {
@@ -107,8 +108,12 @@ internal static class JourneyClosure
                 // 见 remarks：留在发件箱里，等重连补发。
             }
         }
-        // 收尾快照之后：同一次改动里答过时的那些扫码（control-server#324）。
-        await LateSublotSubmission.SendStaleAnswersAsync(publisher, dbContext, agvId, cancellationToken).ConfigureAwait(false);
+        // 收尾快照之后：同一次改动里答过时的那些扫码（control-server#324）。只在最近一趟确实收尾时发——旅程还在走时，本站结束的
+        // 那些由 StopEndWorklist.SendAsync 在空清单之后发；这里也发就会先于空清单、而且发两遍（PR #361 增量复核的建议）。
+        if (closureIds.Count > 0)
+        {
+            await LateSublotSubmission.SendStaleAnswersAsync(publisher, dbContext, agvId, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     /// <summary>

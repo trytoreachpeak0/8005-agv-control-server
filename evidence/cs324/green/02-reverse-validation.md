@@ -65,3 +65,38 @@ M1（去掉号数顺延）下它红在行为判据上：`下一站首号 4 没�
 | M1 去掉号数顺延（重跑，范围含全部新用例） | 号数两条 | 号数两条（「卸货站清单第 3 号没有越过空清单的第 3 号」「下一站首号 4 没有越过空清单的第 4 号」），另四条红在「空清单没上线」：不顺延时发送一侧按号推算出的是上一版非空清单，于是不发 |
 
 原始输出在 `02-reverse-validation-raw.txt`。
+
+## 增量复核之后（PR #361 增量复核，head `0db305b5` 之后）
+
+### 引擎写拒收撞上本站结束时暂存的 STALE
+
+`JourneyRuntimeEngine.RefuseAsync` 写之前若发件箱已有同 id 的 `SublotRejected`，视同已答复、不再写；其余内容冲突照旧抛。
+
+用例 `WhenTheCancellationEndsTheStopAfterTheRuntimeReadTheEntryTheRoundDoesNotThrowAndAnswersOnce`：扫码前取消已授权，一条扫错的子批
+（不在派车范围）落库；拦截器在引擎这一轮**认定这条录入没被拒收、没被消费之后**（它按 correlationId 查装货命令的那条读取关闭时）
+让 ALL_EMPTY 落定。本站结束那一次改动为它暂存 STALE，引擎接着按旧游标判它不在范围、要写 SCOPE。
+
+- 第一版在「读收件箱那一刻」触发，引擎接着读到 STALE 而跳过，根本走不到写拒收——去掉修复的变异 M11 存活。挪到上面那个点之后 M11 红。
+- 第一版扫的是乙本身的子批：旧游标里乙仍待装，引擎走的是**装货**，给已取消的乙下了装货命令（`demand=Cancelled membership=LOADING
+  wf=[LOAD_CANCELLATION:Reconciled:ALL_EMPTY] loadCmdsForB=1 stage=AwaitingLoadResult`）。那是早于本 PR 的另一个竞态，已报调度，
+  不在本 PR 修。所以这条用例改扫一个不在范围的子批，才是会撞 id 的那一种。
+
+### 协调器路径上输给取消的在途扫码
+
+`AnEntryThatLosesToAnAuthorizedCancellationIsAnsweredStaleWhenTheResultEndsTheStop`：取消已授权 → 落一条扫码（断言此刻无答复）→ ALL_EMPTY →
+答 STALE、号为空清单的号、已上线。
+
+### 收尾出口只在确实收尾时发 STALE（复核建议）
+
+`JourneyClosure.SendAsync` 只在最近一趟已收尾（收尾快照 id 非空）时调 `SendStaleAnswersAsync`；旅程继续时由 `StopEndWorklist.SendAsync`
+在空清单之后发，不再先于空清单、也不发两遍。
+
+### 本轮注入
+
+| 注入 | 预期红 | 实际红 |
+| --- | --- | --- |
+| M11 去掉「同 id 拒收已在就不再写」（改成恒为假） | 引擎冲突那条，红在抛异常 | 同预期：`ProtocolContentConflictException : Outbound MessageId was replayed with different semantics…` |
+| M10 去掉收尾出口的 `SendStaleAnswersAsync` | A 形态交错，红在「上线」 | 同预期（`Assert.Contains() Failure`） |
+| M6 重跑（范围含新的协调器用例） | 额外红在输给取消的那条 | 三条：B 形态交错、输给取消的在途扫码、引擎冲突那条（没有 STALE 可撞，引擎答 SCOPE，红在「原因码不同」） |
+
+M10、M6 在触发点挪动之后的最终版本上又重跑了一次，结果与上表相同（原始记录末段）。第一版 M11 存活那一次的原始输出也保留在原始记录里。
