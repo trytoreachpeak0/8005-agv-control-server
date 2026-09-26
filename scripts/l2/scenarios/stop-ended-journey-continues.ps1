@@ -131,7 +131,14 @@ $assertions.Add(
 
 # --- 3. 迟到的扫码 --------------------------------------------------------------------------------------
 
-$lateAt = [DateTimeOffset]::UtcNow
+# 按「答复前后多出来的那条提交」认，不按时刻：合成车载端报的 at 经 ConvertFrom-Json 变成 DateTime，转回文字时毫秒丢了，
+# 同一秒里稍晚发出的提交会被算得比起点早（第一次跑这条场景就这样漏掉了一条已经到车上的拒收）。
+function Get-PeerSubmissionIds {
+    return , @(@(@($onboard.Snapshot().body.wire) | Where-Object {
+                [string]$_.direction -eq 'out' -and [string]$_.messageType -eq 'SublotSubmitted' }) |
+            ForEach-Object { [string]$_.messageId } | Select-Object -Unique)
+}
+$submittedBefore = Get-PeerSubmissionIds
 $null = $onboard.Command('Put', "answer/$([string]$pending.key)", @{ completed = $true })
 # 合成车载端的线上记录只有类型、id 与时刻：拒收的内容读服务端发件箱那一行，再用 messageId 对到车收到的那一条
 # （与 sublot-rejected-after-entry 同一种对法）。
@@ -139,10 +146,7 @@ $rejection = Wait-L2ConditionOrLast -Description 'the late entry was answered wi
     -Criterion 'late-entry-rejected' -TimeoutSeconds 30 `
     -Probe {
         $wire = @($onboard.Snapshot().body.wire)
-        $submitted = @(@($wire | Where-Object {
-                    [string]$_.direction -eq 'out' -and [string]$_.messageType -eq 'SublotSubmitted' -and
-                    ([DateTimeOffset]::Parse([string]$_.at, [Globalization.CultureInfo]::InvariantCulture)) -ge $lateAt }) |
-                ForEach-Object { [string]$_.messageId } | Select-Object -Unique)
+        $submitted = @((Get-PeerSubmissionIds) | Where-Object { $submittedBefore -notcontains $_ })
         $received = @(@($wire | Where-Object { [string]$_.direction -eq 'in' -and [string]$_.messageType -eq 'SublotRejected' }) |
                 ForEach-Object { [string]$_.messageId })
         $rows = Invoke-L2Query -Connection $connection -Sql (
