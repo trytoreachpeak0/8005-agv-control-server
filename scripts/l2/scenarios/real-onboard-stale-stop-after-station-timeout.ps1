@@ -210,110 +210,140 @@ $assertions.Add(
     'L2-SST-05', '第一趟：旅程被站点期限结束之后，车上的清单不再挂着这单',
     (-not $afterFirst.ListsSublot), 'listsSublot=False', (Format-VehicleView $afterFirst))
 
-# 第二趟要一台干净的车：第一趟若有残留（对照组里就是），断一次线让车载端清空投影。修好的三端上这一下什么都不改变。
-if ($afterFirst.CanSubmit -or $afterFirst.OffersCancel -or $afterFirst.ListsSublot) {
-    $journal.Note('The first stop is still on the vehicle; dropping the connection once so the second stop starts clean.')
+# 下一趟要一台干净的车：上一趟若有残留（对照组里就是），断一次线让车载端清空投影。修好的三端上第一趟之后这一下不发生。
+function Clear-Residue([string]$Sublot, [string]$Label) {
+    $view = Get-VehicleView $Sublot
+    if (-not ($view.CanSubmit -or $view.OffersCancel -or $view.ListsSublot)) { return }
+    $journal.Note("$Label is still on the vehicle ($(Format-VehicleView $view)); dropping the connection once so the next stop starts clean.")
     $null = $proxy.Command('Post', 'disconnect', @{})
-    $null = Wait-L2Condition -Description 'the onboard reconnected and the first stop is gone' `
-        -Journal $journal -Criterion 'first-cleared' -TimeoutSeconds 90 `
-        -Probe { Get-VehicleView $first.Sublot } `
+    $null = Wait-L2Condition -Description "the onboard reconnected and $Label is gone" `
+        -Journal $journal -Criterion "$Label-cleared" -TimeoutSeconds 90 `
+        -Probe { Get-VehicleView $Sublot } `
         -Until { param($v) -not $v.CanSubmit -and -not $v.OffersCancel -and -not $v.ListsSublot }
 }
 
-# --- 2. 第二趟：丢掉那张空清单，在「服务端已收尾、车上还挂着」的窗口里迟到地取消与扫码 --------------------------------
-
-$second = Start-UnattendedStop 'L2-SST-B'
-# 这一站那一版清单已经到车（车上列着这单），此刻布下的「丢下一张清单」丢的只能是之后那一张——收尾的空清单。
-$null = $proxy.Command('Put', 'drop-message', @{ messageType = 'CurrentStopWorklistSnapshot'; count = 1 })
-$journal.Note('Armed: drop the next CurrentStopWorklistSnapshot to the vehicle (the closing empty worklist).')
-
-$secondSettled = Wait-StationTimeout $second.DemandId 'second'
-$null = Wait-L2Iterations -Riot $riot -Count 5 -TimeoutSeconds 60 -Journal $journal
-# 丢掉的那一行按流量记录里的行读：丢弃记录（drops）只有计划名的类型、没有 messageId（TrafficLog.DropRecord）。
-$drops = @(@((Get-L2RealTraffic $proxy).lines) | Where-Object {
-        $_.dropped -and [string]$_.messageType -eq 'CurrentStopWorklistSnapshot' })
-$emptyWorklists = @((Get-L2RealOutbound $connection 'CurrentStopWorklistSnapshot') | Where-Object { @($_.Payload.items).Count -eq 0 })
-$journal.Note("Dropped worklists: $(@($drops | ForEach-Object { [string]$_.messageId }) -join ', '); " +
-    "empty worklists in the outbox: $(@($emptyWorklists | ForEach-Object { $_.MessageId }) -join ', ')")
-$inWindow = Get-VehicleView $second.Sublot
-$journal.Note("Second stop after Completed, empty worklist dropped: $(Format-VehicleView $inWindow)")
-$assertions.Add(
-    'L2-SST-09', '第二趟（前提）：服务端已以站点期限收尾，车上仍要子批、仍给「取消装货」、清单仍挂着这单——迟到的动作只能发生在这个窗口里',
-    ((Test-TimedOut $secondSettled) -and $inWindow.CanSubmit -and $inWindow.OffersCancel -and $inWindow.ListsSublot),
-    'Cancelled / CANCELLED_BY_STATION_TIMEOUT / Completed / 0；canSubmit / offersCancel / listsSublot 均为 True',
-    "$(Format-Settlement $secondSettled)；$(Format-VehicleView $inWindow)")
-if (-not ($inWindow.CanSubmit -and $inWindow.OffersCancel)) {
-    Add-L2RealNotReached $assertions @('L2-SST-06', 'L2-SST-07', 'L2-SST-08', 'L2-SST-10') '窗口没造出来：车上没有可按的录入框或「取消装货」'
-    return
+<#
+一个「服务端已收尾、车上还挂着」的窗口：车到站要子批，布下「丢下一张清单」——这一站那一版已经到车（车上列着这单），丢的只能是
+之后那一张，收尾的空清单——然后等站点期限收尾。窗口里只做得了一件迟到的事：车载端收到 STALE（取消被拒或扫码被拒）就认定本站
+已结束、撤掉入口（真装置 run2 实测：第一下取消被 STALE 拒绝后「取消装货」没了，第二下按不到），所以取消与扫码各开一个窗口。
+#>
+function Open-StaleWindow([string]$Prefix, [string]$Label) {
+    $stop = Start-UnattendedStop $Prefix
+    $null = $proxy.Command('Put', 'drop-message', @{ messageType = 'CurrentStopWorklistSnapshot'; count = 1 })
+    $journal.Note("$Label armed: drop the next CurrentStopWorklistSnapshot to the vehicle (the closing empty worklist).")
+    $settled = Wait-StationTimeout $stop.DemandId $Label
+    $null = Wait-L2Iterations -Riot $riot -Count 5 -TimeoutSeconds 60 -Journal $journal
+    # 丢掉的那一行按流量记录里的行读：丢弃记录（drops）只有计划名的类型、没有 messageId（TrafficLog.DropRecord）。
+    $drops = @(@((Get-L2RealTraffic $proxy).lines) | Where-Object {
+            $_.dropped -and [string]$_.messageType -eq 'CurrentStopWorklistSnapshot' })
+    $emptyWorklists = @((Get-L2RealOutbound $connection 'CurrentStopWorklistSnapshot') | Where-Object { @($_.Payload.items).Count -eq 0 })
+    $journal.Note("$Label dropped worklists so far: $(@($drops | ForEach-Object { [string]$_.messageId }) -join ', '); " +
+        "empty worklists in the outbox: $(@($emptyWorklists | ForEach-Object { $_.MessageId }) -join ', ')")
+    $view = Get-VehicleView $stop.Sublot
+    $journal.Note("$Label after Completed, empty worklist dropped: $(Format-VehicleView $view)")
+    return [pscustomobject]@{
+        DemandId = $stop.DemandId; Sublot = $stop.Sublot; Settled = $settled; View = $view
+        Open     = ((Test-TimedOut $settled) -and $view.CanSubmit -and $view.OffersCancel -and $view.ListsSublot)
+    }
 }
 
-# 两下「取消装货」。服务端的判定只与需求状态有关，与两下之间隔多久无关。
-$hellosBefore = Get-HelloCount
-$firstPress = Invoke-CancelPress $second.DemandId 'first'
-$secondPress = Invoke-CancelPress $second.DemandId 'second'
-$null = Wait-L2Iterations -Riot $riot -Count 8 -TimeoutSeconds 60 -Journal $journal
-$hellosAfter = Get-HelloCount
-$assertions.Add(
-    'L2-SST-06', '第二趟：收尾之后按两下「取消装货」，服务端不掐连接、车不重连',
-    ($hellosAfter -eq $hellosBefore), "SessionHello 次数不变（$hellosBefore）",
-    "按前 $hellosBefore / 按后 $hellosAfter")
+function Format-Window([object]$W) { return "$(Format-Settlement $W.Settled)；$(Format-VehicleView $W.View)" }
 
-$workflows = Get-L2RealCount $connection "SELECT COUNT(*) AS Total FROM RecoveryWorkflows WHERE DemandId = '$($second.DemandId)'"
-$statusAfterPresses = [string](Get-L2RealScalar $connection "SELECT Status AS Value FROM AcceptedDemands WHERE DemandId = '$($second.DemandId)'")
-$pressesStale = @($firstPress, $secondPress | Where-Object {
-        $_.Decision -eq 'REJECTED' -and $_.ReasonCode -eq 'WORKLIST_REVISION_STALE' -and $_.DemandId -eq $second.DemandId })
-$assertions.Add(
-    'L2-SST-07', '第二趟：迟到的取消两下都以 WORKLIST_REVISION_STALE 拒绝，不落取消工作流，需求仍是期限判的 Cancelled',
-    ($pressesStale.Count -eq 2 -and $workflows -eq 0 -and $statusAfterPresses -eq 'Cancelled'),
-    '2 × REJECTED/WORKLIST_REVISION_STALE / 0 条工作流 / Cancelled',
-    "第一下 $($firstPress.Decision)/$($firstPress.ReasonCode)；第二下 $($secondPress.Decision)/$($secondPress.ReasonCode)；" +
-    "$workflows 条工作流 / $statusAfterPresses")
+$windowExpected = 'Cancelled / CANCELLED_BY_STATION_TIMEOUT / Completed / 0；canSubmit / offersCancel / listsSublot 均为 True'
 
-# 迟到的扫码。取消被拒不撤录入请求（车载端只忘掉那次取消），所以录入框还在；前提照样读一次。
-$beforeScan = Get-VehicleView $second.Sublot
-if (-not $beforeScan.CanSubmit) {
-    $journal.Note("Entry no longer offered before the late scan: $(Format-VehicleView $beforeScan)")
-    Add-L2RealNotReached $assertions @('L2-SST-08', 'L2-SST-10') '两下取消之后车上已不能录入，迟到的扫码做不了'
-    return
+# --- 2. 第二趟：窗口里迟到地按「取消装货」 ---------------------------------------------------------------------------
+
+Clear-Residue $first.Sublot 'first'
+$second = Open-StaleWindow 'L2-SST-B' 'second'
+$assertions.Add(
+    'L2-SST-09', '第二趟（前提）：服务端已以站点期限收尾，车上仍要子批、仍给「取消装货」、清单仍挂着这单——迟到的取消只能发生在这个窗口里',
+    $second.Open, $windowExpected, (Format-Window $second))
+if ($second.Open) {
+    # 车给几次就按几次，最多两下（现场那次按了两下）。修好的车载端在第一下被 STALE 拒绝之后就撤掉按钮；旧的不撤，按得到第二下。
+    $hellosBefore = Get-HelloCount
+    $presses = @()
+    foreach ($label in 'first', 'second') {
+        if ($label -ne 'first' -and -not (Wait-L2RealButtonOffered $onboard $journal $button "cancel-offered-$label" 10)) {
+            $journal.Note("No $button to press for the $label press.")
+            break
+        }
+        $presses += Invoke-CancelPress $second.DemandId $label
+    }
+    $null = Wait-L2Iterations -Riot $riot -Count 8 -TimeoutSeconds 60 -Journal $journal
+    $hellosAfter = Get-HelloCount
+    $afterPresses = Get-VehicleView $second.Sublot
+    $journal.Note("Second stop after the presses: $(Format-VehicleView $afterPresses)")
+    $pressText = ($presses | ForEach-Object { "$($_.Decision)/$($_.ReasonCode)" }) -join '；'
+    $assertions.Add(
+        'L2-SST-06', '第二趟：收尾之后按「取消装货」（车给几次按几次，最多两下），服务端不掐连接、车不重连',
+        ($presses.Count -ge 1 -and $hellosAfter -eq $hellosBefore), ">= 1 下；SessionHello 次数不变（$hellosBefore）",
+        "按了 $($presses.Count) 下（$pressText）；按前 $hellosBefore / 按后 $hellosAfter")
+
+    $workflows = Get-L2RealCount $connection "SELECT COUNT(*) AS Total FROM RecoveryWorkflows WHERE DemandId = '$($second.DemandId)'"
+    $statusAfterPresses = [string](Get-L2RealScalar $connection "SELECT Status AS Value FROM AcceptedDemands WHERE DemandId = '$($second.DemandId)'")
+    $stale = @($presses | Where-Object {
+            $_.Decision -eq 'REJECTED' -and $_.ReasonCode -eq 'WORKLIST_REVISION_STALE' -and $_.DemandId -eq $second.DemandId })
+    $assertions.Add(
+        'L2-SST-07', '第二趟：迟到的取消每一下都以 WORKLIST_REVISION_STALE 拒绝，不落取消工作流，需求仍是期限判的 Cancelled',
+        ($presses.Count -ge 1 -and $stale.Count -eq $presses.Count -and $workflows -eq 0 -and $statusAfterPresses -eq 'Cancelled'),
+        '每一下 REJECTED/WORKLIST_REVISION_STALE / 0 条工作流 / Cancelled',
+        "$pressText；$workflows 条工作流 / $statusAfterPresses")
+    $assertions.Add(
+        'L2-SST-11', '第二趟：迟到的取消被 STALE 拒绝之后，车不再给「取消装货」（车载端据 STALE 认定本站已结束）',
+        (-not $afterPresses.OffersCancel), 'offersCancel=False', (Format-VehicleView $afterPresses))
+} else {
+    Add-L2RealNotReached $assertions @('L2-SST-06', 'L2-SST-07', 'L2-SST-11') '窗口没造出来：车上没有可按的「取消装货」'
 }
-$submissionsBefore = @((Get-L2RealInbound $connection 'SublotSubmitted') | ForEach-Object { $_.MessageId })
-$journal.Note("Late scan of $($second.Sublot) through UI Automation.")
-$onboard.SetSublot($second.Sublot)
-$null = Wait-L2Condition -Description 'the manual submit button became enabled' `
-    -Journal $journal -Criterion 'late-submit-ready' -TimeoutSeconds 30 `
-    -Probe { $onboard.SubmitReady() } -Until { param($v) $v }
-$onboard.Submit()
-$submission = Wait-L2RealOrLast -Description 'the server received the late sublot entry' `
-    -Journal $journal -Criterion 'late-submission' -TimeoutSeconds 30 `
-    -Probe { @((Get-L2RealInbound $connection 'SublotSubmitted') | Where-Object { $submissionsBefore -notcontains $_.MessageId })[0] } `
-    -Until { param($v) $null -ne $v }
-$submissionId = if ($null -ne $submission) { [string]$submission.MessageId } else { '' }
-$answer = Wait-L2RealOrLast -Description 'the late entry was answered and the vehicle acknowledged the answer' `
-    -Journal $journal -Criterion 'late-answer' -TimeoutSeconds 60 `
-    -Probe { if ($submissionId) { Get-RejectionsOf $submissionId } else { , @() } } `
-    -Until { param($v) @($v).Count -ge 1 -and @($v)[0].Acknowledged }
-$shown = Wait-L2RealOrLast -Description 'the HMI shows the rejection reason' `
-    -Journal $journal -Criterion 'late-answer-shown' -TimeoutSeconds 30 `
-    -Probe { Get-RejectionDisplay } -Until { param($v) $v -eq 'WORKLIST_REVISION_STALE' }
-# 等到的是一个数组时 return 会把它展开：一条时拿到的是那一条本身，零条时是 $null——@($null) 数出来是 1，所以滤掉空值再数。
-$answers = @($answer | Where-Object { $null -ne $_ })
-$answerText = if ($answers.Count -eq 0) { '(no SublotRejected)' } else {
-    ($answers | ForEach-Object { "$($_.ReasonCode) ack=$($_.Acknowledged)" }) -join '; ' }
-$assertions.Add(
-    'L2-SST-08', '第二趟：收尾之后的迟到扫码恰好得到一条 SublotRejected / WORKLIST_REVISION_STALE，车已确认、提示区显示这个原因',
-    ($answers.Count -eq 1 -and $answers[0].ReasonCode -eq 'WORKLIST_REVISION_STALE' -and $answers[0].Acknowledged -and
-        $shown -eq 'WORKLIST_REVISION_STALE'),
-    '1 × WORKLIST_REVISION_STALE ack=True；提示区 WORKLIST_REVISION_STALE',
-    "录入 $(if ($submissionId) { $submissionId } else { '(not received)' })：$answerText；提示区 $(if ($shown) { $shown } else { '(none)' })")
 
-$afterScan = Wait-L2RealOrLast -Description 'the vehicle withdrew sublot entry after the STALE answer' `
-    -Journal $journal -Criterion 'withdrawn-after-stale' -TimeoutSeconds 30 `
-    -Probe { Get-VehicleView $second.Sublot } -Until { param($v) -not $v.CanSubmit -and -not $v.OffersCancel }
+# --- 3. 第三趟：窗口里迟到地扫码 -------------------------------------------------------------------------------------
+
+Clear-Residue $second.Sublot 'second'
+$third = Open-StaleWindow 'L2-SST-C' 'third'
 $assertions.Add(
-    'L2-SST-10', '第二趟：迟到的扫码被 STALE 拒绝之后，车不再要子批、不再给「取消装货」',
-    (-not $afterScan.CanSubmit -and -not $afterScan.OffersCancel), 'canSubmit=False / offersCancel=False',
-    (Format-VehicleView $afterScan))
+    'L2-SST-12', '第三趟（前提）：服务端已以站点期限收尾，车上仍要子批、仍给「取消装货」、清单仍挂着这单——迟到的扫码只能发生在这个窗口里',
+    $third.Open, $windowExpected, (Format-Window $third))
+if (-not $third.Open) {
+    Add-L2RealNotReached $assertions @('L2-SST-08', 'L2-SST-10') '窗口没造出来：车上没有可用的录入框'
+} else {
+    $submissionsBefore = @((Get-L2RealInbound $connection 'SublotSubmitted') | ForEach-Object { $_.MessageId })
+    $journal.Note("Late scan of $($third.Sublot) through UI Automation.")
+    $onboard.SetSublot($third.Sublot)
+    $null = Wait-L2Condition -Description 'the manual submit button became enabled' `
+        -Journal $journal -Criterion 'late-submit-ready' -TimeoutSeconds 30 `
+        -Probe { $onboard.SubmitReady() } -Until { param($v) $v }
+    $onboard.Submit()
+    $submission = Wait-L2RealOrLast -Description 'the server received the late sublot entry' `
+        -Journal $journal -Criterion 'late-submission' -TimeoutSeconds 30 `
+        -Probe { @((Get-L2RealInbound $connection 'SublotSubmitted') | Where-Object { $submissionsBefore -notcontains $_.MessageId })[0] } `
+        -Until { param($v) $null -ne $v }
+    $submissionId = if ($null -ne $submission) { [string]$submission.MessageId } else { '' }
+    $answer = Wait-L2RealOrLast -Description 'the late entry was answered and the vehicle acknowledged the answer' `
+        -Journal $journal -Criterion 'late-answer' -TimeoutSeconds 60 `
+        -Probe { if ($submissionId) { Get-RejectionsOf $submissionId } else { , @() } } `
+        -Until { param($v) @($v).Count -ge 1 -and @($v)[0].Acknowledged }
+    $shown = Wait-L2RealOrLast -Description 'the HMI shows the rejection reason' `
+        -Journal $journal -Criterion 'late-answer-shown' -TimeoutSeconds 30 `
+        -Probe { Get-RejectionDisplay } -Until { param($v) $v -eq 'WORKLIST_REVISION_STALE' }
+    # 等到的是一个数组时 return 会把它展开：一条时拿到的是那一条本身，零条时是 $null——@($null) 数出来是 1，所以滤掉空值再数。
+    $answers = @($answer | Where-Object { $null -ne $_ })
+    $answerText = if ($answers.Count -eq 0) { '(no SublotRejected)' } else {
+        ($answers | ForEach-Object { "$($_.ReasonCode) ack=$($_.Acknowledged)" }) -join '; ' }
+    $assertions.Add(
+        'L2-SST-08', '第三趟：收尾之后的迟到扫码恰好得到一条 SublotRejected / WORKLIST_REVISION_STALE，车已确认、提示区显示这个原因',
+        ($answers.Count -eq 1 -and $answers[0].ReasonCode -eq 'WORKLIST_REVISION_STALE' -and $answers[0].Acknowledged -and
+            $shown -eq 'WORKLIST_REVISION_STALE'),
+        '1 × WORKLIST_REVISION_STALE ack=True；提示区 WORKLIST_REVISION_STALE',
+        "录入 $(if ($submissionId) { $submissionId } else { '(not received)' })：$answerText；提示区 $(if ($shown) { $shown } else { '(none)' })")
+
+    $afterScan = Wait-L2RealOrLast -Description 'the vehicle withdrew sublot entry after the STALE answer' `
+        -Journal $journal -Criterion 'withdrawn-after-stale' -TimeoutSeconds 30 `
+        -Probe { Get-VehicleView $third.Sublot } -Until { param($v) -not $v.CanSubmit -and -not $v.OffersCancel }
+    $assertions.Add(
+        'L2-SST-10', '第三趟：迟到的扫码被 STALE 拒绝之后，车不再要子批、不再给「取消装货」',
+        (-not $afterScan.CanSubmit -and -not $afterScan.OffersCancel), 'canSubmit=False / offersCancel=False',
+        (Format-VehicleView $afterScan))
+}
 
 # 给下一个场景一台干净的车；不当判据用（见文件头）。
-$journal.Note('Dropping the connection once so the vehicle leaves this scenario without the second stop.')
+$journal.Note('Dropping the connection once so the vehicle leaves this scenario without the last stop.')
 $null = $proxy.Command('Post', 'disconnect', @{})
