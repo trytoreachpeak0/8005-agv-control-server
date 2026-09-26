@@ -179,6 +179,14 @@ public static class DemandJourneyLookup
     /// its next round throwing on a stop with no leg after it. So the store's answer is corrected by what this context
     /// tracks -- the same rule <c>JourneyPlanRevisionStage</c> already follows by reading tracked rows.
     /// </para>
+    /// <para>
+    /// <b>What the correction covers, and no more.</b> One dimension: a demand whose tracked row carries a terminal
+    /// <see cref="DemandExecutionStatus"/>. Memberships are not corrected -- a membership removed in this change still counts
+    /// as the store has it. And the test is "tracked and terminal", not "staged and unsaved": a row tracked from an earlier
+    /// save of the same context reads the same. That is only equivalent because every caller's context starts the change
+    /// with nothing stale tracked (the runtime and the inbox clear tracking first); a caller that kept a long-lived context
+    /// would need a sharper test.
+    /// </para>
     /// </remarks>
     public static async Task<bool> IsLastOpenDemandAsync(
         ControlServerDbContext dbContext,

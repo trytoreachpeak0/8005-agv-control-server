@@ -274,6 +274,47 @@ public sealed class Batch7MultiDemandAdvanceTests
             (JourneyRuntimeStage.Completed, "CANCELLED_BY_STATION_TIMEOUT"), (after.Stage, after.BlockReasonCode));
     }
 
+    /// <summary>
+    /// 一站三条：一条早已在库里终结，另两条在同一次改动里逐条终结。「判为最后一条」只出现在<b>最后一次</b>：
+    /// 第一条暂存之后旅程仍开着，第二条暂存之后才收尾（control-server#327 审查建议）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 两个来源的「已终结」一次都照到：库里那一条由查询本身排除，暂存的那一条由跟踪行排除。只看库，第二条仍把第一条当开着，
+    /// 旅程不收尾（修前的样子）；把被跟踪的行一律当成终结（过宽），第一条暂存时就会把还开着的第三条算成终结、当场收尾。
+    /// </para>
+    /// <para>
+    /// 驱动的是期限那个循环做的同一件事——对同一个上下文逐条调 <see cref="PickupStopTermination"/>，不保存——而不是跑引擎一轮：
+    /// 一轮跑完只看得到最后的样子，看不到「中间那一次没有提前收尾」。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task OnlyTheLastOfSeveralEndingsAtOneStopClosesTheJourney()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        const string thirdDemandId = "10000000-0000-4000-8000-000000000003";
+        JourneyRuntimeRow runtime = await TwoDemandsAtThePickupAsync(fixture);
+        fixture.BoxCounts.Set("SUBLOT-003", 4);
+        await AddDemandToJourneyAsync(fixture, runtime, thirdDemandId, "SUBLOT-003", slotBlock: 2);
+
+        // 第一条早已终结、已落库。
+        JourneyRuntimeRow tracked = await fixture.Context.JourneyRuntimes
+            .SingleAsync(row => row.JourneyId == runtime.JourneyId, token);
+        await new PickupStopTermination(fixture.Context).StageAsync(
+            tracked, FirstDemandId, "CANCELLED_BY_OPERATOR", fixture.Clock.GetUtcNow(), token);
+        await fixture.Context.SaveChangesAsync(token);
+        Assert.NotEqual(JourneyRuntimeStage.Completed, tracked.Stage);
+
+        // 另两条在同一次改动里逐条终结，中间不保存。
+        PickupStopTermination termination = new(fixture.Context);
+        await termination.StageAsync(tracked, null, SecondDemandId, "CANCELLED_BY_STATION_TIMEOUT", fixture.Clock.GetUtcNow(), token);
+        Assert.NotEqual(JourneyRuntimeStage.Completed, tracked.Stage);
+        await termination.StageAsync(tracked, null, thirdDemandId, "CANCELLED_BY_STATION_TIMEOUT", fixture.Clock.GetUtcNow(), token);
+        Assert.Equal(
+            (JourneyRuntimeStage.Completed, "CANCELLED_BY_STATION_TIMEOUT"), (tracked.Stage, tracked.BlockReasonCode));
+    }
+
     /// <summary>一站两条需求都没装，门已证明关着，钟拨过站点离站期限。下一轮就是期限那一轮。</summary>
     private static async Task<RuntimeFixture> TwoUnloadedDemandsPastTheStationDeadlineAsync()
     {
@@ -385,7 +426,14 @@ public sealed class Batch7MultiDemandAdvanceTests
     /// <summary>
     /// 往这趟旅程的两个停靠上再挂一条需求，直接写库——本票之前没有任何路径会这么做，途中追加是本票的另一半。
     /// </summary>
-    internal static async Task AddSecondDemandToJourneyAsync(RuntimeFixture fixture, JourneyRuntimeRow runtime)
+    internal static Task AddSecondDemandToJourneyAsync(RuntimeFixture fixture, JourneyRuntimeRow runtime) =>
+        AddDemandToJourneyAsync(fixture, runtime, SecondDemandId, SecondSublot, slotBlock: 1);
+
+    /// <summary>
+    /// 同上，需求 id、子批与仓位段由调用方给：第 <paramref name="slotBlock"/> 段仓位紧接锚需求那一段之后排，几条需求互不重叠。
+    /// </summary>
+    internal static async Task AddDemandToJourneyAsync(
+        RuntimeFixture fixture, JourneyRuntimeRow runtime, string demandId, string sublot, int slotBlock)
     {
         CancellationToken token = TestContext.Current.CancellationToken;
         AcceptedDemandRow anchor = await fixture.Context.AcceptedDemands.AsNoTracking()
@@ -395,31 +443,31 @@ public sealed class Batch7MultiDemandAdvanceTests
 
         // AcceptedDemandRow 不是 record，字段又多，所以整行序列化再读回来当克隆用。
         AcceptedDemandRow second = JsonSerializer.Deserialize<AcceptedDemandRow>(JsonSerializer.Serialize(anchor))!;
-        second.DemandId = SecondDemandId;
-        second.Sublot = SecondSublot;
-        second.TransportDemandKey = $"{SecondSublot}|WIRE_TO_GATE";
-        second.SeriesId = $"SERIES-{SecondDemandId}";
+        second.DemandId = demandId;
+        second.Sublot = sublot;
+        second.TransportDemandKey = $"{sublot}|WIRE_TO_GATE";
+        second.SeriesId = $"SERIES-{demandId}";
         fixture.Context.AcceptedDemands.Add(second);
 
         // 仓位要与锚需求错开：同一辆车上两条需求不能占同一个仓位，而装货结果按仓位回报。
         int[] anchorSlots = JsonSerializer.Deserialize<int[]>(anchorMembership.TargetSlotsJson) ?? [];
-        int[] secondSlots = [.. anchorSlots.Select(slot => slot + anchorSlots.Length)];
+        int[] secondSlots = [.. anchorSlots.Select(slot => slot + anchorSlots.Length * slotBlock)];
         fixture.Context.Set<JourneyDemandRow>().Add(new JourneyDemandRow
         {
             JourneyId = anchorMembership.JourneyId,
-            DemandId = SecondDemandId,
+            DemandId = demandId,
             PickupStopId = anchorMembership.PickupStopId,
             UnloadStopId = anchorMembership.UnloadStopId,
             ExpectedBasketCount = anchorMembership.ExpectedBasketCount,
             TargetSlotsJson = JsonSerializer.Serialize(secondSlots),
-            LoadSlotOperationAttemptId = JourneyPlanBuilder.StableGuid(SecondDemandId, "load-attempt"),
-            LoadCommandMessageId = JourneyPlanBuilder.StableGuid(SecondDemandId, "load-command"),
-            UnloadSlotOperationAttemptId = JourneyPlanBuilder.StableGuid(SecondDemandId, "unload-attempt"),
-            UnloadCommandMessageId = JourneyPlanBuilder.StableGuid(SecondDemandId, "unload-command"),
+            LoadSlotOperationAttemptId = JourneyPlanBuilder.StableGuid(demandId, "load-attempt"),
+            LoadCommandMessageId = JourneyPlanBuilder.StableGuid(demandId, "load-command"),
+            UnloadSlotOperationAttemptId = JourneyPlanBuilder.StableGuid(demandId, "unload-attempt"),
+            UnloadCommandMessageId = JourneyPlanBuilder.StableGuid(demandId, "unload-command"),
             DispatchZone = anchorMembership.DispatchZone,
             DispatchGeneration = anchorMembership.DispatchGeneration,
             Status = JourneyDemandStatuses.PendingLoad,
-            AddedAt = anchorMembership.AddedAt.AddSeconds(1)
+            AddedAt = anchorMembership.AddedAt.AddSeconds(slotBlock)
         });
         await fixture.Context.SaveChangesAsync(token);
     }
