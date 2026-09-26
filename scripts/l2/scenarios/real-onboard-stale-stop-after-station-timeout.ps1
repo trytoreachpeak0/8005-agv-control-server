@@ -15,18 +15,22 @@ v2 的修法两端都有，缺一不可：
 
 **三趟。**
 1. 第一趟不动任何报文：期限到、服务端收尾，看车上是否在十轮之内撤干净（L2-SST-03～05）。两组对照都该红在这里：旧服务端不发
-   收尾快照，旧车载端收到了也不撤录入请求。
+   收尾快照，旧车载端收到了也不撤录入请求。这三条之前先确认这段时间里没断过线、车载端主窗口还在（L2-SST-13）——断线会让车载端
+   清空投影，窗口没了 UI Automation 什么都读不到，两者都会把「没撤」读成「撤了」。
 2. 第二趟与第三趟用协议故障代理丢掉那张空清单，造出「服务端已收尾、车上还挂着」的窗口——空清单一到车，录入入口就撤了，迟到的
-   取消与扫码只可能出现在这个窗口里（PR #361 审查）。一个窗口只做得了一件迟到的事：修好的车载端收到 STALE（取消被拒或扫码被拒）
-   就认定本站已结束、撤掉入口（真装置 run2 实测，第二下取消按不到）。所以第二趟迟到地取消（L2-SST-06、07、11），第三趟迟到地扫码
-   （L2-SST-08、10）。
+   取消与扫码只可能出现在这个窗口里（PR #361 审查）。第二趟迟到地取消（L2-SST-06、07、11），第三趟迟到地扫码（L2-SST-08、10、14）。
+   取消之后窗口就合上了，但不是因为车载端看了 STALE：服务端答复取消之后 3～4 ms，被丢的那张空清单原样重发了一次（同一个
+   messageId，run4 与对照② 的代理记录里都是这样），车收到它就撤掉入口（真装置 run2：第二下取消按不到）。所以取消与扫码各开一趟。
+   扫码那一趟被丢的空清单直到场景结束都没重发（run4 代理记录），第三趟的撤录入来自车载端对 STALE 拒收的处理。
    代理只能丢、不能扣住再放，所以窗口不靠「放行」收尾：动作做完、下一趟之前若有残留就断一次线清掉，最后也断一次，给下一个场景
    留一台干净的车。断线不当判据用：v2 车载端会话一结束就清空旅程投影（WireToGateSessionClient ResetJourneyProjection），断线本身
    就能清掉残留，拿它证「撤干净」证不到任何一端的修复——所以「撤干净」只在第一趟判。
 
 **哪一条证哪一端**（两组对照实测，evidence/cs325）：车载端修复（hmi#199「空清单到车就撤录入请求」）只由第一趟 L2-SST-03 判到。
 L2-SST-10 守的是服务端这一侧——STALE 拒收带的是收尾那一版的号：旧车载端对号比自己手上高的拒收本来就撤录入（HandleSublotRejected
-只在作业会话与清单号都相同时保留），所以它对车载端修复没有判别力，旧服务端上（不答）才红。
+只在作业会话与清单号都相同时保留），所以它对车载端修复没有判别力，旧服务端上（不答）才红。「带的是收尾那一版的号」由 L2-SST-14
+直接判：拒收载荷的 currentWorklistRevision 等于被丢那张空清单的 worklistRevision。修好的三端上 L2-SST-10 与 L2-SST-08 同源
+（都来自那一条 STALE 拒收），它不是另一端的独立证据。
 
 「某样东西不在」的判据都有正向锚点：第一趟 L2-SST-01、第二趟 L2-SST-09、第三趟 L2-SST-12 先读到了录入框可用、「取消装货」在、清单挂着这单，
 同一个读法后来读到「不在」才有意义（control-server#260 的教训）。
@@ -58,7 +62,7 @@ $failure = '取消装货失败'
 # 车上此刻给的：录入框可用、「取消装货」在、清单里挂着哪些子批。Get-L2WorklistRows 返回 $null 表示清单不在树里——也就是没挂任何一条。
 function Get-VehicleView([string]$Sublot) {
     $rows = Get-L2WorklistRows $onboard
-    $sublots = if ($null -eq $rows) { @() } else { @($rows | ForEach-Object { [string]$_.Sublot }) }
+    $sublots = @(if ($null -ne $rows) { $rows | ForEach-Object { [string]$_.Sublot } })
     return [pscustomobject]@{
         CanSubmit     = [bool]$onboard.CanSubmit()
         OffersCancel  = [bool]$onboard.ButtonAvailable($button)
@@ -114,6 +118,8 @@ function Get-RejectionsOf([string]$SubmissionId) {
             [pscustomobject]@{
                 MessageId    = [string]$row.MessageId
                 ReasonCode   = [string]$envelope.payload.problem.reasonCode
+                Revision     = if ($envelope.payload.PSObject.Properties['currentWorklistRevision']) {
+                    [long]$envelope.payload.currentWorklistRevision } else { $null }
                 Acknowledged = Test-L2RealPresent $row.AcknowledgedAt
             }
         }
@@ -126,6 +132,26 @@ function Test-Delivered([string]$MessageId) {
     return @(@((Get-L2RealTraffic $proxy).lines) | Where-Object {
             $_.direction -eq 'server->onboard' -and -not $_.dropped -and
             [string]::Equals([string]$_.messageId, $MessageId, [StringComparison]::OrdinalIgnoreCase) }).Count -ge 1
+}
+
+# 代理从开跑以来接过的连接（按接入顺序编号）。车载端每重连一次多一条；最后一条的 closedAt 为空就是说它此刻连着。
+function Get-ProxyConnections { return , @(@((Get-L2RealTraffic $proxy).connections)) }
+
+function Format-ProxyConnections([object[]]$Connections) {
+    return (@($Connections | ForEach-Object {
+                "#$($_.connection) $(if ($null -eq $_.closedAt) { 'open' } else { "closed($($_.closedBy))" })" }) -join '; ')
+}
+
+# 车载端进程还在、主窗口还读得到。窗口一没，UI Automation 读什么都是「不在」，「不再要子批」就会假绿。
+function Test-OnboardAlive {
+    $process = Get-Process -Id $onboard.ProcessId -ErrorAction SilentlyContinue
+    if ($null -eq $process -or $process.HasExited -or $null -eq $onboard.Window) { return $false }
+    try {
+        $null = $onboard.Window.Current.Name
+        return $true
+    } catch [System.Windows.Automation.ElementNotAvailableException] {
+        return $false
+    }
 }
 
 # 车到站、要子批，但没人扫。返回需求 id、子批与到站那一刻车上的样子。
@@ -179,8 +205,11 @@ function Invoke-CancelPress([string]$DemandId, [string]$Label) {
         $journal.Note("$Label press: no request reached the server (failure notice shown: $closed).")
         return [pscustomobject]@{ Decision = '(no request)'; ReasonCode = ''; DemandId = '' }
     }
-    $decision = [string]$answered.ResponsePayload.decision
-    $reason = if ($answered.ResponsePayload.problem) { [string]$answered.ResponsePayload.problem.reasonCode } else { '' }
+    # 答复可能没有载荷（ResponsePayload 为 $null），接受时载荷里也没有 problem；StrictMode 下读不存在的属性会抛，先看在不在。
+    $response = $answered.ResponsePayload
+    $decision = if ($null -ne $response -and $response.PSObject.Properties['decision']) { [string]$response.decision } else { '(no decision)' }
+    $reason = if ($null -ne $response -and $response.PSObject.Properties['problem'] -and $null -ne $response.problem) {
+        [string]$response.problem.reasonCode } else { '' }
     $journal.Note("$Label press: $decision $reason (demand $($answered.Payload.demandId); failure notice shown: $closed).")
     return [pscustomobject]@{ Decision = $decision; ReasonCode = $reason; DemandId = [string]$answered.Payload.demandId }
 }
@@ -202,6 +231,9 @@ $assertions.Add(
     'L2-SST-01', '第一趟：车到站后要子批、给「取消装货」、清单挂着这单（前提，也是下面三条「不在」的正向锚点）',
     ($first.View.CanSubmit -and $first.View.OffersCancel -and $first.View.ListsSublot),
     'canSubmit / offersCancel / listsSublot 均为 True', (Format-VehicleView $first.View))
+# 下面三条「不在」要在同一个会话、同一个窗口里读才算数：从这里起记下握手次数与代理连接数。
+$firstHellos = Get-HelloCount
+$firstConnections = Get-ProxyConnections
 
 $journal.Note('Nobody scans. Waiting for the station deadline to end the stop.')
 $firstSettled = Wait-StationTimeout $first.DemandId 'first'
@@ -213,6 +245,16 @@ $assertions.Add(
 $null = Wait-L2Iterations -Riot $riot -Count 10 -TimeoutSeconds 90 -Journal $journal
 $afterFirst = Get-VehicleView $first.Sublot
 $journal.Note("First stop, ten rounds after Completed: $(Format-VehicleView $afterFirst)")
+$firstHellosAfter = Get-HelloCount
+$firstConnectionsAfter = Get-ProxyConnections
+$firstAlive = Test-OnboardAlive
+$assertions.Add(
+    'L2-SST-13', '第一趟（前提）：从到站到读下面三条，车没重连（SessionHello 与代理连接数不变、当前连接未关）、车载端主窗口还在——否则「不在」可能是断线清空或窗口没了',
+    ($firstHellosAfter -eq $firstHellos -and $firstConnectionsAfter.Count -eq $firstConnections.Count -and
+        $firstConnectionsAfter.Count -ge 1 -and $null -eq $firstConnectionsAfter[-1].closedAt -and $firstAlive),
+    "SessionHello $firstHellos → 不变；代理连接 $($firstConnections.Count) 条 → 不变、最后一条 open；主窗口在",
+    "SessionHello $firstHellos → $firstHellosAfter；代理连接 [$(Format-ProxyConnections $firstConnections)] → " +
+    "[$(Format-ProxyConnections $firstConnectionsAfter)]；主窗口 $(if ($firstAlive) { '在' } else { '不在' })")
 $assertions.Add(
     'L2-SST-03', '第一趟：旅程被站点期限结束之后，车不再要子批',
     (-not $afterFirst.CanSubmit), 'canSubmit=False', (Format-VehicleView $afterFirst))
@@ -237,32 +279,60 @@ function Clear-Residue([string]$Sublot, [string]$Label) {
 
 <#
 一个「服务端已收尾、车上还挂着」的窗口：车到站要子批，布下「丢下一张清单」——这一站那一版已经到车（车上列着这单），丢的只能是
-之后那一张，收尾的空清单——然后等站点期限收尾。窗口里只做得了一件迟到的事：车载端收到 STALE（取消被拒或扫码被拒）就认定本站
-已结束、撤掉入口（真装置 run2 实测：第一下取消被 STALE 拒绝后「取消装货」没了，第二下按不到），所以取消与扫码各开一个窗口。
+之后那一张，收尾的空清单——然后等站点期限收尾。窗口的前提连同「丢掉的确实是这一趟收尾的空清单」一起判：丢掉的那一行按
+messageId 回发件箱对上，丢了就必须是布下规则之后才写进发件箱的一张空清单。它的 worklistRevision 留给 L2-SST-14 用。
 #>
 function Open-StaleWindow([string]$Prefix, [string]$Label) {
     $stop = Start-UnattendedStop $Prefix
-    $null = $proxy.Command('Put', 'drop-message', @{ messageType = 'CurrentStopWorklistSnapshot'; count = 1 })
-    $journal.Note("$Label armed: drop the next CurrentStopWorklistSnapshot to the vehicle (the closing empty worklist).")
+    # 丢掉的那一行按流量记录里的行读：丢弃记录（drops）只有计划名的类型、没有 messageId（TrafficLog.DropRecord）。
+    $droppedBefore = @(@((Get-L2RealTraffic $proxy).lines) | Where-Object { $_.dropped } | ForEach-Object { ([string]$_.messageId).ToLowerInvariant() })
+    $outboxBefore = @((Get-L2RealOutbound $connection 'CurrentStopWorklistSnapshot') | ForEach-Object { $_.MessageId })
+    # 代理把命令的 commandId 当作计划号（ControlPlane drop-message：PlanId = command.CommandId），丢弃记录按它记。
+    $planId = [guid]::NewGuid().ToString('N')
+    $null = $proxy.Command('Put', 'drop-message', @{ messageType = 'CurrentStopWorklistSnapshot'; count = 1; commandId = $planId })
+    $journal.Note("$Label armed plan ${planId}: drop the next CurrentStopWorklistSnapshot to the vehicle (the closing empty worklist).")
     $settled = Wait-StationTimeout $stop.DemandId $Label
     $null = Wait-L2Iterations -Riot $riot -Count 5 -TimeoutSeconds 60 -Journal $journal
-    # 丢掉的那一行按流量记录里的行读：丢弃记录（drops）只有计划名的类型、没有 messageId（TrafficLog.DropRecord）。
-    $drops = @(@((Get-L2RealTraffic $proxy).lines) | Where-Object {
-            $_.dropped -and [string]$_.messageType -eq 'CurrentStopWorklistSnapshot' })
-    $emptyWorklists = @((Get-L2RealOutbound $connection 'CurrentStopWorklistSnapshot') | Where-Object { @($_.Payload.items).Count -eq 0 })
-    $journal.Note("$Label dropped worklists so far: $(@($drops | ForEach-Object { [string]$_.messageId }) -join ', '); " +
-        "empty worklists in the outbox: $(@($emptyWorklists | ForEach-Object { $_.MessageId }) -join ', ')")
+
+    $traffic = Get-L2RealTraffic $proxy
+    $droppedNow = @(@($traffic.lines) | Where-Object {
+            $_.dropped -and [string]$_.messageType -eq 'CurrentStopWorklistSnapshot' -and
+            $droppedBefore -notcontains ([string]$_.messageId).ToLowerInvariant() })
+    $droppedIds = @($droppedNow | ForEach-Object { ([string]$_.messageId).ToLowerInvariant() } | Select-Object -Unique)
+    $worklists = Get-L2RealOutbound $connection 'CurrentStopWorklistSnapshot'
+    # StrictMode 下越界下标会抛，先数再取。
+    $matching = @(if ($droppedIds.Count -eq 1) { $worklists | Where-Object { $_.MessageId -eq $droppedIds[0] } })
+    $dropped = if ($matching.Count -eq 1) { $matching[0] } else { $null }
+    $droppedIsClosing = ($null -ne $dropped -and $outboxBefore -notcontains $dropped.MessageId -and @($dropped.Payload.items).Count -eq 0)
+    $droppedRevision = if ($null -ne $dropped) { [long]$dropped.Payload.worklistRevision } else { $null }
+    $journal.Note("$Label dropped in this window: $($droppedIds -join ', ') " +
+        "(revision $droppedRevision, empty and new since arming: $droppedIsClosing)")
+
+    # 规则没被用掉（这一趟一张都没丢）就会带进下一趟，丢掉下一趟到站的那一版（对照③ 实测丢了 80b02802）。记下来，清掉。
+    $consumed = @(@($traffic.drops) | Where-Object { [string]$_.planId -eq $planId }).Count -ge 1
+    if (-not $consumed) {
+        $journal.Note("$Label drop plan $planId was not consumed; resetting the proxy plan so it does not carry into the next stop.")
+        $null = $proxy.Command('Post', 'reset', @{})
+    }
+
     $view = Get-VehicleView $stop.Sublot
     $journal.Note("$Label after Completed, empty worklist dropped: $(Format-VehicleView $view)")
+    # 丢了就必须丢对：是这一趟收尾的空清单，不是到站那一版。一张没丢也算窗口——旧服务端根本不发收尾空清单（对照③），车上照样
+    # 挂着；那时迟到动作的判据照常求值，红在它们自己身上，而不是被前提挡成「没走到」。L2-SST-14 另要求真的丢了一张。
+    $dropOk = ($droppedIds.Count -eq 0 -or $droppedIsClosing)
     return [pscustomobject]@{
         DemandId = $stop.DemandId; Sublot = $stop.Sublot; Settled = $settled; View = $view
-        Open     = ((Test-TimedOut $settled) -and $view.CanSubmit -and $view.OffersCancel -and $view.ListsSublot)
+        DroppedId = ($droppedIds -join ','); DroppedRevision = $droppedRevision; DroppedIsClosing = $droppedIsClosing; PlanConsumed = $consumed
+        Open     = ((Test-TimedOut $settled) -and $dropOk -and $view.CanSubmit -and $view.OffersCancel -and $view.ListsSublot)
     }
 }
 
-function Format-Window([object]$W) { return "$(Format-Settlement $W.Settled)；$(Format-VehicleView $W.View)" }
+function Format-Window([object]$W) {
+    $dropText = if ($W.DroppedId) { "丢掉 [$($W.DroppedId)] 号 $($W.DroppedRevision) 收尾空清单=$($W.DroppedIsClosing)" } else { '一张没丢（规则已清）' }
+    return "$(Format-Settlement $W.Settled)；$dropText；$(Format-VehicleView $W.View)"
+}
 
-$windowExpected = 'Cancelled / CANCELLED_BY_STATION_TIMEOUT / Completed / 0；canSubmit / offersCancel / listsSublot 均为 True'
+$windowExpected = 'Cancelled / CANCELLED_BY_STATION_TIMEOUT / Completed / 0；丢了的话恰好一张、是布下规则之后的空清单；canSubmit / offersCancel / listsSublot 均为 True'
 
 # --- 2. 第二趟：窗口里迟到地按「取消装货」 ---------------------------------------------------------------------------
 
@@ -272,8 +342,9 @@ $assertions.Add(
     'L2-SST-09', '第二趟（前提）：服务端已以站点期限收尾，车上仍要子批、仍给「取消装货」、清单仍挂着这单——迟到的取消只能发生在这个窗口里',
     $second.Open, $windowExpected, (Format-Window $second))
 if ($second.Open) {
-    # 车给几次就按几次，最多两下（现场那次按了两下）。修好的车载端在第一下被 STALE 拒绝之后就撤掉按钮；旧的不撤，按得到第二下。
+    # 车给几次就按几次，最多两下（现场那次按了两下）。第一下答复之后被丢的空清单会重发（见文件头），按钮随之撤掉，所以通常只按得到一下。
     $hellosBefore = Get-HelloCount
+    $connectionsBefore = Get-ProxyConnections
     $presses = @()
     foreach ($label in 'first', 'second') {
         if ($label -ne 'first' -and -not (Wait-L2RealButtonOffered $onboard $journal $button "cancel-offered-$label" 10)) {
@@ -284,13 +355,17 @@ if ($second.Open) {
     }
     $null = Wait-L2Iterations -Riot $riot -Count 8 -TimeoutSeconds 60 -Journal $journal
     $hellosAfter = Get-HelloCount
+    $connectionsAfter = Get-ProxyConnections
     $afterPresses = Get-VehicleView $second.Sublot
     $journal.Note("Second stop after the presses: $(Format-VehicleView $afterPresses)")
     $pressText = ($presses | ForEach-Object { "$($_.Decision)/$($_.ReasonCode)" }) -join '；'
     $assertions.Add(
         'L2-SST-06', '第二趟：收尾之后按「取消装货」（车给几次按几次，最多两下），服务端不掐连接、车不重连',
-        ($presses.Count -ge 1 -and $hellosAfter -eq $hellosBefore), ">= 1 下；SessionHello 次数不变（$hellosBefore）",
-        "按了 $($presses.Count) 下（$pressText）；按前 $hellosBefore / 按后 $hellosAfter")
+        ($presses.Count -ge 1 -and $hellosAfter -eq $hellosBefore -and $connectionsAfter.Count -eq $connectionsBefore.Count -and
+            $connectionsAfter.Count -ge 1 -and $null -eq $connectionsAfter[-1].closedAt),
+        ">= 1 下；SessionHello 次数不变（$hellosBefore）；代理连接数不变（$($connectionsBefore.Count)）、当前连接未关",
+        "按了 $($presses.Count) 下（$pressText）；SessionHello 按前 $hellosBefore / 按后 $hellosAfter；代理连接 " +
+        "[$(Format-ProxyConnections $connectionsBefore)] → [$(Format-ProxyConnections $connectionsAfter)]")
 
     $workflows = Get-L2RealCount $connection "SELECT COUNT(*) AS Total FROM RecoveryWorkflows WHERE DemandId = '$($second.DemandId)'"
     $statusAfterPresses = [string](Get-L2RealScalar $connection "SELECT Status AS Value FROM AcceptedDemands WHERE DemandId = '$($second.DemandId)'")
@@ -302,7 +377,7 @@ if ($second.Open) {
         '每一下 REJECTED/WORKLIST_REVISION_STALE / 0 条工作流 / Cancelled',
         "$pressText；$workflows 条工作流 / $statusAfterPresses")
     $assertions.Add(
-        'L2-SST-11', '第二趟：迟到的取消被 STALE 拒绝之后，车不再给「取消装货」（车载端据 STALE 认定本站已结束）',
+        'L2-SST-11', '第二趟：迟到的取消被拒之后，车不再给「取消装货」（撤按钮的是答复之后重发到车的那张收尾空清单，不是车载端看了 STALE）',
         (-not $afterPresses.OffersCancel), 'offersCancel=False', (Format-VehicleView $afterPresses))
 } else {
     Add-L2RealNotReached $assertions @('L2-SST-06', 'L2-SST-07', 'L2-SST-11') '窗口没造出来：车上没有可按的「取消装货」'
@@ -316,7 +391,7 @@ $assertions.Add(
     'L2-SST-12', '第三趟（前提）：服务端已以站点期限收尾，车上仍要子批、仍给「取消装货」、清单仍挂着这单——迟到的扫码只能发生在这个窗口里',
     $third.Open, $windowExpected, (Format-Window $third))
 if (-not $third.Open) {
-    Add-L2RealNotReached $assertions @('L2-SST-08', 'L2-SST-10') '窗口没造出来：车上没有可用的录入框'
+    Add-L2RealNotReached $assertions @('L2-SST-08', 'L2-SST-10', 'L2-SST-14') '窗口没造出来：车上没有可用的录入框'
 } else {
     $submissionsBefore = @((Get-L2RealInbound $connection 'SublotSubmitted') | ForEach-Object { $_.MessageId })
     $journal.Note("Late scan of $($third.Sublot) through UI Automation.")
@@ -339,24 +414,35 @@ if (-not $third.Open) {
     $shown = Wait-L2RealOrLast -Description 'the HMI shows the rejection reason' `
         -Journal $journal -Criterion 'late-answer-shown' -TimeoutSeconds 30 `
         -Probe { Get-RejectionDisplay } -Until { param($v) $v -eq 'WORKLIST_REVISION_STALE' }
-    # 等到的是一个数组时 return 会把它展开：一条时拿到的是那一条本身，零条时是 $null——@($null) 数出来是 1，所以滤掉空值再数。
-    $answers = @($answer | Where-Object { $null -ne $_ })
+    $afterScan = Wait-L2RealOrLast -Description 'the vehicle withdrew sublot entry after the STALE answer' `
+        -Journal $journal -Criterion 'withdrawn-after-stale' -TimeoutSeconds 30 `
+        -Probe { Get-VehicleView $third.Sublot } -Until { param($v) -not $v.CanSubmit -and -not $v.OffersCancel }
+
+    # 「恰好一条」在撤录入的等待之后重数：等答复时只等到了第一条，第二条若有，此刻也该在发件箱里了。
+    # 不写成 @(if ...)：Get-RejectionsOf 以 , @() 整个交出数组，外面再包一层会变成「一个元素是数组」。
+    $answers = @()
+    if ($submissionId) { $answers = Get-RejectionsOf $submissionId }
     $answerText = if ($answers.Count -eq 0) { '(no SublotRejected)' } else {
-        ($answers | ForEach-Object { "$($_.ReasonCode) delivered=$(Test-Delivered $_.MessageId)" }) -join '; ' }
+        ($answers | ForEach-Object { "$($_.ReasonCode) rev=$($_.Revision) delivered=$(Test-Delivered $_.MessageId)" }) -join '; ' }
+    $journal.Note("Late entry answers after the withdrawal wait: $answerText")
     $assertions.Add(
         'L2-SST-08', '第三趟：收尾之后的迟到扫码恰好得到一条 SublotRejected / WORKLIST_REVISION_STALE，经代理送到车上、提示区显示这个原因',
         ($answers.Count -eq 1 -and $answers[0].ReasonCode -eq 'WORKLIST_REVISION_STALE' -and (Test-Delivered $answers[0].MessageId) -and
             $shown -eq 'WORKLIST_REVISION_STALE'),
         '1 × WORKLIST_REVISION_STALE delivered=True；提示区 WORKLIST_REVISION_STALE',
         "录入 $(if ($submissionId) { $submissionId } else { '(not received)' })：$answerText；提示区 $(if ($shown) { $shown } else { '(none)' })")
-
-    $afterScan = Wait-L2RealOrLast -Description 'the vehicle withdrew sublot entry after the STALE answer' `
-        -Journal $journal -Criterion 'withdrawn-after-stale' -TimeoutSeconds 30 `
-        -Probe { Get-VehicleView $third.Sublot } -Until { param($v) -not $v.CanSubmit -and -not $v.OffersCancel }
     $assertions.Add(
-        'L2-SST-10', '第三趟：迟到的扫码被 STALE 拒绝之后，车不再要子批、不再给「取消装货」（守服务端：STALE 带收尾那一版的号）',
+        'L2-SST-10', '第三趟：迟到的扫码被 STALE 拒绝之后，车不再要子批、不再给「取消装货」（守服务端一侧；修好的三端上与 L2-SST-08 同源）',
         (-not $afterScan.CanSubmit -and -not $afterScan.OffersCancel), 'canSubmit=False / offersCancel=False',
         (Format-VehicleView $afterScan))
+    # 服务端 STALE 带的是收尾那一版的号：拒收载荷的 currentWorklistRevision 等于被丢那张空清单的 worklistRevision（窗口里读到的）。
+    # 被丢的那张若是别的号，旧车载端对号更低的拒收会保留录入——L2-SST-10 看不出来的那一半由这一条判。
+    $revisionsMatch = ($answers.Count -ge 1 -and $null -ne $third.DroppedRevision -and
+        @($answers | Where-Object { $_.Revision -ne $third.DroppedRevision }).Count -eq 0)
+    $assertions.Add(
+        'L2-SST-14', '第三趟：STALE 拒收带的是收尾那一版的号——每一条拒收的 currentWorklistRevision 都等于被丢那张收尾空清单的 worklistRevision',
+        $revisionsMatch, "每条 currentWorklistRevision = $($third.DroppedRevision)（被丢的 $($third.DroppedId)）",
+        "拒收 $answerText；被丢的 $($third.DroppedId) 号 $($third.DroppedRevision)")
 }
 
 # 给下一个场景一台干净的车；不当判据用（见文件头）。

@@ -4,10 +4,10 @@
     # 没有 _currentEntryRequest 这回事。
     Onboard                     = 'Real'
 
-    # 第二趟丢掉收尾的那张空清单，造出「服务端已收尾、车上还挂着」的窗口。
+    # 第二、三趟丢掉收尾的那张空清单，造出「服务端已收尾、车上还挂着」的窗口。
     ProtocolFaultProxy          = $true
 
-    # 四十五秒：够车收下录入请求、UI Automation 读到录入框与按钮，又不至于两趟跑太久。出厂配置不开 RecoveryResume：
+    # 四十五秒：够车收下录入请求、UI Automation 读到录入框与按钮，又不至于三趟跑太久。出厂配置不开 RecoveryResume：
     # 扫码前取消只要会话 Ready 与站点操作员权限。
     StationDepartureWaitTimeout = '00:00:45'
 }
