@@ -191,6 +191,46 @@ public sealed class FailedOrderBehindSessionGateTests
     }
 
     /// <summary>
+    /// 失联期间在途单现在也会被判，于是等着同车重建（cs#318）的那一趟也在失联这条路上推进：延迟到点了也不建新单，
+    /// 记录写明在等失联的车（<c>ONBOARD_SESSION_LOST</c>）；车重新说话的那一轮才建。
+    /// </summary>
+    /// <remarks>
+    /// 本票新立的一条线：失联那条路调重建时传 <c>mayCreate: false</c>。改成 <c>true</c>，一辆不说话的车会被派出新单开走——
+    /// 这正是准入线第 1 条「车在无人预期时移动」。修前失联截停整轮、根本走不到重建，所以这条线以前不需要护栏。
+    /// </remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0360")]
+    public async Task ARebuildDueWhileTheReadySessionIsSilentWaitsForTheVehicleToBeHeard()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow dispatched = await fixture.RuntimeAsync();
+        fixture.Riot.CancelOrder(dispatched.PickupUpperId);
+        await TickAndHearAsync(fixture);
+        Assert.Equal("ORDER_ENDED_WITHOUT_ARRIVAL", (await fixture.RuntimeAsync()).BlockReasonCode);
+
+        await fixture.HearFromPeerAsync();
+        TimeSpan silence = (fixture.Options.OwnOrderRebuildDelay > SessionLiveness.Timeout
+            ? fixture.Options.OwnOrderRebuildDelay
+            : SessionLiveness.Timeout) + TimeSpan.FromSeconds(1);
+        fixture.Clock.Advance(silence);
+        await TickSilentAsync(fixture);
+        await TickSilentAsync(fixture);
+
+        await AssertSessionStillReadyAsync(fixture);
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+        await using (ControlServerDbContext reading = new(fixture.DbOptionsForTests))
+        {
+            OwnOrderRebuildRow waiting = await reading.OwnOrderRebuilds.AsNoTracking().SingleAsync(Token);
+            Assert.Equal(
+                (OwnOrderRebuildStates.Pending, JourneyRuntimeEngine.OnboardSessionLostReason),
+                (waiting.State, waiting.WaitingReason));
+        }
+
+        await TickAndHearAsync(fixture);
+        Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+    }
+
+    /// <summary>
     /// 闸门后记下故障之后，一轮读不到这张单（RIoT 不回答）：码仍是 <c>VEHICLE_ORDER_FAILED</c>，开始时刻不动——
     /// 读不到不等于单已继续，而 FAILED 是终态。
     /// </summary>
