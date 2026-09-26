@@ -30,7 +30,21 @@ foreach ($m in $mutations) {
         "    build: $errors" | Tee-Object -Append (Join-Path $Out 'summary.txt')
         $test = dotnet test tests/ControlServer.Tests/ControlServer.Tests.csproj -c Release --no-build --filter 'FullyQualifiedName~EmergencyReleaseVersusOwnOrderRebuildTests' 2>&1
         $test | Set-Content (Join-Path $Out "$($m.Id).log")
-        ($test | Select-String '\[FAIL\]|Passed!|Failed!|\.cs:line') | ForEach-Object { "    $($_.Line.Trim())" } |
+        # For each failed test: its name, the assertion message, and the first line of the test file it stopped at.
+        $lines = @($test)
+        for ($i = 0; $i -lt $lines.Count; $i++) {
+            if ($lines[$i] -match '^\s+Failed (\S+)') {
+                "    FAIL $($Matches[1] -replace '^.*\.', '')" | Tee-Object -Append (Join-Path $Out 'summary.txt')
+                $j = $i + 1
+                while ($j -lt $lines.Count -and $lines[$j] -notmatch 'Stack Trace:') {
+                    if ($lines[$j] -notmatch 'Error Message:' -and $lines[$j].Trim()) { "      $($lines[$j].Trim())" | Tee-Object -Append (Join-Path $Out 'summary.txt') }
+                    $j++
+                }
+                $at = $lines[$j..($lines.Count - 1)] | Where-Object { $_ -match 'EmergencyReleaseVersusOwnOrderRebuildTests\.cs:line (\d+)' } | Select-Object -First 1
+                if ($at -match ':line (\d+)') { "      at line $($Matches[1])" | Tee-Object -Append (Join-Path $Out 'summary.txt') }
+            }
+        }
+        ($test | Select-String 'Passed!|Failed!') | ForEach-Object { "    $($_.Line.Trim())" } |
             Tee-Object -Append (Join-Path $Out 'summary.txt')
     }
     finally {
@@ -40,4 +54,5 @@ foreach ($m in $mutations) {
 }
 $clean = git status --porcelain -- src
 "=== src clean after restore: '$clean'" | Tee-Object -Append (Join-Path $Out 'summary.txt')
-dotnet build tests/ControlServer.Tests/ControlServer.Tests.csproj -c Release --no-incremental 2>&1 | Select-String ' Error\(s\)'
+$final = (dotnet build tests/ControlServer.Tests/ControlServer.Tests.csproj -c Release --no-incremental 2>&1 | Select-String ' Error\(s\)').Line
+"=== rebuild after restore: $($final.Trim())" | Tee-Object -Append (Join-Path $Out 'summary.txt')

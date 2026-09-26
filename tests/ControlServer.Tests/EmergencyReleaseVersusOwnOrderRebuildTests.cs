@@ -25,7 +25,8 @@ namespace ControlServer.Tests;
 /// FAILED 是终态，所以「本服务端的急停锁着、它自己的单还没结束」这个起点服务端自己造不出来——清除入口的类注释也这么写
 /// （<c>FAULT_RECOVERY_CURRENT_ORDER_CANCELLED_IN_RIOT</c> "is not reachable in the product"）。前三条用例走的是今天走得到的链；
 /// 第四条是票面字面那条链（锁着时单还活着、人去 RIoT 取消它），用故障协调器的公开入口构造起点，结论只对「将来有了别的急停来源」
-/// （把 HANG 纳入故障模型的 #319、REQ-0249 两条人工急停来源的入口）成立；第五条是急停不是本服务端发的对照，没有 REQ-0356 这一步。
+/// （把 HANG 纳入故障模型的 #319、REQ-0249 两条人工急停来源的入口）成立；第五条是急停不是本服务端发的那条链，没有 REQ-0356 这一步，
+/// <b>今天走得到，票面担心的两种形状在那里都出现了</b>（已报调度，是否改由用户决定）。
 /// 逐步的表格与反向验证在 <c>evidence/cs349/SUMMARY.md</c>。
 /// </para>
 /// <para>
@@ -200,18 +201,24 @@ public sealed class EmergencyReleaseVersusOwnOrderRebuildTests
     }
 
     /// <summary>
-    /// 同一条链带上真车载端的会话：车带着本服务端的单时会话未就绪（<c>DEPARTURE_SAFETY_NOT_READY</c>）。单 FAILED 时车还在动，这期间
-    /// 服务端既不记故障也不急停；车停下、会话就绪的那一轮才记故障、发急停。锁住之后会话又未就绪，一直到清除之后：解除与清除都照样成立
-    /// （都不看会话），但重建过了延迟也不建，等到会话就绪的那一轮才建——重建时机从「清除后延迟到点」变成「延迟到点且会话就绪」，两者取晚。
+    /// 同一条链带上真车载端的会话，分两段看。前半段是本服务端在途单造成的未就绪（<c>DEPARTURE_SAFETY_NOT_READY</c>）：单 FAILED 时车还在动，
+    /// 这期间服务端既不记故障也不急停，车停下、会话就绪的那一轮才记故障、发急停——<b>被推迟的是记故障与急停（cs#358）</b>，不是重建。
+    /// 后半段是锁住之后会话又未就绪，一直到清除之后：解除与清除都照样成立（都不看会话），重建过了延迟也不建，等到会话就绪的那一轮才建——
+    /// 重建时机从「清除后延迟到点」变成「延迟到点且会话就绪」，两者取晚。
     /// </summary>
     /// <remarks>
     /// <para>
     /// 会话的样子照 <c>PickupDispatchPlanPastOwnOrderTests.DropSessionOnOwnOrderAsync</c>。合成车载端永远报安全，合成 L2 按构造看不见这一格。
     /// </para>
     /// <para>
-    /// 「FAILED 后会话未就绪期间不记故障、不急停」是这一格顺带钉住的<b>今天的行为</b>，不是本票的判断：记故障只在引擎的到站分支里，
-    /// 那在会话闸门之后。已按调度 2026-09-24 的上真车准入规则第 (1) 条报调度；将来改它，这里要跟着翻。锁住之后真车载端会不会未就绪，
-    /// 没在真车上核实过（vehicle-fault-clearance-field-guide.md 末节），这里取未就绪，是对重建更不利的那一种。
+    /// <b>前半段钉的是今天的行为，cs#358 修好之后要翻。</b>记故障只在引擎的到站分支里，那在会话闸门之后；调度判为上真车准入规则第 (1) 条
+    /// 「急停失效」，开成 cs#358。
+    /// </para>
+    /// <para>
+    /// <b>后半段的未就绪不是本服务端在途单造成的</b>：那张单已经 FAILED，是终态。锁住的车在真车载端上会不会未就绪，没在真车上核实过
+    /// （vehicle-fault-clearance-field-guide.md 末节），这里借同一个形状取未就绪，是对重建更不利的那一种。「不建」在这一段有两道挡：
+    /// 重建的会话闸门，和车况护栏里的 <c>ONBOARD_FACTS_NOT_READY</c>（会话未就绪时车载端事实读不到）；拿掉前一道，等待理由换成后一道，
+    /// 仍然不建（反向验证 M4）。
     /// </para>
     /// </remarks>
     [Fact]
@@ -303,7 +310,8 @@ public sealed class EmergencyReleaseVersusOwnOrderRebuildTests
     /// </para>
     /// <para>
     /// 结局是「车不动、单不建」，所以不属于票面的两种停下条件（车在无人预期时移动、送不存在的货）。但它是一个出不去的环：清除入口不接、
-    /// #345 的出口只接停住的重建、重建又在等故障清除。将来那两种来源落地时要一起解决，写进了 PR 的剩余风险。
+    /// #345 的出口只接停住的重建、续行要 PAUSED 的单、重建又在等故障清除。今天走不到，所以不算上真车准入规则第 (3) 条「只能改库」；
+    /// 将来那两种来源落地时就是第 (3) 条，要一起解决（为什么今天走不到，见 evidence/cs349/SUMMARY.md）。
     /// </para>
     /// </remarks>
     [Fact]
@@ -399,18 +407,27 @@ public sealed class EmergencyReleaseVersusOwnOrderRebuildTests
     /// 装着货开往卸货站，车被别人急停（现场物理急停或 RIoT 人员，服务端的命令审计里没有触发），单在 RIoT 上 HANG。人工解除不归服务端
     /// （<c>EMERGENCY_NOT_RAISED_BY_8005</c>）。人在 RIoT 里取消本服务端这张单、把货取走，车报来的仓位读数显示放货的仓是空的。
     /// 急停由别人解开之后，服务端照 REQ-0360 给同一辆车重建开往卸货站的单，承载的仍是那条已装货的需求——取消来源的重建不看仓位读数。
+    /// 重建的延迟从读到取消算，锁着期间就走完了，所以解开急停的那一轮就建单，没有缓冲。
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>这一格钉的是今天的行为，不是判断它对。</b>它不在票面的停下条件里——没有 REQ-0356 的解除，服务端从没被告知「车上无货」——
-    /// 但形状与票面担心的第二件事相同：重建单承载的需求要车上有货，而车上已经没货。同样的情形在故障清除来源上由 REQ-0362 的仓位读数挡住
+    /// <b>这一格今天走得到，票面担心的两种形状在这里都出现了</b>：解开急停的那一轮车就被派走（断言到「那一轮新建了 <c>TO_GATE</c>」），
+    /// 重建单承载的需求要车上有货，而车已报放货的仓是空的。它不在票面的停下条件里，只因为链上没有 REQ-0356 的解除、服务端从没被告知
+    /// 「车上无货」。同样的情形在故障清除来源上由 REQ-0362 的仓位读数挡住
     /// （<see cref="OnTheWayToTheGateAnEmptiedVehicleIsReleasedButItsDeliveryIsNeverRebuilt"/>），取消来源没有这一道
-    /// （<c>JourneyRuntimeEngine.AdvanceOwnOrderRebuildAsync</c> 只对 <c>FaultClearedCargoOnBoard</c> 取仓位读数）。已报调度；
-    /// 将来给取消来源加上同一道，这一条要翻。
+    /// （<c>JourneyRuntimeEngine.AdvanceOwnOrderRebuildAsync</c> 只对 <c>FaultClearedCargoOnBoard</c> 取仓位读数）。
     /// </para>
     /// <para>
-    /// 现场说明（vehicle-fault-clearance-field-guide.md「要分清两种取消」）教的是不要为了让车停下而在 RIoT 里取消服务端的单，
-    /// 所以这一格要有人违反说明才走得到。
+    /// <b>钉的是今天的行为，不是判断它对。</b>已报调度，是否改由用户决定（REQ-0360 字面要求继续承载原需求；它引用的 REQ-0239 又写着
+    /// 「相关阻断收敛」后才可重建、结果不明时继续载货保全）。将来给取消来源加上仓位证明，这一条要翻。
+    /// </para>
+    /// <para>
+    /// <b>这一格不需要有人违反说明。</b>现场说明（vehicle-fault-clearance-field-guide.md「要分清两种取消」）禁止的是「为了让车停下」而取消
+    /// 服务端的单；急停不是本服务端发的，按说明转 RIoT 人员处置，他们为清场取消这张单不一定违反它，而 REQ-0356 条文本身也写着「须先取消该订单」。
+    /// </para>
+    /// <para>
+    /// 仓位读数的时刻要严格晚于重建记录的时刻（<c>CargoEvidenceAsync</c> 只认 <c>ReceivedAt &gt; RecordedAt</c>）。这里先拨一秒再报读数，并断言了
+    /// 这个先后：同一时刻的读数今天无所谓，将来加上仓位证明时会被当成「没收到读数」，这一格就会因为错误的理由变红。
     /// </para>
     /// </remarks>
     [Fact]
@@ -440,20 +457,32 @@ public sealed class EmergencyReleaseVersusOwnOrderRebuildTests
         fixture.Riot.CancelOrder(unload.UpperId);
         site.HasUnfinishedOrder = false;
         await TickAndHearAsync(fixture);
-        Assert.Equal(OwnOrderRebuildSources.CancelledInRiot, (await SingleRebuildAsync(fixture)).Source);
-        await fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow(), physicalState: "EMPTY");
+        DateTimeOffset cancelSeenAt = fixture.Clock.GetUtcNow();
+        OwnOrderRebuildRow recorded = await SingleRebuildAsync(fixture);
+        Assert.Equal(
+            (OwnOrderRebuildSources.CancelledInRiot, cancelSeenAt, cancelSeenAt + fixture.Options.OwnOrderRebuildDelay),
+            (recorded.Source, recorded.RecordedAt, recorded.DueAt));
+
+        // 车报放货的仓是空的：读数晚于重建记录一秒，是读到取消之后才收到的读数（见 remarks）。
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        DateTimeOffset emptyReadAt = fixture.Clock.GetUtcNow();
+        Assert.True(emptyReadAt > recorded.RecordedAt, "the snapshot must be received after the rebuild was recorded");
+        await fixture.AddCargoSnapshotAsync(emptyReadAt, physicalState: "EMPTY");
 
         await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
         Assert.Equal(gateCreates, fixture.Riot.CreateCount("TO_GATE"));
         Assert.Contains("RIOT_EMERGENCY_NOT_OK", (await SingleRebuildAsync(fixture)).WaitingReason, StringComparison.Ordinal);
 
-        // 别人解开急停：下一轮就建开往卸货站的单，承载那条已装货的需求。
+        // 别人解开急停：延迟早已走完，解开的那一轮就建开往卸货站的单，承载那条已装货的需求。
         Unlatch(fixture);
         await TickAndHearAsync(fixture);
+        DateTimeOffset unlatchedRound = fixture.Clock.GetUtcNow();
+        Assert.True(recorded.DueAt < unlatchedRound, "the delay must have run out while the vehicle was latched");
 
         Assert.Equal(gateCreates + 1, fixture.Riot.CreateCount("TO_GATE"));
         await OwnOrderRebuildTests.AssertRebuiltAsync(fixture, dispatched, stopsBefore, unload);
         OwnOrderRebuildRow rebuilt = await SingleRebuildAsync(fixture);
+        Assert.Equal(unlatchedRound, rebuilt.RebuiltAt);
         Assert.Null(rebuilt.CargoEvidenceMessageId);
         Assert.Equal(JourneyDemandStatuses.Loaded, (await MembershipAsync(fixture)).Status);
     }

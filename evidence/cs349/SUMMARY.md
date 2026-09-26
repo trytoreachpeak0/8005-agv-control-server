@@ -6,8 +6,13 @@
 
 ## 结论
 
-- **今天走得到的链上，两种停下条件都没有出现。**解除急停本身不建单，解除后拨过十个延迟（300 秒）仍然不建；车再动的那一刻是人经 #299
-  清除故障之后延迟到点。车上有货的那一趟，人取出货物、确认「车上无货」解除之后，重建因仓位读数为空而停住，永远不建开往卸货站的单。
+- **头条：REQ-0356 那条链上两种停下条件都没有出现；急停不是本服务端发的那条链（第 5 格）今天走得到，两种形状在那里都出现了（L1），
+  已报调度，是否改由用户决定。**
+- REQ-0356 那条链（本服务端的急停，今天走得到的起点只有「单 FAILED → 急停」）：解除急停本身不建单，解除后拨过十个延迟（300 秒）仍然不建；
+  车再动的那一刻是人经 #299 清除故障之后延迟到点。车上有货的那一趟，人取出货物、确认「车上无货」解除之后，重建因仓位读数为空而停住，
+  永远不建开往卸货站的单。
+- 别人的急停那条链（第 5 格）：人在 RIoT 取消本服务端的单、取走货物，重建的延迟在锁着期间就走完了，**解开急停的那一轮就给空车建开往
+  卸货站的单**，承载那条已装货需求。取消来源的重建不看仓位读数。
 - **票面字面那条链今天服务端自己造不出来**：服务端只在旅程当前那张单 FAILED 时记故障、才可能急停，FAILED 是终态，锁着时它自己的单
   不会还活着。构造起点跑下去的结局是「永远不建单」：清除入口拒绝（`FAULT_RECOVERY_CURRENT_ORDER_CANCELLED_IN_RIOT`），重建一直等故障清除。
 - 顺带钉住两处今天的行为，已按上真车准入规则报调度：会话未就绪期间单 FAILED 不记故障、不急停（已开成 cs#358，上真车前）；
@@ -38,14 +43,17 @@
 | 延迟到点 | 不建，等清除之后的仓位读数（`OWN_ORDER_REBUILD_WAITING_CARGO_EVIDENCE`） | — | REQ-0362 |
 | 车报读数：放货的仓 `EMPTY`；再拨 300 秒 | **永不建**，重建停住（`CARGO_NOT_PROVEN_IN_ORIGINAL_SLOTS` / `OWN_ORDER_REBUILD_CARGO_NOT_IN_PLACE`） | 需求仍记在本车、仍是 `Loaded`，等 #345 的出口 | REQ-0362 挡住 |
 
-### 第 3 格：真车载端会话因本服务端在途单未就绪——`WithTheRealOnboardsSessionNotReadyTheRebuildWaitsForTheSessionAsWellAsTheDelay`
+### 第 3 格：真车载端会话未就绪——`WithTheRealOnboardsSessionNotReadyTheRebuildWaitsForTheSessionAsWellAsTheDelay`
+
+分两段。前半段的未就绪是本服务端在途单造成的，**被推迟的是记故障与急停（cs#358）**，不是重建。后半段（锁住之后）的未就绪不是在途单造成的
+——那张单已经 FAILED——是借同一形状取的、对重建更不利的假设，真车上没核实过。
 
 | 步骤 | 会不会重建、何时 | 新单承载的需求 | 护栏 |
 | --- | --- | --- | --- |
-| 会话未就绪时单 FAILED、车在动，跑三轮 | **不记故障、不急停**（旅程码 `ONBOARD_SESSION_NOT_READY`） | — | — |
-| 会话就绪的那一轮 | 记故障、发急停；锁住后会话又未就绪 | — | — |
+| 会话因在途单未就绪时单 FAILED、车在动，跑三轮 | **不记故障、不急停**（旅程码 `ONBOARD_SESSION_NOT_READY`；cs#358） | — | — |
+| 会话就绪的那一轮 | 记故障、发急停；锁住后假设会话又未就绪 | — | — |
 | 解除、清除（都不看会话） | 记重建 | — | 延迟起算 |
-| 清除后 60 秒，会话仍未就绪 | 不建，记录 `ONBOARD_SESSION_NOT_READY` | — | 会话闸门挡住 |
+| 清除后 60 秒，会话仍未就绪 | 不建，记录 `ONBOARD_SESSION_NOT_READY`（两道挡：会话闸门、车况护栏的 `ONBOARD_FACTS_NOT_READY`） | — | 会话闸门挡住 |
 | 会话就绪的下一轮 | 建 1 张 `TO_PICKUP`，`RebuiltAt` 就是这一轮 | 原 `DemandId`、同车、原取货站 | 时机 = max(延迟到点, 会话就绪) |
 
 ### 第 4 格（构造）：锁着时本服务端的单 HANG，人在 RIoT 取消它——`ConstructedALatchOverALiveOwnOrderThatAPersonCancelsInRiotNeverRebuildsBecauseTheFaultCannotBeCleared`
@@ -61,15 +69,33 @@
 | 人再解除：接受 | 不建，等 `VEHICLE_FAULT_IN_EFFECT` | — | 车况护栏挡住 |
 | 人去 #299 清除 | 拒绝 `FAULT_RECOVERY_CURRENT_ORDER_CANCELLED_IN_RIOT`；再拨 1 小时仍不建 | 无新单 | 出不去的环 |
 
-### 第 5 格（对照）：别人的急停、没有 REQ-0356——`UnderSomeoneElsesStopAnEmptiedVehicleWhoseOwnOrderIsCancelledIsRebuiltToDeliverAnyway`
+### 第 5 格：别人的急停、没有 REQ-0356，今天走得到——`UnderSomeoneElsesStopAnEmptiedVehicleWhoseOwnOrderIsCancelledIsRebuiltToDeliverAnyway`
 
 | 步骤 | 会不会重建、何时 | 新单承载的需求 | 护栏 |
 | --- | --- | --- | --- |
 | 装着货去卸货站，别人急停，单 HANG | 不建 | — | — |
 | 人试 REQ-0356 解除 | 拒绝 `EMERGENCY_NOT_RAISED_BY_8005`、`EMERGENCY_VEHICLE_ORDER_NOT_FINISHED` | — | — |
-| 人在 RIoT 取消本服务端的单、取走货物，车报放货仓 `EMPTY` | 记重建：来源 `CancelledInRiot` | — | 延迟起算 |
+| 人在 RIoT 取消本服务端的单（读到取消的时刻 X） | 记重建：来源 `CancelledInRiot`，`RecordedAt = X`，`DueAt = X + 30 s` | — | 延迟起算 |
+| X + 1 s：人取走货物，车报放货仓 `EMPTY`（读数严格晚于记录，将来加仓位证明时会被认） | 不建 | — | — |
 | 延迟到点 | 不建，等 `RIOT_EMERGENCY_NOT_OK` | — | 车况护栏挡住 |
-| 别人解开急停的下一轮 | **建 1 张 `TO_GATE`**，重建记录不带仓位读数 | **原已装货需求**，而仓是空的 | 取消来源没有 REQ-0362 那一道 |
+| 别人解开急停的那一轮（`DueAt` 早已过） | **建 1 张 `TO_GATE`**，`RebuiltAt` 就是这一轮，重建记录不带仓位读数 | **原已装货需求**，而仓是空的 | 延迟锁着期间已走完，没有缓冲；取消来源没有 REQ-0362 那一道 |
+
+这一格不需要有人违反现场说明：说明禁止的是「为了让车停下」取消服务端的单；别人的急停按说明转 RIoT 人员，他们为清场取消不一定违反它，
+而 REQ-0356 条文本身也写着「须先取消该订单」。
+
+交用户的两种读法：按 REQ-0360 字面（「继续承载原订单中尚未终止的 DemandId」「不等待人员确认」），今天的行为符合条文；但 REQ-0360
+同时要求重建「须按 REQ-0239 重新通过正常派车和安全门禁」，REQ-0239 写的是原订单明确终结、相关阻断收敛后才可重建，订单结果未知、
+身份/位置冲突时继续载货保全——按这个读法，车报仓空而服务端记着已装货，是该保全而不是重建的冲突。
+
+## 本类没覆盖的格子
+
+| 格子 | 为什么没单写 |
+| --- | --- |
+| 别人的急停 + 去取货站（车上没货） | 同样在解开急停那一轮重建，只有「解开即派走」一种形状，机理与第 5 格相同；没有货，不涉及「送不存在的货」 |
+| 别人的急停 + 会话未就绪 | 重建多一道会话闸门，时机变成「解开急停」与「会话就绪」取晚，机理同第 3 格后半 |
+| 本服务端急停 + 货没取走 | REQ-0356 要求确认「车上无货」，急停现场说明写明「车上有货不能走这条路」；清除后按 `OCCUPIED` 读数重建去卸货站，由现有 `VehicleFaultRecoveryTests.AClearedFaultWithCargoOnBoardRebuildsTheOrderToDeliverIt` 覆盖（那条不经急停） |
+| 本服务端急停 + 货已取走 + 会话未就绪 | 读数要在清除之后收到，会话不就绪就一直等读数，由现有 `VehicleFaultRecoveryTests.Req0362ALoadedClearanceWhoseSessionNeverBecomesReadyWaitsForTheSnapshot` 覆盖 |
+| 真车与真车载端 | 本票只做 L1；锁住后真车载端会话是否未就绪、FAILED 后车在动时会话是否一直不就绪，都没在真车上核实过 |
 
 ## 两个问题
 
@@ -103,19 +129,22 @@
 
 ## 反向验证
 
-`red/l1-mutations/`：六处临时改动产品代码（每处替换恰好命中一处，跑完按字节还原，`git status -- src` 为空），每处之后只跑本类。
-注入前写下的预期与实际：
+`red/l1-mutations/`：六处临时改动产品代码（每处替换恰好命中一处，`--no-incremental` 重编，跑完按字节还原，`git status -- src` 为空，
+还原后重编 0 错误），每处之后只跑本类。表里是审查修改之后那一轮（`summary.txt`）；注入前写下的预期与实际：
 
-| 变异 | 拿掉的是什么 | 预期红 | 实际红 |
-| --- | --- | --- | --- |
-| M1 | 重建延迟 | 第 1 格 | 第 1 格（「C + 29 s 不建」） |
-| M2 | 车况护栏里的「故障在效」 | 第 4 格 | 第 4 格（解除后建了单） |
-| M3 | 故障清除来源的仓位读数（REQ-0362） | 第 2 格 | 第 2 格 |
-| M4 | 重建的会话就绪闸门 | 第 3 格 | 第 3 格 |
-| M5 | 解除入口的「有未结束订单即拒」 | 第 4、5 格 | 第 4、5 格 |
-| M6 | 给取消来源也加仓位读数（将来可能的修法） | 第 5 格 | 第 5 格，外加第 4 格 |
+| 变异 | 拿掉的是什么 | 预期红 | 实际红 | 红在哪条断言 |
+| --- | --- | --- | --- | --- |
+| M1 | 重建延迟 | 第 1 格 | 第 1 格 | 清除后 29 秒「单还是 1 张」（实际 2 张） |
+| M2 | 车况护栏里的「故障在效」 | 第 4 格 | 第 4 格 | 解除**之前**的等待理由应含 `VEHICLE_FAULT_IN_EFFECT`（实际只有 `RIOT_EMERGENCY_NOT_OK`）。按构造，解除之后会建单，但用例停在第一条红上，没观测到 |
+| M3 | 故障清除来源的仓位读数（REQ-0362） | 第 2 格 | 第 2 格 | 延迟过后「开往卸货站的单还是原数」（实际多 1 张） |
+| M4 | 重建的会话就绪闸门 | 第 3 格 | 第 3 格 | 等待理由应为 `ONBOARD_SESSION_NOT_READY`（实际 `ONBOARD_FACTS_NOT_READY`）：「不建」有第二道挡，拿掉闸门仍然不建 |
+| M5 | 解除入口的「有未结束订单即拒」 | 第 4、5 格 | 第 4、5 格 | 第 4 格第一次解除应被拒（实际发出）；第 5 格拒绝理由少了 `EMERGENCY_VEHICLE_ORDER_NOT_FINISHED` |
+| M6 | 给取消来源也加仓位读数（将来可能的一种修法） | 第 4、5 格 | 第 4、5 格 | 都在等待理由上：第 4 格变成 `CARGO_EVIDENCE_NOT_RECEIVED`（没有装货，没有读数）；第 5 格变成 `SLOT_…:EMPTY…`，即读到空仓后停住 |
 
-M6 多出的第 4 格红在等待理由的断言上：加上仓位读数后，重建先等读数、再看车况，等待理由从 `VEHICLE_FAULT_IN_EFFECT,RIOT_EMERGENCY_NOT_OK`
-变成 `CARGO_EVIDENCE_NOT_RECEIVED`；同一格「一张单都不建」的断言仍然成立。所以将来那样修，第 5 格要翻、第 4 格要改等待理由。
+M6 只是一种修法的样子：将来怎么改由用户定，第 4、5 格要跟着修法改哪条断言，随修法而定。
 
-`summary.txt` 是脚本原样输出；`mutate349.ps1` 是脚本本身。
+第一轮（`summary-9dacdd0a.txt`，测试文件 `9dacdd0a`、上一版脚本，只记了红在第几行）与这一轮的差别：M6 下第 5 格那时红在「没收到读数」，
+因为读数与重建记录同一时刻、而 `CargoEvidenceAsync` 只认严格更晚的读数；审查指出后读数前拨了一秒，这一轮红在「读到空仓」上。
+第一轮的证据说明曾把 M2 写成「解除后建了单」，那是推断、没观测到，这一版已改。
+
+`summary.txt`、`summary-9dacdd0a.txt` 是两轮的原样输出；`mutate349.ps1` 是这一轮的脚本（上一版在 git 历史里）。
