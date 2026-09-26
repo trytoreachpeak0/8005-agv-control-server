@@ -229,7 +229,9 @@ $journal.Note('Armed: drop the next CurrentStopWorklistSnapshot to the vehicle (
 
 $secondSettled = Wait-StationTimeout $second.DemandId 'second'
 $null = Wait-L2Iterations -Riot $riot -Count 5 -TimeoutSeconds 60 -Journal $journal
-$drops = @(@((Get-L2RealTraffic $proxy).drops) | Where-Object { [string]$_.messageType -eq 'CurrentStopWorklistSnapshot' })
+# 丢掉的那一行按流量记录里的行读：丢弃记录（drops）只有计划名的类型、没有 messageId（TrafficLog.DropRecord）。
+$drops = @(@((Get-L2RealTraffic $proxy).lines) | Where-Object {
+        $_.dropped -and [string]$_.messageType -eq 'CurrentStopWorklistSnapshot' })
 $emptyWorklists = @((Get-L2RealOutbound $connection 'CurrentStopWorklistSnapshot') | Where-Object { @($_.Payload.items).Count -eq 0 })
 $journal.Note("Dropped worklists: $(@($drops | ForEach-Object { [string]$_.messageId }) -join ', '); " +
     "empty worklists in the outbox: $(@($emptyWorklists | ForEach-Object { $_.MessageId }) -join ', ')")
