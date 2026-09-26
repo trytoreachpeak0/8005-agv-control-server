@@ -80,3 +80,20 @@ run4、对照②、对照③ 的场景脚本逐字相同，run1～3 期间的修
 - 小项：`Invoke-CancelPress` 读答复载荷前先看属性在不在（StrictMode）；`Get-VehicleView` 的子批列表写成 `@(if ...)`。
 
 新读法离线走过一遍（读到的）：用 run4 与对照③ 存下的代理快照按时间截断重放，run4 第二、三趟分别只认出 `997a3cfb`、`387791ee` 为本趟丢掉的清单，连接数与「最后一条未关」读得出；对照③ 第三趟认出「本趟一张没丢」。发件箱那一半（按 messageId 取号）本机没有存库，只能在 CI 那一遍上验。
+
+### 正式证据：CI `rig=real`（`ci-36262963711/`）
+
+| run | control-server | onboard | simulator | 结论 |
+| --- | --- | --- | --- | --- |
+| [`36262485596`](https://github.com/trytoreachpeak0/8005-agv-control-server/actions/runs/36262485596) | `135169c4` | `4c2d2dc1` | `fb5f7c59` | 场景 PASS（214 秒），**但证据没传上去**：上传一步报 `Failed to CreateArtifact: Unable to make request: ENOTFOUND`，那一步 `continue-on-error`，作业仍是 success，下一步照常删了 vm01 上的证据目录。日志里不打逐条判据，SST-13/14 读到什么看不到，所以不作正式证据 |
+| [`36262963711`](https://github.com/trytoreachpeak0/8005-agv-control-server/actions/runs/36262963711) | `135169c4` | `4c2d2dc1` | `fb5f7c59` | **PASS，15 条全绿**，artifact `real-rig-evidence` 471995 字节，本目录是其中这一遍的 `SUMMARY.md`、`assertions.json`、`timeline.jsonl`、`snapshots/` 与 `commits.json` |
+
+四行核对（`36262963711`，读到的）：三端提交从场景那一步读，与上表一致；场景 PASS；`RIG_COMMIT_GUARD`/`RIG_DESKTOP_LOCK`/`RIG_DEADLINE`/`NOT_STARTED` 命中 9 行，全是源码回显；无停机（214 秒，整机已提交内存峰值 7.64 GiB）。
+
+新判据第一次真跑读到的值（`assertions.json`）：
+
+- **SST-13**：`SessionHello 1 → 1；代理连接 [#1 open] → [#1 open]；主窗口 在`。
+- **SST-14**：拒收 `WORKLIST_REVISION_STALE rev=6 delivered=True`；第三趟被丢的空清单 `2a1dda61-2e32-e35f-acaa-7963c8fe746f` 号 6。第二趟被丢的是 `d6dad452…` 号 4，两趟的号不同，这一条比的是本趟那一张。
+- **SST-09/12**：两个窗口各认出恰好一张本趟丢掉的收尾空清单（`d6dad452…`、`2a1dda61…`），规则都用掉了，没触发 `reset`。
+- **SST-06**：按了 1 下，SessionHello 与代理连接都不变。
+- **SST-10**：`canSubmit=False offersCancel=False listsSublot=True`。清单里仍列着这单是预期内的。读到的（本目录代理快照）：第三趟被丢的空清单 `2a1dda61…` 只有 02:38:19 那一行被丢，直到 02:38:25 场景末尾断线都没重发；第二趟的 `d6dad452…` 02:37:04 被丢、02:37:11 取消答复之后原样重发送达，与 run4、对照② 同一形状。推的：车载端对 STALE 拒收只撤录入请求与取消入口、不改清单行；SST-10 只判前两项。
