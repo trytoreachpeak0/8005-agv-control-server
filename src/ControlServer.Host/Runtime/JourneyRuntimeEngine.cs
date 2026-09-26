@@ -780,8 +780,12 @@ public sealed partial class JourneyRuntimeEngine(
             // server's order in flight, reports VEHICLE_NOT_READY, and the session sits at DEPARTURE_SAFETY_NOT_READY for
             // the whole leg -- HANG included, since 9 is a non-final state. Left to the gate, ORDER_HANG was never written
             // on a real onboard and 2127 never raised. Only the two arrival stages have an in-flight order to read.
+            // A FAILED one goes to the fault model here too (control-server#358): recorded, held and stopped in this round,
+            // and a vehicle already stopped keeps its trigger confirmed and re-triggered -- none of which waits on the
+            // session, and none of which sends to it.
             if (runtime.Stage != JourneyRuntimeStage.Blocked && !IsHeldForAreaEndAdmission(runtime) &&
-                await NameStalledOrderBehindTheGateAsync(runtime, currentMap, cancellationToken).ConfigureAwait(false))
+                await NameInFlightOrderWithoutThePeerAsync(runtime, currentMap, "ONBOARD_SESSION_NOT_READY", cancellationToken)
+                    .ConfigureAwait(false))
             {
                 if (waitVoided)
                 {
@@ -815,7 +819,7 @@ public sealed partial class JourneyRuntimeEngine(
         // The session row says Ready, but does the vehicle still answer? Judged here, before anything is
         // published, because everything below this line either sends to the peer or waits on a fact only the
         // peer can supply (control-server#234).
-        if (await NameSilentOnboardSessionAsync(runtime, session, stops, now, cancellationToken)
+        if (await NameSilentOnboardSessionAsync(runtime, session, stops, currentMap, now, cancellationToken)
                 .ConfigureAwait(false))
         {
             return;
@@ -865,12 +869,8 @@ public sealed partial class JourneyRuntimeEngine(
                     runtime, stops.Current, "TO_PICKUP", session, cancellationToken).ConfigureAwait(false);
                 if (!pickupArrival.Trusted)
                 {
-                    if (await ObserveOrderFailureAsync(runtime, pickupArrival, cancellationToken)
-                            .ConfigureAwait(false))
-                    {
-                        return;
-                    }
-                    if (await NameStalledOrderAsync(runtime, pickupArrival.Intent.UpperId, pickupArrival.Order, cancellationToken)
+                    // FAILED goes to the fault model inside NameStalledOrderAsync, first (control-server#358).
+                    if (await NameStalledOrderAsync(runtime, pickupArrival.Intent, pickupArrival.Order, cancellationToken)
                             .ConfigureAwait(false))
                     {
                         return;
@@ -1230,12 +1230,8 @@ public sealed partial class JourneyRuntimeEngine(
                     runtime, stops.Current, "TO_GATE", session, cancellationToken).ConfigureAwait(false);
                 if (!gateArrival.Trusted)
                 {
-                    if (await ObserveOrderFailureAsync(runtime, gateArrival, cancellationToken)
-                            .ConfigureAwait(false))
-                    {
-                        return;
-                    }
-                    if (await NameStalledOrderAsync(runtime, gateArrival.Intent.UpperId, gateArrival.Order, cancellationToken)
+                    // FAILED goes to the fault model inside NameStalledOrderAsync, first (control-server#358).
+                    if (await NameStalledOrderAsync(runtime, gateArrival.Intent, gateArrival.Order, cancellationToken)
                             .ConfigureAwait(false))
                     {
                         return;
@@ -1462,17 +1458,19 @@ public sealed partial class JourneyRuntimeEngine(
     /// that is known, which is REQ-0238's one case for not binding; past a committed load it is
     /// carrying this demand's product and the binding has to hold.
     /// </para>
+    /// <para>
+    /// <b>Called on either side of the readiness gate</b> (control-server#358): through
+    /// <see cref="NameStalledOrderAsync"/>, which the arrival branches and the gate both use, and from the rebuild for a
+    /// rebuilt order that FAILED before it was confirmed (control-server#318, review S2). Nothing here needs the onboard
+    /// session or sends to it -- the facts and the commands are RIoT's -- and the fault model's evaluation is the only
+    /// thing that advances the stop proof, the escalation, the trigger's confirmation and REQ-0248's re-trigger, so it
+    /// must not wait for a session that a real onboard does not hold Ready for the whole of a leg with this server's
+    /// order in flight. While the engine holds <c>JourneyMutationGate</c> this makes the same RIoT calls behind the gate as
+    /// in front of it -- an emergency-state read, a motion sample, and when due an <c>OrderHold</c> and a trigger with their
+    /// read-backs -- each bounded by <c>RIoT:timeoutSeconds</c> (30 s by default, no retry; <c>RiotSdkRegistration</c>).
+    /// Behind the gate they are new time spent holding it (control-server#334's concern, not a peer send).
+    /// </para>
     /// </remarks>
-    private Task<bool> ObserveOrderFailureAsync(
-        JourneyRuntimeRow runtime,
-        ArrivalCheck arrival,
-        CancellationToken cancellationToken) =>
-        ObserveOrderFailureAsync(runtime, arrival.Intent, arrival.Order, cancellationToken);
-
-    /// <summary>
-    /// The same, for an order read outside an arrival check: a rebuilt order that FAILED before it was confirmed
-    /// (control-server#318, review S2).
-    /// </summary>
     private async Task<bool> ObserveOrderFailureAsync(
         JourneyRuntimeRow runtime,
         OrderIntentRow intent,
@@ -1533,8 +1531,9 @@ public sealed partial class JourneyRuntimeEngine(
     }
 
     /// <summary>
-    /// Names an in-flight order RIoT has stopped without it being FAILED or arrived, and says whether this round stops
-    /// here (control-server#316). Returns false, having cleared any code of its own, when the order is not stalled.
+    /// Hands a FAILED in-flight order to the fault model (control-server#358), names one RIoT has stopped without it being
+    /// FAILED or arrived (control-server#316), and says whether this round stops here. Returns false, having cleared any code
+    /// of its own, when the order is neither.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -1566,17 +1565,29 @@ public sealed partial class JourneyRuntimeEngine(
     /// cancelled itself is named and not recorded. The release service neither releases nor cancels while the code stands.
     /// </para>
     /// <para>
-    /// Ordered after <see cref="ObserveOrderFailureAsync"/>, so FAILED still reaches the fault model and keeps its own
-    /// code; the two cannot both hold for one observation.
+    /// <b>FAILED reaches the fault model here, first, by construction</b> (control-server#358): this method hands the order
+    /// to <see cref="ObserveOrderFailureAsync"/> before anything else and returns true when it was FAILED, so a FAILED order
+    /// keeps its own code and never reaches the switch below, where it would read as an order that moved on. It used to say
+    /// "ordered after <c>ObserveOrderFailureAsync</c>", which each arrival branch arranged by calling that first; the
+    /// readiness gate called only this method, so behind it FAILED went nowhere -- no fault, no hold, no emergency stop, and
+    /// for a vehicle already stopped no trigger confirmation and no REQ-0248 re-trigger -- and the gate wrote its own code
+    /// over <c>VEHICLE_ORDER_FAILED</c>. Every caller that judges an in-flight order goes through here, and none calls the
+    /// fault observation on its own.
     /// </para>
     /// </remarks>
     private async Task<bool> NameStalledOrderAsync(
         JourneyRuntimeRow runtime,
-        string upperId,
+        OrderIntentRow intent,
         RiotOrderObservation order,
         CancellationToken cancellationToken,
         string? reasonOnceMovedOn = null)
     {
+        if (await ObserveOrderFailureAsync(runtime, intent, order, cancellationToken).ConfigureAwait(false))
+        {
+            return true;
+        }
+
+        string upperId = intent.UpperId;
         string? reason = (order.Kind, order.OrderState) switch
         {
             (RiotOrderObservationKind.Active, RiotOrderState.Hang) => OrderHangReason,
@@ -1593,7 +1604,7 @@ public sealed partial class JourneyRuntimeEngine(
             // raised the warning again and let the vehicle back into underWay for that round (independent review, item 1).
             // The round stops here with the code as it is: nothing below can judge an order it cannot see either.
             if (order.Kind is not (RiotOrderObservationKind.Active or RiotOrderObservationKind.Terminal) &&
-                IsStalledOrderReason(runtime.BlockReasonCode))
+                KeepsItsCodeWhileTheOrderIsUnread(runtime.BlockReasonCode))
             {
                 return true;
             }
@@ -1636,43 +1647,69 @@ public sealed partial class JourneyRuntimeEngine(
     }
 
     /// <summary>
-    /// <see cref="NameStalledOrderAsync"/> for a journey behind a closed readiness gate: reads the in-flight order of the
-    /// current stop and says whether a stalled-order code now stands, which the gate then leaves in place of its own.
+    /// A code a round that could not read the in-flight order leaves standing: the stalled-order family, and
+    /// <see cref="VehicleFaultEvidence.OrderFailed"/> (control-server#358). A read that does not answer says nothing about
+    /// an order that was FAILED -- FAILED is terminal -- and left to the readiness gate the code would read "waiting for the
+    /// vehicle" for that round, then flip back on the next, restarting its start time both ways.
+    /// </summary>
+    /// <remarks>
+    /// Kept apart from <see cref="IsStalledOrderReason"/> on purpose: that one also decides en-route appends and the release
+    /// service's refusals, where a fault fact already does the blocking and this code is not meant to join them.
+    /// </remarks>
+    private static bool KeepsItsCodeWhileTheOrderIsUnread(string? reasonCode) =>
+        IsStalledOrderReason(reasonCode) ||
+        string.Equals(reasonCode, VehicleFaultEvidence.OrderFailed, StringComparison.Ordinal);
+
+    /// <summary>
+    /// <see cref="NameStalledOrderAsync"/> for a journey whose round cannot go on to the arrival branches because the peer
+    /// cannot be sent to: behind a closed readiness gate (<paramref name="peerReason"/> <c>ONBOARD_SESSION_NOT_READY</c>),
+    /// or with a Ready session that has gone silent (<see cref="OnboardSessionLostReason"/>, control-server#358). Reads the
+    /// in-flight order of the current stop and says whether a code of its own now stands, which the caller then leaves in
+    /// place of <paramref name="peerReason"/>.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Same rules as in the arrival branches, because it is the same method: a stalled order is named, an order that has
-    /// definitely moved on clears the code (and the gate writes <c>ONBOARD_SESSION_NOT_READY</c> after it), and an order
-    /// that cannot be read keeps whatever code stands. The read is a pure query -- nothing is sent to the peer, which is
-    /// what the gate is there to prevent.
+    /// Same rules as in the arrival branches, because it is the same method: a FAILED order goes to the fault model -- the
+    /// fault, the hold, the escalation, and for a vehicle already stopped the trigger's confirmation and REQ-0248's
+    /// re-trigger (control-server#358) -- a stalled order is named, an order that has definitely moved on clears the code
+    /// (and the caller writes <paramref name="peerReason"/> after it), and an order that cannot be read keeps whatever code
+    /// stands. Nothing is sent to the peer, which is why both callers stop where they do: the reads and the commands are
+    /// RIoT's, and the plan the gate may still publish after this (control-server#314) is withheld once a fault is held.
+    /// </para>
+    /// <para>
+    /// <b>Both callers, because neither condition is rare.</b> A real onboard is not ready for the whole of a leg that
+    /// carries this server's order, and a vehicle that stops talking -- an onboard PC that hangs, a lost link -- is exactly
+    /// when its order is likeliest to fail with the vehicle still moving. The fault model's evaluation is the only thing that
+    /// stops such a vehicle, and it needs nothing from the peer.
     /// </para>
     /// <para>
     /// Only the two arrival stages, and only a confirmed intent: anywhere else there is no in-flight move order this
     /// server is waiting on, and nothing to read. A read that throws counts as unreadable, so a RIoT hiccup cannot take the
-    /// gate's write away from a journey that had no stalled code to begin with.
+    /// caller's write away from a journey that had no code of its own to begin with.
     /// </para>
     /// </remarks>
-    private async Task<bool> NameStalledOrderBehindTheGateAsync(
+    private async Task<bool> NameInFlightOrderWithoutThePeerAsync(
         JourneyRuntimeRow runtime,
         RiotMapStationCatalogSnapshot currentMap,
+        string peerReason,
         CancellationToken cancellationToken)
     {
-        if (runtime.Stage is not (JourneyRuntimeStage.AwaitingPickupArrival or JourneyRuntimeStage.AwaitingGateArrival))
+        if (!WaitsOnAnArrivalTheVehicleReports(runtime.Stage))
         {
             return false;
         }
 
         JourneyStopCursor stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken)
             .ConfigureAwait(false);
-        // A rebuild under way is kept and named behind the gate too (control-server#318): a real onboard is not ready for most
-        // of a leg. It creates nothing here -- a new order waits for a Ready session that vouches for the vehicle (review M2) --
-        // but an order already sent is reconciled, which only reads (incremental review B2); once it is confirmed the journey
-        // carries the gate's own code again, and the next round names a HANG like any other.
+        // A rebuild under way is kept and named here too (control-server#318): a real onboard is not ready for most of a
+        // leg. It creates nothing here -- a new order waits for a Ready, answering session that vouches for the vehicle
+        // (review M2) -- but an order already sent is reconciled, which only reads (incremental review B2), and a rebuilt order
+        // that FAILED goes on being fed to the fault model; once a new order is confirmed the journey carries
+        // peerReason again, and the next round names a HANG like any other.
         if (await OwnOrderRebuilds.ForStopAsync(dbContext, stops.Current, cancellationToken).ConfigureAwait(false) is not null)
         {
             return await AdvanceOwnOrderRebuildAsync(
-                    runtime, stops.Current, currentMap, mayCreate: false, reasonOnceRebuilt: "ONBOARD_SESSION_NOT_READY",
-                    cancellationToken)
+                    runtime, stops.Current, currentMap, mayCreate: false, reasonOnceRebuilt: peerReason, cancellationToken)
                 .ConfigureAwait(false);
         }
         OrderIntentRow? intent = await dbContext.OrderIntents.SingleOrDefaultAsync(
@@ -1690,11 +1727,10 @@ public sealed partial class JourneyRuntimeEngine(
         catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
                                       !cancellationToken.IsCancellationRequested)
         {
-            return IsStalledOrderReason(runtime.BlockReasonCode);
+            return KeepsItsCodeWhileTheOrderIsUnread(runtime.BlockReasonCode);
         }
 
-        return await NameStalledOrderAsync(
-                runtime, intent.UpperId, order, cancellationToken, reasonOnceMovedOn: "ONBOARD_SESSION_NOT_READY")
+        return await NameStalledOrderAsync(runtime, intent, order, cancellationToken, reasonOnceMovedOn: peerReason)
             .ConfigureAwait(false);
     }
 
@@ -1738,8 +1774,7 @@ public sealed partial class JourneyRuntimeEngine(
     /// <item><description>
     /// <b>The session layer's own close must not be removed.</b> It is what makes "silent" and "disconnected"
     /// the same state by the time this runs. Take it away and a vehicle that is silent with its socket still
-    /// open reaches the branches below every round — and this method will have stopped the round that would
-    /// have noticed its order failing.
+    /// open reaches the branches below every round.
     /// </description></item>
     /// </list>
     /// <para>
@@ -1747,15 +1782,23 @@ public sealed partial class JourneyRuntimeEngine(
     /// at exactly the same instant: the inbox stamps <c>ReceivedAt</c> when a message starts being processed,
     /// while the session layer refreshes after it finishes, so the session layer expires a few milliseconds
     /// later. A runtime round landing inside that gap — about one part in a few hundred, against a two-second
-    /// poll — stops a round the replay would still have survived, so a RIoT order failure can be noticed one
-    /// poll later than before. Not lost: the next round, with the connection now closed, could not have
-    /// observed it either.
+    /// poll — stops a round the replay would still have survived. The in-flight order is judged before it stops
+    /// either way (below), so nothing a RIoT read would show is lost to it.
     /// </para>
     /// <para>
-    /// <b>Display and escalation only (REQ-0287).</b> The stage is not moved, the demand is not ended, the
-    /// lease is not released, nothing is reassigned, and no order command is issued — <c>OrderHold</c> least
-    /// of all, which ADR-cross-0026 asks for and REQ-0287 forbids; the user deferred that conflict to
-    /// batch 9 on 2026-09-20.
+    /// <b>The silence itself is display and escalation only (REQ-0287).</b> Because of the silence the stage is
+    /// not moved, the demand is not ended, the lease is not released, nothing is reassigned, and no order command
+    /// is issued — <c>OrderHold</c> least of all, which ADR-cross-0026 asks for and REQ-0287 forbids; the user
+    /// deferred that conflict to batch 9 on 2026-09-20.
+    /// </para>
+    /// <para>
+    /// <b>The order is still judged, from RIoT (control-server#358).</b> REQ-0287 says a lost session "only blocks
+    /// the vehicle's new business and goes on observing it through RIoT", and that observation is what
+    /// <see cref="NameInFlightOrderWithoutThePeerAsync"/> does before this stops the round. When RIoT reports the order
+    /// FAILED, the hold and the emergency stop that follow are REQ-0232/0234/0246's answer to the FAILED -- the same
+    /// answer a round with an answering peer gives -- not an action taken because of the silence. Until this ticket the
+    /// silence stopped that observation too, so a vehicle whose order failed while it was not heard from was neither
+    /// recorded nor stopped until it spoke again.
     /// </para>
     /// <para>
     /// <b>Three codes this must not overwrite, and a family of three more.</b> Two are the ones the readiness gate above also leaves
@@ -1777,9 +1820,9 @@ public sealed partial class JourneyRuntimeEngine(
     /// <para>
     /// The three codes <see cref="NameStalledOrderAsync"/> writes join it for the same reason (control-server#316): a power
     /// cycle mid-order is one of the ways into HANG (BC-ORDER-015 P), so a hanging order and a silent session are often one
-    /// event too, and the person has to be told the order is waiting for a continue or a cancel in RIoT. The limit runs the
-    /// other way as well: a session that went silent first stops the round before the arrival branches, so an order that
-    /// stalls during the silence is named only once the vehicle is heard from again -- the same as a FAILED one.
+    /// event too, and the person has to be told the order is waiting for a continue or a cancel in RIoT. An order that
+    /// stalls or fails during the silence is named here as well, since control-server#358: it used to wait until the
+    /// vehicle was heard from again.
     /// </para>
     /// <para>
     /// The two checkpoint codes are deliberately <b>not</b> on this list, which keeps the existing convention:
@@ -1792,6 +1835,7 @@ public sealed partial class JourneyRuntimeEngine(
         JourneyRuntimeRow runtime,
         SessionRecoveryRow session,
         JourneyStopCursor stops,
+        RiotMapStationCatalogSnapshot currentMap,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
@@ -1822,6 +1866,16 @@ public sealed partial class JourneyRuntimeEngine(
                 .ConfigureAwait(false))
         {
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+
+        // The in-flight order is judged before the round stops (control-server#358): a FAILED one goes to the fault model --
+        // recorded, held and stopped, and a vehicle already stopped keeps its trigger confirmed and re-triggered -- and a
+        // stalled one is named, all from RIoT and nothing sent to the silent peer. Until this ticket a silence stopped all of
+        // that until the vehicle was heard from again, which is exactly when a failing vehicle may still be moving.
+        if (await NameInFlightOrderWithoutThePeerAsync(runtime, currentMap, OnboardSessionLostReason, cancellationToken)
+                .ConfigureAwait(false))
+        {
             return true;
         }
 

@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-order-failed-in-transit",
+  "runId": "20260926T160359204Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "agvId": "AGV-L2-001",
+    "vehicleKey": "BROKERX-L2-0001",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "controlServerCommit": "86773d9d685052bc7ba50857304c5ea781cbc1e9",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260926T160359204Z",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "onboardHmiCommit": "b789c3d4a249cd3368aa53ea5f7ebe992d109666",
+    "batchId": "unspecified",
+    "rig": "RealOnboard"
+  },
+  "assertions": [
+    {
+      "id": "L2-RFF-00",
+      "description": "前提：车在途时真车载端会话掉出 Ready，闸门先为旅程写了 ONBOARD_SESSION_NOT_READY（FAILED 在这之后才注入）",
+      "outcome": "PASS",
+      "expected": "ONBOARD_SESSION_NOT_READY",
+      "actual": "ONBOARD_SESSION_NOT_READY"
+    },
+    {
+      "id": "L2-RFF-01",
+      "description": "订单 FAILED、车在动：记下 SuspectedBlocked 故障，证据码 VEHICLE_ORDER_FAILED，并已升级",
+      "outcome": "PASS",
+      "expected": "SuspectedBlocked / VEHICLE_ORDER_FAILED / 有升级时刻",
+      "actual": "SuspectedBlocked / VEHICLE_ORDER_FAILED / 2026-09-26 16:04:30.7865369+00:00"
+    },
+    {
+      "id": "L2-RFF-02",
+      "description": "命令审计里有 OrderHold 与 triggerEmergency，假 RIoT 收到了急停触发",
+      "outcome": "PASS",
+      "expected": "OrderHold>=1 / triggerEmergency>=1 / RIoT 急停调用>=1",
+      "actual": "1 / 2 / 2"
+    },
+    {
+      "id": "L2-RFF-03",
+      "description": "旅程码是 VEHICLE_ORDER_FAILED，没被闸门的 ONBOARD_SESSION_NOT_READY 盖掉",
+      "outcome": "PASS",
+      "expected": "VEHICLE_ORDER_FAILED",
+      "actual": "VEHICLE_ORDER_FAILED"
+    }
+  ]
+}

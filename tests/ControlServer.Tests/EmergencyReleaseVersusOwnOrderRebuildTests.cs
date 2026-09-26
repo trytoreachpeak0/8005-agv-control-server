@@ -202,7 +202,7 @@ public sealed class EmergencyReleaseVersusOwnOrderRebuildTests
 
     /// <summary>
     /// 同一条链带上真车载端的会话，分两段看。前半段是本服务端在途单造成的未就绪（<c>DEPARTURE_SAFETY_NOT_READY</c>）：单 FAILED 时车还在动，
-    /// 这期间服务端既不记故障也不急停，车停下、会话就绪的那一轮才记故障、发急停——<b>被推迟的是记故障与急停（cs#358）</b>，不是重建。
+    /// 未就绪的第一轮就记故障、发急停（cs#358 之前要等到会话就绪那一轮），三轮下来仍是同一代故障。急停触发没有断「不重复」：触发未确认时急停监督按 2 秒退避重试，第二次触发是可能的（审查低项）。
     /// 后半段是锁住之后会话又未就绪，一直到清除之后：解除与清除都照样成立（都不看会话），重建过了延迟也不建，等到会话就绪的那一轮才建——
     /// 重建时机从「清除后延迟到点」变成「延迟到点且会话就绪」，两者取晚。
     /// </summary>
@@ -211,8 +211,8 @@ public sealed class EmergencyReleaseVersusOwnOrderRebuildTests
     /// 会话的样子照 <c>PickupDispatchPlanPastOwnOrderTests.DropSessionOnOwnOrderAsync</c>。合成车载端永远报安全，合成 L2 按构造看不见这一格。
     /// </para>
     /// <para>
-    /// <b>前半段钉的是今天的行为，cs#358 修好之后要翻。</b>记故障只在引擎的到站分支里，那在会话闸门之后；调度判为上真车准入规则第 (1) 条
-    /// 「急停失效」，开成 cs#358。
+    /// <b>前半段由 cs#358 翻过来。</b>之前记故障只在引擎的到站分支里，那在会话闸门之后，这里钉的是「三轮不记故障、不急停」；调度判为上真车
+    /// 准入规则第 (1) 条「急停失效」，开成 cs#358。闸门后的完整用例在 <see cref="FailedOrderBehindSessionGateTests"/>。
     /// </para>
     /// <para>
     /// <b>后半段的未就绪不是本服务端在途单造成的</b>：那张单已经 FAILED，是终态。锁住的车在真车载端上会不会未就绪，没在真车上核实过
@@ -233,23 +233,22 @@ public sealed class EmergencyReleaseVersusOwnOrderRebuildTests
         JourneyStopRow pickup = stopsBefore.Single(stop => stop.StopRole == JourneyStopRoles.Pickup);
         await OwnOrderRebuildTests.DropSessionOnOwnOrderAsync(fixture);
 
-        // 单 FAILED、车还在动，会话未就绪：三轮下来不记故障、不急停。
+        // 单 FAILED、车还在动，会话未就绪：第一轮就记故障、急停（cs#358）；三轮下来仍是同一代故障。
         fixture.Riot.MovementState = "MT_RUNNING";
         fixture.Riot.FailOrder(pickup.UpperId);
-        for (int round = 0; round < 3; round++)
+        await TickAndHearAsync(fixture);
+        Assert.Equal(RiotOrderCommandOutcome.Pending, await LatestTriggerOutcomeAsync(fixture));
+        for (int round = 1; round < 3; round++)
         {
             await TickAndHearAsync(fixture);
         }
 
-        Assert.Equal("ONBOARD_SESSION_NOT_READY", (await fixture.RuntimeAsync()).BlockReasonCode);
-        await using (ControlServerDbContext reading = new(fixture.DbOptionsForTests))
-        {
-            Assert.Empty(await reading.VehicleFaultStates.AsNoTracking().ToArrayAsync(Token));
-        }
+        Assert.Equal("VEHICLE_ORDER_FAILED", (await fixture.RuntimeAsync()).BlockReasonCode);
+        VehicleFaultStateRow recorded = await VehicleFaultRecoveryTests.FaultAsync(fixture);
+        Assert.Equal((VehicleFaultLevel.SuspectedBlocked, 1L), (recorded.Level, recorded.FaultGeneration));
+        Assert.Equal(SessionReadiness.RecoveryRequired, (await fixture.Context.SessionRecoveries.AsNoTracking().SingleAsync(Token)).Readiness);
 
-        Assert.Null(await LatestTriggerOutcomeAsync(fixture));
-
-        // 会话就绪的那一轮才记故障、发急停；锁住之后会话又未就绪。
+        // 会话就绪、RIoT 锁上；锁住之后会话又未就绪。
         await fixture.RestoreSessionReadyAsync();
         fixture.Context.ChangeTracker.Clear();
         await TickAndHearAsync(fixture);

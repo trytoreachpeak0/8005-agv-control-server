@@ -263,7 +263,7 @@ public sealed partial class JourneyRuntimeEngine
                 await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            if (await HeldBeforeCreateAsync(runtime, rebuild, stop, currentMap, mayCreate, now, cancellationToken)
+            if (await HeldBeforeCreateAsync(runtime, rebuild, stop, currentMap, mayCreate, reasonOnceRebuilt, now, cancellationToken)
                     .ConfigureAwait(false))
             {
                 return true;
@@ -304,7 +304,7 @@ public sealed partial class JourneyRuntimeEngine
             // Decided but never sent -- a crash between the "decided" save and RIoT, then a restart (independent review,
             // made required as M1). The vehicle and the gate are asked again exactly as before deciding: nothing about the
             // decision still says the vehicle may move now.
-            if (await HeldBeforeCreateAsync(runtime, rebuild, stop, currentMap, mayCreate, now, cancellationToken)
+            if (await HeldBeforeCreateAsync(runtime, rebuild, stop, currentMap, mayCreate, reasonOnceRebuilt, now, cancellationToken)
                     .ConfigureAwait(false))
             {
                 return true;
@@ -460,6 +460,7 @@ public sealed partial class JourneyRuntimeEngine
         JourneyStopRow stop,
         RiotMapStationCatalogSnapshot currentMap,
         bool mayCreate,
+        string? reasonOnceRebuilt,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
@@ -482,10 +483,13 @@ public sealed partial class JourneyRuntimeEngine
             return true;
         }
 
+        // Held for the peer: what the record waits on is the caller's reason for not reaching it -- the readiness gate's, or
+        // a silent session's since control-server#358 (the same code the journey carries once the new order is confirmed).
         if (!mayCreate)
         {
             await WaitForRebuildAsync(
-                runtime, rebuild, "ONBOARD_SESSION_NOT_READY", OwnOrderRebuildWaitingVehicleReason, now, cancellationToken)
+                runtime, rebuild, reasonOnceRebuilt ?? "ONBOARD_SESSION_NOT_READY", OwnOrderRebuildWaitingVehicleReason, now,
+                cancellationToken)
                 .ConfigureAwait(false);
             return true;
         }
