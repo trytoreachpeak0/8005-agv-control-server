@@ -13,16 +13,18 @@ v2 的修法两端都有，缺一不可：
 
 合成车载端只看得到线上报文，看不到 _currentEntryRequest 与按钮；车上残不残留只有真 WPF 加 UI Automation 看得见。
 
-**两趟，各证一半。**
+**三趟。**
 1. 第一趟不动任何报文：期限到、服务端收尾，看车上是否在十轮之内撤干净（L2-SST-03～05）。两组对照都该红在这里：旧服务端不发
    收尾快照，旧车载端收到了也不撤录入请求。
-2. 第二趟用协议故障代理丢掉那张空清单，造出「服务端已收尾、车上还挂着」的窗口——空清单一到车，录入入口就撤了，迟到的取消与
-   扫码只可能出现在这个窗口里（PR #361 审查）。在窗口里按两下「取消装货」、扫一次码，看服务端怎么答（L2-SST-06～08、10）。
-   代理只能丢、不能扣住再放，所以这一趟不靠「放行」收尾：窗口里的动作做完就结束，最后断一次线只为给下一个场景留一台干净的车。
-   断线不当判据用：v2 车载端会话一结束就清空旅程投影（WireToGateSessionClient ResetJourneyProjection），断线本身就能清掉残留，
-   拿它证「撤干净」证不到任何一端的修复——所以「撤干净」只在第一趟判。
+2. 第二趟与第三趟用协议故障代理丢掉那张空清单，造出「服务端已收尾、车上还挂着」的窗口——空清单一到车，录入入口就撤了，迟到的
+   取消与扫码只可能出现在这个窗口里（PR #361 审查）。一个窗口只做得了一件迟到的事：修好的车载端收到 STALE（取消被拒或扫码被拒）
+   就认定本站已结束、撤掉入口（真装置 run2 实测，第二下取消按不到）。所以第二趟迟到地取消（L2-SST-06、07、11），第三趟迟到地扫码
+   （L2-SST-08、10）。
+   代理只能丢、不能扣住再放，所以窗口不靠「放行」收尾：动作做完、下一趟之前若有残留就断一次线清掉，最后也断一次，给下一个场景
+   留一台干净的车。断线不当判据用：v2 车载端会话一结束就清空旅程投影（WireToGateSessionClient ResetJourneyProjection），断线本身
+   就能清掉残留，拿它证「撤干净」证不到任何一端的修复——所以「撤干净」只在第一趟判。
 
-「某样东西不在」的判据都有正向锚点：第一趟 L2-SST-01 与第二趟 L2-SST-09 先读到了录入框可用、「取消装货」在、清单挂着这单，
+「某样东西不在」的判据都有正向锚点：第一趟 L2-SST-01、第二趟 L2-SST-09、第三趟 L2-SST-12 先读到了录入框可用、「取消装货」在、清单挂着这单，
 同一个读法后来读到「不在」才有意义（control-server#260 的教训）。
 
 断言读服务端 SQLite、代理的流量记录与车载端 UI Automation。「取消装货」被拒时车载端会另弹「取消装货失败」模态框
@@ -113,6 +115,13 @@ function Get-RejectionsOf([string]$SubmissionId) {
         }
     }
     return , @($found)
+}
+
+# 这条出站报文经代理送到了车上：代理记下了服务端到车那一行，而且没丢。
+function Test-Delivered([string]$MessageId) {
+    return @(@((Get-L2RealTraffic $proxy).lines) | Where-Object {
+            $_.direction -eq 'server->onboard' -and -not $_.dropped -and
+            [string]::Equals([string]$_.messageId, $MessageId, [StringComparison]::OrdinalIgnoreCase) }).Count -ge 1
 }
 
 # 车到站、要子批，但没人扫。返回需求 id、子批与到站那一刻车上的样子。
@@ -317,22 +326,24 @@ if (-not $third.Open) {
         -Probe { @((Get-L2RealInbound $connection 'SublotSubmitted') | Where-Object { $submissionsBefore -notcontains $_.MessageId })[0] } `
         -Until { param($v) $null -ne $v }
     $submissionId = if ($null -ne $submission) { [string]$submission.MessageId } else { '' }
-    $answer = Wait-L2RealOrLast -Description 'the late entry was answered and the vehicle acknowledged the answer' `
+    # 送达看代理的流量记录，不看发件箱的 AcknowledgedAt：真车载端对 SublotRejected 不回 DurableAck（真装置 run3 实测，车到服务端
+    # 只有 SnapshotAppliedAck 一种确认），那一列在真车上恒为空；车收没收到，由代理记下的那一行加上提示区的显示来证。
+    $answer = Wait-L2RealOrLast -Description 'the late entry was answered and the answer crossed the proxy to the vehicle' `
         -Journal $journal -Criterion 'late-answer' -TimeoutSeconds 60 `
         -Probe { if ($submissionId) { Get-RejectionsOf $submissionId } else { , @() } } `
-        -Until { param($v) @($v).Count -ge 1 -and @($v)[0].Acknowledged }
+        -Until { param($v) @($v).Count -ge 1 -and (Test-Delivered @($v)[0].MessageId) }
     $shown = Wait-L2RealOrLast -Description 'the HMI shows the rejection reason' `
         -Journal $journal -Criterion 'late-answer-shown' -TimeoutSeconds 30 `
         -Probe { Get-RejectionDisplay } -Until { param($v) $v -eq 'WORKLIST_REVISION_STALE' }
     # 等到的是一个数组时 return 会把它展开：一条时拿到的是那一条本身，零条时是 $null——@($null) 数出来是 1，所以滤掉空值再数。
     $answers = @($answer | Where-Object { $null -ne $_ })
     $answerText = if ($answers.Count -eq 0) { '(no SublotRejected)' } else {
-        ($answers | ForEach-Object { "$($_.ReasonCode) ack=$($_.Acknowledged)" }) -join '; ' }
+        ($answers | ForEach-Object { "$($_.ReasonCode) delivered=$(Test-Delivered $_.MessageId)" }) -join '; ' }
     $assertions.Add(
-        'L2-SST-08', '第三趟：收尾之后的迟到扫码恰好得到一条 SublotRejected / WORKLIST_REVISION_STALE，车已确认、提示区显示这个原因',
-        ($answers.Count -eq 1 -and $answers[0].ReasonCode -eq 'WORKLIST_REVISION_STALE' -and $answers[0].Acknowledged -and
+        'L2-SST-08', '第三趟：收尾之后的迟到扫码恰好得到一条 SublotRejected / WORKLIST_REVISION_STALE，经代理送到车上、提示区显示这个原因',
+        ($answers.Count -eq 1 -and $answers[0].ReasonCode -eq 'WORKLIST_REVISION_STALE' -and (Test-Delivered $answers[0].MessageId) -and
             $shown -eq 'WORKLIST_REVISION_STALE'),
-        '1 × WORKLIST_REVISION_STALE ack=True；提示区 WORKLIST_REVISION_STALE',
+        '1 × WORKLIST_REVISION_STALE delivered=True；提示区 WORKLIST_REVISION_STALE',
         "录入 $(if ($submissionId) { $submissionId } else { '(not received)' })：$answerText；提示区 $(if ($shown) { $shown } else { '(none)' })")
 
     $afterScan = Wait-L2RealOrLast -Description 'the vehicle withdrew sublot entry after the STALE answer' `
