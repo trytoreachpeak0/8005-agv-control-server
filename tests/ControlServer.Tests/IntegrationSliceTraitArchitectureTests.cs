@@ -102,6 +102,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["DispatchChainSeamTests"] = "batch 4 FP-C15 dispatch chain seams (control-server#69): reason code names, the area assignment lookup and plan replay; server-internal, no wire message",
             ["DispatchZoneParameterFieldOpsTests"] = "batch 7 REQ-0198/REQ-0203 FieldOps per-zone dispatch parameter verbs' process entry: arguments, JSON output, exit codes, read-only open (control-server#216); a controlled operations entry point, no wire message",
             ["DispatchZoneParameterImportTests"] = "batch 7 REQ-0198/REQ-0203 whole-table import of the per-zone dispatch parameters, versions, snapshot and audit (control-server#216); a controlled operations entry point, no wire message",
+            ["EmergencyReleaseVersusOwnOrderRebuildTests"] = "control-server#349 REQ-0356's release on confirmation followed, in the real order, by an own order cancelled in RIoT and #299's clearance, asserting whether and when REQ-0360's rebuild creates a RIoT order and which demand it carries; single-ended server-to-RIoT, no wire message",
             ["EmergencyStopReleaseEndpointsTests"] = "REQ-0356 release-on-confirmation HTTP entry point (control-server#63); single-ended server-to-RIoT, no wire message",
             ["EmergencyStopSupervisorTests"] = "7.5 #8, FP-C11 fault isolation; single-ended server-to-RIoT",
             ["ExperimentalRiotCreateGateTests"] = "RIoT create experiment; single-ended server-to-RIoT",
