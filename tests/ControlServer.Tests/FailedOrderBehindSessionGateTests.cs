@@ -140,6 +140,37 @@ public sealed class FailedOrderBehindSessionGateTests
     }
 
     /// <summary>
+    /// 闸门后记下故障之后，一轮读不到这张单（RIoT 不回答）：码仍是 <c>VEHICLE_ORDER_FAILED</c>，开始时刻不动——
+    /// 读不到不等于单已继续，而 FAILED 是终态。
+    /// </summary>
+    /// <remarks>
+    /// 修复顺带立的一条线（<c>JourneyRuntimeEngine.KeepsItsCodeWhileTheOrderIsUnread</c>）：不立它，闸门会在读不到的那一轮写回
+    /// <c>ONBOARD_SESSION_NOT_READY</c>，下一轮读到 FAILED 又写回来，开始时刻两头归零。
+    /// </remarks>
+    [Fact]
+    public async Task AnUnreadableOrderBehindTheGateKeepsTheFailedCodeAndItsStart()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow dispatched = await fixture.RuntimeAsync();
+        await OwnOrderRebuildTests.DropSessionOnOwnOrderAsync(fixture);
+        fixture.Riot.MovementState = "MT_RUNNING";
+        fixture.Riot.FailOrder(dispatched.PickupUpperId);
+        await TickAndHearAsync(fixture);
+        JourneyRuntimeRow failed = await fixture.RuntimeAsync();
+        Assert.Equal(VehicleFaultEvidence.OrderFailed, failed.BlockReasonCode);
+
+        fixture.Riot.MakeOrderUnreadable(dispatched.PickupUpperId);
+        await TickAndHearAsync(fixture);
+
+        JourneyRuntimeRow after = await fixture.RuntimeAsync();
+        Assert.True(failed.BlockReasonSince < fixture.Clock.GetUtcNow(), "the clock did not move, so keeping the start time proves nothing");
+        Assert.Equal(
+            (VehicleFaultEvidence.OrderFailed, failed.BlockReasonSince),
+            (after.BlockReasonCode, after.BlockReasonSince));
+        await AssertSessionStillNotReadyAsync(fixture);
+    }
+
+    /// <summary>
     /// 闸门前那条路：会话就绪时同一张单 FAILED、车在动，一轮下来的故障与命令审计与闸门后那条一模一样。
     /// </summary>
     /// <remarks>
