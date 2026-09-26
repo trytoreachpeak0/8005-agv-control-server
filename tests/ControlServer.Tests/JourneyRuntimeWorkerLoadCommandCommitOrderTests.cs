@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
@@ -14,18 +15,19 @@ namespace ControlServer.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The iteration that loads does not commit in one piece. The outbox row and the Prepared station operation
-/// are saved and the line is sent (<c>OnboardJourneyPublisher.PublishSlotOperationEnvelopeAsync</c>), the entry
-/// request is settled in a save of its own, and only the save at the end of the iteration writes
-/// <see cref="JourneyRuntimeStage.AwaitingLoadResult"/>. So a vehicle can hold the command while every other
-/// scope still reads <see cref="JourneyRuntimeStage.AwaitingSublot"/>. The L2 criterion L2-LN-01 read in exactly
-/// that window and went red (CI run 35432232407).
+/// Until control-server#362 the iteration that loads did not commit in one piece: the outbox row and the Prepared
+/// station operation were saved and the line was sent, and only the save at the end of the iteration wrote
+/// <see cref="JourneyRuntimeStage.AwaitingLoadResult"/>. A vehicle could hold the command while every other scope
+/// still read <see cref="JourneyRuntimeStage.AwaitingSublot"/>; the L2 criterion L2-LN-01 read in exactly that
+/// window and went red (CI run 35432232407). These tests pinned that window (control-server#193).
 /// </para>
 /// <para>
-/// The window has no business consequence, and the second test is why: what could act on the old stage from
-/// another scope is the cancellation before a sublot, and it is refused there, because the load command it
-/// checks for is already durable when the line goes out. The stage is the last thing to move, not the fact
-/// anything decides on.
+/// Since #362 the command, the Prepared operation, the demand's LOADING membership and the stage are written in one
+/// write transaction, after the demand has been re-checked under that lock, and the line goes out only after it
+/// commits (<c>OnboardJourneyPublisher.StageSlotOperationCommandAsync</c>, then <c>SendPersistedAsync</c>). The
+/// window is closed: whatever reaches the vehicle, every other scope already reads. What #193 established still
+/// holds and the second test keeps it: a cancellation before a sublot that arrives while the line goes out is
+/// refused, because the load it checks for is durable.
 /// </para>
 /// </remarks>
 public sealed class JourneyRuntimeWorkerLoadCommandCommitOrderTests
@@ -34,7 +36,7 @@ public sealed class JourneyRuntimeWorkerLoadCommandCommitOrderTests
 
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-02")]
-    public async Task TheLoadCommandReachesTheVehicleBeforeItsIterationCommitsAwaitingLoadResult()
+    public async Task TheLoadCommandReachesTheVehicleOnlyAfterItsIterationCommitsAwaitingLoadResult()
     {
         CancellationToken token = TestContext.Current.CancellationToken;
         await using RuntimeFixture fixture = await ReachSublotEntryAsync();
@@ -43,6 +45,7 @@ public sealed class JourneyRuntimeWorkerLoadCommandCommitOrderTests
         JourneyRuntimeStage? stageAtSend = null;
         bool commandDurableAtSend = false;
         StationOperationStatus? loadAtSend = null;
+        string? membershipAtSend = null;
         fixture.Peer.OnMessageSent = async line =>
         {
             if (!IsSlotOperationCommand(line)) return;
@@ -51,19 +54,22 @@ public sealed class JourneyRuntimeWorkerLoadCommandCommitOrderTests
             commandDurableAtSend = await reader.ProtocolOutbox.AsNoTracking()
                 .AnyAsync(row => row.MessageId == waiting.LoadCommandMessageId, token);
             loadAtSend = (await reader.StationOperations.AsNoTracking().SingleOrDefaultAsync(token))?.Status;
+            membershipAtSend = (await reader.Set<JourneyDemandRow>().AsNoTracking().SingleAsync(token)).Status;
         };
 
         await fixture.Engine.ExecuteOnceAsync(token);
 
-        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, stageAtSend);
+        // Everything the command stands for is committed before the line leaves (control-server#362).
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, stageAtSend);
         Assert.True(commandDurableAtSend);
         Assert.Equal(StationOperationStatus.Prepared, loadAtSend);
+        Assert.Equal(JourneyDemandStatuses.Loading, membershipAtSend);
         Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, (await fixture.RuntimeAsync()).Stage);
     }
 
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-02")]
-    public async Task ACancellationBeforeSublotArrivingWhileTheStageStillReadsAwaitingSublotIsRefused()
+    public async Task ACancellationBeforeSublotArrivingWhileTheLoadCommandGoesOutIsRefused()
     {
         CancellationToken token = TestContext.Current.CancellationToken;
         await using RuntimeFixture fixture = await ReachSublotEntryAsync();
@@ -100,7 +106,7 @@ public sealed class JourneyRuntimeWorkerLoadCommandCommitOrderTests
 
         await fixture.Engine.ExecuteOnceAsync(token);
 
-        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, stageAtRequest);
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, stageAtRequest);
         Assert.NotNull(response);
         using JsonDocument answer = JsonDocument.Parse(response.Split('\n', StringSplitOptions.RemoveEmptyEntries)[0]);
         Assert.Equal("LoadCancellationAuthorization", answer.RootElement.GetProperty("messageType").GetString());

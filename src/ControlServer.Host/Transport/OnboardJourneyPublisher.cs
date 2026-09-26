@@ -296,7 +296,39 @@ public sealed class OnboardJourneyPublisher(
         SlotOperationCommand command,
         CancellationToken cancellationToken,
         string? admissionStationId = null,
-        string? admissionTaskType = null)
+        string? admissionTaskType = null) =>
+        SlotOperationCommandAsync(
+            messageId, agvId, sessionGeneration, command, send: true, admissionStationId, admissionTaskType,
+            cancellationToken);
+
+    /// <summary>
+    /// 与 <see cref="PublishSlotOperationCommandAsync"/> 相同，但只落库、不发：调用方在自己的写事务里下命令，提交之后再用
+    /// <see cref="SendPersistedAsync"/> 发（control-server#362）。
+    /// </summary>
+    /// <remarks>
+    /// 命令先于提交上线，车就可能照一条最后没落库的命令开仓；所以写事务里只能落库。
+    /// </remarks>
+    public Task StageSlotOperationCommandAsync(
+        string messageId,
+        string agvId,
+        long sessionGeneration,
+        SlotOperationCommand command,
+        CancellationToken cancellationToken,
+        string? admissionStationId = null,
+        string? admissionTaskType = null) =>
+        SlotOperationCommandAsync(
+            messageId, agvId, sessionGeneration, command, send: false, admissionStationId, admissionTaskType,
+            cancellationToken);
+
+    private Task SlotOperationCommandAsync(
+        string messageId,
+        string agvId,
+        long sessionGeneration,
+        SlotOperationCommand command,
+        bool send,
+        string? admissionStationId,
+        string? admissionTaskType,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(command);
         ValidateUuid(command.DemandId, nameof(command.DemandId));
@@ -351,6 +383,7 @@ public sealed class OnboardJourneyPublisher(
             command,
             admissionStationId,
             admissionTaskType,
+            send,
             cancellationToken);
     }
 
@@ -991,6 +1024,7 @@ public sealed class OnboardJourneyPublisher(
         SlotOperationCommand command,
         string? admissionStationId,
         string? admissionTaskType,
+        bool send,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(messageId);
@@ -1018,7 +1052,7 @@ public sealed class OnboardJourneyPublisher(
             messageId,
             candidateWire,
             cancellationToken).ConfigureAwait(false);
-        if (stored.AcknowledgedAt is not null)
+        if (!send || stored.AcknowledgedAt is not null)
         {
             return;
         }
