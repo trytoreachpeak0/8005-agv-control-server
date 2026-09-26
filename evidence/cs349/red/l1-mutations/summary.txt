@@ -1,0 +1,65 @@
+Mutation run on the test file as of the review fixes (base fp/v2-impl@da1eaf8a, test file after 87568c58's review edits), 2026-09-26.
+Raw output of mutate349.ps1. Two sequences are console mis-decodings, left as printed: '鈫?' is xunit's '↑' and '路路路' is '···'.
+Line numbers refer to tests/ControlServer.Tests/EmergencyReleaseVersusOwnOrderRebuildTests.cs in the commit that adds this file.
+
+=== M1-no-delay diff: 1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.OwnOrderRebuild.cs
+    build:     0 Error(s)
+    FAIL OnTheWayToPickupTheReleaseAloneBuildsNothingAndOnlyTheClearanceRebuildsAfterTheDelay
+      Assert.Equal() Failure: Values differ
+      Expected: 1
+      Actual:   2
+      at line 126
+    Failed!  - Failed:     1, Passed:     4, Skipped:     0, Total:     5, Duration: 10 s - ControlServer.Tests.dll (net8.0)
+=== M2-fault-not-a-vehicle-condition diff: 1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.OwnOrderRebuild.cs
+    build:     0 Error(s)
+    FAIL ConstructedALatchOverALiveOwnOrderThatAPersonCancelsInRiotNeverRebuildsBecauseTheFaultCannotBeCleared
+      Assert.Contains() Failure: Sub-string not found
+      String:    "RIOT_EMERGENCY_NOT_OK"
+      Not found: "VEHICLE_FAULT_IN_EFFECT"
+      at line 370
+    Failed!  - Failed:     1, Passed:     4, Skipped:     0, Total:     5, Duration: 8 s - ControlServer.Tests.dll (net8.0)
+=== M3-no-cargo-evidence diff: 1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.OwnOrderRebuild.cs
+    build:     0 Error(s)
+    FAIL OnTheWayToTheGateAnEmptiedVehicleIsReleasedButItsDeliveryIsNeverRebuilt
+      Assert.Equal() Failure: Values differ
+      Expected: 1
+      Actual:   2
+      at line 182
+    Failed!  - Failed:     1, Passed:     4, Skipped:     0, Total:     5, Duration: 10 s - ControlServer.Tests.dll (net8.0)
+=== M4-no-session-gate diff: 1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.OwnOrderRebuild.cs
+    build:     0 Error(s)
+    FAIL WithTheRealOnboardsSessionNotReadyTheRebuildWaitsForTheSessionAsWellAsTheDelay
+      Assert.Equal() Failure: Values differ
+      Expected: Tuple ("PENDING", "ONBOARD_SESSION_NOT_READY")
+      Actual:   Tuple ("PENDING", "ONBOARD_FACTS_NOT_READY")
+      at line 285
+    Failed!  - Failed:     1, Passed:     4, Skipped:     0, Total:     5, Duration: 10 s - ControlServer.Tests.dll (net8.0)
+=== M5-release-ignores-unfinished-orders diff: 1	1	src/ControlServer.Host/Runtime/Commands/EmergencyStopSupervisor.cs
+    build:     0 Error(s)
+    FAIL ConstructedALatchOverALiveOwnOrderThatAPersonCancelsInRiotNeverRebuildsBecauseTheFaultCannotBeCleared
+      Assert.Equal() Failure: Values differ
+      Expected: RecoveryRefused
+      Actual:   RecoveryUnconfirmed
+      at line 352
+    FAIL UnderSomeoneElsesStopAnEmptiedVehicleWhoseOwnOrderIsCancelledIsRebuiltToDeliverAnyway
+      Assert.Equal() Failure: Collections differ
+      鈫?(pos 1)
+      Expected: <>z__ReadOnlyArray<string> ["EMERGENCY_NOT_RAISED_BY_8005", "EMERGENCY_VEHICLE_ORDER_NOT_FINISHED"]
+      Actual:   List<string>               ["EMERGENCY_NOT_RAISED_BY_8005"]
+      at line 453
+    Failed!  - Failed:     2, Passed:     3, Skipped:     0, Total:     5, Duration: 8 s - ControlServer.Tests.dll (net8.0)
+=== M6-cancel-source-needs-cargo-evidence diff: 1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.OwnOrderRebuild.cs
+    build:     0 Error(s)
+    FAIL ConstructedALatchOverALiveOwnOrderThatAPersonCancelsInRiotNeverRebuildsBecauseTheFaultCannotBeCleared
+      Assert.Contains() Failure: Sub-string not found
+      String:    "CARGO_EVIDENCE_NOT_RECEIVED"
+      Not found: "VEHICLE_FAULT_IN_EFFECT"
+      at line 370
+    FAIL UnderSomeoneElsesStopAnEmptiedVehicleWhoseOwnOrderIsCancelledIsRebuiltToDeliverAnyway
+      Assert.Contains() Failure: Sub-string not found
+      String:    "SLOT_1:EMPTY,LOCKED,RESET;SLOT_2:EMPTY,LOCKED,RESE"路路路
+      Not found: "RIOT_EMERGENCY_NOT_OK"
+      at line 474
+    Failed!  - Failed:     2, Passed:     3, Skipped:     0, Total:     5, Duration: 8 s - ControlServer.Tests.dll (net8.0)
+=== src clean after restore: ''
+=== rebuild after restore: 0 Error(s)
