@@ -115,6 +115,8 @@ public sealed class PickupStopTermination(ControlServerDbContext dbContext, Plan
         else
         {
             await StagePlanRevisionAsync(runtime, cancellationToken).ConfigureAwait(false);
+            // 这一重载没有停靠上下文，只在单需求旅程上走得到，而那里终结的恒为最后一条，不会到这一支；照样问一次，不靠这个前提。
+            await StopEndWorklist.StageAsync(dbContext, runtime, demandId, null, endedAt, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -152,6 +154,9 @@ public sealed class PickupStopTermination(ControlServerDbContext dbContext, Plan
         else
         {
             await StagePlanRevisionAsync(runtime, cancellationToken).ConfigureAwait(false);
+            // 旅程继续而这一站可能就此结束（B 形态，control-server#324）：车上不能留着它。
+            await StopEndWorklist.StageAsync(
+                dbContext, runtime, demandId, currentSublotRequestMessageId, endedAt, cancellationToken).ConfigureAwait(false);
         }
     }
 

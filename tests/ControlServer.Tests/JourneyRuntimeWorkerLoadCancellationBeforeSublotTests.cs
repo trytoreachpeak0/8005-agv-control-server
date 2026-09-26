@@ -474,6 +474,122 @@ public sealed class JourneyRuntimeWorkerLoadCancellationBeforeSublotTests
     }
 
     /// <summary>
+    /// 站点期限已经把这一站连同整趟旅程收尾，之后才到的扫码：答 <c>SublotRejected</c> / <c>WORKLIST_REVISION_STALE</c>，
+    /// <c>demandId</c> 为 null，修订号是收尾那张空清单的号，并且发到线上（control-server#324）。
+    /// </summary>
+    /// <remarks>
+    /// 修之前它只得到 <c>DurableAck</c>：引擎只在 <c>AwaitingSublot</c> 里读录入，旅程已经 <c>Completed</c>，永远没人回答，
+    /// 车停在「已提交」。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task ASublotEnteredAfterTheDeadlineClosedTheJourneyIsRejectedAsStale()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await ReachSublotWaitAsync();
+        await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+        OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+            connection, new WireToGateStore(connection), fixture.Clock, new ConfigurationBuilder().Build(), fixture.Peer);
+        OnboardConnectionState state = BeforeSublotConnection(fixture, generation: 1);
+        state.HandshakeCompleted = true;
+        JourneyRuntimeRow waiting = await fixture.RuntimeAsync();
+        fixture.Clock.Advance(TimeSpan.FromSeconds(30));
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(token);
+        Assert.Equal(JourneyRuntimeStage.Completed, (await fixture.RuntimeAsync()).Stage);
+
+        string entry = SublotEntry(fixture, waiting, "SUBLOT-001");
+        string submissionId = JsonDocument.Parse(entry).RootElement.GetProperty("messageId").GetString()!;
+        string ack = await processor.ProcessAsync(entry, state, token);
+
+        Assert.Equal("DurableAck", FirstLineType(ack));
+        ProtocolOutboxRow rejection = Assert.Single(await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .Where(row => row.MessageType == "SublotRejected")
+            .ToArrayAsync(token));
+        using JsonDocument document = JsonDocument.Parse(rejection.PayloadJson);
+        Assert.Equal(submissionId, document.RootElement.GetProperty("correlationId").GetString());
+        JsonElement payload = document.RootElement.GetProperty("payload");
+        Assert.Equal("WORKLIST_REVISION_STALE", payload.GetProperty("problem").GetProperty("reasonCode").GetString());
+        Assert.Equal(JsonValueKind.Null, payload.GetProperty("demandId").ValueKind);
+        Assert.Contains(fixture.Peer.Lines, bytes => ClosureSnapshotAssertions.SentAs(
+            System.Text.Encoding.UTF8.GetString(bytes), rejection.MessageId, 1));
+        IReadOnlyList<ClosureSnapshotAssertions.Snapshot> closure =
+            await ClosureSnapshotAssertions.AssertClosureStagedAsync(fixture.Context, waiting.AgvId, waiting.PickupStationId);
+        Assert.Equal(
+            closure.Single(item => item.MessageType == "CurrentStopWorklistSnapshot").Revision,
+            payload.GetProperty("currentWorklistRevision").GetInt64());
+    }
+
+    /// <summary>
+    /// 期限已过、而这一站<b>仍在等录入</b>时到的扫码，入站那一侧不抢答：它是这一站的合法答复，引擎在期限那一轮先读到它，
+    /// 下装货命令而不是结束这一站（ADR-cross-0055「先落库者胜」），也不回任何 <c>WORKLIST_REVISION_STALE</c>（control-server#324）。
+    /// </summary>
+    /// <remarks>
+    /// 这是票面那条竞态用例的确定性构造：扫码与期限谁先落库，由这里的调用次序定死——扫码先。入站判「这一站已经结束」若只看
+    /// 「期限到了没有」，这里会被错拒，而车上已经在开仓装货。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task ASublotEnteredPastTheDeadlineWhileTheStopStillWaitsIsLeftToTheRuntime()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await ReachSublotWaitAsync();
+        await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+        OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+            connection, new WireToGateStore(connection), fixture.Clock, new ConfigurationBuilder().Build(), fixture.Peer);
+        OnboardConnectionState state = BeforeSublotConnection(fixture, generation: 1);
+        state.HandshakeCompleted = true;
+        JourneyRuntimeRow waiting = await fixture.RuntimeAsync();
+        fixture.Clock.Advance(TimeSpan.FromSeconds(30));
+
+        string ack = await processor.ProcessAsync(SublotEntry(fixture, waiting, "SUBLOT-001"), state, token);
+        Assert.Equal("DurableAck", FirstLineType(ack));
+        Assert.DoesNotContain("SublotRejected", await fixture.OutboxTypesAsync());
+
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(token);
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, (await fixture.RuntimeAsync()).Stage);
+        Assert.DoesNotContain("SublotRejected", await fixture.OutboxTypesAsync());
+    }
+
+    /// <summary>
+    /// 期限已经收尾之后才按的「取消装货（扫码前）」：拒绝的原因码是 <c>WORKLIST_REVISION_STALE</c>（control-server#324）。
+    /// 车还在路上时按的取消仍是 <c>ACTION_NOT_ALLOWED_IN_STATE</c>——那时这一站还没开始，谈不上「过时」。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task ACancellationAfterTheDeadlineClosedTheJourneyIsRejectedAsStale()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+        fixture.Catalog.Set(fixture.Demand(BeforeSublotDemandId, "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+        OnboardMessageProcessor processor = BeforeSublotProcessor(fixture, connection);
+        OnboardConnectionState state = BeforeSublotConnection(fixture, generation: 1);
+        await fixture.Engine.ExecuteOnceAsync(token);
+        string early = await processor.ProcessAsync(
+            CancellationBeforeSublotRequest(fixture, "c1000000-0000-4000-8000-000000000009", generation: 1), state, token);
+        Assert.Equal(
+            "ACTION_NOT_ALLOWED_IN_STATE",
+            FirstLinePayload(early, out _).GetProperty("problem").GetProperty("reasonCode").GetString());
+
+        await fixture.AdvanceToSublotWaitAsync();
+        await fixture.ProveSlotDoorsClosedAsync();
+        fixture.Clock.Advance(TimeSpan.FromSeconds(30));
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(token);
+        Assert.Equal(JourneyRuntimeStage.Completed, (await fixture.RuntimeAsync()).Stage);
+
+        string late = await processor.ProcessAsync(
+            CancellationBeforeSublotRequest(fixture, "c1000000-0000-4000-8000-000000000002", generation: 1), state, token);
+        JsonElement payload = FirstLinePayload(late, out _);
+        Assert.Equal("REJECTED", payload.GetProperty("decision").GetString());
+        Assert.Equal("WORKLIST_REVISION_STALE", payload.GetProperty("problem").GetProperty("reasonCode").GetString());
+    }
+
+    /// <summary>
     /// The station deadline and the cancellation interleaved (control-server#116 review, item 1). Each side
     /// decides under the write lock, so in the store one of them commits first and the other then refuses:
     /// a cancellation arriving after the deadline ended the stop is REJECTED. Should both still have been

@@ -96,7 +96,8 @@ internal static class JourneyClosure
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(publisher);
-        foreach (string messageId in await ReplayIdsAsync(dbContext, agvId, cancellationToken).ConfigureAwait(false))
+        IReadOnlyList<string> closureIds = await ReplayIdsAsync(dbContext, agvId, cancellationToken).ConfigureAwait(false);
+        foreach (string messageId in closureIds)
         {
             try
             {
@@ -106,6 +107,12 @@ internal static class JourneyClosure
             {
                 // 见 remarks：留在发件箱里，等重连补发。
             }
+        }
+        // 收尾快照之后：同一次改动里答过时的那些扫码（control-server#324）。只在最近一趟确实收尾时发——旅程还在走时，本站结束的
+        // 那些由 StopEndWorklist.SendAsync 在空清单之后发；这里也发就会先于空清单、而且发两遍（PR #361 增量复核的建议）。
+        if (closureIds.Count > 0)
+        {
+            await LateSublotSubmission.SendStaleAnswersAsync(publisher, dbContext, agvId, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -202,6 +209,14 @@ internal static class JourneyClosure
             new VehicleBusinessProjection(businessRevision, "READY", null, false, "SUFFICIENT", "NOT_CHARGING", null, []),
             endedAt,
             cancellationToken).ConfigureAwait(false);
+        // 收尾时车停在取货停靠上：那一站已经落库、却没人答的扫码同一次改动里答过时（control-server#324，PR #361 审查 S1）——
+        // 引擎读收件箱与期限写锁之间到的那一条，既不装也不拒，车停在「已提交」。
+        if (stop.StopRole == JourneyStopRoles.Pickup)
+        {
+            await LateSublotSubmission.StageForUnansweredEntriesAsync(
+                dbContext, LateSublotSubmission.AddressOf(staged, runtime, stop), worklistRevision, session.SessionGeneration,
+                endedAt, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     /// <summary>
@@ -237,7 +252,7 @@ internal static class JourneyClosure
     /// 代价是每次收尾把这三类快照整表读一遍。一趟旅程只收尾一次；引擎的 <c>LastSentPlanAsync</c> 对追加过的旅程每轮都这么读。
     /// </para>
     /// </remarks>
-    private static async Task<long?> HighestSentRevisionAsync(
+    internal static async Task<long?> HighestSentRevisionAsync(
         ControlServerDbContext dbContext,
         string agvId,
         string messageType,

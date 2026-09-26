@@ -65,4 +65,5 @@ public static class ServerReasonCodes
     public const string SessionRecoveryRequired = "SESSION_RECOVERY_REQUIRED";
     public const string SublotBoxCountUnavailable = "SUBLOT_BOX_COUNT_UNAVAILABLE";
     public const string SublotNotInDispatchScope = "SUBLOT_NOT_IN_DISPATCH_SCOPE";
+    public const string WorklistRevisionStale = "WORKLIST_REVISION_STALE";
 }

@@ -321,6 +321,11 @@ jobs:
               # a confirmed REBUILD_STOPPED_ORDER rebuilds it once for the same vehicle and demand, and the same request again
               # answers AlreadyDone.
               @{ Name = 'in-transit-rebuild-stopped-person-rebuilds'; Runs = 1 }
+              # control-server#324 (program#86's B shape, before the v2 vehicle trial): a second pickup ended by its station
+              # deadline while the vehicle carries the first one's cargo. The vehicle gets that stop's empty worklist, a late
+              # entry and a late cancellation are both answered WORKLIST_REVISION_STALE, and the next stop's worklist starts
+              # above the empty one, the session never dropping on a revision conflict.
+              @{ Name = 'stop-ended-journey-continues'; Runs = 1 }
               # control-server#214: the task-side ranking. A new STAGING_TO_WIRE demand is taken before an older normal-band
               # one (REQ-0202); with no anti-starvation threshold configured nothing escalates, and once one is imported
               # the overdue normal-band demand is escalated exactly once and goes ahead of a STAGING_TO_WIRE that is not

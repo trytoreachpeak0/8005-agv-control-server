@@ -298,7 +298,9 @@ internal sealed class JourneyStopCursor
     }
 
     /// <summary>
-    /// 一个停靠上清单一共发几版：挂在它上面的需求有几条就几版，至少一版；离站期限每重填一次再多一版（control-server#339）。
+    /// 一个停靠上清单一共发几版：挂在它上面的需求有几条就几版，至少一版；离站期限每重填一次再多一版（control-server#339），
+    /// 本站被结束而旅程继续时发的那张空清单也占一版（<see cref="StopEndWorklist"/>，control-server#324）——两者都记在
+    /// <see cref="JourneyStopRow.WorklistRefills"/> 上。
     /// 后面停靠的首号、录入地址的区间都从这里取，所以重填之后它们跟着移动。
     /// </summary>
     public long WorklistVersionsOf(JourneyStopRow stop) => Math.Max(1, AllAtStop(stop).Count) + stop.WorklistRefills;
