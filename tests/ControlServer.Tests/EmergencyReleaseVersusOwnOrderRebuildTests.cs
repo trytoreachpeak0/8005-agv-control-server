@@ -23,9 +23,10 @@ namespace ControlServer.Tests;
 /// <b>两条链要分开看。</b>今天服务端只在旅程当前那张单 FAILED 时记故障、才可能升级急停
 /// （<c>JourneyRuntimeEngine.ObserveOrderFailureAsync</c> 是 <c>VehicleFaultCoordinator.ObserveAsync</c> 在产品代码里唯一的调用方），
 /// FAILED 是终态，所以「本服务端的急停锁着、它自己的单还没结束」这个起点服务端自己造不出来——清除入口的类注释也这么写
-/// （<c>FAULT_RECOVERY_CURRENT_ORDER_CANCELLED_IN_RIOT</c> "is not reachable in the product"）。前两组用例走的是今天走得到的链；
-/// 票面字面那条链（锁着时单还活着、人去 RIoT 取消它）用例里用故障协调器的公开入口构造起点，结论只对「将来有了别的急停来源」
-/// （把 HANG 纳入故障模型的 #319、REQ-0249 两条人工急停来源的入口）成立，注释里逐条写明。
+/// （<c>FAULT_RECOVERY_CURRENT_ORDER_CANCELLED_IN_RIOT</c> "is not reachable in the product"）。前三条用例走的是今天走得到的链；
+/// 第四条是票面字面那条链（锁着时单还活着、人去 RIoT 取消它），用故障协调器的公开入口构造起点，结论只对「将来有了别的急停来源」
+/// （把 HANG 纳入故障模型的 #319、REQ-0249 两条人工急停来源的入口）成立；第五条是急停不是本服务端发的对照，没有 REQ-0356 这一步。
+/// 逐步的表格与反向验证在 <c>evidence/cs349/SUMMARY.md</c>。
 /// </para>
 /// <para>
 /// <b>断言落在「有没有新建 RIoT 订单」「新订单承载哪条需求」这一层</b>（<c>RecordingRiot.CreateCount</c> 与
@@ -46,12 +47,18 @@ public sealed class EmergencyReleaseVersusOwnOrderRebuildTests
 
     /// <summary>
     /// 开往取货站（车上没货）的单 FAILED、车证不出停稳，服务端急停并锁住。RIoT 里这张单已经 FAILED，没有要取消的；人工解除急停被接受，
-    /// 解除本身不建单——过了多久都不建，因为故障还在；人经 #299 清除故障之后，延迟一到才给同一辆车、同一条需求建一张开往同一个取货站的单。
+    /// 解除本身不建单，过了多久都不建；人经 #299 清除故障之后，延迟一到才给同一辆车、同一条需求建一张开往同一个取货站的单。
     /// 只有一次出问题，护栏三不介入。
     /// </summary>
     /// <remarks>
+    /// <para>
     /// 「解除之后过五分钟仍不建」守的是票面担心的第一件事：人刚在车旁确认解除，车不能因此开走。车动的那一刻是清除之后的延迟到点，
     /// 那是人经清除入口说「可以走了」（用户 2026-09-23，vehicle-fault-clearance-field-guide.md 第 4 步写明「清除之后……车会再动」）。
+    /// </para>
+    /// <para>
+    /// <b>挡住它的不是车况护栏里的「故障在效」</b>：FAILED 这一来源的重建只由清除入口记下，清除之前根本没有重建记录，所以这里断的是
+    /// 「没有重建记录」而不只是「没建单」。反向验证 M2 拿掉「故障在效」，这一格照绿；把「解除之后记重建」加进解除入口，它会红。
+    /// </para>
     /// </remarks>
     [Fact]
     [Trait("Requirement", "REQ-0356")]
@@ -84,7 +91,7 @@ public sealed class EmergencyReleaseVersusOwnOrderRebuildTests
         int triggersAfterRelease = await TriggerCountAsync(fixture);
         await TickAndHearAsync(fixture);
 
-        // 解除只结束急停：故障还在，不记重建、不建单。拨过十个延迟也一样。
+        // 解除只结束急停：清除之前没有任何东西记重建，所以不建单；故障还在，急停也不重触发。拨过十个延迟也一样。
         DateTimeOffset releasedAt = fixture.Clock.GetUtcNow();
         for (int round = 0; round < 10; round++)
         {
