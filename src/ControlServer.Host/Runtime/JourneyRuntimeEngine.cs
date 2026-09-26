@@ -4294,6 +4294,9 @@ public sealed partial class JourneyRuntimeEngine(
         //
         // 整个停靠上的待做项一起终结：期限是这个停靠的（「这一站的活没在期限内做完」），结束它就是让车走，
         // 留下任何一条待做项都会让下一轮回到同一个停靠、同一个期限。
+        //
+        // 逐条终结时「是不是最后一条」要看得见前几条刚暂存的终结（control-server#327）：只读库时每一条都判「另一条还开着」，
+        // 谁也不收尾，旅程停在离站等待，下一轮在一个没有下一段的停靠上抛。那个判断在 DemandJourneyLookup.IsLastOpenDemandAsync。
         string sublotRequestMessageId = stops.CurrentSublotRequestMessageId(runtime.WorklistRevision);
         foreach (JourneyStopDemand outstanding in stops.OutstandingAtCurrentStop)
         {

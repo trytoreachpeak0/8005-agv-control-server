@@ -171,6 +171,22 @@ public static class DemandJourneyLookup
     /// write lock, and with several demands per journey that is the failure above -- so a new caller either holds a
     /// transaction or opens one.
     /// </para>
+    /// <para>
+    /// <b>It also sees the endings staged in this same change and not yet saved</b> (control-server#327). The query reads the
+    /// store, so a demand the caller has just set <c>Cancelled</c> on a tracked row still reads as open there. The station
+    /// deadline ends every outstanding demand of its stop in one change, one after another: read from the store alone, each
+    /// saw the others still open, none was the last, and the journey was left with every demand ended, its vehicle held and
+    /// its next round throwing on a stop with no leg after it. So the store's answer is corrected by what this context
+    /// tracks -- the same rule <c>JourneyPlanRevisionStage</c> already follows by reading tracked rows.
+    /// </para>
+    /// <para>
+    /// <b>What the correction covers, and no more.</b> One dimension: a demand whose tracked row carries a terminal
+    /// <see cref="DemandExecutionStatus"/>. Memberships are not corrected -- a membership removed in this change still counts
+    /// as the store has it. And the test is "tracked and terminal", not "staged and unsaved": a row tracked from an earlier
+    /// save of the same context reads the same. That is only equivalent because every caller's context starts the change
+    /// with nothing stale tracked (the runtime and the inbox clear tracking first); a caller that kept a long-lived context
+    /// would need a sharper test.
+    /// </para>
     /// </remarks>
     public static async Task<bool> IsLastOpenDemandAsync(
         ControlServerDbContext dbContext,
@@ -180,13 +196,18 @@ public static class DemandJourneyLookup
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(journeyId);
         ArgumentException.ThrowIfNullOrWhiteSpace(demandId);
-        bool anotherOpen = await Memberships(dbContext)
+        string[] othersOpenInStore = await Memberships(dbContext)
             .Where(row => row.JourneyId == journeyId && row.DemandId != demandId)
             .Join(OpenDemands(dbContext), membership => membership.DemandId, demand => demand.DemandId,
                 (membership, demand) => demand.DemandId)
             .TagWith(LastOpenDemandTag)
-            .AnyAsync(cancellationToken)
+            .ToArrayAsync(cancellationToken)
             .ConfigureAwait(false);
-        return !anotherOpen;
+        return othersOpenInStore.All(other => EndedInThisChange(dbContext, other));
     }
+
+    /// <summary>Whether this context tracks <paramref name="demandId"/> with a terminal status not yet saved.</summary>
+    private static bool EndedInThisChange(ControlServerDbContext dbContext, string demandId) =>
+        dbContext.AcceptedDemands.Local.FirstOrDefault(row => row.DemandId == demandId)?.Status
+            is DemandExecutionStatus.Succeeded or DemandExecutionStatus.Cancelled;
 }
