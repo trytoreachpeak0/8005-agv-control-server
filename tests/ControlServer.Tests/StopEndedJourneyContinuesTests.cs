@@ -159,6 +159,59 @@ public sealed class StopEndedJourneyContinuesTests
     }
 
     /// <summary>
+    /// 同一站<b>先</b>因断线重连重填了离站期限（cs#339，清单升一版），<b>再</b>被期限结束：两种「本停靠多占一版」叠在
+    /// <see cref="JourneyStopRow.WorklistRefills"/> 上，号仍然严格递增、互不相同，空清单在重填那一版之上，下一站在空清单之上。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 号怎么走：第二个取货站首号记为 F，一条需求。到站发 F；重填之后 <c>WorklistRefills</c> = 1，发 F+1（新期限）；期限结束时这一条算做完，
+    /// 算式给 F+1+1 = F+2，空清单就是 F+2，<c>WorklistRefills</c> 再加一到 2，这一站占 F..F+2 三版，下一站首号 F+3 起算。
+    /// </para>
+    /// <para>
+    /// 反过来的顺序——先空清单、再重填——同一站上不会发生：重填只在本停靠还有待做项时升版
+    /// （<c>AdvanceWorklistPastAStaleDeadlineAsync</c> 开头的判断），而空清单正是在待做项归零时才发。结束之后断线重连，补发的是空清单本身，
+    /// 由 <see cref="AfterAReconnectTheEmptyWorklistIsReplayedAndTheOldOneIsNot"/> 守。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task ARefillBeforeTheStopEndsAndTheEmptyWorklistStackAndTheRevisionsStillOnlyAdvance()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        JourneyStopRow secondPickup = await EndTheSecondPickupByItsDeadlineAsync(fixture, refillFirst: true);
+
+        Snapshot[] atStop = [.. (await WorklistsAsync(fixture))
+            .Where(item => item.Payload.GetProperty("stationId").GetString() == secondPickup.StationId)
+            .OrderBy(item => item.Revision)];
+        // 到站那一版、重填那一版（同一条需求、新期限）、空清单：三版，连号。
+        Assert.Equal(3, atStop.Length);
+        Assert.Equal([atStop[0].Revision, atStop[0].Revision + 1, atStop[0].Revision + 2], atStop.Select(item => item.Revision).ToArray());
+        Assert.Equal(0, atStop[2].Payload.GetProperty("items").GetArrayLength());
+        Assert.NotEqual(
+            atStop[0].Payload.GetProperty("stationDepartureDeadlineAt").GetString(),
+            atStop[1].Payload.GetProperty("stationDepartureDeadlineAt").GetString());
+
+        // 下一站首号按服务端自己的算式读，不把车开过去：重连之后是第 2 代会话，测试驱动器的离站答复写死第 1 代，会被当成旧会话的报文。
+        // 开过去验证「真的发出了那一号」由上面几条用例在第 1 代上守。
+        JourneyRuntimeRow runtime = await JourneyOfAsync(fixture, FirstDemandId);
+        JourneyStopCursor stops = await JourneyStopCursor.LoadAsync(fixture.Context, runtime, token);
+        JourneyStopRow next = stops.Stops.First(stop => stop.Sequence > secondPickup.Sequence &&
+                                                        stop.Status != JourneyStopStatuses.Removed);
+        long nextFirst = stops.FirstWorklistRevisionAt(runtime.WorklistRevision, next);
+        Assert.True(
+            nextFirst > atStop[2].Revision,
+            $"下一站首号 {nextFirst} 没有越过空清单的第 {atStop[2].Revision} 号。");
+        long[] revisions = [.. (await WorklistsAsync(fixture)).Select(item => item.Revision)];
+        Assert.Equal(revisions.Distinct().Count(), revisions.Length);
+
+        // 两种多占的版都记在同一列上：重填一次、空清单一次。放在最后，是为了让上面那条行为判据先说话。
+        JourneyStopRow afterEnd = await fixture.Context.Set<JourneyStopRow>().AsNoTracking()
+            .SingleAsync(row => row.StopId == secondPickup.StopId, token);
+        Assert.Equal(2, afterEnd.WorklistRefills);
+    }
+
+    /// <summary>
     /// 空清单没确认就断线：重连之后补发的是空清单，不是这一站较早那一版。
     /// </summary>
     [Fact]
@@ -277,7 +330,7 @@ public sealed class StopEndedJourneyContinuesTests
     /// 返回第二个取货停靠。
     /// </summary>
     private static async Task<JourneyStopRow> EndTheSecondPickupByItsDeadlineAsync(
-        RuntimeFixture fixture, bool secondUnloadsAtItsOwnStop = false)
+        RuntimeFixture fixture, bool secondUnloadsAtItsOwnStop = false, bool refillFirst = false)
     {
         fixture.Catalog.Set(
             fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)),
@@ -300,8 +353,21 @@ public sealed class StopEndedJourneyContinuesTests
         Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
 
         fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+        if (refillFirst)
+        {
+            // cs#339 的形状：断线那一轮作废离站等待，重连回到 Ready 之后从此刻重填，清单升一版带新期限。
+            await fixture.DropOnboardSessionAsync();
+            fixture.Clock.Advance(TimeSpan.FromSeconds(7));
+            await TickAndRunAsync(fixture);
+            await ArrivalPublishInterruptedThenReconnectedTests.ReconnectAtGenerationAsync(fixture, 2);
+            await fixture.HearFromPeerAsync();
+            await TickAndRunAsync(fixture);
+            Assert.Equal(1, (await fixture.Context.Set<JourneyStopRow>().AsNoTracking()
+                .SingleAsync(row => row.StopId == secondPickup.StopId, TestContext.Current.CancellationToken)).WorklistRefills);
+        }
         await fixture.ProveSlotDoorsClosedAsync();
         fixture.Clock.Advance(TimeSpan.FromSeconds(10));
+        await fixture.HearFromPeerAsync();
         await TickAndRunAsync(fixture);
         Assert.Equal(
             JourneyDemandStatuses.Terminated,

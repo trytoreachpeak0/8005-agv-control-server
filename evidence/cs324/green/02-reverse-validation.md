@@ -19,3 +19,13 @@
 - **M5 存活。**处在 `AwaitingSublot` 的停靠按构造总有待做项（进入这一阶段的两处都是「还有没装的」），后面那道「当前停靠无待做项」
   已经挡住，所以这层判断是多余的防御。护栏用例 `ASublotEnteredPastTheDeadlineWhileTheStopStillWaitsIsLeftToTheRuntime` 守的是
   「按期限到没到判结束」这种写法，不是这一行。
+
+## 与 cs#339 期限重填的叠加（合并 fp/v2-impl `3eaf368c` 之后补，调度要求）
+
+`ARefillBeforeTheStopEndsAndTheEmptyWorklistStackAndTheRevisionsStillOnlyAdvance`：第二个取货站到站发 F，断线重连重填后发 F+1（新期限），
+期限结束发空清单 F+2，这一站 `WorklistRefills` = 2，下一站首号 F+3。修后绿。
+
+M1（去掉号数顺延）下它红在行为判据上：`下一站首号 4 没有越过空清单的第 4 号。`（第一次写时 `WorklistRefills == 2` 那句排在前面、先红，
+挪到最后，让行为判据先说话。）
+
+反过来的顺序（先空清单、再重填）在同一站上不会发生：重填只在本停靠还有待做项时升版，空清单只在待做项归零时发。
