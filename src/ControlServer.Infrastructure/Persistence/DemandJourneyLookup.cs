@@ -171,6 +171,14 @@ public static class DemandJourneyLookup
     /// write lock, and with several demands per journey that is the failure above -- so a new caller either holds a
     /// transaction or opens one.
     /// </para>
+    /// <para>
+    /// <b>It also sees the endings staged in this same change and not yet saved</b> (control-server#327). The query reads the
+    /// store, so a demand the caller has just set <c>Cancelled</c> on a tracked row still reads as open there. The station
+    /// deadline ends every outstanding demand of its stop in one change, one after another: read from the store alone, each
+    /// saw the others still open, none was the last, and the journey was left with every demand ended, its vehicle held and
+    /// its next round throwing on a stop with no leg after it. So the store's answer is corrected by what this context
+    /// tracks -- the same rule <c>JourneyPlanRevisionStage</c> already follows by reading tracked rows.
+    /// </para>
     /// </remarks>
     public static async Task<bool> IsLastOpenDemandAsync(
         ControlServerDbContext dbContext,
@@ -180,13 +188,18 @@ public static class DemandJourneyLookup
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(journeyId);
         ArgumentException.ThrowIfNullOrWhiteSpace(demandId);
-        bool anotherOpen = await Memberships(dbContext)
+        string[] othersOpenInStore = await Memberships(dbContext)
             .Where(row => row.JourneyId == journeyId && row.DemandId != demandId)
             .Join(OpenDemands(dbContext), membership => membership.DemandId, demand => demand.DemandId,
                 (membership, demand) => demand.DemandId)
             .TagWith(LastOpenDemandTag)
-            .AnyAsync(cancellationToken)
+            .ToArrayAsync(cancellationToken)
             .ConfigureAwait(false);
-        return !anotherOpen;
+        return othersOpenInStore.All(other => EndedInThisChange(dbContext, other));
     }
+
+    /// <summary>Whether this context tracks <paramref name="demandId"/> with a terminal status not yet saved.</summary>
+    private static bool EndedInThisChange(ControlServerDbContext dbContext, string demandId) =>
+        dbContext.AcceptedDemands.Local.FirstOrDefault(row => row.DemandId == demandId)?.Status
+            is DemandExecutionStatus.Succeeded or DemandExecutionStatus.Cancelled;
 }
