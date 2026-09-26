@@ -98,8 +98,8 @@ public sealed class StopEndedJourneyContinuesTests
     /// 空清单之后车离站去卸货站：卸货站那一版清单的号在空清单之上，整条清单流的号互不相同、严格递增。
     /// </summary>
     /// <remarks>
-    /// 这一条守的正是票面那句「同号不同内容会当场断会话」：空清单若按算式发在「做完最后一条」那个号上，那个号就是卸货站的首号，
-    /// 这里会看到两版同号。
+    /// 它断的是结果（号在空清单之上、全程不同号），<b>守不住「为什么」</b>：这里甲、乙共用一个卸货站，卸货站把已终结的乙也算作「做完」，
+    /// 不顺延号也自然多出一号。票面那句「同号不同内容会当场断会话」由下一条用例守，那里下一站不挂任何已终结的需求。
     /// </remarks>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-08")]
@@ -121,6 +121,39 @@ public sealed class StopEndedJourneyContinuesTests
         Assert.True(
             atUnload.Revision > empty.Revision,
             $"卸货站清单第 {atUnload.Revision} 号没有越过空清单的第 {empty.Revision} 号（stage={atGate.Stage}）。");
+        long[] revisions = [.. worklists.Select(item => item.Revision)];
+        Assert.Equal(revisions.Distinct().Count(), revisions.Length);
+    }
+
+    /// <summary>
+    /// 同上，但被终结的乙<b>有自己的卸货停靠</b>：终结之后那个停靠被计划删掉，车下一站是只挂着甲的卸货站。
+    /// 那一站的首号按算式恰好是「做完最后一条」那个号——不顺延，空清单就与它同号不同内容。
+    /// </summary>
+    /// <remarks>
+    /// 上一条用例守不住这件事，是反向验证（去掉顺延）时看出来的：那里甲、乙共用一个卸货站，卸货站把已终结的乙也算作「做完」，
+    /// 号自然多出一号，碰巧躲开了冲突。这里让下一站一条已终结的都不挂，冲突就只能靠顺延来避。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task WhenTheNextStopCarriesNoneOfTheEndedDemandsItStillStartsAboveTheEmptyWorklist()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await EndTheSecondPickupByItsDeadlineAsync(fixture, secondUnloadsAtItsOwnStop: true);
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+        await AnswerDepartureSafetyAsync(fixture, FirstDemandId, SecondSafetyResultId);
+        await ArriveAtCurrentStopAsync(fixture, FirstDemandId, "TO_GATE");
+        JourneyStopRow unloadStop = await CurrentStopAsync(fixture, FirstDemandId);
+        Assert.Equal(JourneyStopRoles.Unload, unloadStop.StopRole);
+        Assert.NotEqual(SecondUnloadStopId(await JourneyOfAsync(fixture, FirstDemandId)), unloadStop.StopId);
+
+        Snapshot[] worklists = await WorklistsAsync(fixture);
+        Snapshot empty = Assert.Single(worklists, item => item.Payload.GetProperty("items").GetArrayLength() == 0);
+        Snapshot atUnload = Assert.Single(worklists, item => item.Payload.GetProperty("items").GetArrayLength() > 0 &&
+                                                          item.Payload.GetProperty("stationId").GetString() == unloadStop.StationId);
+        Assert.True(
+            atUnload.Revision > empty.Revision,
+            $"卸货站清单第 {atUnload.Revision} 号没有越过空清单的第 {empty.Revision} 号。");
         long[] revisions = [.. worklists.Select(item => item.Revision)];
         Assert.Equal(revisions.Distinct().Count(), revisions.Length);
     }
@@ -243,7 +276,8 @@ public sealed class StopEndedJourneyContinuesTests
     /// 受理两条需求（第二条在另一个取货站）、第一条在第一站装上车，车到第二个取货站等录入，期限到期那一轮跑完。
     /// 返回第二个取货停靠。
     /// </summary>
-    private static async Task<JourneyStopRow> EndTheSecondPickupByItsDeadlineAsync(RuntimeFixture fixture)
+    private static async Task<JourneyStopRow> EndTheSecondPickupByItsDeadlineAsync(
+        RuntimeFixture fixture, bool secondUnloadsAtItsOwnStop = false)
     {
         fixture.Catalog.Set(
             fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)),
@@ -253,6 +287,10 @@ public sealed class StopEndedJourneyContinuesTests
 
         await TickAndRunAsync(fixture);
         await Batch7ThreeStopJourneyTests.AppendSecondDemandAsync(fixture);
+        if (secondUnloadsAtItsOwnStop)
+        {
+            await GiveTheSecondDemandItsOwnUnloadStopAsync(fixture);
+        }
         await ArriveAtPickupAsync(fixture, FirstDemandId);
         await EnterSublotAsync(fixture, FirstDemandId, FirstSublot, FirstSubmissionId);
         await SettleLoadAsync(fixture, FirstDemandId);
@@ -269,6 +307,43 @@ public sealed class StopEndedJourneyContinuesTests
             JourneyDemandStatuses.Terminated,
             (await MembershipAsync(fixture, SecondDemandId)).Status);
         return secondPickup;
+    }
+
+    private static string SecondUnloadStopId(JourneyRuntimeRow runtime) => $"{runtime.JourneyId}|SECOND-UNLOAD";
+
+    /// <summary>
+    /// 在关卡站上另挂一个只属于乙的卸货停靠（序位排在最后），乙的归属改指向它。形状照
+    /// <c>Batch7ThreeStopJourneyTests.LeavingAnUnloadStopAuthorisesTheLegToTheNextStop</c>：卸货停靠不带录入请求与离站核验的 id。
+    /// </summary>
+    private static async Task GiveTheSecondDemandItsOwnUnloadStopAsync(RuntimeFixture fixture)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        JourneyRuntimeRow runtime = await JourneyOfAsync(fixture, FirstDemandId);
+        string stopId = SecondUnloadStopId(runtime);
+        int last = await fixture.Context.Set<JourneyStopRow>()
+            .Where(row => row.JourneyId == runtime.JourneyId).MaxAsync(row => row.Sequence, token);
+        fixture.Context.Set<JourneyStopRow>().Add(new JourneyStopRow
+        {
+            StopId = stopId,
+            JourneyId = runtime.JourneyId,
+            Sequence = last + 1,
+            StopRole = JourneyStopRoles.Unload,
+            StationId = runtime.GateStationId,
+            StationRiotId = runtime.GateStationRiotId,
+            DispatchZone = runtime.DispatchZone,
+            OperationSessionId = JourneyPlanBuilder.StableGuid(stopId, "session"),
+            MovementLegId = JourneyPlanBuilder.StableGuid(stopId, "leg"),
+            UpperId = $"W2G-{stopId}",
+            VehicleBusinessMessageId = JourneyPlanBuilder.StableGuid(stopId, "vehicle-state"),
+            WorklistMessageId = JourneyPlanBuilder.StableGuid(stopId, "worklist"),
+            PlanMessageId = JourneyPlanBuilder.StableGuid(stopId, "plan"),
+            Status = JourneyStopStatuses.Pending,
+            CreatedAt = runtime.CreatedAt
+        });
+        JourneyDemandRow second = await fixture.Context.Set<JourneyDemandRow>()
+            .SingleAsync(row => row.DemandId == SecondDemandId, token);
+        second.UnloadStopId = stopId;
+        await fixture.Context.SaveChangesAsync(token);
     }
 
     private static async Task<Snapshot[]> WorklistsAsync(RuntimeFixture fixture) =>
