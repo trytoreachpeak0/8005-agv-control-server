@@ -1,0 +1,17 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:12.18]     ControlServer.Tests.FailedOrderBehindSessionGateTests.AnUnreadableOrderBehindTheGateKeepsTheFailedCodeAndItsStart [FAIL]
+  Failed ControlServer.Tests.FailedOrderBehindSessionGateTests.AnUnreadableOrderBehindTheGateKeepsTheFailedCodeAndItsStart [467 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("VEHICLE_ORDER_FAILED", 2026-08-26T01:00:02.0000000+00:00)
+Actual:   Tuple ("ONBOARD_SESSION_NOT_READY", 2026-08-26T01:00:03.0000000+00:00)
+  Stack Trace:
+     at ControlServer.Tests.FailedOrderBehindSessionGateTests.AnUnreadableOrderBehindTheGateKeepsTheFailedCodeAndItsStart() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\FailedOrderBehindSessionGateTests.cs:line 266
+   at ControlServer.Tests.FailedOrderBehindSessionGateTests.AnUnreadableOrderBehindTheGateKeepsTheFailedCodeAndItsStart() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs358-8005-agv-control-server\tests\ControlServer.Tests\FailedOrderBehindSessionGateTests.cs:line 269
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     1, Passed:   197, Skipped:     0, Total:   198, Duration: 52 s - ControlServer.Tests.dll (net8.0)

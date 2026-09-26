@@ -128,6 +128,7 @@ public sealed class FailedOrderBehindSessionGateTests
         await AssertSessionStillNotReadyAsync(fixture);
         Assert.Equal(RiotOrderCommandOutcome.Confirmed, await LatestTriggerOutcomeAsync(fixture));
         Assert.Equal(VehicleFaultEvidence.OrderFailed, (await fixture.RuntimeAsync()).BlockReasonCode);
+        await AssertStopProofSampledThisRoundAsync(fixture);
 
         // 故障未清、没有人工解除，闩锁掉了：闸门后的这一轮重触发。
         Unlatch(fixture);
@@ -135,6 +136,7 @@ public sealed class FailedOrderBehindSessionGateTests
         await AssertSessionStillNotReadyAsync(fixture);
         Assert.Equal(2, await TriggerCountAsync(fixture));
         Assert.Equal(VehicleFaultEvidence.OrderFailed, (await fixture.RuntimeAsync()).BlockReasonCode);
+        await AssertStopProofSampledThisRoundAsync(fixture);
 
         Assert.Equal(before, await OutboundAsync(fixture));
     }
@@ -152,6 +154,12 @@ public sealed class FailedOrderBehindSessionGateTests
     /// <para>
     /// 前提先断：注入 FAILED 之前的那一轮旅程写的是 <c>ONBOARD_SESSION_LOST</c>，会话行是 Ready——这条走的确实是失联那条路，
     /// 不是会话闸门。
+    /// </para>
+    /// <para>
+    /// <b>失联这一侧没有闸门那道 <c>!IsHeldForAreaEndAdmission</c> 保护，今天不需要</b>（审查低项）。那道保护守的是 AREA 端准入保持的码
+    /// （control-server#198 从它起算升级），而准入保持只在车已经到站、这一段的单已经 SUCCESS 之后才有：读到的单不是 FAILED、HANG、
+    /// SUSPENDED、CANCELLED、DELETED 中任何一个，判单一路返回 false 且不改码。另外失联截停里区域准入升级排在判单之前、升级了就先返回。
+    /// 哪天准入保持能在单还在途时出现，这个前提就破了，要回来加上这道保护。本轮只改测试与文字，不改 src，以免两格真装置证据作废。
     /// </para>
     /// </remarks>
     [Fact]
@@ -323,6 +331,17 @@ public sealed class FailedOrderBehindSessionGateTests
         Assert.Equal(RiotOrderCommandOutcome.Pending, trigger.Outcome);
 
         Assert.Equal(VehicleFaultEvidence.OrderFailed, (await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token)).BlockReasonCode);
+    }
+
+    /// <summary>
+    /// 停车证明（REQ-0247）这一轮采过样：故障行的 <c>LastEvaluatedAt</c> 等于这一轮的钟。<c>VehicleFaultCoordinator</c> 每次评估都经
+    /// <c>RecordStopProofAsync</c> 写它，所以它在闸门后还在走，说明停车证明的采样窗口没有停（审查低项：原来只是间接覆盖）。
+    /// </summary>
+    private static async Task AssertStopProofSampledThisRoundAsync(RuntimeFixture fixture)
+    {
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        VehicleFaultStateRow fault = await reading.VehicleFaultStates.AsNoTracking().SingleAsync(Token);
+        Assert.Equal(fixture.Clock.GetUtcNow(), fault.LastEvaluatedAt);
     }
 
     /// <summary>这一轮确实跑在闸门后：会话仍是因在途单造成的未就绪。</summary>
