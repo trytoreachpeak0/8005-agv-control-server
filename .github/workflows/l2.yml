@@ -623,6 +623,9 @@ jobs:
               # control-server#345: a rebuild stopped on cargo not in its slots is handed by a person to the exception recovery
               # session; readiness turns RECOVERY_REQUIRED so the real onboard offers the fault cargo handoff.
               @{ Name = 'real-onboard-rebuild-stopped-cargo-handoff';        Runs = 1 }
+              # control-server#325 (program#86 v2): once the station deadline ends a stop, the real onboard shows none of it,
+              # and a late cancellation and a late scan made before the closing worklist arrives are both refused as STALE.
+              @{ Name = 'real-onboard-stale-stop-after-station-timeout';     Runs = 1 }
           )
 
           # Registered before anything can fail, so the upload step always has a path.
