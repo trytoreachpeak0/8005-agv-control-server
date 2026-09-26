@@ -24,6 +24,10 @@ v2 的修法两端都有，缺一不可：
    留一台干净的车。断线不当判据用：v2 车载端会话一结束就清空旅程投影（WireToGateSessionClient ResetJourneyProjection），断线本身
    就能清掉残留，拿它证「撤干净」证不到任何一端的修复——所以「撤干净」只在第一趟判。
 
+**哪一条证哪一端**（两组对照实测，evidence/cs325）：车载端修复（hmi#199「空清单到车就撤录入请求」）只由第一趟 L2-SST-03 判到。
+L2-SST-10 守的是服务端这一侧——STALE 拒收带的是收尾那一版的号：旧车载端对号比自己手上高的拒收本来就撤录入（HandleSublotRejected
+只在作业会话与清单号都相同时保留），所以它对车载端修复没有判别力，旧服务端上（不答）才红。
+
 「某样东西不在」的判据都有正向锚点：第一趟 L2-SST-01、第二趟 L2-SST-09、第三趟 L2-SST-12 先读到了录入框可用、「取消装货」在、清单挂着这单，
 同一个读法后来读到「不在」才有意义（control-server#260 的教训）。
 
@@ -350,7 +354,7 @@ if (-not $third.Open) {
         -Journal $journal -Criterion 'withdrawn-after-stale' -TimeoutSeconds 30 `
         -Probe { Get-VehicleView $third.Sublot } -Until { param($v) -not $v.CanSubmit -and -not $v.OffersCancel }
     $assertions.Add(
-        'L2-SST-10', '第三趟：迟到的扫码被 STALE 拒绝之后，车不再要子批、不再给「取消装货」',
+        'L2-SST-10', '第三趟：迟到的扫码被 STALE 拒绝之后，车不再要子批、不再给「取消装货」（守服务端：STALE 带收尾那一版的号）',
         (-not $afterScan.CanSubmit -and -not $afterScan.OffersCancel), 'canSubmit=False / offersCancel=False',
         (Format-VehicleView $afterScan))
 }
