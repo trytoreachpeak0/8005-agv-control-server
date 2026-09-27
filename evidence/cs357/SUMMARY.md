@@ -79,3 +79,4 @@
   - M1-early-release（撤守护挪回意图存下之后）：新用例 `ABlockCommittedAtThePreCreateReconciliationStopsTheGateOrder` 红在
     `CreateCount("TO_GATE") == 0`（401 行），7 条里只红这一条；
   - M1-never-release（放开守护变成空操作）：`AJourneyWrittenAfterTheGateOrderWasCreated…` 两格红在「让开那一轮结束时关卡意图已记 CONFIRMED」（314 行）。
+- `green/08-cs342-model-300-3742cbc9.txt`：M1 修复之后同一组 300 个种子，与基点逐项相同（读到的）。
