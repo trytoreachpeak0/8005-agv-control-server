@@ -267,18 +267,30 @@ public sealed partial class VehicleFaultRecoveryService(
         ArgumentNullException.ThrowIfNull(request.Subject);
 
         dbContext.ChangeTracker.Clear();
-        VehicleFaultRecoveryDecision decision = request.Action switch
+        VehicleFaultRecoveryDecision decision;
+        try
         {
-            VehicleFaultRecoveryAction.ClearFault => await ClearAsync(request, cancellationToken).ConfigureAwait(false),
-            VehicleFaultRecoveryAction.ResumeHeldOrder => await ResumeAsync(request, cancellationToken).ConfigureAwait(false),
-            VehicleFaultRecoveryAction.RebuildStoppedOrder =>
-                await RebuildStoppedAsync(request, cancellationToken).ConfigureAwait(false),
-            VehicleFaultRecoveryAction.TerminateStoppedTrip =>
-                await TerminateStoppedAsync(request, cancellationToken).ConfigureAwait(false),
-            VehicleFaultRecoveryAction.PrepareCargoHandoff =>
-                await PrepareCargoHandoffAsync(request, cancellationToken).ConfigureAwait(false),
-            _ => Refused(["FAULT_RECOVERY_ACTION_UNKNOWN"], null),
-        };
+            decision = request.Action switch
+            {
+                VehicleFaultRecoveryAction.ClearFault => await ClearAsync(request, cancellationToken).ConfigureAwait(false),
+                VehicleFaultRecoveryAction.ResumeHeldOrder => await ResumeAsync(request, cancellationToken).ConfigureAwait(false),
+                VehicleFaultRecoveryAction.RebuildStoppedOrder =>
+                    await RebuildStoppedAsync(request, cancellationToken).ConfigureAwait(false),
+                VehicleFaultRecoveryAction.TerminateStoppedTrip =>
+                    await TerminateStoppedAsync(request, cancellationToken).ConfigureAwait(false),
+                VehicleFaultRecoveryAction.PrepareCargoHandoff =>
+                    await PrepareCargoHandoffAsync(request, cancellationToken).ConfigureAwait(false),
+                _ => Refused(["FAULT_RECOVERY_ACTION_UNKNOWN"], null),
+            };
+        }
+        catch (DbUpdateConcurrencyException conflict) when (JourneyRowConflict.Is(conflict))
+        {
+            // control-server#357: the gate keeps the runtime out, not the inbound. A journey row the inbound committed to
+            // between this request's read and its save refused the save and wrote nothing (the transaction, if any, rolled
+            // back as this unwound). The same answer as any other change since the read: the person asks again.
+            dbContext.ChangeTracker.Clear();
+            decision = Refused(["FAULT_RECOVERY_STATE_CHANGED"], null);
+        }
         return Record(request, decision);
     }
 

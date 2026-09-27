@@ -666,7 +666,10 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         // 那里是准入口径（轮次开始时就已经 Blocked 的车不值得算插位），这里是写入一致性（轮次读过之后才
         // 变成 Blocked）。判一道竞态守卫有没有用，看它和它守护的那次写入在不在同一个事务里——那一处不在，
         // 所以它挡不住这个，也不该由它挡。
-        JourneyRuntimeRow journey = await dbContext.JourneyRuntimes
+        //
+        // <b>读库，不读跟踪着的那一份</b>（control-server#357 独立审查必修 4）。派车轮与引擎共用一个上下文，本轮开头读过的旅程在里面被跟踪着；
+        // 带跟踪的查询会被身份解析换回那个旧实例，事务再新也判的是旧阶段。这一行这里只用来判、不用来写。
+        JourneyRuntimeRow journey = await dbContext.JourneyRuntimes.AsNoTracking()
             .SingleAsync(row => row.JourneyId == plan.JourneyId, cancellationToken).ConfigureAwait(false);
         if (journey.Stage is JourneyRuntimeStage.Blocked or JourneyRuntimeStage.Completed)
         {
@@ -1307,7 +1310,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         {
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (DbUpdateConcurrencyException)
+        catch (DbUpdateConcurrencyException failure) when (!JourneyRowConflict.Is(failure))
         {
             await RequireExactCommittedFreshAuthorizationAsync(authorization, cancellationToken)
                 .ConfigureAwait(false);
@@ -1471,7 +1474,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         {
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (DbUpdateConcurrencyException)
+        catch (DbUpdateConcurrencyException failure) when (!JourneyRowConflict.Is(failure))
         {
             throw new BusinessIdentityConflictException(
                 "A concurrent RIoT create decision consumed or invalidated the experimental authorization.");
@@ -1905,6 +1908,9 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         row.CommittedAt = committedAt;
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
+
+    /// <inheritdoc />
+    public void ReleaseJourneyGuardBeforeExternalEffect() => dbContext.GuardedJourneyId = null;
 
     public async Task AuthorizeMovementAsync(
         OrderIntent intent, SafetyCheckObservation safety, DateTimeOffset now,

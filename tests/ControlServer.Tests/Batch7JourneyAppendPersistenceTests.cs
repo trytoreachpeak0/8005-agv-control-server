@@ -143,6 +143,37 @@ public sealed class Batch7JourneyAppendPersistenceTests
         Assert.Equal(before, await ReadAsync(fixture, journeyId));
     }
 
+    /// <summary>
+    /// 同一格，但追加用的是<b>本轮开头读过旅程的那个上下文</b>——生产上派车轮与引擎共用一个作用域（control-server#357 独立审查必修 4）。
+    /// </summary>
+    /// <remarks>
+    /// 上一条用 <c>NewContext()</c>，追加那一侧的上下文里没有旧实例，按构造看不见这一格：事务里那次复核读的若是带跟踪的查询，
+    /// 身份解析会把本轮开头读到的那个实例原样交回，判的是 Blocked 之前的阶段，需求就挂到了一趟等人处理的旅程上。
+    /// </remarks>
+    [Fact]
+    public async Task AnAppendOntoAJourneyBlockedSinceTheRoundReadItIsRefusedWhenTheRoundsOwnContextStillHoldsTheOldRow()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        JourneyExecutionPlan first = await Batch7JourneyFixture.AcceptAsync(
+            fixture.Context, FirstDemandId, AgvId, VehicleKey, Batch7JourneyFixture.Now);
+        string journeyId = JourneyIdentity.ForAnchorDemand(FirstDemandId);
+        ControlServerDbContext round = fixture.NewContext();
+        JourneyRuntimeRow[] read = await round.JourneyRuntimes
+            .Where(row => row.Stage != JourneyRuntimeStage.Completed).ToArrayAsync(token);
+        Assert.NotEqual(JourneyRuntimeStage.Blocked, Assert.Single(read).Stage);
+        await BlockAsync(fixture, journeyId);
+        Snapshot before = await ReadAsync(fixture, journeyId);
+
+        await Assert.ThrowsAsync<BusinessIdentityConflictException>(
+            () => new WireToGateStore(round).AppendToJourneyAsync(
+                Batch7JourneyFixture.Snapshot(SecondDemandId, Batch7JourneyFixture.Now.AddMinutes(1)),
+                AppendPlan(first, journeyId),
+                token));
+
+        Assert.Equal(before, await ReadAsync(fixture, journeyId));
+    }
+
     /// <summary>把旅程置成 Blocked，像一条报了需要恢复的装货结果那样。</summary>
     private static async Task BlockAsync(Batch7JourneyFixture fixture, string journeyId)
     {

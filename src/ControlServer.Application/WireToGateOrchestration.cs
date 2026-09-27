@@ -461,6 +461,7 @@ public sealed class MovementDispatchService
             markResultUnknown: true,
             cancellationToken).ConfigureAwait(false);
 
+        store.ReleaseJourneyGuardBeforeExternalEffect();
         DateTimeOffset armedAt = timeProvider.GetUtcNow();
         CreateDispatchAttempt attempt = await store.ArmExperimentalCreateDispatchAsync(
             intent.UpperId,
@@ -501,6 +502,7 @@ public sealed class MovementDispatchService
             markResultUnknown: false,
             cancellationToken).ConfigureAwait(false);
 
+        store.ReleaseJourneyGuardBeforeExternalEffect();
         DateTimeOffset armedAt = timeProvider.GetUtcNow();
         CreateDispatchAttempt attempt = await store.ArmCreateDispatchAsync(
             intent.UpperId,

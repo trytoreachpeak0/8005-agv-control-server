@@ -148,10 +148,11 @@ public sealed class VehicleDispatchPolicyStore(ControlServerDbContext dbContext)
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             return true;
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException failure) when (!JourneyRowConflict.Is(failure))
         {
             // The unique index decided, not a read-then-write: another order already occupies
-            // this vehicle. Detaching leaves the context usable for the rest of the round.
+            // this vehicle. Detaching leaves the context usable for the rest of the round. A journey row
+            // committed to since the round read it is not this and goes to the runtime (control-server#357).
             dbContext.Entry(row).State = EntityState.Detached;
             return false;
         }

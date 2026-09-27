@@ -121,6 +121,17 @@ public interface IMovementIntentStore
         bool markResultUnknown,
         CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Called once the create is certain to be dispatched and before the at-most-once counter is spent: from here on every
+    /// save records an external side effect, and none of them may be thrown away because the caller's journey was written to
+    /// meanwhile (control-server#357). Up to here -- the reconciliation GET and its audit -- a journey the inbound blocked
+    /// still stops the create. Not later: once the counter is spent a refused save would leave the intent needing
+    /// reconciliation.
+    /// </summary>
+    void ReleaseJourneyGuardBeforeExternalEffect()
+    {
+    }
+
     Task<CreateDispatchAttempt> ArmCreateDispatchAsync(
         string upperId,
         string requestSemanticSha256,

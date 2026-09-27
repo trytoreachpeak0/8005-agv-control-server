@@ -24,3 +24,8 @@
 所以这个丢失更新在基点上就有（读到的）。本票在「装货结果未回」那段分支里，在清码与保存之间多了一次按 id 查发件箱
 （`AdvanceWorklistPastAStaleDeadlineAsync`），窗口的起点是这一轮开头读旅程行，这次查询让窗口略宽（推的，没量）。
 这个场景此前仓里 8 份证据的 `L2-DC-08` 全是 PASS，这是第一次红。
+
+**2026-09-27 更新（control-server#357）：**探针已转成正式用例
+`tests/ControlServer.Tests/JourneyRowLostUpdateTests.cs` 的 `AClosureCommittedBetweenTheEnginesReadAndSaveKeepsItsReason`，
+这里的 `LostUpdateProbeTests.cs` 随之删除（git 历史里仍在）。正式用例在同一处注入，另断言终结原因的起始时刻也保住；
+修前红与修后的判别力见 `evidence/cs357/`。上面的 `probe-at-012c31b2.txt` 是当时的输出，保留不动。

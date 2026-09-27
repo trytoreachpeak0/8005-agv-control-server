@@ -57,6 +57,12 @@ public sealed class DemandReleaseService(
     // 收尾快照在释放落库之后由它发出（control-server#323，JourneyClosure）。
     private readonly OnboardJourneyPublisher _publisher = publisher;
 
+    private static readonly Action<ILogger, string, Exception?> LogYieldedToJourneyCommit =
+        LoggerMessage.Define<string>(
+            LogLevel.Information,
+            new EventId(2192, nameof(LogYieldedToJourneyCommit)),
+            "Journey {JourneyId} was written by someone else between the release service's read and its save; nothing was " +
+            "saved for it this round and the next round judges it afresh (control-server#357).");
     private static readonly Action<ILogger, string, string, string, Exception?> LogReleased =
         LoggerMessage.Define<string, string, string>(
             LogLevel.Information,
@@ -98,7 +104,23 @@ public sealed class DemandReleaseService(
         List<DemandReleaseOutcome> outcomes = [];
         foreach (JourneyRuntimeRow journey in journeys)
         {
-            outcomes.AddRange(await RunForJourneyAsync(journey, policy, cancellationToken).ConfigureAwait(false));
+            try
+            {
+                outcomes.AddRange(await RunForJourneyAsync(journey, policy, cancellationToken).ConfigureAwait(false));
+            }
+            catch (DbUpdateConcurrencyException conflict) when (JourneyRowConflict.Is(conflict))
+            {
+                // control-server#357：清除或写下拒绝码的那两处在事务外重读、再存，入站可以落在两者之间。冲突的那次保存什么都没写；
+                // 丢掉暂存的改动，交给下一轮——每一轮都从事实重判一次，不在这里重试。释放本身在 BEGIN IMMEDIATE 里重读，按构造不冲突。
+                foreach (Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry entry in dbContext.ChangeTracker.Entries().ToArray())
+                {
+                    if (entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+                    {
+                        entry.State = EntityState.Detached;
+                    }
+                }
+                LogYieldedToJourneyCommit(logger, journey.JourneyId, null);
+            }
         }
 
         return outcomes;

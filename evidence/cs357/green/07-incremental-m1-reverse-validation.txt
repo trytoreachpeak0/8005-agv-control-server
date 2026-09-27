@@ -1,0 +1,29 @@
+filter: FullyQualifiedName~JourneyRowLostUpdateTests
+[M1-early-release] file: src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+[M1-early-release] before: await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false); | MovementDispatchResult dispatch = await movementDispatch.ReconcileOrCreateAsync(
+[M1-early-release] after:  await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false); | dbContext.GuardedJourneyId = null; | MovementDispatchResult dispatch = await movementDispatch.ReconcileOrCreateAsync(
+[M1-early-release] target occurrences: 1
+[M1-early-release] build:     0 Error(s)
+[M1-early-release] Failed ControlServer.Tests.JourneyRowLostUpdateTests.ABlockCommittedAtThePreCreateReconciliationStopsTheGateOrder [2 s]
+[M1-early-release]    first test-frame: JourneyRowLostUpdateTests.cs:401
+[M1-early-release] Total tests: 7
+[M1-early-release] Passed: 6
+[M1-early-release] Failed: 1
+[M1-early-release] dotnet test exit code 1
+[M1-early-release] restored
+script exit 0
+[M1-never-release] file: src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs
+[M1-never-release] before: public void ReleaseJourneyGuardBeforeExternalEffect() => dbContext.GuardedJourneyId = null;
+[M1-never-release] after:  public void ReleaseJourneyGuardBeforeExternalEffect() { }
+[M1-never-release] target occurrences: 1
+[M1-never-release] build:     0 Error(s)
+[M1-never-release] Failed ControlServer.Tests.JourneyRowLostUpdateTests.AJourneyWrittenAfterTheGateOrderWasCreatedIsReplayedWithoutASecondOrder(blockedThenRecovered: False) [4 s]
+[M1-never-release]    first test-frame: JourneyRowLostUpdateTests.cs:314
+[M1-never-release] Failed ControlServer.Tests.JourneyRowLostUpdateTests.AJourneyWrittenAfterTheGateOrderWasCreatedIsReplayedWithoutASecondOrder(blockedThenRecovered: True) [2 s]
+[M1-never-release]    first test-frame: JourneyRowLostUpdateTests.cs:314
+[M1-never-release] Total tests: 7
+[M1-never-release] Passed: 5
+[M1-never-release] Failed: 2
+[M1-never-release] dotnet test exit code 1
+[M1-never-release] restored
+script exit 0
