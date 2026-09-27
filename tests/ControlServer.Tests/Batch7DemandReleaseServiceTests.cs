@@ -422,7 +422,6 @@ public sealed class Batch7DemandReleaseServiceTests
     /// 这一条红在整轮抛出。
     /// </remarks>
     [Fact]
-    [Trait("IntegrationSlice", "FP-IS-02")]
     public async Task AJourneyWrittenBetweenTheRefusalsReadAndItsSaveKeepsWhatWasWritten()
     {
         await using RuntimeFixture fixture = await DispatchedToPickupAsync();

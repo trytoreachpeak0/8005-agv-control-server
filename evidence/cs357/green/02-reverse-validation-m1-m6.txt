@@ -1,0 +1,41 @@
+[M1-no-guard] occurrences of mutation target: 1
+[M1-no-guard] build:     0 Error(s)
+[M1-no-guard] Failed ControlServer.Tests.JourneyRowLostUpdateTests.ABlockCommittedBeforeTheGateLegIsCreatedStopsTheOrder [2 s]
+[M1-no-guard] Failed!  - Failed:     1, Passed:    74, Skipped:     0, Total:    75, Duration: 44 s - ControlServer.Tests.dll (net8.0)
+[M1-no-guard] restored
+[M2-no-token] occurrences of mutation target: 1
+[M2-no-token] build:     0 Error(s)
+[M2-no-token] Failed ControlServer.Tests.Batch7DemandReleaseServiceTests.AJourneyWrittenBetweenTheRefusalsReadAndItsSaveKeepsWhatWasWritten [3 s]
+[M2-no-token] Failed ControlServer.Tests.MultiVehicleExecutionTests.OneVehiclesJourneyWrittenAfterTheRoundReadItYieldsThatVehicleAloneForTheRound [4 s]
+[M2-no-token] Failed ControlServer.Tests.JourneyRowLostUpdateTests.AClosureCommittedBetweenTheEnginesReadAndSaveKeepsItsReason [4 s]
+[M2-no-token] Failed ControlServer.Tests.JourneyRowLostUpdateTests.ABlockCommittedBeforeTheGateLegIsCreatedStopsTheOrder [2 s]
+[M2-no-token] Failed ControlServer.Tests.JourneyRuntimeVersionMigrationTests.OnAMigratedDatabaseASaveRaisesTheVersionAndASaveFromAnOlderReadIsRefused [2 s]
+[M2-no-token] Failed ControlServer.Tests.JourneyRowLostUpdateTests.ABlockCommittedWhileTheEngineAdvancesACommittedLoadStaysBlocked [2 s]
+[M2-no-token] Failed ControlServer.Tests.JourneyRowLostUpdateTests.AClosureCommittedWhileTheSessionIsNotReadyOnTheOwnOrderKeepsItsReason [460 ms]
+[M2-no-token] Failed ControlServer.Tests.VehicleFaultRecoveryTests.AJourneyWrittenByTheInboundDuringTheClearanceRefusesItAndWritesNothing [77 ms]
+[M2-no-token] Failed!  - Failed:     8, Passed:    67, Skipped:     0, Total:    75, Duration: 45 s - ControlServer.Tests.dll (net8.0)
+[M2-no-token] restored
+[M3-conflict-throws] occurrences of mutation target: 1
+[M3-conflict-throws] build:     0 Error(s)
+[M3-conflict-throws] Failed ControlServer.Tests.MultiVehicleExecutionTests.OneVehiclesJourneyWrittenAfterTheRoundReadItYieldsThatVehicleAloneForTheRound [3 s]
+[M3-conflict-throws] Failed ControlServer.Tests.JourneyRowLostUpdateTests.AClosureCommittedBetweenTheEnginesReadAndSaveKeepsItsReason [4 s]
+[M3-conflict-throws] Failed ControlServer.Tests.JourneyRowLostUpdateTests.ABlockCommittedBeforeTheGateLegIsCreatedStopsTheOrder [2 s]
+[M3-conflict-throws] Failed ControlServer.Tests.JourneyRowLostUpdateTests.ABlockCommittedWhileTheEngineAdvancesACommittedLoadStaysBlocked [397 ms]
+[M3-conflict-throws] Failed ControlServer.Tests.JourneyRowLostUpdateTests.AClosureCommittedWhileTheSessionIsNotReadyOnTheOwnOrderKeepsItsReason [292 ms]
+[M3-conflict-throws] Failed!  - Failed:     5, Passed:    70, Skipped:     0, Total:    75, Duration: 43 s - ControlServer.Tests.dll (net8.0)
+[M3-conflict-throws] restored
+[M4-release-no-catch] occurrences of mutation target: 1
+[M4-release-no-catch] build:     0 Error(s)
+[M4-release-no-catch] Failed ControlServer.Tests.Batch7DemandReleaseServiceTests.AJourneyWrittenBetweenTheRefusalsReadAndItsSaveKeepsWhatWasWritten [3 s]
+[M4-release-no-catch] Failed!  - Failed:     1, Passed:    74, Skipped:     0, Total:    75, Duration: 44 s - ControlServer.Tests.dll (net8.0)
+[M4-release-no-catch] restored
+[M5-fault-no-catch] occurrences of mutation target: 1
+[M5-fault-no-catch] build:     0 Error(s)
+[M5-fault-no-catch] Failed ControlServer.Tests.VehicleFaultRecoveryTests.AJourneyWrittenByTheInboundDuringTheClearanceRefusesItAndWritesNothing [74 ms]
+[M5-fault-no-catch] Failed!  - Failed:     1, Passed:    74, Skipped:     0, Total:    75, Duration: 44 s - ControlServer.Tests.dll (net8.0)
+[M5-fault-no-catch] restored
+[M6-bypass-write] occurrences of mutation target: 1
+[M6-bypass-write] build:     0 Error(s)
+[M6-bypass-write] Failed ControlServer.Tests.JourneyRowWriteArchitectureTests.NothingOutsideTheNamedPlacesWritesTheJourneyTableAroundTheSaveHook [120 ms]
+[M6-bypass-write] Failed!  - Failed:     1, Passed:     1, Skipped:     0, Total:     2, Duration: 146 ms - ControlServer.Tests.dll (net8.0)
+[M6-bypass-write] restored

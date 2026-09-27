@@ -16,7 +16,6 @@ public sealed partial class MultiVehicleExecutionTests
     /// 把让开改成抛出去（整轮 fail-closed）时这一条红：<c>ExecuteOnceAsync</c> 抛出，冲突那台之后的车这一轮都不推进。
     /// </remarks>
     [Fact]
-    [Trait("IntegrationSlice", "FP-IS-02")]
     public async Task OneVehiclesJourneyWrittenAfterTheRoundReadItYieldsThatVehicleAloneForTheRound()
     {
         CancellationToken token = TestContext.Current.CancellationToken;

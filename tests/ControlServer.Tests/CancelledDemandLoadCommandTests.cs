@@ -185,7 +185,12 @@ public sealed class CancelledDemandLoadCommandTests
                     .Status));
         Assert.Null(await fixture.Context.StationOperations.AsNoTracking()
             .SingleOrDefaultAsync(row => row.DemandId == SecondDemandId, token));
-        AssertTheRuntimeYieldedOnceFor(fixture, SecondDemandId);
+        // control-server#357 之后这一格在更早一步被挡住：入站这条路写了旅程行（Blocked），版本随之加一，引擎这台车推进期间的下一次保存
+        // 就冲突、整台车这一轮让开（2191），走不到下命令之前那次写锁内复核（2190）。复核仍在，是纵深防御；这一格不再经过它。
+        // 另外几条（只写需求或归属、不写旅程行的入站写）照旧由复核挡住，前提断言照旧是 2190。
+        string[] messages = [.. fixture.EngineLog.Entries.Select(entry => entry.Message)];
+        Assert.Single(messages, message => message.Contains("control-server#357", StringComparison.Ordinal));
+        Assert.DoesNotContain(messages, message => message.Contains("no load was commanded", StringComparison.Ordinal));
     }
 
     /// <summary>

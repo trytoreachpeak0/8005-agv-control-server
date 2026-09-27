@@ -1,0 +1,271 @@
+records 503
+== UNGATED(inbound) AcceptedDemandRow OnboardRecoveryCoordinator.ProcessResultAsync
+   states ['Modified']
+   cols   Status
+   scopes ['inbound']
+   frames ['OnboardRecoveryCoordinator.ProcessResultAsync <- OnboardMessageProcessor.ProcessCurrentSessionMessageAsync <- OnboardMessageProcessor. <- WireToGateStore.CaptureFirstResponseAsync <- OnboardMessageProcessor.ProcessAsync', 'OnboardRecoveryCoordinator.ProcessResultAsync <- OnboardMessageProcessor.ProcessCurrentSessionMessageAsync <- OnboardMessageProcessor. <- WireToGateStore.CaptureFirstResponseAsync <- OnboardMessageProcessor.ProcessAsync <- JourneyRuntimeEngine.ExecuteOnceAsync']
+   tests  4 ['ControlServer.Tests.Batch7MultiDemandCancellationTests.CancellingTheOtherDemandWhileOneIsLoadingEndsOnlyTheNamedOne']
+== UNGATED(inbound) AcceptedDemandRow WireToGateStore.ApplyOperationResultAsync
+   states ['Modified']
+   cols   Status
+   scopes ['inbound']
+   frames ['WireToGateStore.ApplyOperationResultAsync <- OnboardMessageProcessor.ProcessCurrentSessionMessageAsync <- OnboardMessageProcessor. <- WireToGateStore.CaptureFirstResponseAsync <- OnboardMessageProcessor.ProcessAsync', 'WireToGateStore.ApplyOperationResultAsync <- OnboardMessageProcessor.ProcessCurrentSessionMessageAsync <- WireToGateStore.CaptureFirstResponseAsync <- OnboardMessageProcessor.ProcessAsync']
+   tests  3 ['ControlServer.Tests.Batch7DemandTerminationTests.TheUnloadResultsReleaseDecisionIsReadInsideTheInboxWriteTransaction']
+== UNGATED(inbound) AcceptedDemandRow WireToGateStore.QueueOutboundEnvelopeAsync
+   states ['Modified']
+   cols   Status
+   scopes ['inbound']
+   frames ['WireToGateStore.QueueOutboundEnvelopeAsync <- OnboardJourneyPublisher.QueueEnvelopeAsync <- OnboardJourneyPublisher.QueueExceptionRecoverySessionSnapshotAsync <- OnboardRecoveryCoordinator.QueueSessionSnapshotAsync <- OnboardRecoveryCoordinator.AdvanceSessionAfterResultAsync <- OnboardRecoveryCoordi']
+   tests  1 ['ControlServer.Tests.JourneyRuntimeWorkerCargoRecoveryTests.AHandedOffDemandStillListedByMesIngestIsNeverDispatchedAgain']
+== UNGATED(inbound) JourneyDemandRow OnboardRecoveryCoordinator.ProcessResultAsync
+   states ['Modified']
+   cols   Status
+   scopes ['inbound']
+   frames ['OnboardRecoveryCoordinator.ProcessResultAsync <- OnboardMessageProcessor.ProcessCurrentSessionMessageAsync <- OnboardMessageProcessor. <- WireToGateStore.CaptureFirstResponseAsync <- OnboardMessageProcessor.ProcessAsync', 'OnboardRecoveryCoordinator.ProcessResultAsync <- OnboardMessageProcessor.ProcessCurrentSessionMessageAsync <- OnboardMessageProcessor. <- WireToGateStore.CaptureFirstResponseAsync <- OnboardMessageProcessor.ProcessAsync <- JourneyRuntimeEngine.ExecuteOnceAsync']
+   tests  4 ['ControlServer.Tests.Batch7MultiDemandCancellationTests.CancellingTheOtherDemandWhileOneIsLoadingEndsOnlyTheNamedOne']
+== UNGATED(inbound) JourneyDemandRow WireToGateStore.QueueOutboundEnvelopeAsync
+   states ['Modified']
+   cols   Status
+   scopes ['inbound']
+   frames ['WireToGateStore.QueueOutboundEnvelopeAsync <- OnboardJourneyPublisher.QueueEnvelopeAsync <- OnboardJourneyPublisher.QueueExceptionRecoverySessionSnapshotAsync <- OnboardRecoveryCoordinator.QueueSessionSnapshotAsync <- OnboardRecoveryCoordinator.AdvanceSessionAfterResultAsync <- OnboardRecoveryCoordi']
+   tests  1 ['ControlServer.Tests.JourneyRuntimeWorkerCargoRecoveryTests.AHandedOffDemandStillListedByMesIngestIsNeverDispatchedAgain']
+== UNGATED(inbound) JourneyRuntimeRow OnboardRecoveryCoordinator.ProcessResultAsync
+   states ['Modified']
+   cols   BlockReasonCode,BlockReasonSince,Stage,StationDepartureWaitStartedAt,UpdatedAt,WaitingSince
+   scopes ['inbound']
+   frames ['OnboardRecoveryCoordinator.ProcessResultAsync <- OnboardMessageProcessor.ProcessCurrentSessionMessageAsync <- OnboardMessageProcessor. <- WireToGateStore.CaptureFirstResponseAsync <- OnboardMessageProcessor.ProcessAsync', 'OnboardRecoveryCoordinator.ProcessResultAsync <- OnboardMessageProcessor.ProcessCurrentSessionMessageAsync <- OnboardMessageProcessor. <- WireToGateStore.CaptureFirstResponseAsync <- OnboardMessageProcessor.ProcessAsync <- JourneyRuntimeEngine.ExecuteOnceAsync']
+   tests  6 ['ControlServer.Tests.JourneyClosureSnapshotTests.AnAllEmptyCancellationBeforeAnySublotTellsTheVehicleTheStopIsOver']
+== UNGATED(inbound) JourneyRuntimeRow WireToGateStore.BeginSessionRecoveryAsync
+   states ['Modified']
+   cols   StationDepartureWaitStartedAt
+   scopes ['inbound']
+   frames ['WireToGateStore.BeginSessionRecoveryAsync <- <>c__DisplayClass12_0.<ProcessAsync <- OnboardMessageProcessor. <- WireToGateStore.CaptureFirstResponseAsync <- OnboardMessageProcessor.ProcessAsync']
+   tests  1 ['ControlServer.Tests.ReconnectModelRegressionTests.ASequenceTheModelOnceFoundStuckNowReachesTheEntryRequest(name: "cut-after-the-business-state-nothing-acknowledged", realOnboard: True)']
+== UNGATED(inbound) JourneyRuntimeRow WireToGateStore.QueueOutboundEnvelopeAsync
+   states ['Modified']
+   cols   BlockReasonCode,BlockReasonSince,Stage,StationDepartureWaitStartedAt,UpdatedAt,WaitingSince
+   scopes ['inbound']
+   frames ['WireToGateStore.QueueOutboundEnvelopeAsync <- OnboardJourneyPublisher.QueueEnvelopeAsync <- OnboardJourneyPublisher.QueueExceptionRecoverySessionSnapshotAsync <- OnboardRecoveryCoordinator.QueueSessionSnapshotAsync <- OnboardRecoveryCoordinator.AdvanceSessionAfterResultAsync <- OnboardRecoveryCoordi']
+   tests  6 ['ControlServer.Tests.JourneyRuntimeWorkerCargoRecoveryTests.AHandedOffDemandStillListedByMesIngestIsNeverDispatchedAgain']
+== UNGATED(inbound) JourneyStopRow OnboardRecoveryCoordinator.ProcessResultAsync
+   states ['Modified']
+   cols   WorklistRefills
+   scopes ['inbound']
+   frames ['OnboardRecoveryCoordinator.ProcessResultAsync <- OnboardMessageProcessor.ProcessCurrentSessionMessageAsync <- WireToGateStore.CaptureFirstResponseAsync <- OnboardMessageProcessor.ProcessAsync <- JourneyRuntimeEngine.ExecuteOnceAsync <- JourneyRuntimeEngine.ExecuteRoundAsync']
+   tests  1 ['ControlServer.Tests.StopEndedJourneyContinuesTests.AfterACancellationEndsTheStopALateEntryIsRejectedAsStaleAtTheEmptyWorklistsRevision']
+== UNGATED(inbound) StopClosureRow WireToGateStore.ApplyOperationResultAsync
+   states ['Added']
+   cols   *
+   scopes ['inbound']
+   frames ['WireToGateStore.ApplyOperationResultAsync <- OnboardMessageProcessor.ProcessCurrentSessionMessageAsync <- WireToGateStore.CaptureFirstResponseAsync <- OnboardMessageProcessor.ProcessAsync', 'WireToGateStore.ApplyOperationResultAsync <- OnboardMessageProcessor.ProcessCurrentSessionMessageAsync <- WireToGateStore.CaptureFirstResponseAsync <- OnboardMessageProcessor.ProcessAsync <- JourneyRuntimeEngine.ExecuteOnceAsync <- JourneyRuntimeEngine.ExecuteRoundAsync']
+   tests  2 ['ControlServer.Tests.Batch7DemandTerminationTests.TheUnloadResultsReleaseDecisionIsReadInsideTheInboxWriteTransaction']
+== UNGATED(none) AcceptedDemandRow (no src frame)
+   states ['Added', 'Modified']
+   cols   *,LiveMesFieldsJson,Status,WorkType
+   scopes ['(none)']
+   frames ['']
+   tests  4 ['ControlServer.Tests.AreaEndAdmissionStoreTests.AReplayOfAnOperationWhoseAdmissionIdentityIsNotTheDemandsTaskTypeIsRefused']
+== UNGATED(none) AcceptedDemandRow JourneyRuntimeEngine.ExecuteOnceAsync
+   states ['Added', 'Modified']
+   cols   *,Status
+   scopes ['(none)']
+   frames ['JourneyRuntimeEngine.ExecuteOnceAsync <- JourneyRuntimeEngine.ExecuteRoundAsync <- JourneyRuntimeEngine.AdvanceAsync <- JourneyRuntimeEngine.AwaitSafeDepartureResultAsync']
+   tests  1 ['ControlServer.Tests.Batch7StopDrivenAdvanceTests.EndingTheAnchorDemandOfATwoDemandJourneyStillLeavesItsMembershipFindable']
+== UNGATED(none) AcceptedDemandRow WireToGateStore.ApplyOperationResultAsync
+   states ['Modified']
+   cols   Status
+   scopes ['(none)']
+   frames ['WireToGateStore.ApplyOperationResultAsync', 'WireToGateStore.ApplyOperationResultAsync <- JourneyRuntimeEngine.ExecuteOnceAsync <- JourneyRuntimeEngine.ExecuteRoundAsync <- JourneyRuntimeEngine.AdvanceAsync <- JourneyRuntimeEngine.AwaitSafeDepartureResultAsync']
+   tests  2 ['ControlServer.Tests.JourneyRuntimeWorkerCargoRecoveryTests.AHandedOffDemandStillListedByMesIngestIsNeverDispatchedAgain']
+== UNGATED(none) AcceptedDemandRow WireToGateStore.CompleteDemandAfterUnloadAsync
+   states ['Modified']
+   cols   Status
+   scopes ['(none)']
+   frames ['WireToGateStore.CompleteDemandAfterUnloadAsync', 'WireToGateStore.CompleteDemandAfterUnloadAsync <- JourneyLeaseRelease.StageIfLastOpenDemandAsync <- DemandJourneyLookup.IsLastOpenDemandAsync']
+   tests  3 ['ControlServer.Tests.Batch7DemandTerminationTests.AnUnloadOfADemandThatIsNotTheLastKeepsTheLeaseAndTheClaim']
+== UNGATED(none) AcceptedDemandRow WireToGateStore.StageAndCommitAcceptanceAsync
+   states ['Added']
+   cols   *
+   scopes ['(none)']
+   frames ['WireToGateStore.StageAndCommitAcceptanceAsync <- WireToGateStore.AcceptCoreAsync', 'WireToGateStore.StageAndCommitAcceptanceAsync <- WireToGateStore.AcceptCoreAsync <- JourneyRuntimeEngine.ExecuteOnceAsync <- JourneyRuntimeEngine.ExecuteRoundAsync <- JourneyRuntimeEngine.AdvanceAsync <- JourneyRuntimeEngine.AwaitSafeDepartureResultAsync']
+   tests  7 ['ControlServer.Tests.ApplicationOrchestrationTests.CreateIsConfirmedOnlyByIndependentUpperIdRead']
+== UNGATED(none) AcceptedDemandRow WireToGateStore.StageAndCommitAppendAsync
+   states ['Added']
+   cols   *
+   scopes ['(none)']
+   frames ['WireToGateStore.StageAndCommitAppendAsync <- WireToGateStore.AppendToJourneyAsync', 'WireToGateStore.StageAndCommitAppendAsync <- WireToGateStore.AppendToJourneyAsync <- JourneyRuntimeEngine.ExecuteOnceAsync <- JourneyRuntimeEngine.ExecuteRoundAsync <- JourneyRuntimeEngine.AdvanceAsync <- JourneyRuntimeEngine.AwaitSafeDepartureResultAsync']
+   tests  2 ['ControlServer.Tests.CancelledDemandLoadCommandTests.ACancellationOfAnotherDemandAtTheStopAuthorizedInTheWindowHoldsTheStopAndNothingIsLoaded']
+== UNGATED(none) JourneyBacklogRow (no src frame)
+   states ['Added', 'Modified']
+   cols   *,AcceptedAt,DecisionFingerprint,DemandCreatedAt,FirstSeenAt,LastSeenAt,ReasonCode,StarvationEscalatedAt,StarvationEscalationParameterVersion,TransportDemandKey
+   scopes ['(none)']
+   frames ['']
+   tests  4 ['ControlServer.Tests.Batch7CargoHoldingDashboardTests.ADemandThatLeftTheCatalogueAndCameBackKeepsItsAge']
+== UNGATED(none) JourneyBacklogRow JourneyRuntimeEngine.ExecuteOnceAsync
+   states ['Added', 'Modified']
+   cols   *,AcceptedAt,ReasonCode
+   scopes ['(none)']
+   frames ['JourneyRuntimeEngine.ExecuteOnceAsync <- JourneyRuntimeEngine.ExecuteRoundAsync <- DispatchRoundRunner.RunAsync <- DispatchRoundRunner.DispatchSelectedAsync <- DispatchRoundRunner.DispatchSelectedCoreAsync <- JourneyIntakeCoordinator.AcceptAndDispatchToPickupAsync']
+   tests  2 ['ControlServer.Tests.MultiVehicleExecutionTests.AClaimOnARedispatchedDemandTheSegmentNeverMadeGoodOnIsWithdrawn']
+== UNGATED(none) JourneyBacklogRow WireToGateStore.StageAndCommitAcceptanceAsync
+   states ['Modified']
+   cols   AcceptedAt,LastSeenAt,ReasonCode
+   scopes ['(none)']
+   frames ['WireToGateStore.StageAndCommitAcceptanceAsync <- WireToGateStore.AcceptCoreAsync']
+   tests  1 ['ControlServer.Tests.Batch7JourneyAcceptanceTests.ARefusedAcceptanceKeepsTheCallersOwnUnsavedChangesAsTheCallerLeftThem']
+== UNGATED(none) JourneyBacklogRow WireToGateStore.StageAndCommitAppendAsync
+   states ['Modified']
+   cols   AcceptedAt,ReasonCode
+   scopes ['(none)']
+   frames ['WireToGateStore.StageAndCommitAppendAsync <- WireToGateStore.AppendToJourneyAsync', 'WireToGateStore.StageAndCommitAppendAsync <- WireToGateStore.AppendToJourneyAsync <- JourneyRuntimeEngine.ExecuteOnceAsync <- JourneyRuntimeEngine.ExecuteRoundAsync <- JourneyRuntimeEngine.AdvanceAsync <- JourneyRuntimeEngine.AwaitSafeDepartureResultAsync']
+   tests  2 ['ControlServer.Tests.CancelledDemandLoadCommandTests.ACancellationOfAnotherDemandAtTheStopAuthorizedInTheWindowHoldsTheStopAndNothingIsLoaded']
+== UNGATED(none) JourneyDemandRow (no src frame)
+   states ['Added', 'Modified']
+   cols   *,PickupStopId,RemovalReason,RemovedAt,Status,TargetSlotsJson,UnloadStopId
+   scopes ['(none)']
+   frames ['']
+   tests  4 ['ControlServer.Tests.Batch7MultiDemandCancellationTests.CancellingADemandThatIsAlreadyLoadingIsRejected']
+== UNGATED(none) JourneyDemandRow JourneyMembershipStore.AddDemandAsync
+   states ['Added']
+   cols   *
+   scopes ['(none)']
+   frames ['JourneyMembershipStore.AddDemandAsync']
+   tests  1 ['ControlServer.Tests.Batch7PersistencePortTests.StopsAndDemandMembershipsAreReadAndWrittenThroughTheirPortAndADemandBelongsToOneJourneyAtATime']
+== UNGATED(none) JourneyDemandRow JourneyMembershipStore.RemoveDemandAsync
+   states ['Modified']
+   cols   RemovalReason,RemovedAt
+   scopes ['(none)']
+   frames ['JourneyMembershipStore.RemoveDemandAsync', 'JourneyMembershipStore.RemoveDemandAsync <- JourneyRuntimeEngine.ExecuteOnceAsync <- JourneyRuntimeEngine.ExecuteRoundAsync <- JourneyRuntimeEngine.AdvanceAsync <- JourneyRuntimeEngine.AwaitSafeDepartureResultAsync']
+   tests  2 ['ControlServer.Tests.Batch7DemandJourneyLookupTests.OnlyADemandWhoseLatestRemovalWasAReleaseIsReleasedForRedispatch(shape: "released-then-later-removed-otherwise", released: False)']
+== UNGATED(none) JourneyDemandRow JourneyRuntimeEngine.ExecuteOnceAsync
+   states ['Added', 'Modified']
+   cols   *,RemovalReason,RemovedAt,Status,TargetSlotsJson,UnloadStopId
+   scopes ['(none)']
+   frames ['JourneyRuntimeEngine.ExecuteOnceAsync <- JourneyRuntimeEngine.ExecuteRoundAsync <- DispatchRoundRunner.RunAsync <- DispatchRoundRunner.DispatchSelectedAsync <- DispatchRoundRunner.DispatchSelectedCoreAsync <- JourneyIntakeCoordinator.AcceptAndDispatchToPickupAsync', 'JourneyRuntimeEngine.ExecuteOnceAsync <- JourneyRuntimeEngine.ExecuteRoundAsync <- JourneyRuntimeEngine.AdvanceAsync <- JourneyRuntimeEngine.AwaitSafeDepartureResultAsync']
+   tests  6 ['ControlServer.Tests.Batch7DemandTerminationTests.AFailedOrUnknownUnloadResultOfTheLastDemandReleasesNothing(overallOutcome: "UNKNOWN")']
+== UNGATED(none) JourneyDemandRow WireToGateStore.StageAndCommitAcceptanceAsync
+   states ['Added']
+   cols   *
+   scopes ['(none)']
+   frames ['WireToGateStore.StageAndCommitAcceptanceAsync <- WireToGateStore.AcceptCoreAsync', 'WireToGateStore.StageAndCommitAcceptanceAsync <- WireToGateStore.AcceptCoreAsync <- JourneyRuntimeEngine.ExecuteOnceAsync <- JourneyRuntimeEngine.ExecuteRoundAsync <- JourneyRuntimeEngine.AdvanceAsync <- JourneyRuntimeEngine.AwaitSafeDepartureResultAsync']
+   tests  4 ['ControlServer.Tests.Batch7DemandJourneyLookupTests.AnOperationOfADemandAddedToAJourneyThatNeedsRecoveryHoldsItsVehicle']
+== UNGATED(none) JourneyDemandRow WireToGateStore.StageAndCommitAppendAsync
+   states ['Added']
+   cols   *
+   scopes ['(none)']
+   frames ['WireToGateStore.StageAndCommitAppendAsync <- WireToGateStore.AppendToJourneyAsync', 'WireToGateStore.StageAndCommitAppendAsync <- WireToGateStore.AppendToJourneyAsync <- JourneyRuntimeEngine.ExecuteOnceAsync <- JourneyRuntimeEngine.ExecuteRoundAsync <- JourneyRuntimeEngine.AdvanceAsync <- JourneyRuntimeEngine.AwaitSafeDepartureResultAsync']
+   tests  2 ['ControlServer.Tests.CancelledDemandLoadCommandTests.ACancellationOfAnotherDemandAtTheStopAuthorizedInTheWindowHoldsTheStopAndNothingIsLoaded']
+== UNGATED(none) JourneyDemands (no src frame)
+   states ['Command']
+   cols   RAW:UPDATE "JourneyDemands" SET "Status" = 'LOADING' WHERE "Status" = 'PENDING_LOAD'   AND "RemovedAt" IS NULL   AND "Journe,RAW:UPDATE "JourneyDemands" SET "Status" = 'PENDING_LOAD' WHERE "Status" = 'LOADING'   AND "RemovedAt" IS NULL  
+   scopes ['(none)']
+   frames ['']
+   tests  2 ['ControlServer.Tests.AuditDatabaseImmutabilityTests.MigratingDownDropsTheTriggersAndMigratingUpAgainBringsThemBack']
+== UNGATED(none) JourneyDemands JourneyRuntimeEngine.ExecuteOnceAsync
+   states ['Command']
+   cols   RAW:UPDATE "JourneyDemands" SET "Status" = 'LOADING' WHERE "Status" = 'PENDING_LOAD'   AND "RemovedAt" IS NULL   AND "Journe
+   scopes ['(none)']
+   frames ['JourneyRuntimeEngine.ExecuteOnceAsync <- JourneyRuntimeEngine.ExecuteRoundAsync <- DispatchRoundRunner.RunAsync <- DispatchRoundRunner.DispatchSelectedAsync <- DispatchRoundRunner.DispatchSelectedCoreAsync <- JourneyIntakeCoordinator.AcceptAndDispatchToPickupAsync', 'JourneyRuntimeEngine.ExecuteOnceAsync <- JourneyRuntimeEngine.ExecuteRoundAsync <- DispatchRoundRunner.RunAsync <- DispatchRoundRunner.JudgeForVehicleAsync <- DispatchAdmissionChain.EvaluateAsync <- SlotCapacityCriterion.EvaluateAsync']
+   tests  4 ['ControlServer.Tests.Batch7DemandTerminationTests.AFailedOrUnknownUnloadResultOfTheLastDemandReleasesNothing(overallOutcome: "UNKNOWN")']
+== UNGATED(none) JourneyRuntimeRow (no src frame)
+   states ['Added', 'Modified']
+   cols   *,BlockReasonCode,BlockReasonSince,LoadingPhaseState,Stage,StationDepartureWaitStartedAt,UpdatedAt,WaitingBatteryObservedAt,WaitingBatteryPercent,WaitingSince
+   scopes ['(none)']
+   frames ['']
+   tests  17 ['ControlServer.Tests.ArrivalPublishInterruptedThenReconnectedTests.AFailedAdvanceLeavesACodeThatNamesAWaitOnAPersonAsItIs(code: "ORDER_ENDED_WITHOUT_ARRIVAL", stage: AwaitingPickupArrival)']
+== UNGATED(none) JourneyRuntimeRow JourneyRuntimeEngine.ExecuteOnceAsync
+   states ['Added', 'Modified']
+   cols   *,AreaEndAdmissionRevokedSince,BlockReasonCode,BlockReasonSince,LoadingPhaseState,Stage,UpdatedAt,WaitingSince,WaitingWarnedAt,WorklistRevision
+   scopes ['(none)']
+   frames ['JourneyRuntimeEngine.ExecuteOnceAsync <- JourneyRuntimeEngine.ExecuteRoundAsync <- DispatchRoundRunner.RunAsync <- DispatchRoundRunner.DispatchSelectedAsync <- DispatchRoundRunner.DispatchSelectedCoreAsync <- JourneyIntakeCoordinator.AcceptAndDispatchToPickupAsync', 'JourneyRuntimeEngine.ExecuteOnceAsync <- JourneyRuntimeEngine.ExecuteRoundAsync <- DispatchRoundRunner.RunAsync <- DispatchRoundRunner.JudgeForVehicleAsync <- DispatchAdmissionChain.EvaluateAsync <- SlotCapacityCriterion.EvaluateAsync']
+   tests  14 ['ControlServer.Tests.Batch7DemandReleaseServiceTests.TheEnginesOwnBlockIsNeitherMaskedNorCleared']
+== UNGATED(none) JourneyRuntimeRow VehicleFaultRecoveryService.ReadAsync
+   states ['Modified']
+   cols   BlockReasonCode,BlockReasonSince,Stage
+   scopes ['(none)']
+   frames ['VehicleFaultRecoveryService.ReadAsync <- VehicleFaultRecoveryService.ClearAsync <- VehicleFaultRecoveryService.RecoverAsync <- JourneyRuntimeEngine.ExecuteOnceAsync <- JourneyRuntimeEngine.ExecuteRoundAsync <- JourneyRuntimeEngine.AdvanceAsync']
+   tests  1 ['ControlServer.Tests.VehicleFaultRecoveryTests.AJourneyThatMovedOnBetweenTheReadAndTheGateIsNotDisposedOf']
+== UNGATED(none) JourneyRuntimeRow WireToGateStore.BeginSessionRecoveryAsync
+   states ['Modified']
+   cols   StationDepartureWaitStartedAt
+   scopes ['(none)']
+   frames ['WireToGateStore.BeginSessionRecoveryAsync', 'WireToGateStore.BeginSessionRecoveryAsync <- JourneyRuntimeEngine.ExecuteOnceAsync <- JourneyRuntimeEngine.ExecuteRoundAsync <- JourneyRuntimeEngine.AdvanceAsync <- JourneyRuntimeEngine.AwaitSafeDepartureResultAsync']
+   tests  2 ['ControlServer.Tests.JourneyRuntimeWorkerTests.ADisconnectVoidsTheDepartureWaitAfterTheLoadAndItRefillsInFullOnceTheSessionIsReadyAgain']
+== UNGATED(none) JourneyRuntimeRow WireToGateStore.StageAndCommitAcceptanceAsync
+   states ['Added', 'Modified']
+   cols   *,BlockReasonCode,BlockReasonSince,Stage,UpdatedAt,WaitingSince,YieldTriggeredAt,YieldTriggeredByVehicleKey
+   scopes ['(none)']
+   frames ['WireToGateStore.StageAndCommitAcceptanceAsync <- WireToGateStore.AcceptCoreAsync', 'WireToGateStore.StageAndCommitAcceptanceAsync <- WireToGateStore.AcceptCoreAsync <- JourneyRuntimeEngine.ExecuteOnceAsync <- JourneyRuntimeEngine.ExecuteRoundAsync <- JourneyRuntimeEngine.AdvanceAsync <- JourneyRuntimeEngine.AwaitSafeDepartureResultAsync']
+   tests  10 ['ControlServer.Tests.Batch7DemandJourneyLookupTests.AnOperationOfADemandAddedToAJourneyThatNeedsRecoveryHoldsItsVehicle']
+== UNGATED(none) JourneyRuntimeRow WireToGateStore.StageAndCommitAppendAsync
+   states ['Modified']
+   cols   UpdatedAt,YieldTriggeredAt,YieldTriggeredByVehicleKey
+   scopes ['(none)']
+   frames ['WireToGateStore.StageAndCommitAppendAsync <- WireToGateStore.AppendToJourneyAsync']
+   tests  1 ['ControlServer.Tests.Batch7StationYieldTriggerTests.AnAppendThatFailsAtTheCommitLeavesNoTriggerBehind']
+== UNGATED(none) JourneyRuntimes (no src frame)
+   states ['Command']
+   cols   RAW:UPDATE "JourneyRuntimes" SET "AreaEndAdmissionRevokedSince" = "BlockReasonSince" WHERE ("Stage" = 'AwaitingGateArrival' ,RAW:UPDATE "JourneyRuntimes" SET "WaitingSince" = COALESCE("BlockReasonSince", "UpdatedAt") WHERE "Stage" IN ('AwaitingSublo
+   scopes ['(none)']
+   frames ['']
+   tests  2 ['ControlServer.Tests.TaskTypeStationHoldAndCatalogChangeStoreTests.ACatalogChangeIsRecordedOncePerStationAndRevisionAndListsBackInObservationOrder']
+== UNGATED(none) JourneyRuntimes JourneyRuntimeEngine.ExecuteOnceAsync
+   states ['Command']
+   cols   RAW:UPDATE "JourneyRuntimes" SET "AreaEndAdmissionRevokedSince" = "BlockReasonSince" WHERE ("Stage" = 'AwaitingGateArrival' ,RAW:UPDATE "JourneyRuntimes" SET "WaitingSince" = COALESCE("BlockReasonSince", "UpdatedAt") WHERE "Stage" IN ('AwaitingSublo
+   scopes ['(none)']
+   frames ['JourneyRuntimeEngine.ExecuteOnceAsync <- JourneyRuntimeEngine.ExecuteRoundAsync <- DispatchRoundRunner.RunAsync <- DispatchRoundRunner.DispatchSelectedAsync <- DispatchRoundRunner.DispatchSelectedCoreAsync <- JourneyIntakeCoordinator.AcceptAndDispatchToPickupAsync', 'JourneyRuntimeEngine.ExecuteOnceAsync <- JourneyRuntimeEngine.ExecuteRoundAsync <- DispatchRoundRunner.RunAsync <- DispatchRoundRunner.JudgeForVehicleAsync <- DispatchAdmissionChain.EvaluateAsync <- SlotCapacityCriterion.EvaluateAsync']
+   tests  4 ['ControlServer.Tests.Batch7DemandTerminationTests.AFailedOrUnknownUnloadResultOfTheLastDemandReleasesNothing(overallOutcome: "UNKNOWN")']
+== UNGATED(none) JourneyStopRow (no src frame)
+   states ['Added', 'Modified']
+   cols   *,Sequence,Status,SublotRequestMessageId
+   scopes ['(none)']
+   frames ['']
+   tests  2 ['ControlServer.Tests.Batch7PlanRevisionStageTests.WithARouteTheStopsAfterTheCurrentOneAreReorderedOnceTheEmptyStopIsGone']
+== UNGATED(none) JourneyStopRow JourneyMembershipStore.AddStopAsync
+   states ['Added']
+   cols   *
+   scopes ['(none)']
+   frames ['JourneyMembershipStore.AddStopAsync']
+   tests  1 ['ControlServer.Tests.Batch7PersistencePortTests.StopsAndDemandMembershipsAreReadAndWrittenThroughTheirPortAndADemandBelongsToOneJourneyAtATime']
+== UNGATED(none) JourneyStopRow JourneyMembershipStore.SetStopSequenceAsync
+   states ['Modified']
+   cols   Sequence
+   scopes ['(none)']
+   frames ['JourneyMembershipStore.SetStopSequenceAsync']
+   tests  1 ['ControlServer.Tests.Batch7PersistencePortTests.StopsAndDemandMembershipsAreReadAndWrittenThroughTheirPortAndADemandBelongsToOneJourneyAtATime']
+== UNGATED(none) JourneyStopRow JourneyMembershipStore.SetStopStatusAsync
+   states ['Modified']
+   cols   Status
+   scopes ['(none)']
+   frames ['JourneyMembershipStore.SetStopStatusAsync']
+   tests  1 ['ControlServer.Tests.Batch7PersistencePortTests.StopsAndDemandMembershipsAreReadAndWrittenThroughTheirPortAndADemandBelongsToOneJourneyAtATime']
+== UNGATED(none) JourneyStopRow JourneyRuntimeEngine.ExecuteOnceAsync
+   states ['Added', 'Modified']
+   cols   *,Sequence,Status
+   scopes ['(none)']
+   frames ['JourneyRuntimeEngine.ExecuteOnceAsync <- JourneyRuntimeEngine.ExecuteRoundAsync <- JourneyRuntimeEngine.AdvanceAsync <- JourneyRuntimeEngine.AwaitSafeDepartureResultAsync']
+   tests  2 ['ControlServer.Tests.Batch7ThreeStopJourneyTests.EndingOneOfTwoDemandsRemovesTheStopsItLeavesEmptyAndWithdrawsThemFromThePlan']
+== UNGATED(none) JourneyStopRow WireToGateStore.StageAndCommitAcceptanceAsync
+   states ['Added']
+   cols   *
+   scopes ['(none)']
+   frames ['WireToGateStore.StageAndCommitAcceptanceAsync <- WireToGateStore.AcceptCoreAsync', 'WireToGateStore.StageAndCommitAcceptanceAsync <- WireToGateStore.AcceptCoreAsync <- JourneyRuntimeEngine.ExecuteOnceAsync <- JourneyRuntimeEngine.ExecuteRoundAsync <- JourneyRuntimeEngine.AdvanceAsync <- JourneyRuntimeEngine.AwaitSafeDepartureResultAsync']
+   tests  4 ['ControlServer.Tests.Batch7DemandJourneyLookupTests.AnOperationOfADemandAddedToAJourneyThatNeedsRecoveryHoldsItsVehicle']
+== UNGATED(none) JourneyStopRow WireToGateStore.StageAndCommitAppendAsync
+   states ['Added', 'Modified']
+   cols   *,Sequence
+   scopes ['(none)']
+   frames ['WireToGateStore.StageAndCommitAppendAsync <- WireToGateStore.AppendToJourneyAsync', 'WireToGateStore.StageAndCommitAppendAsync <- WireToGateStore.AppendToJourneyAsync <- JourneyRuntimeEngine.ExecuteOnceAsync <- JourneyRuntimeEngine.ExecuteRoundAsync <- JourneyRuntimeEngine.AdvanceAsync <- JourneyRuntimeEngine.AwaitSafeDepartureResultAsync']
+   tests  2 ['ControlServer.Tests.CancelledDemandLoadCommandTests.ACancellationOfAnotherDemandAtTheStopAuthorizedInTheWindowHoldsTheStopAndNothingIsLoaded']
+== UNGATED(none) StopClosureRow WireToGateStore.ApplyOperationResultAsync
+   states ['Added']
+   cols   *
+   scopes ['(none)']
+   frames ['WireToGateStore.ApplyOperationResultAsync', 'WireToGateStore.ApplyOperationResultAsync <- JourneyRuntimeEngine.ExecuteOnceAsync <- JourneyRuntimeEngine.ExecuteRoundAsync <- JourneyRuntimeEngine.AdvanceAsync <- JourneyRuntimeEngine.AwaitSafeDepartureResultAsync']
+   tests  2 ['ControlServer.Tests.Batch7DemandTerminationTests.AnUnloadResultOfADemandThatIsNotTheLastKeepsTheLeaseAndTheClaimAndTheLastOneReleasesThem']
+== UNGATED(none) StopClosureRow WireToGateStore.CompleteDemandAfterUnloadAsync
+   states ['Added']
+   cols   *
+   scopes ['(none)']
+   frames ['WireToGateStore.CompleteDemandAfterUnloadAsync', 'WireToGateStore.CompleteDemandAfterUnloadAsync <- JourneyLeaseRelease.StageIfLastOpenDemandAsync <- DemandJourneyLookup.IsLastOpenDemandAsync']
+   tests  3 ['ControlServer.Tests.Batch7DemandTerminationTests.AnUnloadOfADemandThatIsNotTheLastKeepsTheLeaseAndTheClaim']

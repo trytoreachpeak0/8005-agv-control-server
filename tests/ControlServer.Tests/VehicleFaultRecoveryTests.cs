@@ -114,7 +114,6 @@ public sealed class VehicleFaultRecoveryTests
     /// 那次保存失败、事务回滚、什么都没写，请求按「读完之后状态变了」拒绝，由人再来一次。
     /// </summary>
     [Fact]
-    [Trait("IntegrationSlice", "FP-IS-02")]
     public async Task AJourneyWrittenByTheInboundDuringTheClearanceRefusesItAndWritesNothing()
     {
         await using RuntimeFixture fixture = await FaultedOnTheWayToPickupAsync();
