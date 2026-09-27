@@ -33,7 +33,7 @@ v2 上每次失败的服务端日志都是 `An Onboard peer is already attached 
 | M1 | 生产构造函数传入的静默窗口改成 1 小时 | 新的 2 条；另有 `OnboardSilentLivenessLossTests` 的 2 条（它们钉的是构造函数取项目级常量） |
 | M2 | `SessionLiveness.Timeout` 改成 60 秒 | 新的 2 条；另有钉 6 秒常量的 1 条 |
 | M3 | 静默关闭时不把旧连接从路由表摘掉（`finally` 里加 `&& !liveness.Expired`） | **只有新的 2 条**：旧连接关了、窗口也对，但车仍然连不上，现有测试一条都看不到 |
-| H0 | 把合成车载端心跳的 `observedAt` 放回去 | `Failed: 0` 但 `Errors: 1`、退出码 1：出站 schema 门禁报 3 条 Heartbeat 违规 |
+| H0 | 把合成车载端心跳的 `observedAt` 放回去 | `Failed: 0` 但 `Errors: 1`、退出码 1：出站 schema 门禁报 4 条违规，全是 Heartbeat 的 `#/payload/observedAt [additionalProperties]`（范围是这 12 条用例，不是全量；提交 `f04d55fd` 的说明误写成 3 条，以这里为准） |
 
 新 2 条红的都是同一句判据：「断电后 12 秒内新会话一直不可路由」，没有一条红在前提断言上（读到的）。M1、M2 下现有护栏也红，说明窗口的值本来就钉住了；新测试补上的是 M3 那种「值没变、行为坏了」的格子。
 
