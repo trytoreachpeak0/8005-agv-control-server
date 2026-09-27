@@ -1,0 +1,83 @@
+xUnit.net v3 In-Process Runner v3.2.2+728c1dce01 (64-bit .NET 8.0.31)
+  Discovering: ControlServer.Tests
+  Discovered:  ControlServer.Tests
+  Starting:    ControlServer.Tests
+    ControlServer.Tests.OnboardSilentLivenessLossTests.TheListenerTakesItsIdleTimeoutFromTheProjectWideValue [FAIL]
+      Assert.Equal() Failure: Values differ
+      Expected: 00:00:06
+      Actual:   01:00:00
+      Stack Trace:
+        tests\ControlServer.Tests\OnboardSilentLivenessLossTests.cs(113,0): at ControlServer.Tests.OnboardSilentLivenessLossTests.TheListenerTakesItsIdleTimeoutFromTheProjectWideValue()
+           at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+           at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+    ControlServer.Tests.OnboardSilentLivenessLossTests.TheEngineAndTheSessionLayerMeasureTheSameWindow [FAIL]
+      Assert.Equal() Failure: Values differ
+      Expected: 00:00:06
+      Actual:   01:00:00
+      Stack Trace:
+        tests\ControlServer.Tests\OnboardSilentLivenessLossTests.cs(93,0): at ControlServer.Tests.OnboardSilentLivenessLossTests.TheEngineAndTheSessionLayerMeasureTheSameWindow()
+           at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+           at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+    ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsWhileTheServerIsStillWritingIntoTheDeadConnection [FAIL]
+      断电后 30 秒内旧代次一直没离开路由表：半开的旧连接没被放掉，这正是 MVP 线上要重启服务端才能恢复的故障（control-server#276）。
+      旧代次离开路由表：没有
+      第 1 次，t=0.0s 开始：AnsweredButNotRoutable 第 2 代
+      第 2 次，t=3.0s 开始：AnsweredButNotRoutable 第 3 代
+      第 3 次，t=6.1s 开始：AnsweredButNotRoutable 第 4 代
+      第 4 次，t=9.1s 开始：AnsweredButNotRoutable 第 5 代
+      第 5 次，t=12.2s 开始：AnsweredButNotRoutable 第 6 代
+      第 6 次，t=15.3s 开始：AnsweredButNotRoutable 第 7 代
+      第 7 次，t=18.3s 开始：AnsweredButNotRoutable 第 8 代
+      第 8 次，t=21.3s 开始：AnsweredButNotRoutable 第 9 代
+      第 9 次，t=24.4s 开始：AnsweredButNotRoutable 第 10 代
+      第 10 次，t=27.4s 开始：AnsweredButNotRoutable 第 11 代
+      Stack Trace:
+        tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(169,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.Outcome.AssertRecovered()
+        tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(124,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsWhileTheServerIsStillWritingIntoTheDeadConnection()
+        tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(126,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsWhileTheServerIsStillWritingIntoTheDeadConnection()
+        --- End of stack trace from previous location ---
+      Output:
+        旧代次离开路由表：没有
+        第 1 次，t=0.0s 开始：AnsweredButNotRoutable 第 2 代
+        第 2 次，t=3.0s 开始：AnsweredButNotRoutable 第 3 代
+        第 3 次，t=6.1s 开始：AnsweredButNotRoutable 第 4 代
+        第 4 次，t=9.1s 开始：AnsweredButNotRoutable 第 5 代
+        第 5 次，t=12.2s 开始：AnsweredButNotRoutable 第 6 代
+        第 6 次，t=15.3s 开始：AnsweredButNotRoutable 第 7 代
+        第 7 次，t=18.3s 开始：AnsweredButNotRoutable 第 8 代
+        第 8 次，t=21.3s 开始：AnsweredButNotRoutable 第 9 代
+        第 9 次，t=24.4s 开始：AnsweredButNotRoutable 第 10 代
+        第 10 次，t=27.4s 开始：AnsweredButNotRoutable 第 11 代
+    ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsAfterAPowerCutThatLeftTheOldConnectionHalfOpen [FAIL]
+      断电后 30 秒内旧代次一直没离开路由表：半开的旧连接没被放掉，这正是 MVP 线上要重启服务端才能恢复的故障（control-server#276）。
+      旧代次离开路由表：没有
+      第 1 次，t=0.0s 开始：AnsweredButNotRoutable 第 2 代
+      第 2 次，t=3.0s 开始：AnsweredButNotRoutable 第 3 代
+      第 3 次，t=6.1s 开始：AnsweredButNotRoutable 第 4 代
+      第 4 次，t=9.2s 开始：AnsweredButNotRoutable 第 5 代
+      第 5 次，t=12.2s 开始：AnsweredButNotRoutable 第 6 代
+      第 6 次，t=15.2s 开始：AnsweredButNotRoutable 第 7 代
+      第 7 次，t=18.3s 开始：AnsweredButNotRoutable 第 8 代
+      第 8 次，t=21.3s 开始：AnsweredButNotRoutable 第 9 代
+      第 9 次，t=24.4s 开始：AnsweredButNotRoutable 第 10 代
+      第 10 次，t=27.4s 开始：AnsweredButNotRoutable 第 11 代
+      Stack Trace:
+        tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(169,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.Outcome.AssertRecovered()
+        tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(90,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsAfterAPowerCutThatLeftTheOldConnectionHalfOpen()
+        tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(92,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsAfterAPowerCutThatLeftTheOldConnectionHalfOpen()
+        --- End of stack trace from previous location ---
+      Output:
+        旧代次离开路由表：没有
+        第 1 次，t=0.0s 开始：AnsweredButNotRoutable 第 2 代
+        第 2 次，t=3.0s 开始：AnsweredButNotRoutable 第 3 代
+        第 3 次，t=6.1s 开始：AnsweredButNotRoutable 第 4 代
+        第 4 次，t=9.2s 开始：AnsweredButNotRoutable 第 5 代
+        第 5 次，t=12.2s 开始：AnsweredButNotRoutable 第 6 代
+        第 6 次，t=15.2s 开始：AnsweredButNotRoutable 第 7 代
+        第 7 次，t=18.3s 开始：AnsweredButNotRoutable 第 8 代
+        第 8 次，t=21.3s 开始：AnsweredButNotRoutable 第 9 代
+        第 9 次，t=24.4s 开始：AnsweredButNotRoutable 第 10 代
+        第 10 次，t=27.4s 开始：AnsweredButNotRoutable 第 11 代
+  Finished:    ControlServer.Tests (ID = 'f8ba1b415e206499cf4d4644e752bfa521ea1fd73323c53eec687456339a5e13')
+=== TEST EXECUTION SUMMARY ===
+   ControlServer.Tests  Total: 12, Errors: 0, Failed: 4, Skipped: 0, Not Run: 0, Time: 71.091s
