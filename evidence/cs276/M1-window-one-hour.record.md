@@ -1,6 +1,6 @@
 # M1-window-one-hour
 file: src/ControlServer.Host/Transport/OnboardTcpServer.cs
-base: 2ded1b3814487f7b39dcef05f7beecc12fd7a791
+base: 57f39f3339c712451cdfb517ce4911a0e2687943
 ```diff
 diff --git a/src/ControlServer.Host/Transport/OnboardTcpServer.cs b/src/ControlServer.Host/Transport/OnboardTcpServer.cs
 index 668e1548..12eee615 100644

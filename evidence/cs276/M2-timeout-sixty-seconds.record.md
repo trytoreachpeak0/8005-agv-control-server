@@ -1,6 +1,6 @@
 # M2-timeout-sixty-seconds
 file: src/ControlServer.Infrastructure/Persistence/SessionLiveness.cs
-base: 2ded1b3814487f7b39dcef05f7beecc12fd7a791
+base: 57f39f3339c712451cdfb517ce4911a0e2687943
 ```diff
 diff --git a/src/ControlServer.Infrastructure/Persistence/SessionLiveness.cs b/src/ControlServer.Infrastructure/Persistence/SessionLiveness.cs
 index 6f72eb50..f6b0629b 100644
