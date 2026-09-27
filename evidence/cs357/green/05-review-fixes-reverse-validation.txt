@@ -1,0 +1,33 @@
+filter: FullyQualifiedName~JourneyRowLostUpdateTests|FullyQualifiedName~MultiVehicleExecutionTests.OneVehicles|FullyQualifiedName~MultiVehicleExecutionTests.AVehicleThatYields|FullyQualifiedName~Batch7JourneyAppendPersistenceTests
+[R1a-intent-new-now] target occurrences: 1
+[R1a-intent-new-now] build:     0 Error(s)
+[R1a-intent-new-now] Failed ControlServer.Tests.JourneyRowLostUpdateTests.AJourneyWrittenAfterTheGateOrderWasCreatedIsReplayedWithoutASecondOrder(blockedThenRecovered: False) [5 s]
+[R1a-intent-new-now]    first test-frame: JourneyRowLostUpdateTests.cs:332
+[R1a-intent-new-now] Failed ControlServer.Tests.JourneyRowLostUpdateTests.AJourneyWrittenAfterTheGateOrderWasCreatedIsReplayedWithoutASecondOrder(blockedThenRecovered: True) [2 s]
+[R1a-intent-new-now]    first test-frame: JourneyRowLostUpdateTests.cs:332
+[R1a-intent-new-now] dotnet test exit code 1
+[R1a-intent-new-now] restored
+script exit 0
+[R1b-guard-kept-through-create] target occurrences: 1
+[R1b-guard-kept-through-create] build:     0 Error(s)
+[R1b-guard-kept-through-create] Failed ControlServer.Tests.JourneyRowLostUpdateTests.AJourneyWrittenAfterTheGateOrderWasCreatedIsReplayedWithoutASecondOrder(blockedThenRecovered: False) [5 s]
+[R1b-guard-kept-through-create]    first test-frame: JourneyRowLostUpdateTests.cs:314
+[R1b-guard-kept-through-create] Failed ControlServer.Tests.JourneyRowLostUpdateTests.AJourneyWrittenAfterTheGateOrderWasCreatedIsReplayedWithoutASecondOrder(blockedThenRecovered: True) [2 s]
+[R1b-guard-kept-through-create]    first test-frame: JourneyRowLostUpdateTests.cs:314
+[R1b-guard-kept-through-create] dotnet test exit code 1
+[R1b-guard-kept-through-create] restored
+script exit 0
+[R2-yield-detaches-all] target occurrences: 1
+[R2-yield-detaches-all] build:     0 Error(s)
+[R2-yield-detaches-all] Failed ControlServer.Tests.MultiVehicleExecutionTests.AVehicleThatYieldsWithdrawsWhatItStagedOnAnotherVehiclesRowAndThatVehicleStillAdvances [2 s]
+[R2-yield-detaches-all]    first test-frame: MultiVehicleExecutionTests.JourneyCommit.cs:119
+[R2-yield-detaches-all] dotnet test exit code 1
+[R2-yield-detaches-all] restored
+script exit 0
+[R4-append-tracked-read] target occurrences: 1
+[R4-append-tracked-read] build:     0 Error(s)
+[R4-append-tracked-read] Failed ControlServer.Tests.Batch7JourneyAppendPersistenceTests.AnAppendOntoAJourneyBlockedSinceTheRoundReadItIsRefusedWhenTheRoundsOwnContextStillHoldsTheOldRow [461 ms]
+[R4-append-tracked-read]    first test-frame: Batch7JourneyAppendPersistenceTests.cs:168
+[R4-append-tracked-read] dotnet test exit code 1
+[R4-append-tracked-read] restored
+script exit 0

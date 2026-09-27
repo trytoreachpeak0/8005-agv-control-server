@@ -78,8 +78,7 @@ public sealed class JourneyRowLostUpdateTests
     /// </summary>
     /// <remarks>
     /// 修之前引擎拿旧行往离站推：阶段被盖成 <c>AwaitingDepartureSafety</c>、同一轮给车发离站核验，车答 SAFE 的下一轮建去关卡的单——
-    /// 一趟要人工恢复的旅程被放行（第一步结果表 #2）。所以断言三件：阶段与码保住；注入之后这一轮没有任何出站消息落库；
-    /// 再跑一轮也没有去关卡的订单意图。
+    /// 一趟要人工恢复的旅程被放行（第一步结果表 #2）。所以断言：阶段与码保住；注入之后这一轮没有任何出站消息落库（离站核验没发出去）。
     /// </remarks>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-02")]
@@ -109,17 +108,19 @@ public sealed class JourneyRowLostUpdateTests
         await fixture.Engine.ExecuteOnceAsync(token);
 
         Assert.Equal(1, interleaver.Fired);
+        AssertYieldedOnceFor(fixture.EngineLog, loading.JourneyId);
         JourneyRuntimeRow after = await ReadAsync(fixture, loading.JourneyId);
         Assert.Equal(
             (JourneyRuntimeStage.Blocked, "LoadCancellationResult_NOT_RECONCILED"),
             (after.Stage, after.BlockReasonCode));
         Assert.Equal(outboxAtInjection, Count(fixture, "SELECT COUNT(*) FROM ProtocolOutbox"));
 
+        // 下一轮按新行读到 Blocked，照旧不动它。（「没有去关卡的单」不在这里断：这一轮没有 SAFE 答复，修前修后都建不了单，
+        // 那一格由 ABlockCommittedBeforeTheGateLegIsCreatedStopsTheOrder 断——独立审查建议。）
         fixture.Clock.Advance(TimeSpan.FromSeconds(1));
         fixture.Context.ChangeTracker.Clear();
         await fixture.Engine.ExecuteOnceAsync(token);
         Assert.Equal(JourneyRuntimeStage.Blocked, (await ReadAsync(fixture, loading.JourneyId)).Stage);
-        Assert.Equal(0, Count(fixture, "SELECT COUNT(*) FROM OrderIntents WHERE UpperId LIKE '%-GATE-%'"));
     }
 
     /// <summary>
@@ -181,6 +182,7 @@ public sealed class JourneyRowLostUpdateTests
         await fixture.Engine.ExecuteOnceAsync(token);
 
         Assert.Equal(1, interleaver.Fired);
+        AssertYieldedOnceFor(fixture.EngineLog, departing.JourneyId);
         Assert.Equal(0, fixture.Riot.CreateCount("TO_GATE"));
         Assert.Equal(0, Count(fixture, "SELECT COUNT(*) FROM OrderIntents WHERE UpperId LIKE '%-GATE-%'"));
         Assert.Equal(JourneyRuntimeStage.Blocked, (await ReadAsync(fixture, departing.JourneyId)).Stage);
@@ -233,11 +235,118 @@ public sealed class JourneyRowLostUpdateTests
         await fixture.Engine.ExecuteOnceAsync(token);
 
         Assert.Equal(1, interleaver.Fired);
+        AssertYieldedOnceFor(fixture.EngineLog, travelling.JourneyId);
         JourneyRuntimeRow after = await ReadAsync(fixture, travelling.JourneyId);
         Assert.Equal(
             (JourneyRuntimeStage.Completed, "TERMINATED_BY_FAULT_CARGO_HANDOFF", (DateTimeOffset?)endedAt),
             (after.Stage, after.BlockReasonCode, after.BlockReasonSince));
         Assert.Equal(outboxAtInjection, Count(fixture, "SELECT COUNT(*) FROM ProtocolOutbox"));
+    }
+
+    /// <summary>
+    /// 入站写落在 RIoT 建单之后的第一次保存处（独立审查必修 1）：单已经建了，记录它的那几次保存不能被守护丢掉；旅程行自己的改动吃令牌，
+    /// 这台车让开一轮，下一轮重放沿用已存意图——不抛、不建第二张单，推进到等关卡到站。
+    /// </summary>
+    /// <remarks>
+    /// 修之前（守护一直开到推进结束、意图按新的 now 生成）：下一轮起这台车每一轮都抛 <c>BusinessIdentityConflictException</c>，
+    /// 它后面的车都不再推进。
+    /// </remarks>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task AJourneyWrittenAfterTheGateOrderWasCreatedIsReplayedWithoutASecondOrder(bool blockedThenRecovered)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(DemandId, "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        JourneyRuntimeRow departing = await fixture.AdvanceToDepartureSafetyAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, departing.Stage);
+        await fixture.AddInboxAsync(
+            Guid.NewGuid().ToString("D"),
+            "PreDepartureSafetyCheckResult",
+            new
+            {
+                preDepartureSafetyCheckId = departing.PreDepartureSafetyCheckId,
+                outcome = "SAFE",
+                observedAt = fixture.Clock.GetUtcNow(),
+                safetyStateVersion = 7,
+                validUntil = fixture.Clock.GetUtcNow().AddMinutes(1),
+                safety = new
+                {
+                    departureSafe = true,
+                    vehicleStopped = true,
+                    allTargetSlotsLocked = true,
+                    allUnlockOutputsReset = true,
+                    unknownPresent = false,
+                    reasonCodes = Array.Empty<string>()
+                }
+            },
+            departing.PreDepartureSafetyCheckMessageId);
+        fixture.Context.ChangeTracker.Clear();
+
+        // 入站的那一次写：取消结果证明不了空转阻塞，或者只写一个码。落在建单之后的第一次保存上。
+        string inbound = blockedThenRecovered
+            ? "UPDATE JourneyRuntimes SET Stage = 'Blocked', BlockReasonCode = 'LoadCancellationResult_NOT_RECONCILED', " +
+              "Version = Version + 1 WHERE JourneyId = $id"
+            : "UPDATE JourneyRuntimes SET BlockReasonCode = 'ONBOARD_SESSION_NOT_READY', Version = Version + 1 WHERE JourneyId = $id";
+        bool injected = false;
+        fixture.SaveChanges.FailWhen = _ =>
+        {
+            if (!injected && fixture.Riot.CreateCount("TO_GATE") == 1)
+            {
+                injected = true;
+                Execute(fixture, inbound, departing.JourneyId);
+            }
+            return false;
+        };
+        await fixture.Engine.ExecuteOnceAsync(token);
+        fixture.SaveChanges.FailWhen = null;
+
+        // 前提：单建了、注入发生了、这台车因旅程行冲突让开了一次，而且让开的正是它。
+        Assert.True(injected);
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_GATE"));
+        AssertYieldedOnceFor(fixture.EngineLog, departing.JourneyId);
+        Assert.Equal(1, Count(fixture, "SELECT COUNT(*) FROM OrderIntents WHERE UpperId LIKE '%-GATE-%'"));
+        // 建单之后撤掉守护：记下「单已建、已确认」的那次保存不因这次冲突丢掉。守护若一直开着，这一轮让开会把它连同审计一起丢掉，
+        // 下一轮只能靠向 RIoT 对账补回「确认」，这次建单本身在派车审计里就缺了一段——不会建第二张单，所以只有这一句看得见它。
+        Assert.Equal(1, Count(fixture, "SELECT COUNT(*) FROM OrderIntents WHERE UpperId LIKE '%-GATE-%' AND Status = 'CONFIRMED'"));
+
+        if (blockedThenRecovered)
+        {
+            fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+            fixture.Context.ChangeTracker.Clear();
+            await fixture.Engine.ExecuteOnceAsync(token);
+            Assert.Equal(JourneyRuntimeStage.Blocked, (await ReadAsync(fixture, departing.JourneyId)).Stage);
+            // 人处理完，旅程回到离站那一步。
+            Execute(fixture,
+                "UPDATE JourneyRuntimes SET Stage = 'AwaitingDepartureSafety', BlockReasonCode = NULL, BlockReasonSince = NULL, " +
+                "Version = Version + 1 WHERE JourneyId = $id",
+                departing.JourneyId);
+        }
+        for (int round = 0; round < 2; round++)
+        {
+            fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+            fixture.Context.ChangeTracker.Clear();
+            Exception? thrown = await Record.ExceptionAsync(() => fixture.Engine.ExecuteOnceAsync(token));
+            Assert.Null(thrown);
+        }
+
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_GATE"));
+        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, (await ReadAsync(fixture, departing.JourneyId)).Stage);
+    }
+
+    /// <summary>
+    /// 前提（独立审查必修 3）：这台车恰好因旅程行冲突让开一次（2191），让开的正是 <paramref name="journeyId"/>。缺了它，引擎因别的原因
+    /// 没走到保存（没走到建单、没走到发送）时，后果断言一样成立，用例空绿。
+    /// </summary>
+    internal static void AssertYieldedOnceFor(RecordingLogger<ControlServer.Host.Runtime.JourneyRuntimeEngine> log, string journeyId)
+    {
+        string line = Assert.Single(
+            log.Entries.Select(entry => entry.Message),
+            message => message.Contains("control-server#357", StringComparison.Ordinal));
+        Assert.Contains(journeyId, line, StringComparison.Ordinal);
     }
 
     internal static void Execute(RuntimeFixture fixture, string sql, string journeyId, DateTimeOffset? at = null)

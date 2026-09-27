@@ -108,7 +108,9 @@ internal static class ZeroChangePin
         "LastReconciliationOutcomeAt",
         "LastReconciliationReceiptJson",
         // control-server#357: the journey row's concurrency token counts saves. A path that saves once more has not changed
-        // its outcome, and pinning the count would turn every such change red without saying anything about behaviour.
+        // its outcome, and pinning the count would turn every such change red without saying anything about behaviour. Keyed
+        // by column name like the rest: of the tables pinned here only JourneyRuntimes has a column named exactly Version
+        // (PolicyVersion and the like are other names and stay pinned in full).
         "Version",
     };
 

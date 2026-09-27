@@ -52,12 +52,72 @@ public sealed partial class MultiVehicleExecutionTests
         Assert.Equal(
             journeys.Select(row => row.JourneyId == writtenJourneyId ? InboundCode : JourneyRuntimeEngine.CheckpointWaitReason),
             journeys.Select(row => codes[row.JourneyId]));
-        Assert.Single(fixture.EngineLog.Entries, entry => entry.EventId.Id == 2191);
+        EventRecordingLogger<JourneyRuntimeEngine>.Entry yieldEntry = Assert.Single(fixture.EngineLog.Entries, entry => entry.EventId.Id == 2191);
+        Assert.Contains(writtenJourneyId!, yieldEntry.Message, StringComparison.Ordinal);
 
         fixture.Context.ChangeTracker.Clear();
         await fixture.Engine.ExecuteOnceAsync(token);
         Assert.All(
             await fixture.Context.JourneyRuntimes.AsNoTracking().ToArrayAsync(token),
             row => Assert.Equal(JourneyRuntimeEngine.CheckpointWaitReason, row.BlockReasonCode));
+    }
+
+    /// <summary>
+    /// 车 A 推进时改了车 B 的行（让站就是这样：<c>StationYield.StageTriggerAsync</c> 改的是 <c>active</c> 里 B 那个实例），然后 A 让开
+    /// （control-server#357 独立审查必修 2）。A 替 B 做的那个没保存的改动撤回，B 仍被跟踪、这一轮照常推进。
+    /// </summary>
+    /// <remarks>
+    /// 修之前让开把所有挂着改动的条目一律解除跟踪：B 的实例脱离跟踪，轮到 B 时守护核不到它，它的码写不进库。
+    /// </remarks>
+    [Fact]
+    public async Task AVehicleThatYieldsWithdrawsWhatItStagedOnAnotherVehiclesRowAndThatVehicleStillAdvances()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        bool journeysRead = false;
+        string? yieldingJourneyId = null;
+        string? otherJourneyId = null;
+        JourneyRowLostUpdateTests.OnceAfterReading interleaver = new(text =>
+        {
+            if (text.Contains("\"JourneyRuntimes\"", StringComparison.Ordinal) &&
+                text.Contains("<> 'Completed'", StringComparison.Ordinal))
+            {
+                journeysRead = true;
+                return false;
+            }
+            return journeysRead && text.Contains("FROM \"SessionRecoveries\"", StringComparison.Ordinal);
+        });
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(commands: interleaver);
+        await fixture.Engine.ExecuteOnceAsync(token);
+        fixture.Riot.MovementState = RiotMovementStates.WaitForCheckpoint;
+        fixture.Context.ChangeTracker.Clear();
+
+        // 第一次读会话行时正在推进的是 active 里的第一台（按受理时刻排，同时刻按读出的顺序）。
+        interleaver.Arm(() =>
+        {
+            JourneyRuntimeRow[] tracked = [.. fixture.Context.ChangeTracker.Entries<JourneyRuntimeRow>()
+                .Select(entry => entry.Entity).OrderBy(row => row.CreatedAt)];
+            yieldingJourneyId = tracked[0].JourneyId;
+            otherJourneyId = tracked[1].JourneyId;
+            tracked[1].YieldTriggeredAt = fixture.Clock.GetUtcNow();
+            tracked[1].YieldTriggeredByVehicleKey = tracked[0].VehicleKey;
+            using ControlServerDbContext inbound = new(
+                new DbContextOptionsBuilder<ControlServerDbContext>()
+                    .UseSqlite(fixture.Context.Database.GetDbConnection()).Options);
+            JourneyRuntimeRow row = inbound.JourneyRuntimes.Single(item => item.JourneyId == yieldingJourneyId);
+            row.SetBlockReason("LoadCancellationResult_NOT_RECONCILED", fixture.Clock.GetUtcNow());
+            inbound.SaveChanges();
+        });
+        Exception? thrown = await Record.ExceptionAsync(() => fixture.Engine.ExecuteOnceAsync(token));
+
+        Assert.Equal(1, interleaver.Fired);
+        Assert.Null(thrown);
+        EventRecordingLogger<JourneyRuntimeEngine>.Entry yieldEntry =
+            Assert.Single(fixture.EngineLog.Entries, entry => entry.EventId.Id == 2191);
+        Assert.Contains(yieldingJourneyId!, yieldEntry.Message, StringComparison.Ordinal);
+        JourneyRuntimeRow other = await fixture.Context.JourneyRuntimes.AsNoTracking()
+            .SingleAsync(row => row.JourneyId == otherJourneyId, token);
+        Assert.Equal(
+            (JourneyRuntimeEngine.CheckpointWaitReason, (DateTimeOffset?)null),
+            (other.BlockReasonCode, other.YieldTriggeredAt));
     }
 }

@@ -46,3 +46,22 @@
   - **阶段**一条没有护栏了，写明是有意保留的纵深防御：阶段一变就是旅程行被写，版本必然跟着变；要让它单独起作用只能绕开保存钩子，
     那正是 `JourneyRowWriteArchitectureTests` 禁止的。
   - **归属**一条照旧只在与需求组合时有护栏（R23）；**取消**一条照旧单删就红（R5）。
+
+## 独立审查之后（PR #370 issuecomment-5856084438）
+
+- `red/02-review-fixes-at-73ea9f87.txt`：本轮新写的测试文件原样拷到上一轮 head `73ea9f87`（稀疏 worktree，用完即删）上跑，
+  红 4 条、绿 14 条，红的正是四条必修的用例（读到的）：
+  - 必修 1（两格）：`Actual: BusinessIdentityConflictException: Movement identity is already bound to different intent content.`——
+    建单后的保存冲突，下一轮起每一轮都抛；
+  - 必修 2：`Expected ("VEHICLE_WAITING_AT_CHECKPOINT", null)`，`Actual (null, null)`——A 让开时 B 的实例被一并解除跟踪，B 的码没落库；
+  - 必修 4：追加没被拒（期望 `BusinessIdentityConflictException`）——事务里的复核读到的是本轮开头跟踪着的旧实例。
+  补了前提断言（必修 3）的三条在旧 head 上照样绿，说明前提本来就成立，现在它们会在前提不成立时红。
+- `green/05-review-fixes-reverse-validation.txt`：在修后代码上把每一处修复单独撤回（脚本 `scripts/mutate_multi.py`，
+  带过滤范围、失败断言行号、`dotnet test` 退出码）：
+  - R1a 意图按新的 now 生成：必修 1 两格红在重放那一轮抛出（332 行，`Assert.Null(thrown)` 那一次 await）；
+  - R1b 建单后不撤守护：必修 1 两格红在「让开那一轮结束时关卡意图已记 CONFIRMED」（314 行）。这一条第一次跑是**存活**的——
+    `ReconcileOrCreateAsync` 每次先向 RIoT 按单号对账，所以不会建第二张单；它丢的是建单之后那次记录（确认与派车审计），
+    只有断言记录本身才看得见，于是补了 314 行那一句，再跑即红；
+  - R2 让开时解除所有条目：必修 2 那条红（`MultiVehicleExecutionTests.JourneyCommit.cs:119`）；
+  - R4 追加复核读回带跟踪：必修 4 那条红（`Batch7JourneyAppendPersistenceTests.cs:168`）。
+- 前一轮的反向验证 `green/02` 用的脚本是 `scripts/mutate.py`（只打印失败用例名）。

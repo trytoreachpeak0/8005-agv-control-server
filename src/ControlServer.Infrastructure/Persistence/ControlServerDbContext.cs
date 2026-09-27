@@ -78,6 +78,11 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
     /// before the RIoT create, an outbound message before it goes out -- and a token on the journey row alone would not stop
     /// those: the inbound could block the journey after the round read it, and the order intent would still be saved and the
     /// order created. With the row guarded, the first save after such a commit fails before anything leaves this server.
+    /// <para>
+    /// The price: while it is set, a save that would otherwise change nothing on the journey row still updates it (the version).
+    /// The runtime takes it off once an external side effect has happened (the RIoT create of a leg), so the saves that record
+    /// that effect are never thrown away by it; the row's own changes after that still meet the token.
+    /// </para>
     /// </remarks>
     public string? GuardedJourneyId { get; set; }
 

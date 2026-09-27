@@ -122,12 +122,13 @@ public sealed partial class JourneyRuntimeEngine(
             "Vehicle {AgvId}'s sublot entry {SubmissionId} for demand {DemandId} lost to a change made while the iteration " +
             "read it (the demand ended or was held for recovery, or a cancellation opened at its stop); no load was " +
             "commanded, and the next iteration judges the entry afresh.");
-    private static readonly Action<ILogger, string, string, Exception?> LogYieldedToJourneyCommit =
-        LoggerMessage.Define<string, string>(
+    private static readonly Action<ILogger, string, string, string, Exception?> LogYieldedToJourneyCommit =
+        LoggerMessage.Define<string, string, string>(
             LogLevel.Information,
             new EventId(2191, nameof(LogYieldedToJourneyCommit)),
-            "Vehicle {AgvId}'s journey {JourneyId} was written by someone else after this iteration read it; nothing this " +
-            "iteration decided for it was saved or sent, and the next iteration reads it afresh (control-server#357).");
+            "Vehicle {AgvId}'s journey {JourneyId} yielded this iteration: journey {ConflictingJourneyIds} was written by " +
+            "someone else after this iteration read it. What it had not saved was withdrawn; the next iteration reads it " +
+            "afresh (control-server#357).");
     private static readonly Action<ILogger, string, string, string, DateTimeOffset, Exception?> LogStationTimeoutDoorNotClosed =
         LoggerMessage.Define<string, string, string, DateTimeOffset>(
             LogLevel.Warning,
@@ -533,11 +534,21 @@ public sealed partial class JourneyRuntimeEngine(
         // Vehicles are advanced before free ones are served, and a journey created this round is
         // not advanced until the next one. With one vehicle that is exactly the old shape -- either
         // it had a journey and only advanced, or it had none and only discovered.
+        HashSet<string> yielded = new(StringComparer.Ordinal);
         foreach (JourneyRuntimeRow runtime in active)
         {
             // control-server#357：这台车这一轮的决定都出自上面那一次读。入站在那之后提交了这一行（取消收尾、保持阻断……），
-            // 守护让这台车推进期间的每一次保存都先核这一行的版本，第一次保存就失败、什么都没落库也没发出去；这台车这一轮让开，
-            // 下一轮按新行重判。只让这一台让开：别的车的推进与这次提交无关，整轮抛掉会让一台车的入站拖住全车队。
+            // 守护让这台车推进期间的每一次保存都先核这一行的版本，第一次保存就失败；这台车这一轮让开，下一轮按新行重判。
+            // 只让这一台让开：别的车的推进与这次提交无关，整轮抛掉会让一台车的入站拖住全车队。
+            //
+            // 这一行已经不在跟踪里（前面某台车让开时它的实例被丢了）就这一轮跳过：不跟踪的行守护核不到，推进照样会存意图、发消息、
+            // 调 RIoT，而旅程行自己的改动一样都存不下（独立审查必修 2）。
+            if (dbContext.Entry(runtime).State == EntityState.Detached)
+            {
+                yielded.Add(runtime.AgvId);
+                continue;
+            }
+            TrackedBeforeAdvance before = TrackedBeforeAdvance.Take(dbContext);
             dbContext.GuardedJourneyId = runtime.JourneyId;
             try
             {
@@ -559,7 +570,8 @@ public sealed partial class JourneyRuntimeEngine(
             }
             catch (DbUpdateConcurrencyException conflict) when (JourneyRowConflict.Is(conflict))
             {
-                YieldToJourneyCommit(runtime);
+                YieldToJourneyCommit(runtime, before, conflict);
+                yielded.Add(runtime.AgvId);
             }
             finally
             {
@@ -590,6 +602,9 @@ public sealed partial class JourneyRuntimeEngine(
             .Where(row => row.Stage == JourneyRuntimeStage.Blocked || IsStalledOrderReason(row.BlockReasonCode))
             .Select(row => row.AgvId)
             .ToHashSet(StringComparer.Ordinal);
+        // 这一轮让开的车（control-server#357）：手里那份旅程是旧读，此刻库里的它可能已经收尾或转了阻塞。这一轮不把它当可追加的车去问，
+        // 下一轮按新行重判；它仍算 busy，不会被当空闲车派。
+        blocked.UnionWith(yielded);
         FleetVehicle[] underWay = roster.Vehicles
             .Where(vehicle => busy.Contains(vehicle.AgvId) && !blocked.Contains(vehicle.AgvId) &&
                               !heldByForeignOrder.Contains(vehicle.AgvId))
@@ -1250,9 +1265,21 @@ public sealed partial class JourneyRuntimeEngine(
                     return;
                 }
 
-                OrderIntent gateIntent = JourneyPlanBuilder.LegIntent(runtime, nextStop, now);
+                // 这一段腿已经存过意图就沿用它的时刻（control-server#357 独立审查必修 1）：意图存下之后推进可能在任何一步停下——
+                // 让开、重启——下一轮重放到这里，意图若按新的 now 生成，就与已存的那一份对不上，AuthorizeMovementAsync 每一轮都抛，
+                // 这台车之后的车全都不再推进。
+                DateTimeOffset? legIntentCreatedAt = await dbContext.OrderIntents.AsNoTracking()
+                    .Where(row => row.UpperId == nextStop.UpperId)
+                    .Select(row => (DateTimeOffset?)row.CreatedAt)
+                    .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+                OrderIntent gateIntent = JourneyPlanBuilder.LegIntent(runtime, nextStop, legIntentCreatedAt ?? now);
                 await new WireToGateStore(dbContext).AuthorizeMovementAsync(
                     gateIntent, safety, now, cancellationToken).ConfigureAwait(false);
+                // 建单之前最后一次受守护的保存：这台车暂存的一切落库，旅程行的版本在这里最后核一次——入站在这之前写了它，就在这里让开，
+                // 单没建。意图已存、重放时沿用，所以这次保存之后撤掉守护：建单是外部副作用，记录它的保存不能再因守护被丢掉。
+                // 旅程行自己之后的改动（阶段前移）照旧吃令牌，冲突了下一轮重放，重放只对账、不再建第二张单。
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                dbContext.GuardedJourneyId = null;
                 MovementDispatchResult dispatch = await movementDispatch.ReconcileOrCreateAsync(
                     nextStop.UpperId, cancellationToken).ConfigureAwait(false);
                 runtime.ConsumedSafetyResultMessageId = await FindSafetyResultMessageIdAsync(
@@ -4193,24 +4220,64 @@ public sealed partial class JourneyRuntimeEngine(
     /// </para>
     /// </remarks>
     /// <summary>
-    /// 这台车这一轮让开（control-server#357）：失败的那次保存什么都没写，它之前暂存、还没保存的改动也一并丢掉，旅程行不再跟踪，
-    /// 这一轮后面再读到它（等人监看）读的是库里的新行。
+    /// 这台车这一轮让开（control-server#357）：失败的那次保存什么都没写；这台车推进期间暂存、还没保存的改动撤回到推进之前，
+    /// 推进期间才开始跟踪的条目不再跟踪，这台车的旅程行不再跟踪——这一轮后面再读到它（等人监看）读的是库里的新行。
     /// </summary>
     /// <remarks>
-    /// 丢掉的只能是这台车的：前面的车每一台都在自己推进的末尾保存过，暂存着的都是这一台这一轮做的决定。已经发出去的东西不在其中——
-    /// 出站消息与 RIoT 建单都排在一次保存之后，而守护让那次保存先失败。
+    /// <para>
+    /// <b>只撤这台车的，而且只撤没保存的</b>（独立审查必修 2）。车 A 推进时会改车 B 的行（让站，<c>StationYield.StageTriggerAsync</c>
+    /// 改的就是 <c>active</c> 里 B 那个实例）；先前这里把所有挂着改动的条目一律解除跟踪，A 一让开，B 的实例就脱离跟踪，轮到 B 时守护核不到它。
+    /// 现在推进之前拍一份快照：快照里的条目若还挂着未保存的改动，就恢复成快照时的值与状态；已经保存成功的保持原样，与库一致。
+    /// </para>
+    /// <para>
+    /// <b>已经发生的外部副作用不在撤回之列。</b>出站消息在一次保存之后才发；RIoT 建单之前有一次受守护的保存（离站那一段），建单之后撤掉守护，
+    /// 记录它的保存不再因守护而丢——只有旅程行自己的改动还吃令牌，失败了下一轮重放，重放沿用已存意图（独立审查必修 1）。
+    /// </para>
     /// </remarks>
-    private void YieldToJourneyCommit(JourneyRuntimeRow runtime)
+    private void YieldToJourneyCommit(
+        JourneyRuntimeRow runtime,
+        TrackedBeforeAdvance before,
+        DbUpdateConcurrencyException conflict)
     {
-        foreach (EntityEntry entry in dbContext.ChangeTracker.Entries().ToArray())
+        before.Restore(dbContext);
+        dbContext.Entry(runtime).State = EntityState.Detached;
+        string conflicting = string.Join(
+            ",",
+            conflict.Entries.Select(entry => entry.Entity).OfType<JourneyRuntimeRow>()
+                .Select(row => row.JourneyId).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal));
+        LogYieldedToJourneyCommit(logger, runtime.AgvId, runtime.JourneyId, conflicting, null);
+    }
+
+    /// <summary>一台车推进之前被跟踪的每一个条目：它的状态与此刻的值。</summary>
+    private sealed class TrackedBeforeAdvance
+    {
+        private readonly List<(EntityEntry Entry, EntityState State, PropertyValues Values)> entries;
+
+        private TrackedBeforeAdvance(List<(EntityEntry Entry, EntityState State, PropertyValues Values)> entries) =>
+            this.entries = entries;
+
+        public static TrackedBeforeAdvance Take(ControlServerDbContext context) =>
+            new([.. context.ChangeTracker.Entries().Select(entry => (entry, entry.State, entry.CurrentValues.Clone()))]);
+
+        public void Restore(ControlServerDbContext context)
         {
-            if (entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+            HashSet<object> known = entries.Select(item => item.Entry.Entity).ToHashSet(ReferenceEqualityComparer.Instance);
+            foreach (EntityEntry entry in context.ChangeTracker.Entries().ToArray())
             {
-                entry.State = EntityState.Detached;
+                if (!known.Contains(entry.Entity))
+                {
+                    entry.State = EntityState.Detached;
+                }
+            }
+            foreach ((EntityEntry entry, EntityState state, PropertyValues values) in entries)
+            {
+                if (entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+                {
+                    entry.CurrentValues.SetValues(values);
+                    entry.State = state;
+                }
             }
         }
-        dbContext.Entry(runtime).State = EntityState.Detached;
-        LogYieldedToJourneyCommit(logger, runtime.AgvId, runtime.JourneyId, null);
     }
 
     private static bool IsTransportFailure(Exception failure)
