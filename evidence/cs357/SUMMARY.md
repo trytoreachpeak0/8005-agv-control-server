@@ -65,3 +65,5 @@
   - R2 让开时解除所有条目：必修 2 那条红（`MultiVehicleExecutionTests.JourneyCommit.cs:119`）；
   - R4 追加复核读回带跟踪：必修 4 那条红（`Batch7JourneyAppendPersistenceTests.cs:168`）。
 - 前一轮的反向验证 `green/02` 用的脚本是 `scripts/mutate.py`（只打印失败用例名）。
+- `green/06-cs342-model-300-final-5c5641a1.txt`：合入集成分支（cs#276）之后的 head `5c5641a1` 上，同一组 300 个种子，结果与基点逐项相同；
+  每轮 11.8 ms（基点那次 13.8 ms），印证上一轮 19.4 ms 是当时本机磁盘忙造成的，不是本票的开销（读到的）。
