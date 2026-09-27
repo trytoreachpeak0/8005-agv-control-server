@@ -1,0 +1,24 @@
+xUnit.net v3 In-Process Runner v3.2.2+728c1dce01 (64-bit .NET 8.0.31)
+  Discovering: ControlServer.Tests
+  Discovered:  ControlServer.Tests
+  Starting:    ControlServer.Tests
+    [Test Assembly Cleanup Failure (C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs276-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll)] Xunit.Sdk.TestPipelineException
+      Assembly fixture type 'ControlServer.Tests.OutboundSchemaConformance' threw in DisposeAsync
+      ---- System.InvalidOperationException : Outbound schema conformance failed (exit 1); report in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs276-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\schema-conformance.
+      Schema conformance (protocol-v2.0.0 APPROVED_RELEASE): 97 lines, 97 distinct, 11 message types; 4 distinct violations, 4 of them not on file; 0 known-violation entries matched nothing; schema compilation 59464 ms, validation 2038 ms, in 4 process(es).
+      SCHEMA VIOLATION x1: Heartbeat sent by synthetic-peer OnboardPeerSession.Envelope <- OnboardPeerSession.HeartbeatAsync
+        #/payload/observedAt [additionalProperties] violates 'additionalProperties' actual: "2026-09-27T11:13:04.0497261+00:00"
+      SCHEMA VIOLATION x1: Heartbeat sent by synthetic-peer OnboardPeerSession.Envelope <- OnboardPeerSession.HeartbeatAsync
+        #/payload/observedAt [additionalProperties] violates 'additionalProperties' actual: "2026-09-27T11:13:12.6660678+00:00"
+      SCHEMA VIOLATION x1: Heartbeat sent by synthetic-peer OnboardPeerSession.Envelope <- OnboardPeerSession.HeartbeatAsync
+        #/payload/observedAt [additionalProperties] violates 'additionalProperties' actual: "2026-09-27T11:13:15.8117144+00:00"
+      SCHEMA VIOLATION x1: Heartbeat sent by synthetic-peer OnboardPeerSession.Envelope <- OnboardPeerSession.HeartbeatAsync
+        #/payload/observedAt [additionalProperties] violates 'additionalProperties' actual: "2026-09-27T11:13:24.3768538+00:00"
+      
+      Stack Trace:
+        --- End of stack trace from previous location ---
+        ----- Inner Stack Trace -----
+        tests\ControlServer.Tests\OutboundSchemaConformance.cs(83,0): at ControlServer.Tests.OutboundSchemaConformance.DisposeAsync()
+  Finished:    ControlServer.Tests (ID = 'f8ba1b415e206499cf4d4644e752bfa521ea1fd73323c53eec687456339a5e13')
+=== TEST EXECUTION SUMMARY ===
+   ControlServer.Tests  Total: 12, Errors: 1, Failed: 0, Skipped: 0, Not Run: 0, Time: 24.826s
