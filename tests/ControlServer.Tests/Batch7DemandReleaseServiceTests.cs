@@ -413,6 +413,51 @@ public sealed class Batch7DemandReleaseServiceTests
     /// <remarks>
     /// 读不到时规则入口的门让每条判据都说「仍合格」（审查 S1）。拿这个去清码，下一轮读到了又写回去，阻断开始时刻每轮重置。
     /// </remarks>
+    /// <summary>
+    /// 释放写拒绝码之前重读了旅程行，但重读与保存不在一个事务里：入站落在两者之间写下的码不能被盖掉（control-server#357）。
+    /// 冲突的那一轮这条旅程什么都不存、不重试，整轮不抛；下一轮按新行判——入站的码不是释放的码，照旧不盖。
+    /// </summary>
+    /// <remarks>
+    /// 入站的提交放在释放那次保存的拦截器里做：那是重读之后、<c>UPDATE</c> 之前唯一的缝。把冲突处理从 <c>RunOnceAsync</c> 里去掉，
+    /// 这一条红在整轮抛出。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task AJourneyWrittenBetweenTheRefusalsReadAndItsSaveKeepsWhatWasWritten()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
+        Assert.Null(before.BlockReasonCode);
+        LeaveTheMap(fixture);
+        CancellingGateway gateway = new(fixture.Clock, _ => { });
+        const string InboundCode = "LoadCancellationResult_NOT_RECONCILED";
+        bool injected = false;
+        fixture.SaveChanges.FailWhen = written =>
+        {
+            if (!injected && written.Contains("JourneyRuntimeRow.BlockReasonCode"))
+            {
+                injected = true;
+                JourneyRowLostUpdateTests.Execute(fixture,
+                    $"UPDATE JourneyRuntimes SET BlockReasonCode = '{InboundCode}', Version = Version + 1 WHERE JourneyId = $id",
+                    before.JourneyId);
+            }
+            return false;
+        };
+
+        Exception? thrown = await Record.ExceptionAsync(() => Service(fixture, gateway).RunOnceAsync(Token));
+        fixture.SaveChanges.FailWhen = null;
+
+        Assert.True(injected);
+        Assert.Null(thrown);
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Equal(InboundCode, (await fixture.RuntimeAsync(FirstDemandId)).BlockReasonCode);
+
+        Assert.Equal(DemandReleaseReasons.OrderCancelNotConfirmed,
+            Assert.Single(await Service(fixture, gateway).RunOnceAsync(Token)).Result);
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Equal(InboundCode, (await fixture.RuntimeAsync(FirstDemandId)).BlockReasonCode);
+    }
+
     [Fact]
     public async Task AFailedReadDoesNotClearARefusal()
     {

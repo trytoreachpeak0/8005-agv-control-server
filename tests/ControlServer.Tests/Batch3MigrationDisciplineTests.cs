@@ -74,6 +74,8 @@ public sealed class Batch3MigrationDisciplineTests
         "20260923115051_ForeignRiotOrders",
         // control-server#339：JourneyStops 加 WorklistRefills（本停靠的清单因离站期限重填多发了几版），默认 0；不动任何既有行。
         "20260923152943_JourneyStopWorklistRefills",
+        // control-server#357：JourneyRuntimes 加并发令牌 Version（这一行被保存了几次），默认 0；不动任何既有行。自己的断言在 JourneyRuntimeVersionMigrationTests。
+        "20260927113122_JourneyRuntimeVersion",
     ];
 
     private static readonly string[] Batch3Tables =

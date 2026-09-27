@@ -68,6 +68,19 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
     /// <summary>The clock the retention check reads.</summary>
     public TimeProvider AuditClock { get; set; } = TimeProvider.System;
 
+    /// <summary>
+    /// The journey whose tracked row the work under way was decided from; null when there is none (control-server#357).
+    /// While it is set, every save re-checks that row's <see cref="JourneyRuntimeRow.Version"/> and raises it, even a save
+    /// that changes nothing on the row.
+    /// </summary>
+    /// <remarks>
+    /// The runtime sets it for one vehicle's advance. Most of what an advance writes is not the journey row -- an order intent
+    /// before the RIoT create, an outbound message before it goes out -- and a token on the journey row alone would not stop
+    /// those: the inbound could block the journey after the round read it, and the order intent would still be saved and the
+    /// order created. With the row guarded, the first save after such a commit fails before anything leaves this server.
+    /// </remarks>
+    public string? GuardedJourneyId { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<AcceptedDemandRow>().HasKey(row => row.DemandId);
@@ -152,6 +165,8 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
         modelBuilder.Entity<JourneyRuntimeRow>().HasKey(row => row.JourneyId);
         modelBuilder.Entity<JourneyRuntimeRow>().HasIndex(row => row.DemandId);
         modelBuilder.Entity<JourneyRuntimeRow>().Property(row => row.Stage).HasConversion<string>();
+        // control-server#357: raised on every save by StampJourneyVersions, never by a writer.
+        modelBuilder.Entity<JourneyRuntimeRow>().Property(row => row.Version).IsConcurrencyToken();
         modelBuilder.Entity<AdmissionPolicyStateRow>().HasKey(row => row.Id);
         modelBuilder.Entity<AdmissionPolicyStateRow>().Property(row => row.Id).ValueGeneratedNever();
         modelBuilder.Entity<StationTaskTypeAdmissionRow>().HasKey(row => new { row.StationId, row.TaskType });
@@ -208,9 +223,30 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
         }
     }
 
+    /// <summary>
+    /// Raises <see cref="JourneyRuntimeRow.Version"/> on every journey row this save changes, and on the
+    /// <see cref="GuardedJourneyId"/> row even when the save changes nothing on it (control-server#357). After
+    /// <see cref="ReconcileJourneyWaits"/>, so the columns it adds count as a change. Computed from the original value, so a
+    /// save retried after it failed raises it by one, not two.
+    /// </summary>
+    private void StampJourneyVersions()
+    {
+        foreach (EntityEntry<JourneyRuntimeRow> entry in ChangeTracker.Entries<JourneyRuntimeRow>())
+        {
+            bool guarded = entry.State == EntityState.Unchanged &&
+                           string.Equals(entry.Entity.JourneyId, GuardedJourneyId, StringComparison.Ordinal);
+            if (entry.State == EntityState.Modified || guarded)
+            {
+                PropertyEntry<JourneyRuntimeRow, long> version = entry.Property(row => row.Version);
+                version.CurrentValue = version.OriginalValue + 1;
+            }
+        }
+    }
+
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
         ReconcileJourneyWaits();
+        StampJourneyVersions();
         AuditImmutabilityGuard.Enforce(ChangeTracker, AuditRetention, AuditClock.GetUtcNow());
         PublishedVersionImmutabilityGuard.Enforce(ChangeTracker);
         return base.SaveChanges(acceptAllChangesOnSuccess);
@@ -221,6 +257,7 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
         CancellationToken cancellationToken = default)
     {
         ReconcileJourneyWaits();
+        StampJourneyVersions();
         AuditImmutabilityGuard.Enforce(ChangeTracker, AuditRetention, AuditClock.GetUtcNow());
         PublishedVersionImmutabilityGuard.Enforce(ChangeTracker);
         return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
@@ -767,6 +804,33 @@ public sealed class JourneyRuntimeRow
 
     /// <summary>When the watch last logged this journey's wait; kept so a restart neither repeats nor loses the cadence.</summary>
     public DateTimeOffset? WaitingWarnedAt { get; set; }
+
+    /// <summary>
+    /// How many saves have written this row: the concurrency token that stops a writer from saving over a row it read before
+    /// someone else committed to it (control-server#357). Raised by <see cref="ControlServerDbContext"/> on every save that
+    /// changes the row, never by a writer, so no writer can forget it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Why there is one.</b> The inbound handling writes journeys inside the inbox's <c>BEGIN IMMEDIATE</c> transaction, so what
+    /// it reads is current. The runtime reads every open journey at the start of a round and saves each one after deciding --
+    /// after RIoT calls and after the other vehicles' advances. An operator's cancellation or a result that does not reconcile,
+    /// committed in between, was saved over: the reason it closed with went blank (real-rig run 35896134304), and a journey the
+    /// inbound had just blocked for manual recovery was carried on to its departure and its gate order.
+    /// </para>
+    /// <para>
+    /// A save whose original value no longer matches fails with a concurrency exception and writes nothing; the runtime yields
+    /// that vehicle for the round and reads it afresh in the next (<c>JourneyRuntimeEngine</c>). While a vehicle is advanced
+    /// every save the runtime makes also re-checks this row even if it changes nothing on it
+    /// (<see cref="ControlServerDbContext.GuardedJourneyId"/>), so a RIoT order is never created on the strength of a read that
+    /// has since been overtaken.
+    /// </para>
+    /// <para>
+    /// Not a business fact, so the zero-change pins leave it out: it counts saves, and a path that saves once more is not a
+    /// path whose outcome changed.
+    /// </para>
+    /// </remarks>
+    public long Version { get; private set; }
 
     /// <summary>
     /// Brings <see cref="WaitingSince"/> in line with the row as it is about to be saved: a wait that began starts at

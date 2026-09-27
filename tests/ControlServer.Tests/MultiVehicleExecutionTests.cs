@@ -965,12 +965,18 @@ public sealed partial class MultiVehicleExecutionTests
             Action<JourneyRuntimeOptions>? configure = null,
             IDispatchAdmissionCriterion? extraCriterion = null,
             bool withRouteGraph = false,
-            bool routeGraphOnInTransitChain = true)
+            bool routeGraphOnInTransitChain = true,
+            Microsoft.EntityFrameworkCore.Diagnostics.DbCommandInterceptor? commands = null)
         {
             SqliteConnection connection = new("Data Source=:memory:");
             await connection.OpenAsync(TestContext.Current.CancellationToken);
-            DbContextOptions<ControlServerDbContext> dbOptions =
-                new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options;
+            DbContextOptionsBuilder<ControlServerDbContext> builder =
+                new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection);
+            if (commands is not null)
+            {
+                builder.AddInterceptors(commands);
+            }
+            DbContextOptions<ControlServerDbContext> dbOptions = builder.Options;
             ControlServerDbContext context = new(dbOptions);
             await context.Database.MigrateAsync(TestContext.Current.CancellationToken);
             await TaskTypeStationRuntimeSeed.ActivateAsync(dbOptions, Now);

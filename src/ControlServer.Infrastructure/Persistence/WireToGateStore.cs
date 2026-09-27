@@ -1307,7 +1307,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         {
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (DbUpdateConcurrencyException)
+        catch (DbUpdateConcurrencyException failure) when (!JourneyRowConflict.Is(failure))
         {
             await RequireExactCommittedFreshAuthorizationAsync(authorization, cancellationToken)
                 .ConfigureAwait(false);
@@ -1471,7 +1471,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         {
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (DbUpdateConcurrencyException)
+        catch (DbUpdateConcurrencyException failure) when (!JourneyRowConflict.Is(failure))
         {
             throw new BusinessIdentityConflictException(
                 "A concurrent RIoT create decision consumed or invalidated the experimental authorization.");

@@ -71,6 +71,14 @@ namespace ControlServer.Tests;
 /// <c>JourneyStops</c> 行的四份看板基线本来就没动）。先算出该是多少再去对：十份各两行停靠，应有 20 处，实数 20 处
 /// （<c>evidence/l1/20260923-cs339-pins/SUMMARY.md</c>）。列插在 <c>Status</c> 之前，是 <c>EnsureCreated</c> 按属性声明顺序建表的结果。
 /// </para>
+/// <para>
+/// <b>control-server#357 给十份终结状态基线的 <c>JourneyRuntimes</c> 行各加了一段 <c>|Version=&lt;set&gt;</c>，其余逐字未动。</b>
+/// 那一票给旅程行加了并发令牌 <c>Version</c>，它数的是这一行被保存了几次，所以只钉「有没有值」（<see cref="SetOrNotOnly"/>）：
+/// 一条路径多存一次不是结果变了。判据与 cs#339 同一个形状：把新基线里的 <c>|Version=&lt;set&gt;</c> 删掉，与<b>集成分支上的</b>
+/// 旧基线（<c>fp/v2-impl@2ded1b38</c>）逐字相同。先算出该是多少：十份各一行旅程，应有 10 处，实数 10 处，十四份全部相同
+/// （<c>evidence/cs357/green/</c>）。这一列在集成分支上还不存在，所以录只能在本票分支上录；它不是「重录来变绿」，
+/// 撑着它的是与集成分支旧基线的逐字比对。
+/// </para>
 /// </remarks>
 internal static class ZeroChangePin
 {
@@ -99,6 +107,9 @@ internal static class ZeroChangePin
         "LastCreateReceiptJson",
         "LastReconciliationOutcomeAt",
         "LastReconciliationReceiptJson",
+        // control-server#357: the journey row's concurrency token counts saves. A path that saves once more has not changed
+        // its outcome, and pinning the count would turn every such change red without saying anything about behaviour.
+        "Version",
     };
 
     internal static async Task AssertMatchesAsync(

@@ -122,6 +122,12 @@ public sealed partial class JourneyRuntimeEngine(
             "Vehicle {AgvId}'s sublot entry {SubmissionId} for demand {DemandId} lost to a change made while the iteration " +
             "read it (the demand ended or was held for recovery, or a cancellation opened at its stop); no load was " +
             "commanded, and the next iteration judges the entry afresh.");
+    private static readonly Action<ILogger, string, string, Exception?> LogYieldedToJourneyCommit =
+        LoggerMessage.Define<string, string>(
+            LogLevel.Information,
+            new EventId(2191, nameof(LogYieldedToJourneyCommit)),
+            "Vehicle {AgvId}'s journey {JourneyId} was written by someone else after this iteration read it; nothing this " +
+            "iteration decided for it was saved or sent, and the next iteration reads it afresh (control-server#357).");
     private static readonly Action<ILogger, string, string, string, DateTimeOffset, Exception?> LogStationTimeoutDoorNotClosed =
         LoggerMessage.Define<string, string, string, DateTimeOffset>(
             LogLevel.Warning,
@@ -529,20 +535,36 @@ public sealed partial class JourneyRuntimeEngine(
         // it had a journey and only advanced, or it had none and only discovered.
         foreach (JourneyRuntimeRow runtime in active)
         {
+            // control-server#357：这台车这一轮的决定都出自上面那一次读。入站在那之后提交了这一行（取消收尾、保持阻断……），
+            // 守护让这台车推进期间的每一次保存都先核这一行的版本，第一次保存就失败、什么都没落库也没发出去；这台车这一轮让开，
+            // 下一轮按新行重判。只让这一台让开：别的车的推进与这次提交无关，整轮抛掉会让一台车的入站拖住全车队。
+            dbContext.GuardedJourneyId = runtime.JourneyId;
             try
             {
-                await AdvanceAsync(runtime, currentMap, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception error)
-                when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
-            {
-                // 先让这辆车在看板上说出「这一轮推进失败了」，再把异常原样抛出去：轮次仍然 fail-closed，
-                // 2002 仍然记的是原来那一个异常（control-server#331）。
-                await NameFailedAdvanceAsync(runtime, error, cancellationToken).ConfigureAwait(false);
-                throw;
-            }
+                try
+                {
+                    await AdvanceAsync(runtime, currentMap, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception error)
+                    when (!JourneyRowConflict.Is(error) &&
+                          (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested))
+                {
+                    // 先让这辆车在看板上说出「这一轮推进失败了」，再把异常原样抛出去：轮次仍然 fail-closed，
+                    // 2002 仍然记的是原来那一个异常（control-server#331）。
+                    await NameFailedAdvanceAsync(runtime, error, cancellationToken).ConfigureAwait(false);
+                    throw;
+                }
 
-            await ClearFailedAdvanceAsync(runtime, cancellationToken).ConfigureAwait(false);
+                await ClearFailedAdvanceAsync(runtime, cancellationToken).ConfigureAwait(false);
+            }
+            catch (DbUpdateConcurrencyException conflict) when (JourneyRowConflict.Is(conflict))
+            {
+                YieldToJourneyCommit(runtime);
+            }
+            finally
+            {
+                dbContext.GuardedJourneyId = null;
+            }
         }
 
 
@@ -4163,6 +4185,27 @@ public sealed partial class JourneyRuntimeEngine(
     /// <c>error is IOException or ObjectDisposedException</c>。
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// 这台车这一轮让开（control-server#357）：失败的那次保存什么都没写，它之前暂存、还没保存的改动也一并丢掉，旅程行不再跟踪，
+    /// 这一轮后面再读到它（等人监看）读的是库里的新行。
+    /// </summary>
+    /// <remarks>
+    /// 丢掉的只能是这台车的：前面的车每一台都在自己推进的末尾保存过，暂存着的都是这一台这一轮做的决定。已经发出去的东西不在其中——
+    /// 出站消息与 RIoT 建单都排在一次保存之后，而守护让那次保存先失败。
+    /// </remarks>
+    private void YieldToJourneyCommit(JourneyRuntimeRow runtime)
+    {
+        foreach (EntityEntry entry in dbContext.ChangeTracker.Entries().ToArray())
+        {
+            if (entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+            {
+                entry.State = EntityState.Detached;
+            }
+        }
+        dbContext.Entry(runtime).State = EntityState.Detached;
+        LogYieldedToJourneyCommit(logger, runtime.AgvId, runtime.JourneyId, null);
+    }
+
     private static bool IsTransportFailure(Exception failure)
     {
         for (Exception? current = failure; current is not null; current = current.InnerException)

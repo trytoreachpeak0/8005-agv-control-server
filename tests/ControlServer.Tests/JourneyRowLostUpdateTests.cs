@@ -17,7 +17,8 @@ namespace ControlServer.Tests;
 /// 引擎每轮开头带跟踪地读出全部未完成旅程，逐车推进、中间夹着 RIoT 调用，最后才存。第一步的普查（票面评论）是这句话的依据。
 /// </para>
 /// <para>
-/// <b>入站的提交用原始 SQL 做</b>，写的列与入站那条路径写的相同：这里要钉的是「引擎读之后、存之前有人提交了」，
+/// <b>入站的提交用原始 SQL 做</b>，写的列与入站那条路径写的相同，连同 <c>Version = Version + 1</c>——入站经 <c>SaveChanges</c>
+/// 保存，那里的钩子一定递增它，原始 SQL 替它做钩子做的事：这里要钉的是「引擎读之后、存之前有人提交了」，
 /// 不是入站怎样判定。交错点由拦截器在引擎这一轮的某次查询读完时触发，并断言它确实触发了、而且落在引擎读旅程行之后——
 /// 落在之前，引擎读到的就是新值，用例空绿。
 /// </para>
@@ -54,7 +55,8 @@ public sealed class JourneyRowLostUpdateTests
                 injected = true;
                 Execute(fixture,
                     "UPDATE JourneyRuntimes SET Stage = 'Completed', BlockReasonCode = 'CANCELLED_BY_OPERATOR', " +
-                    "BlockReasonSince = $at, WaitingSince = NULL, StationDepartureWaitStartedAt = NULL WHERE JourneyId = $id",
+                    "BlockReasonSince = $at, WaitingSince = NULL, StationDepartureWaitStartedAt = NULL, Version = Version + 1 " +
+                    "WHERE JourneyId = $id",
                     alarmed.JourneyId, closedAt);
             }
             return false;
@@ -98,8 +100,8 @@ public sealed class JourneyRowLostUpdateTests
         interleaver.Arm(() =>
         {
             Execute(fixture,
-                "UPDATE JourneyRuntimes SET Stage = 'Blocked', BlockReasonCode = 'LoadCancellationResult_NOT_RECONCILED' " +
-                "WHERE JourneyId = $id; UPDATE AcceptedDemands SET Status = 'RecoveryRequired' WHERE DemandId = '" +
+                "UPDATE JourneyRuntimes SET Stage = 'Blocked', BlockReasonCode = 'LoadCancellationResult_NOT_RECONCILED', " +
+                "Version = Version + 1 WHERE JourneyId = $id; UPDATE AcceptedDemands SET Status = 'RecoveryRequired' WHERE DemandId = '" +
                 DemandId + "'",
                 loading.JourneyId);
             outboxAtInjection = Count(fixture, "SELECT COUNT(*) FROM ProtocolOutbox");
@@ -118,6 +120,124 @@ public sealed class JourneyRowLostUpdateTests
         await fixture.Engine.ExecuteOnceAsync(token);
         Assert.Equal(JourneyRuntimeStage.Blocked, (await ReadAsync(fixture, loading.JourneyId)).Stage);
         Assert.Equal(0, Count(fixture, "SELECT COUNT(*) FROM OrderIntents WHERE UpperId LIKE '%-GATE-%'"));
+    }
+
+    /// <summary>
+    /// 车已答离站 SAFE，引擎这一轮要为关卡那一段建单；入站在引擎读完旅程行之后、读这条答复时写下 Blocked。
+    /// </summary>
+    /// <remarks>
+    /// 这一格钉的是 <see cref="ControlServerDbContext.GuardedJourneyId"/>，不是令牌本身：建单之前的那次保存存的是订单意图，
+    /// 旅程行此刻未必改过，只靠旅程行上的令牌就核不到它，入站的 Blocked 会被一张已经建好的单绕过去。守护让那次保存也先核旅程行，
+    /// 失败在建单之前。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task ABlockCommittedBeforeTheGateLegIsCreatedStopsTheOrder()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        bool journeysRead = false;
+        OnceAfterReading interleaver = new(text =>
+        {
+            if (text.Contains("\"JourneyRuntimes\"", StringComparison.Ordinal) &&
+                text.Contains("<> 'Completed'", StringComparison.Ordinal))
+            {
+                journeysRead = true;
+                return false;
+            }
+            return journeysRead && text.Contains("PreDepartureSafetyCheckResult", StringComparison.Ordinal);
+        });
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync(commands: interleaver);
+        fixture.Catalog.Set(fixture.Demand(DemandId, "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        JourneyRuntimeRow departing = await fixture.AdvanceToDepartureSafetyAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, departing.Stage);
+        await fixture.AddInboxAsync(
+            Guid.NewGuid().ToString("D"),
+            "PreDepartureSafetyCheckResult",
+            new
+            {
+                preDepartureSafetyCheckId = departing.PreDepartureSafetyCheckId,
+                outcome = "SAFE",
+                observedAt = fixture.Clock.GetUtcNow(),
+                safetyStateVersion = 7,
+                validUntil = fixture.Clock.GetUtcNow().AddMinutes(1),
+                safety = new
+                {
+                    departureSafe = true,
+                    vehicleStopped = true,
+                    allTargetSlotsLocked = true,
+                    allUnlockOutputsReset = true,
+                    unknownPresent = false,
+                    reasonCodes = Array.Empty<string>()
+                }
+            },
+            departing.PreDepartureSafetyCheckMessageId);
+        fixture.Context.ChangeTracker.Clear();
+
+        interleaver.Arm(() => Execute(fixture,
+            "UPDATE JourneyRuntimes SET Stage = 'Blocked', BlockReasonCode = 'LoadCancellationResult_NOT_RECONCILED', " +
+            "Version = Version + 1 WHERE JourneyId = $id",
+            departing.JourneyId));
+        await fixture.Engine.ExecuteOnceAsync(token);
+
+        Assert.Equal(1, interleaver.Fired);
+        Assert.Equal(0, fixture.Riot.CreateCount("TO_GATE"));
+        Assert.Equal(0, Count(fixture, "SELECT COUNT(*) FROM OrderIntents WHERE UpperId LIKE '%-GATE-%'"));
+        Assert.Equal(JourneyRuntimeStage.Blocked, (await ReadAsync(fixture, departing.JourneyId)).Stage);
+    }
+
+    /// <summary>
+    /// 真车载端挂着本服务端在途单时整段路报未就绪（<c>RecoveryRequired</c> / <c>DEPARTURE_SAFETY_NOT_READY</c>），引擎这台车走会话闸门
+    /// 那一支、只写码。入站在引擎读完旅程行之后以故障货物交接终结了这趟旅程（交接在车停在哪都会发生）。
+    /// </summary>
+    /// <remarks>
+    /// 闸门那一支是这台车在路上每一轮都走的路，写的是 <c>ONBOARD_SESSION_NOT_READY</c>；它同样出自这一轮开头的那一次读，
+    /// 同样不能盖掉入站的终结。形状照 <c>PickupDispatchPlanPastOwnOrderTests</c>：受理那一轮建单并确认，之后会话因这张单未就绪。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task AClosureCommittedWhileTheSessionIsNotReadyOnTheOwnOrderKeepsItsReason()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        bool journeysRead = false;
+        OnceAfterReading interleaver = new(text =>
+        {
+            if (text.Contains("\"JourneyRuntimes\"", StringComparison.Ordinal) &&
+                text.Contains("<> 'Completed'", StringComparison.Ordinal))
+            {
+                journeysRead = true;
+                return false;
+            }
+            return journeysRead && text.Contains("FROM \"SessionRecoveries\"", StringComparison.Ordinal);
+        });
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync(commands: interleaver);
+        fixture.Catalog.Set(fixture.Demand(DemandId, "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.Engine.ExecuteOnceAsync(token);
+        JourneyRuntimeRow travelling = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, travelling.Stage);
+        Assert.Equal("CONFIRMED", await fixture.IntentStatusAsync("TO_PICKUP"));
+        await PickupDispatchPlanPastOwnOrderTests.DropSessionOnOwnOrderAsync(fixture);
+        fixture.Context.ChangeTracker.Clear();
+
+        long outboxAtInjection = -1;
+        DateTimeOffset endedAt = fixture.Clock.GetUtcNow();
+        interleaver.Arm(() =>
+        {
+            Execute(fixture,
+                "UPDATE JourneyRuntimes SET Stage = 'Completed', BlockReasonCode = 'TERMINATED_BY_FAULT_CARGO_HANDOFF', " +
+                "BlockReasonSince = $at, WaitingSince = NULL, Version = Version + 1 WHERE JourneyId = $id",
+                travelling.JourneyId, endedAt);
+            outboxAtInjection = Count(fixture, "SELECT COUNT(*) FROM ProtocolOutbox");
+        });
+        await fixture.Engine.ExecuteOnceAsync(token);
+
+        Assert.Equal(1, interleaver.Fired);
+        JourneyRuntimeRow after = await ReadAsync(fixture, travelling.JourneyId);
+        Assert.Equal(
+            (JourneyRuntimeStage.Completed, "TERMINATED_BY_FAULT_CARGO_HANDOFF", (DateTimeOffset?)endedAt),
+            (after.Stage, after.BlockReasonCode, after.BlockReasonSince));
+        Assert.Equal(outboxAtInjection, Count(fixture, "SELECT COUNT(*) FROM ProtocolOutbox"));
     }
 
     internal static void Execute(RuntimeFixture fixture, string sql, string journeyId, DateTimeOffset? at = null)

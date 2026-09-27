@@ -97,6 +97,9 @@ public sealed class VehicleFaultRecoveryTests
         Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
         Assert.Equal("VEHICLE_FAULT_CLEARED_NOTHING_ON_BOARD", (await fixture.RuntimeAsync()).BlockReasonCode);
 
+        // 清除在另一个上下文里写了旅程行（版本随之加一）。生产上引擎每一轮都新开作用域、读到的是新行；这里引擎与测试共用一个
+        // 跨轮存活的上下文，不清跟踪就拿着清除之前的旧行去存，按 control-server#357 让开一轮，延迟之后的这一轮就建不了单。
+        fixture.Context.ChangeTracker.Clear();
         await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
 
         Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
@@ -104,6 +107,46 @@ public sealed class VehicleFaultRecoveryTests
         Assert.Equal(1, await JourneyCountAsync(fixture));
         VehicleFaultStateRow stillCleared = await FaultAsync(fixture);
         Assert.Equal((VehicleFaultLevel.None, 1L), (stillCleared.Level, stillCleared.FaultGeneration));
+    }
+
+    /// <summary>
+    /// 闸门挡住的是引擎，不是入站：清除在闸门外读、在闸门里重读再存，入站落在重读与保存之间写了这趟旅程（control-server#357）。
+    /// 那次保存失败、事务回滚、什么都没写，请求按「读完之后状态变了」拒绝，由人再来一次。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task AJourneyWrittenByTheInboundDuringTheClearanceRefusesItAndWritesNothing()
+    {
+        await using RuntimeFixture fixture = await FaultedOnTheWayToPickupAsync();
+        SiteRiot site = new(fixture);
+        JourneyRuntimeRow faulted = await fixture.RuntimeAsync();
+        await TickAndRunAsync(fixture);
+        await TickAndRunAsync(fixture);
+        Assert.Equal(VehicleFaultLevel.SuspectedBlocked, (await FaultAsync(fixture)).Level);
+        const string InboundCode = "LoadCancellationResult_NOT_RECONCILED";
+        bool injected = false;
+        fixture.SaveChanges.FailWhen = written =>
+        {
+            if (!injected && written.Contains("JourneyRuntimeRow.BlockReasonCode"))
+            {
+                injected = true;
+                JourneyRowLostUpdateTests.Execute(fixture,
+                    $"UPDATE JourneyRuntimes SET BlockReasonCode = '{InboundCode}', Version = Version + 1 WHERE JourneyId = $id",
+                    faulted.JourneyId);
+            }
+            return false;
+        };
+
+        VehicleFaultRecoveryDecision decision = await Service(fixture, site).RecoverAsync(Clear(fixture), Token);
+        fixture.SaveChanges.FailWhen = null;
+
+        Assert.True(injected);
+        Assert.Equal(VehicleFaultRecoveryOutcome.Refused, decision.Outcome);
+        Assert.Equal(["FAULT_RECOVERY_STATE_CHANGED"], decision.Reasons);
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        // 故障没被清掉：失败的那次保存与它的事务一起回滚。注入与清除共用这条连接、落在清除的事务里，所以它也一并回滚了——
+        // 旅程行上断不出入站写下的码，这里只断「清除什么都没写」。
+        Assert.Equal(VehicleFaultLevel.SuspectedBlocked, (await reading.VehicleFaultStates.AsNoTracking().SingleAsync(Token)).Level);
     }
 
     /// <summary>
