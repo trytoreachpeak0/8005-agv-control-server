@@ -4004,6 +4004,13 @@ public sealed partial class JourneyRuntimeEngine(
     /// 各条的护栏（evidence/cs362 反向验证）：第四条单删就红（R5）。需求一条单独就挡得住前两种；归属、阶段两条只在组合层面有护栏——
     /// 单删不红，与需求一起删才红（R23、R24）。它们留着，是为了不把正确性押在「终结与转阻塞总是连带写需求」上。
     /// </para>
+    /// <para>
+    /// <b>control-server#357 之后</b>（evidence/cs357/green/04）：写了旅程行的入站写（转阻塞必写 Blocked）在这之前就被旅程行的版本冲突挡住，
+    /// 这台车这一轮让开、走不到这里，所以 R24 不再红。<b>阶段</b>一条因此没有护栏了：阶段一变就是旅程行被写，版本必然跟着变，要让它单独
+    /// 起作用只能绕开保存钩子，而那正是 <c>JourneyRowWriteArchitectureTests</c> 禁止的——它是有意保留、没有护栏的纵深防御。
+    /// <b>需求</b>一条补了只写需求表的那一格（<c>ADemandHeldForRecoveryWithoutItsJourneyBeingWrittenIsNotLoaded</c>），单删它就红。
+    /// R5、R23 照旧。
+    /// </para>
     /// </remarks>
     private async Task<bool> EnteredDemandStillLoadableAsync(
         JourneyRuntimeRow runtime,

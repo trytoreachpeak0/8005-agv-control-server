@@ -194,6 +194,52 @@ public sealed class CancelledDemandLoadCommandTests
     }
 
     /// <summary>
+    /// 同一个窗口，插进来的只是乙的需求被转成 <c>RecoveryRequired</c>，旅程行与归属都不动（control-server#357 审查要的那一格）。
+    /// 旅程行没被写，版本冲突拦不住；只有写锁内复核里「需求仍是 Accepted」那一条挡得住。
+    /// </summary>
+    /// <remarks>
+    /// 今天没有入站路径只写需求：转阻塞连带写旅程行，终结连带写归属。所以这不是在复现一条现有的写法，而是给那一条复核一个自己的护栏——
+    /// control-server#357 之后「证明不了空」那一格被版本冲突先挡，它原来的护栏（cs#362 的 R24）没了。删掉「需求」那一条，这一条红。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task ADemandHeldForRecoveryWithoutItsJourneyBeingWrittenIsNotLoaded()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        EntryInterleaver interleaver = new(EntryInterleaver.AfterTheEntryWasJudgedUnanswered);
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync(commands: interleaver);
+        JourneyStopRow secondPickup = await ArriveAtTheSecondPickupAsync(fixture);
+        await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+        OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+            connection, new WireToGateStore(connection), fixture.Clock, new ConfigurationBuilder().Build(), fixture.Peer);
+        OnboardConnectionState state = Connection(fixture);
+        JourneyRuntimeRow runtime = await JourneyOfAsync(fixture, FirstDemandId);
+        await processor.ProcessAsync(
+            Envelope(fixture, EntryId, "SublotSubmitted", SecondStopEntry(fixture, secondPickup, runtime, SecondSublot)),
+            state,
+            token);
+        interleaver.Arm(() =>
+        {
+            JourneyRowLostUpdateTests.Execute(fixture,
+                $"UPDATE AcceptedDemands SET Status = 'RecoveryRequired' WHERE DemandId = '{SecondDemandId}' AND $id = $id",
+                runtime.JourneyId);
+            return Task.CompletedTask;
+        });
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.Equal(1, interleaver.Fired);
+        Assert.False(await AnsweredByALoadCommandAsync(fixture, EntryId), "需求已转 RecoveryRequired，乙仍被下了装货命令。");
+        Assert.Null(await fixture.Context.StationOperations.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.DemandId == SecondDemandId, token));
+        // 前提：挡住它的是复核（2190），不是版本冲突（2191）——旅程行在交错里确实没被写过。
+        Assert.DoesNotContain(
+            fixture.EngineLog.Entries, entry => entry.Message.Contains("control-server#357", StringComparison.Ordinal));
+        AssertTheRuntimeYieldedOnceFor(fixture, SecondDemandId);
+    }
+
+    /// <summary>
     /// 同一个窗口，插进来的是同站<b>丙</b>的扫码前取消被授权（它只用丙自己子批的录入去挡，乙的录入挡不住它）。乙的需求、归属、
     /// 阶段都不动，只有「本站没有开着的扫码前取消」这一条挡得住：取消要车证明整排仓位是空的，这时给乙开仓就是在证明进行中往里装。
     /// 这一轮不给乙下命令，本站被扣住直到车报结果。
