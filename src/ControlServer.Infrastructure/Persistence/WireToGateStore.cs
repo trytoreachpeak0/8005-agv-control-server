@@ -1909,6 +1909,9 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
+    public void ReleaseJourneyGuardBeforeExternalEffect() => dbContext.GuardedJourneyId = null;
+
     public async Task AuthorizeMovementAsync(
         OrderIntent intent, SafetyCheckObservation safety, DateTimeOffset now,
         CancellationToken cancellationToken)

@@ -1275,11 +1275,12 @@ public sealed partial class JourneyRuntimeEngine(
                 OrderIntent gateIntent = JourneyPlanBuilder.LegIntent(runtime, nextStop, legIntentCreatedAt ?? now);
                 await new WireToGateStore(dbContext).AuthorizeMovementAsync(
                     gateIntent, safety, now, cancellationToken).ConfigureAwait(false);
-                // 建单之前最后一次受守护的保存：这台车暂存的一切落库，旅程行的版本在这里最后核一次——入站在这之前写了它，就在这里让开，
-                // 单没建。意图已存、重放时沿用，所以这次保存之后撤掉守护：建单是外部副作用，记录它的保存不能再因守护被丢掉。
-                // 旅程行自己之后的改动（阶段前移）照旧吃令牌，冲突了下一轮重放，重放只对账、不再建第二张单。
+                // 暂存的一切在守护下落库。守护不在这里撤（增量复核必修 M1）：这之后建单之前还有一次按单号的 RIoT GET 与对账审计的保存，
+                // 那几次保存不碰旅程行、令牌核不到，入站在那段窗口里写的 Blocked 只有守护挡得住。撤守护的地方是派车服务：对账审计之后、
+                // 用掉「最多建一次」的计数之前（IMovementIntentStore.ReleaseJourneyGuardBeforeExternalEffect）。之后记录建单的保存不再因守护丢掉；
+                // 旅程行自己之后的改动（阶段前移）照旧吃令牌，冲突了下一轮重放，重放沿用已存意图、只对账，不建第二张单。
+                // 意图已确认时派车服务直接返回、不放开守护——那时没有外部副作用要发生。
                 await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-                dbContext.GuardedJourneyId = null;
                 MovementDispatchResult dispatch = await movementDispatch.ReconcileOrCreateAsync(
                     nextStop.UpperId, cancellationToken).ConfigureAwait(false);
                 runtime.ConsumedSafetyResultMessageId = await FindSafetyResultMessageIdAsync(
@@ -4230,8 +4231,9 @@ public sealed partial class JourneyRuntimeEngine(
     /// 现在推进之前拍一份快照：快照里的条目若还挂着未保存的改动，就恢复成快照时的值与状态；已经保存成功的保持原样，与库一致。
     /// </para>
     /// <para>
-    /// <b>已经发生的外部副作用不在撤回之列。</b>出站消息在一次保存之后才发；RIoT 建单之前有一次受守护的保存（离站那一段），建单之后撤掉守护，
-    /// 记录它的保存不再因守护而丢——只有旅程行自己的改动还吃令牌，失败了下一轮重放，重放沿用已存意图（独立审查必修 1）。
+    /// <b>已经发生的外部副作用不在撤回之列。</b>出站消息在一次保存之后才发；RIoT 建单之前，按单号的 GET 与对账审计都还在守护下，
+    /// 派车服务在用掉「最多建一次」的计数之前撤掉守护，记录建单的保存不再因守护而丢——只有旅程行自己的改动还吃令牌，失败了下一轮重放，
+    /// 重放沿用已存意图（独立审查必修 1、增量复核必修 M1）。
     /// </para>
     /// </remarks>
     private void YieldToJourneyCommit(

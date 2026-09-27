@@ -80,8 +80,9 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
     /// order created. With the row guarded, the first save after such a commit fails before anything leaves this server.
     /// <para>
     /// The price: while it is set, a save that would otherwise change nothing on the journey row still updates it (the version).
-    /// The runtime takes it off once an external side effect has happened (the RIoT create of a leg), so the saves that record
-    /// that effect are never thrown away by it; the row's own changes after that still meet the token.
+    /// The movement dispatch takes it off just before an external side effect (after the pre-create reconciliation audit,
+    /// before the at-most-once create counter is spent: <c>IMovementIntentStore.ReleaseJourneyGuardBeforeExternalEffect</c>),
+    /// so the saves that record that effect are never thrown away by it; the row's own changes after that still meet the token.
     /// </para>
     /// </remarks>
     public string? GuardedJourneyId { get; set; }

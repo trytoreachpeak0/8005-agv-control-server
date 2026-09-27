@@ -3,8 +3,11 @@ import sys, shutil, subprocess, os
 f, flt, label = sys.argv[1:4]
 pairs = list(zip(sys.argv[4::2], sys.argv[5::2]))
 s = open(f, encoding='utf-8', newline='').read()
-for old, _ in pairs:
+for old, new in pairs:
     n = s.count(old)
+    print(f'[{label}] file: {f}')
+    print(f'[{label}] before: ' + ' | '.join(x.strip() for x in old.splitlines()))
+    print(f'[{label}] after:  ' + (' | '.join(x.strip() for x in new.splitlines()) or '(removed)'))
     print(f'[{label}] target occurrences: {n}')
     if n != 1:
         sys.exit(2)
@@ -25,7 +28,7 @@ try:
     lines = t.stdout.splitlines()
     for i, l in enumerate(lines):
         st = l.strip()
-        if st.startswith('Failed ControlServer') or 'Passed!' in l or 'Failed!' in l:
+        if st.startswith('Failed ControlServer') or 'Passed!' in l or 'Failed!' in l or st.startswith('Total tests:') or st.startswith('Passed:') or st.startswith('Failed:'):
             print(f'[{label}] ' + st)
             if st.startswith('Failed ControlServer'):
                 for k in lines[i+1:i+40]:

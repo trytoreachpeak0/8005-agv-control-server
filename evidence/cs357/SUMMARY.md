@@ -67,3 +67,15 @@
 - 前一轮的反向验证 `green/02` 用的脚本是 `scripts/mutate.py`（只打印失败用例名）。
 - `green/06-cs342-model-300-final-5c5641a1.txt`：合入集成分支（cs#276）之后的 head `5c5641a1` 上，同一组 300 个种子，结果与基点逐项相同；
   每轮 11.8 ms（基点那次 13.8 ms），印证上一轮 19.4 ms 是当时本机磁盘忙造成的，不是本票的开销（读到的）。
+
+## 增量复核之后（PR #370 最新评论，必修 M1）
+
+- 上一版在意图存下之后立刻撤守护，建单前还有一次按单号的 RIoT GET 与对账审计、占用计数、记建单开始三次保存，都不碰旅程行、令牌核不到，
+  入站在这段窗口写的 Blocked 挡不住建单（复核员探针：`386ee008` 上 c=1，`73ea9f87` 上 c=0）。现在守护由派车服务在对账审计之后、
+  用掉「最多建一次」的计数之前撤（`IMovementIntentStore.ReleaseJourneyGuardBeforeExternalEffect`，接口默认空操作，`WireToGateStore` 实现），
+  普通建单与实验授权建单两处都调；引擎里提前撤守护那一句删掉。补建确认（`EnsureMovementConfirmedAsync`）与自建单重建两条路径调的是同一个
+  `ReconcileOrCreateAsync`，一起受益（读到的）。
+- `green/07-incremental-m1-reverse-validation.txt`（脚本 `scripts/mutate_multi.py`，这版带替换前后原文、`Total tests:` 格式、退出码）：
+  - M1-early-release（撤守护挪回意图存下之后）：新用例 `ABlockCommittedAtThePreCreateReconciliationStopsTheGateOrder` 红在
+    `CreateCount("TO_GATE") == 0`（401 行），7 条里只红这一条；
+  - M1-never-release（放开守护变成空操作）：`AJourneyWrittenAfterTheGateOrderWasCreated…` 两格红在「让开那一轮结束时关卡意图已记 CONFIRMED」（314 行）。

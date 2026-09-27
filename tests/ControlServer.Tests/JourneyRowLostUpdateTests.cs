@@ -338,6 +338,71 @@ public sealed class JourneyRowLostUpdateTests
     }
 
     /// <summary>
+    /// 入站写落在建单之前的对账审计那次保存上（增量复核必修 M1）：意图已存、RIoT 已按单号查过没有这张单，接下来就要建。
+    /// 这几次保存不碰旅程行、令牌核不到，只有守护挡得住——单不能建，这台车恰好让开一次，Blocked 保住。
+    /// </summary>
+    /// <remarks>
+    /// 上一版在意图存下之后立刻撤守护，这一格就漏了：车让开了，关卡单照样建了一张（复核员的探针 <c>c=1</c>）。守护现在由派车服务在对账审计之后、
+    /// 用掉建单计数之前撤。把撤守护挪回意图存下之后，这一条红。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task ABlockCommittedAtThePreCreateReconciliationStopsTheGateOrder()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(DemandId, "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        JourneyRuntimeRow departing = await fixture.AdvanceToDepartureSafetyAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, departing.Stage);
+        await fixture.AddInboxAsync(
+            Guid.NewGuid().ToString("D"),
+            "PreDepartureSafetyCheckResult",
+            new
+            {
+                preDepartureSafetyCheckId = departing.PreDepartureSafetyCheckId,
+                outcome = "SAFE",
+                observedAt = fixture.Clock.GetUtcNow(),
+                safetyStateVersion = 7,
+                validUntil = fixture.Clock.GetUtcNow().AddMinutes(1),
+                safety = new
+                {
+                    departureSafe = true,
+                    vehicleStopped = true,
+                    allTargetSlotsLocked = true,
+                    allUnlockOutputsReset = true,
+                    unknownPresent = false,
+                    reasonCodes = Array.Empty<string>()
+                }
+            },
+            departing.PreDepartureSafetyCheckMessageId);
+        fixture.Context.ChangeTracker.Clear();
+
+        bool injected = false;
+        fixture.SaveChanges.FailWhen = written =>
+        {
+            // 这一轮第一次写派车审计、单还没建：建单之前的对账审计。
+            if (!injected && fixture.Riot.CreateCount("TO_GATE") == 0 &&
+                written.Any(column => column.StartsWith("RiotDispatchAuditEventRow.", StringComparison.Ordinal)))
+            {
+                injected = true;
+                Execute(fixture,
+                    "UPDATE JourneyRuntimes SET Stage = 'Blocked', BlockReasonCode = 'LoadCancellationResult_NOT_RECONCILED', " +
+                    "Version = Version + 1 WHERE JourneyId = $id",
+                    departing.JourneyId);
+            }
+            return false;
+        };
+        await fixture.Engine.ExecuteOnceAsync(token);
+        fixture.SaveChanges.FailWhen = null;
+
+        Assert.True(injected);
+        AssertYieldedOnceFor(fixture.EngineLog, departing.JourneyId);
+        Assert.Equal(0, fixture.Riot.CreateCount("TO_GATE"));
+        Assert.Equal(JourneyRuntimeStage.Blocked, (await ReadAsync(fixture, departing.JourneyId)).Stage);
+    }
+
+    /// <summary>
     /// 前提（独立审查必修 3）：这台车恰好因旅程行冲突让开一次（2191），让开的正是 <paramref name="journeyId"/>。缺了它，引擎因别的原因
     /// 没走到保存（没走到建单、没走到发送）时，后果断言一样成立，用例空绿。
     /// </summary>
