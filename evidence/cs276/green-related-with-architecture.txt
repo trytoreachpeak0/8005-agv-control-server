@@ -1,0 +1,16 @@
+xUnit.net v3 In-Process Runner v3.2.2+728c1dce01 (64-bit .NET 8.0.31)
+  Discovering: ControlServer.Tests
+  Discovered:  ControlServer.Tests
+  Starting:    ControlServer.Tests
+    ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsWhileTheServerIsStillWritingIntoTheDeadConnection [OUTPUT] 旧代次离开路由表：t=5.5s
+    ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsWhileTheServerIsStillWritingIntoTheDeadConnection [OUTPUT] 第 1 次，t=0.0s 开始：AnsweredButNotRoutable 第 2 代
+    ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsWhileTheServerIsStillWritingIntoTheDeadConnection [OUTPUT] 第 2 次，t=3.0s 开始：AnsweredButNotRoutable 第 3 代
+    ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsWhileTheServerIsStillWritingIntoTheDeadConnection [OUTPUT] 第 3 次，t=6.1s 开始：Routable 第 4 代
+    ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsWhileTheServerIsStillWritingIntoTheDeadConnection [OUTPUT] 断电后最长的一次推送：5320 ms
+    ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsAfterAPowerCutThatLeftTheOldConnectionHalfOpen [OUTPUT] 旧代次离开路由表：t=5.5s
+    ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsAfterAPowerCutThatLeftTheOldConnectionHalfOpen [OUTPUT] 第 1 次，t=0.0s 开始：AnsweredButNotRoutable 第 2 代
+    ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsAfterAPowerCutThatLeftTheOldConnectionHalfOpen [OUTPUT] 第 2 次，t=3.0s 开始：AnsweredButNotRoutable 第 3 代
+    ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsAfterAPowerCutThatLeftTheOldConnectionHalfOpen [OUTPUT] 第 3 次，t=6.0s 开始：Routable 第 4 代
+  Finished:    ControlServer.Tests (ID = 'f8ba1b415e206499cf4d4644e752bfa521ea1fd73323c53eec687456339a5e13')
+=== TEST EXECUTION SUMMARY ===
+   ControlServer.Tests  Total: 90, Errors: 0, Failed: 0, Skipped: 0, Not Run: 0, Time: 25.282s

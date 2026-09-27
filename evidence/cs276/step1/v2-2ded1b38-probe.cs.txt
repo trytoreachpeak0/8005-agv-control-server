@@ -1,0 +1,361 @@
+using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
+using System.Reflection;
+using System.Text;
+using System.Text.Json;
+using ControlServer.Domain;
+using ControlServer.FakeOnboard;
+using ControlServer.Host.Transport;
+using ControlServer.Infrastructure.Persistence;
+using ControlServer.TestDoubles;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+
+namespace ControlServer.Tests;
+
+// PROBE for control-server#276, not for commit: an onboard that lost power leaves a half-open connection
+// (no FIN, no RST) and reconnects on a new one. How long until the new session is routable?
+public sealed class Cs276HalfOpenProbe(ITestOutputHelper output)
+{
+    private const string AgvId = "AGV-CS276-01";
+    private const string CredentialVariable = "CONTROL_SERVER_ONBOARD_CREDENTIAL_CS276";
+    private const string Credential = "cs276-probe-credential";
+
+    public static TheoryData<string, bool, int, int> Shapes => new()
+    {
+        // shape, drain server writes after the cut, push interval ms (0 = none), push bytes
+        { "S1 drain, no pushes", true, 0, 0 },
+        { "S2 drain, pushes to the old session every 200 ms", true, 200, 512 },
+        { "S3 no drain (send buffer fills), 64 KiB pushes every 50 ms", false, 50, 65536 },
+        { "S4 drain, no pushes, onboard retries at once", true, 0, -1 },
+        { "S5 COUNTERFACTUAL idle window 1 h, drain, no pushes", true, 0, -2 },
+    };
+
+    [Theory(Explicit = true)]
+    [MemberData(nameof(Shapes))]
+    public async Task ReconnectAfterPowerCut(string shape, bool drain, int pushIntervalMs, int pushBytes)
+    {
+        await using Rig rig = await Rig.StartAsync(output, pushBytes == -2 ? TimeSpan.FromHours(1) : null);
+        await rig.Onboard.StartAsync(rig.Lifetime.Token).WaitAsync(TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
+        await WaitAttachedAsync(rig, 1, TimeSpan.FromSeconds(5));
+        // Let a couple of heartbeats flow, as a live session does.
+        await Task.Delay(TimeSpan.FromSeconds(2.5), TestContext.Current.CancellationToken);
+
+        using CancellationTokenSource pushing = new();
+        Task pusher = Task.CompletedTask;
+        int pushed = 0, refused = 0;
+        if (pushIntervalMs > 0)
+        {
+            byte[] padding = Encoding.ASCII.GetBytes(new string('x', Math.Max(0, pushBytes)));
+            pusher = Task.Run(async () =>
+            {
+                while (!pushing.IsCancellationRequested)
+                {
+                    string line = JsonSerializer.Serialize(new
+                    {
+                        messageType = "FaultCargoRecoveryCommand", messageId = Guid.NewGuid().ToString("D"),
+                        agvId = AgvId, sessionGeneration = 1L, pad = Encoding.ASCII.GetString(padding)
+                    }) + "\n";
+                    try
+                    {
+                        using CancellationTokenSource one = new(TimeSpan.FromSeconds(30));
+                        await rig.Peer.SendAsync(Encoding.UTF8.GetBytes(line), one.Token);
+                        pushed++;
+                    }
+                    catch (Exception) { refused++; }
+                    try { await Task.Delay(pushIntervalMs, pushing.Token); } catch (OperationCanceledException) { }
+                }
+            }, TestContext.Current.CancellationToken);
+        }
+
+        // Power cut: the vehicle's end vanishes; the server's socket sees nothing.
+        rig.Relay.CutPower(drain);
+        await rig.Onboard.DisconnectAsync();
+        Stopwatch clock = Stopwatch.StartNew();
+        output.WriteLine($"[{shape}] power cut at t=0");
+
+        int attempts = 0;
+        long? routableGeneration = null;
+        TimeSpan retryDelay = pushBytes == -1 ? TimeSpan.Zero : TimeSpan.FromSeconds(2);
+        while (clock.Elapsed < TimeSpan.FromSeconds(pushBytes == -2 ? 40 : 60))
+        {
+            attempts++;
+            try
+            {
+                using CancellationTokenSource attempt = new(TimeSpan.FromSeconds(4));
+                await rig.Onboard.ReconnectAsync().WaitAsync(attempt.Token);
+                long generation = rig.Engine.Snapshot().State.SessionGeneration;
+                // The onboard read SessionReadiness; is the server keeping the connection and routing to it?
+                if (await WaitAttachedAsync(rig, generation, TimeSpan.FromSeconds(1)) &&
+                    await StaysConnectedAsync(rig, TimeSpan.FromSeconds(3)))
+                {
+                    routableGeneration = generation;
+                    output.WriteLine($"  attempt {attempts} at t={clock.Elapsed.TotalSeconds:F1}s: routable, generation {generation}");
+                    break;
+                }
+                output.WriteLine($"  attempt {attempts} at t={clock.Elapsed.TotalSeconds:F1}s: handshake answered but server dropped it (gen {generation})");
+            }
+            catch (Exception error)
+            {
+                output.WriteLine($"  attempt {attempts} at t={clock.Elapsed.TotalSeconds:F1}s: failed {error.GetType().Name}: {error.Message}");
+            }
+            await rig.Onboard.DisconnectAsync();
+            await Task.Delay(retryDelay, TestContext.Current.CancellationToken);
+        }
+        TimeSpan total = clock.Elapsed;
+        await pushing.CancelAsync();
+        await pusher;
+        output.WriteLine($"[{shape}] routable={routableGeneration is not null} after {total.TotalSeconds:F1}s, {attempts} attempts; old-session pushes ok={pushed} refused={refused}");
+        foreach (string log in rig.Logs) output.WriteLine("  server log: " + log);
+        Assert.NotNull(routableGeneration);
+    }
+
+    private static async Task<bool> WaitAttachedAsync(Rig rig, long generation, TimeSpan within)
+    {
+        Stopwatch s = Stopwatch.StartNew();
+        while (s.Elapsed < within)
+        {
+            if (rig.AttachedGeneration() == generation) return true;
+            await Task.Delay(20);
+        }
+        return false;
+    }
+
+    private static async Task<bool> StaysConnectedAsync(Rig rig, TimeSpan forHowLong)
+    {
+        Stopwatch s = Stopwatch.StartNew();
+        while (s.Elapsed < forHowLong)
+        {
+            if (!rig.Onboard.IsConnected) return false;
+            await Task.Delay(50);
+        }
+        return true;
+    }
+
+    private sealed class ListLogger(List<string> sink, string category) : ILogger
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            lock (sink) sink.Add($"{DateTime.Now:HH:mm:ss.fff} {logLevel} {category}[{eventId.Id}] {formatter(state, exception)} {exception?.GetType().Name}: {exception?.Message}");
+        }
+    }
+
+    private sealed class Rig : IAsyncDisposable
+    {
+        private readonly SqliteConnection _connection;
+        private readonly ControlServerDbContext _context;
+        private readonly ServiceProvider _provider;
+        private readonly OnboardTcpServer _server;
+        public readonly List<string> Logs = [];
+
+        private Rig(SqliteConnection c, ControlServerDbContext ctx, ServiceProvider p, OnboardTcpServer s, OnboardPeer peer,
+            CutRelay relay, CommandEngine<FakeOnboardState> engine, OnboardPeerSession onboard, List<string> logs)
+        {
+            _connection = c; _context = ctx; _provider = p; _server = s; Peer = peer; Relay = relay; Engine = engine; Onboard = onboard; Logs = logs;
+        }
+
+        public OnboardPeer Peer { get; }
+        public CutRelay Relay { get; }
+        public CommandEngine<FakeOnboardState> Engine { get; }
+        public OnboardPeerSession Onboard { get; }
+        public CancellationTokenSource Lifetime { get; } = new(TimeSpan.FromSeconds(120));
+
+        public long? AttachedGeneration()
+        {
+            FieldInfo field = typeof(OnboardPeer).GetField("_connections", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            FieldInfo gate = typeof(OnboardPeer).GetField("_gate", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            object dictionary = field.GetValue(Peer)!;
+            lock (gate.GetValue(Peer)!)
+            {
+                object[] args = [AgvId, null!];
+                bool found = (bool)dictionary.GetType().GetMethod("TryGetValue")!.Invoke(dictionary, args)!;
+                if (!found) return null;
+                object tuple = args[1];
+                return (long)tuple.GetType().GetField("Item2")!.GetValue(tuple)!;
+            }
+        }
+
+        public static async Task<Rig> StartAsync(ITestOutputHelper output, TimeSpan? idle)
+        {
+            Environment.SetEnvironmentVariable(CredentialVariable, Credential);
+            SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(TestContext.Current.CancellationToken);
+            ControlServerDbContext context = new(new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options);
+            await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+            IConfiguration configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?> { ["OnboardTransport:CredentialEnvironmentVariable"] = CredentialVariable })
+                .Build();
+            OnboardPeer peer = new();
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, new WireToGateStore(context), TimeProvider.System, configuration, peer);
+            ServiceCollection services = new();
+            services.AddScoped(_ => processor);
+            ServiceProvider provider = services.BuildServiceProvider();
+            int port = ReserveFreePort();
+            List<string> logs = [];
+            // The production constructor: SessionLiveness.Timeout, the system clock.
+            OnboardTcpServer server = idle is null
+                ? new(
+                    Options.Create(new OnboardTransportOptions { Enabled = true, ListenAddress = "127.0.0.1", Port = port }),
+                    provider.GetRequiredService<IServiceScopeFactory>(), peer,
+                    new TypedLogger(new ListLogger(logs, "OnboardTcpServer")))
+                : new(
+                    Options.Create(new OnboardTransportOptions { Enabled = true, ListenAddress = "127.0.0.1", Port = port }),
+                    provider.GetRequiredService<IServiceScopeFactory>(), peer,
+                    new TypedLogger(new ListLogger(logs, "OnboardTcpServer")), TimeProvider.System, idle.Value);
+            await server.StartAsync(TestContext.Current.CancellationToken);
+            CutRelay relay = CutRelay.Start(port);
+            CommandEngine<FakeOnboardState> engine = new("cs276-probe", () => new FakeOnboardState());
+            OnboardPeerSession onboard = new(engine,
+                new FakeOnboardOptions { Port = relay.Port, AgvId = AgvId, CredentialEnvironmentVariable = CredentialVariable },
+                SlotStateSeed.Read(new ConfigurationBuilder().Build()));
+            return new Rig(connection, context, provider, server, peer, relay, engine, onboard, logs);
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await Onboard.DisposeAsync();
+            await Relay.DisposeAsync();
+            await _server.StopAsync(CancellationToken.None);
+            _server.Dispose();
+            await _provider.DisposeAsync();
+            await _context.DisposeAsync();
+            await _connection.DisposeAsync();
+            Lifetime.Dispose();
+        }
+
+        private static int ReserveFreePort()
+        {
+            TcpListener probe = new(IPAddress.Loopback, 0);
+            probe.Start();
+            try { return ((IPEndPoint)probe.LocalEndpoint).Port; } finally { probe.Stop(); }
+        }
+    }
+
+    private sealed class TypedLogger(ILogger inner) : ILogger<OnboardTcpServer>
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => inner.BeginScope(state);
+        public bool IsEnabled(LogLevel logLevel) => inner.IsEnabled(logLevel);
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+            inner.Log(logLevel, eventId, state, exception, formatter);
+    }
+
+    /// <summary>
+    /// Byte relay. CutPower freezes the current connection: nothing more reaches the server from the vehicle
+    /// side and the server-side socket is never closed (no FIN, no RST). With drain, what the server writes is
+    /// read and discarded (the kernel accepting into a send buffer); without, it is not read at all.
+    /// </summary>
+    public sealed class CutRelay : IAsyncDisposable
+    {
+        private readonly TcpListener _listener;
+        private readonly int _serverPort;
+        private readonly CancellationTokenSource _stopping = new();
+        private readonly List<IDisposable> _owned = [];
+        private volatile Link? _current;
+        private Task _running = Task.CompletedTask;
+
+        private CutRelay(TcpListener listener, int serverPort) { _listener = listener; _serverPort = serverPort; }
+
+        public int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
+
+        public static CutRelay Start(int serverPort)
+        {
+            TcpListener listener = new(IPAddress.Loopback, 0);
+            listener.Start();
+            CutRelay relay = new(listener, serverPort);
+            relay._running = relay.AcceptAsync();
+            return relay;
+        }
+
+        public void CutPower(bool drain)
+        {
+            Link link = _current ?? throw new InvalidOperationException("no connection");
+            link.Cut = true;
+            link.Drain = drain;
+        }
+
+        private async Task AcceptAsync()
+        {
+            try
+            {
+                while (!_stopping.IsCancellationRequested)
+                {
+                    TcpClient vehicle = await _listener.AcceptTcpClientAsync(_stopping.Token);
+                    TcpClient server = new();
+                    lock (_owned) { _owned.Add(vehicle); _owned.Add(server); }
+                    await server.ConnectAsync(IPAddress.Loopback, _serverPort, _stopping.Token);
+                    Link link = new(vehicle, server);
+                    _current = link;
+                    _ = link.RunAsync(_stopping.Token);
+                }
+            }
+            catch (Exception) { }
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await _stopping.CancelAsync();
+            _listener.Stop();
+            lock (_owned) foreach (IDisposable d in _owned) d.Dispose();
+            try { await _running; } catch (Exception) { }
+        }
+
+        private sealed class Link(TcpClient vehicle, TcpClient server)
+        {
+            public volatile bool Cut;
+            public volatile bool Drain = true;
+
+            public async Task RunAsync(CancellationToken token)
+            {
+                Task up = PumpUpAsync(token);
+                Task down = PumpDownAsync(token);
+                await Task.WhenAll(up, down);
+            }
+
+            private async Task PumpUpAsync(CancellationToken token)
+            {
+                byte[] buffer = new byte[65536];
+                try
+                {
+                    NetworkStream from = vehicle.GetStream();
+                    NetworkStream to = server.GetStream();
+                    while (true)
+                    {
+                        int n = await from.ReadAsync(buffer, token);
+                        if (Cut) return; // never forward, never close the server side
+                        if (n == 0) { server.Client.Shutdown(SocketShutdown.Send); return; }
+                        await to.WriteAsync(buffer.AsMemory(0, n), token);
+                    }
+                }
+                catch (Exception) when (Cut) { }
+                catch (Exception) { if (!Cut) server.Dispose(); }
+            }
+
+            private async Task PumpDownAsync(CancellationToken token)
+            {
+                byte[] buffer = new byte[65536];
+                try
+                {
+                    NetworkStream from = server.GetStream();
+                    while (true)
+                    {
+                        while (Cut && !Drain) await Task.Delay(100, token);
+                        int n = await from.ReadAsync(buffer, token);
+                        if (n == 0) { if (!Cut) vehicle.Dispose(); return; }
+                        if (Cut) continue; // swallowed
+                        await vehicle.GetStream().WriteAsync(buffer.AsMemory(0, n), token);
+                    }
+                }
+                catch (Exception) when (Cut) { }
+                catch (Exception) { vehicle.Dispose(); }
+            }
+        }
+    }
+}

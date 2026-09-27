@@ -220,9 +220,11 @@ public sealed class OnboardPeerSession(
             while (await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
             {
                 FakeOnboardState state = engine.Snapshot().State;
+                // Exactly the two fields Heartbeat.schema.json allows. An observedAt here was refused by the
+                // outbound schema gate (additionalProperties) the first time a test kept this peer alive past
+                // its first beat (control-server#276); the server never read it.
                 await SendLineAsync(Envelope("Heartbeat", NewId(), null, state.SessionGeneration, new
                 {
-                    observedAt = DateTimeOffset.UtcNow,
                     capabilityVersion = 1L,
                     safetyStateVersion = state.SafetyStateVersion
                 }), cancellationToken).ConfigureAwait(false);

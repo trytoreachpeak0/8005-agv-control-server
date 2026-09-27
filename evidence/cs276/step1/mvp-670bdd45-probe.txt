@@ -1,0 +1,45 @@
+670bdd45f146e187ff9974c0b4adb4f59cefde37
+xUnit.net v3 In-Process Runner v3.2.2+728c1dce01 (64-bit .NET 8.0.31)
+  Discovering: ControlServer.Tests
+  Discovered:  ControlServer.Tests
+  Starting:    ControlServer.Tests
+    ControlServer.Tests.Cs276HalfOpenProbe.ReconnectAfterPowerCut(shape: "M0 control: old connection closed cleanly", cut: False) [OUTPUT] [M0 control: old connection closed cleanly] old session gone at t=0
+    ControlServer.Tests.Cs276HalfOpenProbe.ReconnectAfterPowerCut(shape: "M0 control: old connection closed cleanly", cut: False) [OUTPUT]   attempt 1 at t=0.0s: session established, generation 2
+    ControlServer.Tests.Cs276HalfOpenProbe.ReconnectAfterPowerCut(shape: "M0 control: old connection closed cleanly", cut: False) [OUTPUT] [M0 control: old connection closed cleanly] established=True after 0.0s, 1 attempts
+    ControlServer.Tests.Cs276HalfOpenProbe.ReconnectAfterPowerCut(shape: "M1 power cut: old connection half-open", cut: True) [OUTPUT] [M1 power cut: old connection half-open] old session gone at t=0
+    ControlServer.Tests.Cs276HalfOpenProbe.ReconnectAfterPowerCut(shape: "M1 power cut: old connection half-open", cut: True) [OUTPUT]   attempt 1 at t=4.0s: TaskCanceledException: A task was canceled.
+    ControlServer.Tests.Cs276HalfOpenProbe.ReconnectAfterPowerCut(shape: "M1 power cut: old connection half-open", cut: True) [OUTPUT]   attempt 2 at t=10.0s: TaskCanceledException: A task was canceled.
+    ControlServer.Tests.Cs276HalfOpenProbe.ReconnectAfterPowerCut(shape: "M1 power cut: old connection half-open", cut: True) [OUTPUT]   attempt 3 at t=16.0s: TaskCanceledException: A task was canceled.
+    ControlServer.Tests.Cs276HalfOpenProbe.ReconnectAfterPowerCut(shape: "M1 power cut: old connection half-open", cut: True) [OUTPUT]   attempt 4 at t=22.1s: TaskCanceledException: A task was canceled.
+    ControlServer.Tests.Cs276HalfOpenProbe.ReconnectAfterPowerCut(shape: "M1 power cut: old connection half-open", cut: True) [OUTPUT]   attempt 5 at t=28.1s: TaskCanceledException: A task was canceled.
+    ControlServer.Tests.Cs276HalfOpenProbe.ReconnectAfterPowerCut(shape: "M1 power cut: old connection half-open", cut: True) [OUTPUT]   attempt 6 at t=34.1s: TaskCanceledException: A task was canceled.
+    ControlServer.Tests.Cs276HalfOpenProbe.ReconnectAfterPowerCut(shape: "M1 power cut: old connection half-open", cut: True) [OUTPUT]   attempt 7 at t=40.1s: TaskCanceledException: A task was canceled.
+    ControlServer.Tests.Cs276HalfOpenProbe.ReconnectAfterPowerCut(shape: "M1 power cut: old connection half-open", cut: True) [OUTPUT]   attempt 8 at t=46.1s: TaskCanceledException: A task was canceled.
+    ControlServer.Tests.Cs276HalfOpenProbe.ReconnectAfterPowerCut(shape: "M1 power cut: old connection half-open", cut: True) [OUTPUT]   attempt 9 at t=52.1s: TaskCanceledException: A task was canceled.
+    ControlServer.Tests.Cs276HalfOpenProbe.ReconnectAfterPowerCut(shape: "M1 power cut: old connection half-open", cut: True) [OUTPUT]   attempt 10 at t=58.2s: TaskCanceledException: A task was canceled.
+    ControlServer.Tests.Cs276HalfOpenProbe.ReconnectAfterPowerCut(shape: "M1 power cut: old connection half-open", cut: True) [OUTPUT] [M1 power cut: old connection half-open] established=False after 60.2s, 10 attempts
+    ControlServer.Tests.Cs276HalfOpenProbe.ReconnectAfterPowerCut(shape: "M1 power cut: old connection half-open", cut: True) [FAIL]
+      Assert.NotNull() Failure: Value of type 'Nullable<long>' does not have a value
+      Stack Trace:
+        tests\ControlServer.Tests\Cs276HalfOpenProbe.cs(84,0): at ControlServer.Tests.Cs276HalfOpenProbe.ReconnectAfterPowerCut(String shape, Boolean cut)
+        tests\ControlServer.Tests\Cs276HalfOpenProbe.cs(84,0): at ControlServer.Tests.Cs276HalfOpenProbe.ReconnectAfterPowerCut(String shape, Boolean cut)
+        tests\ControlServer.Tests\Cs276HalfOpenProbe.cs(84,0): at ControlServer.Tests.Cs276HalfOpenProbe.ReconnectAfterPowerCut(String shape, Boolean cut)
+        tests\ControlServer.Tests\Cs276HalfOpenProbe.cs(84,0): at ControlServer.Tests.Cs276HalfOpenProbe.ReconnectAfterPowerCut(String shape, Boolean cut)
+        tests\ControlServer.Tests\Cs276HalfOpenProbe.cs(84,0): at ControlServer.Tests.Cs276HalfOpenProbe.ReconnectAfterPowerCut(String shape, Boolean cut)
+        --- End of stack trace from previous location ---
+      Output:
+        [M1 power cut: old connection half-open] old session gone at t=0
+          attempt 1 at t=4.0s: TaskCanceledException: A task was canceled.
+          attempt 2 at t=10.0s: TaskCanceledException: A task was canceled.
+          attempt 3 at t=16.0s: TaskCanceledException: A task was canceled.
+          attempt 4 at t=22.1s: TaskCanceledException: A task was canceled.
+          attempt 5 at t=28.1s: TaskCanceledException: A task was canceled.
+          attempt 6 at t=34.1s: TaskCanceledException: A task was canceled.
+          attempt 7 at t=40.1s: TaskCanceledException: A task was canceled.
+          attempt 8 at t=46.1s: TaskCanceledException: A task was canceled.
+          attempt 9 at t=52.1s: TaskCanceledException: A task was canceled.
+          attempt 10 at t=58.2s: TaskCanceledException: A task was canceled.
+        [M1 power cut: old connection half-open] established=False after 60.2s, 10 attempts
+  Finished:    ControlServer.Tests (ID = '2d8a239e0f3e6eddee8b734c42ba581830b070f5c7078d4edacf2844ba9fca4e')
+=== TEST EXECUTION SUMMARY ===
+   ControlServer.Tests  Total: 2, Errors: 0, Failed: 1, Skipped: 0, Not Run: 0, Time: 67.355s
