@@ -1,0 +1,19 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:20.87]     ControlServer.Tests.GateHeldOnboardSendTests.AStuckWriteAndTheOneQueuedBehindItEndWithinTheTimeoutAndTheConnectionIsClosed [FAIL]
+  Failed ControlServer.Tests.GateHeldOnboardSendTests.AStuckWriteAndTheOneQueuedBehindItEndWithinTheTimeoutAndTheConnectionIsClosed [1 s]
+  Error Message:
+   a send after the timeout took 513 ms to fail: the connection was left open, so every further send waits out the timeout again
+  Stack Trace:
+     at ControlServer.Tests.GateHeldOnboardSendTests.AStuckWriteAndTheOneQueuedBehindItEndWithinTheTimeoutAndTheConnectionIsClosed() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\GateHeldOnboardSendTests.cs:line 229
+   at ControlServer.Tests.GateHeldOnboardSendTests.AStuckWriteAndTheOneQueuedBehindItEndWithinTheTimeoutAndTheConnectionIsClosed() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\GateHeldOnboardSendTests.cs:line 229
+--- End of stack trace from previous location ---
+  Standard Output Messages:
+ both ended after 512 ms, a later send after 513 ms; IOException / IOException / IOException
+
+
+
+Failed!  - Failed:     1, Passed:   132, Skipped:     0, Total:   133, Duration: 54 s - ControlServer.Tests.dll (net8.0)

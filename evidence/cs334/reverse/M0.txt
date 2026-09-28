@@ -1,0 +1,62 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:15.46]     ControlServer.Tests.GateHeldOnboardSendTests.TheConnectionWritesItsStreamInOnePlaceAndOnlyBehindTheWriteTimeout [FAIL]
+  Failed ControlServer.Tests.GateHeldOnboardSendTests.TheConnectionWritesItsStreamInOnePlaceAndOnlyBehindTheWriteTimeout [6 ms]
+  Error Message:
+   Assert.Contains() Failure: Sub-string not found
+String:    "internal sealed class OnboardPeerConnection : IAsy"···
+Not found: "send.WaitAsync(_writeTimeout"
+  Stack Trace:
+     at ControlServer.Tests.GateHeldOnboardSendTests.TheConnectionWritesItsStreamInOnePlaceAndOnlyBehindTheWriteTimeout() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\GateHeldOnboardSendTests.cs:line 298
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+[xUnit.net 00:00:50.94]     ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: null) [FAIL]
+  Failed ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: null) [34 s]
+  Error Message:
+   车还在发心跳、只是不读，30 秒内旧代次一直没离开路由表：卡住的写没有上限，这条连接永远不会被放掉（control-server#334）。
+聋了之后车往服务端送了 6875 字节；最长的一次推送 29889 ms；旧代次离开路由表：没有；推送的失败：
+  Stack Trace:
+     at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 191
+   at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 207
+--- End of stack trace from previous location ---
+  Standard Output Messages:
+ 聋了之后车往服务端送了 6875 字节；最长的一次推送 29889 ms；旧代次离开路由表：没有；推送的失败：
+
+
+[xUnit.net 00:00:56.97]     ControlServer.Tests.GateHeldOnboardSendTests.AVehicleWhoseSocketStopsReadingDoesNotHoldTheGateForTheRestOfTheFleet [FAIL]
+  Failed ControlServer.Tests.GateHeldOnboardSendTests.AVehicleWhoseSocketStopsReadingDoesNotHoldTheGateForTheRestOfTheFleet [41 s]
+  Error Message:
+   the round was still stuck on one vehicle's socket after 41.1 s, holding the gate; the other vehicle's clearance, which waited 20 s for it, got [FAULT_RECOVERY_RUNTIME_BUSY]
+  Stack Trace:
+     at ControlServer.Tests.GateHeldOnboardSendTests.AVehicleWhoseSocketStopsReadingDoesNotHoldTheGateForTheRestOfTheFleet() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\GateHeldOnboardSendTests.cs:line 90
+   at ControlServer.Tests.GateHeldOnboardSendTests.AVehicleWhoseSocketStopsReadingDoesNotHoldTheGateForTheRestOfTheFleet() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\GateHeldOnboardSendTests.cs:line 95
+   at ControlServer.Tests.GateHeldOnboardSendTests.AVehicleWhoseSocketStopsReadingDoesNotHoldTheGateForTheRestOfTheFleet() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\GateHeldOnboardSendTests.cs:line 95
+--- End of stack trace from previous location ---
+[xUnit.net 00:01:25.04]     ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: 1000) [FAIL]
+  Failed ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: 1000) [34 s]
+  Error Message:
+   车还在发心跳、只是不读，30 秒内旧代次一直没离开路由表：卡住的写没有上限，这条连接永远不会被放掉（control-server#334）。
+聋了之后车往服务端送了 6877 字节；最长的一次推送 29884 ms；旧代次离开路由表：没有；推送的失败：
+  Stack Trace:
+     at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 191
+   at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 207
+--- End of stack trace from previous location ---
+  Standard Output Messages:
+ 聋了之后车往服务端送了 6877 字节；最长的一次推送 29884 ms；旧代次离开路由表：没有；推送的失败：
+
+
+[xUnit.net 00:01:26.99]     ControlServer.Tests.GateHeldOnboardSendTests.AStuckWriteAndTheOneQueuedBehindItEndWithinTheTimeoutAndTheConnectionIsClosed [FAIL]
+  Failed ControlServer.Tests.GateHeldOnboardSendTests.AStuckWriteAndTheOneQueuedBehindItEndWithinTheTimeoutAndTheConnectionIsClosed [30 s]
+  Error Message:
+   System.TimeoutException : The operation has timed out.
+  Stack Trace:
+     at ControlServer.Tests.GateHeldOnboardSendTests.<AStuckWriteAndTheOneQueuedBehindItEndWithinTheTimeoutAndTheConnectionIsClosed>g__EndedWith|6_1(Task send) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\GateHeldOnboardSendTests.cs:line 244
+   at ControlServer.Tests.GateHeldOnboardSendTests.<AStuckWriteAndTheOneQueuedBehindItEndWithinTheTimeoutAndTheConnectionIsClosed>g__FailureOf|6_0(Task send) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\GateHeldOnboardSendTests.cs:line 236
+   at ControlServer.Tests.GateHeldOnboardSendTests.AStuckWriteAndTheOneQueuedBehindItEndWithinTheTimeoutAndTheConnectionIsClosed() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\GateHeldOnboardSendTests.cs:line 210
+   at ControlServer.Tests.GateHeldOnboardSendTests.AStuckWriteAndTheOneQueuedBehindItEndWithinTheTimeoutAndTheConnectionIsClosed() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\GateHeldOnboardSendTests.cs:line 229
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     5, Passed:   128, Skipped:     0, Total:   133, Duration: 1 m 34 s - ControlServer.Tests.dll (net8.0)

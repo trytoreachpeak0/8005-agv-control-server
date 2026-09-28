@@ -1,0 +1,112 @@
+// TEMPORARY instrumentation for control-server#334 step 1. Never committed.
+#pragma warning disable
+using System.Diagnostics;
+using System.Reflection;
+using System.Runtime.ExceptionServices;
+
+namespace ControlServer.Application;
+
+public static class GateProbe
+{
+    private static readonly AsyncLocal<string?> Holder = new();
+    private static readonly string? OutFile = Environment.GetEnvironmentVariable("GATE_PROBE_FILE");
+    private static readonly object Sync = new();
+
+    static GateProbe()
+    {
+        if (OutFile is not null)
+        {
+            DiagnosticListener.AllListeners.Subscribe(new AllListeners());
+        }
+    }
+
+    public static bool Enabled => OutFile is not null;
+
+    public static IDisposable Mark(string holder)
+    {
+        string? previous = Holder.Value;
+        Holder.Value = previous is null ? holder : previous + ">" + holder;
+        Record("MARK:" + holder);
+        return new Undo(previous);
+    }
+
+    public static void Record(string what)
+    {
+        if (OutFile is null || Holder.Value is null)
+        {
+            return;
+        }
+        string stack = new StackTrace(1, false).ToString();
+        string test = Environment.GetEnvironmentVariable("GATE_PROBE_TEST") ?? "";
+        lock (Sync)
+        {
+            File.AppendAllText(OutFile, $"@@ {Holder.Value} | {what}\n{stack}\n");
+        }
+    }
+
+    public static T Wrap<T>(T inner) where T : class
+    {
+        if (OutFile is null || inner is null)
+        {
+            return inner!;
+        }
+        T proxy = DispatchProxy.Create<T, Proxy<T>>();
+        ((Proxy<T>)(object)proxy).Inner = inner;
+        return proxy;
+    }
+
+    public class Proxy<T> : DispatchProxy where T : class
+    {
+        public T Inner = default!;
+
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
+        {
+            Record($"{typeof(T).Name}.{targetMethod!.Name}");
+            try
+            {
+                return targetMethod.Invoke(Inner, args);
+            }
+            catch (TargetInvocationException error) when (error.InnerException is not null)
+            {
+                ExceptionDispatchInfo.Capture(error.InnerException).Throw();
+                throw;
+            }
+        }
+    }
+
+    private sealed class Undo(string? previous) : IDisposable
+    {
+        public void Dispose() => Holder.Value = previous;
+    }
+
+    private sealed class AllListeners : IObserver<DiagnosticListener>
+    {
+        public void OnNext(DiagnosticListener value)
+        {
+            if (value.Name == "HttpHandlerDiagnosticListener")
+            {
+                value.Subscribe(new HttpEvents());
+            }
+        }
+
+        public void OnError(Exception error) { }
+
+        public void OnCompleted() { }
+    }
+
+    private sealed class HttpEvents : IObserver<KeyValuePair<string, object?>>
+    {
+        public void OnNext(KeyValuePair<string, object?> value)
+        {
+            if (value.Key == "System.Net.Http.Request")
+            {
+                object? request = value.Value?.GetType().GetProperty("Request")?.GetValue(value.Value);
+                Record("http:" + (request as System.Net.Http.HttpRequestMessage)?.RequestUri);
+            }
+        }
+
+        public void OnError(Exception error) { }
+
+        public void OnCompleted() { }
+    }
+}

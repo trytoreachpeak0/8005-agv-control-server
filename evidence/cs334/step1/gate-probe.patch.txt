@@ -1,0 +1,260 @@
+diff --git a/src/ControlServer.Application/WireToGateOrchestration.cs b/src/ControlServer.Application/WireToGateOrchestration.cs
+index 00b6664c..f7f9552a 100644
+--- a/src/ControlServer.Application/WireToGateOrchestration.cs
++++ b/src/ControlServer.Application/WireToGateOrchestration.cs
+@@ -20,6 +20,7 @@ public enum DemandIntakeOutcome
+ 
+ public sealed class DemandIntakeService(IMesIngestCatalog catalog, IDemandAcceptanceStore store)
+ {
++    private readonly IMesIngestCatalog catalog = ControlServer.Application.GateProbe.Wrap(catalog);
+     public async Task<DemandIntakeOutcome> AcceptAsync(
+         AcceptedDemandSnapshot discovered,
+         OrderIntent orderIntent,
+@@ -258,7 +259,7 @@ public sealed class MovementDispatchService
+         RiotCreateDispatchPolicy createDispatchPolicy)
+     {
+         this.store = store;
+-        this.gateway = gateway;
++        this.gateway = ControlServer.Application.GateProbe.Wrap(gateway);
+         this.timeProvider = timeProvider;
+         this.experimentalAuthorizationSource = experimentalAuthorizationSource;
+         this.createDispatchPolicy = createDispatchPolicy;
+diff --git a/src/ControlServer.Host/Runtime/Commands/EmergencyStopSupervisor.cs b/src/ControlServer.Host/Runtime/Commands/EmergencyStopSupervisor.cs
+index e763e7d7..0e2528ce 100644
+--- a/src/ControlServer.Host/Runtime/Commands/EmergencyStopSupervisor.cs
++++ b/src/ControlServer.Host/Runtime/Commands/EmergencyStopSupervisor.cs
+@@ -171,6 +171,9 @@ public sealed class EmergencyStopSupervisor(
+     TimeProvider timeProvider,
+     ILogger<EmergencyStopSupervisor> logger)
+ {
++    private readonly IRiotOrderCommandGateway gateway = ControlServer.Application.GateProbe.Wrap(gateway);
++    private readonly IRiotVehicleEmergencyFacts emergencyFacts = ControlServer.Application.GateProbe.Wrap(emergencyFacts);
++    private readonly IRiotVehicleOrderFacts orderFacts = ControlServer.Application.GateProbe.Wrap(orderFacts);
+     /// <summary>Alarm raised while a stop has been asked for and no latch is confirmed (REQ-0248).</summary>
+     public const string StopUnconfirmedAlarm = "EMERGENCY_STOP_UNCONFIRMED";
+ 
+diff --git a/src/ControlServer.Host/Runtime/Commands/RiotOrderCommandService.cs b/src/ControlServer.Host/Runtime/Commands/RiotOrderCommandService.cs
+index a8d9273f..84f323d5 100644
+--- a/src/ControlServer.Host/Runtime/Commands/RiotOrderCommandService.cs
++++ b/src/ControlServer.Host/Runtime/Commands/RiotOrderCommandService.cs
+@@ -62,6 +62,8 @@ public sealed class RiotOrderCommandService(
+     IRiotMovementGateway movement,
+     TimeProvider timeProvider)
+ {
++    private readonly IRiotOrderCommandGateway gateway = ControlServer.Application.GateProbe.Wrap(gateway);
++    private readonly IRiotMovementGateway movement = ControlServer.Application.GateProbe.Wrap(movement);
+     /// <summary>
+     /// Arms an attempt, issues the command, reads the order back, and records what it found.
+     /// </summary>
+diff --git a/src/ControlServer.Host/Runtime/CreateGate/PreCreateGate.cs b/src/ControlServer.Host/Runtime/CreateGate/PreCreateGate.cs
+index c5f3fd05..aaf71b8d 100644
+--- a/src/ControlServer.Host/Runtime/CreateGate/PreCreateGate.cs
++++ b/src/ControlServer.Host/Runtime/CreateGate/PreCreateGate.cs
+@@ -97,6 +97,7 @@ public sealed class PreCreateGate(
+     TimeProvider timeProvider,
+     ILogger<PreCreateGate> logger)
+ {
++    private readonly IRiotRouteCostProbe routeCostProbe = ControlServer.Application.GateProbe.Wrap(routeCostProbe);
+     private static readonly Action<ILogger, string, string, int, long?, Exception?> LogConflict =
+         LoggerMessage.Define<string, string, int, long?>(
+             LogLevel.Error,
+diff --git a/src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs b/src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs
+index 81e2b189..d895dddd 100644
+--- a/src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs
++++ b/src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs
+@@ -50,6 +50,8 @@ public sealed class DispatchRoundRunner(
+     TimeProvider timeProvider,
+     ILogger<JourneyRuntimeEngine> logger)
+ {
++    private readonly IMesIngestCatalog catalog = ControlServer.Application.GateProbe.Wrap(catalog);
++    private readonly IRiotVehicleFacts vehicleFacts = ControlServer.Application.GateProbe.Wrap(vehicleFacts);
+     // The backlog's decision fingerprint is a hash over this serialisation, so it is the engine's setting exactly: a
+     // different one would read every backlog row written before the move as a changed demand.
+     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
+diff --git a/src/ControlServer.Host/Runtime/Faults/VehicleFaultCoordinator.cs b/src/ControlServer.Host/Runtime/Faults/VehicleFaultCoordinator.cs
+index ec5a7061..8040a01b 100644
+--- a/src/ControlServer.Host/Runtime/Faults/VehicleFaultCoordinator.cs
++++ b/src/ControlServer.Host/Runtime/Faults/VehicleFaultCoordinator.cs
+@@ -176,6 +176,9 @@ public sealed class VehicleFaultCoordinator(
+     TimeProvider timeProvider,
+     ILogger<VehicleFaultCoordinator> logger)
+ {
++    private readonly IRiotVehicleEmergencyFacts emergencyFacts = ControlServer.Application.GateProbe.Wrap(emergencyFacts);
++    private readonly IVehicleMotionFacts motionFacts = ControlServer.Application.GateProbe.Wrap(motionFacts);
++    private readonly IRiotMovementGateway movement = ControlServer.Application.GateProbe.Wrap(movement);
+     /// <summary>
+     /// Raised while a fault is held and the current order is not demonstrably protected.
+     /// </summary>
+diff --git a/src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs b/src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs
+index aa9271d5..51cfa1ac 100644
+--- a/src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs
++++ b/src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs
+@@ -94,6 +94,7 @@ public sealed partial class VehicleFaultRecoveryService
+     {
+         List<string> reasons = [.. PersonReasons(request)];
+         using IDisposable? round = await gate.TryEnterAsync(gateWait, cancellationToken).ConfigureAwait(false);
++        using IDisposable? probeMark = round is null ? null : ControlServer.Application.GateProbe.Mark("recovery");
+         if (round is null)
+         {
+             return Refused(["FAULT_RECOVERY_RUNTIME_BUSY"], null);
+@@ -171,6 +172,7 @@ public sealed partial class VehicleFaultRecoveryService
+         string[] terminated;
+         using (IDisposable? round = await gate.TryEnterAsync(gateWait, cancellationToken).ConfigureAwait(false))
+         {
++            using IDisposable? probeMark = round is null ? null : ControlServer.Application.GateProbe.Mark("recovery-block");
+             if (round is null)
+             {
+                 return Refused(["FAULT_RECOVERY_RUNTIME_BUSY"], null);
+@@ -286,6 +288,7 @@ public sealed partial class VehicleFaultRecoveryService
+         string agvId = request.Subject.AgvId;
+         List<string> reasons = [.. PersonReasons(request)];
+         using IDisposable? round = await gate.TryEnterAsync(gateWait, cancellationToken).ConfigureAwait(false);
++        using IDisposable? probeMark = round is null ? null : ControlServer.Application.GateProbe.Mark("recovery");
+         if (round is null)
+         {
+             return Refused(["FAULT_RECOVERY_RUNTIME_BUSY"], null);
+diff --git a/src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs b/src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+index 49f368c2..982c5446 100644
+--- a/src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
++++ b/src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+@@ -309,6 +309,8 @@ public sealed partial class VehicleFaultRecoveryService(
+         Reading reading = await ReadAsync(subject, fault, cancellationToken).ConfigureAwait(false);
+ 
+         using IDisposable? round = await gate.TryEnterAsync(gateWait, cancellationToken).ConfigureAwait(false);
++
++        using IDisposable? probeMark = round is null ? null : ControlServer.Application.GateProbe.Mark("recovery");
+         if (round is null)
+         {
+             return Refused(["FAULT_RECOVERY_RUNTIME_BUSY"], fault?.FaultGeneration);
+@@ -384,6 +386,7 @@ public sealed partial class VehicleFaultRecoveryService(
+         long? generation;
+         using (IDisposable? round = await gate.TryEnterAsync(gateWait, cancellationToken).ConfigureAwait(false))
+         {
++            using IDisposable? probeMark = round is null ? null : ControlServer.Application.GateProbe.Mark("recovery-block");
+             if (round is null)
+             {
+                 return Refused(["FAULT_RECOVERY_RUNTIME_BUSY"], fault?.FaultGeneration);
+diff --git a/src/ControlServer.Host/Runtime/ForeignOrders/ForeignRunningOrderSupervisor.cs b/src/ControlServer.Host/Runtime/ForeignOrders/ForeignRunningOrderSupervisor.cs
+index 6907cc78..d7b9367c 100644
+--- a/src/ControlServer.Host/Runtime/ForeignOrders/ForeignRunningOrderSupervisor.cs
++++ b/src/ControlServer.Host/Runtime/ForeignOrders/ForeignRunningOrderSupervisor.cs
+@@ -72,6 +72,8 @@ public sealed class ForeignRunningOrderSupervisor(
+     TimeProvider timeProvider,
+     ILogger<ForeignRunningOrderSupervisor> logger)
+ {
++    private readonly IRiotOrderListingFacts orders = ControlServer.Application.GateProbe.Wrap(orders);
++    private readonly IRiotOrderCommandGateway commands = ControlServer.Application.GateProbe.Wrap(commands);
+     /// <summary>
+     /// How long after its cancel went out an order not yet read back ended is handed to a person. Long enough for RIoT to move
+     /// an order it accepted a cancel for (the lab saw it within one read), short enough that a cancel RIoT ignored is on the
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+index 0b7cdd98..7abaa61d 100644
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+@@ -50,6 +50,10 @@ public sealed partial class JourneyRuntimeEngine(
+     TimeProvider timeProvider,
+     ILogger<JourneyRuntimeEngine> logger)
+ {
++    private readonly IRiotVehicleFacts vehicleFacts = ControlServer.Application.GateProbe.Wrap(vehicleFacts);
++    private readonly IRiotMapStationCatalog mapStationCatalog = ControlServer.Application.GateProbe.Wrap(mapStationCatalog);
++    private readonly IVehicleMotionFacts motionFacts = ControlServer.Application.GateProbe.Wrap(motionFacts);
++    private readonly IRiotVehicleSafetyFacts vehicleSafety = ControlServer.Application.GateProbe.Wrap(vehicleSafety);
+     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
+     private static readonly Action<ILogger, string, string, string, string, string, string, Exception?> LogUnloadOrderFallback =
+         LoggerMessage.Define<string, string, string, string, string, string>(
+@@ -384,6 +388,7 @@ public sealed partial class JourneyRuntimeEngine(
+ 
+     public async Task ExecuteOnceAsync(CancellationToken cancellationToken)
+     {
++        using IDisposable probeMark = ControlServer.Application.GateProbe.Mark("engine-round");
+         if (!runtimeOptions.Enabled)
+         {
+             return;
+diff --git a/src/ControlServer.Host/Runtime/JourneyRuntimeWorker.cs b/src/ControlServer.Host/Runtime/JourneyRuntimeWorker.cs
+index 91996cc3..0a09a511 100644
+--- a/src/ControlServer.Host/Runtime/JourneyRuntimeWorker.cs
++++ b/src/ControlServer.Host/Runtime/JourneyRuntimeWorker.cs
+@@ -51,6 +51,7 @@ public sealed class JourneyRuntimeWorker(
+ 
+             using (round)
+             {
++                using IDisposable probeMark = ControlServer.Application.GateProbe.Mark("worker-round");
+                 try
+                 {
+                     await using AsyncServiceScope scope = scopeFactory.CreateAsyncScope();
+diff --git a/src/ControlServer.Host/Runtime/Release/DemandReleaseService.cs b/src/ControlServer.Host/Runtime/Release/DemandReleaseService.cs
+index e5bd7b7b..17519772 100644
+--- a/src/ControlServer.Host/Runtime/Release/DemandReleaseService.cs
++++ b/src/ControlServer.Host/Runtime/Release/DemandReleaseService.cs
+@@ -52,6 +52,7 @@ public sealed class DemandReleaseService(
+     ILogger<DemandReleaseService> logger,
+     OnboardJourneyPublisher publisher)
+ {
++    private readonly IRiotVehicleFacts vehicleFacts = ControlServer.Application.GateProbe.Wrap(vehicleFacts);
+     public const string CancelCommandType = "CANCEL";
+ 
+     // 收尾快照在释放落库之后由它发出（control-server#323，JourneyClosure）。
+@@ -97,6 +98,7 @@ public sealed class DemandReleaseService(
+ 
+     public async Task<IReadOnlyList<DemandReleaseOutcome>> RunOnceAsync(CancellationToken cancellationToken)
+     {
++        using IDisposable probeMark = ControlServer.Application.GateProbe.Mark("release-round");
+         VehicleDispatchPolicy policy = await dispatchPolicy.EnsureCurrentAsync(cancellationToken).ConfigureAwait(false);
+         JourneyRuntimeRow[] journeys = await dbContext.JourneyRuntimes.AsNoTracking()
+             .Where(row => row.Stage != JourneyRuntimeStage.Completed)
+diff --git a/src/ControlServer.Host/Runtime/RouteGraph/RouteGraphRefresher.cs b/src/ControlServer.Host/Runtime/RouteGraph/RouteGraphRefresher.cs
+index 1069f8b0..eb7971f2 100644
+--- a/src/ControlServer.Host/Runtime/RouteGraph/RouteGraphRefresher.cs
++++ b/src/ControlServer.Host/Runtime/RouteGraph/RouteGraphRefresher.cs
+@@ -54,6 +54,7 @@ public sealed class RouteGraphRefresher(
+     TimeProvider timeProvider,
+     ILogger<RouteGraphRefresher> logger)
+ {
++    private readonly IRouteGraphSource source = ControlServer.Application.GateProbe.Wrap(source);
+     private static readonly Action<ILogger, int, string, Exception?> LogRefreshFailed =
+         LoggerMessage.Define<int, string>(
+             LogLevel.Warning,
+@@ -78,6 +79,7 @@ public sealed class RouteGraphRefresher(
+     /// </remarks>
+     public async Task RefreshOnceAsync(CancellationToken cancellationToken)
+     {
++        using IDisposable probeMark = ControlServer.Application.GateProbe.Mark("routegraph-round");
+         int mapId = _options.MapId;
+         DateTimeOffset now = timeProvider.GetUtcNow();
+ 
+diff --git a/src/ControlServer.Host/Runtime/WaitingJourneyWatch.cs b/src/ControlServer.Host/Runtime/WaitingJourneyWatch.cs
+index 2efef094..5fe3c153 100644
+--- a/src/ControlServer.Host/Runtime/WaitingJourneyWatch.cs
++++ b/src/ControlServer.Host/Runtime/WaitingJourneyWatch.cs
+@@ -49,6 +49,7 @@ internal sealed class WaitingJourneyWatch(
+     TimeProvider timeProvider,
+     ILogger logger)
+ {
++    private readonly IRiotVehicleFacts vehicleFacts = ControlServer.Application.GateProbe.Wrap(vehicleFacts);
+     /// <summary>How stale an unchanged reading may grow before it is recorded again.</summary>
+     internal static readonly TimeSpan RecordRefresh = TimeSpan.FromMinutes(1);
+ 
+diff --git a/src/ControlServer.Host/Transport/OnboardJourneyPublisher.cs b/src/ControlServer.Host/Transport/OnboardJourneyPublisher.cs
+index 904587b7..ba4d2872 100644
+--- a/src/ControlServer.Host/Transport/OnboardJourneyPublisher.cs
++++ b/src/ControlServer.Host/Transport/OnboardJourneyPublisher.cs
+@@ -12,6 +12,7 @@ public sealed class OnboardJourneyPublisher(
+     IOnboardPeer peer,
+     TimeProvider timeProvider)
+ {
++    private readonly IOnboardPeer peer = ControlServer.Application.GateProbe.Wrap(peer);
+     // The envelope's own settings, not a second copy of them: this instance also materialises the
+     // payload and rewrites replayed lines, and both have to agree with the envelope byte for byte.
+     private static readonly JsonSerializerOptions SerializerOptions = ProtocolEnvelope.SerializerOptions;
+diff --git a/src/ControlServer.Host/Transport/OnboardPeer.cs b/src/ControlServer.Host/Transport/OnboardPeer.cs
+index d48be958..fd516118 100644
+--- a/src/ControlServer.Host/Transport/OnboardPeer.cs
++++ b/src/ControlServer.Host/Transport/OnboardPeer.cs
+@@ -175,6 +175,7 @@ internal sealed class OnboardPeerConnection(Stream stream) : IAsyncDisposable
+             throw new InvalidDataException("Onboard outbound data must be one or more newline-terminated NDJSON messages.");
+         }
+ 
++        ControlServer.Application.GateProbe.Record("OnboardPeerConnection.SendAsync");
+         await _sendGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+         try
+         {
