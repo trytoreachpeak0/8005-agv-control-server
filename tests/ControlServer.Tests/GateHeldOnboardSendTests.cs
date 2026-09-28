@@ -10,6 +10,7 @@ using ControlServer.Host.Runtime.Faults;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using static ControlServer.Tests.JourneyRuntimeWorkerTestKit;
 using static ControlServer.Tests.VehicleFaultRecoveryTests;
 
@@ -196,8 +197,9 @@ public sealed class GateHeldOnboardSendTests
     /// <para>
     /// <b>「至少一次」而不是「第一次」</b>（审查必修 3，本机 14 轮红 1 次）：两次发送各有一个 500 ms 计时器，几乎同时到点；排队那一次先到点时，
     /// 是它把流关掉，第一次写随之以普通的 socket 失败结束。哪一次先到点是调度，不是判据（记忆：窗口里「恰好一次」是调度）。
-    /// 两次都必须是 <see cref="IOException"/>：流关了之后的那一次以前是 <see cref="ObjectDisposedException"/>，只接
-    /// <see cref="IOException"/> 的发送方会把它当成别的错。
+    /// 三次都必须<b>恰好</b>是 <see cref="OnboardConnectionUnavailableException"/>（增量复核 X2、X3）：它是引擎认「这台车让开」的唯一依据。
+    /// 只断 <see cref="IOException"/> 的话，写超时改抛普通 <see cref="IOException"/>、或「连接已关」漏出
+    /// <see cref="ObjectDisposedException"/>，这里都看不出来，而引擎会因此整轮抛、全队停。
     /// </para>
     /// <para>
     /// <b>「之后直接失败」钉的是关连接，按事件判</b>：只抛异常、不关流的话，卡住的那次写仍占着发送闸门，之后那一次要再等满一个超时、
@@ -220,12 +222,12 @@ public sealed class GateHeldOnboardSendTests
         TestContext.Current.TestOutputHelper?.WriteLine(
             $"first: {Describe(firstFailure)}{Environment.NewLine}queued: {Describe(queuedFailure)}{Environment.NewLine}" +
             $"later: {Describe(laterFailure)}");
-        Assert.IsAssignableFrom<IOException>(firstFailure);
-        Assert.IsAssignableFrom<IOException>(queuedFailure);
+        Assert.IsType<OnboardConnectionUnavailableException>(firstFailure);
+        Assert.IsType<OnboardConnectionUnavailableException>(queuedFailure);
         Assert.True(
             TimedOut(firstFailure) || TimedOut(queuedFailure),
             "neither the stuck write nor the one behind it ended by the write timeout");
-        Assert.IsAssignableFrom<IOException>(laterFailure);
+        Assert.IsType<OnboardConnectionUnavailableException>(laterFailure);
         Assert.False(
             TimedOut(laterFailure),
             "a send after the timeout waited out the timeout again: the connection was left open");
@@ -279,6 +281,47 @@ public sealed class GateHeldOnboardSendTests
 
         InvalidOperationException refused = await Assert.ThrowsAsync<InvalidOperationException>(() => server.StartAsync(Token));
         Assert.Contains("OnboardTransport:WriteTimeout", refused.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// <c>MesIngest:timeoutSeconds</c> 要在 (0, 15 s] 之内，否则启动时就拒绝（增量复核第 2 条）：<see cref="HttpClient.Timeout"/> 的 setter
+    /// 不收约 24.8 天以上的值，而它要到类型化客户端第一次被解析时才执行——那时引擎与派车在构造时抛，每一轮都失败、全队停下，启动却照样通过。
+    /// 15 s 是锁内一次读能占的上限：故障清除等锁 30 s，一次挂住的读最多吃掉它的一半。
+    /// </summary>
+    /// <remarks>
+    /// 测的是 <see cref="MesIngestReads.Timeout"/> 本身；它在组装时被调用（<c>Program.cs</c> 里 <c>builder.Build()</c> 之前），这一次调用抛出就是
+    /// 启动失败。服务端能不能正常起来，由合成 L2 每个场景先起服务端覆盖。
+    /// </remarks>
+    [Theory]
+    [InlineData("0")]
+    [InlineData("-1")]
+    [InlineData("NaN")]
+    [InlineData("15.001")]
+    [InlineData("5184000")]
+    public void AMesIngestTimeoutOutsideItsBoundsIsRefusedAtStartup(string seconds)
+    {
+        Microsoft.Extensions.Configuration.IConfiguration configuration = new Microsoft.Extensions.Configuration.ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { [MesIngestReads.TimeoutSecondsKey] = seconds })
+            .Build();
+
+        InvalidDataException refused = Assert.Throws<InvalidDataException>(() => MesIngestReads.Timeout(configuration));
+        Assert.Contains(MesIngestReads.TimeoutSecondsKey, refused.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>界内的值照收，没配就是默认的 10 s。</summary>
+    [Theory]
+    [InlineData(null, 10d)]
+    [InlineData("0.5", 0.5d)]
+    [InlineData("15", 15d)]
+    public void AMesIngestTimeoutInsideItsBoundsIsTaken(string? seconds, double expected)
+    {
+        Microsoft.Extensions.Configuration.IConfiguration configuration = new Microsoft.Extensions.Configuration.ConfigurationBuilder()
+            .AddInMemoryCollection(seconds is null
+                ? []
+                : new Dictionary<string, string?> { [MesIngestReads.TimeoutSecondsKey] = seconds })
+            .Build();
+
+        Assert.Equal(TimeSpan.FromSeconds(expected), MesIngestReads.Timeout(configuration));
     }
 
     /// <summary>

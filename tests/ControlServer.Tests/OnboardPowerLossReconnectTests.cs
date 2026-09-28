@@ -199,6 +199,8 @@ public sealed class OnboardPowerLossReconnectTests
             $"车还在发心跳、只是不读，{HangGuard.TotalSeconds} 秒内旧代次一直没离开路由表：卡住的写没有上限，" +
             "这条连接永远不会被放掉（control-server#334）。" + trace);
         Assert.Contains($"did not finish within {timeout.TotalSeconds:0.###} s", rig.PushFailures, StringComparison.Ordinal);
+        // The exact type, not just an IOException: it is what the runtime yields on (incremental review X2).
+        Assert.Contains("× OnboardConnectionUnavailableException: A write to the Onboard peer", rig.PushFailures, StringComparison.Ordinal);
         Assert.Contains($"'{AgvId}'", rig.PushFailures, StringComparison.Ordinal);
         Assert.Contains(serverLog, entry => entry.EventId.Id == 1003);
         Assert.DoesNotContain(serverLog, entry => entry.EventId.Id == 1005);
