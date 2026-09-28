@@ -1,0 +1,34 @@
+# cs#367 mutations at 0eb26ea258b73d799d11d4c47998469c6b66da44 2026-09-28T09:31:49.7651228+08:00
+# only: M1-front-no-observe M2-behind-disabled M6-no-keep-code M8-behind-confirmed-not-named (4)
+== M1-front-no-observe : applied (1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs)
+   build errors: 0
+   exit: 1
+   RED FailedOrderBeforeConfirmationTests.AGateOrderThatFailedBeforeConfirmationAlsoBindsTheCargoInFrontOfTheGate
+   RED FailedOrderBeforeConfirmationTests.AnUnreadableOrderKeepsTheFailedCodeAndItsStart(behindTheGate: False)
+   RED FailedOrderBeforeConfirmationTests.APickupOrderThatFailedBeforeConfirmationIsRecordedHeldAndStoppedInFrontOfTheGate
+   RED FailedOrderBeforeConfirmationTests.AClearedFaultOfAGateOrderThatFailedBeforeConfirmationRebuildsOnlyOnCargoEvidence
+   RED FailedOrderBeforeConfirmationTests.AClearedFaultOfAPickupOrderThatFailedBeforeConfirmationRebuildsItOnTheSameVehicle
+   Failed!  - Failed:     5, Passed:   183, Skipped:     0, Total:   188, Duration: 51 s - ControlServer.Tests.dll (net8.0)
+== M2-behind-disabled : applied (1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs)
+   build errors: 0
+   exit: 1
+   RED FailedOrderBeforeConfirmationTests.AnUnreadableOrderKeepsTheFailedCodeAndItsStart(behindTheGate: True)
+   RED FailedOrderBeforeConfirmationTests.AnUnconfirmedOrderFoundHangingBehindTheGateIsConfirmedAndNamed
+   RED FailedOrderBeforeConfirmationTests.BehindTheGateTheStopIsConfirmedAndRetriggeredForAnOrderThatFailedBeforeConfirmation
+   RED FailedOrderBeforeConfirmationTests.AnUnreconciledPickupOrderThatFailedIsRecordedHeldAndStoppedBehindTheGate
+   RED FailedOrderBeforeConfirmationTests.ATerminalReconciledPickupOrderLeftWithoutAFaultIsRecordedBehindTheGate
+   RED FailedOrderBeforeConfirmationTests.AnUnreconciledGateOrderThatFailedAlsoBindsTheCargoBehindTheGate
+   Failed!  - Failed:     6, Passed:   182, Skipped:     0, Total:   188, Duration: 54 s - ControlServer.Tests.dll (net8.0)
+== M6-no-keep-code : applied (1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs)
+   build errors: 0
+   exit: 1
+   RED FailedOrderBeforeConfirmationTests.AnUnreadableOrderKeepsTheFailedCodeAndItsStart(behindTheGate: False)
+   RED FailedOrderBeforeConfirmationTests.AnUnreadableOrderKeepsTheFailedCodeAndItsStart(behindTheGate: True)
+   Failed!  - Failed:     2, Passed:   186, Skipped:     0, Total:   188, Duration: 53 s - ControlServer.Tests.dll (net8.0)
+== M8-behind-confirmed-not-named : applied (1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs)
+   build errors: 0
+   exit: 1
+   RED FailedOrderBeforeConfirmationTests.AnUnconfirmedOrderFoundHangingBehindTheGateIsConfirmedAndNamed
+   Failed!  - Failed:     1, Passed:   187, Skipped:     0, Total:   188, Duration: 48 s - ControlServer.Tests.dll (net8.0)
+# final build: 0 Error(s)
+# done

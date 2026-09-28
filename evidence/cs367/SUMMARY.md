@@ -1,0 +1,52 @@
+# control-server#367 证据：普通腿确认前 FAILED，闸门前后都进故障模型、能清除、清除后同车重建
+
+每条标了「读到的」（跑出来的、读代码读到的）还是「推的」。基点 `fp/v2-impl@71e62d85`（已含 cs#357、cs#358）。
+
+## 修前红
+
+- 提交 `78bff6e1`（只动 tests）。新测试类 `FailedOrderBeforeConfirmationTests` 在修前 8 条红，都红在同一处：
+  `Assert.Single() Failure: The collection was empty`（没有故障记录），或 REQ-0248 那条的
+  `Expected: Pending / Actual: null`（没有急停触发）（读到的）。
+- 完整的修前运行记录是 `green/01-reverse-validation-first-pass.txt` 里的 **M0**：把 `src` 退回 `71e62d85`、保留全部新测试，
+  188 条里红 11 条，全在新测试类里，别的类一条不红（读到的）。比修前红多出的 3 条是后来补的护栏（`4020b51d`）：
+  读不到保住故障码（两个参数）、闸门后确认的单照常起名。第三条护栏「闸门后不为没发出过的单建单」在修前是绿的——
+  修前闸门后根本不对账，自然不建单；它守的是本票新加的对账不越界，判别力由 M5 撑着。
+
+## 反向验证（green/01～03）
+
+脚本 `green/mutate.ps1`：每个变异先确认替换恰好命中 1 处，`--no-incremental` 重编且 `0 Error(s)`，跑相关的 7～8 个测试类，
+读 `dotnet test` 退出码，跑完从 HEAD 还原（读到的）。第一遍里 M2、M8 编译失败（写成 `if (true)`／`if (false)`，
+不可达代码按警告即错误处理），那两格不算数，换成编译器看不穿的条件在 `02` 里重跑。
+
+| 变异 | 红了什么 | 为什么别的不红（推的） |
+| --- | --- | --- |
+| M0 整个修复撤回 | 新测试类 11 条 | 见上 |
+| M1 闸门前不交给故障模型 | 闸门前取货、关卡两条；两条清除后重建（故障在闸门前记）；读不到保码 `behindTheGate: False` | 闸门后那条路独立 |
+| M2 闸门后整段关掉 | 闸门后 6 条（`02`）；加上计划测试类后另红 `AnOrderWhoseCreateAnswerWasLostIsConfirmedBehindTheGateAndThePlanGoesOut`（`03`，共 7 条） | 清除用例的故障在闸门前记 |
+| M3 清除入口不认 Hold 审计 | 两条清除后重建 | 只有它们靠这个认法放行 |
+| M4 认 Hold 时不看故障代次 | 反向用例 `AFaultOfAnotherOriginIsNotClearedThroughATerminalIntentAnEarlierFaultWasRecordedOn` | — |
+| M5 闸门后对没发过建单的意图也对账 | `AnOrderNeverSentIsNotCreatedBehindTheGate` | — |
+| M6 读不到时不保码 | 读不到保码，两个参数 | — |
+| M7 记下后只喂一次故障模型 | REQ-0248 那条 | 首轮记故障的断言只看第一轮 |
+| M8 闸门后确认了不起名 | HANG 那条 | — |
+
+## 本机 L2（l2/）
+
+`command-surface-order-hold`、`emergency-stop-single-trigger`、`emergency-stop-operator-release` 在 `d67221fa` 上各跑一次，全部 PASS
+（读到的）。只留 `SUMMARY.md` 与 `assertions.json`。前两条的目录名在运行时写错成字面量，跑完改名挪进来，内容没动（读到的）。
+
+## cs#342 断线重连模型（green/04）
+
+同一组 300 个固定种子（masterSeed=342），本票 `d67221fa` 与基点对照。基点取 cs#357 的
+`evidence/cs357/green/08-cs342-model-300-3742cbc9.txt`：`git diff 3742cbc9 71e62d85 -- src tests` 为空，两棵树的代码与测试逐字相同（读到的）。
+逐项相同：录入请求 300/300 送达、确认冲突 0、回退 0、握手接受语义不同的消息 0、「带等人码的轮次推进失败」都是 `ORDER_HANG` 5 次（读到的）。
+每组合耗时 123.0 ms 对 115.9 ms，负载没控制（同时有别的会话在跑全量），不据此下结论（推的）。
+
+**模型测不到的格**（推的，依据是 cs#342 PR 正文「模型的局限」与本票的动作）：模型不产生 FAILED、取消，也不丢建单应答，
+所以本票的每一格它都走不到；它在这里只证明没改坏断线重连那一块。本票的格由上面的 L1 与变异覆盖。
+
+## 全量
+
+- `d67221fa` 之前那次全量（`0eb26ea2`）：2868 条红 1 条，`PickupDispatchPlanPastOwnOrderTests.NoPlanGoesOutWhenTheUnreadinessIsNotExplainedByTheOwnOrder("order-not-confirmed")`。
+  机理：那一格把 RIoT 上正常执行的单改成 `RESULT_UNKNOWN`，本票闸门后的对账同一轮就确认了它，计划随之放行——按 cs#314 这是对的。
+  改的是造前提的方式（让 RIoT 这一轮答不出），断言没改，并补了前提断言；见 `d67221fa` 的提交说明（读到的）。
