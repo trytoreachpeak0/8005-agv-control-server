@@ -175,6 +175,106 @@ public sealed class MapNameBaselineAcceptanceTests
                 accepted.GetProperty("acceptedName").GetString()));
     }
 
+    /// <summary>
+    /// 审查建议 1（PR #378 第一路探针 P3）：解除动作的前置检查读的是事务之外的待接受名称。引擎在「检查通过」与「解除的写事务」之间
+    /// 读到新名称时，解除仍要被拒——否则在一个没人接受的新名下漏挡一轮。所以写事务里再读一次。
+    /// </summary>
+    [Fact]
+    public async Task ARenameSeenBetweenTheReleaseChecksAndItsTransactionStillRefusesTheRelease()
+    {
+        await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
+        TaskTypeStationActivationHarness.Stack stack = TaskTypeStationActivationHarness.StackOver(
+            harness.NewContext(), wrap: inner => new RenameBeforeRelease(inner, harness));
+        await new MapNameBaselineStore(stack.Context, stack.Governance).EstablishAsync(25, "老厂前线new_wk", Now.AddHours(-1), Token);
+        TaskTypeStationHold hold = (await stack.Holds.RaiseAsync(
+            25, TransportTaskTypes.WireToGate, TaskTypeStationHoldSource.CatalogChange, MapNameHoldReasons.MapRenamed, "{}",
+            "server", Now.AddMinutes(-5), Token)).Hold;
+
+        TaskTypeStationHoldReleaseResult result = await stack.Service.ReleaseHoldAsync(
+            25, TransportTaskTypes.WireToGate, "SITE-RECHECK", TaskTypeStationActivationHarness.Catalog,
+            TaskTypeStationActivationHarness.Request, Now, Token);
+
+        Assert.Null((await harness.HoldsAsync()).Single(row => row.HoldId == hold.HoldId).ReleasedAt);
+        Assert.Equal(TaskTypeStationHoldReleaseOutcome.Rejected, result.Outcome);
+        Assert.Equal(MapNameBaselineReasonCodes.RenameNotAccepted, Assert.Single(result.Violations).ReasonCode);
+        BusinessAuditRecordRow audit = (await harness.AuditAsync())[^1];
+        Assert.Equal(
+            (TaskTypeStationActivationAuditActions.HoldReleaseRejected, GovernanceActionOutcome.Failed),
+            (audit.Action, audit.Outcome));
+    }
+
+    /// <summary>
+    /// 审查建议 2：改名待接受期间激活新绑定，新版本生效的那个事务里就给它的任务类型挂上 MAP_RENAMED 暂停；待接受名称是在激活
+    /// 两步之间才出现的，也一样。不这样做，新任务类型会在引擎「本轮观察」之后、「本轮读暂停」之前生效，漏挡一轮。
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AnActivationUnderAPendingRenameHoldsEveryTaskTypeOfTheVersionItMakesActive(bool renameBetweenTheTwoSteps)
+    {
+        await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
+        TaskTypeStationActivationHarness.Stack stack = renameBetweenTheTwoSteps
+            ? TaskTypeStationActivationHarness.StackOver(harness.NewContext(), wrap: inner => new RenameBeforeComplete(inner, harness))
+            : harness.Default();
+        MapNameBaselineStore baselines = new(stack.Context, stack.Governance);
+        await baselines.EstablishAsync(25, "老厂前线new_wk", Now.AddHours(-1), Token);
+        if (!renameBetweenTheTwoSteps)
+        {
+            await baselines.SetPendingAsync(25, "老厂前线new_wk2", Now.AddMinutes(-10), Token);
+        }
+
+        TaskTypeStationActivationResult result = await stack.ActivateAsync(
+            TaskTypeStationActivationHarness.Candidate(TaskTypeStationActivationHarness.Gate, TaskTypeStationActivationHarness.Staging));
+
+        Assert.Equal(TaskTypeStationActivationOutcome.Activated, result.Outcome);
+        TaskTypeStationHoldRow[] renamed = [.. (await harness.HoldsAsync())
+            .Where(row => row.ReleasedAt is null && row.ReasonCode == MapNameHoldReasons.MapRenamed)];
+        Assert.Equal(
+            [TransportTaskTypes.StagingToWire, TransportTaskTypes.WireToGate],
+            renamed.Select(row => row.TaskType).Order(StringComparer.Ordinal));
+        Assert.All(renamed, row => Assert.Equal(TaskTypeStationHoldSource.CatalogChange, row.Source));
+        Assert.Equal(2, (await harness.AuditAsync()).Count(row => row.Action == "TASK_TYPE_STATION_HOLD_RAISED"));
+    }
+
+    /// <summary>Another writer records a pending rename just before the release's write transaction begins.</summary>
+    private sealed class RenameBeforeRelease(ITaskTypeStationActivationStore inner, TaskTypeStationActivationHarness harness)
+        : DelegatingActivationStore(inner)
+    {
+        public override async Task<(IReadOnlyList<TaskTypeStationHold> Released, string AuditRecordId)> ReleaseManualAndCatalogHoldsAsync(
+            int mapId,
+            string taskType,
+            string releasedByPrefix,
+            Func<IReadOnlyList<TaskTypeStationHold>, GovernanceAuditEntry> audit,
+            DateTimeOffset at,
+            CancellationToken cancellationToken)
+        {
+            await SetPendingElsewhereAsync(harness, mapId);
+            return await base.ReleaseManualAndCatalogHoldsAsync(mapId, taskType, releasedByPrefix, audit, at, cancellationToken);
+        }
+    }
+
+    /// <summary>Another writer records a pending rename between the activation's first and second step.</summary>
+    private sealed class RenameBeforeComplete(ITaskTypeStationActivationStore inner, TaskTypeStationActivationHarness harness)
+        : DelegatingActivationStore(inner)
+    {
+        public override async Task CompleteAsync(
+            TaskTypeStationActivationAttempt attempt,
+            DateTimeOffset at,
+            CancellationToken cancellationToken)
+        {
+            await SetPendingElsewhereAsync(harness, attempt.MapId);
+            await base.CompleteAsync(attempt, at, cancellationToken);
+        }
+    }
+
+    private static async Task SetPendingElsewhereAsync(TaskTypeStationActivationHarness harness, int mapId)
+    {
+        await using ControlServerDbContext other = harness.NewContext();
+        GovernanceStore governance = new(
+            other, new GovernanceDeploymentIdentity("deployment:8005-controlserver@test"), AuditRetentionPolicy.Default);
+        await new MapNameBaselineStore(other, governance).SetPendingAsync(mapId, "老厂前线new_wk2", Now, Token);
+    }
+
     private static MapNameBaselineAcceptanceService Service(TaskTypeStationActivationHarness.Stack stack) =>
         new(new MapNameBaselineStore(stack.Context, stack.Governance), stack.Governance);
 

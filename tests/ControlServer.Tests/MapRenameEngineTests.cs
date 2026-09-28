@@ -1,5 +1,6 @@
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -83,6 +84,7 @@ public sealed class MapRenameEngineTests
         await fixture.Engine.ExecuteOnceAsync(Token);
         Assert.Equal(0, await fixture.Context.JourneyRuntimes.CountAsync(Token));
         Assert.Equal(0, fixture.Riot.TotalCreateCount);
+        Assert.Equal(DispatchReasonCodes.TaskTypeBindingMissing, (await fixture.BacklogAsync(DemandId)).ReasonCode);
 
         // The rename holds what is bound -- STAGING_TO_WIRE -- and there is no WIRE_TO_GATE binding to hold.
         fixture.Riot.MapNames = [new RiotMapName(25, "老厂前线new_wk2")];
@@ -103,11 +105,37 @@ public sealed class MapRenameEngineTests
         Assert.True(await new TaskTypeStationHoldStore(fixture.Context).IsHeldAsync(25, TransportTaskTypes.WireToGate, Token));
         Assert.Equal(0, await fixture.Context.JourneyRuntimes.CountAsync(Token));
         Assert.Equal(0, fixture.Riot.TotalCreateCount);
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Equal(DispatchReasonCodes.TaskTypeHeld, (await fixture.BacklogAsync(DemandId)).ReasonCode);
 
         await AcceptAndReleaseAsync(fixture, "老厂前线new_wk2");
         await fixture.Engine.ExecuteOnceAsync(Token);
 
         Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await fixture.RuntimeAsync()).Stage);
+    }
+
+    /// <summary>
+    /// 审查必修（PR #378 第二路 M1）：改名挂上暂停之后地图列表读不到的那几轮，暂停照旧挡着——断在派车结果上，不只断在存储层。
+    /// 反向验证是变异 MX2：读失败时顺手把 MAP_RENAMED 暂停放掉，这一条红。
+    /// </summary>
+    [Fact]
+    public async Task AfterARenameAFailedMapListReadDoesNotLetTheHeldTaskTypeDispatch()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        fixture.Riot.MapNames = [new RiotMapName(25, "老厂前线new_wk2")];
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.True(await new TaskTypeStationHoldStore(fixture.Context).IsHeldAsync(25, TransportTaskTypes.WireToGate, Token));
+
+        fixture.Riot.FailMapNameReads = new InvalidDataException("RIoT Map list response was not valid.");
+        OfferDemand(fixture);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.Equal(0, await fixture.Context.JourneyRuntimes.CountAsync(Token));
+        Assert.Equal(0, fixture.Riot.TotalCreateCount);
+        Assert.Equal(DispatchReasonCodes.TaskTypeHeld, (await fixture.BacklogAsync(DemandId)).ReasonCode);
     }
 
     /// <summary>

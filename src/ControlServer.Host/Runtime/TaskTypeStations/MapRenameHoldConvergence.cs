@@ -5,6 +5,7 @@ using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Logging;
 
 namespace ControlServer.Host.Runtime.TaskTypeStations;
 
@@ -68,8 +69,11 @@ public sealed class MapRenameHoldConvergence(
     ITaskTypeStationHoldStore holds,
     IGovernanceAuditWriter audit,
     GovernanceDeploymentIdentity deployment,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    ILogger<MapRenameHoldConvergence> logger)
 {
+    private readonly ILogger<MapRenameHoldConvergence> _logger = logger;
+
     private static readonly JsonSerializerOptions DetailOptions = new()
     {
         Encoder = JavaScriptEncoder.Create(UnicodeRanges.All)

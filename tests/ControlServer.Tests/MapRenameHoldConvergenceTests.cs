@@ -320,6 +320,38 @@ public sealed class MapRenameHoldConvergenceTests
         Assert.Equal((MapRenameObservationKind.Renamed, 0), (renamed.Kind, renamed.HeldTaskTypes.Count));
     }
 
+    /// <summary>
+    /// 审查建议 3：逐图处理时按图隔离异常。一张不相干的图（这里是 9 号，编号在 26 号之前）读写基线出错，只跳过它自己，
+    /// 26 号图的改名照样在这一次观察里暂停；出错的那张图记日志，不抛出、不连累后面的图。
+    /// </summary>
+    [Fact]
+    public async Task AFailureOnOneUnrelatedMapDoesNotKeepAMapAfterItFromBeingObserved()
+    {
+        await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
+        await TaskTypeHoldTestKit.ActivateAsync(fixture, 26, GateBinding);
+        ScriptedMapNames riot = new((26, "老厂前线new_wk"));
+        await Convergence(fixture, riot).ObserveAsync(Token);
+        riot.Set((9, "新厂一楼"), (26, "老厂前线new_wk2"));
+        RecordingLogger<MapRenameHoldConvergence> log = new();
+        MapRenameHoldConvergence convergence = TaskTypeStationRuntimeSeed.MapRenameHolds(
+            fixture.Context, riot, new FixedAt(Now), baselines => new FailingOnMap(baselines, 9), log);
+
+        IReadOnlyList<MapRenameObservation>? observed = null;
+        Exception? failure = await Record.ExceptionAsync(async () => observed = await convergence.ObserveAsync(Token));
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.Equal(
+            MapNameHoldReasons.MapRenamed,
+            Assert.Single(await fixture.Holds.ListUnreleasedAsync(26, Token)).ReasonCode);
+        Assert.Null(await Baselines(fixture).ReadAsync(9, Token));
+        Assert.Null(failure);
+        Assert.NotNull(observed);
+        Assert.Equal(MapRenameObservationKind.NotObserved, Assert.Single(observed, observation => observation.MapId == 9).Kind);
+        Assert.Equal(MapRenameObservationKind.Renamed, Assert.Single(observed, observation => observation.MapId == 26).Kind);
+        Assert.Contains(log.Entries, entry => entry.Level == Microsoft.Extensions.Logging.LogLevel.Warning
+            && entry.Message.Contains("map 9", StringComparison.Ordinal));
+    }
+
     /// <summary>看板暂停卡片上能看到来源与原因：「目录变化」「地图改名」。</summary>
     [Fact]
     public async Task TheDashboardShowsAMapRenameHoldAsACatalogChangeForAMapRename()
@@ -369,6 +401,33 @@ public sealed class MapRenameHoldConvergenceTests
 internal sealed class FixedAt(DateTimeOffset now) : TimeProvider
 {
     public override DateTimeOffset GetUtcNow() => now;
+}
+
+/// <summary>A baseline store that fails every call for one Map, the way a locked or broken row would.</summary>
+internal sealed class FailingOnMap(IMapNameBaselineStore inner, int failingMapId) : IMapNameBaselineStore
+{
+    public Task<MapNameBaseline?> ReadAsync(int mapId, CancellationToken cancellationToken) =>
+        mapId == failingMapId ? throw Failure(mapId) : inner.ReadAsync(mapId, cancellationToken);
+
+    public Task<bool> EstablishAsync(int mapId, string name, DateTimeOffset at, CancellationToken cancellationToken) =>
+        mapId == failingMapId ? throw Failure(mapId) : inner.EstablishAsync(mapId, name, at, cancellationToken);
+
+    public Task<bool> SetPendingAsync(int mapId, string? pendingName, DateTimeOffset? pendingSince, CancellationToken cancellationToken) =>
+        mapId == failingMapId ? throw Failure(mapId) : inner.SetPendingAsync(mapId, pendingName, pendingSince, cancellationToken);
+
+    public Task<string?> AcceptAsync(
+        int mapId,
+        string acceptedName,
+        string acceptedByPrefix,
+        Func<MapNameBaseline, GovernanceAuditEntry> audit,
+        DateTimeOffset at,
+        CancellationToken cancellationToken) =>
+        mapId == failingMapId
+            ? throw Failure(mapId)
+            : inner.AcceptAsync(mapId, acceptedName, acceptedByPrefix, audit, at, cancellationToken);
+
+    private static InvalidOperationException Failure(int mapId) =>
+        new($"Injected failure on map {mapId}'s baseline.");
 }
 
 /// <summary>A Map list that answers what the test last set, or throws what it was told to.</summary>
