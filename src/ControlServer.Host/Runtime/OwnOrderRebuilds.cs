@@ -257,7 +257,11 @@ internal static class OwnOrderRebuilds
     /// <summary>
     /// Whether the Host should ask <paramref name="agvId"/>'s vehicle for a <c>SafetyStateSnapshot</c> now, for a rebuild with
     /// cargo on board still waiting to be created -- after a cleared fault the clearance judged loaded (REQ-0362), or after a
-    /// cancellation while a demand of the journey is loaded (REQ-0360 as CP-0007 revised it, control-server#366) -- or for
+    /// cancellation while a demand of the journey is loaded (REQ-0360 as CP-0007 revised it, control-server#366); "still waiting
+    /// to be created" is <see cref="OwnOrderRebuildStates.Pending"/>, and <see cref="OwnOrderRebuildStates.Ordering"/> while its
+    /// new intent has never been sent (<c>CreateAttemptCount</c> 0), the state in which the engine asks the cargo question again
+    /// before the create (independent review M1: after a RIoT read that answered Unknown, one hold left such a record waiting
+    /// for a snapshot nobody asked for) -- or for
     /// a stopped trip a person has just handed to the exception recovery session (control-server#345: the snapshot is what gets
     /// readiness judged again and announced, so that the onboard offers its fault cargo handoff); when it should, the request is
     /// recorded here and the caller must send it.
@@ -292,7 +296,10 @@ internal static class OwnOrderRebuilds
     {
         string[] due = await dbContext.OwnOrderRebuilds.AsNoTracking()
             .Where(row => row.AgvId == agvId &&
-                          ((row.State == OwnOrderRebuildStates.Pending &&
+                          (((row.State == OwnOrderRebuildStates.Pending ||
+                             (row.State == OwnOrderRebuildStates.Ordering &&
+                              dbContext.OrderIntents.Any(
+                                  intent => intent.MovementLegId == row.NewMovementLegId && intent.CreateAttemptCount == 0))) &&
                             (row.Source == OwnOrderRebuildSources.FaultClearedCargoOnBoard ||
                              (row.Source == OwnOrderRebuildSources.CancelledInRiot &&
                               dbContext.Set<JourneyDemandRow>().Any(
@@ -315,6 +322,9 @@ internal static class OwnOrderRebuilds
         int claimed = await dbContext.OwnOrderRebuilds
             .Where(row => due.Contains(row.RebuildId) &&
                           (row.State == OwnOrderRebuildStates.Pending ||
+                           (row.State == OwnOrderRebuildStates.Ordering &&
+                            dbContext.OrderIntents.Any(
+                                intent => intent.MovementLegId == row.NewMovementLegId && intent.CreateAttemptCount == 0)) ||
                            (row.State == OwnOrderRebuildStates.AwaitingCargoHandoff &&
                             dbContext.JourneyRuntimes.Any(
                                 journey => journey.JourneyId == row.JourneyId && journey.Stage == JourneyRuntimeStage.Blocked))) &&
