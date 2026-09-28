@@ -1,0 +1,13 @@
+== M12 src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+hits=1 line=1421
+--- before
+        await FaultedCargoBindings.StageReleaseWhenNothingLeftOnBoardAsync(
+                dbContext, runtime.JourneyId, runtime.AgvId, HandedOffInExceptionSessionReason, now, cancellationToken)
+            .ConfigureAwait(false);
+--- after
+(removed)
+build exit=0
+test exit=1
+Failed FaultedCargoBindingLifecycleTests.AHandoffReleasesABindingNamingAnEndedDemandOfTheOpenJourney(action: "FAULT_CARGO_HANDOFF")
+Failed FaultedCargoBindingLifecycleTests.AHandoffReleasesABindingNamingAnEndedDemandOfTheOpenJourney(action: "FORCED_MECHANICAL_RECOVERY")
+Failed!  - Failed:     2, Passed:   399, Skipped:     0, Total:   401, Duration: 1 m 37 s - dll (net8.0)

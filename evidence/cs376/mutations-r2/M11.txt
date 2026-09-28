@@ -1,0 +1,10 @@
+== M11 src/ControlServer.Infrastructure/Persistence/FaultedCargoBindings.cs
+hits=1 line=142
+--- before
+            .Where(binding => closed.Contains(binding.DemandId) && !stillOpen.Contains(binding.DemandId))
+--- after
+            .Where(binding => closed.Contains(binding.DemandId))
+build exit=0
+test exit=1
+Failed FaultedCargoBindingLifecycleTests.ABindingOfADemandStillInAnOpenJourneyIsKeptEvenIfAClosedJourneyOnceHadIt
+Failed!  - Failed:     1, Passed:   400, Skipped:     0, Total:   401, Duration: 1 m 49 s - dll (net8.0)

@@ -1,0 +1,13 @@
+== M3 src/ControlServer.Host/Runtime/Faults/VehicleFaultCoordinator.cs
+hits=1 line=680
+--- before
+        await ReleaseCargoOfOtherJourneysAsync(faults, subject.AgvId, timeProvider.GetUtcNow(), logger, cancellationToken)
+            .ConfigureAwait(false);
+        FaultedCargoBinding? live
+--- after
+        FaultedCargoBinding? live
+build exit=0
+test exit=1
+Failed FaultedCargoBindingLifecycleTests.ALoadedSecondTripHeldForTheDoorsResumesOnItsOwnCargo
+Failed FaultedCargoBindingLifecycleTests.ARealCargoOnASecondTripKeepsItsProtectionBesideAStaleBinding
+Failed!  - Failed:     2, Passed:   399, Skipped:     0, Total:   401, Duration: 1 m 29 s - dll (net8.0)

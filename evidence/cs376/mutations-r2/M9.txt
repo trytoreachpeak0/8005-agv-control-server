@@ -1,0 +1,10 @@
+== M9 src/ControlServer.Host/Runtime/JourneyRuntimeEngine.OwnOrderRebuild.cs
+hits=1 line=783
+--- before
+            return new CargoEvidence(snapshot.MessageId, snapshot.ReceivedAt, null, null, SlotsNotRecorded: true);
+--- after
+            return new CargoEvidence(snapshot.MessageId, snapshot.ReceivedAt, null, "CARGO_SLOTS_UNKNOWN");
+build exit=0
+test exit=1
+Failed FaultedCargoBindingLifecycleTests.AnOnBoardDemandWithNoRecordedSlotsStopsTheRebuildForAPerson
+Failed!  - Failed:     1, Passed:   400, Skipped:     0, Total:   401, Duration: 1 m 44 s - dll (net8.0)

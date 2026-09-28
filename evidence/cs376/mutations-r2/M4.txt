@@ -1,0 +1,14 @@
+== M4 src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+hits=1 line=436
+--- before
+            if (reasons.Count == 0)
+            {
+                await VehicleFaultCoordinator.ReleaseCargoOfOtherJourneysAsync(
+                    faults, subject.AgvId, timeProvider.GetUtcNow(), logger, cancellationToken).ConfigureAwait(false);
+            }
+--- after
+(removed)
+build exit=0
+test exit=1
+Failed FaultedCargoBindingLifecycleTests.AResumptionEntryReleasesALeftoverBindingBeforeJudgingTheCargo
+Failed!  - Failed:     1, Passed:   400, Skipped:     0, Total:   401, Duration: 1 m 33 s - dll (net8.0)

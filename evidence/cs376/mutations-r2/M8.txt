@@ -1,0 +1,10 @@
+== M8 src/ControlServer.Host/Runtime/JourneyRuntimeEngine.OwnOrderRebuild.cs
+hits=1 line=510
+--- before
+        rebuild.Source is OwnOrderRebuildSources.FaultClearedCargoOnBoard or OwnOrderRebuildSources.CancelledInRiot &&
+--- after
+        rebuild.Source == OwnOrderRebuildSources.FaultClearedCargoOnBoard || rebuild.Source == OwnOrderRebuildSources.CancelledInRiot &&
+build exit=0
+test exit=1
+Failed FaultedCargoBindingLifecycleTests.ARebuildLeftWaitingOnAnEmptySetOfSlotsGoesOnWithoutAPerson
+Failed!  - Failed:     1, Passed:   400, Skipped:     0, Total:   401, Duration: 1 m 52 s - dll (net8.0)

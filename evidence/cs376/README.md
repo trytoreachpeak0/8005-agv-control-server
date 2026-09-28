@@ -42,3 +42,12 @@ M2 第一次写成 `if (false)`，被编译器以 CS0162（代码不可达）拒
 - 全量 `dotnet test tests/ControlServer.Tests/ControlServer.Tests.csproj -c Release`：3020 通过，0 失败，退出码 0。
 - cs#342 模型测试：`ReconnectModelTests.PrototypeMeasurement`，`CS342_ITER=300`，Release，退出码 0。报告在 `cs342-model/`。300/300 送达，ack 冲突 0，车辆倒退 0；`ORDER_HANG` 5 次与 cs#366 在集成分支上的报告相同，是原有的。
 - L2 `in-transit-order-cancelled-rebuilt`（合成对端）：PASS，证据在 `evidence/l2/cs376-in-transit-order-cancelled-rebuilt-4cd7525b/`，只留 SUMMARY、assertions、timeline。
+
+## 审查之后（第二轮，最终代码 bc0e3685）
+
+审查结论为修后可合：必修 1 条（M1，交接结算要按旅程收口），另有 9 条建议。
+
+- **修前红**：`b274387e` 只改 tests，在 4cd7525b 上红 5 格。M1 的形状照审查员的探针 rv379a，另有被拒请求不写库两格、不向空车要快照一格。
+- **变异**（`mutations-r2/`）：先写预期（`plan.md`），16 个逐个跑，红的用例与预期逐个一致。每份记录都带替换前后的原文、命中数与行号、构建与测试的退出码。上面第一轮的记录没有原文，而且对应代码之后改过，只作历史保留，以第二轮为准。
+- **全量**：`dotnet test tests/ControlServer.Tests/ControlServer.Tests.csproj -c Release`，经 Invoke-HeavyLocal 跑，3026 通过，0 失败，退出码 0，运行日志在 `full/full-bc0e3685.log`。
+- **cs#342 模型与 L2**：没有重跑，仍是 4cd7525b 上的结果。两者覆盖的是断线重连与取消后重建的整条链；本轮只改了释放点与入口判拒，不涉及这两块。
