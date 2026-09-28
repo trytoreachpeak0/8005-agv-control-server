@@ -1,0 +1,10 @@
+临时探针（跑完即用备份还原，不在仓库里），src = a932c418 加本票 M1 修复，6 轮「车只发心跳、被要才回（货在）」：
+PROBE crash hold=False decided state=ORDERING intent=PENDING_RECONCILIATION/0 | end claims=1 state=REBUILT waiting= creates=2 before=1
+PROBE crash hold=True decided state=ORDERING intent=PENDING_RECONCILIATION/0 | end claims=2 state=REBUILT waiting= creates=2 before=1
+PROBE unknown hold=False decided state=ORDERING intent=RESULT_UNKNOWN/0 | end claims=1 state=ORDERING waiting=CREATE:ResultUnknown creates=1 before=1
+
+读法：
+- crash（决定那次保存之后、问 RIoT 之前进程停了）：意图 PENDING_RECONCILIATION/0，挡与不挡都要到快照并重建——M1 修复覆盖的路径。
+- unknown（对账答 Unknown）：意图 RESULT_UNKNOWN/0，不挡也永远不建，停在 CREATE:ResultUnknown（OWN_ORDER_REBUILD_ORDER_UNCONFIRMED）。
+  WireToGateOrchestration.ReconcileOrCreateAsync 对 NotFound 只在 PENDING_RECONCILIATION 时建单，RESULT_UNKNOWN 之后只 MarkUnknown；
+  src/ControlServer.Application 在 d81c78ad..HEAD 之间零改动，这段 NotFound 处理最早见于 ea3050de（2026-08-26）。早于本票，已报调度。

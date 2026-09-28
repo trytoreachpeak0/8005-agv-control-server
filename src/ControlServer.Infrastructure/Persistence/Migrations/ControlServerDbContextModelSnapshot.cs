@@ -1694,6 +1694,9 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                     b.Property<string>("CargoEvidenceMessageId")
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTimeOffset?>("CargoEvidenceNotBefore")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTimeOffset?>("CargoEvidenceRequestedAt")
                         .HasColumnType("TEXT");
 
@@ -1764,6 +1767,9 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("StoppedReason")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("VehicleHeldAt")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("VehicleKey")

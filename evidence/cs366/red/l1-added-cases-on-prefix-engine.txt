@@ -1,0 +1,17 @@
+补充的三格在修复前的产品代码上：引擎两文件取 d81c78ad，新列保留（未被读），dotnet build --no-incremental 0 Error(s)，dotnet test 退出码 1
+  Failed ControlServer.Tests.OwnOrderRebuildCargoProofTests.ASnapshotFromWithinTheDelayDoesNotProveTheCargoOfACancelledTrip [6 s]
+Expected: 1
+Actual:   2
+     at ControlServer.Tests.OwnOrderRebuildCargoProofTests.AssertWaitingAsync(RuntimeFixture fixture, Cancelled cancelled, String waitingPrefix, String journeyCode) in tests\ControlServer.Tests\OwnOrderRebuildCargoProofTests.cs:line 599
+   at ControlServer.Tests.OwnOrderRebuildCargoProofTests.ASnapshotFromWithinTheDelayDoesNotProveTheCargoOfACancelledTrip() in tests\ControlServer.Tests\OwnOrderRebuildCargoProofTests.cs:line 247
+   at ControlServer.Tests.OwnOrderRebuildCargoProofTests.ASnapshotFromWithinTheDelayDoesNotProveTheCargoOfACancelledTrip() in tests\ControlServer.Tests\OwnOrderRebuildCargoProofTests.cs:line 251
+  Failed ControlServer.Tests.OwnOrderRebuildCargoProofTests.ARequestAnsweredJustBeforeTheDueTimeIsMadeAgainAtTheDueRound [2 s]
+Expected: True
+Actual:   False
+     at ControlServer.Tests.OwnOrderRebuildCargoProofTests.ARequestAnsweredJustBeforeTheDueTimeIsMadeAgainAtTheDueRound() in tests\ControlServer.Tests\OwnOrderRebuildCargoProofTests.cs:line 331
+   at ControlServer.Tests.OwnOrderRebuildCargoProofTests.ARequestAnsweredJustBeforeTheDueTimeIsMadeAgainAtTheDueRound() in tests\ControlServer.Tests\OwnOrderRebuildCargoProofTests.cs:line 352
+  Passed ControlServer.Tests.OwnOrderRebuildCargoProofTests.AVehicleThatOnlySendsHeartbeatsIsAskedAgainAfterTheDueTimeAndTheTripIsRebuilt(source: "cancelled") [2 s]
+  Passed ControlServer.Tests.OwnOrderRebuildCargoProofTests.AVehicleThatOnlySendsHeartbeatsIsAskedAgainAfterTheDueTimeAndTheTripIsRebuilt(source: "fault-cleared") [2 s]
+Total tests: 4
+     Passed: 2
+     Failed: 2
