@@ -222,6 +222,9 @@ public sealed partial class VehicleFaultRecoveryService
                 return Refused(reasons, null);
             }
 
+            // Going ahead: the binding a closed journey left, which did not count above, is released now (control-server#376).
+            await VehicleFaultCoordinator.ReleaseCargoOfOtherJourneysAsync(
+                faults, agvId, timeProvider.GetUtcNow(), logger, cancellationToken).ConfigureAwait(false);
             DateTimeOffset now = timeProvider.GetUtcNow();
             JourneyRuntimeRow runtime = trip.Runtime!;
             PickupStopTermination termination = new(dbContext);
@@ -317,6 +320,8 @@ public sealed partial class VehicleFaultRecoveryService
             return Refused(reasons, null);
         }
 
+        await VehicleFaultCoordinator.ReleaseCargoOfOtherJourneysAsync(
+            faults, agvId, timeProvider.GetUtcNow(), logger, cancellationToken).ConfigureAwait(false);
         DateTimeOffset now = timeProvider.GetUtcNow();
         JourneyRuntimeRow runtime = trip.Runtime!;
         runtime.Stage = JourneyRuntimeStage.Blocked;
@@ -334,8 +339,9 @@ public sealed partial class VehicleFaultRecoveryService
     /// <summary>
     /// Whether something is, or may be, on the vehicle: a demand of the journey past "still to load" and not ended, or a live
     /// cargo binding -- the same reading as a clearance's (<see cref="DisposeOfTheJourneyAsync"/>). A binding a closed journey
-    /// left is released first and does not count (control-server#376): read as this trip's cargo, it refused giving up an empty
-    /// trip, and the handoff it left as the only way could not reach a demand that never loaded.
+    /// left does not count (control-server#376): read as this trip's cargo, it refused giving up an empty trip, and the handoff it
+    /// left as the only way could not reach a demand that never loaded. Only read here; the exit releases it once it goes ahead,
+    /// so a refused request writes nothing (review, suggestion 3).
     /// </summary>
     private async Task<bool> MayCarryAsync(string agvId, JourneyRuntimeRow runtime, CancellationToken cancellationToken)
     {
@@ -350,9 +356,9 @@ public sealed partial class VehicleFaultRecoveryService
             return true;
         }
 
-        await VehicleFaultCoordinator.ReleaseCargoOfOtherJourneysAsync(
-            faults, agvId, timeProvider.GetUtcNow(), logger, cancellationToken).ConfigureAwait(false);
-        return await faults.ReadLiveCargoAsync(agvId, cancellationToken).ConfigureAwait(false) is not null;
+        return await faults.ReadLiveCargoAsync(agvId, cancellationToken).ConfigureAwait(false) is { } live &&
+               !(await faults.ReadCargoOfOtherJourneysAsync(agvId, cancellationToken).ConfigureAwait(false))
+                   .Contains(live.CargoBindingId);
     }
 
     /// <summary>

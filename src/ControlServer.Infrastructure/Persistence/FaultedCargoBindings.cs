@@ -22,6 +22,14 @@ namespace ControlServer.Infrastructure.Persistence;
 /// vehicle's next fault, because the fault coordinator binds once and leaves a live binding alone. An empty vehicle was then cleared
 /// as loaded and its rebuild waited for ever on slots it had none of; a loaded one could not resume its own order.
 /// </para>
+/// <para>
+/// <b>A premise the second rule rests on: the anchor demand a binding names is never re-dispatched into another vehicle's
+/// journey.</b> A binding whose demand is still an active member of an open journey is kept, whichever vehicle that journey is
+/// on, so an anchor moved to another vehicle would pin this one's binding for as long as that journey stays open. Today it
+/// cannot happen: the release service releases a demand for redispatch only before it is loaded, and a binding is made only
+/// for a journey with a demand loaded; a journey's anchor keeps its membership until the journey closes. A change that lets a
+/// journey's anchor move to another vehicle has to revisit <see cref="StageReleaseOfOtherJourneysCargoAsync"/>.
+/// </para>
 /// </remarks>
 public static class FaultedCargoBindings
 {
@@ -86,15 +94,33 @@ public static class FaultedCargoBindings
         DateTimeOffset releasedAt,
         CancellationToken cancellationToken)
     {
+        IReadOnlySet<string> other = await OtherJourneysCargoAsync(dbContext, agvId, cancellationToken).ConfigureAwait(false);
+        return other.Count == 0
+            ? []
+            : await StageReleaseAsync(
+                dbContext, agvId, binding => other.Contains(binding.CargoBindingId), NotCargoOfTheCurrentJourneyReason, releasedAt,
+                cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The ids of this vehicle's live bindings <see cref="StageReleaseOfOtherJourneysCargoAsync"/> would release, read and not
+    /// released: for a caller that has to judge a request before it may write anything (control-server#376 review, suggestion 3).
+    /// </summary>
+    public static async Task<IReadOnlySet<string>> OtherJourneysCargoAsync(
+        ControlServerDbContext dbContext,
+        string agvId,
+        CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(dbContext);
 
-        string[] named = await dbContext.FaultedVehicleCargo
+        var live = await dbContext.FaultedVehicleCargo.AsNoTracking()
             .Where(row => row.AgvId == agvId && row.ReleasedAt == null)
-            .Select(row => row.DemandId)
+            .Select(row => new { row.CargoBindingId, row.DemandId })
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        string[] named = [.. live.Select(row => row.DemandId)];
         if (named.Length == 0)
         {
-            return [];
+            return new HashSet<string>(StringComparer.Ordinal);
         }
 
         var journeys = await (
@@ -112,13 +138,10 @@ public static class FaultedCargoBindings
             .Select(row => row.DemandId)
             .ToHashSet(StringComparer.Ordinal);
 
-        return await StageReleaseAsync(
-            dbContext,
-            agvId,
-            binding => closed.Contains(binding.DemandId) && !stillOpen.Contains(binding.DemandId),
-            NotCargoOfTheCurrentJourneyReason,
-            releasedAt,
-            cancellationToken).ConfigureAwait(false);
+        return live
+            .Where(binding => closed.Contains(binding.DemandId) && !stillOpen.Contains(binding.DemandId))
+            .Select(binding => binding.CargoBindingId)
+            .ToHashSet(StringComparer.Ordinal);
     }
 
     private static async Task<IReadOnlyList<FaultedVehicleCargoRow>> StageReleaseAsync(

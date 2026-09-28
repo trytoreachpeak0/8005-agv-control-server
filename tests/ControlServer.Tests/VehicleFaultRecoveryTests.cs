@@ -1829,6 +1829,9 @@ public sealed class VehicleFaultRecoveryTests
             string agvId, DateTimeOffset releasedAt, CancellationToken cancellationToken) =>
             inner.ReleaseCargoOfOtherJourneysAsync(agvId, releasedAt, cancellationToken);
 
+        public Task<IReadOnlySet<string>> ReadCargoOfOtherJourneysAsync(string agvId, CancellationToken cancellationToken) =>
+            inner.ReadCargoOfOtherJourneysAsync(agvId, cancellationToken);
+
         public Task ReleaseCargoAsync(string cargoBindingId, string reason, DateTimeOffset releasedAt, CancellationToken cancellationToken) =>
             inner.ReleaseCargoAsync(cargoBindingId, reason, releasedAt, cancellationToken);
     }

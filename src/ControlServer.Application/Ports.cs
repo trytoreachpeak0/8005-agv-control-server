@@ -560,6 +560,12 @@ public interface IVehicleFaultStore
         DateTimeOffset releasedAt,
         CancellationToken cancellationToken);
 
+    /// <summary>
+    /// The ids of the bindings <see cref="ReleaseCargoOfOtherJourneysAsync"/> would release, without releasing them: a request is
+    /// judged on it, and only one that goes ahead releases (control-server#376 review).
+    /// </summary>
+    Task<IReadOnlySet<string>> ReadCargoOfOtherJourneysAsync(string agvId, CancellationToken cancellationToken);
+
     Task ReleaseCargoAsync(
         string cargoBindingId,
         string reason,

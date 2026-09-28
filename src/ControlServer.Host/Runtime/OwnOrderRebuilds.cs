@@ -307,13 +307,15 @@ internal static class OwnOrderRebuilds
                              (row.State == OwnOrderRebuildStates.Ordering &&
                               dbContext.OrderIntents.Any(
                                   intent => intent.MovementLegId == row.NewMovementLegId && intent.CreateAttemptCount == 0))) &&
+                            // The same reading as JourneyRuntimeEngine.CarriesCargoAsync (control-server#376 review, suggestion 2): a
+                            // rebuild with no demand of its journey on board has no cargo a snapshot could show.
                             (row.Source == OwnOrderRebuildSources.FaultClearedCargoOnBoard ||
-                             (row.Source == OwnOrderRebuildSources.CancelledInRiot &&
-                              dbContext.Set<JourneyDemandRow>().Any(
-                                  demand => demand.JourneyId == row.JourneyId && demand.RemovedAt == null &&
-                                            demand.Status != JourneyDemandStatuses.PendingLoad &&
-                                            demand.Status != JourneyDemandStatuses.Unloaded &&
-                                            demand.Status != JourneyDemandStatuses.Terminated)))) ||
+                             row.Source == OwnOrderRebuildSources.CancelledInRiot) &&
+                            dbContext.Set<JourneyDemandRow>().Any(
+                                demand => demand.JourneyId == row.JourneyId && demand.RemovedAt == null &&
+                                          demand.Status != JourneyDemandStatuses.PendingLoad &&
+                                          demand.Status != JourneyDemandStatuses.Unloaded &&
+                                          demand.Status != JourneyDemandStatuses.Terminated)) ||
                            (row.State == OwnOrderRebuildStates.AwaitingCargoHandoff &&
                             dbContext.JourneyRuntimes.Any(
                                 journey => journey.JourneyId == row.JourneyId && journey.Stage == JourneyRuntimeStage.Blocked))) &&

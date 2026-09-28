@@ -403,10 +403,16 @@ public sealed partial class VehicleFaultRecoveryService(
             }
 
             reasons.AddRange(EmergencyReasons(reading.Emergency, standing.StopOpen));
-            // A binding a closed journey left is not the cargo of the order being resumed (control-server#376).
-            await VehicleFaultCoordinator.ReleaseCargoOfOtherJourneysAsync(
-                faults, subject.AgvId, timeProvider.GetUtcNow(), logger, cancellationToken).ConfigureAwait(false);
+            // A binding a closed journey left is not the cargo of the order being resumed (control-server#376). Judged as absent
+            // here, and released below only when the resumption goes ahead: a refused request writes nothing (review, suggestion 3).
             FaultedCargoBinding? cargo = await faults.ReadLiveCargoAsync(subject.AgvId, cancellationToken).ConfigureAwait(false);
+            if (cargo is not null &&
+                (await faults.ReadCargoOfOtherJourneysAsync(subject.AgvId, cancellationToken).ConfigureAwait(false))
+                    .Contains(cargo.CargoBindingId))
+            {
+                cargo = null;
+            }
+
             if (standing.Journey is not JourneyRuntimeRow journey ||
                 standing.Intent is not { OrderId: string orderId } intent ||
                 reading.Order is not RiotOrderObservation order)
@@ -425,6 +431,12 @@ public sealed partial class VehicleFaultRecoveryService(
                     transportDemandKey,
                     $"{ResumedByOperatorReason}:{request.OperatorId}");
                 reasons.AddRange(VehicleFaultCoordinator.ResumeRefusals(subject, resumption, standing.Fault, cargo, order));
+            }
+
+            if (reasons.Count == 0)
+            {
+                await VehicleFaultCoordinator.ReleaseCargoOfOtherJourneysAsync(
+                    faults, subject.AgvId, timeProvider.GetUtcNow(), logger, cancellationToken).ConfigureAwait(false);
             }
         }
 

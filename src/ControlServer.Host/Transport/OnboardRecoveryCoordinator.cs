@@ -1414,6 +1414,14 @@ public sealed class OnboardRecoveryCoordinator(
             cargo.ReleasedReason = HandedOffInExceptionSessionReason;
         }
 
+        // A binding names the journey's anchor demand, which need not be the one handed off (control-server#376 review M1): the
+        // anchor may have ended before its load while another demand of the journey, still to load, keeps the journey open. Once
+        // nothing of the journey is on board, whichever demand the binding names, the cargo it stood for has left the vehicle.
+        // The closed-journey rule cannot catch it later: that anchor is still an active member of an open journey.
+        await FaultedCargoBindings.StageReleaseWhenNothingLeftOnBoardAsync(
+                dbContext, runtime.JourneyId, runtime.AgvId, HandedOffInExceptionSessionReason, now, cancellationToken)
+            .ConfigureAwait(false);
+
         if (runtime.Stage != JourneyRuntimeStage.Completed)
         {
             return;
