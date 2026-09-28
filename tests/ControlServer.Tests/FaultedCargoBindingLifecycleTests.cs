@@ -170,44 +170,7 @@ public sealed class FaultedCargoBindingLifecycleTests
         Environment.SetEnvironmentVariable(ProofVariable, Proof);
         try
         {
-            await using RuntimeFixture fixture = await StoppedRebuildExitTests.StoppedWithCargoNotInPlaceAsync();
-            JourneyRuntimeRow stopped = await fixture.RuntimeAsync();
-            const string EndedBeforeLoad = "10000000-0000-4000-8000-000000000003";
-            await using (ControlServerDbContext seeding = new(fixture.DbOptionsForTests))
-            {
-                await JourneyMembershipSeed.AddFurtherDemandAsync(seeding, stopped, SecondDemandId);
-                AcceptedDemandRow ended = await JourneyMembershipSeed.AddFurtherDemandAsync(
-                    seeding, stopped, EndedBeforeLoad, DemandExecutionStatus.Cancelled);
-                FaultedVehicleCargoRow binding = await seeding.FaultedVehicleCargo.SingleAsync(row => row.ReleasedAt == null, Token);
-                binding.DemandId = EndedBeforeLoad;
-                binding.TransportDemandKey = ended.TransportDemandKey;
-                await seeding.SaveChangesAsync(Token);
-            }
-
-            int[] slots = await LoadSlotsAsync(fixture, FirstDemandId);
-            Assert.Equal(
-                VehicleFaultRecoveryOutcome.HandoffPrepared,
-                (await VehicleFaultRecoveryTests.Service(fixture, new(fixture))
-                    .RecoverAsync(StoppedRebuildExitTests.Prepare(fixture), Token)).Outcome);
-            fixture.Context.ChangeTracker.Clear();
-            await using (ControlServerDbContext connection = fixture.OpenConnectionContext())
-            {
-                OnboardMessageProcessor processor = RecoveryProcessor(fixture, connection);
-                OnboardConnectionState state = Connection(fixture);
-                string opened = await processor.ProcessAsync(OpenSession(fixture, FirstDemandId, slots), state, Token);
-                Assert.Equal("ExceptionRecoverySessionOpened", FirstLineType(opened));
-                string sessionId = FirstLinePayload(opened).GetProperty("exceptionRecoverySessionId").GetString()!;
-                string actionId = Guid.NewGuid().ToString("D");
-                Assert.Equal("RecoveryActionAccepted", FirstLineType(await processor.ProcessAsync(
-                    Action(fixture, sessionId, FirstDemandId, slots, actionId, action), state, Token)));
-                string result = action == "FAULT_CARGO_HANDOFF"
-                    ? HandedOff(fixture, sessionId, actionId, FirstDemandId,
-                        (await connection.RecoveryWorkflows.AsNoTracking().SingleAsync(Token)).HandoffId!, slots)
-                    : MechanicallyIsolated(fixture, sessionId, actionId, slots);
-                Assert.Equal("DurableAck", FirstLineType(await processor.ProcessAsync(result, state, Token)));
-            }
-
-            fixture.Context.ChangeTracker.Clear();
+            await using RuntimeFixture fixture = await HandOffTheFirstDemandAsync(action, bindingNamesTheEndedDemand: true, secondLoaded: false);
             Assert.Equal(
                 JourneyDemandStatuses.PendingLoad,
                 (await fixture.Context.Set<JourneyDemandRow>().AsNoTracking().SingleAsync(row => row.DemandId == SecondDemandId, Token)).Status);
@@ -221,6 +184,96 @@ public sealed class FaultedCargoBindingLifecycleTests
         {
             Environment.SetEnvironmentVariable(ProofVariable, null);
         }
+    }
+
+    /// <summary>
+    /// 增量审查建议 S1：交接一条需求时，旅程里另一条还装在车上（LOADED）。绑定无论记在被交接的那条名下，还是记在一条已终结的锚需求名下，
+    /// 都仍在效：它代表的是这趟旅程的货，车上还有。修之前交接结算先按需求逐条释放，绑定正好记在被交接需求名下时就放掉了，下一次故障会把这辆
+    /// 有货的车当空车。第二格守反方向：把收口换成「无条件释放本车全部在效绑定」（审查员的变异 P1）时它红。
+    /// </summary>
+    [Theory]
+    [InlineData("handed-off-demand")]
+    [InlineData("ended-anchor")]
+    [Trait("Requirement", "REQ-0238")]
+    public async Task AHandoffKeepsTheBindingWhileAnotherDemandIsStillOnBoard(string bindingNames)
+    {
+        Environment.SetEnvironmentVariable(ProofVariable, Proof);
+        try
+        {
+            await using RuntimeFixture fixture = await HandOffTheFirstDemandAsync(
+                "FAULT_CARGO_HANDOFF", bindingNamesTheEndedDemand: bindingNames == "ended-anchor", secondLoaded: true);
+            Assert.Equal(
+                JourneyDemandStatuses.Loaded,
+                (await fixture.Context.Set<JourneyDemandRow>().AsNoTracking().SingleAsync(row => row.DemandId == SecondDemandId, Token)).Status);
+            Assert.NotEqual(
+                JourneyDemandStatuses.Loaded,
+                (await fixture.Context.Set<JourneyDemandRow>().AsNoTracking().SingleAsync(row => row.DemandId == FirstDemandId, Token)).Status);
+            FaultedVehicleCargoRow binding = await SingleBindingAsync(fixture);
+            Assert.Equal(bindingNames == "ended-anchor" ? EndedBeforeLoadDemandId : FirstDemandId, binding.DemandId);
+            Assert.Null(binding.ReleasedAt);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(ProofVariable, null);
+        }
+    }
+
+    private const string EndedBeforeLoadDemandId = "10000000-0000-4000-8000-000000000003";
+
+    /// <summary>
+    /// 停住的重建转交接，维护人员在会话里把第一条需求交接（或强制机械恢复）走完。旅程另有两条：第二条（待装，或已装在车上），
+    /// 以及一条装货前就取消了的；绑定记在第一条名下，或改记到那条已取消的名下（引擎按锚需求绑定时的形状）。
+    /// </summary>
+    private static async Task<RuntimeFixture> HandOffTheFirstDemandAsync(string action, bool bindingNamesTheEndedDemand, bool secondLoaded)
+    {
+        RuntimeFixture fixture = await StoppedRebuildExitTests.StoppedWithCargoNotInPlaceAsync();
+        JourneyRuntimeRow stopped = await fixture.RuntimeAsync();
+        await using (ControlServerDbContext seeding = new(fixture.DbOptionsForTests))
+        {
+            await JourneyMembershipSeed.AddFurtherDemandAsync(seeding, stopped, SecondDemandId);
+            AcceptedDemandRow ended = await JourneyMembershipSeed.AddFurtherDemandAsync(
+                seeding, stopped, EndedBeforeLoadDemandId, DemandExecutionStatus.Cancelled);
+            if (secondLoaded)
+            {
+                JourneyDemandRow second = await seeding.Set<JourneyDemandRow>().SingleAsync(row => row.DemandId == SecondDemandId, Token);
+                second.Status = JourneyDemandStatuses.Loaded;
+            }
+
+            if (bindingNamesTheEndedDemand)
+            {
+                FaultedVehicleCargoRow binding = await seeding.FaultedVehicleCargo.SingleAsync(row => row.ReleasedAt == null, Token);
+                binding.DemandId = EndedBeforeLoadDemandId;
+                binding.TransportDemandKey = ended.TransportDemandKey;
+            }
+
+            await seeding.SaveChangesAsync(Token);
+        }
+
+        int[] slots = await LoadSlotsAsync(fixture, FirstDemandId);
+        Assert.Equal(
+            VehicleFaultRecoveryOutcome.HandoffPrepared,
+            (await VehicleFaultRecoveryTests.Service(fixture, new(fixture))
+                .RecoverAsync(StoppedRebuildExitTests.Prepare(fixture), Token)).Outcome);
+        fixture.Context.ChangeTracker.Clear();
+        await using (ControlServerDbContext connection = fixture.OpenConnectionContext())
+        {
+            OnboardMessageProcessor processor = RecoveryProcessor(fixture, connection);
+            OnboardConnectionState state = Connection(fixture);
+            string opened = await processor.ProcessAsync(OpenSession(fixture, FirstDemandId, slots), state, Token);
+            Assert.Equal("ExceptionRecoverySessionOpened", FirstLineType(opened));
+            string sessionId = FirstLinePayload(opened).GetProperty("exceptionRecoverySessionId").GetString()!;
+            string actionId = Guid.NewGuid().ToString("D");
+            Assert.Equal("RecoveryActionAccepted", FirstLineType(await processor.ProcessAsync(
+                Action(fixture, sessionId, FirstDemandId, slots, actionId, action), state, Token)));
+            string result = action == "FAULT_CARGO_HANDOFF"
+                ? HandedOff(fixture, sessionId, actionId, FirstDemandId,
+                    (await connection.RecoveryWorkflows.AsNoTracking().SingleAsync(Token)).HandoffId!, slots)
+                : MechanicallyIsolated(fixture, sessionId, actionId, slots);
+            Assert.Equal("DurableAck", FirstLineType(await processor.ProcessAsync(result, state, Token)));
+        }
+
+        fixture.Context.ChangeTracker.Clear();
+        return fixture;
     }
 
     /// <summary>
@@ -460,17 +513,20 @@ public sealed class FaultedCargoBindingLifecycleTests
 
     /// <summary>
     /// 被拒的请求不写库（审查第一路建议 3）：库里留着上一趟的绑定，人按「继续原单」却没确认现场已处置（<c>FaultRemedied=false</c>），被拒；
-    /// 或者空车被护栏三停住时按「放弃这趟」，但急停闩锁着，被拒。两次都不释放那条绑定——释放只在放行时做。
+    /// 或者空车被护栏三停住时按「放弃这趟」，但急停闩锁着，被拒；或者对这辆空车按「转交接」，以车上没有货被拒（增量审查建议 S2）。
+    /// 三次都不释放那条绑定——释放只在放行时做，判拒只读。
     /// </summary>
     [Theory]
     [InlineData("resume-not-remedied")]
     [InlineData("give-up-under-latch")]
+    [InlineData("handoff-nothing-on-board")]
     [Trait("Requirement", "REQ-0238")]
     public async Task ARefusedRequestReleasesNothing(string request)
     {
         await using RuntimeFixture fixture = await CompletedTripLeavingALiveBindingAsync();
         await DispatchSecondDemandAsync(fixture);
         VehicleFaultRecoveryRequest asked;
+        string expectedReason;
         if (request == "resume-not-remedied")
         {
             fixture.Riot.FailOrder((await fixture.RuntimeAsync(SecondDemandId)).PickupUpperId);
@@ -481,21 +537,28 @@ public sealed class FaultedCargoBindingLifecycleTests
             {
                 Action = VehicleFaultRecoveryAction.ResumeHeldOrder, FaultRemedied = false,
             };
+            expectedReason = "FAULT_RECOVERY_REMEDY_NOT_CONFIRMED";
         }
-        else
+        else if (request == "give-up-under-latch")
         {
             await StopTheSecondTripByTheThirdGuardAsync(fixture);
             fixture.EmergencyLatched = true;
             asked = StoppedRebuildExitTests.GiveUp(fixture);
+            expectedReason = "FAULT_RECOVERY_EMERGENCY_LATCHED";
+        }
+        else
+        {
+            // The one refusal whose own judgement reads the cargo: the leftover binding must not count, and must not go either.
+            await StopTheSecondTripByTheThirdGuardAsync(fixture);
+            asked = StoppedRebuildExitTests.Prepare(fixture);
+            expectedReason = VehicleFaultRecoveryService.ExitNothingOnBoardReason;
         }
 
         VehicleFaultRecoveryDecision refused = await VehicleFaultRecoveryTests.Service(fixture, new(fixture)).RecoverAsync(asked, Token);
         fixture.Context.ChangeTracker.Clear();
 
         Assert.Equal(VehicleFaultRecoveryOutcome.Refused, refused.Outcome);
-        Assert.Contains(
-            refused.Reasons,
-            reason => reason is "FAULT_RECOVERY_REMEDY_NOT_CONFIRMED" or "FAULT_RECOVERY_EMERGENCY_LATCHED");
+        Assert.Contains(expectedReason, refused.Reasons);
         FaultedVehicleCargoRow binding = (await BindingsAsync(fixture)).Single(row => row.DemandId == FirstDemandId);
         Assert.Null(binding.ReleasedAt);
     }
