@@ -193,6 +193,37 @@ public sealed class TaskTypeStationStartupTests
         Assert.Equal(2, await harness.CountAsync<TaskTypeStationBindingSetVersionRow>());
     }
 
+    /// <summary>
+    /// control-server#186 增量审查第 1 条：启动时装载预置、让它成为该图第一个生效版本的那个事务里，若该图有未接受的改名，
+    /// 预置绑定的任务类型也挂 MAP_RENAMED 暂停——否则第一轮地图列表恰好读不到时，它们会在没人接受的新名下派一轮车。
+    /// </summary>
+    [Fact]
+    public async Task AFirstStartUnderAPendingMapRenameHoldsEveryTaskTypeThePresetBinds()
+    {
+        await using Harness harness = await Harness.CreateAsync(Runtime());
+        await using (AsyncServiceScope scope = harness.Services.CreateAsyncScope())
+        {
+            IMapNameBaselineStore baselines = scope.ServiceProvider.GetRequiredService<IMapNameBaselineStore>();
+            await baselines.EstablishAsync(25, "老厂前线new_wk", Now.AddHours(-1), Token);
+            await baselines.SetPendingAsync(25, "老厂前线new_wk2", Now.AddMinutes(-10), Token);
+        }
+        harness.WritePreset(Preset());
+
+        TaskTypeStationStartupResult result = Assert.IsType<TaskTypeStationStartupResult>(
+            await TaskTypeStationStartup.EnsureAsync(harness.Services, Token));
+
+        Assert.True(result.Bindings.Created);
+        await using AsyncServiceScope after = harness.Services.CreateAsyncScope();
+        TaskTypeStationHold hold = Assert.Single(
+            await after.ServiceProvider.GetRequiredService<ITaskTypeStationHoldStore>().ListUnreleasedAsync(25, Token));
+        Assert.Equal(
+            (TransportTaskTypes.WireToGate, TaskTypeStationHoldSource.CatalogChange, MapNameHoldReasons.MapRenamed),
+            (hold.TaskType, hold.Source, hold.ReasonCode));
+        using JsonDocument detail = JsonDocument.Parse(hold.DetailJson);
+        Assert.Equal("老厂前线new_wk2", detail.RootElement.GetProperty("after").GetProperty("mapName").GetString());
+        Assert.Equal(0, detail.RootElement.GetProperty("inFlightDemands").GetInt32());
+    }
+
     [Fact]
     public async Task APointerThatIsActiveButNamesNoVersionStillLetsThePresetLoadAsTheFirstVersion()
     {

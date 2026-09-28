@@ -352,6 +352,25 @@ public sealed class MapRenameHoldConvergenceTests
             && entry.Message.Contains("map 9", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// 增量审查第 2 条：按图隔离之所以能在一张图出错时回滚那张图，靠的是它自己开事务、外面没有事务。放在别人的事务里调用，
+    /// 一张图的失败会连带外层事务一起作废——所以这时直接拒绝，不静悄悄地「隔离」。
+    /// </summary>
+    [Fact]
+    public async Task ObservingInsideSomeoneElsesTransactionIsRefusedBecauseOneMapCouldNotBeRolledBackAlone()
+    {
+        await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
+        ScriptedMapNames riot = new((26, "老厂前线new_wk"));
+        await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction outer =
+            await fixture.Context.Database.BeginTransactionAsync(Token);
+
+        InvalidOperationException refused = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => Convergence(fixture, riot).ObserveAsync(Token));
+
+        Assert.Contains("transaction", refused.Message, StringComparison.Ordinal);
+        Assert.Null(await Baselines(fixture).ReadAsync(26, Token));
+    }
+
     /// <summary>看板暂停卡片上能看到来源与原因：「目录变化」「地图改名」。</summary>
     [Fact]
     public async Task TheDashboardShowsAMapRenameHoldAsACatalogChangeForAMapRename()
