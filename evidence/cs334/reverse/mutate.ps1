@@ -10,14 +10,19 @@ param([string] $Only = '')
 
 $ErrorActionPreference = 'Stop'
 $root = (Get-Location).Path
-$outDir = Join-Path $root 'evidence/cs334/reverse'
+$outDir = Join-Path $root ($env:CS334_MUTATION_OUT ?? 'evidence/cs334/reverse')
 $filter = 'FullyQualifiedName~GateHeldOnboardSendTests|FullyQualifiedName~OnboardPowerLossReconnectTests|' +
     'FullyQualifiedName~OnboardOutboundFunnelArchitectureTests|FullyQualifiedName~StoppedRebuildExitTests|' +
-    'FullyQualifiedName~VehicleFaultRecoveryTests|FullyQualifiedName~OnboardSilentLivenessLossTests'
+    'FullyQualifiedName~VehicleFaultRecoveryTests|FullyQualifiedName~OnboardSilentLivenessLossTests|' +
+    'FullyQualifiedName~MultiVehicleExecutionTests|FullyQualifiedName~ArrivalPublishInterruptedThenReconnectedTests|' +
+    'FullyQualifiedName~ReconnectModelRegressionTests|FullyQualifiedName~Batch7CargoHoldingTests|' +
+    'FullyQualifiedName~JourneyRuntimeWorkerLoadCancellationBeforeSublotTests'
 
 $peer = 'src/ControlServer.Host/Transport/OnboardPeer.cs'
 $server = 'src/ControlServer.Host/Transport/OnboardTcpServer.cs'
 $stopped = 'src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs'
+$engine = 'src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs'
+$mes = 'src/ControlServer.Host/Runtime/MesIngestReads.cs'
 $saveThenSend = @'
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -36,8 +41,8 @@ $mutations = [ordered]@{
         From = 'new(stream, _options.WriteTimeout);'
         To = 'new(stream);' }
     M3 = @{ What = 'no startup validation of WriteTimeout'; File = $server
-        From = "        if (_options.WriteTimeout <= TimeSpan.Zero)`n        {`n            throw new InvalidOperationException(`"OnboardTransport:WriteTimeout must be positive.`");`n        }`n"
-        To = '' }
+        From = "        if (_options.WriteTimeout <= TimeSpan.Zero || _options.WriteTimeout > OnboardTransportOptions.MaxWriteTimeout)`n"
+        To = "        if (_options.WriteTimeout < TimeSpan.MinValue)`n" }
     M4 = @{ What = 'giving up a stopped trip reads RIoT under the gate'; File = $stopped
         From = $saveThenSend
         To = $saveThenSend.Replace(
@@ -52,6 +57,18 @@ $mutations = [ordered]@{
         }
 
 '@ }
+    M6 = @{ What = 'guard b: a second, direct write to the stream inside the connection'; File = $peer
+        From = '    private async Task SendCoreAsync('
+        To = "    internal Task WriteUnboundedAsync(ReadOnlyMemory<byte> line) => _stream.WriteAsync(line).AsTask();`n`n    private async Task SendCoreAsync(" }
+    M7 = @{ What = 'the yield taken back: a vehicle whose connection is gone fails the whole round again'; File = $engine
+        From = "                    if (OnboardConnectionUnavailableException.IsIn(error))`n"
+        To = "                    if (OnboardConnectionUnavailableException.IsIn(error) && error.Data.Contains(`"cs334-mutant`"))`n" }
+    M8 = @{ What = 'a MesIngest timeout is no longer a failed read'; File = $mes
+        From = '(error is OperationCanceledException && !cancellationToken.IsCancellationRequested)'
+        To = '(error is OperationCanceledException && cancellationToken.IsCancellationRequested)' }
+    M9 = @{ What = 'a MesIngest timeout is no longer a failed read, and nothing else changes'; File = $mes
+        From = '(error is OperationCanceledException && !cancellationToken.IsCancellationRequested)'
+        To = '(error is TimeoutException && !cancellationToken.IsCancellationRequested)' }
 }
 
 $selected = $Only -eq '' ? @($mutations.Keys) : @($Only -split ',' | ForEach-Object { $_.Trim() })
@@ -72,6 +89,7 @@ foreach ($id in $selected) {
         [System.IO.File]::WriteAllText($path, $original.Remove($index, $from.Length).Insert($index, $to))
         $diff = git -C $root diff --stat -- $m.File
         $build = dotnet build tests/ControlServer.Tests -c Debug --no-incremental 2>&1 | Select-String -Pattern 'Error\(s\)|error CS' | Select-Object -First 5
+        if (-not (($build | ForEach-Object Line) -match '\b0 Error\(s\)')) { throw "$id did not build: $($build -join ' / ')" }
         $log = Join-Path $outDir "$id.txt"
         dotnet test tests/ControlServer.Tests -c Debug --no-build --filter $filter 2>&1 | Out-File -FilePath $log -Encoding utf8NoBOM
         $exit = $LASTEXITCODE

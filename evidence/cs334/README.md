@@ -64,3 +64,68 @@
 - **a**（`NoFaultRecoveryPathCallsRiotOrSendsToAVehicleWhileTheGateIsHeld`，六条路）：人工出口持锁期间零 RIoT、零车载端发送。每条路都断言走到了自己的结局；放弃停车行程那条还断言发送次数大于零（今天 3 条，全在放锁之后），证明发送检测器看得见发送。原有的 `VehicleFaultRecoveryTests.NoRiotCallIsMadeWhileTheGateIsHeld` 未改。
 - **b 行为**：`AStuckWriteAndTheOneQueuedBehindItEndWithinTheTimeoutAndTheConnectionIsClosed`（排在卡住写后面那一次正是 HeartbeatAck 的形状）；只听不读两格（默认值与 1 秒配置）；`TheListenerRefusesToStartWithAWriteTimeoutThatIsNotPositive`。
 - **b 文本**：`TheConnectionWritesItsStreamInOnePlaceAndOnlyBehindTheWriteTimeout`。按文本数，看不见换名字的写法，是防回归线，不是证明；socket 的其余出口由 `OnboardOutboundFunnelArchitectureTests` 钉着。
+
+## 审查这一轮（review/，head `fde16258` 的两路审查，调度 2026-09-28 并进本票两处）
+
+审查意见：https://github.com/trytoreachpeak0/8005-agv-control-server/pull/372#issuecomment-5863042360 。提交顺序：先红 `963788cc`（只动 tests），修复 `b51c6279`。修复最初提交为 `c4b3b3b1`，推送前只改了提交说明里的一个计数，代码树完全相同；本节文件名与变异记录里的 `c4b3b3b1` 指的就是这棵树。
+
+### 改了什么（读到的）
+
+- **必修 1，车载端连接不可用时这台车本轮让开。**新异常类型 `OnboardConnectionUnavailableException`（继承 `IOException`）：没连上、代次不对、写超时、连接已关（含 socket 错误与流已关的 `ObjectDisposedException`）都以它结束。引擎推进某台车时遇到它，撤回这台车没保存的改动（与 cs#357 的让开同一件事），看板照 cs#331 的判定写 `JOURNEY_ADVANCE_FAILED`，轮次接着推进下一台（事件 2193）。别的失败仍整轮抛：RIoT 连不上（`HttpRequestException` 里包着 `SocketException`）与崩溃注入（普通 `IOException`）都不在此列，这是新类型收窄的原因。
+- **让开时不清空变更跟踪。**`NameFailedAdvanceAsync` 清空再重读，是因为随后整轮就抛了；让开时轮次还要继续，清空会让排在后面的车被循环开头「不在跟踪里就跳过」挡掉。所以只重读、只存这一行；别的车还留着没保存的改动时这一轮不写码，下一轮再写。
+- **必修 2，MES。**需求目录与箱数两个 `HttpClient` 设 `Timeout`（`MesIngest:timeoutSeconds`，默认 10 s，在组装时读一次、校验一次）。引擎读箱数、派车读目录、派车判据读箱数三处都把「调用方令牌没取消的取消」并入读失败（`MesIngestReads.IsFailedRead`）。审查点名的是引擎那一处；另外两处机理相同，一并改。
+- **建议。**写超时 (0, 10 s] 之外拒绝启动；超时消息带车号与会话代次（连接挂进路由表时写上）。
+
+### 测试的认法随契约改（读到的）
+
+改之前，模拟车载端断线的替身抛普通 `IOException`，注释写着「与真实 `OnboardPeer` 的失败点相同」。改之后这句不再成立：唯一的实现 `OnboardPeer` 一切失败都抛新类型，引擎对它让开。替身不改，这些用例就会继续绿，守的却是一条生产里已经不存在的路径。
+
+- 9 处断线替身改抛产品的新类型（`ArrivalPublishInterruptedThenReconnectedTests`、`Batch7CargoHoldingTests`、`JourneyClosureSnapshotTests`、`ReconnectModel`、`ReconnectModelRegressionTests`、`SlotConfigurationActivationEndpointsTests`）。`ArrivalPublishInterruptedThenReconnectedTests` 里那条多形状理论（第 593 行 `wrapped-io`）保持普通 `IOException`：它测的是整轮抛那条路径上 `IsTransportFailure` 的判定，不代表真实断线。
+- 「这一轮必须抛」共 12 处，改成「这一轮照常走完，且断线确实触发过」（`RoundCutAsync` 与计数）。原来的抛异常同时证明了断线注入生效；拿掉之后必须补上这条，否则没生效的注入看起来也是绿的。**每条用例后面的断言一字未改**，全部照样通过：看板命名、开始时间保持、重连后补发，在让开路径下都成立。
+- 精确类型断言 4 处（`OnboardHandshakePushGateTests`、`MultiVehicleExecutionTests`）改成断言新类型，钉住新契约。
+- cs#342 模型：把「这一轮有一次发送被拒」也认作这台车推进失败，机会计数（`WaitOnPersonChances`）按新行为计。
+- 车队夹具的车载端替身改为转给一个什么都没挂的真实 `OnboardPeer`，抛的是产品自己的异常，不是替身挑的类型。
+
+### 修前红（`review/red-pre-fix-963788cc.txt`，`963788cc` 的测试加修前产品代码，读到的）
+
+| 用例 | 修前 |
+| --- | --- |
+| 多车让开两格（`ready`、`not-ready-on-own-order`） | 整轮抛 `IOException : No recovered Onboard peer is connected for '老厂前线新多仓位1'` |
+| 引擎读箱数挂住 | `TaskCanceledException : ... HttpClient.Timeout of 0.5 seconds elapsing` 冒出整轮 |
+| 派车读目录挂住 | 同上 |
+| 派车判据读箱数挂住 | 这一轮没有一台车完成判定：超时把每台车都踢出了派车轮次 |
+| 写超时上限 10.001 s、60 天 | 照常启动 |
+| 只听不读两格 | 超时消息里没有车号 |
+| 排队写 | 排队那一次以非 `IOException` 结束 |
+
+写超时上限 0 s、-1 s 两格修前就绿（下限校验上一轮已有）。
+
+### 两条会假红的用例（审查必修 3）
+
+- **排队写。**判据改成：两次都是 `IOException`，至少一次是写超时，之后那一次的失败里没有超时字样。哪个计时器先到点属于调度，新判据对两种先后都成立，这是按机理修的。`review/repeat-15-c4b3b3b1.txt` 连跑 15 遍全绿，只是旁证：审查实测 14 轮红 1 次，按这个比率连绿 15 遍仍有约三分之一的概率是运气。
+- **只听不读 1000 ms 格。**前提门槛改为配置值的八成。判据改成事件式：推送以写超时失败，消息里是**配置的**秒数与车号；服务端记了 1003、没有记 1005（放掉它的是写超时，不是静默窗口）。墙钟只剩挂死保护。
+
+### 反向验证（`review/reverse/`，基线 `c4b3b3b1`，读到的）
+
+每格的预期都是跑之前写下的。同跑 11 个类、305 条。
+
+| 变异 | 改了什么 | 实际红 |
+| --- | --- | --- |
+| M0 | 整个写上限拿掉 | 5 条：两条红证据、排队写、只听不读两格、文本护栏，与上一轮相同 |
+| M1 | 超时后不关流 | 只有排队写，红在「之后那一次又等满了超时」（事件式判据） |
+| M2 | 监听器不传配置 | 只有 1000 ms 格，红在消息里找不到「1 s 内没写完」 |
+| M3 | 去掉启动校验 | 恰好上限用例四格 |
+| M4 | 放弃停车行程时锁内读 RIoT | 只有护栏 a 的 `give-up-stopped` |
+| M5 | 收尾快照挪进锁里发 | 只有护栏 a 的 `give-up-stopped` |
+| M6（护栏 b，审查建议） | 连接类里另加一处直接写流 | 只有文本护栏，红在「写流恰好一处」 |
+| M7（调度点名） | 让开改回整轮抛 | 24 条：多车让开两格，加上 22 条断线用例（cs#331 那一类 18、货物保持 3、模型回归 1） |
+| M8 | MES 判据里取反去掉 | 4 条：3 条 MES 用例，加上既有的单车预算用例（见下） |
+| M9 | MES 判据只认 `TimeoutException` | 恰好 3 条 MES 用例 |
+
+- **M7 多出来的 22 条是预期内的。**它们在这一轮被改成断言「断线时整轮照常走完」，所以现在也各自守着让开。模型回归里挂起码那条没红，也符合预期：模型把整轮抛与发送被拒都认作推进失败，两种行为下判的是同一件事。
+- **M8 多出的那一条要解释。**这个变异同时做了两件事：让 HTTP 超时不再算读失败，也让派车单车预算到期的取消被当成读失败。多红的 `WhatAVehicleCutOffMidChainHadStagedIsNotSavedWithTheNextVehicle` 是后一半造成的。它说明判据里「令牌没取消」那一半被既有的预算用例守着。M9 只拿掉前一半，恰好红 3 条。
+
+### 修后（review/）
+
+- `full-suite-release-c4b3b3b1.txt`：仓库规定的全量命令，Release，2875 条全过，退出码 0（含出站 schema 门禁）；比上一轮 2868 多 7 条，正是这一轮新增的用例数（多车让开 2、MES 3、上限新增 2 格）
+- `cs342-model-1000.*`：1000 组，masterSeed=342，无违规；录入请求 1000/1000 到车；ack 冲突 0；带着等人码而这一轮推进失败 13 次，全是 `ORDER_HANG`。除耗时（这次是 Release 构建）外与 `green/02-cs342-model-1000.report.txt` 逐项相同：模型改了认「推进失败」的方式之后，这条不变量出事的机会一次没少
