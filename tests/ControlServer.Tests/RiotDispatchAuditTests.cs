@@ -599,6 +599,87 @@ public sealed class RiotDispatchAuditTests
         Assert.Equal([1L, 2L], sequences[second.MovementLegId]);
     }
 
+    /// <summary>
+    /// control-server#375: a pre-create read that timed out leaves the intent RESULT_UNKNOWN with no create attempt. Once RIoT
+    /// answers the order is absent -- NotFound, or the exact absent-at-observation read -- the intent was never sent, and it is
+    /// created exactly once.
+    /// </summary>
+    [Theory]
+    [InlineData("not-found")]
+    [InlineData("exact-absent")]
+    public async Task NeverSentIntentLeftUnknownByATimedOutReadIsCreatedOnceRiotAnswersAbsent(string absence)
+    {
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        WireToGateStore store = new(context);
+        OrderIntent intent = await AcceptIntentAsync(store);
+        RiotOrderObservation absent = absence == "not-found"
+            ? Observation(intent, RiotOrderObservationKind.NotFound, receipt: Receipt("RECONCILE", "NotFound", 404, resultPresent: false))
+            : Observation(intent, RiotOrderObservationKind.Unknown, receipt: Receipt("RECONCILE", "AbsentAtObservation", resultPresent: false));
+        ScriptedGateway gateway = new(
+            [
+                Observation(intent, RiotOrderObservationKind.Unknown, receipt: Receipt("RECONCILE", "SdkFailure", failureCategory: "TIMEOUT")),
+                absent,
+                Observation(intent, RiotOrderObservationKind.Active, "ORDER-375", Receipt("RECONCILE", "Found", resultPresent: true))
+            ],
+            Observation(intent, RiotOrderObservationKind.Active, "ORDER-375", Receipt("CREATE", "SdkAccepted", resultPresent: true)));
+        MovementDispatchService service = new(store, gateway, new AdvancingTimeProvider(Now));
+
+        MovementDispatchResult unread = await service.ReconcileOrCreateAsync(intent.UpperId, TestContext.Current.CancellationToken);
+
+        Assert.Equal(MovementDispatchOutcome.ResultUnknown, unread.Outcome);
+        OrderIntentRow afterUnread = await context.OrderIntents.AsNoTracking().SingleAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(("RESULT_UNKNOWN", 0, (string?)null), (afterUnread.Status, afterUnread.CreateAttemptCount, afterUnread.CreateAttemptId));
+
+        MovementDispatchResult answered = await service.ReconcileOrCreateAsync(intent.UpperId, TestContext.Current.CancellationToken);
+
+        Assert.Equal((MovementDispatchOutcome.Confirmed, "ORDER-375"), (answered.Outcome, answered.OrderId));
+        Assert.Equal(1, gateway.CreateCount);
+        OrderIntentRow row = await context.OrderIntents.AsNoTracking().SingleAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(("CONFIRMED", 1), (row.Status, row.CreateAttemptCount));
+        string[] phases = await context.RiotDispatchAuditEvents.AsNoTracking()
+            .OrderBy(item => item.Sequence).Select(item => item.Phase + "/" + item.Outcome)
+            .ToArrayAsync(TestContext.Current.CancellationToken);
+        Assert.Equal("PRE_CREATE_RECONCILIATION/UNKNOWN", phases[0]);
+        Assert.Equal(absence == "not-found" ? "PRE_CREATE_RECONCILIATION/NOT_FOUND" : "PRE_CREATE_RECONCILIATION/UNKNOWN", phases[1]);
+        Assert.Equal("CREATE_DISPATCH/ARMED", phases[2]);
+        Assert.Equal("POST_CREATE_RECONCILIATION/CONFIRMED", phases[^1]);
+    }
+
+    /// <summary>
+    /// control-server#375, the edge of what it opens: an intent left RESULT_UNKNOWN because its pre-create read found an order
+    /// under its upperId that does not match it is not "never sent" -- something holds that upperId -- and a later NotFound does
+    /// not create; that one stays for a person.
+    /// </summary>
+    [Fact]
+    public async Task IntentThatOnceReadAMismatchedOrderIsNotCreatedWhenItLaterReadsAbsent()
+    {
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        WireToGateStore store = new(context);
+        OrderIntent intent = await AcceptIntentAsync(store);
+        RiotOrderObservation mismatched = Observation(
+                intent, RiotOrderObservationKind.Active, "ORDER-OTHER", Receipt("RECONCILE", "Found", resultPresent: true))
+            with { VehicleKey = "AGV-8005-99" };
+        ScriptedGateway gateway = new(
+            [
+                mismatched,
+                Observation(intent, RiotOrderObservationKind.NotFound, receipt: Receipt("RECONCILE", "NotFound", 404, resultPresent: false))
+            ],
+            Observation(intent, RiotOrderObservationKind.Active, "MUST-NOT-CREATE"));
+        MovementDispatchService service = new(store, gateway, new AdvancingTimeProvider(Now));
+
+        MovementDispatchResult first = await service.ReconcileOrCreateAsync(intent.UpperId, TestContext.Current.CancellationToken);
+        MovementDispatchResult second = await service.ReconcileOrCreateAsync(intent.UpperId, TestContext.Current.CancellationToken);
+
+        Assert.Equal((MovementDispatchOutcome.ResultUnknown, MovementDispatchOutcome.ResultUnknown), (first.Outcome, second.Outcome));
+        Assert.Equal(0, gateway.CreateCount);
+        OrderIntentRow row = await context.OrderIntents.AsNoTracking().SingleAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(("RESULT_UNKNOWN", 0), (row.Status, row.CreateAttemptCount));
+    }
+
     private static async Task<ControlServerDbContext> CreateContextAsync(SqliteConnection connection)
     {
         DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
