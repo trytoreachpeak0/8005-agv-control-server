@@ -87,6 +87,7 @@ ControlServer 的 SDK 实际调用的六个端点，响应形状与 `HttpRiotMov
 | `PUT` | `/orders/{upperId}` | 推进 `orderState`、绑定执行车辆、改终点站 |
 | `PUT` | `/maps/{mapId}/stations` | 替换站点目录 |
 | `PUT` | `/faults/http` | `Normal` / `NoResponse` / `ServerError` / `Delay` |
+| `PUT` | `/faults/absent-order-reads` | 接下来 `count` 次按 upperId 读一张不存在的单时回 503 而不是 404（control-server#375）；只打这一种读，不动数据面别的接口，也不推进 `revision`；`/snapshot` 的 `absentOrderReadFaults` 给出剩余次数与打中了哪些 upperId |
 
 每个响应都带 `schemaVersion`、`instanceId`、`runId`、`revision`、`observedAt`；写命令必须带
 `runId` 与 `commandId`，可带 `expectedRevision`。写响应还带 `changed`、`replayed`、
