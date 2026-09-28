@@ -1695,6 +1695,9 @@ internal static class JourneyRuntimeWorkerTestKit
                 DestinationStationId: stationId);
         }
 
+        /// <summary>RIoT holds no order under <paramref name="upperId"/> from now on: a create that never reached it.</summary>
+        public void ForgetOrder(string upperId) => _orders.Remove(upperId);
+
         /// <summary>RIoT's orderId for the order under <paramref name="upperId"/>, as this RIoT answers it.</summary>
         public string? OrderIdOf(string upperId) => _orders[upperId].OrderId;
 

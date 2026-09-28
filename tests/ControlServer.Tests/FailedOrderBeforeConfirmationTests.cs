@@ -194,6 +194,95 @@ public sealed class FailedOrderBeforeConfirmationTests
         Assert.Equal(before, await OutboundAsync(fixture));
     }
 
+    /// <summary>
+    /// 闸门后绝不建单：取货腿的意图已经定下、建单从没发出过（「定了、没建」那个崩溃点：意图保存之后、问 RIoT 之前进程停了），RIoT 上没有这张单。
+    /// 会话因本车在途单未就绪的这几轮，不对账、不建单，旅程写闸门自己的码；会话回到就绪、闸门前那一轮才建。
+    /// </summary>
+    /// <remarks>
+    /// 本票在闸门后新加了对账，而对账在「待对账、一次没发过、RIoT 上没有」时会建单。闸门后只对发过建单的意图对账，守的就是这一格：
+    /// 去掉那道判断，会话未就绪的车会被派出一张新单开走——准入线第 1 条「车在无人预期时移动」。
+    /// </remarks>
+    [Fact]
+    public async Task AnOrderNeverSentIsNotCreatedBehindTheGate()
+    {
+        await using RuntimeFixture fixture = await PickupCreateAnswerLostAsync();
+        JourneyRuntimeRow dispatched = await fixture.RuntimeAsync();
+        OrderIntentRow intent = await fixture.Context.OrderIntents.SingleAsync(row => row.UpperId == dispatched.PickupUpperId, Token);
+        intent.Status = "PENDING_RECONCILIATION";
+        intent.CreateAttemptCount = 0;
+        intent.CreateAttemptId = null;
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+        fixture.Riot.ForgetOrder(dispatched.PickupUpperId);
+        await OwnOrderRebuildTests.DropSessionOnOwnOrderAsync(fixture);
+        Outbound before = await OutboundAsync(fixture);
+
+        await TickAndHearAsync(fixture);
+        await TickAndHearAsync(fixture);
+
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+        Assert.Equal("ONBOARD_SESSION_NOT_READY", (await fixture.RuntimeAsync()).BlockReasonCode);
+        Assert.Equal("PENDING_RECONCILIATION", (await IntentAsync(fixture, dispatched.PickupUpperId)).Status);
+        Assert.Equal(before, await OutboundAsync(fixture));
+    }
+
+    /// <summary>
+    /// 闸门后对账确认了建单应答丢失的那张单，它此刻在 RIoT 上挂起（HANG）：意图确认、旅程写 <c>ORDER_HANG</c>，与确认过的单一样起名；
+    /// 不记故障、不发命令。
+    /// </summary>
+    [Fact]
+    public async Task AnUnconfirmedOrderFoundHangingBehindTheGateIsConfirmedAndNamed()
+    {
+        await using RuntimeFixture fixture = await PickupCreateAnswerLostAsync();
+        JourneyRuntimeRow dispatched = await fixture.RuntimeAsync();
+        await OwnOrderRebuildTests.DropSessionOnOwnOrderAsync(fixture);
+        fixture.Riot.SetOrderState(dispatched.PickupUpperId, RiotOrderState.Hang, terminal: false);
+        Outbound before = await OutboundAsync(fixture);
+
+        await TickAndHearAsync(fixture);
+
+        Assert.Equal("CONFIRMED", (await IntentAsync(fixture, dispatched.PickupUpperId)).Status);
+        Assert.Equal(JourneyRuntimeEngine.OrderHangReason, (await fixture.RuntimeAsync()).BlockReasonCode);
+        await using (ControlServerDbContext reading = new(fixture.DbOptionsForTests))
+        {
+            Assert.Empty(await reading.VehicleFaultStates.AsNoTracking().ToArrayAsync(Token));
+            Assert.Empty(await reading.RiotOrderCommandAudit.AsNoTracking().ToArrayAsync(Token));
+        }
+
+        Assert.Equal(before, await OutboundAsync(fixture));
+    }
+
+    /// <summary>
+    /// 记下故障之后，一轮读不到这张单（RIoT 不回答）：码仍是 <c>VEHICLE_ORDER_FAILED</c>、开始时刻不动，闸门前后都一样——FAILED 是终态，
+    /// 读不到不说明它变了。
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AnUnreadableOrderKeepsTheFailedCodeAndItsStart(bool behindTheGate)
+    {
+        await using RuntimeFixture fixture = await PickupCreateAnswerLostAsync();
+        JourneyRuntimeRow dispatched = await fixture.RuntimeAsync();
+        if (behindTheGate)
+        {
+            await OwnOrderRebuildTests.DropSessionOnOwnOrderAsync(fixture);
+        }
+
+        fixture.Riot.FailOrder(dispatched.PickupUpperId);
+        await TickAndHearAsync(fixture);
+        JourneyRuntimeRow failed = await fixture.RuntimeAsync();
+        Assert.Equal(VehicleFaultEvidence.OrderFailed, failed.BlockReasonCode);
+
+        fixture.Riot.MakeOrderUnreadable(dispatched.PickupUpperId);
+        await TickAndHearAsync(fixture);
+
+        JourneyRuntimeRow after = await fixture.RuntimeAsync();
+        Assert.True(failed.BlockReasonSince < fixture.Clock.GetUtcNow(), "the clock did not move, so keeping the start time proves nothing");
+        Assert.Equal(
+            (VehicleFaultEvidence.OrderFailed, failed.BlockReasonSince),
+            (after.BlockReasonCode, after.BlockReasonSince));
+    }
+
     // ---- 清除与重建 ----------------------------------------------------------------------------------------------
 
     /// <summary>
