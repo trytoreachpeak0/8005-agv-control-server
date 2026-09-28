@@ -188,6 +188,8 @@ public sealed class UnreadPreCreateReconciliationTests
     [InlineData("TO_PICKUP", "task-type-held")]
     [InlineData("TO_GATE", "task-type-held")]
     [InlineData("TO_GATE", "route-cost-unavailable")]
+    // 取货腿的门禁按停靠本身的站判（toTheStopItself），不是按需求冻结的卸货站：路径代价只在取货站读不到，这一格才挡得住（增量审查 B1）。
+    [InlineData("TO_PICKUP", "route-cost-unavailable")]
     public async Task ANeverSentLegWaitsForTheCreateGateAndIsCreatedOnceItOpens(string purpose, string closedBy)
     {
         await using RuntimeFixture fixture = purpose == "TO_PICKUP" ? await PickupReadTimedOutAsync() : await LoadedAndCheckedAsync();
