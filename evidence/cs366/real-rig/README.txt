@@ -11,3 +11,7 @@ cs#366 CI 真装置（调度 Coordinator 8 放的持有，2026-09-28），对端
 其余行 0 命中；每个场景都有带耗时的 PASS/FAIL 行。artifact 两轮都非空（2043975、332904 字节）。
 9e771922 → 4283e5ec 只改了 scripts/l2/scenarios/real-onboard-cancelled-rebuild-cargo-proof.ps1 与 evidence/，产品代码（src/）逐字节相同，
 所以第一轮另外两个场景的 PASS 对 4283e5ec 仍然作数。
+
+merge fp/v2-impl（b59b09d5，含 cs#334）之后，调度要求在新头上只重跑新场景：
+| 36392595268 | a932c418675f1f3c7ba4d4ce442fa9971bef50a7 | real-onboard-cancelled-rebuild-cargo-proof | PASS 129s，L2-RC-01～11 |
+四行核对同上：三端从日志那一行读，停止标记源码回显之外 0 命中，artifact 330289 字节。
