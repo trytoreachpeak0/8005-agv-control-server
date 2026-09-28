@@ -1,4 +1,4 @@
-# control-server#367 证据：普通腿确认前 FAILED，闸门前后都进故障模型、能清除、清除后同车重建
+# control-server#367 证据：普通腿确认前终态，闸门前后都按确认过的单判（FAILED 进故障模型并能清除重建，取消／删除同车重建，8 交人）
 
 每条标了「读到的」（跑出来的、读代码读到的）还是「推的」。基点 `fp/v2-impl@71e62d85`（已含 cs#357、cs#358）。
 
@@ -50,3 +50,22 @@
 - `d67221fa` 之前那次全量（`0eb26ea2`）：2868 条红 1 条，`PickupDispatchPlanPastOwnOrderTests.NoPlanGoesOutWhenTheUnreadinessIsNotExplainedByTheOwnOrder("order-not-confirmed")`。
   机理：那一格把 RIoT 上正常执行的单改成 `RESULT_UNKNOWN`，本票闸门后的对账同一轮就确认了它，计划随之放行——按 cs#314 这是对的。
   改的是造前提的方式（让 RIoT 这一轮答不出），断言没改，并补了前提断言；见 `d67221fa` 的提交说明（读到的）。
+
+## 并入取消格之后（调度 2026-09-28）
+
+调度把「确认前 CANCELLED/DELETED」并入本票（准入线第 3 条），SUSPENDED(8) 交人。
+
+- 修前红：`39e61e99` 只动 tests，7 条红，都停在 `{PICKUP|GATE}_TerminalReconciliationRequired`（闸门后 `ONBOARD_SESSION_NOT_READY`），
+  原文在 `red/01-cancelled-deleted-suspended-at-5bb47d0b.txt`（读到的）。
+- 修复 `dabbfcc3`：终态意图交给 `NameStalledOrderAsync`，与确认过的单同一个方法。
+- 反向验证最终版 `green/05-reverse-validation-final-dabbfcc3.txt`（读到的）：M0 整体撤回红 19 条（新测试里除「不为没发过的单建单」与反向用例外全部，
+  这两条修前也绿，判别力分别由 M5、M4 撑着）；新增 **M9 终态只看 FAILED**（交给 `ObserveOrderFailureAsync` 而不是 `NameStalledOrderAsync`）
+  恰好红取消、删除、关卡腿登记、REQ-0361 两条、SUSPENDED 两格、读不到保码两格；M1～M5、M7、M8 各只红预期的。原 M6（读不到保码）随实现换成共用方法而作废，
+  那一行为由 M9 覆盖。
+- 最终 head `85348e72`：全量 2876 条通过、退出码 0（读到的）；三条故障路径 L2 在 `l2-final/` 各一次，全 PASS，SUMMARY 里的 `controlServerCommit`
+  是 `85348e72`（读到的）；`l2/` 是 `d67221fa` 上的那一轮，留作记录。cs#342 模型 `green/06-*`，与基点逐项相同（读到的）。
+- 过程中我的一次失误：最终那一串里 L2 误带了 `-SkipBuild`，会跑到旧二进制。在它开始之前用预先建好的证据目录把三条拦下（脚本要求目录必须是新的，
+  三份日志各有 `EvidenceRoot must not exist`），再不带 `-SkipBuild` 重跑，才有 `l2-final/`（读到的）。
+
+**与 cs#366 的交界**：关卡腿确认前被取消，本票只把它接进 `REQ-0360` 的重建路径；车上有货时重建前的仓位证明（CP-0007）由 cs#366 在本票之上补。
+`AGateOrderCancelledBeforeConfirmationIsRecordedToBeRebuilt` 因此只断「登记了、在等」，不断出不出单。已在 cs#366 评论（issuecomment-5862397150）。
