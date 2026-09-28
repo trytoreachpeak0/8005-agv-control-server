@@ -1,0 +1,39 @@
+import re, sys, collections
+path = sys.argv[1]
+counts = collections.Counter()
+examples = {}
+frame_re = re.compile(r"at (ControlServer\.(?:Host|Application|Infrastructure)\.[^\(]+)\(.*?\)(?: in .*?[\/]([^\/]+\.cs):line (\d+))?")
+def flush(head, frames):
+    if head is None: return
+    holder, what = head
+    outer = holder.split(">")[0]
+    sites = []
+    for f in frames:
+        m = frame_re.search(f)
+        if not m: continue
+        name = m.group(1)
+        if "GateProbe" in name: continue
+        loc = f"{m.group(2)}:{m.group(3)}" if m.group(2) else ""
+        name = re.sub(r"\.<(\w+)>d__\d+\.MoveNext", r".\1", name)
+        n2=f"{name} {loc}".strip()
+        if not sites or sites[-1]!=n2: sites.append(n2)
+    caller = next((x for x in sites if '.Host.Transport.' not in x and 'RiotOrderCommandService' not in x), sites[0] if sites else '?')
+    key = (holder.split('>')[0] + '/' + holder.split('>')[-1], what, (caller,))
+    counts[key] += 1
+head=None; frames=[]
+with open(path, encoding="utf-8", errors="replace") as fh:
+    for line in fh:
+        if line.startswith("@@ "):
+            flush(head, frames)
+            h, w = line[3:].rstrip("\n").split(" | ", 1)
+            head=(h, w); frames=[]
+        else:
+            frames.append(line)
+flush(head, frames)
+bywhat = collections.Counter()
+for (h,w,s),n in counts.items(): bywhat[(h,w)] += n
+print("== by holder/what")
+for (h,w),n in sorted(bywhat.items(), key=lambda x:(x[0][1], -x[1])): print(f"{n:7d}  {h:18s} {w}")
+print("\n== distinct call sites (what <- innermost caller chain)")
+for (h,w,s),n in sorted(counts.items(), key=lambda x:(x[0][1], x[0][2])):
+    print(f"{n:6d} [{h}] {w}\n        " + "\n        <- ".join(s))

@@ -135,7 +135,7 @@ public sealed partial class OnboardTcpServer : BackgroundService
     {
         await using NetworkStream stream = client.GetStream();
         using StreamReader reader = new(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
-        await using OnboardPeerConnection connection = new(stream);
+        await using OnboardPeerConnection connection = new(stream, _options.WriteTimeout);
         await using AsyncServiceScope scope = _scopeFactory.CreateAsyncScope();
         OnboardMessageProcessor processor = scope.ServiceProvider.GetRequiredService<OnboardMessageProcessor>();
         OnboardConnectionState state = new() { DeferOutboundUntilResponseWritten = true };
@@ -277,6 +277,15 @@ public sealed partial class OnboardTcpServer : BackgroundService
         if (_options.MaxConcurrentSessions < 1)
         {
             throw new InvalidOperationException("OnboardTransport:MaxConcurrentSessions must be at least 1.");
+        }
+        // control-server#334: zero or less would make every write "timed out" at once, or -- read as infinite -- bring
+        // back the unbounded write the setting exists to end; past the maximum, stuck vehicles can use up a fault
+        // clearance's whole wait for the gate. See OnboardTransportOptions.WriteTimeout.
+        if (_options.WriteTimeout <= TimeSpan.Zero || _options.WriteTimeout > OnboardTransportOptions.MaxWriteTimeout)
+        {
+            throw new InvalidOperationException(
+                "OnboardTransport:WriteTimeout must be positive and at most " +
+                $"{OnboardTransportOptions.MaxWriteTimeout.TotalSeconds:0} seconds.");
         }
         // Unreachable from the composition root, which always passes SessionLiveness.Timeout: the window is
         // not configuration and no settings file can reach it (the ticket asked for a JourneyRuntime setting

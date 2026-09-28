@@ -210,7 +210,7 @@ public sealed class JourneyClosureSnapshotTests
         await using RuntimeFixture fixture = await AtSublotWaitWithDeadlineAsync();
         // 只拒收件箱里「收尾形状」的那几行：收尾那一轮开头的补发还要照常走通，否则这一轮根本走不到收尾。
         fixture.Peer.OnMessageSent = line => IsClosureShaped(line)
-            ? throw new IOException("The link dropped as the closure went out.")
+            ? throw new OnboardConnectionUnavailableException("The link dropped as the closure went out.")
             : Task.CompletedTask;
 
         fixture.Clock.Advance(TimeSpan.FromSeconds(10));
@@ -247,7 +247,7 @@ public sealed class JourneyClosureSnapshotTests
     {
         await using RuntimeFixture fixture = await AtSublotWaitWithDeadlineAsync();
         fixture.Peer.OnMessageSent = line => IsClosureShaped(line)
-            ? throw new IOException("The link dropped as the closure went out.")
+            ? throw new OnboardConnectionUnavailableException("The link dropped as the closure went out.")
             : Task.CompletedTask;
         fixture.Clock.Advance(TimeSpan.FromSeconds(10));
         await fixture.Engine.ExecuteOnceAsync(Token);

@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using ControlServer.Domain;
 using ControlServer.Infrastructure.Persistence;
+using ControlServer.Host.Transport;
 using static ControlServer.Tests.JourneyRuntimeWorkerTestKit;
 
 namespace ControlServer.Tests;
@@ -288,11 +289,13 @@ public sealed class ReconnectModelRegressionTests
         fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(30);
         AdoptingPeer vehicle = new(fixture.Context, fixture.Clock);
         bool cutOnTheArrivedPlan = false;
+        int refused = 0;
         fixture.Peer.OnMessageSent = line =>
         {
             if (cutOnTheArrivedPlan && IsArrivedPickupPlan(line))
             {
-                throw new IOException("No recovered Onboard peer is connected for the test vehicle.");
+                refused++;
+                throw new OnboardConnectionUnavailableException("No recovered Onboard peer is connected for the test vehicle.");
             }
 
             vehicle.Receive(line);
@@ -307,7 +310,10 @@ public sealed class ReconnectModelRegressionTests
 
         cutOnTheArrivedPlan = true;
         fixture.Clock.Advance(TimeSpan.FromSeconds(1));
-        await Assert.ThrowsAsync<IOException>(() => fixture.Engine.ExecuteOnceAsync(Token));
+        // Since control-server#334 the vehicle yields its turn here rather than failing the round; the count is the proof the
+        // cut was reached.
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.True(refused > 0, "the arrived plan was never sent this round, so the cut was never reached");
         await fixture.RecreateEngineAsync();
         cutOnTheArrivedPlan = false;
         await vehicle.DeliverBufferedAcksAsync();

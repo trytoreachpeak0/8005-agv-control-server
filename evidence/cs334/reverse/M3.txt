@@ -1,0 +1,23 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:02.79]     ControlServer.Tests.GateHeldOnboardSendTests.TheListenerRefusesToStartWithAWriteTimeoutThatIsNotPositive(seconds: 0) [FAIL]
+[xUnit.net 00:00:02.79]     ControlServer.Tests.GateHeldOnboardSendTests.TheListenerRefusesToStartWithAWriteTimeoutThatIsNotPositive(seconds: -1) [FAIL]
+  Failed ControlServer.Tests.GateHeldOnboardSendTests.TheListenerRefusesToStartWithAWriteTimeoutThatIsNotPositive(seconds: 0) [58 ms]
+  Error Message:
+   Assert.Throws() Failure: No exception was thrown
+Expected: typeof(System.InvalidOperationException)
+  Stack Trace:
+     at ControlServer.Tests.GateHeldOnboardSendTests.TheListenerRefusesToStartWithAWriteTimeoutThatIsNotPositive(Int32 seconds) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\GateHeldOnboardSendTests.cs:line 273
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.GateHeldOnboardSendTests.TheListenerRefusesToStartWithAWriteTimeoutThatIsNotPositive(seconds: -1) [1 ms]
+  Error Message:
+   Assert.Throws() Failure: No exception was thrown
+Expected: typeof(System.InvalidOperationException)
+  Stack Trace:
+     at ControlServer.Tests.GateHeldOnboardSendTests.TheListenerRefusesToStartWithAWriteTimeoutThatIsNotPositive(Int32 seconds) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\GateHeldOnboardSendTests.cs:line 273
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     2, Passed:   131, Skipped:     0, Total:   133, Duration: 52 s - ControlServer.Tests.dll (net8.0)

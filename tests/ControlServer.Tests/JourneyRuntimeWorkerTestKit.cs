@@ -1615,13 +1615,22 @@ internal static class JourneyRuntimeWorkerTestKit
 
         public Action? BeforeRead { get; set; }
 
+        /// <summary>
+        /// Set, every read goes to it instead -- a real reader against a MesIngest that never answers, for instance
+        /// (control-server#334).
+        /// </summary>
+        public Func<string, CancellationToken, Task<int?>>? Through { get; set; }
+
         public void Set(string sublot, int count) => _counts[sublot] = count;
         public void Remove(string sublot) => _counts.Remove(sublot);
 
         public Task<int?> ReadMaxBoxCountAsync(string sublot, CancellationToken cancellationToken)
         {
-            _ = cancellationToken;
             BeforeRead?.Invoke();
+            if (Through is { } through)
+            {
+                return through(sublot, cancellationToken);
+            }
             return Task.FromResult(_counts.TryGetValue(sublot, out int count) ? (int?)count : null);
         }
     }
