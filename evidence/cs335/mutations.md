@@ -112,6 +112,16 @@ M17、M20、M21 第一次用「参数 is null」一类恒假条件，可空性�
 
 M26、M29 首次写法没编过（M26 触发 CA1826，M29 把语句插进了 `if … else if` 中间），已作废，换写法重跑，结果如上。
 
+## 增量复核两条必修（M30–M32）
+
+过滤器加上 `FullyQualifiedName~HttpRiotMovementGateway`（433 条）。
+
+| 编号 | 变异 | 预期红 | 实际 | 退出码 |
+| --- | --- | --- | --- | --- |
+| M30 | 去掉会话未就绪一侧（`NameInFlightOrderWithoutThePeerAsync`）新加的门锁故障监看 | `AHeldOrderEndedInRiot…(latched-behind-the-readiness-gate)` | 红 1，正是这格 | 1 |
+| M31 | 复核变异 G：网关把单态一律报成 7 | 网关 `UnfinishedOrdersCountOrdersAppointedToOrExecutingOnTheVehicle`（`ORDER-APPOINTED` 读成 7）；同单号两次那格不红（重复的仍被排除） | 红 1，正是这条 | 1 |
+| M32 | 同单号列两次不排除、取第一条 | `AnUnfinishedOrderListedTwiceHasNoState` | 红 1，正是这条 | 1 |
+
 ## 编号 M5 空缺
 
 本票从未有过编号 M5 的变异：草稿区里没有它的片段文件，也没有运行记录。当初为什么跳过这个编号，会话压缩之后已无从还原。

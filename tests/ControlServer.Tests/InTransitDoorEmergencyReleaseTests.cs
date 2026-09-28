@@ -492,7 +492,12 @@ public sealed class InTransitDoorEmergencyReleaseTests
             Assert.Equal((VehicleFaultLevel.SuspectedBlocked, InTransitDoorLockFaultTests.DoorSymptom),
                 (standing.Level, standing.EvidenceCode));
             OwnOrderRebuildRow waiting = Assert.Single(await reading.OwnOrderRebuilds.AsNoTracking().ToArrayAsync(Token));
-            Assert.Contains("VEHICLE_FAULT_IN_EFFECT", waiting.WaitingReason ?? string.Empty, StringComparison.Ordinal);
+            // Behind the readiness gate the rebuild does not create, so it never reaches the vehicle-condition check: it waits on
+            // the session instead (NameInFlightOrderWithoutThePeerAsync, mayCreate: false). Either way it has not moved on.
+            Assert.Contains(
+                behindTheGate ? "ONBOARD_SESSION_NOT_READY" : "VEHICLE_FAULT_IN_EFFECT",
+                waiting.WaitingReason ?? string.Empty,
+                StringComparison.Ordinal);
         }
         Assert.Equal(releasesBefore + (wasLatched ? 1 : 0), await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
         Assert.Equal(1, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));

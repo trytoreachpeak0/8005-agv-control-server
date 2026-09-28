@@ -1899,6 +1899,12 @@ public sealed partial class JourneyRuntimeEngine(
         // (review M2) -- but an order already sent is reconciled, which only reads (incremental review B2), and a rebuilt order
         // that FAILED goes on being fed to the fault model; once a new order is confirmed the journey carries
         // peerReason again, and the next round names a HANG like any other.
+        //
+        // A door fault on an order someone cancelled or deleted in RIoT is supervised before that, as in the stage body
+        // (control-server#335 incremental review, P1g): a real onboard is not ready for the whole of a leg, so this -- not the
+        // stage body -- is the path such a vehicle takes every round, and the rebuild below returns without ever reaching the
+        // fault model. Unsupervised, a latched vehicle was never released and the rebuild waited on the fault for good.
+        await SuperviseDoorFaultOnEndedOrderAsync(runtime, stops.Current, cancellationToken).ConfigureAwait(false);
         if (await OwnOrderRebuilds.ForStopAsync(dbContext, stops.Current, cancellationToken).ConfigureAwait(false) is not null)
         {
             return await AdvanceOwnOrderRebuildAsync(
