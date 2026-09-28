@@ -226,6 +226,59 @@ public sealed class InTransitDoorEmergencyReleaseTests
     }
 
     /// <summary>
+    /// 急停仍锁着（CAN_RECOVER）时人按「继续原单」：拒绝，RIoT 一条 CONTINUE 都收不到。除了闩锁，别的条件全都满足——单是本代
+    /// 自己按住并确认的 7、人确认了原因已排除——所以拒绝只能来自闩锁这一项。
+    /// </summary>
+    /// <remarks>
+    /// 为什么要挡：round-44（rcs/riot-behavior-lab/evidence/rounds/2026-09-28-round-44，BC-ORDER-020，OBSERVED）实测锁住期间
+    /// RIoT 接受 CONTINUE_FROM_HELD，单从 7 变成 3，这时只剩急停挡着车。解除那一刻车会不会自己开走没有观测过
+    /// （BC-ORDER-020 第 5 条，INFERRED），按最坏情况处理。
+    /// </remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0239")]
+    [Trait("Requirement", "REQ-0167")]
+    public async Task AResumeWhileTheLatchIsStillOnSendsNoContinue()
+    {
+        await using RuntimeFixture fixture = await LatchedForTheDoorsAsync();
+        VehicleFaultRecoveryTests.SiteRiot site = new(fixture) { HasUnfinishedOrder = true };
+
+        VehicleFaultRecoveryDecision decision = await VehicleFaultRecoveryTests.Service(fixture, site)
+            .RecoverAsync(ResumeRequest(fixture), Token);
+
+        Assert.Equal(VehicleFaultRecoveryOutcome.Refused, decision.Outcome);
+        Assert.Equal(["FAULT_RECOVERY_EMERGENCY_LATCHED"], decision.Reasons);
+        Assert.Empty(site.OrderCommands);
+        Assert.Equal(0, await CountAsync(fixture, RiotCommandTypeNames.OrderContinue));
+    }
+
+    /// <summary>
+    /// 恢复服务读急停时是 OK，读完之后、CONTINUE 发出之前急停又锁上了（引擎某一轮豁免失效重新急停，或有人在 RIoT 上按了）：
+    /// 协调器在发出前最后一刻再读一次急停，拒绝，RIoT 一条 CONTINUE 都收不到，故障仍在效。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0239")]
+    public async Task ALatchThatComesOnAfterTheServiceReadItStillStopsTheContinue()
+    {
+        await using RuntimeFixture fixture = await ReleasedForTheDoorsAsync();
+        VehicleFaultRecoveryTests.SiteRiot site = new(fixture)
+        {
+            HasUnfinishedOrder = true,
+            AfterUnfinishedOrdersRead = () => fixture.EmergencyLatched = true,
+        };
+
+        VehicleFaultRecoveryDecision decision = await VehicleFaultRecoveryTests.Service(fixture, site)
+            .RecoverAsync(ResumeRequest(fixture), Token);
+
+        Assert.Equal(VehicleFaultRecoveryOutcome.Refused, decision.Outcome);
+        Assert.Equal(["RESUME_EMERGENCY_LATCHED"], decision.Reasons);
+        Assert.Empty(site.OrderCommands);
+        Assert.Equal(0, await CountAsync(fixture, RiotCommandTypeNames.OrderContinue));
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        VehicleFaultStateRow fault = await reading.VehicleFaultStates.AsNoTracking().SingleAsync(Token);
+        Assert.Equal((VehicleFaultLevel.SuspectedBlocked, 1L), (fault.Level, fault.FaultGeneration));
+    }
+
+    /// <summary>
     /// 解除之后 RIoT 把单跑了起来（3），而没有人按继续：写告警与旅程码 <c>HELD_ORDER_RESUMED_WITHOUT_CONTINUE</c>。
     /// round-44（agv03，2026-09-28）单次观测到 HELD 的单在解除后 60 秒里一直是 7；这一格防的是 RIoT 行为以后变了。
     /// 车若真在动，前一格「moving」那条已经证明它会被重新急停；这里让车停着，只看码。
@@ -526,6 +579,14 @@ public sealed class InTransitDoorEmergencyReleaseTests
         Assert.Equal(VehicleFaultRecoveryOutcome.Resumed, resumed.Outcome);
         fixture.Context.ChangeTracker.Clear();
     }
+
+    private static VehicleFaultRecoveryRequest ResumeRequest(RuntimeFixture fixture) =>
+        new(
+            new EmergencyStopSubject(fixture.Options.AgvId, fixture.Options.VehicleKey),
+            VehicleFaultRecoveryAction.ResumeHeldOrder,
+            "L1-OPERATOR",
+            FaultRemedied: true,
+            Note: "doors checked on site");
 
     private static async Task<Latched> LatchedFactsAsync(RuntimeFixture fixture)
     {
