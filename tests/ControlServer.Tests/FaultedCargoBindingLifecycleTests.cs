@@ -274,6 +274,72 @@ public sealed class FaultedCargoBindingLifecycleTests
         Assert.Equal("NOT_CARGO_OF_THE_VEHICLES_CURRENT_JOURNEY", (await SingleBindingAsync(fixture)).ReleasedReason);
     }
 
+    /// <summary>
+    /// 旧版本留在库里的形状，续行入口：这一趟的故障是旧版本记下的，它沿用了上一趟的绑定、没给这一趟的货建绑定，此后引擎还没来得及再评估一轮。
+    /// 人按「继续原单」时，入口先把上一趟那条释放，再判续行，不被 <c>RESUME_CARGO_BINDING_MISMATCH</c> 挡住。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0239")]
+    public async Task AResumptionEntryReleasesALeftoverBindingBeforeJudgingTheCargo()
+    {
+        await using RuntimeFixture fixture = await CompletedTripLeavingALiveBindingAsync();
+        await DispatchSecondDemandAsync(fixture);
+        await ArriveAtCurrentStopAsync(fixture, SecondDemandId, "TO_PICKUP");
+        await EnterSublotAsync(fixture, SecondDemandId, SecondSublot, SecondSubmissionId);
+        await SettleLoadAsync(fixture, SecondDemandId);
+        await AnswerDepartureSafetyAsync(fixture, SecondDemandId, SecondSafetyResultId, await SafetyRevisionAsync(fixture));
+        string upperId = (await CurrentStopAsync(fixture, SecondDemandId)).UpperId!;
+        await ForgetFirstTripsOrdersAsync(fixture);
+        await LatchForTheDoorsAsync(fixture, upperId);
+        await ReportLockedAsync(fixture);
+        await DriveOneRoundAsync(fixture);
+        fixture.EmergencyLatched = false;
+        await DriveOneRoundAsync(fixture);
+        await DriveOneRoundAsync(fixture);
+        await RestoreWhatThePreviousVersionLeftAsync(fixture);
+
+        VehicleFaultRecoveryTests.SiteRiot site = new(fixture)
+        {
+            HasUnfinishedOrder = true,
+            OnOrderCommand = (kind, _) =>
+            {
+                if (kind == RiotOrderCommandKind.ContinueFromHeld)
+                {
+                    fixture.Riot.SetOrderState(upperId, RiotOrderState.Executing, terminal: false);
+                }
+            },
+        };
+        VehicleFaultRecoveryDecision resumed = await VehicleFaultRecoveryTests.Service(fixture, site).RecoverAsync(
+            VehicleFaultRecoveryTests.Clear(fixture) with { Action = VehicleFaultRecoveryAction.ResumeHeldOrder }, Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.True(VehicleFaultRecoveryOutcome.Resumed == resumed.Outcome, string.Join(", ", resumed.Reasons));
+        Assert.Equal("NOT_CARGO_OF_THE_VEHICLES_CURRENT_JOURNEY", (await SingleBindingAsync(fixture)).ReleasedReason);
+    }
+
+    /// <summary>
+    /// 同上，清除入口：空车这一趟的故障是旧版本记下的、沿用了上一趟的绑定。人清除时，处置先把上一趟那条释放，再判车上有没有货——按「车上没货」处置。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0362")]
+    public async Task AClearanceReleasesALeftoverBindingBeforeJudgingTheCargo()
+    {
+        await using RuntimeFixture fixture = await CompletedTripLeavingALiveBindingAsync();
+        await DispatchSecondDemandAsync(fixture);
+        fixture.Riot.FailOrder((await fixture.RuntimeAsync(SecondDemandId)).PickupUpperId);
+        await TickAndRunAsync(fixture);
+        fixture.Context.ChangeTracker.Clear();
+        await RestoreWhatThePreviousVersionLeftAsync(fixture);
+
+        VehicleFaultRecoveryDecision cleared = await VehicleFaultRecoveryTests.Service(fixture, new(fixture))
+            .RecoverAsync(VehicleFaultRecoveryTests.Clear(fixture), Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.Equal(VehicleFaultRecoveryDispositions.RebuildScheduled, cleared.Disposition);
+        Assert.Equal("VEHICLE_FAULT_CLEARED_NOTHING_ON_BOARD", (await fixture.RuntimeAsync(SecondDemandId)).BlockReasonCode);
+        Assert.Equal("NOT_CARGO_OF_THE_VEHICLES_CURRENT_JOURNEY", (await SingleBindingAsync(fixture)).ReleasedReason);
+    }
+
     // ---- 三、不许有没有出口的等待 ----------------------------------------------------------------------------------------
 
     /// <summary>
@@ -543,6 +609,29 @@ public sealed class FaultedCargoBindingLifecycleTests
         fixture.Context.ChangeTracker.Clear();
         await BindAsync(fixture, FirstDemandId);
         return fixture;
+    }
+
+    /// <summary>
+    /// What the previous version leaves once a fault of the second trip has been evaluated: the first trip's binding live, and no
+    /// binding of the second trip's own -- it bound once and took the live one for this fault's cargo.
+    /// </summary>
+    private static async Task RestoreWhatThePreviousVersionLeftAsync(RuntimeFixture fixture)
+    {
+        await using ControlServerDbContext writing = new(fixture.DbOptionsForTests);
+        foreach (FaultedVehicleCargoRow binding in await writing.FaultedVehicleCargo.ToArrayAsync(Token))
+        {
+            if (binding.DemandId == FirstDemandId)
+            {
+                binding.ReleasedAt = null;
+                binding.ReleasedReason = null;
+            }
+            else
+            {
+                writing.FaultedVehicleCargo.Remove(binding);
+            }
+        }
+
+        await writing.SaveChangesAsync(Token);
     }
 
     private static async Task BindAsync(RuntimeFixture fixture, string demandId)
