@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "scenario": "in-transit-door-not-locked",
+  "runId": "20260928T080023545Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "vehicleKey": "BROKERX-L2-0001",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "rig": "SyntheticOnboard",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260928T080023545Z",
+    "controlServerCommit": "887aff1712aa98ec2170019d8372ca8c318576e6",
+    "agvId": "AGV-L2-001",
+    "batchId": "unspecified"
+  },
+  "assertions": [
+    {
+      "id": "L2-DL-01",
+      "description": "车在正常行驶、门锁着时，不发 Hold、不发急停",
+      "outcome": "PASS",
+      "expected": "0 / 0",
+      "actual": "0 / 0"
+    },
+    {
+      "id": "L2-DL-02",
+      "description": "Hold 恰好一条，打在本车、本单上，挂在这一代故障下",
+      "outcome": "PASS",
+      "expected": "1 / AGV-L2-001 / W2G-a44befc4-cd58-4d9c-bc7f-c4f3fbc75009-PICKUP-1",
+      "actual": "1 / AGV-L2-001 / W2G-a44befc4-cd58-4d9c-bc7f-c4f3fbc75009-PICKUP-1"
+    },
+    {
+      "id": "L2-DL-03",
+      "description": "RIoT 侧收到的是 CMD_ORDER_HELD，打在这一张 orderId 上",
+      "outcome": "PASS",
+      "expected": "CMD_ORDER_HELD -> ORDER-000001",
+      "actual": "CMD_ORDER_HELD -> ORDER-000001"
+    },
+    {
+      "id": "L2-DL-04",
+      "description": "急停恰好一条，打在这台车上，而且在 Hold 之后",
+      "outcome": "PASS",
+      "expected": "1 / AGV-L2-001 / vehicle:BROKERX-L2-0001 / hold first",
+      "actual": "1 / AGV-L2-001 / vehicle:BROKERX-L2-0001 / hold 2026-09-28 08:01:22.2251923+00:00 trigger 2026-09-28 08:01:22.384717+00:00"
+    },
+    {
+      "id": "L2-DL-05",
+      "description": "故障事实记的是门锁症状，旅程码也是它",
+      "outcome": "PASS",
+      "expected": "VEHICLE_DOOR_NOT_PROVEN_LOCKED / VEHICLE_DOOR_NOT_PROVEN_LOCKED",
+      "actual": "VEHICLE_DOOR_NOT_PROVEN_LOCKED / VEHICLE_DOOR_NOT_PROVEN_LOCKED"
+    },
+    {
+      "id": "L2-DL-06",
+      "description": "按不住时急停只发一次：再跑几轮，审计表与 RIoT 侧都仍是一次",
+      "outcome": "PASS",
+      "expected": "1 / 1",
+      "actual": "1 / 1"
+    },
+    {
+      "id": "L2-DL-07",
+      "description": "门还报没锁时，急停不解除",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "id": "L2-DL-08",
+      "description": "门锁恢复后自动解除一次，原因记的是门锁原因消除，本单的 Hold 已回查确认",
+      "outcome": "PASS",
+      "expected": "1 / EMERGENCY_DOOR_CAUSE_REMOVED / Confirmed",
+      "actual": "1 / EMERGENCY_DOOR_CAUSE_REMOVED / Confirmed"
+    },
+    {
+      "id": "L2-DL-09",
+      "description": "解除之后单仍停着：没有任何 CONTINUE，审计表与 RIoT 侧都没有",
+      "outcome": "PASS",
+      "expected": "0 / 0",
+      "actual": "0 / 0"
+    },
+    {
+      "id": "L2-DL-10",
+      "description": "解除之后不再急停，故障仍在效（等人继续原单）",
+      "outcome": "PASS",
+      "expected": "1 trigger / fault in effect",
+      "actual": "1 trigger / SuspectedBlocked"
+    },
+    {
+      "id": "L2-DL-11",
+      "description": "全程没有任何 Cancel 代替停车（REQ-0246）",
+      "outcome": "PASS",
+      "expected": "0 / 0",
+      "actual": "0 / 0"
+    }
+  ]
+}
