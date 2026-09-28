@@ -1,0 +1,84 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:18.50]     ControlServer.Tests.MapRenameEngineTests.ARenameStopsDispatchFromItsRoundAndAcceptingTheNameThenReleasingTheHoldResumesIt [FAIL]
+  Failed ControlServer.Tests.MapRenameEngineTests.ARenameStopsDispatchFromItsRoundAndAcceptingTheNameThenReleasingTheHoldResumesIt [7 s]
+  Error Message:
+   Assert.Single() Failure: The collection contained 6 items
+Collection: [TaskTypeStationHold { HoldId = 1632b6c1e1f84aa5abe6ee84083fc684, MapId = 25, TaskType = DIE_TO_WIRE_STAGING, Source = CATALOG_CHANGE, ReasonCode = MAP_RENAMED, DetailJson = {"mapId":25,"taskType":"DIE_TO_WIRE_STAGING","source":"CATALOG_CHANGE","reasonCode":"MAP_RENAMED","classification":"MAP_RENAMED","bindingSetVersion":1,"before":{"mapName":"老厂前线new_wk"},"after":{"mapName":"老厂前线new_wk2"},"inFlightDemands":0}, RaisedAt = 8/26/2026 1:00:00 AM +00:00, RaisedBy = deployment:8005-controlserver@test, ReleasedAt = , ReleasedBy =  }, TaskTypeStationHold { HoldId = 2d874bffb46f40e68815c244b3c4f915, MapId = 25, TaskType = WIRE_TO_NITROGEN, Source = CATALOG_CHANGE, ReasonCode = MAP_RENAMED, DetailJson = {"mapId":25,"taskType":"WIRE_TO_NITROGEN","source":"CATALOG_CHANGE","reasonCode":"MAP_RENAMED","classification":"MAP_RENAMED","bindingSetVersion":1,"before":{"mapName":"老厂前线new_wk"},"after":{"mapName":"老厂前线new_wk2"},"inFlightDemands":0}, RaisedAt = 8/26/2026 1:00:00 AM +00:00, RaisedBy = deployment:8005-controlserver@test, ReleasedAt = , ReleasedBy =  }, TaskTypeStationHold { HoldId = 4948f964ae0046198df28e8a0acb010a, MapId = 25, TaskType = DIE_TO_OVEN, Source = CATALOG_CHANGE, ReasonCode = MAP_RENAMED, DetailJson = {"mapId":25,"taskType":"DIE_TO_OVEN","source":"CATALOG_CHANGE","reasonCode":"MAP_RENAMED","classification":"MAP_RENAMED","bindingSetVersion":1,"before":{"mapName":"老厂前线new_wk"},"after":{"mapName":"老厂前线new_wk2"},"inFlightDemands":0}, RaisedAt = 8/26/2026 1:00:00 AM +00:00, RaisedBy = deployment:8005-controlserver@test, ReleasedAt = , ReleasedBy =  }, TaskTypeStationHold { HoldId = 62b6df1dad6c4087ad9701fe11590c0a, MapId = 25, TaskType = WIRE_TO_OPTICAL, Source = CATALOG_CHANGE, ReasonCode = MAP_RENAMED, DetailJson = {"mapId":25,"taskType":"WIRE_TO_OPTICAL","source":"CATALOG_CHANGE","reasonCode":"MAP_RENAMED","classification":"MAP_RENAMED","bindingSetVersion":1,"before":{"mapName":"老厂前线new_wk"},"after":{"mapName":"老厂前线new_wk2"},"inFlightDemands":0}, RaisedAt = 8/26/2026 1:00:00 AM +00:00, RaisedBy = deployment:8005-controlserver@test, ReleasedAt = , ReleasedBy =  }, TaskTypeStationHold { HoldId = 9131145c16d14819b517a6b7adafd909, MapId = 25, TaskType = WIRE_TO_GATE, Source = CATALOG_CHANGE, ReasonCode = MAP_RENAMED, DetailJson = {"mapId":25,"taskType":"WIRE_TO_GATE","source":"CATALOG_CHANGE","reasonCode":"MAP_RENAMED","classification":"MAP_RENAMED","bindingSetVersion":1,"before":{"mapName":"老厂前线new_wk"},"after":{"mapName":"老厂前线new_wk2"},"inFlightDemands":0}, RaisedAt = 8/26/2026 1:00:00 AM +00:00, RaisedBy = deployment:8005-controlserver@test, ReleasedAt = , ReleasedBy =  }, ···]
+  Stack Trace:
+     at ControlServer.Tests.MapRenameEngineTests.ARenameStopsDispatchFromItsRoundAndAcceptingTheNameThenReleasingTheHoldResumesIt() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameEngineTests.cs:line 32
+   at ControlServer.Tests.MapRenameEngineTests.ARenameStopsDispatchFromItsRoundAndAcceptingTheNameThenReleasingTheHoldResumesIt() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameEngineTests.cs:line 40
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:20.37]     ControlServer.Tests.MapRenameHoldConvergenceTests.ARenameWritesOneDetectionAuditAndOneHoldAuditPerTaskTypeAndARepeatWritesNothingMore [FAIL]
+  Failed ControlServer.Tests.MapRenameHoldConvergenceTests.ARenameWritesOneDetectionAuditAndOneHoldAuditPerTaskTypeAndARepeatWritesNothingMore [9 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 2
+Actual:   6
+  Stack Trace:
+     at ControlServer.Tests.MapRenameHoldConvergenceTests.ARenameWritesOneDetectionAuditAndOneHoldAuditPerTaskTypeAndARepeatWritesNothingMore() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameHoldConvergenceTests.cs:line 131
+   at ControlServer.Tests.MapRenameHoldConvergenceTests.ARenameWritesOneDetectionAuditAndOneHoldAuditPerTaskTypeAndARepeatWritesNothingMore() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameHoldConvergenceTests.cs:line 144
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:24.56]     ControlServer.Tests.MapRenameEngineTests.MapIdentityIsNeitherTheBaselineNorComparedWithIt [FAIL]
+  Failed ControlServer.Tests.MapRenameEngineTests.MapIdentityIsNeitherTheBaselineNorComparedWithIt [1 s]
+  Error Message:
+   Assert.Single() Failure: The collection contained 6 items
+Collection: [TaskTypeStationHold { HoldId = 4b4d8927f57d4581b4398d7cb52b9c02, MapId = 25, TaskType = DIE_TO_OVEN, Source = CATALOG_CHANGE, ReasonCode = MAP_RENAMED, DetailJson = {"mapId":25,"taskType":"DIE_TO_OVEN","source":"CATALOG_CHANGE","reasonCode":"MAP_RENAMED","classification":"MAP_RENAMED","bindingSetVersion":1,"before":{"mapName":"老厂前线new_wk"},"after":{"mapName":"MAP-25"},"inFlightDemands":0}, RaisedAt = 8/26/2026 1:00:00 AM +00:00, RaisedBy = deployment:8005-controlserver@test, ReleasedAt = , ReleasedBy =  }, TaskTypeStationHold { HoldId = 815d1f1e2e77490b83290e9f0850d418, MapId = 25, TaskType = WIRE_TO_NITROGEN, Source = CATALOG_CHANGE, ReasonCode = MAP_RENAMED, DetailJson = {"mapId":25,"taskType":"WIRE_TO_NITROGEN","source":"CATALOG_CHANGE","reasonCode":"MAP_RENAMED","classification":"MAP_RENAMED","bindingSetVersion":1,"before":{"mapName":"老厂前线new_wk"},"after":{"mapName":"MAP-25"},"inFlightDemands":0}, RaisedAt = 8/26/2026 1:00:00 AM +00:00, RaisedBy = deployment:8005-controlserver@test, ReleasedAt = , ReleasedBy =  }, TaskTypeStationHold { HoldId = be5a35f5529646df84854e2c373f2246, MapId = 25, TaskType = DIE_TO_WIRE_STAGING, Source = CATALOG_CHANGE, ReasonCode = MAP_RENAMED, DetailJson = {"mapId":25,"taskType":"DIE_TO_WIRE_STAGING","source":"CATALOG_CHANGE","reasonCode":"MAP_RENAMED","classification":"MAP_RENAMED","bindingSetVersion":1,"before":{"mapName":"老厂前线new_wk"},"after":{"mapName":"MAP-25"},"inFlightDemands":0}, RaisedAt = 8/26/2026 1:00:00 AM +00:00, RaisedBy = deployment:8005-controlserver@test, ReleasedAt = , ReleasedBy =  }, TaskTypeStationHold { HoldId = d178cd36c5864cad979de65eda17ce1f, MapId = 25, TaskType = WIRE_TO_GATE, Source = CATALOG_CHANGE, ReasonCode = MAP_RENAMED, DetailJson = {"mapId":25,"taskType":"WIRE_TO_GATE","source":"CATALOG_CHANGE","reasonCode":"MAP_RENAMED","classification":"MAP_RENAMED","bindingSetVersion":1,"before":{"mapName":"老厂前线new_wk"},"after":{"mapName":"MAP-25"},"inFlightDemands":1}, RaisedAt = 8/26/2026 1:00:00 AM +00:00, RaisedBy = deployment:8005-controlserver@test, ReleasedAt = , ReleasedBy =  }, TaskTypeStationHold { HoldId = deb9aacf88584265b1e789ea3f4f256e, MapId = 25, TaskType = STAGING_TO_WIRE, Source = CATALOG_CHANGE, ReasonCode = MAP_RENAMED, DetailJson = {"mapId":25,"taskType":"STAGING_TO_WIRE","source":"CATALOG_CHANGE","reasonCode":"MAP_RENAMED","classification":"MAP_RENAMED","bindingSetVersion":1,"before":{"mapName":"老厂前线new_wk"},"after":{"mapName":"MAP-25"},"inFlightDemands":0}, RaisedAt = 8/26/2026 1:00:00 AM +00:00, RaisedBy = deployment:8005-controlserver@test, ReleasedAt = , ReleasedBy =  }, ···]
+  Stack Trace:
+     at ControlServer.Tests.MapRenameEngineTests.MapIdentityIsNeitherTheBaselineNorComparedWithIt() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameEngineTests.cs:line 133
+   at ControlServer.Tests.MapRenameEngineTests.MapIdentityIsNeitherTheBaselineNorComparedWithIt() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameEngineTests.cs:line 133
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:25.64]     ControlServer.Tests.MapRenameEngineTests.AnUnboundTaskTypeDoesNotDispatchAndBoundDuringAPendingRenameItIsHeldUntilTheRenameIsAccepted [FAIL]
+  Failed ControlServer.Tests.MapRenameEngineTests.AnUnboundTaskTypeDoesNotDispatchAndBoundDuringAPendingRenameItIsHeldUntilTheRenameIsAccepted [1 s]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+Expected: <>z__ReadOnlySingleElementList<string>           ["STAGING_TO_WIRE"]
+Actual:   SelectIListIterator<TaskTypeStationHold, string> ["STAGING_TO_WIRE", "WIRE_TO_NITROGEN", "WIRE_TO_GATE", "DIE_TO_OVEN", "WIRE_TO_OPTICAL", ···]
+                                                                               ↑ (pos 1)
+  Stack Trace:
+     at ControlServer.Tests.MapRenameEngineTests.AnUnboundTaskTypeDoesNotDispatchAndBoundDuringAPendingRenameItIsHeldUntilTheRenameIsAccepted() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameEngineTests.cs:line 90
+   at ControlServer.Tests.MapRenameEngineTests.AnUnboundTaskTypeDoesNotDispatchAndBoundDuringAPendingRenameItIsHeldUntilTheRenameIsAccepted() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameEngineTests.cs:line 110
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:31.54]     ControlServer.Tests.MapRenameHoldConvergenceTests.HoldsAndBaselineStandThroughFailedAndMissingReadsAndTheUnacceptedRenameStillHoldsAfter [FAIL]
+  Failed ControlServer.Tests.MapRenameHoldConvergenceTests.HoldsAndBaselineStandThroughFailedAndMissingReadsAndTheUnacceptedRenameStillHoldsAfter [6 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 2
+Actual:   6
+  Stack Trace:
+     at ControlServer.Tests.MapRenameHoldConvergenceTests.HoldsAndBaselineStandThroughFailedAndMissingReadsAndTheUnacceptedRenameStillHoldsAfter() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameHoldConvergenceTests.cs:line 208
+   at ControlServer.Tests.MapRenameHoldConvergenceTests.HoldsAndBaselineStandThroughFailedAndMissingReadsAndTheUnacceptedRenameStillHoldsAfter() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameHoldConvergenceTests.cs:line 227
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:35.61]     ControlServer.Tests.MapRenameHoldConvergenceTests.ATaskTypeBoundWhileTheRenameIsPendingIsHeldOnTheNextObservation [FAIL]
+  Failed ControlServer.Tests.MapRenameHoldConvergenceTests.ATaskTypeBoundWhileTheRenameIsPendingIsHeldOnTheNextObservation [4 s]
+  Error Message:
+   Assert.False() Failure
+Expected: False
+Actual:   True
+  Stack Trace:
+     at ControlServer.Tests.MapRenameHoldConvergenceTests.ATaskTypeBoundWhileTheRenameIsPendingIsHeldOnTheNextObservation() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameHoldConvergenceTests.cs:line 265
+   at ControlServer.Tests.MapRenameHoldConvergenceTests.ATaskTypeBoundWhileTheRenameIsPendingIsHeldOnTheNextObservation() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameHoldConvergenceTests.cs:line 275
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:47.77]     ControlServer.Tests.MapRenameHoldConvergenceTests.NamesAreComparedByteForByteSoAWidthOrCaseDifferenceIsARename [FAIL]
+  Failed ControlServer.Tests.MapRenameHoldConvergenceTests.NamesAreComparedByteForByteSoAWidthOrCaseDifferenceIsARename [1 s]
+  Error Message:
+   Assert.Single() Failure: The collection contained 6 items
+Collection: [TaskTypeStationHold { HoldId = 03433a349a6045c0aa5833438ba36836, MapId = 26, TaskType = WIRE_TO_NITROGEN, Source = CATALOG_CHANGE, ReasonCode = MAP_RENAMED, DetailJson = {"mapId":26,"taskType":"WIRE_TO_NITROGEN","source":"CATALOG_CHANGE","reasonCode":"MAP_RENAMED","classification":"MAP_RENAMED","bindingSetVersion":1,"before":{"mapName":"老厂前线new_wk"},"after":{"mapName":"老厂前线NEW_wk"},"inFlightDemands":0}, RaisedAt = 9/19/2026 8:00:00 AM +00:00, RaisedBy = deployment:8005-controlserver@test, ReleasedAt = , ReleasedBy =  }, TaskTypeStationHold { HoldId = 3b5ee5bcf2e14e3296b191531d2c9fbc, MapId = 26, TaskType = WIRE_TO_OPTICAL, Source = CATALOG_CHANGE, ReasonCode = MAP_RENAMED, DetailJson = {"mapId":26,"taskType":"WIRE_TO_OPTICAL","source":"CATALOG_CHANGE","reasonCode":"MAP_RENAMED","classification":"MAP_RENAMED","bindingSetVersion":1,"before":{"mapName":"老厂前线new_wk"},"after":{"mapName":"老厂前线NEW_wk"},"inFlightDemands":0}, RaisedAt = 9/19/2026 8:00:00 AM +00:00, RaisedBy = deployment:8005-controlserver@test, ReleasedAt = , ReleasedBy =  }, TaskTypeStationHold { HoldId = 74acade32c5e4cabb46fdd6a9d9972cc, MapId = 26, TaskType = DIE_TO_WIRE_STAGING, Source = CATALOG_CHANGE, ReasonCode = MAP_RENAMED, DetailJson = {"mapId":26,"taskType":"DIE_TO_WIRE_STAGING","source":"CATALOG_CHANGE","reasonCode":"MAP_RENAMED","classification":"MAP_RENAMED","bindingSetVersion":1,"before":{"mapName":"老厂前线new_wk"},"after":{"mapName":"老厂前线NEW_wk"},"inFlightDemands":0}, RaisedAt = 9/19/2026 8:00:00 AM +00:00, RaisedBy = deployment:8005-controlserver@test, ReleasedAt = , ReleasedBy =  }, TaskTypeStationHold { HoldId = 824a6385ae644cdd8c8030a4d958bf44, MapId = 26, TaskType = WIRE_TO_GATE, Source = CATALOG_CHANGE, ReasonCode = MAP_RENAMED, DetailJson = {"mapId":26,"taskType":"WIRE_TO_GATE","source":"CATALOG_CHANGE","reasonCode":"MAP_RENAMED","classification":"MAP_RENAMED","bindingSetVersion":1,"before":{"mapName":"老厂前线new_wk"},"after":{"mapName":"老厂前线NEW_wk"},"inFlightDemands":0}, RaisedAt = 9/19/2026 8:00:00 AM +00:00, RaisedBy = deployment:8005-controlserver@test, ReleasedAt = , ReleasedBy =  }, TaskTypeStationHold { HoldId = aabd954e16ee4225ab1f86bad6073b46, MapId = 26, TaskType = DIE_TO_OVEN, Source = CATALOG_CHANGE, ReasonCode = MAP_RENAMED, DetailJson = {"mapId":26,"taskType":"DIE_TO_OVEN","source":"CATALOG_CHANGE","reasonCode":"MAP_RENAMED","classification":"MAP_RENAMED","bindingSetVersion":1,"before":{"mapName":"老厂前线new_wk"},"after":{"mapName":"老厂前线NEW_wk"},"inFlightDemands":0}, RaisedAt = 9/19/2026 8:00:00 AM +00:00, RaisedBy = deployment:8005-controlserver@test, ReleasedAt = , ReleasedBy =  }, ···]
+  Stack Trace:
+     at ControlServer.Tests.MapRenameHoldConvergenceTests.NamesAreComparedByteForByteSoAWidthOrCaseDifferenceIsARename() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameHoldConvergenceTests.cs:line 102
+   at ControlServer.Tests.MapRenameHoldConvergenceTests.NamesAreComparedByteForByteSoAWidthOrCaseDifferenceIsARename() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameHoldConvergenceTests.cs:line 102
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:51.59]     ControlServer.Tests.MapRenameHoldConvergenceTests.ARenameUnderTheSameMapIdHoldsEveryBoundTaskTypeOfThatMapAndNothingOnAnotherMap [FAIL]
+  Failed ControlServer.Tests.MapRenameHoldConvergenceTests.ARenameUnderTheSameMapIdHoldsEveryBoundTaskTypeOfThatMapAndNothingOnAnotherMap [2 s]
+  Error Message:
+   Assert.Equal() Failure: Collections differ at index 0
+           ↓ (pos 0)
+Expected: "STAGING_TO_WIRE"
+Actual:   "DIE_TO_OVEN"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.MapRenameHoldConvergenceTests.ARenameUnderTheSameMapIdHoldsEveryBoundTaskTypeOfThatMapAndNothingOnAnotherMap() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameHoldConvergenceTests.cs:line 71
+   at ControlServer.Tests.MapRenameHoldConvergenceTests.ARenameUnderTheSameMapIdHoldsEveryBoundTaskTypeOfThatMapAndNothingOnAnotherMap() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameHoldConvergenceTests.cs:line 85
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     8, Passed:    38, Skipped:     0, Total:    46, Duration: 44 s - ControlServer.Tests.dll (net8.0)
