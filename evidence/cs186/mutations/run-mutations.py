@@ -23,6 +23,7 @@ ENGINE = "src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs"
 GATEWAY = "src/ControlServer.Infrastructure/Adapters/HttpRiotMovementGateway.cs"
 ACCEPT = "src/ControlServer.Application/MapNameBaselineAcceptanceService.cs"
 STORE = "src/ControlServer.Infrastructure/Persistence/MapNameBaselineStore.cs"
+ACTIVATION_STORE = "src/ControlServer.Infrastructure/Persistence/TaskTypeStationActivationStore.cs"
 RELEASE = "src/ControlServer.Application/TaskTypeStationActivationService.cs"
 FIXTURE = "tests/ControlServer.Tests/RiotReplays/map-list-2026-09-28.json"
 
@@ -50,11 +51,11 @@ MUTATIONS = [
     {
         "id": "M3", "file": CONV,
         "models": "A Map the listing leaves out is treated as renamed.",
-        "old": "        return observed;\n    }\n\n    private async Task<MapRenameObservation> ConvergeAsync(",
+        "old": "        return observed;\n    }\n",
         "new": ("        foreach (int missing in dbContext.Set<MapNameBaselineRow>().Select(row => row.MapId).ToList()"
                 ".Where(id => listing.Maps.All(map => map.MapId != id)))\n        {\n"
                 "            observed.Add(await ConvergeAsync(missing, \"(missing)\", now, cancellationToken).ConfigureAwait(false));\n"
-                "        }\n        return observed;\n    }\n\n    private async Task<MapRenameObservation> ConvergeAsync("),
+                "        }\n        return observed;\n    }\n"),
         "expect": ["MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: \"missing\")",
                    "MapRenameHoldConvergenceTests.HoldsAndBaselineStandThroughFailedAndMissingReadsAndTheUnacceptedRenameStillHoldsAfter"],
     },
@@ -111,7 +112,11 @@ MUTATIONS = [
         "models": "The release verb stops checking for an unaccepted rename.",
         "old": "if (mapName?.PendingName is { } pendingName)",
         "new": "if (mapName?.PendingName is { } pendingName && pendingName.Length < 0)",
-        "expect": ["MapNameBaselineAcceptanceTests.AHoldReleaseIsRefusedWhileTheMapCarriesAnUnacceptedRenameAndGoesThroughOnceItIsAccepted"],
+        # 082a6115: red 1 (AHoldReleaseIsRefusedWhileTheMapCarriesAnUnacceptedRenameAndGoesThroughOnceItIsAccepted).
+        # From 08d1a39c the release transaction re-reads the pending name and refuses by itself (review suggestion 1),
+        # so taking out the service's check alone is expected to survive -- the second fence, as with M8a.
+        "expect": [] if os.environ.get("CS186_REVIEWED") else
+                  ["MapNameBaselineAcceptanceTests.AHoldReleaseIsRefusedWhileTheMapCarriesAnUnacceptedRenameAndGoesThroughOnceItIsAccepted"],
     },
     {
         "id": "M8a", "file": ACCEPT,
@@ -178,6 +183,47 @@ MUTATIONS = [
         "new": "if (string.Equals(baseline.Name, name, StringComparison.OrdinalIgnoreCase))",
         "expect": ["MapRenameHoldConvergenceTests.NamesAreComparedByteForByteSoAWidthOrCaseDifferenceIsARename"],
     },
+    # --- PR #378 review round (08d1a39c) ---
+    {
+        "id": "MX1", "file": CONV,
+        "models": "While a rename is pending, a task type bound since is never held (the reviewer's MX1).",
+        "old": "bool writes = !string.Equals(baseline.PendingName, name, StringComparison.Ordinal) || unheld.Length > 0;",
+        "new": "bool writes = !string.Equals(baseline.PendingName, name, StringComparison.Ordinal) || false;",
+        "expect": ["MapRenameHoldConvergenceTests.ATaskTypeBoundWhileTheRenameIsPendingIsHeldOnTheNextObservation",
+                   "MapRenameEngineTests.AnUnboundTaskTypeDoesNotDispatchAndBoundDuringAPendingRenameItIsHeldUntilTheRenameIsAccepted"],
+    },
+    {
+        "id": "MX2", "file": ENGINE,
+        "models": "A failed Map list read lets go of every MAP_RENAMED hold (the reviewer's MX2).",
+        "old": "            LogMapRenameObservationFailed(logger, error);" + chr(10),
+        "new": ("            LogMapRenameObservationFailed(logger, error);" + chr(10) +
+                "            await dbContext.Set<TaskTypeStationHoldRow>().Where(row => row.ReasonCode == \"MAP_RENAMED\" && row.ReleasedAt == null)"
+                ".ExecuteUpdateAsync(setters => setters.SetProperty(row => row.ReleasedAt, timeProvider.GetUtcNow()), cancellationToken)"
+                ".ConfigureAwait(false);" + chr(10)),
+        "expect": ["MapRenameEngineTests.AfterARenameAFailedMapListReadDoesNotLetTheHeldTaskTypeDispatch"],
+    },
+    {
+        "id": "R1", "file": ACTIVATION_STORE,
+        "models": "The release transaction no longer re-reads the pending name (review suggestion 1 undone).",
+        "old": "                throw new MapRenamePendingException(mapId, mapName.Name, pendingName);",
+        "new": "                _ = pendingName;",
+        "expect": ["MapNameBaselineAcceptanceTests.ARenameSeenBetweenTheReleaseChecksAndItsTransactionStillRefusesTheRelease"],
+    },
+    {
+        "id": "R2", "file": ACTIVATION_STORE,
+        "models": "An activation under a pending rename no longer holds its task types (review suggestion 2 undone).",
+        "old": "            await HoldUnderPendingRenameAsync(attempt, at, cancellationToken);" + chr(10),
+        "new": "",
+        "expect": ["MapNameBaselineAcceptanceTests.AnActivationUnderAPendingRenameHoldsEveryTaskTypeOfTheVersionItMakesActive(renameBetweenTheTwoSteps: False)",
+                   "MapNameBaselineAcceptanceTests.AnActivationUnderAPendingRenameHoldsEveryTaskTypeOfTheVersionItMakesActive(renameBetweenTheTwoSteps: True)"],
+    },
+    {
+        "id": "R3", "file": CONV,
+        "models": "A failure on one Map ends the whole observation again (review suggestion 3 undone).",
+        "old": "observed.Add(await ConvergeIsolatedAsync(map.Key, entries[0].Name, now, cancellationToken).ConfigureAwait(false));",
+        "new": "observed.Add(await ConvergeAsync(map.Key, entries[0].Name, now, cancellationToken).ConfigureAwait(false));",
+        "expect": ["MapRenameHoldConvergenceTests.AFailureOnOneUnrelatedMapDoesNotKeepAMapAfterItFromBeingObserved"],
+    },
 ]
 
 
@@ -206,7 +252,7 @@ def lines_of(text):
 
 def main():
     wanted = set(sys.argv[1:])
-    results_path = os.path.join(HERE, "results.json")
+    results_path = os.path.join(HERE, os.environ.get("CS186_RESULTS", "results.json"))
     results = json.load(open(results_path, encoding="utf-8")) if os.path.exists(results_path) else {}
     for mutation in MUTATIONS:
         if wanted and mutation["id"] not in wanted:
@@ -216,7 +262,12 @@ def main():
         shutil.copyfile(path, backup)
         try:
             text = open(path, encoding="utf-8", newline="").read()
+            # The anchors are written with LF. A working copy with CRLF line ends (dotnet format writes them) gets the same
+            # anchors with CRLF, so a multi-line anchor still matches exactly once instead of silently matching nothing.
+            crlf = chr(13) + chr(10)
             for old, new in [(mutation["old"], mutation["new"])] + mutation.get("also", []):
+                if crlf in text:
+                    old, new = old.replace(chr(10), crlf), new.replace(chr(10), crlf)
                 count = text.count(old)
                 if count != 1:
                     sys.exit(f"{mid}: expected exactly one match in {path}, found {count}; batch aborted")
