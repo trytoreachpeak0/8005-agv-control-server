@@ -210,7 +210,7 @@ public sealed class EmergencyStopSupervisor(
     /// <summary>
     /// The reason recorded on an automatic release earned by <see cref="EmergencyReleaseAllowance"/>: the doors of a driving
     /// vehicle are proven locked again while its fault stands (control-server#335). Read back by
-    /// <see cref="WasReleasedWhileTheFaultStoodAsync"/>.
+    /// <see cref="WasReleasedOnDoorCauseAsync"/>.
     /// </summary>
     public const string DoorCauseRemovedReason = "EMERGENCY_DOOR_CAUSE_REMOVED";
 
@@ -577,16 +577,15 @@ public sealed class EmergencyStopSupervisor(
     }
 
     /// <summary>
-    /// Whether this fault generation has had a release take effect while its fault stood: on a person's confirmation
-    /// (REQ-0356), or on the doors proven locked again (<see cref="EmergencyReleaseAllowance"/>, control-server#335).
+    /// Whether this fault generation has had the automatic release an <see cref="EmergencyReleaseAllowance"/> earned take
+    /// effect (control-server#335).
     /// </summary>
     /// <remarks>
-    /// The fault coordinator asks this where it used to ask <see cref="WasReleasedOnConfirmationAsync"/>, for the rule the
-    /// user set on 2026-09-15 and for the same reason: after such a release the vehicle stands, held, wherever it stopped --
-    /// between stations, as a rule, where RIoT reports no station -- and stopping it again for that alone would undo the
-    /// release on the next evaluation. It is still stopped again on motion, an unreadable watch or a stale sample.
+    /// Scoped to the generation like <see cref="WasReleasedOnConfirmationAsync"/>: a fault a person clears ends it, and a new
+    /// fault starts without it. The fault coordinator exempts such a vehicle from being stopped again for want of a station
+    /// alone -- and only while the doors still read fresh, known and locked; that half is the coordinator's, which reads them.
     /// </remarks>
-    public async Task<bool> WasReleasedWhileTheFaultStoodAsync(
+    public async Task<bool> WasReleasedOnDoorCauseAsync(
         EmergencyStopSubject subject,
         long faultGeneration,
         CancellationToken cancellationToken)
@@ -600,7 +599,7 @@ public sealed class EmergencyStopSupervisor(
         return releases.Any(release =>
             release.FaultGeneration == faultGeneration &&
             release.Outcome == RiotOrderCommandOutcome.Confirmed &&
-            (IsReleaseOnConfirmation(release) || IsReleaseOnDoorCause(release)));
+            IsReleaseOnDoorCause(release));
     }
 
     /// <summary>

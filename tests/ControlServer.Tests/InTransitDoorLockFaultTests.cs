@@ -3,6 +3,7 @@ using ControlServer.Domain;
 using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.Commands;
 using ControlServer.Host.Runtime.Faults;
+using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using static ControlServer.Tests.Batch7StopDrivenAdvanceDriver;
@@ -189,6 +190,40 @@ public sealed class InTransitDoorLockFaultTests
             Assert.Equal(fixture.Clock.GetUtcNow(), fault.LastEvaluatedAt);
             Assert.Equal(DoorSymptom, (await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token)).BlockReasonCode);
         }
+    }
+
+    /// <summary>
+    /// cs#334 之后，车载端连接不可用时这台车本轮让开（<c>OnboardConnectionUnavailableException</c>）。门锁这条路不给车载端发任何东西：
+    /// 真车载端在途时会话因本单未就绪，推进走闸门分支，门锁检查排在一切发送之前。所以连接发不出去时，门锁照样按住、急停。
+    /// </summary>
+    /// <remarks>
+    /// 会话就绪那一侧推进先补发发件箱、后判到站，补发抛出时这台车本轮让开、门锁检查这一轮不跑；那只在合成车载端、或车载端将来
+    /// 在途也报就绪时出现，写在 PR 的剩余风险里。这一条守的是现场那一半。
+    /// </remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0246")]
+    public async Task BehindTheGateADoorFaultIsRaisedEvenWhenThePeerCannotBeSentTo()
+    {
+        await using RuntimeFixture fixture = await GateArrivalWaitAsync();
+        JourneyRuntimeRow underWay = await fixture.RuntimeAsync();
+        await OwnOrderRebuildTests.DropSessionOnOwnOrderAsync(fixture);
+        fixture.Riot.MovementState = "MT_RUNNING";
+        await ReportDrivingOnTheOwnOrderAsync(fixture);
+        await DriveOneRoundAsync(fixture);
+        await AssertNothingRaisedAsync(fixture);
+        int sendsAttempted = 0;
+        fixture.Peer.OnMessageSent = _ =>
+        {
+            sendsAttempted++;
+            throw new OnboardConnectionUnavailableException("peer unavailable for the test vehicle");
+        };
+
+        await fixture.ReportSafetySummaryAsync(
+            allTargetSlotsLocked: false, unknownPresent: false, ["LOCK_NOT_CLOSED", "ACTION_NOT_ALLOWED_IN_STATE"]);
+        await DriveOneRoundAsync(fixture);
+
+        await AssertHeldThenStoppedAsync(fixture, underWay.GateUpperId!);
+        Assert.Equal(0, sendsAttempted);
     }
 
     // ---- 不许触发的 ------------------------------------------------------------------------------------------------

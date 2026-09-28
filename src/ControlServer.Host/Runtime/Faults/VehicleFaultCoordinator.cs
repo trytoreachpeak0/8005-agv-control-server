@@ -122,7 +122,8 @@ public sealed record VehicleFaultDecision(
     StopProofVerdict StopProof,
     bool Escalated,
     IReadOnlyList<string> Reasons,
-    string? AlarmCode = null)
+    string? AlarmCode = null,
+    bool ReleasedOnDoorCause = false)
 {
     /// <summary>
     /// True whenever a fault fact is held. New dispatch is blocked at either level — REQ-0234 does
@@ -543,19 +544,26 @@ public sealed class VehicleFaultCoordinator(
         // Asked only when it can change the answer: a latched vehicle is not escalated either way.
         // A release RIoT has carried out since its read-back is settled first, or this evaluation
         // would find it unconfirmed and stop the vehicle it has just released.
-        // A release on the doors proven locked again counts here as a person's confirmation does (control-server#335): the
-        // vehicle stands held wherever it stopped, and that alone is no reason to stop it again.
         bool releasedOnConfirmation = false;
+        bool releasedOnDoorCause = false;
         if (!emergency.IsLatched)
         {
             await emergencyStop.SettleReleaseTakenEffectAsync(subject, emergency, cancellationToken)
                 .ConfigureAwait(false);
             releasedOnConfirmation = await emergencyStop
-                .WasReleasedWhileTheFaultStoodAsync(subject, fault.FaultGeneration, cancellationToken)
+                .WasReleasedOnConfirmationAsync(subject, fault.FaultGeneration, cancellationToken)
+                .ConfigureAwait(false);
+            releasedOnDoorCause = IsDoorFault(fault) && await emergencyStop
+                .WasReleasedOnDoorCauseAsync(subject, fault.FaultGeneration, cancellationToken)
                 .ConfigureAwait(false);
         }
+        // A release on the doors proven locked again exempts the vehicle as a person's confirmation does -- it stands held
+        // wherever it stopped, and a missing station alone is no reason to stop it again -- but only while the doors still
+        // read that way (control-server#335, Coordinator 8 2026-09-28). Doors reported open or unknown again are REQ-0246's
+        // own trigger, and the vehicle is stopped again. Moving, unreadable or stale motion stops it either way.
         bool escalated = RequiresEscalation(
-            hold == RiotOrderCommandOutcome.Confirmed, proof, latest, emergency.IsLatched, releasedOnConfirmation);
+            hold == RiotOrderCommandOutcome.Confirmed, proof, latest, emergency.IsLatched,
+            releasedOnConfirmation || (releasedOnDoorCause && context.DoorCauseRemoved));
         if (escalated)
         {
             await EscalateAsync(subject, fault, proof, cancellationToken).ConfigureAwait(false);
@@ -587,7 +595,7 @@ public sealed class VehicleFaultCoordinator(
         Alarm(alarm, subject.AgvId, reasons);
 
         return new VehicleFaultDecision(
-            fault.Level, fault.FaultGeneration, evidenceCode, hold, cargo, proof, escalated, reasons, alarm);
+            fault.Level, fault.FaultGeneration, evidenceCode, hold, cargo, proof, escalated, reasons, alarm, releasedOnDoorCause);
     }
 
     /// <summary>
@@ -739,6 +747,9 @@ public sealed class VehicleFaultCoordinator(
             .ReconcileByUpperIdAsync(target.UpperId, cancellationToken).ConfigureAwait(false);
         return DoorReleaseAllowance(fault, context, holdOutcome, order);
     }
+
+    private static bool IsDoorFault(VehicleFaultFact fault) =>
+        string.Equals(fault.EvidenceCode, VehicleFaultEvidence.DoorNotProvenLocked, StringComparison.Ordinal);
 
     /// <summary>The release allowance a door fault earns, or null. Pure, so every refusal is a case a test can name.</summary>
     /// <remarks>

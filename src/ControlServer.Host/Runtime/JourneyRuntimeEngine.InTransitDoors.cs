@@ -50,6 +50,21 @@ namespace ControlServer.Host.Runtime;
 /// </remarks>
 public sealed partial class JourneyRuntimeEngine
 {
+    /// <summary>
+    /// A latch this server released on the doors proven locked again (control-server#335), and RIoT now runs the order this
+    /// server held -- with nobody having pressed continue. riot-behavior-lab round-44 (agv03, 2026-09-28, one observation) saw a
+    /// HELD order stay 7 for 60 s after such a release; this names the day RIoT behaves otherwise, for a person to look. A
+    /// vehicle that actually moves is stopped again by the fault model on the motion it reads.
+    /// </summary>
+    public const string HeldOrderResumedWithoutContinueReason = "HELD_ORDER_RESUMED_WITHOUT_CONTINUE";
+
+    private static readonly Action<ILogger, string, string, Exception?> LogHeldOrderResumedWithoutContinue =
+        LoggerMessage.Define<string, string>(
+            LogLevel.Critical,
+            new EventId(2195, nameof(LogHeldOrderResumedWithoutContinue)),
+            "Order {UpperId} on {AgvId} was held for its doors and its latch released automatically; RIoT now reports it " +
+            "executing although nobody continued it.");
+
     private static readonly Action<ILogger, string, string, string, long?, long?, Exception?> LogDoorsNotProvenLocked =
         LoggerMessage.Define<string, string, string, long?, long?>(
             LogLevel.Warning,
@@ -98,17 +113,31 @@ public sealed partial class JourneyRuntimeEngine
         FaultedVehicleContext inFlight = await InFlightFaultContextAsync(runtime, intent, orderId, cancellationToken)
             .ConfigureAwait(false);
         FaultedVehicleContext context = inFlight with { DoorCauseRemoved = doors.State == InTransitDoorState.ProvenLocked };
-        await faults.ObserveAsync(
+        VehicleFaultDecision decision = await faults.ObserveAsync(
             new EmergencyStopSubject(runtime.AgvId, runtime.VehicleKey),
             VehicleFaultEvidence.DoorNotProvenLocked,
             context,
             cancellationToken).ConfigureAwait(false);
 
+        // The held order running again after the automatic release is named over the door code: the doors are the reason the
+        // vehicle stopped, but what a person has to know now is that it may be moving without anyone having let it.
+        string code = VehicleFaultEvidence.DoorNotProvenLocked;
+        if (decision.ReleasedOnDoorCause &&
+            order.Kind == RiotOrderObservationKind.Active &&
+            order.OrderState == RiotOrderState.Executing)
+        {
+            code = HeldOrderResumedWithoutContinueReason;
+            if (!string.Equals(runtime.BlockReasonCode, code, StringComparison.Ordinal))
+            {
+                LogHeldOrderResumedWithoutContinue(logger, intent.UpperId, runtime.AgvId, null);
+            }
+        }
+
         checkpointWaits.Clear(runtime.VehicleKey);
-        if (!string.Equals(runtime.BlockReasonCode, VehicleFaultEvidence.DoorNotProvenLocked, StringComparison.Ordinal))
+        if (!string.Equals(runtime.BlockReasonCode, code, StringComparison.Ordinal))
         {
             now = timeProvider.GetUtcNow();
-            runtime.SetBlockReason(VehicleFaultEvidence.DoorNotProvenLocked, now);
+            runtime.SetBlockReason(code, now);
             runtime.UpdatedAt = now;
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }

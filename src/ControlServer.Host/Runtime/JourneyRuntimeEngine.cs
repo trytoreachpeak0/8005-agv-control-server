@@ -4568,6 +4568,7 @@ public sealed partial class JourneyRuntimeEngine(
         IsHeldForAreaEndAdmission(runtime) ||
         string.Equals(runtime.BlockReasonCode, VehicleFaultEvidence.OrderFailed, StringComparison.Ordinal) ||
         string.Equals(runtime.BlockReasonCode, VehicleFaultEvidence.DoorNotProvenLocked, StringComparison.Ordinal) ||
+        string.Equals(runtime.BlockReasonCode, HeldOrderResumedWithoutContinueReason, StringComparison.Ordinal) ||
         IsStalledOrderReason(runtime.BlockReasonCode) ||
         string.Equals(runtime.BlockReasonCode, OnboardSessionLostReason, StringComparison.Ordinal) ||
         string.Equals(runtime.BlockReasonCode, StationTimeoutDoorNotClosedReason, StringComparison.Ordinal) ||
