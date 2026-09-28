@@ -336,6 +336,7 @@ Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:58007/api/safety/v1/vehicl
     `ORDER_HANG`），`FAILED` 就同一轮记故障、Hold、急停。对账只对**已经发过建单**的单做，所以会话未就绪时服务端不会建新单。
   清除本身不依赖会话是否就绪。
 - **还没确认建成就在 RIoT 里终结的单**（建单应答丢了之后，#367）：与确认过的单一样处理。被取消或删除的，按上面「清除之后的
-  自动重建」同车重建，三道防护照旧；FAILED 的按本说明清除；读到 8（SUSPENDED）的写 `ORDER_STATE_UNRECOGNIZED`，等人到 RIoT 查明。
-  以前这几种都停在 `PICKUP_TerminalReconciliationRequired`（或 `GATE_…`），只能改库。车上有货时，取消来源的重建先证明货在原仓位
-  （`REQ-0360` 经 CP-0007 修订），那一步由 #366 做。
+  自动重建」同车重建，三道防护照旧；FAILED 的按本说明清除；读到 8（SUSPENDED）的写 `ORDER_STATE_UNRECOGNIZED`，等人到 RIoT 查明——
+  人在 RIoT 里把那张单取消或删除之后，服务端下一轮按取消来源同车重建（RIoT 允不允许删除状态 8 的单没有核过）。
+  以前这几种都停在 `PICKUP_TerminalReconciliationRequired`（或 `GATE_…`），只能改库。
+  **车上有货时取消来源的重建要先证明货在原仓位（`REQ-0360` 经 CP-0007 修订）：目前尚未实现，#366 合入前取消来源的重建不验货。**

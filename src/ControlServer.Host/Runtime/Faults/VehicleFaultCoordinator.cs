@@ -642,6 +642,15 @@ public sealed class VehicleFaultCoordinator(
     /// rule out. Open outcomes — Pending and Unknown — still retry, because those are the ones a
     /// later read can still settle.
     /// </para>
+    /// <para>
+    /// <b>The clearance entry relies on this hold's audit row</b> (control-server#367). For an ordinary leg whose order
+    /// ended before its create was confirmed, <c>VehicleFaultRecoveryService</c> tells a fault the engine recorded for
+    /// that order from one that came some other way by an <c>OrderHold</c> audit row for its upperId under the fault's
+    /// generation. That holds because the first evaluation of a generation that reaches here with a current order finds no
+    /// attempt of that generation and issues through <c>RiotOrderCommandService.IssueAsync</c>, which arms the row before
+    /// anything is sent; later evaluations of the generation find it. Stop holding the current order, or send before arming,
+    /// and those faults can no longer be cleared.
+    /// </para>
     /// </remarks>
     private async Task<RiotOrderCommandOutcome?> HoldCurrentOrderAsync(
         VehicleFaultFact fault,
