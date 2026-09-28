@@ -129,6 +129,13 @@ public sealed partial class JourneyRuntimeEngine(
             "Vehicle {AgvId}'s journey {JourneyId} yielded this iteration: journey {ConflictingJourneyIds} was written by " +
             "someone else after this iteration read it. What it had not saved was withdrawn; the next iteration reads it " +
             "afresh (control-server#357).");
+    private static readonly Action<ILogger, string, string, Exception?> LogYieldedToUnavailableConnection =
+        LoggerMessage.Define<string, string>(
+            LogLevel.Warning,
+            new EventId(2193, nameof(LogYieldedToUnavailableConnection)),
+            "Vehicle {AgvId}'s journey {JourneyId} yielded this iteration: its Onboard connection is not available (not " +
+            "connected, another session generation, a write past its timeout, or closed). What it had not saved was withdrawn " +
+            "and the other vehicles go on; the next iteration tries it again (control-server#334).");
     private static readonly Action<ILogger, string, string, string, DateTimeOffset, Exception?> LogStationTimeoutDoorNotClosed =
         LoggerMessage.Define<string, string, string, DateTimeOffset>(
             LogLevel.Warning,
@@ -560,7 +567,18 @@ public sealed partial class JourneyRuntimeEngine(
                     when (!JourneyRowConflict.Is(error) &&
                           (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested))
                 {
-                    // 先让这辆车在看板上说出「这一轮推进失败了」，再把异常原样抛出去：轮次仍然 fail-closed，
+                    // control-server#334：这台车的车载端连接此刻不可用（没连上、代次不对、写超时、连接已关）。这是这一台车的事，
+                    // 它这一轮让开，别的车照常推进——整轮抛掉会让后面每一台车的推进、急停确认与 REQ-0248 重触发、派车都停在它身上，
+                    // 而断线不写库、会话行还是 Ready，下一轮它照样抛，一直到它重连为止。写超时按构造总会留下一条未确认的发件箱行，
+                    // 这条路径因此一定会走到。
+                    if (OnboardConnectionUnavailableException.IsIn(error))
+                    {
+                        await YieldToUnavailableConnectionAsync(runtime, before, error, cancellationToken).ConfigureAwait(false);
+                        yielded.Add(runtime.AgvId);
+                        continue;
+                    }
+
+                    // 别的失败：先让这辆车在看板上说出「这一轮推进失败了」，再把异常原样抛出去：轮次仍然 fail-closed，
                     // 2002 仍然记的是原来那一个异常（control-server#331）。
                     await NameFailedAdvanceAsync(runtime, error, cancellationToken).ConfigureAwait(false);
                     throw;
@@ -716,25 +734,99 @@ public sealed partial class JourneyRuntimeEngine(
             dbContext.ChangeTracker.Clear();
             JourneyRuntimeRow? current = await dbContext.JourneyRuntimes
                 .SingleOrDefaultAsync(row => row.JourneyId == journeyId, cancellationToken).ConfigureAwait(false);
-            if (current is null ||
-                current.Stage == JourneyRuntimeStage.Completed ||
-                string.Equals(current.BlockReasonCode, AdvanceFailedReason, StringComparison.Ordinal) ||
-                CarriesACodeThatNamesAWaitOnAPerson(current) ||
-                (string.Equals(current.BlockReasonCode, JourneyWaitClassification.SessionNotReadyReason, StringComparison.Ordinal) &&
-                 IsTransportFailure(failure) &&
-                 await CurrentReadySessionAsync(current.AgvId, cancellationToken).ConfigureAwait(false) is null))
+            if (!await ShouldNameFailedAdvanceAsync(current, failure, cancellationToken).ConfigureAwait(false))
             {
                 return;
             }
 
             DateTimeOffset now = timeProvider.GetUtcNow();
-            current.SetBlockReason(AdvanceFailedReason, now);
+            current!.SetBlockReason(AdvanceFailedReason, now);
             current.UpdatedAt = now;
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
             LogFailedAdvanceNotNamed(logger, journeyId, error);
+        }
+    }
+
+    /// <summary>
+    /// 失败的这一轮要不要在旅程行上写 <see cref="AdvanceFailedReason"/>：<see cref="NameFailedAdvanceAsync"/> 与
+    /// <see cref="YieldToUnavailableConnectionAsync"/> 共用的判定，理由见前者的 remarks。
+    /// </summary>
+    private async Task<bool> ShouldNameFailedAdvanceAsync(
+        JourneyRuntimeRow? current,
+        Exception failure,
+        CancellationToken cancellationToken) =>
+        current is not null &&
+        current.Stage != JourneyRuntimeStage.Completed &&
+        !string.Equals(current.BlockReasonCode, AdvanceFailedReason, StringComparison.Ordinal) &&
+        !CarriesACodeThatNamesAWaitOnAPerson(current) &&
+        !(string.Equals(current.BlockReasonCode, JourneyWaitClassification.SessionNotReadyReason, StringComparison.Ordinal) &&
+          IsTransportFailure(failure) &&
+          await CurrentReadySessionAsync(current.AgvId, cancellationToken).ConfigureAwait(false) is null);
+
+    /// <summary>
+    /// 这台车的车载端连接此刻不可用，它这一轮让开（control-server#334）：撤回它这一轮没保存的改动，看板上照
+    /// <see cref="NameFailedAdvanceAsync"/> 的判定说出「推进失败」，然后轮次接着推进下一台车。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>撤回与 control-server#357 的让开是同一件事</b>（<see cref="TrackedBeforeAdvance.Restore"/>）：已经保存的留着，与库一致；
+    /// 没保存的回到推进之前。已经发生的外部副作用——保存之后才发的出站消息、建了的 RIoT 单——不在撤回之列，下一轮按已存的意图续上，
+    /// 与整轮抛掉之后下一轮的样子相同。
+    /// </para>
+    /// <para>
+    /// <b>不许清空变更跟踪。</b><see cref="NameFailedAdvanceAsync"/> 先清空再重读，是因为轮次随后就抛了；这里轮次还要继续，清空会让排在后面的
+    /// 每一台车的旅程行都脱离跟踪，被循环开头那条「不在跟踪里就跳过」挡掉——换一种方式照样让一台车拖住全队。所以只重读、只存这一行，
+    /// 存完不再跟踪它。
+    /// </para>
+    /// <para>
+    /// <b>别的车还留着没保存的改动时，这一轮不写码。</b>这里的保存是为这一个字段来的，不该顺带提交别处刻意留到下一步的改动
+    /// （与 <see cref="ClearFailedAdvanceAsync"/> 同一条规矩）。不写的代价只是看板晚一轮说出这件事：这台车下一轮照样失败，照样再试。
+    /// </para>
+    /// </remarks>
+    private async Task YieldToUnavailableConnectionAsync(
+        JourneyRuntimeRow runtime,
+        TrackedBeforeAdvance before,
+        Exception failure,
+        CancellationToken cancellationToken)
+    {
+        before.Restore(dbContext);
+        dbContext.Entry(runtime).State = EntityState.Detached;
+        LogYieldedToUnavailableConnection(logger, runtime.AgvId, runtime.JourneyId, failure);
+        if (dbContext.ChangeTracker.Entries()
+            .Any(entry => entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted))
+        {
+            return;
+        }
+
+        string journeyId = runtime.JourneyId;
+        JourneyRuntimeRow? current = null;
+        try
+        {
+            current = await dbContext.JourneyRuntimes
+                .SingleOrDefaultAsync(row => row.JourneyId == journeyId, cancellationToken).ConfigureAwait(false);
+            if (!await ShouldNameFailedAdvanceAsync(current, failure, cancellationToken).ConfigureAwait(false))
+            {
+                return;
+            }
+
+            DateTimeOffset now = timeProvider.GetUtcNow();
+            current!.SetBlockReason(AdvanceFailedReason, now);
+            current.UpdatedAt = now;
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            LogFailedAdvanceNotNamed(logger, journeyId, error);
+        }
+        finally
+        {
+            if (current is not null)
+            {
+                dbContext.Entry(current).State = EntityState.Detached;
+            }
         }
     }
 
@@ -3170,7 +3262,8 @@ public sealed partial class JourneyRuntimeEngine(
             maxBoxCount = await boxCountReader.ReadMaxBoxCountAsync(demand.Sublot, cancellationToken)
                 .ConfigureAwait(false);
         }
-        catch (Exception error) when (error is HttpRequestException or InvalidDataException or JsonException)
+        // A MesIngest that times out is unreadable like any other (control-server#334, MesIngestReads).
+        catch (Exception error) when (MesIngestReads.IsFailedRead(error, cancellationToken))
         {
             LogBoxCountFailed(logger, demand.DemandId, error);
             maxBoxCount = null;

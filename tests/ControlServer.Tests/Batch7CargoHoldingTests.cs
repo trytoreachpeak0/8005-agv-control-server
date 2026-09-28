@@ -6,6 +6,7 @@ using ControlServer.Domain;
 using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Infrastructure.Persistence;
+using ControlServer.Host.Transport;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using static ControlServer.Tests.Batch7StopDrivenAdvanceDriver;
@@ -333,12 +334,12 @@ public sealed class Batch7CargoHoldingTests
             if (!cut && line.Contains("\"CARGO_HOLDING_WAIT\"", StringComparison.Ordinal))
             {
                 cut = true;
-                throw new IOException("peer dropped mid-send");
+                throw new OnboardConnectionUnavailableException("peer dropped mid-send");
             }
             return Task.CompletedTask;
         };
         await ApplySafeResultAsync(fixture, FirstDemandId, SlotOperationType.Load, SlotBusinessState.Occupied);
-        await TickAndRunExpectingCrashAsync(fixture);
+        await TickAndRunAsync(fixture);
         Assert.True(cut);
 
         fixture.Context.ChangeTracker.Clear();
@@ -398,13 +399,13 @@ public sealed class Batch7CargoHoldingTests
             if (!cut && line.Contains("\"VEHICLE_FULL\"", StringComparison.Ordinal))
             {
                 cut = true;
-                throw new IOException("peer dropped mid-send");
+                throw new OnboardConnectionUnavailableException("peer dropped mid-send");
             }
             return Task.CompletedTask;
         };
         RecordRound(fixture, (DispatchReasonCodes.SlotGroupOccupiedByOwnCargo, "FRONT"),
             (DispatchReasonCodes.SlotGroupOccupiedByOwnCargo, "REAR"));
-        await TickAndRunExpectingCrashAsync(fixture);
+        await TickAndRunAsync(fixture);
         Assert.True(cut, "The vehicle never became full between stops, so there was nothing to cut.");
 
         fixture.Context.ChangeTracker.Clear();

@@ -20,6 +20,9 @@ public sealed class OnboardTransportOptions
     /// <summary>The default for <see cref="WriteTimeout"/>.</summary>
     public static readonly TimeSpan DefaultWriteTimeout = TimeSpan.FromSeconds(5);
 
+    /// <summary>The largest <see cref="WriteTimeout"/> the listener starts with; see its remarks for why 10 seconds.</summary>
+    public static readonly TimeSpan MaxWriteTimeout = TimeSpan.FromSeconds(10);
+
     /// <summary>
     /// How long one write to a vehicle may take -- waiting for the connection's turn, the write and the flush together --
     /// before the connection is treated as lost and closed (control-server#334).
@@ -41,11 +44,15 @@ public sealed class OnboardTransportOptions
     /// <para>
     /// <b>Why 5 seconds.</b> A peer that is reading never makes a write of a few kilobytes wait: the kernel buffers
     /// between the two ends take tens of kilobytes before a write blocks at all. A stuck vehicle costs the gate at most
-    /// this long, once -- the connection is closed and the next send to it fails at once -- so three vehicles stuck
-    /// in one round hold it for 15 seconds, inside the 30 seconds a fault clearance waits for it
-    /// (<c>FAULT_RECOVERY_RUNTIME_BUSY</c>). It is also just under the silence window, so a peer that stops reading is
-    /// let go no later than one that stops talking. Raising it past 10 seconds lets three stuck vehicles use up a
-    /// clearance's whole wait.
+    /// this long, once -- the connection is closed, the next send to it fails at once, and the runtime lets that vehicle
+    /// yield its turn and goes on with the others -- so three vehicles stuck in one round hold it for 15 seconds, inside
+    /// the 30 seconds a fault clearance waits for it (<c>FAULT_RECOVERY_RUNTIME_BUSY</c>). It is also just under the
+    /// silence window, so a peer that stops reading is let go no later than one that stops talking.
+    /// </para>
+    /// <para>
+    /// <b>At most <see cref="MaxWriteTimeout"/>, enforced at startup.</b> Past 10 seconds three stuck vehicles use up a
+    /// clearance's whole wait. And a value too large for a timer (past about 49.7 days) would make every write fail at once
+    /// rather than be refused at startup: the whole fleet stopped by a configuration that looked accepted.
     /// </para>
     /// </remarks>
     public TimeSpan WriteTimeout { get; set; } = DefaultWriteTimeout;

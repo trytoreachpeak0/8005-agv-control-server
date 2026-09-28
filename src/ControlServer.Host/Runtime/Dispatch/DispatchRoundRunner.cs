@@ -178,7 +178,8 @@ public sealed class DispatchRoundRunner(
         {
             snapshot = await catalog.ReadCatalogAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception error) when (error is HttpRequestException or InvalidDataException or JsonException)
+        // A MesIngest that times out is unreadable like any other (control-server#334, MesIngestReads).
+        catch (Exception error) when (MesIngestReads.IsFailedRead(error, cancellationToken))
         {
             LogCatalogPollFailed(logger, error);
             return;

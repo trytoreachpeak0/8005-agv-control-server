@@ -785,7 +785,7 @@ public sealed partial class MultiVehicleExecutionTests
         await using OnboardPeerConnection connection = new(stream);
         peer.Attach(Handshaken("AGV-1"), connection);
 
-        await Assert.ThrowsAsync<IOException>(() =>
+        await Assert.ThrowsAsync<OnboardConnectionUnavailableException>(() =>
             peer.SendAsync(Envelope("AGV-2"), TestContext.Current.CancellationToken));
         Assert.Empty(stream.ToArray());
     }
@@ -813,7 +813,7 @@ public sealed partial class MultiVehicleExecutionTests
         Assert.NotEmpty(first.ToArray());
 
         peer.Detach("AGV-1", firstConnection);
-        await Assert.ThrowsAsync<IOException>(() =>
+        await Assert.ThrowsAsync<OnboardConnectionUnavailableException>(() =>
             peer.SendAsync(Envelope("AGV-1"), TestContext.Current.CancellationToken));
     }
 

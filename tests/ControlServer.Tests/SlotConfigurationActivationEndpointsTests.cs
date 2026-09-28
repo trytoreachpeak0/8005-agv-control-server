@@ -320,7 +320,7 @@ public sealed class SlotConfigurationActivationEndpointsTests
         {
             _ = ndjsonLine;
             _ = cancellationToken;
-            throw new IOException("No recovered Onboard peer is connected for 'AGV-001'.");
+            throw new OnboardConnectionUnavailableException("No recovered Onboard peer is connected for 'AGV-001'.");
         }
     }
 

@@ -91,6 +91,7 @@ public sealed class OnboardPeer : IOnboardPeer
 
             _connections[agvId] = (connection, generation);
         }
+        connection.Addressee = $"'{agvId}' (session generation {generation})";
     }
 
     internal void Detach(string agvId, OnboardPeerConnection connection)
@@ -114,11 +115,11 @@ public sealed class OnboardPeer : IOnboardPeer
         {
             attached = _connections.TryGetValue(agvId, out (OnboardPeerConnection, long) found)
                 ? found
-                : throw new IOException($"No recovered Onboard peer is connected for '{agvId}'.");
+                : throw new OnboardConnectionUnavailableException($"No recovered Onboard peer is connected for '{agvId}'.");
         }
         if (attached.SessionGeneration != generation)
         {
-            throw new IOException(
+            throw new OnboardConnectionUnavailableException(
                 $"The Onboard peer connected for '{agvId}' is in session generation {attached.SessionGeneration}; " +
                 $"this line was built for generation {generation}.");
         }
@@ -169,8 +170,14 @@ public sealed class OnboardPeer : IOnboardPeer
 /// <para>
 /// <b>Every write is bounded</b> (control-server#334, <see cref="OnboardTransportOptions.WriteTimeout"/>): the wait for
 /// this connection's turn, the write and the flush together. Past it the stream is closed and the send throws
-/// <see cref="IOException"/>, which every sender already reads as "the vehicle is not connected": the outbox row stays
-/// unacknowledged and the replay after the reconnect delivers it.
+/// <see cref="OnboardConnectionUnavailableException"/>, an <see cref="IOException"/>, which every sender already reads as
+/// "the vehicle is not connected": the outbox row stays unacknowledged and the replay after the reconnect delivers it.
+/// </para>
+/// <para>
+/// <b>Every way a send finds the connection gone ends the same way.</b> A socket error, a stream already closed (by a timeout
+/// of another sender, or by the read loop ending) or the send gate already disposed all surface as
+/// <see cref="OnboardConnectionUnavailableException"/>, named with the vehicle once the connection is routable -- not as
+/// an <see cref="ObjectDisposedException"/> a sender catching <see cref="IOException"/> would not expect.
 /// </para>
 /// <para>
 /// <b>Why closing, and not just giving up on the write.</b> A write abandoned half way may have put part of a line on the
@@ -200,13 +207,18 @@ internal sealed class OnboardPeerConnection : IAsyncDisposable
     public OnboardPeerConnection(Stream stream, TimeSpan writeTimeout)
     {
         ArgumentNullException.ThrowIfNull(stream);
-        if (writeTimeout <= TimeSpan.Zero)
+        if (writeTimeout <= TimeSpan.Zero || writeTimeout > OnboardTransportOptions.MaxWriteTimeout)
         {
-            throw new ArgumentOutOfRangeException(nameof(writeTimeout), writeTimeout, "The Onboard write timeout must be positive.");
+            throw new ArgumentOutOfRangeException(
+                nameof(writeTimeout), writeTimeout,
+                $"The Onboard write timeout must be positive and at most {OnboardTransportOptions.MaxWriteTimeout.TotalSeconds:0} s.");
         }
         _stream = stream;
         _writeTimeout = writeTimeout;
     }
+
+    /// <summary>Who this connection reaches, for the failures it reports; set once the connection is made routable.</summary>
+    internal string Addressee { get; set; } = "(no session yet)";
 
     public async Task SendAsync(ReadOnlyMemory<byte> ndjsonLine, CancellationToken cancellationToken)
     {
@@ -229,9 +241,17 @@ internal sealed class OnboardPeerConnection : IAsyncDisposable
                 CancellationToken.None,
                 TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
                 TaskScheduler.Default);
-            throw new IOException(
-                $"A write to the Onboard peer did not finish within {_writeTimeout.TotalSeconds:0.###} s; " +
+            throw new OnboardConnectionUnavailableException(
+                $"A write to the Onboard peer {Addressee} did not finish within {_writeTimeout.TotalSeconds:0.###} s; " +
                 "the connection was closed and the line stays unacknowledged for the replay after the reconnect.",
+                error);
+        }
+        catch (Exception error) when (error is ObjectDisposedException ||
+                                      (error is IOException && error is not OnboardConnectionUnavailableException))
+        {
+            throw new OnboardConnectionUnavailableException(
+                $"The connection to the Onboard peer {Addressee} is closed or broken; " +
+                "the line stays unacknowledged for the replay after the reconnect.",
                 error);
         }
     }
