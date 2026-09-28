@@ -138,6 +138,12 @@ internal static class JourneyRuntimeWorkerTestKit
         public bool EmergencyLatched { get; set; }
 
         /// <summary>
+        /// The orderIds RIoT lists as unfinished (states 1, 3, 7, 9) for this vehicle. Empty by default, so every existing
+        /// test keeps reading "no unfinished order" as before; control-server#335 sets it to exercise the release rule.
+        /// </summary>
+        public string[] UnfinishedOrderIds { get; set; } = [];
+
+        /// <summary>
         /// The <paramref name="commands"/> interceptor is the seam for asserting on the SQL the engine
         /// sends, which is the only way to tell a query that narrows in the store from one that reads a
         /// whole type back and filters in memory: a pre-filter that changed results would be a bug, so
@@ -1231,7 +1237,7 @@ internal static class JourneyRuntimeWorkerTestKit
             RiotOrderCommandAuditStore audit = new(Context);
             Microsoft.Extensions.Options.IOptions<VehicleFaultOptions> faultOptions =
                 Microsoft.Extensions.Options.Options.Create(new VehicleFaultOptions());
-            SilentCommandGateway gateway = new(Clock, () => EmergencyLatched);
+            SilentCommandGateway gateway = new(Clock, () => EmergencyLatched, () => UnfinishedOrderIds);
             return new VehicleFaultCoordinator(
                 faults,
                 gateway,
@@ -1266,7 +1272,7 @@ internal static class JourneyRuntimeWorkerTestKit
         /// assertion that fails should be about the fault model, not about a double that was left
         /// unable to answer.
         /// </summary>
-        private sealed class SilentCommandGateway(TimeProvider clock, Func<bool> latched)
+        private sealed class SilentCommandGateway(TimeProvider clock, Func<bool> latched, Func<string[]> unfinished)
             : IRiotOrderCommandGateway, IRiotVehicleEmergencyFacts, IRiotVehicleOrderFacts
         {
             public Task<RiotVehicleOrderObservation> ReadUnfinishedOrdersAsync(
@@ -1274,7 +1280,8 @@ internal static class JourneyRuntimeWorkerTestKit
                 CancellationToken cancellationToken)
             {
                 _ = cancellationToken;
-                return Task.FromResult(new RiotVehicleOrderObservation(deviceKey, false, [], clock.GetUtcNow()));
+                string[] ids = unfinished();
+                return Task.FromResult(new RiotVehicleOrderObservation(deviceKey, ids.Length > 0, ids, clock.GetUtcNow()));
             }
 
             public Task<RiotCommandCallResult> IssueOrderCommandAsync(
@@ -1773,6 +1780,9 @@ internal static class JourneyRuntimeWorkerTestKit
 
         /// <summary>Reports the order under <paramref name="upperId"/> as RIoT's terminal CANCELLED from now on (control-server#215).</summary>
         /// <summary>把这张单在 RIoT 上的状态改成 <paramref name="orderState"/>（终态时观测种类随之为 Terminal）。</summary>
+        /// <summary>The state RIoT reports for this upperId right now (control-server#335 asserts a held order stays held).</summary>
+        public int? OrderStateOf(string upperId) => _orders[upperId].OrderState;
+
         public void SetOrderState(string upperId, int orderState, bool terminal) =>
             _orders[upperId] = _orders[upperId] with
             {
