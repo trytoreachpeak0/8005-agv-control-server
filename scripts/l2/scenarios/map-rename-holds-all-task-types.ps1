@@ -13,8 +13,8 @@ Map 级改名检测（control-server#186；REQ-0341、REQ-0340）：同一 mapId
   5. FieldOps accept-map-name 接受新名，再逐个任务类型 release-task-type-station-hold：暂停全部解除，基线换成新名（L2-MR-08）；
      第 3 步那条等着的需求随即受理，走到关卡腿（L2-MR-09）。
 
-红证据取法（缺陷版本）：在本票改动之前的产品代码上跑（本票先红提交：假 RIoT 与本场景已在、产品代码与 fp/v2-impl 相同）。
-今天改名后照常派车，所以 L2-MR-03、L2-MR-04 红；那之后 accept-map-name 这个动词不存在，场景在第 5 步抛错结束。
+红证据取法（缺陷版本）：在本票改动之前的产品行为上跑（本票先红提交：假 RIoT 与本场景已在，产品代码只有空壳签名、行为与 fp/v2-impl
+相同）。今天改名后照常派车，所以 L2-MR-03、L2-MR-04 红；那之后 accept-map-name 调到的是空壳，答 REJECTED，场景在第 5 步抛错结束。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
@@ -77,17 +77,25 @@ $null = Wait-L2Iterations -Riot $riot -Count 2 -Journal $journal
 # --- 1. 地图列表读不到：不加暂停、基线不变 ------------------------------------------------------------------------
 
 $baselineBefore = Get-Baseline
+$listBefore = $riot.Snapshot().body
 $journal.Note('Fake RIoT: only the Map list answers 500 from now on.')
 $null = $riot.Command('Put', 'maps/list-fault', @{ serverError = $true })
 $null = Wait-L2Iterations -Riot $riot -Count 3 -Journal $journal
 $holdsDuringFault = Get-L2TaskTypeHolds -Context $Context
 $baselineDuringFault = Get-Baseline
+$listDuringFault = $riot.Snapshot().body
 $null = $riot.Command('Put', 'maps/list-fault', @{ serverError = $false })
 $journal.Note('Fake RIoT: the Map list answers again.')
+# That the list was asked for, and answered 500, inside the window is part of the criterion: without it, "nothing was held"
+# would also pass on a server that never reads the list at all (PR #378 review, suggestion 5).
+$readsInFault = [long]$listDuringFault.mapListReads - [long]$listBefore.mapListReads
+$errorsInFault = [long]$listDuringFault.mapListServerErrors - [long]$listBefore.mapListServerErrors
 $assertions.Add(
-    'L2-MR-01', '地图列表读不到的几轮不算改名：没有暂停，基线与读失败之前相同',
-    (@($holdsDuringFault).Count -eq 0 -and (Format-Baseline $baselineDuringFault) -eq (Format-Baseline $baselineBefore)),
-    "(none); $(Format-Baseline $baselineBefore)", "$(Format-Holds $holdsDuringFault); $(Format-Baseline $baselineDuringFault)")
+    'L2-MR-01', '地图列表读不到的几轮不算改名：窗口内确实读过列表且都答 500，没有暂停，基线与读失败之前相同',
+    ($readsInFault -ge 1 -and $errorsInFault -ge 1 -and @($holdsDuringFault).Count -eq 0 -and
+        (Format-Baseline $baselineDuringFault) -eq (Format-Baseline $baselineBefore)),
+    "reads >= 1, 500s >= 1; (none); $(Format-Baseline $baselineBefore)",
+    "reads $readsInFault, 500s $errorsInFault; $(Format-Holds $holdsDuringFault); $(Format-Baseline $baselineDuringFault)")
 
 # --- 2. 改名之前：照常派车 ------------------------------------------------------------------------------------------
 

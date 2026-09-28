@@ -68,6 +68,21 @@ public interface IMapNameBaselineStore
         CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// A write refused inside its own transaction because the Map carries a rename nobody accepted (PR #378 review): the check
+/// before the transaction passed, and a pending name appeared before the write could commit. Nothing was written.
+/// </summary>
+public sealed class MapRenamePendingException(int mapId, string baselineName, string pendingName)
+    : InvalidOperationException(
+        $"Map {mapId} was renamed from '{baselineName}' to '{pendingName}' and the new name has not been accepted.")
+{
+    public int MapId { get; } = mapId;
+
+    public string BaselineName { get; } = baselineName;
+
+    public string PendingName { get; } = pendingName;
+}
+
 /// <summary>The hold reason a Map level rename raises, under source <c>CATALOG_CHANGE</c>.</summary>
 public static class MapNameHoldReasons
 {
@@ -83,6 +98,12 @@ public static class MapNameBaselineAuditActions
     public const string Accepted = "MAP_NAME_BASELINE_ACCEPTED";
 
     public const string AcceptRejected = "MAP_NAME_BASELINE_ACCEPT_REJECTED";
+
+    /// <summary>
+    /// A hold raised because of a rename. The same action string the Host's catalog convergence writes
+    /// (<c>CatalogBindingHoldConvergence.HoldRaisedAction</c>), here for the activation store, which cannot see the Host.
+    /// </summary>
+    public const string HoldRaised = "TASK_TYPE_STATION_HOLD_RAISED";
 }
 
 /// <summary>Why accepting a new Map name, or releasing a hold under an unaccepted rename, is refused.</summary>

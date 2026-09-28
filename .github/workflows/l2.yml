@@ -389,6 +389,8 @@ jobs:
               'cargo-holding-dashboard-projection' = 60
               # control-server#273, one local run (2026-09-22): 83 s with the build.
               'waiting-journey-battery-watch' = 60
+              # control-server#186, one local run (2026-09-29): two journeys, the fault window and four FieldOps calls.
+              'map-rename-holds-all-task-types' = 95
           }
 
           # Registered before anything can fail, so the upload step below always has a path: without it

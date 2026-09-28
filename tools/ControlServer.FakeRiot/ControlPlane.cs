@@ -108,6 +108,7 @@ public static class ControlPlane
         ArgumentNullException.ThrowIfNull(app);
         CommandEngine<FakeRiotState> engine = app.Services.GetRequiredService<CommandEngine<FakeRiotState>>();
         MapStationReadCounter mapStationReads = app.Services.GetRequiredService<MapStationReadCounter>();
+        MapListReadCounter mapListReads = app.Services.GetRequiredService<MapListReadCounter>();
         FakeRiotSeed seed = app.Services.GetRequiredService<FakeRiotSeed>();
         RouteGroupBuilder control = app.MapGroup("/control/v1");
 
@@ -143,7 +144,9 @@ public static class ControlPlane
                     .Select(pair => new { mapId = pair.Key, stationIds = pair.Value }),
                 mapNames = state.MapNamesByMapId.OrderBy(pair => pair.Key)
                     .Select(pair => new { mapId = pair.Key, name = pair.Value }),
-                mapListServerError = state.MapListServerError
+                mapListServerError = state.MapListServerError,
+                mapListReads = mapListReads.Reads,
+                mapListServerErrors = mapListReads.ServerErrors
             }));
         });
 

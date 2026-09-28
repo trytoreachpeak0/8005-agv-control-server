@@ -4,6 +4,8 @@ using System.Text.Unicode;
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 
@@ -72,7 +74,11 @@ public sealed class MapRenameHoldConvergence(
     TimeProvider timeProvider,
     ILogger<MapRenameHoldConvergence> logger)
 {
-    private readonly ILogger<MapRenameHoldConvergence> _logger = logger;
+    private static readonly Action<ILogger, int, Exception?> LogMapFailed = LoggerMessage.Define<int>(
+        LogLevel.Warning,
+        new EventId(2197, nameof(LogMapFailed)),
+        "The Map name check for map {MapId} failed; that Map is skipped this round -- nothing held, no baseline moved -- and " +
+        "every other Map in the list is still checked. The next round checks it again (control-server#186).");
 
     private static readonly JsonSerializerOptions DetailOptions = new()
     {
@@ -93,9 +99,42 @@ public sealed class MapRenameHoldConvergence(
                 observed.Add(new(map.Key, MapRenameObservationKind.NotObserved, []));
                 continue;
             }
-            observed.Add(await ConvergeAsync(map.Key, entries[0].Name, now, cancellationToken).ConfigureAwait(false));
+            observed.Add(await ConvergeIsolatedAsync(map.Key, entries[0].Name, now, cancellationToken).ConfigureAwait(false));
         }
         return observed;
+    }
+
+    /// <summary>
+    /// One Map, fenced off from the others (PR #378 review, suggestion 3): a failure on one Map -- a locked row, a broken
+    /// baseline -- skips that Map and is logged, and the Maps after it in the list are still observed; otherwise a Map
+    /// nobody uses could keep map 26 from being checked every round. What the failed attempt left tracked is detached, so
+    /// the next write of this context does not carry half of it. A shutdown cancellation still ends the observation.
+    /// </summary>
+    private async Task<MapRenameObservation> ConvergeIsolatedAsync(
+        int mapId,
+        string name,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        HashSet<object> trackedBefore = dbContext.ChangeTracker.Entries()
+            .Select(entry => entry.Entity)
+            .ToHashSet(ReferenceEqualityComparer.Instance);
+        try
+        {
+            return await ConvergeAsync(mapId, name, now, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            foreach (EntityEntry left in dbContext.ChangeTracker.Entries()
+                .Where(entry => !trackedBefore.Contains(entry.Entity)
+                    || entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+                .ToArray())
+            {
+                left.State = EntityState.Detached;
+            }
+            LogMapFailed(logger, mapId, error);
+            return new(mapId, MapRenameObservationKind.NotObserved, []);
+        }
     }
 
     private async Task<MapRenameObservation> ConvergeAsync(

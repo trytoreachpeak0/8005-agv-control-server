@@ -555,6 +555,18 @@ public sealed class TaskTypeStationActivationService(
                 : new TaskTypeStationHoldReleaseResult(
                     TaskTypeStationHoldReleaseOutcome.Released, mapId, taskType, [], released, auditId);
         }
+        catch (MapRenamePendingException pending)
+        {
+            // control-server#186: the rename appeared after the checks above; the release transaction saw it and wrote nothing.
+            TaskTypeStationViolation[] renamed =
+            [
+                new(MapNameBaselineReasonCodes.RenameNotAccepted, taskType, null,
+                    Invariant($"Map {mapId} was renamed from '{pending.BaselineName}' to '{pending.PendingName}' while the release was being made, and the new name has not been accepted; run accept-map-name first."))
+            ];
+            string rejectedId = await _audit.WriteBusinessAsync(Entry(renamed, []), now, cancellationToken);
+            return new TaskTypeStationHoldReleaseResult(
+                TaskTypeStationHoldReleaseOutcome.Rejected, mapId, taskType, renamed, [], rejectedId);
+        }
 #pragma warning disable CA1031 // The release and its audit rolled back together; nothing was released. Record that.
         catch (Exception failure)
 #pragma warning restore CA1031

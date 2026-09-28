@@ -17,6 +17,7 @@ public static class RiotDataPlane
         ArgumentNullException.ThrowIfNull(app);
         CommandEngine<FakeRiotState> engine = app.Services.GetRequiredService<CommandEngine<FakeRiotState>>();
         MapStationReadCounter mapStationReads = app.Services.GetRequiredService<MapStationReadCounter>();
+        MapListReadCounter mapListReads = app.Services.GetRequiredService<MapListReadCounter>();
 
         app.MapGet("/api/task/vehicles/getVehicleInfoByDeviceKey", async (
             [FromQuery] string key, CancellationToken cancellationToken) =>
@@ -85,11 +86,15 @@ public static class RiotDataPlane
         // (evidence/field/2026-09-28-cs186-map-list-endpoint-check): id and name, plus the metadata it carries.
         app.MapGet("/api/imap/v1/mapInfo/getALLMapInfoExcludeMapJson", async (CancellationToken cancellationToken) =>
         {
+            // Counted before any fault, like the station reads: a scenario proving "the list could not be read and nothing
+            // was held" must first prove the list was asked for, and failed, in that window.
+            mapListReads.Read();
             IResult? fault = await ApplyFaultAsync(engine, cancellationToken).ConfigureAwait(false);
             if (fault is not null) return fault;
             FakeRiotState state = engine.Snapshot().State;
             if (state.MapListServerError)
             {
+                mapListReads.Failed();
                 return Results.Json(new { code = "500", message = "失败" }, statusCode: StatusCodes.Status500InternalServerError);
             }
             return Ok(state.MapNamesByMapId.OrderBy(pair => pair.Key).Select(pair => new
@@ -303,6 +308,22 @@ public static class RiotDataPlane
 /// would make expectedRevision useless for the commands that carry real changes. The wire log in
 /// ControlServer.FakeOnboard sits outside for the same reason.
 /// </remarks>
+public sealed class MapListReadCounter
+{
+    private long reads;
+    private long serverErrors;
+
+    /// <summary>Every request for the Map list, answered or not (control-server#186).</summary>
+    public long Reads => Interlocked.Read(ref reads);
+
+    /// <summary>The requests <see cref="FakeRiotState.MapListServerError"/> answered with 500.</summary>
+    public long ServerErrors => Interlocked.Read(ref serverErrors);
+
+    public void Read() => Interlocked.Increment(ref reads);
+
+    public void Failed() => Interlocked.Increment(ref serverErrors);
+}
+
 public sealed class MapStationReadCounter
 {
     private long count;
