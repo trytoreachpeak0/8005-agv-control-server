@@ -1452,7 +1452,9 @@ public sealed class VehicleFaultRecoveryTests
 
     /// <summary>
     /// 续行的判据与清除共用署名、确认、闩锁三项，外加 <c>ResumeAsync</c> 自己的判据；订单不是 PAUSED 就拒（FAILED 的单不能续行）。
-    /// 闩锁在时不试：闩锁下 RIoT 拒绝 continue，而续行之后订单在跑，人工解除又因「有未完成订单」被拒——一个出不去的环。
+    /// 闩锁在时不试：round-44（cs#335）实测闩锁下 RIoT 接受 CONTINUE_FROM_HELD、单变 3，只剩急停挡着车；而续行之后订单在跑，
+    /// 人工解除又因「有未完成订单」被拒——一个出不去的环。（此处原写「闩锁下 RIoT 拒绝 continue」，那是 Round27 对 HANG 单的观测。）
+    /// 只缺闩锁一项的格子是 <c>InTransitDoorEmergencyReleaseTests.AResumeWhileTheLatchIsStillOnSendsNoContinue</c>。
     /// </summary>
     [Fact]
     public async Task AResumeIsRefusedForEveryUnmetCriterionIncludingALatch()

@@ -43,6 +43,26 @@ M1–M7、M10 的红与第一轮相同；M8、M9 因为多了豁免边界那几�
 
 M12 补测后那一次单独重跑，过滤器是 `FullyQualifiedName~InTransitDoorEmergencyReleaseTests|FullyQualifiedName~InTransitDoorLockFaultTests`（50 条），红 1、其余 49 绿。
 
+## 续行只在急停已解开之后才发 CONTINUE（M14–M16）
+
+调度 2026-09-28 转 round-44（`rcs/riot-behavior-lab/evidence/rounds/2026-09-28-round-44`，`BC-ORDER-020`）：锁住期间 RIoT 接受
+`CONTINUE_FROM_HELD`、单从 7 变 3（OBSERVED）；解除那一刻车会不会自己走没观测过（第 5 条，INFERRED）。修复是在协调器发 CONTINUE 前
+最后一刻再读一次急停。变异条件用 `emergency.IsLatched && !emergency.IsLatched`：常量 `false` 会触发 CS0162（警告当错误），第一次三个都没编过、
+一条测试也没跑，已作废重跑。过滤器 `FullyQualifiedName~InTransitDoor|FullyQualifiedName~VehicleFault|FullyQualifiedName~StoppedRebuildExitTests|FullyQualifiedName~EmergencyStop|FullyQualifiedName~EmergencyRelease`（340 条）。
+
+| 编号 | 变异 | 预期红 | 实际 | 退出码 |
+| --- | --- | --- | --- | --- |
+| M14 | 去掉恢复服务里的闩锁检查（`EmergencyReasons`） | 新用例两格 + 既有的「闩锁」格与理由列表格 | 红 7：`AResumeWhileTheLatchIsStillOnSendsNoContinue`（own、external）、`StoppedRebuildExitTests…(latched)`、`ARefusalIsAConflictNamingEveryReason`、`AResumeIsRefusedForEveryUnmetCriterionIncludingALatch`、`EachCriterionRefusesOnItsOwn(latched)`、`EveryUnmetCriterionIsNamedAndNothingIsChanged`（最后一条没在预期名单里点名，同属核对理由列表的一类）。零 CONTINUE：own 格理由变成 `FAULT_RECOVERY_EMERGENCY_STOP_OPEN`，external 格变成协调器的 `RESUME_EMERGENCY_LATCHED` | 1 |
+| M15 | 去掉协调器发 CONTINUE 前的闩锁检查 | 「服务读完后急停又锁上」+ 改写后的 isolation 用例 | 红 2，正是这两条 | 1 |
+| M16 | 两处都去掉 | external 格真的发出 CONTINUE | 红 9：M14 的 7 条 + M15 的 2 条；external 格实际理由 `RESUME_CONTINUE_NOT_CONFIRMED`，即 CONTINUE 已发出 | 1 |
+
+**第三道挡，是跑 M16 时才看出来的**：锁住的是本服务端自己发的急停（own 格）时，去掉两处闩锁检查也不发 CONTINUE，因为同一串判断里排在
+后面的「本服务端的急停还没关单」接着拒。所以只有 own 一格证明不了闩锁检查有用；external 格（本服务端的急停已解除，之后有人在 RIoT 上按了急停）
+才是只剩两处闩锁检查在挡的那一格。
+
+修复前的红：`ALatchThatComesOnAfterTheServiceReadItStillStopsTheContinue` 在只改测试的提交上红，Expected `RESUME_EMERGENCY_LATCHED`、
+Actual `RESUME_CONTINUE_NOT_CONFIRMED`（`evidence/cs335/resume-latch-red/dotnet-test.log`）。
+
 ## M12 为什么首轮存活
 
 预期红的那条用例里，第二代故障是由「门又报没锁」立起来的。那一轮 `DoorCauseRemoved` 为假，M11 守的那个条件已经把豁免关掉，

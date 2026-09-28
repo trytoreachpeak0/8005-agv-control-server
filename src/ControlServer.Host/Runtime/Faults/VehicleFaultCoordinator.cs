@@ -339,6 +339,23 @@ public sealed class VehicleFaultCoordinator(
             .ReconcileByUpperIdAsync(resumption.Order.UpperId, cancellationToken).ConfigureAwait(false);
 
         List<string> refusals = ResumeRefusals(subject, resumption, fault, cargo, observation);
+        // The last read before the continue goes out, and it is the emergency state (control-server#335). The recovery
+        // service checked it too, but before its gate, and the continue leaves after that gate is released: a runtime round
+        // can re-trigger the stop in between (the door exemption failing does exactly that), and so can anyone at RIoT.
+        // RIoT accepts CONTINUE_FROM_HELD while latched CAN_RECOVER and turns the order 7 -> 3 (riot-behavior-lab
+        // rcs/riot-behavior-lab/evidence/rounds/2026-09-28-round-44, BC-ORDER-020, OBSERVED). Whether the vehicle then drives
+        // off the moment the latch is released has never been observed (BC-ORDER-020 item 5, INFERRED); this assumes it does.
+        RiotVehicleEmergencyObservation emergency = await emergencyFacts
+            .ReadEmergencyStateAsync(subject.DeviceKey, cancellationToken).ConfigureAwait(false);
+        if (!emergency.IsKnown)
+        {
+            refusals.Add("RESUME_EMERGENCY_STATE_UNKNOWN");
+        }
+        else if (emergency.IsLatched)
+        {
+            refusals.Add("RESUME_EMERGENCY_LATCHED");
+        }
+
         if (refusals.Count > 0)
         {
             Alarm(OrderNotProtectedAlarm, subject.AgvId, refusals);
@@ -724,6 +741,14 @@ public sealed class VehicleFaultCoordinator(
     /// RIoT has not yet parked the order, and <see cref="HoldCurrentOrderAsync"/> neither re-issues nor re-reads it after
     /// an escalation. <see cref="RiotOrderCommandService.ReconcileAsync"/> settles it Confirmed once the order reads PAUSED --
     /// that read-back is what "自己发出并回查确认过的" means -- and never re-decides an attempt already settled.
+    /// <para>
+    /// <b>The order is re-read here, in the round that releases, and must still be 7.</b> A latch is the only thing that keeps
+    /// a vehicle whose order is 3 from moving: RIoT accepts CONTINUE_FROM_HELD while latched CAN_RECOVER and turns the order
+    /// 7 -> 3 (rcs/riot-behavior-lab/evidence/rounds/2026-09-28-round-44, BC-ORDER-020, OBSERVED, one run). Whether a
+    /// vehicle in that state drives off the moment the latch is released has never been observed (BC-ORDER-020 item 5,
+    /// INFERRED); releasing only over this server's own confirmed 7, read now, treats it as if it does. The supervisor reads
+    /// the vehicle's unfinished orders once more immediately before the cancelEmergency and lets through only this order.
+    /// </para>
     /// </remarks>
     private async Task<EmergencyReleaseAllowance?> DoorReleaseAllowanceAsync(
         VehicleFaultFact fault,

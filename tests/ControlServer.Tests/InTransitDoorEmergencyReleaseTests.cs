@@ -233,13 +233,24 @@ public sealed class InTransitDoorEmergencyReleaseTests
     /// 为什么要挡：round-44（rcs/riot-behavior-lab/evidence/rounds/2026-09-28-round-44，BC-ORDER-020，OBSERVED）实测锁住期间
     /// RIoT 接受 CONTINUE_FROM_HELD，单从 7 变成 3，这时只剩急停挡着车。解除那一刻车会不会自己开走没有观测过
     /// （BC-ORDER-020 第 5 条，INFERRED），按最坏情况处理。
+    /// <para>
+    /// 两格。<c>own</c>：锁着的是本服务端为门锁发的急停，还没解除——这时「本服务端的急停还没关单」
+    /// （<c>FAULT_RECOVERY_EMERGENCY_STOP_OPEN</c>）排在闩锁之后也会拒，去掉闩锁检查这一格仍拒、只是理由变了。
+    /// <c>external</c>：本服务端的急停已自动解除并确认，之后有人在 RIoT 上按了急停——没有本服务端的急停在开，挡住 CONTINUE
+    /// 的只有两处闩锁检查（恢复服务一处、协调器发出前一处），两处都去掉就会真的发出 CONTINUE（变异 M16）。
+    /// </para>
     /// </remarks>
-    [Fact]
+    [Theory]
+    [InlineData("own")]
+    [InlineData("external")]
     [Trait("Requirement", "REQ-0239")]
     [Trait("Requirement", "REQ-0167")]
-    public async Task AResumeWhileTheLatchIsStillOnSendsNoContinue()
+    public async Task AResumeWhileTheLatchIsStillOnSendsNoContinue(string latch)
     {
-        await using RuntimeFixture fixture = await LatchedForTheDoorsAsync();
+        await using RuntimeFixture fixture = latch == "own"
+            ? await LatchedForTheDoorsAsync()
+            : await ReleasedForTheDoorsAsync();
+        fixture.EmergencyLatched = true;
         VehicleFaultRecoveryTests.SiteRiot site = new(fixture) { HasUnfinishedOrder = true };
 
         VehicleFaultRecoveryDecision decision = await VehicleFaultRecoveryTests.Service(fixture, site)
