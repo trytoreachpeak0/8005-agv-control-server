@@ -86,3 +86,26 @@
 - M4 多红 2 条与第一批相同，理由见第 4 节。
 
 另：重跑时发现 `dotnet format` 把几个源文件在工作区写成了 CRLF，跨行锚点因此匹配 0 处；脚本按设计整批中止，没有带着没生效的注入往下跑。脚本已改为按文件的行尾适配锚点，M3 的锚点改短（它后面现在紧跟的是新加的 `ConvergeIsolatedAsync`）。中止那次只跑完了 M1、M2，其记录被随后的整批重跑覆盖。
+
+## 7. 增量审查（无必修，几处小改动）
+
+提交：先红 `ce7559a6`，修复 `6e363d7c`，多车转录夹具 `b752f430`。
+
+| 审查项 | 做了什么 | 证据 |
+| --- | --- | --- |
+| 1：启动装载预置时没补挂改名暂停 | 预置成为第一个生效版本的事务里，若该图有未接受的改名，预置绑定的任务类型挂 `MAP_RENAMED` 暂停 | `TaskTypeStationStartupTests.AFirstStartUnderAPendingMapRenameHoldsEveryTaskTypeThePresetBinds` 先红后绿；变异 R4 只红它 |
+| 2：两个前提写明 | 服务层解除前置检查的注释写明它是冗余的第二道；`ObserveAsync` 遇到外层事务直接抛异常 | `ObservingInsideSomeoneElsesTransactionIsRefusedBecauseOneMapCouldNotBeRolledBackAlone` 先红后绿；变异 R5 只红它 |
+| 3：低优先级 | `MapListReadCounter` 挪到 `MapStationReadCounter` 的文档之后并配自己的文档；`__pycache__` 移出版本库、`.gitignore` 忽略；L2-MR-01 描述改为「至少一次」 | — |
+| 4：激活路径的暂停详情与引擎不一致 | 统一：三条路径（引擎观察、激活第二步、启动装载）都经 Infrastructure 的 `MapRenameHoldWriter` 写，详情带 `inFlightDemands`、中文不转义、`raisedThrough` 标出路径；在途需求计数移到 `TaskTypeInFlightDemandCount`（Host 的原函数转调，查询一字未改）；审计动作名只在 `TaskTypeStationHoldAuditActions.Raised` 定义一次，#162 的 `HoldRaisedAction` 引用它、值不变 | 相关测试类 427 条全绿（`l1-review2-green.txt`） |
+
+### 变异第三轮（`6e363d7c`，`mutations/results-6e363d7c.json`）
+
+21 个变异（前一轮 19 个加 R4、R5）全部重跑，没有一个漏红；与上一轮相比结果完全相同，新增的 R4、R5 各只红自己那一条。M4 的注入代码改为调用 `MapRenameHoldWriter.RaiseAsync`（原先调用的私有方法已随统一删除）。测试过滤加上 `TaskTypeStationStartupTests`。
+
+### 全量测试第一次在本地跑出的问题
+
+在 `6e363d7c` 上第一次本地跑全量（`full-suite-6e363d7c-red.txt`）：3060 条里 `MultiVehicleExecutionTests` 五条「搬动之前的转录」用例红。原因（读到的）：这组用例让车队时钟每读一次就前进一格，并把每次读到的时间戳逐字钉在转录里；本票在每一轮开头加的地图名检查多读了两次这把时钟，之后的时间戳整体后移，派车决定一个没变。从 `082a6115` 起就是如此，此前全量只留给 CI，本地没跑过——照原计划直接转 ready，CI 那一轮会红在这里。
+
+改法（`b752f430`）：多车夹具里地图名检查用一把不走的时钟，`FleetRiot` 的地图列表不读会走的车队时钟。转录基线一字未改：在本分支上重录等于拿本票的输出当期望。
+
+全量测试（`b752f430`）：3060 条全绿，退出码 0（含协议 Schema 一致性检查），`full-suite-b752f430.txt`。
