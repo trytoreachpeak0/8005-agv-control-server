@@ -42,7 +42,7 @@
 - `01-journey-row-lost-update.txt`：`JourneyRowLostUpdateTests` 7 条全绿，含 cs#357 点名的 `ABlockCommittedBeforeTheGateLegIsCreatedStopsTheOrder` 与 `ABlockCommittedWhileTheEngineAdvancesACommittedLoadStaysBlocked`。发送位置本票一处没动，仍在一次受守护的保存之后（读到的）。
 - `02-cs342-model-1000.*`：1000 组，masterSeed=342，无违规行；录入请求 1000/1000 到车；ack 冲突 0；`ORDER_HANG` 13 轮。与 `evidence/cs276/cs342-model-1000.report.txt` 逐项相同。**模型对本票说明不了多少**：它不经过 `OnboardTcpServer` 与真实的 `OnboardPeerConnection`（见 `evidence/cs276/README.md` 末节），全绿只说明本改动没碰到它覆盖的路径。
 
-- `03-full-suite-release-de9a33f4.txt`：仓库规定的全量命令（`dotnet test .	ests\ControlServer.Tests\ControlServer.Tests.csproj -c Release`），本机在 `de9a33f4` 上跑：2868 条全过，退出码 0（含出站 schema 门禁）。比第一步探针那次的 2855 多 13 条，正是本票新增的用例数。
+- `03-full-suite-release-de9a33f4.txt`：仓库规定的全量命令（`dotnet test .\tests\ControlServer.Tests\ControlServer.Tests.csproj -c Release`），本机在 `de9a33f4` 上跑：2868 条全过，退出码 0（含出站 schema 门禁）。比第一步探针那次的 2855 多 13 条，正是本票新增的用例数。
 
 ## 反向验证（reverse/）
 
