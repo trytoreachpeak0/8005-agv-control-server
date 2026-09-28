@@ -1850,8 +1850,8 @@ public sealed partial class JourneyRuntimeEngine(
 
     /// <summary>
     /// <see cref="NameInFlightOrderWithoutThePeerAsync"/> for an ordinary leg whose create has not been confirmed
-    /// (control-server#367): reconciles it when a create has been sent, and hands it to the fault model when RIoT reports it
-    /// FAILED. True when a code of its own now stands.
+    /// (control-server#367): reconciles it when a create has been sent, and judges it like a confirmed order once RIoT reports it
+    /// terminal. True when a code of its own now stands.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -1868,8 +1868,10 @@ public sealed partial class JourneyRuntimeEngine(
     /// B2).
     /// </para>
     /// <para>
-    /// A reconciliation that confirms the order goes on to the confirmed path, so a HANG on the way is named like any other.
-    /// One that finds it CANCELLED, DELETED or SUSPENDED names nothing here, as before.
+    /// A reconciliation that confirms the order goes on to the confirmed path, so a HANG on the way is named like any other. One
+    /// that finds it terminal goes to <see cref="NameOrderEndedBeforeConfirmationAsync"/>, as in front of the gate: FAILED to the
+    /// fault model, CANCELLED and DELETED recorded to be rebuilt, SUSPENDED named for a person. A rebuild recorded here creates
+    /// nothing while the session is not ready (<c>mayCreate: false</c> behind the gate).
     /// </para>
     /// </remarks>
     private async Task<bool> NameUnconfirmedOrderWithoutThePeerAsync(
@@ -1923,7 +1925,8 @@ public sealed partial class JourneyRuntimeEngine(
             }
         }
 
-        return await ObserveFailedBeforeConfirmationAsync(runtime, intent.UpperId, cancellationToken).ConfigureAwait(false);
+        return await NameOrderEndedBeforeConfirmationAsync(runtime, intent.UpperId, peerReason, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>
@@ -2203,9 +2206,10 @@ public sealed partial class JourneyRuntimeEngine(
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             return true;
         }
-        // control-server#367: FAILED before the create was ever confirmed goes to the fault model like any other FAILED.
+        // control-server#367: an order that ended before the create was ever confirmed is judged like a confirmed one.
         if (result.Outcome == MovementDispatchOutcome.TerminalReconciliationRequired &&
-            await ObserveFailedBeforeConfirmationAsync(runtime, upperId, cancellationToken).ConfigureAwait(false))
+            await NameOrderEndedBeforeConfirmationAsync(runtime, upperId, reasonOnceMovedOn: null, cancellationToken)
+                .ConfigureAwait(false))
         {
             return false;
         }
@@ -2216,38 +2220,45 @@ public sealed partial class JourneyRuntimeEngine(
     }
 
     /// <summary>
-    /// Hands an ordinary leg's order that RIoT reported FAILED before its create was ever confirmed to the fault model, and says
-    /// whether it did (control-server#367). False when the intent under <paramref name="upperId"/> is not terminal-reconciled,
-    /// or its order is not FAILED -- CANCELLED, DELETED and SUSPENDED keep the confirmation's own code as before.
+    /// Judges an ordinary leg's order that RIoT reported terminal before its create was ever confirmed, the way an order that was
+    /// confirmed is judged, and says whether a code of its own now stands (control-server#367). False when the intent under
+    /// <paramref name="upperId"/> is not terminal-reconciled.
     /// </summary>
     /// <remarks>
     /// <para>
     /// <b>Why this is needed.</b> A create whose answer was lost leaves the intent unconfirmed; the next reconciliation finds the
-    /// order terminal and marks the intent <c>TERMINAL_RECONCILIATION_REQUIRED</c> with RIoT's orderId, and from then on
-    /// <c>ReconcileOrCreateAsync</c> answers that without reading RIoT. The arrival branches stopped at the confirmation, so the
-    /// FAILED never reached <see cref="ObserveOrderFailureAsync"/>: no fault, no hold, no emergency stop, with the vehicle possibly
-    /// still moving. The rebuild had the same gap for its own orders and closed it the same way (control-server#318, review S2).
+    /// order terminal and marks the intent <c>TERMINAL_RECONCILIATION_REQUIRED</c> with RIoT's orderId, whatever the terminal state
+    /// was, and from then on <c>ReconcileOrCreateAsync</c> answers that without reading RIoT. The arrival branches stopped at the
+    /// confirmation and wrote <c>{leg}_TerminalReconciliationRequired</c>, a code nothing ever cleared: a FAILED never reached the
+    /// fault model -- no fault, no hold, no emergency stop, with the vehicle possibly still moving -- and a cancellation never
+    /// reached REQ-0360's rebuild, so the journey could only be moved on by editing the database.
+    /// </para>
+    /// <para>
+    /// <b>So it is handed to <see cref="NameStalledOrderAsync"/>, the same method a confirmed order goes through</b>, and ends the
+    /// same way: FAILED goes to the fault model (the fault is then cleared through the controlled entry and the order rebuilt by
+    /// REQ-0362 -- the reading the rebuild already gave its own orders, control-server#318 review S2, not a new rule); CANCELLED
+    /// and DELETED are recorded to be rebuilt by REQ-0360 under REQ-0361's guards, unless this server cancelled the order itself;
+    /// SUSPENDED (8, never observed in the lab) is named <see cref="OrderStateUnrecognizedReason"/> for a person. The rebuild then
+    /// takes the stop over from the next round, ahead of the confirmation. Cargo proof before rebuilding a cancelled leg with cargo
+    /// on board (REQ-0360 as revised by CP-0007) is control-server#366's, on top of this.
     /// </para>
     /// <para>
     /// <b>Every round, not once</b>, because the fault model's evaluation is what advances the stop proof, the escalation, the
     /// trigger's confirmation and REQ-0248's re-trigger. The order is read afresh each time; the intent stays terminal, so the
-    /// confirmation keeps coming back here until a person clears the fault and the rebuild takes the stop over.
-    /// </para>
-    /// <para>
-    /// <b>A read that does not say FAILED once the fault is recorded keeps the code</b>: FAILED is terminal and does not change, so
-    /// such a read is not trusted to mean anything else -- the rule <c>ObserveRebuiltOrderFailureAsync</c> follows. Without it an
-    /// unreadable round would write the confirmation's code over <see cref="VehicleFaultEvidence.OrderFailed"/> and the next round
-    /// write it back, restarting its start time both ways.
+    /// confirmation keeps coming back here until a person clears the fault and the rebuild takes the stop over. A read that does
+    /// not answer keeps whatever code of this family stands (<see cref="KeepsItsCodeWhileTheOrderIsUnread"/>), so an unreadable
+    /// round does not write the confirmation's code over <see cref="VehicleFaultEvidence.OrderFailed"/> and restart its start time.
     /// </para>
     /// <para>
     /// Called on either side of the readiness gate: from <see cref="EnsureMovementConfirmedAsync"/> and from
-    /// <see cref="NameInFlightOrderWithoutThePeerAsync"/>. It reads RIoT and commands it through the fault model; it never sends to
-    /// the onboard peer.
+    /// <see cref="NameUnconfirmedOrderWithoutThePeerAsync"/>. It reads RIoT and commands it through the fault model; it never sends
+    /// to the onboard peer, and it never creates an order.
     /// </para>
     /// </remarks>
-    private async Task<bool> ObserveFailedBeforeConfirmationAsync(
+    private async Task<bool> NameOrderEndedBeforeConfirmationAsync(
         JourneyRuntimeRow runtime,
         string upperId,
+        string? reasonOnceMovedOn,
         CancellationToken cancellationToken)
     {
         OrderIntentRow intent = await dbContext.OrderIntents.AsNoTracking()
@@ -2257,7 +2268,7 @@ public sealed partial class JourneyRuntimeEngine(
             return false;
         }
 
-        RiotOrderObservation? order;
+        RiotOrderObservation order;
         try
         {
             order = await vehicleFacts.ReconcileByUpperIdAsync(upperId, cancellationToken).ConfigureAwait(false);
@@ -2265,16 +2276,10 @@ public sealed partial class JourneyRuntimeEngine(
         catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
                                       !cancellationToken.IsCancellationRequested)
         {
-            order = null;
+            return KeepsItsCodeWhileTheOrderIsUnread(runtime.BlockReasonCode);
         }
 
-        if (order is not null &&
-            await ObserveOrderFailureAsync(runtime, intent, order, cancellationToken).ConfigureAwait(false))
-        {
-            return true;
-        }
-
-        return string.Equals(runtime.BlockReasonCode, VehicleFaultEvidence.OrderFailed, StringComparison.Ordinal);
+        return await NameStalledOrderAsync(runtime, intent, order, cancellationToken, reasonOnceMovedOn).ConfigureAwait(false);
     }
 
     /// <summary>
