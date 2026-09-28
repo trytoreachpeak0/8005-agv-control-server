@@ -626,6 +626,10 @@ jobs:
               # control-server#345: a rebuild stopped on cargo not in its slots is handed by a person to the exception recovery
               # session; readiness turns RECOVERY_REQUIRED so the real onboard offers the fault cargo handoff.
               @{ Name = 'real-onboard-rebuild-stopped-cargo-handoff';        Runs = 1 }
+              # control-server#366: an own order cancelled in RIoT with cargo on board is rebuilt only on a snapshot received
+              # after it fell due and after the vehicle was last held; emptied under someone else's stop it stops, and the
+              # exception session's handoff takes it to the end though there is no fault cargo binding.
+              @{ Name = 'real-onboard-cancelled-rebuild-cargo-proof';        Runs = 1 }
               # control-server#325 (program#86 v2): once the station deadline ends a stop, the real onboard shows none of it,
               # and a late cancellation and a late scan made before the closing worklist arrives are both refused as STALE.
               @{ Name = 'real-onboard-stale-stop-after-station-timeout';     Runs = 1 }
