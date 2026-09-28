@@ -95,8 +95,9 @@ public sealed partial class JourneyRuntimeEngine
 
         // The doors read fresh, known and locked again is REQ-0167's "原原因消除" for a latch this fault raised; the coordinator
         // releases on it only past this server's own confirmed hold (user's option A, 2026-09-28).
-        FaultedVehicleContext context = await InFlightFaultContextAsync(runtime, intent, orderId, cancellationToken)
-            .ConfigureAwait(false) with { DoorCauseRemoved = doors.State == InTransitDoorState.ProvenLocked };
+        FaultedVehicleContext inFlight = await InFlightFaultContextAsync(runtime, intent, orderId, cancellationToken)
+            .ConfigureAwait(false);
+        FaultedVehicleContext context = inFlight with { DoorCauseRemoved = doors.State == InTransitDoorState.ProvenLocked };
         await faults.ObserveAsync(
             new EmergencyStopSubject(runtime.AgvId, runtime.VehicleKey),
             VehicleFaultEvidence.DoorNotProvenLocked,
