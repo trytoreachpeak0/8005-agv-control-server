@@ -1,0 +1,36 @@
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageType" = 'SafetyStateSnapshot'
+[04:28:42 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[04:28:42 INF] Executed DbCommand (0ms) [Parameters=[@__runtime_JourneyId_0='?' (Size = 44)], CommandType='Text', CommandTimeout='30']
+SELECT "j"."DemandId"
+FROM "JourneyDemands" AS "j"
+WHERE "j"."JourneyId" = @__runtime_JourneyId_0 AND "j"."RemovedAt" IS NULL AND "j"."Status" <> 'PENDING_LOAD' AND "j"."Status" <> 'UNLOADED' AND "j"."Status" <> 'TERMINATED'
+[04:28:42 INF] Executed DbCommand (0ms) [Parameters=[@__onBoard_0='?' (Size = 40)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."SlotOperationAttemptId", "s"."CommittedAt", "s"."ContentHash", "s"."CreatedAt", "s"."DemandId", "s"."EvidenceJson", "s"."ForcedRecoveryGeneration", "s"."OperationType", "s"."Status", "s"."SublotId", "s"."TargetSlotsJson"
+FROM "StationOperations" AS "s"
+WHERE "s"."DemandId" IN (
+    SELECT "o"."value"
+    FROM json_each(@__onBoard_0) AS "o"
+) AND "s"."OperationType" = 'Load'
+[04:28:42 ERR] Order W2G-ac5008c2-772c-435d-89a0-4ffbd4565bd6-GATE-1 of journey journey:ac5008c2-772c-435d-89a0-4ffbd4565bd6 on AGV-L2-001 is not rebuilt (CARGO_NOT_PROVEN_IN_ORIGINAL_SLOTS: SLOT_1:EMPTY,LOCKED,RESET); the journey waits for a person.
+[04:28:42 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 44), @p0='?' (DbType = Int64), @p2='?' (DbType = Int64)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyRuntimes" SET "Version" = @p0
+WHERE "JourneyId" = @p1 AND "Version" = @p2
+RETURNING 1;
+[04:28:42 INF] Executed DbCommand (0ms) [Parameters=[@p6='?' (Size = 36), @p0='?' (Size = 36), @p1='?' (Size = 7), @p7='?' (Size = 7), @p2='?' (DbType = DateTimeOffset), @p3='?' (Size = 34), @p4='?' (Size = 25), @p5='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "OwnOrderRebuilds" SET "CargoEvidenceMessageId" = @p0, "State" = @p1, "StoppedAt" = @p2, "StoppedReason" = @p3, "WaitingReason" = @p4, "WaitingSince" = @p5
+WHERE "RebuildId" = @p6 AND "State" = @p7
+RETURNING 1;
+[04:28:42 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/task/v1/task/getVehicleInfo/BROKERX-L2-0001
+[04:28:42 INF] Sending HTTP request GET http://127.0.0.1:48408/api/task/v1/task/getVehicleInfo/BROKERX-L2-0001
+[04:28:42 INF] Received HTTP response headers after 0.7835ms - 200
+[04:28:42 INF] End processing HTTP request after 2.5076ms - 200
+[04:28:42 INF] Executed DbCommand (0ms) [Parameters=[@p4='?' (Size = 44), @p0='?' (Size = 36), @p1='?' (DbType = DateTimeOffset), @p2='?' (DbType = DateTimeOffset), @p3='?' (DbType = Int64), @p5='?' (DbType = Int64)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyRuntimes" SET "BlockReasonCode" = @p0, "BlockReasonSince" = @p1, "UpdatedAt" = @p2, "Version" = @p3
+WHERE "JourneyId" = @p4 AND "Version" = @p5
+RETURNING 1;
+[04:28:42 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/order/v1/orderRecord?pageNum=1&pageSize=100&filterByState=1&filterByState=3&filterByState=7&filterByState=9

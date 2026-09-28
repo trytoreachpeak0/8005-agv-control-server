@@ -51,3 +51,23 @@ M2 第一次写成 `if (false)`，被编译器以 CS0162（代码不可达）拒
 - **变异**（`mutations-r2/`）：先写预期（`plan.md`），16 个逐个跑，红的用例与预期逐个一致。每份记录都带替换前后的原文、命中数与行号、构建与测试的退出码。上面第一轮的记录没有原文，而且对应代码之后改过，只作历史保留，以第二轮为准。
 - **全量**：`dotnet test tests/ControlServer.Tests/ControlServer.Tests.csproj -c Release`，经 Invoke-HeavyLocal 跑，3026 通过，0 失败，退出码 0，运行日志在 `full/full-bc0e3685.log`。
 - **cs#342 模型与 L2**：没有重跑，仍是 4cd7525b 上的结果。两者覆盖的是断线重连与取消后重建的整条链；本轮只改了释放点与入口判拒，不涉及这两块。
+- **cs#342 模型在 bc0e3685 上重跑**（经 Invoke-HeavyLocal）：`cs342-model/report-bc0e3685.txt`，与 4cd7525b 那份相同：300/300 送达，ack 冲突 0，车辆倒退 0，`ORDER_HANG` 5 次（集成分支基线原有）。
+
+## 真装置（CI，70737b23）
+
+- run 36477303574（`../l2/20260929-ci-36477303574-cs376-real-rig/`）：`in-transit-door-facts` PASS；`cancelled-rebuild-cargo-proof` FAIL，转交接之后 90 秒内车载端没有出故障交接入口。服务端写库时间线与 PASS 那次同一步列级别一致；证据里没有出站内容记录，读不到就绪通知有没有发出、车载端有没有 ack。结论「服务端一侧排除，但只是推的；车载端和传输两侧分不开」（调度 2026-09-29 接受），写进 PR 剩余风险。
+- run 36479121507（`../l2/20260929-ci-36479121507-cs376-real-rig/`，只重跑 cargo-proof）：FAIL 在 L2-RC-03。产品先存重建记录、再存旅程码，场景只等记录，读到两次保存之间的旧码。这次绿的那几步不用来给上一次定性。场景判据已在 459cc3e0 改成两样都等到。
+
+两个目录只留判定用得上的文件：SUMMARY、assertions、timeline、commits.json，加上定位用到的库快照与日志（前者是车载端应用日志，后者是服务端日志 23270–23305 行摘录）。
+
+## 增量审查之后（第三轮，最终代码 459cc3e0）
+
+增量审查没有必修项，三条建议：S1 交接结算只按旅程收口、S2 转交接被拒不释放、S3 注明旧绑定可能在交接后仍在效。
+
+- **修前红**：`e34a146b` 只改 tests，在 70737b23 上跑 `FaultedCargoBindingLifecycleTests` 22 条，红 1 格 `AHandoffKeepsTheBindingWhileAnotherDemandIsStillOnBoard(handed-off-demand)`：断言绑定仍在效，实际已被释放。
+- **变异**（`mutations-r3/`，预期先写在 `plan.md`，过滤到 10 组相关类共 527 条）：
+  - P1（审查员的：收口换成无条件释放本车全部在效绑定）：红新加的两格，与预期一致。
+  - P3（审查员的：转交接判货时就释放）：红 `ARefusedRequestReleasesNothing(handoff-nothing-on-board)`，与预期一致。
+  - P4（恢复按需求逐条释放）：红 handed-off-demand 那一格，与预期一致。
+  - M12 重跑（删掉按旅程收口；它所在的方法这轮改了）：红 9 格，比预期少一格。`AHandedOffCargoBindingIsNotTakenForTheVehiclesNextFault` 没红，因为它断的是下一次故障，而故障协调器建绑定前会先释放别的旅程的绑定。是预期写错了，交接结算本身由另外 8 格守，详见 `plan.md`。
+- **全量**：`dotnet test tests/ControlServer.Tests/ControlServer.Tests.csproj -c Release`，在 459cc3e0 上经 Invoke-HeavyLocal 跑，3029 通过，0 失败，退出码 0（上一轮 3026，本轮新加 3 格），日志在 `full/full-459cc3e0.log`。
