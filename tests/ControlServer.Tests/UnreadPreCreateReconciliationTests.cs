@@ -1,5 +1,8 @@
+using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.CreateGate;
+using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -170,6 +173,86 @@ public sealed class UnreadPreCreateReconciliationTests
         Assert.Equal(1, fixture.Riot.CreateCount(purpose));
         Assert.Equal("CONFIRMED", await fixture.IntentStatusAsync(purpose));
         Assert.Null((await fixture.RuntimeAsync()).BlockReasonCode);
+    }
+
+    /// <summary>
+    /// REQ-0305、REQ-0344/0345 的建单门禁对补建同样有效（审查必修 M1）：读超时之后、补建之前，冻结的 <c>Map + TASK_TYPE</c> 被人暂停，
+    /// 或 RIoT 答不出这一站的路径代价——补建不发，码写门禁自己的精确原因；门禁放行后恰好建一张。
+    /// </summary>
+    /// <remarks>
+    /// 离站那一轮与同车重建（<c>HeldBeforeCreateAsync</c>）都过这道门禁，补建在它们之后若干轮，门禁判的事实可能已经变了。修之前补建只看车况，
+    /// 审查员的探针在这里得到 1 次建单。门禁里「目录不新鲜」一支在引擎的同一轮里造不出来：读目录失败时整轮提前返回，读成功又刷新了新鲜度，
+    /// 所以第三格用路径代价。
+    /// </remarks>
+    [Theory]
+    [InlineData("TO_PICKUP", "task-type-held")]
+    [InlineData("TO_GATE", "task-type-held")]
+    [InlineData("TO_GATE", "route-cost-unavailable")]
+    public async Task ANeverSentLegWaitsForTheCreateGateAndIsCreatedOnceItOpens(string purpose, string closedBy)
+    {
+        await using RuntimeFixture fixture = purpose == "TO_PICKUP" ? await PickupReadTimedOutAsync() : await LoadedAndCheckedAsync();
+        fixture.Riot.AbsentOrdersReadAsTimeout = false;
+        JourneyStopRow stop = await CurrentStopAsync(fixture, FirstDemandId);
+        TaskTypeStationHold? hold = null;
+        if (closedBy == "task-type-held")
+        {
+            hold = (await TaskTypeStationRuntimeSeed.Access(fixture.Context).Holds.RaiseAsync(
+                25, TransportTaskTypes.WireToGate, TaskTypeStationHoldSource.Manual, "L1_375_HOLD", "{}", "test", Now, Token)).Hold;
+            fixture.Context.ChangeTracker.Clear();
+        }
+        else
+        {
+            fixture.RouteCosts.FailFor(stop.StationRiotId);
+        }
+
+        await RoundsAsync(fixture, 3);
+
+        Assert.Equal(0, fixture.Riot.CreateCount(purpose));
+        Assert.Equal(
+            closedBy == "task-type-held" ? DispatchReasonCodes.TaskTypeHeld : CreateGateReasons.RouteCostUnavailable,
+            (await fixture.RuntimeAsync()).BlockReasonCode);
+        await AssertNeverSentAsync(fixture, stop.UpperId);
+
+        if (hold is not null)
+        {
+            await TaskTypeStationRuntimeSeed.Access(fixture.Context).Holds.ReleaseAsync(hold.HoldId, "test", Now, Token);
+            fixture.Context.ChangeTracker.Clear();
+        }
+        else
+        {
+            fixture.RouteCosts.Set(stop.StationRiotId, 9000);
+        }
+        await RoundsAsync(fixture, 3);
+
+        Assert.Equal(1, fixture.Riot.CreateCount(purpose));
+        Assert.Equal("CONFIRMED", await fixture.IntentStatusAsync(purpose));
+        Assert.Null((await fixture.RuntimeAsync()).BlockReasonCode);
+    }
+
+    /// <summary>
+    /// 建单前那一次读读到一张挂在本单号下、却对不上冻结意图的单，意图是 <c>RESULT_UNKNOWN</c> 而一次建单都没发出过——这不是「从没发出过」，
+    /// 要人看。车况不行时，码仍是 <c>GATE_ResultUnknown</c>，不被补建前的车况等待盖住（审查 S3，探针 B 的形状）。
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AnIntentThatReadAMismatchedOrderKeepsItsResultUnknownCodeWhateverTheVehicle(bool emergency)
+    {
+        await using RuntimeFixture fixture = await LoadedAndCheckedAsync();
+        string gateUpperId = (await CurrentStopAsync(fixture, FirstDemandId)).UpperId;
+        await using (ControlServerDbContext writing = new(fixture.DbOptionsForTests))
+        {
+            string leg = (await writing.OrderIntents.SingleAsync(row => row.UpperId == gateUpperId, Token)).MovementLegId;
+            Assert.True(await writing.RiotDispatchAuditEvents.Where(row => row.MovementLegId == leg)
+                .ExecuteUpdateAsync(set => set.SetProperty(row => row.ReturnedOrderId, "MISMATCHED-ORDER"), Token) > 0);
+        }
+        fixture.Riot.AbsentOrdersReadAsTimeout = false;
+        fixture.Riot.SafetyReasons = emergency ? ["RIOT_EMERGENCY_NOT_OK"] : [];
+
+        await RoundsAsync(fixture, 3);
+
+        Assert.Equal(0, fixture.Riot.CreateCount("TO_GATE"));
+        Assert.Equal("GATE_ResultUnknown", (await fixture.RuntimeAsync()).BlockReasonCode);
     }
 
     /// <summary>

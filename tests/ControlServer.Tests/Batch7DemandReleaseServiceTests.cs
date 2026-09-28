@@ -958,6 +958,40 @@ public sealed class Batch7DemandReleaseServiceTests
     }
 
     /// <summary>
+    /// 取货单建单前那一次对账读没读到（SDK 超时），意图是 <c>RESULT_UNKNOWN</c> 而一次建单都没发出过，RIoT 一直读不到。
+    /// 车不再合格时，这就是「没有订单」：照常释放，不发取消（control-server#375）。
+    /// </summary>
+    /// <remarks>
+    /// 修之前释放服务只认 <c>PENDING_RECONCILIATION</c> 为「从没发出过」，这一格报「订单状态未知」、不释放；而引擎在 RIoT 读不到时也不建，
+    /// 取货单就一直悬着，只能改库。现在释放是它不改库的放弃出口。与上一条「建单结果未知」的区别正在于建单有没有发出过。
+    /// </remarks>
+    [Fact]
+    public async Task APickupOrderNeverSentBecauseItsPreCreateReadAnsweredNothingIsReleasedWithoutACancel()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set(FirstSublot, 7);
+        fixture.Riot.AbsentOrdersReadAsTimeout = true;
+        await TickAndRunAsync(fixture);
+        fixture.Context.ChangeTracker.Clear();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync(FirstDemandId);
+        OrderIntentRow unread = await fixture.Context.OrderIntents.AsNoTracking()
+            .SingleAsync(row => row.UpperId == before.PickupUpperId, Token);
+        Assert.Equal(("RESULT_UNKNOWN", 0, (string?)null), (unread.Status, unread.CreateAttemptCount, unread.OrderId));
+        Assert.Equal(0, fixture.Riot.CreateCount("TO_PICKUP"));
+
+        LeaveTheMap(fixture);
+        CancellingGateway gateway = new(fixture.Clock, _ => { });
+        IReadOnlyList<DemandReleaseOutcome> outcomes = await Service(fixture, gateway).RunOnceAsync(Token);
+
+        Assert.Equal("RELEASED", Assert.Single(outcomes).Result);
+        Assert.Equal(0, gateway.Cancels);
+        Assert.Equal(0, fixture.Riot.CreateCount("TO_PICKUP"));
+        await using ControlServerDbContext reading = new ControlServerDbContext(fixture.DbOptionsForTests);
+        Assert.NotNull((await reading.Set<JourneyDemandRow>().AsNoTracking().SingleAsync(Token)).RemovedAt);
+    }
+
+    /// <summary>
     /// 上一条的后半：引擎下一轮把意图对账成 CONFIRMED、拿到订单号之后，释放照常走「取消并对账 → 释放」，
     /// 不会永远停在「订单状态未知」。
     /// </summary>
