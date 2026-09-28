@@ -1,0 +1,110 @@
+# cs#367 mutations at 3e58f0a32f61c100155f55bc97a0b9095ef1ea41 2026-09-28T11:58:45.8930701+08:00
+# only:  (0)
+== M0-revert-src : src reverted to 71e62d85 ( 2 files changed, 11 insertions(+), 212 deletions(-))
+   build errors: 0
+   exit: 1
+   RED FailedOrderBeforeConfirmationTests.ASuspendedOrderBeforeConfirmationIsNamedForAPerson(behindTheGate: False)
+   RED FailedOrderBeforeConfirmationTests.ASuspendedOrderBeforeConfirmationIsNamedForAPerson(behindTheGate: True)
+   RED FailedOrderBeforeConfirmationTests.AGateOrderThatFailedBeforeConfirmationAlsoBindsTheCargoInFrontOfTheGate
+   RED FailedOrderBeforeConfirmationTests.AnUnreadableOrderKeepsTheFailedCodeAndItsStart(behindTheGate: False)
+   RED PickupDispatchPlanPastOwnOrderTests.AnOrderWhoseCreateAnswerWasLostIsConfirmedBehindTheGateAndThePlanGoesOut
+   RED FailedOrderBeforeConfirmationTests.AnUnreadableOrderKeepsTheFailedCodeAndItsStart(behindTheGate: True)
+   RED FailedOrderBeforeConfirmationTests.ARebuildDueWhileTheVehicleIsInAnEmergencyStopWaitsForIt
+   RED FailedOrderBeforeConfirmationTests.AnUnconfirmedOrderFoundHangingBehindTheGateIsConfirmedAndNamed
+   RED FailedOrderBeforeConfirmationTests.AGateOrderCancelledBeforeConfirmationIsRecordedToBeRebuilt
+   RED FailedOrderBeforeConfirmationTests.APickupOrderThatFailedBeforeConfirmationIsRecordedHeldAndStoppedInFrontOfTheGate
+   RED FailedOrderBeforeConfirmationTests.ASecondCancellationWithinTheWindowStopsTheRebuild
+   RED FailedOrderBeforeConfirmationTests.BehindTheGateTheStopIsConfirmedAndRetriggeredForAnOrderThatFailedBeforeConfirmation
+   RED FailedOrderBeforeConfirmationTests.AClearedFaultOfAGateOrderThatFailedBeforeConfirmationRebuildsOnlyOnCargoEvidence
+   RED FailedOrderBeforeConfirmationTests.AnUnreconciledPickupOrderThatFailedIsRecordedHeldAndStoppedBehindTheGate
+   RED FailedOrderBeforeConfirmationTests.AClearedFaultOfAPickupOrderThatFailedBeforeConfirmationRebuildsItOnTheSameVehicle
+   RED FailedOrderBeforeConfirmationTests.AnUnconfirmedOrderThatFailedIsRecordedHeldAndStoppedWhileTheReadySessionIsSilent
+   RED FailedOrderBeforeConfirmationTests.APickupOrderDeletedBeforeConfirmationIsRecordedBehindTheGateAndNothingIsCreatedWhileNotReady
+   RED FailedOrderBeforeConfirmationTests.ATerminalReconciledPickupOrderLeftWithoutAFaultIsRecordedBehindTheGate
+   RED FailedOrderBeforeConfirmationTests.APickupOrderCancelledBeforeConfirmationIsRebuiltOnTheSameVehicle
+   RED FailedOrderBeforeConfirmationTests.AnUnreconciledGateOrderThatFailedAlsoBindsTheCargoBehindTheGate
+   Failed!  - Failed:    20, Passed:   279, Skipped:     0, Total:   299, Duration: 1 m 8 s - ControlServer.Tests.dll (net8.0)
+== M1-front-no-observe : applied (1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs)
+   build errors: 0
+   exit: 1
+   RED FailedOrderBeforeConfirmationTests.ASuspendedOrderBeforeConfirmationIsNamedForAPerson(behindTheGate: False)
+   RED FailedOrderBeforeConfirmationTests.AGateOrderThatFailedBeforeConfirmationAlsoBindsTheCargoInFrontOfTheGate
+   RED FailedOrderBeforeConfirmationTests.AnUnreadableOrderKeepsTheFailedCodeAndItsStart(behindTheGate: False)
+   RED FailedOrderBeforeConfirmationTests.ARebuildDueWhileTheVehicleIsInAnEmergencyStopWaitsForIt
+   RED FailedOrderBeforeConfirmationTests.AGateOrderCancelledBeforeConfirmationIsRecordedToBeRebuilt
+   RED FailedOrderBeforeConfirmationTests.APickupOrderThatFailedBeforeConfirmationIsRecordedHeldAndStoppedInFrontOfTheGate
+   RED FailedOrderBeforeConfirmationTests.ASecondCancellationWithinTheWindowStopsTheRebuild
+   RED FailedOrderBeforeConfirmationTests.AClearedFaultOfAGateOrderThatFailedBeforeConfirmationRebuildsOnlyOnCargoEvidence
+   RED FailedOrderBeforeConfirmationTests.AClearedFaultOfAPickupOrderThatFailedBeforeConfirmationRebuildsItOnTheSameVehicle
+   RED FailedOrderBeforeConfirmationTests.APickupOrderCancelledBeforeConfirmationIsRebuiltOnTheSameVehicle
+   Failed!  - Failed:    10, Passed:   289, Skipped:     0, Total:   299, Duration: 1 m 10 s - ControlServer.Tests.dll (net8.0)
+== M2-behind-disabled : applied (1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs)
+   build errors: 0
+   exit: 1
+   RED FailedOrderBeforeConfirmationTests.ASuspendedOrderBeforeConfirmationIsNamedForAPerson(behindTheGate: True)
+   RED PickupDispatchPlanPastOwnOrderTests.AnOrderWhoseCreateAnswerWasLostIsConfirmedBehindTheGateAndThePlanGoesOut
+   RED FailedOrderBeforeConfirmationTests.AnUnreadableOrderKeepsTheFailedCodeAndItsStart(behindTheGate: True)
+   RED FailedOrderBeforeConfirmationTests.AnUnconfirmedOrderFoundHangingBehindTheGateIsConfirmedAndNamed
+   RED FailedOrderBeforeConfirmationTests.BehindTheGateTheStopIsConfirmedAndRetriggeredForAnOrderThatFailedBeforeConfirmation
+   RED FailedOrderBeforeConfirmationTests.AnUnreconciledPickupOrderThatFailedIsRecordedHeldAndStoppedBehindTheGate
+   RED FailedOrderBeforeConfirmationTests.AnUnconfirmedOrderThatFailedIsRecordedHeldAndStoppedWhileTheReadySessionIsSilent
+   RED FailedOrderBeforeConfirmationTests.APickupOrderDeletedBeforeConfirmationIsRecordedBehindTheGateAndNothingIsCreatedWhileNotReady
+   RED FailedOrderBeforeConfirmationTests.ATerminalReconciledPickupOrderLeftWithoutAFaultIsRecordedBehindTheGate
+   RED FailedOrderBeforeConfirmationTests.AnUnreconciledGateOrderThatFailedAlsoBindsTheCargoBehindTheGate
+   Failed!  - Failed:    10, Passed:   289, Skipped:     0, Total:   299, Duration: 59 s - ControlServer.Tests.dll (net8.0)
+== M3-clear-no-hold-recognition : applied (1	1	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs)
+   build errors: 0
+   exit: 1
+   RED FailedOrderBeforeConfirmationTests.AClearedFaultOfAGateOrderThatFailedBeforeConfirmationRebuildsOnlyOnCargoEvidence
+   RED FailedOrderBeforeConfirmationTests.AClearedFaultOfAPickupOrderThatFailedBeforeConfirmationRebuildsItOnTheSameVehicle
+   Failed!  - Failed:     2, Passed:   297, Skipped:     0, Total:   299, Duration: 58 s - ControlServer.Tests.dll (net8.0)
+== M4-clear-ignores-generation : applied (1	2	src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs)
+   build errors: 0
+   exit: 1
+   RED FailedOrderBeforeConfirmationTests.AFaultOfAnotherOriginIsNotClearedThroughATerminalIntentAnEarlierFaultWasRecordedOn
+   Failed!  - Failed:     1, Passed:   298, Skipped:     0, Total:   299, Duration: 1 m 10 s - ControlServer.Tests.dll (net8.0)
+== M5-behind-creates : applied (1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs)
+   build errors: 0
+   exit: 1
+   RED FailedOrderBeforeConfirmationTests.AnOrderNeverSentIsNotCreatedBehindTheGate
+   Failed!  - Failed:     1, Passed:   298, Skipped:     0, Total:   299, Duration: 55 s - ControlServer.Tests.dll (net8.0)
+== M7-observe-once : applied (1	0	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs)
+   build errors: 0
+   exit: 1
+   RED FailedOrderBeforeConfirmationTests.BehindTheGateTheStopIsConfirmedAndRetriggeredForAnOrderThatFailedBeforeConfirmation
+   Failed!  - Failed:     1, Passed:   298, Skipped:     0, Total:   299, Duration: 57 s - ControlServer.Tests.dll (net8.0)
+== M9-failed-only : applied (1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs)
+   build errors: 0
+   exit: 1
+   RED FailedOrderBeforeConfirmationTests.ASuspendedOrderBeforeConfirmationIsNamedForAPerson(behindTheGate: False)
+   RED FailedOrderBeforeConfirmationTests.ASuspendedOrderBeforeConfirmationIsNamedForAPerson(behindTheGate: True)
+   RED FailedOrderBeforeConfirmationTests.AnUnreadableOrderKeepsTheFailedCodeAndItsStart(behindTheGate: False)
+   RED FailedOrderBeforeConfirmationTests.AnUnreadableOrderKeepsTheFailedCodeAndItsStart(behindTheGate: True)
+   RED FailedOrderBeforeConfirmationTests.ARebuildDueWhileTheVehicleIsInAnEmergencyStopWaitsForIt
+   RED FailedOrderBeforeConfirmationTests.AGateOrderCancelledBeforeConfirmationIsRecordedToBeRebuilt
+   RED FailedOrderBeforeConfirmationTests.ASecondCancellationWithinTheWindowStopsTheRebuild
+   RED FailedOrderBeforeConfirmationTests.APickupOrderDeletedBeforeConfirmationIsRecordedBehindTheGateAndNothingIsCreatedWhileNotReady
+   RED FailedOrderBeforeConfirmationTests.APickupOrderCancelledBeforeConfirmationIsRebuiltOnTheSameVehicle
+   Failed!  - Failed:     9, Passed:   290, Skipped:     0, Total:   299, Duration: 54 s - ControlServer.Tests.dll (net8.0)
+== M10-no-rebuild-delay : applied (1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.OwnOrderRebuild.cs)
+   build errors: 0
+   exit: 1
+   RED Batch7DemandReleaseServiceTests.APickupOrderEndedInRiotIsNeitherReleasedNorRedispatched(orderState: 2)
+   RED Batch7DemandReleaseServiceTests.APickupOrderEndedInRiotIsNeitherReleasedNorRedispatched(orderState: 6)
+   RED EmergencyReleaseVersusOwnOrderRebuildTests.OnTheWayToPickupTheReleaseAloneBuildsNothingAndOnlyTheClearanceRebuildsAfterTheDelay
+   RED OwnOrderRebuildTests.AnOrderCancelledInRiotIsRebuiltForTheSameVehicleAndDemandOnceTheDelayIsOver
+   RED InTransitOrderStallTests.AnOrderEndedWhileTheSessionIsNotReadyIsNamed
+   RED FailedOrderBeforeConfirmationTests.APickupOrderCancelledBeforeConfirmationIsRebuiltOnTheSameVehicle
+   RED OwnOrderRebuildTests.AnOrderCancelledWhileTheSessionIsNotReadyOnItsOwnOrderWaitsForTheSessionBeforeItIsRebuilt
+   RED VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderRebuildsOnceTheSessionIsReady(cargo: "empty")
+   RED VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderRebuildsOnceTheSessionIsReady(cargo: "loaded")
+   RED VehicleFaultRecoveryTests.AClearedFaultWithCargoOnBoardRebuildsTheOrderToDeliverIt
+   RED VehicleFaultRecoveryTests.AClearedFaultOnAnEmptyVehicleKeepsTheDemandAndRebuildsTheOrder
+   Failed!  - Failed:    11, Passed:   288, Skipped:     0, Total:   299, Duration: 58 s - ControlServer.Tests.dll (net8.0)
+== M8-behind-confirmed-not-named : applied (1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs)
+   build errors: 0
+   exit: 1
+   RED FailedOrderBeforeConfirmationTests.AnUnconfirmedOrderFoundHangingBehindTheGateIsConfirmedAndNamed
+   Failed!  - Failed:     1, Passed:   298, Skipped:     0, Total:   299, Duration: 1 m 21 s - ControlServer.Tests.dll (net8.0)
+# final build: 0 Error(s)
+# done

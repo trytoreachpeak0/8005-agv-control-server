@@ -179,6 +179,9 @@ public sealed class PickupDispatchPlanPastOwnOrderTests
                 OrderIntentRow intent = await fixture.Context.OrderIntents.SingleAsync(
                     row => row.Purpose == "TO_PICKUP", Token);
                 intent.Status = "RESULT_UNKNOWN";
+                // control-server#367：闸门后会对发过建单的单对账，RIoT 答得出这张单就在这一轮确认了它、计划随之放行（那是对的）。
+                // 这一格要的是「还没确认」，所以让 RIoT 这一轮答不出：对账确认不了，单仍是结果未知。
+                fixture.Riot.MakeOrderUnreadable(intent.UpperId);
                 break;
             // 下面两格的会话行照旧写 DEPARTURE_SAFETY_NOT_READY：GetRecoveryReason 把出发安全排在作业待恢复与强制恢复待硬件记录
             // 之前，这两者与出发不安全同时成立时，原因码只说出发安全。所以放行不能只看原因码。
@@ -219,8 +222,43 @@ public sealed class PickupDispatchPlanPastOwnOrderTests
 
         await fixture.Engine.ExecuteOnceAsync(Token);
 
+        if (variant == "order-not-confirmed")
+        {
+            // 前提：这一轮之后单确实还没确认，挡住计划的是它，不是别的。
+            fixture.Context.ChangeTracker.Clear();
+            Assert.NotEqual(
+                "CONFIRMED",
+                (await fixture.Context.OrderIntents.AsNoTracking().SingleAsync(row => row.Purpose == "TO_PICKUP", Token)).Status);
+        }
+
         Assert.Empty(PlanLinesSent(fixture));
         Assert.Empty(await PlanRowsAsync(fixture));
+    }
+
+    /// <summary>
+    /// 建单应答丢了、单停在结果未知，会话因这张单未就绪：闸门后这一轮对账确认它（control-server#367），计划同一轮放行、只一行。
+    /// 修前闸门后不对账，这张单要等会话就绪才确认，而会话正是因为它才不就绪——车整段收不到计划。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    [Trait("ProtocolVector", "CV-DEMAND-ACCEPT-TO-PICKUP")]
+    public async Task AnOrderWhoseCreateAnswerWasLostIsConfirmedBehindTheGateAndThePlanGoesOut()
+    {
+        await using RuntimeFixture fixture = await AcceptedWithOrderConfirmedAsync();
+        await DropSessionOnOwnOrderAsync(fixture);
+        OrderIntentRow intent = await fixture.Context.OrderIntents.SingleAsync(row => row.Purpose == "TO_PICKUP", Token);
+        intent.Status = "RESULT_UNKNOWN";
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Equal(
+            "CONFIRMED",
+            (await fixture.Context.OrderIntents.AsNoTracking().SingleAsync(row => row.Purpose == "TO_PICKUP", Token)).Status);
+        Assert.Single(PlanLinesSent(fixture));
+        Assert.Single(await PlanRowsAsync(fixture));
     }
 
     /// <summary>

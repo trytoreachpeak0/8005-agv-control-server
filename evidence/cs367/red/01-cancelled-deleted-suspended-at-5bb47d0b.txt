@@ -1,0 +1,25 @@
+  Failed ControlServer.Tests.FailedOrderBeforeConfirmationTests.ASuspendedOrderBeforeConfirmationIsNamedForAPerson(behindTheGate: False) [272 ms]
+   Assert.Equal() Failure: Strings differ
+Expected: "ORDER_STATE_UNRECOGNIZED"
+Actual:   "PICKUP_TerminalReconciliationRequired"
+  Failed ControlServer.Tests.FailedOrderBeforeConfirmationTests.ASuspendedOrderBeforeConfirmationIsNamedForAPerson(behindTheGate: True) [199 ms]
+   Assert.Equal() Failure: Strings differ
+Expected: "ORDER_STATE_UNRECOGNIZED"
+Actual:   "ONBOARD_SESSION_NOT_READY"
+  Failed ControlServer.Tests.FailedOrderBeforeConfirmationTests.ARebuildDueWhileTheVehicleIsInAnEmergencyStopWaitsForIt [593 ms]
+   Assert.Equal() Failure: Strings differ
+Expected: "OWN_ORDER_REBUILD_WAITING_VEHICLE"
+Actual:   "PICKUP_TerminalReconciliationRequired"
+  Failed ControlServer.Tests.FailedOrderBeforeConfirmationTests.AGateOrderCancelledBeforeConfirmationIsRecordedToBeRebuilt [3 s]
+   Assert.Equal() Failure: Strings differ
+Expected: "ORDER_ENDED_WITHOUT_ARRIVAL"
+Actual:   "GATE_TerminalReconciliationRequired"
+  Failed ControlServer.Tests.FailedOrderBeforeConfirmationTests.ASecondCancellationWithinTheWindowStopsTheRebuild [318 ms]
+   Assert.Equal() Failure: Values differ
+Expected: 2
+Actual:   1
+  Failed ControlServer.Tests.FailedOrderBeforeConfirmationTests.APickupOrderCancelledBeforeConfirmationIsRebuiltOnTheSameVehicle [168 ms]
+   Assert.Equal() Failure: Strings differ
+Expected: "ORDER_ENDED_WITHOUT_ARRIVAL"
+Actual:   "PICKUP_TerminalReconciliationRequired"
+  Failed ControlServer.Tests.FailedOrderBeforeConfirmationTests.APickupOrderDeletedBeforeConfirmationIsRecordedBehindTheGateAndNotRebuiltUntilReady [435 ms]

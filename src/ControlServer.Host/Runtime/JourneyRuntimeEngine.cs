@@ -1822,9 +1822,15 @@ public sealed partial class JourneyRuntimeEngine(
         }
         OrderIntentRow? intent = await dbContext.OrderIntents.SingleOrDefaultAsync(
             row => row.MovementLegId == stops.Current.MovementLegId, cancellationToken).ConfigureAwait(false);
-        if (intent is not { Status: "CONFIRMED", OrderId: not null })
+        if (intent is null)
         {
             return false;
+        }
+
+        if (intent is not { Status: "CONFIRMED", OrderId: not null })
+        {
+            return await NameUnconfirmedOrderWithoutThePeerAsync(runtime, intent, currentMap, peerReason, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         RiotOrderObservation order;
@@ -1839,6 +1845,87 @@ public sealed partial class JourneyRuntimeEngine(
         }
 
         return await NameStalledOrderAsync(runtime, intent, order, cancellationToken, reasonOnceMovedOn: peerReason)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// <see cref="NameInFlightOrderWithoutThePeerAsync"/> for an ordinary leg whose create has not been confirmed
+    /// (control-server#367): reconciles it when a create has been sent, and judges it like a confirmed order once RIoT reports it
+    /// terminal. True when a code of its own now stands.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Why behind the gate at all.</b> A lost create answer leaves the intent unconfirmed while the vehicle drives the order,
+    /// and a real onboard reports its session not ready for exactly that reason -- RIoT shows it an unfinished order of this
+    /// server's -- for the whole of the leg. Until this ticket nothing behind the gate reconciled such an intent, so its order
+    /// could FAIL with the vehicle moving and be neither recorded nor stopped until the session came back.
+    /// </para>
+    /// <para>
+    /// <b>It never creates.</b> Only an intent whose create has already been sent (<c>CreateAttemptCount &gt; 0</c>) is
+    /// reconciled, and every branch of <c>MovementDispatchService.ReconcileOrCreateAsync</c> that creates requires a pending intent
+    /// with no attempt. An intent never sent has no order to read and is left to the gate, as before: a new order waits for a
+    /// Ready session in front of the gate. This is the same line the rebuild draws behind the gate (control-server#318, review
+    /// B2).
+    /// </para>
+    /// <para>
+    /// A reconciliation that confirms the order goes on to the confirmed path, so a HANG on the way is named like any other. One
+    /// that finds it terminal goes to <see cref="NameOrderEndedBeforeConfirmationAsync"/>, as in front of the gate: FAILED to the
+    /// fault model, CANCELLED and DELETED recorded to be rebuilt, SUSPENDED named for a person. A rebuild recorded here creates
+    /// nothing while the session is not ready (<c>mayCreate: false</c> behind the gate).
+    /// </para>
+    /// </remarks>
+    private async Task<bool> NameUnconfirmedOrderWithoutThePeerAsync(
+        JourneyRuntimeRow runtime,
+        OrderIntentRow intent,
+        RiotMapStationCatalogSnapshot currentMap,
+        string peerReason,
+        CancellationToken cancellationToken)
+    {
+        if (intent.CreateAttemptCount == 0)
+        {
+            return false;
+        }
+
+        if (intent.Status != "TERMINAL_RECONCILIATION_REQUIRED")
+        {
+            MovementDispatchResult result;
+            try
+            {
+                result = await movementDispatch.ReconcileOrCreateAsync(intent.UpperId, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
+                                          !cancellationToken.IsCancellationRequested)
+            {
+                return false;
+            }
+
+            if (result.Outcome == MovementDispatchOutcome.Confirmed)
+            {
+                // Read afresh rather than by going round again: what decides the next step is the row as reconciliation left it.
+                OrderIntentRow confirmed = await dbContext.OrderIntents.AsNoTracking()
+                    .SingleAsync(row => row.UpperId == intent.UpperId, cancellationToken).ConfigureAwait(false);
+                RiotOrderObservation order;
+                try
+                {
+                    order = await vehicleFacts.ReconcileByUpperIdAsync(confirmed.UpperId, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
+                                              !cancellationToken.IsCancellationRequested)
+                {
+                    return KeepsItsCodeWhileTheOrderIsUnread(runtime.BlockReasonCode);
+                }
+
+                return await NameStalledOrderAsync(runtime, confirmed, order, cancellationToken, reasonOnceMovedOn: peerReason)
+                    .ConfigureAwait(false);
+            }
+
+            if (result.Outcome != MovementDispatchOutcome.TerminalReconciliationRequired)
+            {
+                return false;
+            }
+        }
+
+        return await NameOrderEndedBeforeConfirmationAsync(runtime, intent.UpperId, peerReason, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -2119,10 +2206,80 @@ public sealed partial class JourneyRuntimeEngine(
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             return true;
         }
+        // control-server#367: an order that ended before the create was ever confirmed is judged like a confirmed one.
+        if (result.Outcome == MovementDispatchOutcome.TerminalReconciliationRequired &&
+            await NameOrderEndedBeforeConfirmationAsync(runtime, upperId, reasonOnceMovedOn: null, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            return false;
+        }
         runtime.SetBlockReason($"{legName}_{result.Outcome}", timeProvider.GetUtcNow());
         runtime.UpdatedAt = timeProvider.GetUtcNow();
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return false;
+    }
+
+    /// <summary>
+    /// Judges an ordinary leg's order that RIoT reported terminal before its create was ever confirmed, the way an order that was
+    /// confirmed is judged, and says whether a code of its own now stands (control-server#367). False when the intent under
+    /// <paramref name="upperId"/> is not terminal-reconciled.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Why this is needed.</b> A create whose answer was lost leaves the intent unconfirmed; the next reconciliation finds the
+    /// order terminal and marks the intent <c>TERMINAL_RECONCILIATION_REQUIRED</c> with RIoT's orderId, whatever the terminal state
+    /// was, and from then on <c>ReconcileOrCreateAsync</c> answers that without reading RIoT. The arrival branches stopped at the
+    /// confirmation and wrote <c>{leg}_TerminalReconciliationRequired</c>, a code nothing ever cleared: a FAILED never reached the
+    /// fault model -- no fault, no hold, no emergency stop, with the vehicle possibly still moving -- and a cancellation never
+    /// reached REQ-0360's rebuild, so the journey could only be moved on by editing the database.
+    /// </para>
+    /// <para>
+    /// <b>So it is handed to <see cref="NameStalledOrderAsync"/>, the same method a confirmed order goes through</b>, and ends the
+    /// same way: FAILED goes to the fault model (the fault is then cleared through the controlled entry and the order rebuilt by
+    /// REQ-0362 -- the reading the rebuild already gave its own orders, control-server#318 review S2, not a new rule); CANCELLED
+    /// and DELETED are recorded to be rebuilt by REQ-0360 under REQ-0361's guards, unless this server cancelled the order itself;
+    /// SUSPENDED (8, never observed in the lab) is named <see cref="OrderStateUnrecognizedReason"/> for a person. The rebuild then
+    /// takes the stop over from the next round, ahead of the confirmation. Cargo proof before rebuilding a cancelled leg with cargo
+    /// on board (REQ-0360 as revised by CP-0007) is control-server#366's, on top of this.
+    /// </para>
+    /// <para>
+    /// <b>Every round, not once</b>, because the fault model's evaluation is what advances the stop proof, the escalation, the
+    /// trigger's confirmation and REQ-0248's re-trigger. The order is read afresh each time; the intent stays terminal, so the
+    /// confirmation keeps coming back here until a person clears the fault and the rebuild takes the stop over. A read that does
+    /// not answer keeps whatever code of this family stands (<see cref="KeepsItsCodeWhileTheOrderIsUnread"/>), so an unreadable
+    /// round does not write the confirmation's code over <see cref="VehicleFaultEvidence.OrderFailed"/> and restart its start time.
+    /// </para>
+    /// <para>
+    /// Called on either side of the readiness gate: from <see cref="EnsureMovementConfirmedAsync"/> and from
+    /// <see cref="NameUnconfirmedOrderWithoutThePeerAsync"/>. It reads RIoT and commands it through the fault model; it never sends
+    /// to the onboard peer, and it never creates an order.
+    /// </para>
+    /// </remarks>
+    private async Task<bool> NameOrderEndedBeforeConfirmationAsync(
+        JourneyRuntimeRow runtime,
+        string upperId,
+        string? reasonOnceMovedOn,
+        CancellationToken cancellationToken)
+    {
+        OrderIntentRow intent = await dbContext.OrderIntents.AsNoTracking()
+            .SingleAsync(row => row.UpperId == upperId, cancellationToken).ConfigureAwait(false);
+        if (intent is not { Status: "TERMINAL_RECONCILIATION_REQUIRED", OrderId: not null })
+        {
+            return false;
+        }
+
+        RiotOrderObservation order;
+        try
+        {
+            order = await vehicleFacts.ReconcileByUpperIdAsync(upperId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
+                                      !cancellationToken.IsCancellationRequested)
+        {
+            return KeepsItsCodeWhileTheOrderIsUnread(runtime.BlockReasonCode);
+        }
+
+        return await NameStalledOrderAsync(runtime, intent, order, cancellationToken, reasonOnceMovedOn).ConfigureAwait(false);
     }
 
     /// <summary>
