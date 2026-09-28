@@ -1652,6 +1652,13 @@ internal static class JourneyRuntimeWorkerTestKit
 
         public Action? BeforeReadVehicle { get; set; }
         public bool LoseNextCreateResponse { get; set; }
+
+        /// <summary>
+        /// Like <see cref="LoseNextCreateResponse"/>, but only for the next create of this purpose (<c>TO_PICKUP</c>,
+        /// <c>TO_GATE</c>): lets a test lose the gate leg's create answer after the pickup leg's went through (control-server#367).
+        /// </summary>
+        public string? LoseNextCreateResponseOf { get; set; }
+
         public int TotalCreateCount => _creates.Values.Sum();
 
         public int CreateCount(string purpose) => _creates.GetValueOrDefault(purpose);
@@ -1696,6 +1703,12 @@ internal static class JourneyRuntimeWorkerTestKit
                 MapId: _options.MapId,
                 DestinationStationId: stationId);
         }
+
+        /// <summary>RIoT holds no order under <paramref name="upperId"/> from now on: a create that never reached it.</summary>
+        public void ForgetOrder(string upperId) => _orders.Remove(upperId);
+
+        /// <summary>RIoT's orderId for the order under <paramref name="upperId"/>, as this RIoT answers it.</summary>
+        public string? OrderIdOf(string upperId) => _orders[upperId].OrderId;
 
         /// <summary>Reports the order under <paramref name="upperId"/> as RIoT's terminal FAILED from now on.</summary>
         public void FailOrder(string upperId) =>
@@ -1829,8 +1842,14 @@ internal static class JourneyRuntimeWorkerTestKit
                 CrashAfterNextCreate = false;
                 throw new IOException($"The process stopped after RIoT created {intent.UpperId} and before the answer was recorded.");
             }
-            if (LoseNextCreateResponse)
+            if (LoseNextCreateResponse ||
+                string.Equals(LoseNextCreateResponseOf, intent.Purpose, StringComparison.Ordinal))
             {
+                if (!LoseNextCreateResponse)
+                {
+                    LoseNextCreateResponseOf = null;
+                }
+
                 LoseNextCreateResponse = false;
                 return Task.FromResult(new RiotOrderObservation(
                     intent.UpperId, RiotOrderObservationKind.Unknown, null));

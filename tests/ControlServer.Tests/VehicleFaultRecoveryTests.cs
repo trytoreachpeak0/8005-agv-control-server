@@ -906,9 +906,11 @@ public sealed class VehicleFaultRecoveryTests
     /// <c>FAULT_RECOVERY_CURRENT_ORDER_UNKNOWN</c> 拒绝，不清故障、不记重建。读终结对账过的意图只为重建出来的那张单放开。
     /// </summary>
     /// <remarks>
-    /// 增量审查低项 4：审查 S2 放开读 <c>TERMINAL_RECONCILIATION_REQUIRED</c> 时对所有腿生效，只有重建腿有用例。普通腿这种状态下引擎不记故障
+    /// 增量审查低项 4：审查 S2 放开读 <c>TERMINAL_RECONCILIATION_REQUIRED</c> 时对所有腿生效，只有重建腿有用例。普通腿这种状态下引擎当时不记故障
     /// （确认对账先挡住，走不到故障观测），它身上的故障是别的来路，这里读到 FAILED 就清掉、再记一次重建，是把一条本票没有论证过的路打开了。
     /// 所以收窄到「有一条 FAILED 状态的重建记录指着这张单」。
+    /// control-server#367 起引擎为这种单记故障，入口也接受<b>引擎记的那一个</b>（认法见
+    /// <see cref="FailedOrderBeforeConfirmationTests"/>）；这条守的仍是另一半：故障不是引擎为这张单记的，就不经它的终态意图放行。
     /// </remarks>
     [Fact]
     public async Task AnOrdinaryLegThatFailedBeforeConfirmationIsNotClearedThroughItsTerminalIntent()
@@ -921,11 +923,10 @@ public sealed class VehicleFaultRecoveryTests
         JourneyRuntimeRow journey = await fixture.RuntimeAsync();
         fixture.Riot.MovementState = "MT_FINISHED";
         fixture.Riot.FailOrder(journey.PickupUpperId);
-        await TickAndRunAsync(fixture);
-        fixture.Context.ChangeTracker.Clear();
-        Assert.Equal(
-            "TERMINAL_RECONCILIATION_REQUIRED",
-            (await fixture.Context.OrderIntents.AsNoTracking().SingleAsync(row => row.UpperId == journey.PickupUpperId, Token)).Status);
+        // control-server#367: the state is written, not reached by a round. Since that ticket the round that reconciles this
+        // order FAILED records the fault itself, and a fault the engine recorded for it is exactly what the entry now clears;
+        // this case is about a fault that came some other way, so no round runs before the other way records it.
+        await FailedOrderBeforeConfirmationTests.LeaveTerminalReconciledWithoutAFaultAsync(fixture, journey.PickupUpperId, "PICKUP");
         await new VehicleFaultStore(fixture.Context).RecordLevelAsync(
             journey.AgvId, VehicleFaultLevel.SuspectedBlocked, "VEHICLE_ORDER_FAILED", false, fixture.Clock.GetUtcNow(), Token);
         fixture.Context.ChangeTracker.Clear();
