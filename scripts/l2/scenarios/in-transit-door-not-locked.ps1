@@ -14,7 +14,8 @@ control-server#335（REQ-0246）：车在路上，车载端报门没锁。服务
 
 **失联不在这里。**车载端不说话时本票不下命令（用户 2026-09-20 把失联时的 Hold 留到批次 9），这条场景只让车载端明报。
 
-取红证据：把门锁从故障模型的输入里拿掉（`JourneyRuntimeEngine.ObserveDoorsInTransitAsync` 直接返回 false），L2-DL-02 起全红。
+取红证据：把门锁从故障模型的输入里拿掉（`JourneyRuntimeEngine.ObserveDoorsInTransitAsync` 第一行直接返回 false）。
+L2-DL-01 照常通过，场景在「等服务端发出急停」那一步 90 秒超时失败，最后观测到 0 条（evidence/l2/20260928-cs335-in-transit-door-not-locked-red-001）。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
@@ -54,7 +55,9 @@ function Set-Vehicle([hashtable]$fields) {
 }
 
 function Set-Doors([bool]$locked) {
-    $reasons = if ($locked) { @('ACTION_NOT_ALLOWED_IN_STATE') } else { @('LOCK_NOT_CLOSED', 'ACTION_NOT_ALLOWED_IN_STATE') }
+    # Typed on purpose: an `if` expression unrolls a one-element array to its string, the control plane then gets
+    # "reasonCodes":"..." and refuses the binding with an empty 400 (the first local run did exactly that).
+    [string[]]$reasons = if ($locked) { @('ACTION_NOT_ALLOWED_IN_STATE') } else { @('LOCK_NOT_CLOSED', 'ACTION_NOT_ALLOWED_IN_STATE') }
     $null = Set-L2OnboardSafety -Onboard $onboard -Connection $connection -AgvId $agvId -Journal $journal -Safety @{
         departureSafe         = $false
         vehicleStopped        = $false
