@@ -716,7 +716,39 @@ public sealed class HttpRiotMovementGatewayTests
         Assert.True(result.IsKnown);
         Assert.True(result.HasUnfinishedOrder);
         Assert.Equal(["ORDER-APPOINTED", "ORDER-HELD"], result.UnfinishedOrderIds);
+        // Each order's state from the same listing (control-server#335 review, item 2): the release decides on it.
+        Assert.Equal((int?)RiotOrderState.Paused, result.StateOf("ORDER-HELD"));
+        Assert.Equal((int?)RiotOrderState.Queueing, result.StateOf("ORDER-APPOINTED"));
+        Assert.Null(result.StateOf("ORDER-OTHER"));
         Assert.Equal(1, handler.CallCount);
+    }
+
+    /// <summary>
+    /// An order listed twice keeps the state of neither (control-server#335 incremental review): the release reads a state it
+    /// cannot vouch for as "not shown PAUSED", never as whichever copy came last.
+    /// </summary>
+    [Fact]
+    public async Task AnUnfinishedOrderListedTwiceHasNoState()
+    {
+        const string orders = """
+            {"code":"0","result":{"current":1,"size":100,"total":2,"records":[
+              {"id":1,"orderId":"ORDER-HELD","upperId":"UPPER-3","orderState":3,
+               "appointVehicleKey":null,"executeVehicleKey":"VEHICLE-KEY-01"},
+              {"id":2,"orderId":"ORDER-HELD","upperId":"UPPER-3","orderState":7,
+               "appointVehicleKey":null,"executeVehicleKey":"VEHICLE-KEY-01"}]}}
+            """;
+        RecordingHandler handler = new((request, _) =>
+            request.RequestUri?.AbsolutePath == "/api/order/v1/orderRecord"
+                ? JsonResponse(orders)
+                : new HttpResponseMessage(HttpStatusCode.NotFound));
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
+
+        RiotVehicleOrderObservation result = await gateway.ReadUnfinishedOrdersAsync(
+            "VEHICLE-KEY-01", TestContext.Current.CancellationToken);
+
+        Assert.True(result.HasUnfinishedOrder);
+        Assert.Null(result.StateOf("ORDER-HELD"));
     }
 
     [Fact]

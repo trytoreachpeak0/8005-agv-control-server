@@ -113,6 +113,34 @@ public sealed class InTransitDoorEmergencyReleaseTests
     }
 
     /// <summary>
+    /// 同一条路，但会话一直未就绪（真车载端在本服务端在途单上的常态：RecoveryRequired / DEPARTURE_SAFETY_NOT_READY）。每一轮走的是
+    /// <c>NameInFlightOrderWithoutThePeerAsync</c> 而不是阶段正文：门锁恢复后照样自动解除一次，之后照样不因报不出站点再急停，单仍停着。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0167")]
+    [Trait("Requirement", "REQ-0246")]
+    public async Task ALatchRaisedForTheDoorsIsReleasedBehindTheReadinessGateToo()
+    {
+        await using RuntimeFixture fixture = await LatchedForTheDoorsAsync(behindTheReadinessGate: true);
+        Latched latched = await LatchedFactsAsync(fixture);
+
+        await ReportLockedAsync(fixture);
+        await DriveOneRoundAsync(fixture);
+        Assert.Equal(1, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+        fixture.EmergencyLatched = false;
+        for (int round = 0; round < 5; round++)
+        {
+            await DriveOneRoundAsync(fixture);
+        }
+
+        Assert.NotEqual(SessionReadiness.Ready, (await fixture.Context.SessionRecoveries.AsNoTracking().SingleAsync(Token)).Readiness);
+        Assert.Equal(1, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+        Assert.Equal(1, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
+        Assert.Equal(0, await CountAsync(fixture, RiotCommandTypeNames.OrderContinue));
+        Assert.Equal(RiotOrderState.Paused, fixture.Riot.OrderStateOf(latched.UpperId));
+    }
+
+    /// <summary>
     /// 门锁自动解除之后，豁免只免「报不出站点」这一项（调度 2026-09-28）。下面几种照旧重新急停，下一轮就发：
     /// 读到车在动、读不到运动、运动读数过期、门锁又报没锁、门锁又报仓位状态未知。
     /// </summary>
@@ -413,12 +441,14 @@ public sealed class InTransitDoorEmergencyReleaseTests
     [InlineData("latched", RiotOrderState.Cancelled)]
     [InlineData("released", RiotOrderState.Cancelled)]
     [InlineData("latched", RiotOrderState.Deleted)]
+    [InlineData("latched-behind-the-readiness-gate", RiotOrderState.Cancelled)]
     [Trait("Requirement", "REQ-0167")]
     [Trait("Requirement", "REQ-0246")]
     public async Task AHeldOrderEndedInRiotUnderADoorFaultStillHasAWayOut(string latch, int ending)
     {
-        await using RuntimeFixture fixture = latch == "latched"
-            ? await LatchedForTheDoorsAsync()
+        bool behindTheGate = latch.EndsWith("behind-the-readiness-gate", StringComparison.Ordinal);
+        await using RuntimeFixture fixture = latch.StartsWith("latched", StringComparison.Ordinal)
+            ? await LatchedForTheDoorsAsync(behindTheGate)
             : await ReleasedForTheDoorsAsync();
         Latched latched = await LatchedFactsAsync(fixture);
         int releasesBefore = await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency);
@@ -429,7 +459,13 @@ public sealed class InTransitDoorEmergencyReleaseTests
         await DriveOneRoundAsync(fixture);
 
         // 锁着的那一格这一轮自动解除一次；RIoT 随后放开闩锁（假 RIoT 不会自己放，同整条路那条用例）。
-        Assert.Equal(releasesBefore + (latch == "latched" ? 1 : 0), await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+        bool wasLatched = latch.StartsWith("latched", StringComparison.Ordinal);
+        Assert.Equal(releasesBefore + (wasLatched ? 1 : 0), await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+        if (behindTheGate)
+        {
+            // 前提：会话一直未就绪，这一格走的确实是会话未就绪那一侧。
+            Assert.NotEqual(SessionReadiness.Ready, (await fixture.Context.SessionRecoveries.AsNoTracking().SingleAsync(Token)).Readiness);
+        }
         fixture.EmergencyLatched = false;
         for (int round = 0; round < 4; round++)
         {
@@ -458,7 +494,7 @@ public sealed class InTransitDoorEmergencyReleaseTests
             OwnOrderRebuildRow waiting = Assert.Single(await reading.OwnOrderRebuilds.AsNoTracking().ToArrayAsync(Token));
             Assert.Contains("VEHICLE_FAULT_IN_EFFECT", waiting.WaitingReason ?? string.Empty, StringComparison.Ordinal);
         }
-        Assert.Equal(releasesBefore + (latch == "latched" ? 1 : 0), await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+        Assert.Equal(releasesBefore + (wasLatched ? 1 : 0), await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
         Assert.Equal(1, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
 
         VehicleFaultRecoveryTests.SiteRiot site = new(fixture) { HasUnfinishedOrder = false };
@@ -789,9 +825,16 @@ public sealed class InTransitDoorEmergencyReleaseTests
     /// 关卡段有货行驶中车载端报门没锁：同一轮按住、急停。随后 RIoT 把单停成 PAUSED(7)、闩锁锁上、车停下（MT_PAUSED），
     /// 车上唯一的未完成单就是这张；下一轮确认触发。前置条件都在这里断：之后的红只能来自解除这一段。
     /// </summary>
-    private static async Task<RuntimeFixture> LatchedForTheDoorsAsync()
+    private static async Task<RuntimeFixture> LatchedForTheDoorsAsync(bool behindTheReadinessGate = false)
     {
         RuntimeFixture fixture = await GateArrivalWaitAsync();
+        if (behindTheReadinessGate)
+        {
+            // A real onboard is not ready for the whole of a leg on this server's order (RecoveryRequired /
+            // DEPARTURE_SAFETY_NOT_READY): every round then goes through NameInFlightOrderWithoutThePeerAsync, not the stage
+            // body (control-server#335 incremental review, P1g).
+            await OwnOrderRebuildTests.DropSessionOnOwnOrderAsync(fixture);
+        }
         JourneyRuntimeRow underWay = await fixture.RuntimeAsync();
         string upperId = underWay.GateUpperId!;
         fixture.Riot.MovementState = "MT_RUNNING";
