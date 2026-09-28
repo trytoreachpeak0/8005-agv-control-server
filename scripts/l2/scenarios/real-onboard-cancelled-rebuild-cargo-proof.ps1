@@ -48,6 +48,9 @@ if (-not $Context.FaultRecoveryCredential) {
     throw 'The setup file must turn VehicleFaultRecovery on; without it this scenario proves nothing.'
 }
 
+# 光幕被固定成「没挡住」的仓（第 1 件里货没了的那一仓）；$null 表示没有。见 Invoke-LoadedTrip 里放货那一步。
+$script:emptiedSlot = $null
+
 $ids = @('L2-RC-01', 'L2-RC-02', 'L2-RC-03', 'L2-RC-04', 'L2-RC-05', 'L2-RC-06', 'L2-RC-07', 'L2-RC-08', 'L2-RC-09', 'L2-RC-10', 'L2-RC-11')
 
 function Get-Journey([string]$forDemand) {
@@ -168,6 +171,14 @@ function Invoke-LoadedTrip([string]$label) {
         throw "This scenario drives one slot per load; the command targets $(@($waiting.Active).Count) ($(@($waiting.Active) -join ', '))."
     }
     $slot = [int]$waiting.Active[0]
+    if ($script:emptiedSlot -eq $slot) {
+        # 第 1 件交接之后，这一仓在模拟器里仍是「有货」，只是光幕被固定成「没挡住」——那正是货被搬走之后车载端读到的样子。
+        # 门此刻开着，操作员放进新货：光幕交还给模拟器（AUTO）。放早了（门关着时），车载端会读到有货而拒绝装货：
+        # CI run 36390242195 第 2 件就是这样红的（装货结果 FAILED，1 号仓 State=1）。
+        $journal.Note("Slot $slot light curtain back to AUTO: the operator puts a new basket into the slot emptied in part 1.")
+        $null = $simulator.Command('Put', "slots/$slot/light-curtain-override", @{ mode = 'AUTO' })
+        $script:emptiedSlot = $null
+    }
     $journal.Note("Onboard is waiting on slot $slot; the operator puts the basket in and closes the door.")
     $null = $simulator.Command('Put', "slots/$slot/cargo", @{ state = 'OCCUPIED' })
     $null = $simulator.Command('Post', "slots/$slot/close-door", @{})
@@ -229,6 +240,7 @@ if ($slotBefore.Count -ne 1) { throw "The simulator snapshot has $($slotBefore.C
 $emptyRaw = 1 - [int]$slotBefore[0].lightCurtainRaw
 $journal.Note("While the vehicle is latched the basket goes missing: slot $($first.Slot) light curtain forced to $emptyRaw (unobstructed).")
 $null = $simulator.Command('Put', "slots/$($first.Slot)/light-curtain-override", @{ mode = "FIXED_$emptyRaw" })
+$script:emptiedSlot = $first.Slot
 $null = Wait-L2Condition -Description "slot $($first.Slot) light curtain reads $emptyRaw" `
     -Journal $journal -Criterion 'light-curtain-empty' -TimeoutSeconds 30 `
     -Probe { [int]@($simulator.Snapshot().slots | Where-Object { [int]$_.slotNo -eq $first.Slot })[0].lightCurtainRaw } `
@@ -392,8 +404,8 @@ if ($settled.Readiness -ne 'Ready' -or $settled.Journey -ne 'Completed/TERMINATE
 # 第 2 件：同样取消，货在
 # ================================================================================================================
 
-$journal.Note("Slot $($first.Slot) light curtain back to AUTO before the next load.")
-$null = $simulator.Command('Put', "slots/$($first.Slot)/light-curtain-override", @{ mode = 'AUTO' })
+# 第 1 件那一仓的光幕不在这里复原：交接把货搬走了，这一仓在车载端读来就该是空的；下一次装货若落在这一仓，
+# 在放货那一刻才复原（Invoke-LoadedTrip）。
 
 # --- 6. 下一条需求装货，车在去卸货站的路上，单被取消 -------------------------------------------------------------------
 
