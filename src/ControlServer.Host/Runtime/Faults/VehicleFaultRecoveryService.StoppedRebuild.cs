@@ -320,6 +320,11 @@ public sealed partial class VehicleFaultRecoveryService
             return Refused(reasons, null);
         }
 
+        // A binding another journey left is not released here, unlike the two other exits (control-server#376): the handoff
+        // judged the cargo without it (MayCarryAsync), and settling the handoff releases only this journey's. So it may stay
+        // live after the handoff closes. That is safe as long as every reader filters or releases it -- the fault coordinator,
+        // the clearance, the three exits -- which rests on the premise in FaultedCargoBindings' remarks: an anchor demand is
+        // never reassigned into another vehicle's journey. Should that change, this is one of the places to revisit.
         DateTimeOffset now = timeProvider.GetUtcNow();
         JourneyRuntimeRow runtime = trip.Runtime!;
         runtime.Stage = JourneyRuntimeStage.Blocked;
