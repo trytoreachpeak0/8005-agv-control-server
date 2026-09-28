@@ -189,6 +189,43 @@ public sealed class InTransitDoorEmergencyReleaseTests
     }
 
     /// <summary>
+    /// 同上，但新一代故障里门锁已经恢复为锁闭：豁免仍不带过来。上一条用例里门又报没锁，「此刻门锁锁闭」那个条件已经把豁免
+    /// 关掉了，代次条件轮不到起作用（变异 M12 在那条上存活）；这一条让两个条件分开。
+    /// </summary>
+    /// <remarks>
+    /// 新一代故障立在站点上（位置已知、停稳），按住即可，不急停；随后门锁恢复、车报不出站点。本代还没自己解除过，
+    /// 所以「报不出站点」照常升级为急停——与第一代解除之前一样。借用上一代的解除记录就会漏掉这次急停。
+    /// </remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0246")]
+    public async Task TheExemptionEndsWithTheFaultGenerationEvenOnceTheDoorsAreLockedAgain()
+    {
+        await using RuntimeFixture fixture = await ReleasedForTheDoorsAsync();
+        Latched latched = await LatchedFactsAsync(fixture);
+        await ResumeByAPersonAsync(fixture, latched.UpperId);
+
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = 1 };
+        fixture.Riot.MovementState = "MT_PAUSED";
+        fixture.UnfinishedOrderIds = [latched.OrderId];
+        await fixture.ReportSafetySummaryAsync(
+            allTargetSlotsLocked: false, unknownPresent: false, ["LOCK_NOT_CLOSED", "ACTION_NOT_ALLOWED_IN_STATE"]);
+        await DriveOneRoundAsync(fixture);
+        await using (ControlServerDbContext reading = new(fixture.DbOptionsForTests))
+        {
+            VehicleFaultStateRow raised = await reading.VehicleFaultStates.AsNoTracking().SingleAsync(Token);
+            Assert.Equal((VehicleFaultLevel.SuspectedBlocked, 2L), (raised.Level, raised.FaultGeneration));
+        }
+        Assert.Equal(1, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
+
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = 0 };
+        await ReportLockedAsync(fixture);
+        await DriveOneRoundAsync(fixture);
+
+        Assert.Equal(2, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
+        Assert.Equal(1, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+    }
+
+    /// <summary>
     /// 解除之后 RIoT 把单跑了起来（3），而没有人按继续：写告警与旅程码 <c>HELD_ORDER_RESUMED_WITHOUT_CONTINUE</c>。
     /// round-44（agv03，2026-09-28）单次观测到 HELD 的单在解除后 60 秒里一直是 7；这一格防的是 RIoT 行为以后变了。
     /// 车若真在动，前一格「moving」那条已经证明它会被重新急停；这里让车停着，只看码。

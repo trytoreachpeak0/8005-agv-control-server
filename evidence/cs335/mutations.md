@@ -6,6 +6,8 @@
 
 基线：提交 `095ba77f` 加上本提交里对 `InTransitDoorEmergencyReleaseTests` 的加强（车停在两站之间，见 M8）。
 
+## 第一轮（基线 `095ba77f`）
+
 | 编号 | 变异 | 预期红 | 实际 | 退出码 |
 | --- | --- | --- | --- | --- |
 | M1 | 放行从「只认本代自己确认过的 7」放宽成「任何 7」（去掉按住已确认与 orderId 相同两条） | 纯函数 4 格 | 红 4：`hold-failed`、`hold-pending`、`no-hold-this-generation`、`other-order-id-paused` | 1 |
@@ -17,6 +19,36 @@
 | M8 | 门锁原因解除后不再豁免「报不出站点」（改回 `WasReleasedOnConfirmationAsync`） | 整条路那一条 | **首轮存活**（绿 51/51，退出码 0）；加强测试后红 1：整条路那一条，红在第 80 行「急停次数期望 1、实际 2」 | 0 → 1 |
 | M9 | 门锁故障只在门锁读数不对时交给故障模型（去掉「故障在效」这一半） | 失联时监看照常 + 整条路 | 红 2：`ARaisedDoorFaultIsStillSupervisedEveryRoundWhileTheSessionIsSilent`、整条路那一条 | 1 |
 | M10 | 监督器放行时不管车上还有没有别的未完成单 | 引擎格 + 纯函数格 | 红 2：`AnotherUnfinishedOrderOnTheVehicleKeepsTheLatch`、纯函数 `another-unfinished-order` | 1 |
+
+## 最终代码上重跑（基线 `057cdf40`，M1–M13）
+
+门锁豁免收窄（调度 2026-09-28：只免「报不出站点」、只在本代门锁自动解除后生效）与 `HELD_ORDER_RESUMED_WITHOUT_CONTINUE` 之后，
+M1–M13 在同一份最终代码上整批重跑，过滤器改为 `FullyQualifiedName~InTransitDoor|FullyQualifiedName~OnboardSessionLostBlockTests`（59 条）。
+M1–M7、M10 的红与第一轮相同；M8、M9 因为多了豁免边界那几条而红得更多，都是预期之内的格子。
+
+| 编号 | 变异 | 预期红 | 实际 | 退出码 |
+| --- | --- | --- | --- | --- |
+| M1 | 同上 | 纯函数 4 格 | 红 4，同第一轮 | 1 |
+| M2 | 同上 | 纯函数 `order-failed` | 红 1，同第一轮 | 1 |
+| M3 | 同上 | 本类 3 条 + cs#234 8 条 | 红 11，同第一轮 | 1 |
+| M4 | 同上 | 正常行驶 2 条 | 红 2，同第一轮 | 1 |
+| M6 | 同上 | `DoorsNotProvenLockedKeepTheLatch(stale)` | 红 1，同第一轮 | 1 |
+| M7 | 同上 | 单调用方护栏 | 红 1，同第一轮 | 1 |
+| M8 | 解除后不再豁免（`releasedOnConfirmation \|\| (releasedOnDoorCause && context.DoorCauseRemoved)` → `releasedOnConfirmation`） | 整条路 + 依赖解除后状态的各格 | 红 8：整条路、`AfterTheDoorRelease…` 5 格、`TheExemptionEndsWithTheFaultGeneration`、`AHeldOrderThatRunsAgainWithoutAContinueIsNamed`（后几条的前置 `ReleasedForTheDoorsAsync` 断「急停一次」，没有豁免就在前置里红） | 1 |
+| M9 | 同上 | 失联监看 + 整条路及依赖解除后状态的各格 | 红 9：M8 那 8 条 + `ARaisedDoorFaultIsStillSupervisedEveryRoundWhileTheSessionIsSilent` | 1 |
+| M10 | 同上 | 引擎格 + 纯函数格 | 红 2，同第一轮 | 1 |
+| M11 | 豁免不看此刻门锁（`(releasedOnDoorCause && context.DoorCauseRemoved)` → `releasedOnDoorCause`） | `doors-not-locked-again`、`slot-state-unknown-again` | 红 2，正是这两格 | 1 |
+| M12 | 豁免不限代次（`WasReleasedOnDoorCauseAsync` 去掉 `release.FaultGeneration == faultGeneration`） | `TheExemptionEndsWithTheFaultGeneration` | **存活**（绿 59/59，退出码 0）；补用例后红 1：`TheExemptionEndsWithTheFaultGenerationEvenOnceTheDoorsAreLockedAgain`，「急停次数期望 2、实际 1」 | 0 → 1 |
+| M13 | 去掉「单被跑起来而没人按继续」的命名（条件前加 `false &&`） | `AHeldOrderThatRunsAgainWithoutAContinueIsNamed` | 红 1，正是这条 | 1 |
+
+M12 补测后那一次单独重跑，过滤器是 `FullyQualifiedName~InTransitDoorEmergencyReleaseTests|FullyQualifiedName~InTransitDoorLockFaultTests`（50 条），红 1、其余 49 绿。
+
+## M12 为什么首轮存活
+
+预期红的那条用例里，第二代故障是由「门又报没锁」立起来的。那一轮 `DoorCauseRemoved` 为假，M11 守的那个条件已经把豁免关掉，
+代次条件无论在不在，结果都一样——两个条件叠在同一格上，只能证明它们合起来有用，证明不了代次条件自己有用。
+补的用例把两者分开：第二代故障先在站点上立起（位置已知、停稳，只按住不急停），随后门锁恢复为锁闭、车报不出站点。
+这时「此刻门锁锁闭」成立，只剩代次条件在挡；正确实现下本代还没自己解除过，照常急停（第 2 次），M12 借用上一代的解除记录豁免掉，只有 1 次。
 
 ## M8 为什么首轮存活
 
