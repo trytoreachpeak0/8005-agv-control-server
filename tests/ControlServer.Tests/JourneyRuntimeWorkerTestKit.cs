@@ -868,12 +868,13 @@ internal static class JourneyRuntimeWorkerTestKit
             string unlockOutputState = "RESET",
             bool unknownPresent = false,
             Func<int, (string Physical, string Lock, string Output)?>? cargoSlot = null,
-            string? agvId = null)
+            string? agvId = null,
+            int[]? cargoSlots = null)
         {
             StationOperationRow[] loads = await Context.StationOperations.AsNoTracking()
                 .Where(row => row.OperationType == SlotOperationType.Load && row.Status == StationOperationStatus.Committed)
                 .ToArrayAsync(TestContext.Current.CancellationToken);
-            int[] cargo = [.. loads.SelectMany(row => JsonSerializer.Deserialize<int[]>(row.TargetSlotsJson)!).Distinct().Order()];
+            int[] cargo = cargoSlots ?? [.. loads.SelectMany(row => JsonSerializer.Deserialize<int[]>(row.TargetSlotsJson)!).Distinct().Order()];
             Assert.NotEmpty(cargo);
             SessionRecoveryRow session = await Context.SessionRecoveries.AsNoTracking()
                 .SingleAsync(TestContext.Current.CancellationToken);
