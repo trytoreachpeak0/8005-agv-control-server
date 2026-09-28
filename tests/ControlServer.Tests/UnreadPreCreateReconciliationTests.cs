@@ -1,5 +1,6 @@
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using static ControlServer.Tests.Batch7StopDrivenAdvanceDriver;
@@ -237,6 +238,79 @@ public sealed class UnreadPreCreateReconciliationTests
         await TickAndRunAsync(fixture);
         fixture.Context.ChangeTracker.Clear();
         return fixture;
+    }
+
+    /// <summary>
+    /// 与 cs#357 版本令牌的交互：补建那一轮，入站在建单前对账审计那次保存上把旅程改成 Blocked。补建走的是原来的
+    /// <c>CreateAfterConfirmedAbsenceAsync</c>，那次保存仍在旅程守护之下，所以这台车恰好让开一次（2191），单不建，Blocked 保住。
+    /// </summary>
+    /// <remarks>把撤守护挪到对账审计之前，这一条红——补建不能绕过守护。</remarks>
+    [Fact]
+    public async Task ABlockCommittedAtTheRetriedPreCreateReconciliationStopsTheCreate()
+    {
+        await using RuntimeFixture fixture = await LoadedAndCheckedAsync();
+        fixture.Riot.AbsentOrdersReadAsTimeout = false;
+        string journeyId = (await fixture.RuntimeAsync()).JourneyId;
+        await fixture.HearFromPeerAsync();
+        fixture.Context.ChangeTracker.Clear();
+
+        bool injected = false;
+        fixture.SaveChanges.FailWhen = written =>
+        {
+            // 补建那一轮第一次写派车审计、单还没建：建单之前的对账审计（NotFound）。
+            if (!injected && fixture.Riot.CreateCount("TO_GATE") == 0 &&
+                written.Any(column => column.StartsWith("RiotDispatchAuditEventRow.", StringComparison.Ordinal)))
+            {
+                injected = true;
+                JourneyRowLostUpdateTests.Execute(fixture,
+                    "UPDATE JourneyRuntimes SET Stage = 'Blocked', BlockReasonCode = 'LoadCancellationResult_NOT_RECONCILED', " +
+                    "Version = Version + 1 WHERE JourneyId = $id",
+                    journeyId);
+            }
+            return false;
+        };
+        await TickAndRunAsync(fixture);
+        fixture.SaveChanges.FailWhen = null;
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.True(injected, "the retried pre-create reconciliation audit was never saved, so nothing was injected there");
+        JourneyRowLostUpdateTests.AssertYieldedOnceFor(fixture.EngineLog, journeyId);
+        Assert.Equal(0, fixture.Riot.CreateCount("TO_GATE"));
+        Assert.Equal(JourneyRuntimeStage.Blocked, (await JourneyRowLostUpdateTests.ReadAsync(fixture, journeyId)).Stage);
+    }
+
+    /// <summary>
+    /// 与 cs#334 让开的交互：补建那一轮建单已经发出、记下之后，发往车载端的下一条报文碰上连接不可用，这台车让开（2193）。
+    /// 建单那次外部副作用在让开之前已经落库，下一轮对账认出这张单、确认，不建第二张。
+    /// </summary>
+    [Fact]
+    public async Task AConnectionLostAfterTheRetriedCreateYieldsAndTheOrderIsConfirmedWithoutASecondCreate()
+    {
+        await using RuntimeFixture fixture = await PickupReadTimedOutAsync();
+        fixture.Riot.AbsentOrdersReadAsTimeout = false;
+
+        bool cut = false;
+        fixture.Peer.OnMessageSent = _ =>
+        {
+            if (!cut && fixture.Riot.CreateCount("TO_PICKUP") == 1)
+            {
+                cut = true;
+                throw new OnboardConnectionUnavailableException("L1: peer dropped right after the retried create");
+            }
+            return Task.CompletedTask;
+        };
+        await RoundsAsync(fixture, 1);
+
+        Assert.True(cut, "nothing was sent to the onboard after the retried create in that round");
+        Assert.Single(fixture.EngineLog.Entries, entry => entry.Message.Contains("control-server#334", StringComparison.Ordinal));
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+
+        fixture.Peer.OnMessageSent = null;
+        await RoundsAsync(fixture, 3);
+
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+        Assert.Equal("CONFIRMED", await fixture.IntentStatusAsync("TO_PICKUP"));
+        Assert.Null((await fixture.RuntimeAsync()).BlockReasonCode);
     }
 
     /// <summary>装货、离站核验通过，开往关卡那一轮建单前的对账读超时。</summary>

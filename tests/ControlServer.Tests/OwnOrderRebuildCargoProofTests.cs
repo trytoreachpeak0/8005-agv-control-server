@@ -453,9 +453,9 @@ public sealed class OwnOrderRebuildCargoProofTests
     /// <remarks>
     /// 修之前宿主的索取只认 <c>PENDING</c>：放开之后一次都不要，旅程永远停在 <c>OWN_ORDER_REBUILD_WAITING_CARGO_EVIDENCE</c>，
     /// 而 cs#345 的三个出口都要求记录是 <c>STOPPED</c>，只能改库。审查员的探针在这三格上 120 轮都是 creates=0、claims=0。
-    /// 注入用的是进程停下（<c>CrashOnNextReconcileOf</c>）而不是对账答 Unknown：答 Unknown 的意图记成 <c>RESULT_UNKNOWN</c>，之后读到
-    /// NotFound 也不再建单，挡不挡都一样停在 <c>OWN_ORDER_REBUILD_ORDER_UNCONFIRMED</c>——那是建单一侧早有的行为，不在本票
-    /// （已报调度，evidence/cs366/review-m1/）。
+    /// 注入用的是进程停下（<c>CrashOnNextReconcileOf</c>）而不是对账答 Unknown：写这条用例时，答 Unknown 的意图记成 <c>RESULT_UNKNOWN</c>，
+    /// 之后读到 NotFound 也不再建单，挡不挡都一样停在 <c>OWN_ORDER_REBUILD_ORDER_UNCONFIRMED</c>（evidence/cs366/review-m1/）。
+    /// control-server#375 修了那一格，答 Unknown 的那一种见 <see cref="ADecidedRebuildWhosePreCreateReadAnsweredNothingProvesTheCargoAgainBeforeItIsSent"/>。
     /// </remarks>
     [Theory]
     [InlineData("riot-unreadable")]
@@ -479,6 +479,48 @@ public sealed class OwnOrderRebuildCargoProofTests
         Assert.Equal((OwnOrderRebuildStates.Rebuilt, newUpperId), (rebuilt.State, rebuilt.NewUpperId));
         JourneyRuntimeRow journey = await fixture.RuntimeAsync(FirstDemandId);
         Assert.Equal((JourneyRuntimeStage.AwaitingGateArrival, (string?)null), (journey.Stage, journey.BlockReasonCode));
+    }
+
+    /// <summary>
+    /// 与 control-server#375 的交互：车上有货、到期、车报货在，决定重建；新单建单前那一次对账读没读到，意图记成 <c>RESULT_UNKNOWN</c>、
+    /// 一次都没发出。之后 RIoT 答没有这张单，本票让它照常建——但建之前仍按 <c>ORDERING</c> 且从没发出的那一格重过全部建单前检查，
+    /// 仓位证明也重读最新一份快照：那一份仍说货在就建，只多建一张；那一份说仓空就停住，一张不建。
+    /// </summary>
+    /// <remarks>把 <c>ORDERING</c> 且从没发出时的重检拿掉，「仓空」那一格就建出一张开往卸货站的单。</remarks>
+    [Theory]
+    [InlineData("OCCUPIED")]
+    [InlineData("EMPTY")]
+    [Trait("Requirement", "REQ-0360")]
+    public async Task ADecidedRebuildWhosePreCreateReadAnsweredNothingProvesTheCargoAgainBeforeItIsSent(string physicalState)
+    {
+        Cancelled cancelled = await CancelledOnTheWayToGateAsync();
+        await using RuntimeFixture fixture = cancelled.Fixture;
+        string newUpperId = (await RebuildAsync(fixture)).NewUpperId;
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        await ReportCargoAsync(fixture);
+        fixture.Riot.AbsentOrdersReadAsTimeout = true;
+        await TickAndHearAsync(fixture);
+        fixture.Riot.AbsentOrdersReadAsTimeout = false;
+
+        Assert.Equal(OwnOrderRebuildStates.Ordering, (await RebuildAsync(fixture)).State);
+        await using (ControlServerDbContext reading = new(fixture.DbOptionsForTests))
+        {
+            OrderIntentRow unread = await reading.OrderIntents.AsNoTracking().SingleAsync(row => row.UpperId == newUpperId, Token);
+            Assert.Equal(("RESULT_UNKNOWN", 0), (unread.Status, unread.CreateAttemptCount));
+        }
+        Assert.Equal(cancelled.GateCreates, fixture.Riot.CreateCount("TO_GATE"));
+
+        await ReportCargoAsync(fixture, physicalState: physicalState);
+        await TickAndHearAsync(fixture);
+
+        if (physicalState == "OCCUPIED")
+        {
+            await AssertRebuiltToTheGateAsync(fixture, cancelled);
+        }
+        else
+        {
+            await AssertStoppedAsync(fixture, cancelled);
+        }
     }
 
     // ---- 故障清除来源（REQ-0362）：「证明一次就记下」的两个窗口 --------------------------------------------------
