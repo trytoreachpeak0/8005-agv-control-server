@@ -32,6 +32,13 @@ namespace ControlServer.Host.Runtime;
 /// would leave a latched vehicle unwatched. Nothing here clears the fault: that is a person's, through the existing entry.
 /// </para>
 /// <para>
+/// <b>The way out</b> (the user's option A of 2026-09-28): once the doors read fresh, known and locked again, the latch this
+/// fault raised is released automatically -- only past this server's own confirmed hold of that generation, see
+/// <c>VehicleFaultCoordinator.DoorReleaseAllowance</c> -- and the order stays HELD until a person resumes it
+/// (<c>VehicleFaultRecoveryAction.ResumeHeldOrder</c>), which clears the fault. Before this, a loaded vehicle stopped here had
+/// no way out on this server: the fault stood, and every release refused the held order as unfinished.
+/// </para>
+/// <para>
 /// <b>In transit means the arrival stages with an order not seen to have ended</b>: that is where
 /// <see cref="NameStalledOrderAsync"/> is called from, on both sides of the readiness gate. A terminal order is an arrival or an
 /// ending and other paths own it. An order RIoT has in HANG (9) is left alone, by the user's decision of 2026-09-22 on #299
@@ -86,10 +93,14 @@ public sealed partial class JourneyRuntimeEngine
                 logger, runtime.AgvId, intent.UpperId, doors.State.ToString(), doors.Generation, doors.SafetyStateVersion, null);
         }
 
+        // The doors read fresh, known and locked again is REQ-0167's "原原因消除" for a latch this fault raised; the coordinator
+        // releases on it only past this server's own confirmed hold (user's option A, 2026-09-28).
+        FaultedVehicleContext context = await InFlightFaultContextAsync(runtime, intent, orderId, cancellationToken)
+            .ConfigureAwait(false) with { DoorCauseRemoved = doors.State == InTransitDoorState.ProvenLocked };
         await faults.ObserveAsync(
             new EmergencyStopSubject(runtime.AgvId, runtime.VehicleKey),
             VehicleFaultEvidence.DoorNotProvenLocked,
-            await InFlightFaultContextAsync(runtime, intent, orderId, cancellationToken).ConfigureAwait(false),
+            context,
             cancellationToken).ConfigureAwait(false);
 
         checkpointWaits.Clear(runtime.VehicleKey);
