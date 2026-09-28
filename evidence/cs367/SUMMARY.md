@@ -69,3 +69,16 @@
 
 **与 cs#366 的交界**：关卡腿确认前被取消，本票只把它接进 `REQ-0360` 的重建路径；车上有货时重建前的仓位证明（CP-0007）由 cs#366 在本票之上补。
 `AGateOrderCancelledBeforeConfirmationIsRecordedToBeRebuilt` 因此只断「登记了、在等」，不断出不出单。已在 cs#366 评论（issuecomment-5862397150）。
+
+## CI 真装置（run 36374996508）
+
+`l2.yml` `rig=real`，两个场景各一遍，head `a43609e0`（产品代码与 `85348e72` 相同，之间只有证据提交）。四行核对（读到的）：
+
+| 项 | 值 |
+| --- | --- |
+| control-server | `a43609e0e7fde4da0ace700c28335d299510b92d` |
+| 8005-agv-onboard-hmi | `4c2d2dc14656f80e812f37128a7964c2c310217a`（`w2g/fp-v2-impl` 顶端，派发前 `ls-remote` 核过） |
+| slots-simulator | `fb5f7c593742bf98bc3957b8729a38aad5321f28`（`main` 顶端，同上） |
+| 真跑了 | `real-onboard-compensate-then-reconnect-01 -- PASS, 58s`、`real-onboard-order-hang-continue-01 -- PASS, 31s`；三个停止码命中 8 行，全是 `^[[36;1m` 源码回显 |
+
+artifact `real-rig-evidence` 231593 字节；两份 `assertions.json` 的 `outcome` 分别 10/10、8/8 为 `PASS`，没有 `FAIL`（读到的）。
