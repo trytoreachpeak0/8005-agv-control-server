@@ -913,6 +913,130 @@ public sealed class StoppedRebuildExitTests
     }
 
     /// <summary>
+    /// 独立审查 M2（第二路 S1，2026-09-28）：取消来源、车上有货，决定建单那次保存之后、问 RIoT 之前进程停了——记录 <c>ORDERING</c>，决定时的证明
+    /// 已落库（<c>CargoProvenAt</c> 有值），新意图从没发出。停机期间货被取走、车报仓空；重启后那一轮重读仓位，读到仓空就停住
+    /// （<c>CARGO_NOT_PROVEN_IN_ORIGINAL_SLOTS</c>），一张新单都不建。<c>handoff</c> 格再从这个形状（停靠指着从没发出过的新单号）走 cs#345 的交接出口到底。
+    /// </summary>
+    /// <remarks>
+    /// 守的是「证明不闩住」：在 <c>CargoNotProvenAsync</c> 开头加 <c>if (rebuild.CargoProvenAt is not null) return false;</c>（审查员的变异 F），
+    /// 这两格要红——重启后照着崩溃前那份证明直接建单。在这两格之前，既有用例在这个变异下全绿。照审查员的探针 rv366b/probe.cs 写成。
+    /// </remarks>
+    [Theory]
+    [InlineData("stop")]
+    [InlineData("handoff")]
+    [Trait("Requirement", "REQ-0360")]
+    public async Task ADecidedRebuildThatCrashedBeforeItsCreateRereadsTheCargoOnRestart(string mode)
+    {
+        Environment.SetEnvironmentVariable(ProofVariable, Proof);
+        try
+        {
+            RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+            await using RuntimeFixture owned = fixture;
+            fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, createdAt: Now.AddMinutes(-10)));
+            fixture.BoxCounts.Set(FirstSublot, 7);
+            await fixture.AdvanceToGateArrivalAsync();
+            fixture.Riot.MovementState = "MT_FINISHED";
+            fixture.Context.ChangeTracker.Clear();
+            int gateCreates = fixture.Riot.CreateCount("TO_GATE");
+            string ended = (await fixture.RuntimeAsync()).GateUpperId;
+            fixture.Riot.CancelOrder(ended);
+            fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+            await fixture.HearFromPeerAsync();
+            await fixture.Engine.ExecuteOnceAsync(Token);
+            fixture.Context.ChangeTracker.Clear();
+            OwnOrderRebuildRow recorded = await RebuildForAsync(fixture, ended);
+            Assert.Equal(OwnOrderRebuildSources.CancelledInRiot, recorded.Source);
+            await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+            Assert.Equal(gateCreates, fixture.Riot.CreateCount("TO_GATE"));
+
+            // Proven, decided, and the process stops before RIoT is asked.
+            fixture.Riot.CrashOnNextReconcileOf = recorded.NewUpperId;
+            fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+            await fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow());
+            fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+            await fixture.HearFromPeerAsync();
+            fixture.Context.ChangeTracker.Clear();
+            await Assert.ThrowsAsync<IOException>(() => fixture.Engine.ExecuteOnceAsync(Token));
+            fixture.Context.ChangeTracker.Clear();
+            Assert.Null(fixture.Riot.CrashOnNextReconcileOf);
+            OwnOrderRebuildRow decided = await RebuildForAsync(fixture, ended);
+            Assert.Equal(OwnOrderRebuildStates.Ordering, decided.State);
+            Assert.NotNull(decided.CargoProvenAt);
+            Assert.Equal(gateCreates, fixture.Riot.CreateCount("TO_GATE"));
+
+            // The cargo is taken while the process is down; the vehicle reports the slot empty. The server restarts.
+            fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+            await fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow(), physicalState: "EMPTY");
+            await fixture.RecreateEngineAsync();
+            fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+            await fixture.HearFromPeerAsync();
+            fixture.Context.ChangeTracker.Clear();
+            await fixture.Engine.ExecuteOnceAsync(Token);
+            fixture.Context.ChangeTracker.Clear();
+            for (int round = 0; round < 5; round++)
+            {
+                await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+            }
+
+            Assert.Equal(gateCreates, fixture.Riot.CreateCount("TO_GATE"));
+            OwnOrderRebuildRow stopped = await RebuildForAsync(fixture, ended);
+            Assert.Equal(
+                (OwnOrderRebuildStates.Stopped, OwnOrderRebuilds.CargoNotProvenInOriginalSlots),
+                (stopped.State, stopped.StoppedReason));
+            Assert.Contains("EMPTY", stopped.WaitingReason, StringComparison.Ordinal);
+            Assert.Equal(recorded.NewUpperId, (await CurrentStopAsync(fixture, FirstDemandId)).UpperId);
+            Assert.Equal("OWN_ORDER_REBUILD_CARGO_NOT_IN_PLACE", (await fixture.RuntimeAsync()).BlockReasonCode);
+            if (mode != "handoff")
+            {
+                return;
+            }
+
+            int[] slots = await CargoSlotsAsync(fixture);
+            await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+            OnboardMessageProcessor processor = RecoveryProcessor(fixture, connection);
+            OnboardConnectionState state = Connection(fixture);
+            long generation = (await connection.SessionRecoveries.AsNoTracking().SingleAsync(Token)).SessionGeneration;
+            VehicleFaultRecoveryDecision decision = await VehicleFaultRecoveryTests.Service(fixture, new(fixture))
+                .RecoverAsync(Prepare(fixture), Token);
+            Assert.Equal(
+                (VehicleFaultRecoveryOutcome.HandoffPrepared, VehicleFaultRecoveryDispositions.AwaitingCargoHandoff),
+                (decision.Outcome, decision.Disposition));
+            Assert.True(await ClaimAsync(fixture, generation, ready: true));
+            string sessionId = FirstLinePayload(
+                await AssertOpenedAsync(processor.ProcessAsync(OpenSession(fixture, SessionRequest, slots), state, Token)))
+                .GetProperty("exceptionRecoverySessionId").GetString()!;
+            Assert.Equal(
+                "RecoveryActionAccepted",
+                FirstLineType(await processor.ProcessAsync(Action(fixture, sessionId, "FAULT_CARGO_HANDOFF", slots), state, Token)));
+            string handoffId = (await connection.RecoveryWorkflows.AsNoTracking().SingleAsync(Token)).HandoffId!;
+            Assert.Equal(
+                "DurableAck",
+                FirstLineType(await processor.ProcessAsync(HandedOff(fixture, sessionId, handoffId, slots), state, Token)));
+
+            await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+            JourneyRuntimeRow closed = await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token);
+            Assert.Equal(
+                (JourneyRuntimeStage.Completed, "TERMINATED_BY_FAULT_CARGO_HANDOFF"),
+                (closed.Stage, closed.BlockReasonCode));
+            Assert.Equal(
+                DemandExecutionStatus.Cancelled,
+                (await reading.AcceptedDemands.AsNoTracking().SingleAsync(row => row.DemandId == FirstDemandId, Token)).Status);
+            Assert.Equal(OwnOrderRebuildStates.Ended, (await RebuildForAsync(fixture, ended)).State);
+            await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(reading);
+            for (int round = 0; round < 3; round++)
+            {
+                await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+            }
+
+            Assert.Equal(gateCreates, fixture.Riot.CreateCount("TO_GATE"));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(ProofVariable, null);
+        }
+    }
+
+    /// <summary>
     /// 护栏三停住而车上有货（去卸货站那条腿上反复被取消）：人可以选人工重建，也可以选交接；选交接时同样转进异常处置会话。转交接的人
     /// 落在那条重建记录上，每次调用记告警（事件 9203，写明动作与人；独立审查 S2、S4）。
     /// </summary>

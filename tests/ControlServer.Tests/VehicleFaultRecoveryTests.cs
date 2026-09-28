@@ -724,13 +724,15 @@ public sealed class VehicleFaultRecoveryTests
     }
 
     /// <summary>
-    /// REQ-0362，真车载端的另一种常态：清除之后会话一直没回到就绪（本车在途单所致的那种未就绪），车也一直没回快照——旅程停在
-    /// <c>OWN_ORDER_REBUILD_WAITING_CARGO_EVIDENCE</c>，不被闸门的码盖掉，也不建单；等待只告警一次，不是每轮一次。
+    /// REQ-0362，真车载端的另一种常态：清除之后会话一直没回到就绪（本车在途单所致的那种未就绪）——不建单，旅程停在
+    /// <c>OWN_ORDER_REBUILD_WAITING_VEHICLE</c>，记录写明在等会话并记下这一次挡住开始（<c>VehicleHeldAt</c>）；等待只告警一次，不是每轮一次。
+    /// control-server#366 之前这里等的是快照（<c>OWN_ORDER_REBUILD_WAITING_CARGO_EVIDENCE</c>）：那时先问货、后看会话；现在会话挡着时快照不算数，
+    /// 所以先等会话，改名随之（原名 <c>…WaitsForTheSnapshot</c>，独立审查建议 2）。
     /// </summary>
     /// <remarks>快照请求本身在 Host 收消息那一侧，节流用例在 <c>OwnOrderRebuildCargoEvidenceRequestTests</c>。</remarks>
     [Fact]
     [Trait("Requirement", "REQ-0362")]
-    public async Task Req0362ALoadedClearanceWhoseSessionNeverBecomesReadyWaitsForTheSnapshot()
+    public async Task Req0362ALoadedClearanceWhoseSessionNeverBecomesReadyWaitsForTheVehicle()
     {
         await using RuntimeFixture fixture = await FaultedOnTheWayToGateAsync();
         int gateCreates = fixture.Riot.CreateCount("TO_GATE");
@@ -754,6 +756,13 @@ public sealed class VehicleFaultRecoveryTests
             entry.Message.Contains("is held back: ONBOARD_SESSION_NOT_READY", StringComparison.Ordinal));
         Assert.DoesNotContain(fixture.EngineLog.Entries, entry =>
             entry.Message.Contains("is held back: CARGO_EVIDENCE_NOT_RECEIVED", StringComparison.Ordinal));
+        await using (ControlServerDbContext record = new(fixture.DbOptionsForTests))
+        {
+            OwnOrderRebuildRow waiting = await record.OwnOrderRebuilds.AsNoTracking().SingleAsync(Token);
+            Assert.Equal((OwnOrderRebuildStates.Pending, "ONBOARD_SESSION_NOT_READY"), (waiting.State, waiting.WaitingReason));
+            Assert.NotNull(waiting.VehicleHeldAt);
+        }
+
         await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
         Assert.Equal(
             SessionReadiness.RecoveryRequired,

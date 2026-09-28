@@ -302,7 +302,7 @@ public sealed class OwnOrderRebuildCargoProofTests
 
         Assert.Equal(gateCreates + 1, fixture.Riot.CreateCount("TO_GATE"));
         Assert.True(fixture.Clock.GetUtcNow() - dueAt <= TimeSpan.FromSeconds(5), $"rebuilt {fixture.Clock.GetUtcNow() - dueAt} after the due time");
-        Assert.InRange(requests, source == "cancelled" ? 0 : 1, 2);
+        Assert.InRange(requests, 1, 2);
         Assert.Equal(OwnOrderRebuildStates.Rebuilt, (await RebuildAsync(fixture)).State);
 
         for (int round = 0; round < 5; round++)

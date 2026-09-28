@@ -297,7 +297,7 @@ $assertions.Add(
         $stopped.Reason -eq 'CARGO_NOT_PROVEN_IN_ORIGINAL_SLOTS' -and $stopped.Stage -eq 'AwaitingGateArrival' -and
         -not $stopped.Held -and $afterRelease -and $stopped.Gates -eq 1),
     'AwaitingGateArrival / OWN_ORDER_REBUILD_CARGO_NOT_IN_PLACE / STOPPED CARGO_NOT_PROVEN_IN_ORIGINAL_SLOTS / 证据晚于放开与到期 / TO_GATE 1',
-    "$($stopped.Stage) / $($stopped.Code) / $($stopped.State) $($stopped.Reason) / 证据 $($stopped.Evidence) 放开 $($stopped.NotBefore) 到期 $($stopped.DueAt) / TO_GATE $($stopped.Gates)")
+    "$($stopped.Stage) / $($stopped.Code) / $($stopped.State) $($stopped.Reason) / 证据 $(if ($null -ne $stopped.Evidence) { $stopped.Evidence.ToString('o') } else { '(无)' }) 放开 $(if ($null -ne $stopped.NotBefore) { $stopped.NotBefore.ToString('o') } else { '(无)' }) 到期 $(if ($null -ne $stopped.DueAt) { $stopped.DueAt.ToString('o') } else { '(无)' }) / TO_GATE $($stopped.Gates)")
 if ($stopped.State -ne 'STOPPED') {
     Add-G3NotReached $assertions ($ids | Select-Object -Skip 3) '重建没有因货不在原仓停住'
     return
@@ -457,7 +457,7 @@ $assertions.Add(
     ($rebuilt.State -eq 'REBUILT' -and $null -ne $rebuilt.Evidence -and $rebuilt.Evidence -gt $rebuilt.DueAt -and
         $rebuilt.Intent -eq 'CONFIRMED' -and $rebuilt.Gates -eq 2),
     'REBUILT / 证据晚于到期 / CONFIRMED / TO_GATE 2',
-    "$($rebuilt.State) / 证据 $($rebuilt.Evidence) 到期 $($rebuilt.DueAt) / $($rebuilt.Intent) / TO_GATE $($rebuilt.Gates)")
+    "$($rebuilt.State) / 证据 $(if ($null -ne $rebuilt.Evidence) { $rebuilt.Evidence.ToString('o') } else { '(无)' }) 到期 $(if ($null -ne $rebuilt.DueAt) { $rebuilt.DueAt.ToString('o') } else { '(无)' }) / $($rebuilt.Intent) / TO_GATE $($rebuilt.Gates)")
 
 $keptJourney = Get-Journey $keptDemand
 $keptMembership = Get-G3Scalar $connection "SELECT Status AS Value FROM JourneyDemands WHERE DemandId = '$keptDemand'"
