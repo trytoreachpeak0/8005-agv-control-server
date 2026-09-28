@@ -48,6 +48,14 @@ public static class VehicleFaultEvidence
     public const string OrderFailed = "VEHICLE_ORDER_FAILED";
 
     /// <summary>
+    /// While the vehicle drives, its doors are not proven locked: reported unlocked, a slot unknown, nothing observed, or
+    /// the observation stale (REQ-0246; control-server#335). REQ-0246's source decision counts all four alike -- "明确未锁闭、
+    /// 反馈无效或未知均属于『仓门未能证明安全锁闭』". A symptom like the others: it asks for a hold and a stop proof, and
+    /// escalates when neither can be shown.
+    /// </summary>
+    public const string DoorNotProvenLocked = "VEHICLE_DOOR_NOT_PROVEN_LOCKED";
+
+    /// <summary>
     /// A person with the exception-recovery permission confirmed the isolation from site facts.
     /// </summary>
     /// <remarks>

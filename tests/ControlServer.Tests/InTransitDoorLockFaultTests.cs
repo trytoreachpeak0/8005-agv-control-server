@@ -98,14 +98,18 @@ public sealed class InTransitDoorLockFaultTests
 
     /// <summary>
     /// 没有观测：车断线后隔了超过静默窗口才重连，新一代握手已开始、它的安全快照还没到。上一代最后一条门锁事实已经比
-    /// <see cref="SessionLiveness.Timeout"/> 旧，这一代又什么都还没说——门锁在这段时间里做过什么，没有人知道。
+    /// <see cref="SessionLiveness.Timeout"/> 旧，这一代又什么都还没说。按 REQ-0246 的来源口径这是「未能证明锁闭」，
+    /// 但本票不对它下命令：它是「车听不到」的一种，而那一格是用户 2026-09-20 留到批次 9 的冲突（REQ-0287 与 ADR-cross-0026）。
     /// </summary>
+    /// <remarks>
+    /// <b>翻转断言</b>（先红提交 2d40da43 里断的是按住加急停）。依据：实现后 cs#234 的 <c>OnboardSessionLostBlockTests</c> 红了，
+    /// 它钉的正是用户那个决定；本票向调度提出选项 X（只认车载端明报），见 PR。
+    /// </remarks>
     [Fact]
     [Trait("Requirement", "REQ-0246")]
-    public async Task NoObservationAfterALongDisconnectWhileDrivingIsHeldThenStopped()
+    public async Task NoObservationAfterALongDisconnectWhileDrivingCommandsNothing()
     {
         await using RuntimeFixture fixture = await GateArrivalWaitAsync();
-        JourneyRuntimeRow underWay = await fixture.RuntimeAsync();
         await OwnOrderRebuildTests.DropSessionOnOwnOrderAsync(fixture);
         fixture.Riot.MovementState = "MT_RUNNING";
         await ReportDrivingOnTheOwnOrderAsync(fixture);
@@ -114,25 +118,30 @@ public sealed class InTransitDoorLockFaultTests
 
         fixture.Clock.Advance(SessionLiveness.Timeout + TimeSpan.FromSeconds(1));
         await fixture.BeginGenerationWithoutSafetyAsync(2);
-        fixture.Context.ChangeTracker.Clear();
-        await fixture.Engine.ExecuteOnceAsync(Token);
-        fixture.Context.ChangeTracker.Clear();
+        for (int round = 0; round < 3; round++)
+        {
+            fixture.Context.ChangeTracker.Clear();
+            await fixture.Engine.ExecuteOnceAsync(Token);
+            fixture.Context.ChangeTracker.Clear();
+            await AssertNothingRaisedAsync(fixture);
+        }
 
-        await AssertHeldThenStoppedAsync(fixture, underWay.GateUpperId!);
+        Assert.NotEqual(DoorSymptom, (await fixture.RuntimeAsync()).BlockReasonCode);
     }
 
     /// <summary>
     /// 观测过期：会话没换代，门锁最后一次报的是锁着，但这一代已经超过静默窗口没有任何入站。闸门两侧各一遍：
     /// 未就绪的会话静默（真车载端在途），与就绪的会话静默（<see cref="JourneyRuntimeEngine.OnboardSessionLostReason"/> 那条路）。
+    /// 与上一格同理，本票不下命令；就绪那一侧照 cs#234 写失联码。
     /// </summary>
+    /// <remarks><b>翻转断言</b>，依据同上一格。</remarks>
     [Theory]
     [InlineData("behind-gate")]
     [InlineData("ready")]
     [Trait("Requirement", "REQ-0246")]
-    public async Task AStaleObservationWhileDrivingIsHeldThenStopped(string side)
+    public async Task AStaleObservationWhileDrivingCommandsNothing(string side)
     {
         await using RuntimeFixture fixture = await GateArrivalWaitAsync();
-        JourneyRuntimeRow underWay = await fixture.RuntimeAsync();
         if (side == "behind-gate")
         {
             await OwnOrderRebuildTests.DropSessionOnOwnOrderAsync(fixture);
@@ -142,19 +151,44 @@ public sealed class InTransitDoorLockFaultTests
         await DriveOneRoundAsync(fixture);
         await AssertNothingRaisedAsync(fixture);
 
-        // 一秒一轮、车载端不说话，走过静默窗口。边界上那一轮之前一条都不许发。
-        int silentRounds = (int)SessionLiveness.Timeout.TotalSeconds + 1;
-        for (int round = 1; round <= silentRounds; round++)
+        // 一秒一轮、车载端不说话，走过静默窗口再多走几轮。
+        for (int round = 1; round <= SessionLiveness.Timeout.TotalSeconds + 4; round++)
         {
-            // Checked after rounds 0 to 5: the last word was at round 0, so the newest fact is at most 5 s old here.
-            if (round <= SessionLiveness.Timeout.TotalSeconds)
-            {
-                await AssertNothingRaisedAsync(fixture);
-            }
             await SilentRoundAsync(fixture);
+            await AssertNothingRaisedAsync(fixture);
         }
 
+        string? code = (await fixture.RuntimeAsync()).BlockReasonCode;
+        Assert.Equal(
+            side == "ready" ? JourneyRuntimeEngine.OnboardSessionLostReason : "ONBOARD_SESSION_NOT_READY",
+            code);
+    }
+
+    /// <summary>
+    /// 故障已经因车载端明报记下，之后车载端静默：故障监看照样每轮推进（停车证明采样、急停确认、REQ-0248 的重触发都挂在它上面，
+    /// <c>DemandReleaseRules.FaultSupervisionInEffect</c> 的前提），码仍是门锁症状，不被失联码盖掉。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0246")]
+    [Trait("Requirement", "REQ-0248")]
+    public async Task ARaisedDoorFaultIsStillSupervisedEveryRoundWhileTheSessionIsSilent()
+    {
+        await using RuntimeFixture fixture = await GateArrivalWaitAsync();
+        JourneyRuntimeRow underWay = await fixture.RuntimeAsync();
+        fixture.Riot.MovementState = "MT_RUNNING";
+        await fixture.ReportSafetySummaryAsync(
+            allTargetSlotsLocked: false, unknownPresent: false, ["LOCK_NOT_CLOSED", "ACTION_NOT_ALLOWED_IN_STATE"]);
+        await DriveOneRoundAsync(fixture);
         await AssertHeldThenStoppedAsync(fixture, underWay.GateUpperId!);
+
+        for (int round = 1; round <= SessionLiveness.Timeout.TotalSeconds + 3; round++)
+        {
+            await SilentRoundAsync(fixture);
+            await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+            VehicleFaultStateRow fault = await reading.VehicleFaultStates.AsNoTracking().SingleAsync(Token);
+            Assert.Equal(fixture.Clock.GetUtcNow(), fault.LastEvaluatedAt);
+            Assert.Equal(DoorSymptom, (await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token)).BlockReasonCode);
+        }
     }
 
     // ---- 不许触发的 ------------------------------------------------------------------------------------------------

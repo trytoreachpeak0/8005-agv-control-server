@@ -89,6 +89,12 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
             [Runtime.Faults.VehicleFaultEvidence.OrderFailed] =
                 "车正在执行的运单在 RIoT 上失败（FAILED），服务端已把车判为疑似故障：不派新单，需求不改派。"
                 + "请到现场排除原因；若急停已锁住，先按急停人工解除；然后由现场人员经故障清除入口确认（见现场说明），服务端核对后清除故障",
+            // control-server#335（REQ-0246）：行驶中车载端报门没锁或仓位状态未知——按住本单，证不出停稳就急停。
+            // 车载端失联本身不走这里（ONBOARD_SESSION_LOST，用户 09-20 决定留到批次 9）。
+            [Runtime.Faults.VehicleFaultEvidence.DoorNotProvenLocked] =
+                "车在行驶中，车载端报门锁未锁闭或仓位状态读不到：服务端已按住本单，证不出停稳即急停，"
+                + "并把车判为疑似故障：不派新单，需求不改派。请到现场确认车已停、门已锁好；"
+                + "门锁恢复锁闭后急停会自动解除，但单仍停着，要由现场人员经故障处置入口「继续原单」车才会再走",
             // control-server#331：推进每一轮都抛异常，旅程一步不动。在这之前看板上只剩最后一次写下的码，说的是一件已经不成立的事。
             [JourneyRuntimeEngine.AdvanceFailedReason] =
                 "服务端推进这趟旅程时出错，旅程停在原处、一步没动（不改派、不发命令）。每一轮都会重试，走通后这个码自动消失；"
