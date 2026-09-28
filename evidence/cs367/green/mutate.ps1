@@ -11,13 +11,13 @@ $Only = @($Only | ForEach-Object { $_ -split ',' } | Where-Object { $_ })
 Set-Location $Worktree
 $engine = 'src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs'
 $recovery = 'src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs'
-$filter = 'FullyQualifiedName~FailedOrderBeforeConfirmationTests|FullyQualifiedName~VehicleFaultRecoveryTests|FullyQualifiedName~FailedOrderBehindSessionGateTests|FullyQualifiedName~OwnOrderRebuild|FullyQualifiedName~InTransitOrderStall|FullyQualifiedName~EmergencyReleaseVersusOwnOrderRebuildTests|FullyQualifiedName~StoppedRebuildExitTests|FullyQualifiedName~PickupDispatchPlanPastOwnOrderTests'
+$filter = 'FullyQualifiedName~FailedOrderBeforeConfirmationTests|FullyQualifiedName~VehicleFaultRecoveryTests|FullyQualifiedName~FailedOrderBehindSessionGateTests|FullyQualifiedName~OwnOrderRebuild|FullyQualifiedName~InTransitOrderStall|FullyQualifiedName~EmergencyReleaseVersusOwnOrderRebuildTests|FullyQualifiedName~StoppedRebuildExitTests|FullyQualifiedName~PickupDispatchPlanPastOwnOrderTests|FullyQualifiedName~Batch7DemandRelease'
 
 $mutations = [ordered]@{
     'M0-revert-src' = @{ Revert = $true }
     'M1-front-no-observe' = @{ File = $engine
-        From = "result.Outcome == MovementDispatchOutcome.TerminalReconciliationRequired &&`n            await ObserveFailedBeforeConfirmationAsync"
-        To = "false && result.Outcome == MovementDispatchOutcome.TerminalReconciliationRequired &&`n            await ObserveFailedBeforeConfirmationAsync" }
+        From = "result.Outcome == MovementDispatchOutcome.TerminalReconciliationRequired &&`n            await NameOrderEndedBeforeConfirmationAsync"
+        To = "false && result.Outcome == MovementDispatchOutcome.TerminalReconciliationRequired &&`n            await NameOrderEndedBeforeConfirmationAsync" }
     'M2-behind-disabled' = @{ File = $engine
         From = "        if (intent.CreateAttemptCount == 0)`n        {`n            return false;"
         To = "        if (intent.CreateAttemptCount >= 0)`n        {`n            return false;" }
@@ -30,12 +30,12 @@ $mutations = [ordered]@{
     'M5-behind-creates' = @{ File = $engine
         From = "        if (intent.CreateAttemptCount == 0)`n        {`n            return false;"
         To = "        if (intent.CreateAttemptCount < 0)`n        {`n            return false;" }
-    'M6-no-keep-code' = @{ File = $engine
-        From = "        return string.Equals(runtime.BlockReasonCode, VehicleFaultEvidence.OrderFailed, StringComparison.Ordinal);`n    }"
-        To = "        return false;`n    }" }
     'M7-observe-once' = @{ File = $engine
-        From = "        if (order is not null &&`n            await ObserveOrderFailureAsync(runtime, intent, order, cancellationToken)"
-        To = "        if (order is not null && !string.Equals(runtime.BlockReasonCode, VehicleFaultEvidence.OrderFailed, StringComparison.Ordinal) &&`n            await ObserveOrderFailureAsync(runtime, intent, order, cancellationToken)" }
+        From = "            return false;`n        }`n`n        RiotOrderObservation order;`n        try`n        {`n            order = await vehicleFacts.ReconcileByUpperIdAsync(upperId, cancellationToken)"
+        To = "            return false;`n        }`n        if (string.Equals(runtime.BlockReasonCode, VehicleFaultEvidence.OrderFailed, StringComparison.Ordinal)) { return true; }`n`n        RiotOrderObservation order;`n        try`n        {`n            order = await vehicleFacts.ReconcileByUpperIdAsync(upperId, cancellationToken)" }
+    'M9-failed-only' = @{ File = $engine
+        From = "        return await NameStalledOrderAsync(runtime, intent, order, cancellationToken, reasonOnceMovedOn).ConfigureAwait(false);"
+        To = "        return await ObserveOrderFailureAsync(runtime, intent, order, cancellationToken).ConfigureAwait(false);" }
     'M8-behind-confirmed-not-named' = @{ File = $engine
         From = "            if (result.Outcome == MovementDispatchOutcome.Confirmed)`n            {`n                // Read afresh"
         To = "            if (result.Outcome == MovementDispatchOutcome.CreateDispatchDisabled)`n            {`n                // Read afresh" }

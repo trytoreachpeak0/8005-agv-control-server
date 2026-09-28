@@ -335,5 +335,7 @@ Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:58007/api/safety/v1/vehicl
   - 建单应答丢了、单还没确认的那一段也一样（#367）：会话未就绪时服务端照样去 RIoT 对账这张单，确认了就照常起名（比如
     `ORDER_HANG`），`FAILED` 就同一轮记故障、Hold、急停。对账只对**已经发过建单**的单做，所以会话未就绪时服务端不会建新单。
   清除本身不依赖会话是否就绪。
-- **还没确认建成就被人在 RIoT 里取消或删除的单**（建单应答丢了之后）：今天停在旅程码 `PICKUP_TerminalReconciliationRequired`
-  （或 `GATE_…`），不会自动重建，本入口也清不了（没有故障）。是否与已确认的单一样同车重建，见 #367 的记录。
+- **还没确认建成就在 RIoT 里终结的单**（建单应答丢了之后，#367）：与确认过的单一样处理。被取消或删除的，按上面「清除之后的
+  自动重建」同车重建，三道防护照旧；FAILED 的按本说明清除；读到 8（SUSPENDED）的写 `ORDER_STATE_UNRECOGNIZED`，等人到 RIoT 查明。
+  以前这几种都停在 `PICKUP_TerminalReconciliationRequired`（或 `GATE_…`），只能改库。车上有货时，取消来源的重建先证明货在原仓位
+  （`REQ-0360` 经 CP-0007 修订），那一步由 #366 做。
