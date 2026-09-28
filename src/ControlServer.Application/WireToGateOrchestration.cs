@@ -287,9 +287,12 @@ public sealed class MovementDispatchService
 
         RiotOrderObservation observed = await gateway.ReconcileByUpperIdAsync(upperId, cancellationToken)
             .ConfigureAwait(false);
-        RiotDispatchAuditPhase reconciliationPhase = intent.Status == "PENDING_RECONCILIATION"
-            ? RiotDispatchAuditPhase.PreCreateReconciliation
-            : RiotDispatchAuditPhase.PostCreateReconciliation;
+        // An intent left RESULT_UNKNOWN by reads that answered nothing has still never been sent (control-server#375): what is
+        // read for it is read before its create, and recorded so -- which is also what keeps it eligible.
+        RiotDispatchAuditPhase reconciliationPhase =
+            intent.Status == "PENDING_RECONCILIATION" || intent.NeverSentAfterUnansweredReads
+                ? RiotDispatchAuditPhase.PreCreateReconciliation
+                : RiotDispatchAuditPhase.PostCreateReconciliation;
         return observed.Kind switch
         {
             RiotOrderObservationKind.Active => await ConfirmAsync(
@@ -304,6 +307,14 @@ public sealed class MovementDispatchService
             RiotOrderObservationKind.NotFound when intent.Status == "PENDING_RECONCILIATION" &&
                                                    intent.DispatchAuditVersion == 1 &&
                                                    intent.CreateAttemptCount == 0 =>
+                await CreateAfterConfirmedAbsenceAsync(intent.Intent, observed, cancellationToken)
+                    .ConfigureAwait(false),
+            // control-server#375: a read before the create that answered nothing -- an SDK timeout, say -- marks the intent
+            // RESULT_UNKNOWN, and until then any later NotFound was taken for a create whose result is unknown, so the order
+            // was never created and the journey could only be moved on by editing the database. RIoT has now answered that
+            // there is no order, and nothing was ever sent: this is the pending case above. A create already armed never
+            // reaches here (the store's definition requires no attempt), and ArmCreateDispatchAsync still arms only once.
+            RiotOrderObservationKind.NotFound when intent.NeverSentAfterUnansweredReads =>
                 await CreateAfterConfirmedAbsenceAsync(intent.Intent, observed, cancellationToken)
                     .ConfigureAwait(false),
             RiotOrderObservationKind.NotFound when intent.Status == "PENDING_RECONCILIATION" =>
@@ -358,6 +369,17 @@ public sealed class MovementDispatchService
             RiotOrderObservationKind.Unknown when intent.Status == "PENDING_RECONCILIATION" &&
                                                   intent.DispatchAuditVersion == 1 &&
                                                   intent.CreateAttemptCount == 0 &&
+                                                  IsExactAbsentAtObservation(upperId, observed) =>
+                await CreateAfterConfirmedAbsenceAsync(
+                        intent.Intent,
+                        observed,
+                        cancellationToken,
+                        RiotDispatchAuditOutcome.Unknown,
+                        IdempotentAbsentEligibilityBasis)
+                    .ConfigureAwait(false),
+            // The same exact absent-at-observation read, for an intent left RESULT_UNKNOWN by reads that answered nothing
+            // (control-server#375).
+            RiotOrderObservationKind.Unknown when intent.NeverSentAfterUnansweredReads &&
                                                   IsExactAbsentAtObservation(upperId, observed) =>
                 await CreateAfterConfirmedAbsenceAsync(
                         intent.Intent,

@@ -1228,7 +1228,42 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
             row.CreateAttemptId,
             row.CreateAttemptCount,
             authorization?.AuthorizationId,
-            authorization is null ? null : "EXPERIMENTAL_ABSENT_AT_OBSERVATION");
+            authorization is null ? null : "EXPERIMENTAL_ABSENT_AT_OBSERVATION",
+            await IsNeverSentAfterUnansweredReadsAsync(row, cancellationToken).ConfigureAwait(false));
+    }
+
+    /// <summary>
+    /// Whether <paramref name="row"/> is RESULT_UNKNOWN only because the reads before its create answered nothing
+    /// (control-server#375), which makes it as eligible for its one create as a pending intent. The single definition, read both
+    /// when the intent is loaded for reconciliation and by <see cref="ArmCreateDispatchAsync"/>.
+    /// </summary>
+    /// <remarks>
+    /// Never sent: audit version 1, no create armed (<c>CreateAttemptCount == 0</c>, no attempt id). Not the experimental path's
+    /// own RESULT_UNKNOWN, which it writes between its pre-create audit and its arm and which only that arm may continue. And no
+    /// read on the leg's audit chain returned an order or a result that might be one: a pre-create read that found an order under
+    /// this upperId not matching the intent also leaves it RESULT_UNKNOWN with no attempt, and that one stays for a person.
+    /// </remarks>
+    private async Task<bool> IsNeverSentAfterUnansweredReadsAsync(OrderIntentRow row, CancellationToken cancellationToken)
+    {
+        if (row.Status != "RESULT_UNKNOWN" ||
+            row.DispatchAuditVersion != 1 ||
+            row.CreateAttemptCount != 0 ||
+            row.CreateAttemptId is not null ||
+            row.ExperimentalCreateAuthorizationId is not null)
+        {
+            return false;
+        }
+
+        var reads = await dbContext.RiotDispatchAuditEvents.AsNoTracking()
+            .Where(item => item.MovementLegId == row.MovementLegId)
+            .Select(item => new { item.Phase, item.Outcome, item.AttemptId, item.ReturnedOrderId, item.ResultPresent })
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        return reads.Length > 0 &&
+               reads.All(item => item.Phase == "PRE_CREATE_RECONCILIATION" &&
+                                 item.Outcome is "UNKNOWN" or "NOT_FOUND" &&
+                                 item.AttemptId is null &&
+                                 item.ReturnedOrderId is null &&
+                                 item.ResultPresent != true);
     }
 
     public async Task PersistExperimentalCreateAuthorizationAsync(
@@ -1352,7 +1387,11 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         ArgumentException.ThrowIfNullOrWhiteSpace(requestSemanticSha256);
         OrderIntentRow row = await dbContext.OrderIntents
             .SingleAsync(item => item.UpperId == upperId, cancellationToken).ConfigureAwait(false);
-        if (row.Status != "PENDING_RECONCILIATION" ||
+        // control-server#375: RESULT_UNKNOWN only because the reads before the create answered nothing is as never-sent as
+        // pending. The at-most-once counter below is unchanged: whatever the status, an armed create is never armed again.
+        bool neverSent = row.Status == "PENDING_RECONCILIATION" ||
+                         await IsNeverSentAfterUnansweredReadsAsync(row, cancellationToken).ConfigureAwait(false);
+        if (!neverSent ||
             row.DispatchAuditVersion != 1 ||
             row.CreateAttemptCount != 0 ||
             row.CreateAttemptId is not null)

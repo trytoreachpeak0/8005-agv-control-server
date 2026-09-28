@@ -214,6 +214,13 @@ public sealed partial class JourneyRuntimeEngine(
     public const string CheckpointWaitExceededReason = "VEHICLE_CHECKPOINT_WAIT_EXCEEDED";
 
     /// <summary>
+    /// After the leg name (<c>PICKUP_</c>, <c>GATE_</c>): this leg's order has never been sent, and the vehicle does not now show
+    /// what creating it needs -- Onboard's departure summary, no fault, RIoT's safety read (control-server#375). A wait on the
+    /// vehicle; the next round asks again.
+    /// </summary>
+    public const string NeverSentLegWaitingVehicleSuffix = "CREATE_WAITING_VEHICLE";
+
+    /// <summary>
     /// RIoT reports this leg's in-flight order HANG (9): it stopped executing it, and only a person can move it on, by
     /// continuing or cancelling it in RIoT (control-server#316; riot-behavior-lab BC-ORDER-015).
     /// </summary>
@@ -2287,6 +2294,19 @@ public sealed partial class JourneyRuntimeEngine(
         if (intent.Status == "CONFIRMED" && intent.OrderId is not null)
         {
             return true;
+        }
+        // control-server#375: an intent never sent may be created by the reconciliation below, rounds or minutes after the
+        // departure check that let the leg go -- a read that timed out is enough to put that distance there -- and the doors,
+        // the vehicle's condition or an emergency stop may have changed since. So it is created only once the vehicle again
+        // shows what a rebuild has to (control-server#366 M1, the same criteria); otherwise the journey names the wait and the
+        // next round asks again. An order already sent is only reconciled, which moves nothing, and is not held here.
+        if (intent is { CreateAttemptCount: 0, CreateAttemptId: null, Status: "PENDING_RECONCILIATION" or "RESULT_UNKNOWN" } &&
+            (await VehicleConditionReasonsAsync(runtime, cancellationToken).ConfigureAwait(false)).Length > 0)
+        {
+            runtime.SetBlockReason($"{legName}_{NeverSentLegWaitingVehicleSuffix}", timeProvider.GetUtcNow());
+            runtime.UpdatedAt = timeProvider.GetUtcNow();
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return false;
         }
         MovementDispatchResult result = await movementDispatch.ReconcileOrCreateAsync(
             upperId, cancellationToken).ConfigureAwait(false);

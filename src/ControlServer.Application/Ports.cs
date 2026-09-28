@@ -282,6 +282,11 @@ public sealed record RiotMapStationCatalogSnapshot(
     string ContentSha256,
     IReadOnlyList<RiotMapStation> Stations);
 
+/// <param name="NeverSentAfterUnansweredReads">
+/// RESULT_UNKNOWN only because every read before its create answered nothing (control-server#375): audit version 1, no create
+/// ever armed, no experimental permit, and no read on its audit chain that returned or may have returned an order. Such an
+/// intent was never sent, so RIoT answering that the order is absent makes it eligible for its one create, as a pending one is.
+/// </param>
 public sealed record StoredMovementIntent(
     OrderIntent Intent,
     string Status,
@@ -290,7 +295,8 @@ public sealed record StoredMovementIntent(
     string? CreateAttemptId,
     int? CreateAttemptCount,
     string? ExperimentalAuthorizationId = null,
-    string? EligibilityBasis = null);
+    string? EligibilityBasis = null,
+    bool NeverSentAfterUnansweredReads = false);
 
 // ======== Batch 2, track B: the four capability lanes' storage ports (ticket 06) ===========
 //
