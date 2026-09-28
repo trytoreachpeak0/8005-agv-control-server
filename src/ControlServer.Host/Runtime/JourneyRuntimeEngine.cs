@@ -999,6 +999,8 @@ public sealed partial class JourneyRuntimeEngine(
         {
             case JourneyRuntimeStage.AwaitingPickupArrival:
                 // 这一站的单终结过、正在按同车同需求重建（control-server#318）：旧单不再读，重建自己走完这一轮。
+                // 在那之前：门锁故障仍在效而这张单已在 RIoT 被取消或删除时，故障模型照样每轮监看（control-server#335 审查 P1）。
+                await SuperviseDoorFaultOnEndedOrderAsync(runtime, stops.Current, cancellationToken).ConfigureAwait(false);
                 if (await AdvanceOwnOrderRebuildAsync(
                         runtime, stops.Current, currentMap, mayCreate: true, reasonOnceRebuilt: null, cancellationToken)
                         .ConfigureAwait(false))
@@ -1427,6 +1429,7 @@ public sealed partial class JourneyRuntimeEngine(
                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                     return;
                 }
+                await SuperviseDoorFaultOnEndedOrderAsync(runtime, stops.Current, cancellationToken).ConfigureAwait(false);
                 if (await AdvanceOwnOrderRebuildAsync(
                         runtime, stops.Current, currentMap, mayCreate: true, reasonOnceRebuilt: null, cancellationToken)
                         .ConfigureAwait(false))
@@ -1696,39 +1699,10 @@ public sealed partial class JourneyRuntimeEngine(
             return false;
         }
 
-        string transportDemandKey = await dbContext.AcceptedDemands
-            .Where(row => row.DemandId == runtime.DemandId)
-            .Select(row => row.TransportDemandKey)
-            .SingleAsync(cancellationToken).ConfigureAwait(false);
-        // 车上有没有货，问的是事实本身（批次7-06，control-server#211）。这之前判的是
-        // arrival.Purpose == "TO_GATE"，而 JourneyPlanBuilder.LegIntent 给每一段后续腿都建 "TO_GATE"，
-        // 所以那个判断真正表达的是「这不是第一段腿」——在只有取货和关卡两个停靠的旅程里，它与「装过货」
-        // 恰好等价；多一个取货停靠就不再等价，而这条链通向故障货物处置，等价关系断了不会有东西变红。
-        bool carryingCargo = await dbContext.Set<JourneyDemandRow>()
-            .AnyAsync(
-                row => row.JourneyId == runtime.JourneyId && row.Status == JourneyDemandStatuses.Loaded,
-                cancellationToken).ConfigureAwait(false);
-        // 腿取这一次失败的那一段，不取旅程行上锚需求的关卡腿。
-        //
-        // 需求与 transportDemandKey 仍然取锚需求，而多停靠下车上可能同时载着几条需求的货：这里说不出
-        // 「是哪一条的货出了事」。本票不改它——判断哪条需求的货需要按停靠归属去认，那是移除停靠与故障货物
-        // 归属一起要解决的事（批次7-10）。依赖的前提写在这里：**只要一趟旅程可能载多于一条需求的货，
-        // 这两个字段就只是「这趟旅程的锚」，不是「出事的那一批货」**。
-        FaultedVehicleCargoFacts? cargo = carryingCargo
-            ? new FaultedVehicleCargoFacts(
-                runtime.DemandId,
-                intent.MovementLegId,
-                transportDemandKey,
-                LoadingWitnessed: true,
-                CargoStateKnown: true)
-            : null;
-
         await faults.ObserveAsync(
             new EmergencyStopSubject(runtime.AgvId, runtime.VehicleKey),
             VehicleFaultEvidence.OrderFailed,
-            new FaultedVehicleContext(
-                new RiotOrderCommandTarget(runtime.AgvId, intent.UpperId, orderId),
-                cargo),
+            await InFlightFaultContextAsync(runtime, intent, orderId, cancellationToken).ConfigureAwait(false),
             cancellationToken).ConfigureAwait(false);
 
         LogOrderFailedSymptom(logger, intent.UpperId, runtime.AgvId, runtime.DemandId, null);
@@ -1795,6 +1769,13 @@ public sealed partial class JourneyRuntimeEngine(
         string? reasonOnceMovedOn = null)
     {
         if (await ObserveOrderFailureAsync(runtime, intent, order, cancellationToken).ConfigureAwait(false))
+        {
+            return true;
+        }
+
+        // control-server#335: an order still in flight whose vehicle's doors are not proven locked goes to the fault model here
+        // too, on both sides of the readiness gate for the reason FAILED does.
+        if (await ObserveDoorsInTransitAsync(runtime, intent, order, cancellationToken).ConfigureAwait(false))
         {
             return true;
         }
@@ -1918,6 +1899,12 @@ public sealed partial class JourneyRuntimeEngine(
         // (review M2) -- but an order already sent is reconciled, which only reads (incremental review B2), and a rebuilt order
         // that FAILED goes on being fed to the fault model; once a new order is confirmed the journey carries
         // peerReason again, and the next round names a HANG like any other.
+        //
+        // A door fault on an order someone cancelled or deleted in RIoT is supervised before that, as in the stage body
+        // (control-server#335 incremental review, P1g): a real onboard is not ready for the whole of a leg, so this -- not the
+        // stage body -- is the path such a vehicle takes every round, and the rebuild below returns without ever reaching the
+        // fault model. Unsupervised, a latched vehicle was never released and the rebuild waited on the fault for good.
+        await SuperviseDoorFaultOnEndedOrderAsync(runtime, stops.Current, cancellationToken).ConfigureAwait(false);
         if (await OwnOrderRebuilds.ForStopAsync(dbContext, stops.Current, cancellationToken).ConfigureAwait(false) is not null)
         {
             return await AdvanceOwnOrderRebuildAsync(
@@ -4565,6 +4552,8 @@ public sealed partial class JourneyRuntimeEngine(
     /// AREA 站等准入的码是 control-server#198 升级的起点；<see cref="VehicleFaultEvidence.OrderFailed"/> 与三个在途单停住的码
     /// 告诉走到车前的人该做什么；<see cref="OnboardSessionLostReason"/> 有自己的升级时钟。检查点等待的两个码有意不在里面，
     /// 那是运行中随等随清的旁白。加一项就是加一处「不许覆盖」，两个调用方同时生效。
+    /// <see cref="VehicleFaultEvidence.DoorNotProvenLocked"/> 是 control-server#335 加的，理由与订单 FAILED 相同：车因门锁被按住、急停，
+    /// 走到车前的人要知道的是门，不是「车不说话了」——失联本身就是门锁那四种情形之一，两者常是同一件事的两面。
     /// <para>
     /// <see cref="StationTimeoutDoorNotClosedReason"/> 与 <see cref="LoadCorrectionInProgressReason"/> 是第三轮审查补进来的：
     /// 一个在等人去关门（ADR-cross-0058 决策 4），一个在等纠错走完，都是 program#55 按开始时间升级的等人码。被覆盖之后，写它的那一段
@@ -4587,6 +4576,8 @@ public sealed partial class JourneyRuntimeEngine(
         runtime.Stage == JourneyRuntimeStage.Blocked ||
         IsHeldForAreaEndAdmission(runtime) ||
         string.Equals(runtime.BlockReasonCode, VehicleFaultEvidence.OrderFailed, StringComparison.Ordinal) ||
+        string.Equals(runtime.BlockReasonCode, VehicleFaultEvidence.DoorNotProvenLocked, StringComparison.Ordinal) ||
+        string.Equals(runtime.BlockReasonCode, HeldOrderResumedWithoutContinueReason, StringComparison.Ordinal) ||
         IsStalledOrderReason(runtime.BlockReasonCode) ||
         string.Equals(runtime.BlockReasonCode, OnboardSessionLostReason, StringComparison.Ordinal) ||
         string.Equals(runtime.BlockReasonCode, StationTimeoutDoorNotClosedReason, StringComparison.Ordinal) ||

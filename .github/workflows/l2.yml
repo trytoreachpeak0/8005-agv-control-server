@@ -188,6 +188,9 @@ jobs:
               # runs for the same reason -- what it guards against is RIoT clearing the latch after the
               # read-back, a timing that one pass cannot tell from luck.
               @{ Name = 'emergency-stop-operator-release'; Runs = 3 }
+              # control-server#335 (REQ-0246): a door reported not locked while driving holds this order, stops once, never cancels;
+              # locked again, the latch is released and the held order waits for a person.
+              @{ Name = 'in-transit-door-not-locked'; Runs = 1 }
               # The batch-3 exit (FP-IS-14 and FP-IS-15), three consecutive runs each.
               @{ Name = 'slot-configuration-activation-replay'; Runs = 3; BatchId = 'batch-3' }
               @{ Name = 'onboard-alarm-snapshot-dashboard';     Runs = 3; BatchId = 'batch-3' }
@@ -630,6 +633,10 @@ jobs:
               # control-server#325 (program#86 v2): once the station deadline ends a stop, the real onboard shows none of it,
               # and a late cancellation and a late scan made before the closing worklist arrives are both refused as STALE.
               @{ Name = 'real-onboard-stale-stop-after-station-timeout';     Runs = 1 }
+              # control-server#335 (REQ-0246): the real onboard, not Ready for the whole leg on this server's order, drives and
+              # reconnects without a hold; a lock feedback forced to 0 holds this order and stops once; locked again, the
+              # latch is released and the held order waits for a person.
+              @{ Name = 'real-onboard-in-transit-door-facts';                Runs = 1 }
           )
 
           # Registered before anything can fail, so the upload step always has a path.

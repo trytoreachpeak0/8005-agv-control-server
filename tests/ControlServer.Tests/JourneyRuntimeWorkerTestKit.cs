@@ -138,6 +138,25 @@ internal static class JourneyRuntimeWorkerTestKit
         public bool EmergencyLatched { get; set; }
 
         /// <summary>
+        /// The orderIds RIoT lists as unfinished (states 1, 3, 7, 9) for this vehicle. Empty by default, so every existing
+        /// test keeps reading "no unfinished order" as before; control-server#335 sets it to exercise the release rule.
+        /// </summary>
+        public string[] UnfinishedOrderIds { get; set; } = [];
+
+        /// <summary>
+        /// Runs just before RIoT's list of unfinished orders is read -- the last read before a release goes out. control-server#335
+        /// review P2 uses it to turn the held order to EXECUTING after every earlier read of the round has seen it PAUSED.
+        /// </summary>
+        public Action? BeforeUnfinishedOrdersRead { get; set; }
+
+        /// <summary>
+        /// Every order and emergency command the fault model sent to RIoT, by its command type name, in the order it was sent.
+        /// The fixture clock does not move within a round, so audit timestamps cannot tell a hold from the stop that followed it
+        /// in the same round (control-server#335 review, item 6); this can.
+        /// </summary>
+        public List<string> RiotCommandsSent { get; } = [];
+
+        /// <summary>
         /// The <paramref name="commands"/> interceptor is the seam for asserting on the SQL the engine
         /// sends, which is the only way to tell a query that narrows in the store from one that reads a
         /// whole type back and filters in memory: a pre-filter that changed results would be a bug, so
@@ -686,6 +705,68 @@ internal static class JourneyRuntimeWorkerTestKit
             Context.ChangeTracker.Clear();
         }
 
+        /// <summary>
+        /// Onboard reports its safety summary as the real onboard computes it (onboard-hmi <c>WireToGateSafetyEvaluator</c>):
+        /// a SafetyStateChanged at the current generation's next safetyStateVersion, received now, and the session row's
+        /// revision moved to it the way <c>OnboardMessageProcessor</c> moves it. Readiness is left as the test set it --
+        /// what this helper changes is only what the session vouches for about the doors (control-server#335).
+        /// </summary>
+        public async Task ReportSafetySummaryAsync(
+            bool allTargetSlotsLocked,
+            bool unknownPresent,
+            string[] reasonCodes,
+            bool departureSafe = false,
+            bool vehicleStopped = false,
+            bool allUnlockOutputsReset = true)
+        {
+            SessionRecoveryRow session = await Context.SessionRecoveries.SingleAsync(TestContext.Current.CancellationToken);
+            long next = (session.SafetyRevision ?? 0) + 1;
+            await AddRawInboxAsync("SafetyStateChanged", new
+            {
+                safetyStateVersion = next,
+                observedAt = Clock.GetUtcNow(),
+                safety = new
+                {
+                    departureSafe,
+                    vehicleStopped,
+                    allTargetSlotsLocked,
+                    allUnlockOutputsReset,
+                    unknownPresent,
+                    reasonCodes
+                },
+                affectedSlots = Enumerable.Range(1, 8).ToArray()
+            }, session.SessionGeneration, Clock.GetUtcNow());
+            session.SafetyRevision = next;
+            session.DepartureSafe = departureSafe;
+            session.SafetyReasonCodesJson = JsonSerializer.Serialize(reasonCodes);
+            session.SafetyUnknownPresent = unknownPresent;
+            await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+            Context.ChangeTracker.Clear();
+        }
+
+        /// <summary>
+        /// The vehicle reconnected and the new generation's handshake has begun, but its SafetyStateSnapshot has not landed:
+        /// what <c>WireToGateStore.BeginSessionRecoveryAsync</c> leaves on the row (revision and departure safety voided,
+        /// <c>HANDSHAKE_INCOMPLETE</c>), with the new generation's first inbound received now. The previous generation's
+        /// messages stay in the inbox, as they do in the product. Measured on the real rig for control-server#335
+        /// (run 36387029532): this state lasted about 100 ms after a mid-drive reconnect.
+        /// </summary>
+        public async Task BeginGenerationWithoutSafetyAsync(long generation)
+        {
+            SessionRecoveryRow session = await Context.SessionRecoveries.SingleAsync(TestContext.Current.CancellationToken);
+            session.SessionGeneration = generation;
+            session.SafetyRevision = null;
+            session.SafetyHash = null;
+            session.DepartureSafe = null;
+            session.RecoveryReportId = null;
+            session.Readiness = SessionReadiness.RecoveryRequired;
+            session.ReasonCode = "HANDSHAKE_INCOMPLETE";
+            session.UpdatedAt = Clock.GetUtcNow();
+            await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+            await AddRawInboxAsync("SessionHello", new { observedAt = Clock.GetUtcNow() }, generation, Clock.GetUtcNow());
+            Context.ChangeTracker.Clear();
+        }
+
         public async Task AddSafetyStateChangedAsync(
             long safetyStateVersion,
             bool departureSafe,
@@ -1169,7 +1250,11 @@ internal static class JourneyRuntimeWorkerTestKit
             RiotOrderCommandAuditStore audit = new(Context);
             Microsoft.Extensions.Options.IOptions<VehicleFaultOptions> faultOptions =
                 Microsoft.Extensions.Options.Options.Create(new VehicleFaultOptions());
-            SilentCommandGateway gateway = new(Clock, () => EmergencyLatched);
+            SilentCommandGateway gateway = new(Clock, () => EmergencyLatched, () =>
+            {
+                BeforeUnfinishedOrdersRead?.Invoke();
+                return UnfinishedOrderIds;
+            }, Riot.StateOfOrderId, RiotCommandsSent.Add);
             return new VehicleFaultCoordinator(
                 faults,
                 gateway,
@@ -1204,7 +1289,12 @@ internal static class JourneyRuntimeWorkerTestKit
         /// assertion that fails should be about the fault model, not about a double that was left
         /// unable to answer.
         /// </summary>
-        private sealed class SilentCommandGateway(TimeProvider clock, Func<bool> latched)
+        private sealed class SilentCommandGateway(
+            TimeProvider clock,
+            Func<bool> latched,
+            Func<string[]> unfinished,
+            Func<string, int?> stateOf,
+            Action<string> sent)
             : IRiotOrderCommandGateway, IRiotVehicleEmergencyFacts, IRiotVehicleOrderFacts
         {
             public Task<RiotVehicleOrderObservation> ReadUnfinishedOrdersAsync(
@@ -1212,7 +1302,10 @@ internal static class JourneyRuntimeWorkerTestKit
                 CancellationToken cancellationToken)
             {
                 _ = cancellationToken;
-                return Task.FromResult(new RiotVehicleOrderObservation(deviceKey, false, [], clock.GetUtcNow()));
+                string[] ids = unfinished();
+                Dictionary<string, int?> states = ids.Distinct(StringComparer.Ordinal)
+                    .ToDictionary(id => id, stateOf, StringComparer.Ordinal);
+                return Task.FromResult(new RiotVehicleOrderObservation(deviceKey, ids.Length > 0, ids, clock.GetUtcNow(), states));
             }
 
             public Task<RiotCommandCallResult> IssueOrderCommandAsync(
@@ -1224,6 +1317,7 @@ internal static class JourneyRuntimeWorkerTestKit
                 _ = orderId;
                 _ = reason;
                 _ = cancellationToken;
+                sent(RiotCommandTypeNames.For(kind));
                 return Task.FromResult(new RiotCommandCallResult(
                     RiotCommandCallDisposition.Accepted,
                     new RiotOrderCallReceipt(
@@ -1237,6 +1331,7 @@ internal static class JourneyRuntimeWorkerTestKit
             {
                 _ = deviceKey;
                 _ = cancellationToken;
+                sent(RiotCommandTypeNames.For(kind));
                 return Task.FromResult(new RiotCommandCallResult(
                     RiotCommandCallDisposition.Accepted,
                     new RiotOrderCallReceipt(
@@ -1710,6 +1805,13 @@ internal static class JourneyRuntimeWorkerTestKit
         /// <summary>RIoT's orderId for the order under <paramref name="upperId"/>, as this RIoT answers it.</summary>
         public string? OrderIdOf(string upperId) => _orders[upperId].OrderId;
 
+        /// <summary>
+        /// The state of the order RIoT knows by <paramref name="orderId"/>, or null when it knows none -- what its listing of
+        /// unfinished orders carries for each (control-server#335 review P2).
+        /// </summary>
+        public int? StateOfOrderId(string orderId) =>
+            _orders.Values.SingleOrDefault(order => string.Equals(order.OrderId, orderId, StringComparison.Ordinal))?.OrderState;
+
         /// <summary>Reports the order under <paramref name="upperId"/> as RIoT's terminal FAILED from now on.</summary>
         public void FailOrder(string upperId) =>
             _orders[upperId] = _orders[upperId] with
@@ -1720,6 +1822,9 @@ internal static class JourneyRuntimeWorkerTestKit
 
         /// <summary>Reports the order under <paramref name="upperId"/> as RIoT's terminal CANCELLED from now on (control-server#215).</summary>
         /// <summary>把这张单在 RIoT 上的状态改成 <paramref name="orderState"/>（终态时观测种类随之为 Terminal）。</summary>
+        /// <summary>The state RIoT reports for this upperId right now (control-server#335 asserts a held order stays held).</summary>
+        public int? OrderStateOf(string upperId) => _orders[upperId].OrderState;
+
         public void SetOrderState(string upperId, int orderState, bool terminal) =>
             _orders[upperId] = _orders[upperId] with
             {
@@ -1757,6 +1862,12 @@ internal static class JourneyRuntimeWorkerTestKit
         /// </summary>
         public Func<CancellationToken, Task>? ReadVehicleDelay { get; set; }
 
+        /// <summary>
+        /// How far behind the clock a motion sample is stamped. Zero by default; control-server#335 sets it past
+        /// <c>VehicleFaultOptions.MaximumEvidenceAge</c> to make the stop proof read its evidence as stale.
+        /// </summary>
+        public TimeSpan MotionObservedAtLag { get; set; } = TimeSpan.Zero;
+
         public Task<VehicleMotionSample> SampleMotionAsync(string deviceKey, CancellationToken cancellationToken)
         {
             _ = cancellationToken;
@@ -1767,7 +1878,7 @@ internal static class JourneyRuntimeWorkerTestKit
                 Vehicle.Speed,
                 Vehicle.CurrentMap,
                 Vehicle.CurrentStationId,
-                _clock.GetUtcNow()));
+                _clock.GetUtcNow() - MotionObservedAtLag));
         }
 
         /// <summary>

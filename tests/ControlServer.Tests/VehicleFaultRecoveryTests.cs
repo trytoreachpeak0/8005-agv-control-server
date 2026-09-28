@@ -1493,7 +1493,9 @@ public sealed class VehicleFaultRecoveryTests
 
     /// <summary>
     /// 续行的判据与清除共用署名、确认、闩锁三项，外加 <c>ResumeAsync</c> 自己的判据；订单不是 PAUSED 就拒（FAILED 的单不能续行）。
-    /// 闩锁在时不试：闩锁下 RIoT 拒绝 continue，而续行之后订单在跑，人工解除又因「有未完成订单」被拒——一个出不去的环。
+    /// 闩锁在时不试：round-44（cs#335）实测闩锁下 RIoT 接受 CONTINUE_FROM_HELD、单变 3，只剩急停挡着车；而续行之后订单在跑，
+    /// 人工解除又因「有未完成订单」被拒——一个出不去的环。（此处原写「闩锁下 RIoT 拒绝 continue」，那是 Round27 对 HANG 单的观测。）
+    /// 只缺闩锁一项的格子是 <c>InTransitDoorEmergencyReleaseTests.AResumeWhileTheLatchIsStillOnSendsNoContinue</c>。
     /// </summary>
     [Fact]
     public async Task AResumeIsRefusedForEveryUnmetCriterionIncludingALatch()
@@ -1694,6 +1696,16 @@ public sealed class VehicleFaultRecoveryTests
         /// <summary>读完「车上有没有未完成订单」之后做的事：用来模拟读 RIoT 与拿锁之间引擎推进了一轮。</summary>
         public Action? AfterUnfinishedOrdersRead { get; set; }
 
+        /// <summary>How many times an order has been read through this double.</summary>
+        public int OrderReads { get; private set; }
+
+        /// <summary>
+        /// Runs after each order read, given its 1-based count. control-server#335 review P3 uses the second one -- the
+        /// coordinator's read inside ResumeAsync, after the recovery service's gate is released -- to let an engine round
+        /// re-trigger the stop before the continue goes out.
+        /// </summary>
+        public Func<int, Task>? AfterOrderReadAsync { get; set; }
+
         public Task<RiotCommandCallResult> IssueOrderCommandAsync(
             RiotOrderCommandKind kind, string orderId, string? reason, CancellationToken cancellationToken)
         {
@@ -1735,12 +1747,18 @@ public sealed class VehicleFaultRecoveryTests
             return Task.FromResult(observation);
         }
 
-        public Task<RiotOrderObservation> ReconcileByUpperIdAsync(string upperId, CancellationToken cancellationToken)
+        public async Task<RiotOrderObservation> ReconcileByUpperIdAsync(string upperId, CancellationToken cancellationToken)
         {
             Called("order read");
-            return OrderReadOverride is { } overridden && overridden.UpperId == upperId
-                ? Task.FromResult(overridden)
-                : fixture.Riot.ReconcileByUpperIdAsync(upperId, cancellationToken);
+            RiotOrderObservation observation = OrderReadOverride is { } overridden && overridden.UpperId == upperId
+                ? overridden
+                : await fixture.Riot.ReconcileByUpperIdAsync(upperId, cancellationToken);
+            OrderReads++;
+            if (AfterOrderReadAsync is { } after)
+            {
+                await after(OrderReads);
+            }
+            return observation;
         }
 
         public Task<RiotOrderObservation> CreateAsync(OrderIntent intent, CancellationToken cancellationToken) =>

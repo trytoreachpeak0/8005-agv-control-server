@@ -1122,11 +1122,20 @@ public sealed class VehicleFaultIsolationTests
 
     /// <summary>
     /// The join between this ticket and ticket 10. Only a fault that was really cleared — level
-    /// None with a clearing timestamp — plus a proven stop lets the supervisor release the latch;
-    /// a resumption that clears both is what makes the vehicle recoverable without a person.
+    /// None with a clearing timestamp — plus a proven stop lets the supervisor release the latch.
     /// </summary>
+    /// <remarks>
+    /// Until control-server#335 the fault was cleared here by a resumption issued under the latch:
+    /// continue first, release after. That order is now refused (RESUME_EMERGENCY_LATCHED, no
+    /// continue sent): round-44 (rcs/riot-behavior-lab/evidence/rounds/2026-09-28-round-44,
+    /// BC-ORDER-020, OBSERVED) saw RIoT accept CONTINUE_FROM_HELD while latched and run the order
+    /// 7 -> 3, leaving only the latch between the vehicle and moving; whether it then drives off on
+    /// release was never observed (item 5, INFERRED). The recovery service, the resumption's one
+    /// caller, already refused it; this test used to call the coordinator directly. The clearing
+    /// the join needs is now done on the store, as another clearance would.
+    /// </remarks>
     [Fact]
-    public async Task AResumptionThatClearsTheFaultLetsTheEmergencyLatchBeReleased()
+    public async Task AClearedFaultLetsTheEmergencyLatchBeReleasedButAResumptionUnderTheLatchIsRefused()
     {
         await using Fixture fixture = await Fixture.CreateAsync();
         fixture.Riot.HoldWorks = true;
@@ -1139,7 +1148,17 @@ public sealed class VehicleFaultIsolationTests
 
         fixture.Clock.Advance(TimeSpan.FromSeconds(1));
         await fixture.ObserveStoppedRoundsAsync(3);
-        await fixture.ResumeAsync();
+        VehicleFaultResumeDecision underLatch = await fixture.ResumeAsync();
+        Assert.False(underLatch.Resumed);
+        Assert.Equal(["RESUME_EMERGENCY_LATCHED"], underLatch.Refusals);
+        Assert.DoesNotContain(
+            fixture.Riot.OrderCalls,
+            call => call.CommandType == RiotCommandTypeNames.OrderContinue);
+
+        VehicleFaultFact standing = await fixture.ReadFaultAsync();
+        await fixture.Faults.ClearAsync(
+            Subject.AgvId, standing.FaultGeneration, "cleared elsewhere", fixture.Clock.GetUtcNow(),
+            TestContext.Current.CancellationToken);
         fixture.Riot.LatchAfterRelease = RiotVehicleEmergencyObservation.Ok;
         EmergencyStopDecision released = await fixture.Supervisor.EvaluateAsync(
             Subject, TestContext.Current.CancellationToken);

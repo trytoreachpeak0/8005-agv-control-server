@@ -343,13 +343,20 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
                 return new RiotVehicleOrderObservation(deviceKey, null, [], timeProvider.GetUtcNow());
             }
 
-            string[] unfinished = [.. orders.Records
+            var unfinished = orders.Records
                 .Where(order =>
                     string.Equals(order.AppointVehicleKey, deviceKey, StringComparison.Ordinal) ||
                     string.Equals(order.ExecuteVehicleKey, deviceKey, StringComparison.Ordinal))
-                .Select(order => order.OrderId)];
+                .ToArray();
+            string[] ids = [.. unfinished.Select(order => order.OrderId)];
+            // A record listed twice keeps the state of neither: StateOf then answers null, which reads as "not shown PAUSED".
+            Dictionary<string, int?> states = unfinished
+                .Where(order => order.OrderId is not null)
+                .GroupBy(order => order.OrderId!, StringComparer.Ordinal)
+                .Where(group => group.Count() == 1)
+                .ToDictionary(group => group.Key, group => group.Single().OrderState, StringComparer.Ordinal);
             return new RiotVehicleOrderObservation(
-                deviceKey, unfinished.Length > 0, unfinished, timeProvider.GetUtcNow());
+                deviceKey, ids.Length > 0, ids, timeProvider.GetUtcNow(), states);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
