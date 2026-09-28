@@ -173,3 +173,17 @@ MES 超时 15.001 s 与 60 天两格红（修前只拒 0、负数、NaN），其
 
 `c4b3b3b1` 没有推到远端，远端核不了它的树。`review/reverse/` 那一轮被变异的 5 个产品文件，基线版本与远端 `b51c6279` 里的逐一相同；两者只差提交说明里的一个计数。
 
+## CI 真装置宽清单（照 cs#362，读到的）
+
+run `36382992051`（`l2.yml`，`rig=real`，`mode=consecutive`，`batch_id=cs334`），success，9/9 PASS。
+
+- **三端提交**：从场景那一步读，是 control-server `10e476c54fefe0cdc3460b6fae6504e7b9be8487`、8005-agv-onboard-hmi `4c2d2dc14656f80e812f37128a7964c2c310217a`、slots-simulator `fb5f7c593742bf98bc3957b8729a38aad5321f28`。
+- **逐场景耗时**：normal-load 80 s、load-door-closed-empty-reopens 78 s、compensate-then-reconnect 45 s、restart-while-waiting-operator 68 s、cancellation-authorization-lost 45 s、durable-ack-lost 70 / 69 / 69 s、mixed-side-one-stop 226 s。
+- **证据包**：`real-rig-evidence` 已上传（约 2.3 MB）。9 份 `assertions.json` 全部 verdict=PASS，每份 7～12 条判据全过。
+- **停止条件**：`RIG_*`／`NOT_STARTED_*` 在日志里命中 9 行，全是源码回显（字面 `^[[36;1m` 前缀，按字节看过）。
+- **与最终 head 的关系**：之后的 src 改动只有两处：
+  - `MesIngestReads` 的启动校验加上限；
+  - `JourneyRuntimeEngine` 的注释（新增代码 0 行）。
+
+  这两处都不碰运行时路径，调度判这次运行仍然有效。启动校验有没有生效，由最终一轮合成 L2 覆盖：每个场景都先起服务端。
+
