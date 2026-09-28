@@ -69,6 +69,15 @@ $mutations = [ordered]@{
     M9 = @{ What = 'a MesIngest timeout is no longer a failed read, and nothing else changes'; File = $mes
         From = '(error is OperationCanceledException && !cancellationToken.IsCancellationRequested)'
         To = '(error is TimeoutException && !cancellationToken.IsCancellationRequested)' }
+    M10 = @{ What = 'X2: the write timeout throws a plain IOException instead of OnboardConnectionUnavailableException'; File = $peer
+        From = '            throw new OnboardConnectionUnavailableException(' + "`n" + '                $"A write to the Onboard peer {Addressee}'
+        To = '            throw new IOException(' + "`n" + '                $"A write to the Onboard peer {Addressee}' }
+    M11 = @{ What = 'X3: a closed connection lets ObjectDisposedException out'; File = $peer
+        From = 'catch (Exception error) when (error is ObjectDisposedException ||'
+        To = 'catch (Exception error) when (error is ArgumentNullException ||' }
+    M12 = @{ What = 'no upper bound on MesIngest:timeoutSeconds'; File = $mes
+        From = '(!(seconds > 0) || seconds > MaxTimeout.TotalSeconds)'
+        To = '(!(seconds > 0) || seconds < 0)' }
 }
 
 $selected = $Only -eq '' ? @($mutations.Keys) : @($Only -split ',' | ForEach-Object { $_.Trim() })

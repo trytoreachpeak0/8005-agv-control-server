@@ -138,3 +138,38 @@
 - `cs342-model-1000.*`：1000 组无违规，除耗时外与合并前逐项相同（机会 13 次，全是 `ORDER_HANG`）。
 - `M7.*`：把让开改回整轮抛，仍红同样的 24 条，多车让开 L1 两格在内。
 
+## 增量复核这一轮（recheck/，head `10e476c5` 的两路复核）
+
+复核意见：https://github.com/trytoreachpeak0/8005-agv-control-server/pull/372#issuecomment-5864809364 。两路都判可合、没有必修，合入前补四件。提交：先红 `76cace41`（只动 tests），修复 `3aa93de0`。
+
+### 补了什么（读到的）
+
+1. **钉住异常类型。**排队写那条三次失败都断言**恰好**是 `OnboardConnectionUnavailableException`；只听不读那条断言推送失败记录里的类型名。它是引擎让开的唯一依据。
+2. **`MesIngest:timeoutSeconds` 加上限 15 s**（`MesIngestReads.MaxTimeout`），启动时校验。15 s 是故障清除 30 s 等锁的一半。补了 0、-1、NaN、15.001 s、60 天被拒，未配、0.5 s、15 s 照收。
+3. **让开时的撤回没有用例走到**：选了写进剩余风险。`YieldToUnavailableConnectionAsync` 的注释写明，这一条靠「先存后发」撑着，与 cs#357 的「冲突即不发」是同一个前提。
+4. **注释写明推迟有上限**：让开的车自己的急停确认会推迟，上限靠约 6 s 的静默窗口（`NameSilentOnboardSessionAsync` 接手）。
+- `JourneyRuntimeEngine.cs` 这一轮只改了注释：去掉 `///` 行之后，新增代码 0 行。
+- 低项四条都写进 PR 的剩余风险，没有改运行时代码。
+
+### 修前红（`recheck/red-pre-fix-10e476c5.txt`，`76cace41` 的测试加 `10e476c5` 的产品代码）
+
+MES 超时 15.001 s 与 60 天两格红（修前只拒 0、负数、NaN），其余绿。收紧后的类型断言在 `10e476c5` 上本来就绿：它们钉的是现有的正确行为，判别力由下面的 M10、M11 证明。
+
+### 反向验证（`recheck/reverse/`，基线 `3aa93de0`，同跑 313 条）
+
+| 变异 | 改了什么 | 预期 | 实际红 |
+| --- | --- | --- | --- |
+| M10（复核 X2） | 写超时改抛普通 `IOException` | 排队写、只听不读两格 | 恰好这 3 条 |
+| M11（复核 X3） | 「连接已关」那一处漏出 `ObjectDisposedException` | 排队写 | 排队写（`Actual: ObjectDisposedException`），**另多 1 条，见下** |
+| M12 | 去掉 MES 超时上限 | 15.001 s、60 天两格 | 这 2 格，**另多 1 条，见下** |
+
+**多出的两条不是变异造成的。**分别是 `MultiVehicleExecutionTests.WhatAVehicleCutOffMidChainHadStagedIsNotSavedWithTheNextVehicle`（M11 那一轮）与 `WhenAVehicleExhaustsItsBudgetTheHookIsStillCalledOnceWithOnlyTheVehiclesThatFinished`（M12 那一轮），红法相同：预期只有第 1 台车被派车预算切断，第 2 台也没在预算内完成（其中一条跑了 40 s）。
+
+- **机理排除：**M11 只改真实连接类，车队夹具不经过真实连接；M12 只改 MES 配置校验，车队测试不读这个配置。本票对车队夹具的改动，在没指定断线车、没设转接委托时，与原来的静默替身、原来的替身逐字等价。
+- **旁证：**这两条在前面三次全量与 M0～M9 的每一轮里都绿；`recheck/budget-tests-repeat-10.txt` 在干净的 `3aa93de0` 上连跑 10 遍全绿。
+- **归因（推的）：**这两条用的是真实计时器的派车预算，变异脚本在 BelowNormal 优先级下与本机其他会话抢 CPU 时，第 2 台车也会超时。这是既有的计时敏感，写进剩余风险。
+
+### 关于 `c4b3b3b1`（复核低项）
+
+`c4b3b3b1` 没有推到远端，远端核不了它的树。`review/reverse/` 那一轮被变异的 5 个产品文件，基线版本与远端 `b51c6279` 里的逐一相同；两者只差提交说明里的一个计数。
+
