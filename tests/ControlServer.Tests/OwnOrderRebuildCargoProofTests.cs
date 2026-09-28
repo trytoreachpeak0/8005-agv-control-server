@@ -158,6 +158,20 @@ public sealed class OwnOrderRebuildCargoProofTests
         await TickAndHearAsync(fixture);
         Assert.Equal(cancelled.GateCreates, fixture.Riot.CreateCount("TO_GATE"));
         Assert.Equal("ONBOARD_SESSION_NOT_READY", (await RebuildAsync(fixture)).WaitingReason);
+        DateTimeOffset? heldAt = (await RebuildAsync(fixture)).VehicleHeldAt;
+        Assert.NotNull(heldAt);
+
+        // Still not ready: the record is not written again round after round (the coordinator's requirement of 2026-09-28).
+        fixture.SaveChanges.Reset();
+        for (int round = 0; round < 3; round++)
+        {
+            await TickAndHearAsync(fixture);
+        }
+
+        Assert.DoesNotContain(
+            fixture.SaveChanges.Saves.SelectMany(written => written),
+            column => column.StartsWith($"{nameof(OwnOrderRebuildRow)}.", StringComparison.Ordinal));
+        Assert.Equal(heldAt, (await RebuildAsync(fixture)).VehicleHeldAt);
 
         await fixture.RestoreSessionReadyAsync();
         fixture.Context.ChangeTracker.Clear();
@@ -212,6 +226,130 @@ public sealed class OwnOrderRebuildCargoProofTests
         Assert.Null(free.CargoEvidenceRequestedGeneration);
         Assert.True(await ClaimAsync(fixture, ready: true), "the free round must make a fresh snapshot request due");
         await AssertWaitingAsync(fixture, cancelled, "CARGO_EVIDENCE_NOT_RECEIVED", "OWN_ORDER_REBUILD_WAITING_CARGO_EVIDENCE");
+    }
+
+    /// <summary>
+    /// 取消来源的窗口乙（调度 2026-09-28 要求单列）：取消之后车立刻报来一份证明货在的快照（宿主在记下重建后的第一条入站就索取），延迟期间货被取走，
+    /// 之后车没有再报。修之前延迟一到就建开往卸货站的单；修之后那份快照早于到期，不算数，等到期之后的那一份，读到仓空就停住。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0360")]
+    public async Task ASnapshotFromWithinTheDelayDoesNotProveTheCargoOfACancelledTrip()
+    {
+        Cancelled cancelled = await CancelledOnTheWayToGateAsync();
+        await using RuntimeFixture fixture = cancelled.Fixture;
+        await ReportCargoAsync(fixture);
+        await TickAndHearAsync(fixture);
+        Assert.Equal(cancelled.GateCreates, fixture.Riot.CreateCount("TO_GATE"));
+        Assert.True((await RebuildAsync(fixture)).DueAt > fixture.Clock.GetUtcNow(), "the snapshot must come within the delay");
+
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        await AssertWaitingAsync(fixture, cancelled, "CARGO_EVIDENCE_NOT_RECEIVED", "OWN_ORDER_REBUILD_WAITING_CARGO_EVIDENCE");
+
+        await ReportCargoAsync(fixture, physicalState: "EMPTY");
+        await TickAndHearAsync(fixture);
+        await AssertStoppedAsync(fixture, cancelled);
+    }
+
+    /// <summary>
+    /// 车静止、只有心跳（调度 2026-09-28 要求）：「到期之后重新索取」靠的是车的下一条入站消息。这里车除了心跳什么都不发，只在被要时回一份快照
+    /// （货在）；每一轮先让宿主判要不要索取（与 <c>OnboardMessageProcessor</c> 每条入站做的是同一个调用），要了就回。到期之后几条心跳之内就要到
+    /// 新快照并建单，建单之后不再要。
+    /// </summary>
+    /// <remarks>
+    /// 修复前也是绿的，而且应当是绿的：故障来源那时在清除后要一次、延迟一到就用那份快照建单；取消来源那时根本不看快照，到期就建。这一格守的是
+    /// 修复之后「多了一次撤回与重新索取」不会让只有心跳的车卡住。它不判别「晚于到期」这条规则本身——那是窗口乙两条的事。
+    /// </remarks>
+    [Theory]
+    [InlineData("cancelled")]
+    [InlineData("fault-cleared")]
+    [Trait("Requirement", "REQ-0360")]
+    [Trait("Requirement", "REQ-0362")]
+    public async Task AVehicleThatOnlySendsHeartbeatsIsAskedAgainAfterTheDueTimeAndTheTripIsRebuilt(string source)
+    {
+        RuntimeFixture fixture;
+        int gateCreates;
+        if (source == "cancelled")
+        {
+            Cancelled cancelled = await CancelledOnTheWayToGateAsync();
+            (fixture, gateCreates) = (cancelled.Fixture, cancelled.GateCreates);
+        }
+        else
+        {
+            Cleared cleared = await ClearedWithCargoOnBoardAsync();
+            (fixture, gateCreates) = (cleared.Fixture, cleared.GateCreates);
+        }
+
+        await using RuntimeFixture owned = fixture;
+        DateTimeOffset dueAt = (await RebuildAsync(fixture)).DueAt;
+        int requests = 0;
+        int rounds = 0;
+        while (fixture.Riot.CreateCount("TO_GATE") == gateCreates && rounds < 60)
+        {
+            rounds++;
+            fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+            await fixture.HearFromPeerAsync();
+            if (await ClaimAsync(fixture, ready: true))
+            {
+                requests++;
+                await fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow());
+            }
+
+            fixture.Context.ChangeTracker.Clear();
+            await fixture.Engine.ExecuteOnceAsync(Token);
+            fixture.Context.ChangeTracker.Clear();
+        }
+
+        Assert.Equal(gateCreates + 1, fixture.Riot.CreateCount("TO_GATE"));
+        Assert.True(fixture.Clock.GetUtcNow() - dueAt <= TimeSpan.FromSeconds(5), $"rebuilt {fixture.Clock.GetUtcNow() - dueAt} after the due time");
+        Assert.InRange(requests, source == "cancelled" ? 0 : 1, 2);
+        Assert.Equal(OwnOrderRebuildStates.Rebuilt, (await RebuildAsync(fixture)).State);
+
+        for (int round = 0; round < 5; round++)
+        {
+            fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+            await fixture.HearFromPeerAsync();
+            Assert.False(await ClaimAsync(fixture, ready: true), "a rebuilt trip is not asked about its cargo again");
+        }
+    }
+
+    /// <summary>
+    /// 到期前几秒刚向车要过快照（例如刚重连过），回答在到期之前就到了、按规则不算数：到期那一轮立刻撤回那次请求，宿主在下一条入站消息时再要，
+    /// 不再等满 10 秒的节流。
+    /// </summary>
+    /// <remarks>
+    /// 反向验证 M4 在第一轮时存活：请求若是记下重建时要的，到期时早已满 10 秒，节流那一条照样会撤回，所以「请求早于下限就撤回」看不出来。
+    /// 这一格把请求放在到期前 3 秒，只有那一条能让到期那一轮就再要。去掉它，车要多等至多 10 秒——不是安全问题，但它是写下的行为。
+    /// </remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0360")]
+    public async Task ARequestAnsweredJustBeforeTheDueTimeIsMadeAgainAtTheDueRound()
+    {
+        Cancelled cancelled = await CancelledOnTheWayToGateAsync();
+        await using RuntimeFixture fixture = cancelled.Fixture;
+        DateTimeOffset dueAt = (await RebuildAsync(fixture)).DueAt;
+        Assert.True(await ClaimAsync(fixture, ready: true));
+        fixture.Clock.Advance(dueAt - fixture.Clock.GetUtcNow() - TimeSpan.FromSeconds(3));
+        await using (ControlServerDbContext writing = new(fixture.DbOptionsForTests))
+        {
+            // A fresh request 3 s before the due time: what a reconnection just then would leave behind.
+            OwnOrderRebuildRow row = await writing.OwnOrderRebuilds.SingleAsync(Token);
+            OwnOrderRebuilds.WithdrawCargoEvidenceRequest(row);
+            await writing.SaveChangesAsync(Token);
+        }
+
+        Assert.True(await ClaimAsync(fixture, ready: true));
+        await ReportCargoAsync(fixture);
+        Assert.True(fixture.Clock.GetUtcNow() < dueAt, "the answer must arrive before the due time");
+
+        fixture.Clock.Advance(dueAt - fixture.Clock.GetUtcNow());
+        await fixture.HearFromPeerAsync();
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        await AssertWaitingAsync(fixture, cancelled, "CARGO_EVIDENCE_NOT_RECEIVED", "OWN_ORDER_REBUILD_WAITING_CARGO_EVIDENCE");
+        Assert.True(await ClaimAsync(fixture, ready: true), "the due round must make a fresh request due at once");
     }
 
     /// <summary>

@@ -1405,12 +1405,16 @@ public sealed class VehicleFaultRecoveryTests
         JourneyRuntimeRow waiting = await fixture.RuntimeAsync();
         Assert.Equal((faulted.JourneyId, faulted.Stage, code), (waiting.JourneyId, waiting.Stage, waiting.BlockReasonCode));
 
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
         if (cargo == "loaded")
         {
+            // After the due time and while the session is still not ready: only the end of the hold keeps it out
+            // (control-server#366; received before the due time it would be kept out for that alone, and this case would not
+            // see the hold rule -- reverse verification M3's first round).
+            fixture.Clock.Advance(TimeSpan.FromSeconds(1));
             await fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow());
         }
-        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
-        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
 
         // 会话未就绪：不在闸门后面建（审查 M2），记录写明在等会话。
         int createsBefore = fixture.Riot.CreateCount(cargo == "loaded" ? "TO_GATE" : "TO_PICKUP");
@@ -1427,8 +1431,8 @@ public sealed class VehicleFaultRecoveryTests
         await fixture.RestoreSessionReadyAsync();
         if (cargo == "loaded")
         {
-            // control-server#366: the snapshot above came while the session was not ready and does not count; the round that
-            // finds the session ready waits for one received after it.
+            // control-server#366: the snapshot above came while the session was not ready and does not count, though it is
+            // after the due time; the round that finds the session ready waits for one received after it.
             await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
             Assert.Equal(createsBefore, fixture.Riot.CreateCount("TO_GATE"));
             Assert.Equal("OWN_ORDER_REBUILD_WAITING_CARGO_EVIDENCE", (await fixture.RuntimeAsync()).BlockReasonCode);
