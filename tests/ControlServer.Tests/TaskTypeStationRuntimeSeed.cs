@@ -61,6 +61,25 @@ internal static class TaskTypeStationRuntimeSeed
             clock);
     }
 
+    /// <summary>The Map level rename detection the engine runs at the start of each round (control-server#186).</summary>
+    public static MapRenameHoldConvergence MapRenameHolds(
+        ControlServerDbContext context,
+        IRiotMapNameCatalog mapNames,
+        TimeProvider clock)
+    {
+        GovernanceDeploymentIdentity deployment = new("deployment:8005-controlserver@test");
+        GovernanceStore governance = new(context, deployment, AuditRetentionPolicy.Default);
+        return new MapRenameHoldConvergence(
+            context,
+            mapNames,
+            new MapNameBaselineStore(context, governance),
+            new TaskTypeStationBindingStore(context, new GovernedConfigurationPublisher(governance, governance)),
+            new TaskTypeStationHoldStore(context),
+            governance,
+            deployment,
+            clock);
+    }
+
     /// <summary>The batch 6 stores over one context, the way the host's scope builds them.</summary>
     public static TaskTypeStationAccess Access(ControlServerDbContext context)
     {

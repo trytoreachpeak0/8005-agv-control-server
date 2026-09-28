@@ -10,6 +10,13 @@ public sealed class FakeRiotSeed
     public string VehicleKey { get; set; } = "BROKERX-0c20ff0600d644869a6a80c186065d85";
     public string MapIdentity { get; set; } = "老厂前线new";
     public int MapId { get; set; } = 25;
+
+    /// <summary>
+    /// The Map's display name in RIoT's Map list (control-server#186). Deliberately its own setting rather than
+    /// <see cref="MapIdentity"/>, which is the vehicles' reported <c>CurrentMap</c>: on site the two are not the same
+    /// literal either (map 26 is 「老厂前线new_wk」 in the list while its vehicles report 「老厂前线new」).
+    /// </summary>
+    public string MapName { get; set; } = "老厂前线new_wk";
     public int StartStationId { get; set; } = 210;
     public int BatteryPercent { get; set; } = 80;
     public string BatteryState { get; set; } = "NO_CHARGE";
@@ -152,6 +159,7 @@ public sealed class FakeRiotSeed
                 [MapId] = RemovedStationIds
             },
             RouteCostsByStation = new Dictionary<string, long>(RouteCosts, StringComparer.Ordinal),
+            MapNamesByMapId = new Dictionary<int, string> { [MapId] = MapName },
             NextOrderSequence = 1
         };
     }

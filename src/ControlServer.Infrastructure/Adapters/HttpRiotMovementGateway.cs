@@ -17,7 +17,7 @@ namespace ControlServer.Infrastructure.Adapters;
 /// owns only ControlServer observation semantics.
 /// </summary>
 public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicleFacts, IRiotMapStationCatalog,
-    IRiotVehicleSafetyFacts, IVehicleMotionFacts, IRiotVehicleOrderFacts, IRiotOrderListingFacts
+    IRiotMapNameCatalog, IRiotVehicleSafetyFacts, IVehicleMotionFacts, IRiotVehicleOrderFacts, IRiotOrderListingFacts
 {
     private static readonly int[] NonFinalOrderStates = [1, 3, 7, 9];
 
@@ -241,6 +241,9 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         DateTimeOffset observedAt = timeProvider.GetUtcNow();
         return new RiotMapStationCatalogSnapshot(mapId, observedAt, fingerprint, stations);
     }
+
+    public Task<RiotMapNameListing> ReadMapNamesAsync(CancellationToken cancellationToken) =>
+        Task.FromResult(new RiotMapNameListing(timeProvider.GetUtcNow(), []));
 
     public async Task<RiotVehicleSafetyObservation> ReadVehicleSafetyAsync(
         string vehicleKey,

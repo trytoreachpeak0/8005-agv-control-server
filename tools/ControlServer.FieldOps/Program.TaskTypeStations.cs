@@ -293,7 +293,8 @@ internal static partial class Program
             bindings,
             new TaskTypeStationActivationStore(context, bindings, governance),
             new CatalogAvailabilityStore(context),
-            governance);
+            governance,
+            new MapNameBaselineStore(context, governance));
     }
 
     private static int EmitActivation(string command, TaskTypeStationActivationResult result, bool dryRun) =>

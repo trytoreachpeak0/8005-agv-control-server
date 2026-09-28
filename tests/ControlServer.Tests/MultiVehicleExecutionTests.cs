@@ -1313,6 +1313,7 @@ public sealed partial class MultiVehicleExecutionTests
                 new BoundFixedTaskStationResolver(TaskTypeStationRuntimeSeed.Access(Context), options),
                 TaskTypeStationRuntimeSeed.Access(Context),
                 TaskTypeStationRuntimeSeed.CatalogBindingHolds(Context, Clock),
+                TaskTypeStationRuntimeSeed.MapRenameHolds(Context, Riot, Clock),
                 movement,
                 store,
                 new OnboardJourneyPublisher(store, Peer, Clock),
@@ -1881,7 +1882,7 @@ public sealed partial class MultiVehicleExecutionTests
     private sealed class FleetRiot(MovableClock clock, JourneyRuntimeOptions options)
         : IRiotMovementGateway, IRiotVehicleFacts, IRiotMapStationCatalog, IVehicleMotionFacts,
           IRiotRouteCostProbe, IRiotOrderCommandGateway, IRiotVehicleEmergencyFacts, IRiotVehicleOrderFacts,
-          IRiotVehicleSafetyFacts
+          IRiotVehicleSafetyFacts, IRiotMapNameCatalog
     {
         private readonly Dictionary<string, RiotOrderObservation> _orders = new(StringComparer.Ordinal);
 
@@ -1976,6 +1977,13 @@ public sealed partial class MultiVehicleExecutionTests
                 options.MapIdentity,
                 300,
                 clock.GetUtcNow()));
+        }
+
+        /// <summary>RIoT's Map list (control-server#186): the served Map under one name that never changes here.</summary>
+        public Task<RiotMapNameListing> ReadMapNamesAsync(CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult(new RiotMapNameListing(clock.GetUtcNow(), [new RiotMapName(options.MapId, "MAP-FLEET")]));
         }
 
         public Task<RiotMapStationCatalogSnapshot> ReadMapStationsAsync(

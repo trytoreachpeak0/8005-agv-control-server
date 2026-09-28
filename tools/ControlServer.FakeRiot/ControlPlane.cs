@@ -46,6 +46,18 @@ public sealed record StationsCommand : CommandEnvelope
     public Dictionary<string, string>? Stations { get; init; }
 }
 
+/// <summary>Renames one Map under the same id (control-server#186).</summary>
+public sealed record MapNameCommand : CommandEnvelope
+{
+    public string? Name { get; init; }
+}
+
+/// <summary>Makes only the Map list answer 500, or answer again (control-server#186).</summary>
+public sealed record MapListFaultCommand : CommandEnvelope
+{
+    public bool? ServerError { get; init; }
+}
+
 public sealed record FaultCommand : CommandEnvelope
 {
     [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -128,7 +140,10 @@ public static class ControlPlane
                 removedEdges = state.RemovedEdgeIdsByMapId.OrderBy(pair => pair.Key)
                     .Select(pair => new { mapId = pair.Key, edgeIds = pair.Value }),
                 removedStations = state.RemovedStationIdsByMapId.OrderBy(pair => pair.Key)
-                    .Select(pair => new { mapId = pair.Key, stationIds = pair.Value })
+                    .Select(pair => new { mapId = pair.Key, stationIds = pair.Value }),
+                mapNames = state.MapNamesByMapId.OrderBy(pair => pair.Key)
+                    .Select(pair => new { mapId = pair.Key, name = pair.Value }),
+                mapListServerError = state.MapListServerError
             }));
         });
 
@@ -289,6 +304,33 @@ public static class ControlPlane
                            costs.TryGetValue(pair.Key, out double value) && value == pair.Value)
                     ? null
                     : state with { DynamicRouteCosts = costs };
+            }));
+
+        control.MapPut("/maps/{mapId:int}/name", (int mapId, MapNameCommand command) =>
+            ControlPlaneConventions.Handle(
+                engine,
+                "map-name:" + mapId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                command,
+                state =>
+                {
+                    if (string.IsNullOrWhiteSpace(command.Name))
+                    {
+                        throw new CommandRefusedException(ReasonCodes.InvalidArgument);
+                    }
+                    if (state.MapNamesByMapId.TryGetValue(mapId, out string? current)
+                        && string.Equals(current, command.Name, StringComparison.Ordinal))
+                    {
+                        return null;
+                    }
+                    Dictionary<int, string> names = new(state.MapNamesByMapId) { [mapId] = command.Name };
+                    return state with { MapNamesByMapId = names };
+                }));
+
+        control.MapPut("/maps/list-fault", (MapListFaultCommand command) =>
+            ControlPlaneConventions.Handle(engine, "map-list-fault", command, state =>
+            {
+                bool serverError = command.ServerError ?? throw new CommandRefusedException(ReasonCodes.InvalidArgument);
+                return state.MapListServerError == serverError ? null : state with { MapListServerError = serverError };
             }));
 
         control.MapPut("/faults/http", (FaultCommand command) =>

@@ -28,7 +28,8 @@ public sealed class TaskTypeStationActivationService(
     ITaskTypeStationBindingStore bindings,
     ITaskTypeStationActivationStore activations,
     ICatalogAvailabilityStore catalogStates,
-    IGovernanceAuditWriter audit)
+    IGovernanceAuditWriter audit,
+    IMapNameBaselineStore mapNames)
 {
     private static readonly JsonSerializerOptions AuditJson = new()
     {
@@ -42,6 +43,7 @@ public sealed class TaskTypeStationActivationService(
     private readonly ICatalogAvailabilityStore _catalogStates =
         catalogStates ?? throw new ArgumentNullException(nameof(catalogStates));
     private readonly IGovernanceAuditWriter _audit = audit ?? throw new ArgumentNullException(nameof(audit));
+    private readonly IMapNameBaselineStore _mapNames = mapNames ?? throw new ArgumentNullException(nameof(mapNames));
 
     /// <summary>
     /// 激活一份候选；<paramref name="dryRun"/> 时只校验并预览，除一条审计外什么都不写。

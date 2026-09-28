@@ -105,7 +105,7 @@ internal sealed class TaskTypeStationActivationHarness : IAsyncDisposable
             activations = wrap(activations);
         }
         TaskTypeStationActivationService service = new(
-            rules, bindings, activations, new CatalogAvailabilityStore(context), audit);
+            rules, bindings, activations, new CatalogAvailabilityStore(context), audit, new MapNameBaselineStore(context, audit));
         return new Stack(context, governance, rules, bindings, new TaskTypeStationHoldStore(context), activations, service);
     }
 

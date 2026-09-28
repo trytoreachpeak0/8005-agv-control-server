@@ -115,6 +115,7 @@ internal static partial class Program
             RollbackTaskTypeStationsCommand => await RollbackTaskTypeStationsAsync(context, governance, options, now),
             ReconcileTaskTypeStationsCommand => await ReconcileTaskTypeStationsAsync(context, governance, options, now),
             ReleaseTaskTypeStationHoldCommand => await ReleaseTaskTypeStationHoldAsync(context, governance, options, now),
+            AcceptMapNameCommand => await AcceptMapNameAsync(context, governance, options, now),
             ReadTaskTypeStationsCommand => await ReadTaskTypeStationsAsync(context, governance, options),
             CloseTaskTypeStationActivationCommand => await CloseTaskTypeStationActivationAsync(context, governance, options, now),
             ImportDispatchZoneParametersCommand => await ImportDispatchZoneParametersAsync(context, governance, options, now),
@@ -709,7 +710,7 @@ internal static partial class Program
             "usage: ControlServer.FieldOps <status|verify|release|enable-gate|audit|seed-approved-facts|bind-io"
             + "|export-audit|check-binding-snapshots|import-area-assignments|area-assignments"
             + "|activate-task-type-stations|rollback-task-type-stations|reconcile-task-type-stations"
-            + "|release-task-type-station-hold|close-task-type-station-activation|task-type-stations"
+            + "|release-task-type-station-hold|accept-map-name|close-task-type-station-activation|task-type-stations"
             + "|import-dispatch-zone-parameters|dispatch-zone-parameters>"
             + " --database <path> [options]");
         Console.Error.WriteLine("  verify      --record <field-record.json>");
@@ -735,6 +736,7 @@ internal static partial class Program
         Console.Error.WriteLine(
             "  release-task-type-station-hold --map <id> --task-type <TASK_TYPE> --site-verification <ref>"
             + " --catalog <stations.json> --reason <text> [--role <text>]");
+        Console.Error.WriteLine("  accept-map-name --map <id> --map-name <name> --reason <text> [--role <text>]");
         Console.Error.WriteLine("  close-task-type-station-activation --map <id> --reason <text> [--role <text>]");
         Console.Error.WriteLine("  task-type-stations      --map <id>   read-only");
         Console.Error.WriteLine("  import-dispatch-zone-parameters --input <zone-parameters.csv> [--dry-run]");

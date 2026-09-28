@@ -27,6 +27,7 @@ public sealed partial class JourneyRuntimeEngine(
     IFixedTaskStationResolver fixedStationResolver,
     TaskTypeStationAccess taskTypeStations,
     CatalogBindingHoldConvergence catalogBindingHolds,
+    MapRenameHoldConvergence mapRenameHolds,
     MovementDispatchService movementDispatch,
     WireToGateStore store,
     OnboardJourneyPublisher publisher,
@@ -299,6 +300,8 @@ public sealed partial class JourneyRuntimeEngine(
     private readonly JourneyRuntimeOptions runtimeOptions = options.Value;
 
     private readonly TaskTypeStationAccess _taskTypeStations = taskTypeStations;
+
+    private readonly MapRenameHoldConvergence _mapRenameHolds = mapRenameHolds;
 
     /// <summary>
     /// Runs the catalog change convergence without letting its failure end the round (control-server#201, review D of

@@ -81,6 +81,30 @@ public static class RiotDataPlane
             });
         });
 
+        // control-server#186: the Map list without any mapJson, in the shape the real RIoT answered on 2026-09-28
+        // (evidence/field/2026-09-28-cs186-map-list-endpoint-check): id and name, plus the metadata it carries.
+        app.MapGet("/api/imap/v1/mapInfo/getALLMapInfoExcludeMapJson", async (CancellationToken cancellationToken) =>
+        {
+            IResult? fault = await ApplyFaultAsync(engine, cancellationToken).ConfigureAwait(false);
+            if (fault is not null) return fault;
+            FakeRiotState state = engine.Snapshot().State;
+            if (state.MapListServerError)
+            {
+                return Results.Json(new { code = "500", message = "失败" }, statusCode: StatusCodes.Status500InternalServerError);
+            }
+            return Ok(state.MapNamesByMapId.OrderBy(pair => pair.Key).Select(pair => new
+            {
+                id = pair.Key,
+                name = pair.Value,
+                description = (string?)null,
+                floor = 1,
+                mapError = (string?)null,
+                source = 1,
+                state = "activated",
+                syncState = 1
+            }).ToArray());
+        });
+
         app.MapGet("/api/imap/v1/mapInfo/stations/{mapId:int}", async (
             int mapId, CancellationToken cancellationToken) =>
         {
