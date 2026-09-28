@@ -764,6 +764,81 @@ public sealed class StoppedRebuildExitTests
     }
 
     /// <summary>
+    /// 取消来源的仓空停住（control-server#366，CP-0007 修订的 REQ-0360）：本服务端的单在 RIoT 被取消、到期之后车报放货的仓是空的，重建停住。这一趟没有
+    /// 任何故障货物绑定——#345 的出口是为故障清除来源做的，这里断它对取消来源同样走到底：转交接、会话转「需要恢复」、车上开会话、故障货物交接、
+    /// 需求终止、旅程收尾、停住的记录 ENDED、会话回到就绪。
+    /// </summary>
+    [Theory]
+    [InlineData("ready")]
+    [InlineData("not-ready-on-own-order")]
+    [Trait("Requirement", "REQ-0360")]
+    [Trait("Requirement", "REQ-0238")]
+    public async Task ACancelledTripWhoseCargoIsNotInPlaceIsHandedToTheExceptionSessionAndEndsThere(string session)
+    {
+        Environment.SetEnvironmentVariable(ProofVariable, Proof);
+        try
+        {
+            await using RuntimeFixture fixture = await StoppedCancelledWithCargoNotInPlaceAsync();
+            string stoppedOrder = (await CurrentStopAsync(fixture, FirstDemandId)).UpperId;
+            Assert.Equal(OwnOrderRebuildSources.CancelledInRiot, (await RebuildForAsync(fixture, stoppedOrder)).Source);
+            Assert.Empty(await fixture.Context.FaultedVehicleCargo.AsNoTracking().ToArrayAsync(Token));
+            if (session == "not-ready-on-own-order")
+            {
+                await OwnOrderRebuildTests.DropSessionOnOwnOrderAsync(fixture);
+            }
+
+            int[] slots = await CargoSlotsAsync(fixture);
+            await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+            OnboardMessageProcessor processor = RecoveryProcessor(fixture, connection);
+            OnboardConnectionState state = Connection(fixture);
+            long generation = (await connection.SessionRecoveries.AsNoTracking().SingleAsync(Token)).SessionGeneration;
+            WireToGateStore store = new(connection);
+
+            VehicleFaultRecoveryDecision decision = await VehicleFaultRecoveryTests.Service(fixture, new(fixture))
+                .RecoverAsync(Prepare(fixture), Token);
+            Assert.Equal(
+                (VehicleFaultRecoveryOutcome.HandoffPrepared, VehicleFaultRecoveryDispositions.AwaitingCargoHandoff),
+                (decision.Outcome, decision.Disposition));
+            JourneyRuntimeRow blocked = await fixture.RuntimeAsync();
+            Assert.Equal(
+                (JourneyRuntimeStage.Blocked, "OWN_ORDER_REBUILD_AWAITING_CARGO_HANDOFF"),
+                (blocked.Stage, blocked.BlockReasonCode));
+            Assert.True(await ClaimAsync(fixture, generation, ready: session == "ready"));
+            SessionReadinessDecision after = await store.DecideReadinessAsync(fixture.Options.AgvId, generation, Token);
+            Assert.Equal(SessionReadiness.RecoveryRequired, after.Readiness);
+
+            string sessionId = FirstLinePayload(
+                await AssertOpenedAsync(processor.ProcessAsync(OpenSession(fixture, SessionRequest, slots), state, Token)))
+                .GetProperty("exceptionRecoverySessionId").GetString()!;
+            string accepted = await processor.ProcessAsync(Action(fixture, sessionId, "FAULT_CARGO_HANDOFF", slots), state, Token);
+            Assert.Equal("RecoveryActionAccepted", FirstLineType(accepted));
+            string handoffId = (await connection.RecoveryWorkflows.AsNoTracking().SingleAsync(Token)).HandoffId!;
+            string ack = await processor.ProcessAsync(HandedOff(fixture, sessionId, handoffId, slots), state, Token);
+            Assert.Equal("DurableAck", FirstLineType(ack));
+
+            await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+            JourneyRuntimeRow closed = await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token);
+            Assert.Equal(
+                (JourneyRuntimeStage.Completed, "TERMINATED_BY_FAULT_CARGO_HANDOFF"),
+                (closed.Stage, closed.BlockReasonCode));
+            Assert.Equal(
+                DemandExecutionStatus.Cancelled,
+                (await reading.AcceptedDemands.AsNoTracking().SingleAsync(row => row.DemandId == FirstDemandId, Token)).Status);
+            Assert.Equal(OwnOrderRebuildStates.Ended, (await RebuildForAsync(fixture, stoppedOrder)).State);
+            Assert.Empty(await reading.FaultedVehicleCargo.AsNoTracking().ToArrayAsync(Token));
+            await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(reading);
+            if (session == "ready")
+            {
+                Assert.Equal(SessionReadiness.Ready, (await reading.SessionRecoveries.AsNoTracking().SingleAsync(Token)).Readiness);
+            }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(ProofVariable, null);
+        }
+    }
+
+    /// <summary>
     /// 护栏三停住而车上有货（去卸货站那条腿上反复被取消）：人可以选人工重建，也可以选交接；选交接时同样转进异常处置会话。转交接的人
     /// 落在那条重建记录上，每次调用记告警（事件 9203，写明动作与人；独立审查 S2、S4）。
     /// </summary>
@@ -1480,6 +1555,36 @@ public sealed class StoppedRebuildExitTests
         fixture.Clock.Advance(TimeSpan.FromSeconds(5));
         await fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow(), physicalState: "EMPTY");
         await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        Assert.Equal("OWN_ORDER_REBUILD_CARGO_NOT_IN_PLACE", (await fixture.RuntimeAsync()).BlockReasonCode);
+        fixture.Context.ChangeTracker.Clear();
+        return fixture;
+    }
+
+    /// <summary>
+    /// 取消来源的仓空停住（control-server#366）：装着货开往卸货站，本服务端的单在 RIoT 被取消；延迟过了，到期之后车报放货的仓是空的：记录停在
+    /// <c>CARGO_NOT_PROVEN_IN_ORIGINAL_SLOTS</c>，旅程码 <c>OWN_ORDER_REBUILD_CARGO_NOT_IN_PLACE</c>，一张新单都没建。
+    /// </summary>
+    internal static async Task<RuntimeFixture> StoppedCancelledWithCargoNotInPlaceAsync()
+    {
+        RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, createdAt: Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set(FirstSublot, 7);
+        await fixture.AdvanceToGateArrivalAsync();
+        fixture.Riot.MovementState = "MT_FINISHED";
+        fixture.Context.ChangeTracker.Clear();
+        int gateCreates = fixture.Riot.CreateCount("TO_GATE");
+        fixture.Riot.CancelOrder((await fixture.RuntimeAsync()).GateUpperId);
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow(), physicalState: "EMPTY");
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.HearFromPeerAsync();
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(gateCreates, fixture.Riot.CreateCount("TO_GATE"));
         Assert.Equal("OWN_ORDER_REBUILD_CARGO_NOT_IN_PLACE", (await fixture.RuntimeAsync()).BlockReasonCode);
         fixture.Context.ChangeTracker.Clear();
         return fixture;
