@@ -1,0 +1,4 @@
+M6（去掉车号过滤）的补充对照，HEAD 23711d51，本机 --no-incremental 构建 0 Error(s)：
+- 用例 Req0362ASnapshotFromAnotherVehicleSaysNothingAboutThisOnesCargo 按本票挪过的时机（另一辆车的快照在到期之后报）：M6 下红（summary-m6-vehicle-filter.txt）。
+- 把这条用例的快照临时改回原来的时机（清除后拨 5 秒就报，早于到期），同时施加 M6：Passed 1/1，退出码 0。
+  即原来的时机下，去掉车号过滤它照样绿——它只因时间点就被排除，看不见过滤器。两处临时改动已用备份还原，git status 干净。
