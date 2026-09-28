@@ -697,8 +697,9 @@ public sealed partial class JourneyRuntimeEngine
     /// <b>Only a slot read EMPTY settles that the cargo is not there</b> (independent review S4). Everything else a snapshot can
     /// fall short with leaves the question open, and the rebuild waits for the next snapshot rather than stopping for a person:
     /// a slot UNKNOWN or left out of the snapshot, <c>unknownPresent</c> not false, a slot OCCUPIED but not LOCKED or with its
-    /// unlock output not RESET, a load of the demands still on board neither committed nor settled, or no committed load at all
-    /// to say which slots to look at. An unlocked or active slot is the one of these a person might expect to stop: the cargo is
+    /// unlock output not RESET, or a load of the demands still on board neither committed nor settled -- each a state that changes
+    /// by itself. No committed load at all to say which slots to look at is not one of them since control-server#376: it is a
+    /// record no snapshot changes, and it stops for a person (<see cref="OwnOrderRebuilds.CargoSlotsNotRecorded"/>). An unlocked or active slot is the one of these a person might expect to stop: the cargo is
     /// there, the slot is not secured -- a state that changes as soon as whoever is at the door is done, not evidence that the
     /// cargo went. It cannot send the vehicle off unsecured either: the new order is still created only when Onboard's summary
     /// says every target slot is locked and every unlock output reset (review M2). A slot read EMPTY settles it even beside an

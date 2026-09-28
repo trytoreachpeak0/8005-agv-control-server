@@ -340,6 +340,62 @@ public sealed class FaultedCargoBindingLifecycleTests
         Assert.Equal("NOT_CARGO_OF_THE_VEHICLES_CURRENT_JOURNEY", (await SingleBindingAsync(fixture)).ReleasedReason);
     }
 
+    /// <summary>
+    /// 证据两半缺一不可的那一半：需求曾在一趟已收尾的旅程里（例如释放改派之后又回到本车），此刻又是本车未收尾旅程的成员、真装着货——
+    /// 它的绑定是这一趟的货，不释放。只有「曾在已收尾的旅程里」是不够的。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0238")]
+    public async Task ABindingOfADemandStillInAnOpenJourneyIsKeptEvenIfAClosedJourneyOnceHadIt()
+    {
+        await using RuntimeFixture fixture = await CompletedTripLeavingALiveBindingAsync();
+        await using (ControlServerDbContext writing = new(fixture.DbOptionsForTests))
+        {
+            writing.FaultedVehicleCargo.RemoveRange(await writing.FaultedVehicleCargo.ToArrayAsync(Token));
+            await writing.SaveChangesAsync(Token);
+        }
+
+        await DispatchSecondDemandAsync(fixture);
+        await using (ControlServerDbContext writing = new(fixture.DbOptionsForTests))
+        {
+            JourneyDemandRow first = await writing.Set<JourneyDemandRow>().AsNoTracking()
+                .SingleAsync(row => row.DemandId == FirstDemandId, Token);
+            JourneyDemandRow earlier = await writing.Set<JourneyDemandRow>().AsNoTracking()
+                .SingleAsync(row => row.DemandId == SecondDemandId, Token);
+            earlier.JourneyId = first.JourneyId;
+            earlier.Status = JourneyDemandStatuses.Terminated;
+            earlier.RemovedAt = fixture.Clock.GetUtcNow();
+            earlier.PickupStopId = first.PickupStopId;
+            earlier.UnloadStopId = first.UnloadStopId;
+            writing.Set<JourneyDemandRow>().Add(earlier);
+            await writing.SaveChangesAsync(Token);
+        }
+
+        await BindAsync(fixture, SecondDemandId);
+        await using ControlServerDbContext store = new(fixture.DbOptionsForTests);
+        Assert.Empty(await new VehicleFaultStore(store).ReleaseCargoOfOtherJourneysAsync(
+            fixture.Options.AgvId, fixture.Clock.GetUtcNow(), Token));
+        Assert.Null((await SingleBindingAsync(fixture)).ReleasedAt);
+    }
+
+    /// <summary>
+    /// 证据的另一半：库里没有任何一趟旅程提到这条绑定的需求（没有旅程可说它的货已经下车），绑定保留。没有证据时，货可能还在车上。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0238")]
+    public async Task ABindingNoJourneyAccountsForIsKept()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await using ControlServerDbContext store = new(fixture.DbOptionsForTests);
+        VehicleFaultStore faults = new(store);
+        await faults.BindCargoAsync(
+            fixture.Options.AgvId, 1, "30000000-0000-4000-8000-000000000376", null, "KEY-376", loadingWitnessed: true,
+            fixture.Clock.GetUtcNow(), Token);
+
+        Assert.Empty(await faults.ReleaseCargoOfOtherJourneysAsync(fixture.Options.AgvId, fixture.Clock.GetUtcNow(), Token));
+        Assert.Null((await SingleBindingAsync(fixture)).ReleasedAt);
+    }
+
     // ---- 三、不许有没有出口的等待 ----------------------------------------------------------------------------------------
 
     /// <summary>

@@ -75,9 +75,9 @@ public static class FaultedCargoBindings
 
     /// <summary>
     /// Releases this vehicle's live bindings that belong to a journey other than its current one (see
-    /// <see cref="NotCargoOfTheCurrentJourneyReason"/>): the demand a binding names is not an active member of a journey of this
-    /// vehicle that is still open, and a journey it belonged to has closed. A binding with no such evidence -- its demand in no
-    /// journey at all, or still in an open journey elsewhere -- is kept: without evidence the cargo may be there.
+    /// <see cref="NotCargoOfTheCurrentJourneyReason"/>): a journey the demand a binding names belonged to has closed, and the
+    /// demand is an active member of no journey still open -- this vehicle's current one included. A binding with no such
+    /// evidence -- its demand in no journey at all, or still in an open one -- is kept: without evidence the cargo may be there.
     /// </summary>
     /// <returns>The bindings released, staged.</returns>
     public static async Task<IReadOnlyList<FaultedVehicleCargoRow>> StageReleaseOfOtherJourneysCargoAsync(
@@ -101,17 +101,13 @@ public static class FaultedCargoBindings
                 from membership in dbContext.Set<JourneyDemandRow>()
                 join journey in dbContext.JourneyRuntimes on membership.JourneyId equals journey.JourneyId
                 where named.Contains(membership.DemandId)
-                select new { membership.DemandId, membership.RemovedAt, journey.AgvId, journey.Stage })
+                select new { membership.DemandId, membership.RemovedAt, journey.Stage })
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
-        HashSet<string> current = journeys
-            .Where(row => row.AgvId == agvId && row.Stage != JourneyRuntimeStage.Completed && row.RemovedAt == null)
-            .Select(row => row.DemandId)
-            .ToHashSet(StringComparer.Ordinal);
         HashSet<string> closed = journeys
             .Where(row => row.Stage == JourneyRuntimeStage.Completed)
             .Select(row => row.DemandId)
             .ToHashSet(StringComparer.Ordinal);
-        HashSet<string> stillOpenElsewhere = journeys
+        HashSet<string> stillOpen = journeys
             .Where(row => row.Stage != JourneyRuntimeStage.Completed && row.RemovedAt == null)
             .Select(row => row.DemandId)
             .ToHashSet(StringComparer.Ordinal);
@@ -119,8 +115,7 @@ public static class FaultedCargoBindings
         return await StageReleaseAsync(
             dbContext,
             agvId,
-            binding => !current.Contains(binding.DemandId) && closed.Contains(binding.DemandId) &&
-                       !stillOpenElsewhere.Contains(binding.DemandId),
+            binding => closed.Contains(binding.DemandId) && !stillOpen.Contains(binding.DemandId),
             NotCargoOfTheCurrentJourneyReason,
             releasedAt,
             cancellationToken).ConfigureAwait(false);
