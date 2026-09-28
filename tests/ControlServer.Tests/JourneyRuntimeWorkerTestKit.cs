@@ -686,6 +686,68 @@ internal static class JourneyRuntimeWorkerTestKit
             Context.ChangeTracker.Clear();
         }
 
+        /// <summary>
+        /// Onboard reports its safety summary as the real onboard computes it (onboard-hmi <c>WireToGateSafetyEvaluator</c>):
+        /// a SafetyStateChanged at the current generation's next safetyStateVersion, received now, and the session row's
+        /// revision moved to it the way <c>OnboardMessageProcessor</c> moves it. Readiness is left as the test set it --
+        /// what this helper changes is only what the session vouches for about the doors (control-server#335).
+        /// </summary>
+        public async Task ReportSafetySummaryAsync(
+            bool allTargetSlotsLocked,
+            bool unknownPresent,
+            string[] reasonCodes,
+            bool departureSafe = false,
+            bool vehicleStopped = false,
+            bool allUnlockOutputsReset = true)
+        {
+            SessionRecoveryRow session = await Context.SessionRecoveries.SingleAsync(TestContext.Current.CancellationToken);
+            long next = (session.SafetyRevision ?? 0) + 1;
+            await AddRawInboxAsync("SafetyStateChanged", new
+            {
+                safetyStateVersion = next,
+                observedAt = Clock.GetUtcNow(),
+                safety = new
+                {
+                    departureSafe,
+                    vehicleStopped,
+                    allTargetSlotsLocked,
+                    allUnlockOutputsReset,
+                    unknownPresent,
+                    reasonCodes
+                },
+                affectedSlots = Enumerable.Range(1, 8).ToArray()
+            }, session.SessionGeneration, Clock.GetUtcNow());
+            session.SafetyRevision = next;
+            session.DepartureSafe = departureSafe;
+            session.SafetyReasonCodesJson = JsonSerializer.Serialize(reasonCodes);
+            session.SafetyUnknownPresent = unknownPresent;
+            await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+            Context.ChangeTracker.Clear();
+        }
+
+        /// <summary>
+        /// The vehicle reconnected and the new generation's handshake has begun, but its SafetyStateSnapshot has not landed:
+        /// what <c>WireToGateStore.BeginSessionRecoveryAsync</c> leaves on the row (revision and departure safety voided,
+        /// <c>HANDSHAKE_INCOMPLETE</c>), with the new generation's first inbound received now. The previous generation's
+        /// messages stay in the inbox, as they do in the product. Measured on the real rig for control-server#335
+        /// (run 36387029532): this state lasted about 100 ms after a mid-drive reconnect.
+        /// </summary>
+        public async Task BeginGenerationWithoutSafetyAsync(long generation)
+        {
+            SessionRecoveryRow session = await Context.SessionRecoveries.SingleAsync(TestContext.Current.CancellationToken);
+            session.SessionGeneration = generation;
+            session.SafetyRevision = null;
+            session.SafetyHash = null;
+            session.DepartureSafe = null;
+            session.RecoveryReportId = null;
+            session.Readiness = SessionReadiness.RecoveryRequired;
+            session.ReasonCode = "HANDSHAKE_INCOMPLETE";
+            session.UpdatedAt = Clock.GetUtcNow();
+            await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+            await AddRawInboxAsync("SessionHello", new { observedAt = Clock.GetUtcNow() }, generation, Clock.GetUtcNow());
+            Context.ChangeTracker.Clear();
+        }
+
         public async Task AddSafetyStateChangedAsync(
             long safetyStateVersion,
             bool departureSafe,
