@@ -15,3 +15,7 @@ cs#366 CI 真装置（调度 Coordinator 8 放的持有，2026-09-28），对端
 merge fp/v2-impl（b59b09d5，含 cs#334）之后，调度要求在新头上只重跑新场景：
 | 36392595268 | a932c418675f1f3c7ba4d4ce442fa9971bef50a7 | real-onboard-cancelled-rebuild-cargo-proof | PASS 129s，L2-RC-01～11 |
 四行核对同上：三端从日志那一行读，停止标记源码回显之外 0 命中，artifact 330289 字节。
+
+审查修改（M1 修复、M2 用例）之后，在最终头上补跑新场景（调度放的持有；车载端改用 hmi#170 合入后的顶端 60f34187，相对 4c2d2dc1 的 src/ 只改注释）：
+| 36399620380 | 87f3c65cb9f571942d4869563f06f9feb71b4319 | real-onboard-cancelled-rebuild-cargo-proof | PASS 155s，L2-RC-01～11 |
+对端 onboard 60f341878a1bce705598aa9043234c1ca2fb1d7a、simulator fb5f7c593742bf98bc3957b8729a38aad5321f28。四行核对同上：三端从日志那一行读、与派发一致，停止标记源码回显之外 0 命中，artifact 341811 字节。
