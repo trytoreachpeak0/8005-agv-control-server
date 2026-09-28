@@ -444,6 +444,43 @@ public sealed class OwnOrderRebuildCargoProofTests
         await AssertStoppedAsync(fixture, cancelled);
     }
 
+    /// <summary>
+    /// 独立审查 M1（2026-09-28，准入线③）：已经决定建单、新单却一次都没发出去（「决定」那次保存之后、问 RIoT 之前进程停了，意图仍是
+    /// <c>PENDING_RECONCILIATION</c>、<c>CreateAttemptCount</c> 为 0，记录停在 <c>ORDERING</c>）。下一轮重走建单前的检查，被挡住一次——RIoT 车况读不到、别人的急停、
+    /// 会话未就绪三选一——放开之后要一份放开之后的快照。宿主必须替这种记录去要：车每轮只发心跳、被要才回（货在），几轮之内就要到、
+    /// 建成一张新单，记录转 <c>REBUILT</c>，旅程码清掉。
+    /// </summary>
+    /// <remarks>
+    /// 修之前宿主的索取只认 <c>PENDING</c>：放开之后一次都不要，旅程永远停在 <c>OWN_ORDER_REBUILD_WAITING_CARGO_EVIDENCE</c>，
+    /// 而 cs#345 的三个出口都要求记录是 <c>STOPPED</c>，只能改库。审查员的探针在这三格上 120 轮都是 creates=0、claims=0。
+    /// 注入用的是进程停下（<c>CrashOnNextReconcileOf</c>）而不是对账答 Unknown：答 Unknown 的意图记成 <c>RESULT_UNKNOWN</c>，之后读到
+    /// NotFound 也不再建单，挡不挡都一样停在 <c>OWN_ORDER_REBUILD_ORDER_UNCONFIRMED</c>——那是建单一侧早有的行为，不在本票
+    /// （已报调度，evidence/cs366/review-m1/）。
+    /// </remarks>
+    [Theory]
+    [InlineData("riot-unreadable")]
+    [InlineData("emergency")]
+    [InlineData("session-not-ready")]
+    [Trait("Requirement", "REQ-0360")]
+    public async Task ADecidedRebuildNeverSentThatIsHeldOnceIsAskedForAFreshSnapshotAndRebuilt(string hold)
+    {
+        (RuntimeFixture fixture, Cancelled cancelled, string newUpperId) = await DecidedButNeverSentAsync();
+        await using RuntimeFixture owned = fixture;
+
+        await HoldOneRoundAsync(fixture, hold);
+        OwnOrderRebuildRow held = await RebuildAsync(fixture);
+        Assert.Equal((OwnOrderRebuildStates.Ordering, cancelled.GateCreates), (held.State, fixture.Riot.CreateCount("TO_GATE")));
+
+        int claims = await RunWithAVehicleThatAnswersAsync(fixture, rounds: 6, physicalState: "OCCUPIED");
+
+        Assert.True(claims >= 1, "the Host must ask for a snapshot for a decided rebuild never sent");
+        Assert.Equal(cancelled.GateCreates + 1, fixture.Riot.CreateCount("TO_GATE"));
+        OwnOrderRebuildRow rebuilt = await RebuildAsync(fixture);
+        Assert.Equal((OwnOrderRebuildStates.Rebuilt, newUpperId), (rebuilt.State, rebuilt.NewUpperId));
+        JourneyRuntimeRow journey = await fixture.RuntimeAsync(FirstDemandId);
+        Assert.Equal((JourneyRuntimeStage.AwaitingGateArrival, (string?)null), (journey.Stage, journey.BlockReasonCode));
+    }
+
     // ---- 故障清除来源（REQ-0362）：「证明一次就记下」的两个窗口 --------------------------------------------------
 
     /// <summary>
@@ -506,7 +543,7 @@ public sealed class OwnOrderRebuildCargoProofTests
 
     // ---- 夹具 ----------------------------------------------------------------------------------------------
 
-    private sealed record Cancelled(
+    internal sealed record Cancelled(
         RuntimeFixture Fixture, JourneyRuntimeRow Dispatched, JourneyStopRow[] StopsBefore, JourneyStopRow Unload, int GateCreates);
 
     private sealed record Cleared(RuntimeFixture Fixture, int GateCreates);
@@ -583,6 +620,91 @@ public sealed class OwnOrderRebuildCargoProofTests
             CommittedAt = anchor.CommittedAt,
         });
         await writing.SaveChangesAsync(Token);
+    }
+
+    /// <summary>
+    /// 取消来源、车上有货，到期之后车报货在；决定建单那次保存之后、问 RIoT 之前进程停了：新意图写下了、从没发出（<c>PENDING_RECONCILIATION</c>，
+    /// <c>CreateAttemptCount</c> 为 0），记录 <c>ORDERING</c>。返回夹具、取消时的样子与新单号。<see cref="StoppedRebuildExitTests"/> 的交接格也用它。
+    /// </summary>
+    internal static async Task<(RuntimeFixture Fixture, Cancelled Cancelled, string NewUpperId)> DecidedButNeverSentAsync()
+    {
+        Cancelled cancelled = await CancelledOnTheWayToGateAsync();
+        RuntimeFixture fixture = cancelled.Fixture;
+        string newUpperId = (await RebuildAsync(fixture)).NewUpperId;
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        await ReportCargoAsync(fixture);
+        fixture.Riot.CrashOnNextReconcileOf = newUpperId;
+        await Assert.ThrowsAsync<IOException>(() => TickAndHearAsync(fixture));
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.Null(fixture.Riot.CrashOnNextReconcileOf);
+        OwnOrderRebuildRow ordering = await RebuildAsync(fixture);
+        Assert.Equal(OwnOrderRebuildStates.Ordering, ordering.State);
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        OrderIntentRow intent = await reading.OrderIntents.AsNoTracking().SingleAsync(row => row.UpperId == newUpperId, Token);
+        Assert.Equal(("PENDING_RECONCILIATION", 0), (intent.Status, intent.CreateAttemptCount));
+        Assert.Equal(cancelled.GateCreates, fixture.Riot.CreateCount("TO_GATE"));
+        return (fixture, cancelled, newUpperId);
+    }
+
+    /// <summary>
+    /// 挡住一轮再放开：RIoT 车辆读取读不到（<c>RIOT_VEHICLE_SAFETY_UNREADABLE</c>）、别人的急停，或会话因本车在途单未就绪。
+    /// </summary>
+    internal static async Task HoldOneRoundAsync(RuntimeFixture fixture, string hold)
+    {
+        switch (hold)
+        {
+            case "riot-unreadable":
+                fixture.Riot.BeforeReadVehicle = () => throw new HttpRequestException("L1: RIoT vehicle read failed");
+                break;
+            case "emergency":
+                Latch(fixture);
+                break;
+            default:
+                await OwnOrderRebuildTests.DropSessionOnOwnOrderAsync(fixture);
+                break;
+        }
+
+        await TickAndHearAsync(fixture);
+        Assert.NotNull((await RebuildAsync(fixture)).VehicleHeldAt);
+        switch (hold)
+        {
+            case "riot-unreadable":
+                fixture.Riot.BeforeReadVehicle = null;
+                break;
+            case "emergency":
+                Unlatch(fixture);
+                break;
+            default:
+                await fixture.RestoreSessionReadyAsync();
+                fixture.Context.ChangeTracker.Clear();
+                break;
+        }
+    }
+
+    /// <summary>
+    /// 车每轮只发心跳，被要才回一份快照：每轮先照宿主的做法判要不要（<see cref="OwnOrderRebuilds.ClaimCargoEvidenceRequestAsync"/>），
+    /// 要了就回，再跑一轮引擎。返回要了几次。
+    /// </summary>
+    internal static async Task<int> RunWithAVehicleThatAnswersAsync(RuntimeFixture fixture, int rounds, string physicalState)
+    {
+        int claims = 0;
+        for (int round = 0; round < rounds; round++)
+        {
+            fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+            await fixture.HearFromPeerAsync();
+            if (await ClaimAsync(fixture, ready: true))
+            {
+                claims++;
+                await fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow(), physicalState: physicalState);
+            }
+
+            fixture.Context.ChangeTracker.Clear();
+            await fixture.Engine.ExecuteOnceAsync(Token);
+            fixture.Context.ChangeTracker.Clear();
+        }
+
+        return claims;
     }
 
     /// <summary>拨一秒，车报一份快照：接收时刻严格晚于上一轮。</summary>
