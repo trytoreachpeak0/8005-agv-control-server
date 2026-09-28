@@ -11,6 +11,9 @@ $Only = @($Only | ForEach-Object { $_ -split ',' } | Where-Object { $_ })
 Set-Location $Worktree
 $engine = 'src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs'
 $recovery = 'src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs'
+$rebuild = 'src/ControlServer.Host/Runtime/JourneyRuntimeEngine.OwnOrderRebuild.cs'
+$dirty = git status --porcelain -- src tests
+if ($dirty) { throw "working tree not clean, refusing to mutate:`n$($dirty -join "`n")" }
 $filter = 'FullyQualifiedName~FailedOrderBeforeConfirmationTests|FullyQualifiedName~VehicleFaultRecoveryTests|FullyQualifiedName~FailedOrderBehindSessionGateTests|FullyQualifiedName~OwnOrderRebuild|FullyQualifiedName~InTransitOrderStall|FullyQualifiedName~EmergencyReleaseVersusOwnOrderRebuildTests|FullyQualifiedName~StoppedRebuildExitTests|FullyQualifiedName~PickupDispatchPlanPastOwnOrderTests|FullyQualifiedName~Batch7DemandRelease'
 
 $mutations = [ordered]@{
@@ -36,6 +39,9 @@ $mutations = [ordered]@{
     'M9-failed-only' = @{ File = $engine
         From = "        return await NameStalledOrderAsync(runtime, intent, order, cancellationToken, reasonOnceMovedOn).ConfigureAwait(false);"
         To = "        return await ObserveOrderFailureAsync(runtime, intent, order, cancellationToken).ConfigureAwait(false);" }
+    'M10-no-rebuild-delay' = @{ File = $rebuild
+        From = "            if (now < rebuild.DueAt)"
+        To = "            if (now < rebuild.RecordedAt)" }
     'M8-behind-confirmed-not-named' = @{ File = $engine
         From = "            if (result.Outcome == MovementDispatchOutcome.Confirmed)`n            {`n                // Read afresh"
         To = "            if (result.Outcome == MovementDispatchOutcome.CreateDispatchDisabled)`n            {`n                // Read afresh" }
@@ -48,7 +54,7 @@ foreach ($name in $mutations.Keys) {
     if ($Only.Count -gt 0 -and $name -notin $Only) { continue }
     $m = $mutations[$name]
     if ($m.Revert) {
-        git checkout 71e62d85 -- $engine $recovery
+        git checkout 71e62d85 -- $engine $recovery $rebuild
         $changed = (git diff --stat HEAD -- src | Select-Object -Last 1)
         "== $name : src reverted to 71e62d85 ($changed)" | Add-Content $OutFile
     }
@@ -74,7 +80,7 @@ foreach ($name in $mutations.Keys) {
         $test | Select-String -Pattern '(Failed|Passed)!\s+-' | ForEach-Object { "   $($_.Line.Trim())" } | Add-Content $OutFile
     }
     finally {
-        git checkout HEAD -- $engine $recovery
+        git checkout HEAD -- $engine $recovery $rebuild
     }
 }
 # Leave the build matching HEAD.
