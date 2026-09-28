@@ -185,7 +185,8 @@ public sealed class GateHeldOnboardSendTests
     }
 
     /// <summary>
-    /// 卡住的写，和排在它后面的写，都在写超时之内结束；这条连接随之关掉，之后的发送立刻失败（护栏 b 的行为一半）。
+    /// 卡住的写，和排在它后面的写，都以「连接不可用」结束，其中至少一次是写超时；这条连接随之关掉，之后的发送不再等超时、直接失败
+    /// （护栏 b 的行为一半）。
     /// </summary>
     /// <remarks>
     /// <para>
@@ -193,8 +194,14 @@ public sealed class GateHeldOnboardSendTests
     /// 发送闸门的那一次。上限只罩住写本身、不罩住排队，接收循环照样停在那里，静默窗口照样走不到。
     /// </para>
     /// <para>
-    /// <b>「之后立刻失败」钉的是关连接。</b>只抛异常、不关流的话，卡住的那次写仍占着发送闸门，这条连接上之后的每一次发送都要再等满一个
-    /// 超时——一轮里给这台车发几条，闸门就多占几个超时；而接收循环不在的时候（引擎直接发的那一路），也没有别的东西会把它从路由表摘掉。
+    /// <b>「至少一次」而不是「第一次」</b>（审查必修 3，本机 14 轮红 1 次）：两次发送各有一个 500 ms 计时器，几乎同时到点；排队那一次先到点时，
+    /// 是它把流关掉，第一次写随之以普通的 socket 失败结束。哪一次先到点是调度，不是判据（记忆：窗口里「恰好一次」是调度）。
+    /// 两次都必须是 <see cref="IOException"/>：流关了之后的那一次以前是 <see cref="ObjectDisposedException"/>，只接
+    /// <see cref="IOException"/> 的发送方会把它当成别的错。
+    /// </para>
+    /// <para>
+    /// <b>「之后直接失败」钉的是关连接，按事件判</b>：只抛异常、不关流的话，卡住的那次写仍占着发送闸门，之后那一次要再等满一个超时、
+    /// 以写超时结束；关了流，它以「连接已关」结束，里面没有超时的字样。墙钟只剩宽松的挂死保护。
     /// </para>
     /// </remarks>
     [Fact]
@@ -204,58 +211,58 @@ public sealed class GateHeldOnboardSendTests
         await using StuckPeer stuck = await StuckPeer.OpenAsync(timeout);
         ReadOnlyMemory<byte> line = OnboardPeerConnection.Encode("""{"messageType":"Heartbeat"}""");
 
-        Stopwatch took = Stopwatch.StartNew();
         Task first = stuck.Connection.SendAsync(line, CancellationToken.None);
         Task queued = stuck.Connection.SendAsync(line, CancellationToken.None);
         Exception firstFailure = await FailureOf(first);
         Exception queuedFailure = await FailureOf(queued);
-        TimeSpan bothEnded = took.Elapsed;
-
-        Stopwatch after = Stopwatch.StartNew();
         Exception laterFailure = await FailureOf(stuck.Connection.SendAsync(line, CancellationToken.None));
-        TimeSpan laterEnded = after.Elapsed;
 
         TestContext.Current.TestOutputHelper?.WriteLine(
-            $"both ended after {bothEnded.TotalMilliseconds:F0} ms, a later send after {laterEnded.TotalMilliseconds:F0} ms; " +
-            $"{firstFailure.GetType().Name} / {queuedFailure.GetType().Name} / {laterFailure.GetType().Name}");
-        IOException timedOut = Assert.IsType<IOException>(firstFailure);
-        Assert.Contains("did not finish within", timedOut.Message, StringComparison.Ordinal);
+            $"first: {Describe(firstFailure)}{Environment.NewLine}queued: {Describe(queuedFailure)}{Environment.NewLine}" +
+            $"later: {Describe(laterFailure)}");
+        Assert.IsAssignableFrom<IOException>(firstFailure);
+        Assert.IsAssignableFrom<IOException>(queuedFailure);
         Assert.True(
-            queuedFailure is IOException or ObjectDisposedException,
-            $"the queued send ended with {queuedFailure.GetType().Name}, which no sender reads as a lost connection");
-        Assert.True(
-            bothEnded < timeout * 2 + TimeSpan.FromSeconds(2),
-            $"the stuck write and the one behind it took {bothEnded.TotalMilliseconds:F0} ms to end against a {timeout.TotalMilliseconds:F0} ms timeout");
-        Assert.True(
-            laterEnded < timeout,
-            $"a send after the timeout took {laterEnded.TotalMilliseconds:F0} ms to fail: the connection was left open, " +
-            "so every further send waits out the timeout again");
+            TimedOut(firstFailure) || TimedOut(queuedFailure),
+            "neither the stuck write nor the one behind it ended by the write timeout");
+        Assert.IsAssignableFrom<IOException>(laterFailure);
+        Assert.False(
+            TimedOut(laterFailure),
+            "a send after the timeout waited out the timeout again: the connection was left open");
+
+        static bool TimedOut(Exception failure) => failure.Message.Contains("did not finish within", StringComparison.Ordinal);
+
+        static string Describe(Exception failure) => $"{failure.GetType().Name}: {failure.Message}";
 
         static async Task<Exception> FailureOf(Task send)
         {
-            Exception? failure = await EndedWith(send);
-            return failure ?? throw new Xunit.Sdk.XunitException("a write into a socket nobody reads succeeded");
-        }
-
-        static async Task<Exception?> EndedWith(Task send)
-        {
             try
             {
+                // A generous guard against a hang, not the verdict: the verdict is how each send ended.
                 await send.WaitAsync(TimeSpan.FromSeconds(30), Token);
-                return null;
             }
             catch (Exception error) when (error is not TimeoutException)
             {
                 return error;
             }
+            catch (TimeoutException)
+            {
+                throw new Xunit.Sdk.XunitException("a send into a socket nobody reads was still pending after 30 s");
+            }
+            throw new Xunit.Sdk.XunitException("a write into a socket nobody reads succeeded");
         }
     }
 
-    /// <summary>写超时不能配成零或负数：服务端拒绝启动，而不是把每次写都判超时，或把它读成「永不超时」。</summary>
+    /// <summary>
+    /// 写超时要在 (0, 10 s] 之内，否则服务端拒绝启动：零或负数会把每次写都判超时；超过 10 s，三台卡住的车就能吃满故障清除等锁的
+    /// 30 s；大到计时器装不下（约 49.7 天以上）时，每次发送都会当场失败、全队停下，而启动却照样通过。
+    /// </summary>
     [Theory]
-    [InlineData(0)]
-    [InlineData(-1)]
-    public async Task TheListenerRefusesToStartWithAWriteTimeoutThatIsNotPositive(int seconds)
+    [InlineData(0d)]
+    [InlineData(-1d)]
+    [InlineData(10.001d)]
+    [InlineData(60d * 60 * 24 * 60)]
+    public async Task TheListenerRefusesToStartWithAWriteTimeoutOutsideItsBounds(double seconds)
     {
         using OnboardTcpServer server = new(
             Microsoft.Extensions.Options.Options.Create(new OnboardTransportOptions
@@ -315,6 +322,119 @@ public sealed class GateHeldOnboardSendTests
     {
         public Microsoft.Extensions.DependencyInjection.IServiceScope CreateScope() =>
             throw new InvalidOperationException("the listener opened a connection it should have refused to start for");
+    }
+
+    /// <summary>
+    /// 录入子批之后读箱数，MesIngest 接了连接却一直不回话：这一次读按读失败处理（拒收这次录入，理由是箱数不可用），这一轮照常走完，
+    /// 不是整轮失败（control-server#334 审查必修 2）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为什么要紧。</b>这次读在引擎整轮持锁期间、在某一台车的推进里。修之前 <see cref="HttpClient"/> 超时抛的
+    /// <see cref="TaskCanceledException"/> 这里没接，冒出去让这台车的推进失败，整轮随之失败：排在后面的每一台车都不推进，
+    /// 急停确认与派车也停着，下一轮再等一个超时、再失败。
+    /// </para>
+    /// <para>
+    /// <b>「挂住」是真的挂住。</b>生产的 <see cref="HttpSublotBoxCountReader"/>，经真实的 <see cref="HttpClient"/> 连一个只接连接、
+    /// 从不回话的回环监听（<see cref="HungMesIngest"/>）；超时取 500 ms，抛的就是 <see cref="HttpClient"/> 自己的超时异常，不是
+    /// 替身扔出来的一个同名类型。前提断言这次读确实到了 MesIngest（监听接到过连接），否则没读就拒收也会绿。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task ABoxCountReadFromAMesIngestThatNeverAnswersRefusesTheEntryAndTheRoundGoesOn()
+    {
+        await using RuntimeFixture fixture = await JourneyRuntimeWorkerLoadCancellationBeforeSublotTests.ReachSublotWaitAsync();
+        await using HungMesIngest mes = HungMesIngest.Start();
+        using HttpClient client = mes.Client(TimeSpan.FromMilliseconds(500));
+        HttpSublotBoxCountReader reader = new(client, Microsoft.Extensions.Options.Options.Create(fixture.Options), fixture.Clock);
+        fixture.BoxCounts.Through = reader.ReadMaxBoxCountAsync;
+        await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+        OnboardMessageProcessor processor = JourneyRuntimeWorkerLoadCancellationBeforeSublotTests.BeforeSublotProcessor(fixture, connection);
+        OnboardConnectionState state = JourneyRuntimeWorkerLoadCancellationBeforeSublotTests.BeforeSublotConnection(fixture, generation: 1);
+        JourneyRuntimeRow waiting = await fixture.RuntimeAsync();
+        await processor.ProcessAsync(
+            JourneyRuntimeWorkerLoadCancellationBeforeSublotTests.SublotEntry(fixture, waiting, "SUBLOT-001"), state, Token);
+
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.True(mes.Accepted > 0, "the box count read never reached MesIngest, so nothing here timed out");
+        using System.Text.Json.JsonDocument refusal = System.Text.Json.JsonDocument.Parse(
+            (await fixture.Context.ProtocolOutbox.AsNoTracking()
+                .SingleAsync(row => row.MessageType == "SublotRejected", Token)).PayloadJson);
+        Assert.Equal(
+            ServerReasonCodes.SublotBoxCountUnavailable,
+            refusal.RootElement.GetProperty("payload").GetProperty("problem").GetProperty("reasonCode").GetString());
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync()).Stage);
+    }
+
+    /// <summary>
+    /// A loopback MesIngest that accepts every connection and never answers on any of them: what a hung MesIngest process,
+    /// or a half-open connection to one, looks like to an <see cref="HttpClient"/>.
+    /// </summary>
+    internal sealed class HungMesIngest : IAsyncDisposable
+    {
+        private readonly TcpListener _listener;
+        private readonly List<TcpClient> _held = [];
+        private readonly CancellationTokenSource _stopping = new();
+        private readonly Task _accepting;
+        private int _accepted;
+
+        private HungMesIngest(TcpListener listener)
+        {
+            _listener = listener;
+            _accepting = AcceptAsync();
+        }
+
+        /// <summary>How many connections a client opened to it; above zero means a request really reached it.</summary>
+        public int Accepted => Volatile.Read(ref _accepted);
+
+        public static HungMesIngest Start()
+        {
+            TcpListener listener = new(IPAddress.Loopback, 0);
+            listener.Start();
+            return new HungMesIngest(listener);
+        }
+
+        public HttpClient Client(TimeSpan timeout) => new()
+        {
+            BaseAddress = new Uri($"http://127.0.0.1:{((IPEndPoint)_listener.LocalEndpoint).Port}/"),
+            Timeout = timeout,
+        };
+
+        private async Task AcceptAsync()
+        {
+            try
+            {
+                while (!_stopping.IsCancellationRequested)
+                {
+                    TcpClient client = await _listener.AcceptTcpClientAsync(_stopping.Token);
+                    lock (_held)
+                    {
+                        _held.Add(client);
+                    }
+                    Interlocked.Increment(ref _accepted);
+                }
+            }
+            catch (Exception error) when (error is OperationCanceledException or SocketException or ObjectDisposedException)
+            {
+                // Torn down.
+            }
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await _stopping.CancelAsync();
+            _listener.Stop();
+            await _accepting;
+            lock (_held)
+            {
+                foreach (TcpClient client in _held)
+                {
+                    client.Dispose();
+                }
+            }
+            _stopping.Dispose();
+        }
     }
 
     private static VehicleFaultRecoveryRequest OtherVehicleClear(RuntimeFixture fixture) =>

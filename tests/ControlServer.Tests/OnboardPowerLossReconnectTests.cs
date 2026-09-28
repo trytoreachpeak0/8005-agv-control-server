@@ -140,9 +140,12 @@ public sealed class OnboardPowerLossReconnectTests
     /// 「already attached」拒掉。
     /// </para>
     /// <para>
-    /// <b>三条前提</b>证明造出来的确实是这一格：聋了之后车往服务端的字节一直在流（心跳没停）；至少一次推送挂了一秒以上
-    /// （写真的卡住了）；放掉旧连接的是写超时本身——至少一次推送以写超时那条 <see cref="IOException"/> 失败，而不是静默
-    /// 关闭之后被路由表拒掉。
+    /// <b>两条前提</b>证明造出来的确实是这一格：聋了之后车往服务端的字节一直在流（心跳没停）；最长的一次推送挂到了配置超时的八成
+    /// 以上（写真的卡住了；门槛取比例而不是等于超时本身，审查必修 3 实测等于时余量只有 3 ms）。
+    /// </para>
+    /// <para>
+    /// <b>判据按事件，不按墙钟</b>（审查建议）：旧代次离开了路由表；推送以写超时失败，消息里是<b>配置的</b>秒数与这台车的车号；服务端
+    /// 记下连接因错误结束（1003），没有记静默关闭（1005）——放掉它的是写超时，不是静默窗口。墙钟只剩 <see cref="HangGuard"/>。
     /// </para>
     /// </remarks>
     /// <param name="writeTimeoutMilliseconds">
@@ -178,28 +181,27 @@ public sealed class OnboardPowerLossReconnectTests
             await pusher;
         }
 
+        EventRecordingLogger<OnboardTcpServer>.Entry[] serverLog = rig.ServerLogSnapshot();
+        TimeSpan timeout = configured ?? OnboardTransportOptions.DefaultWriteTimeout;
         string trace =
-            $"{Environment.NewLine}聋了之后车往服务端送了 {rig.Relay.BytesToServerWhileDeaf} 字节；" +
+            $"{Environment.NewLine}服务端日志：{string.Join("、", serverLog.Select(entry => entry.EventId.Id))}；" +
+            $"聋了之后车往服务端送了 {rig.Relay.BytesToServerWhileDeaf} 字节；" +
             $"最长的一次推送 {rig.LongestPush.TotalMilliseconds:F0} ms；" +
             $"旧代次离开路由表：{(leftAfter is { } at ? $"t={at.TotalSeconds:F1}s" : "没有")}；" +
             $"推送的失败：{rig.PushFailures}";
         TestContext.Current.TestOutputHelper?.WriteLine(trace.TrimStart());
         Assert.True(rig.Relay.BytesToServerWhileDeaf > 0, "聋了之后车没再往服务端送任何东西：这是断电，不是本条要造的形状。" + trace);
         Assert.True(
-            rig.LongestPush >= TimeSpan.FromSeconds(1),
-            "没有一次推送挂过一秒：写没有卡住，这一条没造出它要的形状。" + trace);
+            rig.LongestPush >= timeout * 0.8,
+            $"最长的一次推送不到写超时 {timeout.TotalSeconds:0.###} 秒的八成：写没有卡住，这一条没造出它要的形状。" + trace);
         Assert.True(
             leftAfter is not null,
             $"车还在发心跳、只是不读，{HangGuard.TotalSeconds} 秒内旧代次一直没离开路由表：卡住的写没有上限，" +
             "这条连接永远不会被放掉（control-server#334）。" + trace);
-        Assert.Contains("did not finish within", rig.PushFailures, StringComparison.Ordinal);
-        if (configured is not null)
-        {
-            Assert.True(
-                leftAfter < OnboardTransportOptions.DefaultWriteTimeout,
-                $"配的写超时是 {configured.Value.TotalSeconds:F1} 秒，旧连接却在 t={leftAfter!.Value.TotalSeconds:F1}s 才被放掉：" +
-                "监听器没有把配置交给连接。" + trace);
-        }
+        Assert.Contains($"did not finish within {timeout.TotalSeconds:0.###} s", rig.PushFailures, StringComparison.Ordinal);
+        Assert.Contains($"'{AgvId}'", rig.PushFailures, StringComparison.Ordinal);
+        Assert.Contains(serverLog, entry => entry.EventId.Id == 1003);
+        Assert.DoesNotContain(serverLog, entry => entry.EventId.Id == 1005);
 
         rig.Relay.ResumeReadingServerWrites();
         await rig.DisconnectOnboardAsync();
@@ -324,6 +326,17 @@ public sealed class OnboardPowerLossReconnectTests
         /// <summary>断电之后，最长的一次推送挂了多久（成功、被拒、被取消都算）。</summary>
         public TimeSpan LongestPush => TimeSpan.FromTicks(Interlocked.Read(ref _longestPushTicks));
 
+        /// <summary>What the listener logged, so a test can say how a connection ended (control-server#334).</summary>
+        public EventRecordingLogger<OnboardTcpServer> ServerLog { get; private init; } = new();
+
+        public EventRecordingLogger<OnboardTcpServer>.Entry[] ServerLogSnapshot()
+        {
+            lock (ServerLog.Entries)
+            {
+                return [.. ServerLog.Entries];
+            }
+        }
+
         /// <summary>推送失败过的每一种原因与次数（control-server#334 用它判是谁放掉了连接）。</summary>
         public string PushFailures => string.Join(
             " | ", _pushFailures.OrderBy(item => item.Key, StringComparer.Ordinal).Select(item => $"{item.Value}× {item.Key}"));
@@ -351,13 +364,14 @@ public sealed class OnboardPowerLossReconnectTests
             ServiceProvider provider = services.BuildServiceProvider();
 
             int serverPort = ReserveFreePort();
+            EventRecordingLogger<OnboardTcpServer> serverLog = new();
             // The composition root's constructor on purpose: the window under test is the one production
             // runs with, not one a test chose.
             OnboardTcpServer server = new(
                 Options.Create(ConfiguredTransport(serverPort, writeTimeout)),
                 provider.GetRequiredService<IServiceScopeFactory>(),
                 peer,
-                NullLogger<OnboardTcpServer>.Instance);
+                serverLog);
             await server.StartAsync(TestContext.Current.CancellationToken);
 
             PowerCutRelay relay = PowerCutRelay.Start(serverPort);
@@ -371,7 +385,7 @@ public sealed class OnboardPowerLossReconnectTests
                     CredentialEnvironmentVariable = CredentialVariable
                 },
                 SlotStateSeed.Read(new ConfigurationBuilder().Build()));
-            return new Rig(connection, context, provider, server, peer, relay, engine, onboard);
+            return new Rig(connection, context, provider, server, peer, relay, engine, onboard) { ServerLog = serverLog };
         }
 
         /// <summary>The production defaults, and the write timeout only when a test names one.</summary>
