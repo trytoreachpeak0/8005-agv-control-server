@@ -1,0 +1,100 @@
+cs#366 mutations, 2026-09-28T16:29:13.393481, HEAD 32a7168d775972b0ea3859064fe410d5c484eb05
+=== M1-cancel-source-carries-no-cargo (src\ControlServer.Host\Runtime\JourneyRuntimeEngine.OwnOrderRebuild.cs) replacements: 1 (expected 1)
+    diff: 1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.OwnOrderRebuild.cs
+    build exit 0, 0 Error(s)
+    test exit 1; Total tests: 221, Passed: 199, Failed: 22
+    RED ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.UnderSomeoneElsesStopAnEmptiedVehicleWhoseOwnOrderIsCancelledIsNotRebuiltAndStopsForAPerson @ EmergencyReleaseVersusOwnOrderRebuildTests.cs:472
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.ADecidedRebuildNeverSentThatIsHeldOnceIsAskedForAFreshSnapshotAndRebuilt(hold: "emergency") @ OwnOrderRebuildCargoProofTests.cs:642
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.ADecidedRebuildNeverSentThatIsHeldOnceIsAskedForAFreshSnapshotAndRebuilt(hold: "riot-unreadable") @ OwnOrderRebuildCargoProofTests.cs:642
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.ADecidedRebuildNeverSentThatIsHeldOnceIsAskedForAFreshSnapshotAndRebuilt(hold: "session-not-ready") @ OwnOrderRebuildCargoProofTests.cs:642
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.AGateOrderCancelledBeforeConfirmationWithCargoOnBoardNeedsTheSameProof @ OwnOrderRebuildCargoProofTests.cs:721
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.ARequestAnsweredJustBeforeTheDueTimeIsMadeAgainAtTheDueRound @ OwnOrderRebuildCargoProofTests.cs:721
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.ASnapshotFromWithinTheDelayDoesNotProveTheCargoOfACancelledTrip @ OwnOrderRebuildCargoProofTests.cs:721
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.ASnapshotReceivedBeforeTheRecoveryDoesNotCount @ OwnOrderRebuildCargoProofTests.cs:721
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.AnEmptySlotAfterTheCancellationStopsTheRebuildForAPerson @ OwnOrderRebuildCargoProofTests.cs:721
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.AnInconclusiveSnapshotWaitsAndACargoShownInPlaceRebuildsToTheGate @ OwnOrderRebuildCargoProofTests.cs:721
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.CargoProvenThenTakenUnderSomeoneElsesStopIsNotRebuilt @ OwnOrderRebuildCargoProofTests.cs:721
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.OneEmptySlotAmongTheLoadedDemandsStopsTheWholeTrip @ OwnOrderRebuildCargoProofTests.cs:730
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.WhileTheSessionIsNotReadyOnItsOwnOrderASnapshotDoesNotCountAndReadinessAsksForAFreshOne @ OwnOrderRebuildCargoProofTests.cs:162
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.WhileTheVehicleStaysHeldTheRecordIsWrittenOnceAndTheFirstFreeRoundMovesTheFloor @ OwnOrderRebuildCargoProofTests.cs:205
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.WithoutASnapshotAfterTheCancellationTheRebuildWaits @ OwnOrderRebuildCargoProofTests.cs:721
+    RED ControlServer.Tests.OwnOrderRebuildTests.ALoadedOrderCancelledInRiotIsRebuiltToTheSameUnloadStop @ OwnOrderRebuildTests.cs:98
+    RED ControlServer.Tests.OwnOrderRebuildTests.ARebuildToTheUnloadStopWaitsWhileTheOnboardSaysASlotIsUnlocked @ OwnOrderRebuildTests.cs:310
+    RED ControlServer.Tests.StoppedRebuildExitTests.ACancelledTripWhoseCargoIsNotInPlaceIsHandedToTheExceptionSessionAndEndsThere(session: "not-ready-on-own-order") @ StoppedRebuildExitTests.cs:1799
+    RED ControlServer.Tests.StoppedRebuildExitTests.ACancelledTripWhoseCargoIsNotInPlaceIsHandedToTheExceptionSessionAndEndsThere(session: "ready") @ StoppedRebuildExitTests.cs:1799
+    RED ControlServer.Tests.StoppedRebuildExitTests.ADecidedRebuildNeverSentThatReadsTheSlotEmptyStopsAndIsHandedOverToTheEnd @ OwnOrderRebuildCargoProofTests.cs:642
+    RED ControlServer.Tests.StoppedRebuildExitTests.ADecidedRebuildThatCrashedBeforeItsCreateRereadsTheCargoOnRestart(mode: "handoff") @ StoppedRebuildExitTests.cs:950
+    RED ControlServer.Tests.StoppedRebuildExitTests.ADecidedRebuildThatCrashedBeforeItsCreateRereadsTheCargoOnRestart(mode: "stop") @ StoppedRebuildExitTests.cs:950
+    verdict: 22 red, expected 22 -> as expected
+    src clean after restore: ''
+=== M2-floor-without-due (src\ControlServer.Host\Runtime\JourneyRuntimeEngine.OwnOrderRebuild.cs) replacements: 1 (expected 1)
+    diff: 1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.OwnOrderRebuild.cs
+    build exit 0, 0 Error(s)
+    test exit 1; Total tests: 221, Passed: 218, Failed: 3
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.ARequestAnsweredJustBeforeTheDueTimeIsMadeAgainAtTheDueRound @ OwnOrderRebuildCargoProofTests.cs:721
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.ASnapshotFromWithinTheDelayDoesNotProveTheCargoOfACancelledTrip @ OwnOrderRebuildCargoProofTests.cs:721
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.FaultWindowBASnapshotFromWithinTheDelayDoesNotProveTheCargoAtTheRebuild @ OwnOrderRebuildCargoProofTests.cs:534
+    verdict: 3 red, expected 3 -> as expected
+    src clean after restore: ''
+=== M3-free-round-keeps-floor (src\ControlServer.Host\Runtime\JourneyRuntimeEngine.OwnOrderRebuild.cs) replacements: 1 (expected 1)
+    diff: 2	2	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.OwnOrderRebuild.cs
+    build exit 0, 0 Error(s)
+    test exit 1; Total tests: 221, Passed: 214, Failed: 7
+    RED ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.UnderSomeoneElsesStopAnEmptiedVehicleWhoseOwnOrderIsCancelledIsNotRebuiltAndStopsForAPerson @ EmergencyReleaseVersusOwnOrderRebuildTests.cs:474
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.ASnapshotReceivedBeforeTheRecoveryDoesNotCount @ OwnOrderRebuildCargoProofTests.cs:721
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.CargoProvenThenTakenUnderSomeoneElsesStopIsNotRebuilt @ OwnOrderRebuildCargoProofTests.cs:723
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.FaultWindowACargoProvenThenTakenWhileTheVehicleIsHeldIsNotRebuilt @ OwnOrderRebuildCargoProofTests.cs:507
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.WhileTheSessionIsNotReadyOnItsOwnOrderASnapshotDoesNotCountAndReadinessAsksForAFreshOne @ OwnOrderRebuildCargoProofTests.cs:721
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.WhileTheVehicleStaysHeldTheRecordIsWrittenOnceAndTheFirstFreeRoundMovesTheFloor @ OwnOrderRebuildCargoProofTests.cs:225
+    RED ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderRebuildsOnceTheSessionIsReady(cargo: "loaded") @ VehicleFaultRecoveryTests.cs:1446
+    verdict: 7 red, expected 7 -> as expected
+    src clean after restore: ''
+=== M4-stale-request-not-withdrawn (src\ControlServer.Host\Runtime\JourneyRuntimeEngine.OwnOrderRebuild.cs) replacements: 1 (expected 1)
+    diff: 1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.OwnOrderRebuild.cs
+    build exit 0, 0 Error(s)
+    test exit 1; Total tests: 221, Passed: 220, Failed: 1
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.ARequestAnsweredJustBeforeTheDueTimeIsMadeAgainAtTheDueRound @ OwnOrderRebuildCargoProofTests.cs:352
+    verdict: 1 red, expected 1 -> as expected
+    src clean after restore: ''
+=== M5-claim-skips-cancel-source (src\ControlServer.Host\Runtime\OwnOrderRebuilds.cs) replacements: 1 (expected 1)
+    diff: 1	1	src/ControlServer.Host/Runtime/OwnOrderRebuilds.cs
+    build exit 0, 0 Error(s)
+    test exit 1; Total tests: 221, Passed: 213, Failed: 8
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.ADecidedRebuildNeverSentThatIsHeldOnceIsAskedForAFreshSnapshotAndRebuilt(hold: "emergency") @ OwnOrderRebuildCargoProofTests.cs:476
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.ADecidedRebuildNeverSentThatIsHeldOnceIsAskedForAFreshSnapshotAndRebuilt(hold: "riot-unreadable") @ OwnOrderRebuildCargoProofTests.cs:476
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.ADecidedRebuildNeverSentThatIsHeldOnceIsAskedForAFreshSnapshotAndRebuilt(hold: "session-not-ready") @ OwnOrderRebuildCargoProofTests.cs:476
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.ARequestAnsweredJustBeforeTheDueTimeIsMadeAgainAtTheDueRound @ OwnOrderRebuildCargoProofTests.cs:331
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.AVehicleThatOnlySendsHeartbeatsIsAskedAgainAfterTheDueTimeAndTheTripIsRebuilt(source: "cancelled") @ OwnOrderRebuildCargoProofTests.cs:303
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.WhileTheSessionIsNotReadyOnItsOwnOrderASnapshotDoesNotCountAndReadinessAsksForAFreshOne @ OwnOrderRebuildCargoProofTests.cs:180
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.WhileTheVehicleStaysHeldTheRecordIsWrittenOnceAndTheFirstFreeRoundMovesTheFloor @ OwnOrderRebuildCargoProofTests.cs:218
+    RED ControlServer.Tests.StoppedRebuildExitTests.ADecidedRebuildNeverSentThatReadsTheSlotEmptyStopsAndIsHandedOverToTheEnd @ StoppedRebuildExitTests.cs:861
+    verdict: 8 red, expected 8 -> as expected
+    src clean after restore: ''
+=== M6-snapshot-of-any-vehicle (src\ControlServer.Host\Runtime\JourneyRuntimeEngine.OwnOrderRebuild.cs) replacements: 1 (expected 1)
+    diff: 1	1	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.OwnOrderRebuild.cs
+    build exit 0, 0 Error(s)
+    test exit 1; Total tests: 221, Passed: 220, Failed: 1
+    RED ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotFromAnotherVehicleSaysNothingAboutThisOnesCargo @ VehicleFaultRecoveryTests.cs:721
+    verdict: 1 red, expected 1 -> as expected
+    src clean after restore: ''
+=== M7-claim-pending-only (src\ControlServer.Host\Runtime\OwnOrderRebuilds.cs) replacements: 2 (expected 2)
+    diff: 2	2	src/ControlServer.Host/Runtime/OwnOrderRebuilds.cs
+    build exit 0, 0 Error(s)
+    test exit 1; Total tests: 221, Passed: 217, Failed: 4
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.ADecidedRebuildNeverSentThatIsHeldOnceIsAskedForAFreshSnapshotAndRebuilt(hold: "emergency") @ OwnOrderRebuildCargoProofTests.cs:476
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.ADecidedRebuildNeverSentThatIsHeldOnceIsAskedForAFreshSnapshotAndRebuilt(hold: "riot-unreadable") @ OwnOrderRebuildCargoProofTests.cs:476
+    RED ControlServer.Tests.OwnOrderRebuildCargoProofTests.ADecidedRebuildNeverSentThatIsHeldOnceIsAskedForAFreshSnapshotAndRebuilt(hold: "session-not-ready") @ OwnOrderRebuildCargoProofTests.cs:476
+    RED ControlServer.Tests.StoppedRebuildExitTests.ADecidedRebuildNeverSentThatReadsTheSlotEmptyStopsAndIsHandedOverToTheEnd @ StoppedRebuildExitTests.cs:861
+    verdict: 4 red, expected 4 -> as expected
+    src clean after restore: ''
+=== F-proof-latched (src\ControlServer.Host\Runtime\JourneyRuntimeEngine.OwnOrderRebuild.cs) replacements: 1 (expected 1)
+    diff: 1	0	src/ControlServer.Host/Runtime/JourneyRuntimeEngine.OwnOrderRebuild.cs
+    build exit 0, 0 Error(s)
+    test exit 1; Total tests: 221, Passed: 218, Failed: 3
+    RED ControlServer.Tests.StoppedRebuildExitTests.ADecidedRebuildNeverSentThatReadsTheSlotEmptyStopsAndIsHandedOverToTheEnd @ StoppedRebuildExitTests.cs:862
+    RED ControlServer.Tests.StoppedRebuildExitTests.ADecidedRebuildThatCrashedBeforeItsCreateRereadsTheCargoOnRestart(mode: "handoff") @ StoppedRebuildExitTests.cs:981
+    RED ControlServer.Tests.StoppedRebuildExitTests.ADecidedRebuildThatCrashedBeforeItsCreateRereadsTheCargoOnRestart(mode: "stop") @ StoppedRebuildExitTests.cs:981
+    verdict: 3 red, expected 3 -> as expected
+    src clean after restore: ''
+=== rebuild after all restores: exit 0, 0 Error(s)
+=== overall: all as expected
