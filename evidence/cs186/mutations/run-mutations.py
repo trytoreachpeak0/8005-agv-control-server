@@ -17,13 +17,15 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FILTER = ("FullyQualifiedName~MapRename|FullyQualifiedName~MapNameBaseline|"
-          "FullyQualifiedName~HttpRiotMapNameCatalog|FullyQualifiedName~FakeRiotMapName")
+          "FullyQualifiedName~HttpRiotMapNameCatalog|FullyQualifiedName~FakeRiotMapName|"
+          "FullyQualifiedName~TaskTypeStationStartupTests")
 CONV = "src/ControlServer.Host/Runtime/TaskTypeStations/MapRenameHoldConvergence.cs"
 ENGINE = "src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs"
 GATEWAY = "src/ControlServer.Infrastructure/Adapters/HttpRiotMovementGateway.cs"
 ACCEPT = "src/ControlServer.Application/MapNameBaselineAcceptanceService.cs"
 STORE = "src/ControlServer.Infrastructure/Persistence/MapNameBaselineStore.cs"
 ACTIVATION_STORE = "src/ControlServer.Infrastructure/Persistence/TaskTypeStationActivationStore.cs"
+STARTUP = "src/ControlServer.Host/Runtime/TaskTypeStations/TaskTypeStationStartup.cs"
 RELEASE = "src/ControlServer.Application/TaskTypeStationActivationService.cs"
 FIXTURE = "tests/ControlServer.Tests/RiotReplays/map-list-2026-09-28.json"
 
@@ -69,7 +71,7 @@ MUTATIONS = [
                 "                TaskTypeStationBindingSetVersion? first = await bindings.ReadActiveAsync(mapId, cancellationToken).ConfigureAwait(false);\n"
                 "                foreach (string firstTaskType in first?.Bindings.Select(binding => binding.TaskType).Distinct() ?? [])\n"
                 "                {\n"
-                "                    await RaiseAsync(first!, name, name, firstTaskType, now, cancellationToken).ConfigureAwait(false);\n"
+                "                    await MapRenameHoldWriter.RaiseAsync(dbContext, holds, audit, first!, firstTaskType, name, name, deployment.Value, \"FIRST_SIGHT\", now, cancellationToken).ConfigureAwait(false);\n"
                 "                }\n"),
         "expect": ["MapRenameHoldConvergenceTests.TheFirstNameSeenForAMapBecomesItsBaselineAndHoldsNothing",
                    "MapRenameHoldConvergenceTests.TheSameNameAgainChangesNothing",
@@ -223,6 +225,21 @@ MUTATIONS = [
         "old": "observed.Add(await ConvergeIsolatedAsync(map.Key, entries[0].Name, now, cancellationToken).ConfigureAwait(false));",
         "new": "observed.Add(await ConvergeAsync(map.Key, entries[0].Name, now, cancellationToken).ConfigureAwait(false));",
         "expect": ["MapRenameHoldConvergenceTests.AFailureOnOneUnrelatedMapDoesNotKeepAMapAfterItFromBeingObserved"],
+    },
+    # --- PR #378 incremental review (6e363d7c) ---
+    {
+        "id": "R4", "file": STARTUP,
+        "models": "The startup preset no longer holds its task types under a pending rename (incremental review item 1 undone).",
+        "old": "        await MapRenameHoldWriter.HoldUnderPendingRenameAsync(" + chr(10) + "            context,",
+        "new": "        if (now < DateTimeOffset.MinValue.AddYears(1)) await MapRenameHoldWriter.HoldUnderPendingRenameAsync(" + chr(10) + "            context,",
+        "expect": ["TaskTypeStationStartupTests.AFirstStartUnderAPendingMapRenameHoldsEveryTaskTypeThePresetBinds"],
+    },
+    {
+        "id": "R5", "file": CONV,
+        "models": "The Map name check runs inside an outer transaction as if it could still isolate one Map (item 2 undone).",
+        "old": "        if (dbContext.Database.CurrentTransaction is not null)",
+        "new": "        if (dbContext.Database.CurrentTransaction is not null && mapNames is null)",
+        "expect": ["MapRenameHoldConvergenceTests.ObservingInsideSomeoneElsesTransactionIsRefusedBecauseOneMapCouldNotBeRolledBackAlone"],
     },
 ]
 

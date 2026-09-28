@@ -1,10 +1,10 @@
 Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
 A total of 1 test files matched the specified pattern.
-[xUnit.net 00:00:03.00]     ControlServer.Tests.HttpRiotMapNameCatalogTests.AnEnumValueTheSdkDoesNotKnowStillReadsEveryMapAndItsName(key: "state", known: "activated", unknown: "archived") [FAIL]
-[xUnit.net 00:00:03.01]     ControlServer.Tests.HttpRiotMapNameCatalogTests.AnEnumValueTheSdkDoesNotKnowStillReadsEveryMapAndItsName(key: "source", known: "fetch", unknown: "importedFromCloud") [FAIL]
-[xUnit.net 00:00:03.01]     ControlServer.Tests.HttpRiotMapNameCatalogTests.AnEnumValueTheSdkDoesNotKnowStillReadsEveryMapAndItsName(key: "syncState", known: "partition", unknown: "resyncing") [FAIL]
-[xUnit.net 00:00:03.02]     ControlServer.Tests.HttpRiotMapNameCatalogTests.TheRealRiotAnswerOf20260928ParsesThroughTheAdapterWithMap26UnderItsName [FAIL]
-  Failed ControlServer.Tests.HttpRiotMapNameCatalogTests.AnEnumValueTheSdkDoesNotKnowStillReadsEveryMapAndItsName(key: "state", known: "activated", unknown: "archived") [33 ms]
+[xUnit.net 00:00:04.75]     ControlServer.Tests.HttpRiotMapNameCatalogTests.AnEnumValueTheSdkDoesNotKnowStillReadsEveryMapAndItsName(key: "state", known: "activated", unknown: "archived") [FAIL]
+[xUnit.net 00:00:04.77]     ControlServer.Tests.HttpRiotMapNameCatalogTests.AnEnumValueTheSdkDoesNotKnowStillReadsEveryMapAndItsName(key: "source", known: "fetch", unknown: "importedFromCloud") [FAIL]
+[xUnit.net 00:00:04.78]     ControlServer.Tests.HttpRiotMapNameCatalogTests.AnEnumValueTheSdkDoesNotKnowStillReadsEveryMapAndItsName(key: "syncState", known: "partition", unknown: "resyncing") [FAIL]
+[xUnit.net 00:00:04.80]     ControlServer.Tests.HttpRiotMapNameCatalogTests.TheRealRiotAnswerOf20260928ParsesThroughTheAdapterWithMap26UnderItsName [FAIL]
+  Failed ControlServer.Tests.HttpRiotMapNameCatalogTests.AnEnumValueTheSdkDoesNotKnowStillReadsEveryMapAndItsName(key: "state", known: "activated", unknown: "archived") [62 ms]
   Error Message:
    System.IO.InvalidDataException : RIoT Map list response was not valid.
 ---- System.InvalidOperationException : The requested operation requires an element of type 'String', but the target element has type 'Number'.
@@ -85,7 +85,7 @@ A total of 1 test files matched the specified pattern.
    at RIoT.Sdk.Generated.Imap.Api.Imap.V1.MapInfo.GetALLMapInfoExcludeMapJson.GetALLMapInfoExcludeMapJsonRequestBuilder.GetAsync(Action`1 requestConfiguration, CancellationToken cancellationToken)
    at RIoT.Sdk.Facade.MapClient.ListMapsAsync(CancellationToken cancellationToken)
    at ControlServer.Infrastructure.Adapters.HttpRiotMovementGateway.ReadMapNamesAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\src\ControlServer.Infrastructure\Adapters\HttpRiotMovementGateway.cs:line 255
-  Failed ControlServer.Tests.HttpRiotMapNameCatalogTests.TheRealRiotAnswerOf20260928ParsesThroughTheAdapterWithMap26UnderItsName [3 ms]
+  Failed ControlServer.Tests.HttpRiotMapNameCatalogTests.TheRealRiotAnswerOf20260928ParsesThroughTheAdapterWithMap26UnderItsName [4 ms]
   Error Message:
    System.IO.InvalidDataException : RIoT Map list response was not valid.
 ---- System.InvalidOperationException : The requested operation requires an element of type 'String', but the target element has type 'Number'.
@@ -113,4 +113,4 @@ A total of 1 test files matched the specified pattern.
    at RIoT.Sdk.Facade.MapClient.ListMapsAsync(CancellationToken cancellationToken)
    at ControlServer.Infrastructure.Adapters.HttpRiotMovementGateway.ReadMapNamesAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\src\ControlServer.Infrastructure\Adapters\HttpRiotMovementGateway.cs:line 255
 
-Failed!  - Failed:     4, Passed:    47, Skipped:     0, Total:    51, Duration: 27 s - ControlServer.Tests.dll (net8.0)
+Failed!  - Failed:     4, Passed:    66, Skipped:     0, Total:    70, Duration: 1 m 5 s - ControlServer.Tests.dll (net8.0)

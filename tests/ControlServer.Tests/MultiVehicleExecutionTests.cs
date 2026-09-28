@@ -1313,7 +1313,10 @@ public sealed partial class MultiVehicleExecutionTests
                 new BoundFixedTaskStationResolver(TaskTypeStationRuntimeSeed.Access(Context), options),
                 TaskTypeStationRuntimeSeed.Access(Context),
                 TaskTypeStationRuntimeSeed.CatalogBindingHolds(Context, Clock),
-                TaskTypeStationRuntimeSeed.MapRenameHolds(Context, Riot, Clock),
+                // Its own clock that never moves (control-server#186): the transcript tests tick the fleet clock on every read
+                // and pin the timestamps each read produced, so a round-start step that read that clock would shift every
+                // timestamp after it without changing one decision. The Map name check is not what these tests pin.
+                TaskTypeStationRuntimeSeed.MapRenameHolds(Context, Riot, new FixedMapNameClock(Clock.GetUtcNowWithoutTick())),
                 movement,
                 store,
                 new OnboardJourneyPublisher(store, Peer, Clock),
@@ -1983,7 +1986,8 @@ public sealed partial class MultiVehicleExecutionTests
         public Task<RiotMapNameListing> ReadMapNamesAsync(CancellationToken cancellationToken)
         {
             _ = cancellationToken;
-            return Task.FromResult(new RiotMapNameListing(clock.GetUtcNow(), [new RiotMapName(options.MapId, "MAP-FLEET")]));
+            // Not clock.GetUtcNow(): that read would tick the transcript clock (see MapRenameHolds above).
+            return Task.FromResult(new RiotMapNameListing(clock.GetUtcNowWithoutTick(), [new RiotMapName(options.MapId, "MAP-FLEET")]));
         }
 
         public Task<RiotMapStationCatalogSnapshot> ReadMapStationsAsync(
@@ -2143,5 +2147,13 @@ public sealed partial class MultiVehicleExecutionTests
         }
 
         public void Advance(TimeSpan elapsed) => _utcNow += elapsed;
+
+        /// <summary>The time now, without moving the clock on: for reads the transcript does not pin (control-server#186).</summary>
+        public DateTimeOffset GetUtcNowWithoutTick() => _utcNow;
+    }
+
+    private sealed class FixedMapNameClock(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
     }
 }

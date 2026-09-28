@@ -1,7 +1,7 @@
 Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
 A total of 1 test files matched the specified pattern.
-[xUnit.net 00:00:12.21]     ControlServer.Tests.MapRenameHoldConvergenceTests.ARenameWritesOneDetectionAuditAndOneHoldAuditPerTaskTypeAndARepeatWritesNothingMore [FAIL]
-  Failed ControlServer.Tests.MapRenameHoldConvergenceTests.ARenameWritesOneDetectionAuditAndOneHoldAuditPerTaskTypeAndARepeatWritesNothingMore [4 s]
+[xUnit.net 00:00:12.40]     ControlServer.Tests.MapRenameHoldConvergenceTests.ARenameWritesOneDetectionAuditAndOneHoldAuditPerTaskTypeAndARepeatWritesNothingMore [FAIL]
+  Failed ControlServer.Tests.MapRenameHoldConvergenceTests.ARenameWritesOneDetectionAuditAndOneHoldAuditPerTaskTypeAndARepeatWritesNothingMore [9 s]
   Error Message:
    Assert.Equal() Failure: Exception thrown during comparison
 Expected: <>z__ReadOnlyArray<string>        ["STAGING_TO_WIRE", "WIRE_TO_GATE"]
@@ -20,8 +20,8 @@ Actual:   "老厂前线new_wk"
    at System.Linq.Enumerable.SelectArrayIterator`2.ToArray()
    at System.Linq.Buffer`1..ctor(IEnumerable`1 source)
    at System.Linq.OrderedEnumerable`1.GetEnumerator()+MoveNext()
-[xUnit.net 00:00:15.00]     ControlServer.Tests.MapRenameEngineTests.MapIdentityIsNeitherTheBaselineNorComparedWithIt [FAIL]
-  Failed ControlServer.Tests.MapRenameEngineTests.MapIdentityIsNeitherTheBaselineNorComparedWithIt [442 ms]
+[xUnit.net 00:00:13.67]     ControlServer.Tests.MapRenameEngineTests.MapIdentityIsNeitherTheBaselineNorComparedWithIt [FAIL]
+  Failed ControlServer.Tests.MapRenameEngineTests.MapIdentityIsNeitherTheBaselineNorComparedWithIt [418 ms]
   Error Message:
    System.InvalidOperationException : Sequence contains no elements.
   Stack Trace:
@@ -30,77 +30,77 @@ Actual:   "老厂前线new_wk"
    at ControlServer.Tests.MapRenameEngineTests.MapIdentityIsNeitherTheBaselineNorComparedWithIt() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameEngineTests.cs:line 154
    at ControlServer.Tests.MapRenameEngineTests.MapIdentityIsNeitherTheBaselineNorComparedWithIt() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameEngineTests.cs:line 161
 --- End of stack trace from previous location ---
-[xUnit.net 00:00:40.06]     ControlServer.Tests.MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: "blank") [FAIL]
-  Failed ControlServer.Tests.MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: "blank") [1 s]
+[xUnit.net 00:00:30.14]     ControlServer.Tests.MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: "blank") [FAIL]
+  Failed ControlServer.Tests.MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: "blank") [2 s]
   Error Message:
    Assert.Empty() Failure: Collection was not empty
-Collection: [TaskTypeStationHold { HoldId = b78a14416686459392e49d6cd756cb0e, MapId = 26, TaskType = WIRE_TO_GATE, Source = CATALOG_CHANGE, ReasonCode = MAP_RENAMED, DetailJson = {"mapId":26,"taskType":"WIRE_TO_GATE","source":"CATALOG_CHANGE","reasonCode":"MAP_RENAMED","classification":"MAP_RENAMED","bindingSetVersion":1,"before":{"mapName":"老厂前线new_wk"},"after":{"mapName":"老厂前线new_wk"},"inFlightDemands":0}, RaisedAt = 9/19/2026 8:00:00 AM +00:00, RaisedBy = deployment:8005-controlserver@test, ReleasedAt = , ReleasedBy =  }]
+Collection: [TaskTypeStationHold { HoldId = 69fceca6c8934f51894e9ec43c63fbfe, MapId = 26, TaskType = WIRE_TO_GATE, Source = CATALOG_CHANGE, ReasonCode = MAP_RENAMED, DetailJson = {"mapId":26,"taskType":"WIRE_TO_GATE","source":"CATALOG_CHANGE","reasonCode":"MAP_RENAMED","classification":"MAP_RENAMED","bindingSetVersion":1,"before":{"mapName":"老厂前线new_wk"},"after":{"mapName":"老厂前线new_wk"},"raisedThrough":"FIRST_SIGHT","inFlightDemands":0}, RaisedAt = 9/19/2026 8:00:00 AM +00:00, RaisedBy = deployment:8005-controlserver@test, ReleasedAt = , ReleasedBy =  }]
   Stack Trace:
      at ControlServer.Tests.MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(String shape) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameHoldConvergenceTests.cs:line 189
    at ControlServer.Tests.MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(String shape) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameHoldConvergenceTests.cs:line 190
 --- End of stack trace from previous location ---
-[xUnit.net 00:00:47.30]     ControlServer.Tests.MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: "duplicate") [FAIL]
-  Failed ControlServer.Tests.MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: "duplicate") [7 s]
+[xUnit.net 00:00:32.22]     ControlServer.Tests.MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: "duplicate") [FAIL]
+  Failed ControlServer.Tests.MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: "duplicate") [2 s]
   Error Message:
    Assert.Empty() Failure: Collection was not empty
-Collection: [TaskTypeStationHold { HoldId = d815fbc1cf394438b68d70c30288da7e, MapId = 26, TaskType = WIRE_TO_GATE, Source = CATALOG_CHANGE, ReasonCode = MAP_RENAMED, DetailJson = {"mapId":26,"taskType":"WIRE_TO_GATE","source":"CATALOG_CHANGE","reasonCode":"MAP_RENAMED","classification":"MAP_RENAMED","bindingSetVersion":1,"before":{"mapName":"老厂前线new_wk"},"after":{"mapName":"老厂前线new_wk"},"inFlightDemands":0}, RaisedAt = 9/19/2026 8:00:00 AM +00:00, RaisedBy = deployment:8005-controlserver@test, ReleasedAt = , ReleasedBy =  }]
+Collection: [TaskTypeStationHold { HoldId = 00167309dd3c420298a3fe031dfd4d49, MapId = 26, TaskType = WIRE_TO_GATE, Source = CATALOG_CHANGE, ReasonCode = MAP_RENAMED, DetailJson = {"mapId":26,"taskType":"WIRE_TO_GATE","source":"CATALOG_CHANGE","reasonCode":"MAP_RENAMED","classification":"MAP_RENAMED","bindingSetVersion":1,"before":{"mapName":"老厂前线new_wk"},"after":{"mapName":"老厂前线new_wk"},"raisedThrough":"FIRST_SIGHT","inFlightDemands":0}, RaisedAt = 9/19/2026 8:00:00 AM +00:00, RaisedBy = deployment:8005-controlserver@test, ReleasedAt = , ReleasedBy =  }]
   Stack Trace:
      at ControlServer.Tests.MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(String shape) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameHoldConvergenceTests.cs:line 189
    at ControlServer.Tests.MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(String shape) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameHoldConvergenceTests.cs:line 190
 --- End of stack trace from previous location ---
-[xUnit.net 00:00:49.28]     ControlServer.Tests.MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: "empty") [FAIL]
-  Failed ControlServer.Tests.MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: "empty") [1 s]
+[xUnit.net 00:00:34.23]     ControlServer.Tests.MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: "empty") [FAIL]
+  Failed ControlServer.Tests.MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: "empty") [2 s]
   Error Message:
    Assert.Empty() Failure: Collection was not empty
-Collection: [TaskTypeStationHold { HoldId = 8dd10541850142dab7dbf56af8c02eca, MapId = 26, TaskType = WIRE_TO_GATE, Source = CATALOG_CHANGE, ReasonCode = MAP_RENAMED, DetailJson = {"mapId":26,"taskType":"WIRE_TO_GATE","source":"CATALOG_CHANGE","reasonCode":"MAP_RENAMED","classification":"MAP_RENAMED","bindingSetVersion":1,"before":{"mapName":"老厂前线new_wk"},"after":{"mapName":"老厂前线new_wk"},"inFlightDemands":0}, RaisedAt = 9/19/2026 8:00:00 AM +00:00, RaisedBy = deployment:8005-controlserver@test, ReleasedAt = , ReleasedBy =  }]
+Collection: [TaskTypeStationHold { HoldId = 5ca4c3ef65bf4f398f0ab24229ed9dbb, MapId = 26, TaskType = WIRE_TO_GATE, Source = CATALOG_CHANGE, ReasonCode = MAP_RENAMED, DetailJson = {"mapId":26,"taskType":"WIRE_TO_GATE","source":"CATALOG_CHANGE","reasonCode":"MAP_RENAMED","classification":"MAP_RENAMED","bindingSetVersion":1,"before":{"mapName":"老厂前线new_wk"},"after":{"mapName":"老厂前线new_wk"},"raisedThrough":"FIRST_SIGHT","inFlightDemands":0}, RaisedAt = 9/19/2026 8:00:00 AM +00:00, RaisedBy = deployment:8005-controlserver@test, ReleasedAt = , ReleasedBy =  }]
   Stack Trace:
      at ControlServer.Tests.MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(String shape) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameHoldConvergenceTests.cs:line 189
    at ControlServer.Tests.MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(String shape) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameHoldConvergenceTests.cs:line 190
 --- End of stack trace from previous location ---
-[xUnit.net 00:00:52.48]     ControlServer.Tests.MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: "missing") [FAIL]
-  Failed ControlServer.Tests.MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: "missing") [3 s]
+[xUnit.net 00:00:36.60]     ControlServer.Tests.MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: "missing") [FAIL]
+  Failed ControlServer.Tests.MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: "missing") [2 s]
   Error Message:
    Assert.Empty() Failure: Collection was not empty
-Collection: [TaskTypeStationHold { HoldId = 072d3830da514ba38b5757bd96722372, MapId = 26, TaskType = WIRE_TO_GATE, Source = CATALOG_CHANGE, ReasonCode = MAP_RENAMED, DetailJson = {"mapId":26,"taskType":"WIRE_TO_GATE","source":"CATALOG_CHANGE","reasonCode":"MAP_RENAMED","classification":"MAP_RENAMED","bindingSetVersion":1,"before":{"mapName":"老厂前线new_wk"},"after":{"mapName":"老厂前线new_wk"},"inFlightDemands":0}, RaisedAt = 9/19/2026 8:00:00 AM +00:00, RaisedBy = deployment:8005-controlserver@test, ReleasedAt = , ReleasedBy =  }]
+Collection: [TaskTypeStationHold { HoldId = ef8480179a554441a31bf4176df934a7, MapId = 26, TaskType = WIRE_TO_GATE, Source = CATALOG_CHANGE, ReasonCode = MAP_RENAMED, DetailJson = {"mapId":26,"taskType":"WIRE_TO_GATE","source":"CATALOG_CHANGE","reasonCode":"MAP_RENAMED","classification":"MAP_RENAMED","bindingSetVersion":1,"before":{"mapName":"老厂前线new_wk"},"after":{"mapName":"老厂前线new_wk"},"raisedThrough":"FIRST_SIGHT","inFlightDemands":0}, RaisedAt = 9/19/2026 8:00:00 AM +00:00, RaisedBy = deployment:8005-controlserver@test, ReleasedAt = , ReleasedBy =  }]
   Stack Trace:
      at ControlServer.Tests.MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(String shape) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameHoldConvergenceTests.cs:line 189
    at ControlServer.Tests.MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(String shape) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameHoldConvergenceTests.cs:line 190
 --- End of stack trace from previous location ---
-[xUnit.net 00:00:55.33]     ControlServer.Tests.MapRenameHoldConvergenceTests.AFailedReadThrowsAndLeavesBaselineAndHoldsExactlyAsTheyWere [FAIL]
+[xUnit.net 00:00:38.84]     ControlServer.Tests.MapRenameHoldConvergenceTests.AFailedReadThrowsAndLeavesBaselineAndHoldsExactlyAsTheyWere [FAIL]
   Failed ControlServer.Tests.MapRenameHoldConvergenceTests.AFailedReadThrowsAndLeavesBaselineAndHoldsExactlyAsTheyWere [2 s]
   Error Message:
    Assert.Empty() Failure: Collection was not empty
-Collection: [TaskTypeStationHold { HoldId = 10f71cd3fb564d799b5ed4c3b55ab232, MapId = 26, TaskType = WIRE_TO_GATE, Source = CATALOG_CHANGE, ReasonCode = MAP_RENAMED, DetailJson = {"mapId":26,"taskType":"WIRE_TO_GATE","source":"CATALOG_CHANGE","reasonCode":"MAP_RENAMED","classification":"MAP_RENAMED","bindingSetVersion":1,"before":{"mapName":"老厂前线new_wk"},"after":{"mapName":"老厂前线new_wk"},"inFlightDemands":0}, RaisedAt = 9/19/2026 8:00:00 AM +00:00, RaisedBy = deployment:8005-controlserver@test, ReleasedAt = , ReleasedBy =  }]
+Collection: [TaskTypeStationHold { HoldId = 9394a2a9d81c404892db91c14af06e1d, MapId = 26, TaskType = WIRE_TO_GATE, Source = CATALOG_CHANGE, ReasonCode = MAP_RENAMED, DetailJson = {"mapId":26,"taskType":"WIRE_TO_GATE","source":"CATALOG_CHANGE","reasonCode":"MAP_RENAMED","classification":"MAP_RENAMED","bindingSetVersion":1,"before":{"mapName":"老厂前线new_wk"},"after":{"mapName":"老厂前线new_wk"},"raisedThrough":"FIRST_SIGHT","inFlightDemands":0}, RaisedAt = 9/19/2026 8:00:00 AM +00:00, RaisedBy = deployment:8005-controlserver@test, ReleasedAt = , ReleasedBy =  }]
   Stack Trace:
      at ControlServer.Tests.MapRenameHoldConvergenceTests.AFailedReadThrowsAndLeavesBaselineAndHoldsExactlyAsTheyWere() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameHoldConvergenceTests.cs:line 161
    at ControlServer.Tests.MapRenameHoldConvergenceTests.AFailedReadThrowsAndLeavesBaselineAndHoldsExactlyAsTheyWere() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameHoldConvergenceTests.cs:line 162
 --- End of stack trace from previous location ---
-[xUnit.net 00:01:01.82]     ControlServer.Tests.MapRenameHoldConvergenceTests.TheSameNameAgainChangesNothing [FAIL]
+[xUnit.net 00:00:44.89]     ControlServer.Tests.MapRenameHoldConvergenceTests.TheSameNameAgainChangesNothing [FAIL]
   Failed ControlServer.Tests.MapRenameHoldConvergenceTests.TheSameNameAgainChangesNothing [1 s]
   Error Message:
    Assert.Empty() Failure: Collection was not empty
-Collection: [TaskTypeStationHold { HoldId = 437c17bb16b94c79b833293b8c27ba40, MapId = 26, TaskType = WIRE_TO_GATE, Source = CATALOG_CHANGE, ReasonCode = MAP_RENAMED, DetailJson = {"mapId":26,"taskType":"WIRE_TO_GATE","source":"CATALOG_CHANGE","reasonCode":"MAP_RENAMED","classification":"MAP_RENAMED","bindingSetVersion":1,"before":{"mapName":"老厂前线new_wk"},"after":{"mapName":"老厂前线new_wk"},"inFlightDemands":0}, RaisedAt = 9/19/2026 8:00:00 AM +00:00, RaisedBy = deployment:8005-controlserver@test, ReleasedAt = , ReleasedBy =  }, TaskTypeStationHold { HoldId = f8150c5c967f4976843f81323eeffa21, MapId = 26, TaskType = STAGING_TO_WIRE, Source = CATALOG_CHANGE, ReasonCode = MAP_RENAMED, DetailJson = {"mapId":26,"taskType":"STAGING_TO_WIRE","source":"CATALOG_CHANGE","reasonCode":"MAP_RENAMED","classification":"MAP_RENAMED","bindingSetVersion":1,"before":{"mapName":"老厂前线new_wk"},"after":{"mapName":"老厂前线new_wk"},"inFlightDemands":0}, RaisedAt = 9/19/2026 8:00:00 AM +00:00, RaisedBy = deployment:8005-controlserver@test, ReleasedAt = , ReleasedBy =  }]
+Collection: [TaskTypeStationHold { HoldId = 520b21c133aa4f9c9f0aa4ee94ed4208, MapId = 26, TaskType = STAGING_TO_WIRE, Source = CATALOG_CHANGE, ReasonCode = MAP_RENAMED, DetailJson = {"mapId":26,"taskType":"STAGING_TO_WIRE","source":"CATALOG_CHANGE","reasonCode":"MAP_RENAMED","classification":"MAP_RENAMED","bindingSetVersion":1,"before":{"mapName":"老厂前线new_wk"},"after":{"mapName":"老厂前线new_wk"},"raisedThrough":"FIRST_SIGHT","inFlightDemands":0}, RaisedAt = 9/19/2026 8:00:00 AM +00:00, RaisedBy = deployment:8005-controlserver@test, ReleasedAt = , ReleasedBy =  }, TaskTypeStationHold { HoldId = 7b1b260d3872457b87755c0f4411a11d, MapId = 26, TaskType = WIRE_TO_GATE, Source = CATALOG_CHANGE, ReasonCode = MAP_RENAMED, DetailJson = {"mapId":26,"taskType":"WIRE_TO_GATE","source":"CATALOG_CHANGE","reasonCode":"MAP_RENAMED","classification":"MAP_RENAMED","bindingSetVersion":1,"before":{"mapName":"老厂前线new_wk"},"after":{"mapName":"老厂前线new_wk"},"raisedThrough":"FIRST_SIGHT","inFlightDemands":0}, RaisedAt = 9/19/2026 8:00:00 AM +00:00, RaisedBy = deployment:8005-controlserver@test, ReleasedAt = , ReleasedBy =  }]
   Stack Trace:
      at ControlServer.Tests.MapRenameHoldConvergenceTests.TheSameNameAgainChangesNothing() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameHoldConvergenceTests.cs:line 52
    at ControlServer.Tests.MapRenameHoldConvergenceTests.TheSameNameAgainChangesNothing() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameHoldConvergenceTests.cs:line 53
 --- End of stack trace from previous location ---
-[xUnit.net 00:01:03.20]     ControlServer.Tests.MapRenameHoldConvergenceTests.ARenameUnderTheSameMapIdHoldsEveryBoundTaskTypeOfThatMapAndNothingOnAnotherMap [FAIL]
+[xUnit.net 00:00:46.59]     ControlServer.Tests.MapRenameHoldConvergenceTests.ARenameUnderTheSameMapIdHoldsEveryBoundTaskTypeOfThatMapAndNothingOnAnotherMap [FAIL]
   Failed ControlServer.Tests.MapRenameHoldConvergenceTests.ARenameUnderTheSameMapIdHoldsEveryBoundTaskTypeOfThatMapAndNothingOnAnotherMap [1 s]
   Error Message:
    Assert.Empty() Failure: Collection was not empty
-Collection: [TaskTypeStationHold { HoldId = 0294568c16ed43f5a85d98be4c79ec13, MapId = 25, TaskType = WIRE_TO_GATE, Source = CATALOG_CHANGE, ReasonCode = MAP_RENAMED, DetailJson = {"mapId":25,"taskType":"WIRE_TO_GATE","source":"CATALOG_CHANGE","reasonCode":"MAP_RENAMED","classification":"MAP_RENAMED","bindingSetVersion":1,"before":{"mapName":"老厂前线new"},"after":{"mapName":"老厂前线new"},"inFlightDemands":0}, RaisedAt = 9/19/2026 8:00:00 AM +00:00, RaisedBy = deployment:8005-controlserver@test, ReleasedAt = , ReleasedBy =  }]
+Collection: [TaskTypeStationHold { HoldId = 603f5585212f40d584396625a3618063, MapId = 25, TaskType = WIRE_TO_GATE, Source = CATALOG_CHANGE, ReasonCode = MAP_RENAMED, DetailJson = {"mapId":25,"taskType":"WIRE_TO_GATE","source":"CATALOG_CHANGE","reasonCode":"MAP_RENAMED","classification":"MAP_RENAMED","bindingSetVersion":1,"before":{"mapName":"老厂前线new"},"after":{"mapName":"老厂前线new"},"raisedThrough":"FIRST_SIGHT","inFlightDemands":0}, RaisedAt = 9/19/2026 8:00:00 AM +00:00, RaisedBy = deployment:8005-controlserver@test, ReleasedAt = , ReleasedBy =  }]
   Stack Trace:
      at ControlServer.Tests.MapRenameHoldConvergenceTests.ARenameUnderTheSameMapIdHoldsEveryBoundTaskTypeOfThatMapAndNothingOnAnotherMap() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameHoldConvergenceTests.cs:line 79
    at ControlServer.Tests.MapRenameHoldConvergenceTests.ARenameUnderTheSameMapIdHoldsEveryBoundTaskTypeOfThatMapAndNothingOnAnotherMap() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameHoldConvergenceTests.cs:line 85
 --- End of stack trace from previous location ---
-[xUnit.net 00:01:06.86]     ControlServer.Tests.MapRenameHoldConvergenceTests.TheFirstNameSeenForAMapBecomesItsBaselineAndHoldsNothing [FAIL]
-  Failed ControlServer.Tests.MapRenameHoldConvergenceTests.TheFirstNameSeenForAMapBecomesItsBaselineAndHoldsNothing [2 s]
+[xUnit.net 00:00:49.10]     ControlServer.Tests.MapRenameHoldConvergenceTests.TheFirstNameSeenForAMapBecomesItsBaselineAndHoldsNothing [FAIL]
+  Failed ControlServer.Tests.MapRenameHoldConvergenceTests.TheFirstNameSeenForAMapBecomesItsBaselineAndHoldsNothing [1 s]
   Error Message:
    Assert.Empty() Failure: Collection was not empty
-Collection: [TaskTypeStationHold { HoldId = 015ab371eec547a2952dd53801d55a47, MapId = 26, TaskType = WIRE_TO_GATE, Source = CATALOG_CHANGE, ReasonCode = MAP_RENAMED, DetailJson = {"mapId":26,"taskType":"WIRE_TO_GATE","source":"CATALOG_CHANGE","reasonCode":"MAP_RENAMED","classification":"MAP_RENAMED","bindingSetVersion":1,"before":{"mapName":"老厂前线new_wk"},"after":{"mapName":"老厂前线new_wk"},"inFlightDemands":0}, RaisedAt = 9/19/2026 8:00:00 AM +00:00, RaisedBy = deployment:8005-controlserver@test, ReleasedAt = , ReleasedBy =  }, TaskTypeStationHold { HoldId = 5dc3841f13264f7fae32b312429f4970, MapId = 26, TaskType = STAGING_TO_WIRE, Source = CATALOG_CHANGE, ReasonCode = MAP_RENAMED, DetailJson = {"mapId":26,"taskType":"STAGING_TO_WIRE","source":"CATALOG_CHANGE","reasonCode":"MAP_RENAMED","classification":"MAP_RENAMED","bindingSetVersion":1,"before":{"mapName":"老厂前线new_wk"},"after":{"mapName":"老厂前线new_wk"},"inFlightDemands":0}, RaisedAt = 9/19/2026 8:00:00 AM +00:00, RaisedBy = deployment:8005-controlserver@test, ReleasedAt = , ReleasedBy =  }]
+Collection: [TaskTypeStationHold { HoldId = 0eb5228ddb2b44beac27303c9603747c, MapId = 26, TaskType = STAGING_TO_WIRE, Source = CATALOG_CHANGE, ReasonCode = MAP_RENAMED, DetailJson = {"mapId":26,"taskType":"STAGING_TO_WIRE","source":"CATALOG_CHANGE","reasonCode":"MAP_RENAMED","classification":"MAP_RENAMED","bindingSetVersion":1,"before":{"mapName":"老厂前线new_wk"},"after":{"mapName":"老厂前线new_wk"},"raisedThrough":"FIRST_SIGHT","inFlightDemands":0}, RaisedAt = 9/19/2026 8:00:00 AM +00:00, RaisedBy = deployment:8005-controlserver@test, ReleasedAt = , ReleasedBy =  }, TaskTypeStationHold { HoldId = f550f10b22bc44a58016e1d63dbe4c56, MapId = 26, TaskType = WIRE_TO_GATE, Source = CATALOG_CHANGE, ReasonCode = MAP_RENAMED, DetailJson = {"mapId":26,"taskType":"WIRE_TO_GATE","source":"CATALOG_CHANGE","reasonCode":"MAP_RENAMED","classification":"MAP_RENAMED","bindingSetVersion":1,"before":{"mapName":"老厂前线new_wk"},"after":{"mapName":"老厂前线new_wk"},"raisedThrough":"FIRST_SIGHT","inFlightDemands":0}, RaisedAt = 9/19/2026 8:00:00 AM +00:00, RaisedBy = deployment:8005-controlserver@test, ReleasedAt = , ReleasedBy =  }]
   Stack Trace:
      at ControlServer.Tests.MapRenameHoldConvergenceTests.TheFirstNameSeenForAMapBecomesItsBaselineAndHoldsNothing() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameHoldConvergenceTests.cs:line 35
    at ControlServer.Tests.MapRenameHoldConvergenceTests.TheFirstNameSeenForAMapBecomesItsBaselineAndHoldsNothing() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameHoldConvergenceTests.cs:line 36
 --- End of stack trace from previous location ---
 
-Failed!  - Failed:    10, Passed:    41, Skipped:     0, Total:    51, Duration: 1 m 1 s - ControlServer.Tests.dll (net8.0)
+Failed!  - Failed:    10, Passed:    60, Skipped:     0, Total:    70, Duration: 49 s - ControlServer.Tests.dll (net8.0)
