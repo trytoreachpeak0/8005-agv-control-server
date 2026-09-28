@@ -308,6 +308,20 @@ public static class RiotDataPlane
 /// would make expectedRevision useless for the commands that carry real changes. The wire log in
 /// ControlServer.FakeOnboard sits outside for the same reason.
 /// </remarks>
+public sealed class MapStationReadCounter
+{
+    private long count;
+
+    public long Count => Interlocked.Read(ref count);
+
+    public void Increment() => Interlocked.Increment(ref count);
+}
+
+/// <summary>
+/// Counts Map list reads and the ones answered 500 (control-server#186). Outside the command engine for the same reason as
+/// <see cref="MapStationReadCounter"/>: a counter that moved the state revision on every poll would make expectedRevision
+/// useless for the commands that carry real changes.
+/// </summary>
 public sealed class MapListReadCounter
 {
     private long reads;
@@ -322,13 +336,4 @@ public sealed class MapListReadCounter
     public void Read() => Interlocked.Increment(ref reads);
 
     public void Failed() => Interlocked.Increment(ref serverErrors);
-}
-
-public sealed class MapStationReadCounter
-{
-    private long count;
-
-    public long Count => Interlocked.Read(ref count);
-
-    public void Increment() => Interlocked.Increment(ref count);
 }

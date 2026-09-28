@@ -88,6 +88,15 @@ public sealed class MapRenameHoldConvergence(
     /// <summary>Reads RIoT's Map list and converges every Map in it. A failed read throws and touches nothing.</summary>
     public async Task<IReadOnlyList<MapRenameObservation>> ObserveAsync(CancellationToken cancellationToken)
     {
+        // The per-Map fence below (ConvergeIsolatedAsync) rolls back one Map's failed attempt by giving it a transaction of
+        // its own. Inside someone else's transaction there is no such thing: one Map's failure would doom the outer
+        // transaction and every Map written before it, while this code went on as if it had been isolated. So refuse
+        // instead of pretending (PR #378 incremental review, item 2).
+        if (dbContext.Database.CurrentTransaction is not null)
+        {
+            throw new InvalidOperationException(
+                "The Map name check opens a transaction per Map and cannot run inside an outer transaction.");
+        }
         RiotMapNameListing listing = await mapNames.ReadMapNamesAsync(cancellationToken).ConfigureAwait(false);
         DateTimeOffset now = timeProvider.GetUtcNow();
         List<MapRenameObservation> observed = [];
@@ -152,9 +161,9 @@ public sealed class MapRenameHoldConvergence(
             return new(mapId, plan.Kind, []);
         }
 
-        await using IDbContextTransaction? transaction = dbContext.Database.CurrentTransaction is null
-            ? await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
-            : null;
+        // Always a transaction of its own: ObserveAsync refuses to run inside an outer one.
+        await using IDbContextTransaction transaction =
+            await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         plan = await PlanAsync(mapId, name, cancellationToken).ConfigureAwait(false);
         List<string> held = [];
         switch (plan.Kind)
@@ -193,68 +202,17 @@ public sealed class MapRenameHoldConvergence(
                 }
                 foreach (string taskType in plan.Unheld)
                 {
-                    if (await RaiseAsync(plan.Active!, baseline.Name, name, taskType, now, cancellationToken).ConfigureAwait(false))
+                    if (await MapRenameHoldWriter.RaiseAsync(
+                            dbContext, holds, audit, plan.Active!, taskType, baseline.Name, name, deployment.Value,
+                            MapRenameHoldWriter.ByEngineObservation, now, cancellationToken).ConfigureAwait(false))
                     {
                         held.Add(taskType);
                     }
                 }
                 break;
         }
-        if (transaction is not null)
-        {
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-        }
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         return new(mapId, plan.Kind, held);
-    }
-
-    private async Task<bool> RaiseAsync(
-        TaskTypeStationBindingSetVersion active,
-        string baselineName,
-        string observedName,
-        string taskType,
-        DateTimeOffset now,
-        CancellationToken cancellationToken)
-    {
-        int inFlight = await TaskTypeInFlightDemands.CountAsync(dbContext, active.MapId, taskType, cancellationToken)
-            .ConfigureAwait(false);
-        string detailJson = JsonSerializer.Serialize(
-            new
-            {
-                mapId = active.MapId,
-                taskType,
-                source = TaskTypeStationHoldSource.CatalogChange,
-                reasonCode = MapNameHoldReasons.MapRenamed,
-                classification = "MAP_RENAMED",
-                bindingSetVersion = active.Version,
-                before = new { mapName = baselineName },
-                after = new { mapName = observedName },
-                inFlightDemands = inFlight
-            },
-            DetailOptions);
-        TaskTypeStationHoldRaise raised = await holds.RaiseAsync(
-            active.MapId,
-            taskType,
-            TaskTypeStationHoldSource.CatalogChange,
-            MapNameHoldReasons.MapRenamed,
-            detailJson,
-            deployment.Value,
-            now,
-            cancellationToken).ConfigureAwait(false);
-        if (raised.Created)
-        {
-            await audit.WriteBusinessAsync(
-                new GovernanceAuditEntry(
-                    CatalogBindingHoldConvergence.HoldRaisedAction,
-                    GovernedObjectKind.PublicStationBinding,
-                    TaskTypeStationGovernance.BindingSetObjectId(active.MapId),
-                    active.Version,
-                    GovernanceActionOutcome.Succeeded,
-                    detailJson,
-                    active.SnapshotId),
-                now,
-                cancellationToken).ConfigureAwait(false);
-        }
-        return raised.Created;
     }
 
     private async Task<Plan> PlanAsync(int mapId, string name, CancellationToken cancellationToken)

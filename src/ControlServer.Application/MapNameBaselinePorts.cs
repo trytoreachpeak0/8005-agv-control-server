@@ -98,12 +98,6 @@ public static class MapNameBaselineAuditActions
     public const string Accepted = "MAP_NAME_BASELINE_ACCEPTED";
 
     public const string AcceptRejected = "MAP_NAME_BASELINE_ACCEPT_REJECTED";
-
-    /// <summary>
-    /// A hold raised because of a rename. The same action string the Host's catalog convergence writes
-    /// (<c>CatalogBindingHoldConvergence.HoldRaisedAction</c>), here for the activation store, which cannot see the Host.
-    /// </summary>
-    public const string HoldRaised = "TASK_TYPE_STATION_HOLD_RAISED";
 }
 
 /// <summary>Why accepting a new Map name, or releasing a hold under an unaccepted rename, is refused.</summary>

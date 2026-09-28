@@ -437,6 +437,10 @@ public sealed class TaskTypeStationActivationService(
         }
         // control-server#186: a release under a Map rename nobody accepted would be undone the next round, when the rename is
         // seen again -- and in between it would dispatch on a Map whose name the field has not checked. Accept first.
+        // This check is the redundant one: the release transaction re-reads the pending name and refuses by itself
+        // (TaskTypeStationActivationStore.ReleaseManualAndCatalogHoldsAsync), and that is what closes the race. What this
+        // one adds is that the refusal is listed together with every other violation, before anything is attempted --
+        // which is why taking it out alone changes no outcome (mutation M7 survives by design).
         MapNameBaseline? mapName = await _mapNames.ReadAsync(mapId, cancellationToken);
         if (mapName?.PendingName is { } pendingName)
         {

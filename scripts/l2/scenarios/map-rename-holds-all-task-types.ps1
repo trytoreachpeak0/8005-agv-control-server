@@ -91,7 +91,7 @@ $journal.Note('Fake RIoT: the Map list answers again.')
 $readsInFault = [long]$listDuringFault.mapListReads - [long]$listBefore.mapListReads
 $errorsInFault = [long]$listDuringFault.mapListServerErrors - [long]$listBefore.mapListServerErrors
 $assertions.Add(
-    'L2-MR-01', '地图列表读不到的几轮不算改名：窗口内确实读过列表且都答 500，没有暂停，基线与读失败之前相同',
+    'L2-MR-01', '地图列表读不到的几轮不算改名：窗口内读过列表至少一次、答 500 至少一次，没有暂停，基线与读失败之前相同',
     ($readsInFault -ge 1 -and $errorsInFault -ge 1 -and @($holdsDuringFault).Count -eq 0 -and
         (Format-Baseline $baselineDuringFault) -eq (Format-Baseline $baselineBefore)),
     "reads >= 1, 500s >= 1; (none); $(Format-Baseline $baselineBefore)",

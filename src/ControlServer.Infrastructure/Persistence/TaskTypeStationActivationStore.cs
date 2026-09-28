@@ -649,63 +649,19 @@ public sealed class TaskTypeStationActivationStore(
         DateTimeOffset at,
         CancellationToken cancellationToken)
     {
-        MapNameBaselineRow? mapName = await _context.Set<MapNameBaselineRow>().AsNoTracking()
-            .SingleOrDefaultAsync(row => row.MapId == attempt.MapId, cancellationToken);
-        if (mapName?.PendingName is not { } pendingName)
-        {
-            return;
-        }
         TaskTypeStationBindingSetVersion target = await _bindings.ReadVersionAsync(
                 attempt.MapId, attempt.TargetVersion, cancellationToken)
             ?? throw new InvalidOperationException(Invariant(
-                $"Map {attempt.MapId} has no binding set version {attempt.TargetVersion} to hold under the pending rename."));
-        HashSet<string> alreadyHeld = [.. await _context.Set<TaskTypeStationHoldRow>().AsNoTracking()
-            .Where(row => row.MapId == attempt.MapId
-                && row.Source == TaskTypeStationHoldSource.CatalogChange
-                && row.ReasonCode == MapNameHoldReasons.MapRenamed
-                && row.ReleasedAt == null)
-            .Select(row => row.TaskType)
-            .ToListAsync(cancellationToken)];
-        foreach (string taskType in target.Bindings.Select(binding => binding.TaskType)
-            .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).Where(taskType => !alreadyHeld.Contains(taskType)))
-        {
-            string detailJson = JsonSerializer.Serialize(new
-            {
-                mapId = attempt.MapId,
-                taskType,
-                source = TaskTypeStationHoldSource.CatalogChange,
-                reasonCode = MapNameHoldReasons.MapRenamed,
-                classification = "MAP_RENAMED",
-                bindingSetVersion = target.Version,
-                before = new { mapName = mapName.Name },
-                after = new { mapName = pendingName },
-                raisedBy = "ACTIVATION_UNDER_PENDING_RENAME",
-                attemptId = attempt.AttemptId
-            });
-            _context.Set<TaskTypeStationHoldRow>().Add(new TaskTypeStationHoldRow
-            {
-                HoldId = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture),
-                MapId = attempt.MapId,
-                TaskType = taskType,
-                Source = TaskTypeStationHoldSource.CatalogChange,
-                ReasonCode = MapNameHoldReasons.MapRenamed,
-                DetailJson = detailJson,
-                RaisedAt = at,
-                RaisedBy = "fieldops:activate:" + attempt.AttemptId
-            });
-            await _context.SaveChangesAsync(cancellationToken);
-            await _audit.WriteBusinessAsync(
-                new GovernanceAuditEntry(
-                    MapNameBaselineAuditActions.HoldRaised,
-                    GovernedObjectKind.PublicStationBinding,
-                    TaskTypeStationGovernance.BindingSetObjectId(attempt.MapId),
-                    target.Version,
-                    GovernanceActionOutcome.Succeeded,
-                    detailJson,
-                    target.SnapshotId),
-                at,
-                cancellationToken);
-        }
+                $"Map {attempt.MapId} has no binding set version {attempt.TargetVersion} to hold under a pending rename."));
+        await MapRenameHoldWriter.HoldUnderPendingRenameAsync(
+            _context,
+            new TaskTypeStationHoldStore(_context),
+            _audit,
+            target,
+            "fieldops:activate:" + attempt.AttemptId,
+            MapRenameHoldWriter.ByActivation,
+            at,
+            cancellationToken);
     }
 
     private static string Invariant(FormattableString text) => text.ToString(CultureInfo.InvariantCulture);
