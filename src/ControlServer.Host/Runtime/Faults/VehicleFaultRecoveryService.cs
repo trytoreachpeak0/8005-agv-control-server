@@ -450,18 +450,14 @@ public sealed partial class VehicleFaultRecoveryService(
         RiotVehicleOrderObservation orders = await orderFacts
             .ReadUnfinishedOrdersAsync(subject.DeviceKey, cancellationToken).ConfigureAwait(false);
         RiotOrderObservation? order = null;
-        // A terminal-reconciled intent is read too, but only a rebuilt order's: one that FAILED before it was confirmed is left
-        // that way, and its fault is cleared here like any other (control-server#318, review S2). Its orderId is RIoT's,
-        // matched against the frozen intent when it was reconciled. An ordinary leg in that state is not read (incremental
-        // review, low 4): the engine records no fault for it, so a fault standing there came some other way, and clearing it
-        // here would open a path #318 never argued for.
+        // A terminal-reconciled intent -- an order that ended in RIoT before its create was ever confirmed -- is read too, but
+        // only when the fault standing is one the engine recorded for that very order, and it is then cleared here like any
+        // other (control-server#318 review S2 for a rebuilt order, control-server#367 for an ordinary leg). Its orderId is RIoT's,
+        // matched against the frozen intent when it was reconciled. See TerminalIntentCarriesThisFaultAsync for how that is
+        // told apart from a fault that came some other way, which is not cleared through this intent (incremental review, low 4).
         if (intent is { Status: "CONFIRMED", OrderId: not null } ||
             (intent is { Status: "TERMINAL_RECONCILIATION_REQUIRED", OrderId: not null } &&
-             await dbContext.OwnOrderRebuilds.AsNoTracking()
-                 .AnyAsync(
-                     row => row.NewUpperId == intent.UpperId && row.State == OwnOrderRebuildStates.Failed,
-                     cancellationToken)
-                 .ConfigureAwait(false)))
+             await TerminalIntentCarriesThisFaultAsync(intent, fault, cancellationToken).ConfigureAwait(false)))
         {
             try
             {
@@ -475,6 +471,54 @@ public sealed partial class VehicleFaultRecoveryService(
         }
 
         return new Reading(fault, journey, intent, emergency, orders, order);
+    }
+
+    /// <summary>
+    /// Whether the fault standing on the vehicle is the one the engine recorded for the order of this terminal-reconciled
+    /// intent -- an order RIoT reported FAILED before its create was confirmed. Only then is the intent read for a clearance.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Two ways to tell, both this server's own durable records.</b> A rebuilt order that FAILED before confirmation leaves its
+    /// rebuild record in <see cref="OwnOrderRebuildStates.Failed"/> (control-server#318, review S2); that is kept as it was. An
+    /// ordinary leg has no such record (control-server#367), and what marks it is the hold: the engine hands a FAILED order to
+    /// <c>VehicleFaultCoordinator.ObserveAsync</c> -- the only caller in the product -- and every evaluation of that fault arms
+    /// an <c>OrderHold</c> audit row for the order's upperId under the fault's generation before anything is sent. So a hold
+    /// for this upperId <b>under the generation standing now</b> says the engine saw this order FAILED during this fault.
+    /// </para>
+    /// <para>
+    /// <b>The generation is what keeps the other ways out.</b> A fault recorded some other way arms no hold for this order; and a
+    /// hold from an earlier, cleared fault says nothing about the one standing now. Matching the upperId alone would let the
+    /// second through (<c>FailedOrderBeforeConfirmationTests.AFaultOfAnotherOriginIsNotClearedThroughATerminalIntentAnEarlierFaultWasRecordedOn</c>).
+    /// No fault at all reads nothing either: there is nothing to clear.
+    /// </para>
+    /// </remarks>
+    private async Task<bool> TerminalIntentCarriesThisFaultAsync(
+        OrderIntentRow intent,
+        VehicleFaultFact? fault,
+        CancellationToken cancellationToken)
+    {
+        if (await dbContext.OwnOrderRebuilds.AsNoTracking()
+                .AnyAsync(
+                    row => row.NewUpperId == intent.UpperId && row.State == OwnOrderRebuildStates.Failed,
+                    cancellationToken)
+                .ConfigureAwait(false))
+        {
+            return true;
+        }
+
+        if (fault is not { Level: not VehicleFaultLevel.None } standing)
+        {
+            return false;
+        }
+
+        long generation = standing.FaultGeneration;
+        return await dbContext.RiotOrderCommandAudit.AsNoTracking()
+            .AnyAsync(
+                row => row.CommandType == RiotCommandTypeNames.OrderHold && row.TargetUpperId == intent.UpperId &&
+                       row.FaultGeneration == generation,
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>This server's own tables, read again under the gate: the facts a decision is committed on.</summary>
