@@ -159,6 +159,9 @@ internal sealed class TaskTypeBindingsQueryEndpoint : IDashboardQueryEndpoint
                 return "站点改名";
             case CatalogBindingHoldReasons.StationNotInCatalog:
                 return "站点已不在目录";
+            // control-server#186: the Map was renamed under the same mapId.
+            case MapNameHoldReasons.MapRenamed:
+                return "地图改名";
         }
         try
         {

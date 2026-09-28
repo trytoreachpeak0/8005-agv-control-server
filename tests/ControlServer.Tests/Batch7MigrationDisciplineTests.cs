@@ -57,6 +57,8 @@ public sealed class Batch7MigrationDisciplineTests
         "20260927113122_JourneyRuntimeVersion",
         // control-server#366：OwnOrderRebuilds 加 VehicleHeldAt（有货重建这一次被车况或会话挡住的开始）与 CargoEvidenceNotBefore（快照要晚于它才算数），都可空、不回填；不动任何既有行。
         "20260928060831_OwnOrderRebuildCargoEvidenceNotBefore",
+        // control-server#186：新建 MapNameBaselines 表，每个 mapId 一行地图名基线（首次读到的名称、待接受的新名称、最近一次接受）；不动任何既有表与行。自己的断言在 MapNameBaselinesMigrationTests。
+        "20260928153736_MapNameBaselines",
     ];
 
     [Fact]

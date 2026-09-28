@@ -99,9 +99,9 @@ public static class RiotDataPlane
                 description = (string?)null,
                 floor = 1,
                 mapError = (string?)null,
-                source = 1,
+                source = "upload",
                 state = "activated",
-                syncState = 1
+                syncState = "synced"
             }).ToArray());
         });
 

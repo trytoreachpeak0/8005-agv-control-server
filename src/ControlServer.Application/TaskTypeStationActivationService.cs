@@ -435,6 +435,15 @@ public sealed class TaskTypeStationActivationService(
                 TaskTypeStationActivationReasonCodes.ActivationPendingReconciliation, taskType, null,
                 Invariant($"Map {mapId} has an activation of version {pointer.PendingVersion} whose result is unknown; which binding is in force is not known until it is reconciled.")));
         }
+        // control-server#186: a release under a Map rename nobody accepted would be undone the next round, when the rename is
+        // seen again -- and in between it would dispatch on a Map whose name the field has not checked. Accept first.
+        MapNameBaseline? mapName = await _mapNames.ReadAsync(mapId, cancellationToken);
+        if (mapName?.PendingName is { } pendingName)
+        {
+            violations.Add(new(
+                MapNameBaselineReasonCodes.RenameNotAccepted, taskType, null,
+                Invariant($"Map {mapId} was renamed from '{mapName.Name}' to '{pendingName}' and the new name has not been accepted; run accept-map-name first.")));
+        }
         if (binding is null)
         {
             violations.Add(new(

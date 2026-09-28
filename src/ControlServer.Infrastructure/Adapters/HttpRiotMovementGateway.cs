@@ -242,8 +242,36 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         return new RiotMapStationCatalogSnapshot(mapId, observedAt, fingerprint, stations);
     }
 
-    public Task<RiotMapNameListing> ReadMapNamesAsync(CancellationToken cancellationToken) =>
-        Task.FromResult(new RiotMapNameListing(timeProvider.GetUtcNow(), []));
+    /// <summary>
+    /// RIoT's Map list without any <c>mapJson</c> (control-server#186; verified on the real RIoT 2026-09-28: 2 KB for eight
+    /// Maps, where <c>mapInfo/{mapId}</c> is some 260 KB for one). Fails closed: an answer that is not a non-empty list
+    /// throws rather than coming back empty, because an empty list would read as every Map being absent.
+    /// </summary>
+    public async Task<RiotMapNameListing> ReadMapNamesAsync(CancellationToken cancellationToken)
+    {
+        IReadOnlyList<Map> maps;
+        try
+        {
+            maps = await riotSession.Maps.ListMapsAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception error) when (RiotCallFailureClassification.IsSdkFailure(error))
+        {
+            throw new InvalidDataException("RIoT Map list response was not valid.", error);
+        }
+
+        // The SDK drops entries without an id or a name; what is left must still be something.
+        if (maps.Count == 0)
+        {
+            throw new InvalidDataException("RIoT Map list must be non-empty.");
+        }
+        return new RiotMapNameListing(
+            timeProvider.GetUtcNow(),
+            [.. maps.Select(map => new RiotMapName(map.MapId, map.Name))]);
+    }
 
     public async Task<RiotVehicleSafetyObservation> ReadVehicleSafetyAsync(
         string vehicleKey,
