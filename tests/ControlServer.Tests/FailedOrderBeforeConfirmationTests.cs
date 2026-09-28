@@ -132,6 +132,37 @@ public sealed class FailedOrderBeforeConfirmationTests
     }
 
     /// <summary>
+    /// 失联那一路（cs#358 的第二个位置）：会话行仍是 Ready，但车载端 6 秒没有任何入站，旅程写 <c>ONBOARD_SESSION_LOST</c>。这时建单应答丢了的那张单
+    /// 被报 FAILED、车在动：同一轮记故障、Hold、急停，车载端一条都没收到。
+    /// </summary>
+    /// <remarks>
+    /// 前提先断：注入 FAILED 之前那一轮旅程写的是 <c>ONBOARD_SESSION_LOST</c>、会话行是 Ready——这条走的确实是失联截停，不是会话闸门。
+    /// </remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0232")]
+    [Trait("Requirement", "REQ-0246")]
+    public async Task AnUnconfirmedOrderThatFailedIsRecordedHeldAndStoppedWhileTheReadySessionIsSilent()
+    {
+        await using RuntimeFixture fixture = await PickupCreateAnswerLostAsync();
+        JourneyRuntimeRow dispatched = await fixture.RuntimeAsync();
+        await fixture.HearFromPeerAsync();
+        fixture.Clock.Advance(SessionLiveness.Timeout + TimeSpan.FromSeconds(2));
+        await TickSilentAsync(fixture);
+        Assert.Equal(JourneyRuntimeEngine.OnboardSessionLostReason, (await fixture.RuntimeAsync()).BlockReasonCode);
+        await AssertSessionReadyAsync(fixture);
+
+        fixture.Riot.MovementState = "MT_RUNNING";
+        fixture.Riot.FailOrder(dispatched.PickupUpperId);
+        Outbound before = await OutboundAsync(fixture);
+        await TickSilentAsync(fixture);
+
+        await AssertSessionReadyAsync(fixture);
+        await AssertRecordedHeldAndStoppedAsync(fixture, dispatched.PickupUpperId);
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+        Assert.Equal(before, await OutboundAsync(fixture));
+    }
+
+    /// <summary>
     /// 意图已经是终态对账、却没有故障的旅程——修之前的版本留在库里的样子（码 <c>PICKUP_TerminalReconciliationRequired</c>），或者在
     /// 「意图写成终态」与「故障观测」两次保存之间崩掉的样子。会话未就绪：闸门后这一轮照样把它交给故障模型。
     /// </summary>
@@ -439,6 +470,10 @@ public sealed class FailedOrderBeforeConfirmationTests
             Assert.Empty(await reading.RiotOrderCommandAudit.AsNoTracking().ToArrayAsync(Token));
         }
 
+        // REQ-0361's delay: nothing is created before it is over, although the vehicle is stopped and the session Ready.
+        await TickAndHearAsync(fixture);
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+
         await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
         fixture.Context.ChangeTracker.Clear();
 
@@ -448,11 +483,12 @@ public sealed class FailedOrderBeforeConfirmationTests
     }
 
     /// <summary>
-    /// 同一件事在闸门后，单是被删除（DELETED）：会话因本车在途单未就绪，这一轮照样登记重建、写码；会话没就绪就不建新单，车载端一条都没收到。
+    /// 同一件事在闸门后，单是被删除（DELETED）：会话因本车在途单未就绪，这一轮照样登记重建、写码；延迟过了、会话仍没就绪，就不建新单，
+    /// 车载端一条都没收到。会话回到就绪之后建单是 cs#318 既有的那一段，这里不重复断。
     /// </summary>
     [Fact]
     [Trait("Requirement", "REQ-0360")]
-    public async Task APickupOrderDeletedBeforeConfirmationIsRecordedBehindTheGateAndNotRebuiltUntilReady()
+    public async Task APickupOrderDeletedBeforeConfirmationIsRecordedBehindTheGateAndNothingIsCreatedWhileNotReady()
     {
         await using RuntimeFixture fixture = await PickupCreateAnswerLostAsync();
         JourneyRuntimeRow dispatched = await fixture.RuntimeAsync();
@@ -715,6 +751,17 @@ public sealed class FailedOrderBeforeConfirmationTests
     {
         fixture.EmergencyLatched = false;
         fixture.Riot.SafetyReasons = [];
+    }
+
+    /// <summary>钟走一秒、车载端不说话，跑一轮：失联一直持续。</summary>
+    private static async Task TickSilentAsync(RuntimeFixture fixture)
+    {
+        DateTimeOffset before = fixture.Clock.GetUtcNow();
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        Assert.True(fixture.Clock.GetUtcNow() > before, "the clock did not move");
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
     }
 
     private static async Task TickAndHearAsync(RuntimeFixture fixture)
