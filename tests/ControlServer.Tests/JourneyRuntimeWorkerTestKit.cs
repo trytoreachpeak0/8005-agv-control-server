@@ -144,6 +144,12 @@ internal static class JourneyRuntimeWorkerTestKit
         public string[] UnfinishedOrderIds { get; set; } = [];
 
         /// <summary>
+        /// Runs just before RIoT's list of unfinished orders is read -- the last read before a release goes out. control-server#335
+        /// review P2 uses it to turn the held order to EXECUTING after every earlier read of the round has seen it PAUSED.
+        /// </summary>
+        public Action? BeforeUnfinishedOrdersRead { get; set; }
+
+        /// <summary>
         /// The <paramref name="commands"/> interceptor is the seam for asserting on the SQL the engine
         /// sends, which is the only way to tell a query that narrows in the store from one that reads a
         /// whole type back and filters in memory: a pre-filter that changed results would be a bug, so
@@ -1237,7 +1243,11 @@ internal static class JourneyRuntimeWorkerTestKit
             RiotOrderCommandAuditStore audit = new(Context);
             Microsoft.Extensions.Options.IOptions<VehicleFaultOptions> faultOptions =
                 Microsoft.Extensions.Options.Options.Create(new VehicleFaultOptions());
-            SilentCommandGateway gateway = new(Clock, () => EmergencyLatched, () => UnfinishedOrderIds);
+            SilentCommandGateway gateway = new(Clock, () => EmergencyLatched, () =>
+            {
+                BeforeUnfinishedOrdersRead?.Invoke();
+                return UnfinishedOrderIds;
+            });
             return new VehicleFaultCoordinator(
                 faults,
                 gateway,

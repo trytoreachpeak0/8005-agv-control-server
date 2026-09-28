@@ -290,6 +290,128 @@ public sealed class InTransitDoorEmergencyReleaseTests
     }
 
     /// <summary>
+    /// 审查必修 3（探针 P3）：恢复服务过了闸门之后、协调器发 CONTINUE 之前，引擎这一轮因为门又没锁重新急停，而 RIoT 的闩锁
+    /// 还没锁上（实车约 1 s）。协调器最后一刻读到急停 OK，但本服务端有一次急停还开着：拒绝，零 CONTINUE。
+    /// </summary>
+    /// <remarks>
+    /// 不挡的话：单变 3、故障被清除，急停随后锁上。门锁恢复之后这次急停没有故障在监看，有货的车只能改库。
+    /// </remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0239")]
+    [Trait("Requirement", "REQ-0248")]
+    public async Task AStopReTriggeredAfterTheServiceGateStillStopsTheContinue()
+    {
+        await using RuntimeFixture fixture = await ReleasedForTheDoorsAsync();
+        VehicleFaultRecoveryTests.SiteRiot site = new(fixture)
+        {
+            HasUnfinishedOrder = true,
+            AfterOrderReadAsync = async read =>
+            {
+                // 第 2 次读单是协调器在 ResumeAsync 里那一次：恢复服务的闸门已经放开。
+                if (read == 2)
+                {
+                    await fixture.ReportSafetySummaryAsync(
+                        allTargetSlotsLocked: false, unknownPresent: false, ["LOCK_NOT_CLOSED", "ACTION_NOT_ALLOWED_IN_STATE"]);
+                    await DriveOneRoundAsync(fixture);
+                }
+            },
+        };
+
+        VehicleFaultRecoveryDecision decision = await VehicleFaultRecoveryTests.Service(fixture, site)
+            .RecoverAsync(ResumeRequest(fixture), Token);
+
+        // 前提：引擎确实在那个时间窗里重新急停了，而闩锁还没锁上。
+        Assert.Equal(2, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
+        Assert.False(fixture.EmergencyLatched);
+        Assert.Equal(VehicleFaultRecoveryOutcome.Refused, decision.Outcome);
+        Assert.Equal(["RESUME_EMERGENCY_STOP_OPEN"], decision.Reasons);
+        Assert.Empty(site.OrderCommands);
+        Assert.Equal(0, await CountAsync(fixture, RiotCommandTypeNames.OrderContinue));
+    }
+
+    /// <summary>
+    /// 审查必修 2（探针 P2）：解除那一轮里，放行已经读到本代自确认的 7，而在监督器最后一次列车上未完成单之前，单变成了执行中（3）。
+    /// 最后那次读取也要核单态：不是 7 就不解除。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0167")]
+    public async Task AHeldOrderThatRunsBeforeTheLastReadKeepsTheLatch()
+    {
+        await using RuntimeFixture fixture = await LatchedForTheDoorsAsync();
+        Latched latched = await LatchedFactsAsync(fixture);
+        fixture.BeforeUnfinishedOrdersRead = () =>
+            fixture.Riot.SetOrderState(latched.UpperId, RiotOrderState.Executing, terminal: false);
+
+        await ReportLockedAsync(fixture);
+        await DriveOneRoundAsync(fixture);
+
+        Assert.Equal(RiotOrderState.Executing, fixture.Riot.OrderStateOf(latched.UpperId));
+        Assert.Equal(0, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+    }
+
+    /// <summary>
+    /// 审查必修 1（探针 P1）：门锁故障在效期间，有人在 RIoT 上取消或删除了本服务端按住的那张单。之后不能只剩改库：
+    /// 门锁恢复新鲜锁闭、车上没有任何未完成单时自动解除急停（锁着那一格）；人工清除对门锁故障放行 CANCELLED／DELETED，
+    /// 只清故障，重建交给引擎已经登记的那一条 cs#318 记录，不登记第二条；故障不自动清除。
+    /// </summary>
+    [Theory]
+    [InlineData("latched", RiotOrderState.Cancelled)]
+    [InlineData("released", RiotOrderState.Cancelled)]
+    [InlineData("latched", RiotOrderState.Deleted)]
+    [Trait("Requirement", "REQ-0167")]
+    [Trait("Requirement", "REQ-0246")]
+    public async Task AHeldOrderEndedInRiotUnderADoorFaultStillHasAWayOut(string latch, int ending)
+    {
+        await using RuntimeFixture fixture = latch == "latched"
+            ? await LatchedForTheDoorsAsync()
+            : await ReleasedForTheDoorsAsync();
+        Latched latched = await LatchedFactsAsync(fixture);
+        int releasesBefore = await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency);
+
+        fixture.Riot.SetOrderState(latched.UpperId, ending, terminal: true);
+        fixture.UnfinishedOrderIds = [];
+        await ReportLockedAsync(fixture);
+        for (int round = 0; round < 5; round++)
+        {
+            await DriveOneRoundAsync(fixture);
+        }
+
+        // 故障仍在效，不自动清除；锁着的那一格已经自动解除了一次。
+        await using (ControlServerDbContext reading = new(fixture.DbOptionsForTests))
+        {
+            VehicleFaultStateRow standing = await reading.VehicleFaultStates.AsNoTracking().SingleAsync(Token);
+            Assert.Equal((VehicleFaultLevel.SuspectedBlocked, InTransitDoorLockFaultTests.DoorSymptom),
+                (standing.Level, standing.EvidenceCode));
+        }
+        Assert.Equal(releasesBefore + (latch == "latched" ? 1 : 0), await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+        fixture.EmergencyLatched = false;
+        await DriveOneRoundAsync(fixture);
+
+        VehicleFaultRecoveryTests.SiteRiot site = new(fixture) { HasUnfinishedOrder = false };
+        VehicleFaultRecoveryDecision decision = await VehicleFaultRecoveryTests.Service(fixture, site).RecoverAsync(
+            new VehicleFaultRecoveryRequest(
+                new EmergencyStopSubject(fixture.Options.AgvId, fixture.Options.VehicleKey),
+                VehicleFaultRecoveryAction.ClearFault,
+                "L1-OPERATOR",
+                FaultRemedied: true,
+                Note: "doors checked on site"),
+            Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.True(VehicleFaultRecoveryOutcome.Cleared == decision.Outcome, string.Join(", ", decision.Reasons));
+        await DriveOneRoundAsync(fixture);
+        await using (ControlServerDbContext reading = new(fixture.DbOptionsForTests))
+        {
+            VehicleFaultStateRow cleared = await reading.VehicleFaultStates.AsNoTracking().SingleAsync(Token);
+            Assert.Equal(VehicleFaultLevel.None, cleared.Level);
+            OwnOrderRebuildRow rebuild = Assert.Single(await reading.OwnOrderRebuilds.AsNoTracking().ToArrayAsync(Token));
+            Assert.Equal((OwnOrderRebuildSources.CancelledInRiot, latched.UpperId), (rebuild.Source, rebuild.EndedUpperId));
+            Assert.DoesNotContain("VEHICLE_FAULT_IN_EFFECT", rebuild.WaitingReason ?? string.Empty, StringComparison.Ordinal);
+        }
+        Assert.Equal(1, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
+    }
+
+    /// <summary>
     /// 解除之后 RIoT 把单跑了起来（3），而没有人按继续：写告警与旅程码 <c>HELD_ORDER_RESUMED_WITHOUT_CONTINUE</c>。
     /// round-44（agv03，2026-09-28）单次观测到 HELD 的单在解除后 60 秒里一直是 7；这一格防的是 RIoT 行为以后变了。
     /// 车若真在动，前一格「moving」那条已经证明它会被重新急停；这里让车停着，只看码。

@@ -1696,6 +1696,16 @@ public sealed class VehicleFaultRecoveryTests
         /// <summary>读完「车上有没有未完成订单」之后做的事：用来模拟读 RIoT 与拿锁之间引擎推进了一轮。</summary>
         public Action? AfterUnfinishedOrdersRead { get; set; }
 
+        /// <summary>How many times an order has been read through this double.</summary>
+        public int OrderReads { get; private set; }
+
+        /// <summary>
+        /// Runs after each order read, given its 1-based count. control-server#335 review P3 uses the second one -- the
+        /// coordinator's read inside ResumeAsync, after the recovery service's gate is released -- to let an engine round
+        /// re-trigger the stop before the continue goes out.
+        /// </summary>
+        public Func<int, Task>? AfterOrderReadAsync { get; set; }
+
         public Task<RiotCommandCallResult> IssueOrderCommandAsync(
             RiotOrderCommandKind kind, string orderId, string? reason, CancellationToken cancellationToken)
         {
@@ -1737,12 +1747,18 @@ public sealed class VehicleFaultRecoveryTests
             return Task.FromResult(observation);
         }
 
-        public Task<RiotOrderObservation> ReconcileByUpperIdAsync(string upperId, CancellationToken cancellationToken)
+        public async Task<RiotOrderObservation> ReconcileByUpperIdAsync(string upperId, CancellationToken cancellationToken)
         {
             Called("order read");
-            return OrderReadOverride is { } overridden && overridden.UpperId == upperId
-                ? Task.FromResult(overridden)
-                : fixture.Riot.ReconcileByUpperIdAsync(upperId, cancellationToken);
+            RiotOrderObservation observation = OrderReadOverride is { } overridden && overridden.UpperId == upperId
+                ? overridden
+                : await fixture.Riot.ReconcileByUpperIdAsync(upperId, cancellationToken);
+            OrderReads++;
+            if (AfterOrderReadAsync is { } after)
+            {
+                await after(OrderReads);
+            }
+            return observation;
         }
 
         public Task<RiotOrderObservation> CreateAsync(OrderIntent intent, CancellationToken cancellationToken) =>
