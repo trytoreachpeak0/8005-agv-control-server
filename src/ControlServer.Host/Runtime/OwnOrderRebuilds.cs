@@ -40,6 +40,13 @@ internal static class OwnOrderRebuilds
     public const string EndedAgainWithinWindow = "REBUILT_ORDER_ENDED_AGAIN_WITHIN_WINDOW";
 
     /// <summary>
+    /// Why a rebuild with cargo on board was not made: a demand of the journey is on board, and no settled load of it records the
+    /// slots its cargo went into, so no snapshot can show it in place (control-server#376). Stopped for a person rather than left
+    /// waiting on a snapshot that cannot settle it; control-server#345's exits apply.
+    /// </summary>
+    public const string CargoSlotsNotRecorded = "CARGO_SLOTS_NOT_RECORDED";
+
+    /// <summary>
     /// Why a rebuild was not made: a snapshot received after a clearance with cargo on board did not show the cargo whole in
     /// its slots (REQ-0362). The record's waiting reason says which slot read what.
     /// </summary>

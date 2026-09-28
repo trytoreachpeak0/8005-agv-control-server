@@ -230,7 +230,32 @@ public sealed class VehicleFaultCoordinator(
             new EventId(9202, "VehicleFaultOperatorConfirmation"),
             "Isolation of {AgvId} confirmed by {RequesterIdentity} in exception-recovery session {SessionId}.");
 
+    private static readonly Action<ILogger, string, string, string, Exception?> LogCargoOfAnotherJourneyReleased =
+        LoggerMessage.Define<string, string, string>(
+            LogLevel.Warning,
+            new EventId(9204, "VehicleFaultCargoOfAnotherJourneyReleased"),
+            "Cargo binding {CargoBindingId} of {AgvId} for demand {DemandId} released: its journey has closed and is not the " +
+            "vehicle's current one.");
+
     private readonly VehicleFaultOptions faultOptions = options.Value;
+
+    /// <summary>
+    /// Releases the vehicle's live bindings left by a journey that has closed (control-server#376), and logs each: the audit is
+    /// the binding's own release reason, the log says it happened. Asked before a binding is read for the current journey.
+    /// </summary>
+    internal static async Task ReleaseCargoOfOtherJourneysAsync(
+        IVehicleFaultStore faults,
+        string agvId,
+        DateTimeOffset now,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        foreach (FaultedCargoBinding released in await faults.ReleaseCargoOfOtherJourneysAsync(agvId, now, cancellationToken)
+                     .ConfigureAwait(false))
+        {
+            LogCargoOfAnotherJourneyReleased(logger, released.CargoBindingId, agvId, released.DemandId, null);
+        }
+    }
 
     /// <summary>
     /// Records a symptom, protects the order and the cargo, and either proves the vehicle stopped
@@ -649,6 +674,11 @@ public sealed class VehicleFaultCoordinator(
         FaultedVehicleContext context,
         CancellationToken cancellationToken)
     {
+        // A binding a closed journey left is not this fault's cargo (control-server#376): taken as it, an empty vehicle was cleared
+        // as loaded and its rebuild waited on slots it had none of, and a loaded one could not resume its own order. Released
+        // first, so that the one-binding-per-vehicle rule below binds this journey's cargo and never leaves two live.
+        await ReleaseCargoOfOtherJourneysAsync(faults, subject.AgvId, timeProvider.GetUtcNow(), logger, cancellationToken)
+            .ConfigureAwait(false);
         FaultedCargoBinding? live = await faults.ReadLiveCargoAsync(subject.AgvId, cancellationToken)
             .ConfigureAwait(false);
         if (live is not null || context.Cargo is null)

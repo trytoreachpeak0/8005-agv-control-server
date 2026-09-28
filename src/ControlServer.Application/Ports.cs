@@ -551,6 +551,15 @@ public interface IVehicleFaultStore
 
     Task<FaultedCargoBinding?> ReadLiveCargoAsync(string agvId, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Releases the vehicle's live bindings left by a journey that has closed and is not its current one, and returns them
+    /// (control-server#376). Called before a binding is read to decide anything about the vehicle's current journey.
+    /// </summary>
+    Task<IReadOnlyList<FaultedCargoBinding>> ReleaseCargoOfOtherJourneysAsync(
+        string agvId,
+        DateTimeOffset releasedAt,
+        CancellationToken cancellationToken);
+
     Task ReleaseCargoAsync(
         string cargoBindingId,
         string reason,

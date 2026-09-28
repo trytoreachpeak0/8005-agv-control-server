@@ -333,17 +333,27 @@ public sealed partial class VehicleFaultRecoveryService
 
     /// <summary>
     /// Whether something is, or may be, on the vehicle: a demand of the journey past "still to load" and not ended, or a live
-    /// cargo binding -- the same reading as a clearance's (<see cref="DisposeOfTheJourneyAsync"/>).
+    /// cargo binding -- the same reading as a clearance's (<see cref="DisposeOfTheJourneyAsync"/>). A binding a closed journey
+    /// left is released first and does not count (control-server#376): read as this trip's cargo, it refused giving up an empty
+    /// trip, and the handoff it left as the only way could not reach a demand that never loaded.
     /// </summary>
-    private async Task<bool> MayCarryAsync(string agvId, JourneyRuntimeRow runtime, CancellationToken cancellationToken) =>
-        await dbContext.Set<JourneyDemandRow>().AsNoTracking()
-            .AnyAsync(
-                row => row.JourneyId == runtime.JourneyId && row.RemovedAt == null &&
-                       row.Status != JourneyDemandStatuses.PendingLoad && row.Status != JourneyDemandStatuses.Unloaded &&
-                       row.Status != JourneyDemandStatuses.Terminated,
-                cancellationToken)
-            .ConfigureAwait(false) ||
-        await faults.ReadLiveCargoAsync(agvId, cancellationToken).ConfigureAwait(false) is not null;
+    private async Task<bool> MayCarryAsync(string agvId, JourneyRuntimeRow runtime, CancellationToken cancellationToken)
+    {
+        if (await dbContext.Set<JourneyDemandRow>().AsNoTracking()
+                .AnyAsync(
+                    row => row.JourneyId == runtime.JourneyId && row.RemovedAt == null &&
+                           row.Status != JourneyDemandStatuses.PendingLoad && row.Status != JourneyDemandStatuses.Unloaded &&
+                           row.Status != JourneyDemandStatuses.Terminated,
+                    cancellationToken)
+                .ConfigureAwait(false))
+        {
+            return true;
+        }
+
+        await VehicleFaultCoordinator.ReleaseCargoOfOtherJourneysAsync(
+            faults, agvId, timeProvider.GetUtcNow(), logger, cancellationToken).ConfigureAwait(false);
+        return await faults.ReadLiveCargoAsync(agvId, cancellationToken).ConfigureAwait(false) is not null;
+    }
 
     /// <summary>
     /// The vehicle's journey, the stop it waits at and the rebuild record that stop waits on, read afresh; and why a person's

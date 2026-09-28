@@ -403,6 +403,9 @@ public sealed partial class VehicleFaultRecoveryService(
             }
 
             reasons.AddRange(EmergencyReasons(reading.Emergency, standing.StopOpen));
+            // A binding a closed journey left is not the cargo of the order being resumed (control-server#376).
+            await VehicleFaultCoordinator.ReleaseCargoOfOtherJourneysAsync(
+                faults, subject.AgvId, timeProvider.GetUtcNow(), logger, cancellationToken).ConfigureAwait(false);
             FaultedCargoBinding? cargo = await faults.ReadLiveCargoAsync(subject.AgvId, cancellationToken).ConfigureAwait(false);
             if (standing.Journey is not JourneyRuntimeRow journey ||
                 standing.Intent is not { OrderId: string orderId } intent ||
@@ -594,6 +597,10 @@ public sealed partial class VehicleFaultRecoveryService(
         List<JourneyDemandRow> memberships = await dbContext.Set<JourneyDemandRow>()
             .Where(row => row.JourneyId == runtime.JourneyId && row.RemovedAt == null)
             .ToListAsync(cancellationToken).ConfigureAwait(false);
+        // A binding a closed journey left says nothing about this journey's cargo (control-server#376): read as it, an empty
+        // vehicle was disposed of as loaded.
+        await VehicleFaultCoordinator.ReleaseCargoOfOtherJourneysAsync(faults, agvId, now, logger, cancellationToken)
+            .ConfigureAwait(false);
         bool cargoBound = await faults.ReadLiveCargoAsync(agvId, cancellationToken).ConfigureAwait(false) is not null;
 
         // Anything other than "still to load" or "already ended" may be on the vehicle: loading, loaded, or a status this

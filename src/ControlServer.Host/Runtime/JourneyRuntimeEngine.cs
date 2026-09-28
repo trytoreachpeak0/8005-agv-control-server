@@ -1498,6 +1498,12 @@ public sealed partial class JourneyRuntimeEngine(
                         unloading.Membership.UnloadCommandMessageId, now, cancellationToken).ConfigureAwait(false);
                     (await TrackedMembershipAsync(runtime, unloading.Demand.DemandId, cancellationToken)
                         .ConfigureAwait(false)).Status = JourneyDemandStatuses.Unloaded;
+                    // The cargo has left the vehicle: once nothing of the journey is on board, a fault's binding of it has done its
+                    // work, and left live it would be taken for the next fault's cargo (control-server#376). Saved with the unload.
+                    await FaultedCargoBindings.StageReleaseWhenNothingLeftOnBoardAsync(
+                            dbContext, runtime.JourneyId, runtime.AgvId, FaultedCargoBindings.UnloadedWithNothingLeftOnBoardReason,
+                            now, cancellationToken)
+                        .ConfigureAwait(false);
                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                     stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken)
                         .ConfigureAwait(false);
