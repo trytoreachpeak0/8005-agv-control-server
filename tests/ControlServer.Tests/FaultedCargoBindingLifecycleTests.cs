@@ -154,6 +154,133 @@ public sealed class FaultedCargoBindingLifecycleTests
         Assert.Equal("UNLOADED_WITH_NOTHING_LEFT_ON_BOARD", (await SingleBindingAsync(fixture)).ReleasedReason);
     }
 
+    /// <summary>
+    /// 审查 rv379a（必修 M1）：多需求旅程，绑定记在一条已终结、不在车上的需求名下（引擎按锚需求绑定），车上那一条经交接（或强制机械恢复）
+    /// 了结，另一条还待装、旅程不收尾。修之前交接只释放会话需求名下那条，绑定仍在效：「放弃这趟」以 <c>OWN_ORDER_REBUILD_EXIT_CARGO_ON_BOARD</c>
+    /// 被拒，再交接也只能交同一条，第二层兜不住（那条需求在本趟的归属未移除，算「仍在未收尾的旅程里」），只能改库。现在交接结算后车上什么都不剩，
+    /// 就按旅程收口，放弃这趟成功。
+    /// </summary>
+    /// <remarks>形状照审查员的探针（rv379a-probe.diff，relabel=true 那一格）。</remarks>
+    [Theory]
+    [InlineData("FAULT_CARGO_HANDOFF")]
+    [InlineData("FORCED_MECHANICAL_RECOVERY")]
+    [Trait("Requirement", "REQ-0238")]
+    public async Task AHandoffReleasesABindingNamingAnEndedDemandOfTheOpenJourney(string action)
+    {
+        Environment.SetEnvironmentVariable(ProofVariable, Proof);
+        try
+        {
+            await using RuntimeFixture fixture = await StoppedRebuildExitTests.StoppedWithCargoNotInPlaceAsync();
+            JourneyRuntimeRow stopped = await fixture.RuntimeAsync();
+            const string EndedBeforeLoad = "10000000-0000-4000-8000-000000000003";
+            await using (ControlServerDbContext seeding = new(fixture.DbOptionsForTests))
+            {
+                await JourneyMembershipSeed.AddFurtherDemandAsync(seeding, stopped, SecondDemandId);
+                AcceptedDemandRow ended = await JourneyMembershipSeed.AddFurtherDemandAsync(
+                    seeding, stopped, EndedBeforeLoad, DemandExecutionStatus.Cancelled);
+                FaultedVehicleCargoRow binding = await seeding.FaultedVehicleCargo.SingleAsync(row => row.ReleasedAt == null, Token);
+                binding.DemandId = EndedBeforeLoad;
+                binding.TransportDemandKey = ended.TransportDemandKey;
+                await seeding.SaveChangesAsync(Token);
+            }
+
+            int[] slots = await LoadSlotsAsync(fixture, FirstDemandId);
+            Assert.Equal(
+                VehicleFaultRecoveryOutcome.HandoffPrepared,
+                (await VehicleFaultRecoveryTests.Service(fixture, new(fixture))
+                    .RecoverAsync(StoppedRebuildExitTests.Prepare(fixture), Token)).Outcome);
+            fixture.Context.ChangeTracker.Clear();
+            await using (ControlServerDbContext connection = fixture.OpenConnectionContext())
+            {
+                OnboardMessageProcessor processor = RecoveryProcessor(fixture, connection);
+                OnboardConnectionState state = Connection(fixture);
+                string opened = await processor.ProcessAsync(OpenSession(fixture, FirstDemandId, slots), state, Token);
+                Assert.Equal("ExceptionRecoverySessionOpened", FirstLineType(opened));
+                string sessionId = FirstLinePayload(opened).GetProperty("exceptionRecoverySessionId").GetString()!;
+                string actionId = Guid.NewGuid().ToString("D");
+                Assert.Equal("RecoveryActionAccepted", FirstLineType(await processor.ProcessAsync(
+                    Action(fixture, sessionId, FirstDemandId, slots, actionId, action), state, Token)));
+                string result = action == "FAULT_CARGO_HANDOFF"
+                    ? HandedOff(fixture, sessionId, actionId, FirstDemandId,
+                        (await connection.RecoveryWorkflows.AsNoTracking().SingleAsync(Token)).HandoffId!, slots)
+                    : MechanicallyIsolated(fixture, sessionId, actionId, slots);
+                Assert.Equal("DurableAck", FirstLineType(await processor.ProcessAsync(result, state, Token)));
+            }
+
+            fixture.Context.ChangeTracker.Clear();
+            Assert.Equal(
+                JourneyDemandStatuses.PendingLoad,
+                (await fixture.Context.Set<JourneyDemandRow>().AsNoTracking().SingleAsync(row => row.DemandId == SecondDemandId, Token)).Status);
+            Assert.Equal("HANDED_OFF_IN_EXCEPTION_SESSION", (await SingleBindingAsync(fixture)).ReleasedReason);
+
+            VehicleFaultRecoveryDecision givenUp = await VehicleFaultRecoveryTests.Service(fixture, new(fixture))
+                .RecoverAsync(StoppedRebuildExitTests.GiveUp(fixture), Token);
+            Assert.True(VehicleFaultRecoveryOutcome.TripTerminated == givenUp.Outcome, string.Join(", ", givenUp.Reasons));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(ProofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// 反序（审查第二路建议 3）：绑定记的锚需求最后卸。另一条先卸完时锚需求的货还在车上，保留；锚需求卸完才释放。
+    /// </summary>
+    /// <remarks>
+    /// 同一站跨需求的卸货先按仓在车上的哪一侧、同侧再按加入旅程的先后（<c>JourneyStopCursor.NextToUnloadAtCurrentStopAsync</c>）。
+    /// 这里把锚需求的加入时刻挪到另一条之后，让它排在后面；断言先卸的确实是另一条，这个前提不成立时用例红，而不是悄悄测回正序。
+    /// </remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0238")]
+    public async Task WhenTheAnchorUnloadsLastTheBindingIsKeptUntilItHas()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(
+            fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)),
+            fixture.Demand(SecondDemandId, SecondSublot, Now.AddMinutes(-9), area: "N1-2"));
+        fixture.BoxCounts.Set(FirstSublot, 7);
+        fixture.BoxCounts.Set(SecondSublot, 7);
+        await TickAndRunAsync(fixture);
+        await Batch7ThreeStopJourneyTests.AppendSecondDemandAsync(fixture);
+        await ArriveAtPickupAsync(fixture, FirstDemandId);
+        await EnterSublotAsync(fixture, FirstDemandId, FirstSublot, FirstSubmissionId);
+        await SettleLoadAsync(fixture, FirstDemandId);
+        await AnswerDepartureSafetyAsync(fixture, FirstDemandId, FirstSafetyResultId);
+        await ArriveAtCurrentStopAsync(fixture, SecondDemandId, "TO_GATE");
+        await EnterSublotAsync(fixture, SecondDemandId, SecondSublot, SecondSubmissionId);
+        await SettleLoadAsync(fixture, SecondDemandId);
+        await AnswerDepartureSafetyAsync(fixture, SecondDemandId, SecondSafetyResultId);
+        await BindAsync(fixture, FirstDemandId);
+        await using (ControlServerDbContext writing = new(fixture.DbOptionsForTests))
+        {
+            JourneyDemandRow anchor = await writing.Set<JourneyDemandRow>().SingleAsync(row => row.DemandId == FirstDemandId, Token);
+            JourneyDemandRow other = await writing.Set<JourneyDemandRow>().AsNoTracking().SingleAsync(row => row.DemandId == SecondDemandId, Token);
+            anchor.AddedAt = other.AddedAt.AddSeconds(1);
+            await writing.SaveChangesAsync(Token);
+        }
+
+        await ArriveAtCurrentStopAsync(fixture, FirstDemandId, "TO_GATE");
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Equal(
+            [SecondDemandId],
+            await fixture.Context.StationOperations.AsNoTracking()
+                .Where(row => row.OperationType == SlotOperationType.Unload).Select(row => row.DemandId).ToArrayAsync(Token));
+        await ApplySafeResultAsync(fixture, SecondDemandId, SlotOperationType.Unload, SlotBusinessState.Empty);
+        await TickAndRunAsync(fixture);
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Equal(
+            JourneyDemandStatuses.Unloaded,
+            (await fixture.Context.Set<JourneyDemandRow>().AsNoTracking().SingleAsync(row => row.DemandId == SecondDemandId, Token)).Status);
+        Assert.Null((await SingleBindingAsync(fixture)).ReleasedAt);
+
+        await ApplySafeResultAsync(fixture, FirstDemandId, SlotOperationType.Unload, SlotBusinessState.Empty);
+        await TickAndRunAsync(fixture);
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.Equal(JourneyRuntimeStage.Completed, (await fixture.RuntimeAsync(FirstDemandId)).Stage);
+        Assert.Equal("UNLOADED_WITH_NOTHING_LEFT_ON_BOARD", (await SingleBindingAsync(fixture)).ReleasedReason);
+    }
+
     // ---- 二、新故障只认本趟旅程的货 --------------------------------------------------------------------------------------
 
     /// <summary>
@@ -254,16 +381,7 @@ public sealed class FaultedCargoBindingLifecycleTests
     {
         await using RuntimeFixture fixture = await CompletedTripLeavingALiveBindingAsync();
         await DispatchSecondDemandAsync(fixture);
-        fixture.Riot.CancelOrder((await CurrentStopAsync(fixture, SecondDemandId)).UpperId!);
-        await TickAndRunAsync(fixture);
-        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
-        fixture.Clock.Advance(TimeSpan.FromMinutes(1));
-        await fixture.HearFromPeerAsync();
-        fixture.Riot.CancelOrder((await CurrentStopAsync(fixture, SecondDemandId)).UpperId!);
-        await fixture.Engine.ExecuteOnceAsync(Token);
-        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
-        fixture.Context.ChangeTracker.Clear();
-        Assert.Equal("OWN_ORDER_REBUILD_STOPPED", (await fixture.RuntimeAsync(SecondDemandId)).BlockReasonCode);
+        await StopTheSecondTripByTheThirdGuardAsync(fixture);
 
         VehicleFaultRecoveryDecision givenUp = await VehicleFaultRecoveryTests.Service(fixture, new(fixture))
             .RecoverAsync(StoppedRebuildExitTests.GiveUp(fixture), Token);
@@ -341,8 +459,51 @@ public sealed class FaultedCargoBindingLifecycleTests
     }
 
     /// <summary>
-    /// 证据两半缺一不可的那一半：需求曾在一趟已收尾的旅程里（例如释放改派之后又回到本车），此刻又是本车未收尾旅程的成员、真装着货——
-    /// 它的绑定是这一趟的货，不释放。只有「曾在已收尾的旅程里」是不够的。
+    /// 被拒的请求不写库（审查第一路建议 3）：库里留着上一趟的绑定，人按「继续原单」却没确认现场已处置（<c>FaultRemedied=false</c>），被拒；
+    /// 或者空车被护栏三停住时按「放弃这趟」，但急停闩锁着，被拒。两次都不释放那条绑定——释放只在放行时做。
+    /// </summary>
+    [Theory]
+    [InlineData("resume-not-remedied")]
+    [InlineData("give-up-under-latch")]
+    [Trait("Requirement", "REQ-0238")]
+    public async Task ARefusedRequestReleasesNothing(string request)
+    {
+        await using RuntimeFixture fixture = await CompletedTripLeavingALiveBindingAsync();
+        await DispatchSecondDemandAsync(fixture);
+        VehicleFaultRecoveryRequest asked;
+        if (request == "resume-not-remedied")
+        {
+            fixture.Riot.FailOrder((await fixture.RuntimeAsync(SecondDemandId)).PickupUpperId);
+            await TickAndRunAsync(fixture);
+            fixture.Context.ChangeTracker.Clear();
+            await RestoreWhatThePreviousVersionLeftAsync(fixture);
+            asked = VehicleFaultRecoveryTests.Clear(fixture) with
+            {
+                Action = VehicleFaultRecoveryAction.ResumeHeldOrder, FaultRemedied = false,
+            };
+        }
+        else
+        {
+            await StopTheSecondTripByTheThirdGuardAsync(fixture);
+            fixture.EmergencyLatched = true;
+            asked = StoppedRebuildExitTests.GiveUp(fixture);
+        }
+
+        VehicleFaultRecoveryDecision refused = await VehicleFaultRecoveryTests.Service(fixture, new(fixture)).RecoverAsync(asked, Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.Equal(VehicleFaultRecoveryOutcome.Refused, refused.Outcome);
+        Assert.Contains(
+            refused.Reasons,
+            reason => reason is "FAULT_RECOVERY_REMEDY_NOT_CONFIRMED" or "FAULT_RECOVERY_EMERGENCY_LATCHED");
+        FaultedVehicleCargoRow binding = (await BindingsAsync(fixture)).Single(row => row.DemandId == FirstDemandId);
+        Assert.Null(binding.ReleasedAt);
+    }
+
+    /// <summary>
+    /// 证据两半缺一不可的那一半：需求曾在一趟已收尾的旅程里（例如释放改派之后又回到本车），此刻又是本车未收尾旅程的活跃成员——
+    /// 用例里它此刻是待装（PENDING_LOAD），并没有装上车；被测的只是「仍在未收尾旅程里」这一半证据：有它就不释放。
+    /// 只有「曾在已收尾的旅程里」是不够的。
     /// </summary>
     [Fact]
     [Trait("Requirement", "REQ-0238")]
@@ -399,10 +560,14 @@ public sealed class FaultedCargoBindingLifecycleTests
     // ---- 三、不许有没有出口的等待 ----------------------------------------------------------------------------------------
 
     /// <summary>
-    /// 旧版本已经留在库里的卡死形状：空车这一趟的重建记着「清除时车上有货」、车上还挂着一条在效绑定，重建等在 <c>CARGO_SLOTS_UNKNOWN</c> 上
-    /// （修之前它会永远等下去）。现在「要查的仓位是空集」按空集判定：车上没有一条已装未卸的需求，就没有要证明的货，延迟过后照常重建，
-    /// 不用人、不改库，而且只建一张。
+    /// 旧版本已经留在库里的卡死形状，照旧代码真正卡住后的样子摆（审查第二路建议 1）：空车这一趟的重建记着「清除时车上有货」，等待原因
+    /// <c>CARGO_SLOTS_UNKNOWN</c>、等待起点有值，旅程码 <c>OWN_ORDER_REBUILD_CARGO_UNPROVEN</c>，车上还挂着上一趟的在效绑定。现在「要查的仓位
+    /// 是空集」按空集判定：车上没有一条已装未卸的需求，就没有要证明的货，也不再向车要快照；下一轮照常重建，不用人、不改库，只建一张。
     /// </summary>
+    /// <remarks>
+    /// 那条旧绑定在这里以 <c>REBUILT_ON_ORIGINAL_VEHICLE</c> 了结，不是 <c>NOT_CARGO_OF_THE_VEHICLES_CURRENT_JOURNEY</c>：引擎在重建确认时按来源
+    /// 「清除时车上有货」释放本车全部在效绑定，发生在任何入口读它之前。审计原因不准，但行为是对的——它不会再被当成货。
+    /// </remarks>
     [Fact]
     [Trait("Requirement", "REQ-0362")]
     public async Task ARebuildLeftWaitingOnAnEmptySetOfSlotsGoesOnWithoutAPerson()
@@ -420,6 +585,11 @@ public sealed class FaultedCargoBindingLifecycleTests
         {
             OwnOrderRebuildRow record = await writing.OwnOrderRebuilds.SingleAsync(row => row.DemandId == SecondDemandId, Token);
             record.Source = OwnOrderRebuildSources.FaultClearedCargoOnBoard;
+            record.DueAt = fixture.Clock.GetUtcNow().AddSeconds(-1);
+            record.WaitingReason = "CARGO_SLOTS_UNKNOWN";
+            record.WaitingSince = fixture.Clock.GetUtcNow().AddMinutes(-5);
+            JourneyRuntimeRow journey = await writing.JourneyRuntimes.SingleAsync(row => row.DemandId == SecondDemandId, Token);
+            journey.SetBlockReason(JourneyRuntimeEngine.OwnOrderRebuildCargoUnprovenReason, fixture.Clock.GetUtcNow().AddMinutes(-5));
             foreach (FaultedVehicleCargoRow binding in await writing.FaultedVehicleCargo.ToArrayAsync(Token))
             {
                 binding.ReleasedAt = null;
@@ -429,7 +599,8 @@ public sealed class FaultedCargoBindingLifecycleTests
             await writing.SaveChangesAsync(Token);
         }
 
-        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        // No cargo on board, so the Host has no snapshot to ask the vehicle for (control-server#376 review, suggestion 2).
+        Assert.False(await ClaimSnapshotRequestAsync(fixture));
         for (int round = 0; round < 6; round++)
         {
             fixture.Clock.Advance(TimeSpan.FromSeconds(11));
@@ -441,11 +612,13 @@ public sealed class FaultedCargoBindingLifecycleTests
         Assert.Equal(
             OwnOrderRebuildStates.Rebuilt,
             (await RebuildsAsync(fixture)).Single(row => row.DemandId == SecondDemandId).State);
+        Assert.Null((await fixture.RuntimeAsync(SecondDemandId)).BlockReasonCode);
+        Assert.Equal("REBUILT_ON_ORIGINAL_VEHICLE", (await SingleBindingAsync(fixture)).ReleasedReason);
     }
 
     /// <summary>
     /// 车上确有已装未卸的需求，库里却找不到它落定的装货批次（要查的仓位仍是空集）：证明不了、也等不来，重建停住等人
-    /// （<c>CARGO_SLOTS_NOT_RECORDED</c>），不再无限等待；#345 的交接出口可用，会话开得出来。
+    /// （<c>CARGO_SLOTS_NOT_RECORDED</c>），不再无限等待。之后经 #345 转交接，服务端会话可开，交接走到底：需求终结、旅程收尾、绑定了结。
     /// </summary>
     [Fact]
     [Trait("Requirement", "REQ-0362")]
@@ -485,10 +658,24 @@ public sealed class FaultedCargoBindingLifecycleTests
                 (await VehicleFaultRecoveryTests.Service(fixture, new(fixture))
                     .RecoverAsync(StoppedRebuildExitTests.Prepare(fixture), Token)).Outcome);
             fixture.Context.ChangeTracker.Clear();
-            await using ControlServerDbContext connection = fixture.OpenConnectionContext();
-            string opened = await RecoveryProcessor(fixture, connection).ProcessAsync(
-                OpenSession(fixture, FirstDemandId, slots), Connection(fixture), Token);
-            Assert.Equal("ExceptionRecoverySessionOpened", FirstLineType(opened));
+            await using (ControlServerDbContext connection = fixture.OpenConnectionContext())
+            {
+                OnboardMessageProcessor processor = RecoveryProcessor(fixture, connection);
+                OnboardConnectionState state = Connection(fixture);
+                string opened = await processor.ProcessAsync(OpenSession(fixture, FirstDemandId, slots), state, Token);
+                Assert.Equal("ExceptionRecoverySessionOpened", FirstLineType(opened));
+                string sessionId = FirstLinePayload(opened).GetProperty("exceptionRecoverySessionId").GetString()!;
+                string actionId = Guid.NewGuid().ToString("D");
+                Assert.Equal("RecoveryActionAccepted", FirstLineType(await processor.ProcessAsync(
+                    Action(fixture, sessionId, FirstDemandId, slots, actionId), state, Token)));
+                string handoffId = (await connection.RecoveryWorkflows.AsNoTracking().SingleAsync(Token)).HandoffId!;
+                Assert.Equal("DurableAck", FirstLineType(await processor.ProcessAsync(
+                    HandedOff(fixture, sessionId, actionId, FirstDemandId, handoffId, slots), state, Token)));
+            }
+
+            fixture.Context.ChangeTracker.Clear();
+            Assert.Equal(JourneyRuntimeStage.Completed, (await fixture.RuntimeAsync()).Stage);
+            Assert.DoesNotContain(await BindingsAsync(fixture), row => row.ReleasedAt is null);
         }
         finally
         {
@@ -544,6 +731,7 @@ public sealed class FaultedCargoBindingLifecycleTests
                 .RecoverAsync(StoppedRebuildExitTests.GiveUp(fixture), Token);
             fixture.Context.ChangeTracker.Clear();
             Assert.Equal(VehicleFaultRecoveryOutcome.Refused, givenUp.Outcome);
+            Assert.Equal("OWN_ORDER_REBUILD_EXIT_CARGO_NOT_IN_PLACE", Assert.Single(givenUp.Reasons));
             Assert.Equal(
                 VehicleFaultRecoveryOutcome.HandoffPrepared,
                 (await VehicleFaultRecoveryTests.Service(fixture, new(fixture))
@@ -700,6 +888,21 @@ public sealed class FaultedCargoBindingLifecycleTests
         Assert.Single(await writing.FaultedVehicleCargo.AsNoTracking().Where(row => row.ReleasedAt == null).ToArrayAsync(Token));
     }
 
+    /// <summary>这一趟空车去取货：单被取消、重建，重建出来的又在窗口内被取消，护栏三停住。</summary>
+    private static async Task StopTheSecondTripByTheThirdGuardAsync(RuntimeFixture fixture)
+    {
+        fixture.Riot.CancelOrder((await CurrentStopAsync(fixture, SecondDemandId)).UpperId!);
+        await TickAndRunAsync(fixture);
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        fixture.Clock.Advance(TimeSpan.FromMinutes(1));
+        await fixture.HearFromPeerAsync();
+        fixture.Riot.CancelOrder((await CurrentStopAsync(fixture, SecondDemandId)).UpperId!);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Equal("OWN_ORDER_REBUILD_STOPPED", (await fixture.RuntimeAsync(SecondDemandId)).BlockReasonCode);
+    }
+
     private static async Task DispatchSecondDemandAsync(RuntimeFixture fixture)
     {
         fixture.Context.ChangeTracker.Clear();
@@ -819,12 +1022,36 @@ public sealed class FaultedCargoBindingLifecycleTests
             authenticationProof = Proof
         });
 
-    private static string Action(RuntimeFixture fixture, string sessionId, string demandId, int[] slots, string actionId) =>
+    private static async Task<bool> ClaimSnapshotRequestAsync(RuntimeFixture fixture)
+    {
+        await using ControlServerDbContext claiming = new(fixture.DbOptionsForTests);
+        long generation = (await claiming.SessionRecoveries.AsNoTracking().SingleAsync(Token)).SessionGeneration;
+        return await OwnOrderRebuilds.ClaimCargoEvidenceRequestAsync(
+            claiming, fixture.Options.AgvId, generation, ready: true, fixture.Clock.GetUtcNow(), Token);
+    }
+
+    private static string MechanicallyIsolated(RuntimeFixture fixture, string sessionId, string actionId, int[] slots) =>
+        Envelope(fixture, "ForcedMechanicalRecoveryResult", new
+        {
+            exceptionRecoverySessionId = sessionId,
+            recoveryActionId = actionId,
+            forcedRecoveryGeneration = 1,
+            outcome = "MECHANICALLY_ISOLATED",
+            slots,
+            @operator = BeforeSublotOperator(fixture),
+            observedAt = Now,
+            electronicEmptyProven = false,
+            vehicleReadyProven = false
+        });
+
+    private static string Action(
+        RuntimeFixture fixture, string sessionId, string demandId, int[] slots, string actionId,
+        string action = "FAULT_CARGO_HANDOFF") =>
         Envelope(fixture, "RecoveryActionSubmitted", new
         {
             recoveryActionId = actionId,
             exceptionRecoverySessionId = sessionId,
-            action = "FAULT_CARGO_HANDOFF",
+            action,
             eventId = SessionEventId,
             demandId,
             slots,
