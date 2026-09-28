@@ -1829,6 +1829,12 @@ internal static class JourneyRuntimeWorkerTestKit
         /// </summary>
         public Func<CancellationToken, Task>? ReadVehicleDelay { get; set; }
 
+        /// <summary>
+        /// How far behind the clock a motion sample is stamped. Zero by default; control-server#335 sets it past
+        /// <c>VehicleFaultOptions.MaximumEvidenceAge</c> to make the stop proof read its evidence as stale.
+        /// </summary>
+        public TimeSpan MotionObservedAtLag { get; set; } = TimeSpan.Zero;
+
         public Task<VehicleMotionSample> SampleMotionAsync(string deviceKey, CancellationToken cancellationToken)
         {
             _ = cancellationToken;
@@ -1839,7 +1845,7 @@ internal static class JourneyRuntimeWorkerTestKit
                 Vehicle.Speed,
                 Vehicle.CurrentMap,
                 Vehicle.CurrentStationId,
-                _clock.GetUtcNow()));
+                _clock.GetUtcNow() - MotionObservedAtLag));
         }
 
         /// <summary>
