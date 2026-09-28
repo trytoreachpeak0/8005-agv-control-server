@@ -363,11 +363,15 @@ public sealed class UnreadPreCreateReconciliationTests
     }
 
     /// <summary>
-    /// 与 cs#334 让开的交互：补建那一轮建单已经发出、记下之后，发往车载端的下一条报文碰上连接不可用，这台车让开（2193）。
-    /// 建单那次外部副作用在让开之前已经落库，下一轮对账认出这张单、确认，不建第二张。
+    /// 与 cs#334 让开的交互：补建那一轮建单已经发出、确认（意图此时已是 <c>CONFIRMED</c>、建单计数 1），发往车载端的下一条报文碰上
+    /// 连接不可用，这台车恰好让开一次（2193）；之后几轮不再建第二张。
     /// </summary>
+    /// <remarks>
+    /// 它守的是「补建之后断线，这台车让开，之后不会再建」，把 cs#334 的让开关掉（审查员的变异 X334）这一条红。
+    /// 「不建第二张」本身靠的是至多建一次的计数门，那由本票的 M1 变异守着，不是由这一条。
+    /// </remarks>
     [Fact]
-    public async Task AConnectionLostAfterTheRetriedCreateYieldsAndTheOrderIsConfirmedWithoutASecondCreate()
+    public async Task AConnectionLostAfterTheRetriedCreateYieldsOnceAndNoSecondOrderIsCreated()
     {
         await using RuntimeFixture fixture = await PickupReadTimedOutAsync();
         fixture.Riot.AbsentOrdersReadAsTimeout = false;
@@ -387,6 +391,8 @@ public sealed class UnreadPreCreateReconciliationTests
         Assert.True(cut, "nothing was sent to the onboard after the retried create in that round");
         Assert.Single(fixture.EngineLog.Entries, entry => entry.Message.Contains("control-server#334", StringComparison.Ordinal));
         Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+        // 断线时建单已经确认：这一条不是在守「下一轮对账把它认出来」，那一步在这里没有发生。
+        Assert.Equal("CONFIRMED", await fixture.IntentStatusAsync("TO_PICKUP"));
 
         fixture.Peer.OnMessageSent = null;
         await RoundsAsync(fixture, 3);
