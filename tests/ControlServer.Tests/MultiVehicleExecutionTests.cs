@@ -785,7 +785,7 @@ public sealed partial class MultiVehicleExecutionTests
         await using OnboardPeerConnection connection = new(stream);
         peer.Attach(Handshaken("AGV-1"), connection);
 
-        await Assert.ThrowsAsync<IOException>(() =>
+        await Assert.ThrowsAsync<OnboardConnectionUnavailableException>(() =>
             peer.SendAsync(Envelope("AGV-2"), TestContext.Current.CancellationToken));
         Assert.Empty(stream.ToArray());
     }
@@ -813,7 +813,7 @@ public sealed partial class MultiVehicleExecutionTests
         Assert.NotEmpty(first.ToArray());
 
         peer.Detach("AGV-1", firstConnection);
-        await Assert.ThrowsAsync<IOException>(() =>
+        await Assert.ThrowsAsync<OnboardConnectionUnavailableException>(() =>
             peer.SendAsync(Envelope("AGV-1"), TestContext.Current.CancellationToken));
     }
 
@@ -954,6 +954,9 @@ public sealed partial class MultiVehicleExecutionTests
         public List<JourneyExecutionPlan> AcceptedPlans { get; } = [];
         public RecordingAcceptances Acceptances { get; }
         public FleetBoxCounts BoxCounts { get; } = new();
+
+        /// <summary>Silent unless a test names a vehicle whose Onboard connection is gone (control-server#334).</summary>
+        public FleetPeer Peer { get; } = new();
         public EventRecordingLogger<JourneyRuntimeEngine> EngineLog { get; } = new();
         public JourneyRuntimeEngine Engine { get; private set; }
 
@@ -1312,7 +1315,7 @@ public sealed partial class MultiVehicleExecutionTests
                 TaskTypeStationRuntimeSeed.CatalogBindingHolds(Context, Clock),
                 movement,
                 store,
-                new OnboardJourneyPublisher(store, new SilentPeer(), Clock),
+                new OnboardJourneyPublisher(store, Peer, Clock),
                 BoxCounts,
                 new PackageCapacityStore(Context),
                 catalogAccess,
@@ -1597,9 +1600,16 @@ public sealed partial class MultiVehicleExecutionTests
 
         public void Set(AcceptedDemandSnapshot[] items) => _items = items;
 
+        /// <summary>Set, every read goes to it instead (control-server#334's MesIngest that never answers).</summary>
+        public Func<CancellationToken, Task<DemandCatalogSnapshot>>? Through { get; set; }
+
         public async Task<DemandCatalogSnapshot> ReadCatalogAsync(CancellationToken cancellationToken)
         {
             ReadCount++;
+            if (Through is { } through)
+            {
+                return await through(cancellationToken).ConfigureAwait(false);
+            }
             if (ReadCount == HangOnRead)
             {
                 await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
@@ -1646,10 +1656,16 @@ public sealed partial class MultiVehicleExecutionTests
         /// <summary>Runs just before the hanging call starts to wait, so a test can see the state it hangs in.</summary>
         public Action? OnHang { get; set; }
 
+        /// <summary>Set, every read goes to it instead (control-server#334's MesIngest that never answers).</summary>
+        public Func<string, CancellationToken, Task<int?>>? Through { get; set; }
+
         public async Task<int?> ReadMaxBoxCountAsync(string sublot, CancellationToken cancellationToken)
         {
-            _ = sublot;
             Calls++;
+            if (Through is { } through)
+            {
+                return await through(sublot, cancellationToken).ConfigureAwait(false);
+            }
             if (Calls == HangOnCall)
             {
                 OnHang?.Invoke();
@@ -1828,14 +1844,34 @@ public sealed partial class MultiVehicleExecutionTests
         }
     }
 
-    private sealed class SilentPeer : IOnboardPeer
+    /// <summary>
+    /// Takes every line silently, except for the vehicle named <see cref="Unavailable"/>: its lines go to a real
+    /// <see cref="OnboardPeer"/> with nothing attached, which refuses them exactly as it refuses a vehicle whose connection is
+    /// gone -- the product's own exception, not one this double chose (control-server#334).
+    /// </summary>
+    private sealed class FleetPeer : IOnboardPeer
     {
+        public string? Unavailable { get; set; }
+
+        /// <summary>How many sends were refused, so a test can show the failure it arranged did happen.</summary>
+        public int Refused { get; private set; }
+
         public Task SendAsync(ReadOnlyMemory<byte> ndjsonLine, CancellationToken cancellationToken)
         {
-            _ = ndjsonLine;
-            _ = cancellationToken;
-            return Task.CompletedTask;
+            if (Unavailable is not string gone)
+            {
+                return Task.CompletedTask;
+            }
+            using JsonDocument envelope = JsonDocument.Parse(Encoding.UTF8.GetString(ndjsonLine.Span).Split('\n')[0]);
+            if (envelope.RootElement.GetProperty("agvId").GetString() != gone)
+            {
+                return Task.CompletedTask;
+            }
+            Refused++;
+            return _nobodyAttached.SendAsync(ndjsonLine, cancellationToken);
         }
+
+        private readonly OnboardPeer _nobodyAttached = new();
     }
 
     /// <summary>

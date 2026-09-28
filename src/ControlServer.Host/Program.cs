@@ -120,10 +120,14 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddRiotCreateDispatchGate(builder.Configuration);
 builder.Services.AddRiotForeignOrderCancelGate(builder.Configuration);
 builder.Services.AddRiotAbsentAtObservationCreateExperiment(builder.Configuration);
+// Read and checked here, at startup, rather than on the first request that creates a client.
+TimeSpan mesIngestTimeout = MesIngestReads.Timeout(builder.Configuration);
 builder.Services.AddHttpClient<IMesIngestCatalog, HttpMesIngestCatalog>((services, client) =>
 {
     IConfiguration configuration = services.GetRequiredService<IConfiguration>();
     client.BaseAddress = new Uri(configuration["MesIngest:baseUrl"] ?? "http://127.0.0.1:5088");
+    // Read under JourneyMutationGate: bounded, and a timeout is a failed read (control-server#334, MesIngestReads).
+    client.Timeout = mesIngestTimeout;
     string? secretVariable = configuration["MesIngest:sharedSecretEnvironmentVariable"];
     string? secret = string.IsNullOrWhiteSpace(secretVariable) ? null : Environment.GetEnvironmentVariable(secretVariable);
     if (!string.IsNullOrWhiteSpace(secret))
@@ -156,6 +160,7 @@ builder.Services.AddHttpClient<ISublotBoxCountReader, HttpSublotBoxCountReader>(
 {
     IConfiguration configuration = services.GetRequiredService<IConfiguration>();
     client.BaseAddress = new Uri(configuration["MesIngest:baseUrl"] ?? "http://127.0.0.1:5088");
+    client.Timeout = mesIngestTimeout;
     string? secretVariable = configuration["MesIngest:sharedSecretEnvironmentVariable"];
     string? secret = string.IsNullOrWhiteSpace(secretVariable) ? null : Environment.GetEnvironmentVariable(secretVariable);
     if (!string.IsNullOrWhiteSpace(secret))

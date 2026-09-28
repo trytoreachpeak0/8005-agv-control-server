@@ -351,6 +351,12 @@ internal static class ReconnectModel
         private readonly List<(string MessageId, string Line)> _processedSafetyChanges = [];
         private int _waitOnPersonChances;
 
+        /// <summary>
+        /// Whether a line was refused this round: since control-server#334 the vehicle's advance fails by yielding its turn, and
+        /// the round itself no longer throws, so a refused send is what "this round's advance failed" looks like.
+        /// </summary>
+        private bool _refusedThisRound;
+
         /// <summary>出事的机会按码分开数，外加失联码豁免生效的次数：一格没有机会，这一格的判据就没被考过。</summary>
         private readonly Dictionary<string, int> _waitOnPersonChancesByCode = new(StringComparer.Ordinal);
 
@@ -612,7 +618,8 @@ internal static class ReconnectModel
         {
             if (!_connected)
             {
-                throw new IOException("No recovered Onboard peer is connected for the model vehicle.");
+                _refusedThisRound = true;
+                throw new OnboardConnectionUnavailableException("No recovered Onboard peer is connected for the model vehicle.");
             }
 
             if (_sendsBeforeCut is 0)
@@ -620,7 +627,8 @@ internal static class ReconnectModel
                 _sendsBeforeCut = null;
                 _connected = false;
                 _roundsAtDrop = _rounds;
-                throw new IOException("The model connection dropped while this line was being sent.");
+                _refusedThisRound = true;
+                throw new OnboardConnectionUnavailableException("The model connection dropped while this line was being sent.");
             }
 
             if (_sendsBeforeCut is int remaining)
@@ -659,10 +667,13 @@ internal static class ReconnectModel
             int sentBefore = _delivered.Count;
             JourneyRuntimeRow beforeRound = await _fixture.RuntimeAsync();
             string? outcome;
+            _refusedThisRound = false;
             try
             {
                 await _fixture.Engine.ExecuteOnceAsync(Token);
-                outcome = null;
+                // control-server#334: a send refused because the connection is gone makes the vehicle yield its turn rather than
+                // fail the round. For this model's one vehicle that is the same event as the round failing did before.
+                outcome = _refusedThisRound ? "yielded: the Onboard connection is not available" : null;
             }
             catch (Exception error) when (error is not OperationCanceledException)
             {

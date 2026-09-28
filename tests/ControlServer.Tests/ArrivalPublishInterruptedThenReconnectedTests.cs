@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using ControlServer.Domain;
 using ControlServer.Infrastructure.Persistence;
+using ControlServer.Host.Transport;
 using Microsoft.EntityFrameworkCore;
 using static ControlServer.Tests.JourneyRuntimeWorkerTestKit;
 
@@ -144,7 +145,7 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
 
         await ReconnectAtGenerationAsync(fixture, generation: 2);
         cut.On(line => MessageType(line) == "SublotEntryRequested");
-        await Assert.ThrowsAsync<IOException>(() => fixture.Engine.ExecuteOnceAsync(Token));
+        await RoundCutAsync(fixture, cut);
         await fixture.RecreateEngineAsync();
         cut.Heal();
         await cut.Peer.DeliverBufferedAcksAsync();
@@ -198,7 +199,7 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
         await fixture.Engine.ExecuteOnceAsync(Token);
         await ArriveAtPickupAsync(fixture);
         cut.On(line => MessageType(line) == "CurrentStopWorklistSnapshot");
-        await Assert.ThrowsAsync<IOException>(() => fixture.Engine.ExecuteOnceAsync(Token));
+        await RoundCutAsync(fixture, cut);
         await fixture.RecreateEngineAsync();
         cut.Heal();
         await cut.Peer.DeliverBufferedAcksAsync();
@@ -303,7 +304,7 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
         await ArriveAtPickupAsync(fixture);
         cut.On(IsArrivedPickupPlan);
 
-        await Assert.ThrowsAsync<IOException>(() => fixture.Engine.ExecuteOnceAsync(Token));
+        await RoundCutAsync(fixture, cut);
 
         JourneyRuntimeRow runtime = await ReadRuntimeAfterFailedRoundAsync(fixture);
         Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, runtime.Stage);
@@ -334,7 +335,7 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
         Assert.NotEqual(firstFailure, fixture.Clock.GetUtcNow());
         await fixture.HearFromPeerAsync();
         cut.On(IsArrivedPickupPlan);
-        await Assert.ThrowsAsync<IOException>(() => fixture.Engine.ExecuteOnceAsync(Token));
+        await RoundCutAsync(fixture, cut);
 
         JourneyRuntimeRow runtime = await ReadRuntimeAfterFailedRoundAsync(fixture);
         Assert.Equal(AdvanceFailedReason, runtime.BlockReasonCode);
@@ -362,9 +363,10 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
         await fixture.Engine.ExecuteOnceAsync(Token);
         Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync()).Stage);
 
-        // 录入请求没有确认（它的答复是录入本身），每一轮开头都会补发它；断在这一条上，这一轮就失败在重放里。
+        // 录入请求没有确认（它的答复是录入本身），每一轮开头都会补发它；断在这一条上，这一轮这台车的推进就失败在重放里
+        // （control-server#334 起它让开，整轮不再抛）。
         cut.On(line => MessageType(line) == "SublotEntryRequested");
-        await Assert.ThrowsAsync<IOException>(() => fixture.Engine.ExecuteOnceAsync(Token));
+        await RoundCutAsync(fixture, cut);
         Assert.Equal(
             AdvanceFailedReason, (await ReadRuntimeAfterFailedRoundAsync(fixture)).BlockReasonCode);
 
@@ -398,7 +400,7 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
         await fixture.HearFromPeerAsync();
 
         cut.On(IsArrivedPickupPlan);
-        await Assert.ThrowsAsync<IOException>(() => fixture.Engine.ExecuteOnceAsync(Token));
+        await RoundCutAsync(fixture, cut);
 
         JourneyRuntimeRow runtime = await ReadRuntimeAfterFailedRoundAsync(fixture);
         Assert.Equal(JourneyRuntimeStage.Blocked, runtime.Stage);
@@ -448,7 +450,7 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
         await fixture.HearFromPeerAsync();
 
         cut.On(IsArrivedPickupPlan);
-        await Assert.ThrowsAsync<IOException>(() => fixture.Engine.ExecuteOnceAsync(Token));
+        await RoundCutAsync(fixture, cut);
 
         JourneyRuntimeRow runtime = await ReadRuntimeAfterFailedRoundAsync(fixture);
         Assert.Equal(stage, runtime.Stage);
@@ -494,7 +496,7 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
         {
             fixture.Clock.Advance(TimeSpan.FromSeconds(10));
             await fixture.HearFromPeerAsync();
-            await Assert.ThrowsAsync<IOException>(() => fixture.Engine.ExecuteOnceAsync(Token));
+            await RoundCutAsync(fixture, cut);
             JourneyRuntimeRow failed = await ReadRuntimeAfterFailedRoundAsync(fixture);
             Assert.Equal("ONBOARD_SESSION_NOT_READY", failed.BlockReasonCode);
             Assert.Equal(since, failed.BlockReasonSince);
@@ -626,7 +628,7 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
         await ArriveAtPickupAsync(fixture);
         cut.On(IsArrivedPickupPlan);
 
-        await Assert.ThrowsAsync<IOException>(() => fixture.Engine.ExecuteOnceAsync(Token));
+        await RoundCutAsync(fixture, cut);
 
         await fixture.RecreateEngineAsync();
         cut.Heal();
@@ -743,6 +745,21 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
     /// 默认抛 <see cref="IOException"/>——真实 <c>OnboardPeer</c> 在连接不在时抛的就是它。要造「与连接无关的失败」时，
     /// 给 <see cref="On"/> 传别的异常（审查建议 3 那一条）。
     /// </remarks>
+    /// <summary>
+    /// One round with the connection cut on the line <paramref name="cut"/> names, and proof the cut was reached.
+    /// </summary>
+    /// <remarks>
+    /// Since control-server#334 a vehicle whose connection is gone yields its turn instead of failing the round, so the round
+    /// no longer throws here. Until then the throw was also the proof that the cut fired; without it, a cut that never matched
+    /// would leave every assertion after it judging a round in which nothing was interrupted.
+    /// </remarks>
+    private static async Task RoundCutAsync(RuntimeFixture fixture, ConnectionCut cut)
+    {
+        int before = cut.Refused;
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.True(cut.Refused > before, "the cut was never reached this round, so nothing was interrupted");
+    }
+
     internal sealed class ConnectionCut
     {
         private Func<string, bool>? _cutOn;
@@ -753,6 +770,9 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
 
         public AdoptingPeer Peer { get; }
 
+        /// <summary>How many lines the cut refused, so a test can show the cut it arranged was reached.</summary>
+        public int Refused { get; private set; }
+
         public static ConnectionCut Attach(RuntimeFixture fixture)
         {
             ConnectionCut cut = new(new AdoptingPeer(fixture.Context, fixture.Clock));
@@ -760,6 +780,7 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
             {
                 if (cut._cutOn?.Invoke(line) == true)
                 {
+                    cut.Refused++;
                     throw cut._fault();
                 }
 
@@ -778,6 +799,6 @@ public sealed class ArrivalPublishInterruptedThenReconnectedTests
         public void Heal() => _cutOn = null;
 
         private static Exception TransportFault() =>
-            new IOException("No recovered Onboard peer is connected for the test vehicle.");
+            new OnboardConnectionUnavailableException("No recovered Onboard peer is connected for the test vehicle.");
     }
 }

@@ -1,0 +1,146 @@
+== by holder/what
+   4746  engine-round/engine-round IMesIngestCatalog.ReadCatalogAsync
+  10764  engine-round/engine-round IOnboardPeer.SendAsync
+     72  release-round/release-round IOnboardPeer.SendAsync
+   4545  engine-round/engine-round IRiotMapStationCatalog.ReadMapStationsAsync
+   1275  engine-round/engine-round IRiotMovementGateway.CreateAsync
+   2656  engine-round/engine-round IRiotMovementGateway.ReconcileByUpperIdAsync
+     34  release-round/release-round IRiotMovementGateway.ReconcileByUpperIdAsync
+     21  engine-round/engine-round IRiotOrderCommandGateway.IssueEmergencyCommandAsync
+    132  engine-round/engine-round IRiotOrderCommandGateway.IssueOrderCommandAsync
+     26  release-round/release-round IRiotOrderCommandGateway.IssueOrderCommandAsync
+   4580  engine-round/engine-round IRiotOrderListingFacts.ListUnfinishedOrdersAsync
+     63  engine-round/engine-round IRiotOrderListingFacts.ReadOrderStateAsync
+   1823  engine-round/engine-round IRiotRouteCostProbe.ReadRouteCostAsync
+    216  engine-round/engine-round IRiotVehicleEmergencyFacts.ReadEmergencyStateAsync
+  11848  engine-round/engine-round IRiotVehicleFacts.ReadVehicleAsync
+     66  release-round/release-round IRiotVehicleFacts.ReadVehicleAsync
+   1790  engine-round/engine-round IRiotVehicleFacts.ReconcileByUpperIdAsync
+     36  release-round/release-round IRiotVehicleFacts.ReconcileByUpperIdAsync
+      8  engine-round/engine-round IRiotVehicleOrderFacts.ReadUnfinishedOrdersAsync
+    255  engine-round/engine-round IRiotVehicleSafetyFacts.ReadVehicleSafetyAsync
+     12  routegraph-round/routegraph-round IRouteGraphSource.ReadDynamicRouteCostPresentAsync
+     12  routegraph-round/routegraph-round IRouteGraphSource.ReadEdgeGroupsAsync
+      8  routegraph-round/routegraph-round IRouteGraphSource.ReadEdgesAsync
+     13  routegraph-round/routegraph-round IRouteGraphSource.ReadRemovedEdgeIdsAsync
+     12  routegraph-round/routegraph-round IRouteGraphSource.ReadRemovedStationIdsAsync
+      8  routegraph-round/routegraph-round IRouteGraphSource.ReadStationsAsync
+    370  engine-round/engine-round IVehicleMotionFacts.SampleMotionAsync
+
+== distinct call sites (what <- innermost caller chain)
+  1004 [engine-round/engine-round] IMesIngestCatalog.ReadCatalogAsync
+        ControlServer.Application.DemandIntakeService.AcceptCoreAsync
+  3742 [engine-round/engine-round] IMesIngestCatalog.ReadCatalogAsync
+        ControlServer.Host.Runtime.Dispatch.DispatchRoundRunner.RunAsync
+   183 [engine-round/engine-round] IOnboardPeer.SendAsync
+        ControlServer.Host.Runtime.JourneyClosure.SendAsync
+    72 [release-round/release-round] IOnboardPeer.SendAsync
+        ControlServer.Host.Runtime.JourneyClosure.SendAsync
+  6569 [engine-round/engine-round] IOnboardPeer.SendAsync
+        ControlServer.Host.Runtime.JourneyRuntimeEngine.AdvanceAsync
+   652 [engine-round/engine-round] IOnboardPeer.SendAsync
+        ControlServer.Host.Runtime.JourneyRuntimeEngine.PublishEntryRequestAsync
+   186 [engine-round/engine-round] IOnboardPeer.SendAsync
+        ControlServer.Host.Runtime.JourneyRuntimeEngine.PublishGateStateAndUnloadAsync
+    53 [engine-round/engine-round] IOnboardPeer.SendAsync
+        ControlServer.Host.Runtime.JourneyRuntimeEngine.PublishLoadingPhaseAsync
+   803 [engine-round/engine-round] IOnboardPeer.SendAsync
+        ControlServer.Host.Runtime.JourneyRuntimeEngine.PublishPickupDispatchPlanOnceAsync
+    49 [engine-round/engine-round] IOnboardPeer.SendAsync
+        ControlServer.Host.Runtime.JourneyRuntimeEngine.PublishPickupDispatchPlanPastOwnOrderAsync
+  1277 [engine-round/engine-round] IOnboardPeer.SendAsync
+        ControlServer.Host.Runtime.JourneyRuntimeEngine.PublishPickupStateAsync
+   779 [engine-round/engine-round] IOnboardPeer.SendAsync
+        ControlServer.Host.Runtime.JourneyRuntimeEngine.PublishStopWorklistAsync
+    97 [engine-round/engine-round] IOnboardPeer.SendAsync
+        ControlServer.Host.Runtime.JourneyRuntimeEngine.PublishUnloadCommandAsync
+    59 [engine-round/engine-round] IOnboardPeer.SendAsync
+        ControlServer.Host.Runtime.JourneyRuntimeEngine.RefreshUpcomingStopPlanAsync
+    19 [engine-round/engine-round] IOnboardPeer.SendAsync
+        ControlServer.Host.Runtime.JourneyRuntimeEngine.RefuseAsync
+     6 [engine-round/engine-round] IOnboardPeer.SendAsync
+        ControlServer.Host.Runtime.JourneyRuntimeEngine.ReissueExpiredDepartureCheckAsync
+    12 [engine-round/engine-round] IOnboardPeer.SendAsync
+        ControlServer.Host.Runtime.LateSublotSubmission.SendStaleAnswersAsync
+    20 [engine-round/engine-round] IOnboardPeer.SendAsync
+        ControlServer.Host.Runtime.StopEndWorklist.SendAsync
+  4545 [engine-round/engine-round] IRiotMapStationCatalog.ReadMapStationsAsync
+        ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteRoundAsync
+  1275 [engine-round/engine-round] IRiotMovementGateway.CreateAsync
+        ControlServer.Application.MovementDispatchService.DispatchCreateAttemptAsync
+  1257 [engine-round/engine-round] IRiotMovementGateway.ReconcileByUpperIdAsync
+        ControlServer.Application.MovementDispatchService.DispatchCreateAttemptAsync
+  1294 [engine-round/engine-round] IRiotMovementGateway.ReconcileByUpperIdAsync
+        ControlServer.Application.MovementDispatchService.ReconcileOrCreateAsync
+   105 [engine-round/engine-round] IRiotMovementGateway.ReconcileByUpperIdAsync
+        ControlServer.Host.Runtime.Faults.VehicleFaultCoordinator.HoldCurrentOrderAsync
+    34 [release-round/release-round] IRiotMovementGateway.ReconcileByUpperIdAsync
+        ControlServer.Host.Runtime.Release.DemandReleaseService.CancelPickupOrderAsync
+    21 [engine-round/engine-round] IRiotOrderCommandGateway.IssueEmergencyCommandAsync
+        ControlServer.Host.Runtime.Commands.EmergencyStopSupervisor.TriggerAsync
+   105 [engine-round/engine-round] IRiotOrderCommandGateway.IssueOrderCommandAsync
+        ControlServer.Host.Runtime.Faults.VehicleFaultCoordinator.HoldCurrentOrderAsync
+    27 [engine-round/engine-round] IRiotOrderCommandGateway.IssueOrderCommandAsync
+        ControlServer.Host.Runtime.ForeignOrders.ForeignRunningOrderSupervisor.CancelAsync
+    26 [release-round/release-round] IRiotOrderCommandGateway.IssueOrderCommandAsync
+        ControlServer.Host.Runtime.Release.DemandReleaseService.CancelPickupOrderAsync
+    35 [engine-round/engine-round] IRiotOrderListingFacts.ListUnfinishedOrdersAsync
+        ControlServer.Host.Runtime.ForeignOrders.ForeignRunningOrderSupervisor.CancelAsync
+  4545 [engine-round/engine-round] IRiotOrderListingFacts.ListUnfinishedOrdersAsync
+        ControlServer.Host.Runtime.ForeignOrders.ForeignRunningOrderSupervisor.SuperviseAsync
+    26 [engine-round/engine-round] IRiotOrderListingFacts.ReadOrderStateAsync
+        ControlServer.Host.Runtime.ForeignOrders.ForeignRunningOrderSupervisor.CancelAsync
+    37 [engine-round/engine-round] IRiotOrderListingFacts.ReadOrderStateAsync
+        ControlServer.Host.Runtime.ForeignOrders.ForeignRunningOrderSupervisor.FollowAsync
+  1823 [engine-round/engine-round] IRiotRouteCostProbe.ReadRouteCostAsync
+        ControlServer.Host.Runtime.CreateGate.PreCreateGate.EvaluateAsync
+    23 [engine-round/engine-round] IRiotVehicleEmergencyFacts.ReadEmergencyStateAsync
+        ControlServer.Host.Runtime.Commands.EmergencyStopSupervisor.EvaluateAsync
+    23 [engine-round/engine-round] IRiotVehicleEmergencyFacts.ReadEmergencyStateAsync
+        ControlServer.Host.Runtime.Commands.EmergencyStopSupervisor.RequestStopAsync
+    21 [engine-round/engine-round] IRiotVehicleEmergencyFacts.ReadEmergencyStateAsync
+        ControlServer.Host.Runtime.Commands.EmergencyStopSupervisor.TriggerAsync
+   149 [engine-round/engine-round] IRiotVehicleEmergencyFacts.ReadEmergencyStateAsync
+        ControlServer.Host.Runtime.Faults.VehicleFaultCoordinator.ObserveAsync
+  1998 [engine-round/engine-round] IRiotVehicleFacts.ReadVehicleAsync
+        ControlServer.Host.Runtime.Dispatch.DispatchRoundRunner.FinalDynamicFactsReadyAsync
+  3879 [engine-round/engine-round] IRiotVehicleFacts.ReadVehicleAsync
+        ControlServer.Host.Runtime.Dispatch.DispatchRoundRunner.TryAdmitToRoundAsync
+   764 [engine-round/engine-round] IRiotVehicleFacts.ReadVehicleAsync
+        ControlServer.Host.Runtime.JourneyRuntimeEngine.CheckArrivalAsync
+   255 [engine-round/engine-round] IRiotVehicleFacts.ReadVehicleAsync
+        ControlServer.Host.Runtime.JourneyRuntimeEngine.VehicleConditionReasonsAsync
+    66 [release-round/release-round] IRiotVehicleFacts.ReadVehicleAsync
+        ControlServer.Host.Runtime.Release.DemandReleaseService.ReadVehicleAsync
+  4952 [engine-round/engine-round] IRiotVehicleFacts.ReadVehicleAsync
+        ControlServer.Host.Runtime.WaitingJourneyWatch.ReadBatteryAsync
+  1253 [engine-round/engine-round] IRiotVehicleFacts.ReconcileByUpperIdAsync
+        ControlServer.Host.Runtime.JourneyRuntimeEngine.CheckArrivalAsync
+    11 [engine-round/engine-round] IRiotVehicleFacts.ReconcileByUpperIdAsync
+        ControlServer.Host.Runtime.JourneyRuntimeEngine.EndedBeforeConfirmationAsync
+   524 [engine-round/engine-round] IRiotVehicleFacts.ReconcileByUpperIdAsync
+        ControlServer.Host.Runtime.JourneyRuntimeEngine.NameInFlightOrderWithoutThePeerAsync
+     2 [engine-round/engine-round] IRiotVehicleFacts.ReconcileByUpperIdAsync
+        ControlServer.Host.Runtime.JourneyRuntimeEngine.ObserveRebuiltOrderFailureAsync
+    36 [release-round/release-round] IRiotVehicleFacts.ReconcileByUpperIdAsync
+        ControlServer.Host.Runtime.Release.DemandReleaseService.CancelPickupOrderAsync
+     8 [engine-round/engine-round] IRiotVehicleOrderFacts.ReadUnfinishedOrdersAsync
+        ControlServer.Host.Runtime.Commands.EmergencyStopSupervisor.ConsiderReleaseAsync
+   255 [engine-round/engine-round] IRiotVehicleSafetyFacts.ReadVehicleSafetyAsync
+        ControlServer.Host.Runtime.JourneyRuntimeEngine.VehicleConditionReasonsAsync
+    12 [routegraph-round/routegraph-round] IRouteGraphSource.ReadDynamicRouteCostPresentAsync
+        ControlServer.Host.Runtime.RouteGraph.RouteGraphRefresher.RefreshDynamicRouteCostAsync
+    12 [routegraph-round/routegraph-round] IRouteGraphSource.ReadEdgeGroupsAsync
+        ControlServer.Host.Runtime.RouteGraph.RouteGraphRefresher.RefreshEdgeGroupsAsync
+     8 [routegraph-round/routegraph-round] IRouteGraphSource.ReadEdgesAsync
+        ControlServer.Host.Runtime.RouteGraph.RouteGraphRefresher.RefreshDesignStateAsync
+    13 [routegraph-round/routegraph-round] IRouteGraphSource.ReadRemovedEdgeIdsAsync
+        ControlServer.Host.Runtime.RouteGraph.RouteGraphRefresher.RefreshRuntimeStateAsync
+    12 [routegraph-round/routegraph-round] IRouteGraphSource.ReadRemovedStationIdsAsync
+        ControlServer.Host.Runtime.RouteGraph.RouteGraphRefresher.RefreshRuntimeStateAsync
+     8 [routegraph-round/routegraph-round] IRouteGraphSource.ReadStationsAsync
+        ControlServer.Host.Runtime.RouteGraph.RouteGraphRefresher.RefreshDesignStateAsync
+   149 [engine-round/engine-round] IVehicleMotionFacts.SampleMotionAsync
+        ControlServer.Host.Runtime.Faults.VehicleFaultCoordinator.ProveStopAsync
+   221 [engine-round/engine-round] IVehicleMotionFacts.SampleMotionAsync
+        ControlServer.Host.Runtime.JourneyRuntimeEngine.NameCheckpointWaitAsync
