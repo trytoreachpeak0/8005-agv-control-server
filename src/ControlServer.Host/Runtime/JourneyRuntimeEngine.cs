@@ -785,6 +785,18 @@ public sealed partial class JourneyRuntimeEngine(
     /// <b>别的车还留着没保存的改动时，这一轮不写码。</b>这里的保存是为这一个字段来的，不该顺带提交别处刻意留到下一步的改动
     /// （与 <see cref="ClearFailedAdvanceAsync"/> 同一条规矩）。不写的代价只是看板晚一轮说出这件事：这台车下一轮照样失败，照样再试。
     /// </para>
+    /// <para>
+    /// <b>撤回今天没有东西可撤</b>（增量复核：11 个类 48 次让开，进入时变更跟踪全是干净的）。车载端发送都排在一次保存之后，
+    /// 所以走到这里时这台车这一轮的改动已经存下了。撤回与「不写码」那一支是为发送前留着未保存改动的推进准备的；没有用例走到它们，
+    /// 这一条靠「先存后发」撑着——与 control-server#357 的「冲突即不发」是同一个前提，由 <c>JourneyRowLostUpdateTests</c> 守着。
+    /// </para>
+    /// <para>
+    /// <b>让开的车自己的急停确认会推迟，推迟有上限。</b>断线不写库，会话行仍是 Ready 而连接已经没了时，这台车每一轮都在补发
+    /// （<c>ReplayPendingForSessionAsync</c>）那里让开，走不到故障模型：它自己的急停确认与 REQ-0248 重触发这几轮不跑。上限靠静默窗口：
+    /// 最后一条合法入站之后约 6 s（<see cref="SessionLiveness.Timeout"/>），<see cref="NameSilentOnboardSessionAsync"/> 在补发之前接手，
+    /// 这台车的推进照常往下走，故障监看随之恢复。修之前是整队都停着，所以这不是回归；但谁要把静默判定挪到补发之后、或把静默窗口
+    /// 拉长，这里的推迟就跟着变长。
+    /// </para>
     /// </remarks>
     private async Task YieldToUnavailableConnectionAsync(
         JourneyRuntimeRow runtime,

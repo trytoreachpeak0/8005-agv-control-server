@@ -26,14 +26,27 @@ public static class MesIngestReads
 
     public static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(10);
 
-    /// <summary>The configured request timeout, refused at startup unless it is positive.</summary>
+    /// <summary>
+    /// The largest timeout accepted: half of a fault clearance's 30-second wait for the gate, so one hung read can never use it
+    /// all up.
+    /// </summary>
+    public static readonly TimeSpan MaxTimeout = TimeSpan.FromSeconds(15);
+
+    /// <summary>The configured request timeout, refused at startup unless it is in (0, <see cref="MaxTimeout"/>].</summary>
+    /// <remarks>
+    /// <b>Why the upper bound is checked here and not left to <see cref="HttpClient"/>.</b> Its <c>Timeout</c> setter refuses
+    /// values past about 24.8 days, but the setter runs only when a typed client is first resolved -- inside the runtime's
+    /// round, where every round would then fail in construction and the fleet stop, after a startup that looked accepted
+    /// (control-server#334, incremental review).
+    /// </remarks>
     public static TimeSpan Timeout(IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);
         double seconds = configuration.GetValue<double?>(TimeoutSecondsKey) ?? DefaultTimeout.TotalSeconds;
-        if (!(seconds > 0))
+        if (!(seconds > 0) || seconds > MaxTimeout.TotalSeconds)
         {
-            throw new InvalidDataException($"{TimeoutSecondsKey} must be positive.");
+            throw new InvalidDataException(
+                $"{TimeoutSecondsKey} must be positive and at most {MaxTimeout.TotalSeconds:0} seconds.");
         }
         return TimeSpan.FromSeconds(seconds);
     }
