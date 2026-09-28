@@ -330,6 +330,61 @@ public sealed class InTransitDoorEmergencyReleaseTests
     }
 
     /// <summary>
+    /// 同上，但协调器最后一刻读不到急停状态（审查第二路变异 B）：读不到不当作 OK，拒绝，零 CONTINUE。与必修 2 那道重读缺口叠在一起，
+    /// 就是「单变 3、闩锁状态不明、CONTINUE 照发」的完整危险链。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0239")]
+    public async Task AnEmergencyStateThatCannotBeReadAfterTheServiceReadItStopsTheContinue()
+    {
+        await using RuntimeFixture fixture = await ReleasedForTheDoorsAsync();
+        VehicleFaultRecoveryTests.SiteRiot site = new(fixture) { HasUnfinishedOrder = true };
+        site.AfterUnfinishedOrdersRead = () => site.EmergencyUnreadable = true;
+
+        VehicleFaultRecoveryDecision decision = await VehicleFaultRecoveryTests.Service(fixture, site)
+            .RecoverAsync(ResumeRequest(fixture), Token);
+
+        Assert.Equal(VehicleFaultRecoveryOutcome.Refused, decision.Outcome);
+        Assert.Equal(["RESUME_EMERGENCY_STATE_UNKNOWN"], decision.Reasons);
+        Assert.Empty(site.OrderCommands);
+        Assert.Equal(0, await CountAsync(fixture, RiotCommandTypeNames.OrderContinue));
+    }
+
+    /// <summary>
+    /// 审查必修 2 第二路补的那一格：按住在较早一轮已经回查确认，那一轮被一张外来的未完成单挡住没解除；之后有人在 RIoT 上把这张单
+    /// CONTINUE 成执行中（3），外来单也没了，门锁报锁闭。放行时的重读读到 3：不解除。
+    /// </summary>
+    /// <remarks>
+    /// 这一格有两道检查各自挡住：放行那次重读（<c>DoorReleaseAllowanceAsync</c>，单必须是 7），和监督器最后列车上未完成单时的单态
+    /// （<c>ReleaseObstacles</c>）。单独去掉任何一道，另一道照样挡，这条仍绿；两道都去掉才红（见 <c>evidence/cs335/mutations.md</c>
+    /// 的 M24–M26）。只有第二道看得见的时间窗由 <see cref="AHeldOrderThatRunsBeforeTheLastReadKeepsTheLatch"/> 守着。
+    /// </remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0167")]
+    public async Task AHoldConfirmedEarlierThenContinuedInRiotKeepsTheLatch()
+    {
+        await using RuntimeFixture fixture = await LatchedForTheDoorsAsync();
+        Latched latched = await LatchedFactsAsync(fixture);
+        fixture.UnfinishedOrderIds = [latched.OrderId, "FOREIGN-ORDER-0001"];
+        await ReportLockedAsync(fixture);
+        await DriveOneRoundAsync(fixture);
+
+        // 前提：按住已回查确认，这一轮只是被外来单挡住。
+        await using (ControlServerDbContext reading = new(fixture.DbOptionsForTests))
+        {
+            RiotOrderCommandAuditRow hold = Assert.Single(await reading.RiotOrderCommandAudit.AsNoTracking()
+                .Where(row => row.CommandType == RiotCommandTypeNames.OrderHold).ToArrayAsync(Token));
+            Assert.Equal(RiotOrderCommandOutcome.Confirmed, hold.Outcome);
+        }
+        Assert.Equal(0, await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+
+        fixture.Riot.SetOrderState(latched.UpperId, RiotOrderState.Executing, terminal: false);
+        fixture.UnfinishedOrderIds = [latched.OrderId];
+        await ReportLockedAsync(fixture);
+        await AssertNoReleaseOverRoundsAsync(fixture);
+    }
+
+    /// <summary>
     /// 审查必修 2（探针 P2）：解除那一轮里，放行已经读到本代自确认的 7，而在监督器最后一次列车上未完成单之前，单变成了执行中（3）。
     /// 最后那次读取也要核单态：不是 7 就不解除。
     /// </summary>

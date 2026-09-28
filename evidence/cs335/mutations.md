@@ -86,6 +86,37 @@ M17、M20、M21 第一次用「参数 is null」一类恒假条件，可空性�
 都错，REQ-0361 的重复窗口按来源判也跟着错。补 `AClearanceBeforeTheEngineSeesTheCancellationLeavesTheRebuildToTheEngine`，
 并在必修 1 用例里断言处置结果是 `NONE`，M22 变红。
 
+## 两路合并审查补的用例（M18b、M24–M29）
+
+同一过滤器（366 条）。第二路审查的变异 A、B、C、F 与「对调顺序」对应如下。
+
+| 编号 | 变异 | 预期红 | 实际 | 退出码 |
+| --- | --- | --- | --- | --- |
+| M18b | 同 M18（监督器不核单态），加上新补的 `AHoldConfirmedEarlierThenContinuedInRiotKeepsTheLatch` 重跑 | M18 的三条；新格**存活**（被放行重读挡住） | 红 3，新格绿，与预期一致 | 1 |
+| M24 | 变异 A：放行不重读单，直接当作本单 7 | 新格**存活**（被监督器的单态检查挡住） | 新格绿，与预期一致；另红 2：必修 1 用例锁着两格——「单已取消或删除」那一支靠这次重读才看得见终态，伪造成 7 后走不到，被取消单的按住又回查不到确认，放行没有了 | 1 |
+| M25 | M24 加 M18 | 新格 + P2 那条 + 纯函数两格 | 红 6：这四条，加必修 1 锁着两格（同 M24） | 1 |
+| M26 | 变异 C：放行取按住审计时不限故障代次 | 不确定，照实记 | **存活**（366/366，退出码 0）。见下 | 0 |
+| M27 | 变异 F：门锁路径不再排除 HANG | `AHangingOrderIsLeftAloneWhateverTheDoorsSay` 两格 | 红 2，正是这两格 | 1 |
+| M28 | 变异 B：续行时读不到急停不拒 | `AnEmergencyStateThatCannotBeReadAfterTheServiceReadItStopsTheContinue` | 红 1，正是这条 | 1 |
+| M29 | 对调：先急停、后按住（按住挪进升级那一支、排在急停之后） | 调用 `AssertHeldThenStoppedAsync` 的各格 | 红 13：`ADoorNotProvenLocked…` 全部 6 格与另外两条门锁用例，都红在「the hold must reach RIoT before the emergency stop: triggerEmergency -> OrderHold」；另 5 条 `VehicleFaultIsolationTests` 红在「没有按住」——这个写法让不升级的那条路完全不发按住，它们红的原因与顺序无关 | 1 |
+
+**第 2 条审查要求「变异 A 与『不核单态』各自都让新格红」，按当前代码做不到，这是纵深防御的结果**：审查写这条时（`6db50864`）监督器还不核单态，
+变异 A 一去掉重读就放行；必修 2 补上单态检查之后，同一张单变 3 会被两道各自挡住，单独去掉哪一道，另一道都兜得住（M18b、M24），
+两道一起去掉才红（M25）。两道各自的有效性另有用例单独钉：放行重读由必修 1 锁着两格（M24 红）钉住，监督器单态由 P2 那条与纯函数两格
+（M18b 红）钉住。
+
+**M26 为什么存活**：产品里写 `OrderHold` 审计的只有 `VehicleFaultCoordinator.HoldCurrentOrderAsync`（经 `RiotOrderCommandService.IssueAsync`，
+永远带故障代次；另一个调用方 `DemandReleaseService` 发的是取消）。而同一次 `ApplyAsync` 里，本代的按住总在放行读审计之前落库——本代已有
+就直接用，没有就先写审计再发。所以放行读到的「这张单最后一条按住」按构造就是本代的，去掉代次过滤在今天的产品里区分不出来。过滤保留，
+防的是将来多出第二个写按住的来源；不补用例。
+
+M26、M29 首次写法没编过（M26 触发 CA1826，M29 把语句插进了 `if … else if` 中间），已作废，换写法重跑，结果如上。
+
+## 编号 M5 空缺
+
+本票从未有过编号 M5 的变异：草稿区里没有它的片段文件，也没有运行记录。当初为什么跳过这个编号，会话压缩之后已无从还原。
+编号保持空缺，不事后补一个进去。
+
 ## M12 为什么首轮存活
 
 预期红的那条用例里，第二代故障是由「门又报没锁」立起来的。那一轮 `DoorCauseRemoved` 为假，M11 守的那个条件已经把豁免关掉，

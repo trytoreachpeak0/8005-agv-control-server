@@ -98,6 +98,41 @@ public sealed class InTransitDoorLockFaultTests
     }
 
     /// <summary>
+    /// 单在 RIoT 里是 HANG（9），车载端报门没锁：不进门锁路径——不记故障、不按住、不急停，旅程码仍是 <c>ORDER_HANG</c>
+    /// （用户 2026-09-22 在 #299 定的 H-a）。进了会怎样：两站之间按住即升级为急停，而 HANG 的单既不是本服务端确认过的 7、
+    /// 又算未完成，自动解除、人工解除、清除、续行四个出口全被挡（审查第二路变异 F）。
+    /// </summary>
+    [Theory]
+    [InlineData("ready")]
+    [InlineData("behind-gate")]
+    [Trait("Requirement", "REQ-0246")]
+    public async Task AHangingOrderIsLeftAloneWhateverTheDoorsSay(string side)
+    {
+        await using RuntimeFixture fixture = await GateArrivalWaitAsync();
+        string upperId = (await fixture.RuntimeAsync()).GateUpperId!;
+        if (side == "behind-gate")
+        {
+            await OwnOrderRebuildTests.DropSessionOnOwnOrderAsync(fixture);
+        }
+        fixture.Riot.MovementState = "MT_PAUSED";
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = 0 };
+        fixture.Riot.SetOrderState(upperId, RiotOrderState.Hang, terminal: false);
+        await DriveOneRoundAsync(fixture);
+        Assert.Equal("ORDER_HANG", (await fixture.RuntimeAsync()).BlockReasonCode);
+
+        await fixture.ReportSafetySummaryAsync(
+            allTargetSlotsLocked: false, unknownPresent: false, ["LOCK_NOT_CLOSED", "ACTION_NOT_ALLOWED_IN_STATE"]);
+        for (int round = 0; round < 3; round++)
+        {
+            await DriveOneRoundAsync(fixture);
+        }
+
+        await AssertNothingRaisedAsync(fixture);
+        Assert.Empty(fixture.RiotCommandsSent);
+        Assert.Equal("ORDER_HANG", (await fixture.RuntimeAsync()).BlockReasonCode);
+    }
+
+    /// <summary>
     /// 没有观测：车断线后隔了超过静默窗口才重连，新一代握手已开始、它的安全快照还没到。上一代最后一条门锁事实已经比
     /// <see cref="SessionLiveness.Timeout"/> 旧，这一代又什么都还没说。按 REQ-0246 的来源口径这是「未能证明锁闭」，
     /// 但本票不对它下命令：它是「车听不到」的一种，而那一格是用户 2026-09-20 留到批次 9 的冲突（REQ-0287 与 ADR-cross-0026）。
@@ -404,7 +439,13 @@ public sealed class InTransitDoorLockFaultTests
         RiotOrderCommandAuditRow trigger = Assert.Single(
             audit, row => row.CommandType == RiotCommandTypeNames.TriggerEmergency);
         Assert.Equal((fixture.Options.AgvId, (long?)1), (trigger.AgvId, trigger.FaultGeneration));
-        Assert.True(hold.IssuedAt <= trigger.IssuedAt, "the hold must be issued before the emergency stop");
+        // The order RIoT received them in, not the audit timestamps: both go out in one round and the fixture clock does not
+        // move within a round, so IssuedAt ties and a stop sent before the hold would pass a <= comparison (review, item 6).
+        int holdSent = fixture.RiotCommandsSent.IndexOf(RiotCommandTypeNames.OrderHold);
+        int stopSent = fixture.RiotCommandsSent.IndexOf(RiotCommandTypeNames.TriggerEmergency);
+        Assert.True(
+            holdSent >= 0 && stopSent > holdSent,
+            $"the hold must reach RIoT before the emergency stop: {string.Join(" -> ", fixture.RiotCommandsSent)}");
         Assert.DoesNotContain(audit, row => row.CommandType == RiotCommandTypeNames.CancelOrder);
 
         Assert.Equal(DoorSymptom, (await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token)).BlockReasonCode);

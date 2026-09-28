@@ -110,7 +110,9 @@ $orderId = [string]$intent.OrderId
 
 # 「该发时才发」的负半条。少了它，一台只要在动就按住的服务端也能让后面全部判据变绿。
 $null = $riot.Command('Put', "orders/$upperId", @{ orderState = 3; executeVehicleKey = $vehicleKey })
-Set-Vehicle @{ movementState = 'MT_RUNNING'; speed = 0.6; processingOrder = $true }
+# Between stations, as a driving vehicle is: RIoT reports station 0 there (ADR-cross-0060). Left at a station, L2-DL-10 could
+# not see the one rule it is about -- a release must not be undone merely because no station is reported (review suggestion).
+Set-Vehicle @{ movementState = 'MT_RUNNING'; speed = 0.6; processingOrder = $true; currentPosition = 0 }
 $null = Wait-L2Iterations -Riot $riot -Count 3 -TimeoutSeconds 60 -Journal $journal
 $holdsBefore = Get-Attempts 'OrderHold'
 $triggersBefore = Get-Attempts 'triggerEmergency'

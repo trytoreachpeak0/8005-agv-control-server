@@ -150,6 +150,13 @@ internal static class JourneyRuntimeWorkerTestKit
         public Action? BeforeUnfinishedOrdersRead { get; set; }
 
         /// <summary>
+        /// Every order and emergency command the fault model sent to RIoT, by its command type name, in the order it was sent.
+        /// The fixture clock does not move within a round, so audit timestamps cannot tell a hold from the stop that followed it
+        /// in the same round (control-server#335 review, item 6); this can.
+        /// </summary>
+        public List<string> RiotCommandsSent { get; } = [];
+
+        /// <summary>
         /// The <paramref name="commands"/> interceptor is the seam for asserting on the SQL the engine
         /// sends, which is the only way to tell a query that narrows in the store from one that reads a
         /// whole type back and filters in memory: a pre-filter that changed results would be a bug, so
@@ -1247,7 +1254,7 @@ internal static class JourneyRuntimeWorkerTestKit
             {
                 BeforeUnfinishedOrdersRead?.Invoke();
                 return UnfinishedOrderIds;
-            }, Riot.StateOfOrderId);
+            }, Riot.StateOfOrderId, RiotCommandsSent.Add);
             return new VehicleFaultCoordinator(
                 faults,
                 gateway,
@@ -1283,7 +1290,11 @@ internal static class JourneyRuntimeWorkerTestKit
         /// unable to answer.
         /// </summary>
         private sealed class SilentCommandGateway(
-            TimeProvider clock, Func<bool> latched, Func<string[]> unfinished, Func<string, int?> stateOf)
+            TimeProvider clock,
+            Func<bool> latched,
+            Func<string[]> unfinished,
+            Func<string, int?> stateOf,
+            Action<string> sent)
             : IRiotOrderCommandGateway, IRiotVehicleEmergencyFacts, IRiotVehicleOrderFacts
         {
             public Task<RiotVehicleOrderObservation> ReadUnfinishedOrdersAsync(
@@ -1306,6 +1317,7 @@ internal static class JourneyRuntimeWorkerTestKit
                 _ = orderId;
                 _ = reason;
                 _ = cancellationToken;
+                sent(RiotCommandTypeNames.For(kind));
                 return Task.FromResult(new RiotCommandCallResult(
                     RiotCommandCallDisposition.Accepted,
                     new RiotOrderCallReceipt(
@@ -1319,6 +1331,7 @@ internal static class JourneyRuntimeWorkerTestKit
             {
                 _ = deviceKey;
                 _ = cancellationToken;
+                sent(RiotCommandTypeNames.For(kind));
                 return Task.FromResult(new RiotCommandCallResult(
                     RiotCommandCallDisposition.Accepted,
                     new RiotOrderCallReceipt(

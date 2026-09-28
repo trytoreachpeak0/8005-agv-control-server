@@ -149,6 +149,8 @@ function Start-Drive([object]$intent) {
     $null = $riot.Command('Put', 'vehicle', @{
         vehicleKey = $Context.VehicleKey; procState = 'RUNNING'; movementState = 'MT_RUNNING'; speed = 0.8
         processingOrder = $true; orderTaskId = $intent.OrderId
+        # Between stations RIoT reports station 0 (ADR-cross-0060); L2-DF-08 needs the vehicle there to see the release kept.
+        currentPosition = 0
     })
 }
 
@@ -314,7 +316,8 @@ $null = $riot.Command('Put', "orders/$gateUpperId", @{ orderState = 7 })
 $null = $riot.Command('Put', 'vehicle', @{
     vehicleKey = $Context.VehicleKey; procState = 'USER_FORCE_IDLE'; movementState = 'MT_PAUSED'; speed = 0; emergencyState = 'CAN_RECOVER'
 })
-Start-Sleep -Seconds 3
+# Rounds, not seconds: under load on vm01 a fixed sleep can end before a single round has run (review suggestion).
+$null = Wait-L2Iterations -Riot $riot -Count 3 -TimeoutSeconds 60 -Journal $journal
 $assertions.Add(
     'L2-DF-06', '锁反馈仍是 0 时不解除', ((Get-Attempts 'cancelEmergency').Count -eq 0), 0, (Get-Attempts 'cancelEmergency').Count)
 
@@ -335,6 +338,7 @@ $assertions.Add(
 
 $null = $riot.Command('Put', 'vehicle', @{ vehicleKey = $Context.VehicleKey; emergencyState = 'OK' })
 $afterRelease = Invoke-Sampling 'L-after-release' 5
+$null = Wait-L2Iterations -Riot $riot -Count 5 -TimeoutSeconds 60 -Journal $journal
 Save-Evidence 'L-release' @{ LockAt = $lockAt.ToString('o'); Samples = $afterRelease }
 $continues = Get-Attempts 'OrderContinue'
 $assertions.Add(
