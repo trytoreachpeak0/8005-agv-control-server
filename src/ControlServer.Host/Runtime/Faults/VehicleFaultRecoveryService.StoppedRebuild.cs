@@ -320,8 +320,6 @@ public sealed partial class VehicleFaultRecoveryService
             return Refused(reasons, null);
         }
 
-        await VehicleFaultCoordinator.ReleaseCargoOfOtherJourneysAsync(
-            faults, agvId, timeProvider.GetUtcNow(), logger, cancellationToken).ConfigureAwait(false);
         DateTimeOffset now = timeProvider.GetUtcNow();
         JourneyRuntimeRow runtime = trip.Runtime!;
         runtime.Stage = JourneyRuntimeStage.Blocked;
