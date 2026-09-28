@@ -626,6 +626,9 @@ jobs:
               # control-server#325 (program#86 v2): once the station deadline ends a stop, the real onboard shows none of it,
               # and a late cancellation and a late scan made before the closing worklist arrives are both refused as STALE.
               @{ Name = 'real-onboard-stale-stop-after-station-timeout';     Runs = 1 }
+              # control-server#335 (REQ-0246): what the server holds of the door locks while the real onboard drives on
+              # this server's order, and how long a mid-drive reconnect takes to bring it back. Records, judges nothing yet.
+              @{ Name = 'real-onboard-in-transit-door-facts';                Runs = 1 }
           )
 
           # Registered before anything can fail, so the upload step always has a path.
