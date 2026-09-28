@@ -63,6 +63,29 @@ M12 补测后那一次单独重跑，过滤器是 `FullyQualifiedName~InTransitD
 修复前的红：`ALatchThatComesOnAfterTheServiceReadItStillStopsTheContinue` 在只改测试的提交上红，Expected `RESUME_EMERGENCY_LATCHED`、
 Actual `RESUME_CONTINUE_NOT_CONFIRMED`（`evidence/cs335/resume-latch-red/dotnet-test.log`）。
 
+## 审查第一路三条必修（M17–M23）
+
+修复提交 `5f7d14e5` 之上。过滤器 `FullyQualifiedName~InTransitDoor|FullyQualifiedName~VehicleFault|FullyQualifiedName~StoppedRebuildExitTests|FullyQualifiedName~EmergencyStop|FullyQualifiedName~EmergencyRelease`。
+
+| 编号 | 变异 | 预期红 | 实际 | 退出码 |
+| --- | --- | --- | --- | --- |
+| M17 | 续行前不查本服务端还开着的急停（P3） | `AStopReTriggeredAfterTheServiceGateStillStopsTheContinue` | 红 1，正是这条 | 1 |
+| M18 | 解除前最后一次读取不核单态（P2） | `AHeldOrderThatRunsBeforeTheLastReadKeepsTheLatch` + 监督器纯函数两格 | 红 3：这条、`held-order-listed-executing`、`held-order-listed-without-state` | 1 |
+| M19 | 放行去掉「单已取消或删除」那一支（P1） | 放行纯函数三格 + 必修 1 用例锁着两格 | 红 5，正是这五格 | 1 |
+| M20 | 引擎的补充监看直接返回（P1） | 必修 1 用例锁着两格 | 红 2，正是这两格 | 1 |
+| M21 | 人工清除不对门锁故障放行被取消的单（P1） | 必修 1 用例三格 + 清除先于引擎那条 | 红 4，正是这四条 | 1 |
+| M22 | 门锁故障加被取消单时清除仍走旅程处置（P1） | 同 M21 的四条 | **首轮存活**（绿 361/361，退出码 0）；补断言与用例后红 4，正是这四条 | 0 → 1 |
+| M23 | 不点名单的放行不再要求车上没有未完成单（P1） | 监督器纯函数 `no-order-named-one-listed` | 红 1，正是这格 | 1 |
+
+M17、M20、M21 第一次用「参数 is null」一类恒假条件，可空性分析随之把参数当成可能为空，后面用到它就报 CS8602，三个都没编过、
+一条测试也没跑，已作废；换成 `cancellationToken.IsCancellationRequested`（测试里恒为假）和一个不存在的证据码重跑，结果如上。
+
+**M22 为什么首轮存活**：重建记录按被终结那张单的单号生成固定编号（`OwnOrderRebuilds.RebuildIdFor`），`StageAsync` 遇到已有的就原样
+返回。原用例都先让引擎跑几轮、登记了取消重建再清除，所以清除时即使照 FAILED 那样处置旅程，也拿回同一条记录，看不出差别。
+但人按清除可能早于引擎读到这次取消：那时走处置就会先登记一条来源「故障清除」、单态 FAILED 的记录，引擎随后只拿回它——来源和单态
+都错，REQ-0361 的重复窗口按来源判也跟着错。补 `AClearanceBeforeTheEngineSeesTheCancellationLeavesTheRebuildToTheEngine`，
+并在必修 1 用例里断言处置结果是 `NONE`，M22 变红。
+
 ## M12 为什么首轮存活
 
 预期红的那条用例里，第二代故障是由「门又报没锁」立起来的。那一轮 `DoorCauseRemoved` 为假，M11 守的那个条件已经把豁免关掉，

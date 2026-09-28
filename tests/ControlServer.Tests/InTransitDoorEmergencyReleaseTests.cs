@@ -418,6 +418,8 @@ public sealed class InTransitDoorEmergencyReleaseTests
         fixture.Context.ChangeTracker.Clear();
 
         Assert.True(VehicleFaultRecoveryOutcome.Cleared == decision.Outcome, string.Join(", ", decision.Reasons));
+        // 只清故障，不处置旅程：重建是引擎登记的那一条（见下一条用例为什么要紧）。
+        Assert.Equal(VehicleFaultRecoveryDispositions.None, decision.Disposition);
         await DriveOneRoundAsync(fixture);
         await using (ControlServerDbContext reading = new(fixture.DbOptionsForTests))
         {
@@ -428,6 +430,43 @@ public sealed class InTransitDoorEmergencyReleaseTests
             Assert.DoesNotContain("VEHICLE_FAULT_IN_EFFECT", rebuild.WaitingReason ?? string.Empty, StringComparison.Ordinal);
         }
         Assert.Equal(1, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
+    }
+
+    /// <summary>
+    /// 同上，但人按清除时引擎还没看到这次取消（单刚在 RIoT 被取消，引擎下一轮才会读到）。清除只清故障，不替它登记重建：
+    /// 重建记录按被终结那张单的单号唯一，谁先登记就是谁的。清除若照 FAILED 那样处置旅程，登记下的是来源「故障清除」、
+    /// 单态 FAILED 的记录，引擎随后读到取消也只会拿回这一条——来源和单态都记错了，REQ-0361 的重复窗口按来源判，也跟着错。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0246")]
+    [Trait("Requirement", "REQ-0361")]
+    public async Task AClearanceBeforeTheEngineSeesTheCancellationLeavesTheRebuildToTheEngine()
+    {
+        await using RuntimeFixture fixture = await ReleasedForTheDoorsAsync();
+        Latched latched = await LatchedFactsAsync(fixture);
+        fixture.Riot.SetOrderState(latched.UpperId, RiotOrderState.Cancelled, terminal: true);
+        fixture.UnfinishedOrderIds = [];
+
+        VehicleFaultRecoveryTests.SiteRiot site = new(fixture) { HasUnfinishedOrder = false };
+        VehicleFaultRecoveryDecision decision = await VehicleFaultRecoveryTests.Service(fixture, site).RecoverAsync(
+            new VehicleFaultRecoveryRequest(
+                new EmergencyStopSubject(fixture.Options.AgvId, fixture.Options.VehicleKey),
+                VehicleFaultRecoveryAction.ClearFault,
+                "L1-OPERATOR",
+                FaultRemedied: true,
+                Note: "doors checked on site"),
+            Token);
+        fixture.Context.ChangeTracker.Clear();
+        Assert.True(VehicleFaultRecoveryOutcome.Cleared == decision.Outcome, string.Join(", ", decision.Reasons));
+        Assert.Equal(VehicleFaultRecoveryDispositions.None, decision.Disposition);
+
+        await DriveOneRoundAsync(fixture);
+
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        OwnOrderRebuildRow rebuild = Assert.Single(await reading.OwnOrderRebuilds.AsNoTracking().ToArrayAsync(Token));
+        Assert.Equal(
+            (OwnOrderRebuildSources.CancelledInRiot, latched.UpperId, (int?)RiotOrderState.Cancelled),
+            (rebuild.Source, rebuild.EndedUpperId, rebuild.EndedOrderState));
     }
 
     /// <summary>
