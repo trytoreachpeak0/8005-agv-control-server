@@ -270,7 +270,7 @@ public sealed class DemandReleaseService(
     {
         OrderIntentRow? intent = await dbContext.OrderIntents.AsNoTracking()
             .SingleOrDefaultAsync(row => row.UpperId == currentStop.UpperId, cancellationToken).ConfigureAwait(false);
-        if (NeverDispatched(intent))
+        if (await NeverDispatchedAsync(intent, cancellationToken).ConfigureAwait(false))
         {
             return (PickupOrderSettlement.NoOrder, null);
         }
@@ -378,12 +378,16 @@ public sealed class DemandReleaseService(
     }
 
     /// <summary>
-    /// 这张单确定从没向 RIoT 发出过创建：意图不在，或者还在初始的待对账状态、创建次数为零、没有订单号。
+    /// 这张单确定从没向 RIoT 发出过创建：意图不在，或者按 store 的唯一定义从没发出过（<c>WireToGateStore.IsNeverSentAsync</c>）——
+    /// 还在初始的待对账状态、创建次数为零、没有订单号；或者只因建单前的读没读到才是 <c>RESULT_UNKNOWN</c>（control-server#375）。
     /// 其余一切状态都可能在 RIoT 上有一张活的订单。
     /// </summary>
-    private static bool NeverDispatched(OrderIntentRow? intent) =>
-        intent is null ||
-        (intent.Status == "PENDING_RECONCILIATION" && intent.CreateAttemptCount == 0 && intent.OrderId is null);
+    /// <remarks>
+    /// 第二种在 control-server#375 之前不算：RIoT 长时间读不到时，那样的取货单既不会建、也不能释放，只能改库。现在释放是它
+    /// 不改库的放弃出口。与引擎并发时仍由事务里那次复读把关：引擎若已 arm，意图不再「从没发出过」，释放照旧拒绝。
+    /// </remarks>
+    private async Task<bool> NeverDispatchedAsync(OrderIntentRow? intent, CancellationToken cancellationToken) =>
+        intent is null || await new WireToGateStore(dbContext).IsNeverSentAsync(intent, cancellationToken).ConfigureAwait(false);
 
     private async Task<DemandReleaseOutcome> ReleaseAsync(
         JourneyRuntimeRow journey,
@@ -421,8 +425,10 @@ public sealed class DemandReleaseService(
                     cancellationToken).ConfigureAwait(false);
             }
 
-            if (!pickupOrderSettled && !NeverDispatched(await dbContext.OrderIntents.AsNoTracking()
-                    .SingleOrDefaultAsync(row => row.UpperId == pickup.UpperId, cancellationToken).ConfigureAwait(false)))
+            if (!pickupOrderSettled && !await NeverDispatchedAsync(
+                    await dbContext.OrderIntents.AsNoTracking()
+                        .SingleOrDefaultAsync(row => row.UpperId == pickup.UpperId, cancellationToken).ConfigureAwait(false),
+                    cancellationToken).ConfigureAwait(false))
             {
                 return await RefuseInTransactionAsync(runtime, demandId, trigger, DemandReleaseReasons.PickupOrderAppeared,
                     transaction, cancellationToken).ConfigureAwait(false);

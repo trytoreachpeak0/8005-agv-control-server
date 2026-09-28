@@ -1017,7 +1017,7 @@ public sealed partial class JourneyRuntimeEngine(
                 // 与关卡侧对称，取这个停靠自己的单号（批次7-06）：旅程行上的 PickupUpperId 是锚需求那一段的，
                 // 第二个取货停靠用它会去确认一段早已走完的移动。
                 if (!await EnsureMovementConfirmedAsync(
-                        runtime, stops.Current.UpperId, "PICKUP", cancellationToken).ConfigureAwait(false))
+                        runtime, stops.Current, currentMap, "PICKUP", cancellationToken).ConfigureAwait(false))
                 {
                     return;
                 }
@@ -1444,7 +1444,7 @@ public sealed partial class JourneyRuntimeEngine(
                     return;
                 }
                 if (!await EnsureMovementConfirmedAsync(
-                        runtime, stops.Current.UpperId, "GATE", cancellationToken).ConfigureAwait(false))
+                        runtime, stops.Current, currentMap, "GATE", cancellationToken).ConfigureAwait(false))
                 {
                     return;
                 }
@@ -2284,10 +2284,12 @@ public sealed partial class JourneyRuntimeEngine(
 
     private async Task<bool> EnsureMovementConfirmedAsync(
         JourneyRuntimeRow runtime,
-        string upperId,
+        JourneyStopRow stop,
+        RiotMapStationCatalogSnapshot currentMap,
         string legName,
         CancellationToken cancellationToken)
     {
+        string upperId = stop.UpperId;
         OrderIntentRow intent = await dbContext.OrderIntents.SingleAsync(
             row => row.UpperId == upperId,
             cancellationToken).ConfigureAwait(false);
@@ -2296,17 +2298,34 @@ public sealed partial class JourneyRuntimeEngine(
             return true;
         }
         // control-server#375: an intent never sent may be created by the reconciliation below, rounds or minutes after the
-        // departure check that let the leg go -- a read that timed out is enough to put that distance there -- and the doors,
-        // the vehicle's condition or an emergency stop may have changed since. So it is created only once the vehicle again
-        // shows what a rebuild has to (control-server#366 M1, the same criteria); otherwise the journey names the wait and the
-        // next round asks again. An order already sent is only reconciled, which moves nothing, and is not held here.
-        if (intent is { CreateAttemptCount: 0, CreateAttemptId: null, Status: "PENDING_RECONCILIATION" or "RESULT_UNKNOWN" } &&
-            (await VehicleConditionReasonsAsync(runtime, cancellationToken).ConfigureAwait(false)).Length > 0)
+        // departure check (or the dispatch admission) that let the leg go -- a read that timed out is enough to put that
+        // distance there -- and the doors, the vehicle's condition, an emergency stop, the catalog or an operator hold may have
+        // changed since. So it is created only once two of the checks a rebuild's HeldBeforeCreateAsync makes pass again
+        // (control-server#366 M1): the vehicle's condition, then REQ-0305's create gate for this stop, which the departure path
+        // asks too. Neither holding writes anything but the journey's code, and the next round asks again. "Never sent" is the
+        // store's own definition, so an intent RESULT_UNKNOWN for a reason a person has to look at -- a read that found an order
+        // not matching it -- is not held here and keeps its {leg}_ResultUnknown. An order already sent is only reconciled, which
+        // moves nothing, and is not held here either.
+        if (await new WireToGateStore(dbContext).IsNeverSentAsync(intent, cancellationToken).ConfigureAwait(false))
         {
-            runtime.SetBlockReason($"{legName}_{NeverSentLegWaitingVehicleSuffix}", timeProvider.GetUtcNow());
-            runtime.UpdatedAt = timeProvider.GetUtcNow();
-            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            return false;
+            if ((await VehicleConditionReasonsAsync(runtime, cancellationToken).ConfigureAwait(false)).Length > 0)
+            {
+                runtime.SetBlockReason($"{legName}_{NeverSentLegWaitingVehicleSuffix}", timeProvider.GetUtcNow());
+                runtime.UpdatedAt = timeProvider.GetUtcNow();
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                return false;
+            }
+
+            CreateGateOutcome gate = await GateLegAsync(
+                    runtime, stop, currentMap, cancellationToken, toTheStopItself: stop.StopRole == JourneyStopRoles.Pickup)
+                .ConfigureAwait(false);
+            if (!gate.IsAllowed)
+            {
+                runtime.SetBlockReason(gate.BlockReason, timeProvider.GetUtcNow());
+                runtime.UpdatedAt = timeProvider.GetUtcNow();
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                return false;
+            }
         }
         MovementDispatchResult result = await movementDispatch.ReconcileOrCreateAsync(
             upperId, cancellationToken).ConfigureAwait(false);

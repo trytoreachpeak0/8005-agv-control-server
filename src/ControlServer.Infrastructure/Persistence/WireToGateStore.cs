@@ -1233,6 +1233,20 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
     }
 
     /// <summary>
+    /// Whether the order intent <paramref name="row"/> has certainly never been sent to RIoT (control-server#375): pending with
+    /// no create attempt and no order, or RESULT_UNKNOWN only because the reads before its create answered nothing
+    /// (<see cref="IsNeverSentAfterUnansweredReadsAsync"/>). The one definition the runtime's check before a retried create and
+    /// the release service's "no order to cancel" both read. Every other state may have a live order in RIoT.
+    /// </summary>
+    public async Task<bool> IsNeverSentAsync(OrderIntentRow row, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        return (row.Status == "PENDING_RECONCILIATION" && row.CreateAttemptCount == 0 && row.CreateAttemptId is null &&
+                row.OrderId is null) ||
+               await IsNeverSentAfterUnansweredReadsAsync(row, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Whether <paramref name="row"/> is RESULT_UNKNOWN only because the reads before its create answered nothing
     /// (control-server#375), which makes it as eligible for its one create as a pending intent. The single definition, read both
     /// when the intent is loaded for reconciliation and by <see cref="ArmCreateDispatchAsync"/>.
