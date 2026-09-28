@@ -164,9 +164,49 @@ public sealed class OnboardPeer : IOnboardPeer
     }
 }
 
-internal sealed class OnboardPeerConnection(Stream stream) : IAsyncDisposable
+/// <summary>One vehicle's socket, as the senders see it: one write at a time, and no write without an end.</summary>
+/// <remarks>
+/// <para>
+/// <b>Every write is bounded</b> (control-server#334, <see cref="OnboardTransportOptions.WriteTimeout"/>): the wait for
+/// this connection's turn, the write and the flush together. Past it the stream is closed and the send throws
+/// <see cref="IOException"/>, which every sender already reads as "the vehicle is not connected": the outbox row stays
+/// unacknowledged and the replay after the reconnect delivers it.
+/// </para>
+/// <para>
+/// <b>Why closing, and not just giving up on the write.</b> A write abandoned half way may have put part of a line on the
+/// wire, and the next line would be read as its tail. And the connection has to leave the routing table, or the vehicle's
+/// reconnect is refused as a second connection for the same vehicle (control-server#276). Closing the stream does both
+/// through the path the silence window already takes: the connection's read fails, its loop ends, and
+/// <c>OnboardTcpServer.HandleClientAsync</c> detaches it. When the loop is itself the one stuck -- on its HeartbeatAck,
+/// behind another sender's write -- that write is bounded here too, and the loop ends through the same exception.
+/// </para>
+/// <para>
+/// <b>The bound is on the caller's wait, not on the write's cancellation.</b> A pending socket write is not guaranteed to
+/// honour a token, so the wait is timed from outside it and the stream is closed underneath it; that is what makes a
+/// socket write end.
+/// </para>
+/// </remarks>
+internal sealed class OnboardPeerConnection : IAsyncDisposable
 {
     private readonly SemaphoreSlim _sendGate = new(1, 1);
+    private readonly Stream _stream;
+    private readonly TimeSpan _writeTimeout;
+
+    public OnboardPeerConnection(Stream stream)
+        : this(stream, OnboardTransportOptions.DefaultWriteTimeout)
+    {
+    }
+
+    public OnboardPeerConnection(Stream stream, TimeSpan writeTimeout)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        if (writeTimeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(writeTimeout), writeTimeout, "The Onboard write timeout must be positive.");
+        }
+        _stream = stream;
+        _writeTimeout = writeTimeout;
+    }
 
     public async Task SendAsync(ReadOnlyMemory<byte> ndjsonLine, CancellationToken cancellationToken)
     {
@@ -175,11 +215,34 @@ internal sealed class OnboardPeerConnection(Stream stream) : IAsyncDisposable
             throw new InvalidDataException("Onboard outbound data must be one or more newline-terminated NDJSON messages.");
         }
 
+        Task send = SendCoreAsync(ndjsonLine, cancellationToken);
+        try
+        {
+            await send.WaitAsync(_writeTimeout, cancellationToken).ConfigureAwait(false);
+        }
+        catch (TimeoutException error)
+        {
+            // Closing is what ends the pending write; the send is then observed so its failure is not left unobserved.
+            await _stream.DisposeAsync().ConfigureAwait(false);
+            _ = send.ContinueWith(
+                static finished => _ = finished.Exception,
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+            throw new IOException(
+                $"A write to the Onboard peer did not finish within {_writeTimeout.TotalSeconds:0.###} s; " +
+                "the connection was closed and the line stays unacknowledged for the replay after the reconnect.",
+                error);
+        }
+    }
+
+    private async Task SendCoreAsync(ReadOnlyMemory<byte> ndjsonLine, CancellationToken cancellationToken)
+    {
         await _sendGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await stream.WriteAsync(ndjsonLine, cancellationToken).ConfigureAwait(false);
-            await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+            await _stream.WriteAsync(ndjsonLine, cancellationToken).ConfigureAwait(false);
+            await _stream.FlushAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
         {

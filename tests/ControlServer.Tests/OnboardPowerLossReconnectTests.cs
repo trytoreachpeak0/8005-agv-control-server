@@ -145,14 +145,25 @@ public sealed class OnboardPowerLossReconnectTests
     /// 关闭之后被路由表拒掉。
     /// </para>
     /// </remarks>
-    [Fact]
+    /// <param name="writeTimeoutMilliseconds">
+    /// null 是生产默认值。1000 那一格钉的是「监听器把配置的值交给了连接」：它必须比默认的 5 秒早放掉旧连接。
+    /// </param>
+    [Theory]
+    [InlineData(null)]
+    [InlineData(1000)]
     [Trait("IntegrationSlice", "FP-IS-05")]
-    public async Task AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects()
+    public async Task AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(int? writeTimeoutMilliseconds)
     {
-        await using Rig rig = await Rig.StartAsync();
+        TimeSpan? configured = writeTimeoutMilliseconds is { } ms ? TimeSpan.FromMilliseconds(ms) : null;
+        await using Rig rig = await Rig.StartAsync(configured);
         long oldGeneration = await rig.ConnectFirstSessionAsync();
 
         rig.Relay.StopReadingServerWrites();
+        // Talking first: a heartbeat has to reach the server after the vehicle stopped reading, or a short write timeout
+        // would let go of the connection before this was ever the shape under test.
+        Assert.True(
+            await rig.Relay.WaitBytesToServerWhileDeafAsync(TimeSpan.FromSeconds(5)),
+            "变聋之后 5 秒内车没往服务端送任何东西：心跳停了，这不是本条要造的形状。");
         Stopwatch sinceDeaf = Stopwatch.StartNew();
         using CancellationTokenSource pushing = new();
         Task pusher = rig.PushToSessionUntilCancelledAsync(oldGeneration, payloadBytes: 64 * 1024, pushing.Token);
@@ -182,6 +193,13 @@ public sealed class OnboardPowerLossReconnectTests
             $"车还在发心跳、只是不读，{HangGuard.TotalSeconds} 秒内旧代次一直没离开路由表：卡住的写没有上限，" +
             "这条连接永远不会被放掉（control-server#334）。" + trace);
         Assert.Contains("did not finish within", rig.PushFailures, StringComparison.Ordinal);
+        if (configured is not null)
+        {
+            Assert.True(
+                leftAfter < OnboardTransportOptions.DefaultWriteTimeout,
+                $"配的写超时是 {configured.Value.TotalSeconds:F1} 秒，旧连接却在 t={leftAfter!.Value.TotalSeconds:F1}s 才被放掉：" +
+                "监听器没有把配置交给连接。" + trace);
+        }
 
         rig.Relay.ResumeReadingServerWrites();
         await rig.DisconnectOnboardAsync();
@@ -310,7 +328,7 @@ public sealed class OnboardPowerLossReconnectTests
         public string PushFailures => string.Join(
             " | ", _pushFailures.OrderBy(item => item.Key, StringComparer.Ordinal).Select(item => $"{item.Value}× {item.Key}"));
 
-        public static async Task<Rig> StartAsync()
+        public static async Task<Rig> StartAsync(TimeSpan? writeTimeout = null)
         {
             Environment.SetEnvironmentVariable(CredentialVariable, Credential);
             SqliteConnection connection = new("Data Source=:memory:");
@@ -336,12 +354,7 @@ public sealed class OnboardPowerLossReconnectTests
             // The composition root's constructor on purpose: the window under test is the one production
             // runs with, not one a test chose.
             OnboardTcpServer server = new(
-                Options.Create(new OnboardTransportOptions
-                {
-                    Enabled = true,
-                    ListenAddress = "127.0.0.1",
-                    Port = serverPort
-                }),
+                Options.Create(ConfiguredTransport(serverPort, writeTimeout)),
                 provider.GetRequiredService<IServiceScopeFactory>(),
                 peer,
                 NullLogger<OnboardTcpServer>.Instance);
@@ -359,6 +372,17 @@ public sealed class OnboardPowerLossReconnectTests
                 },
                 SlotStateSeed.Read(new ConfigurationBuilder().Build()));
             return new Rig(connection, context, provider, server, peer, relay, engine, onboard);
+        }
+
+        /// <summary>The production defaults, and the write timeout only when a test names one.</summary>
+        private static OnboardTransportOptions ConfiguredTransport(int port, TimeSpan? writeTimeout)
+        {
+            OnboardTransportOptions options = new() { Enabled = true, ListenAddress = "127.0.0.1", Port = port };
+            if (writeTimeout is { } configured)
+            {
+                options.WriteTimeout = configured;
+            }
+            return options;
         }
 
         /// <summary>The first session, routable, with its heartbeats flowing as a live session's do.</summary>
@@ -705,6 +729,20 @@ public sealed class OnboardPowerLossReconnectTests
         public long BytesToServerWhileDeaf => _deaf?.BytesToServerWhileDeaf ?? 0;
 
         private volatile Link? _deaf;
+
+        public async Task<bool> WaitBytesToServerWhileDeafAsync(TimeSpan within)
+        {
+            Stopwatch waited = Stopwatch.StartNew();
+            while (waited.Elapsed < within)
+            {
+                if (BytesToServerWhileDeaf > 0)
+                {
+                    return true;
+                }
+                await Task.Delay(TimeSpan.FromMilliseconds(20), TestContext.Current.CancellationToken);
+            }
+            return false;
+        }
 
         private async Task AcceptAsync()
         {
