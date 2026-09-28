@@ -1247,7 +1247,7 @@ internal static class JourneyRuntimeWorkerTestKit
             {
                 BeforeUnfinishedOrdersRead?.Invoke();
                 return UnfinishedOrderIds;
-            });
+            }, Riot.StateOfOrderId);
             return new VehicleFaultCoordinator(
                 faults,
                 gateway,
@@ -1282,7 +1282,8 @@ internal static class JourneyRuntimeWorkerTestKit
         /// assertion that fails should be about the fault model, not about a double that was left
         /// unable to answer.
         /// </summary>
-        private sealed class SilentCommandGateway(TimeProvider clock, Func<bool> latched, Func<string[]> unfinished)
+        private sealed class SilentCommandGateway(
+            TimeProvider clock, Func<bool> latched, Func<string[]> unfinished, Func<string, int?> stateOf)
             : IRiotOrderCommandGateway, IRiotVehicleEmergencyFacts, IRiotVehicleOrderFacts
         {
             public Task<RiotVehicleOrderObservation> ReadUnfinishedOrdersAsync(
@@ -1291,7 +1292,9 @@ internal static class JourneyRuntimeWorkerTestKit
             {
                 _ = cancellationToken;
                 string[] ids = unfinished();
-                return Task.FromResult(new RiotVehicleOrderObservation(deviceKey, ids.Length > 0, ids, clock.GetUtcNow()));
+                Dictionary<string, int?> states = ids.Distinct(StringComparer.Ordinal)
+                    .ToDictionary(id => id, stateOf, StringComparer.Ordinal);
+                return Task.FromResult(new RiotVehicleOrderObservation(deviceKey, ids.Length > 0, ids, clock.GetUtcNow(), states));
             }
 
             public Task<RiotCommandCallResult> IssueOrderCommandAsync(
@@ -1788,6 +1791,13 @@ internal static class JourneyRuntimeWorkerTestKit
 
         /// <summary>RIoT's orderId for the order under <paramref name="upperId"/>, as this RIoT answers it.</summary>
         public string? OrderIdOf(string upperId) => _orders[upperId].OrderId;
+
+        /// <summary>
+        /// The state of the order RIoT knows by <paramref name="orderId"/>, or null when it knows none -- what its listing of
+        /// unfinished orders carries for each (control-server#335 review P2).
+        /// </summary>
+        public int? StateOfOrderId(string orderId) =>
+            _orders.Values.SingleOrDefault(order => string.Equals(order.OrderId, orderId, StringComparison.Ordinal))?.OrderState;
 
         /// <summary>Reports the order under <paramref name="upperId"/> as RIoT's terminal FAILED from now on.</summary>
         public void FailOrder(string upperId) =>

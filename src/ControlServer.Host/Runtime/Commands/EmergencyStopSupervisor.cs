@@ -48,13 +48,20 @@ public sealed record EmergencyStopRequest(
 /// The one release REQ-0167 allows while a fault still stands (control-server#335, the user's option A of 2026-09-28): the
 /// fault is the doors of a driving vehicle, they read fresh, known and locked again, and the one unfinished order RIoT may
 /// hold for the vehicle is <paramref name="HeldOrderId"/> -- this server's own <c>OrderHold</c> of that fault generation,
-/// read back PAUSED (7).
+/// read back PAUSED (7), and read PAUSED again in the list the release is decided on.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Built only by <c>VehicleFaultCoordinator</c>, which alone knows the symptom and reads the hold back; this class trusts it for
 /// the generation it names and for nothing else. Every other cause, and every other unfinished order, still refuses.
+/// </para>
+/// <para>
+/// <paramref name="HeldOrderId"/> is null when the held order has since been cancelled or deleted in RIoT (control-server#335
+/// review P1): the allowance then lets no order through, and the release needs the vehicle to hold none at all -- with no
+/// order nothing can drive it.
+/// </para>
 /// </remarks>
-public sealed record EmergencyReleaseAllowance(long FaultGeneration, string HeldOrderId);
+public sealed record EmergencyReleaseAllowance(long FaultGeneration, string? HeldOrderId);
 
 /// <summary>
 /// A person's confirmation that a latched vehicle may be released, with everything REQ-0356 requires
@@ -811,9 +818,13 @@ public sealed class EmergencyStopSupervisor(
             obstacles.Add("EMERGENCY_VEHICLE_ORDERS_UNKNOWN");
         }
         else if (orders.HasUnfinishedOrder == true &&
-                 !(allowed && orders.UnfinishedOrderIds.All(id =>
-                     string.Equals(id, allowance!.HeldOrderId, StringComparison.Ordinal))))
+                 !(allowed && allowance!.HeldOrderId is string held &&
+                   orders.UnfinishedOrderIds.All(id => string.Equals(id, held, StringComparison.Ordinal)) &&
+                   orders.StateOf(held) == RiotOrderState.Paused))
         {
+            // The held order must still read PAUSED (7) in this list, the last read before the release goes out, not only in
+            // the coordinator's read earlier in the round (control-server#335 review P2): a 3 here is an order that runs the
+            // moment the latch comes off. A state RIoT did not give counts against it.
             obstacles.Add("EMERGENCY_VEHICLE_ORDER_NOT_FINISHED");
         }
 

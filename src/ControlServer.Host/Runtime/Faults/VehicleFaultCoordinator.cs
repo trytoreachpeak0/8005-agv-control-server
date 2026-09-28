@@ -355,6 +355,19 @@ public sealed class VehicleFaultCoordinator(
         {
             refusals.Add("RESUME_EMERGENCY_LATCHED");
         }
+        else
+        {
+            // Not latched is not the same as no stop: a trigger this server issued a moment ago reads OK until RIoT engages
+            // the latch (about a second on the vehicle), and an engine round after the service's gate re-triggers exactly so
+            // when the doors read open again (control-server#335 review P3). A continue then leaves an order 3 under a stop
+            // with nobody left to supervise it once the fault is cleared. A release that has taken effect is settled first,
+            // or a stop REQ-0356 already ended would read as still open (see HasOpenEpisodeAsync).
+            await emergencyStop.SettleReleaseTakenEffectAsync(subject, emergency, cancellationToken).ConfigureAwait(false);
+            if (await emergencyStop.HasOpenEpisodeAsync(subject, cancellationToken).ConfigureAwait(false))
+            {
+                refusals.Add("RESUME_EMERGENCY_STOP_OPEN");
+            }
+        }
 
         if (refusals.Count > 0)
         {
@@ -782,6 +795,8 @@ public sealed class VehicleFaultCoordinator(
     /// this generation issued an <c>OrderHold</c> on this order and it reads back Confirmed; and RIoT reports this very order
     /// -- same orderId -- PAUSED (7) now. A 7 this server did not put there, a 1, 3 or 9, another order, or any other symptom
     /// earns nothing; <see cref="VehicleFaultEvidence.OrderFailed"/> in particular stays with a person, as it always has.
+    /// The one exception is this very order cancelled or deleted in RIoT since (control-server#335 review P1): the allowance
+    /// then names no order, and the supervisor releases only while RIoT lists none at all for the vehicle.
     /// </remarks>
     internal static EmergencyReleaseAllowance? DoorReleaseAllowance(
         VehicleFaultFact fault,
@@ -796,8 +811,23 @@ public sealed class VehicleFaultCoordinator(
         if (!context.DoorCauseRemoved ||
             fault.Level == VehicleFaultLevel.None ||
             !string.Equals(fault.EvidenceCode, VehicleFaultEvidence.DoorNotProvenLocked, StringComparison.Ordinal) ||
-            context.CurrentOrder is not RiotOrderCommandTarget target ||
-            holdOutcome != RiotOrderCommandOutcome.Confirmed ||
+            context.CurrentOrder is not RiotOrderCommandTarget target)
+        {
+            return null;
+        }
+
+        // The held order was cancelled or deleted in RIoT while the fault stood (control-server#335 review P1). Nothing is left
+        // that could drive the vehicle, so the doors proven locked again earn a release that lets no order through: the
+        // supervisor then needs RIoT to list none at all for the vehicle. Without this, a latched vehicle with cargo had no way
+        // out but the database -- REQ-0356 needs it empty, and the clearance refuses while latched.
+        if (order.Kind == RiotOrderObservationKind.Terminal &&
+            order.OrderState is RiotOrderState.Cancelled or RiotOrderState.Deleted &&
+            string.Equals(order.OrderId, target.OrderId, StringComparison.Ordinal))
+        {
+            return new EmergencyReleaseAllowance(fault.FaultGeneration, HeldOrderId: null);
+        }
+
+        if (holdOutcome != RiotOrderCommandOutcome.Confirmed ||
             order.Kind != RiotOrderObservationKind.Active ||
             order.OrderState != RiotOrderState.Paused ||
             !string.Equals(order.OrderId, target.OrderId, StringComparison.Ordinal))

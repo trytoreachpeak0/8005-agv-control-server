@@ -371,21 +371,40 @@ public sealed class InTransitDoorEmergencyReleaseTests
         fixture.Riot.SetOrderState(latched.UpperId, ending, terminal: true);
         fixture.UnfinishedOrderIds = [];
         await ReportLockedAsync(fixture);
-        for (int round = 0; round < 5; round++)
+        await DriveOneRoundAsync(fixture);
+
+        // 锁着的那一格这一轮自动解除一次；RIoT 随后放开闩锁（假 RIoT 不会自己放，同整条路那条用例）。
+        Assert.Equal(releasesBefore + (latch == "latched" ? 1 : 0), await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
+        fixture.EmergencyLatched = false;
+        for (int round = 0; round < 4; round++)
         {
             await DriveOneRoundAsync(fixture);
         }
 
-        // 故障仍在效，不自动清除；锁着的那一格已经自动解除了一次。
+        // 引擎登记的 cs#318 重建到期之后，正是卡在这个故障上（审查探针 P1 看到的现场）：先让它真的到期，前提才算立住。
+        await using (ControlServerDbContext reading = new(fixture.DbOptionsForTests))
+        {
+            OwnOrderRebuildRow recorded = Assert.Single(await reading.OwnOrderRebuilds.AsNoTracking().ToArrayAsync(Token));
+            TimeSpan untilDue = recorded.DueAt - fixture.Clock.GetUtcNow();
+            if (untilDue > TimeSpan.Zero)
+            {
+                fixture.Clock.Advance(untilDue + TimeSpan.FromSeconds(1));
+            }
+        }
+        await ReportLockedAsync(fixture);
+        await DriveOneRoundAsync(fixture);
+
+        // 故障仍在效，不自动清除；没有再次急停，也没有再次解除。
         await using (ControlServerDbContext reading = new(fixture.DbOptionsForTests))
         {
             VehicleFaultStateRow standing = await reading.VehicleFaultStates.AsNoTracking().SingleAsync(Token);
             Assert.Equal((VehicleFaultLevel.SuspectedBlocked, InTransitDoorLockFaultTests.DoorSymptom),
                 (standing.Level, standing.EvidenceCode));
+            OwnOrderRebuildRow waiting = Assert.Single(await reading.OwnOrderRebuilds.AsNoTracking().ToArrayAsync(Token));
+            Assert.Contains("VEHICLE_FAULT_IN_EFFECT", waiting.WaitingReason ?? string.Empty, StringComparison.Ordinal);
         }
         Assert.Equal(releasesBefore + (latch == "latched" ? 1 : 0), await CountAsync(fixture, RiotCommandTypeNames.CancelEmergency));
-        fixture.EmergencyLatched = false;
-        await DriveOneRoundAsync(fixture);
+        Assert.Equal(1, await CountAsync(fixture, RiotCommandTypeNames.TriggerEmergency));
 
         VehicleFaultRecoveryTests.SiteRiot site = new(fixture) { HasUnfinishedOrder = false };
         VehicleFaultRecoveryDecision decision = await VehicleFaultRecoveryTests.Service(fixture, site).RecoverAsync(
@@ -539,19 +558,28 @@ public sealed class InTransitDoorEmergencyReleaseTests
     [InlineData("executing")]
     [InlineData("hang")]
     [InlineData("order-unread")]
+    [InlineData("cancelled")]
+    [InlineData("deleted")]
+    [InlineData("cancelled-without-a-confirmed-hold")]
+    [InlineData("cancelled-other-order-id")]
+    [InlineData("cancelled-doors-not-locked-again")]
+    [InlineData("cancelled-order-failed-fault")]
+    [InlineData("terminal-failed")]
     [Trait("Requirement", "REQ-0167")]
     public void TheAllowanceIsGivenOnlyPastTheOwnConfirmedHold(string variant)
     {
         VehicleFaultFact fault = Fault(
-            variant == "order-failed" ? VehicleFaultEvidence.OrderFailed : VehicleFaultEvidence.DoorNotProvenLocked,
+            variant is "order-failed" or "cancelled-order-failed-fault"
+                ? VehicleFaultEvidence.OrderFailed
+                : VehicleFaultEvidence.DoorNotProvenLocked,
             variant == "fault-cleared" ? VehicleFaultLevel.None : VehicleFaultLevel.SuspectedBlocked);
         FaultedVehicleContext context = new(
             new RiotOrderCommandTarget("AGV-1", OwnUpperId, OwnOrderId),
             Cargo: null,
-            DoorCauseRemoved: variant != "doors-not-locked-again");
+            DoorCauseRemoved: variant is not ("doors-not-locked-again" or "cancelled-doors-not-locked-again"));
         RiotOrderCommandOutcome? hold = variant switch
         {
-            "no-hold-this-generation" => null,
+            "no-hold-this-generation" or "cancelled-without-a-confirmed-hold" => null,
             "hold-pending" => RiotOrderCommandOutcome.Pending,
             "hold-failed" => RiotOrderCommandOutcome.Failed,
             _ => RiotOrderCommandOutcome.Confirmed,
@@ -563,6 +591,12 @@ public sealed class InTransitDoorEmergencyReleaseTests
             "executing" => new(OwnUpperId, RiotOrderObservationKind.Active, OwnOrderId, RiotOrderState.Executing),
             "hang" => new(OwnUpperId, RiotOrderObservationKind.Active, OwnOrderId, RiotOrderState.Hang),
             "order-unread" => new(OwnUpperId, RiotOrderObservationKind.Unknown, null),
+            "cancelled" or "cancelled-without-a-confirmed-hold" or "cancelled-doors-not-locked-again" or "cancelled-order-failed-fault" =>
+                new(OwnUpperId, RiotOrderObservationKind.Terminal, OwnOrderId, RiotOrderState.Cancelled),
+            "deleted" => new(OwnUpperId, RiotOrderObservationKind.Terminal, OwnOrderId, RiotOrderState.Deleted),
+            "cancelled-other-order-id" =>
+                new(OwnUpperId, RiotOrderObservationKind.Terminal, "ORDER-SOMEONE-ELSE", RiotOrderState.Cancelled),
+            "terminal-failed" => new(OwnUpperId, RiotOrderObservationKind.Terminal, OwnOrderId, RiotOrderState.Failed),
             _ => new(OwnUpperId, RiotOrderObservationKind.Active, OwnOrderId, RiotOrderState.Paused),
         };
 
@@ -571,6 +605,12 @@ public sealed class InTransitDoorEmergencyReleaseTests
         if (variant == "allowed")
         {
             Assert.Equal(new EmergencyReleaseAllowance(3, OwnOrderId), allowance);
+        }
+        else if (variant is "cancelled" or "deleted" or "cancelled-without-a-confirmed-hold")
+        {
+            // 单已在 RIoT 结束（审查 P1）：放行不点名任何单，监督器因此要求车上一张未完成单都没有。按住有没有确认过无关——
+            // 没有单了，就没有能让车动的东西。
+            Assert.Equal(new EmergencyReleaseAllowance(3, HeldOrderId: null), allowance);
         }
         else
         {
@@ -581,9 +621,15 @@ public sealed class InTransitDoorEmergencyReleaseTests
     /// <summary>
     /// <c>EmergencyStopSupervisor.ReleaseObstacles</c> 那一侧：放行只让过它点名的那一张单、只对它点名的那一代。
     /// 车上另有一张未完成单、放行点的是别的代次、故障已换代、没有放行——都照旧挡。
+    /// 点名那张单在这次列表里必须读到 7：读到 3 或读不到单态都挡（审查 P2）。不点名任何单的放行（单已在 RIoT 取消或删除，
+    /// 审查 P1）要求车上一张未完成单都没有。
     /// </summary>
     [Theory]
     [InlineData("allowed", "")]
+    [InlineData("held-order-listed-executing", "EMERGENCY_VEHICLE_ORDER_NOT_FINISHED")]
+    [InlineData("held-order-listed-without-state", "EMERGENCY_VEHICLE_ORDER_NOT_FINISHED")]
+    [InlineData("no-order-named-none-listed", "")]
+    [InlineData("no-order-named-one-listed", "EMERGENCY_VEHICLE_ORDER_NOT_FINISHED")]
     [InlineData("another-unfinished-order", "EMERGENCY_VEHICLE_ORDER_NOT_FINISHED")]
     [InlineData("allowance-for-another-generation", "EMERGENCY_VEHICLE_ORDER_NOT_FINISHED,EMERGENCY_CAUSE_NOT_CLEARED")]
     [InlineData("trigger-of-another-generation", "EMERGENCY_VEHICLE_ORDER_NOT_FINISHED,EMERGENCY_FAULT_GENERATION_MOVED,EMERGENCY_CAUSE_NOT_CLEARED")]
@@ -593,10 +639,25 @@ public sealed class InTransitDoorEmergencyReleaseTests
     {
         DateTimeOffset now = DateTimeOffset.Parse("2026-09-28T08:00:00Z", System.Globalization.CultureInfo.InvariantCulture);
         RiotVehicleEmergencyObservation latched = new("DEVICE-1", RiotVehicleEmergencyObservation.CanRecover, now);
-        string[] unfinished = variant == "another-unfinished-order" ? [OwnOrderId, "ORDER-FOREIGN"] : [OwnOrderId];
+        string[] unfinished = variant switch
+        {
+            "another-unfinished-order" => [OwnOrderId, "ORDER-FOREIGN"],
+            "no-order-named-none-listed" => [],
+            _ => [OwnOrderId],
+        };
+        Dictionary<string, int?> states = new(StringComparer.Ordinal)
+        {
+            [OwnOrderId] = variant == "held-order-listed-executing" ? RiotOrderState.Executing : RiotOrderState.Paused,
+            ["ORDER-FOREIGN"] = RiotOrderState.Executing,
+        };
+        if (variant == "held-order-listed-without-state")
+        {
+            states.Remove(OwnOrderId);
+        }
         EmergencyReleaseAllowance? allowance = variant switch
         {
             "no-allowance" => null,
+            "no-order-named-none-listed" or "no-order-named-one-listed" => new EmergencyReleaseAllowance(3, HeldOrderId: null),
             "allowance-for-another-generation" => new EmergencyReleaseAllowance(2, OwnOrderId),
             _ => new EmergencyReleaseAllowance(3, OwnOrderId),
         };
@@ -605,7 +666,7 @@ public sealed class InTransitDoorEmergencyReleaseTests
             latched,
             triggerFaultGeneration: variant == "trigger-of-another-generation" ? 2 : 3,
             Fault(VehicleFaultEvidence.DoorNotProvenLocked, VehicleFaultLevel.SuspectedBlocked),
-            new RiotVehicleOrderObservation("DEVICE-1", true, unfinished, now),
+            new RiotVehicleOrderObservation("DEVICE-1", unfinished.Length > 0, unfinished, now, states),
             allowance);
 
         Assert.Equal(expected, string.Join(',', obstacles));

@@ -145,6 +145,67 @@ public sealed partial class JourneyRuntimeEngine
     }
 
     /// <summary>
+    /// A door fault still stands, and the order it held has since been cancelled or deleted in RIoT: keep handing it to the fault
+    /// model every round (control-server#335 review P1).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Called at the top of both arrival stages, before the rebuild of control-server#318 takes the round over: once the engine
+    /// has recorded that ending, <see cref="AdvanceOwnOrderRebuildAsync"/> returns early every round and
+    /// <see cref="ObserveDoorsInTransitAsync"/> is never reached again. Without this the fault model, which alone evaluates the
+    /// latch, went unasked for good -- a latched vehicle was never released, and the rebuild waited on the fault forever.
+    /// </para>
+    /// <para>
+    /// It supervises only: no journey code is written, the rebuild keeps its own. With the doors proven locked again the
+    /// coordinator earns a release that lets no order through (<c>VehicleFaultCoordinator.DoorReleaseAllowance</c>), and a person
+    /// then clears the fault; the rebuild the engine recorded goes on from there. Doors reported open again between stations
+    /// stop the vehicle again, as anywhere else.
+    /// </para>
+    /// </remarks>
+    private async Task SuperviseDoorFaultOnEndedOrderAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopRow stop,
+        CancellationToken cancellationToken)
+    {
+        bool doorFaultInEffect = await dbContext.VehicleFaultStates.AsNoTracking()
+            .AnyAsync(
+                row => row.AgvId == runtime.AgvId &&
+                       row.Level != VehicleFaultLevel.None &&
+                       row.EvidenceCode == VehicleFaultEvidence.DoorNotProvenLocked,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!doorFaultInEffect)
+        {
+            return;
+        }
+
+        OrderIntentRow? intent = await dbContext.OrderIntents.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.MovementLegId == stop.MovementLegId, cancellationToken).ConfigureAwait(false);
+        if (intent?.OrderId is not string orderId)
+        {
+            return;
+        }
+
+        RiotOrderObservation order = await vehicleFacts.ReconcileByUpperIdAsync(intent.UpperId, cancellationToken)
+            .ConfigureAwait(false);
+        if (order is not { Kind: RiotOrderObservationKind.Terminal, OrderState: RiotOrderState.Cancelled or RiotOrderState.Deleted })
+        {
+            return;
+        }
+
+        InTransitDoorVerdict doors = await InTransitDoorFacts.ReadAsync(
+            dbContext, runtime.AgvId, timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
+        FaultedVehicleContext ended = await InFlightFaultContextAsync(runtime, intent, orderId, cancellationToken)
+            .ConfigureAwait(false);
+        FaultedVehicleContext context = ended with { DoorCauseRemoved = doors.State == InTransitDoorState.ProvenLocked };
+        await faults.ObserveAsync(
+            new EmergencyStopSubject(runtime.AgvId, runtime.VehicleKey),
+            VehicleFaultEvidence.DoorNotProvenLocked,
+            context,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// The order and the cargo a fault on an in-flight order is about: the same for every symptom that meets a vehicle on the move,
     /// so the order FAILED and the doors not proven locked cannot come to bind different cargo for one vehicle.
     /// </summary>

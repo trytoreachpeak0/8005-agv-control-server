@@ -999,6 +999,8 @@ public sealed partial class JourneyRuntimeEngine(
         {
             case JourneyRuntimeStage.AwaitingPickupArrival:
                 // 这一站的单终结过、正在按同车同需求重建（control-server#318）：旧单不再读，重建自己走完这一轮。
+                // 在那之前：门锁故障仍在效而这张单已在 RIoT 被取消或删除时，故障模型照样每轮监看（control-server#335 审查 P1）。
+                await SuperviseDoorFaultOnEndedOrderAsync(runtime, stops.Current, cancellationToken).ConfigureAwait(false);
                 if (await AdvanceOwnOrderRebuildAsync(
                         runtime, stops.Current, currentMap, mayCreate: true, reasonOnceRebuilt: null, cancellationToken)
                         .ConfigureAwait(false))
@@ -1427,6 +1429,7 @@ public sealed partial class JourneyRuntimeEngine(
                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                     return;
                 }
+                await SuperviseDoorFaultOnEndedOrderAsync(runtime, stops.Current, cancellationToken).ConfigureAwait(false);
                 if (await AdvanceOwnOrderRebuildAsync(
                         runtime, stops.Current, currentMap, mayCreate: true, reasonOnceRebuilt: null, cancellationToken)
                         .ConfigureAwait(false))
