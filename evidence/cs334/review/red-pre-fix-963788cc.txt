@@ -1,0 +1,359 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 8.0.31)
+[xUnit.net 00:00:00.44]   Discovering: ControlServer.Tests
+[xUnit.net 00:00:02.07]   Discovered:  ControlServer.Tests
+[xUnit.net 00:00:02.32]   Starting:    ControlServer.Tests
+[xUnit.net 00:00:02.48]     ControlServer.Tests.GateHeldOnboardSendTests.TheListenerRefusesToStartWithAWriteTimeoutOutsideItsBounds(seconds: 5184000) [FAIL]
+[xUnit.net 00:00:02.48]       Assert.Throws() Failure: No exception was thrown
+[xUnit.net 00:00:02.48]       Expected: typeof(System.InvalidOperationException)
+[xUnit.net 00:00:02.48]       Stack Trace:
+[xUnit.net 00:00:02.48]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\GateHeldOnboardSendTests.cs(280,0): at ControlServer.Tests.GateHeldOnboardSendTests.TheListenerRefusesToStartWithAWriteTimeoutOutsideItsBounds(Double seconds)
+[xUnit.net 00:00:02.48]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:02.49]     ControlServer.Tests.GateHeldOnboardSendTests.TheListenerRefusesToStartWithAWriteTimeoutOutsideItsBounds(seconds: 10.000999999999999) [FAIL]
+[xUnit.net 00:00:02.49]       Assert.Throws() Failure: No exception was thrown
+[xUnit.net 00:00:02.49]       Expected: typeof(System.InvalidOperationException)
+[xUnit.net 00:00:02.49]       Stack Trace:
+[xUnit.net 00:00:02.49]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\GateHeldOnboardSendTests.cs(280,0): at ControlServer.Tests.GateHeldOnboardSendTests.TheListenerRefusesToStartWithAWriteTimeoutOutsideItsBounds(Double seconds)
+[xUnit.net 00:00:02.49]         --- End of stack trace from previous location ---
+  Passed ControlServer.Tests.GateHeldOnboardSendTests.TheListenerRefusesToStartWithAWriteTimeoutOutsideItsBounds(seconds: -1) [27 ms]
+  Failed ControlServer.Tests.GateHeldOnboardSendTests.TheListenerRefusesToStartWithAWriteTimeoutOutsideItsBounds(seconds: 5184000) [16 ms]
+  Error Message:
+   Assert.Throws() Failure: No exception was thrown
+Expected: typeof(System.InvalidOperationException)
+  Stack Trace:
+     at ControlServer.Tests.GateHeldOnboardSendTests.TheListenerRefusesToStartWithAWriteTimeoutOutsideItsBounds(Double seconds) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\GateHeldOnboardSendTests.cs:line 280
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.GateHeldOnboardSendTests.TheListenerRefusesToStartWithAWriteTimeoutOutsideItsBounds(seconds: 10.000999999999999) [< 1 ms]
+  Error Message:
+   Assert.Throws() Failure: No exception was thrown
+Expected: typeof(System.InvalidOperationException)
+  Stack Trace:
+     at ControlServer.Tests.GateHeldOnboardSendTests.TheListenerRefusesToStartWithAWriteTimeoutOutsideItsBounds(Double seconds) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\GateHeldOnboardSendTests.cs:line 280
+--- End of stack trace from previous location ---
+  Passed ControlServer.Tests.GateHeldOnboardSendTests.TheListenerRefusesToStartWithAWriteTimeoutOutsideItsBounds(seconds: 0) [< 1 ms]
+[xUnit.net 00:00:06.43]     ControlServer.Tests.MultiVehicleExecutionTests.AVehicleWhoseOnboardConnectionIsGoneYieldsItsTurnAndTheVehiclesAfterItAreStillAdvanced(lastVehicleSession: "not-ready-on-own-order") [FAIL]
+[xUnit.net 00:00:06.43]       System.IO.IOException : No recovered Onboard peer is connected for '老厂前线新多仓位1'.
+[xUnit.net 00:00:06.43]       Stack Trace:
+[xUnit.net 00:00:06.43]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardPeer.cs(115,0): at ControlServer.Host.Transport.OnboardPeer.SendAsync(ReadOnlyMemory`1 ndjsonLine, CancellationToken cancellationToken)
+[xUnit.net 00:00:06.43]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs(1871,0): at ControlServer.Tests.MultiVehicleExecutionTests.FleetPeer.SendAsync(ReadOnlyMemory`1 ndjsonLine, CancellationToken cancellationToken)
+[xUnit.net 00:00:06.43]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardJourneyPublisher.cs(874,0): at ControlServer.Host.Transport.OnboardJourneyPublisher.PublishStampedEnvelopeAsync(String messageType, String messageId, String correlationId, String agvId, Int64 sessionGeneration, Func`2 payloadFactory, CancellationToken cancellationToken, IReadOnlySet`1 keepAcknowledgedIgnoring)
+[xUnit.net 00:00:06.43]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardJourneyPublisher.cs(834,0): at ControlServer.Host.Transport.OnboardJourneyPublisher.PublishStampedSnapshotAsync(String messageType, String messageId, String agvId, Int64 sessionGeneration, Int64 revision, Func`2 payloadFactory, CancellationToken cancellationToken, IReadOnlySet`1 keepAcknowledgedIgnoring)
+[xUnit.net 00:00:06.43]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardJourneyPublisher.cs(808,0): at ControlServer.Host.Transport.OnboardJourneyPublisher.PublishSnapshotAsync(String messageType, String messageId, String agvId, Int64 sessionGeneration, Int64 revision, Object payload, CancellationToken cancellationToken, IReadOnlySet`1 keepAcknowledgedIgnoring)
+[xUnit.net 00:00:06.43]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs(2457,0): at ControlServer.Host.Runtime.JourneyRuntimeEngine.PublishPickupDispatchPlanOnceAsync(JourneyRuntimeRow runtime, JourneyStopCursor stops, SessionRecoveryRow session, CancellationToken cancellationToken)
+[xUnit.net 00:00:06.43]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs(911,0): at ControlServer.Host.Runtime.JourneyRuntimeEngine.AdvanceAsync(JourneyRuntimeRow runtime, RiotMapStationCatalogSnapshot currentMap, CancellationToken cancellationToken)
+[xUnit.net 00:00:06.43]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs(557,0): at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteRoundAsync(CancellationToken cancellationToken)
+[xUnit.net 00:00:06.43]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs(566,0): at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteRoundAsync(CancellationToken cancellationToken)
+[xUnit.net 00:00:06.43]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs(394,0): at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken)
+[xUnit.net 00:00:06.43]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs(408,0): at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken)
+[xUnit.net 00:00:06.43]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs(1081,0): at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.RunRoundAsync(Nullable`1 advance)
+[xUnit.net 00:00:06.43]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.GateHeldIo.cs(55,0): at ControlServer.Tests.MultiVehicleExecutionTests.AVehicleWhoseOnboardConnectionIsGoneYieldsItsTurnAndTheVehiclesAfterItAreStillAdvanced(String lastVehicleSession)
+[xUnit.net 00:00:06.43]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.GateHeldIo.cs(63,0): at ControlServer.Tests.MultiVehicleExecutionTests.AVehicleWhoseOnboardConnectionIsGoneYieldsItsTurnAndTheVehiclesAfterItAreStillAdvanced(String lastVehicleSession)
+[xUnit.net 00:00:06.43]         --- End of stack trace from previous location ---
+  Failed ControlServer.Tests.MultiVehicleExecutionTests.AVehicleWhoseOnboardConnectionIsGoneYieldsItsTurnAndTheVehiclesAfterItAreStillAdvanced(lastVehicleSession: "not-ready-on-own-order") [4 s]
+  Error Message:
+   System.IO.IOException : No recovered Onboard peer is connected for '老厂前线新多仓位1'.
+  Stack Trace:
+     at ControlServer.Host.Transport.OnboardPeer.SendAsync(ReadOnlyMemory`1 ndjsonLine, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardPeer.cs:line 115
+   at ControlServer.Tests.MultiVehicleExecutionTests.FleetPeer.SendAsync(ReadOnlyMemory`1 ndjsonLine, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1871
+   at ControlServer.Host.Transport.OnboardJourneyPublisher.PublishStampedEnvelopeAsync(String messageType, String messageId, String correlationId, String agvId, Int64 sessionGeneration, Func`2 payloadFactory, CancellationToken cancellationToken, IReadOnlySet`1 keepAcknowledgedIgnoring) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardJourneyPublisher.cs:line 874
+   at ControlServer.Host.Transport.OnboardJourneyPublisher.PublishStampedSnapshotAsync(String messageType, String messageId, String agvId, Int64 sessionGeneration, Int64 revision, Func`2 payloadFactory, CancellationToken cancellationToken, IReadOnlySet`1 keepAcknowledgedIgnoring) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardJourneyPublisher.cs:line 834
+   at ControlServer.Host.Transport.OnboardJourneyPublisher.PublishSnapshotAsync(String messageType, String messageId, String agvId, Int64 sessionGeneration, Int64 revision, Object payload, CancellationToken cancellationToken, IReadOnlySet`1 keepAcknowledgedIgnoring) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardJourneyPublisher.cs:line 808
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.PublishPickupDispatchPlanOnceAsync(JourneyRuntimeRow runtime, JourneyStopCursor stops, SessionRecoveryRow session, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 2457
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.AdvanceAsync(JourneyRuntimeRow runtime, RiotMapStationCatalogSnapshot currentMap, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 911
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteRoundAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 557
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteRoundAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 566
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 394
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 408
+   at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.RunRoundAsync(Nullable`1 advance) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1081
+   at ControlServer.Tests.MultiVehicleExecutionTests.AVehicleWhoseOnboardConnectionIsGoneYieldsItsTurnAndTheVehiclesAfterItAreStillAdvanced(String lastVehicleSession) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.GateHeldIo.cs:line 55
+   at ControlServer.Tests.MultiVehicleExecutionTests.AVehicleWhoseOnboardConnectionIsGoneYieldsItsTurnAndTheVehiclesAfterItAreStillAdvanced(String lastVehicleSession) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.GateHeldIo.cs:line 63
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:07.10]     ControlServer.Tests.GateHeldOnboardSendTests.ABoxCountReadFromAMesIngestThatNeverAnswersRefusesTheEntryAndTheRoundGoesOn [FAIL]
+[xUnit.net 00:00:07.10]       System.Threading.Tasks.TaskCanceledException : The request was canceled due to the configured HttpClient.Timeout of 0.5 seconds elapsing.
+[xUnit.net 00:00:07.10]       ---- System.TimeoutException : The operation was canceled.
+[xUnit.net 00:00:07.10]       -------- System.Threading.Tasks.TaskCanceledException : The operation was canceled.
+[xUnit.net 00:00:07.10]       ------------ System.IO.IOException : Unable to read data from the transport connection: The I/O operation has been aborted because of either a thread exit or an application request..
+[xUnit.net 00:00:07.10]       ---------------- System.Net.Sockets.SocketException : The I/O operation has been aborted because of either a thread exit or an application request.
+[xUnit.net 00:00:07.10]       Stack Trace:
+[xUnit.net 00:00:07.10]            at System.Net.Http.HttpClient.HandleFailure(Exception e, Boolean telemetryStarted, HttpResponseMessage response, CancellationTokenSource cts, CancellationToken cancellationToken, CancellationTokenSource pendingRequestsCts)
+[xUnit.net 00:00:07.10]            at System.Net.Http.HttpClient.<SendAsync>g__Core|83_0(HttpRequestMessage request, HttpCompletionOption completionOption, CancellationTokenSource cts, Boolean disposeCts, CancellationTokenSource pendingRequestsCts, CancellationToken originalCancellationToken)
+[xUnit.net 00:00:07.10]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\HttpSublotBoxCountReader.cs(23,0): at ControlServer.Host.Runtime.HttpSublotBoxCountReader.ReadMaxBoxCountAsync(String sublot, CancellationToken cancellationToken)
+[xUnit.net 00:00:07.10]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs(3170,0): at ControlServer.Host.Runtime.JourneyRuntimeEngine.RevalidateEnteredSublotAsync(JourneyRuntimeRow runtime, JourneyStopCursor stops, SessionRecoveryRow session, ProtocolInboxRow submission, DateTimeOffset now, CancellationToken cancellationToken)
+[xUnit.net 00:00:07.10]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs(1010,0): at ControlServer.Host.Runtime.JourneyRuntimeEngine.AdvanceAsync(JourneyRuntimeRow runtime, RiotMapStationCatalogSnapshot currentMap, CancellationToken cancellationToken)
+[xUnit.net 00:00:07.10]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs(557,0): at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteRoundAsync(CancellationToken cancellationToken)
+[xUnit.net 00:00:07.10]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs(566,0): at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteRoundAsync(CancellationToken cancellationToken)
+[xUnit.net 00:00:07.10]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs(394,0): at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken)
+[xUnit.net 00:00:07.10]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs(408,0): at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken)
+[xUnit.net 00:00:07.10]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\GateHeldOnboardSendTests.cs(358,0): at ControlServer.Tests.GateHeldOnboardSendTests.ABoxCountReadFromAMesIngestThatNeverAnswersRefusesTheEntryAndTheRoundGoesOn()
+[xUnit.net 00:00:07.10]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\GateHeldOnboardSendTests.cs(367,0): at ControlServer.Tests.GateHeldOnboardSendTests.ABoxCountReadFromAMesIngestThatNeverAnswersRefusesTheEntryAndTheRoundGoesOn()
+[xUnit.net 00:00:07.10]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\GateHeldOnboardSendTests.cs(367,0): at ControlServer.Tests.GateHeldOnboardSendTests.ABoxCountReadFromAMesIngestThatNeverAnswersRefusesTheEntryAndTheRoundGoesOn()
+[xUnit.net 00:00:07.10]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\GateHeldOnboardSendTests.cs(367,0): at ControlServer.Tests.GateHeldOnboardSendTests.ABoxCountReadFromAMesIngestThatNeverAnswersRefusesTheEntryAndTheRoundGoesOn()
+[xUnit.net 00:00:07.10]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:07.10]         ----- Inner Stack Trace -----
+[xUnit.net 00:00:07.10]         
+[xUnit.net 00:00:07.10]         ----- Inner Stack Trace -----
+[xUnit.net 00:00:07.10]            at System.Net.Http.HttpConnection.SendAsync(HttpRequestMessage request, Boolean async, CancellationToken cancellationToken)
+[xUnit.net 00:00:07.10]            at System.Net.Http.HttpConnectionPool.SendWithVersionDetectionAndRetryAsync(HttpRequestMessage request, Boolean async, Boolean doRequestAuth, CancellationToken cancellationToken)
+[xUnit.net 00:00:07.10]            at System.Net.Http.RedirectHandler.SendAsync(HttpRequestMessage request, Boolean async, CancellationToken cancellationToken)
+[xUnit.net 00:00:07.10]            at System.Net.Http.HttpClient.<SendAsync>g__Core|83_0(HttpRequestMessage request, HttpCompletionOption completionOption, CancellationTokenSource cts, Boolean disposeCts, CancellationTokenSource pendingRequestsCts, CancellationToken originalCancellationToken)
+[xUnit.net 00:00:07.10]         ----- Inner Stack Trace -----
+[xUnit.net 00:00:07.10]            at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.ThrowException(SocketError error, CancellationToken cancellationToken)
+[xUnit.net 00:00:07.10]            at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.System.Threading.Tasks.Sources.IValueTaskSource<System.Int32>.GetResult(Int16 token)
+[xUnit.net 00:00:07.10]            at System.Net.Http.HttpConnection.InitialFillAsync(Boolean async)
+[xUnit.net 00:00:07.10]            at System.Net.Http.HttpConnection.SendAsync(HttpRequestMessage request, Boolean async, CancellationToken cancellationToken)
+[xUnit.net 00:00:07.10]         ----- Inner Stack Trace -----
+[xUnit.net 00:00:07.11]         
+  Failed ControlServer.Tests.GateHeldOnboardSendTests.ABoxCountReadFromAMesIngestThatNeverAnswersRefusesTheEntryAndTheRoundGoesOn [4 s]
+  Error Message:
+   System.Threading.Tasks.TaskCanceledException : The request was canceled due to the configured HttpClient.Timeout of 0.5 seconds elapsing.
+---- System.TimeoutException : The operation was canceled.
+-------- System.Threading.Tasks.TaskCanceledException : The operation was canceled.
+------------ System.IO.IOException : Unable to read data from the transport connection: The I/O operation has been aborted because of either a thread exit or an application request..
+---------------- System.Net.Sockets.SocketException : The I/O operation has been aborted because of either a thread exit or an application request.
+  Stack Trace:
+     at System.Net.Http.HttpClient.HandleFailure(Exception e, Boolean telemetryStarted, HttpResponseMessage response, CancellationTokenSource cts, CancellationToken cancellationToken, CancellationTokenSource pendingRequestsCts)
+   at System.Net.Http.HttpClient.<SendAsync>g__Core|83_0(HttpRequestMessage request, HttpCompletionOption completionOption, CancellationTokenSource cts, Boolean disposeCts, CancellationTokenSource pendingRequestsCts, CancellationToken originalCancellationToken)
+   at ControlServer.Host.Runtime.HttpSublotBoxCountReader.ReadMaxBoxCountAsync(String sublot, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\HttpSublotBoxCountReader.cs:line 23
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.RevalidateEnteredSublotAsync(JourneyRuntimeRow runtime, JourneyStopCursor stops, SessionRecoveryRow session, ProtocolInboxRow submission, DateTimeOffset now, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 3170
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.AdvanceAsync(JourneyRuntimeRow runtime, RiotMapStationCatalogSnapshot currentMap, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 1010
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteRoundAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 557
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteRoundAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 566
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 394
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 408
+   at ControlServer.Tests.GateHeldOnboardSendTests.ABoxCountReadFromAMesIngestThatNeverAnswersRefusesTheEntryAndTheRoundGoesOn() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\GateHeldOnboardSendTests.cs:line 358
+   at ControlServer.Tests.GateHeldOnboardSendTests.ABoxCountReadFromAMesIngestThatNeverAnswersRefusesTheEntryAndTheRoundGoesOn() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\GateHeldOnboardSendTests.cs:line 367
+   at ControlServer.Tests.GateHeldOnboardSendTests.ABoxCountReadFromAMesIngestThatNeverAnswersRefusesTheEntryAndTheRoundGoesOn() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\GateHeldOnboardSendTests.cs:line 367
+   at ControlServer.Tests.GateHeldOnboardSendTests.ABoxCountReadFromAMesIngestThatNeverAnswersRefusesTheEntryAndTheRoundGoesOn() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\GateHeldOnboardSendTests.cs:line 367
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+
+----- Inner Stack Trace -----
+   at System.Net.Http.HttpConnection.SendAsync(HttpRequestMessage request, Boolean async, CancellationToken cancellationToken)
+   at System.Net.Http.HttpConnectionPool.SendWithVersionDetectionAndRetryAsync(HttpRequestMessage request, Boolean async, Boolean doRequestAuth, CancellationToken cancellationToken)
+   at System.Net.Http.RedirectHandler.SendAsync(HttpRequestMessage request, Boolean async, CancellationToken cancellationToken)
+   at System.Net.Http.HttpClient.<SendAsync>g__Core|83_0(HttpRequestMessage request, HttpCompletionOption completionOption, CancellationTokenSource cts, Boolean disposeCts, CancellationTokenSource pendingRequestsCts, CancellationToken originalCancellationToken)
+----- Inner Stack Trace -----
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.ThrowException(SocketError error, CancellationToken cancellationToken)
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.System.Threading.Tasks.Sources.IValueTaskSource<System.Int32>.GetResult(Int16 token)
+   at System.Net.Http.HttpConnection.InitialFillAsync(Boolean async)
+   at System.Net.Http.HttpConnection.SendAsync(HttpRequestMessage request, Boolean async, CancellationToken cancellationToken)
+----- Inner Stack Trace -----
+
+[xUnit.net 00:00:08.04]     ControlServer.Tests.MultiVehicleExecutionTests.AVehicleWhoseOnboardConnectionIsGoneYieldsItsTurnAndTheVehiclesAfterItAreStillAdvanced(lastVehicleSession: "ready") [FAIL]
+[xUnit.net 00:00:08.04]       System.IO.IOException : No recovered Onboard peer is connected for '老厂前线新多仓位1'.
+[xUnit.net 00:00:08.04]       Stack Trace:
+[xUnit.net 00:00:08.04]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardPeer.cs(115,0): at ControlServer.Host.Transport.OnboardPeer.SendAsync(ReadOnlyMemory`1 ndjsonLine, CancellationToken cancellationToken)
+[xUnit.net 00:00:08.04]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs(1871,0): at ControlServer.Tests.MultiVehicleExecutionTests.FleetPeer.SendAsync(ReadOnlyMemory`1 ndjsonLine, CancellationToken cancellationToken)
+[xUnit.net 00:00:08.04]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardJourneyPublisher.cs(874,0): at ControlServer.Host.Transport.OnboardJourneyPublisher.PublishStampedEnvelopeAsync(String messageType, String messageId, String correlationId, String agvId, Int64 sessionGeneration, Func`2 payloadFactory, CancellationToken cancellationToken, IReadOnlySet`1 keepAcknowledgedIgnoring)
+[xUnit.net 00:00:08.04]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardJourneyPublisher.cs(834,0): at ControlServer.Host.Transport.OnboardJourneyPublisher.PublishStampedSnapshotAsync(String messageType, String messageId, String agvId, Int64 sessionGeneration, Int64 revision, Func`2 payloadFactory, CancellationToken cancellationToken, IReadOnlySet`1 keepAcknowledgedIgnoring)
+[xUnit.net 00:00:08.04]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardJourneyPublisher.cs(808,0): at ControlServer.Host.Transport.OnboardJourneyPublisher.PublishSnapshotAsync(String messageType, String messageId, String agvId, Int64 sessionGeneration, Int64 revision, Object payload, CancellationToken cancellationToken, IReadOnlySet`1 keepAcknowledgedIgnoring)
+[xUnit.net 00:00:08.04]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs(2457,0): at ControlServer.Host.Runtime.JourneyRuntimeEngine.PublishPickupDispatchPlanOnceAsync(JourneyRuntimeRow runtime, JourneyStopCursor stops, SessionRecoveryRow session, CancellationToken cancellationToken)
+[xUnit.net 00:00:08.04]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs(911,0): at ControlServer.Host.Runtime.JourneyRuntimeEngine.AdvanceAsync(JourneyRuntimeRow runtime, RiotMapStationCatalogSnapshot currentMap, CancellationToken cancellationToken)
+[xUnit.net 00:00:08.04]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs(557,0): at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteRoundAsync(CancellationToken cancellationToken)
+[xUnit.net 00:00:08.04]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs(566,0): at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteRoundAsync(CancellationToken cancellationToken)
+[xUnit.net 00:00:08.04]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs(394,0): at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken)
+[xUnit.net 00:00:08.04]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs(408,0): at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken)
+[xUnit.net 00:00:08.04]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs(1081,0): at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.RunRoundAsync(Nullable`1 advance)
+[xUnit.net 00:00:08.04]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.GateHeldIo.cs(55,0): at ControlServer.Tests.MultiVehicleExecutionTests.AVehicleWhoseOnboardConnectionIsGoneYieldsItsTurnAndTheVehiclesAfterItAreStillAdvanced(String lastVehicleSession)
+[xUnit.net 00:00:08.04]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.GateHeldIo.cs(63,0): at ControlServer.Tests.MultiVehicleExecutionTests.AVehicleWhoseOnboardConnectionIsGoneYieldsItsTurnAndTheVehiclesAfterItAreStillAdvanced(String lastVehicleSession)
+[xUnit.net 00:00:08.04]         --- End of stack trace from previous location ---
+  Failed ControlServer.Tests.MultiVehicleExecutionTests.AVehicleWhoseOnboardConnectionIsGoneYieldsItsTurnAndTheVehiclesAfterItAreStillAdvanced(lastVehicleSession: "ready") [1 s]
+  Error Message:
+   System.IO.IOException : No recovered Onboard peer is connected for '老厂前线新多仓位1'.
+  Stack Trace:
+     at ControlServer.Host.Transport.OnboardPeer.SendAsync(ReadOnlyMemory`1 ndjsonLine, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardPeer.cs:line 115
+   at ControlServer.Tests.MultiVehicleExecutionTests.FleetPeer.SendAsync(ReadOnlyMemory`1 ndjsonLine, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1871
+   at ControlServer.Host.Transport.OnboardJourneyPublisher.PublishStampedEnvelopeAsync(String messageType, String messageId, String correlationId, String agvId, Int64 sessionGeneration, Func`2 payloadFactory, CancellationToken cancellationToken, IReadOnlySet`1 keepAcknowledgedIgnoring) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardJourneyPublisher.cs:line 874
+   at ControlServer.Host.Transport.OnboardJourneyPublisher.PublishStampedSnapshotAsync(String messageType, String messageId, String agvId, Int64 sessionGeneration, Int64 revision, Func`2 payloadFactory, CancellationToken cancellationToken, IReadOnlySet`1 keepAcknowledgedIgnoring) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardJourneyPublisher.cs:line 834
+   at ControlServer.Host.Transport.OnboardJourneyPublisher.PublishSnapshotAsync(String messageType, String messageId, String agvId, Int64 sessionGeneration, Int64 revision, Object payload, CancellationToken cancellationToken, IReadOnlySet`1 keepAcknowledgedIgnoring) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardJourneyPublisher.cs:line 808
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.PublishPickupDispatchPlanOnceAsync(JourneyRuntimeRow runtime, JourneyStopCursor stops, SessionRecoveryRow session, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 2457
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.AdvanceAsync(JourneyRuntimeRow runtime, RiotMapStationCatalogSnapshot currentMap, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 911
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteRoundAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 557
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteRoundAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 566
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 394
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 408
+   at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.RunRoundAsync(Nullable`1 advance) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1081
+   at ControlServer.Tests.MultiVehicleExecutionTests.AVehicleWhoseOnboardConnectionIsGoneYieldsItsTurnAndTheVehiclesAfterItAreStillAdvanced(String lastVehicleSession) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.GateHeldIo.cs:line 55
+   at ControlServer.Tests.MultiVehicleExecutionTests.AVehicleWhoseOnboardConnectionIsGoneYieldsItsTurnAndTheVehiclesAfterItAreStillAdvanced(String lastVehicleSession) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.GateHeldIo.cs:line 63
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:10.77]     ControlServer.Tests.MultiVehicleExecutionTests.ABoxCountReadFromAMesIngestThatNeverAnswersRefusesTheCandidatesNotTheRound [FAIL]
+[xUnit.net 00:00:10.77]       Assert.NotEmpty() Failure: Collection was empty
+[xUnit.net 00:00:10.77]       Stack Trace:
+[xUnit.net 00:00:10.77]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.GateHeldIo.cs(116,0): at ControlServer.Tests.MultiVehicleExecutionTests.ABoxCountReadFromAMesIngestThatNeverAnswersRefusesTheCandidatesNotTheRound()
+[xUnit.net 00:00:10.77]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.GateHeldIo.cs(117,0): at ControlServer.Tests.MultiVehicleExecutionTests.ABoxCountReadFromAMesIngestThatNeverAnswersRefusesTheCandidatesNotTheRound()
+[xUnit.net 00:00:10.77]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.GateHeldIo.cs(117,0): at ControlServer.Tests.MultiVehicleExecutionTests.ABoxCountReadFromAMesIngestThatNeverAnswersRefusesTheCandidatesNotTheRound()
+[xUnit.net 00:00:10.77]         --- End of stack trace from previous location ---
+  Passed ControlServer.Tests.GateHeldOnboardSendTests.NoFaultRecoveryPathCallsRiotOrSendsToAVehicleWhileTheGateIsHeld(path: "prepare-cargo-handoff") [3 s]
+  Passed ControlServer.Tests.GateHeldOnboardSendTests.NoFaultRecoveryPathCallsRiotOrSendsToAVehicleWhileTheGateIsHeld(path: "resume") [301 ms]
+  Failed ControlServer.Tests.MultiVehicleExecutionTests.ABoxCountReadFromAMesIngestThatNeverAnswersRefusesTheCandidatesNotTheRound [2 s]
+  Error Message:
+   Assert.NotEmpty() Failure: Collection was empty
+  Stack Trace:
+     at ControlServer.Tests.MultiVehicleExecutionTests.ABoxCountReadFromAMesIngestThatNeverAnswersRefusesTheCandidatesNotTheRound() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.GateHeldIo.cs:line 116
+   at ControlServer.Tests.MultiVehicleExecutionTests.ABoxCountReadFromAMesIngestThatNeverAnswersRefusesTheCandidatesNotTheRound() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.GateHeldIo.cs:line 117
+   at ControlServer.Tests.MultiVehicleExecutionTests.ABoxCountReadFromAMesIngestThatNeverAnswersRefusesTheCandidatesNotTheRound() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.GateHeldIo.cs:line 117
+--- End of stack trace from previous location ---
+  Passed ControlServer.Tests.GateHeldOnboardSendTests.NoFaultRecoveryPathCallsRiotOrSendsToAVehicleWhileTheGateIsHeld(path: "rebuild-stopped") [587 ms]
+[xUnit.net 00:00:12.49]     ControlServer.Tests.MultiVehicleExecutionTests.ACatalogReadFromAMesIngestThatNeverAnswersDecidesLikeAnUnreachableOne [FAIL]
+[xUnit.net 00:00:12.49]       System.Threading.Tasks.TaskCanceledException : The request was canceled due to the configured HttpClient.Timeout of 0.5 seconds elapsing.
+[xUnit.net 00:00:12.49]       ---- System.TimeoutException : The operation was canceled.
+[xUnit.net 00:00:12.49]       -------- System.Threading.Tasks.TaskCanceledException : The operation was canceled.
+[xUnit.net 00:00:12.49]       ------------ System.IO.IOException : Unable to read data from the transport connection: The I/O operation has been aborted because of either a thread exit or an application request..
+[xUnit.net 00:00:12.49]       ---------------- System.Net.Sockets.SocketException : The I/O operation has been aborted because of either a thread exit or an application request.
+[xUnit.net 00:00:12.49]       Stack Trace:
+[xUnit.net 00:00:12.49]            at System.Net.Http.HttpClient.HandleFailure(Exception e, Boolean telemetryStarted, HttpResponseMessage response, CancellationTokenSource cts, CancellationToken cancellationToken, CancellationTokenSource pendingRequestsCts)
+[xUnit.net 00:00:12.49]            at System.Net.Http.HttpClient.<SendAsync>g__Core|83_0(HttpRequestMessage request, HttpCompletionOption completionOption, CancellationTokenSource cts, Boolean disposeCts, CancellationTokenSource pendingRequestsCts, CancellationToken originalCancellationToken)
+[xUnit.net 00:00:12.49]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Infrastructure\Adapters\HttpMesIngestCatalog.cs(100,0): at ControlServer.Infrastructure.Adapters.HttpMesIngestCatalog.RequireExactContractAsync(CancellationToken cancellationToken)
+[xUnit.net 00:00:12.49]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Infrastructure\Adapters\HttpMesIngestCatalog.cs(69,0): at ControlServer.Infrastructure.Adapters.HttpMesIngestCatalog.ReadCatalogAsync(CancellationToken cancellationToken)
+[xUnit.net 00:00:12.49]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs(1611,0): at ControlServer.Tests.MultiVehicleExecutionTests.FleetCatalog.ReadCatalogAsync(CancellationToken cancellationToken)
+[xUnit.net 00:00:12.49]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\Dispatch\DispatchRoundRunner.cs(179,0): at ControlServer.Host.Runtime.Dispatch.DispatchRoundRunner.RunAsync(RiotMapStationCatalogSnapshot currentMap, IFixedTaskStationView fixedStations, IReadOnlyList`1 vehicles, IReadOnlyList`1 vehiclesUnderWay, Boolean admissionPolicyDrifted, CancellationToken cancellationToken)
+[xUnit.net 00:00:12.49]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs(643,0): at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteRoundAsync(CancellationToken cancellationToken)
+[xUnit.net 00:00:12.49]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs(394,0): at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken)
+[xUnit.net 00:00:12.49]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs(408,0): at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken)
+[xUnit.net 00:00:12.49]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs(1081,0): at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.RunRoundAsync(Nullable`1 advance)
+[xUnit.net 00:00:12.49]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.GateHeldIo.cs(84,0): at ControlServer.Tests.MultiVehicleExecutionTests.ACatalogReadFromAMesIngestThatNeverAnswersDecidesLikeAnUnreachableOne()
+[xUnit.net 00:00:12.49]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.GateHeldIo.cs(88,0): at ControlServer.Tests.MultiVehicleExecutionTests.ACatalogReadFromAMesIngestThatNeverAnswersDecidesLikeAnUnreachableOne()
+[xUnit.net 00:00:12.49]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.GateHeldIo.cs(88,0): at ControlServer.Tests.MultiVehicleExecutionTests.ACatalogReadFromAMesIngestThatNeverAnswersDecidesLikeAnUnreachableOne()
+[xUnit.net 00:00:12.49]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:12.49]         ----- Inner Stack Trace -----
+[xUnit.net 00:00:12.49]         
+[xUnit.net 00:00:12.49]         ----- Inner Stack Trace -----
+[xUnit.net 00:00:12.49]            at System.Net.Http.HttpConnection.SendAsync(HttpRequestMessage request, Boolean async, CancellationToken cancellationToken)
+[xUnit.net 00:00:12.49]            at System.Net.Http.HttpConnectionPool.SendWithVersionDetectionAndRetryAsync(HttpRequestMessage request, Boolean async, Boolean doRequestAuth, CancellationToken cancellationToken)
+[xUnit.net 00:00:12.49]            at System.Net.Http.RedirectHandler.SendAsync(HttpRequestMessage request, Boolean async, CancellationToken cancellationToken)
+[xUnit.net 00:00:12.49]            at System.Net.Http.HttpClient.<SendAsync>g__Core|83_0(HttpRequestMessage request, HttpCompletionOption completionOption, CancellationTokenSource cts, Boolean disposeCts, CancellationTokenSource pendingRequestsCts, CancellationToken originalCancellationToken)
+[xUnit.net 00:00:12.49]         ----- Inner Stack Trace -----
+[xUnit.net 00:00:12.49]            at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.ThrowException(SocketError error, CancellationToken cancellationToken)
+[xUnit.net 00:00:12.49]            at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.System.Threading.Tasks.Sources.IValueTaskSource<System.Int32>.GetResult(Int16 token)
+[xUnit.net 00:00:12.49]            at System.Net.Http.HttpConnection.InitialFillAsync(Boolean async)
+[xUnit.net 00:00:12.49]            at System.Net.Http.HttpConnection.SendAsync(HttpRequestMessage request, Boolean async, CancellationToken cancellationToken)
+[xUnit.net 00:00:12.49]         ----- Inner Stack Trace -----
+[xUnit.net 00:00:12.49]         
+[xUnit.net 00:00:13.80]     ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: null) [FAIL]
+[xUnit.net 00:00:13.80]       Assert.Contains() Failure: Sub-string not found
+[xUnit.net 00:00:13.80]       String:    "1× IOException: A write to the Onboard peer did no"···
+[xUnit.net 00:00:13.80]       Not found: "'AGV-POWER-01'"
+[xUnit.net 00:00:13.80]       Stack Trace:
+[xUnit.net 00:00:13.80]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(202,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds)
+[xUnit.net 00:00:13.80]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(209,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds)
+[xUnit.net 00:00:13.80]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:13.80]       Output:
+[xUnit.net 00:00:13.80]         服务端日志：1002、1003；聋了之后车往服务端送了 1290 字节；最长的一次推送 5013 ms；旧代次离开路由表：t=5.2s；推送的失败：1× IOException: A write to the Onboard peer did not finish within 5 s; the connection was closed and the line stays unacknowledged for the replay after the reconnect.
+  Failed ControlServer.Tests.MultiVehicleExecutionTests.ACatalogReadFromAMesIngestThatNeverAnswersDecidesLikeAnUnreachableOne [1 s]
+  Error Message:
+   System.Threading.Tasks.TaskCanceledException : The request was canceled due to the configured HttpClient.Timeout of 0.5 seconds elapsing.
+---- System.TimeoutException : The operation was canceled.
+-------- System.Threading.Tasks.TaskCanceledException : The operation was canceled.
+------------ System.IO.IOException : Unable to read data from the transport connection: The I/O operation has been aborted because of either a thread exit or an application request..
+---------------- System.Net.Sockets.SocketException : The I/O operation has been aborted because of either a thread exit or an application request.
+  Stack Trace:
+     at System.Net.Http.HttpClient.HandleFailure(Exception e, Boolean telemetryStarted, HttpResponseMessage response, CancellationTokenSource cts, CancellationToken cancellationToken, CancellationTokenSource pendingRequestsCts)
+   at System.Net.Http.HttpClient.<SendAsync>g__Core|83_0(HttpRequestMessage request, HttpCompletionOption completionOption, CancellationTokenSource cts, Boolean disposeCts, CancellationTokenSource pendingRequestsCts, CancellationToken originalCancellationToken)
+   at ControlServer.Infrastructure.Adapters.HttpMesIngestCatalog.RequireExactContractAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Infrastructure\Adapters\HttpMesIngestCatalog.cs:line 100
+   at ControlServer.Infrastructure.Adapters.HttpMesIngestCatalog.ReadCatalogAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Infrastructure\Adapters\HttpMesIngestCatalog.cs:line 69
+   at ControlServer.Tests.MultiVehicleExecutionTests.FleetCatalog.ReadCatalogAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1611
+   at ControlServer.Host.Runtime.Dispatch.DispatchRoundRunner.RunAsync(RiotMapStationCatalogSnapshot currentMap, IFixedTaskStationView fixedStations, IReadOnlyList`1 vehicles, IReadOnlyList`1 vehiclesUnderWay, Boolean admissionPolicyDrifted, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\Dispatch\DispatchRoundRunner.cs:line 179
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteRoundAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 643
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 394
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 408
+   at ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture.RunRoundAsync(Nullable`1 advance) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.cs:line 1081
+   at ControlServer.Tests.MultiVehicleExecutionTests.ACatalogReadFromAMesIngestThatNeverAnswersDecidesLikeAnUnreachableOne() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.GateHeldIo.cs:line 84
+   at ControlServer.Tests.MultiVehicleExecutionTests.ACatalogReadFromAMesIngestThatNeverAnswersDecidesLikeAnUnreachableOne() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.GateHeldIo.cs:line 88
+   at ControlServer.Tests.MultiVehicleExecutionTests.ACatalogReadFromAMesIngestThatNeverAnswersDecidesLikeAnUnreachableOne() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\MultiVehicleExecutionTests.GateHeldIo.cs:line 88
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+
+----- Inner Stack Trace -----
+   at System.Net.Http.HttpConnection.SendAsync(HttpRequestMessage request, Boolean async, CancellationToken cancellationToken)
+   at System.Net.Http.HttpConnectionPool.SendWithVersionDetectionAndRetryAsync(HttpRequestMessage request, Boolean async, Boolean doRequestAuth, CancellationToken cancellationToken)
+   at System.Net.Http.RedirectHandler.SendAsync(HttpRequestMessage request, Boolean async, CancellationToken cancellationToken)
+   at System.Net.Http.HttpClient.<SendAsync>g__Core|83_0(HttpRequestMessage request, HttpCompletionOption completionOption, CancellationTokenSource cts, Boolean disposeCts, CancellationTokenSource pendingRequestsCts, CancellationToken originalCancellationToken)
+----- Inner Stack Trace -----
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.ThrowException(SocketError error, CancellationToken cancellationToken)
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.System.Threading.Tasks.Sources.IValueTaskSource<System.Int32>.GetResult(Int16 token)
+   at System.Net.Http.HttpConnection.InitialFillAsync(Boolean async)
+   at System.Net.Http.HttpConnection.SendAsync(HttpRequestMessage request, Boolean async, CancellationToken cancellationToken)
+----- Inner Stack Trace -----
+
+  Failed ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: null) [11 s]
+  Error Message:
+   Assert.Contains() Failure: Sub-string not found
+String:    "1× IOException: A write to the Onboard peer did no"···
+Not found: "'AGV-POWER-01'"
+  Stack Trace:
+     at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 202
+   at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 209
+--- End of stack trace from previous location ---
+  Standard Output Messages:
+ 服务端日志：1002、1003；聋了之后车往服务端送了 1290 字节；最长的一次推送 5013 ms；旧代次离开路由表：t=5.2s；推送的失败：1× IOException: A write to the Onboard peer did not finish within 5 s; the connection was closed and the line stays unacknowledged for the replay after the reconnect.
+
+
+  Passed ControlServer.Tests.GateHeldOnboardSendTests.NoFaultRecoveryPathCallsRiotOrSendsToAVehicleWhileTheGateIsHeld(path: "clear-loaded") [2 s]
+  Passed ControlServer.Tests.GateHeldOnboardSendTests.NoFaultRecoveryPathCallsRiotOrSendsToAVehicleWhileTheGateIsHeld(path: "give-up-stopped") [377 ms]
+  Passed ControlServer.Tests.GateHeldOnboardSendTests.NoFaultRecoveryPathCallsRiotOrSendsToAVehicleWhileTheGateIsHeld(path: "clear-empty") [209 ms]
+  Passed ControlServer.Tests.GateHeldOnboardSendTests.TheConnectionWritesItsStreamInOnePlaceAndOnlyBehindTheWriteTimeout [3 ms]
+[xUnit.net 00:00:19.05]     ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: 1000) [FAIL]
+[xUnit.net 00:00:19.05]       Assert.Contains() Failure: Sub-string not found
+[xUnit.net 00:00:19.05]       String:    "1× IOException: A write to the Onboard peer did no"···
+[xUnit.net 00:00:19.05]       Not found: "'AGV-POWER-01'"
+[xUnit.net 00:00:19.05]       Stack Trace:
+[xUnit.net 00:00:19.05]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(202,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds)
+[xUnit.net 00:00:19.05]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(209,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds)
+[xUnit.net 00:00:19.05]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:19.05]       Output:
+[xUnit.net 00:00:19.05]         服务端日志：1002、1003；聋了之后车往服务端送了 430 字节；最长的一次推送 1002 ms；旧代次离开路由表：t=1.1s；推送的失败：1× IOException: A write to the Onboard peer did not finish within 1 s; the connection was closed and the line stays unacknowledged for the replay after the reconnect.
+  Failed ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: 1000) [5 s]
+  Error Message:
+   Assert.Contains() Failure: Sub-string not found
+String:    "1× IOException: A write to the Onboard peer did no"···
+Not found: "'AGV-POWER-01'"
+  Stack Trace:
+     at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 202
+   at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 209
+--- End of stack trace from previous location ---
+  Standard Output Messages:
+ 服务端日志：1002、1003；聋了之后车往服务端送了 430 字节；最长的一次推送 1002 ms；旧代次离开路由表：t=1.1s；推送的失败：1× IOException: A write to the Onboard peer did not finish within 1 s; the connection was closed and the line stays unacknowledged for the replay after the reconnect.
+
+
+  Passed ControlServer.Tests.GateHeldOnboardSendTests.AVehicleWhoseSocketStopsReadingDoesNotHoldTheGateForTheRestOfTheFleet [5 s]
+[xUnit.net 00:00:20.40]     ControlServer.Tests.GateHeldOnboardSendTests.AStuckWriteAndTheOneQueuedBehindItEndWithinTheTimeoutAndTheConnectionIsClosed [FAIL]
+[xUnit.net 00:00:20.40]       Assert.IsAssignableFrom() Failure: Value is an incompatible type
+[xUnit.net 00:00:20.40]       Expected: typeof(System.IO.IOException)
+[xUnit.net 00:00:20.40]       Actual:   typeof(System.ObjectDisposedException)
+[xUnit.net 00:00:20.40]       Stack Trace:
+[xUnit.net 00:00:20.40]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\GateHeldOnboardSendTests.cs(228,0): at ControlServer.Tests.GateHeldOnboardSendTests.AStuckWriteAndTheOneQueuedBehindItEndWithinTheTimeoutAndTheConnectionIsClosed()
+[xUnit.net 00:00:20.40]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\GateHeldOnboardSendTests.cs(229,0): at ControlServer.Tests.GateHeldOnboardSendTests.AStuckWriteAndTheOneQueuedBehindItEndWithinTheTimeoutAndTheConnectionIsClosed()
+[xUnit.net 00:00:20.40]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:20.40]       Output:
+[xUnit.net 00:00:20.40]         first: IOException: A write to the Onboard peer did not finish within 0.5 s; the connection was closed and the line stays unacknowledged for the replay after the reconnect.
+[xUnit.net 00:00:20.40]         queued: IOException: A write to the Onboard peer did not finish within 0.5 s; the connection was closed and the line stays unacknowledged for the replay after the reconnect.
+[xUnit.net 00:00:20.40]         later: ObjectDisposedException: Cannot access a disposed object.
+[xUnit.net 00:00:20.40]         Object name: 'System.Net.Sockets.NetworkStream'.
+  Failed ControlServer.Tests.GateHeldOnboardSendTests.AStuckWriteAndTheOneQueuedBehindItEndWithinTheTimeoutAndTheConnectionIsClosed [512 ms]
+  Error Message:
+   Assert.IsAssignableFrom() Failure: Value is an incompatible type
+Expected: typeof(System.IO.IOException)
+Actual:   typeof(System.ObjectDisposedException)
+  Stack Trace:
+     at ControlServer.Tests.GateHeldOnboardSendTests.AStuckWriteAndTheOneQueuedBehindItEndWithinTheTimeoutAndTheConnectionIsClosed() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\GateHeldOnboardSendTests.cs:line 228
+   at ControlServer.Tests.GateHeldOnboardSendTests.AStuckWriteAndTheOneQueuedBehindItEndWithinTheTimeoutAndTheConnectionIsClosed() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\GateHeldOnboardSendTests.cs:line 229
+--- End of stack trace from previous location ---
+  Standard Output Messages:
+ first: IOException: A write to the Onboard peer did not finish within 0.5 s; the connection was closed and the line stays unacknowledged for the replay after the reconnect.
+ queued: IOException: A write to the Onboard peer did not finish within 0.5 s; the connection was closed and the line stays unacknowledged for the replay after the reconnect.
+ later: ObjectDisposedException: Cannot access a disposed object.
+ Object name: 'System.Net.Sockets.NetworkStream'.
+
+
+[xUnit.net 00:00:51.70]   Finished:    ControlServer.Tests (ID = 'c6ecf6f57923c299d4cd07c5d0acf906635b1ef2dfe82b34f291164c3610373c')
+
+Test Run Failed.
+Total tests: 20
+     Passed: 10
+     Failed: 10
+ Total time: 52.2368 Seconds
+exit=1

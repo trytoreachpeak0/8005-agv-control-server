@@ -1,0 +1,56 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 8.0.31)
+[xUnit.net 00:00:00.41]   Discovering: ControlServer.Tests
+[xUnit.net 00:00:03.08]   Discovered:  ControlServer.Tests
+[xUnit.net 00:00:03.84]   Starting:    ControlServer.Tests
+[xUnit.net 00:00:04.12]     ControlServer.Tests.GateHeldOnboardSendTests.AMesIngestTimeoutOutsideItsBoundsIsRefusedAtStartup(seconds: "5184000") [FAIL]
+[xUnit.net 00:00:04.13]       Assert.Throws() Failure: No exception was thrown
+[xUnit.net 00:00:04.13]       Expected: typeof(System.IO.InvalidDataException)
+[xUnit.net 00:00:04.13]       Stack Trace:
+[xUnit.net 00:00:04.13]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\GateHeldOnboardSendTests.cs(307,0): at ControlServer.Tests.GateHeldOnboardSendTests.AMesIngestTimeoutOutsideItsBoundsIsRefusedAtStartup(String seconds)
+[xUnit.net 00:00:04.13]            at InvokeStub_GateHeldOnboardSendTests.AMesIngestTimeoutOutsideItsBoundsIsRefusedAtStartup(Object, Span`1)
+[xUnit.net 00:00:04.13]            at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+[xUnit.net 00:00:04.14]     ControlServer.Tests.GateHeldOnboardSendTests.AMesIngestTimeoutOutsideItsBoundsIsRefusedAtStartup(seconds: "15.001") [FAIL]
+[xUnit.net 00:00:04.14]       Assert.Throws() Failure: No exception was thrown
+[xUnit.net 00:00:04.14]       Expected: typeof(System.IO.InvalidDataException)
+[xUnit.net 00:00:04.14]       Stack Trace:
+[xUnit.net 00:00:04.14]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\GateHeldOnboardSendTests.cs(307,0): at ControlServer.Tests.GateHeldOnboardSendTests.AMesIngestTimeoutOutsideItsBoundsIsRefusedAtStartup(String seconds)
+[xUnit.net 00:00:04.14]            at InvokeStub_GateHeldOnboardSendTests.AMesIngestTimeoutOutsideItsBoundsIsRefusedAtStartup(Object, Span`1)
+[xUnit.net 00:00:04.15]            at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Passed ControlServer.Tests.GateHeldOnboardSendTests.AMesIngestTimeoutOutsideItsBoundsIsRefusedAtStartup(seconds: "-1") [49 ms]
+  Failed ControlServer.Tests.GateHeldOnboardSendTests.AMesIngestTimeoutOutsideItsBoundsIsRefusedAtStartup(seconds: "5184000") [8 ms]
+  Error Message:
+   Assert.Throws() Failure: No exception was thrown
+Expected: typeof(System.IO.InvalidDataException)
+  Stack Trace:
+     at ControlServer.Tests.GateHeldOnboardSendTests.AMesIngestTimeoutOutsideItsBoundsIsRefusedAtStartup(String seconds) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\GateHeldOnboardSendTests.cs:line 307
+   at InvokeStub_GateHeldOnboardSendTests.AMesIngestTimeoutOutsideItsBoundsIsRefusedAtStartup(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Passed ControlServer.Tests.GateHeldOnboardSendTests.AMesIngestTimeoutOutsideItsBoundsIsRefusedAtStartup(seconds: "0") [< 1 ms]
+  Failed ControlServer.Tests.GateHeldOnboardSendTests.AMesIngestTimeoutOutsideItsBoundsIsRefusedAtStartup(seconds: "15.001") [< 1 ms]
+  Error Message:
+   Assert.Throws() Failure: No exception was thrown
+Expected: typeof(System.IO.InvalidDataException)
+  Stack Trace:
+     at ControlServer.Tests.GateHeldOnboardSendTests.AMesIngestTimeoutOutsideItsBoundsIsRefusedAtStartup(String seconds) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\GateHeldOnboardSendTests.cs:line 307
+   at InvokeStub_GateHeldOnboardSendTests.AMesIngestTimeoutOutsideItsBoundsIsRefusedAtStartup(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Passed ControlServer.Tests.GateHeldOnboardSendTests.AMesIngestTimeoutOutsideItsBoundsIsRefusedAtStartup(seconds: "NaN") [< 1 ms]
+  Passed ControlServer.Tests.GateHeldOnboardSendTests.AMesIngestTimeoutInsideItsBoundsIsTaken(seconds: "15", expected: 15) [15 ms]
+  Passed ControlServer.Tests.GateHeldOnboardSendTests.AMesIngestTimeoutInsideItsBoundsIsTaken(seconds: "0.5", expected: 0.5) [< 1 ms]
+  Passed ControlServer.Tests.GateHeldOnboardSendTests.AMesIngestTimeoutInsideItsBoundsIsTaken(seconds: null, expected: 10) [< 1 ms]
+  Passed ControlServer.Tests.GateHeldOnboardSendTests.AStuckWriteAndTheOneQueuedBehindItEndWithinTheTimeoutAndTheConnectionIsClosed [604 ms]
+  Passed ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: null) [16 s]
+  Passed ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: 1000) [8 s]
+[xUnit.net 00:00:56.93]   Finished:    ControlServer.Tests (ID = 'c6ecf6f57923c299d4cd07c5d0acf906635b1ef2dfe82b34f291164c3610373c')
+
+Test Run Failed.
+Total tests: 11
+     Passed: 9
+     Failed: 2
+ Total time: 57.4491 Seconds
+exit=1

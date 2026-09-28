@@ -1,0 +1,23 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs334-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 8.0.31)
+[xUnit.net 00:00:00.45]   Discovering: ControlServer.Tests
+[xUnit.net 00:00:02.47]   Discovered:  ControlServer.Tests
+[xUnit.net 00:00:02.77]   Starting:    ControlServer.Tests
+  Passed ControlServer.Tests.JourneyRowLostUpdateTests.ABlockCommittedBeforeTheGateLegIsCreatedStopsTheOrder [7 s]
+  Passed ControlServer.Tests.JourneyRowLostUpdateTests.AJourneyWrittenAfterTheGateOrderWasCreatedIsReplayedWithoutASecondOrder(blockedThenRecovered: False) [2 s]
+  Passed ControlServer.Tests.JourneyRowLostUpdateTests.AJourneyWrittenAfterTheGateOrderWasCreatedIsReplayedWithoutASecondOrder(blockedThenRecovered: True) [2 s]
+  Passed ControlServer.Tests.JourneyRowLostUpdateTests.AClosureCommittedWhileTheSessionIsNotReadyOnTheOwnOrderKeepsItsReason [137 ms]
+  Passed ControlServer.Tests.JourneyRowLostUpdateTests.AClosureCommittedBetweenTheEnginesReadAndSaveKeepsItsReason [186 ms]
+  Passed ControlServer.Tests.JourneyRowLostUpdateTests.ABlockCommittedWhileTheEngineAdvancesACommittedLoadStaysBlocked [187 ms]
+  Passed ControlServer.Tests.JourneyRowLostUpdateTests.ABlockCommittedAtThePreCreateReconciliationStopsTheGateOrder [2 s]
+[xUnit.net 00:00:43.01]   Finished:    ControlServer.Tests (ID = 'c6ecf6f57923c299d4cd07c5d0acf906635b1ef2dfe82b34f291164c3610373c')
+
+Test Run Successful.
+Total tests: 7
+     Passed: 7
+ Total time: 43.6106 Seconds
+exit=0

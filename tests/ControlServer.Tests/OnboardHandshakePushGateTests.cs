@@ -375,7 +375,7 @@ public sealed class OnboardHandshakePushGateTests
         await rig.Relay.InjectToServerAsync(SessionHello());
         await rig.WaitForInboundCountAsync("SessionAccepted", 2);
 
-        await Assert.ThrowsAsync<IOException>(() =>
+        await Assert.ThrowsAsync<OnboardConnectionUnavailableException>(() =>
             rig.Peer.SendAsync(Push("FaultCargoRecoveryCommand"), TestContext.Current.CancellationToken));
     }
 
@@ -401,7 +401,7 @@ public sealed class OnboardHandshakePushGateTests
         };
 
         Assert.Throws<InvalidOperationException>(() => peer.Attach(session, connection));
-        await Assert.ThrowsAsync<IOException>(() =>
+        await Assert.ThrowsAsync<OnboardConnectionUnavailableException>(() =>
             peer.SendAsync(Push("FaultCargoRecoveryCommand"), TestContext.Current.CancellationToken));
         Assert.Empty(stream.ToArray());
     }

@@ -919,7 +919,7 @@ public sealed class JourneyRuntimeWorkerLoadCancellationBeforeSublotTests
         Assert.DoesNotContain("SlotOperationCommand", await fixture.OutboxTypesAsync());
     }
 
-    private static OnboardMessageProcessor BeforeSublotProcessor(RuntimeFixture fixture, ControlServerDbContext connection) =>
+    internal static OnboardMessageProcessor BeforeSublotProcessor(RuntimeFixture fixture, ControlServerDbContext connection) =>
         TestOnboardProcessorFactory.Create(
             connection, new WireToGateStore(connection), fixture.Clock, new ConfigurationBuilder().Build());
 
@@ -972,7 +972,7 @@ public sealed class JourneyRuntimeWorkerLoadCancellationBeforeSublotTests
             observedAt = Now
         });
 
-    private static string SublotEntry(RuntimeFixture fixture, JourneyRuntimeRow runtime, string sublot) =>
+    internal static string SublotEntry(RuntimeFixture fixture, JourneyRuntimeRow runtime, string sublot) =>
         BeforeSublotEnvelope(fixture, Guid.NewGuid().ToString("D"), "SublotSubmitted", generation: 1, new
         {
             operationSessionId = runtime.OperationSessionId,
