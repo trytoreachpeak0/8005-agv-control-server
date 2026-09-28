@@ -408,6 +408,177 @@ public sealed class FailedOrderBeforeConfirmationTests
         Assert.Empty(await reading.OwnOrderRebuilds.AsNoTracking().ToArrayAsync(Token));
     }
 
+    // ---- 确认前被取消、删除、SUSPENDED（调度 2026-09-28 并入本票） ------------------------------------------------
+
+    /// <summary>
+    /// 建单应答丢了的取货单，确认前在 RIoT 被取消（本服务端没发过取消）：按 REQ-0360 当误操作，登记同车同需求重建，旅程写
+    /// <c>ORDER_ENDED_WITHOUT_ARRIVAL</c>；延迟过后重建开往同一取货站的单。不记故障、不发命令。
+    /// </summary>
+    /// <remarks>
+    /// 修之前这一格停在 <c>PICKUP_TerminalReconciliationRequired</c>，重建接不上（登记重建要求意图已确认），没有故障可清，
+    /// 只能改库——准入线第 3 条。
+    /// </remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0360")]
+    public async Task APickupOrderCancelledBeforeConfirmationIsRebuiltOnTheSameVehicle()
+    {
+        await using RuntimeFixture fixture = await PickupCreateAnswerLostAsync();
+        JourneyRuntimeRow dispatched = await fixture.RuntimeAsync();
+        fixture.Riot.CancelOrder(dispatched.PickupUpperId);
+
+        await TickAndHearAsync(fixture);
+
+        Assert.Equal(JourneyRuntimeEngine.OrderEndedWithoutArrivalReason, (await fixture.RuntimeAsync()).BlockReasonCode);
+        await using (ControlServerDbContext reading = new(fixture.DbOptionsForTests))
+        {
+            OwnOrderRebuildRow recorded = await reading.OwnOrderRebuilds.AsNoTracking().SingleAsync(Token);
+            Assert.Equal(
+                (dispatched.PickupUpperId, OwnOrderRebuildSources.CancelledInRiot, OwnOrderRebuildStates.Pending),
+                (recorded.EndedUpperId, recorded.Source, recorded.State));
+            Assert.Empty(await reading.VehicleFaultStates.AsNoTracking().ToArrayAsync(Token));
+            Assert.Empty(await reading.RiotOrderCommandAudit.AsNoTracking().ToArrayAsync(Token));
+        }
+
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+        await using ControlServerDbContext after = new(fixture.DbOptionsForTests);
+        Assert.Equal(OwnOrderRebuildStates.Rebuilt, (await after.OwnOrderRebuilds.AsNoTracking().SingleAsync(Token)).State);
+    }
+
+    /// <summary>
+    /// 同一件事在闸门后，单是被删除（DELETED）：会话因本车在途单未就绪，这一轮照样登记重建、写码；会话没就绪就不建新单，车载端一条都没收到。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0360")]
+    public async Task APickupOrderDeletedBeforeConfirmationIsRecordedBehindTheGateAndNotRebuiltUntilReady()
+    {
+        await using RuntimeFixture fixture = await PickupCreateAnswerLostAsync();
+        JourneyRuntimeRow dispatched = await fixture.RuntimeAsync();
+        await OwnOrderRebuildTests.DropSessionOnOwnOrderAsync(fixture);
+        fixture.Riot.SetOrderState(dispatched.PickupUpperId, RiotOrderState.Deleted, terminal: true);
+        Outbound before = await OutboundAsync(fixture);
+
+        await TickAndHearAsync(fixture);
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        fixture.Context.ChangeTracker.Clear();
+
+        await AssertSessionStillNotReadyAsync(fixture);
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+        await using (ControlServerDbContext reading = new(fixture.DbOptionsForTests))
+        {
+            OwnOrderRebuildRow recorded = await reading.OwnOrderRebuilds.AsNoTracking().SingleAsync(Token);
+            Assert.Equal(
+                (dispatched.PickupUpperId, OwnOrderRebuildSources.CancelledInRiot, OwnOrderRebuildStates.Pending),
+                (recorded.EndedUpperId, recorded.Source, recorded.State));
+        }
+
+        Assert.Equal(before, await OutboundAsync(fixture));
+    }
+
+    /// <summary>
+    /// 装着货开往关卡的单，确认前被取消：登记同车重建（来源是 RIoT 里被取消）。本票只把这一格接进重建路径；车上有货时重建前的仓位证明
+    /// （CP-0007 修订的 REQ-0360）由 control-server#366 补上，所以这里只断「登记了、在等」，不断重建出没出单。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0360")]
+    public async Task AGateOrderCancelledBeforeConfirmationIsRecordedToBeRebuilt()
+    {
+        await using RuntimeFixture fixture = await GateCreateAnswerLostAsync();
+        JourneyRuntimeRow underWay = await fixture.RuntimeAsync();
+        fixture.Riot.CancelOrder(underWay.GateUpperId);
+
+        await TickAndHearAsync(fixture);
+
+        Assert.Equal(JourneyRuntimeEngine.OrderEndedWithoutArrivalReason, (await fixture.RuntimeAsync()).BlockReasonCode);
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        OwnOrderRebuildRow recorded = await reading.OwnOrderRebuilds.AsNoTracking().SingleAsync(Token);
+        Assert.Equal(
+            (underWay.GateUpperId, OwnOrderRebuildSources.CancelledInRiot, OwnOrderRebuildStates.Pending),
+            (recorded.EndedUpperId, recorded.Source, recorded.State));
+        Assert.Empty(await reading.VehicleFaultStates.AsNoTracking().ToArrayAsync(Token));
+    }
+
+    /// <summary>
+    /// REQ-0361 的护栏照样生效：确认前被取消、重建出来的新单在窗口之内又被取消，不再重建，旅程写 <c>OWN_ORDER_REBUILD_STOPPED</c>。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0361")]
+    public async Task ASecondCancellationWithinTheWindowStopsTheRebuild()
+    {
+        await using RuntimeFixture fixture = await PickupCreateAnswerLostAsync();
+        JourneyRuntimeRow dispatched = await fixture.RuntimeAsync();
+        fixture.Riot.CancelOrder(dispatched.PickupUpperId);
+        await TickAndHearAsync(fixture);
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+        string newUpperId = (await CurrentStopAsync(fixture, FirstDemandId)).UpperId;
+        Assert.NotEqual(dispatched.PickupUpperId, newUpperId);
+
+        fixture.Riot.CancelOrder(newUpperId);
+        await TickAndHearAsync(fixture);
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+        Assert.Equal(JourneyRuntimeEngine.OwnOrderRebuildStoppedReason, (await fixture.RuntimeAsync()).BlockReasonCode);
+    }
+
+    /// <summary>
+    /// REQ-0361 的另一条护栏：延迟到点时车在急停里，不建新单，旅程写 <c>OWN_ORDER_REBUILD_WAITING_VEHICLE</c>；急停解了才建。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0361")]
+    public async Task ARebuildDueWhileTheVehicleIsInAnEmergencyStopWaitsForIt()
+    {
+        await using RuntimeFixture fixture = await PickupCreateAnswerLostAsync();
+        JourneyRuntimeRow dispatched = await fixture.RuntimeAsync();
+        fixture.Riot.CancelOrder(dispatched.PickupUpperId);
+        await TickAndHearAsync(fixture);
+        fixture.Riot.SafetyReasons = ["RIOT_EMERGENCY_NOT_OK"];
+
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+        Assert.Equal(JourneyRuntimeEngine.OwnOrderRebuildWaitingVehicleReason, (await fixture.RuntimeAsync()).BlockReasonCode);
+
+        fixture.Riot.SafetyReasons = [];
+        await TickAndHearAsync(fixture);
+        Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+    }
+
+    /// <summary>
+    /// 确认前读到 SUSPENDED（8，实验室零观测、SDK 标注已移除）：按未知终态交人，旅程写 <c>ORDER_STATE_UNRECOGNIZED</c>——与确认过的单读到 8
+    /// 时一样。不登记重建、不记故障、不发命令。闸门前后都一样。
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ASuspendedOrderBeforeConfirmationIsNamedForAPerson(bool behindTheGate)
+    {
+        await using RuntimeFixture fixture = await PickupCreateAnswerLostAsync();
+        JourneyRuntimeRow dispatched = await fixture.RuntimeAsync();
+        if (behindTheGate)
+        {
+            await OwnOrderRebuildTests.DropSessionOnOwnOrderAsync(fixture);
+        }
+
+        fixture.Riot.SetOrderState(dispatched.PickupUpperId, RiotOrderState.Suspended, terminal: true);
+
+        await TickAndHearAsync(fixture);
+        await TickAndHearAsync(fixture);
+
+        Assert.Equal(JourneyRuntimeEngine.OrderStateUnrecognizedReason, (await fixture.RuntimeAsync()).BlockReasonCode);
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        Assert.Empty(await reading.OwnOrderRebuilds.AsNoTracking().ToArrayAsync(Token));
+        Assert.Empty(await reading.VehicleFaultStates.AsNoTracking().ToArrayAsync(Token));
+        Assert.Empty(await reading.RiotOrderCommandAudit.AsNoTracking().ToArrayAsync(Token));
+    }
+
     // ---- 夹具 ----------------------------------------------------------------------------------------------
 
     /// <summary>受理、派往取货站，建单应答丢了：单在 RIoT 上存在并在执行，意图没确认、至少发过一次建单。车停着（<c>MT_FINISHED</c>）。</summary>
