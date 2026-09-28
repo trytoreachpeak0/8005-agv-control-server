@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-in-transit-door-facts",
+  "runId": "20260928T062634491Z",
+  "outcome": "FAIL",
+  "failureReason": "Timed out after 180s waiting for: the load committed and the journey reached the gate leg. Last observed: \"AwaitingStationDeparture\"",
+  "identity": {
+    "protocolFaultProxy": true,
+    "batchId": "unspecified",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "vehicleKey": "BROKERX-L2-0001",
+    "onboardHmiCommit": "4c2d2dc14656f80e812f37128a7964c2c310217a",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-36386347310-1\\_stage\\l2-20260928T062634491Z",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "agvId": "AGV-L2-001",
+    "controlServerCommit": "512cbfd8138f4cabcf2004521172002a6aad15cf",
+    "rig": "RealOnboard"
+  },
+  "assertions": [
+    {
+      "id": "L2-DF-01",
+      "description": "取货段行驶中抽到了样本",
+      "outcome": "PASS",
+      "expected": ">= 10",
+      "actual": 24
+    }
+  ]
+}

@@ -315,6 +315,10 @@ public sealed class InTransitDoorEmergencyReleaseTests
         JourneyRuntimeRow underWay = await fixture.RuntimeAsync();
         string upperId = underWay.GateUpperId!;
         fixture.Riot.MovementState = "MT_RUNNING";
+        // Between stations, as a driving vehicle is: RIoT reports station 0 there (ADR-cross-0060), so no sample pins it to a
+        // place. Left at the fixture's station 1, every sample reads as a known position and the rule that a release must not be
+        // undone merely for want of one is never exercised -- mutation M8 survived exactly that way on the first run.
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = 0 };
         await fixture.ReportSafetySummaryAsync(
             allTargetSlotsLocked: false, unknownPresent: false, ["LOCK_NOT_CLOSED", "ACTION_NOT_ALLOWED_IN_STATE"]);
         await DriveOneRoundAsync(fixture);

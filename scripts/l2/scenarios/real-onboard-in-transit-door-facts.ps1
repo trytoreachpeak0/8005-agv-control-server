@@ -1,22 +1,21 @@
 #Requires -Version 7
 
 <#
-control-server#335 开工第一步的查证场景：车在路上时，服务端对这辆车有没有新鲜的门锁事实；途中断线重连后多久恢复。
+control-server#335（REQ-0246）的真装置场景：真车载端在本服务端在途单上正常行驶、途中重连，服务端不按住、不急停；
+有货的仓锁反馈在行驶中变成 0（没锁），服务端对本车本单 OrderHold、按不住就急停；RIoT 把单停住、闩锁锁上之后，
+锁反馈恢复，服务端自动解除急停（用户 2026-09-28 选的 A），单仍停着，没有 CONTINUE。
 
-**为什么要真车载端。**真车载端在执行本服务端的在途单时，会从服务端的车辆安全接口读到 motionState=Unknown
-（服务端看见本车有未终结的 RIoT 单，cs#138 起按设计如此），于是它报 VEHICLE_NOT_READY、departureSafe=false，
-会话落到 RecoveryRequired / DEPARTURE_SAFETY_NOT_READY，到站才回来。合成车载端永远报安全，看不到这一段。
+**为什么要真车载端。**真车载端在本服务端的在途单上会从服务端的车辆安全接口读到本车有未终结的单（cs#138），会话整段
+RecoveryRequired / DEPARTURE_SAFETY_NOT_READY，到站才回来；门锁摘要照发。合成车载端永远报安全、会话永远就绪，看不到这一段，
+所以「正常行驶不误按」只有这里证得了。开工前这条场景是只记录不判的探针（run 36387029532），那次量到：门锁摘要全程可取、
+最旧 33 秒不变而心跳约 2 秒一次、途中重连 2.24 秒恢复、锁反馈变 0 后 116 毫秒到库。
 
-**它不断言任何产品行为，只抄数据。**判据只要求「每一段都观测到了」，数字写进 snapshots/door-facts-*.json：
+**假 RIoT 不替服务端改状态**：Hold 不会让单变 PAUSED，急停不会锁闩锁。「按不住」是默认；「单已停住」「闩锁锁上/放开」由场景
+照真实 RIoT（riot-behavior-lab BC-ORDER-006、BC-VEH-005）的样子摆出来。
 
-- 段 P（取货段，空车行驶 12 秒）与段 A（关卡段，有货行驶 15 秒）：每 500 ms 抄一次会话行、服务端收到的最新安全摘要
-  （与会话行 SafetyRevision 对得上的那一条）、这一代最后一条入站消息的时刻、旅程阶段与阻塞码。
-- 段 D：代理断开一次连接，量「断开 → 新一代会话行出现 → 新一代的首条安全快照到库」。
-- 段 L：把有货那个仓的锁反馈强制成 0（没锁），量「覆盖 → 服务端收到 allTargetSlotsLocked=false」；再放回 AUTO，量恢复。
-- 段 M：让 Modbus 不回应，量「故障 → 服务端收到 SLOT_STATE_UNKNOWN」；再恢复 NORMAL，量恢复。
+**失联不在这里。**车载端不说话时本票不下命令（用户 2026-09-20 把失联时的 Hold 留到批次 9）。途中重连在静默窗口内，本来就不该触发。
 
-时刻一律取服务端库里的 ReceivedAt 减去本脚本下命令前那一刻的 UtcNow，两者在同一台机器上，没有时钟偏差。
-段的顺序是 A → D → L → M：锁反馈覆盖可能让车载端锁存别的状态，放在后面免得污染前两段。
+判据只从服务端库、假 RIoT 的控制面与模拟器读；抽样写进 snapshots/door-facts-*.json，作为这一轮的旁证。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
@@ -24,6 +23,7 @@ param([Parameter(Mandatory)][object]$Context)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2RealOnboard.psm1') -Force
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ConditionOrLast.psm1') -Force
 
 $journal = $Context.Journal
 $assertions = $Context.Assertions
@@ -139,20 +139,6 @@ function Save-Evidence([string]$name, [object]$value) {
     $journal.Note("Wrote $path.")
 }
 
-# The first safety message received at or after $since that satisfies $predicate; waits up to $timeoutSeconds.
-function Wait-SafetyMessage([string]$description, [string]$criterion, [DateTimeOffset]$since, [scriptblock]$predicate,
-    [int]$timeoutSeconds = 60) {
-    try {
-        return Wait-L2Condition -Description $description -Journal $journal -Criterion $criterion `
-            -TimeoutSeconds $timeoutSeconds -PollMilliseconds 100 `
-            -Probe { @((Get-SafetyMessages) | Where-Object { $_.ReceivedAt -ge $since -and (& $predicate $_) })[0] } `
-            -Until { param($v) $null -ne $v }
-    } catch {
-        $journal.Note("Not observed: $description ($($_.Exception.Message))")
-        return $null
-    }
-}
-
 function Get-SlotReading([int]$slotNo) {
     $slot = @($simulator.Snapshot().slots | Where-Object { [int]$_.slotNo -eq $slotNo })[0]
     return "$($slot.doorState)/$($slot.cargoState)/$($slot.lockFeedbackRaw)/$($slot.unlockOutputRaw)"
@@ -196,7 +182,33 @@ function Invoke-SlotOperation([string]$operationType, [string]$cargoState) {
     return $slotNo
 }
 
-# --- 1. 需求受理，取货段（空车）行驶 12 秒并抽样 ----------------------------------------------------------------
+
+function Get-Attempts([string]$commandType) {
+    # 调用方先赋值再用，不要直接送进管道：`Invoke-L2Query` 的 `return , $rows` 包装穿得过一层 return。
+    return Invoke-L2Query -Connection $connection -Sql @"
+SELECT CommandType, AgvId, TargetUpperId, AttemptNumber, IssuedAt, Outcome, FaultGeneration, ReceiptJson
+FROM RiotOrderCommandAudit WHERE CommandType = '$commandType' ORDER BY AttemptNumber
+"@
+}
+
+function Get-RiotInvocations([string]$commandType) {
+    return , @(@($riot.Snapshot().body.commandInvocations) | Where-Object { [string]$_.commandType -eq $commandType })
+}
+
+function Get-FaultCommandCounts {
+    $holds = Get-Attempts 'OrderHold'
+    $triggers = Get-Attempts 'triggerEmergency'
+    $cancels = Get-Attempts 'CANCEL'
+    return "$($holds.Count)/$($triggers.Count)/$($cancels.Count)"
+}
+
+function Get-Instant($value) {
+    if ($value -is [DateTimeOffset]) { return $value }
+    if ($value -is [DateTime]) { return [DateTimeOffset]$value }
+    return [DateTimeOffset]::Parse([string]$value, [Globalization.CultureInfo]::InvariantCulture)
+}
+
+# --- 1. 需求受理；取货段（空车）行驶 12 秒：不按住 ---------------------------------------------------------
 
 $journal.Note("Publishing demand $($demandGuid.ToString('N')) (sublot $sublot).")
 $null = $Context.MesIngest.Command('Put', "demands/$($demandGuid.ToString('N'))", @{
@@ -207,13 +219,16 @@ $null = Wait-L2Condition -Description 'the demand was accepted and dispatched to
     -Probe { Get-Stage } -Until { param($v) $v -eq 'AwaitingPickupArrival' }
 $pickupIntent = Wait-L2RealIntent $Context $demandId 'TO_PICKUP'
 
-$preDrive = Get-DoorFactsSample 'before-pickup-drive'
 $journal.Note('Vehicle departs for the pickup station; sampling for 12 s.')
 Start-Drive $pickupIntent
 $pickupSamples = Invoke-Sampling 'P-pickup-drive' 12
-Save-Evidence 'P-pickup-drive' @{ Before = $preDrive; Samples = $pickupSamples }
+Save-Evidence 'P-pickup-drive' @{ Samples = $pickupSamples }
+$pickupCounts = Get-FaultCommandCounts
+$assertions.Add(
+    'L2-DF-01', '真车载端空车行驶 12 秒（会话因本单未就绪）：不 Hold、不急停、不 Cancel',
+    ($pickupSamples.Count -ge 10 -and $pickupCounts -eq '0/0/0'),
+    '>= 10 samples, 0/0/0', "$($pickupSamples.Count) samples, $pickupCounts")
 Complete-Drive $pickupIntent $Context.PickupStationRiotId
-$assertions.Add('L2-DF-01', '取货段行驶中抽到了样本', ($pickupSamples.Count -ge 10), '>= 10', $pickupSamples.Count)
 
 # --- 2. 装货 --------------------------------------------------------------------------------------------------------
 
@@ -233,122 +248,102 @@ $null = Wait-L2Condition -Description 'the load committed and the journey reache
     -Journal $journal -Criterion 'journey-stage' -TimeoutSeconds 180 `
     -Probe { Get-Stage } -Until { param($v) $v -eq 'AwaitingGateArrival' }
 $gateIntent = Wait-L2RealIntent $Context $demandId 'TO_GATE'
+$gateUpperId = [string]$gateIntent.UpperId
+$gateOrderId = [string]$gateIntent.OrderId
 
-# --- 3. 段 A：关卡段（有货）行驶 15 秒并抽样 ----------------------------------------------------------------------
+# --- 3. 关卡段（有货）行驶 12 秒、途中断线重连一次：不按住 ---------------------------------------------------
 
-$journal.Note("Vehicle departs for the gate with slot $loadSlot loaded; sampling for 15 s.")
+$journal.Note("Vehicle departs for the gate with slot $loadSlot loaded; sampling for 12 s.")
 Start-Drive $gateIntent
-$gateSamples = Invoke-Sampling 'A-gate-drive' 15
+$gateSamples = Invoke-Sampling 'A-gate-drive' 12
 Save-Evidence 'A-gate-drive' @{ LoadSlot = $loadSlot; Samples = $gateSamples }
-$assertions.Add('L2-DF-02', '关卡段行驶中抽到了样本', ($gateSamples.Count -ge 10), '>= 10', $gateSamples.Count)
 
-# --- 4. 段 D：行驶中断线一次，量恢复 -------------------------------------------------------------------------------
-
-$before = Get-DoorFactsSample 'D-before'
-$oldGeneration = $before.Generation
+$oldGeneration = (Get-DoorFactsSample 'D-before').Generation
 $disconnectAt = [DateTimeOffset]::UtcNow
-$closed = @($proxy.Command('Post', 'disconnect', @{}).body.connections)
-$journal.Note("Disconnected $($closed.Count) relay connection(s) at $($disconnectAt.ToString('o')); old generation $oldGeneration.")
-$reconnectSamples = [System.Collections.Generic.List[object]]::new()
-$newGenerationSeenAt = $null
-$newSafetyRevisionSeenAt = $null
-$until = $disconnectAt.AddSeconds(60)
-while ([DateTimeOffset]::UtcNow -lt $until) {
-    $sample = Get-DoorFactsSample 'D-reconnect'
-    $reconnectSamples.Add($sample)
-    if ($null -eq $newGenerationSeenAt -and $null -ne $sample.Generation -and $sample.Generation -gt $oldGeneration) {
-        $newGenerationSeenAt = [DateTimeOffset]::Parse($sample.At)
-    }
-    if ($null -ne $newGenerationSeenAt -and $null -eq $newSafetyRevisionSeenAt -and $null -ne $sample.SafetyRevision -and
-        $sample.Generation -gt $oldGeneration) {
-        $newSafetyRevisionSeenAt = [DateTimeOffset]::Parse($sample.At)
-    }
-    if ($null -ne $newSafetyRevisionSeenAt -and ([DateTimeOffset]::UtcNow - $newSafetyRevisionSeenAt).TotalSeconds -ge 5) { break }
-    Start-Sleep -Milliseconds 100
-}
-$newSafety = @((Get-SafetyMessages) | Where-Object { $_.Generation -gt $oldGeneration })
-$firstNewSafety = if ($newSafety.Count -gt 0) { $newSafety[0] } else { $null }
-$reconnect = [ordered]@{
-    OldGeneration                 = $oldGeneration
-    DisconnectAt                  = $disconnectAt.ToString('o')
-    ClosedConnections             = $closed.Count
-    NewGenerationSeenAfterMs      = if ($newGenerationSeenAt) { [int]($newGenerationSeenAt - $disconnectAt).TotalMilliseconds } else { $null }
-    NewSafetyRevisionSeenAfterMs  = if ($newSafetyRevisionSeenAt) { [int]($newSafetyRevisionSeenAt - $disconnectAt).TotalMilliseconds } else { $null }
-    FirstNewSafetyMessage         = $firstNewSafety
-    FirstNewSafetyReceivedAfterMs = if ($firstNewSafety) { [int]($firstNewSafety.ReceivedAt - $disconnectAt).TotalMilliseconds } else { $null }
-    Samples                       = $reconnectSamples.ToArray()
-}
-Save-Evidence 'D-reconnect' $reconnect
-$assertions.Add('L2-DF-03', '行驶中断线后，新一代会话的首条安全快照在 60 秒内到库',
-    ($null -ne $firstNewSafety), 'a SafetyStateSnapshot of a newer generation',
-    $(if ($firstNewSafety) { "$($firstNewSafety.MessageType) gen $($firstNewSafety.Generation) after $($reconnect.FirstNewSafetyReceivedAfterMs) ms" } else { '(none)' }))
+$null = $proxy.Command('Post', 'disconnect', @{})
+$journal.Note("Disconnected the onboard link at $($disconnectAt.ToString('o')); old generation $oldGeneration.")
+$reconnected = Wait-L2Condition -Description 'the new generation reported its safety snapshot' `
+    -Journal $journal -Criterion 'reconnect-safety' -TimeoutSeconds 60 -PollMilliseconds 100 `
+    -Probe { $sample = Get-DoorFactsSample 'D-reconnect'; if ($sample.Generation -gt $oldGeneration -and $null -ne $sample.Summary) { $sample } else { $null } } `
+    -Until { param($v) $null -ne $v }
+$afterReconnect = Invoke-Sampling 'D-after-reconnect' 5
+Save-Evidence 'D-reconnect' @{ OldGeneration = $oldGeneration; DisconnectAt = $disconnectAt.ToString('o'); Reconnected = $reconnected; Samples = $afterReconnect }
+$gateCounts = Get-FaultCommandCounts
+$assertions.Add(
+    'L2-DF-02', '真车载端有货行驶 12 秒并途中重连一次：不 Hold、不急停、不 Cancel',
+    ($gateSamples.Count -ge 10 -and $gateCounts -eq '0/0/0'),
+    '>= 10 samples, 0/0/0', "$($gateSamples.Count) samples, $gateCounts")
 
-# --- 5. 段 L：行驶中把有货的仓锁反馈强制成 0，量到库时间；再放回 AUTO -----------------------------------------------
+# --- 4. 有货的仓锁反馈变 0：本车本单 Hold，按不住、车在动，急停一次 --------------------------------------------
 
 $lockAt = [DateTimeOffset]::UtcNow
 $null = $simulator.Command('Put', "slots/$loadSlot/lock-feedback-override", @{ mode = 'FIXED_0' })
-$unlocked = Wait-SafetyMessage "the server received a safety summary with the doors not all locked" 'lock-not-closed' $lockAt `
-    { param($m) -not [bool]$m.Safety.allTargetSlotsLocked }
-$unlockedSamples = Invoke-Sampling 'L-lock-feedback-0' 5
-$relockAt = [DateTimeOffset]::UtcNow
+$journal.Note("Lock feedback of slot $loadSlot forced to 0 while driving.")
+$null = Wait-L2Condition -Description 'the server issued the emergency stop' `
+    -Journal $journal -Criterion 'trigger-issued' -TimeoutSeconds 60 `
+    -Probe { (Get-Attempts 'triggerEmergency').Count } -Until { param($v) $v -ge 1 }
+$trigger = Wait-L2ConditionOrLast -Description 'the trigger attempt was settled' `
+    -Journal $journal -Criterion 'trigger-settled' -TimeoutSeconds 30 `
+    -Probe { $rows = Get-Attempts 'triggerEmergency'; if ($rows.Count -gt 0) { $rows[0] } else { $null } } `
+    -Until { param($row) -not [string]::IsNullOrEmpty([string]$row.ReceiptJson) }
+$holds = Get-Attempts 'OrderHold'
+$hold = if ($holds.Count -gt 0) { $holds[0] } else { $null }
+$heldCalls = Get-RiotInvocations 'CMD_ORDER_HELD'
+$assertions.Add(
+    'L2-DF-03', '锁反馈变 0：Hold 恰好一条，打在本车、关卡段这一张单上，RIoT 侧收到的 CMD_ORDER_HELD 也打在这张 orderId 上',
+    ($holds.Count -eq 1 -and [string]$hold.AgvId -eq $agvId -and [string]$hold.TargetUpperId -eq $gateUpperId -and
+        $heldCalls.Count -ge 1 -and @($heldCalls | Where-Object { [string]$_.target -ne $gateOrderId }).Count -eq 0),
+    "1 / $agvId / $gateUpperId / -> $gateOrderId",
+    $(if ($hold) { "$($holds.Count) / $([string]$hold.AgvId) / $([string]$hold.TargetUpperId) / -> $((@($heldCalls) | ForEach-Object { $_.target }) -join ',')" } else { '0' }))
+$assertions.Add(
+    'L2-DF-04', '按不住、车还在动：急停恰好一条，打在这台车上，而且在 Hold 之后',
+    ((Get-Attempts 'triggerEmergency').Count -eq 1 -and [string]$trigger.AgvId -eq $agvId -and
+        $null -ne $hold -and (Get-Instant $hold.IssuedAt) -le (Get-Instant $trigger.IssuedAt)),
+    "1 / $agvId / hold first",
+    "$((Get-Attempts 'triggerEmergency').Count) / $([string]$trigger.AgvId) / hold $(if ($hold) { [string]$hold.IssuedAt } else { '-' }) trigger $([string]$trigger.IssuedAt)")
+$faults = Invoke-L2Query -Connection $connection -Sql "SELECT EvidenceCode FROM VehicleFaultStates WHERE AgvId = '$agvId'"
+$assertions.Add(
+    'L2-DF-05', '故障事实记的是门锁症状',
+    ($faults.Count -eq 1 -and [string]$faults[0].EvidenceCode -eq 'VEHICLE_DOOR_NOT_PROVEN_LOCKED'),
+    'VEHICLE_DOOR_NOT_PROVEN_LOCKED', $(if ($faults.Count -gt 0) { [string]$faults[0].EvidenceCode } else { '-' }))
+
+# --- 5. RIoT 停住单、锁上闩锁；锁反馈恢复：自动解除，单仍停着，没有 CONTINUE ----------------------------------------
+
+$journal.Note('RIoT parks the order (PAUSED 7) and latches the emergency stop.')
+$null = $riot.Command('Put', "orders/$gateUpperId", @{ orderState = 7 })
+$null = $riot.Command('Put', 'vehicle', @{
+    vehicleKey = $Context.VehicleKey; procState = 'USER_FORCE_IDLE'; movementState = 'MT_PAUSED'; speed = 0; emergencyState = 'CAN_RECOVER'
+})
+Start-Sleep -Seconds 3
+$assertions.Add(
+    'L2-DF-06', '锁反馈仍是 0 时不解除', ((Get-Attempts 'cancelEmergency').Count -eq 0), 0, (Get-Attempts 'cancelEmergency').Count)
+
 $null = $simulator.Command('Put', "slots/$loadSlot/lock-feedback-override", @{ mode = 'AUTO' })
-$relocked = Wait-SafetyMessage "the server received a safety summary with the doors locked again" 'lock-closed-again' $relockAt `
-    { param($m) [bool]$m.Safety.allTargetSlotsLocked }
-$afterRelock = Invoke-Sampling 'L-lock-feedback-auto' 3
-Save-Evidence 'L-lock-feedback' ([ordered]@{
-    LoadSlot            = $loadSlot
-    OverrideAt          = $lockAt.ToString('o')
-    Unlocked            = $unlocked
-    UnlockedAfterMs     = if ($unlocked) { [int]($unlocked.ReceivedAt - $lockAt).TotalMilliseconds } else { $null }
-    UnlockedSamples     = $unlockedSamples
-    RestoreAt           = $relockAt.ToString('o')
-    Relocked            = $relocked
-    RelockedAfterMs     = if ($relocked) { [int]($relocked.ReceivedAt - $relockAt).TotalMilliseconds } else { $null }
-    AfterRestoreSamples = $afterRelock
-})
-$assertions.Add('L2-DF-04', '行驶中锁反馈变为未锁，服务端收到 allTargetSlotsLocked=false',
-    ($null -ne $unlocked), 'observed',
-    $(if ($unlocked) { "after $([int]($unlocked.ReceivedAt - $lockAt).TotalMilliseconds) ms, reasons $(@($unlocked.Safety.reasonCodes) -join ',')" } else { '(none)' }))
+$journal.Note("Lock feedback of slot $loadSlot back to AUTO.")
+$null = Wait-L2Condition -Description 'the server released the emergency stop' `
+    -Journal $journal -Criterion 'release-issued' -TimeoutSeconds 60 `
+    -Probe { (Get-Attempts 'cancelEmergency').Count } -Until { param($v) $v -ge 1 }
+$release = Wait-L2ConditionOrLast -Description 'the release attempt was settled' `
+    -Journal $journal -Criterion 'release-settled' -TimeoutSeconds 30 `
+    -Probe { $rows = Get-Attempts 'cancelEmergency'; if ($rows.Count -gt 0) { $rows[0] } else { $null } } `
+    -Until { param($row) -not [string]::IsNullOrEmpty([string]$row.ReceiptJson) }
+$releaseReason = ([string]$release.ReceiptJson | ConvertFrom-Json).Reason
+$assertions.Add(
+    'L2-DF-07', '锁反馈恢复后自动解除一次，原因记门锁原因消除',
+    ((Get-Attempts 'cancelEmergency').Count -eq 1 -and $releaseReason -eq 'EMERGENCY_DOOR_CAUSE_REMOVED'),
+    '1 / EMERGENCY_DOOR_CAUSE_REMOVED', "$((Get-Attempts 'cancelEmergency').Count) / $releaseReason")
 
-# --- 6. 段 M：行驶中 Modbus 不回应，量到库时间；再恢复 ------------------------------------------------------------
-
-$faultAt = [DateTimeOffset]::UtcNow
-$null = $simulator.Command('Put', 'faults/modbus', @{ mode = 'NO_RESPONSE' })
-$unknown = Wait-SafetyMessage "the server received a safety summary naming the slot state unknown" 'slot-state-unknown' $faultAt `
-    { param($m) @($m.Safety.reasonCodes) -contains 'SLOT_STATE_UNKNOWN' }
-$unknownSamples = Invoke-Sampling 'M-modbus-no-response' 5
-$healAt = [DateTimeOffset]::UtcNow
-$null = $simulator.Command('Put', 'faults/modbus', @{ mode = 'NORMAL' })
-$healed = Wait-SafetyMessage "the server received a safety summary with the slot state known again" 'slot-state-known' $healAt `
-    { param($m) @($m.Safety.reasonCodes) -notcontains 'SLOT_STATE_UNKNOWN' }
-$afterHeal = Invoke-Sampling 'M-modbus-normal' 3
-Save-Evidence 'M-modbus' ([ordered]@{
-    FaultAt             = $faultAt.ToString('o')
-    Unknown             = $unknown
-    UnknownAfterMs      = if ($unknown) { [int]($unknown.ReceivedAt - $faultAt).TotalMilliseconds } else { $null }
-    UnknownSamples      = $unknownSamples
-    HealAt              = $healAt.ToString('o')
-    Healed              = $healed
-    HealedAfterMs       = if ($healed) { [int]($healed.ReceivedAt - $healAt).TotalMilliseconds } else { $null }
-    AfterHealSamples    = $afterHeal
-})
-$assertions.Add('L2-DF-05', '行驶中 IO 失联，服务端收到 SLOT_STATE_UNKNOWN',
-    ($null -ne $unknown), 'observed',
-    $(if ($unknown) { "after $([int]($unknown.ReceivedAt - $faultAt).TotalMilliseconds) ms" } else { '(none)' }))
-
-# --- 7. 全部安全消息原样存档，再把车开到关卡、尽量走完（只记录，不判） ------------------------------------------------
+$null = $riot.Command('Put', 'vehicle', @{ vehicleKey = $Context.VehicleKey; emergencyState = 'OK' })
+$afterRelease = Invoke-Sampling 'L-after-release' 5
+Save-Evidence 'L-release' @{ LockAt = $lockAt.ToString('o'); Samples = $afterRelease }
+$continues = Get-Attempts 'OrderContinue'
+$assertions.Add(
+    'L2-DF-08', '解除之后单仍停着：没有 CONTINUE，没有第二次急停，没有 Cancel',
+    ($continues.Count -eq 0 -and (Get-RiotInvocations 'CMD_ORDER_CONTINUE_FROM_HELD').Count -eq 0 -and
+        (Get-Attempts 'triggerEmergency').Count -eq 1 -and (Get-Attempts 'CANCEL').Count -eq 0),
+    '0 continue / 1 trigger / 0 cancel',
+    "$($continues.Count) continue / $((Get-Attempts 'triggerEmergency').Count) trigger / $((Get-Attempts 'CANCEL').Count) cancel")
 
 Save-Evidence 'all-safety-messages' (Get-SafetyMessages)
-
-Complete-Drive $gateIntent $Context.GateStationRiotId
-try {
-    $unloadSlot = Invoke-SlotOperation 'Unload' 'EMPTY'
-    $stage = Wait-L2Condition -Description 'the journey completed at the gate' `
-        -Journal $journal -Criterion 'journey-stage' -TimeoutSeconds 120 `
-        -Probe { Get-Stage } -Until { param($v) $v -eq 'Completed' }
-    $journal.Note("Unloaded slot $unloadSlot; journey $stage.")
-} catch {
-    $journal.Note("The trip did not finish after the probes (recorded, not judged): $($_.Exception.Message)")
-}
 Save-Evidence 'final' (Get-DoorFactsSample 'final')
-$journal.Note('Scenario finished.')
+$journal.Note('Scenario finished; the held order waits for a person, as designed.')
