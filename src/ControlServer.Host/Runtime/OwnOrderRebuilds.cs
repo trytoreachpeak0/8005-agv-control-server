@@ -1,3 +1,4 @@
+using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -207,6 +208,8 @@ internal static class OwnOrderRebuilds
             stopped.CargoEvidenceMessageId = null;
             WithdrawCargoEvidenceRequest(stopped);
             stopped.CargoEvidenceRequestedAt = null;
+            stopped.VehicleHeldAt = null;
+            stopped.CargoEvidenceNotBefore = null;
             return stopped;
         }
 
@@ -252,8 +255,9 @@ internal static class OwnOrderRebuilds
         journeysRecords.Any(other => ManualRebuildIdFor(other.RebuildId) == row.RebuildId);
 
     /// <summary>
-    /// Whether the Host should ask <paramref name="agvId"/>'s vehicle for a <c>SafetyStateSnapshot</c> now, for a rebuild after a
-    /// cleared fault with cargo on board that is still waiting for the vehicle to show the cargo in its slots (REQ-0362), or for
+    /// Whether the Host should ask <paramref name="agvId"/>'s vehicle for a <c>SafetyStateSnapshot</c> now, for a rebuild with
+    /// cargo on board still waiting to be created -- after a cleared fault the clearance judged loaded (REQ-0362), or after a
+    /// cancellation while a demand of the journey is loaded (REQ-0360 as CP-0007 revised it, control-server#366) -- or for
     /// a stopped trip a person has just handed to the exception recovery session (control-server#345: the snapshot is what gets
     /// readiness judged again and announced, so that the onboard offers its fault cargo handoff); when it should, the request is
     /// recorded here and the caller must send it.
@@ -261,8 +265,11 @@ internal static class OwnOrderRebuilds
     /// <remarks>
     /// <para>
     /// <b>The throttle</b>: once per session generation; once more in the same generation when the session has become ready
-    /// since -- a vehicle whose session was not ready may not have answered; none once the cargo is proven, the rebuild is
-    /// stopped, or it is not a cargo rebuild at all. So a session that never becomes ready is asked once, not on every
+    /// since -- a vehicle whose session was not ready may not have answered; none once the rebuild is stopped or ordered, or
+    /// when it is not a cargo rebuild at all. The engine withdraws a request whose answer cannot count any more -- made before
+    /// the rebuild fell due or before the vehicle's last hold ended -- and that makes it due here again
+    /// (<see cref="WithdrawCargoEvidenceRequest"/>). Being proven once no longer ends the asking (control-server#366): the proof
+    /// is read again in the round that creates. So a session that never becomes ready is asked once, not on every
     /// message, and a reconnection asks again. A record waiting for a handoff counts only while its journey is still
     /// <c>Blocked</c> (independent review S3): one whose journey has closed some other way is an orphan, and would otherwise
     /// have the vehicle asked in every generation for good.
@@ -286,7 +293,13 @@ internal static class OwnOrderRebuilds
         string[] due = await dbContext.OwnOrderRebuilds.AsNoTracking()
             .Where(row => row.AgvId == agvId &&
                           ((row.State == OwnOrderRebuildStates.Pending &&
-                            row.Source == OwnOrderRebuildSources.FaultClearedCargoOnBoard && row.CargoProvenAt == null) ||
+                            (row.Source == OwnOrderRebuildSources.FaultClearedCargoOnBoard ||
+                             (row.Source == OwnOrderRebuildSources.CancelledInRiot &&
+                              dbContext.Set<JourneyDemandRow>().Any(
+                                  demand => demand.JourneyId == row.JourneyId && demand.RemovedAt == null &&
+                                            demand.Status != JourneyDemandStatuses.PendingLoad &&
+                                            demand.Status != JourneyDemandStatuses.Unloaded &&
+                                            demand.Status != JourneyDemandStatuses.Terminated)))) ||
                            (row.State == OwnOrderRebuildStates.AwaitingCargoHandoff &&
                             dbContext.JourneyRuntimes.Any(
                                 journey => journey.JourneyId == row.JourneyId && journey.Stage == JourneyRuntimeStage.Blocked))) &&
@@ -301,7 +314,7 @@ internal static class OwnOrderRebuilds
 
         int claimed = await dbContext.OwnOrderRebuilds
             .Where(row => due.Contains(row.RebuildId) &&
-                          ((row.State == OwnOrderRebuildStates.Pending && row.CargoProvenAt == null) ||
+                          (row.State == OwnOrderRebuildStates.Pending ||
                            (row.State == OwnOrderRebuildStates.AwaitingCargoHandoff &&
                             dbContext.JourneyRuntimes.Any(
                                 journey => journey.JourneyId == row.JourneyId && journey.Stage == JourneyRuntimeStage.Blocked))) &&

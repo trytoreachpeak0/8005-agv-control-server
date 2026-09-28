@@ -55,15 +55,18 @@ namespace ControlServer.Host.Runtime;
 /// driving it (incremental review B2).
 /// </para>
 /// <para>
-/// <b>A cleared fault with cargo on board is rebuilt only on fresh evidence</b> (REQ-0362, which keeps REQ-0238's premise for
-/// continuing after a repair: the cargo still whole in its original slots, and the safety loop closed again). The evidence is
-/// a <c>SafetyStateSnapshot</c> the server received after the clearance -- the only message that carries each slot's state --
-/// in which every slot the committed loads targeted reads OCCUPIED, LOCKED and RESET and nothing is unknown
-/// (<see cref="CargoEvidenceAsync"/>). Until one arrives the journey waits under
-/// <see cref="OwnOrderRebuildWaitingCargoEvidenceReason"/>; the Host asks the vehicle for one
-/// (<c>OwnOrderRebuilds.ClaimCargoEvidenceRequestAsync</c>). One that arrives and does not show the cargo in place stops
-/// the rebuild for a person (<see cref="OwnOrderRebuildCargoNotInPlaceReason"/>): the cargo may not be where it was. The
-/// user chose this over an operator's tick-box (cs#318, scope comment of 2026-09-23, relayed by the coordinator).
+/// <b>A rebuild with cargo on board is created only on fresh evidence</b> -- a cleared fault the clearance judged loaded
+/// (REQ-0362), and since control-server#366 a cancellation while a demand of the journey is loaded (REQ-0360 as CP-0007
+/// revised it). Both keep REQ-0238's premise for carrying on: the cargo still whole in its original slots, and the safety loop
+/// closed again. The evidence is a <c>SafetyStateSnapshot</c> -- the only message that carries each slot's state -- in which
+/// every slot the committed loads targeted reads OCCUPIED, LOCKED and RESET and nothing is unknown
+/// (<see cref="CargoEvidenceAsync"/>), received after the ending was recorded, after the rebuild fell due and after the vehicle
+/// was last seen held, and read again in the very round that creates (<see cref="CargoNotProvenAsync"/>). Until one arrives the
+/// journey waits under <see cref="OwnOrderRebuildWaitingCargoEvidenceReason"/>; the Host asks the vehicle for one
+/// (<c>OwnOrderRebuilds.ClaimCargoEvidenceRequestAsync</c>). One that shows a slot empty stops the rebuild for a person
+/// (<see cref="OwnOrderRebuildCargoNotInPlaceReason"/>), who takes it on through control-server#345's handoff: the cargo is
+/// not where the server has it. The user chose this over an operator's tick-box (cs#318, scope comment of 2026-09-23, relayed
+/// by the coordinator), and chose it for the cancellation too (CP-0007, approved 2026-09-27).
 /// </para>
 /// </remarks>
 public sealed partial class JourneyRuntimeEngine
@@ -84,21 +87,21 @@ public sealed partial class JourneyRuntimeEngine
     public const string OwnOrderRebuildStoppedReason = "OWN_ORDER_REBUILD_STOPPED";
 
     /// <summary>
-    /// A fault with cargo on board was cleared and the rebuild is due, but the vehicle has not yet sent a snapshot, received
-    /// after the clearance, that shows the cargo in its slots (REQ-0362). A wait on the vehicle, not on a person; it is in the
+    /// A rebuild with cargo on board is due, but the vehicle has not yet sent a snapshot fresh enough to count that shows the
+    /// cargo in its slots (REQ-0362; REQ-0360 as CP-0007 revised it). A wait on the vehicle, not on a person; it is in the
     /// stalled-order family all the same, so nothing overwrites it and the vehicle takes no appended demand meanwhile.
     /// </summary>
     public const string OwnOrderRebuildWaitingCargoEvidenceReason = "OWN_ORDER_REBUILD_WAITING_CARGO_EVIDENCE";
 
     /// <summary>
-    /// A snapshot received after the clearance showed a slot of the cargo EMPTY: no automatic rebuild, held and alarmed for a
-    /// person (REQ-0362). Only an EMPTY slot settles it; anything else a snapshot falls short with is
+    /// A snapshot fresh enough to count showed a slot of the cargo EMPTY: no automatic rebuild, held and alarmed for a person
+    /// (REQ-0362; REQ-0360 as CP-0007 revised it). Only an EMPTY slot settles it; anything else a snapshot falls short with is
     /// <see cref="OwnOrderRebuildCargoUnprovenReason"/> (review S4).
     /// </summary>
     public const string OwnOrderRebuildCargoNotInPlaceReason = "OWN_ORDER_REBUILD_CARGO_NOT_IN_PLACE";
 
     /// <summary>
-    /// A snapshot received after the clearance can settle neither way where the cargo is -- a slot UNKNOWN, unreported,
+    /// A snapshot fresh enough to count can settle neither way where the cargo is -- a slot UNKNOWN, unreported,
     /// unlocked or with its unlock output active, something unknown on the vehicle, or the load itself not settled: the rebuild
     /// waits for the next snapshot (REQ-0362, review S4). The record's waiting reason says which. In the stalled-order family,
     /// as the wait for the first snapshot is.
@@ -119,7 +122,7 @@ public sealed partial class JourneyRuntimeEngine
     /// </summary>
     private static readonly TimeSpan CargoEvidenceReaskInterval = TimeSpan.FromSeconds(10);
 
-    /// <summary>What <see cref="OwnOrderRebuildRow.WaitingReason"/> says while no snapshot after the clearance has arrived.</summary>
+    /// <summary>What <see cref="OwnOrderRebuildRow.WaitingReason"/> says while no snapshot fresh enough to count has arrived.</summary>
     private const string CargoEvidenceNotReceived = "CARGO_EVIDENCE_NOT_RECEIVED";
 
     /// <summary>What a fault cleared with a cargo binding leaves on the vehicle once the rebuilt order is confirmed.</summary>
@@ -199,70 +202,6 @@ public sealed partial class JourneyRuntimeEngine
                 return true;
             }
 
-            // REQ-0362: cargo is carried on only once the vehicle has shown it whole in its slots since the clearance. Before
-            // the session's readiness is looked at: the snapshot is what is missing whichever way the session stands.
-            if (rebuild.Source == OwnOrderRebuildSources.FaultClearedCargoOnBoard && rebuild.CargoProvenAt is null)
-            {
-                CargoEvidence evidence = await CargoEvidenceAsync(runtime, rebuild, cancellationToken).ConfigureAwait(false);
-                if (evidence.MessageId is null)
-                {
-                    await WaitForRebuildAsync(
-                        runtime, rebuild, CargoEvidenceNotReceived, OwnOrderRebuildWaitingCargoEvidenceReason, now,
-                        cancellationToken).ConfigureAwait(false);
-                    return true;
-                }
-
-                if (evidence.NotShown is null && evidence.Unproven is not null)
-                {
-                    // Review S4: a snapshot that cannot settle where the cargo is waits for the next one -- and the next one
-                    // has to be asked for: Onboard sends a SafetyStateSnapshot only in the handshake and when asked. Once both
-                    // the inconclusive snapshot and the last request are an interval old, the request is withdrawn, so the Host
-                    // asks again on the vehicle's next message: at most once per interval, however long the slot stays
-                    // unsecured. The last request counts too (incremental review B1): a vehicle that does not answer leaves the
-                    // snapshot old for ever, and counting from the snapshot alone asked on every round.
-                    //
-                    // No cap on how often, on purpose (agreed with the coordinator). Stopping the asking adds no safety: the
-                    // vehicle is not sent off either way. It would instead turn a state that clears by itself, once the slot is
-                    // secured, into one that needs a person (control-server#345's exits). And a person can see it
-                    // from the first inconclusive snapshot on: the journey carries OWN_ORDER_REBUILD_CARGO_UNPROVEN, described
-                    // on the dashboard, and event 2172 is logged at Warning once per waiting reason.
-                    DateTimeOffset since = rebuild.CargoEvidenceRequestedAt is { } requestedAt && requestedAt > evidence.ReceivedAt
-                        ? requestedAt
-                        : evidence.ReceivedAt;
-                    if (rebuild.CargoEvidenceRequestedGeneration is not null && now - since >= CargoEvidenceReaskInterval)
-                    {
-                        OwnOrderRebuilds.WithdrawCargoEvidenceRequest(rebuild);
-                        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-                    }
-
-                    await WaitForRebuildAsync(
-                        runtime, rebuild, evidence.Unproven, OwnOrderRebuildCargoUnprovenReason, now, cancellationToken)
-                        .ConfigureAwait(false);
-                    return true;
-                }
-
-                rebuild.CargoEvidenceMessageId = evidence.MessageId;
-                if (evidence.NotShown is not null)
-                {
-                    rebuild.State = OwnOrderRebuildStates.Stopped;
-                    rebuild.StoppedReason = OwnOrderRebuilds.CargoNotProvenInOriginalSlots;
-                    rebuild.StoppedAt = now;
-                    rebuild.WaitingReason = evidence.NotShown;
-                    rebuild.WaitingSince = now;
-                    LogOwnOrderRebuildStopped(
-                        logger, rebuild.EndedUpperId, runtime.JourneyId, runtime.AgvId,
-                        $"{OwnOrderRebuilds.CargoNotProvenInOriginalSlots}: {evidence.NotShown}", null);
-                    // Saved here, not left to NameRebuildAsync: that one saves only when the journey's code changes.
-                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-                    await NameRebuildAsync(runtime, OwnOrderRebuildCargoNotInPlaceReason, now, cancellationToken)
-                        .ConfigureAwait(false);
-                    return true;
-                }
-
-                rebuild.CargoProvenAt = now;
-                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            }
-
             if (await HeldBeforeCreateAsync(runtime, rebuild, stop, currentMap, mayCreate, reasonOnceRebuilt, now, cancellationToken)
                     .ConfigureAwait(false))
             {
@@ -270,7 +209,9 @@ public sealed partial class JourneyRuntimeEngine
             }
 
             // Decided: the new order's intent and the stop's pointer to it are written in one save, before RIoT is asked. A
-            // crash after this save is the "decided, not created" point, and the next round carries on from Ordering.
+            // crash after this save is the "decided, not created" point, and the next round carries on from Ordering. With cargo
+            // on board the snapshot that proved it was the last thing read before this save, in the same round (the window
+            // control-server#357 names: a snapshot showing the slot empty that lands between the read and the create).
             JourneyStopRow tracked = await TrackedStopAsync(stop.StopId, cancellationToken).ConfigureAwait(false);
             tracked.MovementLegId = rebuild.NewMovementLegId;
             tracked.UpperId = rebuild.NewUpperId;
@@ -451,9 +392,26 @@ public sealed partial class JourneyRuntimeEngine
 
     /// <summary>
     /// Everything that has to hold before the new order may be asked of RIoT: the session, the vehicle's condition (the second
-    /// guard) and REQ-0305's create gate. True when one of them holds the rebuild back, which is then recorded and named on the
-    /// journey. Asked before the decision and again after it for as long as the order has never been sent (M1).
+    /// guard), REQ-0305's create gate and, with cargo on board, a fresh snapshot showing it in its slots. True when one of them
+    /// holds the rebuild back, which is then recorded and named on the journey. Asked before the decision and again after it
+    /// for as long as the order has never been sent (M1).
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The cargo is looked at last</b> (control-server#366): CP-0007 counts only a snapshot received after the vehicle's
+    /// most recent recovery from an emergency stop, manual mode or a fault, so the question is asked once nothing holds the
+    /// vehicle any more, and it is the last read before the decision is saved. Until control-server#366 it came first and,
+    /// once answered, was never asked again (<see cref="OwnOrderRebuildRow.CargoProvenAt"/> latched it): a hold after the
+    /// proof, or a snapshot from within the delay, let the rebuild go on a proof older than what happened at the vehicle.
+    /// </para>
+    /// <para>
+    /// <b>Which holds count.</b> The session not being ready and the vehicle's condition -- the two that can stand for a person
+    /// at the vehicle. A hold starts <see cref="OwnOrderRebuildRow.VehicleHeldAt"/> once; the first round that finds neither
+    /// holding moves <see cref="OwnOrderRebuildRow.CargoEvidenceNotBefore"/> to that round and asks the vehicle for a snapshot
+    /// again. Counting the session too is stricter than CP-0007's three conditions, and it only waits: the Host asks again as
+    /// the session turns ready anyway. The create gate is traffic, not the vehicle, and moves nothing.
+    /// </para>
+    /// </remarks>
     private async Task<bool> HeldBeforeCreateAsync(
         JourneyRuntimeRow runtime,
         OwnOrderRebuildRow rebuild,
@@ -464,6 +422,7 @@ public sealed partial class JourneyRuntimeEngine
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
+        bool cargoOnBoard = await CarriesCargoAsync(runtime, rebuild, cancellationToken).ConfigureAwait(false);
         // Review S1: a vehicle no longer admitted for a demand still to be loaded here is not sent off again only to have the
         // release service cancel the new order a round later. Asked first, and on either side of the gate: it does not wait on
         // anything the vehicle can supply, and nothing about it gets better by waiting.
@@ -487,6 +446,7 @@ public sealed partial class JourneyRuntimeEngine
         // a silent session's since control-server#358 (the same code the journey carries once the new order is confirmed).
         if (!mayCreate)
         {
+            await MarkVehicleHeldAsync(rebuild, cargoOnBoard, now, cancellationToken).ConfigureAwait(false);
             await WaitForRebuildAsync(
                 runtime, rebuild, reasonOnceRebuilt ?? "ONBOARD_SESSION_NOT_READY", OwnOrderRebuildWaitingVehicleReason, now,
                 cancellationToken)
@@ -497,10 +457,21 @@ public sealed partial class JourneyRuntimeEngine
         string[] vehicle = await VehicleConditionReasonsAsync(runtime, cancellationToken).ConfigureAwait(false);
         if (vehicle.Length > 0)
         {
+            await MarkVehicleHeldAsync(rebuild, cargoOnBoard, now, cancellationToken).ConfigureAwait(false);
             await WaitForRebuildAsync(
                 runtime, rebuild, string.Join(',', vehicle), OwnOrderRebuildWaitingVehicleReason, now, cancellationToken)
                 .ConfigureAwait(false);
             return true;
+        }
+
+        if (rebuild.VehicleHeldAt is not null)
+        {
+            // The first round that finds the vehicle no longer held: only a snapshot received after this round counts, and the
+            // vehicle is asked for one -- the request made during the hold, or before it, may have been answered already.
+            rebuild.VehicleHeldAt = null;
+            rebuild.CargoEvidenceNotBefore = now;
+            OwnOrderRebuilds.WithdrawCargoEvidenceRequest(rebuild);
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
 
         CreateGateOutcome gate = await GateLegAsync(
@@ -515,6 +486,145 @@ public sealed partial class JourneyRuntimeEngine
             return true;
         }
 
+        return cargoOnBoard && await CargoNotProvenAsync(runtime, rebuild, now, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Whether the rebuild carries cargo on, so that it waits for a snapshot showing it in place (REQ-0360 as CP-0007 revised
+    /// it, REQ-0362): a cleared fault the clearance judged loaded, or a cancellation while a demand of the journey is loaded and
+    /// not yet unloaded -- the same reading <see cref="CargoEvidenceAsync"/> takes its slots from. A cancellation on the way to
+    /// the pickup, nothing loaded yet, is rebuilt without one.
+    /// </summary>
+    private async Task<bool> CarriesCargoAsync(
+        JourneyRuntimeRow runtime,
+        OwnOrderRebuildRow rebuild,
+        CancellationToken cancellationToken) =>
+        rebuild.Source switch
+        {
+            OwnOrderRebuildSources.FaultClearedCargoOnBoard => true,
+            OwnOrderRebuildSources.CancelledInRiot => await dbContext.Set<JourneyDemandRow>().AsNoTracking()
+                .AnyAsync(row => row.JourneyId == runtime.JourneyId && row.RemovedAt == null &&
+                                 row.Status != JourneyDemandStatuses.PendingLoad &&
+                                 row.Status != JourneyDemandStatuses.Unloaded &&
+                                 row.Status != JourneyDemandStatuses.Terminated,
+                    cancellationToken)
+                .ConfigureAwait(false),
+            _ => false,
+        };
+
+    /// <summary>A hold of a rebuild with cargo on board begins: written once, on the first held round (control-server#366).</summary>
+    private async Task MarkVehicleHeldAsync(
+        OwnOrderRebuildRow rebuild,
+        bool cargoOnBoard,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (!cargoOnBoard || rebuild.VehicleHeldAt is not null)
+        {
+            return;
+        }
+
+        rebuild.VehicleHeldAt = now;
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The cargo question, asked last before the decision (control-server#366): true when the newest snapshot fresh enough to
+    /// count does not show the cargo whole in its slots -- none yet, one that cannot settle it (both wait), or one with a slot
+    /// read EMPTY (stops the rebuild for a person). False when it shows the cargo in place; the snapshot is then staged on the
+    /// record and saved with the decision.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Fresh enough</b>, by this server's receive clock: after the rebuild was recorded (the cancellation or the clearance
+    /// was found), after it fell due, and after the first round that found the vehicle no longer held
+    /// (<see cref="OwnOrderRebuildRow.CargoEvidenceNotBefore"/>). The first and the last are CP-0007's; "after it fell due" is
+    /// stricter, for REQ-0362's window B the coordinator had fixed together (2026-09-28): a snapshot from within the delay,
+    /// the cargo taken out after it, and nothing reported since, would otherwise still carry the rebuild.
+    /// </para>
+    /// <para>
+    /// <b>Never latched.</b> Every round that reaches here reads the newest snapshot again, so a later one showing a slot empty
+    /// overrides an earlier proof (CP-0007's "the most recent one received before the rebuild").
+    /// </para>
+    /// </remarks>
+    private async Task<bool> CargoNotProvenAsync(
+        JourneyRuntimeRow runtime,
+        OwnOrderRebuildRow rebuild,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        DateTimeOffset notBefore = new[]
+            {
+                rebuild.RecordedAt, rebuild.DueAt, rebuild.CargoEvidenceNotBefore ?? DateTimeOffset.MinValue,
+            }.Max();
+        CargoEvidence evidence = await CargoEvidenceAsync(runtime, notBefore, cancellationToken).ConfigureAwait(false);
+        if (evidence.MessageId is null)
+        {
+            // Nothing fresh enough. A request made no later than the point a snapshot has to follow may have been answered
+            // before it -- after the delay, or across a hold -- so it is withdrawn and the Host asks again; one made after it is
+            // waited for, and asked again once an interval old, as for an inconclusive one.
+            if (rebuild.CargoEvidenceRequestedGeneration is not null &&
+                (rebuild.CargoEvidenceRequestedAt is not { } requestedAt || requestedAt <= notBefore ||
+                 now - requestedAt >= CargoEvidenceReaskInterval))
+            {
+                OwnOrderRebuilds.WithdrawCargoEvidenceRequest(rebuild);
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            await WaitForRebuildAsync(
+                runtime, rebuild, CargoEvidenceNotReceived, OwnOrderRebuildWaitingCargoEvidenceReason, now, cancellationToken)
+                .ConfigureAwait(false);
+            return true;
+        }
+
+        if (evidence.NotShown is null && evidence.Unproven is not null)
+        {
+            // Review S4: a snapshot that cannot settle where the cargo is waits for the next one -- and the next one has to be
+            // asked for: Onboard sends a SafetyStateSnapshot only in the handshake and when asked. Once both the inconclusive
+            // snapshot and the last request are an interval old, the request is withdrawn, so the Host asks again on the
+            // vehicle's next message: at most once per interval, however long the slot stays unsecured. The last request counts
+            // too (incremental review B1): a vehicle that does not answer leaves the snapshot old for ever, and counting from
+            // the snapshot alone asked on every round.
+            //
+            // No cap on how often, on purpose (agreed with the coordinator). Stopping the asking adds no safety: the vehicle is
+            // not sent off either way. It would instead turn a state that clears by itself, once the slot is secured, into one
+            // that needs a person (control-server#345's exits). And a person can see it from the first inconclusive snapshot
+            // on: the journey carries OWN_ORDER_REBUILD_CARGO_UNPROVEN, described on the dashboard, and event 2172 is logged at
+            // Warning once per waiting reason.
+            DateTimeOffset since = rebuild.CargoEvidenceRequestedAt is { } requestedAt && requestedAt > evidence.ReceivedAt
+                ? requestedAt
+                : evidence.ReceivedAt;
+            if (rebuild.CargoEvidenceRequestedGeneration is not null && now - since >= CargoEvidenceReaskInterval)
+            {
+                OwnOrderRebuilds.WithdrawCargoEvidenceRequest(rebuild);
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            await WaitForRebuildAsync(
+                runtime, rebuild, evidence.Unproven, OwnOrderRebuildCargoUnprovenReason, now, cancellationToken)
+                .ConfigureAwait(false);
+            return true;
+        }
+
+        rebuild.CargoEvidenceMessageId = evidence.MessageId;
+        if (evidence.NotShown is not null)
+        {
+            rebuild.State = OwnOrderRebuildStates.Stopped;
+            rebuild.StoppedReason = OwnOrderRebuilds.CargoNotProvenInOriginalSlots;
+            rebuild.StoppedAt = now;
+            rebuild.WaitingReason = evidence.NotShown;
+            rebuild.WaitingSince = now;
+            LogOwnOrderRebuildStopped(
+                logger, rebuild.EndedUpperId, runtime.JourneyId, runtime.AgvId,
+                $"{OwnOrderRebuilds.CargoNotProvenInOriginalSlots}: {evidence.NotShown}", null);
+            // Saved here, not left to NameRebuildAsync: that one saves only when the journey's code changes.
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            await NameRebuildAsync(runtime, OwnOrderRebuildCargoNotInPlaceReason, now, cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+
+        // Proven now; staged, saved with the decision. Audit only -- nothing reads it to skip the question next round.
+        rebuild.CargoProvenAt = now;
         return false;
     }
 
@@ -557,8 +667,9 @@ public sealed partial class JourneyRuntimeEngine
     }
 
     /// <summary>
-    /// What the vehicle has shown about its cargo since the clearance (REQ-0362): no snapshot yet (<c>MessageId</c> null); or
-    /// the freshest snapshot of this vehicle received after <see cref="OwnOrderRebuildRow.RecordedAt"/>, and what it settles --
+    /// What the vehicle has shown about its cargo since <paramref name="notBefore"/> (REQ-0360, REQ-0362; the point is chosen by
+    /// <see cref="CargoNotProvenAsync"/>): no snapshot yet (<c>MessageId</c> null); or the freshest snapshot of this vehicle
+    /// received after it, and what it settles --
     /// the cargo shown whole in its slots (both reasons null), shown not to be there (<c>NotShown</c>), or neither
     /// (<c>Unproven</c>).
     /// </summary>
@@ -579,20 +690,20 @@ public sealed partial class JourneyRuntimeEngine
     /// <see cref="StationOperationRow.TargetSlotsJson"/>.
     /// </para>
     /// <para>
-    /// <b>After the clearance, by the server's receive clock.</b> The clearance time and the receive time are both this
-    /// server's; the snapshot's own <c>observedAt</c> is the vehicle's clock. A server clock stepped back can make a fresh
+    /// <b>By the server's receive clock.</b> The point it has to follow and the receive time are both this server's; the
+    /// snapshot's own <c>observedAt</c> is the vehicle's clock. A server clock stepped back can make a fresh
     /// snapshot look old, which only makes the rebuild wait -- the safe way round.
     /// </para>
     /// <para>
     /// <b>Read in two steps</b> (review S5): the ids and receive times of the snapshots first, then the body of one snapshot at a
     /// time, freshest first, until one is this vehicle's. The inbox keeps no vehicle column -- the vehicle is in the envelope --
     /// so the vehicle cannot be filtered in the store, and SQLite cannot compare the receive time there either; what is read in
-    /// full is the snapshots after the clearance down to this vehicle's newest, not every snapshot ever received.
+    /// full is the snapshots after that point down to this vehicle's newest, not every snapshot ever received.
     /// </para>
     /// </remarks>
     private async Task<CargoEvidence> CargoEvidenceAsync(
         JourneyRuntimeRow runtime,
-        OwnOrderRebuildRow rebuild,
+        DateTimeOffset notBefore,
         CancellationToken cancellationToken)
     {
         // Compared in memory: SQLite cannot order or compare DateTimeOffset columns in the store.
@@ -600,7 +711,7 @@ public sealed partial class JourneyRuntimeEngine
                 .Where(row => row.MessageType == "SafetyStateSnapshot")
                 .Select(row => new { row.MessageId, row.ReceivedAt })
                 .ToArrayAsync(cancellationToken).ConfigureAwait(false))
-            .Where(row => row.ReceivedAt > rebuild.RecordedAt)
+            .Where(row => row.ReceivedAt > notBefore)
             .OrderByDescending(row => row.ReceivedAt)
             .Select(row => (row.MessageId, row.ReceivedAt))];
         (string MessageId, string Json, DateTimeOffset ReceivedAt)? fresh = null;

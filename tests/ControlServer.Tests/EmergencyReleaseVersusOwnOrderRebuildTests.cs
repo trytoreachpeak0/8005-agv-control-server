@@ -26,7 +26,7 @@ namespace ControlServer.Tests;
 /// （<c>FAULT_RECOVERY_CURRENT_ORDER_CANCELLED_IN_RIOT</c> "is not reachable in the product"）。前三条用例走的是今天走得到的链；
 /// 第四条是票面字面那条链（锁着时单还活着、人去 RIoT 取消它），用故障协调器的公开入口构造起点，结论只对「将来有了别的急停来源」
 /// （把 HANG 纳入故障模型的 #319、REQ-0249 两条人工急停来源的入口）成立；第五条是急停不是本服务端发的那条链，没有 REQ-0356 这一步，
-/// <b>今天走得到，票面担心的两种形状在那里都出现了</b>（已报调度，是否改由用户决定）。
+/// 今天走得到。cs#349 时票面担心的两种形状在那里都出现了；用户选「甲」（CP-0007），control-server#366 把它翻成「不重建、停住等人」。
 /// 逐步的表格与反向验证在 <c>evidence/cs349/SUMMARY.md</c>。
 /// </para>
 /// <para>
@@ -182,7 +182,8 @@ public sealed class EmergencyReleaseVersusOwnOrderRebuildTests
         Assert.Equal(gateCreates, fixture.Riot.CreateCount("TO_GATE"));
         Assert.Equal("OWN_ORDER_REBUILD_WAITING_CARGO_EVIDENCE", (await fixture.RuntimeAsync()).BlockReasonCode);
 
-        // 车报来清除之后的仓位读数：放货的仓是空的。
+        // 车报来清除之后的仓位读数：放货的仓是空的。晚于到期一秒收到——恰在到期那一刻收到的不算（control-server#366：要严格晚于到期）。
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
         await fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow(), physicalState: "EMPTY");
         await TickAndHearAsync(fixture);
         for (int round = 0; round < 10; round++)
@@ -405,33 +406,26 @@ public sealed class EmergencyReleaseVersusOwnOrderRebuildTests
     /// <summary>
     /// 装着货开往卸货站，车被别人急停（现场物理急停或 RIoT 人员，服务端的命令审计里没有触发），单在 RIoT 上 HANG。人工解除不归服务端
     /// （<c>EMERGENCY_NOT_RAISED_BY_8005</c>）。人在 RIoT 里取消本服务端这张单、把货取走，车报来的仓位读数显示放货的仓是空的。
-    /// 急停由别人解开之后，服务端照 REQ-0360 给同一辆车重建开往卸货站的单，承载的仍是那条已装货的需求——取消来源的重建不看仓位读数。
-    /// 重建的延迟从读到取消算，锁着期间就走完了，所以解开急停的那一轮就建单，没有缓冲。
+    /// 急停由别人解开之后，服务端不建开往卸货站的单：锁着期间收到的读数不算（CP-0007 修订的 REQ-0360），要等解开之后的那一份；
+    /// 那一份仍显示放货的仓是空的，重建停住等人，需求仍记在本车上、仍是已装货，由人经 control-server#345 的交接出口处置。
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>这一格今天走得到，票面担心的两种形状在这里都出现了</b>：解开急停的那一轮车就被派走（断言到「那一轮新建了 <c>TO_GATE</c>」），
-    /// 重建单承载的需求要车上有货，而车已报放货的仓是空的。它不在票面的停下条件里，只因为链上没有 REQ-0356 的解除、服务端从没被告知
-    /// 「车上无货」。同样的情形在故障清除来源上由 REQ-0362 的仓位读数挡住
-    /// （<see cref="OnTheWayToTheGateAnEmptiedVehicleIsReleasedButItsDeliveryIsNeverRebuilt"/>），取消来源没有这一道
-    /// （<c>JourneyRuntimeEngine.AdvanceOwnOrderRebuildAsync</c> 只对 <c>FaultClearedCargoOnBoard</c> 取仓位读数）。
-    /// </para>
-    /// <para>
-    /// <b>钉的是今天的行为，不是判断它对。</b>已报调度，是否改由用户决定（REQ-0360 字面要求继续承载原需求；它引用的 REQ-0239 又写着
-    /// 「相关阻断收敛」后才可重建、结果不明时继续载货保全）。将来给取消来源加上仓位证明，这一条要翻。
+    /// <b>这一格由 control-server#366 翻过来。</b>cs#349 钉的是当时的行为：解开急停的那一轮就建开往卸货站的单，承载那条已装货的需求，
+    /// 而车已报放货的仓是空的——取消来源的重建不看仓位读数。用户 2026-09-26 选「甲」，写成 CP-0007（2026-09-27 批准）：取消来源在车上有货时
+    /// 也要先证明货物仍在原仓位。cs#349 反向验证的变异 M6 演示过这一格在这种修法下红在哪一条（<c>evidence/cs349/red/l1-mutations/summary.txt</c>）。
     /// </para>
     /// <para>
     /// <b>这一格不需要有人违反说明。</b>现场说明（vehicle-fault-clearance-field-guide.md「要分清两种取消」）禁止的是「为了让车停下」而取消
     /// 服务端的单；急停不是本服务端发的，按说明转 RIoT 人员处置，他们为清场取消这张单不一定违反它，而 REQ-0356 条文本身也写着「须先取消该订单」。
     /// </para>
     /// <para>
-    /// 仓位读数的时刻要严格晚于重建记录的时刻（<c>CargoEvidenceAsync</c> 只认 <c>ReceivedAt &gt; RecordedAt</c>）。这里先拨一秒再报读数，并断言了
-    /// 这个先后：同一时刻的读数今天无所谓，将来加上仓位证明时会被当成「没收到读数」，这一格就会因为错误的理由变红。
+    /// 锁着期间那份读数的时刻严格晚于重建记录的时刻，并且断言了这个先后：它不算数只因为车还锁着，不是因为它早于取消。
     /// </para>
     /// </remarks>
     [Fact]
     [Trait("Requirement", "REQ-0360")]
-    public async Task UnderSomeoneElsesStopAnEmptiedVehicleWhoseOwnOrderIsCancelledIsRebuiltToDeliverAnyway()
+    public async Task UnderSomeoneElsesStopAnEmptiedVehicleWhoseOwnOrderIsCancelledIsNotRebuiltAndStopsForAPerson()
     {
         await using RuntimeFixture fixture = await GateArrivalWaitAsync();
         SiteRiot site = new(fixture);
@@ -462,28 +456,40 @@ public sealed class EmergencyReleaseVersusOwnOrderRebuildTests
             (OwnOrderRebuildSources.CancelledInRiot, cancelSeenAt, cancelSeenAt + fixture.Options.OwnOrderRebuildDelay),
             (recorded.Source, recorded.RecordedAt, recorded.DueAt));
 
-        // 车报放货的仓是空的：读数晚于重建记录一秒，是读到取消之后才收到的读数（见 remarks）。
+        // 延迟在锁着期间走完；锁着期间车报放货的仓是空的，读数晚于重建记录，也晚于到期。
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
         fixture.Clock.Advance(TimeSpan.FromSeconds(1));
         DateTimeOffset emptyReadAt = fixture.Clock.GetUtcNow();
-        Assert.True(emptyReadAt > recorded.RecordedAt, "the snapshot must be received after the rebuild was recorded");
+        Assert.True(emptyReadAt > recorded.DueAt, "the snapshot must be received after the rebuild fell due");
         await fixture.AddCargoSnapshotAsync(emptyReadAt, physicalState: "EMPTY");
-
-        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        await TickAndHearAsync(fixture);
         Assert.Equal(gateCreates, fixture.Riot.CreateCount("TO_GATE"));
         Assert.Contains("RIOT_EMERGENCY_NOT_OK", (await SingleRebuildAsync(fixture)).WaitingReason, StringComparison.Ordinal);
 
-        // 别人解开急停：延迟早已走完，解开的那一轮就建开往卸货站的单，承载那条已装货的需求。
+        // 别人解开急停：解开的那一轮不建，锁着期间的读数不算，等解开之后的那一份。
         Unlatch(fixture);
         await TickAndHearAsync(fixture);
-        DateTimeOffset unlatchedRound = fixture.Clock.GetUtcNow();
-        Assert.True(recorded.DueAt < unlatchedRound, "the delay must have run out while the vehicle was latched");
+        Assert.Equal(gateCreates, fixture.Riot.CreateCount("TO_GATE"));
+        OwnOrderRebuildRow waiting = await SingleRebuildAsync(fixture);
+        Assert.Equal((OwnOrderRebuildStates.Pending, "CARGO_EVIDENCE_NOT_RECEIVED"), (waiting.State, waiting.WaitingReason));
+        Assert.Equal("OWN_ORDER_REBUILD_WAITING_CARGO_EVIDENCE", (await fixture.RuntimeAsync()).BlockReasonCode);
 
-        Assert.Equal(gateCreates + 1, fixture.Riot.CreateCount("TO_GATE"));
-        await OwnOrderRebuildTests.AssertRebuiltAsync(fixture, dispatched, stopsBefore, unload);
-        OwnOrderRebuildRow rebuilt = await SingleRebuildAsync(fixture);
-        Assert.Equal(unlatchedRound, rebuilt.RebuiltAt);
-        Assert.Null(rebuilt.CargoEvidenceMessageId);
-        Assert.Equal(JourneyDemandStatuses.Loaded, (await MembershipAsync(fixture)).Status);
+        // 解开之后车报放货的仓仍是空的：停住，不建开往卸货站的单。
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow(), physicalState: "EMPTY");
+        for (int round = 0; round < 10; round++)
+        {
+            await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        }
+
+        Assert.Equal(gateCreates, fixture.Riot.CreateCount("TO_GATE"));
+        OwnOrderRebuildRow stopped = await SingleRebuildAsync(fixture);
+        Assert.Equal(
+            (OwnOrderRebuildStates.Stopped, OwnOrderRebuilds.CargoNotProvenInOriginalSlots),
+            (stopped.State, stopped.StoppedReason));
+        Assert.Equal("OWN_ORDER_REBUILD_CARGO_NOT_IN_PLACE", (await fixture.RuntimeAsync()).BlockReasonCode);
+        JourneyDemandRow membership = await MembershipAsync(fixture);
+        Assert.Equal((JourneyDemandStatuses.Loaded, (DateTimeOffset?)null), (membership.Status, membership.RemovedAt));
     }
 
     // ---- 夹具 ----------------------------------------------------------------------------------------------

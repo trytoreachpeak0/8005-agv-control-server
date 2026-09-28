@@ -171,6 +171,50 @@ public sealed class OwnOrderRebuildCargoProofTests
     }
 
     /// <summary>
+    /// 两列的写法（调度 2026-09-28 的要求）：车况护栏挡着的每一轮，<c>VehicleHeldAt</c> 只在第一轮写一次，之后的轮次重建记录一列都不写；
+    /// 第一次观察到不再挡住的那一轮清掉它、把 <c>CargoEvidenceNotBefore</c> 写成那一轮的时刻，并撤回快照请求让宿主重新索取。
+    /// </summary>
+    /// <remarks>
+    /// 「一列都不写」按保存拦截器记下的列断，不按读回的值断：值不变也可能每轮都写了一遍同样的值。挡住期间的等待理由不变，
+    /// <c>WaitForRebuildAsync</c> 也不写（它只在理由变化时写）。
+    /// </remarks>
+    [Fact]
+    [Trait("Requirement", "REQ-0360")]
+    public async Task WhileTheVehicleStaysHeldTheRecordIsWrittenOnceAndTheFirstFreeRoundMovesTheFloor()
+    {
+        Cancelled cancelled = await CancelledOnTheWayToGateAsync();
+        await using RuntimeFixture fixture = cancelled.Fixture;
+        Latch(fixture);
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        DateTimeOffset heldAt = fixture.Clock.GetUtcNow();
+        OwnOrderRebuildRow firstHeld = await RebuildAsync(fixture);
+        Assert.Equal((heldAt, (DateTimeOffset?)null), (firstHeld.VehicleHeldAt, firstHeld.CargoEvidenceNotBefore));
+
+        fixture.SaveChanges.Reset();
+        for (int round = 0; round < 5; round++)
+        {
+            await TickAndHearAsync(fixture);
+        }
+
+        Assert.DoesNotContain(
+            fixture.SaveChanges.Saves.SelectMany(written => written),
+            column => column.StartsWith($"{nameof(OwnOrderRebuildRow)}.", StringComparison.Ordinal));
+        OwnOrderRebuildRow stillHeld = await RebuildAsync(fixture);
+        Assert.Equal((heldAt, (DateTimeOffset?)null), (stillHeld.VehicleHeldAt, stillHeld.CargoEvidenceNotBefore));
+        Assert.True(await ClaimAsync(fixture, ready: true), "the fixture's vehicle has not been asked yet in this generation");
+
+        Unlatch(fixture);
+        await TickAndHearAsync(fixture);
+        DateTimeOffset freeRound = fixture.Clock.GetUtcNow();
+
+        OwnOrderRebuildRow free = await RebuildAsync(fixture);
+        Assert.Equal((null, (DateTimeOffset?)freeRound), (free.VehicleHeldAt, free.CargoEvidenceNotBefore));
+        Assert.Null(free.CargoEvidenceRequestedGeneration);
+        Assert.True(await ClaimAsync(fixture, ready: true), "the free round must make a fresh snapshot request due");
+        await AssertWaitingAsync(fixture, cancelled, "CARGO_EVIDENCE_NOT_RECEIVED", "OWN_ORDER_REBUILD_WAITING_CARGO_EVIDENCE");
+    }
+
+    /// <summary>
     /// 一趟承载两条已装货的需求（另有一条待装）：一条的仓位证明货在，另一条的仓位读空，整趟停住；报出来的只有读空的那一仓，待装那条的仓位不看。
     /// </summary>
     [Fact]

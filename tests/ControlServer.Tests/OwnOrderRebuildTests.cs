@@ -74,8 +74,12 @@ public sealed class OwnOrderRebuildTests
 
     /// <summary>
     /// 装着货开往卸货站的单被取消：同样延迟后给同一辆车、同一条需求重建，去的是同一个卸货停靠——车上的货送完这一趟；
-    /// 车到了照常卸货。
+    /// 车到了照常卸货。车上有货，所以延迟过了先等一份到期之后的快照证明货在原仓（control-server#366，CP-0007 修订的 REQ-0360）。
     /// </summary>
+    /// <remarks>
+    /// control-server#366 之前这里断「延迟一到就建」：取消来源不读快照，这正是 cs#349 第 5 格那个缺陷的行为。现在断「先等快照，货在才建」，
+    /// 仓空与证明不了的格子在 <see cref="OwnOrderRebuildCargoProofTests"/>。
+    /// </remarks>
     [Fact]
     public async Task ALoadedOrderCancelledInRiotIsRebuiltToTheSameUnloadStop()
     {
@@ -91,6 +95,9 @@ public sealed class OwnOrderRebuildTests
         await TickAndRunAsync(fixture);
         Assert.Equal("ORDER_ENDED_WITHOUT_ARRIVAL", (await fixture.RuntimeAsync()).BlockReasonCode);
         await PassTheDelayAsync(fixture);
+        Assert.Equal(gateCreates, fixture.Riot.CreateCount("TO_GATE"));
+        Assert.Equal("OWN_ORDER_REBUILD_WAITING_CARGO_EVIDENCE", (await fixture.RuntimeAsync()).BlockReasonCode);
+        await ReportCargoInPlaceAndRunAsync(fixture);
 
         Assert.Equal(gateCreates + 1, fixture.Riot.CreateCount("TO_GATE"));
         await AssertRebuiltAsync(fixture, before, stopsBefore, unload);
@@ -298,6 +305,11 @@ public sealed class OwnOrderRebuildTests
 
         await fixture.SetDepartureSummaryAsync();
         await PassTheDelayAsync(fixture);
+        // control-server#366: the round that finds the slot locked again is the end of a hold; the cargo is proven only by a
+        // snapshot received after it.
+        Assert.Equal(gateCreates, fixture.Riot.CreateCount("TO_GATE"));
+        Assert.Equal("OWN_ORDER_REBUILD_WAITING_CARGO_EVIDENCE", (await fixture.RuntimeAsync()).BlockReasonCode);
+        await ReportCargoInPlaceAndRunAsync(fixture);
 
         Assert.Equal(gateCreates + 1, fixture.Riot.CreateCount("TO_GATE"));
         await AssertRebuiltAsync(fixture, before, stopsBefore, unload);
@@ -1108,6 +1120,21 @@ public sealed class OwnOrderRebuildTests
     }
 
     /// <summary>延迟到点的那一轮：拨过延迟、车载端刚说过话，跑一轮。</summary>
+    /// <summary>
+    /// The vehicle reports its cargo in place a second after the last round, and the engine runs once more: what a rebuild with
+    /// cargo on board waits for once it is due and nothing holds the vehicle (control-server#366).
+    /// </summary>
+    internal static async Task ReportCargoInPlaceAndRunAsync(RuntimeFixture fixture)
+    {
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow());
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.HearFromPeerAsync();
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+    }
+
     internal static async Task PassTheDelayAsync(RuntimeFixture fixture)
     {
         DateTimeOffset before = fixture.Clock.GetUtcNow();

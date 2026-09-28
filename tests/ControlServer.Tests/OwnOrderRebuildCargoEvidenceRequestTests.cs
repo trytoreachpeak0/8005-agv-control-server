@@ -16,7 +16,8 @@ namespace ControlServer.Tests;
 /// <remarks>
 /// <para>
 /// 节流规则：同一个会话代次只要一次；那一次若是在会话未就绪时要的，会话在同一代次里变成就绪之后可以再要一次；重连后的新代次再要一次；
-/// 快照证明了货在原仓（或重建已不在等证据）之后不再要。每条断言都同时看两处——应答里有没有那一行、库里记没记「已请求」——两者必须一致：
+/// 重建已不在等证据（停住、已下单，或不是有货的重建）之后不再要。control-server#366 之前「快照证明过一次货在原仓」也算不再要；现在建单那一轮
+/// 总是重读最新一份，所以还在等建单就照样可以要，引擎撤回过时的请求时也靠这里再要。每条断言都同时看两处——应答里有没有那一行、库里记没记「已请求」——两者必须一致：
 /// 记了没发，车永远等不到请求；发了没记，每条消息都会再要一次。
 /// </para>
 /// <para>
@@ -166,8 +167,9 @@ public sealed class OwnOrderRebuildCargoEvidenceRequestTests
 
     [Theory]
     [InlineData("nothing-waits")]
-    [InlineData("cargo-proven")]
+    [InlineData("ordering")]
     [InlineData("nothing-on-board")]
+    [InlineData("cancelled-nothing-loaded")]
     [InlineData("stopped")]
     [Trait("Requirement", "REQ-0362")]
     public async Task Req0362NothingIsAskedWhenNoCargoRebuildWaitsForEvidence(string state)
@@ -180,8 +182,13 @@ public sealed class OwnOrderRebuildCargoEvidenceRequestTests
             {
                 switch (state)
                 {
-                    case "cargo-proven":
-                        row.CargoProvenAt = Now;
+                    case "ordering":
+                        row.State = OwnOrderRebuildStates.Ordering;
+                        break;
+                    case "cancelled-nothing-loaded":
+                        // A cancellation with no loaded demand on the journey (the fixture writes none): rebuilt without a
+                        // snapshot, so none is asked for (control-server#366).
+                        row.Source = OwnOrderRebuildSources.CancelledInRiot;
                         break;
                     case "nothing-on-board":
                         row.Source = OwnOrderRebuildSources.FaultClearedNothingOnBoard;

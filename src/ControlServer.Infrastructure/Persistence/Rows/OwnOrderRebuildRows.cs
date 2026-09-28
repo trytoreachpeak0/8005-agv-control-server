@@ -71,7 +71,8 @@ public sealed class OwnOrderRebuildRow
     public DateTimeOffset? StoppedAt { get; set; }
 
     /// <summary>
-    /// 有货来源（REQ-0362）：清除之后车报的快照证明了货还完整留在原仓、门锁闭、开锁输出复位的时刻；为空时不建。其余来源始终为空。
+    /// 车上有货的重建（REQ-0362；取消来源自 control-server#366 起，CP-0007 修订的 REQ-0360）：决定建单的那一轮，够新的最新快照证明了货还完整留在原仓、
+    /// 门锁闭、开锁输出复位的时刻。只作审计：control-server#366 之前它一旦写上，之后就不再读新快照，现在建单那一轮总是重读。
     /// </summary>
     public DateTimeOffset? CargoProvenAt { get; set; }
 
@@ -92,6 +93,20 @@ public sealed class OwnOrderRebuildRow
     /// 旧快照一直够老，只看快照会每轮都再要（审查增量 B1）。
     /// </summary>
     public DateTimeOffset? CargoEvidenceRequestedAt { get; set; }
+
+    /// <summary>
+    /// 车上有货的重建（control-server#366，CP-0007 修订的 REQ-0360 与 REQ-0362）：这一次挡住开始的那一轮——到期之后，车况护栏或会话未就绪挡住了建单。
+    /// <b>一次挡住只写一次</b>：挡着的每一轮都看见它非空，就不再写；挡住一结束（第一次观察到不再挡住的那一轮）就清空，同时写
+    /// <see cref="CargoEvidenceNotBefore"/>。为空时这辆车此刻没有被挡住。
+    /// </summary>
+    public DateTimeOffset? VehicleHeldAt { get; set; }
+
+    /// <summary>
+    /// 车上有货的重建：快照要晚于这一刻收到才算数（服务端时钟），与 <see cref="RecordedAt"/>、<see cref="DueAt"/> 取最晚的一个。
+    /// <b>在第一次观察到不再挡住的那一轮写入</b>，即那一轮的此刻：挡住期间有人在车旁，那时收到的快照看不见之后发生的事。之后再被挡住、再放开，
+    /// 就再往后挪。为空时只看记录与到期时刻。
+    /// </summary>
+    public DateTimeOffset? CargoEvidenceNotBefore { get; set; }
 }
 
 /// <summary>重建由哪一种终结引起（control-server#318 票面「三个触发来源」）。</summary>

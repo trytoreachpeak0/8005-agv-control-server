@@ -309,8 +309,9 @@ public sealed class StoppedRebuildExitTests
         VehicleFaultRecoveryTests.SiteRiot site = new(fixture);
         await VehicleFaultRecoveryTests.Service(fixture, site).RecoverAsync(VehicleFaultRecoveryTests.Clear(fixture), Token);
         fixture.Context.ChangeTracker.Clear();
-        await fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow() + TimeSpan.FromSeconds(1));
+        // The first rebuild's snapshot is received after it fell due (control-server#366).
         await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        await OwnOrderRebuildTests.ReportCargoInPlaceAndRunAsync(fixture);
         int gateCreates = fixture.Riot.CreateCount("TO_GATE");
         string rebuiltOrder = (await CurrentStopAsync(fixture, FirstDemandId)).UpperId;
         Assert.Equal(OwnOrderRebuildStates.Rebuilt, (await RebuildForAsync(fixture, (await fixture.RuntimeAsync()).GateUpperId)).State);
@@ -1429,6 +1430,15 @@ public sealed class StoppedRebuildExitTests
         fixture.Riot.CancelOrder((await fixture.RuntimeAsync()).GateUpperId);
         await TickAndRunAsync(fixture);
         await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        // Cargo on board: the first rebuild waits for a snapshot received after it fell due showing the cargo in place
+        // (control-server#366, CP-0007).
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow());
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.HearFromPeerAsync();
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(2, fixture.Riot.CreateCount("TO_GATE"));
         fixture.Clock.Advance(TimeSpan.FromMinutes(1));
         await fixture.HearFromPeerAsync();
         fixture.Riot.CancelOrder((await CurrentStopAsync(fixture, FirstDemandId)).UpperId);
@@ -1552,9 +1562,14 @@ public sealed class StoppedRebuildExitTests
             (await VehicleFaultRecoveryTests.Service(fixture, new(fixture))
                 .RecoverAsync(VehicleFaultRecoveryTests.Clear(fixture), Token)).Disposition);
         fixture.Context.ChangeTracker.Clear();
-        fixture.Clock.Advance(TimeSpan.FromSeconds(5));
-        await fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow(), physicalState: "EMPTY");
+        // The snapshot is received after the rebuild fell due: one from within the delay no longer counts (control-server#366).
         await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow(), physicalState: "EMPTY");
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.HearFromPeerAsync();
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(Token);
         Assert.Equal("OWN_ORDER_REBUILD_CARGO_NOT_IN_PLACE", (await fixture.RuntimeAsync()).BlockReasonCode);
         fixture.Context.ChangeTracker.Clear();
         return fixture;

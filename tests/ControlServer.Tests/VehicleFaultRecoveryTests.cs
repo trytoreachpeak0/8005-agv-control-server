@@ -484,7 +484,9 @@ public sealed class VehicleFaultRecoveryTests
             VehicleFaultRecoveryDispositions.RebuildScheduled,
             (await Service(fixture, new SiteRiot(fixture)).RecoverAsync(Clear(fixture), Token)).Disposition);
         fixture.Context.ChangeTracker.Clear();
-        fixture.Clock.Advance(TimeSpan.FromSeconds(5));
+        // Received after the rebuild fell due: one from within the delay no longer counts (control-server#366, window B).
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
         if (shows == "one-of-two-empty")
         {
             await SecondCargoSlotAsync(fixture);
@@ -547,7 +549,9 @@ public sealed class VehicleFaultRecoveryTests
             VehicleFaultRecoveryDispositions.RebuildScheduled,
             (await Service(fixture, new SiteRiot(fixture)).RecoverAsync(Clear(fixture), Token)).Disposition);
         fixture.Context.ChangeTracker.Clear();
-        fixture.Clock.Advance(TimeSpan.FromSeconds(5));
+        // Received after the rebuild fell due: one from within the delay no longer counts (control-server#366, window B).
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
         await (shows switch
         {
             "unlocked" => fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow(), lockState: "UNLOCKED"),
@@ -641,6 +645,12 @@ public sealed class VehicleFaultRecoveryTests
         Assert.False(await ClaimAsync(fixture, generation));
         await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
 
+        // control-server#366: the request made at the clearance predates the due time, and an answer to it would not count; the
+        // round the rebuild falls due withdraws it, and the vehicle is asked again -- once.
+        fixture.Context.ChangeTracker.Clear();
+        Assert.True(await ClaimAsync(fixture, generation));
+        Assert.False(await ClaimAsync(fixture, generation));
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
         await fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow(), lockState: "UNLOCKED");
         fixture.Clock.Advance(TimeSpan.FromSeconds(9));
         await fixture.HearFromPeerAsync();
@@ -699,7 +709,10 @@ public sealed class VehicleFaultRecoveryTests
             VehicleFaultRecoveryDispositions.RebuildScheduled,
             (await Service(fixture, new SiteRiot(fixture)).RecoverAsync(Clear(fixture), Token)).Disposition);
         fixture.Context.ChangeTracker.Clear();
-        fixture.Clock.Advance(TimeSpan.FromSeconds(5));
+        // After the rebuild fell due, so that only the vehicle filter keeps it out: one from within the delay would be left out
+        // for its time alone (control-server#366), and this case would stay green with the filter gone.
+        await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
         await fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow(), physicalState: "EMPTY", agvId: "另一辆车");
         await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
         await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
@@ -733,9 +746,13 @@ public sealed class VehicleFaultRecoveryTests
             await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
         }
 
+        // control-server#366: the cargo is asked about only once nothing holds the vehicle -- a snapshot received while the
+        // session is not ready does not count (CP-0007) -- so what the journey waits on is the vehicle, not the snapshot.
         Assert.Equal(gateCreates, fixture.Riot.CreateCount("TO_GATE"));
-        Assert.Equal("OWN_ORDER_REBUILD_WAITING_CARGO_EVIDENCE", (await fixture.RuntimeAsync()).BlockReasonCode);
+        Assert.Equal("OWN_ORDER_REBUILD_WAITING_VEHICLE", (await fixture.RuntimeAsync()).BlockReasonCode);
         Assert.Single(fixture.EngineLog.Entries, entry =>
+            entry.Message.Contains("is held back: ONBOARD_SESSION_NOT_READY", StringComparison.Ordinal));
+        Assert.DoesNotContain(fixture.EngineLog.Entries, entry =>
             entry.Message.Contains("is held back: CARGO_EVIDENCE_NOT_RECEIVED", StringComparison.Ordinal));
         await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
         Assert.Equal(
@@ -1408,6 +1425,17 @@ public sealed class VehicleFaultRecoveryTests
 
         fixture.Context.ChangeTracker.Clear();
         await fixture.RestoreSessionReadyAsync();
+        if (cargo == "loaded")
+        {
+            // control-server#366: the snapshot above came while the session was not ready and does not count; the round that
+            // finds the session ready waits for one received after it.
+            await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
+            Assert.Equal(createsBefore, fixture.Riot.CreateCount("TO_GATE"));
+            Assert.Equal("OWN_ORDER_REBUILD_WAITING_CARGO_EVIDENCE", (await fixture.RuntimeAsync()).BlockReasonCode);
+            fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+            await fixture.AddCargoSnapshotAsync(fixture.Clock.GetUtcNow());
+        }
+
         await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
 
         Assert.Equal(createsBefore + 1, fixture.Riot.CreateCount(cargo == "loaded" ? "TO_GATE" : "TO_PICKUP"));
