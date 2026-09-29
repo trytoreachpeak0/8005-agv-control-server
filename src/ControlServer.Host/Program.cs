@@ -195,6 +195,8 @@ if (PackageCapacityImportCommand.IsRequested(args))
     return;
 }
 
+// control-server#382：发件箱里有未确认、信封身份不是本构建的行时拒绝启动——补发不改身份，车会拒收并反复断会话。
+await ProtocolOutboxIdentityStartupCheck.EnsureAsync(app.Services, CancellationToken.None);
 // control-server#72：当前分区归属版本把 AREA 归进了未允许的调度区时拒绝启动，并列出是哪几条。
 await AreaAssignmentDispatchZoneStartupCheck.EnsureAsync(app.Services, CancellationToken.None);
 // control-server#159：旅程运行时开着时装载任务类型规则与按图绑定的预置配置，配错拒绝启动并列出全部违规。

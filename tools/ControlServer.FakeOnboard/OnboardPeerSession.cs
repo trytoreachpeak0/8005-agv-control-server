@@ -133,7 +133,6 @@ public sealed class OnboardPeerSession(
             activeSlotConfigurationVersion = state.ActiveSlotConfigurationVersion,
             activeSlotConfigurationFingerprint = state.ActiveSlotConfigurationFingerprint,
             slotStates = slotStateSeed.Render(),
-            supportsBatchUnlock = false,
             onboardJournalFormatVersion = 1
         }), cancellationToken).ConfigureAwait(false);
         await ReadRequiredAsync(reader, "SnapshotAppliedAck", cancellationToken).ConfigureAwait(false);
@@ -513,6 +512,10 @@ public sealed class OnboardPeerSession(
             new
             {
                 preDepartureSafetyCheckId = checkPayload.GetProperty("preDepartureSafetyCheckId").GetString(),
+                // v3 (control-server#382): the answer says which check it answers. Required by the schema, and
+                // the server does not validate inbound lines, so only FakeOnboardRequestAnswerTests would notice
+                // it missing.
+                checkPurpose = checkPayload.GetProperty("checkPurpose").GetString(),
                 outcome = safe ? "SAFE" : "UNSAFE",
                 observedAt,
                 safetyStateVersion = checkPayload.GetProperty("expectedSafetyStateVersion").GetInt64(),

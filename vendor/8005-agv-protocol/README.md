@@ -5,7 +5,7 @@
 ## 为什么是副本而不是引用
 
 `integration-slices/index.json` 是切片家族表与向量清单的权威定义，`manifest/release.json` 是
-发布身份、63 条消息面与 11 条 denylist 的权威定义，权威副本都在 `8005-agv-protocol`。本仓库的
+发布身份、65 条消息面与 11 条 denylist 的权威定义，权威副本都在 `8005-agv-protocol`。本仓库的
 `ProtocolVectorTestBindingArchitectureTests`、`ProtocolIdentityArchitectureTests`、
 `ProtocolMessageSurfaceArchitectureTests` 与 `IntegrationSliceTraitArchitectureTests` 要在 CI 的
 headless runner 上把它们当清单来源用，而那里 `actions/checkout` 只取一个仓库——**读兄弟目录在
@@ -20,7 +20,7 @@ CI 上不成立**，两个仓库是各自独立的克隆，没有 submodule 也�
 那个常量去核副本：常量让副本可信，副本让常量可查，两边互为凭据。`index.json` 那份没有这种现成
 的凭据，故仍单独钉在 `ProtocolVectorTestBindingArchitectureTests.ApprovedIndexSha256`。
 
-`schemas/` 是 69 个文件，钉的是**一个树摘要**：按相对路径排序，逐个写入「路径 ＋ 换行 ＋ 该文件
+`schemas/` 是 71 个文件，钉的是**一个树摘要**：按相对路径排序，逐个写入「路径 ＋ 换行 ＋ 该文件
 SHA-256 的小写十六进制 ＋ 换行」，整体再取一次 SHA-256，常量是
 `ProtocolPayloadShapeArchitectureTests.ApprovedSchemaTreeSha256`。**这个摘要是我们自己的，不是
 manifest 里的 `schemaBundleSha256`**——后者由协议仓自己的打包算法算出，本仓不复现它；拿它来钉
@@ -32,26 +32,32 @@ manifest 里的 `schemaBundleSha256`**——后者由协议仓自己的打包算
 
 ## 当前副本
 
-两份都取自同一个提交。
+三份都取自同一个提交。**这一份只在批次分支 `batch-p3/v3` 上**；集成分支 `fp/v2-impl` 仍是
+`protocol-v2.0.0` 的副本。
 
 | 项 | 值 |
 | --- | --- |
 | 来源仓库 | `8005-agv-protocol` |
-| 来源提交 | `86575456c847041515b7b75e8851a00e0d939804`（tag `protocol-v2.0.0`） |
-| 取用日期 | 2026-09-16 |
+| 来源提交 | `3f091cb2eae7c58cec54a95dd9389c9180bc7b4c`（分支 `batch-p3/protocol-v3.0.0-candidate`，tag `protocol-v3.0.0` 尚未创建） |
+| 取用日期 | 2026-09-30 |
 
 | 来源路径 | 内容 |
 | --- | --- |
-| `integration-slices/index.json` | `schemaVersion 2.0.0`、16 条切片（`FP-IS-00`～`15`）、`vectorIds` 条目 36、去重 33 |
-| `manifest/release.json` | `status CONTENT_SNAPSHOT`、`releaseVersion 2.0.0`、`protocolVersion 3`、`profileId AGV_FULL_PRODUCT`、63 条消息、11 条 denylist、1785 条文件表项 |
-| `schemas/`（整棵树） | 69 个文件，`$id` 段 `agv-full-product/v3` |
+| `integration-slices/index.json` | `schemaVersion 2.0.0`、16 条切片（`FP-IS-00`～`15`）、`vectorIds` 条目 42、去重 39 |
+| `manifest/release.json` | `status CONTENT_SNAPSHOT`、`releaseVersion 3.0.0`、`protocolVersion 4`、`profileId AGV_FULL_PRODUCT`、65 条消息、11 条 denylist、1897 条文件表项 |
+| `schemas/`（整棵树） | 71 个文件，`$id` 段 `agv-full-product/v4` |
 
-那个提交即协议 `protocol-v2.0.0` 的发布内容（`ApprovalStatus APPROVED_RELEASE`）：`8005-agv-program#96` 于
-2026-09-16 把它冻结为 `2.0.0` 候选并在其上通过 G1（协议仓 PR 的 CI 与合并顶端的干净克隆各一次），
-`8005-agv-program#97` 同日用注释 tag `protocol-v2.0.0` 发布**同一个提交**——manifest 未变，批准只以外置
-attestation（Release asset `release-approval.json`）给出。三份文件从该提交的对象里导出（不经协议仓工作树），
-逐个与 manifest 自带的文件表 SHA-256 核对一致后整份拷入；发布后服务端没有重新 vendor，因为副本与发布提交
-逐字节相同（`8005-agv-control-server#89` 已逐个核对）。
+那个提交是协议 `3.0.0` 的**未发布候选**（`ApprovalStatus SUPERSEDING_CANDIDATE`）：`8005-agv-program#151` 于
+2026-09-29 由生成器一把产出并冻结在候选分支上，G1 通过（协议仓 PR #12 的 CI 与候选顶端的干净克隆各一次），
+身份表见该票关闭评论。它要挂到上真车验证之后，由 `8005-agv-program#152` 在同一个提交上打 tag 发布；
+服务端改绑发布身份是 `8005-agv-control-server#393`。在它上面跑出的 G2／L2 证据一律是 `UNRELEASED_CANDIDATE`，
+不计入批次出口。三份文件从该提交的对象里用 `git archive` 导出（不经协议仓工作树，避免行尾转换），逐个与
+manifest 自带的文件表 SHA-256 核对一致（71 个 schema 与 `index.json` 全部命中）后整份拷入
+（`8005-agv-control-server#382`）。
+
+候选若重发，以 `8005-agv-program#151` 上追加评论公布的新身份为准，按下面的步骤重新 vendor。
+
+上一份副本是 `protocol-v2.0.0`（`86575456c847041515b7b75e8851a00e0d939804`，2026-09-16 取用）。
 
 ## 上游改了以后怎么刷新
 

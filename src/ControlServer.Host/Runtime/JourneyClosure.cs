@@ -65,7 +65,7 @@ internal static class JourneyClosure
         runtime.Stage = JourneyRuntimeStage.Completed;
         runtime.SetBlockReason(reasonCode, endedAt);
         runtime.UpdatedAt = endedAt;
-        await StageSnapshotsAsync(dbContext, runtime, endedAt, cancellationToken).ConfigureAwait(false);
+        await StageSnapshotsAsync(dbContext, runtime, reasonCode, endedAt, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>这趟旅程三张收尾快照的 messageId。一趟旅程只收尾一次，所以按旅程派生。</summary>
@@ -155,6 +155,7 @@ internal static class JourneyClosure
     private static async Task StageSnapshotsAsync(
         ControlServerDbContext dbContext,
         JourneyRuntimeRow runtime,
+        string? reasonCode,
         DateTimeOffset endedAt,
         CancellationToken cancellationToken)
     {
@@ -189,7 +190,8 @@ internal static class JourneyClosure
             ids[0],
             runtime.AgvId,
             session.SessionGeneration,
-            new CurrentStopWorklistProjection(closingStop.StationId, worklistRevision, null, null, []),
+            new CurrentStopWorklistProjection(
+                closingStop.StationId, worklistRevision, null, null, [], StopEndedReasons.ForEnding(reasonCode)),
             endedAt,
             cancellationToken).ConfigureAwait(false);
         await OnboardJourneyPublisher.StageUpcomingStopPlanAsync(

@@ -618,6 +618,108 @@ public sealed class StopEndedJourneyContinuesTests
     }
 
     /// <summary>
+    /// v3 的 <c>stopEndedReason</c>（control-server#382）：期限结束了这一站，那张空清单说的是 <c>STATION_DEADLINE_EXPIRED</c>。
+    /// </summary>
+    /// <remarks>
+    /// 断的是<b>线上那一行</b>，不是发件箱：车只认它收到的。原因码与取值的对照在 <see cref="StopEndedReasons"/>，一处。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AStopEndedByItsDeadlineTellsTheVehicleTheDeadlineExpired()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await EndTheSecondPickupByItsDeadlineAsync(fixture);
+
+        Snapshot empty = Assert.Single(
+            await WorklistsAsync(fixture), item => item.Payload.GetProperty("items").GetArrayLength() == 0);
+        Assert.Equal("STATION_DEADLINE_EXPIRED", SentStopEndedReason(fixture, empty.MessageId));
+    }
+
+    /// <summary>
+    /// 同上，但这一站是被扫码前取消（车报 <c>LoadCancellationResult</c>，<c>ALL_EMPTY</c>）结束的：空清单说 <c>LOAD_CANCELLED</c>。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AStopEndedByACancellationTellsTheVehicleTheLoadWasCancelled()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await ArriveAtTheSecondPickupAsync(fixture);
+        await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+        OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+            connection, new WireToGateStore(connection), fixture.Clock, new ConfigurationBuilder().Build(), fixture.Peer);
+        OnboardConnectionState state = Connection(fixture);
+        const string cancellationId = "d3000000-0000-4000-8000-000000000001";
+        await processor.ProcessAsync(
+            Envelope(fixture, "d3000000-0000-4000-8000-000000000002", "LoadCancellationStartRequested", new
+            {
+                cancellationId,
+                demandId = SecondDemandId,
+                slotOperationAttemptId = (string?)null,
+                @operator = Operator(fixture),
+                reason = "Nothing to load at this stop."
+            }),
+            state,
+            token);
+        await processor.ProcessAsync(
+            Envelope(fixture, "d3000000-0000-4000-8000-000000000003", "LoadCancellationResult", new
+            {
+                cancellationId,
+                demandId = SecondDemandId,
+                slotOperationAttemptId = (string?)null,
+                overallOutcome = "ALL_EMPTY",
+                slotResults = Array.Empty<object>(),
+                observedAt = Now
+            }),
+            state,
+            token);
+
+        Assert.Equal(JourneyDemandStatuses.Terminated, (await MembershipAsync(fixture, SecondDemandId)).Status);
+        Snapshot empty = Assert.Single(
+            await WorklistsAsync(fixture), item => item.Payload.GetProperty("items").GetArrayLength() == 0);
+        Assert.Equal("LOAD_CANCELLED", SentStopEndedReason(fixture, empty.MessageId));
+    }
+
+    /// <summary>
+    /// 这一站还没结束的每一版清单都带着 <c>stopEndedReason: null</c>——字段在、值为 null，不是缺字段。
+    /// </summary>
+    /// <remarks>
+    /// v3 把它定为必填可空：<c>items</c> 非空时必须是 null。缺字段与 null 在车载端的解析里不是一回事，所以断
+    /// <see cref="JsonValueKind.Null"/> 而不是「读不到」。一路跑到卸货站，覆盖取货站与卸货站两种有项的清单。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task EveryWorklistOfAStopThatHasNotEndedCarriesANullStopEndedReason()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await EndTheSecondPickupByItsDeadlineAsync(fixture);
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+        await AnswerDepartureSafetyAsync(fixture, FirstDemandId, SecondSafetyResultId);
+        await ArriveAtCurrentStopAsync(fixture, FirstDemandId, "TO_GATE");
+
+        Snapshot[] withItems =
+            [.. (await WorklistsAsync(fixture)).Where(item => item.Payload.GetProperty("items").GetArrayLength() > 0)];
+        Assert.True(withItems.Length >= 3, $"只看到 {withItems.Length} 版有项的清单，覆盖不到两个取货站与卸货站。");
+        Assert.All(withItems, item =>
+        {
+            Assert.True(
+                item.Payload.TryGetProperty("stopEndedReason", out JsonElement reason),
+                $"清单 {item.MessageId} 缺 stopEndedReason。");
+            Assert.Equal(JsonValueKind.Null, reason.ValueKind);
+        });
+    }
+
+    /// <summary>线上发出的那一行里的 <c>stopEndedReason</c>。那一行不在线上就失败。</summary>
+    private static string? SentStopEndedReason(RuntimeFixture fixture, string messageId)
+    {
+        string line = Assert.Single(
+            fixture.Peer.Lines.Select(Line).Where(text => text.Contains(messageId, StringComparison.Ordinal)).Distinct());
+        using JsonDocument document = JsonDocument.Parse(line);
+        return document.RootElement.GetProperty("payload").GetProperty("stopEndedReason").GetString();
+    }
+
+    /// <summary>
     /// 受理两条需求（第二条在另一个取货站）、第一条在第一站装上车，车到第二个取货站等录入，期限到期那一轮跑完。
     /// 返回第二个取货停靠。
     /// </summary>

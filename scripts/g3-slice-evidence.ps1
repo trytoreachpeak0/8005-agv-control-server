@@ -51,9 +51,9 @@
 #
 # Batch 6 (control-server#164): the journey runner claims FP-IS-10 and FP-IS-11, one scenario each, nine
 # assertions each. docs/g3-slice-claim-review.md has their rows, each against the vector's productAssertions
-# entry it answers. One onboard entry is deliberately answered by nothing: CV-TASK-TYPE-ADMISSION-FAIL-CLOSED's
-# DISPLAY_ADMISSION_BLOCK_REASON, which specification 5.3 cancelled (the reason stays on the server and the
-# dashboard, so v2 has no producer for it); registered as program#125.
+# entry it answers. CV-TASK-TYPE-ADMISSION-FAIL-CLOSED used to carry one onboard entry answered by nothing,
+# DISPLAY_ADMISSION_BLOCK_REASON, which specification 5.3 cancelled; protocol 3.0.0 deleted it from the vector
+# (program#125, control-server#382), so every entry is answered.
 #
 # Batch 7 (control-server#218): the journey runner claims FP-IS-08, one scenario (g3-multi-stop-plan), seven
 # assertions, one en-route append that grows the plan from two legs to three, run to completion on the real
@@ -448,8 +448,8 @@ function Get-G3RunnerClaim {
                 # CV-TASK-TYPE-ADMISSION-FAIL-CLOSED (batch 6, control-server#164): under the factory preset
                 # STAGING_TO_WIRE has no binding, so its demand is never admitted while a WIRE_TO_GATE demand in
                 # the same rounds runs to completion. The onboard half is NEVER_INFER_UNBOUND_TASK_TYPE, read
-                # through UI Automation. DISPLAY_ADMISSION_BLOCK_REASON is deliberately unclaimed: specification
-                # 5.3 keeps the reason on the server and the dashboard, so no v2 producer exists (program#125).
+                # through UI Automation. DISPLAY_ADMISSION_BLOCK_REASON is gone: protocol 3.0.0 deleted it from the
+                # vector (program#125, control-server#382), as specification 5.3 keeps the reason on the server.
                 'FP-IS-10' = @(
                     'unboundTaskTypeDemandNeverAccepted',
                     'unboundTaskTypeNeverPlannedListedOrOrdered',

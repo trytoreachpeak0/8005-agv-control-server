@@ -121,7 +121,7 @@ public sealed class ProtocolReasonCodeArchitectureTests
                 .EnumerateArray().Select(code => code.GetString()!).Order(StringComparer.Ordinal)
         ];
 
-        Assert.Equal(58, vendored.Length);
+        Assert.Equal(62, vendored.Length);
         Assert.Equal(vendored, ProtocolErrorCodes.All.Order(StringComparer.Ordinal));
     }
 

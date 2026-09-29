@@ -135,7 +135,8 @@ public sealed class OnboardJourneyPublisherTests
                 operationSessionId,
                 null,
                 [new CurrentStopWorklistItem(
-                    demandId, "SUBLOT-001|WIRE_TO_GATE", "SUBLOT-001", "WIRE_TO_GATE", "PICKUP", 2)]),
+                    demandId, "SUBLOT-001|WIRE_TO_GATE", "SUBLOT-001", "WIRE_TO_GATE", "PICKUP", 2)],
+                StopEndedReason: null),
             TestContext.Current.CancellationToken);
         await publisher.PublishUpcomingStopPlanAsync(
             "00000000-0000-4000-8000-000000000325",
@@ -500,6 +501,7 @@ public sealed class OnboardJourneyPublisherTests
             11,
             new PreDepartureSafetyCheckCommand(
                 "00000000-0000-4000-8000-000000000407",
+                PreDepartureCheckPurposes.Departure,
                 demandId,
                 "00000000-0000-4000-8000-000000000408",
                 17,
@@ -549,6 +551,8 @@ public sealed class OnboardJourneyPublisherTests
             .GetProperty("expectedFinalPhysicalState").GetString());
         Assert.Equal(17, safetyEnvelope.RootElement.GetProperty("payload")
             .GetProperty("expectedSafetyStateVersion").GetInt64());
+        Assert.Equal("DEPARTURE", safetyEnvelope.RootElement.GetProperty("payload")
+            .GetProperty("checkPurpose").GetString());
         Assert.Null(unloadEnvelope.RootElement.GetProperty("correlationId").GetString());
         Assert.Equal("UNLOAD", unloadEnvelope.RootElement.GetProperty("payload")
             .GetProperty("operationType").GetString());
@@ -569,6 +573,46 @@ public sealed class OnboardJourneyPublisherTests
                     envelope.RootElement.GetProperty("protocolReleaseManifestSha256").GetString());
                 Assert.Equal(11, envelope.RootElement.GetProperty("sessionGeneration").GetInt64());
             });
+    }
+
+    /// <summary>
+    /// v3 的 <c>checkPurpose</c>（control-server#382）：今天只组装 <c>DEPARTURE</c>，另外两种用途的检查拒绝组装。
+    /// </summary>
+    /// <remarks>
+    /// 命令记录的三个字段今天都是非空字符串，而 schema 要 <c>NON_BUSINESS_MOVE</c> 的 <c>demandId</c> 为 null、<c>HOLD_RELEASE</c>
+    /// 的三个都为 null。拿非空字段组一条那两种用途的检查，车载端会按 schema 拒收。组装它们归认领的票：<c>HOLD_RELEASE</c> 是
+    /// control-server#385，<c>NON_BUSINESS_MOVE</c> 是空闲返回与自动充电的票。
+    /// </remarks>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-03")]
+    [InlineData("NON_BUSINESS_MOVE")]
+    [InlineData("HOLD_RELEASE")]
+    [InlineData("SOMETHING_ELSE")]
+    public async Task OnlyADepartureCheckIsAssembledToday(string checkPurpose)
+    {
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using ControlServerDbContext context = new(options);
+        await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+        RecordingPeer peer = new(context);
+        OnboardJourneyPublisher publisher = new(new WireToGateStore(context), peer, new AdvancingTimeProvider());
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => publisher.PublishPreDepartureSafetyCheckAsync(
+            "00000000-0000-4000-8000-000000000431",
+            "AGV-001",
+            1,
+            new PreDepartureSafetyCheckCommand(
+                "00000000-0000-4000-8000-000000000432",
+                checkPurpose,
+                "00000000-0000-4000-8000-000000000433",
+                "00000000-0000-4000-8000-000000000434",
+                3,
+                "GATE-01"),
+            TestContext.Current.CancellationToken));
+        Assert.Empty(peer.Lines);
     }
 
     [Fact]

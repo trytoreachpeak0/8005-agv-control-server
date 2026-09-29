@@ -188,7 +188,8 @@ public sealed record CurrentStopWorklistProjection(
     long Revision,
     string? OperationSessionId,
     DateTimeOffset? StationDepartureDeadlineAt,
-    IReadOnlyList<CurrentStopWorklistItem> Items);
+    IReadOnlyList<CurrentStopWorklistItem> Items,
+    string? StopEndedReason);
 
 /// <summary>
 /// One leg of the plan the vehicle is shown.
@@ -280,12 +281,33 @@ public sealed record SlotOperationCommand(
     long ForcedRecoveryGeneration,
     string CommandContentSha256);
 
+/// <remarks>
+/// <see cref="CheckPurpose"/> is v3's discriminator (control-server#382), one of <see cref="PreDepartureCheckPurposes"/>.
+/// The three fields after it stay non-null because the only purpose assembled today is
+/// <see cref="PreDepartureCheckPurposes.Departure"/>, for which the schema requires all three.
+/// </remarks>
 public sealed record PreDepartureSafetyCheckCommand(
     string PreDepartureSafetyCheckId,
+    string CheckPurpose,
     string DemandId,
     string MovementLegId,
     long ExpectedSafetyStateVersion,
     string TargetStationId);
+
+/// <summary>
+/// v3's <c>checkPurpose</c> on <c>PreDepartureSafetyCheck</c> and its result (<c>8005-agv-program#150</c>, control-server#382).
+/// </summary>
+public static class PreDepartureCheckPurposes
+{
+    /// <summary>A demand-bearing departure: <c>demandId</c>, <c>movementLegId</c> and <c>targetStationId</c> all present.</summary>
+    public const string Departure = "DEPARTURE";
+
+    /// <summary>A move without a demand (idle return, charging): <c>demandId</c> null, leg and target present.</summary>
+    public const string NonBusinessMove = "NON_BUSINESS_MOVE";
+
+    /// <summary>Releasing a door-unproven hold: all three null.</summary>
+    public const string HoldRelease = "HOLD_RELEASE";
+}
 
 public enum DemandExecutionStatus
 {

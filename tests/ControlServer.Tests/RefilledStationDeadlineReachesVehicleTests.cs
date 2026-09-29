@@ -590,6 +590,7 @@ public sealed class RefilledStationDeadlineReachesVehicleTests
             new
             {
                 preDepartureSafetyCheckId = runtime.PreDepartureSafetyCheckId,
+                checkPurpose = "DEPARTURE",
                 outcome = "SAFE",
                 observedAt = fixture.Clock.GetUtcNow(),
                 safetyStateVersion = 7,

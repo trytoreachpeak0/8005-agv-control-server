@@ -342,7 +342,6 @@ public sealed class CapabilitySnapshotFingerprintTests
                         activeSlotConfigurationVersion = "1",
                         activeSlotConfigurationFingerprint = fingerprint,
                         slotStates = Array.Empty<object>(),
-                        supportsBatchUnlock = true,
                         onboardJournalFormatVersion = 1
                     }),
                 State,

@@ -43,17 +43,23 @@ internal static class StopEndWorklist
     /// <param name="currentSublotRequestMessageId">
     /// 终结之前本停靠在车上那一版录入请求的 id：终结之后按算式已经算不回它，所以由调用方在终结前取好传进来。null 表示没有要结清的。
     /// </param>
+    /// <param name="reasonCode">
+    /// 终结 <paramref name="demandId"/> 的原因码，经 <see cref="StopEndedReasons.ForEnding"/> 成为空清单的 <c>stopEndedReason</c>
+    /// （v3，control-server#382）。它是结束这一站最后一条待做项的那条来路，正是协议要的那一个。
+    /// </param>
     public static async Task<bool> StageAsync(
         ControlServerDbContext dbContext,
         JourneyRuntimeRow runtime,
         string demandId,
         string? currentSublotRequestMessageId,
+        string reasonCode,
         DateTimeOffset endedAt,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(dbContext);
         ArgumentNullException.ThrowIfNull(runtime);
         ArgumentException.ThrowIfNullOrWhiteSpace(demandId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(reasonCode);
 
         JourneyStopCursor staged = await JourneyStopCursor
             .LoadIncludingUnsavedChangesAsync(dbContext, runtime, cancellationToken).ConfigureAwait(false);
@@ -116,7 +122,7 @@ internal static class StopEndWorklist
             messageId,
             runtime.AgvId,
             session.SessionGeneration,
-            new CurrentStopWorklistProjection(stop.StationId, revision, null, null, []),
+            new CurrentStopWorklistProjection(stop.StationId, revision, null, null, [], StopEndedReasons.ForEnding(reasonCode)),
             endedAt,
             cancellationToken).ConfigureAwait(false);
         // 这一站上已经落库、却没人答的扫码（引擎读收件箱与这把写锁之间到的，或输给了扫码前取消的），同一次改动里答过时。

@@ -15,6 +15,105 @@ public sealed class OnboardMessageProcessorTests
 {
     private static readonly int[] FirstTwoSlots = [1, 2];
 
+    /// <summary>
+    /// control-server#382: the handshake accepts a peer speaking the <c>3.0.0</c> candidate and rejects one still built
+    /// against the released <c>protocol-v2.0.0</c>, naming the candidate as what it expected.
+    /// </summary>
+    /// <remarks>
+    /// There is no negotiation and no downgrade (ADR-cross-0031): a peer on the old release is refused at
+    /// <c>SessionHello</c> with <c>PROTOCOL_RELEASE_IDENTITY_MISMATCH</c>, never half-accepted. The v2 identity is
+    /// written out literally here on purpose -- it is the released one the integration branch still speaks, and the
+    /// point is that this build no longer does.
+    /// </remarks>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task TheHandshakeAcceptsTheCandidateIdentityAndRejectsTheReleasedV2One(bool candidate)
+    {
+        const string credentialVariable = "CONTROL_SERVER_TEST_ONBOARD_V3_IDENTITY_CREDENTIAL";
+        const string credential = "test-credential-not-for-production";
+        Environment.SetEnvironmentVariable(credentialVariable, credential);
+        try
+        {
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(TestContext.Current.CancellationToken);
+            DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+                .UseSqlite(connection)
+                .Options;
+            await using ControlServerDbContext context = new(options);
+            await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+            IConfiguration configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["OnboardTransport:CredentialEnvironmentVariable"] = credentialVariable
+                })
+                .Build();
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, new WireToGateStore(context), new FixedTimeProvider(), configuration);
+
+            object hello = new
+            {
+                protocolReleaseIdentity = candidate ? ReleaseIdentity() : ReleasedV2Identity(),
+                credentialProof = credential
+            };
+            string line = candidate
+                ? Envelope("SessionHello", "00000000-0000-4000-8000-000000000382", null, hello)
+                : JsonSerializer.Serialize(new
+                {
+                    protocolVersion = 3,
+                    profileId = "AGV_FULL_PRODUCT",
+                    protocolReleaseVersion = "2.0.0",
+                    protocolReleaseManifestSha256 = "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+                    messageType = "SessionHello",
+                    messageId = "00000000-0000-4000-8000-000000000382",
+                    correlationId = (string?)null,
+                    agvId = "AGV-001",
+                    sessionGeneration = (long?)null,
+                    sentAt = "2026-08-25T09:00:00Z",
+                    payload = JsonSerializer.SerializeToElement(hello, PeerSerializerOptions)
+                });
+
+            string response = await processor.ProcessAsync(line, new OnboardConnectionState(), TestContext.Current.CancellationToken);
+
+            using JsonDocument answer = JsonDocument.Parse(
+                response.Split((char)10, StringSplitOptions.RemoveEmptyEntries)[0]);
+            JsonElement root = answer.RootElement;
+            if (candidate)
+            {
+                Assert.Equal("SessionAccepted", root.GetProperty("messageType").GetString());
+                return;
+            }
+            Assert.Equal("SessionRejected", root.GetProperty("messageType").GetString());
+            JsonElement payload = root.GetProperty("payload");
+            Assert.Equal(
+                "PROTOCOL_RELEASE_IDENTITY_MISMATCH",
+                payload.GetProperty("problem").GetProperty("reasonCode").GetString());
+            Assert.Equal(4, payload.GetProperty("expectedProtocolVersion").GetInt32());
+            Assert.Equal(
+                ProtocolCandidateIdentity.ManifestSha256,
+                payload.GetProperty("expectedProtocolReleaseIdentity").GetProperty("manifestSha256").GetString());
+            Assert.Empty(await context.SessionRecoveries.AsNoTracking().ToArrayAsync(TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(credentialVariable, null);
+        }
+    }
+
+    private static object ReleasedV2Identity() => new
+    {
+        repository = "8005-agv-protocol",
+        releaseVersion = "2.0.0",
+        tag = "protocol-v2.0.0",
+        commit = "86575456c847041515b7b75e8851a00e0d939804",
+        protocolVersion = 3,
+        profileId = "AGV_FULL_PRODUCT",
+        manifestSha256 = "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+        schemaBundleSha256 = "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+        vectorsSha256 = "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a"
+    };
+
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-00")]
     public async Task ProtocolProblemIsRecordedWithoutAnsweringOrDroppingTheSession()
@@ -477,6 +576,7 @@ public sealed class OnboardMessageProcessorTests
                 ("PreDepartureSafetyCheckResult", "00000000-0000-4000-8000-000000000103", new
                 {
                     preDepartureSafetyCheckId = "00000000-0000-4000-8000-000000000113",
+                    checkPurpose = "DEPARTURE",
                     outcome = "SAFE",
                     observedAt = "2026-08-25T09:00:00Z",
                     safetyStateVersion = 1,

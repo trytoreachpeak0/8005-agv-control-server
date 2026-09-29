@@ -199,8 +199,8 @@ $scenarioAssertions = [ordered]@{
         'G3-07-54' = 'manualChargingReturnHasNoSideEffects'
     }
     # Batch 6 (control-server#164): CV-TASK-TYPE-ADMISSION-FAIL-CLOSED under the factory preset, where
-    # STAGING_TO_WIRE is in no demand set and has no binding. DISPLAY_ADMISSION_BLOCK_REASON is not claimed:
-    # specification 5.3 keeps the reason on the server, so v2 has no producer for it (program#125).
+    # STAGING_TO_WIRE is in no demand set and has no binding. DISPLAY_ADMISSION_BLOCK_REASON is no longer in the
+    # vector: protocol 3.0.0 deleted it (program#125, control-server#382), as specification 5.3 keeps the reason on the server.
     'g3-task-type-admission-fail-closed' = [ordered]@{
         'G3-10-01' = 'unboundTaskTypeDemandNeverAccepted'
         'G3-10-02' = 'unboundTaskTypeNeverPlannedListedOrOrdered'

@@ -387,6 +387,11 @@ public sealed class OnboardJourneyPublisher(
             cancellationToken);
     }
 
+    /// <remarks>
+    /// v3 加了必填的 <c>checkPurpose</c>（control-server#382）。今天只组装 <see cref="PreDepartureCheckPurposes.Departure"/>：
+    /// 命令记录的三个字段都是非空字符串，而 schema 要另外两种用途把其中几个置 null，拿非空字段组出来的那两种检查车载端会按 schema
+    /// 拒收。<c>HOLD_RELEASE</c> 由 control-server#385 放开，<c>NON_BUSINESS_MOVE</c> 由空闲返回与自动充电的票放开。
+    /// </remarks>
     public Task PublishPreDepartureSafetyCheckAsync(
         string messageId,
         string agvId,
@@ -396,6 +401,11 @@ public sealed class OnboardJourneyPublisher(
     {
         ArgumentNullException.ThrowIfNull(command);
         ValidateUuid(command.PreDepartureSafetyCheckId, nameof(command.PreDepartureSafetyCheckId));
+        if (command.CheckPurpose != PreDepartureCheckPurposes.Departure)
+            throw new ArgumentOutOfRangeException(
+                nameof(command),
+                command.CheckPurpose,
+                "Only a DEPARTURE check is assembled today; HOLD_RELEASE and NON_BUSINESS_MOVE need nullable fields.");
         ValidateUuid(command.DemandId, nameof(command.DemandId));
         ValidateUuid(command.MovementLegId, nameof(command.MovementLegId));
         ArgumentOutOfRangeException.ThrowIfNegative(command.ExpectedSafetyStateVersion);
@@ -410,6 +420,7 @@ public sealed class OnboardJourneyPublisher(
             new
             {
                 command.PreDepartureSafetyCheckId,
+                command.CheckPurpose,
                 command.DemandId,
                 command.MovementLegId,
                 command.ExpectedSafetyStateVersion,
@@ -472,6 +483,9 @@ public sealed class OnboardJourneyPublisher(
                 throw new InvalidDataException("A recovery session without a demand names no slot operation attempt.");
         }
         ValidateSlots(projection.Slots);
+        if (projection.ClosedReason is not null &&
+            (projection.State != "CLOSED" || !ProtocolErrorCodes.All.Contains(projection.ClosedReason)))
+            throw new InvalidDataException("closedReason names a registry code, and only on a CLOSED session.");
         return QueueEnvelopeAsync(
             "ExceptionRecoverySessionSnapshot", messageId, null, agvId, sessionGeneration,
             new
@@ -492,7 +506,8 @@ public sealed class OnboardJourneyPublisher(
                     fact.ReasonCode,
                     fact.SubjectType,
                     fact.SubjectId
-                })
+                }),
+                projection.ClosedReason
             }, cancellationToken);
     }
 
@@ -674,22 +689,43 @@ public sealed class OnboardJourneyPublisher(
             cancellationToken,
             keepAcknowledgedIgnoring);
 
-    private static object CurrentStopWorklistPayload(CurrentStopWorklistProjection projection) => new
+    private static object CurrentStopWorklistPayload(CurrentStopWorklistProjection projection)
     {
-        projection.StationId,
-        worklistRevision = projection.Revision,
-        projection.OperationSessionId,
-        projection.StationDepartureDeadlineAt,
-        items = projection.Items.Select(item => new
+        ValidateCurrentStopWorklist(projection);
+        return new
         {
-            item.DemandId,
-            item.TransportDemandKey,
-            item.Sublot,
-            item.WorkType,
-            item.StopRole,
-            item.ExpectedBasketCount
-        })
-    };
+            projection.StationId,
+            worklistRevision = projection.Revision,
+            projection.OperationSessionId,
+            projection.StationDepartureDeadlineAt,
+            items = projection.Items.Select(item => new
+            {
+                item.DemandId,
+                item.TransportDemandKey,
+                item.Sublot,
+                item.WorkType,
+                item.StopRole,
+                item.ExpectedBasketCount
+            }),
+            projection.StopEndedReason
+        };
+    }
+
+    /// <summary>
+    /// v3 的清单条件（control-server#382）：<c>items</c> 非空时 <c>stopEndedReason</c> 必须是 null，为空时必须给出原因。
+    /// </summary>
+    /// <remarks>
+    /// 车载端按 schema 拒收违反它的清单并断会话，而本服务端运行时不按 schema 校验出站报文，出站 schema 检查只在测试里跑。所以在组装
+    /// 这里守：一张该说原因却没说的空清单，宁可在服务端这一侧当场失败，也不要发出去让车拆会话。原因的取值由
+    /// <c>StopEndedReasons.ForEnding</c> 一处给出。
+    /// </remarks>
+    internal static void ValidateCurrentStopWorklist(CurrentStopWorklistProjection projection)
+    {
+        ArgumentNullException.ThrowIfNull(projection);
+        if ((projection.Items.Count == 0) != (projection.StopEndedReason is not null))
+            throw new InvalidDataException(
+                "stopEndedReason must be present exactly when the worklist has no items.");
+    }
 
     private static object UpcomingStopPlanPayload(UpcomingStopPlanProjection projection) => new
     {

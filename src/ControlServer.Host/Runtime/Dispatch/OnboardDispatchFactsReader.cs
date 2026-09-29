@@ -89,11 +89,11 @@ public sealed class OnboardDispatchFactsReader(
         // session-start snapshot. MaximumEvidenceAge still separately governs the RIoT vehicle
         // observation in ValidateDynamicFacts, which genuinely is polled.
         //
-        // supportsBatchUnlock is deliberately not consulted: the protocol declares it with no
-        // semantics -- a bare boolean in CapabilitySnapshot, unchanged from protocol-v0.1.1 through
-        // the v2 candidate -- and its own canonical example sets it false, while the real question,
-        // can the vehicle operate this slot set, is answered against AvailableSlots when the command
-        // is actually sent. See docs/defects/20260829-intake-gates-on-unspecified-onboard-facts.md.
+        // There is no supportsBatchUnlock to consult: protocol 3.0.0 deleted it from CapabilitySnapshot
+        // (8005-agv-program#148, control-server#382). Until then it was deliberately ignored here -- a
+        // bare boolean with no semantics that the protocol's own canonical example set false -- and the
+        // real question, can the vehicle operate this slot set, is still answered against AvailableSlots
+        // when the command is actually sent. See docs/defects/20260829-intake-gates-on-unspecified-onboard-facts.md.
         DateTimeOffset now = timeProvider.GetUtcNow();
         DateTimeOffset capabilityAt = capabilityPayload.GetProperty("observedAt").GetDateTimeOffset();
         DateTimeOffset safetyAt = safetySummaryPayload.GetProperty("observedAt").GetDateTimeOffset();

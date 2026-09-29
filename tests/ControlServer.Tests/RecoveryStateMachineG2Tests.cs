@@ -902,6 +902,126 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     /// <summary>
+    /// v3 (control-server#382): <c>ForcedMechanicalRecoveryResult</c> gained the required nullable <c>demandId</c> and
+    /// <c>cargoHandoff</c>. A result carrying them settles exactly as one without them did: the parse does not assume
+    /// they are absent. What the hand-off fields mean for the settlement is control-server#385.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    public async Task AForcedRecoveryResultCarryingTheV3HandoffFieldsSettlesAsBefore()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_FORCED_V3_FIELDS";
+        const string proof = "forced-v3-fields-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), proofVariable);
+            OnboardConnectionState state = CurrentState();
+            await processor.ProcessAsync(RecoverySessionRequest(proof), state, token);
+            await processor.ProcessAsync(RecoveryAction("FORCED_MECHANICAL_RECOVERY"), state, token);
+            JsonNode result = JsonNode.Parse(MechanicallyIsolatedResult(generation: 1))!;
+            result["payload"]!["demandId"] = DemandId;
+            result["payload"]!["cargoHandoff"] = new JsonObject
+            {
+                ["sublot"] = "SUBLOT-001",
+                ["receiverName"] = "Line lead",
+                ["handedOverAt"] = Now.AddSeconds(1).ToString("O", System.Globalization.CultureInfo.InvariantCulture)
+            };
+
+            string ack = await processor.ProcessAsync(result.ToJsonString(), state, token);
+
+            Assert.Equal("DurableAck", MessageType(ack));
+            Assert.Equal(RecoveryWorkflowState.Reconciled, (await context.RecoveryWorkflows.SingleAsync(token)).State);
+            Assert.Equal(DemandExecutionStatus.Cancelled, (await context.AcceptedDemands.SingleAsync(token)).Status);
+            Assert.Equal("CLOSED", (await context.ExceptionRecoverySessions.SingleAsync(token)).State);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// v3 (control-server#382) added <c>ALL_EMPTY_DOOR_UNPROVEN</c> to the compensation result's
+    /// <c>overallOutcome</c>. Until control-server#385 settles it, the server takes it the way it takes any outcome
+    /// it cannot settle on: acknowledged, the workflow needing recovery, the demand still blocked -- never a crash, and
+    /// never a settlement it has not decided to make.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    public async Task ACompensationReportingDoorsUnprovenIsAcknowledgedAndLeftUnreconciledUntilItIsHandled()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_DOOR_UNPROVEN";
+        const string proof = "door-unproven-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), proofVariable);
+            OnboardConnectionState state = CurrentState();
+            JsonNode result = JsonNode.Parse(
+                AllEmptyCompensationResult(await ReachCompensationResultAsync(processor, state, proof)))!;
+            result["payload"]!["overallOutcome"] = "ALL_EMPTY_DOOR_UNPROVEN";
+
+            Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(result.ToJsonString(), state, token)));
+
+            Assert.Equal(
+                RecoveryWorkflowState.RecoveryRequired, (await context.RecoveryWorkflows.SingleAsync(token)).State);
+            Assert.NotEqual(DemandExecutionStatus.Cancelled, (await context.AcceptedDemands.SingleAsync(token)).Status);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// v3 (control-server#382) added <c>HARDWARE_REPAIR_RELEASE</c> to the recovery actions. The server does not offer
+    /// it yet (control-server#385 does), so choosing it is refused like any action not allowed in the session's
+    /// state, and nothing is started.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    public async Task ARepairReleaseActionIsRefusedAsNotAllowedUntilItIsOffered()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_REPAIR_RELEASE";
+        const string proof = "repair-release-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), proofVariable);
+            OnboardConnectionState state = CurrentState();
+            await processor.ProcessAsync(RecoverySessionRequest(proof), state, token);
+
+            string refused = await processor.ProcessAsync(RecoveryAction("HARDWARE_REPAIR_RELEASE"), state, token);
+
+            Assert.Equal("RecoveryActionRejected", MessageType(refused));
+            Assert.Equal(
+                ServerReasonCodes.ActionNotAllowedInState,
+                FirstPayload(refused).GetProperty("problem").GetProperty("reasonCode").GetString());
+            Assert.Empty(await context.RecoveryWorkflows.AsNoTracking().ToArrayAsync(token));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
     /// REQ-0241/0242, device half (control-server#137). Ending the cargo's business proves nothing about
     /// the slots: once the forced result settled the operation, every other readiness input -- the vehicle
     /// reporting the new forced generation, nothing pending, departure safe -- says Ready, and without this

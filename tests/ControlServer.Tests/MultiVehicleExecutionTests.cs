@@ -1424,7 +1424,6 @@ public sealed partial class MultiVehicleExecutionTests
                 activeSlotConfigurationVersion = "SLOT-CONFIG-1",
                 activeSlotConfigurationFingerprint = new string('0', 64),
                 slotStates = Slots(),
-                supportsBatchUnlock = true,
                 onboardJournalFormatVersion = 1,
             });
 

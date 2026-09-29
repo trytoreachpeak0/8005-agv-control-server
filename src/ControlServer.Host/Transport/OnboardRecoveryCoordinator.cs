@@ -1176,7 +1176,10 @@ public sealed class OnboardRecoveryCoordinator(
                 ParseSlots(session.SlotsJson),
                 session.SelectedAction,
                 allowedActions,
-                blockingFacts),
+                blockingFacts,
+                // v3's closedReason (control-server#382). Null for every session today: filling it truthfully -- a
+                // session closed with its action's result not reconciled -- is control-server#385.
+                ClosedReason: null),
             cancellationToken).ConfigureAwait(false);
     }
 
