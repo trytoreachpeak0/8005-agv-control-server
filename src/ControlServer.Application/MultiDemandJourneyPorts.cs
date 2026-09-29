@@ -65,6 +65,25 @@ public static class JourneyStopRoles
 {
     public const string Pickup = "PICKUP";
     public const string Unload = "UNLOAD";
+
+    /// <summary>
+    /// 去充电桩的停靠（批次 9；control-server#401 先立这个值，产生这种停靠的是 control-server#404）。
+    /// </summary>
+    public const string Charger = "CHARGER";
+
+    /// <summary>
+    /// 这个停靠的订单是哪一种形态：<see cref="Charger"/> 是充电单 <see cref="ControlServer.Domain.OrderShapes.Charge"/>
+    /// （<c>move(桩) + act(78,1,0)</c>），其余都是单段移动。
+    /// </summary>
+    /// <remarks>
+    /// 构造订单意图的每一条路都从这里取形态（control-server#401 调度评论）：<c>WireToGateStore.Matches</c> 比较形态，
+    /// 同一段腿若一处按充电、一处按单段构造，授权时每轮都抛冲突，这台车之后的车全都不再推进；自建单重建若不带形态，
+    /// 充电单会被降成单段移动，车到桩上却不通电。两条路读同一个函数，就不会各说各的。
+    /// </remarks>
+    public static string OrderShapeOf(string stopRole) =>
+        string.Equals(stopRole, Charger, StringComparison.Ordinal)
+            ? ControlServer.Domain.OrderShapes.Charge
+            : ControlServer.Domain.OrderShapes.SingleMove;
 }
 
 /// <summary>停靠的状态：待到、进行、完成、移除。</summary>
