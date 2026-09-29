@@ -81,6 +81,7 @@ public static class StructuralDispatchClassification
     private const int TransportDemandKeySuppressed = 11;
     private const int TransportDemandKeyAlreadyAccepted = 12;
     private const int FaultBlock = 15;
+    private const int IdleReturnCommitment = 16;
     private const int WorkTypeScope = 20;
     private const int VehicleTaskType = 25;
     private const int RequiredMesFacts = 30;
@@ -121,6 +122,11 @@ public static class StructuralDispatchClassification
             "This vehicle's fault state; another vehicle, or releasing the isolation, lets the demand through."),
         Backlog(VehicleFaultBlockCriterion.IdentityUnresolvedReason, FaultBlock,
             "This vehicle's identity; says nothing about the demand."),
+
+        // ---- IdleReturnCommitmentCriterion (16) ---------------------------------------------------------
+        Backlog(DispatchReasonCodes.VehicleCommittedToIdleReturn, IdleReturnCommitment,
+            "control-server#389, REQ-0292: this vehicle committed to an idle return, which no later transport takes over. " +
+            "Another vehicle, or this one once the return has converged (control-server#390), takes the demand."),
 
         // ---- WorkTypeScopeCriterion (20) ----------------------------------------------------------------
         Backlog(DispatchReasonCodes.OutOfScopeWorkType, WorkTypeScope,

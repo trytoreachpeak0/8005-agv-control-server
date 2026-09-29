@@ -181,6 +181,14 @@ public static class DispatchReasonCodes
     public const string TransportDemandKeyAlreadyAccepted = "TRANSPORT_DEMAND_KEY_ALREADY_ACCEPTED";
 
     /// <summary>
+    /// 这辆车已承诺空闲返回（<c>REQ-0292</c>；批次8-18，control-server#389）：返回是它当前已承诺的下一站，搬运不取消、不换点、不抢它。
+    /// </summary>
+    /// <remarks>
+    /// 归普通积压：别的车能接，或这辆车返回到点收敛（批次8-19）后下一轮能接。不是故障，也不是整个车队都接不了。
+    /// </remarks>
+    public const string VehicleCommittedToIdleReturn = "VEHICLE_COMMITTED_TO_IDLE_RETURN";
+
+    /// <summary>
     /// The reasons that are a configured outcome rather than a problem: they reach the backlog and nothing
     /// else — no structural dispatch block, no alarm, no log at Warning or above.
     /// </summary>

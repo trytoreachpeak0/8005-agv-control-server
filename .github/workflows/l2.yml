@@ -358,6 +358,9 @@ jobs:
               # control-server#388, specification 5.4 and 8.3 batch-8: two vehicles and one registered waiting point, and the
               # server refuses to start before it listens, naming both counts; nothing is accepted and no order is created.
               @{ Name = 'waiting-points-fewer-than-vehicles-refuses-start'; Runs = 1; BatchId = 'batch-8' }
+              # control-server#389, REQ-0291/0292: two idle vehicles and one usable waiting point; exactly one commits to an
+              # idle return (purpose claim and reservation in one save), and a later transport goes to the other vehicle.
+              @{ Name = 'idle-return-two-vehicles-contend-one-waiting-point'; Runs = 1; BatchId = 'batch-8' }
           )
           # One run's usual length in seconds, for dealing scenarios out to lanes longest first. Medians of 31
           # CI jobs from 2026-09-17 (ci-research, control-server#130); normal-load's excludes the build it used
