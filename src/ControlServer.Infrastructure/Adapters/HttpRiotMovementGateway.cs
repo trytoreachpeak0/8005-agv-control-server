@@ -17,7 +17,8 @@ namespace ControlServer.Infrastructure.Adapters;
 /// owns only ControlServer observation semantics.
 /// </summary>
 public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicleFacts, IRiotMapStationCatalog,
-    IRiotMapNameCatalog, IRiotVehicleSafetyFacts, IVehicleMotionFacts, IRiotVehicleOrderFacts, IRiotOrderListingFacts
+    IRiotMapNameCatalog, IRiotVehicleSafetyFacts, IVehicleMotionFacts, IRiotVehicleOrderFacts, IRiotOrderListingFacts,
+    IRiotOrderMissionFacts
 {
     private static readonly int[] NonFinalOrderStates = [1, 3, 7, 9];
 
@@ -471,6 +472,54 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         }
     }
 
+    public async Task<RiotOrderMissionFacts> ReadOrderMissionFactsAsync(
+        string upperId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(upperId);
+        try
+        {
+            OrderLookupResult lookup = await riotSession.Order.FindOrderByUpperIdAsync(
+                upperId, cancellationToken).ConfigureAwait(false);
+            DateTimeOffset observedAt = timeProvider.GetUtcNow();
+            return lookup.Status switch
+            {
+                OrderLookupStatus.Found when lookup.Order is { } order &&
+                    string.Equals(order.UpperId, upperId, StringComparison.Ordinal) =>
+                    new RiotOrderMissionFacts(
+                        upperId,
+                        RiotOrderMissionFactsStatus.Found,
+                        order.OrderId,
+                        order.OrderState,
+                        order.Missions
+                            .Select(mission => new RiotOrderMissionFact(
+                                mission.Type,
+                                mission.MapId,
+                                mission.Destination,
+                                mission.ActionId,
+                                mission.ActionParam1,
+                                mission.ActionParam2,
+                                mission.ResultCode))
+                            .ToArray(),
+                        observedAt),
+                OrderLookupStatus.NotFound => new RiotOrderMissionFacts(
+                    upperId, RiotOrderMissionFactsStatus.NotFound, null, null, [], observedAt),
+                _ => UnknownMissionFacts(upperId, observedAt)
+            };
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception error) when (RiotCallFailureClassification.IsSdkFailure(error))
+        {
+            return UnknownMissionFacts(upperId, timeProvider.GetUtcNow());
+        }
+    }
+
+    private static RiotOrderMissionFacts UnknownMissionFacts(string upperId, DateTimeOffset observedAt) =>
+        new(upperId, RiotOrderMissionFactsStatus.Unknown, null, null, [], observedAt);
+
     /// <summary>
     /// One motion-and-position sample for REQ-0247's combined stop proof.
     /// </summary>
@@ -572,8 +621,7 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
             string.IsNullOrWhiteSpace(order.OrderId) ||
             !string.Equals(order.UpperId, expectedUpperId, StringComparison.Ordinal) ||
             string.IsNullOrWhiteSpace(vehicleKey) ||
-            movements.Length != 1 ||
-            movements[0].MapId is not > 0)
+            movements.Length == 0)
         {
             return Unknown(expectedUpperId, receipt with
             {
@@ -582,7 +630,26 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
             });
         }
 
-        int? destination = movements[0].Destination ?? order.EndStationNo;
+        // RIoT expands an order whose target station has an enter_exit point into several moves: a
+        // charging order to 211 on maps 25 and 26 reads back as move(212) -> move(211) -> act(78,1,0),
+        // and the order after it may start with RIoT's own act(78,2,0). Act missions never decide the
+        // destination. With several moves the last one is the destination, and only when the order's
+        // endStationNo says the same: an order whose moves end somewhere other than where RIoT says it
+        // ends is not evidence of anything (the MVP rule of 3c9ced4). This holds for every order shape,
+        // not just charging: a transport order after leaving the charger may be expanded the same way.
+        OrderMissionSnapshot movement = movements[^1];
+        if (movement.MapId is not > 0 ||
+            (movements.Length > 1 &&
+             (order.EndStationNo is not > 0 || movement.Destination != order.EndStationNo)))
+        {
+            return Unknown(expectedUpperId, receipt with
+            {
+                Classification = "Indeterminate",
+                FailureCategory = "IDENTITY_INVALID"
+            });
+        }
+
+        int? destination = movement.Destination ?? order.EndStationNo;
         if (destination is not > 0)
         {
             return Unknown(expectedUpperId, receipt with
@@ -598,7 +665,7 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
             order.OrderId,
             order.OrderState,
             vehicleKey,
-            movements[0].MapId,
+            movement.MapId,
             destination,
             receipt);
     }
