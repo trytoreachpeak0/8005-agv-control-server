@@ -183,12 +183,16 @@ move 段在详情里仍然只有 `type`、`mapId`、`destination` 三个字段�
 ### 充电怎么走
 
 1. 建单时，去已登记且配了进出点的桩的 move 前面插一段 `move(进出点)`；`endStationNo` 取**最后一段 move** 的站
-   （以前取最后一段，尾部是 act 时会变成 0）。
+   （以前取最后一段，尾部是 act 时会变成 0）。真 RIoT 对没配进出点的站建充电单会拒（10008），假件照收，只是不展开——
+   去没配进出点的桩的单是否该被拒，由服务端或场景自己判。
 2. 带 `act(78,1,0)` 的单经 `PUT /orders/{upperId}` 推到 5：act 段记成功，车（`executeVehicleKey`，没绑时用
    `appointVehicleKey`）停在 act 前最后一段 move 的站上。那个站是已登记的桩，车就报 `CHARGING`，电量按桩的速率涨。
    act 在没登记的站上完成时车不变——真 RIoT 在那种情况下怎么回答没人测过，假件不替它编。
 3. 这辆车在桩上时再给它建单，那张单队首自动插 `act(78,2,0)`；这张单推到 3 或 5 时车离桩，回 `NO_CHARGE`，电量停在
-   那一刻的值（有耗电速率就从那里开始掉）。
+   那一刻的值（有耗电速率就从那里开始掉）。「在桩上」指充电动作完成过、之后还没离桩，**不看此刻是不是 `CHARGING`**：
+   充电中断或无进展的车，下一张单队首照样插 `act(78,2,0)`。离桩先于充电：在桩上的车拿到一张新的充电单，从 1 直接推到
+   5 也是先离旧桩、再上新桩，最后报 `CHARGING`；这张新单若挂在充电动作上（停在 9，无论是注入的还是场景自己推的 9），
+   队首的 `act(78,2,0)` 已经执行过，车同样算离了旧桩。
 4. 电量读的是注入的时钟（`FakeRiotHost.TryCreate(args, clock)`，可执行文件用系统时钟），**时间流逝不推进
    `revision`**：数值在每次读的时候算出来。`PUT /vehicle` 仍可随时写 `battery`，写进去的值覆盖模拟值，模拟从它接着走；
    写 `batteryState` 则结束模拟中的充电，照写进去的字面值报。
@@ -202,13 +206,14 @@ move 段在详情里仍然只有 `type`、`mapId`、`destination` 三个字段�
 | 字段 | 效果 | 对应需求 |
 | --- | --- | --- |
 | `startOutcome: "CannotCharge"` | 带 `act(78,1,0)` 的单推到 5（或 9）时停在 9（HANG），act 段 `resultCode = 407802`、`missionState = 1`，车始终不报 `CHARGING`，也不算在桩上 | `REQ-0174` |
-| `startOutcome: "HangOnly"` | 同样停在 9，act 段没有 `resultCode`（`null`），全程没有 407802 | `REQ-0175` 的负向 |
+| `startOutcome: "HangOnly"` | 同样停在 9，act 段缺省没有 `resultCode`（`null`），全程没有 407802 | `REQ-0175` 的负向 |
+| `hangResultCode: N` | 挂起时 act 段带这个码（给 B9-08 造「HANG＋非 407802 的码」）。对 `HangOnly` 和场景自己推到 9 的单都生效；不许是 407802（那是 `CannotCharge`）。`clearHangResultCode: true` 撤掉 | `REQ-0175` |
 | `startOutcome: "Normal"` | 撤掉上面两种 | |
-| `interruptAtPercent: N` | 充电中电量到 N 时自己回 `NO_CHARGE`，不需要离桩单；开始充电时已经 ≥ N 就立刻中断。`clearInterrupt: true` 撤掉 | `REQ-0285` 已确认中断 |
+| `interruptAtPercent: N` | 充电中电量到 N 时自己回 `NO_CHARGE`，不需要离桩单；开始充电时已经 ≥ N 就立刻中断。**一直有效**：之后每次充电到 N 都会再断，要让车恢复正常充电，先 `clearInterrupt: true` 撤掉 | `REQ-0285` 已确认中断 |
 | `noProgress: true` | 报 `CHARGING`，电量不动 | `REQ-0285` 已确认无进展 |
 | `batteryUnreadable: "Battery"`／`"BatteryState"`／`"Both"`／`"None"` | 车卡片里去掉 `battery`、`batteryState` 或两个都去掉（键不出现，不是 `null`）。整张卡读不到用 `/faults/http` | `REQ-0287` 电量遥测丢失 |
 
-按单（`upperId`）只收 `startOutcome`，而且优先于那辆车的设定；其余几种是车的属性。故障从下命令那一刻起作用，
+按单（`upperId`）只收 `startOutcome` 与 `hangResultCode`，整条替换，而且优先于那辆车的设定；其余几种是车的属性。故障从下命令那一刻起作用，
 之前的时间按旧设定结算。
 
 以上状态全部按车独立：种子里 `AdditionalVehicleKeys` 的每辆车都能各自充电、各自注入，「1 桩 3 车」就是这样搭的。

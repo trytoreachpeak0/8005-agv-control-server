@@ -29,7 +29,8 @@ public sealed record ChargersCommand : CommandEnvelope
 
 /// <summary>
 /// Sets charging faults on one vehicle or one order (control-server#402). Only the fields present are applied; an order
-/// takes only <see cref="StartOutcome"/>, because the other faults are the vehicle's, not the order's.
+/// takes only <see cref="StartOutcome"/> and <see cref="HangResultCode"/>, because the other faults are the vehicle's, not
+/// the order's.
 /// </summary>
 public sealed record ChargingFaultCommand : CommandEnvelope
 {
@@ -38,6 +39,13 @@ public sealed record ChargingFaultCommand : CommandEnvelope
 
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public FakeChargeStartOutcome? StartOutcome { get; init; }
+
+    /// <summary>
+    /// The act's result code when the order hangs without 407802 (B9-08: HANG with some other code). Refused as 407802,
+    /// which is <see cref="FakeChargeStartOutcome.CannotCharge"/>'s. <see cref="ClearHangResultCode"/> removes it.
+    /// </summary>
+    public int? HangResultCode { get; init; }
+    public bool ClearHangResultCode { get; init; }
     public int? InterruptAtPercent { get; init; }
     public bool ClearInterrupt { get; init; }
     public bool? NoProgress { get; init; }
@@ -113,7 +121,9 @@ internal static class FakeChargingControl
     {
         bool byVehicle = !string.IsNullOrWhiteSpace(command.VehicleKey);
         bool byOrder = !string.IsNullOrWhiteSpace(command.UpperId);
-        if (byVehicle == byOrder || command.InterruptAtPercent is < 0 or > 100)
+        if (byVehicle == byOrder || command.InterruptAtPercent is < 0 or > 100 ||
+            command.HangResultCode == FakeChargingModel.CannotChargeResultCode ||
+            (command.HangResultCode is not null && command.ClearHangResultCode))
         {
             throw new CommandRefusedException(ReasonCodes.InvalidArgument);
         }
@@ -121,21 +131,23 @@ internal static class FakeChargingControl
         if (byOrder)
         {
             if (command.StartOutcome is not FakeChargeStartOutcome outcome ||
-                command.InterruptAtPercent is not null || command.ClearInterrupt ||
+                command.InterruptAtPercent is not null || command.ClearInterrupt || command.ClearHangResultCode ||
                 command.NoProgress is not null || command.BatteryUnreadable is not null)
             {
                 throw new CommandRefusedException(ReasonCodes.InvalidArgument);
             }
-            if (state.ChargeStartOutcomeByUpperId.TryGetValue(command.UpperId!, out FakeChargeStartOutcome current) &&
-                current == outcome)
+            // An order's entry is replaced whole: it is set for one order at a time, so there is nothing to merge.
+            FakeOrderChargeFault fault = new(outcome, command.HangResultCode);
+            if (state.ChargeStartByUpperId.TryGetValue(command.UpperId!, out FakeOrderChargeFault? current) &&
+                current == fault)
             {
                 return null;
             }
-            Dictionary<string, FakeChargeStartOutcome> outcomes = new(state.ChargeStartOutcomeByUpperId, StringComparer.Ordinal)
+            Dictionary<string, FakeOrderChargeFault> faults = new(state.ChargeStartByUpperId, StringComparer.Ordinal)
             {
-                [command.UpperId!] = outcome
+                [command.UpperId!] = fault
             };
-            return state with { ChargeStartOutcomeByUpperId = outcomes };
+            return state with { ChargeStartByUpperId = faults };
         }
 
         string key = command.VehicleKey!;
@@ -148,6 +160,7 @@ internal static class FakeChargingControl
         FakeVehicleCharge wanted = basis with
         {
             StartOutcome = command.StartOutcome ?? basis.StartOutcome,
+            HangResultCode = command.ClearHangResultCode ? null : command.HangResultCode ?? basis.HangResultCode,
             InterruptAtPercent = command.ClearInterrupt ? null : command.InterruptAtPercent ?? basis.InterruptAtPercent,
             NoProgress = command.NoProgress ?? basis.NoProgress,
             BatteryUnreadable = command.BatteryUnreadable ?? basis.BatteryUnreadable
@@ -163,6 +176,7 @@ internal static class FakeChargingControl
         return FakeChargingModel.WithVehicle(state, state.Vehicles[key], settled with
         {
             StartOutcome = wanted.StartOutcome,
+            HangResultCode = wanted.HangResultCode,
             InterruptAtPercent = wanted.InterruptAtPercent,
             NoProgress = wanted.NoProgress,
             BatteryUnreadable = wanted.BatteryUnreadable

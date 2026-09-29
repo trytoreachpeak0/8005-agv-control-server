@@ -297,6 +297,112 @@ public sealed class FakeRiotChargingTests
         Assert.Equal(("NO_CHARGE", 25), (after.BatteryState, after.BatteryPercent));
         JsonElement orders = (await fixture.SnapshotAsync()).GetProperty("body").GetProperty("orders");
         Assert.Equal(1, orders.GetArrayLength());
+
+        // Interrupted is not departed: the vehicle is still on the charger, so its next order still starts by stopping it.
+        await CreateAsync(fixture, "UPPER-NEXT", VehicleKey, Move(12));
+        Assert.Equal(["act:78,2,0", "move:12"], Shape(await DetailAsync(fixture, "UPPER-NEXT")));
+    }
+
+    [Fact]
+    public async Task AVehicleOnAChargerGivenANewChargeOrderPushedStraightToFiveEndsUpCharging()
+    {
+        // The head act(78,2,0) runs before the order's own act(78,1,0). Applied the other way round, a push from 1 straight
+        // to 5 -- what ChargeAsync does -- engaged the charger and then stopped it again.
+        MovableClock clock = new(Start);
+        await using FakeRiotTests.FakeRiotFixture fixture = await FakeRiotTests.FakeRiotFixture.StartAsync(clock);
+        await RegisterChargerAsync(fixture, enterExit: EnterExit, intervalSeconds: 60, percent: 1);
+        await SetBatteryAsync(fixture, VehicleKey, 40);
+        await ChargeAsync(fixture, "UPPER-FIRST", VehicleKey);
+        clock.Advance(TimeSpan.FromMinutes(5));
+
+        await CreateAsync(fixture, "UPPER-AGAIN", VehicleKey, Move(Charger), StartCharge());
+        await fixture.CommandAsync(HttpMethod.Put, "orders/UPPER-AGAIN", new { orderState = 5, executeVehicleKey = VehicleKey });
+        clock.Advance(TimeSpan.FromMinutes(5));
+
+        JsonElement again = await DetailAsync(fixture, "UPPER-AGAIN");
+        RiotVehicleObservation vehicle = await ReadVehicleAsync(fixture, VehicleKey);
+        Assert.Equal(["act:78,2,0", "move:212", "move:211", "act:78,1,0"], Shape(again));
+        Assert.Equal(5, again.GetProperty("orderState").GetInt32());
+        Assert.Equal(("CHARGING", 50), (vehicle.BatteryState, vehicle.BatteryPercent));
+    }
+
+    [Fact]
+    public async Task AVehicleOnAChargerWhoseNewChargeOrderHangsHasLeftTheOldCharger()
+    {
+        // The hang is at the order's charge act, so its head act(78,2,0) already ran: the vehicle is off the old charger,
+        // not charging, and its next order has nothing to stop.
+        MovableClock clock = new(Start);
+        await using FakeRiotTests.FakeRiotFixture fixture = await FakeRiotTests.FakeRiotFixture.StartAsync(clock);
+        await RegisterChargerAsync(fixture, enterExit: EnterExit, intervalSeconds: 60, percent: 1);
+        await SetBatteryAsync(fixture, VehicleKey, 40);
+        await ChargeAsync(fixture, "UPPER-FIRST", VehicleKey);
+        clock.Advance(TimeSpan.FromMinutes(5));
+
+        await CreateAsync(fixture, "UPPER-AGAIN", VehicleKey, Move(Charger), StartCharge());
+        await SetFaultsAsync(fixture, new { upperId = "UPPER-AGAIN", startOutcome = "CannotCharge" });
+        await fixture.CommandAsync(HttpMethod.Put, "orders/UPPER-AGAIN", new { orderState = 5, executeVehicleKey = VehicleKey });
+        clock.Advance(TimeSpan.FromMinutes(5));
+
+        JsonElement again = await DetailAsync(fixture, "UPPER-AGAIN");
+        RiotVehicleObservation vehicle = await ReadVehicleAsync(fixture, VehicleKey);
+        Assert.Equal(9, again.GetProperty("orderState").GetInt32());
+        Assert.Equal(2, again.GetProperty("missions")[0].GetProperty("missionState").GetInt32());
+        Assert.Equal(407802, again.GetProperty("missions")[3].GetProperty("resultCode").GetInt32());
+        Assert.Equal(("NO_CHARGE", 45), (vehicle.BatteryState, vehicle.BatteryPercent));
+        await CreateAsync(fixture, "UPPER-NEXT", VehicleKey, Move(12));
+        Assert.Equal(["move:12"], Shape(await DetailAsync(fixture, "UPPER-NEXT")));
+    }
+
+    [Fact]
+    public async Task AVehicleOnAChargerWhoseNewChargeOrderIsPushedStraightToNineHasLeftTheOldCharger()
+    {
+        // The same, with the scenario writing the HANG itself: the order never passed through 3 or 5, and still got past
+        // its head act before hanging at the charge act.
+        MovableClock clock = new(Start);
+        await using FakeRiotTests.FakeRiotFixture fixture = await FakeRiotTests.FakeRiotFixture.StartAsync(clock);
+        await RegisterChargerAsync(fixture, enterExit: EnterExit, intervalSeconds: 60, percent: 1);
+        await SetBatteryAsync(fixture, VehicleKey, 40);
+        await ChargeAsync(fixture, "UPPER-FIRST", VehicleKey);
+        clock.Advance(TimeSpan.FromMinutes(5));
+
+        await CreateAsync(fixture, "UPPER-AGAIN", VehicleKey, Move(Charger), StartCharge());
+        await fixture.CommandAsync(HttpMethod.Put, "orders/UPPER-AGAIN", new { orderState = 9, executeVehicleKey = VehicleKey });
+        clock.Advance(TimeSpan.FromMinutes(5));
+
+        JsonElement again = await DetailAsync(fixture, "UPPER-AGAIN");
+        RiotVehicleObservation vehicle = await ReadVehicleAsync(fixture, VehicleKey);
+        Assert.Equal(9, again.GetProperty("orderState").GetInt32());
+        Assert.Equal(JsonValueKind.Null, again.GetProperty("missions")[3].GetProperty("resultCode").ValueKind);
+        Assert.Equal(("NO_CHARGE", 45), (vehicle.BatteryState, vehicle.BatteryPercent));
+        await CreateAsync(fixture, "UPPER-NEXT", VehicleKey, Move(12));
+        Assert.Equal(["move:12"], Shape(await DetailAsync(fixture, "UPPER-NEXT")));
+    }
+
+    [Fact]
+    public async Task HangOnlyCanCarryAResultCodeOtherThan407802()
+    {
+        // B9-08 needs "HANG with some other code" to tell apart from REQ-0174's 407802.
+        await using FakeRiotTests.FakeRiotFixture fixture = await FakeRiotTests.FakeRiotFixture.StartAsync(
+            new MovableClock(Start),
+            "--FakeRiot:Seed:AdditionalVehicleKeys:0=" + SecondKey);
+        await RegisterChargerAsync(fixture, enterExit: EnterExit);
+        await SetFaultsAsync(fixture, new { vehicleKey = VehicleKey, startOutcome = "HangOnly", hangResultCode = 407801 });
+        await CreateAsync(fixture, "UPPER-B", SecondKey, Move(Charger), StartCharge());
+        await SetFaultsAsync(fixture, new { upperId = "UPPER-B", startOutcome = "HangOnly", hangResultCode = 500 });
+
+        await ChargeAsync(fixture, "UPPER-A", VehicleKey);
+        await fixture.CommandAsync(HttpMethod.Put, "orders/UPPER-B", new { orderState = 5, executeVehicleKey = SecondKey });
+        HttpResponseMessage cannotBeCannotCharge = await fixture.SendCommandAsync(
+            HttpMethod.Put, "charging/faults", new { vehicleKey = VehicleKey, hangResultCode = 407802 });
+
+        JsonElement a = await DetailAsync(fixture, "UPPER-A");
+        JsonElement b = await DetailAsync(fixture, "UPPER-B");
+        Assert.Equal(9, a.GetProperty("orderState").GetInt32());
+        Assert.Equal(407801, a.GetProperty("missions")[2].GetProperty("resultCode").GetInt32());
+        Assert.Equal(9, b.GetProperty("orderState").GetInt32());
+        Assert.Equal(500, b.GetProperty("missions")[2].GetProperty("resultCode").GetInt32());
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, cannotBeCannotCharge.StatusCode);
+        Assert.Equal("NO_CHARGE", (await ReadVehicleAsync(fixture, VehicleKey)).BatteryState);
     }
 
     [Fact]

@@ -178,14 +178,20 @@ public static class ControlPlane
                             chargerStationId = pair.Value.ChargerStationId,
                             anchorAt = pair.Value.AnchorAt,
                             startOutcome = pair.Value.StartOutcome,
+                            hangResultCode = pair.Value.HangResultCode,
                             interruptAtPercent = pair.Value.InterruptAtPercent,
                             noProgress = pair.Value.NoProgress,
                             batteryUnreadable = pair.Value.BatteryUnreadable
                         };
                     }),
-                    startOutcomeByUpperId = state.ChargeStartOutcomeByUpperId
+                    startOutcomeByUpperId = state.ChargeStartByUpperId
                         .OrderBy(pair => pair.Key, StringComparer.Ordinal)
-                        .Select(pair => new { upperId = pair.Key, startOutcome = pair.Value })
+                        .Select(pair => new
+                        {
+                            upperId = pair.Key,
+                            startOutcome = pair.Value.StartOutcome,
+                            hangResultCode = pair.Value.HangResultCode
+                        })
                 }
             }));
         });

@@ -41,6 +41,9 @@ public enum FakeChargeStartOutcome
     HangOnly
 }
 
+/// <summary>A start-charging outcome set on one order, taking precedence over its vehicle's (control-server#402).</summary>
+public sealed record FakeOrderChargeFault(FakeChargeStartOutcome StartOutcome, int? HangResultCode);
+
 /// <summary>Which battery field the vehicle card leaves out (REQ-0287, telemetry lost).</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum FakeBatteryUnreadable
@@ -69,6 +72,12 @@ public sealed record FakeVehicleCharge
     public int? ChargerStationId { get; init; }
 
     public FakeChargeStartOutcome StartOutcome { get; init; }
+
+    /// <summary>
+    /// The act's result code when a start-charging order hangs without 407802 -- under
+    /// <see cref="FakeChargeStartOutcome.HangOnly"/>, or pushed to 9 by the scenario. Null by default. Never 407802.
+    /// </summary>
+    public int? HangResultCode { get; init; }
 
     /// <summary>Charging stops by itself once the battery reaches this, with no departure order (REQ-0285).</summary>
     public int? InterruptAtPercent { get; init; }
@@ -199,9 +208,16 @@ public static class FakeChargingModel
     }
 
     /// <summary>
-    /// Applies what an order-state change means for charging: a start-charging order reaching 5 engages the charger (or,
-    /// under an injected fault, hangs at 9 instead); a departure order reaching 3 or 5 takes the vehicle off it.
+    /// Applies what an order-state change means for charging: a departure order's leading <c>act(78,2,0)</c> takes the
+    /// vehicle off its charger once the order executes, and a start-charging order reaching 5 engages the charger (or, under
+    /// an injected fault, hangs at 9 instead).
     /// </summary>
+    /// <remarks>
+    /// Departure is applied first because it comes first in the order: a vehicle on a charger given a new charge order
+    /// leaves the old charger before it engages the new one. The other way round, an order pushed straight from 1 to 5
+    /// engaged the charger and then its own head act stopped it again. An order that hangs at its charge act got past its
+    /// head act first, so it has left the old charger too.
+    /// </remarks>
     public static (FakeRiotState State, FakeOrder Order) ApplyOrderTransition(
         FakeRiotState state, FakeOrder before, FakeOrder after, DateTimeOffset now)
     {
@@ -213,42 +229,23 @@ public static class FakeChargingModel
         FakeOrder order = after;
 
         int start = IndexOf(after.Missions, IsStartCharge);
-        if (start >= 0 && after.OrderState is 5 or 9)
+        FakeChargeStartOutcome outcome = FakeChargeStartOutcome.Normal;
+        int? hangResultCode = null;
+        if (state.ChargeStartByUpperId.TryGetValue(after.UpperId, out FakeOrderChargeFault? byOrder))
         {
-            FakeChargeStartOutcome outcome = state.ChargeStartOutcomeByUpperId.TryGetValue(after.UpperId, out FakeChargeStartOutcome byOrder)
-                ? byOrder
-                : vehicleKey is not null && state.ChargeByVehicle.TryGetValue(vehicleKey, out FakeVehicleCharge? charge)
-                    ? charge.StartOutcome
-                    : FakeChargeStartOutcome.Normal;
-            if (after.OrderState == 5 && outcome == FakeChargeStartOutcome.Normal)
-            {
-                order = WithMission(order, start, order.Missions[start] with
-                {
-                    MissionState = 2,
-                    ResultCode = 0,
-                    ResultStr = ActResultText(0)
-                });
-                if (vehicleKey is not null && state.Vehicles.ContainsKey(vehicleKey))
-                {
-                    FakeMission target = order.Missions.Take(start).LastOrDefault(mission => mission.Type == "move")
-                        ?? new FakeMission("move", 0, 0);
-                    state = StartCharging(state, vehicleKey, target.MapId, target.Destination, now);
-                }
-            }
-            else
-            {
-                int? code = outcome == FakeChargeStartOutcome.CannotCharge ? CannotChargeResultCode : null;
-                order = WithMission(order with { OrderState = 9 }, start, order.Missions[start] with
-                {
-                    MissionState = 1,
-                    ResultCode = code,
-                    ResultStr = code is int value ? ActResultText(value) : null
-                });
-            }
+            (outcome, hangResultCode) = (byOrder.StartOutcome, byOrder.HangResultCode);
         }
+        else if (vehicleKey is not null && state.ChargeByVehicle.TryGetValue(vehicleKey, out FakeVehicleCharge? byVehicle))
+        {
+            (outcome, hangResultCode) = (byVehicle.StartOutcome, byVehicle.HangResultCode);
+        }
+        bool resolves = start >= 0 && after.OrderState is 5 or 9;
+        bool engages = resolves && after.OrderState == 5 && outcome == FakeChargeStartOutcome.Normal;
+        bool hangs = resolves && !engages;
 
         if (after.Missions.Count > 0 && IsStopCharge(after.Missions[0]) &&
-            order.OrderState is 3 or 5 && before.OrderState is not (3 or 5))
+            before.OrderState is not (3 or 5) &&
+            (after.OrderState is 3 or 5 || (hangs && start > 0)))
         {
             order = WithMission(order, 0, order.Missions[0] with
             {
@@ -260,6 +257,32 @@ public static class FakeChargingModel
             {
                 state = StopCharging(state, vehicleKey, now);
             }
+        }
+
+        if (engages)
+        {
+            order = WithMission(order, start, order.Missions[start] with
+            {
+                MissionState = 2,
+                ResultCode = 0,
+                ResultStr = ActResultText(0)
+            });
+            if (vehicleKey is not null && state.Vehicles.ContainsKey(vehicleKey))
+            {
+                FakeMission target = order.Missions.Take(start).LastOrDefault(mission => mission.Type == "move")
+                    ?? new FakeMission("move", 0, 0);
+                state = StartCharging(state, vehicleKey, target.MapId, target.Destination, now);
+            }
+        }
+        else if (hangs)
+        {
+            int? code = outcome == FakeChargeStartOutcome.CannotCharge ? CannotChargeResultCode : hangResultCode;
+            order = WithMission(order with { OrderState = 9 }, start, order.Missions[start] with
+            {
+                MissionState = 1,
+                ResultCode = code,
+                ResultStr = code is int value ? ActResultText(value) : null
+            });
         }
         return (state, order);
     }

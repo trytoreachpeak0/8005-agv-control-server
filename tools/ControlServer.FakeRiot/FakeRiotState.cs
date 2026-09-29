@@ -239,8 +239,8 @@ public sealed record FakeRiotState
         new Dictionary<string, FakeVehicleCharge>(StringComparer.Ordinal);
 
     /// <summary>A start-charging outcome for one order, taking precedence over its vehicle's.</summary>
-    public IReadOnlyDictionary<string, FakeChargeStartOutcome> ChargeStartOutcomeByUpperId { get; init; } =
-        new Dictionary<string, FakeChargeStartOutcome>(StringComparer.Ordinal);
+    public IReadOnlyDictionary<string, FakeOrderChargeFault> ChargeStartByUpperId { get; init; } =
+        new Dictionary<string, FakeOrderChargeFault>(StringComparer.Ordinal);
 
     /// <summary>Serial number for the next created order, so orderIds are stable within a round.</summary>
     public required long NextOrderSequence { get; init; }

@@ -224,7 +224,7 @@
     "/control/v1/charging/faults": {
       "put": {
         "summary": "Control plane: charging faults on one vehicle or one order (control-server#402).",
-        "description": "Exactly one of vehicleKey and upperId. Only the fields present are applied, and they stay until changed. startOutcome decides what act(78,1,0) becomes when its order is pushed to 5: Normal (CHARGING), CannotCharge (order held at 9, act resultCode 407802, missionState 1) or HangOnly (order held at 9, no resultCode). An order's startOutcome overrides its vehicle's; an order takes nothing else. interruptAtPercent ends charging by itself once the battery reaches it (clearInterrupt removes it); noProgress reports CHARGING with the battery flat; batteryUnreadable leaves battery, batteryState or both out of the vehicle card.",
+        "description": "Exactly one of vehicleKey and upperId. Only the fields present are applied, and they stay until changed. startOutcome decides what act(78,1,0) becomes when its order is pushed to 5: Normal (CHARGING), CannotCharge (order held at 9, act resultCode 407802, missionState 1) or HangOnly (order held at 9, resultCode hangResultCode, null by default). hangResultCode also applies to an order the scenario pushes to 9 itself, and is refused as 407802 (clearHangResultCode removes it). An order takes only startOutcome and hangResultCode, replaced whole, and overrides its vehicle. Departure comes first: a vehicle on a charger that gets a new charge order leaves the old charger before engaging, and has left it too when the new order hangs at its charge act. Docked means a charge act completed and no departure since, whether or not the vehicle is CHARGING now. interruptAtPercent ends charging by itself once the battery reaches it (clearInterrupt removes it); noProgress reports CHARGING with the battery flat; batteryUnreadable leaves battery, batteryState or both out of the vehicle card.",
         "requestBody": {
           "required": true,
           "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChargingFaultCommand" } } }
@@ -381,6 +381,8 @@
               "startOutcome": { "type": "string", "enum": ["Normal", "CannotCharge", "HangOnly"] },
               "interruptAtPercent": { "type": "integer", "minimum": 0, "maximum": 100 },
               "clearInterrupt": { "type": "boolean" },
+              "hangResultCode": { "type": "integer", "not": { "enum": [407802] } },
+              "clearHangResultCode": { "type": "boolean" },
               "noProgress": { "type": "boolean" },
               "batteryUnreadable": { "type": "string", "enum": ["None", "Battery", "BatteryState", "Both"] }
             }
