@@ -120,7 +120,7 @@ $assertions.Add(
     "$demandStatus / $loadStatus / $journey / TO_GATE $toGate / RIoT 单 $orders / $physical")
 
 Add-G3VehicleReleasedForNextDemand $Context 'G3-07-36' `
-    '交接收敛之后车辆放出来了：这条需求的 TO_PICKUP 单车辆占用已释放，同一台车在 60 秒内接了下一单（旅程到 AwaitingPickupArrival，不是 Blocked/VEHICLE_OCCUPANCY_CONFLICT；control-server#131）' `
+    '交接收敛之后车辆放出来了：这条需求所在旅程的用途占有记录已释放，同一台车在 60 秒内接了下一单（旅程到 AwaitingPickupArrival、没有停摆原因码；control-server#131，#387 起读用途占有）' `
     $demandId 'G3-07F'
 
 $journal.Note('FP-IS-07: an UNKNOWN load was handed off as fault cargo on an authorized command, one handoff id end to end.')

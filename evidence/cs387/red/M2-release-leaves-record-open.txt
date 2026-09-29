@@ -1,0 +1,61 @@
+== M2-release-leaves-record-open: src/ControlServer.Infrastructure/Persistence/VehiclePurposeClaimWrites.cs
+  Failed ControlServer.Tests.Batch8OccupancyRetirementMigrationTests.TheRoundInWhichAnUnloadReleasedTheClaimButNotYetTheOrderOccupancyDoesNotRefuse [9 s]
+   Microsoft.Data.Sqlite.SqliteException : SQLite Error 19: 'Batch8RetireOldVehicleOccupancy refused, nothing was dropped: 2 unfinished old vehicle occupancy row(s) have no purpose claim behind them. Find out why before upgrading; do not edit the migration. VehicleDispatchLeases unreleased: DemandId=D-3 JourneyId=journey:D-3 VehicleKey=VK-03; VehicleDispatchLeases unreleased: DemandId=D-4 JourneyId=journey:D-4 VehicleKey=VK-04'.
+   at Microsoft.Data.Sqlite.SqliteDataReader.NextResult()
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader(CommandBehavior behavior)
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader()
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteNonQuery()
+   at System.Data.Common.DbCommand.ExecuteNonQueryAsync(CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Storage.RelationalCommand.ExecuteNonQueryAsync(RelationalCommandParameterObject parameterObject, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Storage.RelationalCommand.ExecuteNonQueryAsync(RelationalCommandParameterObject parameterObject, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Storage.RelationalCommand.ExecuteNonQueryAsync(RelationalCommandParameterObject parameterObject, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.ExecuteNonQueryAsync(IEnumerable`1 migrationCommands, IRelationalConnection connection, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.ExecuteNonQueryAsync(IEnumerable`1 migrationCommands, IRelationalConnection connection, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.ExecuteNonQueryAsync(IEnumerable`1 migrationCommands, IRelationalConnection connection, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.ExecuteNonQueryAsync(IEnumerable`1 migrationCommands, IRelationalConnection connection, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.Migrator.MigrateAsync(String targetMigration, CancellationToken cancellationToken)
+   at ControlServer.Tests.Batch8OccupancyRetirementMigrationTests.TheRoundInWhichAnUnloadReleasedTheClaimButNotYetTheOrderOccupancyDoesNotRefuse() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs387-8005-agv-control-server\tests\ControlServer.Tests\Batch8OccupancyRetirementMigrationTests.cs:line 195
+   at ControlServer.Tests.Batch8OccupancyRetirementMigrationTests.TheRoundInWhichAnUnloadReleasedTheClaimButNotYetTheOrderOccupancyDoesNotRefuse() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs387-8005-agv-control-server\tests\ControlServer.Tests\Batch8OccupancyRetirementMigrationTests.cs:line 197
+  Failed ControlServer.Tests.Batch8VehicleOccupancyTests.WhenClosingTheRecordFailsTheClaimTheJourneyAndTheDemandAreAllLeftAsTheyWere [9 s]
+   Assert.Throws() Failure: No exception was thrown
+   at ControlServer.Tests.Batch8VehicleOccupancyTests.WhenClosingTheRecordFailsTheClaimTheJourneyAndTheDemandAreAllLeftAsTheyWere() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs387-8005-agv-control-server\tests\ControlServer.Tests\Batch8VehicleOccupancyTests.cs:line 66
+  Failed ControlServer.Tests.Batch7VehicleOccupancyReleaseTests.AfterASuccessfulUnloadResultTheSameVehicleTakesItsNextJourney [12 s]
+   Assert.Equal() Failure: Collections differ
+   at ControlServer.Tests.Batch7VehicleOccupancyReleaseTests.AfterASuccessfulUnloadResultTheSameVehicleTakesItsNextJourney() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs387-8005-agv-control-server\tests\ControlServer.Tests\Batch7VehicleOccupancyReleaseTests.cs:line 34
+   at ControlServer.Tests.Batch7VehicleOccupancyReleaseTests.AfterASuccessfulUnloadResultTheSameVehicleTakesItsNextJourney() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs387-8005-agv-control-server\tests\ControlServer.Tests\Batch7VehicleOccupancyReleaseTests.cs:line 50
+  Failed ControlServer.Tests.Batch8OccupancyRetirementMigrationTests.EveryMismatchIsNamedInOneRefusal [8 s]
+   Assert.Contains() Failure: Sub-string not found
+   at ControlServer.Tests.Batch8OccupancyRetirementMigrationTests.EveryMismatchIsNamedInOneRefusal() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs387-8005-agv-control-server\tests\ControlServer.Tests\Batch8OccupancyRetirementMigrationTests.cs:line 118
+   at ControlServer.Tests.Batch8OccupancyRetirementMigrationTests.EveryMismatchIsNamedInOneRefusal() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs387-8005-agv-control-server\tests\ControlServer.Tests\Batch8OccupancyRetirementMigrationTests.cs:line 118
+  Failed ControlServer.Tests.Batch7VehicleOccupancyReleaseTests.AfterAPickupStopEndsTheSameVehicleTakesItsNextJourney(endedIn: AwaitingGateArrival, reasonCode: "TERMINATED_BY_FAULT_CARGO_HANDOFF") [9 s]
+   Assert.Equal() Failure: Collections differ
+   at ControlServer.Tests.Batch7VehicleOccupancyReleaseTests.AfterAPickupStopEndsTheSameVehicleTakesItsNextJourney(JourneyRuntimeStage endedIn, String reasonCode) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs387-8005-agv-control-server\tests\ControlServer.Tests\Batch7VehicleOccupancyReleaseTests.cs:line 99
+   at ControlServer.Tests.Batch7VehicleOccupancyReleaseTests.AfterAPickupStopEndsTheSameVehicleTakesItsNextJourney(JourneyRuntimeStage endedIn, String reasonCode) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs387-8005-agv-control-server\tests\ControlServer.Tests\Batch7VehicleOccupancyReleaseTests.cs:line 105
+  Failed ControlServer.Tests.Batch8OccupancyRetirementMigrationTests.AJourneyThatEndedBeforeTheUpgradeLeavesItsVehicleFreeForTheNextAcceptance [8 s]
+   Microsoft.Data.Sqlite.SqliteException : SQLite Error 19: 'Batch8RetireOldVehicleOccupancy refused, nothing was dropped: 2 unfinished old vehicle occupancy row(s) have no purpose claim behind them. Find out why before upgrading; do not edit the migration. VehicleDispatchLeases unreleased: DemandId=D-3 JourneyId=journey:D-3 VehicleKey=VK-03; VehicleDispatchLeases unreleased: DemandId=D-4 JourneyId=journey:D-4 VehicleKey=VK-04'.
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader(CommandBehavior behavior)
+   at System.Data.Common.DbCommand.ExecuteNonQueryAsync(CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Storage.RelationalCommand.ExecuteNonQueryAsync(RelationalCommandParameterObject parameterObject, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Storage.RelationalCommand.ExecuteNonQueryAsync(RelationalCommandParameterObject parameterObject, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Storage.RelationalCommand.ExecuteNonQueryAsync(RelationalCommandParameterObject parameterObject, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.ExecuteNonQueryAsync(IEnumerable`1 migrationCommands, IRelationalConnection connection, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.ExecuteNonQueryAsync(IEnumerable`1 migrationCommands, IRelationalConnection connection, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.ExecuteNonQueryAsync(IEnumerable`1 migrationCommands, IRelationalConnection connection, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.ExecuteNonQueryAsync(IEnumerable`1 migrationCommands, IRelationalConnection connection, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.Migrator.MigrateAsync(String targetMigration, CancellationToken cancellationToken)
+   at ControlServer.Tests.Batch8OccupancyRetirementMigrationTests.AJourneyThatEndedBeforeTheUpgradeLeavesItsVehicleFreeForTheNextAcceptance() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs387-8005-agv-control-server\tests\ControlServer.Tests\Batch8OccupancyRetirementMigrationTests.cs:line 162
+   at ControlServer.Tests.Batch8OccupancyRetirementMigrationTests.AJourneyThatEndedBeforeTheUpgradeLeavesItsVehicleFreeForTheNextAcceptance() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs387-8005-agv-control-server\tests\ControlServer.Tests\Batch8OccupancyRetirementMigrationTests.cs:line 171
+  Failed ControlServer.Tests.Batch7VehicleOccupancyReleaseTests.AfterAPickupStopEndsTheSameVehicleTakesItsNextJourney(endedIn: Blocked, reasonCode: "TERMINATED_BY_FAULT_CARGO_HANDOFF") [11 s]
+   Assert.Equal() Failure: Collections differ
+   at ControlServer.Tests.Batch7VehicleOccupancyReleaseTests.AfterAPickupStopEndsTheSameVehicleTakesItsNextJourney(JourneyRuntimeStage endedIn, String reasonCode) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs387-8005-agv-control-server\tests\ControlServer.Tests\Batch7VehicleOccupancyReleaseTests.cs:line 99
+   at ControlServer.Tests.Batch7VehicleOccupancyReleaseTests.AfterAPickupStopEndsTheSameVehicleTakesItsNextJourney(JourneyRuntimeStage endedIn, String reasonCode) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs387-8005-agv-control-server\tests\ControlServer.Tests\Batch7VehicleOccupancyReleaseTests.cs:line 105
+  Failed ControlServer.Tests.Batch8OccupancyRetirementMigrationTests.AnUnreleasedOrderOccupancyOfAClosedJourneyWithoutAClaimRefusesTheMigrationWholeNamingTheOrder [11 s]
+   Assert.Contains() Failure: Sub-string not found
+   at ControlServer.Tests.Batch8OccupancyRetirementMigrationTests.AnUnreleasedOrderOccupancyOfAClosedJourneyWithoutAClaimRefusesTheMigrationWholeNamingTheOrder() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs387-8005-agv-control-server\tests\ControlServer.Tests\Batch8OccupancyRetirementMigrationTests.cs:line 105
+   at ControlServer.Tests.Batch8OccupancyRetirementMigrationTests.AnUnreleasedOrderOccupancyOfAClosedJourneyWithoutAClaimRefusesTheMigrationWholeNamingTheOrder() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs387-8005-agv-control-server\tests\ControlServer.Tests\Batch8OccupancyRetirementMigrationTests.cs:line 105
+  Failed ControlServer.Tests.Batch7VehicleOccupancyReleaseTests.AfterAPickupStopEndsTheSameVehicleTakesItsNextJourney(endedIn: AwaitingSublot, reasonCode: "CANCELLED_BY_STATION_TIMEOUT") [10 s]
+   Assert.Equal() Failure: Collections differ
+   at ControlServer.Tests.Batch7VehicleOccupancyReleaseTests.AfterAPickupStopEndsTheSameVehicleTakesItsNextJourney(JourneyRuntimeStage endedIn, String reasonCode) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs387-8005-agv-control-server\tests\ControlServer.Tests\Batch7VehicleOccupancyReleaseTests.cs:line 99
+   at ControlServer.Tests.Batch7VehicleOccupancyReleaseTests.AfterAPickupStopEndsTheSameVehicleTakesItsNextJourney(JourneyRuntimeStage endedIn, String reasonCode) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs387-8005-agv-control-server\tests\ControlServer.Tests\Batch7VehicleOccupancyReleaseTests.cs:line 105
+  Failed ControlServer.Tests.Batch8OccupancyRetirementMigrationTests.AnUnreleasedLeaseWithoutItsClaimRefusesTheMigrationWholeNamingTheLeaseAndDropsNothing [12 s]
+   Assert.Contains() Failure: Sub-string not found

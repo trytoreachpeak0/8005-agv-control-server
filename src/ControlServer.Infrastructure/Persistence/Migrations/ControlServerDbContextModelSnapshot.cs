@@ -1668,12 +1668,6 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset?>("VehicleOccupancyClaimedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset?>("VehicleOccupancyReleasedAt")
-                        .HasColumnType("TEXT");
-
                     b.HasKey("MovementLegId");
 
                     b.HasIndex("CreateAttemptId")
@@ -1686,10 +1680,6 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("UpperId")
                         .IsUnique();
-
-                    b.HasIndex("VehicleKey")
-                        .IsUnique()
-                        .HasFilter("VehicleOccupancyClaimedAt IS NOT NULL AND VehicleOccupancyReleasedAt IS NULL");
 
                     b.ToTable("OrderIntents");
                 });
@@ -3581,36 +3571,6 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                     b.HasKey("AgvId");
 
                     b.ToTable("VehicleDispatchBudgets");
-                });
-
-            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.VehicleDispatchLeaseRow", b =>
-                {
-                    b.Property<string>("JourneyId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("AcquiredAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("DemandId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset?>("ReleasedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("VehicleKey")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("JourneyId");
-
-                    b.HasIndex("DemandId");
-
-                    b.HasIndex("VehicleKey")
-                        .IsUnique()
-                        .HasFilter("ReleasedAt IS NULL");
-
-                    b.ToTable("VehicleDispatchLeases");
                 });
 
             modelBuilder.Entity("ControlServer.Infrastructure.Persistence.VehicleFaultStateRow", b =>

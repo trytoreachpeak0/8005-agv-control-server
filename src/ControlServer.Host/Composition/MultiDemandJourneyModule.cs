@@ -17,7 +17,6 @@ internal static class MultiDemandJourneyModule
         ArgumentNullException.ThrowIfNull(services);
 
         services.AddScoped<IJourneyMembershipStore, JourneyMembershipStore>();
-        services.AddScoped<IVehiclePurposeClaimStore, VehiclePurposeClaimStore>();
         services.AddScoped<ITransportDemandSuppressionStore, TransportDemandSuppressionStore>();
         services.AddScoped<IDispatchZoneParameterStore, DispatchZoneParameterStore>();
         services.AddScoped<IVehicleSnapshotRevisionStore, VehicleSnapshotRevisionStore>();

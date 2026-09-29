@@ -103,7 +103,7 @@ public sealed class Batch7DemandTerminationTests
     // ---- The unload result releases the lease only for the last demand ------------------------------------------
 
     [Fact]
-    public async Task AnUnloadOfADemandThatIsNotTheLastKeepsTheLeaseAndTheClaim()
+    public async Task AnUnloadOfADemandThatIsNotTheLastKeepsTheClaim()
     {
         await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
         JourneyRuntimeRow runtime = await AcceptTwoDemandJourneyAsync(fixture);
@@ -118,7 +118,7 @@ public sealed class Batch7DemandTerminationTests
     }
 
     [Fact]
-    public async Task AnUnloadResultOfADemandThatIsNotTheLastKeepsTheLeaseAndTheClaimAndTheLastOneReleasesThem()
+    public async Task AnUnloadResultOfADemandThatIsNotTheLastKeepsTheClaimAndTheLastOneReleasesIt()
     {
         await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
         JourneyRuntimeRow runtime = await AcceptTwoDemandJourneyAsync(fixture);
@@ -131,7 +131,7 @@ public sealed class Batch7DemandTerminationTests
 
         Assert.Equal(OperationResultDisposition.Accepted, await ApplyUnloadResultAsync(fixture, Anchor, "COMPLETED", 7));
         await using ControlServerDbContext reading = fixture.NewContext();
-        Assert.Equal(At.AddMinutes(7), (await reading.VehicleDispatchLeases.SingleAsync(TestContext.Current.CancellationToken)).ReleasedAt);
+        Assert.Equal(At.AddMinutes(7), (await reading.Set<VehiclePurposeClaimRecordRow>().SingleAsync(TestContext.Current.CancellationToken)).ReleasedAt);
         Assert.Empty(await reading.Set<VehiclePurposeClaimRow>().ToArrayAsync(TestContext.Current.CancellationToken));
         // The journey and the pickup order are the runtime's to close on its next round, as before (Engine, AwaitingUnloadResult).
         Assert.NotEqual(JourneyRuntimeStage.Completed, (await reading.JourneyRuntimes.SingleAsync(TestContext.Current.CancellationToken)).Stage);
@@ -216,12 +216,12 @@ public sealed class Batch7DemandTerminationTests
             Assert.Equal(DemandExecutionStatus.Cancelled, (await reading.AcceptedDemands.SingleAsync(row => row.DemandId == Anchor, cancellationToken)).Status);
             // The cancellation read after the unload committed, so it was the last: it closed the journey and released
             // the lease at its own moment. The unload released nothing.
-            Assert.Equal(At.AddMinutes(6), (await reading.VehicleDispatchLeases.SingleAsync(cancellationToken)).ReleasedAt);
+            Assert.Equal(At.AddMinutes(6), (await reading.Set<VehiclePurposeClaimRecordRow>().SingleAsync(cancellationToken)).ReleasedAt);
             Assert.Empty(await reading.Set<VehiclePurposeClaimRow>().ToArrayAsync(cancellationToken));
             JourneyRuntimeRow closed = await reading.JourneyRuntimes.SingleAsync(cancellationToken);
             Assert.Equal(JourneyRuntimeStage.Completed, closed.Stage);
             Assert.Equal(Reason, closed.BlockReasonCode);
-            await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(reading);
+            await VehicleOccupancyAssertions.AssertOpenClaimRecordsAndPurposeClaimsMatchAsync(reading);
         }
         finally
         {
@@ -261,7 +261,7 @@ public sealed class Batch7DemandTerminationTests
 
         Assert.Contains("DurableAck", response, StringComparison.Ordinal);
         Assert.Equal(DemandExecutionStatus.Succeeded, (await fixture.DemandRowAsync()).Status);
-        Assert.NotNull((await fixture.LeaseAsync()).ReleasedAt);
+        Assert.NotNull((await fixture.ClaimRecordAsync()).ReleasedAt);
         Assert.Equal(1, watch.Reads);
         Assert.Equal(0, watch.ReadsOutsideATransaction);
     }
@@ -283,7 +283,7 @@ public sealed class Batch7DemandTerminationTests
         await fixture.ApplySafeResultAsync(
             await fixture.OperationAsync(SlotOperationType.Unload), SlotOperationType.Unload, SlotBusinessState.Empty);
         Assert.Equal(DemandExecutionStatus.Succeeded, (await fixture.DemandRowAsync()).Status);
-        Assert.NotNull((await fixture.LeaseAsync()).ReleasedAt);
+        Assert.NotNull((await fixture.ClaimRecordAsync()).ReleasedAt);
         Assert.Equal(JourneyRuntimeStage.AwaitingUnloadResult, (await fixture.RuntimeAsync()).Stage);
 
         await fixture.RecreateEngineAsync();
@@ -304,7 +304,7 @@ public sealed class Batch7DemandTerminationTests
             fixture.Context, runtime, "10000000-0000-4000-8000-000000000072", DemandExecutionStatus.Cancelled);
         await fixture.ApplySafeResultAsync(
             await fixture.OperationAsync(SlotOperationType.Unload), SlotOperationType.Unload, SlotBusinessState.Empty);
-        Assert.NotNull((await fixture.LeaseAsync()).ReleasedAt);
+        Assert.NotNull((await fixture.ClaimRecordAsync()).ReleasedAt);
 
         await fixture.RecreateEngineAsync();
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
@@ -381,10 +381,8 @@ public sealed class Batch7DemandTerminationTests
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
         await using ControlServerDbContext reading = fixture.NewContext();
         Assert.NotEqual(JourneyRuntimeStage.Completed, (await reading.JourneyRuntimes.SingleAsync(cancellationToken)).Stage);
-        Assert.Null((await reading.VehicleDispatchLeases.SingleAsync(cancellationToken)).ReleasedAt);
+        Assert.Null((await reading.Set<VehiclePurposeClaimRecordRow>().SingleAsync(cancellationToken)).ReleasedAt);
         Assert.Equal(runtime.JourneyId, (await reading.Set<VehiclePurposeClaimRow>().SingleAsync(cancellationToken)).JourneyId);
-        Assert.Null((await reading.OrderIntents.SingleAsync(row => row.UpperId == runtime.PickupUpperId, cancellationToken))
-            .VehicleOccupancyReleasedAt);
     }
 
     private static async Task AssertClosedAtAsync(
@@ -396,10 +394,9 @@ public sealed class Batch7DemandTerminationTests
         Assert.Equal(JourneyRuntimeStage.Completed, closed.Stage);
         Assert.Equal(reasonCode, closed.BlockReasonCode);
         Assert.Null(closed.StationDepartureWaitStartedAt);
-        Assert.Equal(closedAt, (await reading.VehicleDispatchLeases.SingleAsync(cancellationToken)).ReleasedAt);
+        Assert.Equal(closedAt, (await reading.Set<VehiclePurposeClaimRecordRow>().SingleAsync(cancellationToken)).ReleasedAt);
         Assert.Empty(await reading.Set<VehiclePurposeClaimRow>().ToArrayAsync(cancellationToken));
-        Assert.Equal(closedAt, (await reading.OrderIntents.SingleAsync(row => row.UpperId == runtime.PickupUpperId, cancellationToken))
-            .VehicleOccupancyReleasedAt);
+        Assert.Equal(reasonCode, (await reading.Set<VehiclePurposeClaimRecordRow>().SingleAsync(cancellationToken)).ReleaseReason);
         Assert.Equal(DemandExecutionStatus.Cancelled, (await reading.AcceptedDemands.SingleAsync(row => row.DemandId == Anchor, cancellationToken)).Status);
     }
 
@@ -407,9 +404,9 @@ public sealed class Batch7DemandTerminationTests
     {
         JourneyRuntimeRow closed = await fixture.RuntimeAsync();
         Assert.Equal(JourneyRuntimeStage.Completed, closed.Stage);
-        Assert.NotNull((await fixture.Context.OrderIntents.AsNoTracking()
-            .SingleAsync(row => row.UpperId == closed.PickupUpperId, TestContext.Current.CancellationToken)).VehicleOccupancyReleasedAt);
-        await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(fixture.Context);
+        Assert.False(await fixture.Context.Set<VehiclePurposeClaimRow>().AsNoTracking()
+            .AnyAsync(row => row.JourneyId == closed.JourneyId, TestContext.Current.CancellationToken));
+        await VehicleOccupancyAssertions.AssertOpenClaimRecordsAndPurposeClaimsMatchAsync(fixture.Context);
     }
 
     private static async Task<JourneyRuntimeRow> CompleteAJourneyAsync(RuntimeFixture fixture)

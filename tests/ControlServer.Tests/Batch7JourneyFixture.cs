@@ -55,6 +55,81 @@ internal sealed class Batch7JourneyFixture : IAsyncDisposable
         Context = NewContext();
     }
 
+    /// <summary>
+    /// Lets today's acceptance and release paths seed a database migrated only as far as a migration from before batch 8-16
+    /// (control-server#387), and leaves behind what the version of that time wrote: a dispatch lease per claim, not a record.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Today's paths write the claim's record into <c>VehiclePurposeClaimRecords</c>, which a database from before
+    /// control-server#386 does not have, and no longer write the lease. So a stand-in record table is created for the
+    /// seeding, and on dispose every record becomes the lease that version would have written beside the claim -- same
+    /// journey, vehicle and moments, the demand the journey is anchored on -- and the stand-in is dropped. On a database
+    /// that has had the record table since #386 (empty until #387, which nothing wrote before) the records the seeding wrote
+    /// are removed the same way.
+    /// </para>
+    /// <para>
+    /// Only for migration tests that must seed a schema from before the lease was retired. Everything else seeds the
+    /// current schema and reads the records.
+    /// </para>
+    /// </remarks>
+    internal static async Task<IAsyncDisposable> WriteLeasesTheWayTheOldVersionDidAsync(SqliteConnection connection)
+    {
+        bool hadRecords = await ScalarAsync(
+            connection, "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'VehiclePurposeClaimRecords'") > 0;
+        if (!hadRecords)
+        {
+            await ExecuteAsync(
+                connection,
+                """
+                CREATE TABLE "VehiclePurposeClaimRecords" (
+                    "RecordId" TEXT NOT NULL PRIMARY KEY, "VehicleKey" TEXT NOT NULL, "Purpose" TEXT NOT NULL,
+                    "JourneyId" TEXT NOT NULL, "AcquiredAt" TEXT NOT NULL, "ReleasedAt" TEXT NULL, "ReleaseReason" TEXT NULL)
+                """);
+        }
+        long before = hadRecords
+            ? await ScalarAsync(connection, """SELECT coalesce(max(rowid), 0) FROM "VehiclePurposeClaimRecords" """)
+            : 0;
+        return new LeaseEra(connection, hadRecords, before);
+    }
+
+    private sealed class LeaseEra(SqliteConnection connection, bool hadRecords, long recordsBefore) : IAsyncDisposable
+    {
+        public async ValueTask DisposeAsync()
+        {
+            await ExecuteAsync(
+                connection,
+                """
+                INSERT INTO "VehicleDispatchLeases" ("JourneyId", "DemandId", "VehicleKey", "AcquiredAt", "ReleasedAt")
+                SELECT r."JourneyId",
+                       coalesce((SELECT j."DemandId" FROM "JourneyRuntimes" AS j WHERE j."JourneyId" = r."JourneyId"),
+                                substr(r."JourneyId", length('journey:') + 1)),
+                       r."VehicleKey", r."AcquiredAt", r."ReleasedAt"
+                FROM "VehiclePurposeClaimRecords" AS r
+                WHERE r.rowid > $before
+                """.Replace("$before", recordsBefore.ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal));
+            await ExecuteAsync(
+                connection,
+                hadRecords
+                    ? $"""DELETE FROM "VehiclePurposeClaimRecords" WHERE rowid > {recordsBefore.ToString(System.Globalization.CultureInfo.InvariantCulture)}"""
+                    : """DROP TABLE "VehiclePurposeClaimRecords" """);
+        }
+    }
+
+    private static async Task<long> ScalarAsync(SqliteConnection connection, string sql)
+    {
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = sql;
+        return (long)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
+    }
+
+    private static async Task ExecuteAsync(SqliteConnection connection, string sql)
+    {
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = sql;
+        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+    }
+
     internal static AcceptedDemandSnapshot Snapshot(string demandId, DateTimeOffset acceptedAt) =>
         new(demandId, $"SUBLOT-{demandId}|WIRE_TO_GATE", 7, "history-1", 21, acceptedAt,
             SeriesId: $"SERIES-{demandId}", WorkType: "WIRE_TO_GATE", Sublot: $"SUBLOT-{demandId}", Generation: 1,

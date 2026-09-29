@@ -588,9 +588,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
     /// <remarks>
     /// <para>
     /// <b>与受理写的是同一套冻结，少的是旅程层面那几样。</b>需求行、三样冻结（区域分配、端点、任务类型站点版本）
-    /// 与受理一字不差——一条需求不会因为它是被追加进来的就少冻结一个版本。不写的是旅程行、租约、用途占有与移动订单：
-    /// 那辆车已经被这趟旅程占着（<c>OrderIntents</c> 的过滤唯一索引与 <c>VehiclePurposeClaims</c> 的主键都是一车一行，
-    /// 再认领一次会直接冲突），而新那一段腿要等前面的停靠走完才发。
+    /// 与受理一字不差——一条需求不会因为它是被追加进来的就少冻结一个版本。不写的是旅程行、用途占有与移动订单：
+    /// 那辆车已经被这趟旅程占着（<c>VehiclePurposeClaims</c> 的主键一车一行，再认领一次会直接冲突），而新那一段腿要等前面的停靠走完才发。
     /// </para>
     /// <para>
     /// <b>四样东西一个事务：</b>需求行、归属、两个新停靠、既有停靠的新序位。分开写会留下「占了仓位却不在计划里的需求」
@@ -1078,17 +1077,6 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction,
         CancellationToken cancellationToken)
     {
-        VehicleDispatchLeaseRow? activeLease = await dbContext.VehicleDispatchLeases
-            .SingleOrDefaultAsync(
-                row => row.VehicleKey == orderIntent.VehicleKey && row.ReleasedAt == null,
-                cancellationToken)
-            .ConfigureAwait(false);
-        if (activeLease is not null)
-        {
-            throw new BusinessIdentityConflictException(
-                $"Vehicle '{orderIntent.VehicleKey}' is already bound to unresolved demand '{activeLease.DemandId}'.");
-        }
-
         if (redispatch)
         {
             await ThawForRedispatchAsync(snapshot.DemandId, cancellationToken).ConfigureAwait(false);
@@ -1122,24 +1110,13 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
             dbContext.AcceptedDemands.Add(NewAcceptedDemandRow(snapshot));
         }
         string journeyId = JourneyIdentity.ForAnchorDemand(journey?.DerivationKeyFor(snapshot.DemandId) ?? snapshot.DemandId);
-        dbContext.VehicleDispatchLeases.Add(new VehicleDispatchLeaseRow
-        {
-            JourneyId = journeyId,
-            DemandId = snapshot.DemandId,
-            VehicleKey = orderIntent.VehicleKey,
-            AcquiredAt = snapshot.AcceptedAt
-        });
-        // Batch 7 (control-server#206): the purpose claim is the vehicle's occupancy of record, written beside the lease in
-        // the same save and released wherever the lease is. It is inserted, never read first: the key decides who holds
-        // the vehicle.
+        // The purpose claim is the vehicle's one occupancy (batch 8-16, control-server#387: the lease and the order
+        // occupancy that used to be written beside it are gone), taken with its record in this acceptance's save. It is
+        // inserted, never read first: the key decides who holds the vehicle, and a vehicle some other journey holds
+        // refuses the whole acceptance below.
         ForgetClaimsThisContextLastSaw(orderIntent.VehicleKey);
-        dbContext.Set<VehiclePurposeClaimRow>().Add(new VehiclePurposeClaimRow
-        {
-            VehicleKey = orderIntent.VehicleKey,
-            Purpose = VehiclePurposes.Transport,
-            JourneyId = journeyId,
-            ClaimedAt = snapshot.AcceptedAt
-        });
+        dbContext.AddRange(VehiclePurposeClaimWrites.NewRows(
+            new VehiclePurposeClaim(orderIntent.VehicleKey, VehiclePurposes.Transport, journeyId, snapshot.AcceptedAt)));
         dbContext.OrderIntents.Add(ToRow(orderIntent));
         if (journey is not null)
         {
@@ -1170,8 +1147,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         }
         catch (DbUpdateException failure) when (IsPurposeClaimConflict(failure))
         {
-            // Another journey's claim landed between the lease read above and this insert: the key refused this one, and
-            // the transaction rolls every row of this acceptance back with it. Said the way the lease read says it.
+            // Another journey holds the vehicle: the key refused this claim, and the transaction rolls every row of this
+            // acceptance back with it.
             throw new BusinessIdentityConflictException(
                 $"Vehicle '{orderIntent.VehicleKey}' is already claimed by another journey: {failure.InnerException?.Message}");
         }
@@ -2086,9 +2063,10 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         });
         dbContext.StopClosures.Add(new StopClosureRow { DemandId = demandId, CommittedAt = completedAt });
         demand.Status = DemandExecutionStatus.Succeeded;
-        // The lease and the purpose claim go when the journey's last open demand ends (control-server#207), decided inside
+        // The purpose claim goes when the journey's last open demand ends (control-server#207), decided inside
         // the transaction opened just above; with one demand that is this one, in this save, as before.
-        await JourneyLeaseRelease.StageIfLastOpenDemandAsync(dbContext, demandId, completedAt, cancellationToken)
+        await JourneyPurposeClaimRelease.StageIfLastOpenDemandAsync(
+                dbContext, demandId, completedAt, VehiclePurposeReleaseReasons.LastDemandUnloaded, cancellationToken)
             .ConfigureAwait(false);
         dbContext.TransportDemandCompletions.Add(new TransportDemandCompletionRow
         {
@@ -2691,7 +2669,9 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         // is inside a write transaction on the path that reaches it. Batch7DemandTerminationTests
         // .TheUnloadResultsReleaseDecisionIsReadInsideTheInboxWriteTransaction pins that, because it is the inbox's
         // structure that provides it rather than anything here.
-        await JourneyLeaseRelease.StageIfLastOpenDemandAsync(dbContext, result.DemandId, result.ObservedAt, cancellationToken)
+        await JourneyPurposeClaimRelease.StageIfLastOpenDemandAsync(
+                dbContext, result.DemandId, result.ObservedAt, VehiclePurposeReleaseReasons.LastDemandUnloaded,
+                cancellationToken)
             .ConfigureAwait(false);
         dbContext.TransportDemandCompletions.Add(new TransportDemandCompletionRow
         {

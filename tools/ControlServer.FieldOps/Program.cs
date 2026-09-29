@@ -120,6 +120,8 @@ internal static partial class Program
             CloseTaskTypeStationActivationCommand => await CloseTaskTypeStationActivationAsync(context, governance, options, now),
             ImportDispatchZoneParametersCommand => await ImportDispatchZoneParametersAsync(context, governance, options, now),
             ReadDispatchZoneParametersCommand => await ReadDispatchZoneParametersAsync(context, governance, options),
+            ImportWaitingPointsCommand => await ImportWaitingPointsAsync(context, governance, options, now),
+            ReadWaitingPointsCommand => await ReadWaitingPointsAsync(context, governance, options),
             _ => Usage($"unknown command '{args[0]}'")
         };
     }
@@ -129,7 +131,7 @@ internal static partial class Program
     /// </summary>
     internal static bool OpensReadOnly(string command) =>
         command is CheckBindingSnapshotsCommand or ReadAreaAssignmentsCommand or ReadTaskTypeStationsCommand
-            or ReadDispatchZoneParametersCommand;
+            or ReadDispatchZoneParametersCommand or ReadWaitingPointsCommand;
 
     private const string CheckBindingSnapshotsCommand = "check-binding-snapshots";
 

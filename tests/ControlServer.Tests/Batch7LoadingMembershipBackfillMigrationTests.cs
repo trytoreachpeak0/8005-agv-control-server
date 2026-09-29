@@ -108,11 +108,18 @@ public sealed class Batch7LoadingMembershipBackfillMigrationTests
             .Status = JourneyDemandStatuses.Loaded;
         await context.SaveChangesAsync(cancellationToken);
 
-        foreach (string table in await TableNamesAsync(fixture.Connection))
+        // A table today's schema no longer has (the dispatch lease, control-server#387) has nothing to copy.
+        string[] scratchTables = await TableNamesAsync(scratch.Connection);
+        foreach (string table in (await TableNamesAsync(fixture.Connection)).Intersect(scratchTables, StringComparer.Ordinal))
         {
             if (await CountAsync(scratch.Connection, table) > 0 && await CountAsync(fixture.Connection, table) == 0)
             {
-                await CopyRowsAsync(scratch.Connection, fixture.Connection, table, await ColumnsAsync(fixture.Connection, table));
+                // Only the columns both have: the scratch database is at today's schema, which dropped the order occupancy
+                // columns (control-server#387) that this older one still has.
+                string[] scratchColumns = await ColumnsAsync(scratch.Connection, table);
+                await CopyRowsAsync(
+                    scratch.Connection, fixture.Connection, table,
+                    [.. (await ColumnsAsync(fixture.Connection, table)).Intersect(scratchColumns, StringComparer.Ordinal)]);
             }
         }
     }

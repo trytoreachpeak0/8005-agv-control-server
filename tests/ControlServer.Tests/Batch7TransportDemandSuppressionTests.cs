@@ -247,9 +247,9 @@ public sealed class Batch7TransportDemandSuppressionTests
                 new TransportDemandSuppression(KeyOf(Demand), Demand, "CANCELLED_BY_STATION_TIMEOUT", At.AddMinutes(5)),
                 Assert.Single(await SuppressionAssertions.AllAsync(reading)));
             Assert.Equal(DemandExecutionStatus.Cancelled, (await reading.AcceptedDemands.SingleAsync(cancellationToken)).Status);
-            Assert.Equal(At.AddMinutes(5), (await reading.VehicleDispatchLeases.SingleAsync(cancellationToken)).ReleasedAt);
+            Assert.Equal(At.AddMinutes(5), (await reading.Set<VehiclePurposeClaimRecordRow>().SingleAsync(cancellationToken)).ReleasedAt);
             Assert.Empty(await reading.Set<VehiclePurposeClaimRow>().ToArrayAsync(cancellationToken));
-            await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(reading);
+            await VehicleOccupancyAssertions.AssertOpenClaimRecordsAndPurposeClaimsMatchAsync(reading);
             // Both writers asked, and each asked inside its write transaction.
             Assert.True(deadlineWatch.Reads > 0 && cancellationWatch.Reads > 0,
                 $"suppression reads: deadline {deadlineWatch.Reads}, cancellation {cancellationWatch.Reads}");
@@ -295,7 +295,7 @@ public sealed class Batch7TransportDemandSuppressionTests
         Assert.Equal(before, await DumpEndingTablesAsync(fixture));
         await using ControlServerDbContext reading = fixture.NewContext();
         Assert.Equal(DemandExecutionStatus.Accepted, (await reading.AcceptedDemands.SingleAsync(cancellationToken)).Status);
-        Assert.Null((await reading.VehicleDispatchLeases.SingleAsync(cancellationToken)).ReleasedAt);
+        Assert.Null((await reading.Set<VehiclePurposeClaimRecordRow>().SingleAsync(cancellationToken)).ReleasedAt);
         Assert.Single(await reading.Set<VehiclePurposeClaimRow>().ToArrayAsync(cancellationToken));
         Assert.NotEqual(JourneyRuntimeStage.Completed, (await reading.JourneyRuntimes.SingleAsync(cancellationToken)).Stage);
         await SuppressionAssertions.AssertNothingSuppressedAsync(reading);
@@ -322,7 +322,7 @@ public sealed class Batch7TransportDemandSuppressionTests
         List<string> rows = [];
         foreach (string table in new[]
                  {
-                     "AcceptedDemands", "VehicleDispatchLeases", "VehiclePurposeClaims", "OrderIntents", "JourneyRuntimes",
+                     "AcceptedDemands", "VehiclePurposeClaimRecords", "VehiclePurposeClaims", "OrderIntents", "JourneyRuntimes",
                      "JourneyDemands", "JourneyStops", "TransportDemandSuppressions",
                  })
         {

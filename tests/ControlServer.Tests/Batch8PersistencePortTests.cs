@@ -173,11 +173,36 @@ public sealed class Batch8PersistencePortTests
     }
 
     [Fact]
-    public async Task AClaimTheEngineWroteWithoutARecordIsReleasedAllTheSame()
+    public async Task AClaimTheEngineTookIsReleasedThroughTheLedgerWithItsRecordClosed()
     {
-        // Until batch 8-16 moves the engine onto this port, an acceptance writes the claim row alone.
+        // Since batch 8-16 (control-server#387) the acceptance writes the claim and its record through the same write path
+        // as the ledger (until then it wrote the claim row alone), so the ledger releases what the engine took, record
+        // included.
         await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
         await Batch7JourneyFixture.AcceptAsync(fixture.Context, "D-1", "AGV-01", "VK-01", Now);
+
+        Assert.True(await new VehiclePurposeLedgerStore(fixture.NewContext())
+            .ReleaseAsync("VK-01", "journey:D-1", Now.AddMinutes(1), "TEST", Token));
+        Assert.Empty(await Batch7JourneyFixture.DumpAsync(fixture.Connection, "VehiclePurposeClaims"));
+        VehiclePurposeClaimRecord record = Assert.Single(
+            await new VehiclePurposeLedgerStore(fixture.NewContext()).ListClaimHistoryAsync("VK-01", Token));
+        Assert.Equal(("journey:D-1", (DateTimeOffset?)Now.AddMinutes(1), (string?)"TEST"), (record.JourneyId, record.ReleasedAt, record.ReleaseReason));
+    }
+
+    [Fact]
+    public async Task AClaimWithoutARecordIsReleasedAllTheSame()
+    {
+        // A claim row with no record can no longer be written by the server, but one left by a database edit must not
+        // stick the vehicle: the release goes by the claim.
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        fixture.Context.Set<VehiclePurposeClaimRow>().Add(new VehiclePurposeClaimRow
+        {
+            VehicleKey = "VK-01",
+            Purpose = VehiclePurposes.Transport,
+            JourneyId = "journey:D-1",
+            ClaimedAt = Now
+        });
+        await fixture.Context.SaveChangesAsync(Token);
 
         Assert.True(await new VehiclePurposeLedgerStore(fixture.NewContext())
             .ReleaseAsync("VK-01", "journey:D-1", Now.AddMinutes(1), "TEST", Token));

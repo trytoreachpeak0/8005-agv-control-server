@@ -32,8 +32,18 @@ public sealed class Batch8MigrationDisciplineTests
     internal const string PreviousMigration = "20260928153736_MapNameBaselines";
     internal const string Batch8MigrationSuffix = "_Batch8VehiclePurposePersistence";
 
+    /// <summary>
+    /// This migration by its full name. The assertions below migrate to it rather than to the latest: the one after it
+    /// (batch 8-16, control-server#387) drops the order occupancy columns these compare row for row.
+    /// </summary>
+    internal const string Batch8Migration = "20260929044052" + Batch8MigrationSuffix;
+
     /// <summary>批次 8 迁移之后允许存在的迁移，按名字点出来。</summary>
-    private static readonly string[] MigrationsAfterBatch8 = [];
+    private static readonly string[] MigrationsAfterBatch8 =
+    [
+        // control-server#387：批次 8 第二次迁移——删前核数据（未结束的旧占用没有对应用途占有即整体拒绝、列出行、什么都不删），从占有行与已释放租约回填占有记录，删租约表与 OrderIntents 的两列订单占用及其过滤唯一索引（原生 DROP COLUMN，其余列序不变）。自己的断言在 Batch8OccupancyRetirementMigrationTests。
+        "20260929070322_Batch8RetireOldVehicleOccupancy",
+    ];
 
     private static readonly string[] NewTables =
     [
@@ -123,7 +133,7 @@ public sealed class Batch8MigrationDisciplineTests
         Assert.Equal(2, rowsBefore["VehiclePurposeClaims"].Length);
 
         // Journeys in flight while the migration runs: it runs all the same.
-        await migrator.MigrateAsync(null, Token);
+        await migrator.MigrateAsync(Batch8Migration, Token);
 
         // Every table that existed keeps its columns, in the same order, and every row, value for value. The only
         // difference is the nullability of the columns choice A relaxes -- and none of them holds a null.
@@ -161,7 +171,7 @@ public sealed class Batch8MigrationDisciplineTests
         await SeedThroughTheAcceptancePathAsync(fixture);
         Dictionary<string, string[]> before = await ObjectsOfAsync(fixture.Connection, RebuiltTables);
 
-        await migrator.MigrateAsync(null, Token);
+        await migrator.MigrateAsync(Batch8Migration, Token);
         Dictionary<string, string[]> after = await ObjectsOfAsync(fixture.Connection, RebuiltTables);
 
         foreach (string table in RebuiltTables)
@@ -246,7 +256,7 @@ public sealed class Batch8MigrationDisciplineTests
         string[] schemaBefore = await SchemaAsync(fixture.Connection);
         Dictionary<string, string[]> rowsBefore = await DumpEveryTableAsync(fixture.Connection);
 
-        await migrator.MigrateAsync(null, Token);
+        await migrator.MigrateAsync(Batch8Migration, Token);
         string[] schemaAfter = await SchemaAsync(fixture.Connection);
         Dictionary<string, string[]> rowsAfter = await DumpEveryTableAsync(fixture.Connection);
         Assert.NotEqual(schemaBefore, schemaAfter);
@@ -255,7 +265,7 @@ public sealed class Batch8MigrationDisciplineTests
         Assert.Equal(schemaBefore, await SchemaAsync(fixture.Connection));
         Assert.Equal(rowsBefore, await DumpEveryTableAsync(fixture.Connection));
 
-        await migrator.MigrateAsync(null, Token);
+        await migrator.MigrateAsync(Batch8Migration, Token);
         Assert.Equal(schemaAfter, await SchemaAsync(fixture.Connection));
         Assert.Equal(rowsAfter, await DumpEveryTableAsync(fixture.Connection));
     }
@@ -276,7 +286,7 @@ public sealed class Batch8MigrationDisciplineTests
         }
         string[] schemaBefore = await SchemaAsync(fixture.Connection);
 
-        SqliteException failure = await Assert.ThrowsAsync<SqliteException>(() => migrator.MigrateAsync(null, Token));
+        SqliteException failure = await Assert.ThrowsAsync<SqliteException>(() => migrator.MigrateAsync(Batch8Migration, Token));
         Assert.Equal(275, failure.SqliteExtendedErrorCode); // SQLITE_CONSTRAINT_CHECK
         Assert.Contains("CK_VehiclePurposeClaims_Purpose", failure.Message, StringComparison.Ordinal);
 
@@ -289,14 +299,11 @@ public sealed class Batch8MigrationDisciplineTests
     private static async Task SeedThroughTheAcceptancePathAsync(Batch7JourneyFixture fixture)
     {
         DateTimeOffset now = Batch7JourneyFixture.Now;
-        await Batch7JourneyFixture.AcceptAsync(fixture.Context, "D-1", "AGV-01", "VK-01", now);
-        await fixture.RenewContextAsync();
-        await Batch7JourneyFixture.AcceptAsync(fixture.Context, "D-2", "AGV-02", "VK-02", now.AddMinutes(1));
-        await fixture.RenewContextAsync();
-        await Batch7JourneyFixture.AcceptAsync(fixture.Context, "D-3", "AGV-03", "VK-03", now.AddMinutes(2));
-        await fixture.RenewContextAsync();
-        await Batch7JourneyFixture.CompleteByUnloadAsync(fixture.Context, "D-3", now.AddMinutes(10));
-        await fixture.RenewContextAsync();
+        // The acceptance writes a claim record since batch 8-16 (control-server#387); this schema has leases instead.
+        await using (await Batch7JourneyFixture.WriteLeasesTheWayTheOldVersionDidAsync(fixture.Connection))
+        {
+            await AcceptAndCompleteAsync(fixture, now);
+        }
 
         // The RIoT tables and the own-order rebuild record whose DemandId is relaxed, one row each, so their values are
         // compared too. Written directly: the rows are only there to be carried through the rebuild.
@@ -333,6 +340,18 @@ public sealed class Batch8MigrationDisciplineTests
             }
             Assert.NotEqual(0L, await ScalarAsync(fixture.Connection, $"SELECT COUNT(*) FROM \"{table}\""));
         }
+    }
+
+    private static async Task AcceptAndCompleteAsync(Batch7JourneyFixture fixture, DateTimeOffset now)
+    {
+        await Batch7JourneyFixture.AcceptAsync(fixture.Context, "D-1", "AGV-01", "VK-01", now);
+        await fixture.RenewContextAsync();
+        await Batch7JourneyFixture.AcceptAsync(fixture.Context, "D-2", "AGV-02", "VK-02", now.AddMinutes(1));
+        await fixture.RenewContextAsync();
+        await Batch7JourneyFixture.AcceptAsync(fixture.Context, "D-3", "AGV-03", "VK-03", now.AddMinutes(2));
+        await fixture.RenewContextAsync();
+        await Batch7JourneyFixture.CompleteByUnloadAsync(fixture.Context, "D-3", now.AddMinutes(10));
+        await fixture.RenewContextAsync();
     }
 
     private static async Task<List<(string Column, string Type)>> NullableColumnsAsync(SqliteConnection connection, string table)

@@ -722,14 +722,12 @@ public sealed partial class MultiVehicleExecutionTests
 
     /// <summary>
     /// A dispatched vehicle holds its occupancy claim for the whole journey, and a second claim for
-    /// the same vehicle is refused by the index rather than by a read.
+    /// the same vehicle is refused by the key rather than by a read.
     /// </summary>
     /// <remarks>
-    /// This is where the uniqueness ticket 06 moved down onto <c>OrderIntents</c> starts being
-    /// enforced: the columns and the filtered unique index existed already, and until something
-    /// wrote them every row fell outside the index. The ticket's own acceptance names a
-    /// <c>DispatchUniquenessGuard</c>, which does not exist in this repository — see the
-    /// resolution — so what is pinned here is the invariant that name stood for.
+    /// Until batch 8-16 (control-server#387) this pinned the order occupancy on <c>OrderIntents</c>, the uniqueness
+    /// ticket 06 moved down there. That occupancy and its filtered unique index were retired; the vehicle's one occupancy is
+    /// its <c>VehiclePurposeClaims</c> row, taken in the acceptance's own save, so the invariant is pinned there.
     /// </remarks>
     [Fact]
     public async Task ADispatchedVehicleHoldsItsOccupancyUntilTheJourneyEnds()
@@ -737,19 +735,20 @@ public sealed partial class MultiVehicleExecutionTests
         await using FleetFixture fixture = await FleetFixture.CreateAsync();
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
 
-        OrderIntentRow[] claimed = await fixture.Context.OrderIntents
-            .Where(row => row.VehicleOccupancyClaimedAt != null && row.VehicleOccupancyReleasedAt == null)
+        VehiclePurposeClaimRow[] claimed = await fixture.Context.Set<VehiclePurposeClaimRow>().AsNoTracking()
             .ToArrayAsync(TestContext.Current.CancellationToken);
         Assert.Equal(3, claimed.Length);
         Assert.Equal(
             FleetFixture.VehicleKeys,
             claimed.Select(row => row.VehicleKey).Order(StringComparer.Ordinal).ToArray());
 
-        // A second in-flight order for a vehicle that already holds one is refused by the index.
-        VehicleDispatchPolicyStore store = new(fixture.Context);
-        string second = await fixture.AddSecondIntentAsync(FleetFixture.VehicleKeys[0]);
-        Assert.False(await store.TryClaimVehicleOccupancyAsync(
-            second, Now, TestContext.Current.CancellationToken));
+        // A second claim for a vehicle that already holds one is refused by the key.
+        Assert.Equal(
+            VehiclePurposeAcquisitionOutcome.VehicleHeld,
+            await new VehiclePurposeLedgerStore(fixture.Context).TryAcquireAsync(
+                new VehiclePurposeClaim(FleetFixture.VehicleKeys[0], VehiclePurposes.Transport, "journey:SECOND", Now),
+                station: null,
+                TestContext.Current.CancellationToken));
     }
 
     // ---- N sessions on the peer -----------------------------------------------------------------
@@ -875,16 +874,6 @@ public sealed partial class MultiVehicleExecutionTests
         public Task ReplacePolicyAsync(
             VehicleDispatchPolicy policy,
             DateTimeOffset updatedAt,
-            CancellationToken cancellationToken) => throw new NotSupportedException();
-
-        public Task<bool> TryClaimVehicleOccupancyAsync(
-            string upperId,
-            DateTimeOffset claimedAt,
-            CancellationToken cancellationToken) => throw new NotSupportedException();
-
-        public Task ReleaseVehicleOccupancyAsync(
-            string upperId,
-            DateTimeOffset releasedAt,
             CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
@@ -1099,16 +1088,28 @@ public sealed partial class MultiVehicleExecutionTests
             await Task.CompletedTask;
         }
 
-        /// <summary>给这辆车留下一条没有释放的派车租约，像一次释放没落库那样。</summary>
-        public async Task LeaveUnreleasedLeaseAsync(string agvId)
+        /// <summary>
+        /// 给这辆车留下一条没有释放的用途占有（连同它开着的记录），像一次释放没落库那样。批次8-16（control-server#387）之前
+        /// 这里留的是租约；租约退役后，车被占着只剩这一种写法。
+        /// </summary>
+        public async Task LeaveUnreleasedClaimAsync(string agvId)
         {
             int index = Array.IndexOf(AgvIds, agvId);
-            Context.VehicleDispatchLeases.Add(new VehicleDispatchLeaseRow
+            DateTimeOffset claimedAt = Clock.GetUtcNow().AddHours(-1);
+            Context.Set<VehiclePurposeClaimRow>().Add(new VehiclePurposeClaimRow
             {
-                JourneyId = $"journey:stale-lease-{agvId}",
-                DemandId = $"demand:stale-lease-{agvId}",
                 VehicleKey = VehicleKeys[index],
-                AcquiredAt = Clock.GetUtcNow().AddHours(-1)
+                Purpose = VehiclePurposes.Transport,
+                JourneyId = $"journey:stale-claim-{agvId}",
+                ClaimedAt = claimedAt
+            });
+            Context.Set<VehiclePurposeClaimRecordRow>().Add(new VehiclePurposeClaimRecordRow
+            {
+                RecordId = $"record:stale-claim-{agvId}",
+                VehicleKey = VehicleKeys[index],
+                Purpose = VehiclePurposes.Transport,
+                JourneyId = $"journey:stale-claim-{agvId}",
+                AcquiredAt = claimedAt
             });
             await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
             Context.ChangeTracker.Clear();
@@ -1196,29 +1197,6 @@ public sealed partial class MultiVehicleExecutionTests
                     Options.DispatchGeneration),
                 TestContext.Current.CancellationToken);
             Context.ChangeTracker.Clear();
-        }
-
-        /// <summary>Adds another in-flight order intent for one vehicle and returns its upperId.</summary>
-        public async Task<string> AddSecondIntentAsync(string vehicleKey)
-        {
-            string upperId = $"W2G-SECOND-{vehicleKey}";
-            Context.OrderIntents.Add(new OrderIntentRow
-            {
-                UpperId = upperId,
-                MovementLegId = Guid.NewGuid().ToString("D"),
-                DemandId = "demand-second",
-                Purpose = "TO_PICKUP",
-                TargetStationId = "N1-1",
-                VehicleKey = vehicleKey,
-                MapId = 25,
-                DestinationStationId = 12,
-                AgvLifecycleGeneration = 1,
-                DispatchGeneration = 1,
-                CreatedAt = Now,
-                Status = "PENDING",
-            });
-            await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
-            return upperId;
         }
 
         public async ValueTask DisposeAsync()

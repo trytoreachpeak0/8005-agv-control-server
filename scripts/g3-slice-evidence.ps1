@@ -295,7 +295,7 @@ function Get-G3RunnerClaim {
                 'FP-IS-05' = @(
                     'resultFromASupersededSessionGenerationIsRefused',
                     'acceptedDemandSurvivesTheHostRestart',
-                    'vehicleDispatchLeaseSurvivesTheHostRestart',
+                    'vehicleClaimRecordSurvivesTheHostRestart',
                     'restartedHostServesTheSameStore')
                 # CV-RELIABLE-RETRY-SAME-CONTENT and CV-RELIABLE-RETRY-DIFFERENT-CONTENT on an
                 # OperationResult; moved from FP-IS-04 (items 20, 21).

@@ -30,32 +30,11 @@ public sealed class Batch7PersistencePortTests
         await using AsyncServiceScope scope = provider.CreateAsyncScope();
 
         Assert.IsType<JourneyMembershipStore>(scope.ServiceProvider.GetRequiredService<IJourneyMembershipStore>());
-        Assert.IsType<VehiclePurposeClaimStore>(scope.ServiceProvider.GetRequiredService<IVehiclePurposeClaimStore>());
         Assert.IsType<TransportDemandSuppressionStore>(
             scope.ServiceProvider.GetRequiredService<ITransportDemandSuppressionStore>());
         Assert.IsType<DispatchZoneParameterStore>(scope.ServiceProvider.GetRequiredService<IDispatchZoneParameterStore>());
         Assert.IsType<VehicleSnapshotRevisionStore>(
             scope.ServiceProvider.GetRequiredService<IVehicleSnapshotRevisionStore>());
-    }
-
-    [Fact]
-    public async Task APurposeClaimIsHeldByWhoeverInsertsFirstAndOnlyItsOwnJourneyReleasesIt()
-    {
-        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
-        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
-        VehiclePurposeClaimStore first = new(fixture.Context);
-        VehiclePurposeClaimStore second = new(fixture.NewContext());
-
-        Assert.True(await first.TryClaimAsync(Claim("journey:D-1"), cancellationToken));
-        Assert.True(await first.TryClaimAsync(Claim("journey:D-1"), cancellationToken));
-        Assert.False(await second.TryClaimAsync(Claim("journey:D-2"), cancellationToken));
-        await second.ReleaseAsync("VK-01", "journey:D-2", cancellationToken);
-        Assert.Equal(Claim("journey:D-1"), await second.ReadAsync("VK-01", cancellationToken));
-
-        await first.ReleaseAsync("VK-01", "journey:D-1", cancellationToken);
-        Assert.Null(await second.ReadAsync("VK-01", cancellationToken));
-        Assert.True(await second.TryClaimAsync(Claim("journey:D-2"), cancellationToken));
-        Assert.Equal(Claim("journey:D-2"), await first.ReadAsync("VK-01", cancellationToken));
     }
 
     [Fact]

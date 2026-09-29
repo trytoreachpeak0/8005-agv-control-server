@@ -1,0 +1,6 @@
+== A-lease-rule-any-vehicle: src/ControlServer.Infrastructure/Persistence/Migrations/20260929070322_Batch8RetireOldVehicleOccupancy.cs
+  Failed ControlServer.Tests.Batch8OccupancyRetirementMigrationTests.AnUnreleasedLeaseIsExcusedOnlyByAClaimOfTheSameVehicleForTheSameJourney(mismatch: "UPDATE VehicleDispatchLeases SET VehicleKey = 'VK-"，，，, named: "VehicleDispatchLeases unreleased: DemandId=D-2 Jou"，，，) [1 s]
+   Assert.Throws() Failure: No exception was thrown
+   at ControlServer.Tests.Batch8OccupancyRetirementMigrationTests.AnUnreleasedLeaseIsExcusedOnlyByAClaimOfTheSameVehicleForTheSameJourney(String mismatch, String named) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs387-8005-agv-control-server\tests\ControlServer.Tests\Batch8OccupancyRetirementMigrationTests.cs:line 123
+   at ControlServer.Tests.Batch8OccupancyRetirementMigrationTests.AnUnreleasedLeaseIsExcusedOnlyByAClaimOfTheSameVehicleForTheSameJourney(String mismatch, String named) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs387-8005-agv-control-server\tests\ControlServer.Tests\Batch8OccupancyRetirementMigrationTests.cs:line 123
+Failed!  - Failed:     1, Passed:    13, Skipped:     0, Total:    14, Duration: 16 s - ControlServer.Tests.dll (net8.0)

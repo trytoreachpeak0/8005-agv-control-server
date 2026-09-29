@@ -104,7 +104,7 @@ public sealed class Batch7JourneyAcceptanceTests
         Assert.Equal(
             $"VK-01 TRANSPORT journey:D-711 {Batch7JourneyFixture.Now:O}",
             $"{claim.VehicleKey} {claim.Purpose} {claim.JourneyId} {claim.ClaimedAt:O}");
-        VehicleDispatchLeaseRow lease = await read.VehicleDispatchLeases.AsNoTracking().SingleAsync(cancellationToken);
+        VehiclePurposeClaimRecordRow lease = await read.Set<VehiclePurposeClaimRecordRow>().AsNoTracking().SingleAsync(cancellationToken);
         Assert.Equal("journey:D-711", lease.JourneyId);
         VehicleSnapshotRevisionRow counter =
             await read.Set<VehicleSnapshotRevisionRow>().AsNoTracking().SingleAsync(cancellationToken);
@@ -119,7 +119,7 @@ public sealed class Batch7JourneyAcceptanceTests
         await Batch7JourneyFixture.AcceptAsync(fixture.Context, "D-712", "agv-01", "VK-01", Batch7JourneyFixture.Now);
         await fixture.RenewContextAsync();
         string[] tables =
-            ["JourneyStops", "JourneyDemands", "VehiclePurposeClaims", "VehicleSnapshotRevisions", "JourneyRuntimes", "VehicleDispatchLeases"];
+            ["JourneyStops", "JourneyDemands", "VehiclePurposeClaims", "VehicleSnapshotRevisions", "JourneyRuntimes", "VehiclePurposeClaimRecords"];
         Dictionary<string, string[]> written = [];
         foreach (string table in tables)
         {
@@ -133,8 +133,13 @@ public sealed class Batch7JourneyAcceptanceTests
 
         foreach (string table in tables)
         {
-            Assert.Equal(written[table], await Batch7JourneyFixture.DumpAsync(fixture.Connection, table));
+            Assert.Equal(WithoutRecordId(written[table]), WithoutRecordId(await Batch7JourneyFixture.DumpAsync(fixture.Connection, table)));
         }
+
+        // A claim record's key is a fresh GUID when the acceptance writes it and derived from the vehicle and the journey when
+        // the migration backfills it (control-server#387): the one field in which the two are allowed to differ.
+        static string[] WithoutRecordId(string[] rows) =>
+            [.. rows.Select(row => System.Text.RegularExpressions.Regex.Replace(row, @"^RecordId='[^']*'\|", ""))];
     }
 
     private sealed class SaveCounter : SaveChangesInterceptor
@@ -161,7 +166,7 @@ public sealed class Batch7JourneyAcceptanceTests
 
         Assert.True(failure.Fired);
         foreach (string table in (string[])
-                 ["AcceptedDemands", "VehicleDispatchLeases", "OrderIntents", "JourneyRuntimes", "JourneyStops",
+                 ["AcceptedDemands", "VehiclePurposeClaimRecords", "OrderIntents", "JourneyRuntimes", "JourneyStops",
                   "JourneyDemands", "VehiclePurposeClaims", "VehicleSnapshotRevisions"])
         {
             Assert.Empty(await Batch7JourneyFixture.DumpAsync(fixture.Connection, table));
@@ -223,7 +228,7 @@ public sealed class Batch7JourneyAcceptanceTests
         Assert.Equal(
             ["VehicleKey='VK-01'|Purpose='TRANSPORT'|JourneyId='journey:D-OTHER'|ClaimedAt='2026-09-19 08:59:00+00:00'"],
             await Batch7JourneyFixture.DumpAsync(fixture.Connection, "VehiclePurposeClaims"));
-        foreach (string table in (string[])["AcceptedDemands", "VehicleDispatchLeases", "OrderIntents", "JourneyRuntimes", "JourneyStops"])
+        foreach (string table in (string[])["AcceptedDemands", "VehiclePurposeClaimRecords", "OrderIntents", "JourneyRuntimes", "JourneyStops"])
         {
             Assert.Empty(await Batch7JourneyFixture.DumpAsync(fixture.Connection, table));
         }
@@ -313,7 +318,7 @@ public sealed class Batch7JourneyAcceptanceTests
         await context.SaveChangesAsync(cancellationToken);
 
         foreach (string table in (string[])
-                 ["AcceptedDemands", "VehicleDispatchLeases", "OrderIntents", "JourneyRuntimes", "JourneyStops",
+                 ["AcceptedDemands", "VehiclePurposeClaimRecords", "OrderIntents", "JourneyRuntimes", "JourneyStops",
                   "JourneyDemands", "VehicleSnapshotRevisions"])
         {
             Assert.Empty(await Batch7JourneyFixture.DumpAsync(fixture.Connection, table));

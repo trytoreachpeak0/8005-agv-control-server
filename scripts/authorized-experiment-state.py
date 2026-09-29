@@ -54,9 +54,12 @@ def extract(args: argparse.Namespace) -> None:
         )
         runtimes = rows(shadow, "SELECT DemandId, Stage FROM JourneyRuntimes")
         accepted = rows(shadow, "SELECT DemandId FROM AcceptedDemands")
+        # The vehicle's occupancy record (control-server#387 retired the dispatch lease it replaced), with the demand
+        # of its journey, so the checks below read as they did.
         leases = rows(
             shadow,
-            "SELECT DemandId, VehicleKey, ReleasedAt FROM VehicleDispatchLeases",
+            "SELECT d.DemandId, r.VehicleKey, r.ReleasedAt FROM VehiclePurposeClaimRecords AS r "
+            "JOIN JourneyDemands AS d ON d.JourneyId = r.JourneyId",
         )
         if (
             len(intents) != 1
@@ -196,9 +199,11 @@ def extract(args: argparse.Namespace) -> None:
             "exactAbsentAtObservation": True,
             "productionIdentityOverlap": False,
             "productionAcceptedDemandCount": count(production, "AcceptedDemands"),
+            # Requires the production store to have been migrated past control-server#387 (VehiclePurposeClaims exists
+            # since batch 7, and is the vehicle's only occupancy since #387); the key name is kept for the output format.
             "productionActiveLeaseCount": int(
                 production.execute(
-                    "SELECT COUNT(*) FROM VehicleDispatchLeases WHERE ReleasedAt IS NULL"
+                    "SELECT COUNT(*) FROM VehiclePurposeClaims"
                 ).fetchone()[0]
             ),
             "selectionIdentitySha256": selection_hash,
@@ -280,7 +285,7 @@ def diagnose(args: argparse.Namespace) -> None:
                     "OrderIntents",
                     "RiotDispatchAuditEvents",
                     "SessionRecoveries",
-                    "VehicleDispatchLeases",
+                    "VehiclePurposeClaimRecords",
                     "StationOperations",
                     "ProtocolInbox",
                     "ExperimentalRiotCreateAuthorizations",
