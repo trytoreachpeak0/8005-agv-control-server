@@ -23,7 +23,10 @@ public enum GovernedObjectKind
     TaskTypeStationRule,
 
     /// <summary>每区派车参数表，整张表一个版本（REQ-0198、REQ-0203；批次 7 建表票 control-server#206）。</summary>
-    DispatchZoneParameters
+    DispatchZoneParameters,
+
+    /// <summary>等待点登记（含 <c>WaitingPointVehicleScope</c> 白名单），整张登记一个版本（REQ-0289；批次 8 建表票 control-server#386）。</summary>
+    WaitingPointRegistration
 }
 
 /// <summary>

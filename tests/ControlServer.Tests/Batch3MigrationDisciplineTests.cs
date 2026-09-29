@@ -80,6 +80,8 @@ public sealed class Batch3MigrationDisciplineTests
         "20260928060831_OwnOrderRebuildCargoEvidenceNotBefore",
         // control-server#186：新建 MapNameBaselines 表，每个 mapId 一行地图名基线（首次读到的名称、待接受的新名称、最近一次接受）；不动任何既有表与行。自己的断言在 MapNameBaselinesMigrationTests。
         "20260928153736_MapNameBaselines",
+        // control-server#386：批次 8 建表迁移——新建用途占有记录、站点独占与经过、等待点登记四组表，回填每条在途占有的「取得」，VehiclePurposeClaims 加用途 CHECK；选甲放宽 JourneyRuntimes 锚需求与只属搬运的 14 列、OrderIntents／RiotDispatchAuditEvents／ExperimentalRiotCreateAuthorizations 的 DemandId 必填性（都是保留列序的手写重建）；既有列序与行不变。自己的断言在 Batch8MigrationDisciplineTests。
+        "20260929023936_Batch8VehiclePurposePersistence",
     ];
 
     private static readonly string[] Batch3Tables =
