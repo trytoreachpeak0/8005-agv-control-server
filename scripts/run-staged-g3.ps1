@@ -1881,6 +1881,10 @@ public static class StagedG3TlsHarness
                 return new Dictionary<string, object?>
                 {
                     ["preDepartureSafetyCheckId"] = StableGuid("business:pre-departure-check"),
+                    // v3 (control-server#382): checkPurpose is required. This probe answers no request, so it names the
+                    // one purpose a departure-bearing peer sends; both variants carry it, so the conflict case still
+                    // differs in exactly one business field.
+                    ["checkPurpose"] = "DEPARTURE",
                     ["outcome"] = "SAFE",
                     ["observedAt"] = "2026-08-26T12:00:00Z",
                     ["safetyStateVersion"] = variant,
