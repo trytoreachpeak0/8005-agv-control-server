@@ -27,6 +27,9 @@ public sealed class ChargingOrderShapePathTests
     [InlineData(JourneyStopRoles.Unload, OrderShapes.SingleMove)]
     [InlineData("charger", OrderShapes.SingleMove)]
     [InlineData("", OrderShapes.SingleMove)]
+    // A role this function does not know is never a charging order: #390's waiting point, and anything newer.
+    [InlineData("WAITING_POINT", OrderShapes.SingleMove)]
+    [InlineData("SOME_FUTURE_ROLE", OrderShapes.SingleMove)]
     public void OnlyAChargerStopIsAChargingOrder(string stopRole, string expected)
     {
         Assert.Equal(expected, JourneyStopRoles.OrderShapeOf(stopRole));
