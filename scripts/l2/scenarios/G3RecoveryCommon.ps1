@@ -303,8 +303,8 @@ function Invoke-G3UnknownLoad([object]$Context, [string]$SublotPrefix) {
 
 <#
 结算之后车辆真的放出来了（control-server#128，按调度会话 2026-09-18 的要求补；缺口本身是 control-server#131）：
-这条需求的 TO_PICKUP 单 `VehicleOccupancyReleasedAt` 有值，而且同一台车在 60 秒内接了下一单——下一单的旅程到
-`AwaitingPickupArrival`，不是建了旅程却 `Blocked / VEHICLE_OCCUPANCY_CONFLICT`。写法同 `real-onboard-load-door-closed-empty-reopens`
+这条需求所在旅程的用途占有记录有释放时刻（`VehiclePurposeClaimRecords.ReleasedAt`；control-server#387 之前读的是 TO_PICKUP 单上
+的订单占用释放时刻，那两列已删），而且同一台车在 60 秒内接了下一单——下一单的旅程到 `AwaitingPickupArrival`，没有停摆原因码。写法同 `real-onboard-load-door-closed-empty-reopens`
 的 `L2-DC-10`、`L2-DC-12`，两层合成一条判据。
 
 发下一单会在假 RIoT 上多出一张单，所以调用方把它放在所有数 RIoT 单的判据之后。不用 Wait-L2Condition：派不出去
@@ -313,7 +313,10 @@ function Invoke-G3UnknownLoad([object]$Context, [string]$SublotPrefix) {
 function Add-G3VehicleReleasedForNextDemand([object]$Context, [string]$Id, [string]$Description, [string]$DemandId, [string]$SublotPrefix) {
     $connection = $Context.Connection
     $journal = $Context.Journal
-    $occupancy = Get-G3Scalar $connection "SELECT VehicleOccupancyReleasedAt AS Value FROM OrderIntents WHERE DemandId = '$DemandId' AND Purpose = 'TO_PICKUP'"
+    $occupancy = Get-G3Scalar $connection @"
+SELECT r.ReleasedAt AS Value FROM VehiclePurposeClaimRecords AS r JOIN JourneyDemands AS d ON d.JourneyId = r.JourneyId
+WHERE d.DemandId = '$DemandId' ORDER BY r.AcquiredAt DESC LIMIT 1
+"@
 
     $nextGuid = [guid]::NewGuid()
     $nextDemandId = $nextGuid.ToString('D')
@@ -327,8 +330,9 @@ function Add-G3VehicleReleasedForNextDemand([object]$Context, [string]$Id, [stri
     #   1. `DispatchRoundRunner.cs:499` → `WireToGateOrchestration.AcceptAndDispatchToPickupAsync`：
     #      先 `AcceptJourneyAsync` 写 JourneyRuntimes（阶段 `AwaitingPickupArrival`），**紧接着**
     #      `ReconcileOrCreateAsync` 建 RIoT 单并把 TO_PICKUP 意图置 `CONFIRMED`；
-    #   2. `DispatchRoundRunner.cs:548` `TryClaimVehicleOccupancyAsync` 在**这之后**，失败才
-    #      `Block(...)`（`:712` 把 Stage 设为 `Blocked` 并写 `VEHICLE_OCCUPANCY_CONFLICT`）；
+    #   2. （control-server#387 之前）`TryClaimVehicleOccupancyAsync` 在**这之后**认领订单占用，失败才
+    #      `Block(...)` 写 `VEHICLE_OCCUPANCY_CONFLICT`。那一步已随订单占用退役：车由受理那一次提交里的用途占有
+    #      主键认领，被占着时受理整体被拒、旅程根本不建；
     #   3. `DispatchRoundRunner.cs:560` 另一条分支：建单没到 `Confirmed` 时只 `SetBlockReason(...)`，
     #      **不改 Stage**。
     #
@@ -375,6 +379,6 @@ function Add-G3VehicleReleasedForNextDemand([object]$Context, [string]$Id, [stri
         ((Test-G3Present $occupancy) -and $null -ne $next -and [string]$next.Stage -eq 'AwaitingPickupArrival' -and
             [string]$next.AgvId -eq [string]$Context.AgvId -and [string]$intentStatus -eq 'CONFIRMED' -and
             -not (Test-G3Present $next.BlockReasonCode)),
-        "TO_PICKUP 占用已释放 / 下一单 AwaitingPickupArrival on $($Context.AgvId)，TO_PICKUP 意图 CONFIRMED，没有停摆原因码",
-        "VehicleOccupancyReleasedAt='$occupancy' / $nextText")
+        "用途占有记录已释放 / 下一单 AwaitingPickupArrival on $($Context.AgvId)，TO_PICKUP 意图 CONFIRMED，没有停摆原因码",
+        "ClaimRecord.ReleasedAt='$occupancy' / $nextText")
 }

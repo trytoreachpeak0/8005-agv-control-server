@@ -1,7 +1,7 @@
 namespace ControlServer.Application;
 
 // 批次 8 建表票 control-server#386 的端口：用途占有（按用途认领与释放、占有历史）、站点独占、等待点登记。
-// 本票没有运行时读者；取用它们的是批次8-17～8-21（control-server#388～#392）。
+// 引擎的受理与释放与账本端口共用同一条写入路径（批次8-16，control-server#387）；其余取用者是批次8-17～8-21（control-server#388～#392）。
 
 /// <summary>站点独占一行的两种状态（规格 5.4「一行两状态」）。</summary>
 public static class StationExclusivityStates
@@ -39,6 +39,27 @@ public static class WaitingPointGovernance
     public const string ObjectId = "waiting-points";
 
     public const string VersionImportedAction = "WAITING_POINTS_VERSION_IMPORTED";
+}
+
+/// <summary>
+/// 用途占有记录上的释放原因里，服务端自己定的那几个（批次8-16，control-server#387）。取货停靠的终结写它自己的终结码
+/// （<c>PickupStopTermination</c> 的 <c>reasonCode</c>），不在这里列。
+/// </summary>
+public static class VehiclePurposeReleaseReasons
+{
+    /// <summary>旅程最后一条未结束的需求卸完了（卸货成功或卸货结果进来）。</summary>
+    public const string LastDemandUnloaded = "LAST_DEMAND_UNLOADED";
+
+    /// <summary>
+    /// 迁移时从已释放的租约行搬进来的历史（批次8-16 的迁移删租约表之前）。取得与释放时刻取自租约行。
+    /// </summary>
+    public const string DispatchLeaseReleased = "DISPATCH_LEASE_RELEASED";
+
+    /// <summary>
+    /// 迁移时发现一条开着的记录，而它的占有行已经不在：只会发生在降级跑过旧引擎（旧引擎放车不关记录）再升级回来之后。
+    /// 迁移把它关上，免得它比占有行活得久。
+    /// </summary>
+    public const string ClaimGoneBeforeMigration = "CLAIM_GONE_BEFORE_MIGRATION";
 }
 
 /// <summary>

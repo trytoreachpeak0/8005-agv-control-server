@@ -255,7 +255,7 @@ $assertions.Add(
 
 $workflow = @(Invoke-L2Query -Connection $connection `
         -Sql "SELECT WorkflowType, State, SlotOperationAttemptId, SlotsJson, ResultMessageId FROM RecoveryWorkflows WHERE WorkflowId = '$cancellationId'")
-$lease = @(Invoke-L2Query -Connection $connection -Sql "SELECT ReleasedAt FROM VehicleDispatchLeases WHERE DemandId = '$demandId'")
+$lease = @(Invoke-L2Query -Connection $connection -Sql "SELECT r.ReleasedAt FROM VehiclePurposeClaimRecords AS r JOIN JourneyDemands AS d ON d.JourneyId = r.JourneyId WHERE d.DemandId = '$demandId' ORDER BY r.AcquiredAt DESC LIMIT 1")
 $releasedAt = if ($lease.Count -eq 1 -and (Test-Present $lease[0].ReleasedAt)) { ConvertTo-Instant $lease[0].ReleasedAt } else { $null }
 $demandStatus = Get-Scalar "SELECT Status AS Value FROM AcceptedDemands WHERE DemandId = '$demandId'"
 $blockReason = Get-Scalar "SELECT BlockReasonCode AS Value FROM JourneyRuntimes WHERE DemandId = '$demandId'"

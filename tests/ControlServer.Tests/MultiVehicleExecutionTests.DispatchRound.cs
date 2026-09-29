@@ -457,7 +457,7 @@ public sealed partial class MultiVehicleExecutionTests
                 (await reference.Context.JourneyRuntimes.SingleAsync(TestContext.Current.CancellationToken)).AgvId);
         }
 
-        await fixture.LeaveUnreleasedLeaseAsync(FleetFixture.AgvIds[0]);
+        await fixture.LeaveUnreleasedClaimAsync(FleetFixture.AgvIds[0]);
         await fixture.RunRoundAsync();
 
         // 先断言「有车接了」再断言「不是那一辆」：缺陷的样子正是一条旅程都没有，而 SingleAsync 在空集上抛的
@@ -466,6 +466,10 @@ public sealed partial class MultiVehicleExecutionTests
             .ToArrayAsync(TestContext.Current.CancellationToken);
         JourneyRuntimeRow journey = Assert.Single(journeys);
         Assert.NotEqual(FleetFixture.AgvIds[0], journey.AgvId);
+        // 被占着是这辆车自己的原因，由受理前那一处预读认出来，不是让受理撞上占有主键、抛出来再由外层兜住。去掉预读时
+        // 上面两条仍绿（外层让下一个出价者接了），但每一轮都记一条 Error 级的 2124「本服务端自己的不变量被破坏」——
+        // 一条正常情形被当成缺陷报（control-server#387 变异 M6，实测记的是 2124）。
+        Assert.DoesNotContain(fixture.EngineLog.Entries, entry => entry.EventId.Id is 2123 or 2124);
     }
 
     /// <summary>

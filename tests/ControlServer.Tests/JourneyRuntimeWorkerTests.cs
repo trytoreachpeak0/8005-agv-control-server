@@ -146,7 +146,7 @@ public sealed class JourneyRuntimeWorkerTests
         runtime = await fixture.RuntimeAsync();
         Assert.Equal(JourneyRuntimeStage.Completed, runtime.Stage);
         Assert.Equal(DemandExecutionStatus.Succeeded, (await fixture.DemandRowAsync()).Status);
-        Assert.NotNull((await fixture.LeaseAsync()).ReleasedAt);
+        Assert.NotNull((await fixture.ClaimRecordAsync()).ReleasedAt);
         Assert.Equal(1, await fixture.Context.TransportDemandCompletions.CountAsync(TestContext.Current.CancellationToken));
 
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
@@ -420,10 +420,8 @@ public sealed class JourneyRuntimeWorkerTests
         Assert.Equal(JourneyRuntimeStage.Completed, runtime.Stage);
         Assert.Equal("CANCELLED_BY_STATION_TIMEOUT", runtime.BlockReasonCode);
         Assert.Equal(DemandExecutionStatus.Cancelled, (await fixture.DemandRowAsync()).Status);
-        Assert.Equal(deadline, (await fixture.LeaseAsync()).ReleasedAt);
-        OrderIntentRow pickup = await fixture.Context.OrderIntents.AsNoTracking()
-            .SingleAsync(row => row.Purpose == "TO_PICKUP", TestContext.Current.CancellationToken);
-        Assert.Equal(deadline, pickup.VehicleOccupancyReleasedAt);
+        Assert.Equal(deadline, (await fixture.ClaimRecordAsync()).ReleasedAt);
+        Assert.False(await fixture.Context.Set<VehiclePurposeClaimRow>().AsNoTracking().AnyAsync(TestContext.Current.CancellationToken));
         ProtocolOutboxRow entryRequest = await fixture.Context.ProtocolOutbox.AsNoTracking()
             .SingleAsync(row => row.MessageId == runtime.SublotRequestMessageId, TestContext.Current.CancellationToken);
         Assert.Equal(deadline, entryRequest.AcknowledgedAt);
@@ -433,8 +431,8 @@ public sealed class JourneyRuntimeWorkerTests
         string[] settlement = Assert.Single(
             fixture.SaveChanges.Saves, save => save.Contains("JourneyRuntimeRow.Stage"));
         Assert.Contains("AcceptedDemandRow.Status", settlement);
-        Assert.Contains("VehicleDispatchLeaseRow.ReleasedAt", settlement);
-        Assert.Contains("OrderIntentRow.VehicleOccupancyReleasedAt", settlement);
+        Assert.Contains("VehiclePurposeClaimRecordRow.ReleasedAt", settlement);
+        Assert.Contains("VehiclePurposeClaimRow (Deleted)", settlement);
         Assert.Contains("ProtocolOutboxRow.AcknowledgedAt", settlement);
     }
 
@@ -469,7 +467,7 @@ public sealed class JourneyRuntimeWorkerTests
 
         Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync()).Stage);
         Assert.Equal(DemandExecutionStatus.Accepted, (await fixture.DemandRowAsync()).Status);
-        Assert.Null((await fixture.LeaseAsync()).ReleasedAt);
+        Assert.Null((await fixture.ClaimRecordAsync()).ReleasedAt);
 
         await fixture.ProveSlotDoorsClosedAsync();
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
@@ -510,7 +508,7 @@ public sealed class JourneyRuntimeWorkerTests
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
         Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, (await fixture.RuntimeAsync()).Stage);
         Assert.Equal(DemandExecutionStatus.Accepted, (await fixture.DemandRowAsync()).Status);
-        Assert.Null((await fixture.LeaseAsync()).ReleasedAt);
+        Assert.Null((await fixture.ClaimRecordAsync()).ReleasedAt);
     }
 
     /// <summary>
@@ -567,7 +565,7 @@ public sealed class JourneyRuntimeWorkerTests
         fixture.Clock.Advance(TimeSpan.FromSeconds(10));
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
         Assert.Equal(JourneyRuntimeStage.Completed, (await fixture.RuntimeAsync()).Stage);
-        await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(fixture.Context);
+        await VehicleOccupancyAssertions.AssertOpenClaimRecordsAndPurposeClaimsMatchAsync(fixture.Context);
         await ZeroChangePin.AssertMatchesAsync(fixture.Context, "station-deadline");
         await SuppressionAssertions.AssertTheDemandSuppressedAsync(fixture.Context, "CANCELLED_BY_STATION_TIMEOUT");
 
@@ -579,7 +577,7 @@ public sealed class JourneyRuntimeWorkerTests
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await fixture.RuntimeAsync(next.DemandId)).Stage);
-        await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(fixture.Context);
+        await VehicleOccupancyAssertions.AssertOpenClaimRecordsAndPurposeClaimsMatchAsync(fixture.Context);
         Assert.Equal(2, await fixture.Context.JourneyRuntimes.CountAsync(TestContext.Current.CancellationToken));
         Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
     }
@@ -613,7 +611,7 @@ public sealed class JourneyRuntimeWorkerTests
 
         Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync()).Stage);
         Assert.Equal(DemandExecutionStatus.Accepted, (await fixture.DemandRowAsync()).Status);
-        Assert.Null((await fixture.LeaseAsync()).ReleasedAt);
+        Assert.Null((await fixture.ClaimRecordAsync()).ReleasedAt);
 
         // Heard from again on the same generation: nothing reconnected, so the deadline that has
         // already passed still stands and this iteration ends the stop. A hold, not an exemption.
@@ -872,7 +870,7 @@ public sealed class JourneyRuntimeWorkerTests
         Assert.Equal(1, await fixture.Context.JourneyRuntimes.CountAsync(TestContext.Current.CancellationToken));
         Assert.Equal(1, await fixture.Context.AcceptedDemands.CountAsync(TestContext.Current.CancellationToken));
         Assert.Equal(1, await fixture.Context.TransportDemandCompletions.CountAsync(TestContext.Current.CancellationToken));
-        Assert.NotNull((await fixture.LeaseAsync()).ReleasedAt);
+        Assert.NotNull((await fixture.ClaimRecordAsync()).ReleasedAt);
         Assert.Equal(2, fixture.Riot.TotalCreateCount);
     }
 
@@ -890,7 +888,7 @@ public sealed class JourneyRuntimeWorkerTests
         fixture.Catalog.Set(finished);
         fixture.BoxCounts.Set("SUBLOT-001", 4);
         await fixture.RunToCompletionAsync();
-        Assert.NotNull((await fixture.LeaseAsync()).ReleasedAt);
+        Assert.NotNull((await fixture.ClaimRecordAsync()).ReleasedAt);
 
         fixture.Clock.Advance(TimeSpan.FromSeconds(2));
         AcceptedDemandSnapshot next = fixture.Demand(
@@ -970,7 +968,7 @@ public sealed class JourneyRuntimeWorkerTests
 
         // The vehicle lease is released by an atomic completion, so the same vehicle taking a second
         // demand is the designed path, not a recovery case.
-        Assert.NotNull((await fixture.LeaseAsync()).ReleasedAt);
+        Assert.NotNull((await fixture.ClaimRecordAsync()).ReleasedAt);
         fixture.Catalog.Set(fixture.Demand(
             "10000000-0000-4000-8000-000000000002", "SUBLOT-002", Now.AddMinutes(-5)));
         fixture.BoxCounts.Set("SUBLOT-002", 4);

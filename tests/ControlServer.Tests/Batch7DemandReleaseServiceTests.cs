@@ -54,7 +54,8 @@ public sealed class Batch7DemandReleaseServiceTests
         Assert.Equal(DemandReleaseReasons.Released, membership.RemovalReason);
         JourneyRuntimeRow after = await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token);
         Assert.Equal((JourneyRuntimeStage.Completed, DemandReleaseReasons.Released), (after.Stage, after.BlockReasonCode));
-        Assert.False(await reading.VehicleDispatchLeases.AnyAsync(row => row.ReleasedAt == null, Token));
+        Assert.False(await reading.Set<VehiclePurposeClaimRow>().AnyAsync(Token));
+        Assert.False(await reading.Set<VehiclePurposeClaimRecordRow>().AnyAsync(row => row.ReleasedAt == null, Token));
         Assert.Equal(DemandExecutionStatus.Accepted,
             (await reading.AcceptedDemands.AsNoTracking().SingleAsync(row => row.DemandId == FirstDemandId, Token)).Status);
         Assert.True(await DemandJourneyLookup.ReleasedForRedispatch(reading).AnyAsync(row => row.DemandId == FirstDemandId, Token));
@@ -1135,20 +1136,26 @@ public sealed class Batch7DemandReleaseServiceTests
     }
 
     /// <summary>
-    /// 改派出来的锚需求撞上这辆车已有的占用：新旅程被 Block（VEHICLE_OCCUPANCY_CONFLICT），不在没有占用认领的情况下往下走（审查 M2）。
+    /// 改派时这辆车已被别的旅程占着：派车轮判「这辆车接不了」，不建新旅程、不把需求吃掉，积压行不写成已被接走（审查 M2；
+    /// 批次8-16，control-server#387 起占用只看用途占有）。
     /// </summary>
     /// <remarks>
-    /// 占用冲突用「第一趟那张单又占着这辆车」造：释放时它的占用已放掉，这里把它重新挂上，唯一索引就会拒绝新单的认领。
+    /// 批次 7 时这条用「第一趟那张单又占着这辆车」（订单占用）造冲突，新旅程被 Block 成 <c>VEHICLE_OCCUPANCY_CONFLICT</c>。订单占用退役后
+    /// 冲突只剩用途占有一处，它在受理之前就被派车轮的预读挡住（<c>DispatchRoundRunner</c> 那段「这辆车自己的原因」）。
+    /// 这里直接给这辆车挂一条别的旅程的占有行。
     /// </remarks>
     [Fact]
-    public async Task ARedispatchThatFindsTheVehicleOccupiedBlocksTheNewJourney()
+    public async Task ARedispatchThatFindsTheVehicleClaimedByAnotherJourneyLeavesTheDemandForLater()
     {
         await using RuntimeFixture fixture = await DispatchedToPickupAsync();
         JourneyRuntimeRow first = await ReleaseTheAnchorAsync(fixture);
-        OrderIntentRow old = await fixture.Context.OrderIntents
-            .SingleAsync(row => row.UpperId == first.PickupUpperId, Token);
-        Assert.NotNull(old.VehicleOccupancyReleasedAt);
-        old.VehicleOccupancyReleasedAt = null;
+        fixture.Context.Set<VehiclePurposeClaimRow>().Add(new VehiclePurposeClaimRow
+        {
+            VehicleKey = first.VehicleKey,
+            Purpose = VehiclePurposes.Transport,
+            JourneyId = "journey:SOMEONE-ELSE",
+            ClaimedAt = fixture.Clock.GetUtcNow()
+        });
         await fixture.Context.SaveChangesAsync(Token);
         fixture.Context.ChangeTracker.Clear();
 
@@ -1156,8 +1163,16 @@ public sealed class Batch7DemandReleaseServiceTests
         await TickAndRunAsync(fixture);
         fixture.Context.ChangeTracker.Clear();
 
-        JourneyRuntimeRow second = await NewJourneyAsync(fixture, first);
-        Assert.Equal((JourneyRuntimeStage.Blocked, "VEHICLE_OCCUPANCY_CONFLICT"), (second.Stage, second.BlockReasonCode));
+        Assert.False(await fixture.Context.JourneyRuntimes.AsNoTracking()
+            .AnyAsync(row => row.DemandId == FirstDemandId && row.JourneyId != first.JourneyId, Token));
+        Assert.True(await DemandJourneyLookup.ReleasedForRedispatch(fixture.Context)
+            .AnyAsync(row => row.DemandId == FirstDemandId, Token));
+        JourneyBacklogRow backlog = await fixture.Context.JourneyBacklog.AsNoTracking()
+            .SingleAsync(row => row.DemandId == FirstDemandId, Token);
+        Assert.Null(backlog.AcceptedAt);
+        Assert.NotEqual("DEMAND_ALREADY_ACCEPTED", backlog.ReasonCode);
+        Assert.Equal("journey:SOMEONE-ELSE",
+            (await fixture.Context.Set<VehiclePurposeClaimRow>().AsNoTracking().SingleAsync(Token)).JourneyId);
     }
 
     /// <summary>

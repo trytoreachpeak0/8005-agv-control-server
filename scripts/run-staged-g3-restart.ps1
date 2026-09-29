@@ -460,7 +460,7 @@ function Read-ControlDatabase {
     if (-not (Test-Path -LiteralPath $controlDatabasePath -PathType Leaf)) { return $null }
 
     $sideEffectTables = @(
-        'OrderIntents', 'AcceptedDemands', 'StationOperations', 'VehicleDispatchLeases',
+        'OrderIntents', 'AcceptedDemands', 'StationOperations', 'VehiclePurposeClaimRecords',
         'RiotDispatchAuditEvents', 'UnloadBatches', 'TransportDemandCompletions',
         'RecoveryWorkflows', 'ExceptionRecoverySessions', 'HardwareRecoveryRecords')
     $sideEffectCounts = [ordered]@{}
@@ -1046,7 +1046,7 @@ $configuration = [ordered]@{
     vehicleSafetyEligibilityFabricated = $false
     vectorsNotReachableWithoutAnAcceptedDemand = @(
         'demandReusedAcrossRestart',
-        'vehicleDispatchLeaseReusedAcrossRestart')
+        'vehicleClaimReusedAcrossRestart')
 }
 $configurationJson = $configuration | ConvertTo-Json -Depth 20
 [IO.File]::WriteAllText(

@@ -1,22 +1,23 @@
 namespace ControlServer.Infrastructure.Persistence;
 
-// 批次 8 建表票 control-server#386 的行：占有记录、站点独占与它的经过、等待点登记。本票没有运行时写入者，写它们的只有
-// VehiclePurposeLedgerStore、StationExclusivityStore 与 WaitingPointRegistry。
+// 批次 8 建表票 control-server#386 的行：占有记录、站点独占与它的经过、等待点登记。占有记录只经 VehiclePurposeClaimWrites
+// 写（账本端口与引擎的受理、释放都走它，批次8-16 control-server#387）；另两类只经 StationExclusivityStore 与 WaitingPointRegistry。
 
 /// <summary>
 /// 一次用途占有的经过（<c>REQ-0297</c>）：取得时插入，释放时写上 <see cref="ReleasedAt"/> 与 <see cref="ReleaseReason"/>，从不删除。
 /// </summary>
 /// <remarks>
 /// <para>
-/// 它是占有历史的载体。今天那段历史由租约行的 <c>ReleasedAt</c> 承载，批次8-16（control-server#387）删租约表之后，脚本改读这里。
+/// 它是占有历史的载体（批次8-16，control-server#387 删了租约表，已释放的租约行在那次迁移里搬进来，原因记
+/// <c>DISPATCH_LEASE_RELEASED</c>）。脚本读「占用已释放」读这里的 <see cref="ReleasedAt"/>。
 /// </para>
 /// <para>
 /// 它是证据，不是仲裁者：谁占着车只由 <c>VehiclePurposeClaims</c> 的主键决定，这里的 <c>VehicleKey</c> 索引故意不唯一。
 /// 两个仲裁者一旦说法不一——比如一条路径删了占有行却没关记录——第二个会把车永久挡住（control-server#394 审查必修 1）。
 /// </para>
 /// <para>
-/// 本票迁移建出空表、不回填：本票到批次8-16 之间引擎仍直写占有行、不读不写这里，此时回填的「取得」会在引擎按老路放车后
-/// 永远开着。回填归批次8-16，在它把引擎改走 <c>IVehiclePurposeLedger</c> 的同一次迁移里从当时的占有行补。
+/// 批次8-16 的迁移在把引擎改走同一条写入路径时回填：每条当时的占有行补一条开着的「取得」，并关掉占有行已不在的开着的记录。
+/// 从那以后占有行与它开着的记录同一次保存生灭，不存在开着却没有占有行的记录。
 /// </para>
 /// </remarks>
 public sealed class VehiclePurposeClaimRecordRow

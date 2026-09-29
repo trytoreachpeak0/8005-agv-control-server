@@ -296,10 +296,20 @@ public sealed class JourneyStopEntryRequestIdTests
             Status = "CONFIRMED",
             OrderId = "ORDER-TO_PICKUP"
         });
-        context.VehicleDispatchLeases.Add(new VehicleDispatchLeaseRow
+        // The acceptance's occupancy: the purpose claim and its open record (batch 8-16, control-server#387, in place of
+        // the lease this seed used to write).
+        context.Set<VehiclePurposeClaimRow>().Add(new VehiclePurposeClaimRow
         {
+            VehicleKey = "VEHICLE-001",
+            Purpose = VehiclePurposes.Transport,
             JourneyId = runtime.JourneyId,
-            DemandId = DemandId,
+            ClaimedAt = Now.AddMinutes(-8)
+        });
+        context.Set<VehiclePurposeClaimRecordRow>().Add(new VehiclePurposeClaimRecordRow
+        {
+            RecordId = "record:" + DemandId,
+            JourneyId = runtime.JourneyId,
+            Purpose = VehiclePurposes.Transport,
             VehicleKey = "VEHICLE-001",
             AcquiredAt = Now.AddMinutes(-8)
         });

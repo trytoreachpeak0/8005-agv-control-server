@@ -111,8 +111,9 @@ public sealed class JourneyDemandRow
 /// 车辆被哪种用途、哪趟旅程占着（规格 3.3 第 9 项、5.2，REQ-0290 的搬运一半）。批次 7 起它是车辆占用的权威。
 /// </summary>
 /// <remarks>
-/// 主键 <c>VehicleKey</c>：一车一行，谁占到由主键冲突决定，不先读后写。释放即删除行；占用的历史由租约行的 <c>ReleasedAt</c> 承载。
-/// 另两套占用（<c>VehicleDispatchLeases</c> 与 <c>OrderIntents.VehicleOccupancy*</c>）本批行为不变，批次 8 退役。
+/// 主键 <c>VehicleKey</c>：一车一行，谁占到由主键冲突决定，不先读后写。释放即删除行；占用的历史在
+/// <c>VehiclePurposeClaimRecords</c>，与占有行同一次保存写入、关闭（<c>VehiclePurposeClaimWrites</c>）。
+/// 批次 8-16（control-server#387）起它是车辆占用的唯一载体：租约表与订单占用列已删。
 /// </remarks>
 public sealed class VehiclePurposeClaimRow
 {

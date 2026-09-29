@@ -62,7 +62,7 @@ public sealed class JourneyRuntimeWorkerLoadCancellationBeforeSublotTests
         Assert.Equal("[]", workflow.SlotsJson);
         Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync()).Stage);
         Assert.Equal(DemandExecutionStatus.Accepted, (await fixture.DemandRowAsync()).Status);
-        Assert.Null((await fixture.LeaseAsync()).ReleasedAt);
+        Assert.Null((await fixture.ClaimRecordAsync()).ReleasedAt);
 
         // Steps 3 and 4.
         DateTimeOffset receivedAt = fixture.Clock.GetUtcNow();
@@ -292,7 +292,7 @@ public sealed class JourneyRuntimeWorkerLoadCancellationBeforeSublotTests
         Assert.Equal(0, await fixture.Context.StationOperations.CountAsync(token));
         Assert.DoesNotContain("SlotOperationCommand", await fixture.OutboxTypesAsync());
         Assert.Equal(DemandExecutionStatus.Accepted, (await fixture.DemandRowAsync()).Status);
-        Assert.Null((await fixture.LeaseAsync()).ReleasedAt);
+        Assert.Null((await fixture.ClaimRecordAsync()).ReleasedAt);
     }
 
     /// <summary>
@@ -328,7 +328,7 @@ public sealed class JourneyRuntimeWorkerLoadCancellationBeforeSublotTests
         Assert.Equal(0, await fixture.Context.StationOperations.CountAsync(token));
         Assert.DoesNotContain("SlotOperationCommand", await fixture.OutboxTypesAsync());
         Assert.Equal(DemandExecutionStatus.Accepted, (await fixture.DemandRowAsync()).Status);
-        Assert.Null((await fixture.LeaseAsync()).ReleasedAt);
+        Assert.Null((await fixture.ClaimRecordAsync()).ReleasedAt);
 
         DateTimeOffset receivedAt = fixture.Clock.GetUtcNow();
         await processor.ProcessAsync(
@@ -373,7 +373,7 @@ public sealed class JourneyRuntimeWorkerLoadCancellationBeforeSublotTests
         JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
         Assert.Equal(JourneyRuntimeStage.Blocked, runtime.Stage);
         Assert.Equal("LoadCancellationResult_NOT_RECONCILED", runtime.BlockReasonCode);
-        Assert.Null((await fixture.LeaseAsync()).ReleasedAt);
+        Assert.Null((await fixture.ClaimRecordAsync()).ReleasedAt);
         ProtocolOutboxRow entryRequest = await fixture.Context.ProtocolOutbox.AsNoTracking()
             .SingleAsync(row => row.MessageId == waiting.SublotRequestMessageId, token);
         Assert.Null(entryRequest.AcknowledgedAt);
@@ -618,7 +618,7 @@ public sealed class JourneyRuntimeWorkerLoadCancellationBeforeSublotTests
         Assert.Equal("REJECTED", FirstLinePayload(refused, out _).GetProperty("decision").GetString());
 
         // Both recorded anyway: an open cancellation on a stop the deadline has already ended.
-        DateTimeOffset endedAt = (await fixture.LeaseAsync()).ReleasedAt!.Value;
+        DateTimeOffset endedAt = (await fixture.ClaimRecordAsync()).ReleasedAt!.Value;
         await using (ControlServerDbContext racer = fixture.OpenConnectionContext())
         {
             racer.RecoveryWorkflows.Add(new RecoveryWorkflowRow
@@ -650,7 +650,7 @@ public sealed class JourneyRuntimeWorkerLoadCancellationBeforeSublotTests
         Assert.Equal(JourneyRuntimeStage.Completed, runtime.Stage);
         Assert.Equal("CANCELLED_BY_STATION_TIMEOUT", runtime.BlockReasonCode);
         Assert.Equal(DemandExecutionStatus.Cancelled, (await fixture.DemandRowAsync()).Status);
-        Assert.Equal(endedAt, (await fixture.LeaseAsync()).ReleasedAt);
+        Assert.Equal(endedAt, (await fixture.ClaimRecordAsync()).ReleasedAt);
         Assert.Equal(endedAt, (await fixture.Context.ProtocolOutbox.AsNoTracking()
             .SingleAsync(row => row.MessageId == waiting.SublotRequestMessageId, token)).AcknowledgedAt);
         Assert.Single(await fixture.Context.RecoveryResultEvidence.AsNoTracking().ToArrayAsync(token));
@@ -693,7 +693,7 @@ public sealed class JourneyRuntimeWorkerLoadCancellationBeforeSublotTests
         JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
         Assert.Equal(JourneyRuntimeStage.Blocked, runtime.Stage);
         Assert.Equal("LoadCancellationResult_NOT_RECONCILED", runtime.BlockReasonCode);
-        Assert.Null((await fixture.LeaseAsync()).ReleasedAt);
+        Assert.Null((await fixture.ClaimRecordAsync()).ReleasedAt);
     }
 
     /// <summary>
@@ -906,10 +906,8 @@ public sealed class JourneyRuntimeWorkerLoadCancellationBeforeSublotTests
         Assert.Equal(JourneyRuntimeStage.Completed, runtime.Stage);
         Assert.Equal("CANCELLED_BY_OPERATOR", runtime.BlockReasonCode);
         Assert.Equal(DemandExecutionStatus.Cancelled, (await fixture.DemandRowAsync()).Status);
-        Assert.Equal(endedAt, (await fixture.LeaseAsync()).ReleasedAt);
-        OrderIntentRow pickup = await fixture.Context.OrderIntents.AsNoTracking()
-            .SingleAsync(row => row.Purpose == "TO_PICKUP", token);
-        Assert.Equal(endedAt, pickup.VehicleOccupancyReleasedAt);
+        Assert.Equal(endedAt, (await fixture.ClaimRecordAsync()).ReleasedAt);
+        Assert.False(await fixture.Context.Set<VehiclePurposeClaimRow>().AsNoTracking().AnyAsync(token));
         ProtocolOutboxRow entryRequest = await fixture.Context.ProtocolOutbox.AsNoTracking()
             .SingleAsync(row => row.MessageId == waiting.SublotRequestMessageId, token);
         Assert.Equal(endedAt, entryRequest.AcknowledgedAt);
@@ -1046,10 +1044,8 @@ public sealed class JourneyRuntimeWorkerLoadCancellationBeforeSublotTests
         Assert.Equal(DemandExecutionStatus.Cancelled, (await fixture.DemandRowAsync()).Status);
         Assert.Equal(StationOperationStatus.Cancelled,
             (await fixture.Context.StationOperations.AsNoTracking().SingleAsync(token)).Status);
-        Assert.Equal(receivedAt, (await fixture.LeaseAsync()).ReleasedAt);
-        OrderIntentRow pickup = await fixture.Context.OrderIntents.AsNoTracking()
-            .SingleAsync(row => row.Purpose == "TO_PICKUP", token);
-        Assert.Equal(receivedAt, pickup.VehicleOccupancyReleasedAt);
+        Assert.Equal(receivedAt, (await fixture.ClaimRecordAsync()).ReleasedAt);
+        Assert.False(await fixture.Context.Set<VehiclePurposeClaimRow>().AsNoTracking().AnyAsync(token));
         await ZeroChangePin.AssertMatchesAsync(fixture.Context, "in-flight-cancellation");
         await SuppressionAssertions.AssertTheDemandSuppressedAsync(fixture.Context, "CANCELLED_BY_OPERATOR");
         // control-server#208：库里的状态由上面那一行钉，发出去的报文与修订号由这一行钉。录入提交的 messageId 是
@@ -1106,7 +1102,7 @@ public sealed class JourneyRuntimeWorkerLoadCancellationBeforeSublotTests
     {
         CancellationToken token = TestContext.Current.CancellationToken;
         // Batch 7 (control-server#206): the ending released the purpose claim together with the lease.
-        await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(fixture.Context);
+        await VehicleOccupancyAssertions.AssertOpenClaimRecordsAndPurposeClaimsMatchAsync(fixture.Context);
         AcceptedDemandSnapshot next = fixture.Demand(NextDemandId, "SUBLOT-002", createdAt: Now.AddMinutes(-5));
         fixture.Catalog.Set([cancelled, next]);
         fixture.BoxCounts.Set("SUBLOT-002", 7);
@@ -1118,7 +1114,7 @@ public sealed class JourneyRuntimeWorkerLoadCancellationBeforeSublotTests
         Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, nextRuntime.Stage);
         Assert.Equal((await fixture.RuntimeAsync(cancelled.DemandId)).AgvId, nextRuntime.AgvId);
         Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
-        await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(fixture.Context);
+        await VehicleOccupancyAssertions.AssertOpenClaimRecordsAndPurposeClaimsMatchAsync(fixture.Context);
     }
 
     private static string InFlightCancellationRequest(RuntimeFixture fixture, string attemptId) =>

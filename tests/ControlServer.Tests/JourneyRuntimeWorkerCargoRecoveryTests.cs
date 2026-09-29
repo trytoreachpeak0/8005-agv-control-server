@@ -70,7 +70,7 @@ public sealed class JourneyRuntimeWorkerCargoRecoveryTests
                 Assert.Equal("DurableAck", FirstLineType(ack));
                 Assert.Equal(DemandExecutionStatus.Cancelled, (await fixture.DemandRowAsync()).Status);
                 Assert.Equal("TERMINATED_BY_FAULT_CARGO_HANDOFF", (await fixture.RuntimeAsync()).BlockReasonCode);
-                await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(fixture.Context);
+                await VehicleOccupancyAssertions.AssertOpenClaimRecordsAndPurposeClaimsMatchAsync(fixture.Context);
                 await ZeroChangePin.AssertMatchesAsync(fixture.Context, "fault-cargo-handoff");
                 // CP-0008 (REQ-0156 as revised): the handoff suppresses the key, like a local cancellation.
                 await SuppressionAssertions.AssertTheDemandSuppressedAsync(fixture.Context, HandoffEnding);
@@ -119,7 +119,7 @@ public sealed class JourneyRuntimeWorkerCargoRecoveryTests
                 Assert.Equal("DurableAck", FirstLineType(ack));
                 Assert.Equal(DemandExecutionStatus.Cancelled, (await fixture.DemandRowAsync()).Status);
                 Assert.Equal("TERMINATED_BY_FAULT_CARGO_HANDOFF", (await fixture.RuntimeAsync()).BlockReasonCode);
-                await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(fixture.Context);
+                await VehicleOccupancyAssertions.AssertOpenClaimRecordsAndPurposeClaimsMatchAsync(fixture.Context);
                 await ZeroChangePin.AssertMatchesAsync(fixture.Context, "forced-mechanical-recovery");
                 // CP-0008 (REQ-0156 as revised, REQ-0242): the forced recovery's handoff suppresses the key as well.
                 await SuppressionAssertions.AssertTheDemandSuppressedAsync(fixture.Context, HandoffEnding);
@@ -353,7 +353,7 @@ public sealed class JourneyRuntimeWorkerCargoRecoveryTests
         Assert.Equal(JourneyRuntimeStage.Completed, (await fixture.RuntimeAsync(ended.DemandId)).Stage);
         Assert.Equal(DemandExecutionStatus.Cancelled, (await fixture.Context.AcceptedDemands.AsNoTracking()
             .SingleAsync(row => row.DemandId == ended.DemandId, token)).Status);
-        await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(fixture.Context);
+        await VehicleOccupancyAssertions.AssertOpenClaimRecordsAndPurposeClaimsMatchAsync(fixture.Context);
     }
 
     private static async Task<string> OpenSessionAsync(

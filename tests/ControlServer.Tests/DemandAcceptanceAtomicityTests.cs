@@ -32,7 +32,7 @@ public sealed class DemandAcceptanceAtomicityTests
             TestContext.Current.CancellationToken);
 
         Assert.Equal(1, await dbContext.AcceptedDemands.CountAsync(TestContext.Current.CancellationToken));
-        Assert.Equal(1, await dbContext.VehicleDispatchLeases.CountAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(1, await dbContext.Set<VehiclePurposeClaimRecordRow>().CountAsync(TestContext.Current.CancellationToken));
         Assert.Equal(1, await dbContext.OrderIntents.CountAsync(TestContext.Current.CancellationToken));
     }
 
@@ -61,7 +61,7 @@ public sealed class DemandAcceptanceAtomicityTests
             PickupIntent("D-002", "LEG-002", "W2G-D-002-PICKUP-1", now.AddMinutes(1)),
             TestContext.Current.CancellationToken));
         Assert.Equal(1, await dbContext.AcceptedDemands.CountAsync(TestContext.Current.CancellationToken));
-        Assert.Equal(1, await dbContext.VehicleDispatchLeases.CountAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(1, await dbContext.Set<VehiclePurposeClaimRecordRow>().CountAsync(TestContext.Current.CancellationToken));
         Assert.Equal(1, await dbContext.OrderIntents.CountAsync(TestContext.Current.CancellationToken));
 
         await store.CompleteDemandAfterUnloadAsync(
@@ -82,8 +82,8 @@ public sealed class DemandAcceptanceAtomicityTests
         Assert.Equal(2, await dbContext.AcceptedDemands.CountAsync(TestContext.Current.CancellationToken));
         Assert.Equal(
             1,
-            await dbContext.VehicleDispatchLeases.CountAsync(
-                lease => lease.ReleasedAt == null,
+            await dbContext.Set<VehiclePurposeClaimRecordRow>().CountAsync(
+                record => record.ReleasedAt == null,
                 TestContext.Current.CancellationToken));
         Assert.Equal(2, await dbContext.OrderIntents.CountAsync(TestContext.Current.CancellationToken));
     }
@@ -128,12 +128,19 @@ public sealed class DemandAcceptanceAtomicityTests
 
         await migrator.MigrateAsync(cancellationToken: TestContext.Current.CancellationToken);
 
-        VehicleDispatchLeaseRow lease = await dbContext.VehicleDispatchLeases
+        // The lease that old migration backfilled became a purpose claim in batch 7 and, when batch 8-16 (control-server#387)
+        // dropped the lease table, an open claim record: the vehicle is still held for that demand's journey.
+        VehiclePurposeClaimRecordRow record = await dbContext.Set<VehiclePurposeClaimRecordRow>()
             .AsNoTracking()
             .SingleAsync(TestContext.Current.CancellationToken);
-        Assert.Equal("D-001", lease.DemandId);
-        Assert.Equal("AGV-8005-01", lease.VehicleKey);
-        Assert.Null(lease.ReleasedAt);
+        Assert.Equal("journey:D-001", record.JourneyId);
+        Assert.Equal("AGV-8005-01", record.VehicleKey);
+        Assert.Null(record.ReleasedAt);
+        Assert.Equal(
+            ("AGV-8005-01", "journey:D-001"),
+            await dbContext.Set<VehiclePurposeClaimRow>().AsNoTracking()
+                .Select(claim => ValueTuple.Create(claim.VehicleKey, claim.JourneyId))
+                .SingleAsync(TestContext.Current.CancellationToken));
     }
 
     private static AcceptedDemandSnapshot Snapshot(

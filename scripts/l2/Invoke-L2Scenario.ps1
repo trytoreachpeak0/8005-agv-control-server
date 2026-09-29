@@ -1382,8 +1382,11 @@ try {
                              # What the task type station preset loaded at startup (control-server#159).
                              'TaskTypeStationRuleVersions', 'TaskTypeStationBindingSetVersions',
                              'TaskTypeStationBindings', 'TaskTypeStationActiveBindingSets',
-                             # Batch 7's per-zone dispatch parameters, and the occupancy of record (control-server#206).
-                             'DispatchZoneParameterVersions', 'DispatchZoneParameters', 'VehiclePurposeClaims')) {
+                             # Batch 7's per-zone dispatch parameters, and the occupancy of record (control-server#206),
+                             # with its history since the lease was retired (control-server#387): what the "vehicle
+                             # released" criteria read.
+                             'DispatchZoneParameterVersions', 'DispatchZoneParameters', 'VehiclePurposeClaims',
+                             'VehiclePurposeClaimRecords')) {
             try {
                 $rows = Invoke-L2Query -Connection $connection -Sql "SELECT * FROM $table"
                 [IO.File]::WriteAllText(

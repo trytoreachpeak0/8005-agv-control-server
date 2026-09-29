@@ -9,7 +9,7 @@ using Microsoft.EntityFrameworkCore.Storage;
 
 namespace ControlServer.Infrastructure.Persistence;
 
-// 批次 8 建表票 control-server#386 的三个存储。本票没有运行时读者；批次8-16～8-21 取用它们。
+// 批次 8 建表票 control-server#386 的三个存储。用途占有的写入与释放经 VehiclePurposeClaimWrites，引擎（批次8-16，control-server#387）也走它。
 
 /// <summary>
 /// 用途占有：认领时占有行、占有记录（以及请求了的站点独占与它的经过）在同一次保存里插入，谁占到由约束决定，不先读后写。
@@ -42,24 +42,7 @@ public sealed class VehiclePurposeLedgerStore(ControlServerDbContext context) : 
 
         // The purpose itself is not checked here: the CHECK constraint is what refuses a fifth one.
         StationExclusivityWrites.ForgetUnchangedClaims(_context, claim.VehicleKey);
-        List<object> staged =
-        [
-            new VehiclePurposeClaimRow
-            {
-                VehicleKey = claim.VehicleKey,
-                Purpose = claim.Purpose,
-                JourneyId = claim.JourneyId,
-                ClaimedAt = claim.ClaimedAt
-            },
-            new VehiclePurposeClaimRecordRow
-            {
-                RecordId = Guid.NewGuid().ToString("D"),
-                VehicleKey = claim.VehicleKey,
-                Purpose = claim.Purpose,
-                JourneyId = claim.JourneyId,
-                AcquiredAt = claim.ClaimedAt
-            }
-        ];
+        List<object> staged = [.. VehiclePurposeClaimWrites.NewRows(claim)];
         if (station is not null)
         {
             StationExclusivityWrites.ForgetUnchangedStation(_context, station.MapId, station.StationId);
@@ -128,22 +111,10 @@ public sealed class VehiclePurposeLedgerStore(ControlServerDbContext context) : 
         ArgumentException.ThrowIfNullOrWhiteSpace(journeyId);
         ArgumentException.ThrowIfNullOrWhiteSpace(releaseReason);
 
-        VehiclePurposeClaimRow? claim = await _context.Set<VehiclePurposeClaimRow>()
-            .SingleOrDefaultAsync(row => row.VehicleKey == vehicleKey && row.JourneyId == journeyId, cancellationToken);
-        if (claim is null)
+        if (!await VehiclePurposeClaimWrites.StageReleaseAsync(
+                _context, vehicleKey, journeyId, releasedAt, releaseReason, cancellationToken))
         {
             return false;
-        }
-        _context.Set<VehiclePurposeClaimRow>().Remove(claim);
-        // A claim the engine wrote directly (before batch 8-16 moves it onto this port) has no record; it is released all
-        // the same, and its history stays on the lease row it was written beside. Records are evidence, not an arbiter,
-        // so nothing guarantees there is at most one open: every open one of this journey on this vehicle is closed.
-        foreach (VehiclePurposeClaimRecordRow record in await _context.Set<VehiclePurposeClaimRecordRow>()
-                     .Where(row => row.VehicleKey == vehicleKey && row.JourneyId == journeyId && row.ReleasedAt == null)
-                     .ToListAsync(cancellationToken))
-        {
-            record.ReleasedAt = releasedAt;
-            record.ReleaseReason = releaseReason;
         }
         try
         {

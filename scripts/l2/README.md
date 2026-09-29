@@ -416,7 +416,7 @@ DispatchZoneParameters = @{
 - **L2 预置不走正式导入**：辅助模块 `L2DispatchZoneParameters.psm1` 直写服务端库，版本号取当前最大 + 1，版本行 `Source = 'L2_PRESET'`、
   `SnapshotId` 为空，不经治理快照与业务审计。正式导入的动词与它的证据归批次7-11（control-server#216）的场景；它合入之后 L2 是否改走
   FieldOps 由它决定。写入的内容留在 `snapshots/preseed-dispatch-zone-parameters.json`，判据 `preseed:dispatch-zone-parameters` 进
-  `timeline.jsonl`；收尾快照多了 `db-DispatchZoneParameterVersions.json`、`db-DispatchZoneParameters.json` 与 `db-VehiclePurposeClaims.json`。
+  `timeline.jsonl`；收尾快照多了 `db-DispatchZoneParameterVersions.json`、`db-DispatchZoneParameters.json` 与 `db-VehiclePurposeClaims.json`（control-server#387 起另有 `db-VehiclePurposeClaimRecords.json`）。
 - 预期服务端启动即拒绝的场景（`ExpectedStartupRefusal`）没有库可写，同时给 `DispatchZoneParameters` 直接报错。
 
 ### 批次 4 的辅助模块：`L2SlotGroups.psm1`
@@ -813,8 +813,9 @@ pwsh -NoProfile -File .\scripts\l2\Test-L2PortLockQueueing.ps1
     判法只有一条：直读的东西要么与被等的条件落在**同一次提交**，要么在因果上**必然先于**它落库，否则就是这种
     形状。v2 服务端的写入边界，核对过的记在这里，下次不必再读一遍服务端（行号会漂，按名字查）：
     - **站点期限到期结束本站**（`JourneyRuntimeEngine.TryEndStopAtStationDeadlineAsync` →
-      `PickupStopTermination.StageAsync`）一次提交：需求 `Cancelled`、调度租约 `ReleasedAt`、取货单的
-      `VehicleOccupancyReleasedAt`、录入请求在发件箱里结算、旅程 `Completed` / `CANCELLED_BY_STATION_TIMEOUT`。
+      `PickupStopTermination.StageAsync`）一次提交：需求 `Cancelled`、用途占有行删除且它的记录写上 `ReleasedAt`
+      （control-server#387 之前是调度租约与取货单上的订单占用，已退役）、录入请求在发件箱里结算、旅程 `Completed` /
+      `CANCELLED_BY_STATION_TIMEOUT`。
       等到旅程 `Completed` 再读这几样是安全的。
     - **到站那一轮**：车辆业务状态、工作清单、计划、录入请求四条出站报文各自在发布时落库
       （`WireToGateStore.QueueOutboundEnvelopeAsync` 每条一次保存），之后引擎才保存 `AwaitingSublot`；期限起点随工作清单那次

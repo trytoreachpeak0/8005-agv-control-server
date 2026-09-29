@@ -25,7 +25,8 @@ namespace ControlServer.Host.Runtime.Dispatch;
 /// dropped, and the round carries on with the vehicles behind it and still reports at its end.
 /// </para>
 /// <para>
-/// It logs under <see cref="JourneyRuntimeEngine"/>'s category, with the event ids it had there (2101, 2104, 2106)
+/// It logs under <see cref="JourneyRuntimeEngine"/>'s category, with the event ids it had there (2101, 2104; 2106, the
+/// order occupancy conflict, went with the order occupancy in control-server#387)
 /// plus three of control-server#231's own — 2123 a segment that threw, 2124 a segment that broke one of this
 /// server's invariants, 2125 an in-transit vehicle that could not be asked — so a log filter or an alert written
 /// against the engine still sees the round.
@@ -63,12 +64,6 @@ public sealed class DispatchRoundRunner(
             new EventId(2104, nameof(LogVehicleRoundBudgetExhausted)),
             "Vehicle {AgvId} exhausted its {BudgetMilliseconds} ms dispatch budget; the round moved on " +
             "to the remaining vehicles.");
-    private static readonly Action<ILogger, string, string, Exception?> LogVehicleOccupancyConflict =
-        LoggerMessage.Define<string, string>(
-            LogLevel.Error,
-            new EventId(2106, nameof(LogVehicleOccupancyConflict)),
-            "Vehicle {AgvId} already holds an in-flight order; the claim for {UpperId} was refused by " +
-            "the occupancy index.");
     private static readonly Action<ILogger, string, string, Exception?> LogVehicleRoundFailed =
         LoggerMessage.Define<string, string>(
             LogLevel.Warning,
@@ -821,12 +816,15 @@ public sealed class DispatchRoundRunner(
         // 这两处返回 false：它们是<b>这辆车自己</b>的原因，换一辆车会得到不同的答案（批次7-06，control-server#211）。
         //
         // 出价循环那句「受理把它拒掉是这条需求自己的结论，换一辆车再试一次只会得到同一个答案」，对最终重读
-        // 发现候选变了、没了那种情形成立，对下面这两种不成立：租约是<b>这一辆</b>车的租约，最终动态事实读的是
+        // 发现候选变了、没了那种情形成立，对下面这两种不成立：用途占有是<b>这一辆</b>车的占有，最终动态事实读的是
         // <b>这一辆</b>车的状态。翻转之前这两处从「这辆车自己那一段」返回，后面的车会重新判到这条需求；翻转之后
         // 它们落在同一个方法里，不区分就会把这条任务在本轮吃掉——而且积压行上还会被盖成 DEMAND_ALREADY_ACCEPTED，
         // 看板显示「已被接走」，而这条需求根本没有任何人接受。
-        if (!underWay && await dbContext.VehicleDispatchLeases.AnyAsync(
-                row => row.VehicleKey == selected.Vehicle.VehicleKey && row.ReleasedAt == null,
+        //
+        // 这里读的是用途占有（批次8-16，control-server#387 退役了租约）。它只是这辆车的预判，谁占到仍由受理时
+        // VehiclePurposeClaims 的主键决定：读完到受理之间别的旅程占上了，受理会被主键整个拒掉。
+        if (!underWay && await dbContext.Set<VehiclePurposeClaimRow>().AnyAsync(
+                row => row.VehicleKey == selected.Vehicle.VehicleKey,
                 cancellationToken).ConfigureAwait(false))
         {
             return CandidateDispatchOutcome.VehicleCannotTake;
@@ -902,8 +900,8 @@ public sealed class DispatchRoundRunner(
 
         if (underWay)
         {
-            // 追加「不认领车辆占用」（票面「车辆占用」那一条）：三套占用都是一车一行，这辆车已经被这趟旅程占着，
-            // 再认领一次会被索引直接拒绝。
+            // 追加「不认领车辆占用」（票面「车辆占用」那一条）：用途占有一车一行，这辆车已经被这趟旅程占着，
+            // 再认领一次会被主键直接拒绝。
             return CandidateDispatchOutcome.Taken;
         }
 
@@ -911,19 +909,9 @@ public sealed class DispatchRoundRunner(
         // after a redispatch this demand has an older, Completed journey row too, so "the row for this demand" is two rows
         // (control-server#215).
         string createdJourneyId = JourneyIdentity.ForAnchorDemand(plan.DerivationKeyFor(demandId));
-        // The vehicle is now carrying this journey's first order, and that is what the occupancy claim records.
-        if (!await dispatchPolicy.TryClaimVehicleOccupancyAsync(plan.PickupUpperId, cancellationToken)
-                .ConfigureAwait(false))
-        {
-            LogVehicleOccupancyConflict(logger, selected.Vehicle.AgvId, plan.PickupUpperId, null);
-            JourneyRuntimeRow conflicted = await dbContext.JourneyRuntimes
-                .SingleAsync(row => row.JourneyId == createdJourneyId, cancellationToken).ConfigureAwait(false);
-            Block(conflicted, "VEHICLE_OCCUPANCY_CONFLICT", timeProvider.GetUtcNow());
-            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            // 旅程已经建出来并且被 Block 了，这条需求这一轮有结论了。理由写在旅程的阻断码上，不在积压行上。
-            return CandidateDispatchOutcome.Taken;
-        }
-
+        // The vehicle was claimed by the acceptance itself, in its save (VehiclePurposeClaims). The order occupancy that
+        // used to be claimed here in a second save, and logged as event 2106 when its index refused, was retired in
+        // batch 8-16 (control-server#387).
         if (result.MovementDispatch?.Outcome != MovementDispatchOutcome.Confirmed)
         {
             JourneyRuntimeRow runtime = await dbContext.JourneyRuntimes
@@ -1322,16 +1310,5 @@ public sealed class DispatchRoundRunner(
         row.ReasonCode = reason;
         row.LastSeenAt = now;
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Blocks the journey the occupancy claim was refused for. The same three assignments as the engine's own
-    /// <c>Block</c>, which the advance side keeps: a journey blocked here is advanced there, and both read it alike.
-    /// </summary>
-    private static void Block(JourneyRuntimeRow runtime, string reason, DateTimeOffset now)
-    {
-        runtime.Stage = JourneyRuntimeStage.Blocked;
-        runtime.SetBlockReason(reason, now);
-        runtime.UpdatedAt = now;
     }
 }
