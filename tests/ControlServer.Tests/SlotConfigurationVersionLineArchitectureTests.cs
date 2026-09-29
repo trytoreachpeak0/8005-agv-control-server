@@ -125,7 +125,9 @@ public sealed class SlotConfigurationVersionLineArchitectureTests
             ["ControlServer.Infrastructure.Persistence.SlotConfigurationAuthorityStore"] = LineRole.SlotConfiguration,
             // control-server#159: the task type rule table (one line) and each map's binding set (one line per map).
             ["ControlServer.Infrastructure.Persistence.TaskTypeStationBindingStore"] = LineRole.AnotherLine,
-            ["ControlServer.Infrastructure.Persistence.TaskTypeStationRuleStore"] = LineRole.AnotherLine
+            ["ControlServer.Infrastructure.Persistence.TaskTypeStationRuleStore"] = LineRole.AnotherLine,
+            // control-server#386: the waiting point registration, one line.
+            ["ControlServer.Infrastructure.Persistence.WaitingPointRegistry"] = LineRole.AnotherLine
         };
 
     private enum LineRole

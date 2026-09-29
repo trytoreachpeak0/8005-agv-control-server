@@ -173,6 +173,20 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
         modelBuilder.Entity<JourneyRuntimeRow>().Property(row => row.Stage).HasConversion<string>();
         // control-server#357: raised on every save by StampJourneyVersions, never by a writer.
         modelBuilder.Entity<JourneyRuntimeRow>().Property(row => row.Version).IsConcurrencyToken();
+        // Batch 8 (control-server#386): an idle return is a journey without a demand (choice A), so the anchor demand and the
+        // columns only a transport has become nullable in the database. The CLR properties stay non-nullable on purpose:
+        // until batch 8-18/8-19 (control-server#389, #390) change a type and meet every reader the compiler then names, no
+        // code can write a null here, and nothing any engine path writes changes.
+        foreach (string column in IdleReturnNullableColumns.JourneyRuntimes)
+        {
+            modelBuilder.Entity<JourneyRuntimeRow>().Property(column).IsRequired(false);
+        }
+        modelBuilder.Entity<OrderIntentRow>().Property(row => row.DemandId).IsRequired(false);
+        modelBuilder.Entity<RiotDispatchAuditEventRow>().Property(row => row.DemandId).IsRequired(false);
+        modelBuilder.Entity<ExperimentalRiotCreateAuthorizationRow>().Property(row => row.DemandId).IsRequired(false);
+        // An idle return rides on the journey so that fault supervision and the own-order rebuild reach it too; the
+        // rebuild's record names the journey's anchor demand.
+        modelBuilder.Entity<OwnOrderRebuildRow>().Property(row => row.DemandId).IsRequired(false);
         modelBuilder.Entity<AdmissionPolicyStateRow>().HasKey(row => row.Id);
         modelBuilder.Entity<AdmissionPolicyStateRow>().Property(row => row.Id).ValueGeneratedNever();
         modelBuilder.Entity<StationTaskTypeAdmissionRow>().HasKey(row => new { row.StationId, row.TaskType });

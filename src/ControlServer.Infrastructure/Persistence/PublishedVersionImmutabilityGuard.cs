@@ -68,6 +68,8 @@ internal static class PublishedVersionImmutabilityGuard
             or TaskTypeStationBindingSetVersionRow or TaskTypeStationBindingRow or TaskTypeStationRequirementRow => true,
         // 每区派车参数同样没有草稿态（REQ-0198、REQ-0203；control-server#206）：版本行与分区行写入即发布，换参数是写一个新版本。
         DispatchZoneParameterVersionRow or DispatchZoneParameterRow => true,
+        // 等待点登记同样没有草稿态（REQ-0289、REQ-0297；control-server#386）：版本行、等待点行与白名单行写入即发布。
+        WaitingPointVersionRow or WaitingPointRow or WaitingPointVehicleScopeRow => true,
         _ => false,
     };
 

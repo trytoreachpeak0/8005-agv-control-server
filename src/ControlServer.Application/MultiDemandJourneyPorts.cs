@@ -95,10 +95,27 @@ public static class JourneyDemandStatuses
     public const string Terminated = "TERMINATED";
 }
 
-/// <summary>车辆占有的用途。本批只有搬运一种（规格 3.3 第 9 项）；<c>REQ-0290</c> 的其余用途在批次 8。</summary>
+/// <summary>
+/// 车辆占有的用途，四值一次定全（规格 5.4，批次 8 建表票 control-server#386）。<c>VehiclePurposeClaims</c> 与
+/// <c>VehiclePurposeClaimRecords</c> 的 <c>Purpose</c> 列由 CHECK 约束只收这四个值，约束的值表就取自 <see cref="All"/>。
+/// </summary>
+/// <remarks>
+/// 与线上 <c>activePurpose</c> 的常量（<c>ControlServer.Domain.VehicleActivePurposes</c>）是两件事：这里是服务端占有的记录，
+/// 那里是协议报文的取值，随协议版本走。今天两边的拼写逐字相同（协议 <c>VehicleBusinessStateSnapshot.activePurpose</c> 的枚举也是这四个），
+/// 由 <c>Batch8PersistencePortTests.TheFourPurposesAreDefinedOnceAndEachHasItsWireCounterpartInTheProtocolEnum</c> 钉住「这里每个值在协议枚举里都有」，这里多出协议没有的值、或协议删掉这里在用的值，它就红；把一边的值原样写到另一边是
+/// 批次8-18（control-server#389）的事。本批实际会取得的只有 <see cref="Transport"/> 与 <see cref="IdleReturn"/>。
+/// </remarks>
 public static class VehiclePurposes
 {
     public const string Transport = "TRANSPORT";
+
+    public const string Charging = "CHARGING";
+
+    public const string ClearingMaintenance = "CLEARING_MAINTENANCE";
+
+    public const string IdleReturn = "IDLE_RETURN";
+
+    public static IReadOnlyList<string> All { get; } = [Transport, Charging, ClearingMaintenance, IdleReturn];
 }
 
 /// <summary>每区派车参数版本从哪来。</summary>
