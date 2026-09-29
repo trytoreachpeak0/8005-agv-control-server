@@ -22,6 +22,9 @@ public sealed class AreaEndAdmissionStoreTests
     // A WIRE_TO_GATE demand that froze the factory rules, so STAGING_TO_WIRE's rule can be read under its version.
     private const string FrozenForwardDemand = "D-WIRE-TO-GATE-FROZEN";
 
+    /// <summary>How control-server#251's station check words its refusal; what tells it from the other conflicts.</summary>
+    private const string StationRefusal = "The admission identity names station ";
+
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
     [Fact]
@@ -237,6 +240,7 @@ public sealed class AreaEndAdmissionStoreTests
 
         fixture.Context.ChangeTracker.Clear();
         Assert.True(refused is BusinessIdentityConflictException, $"exception: {refused?.GetType().Name ?? "none"}");
+        Assert.StartsWith(StationRefusal, refused!.Message, StringComparison.Ordinal);
         Assert.Equal(
             (1, 1, 1),
             (await fixture.Context.StationOperations.CountAsync(Token),
@@ -286,6 +290,45 @@ public sealed class AreaEndAdmissionStoreTests
     }
 
     /// <summary>
+    /// control-server#251: the operation's stop is found through the membership its attempt id names, not through every
+    /// membership the demand ever had. A demand released for redispatch keeps its old, removed membership -- here at N2-1 --
+    /// beside the one in force at N1-1; its new load at N1-1 is prepared. Found by demand alone, the two memberships would
+    /// name two stations and neither answer would be the operation's.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task AnOperationIsJudgedAtTheStopOfTheMembershipItsAttemptBelongsTo()
+    {
+        await using TaskTypeStationPersistenceFixture fixture = await WithFrozenReverseDemandAsync();
+        await AcceptAsync(fixture, ForwardDemand, TransportTaskTypes.WireToGate);
+        await SeedStopAsync(fixture, "STOP-OLD-PICKUP", 1, JourneyStopRoles.Pickup, "N2-1", "J-OLD");
+        await SeedStopAsync(fixture, "STOP-OLD-GATE", 2, JourneyStopRoles.Unload, "GATE-1", "J-OLD");
+        await SeedStopAsync(fixture, "STOP-NEW-PICKUP", 1, JourneyStopRoles.Pickup, "N1-1", "J-NEW");
+        await SeedStopAsync(fixture, "STOP-NEW-GATE", 2, JourneyStopRoles.Unload, "GATE-1", "J-NEW");
+        JourneyDemandRow released = JourneyMembershipSeed.Membership(
+            "J-OLD", ForwardDemand, "STOP-OLD-PICKUP", "STOP-OLD-GATE", "ATTEMPT-OLD-LOAD", "ATTEMPT-OLD-UNLOAD");
+        released.RemovedAt = Now;
+        released.RemovalReason = DemandJourneyLookup.ReleasedForRedispatchReason;
+        fixture.Context.Set<JourneyDemandRow>().Add(released);
+        JourneyDemandRow current = JourneyMembershipSeed.Membership(
+            "J-NEW", ForwardDemand, "STOP-NEW-PICKUP", "STOP-NEW-GATE", "ATTEMPT-NEW-LOAD", "ATTEMPT-NEW-UNLOAD");
+        current.DispatchGeneration = 2;
+        fixture.Context.Set<JourneyDemandRow>().Add(current);
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+        WireToGateStore store = new(fixture.Context);
+
+        await store.PrepareSlotOperationAsync(
+            Plan("ATTEMPT-NEW-LOAD", ForwardDemand, SlotOperationType.Load, "N1-1", TransportTaskTypes.WireToGate),
+            "MESSAGE-NEW-LOAD", Wire("MESSAGE-NEW-LOAD", "ATTEMPT-NEW-LOAD"), Token);
+
+        fixture.Context.ChangeTracker.Clear();
+        AdmissionDecisionSnapshotRow decision = await fixture.Context.AdmissionDecisionSnapshots.AsNoTracking()
+            .SingleAsync(Token);
+        Assert.Equal(("ATTEMPT-NEW-LOAD", "N1-1"), (decision.SlotOperationAttemptId, decision.StationId));
+    }
+
+    /// <summary>
     /// control-server#251 (ticket item 4, one derivation of "which station is the AREA end"): the runtime's admission
     /// question for a demand that is not the journey's anchor is asked at that demand's own stop. Demand A anchors the
     /// journey and loads at N1-1; demand B loads at N2-1. After dispatch the policy moves: WIRE_TO_GATE is admitted at N2-1
@@ -331,6 +374,8 @@ public sealed class AreaEndAdmissionStoreTests
         Assert.True(
             refused is BusinessIdentityConflictException,
             $"exception: {refused?.GetType().Name ?? "none"}; operations: {operations}; admission snapshots: {snapshots}; outbox rows: {outbox}");
+        // This check's own refusal, not any other business identity conflict raised on the way.
+        Assert.StartsWith(StationRefusal, refused!.Message, StringComparison.Ordinal);
         Assert.Equal((0, 0, 0), (operations, snapshots, outbox));
     }
 
