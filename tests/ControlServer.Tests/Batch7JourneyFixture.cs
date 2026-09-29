@@ -224,9 +224,14 @@ internal sealed class Batch7JourneyFixture : IAsyncDisposable
     /// <para>
     /// On a database at the current schema it adds and drops nothing.
     /// </para>
+    /// <para>
+    /// The connection is opened through the context and handed back on dispose: a context built from a connection string
+    /// keeps its connection closed between operations, and EF closes on its own only what it opened itself.
+    /// </para>
     /// </remarks>
     internal static async Task<IAsyncDisposable> WithTodaysTrailingColumnsAsync(ControlServerDbContext context)
     {
+        await context.Database.OpenConnectionAsync(TestContext.Current.CancellationToken);
         SqliteConnection connection = (SqliteConnection)context.Database.GetDbConnection();
         List<(string Table, string Column)> added = [];
         foreach ((string table, string column, string definition) in TodaysTrailingColumns)
@@ -241,10 +246,11 @@ internal sealed class Batch7JourneyFixture : IAsyncDisposable
             await ExecuteAsync(connection, $"""ALTER TABLE "{table}" ADD COLUMN "{column}" {definition}""");
             added.Add((table, column));
         }
-        return new TrailingColumns(connection, added);
+        return new TrailingColumns(context, connection, added);
     }
 
-    private sealed class TrailingColumns(SqliteConnection connection, List<(string Table, string Column)> added)
+    private sealed class TrailingColumns(
+        ControlServerDbContext context, SqliteConnection connection, List<(string Table, string Column)> added)
         : IAsyncDisposable
     {
         public async ValueTask DisposeAsync()
@@ -253,6 +259,7 @@ internal sealed class Batch7JourneyFixture : IAsyncDisposable
             {
                 await ExecuteAsync(connection, $"""ALTER TABLE "{added[index].Table}" DROP COLUMN "{added[index].Column}" """);
             }
+            await context.Database.CloseConnectionAsync();
         }
     }
 
