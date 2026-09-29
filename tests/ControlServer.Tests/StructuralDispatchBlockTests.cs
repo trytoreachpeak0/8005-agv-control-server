@@ -118,6 +118,9 @@ public sealed class StructuralDispatchBlockTests
     [InlineData("EN_ROUTE_APPEND_DEMAND_LEFT_THIS_JOURNEY", DispatchReasonClass.Backlog)]
     // 批次7-07（control-server#212）：装货阶段结束的在途车不再接追加。只是这一辆车的旅程，别的车照接。
     [InlineData("LOADING_PHASE_CLOSED", DispatchReasonClass.Backlog)]
+    // 批次8-20（control-server#391，REQ-0204）：公共站点被别的车预占或占用着。那辆车离点之后就放，这条需求那时再派。
+    [InlineData("FIXED_TASK_STATION_RESERVED_BY_OTHER_VEHICLE", DispatchReasonClass.Backlog)]
+    [InlineData("FIXED_TASK_STATION_OCCUPIED_BY_OTHER_VEHICLE", DispatchReasonClass.Backlog)]
     [InlineData("SUBLOT_TASK_TYPE_CONFLICT", DispatchReasonClass.Backlog)]
     // 批次7-05（control-server#210）：按业务键抑制与同键已受理，都是有意不执行，不是故障，归普通积压。
     [InlineData("TRANSPORT_DEMAND_KEY_SUPPRESSED", DispatchReasonClass.Backlog)]

@@ -104,8 +104,10 @@ public sealed class DispatchVehicleOrderingTests
     {
         // 成本在带内之前，带内是「偏好、接单久远、电量」，最后一层保证确定性。写成完整序列而不是数个数：
         // 一条 Assert.Equal(6, layers.Count) 对调换两层毫无反应。
+        // REQ-0204 的选车软层在最前（批次8-20，control-server#391）：取货起点是公共站点时已在点的车先取。
         Assert.Equal(
             [
+                typeof(FixedOriginStationPresenceLayer),
                 typeof(PricedVehicleBeforeUnpricedLayer),
                 typeof(MarginalTripCostLayer),
                 typeof(DispatchZoneVehiclePreferenceLayer),
