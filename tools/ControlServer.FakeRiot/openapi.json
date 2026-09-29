@@ -100,7 +100,7 @@
     "/control/v1/snapshot": {
       "get": {
         "summary": "Control plane: everything one round can observe.",
-        "responses": { "200": { "description": "Standard control envelope carrying vehicles, orders, maps, the fault mode, and mapStationReads -- a monotonic count of Map station catalog reads, one per journey runtime iteration, which a scenario waits on instead of sleeping before asserting that something did not happen." } }
+        "responses": { "200": { "description": "Standard control envelope carrying vehicles, orders, maps, the fault mode, and mapStationReads -- a monotonic count of Map station catalog reads, one per journey runtime iteration, which a scenario waits on instead of sleeping before asserting that something did not happen. Vehicles report the simulated battery at the time of the read; charging carries the registered chargers, the discharge rate, each simulated vehicle's battery, batteryState, docked, charger and faults, and the per-order start outcomes (control-server#402)." } }
       }
     },
     "/control/v1/openapi.json": {
@@ -205,6 +205,36 @@
           "400": { "description": "INVALID_ARGUMENT." }
         }
       }
+    },
+    "/control/v1/chargers": {
+      "put": {
+        "summary": "Control plane: replace the registered chargers and the discharge rate (control-server#402).",
+        "description": "No charger registered means no charging and no expansion at all, which is the default. A move to a charger with enterExitStationId is recorded as move(enterExit) -> move(charger), and that station's user_define_properties reports {\"enter_exit\": \"<id>\"}. Only an order carrying act(78,1,0) pushed to 5 makes its vehicle report CHARGING; the battery then rises by chargePercentPerInterval every chargeIntervalSeconds, capped at 100, on the injected clock. Off the charger it falls by dischargePercentPerInterval every dischargeIntervalSeconds (both 0 by default: flat). Time passing does not move the revision.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChargersCommand" } } }
+        },
+        "responses": {
+          "200": { "description": "Accepted or replayed." },
+          "400": { "description": "INVALID_ARGUMENT: chargers missing, a rate out of range, a charger listed twice, a charger that is its own enter/exit station, or only one of the two discharge fields set." },
+          "409": { "description": "RUN_ID_MISMATCH, COMMAND_ID_CONFLICT or REVISION_CONFLICT." }
+        }
+      }
+    },
+    "/control/v1/charging/faults": {
+      "put": {
+        "summary": "Control plane: charging faults on one vehicle or one order (control-server#402).",
+        "description": "Exactly one of vehicleKey and upperId. Only the fields present are applied, and they stay until changed. startOutcome decides what act(78,1,0) becomes when its order is pushed to 5: Normal (CHARGING), CannotCharge (order held at 9, act resultCode 407802, missionState 1) or HangOnly (order held at 9, no resultCode). An order's startOutcome overrides its vehicle's; an order takes nothing else. interruptAtPercent ends charging by itself once the battery reaches it (clearInterrupt removes it); noProgress reports CHARGING with the battery flat; batteryUnreadable leaves battery, batteryState or both out of the vehicle card.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChargingFaultCommand" } } }
+        },
+        "responses": {
+          "200": { "description": "Accepted or replayed." },
+          "400": { "description": "INVALID_ARGUMENT." },
+          "409": { "description": "NOT_FOUND (unknown vehicle), RUN_ID_MISMATCH, COMMAND_ID_CONFLICT or REVISION_CONFLICT." }
+        }
+      }
     }
   },
   "components": {
@@ -301,13 +331,61 @@
             "items": {
               "type": "object",
               "properties": {
-                "type": { "type": "string" },
-                "mapId": { "type": "integer" },
-                "destination": { "type": "integer" }
+                "type": { "type": "string", "enum": ["move", "act"] },
+                "mapId": { "type": "integer", "description": "0 when absent, as on an act." },
+                "destination": { "type": "integer", "description": "0 when absent, as on an act." },
+                "actionId": { "type": "integer", "description": "act only; 78 is charging (control-server#402)." },
+                "actionParam1": { "type": "integer", "description": "act only; for 78, 1 starts and 2 stops charging." },
+                "actionParam2": { "type": "integer" }
               }
             }
           }
         }
+      },
+      "ChargersCommand": {
+        "allOf": [
+          { "$ref": "#/components/schemas/CommandEnvelope" },
+          {
+            "type": "object",
+            "required": ["chargers"],
+            "properties": {
+              "chargers": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["mapId", "stationId", "chargeIntervalSeconds", "chargePercentPerInterval"],
+                  "properties": {
+                    "mapId": { "type": "integer" },
+                    "stationId": { "type": "integer" },
+                    "enterExitStationId": { "type": "integer", "nullable": true },
+                    "chargeIntervalSeconds": { "type": "integer", "minimum": 1, "maximum": 3600 },
+                    "chargePercentPerInterval": { "type": "integer", "minimum": 1, "maximum": 100 },
+                    "expandDeparture": { "type": "boolean", "default": false, "description": "Route the departure order through enterExitStationId after act(78,2,0). Off by default: the real departure shape is unmeasured." }
+                  }
+                }
+              },
+              "dischargeIntervalSeconds": { "type": "integer", "minimum": 0, "maximum": 3600, "default": 0 },
+              "dischargePercentPerInterval": { "type": "integer", "minimum": 0, "maximum": 100, "default": 0 }
+            }
+          }
+        ]
+      },
+      "ChargingFaultCommand": {
+        "allOf": [
+          { "$ref": "#/components/schemas/CommandEnvelope" },
+          {
+            "type": "object",
+            "properties": {
+              "vehicleKey": { "type": "string" },
+              "upperId": { "type": "string" },
+              "startOutcome": { "type": "string", "enum": ["Normal", "CannotCharge", "HangOnly"] },
+              "interruptAtPercent": { "type": "integer", "minimum": 0, "maximum": 100 },
+              "clearInterrupt": { "type": "boolean" },
+              "noProgress": { "type": "boolean" },
+              "batteryUnreadable": { "type": "string", "enum": ["None", "Battery", "BatteryState", "Both"] }
+            }
+          }
+        ]
       },
       "VehicleCardEnvelope": {
         "type": "object",

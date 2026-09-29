@@ -117,6 +117,7 @@ public static class ControlPlane
         MapListReadCounter mapListReads = app.Services.GetRequiredService<MapListReadCounter>();
         AbsentOrderReadFaults absentOrderReadFaults = app.Services.GetRequiredService<AbsentOrderReadFaults>();
         FakeRiotSeed seed = app.Services.GetRequiredService<FakeRiotSeed>();
+        TimeProvider clock = app.Services.GetRequiredService<TimeProvider>();
         RouteGroupBuilder control = app.MapGroup("/control/v1");
 
         control.MapGet("/openapi.json", ControlPlaneConventions.OpenApiDocument);
@@ -130,13 +131,16 @@ public static class ControlPlane
         control.MapGet("/snapshot", () =>
         {
             FakeRiotState state = engine.Snapshot().State;
+            DateTimeOffset now = clock.GetUtcNow();
             return Results.Json(ControlPlaneConventions.Envelope(engine, new
             {
                 faultMode = state.FaultMode.ToString(),
                 delayMs = state.DelayMs,
                 mapStationReads = mapStationReads.Count,
                 absentOrderReadFaults = absentOrderReadFaults.Describe(),
-                vehicles = state.Vehicles.Values.OrderBy(item => item.DeviceKey, StringComparer.Ordinal),
+                // As RIoT would report them now: a simulated battery moves with the clock, not with the revision.
+                vehicles = state.Vehicles.Values.OrderBy(item => item.DeviceKey, StringComparer.Ordinal)
+                    .Select(item => FakeChargingModel.Effective(state, item, now)),
                 orders = state.OrdersByUpperId.Values.OrderBy(item => item.Id),
                 maps = state.StationsByMapId.OrderBy(pair => pair.Key)
                     .Select(pair => new { mapId = pair.Key, stations = pair.Value }),
@@ -154,7 +158,35 @@ public static class ControlPlane
                     .Select(pair => new { mapId = pair.Key, name = pair.Value }),
                 mapListServerError = state.MapListServerError,
                 mapListReads = mapListReads.Reads,
-                mapListServerErrors = mapListReads.ServerErrors
+                mapListServerErrors = mapListReads.ServerErrors,
+                // control-server#402: the registered chargers and each simulated vehicle's charging state and faults.
+                charging = new
+                {
+                    chargers = state.Chargers,
+                    dischargeIntervalSeconds = state.DischargeIntervalSeconds,
+                    dischargePercentPerInterval = state.DischargePercentPerInterval,
+                    vehicles = state.ChargeByVehicle.OrderBy(pair => pair.Key, StringComparer.Ordinal).Select(pair =>
+                    {
+                        FakeVehicle effective = FakeChargingModel.Effective(state, state.Vehicles[pair.Key], now);
+                        return new
+                        {
+                            vehicleKey = pair.Key,
+                            battery = effective.Battery,
+                            batteryState = effective.BatteryState,
+                            docked = pair.Value.Docked,
+                            chargerMapId = pair.Value.ChargerMapId,
+                            chargerStationId = pair.Value.ChargerStationId,
+                            anchorAt = pair.Value.AnchorAt,
+                            startOutcome = pair.Value.StartOutcome,
+                            interruptAtPercent = pair.Value.InterruptAtPercent,
+                            noProgress = pair.Value.NoProgress,
+                            batteryUnreadable = pair.Value.BatteryUnreadable
+                        };
+                    }),
+                    startOutcomeByUpperId = state.ChargeStartOutcomeByUpperId
+                        .OrderBy(pair => pair.Key, StringComparer.Ordinal)
+                        .Select(pair => new { upperId = pair.Key, startOutcome = pair.Value })
+                }
             }));
         });
 
@@ -177,6 +209,21 @@ public static class ControlPlane
                 {
                     throw new CommandRefusedException(ReasonCodes.NotFound);
                 }
+                // A written battery overrides the simulated one and the simulation restarts from it (control-server#402);
+                // a written battery state ends simulated charging. A vehicle with no simulation is untouched by this.
+                bool simulated = state.ChargeByVehicle.ContainsKey(key) &&
+                                 (command.Battery is not null || command.BatteryState is not null);
+                if (simulated)
+                {
+                    DateTimeOffset now = clock.GetUtcNow();
+                    state = FakeChargingModel.Settle(state, key, now);
+                    vehicle = state.Vehicles[key];
+                    if (command.BatteryState is not null)
+                    {
+                        state = FakeChargingModel.WithVehicle(
+                            state, vehicle, state.ChargeByVehicle[key] with { Charging = false });
+                    }
+                }
                 FakeVehicle updated = vehicle with
                 {
                     Enable = command.Enable ?? vehicle.Enable,
@@ -197,7 +244,7 @@ public static class ControlPlane
                     ProcessingOrder = command.ProcessingOrder ?? vehicle.ProcessingOrder,
                     IntegrationLevel = command.IntegrationLevel ?? vehicle.IntegrationLevel
                 };
-                if (updated == vehicle)
+                if (updated == vehicle && !simulated)
                 {
                     return null;
                 }
@@ -229,12 +276,23 @@ public static class ControlPlane
                 {
                     return null;
                 }
+                // What the state change means for charging (control-server#402). An order with no charge act, on a
+                // vehicle with no simulation, comes back exactly as it went in.
+                (state, updated) = FakeChargingModel.ApplyOrderTransition(state, order, updated, clock.GetUtcNow());
                 Dictionary<string, FakeOrder> orders = new(state.OrdersByUpperId, StringComparer.Ordinal)
                 {
                     [upperId] = updated
                 };
                 return state with { OrdersByUpperId = orders };
             }));
+
+        control.MapPut("/chargers", (ChargersCommand command) =>
+            ControlPlaneConventions.Handle(engine, "chargers", command, state =>
+                FakeChargingControl.RegisterChargers(state, command, clock.GetUtcNow())));
+
+        control.MapPut("/charging/faults", (ChargingFaultCommand command) =>
+            ControlPlaneConventions.Handle(engine, "charging-faults", command, state =>
+                FakeChargingControl.SetFaults(state, command, clock.GetUtcNow())));
 
         control.MapPut("/maps/{mapId:int}/stations", (int mapId, StationsCommand command) =>
             ControlPlaneConventions.Handle(

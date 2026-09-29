@@ -53,7 +53,32 @@ public sealed record FakeOrder
     public required IReadOnlyList<FakeMission> Missions { get; init; }
 }
 
-public sealed record FakeMission(string Type, int MapId, int Destination);
+/// <summary>
+/// One mission of an order. A move is <c>(type, mapId, destination)</c> and nothing else, on the wire and in the snapshot,
+/// exactly as before control-server#402. An act carries the rest: its action, and once its order resolves, the result RIoT
+/// recorded for it (Round 24/25: <c>missionState</c> 2 with <c>resultCode</c> 0 on success, 1 with 407802 when the charger
+/// would not engage).
+/// </summary>
+public sealed record FakeMission(string Type, int MapId, int Destination)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public int ActionId { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public int ActionParam1 { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public int ActionParam2 { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public int? ResultCode { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public string? ResultStr { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public int MissionState { get; init; }
+}
 
 /// <summary>
 /// One station as <c>mapInfo/stations/{mapId}</c> reports it.
@@ -201,6 +226,21 @@ public sealed record FakeRiotState
     /// from a failed round.
     /// </summary>
     public bool MapListServerError { get; init; }
+
+    /// <summary>Registered chargers (control-server#402). Empty means there is no charger, and no charging, at all.</summary>
+    public IReadOnlyList<FakeCharger> Chargers { get; init; } = [];
+
+    /// <summary>Battery falls by <see cref="DischargePercentPerInterval"/> once per this many seconds off the charger. 0 is flat.</summary>
+    public int DischargeIntervalSeconds { get; init; }
+    public int DischargePercentPerInterval { get; init; }
+
+    /// <summary>Per-vehicle battery simulation. A vehicle with no entry reports its stored battery, as every vehicle did before.</summary>
+    public IReadOnlyDictionary<string, FakeVehicleCharge> ChargeByVehicle { get; init; } =
+        new Dictionary<string, FakeVehicleCharge>(StringComparer.Ordinal);
+
+    /// <summary>A start-charging outcome for one order, taking precedence over its vehicle's.</summary>
+    public IReadOnlyDictionary<string, FakeChargeStartOutcome> ChargeStartOutcomeByUpperId { get; init; } =
+        new Dictionary<string, FakeChargeStartOutcome>(StringComparer.Ordinal);
 
     /// <summary>Serial number for the next created order, so orderIds are stable within a round.</summary>
     public required long NextOrderSequence { get; init; }
