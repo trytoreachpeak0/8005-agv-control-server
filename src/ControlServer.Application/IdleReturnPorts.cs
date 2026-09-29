@@ -16,14 +16,18 @@ namespace ControlServer.Application;
 /// <para>
 /// 只回答「低于线没有」。电量读不到、车在充电，由调用方各自按不接新承诺处理：那是读数的事，不是线的事。
 /// </para>
+/// <para>
+/// 签名按车、异步（审查 S3）：批次 9（B9-05）按车读充电策略版本、要读库；过渡实现两样都用不上，但签名今天就定好，
+/// 那张票只换实现、不改调用方。
+/// </para>
 /// </remarks>
 public interface IMandatoryChargeLine
 {
-    /// <summary>这个电量是否低于强制充电入口线。低于即不接空闲返回的新承诺。</summary>
-    bool IsBelowLine(int batteryPercent);
+    /// <summary>这辆车在这个电量下是否低于它的强制充电入口线。低于即不接空闲返回的新承诺。</summary>
+    ValueTask<bool> IsBelowLineAsync(string vehicleKey, int batteryPercent, CancellationToken cancellationToken);
 
-    /// <summary>线从哪来、是多少，给日志与证据用，例如 <c>30 (transitional: JourneyRuntime:MinimumBatteryPercent)</c>。</summary>
-    string Describe();
+    /// <summary>这辆车的线从哪来、是多少，给日志与证据用，例如 <c>30 (transitional: JourneyRuntime:MinimumBatteryPercent)</c>。</summary>
+    string Describe(string vehicleKey);
 }
 
 /// <summary>空闲返回的身份。</summary>

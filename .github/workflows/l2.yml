@@ -397,6 +397,9 @@ jobs:
               'waiting-journey-battery-watch' = 60
               # control-server#186, one local run (2026-09-29): two journeys, the fault window and four FieldOps calls.
               'map-rename-holds-all-task-types' = 95
+              # control-server#389, local runs (2026-09-29): 25 s of deliberate waits (the two Wait-L2ConditionOrLast windows)
+              # on top of a two-vehicle start and one transport.
+              'idle-return-two-vehicles-contend-one-waiting-point' = 75
           }
 
           # Registered before anything can fail, so the upload step below always has a path: without it

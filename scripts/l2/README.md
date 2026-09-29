@@ -619,7 +619,7 @@ DispatchZoneParameters = @{
 
 - `WaitingPoints`（control-server#388） —— 等待点登记。不写时 `Fleet` 场景每车一个、单车场景不登记；`$false` 不登记；整数是默认点的个数；列表逐个写站号、
   站名、启用、白名单与路网节点（`Node`，control-server#389）。在服务端第一次启动之前经 `--migrate-only` 与 FieldOps `import-waiting-points` 正式导入。
-- `IdleReturn`（control-server#389） —— `$true` 打开空闲返回（服务端 `IdleReturn:Enabled`）。不写即关，与产品默认一致；
+- `IdleReturn`（control-server#389） —— `$true` 打开空闲返回（服务端 `IdleReturn:Enabled`，连同只有本编排器会设的 `IdleReturn:AllowWithoutExecutionForL2Only`：过渡期的启动护栏单独见到 `Enabled` 就拒绝启动）。不写即关，与产品默认一致；
   批次8-19（control-server#390）合入之前产品默认关，任何环境都不得打开，只有 L2 场景用它。空闲返回还要路网（`RouteGraph`）开着、
   等待点在路网上（`WaitingPoints` 列表项的 `Node`），否则一个点也不承诺。
 

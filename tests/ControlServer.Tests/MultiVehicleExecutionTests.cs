@@ -1091,6 +1091,9 @@ public sealed partial class MultiVehicleExecutionTests
         /// <summary>空闲返回评估器的工厂；为空即派车轮不评估空闲返回，与本票之前逐字相同（control-server#389）。</summary>
         private Func<FleetFixture, ControlServer.Host.Runtime.IdleReturn.IdleReturnEvaluator>? _idleReturn;
 
+        /// <summary>打开空闲返回之后每辆车最近一次的结论，跨轮次保留，像宿主里的单例。</summary>
+        public ControlServer.Host.Runtime.IdleReturn.IdleReturnVerdictBoard IdleReturnBoard { get; } = new();
+
         /// <summary>
         /// 打开空闲返回（control-server#389）：登记这些等待点、让实时目录列出它们，派车轮末尾按生产的样子评估。要装了路网的夹具。
         /// </summary>
@@ -1104,21 +1107,8 @@ public sealed partial class MultiVehicleExecutionTests
             await new WaitingPointRegistry(Context, JourneyRuntimeWorkerTestKit.CreateGovernedPublisher(Context))
                 .WriteVersionAsync(points, Clock.GetUtcNow(), TestContext.Current.CancellationToken);
             Riot.ExtraStations.AddRange(points.Select(point => new RiotMapStation(point.StationId, point.StationName)));
-            _idleReturn = fixture => new ControlServer.Host.Runtime.IdleReturn.IdleReturnEvaluator(
-                fixture.Context,
-                new VehiclePurposeLedgerStore(fixture.Context),
-                new StationExclusivityStore(fixture.Context),
-                new WaitingPointRegistry(fixture.Context, JourneyRuntimeWorkerTestKit.CreateGovernedPublisher(fixture.Context)),
-                TaskTypeStationRuntimeSeed.Access(fixture.Context).Bindings,
-                fixture.RouteGraph()!,
-                new ControlServer.Host.Runtime.IdleReturn.TransitionalMandatoryChargeLine(
-                    Microsoft.Extensions.Options.Options.Create(fixture.Options)),
-                Microsoft.Extensions.Options.Options.Create(
-                    new ControlServer.Host.Runtime.IdleReturn.IdleReturnOptions { Enabled = true }),
-                Microsoft.Extensions.Options.Options.Create(fixture.Options),
-                new ControlServer.Host.Runtime.IdleReturn.IdleReturnVerdictBoard(),
-                fixture.Clock,
-                NullLogger<ControlServer.Host.Runtime.IdleReturn.IdleReturnEvaluator>.Instance);
+            _idleReturn = fixture => IdleReturnTestKit.Create(
+                fixture.Context, fixture.Options, fixture.Clock, fixture.RouteGraph()!, enabled: true, board: fixture.IdleReturnBoard);
             await RecreateEngineAsync();
         }
 
@@ -1317,7 +1307,7 @@ public sealed partial class MultiVehicleExecutionTests
                 options,
                 Clock,
                 EngineLog,
-                _idleReturn?.Invoke(this));
+                _idleReturn?.Invoke(this) ?? IdleReturnTestKit.Create(Context, Options, Clock));
             return new JourneyRuntimeEngine(
                 Context,
                 Riot,

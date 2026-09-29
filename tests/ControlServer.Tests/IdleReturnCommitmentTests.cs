@@ -83,6 +83,9 @@ public sealed class IdleReturnCommitmentTests
         "selected-for-transport",
         "has-purpose",
         "holds-station",
+        "holds-charger",
+        "fault-suspected",
+        "fault-isolated",
         "has-next-business-target",
         "foreign-order",
         "own-order-result-unknown",
@@ -119,6 +122,20 @@ public sealed class IdleReturnCommitmentTests
                 // 停在上一次返回的等待点、等离点证据：占有已放，站还是它的。它已经在一个等待点上了，不再去另一个。
                 await harness.HoldStationAsync(VehicleA, 216, StationExclusivityStates.Occupied);
                 expected = IdleReturnReasons.VehicleHoldsStation;
+                break;
+            case "holds-charger":
+                // 停在充电桩上等离点证据：同样已在一个等待之处。口径由 B9-07 定，今天与等待点一样拒。
+                await harness.HoldStationAsync(VehicleA, 211, StationExclusivityStates.Occupied, StationExclusivityKinds.Charger);
+                expected = IdleReturnReasons.VehicleHoldsStation;
+                break;
+            case "fault-suspected":
+                // 审查 M1：故障阻断曾经只在派车链里。派车链答这个码的车，空闲返回也答同一个码。
+                await harness.RecordFaultAsync(candidate.Vehicle, VehicleFaultLevel.SuspectedBlocked);
+                expected = VehicleFaultBlockCriterion.SuspectedReason;
+                break;
+            case "fault-isolated":
+                await harness.RecordFaultAsync(candidate.Vehicle, VehicleFaultLevel.ConfirmedIsolated);
+                expected = VehicleFaultBlockCriterion.IsolatedReason;
                 break;
             case "has-next-business-target":
                 await harness.LeaveJourneyWithoutClaimAsync(candidate.Vehicle);
@@ -202,8 +219,8 @@ public sealed class IdleReturnCommitmentTests
         Assert.Equal(DispatchAdmissionChain.Eligible, VehicleDynamicFactsCriterion.Evaluate(atLine.Facts, harness.Options));
         // 线跟着配置走，不是另一个写死的数：批次 9 只换这个端口的实现。
         TransitionalMandatoryChargeLine line = new(Options.Create(new JourneyRuntimeOptions { MinimumBatteryPercent = 55 }));
-        Assert.True(line.IsBelowLine(54));
-        Assert.False(line.IsBelowLine(55));
+        Assert.True(await line.IsBelowLineAsync(VehicleA, 54, Token));
+        Assert.False(await line.IsBelowLineAsync(VehicleA, 55, Token));
     }
 
     [Fact]
@@ -226,6 +243,8 @@ public sealed class IdleReturnCommitmentTests
 
         IReadOnlyList<IdleReturnVerdict> verdicts =
             await harness.EvaluateAsync(harness.Candidate(VehicleA), harness.Candidate(VehicleB));
+        // 先把共享上下文里可能暂存的东西落库再比：只比库，会漏掉「暂存了、等轮次后面那次保存替它写下去」的写。
+        await harness.Context.SaveChangesAsync(Token);
 
         Assert.All(verdicts, verdict => Assert.Equal(IdleReturnReasons.Disabled, verdict.Reason));
         Dictionary<string, string[]> after = await harness.DumpEveryTableAsync();
@@ -298,6 +317,121 @@ public sealed class IdleReturnCommitmentTests
                 .Where(entry => entry.EventId.Id is 2198 or 2199)
                 .Select(entry => (entry.EventId.Id, entry.EventId.Id == 2199 ? entry.Message.Split(": ")[1].Split('.')[0] : "")));
         Assert.Equal(IdleReturnReasons.Committed, harness.VerdictBoard.Reasons["AGV-" + VehicleA]);
+    }
+
+    /// <summary>
+    /// 卸完货、没有下一单、还占着固定公共站（REQ-0204）的车正该离开那个单车位的站去等待点：持公共站不拒（审查 S4）。
+    /// </summary>
+    [Fact]
+    public async Task AVehicleStillHoldingAFixedTaskStationIsStillSentToAWaitingPoint()
+    {
+        await using Harness harness = await Harness.CreateAsync();
+        await harness.HoldStationAsync(VehicleA, 210, StationExclusivityStates.Occupied, StationExclusivityKinds.FixedTaskStation);
+
+        IdleReturnVerdict verdict = Assert.Single(await harness.EvaluateAsync(harness.Candidate(VehicleA)));
+
+        Assert.Equal((IdleReturnReasons.Committed, (int?)214), (verdict.Reason, verdict.StationId));
+    }
+
+    /// <summary>
+    /// 过渡期的启动护栏（审查 S2）：批次8-19 合入之前，单独打开 <c>IdleReturn:Enabled</c> 拒绝启动；只有合成 L2 同时设
+    /// <c>AllowWithoutExecution</c>。宿主注册经 <c>ValidateOnStart</c>，这里按宿主的注册取选项，取即校验。
+    /// </summary>
+    [Theory]
+    [InlineData(null, null, true)]
+    [InlineData("true", null, false)]
+    [InlineData("true", "true", true)]
+    [InlineData("false", "true", true)]
+    public void TurningIdleReturnOnBeforeItsExecutionExistsRefusesToStartUnlessTheRigSaysSo(
+        string? enabled, string? allowWithoutExecution, bool starts)
+    {
+        Dictionary<string, string?> settings = new(StringComparer.Ordinal);
+        if (enabled is not null)
+        {
+            settings["IdleReturn:Enabled"] = enabled;
+        }
+        if (allowWithoutExecution is not null)
+        {
+            settings["IdleReturn:AllowWithoutExecutionForL2Only"] = allowWithoutExecution;
+        }
+        ServiceCollection services = new();
+        services.AddIdleReturn(new ConfigurationBuilder().AddInMemoryCollection(settings).Build());
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        if (starts)
+        {
+            _ = provider.GetRequiredService<IOptions<IdleReturnOptions>>().Value;
+            return;
+        }
+        OptionsValidationException refusal = Assert.Throws<OptionsValidationException>(
+            () => provider.GetRequiredService<IOptions<IdleReturnOptions>>().Value);
+        Assert.Contains(IdleReturnOptionsValidator.RefusalMessage, refusal.Failures);
+        Assert.Contains("control-server#390", IdleReturnOptionsValidator.RefusalMessage, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 空闲返回自己的强制充电线比搬运门槛低时，线上方、门槛下方的车照样不承诺（「宁可不动」）。今天两者是同一个值，这条路径只有
+    /// 批次 9 换了线之后才走得到，所以用一条更低的替身线钉住它。
+    /// </summary>
+    [Fact]
+    public async Task AVehicleAboveItsIdleReturnLineButBelowTheTransportThresholdIsStillRefused()
+    {
+        await using Harness harness = await Harness.CreateAsync();
+        harness.ChargeLine = new FixedChargeLine(10);
+
+        IdleReturnVerdict verdict = Assert.Single(
+            await harness.EvaluateAsync(harness.Candidate(VehicleA, battery: harness.Options.MinimumBatteryPercent - 1)));
+
+        Assert.Equal("BATTERY_POLICY_NOT_SATISFIED", verdict.Reason);
+        Assert.Empty(await harness.Db.DumpAsyncOf("VehiclePurposeClaims"));
+    }
+
+    /// <summary>只有合成 L2 那种打开，启动时打一条 Warning（事件 2201）；关着或正常配置什么也不说。</summary>
+    [Theory]
+    [InlineData(true, true, true)]
+    [InlineData(false, true, false)]
+    [InlineData(false, false, false)]
+    public async Task TheL2OnlyWayOfTurningItOnWarnsAtStartup(bool enabled, bool l2Only, bool warns)
+    {
+        EventRecordingLogger<IdleReturnStartupWarning> log = new();
+        IdleReturnStartupWarning warning = new(
+            Options.Create(new IdleReturnOptions { Enabled = enabled, AllowWithoutExecutionForL2Only = l2Only }), log);
+
+        await warning.StartAsync(Token);
+
+        Assert.Equal(warns ? [2201] : [], log.Entries.Select(entry => entry.EventId.Id));
+        if (warns)
+        {
+            Assert.Contains("control-server#390", log.Entries.Single().Message, StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>
+    /// 只给 L2 的确认键不得出现在现场配置与安装脚本里（审查 S2）：扫仓库里所有 <c>appsettings*.json</c> 与 <c>scripts/</c> 下
+    /// <c>scripts/l2/</c> 以外的文件。L2 编排器里必须有它，否则这条扫描扫的是一个不存在的名字。
+    /// </summary>
+    [Fact]
+    public void TheL2OnlyKeyAppearsInNoSiteConfigurationOrInstallScript()
+    {
+        const string Key = nameof(IdleReturnOptions.AllowWithoutExecutionForL2Only);
+        string root = RepositoryRoot();
+        string l2 = Path.Combine(root, "scripts", "l2") + Path.DirectorySeparatorChar;
+        string[] configurations = Directory.GetFiles(root, "appsettings*.json", SearchOption.AllDirectories)
+            .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal) &&
+                           !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            .ToArray();
+        string[] scripts = Directory.GetFiles(Path.Combine(root, "scripts"), "*", SearchOption.AllDirectories)
+            .Where(path => !path.StartsWith(l2, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        Assert.NotEmpty(configurations);
+        Assert.NotEmpty(scripts);
+
+        Assert.Equal(
+            [],
+            configurations.Concat(scripts)
+                .Where(path => File.ReadAllText(path).Contains(Key, StringComparison.Ordinal))
+                .Select(path => Path.GetRelativePath(root, path)));
+        Assert.Contains(Key, File.ReadAllText(Path.Combine(root, "scripts", "l2", "Invoke-L2Scenario.ps1")), StringComparison.Ordinal);
     }
 
     // ---- 选点：逐点核验，候选不等于拿到 ---------------------------------------------------------------------------
@@ -421,6 +555,10 @@ public sealed class IdleReturnCommitmentTests
         Assert.Equal([VehiclePurposeAcquisitionOutcome.Acquired, VehiclePurposeAcquisitionOutcome.StationHeld], outcomes);
         Assert.Null(await second.ReadClaimAsync(VehicleB, Token));
         Assert.Empty(await second.ListClaimHistoryAsync(VehicleB, Token));
+        Assert.DoesNotContain(
+            await harness.Db.DumpAsyncOf("StationExclusivityRecords"),
+            row => row.Contains(VehicleB, StringComparison.Ordinal));
+        Assert.Single(await harness.Db.DumpAsyncOf("StationExclusivityRecords"));
         StationExclusivity holder = Assert.IsType<StationExclusivity>(
             await new StationExclusivityStore(harness.Db.NewContext()).ReadAsync(Map, 214, Token));
         Assert.Equal(VehicleA, holder.VehicleKey);
@@ -475,6 +613,27 @@ public sealed class IdleReturnCommitmentTests
         Assert.DoesNotContain(await harness.Db.DumpAsyncOf("StationExclusivityRecords"), row => row.Contains(VehicleA, StringComparison.Ordinal));
         Assert.Empty(await harness.Db.DumpAsyncOf("OrderIntents"));
         Assert.Contains(harness.Log.Entries, entry => entry.EventId.Id == 2200);
+    }
+
+    /// <summary>
+    /// 评估里的读失败只是那一辆车这一轮不评估（审查 S5）：外来订单那张表读不出来，评估照样返回、不向外抛，
+    /// 派车轮后面的轮次结局记录因此照常；什么也没写。
+    /// </summary>
+    [Fact]
+    public async Task AReadThatFailsInsideTheEvaluationFailsThatVehicleNotTheRound()
+    {
+        FailOnReadFrom failure = new("ForeignRiotOrders");
+        await using Harness harness = await Harness.CreateAsync(interceptor: failure);
+
+        IReadOnlyList<IdleReturnVerdict> verdicts =
+            await harness.EvaluateAsync(harness.Candidate(VehicleA), harness.Candidate(VehicleB));
+
+        Assert.True(failure.Fired, "The injected read failure never fired, so this proves nothing.");
+        Assert.Equal(
+            [IdleReturnReasons.EvaluationFailed, IdleReturnReasons.EvaluationFailed],
+            verdicts.Select(verdict => verdict.Reason));
+        Assert.Empty(await harness.Db.DumpAsyncOf("VehiclePurposeClaims"));
+        Assert.Empty(await harness.Db.DumpAsyncOf("StationExclusivities"));
     }
 
     // ---- 承诺之后不被抢 ------------------------------------------------------------------------------------------
@@ -560,6 +719,9 @@ public sealed class IdleReturnCommitmentTests
 
         public EventRecordingLogger<IdleReturnEvaluator> Log { get; } = new();
 
+        /// <summary>替换强制充电线；为空即过渡实现。</summary>
+        public IMandatoryChargeLine? ChargeLine { get; set; }
+
         /// <summary>跨评估保留，像宿主里的单例。</summary>
         public IdleReturnVerdictBoard VerdictBoard { get; } = new();
 
@@ -586,6 +748,7 @@ public sealed class IdleReturnCommitmentTests
                 Context,
                 new VehiclePurposeLedgerStore(Context),
                 new StationExclusivityStore(Context),
+                new VehicleFaultStore(Context),
                 new WaitingPointRegistry(Context, JourneyRuntimeWorkerTestKit.CreateGovernedPublisher(Context)),
                 TaskTypeStationRuntimeSeed.Access(Context).Bindings,
                 new RouteGraphAccess(
@@ -599,7 +762,7 @@ public sealed class IdleReturnCommitmentTests
                         RuntimeStateMaxAge = TimeSpan.FromHours(1),
                     }),
                     new FixedClock(Now)),
-                new TransitionalMandatoryChargeLine(Microsoft.Extensions.Options.Options.Create(Options)),
+                ChargeLine ?? new TransitionalMandatoryChargeLine(Microsoft.Extensions.Options.Options.Create(Options)),
                 Microsoft.Extensions.Options.Options.Create(new IdleReturnOptions { Enabled = Enabled }),
                 Microsoft.Extensions.Options.Options.Create(Options),
                 VerdictBoard,
@@ -680,13 +843,15 @@ public sealed class IdleReturnCommitmentTests
                     new VehiclePurposeClaim(vehicleKey, VehiclePurposes.Transport, $"journey:D-{vehicleKey}", Now), null, Token));
         }
 
-        public async Task HoldStationAsync(string vehicleKey, int stationId, string state)
+        public async Task HoldStationAsync(
+            string vehicleKey, int stationId, string state, string kind = StationExclusivityKinds.WaitingPoint)
         {
             await using ControlServerDbContext context = Db.NewContext();
             Assert.Equal(
                 StationExclusivityAcquisitionOutcome.Acquired,
                 await new StationExclusivityStore(context).TryAcquireAsync(
-                    new StationExclusivityRequest(Map, stationId, StationExclusivityKinds.WaitingPoint, state, RegistrationVersion),
+                    new StationExclusivityRequest(
+                        Map, stationId, kind, state, kind == StationExclusivityKinds.WaitingPoint ? RegistrationVersion : null),
                     vehicleKey,
                     IdleReturnIdentity.JourneyIdFor(vehicleKey, Now.AddHours(-1)),
                     Now.AddHours(-1),
@@ -713,6 +878,13 @@ public sealed class IdleReturnCommitmentTests
                 dump[table] = await Db.DumpAsyncOf(table);
             }
             return dump;
+        }
+
+        public async Task RecordFaultAsync(FleetVehicle vehicle, VehicleFaultLevel level)
+        {
+            await using ControlServerDbContext context = Db.NewContext();
+            await new VehicleFaultStore(context).RecordLevelAsync(
+                vehicle.AgvId, level, "COMMS_LOST", false, Now.AddMinutes(-1), Token);
         }
 
         /// <summary>一趟没结束的旅程、却没有用途占有：只剩「有下一业务目标」那一格挡它。</summary>
@@ -777,6 +949,32 @@ public sealed class IdleReturnCommitmentTests
     private sealed class FixedClock(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    private sealed class FixedChargeLine(int percent) : IMandatoryChargeLine
+    {
+        public ValueTask<bool> IsBelowLineAsync(string vehicleKey, int batteryPercent, CancellationToken cancellationToken) =>
+            ValueTask.FromResult(batteryPercent < percent);
+
+        public string Describe(string vehicleKey) => percent.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>读这张表时失败。</summary>
+    private sealed class FailOnReadFrom(string table) : DbCommandInterceptor
+    {
+        public bool Fired { get; private set; }
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (command.CommandText.Contains($"FROM \"{table}\"", StringComparison.Ordinal))
+            {
+                Fired = true;
+                throw new InvalidOperationException($"Injected failure while reading {table}.");
+            }
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
     }
 
     /// <summary>写到这张表、而且是这辆车的那一行时失败；别的车照常。</summary>

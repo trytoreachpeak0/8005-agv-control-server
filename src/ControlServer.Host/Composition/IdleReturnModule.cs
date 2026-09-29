@@ -1,5 +1,6 @@
 using ControlServer.Application;
 using ControlServer.Host.Runtime.IdleReturn;
+using Microsoft.Extensions.Options;
 
 namespace ControlServer.Host.Composition;
 
@@ -17,7 +18,12 @@ internal static class IdleReturnModule
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        services.AddOptions<IdleReturnOptions>().Bind(configuration.GetSection(IdleReturnOptions.SectionName));
+        services.AddOptions<IdleReturnOptions>()
+            .Bind(configuration.GetSection(IdleReturnOptions.SectionName))
+            .ValidateOnStart();
+        // 过渡期护栏：批次8-19 合入前打开即拒绝启动（审查 S2），由那张票删掉。
+        services.AddSingleton<IValidateOptions<IdleReturnOptions>, IdleReturnOptionsValidator>();
+        services.AddHostedService<IdleReturnStartupWarning>();
         // 批次 9 的阈值票只换这一行的实现。
         services.AddSingleton<IMandatoryChargeLine, TransitionalMandatoryChargeLine>();
         // 单例：结论变了才记日志，要跨轮次（每一轮是一个新的作用域）记得上一轮的结论。

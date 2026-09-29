@@ -61,6 +61,7 @@ public sealed class IdleReturnEvaluator(
     ControlServerDbContext dbContext,
     IVehiclePurposeLedger ledger,
     IStationExclusivityStore stations,
+    IVehicleFaultStore faults,
     IWaitingPointRegistry registry,
     ITaskTypeStationBindingStore bindings,
     RouteGraphAccess routeGraph,
@@ -72,6 +73,12 @@ public sealed class IdleReturnEvaluator(
     ILogger<IdleReturnEvaluator> logger)
 {
     /// <summary>「结果未知」的本服务端订单意图状态：建单发出过、而服务端还没核实它的结局。</summary>
+    /// <summary>
+    /// 共用判定里的两个电量码：先让给空闲返回自己的电量检查（读不到或充电中、强制充电线），好答空闲返回的码；那两格都过了而共用判定
+    /// 仍是它们之一，照样拒。任何一条路径都不会因为让了一步而多放行一辆车。
+    /// </summary>
+    private static readonly string[] DeferredBatteryCodes = ["BATTERY_FACT_UNKNOWN", "BATTERY_POLICY_NOT_SATISFIED"];
+
     internal static readonly string[] UnknownOutcomeIntentStatuses =
         ["CREATE_ATTEMPTED", "RESULT_UNKNOWN", "TERMINAL_RECONCILIATION_REQUIRED"];
 
@@ -119,14 +126,16 @@ public sealed class IdleReturnEvaluator(
             return [.. candidates.Select(candidate => Refuse(candidate.Vehicle, IdleReturnReasons.Disabled, ""))];
         }
 
-        HashSet<string> heldByForeignOrder = await ForeignRunningOrders
-            .HeldAgvIdsAsync(dbContext, cancellationToken).ConfigureAwait(false);
+        // 读在每辆车的 try 里（审查 S5）：它抛了只是这一辆这一轮不评估，不让空闲返回的故障跳过轮次结局的记录。
+        HashSet<string>? heldByForeignOrder = null;
         RoundReads? reads = null;
         List<IdleReturnVerdict> verdicts = [];
         foreach (IdleReturnCandidate candidate in candidates)
         {
             try
             {
+                heldByForeignOrder ??= await ForeignRunningOrders
+                    .HeldAgvIdsAsync(dbContext, cancellationToken).ConfigureAwait(false);
                 string? refusal = await QualifyAsync(candidate, heldByForeignOrder, cancellationToken).ConfigureAwait(false);
                 if (refusal is not null)
                 {
@@ -172,7 +181,10 @@ public sealed class IdleReturnEvaluator(
             return IdleReturnReasons.VehicleHasPurpose;
         }
 
-        if ((await stations.ListByVehicleAsync(vehicle.VehicleKey, cancellationToken).ConfigureAwait(false)).Count > 0)
+        // 停在上一次返回的等待点或充电桩上（等离点证据）：它已经在一个等待之处了。持有的是固定公共站（REQ-0204）时不拒——
+        // 卸完货、没有下一单的车正该离开那个单车位的公共站去等待点（审查 S4）。充电桩的口径由 B9-07 定，今天保持拒。
+        if ((await stations.ListByVehicleAsync(vehicle.VehicleKey, cancellationToken).ConfigureAwait(false))
+            .Any(held => held.StationKind is StationExclusivityKinds.WaitingPoint or StationExclusivityKinds.Charger))
         {
             return IdleReturnReasons.VehicleHoldsStation;
         }
@@ -204,6 +216,17 @@ public sealed class IdleReturnEvaluator(
             return IdleReturnReasons.OwnOrderResultUnknown;
         }
 
+        // 这辆车此刻能不能承接新用途：与派车共用的车辆侧判定（故障阻断，然后动态事实——安全、在线、绑定、IDLE、地图、新鲜、
+        // 停止、RIoT 上没有它的单）。故障那一格曾经只在派车链里，空闲返回漏了它（审查 M1）。新鲜度按此刻算，不按这一轮开头读事实的
+        // 时刻：承诺发生在任务循环之后。放在电量线之前：一辆故障车先答故障。
+        string readiness = await VehicleNewPurposeReadiness.JudgeAsync(
+                faults, candidate.Facts with { ObservedAt = timeProvider.GetUtcNow() }, _runtime, cancellationToken)
+            .ConfigureAwait(false);
+        if (readiness != DispatchAdmissionChain.Eligible && !DeferredBatteryCodes.Contains(readiness))
+        {
+            return readiness;
+        }
+
         RiotVehicleObservation observed = candidate.Facts.Vehicle;
         if (observed.BatteryPercent is not int battery ||
             string.IsNullOrWhiteSpace(observed.BatteryState) ||
@@ -212,18 +235,15 @@ public sealed class IdleReturnEvaluator(
             return IdleReturnReasons.BatteryUnknownOrCharging;
         }
 
-        if (chargeLine.IsBelowLine(battery))
+        if (await chargeLine.IsBelowLineAsync(vehicle.VehicleKey, battery, cancellationToken).ConfigureAwait(false))
         {
             return IdleReturnReasons.BelowMandatoryChargeLine;
         }
 
-        // 这辆车现在能不能动：与派车同一个判定（安全、在线、绑定、IDLE、地图、新鲜、停止、RIoT 上没有它的订单）。
-        // 新鲜度按此刻算，不按这一轮开头读事实的时刻：承诺发生在任务循环之后。
-        string dynamic = VehicleDynamicFactsCriterion.Evaluate(
-            candidate.Facts with { ObservedAt = timeProvider.GetUtcNow() }, _runtime);
-        if (dynamic != DispatchAdmissionChain.Eligible)
+        // 让出去的电量码在这里收回：今天两条线是同一个值，走不到这里；批次 9 之后若出现「线上方、门槛下方」的车，仍拒——宁可不动。
+        if (DeferredBatteryCodes.Contains(readiness))
         {
-            return dynamic;
+            return readiness;
         }
 
         return observed.CurrentStationId is null ? IdleReturnReasons.VehiclePositionUnknown : null;
@@ -292,7 +312,8 @@ public sealed class IdleReturnEvaluator(
             return Refuse(vehicle, IdleReturnReasons.CommitmentRefused, $"Station {chosen.StationId}: {outcome}.");
         }
 
-        LogCommitted(logger, vehicle.AgvId, chosen.StationId, version, journeyId, chosen.CostMm, chargeLine.Describe(), null);
+        LogCommitted(
+            logger, vehicle.AgvId, chosen.StationId, version, journeyId, chosen.CostMm, chargeLine.Describe(vehicle.VehicleKey), null);
         verdictBoard.Record(vehicle.AgvId, IdleReturnReasons.Committed, journeyId);
         return new IdleReturnVerdict(
             vehicle.AgvId, vehicle.VehicleKey, IdleReturnReasons.Committed, chosen.StationId, version, journeyId);

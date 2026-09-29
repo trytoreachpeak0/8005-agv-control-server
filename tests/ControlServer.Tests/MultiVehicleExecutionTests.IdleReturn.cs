@@ -93,4 +93,64 @@ public sealed partial class MultiVehicleExecutionTests
             await fixture.Context.Set<StationExclusivityRow>().AsNoTracking().ToArrayAsync(TestContext.Current.CancellationToken));
         Assert.Equal((300, committed.JourneyId), (station.StationId, station.JourneyId));
     }
+
+    /// <summary>
+    /// 在途车不交给空闲返回评估：它这一轮的结论停在上一轮（接单那一轮的「本轮被选中」），不会变成任何新的结论。
+    /// </summary>
+    /// <remarks>
+    /// 只断言「没有承诺」不够：在途车持有搬运占有，评估了也只会答「有用途」，派车轮把在途车交过去照样全绿（审查实测 MI）。
+    /// 所以断言它根本没被评估：评估器每评估一次都会记下结论，结论停在上一轮就是没被评估。
+    /// </remarks>
+    [Fact]
+    public async Task AVehicleUnderWayIsNotHandedToTheIdleReturnEvaluation()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(
+            configure: options => options.Fleet = options.Fleet[..1], withRouteGraph: true);
+        await fixture.AllowEnRouteAppendAsync(1_000_000);
+        await fixture.EnableIdleReturnAsync(FleetWaitingPoint);
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
+
+        await fixture.RunRoundAsync();
+        Assert.Single(await fixture.Context.JourneyRuntimes.AsNoTracking().ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(
+            IdleReturnReasons.NotLeftOverByTransportThisRound, fixture.IdleReturnBoard.Reasons[FleetFixture.AgvIds[0]]);
+
+        // 下一轮它在途（有旅程、可追加），参加的是在途那一路；目录里没有它能接的新需求，所以它这一轮没被选中。交过去的话它会答
+        // 「有用途」，结论就变了。给一条它能追加的新需求则测不到：它会被选中，答的仍是「本轮被选中」（第一版这样写，变异 R8 活了下来）。
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+        Assert.Contains(
+            fixture.RoundOutcomes.Outcomes.Last().CompletedVehicles,
+            vehicle => vehicle.AgvId == FleetFixture.AgvIds[0] &&
+                       vehicle.Verdicts.All(verdict => verdict.Evaluation.Vehicle.Plan is not null));
+
+        Assert.Equal(
+            IdleReturnReasons.NotLeftOverByTransportThisRound, fixture.IdleReturnBoard.Reasons[FleetFixture.AgvIds[0]]);
+    }
+
+    /// <summary>
+    /// 故障车同时持有空闲返回承诺时，积压显示故障原因：故障判据（15）排在承诺判据（16）之前是有意的，故障是更要人去看的那一个。
+    /// </summary>
+    [Fact]
+    public async Task AFaultedVehicleHoldingAnIdleReturnShowsTheFaultOnTheBacklog()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(
+            configure: options => options.Fleet = options.Fleet[..1], withRouteGraph: true);
+        await fixture.EnableIdleReturnAsync(FleetWaitingPoint);
+        fixture.Catalog.Set([]);
+        await fixture.RunRoundAsync();
+        Assert.Equal(
+            VehiclePurposes.IdleReturn,
+            (await fixture.Context.Set<VehiclePurposeClaimRow>().AsNoTracking().SingleAsync(TestContext.Current.CancellationToken)).Purpose);
+
+        await new VehicleFaultStore(fixture.Context).RecordLevelAsync(
+            FleetFixture.AgvIds[0], ControlServer.Domain.VehicleFaultLevel.SuspectedBlocked, "COMMS_LOST", false,
+            fixture.Clock.GetUtcNow(), TestContext.Current.CancellationToken);
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+
+        JourneyBacklogRow backlog = Assert.Single(
+            await fixture.Context.JourneyBacklog.AsNoTracking().ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(ControlServer.Host.Runtime.Dispatch.Criteria.VehicleFaultBlockCriterion.SuspectedReason, backlog.ReasonCode);
+        Assert.Empty(await fixture.Context.JourneyRuntimes.AsNoTracking().ToArrayAsync(TestContext.Current.CancellationToken));
+    }
 }
