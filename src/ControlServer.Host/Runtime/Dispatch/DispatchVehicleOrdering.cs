@@ -153,6 +153,8 @@ public static class DispatchVehicleOrdering
     /// <summary>每一层，按被问到的顺序。</summary>
     public static IReadOnlyList<IDispatchVehicleComparisonLayer> Layers() =>
     [
+        // REQ-0204（批次8-20，control-server#391）：取货起点是公共站点时，已在点的车先取；为什么在成本层之前见层自己的注释。
+        new FixedOriginStationPresenceLayer(),
         new PricedVehicleBeforeUnpricedLayer(),
         new MarginalTripCostLayer(),
         new DispatchZoneVehiclePreferenceLayer(),

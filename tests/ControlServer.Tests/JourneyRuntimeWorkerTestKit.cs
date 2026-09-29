@@ -1159,7 +1159,8 @@ internal static class JourneyRuntimeWorkerTestKit
                 onboardFacts,
                 options,
                 Clock,
-                EngineLog);
+                EngineLog,
+                IdleReturnTestKit.Create(Context, Options, Clock));
             return new JourneyRuntimeEngine(
                 Context,
                 Riot,

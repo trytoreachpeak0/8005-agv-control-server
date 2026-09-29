@@ -128,7 +128,9 @@ public sealed class JourneyPlanBuilder(JourneyRuntimeOptions options)
             candidate.Route.FixedStation.RuleVersion,
             candidate.Route.FixedStation.BindingSetVersion,
             candidate.CatalogRevision,
-            redispatchGeneration is null ? null : key);
+            redispatchGeneration is null ? null : key,
+            // REQ-0204（批次8-20，control-server#391）：这条需求的公共站点是哪一个，受理与追加据此取得站点独占。
+            candidate.Route.FixedStation.Station?.StationId);
     }
 
     /// <summary>The first move order, which is created with the journey.</summary>

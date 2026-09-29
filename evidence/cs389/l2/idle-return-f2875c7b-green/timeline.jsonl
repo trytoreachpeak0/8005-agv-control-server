@@ -1,0 +1,42 @@
+{"at":"2026-09-29T15:18:28.2535532+00:00","note":"L2 run 20260929T151828049Z starting for scenario 'idle-return-two-vehicles-contend-one-waiting-point'."}
+{"at":"2026-09-29T15:18:28.4494432+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-09-29T15:18:28.4581818+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-29T15:19:01.0212379+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-29T15:19:01.7171582+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-29T15:19:01.8844778+00:00","note":"Fleet of 2: AGV-L2-001/BROKERX-L2-0001, AGV-L2-002/BROKERX-L2-0002"}
+{"at":"2026-09-29T15:19:01.9166321+00:00","note":"Route graph engine enabled for map 25."}
+{"at":"2026-09-29T15:19:01.9195038+00:00","note":"Idle return enabled."}
+{"at":"2026-09-29T15:19:01.9870955+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-09-29T15:19:16.9520065+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-29T15:19:22.3107216+00:00","note":"FieldOps: import-waiting-points --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260929T151828049Z\\controlserver.db --input C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260929T151828049Z\\waiting-points.csv --catalog C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260929T151828049Z\\waiting-points-catalog-25.json --map 25 --fleet BROKERX-L2-0001;BROKERX-L2-0002"}
+{"at":"2026-09-29T15:19:28.3810880+00:00","criterion":"waiting-points-imported","value":"1","detail":{"stations":[214,215],"coverage":{"mapId":25,"vehicleCount":2,"enabledOnMap":2,"assignable":2,"sufficient":true,"shortfall":0,"unassigned":[],"onOtherMaps":{},"warning":null}}}
+{"at":"2026-09-29T15:19:28.4023933+00:00","note":"Waiting points registered on map 25 as version 1: 214=等待点1, 215=等待点2"}
+{"at":"2026-09-29T15:19:30.5413529+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-29T15:19:35.4479334+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-29T15:19:35.9154795+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-29T15:19:38.0371646+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-29T15:19:38.8143801+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-29T15:19:41.7072640+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-29T15:19:41.8370196+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260929T151828049Z\\controlserver.db"}
+{"at":"2026-09-29T15:19:48.7678851+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"7e69654f5e8941bca75280b2d7fbbbbf","version":1,"slotCount":8}}}
+{"at":"2026-09-29T15:19:48.7785964+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260929T151828049Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-29T15:19:54.7583324+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"7e69654f5e8941bca75280b2d7fbbbbf","boundSlots":8,"version":1}}}
+{"at":"2026-09-29T15:19:54.7944225+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260929T151828049Z\\controlserver.db --agv AGV-L2-002"}
+{"at":"2026-09-29T15:19:59.7788170+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-002","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-002","slotModelVersionId":"7e69654f5e8941bca75280b2d7fbbbbf","boundSlots":8,"version":1}}}
+{"at":"2026-09-29T15:20:00.0586964+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-29T15:20:00.0644878+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260929T151828049Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs389-8005-agv-control-server\\evidence\\l2\\cs389-idle-return-f2875c7b-green\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-29T15:20:05.5895468+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs389-8005-agv-control-server\\evidence\\l2\\cs389-idle-return-f2875c7b-green\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"e39eb4a59f6047c3aa2108c7ad1d82cf","importedAt":"2026-09-29T23:20:00.677191+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-29T15:20:05.5990699+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-09-29T15:20:05.6098373+00:00","note":"Environment is up; entering scenario 'idle-return-two-vehicles-contend-one-waiting-point'."}
+{"at":"2026-09-29T15:20:05.8812546+00:00","criterion":"route-graph-ready","value":"True"}
+{"at":"2026-09-29T15:20:05.8965595+00:00","criterion":"first-commitment","value":"1"}
+{"at":"2026-09-29T15:20:05.9192643+00:00","criterion":"idle-return-claims-after-window","value":"1"}
+{"at":"2026-09-29T15:20:20.9572283+00:00","note":"Not reached: Timed out after 15s waiting for: a second idle return commitment appears (it must not). Last observed: 1"}
+{"at":"2026-09-29T15:20:20.9703565+00:00","criterion":"idle-return-commitment","value":"BROKERX-L2-0001=idle-return:BROKERX-L2-0001:20260929T151939904Z","detail":{"stations":[{"MapId":25,"StationId":214,"StationKind":"WAITING_POINT","State":"RESERVED","VehicleKey":"BROKERX-L2-0001","JourneyId":"idle-return:BROKERX-L2-0001:20260929T151939904Z","WaitingPointVersion":1}],"claims":[{"VehicleKey":"BROKERX-L2-0001","JourneyId":"idle-return:BROKERX-L2-0001:20260929T151939904Z","ClaimedAt":"2026-09-29 15:19:39.904853+00:00"}]}}
+{"at":"2026-09-29T15:20:21.0230729+00:00","note":"Publishing demand 8fcfd8d5-5db1-4c2e-bf8e-1780978a5f5d after the commitment."}
+{"at":"2026-09-29T15:20:21.1034518+00:00","criterion":"demand-taken-by","value":"(null)"}
+{"at":"2026-09-29T15:20:24.1579600+00:00","criterion":"demand-taken-by","value":"AGV-L2-002"}
+{"at":"2026-09-29T15:20:24.1810951+00:00","criterion":"commitment-after-transport","value":"IDLE_RETURN idle-return:BROKERX-L2-0001:20260929T151939904Z | 214 idle-return:BROKERX-L2-0001:20260929T151939904Z"}
+{"at":"2026-09-29T15:20:34.2141587+00:00","note":"Not reached: Timed out after 10s waiting for: the committed vehicle lost or changed its idle return (it must not). Last observed: \"IDLE_RETURN idle-return:BROKERX-L2-0001:20260929T151939904Z | 214 idle-return:BROKERX-L2-0001:20260929T151939904Z\""}
+{"at":"2026-09-29T15:20:34.2234266+00:00","note":"两辆空闲车抢一个等待点：一辆承诺、一辆什么也没拿到；之后的搬运派给了没承诺的那辆，承诺原样留着。"}
+{"at":"2026-09-29T15:20:35.0544835+00:00","note":"L2 port block lock released."}
