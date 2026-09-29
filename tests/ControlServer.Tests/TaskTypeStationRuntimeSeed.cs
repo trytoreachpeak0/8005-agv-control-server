@@ -4,6 +4,8 @@ using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.TaskTypeStations;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ControlServer.Tests;
 
@@ -59,6 +61,29 @@ internal static class TaskTypeStationRuntimeSeed
             governance,
             deployment,
             clock);
+    }
+
+    /// <summary>The Map level rename detection the engine runs at the start of each round (control-server#186).</summary>
+    public static MapRenameHoldConvergence MapRenameHolds(
+        ControlServerDbContext context,
+        IRiotMapNameCatalog mapNames,
+        TimeProvider clock,
+        Func<IMapNameBaselineStore, IMapNameBaselineStore>? wrapBaselines = null,
+        ILogger<MapRenameHoldConvergence>? logger = null)
+    {
+        GovernanceDeploymentIdentity deployment = new("deployment:8005-controlserver@test");
+        GovernanceStore governance = new(context, deployment, AuditRetentionPolicy.Default);
+        IMapNameBaselineStore baselines = new MapNameBaselineStore(context, governance);
+        return new MapRenameHoldConvergence(
+            context,
+            mapNames,
+            wrapBaselines?.Invoke(baselines) ?? baselines,
+            new TaskTypeStationBindingStore(context, new GovernedConfigurationPublisher(governance, governance)),
+            new TaskTypeStationHoldStore(context),
+            governance,
+            deployment,
+            clock,
+            logger ?? NullLogger<MapRenameHoldConvergence>.Instance);
     }
 
     /// <summary>The batch 6 stores over one context, the way the host's scope builds them.</summary>

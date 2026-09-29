@@ -17,6 +17,7 @@ public static class RiotDataPlane
         ArgumentNullException.ThrowIfNull(app);
         CommandEngine<FakeRiotState> engine = app.Services.GetRequiredService<CommandEngine<FakeRiotState>>();
         MapStationReadCounter mapStationReads = app.Services.GetRequiredService<MapStationReadCounter>();
+        MapListReadCounter mapListReads = app.Services.GetRequiredService<MapListReadCounter>();
         AbsentOrderReadFaults absentOrderReadFaults = app.Services.GetRequiredService<AbsentOrderReadFaults>();
 
         app.MapGet("/api/task/vehicles/getVehicleInfoByDeviceKey", async (
@@ -80,6 +81,34 @@ public static class RiotDataPlane
                     integrationLevel = vehicle.IntegrationLevel
                 }
             });
+        });
+
+        // control-server#186: the Map list without any mapJson, in the shape the real RIoT answered on 2026-09-28
+        // (evidence/field/2026-09-28-cs186-map-list-endpoint-check): id and name, plus the metadata it carries.
+        app.MapGet("/api/imap/v1/mapInfo/getALLMapInfoExcludeMapJson", async (CancellationToken cancellationToken) =>
+        {
+            // Counted before any fault, like the station reads: a scenario proving "the list could not be read and nothing
+            // was held" must first prove the list was asked for, and failed, in that window.
+            mapListReads.Read();
+            IResult? fault = await ApplyFaultAsync(engine, cancellationToken).ConfigureAwait(false);
+            if (fault is not null) return fault;
+            FakeRiotState state = engine.Snapshot().State;
+            if (state.MapListServerError)
+            {
+                mapListReads.Failed();
+                return Results.Json(new { code = "500", message = "失败" }, statusCode: StatusCodes.Status500InternalServerError);
+            }
+            return Ok(state.MapNamesByMapId.OrderBy(pair => pair.Key).Select(pair => new
+            {
+                id = pair.Key,
+                name = pair.Value,
+                description = (string?)null,
+                floor = 1,
+                mapError = (string?)null,
+                source = "upload",
+                state = "activated",
+                syncState = "synced"
+            }).ToArray());
         });
 
         app.MapGet("/api/imap/v1/mapInfo/stations/{mapId:int}", async (
@@ -338,4 +367,25 @@ public sealed class MapStationReadCounter
     public long Count => Interlocked.Read(ref count);
 
     public void Increment() => Interlocked.Increment(ref count);
+}
+
+/// <summary>
+/// Counts Map list reads and the ones answered 500 (control-server#186). Outside the command engine for the same reason as
+/// <see cref="MapStationReadCounter"/>: a counter that moved the state revision on every poll would make expectedRevision
+/// useless for the commands that carry real changes.
+/// </summary>
+public sealed class MapListReadCounter
+{
+    private long reads;
+    private long serverErrors;
+
+    /// <summary>Every request for the Map list, answered or not (control-server#186).</summary>
+    public long Reads => Interlocked.Read(ref reads);
+
+    /// <summary>The requests <see cref="FakeRiotState.MapListServerError"/> answered with 500.</summary>
+    public long ServerErrors => Interlocked.Read(ref serverErrors);
+
+    public void Read() => Interlocked.Increment(ref reads);
+
+    public void Failed() => Interlocked.Increment(ref serverErrors);
 }

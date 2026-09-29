@@ -25,6 +25,9 @@ internal static class TaskTypeStationModule
         services.AddScoped<IDemandTaskTypeStationFreeze, DemandTaskTypeStationFreezeStore>();
         // control-server#162：每次目录完整确认之后，绑定站点有变化的任务类型收紧为「目录变化」暂停。
         services.AddScoped<CatalogBindingHoldConvergence>();
+        // control-server#186：Map 级改名检测——地图名基线，同一 mapId 下改名即暂停该图生效绑定的全部任务类型。
+        services.AddScoped<IMapNameBaselineStore, MapNameBaselineStore>();
+        services.AddScoped<MapRenameHoldConvergence>();
         return services;
     }
 }

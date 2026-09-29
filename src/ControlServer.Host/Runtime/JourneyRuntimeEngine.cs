@@ -27,6 +27,7 @@ public sealed partial class JourneyRuntimeEngine(
     IFixedTaskStationResolver fixedStationResolver,
     TaskTypeStationAccess taskTypeStations,
     CatalogBindingHoldConvergence catalogBindingHolds,
+    MapRenameHoldConvergence mapRenameHolds,
     MovementDispatchService movementDispatch,
     WireToGateStore store,
     OnboardJourneyPublisher publisher,
@@ -164,6 +165,13 @@ public sealed partial class JourneyRuntimeEngine(
             new EventId(2117, nameof(LogAreaEndAdmissionRevokedTimeout)),
             "Vehicle {AgvId} has waited at AREA machine station {StationId} with demand {DemandId} on board for longer " +
             "than {Timeout} for the station to admit its task type again; the journey is blocked for manual recovery.");
+
+    private static readonly Action<ILogger, Exception?> LogMapRenameObservationFailed = LoggerMessage.Define(
+        LogLevel.Warning,
+        new EventId(2196, nameof(LogMapRenameObservationFailed)),
+        "The Map name check against RIoT's Map list failed; it is not a rename, so nothing is held and no baseline moves. " +
+        "This round goes on, the next one reads the Map list again, and a Map that is really gone is the catalog freshness " +
+        "gate's to block (control-server#186).");
 
     private static readonly Action<ILogger, int, Exception?> LogCatalogBindingHoldConvergenceFailed =
         LoggerMessage.Define<int>(
@@ -307,6 +315,7 @@ public sealed partial class JourneyRuntimeEngine(
 
     private readonly TaskTypeStationAccess _taskTypeStations = taskTypeStations;
 
+
     /// <summary>
     /// Runs the catalog change convergence without letting its failure end the round (control-server#201, review D of
     /// #162). A busy database or a constraint conflict here used to escape <see cref="ExecuteOnceAsync"/>, so the
@@ -390,6 +399,44 @@ public sealed partial class JourneyRuntimeEngine(
         }
     }
 
+    /// <summary>
+    /// Runs the Map level rename check (control-server#186) without letting its failure end the round, the way
+    /// <see cref="ConvergeCatalogBindingHoldsAsync"/> runs the catalog convergence.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A failed Map list read -- a timeout, an error, an answer that is not a list -- is not a rename (the ticket's item 4):
+    /// nothing is held, the baseline stays, and holds a rename already raised stay in force, because the fixed station view
+    /// reads them from the store. Whether the Map can be used at all is the catalog freshness gate's question, driven by the
+    /// station catalog read right after this.
+    /// </para>
+    /// <para>
+    /// First in the round, before the fixed station view reads the holds, so a rename holds its task types in the very
+    /// round that first sees it. What the attempt left tracked is detached; a shutdown cancellation still ends the round.
+    /// </para>
+    /// </remarks>
+    private async Task ObserveMapNamesAsync(CancellationToken cancellationToken)
+    {
+        HashSet<object> trackedBefore = dbContext.ChangeTracker.Entries()
+            .Select(entry => entry.Entity)
+            .ToHashSet(ReferenceEqualityComparer.Instance);
+        try
+        {
+            await mapRenameHolds.ObserveAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            foreach (EntityEntry left in dbContext.ChangeTracker.Entries()
+                .Where(entry => !trackedBefore.Contains(entry.Entity)
+                    || entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+                .ToArray())
+            {
+                left.State = EntityState.Detached;
+            }
+            LogMapRenameObservationFailed(logger, error);
+        }
+    }
+
     private static readonly Action<ILogger, Exception?> LogForeignOrderSupervisionFailed = LoggerMessage.Define(
         LogLevel.Error,
         new EventId(2189, nameof(LogForeignOrderSupervisionFailed)),
@@ -428,6 +475,9 @@ public sealed partial class JourneyRuntimeEngine(
         // vehicle of ours this round holds that vehicle this round. Not behind the Map catalog read: cancelling an order that
         // is not ours does not depend on the Map.
         await SuperviseForeignOrdersAsync(cancellationToken).ConfigureAwait(false);
+        // control-server#186: a Map renamed under the same mapId holds every task type bound on it, before this round's
+        // fixed station view reads the holds. Not behind the station catalog read: the two reads fail independently.
+        await ObserveMapNamesAsync(cancellationToken).ConfigureAwait(false);
 
         RiotMapStationCatalogSnapshot currentMap;
         IFixedTaskStationView fixedStations;

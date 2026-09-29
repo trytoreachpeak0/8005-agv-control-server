@@ -351,6 +351,10 @@ jobs:
               # has its battery read from RIoT and logged past the (shortened) threshold -- an error under the rescue line
               # -- the dashboard card shows it, and not one order is created for it (REQ-0169).
               @{ Name = 'waiting-journey-battery-watch'; Runs = 1; BatchId = 'batch-8' }
+              # control-server#186, after the batch-7 exit and before v2 goes on a real vehicle: RIoT renames the Map under
+              # the same mapId and every task type bound on it is held (source CATALOG_CHANGE, MAP_RENAMED) until FieldOps
+              # accepts the new name and releases the holds; a Map list that cannot be read is not a rename (REQ-0341).
+              @{ Name = 'map-rename-holds-all-task-types'; Runs = 1; BatchId = 'batch-8' }
           )
           # One run's usual length in seconds, for dealing scenarios out to lanes longest first. Medians of 31
           # CI jobs from 2026-09-17 (ci-research, control-server#130); normal-load's excludes the build it used
@@ -385,6 +389,8 @@ jobs:
               'cargo-holding-dashboard-projection' = 60
               # control-server#273, one local run (2026-09-22): 83 s with the build.
               'waiting-journey-battery-watch' = 60
+              # control-server#186, one local run (2026-09-29): two journeys, the fault window and four FieldOps calls.
+              'map-rename-holds-all-task-types' = 95
           }
 
           # Registered before anything can fail, so the upload step below always has a path: without it

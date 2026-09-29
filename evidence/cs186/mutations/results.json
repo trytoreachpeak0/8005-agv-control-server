@@ -1,0 +1,520 @@
+{
+  "M1": {
+    "file": "src/ControlServer.Host/Runtime/TaskTypeStations/MapRenameHoldConvergence.cs",
+    "models": "A blank name in the listing is taken as data: the guard against blank names is dropped.",
+    "diffStat": ".../Runtime/TaskTypeStations/MapRenameHoldConvergence.cs                | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)",
+    "buildExit": 0,
+    "testExit": 1,
+    "failed": 2,
+    "passed": 44,
+    "expected": [
+      "MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: \"empty\")",
+      "MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: \"blank\")"
+    ],
+    "red": [
+      "MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: \"blank\")",
+      "MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: \"empty\")"
+    ],
+    "expectedButGreen": [],
+    "redButNotExpected": [],
+    "where": {
+      "MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: \"blank\")": {
+        "at": "MapRenameHoldConvergenceTests.cs:190",
+        "message": "Assert.Equal() Failure: Values differ"
+      },
+      "MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: \"empty\")": {
+        "at": "MapRenameHoldConvergenceTests.cs:190",
+        "message": "Assert.Equal() Failure: Values differ"
+      }
+    }
+  },
+  "M2": {
+    "file": "src/ControlServer.Host/Runtime/TaskTypeStations/MapRenameHoldConvergence.cs",
+    "models": "An unreadable Map list is treated fail-closed as a rename of every Map already known.",
+    "diffStat": ".../Runtime/TaskTypeStations/MapRenameHoldConvergence.cs              | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-)",
+    "buildExit": 0,
+    "testExit": 1,
+    "failed": 3,
+    "passed": 43,
+    "expected": [
+      "MapRenameHoldConvergenceTests.AFailedReadThrowsAndLeavesBaselineAndHoldsExactlyAsTheyWere",
+      "MapRenameHoldConvergenceTests.HoldsAndBaselineStandThroughFailedAndMissingReadsAndTheUnacceptedRenameStillHoldsAfter",
+      "MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(failure: \"invalid\")"
+    ],
+    "red": [
+      "MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(failure: \"invalid\")",
+      "MapRenameHoldConvergenceTests.HoldsAndBaselineStandThroughFailedAndMissingReadsAndTheUnacceptedRenameStillHoldsAfter",
+      "MapRenameHoldConvergenceTests.AFailedReadThrowsAndLeavesBaselineAndHoldsExactlyAsTheyWere"
+    ],
+    "expectedButGreen": [],
+    "redButNotExpected": [],
+    "where": {
+      "MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(failure: \"invalid\")": {
+        "at": "MapRenameEngineTests.cs:64",
+        "message": "Assert.Contains() Failure: Filter not matched in collection"
+      },
+      "MapRenameHoldConvergenceTests.HoldsAndBaselineStandThroughFailedAndMissingReadsAndTheUnacceptedRenameStillHoldsAfter": {
+        "at": "MapRenameHoldConvergenceTests.cs:227",
+        "message": "Assert.Equal() Failure: Strings differ"
+      },
+      "MapRenameHoldConvergenceTests.AFailedReadThrowsAndLeavesBaselineAndHoldsExactlyAsTheyWere": {
+        "at": "MapRenameHoldConvergenceTests.cs:162",
+        "message": "Assert.Equal() Failure: Values differ"
+      }
+    }
+  },
+  "M3": {
+    "file": "src/ControlServer.Host/Runtime/TaskTypeStations/MapRenameHoldConvergence.cs",
+    "models": "A Map the listing leaves out is treated as renamed.",
+    "diffStat": ".../Runtime/TaskTypeStations/MapRenameHoldConvergence.cs              | 4 ++++\n 1 file changed, 4 insertions(+)",
+    "buildExit": 0,
+    "testExit": 1,
+    "failed": 2,
+    "passed": 44,
+    "expected": [
+      "MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: \"missing\")",
+      "MapRenameHoldConvergenceTests.HoldsAndBaselineStandThroughFailedAndMissingReadsAndTheUnacceptedRenameStillHoldsAfter"
+    ],
+    "red": [
+      "MapRenameHoldConvergenceTests.HoldsAndBaselineStandThroughFailedAndMissingReadsAndTheUnacceptedRenameStillHoldsAfter",
+      "MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: \"missing\")"
+    ],
+    "expectedButGreen": [],
+    "redButNotExpected": [],
+    "where": {
+      "MapRenameHoldConvergenceTests.HoldsAndBaselineStandThroughFailedAndMissingReadsAndTheUnacceptedRenameStillHoldsAfter": {
+        "at": "MapRenameHoldConvergenceTests.cs:227",
+        "message": "Assert.Equal() Failure: Strings differ"
+      },
+      "MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: \"missing\")": {
+        "at": "MapRenameHoldConvergenceTests.cs:190",
+        "message": "Assert.Equal() Failure: Values differ"
+      }
+    }
+  },
+  "M4": {
+    "file": "src/ControlServer.Host/Runtime/TaskTypeStations/MapRenameHoldConvergence.cs",
+    "models": "First sight holds the Map's bound task types as if it were a change.",
+    "diffStat": ".../Runtime/TaskTypeStations/MapRenameHoldConvergence.cs             | 5 +++++\n 1 file changed, 5 insertions(+)",
+    "buildExit": 0,
+    "testExit": 1,
+    "failed": 10,
+    "passed": 36,
+    "expected": [
+      "MapRenameHoldConvergenceTests.TheFirstNameSeenForAMapBecomesItsBaselineAndHoldsNothing",
+      "MapRenameHoldConvergenceTests.TheSameNameAgainChangesNothing",
+      "MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: \"missing\")",
+      "MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: \"empty\")",
+      "MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: \"blank\")",
+      "MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: \"duplicate\")",
+      "MapRenameHoldConvergenceTests.AFailedReadThrowsAndLeavesBaselineAndHoldsExactlyAsTheyWere",
+      "MapRenameEngineTests.MapIdentityIsNeitherTheBaselineNorComparedWithIt"
+    ],
+    "red": [
+      "MapRenameHoldConvergenceTests.ARenameWritesOneDetectionAuditAndOneHoldAuditPerTaskTypeAndARepeatWritesNothingMore",
+      "MapRenameEngineTests.MapIdentityIsNeitherTheBaselineNorComparedWithIt",
+      "MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: \"blank\")",
+      "MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: \"duplicate\")",
+      "MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: \"empty\")",
+      "MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: \"missing\")",
+      "MapRenameHoldConvergenceTests.AFailedReadThrowsAndLeavesBaselineAndHoldsExactlyAsTheyWere",
+      "MapRenameHoldConvergenceTests.TheSameNameAgainChangesNothing",
+      "MapRenameHoldConvergenceTests.ARenameUnderTheSameMapIdHoldsEveryBoundTaskTypeOfThatMapAndNothingOnAnotherMap",
+      "MapRenameHoldConvergenceTests.TheFirstNameSeenForAMapBecomesItsBaselineAndHoldsNothing"
+    ],
+    "expectedButGreen": [],
+    "redButNotExpected": [
+      "MapRenameHoldConvergenceTests.ARenameWritesOneDetectionAuditAndOneHoldAuditPerTaskTypeAndARepeatWritesNothingMore",
+      "MapRenameHoldConvergenceTests.ARenameUnderTheSameMapIdHoldsEveryBoundTaskTypeOfThatMapAndNothingOnAnotherMap"
+    ],
+    "where": {
+      "MapRenameHoldConvergenceTests.ARenameWritesOneDetectionAuditAndOneHoldAuditPerTaskTypeAndARepeatWritesNothingMore": {
+        "at": "MapRenameHoldConvergenceTests.cs:141",
+        "message": "Assert.Equal() Failure: Exception thrown during comparison"
+      },
+      "MapRenameEngineTests.MapIdentityIsNeitherTheBaselineNorComparedWithIt": {
+        "at": "MapRenameEngineTests.cs:133",
+        "message": "System.InvalidOperationException : Sequence contains no elements."
+      },
+      "MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: \"blank\")": {
+        "at": "MapRenameHoldConvergenceTests.cs:190",
+        "message": "Assert.Empty() Failure: Collection was not empty"
+      },
+      "MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: \"duplicate\")": {
+        "at": "MapRenameHoldConvergenceTests.cs:190",
+        "message": "Assert.Empty() Failure: Collection was not empty"
+      },
+      "MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: \"empty\")": {
+        "at": "MapRenameHoldConvergenceTests.cs:190",
+        "message": "Assert.Empty() Failure: Collection was not empty"
+      },
+      "MapRenameHoldConvergenceTests.AMapTheListingDoesNotNameUsablyIsNotARename(shape: \"missing\")": {
+        "at": "MapRenameHoldConvergenceTests.cs:190",
+        "message": "Assert.Empty() Failure: Collection was not empty"
+      },
+      "MapRenameHoldConvergenceTests.AFailedReadThrowsAndLeavesBaselineAndHoldsExactlyAsTheyWere": {
+        "at": "MapRenameHoldConvergenceTests.cs:162",
+        "message": "Assert.Empty() Failure: Collection was not empty"
+      },
+      "MapRenameHoldConvergenceTests.TheSameNameAgainChangesNothing": {
+        "at": "MapRenameHoldConvergenceTests.cs:53",
+        "message": "Assert.Empty() Failure: Collection was not empty"
+      },
+      "MapRenameHoldConvergenceTests.ARenameUnderTheSameMapIdHoldsEveryBoundTaskTypeOfThatMapAndNothingOnAnotherMap": {
+        "at": "MapRenameHoldConvergenceTests.cs:85",
+        "message": "Assert.Empty() Failure: Collection was not empty"
+      },
+      "MapRenameHoldConvergenceTests.TheFirstNameSeenForAMapBecomesItsBaselineAndHoldsNothing": {
+        "at": "MapRenameHoldConvergenceTests.cs:36",
+        "message": "Assert.Empty() Failure: Collection was not empty"
+      }
+    }
+  },
+  "M5": {
+    "file": "src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs",
+    "models": "The baseline is seeded from JourneyRuntime:mapIdentity before RIoT is read.",
+    "diffStat": "src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs | 1 +\n 1 file changed, 1 insertion(+)",
+    "buildExit": 0,
+    "testExit": 1,
+    "failed": 4,
+    "passed": 42,
+    "expected": [
+      "MapRenameEngineTests.MapIdentityIsNeitherTheBaselineNorComparedWithIt",
+      "MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(failure: \"invalid\")",
+      "MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(failure: \"http\")",
+      "MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(failure: \"timeout\")"
+    ],
+    "red": [
+      "MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(failure: \"invalid\")",
+      "MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(failure: \"http\")",
+      "MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(failure: \"timeout\")",
+      "MapRenameEngineTests.MapIdentityIsNeitherTheBaselineNorComparedWithIt"
+    ],
+    "expectedButGreen": [],
+    "redButNotExpected": [],
+    "where": {
+      "MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(failure: \"invalid\")": {
+        "at": "MapRenameEngineTests.cs:64",
+        "message": "Assert.Null() Failure: Value is not null"
+      },
+      "MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(failure: \"http\")": {
+        "at": "MapRenameEngineTests.cs:64",
+        "message": "Assert.Null() Failure: Value is not null"
+      },
+      "MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(failure: \"timeout\")": {
+        "at": "MapRenameEngineTests.cs:64",
+        "message": "Assert.Null() Failure: Value is not null"
+      },
+      "MapRenameEngineTests.MapIdentityIsNeitherTheBaselineNorComparedWithIt": {
+        "at": "MapRenameEngineTests.cs:133",
+        "message": "System.InvalidOperationException : Sequence contains no elements."
+      }
+    }
+  },
+  "M6": {
+    "file": "src/ControlServer.Host/Runtime/TaskTypeStations/MapRenameHoldConvergence.cs",
+    "models": "Every task type there is gets held, bound or not (the ticket's literal wording).",
+    "diffStat": ".../Runtime/TaskTypeStations/MapRenameHoldConvergence.cs                | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)",
+    "buildExit": 0,
+    "testExit": 1,
+    "failed": 8,
+    "passed": 38,
+    "expected": [
+      "MapRenameHoldConvergenceTests.ARenameUnderTheSameMapIdHoldsEveryBoundTaskTypeOfThatMapAndNothingOnAnotherMap",
+      "MapRenameHoldConvergenceTests.ARenameWritesOneDetectionAuditAndOneHoldAuditPerTaskTypeAndARepeatWritesNothingMore",
+      "MapRenameHoldConvergenceTests.ATaskTypeBoundWhileTheRenameIsPendingIsHeldOnTheNextObservation",
+      "MapRenameHoldConvergenceTests.NamesAreComparedByteForByteSoAWidthOrCaseDifferenceIsARename",
+      "MapRenameHoldConvergenceTests.HoldsAndBaselineStandThroughFailedAndMissingReadsAndTheUnacceptedRenameStillHoldsAfter",
+      "MapRenameEngineTests.AnUnboundTaskTypeDoesNotDispatchAndBoundDuringAPendingRenameItIsHeldUntilTheRenameIsAccepted",
+      "MapRenameEngineTests.ARenameStopsDispatchFromItsRoundAndAcceptingTheNameThenReleasingTheHoldResumesIt",
+      "MapRenameEngineTests.MapIdentityIsNeitherTheBaselineNorComparedWithIt"
+    ],
+    "red": [
+      "MapRenameEngineTests.ARenameStopsDispatchFromItsRoundAndAcceptingTheNameThenReleasingTheHoldResumesIt",
+      "MapRenameHoldConvergenceTests.ARenameWritesOneDetectionAuditAndOneHoldAuditPerTaskTypeAndARepeatWritesNothingMore",
+      "MapRenameEngineTests.MapIdentityIsNeitherTheBaselineNorComparedWithIt",
+      "MapRenameEngineTests.AnUnboundTaskTypeDoesNotDispatchAndBoundDuringAPendingRenameItIsHeldUntilTheRenameIsAccepted",
+      "MapRenameHoldConvergenceTests.HoldsAndBaselineStandThroughFailedAndMissingReadsAndTheUnacceptedRenameStillHoldsAfter",
+      "MapRenameHoldConvergenceTests.ATaskTypeBoundWhileTheRenameIsPendingIsHeldOnTheNextObservation",
+      "MapRenameHoldConvergenceTests.NamesAreComparedByteForByteSoAWidthOrCaseDifferenceIsARename",
+      "MapRenameHoldConvergenceTests.ARenameUnderTheSameMapIdHoldsEveryBoundTaskTypeOfThatMapAndNothingOnAnotherMap"
+    ],
+    "expectedButGreen": [],
+    "redButNotExpected": [],
+    "where": {
+      "MapRenameEngineTests.ARenameStopsDispatchFromItsRoundAndAcceptingTheNameThenReleasingTheHoldResumesIt": {
+        "at": "MapRenameEngineTests.cs:40",
+        "message": "Assert.Single() Failure: The collection contained 6 items"
+      },
+      "MapRenameHoldConvergenceTests.ARenameWritesOneDetectionAuditAndOneHoldAuditPerTaskTypeAndARepeatWritesNothingMore": {
+        "at": "MapRenameHoldConvergenceTests.cs:144",
+        "message": "Assert.Equal() Failure: Values differ"
+      },
+      "MapRenameEngineTests.MapIdentityIsNeitherTheBaselineNorComparedWithIt": {
+        "at": "MapRenameEngineTests.cs:133",
+        "message": "Assert.Single() Failure: The collection contained 6 items"
+      },
+      "MapRenameEngineTests.AnUnboundTaskTypeDoesNotDispatchAndBoundDuringAPendingRenameItIsHeldUntilTheRenameIsAccepted": {
+        "at": "MapRenameEngineTests.cs:110",
+        "message": "Assert.Equal() Failure: Collections differ"
+      },
+      "MapRenameHoldConvergenceTests.HoldsAndBaselineStandThroughFailedAndMissingReadsAndTheUnacceptedRenameStillHoldsAfter": {
+        "at": "MapRenameHoldConvergenceTests.cs:227",
+        "message": "Assert.Equal() Failure: Values differ"
+      },
+      "MapRenameHoldConvergenceTests.ATaskTypeBoundWhileTheRenameIsPendingIsHeldOnTheNextObservation": {
+        "at": "MapRenameHoldConvergenceTests.cs:275",
+        "message": "Assert.False() Failure"
+      },
+      "MapRenameHoldConvergenceTests.NamesAreComparedByteForByteSoAWidthOrCaseDifferenceIsARename": {
+        "at": "MapRenameHoldConvergenceTests.cs:102",
+        "message": "Assert.Single() Failure: The collection contained 6 items"
+      },
+      "MapRenameHoldConvergenceTests.ARenameUnderTheSameMapIdHoldsEveryBoundTaskTypeOfThatMapAndNothingOnAnotherMap": {
+        "at": "MapRenameHoldConvergenceTests.cs:85",
+        "message": "Assert.Equal() Failure: Collections differ at index 0"
+      }
+    }
+  },
+  "M7": {
+    "file": "src/ControlServer.Application/TaskTypeStationActivationService.cs",
+    "models": "The release verb stops checking for an unaccepted rename.",
+    "diffStat": "src/ControlServer.Application/TaskTypeStationActivationService.cs | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)",
+    "buildExit": 0,
+    "testExit": 1,
+    "failed": 1,
+    "passed": 45,
+    "expected": [
+      "MapNameBaselineAcceptanceTests.AHoldReleaseIsRefusedWhileTheMapCarriesAnUnacceptedRenameAndGoesThroughOnceItIsAccepted"
+    ],
+    "red": [
+      "MapNameBaselineAcceptanceTests.AHoldReleaseIsRefusedWhileTheMapCarriesAnUnacceptedRenameAndGoesThroughOnceItIsAccepted"
+    ],
+    "expectedButGreen": [],
+    "redButNotExpected": [],
+    "where": {
+      "MapNameBaselineAcceptanceTests.AHoldReleaseIsRefusedWhileTheMapCarriesAnUnacceptedRenameAndGoesThroughOnceItIsAccepted": {
+        "at": "MapNameBaselineAcceptanceTests.cs:145",
+        "message": "Assert.Equal() Failure: Values differ"
+      }
+    }
+  },
+  "M8a": {
+    "file": "src/ControlServer.Application/MapNameBaselineAcceptanceService.cs",
+    "models": "The service stops comparing the typed name with the pending one (the store's own check stays).",
+    "diffStat": "src/ControlServer.Application/MapNameBaselineAcceptanceService.cs | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)",
+    "buildExit": 0,
+    "testExit": 0,
+    "failed": 0,
+    "passed": 46,
+    "expected": [],
+    "red": [],
+    "expectedButGreen": [],
+    "redButNotExpected": [],
+    "where": {}
+  },
+  "M8b": {
+    "file": "src/ControlServer.Infrastructure/Persistence/MapNameBaselineStore.cs",
+    "models": "The store accepts whatever name it is handed.",
+    "diffStat": "src/ControlServer.Infrastructure/Persistence/MapNameBaselineStore.cs | 4 ++--\n 1 file changed, 2 insertions(+), 2 deletions(-)",
+    "buildExit": 0,
+    "testExit": 1,
+    "failed": 1,
+    "passed": 45,
+    "expected": [
+      "MapNameBaselineAcceptanceTests.TheStoreAcceptsOnlyTheNameThatIsStillPendingAndOtherwiseWritesNothing"
+    ],
+    "red": [
+      "MapNameBaselineAcceptanceTests.TheStoreAcceptsOnlyTheNameThatIsStillPendingAndOtherwiseWritesNothing"
+    ],
+    "expectedButGreen": [],
+    "redButNotExpected": [],
+    "where": {
+      "MapNameBaselineAcceptanceTests.TheStoreAcceptsOnlyTheNameThatIsStillPendingAndOtherwiseWritesNothing": {
+        "at": "MapNameBaselineAcceptanceTests.cs:112",
+        "message": "Assert.Null() Failure: Value is not null"
+      }
+    }
+  },
+  "M9": {
+    "file": "src/ControlServer.Host/Runtime/TaskTypeStations/MapRenameHoldConvergence.cs",
+    "models": "A rename back to the baseline releases the rename holds by itself.",
+    "diffStat": ".../Runtime/TaskTypeStations/MapRenameHoldConvergence.cs              | 4 ++++\n 1 file changed, 4 insertions(+)",
+    "buildExit": 0,
+    "testExit": 1,
+    "failed": 1,
+    "passed": 45,
+    "expected": [
+      "MapRenameHoldConvergenceTests.ARenameBackToTheBaselineClearsThePendingNameButLeavesTheHoldsForTheField"
+    ],
+    "red": [
+      "MapRenameHoldConvergenceTests.ARenameBackToTheBaselineClearsThePendingNameButLeavesTheHoldsForTheField"
+    ],
+    "expectedButGreen": [],
+    "redButNotExpected": [],
+    "where": {
+      "MapRenameHoldConvergenceTests.ARenameBackToTheBaselineClearsThePendingNameButLeavesTheHoldsForTheField": {
+        "at": "MapRenameHoldConvergenceTests.cs:248",
+        "message": "Assert.True() Failure"
+      }
+    }
+  },
+  "M10": {
+    "file": "tests/ControlServer.Tests/RiotReplays/map-list-2026-09-28.json",
+    "models": "RIoT answers one Map's source as a number instead of a string (fixture change, not product).",
+    "diffStat": "tests/ControlServer.Tests/RiotReplays/map-list-2026-09-28.json | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)",
+    "buildExit": 0,
+    "testExit": 1,
+    "failed": 4,
+    "passed": 42,
+    "expected": [
+      "HttpRiotMapNameCatalogTests.TheRealRiotAnswerOf20260928ParsesThroughTheAdapterWithMap26UnderItsName",
+      "HttpRiotMapNameCatalogTests.AnEnumValueTheSdkDoesNotKnowStillReadsEveryMapAndItsName(key: \"syncState\", known: \"partition\", unknown: \"resyncing\")",
+      "HttpRiotMapNameCatalogTests.AnEnumValueTheSdkDoesNotKnowStillReadsEveryMapAndItsName(key: \"source\", known: \"fetch\", unknown: \"importedFromCloud\")",
+      "HttpRiotMapNameCatalogTests.AnEnumValueTheSdkDoesNotKnowStillReadsEveryMapAndItsName(key: \"state\", known: \"activated\", unknown: \"archived\")"
+    ],
+    "red": [
+      "HttpRiotMapNameCatalogTests.AnEnumValueTheSdkDoesNotKnowStillReadsEveryMapAndItsName(key: \"state\", known: \"activated\", unknown: \"archived\")",
+      "HttpRiotMapNameCatalogTests.AnEnumValueTheSdkDoesNotKnowStillReadsEveryMapAndItsName(key: \"source\", known: \"fetch\", unknown: \"importedFromCloud\")",
+      "HttpRiotMapNameCatalogTests.AnEnumValueTheSdkDoesNotKnowStillReadsEveryMapAndItsName(key: \"syncState\", known: \"partition\", unknown: \"resyncing\")",
+      "HttpRiotMapNameCatalogTests.TheRealRiotAnswerOf20260928ParsesThroughTheAdapterWithMap26UnderItsName"
+    ],
+    "expectedButGreen": [],
+    "redButNotExpected": [],
+    "where": {
+      "HttpRiotMapNameCatalogTests.AnEnumValueTheSdkDoesNotKnowStillReadsEveryMapAndItsName(key: \"state\", known: \"activated\", unknown: \"archived\")": {
+        "at": "HttpRiotMapNameCatalogTests.cs:87",
+        "message": "System.IO.InvalidDataException : RIoT Map list response was not valid."
+      },
+      "HttpRiotMapNameCatalogTests.AnEnumValueTheSdkDoesNotKnowStillReadsEveryMapAndItsName(key: \"source\", known: \"fetch\", unknown: \"importedFromCloud\")": {
+        "at": "HttpRiotMapNameCatalogTests.cs:87",
+        "message": "System.IO.InvalidDataException : RIoT Map list response was not valid."
+      },
+      "HttpRiotMapNameCatalogTests.AnEnumValueTheSdkDoesNotKnowStillReadsEveryMapAndItsName(key: \"syncState\", known: \"partition\", unknown: \"resyncing\")": {
+        "at": "HttpRiotMapNameCatalogTests.cs:87",
+        "message": "System.IO.InvalidDataException : RIoT Map list response was not valid."
+      },
+      "HttpRiotMapNameCatalogTests.TheRealRiotAnswerOf20260928ParsesThroughTheAdapterWithMap26UnderItsName": {
+        "at": "HttpRiotMapNameCatalogTests.cs:65",
+        "message": "System.IO.InvalidDataException : RIoT Map list response was not valid."
+      }
+    }
+  },
+  "M11": {
+    "file": "src/ControlServer.Infrastructure/Adapters/HttpRiotMovementGateway.cs",
+    "models": "The adapter swallows an unreadable Map list and answers an empty one.",
+    "diffStat": "src/ControlServer.Infrastructure/Adapters/HttpRiotMovementGateway.cs | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)",
+    "buildExit": 0,
+    "testExit": 1,
+    "failed": 4,
+    "passed": 42,
+    "expected": [
+      "HttpRiotMapNameCatalogTests.AReadThatDoesNotYieldANonEmptyListThrowsInsteadOfAnsweringEmpty(status: OK, body: \"{\\\"code\\\":\\\"500\\\",\\\"message\\\":\\\"失败\\\",\\\"result\\\":nu\"···)",
+      "HttpRiotMapNameCatalogTests.AReadThatDoesNotYieldANonEmptyListThrowsInsteadOfAnsweringEmpty(status: OK, body: \"not json\")",
+      "HttpRiotMapNameCatalogTests.AReadThatDoesNotYieldANonEmptyListThrowsInsteadOfAnsweringEmpty(status: InternalServerError, body: \"{\\\"code\\\":\\\"500\\\"}\")",
+      "FakeRiotMapNameTests.AMapListFaultFailsOnlyTheMapListAndClearingItAnswersAgain"
+    ],
+    "red": [
+      "HttpRiotMapNameCatalogTests.AReadThatDoesNotYieldANonEmptyListThrowsInsteadOfAnsweringEmpty(status: InternalServerError, body: \"{\\\"code\\\":\\\"500\\\"}\")",
+      "HttpRiotMapNameCatalogTests.AReadThatDoesNotYieldANonEmptyListThrowsInsteadOfAnsweringEmpty(status: OK, body: \"{\\\"code\\\":\\\"500\\\",\\\"message\\\":\\\"失败\\\",\\\"result\\\":nu\"···)",
+      "HttpRiotMapNameCatalogTests.AReadThatDoesNotYieldANonEmptyListThrowsInsteadOfAnsweringEmpty(status: OK, body: \"not json\")",
+      "FakeRiotMapNameTests.AMapListFaultFailsOnlyTheMapListAndClearingItAnswersAgain"
+    ],
+    "expectedButGreen": [],
+    "redButNotExpected": [],
+    "where": {
+      "HttpRiotMapNameCatalogTests.AReadThatDoesNotYieldANonEmptyListThrowsInsteadOfAnsweringEmpty(status: InternalServerError, body: \"{\\\"code\\\":\\\"500\\\"}\")": {
+        "at": "HttpRiotMapNameCatalogTests.cs:104",
+        "message": "Assert.Throws() Failure: No exception was thrown"
+      },
+      "HttpRiotMapNameCatalogTests.AReadThatDoesNotYieldANonEmptyListThrowsInsteadOfAnsweringEmpty(status: OK, body: \"{\\\"code\\\":\\\"500\\\",\\\"message\\\":\\\"失败\\\",\\\"result\\\":nu\"···)": {
+        "at": "HttpRiotMapNameCatalogTests.cs:104",
+        "message": "Assert.Throws() Failure: No exception was thrown"
+      },
+      "HttpRiotMapNameCatalogTests.AReadThatDoesNotYieldANonEmptyListThrowsInsteadOfAnsweringEmpty(status: OK, body: \"not json\")": {
+        "at": "HttpRiotMapNameCatalogTests.cs:104",
+        "message": "Assert.Throws() Failure: No exception was thrown"
+      },
+      "FakeRiotMapNameTests.AMapListFaultFailsOnlyTheMapListAndClearingItAnswersAgain": {
+        "at": "FakeRiotMapNameTests.cs:39",
+        "message": "Assert.Throws() Failure: No exception was thrown"
+      }
+    }
+  },
+  "M12": {
+    "file": "src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs",
+    "models": "A failed Map list read ends the round instead of being logged and skipped.",
+    "diffStat": "src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs | 1 +\n 1 file changed, 1 insertion(+)",
+    "buildExit": 0,
+    "testExit": 1,
+    "failed": 3,
+    "passed": 43,
+    "expected": [
+      "MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(failure: \"invalid\")",
+      "MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(failure: \"http\")",
+      "MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(failure: \"timeout\")"
+    ],
+    "red": [
+      "MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(failure: \"invalid\")",
+      "MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(failure: \"http\")",
+      "MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(failure: \"timeout\")"
+    ],
+    "expectedButGreen": [],
+    "redButNotExpected": [],
+    "where": {
+      "MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(failure: \"invalid\")": {
+        "at": "MapRenameEngineTests.cs:64",
+        "message": "System.IO.InvalidDataException : RIoT Map list response was not valid."
+      },
+      "MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(failure: \"http\")": {
+        "at": "MapRenameEngineTests.cs:64",
+        "message": "System.Net.Http.HttpRequestException : connection refused"
+      },
+      "MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(failure: \"timeout\")": {
+        "at": "MapRenameEngineTests.cs:64",
+        "message": "System.Threading.Tasks.TaskCanceledException : The request was canceled due to the configured HttpClient.Timeout."
+      }
+    }
+  },
+  "M13": {
+    "file": "src/ControlServer.Host/Runtime/TaskTypeStations/MapRenameHoldConvergence.cs",
+    "models": "Names are compared ignoring case.",
+    "diffStat": ".../Runtime/TaskTypeStations/MapRenameHoldConvergence.cs                | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)",
+    "buildExit": 0,
+    "testExit": 1,
+    "failed": 1,
+    "passed": 45,
+    "expected": [
+      "MapRenameHoldConvergenceTests.NamesAreComparedByteForByteSoAWidthOrCaseDifferenceIsARename"
+    ],
+    "red": [
+      "MapRenameHoldConvergenceTests.NamesAreComparedByteForByteSoAWidthOrCaseDifferenceIsARename"
+    ],
+    "expectedButGreen": [],
+    "redButNotExpected": [],
+    "where": {
+      "MapRenameHoldConvergenceTests.NamesAreComparedByteForByteSoAWidthOrCaseDifferenceIsARename": {
+        "at": "MapRenameHoldConvergenceTests.cs:102",
+        "message": "Assert.Single() Failure: The collection was empty"
+      }
+    }
+  },
+  "M7-invalid-first-attempt": {
+    "file": "src/ControlServer.Application/TaskTypeStationActivationService.cs",
+    "models": "The release verb stops checking for an unaccepted rename.",
+    "diffStat": "src/ControlServer.Application/TaskTypeStationActivationService.cs | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)",
+    "buildExit": 1,
+    "testExit": null,
+    "failed": null,
+    "passed": null,
+    "expected": [
+      "MapNameBaselineAcceptanceTests.AHoldReleaseIsRefusedWhileTheMapCarriesAnUnacceptedRenameAndGoesThroughOnceItIsAccepted"
+    ],
+    "red": [],
+    "expectedButGreen": [
+      "MapNameBaselineAcceptanceTests.AHoldReleaseIsRefusedWhileTheMapCarriesAnUnacceptedRenameAndGoesThroughOnceItIsAccepted"
+    ],
+    "redButNotExpected": [],
+    "where": {}
+  }
+}

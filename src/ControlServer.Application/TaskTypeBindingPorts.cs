@@ -252,6 +252,15 @@ public interface ITaskTypeStationBindingStore
         CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// 暂停的业务审计动作。站点级目录变化收敛（control-server#162）、Map 级改名（control-server#186）的引擎、激活与启动装载
+/// 三条路径写的是同一个动作名，定义只在这一处。
+/// </summary>
+public static class TaskTypeStationHoldAuditActions
+{
+    public const string Raised = "TASK_TYPE_STATION_HOLD_RAISED";
+}
+
 /// <summary>暂停的来源：人工收紧，或目录变化自动收敛（REQ-0340、REQ-0342）。</summary>
 public static class TaskTypeStationHoldSource
 {

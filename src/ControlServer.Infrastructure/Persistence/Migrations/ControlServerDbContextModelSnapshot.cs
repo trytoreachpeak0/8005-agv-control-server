@@ -1435,6 +1435,35 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                     b.ToTable("ManualChargingReturnToServiceRequests");
                 });
 
+            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.MapNameBaselineRow", b =>
+                {
+                    b.Property<int>("MapId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset?>("AcceptedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AcceptedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("EstablishedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PendingName")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("PendingSince")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("MapId");
+
+                    b.ToTable("MapNameBaselines", (string)null);
+                });
+
             modelBuilder.Entity("ControlServer.Infrastructure.Persistence.MapStationCatalogStateRow", b =>
                 {
                     b.Property<int>("MapId")

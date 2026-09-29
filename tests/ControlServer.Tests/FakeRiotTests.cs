@@ -350,7 +350,7 @@ public sealed class FakeRiotTests
         1,
         1);
 
-    private sealed class FakeRiotFixture : IAsyncDisposable
+    internal sealed class FakeRiotFixture : IAsyncDisposable
     {
         private WebApplication app = null!;
 

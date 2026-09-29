@@ -57,6 +57,8 @@ internal static class RiotSdkRegistration
             services.GetRequiredService<HttpRiotMovementGateway>());
         services.AddScoped<IRiotMapStationCatalog>(services =>
             services.GetRequiredService<HttpRiotMovementGateway>());
+        services.AddScoped<IRiotMapNameCatalog>(services =>
+            services.GetRequiredService<HttpRiotMovementGateway>());
         services.AddScoped<IRiotVehicleSafetyFacts>(services =>
             services.GetRequiredService<HttpRiotMovementGateway>());
         // On the movement gateway rather than on a new adapter, because the two calls a motion

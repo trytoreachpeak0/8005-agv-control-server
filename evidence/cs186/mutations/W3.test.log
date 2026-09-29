@@ -1,0 +1,24 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:19.85]     ControlServer.Tests.TaskTypeStationStartupTests.AFirstStartWithABaselineButNoPendingRenameHoldsNothing [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationStartupTests.AFirstStartWithABaselineButNoPendingRenameHoldsNothing [1 s]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+Collection: [TaskTypeStationHold { HoldId = d1e6b4fa2fbf4957ab2ee58641e791b6, MapId = 25, TaskType = WIRE_TO_GATE, Source = CATALOG_CHANGE, ReasonCode = MAP_RENAMED, DetailJson = {"mapId":25,"taskType":"WIRE_TO_GATE","source":"CATALOG_CHANGE","reasonCode":"MAP_RENAMED","classification":"MAP_RENAMED","bindingSetVersion":1,"before":{"mapName":"老厂前线new_wk"},"after":{"mapName":"老厂前线new_wk"},"raisedThrough":"STARTUP_PRESET_UNDER_PENDING_RENAME","inFlightDemands":0}, RaisedAt = 9/29/2026 12:29:31 AM +00:00, RaisedBy = preset:C:\Users\szy\AppData\Local\Temp\cs159-preset-etkk3lui.zcz\task-type-stations.settings.json, ReleasedAt = , ReleasedBy =  }]
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationStartupTests.AFirstStartWithABaselineButNoPendingRenameHoldsNothing() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationStartupTests.cs:line 247
+   at ControlServer.Tests.TaskTypeStationStartupTests.AFirstStartWithABaselineButNoPendingRenameHoldsNothing() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationStartupTests.cs:line 248
+   at ControlServer.Tests.TaskTypeStationStartupTests.AFirstStartWithABaselineButNoPendingRenameHoldsNothing() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationStartupTests.cs:line 248
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:33.68]     ControlServer.Tests.MapNameBaselineAcceptanceTests.AnActivationWithABaselineButNoPendingRenameHoldsNothing [FAIL]
+  Failed ControlServer.Tests.MapNameBaselineAcceptanceTests.AnActivationWithABaselineButNoPendingRenameHoldsNothing [1 s]
+  Error Message:
+   Assert.DoesNotContain() Failure: Filter matched in collection
+             ↓ (pos 0)
+Collection: [TaskTypeStationHoldRow { DetailJson = "{\"mapId\":25,\"taskType\":\"STAGING_TO_WIRE\",\"s"···, HoldId = "43e0cf82dc9345cbbe657d7df8fd8099", MapId = 25, RaisedAt = 2026-09-19T08:00:00.0000000+00:00, RaisedBy = "fieldops:activate:7dabe1f7baa640b79dda5de0b4166454", ··· }, TaskTypeStationHoldRow { DetailJson = "{\"attemptId\":\"7dabe1f7baa640b79dda5de0b4166454\"···, HoldId = "726f950a0b6147248bc078b53ac642a8", MapId = 25, RaisedAt = 2026-09-19T08:00:00.0000000+00:00, RaisedBy = "fieldops:activation:7dabe1f7baa640b79dda5de0b41664"···, ··· }, TaskTypeStationHoldRow { DetailJson = "{\"mapId\":25,\"taskType\":\"WIRE_TO_GATE\",\"sour"···, HoldId = "9de3208f3bba46efae7f08a3f224f7e4", MapId = 25, RaisedAt = 2026-09-19T08:00:00.0000000+00:00, RaisedBy = "fieldops:activate:7dabe1f7baa640b79dda5de0b4166454", ··· }, TaskTypeStationHoldRow { DetailJson = "{\"attemptId\":\"7dabe1f7baa640b79dda5de0b4166454\"···, HoldId = "d616451eba65478cb9922141dd84c75e", MapId = 25, RaisedAt = 2026-09-19T08:00:00.0000000+00:00, RaisedBy = "fieldops:activation:7dabe1f7baa640b79dda5de0b41664"···, ··· }]
+  Stack Trace:
+     at ControlServer.Tests.MapNameBaselineAcceptanceTests.AnActivationWithABaselineButNoPendingRenameHoldsNothing() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapNameBaselineAcceptanceTests.cs:line 262
+   at ControlServer.Tests.MapNameBaselineAcceptanceTests.AnActivationWithABaselineButNoPendingRenameHoldsNothing() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapNameBaselineAcceptanceTests.cs:line 263
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     2, Passed:    70, Skipped:     0, Total:    72, Duration: 35 s - ControlServer.Tests.dll (net8.0)

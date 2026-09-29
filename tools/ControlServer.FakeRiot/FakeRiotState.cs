@@ -189,6 +189,19 @@ public sealed record FakeRiotState
     public FakeRiotFaultMode FaultMode { get; init; } = FakeRiotFaultMode.Normal;
     public int DelayMs { get; init; }
 
+    /// <summary>
+    /// Each Map's display name, as <c>mapInfo/getALLMapInfoExcludeMapJson</c> reports it (control-server#186). A scenario
+    /// renames a Map under the same id through the control plane.
+    /// </summary>
+    public IReadOnlyDictionary<int, string> MapNamesByMapId { get; init; } = new Dictionary<int, string>();
+
+    /// <summary>
+    /// When true, only the Map list answers 500; every other endpoint is unaffected. A narrower fault than
+    /// <see cref="FaultMode"/>, which would fail the station catalog too and so could not tell a failed Map list read
+    /// from a failed round.
+    /// </summary>
+    public bool MapListServerError { get; init; }
+
     /// <summary>Serial number for the next created order, so orderIds are stable within a round.</summary>
     public required long NextOrderSequence { get; init; }
 }

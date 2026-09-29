@@ -1,0 +1,56 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:15.48]     ControlServer.Tests.MapRenameEngineTests.AfterARenameAFailedMapListReadDoesNotLetTheHeldTaskTypeDispatch [FAIL]
+  Failed ControlServer.Tests.MapRenameEngineTests.AfterARenameAFailedMapListReadDoesNotLetTheHeldTaskTypeDispatch [10 s]
+  Error Message:
+   System.IO.InvalidDataException : RIoT Map list response was not valid.
+  Stack Trace:
+     at ControlServer.Host.Runtime.TaskTypeStations.MapRenameHoldConvergence.ObserveAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\src\ControlServer.Host\Runtime\TaskTypeStations\MapRenameHoldConvergence.cs:line 100
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ObserveMapNamesAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 418
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteRoundAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 474
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 449
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 460
+   at ControlServer.Tests.MapRenameEngineTests.AfterARenameAFailedMapListReadDoesNotLetTheHeldTaskTypeDispatch() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameEngineTests.cs:line 132
+   at ControlServer.Tests.MapRenameEngineTests.AfterARenameAFailedMapListReadDoesNotLetTheHeldTaskTypeDispatch() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameEngineTests.cs:line 138
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:18.20]     ControlServer.Tests.MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(failure: "invalid") [FAIL]
+[xUnit.net 00:00:18.51]     ControlServer.Tests.MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(failure: "http") [FAIL]
+[xUnit.net 00:00:18.82]     ControlServer.Tests.MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(failure: "timeout") [FAIL]
+  Failed ControlServer.Tests.MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(failure: "invalid") [403 ms]
+  Error Message:
+   System.IO.InvalidDataException : RIoT Map list response was not valid.
+  Stack Trace:
+     at ControlServer.Host.Runtime.TaskTypeStations.MapRenameHoldConvergence.ObserveAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\src\ControlServer.Host\Runtime\TaskTypeStations\MapRenameHoldConvergence.cs:line 100
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ObserveMapNamesAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 418
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteRoundAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 474
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 449
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 460
+   at ControlServer.Tests.MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(String failure) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameEngineTests.cs:line 60
+   at ControlServer.Tests.MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(String failure) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameEngineTests.cs:line 65
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(failure: "http") [288 ms]
+  Error Message:
+   System.Net.Http.HttpRequestException : connection refused
+  Stack Trace:
+     at ControlServer.Host.Runtime.TaskTypeStations.MapRenameHoldConvergence.ObserveAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\src\ControlServer.Host\Runtime\TaskTypeStations\MapRenameHoldConvergence.cs:line 100
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ObserveMapNamesAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 418
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteRoundAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 474
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 449
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 460
+   at ControlServer.Tests.MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(String failure) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameEngineTests.cs:line 60
+   at ControlServer.Tests.MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(String failure) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameEngineTests.cs:line 65
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(failure: "timeout") [299 ms]
+  Error Message:
+   System.Threading.Tasks.TaskCanceledException : The request was canceled due to the configured HttpClient.Timeout.
+  Stack Trace:
+     at ControlServer.Host.Runtime.TaskTypeStations.MapRenameHoldConvergence.ObserveAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\src\ControlServer.Host\Runtime\TaskTypeStations\MapRenameHoldConvergence.cs:line 100
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ObserveMapNamesAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 418
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteRoundAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 474
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 449
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 460
+   at ControlServer.Tests.MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(String failure) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameEngineTests.cs:line 60
+   at ControlServer.Tests.MapRenameEngineTests.AFailedMapListReadNeitherStopsTheRoundNorHolds(String failure) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs186-8005-agv-control-server\tests\ControlServer.Tests\MapRenameEngineTests.cs:line 65
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     4, Passed:    66, Skipped:     0, Total:    70, Duration: 1 m - ControlServer.Tests.dll (net8.0)

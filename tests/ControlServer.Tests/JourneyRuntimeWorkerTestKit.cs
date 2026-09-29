@@ -1181,6 +1181,7 @@ internal static class JourneyRuntimeWorkerTestKit
                 new BoundFixedTaskStationResolver(TaskTypeStationRuntimeSeed.Access(Context), options),
                 TaskTypeStationRuntimeSeed.Access(Context),
                 TaskTypeStationRuntimeSeed.CatalogBindingHolds(Context, Clock),
+                TaskTypeStationRuntimeSeed.MapRenameHolds(Context, Riot, Clock),
                 new MovementDispatchService(store, Riot),
                 store,
                 publisher,
@@ -1707,7 +1708,7 @@ internal static class JourneyRuntimeWorkerTestKit
 
     internal sealed class RecordingRiot
         : IRiotMovementGateway, IRiotVehicleFacts, IRiotMapStationCatalog, IVehicleMotionFacts, IRiotVehicleSafetyFacts,
-            IRiotOrderListingFacts, IRiotOrderCommandGateway
+            IRiotOrderListingFacts, IRiotOrderCommandGateway, IRiotMapNameCatalog
     {
         private readonly JourneyRuntimeOptions _options;
         private readonly FixedTimeProvider _clock;
@@ -1763,6 +1764,26 @@ internal static class JourneyRuntimeWorkerTestKit
         public int CreateCount(string purpose) => _creates.GetValueOrDefault(purpose);
 
         public void SetMapStations(params RiotMapStation[] stations) => _mapStations = stations;
+
+        /// <summary>
+        /// RIoT's Map list (control-server#186). By default the served Map under a name that never changes, so a test that is
+        /// not about Map names sees its first round record that name as the baseline and nothing else.
+        /// </summary>
+        public RiotMapName[] MapNames { get; set; } = [new RiotMapName(25, "老厂前线new_wk")];
+
+        /// <summary>When set, every Map list read throws it until cleared.</summary>
+        public Exception? FailMapNameReads { get; set; }
+
+        public int MapNameReads { get; private set; }
+
+        public Task<RiotMapNameListing> ReadMapNamesAsync(CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            MapNameReads++;
+            return FailMapNameReads is { } failure
+                ? Task.FromException<RiotMapNameListing>(failure)
+                : Task.FromResult(new RiotMapNameListing(_clock.GetUtcNow(), MapNames));
+        }
 
         /// <summary>When set, the next Map/Station catalog read throws it instead of answering, once.</summary>
         public Exception? FailNextMapRead { get; set; }
