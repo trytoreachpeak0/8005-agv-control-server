@@ -387,6 +387,11 @@ public sealed class OnboardJourneyPublisher(
             cancellationToken);
     }
 
+    /// <remarks>
+    /// v3 加了必填的 <c>checkPurpose</c>（control-server#382）。今天只组装 <see cref="PreDepartureCheckPurposes.Departure"/>：
+    /// 命令记录的三个字段都是非空字符串，而 schema 要另外两种用途把其中几个置 null，拿非空字段组出来的那两种检查车载端会按 schema
+    /// 拒收。<c>HOLD_RELEASE</c> 由 control-server#385 放开，<c>NON_BUSINESS_MOVE</c> 由空闲返回与自动充电的票放开。
+    /// </remarks>
     public Task PublishPreDepartureSafetyCheckAsync(
         string messageId,
         string agvId,
@@ -396,6 +401,11 @@ public sealed class OnboardJourneyPublisher(
     {
         ArgumentNullException.ThrowIfNull(command);
         ValidateUuid(command.PreDepartureSafetyCheckId, nameof(command.PreDepartureSafetyCheckId));
+        if (command.CheckPurpose != PreDepartureCheckPurposes.Departure)
+            throw new ArgumentOutOfRangeException(
+                nameof(command),
+                command.CheckPurpose,
+                "Only a DEPARTURE check is assembled today; HOLD_RELEASE and NON_BUSINESS_MOVE need nullable fields.");
         ValidateUuid(command.DemandId, nameof(command.DemandId));
         ValidateUuid(command.MovementLegId, nameof(command.MovementLegId));
         ArgumentOutOfRangeException.ThrowIfNegative(command.ExpectedSafetyStateVersion);
@@ -410,6 +420,7 @@ public sealed class OnboardJourneyPublisher(
             new
             {
                 command.PreDepartureSafetyCheckId,
+                command.CheckPurpose,
                 command.DemandId,
                 command.MovementLegId,
                 command.ExpectedSafetyStateVersion,
