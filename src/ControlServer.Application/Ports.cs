@@ -335,21 +335,6 @@ public interface IVehicleDispatchPolicyStore
         VehicleDispatchPolicy policy,
         DateTimeOffset updatedAt,
         CancellationToken cancellationToken);
-
-    /// <summary>
-    /// Claims a vehicle for one in-flight order, returning false when it is already occupied.
-    /// This is the uniqueness that moved down from the lease table onto OrderIntents: the unique
-    /// index is what decides, not a read-then-write.
-    /// </summary>
-    Task<bool> TryClaimVehicleOccupancyAsync(
-        string upperId,
-        DateTimeOffset claimedAt,
-        CancellationToken cancellationToken);
-
-    Task ReleaseVehicleOccupancyAsync(
-        string upperId,
-        DateTimeOffset releasedAt,
-        CancellationToken cancellationToken);
 }
 
 // ---- RouteGraphSnapshot engine (ticket 12) ------------------------------------------------

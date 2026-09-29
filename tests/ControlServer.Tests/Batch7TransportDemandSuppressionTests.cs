@@ -10,18 +10,20 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 namespace ControlServer.Tests;
 
 /// <summary>
-/// 批次7-05（control-server#210）写入侧：终结需求那一步，终态码属于 <c>REQ-0156</c> 的四个之一时，按该需求的业务键写一条抑制，
-/// 与终态同一次保存；先写者胜、不覆盖。公开入口是批次7-02 的终结服务 <see cref="PickupStopTermination"/>。
+/// 批次7-05（control-server#210）写入侧：终结需求那一步，终态码属于 <c>REQ-0156</c> 写抑制的那几个时，按该需求的业务键写一条
+/// 抑制，与终态同一次保存；先写者胜、不覆盖。公开入口是批次7-02 的终结服务 <see cref="PickupStopTermination"/>。
 /// </summary>
 /// <remarks>
 /// <para>
-/// 这里是服务层的每一种情形与票面点名的时刻：四个码各一条、不写的两种、两个写者同时终结同一需求、重放、写抑制失败。
-/// 经真实运行时与报文处理器走完各条终结路径的端到端证据，在那些路径各自的端到端测试里（与 <see cref="ZeroChangePin"/> 同一处）
-/// 各多一行 <see cref="SuppressionAssertions"/>。
+/// 这里是服务层的每一种情形与票面点名的时刻：四个本地取消码与故障货物交接各一条、不写的三种、两个写者同时终结同一需求、重放、
+/// 写抑制失败。经真实运行时与报文处理器走完各条终结路径的端到端证据，在那些路径各自的端到端测试里（与 <see cref="ZeroChangePin"/>
+/// 同一处）各多一行 <see cref="SuppressionAssertions"/>。
 /// </para>
 /// <para>
-/// <c>TERMINATED_BY_FAULT_CARGO_HANDOFF</c> 不写：需求基线 <c>REQ-0156</c> 只列四个码。MVP 多写了它（<c>557644a6</c>），
-/// 本票照基线。
+/// <c>TERMINATED_BY_FAULT_CARGO_HANDOFF</c> 写：需求基线 <c>v1.7.0</c>（<c>CP-0008</c>，control-server#395）修订了 <c>REQ-0156</c>，
+/// 交接终止与本地取消一样与终态原子写入抑制，与 <c>REQ-0240</c> 对齐。control-server#210 时的基线 <c>v1.6.0</c> 只列四个码，
+/// 那时这里钉的是「交接不写」。人员放弃停住的重建（<c>TERMINATED_BY_OPERATOR_AFTER_REBUILD_STOP</c>）仍不写，理由见
+/// <see cref="PickupStopTermination.KeySuppressingReasonCodes"/>。
 /// </para>
 /// </remarks>
 public sealed class Batch7TransportDemandSuppressionTests
@@ -40,6 +42,15 @@ public sealed class Batch7TransportDemandSuppressionTests
     [InlineData("CANCELLED_BY_STOP_COMPLETE")]
     [InlineData("CANCELLED_BY_STATION_TIMEOUT")]
     public async Task EachLocalCancellationSuppressesTheKeyInTheSameSaveAsTheEnding(string reasonCode)
+    {
+        await AssertSuppressedInTheSameSaveAsTheEndingAsync(reasonCode);
+    }
+
+    /// <summary>
+    /// 以 <paramref name="reasonCode"/> 终结一条需求：暂存之后、保存之前，另一个连接上既没有抑制、需求也还没取消；保存之后两者同时在，
+    /// 抑制记下需求、码与终结时刻。
+    /// </summary>
+    private static async Task AssertSuppressedInTheSameSaveAsTheEndingAsync(string reasonCode)
     {
         await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
@@ -68,20 +79,39 @@ public sealed class Batch7TransportDemandSuppressionTests
         Assert.Equal(new TransportDemandSuppression(KeyOf(Demand), Demand, reasonCode, At.AddMinutes(5)), suppression);
     }
 
-    // ---- Endings that are not a local cancellation ------------------------------------------------------------------
+    // ---- The fault cargo handoff ------------------------------------------------------------------------------------
 
     /// <summary>
-    /// 故障货物交接与强制机械取出都以 <c>TERMINATED_BY_FAULT_CARGO_HANDOFF</c> 终结，不是本地取消，不抑制（REQ-0156 只列四个）。
-    /// 两条路径的端到端各在自己的测试里断言同一件事；这里是终结服务本身。
+    /// 故障货物交接与强制机械取出都以 <c>TERMINATED_BY_FAULT_CARGO_HANDOFF</c> 终结，与本地取消一样在同一次保存里按业务键抑制
+    /// （<c>REQ-0156</c> 经 <c>CP-0008</c> 修订，<c>REQ-0240</c>、<c>REQ-0242</c>）。control-server#210 时这里钉的是「交接不写」，
+    /// 那是 <c>v1.6.0</c> 的条文，不是放宽。两条路径经报文处理器的端到端各在 <c>JourneyRuntimeWorkerCargoRecoveryTests</c> 里断言
+    /// 同一次保存；这里是终结服务本身。
     /// </summary>
     [Fact]
-    public async Task AFaultCargoHandoffEndsTheDemandWithoutSuppressingItsKey()
+    public async Task AFaultCargoHandoffSuppressesTheKeyInTheSameSaveAsTheEnding()
+    {
+        await AssertSuppressedInTheSameSaveAsTheEndingAsync("TERMINATED_BY_FAULT_CARGO_HANDOFF");
+    }
+
+    // ---- Endings that write no suppression ------------------------------------------------------------------------
+
+    /// <summary>
+    /// 人员放弃停住的重建（control-server#345）不抑制：只在车上没有该任务货物时允许，货物从未离开原取货位置，同键以后再现时应当
+    /// 可以重新派车（<c>REQ-0156</c> 经 <c>CP-0008</c> 修订后写明）。
+    /// </summary>
+    /// <remarks>
+    /// 今天的放弃路径（<c>VehicleFaultRecoveryService.StoppedRebuild</c>）不经 <see cref="PickupStopTermination.StageAsync(JourneyRuntimeRow, string, string, DateTimeOffset, CancellationToken)"/>，
+    /// 所以它端到端不写抑制并不取决于写抑制集合——那一条在 <c>StoppedRebuildExitTests</c> 里断言。这里钉的是集合本身：哪天放弃改走
+    /// 终结服务、或者有人把这个码加进集合，这条要红。
+    /// </remarks>
+    [Fact]
+    public async Task AnOperatorGivingUpAStoppedRebuildEndsTheDemandWithoutSuppressingItsKey()
     {
         await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
         await Batch7JourneyFixture.AcceptAsync(fixture.Context, Demand, "agv-01", "VK-01", At);
         await fixture.RenewContextAsync();
 
-        await EndAsync(fixture.Context, Demand, "TERMINATED_BY_FAULT_CARGO_HANDOFF", At.AddMinutes(5));
+        await EndAsync(fixture.Context, Demand, "TERMINATED_BY_OPERATOR_AFTER_REBUILD_STOP", At.AddMinutes(5));
 
         await using ControlServerDbContext reading = fixture.NewContext();
         Assert.Equal(DemandExecutionStatus.Cancelled,
@@ -217,9 +247,9 @@ public sealed class Batch7TransportDemandSuppressionTests
                 new TransportDemandSuppression(KeyOf(Demand), Demand, "CANCELLED_BY_STATION_TIMEOUT", At.AddMinutes(5)),
                 Assert.Single(await SuppressionAssertions.AllAsync(reading)));
             Assert.Equal(DemandExecutionStatus.Cancelled, (await reading.AcceptedDemands.SingleAsync(cancellationToken)).Status);
-            Assert.Equal(At.AddMinutes(5), (await reading.VehicleDispatchLeases.SingleAsync(cancellationToken)).ReleasedAt);
+            Assert.Equal(At.AddMinutes(5), (await reading.Set<VehiclePurposeClaimRecordRow>().SingleAsync(cancellationToken)).ReleasedAt);
             Assert.Empty(await reading.Set<VehiclePurposeClaimRow>().ToArrayAsync(cancellationToken));
-            await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(reading);
+            await VehicleOccupancyAssertions.AssertOpenClaimRecordsAndPurposeClaimsMatchAsync(reading);
             // Both writers asked, and each asked inside its write transaction.
             Assert.True(deadlineWatch.Reads > 0 && cancellationWatch.Reads > 0,
                 $"suppression reads: deadline {deadlineWatch.Reads}, cancellation {cancellationWatch.Reads}");
@@ -265,7 +295,7 @@ public sealed class Batch7TransportDemandSuppressionTests
         Assert.Equal(before, await DumpEndingTablesAsync(fixture));
         await using ControlServerDbContext reading = fixture.NewContext();
         Assert.Equal(DemandExecutionStatus.Accepted, (await reading.AcceptedDemands.SingleAsync(cancellationToken)).Status);
-        Assert.Null((await reading.VehicleDispatchLeases.SingleAsync(cancellationToken)).ReleasedAt);
+        Assert.Null((await reading.Set<VehiclePurposeClaimRecordRow>().SingleAsync(cancellationToken)).ReleasedAt);
         Assert.Single(await reading.Set<VehiclePurposeClaimRow>().ToArrayAsync(cancellationToken));
         Assert.NotEqual(JourneyRuntimeStage.Completed, (await reading.JourneyRuntimes.SingleAsync(cancellationToken)).Stage);
         await SuppressionAssertions.AssertNothingSuppressedAsync(reading);
@@ -292,7 +322,7 @@ public sealed class Batch7TransportDemandSuppressionTests
         List<string> rows = [];
         foreach (string table in new[]
                  {
-                     "AcceptedDemands", "VehicleDispatchLeases", "VehiclePurposeClaims", "OrderIntents", "JourneyRuntimes",
+                     "AcceptedDemands", "VehiclePurposeClaimRecords", "VehiclePurposeClaims", "OrderIntents", "JourneyRuntimes",
                      "JourneyDemands", "JourneyStops", "TransportDemandSuppressions",
                  })
         {

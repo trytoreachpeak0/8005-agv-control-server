@@ -1409,8 +1409,11 @@ try {
                              # What the task type station preset loaded at startup (control-server#159).
                              'TaskTypeStationRuleVersions', 'TaskTypeStationBindingSetVersions',
                              'TaskTypeStationBindings', 'TaskTypeStationActiveBindingSets',
-                             # Batch 7's per-zone dispatch parameters, and the occupancy of record (control-server#206).
+                             # Batch 7's per-zone dispatch parameters, and the occupancy of record (control-server#206),
+                             # with its history since the lease was retired (control-server#387): what the "vehicle
+                             # released" criteria read.
                              'DispatchZoneParameterVersions', 'DispatchZoneParameters', 'VehiclePurposeClaims',
+                             'VehiclePurposeClaimRecords',
                              # The waiting point registration the orchestrator imported before the start (control-server#388).
                              'WaitingPointVersions', 'WaitingPoints', 'WaitingPointVehicleScopes')) {
             try {

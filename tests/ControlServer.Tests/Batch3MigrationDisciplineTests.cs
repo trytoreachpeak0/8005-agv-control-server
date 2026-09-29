@@ -50,7 +50,7 @@ public sealed class Batch3MigrationDisciplineTests
         // 在 #80 合入之后的 fp/v2-impl 上生成，排在它后面。批次 6 自己的断言在 Batch6MigrationDisciplineTests。
         "20260919021150_Batch6TaskTypeStationBindings",
         // 批次 7 唯一建表票 control-server#206：停靠与需求从属、用途占有、按业务键抑制、每区派车参数、按车修订号计数器，
-        // JourneyRuntimes／VehicleDispatchLeases 主键改 JourneyId。在 #159 合入之后的 fp/v2-impl 上生成。批次 7 自己的断言在
+        // JourneyRuntimes 与租约表主键改 JourneyId。在 #159 合入之后的 fp/v2-impl 上生成。批次 7 自己的断言在
         // Batch7MigrationDisciplineTests；迁移通道上排在它后面的是 control-server#199、#186。
         "20260919154546_Batch7MultiDemandJourneyPersistence",
         // 批次 7 迁移通道第一张：control-server#228，JourneyRuntimes 加 AreaEndAdmissionRevokedSince（准入被撤的等待起点）。
@@ -82,6 +82,8 @@ public sealed class Batch3MigrationDisciplineTests
         "20260928153736_MapNameBaselines",
         // control-server#386：批次 8 建表迁移——新建用途占有记录、站点独占与经过、等待点登记四组表（记录表建空，回填归 #387），VehiclePurposeClaims 加用途 CHECK；选甲放宽 JourneyRuntimes 锚需求与只属搬运的 14 列、OrderIntents／RiotDispatchAuditEvents／ExperimentalRiotCreateAuthorizations／OwnOrderRebuilds 的 DemandId 必填性（都是保留列序的手写重建）；既有列序与行不变。自己的断言在 Batch8MigrationDisciplineTests。
         "20260929044052_Batch8VehiclePurposePersistence",
+        // control-server#387：批次 8 第二次迁移——删前核数据（未结束的旧占用没有对应用途占有即整体拒绝、列出行、什么都不删），从占有行与已释放租约回填占有记录，删租约表与 OrderIntents 的两列订单占用及其过滤唯一索引（原生 DROP COLUMN，其余列序不变）。自己的断言在 Batch8OccupancyRetirementMigrationTests。
+        "20260929070322_Batch8RetireOldVehicleOccupancy",
     ];
 
     private static readonly string[] Batch3Tables =

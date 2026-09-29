@@ -942,7 +942,11 @@ internal static class JourneyRuntimeWorkerTestKit
             .AsNoTracking()
             .SingleAsync(row => row.DemandId == demandId, TestContext.Current.CancellationToken);
 
-        public Task<VehicleDispatchLeaseRow> LeaseAsync() => Context.VehicleDispatchLeases
+        /// <summary>
+        /// The one vehicle purpose claim record of the fixture's one journey. Its <c>ReleasedAt</c> is when the vehicle was
+        /// given back; it replaced the dispatch lease's (batch 8-16, control-server#387), written in the same save.
+        /// </summary>
+        public Task<VehiclePurposeClaimRecordRow> ClaimRecordAsync() => Context.Set<VehiclePurposeClaimRecordRow>()
             .AsNoTracking()
             .SingleAsync(TestContext.Current.CancellationToken);
 
@@ -1560,7 +1564,8 @@ internal static class JourneyRuntimeWorkerTestKit
 
         /// <summary>
         /// What each save since the last <see cref="Reset"/> wrote, one entry per save, as
-        /// <c>RowType.Property</c> for every property it inserted or modified. It is how a test says
+        /// <c>RowType.Property</c> for every property it inserted or modified, and <c>RowType (Deleted)</c> for every row it
+        /// deleted (a released purpose claim is a deleted row, control-server#387). It is how a test says
         /// that several facts commit together rather than one after another.
         /// </summary>
         public List<string[]> Saves { get; } = [];
@@ -1607,6 +1612,9 @@ internal static class JourneyRuntimeWorkerTestKit
                 .SelectMany(entry => entry.Properties
                     .Where(property => entry.State == EntityState.Added || property.IsModified)
                     .Select(property => $"{entry.Metadata.ClrType.Name}.{property.Metadata.Name}"))
+                .Concat(eventData.Context.ChangeTracker.Entries()
+                    .Where(entry => entry.State == EntityState.Deleted)
+                    .Select(entry => $"{entry.Metadata.ClrType.Name} (Deleted)"))
                 .ToArray();
             Saves.Add(written);
             if (FailWhen?.Invoke(written) == true)

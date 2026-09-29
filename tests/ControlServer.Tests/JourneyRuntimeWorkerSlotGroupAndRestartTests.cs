@@ -216,7 +216,7 @@ public sealed class JourneyRuntimeWorkerSlotGroupAndRestartTests
         Assert.Equal(before.DemandId, after.DemandId);
         Assert.Equal(before.PickupMovementLegId, after.PickupMovementLegId);
         Assert.Equal(before.PickupUpperId, after.PickupUpperId);
-        Assert.Equal(1, await fixture.Context.VehicleDispatchLeases.CountAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(1, await fixture.Context.Set<VehiclePurposeClaimRecordRow>().CountAsync(TestContext.Current.CancellationToken));
         Assert.Equal(1, await fixture.Context.OrderIntents.CountAsync(TestContext.Current.CancellationToken));
         Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
     }
@@ -384,7 +384,7 @@ public sealed class JourneyRuntimeWorkerSlotGroupAndRestartTests
         Assert.Equal("CONFIRMED", reconciled.Status);
         Assert.Equal("ORDER-TO_PICKUP", reconciled.OrderId);
         Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
-        Assert.Single(await fixture.Context.VehicleDispatchLeases.ToArrayAsync(
+        Assert.Single(await fixture.Context.Set<VehiclePurposeClaimRecordRow>().ToArrayAsync(
             TestContext.Current.CancellationToken));
     }
 

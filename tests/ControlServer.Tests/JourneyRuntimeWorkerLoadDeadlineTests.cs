@@ -46,11 +46,9 @@ public sealed class JourneyRuntimeWorkerLoadDeadlineTests
         Assert.Equal("CANCELLED_BY_STATION_TIMEOUT", runtime.BlockReasonCode);
         Assert.Equal(DemandExecutionStatus.Cancelled, (await fixture.DemandRowAsync()).Status);
         Assert.Equal(StationOperationStatus.Failed, (await fixture.OperationAsync(SlotOperationType.Load)).Status);
-        Assert.Equal(settledAt, (await fixture.LeaseAsync()).ReleasedAt);
-        OrderIntentRow pickup = await fixture.Context.OrderIntents.AsNoTracking()
-            .SingleAsync(row => row.Purpose == "TO_PICKUP", TestContext.Current.CancellationToken);
-        Assert.Equal(settledAt, pickup.VehicleOccupancyReleasedAt);
-        await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(fixture.Context);
+        Assert.Equal(settledAt, (await fixture.ClaimRecordAsync()).ReleasedAt);
+        Assert.False(await fixture.Context.Set<VehiclePurposeClaimRow>().AsNoTracking().AnyAsync(TestContext.Current.CancellationToken));
+        await VehicleOccupancyAssertions.AssertOpenClaimRecordsAndPurposeClaimsMatchAsync(fixture.Context);
         ProtocolOutboxRow loadCommand = await fixture.Context.ProtocolOutbox.AsNoTracking()
             .SingleAsync(row => row.MessageId == runtime.LoadCommandMessageId, TestContext.Current.CancellationToken);
         Assert.Equal(settledAt, loadCommand.AcknowledgedAt);
@@ -95,7 +93,7 @@ public sealed class JourneyRuntimeWorkerLoadDeadlineTests
         Assert.Equal("LOAD_RESULT_REQUIRES_RECOVERY", runtime.BlockReasonCode);
         Assert.Equal(StationOperationStatus.RecoveryRequired, (await fixture.OperationAsync(SlotOperationType.Load)).Status);
         Assert.Equal(DemandExecutionStatus.RecoveryRequired, (await fixture.DemandRowAsync()).Status);
-        Assert.Null((await fixture.LeaseAsync()).ReleasedAt);
+        Assert.Null((await fixture.ClaimRecordAsync()).ReleasedAt);
     }
 
     /// <summary>
@@ -127,7 +125,7 @@ public sealed class JourneyRuntimeWorkerLoadDeadlineTests
         Assert.Equal("STATION_TIMEOUT_DOOR_NOT_CLOSED", alarmed.BlockReasonCode);
         Assert.Equal(raisedAt, alarmed.BlockReasonSince);
         Assert.Equal(DemandExecutionStatus.Accepted, (await fixture.DemandRowAsync()).Status);
-        Assert.Null((await fixture.LeaseAsync()).ReleasedAt);
+        Assert.Null((await fixture.ClaimRecordAsync()).ReleasedAt);
         Assert.Single(fixture.EngineLog.Entries, entry =>
             entry.Level == LogLevel.Warning && entry.Message.Contains("STATION_TIMEOUT_DOOR_NOT_CLOSED"));
 
@@ -238,7 +236,7 @@ public sealed class JourneyRuntimeWorkerLoadDeadlineTests
         Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, unchanged.Stage);
         Assert.Null(unchanged.BlockReasonCode);
         Assert.Equal(DemandExecutionStatus.Accepted, (await fixture.DemandRowAsync()).Status);
-        Assert.Null((await fixture.LeaseAsync()).ReleasedAt);
+        Assert.Null((await fixture.ClaimRecordAsync()).ReleasedAt);
     }
 
     /// <summary>

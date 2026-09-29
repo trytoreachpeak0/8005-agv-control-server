@@ -845,7 +845,7 @@ public sealed class OnboardRecoveryCoordinator(
             // that cannot do the work at all, and it is not a SublotRejected.
             // Judged at the AREA machine station the way the runtime judges the entry (control-server#163): for
             // STAGING_TO_WIRE that is the drop-off, not the staging station the entry was made at.
-            return !await store.IsTaskTypeAllowedAtAreaEndAsync(runtime, demand.WorkType, cancellationToken)
+            return !await store.IsTaskTypeAllowedAtAreaEndAsync(demand.DemandId, demand.WorkType, cancellationToken)
                 .ConfigureAwait(false);
         }
         return true;

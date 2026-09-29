@@ -1607,14 +1607,9 @@ public sealed partial class JourneyRuntimeEngine(
                     await JourneyClosure.StageAsync(dbContext, runtime, reasonCode: null, now, cancellationToken)
                         .ConfigureAwait(false);
                     checkpointWaits.Clear(runtime.VehicleKey);
-                    // The journey is over, so the vehicle stops being occupied by it. Released
-                    // here rather than at the gate arrival because the claim covers the whole
-                    // journey, not one leg -- a vehicle that has arrived but not unloaded is still
-                    // executing this demand and must not be given another. It runs after the stage
-                    // is set so that the store's save commits both, and a crash between them
-                    // cannot leave a completed journey still holding its vehicle.
-                    await dispatchPolicy.ReleaseVehicleOccupancyAsync(
-                        runtime.PickupUpperId, cancellationToken).ConfigureAwait(false);
+                    // The vehicle's purpose claim was already released with the unload that ended the journey's last
+                    // demand (JourneyPurposeClaimRelease). The order occupancy that used to be released here, one round
+                    // later, was retired in batch 8-16 (control-server#387).
                 }
                 break;
             case JourneyRuntimeStage.Blocked:
@@ -3284,7 +3279,7 @@ public sealed partial class JourneyRuntimeEngine(
         {
             return true;
         }
-        return await store.IsTaskTypeAllowedAtAreaEndAsync(runtime, workType, cancellationToken).ConfigureAwait(false);
+        return await store.IsTaskTypeAllowedAtAreaEndAsync(next.Demand.DemandId, workType, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -3462,7 +3457,7 @@ public sealed partial class JourneyRuntimeEngine(
         // At the AREA machine station, not necessarily this one: STAGING_TO_WIRE loads at a staging station and is
         // admitted at the machine it unloads at (control-server#163). Asked here too, before anything is loaded for a
         // machine that would refuse it.
-        if (!await store.IsTaskTypeAllowedAtAreaEndAsync(runtime, demand.WorkType, cancellationToken)
+        if (!await store.IsTaskTypeAllowedAtAreaEndAsync(demand.DemandId, demand.WorkType, cancellationToken)
                 .ConfigureAwait(false))
         {
             runtime.SetBlockReason(AreaEndAdmissionHeldReason, now);

@@ -1,0 +1,23 @@
+Mutation: TERMINATED_BY_FAULT_CARGO_HANDOFF removed from KeySuppressingReasonCodes; same 22 classes
+  Failed ControlServer.Tests.JourneyRuntimeWorkerCargoRecoveryTests.AForcedRecoveryEndsTheDemandForGoodAndTheVehicleWorksAgainOnlyAfterItsHardwareRecord [12 s]
+  Error Message:
+   Assert.Single() Failure: The collection was empty
+  Failed ControlServer.Tests.JourneyRuntimeWorkerCargoRecoveryTests.AFaultCargoHandoffSuppressesTheKeyInTheSameSaveAsTheEnding [2 s]
+  Error Message:
+   Assert.Single() Failure: The collection was empty
+  Failed ControlServer.Tests.JourneyRuntimeWorkerCargoRecoveryTests.AForcedMechanicalRecoverySuppressesTheKeyInTheSameSaveAsTheEnding [2 s]
+  Error Message:
+   Assert.Single() Failure: The collection was empty
+  Failed ControlServer.Tests.JourneyRuntimeWorkerCargoRecoveryTests.AHandedOffDemandStillListedByMesIngestIsNeverDispatchedAgain [2 s]
+  Error Message:
+   Assert.Single() Failure: The collection was empty
+  Failed ControlServer.Tests.JourneyRuntimeWorkerCargoRecoveryTests.AKeySuppressedByAHandoffIsNotDispatchedAgainUnderANewDemandId [2 s]
+  Error Message:
+   Assert.Single() Failure: The collection was empty
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.EachResultThatEndsACommandedLoadFreesTheVehicleForItsNextOrder(messageType: "FaultCargoRecoveryResult", reasonCode: "TERMINATED_BY_FAULT_CARGO_HANDOFF") [819 ms]
+  Error Message:
+   Assert.Single() Failure: The collection was empty
+  Failed ControlServer.Tests.Batch7TransportDemandSuppressionTests.AFaultCargoHandoffSuppressesTheKeyInTheSameSaveAsTheEnding [19 s]
+  Error Message:
+   Assert.Contains() Failure: Filter not matched in collection
+Failed!  - Failed:     7, Passed:   522, Skipped:     0, Total:   529, Duration: 4 m 56 s - ControlServer.Tests.dll (net8.0)

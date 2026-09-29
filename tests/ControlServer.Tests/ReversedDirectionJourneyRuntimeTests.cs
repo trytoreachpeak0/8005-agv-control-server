@@ -2,6 +2,7 @@ using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Dashboard;
+using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
@@ -166,6 +167,114 @@ public sealed class ReversedDirectionJourneyRuntimeTests
         Assert.Equal("LoadCancellationAuthorization", Type(document.RootElement));
         Assert.Equal("REJECTED", document.RootElement.GetProperty("payload").GetProperty("decision").GetString());
         Assert.Empty(await fixture.Context.RecoveryWorkflows.AsNoTracking().ToArrayAsync(Token));
+    }
+
+    /// <summary>
+    /// control-server#251 (the coordinator's choice B on 2026-09-29): the unload's admission is asked at the machine of the
+    /// demand being unloaded, not at the anchor's. Two STAGING_TO_WIRE demands load at the same staging station; the anchor
+    /// unloads at N1-1, the further demand at a second machine. Once the anchor is unloaded, N1-1 stops admitting
+    /// STAGING_TO_WIRE; the second machine still does, so the further demand's unload is commanded there. Asked at the
+    /// anchor's machine, it is held under TASK_TYPE_NOT_ALLOWED_AT_STATION instead.
+    /// </summary>
+    /// <remarks>
+    /// The journey is shaped by hand the way the planner would leave it -- a second unload stop, the further demand's
+    /// membership pointing at it, its task type freeze the anchor's -- as <c>Batch7ThreeStopJourneyTests</c> does for its
+    /// extra unload stop: the append path is WIRE_TO_GATE-shaped in the test kit.
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task AFurtherDemandsUnloadIsAdmittedAtItsOwnMachineWhenTheAnchorsIsRevoked()
+    {
+        const string FurtherDemand = "10000000-0000-4000-8000-000000000002";
+        const string SecondMachine = "N1-2_N1-3";
+        await using RuntimeFixture fixture = await WithStagingToWireBoundAsync();
+        fixture.Catalog.Set(Reverse(fixture, ReverseDemand, "SUBLOT-001"));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        await Batch7StopDrivenAdvanceDriver.TickAndRunAsync(fixture);
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync(ReverseDemand);
+
+        string extraId = $"{runtime.JourneyId}|EXTRA-UNLOAD";
+        fixture.Context.Set<JourneyStopRow>().Add(new JourneyStopRow
+        {
+            StopId = extraId,
+            JourneyId = runtime.JourneyId,
+            Sequence = 3,
+            StopRole = JourneyStopRoles.Unload,
+            StationId = SecondMachine,
+            StationRiotId = 13,
+            DispatchZone = runtime.DispatchZone,
+            OperationSessionId = JourneyPlanBuilder.StableGuid(extraId, "session"),
+            MovementLegId = JourneyPlanBuilder.StableGuid(extraId, "leg"),
+            UpperId = $"W2G-{extraId}",
+            VehicleBusinessMessageId = JourneyPlanBuilder.StableGuid(extraId, "vehicle-state"),
+            WorklistMessageId = JourneyPlanBuilder.StableGuid(extraId, "worklist"),
+            PlanMessageId = JourneyPlanBuilder.StableGuid(extraId, "plan"),
+            Status = JourneyStopStatuses.Pending,
+            CreatedAt = runtime.CreatedAt
+        });
+        await fixture.Context.SaveChangesAsync(Token);
+        AcceptedDemandRow further = await JourneyMembershipSeed.AddFurtherDemandAsync(fixture.Context, runtime, FurtherDemand);
+        fixture.BoxCounts.Set(further.Sublot, 7);
+        JourneyDemandRow membership = await fixture.Context.Set<JourneyDemandRow>()
+            .SingleAsync(row => row.DemandId == FurtherDemand, Token);
+        membership.UnloadStopId = extraId;
+        // The seed's per-demand ids are shaped for store-level tests; the engine sends them, so they are UUIDs here.
+        membership.LoadSlotOperationAttemptId = JourneyPlanBuilder.StableGuid(FurtherDemand, "load-attempt");
+        membership.LoadCommandMessageId = JourneyPlanBuilder.StableGuid(FurtherDemand, "load-command");
+        membership.UnloadSlotOperationAttemptId = JourneyPlanBuilder.StableGuid(FurtherDemand, "unload-attempt");
+        membership.UnloadCommandMessageId = JourneyPlanBuilder.StableGuid(FurtherDemand, "unload-command");
+        DemandTaskTypeStationFreezeStore freezes = new(fixture.Context);
+        DemandTaskTypeStationFreeze anchorFreeze = (await freezes.ReadAsync(ReverseDemand, Token))!;
+        await freezes.FreezeAsync(
+            FurtherDemand, anchorFreeze.RuleVersion, anchorFreeze.MapId, anchorFreeze.BindingSetVersion, Now, Token);
+        await fixture.Context.SaveChangesAsync(Token);
+        // The second machine admits STAGING_TO_WIRE -- the premise the further demand was dispatched on.
+        if (!await fixture.Context.StationTaskTypeAdmissions.AnyAsync(
+                row => row.StationId == SecondMachine && row.TaskType == TransportTaskTypes.StagingToWire, Token))
+        {
+            fixture.Context.StationTaskTypeAdmissions.Add(new StationTaskTypeAdmissionRow
+            {
+                StationId = SecondMachine,
+                TaskType = TransportTaskTypes.StagingToWire,
+                PolicyVersion = 1
+            });
+            await fixture.Context.SaveChangesAsync(Token);
+        }
+        fixture.Context.ChangeTracker.Clear();
+
+        // Both load at the staging station, the anchor unloads at N1-1 and the vehicle leaves for the second machine.
+        await Batch7StopDrivenAdvanceDriver.ArriveAtCurrentStopAsync(fixture, ReverseDemand, "TO_PICKUP");
+        await Batch7StopDrivenAdvanceDriver.EnterSublotAsync(
+            fixture, ReverseDemand, "SUBLOT-001", Batch7StopDrivenAdvanceDriver.FirstSubmissionId);
+        await Batch7StopDrivenAdvanceDriver.SettleLoadAsync(fixture, ReverseDemand);
+        await Batch7StopDrivenAdvanceDriver.EnterSublotAsync(
+            fixture, FurtherDemand, further.Sublot, Batch7StopDrivenAdvanceDriver.SecondSubmissionId);
+        await Batch7StopDrivenAdvanceDriver.SettleLoadAsync(fixture, FurtherDemand);
+        await Batch7StopDrivenAdvanceDriver.AnswerDepartureSafetyAsync(
+            fixture, ReverseDemand, Batch7StopDrivenAdvanceDriver.FirstSafetyResultId);
+        await Batch7StopDrivenAdvanceDriver.ArriveAtGateAndUnloadAsync(fixture, ReverseDemand);
+        // The policy after the anchor's unload: N1-1 no longer admits STAGING_TO_WIRE; the second machine still does.
+        fixture.Context.StationTaskTypeAdmissions.RemoveRange(
+            await fixture.Context.StationTaskTypeAdmissions
+                .Where(row => row.StationId == "N1-1" && row.TaskType == TransportTaskTypes.StagingToWire)
+                .ToArrayAsync(Token));
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+        await Batch7StopDrivenAdvanceDriver.AnswerDepartureSafetyAsync(
+            fixture, ReverseDemand, Batch7StopDrivenAdvanceDriver.SecondSafetyResultId);
+
+        await Batch7StopDrivenAdvanceDriver.ArriveAtCurrentStopAsync(fixture, FurtherDemand, "TO_GATE");
+
+        fixture.Context.ChangeTracker.Clear();
+        JourneyRuntimeRow after = await fixture.RuntimeAsync(ReverseDemand);
+        bool unloadPrepared = await fixture.Context.StationOperations.AsNoTracking()
+            .AnyAsync(row => row.SlotOperationAttemptId == membership.UnloadSlotOperationAttemptId, Token);
+        Assert.True(
+            unloadPrepared && after.BlockReasonCode != "TASK_TYPE_NOT_ALLOWED_AT_STATION",
+            $"stage: {after.Stage}; unload prepared: {unloadPrepared}; block reason: {after.BlockReasonCode ?? "none"}");
+        AdmissionDecisionSnapshotRow frozen = await fixture.Context.AdmissionDecisionSnapshots.AsNoTracking()
+            .SingleAsync(row => row.SlotOperationAttemptId == membership.UnloadSlotOperationAttemptId, Token);
+        Assert.Equal(SecondMachine, frozen.StationId);
     }
 
     /// <summary>

@@ -238,12 +238,11 @@ public sealed class Batch7MultiDemandAdvanceTests
         JourneyRuntimeRow after = await JourneyOfAsync(fixture, FirstDemandId);
         Assert.Equal(
             (JourneyRuntimeStage.Completed, "CANCELLED_BY_STATION_TIMEOUT"), (after.Stage, after.BlockReasonCode));
-        VehicleDispatchLeaseRow lease = await fixture.Context.VehicleDispatchLeases.AsNoTracking()
+        VehiclePurposeClaimRecordRow record = await fixture.Context.Set<VehiclePurposeClaimRecordRow>().AsNoTracking()
             .SingleAsync(row => row.JourneyId == after.JourneyId, token);
-        Assert.NotNull(lease.ReleasedAt);
-        OrderIntentRow pickup = await fixture.Context.OrderIntents.AsNoTracking()
-            .SingleAsync(row => row.UpperId == after.PickupUpperId, token);
-        Assert.NotNull(pickup.VehicleOccupancyReleasedAt);
+        Assert.NotNull(record.ReleasedAt);
+        Assert.False(await fixture.Context.Set<VehiclePurposeClaimRow>().AsNoTracking()
+            .AnyAsync(row => row.JourneyId == after.JourneyId, token));
 
         await ClosureSnapshotAssertions.AssertClosureSentAsync(
             fixture.Context,

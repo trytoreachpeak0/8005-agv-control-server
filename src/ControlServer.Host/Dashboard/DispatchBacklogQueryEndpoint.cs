@@ -61,9 +61,9 @@ internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
                 "本图这个任务类型处于暂停（人工暂停、站点目录变化或绑定激活结果未知），解除后才会派车",
             [DispatchReasonCodes.TaskTypeNotYetExecutable] =
                 "这个任务类型已有绑定，但当前版本的服务端还不能执行它",
-            // 按业务键抑制（control-server#210）：有意不执行，不是故障。
+            // 按业务键抑制（control-server#210；故障货物交接自 control-server#395 起也写）：有意不执行，不是故障。
             [DispatchReasonCodes.TransportDemandKeySuppressed] =
-                "这个子批次的这类任务已在本地取消过，按业务键永久不再执行；MES 换了新的需求号也一样",
+                "这个子批次的这类任务已在本地取消过、或已以故障货物交接终止，按业务键永久不再执行；MES 换了新的需求号也一样",
             [DispatchReasonCodes.TransportDemandKeyAlreadyAccepted] =
                 "这个子批次的这类任务已由另一个需求号受理过（在办、已完成或已取消），同一件活不再重复受理",
             // 批次 7（control-server#211～#215）：途中追加、装货阶段、释放改派。都是正常调度的结论，不是故障（规格 8.8 第 4 条）。

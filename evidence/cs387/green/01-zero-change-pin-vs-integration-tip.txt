@@ -1,0 +1,44 @@
+# control-server#387 ZeroChangePins 与集成分支顶端逐字段比对
+# integration tip: origin/fp/v2-impl@af2b02cb7bc8cda379321d5a80566776191396a7
+# script: 按表分节比对；VehicleDispatchLeases 行对 VehiclePurposeClaimRecords 行按 (VehicleKey, JourneyId, AcquiredAt, ReleasedAt) 比，OrderIntents 行去掉末尾两列后逐字比，其余节逐字比
+# ZeroChangePins: this branch vs origin/fp/v2-impl
+SAME-EXCEPT-RETIREMENT cancellation-before-sublot.txt
+  lease->record 'journey:10000000-0000-4000-8000-000000000001' 'BROKERX-0c20ff0600d644869a6a80c186065d85' AcquiredAt='2026-08-26 01:00:00+00:00' ReleasedAt='2026-08-26 01:00:00+00:00' ReleaseReason='CANCELLED_BY_OPERATOR'
+  OrderIntents W2G-10000000-0000-4000-8000-000000000001-PICKUP-1: dropped VehicleOccupancyClaimedAt='2026-08-26 01:00:00+00:00' VehicleOccupancyReleasedAt='2026-08-26 01:00:00+00:00'
+SAME-EXCEPT-RETIREMENT commanded-ending-FaultCargoRecoveryResult.txt
+  lease->record 'journey:10000000-0000-4000-8000-000000000001' 'VEHICLE-001' AcquiredAt='2026-08-26 09:52:00+00:00' ReleasedAt='2026-08-26 10:00:00+00:00' ReleaseReason='TERMINATED_BY_FAULT_CARGO_HANDOFF'
+  OrderIntents UPPER-GATE: dropped VehicleOccupancyClaimedAt=NULL VehicleOccupancyReleasedAt=NULL
+  OrderIntents UPPER-PICKUP: dropped VehicleOccupancyClaimedAt='2026-08-26 09:52:00+00:00' VehicleOccupancyReleasedAt='2026-08-26 10:00:00+00:00'
+SAME-EXCEPT-RETIREMENT commanded-ending-LoadCancellationResult.txt
+  lease->record 'journey:10000000-0000-4000-8000-000000000001' 'VEHICLE-001' AcquiredAt='2026-08-26 09:52:00+00:00' ReleasedAt='2026-08-26 10:00:00+00:00' ReleaseReason='CANCELLED_BY_OPERATOR'
+  OrderIntents UPPER-GATE: dropped VehicleOccupancyClaimedAt=NULL VehicleOccupancyReleasedAt=NULL
+  OrderIntents UPPER-PICKUP: dropped VehicleOccupancyClaimedAt='2026-08-26 09:52:00+00:00' VehicleOccupancyReleasedAt='2026-08-26 10:00:00+00:00'
+SAME-EXCEPT-RETIREMENT commanded-ending-LoadCompensationResult.txt
+  lease->record 'journey:10000000-0000-4000-8000-000000000001' 'VEHICLE-001' AcquiredAt='2026-08-26 09:52:00+00:00' ReleasedAt='2026-08-26 10:00:00+00:00' ReleaseReason='CANCELLED_BY_LOAD_COMPENSATION'
+  OrderIntents UPPER-GATE: dropped VehicleOccupancyClaimedAt=NULL VehicleOccupancyReleasedAt=NULL
+  OrderIntents UPPER-PICKUP: dropped VehicleOccupancyClaimedAt='2026-08-26 09:52:00+00:00' VehicleOccupancyReleasedAt='2026-08-26 10:00:00+00:00'
+SAME dashboard-blocked-journeys-admission-session-down.txt (not a table dump)
+SAME dashboard-blocked-journeys-own-move-order.txt (not a table dump)
+SAME dashboard-expected-action-overdue-load.txt (not a table dump)
+SAME dashboard-expected-action-overdue-unload.txt (not a table dump)
+SAME-EXCEPT-RETIREMENT determinate-load-failure.txt
+  lease->record 'journey:10000000-0000-4000-8000-000000000001' 'BROKERX-0c20ff0600d644869a6a80c186065d85' AcquiredAt='2026-08-26 01:00:00+00:00' ReleasedAt='2026-08-26 01:00:11+00:00' ReleaseReason='CANCELLED_BY_STATION_TIMEOUT'
+  OrderIntents W2G-10000000-0000-4000-8000-000000000001-PICKUP-1: dropped VehicleOccupancyClaimedAt='2026-08-26 01:00:00+00:00' VehicleOccupancyReleasedAt='2026-08-26 01:00:11+00:00'
+SAME-EXCEPT-RETIREMENT fault-cargo-handoff.txt
+  lease->record 'journey:10000000-0000-4000-8000-000000000001' 'BROKERX-0c20ff0600d644869a6a80c186065d85' AcquiredAt='2026-08-26 01:00:00+00:00' ReleasedAt='2026-08-26 01:00:00+00:00' ReleaseReason='TERMINATED_BY_FAULT_CARGO_HANDOFF'
+  OrderIntents W2G-10000000-0000-4000-8000-000000000001-PICKUP-1: dropped VehicleOccupancyClaimedAt='2026-08-26 01:00:00+00:00' VehicleOccupancyReleasedAt='2026-08-26 01:00:00+00:00'
+SAME-EXCEPT-RETIREMENT forced-mechanical-recovery.txt
+  lease->record 'journey:10000000-0000-4000-8000-000000000001' 'BROKERX-0c20ff0600d644869a6a80c186065d85' AcquiredAt='2026-08-26 01:00:00+00:00' ReleasedAt='2026-08-26 01:00:00+00:00' ReleaseReason='TERMINATED_BY_FAULT_CARGO_HANDOFF'
+  OrderIntents W2G-10000000-0000-4000-8000-000000000001-PICKUP-1: dropped VehicleOccupancyClaimedAt='2026-08-26 01:00:00+00:00' VehicleOccupancyReleasedAt='2026-08-26 01:00:00+00:00'
+SAME-EXCEPT-RETIREMENT in-flight-cancellation.txt
+  lease->record 'journey:10000000-0000-4000-8000-000000000001' 'BROKERX-0c20ff0600d644869a6a80c186065d85' AcquiredAt='2026-08-26 01:00:00+00:00' ReleasedAt='2026-08-26 01:00:00+00:00' ReleaseReason='CANCELLED_BY_OPERATOR'
+  OrderIntents W2G-10000000-0000-4000-8000-000000000001-PICKUP-1: dropped VehicleOccupancyClaimedAt='2026-08-26 01:00:00+00:00' VehicleOccupancyReleasedAt='2026-08-26 01:00:00+00:00'
+SAME-EXCEPT-RETIREMENT station-deadline.txt
+  lease->record 'journey:10000000-0000-4000-8000-000000000001' 'BROKERX-0c20ff0600d644869a6a80c186065d85' AcquiredAt='2026-08-26 01:00:00+00:00' ReleasedAt='2026-08-26 01:00:10+00:00' ReleaseReason='CANCELLED_BY_STATION_TIMEOUT'
+  OrderIntents W2G-10000000-0000-4000-8000-000000000001-PICKUP-1: dropped VehicleOccupancyClaimedAt='2026-08-26 01:00:00+00:00' VehicleOccupancyReleasedAt='2026-08-26 01:00:10+00:00'
+SAME-EXCEPT-RETIREMENT unload.txt
+  lease->record 'journey:10000000-0000-4000-8000-000000000001' 'BROKERX-0c20ff0600d644869a6a80c186065d85' AcquiredAt='2026-08-26 01:00:00+00:00' ReleasedAt='2026-08-26 01:00:00+00:00' ReleaseReason='LAST_DEMAND_UNLOADED'
+  OrderIntents W2G-10000000-0000-4000-8000-000000000001-GATE-1: dropped VehicleOccupancyClaimedAt=NULL VehicleOccupancyReleasedAt=NULL
+  OrderIntents W2G-10000000-0000-4000-8000-000000000001-PICKUP-1: dropped VehicleOccupancyClaimedAt='2026-08-26 01:00:00+00:00' VehicleOccupancyReleasedAt='2026-08-26 01:00:00+00:00'
+
+totals: lease->record=10, orderintent-two-columns-dropped=14, other-diff=0, files=14

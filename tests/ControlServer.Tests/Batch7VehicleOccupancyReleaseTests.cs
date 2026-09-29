@@ -8,12 +8,13 @@ using static ControlServer.Tests.JourneyRuntimeWorkerTestKit;
 namespace ControlServer.Tests;
 
 /// <summary>
-/// 批次 7 建表票（control-server#206）：用途占有在每一个释放租约的地方、同一次保存里一起释放，所以一趟旅程不论怎样结束，
-/// 同一辆车都能受理下一趟，且「活租约 ⇔ 用途占有」始终成立。
+/// 批次 7 建表票（control-server#206）：用途占有在每一个旅程结束的地方、同一次保存里释放，所以一趟旅程不论怎样结束，
+/// 同一辆车都能受理下一趟。批次8-16（control-server#387）退役租约之后，成立的是「开着的占有记录 ⇔ 用途占有」，
+/// 并且每一趟结束都在历史里留下释放时刻与原因。
 /// </summary>
 /// <remarks>
 /// <para>
-/// 释放租约的地方只有三处：卸货结果（<c>WireToGateStore.ApplyOperationResultAsync</c>）、直接完成入口
+/// 释放用途占有的地方只有三处：卸货结果（<c>WireToGateStore.ApplyOperationResultAsync</c>）、直接完成入口
 /// （<c>WireToGateStore.CompleteDemandAfterUnloadAsync</c>）、取货停靠的各种结束（<see cref="PickupStopTermination"/>）。
 /// 最后那一处是站点期限、确定性装货失败、扫码前取消、在途取消、补偿、故障货物交接、强制机械取出七条路径共用的尾巴，
 /// 这里按它们用到的四种终态原因各跑一遍。经真实运行时与报文处理器走完这些路径、再让同车接下一单的端到端测试在各自的类里
@@ -30,8 +31,13 @@ public sealed class Batch7VehicleOccupancyReleaseTests
         fixture.BoxCounts.Set("SUBLOT-001", 4);
         await fixture.RunToCompletionAsync();
         Assert.Equal(DemandExecutionStatus.Succeeded, (await fixture.DemandRowAsync()).Status);
-        await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(fixture.Context);
+        await VehicleOccupancyAssertions.AssertOpenClaimRecordsAndPurposeClaimsMatchAsync(fixture.Context);
         await ZeroChangePin.AssertMatchesAsync(fixture.Context, "unload");
+        Assert.Equal(
+            VehiclePurposeReleaseReasons.LastDemandUnloaded,
+            (await fixture.ClaimRecordAsync()).ReleaseReason);
+        Assert.Empty(await fixture.Context.Set<VehiclePurposeClaimRow>().AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken));
 
         fixture.Catalog.Set(fixture.Demand("10000000-0000-4000-8000-000000000002", "SUBLOT-002", Now.AddMinutes(-5)));
         fixture.BoxCounts.Set("SUBLOT-002", 4);
@@ -40,7 +46,7 @@ public sealed class Batch7VehicleOccupancyReleaseTests
         Assert.Equal(
             JourneyRuntimeStage.AwaitingPickupArrival,
             (await fixture.RuntimeAsync("10000000-0000-4000-8000-000000000002")).Stage);
-        await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(fixture.Context);
+        await VehicleOccupancyAssertions.AssertOpenClaimRecordsAndPurposeClaimsMatchAsync(fixture.Context);
         Assert.Single(await fixture.Context.Set<VehiclePurposeClaimRow>().AsNoTracking()
             .Where(claim => claim.JourneyId == "journey:10000000-0000-4000-8000-000000000002")
             .ToArrayAsync(TestContext.Current.CancellationToken));
@@ -53,10 +59,13 @@ public sealed class Batch7VehicleOccupancyReleaseTests
         await Batch7JourneyFixture.AcceptAsync(fixture.Context, "D-721", "agv-01", "VK-01", Batch7JourneyFixture.Now);
 
         await Batch7JourneyFixture.CompleteByUnloadAsync(fixture.Context, "D-721", Batch7JourneyFixture.Now.AddMinutes(10));
-        await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(fixture.NewContext());
+        await VehicleOccupancyAssertions.AssertOpenClaimRecordsAndPurposeClaimsMatchAsync(fixture.NewContext());
+        await VehicleOccupancyAssertions.AssertReleasedWithHistoryAsync(
+            fixture.NewContext(), JourneyIdentity.ForAnchorDemand("D-721"), Batch7JourneyFixture.Now.AddMinutes(10),
+            VehiclePurposeReleaseReasons.LastDemandUnloaded);
 
         await Batch7JourneyFixture.AcceptAsync(fixture.Context, "D-722", "agv-01", "VK-01", Batch7JourneyFixture.Now.AddMinutes(11));
-        await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(fixture.NewContext());
+        await VehicleOccupancyAssertions.AssertOpenClaimRecordsAndPurposeClaimsMatchAsync(fixture.NewContext());
     }
 
     /// <summary>
@@ -87,11 +96,13 @@ public sealed class Batch7VehicleOccupancyReleaseTests
         await fixture.Context.SaveChangesAsync(cancellationToken);
 
         Assert.Equal(DemandExecutionStatus.Cancelled, (await fixture.NewContext().AcceptedDemands.SingleAsync(cancellationToken)).Status);
-        await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(fixture.NewContext());
+        await VehicleOccupancyAssertions.AssertOpenClaimRecordsAndPurposeClaimsMatchAsync(fixture.NewContext());
         Assert.Empty(await fixture.NewContext().Set<VehiclePurposeClaimRow>().ToArrayAsync(cancellationToken));
+        await VehicleOccupancyAssertions.AssertReleasedWithHistoryAsync(
+            fixture.NewContext(), runtime.JourneyId, now.AddMinutes(5), reasonCode);
 
         await Batch7JourneyFixture.AcceptAsync(fixture.Context, "D-724", "agv-01", "VK-01", now.AddMinutes(6));
-        await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(fixture.NewContext());
+        await VehicleOccupancyAssertions.AssertOpenClaimRecordsAndPurposeClaimsMatchAsync(fixture.NewContext());
     }
 
     [Fact]
@@ -114,6 +125,6 @@ public sealed class Batch7VehicleOccupancyReleaseTests
 
         VehiclePurposeClaimRow claim = await fixture.NewContext().Set<VehiclePurposeClaimRow>().SingleAsync(cancellationToken);
         Assert.Equal(JourneyIdentity.ForAnchorDemand("D-726"), claim.JourneyId);
-        await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(fixture.NewContext());
+        await VehicleOccupancyAssertions.AssertOpenClaimRecordsAndPurposeClaimsMatchAsync(fixture.NewContext());
     }
 }

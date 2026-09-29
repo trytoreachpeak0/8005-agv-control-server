@@ -173,7 +173,7 @@ public sealed class DemandTaskTypeStationIntakeFreezeTests
         Assert.Null(versions);
         Assert.Empty(await fixture.Context.JourneyRuntimes.AsNoTracking().ToArrayAsync(Token));
         Assert.Empty(await fixture.Context.OrderIntents.AsNoTracking().ToArrayAsync(Token));
-        Assert.Empty(await fixture.Context.VehicleDispatchLeases.AsNoTracking().ToArrayAsync(Token));
+        Assert.Empty(await fixture.Context.Set<VehiclePurposeClaimRecordRow>().AsNoTracking().ToArrayAsync(Token));
     }
 
     /// <summary>

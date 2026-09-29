@@ -588,9 +588,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
     /// <remarks>
     /// <para>
     /// <b>与受理写的是同一套冻结，少的是旅程层面那几样。</b>需求行、三样冻结（区域分配、端点、任务类型站点版本）
-    /// 与受理一字不差——一条需求不会因为它是被追加进来的就少冻结一个版本。不写的是旅程行、租约、用途占有与移动订单：
-    /// 那辆车已经被这趟旅程占着（<c>OrderIntents</c> 的过滤唯一索引与 <c>VehiclePurposeClaims</c> 的主键都是一车一行，
-    /// 再认领一次会直接冲突），而新那一段腿要等前面的停靠走完才发。
+    /// 与受理一字不差——一条需求不会因为它是被追加进来的就少冻结一个版本。不写的是旅程行、用途占有与移动订单：
+    /// 那辆车已经被这趟旅程占着（<c>VehiclePurposeClaims</c> 的主键一车一行，再认领一次会直接冲突），而新那一段腿要等前面的停靠走完才发。
     /// </para>
     /// <para>
     /// <b>四样东西一个事务：</b>需求行、归属、两个新停靠、既有停靠的新序位。分开写会留下「占了仓位却不在计划里的需求」
@@ -1078,17 +1077,6 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction,
         CancellationToken cancellationToken)
     {
-        VehicleDispatchLeaseRow? activeLease = await dbContext.VehicleDispatchLeases
-            .SingleOrDefaultAsync(
-                row => row.VehicleKey == orderIntent.VehicleKey && row.ReleasedAt == null,
-                cancellationToken)
-            .ConfigureAwait(false);
-        if (activeLease is not null)
-        {
-            throw new BusinessIdentityConflictException(
-                $"Vehicle '{orderIntent.VehicleKey}' is already bound to unresolved demand '{activeLease.DemandId}'.");
-        }
-
         if (redispatch)
         {
             await ThawForRedispatchAsync(snapshot.DemandId, cancellationToken).ConfigureAwait(false);
@@ -1122,24 +1110,13 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
             dbContext.AcceptedDemands.Add(NewAcceptedDemandRow(snapshot));
         }
         string journeyId = JourneyIdentity.ForAnchorDemand(journey?.DerivationKeyFor(snapshot.DemandId) ?? snapshot.DemandId);
-        dbContext.VehicleDispatchLeases.Add(new VehicleDispatchLeaseRow
-        {
-            JourneyId = journeyId,
-            DemandId = snapshot.DemandId,
-            VehicleKey = orderIntent.VehicleKey,
-            AcquiredAt = snapshot.AcceptedAt
-        });
-        // Batch 7 (control-server#206): the purpose claim is the vehicle's occupancy of record, written beside the lease in
-        // the same save and released wherever the lease is. It is inserted, never read first: the key decides who holds
-        // the vehicle.
+        // The purpose claim is the vehicle's one occupancy (batch 8-16, control-server#387: the lease and the order
+        // occupancy that used to be written beside it are gone), taken with its record in this acceptance's save. It is
+        // inserted, never read first: the key decides who holds the vehicle, and a vehicle some other journey holds
+        // refuses the whole acceptance below.
         ForgetClaimsThisContextLastSaw(orderIntent.VehicleKey);
-        dbContext.Set<VehiclePurposeClaimRow>().Add(new VehiclePurposeClaimRow
-        {
-            VehicleKey = orderIntent.VehicleKey,
-            Purpose = VehiclePurposes.Transport,
-            JourneyId = journeyId,
-            ClaimedAt = snapshot.AcceptedAt
-        });
+        dbContext.AddRange(VehiclePurposeClaimWrites.NewRows(
+            new VehiclePurposeClaim(orderIntent.VehicleKey, VehiclePurposes.Transport, journeyId, snapshot.AcceptedAt)));
         dbContext.OrderIntents.Add(ToRow(orderIntent));
         if (journey is not null)
         {
@@ -1170,8 +1147,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         }
         catch (DbUpdateException failure) when (IsPurposeClaimConflict(failure))
         {
-            // Another journey's claim landed between the lease read above and this insert: the key refused this one, and
-            // the transaction rolls every row of this acceptance back with it. Said the way the lease read says it.
+            // Another journey holds the vehicle: the key refused this claim, and the transaction rolls every row of this
+            // acceptance back with it.
             throw new BusinessIdentityConflictException(
                 $"Vehicle '{orderIntent.VehicleKey}' is already claimed by another journey: {failure.InnerException?.Message}");
         }
@@ -1771,24 +1748,70 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
     }
 
     /// <summary>
-    /// Whether the task type is admitted at the journey's AREA machine station: its pickup when the machine is where
-    /// it loads, its drop-off when the machine is where it unloads (<see cref="AreaEndOperationAsync"/>). A journey
-    /// whose direction cannot be read is not admitted.
+    /// Whether the task type is admitted at the demand's AREA machine station: the station of the stop it loads at when the
+    /// machine is where it loads, of the stop it unloads at when the machine is where it unloads
+    /// (<see cref="AreaEndOperationAsync"/>). A demand whose direction cannot be read, or that no journey carries, is not
+    /// admitted.
     /// </summary>
+    /// <remarks>
+    /// Asked of the demand, not of the journey (control-server#251): the journey row's <c>DemandId</c>,
+    /// <c>PickupStationId</c> and <c>GateStationId</c> are the anchor demand's, and in a journey of several stops a further
+    /// demand is loaded or unloaded somewhere else, under a rule version of its own. The station comes from
+    /// <see cref="StopStationIds"/>, the one derivation <see cref="PrepareSlotOperationAsync"/> checks against too.
+    /// </remarks>
     public async Task<bool> IsTaskTypeAllowedAtAreaEndAsync(
-        JourneyRuntimeRow runtime,
+        string demandId,
         string taskType,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(runtime);
-        return await AreaEndOperationAsync(runtime.DemandId, taskType, cancellationToken).ConfigureAwait(false) switch
+        ArgumentException.ThrowIfNullOrWhiteSpace(demandId);
+        if (await AreaEndOperationAsync(demandId, taskType, cancellationToken).ConfigureAwait(false)
+            is not { } areaEnd)
         {
-            SlotOperationType.Load => await IsTaskTypeAllowedAsync(runtime.PickupStationId, taskType, cancellationToken)
-                .ConfigureAwait(false),
-            SlotOperationType.Unload => await IsTaskTypeAllowedAsync(runtime.GateStationId, taskType, cancellationToken)
-                .ConfigureAwait(false),
-            _ => false,
-        };
+            return false;
+        }
+        string? stationId = await StopStationIds(
+                dbContext.Set<JourneyDemandRow>().Where(row => row.DemandId == demandId && row.RemovedAt == null),
+                areaEnd)
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        return stationId is not null &&
+               await IsTaskTypeAllowedAsync(stationId, taskType, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// "Which station is this": the station of the stop each of <paramref name="memberships"/> performs
+    /// <paramref name="operationType"/> at -- its pickup stop for the load, its unload stop for the unload. The one place
+    /// that maps a demand's operation to a station (control-server#251); callers choose which memberships.
+    /// </summary>
+    private IQueryable<string> StopStationIds(IQueryable<JourneyDemandRow> memberships, SlotOperationType operationType)
+    {
+        IQueryable<string> stopIds = operationType == SlotOperationType.Load
+            ? memberships.Select(row => row.PickupStopId)
+            : memberships.Select(row => row.UnloadStopId);
+        return dbContext.Set<JourneyStopRow>().AsNoTracking()
+            .Where(stop => stopIds.Contains(stop.StopId))
+            .Select(stop => stop.StationId);
+    }
+
+    /// <summary>
+    /// The station of the stop a slot operation is performed at (<see cref="StopStationIds"/>), <c>null</c> when no membership
+    /// names this operation's attempt.
+    /// </summary>
+    /// <remarks>
+    /// The membership is found by the operation's own attempt id, not by "the membership in force": the attempt id is what
+    /// ties an operation to one membership, and so to one pickup and one unload stop, in a journey of several stops
+    /// (control-server#211). The journey row's <c>PickupStationId</c> and <c>GateStationId</c> are the anchor demand's and are
+    /// not read (control-server#251).
+    /// </remarks>
+    private async Task<string?> OperationStopStationIdAsync(StationOperationPlan plan, CancellationToken cancellationToken)
+    {
+        IQueryable<JourneyDemandRow> memberships = dbContext.Set<JourneyDemandRow>()
+            .Where(row => row.DemandId == plan.DemandId);
+        memberships = plan.OperationType == SlotOperationType.Load
+            ? memberships.Where(row => row.LoadSlotOperationAttemptId == plan.SlotOperationAttemptId)
+            : memberships.Where(row => row.UnloadSlotOperationAttemptId == plan.SlotOperationAttemptId);
+        return await StopStationIds(memberships, plan.OperationType)
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<ProtocolOutboxRow> PrepareSlotOperationAsync(
@@ -1831,6 +1854,18 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         {
             throw new BusinessIdentityConflictException(
                 "Only the operation at the AREA machine station may carry a station/task admission identity.");
+        }
+        // control-server#251: and the station is that operation's own. The runtime's two call sites name the station of the
+        // stop the vehicle is at, which is right by construction -- but only for those two call sites. Checked ahead of the
+        // replay branch too, whose comparison is with the frozen snapshot, not with the stop.
+        if (hasAdmissionIdentity)
+        {
+            string? stationId = await OperationStopStationIdAsync(plan, cancellationToken).ConfigureAwait(false);
+            if (!string.Equals(stationId, plan.AdmissionStationId, StringComparison.Ordinal))
+            {
+                throw new BusinessIdentityConflictException(FormattableString.Invariant(
+                    $"The admission identity names station {plan.AdmissionStationId}, but the {plan.OperationType} of demand {plan.DemandId} is at {stationId ?? "no stop of any journey"}."));
+            }
         }
 
         StationOperationRow? existing = await dbContext.StationOperations
@@ -2028,9 +2063,10 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         });
         dbContext.StopClosures.Add(new StopClosureRow { DemandId = demandId, CommittedAt = completedAt });
         demand.Status = DemandExecutionStatus.Succeeded;
-        // The lease and the purpose claim go when the journey's last open demand ends (control-server#207), decided inside
+        // The purpose claim goes when the journey's last open demand ends (control-server#207), decided inside
         // the transaction opened just above; with one demand that is this one, in this save, as before.
-        await JourneyLeaseRelease.StageIfLastOpenDemandAsync(dbContext, demandId, completedAt, cancellationToken)
+        await JourneyPurposeClaimRelease.StageIfLastOpenDemandAsync(
+                dbContext, demandId, completedAt, VehiclePurposeReleaseReasons.LastDemandUnloaded, cancellationToken)
             .ConfigureAwait(false);
         dbContext.TransportDemandCompletions.Add(new TransportDemandCompletionRow
         {
@@ -2633,7 +2669,9 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         // is inside a write transaction on the path that reaches it. Batch7DemandTerminationTests
         // .TheUnloadResultsReleaseDecisionIsReadInsideTheInboxWriteTransaction pins that, because it is the inbox's
         // structure that provides it rather than anything here.
-        await JourneyLeaseRelease.StageIfLastOpenDemandAsync(dbContext, result.DemandId, result.ObservedAt, cancellationToken)
+        await JourneyPurposeClaimRelease.StageIfLastOpenDemandAsync(
+                dbContext, result.DemandId, result.ObservedAt, VehiclePurposeReleaseReasons.LastDemandUnloaded,
+                cancellationToken)
             .ConfigureAwait(false);
         dbContext.TransportDemandCompletions.Add(new TransportDemandCompletionRow
         {

@@ -1,0 +1,61 @@
+== M3-no-claim-backfill: src/ControlServer.Infrastructure/Persistence/Migrations/20260929070322_Batch8RetireOldVehicleOccupancy.cs
+  Failed ControlServer.Tests.Batch8OccupancyRetirementMigrationTests.TheRoundInWhichAnUnloadReleasedTheClaimButNotYetTheOrderOccupancyDoesNotRefuse [8 s]
+   Microsoft.Data.Sqlite.SqliteException : SQLite Error 1: 'near ",": syntax error'.
+   at Microsoft.Data.Sqlite.SqliteCommand.PrepareAndEnumerateStatements()+MoveNext()
+   at Microsoft.Data.Sqlite.SqliteCommand.GetStatements()+MoveNext()
+   at Microsoft.Data.Sqlite.SqliteDataReader.NextResult()
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader(CommandBehavior behavior)
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader()
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteNonQuery()
+   at System.Data.Common.DbCommand.ExecuteNonQueryAsync(CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Storage.RelationalCommand.ExecuteNonQueryAsync(RelationalCommandParameterObject parameterObject, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Storage.RelationalCommand.ExecuteNonQueryAsync(RelationalCommandParameterObject parameterObject, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Storage.RelationalCommand.ExecuteNonQueryAsync(RelationalCommandParameterObject parameterObject, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.ExecuteNonQueryAsync(IEnumerable`1 migrationCommands, IRelationalConnection connection, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.ExecuteNonQueryAsync(IEnumerable`1 migrationCommands, IRelationalConnection connection, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.ExecuteNonQueryAsync(IEnumerable`1 migrationCommands, IRelationalConnection connection, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.ExecuteNonQueryAsync(IEnumerable`1 migrationCommands, IRelationalConnection connection, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.Migrator.MigrateAsync(String targetMigration, CancellationToken cancellationToken)
+   at ControlServer.Tests.Batch8OccupancyRetirementMigrationTests.TheRoundInWhichAnUnloadReleasedTheClaimButNotYetTheOrderOccupancyDoesNotRefuse() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs387-8005-agv-control-server\tests\ControlServer.Tests\Batch8OccupancyRetirementMigrationTests.cs:line 195
+   at ControlServer.Tests.Batch8OccupancyRetirementMigrationTests.TheRoundInWhichAnUnloadReleasedTheClaimButNotYetTheOrderOccupancyDoesNotRefuse() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs387-8005-agv-control-server\tests\ControlServer.Tests\Batch8OccupancyRetirementMigrationTests.cs:line 197
+  Failed ControlServer.Tests.Batch8OccupancyRetirementMigrationTests.AJourneyThatEndedBeforeTheUpgradeLeavesItsVehicleFreeForTheNextAcceptance [2 s]
+   Microsoft.Data.Sqlite.SqliteException : SQLite Error 1: 'near ",": syntax error'.
+   at Microsoft.Data.Sqlite.SqliteCommand.PrepareAndEnumerateStatements()+MoveNext()
+   at Microsoft.Data.Sqlite.SqliteCommand.GetStatements()+MoveNext()
+   at Microsoft.Data.Sqlite.SqliteDataReader.NextResult()
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader(CommandBehavior behavior)
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader()
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteNonQuery()
+   at System.Data.Common.DbCommand.ExecuteNonQueryAsync(CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Storage.RelationalCommand.ExecuteNonQueryAsync(RelationalCommandParameterObject parameterObject, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Storage.RelationalCommand.ExecuteNonQueryAsync(RelationalCommandParameterObject parameterObject, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Storage.RelationalCommand.ExecuteNonQueryAsync(RelationalCommandParameterObject parameterObject, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.ExecuteNonQueryAsync(IEnumerable`1 migrationCommands, IRelationalConnection connection, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.ExecuteNonQueryAsync(IEnumerable`1 migrationCommands, IRelationalConnection connection, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.ExecuteNonQueryAsync(IEnumerable`1 migrationCommands, IRelationalConnection connection, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.ExecuteNonQueryAsync(IEnumerable`1 migrationCommands, IRelationalConnection connection, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.Migrator.MigrateAsync(String targetMigration, CancellationToken cancellationToken)
+   at ControlServer.Tests.Batch8OccupancyRetirementMigrationTests.AJourneyThatEndedBeforeTheUpgradeLeavesItsVehicleFreeForTheNextAcceptance() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs387-8005-agv-control-server\tests\ControlServer.Tests\Batch8OccupancyRetirementMigrationTests.cs:line 162
+   at ControlServer.Tests.Batch8OccupancyRetirementMigrationTests.AJourneyThatEndedBeforeTheUpgradeLeavesItsVehicleFreeForTheNextAcceptance() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs387-8005-agv-control-server\tests\ControlServer.Tests\Batch8OccupancyRetirementMigrationTests.cs:line 171
+  Failed ControlServer.Tests.Batch8OccupancyRetirementMigrationTests.DownRebuildsALeasePerJourneyAndPutsTheColumnsBackInPlaceAndUpAgainWritesTheSameRecords [1 s]
+   Microsoft.Data.Sqlite.SqliteException : SQLite Error 1: 'near ",": syntax error'.
+   at Microsoft.Data.Sqlite.SqliteCommand.GetStatements()+MoveNext()
+   at Microsoft.Data.Sqlite.SqliteDataReader.NextResult()
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader(CommandBehavior behavior)
+   at System.Data.Common.DbCommand.ExecuteNonQueryAsync(CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Storage.RelationalCommand.ExecuteNonQueryAsync(RelationalCommandParameterObject parameterObject, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Storage.RelationalCommand.ExecuteNonQueryAsync(RelationalCommandParameterObject parameterObject, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Storage.RelationalCommand.ExecuteNonQueryAsync(RelationalCommandParameterObject parameterObject, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.ExecuteNonQueryAsync(IEnumerable`1 migrationCommands, IRelationalConnection connection, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.ExecuteNonQueryAsync(IEnumerable`1 migrationCommands, IRelationalConnection connection, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.ExecuteNonQueryAsync(IEnumerable`1 migrationCommands, IRelationalConnection connection, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.MigrationCommandExecutor.ExecuteNonQueryAsync(IEnumerable`1 migrationCommands, IRelationalConnection connection, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Migrations.Internal.Migrator.MigrateAsync(String targetMigration, CancellationToken cancellationToken)
+   at ControlServer.Tests.Batch8OccupancyRetirementMigrationTests.DownRebuildsALeasePerJourneyAndPutsTheColumnsBackInPlaceAndUpAgainWritesTheSameRecords() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs387-8005-agv-control-server\tests\ControlServer.Tests\Batch8OccupancyRetirementMigrationTests.cs:line 207
+   at ControlServer.Tests.Batch8OccupancyRetirementMigrationTests.DownRebuildsALeasePerJourneyAndPutsTheColumnsBackInPlaceAndUpAgainWritesTheSameRecords() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs387-8005-agv-control-server\tests\ControlServer.Tests\Batch8OccupancyRetirementMigrationTests.cs:line 222
+  Failed ControlServer.Tests.Batch8OccupancyRetirementMigrationTests.WithJourneysInFlightItRunsKeepsEveryOtherRowAndLeavesOneRecordPerJourneyOpenOnlyWhileItsClaimIs [1 s]
+   Microsoft.Data.Sqlite.SqliteException : SQLite Error 1: 'near ",": syntax error'.
+   at Microsoft.Data.Sqlite.SqliteCommand.GetStatements()+MoveNext()
+   at Microsoft.Data.Sqlite.SqliteDataReader.NextResult()
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader(CommandBehavior behavior)
+   at System.Data.Common.DbCommand.ExecuteNonQueryAsync(CancellationToken cancellationToken)

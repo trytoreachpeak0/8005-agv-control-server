@@ -312,18 +312,19 @@ try {
 
     # --- 7. 取消完成也把车还回去 -----------------------------------------------------------------------------------
 
-    # 「取消完成」是这一站的终结（ADR-cross-0046），终结要把车辆占用还回去，否则这台车此后一单也派不出（旅程
-    # Blocked / VEHICLE_OCCUPANCY_CONFLICT）。读的是被释放的那个事实本身，不靠再派一单：本场景不驱动第二个需求。
+    # 「取消完成」是这一站的终结（ADR-cross-0046），终结要把车辆占用还回去，否则这台车此后一单也派不出（受理被
+    # 用途占有的主键拒掉；control-server#387 之前是旅程 Blocked / VEHICLE_OCCUPANCY_CONFLICT）。读的是被释放的那个事实本身，
+    # 不靠再派一单：本场景不驱动第二个需求。control-server#387 起车辆占用只剩用途占有，读它的记录上的释放时刻。
     # 扫码前取消走 PickupStopTermination，同一次提交里释放；在途取消由 OnboardRecoveryCoordinator 手写终结，写不写这一格
     # 就是 control-server#131。写入不一定与工作流 Reconciled 同一次提交，所以等，不直读。
     $releasedAt = Wait-L2RealOrLast -Description 'the vehicle occupancy of the cancelled pickup was released' -Journal $journal `
         -Criterion 'vehicle-occupancy-released' -TimeoutSeconds 30 `
-        -Probe { Get-L2RealScalar $connection "SELECT VehicleOccupancyReleasedAt AS Value FROM OrderIntents WHERE DemandId = '$demandId' AND Purpose = 'TO_PICKUP'" } `
+        -Probe { Get-L2RealScalar $connection "SELECT r.ReleasedAt AS Value FROM VehiclePurposeClaimRecords AS r JOIN JourneyDemands AS d ON d.JourneyId = r.JourneyId WHERE d.DemandId = '$demandId' ORDER BY r.AcquiredAt DESC LIMIT 1" } `
         -Until { param($v) $null -ne $v }
     $assertions.Add(
-        'L2-CAL-09', '取消完成也把车还回去：这一单 TO_PICKUP 的车辆占用已释放（VehicleOccupancyReleasedAt 有值），同一台车能再派单',
-        ($null -ne $releasedAt), 'VehicleOccupancyReleasedAt 有值',
-        $(if ($null -ne $releasedAt) { "VehicleOccupancyReleasedAt $releasedAt" } else { 'VehicleOccupancyReleasedAt 为空（30 s 内）' }))
+        'L2-CAL-09', '取消完成也把车还回去：这一单所在旅程的用途占有记录已释放（ReleasedAt 有值），同一台车能再派单',
+        ($null -ne $releasedAt), '用途占有记录 ReleasedAt 有值',
+        $(if ($null -ne $releasedAt) { "ReleasedAt $releasedAt" } else { '用途占有记录 ReleasedAt 为空（30 s 内）' }))
 
     # --- 8. 一次只开一扇 ---------------------------------------------------------------------------------------------
 

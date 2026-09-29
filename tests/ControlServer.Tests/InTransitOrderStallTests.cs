@@ -172,7 +172,7 @@ public sealed class InTransitOrderStallTests
         Assert.Equal((JourneyRuntimeStage.AwaitingPickupArrival, OrderStateUnrecognized),
             (after.Stage, after.BlockReasonCode));
         await AssertNothingCommandedAsync(fixture);
-        Assert.Null((await fixture.LeaseAsync()).ReleasedAt);
+        Assert.Null((await fixture.ClaimRecordAsync()).ReleasedAt);
     }
 
     /// <summary>
