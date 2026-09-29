@@ -18,11 +18,8 @@ public sealed class WaitingPointImportFacts(
 
     public async Task<IReadOnlySet<int>> ReadFixedTaskStationIdsAsync(int mapId, CancellationToken cancellationToken)
     {
-        TaskTypeStationBindingSetVersion? active = await _bindings.ReadActiveAsync(mapId, cancellationToken);
-        TaskTypeStationBindingSetVersion? latest = await _bindings.ReadLatestAsync(mapId, cancellationToken);
-        return (active?.Bindings ?? []).Concat(latest?.Bindings ?? [])
-            .Select(binding => binding.StationRiotId)
-            .ToHashSet();
+        return WaitingPointFixedTaskStations.StationIds(
+            await WaitingPointFixedTaskStations.ReadAsync(_bindings, mapId, cancellationToken));
     }
 
     public async Task<long?> ReadConfirmedCatalogRevisionAsync(int mapId, CancellationToken cancellationToken)

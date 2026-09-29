@@ -132,6 +132,62 @@ public sealed record WaitingPointImportResult(
     WaitingPointCoverage? Coverage,
     bool? CatalogMatchesServerConfirmation);
 
+/// <summary>本图任务类型绑定的一个固定站，出自哪一版绑定集，以及那一版此刻是不是生效版本。</summary>
+public sealed record FixedTaskStationOrigin(int StationId, long BindingSetVersion, bool Active);
+
+/// <summary>
+/// 「本图的任务类型固定站」只在这一处推导：生效版本 ∪ 最新版本（含还没激活的）。导入、只读查看、启动校验与承诺前的判定都经它，
+/// 所以四处数的永远是同一批站。
+/// </summary>
+/// <remarks>
+/// 最新版本也算，是因为批次 6 激活两步走，第一步写下的版本在第二步之前就已经是「马上要成为固定站」的承诺；它若永远没激活成功，
+/// 用 <c>rollback-task-type-stations --version &lt;当前生效版本&gt;</c> 把生效内容再写成一个新版本，那一版就不再是最新（回滚写新版本、不拨指针）。
+/// </remarks>
+public static class WaitingPointFixedTaskStations
+{
+    public static IReadOnlyList<FixedTaskStationOrigin> Derive(
+        TaskTypeStationBindingSetVersion? active,
+        TaskTypeStationBindingSetVersion? latest)
+    {
+        List<FixedTaskStationOrigin> origins = [.. (active?.Bindings ?? []).Select(binding =>
+            new FixedTaskStationOrigin(binding.StationRiotId, active!.Version, Active: true))];
+        if (latest is not null && latest.Version != active?.Version)
+        {
+            origins.AddRange(latest.Bindings.Select(binding =>
+                new FixedTaskStationOrigin(binding.StationRiotId, latest.Version, Active: false)));
+        }
+        return [.. origins.Distinct().OrderBy(origin => origin.StationId).ThenByDescending(origin => origin.Active)];
+    }
+
+    public static async Task<IReadOnlyList<FixedTaskStationOrigin>> ReadAsync(
+        ITaskTypeStationBindingStore bindings, int mapId, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(bindings);
+        TaskTypeStationBindingSetVersion? active = await bindings.ReadActiveAsync(mapId, cancellationToken).ConfigureAwait(false);
+        TaskTypeStationBindingSetVersion? latest = await bindings.ReadLatestAsync(mapId, cancellationToken).ConfigureAwait(false);
+        return Derive(active, latest);
+    }
+
+    public static IReadOnlySet<int> StationIds(IEnumerable<FixedTaskStationOrigin> origins) =>
+        origins.Select(origin => origin.StationId).ToHashSet();
+
+    /// <summary>
+    /// 例如 <c>305 (binding set version 2, latest, not active)</c>：给报错与日志用，一次没激活成功的绑定与生效绑定分得开。
+    /// </summary>
+    public static string Describe(int stationId, IEnumerable<FixedTaskStationOrigin> origins)
+    {
+        string[] sources =
+        [
+            .. origins.Where(origin => origin.StationId == stationId).Select(origin => origin.Active
+                ? string.Create(CultureInfo.InvariantCulture, $"binding set version {origin.BindingSetVersion}, active")
+                : string.Create(CultureInfo.InvariantCulture, $"binding set version {origin.BindingSetVersion}, latest, not active"))
+        ];
+        return sources.Length == 0
+            ? stationId.ToString(CultureInfo.InvariantCulture)
+            : string.Create(CultureInfo.InvariantCulture, $"{stationId} ({string.Join("; ", sources)})");
+    }
+}
+
 /// <summary>导入要判的库内事实。</summary>
 public interface IWaitingPointImportFacts
 {

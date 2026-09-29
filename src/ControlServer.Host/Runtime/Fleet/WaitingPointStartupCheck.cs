@@ -52,11 +52,13 @@ public static class WaitingPointStartupCheck
     /// arguments filled in as far as the server knows them, and that a single-vehicle deployment is not checked.
     /// </summary>
     /// <param name="databasePath">The server's SQLite file, for the command; null writes a placeholder.</param>
+    /// <param name="fixedStationOrigins">Where each excluded fixed station comes from, so the refusal names the binding set version.</param>
     public static string? Judge(
         WaitingPointCoverage coverage,
         long? registrationVersion,
         IReadOnlyList<string> fleet,
-        string? databasePath)
+        string? databasePath,
+        IReadOnlyList<FixedTaskStationOrigin>? fixedStationOrigins = null)
     {
         ArgumentNullException.ThrowIfNull(coverage);
         ArgumentNullException.ThrowIfNull(fleet);
@@ -73,7 +75,12 @@ public static class WaitingPointStartupCheck
               + ".";
         string excluded = coverage.Excluded.Count == 0
             ? string.Empty
-            : " Not counted because they are a task type's fixed station: " + string.Join(", ", coverage.Excluded) + ".";
+            : " Not counted because they are a task type's fixed station: " + DescribeExcluded(coverage, fixedStationOrigins ?? [])
+              + (fixedStationOrigins?.Any(origin => !origin.Active && coverage.Excluded.Contains(origin.StationId)) == true
+                  ? ". A binding set version that was written but never activated counts too: roll it back to the active version "
+                    + "(rollback-task-type-stations --version <active version>) or activate it. Both need the catalog a running "
+                    + "server has confirmed, so start this server with one vehicle in JourneyRuntime:Fleet first, then restore the fleet."
+                  : ".");
         string version = registrationVersion is long number
             ? FormattableString.Invariant($"version {number}")
             : "(none imported)";
@@ -128,23 +135,20 @@ public static class WaitingPointStartupCheck
         }
 
         WaitingPointRegistrationVersion? registration = await registry.ReadCurrentAsync(cancellationToken).ConfigureAwait(false);
-        // The active binding set and the latest one, active or not: the same set the import refuses and the eligibility
-        // predicate stops at (WaitingPointImportFacts), so a start, a preview and a commitment never count different points.
-        TaskTypeStationBindingSetVersion? active = await bindings.ReadActiveAsync(options.MapId, cancellationToken)
-            .ConfigureAwait(false);
-        TaskTypeStationBindingSetVersion? latest = await bindings.ReadLatestAsync(options.MapId, cancellationToken)
-            .ConfigureAwait(false);
-        HashSet<int> fixedStations =
-            [.. (active?.Bindings ?? []).Concat(latest?.Bindings ?? []).Select(binding => binding.StationRiotId)];
+        // The one derivation the import, the read verb and the eligibility predicate use too, so a start, a preview and a
+        // commitment never count different points.
+        IReadOnlyList<FixedTaskStationOrigin> fixedOrigins =
+            await WaitingPointFixedTaskStations.ReadAsync(bindings, options.MapId, cancellationToken).ConfigureAwait(false);
+        IReadOnlySet<int> fixedStations = WaitingPointFixedTaskStations.StationIds(fixedOrigins);
         string[] fleet = [.. options.Fleet.Select(vehicle => vehicle.VehicleKey)];
         WaitingPointCoverage coverage = WaitingPointCoverageCalculator.Evaluate(
             registration?.Points ?? [], options.MapId, fleet, fixedStations);
         if (coverage.Excluded.Count > 0)
         {
-            ExcludedFixedStations(logger, options.MapId, string.Join(", ", coverage.Excluded), null);
+            ExcludedFixedStations(logger, options.MapId, DescribeExcluded(coverage, fixedOrigins), null);
         }
 
-        string? detail = Judge(coverage, registration?.Version, fleet, databasePath);
+        string? detail = Judge(coverage, registration?.Version, fleet, databasePath, fixedOrigins);
         if (detail is null)
         {
             return;
@@ -170,6 +174,9 @@ public static class WaitingPointStartupCheck
                 cancellationToken)
             .ConfigureAwait(false);
     }
+
+    private static string DescribeExcluded(WaitingPointCoverage coverage, IReadOnlyList<FixedTaskStationOrigin> origins) =>
+        string.Join(", ", coverage.Excluded.Select(station => WaitingPointFixedTaskStations.Describe(station, origins)));
 
     // The SQLite file the server actually opened (the configured one, defaults and %ProgramData% expanded), so the command
     // in the refusal can be pasted as it stands.

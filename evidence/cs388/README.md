@@ -28,7 +28,7 @@
 `grep -c waiting-points-imported */timeline.jsonl` 一眼可见。
 
 审查之后的两次不一样：负向场景 `-3` 跑在已提交的 `a8041ea9` 上，工作树干净，提交号就是它跑的代码；红证据
-`red/l2-wpr03-database-path-placeholder` 也显示 `a8041ea9`，但那是在它上面临时改了一行（见下表），跑完用备份还原。
+`red/l2-wpr03-database-path-placeholder` 也显示 `a8041ea9`，但那是在它上面临时改了一行（见上表），跑完用备份还原。
 
 ## 第一轮那 3 个红与本票无关
 

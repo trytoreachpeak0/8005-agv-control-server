@@ -182,7 +182,8 @@ public sealed class WaitingPointStartupCheckTests
             () => EnsureAsync(harness, Runtime(2)));
 
         Assert.Contains("gives only 1 of them", error.Message, StringComparison.Ordinal);
-        Assert.Contains("fixed station: 305", error.Message, StringComparison.Ordinal);
+        Assert.Contains("fixed station: 305 (binding set version 1, active).", error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("never activated", error.Message, StringComparison.Ordinal);
     }
 
     /// <summary>白名单口径：按匹配，不按总数，也不按每辆车各自可用的点数。</summary>
@@ -256,8 +257,35 @@ public sealed class WaitingPointStartupCheckTests
         InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(
             () => EnsureAsync(harness, Runtime(2)));
 
-        Assert.Contains("fixed station: 305", error.Message, StringComparison.Ordinal);
+        // Which version, and that it never became active: the way out is a rollback, not a re-import.
+        Assert.Contains("fixed station: 305 (binding set version 1, latest, not active)", error.Message, StringComparison.Ordinal);
+        Assert.Contains("rollback-task-type-stations --version <active version>", error.Message, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// 固定站只有一处推导：生效版本的站记为生效，最新版本（不是生效那一版时）的站记为未激活；同一站两版都有就两条都记。
+    /// </summary>
+    [Fact]
+    public void TheFixedStationDerivationKeepsWhichVersionEachStationComesFrom()
+    {
+        TaskTypeStationBindingSetVersion active = BindingSet(1, TaskTypeStationTestData.GateBinding);
+        TaskTypeStationBindingSetVersion latest = BindingSet(2, TaskTypeStationTestData.GateBinding, TaskTypeStationTestData.StagingBinding);
+
+        Assert.Equal(
+            ["210 v1 active", "210 v2 pending", "305 v2 pending"],
+            WaitingPointFixedTaskStations.Derive(active, latest)
+                .Select(origin => $"{origin.StationId} v{origin.BindingSetVersion} {(origin.Active ? "active" : "pending")}"));
+        Assert.Equal(["210 v1 active"],
+            WaitingPointFixedTaskStations.Derive(active, active)
+                .Select(origin => $"{origin.StationId} v{origin.BindingSetVersion} {(origin.Active ? "active" : "pending")}"));
+        Assert.Empty(WaitingPointFixedTaskStations.Derive(null, null));
+        Assert.Equal(
+            "210 (binding set version 1, active; binding set version 2, latest, not active)",
+            WaitingPointFixedTaskStations.Describe(210, WaitingPointFixedTaskStations.Derive(active, latest)));
+    }
+
+    private static TaskTypeStationBindingSetVersion BindingSet(long version, params TaskTypeStationBinding[] bindings) =>
+        new(Map, version, 1, "sha", "snapshot", null, Imported, "test", [.. bindings.Select(binding => binding.TaskType)], bindings);
 
     private static int FreePort()
     {
