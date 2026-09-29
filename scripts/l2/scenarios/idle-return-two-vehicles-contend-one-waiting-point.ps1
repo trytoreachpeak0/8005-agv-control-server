@@ -99,7 +99,8 @@ $assertions.Add(
     1,
     "$claimCount / $($claims.Count)")
 
-$committed = if ($claims.Count -ge 1) { $vehicles | Where-Object { $_.VehicleKey -eq [string]$claims[0].VehicleKey } } else { $null }
+# 哪一辆承诺了，按 214 的预占持有者认；预占与占有同一次保存，两者一致由 L2-IRC-02 断言。
+$committed = if ($stations.Count -ge 1) { $vehicles | Where-Object { $_.VehicleKey -eq [string]$stations[0].VehicleKey } } else { $null }
 $other = if ($null -ne $committed) { $vehicles | Where-Object { $_.VehicleKey -ne $committed.VehicleKey } } else { $null }
 $committedKey = if ($null -ne $committed) { $committed.VehicleKey } else { '(none)' }
 $committedJourney = if ($claims.Count -ge 1) { [string]$claims[0].JourneyId } else { '(none)' }
@@ -108,8 +109,8 @@ $assertions.Add(
     'L2-IRC-02',
     '承诺那一辆同一趟预占着 214，是等待点、在途预占；除此之外没有任何站点独占（215 没人预占）',
     ($stations.Count -eq 1 -and [int]$stations[0].StationId -eq 214 -and [string]$stations[0].State -eq 'RESERVED' -and
-        [string]$stations[0].StationKind -eq 'WAITING_POINT' -and [string]$stations[0].VehicleKey -eq $committedKey -and
-        [string]$stations[0].JourneyId -eq $committedJourney),
+        [string]$stations[0].StationKind -eq 'WAITING_POINT' -and $claims.Count -eq 1 -and
+        [string]$claims[0].VehicleKey -eq $committedKey -and [string]$stations[0].JourneyId -eq $committedJourney),
     "214 RESERVED WAITING_POINT $committedKey $committedJourney",
     (($stations | ForEach-Object { "$($_.StationId) $($_.State) $($_.StationKind) $($_.VehicleKey) $($_.JourneyId)" }) -join '; '))
 

@@ -220,12 +220,44 @@ public sealed class IdleReturnCommitmentTests
             Assert.IsType<TransitionalMandatoryChargeLine>(provider.GetRequiredService<IMandatoryChargeLine>());
         }
 
+        // 开关关着，评估不产生任何写：本票合入后、批次8-19 合入前，「有 IDLE_RETURN 占有却没有旅程行」的车因此不会出现。
         await using Harness harness = await Harness.CreateAsync(enabled: false);
-        IdleReturnVerdict verdict = Assert.Single(await harness.EvaluateAsync(harness.Candidate(VehicleA)));
+        Dictionary<string, string[]> before = await harness.DumpEveryTableAsync();
 
-        Assert.Equal(IdleReturnReasons.Disabled, verdict.Reason);
-        Assert.Empty(await harness.Db.DumpAsyncOf("VehiclePurposeClaims"));
-        Assert.Empty(await harness.Db.DumpAsyncOf("StationExclusivities"));
+        IReadOnlyList<IdleReturnVerdict> verdicts =
+            await harness.EvaluateAsync(harness.Candidate(VehicleA), harness.Candidate(VehicleB));
+
+        Assert.All(verdicts, verdict => Assert.Equal(IdleReturnReasons.Disabled, verdict.Reason));
+        Dictionary<string, string[]> after = await harness.DumpEveryTableAsync();
+        Assert.Equal(before.Keys.Order(StringComparer.Ordinal), after.Keys.Order(StringComparer.Ordinal));
+        Assert.All(before, table => Assert.Equal(table.Value, after[table.Key]));
+        Assert.Contains("VehiclePurposeClaims", before.Keys);
+        Assert.Contains("StationExclusivities", before.Keys);
+    }
+
+    /// <summary>
+    /// 判据与受理前的预读都漏了，受理那一次保存也会被 <c>VehiclePurposeClaims</c> 的主键整个拒掉：已承诺空闲返回的车接不了搬运，
+    /// 受理的行一条不留，承诺原样。
+    /// </summary>
+    [Fact]
+    public async Task AnAcceptanceThatSlipsPastTheCriterionIsRefusedWholeByTheClaimsKey()
+    {
+        await using Harness harness = await Harness.CreateAsync();
+        IdleReturnVerdict committed = Assert.Single(await harness.EvaluateAsync(harness.Candidate(VehicleA)));
+        Assert.Equal(IdleReturnReasons.Committed, committed.Reason);
+        string[] claims = await harness.Db.DumpAsyncOf("VehiclePurposeClaims");
+        string[] stations = await harness.Db.DumpAsyncOf("StationExclusivities");
+
+        await using ControlServerDbContext context = harness.Db.NewContext();
+        BusinessIdentityConflictException refusal = await Assert.ThrowsAsync<BusinessIdentityConflictException>(() =>
+            Batch7JourneyFixture.AcceptAsync(context, "D-SLIPPED", "AGV-" + VehicleA, VehicleA, Now));
+
+        Assert.Contains("already claimed", refusal.Message, StringComparison.Ordinal);
+        Assert.Empty(await harness.Db.DumpAsyncOf("AcceptedDemands"));
+        Assert.Empty(await harness.Db.DumpAsyncOf("JourneyRuntimes"));
+        Assert.Empty(await harness.Db.DumpAsyncOf("OrderIntents"));
+        Assert.Equal(claims, await harness.Db.DumpAsyncOf("VehiclePurposeClaims"));
+        Assert.Equal(stations, await harness.Db.DumpAsyncOf("StationExclusivities"));
     }
 
     /// <summary>关掉只挡新承诺：已经形成的承诺不取消、不改写（<c>REQ-0291</c>）。</summary>
@@ -659,6 +691,28 @@ public sealed class IdleReturnCommitmentTests
                     IdleReturnIdentity.JourneyIdFor(vehicleKey, Now.AddHours(-1)),
                     Now.AddHours(-1),
                     Token));
+        }
+
+        /// <summary>库里每一张表（迁移历史除外）的全部行。</summary>
+        public async Task<Dictionary<string, string[]>> DumpEveryTableAsync()
+        {
+            List<string> tables = [];
+            await using (Microsoft.Data.Sqlite.SqliteCommand command = Db.Connection.CreateCommand())
+            {
+                command.CommandText =
+                    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name <> '__EFMigrationsHistory'";
+                await using DbDataReader reader = await command.ExecuteReaderAsync(Token);
+                while (await reader.ReadAsync(Token))
+                {
+                    tables.Add(reader.GetString(0));
+                }
+            }
+            Dictionary<string, string[]> dump = new(StringComparer.Ordinal);
+            foreach (string table in tables)
+            {
+                dump[table] = await Db.DumpAsyncOf(table);
+            }
+            return dump;
         }
 
         /// <summary>一趟没结束的旅程、却没有用途占有：只剩「有下一业务目标」那一格挡它。</summary>
