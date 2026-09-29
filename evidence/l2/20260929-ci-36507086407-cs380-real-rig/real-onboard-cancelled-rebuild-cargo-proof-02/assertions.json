@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-cancelled-rebuild-cargo-proof",
+  "runId": "20260929T012542365Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "onboardHmiCommit": "3520505d6715192be613b938133994e8cd4da6b4",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "vehicleKey": "BROKERX-L2-0001",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-36507086407-1\\_stage\\l2-20260929T012542365Z",
+    "batchId": "unspecified",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "controlServerCommit": "ee3513a7de87ae408cc504c187f4dfae4440daed",
+    "agvId": "AGV-L2-001",
+    "rig": "RealOnboard"
+  },
+  "assertions": [
+    {
+      "id": "L2-RC-01",
+      "description": "别人的急停锁着（服务端没有发过触发），单 HANG 之后被人在 RIoT 取消：服务端记下取消来源的同车重建（ORDER_CANCELLED_IN_RIOT / PENDING），只有原来那一张 TO_GATE 单",
+      "outcome": "PASS",
+      "expected": "ORDER_HANG / ORDER_CANCELLED_IN_RIOT PENDING / 触发 0 / TO_GATE 1",
+      "actual": "ORDER_HANG / ORDER_CANCELLED_IN_RIOT PENDING / 触发 0 / TO_GATE 1"
+    },
+    {
+      "id": "L2-RC-02",
+      "description": "延迟在锁着期间走完：重建被车况挡住（OWN_ORDER_REBUILD_WAITING_VEHICLE），记录仍 PENDING、记下这一次挡住开始（VehicleHeldAt），不建新单",
+      "outcome": "PASS",
+      "expected": "OWN_ORDER_REBUILD_WAITING_VEHICLE / PENDING / VehicleHeldAt 有值 / TO_GATE 1",
+      "actual": "OWN_ORDER_REBUILD_WAITING_VEHICLE / PENDING (ONBOARD_SESSION_NOT_READY) / VehicleHeldAt 有值 / TO_GATE 1"
+    },
+    {
+      "id": "L2-RC-03",
+      "description": "解开急停之后不建开往卸货站的单：证据是解开之后收到的快照（晚于 CargoEvidenceNotBefore 与到期），它显示放货的仓是空的，重建停住（STOPPED / CARGO_NOT_PROVEN_IN_ORIGINAL_SLOTS），旅程码 OWN_ORDER_REBUILD_CARGO_NOT_IN_PLACE、仍在去关卡的阶段，只有原来那一张 TO_GATE 单",
+      "outcome": "PASS",
+      "expected": "AwaitingGateArrival / OWN_ORDER_REBUILD_CARGO_NOT_IN_PLACE / STOPPED CARGO_NOT_PROVEN_IN_ORIGINAL_SLOTS / 证据晚于放开与到期 / TO_GATE 1",
+      "actual": "AwaitingGateArrival / OWN_ORDER_REBUILD_CARGO_NOT_IN_PLACE / STOPPED CARGO_NOT_PROVEN_IN_ORIGINAL_SLOTS / 证据 2026-09-29T01:26:53.1480153+00:00 放开 2026-09-29T01:26:52.7340821+00:00 到期 2026-09-29T01:26:50.8589926+00:00 / TO_GATE 1"
+    },
+    {
+      "id": "L2-RC-04",
+      "description": "取消来源停住之后人工转交接被受理（200 HandoffPrepared）：旅程 Blocked / OWN_ORDER_REBUILD_AWAITING_CARGO_HANDOFF，记录 AWAITING_CARGO_HANDOFF，会话 RecoveryRequired / CARGO_HANDOFF_REQUIRED",
+      "outcome": "PASS",
+      "expected": "200 HandoffPrepared / Blocked/OWN_ORDER_REBUILD_AWAITING_CARGO_HANDOFF / AWAITING_CARGO_HANDOFF / RecoveryRequired/CARGO_HANDOFF_REQUIRED",
+      "actual": "200 HandoffPrepared / Blocked/OWN_ORDER_REBUILD_AWAITING_CARGO_HANDOFF / AWAITING_CARGO_HANDOFF / RecoveryRequired/CARGO_HANDOFF_REQUIRED"
+    },
+    {
+      "id": "L2-RC-05",
+      "description": "车载端给出「故障交接」入口：这一趟没有故障，也没有故障货物绑定，入口照样出现",
+      "outcome": "PASS",
+      "expected": "offered",
+      "actual": "offered"
+    },
+    {
+      "id": "L2-RC-06",
+      "description": "车载端的交接走完 CV-FAULT-CARGO-HANDOFF：RecoveryActionSubmitted(FAULT_CARGO_HANDOFF) 被接受，结果 HANDED_OFF；工作流 Reconciled / HANDED_OFF",
+      "outcome": "PASS",
+      "expected": "Action×1 RecoveryActionAccepted / HANDED_OFF / Reconciled HANDED_OFF",
+      "actual": "Action×1 RecoveryActionAccepted / HANDED_OFF / Reconciled HANDED_OFF"
+    },
+    {
+      "id": "L2-RC-07",
+      "description": "交接收敛：需求 Cancelled，旅程 Completed / TERMINATED_BY_FAULT_CARGO_HANDOFF，停住的重建记录 ENDED，全程没有故障货物绑定、只有一张 TO_GATE 单，会话回到 Ready",
+      "outcome": "PASS",
+      "expected": "Cancelled / Completed/TERMINATED_BY_FAULT_CARGO_HANDOFF / ENDED / 绑定 0 / TO_GATE 1 / Ready",
+      "actual": "Cancelled / Completed/TERMINATED_BY_FAULT_CARGO_HANDOFF / ENDED / 绑定 0 / TO_GATE 1 / Ready"
+    },
+    {
+      "id": "L2-RC-08",
+      "description": "交接之后同一台车接了下一单，照常装货、建出 TO_GATE 单",
+      "outcome": "PASS",
+      "expected": "TO_GATE 1",
+      "actual": "TO_GATE 1"
+    },
+    {
+      "id": "L2-RC-09",
+      "description": "第二张 TO_GATE 单被取消：记下取消来源的同车重建（PENDING），这条需求的第一次出问题，不在第 1 件的窗口里",
+      "outcome": "PASS",
+      "expected": "ORDER_CANCELLED_IN_RIOT PENDING",
+      "actual": "ORDER_CANCELLED_IN_RIOT PENDING"
+    },
+    {
+      "id": "L2-RC-10",
+      "description": "货在原仓：延迟到点后服务端要到一份晚于到期的快照，它证明货在、锁闭、输出复位，才重建（REBUILT，新 TO_GATE 意图 CONFIRMED，共两张 TO_GATE 单）",
+      "outcome": "PASS",
+      "expected": "REBUILT / 证据晚于到期 / CONFIRMED / TO_GATE 2",
+      "actual": "REBUILT / 证据 2026-09-29T01:27:46.9204183+00:00 到期 2026-09-29T01:27:44.9214423+00:00 / CONFIRMED / TO_GATE 2"
+    },
+    {
+      "id": "L2-RC-11",
+      "description": "重建之后这一趟照常去卸货站：旅程 AwaitingGateArrival，旅程码不再是重建那一族（真车载端在途时的 ONBOARD_SESSION_NOT_READY 是常态），需求仍是已装货",
+      "outcome": "PASS",
+      "expected": "AwaitingGateArrival / 非重建族原因码 / LOADED",
+      "actual": "AwaitingGateArrival/ / LOADED"
+    }
+  ]
+}
