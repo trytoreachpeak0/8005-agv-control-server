@@ -1,4 +1,4 @@
-=== real-onboard-cancelled-rebuild-cargo-proof-01: server 1103 lines 22, onboard diagnostic lines 74
+=== real-onboard-cancelled-rebuild-cargo-proof-01: server 1103 lines 22, paired with onboard 收到SessionReadiness 22, unpaired [], onboard diagnostic lines 74
   server 09:58:33 1103 RECOVERY_REQUIRED[DEPARTURE_UNSAFE] gen=1 on SafetyStateChanged 490e564b line=d273554b
     onboard 09:58:33.970 收到SessionReadiness：generation=1，readiness=RECOVERY_REQUIRED，reasonCodes=[DEPARTURE_UNSAFE]，acceptedSafetyStateVersion=8。
     onboard 09:58:33.971 会话状态发布：source=SessionReadiness，generation=1，readiness=RecoveryRequired，reasonCodes=[DEPARTURE_UNSAFE]，safetyStateVersion=8。
@@ -20,7 +20,7 @@
     onboard 09:59:39.309 会话状态发布：source=SessionReadiness，generation=1，readiness=RecoveryRequired，reasonCodes=[DEPARTURE_UNSAFE]，safetyStateVersion=21。
     onboard 09:59:39.310 判恢复入口：generation=1，readiness=RecoveryRequired，reasonCodes=[DEPARTURE_UNSAFE]，subject=Load/861dbc0b-367c-4fac-a6ff-f61f730dd73b/9a4bfc29-1ca5-e059-aae0-4b8dd8d4d3b8（最近完成的装
     onboard 09:59:39.338 会话状态发布：source=SafetyStateChanged-ack，generation=1，readiness=RecoveryRequired，reasonCodes=[DEPARTURE_UNSAFE]，safetyStateVersion=21。
-=== real-onboard-cancelled-rebuild-cargo-proof-02: server 1103 lines 28, onboard diagnostic lines 97
+=== real-onboard-cancelled-rebuild-cargo-proof-02: server 1103 lines 28, paired with onboard 收到SessionReadiness 28, unpaired [], onboard diagnostic lines 97
   server 10:00:03 1103 RECOVERY_REQUIRED[DEPARTURE_UNSAFE] gen=1 on SafetyStateChanged a47eb31a line=bb6722cb
     onboard 10:00:03.560 收到SessionReadiness：generation=1，readiness=RECOVERY_REQUIRED，reasonCodes=[DEPARTURE_UNSAFE]，acceptedSafetyStateVersion=3。
     onboard 10:00:03.563 会话状态发布：source=SessionReadiness，generation=1，readiness=RecoveryRequired，reasonCodes=[DEPARTURE_UNSAFE]，safetyStateVersion=3。
@@ -76,7 +76,7 @@
     onboard 10:01:39.007 收到SessionReadiness：generation=1，readiness=READY，reasonCodes=[]，acceptedSafetyStateVersion=26。
     onboard 10:01:39.007 会话状态发布：source=SafetyStateSnapshot-ack，generation=1，readiness=Ready，reasonCodes=[]，safetyStateVersion=26。
     onboard 10:01:39.014 会话状态发布：source=SessionReadiness，generation=1，readiness=Ready，reasonCodes=[]，safetyStateVersion=26。
-=== real-onboard-cancelled-rebuild-cargo-proof-03: server 1103 lines 21, onboard diagnostic lines 70
+=== real-onboard-cancelled-rebuild-cargo-proof-03: server 1103 lines 21, paired with onboard 收到SessionReadiness 21, unpaired [], onboard diagnostic lines 70
   server 10:02:51 1103 RECOVERY_REQUIRED[DEPARTURE_UNSAFE] gen=1 on SafetyStateChanged be46ca64 line=97c2dad9
     onboard 10:02:51.097 收到SessionReadiness：generation=1，readiness=RECOVERY_REQUIRED，reasonCodes=[DEPARTURE_UNSAFE]，acceptedSafetyStateVersion=7。
     onboard 10:02:51.099 会话状态发布：source=SessionReadiness，generation=1，readiness=RecoveryRequired，reasonCodes=[DEPARTURE_UNSAFE]，safetyStateVersion=7。
@@ -96,7 +96,7 @@
     onboard 10:03:04.207 会话状态发布：source=SafetyStateSnapshot-ack，generation=1，readiness=Ready，reasonCodes=[]，safetyStateVersion=13。
     onboard 10:03:04.215 会话状态发布：source=SessionReadiness，generation=1，readiness=RecoveryRequired，reasonCodes=[SESSION_RECOVERY_REQUIRED]，safetyStateVersion=13。
     onboard 10:03:04.216 判恢复入口：generation=1，readiness=RecoveryRequired，reasonCodes=[SESSION_RECOVERY_REQUIRED]，subject=Load/6b1aacc7-45d0-4f84-9121-8fd91a24093f/d7a19202-65ff-5b5d-8eef-36e40869d5
-=== real-onboard-compensate-then-reconnect-01: server 1103 lines 14, onboard diagnostic lines 61
+=== real-onboard-compensate-then-reconnect-01: server 1103 lines 14, paired with onboard 收到SessionReadiness 14, unpaired [], onboard diagnostic lines 61
   server 09:55:40 1103 RECOVERY_REQUIRED[DEPARTURE_UNSAFE] gen=1 on SafetyStateChanged e111ff40 line=f2b5fb15
     onboard 09:55:40.443 收到SessionReadiness：generation=1，readiness=RECOVERY_REQUIRED，reasonCodes=[DEPARTURE_UNSAFE]，acceptedSafetyStateVersion=3。
     onboard 09:55:40.445 会话状态发布：source=SessionReadiness，generation=1，readiness=RecoveryRequired，reasonCodes=[DEPARTURE_UNSAFE]，safetyStateVersion=3。
@@ -126,7 +126,7 @@
     onboard 09:56:02.965 会话状态发布：source=SessionReadiness，generation=3，readiness=Ready，reasonCodes=[]，safetyStateVersion=5。
     onboard 09:56:02.966 判恢复入口：generation=3，readiness=Ready，reasonCodes=[]，subject=none，recoveryVector=none，recoverySession=none，faultCargoHandoff=False。
     onboard 09:56:02.977 会话状态发布：source=SafetyStateChanged-ack，generation=3，readiness=Ready，reasonCodes=[]，safetyStateVersion=5。
-=== real-onboard-compensate-then-reconnect-02: server 1103 lines 10, onboard diagnostic lines 45
+=== real-onboard-compensate-then-reconnect-02: server 1103 lines 10, paired with onboard 收到SessionReadiness 10, unpaired [], onboard diagnostic lines 45
   server 09:56:33 1103 RECOVERY_REQUIRED[SESSION_RECOVERY_REQUIRED] gen=2 on RecoveryStateReport 5c56718a line=b5e21643
     onboard 09:56:33.405 会话状态发布：source=handshake-start，connected=False，generation=null，readiness=Recovering，reasonCodes=[]，safetyStateVersion=1。
     onboard 09:56:33.408 判恢复入口：generation=null，readiness=Recovering，reasonCodes=[]，subject=none，recoveryVector=none，recoverySession=none，faultCargoHandoff=False。
@@ -138,7 +138,7 @@
     onboard 09:56:34.035 收到SessionReadiness：generation=2，readiness=RECOVERY_REQUIRED，reasonCodes=[SESSION_RECOVERY_REQUIRED]，acceptedSafetyStateVersion=2。
     onboard 09:56:34.036 会话状态发布：source=SessionReadiness，generation=2，readiness=RecoveryRequired，reasonCodes=[SESSION_RECOVERY_REQUIRED]，safetyStateVersion=2。
     onboard 09:56:34.070 会话状态发布：source=SafetyStateChanged-ack，generation=2，readiness=RecoveryRequired，reasonCodes=[SESSION_RECOVERY_REQUIRED]，safetyStateVersion=2。
-=== real-onboard-compensate-then-reconnect-03: server 1103 lines 12, onboard diagnostic lines 53
+=== real-onboard-compensate-then-reconnect-03: server 1103 lines 12, paired with onboard 收到SessionReadiness 12, unpaired [], onboard diagnostic lines 53
   server 09:57:13 1103 RECOVERY_REQUIRED[DEPARTURE_UNSAFE] gen=1 on SafetyStateChanged 70f3eeff line=5dfa68ef
     onboard 09:57:13.888 收到SessionReadiness：generation=1，readiness=RECOVERY_REQUIRED，reasonCodes=[DEPARTURE_UNSAFE]，acceptedSafetyStateVersion=3。
     onboard 09:57:13.889 会话状态发布：source=SessionReadiness，generation=1，readiness=RecoveryRequired，reasonCodes=[DEPARTURE_UNSAFE]，safetyStateVersion=3。
@@ -159,3 +159,4 @@
     onboard 09:57:19.500 收到SessionReadiness：generation=2，readiness=RECOVERY_REQUIRED，reasonCodes=[SESSION_RECOVERY_REQUIRED]，acceptedSafetyStateVersion=2。
     onboard 09:57:19.501 会话状态发布：source=SessionReadiness，generation=2，readiness=RecoveryRequired，reasonCodes=[SESSION_RECOVERY_REQUIRED]，safetyStateVersion=2。
     onboard 09:57:19.591 会话状态发布：source=SafetyStateChanged-ack，generation=2，readiness=RecoveryRequired，reasonCodes=[SESSION_RECOVERY_REQUIRED]，safetyStateVersion=2。
+=== total: server 1103 lines 107, paired 107, unpaired 0

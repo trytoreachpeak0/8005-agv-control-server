@@ -22,7 +22,7 @@
 
 - **「需要恢复」之后没有再发布「就绪」**：六遍里，凡是发布了 RecoveryRequired 之后、同一代下一次收到 READY 之前，都没有出现 Ready 的发布，次数为 0。脚本先用一份故意放了一次违例和一次丢弃的假日志验证过，两种都能报出来。第一轮 run 36507086407 用同一脚本复查，也是 0。
 - **「丢弃SessionReadiness」出现 0 次**：这两个场景的重连，是由中继断开或者车载端断电重启引起的。断开的那一刻，旧连接上没有正在处理的就绪行，所以不需要丢弃任何东西。「旧循环的就绪行被丢弃」这条路径，目前只由车载端 G2 用例 `AReplacedReceiveLoopDoesNotPublishItsOldSessionsReadinessOverTheNewOne` 覆盖，真装置上没有被走到。
-- **1103 对得上**：服务端 1103 共 107 条，逐条按 messageId 在车载端都找到了「收到SessionReadiness」，缺失 0 条。1104（握手中压住）出现 0 次。
+- **1103 对得上**：服务端 1103 共 107 条，逐条按 messageId 在车载端都找到了「收到SessionReadiness」，缺失 0 条。`readiness-timeline.py` 与 `readiness-shape.py` 各自独立算出这个数，两者一致。1104（握手中压住）出现 0 次。
 
 ## 交接那一刻（`real-onboard-cancelled-rebuild-cargo-proof`）
 
