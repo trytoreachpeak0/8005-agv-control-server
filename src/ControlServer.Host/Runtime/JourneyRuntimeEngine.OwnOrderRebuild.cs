@@ -227,6 +227,9 @@ public sealed partial class JourneyRuntimeEngine
                 DestinationStationId = stop.StationRiotId,
                 AgvLifecycleGeneration = runtime.AgvLifecycleGeneration,
                 DispatchGeneration = runtime.DispatchGeneration,
+                // The same shape the ended order had, from the same function the authorisation path uses: a charging order
+                // rebuilt as a single move would drive the vehicle onto the charger and never start charging.
+                OrderShape = JourneyStopRoles.OrderShapeOf(stop.StopRole),
                 CreatedAt = now,
                 DispatchAuditVersion = 1,
                 DispatchAuditSequence = 0,

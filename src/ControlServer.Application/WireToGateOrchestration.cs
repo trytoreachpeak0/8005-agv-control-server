@@ -189,7 +189,14 @@ public enum MovementDispatchOutcome
     /// The observation was create-eligible but the operational create-dispatch gate is closed,
     /// so no RIoT mutation was attempted and the intent keeps its create eligibility.
     /// </summary>
-    CreateDispatchDisabled
+    CreateDispatchDisabled,
+
+    /// <summary>
+    /// The intent names an order shape this server cannot build (<c>OrderShapes</c>; the column has no CHECK,
+    /// control-server#399). Refused before the create is armed, so nothing is written: the intent has still never been
+    /// sent, and only this leg waits, under this name as its block reason (control-server#401).
+    /// </summary>
+    UnsupportedOrderShape
 }
 
 /// <summary>
@@ -458,6 +465,11 @@ public sealed class MovementDispatchService
             return CreateDispatchDisabled(intent);
         }
 
+        if (!IsBuildableOrderShape(intent))
+        {
+            return UnsupportedOrderShape(intent);
+        }
+
         DateTimeOffset absenceRecordedAt = timeProvider.GetUtcNow();
         if (!MatchesExperimentalAuthorization(intent, authorization, absenceRecordedAt))
         {
@@ -512,6 +524,11 @@ public sealed class MovementDispatchService
             return CreateDispatchDisabled(intent);
         }
 
+        if (!IsBuildableOrderShape(intent))
+        {
+            return UnsupportedOrderShape(intent);
+        }
+
         DateTimeOffset absenceRecordedAt = timeProvider.GetUtcNow();
         await store.RecordReconciliationAsync(
             intent.UpperId,
@@ -541,6 +558,19 @@ public sealed class MovementDispatchService
     /// </summary>
     private static MovementDispatchResult CreateDispatchDisabled(OrderIntent intent) =>
         new(MovementDispatchOutcome.CreateDispatchDisabled, intent.UpperId, null);
+
+    /// <summary>
+    /// Refuses a create whose order shape the RIoT gateway cannot build, before the create is armed. Nothing is written,
+    /// exactly as for a closed gate: arming first would spend the intent's one create on a request that is never sent, and
+    /// leave it RESULT_UNKNOWN with every later NotFound read as "result unknown" -- a leg stuck until the database is
+    /// edited. The gateway refuses the same shapes again as a second line (control-server#401 review).
+    /// </summary>
+    private static MovementDispatchResult UnsupportedOrderShape(OrderIntent intent) =>
+        new(MovementDispatchOutcome.UnsupportedOrderShape, intent.UpperId, null);
+
+    private static bool IsBuildableOrderShape(OrderIntent intent) =>
+        string.Equals(intent.OrderShape, OrderShapes.SingleMove, StringComparison.Ordinal) ||
+        string.Equals(intent.OrderShape, OrderShapes.Charge, StringComparison.Ordinal);
 
     private async Task<MovementDispatchResult> DispatchCreateAttemptAsync(
         OrderIntent intent,
@@ -919,25 +949,70 @@ public sealed class MovementDispatchService
             ExperimentalAuthorizationId: experimentalAuthorizationId,
             EligibilityBasis: eligibilityBasis);
 
-    private static string ComputeRequestSemanticSha256(OrderIntent intent)
+    /// <summary>
+    /// The digest of what a create for this intent asks RIoT to do, recorded on the create audit rows.
+    /// </summary>
+    /// <remarks>
+    /// <b>A single-move intent's digest is byte-for-byte what it was before order shapes existed</b>: the
+    /// audit rows already written carry it, and the next attempt of the same intent must compare equal
+    /// to them. Every other shape serializes its shape name and its missions as a list, so it can never
+    /// collide with a single-move digest for the same vehicle and station.
+    /// </remarks>
+    public static string ComputeRequestSemanticSha256(OrderIntent intent)
     {
-        byte[] semanticRequest = JsonSerializer.SerializeToUtf8Bytes(new
-        {
-            schemaVersion = 1,
-            endpoint = "byDefaultMissions",
-            upperId = intent.UpperId,
-            appointVehicleKey = intent.VehicleKey,
-            isAppointEnable = 1,
-            lockStatus = 0,
-            orderName = intent.UpperId,
-            mission = new
+        ArgumentNullException.ThrowIfNull(intent);
+        byte[] semanticRequest = string.Equals(intent.OrderShape, OrderShapes.SingleMove, StringComparison.Ordinal)
+            ? JsonSerializer.SerializeToUtf8Bytes(new
             {
-                type = "move",
-                mapId = intent.MapId,
-                destination = intent.DestinationStationId
-            }
-        });
+                schemaVersion = 1,
+                endpoint = "byDefaultMissions",
+                upperId = intent.UpperId,
+                appointVehicleKey = intent.VehicleKey,
+                isAppointEnable = 1,
+                lockStatus = 0,
+                orderName = intent.UpperId,
+                mission = new
+                {
+                    type = "move",
+                    mapId = intent.MapId,
+                    destination = intent.DestinationStationId
+                }
+            })
+            : JsonSerializer.SerializeToUtf8Bytes(new
+            {
+                schemaVersion = 1,
+                endpoint = "byDefaultMissions",
+                orderShape = intent.OrderShape,
+                upperId = intent.UpperId,
+                appointVehicleKey = intent.VehicleKey,
+                isAppointEnable = 1,
+                lockStatus = 0,
+                orderName = intent.UpperId,
+                missions = RequestedMissions(intent)
+            });
         return Convert.ToHexString(SHA256.HashData(semanticRequest)).ToLowerInvariant();
+    }
+
+    private static object[] RequestedMissions(OrderIntent intent)
+    {
+        object move = new
+        {
+            type = "move",
+            mapId = intent.MapId,
+            destination = intent.DestinationStationId
+        };
+        return string.Equals(intent.OrderShape, OrderShapes.Charge, StringComparison.Ordinal)
+            ? [
+                move,
+                new
+                {
+                    type = "act",
+                    actionId = RiotChargingOrderAction.ActionId,
+                    actionParam1 = RiotChargingOrderAction.StartChargingParam1,
+                    actionParam2 = RiotChargingOrderAction.Param2
+                }
+            ]
+            : [move];
     }
 
     private static async Task RecordAfterDispatchAsync(Func<CancellationToken, Task> write)
