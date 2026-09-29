@@ -111,3 +111,15 @@
 全量测试（`b752f430`）：3060 条全绿，退出码 0（含协议 Schema 一致性检查），`full-suite-b752f430.txt`。
 
 本地合成 L2（`0122296e`，调度第二次增量审查前要求补跑）：`evidence/l2/20260929-cs186-map-rename-green-0122296e`，9/9 PASS，L2-MR-01 窗口内读 3 次、500 共 3 次。
+
+## 8. 第二次增量审查（无必修）
+
+提交 `656d9a17`（只改测试、注释，加激活详情里的 `attemptId`）。
+
+| 审查项 | 做了什么 | 证据 |
+| --- | --- | --- |
+| W3：「有基线行就挂」时现有用例全绿 | 补两条：启动装载、激活在「有基线、没有待接受改名」时 0 条暂停、0 条 `TASK_TYPE_STATION_HOLD_RAISED` | 变异 W3 只红这两条（`mutations/results-review3.json`）；第一次注入写法编译不过（CS8602），记录保留为 `W3-invalid-first-attempt`，改写后重跑 |
+| W1、W2 是等价变异 | 写入器的 `alreadyHeld` 过滤与 `if (raised.Created)` 注释写明是 `RaiseAsync` 自身去重之外的冗余第二道，单独拿掉不改结果 | — |
+| 激活路径的详情少了 `attemptId` | 放回：只在激活路径出现（其余路径省略 null 字段），激活用例断言它与 `RaisedBy` 一致 | — |
+
+相关测试类加 cs#342 模型测试与多车执行共 495 条全绿（`l1-review3-green.txt`）。本地合成 L2 在最终代码 `656d9a17` 上 9/9 PASS：`evidence/l2/20260929-cs186-map-rename-green-656d9a17`。
