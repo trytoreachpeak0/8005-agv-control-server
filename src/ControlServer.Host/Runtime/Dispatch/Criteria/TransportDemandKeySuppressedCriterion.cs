@@ -3,11 +3,12 @@ using ControlServer.Application;
 namespace ControlServer.Host.Runtime.Dispatch.Criteria;
 
 /// <summary>
-/// 候选的业务键已被本地取消抑制，永远不再成为候选（REQ-0155、REQ-0156、REQ-0211；批次7-05，control-server#210）。
+/// 候选的业务键已被本地取消或故障货物交接终止抑制，永远不再成为候选（REQ-0155、REQ-0156、REQ-0211；批次7-05，control-server#210；
+/// 交接自 control-server#395，CP-0008）。
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>挡的是键，不是 DemandId。</b>本地取消只终结那一条 <c>DemandId</c>，而 MesIngest 在需求仍可见、或 GONE 后再现时会给同一个
+/// <b>挡的是键，不是 DemandId。</b>本地取消与交接终止只终结那一条 <c>DemandId</c>，而 MesIngest 在需求仍可见、或 GONE 后再现时会给同一个
 /// 业务键发新的 <c>DemandId</c>。REQ-0155 要的是那个键不再被执行，不管它这次叫什么。同一 SUBLOT 的另一任务类型是另一个键，
 /// 不受影响——键本身就是 <c>sublot|workType</c>。
 /// </para>

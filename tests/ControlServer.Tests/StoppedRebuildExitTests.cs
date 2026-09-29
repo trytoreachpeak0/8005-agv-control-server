@@ -440,7 +440,8 @@ public sealed class StoppedRebuildExitTests
             Assert.Equal(
                 DemandExecutionStatus.Cancelled,
                 (await reading.AcceptedDemands.AsNoTracking().SingleAsync(row => row.DemandId == FirstDemandId, Token)).Status);
-            // CP-0008（REQ-0156 修订，control-server#395）：货物从未离开原取货位置，不按业务键抑制，同键再现时可重新派车。
+            // CP-0008（REQ-0156 修订，control-server#395）：货物从未离开原取货位置，不按业务键抑制。条文说同键再现时可重新派车，
+            // v2 今天不成立：已受理同键判据（第 12 道）照样挡住（独立审查探针 P2），这里只断言不写抑制。
             await SuppressionAssertions.AssertNothingSuppressedAsync(reading);
             Assert.Equal(
                 JourneyDemandStatuses.Terminated,

@@ -163,8 +163,8 @@ public static class DispatchReasonCodes
     public const string SublotTaskTypeConflict = "SUBLOT_TASK_TYPE_CONFLICT";
 
     /// <summary>
-    /// 这个业务键（<c>sublot|workType</c>）已被本地取消永久抑制（<c>REQ-0155</c>、<c>REQ-0156</c>、<c>REQ-0211</c>；
-    /// 批次7-05，control-server#210）：MES 换了新 <c>DemandId</c> 也不再执行。
+    /// 这个业务键（<c>sublot|workType</c>）已被本地取消或故障货物交接终止永久抑制（<c>REQ-0155</c>、<c>REQ-0156</c>、
+    /// <c>REQ-0211</c>；批次7-05，control-server#210；交接自 control-server#395）：MES 换了新 <c>DemandId</c> 也不再执行。
     /// </summary>
     /// <remarks>
     /// 归普通积压、不报结构性告警：这是有意不执行，不是故障，也没有人需要去处理它。抑制没有「解除」操作。

@@ -161,7 +161,7 @@ public sealed class JourneyRuntimeWorkerCargoRecoveryTests
     /// CP-0008 (REQ-0156 as revised, REQ-0240): a fault cargo handoff writes the TransportDemandKey suppression in
     /// the one save that ends the demand and its journey and reconciles the workflow -- none before the result,
     /// and no save that carries one without the other. A crash between two saves would leave a handed-off demand
-    /// whose key MesIngest can reissue under a new DemandId and have carried a second time.
+    /// ended without the suppression REQ-0240 commits atomically with it.
     /// </summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-07")]
@@ -228,9 +228,15 @@ public sealed class JourneyRuntimeWorkerCargoRecoveryTests
 
     /// <summary>
     /// REQ-0155's effect for a suppression a handoff wrote (CP-0008): MesIngest withdraws the handed-off demand
-    /// and lists the same key under a new DemandId. The reissue waits as TRANSPORT_DEMAND_KEY_SUPPRESSED and is
-    /// never accepted, while an unrelated demand listed after it is dispatched to the same vehicle -- so the
-    /// vehicle was free to take the reissue, and the suppression is what kept it off.
+    /// and lists the same key under a new DemandId. The reissue is never accepted, while an unrelated demand listed
+    /// after it is dispatched to the same vehicle, so the vehicle was free to take it.
+    /// <para>
+    /// <b>What in here is sensitive to the suppression is the reason code, not "not dispatched".</b> Without the
+    /// suppression the reissue is still refused -- by <c>TransportDemandKeyAlreadyAcceptedCriterion</c> (order 12),
+    /// since the handed-off row keeps the key in <c>AcceptedDemands</c> -- and waits as
+    /// TRANSPORT_DEMAND_KEY_ALREADY_ACCEPTED instead (control-server#395 review, probe P1). The suppression (order 11)
+    /// comes first and turns it into TRANSPORT_DEMAND_KEY_SUPPRESSED, which is what the dashboard explains.
+    /// </para>
     /// </summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-07")]

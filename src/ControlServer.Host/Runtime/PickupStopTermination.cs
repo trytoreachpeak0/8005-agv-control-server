@@ -173,15 +173,20 @@ public sealed class PickupStopTermination(ControlServerDbContext dbContext, Plan
     /// <para>
     /// <c>TERMINATED_BY_FAULT_CARGO_HANDOFF</c>：故障货物交接（<c>REQ-0240</c>）与强制取出后交接（<c>REQ-0242</c>）两条路都以这个码经
     /// <see cref="StageAsync(JourneyRuntimeRow, string?, string, string, DateTimeOffset, CancellationToken)"/> 终结
-    /// （<c>OnboardRecoveryCoordinator</c>），所以放在这里就是两条路都与终态同一次保存写抑制。交接之后 MES 那边任务仍在；不抑制的话，
-    /// MesIngest 以新 <c>DemandId</c> 再出同一个键时会被再派一次车。control-server#210 按 <c>v1.6.0</c> 的字面只写四个码，
-    /// control-server#395 按修订后的条文补上，与 MVP 的 <c>557644a6</c> 同义。
+    /// （<c>OnboardRecoveryCoordinator</c>），所以放在这里就是两条路都与终态同一次保存写抑制。control-server#210 按 <c>v1.6.0</c>
+    /// 的字面只写四个码，control-server#395 按修订后的条文补上，与 MVP 的 <c>557644a6</c> 同义。
+    /// </para>
+    /// <para>
+    /// <b>今天在 v2 上，写不写抑制都不改变「同键以新 <c>DemandId</c> 再现时不派车」这个结果。</b><c>AcceptedDemands.TransportDemandKey</c>
+    /// 是唯一索引、受理行不删，<c>TransportDemandKeyAlreadyAcceptedCriterion</c>（第 12 道）挡住任何已有别的 <c>DemandId</c> 受理过的键，
+    /// 不论那条是怎么结束的。抑制（第 11 道）改变的是积压原因码与看板说明，并按条文把「永久不再执行」记成一条事实
+    /// （control-server#395 独立审查的探针 P1 实测）。
     /// </para>
     /// <para>
     /// <b>不要加 <c>TERMINATED_BY_OPERATOR_AFTER_REBUILD_STOP</c>。</b>人员放弃停住的重建（control-server#345）只在车上没有该任务货物时
-    /// 允许：货物从未离开原取货位置，MES 那边的任务也还在，同键以后再现时重新派车去取正是该做的；写了抑制，这批货就再也不会被搬。
-    /// 修订后的 <c>REQ-0156</c> 写明了这一条。今天那条路径不经这里的 <c>StageAsync</c>，但不能靠这个：哪天它改走这里，这个集合就是
-    /// 唯一的闸。
+    /// 允许：货物从未离开原取货位置，MES 那边的任务也还在。修订后的 <c>REQ-0156</c> 写明它不写抑制、同键以后再现时可重新派车。
+    /// <b>后半句在 v2 上今天不成立</b>：同键再现照样被上一段说的第 12 道挡住（独立审查探针 P2 实测），调度已报用户。这里只守前半句——
+    /// 不写抑制。今天那条路径不经这里的 <c>StageAsync</c>，但不能靠这个：哪天它改走这里，这个集合就是唯一的闸。
     /// </para>
     /// <para>
     /// <c>CANCELLED_BY_STOP_COMPLETE</c> 今天在 <c>src/</c> 里没有生产者，放在这里是为了以后谁产生它谁就自动抑制，
