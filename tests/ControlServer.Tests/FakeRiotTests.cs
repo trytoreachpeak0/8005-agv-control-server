@@ -356,7 +356,10 @@ public sealed class FakeRiotTests
 
         public HttpClient Client { get; private set; } = null!;
 
-        public static async Task<FakeRiotFixture> StartAsync()
+        public static Task<FakeRiotFixture> StartAsync() => StartAsync(TimeProvider.System);
+
+        /// <summary>With the clock the battery simulation reads, and any further seed switches (control-server#402).</summary>
+        public static async Task<FakeRiotFixture> StartAsync(TimeProvider clock, params string[] extraArgs)
         {
             FakeRiotFixture fixture = new();
             // Port 0 lets the OS pick, so parallel test classes never collide on 58008 and no test
@@ -366,8 +369,9 @@ public sealed class FakeRiotTests
                 "--FakeRiot:port=0",
                 "--FakeRiot:instanceId=fake-riot-test",
                 "--FakeRiot:Seed:vehicleKey=" + VehicleKey,
-                "--FakeRiot:Seed:mapIdentity=MAP-TEST"
-            ]);
+                "--FakeRiot:Seed:mapIdentity=MAP-TEST",
+                .. extraArgs
+            ], clock);
             Assert.NotNull(app);
             fixture.app = app;
             await app.StartAsync(TestContext.Current.CancellationToken);
@@ -428,7 +432,7 @@ public sealed class FakeRiotTests
             return await Client.SendAsync(request, TestContext.Current.CancellationToken);
         }
 
-        private async Task<JsonElement> SnapshotAsync()
+        public async Task<JsonElement> SnapshotAsync()
         {
             string json = await Client.GetStringAsync(
                 new Uri("/control/v1/snapshot", UriKind.Relative), TestContext.Current.CancellationToken);
