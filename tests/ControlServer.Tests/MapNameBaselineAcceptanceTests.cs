@@ -232,8 +232,35 @@ public sealed class MapNameBaselineAcceptanceTests
         Assert.Equal(
             [TransportTaskTypes.StagingToWire, TransportTaskTypes.WireToGate],
             renamed.Select(row => row.TaskType).Order(StringComparer.Ordinal));
-        Assert.All(renamed, row => Assert.Equal(TaskTypeStationHoldSource.CatalogChange, row.Source));
+        Assert.All(renamed, row =>
+        {
+            Assert.Equal(TaskTypeStationHoldSource.CatalogChange, row.Source);
+            // The activation that raised it is named in the detail (PR #378 second incremental review, item 3).
+            using JsonDocument detail = JsonDocument.Parse(row.DetailJson);
+            Assert.Equal(MapRenameHoldWriter.ByActivation, detail.RootElement.GetProperty("raisedThrough").GetString());
+            Assert.False(string.IsNullOrEmpty(detail.RootElement.GetProperty("attemptId").GetString()));
+            Assert.Equal("fieldops:activate:" + detail.RootElement.GetProperty("attemptId").GetString(), row.RaisedBy);
+        });
         Assert.Equal(2, (await harness.AuditAsync()).Count(row => row.Action == "TASK_TYPE_STATION_HOLD_RAISED"));
+    }
+
+    /// <summary>
+    /// The other side (PR #378 second incremental review, W3): an activation on a Map with a name baseline and no rename
+    /// waiting to be accepted holds nothing and audits no hold. A baseline alone is not a rename.
+    /// </summary>
+    [Fact]
+    public async Task AnActivationWithABaselineButNoPendingRenameHoldsNothing()
+    {
+        await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
+        TaskTypeStationActivationHarness.Stack stack = harness.Default();
+        await new MapNameBaselineStore(stack.Context, stack.Governance).EstablishAsync(25, "老厂前线new_wk", Now.AddHours(-1), Token);
+
+        TaskTypeStationActivationResult result = await stack.ActivateAsync(
+            TaskTypeStationActivationHarness.Candidate(TaskTypeStationActivationHarness.Gate, TaskTypeStationActivationHarness.Staging));
+
+        Assert.Equal(TaskTypeStationActivationOutcome.Activated, result.Outcome);
+        Assert.DoesNotContain(await harness.HoldsAsync(), row => row.ReasonCode == MapNameHoldReasons.MapRenamed);
+        Assert.DoesNotContain(await harness.AuditAsync(), row => row.Action == "TASK_TYPE_STATION_HOLD_RAISED");
     }
 
     /// <summary>Another writer records a pending rename just before the release's write transaction begins.</summary>

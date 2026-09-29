@@ -241,6 +241,15 @@ MUTATIONS = [
         "new": "        if (dbContext.Database.CurrentTransaction is not null && mapNames is null)",
         "expect": ["MapRenameHoldConvergenceTests.ObservingInsideSomeoneElsesTransactionIsRefusedBecauseOneMapCouldNotBeRolledBackAlone"],
     },
+    # --- PR #378 second incremental review ---
+    {
+        "id": "W3", "file": "src/ControlServer.Infrastructure/Persistence/MapRenameHoldWriter.cs",
+        "models": "Making a version active holds its task types whenever the Map has a baseline, pending rename or not (the reviewer's W3).",
+        "old": "        if (mapName?.PendingName is not { } pendingName)",
+        "new": "        if (mapName is null || (mapName.PendingName ?? mapName.Name) is not { } pendingName)",
+        "expect": ["TaskTypeStationStartupTests.AFirstStartWithABaselineButNoPendingRenameHoldsNothing",
+                   "MapNameBaselineAcceptanceTests.AnActivationWithABaselineButNoPendingRenameHoldsNothing"],
+    },
 ]
 
 

@@ -1,5 +1,6 @@
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.Unicode;
 using ControlServer.Application;
 using ControlServer.Domain;
@@ -60,7 +61,9 @@ public static class MapRenameHoldWriter
 
     private static readonly JsonSerializerOptions DetailOptions = new()
     {
-        Encoder = JavaScriptEncoder.Create(UnicodeRanges.All)
+        Encoder = JavaScriptEncoder.Create(UnicodeRanges.All),
+        // attemptId is there only for holds an activation raised; the engine's and the startup's details leave it out.
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
     /// <summary>
@@ -78,7 +81,8 @@ public static class MapRenameHoldWriter
         string raisedBy,
         string raisedThrough,
         DateTimeOffset at,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? attemptId = null)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(holds);
@@ -98,6 +102,7 @@ public static class MapRenameHoldWriter
                 before = new { mapName = baselineName },
                 after = new { mapName = observedName },
                 raisedThrough,
+                attemptId,
                 inFlightDemands = inFlight
             },
             DetailOptions);
@@ -110,6 +115,9 @@ public static class MapRenameHoldWriter
             raisedBy,
             at,
             cancellationToken).ConfigureAwait(false);
+        // The redundant layer, not the one that decides: RaiseAsync above already answers an existing hold with
+        // Created = false instead of a second row, so this condition only keeps a repeat from writing a second audit for
+        // the hold it did not create. Taking it out alone changes no hold (mutation W2 is equivalent by design).
         if (raised.Created)
         {
             await audit.WriteBusinessAsync(
@@ -140,7 +148,8 @@ public static class MapRenameHoldWriter
         string raisedBy,
         string raisedThrough,
         DateTimeOffset at,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? attemptId = null)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(version);
@@ -150,6 +159,9 @@ public static class MapRenameHoldWriter
         {
             return [];
         }
+        // Also the redundant layer: RaiseAsync dedupes on (MapId, TaskType, Source, ReasonCode) by itself, so skipping the
+        // task types already held only saves a round trip per task type and reports what this call newly held. Taking it
+        // out alone changes no hold and no audit (mutation W1 is equivalent by design).
         HashSet<string> alreadyHeld = [.. await context.Set<TaskTypeStationHoldRow>().AsNoTracking()
             .Where(row => row.MapId == version.MapId
                 && row.Source == TaskTypeStationHoldSource.CatalogChange
@@ -162,7 +174,7 @@ public static class MapRenameHoldWriter
             .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).Where(taskType => !alreadyHeld.Contains(taskType)))
         {
             if (await RaiseAsync(context, holds, audit, version, taskType, mapName.Name, pendingName, raisedBy, raisedThrough, at,
-                    cancellationToken).ConfigureAwait(false))
+                    cancellationToken, attemptId).ConfigureAwait(false))
             {
                 held.Add(taskType);
             }

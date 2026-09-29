@@ -224,6 +224,31 @@ public sealed class TaskTypeStationStartupTests
         Assert.Equal(0, detail.RootElement.GetProperty("inFlightDemands").GetInt32());
     }
 
+    /// <summary>
+    /// The other side of the one above (PR #378 second incremental review, W3): a Map with a name baseline and no rename
+    /// waiting to be accepted loads its preset with no hold and no hold audit. A baseline alone is not a rename.
+    /// </summary>
+    [Fact]
+    public async Task AFirstStartWithABaselineButNoPendingRenameHoldsNothing()
+    {
+        await using Harness harness = await Harness.CreateAsync(Runtime());
+        await using (AsyncServiceScope scope = harness.Services.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<IMapNameBaselineStore>()
+                .EstablishAsync(25, "老厂前线new_wk", Now.AddHours(-1), Token);
+        }
+        harness.WritePreset(Preset());
+
+        TaskTypeStationStartupResult result = Assert.IsType<TaskTypeStationStartupResult>(
+            await TaskTypeStationStartup.EnsureAsync(harness.Services, Token));
+
+        Assert.True(result.Bindings.Created);
+        await using AsyncServiceScope after = harness.Services.CreateAsyncScope();
+        Assert.Empty(await after.ServiceProvider.GetRequiredService<ITaskTypeStationHoldStore>().ListUnreleasedAsync(25, Token));
+        Assert.Equal(0, await after.ServiceProvider.GetRequiredService<ControlServerDbContext>()
+            .Set<BusinessAuditRecordRow>().CountAsync(row => row.Action == TaskTypeStationHoldAuditActions.Raised, Token));
+    }
+
     [Fact]
     public async Task APointerThatIsActiveButNamesNoVersionStillLetsThePresetLoadAsTheFirstVersion()
     {

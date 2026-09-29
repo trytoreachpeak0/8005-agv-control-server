@@ -661,7 +661,8 @@ public sealed class TaskTypeStationActivationStore(
             "fieldops:activate:" + attempt.AttemptId,
             MapRenameHoldWriter.ByActivation,
             at,
-            cancellationToken);
+            cancellationToken,
+            attempt.AttemptId);
     }
 
     private static string Invariant(FormattableString text) => text.ToString(CultureInfo.InvariantCulture);
