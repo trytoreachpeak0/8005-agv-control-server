@@ -35,13 +35,6 @@ public sealed class IdleReturnOptions
 }
 
 /// <summary>
-/// 过渡期的启动护栏（审查 S2）：批次8-19 合入之前，<c>IdleReturn:Enabled=true</c> 而没有 <c>AllowWithoutExecutionForL2Only</c> 就拒绝启动。
-/// </summary>
-/// <remarks>
-/// 打开之后承诺永不释放（用途占有的释放在生产代码里没有调用方，那是批次8-19 的离点与失败分流），车被永久挡住、只能改库——
-/// 准入线第 3 条。一个会在现场这样坏掉的配置，要在启动时被拒，而不是写一句「不得打开」等人记得。
-/// </remarks>
-/// <summary>
 /// 打开了、而且是合成 L2 那种打开时，启动打一条 Warning（事件 2201）：承诺在批次8-19 合入前不会被执行、也不会被释放。
 /// </summary>
 public sealed class IdleReturnStartupWarning(IOptions<IdleReturnOptions> options, ILogger<IdleReturnStartupWarning> logger)
@@ -67,6 +60,19 @@ public sealed class IdleReturnStartupWarning(IOptions<IdleReturnOptions> options
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }
 
+/// <summary>
+/// 过渡期的启动护栏（审查 S2）：批次8-19 合入之前，<c>IdleReturn:Enabled=true</c> 而没有 <c>AllowWithoutExecutionForL2Only</c> 就拒绝启动。
+/// </summary>
+/// <remarks>
+/// <para>
+/// 打开之后承诺永不释放（用途占有的释放在生产代码里没有调用方，那是批次8-19 的离点与失败分流），车被永久挡住、只能改库——
+/// 准入线第 3 条。一个会在现场这样坏掉的配置，要在启动时被拒，而不是写一句「不得打开」等人记得。
+/// </para>
+/// <para>
+/// 配置键不分大小写（.NET 配置），所以文本扫描用例按不分大小写扫。它覆盖不到仓库之外：机器级环境变量
+/// <c>IdleReturn__AllowWithoutExecutionForL2Only</c> 设在现场机器上时，这道护栏就被绕过——那只能靠现场配置不写它。
+/// </para>
+/// </remarks>
 public sealed class IdleReturnOptionsValidator : IValidateOptions<IdleReturnOptions>
 {
     public const string RefusalMessage =

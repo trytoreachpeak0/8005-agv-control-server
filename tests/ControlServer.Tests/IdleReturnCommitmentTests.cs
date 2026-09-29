@@ -13,6 +13,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -434,8 +435,9 @@ public sealed class IdleReturnCommitmentTests
     }
 
     /// <summary>
-    /// 只给 L2 的确认键不得出现在现场配置与安装脚本里（审查 S2）：扫仓库里所有 <c>appsettings*.json</c> 与 <c>scripts/</c> 下
-    /// <c>scripts/l2/</c> 以外的文件。L2 编排器里必须有它，否则这条扫描扫的是一个不存在的名字。
+    /// 只给 L2 的确认键不得出现在现场配置、安装脚本与工作流里（审查 S2）：扫仓库里所有 <c>appsettings*.json</c>、<c>scripts/</c> 下
+    /// <c>scripts/l2/</c> 以外的文件与 <c>.github/workflows/</c>。不分大小写：.NET 配置键不分大小写，小写写进 appsettings.json 一样生效。
+    /// L2 编排器里必须有它，否则这条扫描扫的是一个不存在的名字。仓库外的机器级环境变量它覆盖不到。
     /// </summary>
     [Fact]
     public void TheL2OnlyKeyAppearsInNoSiteConfigurationOrInstallScript()
@@ -450,15 +452,37 @@ public sealed class IdleReturnCommitmentTests
         string[] scripts = Directory.GetFiles(Path.Combine(root, "scripts"), "*", SearchOption.AllDirectories)
             .Where(path => !path.StartsWith(l2, StringComparison.OrdinalIgnoreCase))
             .ToArray();
+        string[] workflows = Directory.GetFiles(Path.Combine(root, ".github", "workflows"), "*", SearchOption.AllDirectories);
         Assert.NotEmpty(configurations);
         Assert.NotEmpty(scripts);
+        Assert.NotEmpty(workflows);
 
         Assert.Equal(
             [],
-            configurations.Concat(scripts)
-                .Where(path => File.ReadAllText(path).Contains(Key, StringComparison.Ordinal))
+            configurations.Concat(scripts).Concat(workflows)
+                .Where(path => File.ReadAllText(path).Contains(Key, StringComparison.OrdinalIgnoreCase))
                 .Select(path => Path.GetRelativePath(root, path)));
         Assert.Contains(Key, File.ReadAllText(Path.Combine(root, "scripts", "l2", "Invoke-L2Scenario.ps1")), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 护栏在任何托管服务启动之前就拒绝启动（审查 B3）：先注册一个会记下「我启动了」的托管服务，再按宿主注册空闲返回，
+    /// 单独打开开关——宿主启动失败，那个服务从没启动过。去掉 <c>ValidateOnStart</c> 时校验要等第一次取选项，那个服务已经起来了。
+    /// </summary>
+    [Fact]
+    public async Task TheStartupGuardRefusesBeforeAnyHostedServiceStarts()
+    {
+        RecordingHostedService earlier = new();
+        HostApplicationBuilder builder = Microsoft.Extensions.Hosting.Host.CreateApplicationBuilder();
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["IdleReturn:Enabled"] = "true" });
+        builder.Services.AddSingleton<IHostedService>(earlier);
+        builder.Services.AddIdleReturn(builder.Configuration);
+        using IHost host = builder.Build();
+
+        OptionsValidationException refusal = await Assert.ThrowsAsync<OptionsValidationException>(() => host.StartAsync(Token));
+
+        Assert.Contains(IdleReturnOptionsValidator.RefusalMessage, refusal.Failures);
+        Assert.False(earlier.Started);
     }
 
     // ---- 选点：逐点核验，候选不等于拿到 ---------------------------------------------------------------------------
@@ -976,6 +1000,19 @@ public sealed class IdleReturnCommitmentTests
     private sealed class FixedClock(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    private sealed class RecordingHostedService : IHostedService
+    {
+        public bool Started { get; private set; }
+
+        public Task StartAsync(CancellationToken cancellationToken)
+        {
+            Started = true;
+            return Task.CompletedTask;
+        }
+
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     private sealed class FixedChargeLine(int percent) : IMandatoryChargeLine

@@ -18,6 +18,8 @@ internal static class IdleReturnModule
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
+        // ValidateOnStart：校验在任何托管服务启动之前就拒（IdleReturnCommitmentTests.TheStartupGuardRefusesBeforeAnyHostedServiceStarts）。
+        // 没有它，校验要等第一次取选项——那时别的托管服务（车载端监听、派车循环）已经起来了。
         services.AddOptions<IdleReturnOptions>()
             .Bind(configuration.GetSection(IdleReturnOptions.SectionName))
             .ValidateOnStart();

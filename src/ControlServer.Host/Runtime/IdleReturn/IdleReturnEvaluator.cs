@@ -72,13 +72,17 @@ public sealed class IdleReturnEvaluator(
     TimeProvider timeProvider,
     ILogger<IdleReturnEvaluator> logger)
 {
-    /// <summary>「结果未知」的本服务端订单意图状态：建单发出过、而服务端还没核实它的结局。</summary>
     /// <summary>
     /// 共用判定里的两个电量码：先让给空闲返回自己的电量检查（读不到或充电中、强制充电线），好答空闲返回的码；那两格都过了而共用判定
     /// 仍是它们之一，照样拒。任何一条路径都不会因为让了一步而多放行一辆车。
     /// </summary>
-    private static readonly string[] DeferredBatteryCodes = ["BATTERY_FACT_UNKNOWN", "BATTERY_POLICY_NOT_SATISFIED"];
+    private static readonly string[] DeferredBatteryCodes =
+    [
+        VehicleDynamicFactsCriterion.BatteryFactUnknownReason,
+        VehicleDynamicFactsCriterion.BatteryPolicyNotSatisfiedReason,
+    ];
 
+    /// <summary>「结果未知」的本服务端订单意图状态：建单发出过、而服务端还没核实它的结局。</summary>
     internal static readonly string[] UnknownOutcomeIntentStatuses =
         ["CREATE_ATTEMPTED", "RESULT_UNKNOWN", "TERMINAL_RECONCILIATION_REQUIRED"];
 

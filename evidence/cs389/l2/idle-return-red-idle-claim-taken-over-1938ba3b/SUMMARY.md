@@ -9,7 +9,7 @@
 | runId | `20260929T170610346Z` |
 | agvId | `AGV-L2-001` |
 | batchId | `unspecified` |
-| controlServerCommit | `1938ba3b8180c2ed419c8e5a13dd1da54f1fdc5e` |
+| controlServerCommit | `1938ba3b8180c2ed419c8e5a13dd1da54f1fdc5e` （带未提交的注入，见同目录 `injection.diff`）|
 | fleet | `AGV-L2-001/BROKERX-L2-0001, AGV-L2-002/BROKERX-L2-0002` |
 | protocolReleaseIdentity.repository | `8005-agv-protocol` |
 | protocolReleaseIdentity.releaseVersion | `2.0.0` |
