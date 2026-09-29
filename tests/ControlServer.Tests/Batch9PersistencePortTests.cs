@@ -327,7 +327,11 @@ public sealed class Batch9PersistencePortTests
         FailOnInsertInto failure = new("StationExclusivities");
         ChargingCycleStore cycles = new(fixture.NewContext(failure));
 
-        await Assert.ThrowsAnyAsync<Exception>(() => cycles.TryStartAsync(Start("C-1", "agv02"), [ChargingIntent("C-1")], Token));
+        // The injected failure itself, as EF hands it on from the command, not any exception (#416 review, 6).
+        DbUpdateException thrown = await Assert.ThrowsAsync<DbUpdateException>(
+            () => cycles.TryStartAsync(Start("C-1", "agv02"), [ChargingIntent("C-1")], Token));
+        InvalidOperationException injected = Assert.IsType<InvalidOperationException>(thrown.InnerException);
+        Assert.Equal("Injected failure while inserting into StationExclusivities.", injected.Message);
 
         // Some of the save's inserts had already run when the reservation failed: what is gone was rolled back, not
         // never written.

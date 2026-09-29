@@ -145,8 +145,10 @@ public sealed class Batch9MigrationDisciplineTests
             ],
             await IndexesAsync(fixture.Connection, [.. NewTables, .. RebuiltTables]));
 
-        // Each policy field's own range, and nothing relating the three thresholds (REQ-0281): that relation has one
-        // definition, the validation batch 9-02 writes. OrderIntents.OrderShape has no CHECK either.
+        // Every CHECK in the schema, not only this migration's tables: since batch 8's own assertion stops at its migration,
+        // this is the one place the whole list is pinned (#416 review, 4). Each policy field's own range, and nothing
+        // relating the three thresholds (REQ-0281): that relation has one definition, the validation batch 9-02 writes.
+        // OrderIntents.OrderShape has no CHECK either.
         Assert.Equal(
             [
                 """ChargingCycles: CONSTRAINT "CK_ChargingCycles_Phase" CHECK ("Phase" IN ('ACTIVE', 'CLEARING', 'ENDED'))""",
@@ -166,8 +168,10 @@ public sealed class Batch9MigrationDisciplineTests
                 """StationExclusivities: CONSTRAINT "CK_StationExclusivities_StationKind" CHECK ("StationKind" IN ('WAITING_POINT', 'FIXED_TASK_STATION', 'CHARGER'))""",
                 """StationExclusivityRecords: CONSTRAINT "CK_StationExclusivityRecords_StationKind" CHECK ("StationKind" IN ('WAITING_POINT', 'FIXED_TASK_STATION', 'CHARGER'))""",
                 """VehicleChargingEligibilityHolds: CONSTRAINT "CK_VehicleChargingEligibilityHolds_Reason" CHECK ("Reason" IN ('INTERRUPTION_CONFIRMED', 'NO_PROGRESS_CONFIRMED'))""",
+                """VehiclePurposeClaimRecords: CONSTRAINT "CK_VehiclePurposeClaimRecords_Purpose" CHECK ("Purpose" IN ('TRANSPORT', 'CHARGING', 'CLEARING_MAINTENANCE', 'IDLE_RETURN'))""",
+                """VehiclePurposeClaims: CONSTRAINT "CK_VehiclePurposeClaims_Purpose" CHECK ("Purpose" IN ('TRANSPORT', 'CHARGING', 'CLEARING_MAINTENANCE', 'IDLE_RETURN'))""",
             ],
-            await CheckConstraintsAsync(fixture.Connection, [.. NewTables, .. RebuiltTables, "OrderIntents", "JourneyRuntimes"]));
+            await CheckConstraintsAsync(fixture.Connection));
 
         // The appended columns are their tables' last ones.
         Dictionary<string, string[]> columns = await ColumnsOfEveryTableAsync(fixture.Connection);
@@ -552,20 +556,15 @@ public sealed class Batch9MigrationDisciplineTests
         return [.. indexes];
     }
 
-    /// <summary>Every CHECK constraint of the given tables, as "table: its clause".</summary>
-    private static async Task<string[]> CheckConstraintsAsync(SqliteConnection connection, IEnumerable<string> tables)
+    /// <summary>Every CHECK constraint in the schema, as "table: its clause".</summary>
+    private static async Task<string[]> CheckConstraintsAsync(SqliteConnection connection)
     {
-        HashSet<string> wanted = new(tables, StringComparer.Ordinal);
         await using SqliteCommand command = connection.CreateCommand();
         command.CommandText = "SELECT name, sql FROM sqlite_master WHERE type = 'table'";
         List<string> checks = [];
         await using SqliteDataReader reader = await command.ExecuteReaderAsync(Token);
         while (await reader.ReadAsync(Token))
         {
-            if (!wanted.Contains(reader.GetString(0)))
-            {
-                continue;
-            }
             foreach (string line in reader.GetString(1).ReplaceLineEndings("\n").Split('\n'))
             {
                 string clause = line.Trim().TrimEnd(',');
