@@ -1,0 +1,12 @@
+== M16 src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs
+hits=1 line=357
+--- before
+        return await faults.ReadLiveCargoAsync(agvId, cancellationToken).ConfigureAwait(false) is { } live &&
+--- after
+        await VehicleFaultCoordinator.ReleaseCargoOfOtherJourneysAsync(
+            faults, agvId, timeProvider.GetUtcNow(), logger, cancellationToken).ConfigureAwait(false);
+        return await faults.ReadLiveCargoAsync(agvId, cancellationToken).ConfigureAwait(false) is { } live &&
+build exit=0
+test exit=1
+Failed FaultedCargoBindingLifecycleTests.ARefusedRequestReleasesNothing(request: "give-up-under-latch")
+Failed!  - Failed:     1, Passed:   400, Skipped:     0, Total:   401, Duration: 1 m 51 s - dll (net8.0)

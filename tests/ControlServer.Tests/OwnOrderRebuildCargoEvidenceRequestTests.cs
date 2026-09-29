@@ -1,3 +1,4 @@
+using ControlServer.Application;
 using System.Text.Json;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
@@ -170,6 +171,7 @@ public sealed class OwnOrderRebuildCargoEvidenceRequestTests
     [InlineData("ordering")]
     [InlineData("nothing-on-board")]
     [InlineData("cancelled-nothing-loaded")]
+    [InlineData("cleared-loaded-nothing-loaded")]
     [InlineData("stopped")]
     [Trait("Requirement", "REQ-0362")]
     public async Task Req0362NothingIsAskedWhenNoCargoRebuildWaitsForEvidence(string state)
@@ -186,9 +188,14 @@ public sealed class OwnOrderRebuildCargoEvidenceRequestTests
                         row.State = OwnOrderRebuildStates.Ordering;
                         break;
                     case "cancelled-nothing-loaded":
-                        // A cancellation with no loaded demand on the journey (the fixture writes none): rebuilt without a
-                        // snapshot, so none is asked for (control-server#366).
+                        // A cancellation with no loaded demand on the journey: rebuilt without a snapshot, so none is asked for
+                        // (control-server#366).
                         row.Source = OwnOrderRebuildSources.CancelledInRiot;
+                        break;
+                    case "cleared-loaded-nothing-loaded":
+                        // The clearance judged it loaded -- from a binding a closed journey had left -- and nothing of the
+                        // journey is on board: no cargo a snapshot could show, so none is asked for (control-server#376 review,
+                        // suggestion 2; the same reading as JourneyRuntimeEngine.CarriesCargoAsync).
                         break;
                     case "nothing-on-board":
                         row.Source = OwnOrderRebuildSources.FaultClearedNothingOnBoard;
@@ -197,7 +204,7 @@ public sealed class OwnOrderRebuildCargoEvidenceRequestTests
                         row.State = OwnOrderRebuildStates.Stopped;
                         break;
                 }
-            });
+            }, cargoOnBoard: state is not ("cancelled-nothing-loaded" or "cleared-loaded-nothing-loaded"));
         }
 
         Assert.DoesNotContain(Requested, Lines(await fixture.HeartbeatAsync()).Select(MessageType));
@@ -312,7 +319,7 @@ public sealed class OwnOrderRebuildCargoEvidenceRequestTests
         }
 
         /// <summary>A cleared fault with cargo on board whose rebuild waits for the vehicle to show the cargo (REQ-0362).</summary>
-        public async Task AddCargoRebuildAsync(Action<OwnOrderRebuildRow>? adjust = null)
+        public async Task AddCargoRebuildAsync(Action<OwnOrderRebuildRow>? adjust = null, bool cargoOnBoard = true)
         {
             await using ControlServerDbContext writing = new(
                 new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(Connection).Options);
@@ -337,6 +344,24 @@ public sealed class OwnOrderRebuildCargoEvidenceRequestTests
             };
             adjust?.Invoke(row);
             writing.OwnOrderRebuilds.Add(row);
+            // The cargo on board, as the journey records it. Until control-server#376 the source alone asked for a snapshot; now
+            // the claim reads the journey the same way JourneyRuntimeEngine.CarriesCargoAsync does, and a record whose journey has
+            // nothing loaded asks for none (FaultedCargoBindingLifecycleTests pins that side).
+            writing.Set<JourneyDemandRow>().Add(new JourneyDemandRow
+            {
+                JourneyId = row.JourneyId,
+                DemandId = row.DemandId,
+                PickupStopId = "stop:D-318:1",
+                UnloadStopId = row.StopId,
+                TargetSlotsJson = "[3]",
+                LoadSlotOperationAttemptId = "load-D-318",
+                LoadCommandMessageId = "load-command-D-318",
+                UnloadSlotOperationAttemptId = "unload-D-318",
+                UnloadCommandMessageId = "unload-command-D-318",
+                DispatchZone = "ZONE-318",
+                Status = cargoOnBoard ? JourneyDemandStatuses.Loaded : JourneyDemandStatuses.PendingLoad,
+                AddedAt = Now.AddMinutes(-10),
+            });
             await writing.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 

@@ -1,0 +1,11 @@
+== M10 src/ControlServer.Infrastructure/Persistence/FaultedCargoBindings.cs
+hits=1 line=142
+--- before
+            .Where(binding => closed.Contains(binding.DemandId) && !stillOpen.Contains(binding.DemandId))
+--- after
+            .Where(binding => !stillOpen.Contains(binding.DemandId))
+build exit=0
+test exit=1
+Failed FaultedCargoBindingLifecycleTests.ABindingNoJourneyAccountsForIsKept
+Failed VehicleFaultIsolationTests.ReObservingTheSameFaultDoesNotBindTheCargoTwice
+Failed!  - Failed:     2, Passed:   399, Skipped:     0, Total:   401, Duration: 1 m 47 s - dll (net8.0)

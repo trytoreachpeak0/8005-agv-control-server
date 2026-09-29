@@ -1,0 +1,17 @@
+== M1 src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+hits=1 line=1503
+--- before
+                    await FaultedCargoBindings.StageReleaseWhenNothingLeftOnBoardAsync(
+                            dbContext, runtime.JourneyId, runtime.AgvId, FaultedCargoBindings.UnloadedWithNothingLeftOnBoardReason,
+                            now, cancellationToken)
+                        .ConfigureAwait(false);
+--- after
+(removed)
+build exit=0
+test exit=1
+Failed FaultedCargoBindingLifecycleTests.AnUnloadAfterADoorFaultOnAnOrderCancelledInRiotReleasesTheBinding(session: "behind-the-readiness-gate")
+Failed FaultedCargoBindingLifecycleTests.AnUnloadAfterADoorFaultOnAnOrderCancelledInRiotReleasesTheBinding(session: "ready")
+Failed FaultedCargoBindingLifecycleTests.AnUnloadAfterARebuildCancelledBeforeConfirmationReleasesTheBinding
+Failed FaultedCargoBindingLifecycleTests.TheFirstOfTwoUnloadsKeepsTheBindingAndTheLastReleasesIt
+Failed FaultedCargoBindingLifecycleTests.WhenTheAnchorUnloadsLastTheBindingIsKeptUntilItHas
+Failed!  - Failed:     5, Passed:   396, Skipped:     0, Total:   401, Duration: 1 m 53 s - dll (net8.0)

@@ -1,0 +1,12 @@
+== M6 src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.StoppedRebuild.cs
+hits=1 line=357
+--- before
+        return await faults.ReadLiveCargoAsync(agvId, cancellationToken).ConfigureAwait(false) is { } live &&
+               !(await faults.ReadCargoOfOtherJourneysAsync(agvId, cancellationToken).ConfigureAwait(false))
+                   .Contains(live.CargoBindingId);
+--- after
+        return await faults.ReadLiveCargoAsync(agvId, cancellationToken).ConfigureAwait(false) is not null;
+build exit=0
+test exit=1
+Failed FaultedCargoBindingLifecycleTests.AnEmptySecondTripStoppedByTheThirdGuardCanBeGivenUp
+Failed!  - Failed:     1, Passed:   400, Skipped:     0, Total:   401, Duration: 1 m 39 s - dll (net8.0)

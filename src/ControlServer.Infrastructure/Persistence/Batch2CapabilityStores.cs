@@ -632,6 +632,29 @@ public sealed class VehicleFaultStore(ControlServerDbContext dbContext) : IVehic
         return row is null ? null : ToBinding(row);
     }
 
+    public async Task<IReadOnlyList<FaultedCargoBinding>> ReleaseCargoOfOtherJourneysAsync(
+        string agvId,
+        DateTimeOffset releasedAt,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+
+        IReadOnlyList<FaultedVehicleCargoRow> released = await FaultedCargoBindings
+            .StageReleaseOfOtherJourneysCargoAsync(dbContext, agvId, releasedAt, cancellationToken).ConfigureAwait(false);
+        if (released.Count > 0)
+        {
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        return [.. released.Select(ToBinding)];
+    }
+
+    public Task<IReadOnlySet<string>> ReadCargoOfOtherJourneysAsync(string agvId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+        return FaultedCargoBindings.OtherJourneysCargoAsync(dbContext, agvId, cancellationToken);
+    }
+
     public async Task ReleaseCargoAsync(
         string cargoBindingId,
         string reason,

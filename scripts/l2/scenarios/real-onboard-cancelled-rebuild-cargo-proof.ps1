@@ -270,6 +270,10 @@ $assertions.Add(
 
 $journal.Note('Someone else releases the emergency stop.')
 Set-Vehicle @{ emergencyState = 'OK' }
+# 停住要等两样都到：产品在「快照显示仓空」这一支分两次保存，先存重建记录（STOPPED），再存旅程码
+# （JourneyRuntimeEngine.CargoNotProvenAsync）。只等记录会读到两次保存之间的旧码：真装置 run 36479121507 就是这样红的，
+# 记录已是 STOPPED / CARGO_NOT_PROVEN_IN_ORIGINAL_SLOTS，旅程码还是 OWN_ORDER_REBUILD_WAITING_CARGO_EVIDENCE。
+# 走错了路（建了单、停在别的原因上）照旧立刻停下来判定，不等满超时。
 $stopped = Wait-L2ConditionOrLast -Description 'the rebuild stopped on a snapshot received after the release' `
     -Journal $journal -Criterion 'cargo-not-in-place' -TimeoutSeconds 120 `
     -Probe {
@@ -287,7 +291,12 @@ $stopped = Wait-L2ConditionOrLast -Description 'the rebuild stopped on a snapsho
             Gates     = Get-GateCount $demandId
         }
     } `
-    -Until { param($v) $v.State -in @('STOPPED', 'REBUILT', 'ORDERING') -or $v.Gates -ne 1 }
+    -Until {
+        param($v)
+        ($v.State -eq 'STOPPED' -and
+            ($v.Reason -ne 'CARGO_NOT_PROVEN_IN_ORIGINAL_SLOTS' -or $v.Code -eq 'OWN_ORDER_REBUILD_CARGO_NOT_IN_PLACE')) -or
+            $v.State -in @('REBUILT', 'ORDERING') -or $v.Gates -ne 1
+    }
 $afterRelease = $null -ne $stopped.NotBefore -and $null -ne $stopped.Evidence -and $stopped.Evidence -gt $stopped.NotBefore -and
     $stopped.Evidence -gt $stopped.DueAt
 $assertions.Add(

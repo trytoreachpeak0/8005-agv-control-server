@@ -1,0 +1,18 @@
+== M13 src/ControlServer.Host/Runtime/OwnOrderRebuilds.cs
+hits=1 line=314
+--- before
+                            dbContext.Set<JourneyDemandRow>().Any(
+                                demand => demand.JourneyId == row.JourneyId && demand.RemovedAt == null &&
+--- after
+                            (row.Source == OwnOrderRebuildSources.FaultClearedCargoOnBoard || dbContext.Set<JourneyDemandRow>().Any(
+                                demand => demand.JourneyId == row.JourneyId && demand.RemovedAt == null &&
+hits=1 line=318
+--- before
+                                          demand.Status != JourneyDemandStatuses.Terminated)) ||
+--- after
+                                          demand.Status != JourneyDemandStatuses.Terminated))) ||
+build exit=0
+test exit=1
+Failed FaultedCargoBindingLifecycleTests.ARebuildLeftWaitingOnAnEmptySetOfSlotsGoesOnWithoutAPerson
+Failed OwnOrderRebuildCargoEvidenceRequestTests.Req0362NothingIsAskedWhenNoCargoRebuildWaitsForEvidence(state: "cleared-loaded-nothing-loaded")
+Failed!  - Failed:     2, Passed:   399, Skipped:     0, Total:   401, Duration: 1 m 45 s - dll (net8.0)

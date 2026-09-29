@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-in-transit-door-facts",
+  "runId": "20260928T201710832Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "protocolFaultProxy": true,
+    "rig": "RealOnboard",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "onboardHmiCommit": "60f341878a1bce705598aa9043234c1ca2fb1d7a",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-36477303574-1\\_stage\\l2-20260928T201710832Z",
+    "controlServerCommit": "70737b23b9a97c6c6fd1e7e179eb31af94b50b77",
+    "batchId": "unspecified",
+    "agvId": "AGV-L2-001",
+    "vehicleKey": "BROKERX-L2-0001"
+  },
+  "assertions": [
+    {
+      "id": "L2-DF-01",
+      "description": "真车载端空车行驶 12 秒（会话因本单未就绪）：不 Hold、不急停、不 Cancel",
+      "outcome": "PASS",
+      "expected": ">= 10 samples, 0/0/0",
+      "actual": "24 samples, 0/0/0"
+    },
+    {
+      "id": "L2-DF-02",
+      "description": "真车载端有货行驶 12 秒并途中重连一次：不 Hold、不急停、不 Cancel",
+      "outcome": "PASS",
+      "expected": ">= 10 samples, 0/0/0",
+      "actual": "23 samples, 0/0/0"
+    },
+    {
+      "id": "L2-DF-03",
+      "description": "锁反馈变 0：Hold 恰好一条，打在本车、关卡段这一张单上，RIoT 侧收到的 CMD_ORDER_HELD 也打在这张 orderId 上",
+      "outcome": "PASS",
+      "expected": "1 / AGV-L2-001 / W2G-eda5e8d3-e92d-4c02-b1cf-95c286ddc3dd-GATE-1 / -> ORDER-000002",
+      "actual": "1 / AGV-L2-001 / W2G-eda5e8d3-e92d-4c02-b1cf-95c286ddc3dd-GATE-1 / -> ORDER-000002"
+    },
+    {
+      "id": "L2-DF-04",
+      "description": "按不住、车还在动：急停恰好一条，打在这台车上，而且在 Hold 之后",
+      "outcome": "PASS",
+      "expected": "1 / AGV-L2-001 / hold first",
+      "actual": "1 / AGV-L2-001 / hold 2026-09-28 20:18:58.5061088+00:00 trigger 2026-09-28 20:18:59.4624618+00:00"
+    },
+    {
+      "id": "L2-DF-05",
+      "description": "故障事实记的是门锁症状",
+      "outcome": "PASS",
+      "expected": "VEHICLE_DOOR_NOT_PROVEN_LOCKED",
+      "actual": "VEHICLE_DOOR_NOT_PROVEN_LOCKED"
+    },
+    {
+      "id": "L2-DF-06",
+      "description": "锁反馈仍是 0 时不解除",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "id": "L2-DF-07",
+      "description": "锁反馈恢复后自动解除一次，原因记门锁原因消除",
+      "outcome": "PASS",
+      "expected": "1 / EMERGENCY_DOOR_CAUSE_REMOVED",
+      "actual": "1 / EMERGENCY_DOOR_CAUSE_REMOVED"
+    },
+    {
+      "id": "L2-DF-08",
+      "description": "解除之后单仍停着：没有 CONTINUE，没有第二次急停，没有 Cancel",
+      "outcome": "PASS",
+      "expected": "0 continue / 1 trigger / 0 cancel",
+      "actual": "0 continue / 1 trigger / 0 cancel"
+    }
+  ]
+}

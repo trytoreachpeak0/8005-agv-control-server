@@ -1,0 +1,12 @@
+== M14 src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+hits=1 line=409
+--- before
+            if (cargo is not null &&
+                (await faults.ReadCargoOfOtherJourneysAsync(subject.AgvId, cancellationToken).ConfigureAwait(false))
+                    .Contains(cargo.CargoBindingId))
+--- after
+            if (cargo is null)
+build exit=0
+test exit=1
+Failed FaultedCargoBindingLifecycleTests.AResumptionEntryReleasesALeftoverBindingBeforeJudgingTheCargo
+Failed!  - Failed:     1, Passed:   400, Skipped:     0, Total:   401, Duration: 1 m 44 s - dll (net8.0)

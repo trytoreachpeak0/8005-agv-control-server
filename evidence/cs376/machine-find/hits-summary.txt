@@ -1,0 +1,125 @@
+      2 BIND	ControlServer.Tests.Batch2CapabilityStoresTests.CargoBindingIsUniquePerLiveFaultAndSurvivesRelease	
+      1 BIND	ControlServer.Tests.Cs376StaleCargoBindingProbe.P1EmptyVehicleSecondFaultRebuildAndExits(firstFault: "behind-the-readiness-gate")	
+      1 BIND	ControlServer.Tests.Cs376StaleCargoBindingProbe.P1EmptyVehicleSecondFaultRebuildAndExits(firstFault: "ready")	
+      1 BIND	ControlServer.Tests.Cs376StaleCargoBindingProbe.P2LoadedSecondTripDoorFaultResume	
+      1 BIND	ControlServer.Tests.Cs376StaleCargoBindingProbe.P3EmptyVehicleStoppedByTheThirdGuardHandoff	
+      1 BIND	ControlServer.Tests.EmergencyReleaseVersusOwnOrderRebuildTests.OnTheWayToTheGateAnEmptiedVehicleIsReleasedButItsDeliveryIsNeverRebuilt	
+      1 BIND	ControlServer.Tests.FailedOrderBeforeConfirmationTests.AClearedFaultOfAGateOrderThatFailedBeforeConfirmationRebuildsOnlyOnCargoEvidence	
+      1 BIND	ControlServer.Tests.FailedOrderBeforeConfirmationTests.AGateOrderThatFailedBeforeConfirmationAlsoBindsTheCargoInFrontOfTheGate	
+      1 BIND	ControlServer.Tests.FailedOrderBeforeConfirmationTests.AnUnreconciledGateOrderThatFailedAlsoBindsTheCargoBehindTheGate	
+      1 BIND	ControlServer.Tests.FailedOrderBehindSessionGateTests.AFailedGateOrderBehindTheGateAlsoBindsTheCargoInTheSameRound	
+      1 BIND	ControlServer.Tests.GateHeldOnboardSendTests.NoFaultRecoveryPathCallsRiotOrSendsToAVehicleWhileTheGateIsHeld(path: "clear-loaded")	
+      1 BIND	ControlServer.Tests.GateHeldOnboardSendTests.NoFaultRecoveryPathCallsRiotOrSendsToAVehicleWhileTheGateIsHeld(path: "prepare-cargo-handoff")	
+      1 BIND	ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AClearanceBeforeTheEngineSeesTheCancellationLeavesTheRebuildToTheEngine	
+      1 BIND	ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AFailedOrderFaultIsNotReleasedAutomaticallyWhateverTheDoorsSay	
+      1 BIND	ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AHeldOrderEndedInRiotUnderADoorFaultStillHasAWayOut(latch: "latched", ending: 2)	
+      1 BIND	ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AHeldOrderEndedInRiotUnderADoorFaultStillHasAWayOut(latch: "latched", ending: 6)	
+      1 BIND	ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AHeldOrderEndedInRiotUnderADoorFaultStillHasAWayOut(latch: "latched-behind-the-readiness-gate", ending: 2)	
+      1 BIND	ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AHeldOrderEndedInRiotUnderADoorFaultStillHasAWayOut(latch: "released", ending: 2)	
+      1 BIND	ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AHeldOrderThatRunsAgainWithoutAContinueIsNamed	
+      1 BIND	ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AHeldOrderThatRunsBeforeTheLastReadKeepsTheLatch	
+      1 BIND	ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AHoldConfirmedEarlierThenContinuedInRiotKeepsTheLatch	
+      1 BIND	ControlServer.Tests.InTransitDoorEmergencyReleaseTests.ALatchRaisedForTheDoorsIsReleasedBehindTheReadinessGateToo	
+      1 BIND	ControlServer.Tests.InTransitDoorEmergencyReleaseTests.ALatchRaisedForTheDoorsIsReleasedOnceTheyAreLockedAndTheHeldOrderWaitsForAPerson	
+      1 BIND	ControlServer.Tests.InTransitDoorEmergencyReleaseTests.ALatchThatComesOnAfterTheServiceReadItStillStopsTheContinue	
+      1 BIND	ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AResumeWhileTheLatchIsStillOnSendsNoContinue(latch: "external")	
+      1 BIND	ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AResumeWhileTheLatchIsStillOnSendsNoContinue(latch: "own")	
+      1 BIND	ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AStopReTriggeredAfterTheServiceGateStillStopsTheContinue	
+      1 BIND	ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AfterTheDoorReleaseTheVehicleIsStoppedAgainOnAnythingButAMissingStation(reading: "doors-not-locked-again")	
+      1 BIND	ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AfterTheDoorReleaseTheVehicleIsStoppedAgainOnAnythingButAMissingStation(reading: "motion-stale")	
+      1 BIND	ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AfterTheDoorReleaseTheVehicleIsStoppedAgainOnAnythingButAMissingStation(reading: "motion-unreadable")	
+      1 BIND	ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AfterTheDoorReleaseTheVehicleIsStoppedAgainOnAnythingButAMissingStation(reading: "moving")	
+      1 BIND	ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AfterTheDoorReleaseTheVehicleIsStoppedAgainOnAnythingButAMissingStation(reading: "slot-state-unknown-again")	
+      1 BIND	ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AnEmergencyStateThatCannotBeReadAfterTheServiceReadItStopsTheContinue	
+      1 BIND	ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AnOrderThatIsNotTheOwnConfirmedHoldKeepsTheLatch(orderState: 1)	
+      1 BIND	ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AnOrderThatIsNotTheOwnConfirmedHoldKeepsTheLatch(orderState: 3)	
+      1 BIND	ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AnOrderThatIsNotTheOwnConfirmedHoldKeepsTheLatch(orderState: 9)	
+      1 BIND	ControlServer.Tests.InTransitDoorEmergencyReleaseTests.AnotherUnfinishedOrderOnTheVehicleKeepsTheLatch	
+      1 BIND	ControlServer.Tests.InTransitDoorEmergencyReleaseTests.DoorsNotProvenLockedKeepTheLatch(doors: "slot-state-unknown")	
+      1 BIND	ControlServer.Tests.InTransitDoorEmergencyReleaseTests.DoorsNotProvenLockedKeepTheLatch(doors: "stale")	
+      2 BIND	ControlServer.Tests.InTransitDoorEmergencyReleaseTests.TheExemptionEndsWithTheFaultGeneration	
+      2 BIND	ControlServer.Tests.InTransitDoorEmergencyReleaseTests.TheExemptionEndsWithTheFaultGenerationEvenOnceTheDoorsAreLockedAgain	
+      1 BIND	ControlServer.Tests.InTransitDoorLockFaultTests.ADoorNotProvenLockedWhileDrivingIsHeldOnThisOrderThenStopped(leg: "gate", side: "behind-gate", doors: "unknown")	
+      1 BIND	ControlServer.Tests.InTransitDoorLockFaultTests.ADoorNotProvenLockedWhileDrivingIsHeldOnThisOrderThenStopped(leg: "gate", side: "behind-gate", doors: "unlocked")	
+      1 BIND	ControlServer.Tests.InTransitDoorLockFaultTests.ADoorNotProvenLockedWhileDrivingIsHeldOnThisOrderThenStopped(leg: "gate", side: "ready", doors: "unknown")	
+      1 BIND	ControlServer.Tests.InTransitDoorLockFaultTests.ARaisedDoorFaultIsStillSupervisedEveryRoundWhileTheSessionIsSilent	
+      1 BIND	ControlServer.Tests.InTransitDoorLockFaultTests.BehindTheGateADoorFaultIsRaisedEvenWhenThePeerCannotBeSentTo	
+      1 BIND	ControlServer.Tests.OnboardSessionLostBlockTests.ASilentSessionDoesNotOverwriteAFailedOrderAsTheReason	
+      1 BIND	ControlServer.Tests.OwnOrderRebuildCargoProofTests.AVehicleThatOnlySendsHeartbeatsIsAskedAgainAfterTheDueTimeAndTheTripIsRebuilt(source: "fault-cleared")	
+      1 BIND	ControlServer.Tests.OwnOrderRebuildCargoProofTests.FaultWindowACargoProvenThenTakenWhileTheVehicleIsHeldIsNotRebuilt	
+      1 BIND	ControlServer.Tests.OwnOrderRebuildCargoProofTests.FaultWindowBASnapshotFromWithinTheDelayDoesNotProveTheCargoAtTheRebuild	
+      1 BIND	ControlServer.Tests.ReversedDirectionJourneyRuntimeTests.AnOrderFailureInTheMiddleOfTheWaitDoesNotRestartTheCount	
+      1 BIND	ControlServer.Tests.StoppedRebuildExitTests.ACargoNotInPlaceIsHandedToTheExceptionSessionAndEndsThere(session: "not-ready-on-own-order")	
+      1 BIND	ControlServer.Tests.StoppedRebuildExitTests.ACargoNotInPlaceIsHandedToTheExceptionSessionAndEndsThere(session: "ready")	
+      1 BIND	ControlServer.Tests.StoppedRebuildExitTests.AFailedHandoffLeavesTheTripAWayOut	
+      1 BIND	ControlServer.Tests.StoppedRebuildExitTests.AForcedMechanicalRecoveryOfAHandedOverTripSettlesItsBinding	
+      1 BIND	ControlServer.Tests.StoppedRebuildExitTests.AHandedOffCargoBindingIsNotTakenForTheVehiclesNextFault	
+      1 BIND	ControlServer.Tests.StoppedRebuildExitTests.AHandedOverTripIsNotRebuiltByAPerson	
+      1 BIND	ControlServer.Tests.StoppedRebuildExitTests.AHandoffRecordWhoseJourneyIsNoLongerBlockedAsksTheVehicleForNothing	
+      1 BIND	ControlServer.Tests.StoppedRebuildExitTests.APartialHandoffLetsThePersonGiveTheRestUp	
+      2 BIND	ControlServer.Tests.StoppedRebuildExitTests.APersonsRebuildWithCargoOnBoardStillNeedsAFreshSnapshotOfTheCargo	
+      1 BIND	ControlServer.Tests.StoppedRebuildExitTests.ARequestForAJourneyNotStoppedByTheThirdGuardIsRefusedAndChangesNothing(state: "cargo-not-in-place", refusal: "OWN_ORDER_REBUILD_EXIT_CARGO_NOT_IN_PLACE")	
+      1 BIND	ControlServer.Tests.StoppedRebuildExitTests.AStoppedTripWithCargoOnBoardIsNotGivenUp(cargo: "live-cargo-binding")	
+      1 BIND	ControlServer.Tests.StoppedRebuildExitTests.AnUnnamedOrUnconfirmedRequestIsRefusedForBoth(action: PrepareCargoHandoff)	
+      1 BIND	ControlServer.Tests.StoppedRebuildExitTests.GivingUpAJourneyNotStoppedByTheThirdGuardIsRefusedAndChangesNothing(state: "cargo-not-in-place", refusal: "OWN_ORDER_REBUILD_EXIT_CARGO_NOT_IN_PLACE")	
+      1 BIND	ControlServer.Tests.StoppedRebuildExitTests.OnlyThisVehiclesBlockedJourneyAwaitingAHandoffHoldsItsSession	
+      1 BIND	ControlServer.Tests.StoppedRebuildExitTests.TheSameHandoffPreparationTwiceIsDoneOnce	
+      1 BIND	ControlServer.Tests.VehicleFaultIsolationTests.ACargoBindingThatDoesNotMatchRefusesTheResumption	
+      1 BIND	ControlServer.Tests.VehicleFaultIsolationTests.AClearedFaultLetsTheEmergencyLatchBeReleasedButAResumptionUnderTheLatchIsRefused	
+      1 BIND	ControlServer.Tests.VehicleFaultIsolationTests.AContinueThatWasNotConfirmedClearsNothing	
+      1 BIND	ControlServer.Tests.VehicleFaultIsolationTests.ALoadedOrPossiblyLoadedVehicleKeepsItsBinding(loadingWitnessed: False, cargoStateKnown: False)	
+      1 BIND	ControlServer.Tests.VehicleFaultIsolationTests.ALoadedOrPossiblyLoadedVehicleKeepsItsBinding(loadingWitnessed: True, cargoStateKnown: False)	
+      1 BIND	ControlServer.Tests.VehicleFaultIsolationTests.ALoadedOrPossiblyLoadedVehicleKeepsItsBinding(loadingWitnessed: True, cargoStateKnown: True)	
+      1 BIND	ControlServer.Tests.VehicleFaultIsolationTests.ANewFaultEpisodeStartsFromAnEmptyObservationWindow	
+      1 BIND	ControlServer.Tests.VehicleFaultIsolationTests.AProvenStopIsWithdrawnWhenTheVehicleMovesAgain	
+      1 BIND	ControlServer.Tests.VehicleFaultIsolationTests.AResumptionForAnotherVehicleIsRefused	
+      1 BIND	ControlServer.Tests.VehicleFaultIsolationTests.AResumptionWithEverythingInAgreementContinuesTheOriginalOrder	
+      1 BIND	ControlServer.Tests.VehicleFaultIsolationTests.AnOrderIdentityThatDoesNotMatchRefusesTheResumption	
+      1 BIND	ControlServer.Tests.VehicleFaultIsolationTests.AnOrderThatIsNotHeldRefusesTheResumption	
+      1 BIND	ControlServer.Tests.VehicleFaultIsolationTests.ReObservingTheSameFaultDoesNotBindTheCargoTwice	
+      1 BIND	ControlServer.Tests.VehicleFaultIsolationTests.ThreeStoppedEvaluationsProveTheStopAndRecordIt	
+      1 BIND	ControlServer.Tests.VehicleFaultRecoveryEndpointsTests.AnExitFromAStoppedRebuildIsOkOnceAndAlreadyDoneAfterwards(action: "PREPARE_CARGO_HANDOFF", outcome: "HandoffPrepared", disposition: "AWAITING_CARGO_HANDOFF")	
+      1 BIND	ControlServer.Tests.VehicleFaultRecoveryEndpointsTests.AnExitFromAStoppedRebuildNeedsTheCredential(action: "PREPARE_CARGO_HANDOFF")	
+      1 BIND	ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderRebuildsOnceTheSessionIsReady(cargo: "loaded")	
+      1 BIND	ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultWithCargoOnBoardRebuildsTheOrderToDeliverIt	
+      1 BIND	ControlServer.Tests.VehicleFaultRecoveryTests.NoRiotCallIsMadeWhileTheGateIsHeld(path: "clear-loaded")	
+      1 BIND	ControlServer.Tests.VehicleFaultRecoveryTests.Req0362AFreshSnapshotThatDoesNotShowTheCargoInPlaceStopsTheRebuild(shows: "empty")	
+      1 BIND	ControlServer.Tests.VehicleFaultRecoveryTests.Req0362AFreshSnapshotThatDoesNotShowTheCargoInPlaceStopsTheRebuild(shows: "one-of-two-empty")	
+      1 BIND	ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ALoadedClearanceWhoseSessionNeverBecomesReadyWaitsForTheVehicle	
+      1 BIND	ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotFromAnotherVehicleSaysNothingAboutThisOnesCargo	
+      1 BIND	ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotFromBeforeTheClearanceDoesNotProveTheCargo	
+      1 BIND	ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(shows: "load-not-settled")	
+      1 BIND	ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(shows: "no-committed-load")	
+      1 BIND	ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(shows: "output-not-reset")	
+      1 BIND	ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(shows: "physical-unknown")	
+      1 BIND	ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(shows: "slot-not-reported")	
+      1 BIND	ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(shows: "unknown-present")	
+      1 BIND	ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(shows: "unlocked")	
+      1 BIND	ControlServer.Tests.VehicleFaultRecoveryTests.Req0362AnInconclusiveSnapshotIsAskedForAgainAfterAWhile	
+      1 BIND	ControlServer.Tests.WaitingJourneyBatteryWatchTests.ALegThatNamesAReasonLateWaitsFromTheReasonNotFromTheDeparture	
+      1 LEFT	ControlServer.Tests.Cs376StaleCargoBindingProbe.P1EmptyVehicleSecondFaultRebuildAndExits(firstFault: "behind-the-readiness-gate")	reason=
+      1 LEFT	ControlServer.Tests.Cs376StaleCargoBindingProbe.P1EmptyVehicleSecondFaultRebuildAndExits(firstFault: "ready")	reason=
+      1 LEFT	ControlServer.Tests.Cs376StaleCargoBindingProbe.P2LoadedSecondTripDoorFaultResume	reason=
+      1 LEFT	ControlServer.Tests.Cs376StaleCargoBindingProbe.P3EmptyVehicleStoppedByTheThirdGuardHandoff	reason=
+      1 LEFT	ControlServer.Tests.StoppedRebuildExitTests.AHandoffRecordWhoseJourneyIsNoLongerBlockedAsksTheVehicleForNothing	reason=OWN_ORDER_REBUILD_AWAITING_CARGO_HANDOFF
+      1 RELEASE	ControlServer.Tests.Batch2CapabilityStoresTests.CargoBindingIsUniquePerLiveFaultAndSurvivesRelease	REPAIR_CONTINUE
+      1 RELEASE	ControlServer.Tests.FailedOrderBeforeConfirmationTests.AClearedFaultOfAGateOrderThatFailedBeforeConfirmationRebuildsOnlyOnCargoEvidence	REBUILT_ON_ORIGINAL_VEHICLE
+      1 RELEASE	ControlServer.Tests.InTransitDoorEmergencyReleaseTests.ALatchRaisedForTheDoorsIsReleasedOnceTheyAreLockedAndTheHeldOrderWaitsForAPerson	RESUMED_ON_ORIGINAL_VEHICLE
+      1 RELEASE	ControlServer.Tests.InTransitDoorEmergencyReleaseTests.TheExemptionEndsWithTheFaultGeneration	RESUMED_ON_ORIGINAL_VEHICLE
+      1 RELEASE	ControlServer.Tests.InTransitDoorEmergencyReleaseTests.TheExemptionEndsWithTheFaultGenerationEvenOnceTheDoorsAreLockedAgain	RESUMED_ON_ORIGINAL_VEHICLE
+      1 RELEASE	ControlServer.Tests.OwnOrderRebuildCargoProofTests.AVehicleThatOnlySendsHeartbeatsIsAskedAgainAfterTheDueTimeAndTheTripIsRebuilt(source: "fault-cleared")	REBUILT_ON_ORIGINAL_VEHICLE
+      1 RELEASE	ControlServer.Tests.StoppedRebuildExitTests.ACargoNotInPlaceIsHandedToTheExceptionSessionAndEndsThere(session: "not-ready-on-own-order")	HANDED_OFF_IN_EXCEPTION_SESSION
+      1 RELEASE	ControlServer.Tests.StoppedRebuildExitTests.ACargoNotInPlaceIsHandedToTheExceptionSessionAndEndsThere(session: "ready")	HANDED_OFF_IN_EXCEPTION_SESSION
+      1 RELEASE	ControlServer.Tests.StoppedRebuildExitTests.AFailedHandoffLeavesTheTripAWayOut	HANDED_OFF_IN_EXCEPTION_SESSION
+      1 RELEASE	ControlServer.Tests.StoppedRebuildExitTests.AForcedMechanicalRecoveryOfAHandedOverTripSettlesItsBinding	HANDED_OFF_IN_EXCEPTION_SESSION
+      1 RELEASE	ControlServer.Tests.StoppedRebuildExitTests.AHandedOffCargoBindingIsNotTakenForTheVehiclesNextFault	HANDED_OFF_IN_EXCEPTION_SESSION
+      1 RELEASE	ControlServer.Tests.StoppedRebuildExitTests.APartialHandoffLetsThePersonGiveTheRestUp	HANDED_OFF_IN_EXCEPTION_SESSION
+      2 RELEASE	ControlServer.Tests.StoppedRebuildExitTests.APersonsRebuildWithCargoOnBoardStillNeedsAFreshSnapshotOfTheCargo	REBUILT_ON_ORIGINAL_VEHICLE
+      1 RELEASE	ControlServer.Tests.VehicleFaultIsolationTests.AResumptionWithEverythingInAgreementContinuesTheOriginalOrder	RESUMED_ON_ORIGINAL_VEHICLE
+      1 RELEASE	ControlServer.Tests.VehicleFaultRecoveryTests.AClearanceWhileTheSessionIsNotReadyOnItsOwnOrderRebuildsOnceTheSessionIsReady(cargo: "loaded")	REBUILT_ON_ORIGINAL_VEHICLE
+      1 RELEASE	ControlServer.Tests.VehicleFaultRecoveryTests.AClearedFaultWithCargoOnBoardRebuildsTheOrderToDeliverIt	REBUILT_ON_ORIGINAL_VEHICLE
+      1 RELEASE	ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(shows: "output-not-reset")	REBUILT_ON_ORIGINAL_VEHICLE
+      1 RELEASE	ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(shows: "physical-unknown")	REBUILT_ON_ORIGINAL_VEHICLE
+      1 RELEASE	ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(shows: "slot-not-reported")	REBUILT_ON_ORIGINAL_VEHICLE
+      1 RELEASE	ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(shows: "unknown-present")	REBUILT_ON_ORIGINAL_VEHICLE
+      1 RELEASE	ControlServer.Tests.VehicleFaultRecoveryTests.Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(shows: "unlocked")	REBUILT_ON_ORIGINAL_VEHICLE

@@ -1,0 +1,14 @@
+== M15 src/ControlServer.Host/Runtime/Faults/VehicleFaultRecoveryService.cs
+hits=1 line=436
+--- before
+            if (reasons.Count == 0)
+            {
+                await VehicleFaultCoordinator.ReleaseCargoOfOtherJourneysAsync(
+--- after
+            if (reasons.Count >= 0)
+            {
+                await VehicleFaultCoordinator.ReleaseCargoOfOtherJourneysAsync(
+build exit=0
+test exit=1
+Failed FaultedCargoBindingLifecycleTests.ARefusedRequestReleasesNothing(request: "resume-not-remedied")
+Failed!  - Failed:     1, Passed:   400, Skipped:     0, Total:   401, Duration: 1 m 50 s - dll (net8.0)

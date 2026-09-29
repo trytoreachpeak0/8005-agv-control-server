@@ -1,0 +1,20 @@
+== M12 src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+hits=1 line=1414
+--- before
+        await FaultedCargoBindings.StageReleaseWhenNothingLeftOnBoardAsync(
+                dbContext, runtime.JourneyId, runtime.AgvId, HandedOffInExceptionSessionReason, now, cancellationToken)
+            .ConfigureAwait(false);
+--- after
+(removed)
+build exit=0
+test exit=1
+Failed FaultedCargoBindingLifecycleTests.AHandoffReleasesABindingNamingAnEndedDemandOfTheOpenJourney(action: "FAULT_CARGO_HANDOFF")
+Failed FaultedCargoBindingLifecycleTests.AHandoffReleasesABindingNamingAnEndedDemandOfTheOpenJourney(action: "FORCED_MECHANICAL_RECOVERY")
+Failed FaultedCargoBindingLifecycleTests.ARealCargoOnASecondTripKeepsItsProtectionBesideAStaleBinding
+Failed FaultedCargoBindingLifecycleTests.AnOnBoardDemandWithNoRecordedSlotsStopsTheRebuildForAPerson
+Failed StoppedRebuildExitTests.ACargoNotInPlaceIsHandedToTheExceptionSessionAndEndsThere(session: "not-ready-on-own-order")
+Failed StoppedRebuildExitTests.ACargoNotInPlaceIsHandedToTheExceptionSessionAndEndsThere(session: "ready")
+Failed StoppedRebuildExitTests.AFailedHandoffLeavesTheTripAWayOut
+Failed StoppedRebuildExitTests.AForcedMechanicalRecoveryOfAHandedOverTripSettlesItsBinding
+Failed StoppedRebuildExitTests.APartialHandoffLetsThePersonGiveTheRestUp
+Failed!  - Failed:     9, Passed:   518, Skipped:     0, Total:   527, Duration: 1 m 26 s - dll (net8.0)

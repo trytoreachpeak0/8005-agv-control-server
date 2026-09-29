@@ -491,26 +491,30 @@ public sealed partial class JourneyRuntimeEngine
 
     /// <summary>
     /// Whether the rebuild carries cargo on, so that it waits for a snapshot showing it in place (REQ-0360 as CP-0007 revised
-    /// it, REQ-0362): a cleared fault the clearance judged loaded, or a cancellation while a demand of the journey is loaded and
+    /// it, REQ-0362): a cleared fault the clearance judged loaded, or a cancellation, while a demand of the journey is loaded and
     /// not yet unloaded -- the same reading <see cref="CargoEvidenceAsync"/> takes its slots from. A cancellation on the way to
     /// the pickup, nothing loaded yet, is rebuilt without one.
     /// </summary>
+    /// <remarks>
+    /// <b>The cleared-fault source asks the journey too</b> (control-server#376). The clearance judged it loaded from its demands or
+    /// from a live binding, and until #376 a binding a closed journey had left counted: an empty vehicle's rebuild then waited for a
+    /// snapshot of slots no demand on board had targeted, for ever, and none of control-server#345's exits applied to a wait. With
+    /// no demand of the journey on board there is no cargo a snapshot could show, so there is nothing to prove -- this is also how a
+    /// record the previous version left in that wait goes on by itself. A demand on board with no slots recorded stops for a person
+    /// instead (<see cref="OwnOrderRebuilds.CargoSlotsNotRecorded"/>).
+    /// </remarks>
     private async Task<bool> CarriesCargoAsync(
         JourneyRuntimeRow runtime,
         OwnOrderRebuildRow rebuild,
         CancellationToken cancellationToken) =>
-        rebuild.Source switch
-        {
-            OwnOrderRebuildSources.FaultClearedCargoOnBoard => true,
-            OwnOrderRebuildSources.CancelledInRiot => await dbContext.Set<JourneyDemandRow>().AsNoTracking()
-                .AnyAsync(row => row.JourneyId == runtime.JourneyId && row.RemovedAt == null &&
-                                 row.Status != JourneyDemandStatuses.PendingLoad &&
-                                 row.Status != JourneyDemandStatuses.Unloaded &&
-                                 row.Status != JourneyDemandStatuses.Terminated,
-                    cancellationToken)
-                .ConfigureAwait(false),
-            _ => false,
-        };
+        rebuild.Source is OwnOrderRebuildSources.FaultClearedCargoOnBoard or OwnOrderRebuildSources.CancelledInRiot &&
+        await dbContext.Set<JourneyDemandRow>().AsNoTracking()
+            .AnyAsync(row => row.JourneyId == runtime.JourneyId && row.RemovedAt == null &&
+                             row.Status != JourneyDemandStatuses.PendingLoad &&
+                             row.Status != JourneyDemandStatuses.Unloaded &&
+                             row.Status != JourneyDemandStatuses.Terminated,
+                cancellationToken)
+            .ConfigureAwait(false);
 
     /// <summary>A hold of a rebuild with cargo on board begins: written once, on the first held round (control-server#366).</summary>
     private async Task MarkVehicleHeldAsync(
@@ -574,6 +578,21 @@ public sealed partial class JourneyRuntimeEngine
             await WaitForRebuildAsync(
                 runtime, rebuild, CargoEvidenceNotReceived, OwnOrderRebuildWaitingCargoEvidenceReason, now, cancellationToken)
                 .ConfigureAwait(false);
+            return true;
+        }
+
+        if (evidence.SlotsNotRecorded)
+        {
+            rebuild.CargoEvidenceMessageId = evidence.MessageId;
+            rebuild.State = OwnOrderRebuildStates.Stopped;
+            rebuild.StoppedReason = OwnOrderRebuilds.CargoSlotsNotRecorded;
+            rebuild.StoppedAt = now;
+            rebuild.WaitingReason = null;
+            rebuild.WaitingSince = null;
+            LogOwnOrderRebuildStopped(
+                logger, rebuild.EndedUpperId, runtime.JourneyId, runtime.AgvId, OwnOrderRebuilds.CargoSlotsNotRecorded, null);
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            await NameRebuildAsync(runtime, StoppedCode(rebuild), now, cancellationToken).ConfigureAwait(false);
             return true;
         }
 
@@ -678,8 +697,9 @@ public sealed partial class JourneyRuntimeEngine
     /// <b>Only a slot read EMPTY settles that the cargo is not there</b> (independent review S4). Everything else a snapshot can
     /// fall short with leaves the question open, and the rebuild waits for the next snapshot rather than stopping for a person:
     /// a slot UNKNOWN or left out of the snapshot, <c>unknownPresent</c> not false, a slot OCCUPIED but not LOCKED or with its
-    /// unlock output not RESET, a load of the demands still on board neither committed nor settled, or no committed load at all
-    /// to say which slots to look at. An unlocked or active slot is the one of these a person might expect to stop: the cargo is
+    /// unlock output not RESET, or a load of the demands still on board neither committed nor settled -- each a state that changes
+    /// by itself. No committed load at all to say which slots to look at is not one of them since control-server#376: it is a
+    /// record no snapshot changes, and it stops for a person (<see cref="OwnOrderRebuilds.CargoSlotsNotRecorded"/>). An unlocked or active slot is the one of these a person might expect to stop: the cargo is
     /// there, the slot is not secured -- a state that changes as soon as whoever is at the door is done, not evidence that the
     /// cargo went. It cannot send the vehicle off unsecured either: the new order is still created only when Onboard's summary
     /// says every target slot is locked and every unlock output reset (review M2). A slot read EMPTY settles it even beside an
@@ -757,7 +777,10 @@ public sealed partial class JourneyRuntimeEngine
             .Order()];
         if (cargoSlots.Length == 0)
         {
-            return new CargoEvidence(snapshot.MessageId, snapshot.ReceivedAt, null, "CARGO_SLOTS_UNKNOWN");
+            // A demand is on board and no settled load of it says which slots it went into (control-server#376). No snapshot can
+            // settle that, so waiting for the next one is waiting for ever; it stops for a person, whom control-server#345's exits
+            // then serve.
+            return new CargoEvidence(snapshot.MessageId, snapshot.ReceivedAt, null, null, SlotsNotRecorded: true);
         }
 
         using JsonDocument document = JsonDocument.Parse(snapshot.Json);
@@ -809,7 +832,8 @@ public sealed partial class JourneyRuntimeEngine
     /// The snapshot that answered the cargo question, if any; what it showed missing (a slot read EMPTY), or else what it left
     /// open. Both null when it showed the cargo whole.
     /// </summary>
-    private sealed record CargoEvidence(string? MessageId, DateTimeOffset ReceivedAt, string? NotShown, string? Unproven);
+    private sealed record CargoEvidence(
+        string? MessageId, DateTimeOffset ReceivedAt, string? NotShown, string? Unproven, bool SlotsNotRecorded = false);
 
     /// <summary>
     /// Records that the order under <paramref name="upperId"/> -- the one <paramref name="runtime"/> waits on -- was cancelled

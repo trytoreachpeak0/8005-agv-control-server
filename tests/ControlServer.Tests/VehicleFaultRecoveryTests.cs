@@ -519,12 +519,17 @@ public sealed class VehicleFaultRecoveryTests
 
     /// <summary>
     /// REQ-0362：清除之后的快照到了，但判不了货在不在原仓——门没锁、开锁输出没复位（货还在、只是没锁好）、车报有未知、目标仓读到
-    /// UNKNOWN、目标仓没在快照里、装货批次还没落定、没有一个已提交的装货——不停，继续等，旅程码
+    /// UNKNOWN、目标仓没在快照里、装货批次还没落定——不停，继续等，旅程码
     /// <c>OWN_ORDER_REBUILD_CARGO_UNPROVEN</c>（看板另写文案），记录写明卡在哪一项；之后来一份能证明的快照，照常重建。
     /// </summary>
     /// <remarks>
     /// <para>
     /// 审查 S4：只有确证货不在（EMPTY）才停住告警；判不了的等下一份快照。第一版把前三种停住，后四种里有的停、有的没测到。
+    /// </para>
+    /// <para>
+    /// 「没有一个已提交的装货」原先也在这里，control-server#376 把它移走了：它是库里的记录，下一份快照改变不了它，等就是永远等，而等待不是
+    /// #345 出口能处置的状态。现在车上有需求却没有落定装货时停住等人（<c>CARGO_SLOTS_NOT_RECORDED</c>），车上没有需求时按空集判定、照常重建，
+    /// 两格在 <c>FaultedCargoBindingLifecycleTests</c>。上面留下的几种都会自己变：门锁上、输出回落、车重报、装货落定。
     /// </para>
     /// <para>
     /// <b>门没锁、开锁输出没复位归「判不了」，理由</b>：货在（OCCUPIED），只是仓没锁好。这是一个会变的状态——有人在门边，或者开锁输出
@@ -539,7 +544,6 @@ public sealed class VehicleFaultRecoveryTests
     [InlineData("physical-unknown")]
     [InlineData("slot-not-reported")]
     [InlineData("load-not-settled")]
-    [InlineData("no-committed-load")]
     [Trait("Requirement", "REQ-0362")]
     public async Task Req0362ASnapshotThatCannotSettleWhereTheCargoIsKeepsTheRebuildWaiting(string shows)
     {
@@ -576,10 +580,6 @@ public sealed class VehicleFaultRecoveryTests
                 Status = StationOperationStatus.Prepared,
             });
         }
-        else if (shows == "no-committed-load")
-        {
-            load.Status = StationOperationStatus.Cancelled;
-        }
 
         await fixture.Context.SaveChangesAsync(Token);
         fixture.Context.ChangeTracker.Clear();
@@ -598,13 +598,12 @@ public sealed class VehicleFaultRecoveryTests
                     "unknown-present" => "UNKNOWN_PRESENT",
                     "slot-not-reported" => "SLOT_",
                     "load-not-settled" => "LOAD_NOT_SETTLED:LOAD-NOT-SETTLED",
-                    "no-committed-load" => "CARGO_SLOTS_UNKNOWN",
                     _ => "SLOT_",
                 },
                 record.WaitingReason);
         }
 
-        if (shows is "load-not-settled" or "no-committed-load")
+        if (shows is "load-not-settled")
         {
             return;
         }
@@ -1825,6 +1824,13 @@ public sealed class VehicleFaultRecoveryTests
 
         public Task<FaultedCargoBinding?> ReadLiveCargoAsync(string agvId, CancellationToken cancellationToken) =>
             inner.ReadLiveCargoAsync(agvId, cancellationToken);
+
+        public Task<IReadOnlyList<FaultedCargoBinding>> ReleaseCargoOfOtherJourneysAsync(
+            string agvId, DateTimeOffset releasedAt, CancellationToken cancellationToken) =>
+            inner.ReleaseCargoOfOtherJourneysAsync(agvId, releasedAt, cancellationToken);
+
+        public Task<IReadOnlySet<string>> ReadCargoOfOtherJourneysAsync(string agvId, CancellationToken cancellationToken) =>
+            inner.ReadCargoOfOtherJourneysAsync(agvId, cancellationToken);
 
         public Task ReleaseCargoAsync(string cargoBindingId, string reason, DateTimeOffset releasedAt, CancellationToken cancellationToken) =>
             inner.ReleaseCargoAsync(cargoBindingId, reason, releasedAt, cancellationToken);

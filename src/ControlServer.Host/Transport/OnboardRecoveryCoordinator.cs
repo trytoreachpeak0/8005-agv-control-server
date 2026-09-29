@@ -1379,12 +1379,12 @@ public sealed class OnboardRecoveryCoordinator(
             .ConfigureAwait(false);
         if (messageType is "FaultCargoRecoveryResult" or "ForcedMechanicalRecoveryResult")
         {
-            await SettleHandedOffCargoAsync(runtime, workflow.DemandId, cancellationToken).ConfigureAwait(false);
+            await SettleHandedOffCargoAsync(runtime, cancellationToken).ConfigureAwait(false);
         }
     }
 
     /// <summary>
-    /// The cargo of <paramref name="demandId"/> left the vehicle by hand: the fault's cargo binding for it has done its work, and
+    /// A demand's cargo left the vehicle by hand: the fault's cargo binding has done its work once nothing of the journey is left, and
     /// a stopped rebuild handed to this session is over once the journey has closed (control-server#345). Staged with the
     /// settlement; the caller saves.
     /// </summary>
@@ -1396,23 +1396,24 @@ public sealed class OnboardRecoveryCoordinator(
     /// comes next -- so the vehicle's next FAILED order was held, and cleared, as a vehicle with cargo on board.
     /// </para>
     /// <para>
-    /// Only the binding of the demand handed off: a binding names one demand, and another demand's cargo is still on board until
-    /// its own session hands it off.
+    /// <b>Released by journey, never by demand</b> (control-server#376): a binding stands for the cargo of the journey, whichever
+    /// demand it names -- the engine binds under the journey's anchor, which need not be the one handed off. So it goes only once
+    /// nothing of the journey is left on board. It used to go by demand as well, which released it while another demand of the
+    /// journey was still loaded, and the vehicle's next fault took a loaded vehicle for an empty one.
     /// </para>
     /// </remarks>
     private async Task SettleHandedOffCargoAsync(
         JourneyRuntimeRow runtime,
-        string demandId,
         CancellationToken cancellationToken)
     {
         DateTimeOffset now = timeProvider.GetUtcNow();
-        foreach (FaultedVehicleCargoRow cargo in await dbContext.FaultedVehicleCargo
-                     .Where(row => row.AgvId == runtime.AgvId && row.DemandId == demandId && row.ReleasedAt == null)
-                     .ToArrayAsync(cancellationToken).ConfigureAwait(false))
-        {
-            cargo.ReleasedAt = now;
-            cargo.ReleasedReason = HandedOffInExceptionSessionReason;
-        }
+
+        // The anchor may have ended before its load while another demand of the journey, still to load, keeps the journey open
+        // (control-server#376 review M1). The closed-journey rule cannot catch that binding later: its anchor is still an active
+        // member of an open journey.
+        await FaultedCargoBindings.StageReleaseWhenNothingLeftOnBoardAsync(
+                dbContext, runtime.JourneyId, runtime.AgvId, HandedOffInExceptionSessionReason, now, cancellationToken)
+            .ConfigureAwait(false);
 
         if (runtime.Stage != JourneyRuntimeStage.Completed)
         {

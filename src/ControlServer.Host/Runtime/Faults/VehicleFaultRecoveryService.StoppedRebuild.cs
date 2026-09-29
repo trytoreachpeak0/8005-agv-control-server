@@ -222,6 +222,9 @@ public sealed partial class VehicleFaultRecoveryService
                 return Refused(reasons, null);
             }
 
+            // Going ahead: the binding a closed journey left, which did not count above, is released now (control-server#376).
+            await VehicleFaultCoordinator.ReleaseCargoOfOtherJourneysAsync(
+                faults, agvId, timeProvider.GetUtcNow(), logger, cancellationToken).ConfigureAwait(false);
             DateTimeOffset now = timeProvider.GetUtcNow();
             JourneyRuntimeRow runtime = trip.Runtime!;
             PickupStopTermination termination = new(dbContext);
@@ -317,6 +320,11 @@ public sealed partial class VehicleFaultRecoveryService
             return Refused(reasons, null);
         }
 
+        // A binding another journey left is not released here, unlike the two other exits (control-server#376): the handoff
+        // judged the cargo without it (MayCarryAsync), and settling the handoff releases only this journey's. So it may stay
+        // live after the handoff closes. That is safe as long as every reader filters or releases it -- the fault coordinator,
+        // the clearance, the three exits -- which rests on the premise in FaultedCargoBindings' remarks: an anchor demand is
+        // never reassigned into another vehicle's journey. Should that change, this is one of the places to revisit.
         DateTimeOffset now = timeProvider.GetUtcNow();
         JourneyRuntimeRow runtime = trip.Runtime!;
         runtime.Stage = JourneyRuntimeStage.Blocked;
@@ -333,17 +341,28 @@ public sealed partial class VehicleFaultRecoveryService
 
     /// <summary>
     /// Whether something is, or may be, on the vehicle: a demand of the journey past "still to load" and not ended, or a live
-    /// cargo binding -- the same reading as a clearance's (<see cref="DisposeOfTheJourneyAsync"/>).
+    /// cargo binding -- the same reading as a clearance's (<see cref="DisposeOfTheJourneyAsync"/>). A binding a closed journey
+    /// left does not count (control-server#376): read as this trip's cargo, it refused giving up an empty trip, and the handoff it
+    /// left as the only way could not reach a demand that never loaded. Only read here; the exit releases it once it goes ahead,
+    /// so a refused request writes nothing (review, suggestion 3).
     /// </summary>
-    private async Task<bool> MayCarryAsync(string agvId, JourneyRuntimeRow runtime, CancellationToken cancellationToken) =>
-        await dbContext.Set<JourneyDemandRow>().AsNoTracking()
-            .AnyAsync(
-                row => row.JourneyId == runtime.JourneyId && row.RemovedAt == null &&
-                       row.Status != JourneyDemandStatuses.PendingLoad && row.Status != JourneyDemandStatuses.Unloaded &&
-                       row.Status != JourneyDemandStatuses.Terminated,
-                cancellationToken)
-            .ConfigureAwait(false) ||
-        await faults.ReadLiveCargoAsync(agvId, cancellationToken).ConfigureAwait(false) is not null;
+    private async Task<bool> MayCarryAsync(string agvId, JourneyRuntimeRow runtime, CancellationToken cancellationToken)
+    {
+        if (await dbContext.Set<JourneyDemandRow>().AsNoTracking()
+                .AnyAsync(
+                    row => row.JourneyId == runtime.JourneyId && row.RemovedAt == null &&
+                           row.Status != JourneyDemandStatuses.PendingLoad && row.Status != JourneyDemandStatuses.Unloaded &&
+                           row.Status != JourneyDemandStatuses.Terminated,
+                    cancellationToken)
+                .ConfigureAwait(false))
+        {
+            return true;
+        }
+
+        return await faults.ReadLiveCargoAsync(agvId, cancellationToken).ConfigureAwait(false) is { } live &&
+               !(await faults.ReadCargoOfOtherJourneysAsync(agvId, cancellationToken).ConfigureAwait(false))
+                   .Contains(live.CargoBindingId);
+    }
 
     /// <summary>
     /// The vehicle's journey, the stop it waits at and the rebuild record that stop waits on, read afresh; and why a person's
