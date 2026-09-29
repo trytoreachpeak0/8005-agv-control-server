@@ -174,7 +174,8 @@ public sealed class JourneyPlanBuilder(JourneyRuntimeOptions options)
             runtime.MapId,
             stop.StationRiotId,
             runtime.AgvLifecycleGeneration,
-            runtime.DispatchGeneration);
+            runtime.DispatchGeneration,
+            JourneyStopRoles.OrderShapeOf(stop.StopRole));
     }
 
     // 计划流每趟推进「到站次数 + 1」次：派车时先发一张「车还在路上」的（CV-DEMAND-ACCEPT-TO-PICKUP，用存着的

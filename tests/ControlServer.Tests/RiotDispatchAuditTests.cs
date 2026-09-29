@@ -136,6 +136,48 @@ public sealed class RiotDispatchAuditTests
         Assert.Equal("PROTOCOL_FAILURE", response.FailureCategory);
     }
 
+    /// <summary>
+    /// control-server#401 review: an intent whose order shape the gateway cannot build is refused before the create is
+    /// armed. Arming first would spend its one create on a request never sent and leave it RESULT_UNKNOWN, after which
+    /// every NotFound reads as "result unknown" and the leg is stuck until the database is edited.
+    /// </summary>
+    [Fact]
+    public async Task AnUnbuildableOrderShapeIsRefusedBeforeTheCreateIsArmedAndStaysNeverSent()
+    {
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        WireToGateStore store = new(context);
+        OrderIntent intent = new(
+            "LEG-001", "D-001", "UPPER-001", "TO_PICKUP", "ST-12", Now, "AGV-8005-01", 25, 12, 1, 1, "MOVE");
+        await store.AcceptWithOrderIntentAsync(
+            new AcceptedDemandSnapshot("D-001", "SUBLOT-001|WIRE_TO_GATE", 1, "history-001", 1, Now),
+            intent,
+            TestContext.Current.CancellationToken);
+        ScriptedGateway gateway = new(
+            [
+                Observation(intent, RiotOrderObservationKind.NotFound, receipt: Receipt("RECONCILE", "NotFound", 404)),
+                Observation(intent, RiotOrderObservationKind.NotFound, receipt: Receipt("RECONCILE", "NotFound", 404))
+            ],
+            Observation(intent, RiotOrderObservationKind.Active));
+        MovementDispatchService service = new(store, gateway, new AdvancingTimeProvider(Now));
+
+        MovementDispatchResult first = await service.ReconcileOrCreateAsync(intent.UpperId, TestContext.Current.CancellationToken);
+        MovementDispatchResult second = await service.ReconcileOrCreateAsync(intent.UpperId, TestContext.Current.CancellationToken);
+
+        Assert.Equal(MovementDispatchOutcome.UnsupportedOrderShape, first.Outcome);
+        Assert.Equal(MovementDispatchOutcome.UnsupportedOrderShape, second.Outcome);
+        Assert.Null(first.OrderId);
+        Assert.Equal(0, gateway.CreateCount);
+        OrderIntentRow row = await context.OrderIntents.AsNoTracking().SingleAsync(TestContext.Current.CancellationToken);
+        Assert.Equal("PENDING_RECONCILIATION", row.Status);
+        Assert.Equal(0, row.CreateAttemptCount);
+        Assert.Null(row.CreateAttemptId);
+        Assert.False(await context.RiotDispatchAuditEvents.AsNoTracking()
+            .AnyAsync(item => item.Phase == "CREATE_DISPATCH" || item.Phase == "CREATE_REQUEST",
+                TestContext.Current.CancellationToken));
+    }
+
     [Fact]
     public async Task AcceptedCreateWithUnknownIndependentReadRecordsPostCreateUnknown()
     {

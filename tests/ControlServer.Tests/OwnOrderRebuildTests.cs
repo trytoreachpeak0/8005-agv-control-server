@@ -73,6 +73,48 @@ public sealed class OwnOrderRebuildTests
     }
 
     /// <summary>
+    /// 充电单被取消后重建出来仍是充电单（control-server#401 调度评论）：重建若不带形态，新单是单段移动，车开到桩上却不通电。
+    /// </summary>
+    /// <remarks>
+    /// 今天还没有路径产生充电停靠（control-server#404 才加），这里照 #404 将写下的样子，把开往取货站的那个停靠改成
+    /// <see cref="JourneyStopRoles.Charger"/>、它的意图改成 <see cref="OrderShapes.Charge"/>，再走现有的取消与重建。
+    /// 断言断在新意图行上：建单网关按这一列选 RIoT 的请求体（<c>HttpRiotChargingOrderGatewayTests</c>）。
+    /// </remarks>
+    [Fact]
+    public async Task AChargingOrderCancelledInRiotIsRebuiltAsAChargingOrder()
+    {
+        await using RuntimeFixture fixture = await DispatchedToPickupAsync();
+        JourneyRuntimeRow before = await fixture.RuntimeAsync();
+        JourneyStopRow stop = (await StopsAsync(fixture, before.JourneyId)).Single(row => row.StopRole == JourneyStopRoles.Pickup);
+        await using (ControlServerDbContext writing = new(fixture.DbOptionsForTests))
+        {
+            JourneyStopRow tracked = await writing.Set<JourneyStopRow>().SingleAsync(row => row.StopId == stop.StopId, Token);
+            tracked.StopRole = JourneyStopRoles.Charger;
+            OrderIntentRow intent = await writing.OrderIntents.SingleAsync(row => row.UpperId == stop.UpperId, Token);
+            intent.OrderShape = OrderShapes.Charge;
+            await writing.SaveChangesAsync(Token);
+        }
+        fixture.Riot.CancelOrder(stop.UpperId);
+
+        await TickAndRunAsync(fixture);
+        fixture.Clock.Advance(fixture.Options.OwnOrderRebuildDelay);
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        OwnOrderRebuildRow rebuild = await SingleRebuildAsync(fixture, stop.UpperId);
+        await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
+        OrderIntentRow rebuilt = await reading.OrderIntents.AsNoTracking()
+            .SingleAsync(row => row.MovementLegId == rebuild.NewMovementLegId, Token);
+        Assert.NotEqual(stop.UpperId, rebuilt.UpperId);
+        Assert.Equal(OrderShapes.Charge, rebuilt.OrderShape);
+        Assert.Equal(stop.StationRiotId, rebuilt.DestinationStationId);
+        // The ended order's intent row is left as it was.
+        Assert.Equal(
+            OrderShapes.Charge,
+            (await reading.OrderIntents.AsNoTracking().SingleAsync(row => row.UpperId == stop.UpperId, Token)).OrderShape);
+    }
+
+    /// <summary>
     /// 装着货开往卸货站的单被取消：同样延迟后给同一辆车、同一条需求重建，去的是同一个卸货停靠——车上的货送完这一趟；
     /// 车到了照常卸货。车上有货，所以延迟过了先等一份到期之后的快照证明货在原仓（control-server#366，CP-0007 修订的 REQ-0360）。
     /// </summary>
