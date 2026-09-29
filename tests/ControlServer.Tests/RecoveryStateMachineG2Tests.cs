@@ -5193,6 +5193,42 @@ public sealed class RecoveryStateMachineG2Tests
             message);
     }
 
+    /// <summary>
+    /// control-server#380, the other side of <see cref="AReadinessChangeHeldBackInTheHandshakeIsLoggedAsHeldNotAsSent"/>
+    /// (independent review S-5): inside the handshake a message that leaves readiness as it was is not logged as held.
+    /// Held means a change the recovery report's answer will carry; an unchanged readiness is nothing held, and logging it
+    /// would make every resend in every reconnect look like a readiness the vehicle was kept from.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
+    public async Task AnUnchangedReadinessInTheHandshakeIsNotLoggedAsHeld()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(token);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        await SeedLoadAwaitingResultAsync(context, Now);
+        RecordingPeer peer = new(context);
+        EventRecordingLogger<OnboardMessageProcessor> log = new();
+        OnboardMessageProcessor processor = Processor(context, peer, UnusedProofVariable, log);
+        OnboardConnectionState reconnected = new() { DeferOutboundUntilResponseWritten = true };
+        await ReconnectAsync(processor, peer, reconnected);
+        long generation = reconnected.SessionGeneration!.Value;
+        // After SessionHello the connection is RecoveryRequired, and an unknown result inside the handshake decides the
+        // same: readiness is decided again and does not change.
+        Assert.Equal(SessionReadiness.RecoveryRequired, reconnected.Readiness);
+
+        string[] resent = await ExchangeAsync(processor, peer, reconnected, InSession(Envelope(
+            "e0000000-0000-4000-8000-000000003804",
+            "OperationResult",
+            OperationResultPayload(completed: false, journalCheckpoint: "RESULT_UNKNOWN_RECORDED")), generation));
+
+        Assert.Equal(["DurableAck"], resent.Select(MessageType).ToArray());
+        Assert.Equal(SessionReadiness.RecoveryRequired, reconnected.Readiness);
+        Assert.DoesNotContain(log.Entries, entry => entry.EventId.Id is 1103 or 1104);
+    }
+
     private static string MessageIdOf(string wire)
     {
         using JsonDocument document = JsonDocument.Parse(wire.Split('\n', StringSplitOptions.RemoveEmptyEntries).First());
