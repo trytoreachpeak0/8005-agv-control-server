@@ -181,6 +181,12 @@ app.UseSerilogRequestLogging();
 
 await EnsureDatabaseAsync(app.Services);
 
+// control-server#388：只迁移建库就退出。多车部署在导入等待点之前起不来，首次部署要先有一个库给 FieldOps 离线导入。
+if (args.Contains("--migrate-only", StringComparer.Ordinal))
+{
+    return;
+}
+
 if (PackageCapacityImportCommand.IsRequested(args))
 {
     Environment.ExitCode = await PackageCapacityImportCommand.RunAsync(
@@ -192,6 +198,8 @@ if (PackageCapacityImportCommand.IsRequested(args))
 await AreaAssignmentDispatchZoneStartupCheck.EnsureAsync(app.Services, CancellationToken.None);
 // control-server#159：旅程运行时开着时装载任务类型规则与按图绑定的预置配置，配错拒绝启动并列出全部违规。
 await TaskTypeStationStartup.EnsureAsync(app.Services, CancellationToken.None);
+// control-server#388：投运车辆数大于 1 而等待点不够每辆车各分一个时拒绝启动（规格 5.4）。在绑定装载之后，固定站不算等待点。
+await WaitingPointStartupCheck.EnsureAsync(app.Services, CancellationToken.None);
 
 app.MapGet("/health/live", () => Results.Ok(new { status = "live" }));
 app.MapGet("/health/ready", async (ControlServerDbContext dbContext, CancellationToken cancellationToken) =>

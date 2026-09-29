@@ -108,6 +108,8 @@ Import-Module (Join-Path $PSScriptRoot 'L2TaskTypeStations.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'L2ExpectedActionOverdue.psm1') -Force
 # Batch 7's CargoHoldingTimeout and DispatchZoneParameters setup keys (control-server#206).
 Import-Module (Join-Path $PSScriptRoot 'L2DispatchZoneParameters.psm1') -Force
+# Batch 8's WaitingPoints setup key and the Fleet default of one waiting point per vehicle (control-server#388).
+Import-Module (Join-Path $PSScriptRoot 'L2WaitingPoints.psm1') -Force
 # Only the real-onboard rig ever takes the desktop lock, but the import stays unconditional so the
 # dependency is visible at the top rather than buried in a branch 150 lines down.
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'DesktopLock.psm1') -Force
@@ -524,6 +526,13 @@ try {
     for ($index = 1; $index -lt $fleet.Count; $index++) {
         $riotArguments += "--FakeRiot:Seed:AdditionalVehicleKeys:$($index - 1)=$($fleet[$index].VehicleKey)"
     }
+    # control-server#388: a Fleet server refuses to start without a waiting point per vehicle, so a Fleet scenario gets
+    # stations 214.. (等待点1..) on the fake Map by default, registered before the server starts (L2WaitingPoints.psm1).
+    # On the command line they merge into the seed's default stations; a scenario's own Stations table gets them below.
+    $waitingPoints = Resolve-L2WaitingPoints -Setup $setup -Where "$Scenario.setup.psd1" -FleetCount $fleet.Count
+    foreach ($point in @($waitingPoints | Where-Object { $null -ne $_ })) {
+        $riotArguments += "--FakeRiot:Seed:Stations:$($point.StationId)=$($point.StationName)"
+    }
     if ($setup.ContainsKey('RouteCosts')) {
         foreach ($key in ($setup.RouteCosts.Keys | Sort-Object)) {
             $riotArguments += "--FakeRiot:Seed:RouteCosts:$key=$($setup.RouteCosts[$key])"
@@ -566,6 +575,9 @@ try {
     if ($setup.ContainsKey('Stations')) {
         $stationTable = @{}
         foreach ($key in $setup.Stations.Keys) { $stationTable[[string]$key] = [string]$setup.Stations[$key] }
+        foreach ($point in @($waitingPoints | Where-Object { $null -ne $_ })) {
+            if (-not $stationTable.ContainsKey([string]$point.StationId)) { $stationTable[[string]$point.StationId] = $point.StationName }
+        }
         $null = $riot.Command('Put', "maps/$mapId/stations", @{ stations = $stationTable })
         $journal.Note("Fake RIoT stations on map ${mapId}: " +
             (($stationTable.Keys | Sort-Object { [int]$_ } | ForEach-Object { "$_=$($stationTable[$_])" }) -join ', '))
@@ -778,6 +790,37 @@ try {
         $journal.Observe('server-environment:JourneyRuntime__cargoHoldingTimeout',
             $serverEnvironment['JourneyRuntime__cargoHoldingTimeout'], $null)
     }
+    # ControlServer.FieldOps, the same executable a site's W1 window runs, against the SQLite file the server is
+    # using. Returns the one JSON object the tool prints; a non-zero exit is a thrown error carrying its stderr,
+    # because a governance act that silently did nothing would leave the rest of the scenario proving something
+    # else. Defined before the server starts: the waiting point import runs it then, and the preseed below before the scenario.
+    $invokeFieldOps = {
+        param([Parameter(Mandatory)][string[]]$Arguments)
+        $all = @($Arguments[0], '--database', $databasePath) + @($Arguments | Select-Object -Skip 1)
+        $journal.Note("FieldOps: $($all -join ' ')")
+        $lines = @(& (Join-Path $fieldOpsDirectory 'ControlServer.FieldOps.exe') @all 2>&1)
+        $exit = $LASTEXITCODE
+        $text = ($lines | ForEach-Object { [string]$_ }) -join "`n"
+        if ($exit -ne 0) { throw "ControlServer.FieldOps $($Arguments[0]) exited with $exit`: $text" }
+        $json = $lines | Where-Object { $_ -is [string] -and $_.TrimStart().StartsWith('{') } | Select-Object -Last 1
+        if (-not $json) { throw "ControlServer.FieldOps $($Arguments[0]) printed no JSON: $text" }
+        return ($json | ConvertFrom-Json)
+    }
+
+    # 3a. The waiting point registration (control-server#388), before the server's first start: a Fleet server refuses to
+    #     start without it. The host migrates the database and exits, then the formal FieldOps verb imports into it.
+    if ($null -ne $waitingPoints) {
+        Invoke-L2HostMigrateOnly -HostDirectory $hostDirectory -Environment $serverEnvironment -LogRoot $logRoot
+        $waitingPointImport = Invoke-L2WaitingPointImport -Points $waitingPoints -MapId $mapId `
+            -Fleet @($fleet | ForEach-Object { $_.VehicleKey }) -Riot $riot -InvokeFieldOps $invokeFieldOps -StageRoot $stageRoot
+        $journal.Observe('waiting-points-imported', $waitingPointImport.version,
+            @{ stations = @($waitingPoints | ForEach-Object { $_.StationId }); coverage = $waitingPointImport.coverage })
+        $journal.Note("Waiting points registered on map ${mapId} as version $($waitingPointImport.version): " +
+            (($waitingPoints | ForEach-Object { "$($_.StationId)=$($_.StationName)$(if (-not $_.Enabled) { ' (disabled)' })" }) -join ', '))
+    } else {
+        $journal.Note('No waiting point registration: a single-vehicle rig, or WaitingPoints = $false.')
+    }
+
     $serverHandle = Start-L2Process -Name 'control-server' `
         -FilePath (Join-Path $hostDirectory 'ControlServer.Host.exe') `
         -WorkingDirectory $hostDirectory -Environment $serverEnvironment -LogRoot $logRoot |
@@ -1055,22 +1098,6 @@ try {
 
     $connection = Open-L2Database -HostDirectory $hostDirectory -DatabasePath $databasePath
 
-    # ControlServer.FieldOps, the same executable a site's W1 window runs, against the SQLite file the server is
-    # using. Returns the one JSON object the tool prints; a non-zero exit is a thrown error carrying its stderr,
-    # because a governance act that silently did nothing would leave the rest of the scenario proving something
-    # else. Defined out here rather than on Context alone because the preseed below runs it before the scenario.
-    $invokeFieldOps = {
-        param([Parameter(Mandatory)][string[]]$Arguments)
-        $all = @($Arguments[0], '--database', $databasePath) + @($Arguments | Select-Object -Skip 1)
-        $journal.Note("FieldOps: $($all -join ' ')")
-        $lines = @(& (Join-Path $fieldOpsDirectory 'ControlServer.FieldOps.exe') @all 2>&1)
-        $exit = $LASTEXITCODE
-        $text = ($lines | ForEach-Object { [string]$_ }) -join "`n"
-        if ($exit -ne 0) { throw "ControlServer.FieldOps $($Arguments[0]) exited with $exit`: $text" }
-        $json = $lines | Where-Object { $_ -is [string] -and $_.TrimStart().StartsWith('{') } | Select-Object -Last 1
-        if (-not $json) { throw "ControlServer.FieldOps $($Arguments[0]) printed no JSON: $text" }
-        return ($json | ConvertFrom-Json)
-    }
 
     # 7. The slot model preseed (control-server#71): what a commissioned site has before its first dispatch,
     #    through the same FieldOps verbs the site uses, in the order it uses them.
@@ -1383,7 +1410,9 @@ try {
                              'TaskTypeStationRuleVersions', 'TaskTypeStationBindingSetVersions',
                              'TaskTypeStationBindings', 'TaskTypeStationActiveBindingSets',
                              # Batch 7's per-zone dispatch parameters, and the occupancy of record (control-server#206).
-                             'DispatchZoneParameterVersions', 'DispatchZoneParameters', 'VehiclePurposeClaims')) {
+                             'DispatchZoneParameterVersions', 'DispatchZoneParameters', 'VehiclePurposeClaims',
+                             # The waiting point registration the orchestrator imported before the start (control-server#388).
+                             'WaitingPointVersions', 'WaitingPoints', 'WaitingPointVehicleScopes')) {
             try {
                 $rows = Invoke-L2Query -Connection $connection -Sql "SELECT * FROM $table"
                 [IO.File]::WriteAllText(

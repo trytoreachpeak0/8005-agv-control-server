@@ -355,6 +355,9 @@ jobs:
               # the same mapId and every task type bound on it is held (source CATALOG_CHANGE, MAP_RENAMED) until FieldOps
               # accepts the new name and releases the holds; a Map list that cannot be read is not a rename (REQ-0341).
               @{ Name = 'map-rename-holds-all-task-types'; Runs = 1; BatchId = 'batch-8' }
+              # control-server#388, specification 5.4 and 8.3 batch-8: two vehicles and one registered waiting point, and the
+              # server refuses to start before it listens, naming both counts; nothing is accepted and no order is created.
+              @{ Name = 'waiting-points-fewer-than-vehicles-refuses-start'; Runs = 1; BatchId = 'batch-8' }
           )
           # One run's usual length in seconds, for dealing scenarios out to lanes longest first. Medians of 31
           # CI jobs from 2026-09-17 (ci-research, control-server#130); normal-load's excludes the build it used
