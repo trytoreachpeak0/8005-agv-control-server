@@ -119,6 +119,53 @@ public static class FixedStationExclusivity
         record.ReleaseReason = reason;
     }
 
+    /// <summary>
+    /// 按读到的那一次独占释放：删行的条件带着读到的持有旅程与经过（<c>JourneyId</c>、<c>RecordId</c>），删掉了才关它的经过。
+    /// 离点清扫与人工释放（control-server#419）都走这里，所以两者同刻只有一方生效——后到的一方删到 0 行，什么也不写。
+    /// </summary>
+    /// <remarks>
+    /// 不开事务、绕开变更跟踪器：调用方持有事务（清扫的上下文与整轮共用，人工释放要把审计放进同一个事务）。删到 0 行时返回
+    /// <c>false</c>——读到之后它已被释放、或交给了同一辆车的新旅程，那一次已不归调用方。
+    /// </remarks>
+    public static async Task<bool> ReleaseAsReadAsync(
+        ControlServerDbContext dbContext,
+        StationExclusivityRow asRead,
+        DateTimeOffset at,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(dbContext);
+        ArgumentNullException.ThrowIfNull(asRead);
+        ArgumentException.ThrowIfNullOrWhiteSpace(reason);
+        int deleted = await dbContext.Set<StationExclusivityRow>()
+            .Where(item => item.MapId == asRead.MapId && item.StationId == asRead.StationId &&
+                           item.JourneyId == asRead.JourneyId && item.RecordId == asRead.RecordId)
+            .ExecuteDeleteAsync(cancellationToken).ConfigureAwait(false);
+        if (deleted == 0)
+        {
+            return false;
+        }
+
+        await dbContext.Set<StationExclusivityRecordRow>()
+            .Where(record => record.RecordId == asRead.RecordId)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(record => record.ReleasedAt, at)
+                    .SetProperty(record => record.ReleaseReason, reason),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        // A tracked copy would still read held; the next reserve reads again.
+        foreach (var stale in dbContext.ChangeTracker.Entries<StationExclusivityRow>()
+                     .Where(entry => entry.Entity.MapId == asRead.MapId && entry.Entity.StationId == asRead.StationId &&
+                                     entry.State == EntityState.Unchanged)
+                     .ToArray())
+        {
+            stale.State = EntityState.Detached;
+        }
+        return true;
+    }
+
     /// <summary>这次保存是不是被站点独占的主键拒绝的——也就是站点已被别的车占着。</summary>
     public static bool IsStationHeld(DbUpdateException failure) =>
         StationExclusivityWrites.IsKeyConflict(failure) && StationExclusivityWrites.IsStationConflict(failure);
