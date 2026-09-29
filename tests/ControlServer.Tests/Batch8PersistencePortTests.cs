@@ -266,8 +266,9 @@ public sealed class Batch8PersistencePortTests
     [Theory]
     [InlineData("StationExclusivities", "State", "LEAVING")]
     [InlineData("StationExclusivities", "State", "reserved")]
-    [InlineData("StationExclusivities", "StationKind", "CHARGER")]
-    [InlineData("StationExclusivityRecords", "StationKind", "CHARGER")]
+    // CHARGER was the unknown kind here until batch 9 made it the third (control-server#399); PARKING is still unknown.
+    [InlineData("StationExclusivities", "StationKind", "PARKING")]
+    [InlineData("StationExclusivityRecords", "StationKind", "PARKING")]
     public async Task TheDatabaseRefusesAThirdStateOrAnUnknownKindOfStation(string table, string column, string value)
     {
         await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();

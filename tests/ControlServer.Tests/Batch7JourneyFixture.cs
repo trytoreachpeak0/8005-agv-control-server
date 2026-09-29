@@ -168,25 +168,93 @@ internal sealed class Batch7JourneyFixture : IAsyncDisposable
         ControlServerDbContext context, string demandId, string agvId, string vehicleKey, DateTimeOffset at)
     {
         JourneyExecutionPlan plan = Plan(demandId, agvId, vehicleKey, at);
-        await new WireToGateStore(context).AcceptWithOrderIntentAsync(
-            Snapshot(demandId, at),
-            JourneyPlanBuilder.PickupIntent(plan, demandId, at),
-            plan,
-            TestContext.Current.CancellationToken);
+        await using (await WithTodaysTrailingColumnsAsync(context))
+        {
+            await new WireToGateStore(context).AcceptWithOrderIntentAsync(
+                Snapshot(demandId, at),
+                JourneyPlanBuilder.PickupIntent(plan, demandId, at),
+                plan,
+                TestContext.Current.CancellationToken);
+        }
         return plan;
     }
 
     /// <summary>Ends a journey the way a successful unload does through the direct completion entry.</summary>
-    internal static Task CompleteByUnloadAsync(ControlServerDbContext context, string demandId, DateTimeOffset at) =>
-        new WireToGateStore(context).CompleteDemandAfterUnloadAsync(
-            $"UNLOAD-{demandId}",
-            demandId,
-            $"SUBLOT-{demandId}|WIRE_TO_GATE",
-            7,
-            [new SlotPhysicalEvidence(1, SlotBusinessState.Empty, true, true)],
-            "all-empty-locked-output-reset",
-            at,
-            TestContext.Current.CancellationToken);
+    internal static async Task CompleteByUnloadAsync(ControlServerDbContext context, string demandId, DateTimeOffset at)
+    {
+        await using (await WithTodaysTrailingColumnsAsync(context))
+        {
+            await new WireToGateStore(context).CompleteDemandAfterUnloadAsync(
+                $"UNLOAD-{demandId}",
+                demandId,
+                $"SUBLOT-{demandId}|WIRE_TO_GATE",
+                7,
+                [new SlotPhysicalEvidence(1, SlotBusinessState.Empty, true, true)],
+                "all-empty-locked-output-reset",
+                at,
+                TestContext.Current.CancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// The columns later migrations appended to tables the acceptance path reads and writes, each with the definition its
+    /// migration added. Batch 9 (control-server#399) is the first to append to them since these fixtures began seeding
+    /// databases at earlier migrations.
+    /// </summary>
+    private static readonly (string Table, string Column, string Definition)[] TodaysTrailingColumns =
+    [
+        ("OrderIntents", "OrderShape", "TEXT NOT NULL DEFAULT 'SINGLE_MOVE'"),
+        ("JourneyRuntimes", "ChargingPolicyVersion", "INTEGER NULL"),
+        ("JourneyRuntimes", "PublishedBatteryState", "TEXT NULL"),
+        ("StationExclusivities", "ChargerRosterVersion", "INTEGER NULL"),
+        ("StationExclusivityRecords", "ChargerRosterVersion", "INTEGER NULL"),
+    ];
+
+    /// <summary>
+    /// Lets today's model read and write a database migrated only to an earlier migration: every column in
+    /// <see cref="TodaysTrailingColumns"/> that such a database lacks is added for the duration, and dropped again on
+    /// dispose with SQLite's own <c>DROP COLUMN</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Each is its table's last column, so the drop gives back the stored table definition exactly as it was, and what a
+    /// migration test then compares -- schema text, columns, rows -- is what the earlier migration left. The values the
+    /// seeding put there go with the column: they are the default or null, the same the migration would give them.
+    /// </para>
+    /// <para>
+    /// On a database at the current schema it adds and drops nothing.
+    /// </para>
+    /// </remarks>
+    internal static async Task<IAsyncDisposable> WithTodaysTrailingColumnsAsync(ControlServerDbContext context)
+    {
+        SqliteConnection connection = (SqliteConnection)context.Database.GetDbConnection();
+        List<(string Table, string Column)> added = [];
+        foreach ((string table, string column, string definition) in TodaysTrailingColumns)
+        {
+            bool tableExists = await ScalarAsync(
+                connection, $"SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = '{table}'") > 0;
+            if (!tableExists || await ScalarAsync(
+                    connection, $"SELECT count(*) FROM pragma_table_info('{table}') WHERE name = '{column}'") > 0)
+            {
+                continue;
+            }
+            await ExecuteAsync(connection, $"""ALTER TABLE "{table}" ADD COLUMN "{column}" {definition}""");
+            added.Add((table, column));
+        }
+        return new TrailingColumns(connection, added);
+    }
+
+    private sealed class TrailingColumns(SqliteConnection connection, List<(string Table, string Column)> added)
+        : IAsyncDisposable
+    {
+        public async ValueTask DisposeAsync()
+        {
+            for (int index = added.Count - 1; index >= 0; index--)
+            {
+                await ExecuteAsync(connection, $"""ALTER TABLE "{added[index].Table}" DROP COLUMN "{added[index].Column}" """);
+            }
+        }
+    }
 
     /// <summary>Every row of a table, all columns, as SQLite's own literal for each value, sorted.</summary>
     internal static async Task<string[]> DumpAsync(SqliteConnection connection, string table)

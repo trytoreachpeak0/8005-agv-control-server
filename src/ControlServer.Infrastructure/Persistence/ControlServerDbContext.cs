@@ -97,6 +97,8 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
         modelBuilder.Entity<OrderIntentRow>().Property(row => row.CreateAttemptCount).IsConcurrencyToken();
         modelBuilder.Entity<OrderIntentRow>().Property(row => row.DispatchAuditSequence).IsConcurrencyToken();
         modelBuilder.Entity<OrderIntentRow>().Property(row => row.ExperimentalCreateAuthorizationId).IsConcurrencyToken();
+        // The database default is what the migration back-fills existing rows with (control-server#399).
+        modelBuilder.Entity<OrderIntentRow>().Property(row => row.OrderShape).HasDefaultValue(OrderShapes.SingleMove);
         modelBuilder.Entity<OrderIntentRow>()
             .HasIndex(row => row.CreateAttemptId)
             .IsUnique()
@@ -322,6 +324,13 @@ public sealed class OrderIntentRow
     public string? LastReconciliationOutcome { get; set; }
     public DateTimeOffset? LastReconciliationOutcomeAt { get; set; }
     public string? LastReconciliationReceiptJson { get; set; }
+
+    /// <summary>
+    /// Which kind of RIoT order this intent stands for (<see cref="OrderShapes"/>; batch 9, control-server#399). Every
+    /// existing writer leaves it at <see cref="OrderShapes.SingleMove"/>, the value the migration back-fills. No CHECK: the
+    /// values are validated in code (control-server#401).
+    /// </summary>
+    public string OrderShape { get; set; } = OrderShapes.SingleMove;
 }
 
 public sealed class RiotDispatchAuditEventRow
@@ -799,6 +808,23 @@ public sealed class JourneyRuntimeRow
 
     /// <summary>When the watch last logged this journey's wait; kept so a restart neither repeats nor loses the cadence.</summary>
     public DateTimeOffset? WaitingWarnedAt { get; set; }
+
+    /// <summary>
+    /// The <c>ChargingPolicyVersion</c> this journey was dispatched under (<c>REQ-0282</c>: work already under way keeps the
+    /// policy snapshot it started with; <c>REQ-0281</c>: a threshold crossed on the way is acted on after the journey, read
+    /// against this version). Null on every journey today: batch 9 schema ticket control-server#399 only adds the column, and
+    /// its writer is the dispatch of batch 9.
+    /// </summary>
+    public long? ChargingPolicyVersion { get; set; }
+
+    /// <summary>
+    /// The <c>batteryState</c> this server last put into this journey's <c>VehicleBusinessStateSnapshot</c>. That snapshot is
+    /// re-sent under one deterministic message id per stage, and a re-send whose payload differs is refused as a semantic
+    /// conflict (<c>OnboardJourneyPublisher</c>), so the value a stage published must be readable again rather than taken
+    /// from the vehicle's live battery. Null on every journey today (control-server#399); its writer is batch 9's
+    /// projection of the real battery state.
+    /// </summary>
+    public string? PublishedBatteryState { get; set; }
 
     /// <summary>
     /// How many saves have written this row: the concurrency token that stops a writer from saving over a row it read before
