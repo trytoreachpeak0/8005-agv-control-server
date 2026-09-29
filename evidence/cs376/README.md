@@ -71,3 +71,11 @@ M2 第一次写成 `if (false)`，被编译器以 CS0162（代码不可达）拒
   - P4（恢复按需求逐条释放）：红 handed-off-demand 那一格，与预期一致。
   - M12 重跑（删掉按旅程收口；它所在的方法这轮改了）：红 9 格，比预期少一格。`AHandedOffCargoBindingIsNotTakenForTheVehiclesNextFault` 没红，因为它断的是下一次故障，而故障协调器建绑定前会先释放别的旅程的绑定。是预期写错了，交接结算本身由另外 8 格守，详见 `plan.md`。
 - **全量**：`dotnet test tests/ControlServer.Tests/ControlServer.Tests.csproj -c Release`，在 459cc3e0 上经 Invoke-HeavyLocal 跑，3029 通过，0 失败，退出码 0（上一轮 3026，本轮新加 3 格），日志在 `full/full-459cc3e0.log`。
+
+## 真装置（CI，5a3fd757，最终 head）
+
+run 36502935245（`../l2/20260929-ci-36502935245-cs376-real-rig/`），`mode=consecutive`，两个场景登记 Runs 都是 1，各 1 遍，都 PASS。四行核对：
+artifact 696425 字节；三端提交在场景那一步的日志里是 5a3fd757 / 60f34187 / fb5f7c59，与 commits.json 和派发参数一致；
+停止标记只以源码回显出现（1 行，是 `throw "RIG_DESKTOP_LOCK: ..."` 那一句脚本文本）；assertions 里 PASS 21 条（12 + 9），FAIL 0 条。
+RC-03 用的是 459cc3e0 的新等待条件：00:27:16.21 读到记录 STOPPED、旅程码已是 OWN_ORDER_REBUILD_CARGO_NOT_IN_PLACE 才判定；
+转交接之后 00:27:17.10 会话 RecoveryRequired，00:27:17.17 车载端出现故障交接入口。
