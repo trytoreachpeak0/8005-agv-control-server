@@ -25,6 +25,17 @@ namespace ControlServer.Tests;
 /// <b>红了就是行为变了，不能重录来变绿。</b>
 /// </para>
 /// <para>
+/// <b>control-server#382（协议 v3.0.0 候选，批次分支 <c>batch-p3/v3</c>）给八份基线的载荷加了两个键，其余逐字未动。</b>v3 把
+/// <c>CurrentStopWorklistSnapshot.stopEndedReason</c> 与 <c>PreDepartureSafetyCheck.checkPurpose</c> 定为必填，每一行这两类报文都因此
+/// 多一个键、摘要随之变。两个键在集成分支上还不存在，所以同 <see cref="ZeroChangePin"/> 里 cs#357 那段，只能在本票分支上录。
+/// 判据：与<b>批次分支上的</b>旧基线（<c>batch-p3/v3@f55669db</c>）逐行比，去掉这两个键后每条载荷逐字相同，表头、messageId、修订号、
+/// 发件箱与线上顺序、RIoT 订单逐字相同，线上一节每个变了的摘要都能由发件箱一节的同一条载荷解释。先算出该是多少：新键次数应等于
+/// 旧基线发件箱里两类报文的行数，八份逐份对上（例如 <c>normal-journey</c> 清单 3 行、出发检查 1 行）；比对脚本另用三种注入
+/// （载荷里改一个无关字符、表头改一个修订号、删掉一个新键）验过都报 FAIL（<c>evidence/cs382/</c>）。新键的取值与
+/// <c>8005-agv-program</c> PR #163 正文第 3 项的对照表一致：正常卸完 <c>COMPLETED</c>、离站期限与确定的装货失败
+/// <c>STATION_DEADLINE_EXPIRED</c>、两种取消 <c>LOAD_CANCELLED</c>，有项的清单为 null；出发检查全为 <c>DEPARTURE</c>。
+/// </para>
+/// <para>
 /// <b>每条消息存的是规范化后的载荷全文，不只是摘要。</b>摘要能判等，判不出差在哪；审查要能独立复核「哪一个 id、哪一个修订号
 /// 变了」，就得看得见。规范化只做一件事：递归按键名排序，让 JSON 属性顺序的变动不算差异。
 /// </para>

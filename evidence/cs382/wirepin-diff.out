@@ -1,0 +1,8 @@
+PASS cancellation-before-sublot.txt expected={'stopEndedReason': 2, 'checkPurpose': 0} counted={'stopEndedReason': 2, 'checkPurpose': 0} values={'stopEndedReason': ['"LOAD_CANCELLED"', 'null']}
+PASS departure-check-expired.txt expected={'stopEndedReason': 1, 'checkPurpose': 2} counted={'stopEndedReason': 1, 'checkPurpose': 2} values={'stopEndedReason': ['null'], 'checkPurpose': ['"DEPARTURE"']}
+PASS determinate-load-failure.txt expected={'stopEndedReason': 2, 'checkPurpose': 0} counted={'stopEndedReason': 2, 'checkPurpose': 0} values={'stopEndedReason': ['"STATION_DEADLINE_EXPIRED"', 'null']}
+PASS in-flight-cancellation.txt expected={'stopEndedReason': 2, 'checkPurpose': 0} counted={'stopEndedReason': 2, 'checkPurpose': 0} values={'stopEndedReason': ['"LOAD_CANCELLED"', 'null']}
+PASS normal-journey.txt expected={'stopEndedReason': 3, 'checkPurpose': 1} counted={'stopEndedReason': 3, 'checkPurpose': 1} values={'stopEndedReason': ['"COMPLETED"', 'null'], 'checkPurpose': ['"DEPARTURE"']}
+PASS reconnect-replay.txt expected={'stopEndedReason': 1, 'checkPurpose': 0} counted={'stopEndedReason': 1, 'checkPurpose': 0} values={'stopEndedReason': ['null']}
+PASS station-deadline.txt expected={'stopEndedReason': 2, 'checkPurpose': 0} counted={'stopEndedReason': 2, 'checkPurpose': 0} values={'stopEndedReason': ['"STATION_DEADLINE_EXPIRED"', 'null']}
+PASS two-journeys-one-vehicle.txt expected={'stopEndedReason': 6, 'checkPurpose': 2} counted={'stopEndedReason': 6, 'checkPurpose': 2} values={'stopEndedReason': ['"COMPLETED"', 'null'], 'checkPurpose': ['"DEPARTURE"']}

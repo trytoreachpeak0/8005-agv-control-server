@@ -1,0 +1,12 @@
+== self-test a-payload-char
+FAIL normal-journey.txt expected={'stopEndedReason': 3, 'checkPurpose': 1} counted={'stopEndedReason': 3, 'checkPurpose': 1} values={'stopEndedReason': ['"COMPLETED"', 'null'], 'checkPurpose': ['"DEPARTURE"']}
+    line 3: payload differs beyond the new key
+exit=1
+== self-test b-header-revision
+FAIL normal-journey.txt expected={'stopEndedReason': 3, 'checkPurpose': 1} counted={'stopEndedReason': 3, 'checkPurpose': 1} values={'stopEndedReason': ['"COMPLETED"', 'null'], 'checkPurpose': ['"DEPARTURE"']}
+    line 4: header differs: '02 t=+2s type=UpcomingStopPlanSnapshot messageId=2694bd09-7092-ef5c-886a-6cdba914299d correlationId=NULL sessionGeneration=1 revision=1 acknowledged=no fenced=yes payloadSha256=e773de7ff0d6c3d47ec70611bb8320c83be59607bfe9e3dce1c7b8a6b4de0a5b' -> '02 t=+2s type=UpcomingStopPlanSnapshot messageId=2694bd09-7092-ef5c-886a-6cdba914299d correlationId=NULL sessionGeneration=1 revision=2 acknowledged=no fenced=yes payloadSha256=e773de7ff0d6c3d47ec70611bb8320c83be59607bfe9e3dce1c7b8a6b4de0a5b'
+exit=1
+== self-test c-drop-new-key
+FAIL normal-journey.txt expected={'stopEndedReason': 3, 'checkPurpose': 1} counted={'stopEndedReason': 3, 'checkPurpose': 0} values={'stopEndedReason': ['"COMPLETED"', 'null']}
+    new-key count {'stopEndedReason': 3, 'checkPurpose': 0} != expected {'stopEndedReason': 3, 'checkPurpose': 1}
+exit=1
