@@ -440,6 +440,8 @@ public sealed class StoppedRebuildExitTests
             Assert.Equal(
                 DemandExecutionStatus.Cancelled,
                 (await reading.AcceptedDemands.AsNoTracking().SingleAsync(row => row.DemandId == FirstDemandId, Token)).Status);
+            // CP-0008（REQ-0156 修订，control-server#395）：货物从未离开原取货位置，不按业务键抑制，同键再现时可重新派车。
+            await SuppressionAssertions.AssertNothingSuppressedAsync(reading);
             Assert.Equal(
                 JourneyDemandStatuses.Terminated,
                 (await reading.Set<JourneyDemandRow>().AsNoTracking().SingleAsync(Token)).Status);

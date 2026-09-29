@@ -52,9 +52,10 @@ public sealed partial class VehicleFaultRecoveryService
     public const string ExitVehicleIneligibleReason = "OWN_ORDER_REBUILD_EXIT_VEHICLE_INELIGIBLE";
 
     /// <summary>
-    /// The code a journey closes under when a person gives its stopped trip up (control-server#345). Not one of the local
-    /// cancellations <c>PickupStopTermination.KeySuppressingReasonCodes</c> suppresses by business key: the demand is ended
-    /// under its <c>DemandId</c> alone, as a fault cargo handoff's is.
+    /// The code a journey closes under when a person gives its stopped trip up (control-server#345). Not one of the codes
+    /// <c>PickupStopTermination.KeySuppressingReasonCodes</c> suppresses by business key: the demand is ended under its
+    /// <c>DemandId</c> alone, because the cargo never left its pickup and a reissue of the key should be dispatched again
+    /// (REQ-0156 as revised by CP-0008; a fault cargo handoff, by contrast, does suppress since control-server#395).
     /// </summary>
     public const string TripTerminatedReason = "TERMINATED_BY_OPERATOR_AFTER_REBUILD_STOP";
 

@@ -31,7 +31,7 @@ internal static class SuppressionAssertions
             (await context.AcceptedDemands.AsNoTracking().SingleAsync(TestContext.Current.CancellationToken)).DemandId,
             reasonCode);
 
-    /// <summary>库里一条抑制都没有：这种结束不是本地取消（REQ-0156）。</summary>
+    /// <summary>库里一条抑制都没有：这种结束不写抑制（REQ-0156）。</summary>
     internal static async Task AssertNothingSuppressedAsync(ControlServerDbContext context) =>
         Assert.Empty(await AllAsync(context));
 

@@ -166,12 +166,27 @@ public sealed class PickupStopTermination(ControlServerDbContext dbContext, Plan
             dbContext, runtime.JourneyId, leavingDemandIds: [], currentStopMayGo: false, routing, cancellationToken);
 
     /// <summary>
-    /// 本地取消的四个终态码（<c>REQ-0156</c>）。只有它们按业务键抑制；<c>Succeeded</c>、GONE（v2 没有这条路径）与
-    /// <c>TERMINATED_BY_FAULT_CARGO_HANDOFF</c> 不抑制——需求基线只列这四个，MVP 多写的第五个（<c>557644a6</c>）不移植。
+    /// 按业务键抑制的终态码（<c>REQ-0156</c>，需求基线 <c>v1.7.0</c> 经 <c>CP-0008</c> 修订）：本地取消的四个，加故障货物交接终止
+    /// <c>TERMINATED_BY_FAULT_CARGO_HANDOFF</c>。<c>Succeeded</c>、GONE（v2 没有这条路径）与下面写明的那一个不抑制。
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// <c>TERMINATED_BY_FAULT_CARGO_HANDOFF</c>：故障货物交接（<c>REQ-0240</c>）与强制取出后交接（<c>REQ-0242</c>）两条路都以这个码经
+    /// <see cref="StageAsync(JourneyRuntimeRow, string?, string, string, DateTimeOffset, CancellationToken)"/> 终结
+    /// （<c>OnboardRecoveryCoordinator</c>），所以放在这里就是两条路都与终态同一次保存写抑制。交接之后 MES 那边任务仍在；不抑制的话，
+    /// MesIngest 以新 <c>DemandId</c> 再出同一个键时会被再派一次车。control-server#210 按 <c>v1.6.0</c> 的字面只写四个码，
+    /// control-server#395 按修订后的条文补上，与 MVP 的 <c>557644a6</c> 同义。
+    /// </para>
+    /// <para>
+    /// <b>不要加 <c>TERMINATED_BY_OPERATOR_AFTER_REBUILD_STOP</c>。</b>人员放弃停住的重建（control-server#345）只在车上没有该任务货物时
+    /// 允许：货物从未离开原取货位置，MES 那边的任务也还在，同键以后再现时重新派车去取正是该做的；写了抑制，这批货就再也不会被搬。
+    /// 修订后的 <c>REQ-0156</c> 写明了这一条。今天那条路径不经这里的 <c>StageAsync</c>，但不能靠这个：哪天它改走这里，这个集合就是
+    /// 唯一的闸。
+    /// </para>
+    /// <para>
     /// <c>CANCELLED_BY_STOP_COMPLETE</c> 今天在 <c>src/</c> 里没有生产者，放在这里是为了以后谁产生它谁就自动抑制，
     /// 不必再有人记得回到这里加一行。
+    /// </para>
     /// </remarks>
     public static IReadOnlySet<string> KeySuppressingReasonCodes { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
@@ -179,10 +194,12 @@ public sealed class PickupStopTermination(ControlServerDbContext dbContext, Plan
         "CANCELLED_BY_LOAD_COMPENSATION",
         "CANCELLED_BY_STOP_COMPLETE",
         "CANCELLED_BY_STATION_TIMEOUT",
+        "TERMINATED_BY_FAULT_CARGO_HANDOFF",
     };
 
     /// <summary>
-    /// 终结的是本地取消时，按这条需求的业务键暂存一条抑制（批次7-05，control-server#210；REQ-0155、REQ-0156、REQ-0211）。
+    /// 终结的是本地取消或故障货物交接时，按这条需求的业务键暂存一条抑制（批次7-05，control-server#210；REQ-0155、REQ-0156、
+    /// REQ-0211；交接自 control-server#395，CP-0008）。
     /// </summary>
     /// <remarks>
     /// <para>
