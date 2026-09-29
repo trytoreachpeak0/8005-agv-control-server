@@ -630,6 +630,9 @@ public sealed class Batch7CargoHoldingDashboardTests
     [InlineData("OWN_ORDER_REBUILD_AWAITING_CARGO_HANDOFF")]
     // control-server#331：推进每轮抛异常时写的码。之前这种情况看板上只剩上一次写下的旧码。
     [InlineData("JOURNEY_ADVANCE_FAILED")]
+    // control-server#375：从没发出过的腿补建前车况不允许。
+    [InlineData("PICKUP_CREATE_WAITING_VEHICLE")]
+    [InlineData("GATE_CREATE_WAITING_VEHICLE")]
     public async Task AStalledInTransitOrderIsShownWithAChineseDescription(string code)
     {
         Assert.True(BlockedJourneysQueryEndpoint.Descriptions.ContainsKey(code), $"{code} has no description");

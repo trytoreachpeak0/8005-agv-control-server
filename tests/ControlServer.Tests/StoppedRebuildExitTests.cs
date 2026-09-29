@@ -1650,6 +1650,38 @@ public sealed class StoppedRebuildExitTests
     }
 
     /// <summary>人工重建一次并跑一轮引擎（车载端刚说过话）。</summary>
+    /// <summary>
+    /// 护栏三停住 → 人工重建 → 引擎建出第三张单并确认：确认的那一轮结束时旅程码已清空，下一轮仍为空（control-server#375 诊断
+    /// L2 in-transit-rebuild-stopped-person-rebuilds 的判据 L2-SR-04）。
+    /// </summary>
+    /// <remarks>
+    /// 引擎在同一轮里先存意图 CONFIRMED，再存重建记录 REBUILT 与清码；L2 判据在意图 CONFIRMED 之后的第一次采样就断言码为空，
+    /// 可能落在两次保存之间。这里按轮断言，与采样时机无关。
+    /// </remarks>
+    [Fact]
+    public async Task APersonsRebuildOnceConfirmedLeavesTheJourneyWithoutACode()
+    {
+        await using RuntimeFixture fixture = await StoppedByTheThirdGuardAsync();
+
+        await RequestAndRunAsync(fixture);
+
+        Assert.Equal(3, fixture.Riot.CreateCount("TO_PICKUP"));
+        JourneyStopRow stop = await CurrentStopAsync(fixture, FirstDemandId);
+        await using (ControlServerDbContext reading = new(fixture.DbOptionsForTests))
+        {
+            Assert.Equal("CONFIRMED", (await reading.OrderIntents.AsNoTracking()
+                .SingleAsync(row => row.UpperId == stop.UpperId, Token)).Status);
+        }
+        JourneyRuntimeRow confirmed = await fixture.RuntimeAsync();
+        Assert.Equal((JourneyRuntimeStage.AwaitingPickupArrival, (string?)null), (confirmed.Stage, confirmed.BlockReasonCode));
+
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+
+        Assert.Null((await fixture.RuntimeAsync()).BlockReasonCode);
+        Assert.Equal(3, fixture.Riot.CreateCount("TO_PICKUP"));
+    }
+
     private static async Task RequestAndRunAsync(RuntimeFixture fixture)
     {
         Assert.Equal(
