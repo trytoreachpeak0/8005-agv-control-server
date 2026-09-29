@@ -189,7 +189,14 @@ public enum MovementDispatchOutcome
     /// The observation was create-eligible but the operational create-dispatch gate is closed,
     /// so no RIoT mutation was attempted and the intent keeps its create eligibility.
     /// </summary>
-    CreateDispatchDisabled
+    CreateDispatchDisabled,
+
+    /// <summary>
+    /// The intent names an order shape this server cannot build (<c>OrderShapes</c>; the column has no CHECK,
+    /// control-server#399). Refused before the create is armed, so nothing is written: the intent has still never been
+    /// sent, and only this leg waits, under this name as its block reason (control-server#401).
+    /// </summary>
+    UnsupportedOrderShape
 }
 
 /// <summary>
@@ -458,6 +465,11 @@ public sealed class MovementDispatchService
             return CreateDispatchDisabled(intent);
         }
 
+        if (!IsBuildableOrderShape(intent))
+        {
+            return UnsupportedOrderShape(intent);
+        }
+
         DateTimeOffset absenceRecordedAt = timeProvider.GetUtcNow();
         if (!MatchesExperimentalAuthorization(intent, authorization, absenceRecordedAt))
         {
@@ -512,6 +524,11 @@ public sealed class MovementDispatchService
             return CreateDispatchDisabled(intent);
         }
 
+        if (!IsBuildableOrderShape(intent))
+        {
+            return UnsupportedOrderShape(intent);
+        }
+
         DateTimeOffset absenceRecordedAt = timeProvider.GetUtcNow();
         await store.RecordReconciliationAsync(
             intent.UpperId,
@@ -541,6 +558,19 @@ public sealed class MovementDispatchService
     /// </summary>
     private static MovementDispatchResult CreateDispatchDisabled(OrderIntent intent) =>
         new(MovementDispatchOutcome.CreateDispatchDisabled, intent.UpperId, null);
+
+    /// <summary>
+    /// Refuses a create whose order shape the RIoT gateway cannot build, before the create is armed. Nothing is written,
+    /// exactly as for a closed gate: arming first would spend the intent's one create on a request that is never sent, and
+    /// leave it RESULT_UNKNOWN with every later NotFound read as "result unknown" -- a leg stuck until the database is
+    /// edited. The gateway refuses the same shapes again as a second line (control-server#401 review).
+    /// </summary>
+    private static MovementDispatchResult UnsupportedOrderShape(OrderIntent intent) =>
+        new(MovementDispatchOutcome.UnsupportedOrderShape, intent.UpperId, null);
+
+    private static bool IsBuildableOrderShape(OrderIntent intent) =>
+        string.Equals(intent.OrderShape, OrderShapes.SingleMove, StringComparison.Ordinal) ||
+        string.Equals(intent.OrderShape, OrderShapes.Charge, StringComparison.Ordinal);
 
     private async Task<MovementDispatchResult> DispatchCreateAttemptAsync(
         OrderIntent intent,
