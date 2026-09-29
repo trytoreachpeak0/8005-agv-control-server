@@ -1,0 +1,100 @@
+{"at":"2026-09-29T01:27:50.4229904+00:00","note":"L2 run 20260929T012750373Z starting for scenario 'real-onboard-cancelled-rebuild-cargo-proof'."}
+{"at":"2026-09-29T01:27:50.4595533+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-09-29T01:27:50.4620778+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-09-29T01:27:50.7147561+00:00","note":"Reusing cached onboard-hmi publish for 3520505d6715192be613b938133994e8cd4da6b4."}
+{"at":"2026-09-29T01:27:50.8805815+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-29T01:27:50.8895327+00:00","note":"Peers: onboard-hmi@3520505d6715192be613b938133994e8cd4da6b4, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-29T01:27:50.9021206+00:00","note":"Interactive desktop lock acquired."}
+{"at":"2026-09-29T01:27:51.8842994+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-29T01:27:52.1237378+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-29T01:27:53.9699040+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-29T01:27:54.0871780+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-09-29T01:27:58.3488652+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-29T01:28:00.4236493+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-29T01:28:01.2997991+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-29T01:28:01.3950169+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-29T01:28:03.4322957+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-29T01:28:03.4472652+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-29T01:28:03.4804223+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-29T01:28:04.2963478+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-29T01:28:04.3418173+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-36507086407-1\\_stage\\l2-20260929T012750373Z\\controlserver.db"}
+{"at":"2026-09-29T01:28:06.0499434+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"8edc32558e07463dba210b713408cc6f","version":1,"slotCount":8}}}
+{"at":"2026-09-29T01:28:06.0593270+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-36507086407-1\\_stage\\l2-20260929T012750373Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-29T01:28:07.7401194+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"8edc32558e07463dba210b713408cc6f","boundSlots":8,"version":1}}}
+{"at":"2026-09-29T01:28:07.8303227+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-29T01:28:07.8324184+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-36507086407-1\\_stage\\l2-20260929T012750373Z\\controlserver.db --input C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-36507086407-1\\real-onboard-cancelled-rebuild-cargo-proof-03\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-29T01:28:09.6124034+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-36507086407-1\\real-onboard-cancelled-rebuild-cargo-proof-03\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"08b5faeb909044399825790a5aaa987a","importedAt":"2026-09-29T09:28:08.0859058+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-29T01:28:09.6199951+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-09-29T01:28:09.6297621+00:00","note":"Environment is up; entering scenario 'real-onboard-cancelled-rebuild-cargo-proof'."}
+{"at":"2026-09-29T01:28:09.7437056+00:00","note":"Publishing demand 2f2194a10c8f4c3d82895dc7db95b564 (sublot L2-RC-20260929T012750373Z-EMPTIED)."}
+{"at":"2026-09-29T01:28:09.8246255+00:00","criterion":"to-pickup-intent-EMPTIED","value":"(null)"}
+{"at":"2026-09-29T01:28:12.1157588+00:00","criterion":"to-pickup-intent-EMPTIED","value":"@{UpperId=W2G-2f2194a1-0c8f-4c3d-8289-5dc7db95b564-PICKUP-1; OrderId=; Status=CREATE_ATTEMPTED}"}
+{"at":"2026-09-29T01:28:12.3743055+00:00","criterion":"to-pickup-intent-EMPTIED","value":"@{UpperId=W2G-2f2194a1-0c8f-4c3d-8289-5dc7db95b564-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-29T01:28:12.3774129+00:00","note":"Vehicle drives to the pickup station and comes to rest there."}
+{"at":"2026-09-29T01:28:12.5299018+00:00","criterion":"onboard-can-submit-EMPTIED","value":"False"}
+{"at":"2026-09-29T01:28:13.3504342+00:00","criterion":"onboard-can-submit-EMPTIED","value":"True"}
+{"at":"2026-09-29T01:28:13.4424779+00:00","criterion":"onboard-submit-ready-EMPTIED","value":"True"}
+{"at":"2026-09-29T01:28:13.4740724+00:00","criterion":"load-attempt-EMPTIED","value":"(null)"}
+{"at":"2026-09-29T01:28:14.2495268+00:00","criterion":"load-attempt-EMPTIED","value":"3f207815-75a4-6e5e-838a-ca70184b6a2f"}
+{"at":"2026-09-29T01:28:14.2647681+00:00","criterion":"load-waiting-operator-EMPTIED","value":"(null)"}
+{"at":"2026-09-29T01:28:15.9021874+00:00","criterion":"load-waiting-operator-EMPTIED","value":"@{At=09/29/2026 01:28:15 +00:00; Phase=WAITING_OPERATOR; Active=System.Object[]}"}
+{"at":"2026-09-29T01:28:15.9078286+00:00","note":"Onboard is waiting on slot 1; the operator puts the basket in and closes the door."}
+{"at":"2026-09-29T01:28:15.9960820+00:00","criterion":"load-slot-physical-EMPTIED","value":"CLOSED/OCCUPIED/0/0"}
+{"at":"2026-09-29T01:28:16.2493248+00:00","criterion":"load-slot-physical-EMPTIED","value":"CLOSED/OCCUPIED/1/0"}
+{"at":"2026-09-29T01:28:16.2546374+00:00","criterion":"to-gate-intent-EMPTIED","value":"(null)"}
+{"at":"2026-09-29T01:28:48.0006938+00:00","criterion":"to-gate-intent-EMPTIED","value":"@{UpperId=W2G-2f2194a1-0c8f-4c3d-8289-5dc7db95b564-GATE-1; OrderId=; Status=PENDING_RECONCILIATION}"}
+{"at":"2026-09-29T01:28:48.2543667+00:00","criterion":"to-gate-intent-EMPTIED","value":"@{UpperId=W2G-2f2194a1-0c8f-4c3d-8289-5dc7db95b564-GATE-1; OrderId=ORDER-000002; Status=CONFIRMED}"}
+{"at":"2026-09-29T01:28:48.2618435+00:00","note":"Vehicle sets off for the gate on W2G-2f2194a1-0c8f-4c3d-8289-5dc7db95b564-GATE-1; someone else presses the emergency stop on the way."}
+{"at":"2026-09-29T01:28:48.3187045+00:00","criterion":"order-hang","value":""}
+{"at":"2026-09-29T01:28:49.5841545+00:00","criterion":"order-hang","value":"ORDER_HANG"}
+{"at":"2026-09-29T01:28:49.5873518+00:00","note":"Someone cancels W2G-2f2194a1-0c8f-4c3d-8289-5dc7db95b564-GATE-1 in RIoT while the vehicle is latched."}
+{"at":"2026-09-29T01:28:49.6380673+00:00","criterion":"cancel-recorded","value":"(null)"}
+{"at":"2026-09-29T01:28:50.1394270+00:00","criterion":"cancel-recorded","value":"@{Source=ORDER_CANCELLED_IN_RIOT; State=PENDING; StoppedReason=; WaitingReason=; RecordedAt=2026-09-29 01:28:49.9320694+00:00; DueAt=2026-09-29 01:28:57.9320694+00:00; VehicleHeldAt=; CargoEvidenceNotBefore=; CargoEvidenceMessageId=; NewUpperId=W2G-2f2194a1-0c8f-4c3d-8289-5dc7db95b564-REBUILD-1-1}"}
+{"at":"2026-09-29T01:28:50.1714984+00:00","note":"While the vehicle is latched the basket goes missing: slot 1 light curtain forced to 1 (unobstructed)."}
+{"at":"2026-09-29T01:28:50.1858234+00:00","criterion":"light-curtain-empty","value":"1"}
+{"at":"2026-09-29T01:28:50.1905311+00:00","criterion":"rebuild-held","value":"@{Code=ORDER_ENDED_WITHOUT_ARRIVAL; State=PENDING; Waiting=; Held=False}"}
+{"at":"2026-09-29T01:28:59.0724920+00:00","criterion":"rebuild-held","value":"@{Code=OWN_ORDER_REBUILD_WAITING_VEHICLE; State=PENDING; Waiting=ONBOARD_SESSION_NOT_READY; Held=True}"}
+{"at":"2026-09-29T01:28:59.0803799+00:00","note":"Someone else releases the emergency stop."}
+{"at":"2026-09-29T01:28:59.1215190+00:00","criterion":"cargo-not-in-place","value":"@{Stage=AwaitingGateArrival; Code=OWN_ORDER_REBUILD_WAITING_VEHICLE; State=PENDING; Reason=; Held=True; NotBefore=; DueAt=09/29/2026 01:28:57 +00:00; Evidence=; Gates=1}"}
+{"at":"2026-09-29T01:29:01.1526532+00:00","criterion":"cargo-not-in-place","value":"@{Stage=AwaitingGateArrival; Code=OWN_ORDER_REBUILD_WAITING_VEHICLE; State=PENDING; Reason=; Held=False; NotBefore=09/29/2026 01:29:00 +00:00; DueAt=09/29/2026 01:28:57 +00:00; Evidence=; Gates=1}"}
+{"at":"2026-09-29T01:29:01.4053539+00:00","criterion":"cargo-not-in-place","value":"@{Stage=AwaitingGateArrival; Code=OWN_ORDER_REBUILD_WAITING_CARGO_EVIDENCE; State=PENDING; Reason=; Held=False; NotBefore=09/29/2026 01:29:00 +00:00; DueAt=09/29/2026 01:28:57 +00:00; Evidence=; Gates=1}"}
+{"at":"2026-09-29T01:29:03.2034536+00:00","criterion":"cargo-not-in-place","value":"@{Stage=AwaitingGateArrival; Code=OWN_ORDER_REBUILD_CARGO_NOT_IN_PLACE; State=STOPPED; Reason=CARGO_NOT_PROVEN_IN_ORIGINAL_SLOTS; Held=False; NotBefore=09/29/2026 01:29:00 +00:00; DueAt=09/29/2026 01:28:57 +00:00; Evidence=09/29/2026 01:29:02 +00:00; Gates=1}"}
+{"at":"2026-09-29T01:29:03.4627186+00:00","note":"Fault recovery PREPARE_CARGO_HANDOFF (handoff) -> 200: {\"agvId\":\"AGV-L2-001\",\"action\":\"PREPARE_CARGO_HANDOFF\",\"outcome\":\"HandoffPrepared\",\"disposition\":\"AWAITING_CARGO_HANDOFF\",\"reasons\":[],\"faultGeneration\":null,\"terminatedDemandIds\":[]}"}
+{"at":"2026-09-29T01:29:03.4746885+00:00","criterion":"handoff-prepared","value":"@{Journey=Blocked/OWN_ORDER_REBUILD_AWAITING_CARGO_HANDOFF; Record=AWAITING_CARGO_HANDOFF; Session=Ready/READY}"}
+{"at":"2026-09-29T01:29:04.4986750+00:00","criterion":"handoff-prepared","value":"@{Journey=Blocked/OWN_ORDER_REBUILD_AWAITING_CARGO_HANDOFF; Record=AWAITING_CARGO_HANDOFF; Session=RecoveryRequired/CARGO_HANDOFF_REQUIRED}"}
+{"at":"2026-09-29T01:29:04.5753912+00:00","criterion":"onboard-fault-cargo-entry","value":"True"}
+{"at":"2026-09-29T01:29:04.5807700+00:00","note":"Maintenance presses 故障交接 and confirms."}
+{"at":"2026-09-29T01:29:05.6516645+00:00","note":"Pressing 故障交接 (attempt 1)."}
+{"at":"2026-09-29T01:29:06.7965646+00:00","criterion":"fault-cargo-result","value":"(null)"}
+{"at":"2026-09-29T01:29:07.0519865+00:00","criterion":"fault-cargo-result","value":"@{MessageId=758d44a9-2d37-8251-a55b-2f204684c3e5; At=09/29/2026 01:29:06 +00:00; Generation=1; Payload=; PayloadJson={\"exceptionRecoverySessionId\":\"58871777-ae48-dc55-ad22-422ef17154a3\",\"recoveryActionId\":\"62283960-50f2-7c51-94cc-fff2a3884162\",\"demandId\":\"2f2194a1-0c8f-4c3d-8289-5dc7db95b564\",\"handoffId\":\"2f919189-1eab-3c5d-b3b5-6d3b67263996\",\"overallOutcome\":\"HANDED_OFF\",\"slotResults\":[{\"slotNo\":1,\"outcome\":\"COMPLETED\",\"finalPhysicalState\":\"EMPTY\",\"lockState\":\"LOCKED\",\"unlockOutputState\":\"RESET\",\"reasonCodes\":[]}],\"operator\":{\"operatorId\":\"L2-OPERATOR\",\"verificationMethod\":\"SESSION\",\"verifiedAt\":\"2026-09-29T09:29:05.9743737+08:00\"},\"observedAt\":\"2026-09-29T09:29:06.4302278+08:00\"}; ContentHash=7a96b2b41dc63b9445178ada9507e330f34dec5d5174dfc15a31a27dbc4b712a; Response=DurableAck; ResponsePayload=; ResponseLine=}"}
+{"at":"2026-09-29T01:29:07.0580431+00:00","criterion":"fault-cargo-workflow","value":"Reconciled"}
+{"at":"2026-09-29T01:29:07.0958988+00:00","criterion":"handoff-settled","value":"@{Demand=Cancelled; Journey=Completed/TERMINATED_BY_FAULT_CARGO_HANDOFF; Record=ENDED; Readiness=Ready; Bindings=0; Gates=1}"}
+{"at":"2026-09-29T01:29:07.1019390+00:00","note":"Publishing demand 98f60cfb29024b9597d91ca2080cfc19 (sublot L2-RC-20260929T012750373Z-KEPT)."}
+{"at":"2026-09-29T01:29:07.1275750+00:00","criterion":"to-pickup-intent-KEPT","value":"(null)"}
+{"at":"2026-09-29T01:29:07.8849196+00:00","criterion":"to-pickup-intent-KEPT","value":"@{UpperId=W2G-98f60cfb-2902-4b95-97d9-1ca2080cfc19-PICKUP-1; OrderId=; Status=PENDING_RECONCILIATION}"}
+{"at":"2026-09-29T01:29:08.1383826+00:00","criterion":"to-pickup-intent-KEPT","value":"@{UpperId=W2G-98f60cfb-2902-4b95-97d9-1ca2080cfc19-PICKUP-1; OrderId=ORDER-000003; Status=CONFIRMED}"}
+{"at":"2026-09-29T01:29:08.1413628+00:00","note":"Vehicle drives to the pickup station and comes to rest there."}
+{"at":"2026-09-29T01:29:08.2113588+00:00","criterion":"onboard-can-submit-KEPT","value":"False"}
+{"at":"2026-09-29T01:29:09.3075444+00:00","criterion":"onboard-can-submit-KEPT","value":"True"}
+{"at":"2026-09-29T01:29:09.3718786+00:00","criterion":"onboard-submit-ready-KEPT","value":"True"}
+{"at":"2026-09-29T01:29:09.4053400+00:00","criterion":"load-attempt-KEPT","value":"(null)"}
+{"at":"2026-09-29T01:29:09.9134369+00:00","criterion":"load-attempt-KEPT","value":"7651372d-caa7-0f5e-bdd4-d41d5cc7e461"}
+{"at":"2026-09-29T01:29:09.9342291+00:00","criterion":"load-waiting-operator-KEPT","value":"(null)"}
+{"at":"2026-09-29T01:29:11.7238059+00:00","criterion":"load-waiting-operator-KEPT","value":"@{At=09/29/2026 01:29:11 +00:00; Phase=WAITING_OPERATOR; Active=System.Object[]}"}
+{"at":"2026-09-29T01:29:11.7265186+00:00","note":"Slot 1 light curtain back to AUTO: the operator puts a new basket into the slot emptied in part 1."}
+{"at":"2026-09-29T01:29:11.7529515+00:00","note":"Onboard is waiting on slot 1; the operator puts the basket in and closes the door."}
+{"at":"2026-09-29T01:29:11.7723805+00:00","criterion":"load-slot-physical-KEPT","value":"CLOSED/OCCUPIED/0/0"}
+{"at":"2026-09-29T01:29:12.0316440+00:00","criterion":"load-slot-physical-KEPT","value":"CLOSED/OCCUPIED/1/0"}
+{"at":"2026-09-29T01:29:12.0334214+00:00","criterion":"to-gate-intent-KEPT","value":"(null)"}
+{"at":"2026-09-29T01:29:44.5919056+00:00","criterion":"to-gate-intent-KEPT","value":"@{UpperId=W2G-98f60cfb-2902-4b95-97d9-1ca2080cfc19-GATE-1; OrderId=; Status=PENDING_RECONCILIATION}"}
+{"at":"2026-09-29T01:29:45.3504854+00:00","criterion":"to-gate-intent-KEPT","value":"@{UpperId=W2G-98f60cfb-2902-4b95-97d9-1ca2080cfc19-GATE-1; OrderId=; Status=CREATE_ATTEMPTED}"}
+{"at":"2026-09-29T01:29:45.6039793+00:00","criterion":"to-gate-intent-KEPT","value":"@{UpperId=W2G-98f60cfb-2902-4b95-97d9-1ca2080cfc19-GATE-1; OrderId=ORDER-000004; Status=CONFIRMED}"}
+{"at":"2026-09-29T01:29:45.6150044+00:00","note":"Vehicle sets off for the gate on W2G-98f60cfb-2902-4b95-97d9-1ca2080cfc19-GATE-1; someone cancels the order in RIoT on the way (no emergency stop)."}
+{"at":"2026-09-29T01:29:45.6516139+00:00","criterion":"cancel-recorded-kept","value":"(null)"}
+{"at":"2026-09-29T01:29:46.6655009+00:00","criterion":"cancel-recorded-kept","value":"@{Source=ORDER_CANCELLED_IN_RIOT; State=PENDING; StoppedReason=; WaitingReason=; RecordedAt=2026-09-29 01:29:46.5424132+00:00; DueAt=2026-09-29 01:29:54.5424132+00:00; VehicleHeldAt=; CargoEvidenceNotBefore=; CargoEvidenceMessageId=; NewUpperId=W2G-98f60cfb-2902-4b95-97d9-1ca2080cfc19-REBUILD-1-1}"}
+{"at":"2026-09-29T01:29:46.6813326+00:00","criterion":"rebuilt-on-proof","value":"@{State=PENDING; DueAt=09/29/2026 01:29:54 +00:00; Evidence=; Intent=; Gates=1}"}
+{"at":"2026-09-29T01:29:57.3594599+00:00","criterion":"rebuilt-on-proof","value":"@{State=ORDERING; DueAt=09/29/2026 01:29:54 +00:00; Evidence=09/29/2026 01:29:56 +00:00; Intent=PENDING_RECONCILIATION; Gates=2}"}
+{"at":"2026-09-29T01:29:57.8684684+00:00","criterion":"rebuilt-on-proof","value":"@{State=ORDERING; DueAt=09/29/2026 01:29:54 +00:00; Evidence=09/29/2026 01:29:56 +00:00; Intent=CREATE_ATTEMPTED; Gates=2}"}
+{"at":"2026-09-29T01:29:59.1404322+00:00","criterion":"rebuilt-on-proof","value":"@{State=REBUILT; DueAt=09/29/2026 01:29:54 +00:00; Evidence=09/29/2026 01:29:56 +00:00; Intent=CONFIRMED; Gates=2}"}
+{"at":"2026-09-29T01:29:59.1484026+00:00","note":"取消来源、车上有货：锁着期间货没了，解开之后读到仓空停住并交接到底；货在时收到到期之后的快照才重建。"}
+{"at":"2026-09-29T01:29:59.8227540+00:00","note":"L2 port block lock released."}
