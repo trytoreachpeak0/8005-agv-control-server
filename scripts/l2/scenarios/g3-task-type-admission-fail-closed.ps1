@@ -19,7 +19,8 @@ onboard-hmi#115（放开非 `WIRE_TO_GATE` 的入站校验、按清单项显示�
 - 服务端 `ADMIT_ONLY_BOUND_TASK_TYPES`：同一轮里的 `WIRE_TO_GATE` 照常受理、在真车载端上走完一趟。
 - 车载端 `NEVER_INFER_UNBOUND_TASK_TYPE`：经 UIA 读 `TaskType`——只有计划、没有清单项时不显示任何任务类型；有清单项时
   只出现 `WIRE_TO_GATE` 那一种文案。按 `AutomationId` 读，按文字含义判（含「关卡」、不是「未知」），不比文案全文。
-- 车载端 `DISPLAY_ADMISSION_BLOCK_REASON` **不认领**：规格第 5.3 节把原因留在服务端，v2 没有生产者（program#125）。
+- 车载端 `DISPLAY_ADMISSION_BLOCK_REASON`：**v3 已从向量删除**（program#125，control-server#382）；规格第 5.3 节把原因留在服务端。
+  反向的「原因确实没有下发」照旧由本场景判（`admissionReasonNeverSentToTheVehicle`）。
 
 向量的 `stableErrorCode`（`ACTION_NOT_ALLOWED_IN_STATE`）是车载端对不可做动作的应答码，本场景里车载端从没被要求做
 `STAGING_TO_WIRE` 的任何动作，所以没有它可判；判的是「它根本没被下发」。
