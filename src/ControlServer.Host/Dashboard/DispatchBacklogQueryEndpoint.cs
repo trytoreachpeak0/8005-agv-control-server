@@ -89,6 +89,13 @@ internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
                 "同一份 MES 快照里这个批次同时命中了不止一种任务类型，这个批次的需求都先不派，请到 MES 核对数据",
             [DemandReleaseReasons.Released] =
                 "这条需求已从原来的车上释放，正在等改派给别的车",
+            // 批次8-20（control-server#391，REQ-0204）：公共站点同时只由一台车占用或预占。都是正常调度的结论，那辆车离开后再派。
+            [DispatchReasonCodes.FixedTaskStationReservedByOtherVehicle] =
+                "这条需求的公共站点（如派工待送站）已被另一台车预占、正在前往，等它到站并离开后再派",
+            [DispatchReasonCodes.FixedTaskStationOccupiedByOtherVehicle] =
+                "这条需求的公共站点（如派工待送站）上正停着另一台车，等它离开后再派",
+            [DispatchReasonCodes.FixedTaskStationApproachedByOtherVehicle] =
+                "这条需求的公共站点正是另一台车的下一站、它还在等这个站空出来，等它到站并离开后再派",
         };
 
     private readonly TimeProvider _clock;

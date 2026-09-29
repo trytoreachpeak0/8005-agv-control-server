@@ -358,6 +358,10 @@ jobs:
               # control-server#388, specification 5.4 and 8.3 batch-8: two vehicles and one registered waiting point, and the
               # server refuses to start before it listens, naming both counts; nothing is accepted and no order is created.
               @{ Name = 'waiting-points-fewer-than-vehicles-refuses-start'; Runs = 1; BatchId = 'batch-8' }
+              # control-server#391, REQ-0204 revised: a public station is held by one vehicle at a time. A vehicle heading
+              # for a held gate goes on and is given it once released; a second demand at the staging station is not taken
+              # while another vehicle holds it, and is taken only after that vehicle leaves on departure evidence.
+              @{ Name = 'fixed-station-single-occupancy'; Runs = 1; BatchId = 'batch-8' }
           )
           # One run's usual length in seconds, for dealing scenarios out to lanes longest first. Medians of 31
           # CI jobs from 2026-09-17 (ci-research, control-server#130); normal-load's excludes the build it used

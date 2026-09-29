@@ -49,8 +49,13 @@ public sealed partial class JourneyRuntimeEngine(
     ForeignOrders.ForeignRunningOrderSupervisor foreignOrders,
     IOptions<JourneyRuntimeOptions> options,
     TimeProvider timeProvider,
-    ILogger<JourneyRuntimeEngine> logger)
+    ILogger<JourneyRuntimeEngine> logger,
+    FixedStationSweepWarnings? fixedStationWarnings = null)
 {
+    // control-server#391: the fixed task station sweep's open warnings outlive the per-round engine (the host registers
+    // them as a singleton); an engine built without them keeps its own.
+    private readonly FixedStationSweepWarnings _fixedStationWarnings = fixedStationWarnings ?? new FixedStationSweepWarnings();
+
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private static readonly Action<ILogger, string, string, string, string, string, string, Exception?> LogUnloadOrderFallback =
         LoggerMessage.Define<string, string, string, string, string, string>(
@@ -475,6 +480,18 @@ public sealed partial class JourneyRuntimeEngine(
         // vehicle of ours this round holds that vehicle this round. Not behind the Map catalog read: cancelling an order that
         // is not ours does not depend on the Map.
         await SuperviseForeignOrdersAsync(cancellationToken).ConfigureAwait(false);
+        // control-server#391 (REQ-0204): a public station whose holder has left it on evidence is freed, and then given to a
+        // vehicle already heading for it without a reservation, before this round dispatches anything against it -- that
+        // vehicle comes before any new task. Not behind the Map catalog read: departure is read off RIoT's vehicle position,
+        // and which stations are public off the Map's active binding set.
+        FixedStationExclusivitySweep fixedStationSweep = new(dbContext, vehicleFacts, timeProvider, logger, _fixedStationWarnings);
+        await fixedStationSweep.ReleaseDepartedAsync(cancellationToken).ConfigureAwait(false);
+        TaskTypeStationBindingSetVersion? publicStationBindings = await _taskTypeStations.Bindings
+            .ReadActiveAsync(runtimeOptions.MapId, cancellationToken).ConfigureAwait(false);
+        await fixedStationSweep.ReserveApproachingAsync(
+                (publicStationBindings?.Bindings ?? []).Select(binding => binding.StationRiotId).ToHashSet(),
+                cancellationToken)
+            .ConfigureAwait(false);
         // control-server#186: a Map renamed under the same mapId holds every task type bound on it, before this round's
         // fixed station view reads the holds. Not behind the station catalog read: the two reads fail independently.
         await ObserveMapNamesAsync(cancellationToken).ConfigureAwait(false);
@@ -1086,6 +1103,10 @@ public sealed partial class JourneyRuntimeEngine(
                     return;
                 }
                 await PublishPickupStateAsync(runtime, stops, session, holdingApplicable, cancellationToken).ConfigureAwait(false);
+                // REQ-0204（批次8-20，control-server#391）：到站可信了，这趟旅程在这个公共站点上的预占转为占用，与阶段前移同一次保存。
+                await FixedStationExclusivity.StageOccupyOnArrivalAsync(
+                        dbContext, runtime.MapId, stops.Current.StationRiotId, runtime.JourneyId, now, cancellationToken)
+                    .ConfigureAwait(false);
                 SetStage(runtime, JourneyRuntimeStage.AwaitingSublot, now);
                 break;
             case JourneyRuntimeStage.AwaitingSublot:
@@ -1511,6 +1532,11 @@ public sealed partial class JourneyRuntimeEngine(
                     await NameCheckpointWaitAsync(runtime, cancellationToken).ConfigureAwait(false);
                     return;
                 }
+                // REQ-0204（批次8-20，control-server#391）：到站可信了就转占用，不等卸货准入——车已经站在那里。暂存，随这次推进的保存落库，
+                // 下面准入挂住那条路径的保存也带上它。
+                await FixedStationExclusivity.StageOccupyOnArrivalAsync(
+                        dbContext, runtime.MapId, stops.Current.StationRiotId, runtime.JourneyId, now, cancellationToken)
+                    .ConfigureAwait(false);
                 if (!await UnloadAdmittedAsync(runtime, stops, cancellationToken).ConfigureAwait(false))
                 {
                     // The first hold stores when the wait began, in this same save as the hold itself, so a crash leaves
