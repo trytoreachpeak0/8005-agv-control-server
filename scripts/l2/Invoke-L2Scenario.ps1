@@ -664,12 +664,18 @@ try {
     # AllowedTaskTypes means the vehicle may take no task at all, and an empty Zones means it
     # serves none. Both are read from the same single-vehicle fields the server would otherwise
     # derive its one entry from, so the fleet runs the configuration the single vehicle ran.
+    #
+    # FleetAllowedTaskTypes (control-server#391) widens every vehicle's AllowedTaskTypes past WIRE_TO_GATE, for a fleet
+    # scenario about STAGING_TO_WIRE. Absent, every fleet vehicle takes WIRE_TO_GATE alone, as it always has.
+    $fleetAllowedTaskTypes = @(if ($setup.ContainsKey('FleetAllowedTaskTypes')) { $setup.FleetAllowedTaskTypes } else { 'WIRE_TO_GATE' })
     if ($fleet.Count -gt 1) {
         for ($index = 0; $index -lt $fleet.Count; $index++) {
             $serverEnvironment["JourneyRuntime__Fleet__${index}__AgvId"] = $fleet[$index].AgvId
             $serverEnvironment["JourneyRuntime__Fleet__${index}__VehicleKey"] = $fleet[$index].VehicleKey
             $serverEnvironment["JourneyRuntime__Fleet__${index}__AgvLifecycleGeneration"] = '1'
-            $serverEnvironment["JourneyRuntime__Fleet__${index}__AllowedTaskTypes__0"] = 'WIRE_TO_GATE'
+            for ($taskType = 0; $taskType -lt $fleetAllowedTaskTypes.Count; $taskType++) {
+                $serverEnvironment["JourneyRuntime__Fleet__${index}__AllowedTaskTypes__${taskType}"] = [string]$fleetAllowedTaskTypes[$taskType]
+            }
             $serverEnvironment["JourneyRuntime__Fleet__${index}__Zones__0"] = 'MAP-25-WIRE_TO_GATE'
         }
         $journal.Note("Fleet of $($fleet.Count): " +
