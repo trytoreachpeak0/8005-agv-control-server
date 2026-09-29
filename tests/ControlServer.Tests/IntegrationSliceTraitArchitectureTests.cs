@@ -202,6 +202,9 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["WaitingJourneyBatteryWatchTests"] = "control-server#273 the waiting journey watch: a vehicle standing waiting for a person has its battery read from RIoT, recorded and logged past a threshold, and nothing is ever sent to it; server log and the server's own rows only, no wire message",
             ["WaitingJourneyDashboardTests"] = "control-server#273 the dashboard's waiting journey card: read-only /api/dashboard/ over the server's own tables, nothing goes on the wire (spec 5.1 #10)",
             ["WaitingJourneyWatchMigrationTests"] = "cross-cutting migration guard for control-server#273's one migration and its back-fill of when journeys already waiting began to wait; hanging it off a slice would defer the guard with the slice",
+            ["WaitingPointFieldOpsTests"] = "batch 8 REQ-0289/REQ-0297 FieldOps waiting point verbs' process entry: arguments, JSON output, exit codes, read-only open (control-server#388); a controlled operations entry point, no wire message",
+            ["WaitingPointImportTests"] = "batch 8 REQ-0289/REQ-0297 whole-map import of the waiting point registration, versions, snapshot and audit, and existing reservations kept (control-server#388); a controlled operations entry point, no wire message",
+            ["WaitingPointStartupCheckTests"] = "batch 8 specification 5.4 the multi-vehicle startup refusal when waiting points cannot cover the fleet, and the eligibility predicate (control-server#388); 7.5 multi-vehicle execution, server-internal, no wire message",
         };
 
     /// <summary>

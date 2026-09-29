@@ -54,6 +54,7 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `in-transit-rebuild-stopped-person-rebuilds` | 合成 | **control-server#345（出口甲）**：本服务端自己的在途单被取消、同车重建，重建出来的单在窗口内又被取消而停住（`OWN_ORDER_REBUILD_STOPPED`）；没确认已查明原因的请求 409；署名、确认的 `REBUILD_STOPPED_ORDER` 200、停住的记录原行重开，引擎给同车同需求建第三张单；同一请求再来一次 `AlreadyDone`；全程没有订单命令或急停 | `evidence/cs345/`（修复前 `012c31b2` 红、修复后绿） |
 | `stop-ended-journey-continues` | 合成 | **control-server#324（program#86 v2 的 B 形态，上真车前）**：两条需求在两个取货站，甲装上车；车到第二站，合成车载端把乙的录入请求挂着不答，站点期限结束这一站，车带着甲的货持货等单——断言乙终结、旅程不收尾；车收到并确认这一站的空清单（号最大，作业会话与期限为 null）；迟到的扫码答 `SublotRejected` / `WORKLIST_REVISION_STALE`（`demandId` 空、号是空清单的号）；迟到的取消 `REJECTED` / `WORKLIST_REVISION_STALE`；关卡清单号在空清单之上、全程不重号；会话代全程不变。这个装置里甲、乙共用关卡卸货站，SEJ-05 判不出号冲突，号冲突由 L1 `WhenTheNextStopCarriesNoneOfTheEndedDemandsItStillStartsAboveTheEmptyWorklist` 守 | `evidence/cs324/`（修前 SEJ-02～05 红、修后 6/6） |
 | `real-onboard-rebuild-stopped-cargo-handoff` | **真的** | **control-server#345（交接衔接）**：装货提交、TO_GATE 单 FAILED（车静止在取货站，不急停）→ 光幕固定成「没挡住」模拟货没了 → 人工清除 → 快照显示仓空、重建停住 `OWN_ORDER_REBUILD_CARGO_NOT_IN_PLACE` → 人工重建 409、转交接 200、重复 `AlreadyDone` → 会话 `CARGO_HANDOFF_REQUIRED` → 车载端出「故障交接」入口，UIA 交接 → 需求终结、绑定了结、记录 `ENDED`、会话就绪 → 车接下一单。只覆盖取货站上静止时的故障（简化，不是遗漏） | `evidence/cs345/real-rig.md`（衔接 b 的变异红只落 `L2-RH-07/08`） |
+| `waiting-points-fewer-than-vehicles-refuses-start` | 合成（服务端不起来） | **control-server#388（批次8-17，规格 5.4）**：两台车只登记一个等待点，服务端在监听之前拒绝启动，日志写明车辆数、点数与 `import-waiting-points`；另等 15 秒库里没有受理、假 RIoT 没有建单 | `evidence/cs388/l2-waiting-points-refuses-start-2`（去掉启动校验的红：`evidence/cs388/red/l2-startup-check-removed`） |
 
 编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。三个是**红的**，各自的原因见文末：
 `load-result-requires-recovery-001`（第 6 条）、`real-onboard-clock-skew-001`（第 8 条）与
@@ -419,6 +420,39 @@ DispatchZoneParameters = @{
   `timeline.jsonl`；收尾快照多了 `db-DispatchZoneParameterVersions.json`、`db-DispatchZoneParameters.json` 与 `db-VehiclePurposeClaims.json`（control-server#387 起另有 `db-VehiclePurposeClaimRecords.json`）。
 - 预期服务端启动即拒绝的场景（`ExpectedStartupRefusal`）没有库可写，同时给 `DispatchZoneParameters` 直接报错。
 
+### 批次 8 的默认前置：多车场景每车一个等待点（control-server#388）
+
+批次8-17 起，`JourneyRuntime:Fleet` 多于一台车的服务端，只有在当前生效的等待点登记能给**每辆车各分一个**本图启用的等待点时才启动
+（规格 5.4；按二分图匹配算，白名单只对部分车开放时比总数严），否则以 `WAITING_POINTS_FEWER_THAN_VEHICLES` 拒绝启动。单车不校验。
+
+所以**经本编排器跑的每个 `Fleet` 场景，默认登记与车辆数相同的等待点**，既有场景的 `setup.psd1` 一个都不改：
+
+1. 假 RIoT 的地图上加站 214、215……，站名「等待点1」「等待点2」……（现场 26 号图上建的就是这几个号与名）。不替换站表的场景经命令行
+   合进默认站表；自带 `Stations` 的场景在整表替换时并进去（表里已有同号站时不覆盖）。这些站不是机台站、不绑任何任务类型，也不在路网节点表里。
+2. 服务端第一次启动之前，编排器用构建好的 `ControlServer.Host.exe --migrate-only` 迁移建库（迁移完即退出），再用**正式的**
+   `ControlServer.FieldOps import-waiting-points` 导入：CSV 与站点目录写在 stage 里，目录取自假 RIoT 的控制面快照（不计入
+   `mapStationReads`），`--map` 是本装置的图，`--fleet` 是全部车辆的 `VehicleKey`。导入走治理快照与业务审计，不是 L2 直写。
+3. 判据 `waiting-points-imported` 进 `timeline.jsonl`（值是登记版本号，附站号与覆盖）；收尾快照多了 `db-WaitingPointVersions.json`、
+   `db-WaitingPoints.json`、`db-WaitingPointVehicleScopes.json`。
+
+**默认登记的等待点不会让车移动。**本票之后服务端在运行时还不读登记（启动校验除外）；空闲返回与它的默认开关归批次8-18（control-server#389）。
+那张票打开空闲返回时，默认前置的等待点就是车会去的地方——届时要看这 8 个多车场景里有没有「车空着停在关卡」被当成前提的，
+以及中途整表替换站表（例如目录变化类场景）会把这几个站从实时目录里拿掉：判定函数 `WaitingPointEligibility.Judge` 对不在实时目录里的点说不接。
+
+场景要别的登记时写 `WaitingPoints` 键：
+
+| 取值 | 编排器做什么 |
+| --- | --- |
+| 不写 | `Fleet` 场景：每车一个（214 起）；单车场景：不登记 |
+| `$false` | 不登记。`Fleet` 场景的服务端因此拒绝启动，配 `ExpectServerStartupRefusal` 用 |
+| 整数 N（≥ 1） | 登记 N 个默认点，214 至 214+N-1 |
+| 列表 | 逐个写：`@{ StationId = 214; StationName = '等待点1'; Enabled = $true; VehicleScope = @('BROKERX-L2-0002') }`；站名缺省「等待点k」，`Enabled` 缺省 `$true`，`VehicleScope` 缺省为空（同图全部车辆） |
+
+- `ExpectServerStartupRefusal` 从本票起可以与 `Fleet` 同用（它只配置服务端与假 RIoT，不起对端）；与 `Dashboard`、`OnboardPeers`、
+  `ClockSkewMs`、`ProtocolFaultProxy` 仍然互斥。
+- 负向场景 `waiting-points-fewer-than-vehicles-refuses-start` 是 `Fleet` 两台车 + `WaitingPoints = 1`。
+- 辅助模块是 `L2WaitingPoints.psm1`。
+
 ### 批次 4 的辅助模块：`L2SlotGroups.psm1`
 
 与 `L2Change.psm1` 同样是单独一个文件，用的场景自己导入：
@@ -576,6 +610,11 @@ DispatchZoneParameters = @{
 两个键都在启动任何进程之前校验。键名与它们「近似」——只看字母数字、忽略大小写、编辑距离不超过 3，例如
 `DispatchZoneParameter`、`cargoHoldingTimeout`、`CargoHoldTimeout`——直接报错；只沾一个词的新键（后续票的
 `CargoHoldingYieldWindow` 之类）不受影响。
+
+下面这个键是批次 8 的（control-server#388），默认前置与写法见上面「批次 8 的默认前置：多车场景每车一个等待点」一节：
+
+- `WaitingPoints` —— 等待点登记。不写时 `Fleet` 场景每车一个、单车场景不登记；`$false` 不登记；整数是默认点的个数；列表逐个写站号、
+  站名、启用与白名单。在服务端第一次启动之前经 `--migrate-only` 与 FieldOps `import-waiting-points` 正式导入。
 
 下面四个键是批次 4 的仓位分组（control-server#71），默认前置见上面「派车场景的默认前置」。四个键的结构（仓号、字段名、键之间的组合规则，含
 `OnboardPeers` 各项自带的 `SlotStates`）都在启动任何进程之前校验，写错直接报错，而不是几分钟后表现成「一辆车也没派出去」；
