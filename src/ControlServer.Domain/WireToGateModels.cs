@@ -188,7 +188,8 @@ public sealed record CurrentStopWorklistProjection(
     long Revision,
     string? OperationSessionId,
     DateTimeOffset? StationDepartureDeadlineAt,
-    IReadOnlyList<CurrentStopWorklistItem> Items);
+    IReadOnlyList<CurrentStopWorklistItem> Items,
+    string? StopEndedReason);
 
 /// <summary>
 /// One leg of the plan the vehicle is shown.

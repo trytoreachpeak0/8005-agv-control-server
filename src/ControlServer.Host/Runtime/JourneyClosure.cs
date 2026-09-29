@@ -189,7 +189,7 @@ internal static class JourneyClosure
             ids[0],
             runtime.AgvId,
             session.SessionGeneration,
-            new CurrentStopWorklistProjection(closingStop.StationId, worklistRevision, null, null, []),
+            new CurrentStopWorklistProjection(closingStop.StationId, worklistRevision, null, null, [], null),
             endedAt,
             cancellationToken).ConfigureAwait(false);
         await OnboardJourneyPublisher.StageUpcomingStopPlanAsync(

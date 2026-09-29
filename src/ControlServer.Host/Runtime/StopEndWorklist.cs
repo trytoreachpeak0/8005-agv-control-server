@@ -116,7 +116,7 @@ internal static class StopEndWorklist
             messageId,
             runtime.AgvId,
             session.SessionGeneration,
-            new CurrentStopWorklistProjection(stop.StationId, revision, null, null, []),
+            new CurrentStopWorklistProjection(stop.StationId, revision, null, null, [], null),
             endedAt,
             cancellationToken).ConfigureAwait(false);
         // 这一站上已经落库、却没人答的扫码（引擎读收件箱与这把写锁之间到的，或输给了扫码前取消的），同一次改动里答过时。

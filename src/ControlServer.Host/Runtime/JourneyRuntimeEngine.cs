@@ -3853,7 +3853,8 @@ public sealed partial class JourneyRuntimeEngine(
                 item.Demand.WorkType,
                 // 协议这一栏说的是「在这个停靠上对这条需求做什么」：取货停靠装货，卸货停靠卸货。
                 stop.StopRole == JourneyStopRoles.Pickup ? "PICKUP" : "DROPOFF",
-                item.Membership.ExpectedBasketCount))]);
+                item.Membership.ExpectedBasketCount))],
+            StopEndedReason: null);
 
     // Likewise the only activePurpose this runtime can be in. CHARGING is batch 8, IDLE_RETURN is
     // batch 5, CLEARING_MAINTENANCE is deferred; a vehicle running this worker is carrying a demand.

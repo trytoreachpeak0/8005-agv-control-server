@@ -688,8 +688,13 @@ public sealed class OnboardJourneyPublisher(
             item.WorkType,
             item.StopRole,
             item.ExpectedBasketCount
-        })
+        }),
+        projection.StopEndedReason
     };
+
+    internal static void ValidateCurrentStopWorklist(CurrentStopWorklistProjection projection)
+    {
+    }
 
     private static object UpcomingStopPlanPayload(UpcomingStopPlanProjection projection) => new
     {

@@ -359,7 +359,8 @@ public sealed class ProtocolPayloadShapeArchitectureTests
                 "00000000-0000-4000-8000-000000000413",
                 new DateTimeOffset(2026, 9, 8, 9, 5, 0, TimeSpan.Zero),
                 [new CurrentStopWorklistItem(
-                    demandId, "SUBLOT-001|WIRE_TO_GATE", "SUBLOT-001", "WIRE_TO_GATE", "PICKUP", 2)]),
+                    demandId, "SUBLOT-001|WIRE_TO_GATE", "SUBLOT-001", "WIRE_TO_GATE", "PICKUP", 2)],
+                StopEndedReason: null),
             TestContext.Current.CancellationToken);
         await publisher.PublishUpcomingStopPlanAsync(
             "00000000-0000-4000-8000-000000000414",
