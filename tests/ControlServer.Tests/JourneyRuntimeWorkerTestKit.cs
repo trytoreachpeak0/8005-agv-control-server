@@ -560,24 +560,6 @@ internal static class JourneyRuntimeWorkerTestKit
             await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
-        /// <summary>
-        /// Sets the undefined <c>supportsBatchUnlock</c> capability flag to false, which is the
-        /// value Onboard ships and the value the protocol's own canonical example carries.
-        /// </summary>
-        public async Task ClearSupportsBatchUnlockAsync()
-        {
-            ProtocolInboxRow[] rows = await Context.ProtocolInbox
-                .Where(row => row.MessageType == "CapabilitySnapshot")
-                .ToArrayAsync(TestContext.Current.CancellationToken);
-            foreach (ProtocolInboxRow row in rows)
-            {
-                JsonObject root = JsonNode.Parse(row.RequestJson)!.AsObject();
-                root["payload"]!["supportsBatchUnlock"] = false;
-                row.RequestJson = root.ToJsonString(SerializerOptions);
-            }
-            await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
-        }
-
         public async Task KeepOnlyOneAvailableSlotAsync()
         {
             ProtocolInboxRow[] rows = await Context.ProtocolInbox
@@ -1402,7 +1384,6 @@ internal static class JourneyRuntimeWorkerTestKit
                     unlockOutputState = "RESET",
                     reasonCodes = Array.Empty<string>()
                 }),
-                supportsBatchUnlock = true,
                 onboardJournalFormatVersion = 1
             }, generation);
             await AddRawInboxAsync("SafetyStateSnapshot", new

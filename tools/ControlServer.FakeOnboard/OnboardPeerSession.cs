@@ -133,7 +133,6 @@ public sealed class OnboardPeerSession(
             activeSlotConfigurationVersion = state.ActiveSlotConfigurationVersion,
             activeSlotConfigurationFingerprint = state.ActiveSlotConfigurationFingerprint,
             slotStates = slotStateSeed.Render(),
-            supportsBatchUnlock = false,
             onboardJournalFormatVersion = 1
         }), cancellationToken).ConfigureAwait(false);
         await ReadRequiredAsync(reader, "SnapshotAppliedAck", cancellationToken).ConfigureAwait(false);
