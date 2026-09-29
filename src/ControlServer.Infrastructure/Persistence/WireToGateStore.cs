@@ -726,6 +726,11 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
             dbContext.AcceptedDemands.Add(NewAcceptedDemandRow(snapshot));
         }
 
+        // 追加之前的下一站（批次8-20，control-server#391）：只有追加改变了下一站，才是这次承诺让车以新的站为下一站。
+        string? nextStopBeforeAppend = StationYield.NextStop(
+                journey.Stage, await StationYield.StopsOfAsync(dbContext, plan.JourneyId, cancellationToken).ConfigureAwait(false))
+            ?.StopId;
+
         // 追加停靠与归属上的 id 同样取键（批次7-10，control-server#215），理由见 ToRuntimeRow。
         string key = demand.DerivationKeyFor(snapshot.DemandId);
         foreach (JourneyStopRow stop in await NewStopsAsync(key, plan, cancellationToken)
@@ -764,6 +769,18 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
             await StationYield.StageTriggerAsync(
                     dbContext, journey.VehicleKey, nextStop.StationRiotId, plan.AddedAt, cancellationToken)
                 .ConfigureAwait(false);
+            // REQ-0204（批次8-20，control-server#391）：追加把这条需求的公共站点排成了这辆车的下一站（车站在停靠上、新停靠
+            // 插在紧接着的位置），就在追加的同一次保存里预占它；别的车占着时主键拒绝，追加整笔回滚（下面的 catch）。
+            // 下一站没变（仍是追加之前那一个，包括新需求并进了它）时不取：那不是本次承诺的，本票不管已经承诺的。
+            if (demand.FixedTaskStationRiotId is int fixedStation &&
+                nextStop.StationRiotId == fixedStation &&
+                !string.Equals(nextStop.StopId, nextStopBeforeAppend, StringComparison.Ordinal))
+            {
+                await FixedStationExclusivity.StageReserveAsync(
+                        dbContext, demand.MapId, fixedStation, journey.VehicleKey, plan.JourneyId, plan.AddedAt,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
 
         JourneyBacklogRow? backlog = await dbContext.JourneyBacklog
@@ -775,7 +792,15 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
             backlog.LastSeenAt = snapshot.AcceptedAt;
         }
 
-        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (DbUpdateException failure) when (FixedStationExclusivity.IsStationHeld(failure))
+        {
+            throw new BusinessIdentityConflictException(
+                $"The fixed task station of appended demand '{snapshot.DemandId}' is held by another vehicle: {failure.InnerException?.Message}");
+        }
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -1131,6 +1156,16 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
             await StationYield.StageTriggerAsync(
                     dbContext, orderIntent.VehicleKey, journey.PickupStationRiotId, snapshot.AcceptedAt, cancellationToken)
                 .ConfigureAwait(false);
+            // REQ-0204（批次8-20，control-server#391）：新旅程的下一站是公共站点（STAGING_TO_WIRE 的派工待送取货站）时，
+            // 在同一次保存里预占它。别的车占着时主键拒绝整次保存，受理整笔回滚（下面的 catch）；WIRE_TO_GATE 的公共站点是
+            // 关卡，受理时它不是下一站，这里不取。
+            if (journey.FixedTaskStationRiotId is int fixedStation && fixedStation == journey.PickupStationRiotId)
+            {
+                await FixedStationExclusivity.StageReserveAsync(
+                        dbContext, journey.MapId, fixedStation, orderIntent.VehicleKey, runtimeRow.JourneyId,
+                        snapshot.AcceptedAt, cancellationToken)
+                    .ConfigureAwait(false);
+            }
             JourneyBacklogRow? backlog = await dbContext.JourneyBacklog
                 .SingleOrDefaultAsync(row => row.DemandId == snapshot.DemandId, cancellationToken)
                 .ConfigureAwait(false);
@@ -1151,6 +1186,13 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
             // acceptance back with it.
             throw new BusinessIdentityConflictException(
                 $"Vehicle '{orderIntent.VehicleKey}' is already claimed by another journey: {failure.InnerException?.Message}");
+        }
+        catch (DbUpdateException failure) when (FixedStationExclusivity.IsStationHeld(failure))
+        {
+            // Another vehicle holds the journey's public station (REQ-0204): the key refused the reservation, and the
+            // transaction rolls every row of this acceptance back with it.
+            throw new BusinessIdentityConflictException(
+                $"The fixed task station of demand '{snapshot.DemandId}' is held by another vehicle: {failure.InnerException?.Message}");
         }
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }

@@ -181,6 +181,19 @@ public static class DispatchReasonCodes
     public const string TransportDemandKeyAlreadyAccepted = "TRANSPORT_DEMAND_KEY_ALREADY_ACCEPTED";
 
     /// <summary>
+    /// 这条候选会让这辆车的下一站变成它的公共站点（<c>REQ-0204</c>，批次8-20，control-server#391），而那个站此刻被别的车预占着——
+    /// 别的车已被承诺前往、还没到。
+    /// </summary>
+    /// <remarks>归普通积压：那辆车到点、离开并满足离点证据之后就放了，这条需求那时再派。</remarks>
+    public const string FixedTaskStationReservedByOtherVehicle = "FIXED_TASK_STATION_RESERVED_BY_OTHER_VEHICLE";
+
+    /// <summary>
+    /// 同上，而那个站此刻被别的已到达的车占用着（<c>REQ-0204</c>，批次8-20，control-server#391）。
+    /// </summary>
+    /// <remarks>归普通积压，理由同上：占用在车离点之后释放。</remarks>
+    public const string FixedTaskStationOccupiedByOtherVehicle = "FIXED_TASK_STATION_OCCUPIED_BY_OTHER_VEHICLE";
+
+    /// <summary>
     /// The reasons that are a configured outcome rather than a problem: they reach the backlog and nothing
     /// else — no structural dispatch block, no alarm, no log at Warning or above.
     /// </summary>

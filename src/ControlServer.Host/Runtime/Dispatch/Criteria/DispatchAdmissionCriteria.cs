@@ -72,6 +72,8 @@ public static class DispatchAdmissionCriteria
             new AdmissionPolicyDriftCriterion(),
             new VehicleDynamicFactsCriterion(options),
             new StationTaskTypeAdmissionCriterion(store),
+            // REQ-0204（批次8-20，control-server#391）：别的车预占或占用着的公共站点不做这辆车的新下一站。
+            new FixedStationSingleOccupancyCriterion(dbContext),
             // Null is the idle vehicle's ledger, the session baseline -- what the host registers too.
             new SlotCapacityCriterion(boxCountReader, slotCapacityLogger, slotLedger ?? new SessionBaselineSlotLedger()),
         ];
@@ -114,7 +116,7 @@ public static class DispatchAdmissionCriteria
     {
         ArgumentNullException.ThrowIfNull(idleChain);
         List<IDispatchAdmissionCriterion> criteria =
-            [.. idleChain.Where(criterion => criterion is not VehicleDynamicFactsCriterion),
+            [.. idleChain.Where(criterion => criterion is not (VehicleDynamicFactsCriterion or FixedStationSingleOccupancyCriterion)),
              new InTransitVehicleFactsCriterion(options),
              // 批次7-07（control-server#212）：装货阶段结束的车不再接追加。不依赖路网，所以不跟着下面那一条的条件走。
              new LoadingPhaseOpenCriterion()];
@@ -122,6 +124,10 @@ public static class DispatchAdmissionCriteria
         {
             criteria.Add(new EnRouteAppendCriterion(routeGraph));
         }
+
+        // 公共站点单车位（批次8-20，control-server#391）与装货阶段同序（99），挪到它后面：同序按这张表的先后跑，装货阶段已结束的车
+        // 要报的是 LOADING_PHASE_CLOSED。
+        criteria.AddRange(idleChain.OfType<FixedStationSingleOccupancyCriterion>());
 
         return criteria;
     }
@@ -148,6 +154,7 @@ public static class DispatchAdmissionCriteria
         services.AddScoped<IDispatchAdmissionCriterion, AdmissionPolicyDriftCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, VehicleDynamicFactsCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, StationTaskTypeAdmissionCriterion>();
+        services.AddScoped<IDispatchAdmissionCriterion, FixedStationSingleOccupancyCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, RouteGraphReachabilityCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, PreCreateGateCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, SlotCapacityCriterion>();

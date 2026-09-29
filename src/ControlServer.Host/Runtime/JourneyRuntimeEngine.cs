@@ -475,6 +475,11 @@ public sealed partial class JourneyRuntimeEngine(
         // vehicle of ours this round holds that vehicle this round. Not behind the Map catalog read: cancelling an order that
         // is not ours does not depend on the Map.
         await SuperviseForeignOrdersAsync(cancellationToken).ConfigureAwait(false);
+        // control-server#391 (REQ-0204): a public station whose holder has left it on evidence is freed before anything this
+        // round reserves or dispatches against it. Not behind the Map catalog read: departure is read off RIoT's vehicle
+        // position, not the Map.
+        await new FixedStationDepartureRelease(dbContext, vehicleFacts, timeProvider, logger)
+            .ReleaseDepartedAsync(cancellationToken).ConfigureAwait(false);
         // control-server#186: a Map renamed under the same mapId holds every task type bound on it, before this round's
         // fixed station view reads the holds. Not behind the station catalog read: the two reads fail independently.
         await ObserveMapNamesAsync(cancellationToken).ConfigureAwait(false);
@@ -1086,6 +1091,10 @@ public sealed partial class JourneyRuntimeEngine(
                     return;
                 }
                 await PublishPickupStateAsync(runtime, stops, session, holdingApplicable, cancellationToken).ConfigureAwait(false);
+                // REQ-0204（批次8-20，control-server#391）：到站可信了，这趟旅程在这个公共站点上的预占转为占用，与阶段前移同一次保存。
+                await FixedStationExclusivity.StageOccupyOnArrivalAsync(
+                        dbContext, runtime.MapId, stops.Current.StationRiotId, runtime.JourneyId, now, cancellationToken)
+                    .ConfigureAwait(false);
                 SetStage(runtime, JourneyRuntimeStage.AwaitingSublot, now);
                 break;
             case JourneyRuntimeStage.AwaitingSublot:
@@ -1511,6 +1520,11 @@ public sealed partial class JourneyRuntimeEngine(
                     await NameCheckpointWaitAsync(runtime, cancellationToken).ConfigureAwait(false);
                     return;
                 }
+                // REQ-0204（批次8-20，control-server#391）：到站可信了就转占用，不等卸货准入——车已经站在那里。暂存，随这次推进的保存落库，
+                // 下面准入挂住那条路径的保存也带上它。
+                await FixedStationExclusivity.StageOccupyOnArrivalAsync(
+                        dbContext, runtime.MapId, stops.Current.StationRiotId, runtime.JourneyId, now, cancellationToken)
+                    .ConfigureAwait(false);
                 if (!await UnloadAdmittedAsync(runtime, stops, cancellationToken).ConfigureAwait(false))
                 {
                     // The first hold stores when the wait began, in this same save as the hold itself, so a crash leaves
