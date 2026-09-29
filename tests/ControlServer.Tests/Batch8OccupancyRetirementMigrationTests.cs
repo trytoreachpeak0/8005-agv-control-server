@@ -25,6 +25,10 @@ namespace ControlServer.Tests;
 /// </remarks>
 public sealed class Batch8OccupancyRetirementMigrationTests
 {
+    /// <summary>
+    /// This migration by its full name. The tests that assert what it leaves migrate to it rather than to the latest:
+    /// batch 9 (control-server#399) follows it with tables and columns of its own.
+    /// </summary>
     internal const string Migration = "20260929070322_Batch8RetireOldVehicleOccupancy";
 
     private static readonly string[] RetiredNames =
@@ -42,7 +46,7 @@ public sealed class Batch8OccupancyRetirementMigrationTests
         Assert.Equal(4, rowsBefore["VehicleDispatchLeases"].Length);
         Assert.Empty(rowsBefore["VehiclePurposeClaimRecords"]);
 
-        await fixture.Context.Database.MigrateAsync(Token);
+        await fixture.Context.GetService<IMigrator>().MigrateAsync(Migration, Token);
 
         Dictionary<string, string[]> columnsAfter = await ColumnsOfEveryTableAsync(fixture.Connection);
         Assert.Equal(["VehicleDispatchLeases"], columnsBefore.Keys.Except(columnsAfter.Keys));
@@ -146,14 +150,14 @@ public sealed class Batch8OccupancyRetirementMigrationTests
     {
         await using Batch7JourneyFixture fixture = await SeededAsync();
         await ExecuteAsync(fixture.Connection, "DELETE FROM VehiclePurposeClaims WHERE JourneyId = 'journey:D-2'");
-        await Assert.ThrowsAsync<SqliteException>(() => fixture.Context.Database.MigrateAsync(Token));
+        await Assert.ThrowsAsync<SqliteException>(() => fixture.Context.GetService<IMigrator>().MigrateAsync(Migration, Token));
 
         // What a person does after finding out why: here, the vehicle is known to be free, so the lease is released.
         await ExecuteAsync(
             fixture.Connection,
             "UPDATE VehicleDispatchLeases SET ReleasedAt = '2026-09-19 09:30:00+00:00' WHERE JourneyId = 'journey:D-2'");
         await fixture.RenewContextAsync();
-        await fixture.Context.Database.MigrateAsync(Token);
+        await fixture.Context.GetService<IMigrator>().MigrateAsync(Migration, Token);
 
         Assert.Equal(Migration, (await fixture.Context.Database.GetAppliedMigrationsAsync(Token)).Last());
         Assert.Contains(
@@ -253,7 +257,7 @@ public sealed class Batch8OccupancyRetirementMigrationTests
                   AND NOT EXISTS (SELECT 1 FROM VehiclePurposeClaims AS c WHERE c.JourneyId = j.JourneyId)
                 """));
 
-        await fixture.Context.Database.MigrateAsync(Token);
+        await fixture.Context.GetService<IMigrator>().MigrateAsync(Migration, Token);
 
         Assert.Equal(Migration, (await fixture.Context.Database.GetAppliedMigrationsAsync(Token)).Last());
     }

@@ -127,7 +127,11 @@ public sealed class SlotConfigurationVersionLineArchitectureTests
             ["ControlServer.Infrastructure.Persistence.TaskTypeStationBindingStore"] = LineRole.AnotherLine,
             ["ControlServer.Infrastructure.Persistence.TaskTypeStationRuleStore"] = LineRole.AnotherLine,
             // control-server#386: the waiting point registration, one line.
-            ["ControlServer.Infrastructure.Persistence.WaitingPointRegistry"] = LineRole.AnotherLine
+            ["ControlServer.Infrastructure.Persistence.WaitingPointRegistry"] = LineRole.AnotherLine,
+            // control-server#399: the charger roster and the charging policy, one line each (their own GovernedObjectKind
+            // and object id, numbered from 1 by their own version tables), neither on ActiveSlotConfiguration's.
+            ["ControlServer.Infrastructure.Persistence.ChargerRosterStore"] = LineRole.AnotherLine,
+            ["ControlServer.Infrastructure.Persistence.ChargingPolicyStore"] = LineRole.AnotherLine
         };
 
     private enum LineRole

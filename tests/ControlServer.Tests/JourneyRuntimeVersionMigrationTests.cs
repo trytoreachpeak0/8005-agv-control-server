@@ -81,8 +81,11 @@ public sealed class JourneyRuntimeVersionMigrationTests
     public async Task MigratingDownDropsTheColumnAndMigratingUpAgainLeavesEveryOtherColumnTheSame()
     {
         await using Batch7JourneyFixture fixture = await SeededAtThePreviousMigrationAsync();
+        // The columns the previous migration left, read before migrating up: later migrations append their own columns
+        // too (control-server#399), and migrating down to the previous one takes those away as well.
+        string[] oldColumns = await ColumnsAsync(fixture.Connection);
+        Assert.DoesNotContain("Version", oldColumns);
         await fixture.Context.Database.MigrateAsync(Token);
-        string[] oldColumns = [.. (await ColumnsAsync(fixture.Connection)).Where(column => column != "Version")];
         string[] after = await DumpAsync(fixture.Connection, oldColumns);
 
         await fixture.Context.GetService<IMigrator>().MigrateAsync(PreviousMigration, Token);

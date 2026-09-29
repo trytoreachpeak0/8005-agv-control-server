@@ -2982,6 +2982,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         AgvLifecycleGeneration = intent.AgvLifecycleGeneration,
         DispatchGeneration = intent.DispatchGeneration,
         CreatedAt = intent.CreatedAt,
+        OrderShape = intent.OrderShape,
         DispatchAuditVersion = 1,
         DispatchAuditSequence = 0,
         CreateAttemptCount = 0
@@ -2998,7 +2999,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         row.MapId,
         row.DestinationStationId,
         row.AgvLifecycleGeneration,
-        row.DispatchGeneration);
+        row.DispatchGeneration,
+        row.OrderShape);
 
     private static bool Matches(OrderIntentRow row, OrderIntent intent) =>
         row.MovementLegId == intent.MovementLegId &&
@@ -3011,6 +3013,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         row.DestinationStationId == intent.DestinationStationId &&
         row.AgvLifecycleGeneration == intent.AgvLifecycleGeneration &&
         row.DispatchGeneration == intent.DispatchGeneration &&
+        row.OrderShape == intent.OrderShape &&
         row.CreatedAt == intent.CreatedAt;
 
     private static bool Matches(JourneyRuntimeRow row, JourneyExecutionPlan journey) =>
