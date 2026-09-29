@@ -1,0 +1,48 @@
+# L2 场景证据：fixed-station-single-occupancy
+
+结论：**FAIL**
+
+## 身份
+
+| 项 | 值 |
+| --- | --- |
+| runId | `20260929T133323926Z` |
+| agvId | `AGV-L2-001` |
+| batchId | `batch-8` |
+| controlServerCommit | `9cb83eae9a024ecc3edcdfaebf582a44d5e7c2aa` |
+| fleet | `AGV-L2-001/BROKERX-L2-0001, AGV-L2-002/BROKERX-L2-0002` |
+| protocolReleaseIdentity.repository | `8005-agv-protocol` |
+| protocolReleaseIdentity.releaseVersion | `2.0.0` |
+| protocolReleaseIdentity.tag | `protocol-v2.0.0` |
+| protocolReleaseIdentity.commit | `86575456c847041515b7b75e8851a00e0d939804` |
+| protocolReleaseIdentity.protocolVersion | `3` |
+| protocolReleaseIdentity.profileId | `AGV_FULL_PRODUCT` |
+| protocolReleaseIdentity.manifestSha256 | `4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7` |
+| protocolReleaseIdentity.schemaBundleSha256 | `9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221` |
+| protocolReleaseIdentity.vectorsSha256 | `391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a` |
+| protocolReleaseIdentity.approvalStatus | `APPROVED_RELEASE` |
+| rig | `SyntheticOnboard` |
+| stageRoot | `C:\Users\szy\AppData\Local\Temp\l2-20260929T133323926Z` |
+| vehicleKey | `BROKERX-L2-0001` |
+
+## 判据
+
+| 判据 | 结论 | 期望 | 实际 |
+| --- | --- | --- | --- |
+| 两条 WIRE_TO_GATE 需求落在两台不同的车上，受理时关卡都不是它们的下一站、没有任何独占行 | PASS | `two vehicles, no row at 210` | `A=BROKERX-L2-0001 B=BROKERX-L2-0002, row at 210:` |
+| A 装完后关卡成了它的下一站、被补预占给 A；到关卡后转占用，卸完车还停在那里仍是占用 | PASS | `BROKERX-L2-0001 OCCUPIED at 210` | `BROKERX-L2-0001 OCCUPIED` |
+| B 装完时关卡被 A 占着：B 照常出发（AwaitingGateArrival、没有阻断码），关卡仍是 A 的 | PASS | `B AwaitingGateArrival, gate held by BROKERX-L2-0001` | `B AwaitingGateArrival block=, gate held by BROKERX-L2-0001` |
+| A 离开关卡、凭离点证据释放之后，下一轮补预占把关卡给 B（RESERVED），B 的预占不早于 A 的释放 | PASS | `B RESERVED at 210 at or after A's DEPARTED_STATION release` | `held: BROKERX-L2-0002 RESERVED; A released 2026-09-29 13:36:09.6434581+00:00 (DEPARTED_STATION); B reserved 2026-09-29 13:36:09.6533994+00:00` |
+| 第一条 STAGING_TO_WIRE 受理即预占派工待送站，持有者是接它的那台车那一趟 | FAIL | `BROKERX-L2-0001 RESERVED FIXED_TASK_STATION` | `` |
+| H 占着派工待送站的整段时间里（在途预占、到站占用、下达离站订单之后），同站的第二条需求一直没被接走 | FAIL | `not accepted; 305 held by BROKERX-L2-0001 OCCUPIED after the departure order` | `accepted while reserved: 2026-09-29 13:36:13.7283946+00:00; while occupied: 2026-09-29 13:36:13.7283946+00:00; held BROKERX-L2-0001 OCCUPIED` |
+| H 到了机台、凭离点证据释放派工待送站之后，第二条需求才被接走（受理时刻不早于释放时刻） | FAIL | `accepted at or after H's DEPARTED_STATION release` | `accepted 2026-09-29 13:36:13.7283946+00:00; H released  ()` |
+
+## 目录内容
+
+- `assertions.json` —— 机器可读的判据结论
+- `timeline.jsonl` —— 一行一次判据翻转，只追加
+- `logs/` —— 每个组件的 stdout 与 stderr
+- `snapshots/` —— 收尾时各控制面与服务端数据库的快照
+
+L2 PASS 只证明服务端在假 RIoT、假 MesIngest 与合成车载端下的跨端时序，
+**不代表真实 RCS、真车、真实 IO 模块或接线合格**。
