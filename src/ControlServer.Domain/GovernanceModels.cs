@@ -26,7 +26,16 @@ public enum GovernedObjectKind
     DispatchZoneParameters,
 
     /// <summary>等待点登记（含 <c>WaitingPointVehicleScope</c> 白名单），整张登记一个版本（REQ-0289；批次 8 建表票 control-server#386）。</summary>
-    WaitingPointRegistration
+    WaitingPointRegistration,
+
+    /// <summary>
+    /// 8005 独占充电桩名册（含每桩的车辆候选子集），整张名册一个版本；零条目的版本合法，即「名册置空」（REQ-0171；批次 9 建表票
+    /// control-server#399）。
+    /// </summary>
+    ChargerRoster,
+
+    /// <summary><c>ChargingPolicyVersion</c> 的内容（三个阈值、耗电估计、无进展观察策略、适用车辆），一版一份（REQ-0281、REQ-0282；control-server#399）。</summary>
+    ChargingPolicy
 }
 
 /// <summary>

@@ -174,6 +174,7 @@ builder.Services.AddGovernance(builder.Configuration);
 builder.Services.AddTaskTypeStations();
 builder.Services.AddMultiDemandJourneys();
 builder.Services.AddVehiclePurposes();
+builder.Services.AddCharging();
 builder.Services.AddPlanRevision();
 
 WebApplication app = builder.Build();
