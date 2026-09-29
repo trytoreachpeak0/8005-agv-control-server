@@ -312,6 +312,9 @@ public static class StructuralDispatchClassification
         Backlog(DispatchReasonCodes.FixedTaskStationOccupiedByOtherVehicle, FixedStationSingleOccupancy,
             "control-server#391, REQ-0204: the same, with the other vehicle already standing at the station. Its departure " +
             "evidence releases it; a vehicle standing there itself is not refused, so the demand is not stranded."),
+        Backlog(DispatchReasonCodes.FixedTaskStationApproachedByOtherVehicle, FixedStationSingleOccupancy,
+            "control-server#391, REQ-0204: no one holds the station yet, but another vehicle has it as its next stop and is " +
+            "waiting for the per-round reservation to give it to it. Its departure evidence frees it in turn."),
 
         // ---- written by the engine after the chain ------------------------------------------------------
         Backlog("FINAL_DYNAMIC_FACTS_NOT_READY", null, "The pre-intake re-read of this vehicle's facts failed."),

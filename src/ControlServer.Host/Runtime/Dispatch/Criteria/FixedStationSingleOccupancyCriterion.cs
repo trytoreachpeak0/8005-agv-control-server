@@ -54,7 +54,13 @@ public sealed class FixedStationSingleOccupancyCriterion(ControlServerDbContext 
             .ConfigureAwait(false);
         if (held is null)
         {
-            return DispatchAdmissionChain.Eligible;
+            // 没有行也可能有持有者：一辆车在推进里把这个站排成了下一站、还没取得预占（离站时站被占着，它照常出发，调度 2026-09-29 定）。
+            // 它等着引擎每轮开头的补预占（FixedStationExclusivitySweep），站一放就先给它；这里把它当持有者，新任务不能抢它正开往的站。
+            return (await FixedStationExclusivitySweep.ApproachingAsync(
+                    dbContext, new HashSet<int> { nextStation }, evaluation.Vehicle.VehicleKey, cancellationToken)
+                .ConfigureAwait(false)).Count > 0
+                ? DispatchReasonCodes.FixedTaskStationApproachedByOtherVehicle
+                : DispatchAdmissionChain.Eligible;
         }
 
         // 同一个 (MapId, StationId) 不会既是等待点又是公共站点：批次8-17（control-server#388）的导入已拒绝，这里不再校验那条，只断言。

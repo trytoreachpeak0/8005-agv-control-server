@@ -194,6 +194,13 @@ public static class DispatchReasonCodes
     public const string FixedTaskStationOccupiedByOtherVehicle = "FIXED_TASK_STATION_OCCUPIED_BY_OTHER_VEHICLE";
 
     /// <summary>
+    /// 同上，而那个站此刻没有独占行，但别的车正开往它、还没取得预占（<c>REQ-0204</c>，批次8-20，control-server#391）：那辆车在推进里
+    /// 把它排成了下一站，离站时站被占着就照常出发，等每轮开头的补预占。
+    /// </summary>
+    /// <remarks>归普通积压：那辆车到点、离开之后就放了。</remarks>
+    public const string FixedTaskStationApproachedByOtherVehicle = "FIXED_TASK_STATION_APPROACHED_BY_OTHER_VEHICLE";
+
+    /// <summary>
     /// The reasons that are a configured outcome rather than a problem: they reach the backlog and nothing
     /// else — no structural dispatch block, no alarm, no log at Warning or above.
     /// </summary>

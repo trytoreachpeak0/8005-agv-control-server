@@ -325,6 +325,92 @@ public sealed class Batch8FixedStationSingleOccupancyTests
         Assert.Equal(StationExclusivityStates.Reserved, (await HeldAsync(fixture))!.State);
     }
 
+    // ---- 正开往公共站点、还没预占的车（调度 2026-09-29 定：照常出发，判据算它占着，每轮补预占） ----------------------
+
+    /// <summary>
+    /// A 占着关卡；B 站在最后一个取货停靠上，下一站就是关卡，还没预占（离站时取不到就照常出发）。新任务 C（下一站会是关卡）被挡；
+    /// B 的旅程不受任何影响。A 离点释放之后：C 仍被挡——这时没有行，是 B 正开往它；下一轮补预占把关卡给 B，C 被 B 的预占挡住。
+    /// </summary>
+    /// <remarks>
+    /// <c>WIRE_TO_GATE</c> 的新任务不会让关卡成为下一站（关卡排在取货之后），所以 C 是直接对判据构造的一条「下一站是关卡」的候选：
+    /// 这条用例证的是持有者的认定——行、以及没有行时正开往它的车——与新任务是什么类型无关。<c>STAGING_TO_WIRE</c> 的派工待送站上，
+    /// 这正是一条同站新需求。
+    /// </remarks>
+    [Fact]
+    public async Task AVehicleHeadingForAHeldPublicStationGoesOnHoldsItAgainstNewTasksAndIsGivenItOnceReleased()
+    {
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        string holder = JourneyIdentity.ForAnchorDemand(DemandA);
+        await new StationExclusivityStore(fixture.Context).TryAcquireAsync(
+            new StationExclusivityRequest(
+                25, 202, StationExclusivityKinds.FixedTaskStation, StationExclusivityStates.Occupied, null),
+            KeyA, holder, At, Token);
+        await SeedHolderAsync(fixture, pickup: 101, fixedStation: 202, demandId: DemandB, agvId: AgvB, vehicleKey: KeyB);
+        JourneyRuntimeRow before = await fixture.NewContext().JourneyRuntimes.AsNoTracking()
+            .SingleAsync(row => row.DemandId == DemandB, Token);
+
+        await Sweep(fixture.Context).ReserveApproachingAsync(new HashSet<int> { 202 }, Token);
+        Assert.Equal(KeyA, (await HeldAtAsync(fixture, 202))!.VehicleKey);
+        JourneyRuntimeRow after = await fixture.NewContext().JourneyRuntimes.AsNoTracking()
+            .SingleAsync(row => row.DemandId == DemandB, Token);
+        Assert.Equal((before.Stage, before.BlockReasonCode), (after.Stage, after.BlockReasonCode));
+        Assert.Equal(
+            DispatchReasonCodes.FixedTaskStationOccupiedByOtherVehicle,
+            await new FixedStationSingleOccupancyCriterion(fixture.NewContext()).EvaluateAsync(IdleOnto(202, "KEY-C"), Token));
+
+        Assert.True(await new StationExclusivityStore(fixture.NewContext()).ReleaseAsync(
+            25, 202, holder, At.AddMinutes(1), FixedStationExclusivity.ReleasedOnDepartureEvidence, Token));
+        Assert.Equal(
+            DispatchReasonCodes.FixedTaskStationApproachedByOtherVehicle,
+            await new FixedStationSingleOccupancyCriterion(fixture.NewContext()).EvaluateAsync(IdleOnto(202, "KEY-C"), Token));
+
+        await fixture.RenewContextAsync();
+        await Sweep(fixture.Context).ReserveApproachingAsync(new HashSet<int> { 202 }, Token);
+        StationExclusivity given = (await HeldAtAsync(fixture, 202))!;
+        Assert.Equal(
+            (KeyB, JourneyIdentity.ForAnchorDemand(DemandB), StationExclusivityStates.Reserved),
+            (given.VehicleKey, given.JourneyId, given.State));
+        Assert.Equal(
+            DispatchReasonCodes.FixedTaskStationReservedByOtherVehicle,
+            await new FixedStationSingleOccupancyCriterion(fixture.NewContext()).EvaluateAsync(IdleOnto(202, "KEY-C"), Token));
+    }
+
+    /// <summary>
+    /// 崩溃点：补预占那次保存出错（注入在独占行的 INSERT 上）。不留半截——没有独占行，也没有开着的经过；下一轮照常补上。
+    /// </summary>
+    [Fact]
+    public async Task AFailureWritingTheCatchUpReservationLeavesNothingAndTheNextRoundTakesIt()
+    {
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        await SeedHolderAsync(fixture, pickup: 101, fixedStation: 202, demandId: DemandB, agvId: AgvB, vehicleKey: KeyB);
+        FailingInsertInterceptor failing = new("\"StationExclusivities\"");
+        await using ControlServerDbContext injected = fixture.NewContext(failing);
+
+        await Sweep(injected).ReserveApproachingAsync(new HashSet<int> { 202 }, Token);
+
+        Assert.True(failing.Fired, "The injection never reached the reservation's insert, so it proves nothing.");
+        await using ControlServerDbContext read = fixture.NewContext();
+        Assert.Empty(await read.Set<StationExclusivityRow>().AsNoTracking().ToArrayAsync(Token));
+        Assert.Empty(await read.Set<StationExclusivityRecordRow>().AsNoTracking().ToArrayAsync(Token));
+        Assert.False(injected.ChangeTracker.HasChanges(), "The failed reservation stayed staged for the round's next save.");
+
+        await Sweep(fixture.NewContext()).ReserveApproachingAsync(new HashSet<int> { 202 }, Token);
+        Assert.Equal(KeyB, (await HeldAtAsync(fixture, 202))!.VehicleKey);
+    }
+
+    /// <summary>车不开往公共站点（下一站是机台）时不补；站不在公共站点集合里时也不补。</summary>
+    [Fact]
+    public async Task OnlyAVehicleWhoseNextStopIsAPublicStationIsGivenACatchUpReservation()
+    {
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        await AcceptAsync(fixture.Context, DemandB, AgvB, KeyB, pickup: 101, fixedStation: 202);
+        await fixture.RenewContextAsync();
+
+        await Sweep(fixture.Context).ReserveApproachingAsync(new HashSet<int> { 202 }, Token);
+        Assert.Null(await HeldAtAsync(fixture, 202));
+        Assert.Null(await HeldAtAsync(fixture, 101));
+    }
+
     // ---- 第 4 条：与让站的关系 --------------------------------------------------------------------------
 
     /// <summary>
@@ -389,10 +475,16 @@ public sealed class Batch8FixedStationSingleOccupancyTests
     }
 
     /// <summary>车 A 站在取货停靠上持货等单，它的取货站是 <paramref name="pickup"/>；公共站点的话它占用着。</summary>
-    private static async Task SeedHolderAsync(Batch7JourneyFixture fixture, int pickup, int fixedStation)
+    private static async Task SeedHolderAsync(
+        Batch7JourneyFixture fixture,
+        int pickup,
+        int fixedStation,
+        string demandId = DemandA,
+        string agvId = AgvA,
+        string vehicleKey = KeyA)
     {
-        await AcceptAsync(fixture.Context, DemandA, AgvA, KeyA, pickup, fixedStation);
-        JourneyRuntimeRow holder = await fixture.Context.JourneyRuntimes.SingleAsync(row => row.DemandId == DemandA, Token);
+        await AcceptAsync(fixture.Context, demandId, agvId, vehicleKey, pickup, fixedStation);
+        JourneyRuntimeRow holder = await fixture.Context.JourneyRuntimes.SingleAsync(row => row.DemandId == demandId, Token);
         holder.Stage = JourneyRuntimeStage.AwaitingStationDeparture;
         holder.LoadingPhaseState = LoadingPhaseStates.CargoHoldingWait;
         await fixture.Context.SaveChangesAsync(Token);
@@ -411,6 +503,31 @@ public sealed class Batch8FixedStationSingleOccupancyTests
         Assert.False(await read.JourneyRuntimes.AnyAsync(row => row.DemandId == demandId, Token));
         Assert.False(await read.OrderIntents.AnyAsync(row => row.DemandId == demandId, Token));
         Assert.False(await read.Set<VehiclePurposeClaimRow>().AnyAsync(row => row.VehicleKey == vehicleKey, Token));
+    }
+
+    private static FixedStationExclusivitySweep Sweep(ControlServerDbContext context) =>
+        new(context, null!, new FixedClock(At.AddMinutes(5)), Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance);
+
+    private static async Task<StationExclusivity?> HeldAtAsync(Batch7JourneyFixture fixture, int station)
+    {
+        await using ControlServerDbContext read = fixture.NewContext();
+        return await new StationExclusivityStore(read).ReadAsync(25, station, Token);
+    }
+
+    /// <summary>一辆空闲车的候选，取货站（也就是它的下一站）是公共站点 <paramref name="station"/>。</summary>
+    private static DispatchCandidateEvaluation IdleOnto(int station, string vehicleKey) =>
+        Evaluation(
+            vehicleKey,
+            new ResolvedJourneyRoute(
+                "ZONE", "EVIDENCE", $"ST-{station}", station, "N1-1", Machine,
+                FixedTaskStationResolution.Resolved(
+                    TransportTaskTypes.StagingToWire, FixedStationEnd.Origin, new RiotMapStation(station, $"ST-{station}"))),
+            plan: null,
+            placement: null);
+
+    private sealed class FixedClock(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
     }
 
     private static StationExclusivityRequest Reserve(int station) =>
