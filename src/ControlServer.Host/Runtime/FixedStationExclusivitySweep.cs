@@ -38,13 +38,12 @@ internal sealed class FixedStationExclusivitySweep(
     ControlServerDbContext dbContext,
     IRiotVehicleFacts vehicleFacts,
     TimeProvider timeProvider,
-    ILogger logger)
+    ILogger logger,
+    FixedStationSweepWarnings warnings)
 {
     /// <summary>车正开往一个被别的车预占或占用着的公共站点、自己没取得预占时记的原因码。</summary>
     public const string HeldOnApproachReason = "FIXED_TASK_STATION_HELD_ON_APPROACH";
 
-    // Journeys already reported heading for a held station, so the line is written once per approach, not every round.
-    private static readonly ConcurrentDictionary<string, byte> ReportedApproaches = new(StringComparer.Ordinal);
 
     private static readonly Action<ILogger, int, int, string, string, Exception?> LogReleased =
         LoggerMessage.Define<int, int, string, string>(
@@ -73,6 +72,12 @@ internal sealed class FixedStationExclusivitySweep(
             "The fixed task station reservation sweep found unsaved changes in the round's context and skipped this round, " +
             "so as not to save them with its own.");
 
+    private static readonly Action<ILogger, string, Exception?> LogRecovered =
+        LoggerMessage.Define<string>(
+            LogLevel.Information,
+            new EventId(2214, nameof(LogRecovered)),
+            "The fixed task station sweep's warning {WarningKey} has cleared.");
+
     /// <summary>凭离点证据释放。</summary>
     public async Task ReleaseDepartedAsync(CancellationToken cancellationToken)
     {
@@ -81,18 +86,26 @@ internal sealed class FixedStationExclusivitySweep(
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
         foreach (StationExclusivityRow row in held)
         {
+            string warning = $"release|{row.MapId}/{row.StationId}";
             try
             {
                 if (await HasDepartedAsync(row, cancellationToken).ConfigureAwait(false))
                 {
                     await ReleaseAsync(row, cancellationToken).ConfigureAwait(false);
                 }
+                Clear(warning);
             }
             catch (Exception error) when (!cancellationToken.IsCancellationRequested)
             {
-                LogSweepFailed(logger, row.MapId, row.StationId, error);
+                if (Raise(warning, error.GetType().FullName!))
+                {
+                    LogSweepFailed(logger, row.MapId, row.StationId, error);
+                }
             }
         }
+
+        HashSet<string> stillHeld = [.. held.Select(row => $"release|{row.MapId}/{row.StationId}")];
+        Forget(key => key.StartsWith("release|", StringComparison.Ordinal) && !stillHeld.Contains(key));
     }
 
     /// <summary>
@@ -107,12 +120,17 @@ internal sealed class FixedStationExclusivitySweep(
         }
         if (dbContext.ChangeTracker.HasChanges())
         {
-            LogPendingChanges(logger, null);
+            if (Raise("pending", "pending"))
+            {
+                LogPendingChanges(logger, null);
+            }
             return;
         }
+        Clear("pending");
 
-        foreach ((JourneyRuntimeRow journey, JourneyStopRow next) in await ApproachingAsync(
-                     dbContext, publicStations, excludeVehicleKey: null, cancellationToken).ConfigureAwait(false))
+        IReadOnlyList<(JourneyRuntimeRow Journey, JourneyStopRow Next)> approaching = await ApproachingAsync(
+            dbContext, publicStations, excludeVehicleKey: null, cancellationToken).ConfigureAwait(false);
+        foreach ((JourneyRuntimeRow journey, JourneyStopRow next) in approaching)
         {
             string approach = $"{journey.JourneyId}|{next.StationRiotId}";
             try
@@ -123,12 +141,14 @@ internal sealed class FixedStationExclusivitySweep(
                     .ConfigureAwait(false);
                 if (held?.JourneyId == journey.JourneyId)
                 {
-                    ReportedApproaches.TryRemove(approach, out _);
+                    warnings.Open.TryRemove($"held|{approach}", out _);
+                    Clear($"reserve|{approach}");
                     continue;
                 }
                 if (held is not null && held.VehicleKey != journey.VehicleKey)
                 {
-                    if (ReportedApproaches.TryAdd(approach, 0))
+                    Clear($"reserve|{approach}");
+                    if (Raise($"held|{approach}", held.VehicleKey))
                     {
                         LogHeldOnApproach(logger, HeldOnApproachReason, journey.VehicleKey, journey.MapId,
                             next.StationRiotId, held.VehicleKey, journey.JourneyId, null);
@@ -141,18 +161,55 @@ internal sealed class FixedStationExclusivitySweep(
                         timeProvider.GetUtcNow(), cancellationToken)
                     .ConfigureAwait(false);
                 await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-                ReportedApproaches.TryRemove(approach, out _);
+                warnings.Open.TryRemove($"held|{approach}", out _);
+                Clear($"reserve|{approach}");
             }
             catch (Exception error) when (!cancellationToken.IsCancellationRequested)
             {
                 // Taken between the read and the insert (the key refused it), or the save failed: nothing of it was written.
                 // Forget what was staged, so neither this round's later saves nor the next journey's carry it.
                 ForgetStagedExclusivity();
-                if (error is not DbUpdateException failure || !FixedStationExclusivity.IsStationHeld(failure))
+                if ((error is not DbUpdateException failure || !FixedStationExclusivity.IsStationHeld(failure)) &&
+                    Raise($"reserve|{approach}", error.GetType().FullName!))
                 {
                     LogSweepFailed(logger, journey.MapId, next.StationRiotId, error);
                 }
             }
+        }
+
+        // A journey that finished, was blocked or turned away without ever getting its station leaves nothing behind.
+        HashSet<string> stillApproaching =
+            [.. approaching.Select(item => $"{item.Journey.JourneyId}|{item.Next.StationRiotId}")];
+        Forget(key => (key.StartsWith("held|", StringComparison.Ordinal) || key.StartsWith("reserve|", StringComparison.Ordinal)) &&
+                      !stillApproaching.Contains(key[(key.IndexOf('|') + 1)..]));
+    }
+
+    /// <summary>打开（或换了原因）时为真，调用方据此只打一次。</summary>
+    private bool Raise(string key, string reason)
+    {
+        bool fresh = true;
+        warnings.Open.AddOrUpdate(key, reason, (_, open) =>
+        {
+            fresh = !string.Equals(open, reason, StringComparison.Ordinal);
+            return reason;
+        });
+        return fresh;
+    }
+
+    /// <summary>它开着就关上，并打一条恢复。</summary>
+    private void Clear(string key)
+    {
+        if (warnings.Open.TryRemove(key, out _))
+        {
+            LogRecovered(logger, key, null);
+        }
+    }
+
+    private void Forget(Func<string, bool> stale)
+    {
+        foreach (string key in warnings.Open.Keys.Where(stale).ToArray())
+        {
+            warnings.Open.TryRemove(key, out _);
         }
     }
 
@@ -261,4 +318,20 @@ internal sealed class FixedStationExclusivitySweep(
             entry.State = EntityState.Detached;
         }
     }
+}
+
+/// <summary>
+/// 公共站点独占清扫开着的告警（#418 审查）：同一件事、同一个原因只在打开与恢复时各记一次，而不是每轮都记。
+/// </summary>
+/// <remarks>
+/// 键是告警说的那件事——<c>release|map/station</c>、<c>reserve|journey|station</c>、<c>held|journey|station</c>、<c>pending</c>——
+/// 值是打开时的原因。每轮末尾丢掉已不在途的旅程与已不被占的站的键，所以没拿到站就完成的旅程什么也不留下。
+/// 清扫每轮新建（引擎是每轮一个作用域），所以这份状态由主机注册成单例交给引擎；引擎没拿到时自带一份。
+/// </remarks>
+public sealed class FixedStationSweepWarnings
+{
+    internal ConcurrentDictionary<string, string> Open { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>此刻还开着的告警键。</summary>
+    public IReadOnlyCollection<string> OpenKeys => [.. Open.Keys];
 }

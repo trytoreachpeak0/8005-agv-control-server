@@ -49,8 +49,13 @@ public sealed partial class JourneyRuntimeEngine(
     ForeignOrders.ForeignRunningOrderSupervisor foreignOrders,
     IOptions<JourneyRuntimeOptions> options,
     TimeProvider timeProvider,
-    ILogger<JourneyRuntimeEngine> logger)
+    ILogger<JourneyRuntimeEngine> logger,
+    FixedStationSweepWarnings? fixedStationWarnings = null)
 {
+    // control-server#391: the fixed task station sweep's open warnings outlive the per-round engine (the host registers
+    // them as a singleton); an engine built without them keeps its own.
+    private readonly FixedStationSweepWarnings _fixedStationWarnings = fixedStationWarnings ?? new FixedStationSweepWarnings();
+
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private static readonly Action<ILogger, string, string, string, string, string, string, Exception?> LogUnloadOrderFallback =
         LoggerMessage.Define<string, string, string, string, string, string>(
@@ -479,7 +484,7 @@ public sealed partial class JourneyRuntimeEngine(
         // vehicle already heading for it without a reservation, before this round dispatches anything against it -- that
         // vehicle comes before any new task. Not behind the Map catalog read: departure is read off RIoT's vehicle position,
         // and which stations are public off the Map's active binding set.
-        FixedStationExclusivitySweep fixedStationSweep = new(dbContext, vehicleFacts, timeProvider, logger);
+        FixedStationExclusivitySweep fixedStationSweep = new(dbContext, vehicleFacts, timeProvider, logger, _fixedStationWarnings);
         await fixedStationSweep.ReleaseDepartedAsync(cancellationToken).ConfigureAwait(false);
         TaskTypeStationBindingSetVersion? publicStationBindings = await _taskTypeStations.Bindings
             .ReadActiveAsync(runtimeOptions.MapId, cancellationToken).ConfigureAwait(false);

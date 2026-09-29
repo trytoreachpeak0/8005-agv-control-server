@@ -78,6 +78,47 @@ public sealed class Batch8FixedStationSingleOccupancyTests
     }
 
     /// <summary>
+    /// 途中追加（走 <see cref="WireToGateStore.AppendToJourneyAsync"/>）：车站在取货停靠 101 上，下一站原是关卡；追加一条取货在公共站点
+    /// 305 的需求、插在紧接着的位置——下一站变成 305，在追加的同一次保存里预占它。
+    /// </summary>
+    [Fact]
+    public async Task AnAppendThatMakesThePublicStationTheNextStopReservesItInTheSameSave()
+    {
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        await SeedHolderAsync(fixture, pickup: 101, fixedStation: 202);
+
+        await AppendOntoAsync(fixture.Context, DemandA, DemandB, pickup: StagingStation, fixedStation: StagingStation);
+
+        StationExclusivity held = (await HeldAtAsync(fixture, StagingStation))!;
+        Assert.Equal(
+            (KeyA, JourneyIdentity.ForAnchorDemand(DemandA), StationExclusivityStates.Reserved),
+            (held.VehicleKey, held.JourneyId, held.State));
+        Assert.True(await fixture.NewContext().Set<JourneyDemandRow>().AnyAsync(row => row.DemandId == DemandB, Token));
+    }
+
+    /// <summary>
+    /// 同上，而 305 被别的车占着（判据读过之后才被占的那一刻）：主键拒绝预占，追加整笔回滚——没有新停靠、没有归属、没有受理行。
+    /// </summary>
+    [Fact]
+    public async Task AnAppendOntoAPublicStationAnotherVehicleHoldsIsRefusedByTheKeyAndLeavesNothing()
+    {
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        await SeedHolderAsync(fixture, pickup: 101, fixedStation: 202);
+        await new StationExclusivityStore(fixture.NewContext()).TryAcquireAsync(
+            Reserve(StagingStation), "KEY-OTHER", "journey:other", At, Token);
+
+        await Assert.ThrowsAsync<BusinessIdentityConflictException>(
+            () => AppendOntoAsync(fixture.NewContext(), DemandA, DemandB, pickup: StagingStation, fixedStation: StagingStation));
+
+        await using ControlServerDbContext read = fixture.NewContext();
+        Assert.False(await read.Set<JourneyDemandRow>().AnyAsync(row => row.DemandId == DemandB, Token));
+        Assert.False(await read.AcceptedDemands.AnyAsync(row => row.DemandId == DemandB, Token));
+        Assert.False(await read.Set<JourneyStopRow>().AnyAsync(
+            row => row.StopId == JourneyIdentity.AppendedPickupStopId(DemandB), Token));
+        Assert.Equal("KEY-OTHER", (await HeldAtAsync(fixture, StagingStation))!.VehicleKey);
+    }
+
+    /// <summary>
     /// 同轮两车都以同一公共站点为下一站：判据读的那一刻两边都还空着，两次受理都走到了写。谁占到由主键定——第二次受理被拒，
     /// 整笔回滚：没有旅程、没有用途占有、没有受理行、没有订单意图，站仍是第一辆车的。
     /// </summary>
@@ -404,6 +445,72 @@ public sealed class Batch8FixedStationSingleOccupancyTests
         Assert.Equal(KeyB, (await HeldAtAsync(fixture, 202))!.VehicleKey);
     }
 
+    /// <summary>
+    /// 正开往被占公共站点的车没拿到站就把旅程走完了：它那条告警的键在下一次清扫时被丢掉，不留在进程里（#418 审查第 3 条）。
+    /// </summary>
+    [Fact]
+    public async Task AJourneyThatFinishesWithoutItsStationLeavesNoWarningBehind()
+    {
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        await new StationExclusivityStore(fixture.Context).TryAcquireAsync(
+            new StationExclusivityRequest(
+                25, 202, StationExclusivityKinds.FixedTaskStation, StationExclusivityStates.Occupied, null),
+            KeyA, JourneyIdentity.ForAnchorDemand(DemandA), At, Token);
+        await SeedHolderAsync(fixture, pickup: 101, fixedStation: 202, demandId: DemandB, agvId: AgvB, vehicleKey: KeyB);
+        FixedStationSweepWarnings warnings = new();
+        string key = $"held|{JourneyIdentity.ForAnchorDemand(DemandB)}|202";
+
+        await Sweep(fixture.Context, warnings).ReserveApproachingAsync(new HashSet<int> { 202 }, Token);
+        Assert.Contains(key, warnings.OpenKeys);
+
+        await using (ControlServerDbContext write = fixture.NewContext())
+        {
+            JourneyRuntimeRow journey = await write.JourneyRuntimes.SingleAsync(row => row.DemandId == DemandB, Token);
+            journey.Stage = JourneyRuntimeStage.Completed;
+            await write.SaveChangesAsync(Token);
+        }
+        await Sweep(fixture.NewContext(), warnings).ReserveApproachingAsync(new HashSet<int> { 202 }, Token);
+
+        Assert.DoesNotContain(key, warnings.OpenKeys);
+    }
+
+    /// <summary>
+    /// 同一个失败每轮都发生时只告警一次，恢复时记一次恢复（#418 审查第 4 条）：补预占的写入连续两轮失败 → 事件 2211 一条；
+    /// 第三轮写成 → 事件 2214 一条。跟踪器里有未存改动连续两轮 → 事件 2213 一条；清掉之后 → 2214 一条。
+    /// </summary>
+    [Fact]
+    public async Task ARepeatedSweepFailureIsWarnedOnceAndItsRecoveryOnce()
+    {
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        await SeedHolderAsync(fixture, pickup: 101, fixedStation: 202, demandId: DemandB, agvId: AgvB, vehicleKey: KeyB);
+        FixedStationSweepWarnings warnings = new();
+        EventRecordingLogger<FixedStationSweepWarnings> log = new();
+        FailingInsertInterceptor failing = new("\"StationExclusivities\"");
+
+        for (int round = 0; round < 2; round++)
+        {
+            await using ControlServerDbContext injected = fixture.NewContext(failing);
+            await Sweep(injected, warnings, log).ReserveApproachingAsync(new HashSet<int> { 202 }, Token);
+        }
+        await Sweep(fixture.NewContext(), warnings, log).ReserveApproachingAsync(new HashSet<int> { 202 }, Token);
+
+        Assert.Equal(KeyB, (await HeldAtAsync(fixture, 202))!.VehicleKey);
+        Assert.Equal(1, log.Entries.Count(entry => entry.EventId.Id == 2211));
+        Assert.Equal(1, log.Entries.Count(entry => entry.EventId.Id == 2214));
+
+        await using ControlServerDbContext dirty = fixture.NewContext();
+        JourneyRuntimeRow touched = await dirty.JourneyRuntimes.SingleAsync(row => row.DemandId == DemandB, Token);
+        touched.UpdatedAt = At.AddHours(1);
+        await Sweep(dirty, warnings, log).ReserveApproachingAsync(new HashSet<int> { 202 }, Token);
+        await Sweep(dirty, warnings, log).ReserveApproachingAsync(new HashSet<int> { 202 }, Token);
+        dirty.ChangeTracker.Clear();
+        await Sweep(dirty, warnings, log).ReserveApproachingAsync(new HashSet<int> { 202 }, Token);
+
+        Assert.Equal(1, log.Entries.Count(entry => entry.EventId.Id == 2213));
+        Assert.Equal(2, log.Entries.Count(entry => entry.EventId.Id == 2214));
+        Assert.Empty(warnings.OpenKeys);
+    }
+
     /// <summary>车不开往公共站点（下一站是机台）时不补；站不在公共站点集合里时也不补。</summary>
     [Fact]
     public async Task OnlyAVehicleWhoseNextStopIsAPublicStationIsGivenACatchUpReservation()
@@ -480,6 +587,44 @@ public sealed class Batch8FixedStationSingleOccupancyTests
             Token);
     }
 
+    /// <summary>
+    /// 往 <paramref name="journeyDemandId"/> 那趟单需求旅程（[取货, 关卡]，车站在取货停靠上）追加 <paramref name="demandId"/>：
+    /// 取货停靠新开、插在当前停靠之后，卸货并进原来的关卡停靠。
+    /// </summary>
+    private static async Task AppendOntoAsync(
+        ControlServerDbContext context, string journeyDemandId, string demandId, int pickup, int fixedStation)
+    {
+        string journeyId = JourneyIdentity.ForAnchorDemand(journeyDemandId);
+        string pickupStop = JourneyIdentity.AppendedPickupStopId(demandId);
+        string gateStop = JourneyIdentity.UnloadStopId(journeyId);
+        JourneyRuntimeRow journey = await context.JourneyRuntimes.AsNoTracking()
+            .SingleAsync(row => row.JourneyId == journeyId, Token);
+        JourneyExecutionPlan demand = Batch7JourneyFixture.Plan(demandId, journey.AgvId, journey.VehicleKey, At) with
+        {
+            PickupStationId = $"ST-{pickup}",
+            PickupStationRiotId = pickup,
+            FixedTaskStationRiotId = fixedStation,
+            TargetSlots = [3],
+        };
+        await new WireToGateStore(context).AppendToJourneyAsync(
+            Batch7JourneyFixture.Snapshot(demandId, At),
+            new JourneyAppendPlan(
+                journeyId,
+                demandId,
+                demand,
+                pickupStop,
+                gateStop,
+                journey.DispatchZone,
+                null,
+                [
+                    new JourneyStopSequenceChange(JourneyIdentity.PickupStopId(journeyId), 1),
+                    new JourneyStopSequenceChange(pickupStop, 2),
+                    new JourneyStopSequenceChange(gateStop, 3),
+                ],
+                At.AddMinutes(1)),
+            Token);
+    }
+
     /// <summary>车 A 站在取货停靠上持货等单，它的取货站是 <paramref name="pickup"/>；公共站点的话它占用着。</summary>
     private static async Task SeedHolderAsync(
         Batch7JourneyFixture fixture,
@@ -511,8 +656,16 @@ public sealed class Batch8FixedStationSingleOccupancyTests
         Assert.False(await read.Set<VehiclePurposeClaimRow>().AnyAsync(row => row.VehicleKey == vehicleKey, Token));
     }
 
-    private static FixedStationExclusivitySweep Sweep(ControlServerDbContext context) =>
-        new(context, null!, new FixedClock(At.AddMinutes(5)), Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance);
+    private static FixedStationExclusivitySweep Sweep(
+        ControlServerDbContext context,
+        FixedStationSweepWarnings? warnings = null,
+        Microsoft.Extensions.Logging.ILogger? logger = null) =>
+        new(
+            context,
+            null!,
+            new FixedClock(At.AddMinutes(5)),
+            logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance,
+            warnings ?? new FixedStationSweepWarnings());
 
     private static async Task<StationExclusivity?> HeldAtAsync(Batch7JourneyFixture fixture, int station)
     {
