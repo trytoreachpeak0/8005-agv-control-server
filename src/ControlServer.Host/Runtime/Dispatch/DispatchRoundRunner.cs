@@ -515,7 +515,10 @@ public sealed class DispatchRoundRunner(
             .LoadAsync(dbContext, runtime, cancellationToken).ConfigureAwait(false);
         return stops.OpenStops.Count == 0
             ? null
-            : EnRoutePlanOf(stops, vehicleStation, runtime.LoadingPhaseState == LoadingPhaseStates.Closed);
+            : EnRoutePlanOf(stops, vehicleStation, runtime.LoadingPhaseState == LoadingPhaseStates.Closed) with
+            {
+                StandsAtCurrentStop = StationYield.StandsAtCurrentStop(runtime.Stage),
+            };
     }
 
     /// <summary>一趟旅程此刻交给途中追加规划器的计划。</summary>

@@ -361,6 +361,10 @@ jobs:
               # control-server#389, REQ-0291/0292: two idle vehicles and one usable waiting point; exactly one commits to an
               # idle return (purpose claim and reservation in one save), and a later transport goes to the other vehicle.
               @{ Name = 'idle-return-two-vehicles-contend-one-waiting-point'; Runs = 1; BatchId = 'batch-8' }
+              # control-server#391, REQ-0204 revised: a public station is held by one vehicle at a time. A vehicle heading
+              # for a held gate goes on and is given it once released; a second demand at the staging station is not taken
+              # while another vehicle holds it, and is taken only after that vehicle leaves on departure evidence.
+              @{ Name = 'fixed-station-single-occupancy'; Runs = 1; BatchId = 'batch-8' }
           )
           # One run's usual length in seconds, for dealing scenarios out to lanes longest first. Medians of 31
           # CI jobs from 2026-09-17 (ci-research, control-server#130); normal-load's excludes the build it used

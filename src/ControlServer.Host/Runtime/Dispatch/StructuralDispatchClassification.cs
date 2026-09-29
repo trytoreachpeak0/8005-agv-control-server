@@ -100,6 +100,7 @@ public static class StructuralDispatchClassification
     private const int SublotTaskTypeConflict = 35;
     private const int EnRouteAppend = 98;
     private const int LoadingPhaseOpen = 99;
+    private const int FixedStationSingleOccupancy = 99;
 
     private static readonly DispatchReasonClassification[] Rows =
     [
@@ -309,6 +310,17 @@ public static class StructuralDispatchClassification
             "control-server#212, REQ-0354: this vehicle's loading phase has ended -- held past its cargo holding " +
             "deadline, full and gone from its last pickup, or its plan loaded with appending forbidden. This " +
             "vehicle's journey only: another vehicle takes the demand, and this one does after it unloads."),
+
+        // ---- FixedStationSingleOccupancyCriterion (99) --------------------------------------------------
+        Backlog(DispatchReasonCodes.FixedTaskStationReservedByOtherVehicle, FixedStationSingleOccupancy,
+            "control-server#391, REQ-0204: the public station this candidate would make the vehicle's next stop is reserved " +
+            "by another vehicle on its way there. Waiting clears it: that vehicle arrives, leaves, and the station is free."),
+        Backlog(DispatchReasonCodes.FixedTaskStationOccupiedByOtherVehicle, FixedStationSingleOccupancy,
+            "control-server#391, REQ-0204: the same, with the other vehicle already standing at the station. Its departure " +
+            "evidence releases it; a vehicle standing there itself is not refused, so the demand is not stranded."),
+        Backlog(DispatchReasonCodes.FixedTaskStationApproachedByOtherVehicle, FixedStationSingleOccupancy,
+            "control-server#391, REQ-0204: no one holds the station yet, but another vehicle has it as its next stop and is " +
+            "waiting for the per-round reservation to give it to it. Its departure evidence frees it in turn."),
 
         // ---- written by the engine after the chain ------------------------------------------------------
         Backlog("FINAL_DYNAMIC_FACTS_NOT_READY", null, "The pre-intake re-read of this vehicle's facts failed."),

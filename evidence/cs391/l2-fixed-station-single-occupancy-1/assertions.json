@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "scenario": "fixed-station-single-occupancy",
+  "runId": "20260929T132934501Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "fleet": [
+      "AGV-L2-001/BROKERX-L2-0001",
+      "AGV-L2-002/BROKERX-L2-0002"
+    ],
+    "rig": "SyntheticOnboard",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260929T132934501Z",
+    "controlServerCommit": "9cb83eae9a024ecc3edcdfaebf582a44d5e7c2aa",
+    "vehicleKey": "BROKERX-L2-0001",
+    "batchId": "batch-8",
+    "agvId": "AGV-L2-001",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    }
+  },
+  "assertions": [
+    {
+      "id": "L2-FSO-01",
+      "description": "两条 WIRE_TO_GATE 需求落在两台不同的车上，受理时关卡都不是它们的下一站、没有任何独占行",
+      "outcome": "PASS",
+      "expected": "two vehicles, no row at 210",
+      "actual": "A=BROKERX-L2-0001 B=BROKERX-L2-0002, row at 210: "
+    },
+    {
+      "id": "L2-FSO-02",
+      "description": "A 装完后关卡成了它的下一站、被补预占给 A；到关卡后转占用，卸完车还停在那里仍是占用",
+      "outcome": "PASS",
+      "expected": "BROKERX-L2-0001 OCCUPIED at 210",
+      "actual": "BROKERX-L2-0001 OCCUPIED"
+    },
+    {
+      "id": "L2-FSO-03",
+      "description": "B 装完时关卡被 A 占着：B 照常出发（AwaitingGateArrival、没有阻断码），关卡仍是 A 的",
+      "outcome": "PASS",
+      "expected": "B AwaitingGateArrival, gate held by BROKERX-L2-0001",
+      "actual": "B AwaitingGateArrival block=, gate held by BROKERX-L2-0001"
+    },
+    {
+      "id": "L2-FSO-04",
+      "description": "A 离开关卡、凭离点证据释放之后，下一轮补预占把关卡给 B（RESERVED），B 的预占不早于 A 的释放",
+      "outcome": "PASS",
+      "expected": "B RESERVED at 210 at or after A's DEPARTED_STATION release",
+      "actual": "held: BROKERX-L2-0002 RESERVED; A released 2026-09-29 13:31:55.788562+00:00 (DEPARTED_STATION); B reserved 2026-09-29 13:31:55.8120452+00:00"
+    },
+    {
+      "id": "L2-FSO-05",
+      "description": "第一条 STAGING_TO_WIRE 受理即预占派工待送站，持有者是接它的那台车那一趟",
+      "outcome": "PASS",
+      "expected": "BROKERX-L2-0001 RESERVED FIXED_TASK_STATION",
+      "actual": "BROKERX-L2-0001 RESERVED FIXED_TASK_STATION"
+    },
+    {
+      "id": "L2-FSO-06",
+      "description": "H 占着派工待送站的整段时间里（在途预占、到站占用、下达离站订单之后），同站的第二条需求一直没被接走",
+      "outcome": "PASS",
+      "expected": "not accepted; 305 held by BROKERX-L2-0001 OCCUPIED after the departure order",
+      "actual": "accepted while reserved: ; while occupied: ; held BROKERX-L2-0001 OCCUPIED"
+    },
+    {
+      "id": "L2-FSO-07",
+      "description": "H 到了机台、凭离点证据释放派工待送站之后，第二条需求才被接走（受理时刻不早于释放时刻）",
+      "outcome": "PASS",
+      "expected": "accepted at or after H's DEPARTED_STATION release",
+      "actual": "accepted 2026-09-29 13:32:40.2284976+00:00; H released 2026-09-29 13:32:39.7771877+00:00 (DEPARTED_STATION)"
+    }
+  ]
+}
