@@ -245,6 +245,31 @@ public sealed class IdleReturnCommitmentTests
             await harness.Context.Set<VehiclePurposeClaimRow>().AsNoTracking().Select(row => row.VehicleKey).ToArrayAsync(Token));
     }
 
+    /// <summary>
+    /// 先后次序（control-server#400 审查 S3）：一辆故障车同时没有生效策略，空闲返回与派车链都先答故障码，不答投运码——故障是更具体、
+    /// 更要紧的原因。空闲返回的次序在共用判定 <see cref="VehicleNewPurposeReadiness.JudgeAsync"/> 里（故障 → 投运 → 动态事实），
+    /// 派车链的次序在判据的 Order 上（故障 15、投运 17）。变异 MD（调换 JudgeAsync 里前两格）时这条变红。
+    /// </summary>
+    [Theory]
+    [InlineData(VehicleFaultLevel.SuspectedBlocked, VehicleFaultBlockCriterion.SuspectedReason)]
+    [InlineData(VehicleFaultLevel.ConfirmedIsolated, VehicleFaultBlockCriterion.IsolatedReason)]
+    public async Task AFaultedVehicleWithoutAPolicyIsRefusedForTheFaultFirstOnBothPaths(VehicleFaultLevel level, string expected)
+    {
+        await using Harness harness = await Harness.CreateAsync();
+        harness.ChargingPolicy = TestChargingPolicies.None;
+        IdleReturnCandidate candidate = harness.Candidate(VehicleA);
+        await harness.RecordFaultAsync(candidate.Vehicle, level);
+
+        IdleReturnVerdict idle = Assert.Single(await harness.EvaluateAsync(candidate));
+        string dispatch = await new DispatchAdmissionChain(
+            [
+                new ChargingPolicyCommissioningCriterion(TestChargingPolicies.None),
+                new VehicleFaultBlockCriterion(new VehicleFaultStore(harness.Context)),
+            ]).EvaluateAsync(new DispatchCandidateEvaluation(null!, null!, candidate.Facts), Token);
+
+        Assert.Equal((expected, expected), (idle.Reason, dispatch));
+    }
+
     [Fact]
     public async Task TheSwitchIsOffByDefaultSoAVehicleMeetingEveryConditionCommitsNothing()
     {
