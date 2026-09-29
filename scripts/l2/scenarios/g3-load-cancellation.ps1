@@ -24,7 +24,7 @@ G3 `FP-IS-02` 的第二条场景：装载进行中由操作员取消，全部仓
 了它（onboard-hmi#78），理应什么都不再来。收敛之后的状态经不经得起原装载任何迟到的动静，正是向量 `finalState`
 （`NO_DUPLICATE_COMMIT` / `NO_UNPROVEN_STATE`）要的东西，所以留一段有界的观察窗、服务端再转几轮，才下终态判据。
 
-**车辆放出来了。**最后另判一条（`G3-02-28`）：取消结算后这条需求的 TO_PICKUP 单车辆占用已释放，同一台车能接下一单。
+**车辆放出来了。**最后另判一条（`G3-02-28`）：取消结算后这条需求所在旅程的用途占有记录已释放（control-server#387 之前读 TO_PICKUP 单上的订单占用），同一台车能接下一单。
 在途取消原来不释放占用（control-server#131），这条在它合入前是红的。
 
 **一次只开一个仓门**（用户 2026-09-18，program#111）：判据不断言多门同开或批量开锁，只判开过哪个仓、开了几次。
@@ -335,7 +335,7 @@ function Get-Settlement {
         Workflow  = Get-Scalar "SELECT State AS Value FROM RecoveryWorkflows WHERE WorkflowId = '$cancellationId'"
         Demand    = Get-Scalar "SELECT Status AS Value FROM AcceptedDemands WHERE DemandId = '$demandId'"
         Operation = Get-Scalar "SELECT Status AS Value FROM StationOperations WHERE SlotOperationAttemptId = '$attemptId'"
-        Released  = Test-Present (Get-Scalar "SELECT ReleasedAt AS Value FROM VehicleDispatchLeases WHERE DemandId = '$demandId'")
+        Released  = Test-Present (Get-Scalar "SELECT r.ReleasedAt AS Value FROM VehiclePurposeClaimRecords AS r JOIN JourneyDemands AS d ON d.JourneyId = r.JourneyId WHERE d.DemandId = '$demandId'")
         Journey   = "$(Get-Stage)/$(Get-Scalar "SELECT BlockReasonCode AS Value FROM JourneyRuntimes WHERE DemandId = '$demandId'")"
         ToGate    = Get-Count "SELECT COUNT(*) AS Total FROM OrderIntents WHERE DemandId = '$demandId' AND Purpose = 'TO_GATE'"
     }
@@ -394,7 +394,7 @@ $assertions.Add(
     "$(Format-Settlement $final) / RecoveryRequired $recoveryRequired / 完成记录 $completions / RIoT 单 $($orders.Count) / $finalPhysical / $lateText")
 
 Add-G3VehicleReleasedForNextDemand $Context 'G3-02-28' `
-    '取消结算之后车辆放出来了：这条需求的 TO_PICKUP 单车辆占用已释放，同一台车在 60 秒内接了下一单（旅程到 AwaitingPickupArrival，不是 Blocked/VEHICLE_OCCUPANCY_CONFLICT；control-server#131）' `
+    '取消结算之后车辆放出来了：这条需求所在旅程的用途占有记录已释放，同一台车在 60 秒内接了下一单（旅程到 AwaitingPickupArrival、没有停摆原因码；control-server#131，#387 起读用途占有）' `
     $demandId 'G3-02C'
 
 $journal.Note('FP-IS-02: load cancelled mid-operation with explicit authorization, every slot proven empty, final state checked after the late load result.')

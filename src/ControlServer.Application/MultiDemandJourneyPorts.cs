@@ -209,20 +209,6 @@ public interface IJourneyMembershipStore
 /// <summary>车辆被哪种用途、哪趟旅程占着。</summary>
 public sealed record VehiclePurposeClaim(string VehicleKey, string Purpose, string JourneyId, DateTimeOffset ClaimedAt);
 
-/// <summary>车辆用途占有（规格 3.3 第 9 项、5.2）。谁占到由主键冲突决定，不先读后写。</summary>
-public interface IVehiclePurposeClaimStore
-{
-    Task<VehiclePurposeClaim?> ReadAsync(string vehicleKey, CancellationToken cancellationToken);
-
-    /// <summary>
-    /// 为这趟旅程占住车辆。占到或这趟旅程本来就占着时为真；被别的旅程或用途占着时为假，现有占有不变。
-    /// </summary>
-    Task<bool> TryClaimAsync(VehiclePurposeClaim claim, CancellationToken cancellationToken);
-
-    /// <summary>释放这趟旅程对车辆的占有；车辆没被它占着时什么也不做。</summary>
-    Task ReleaseAsync(string vehicleKey, string journeyId, CancellationToken cancellationToken);
-}
-
 /// <summary>一个业务键的终态抑制。</summary>
 public sealed record TransportDemandSuppression(
     string TransportDemandKey, string DemandId, string ReasonCode, DateTimeOffset SuppressedAt);

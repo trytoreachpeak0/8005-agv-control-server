@@ -74,7 +74,7 @@ function Get-Operation([string]$demandId) {
 
 function Get-Intent([string]$demandId, [string]$purpose) {
     $rows = Invoke-L2Query -Connection $connection `
-        -Sql "SELECT UpperId, OrderId, Status, VehicleOccupancyReleasedAt FROM OrderIntents WHERE DemandId = '$demandId' AND Purpose = '$purpose'"
+        -Sql "SELECT UpperId, OrderId, Status FROM OrderIntents WHERE DemandId = '$demandId' AND Purpose = '$purpose'"
     if ($rows.Count -eq 0) { return $null }
     return $rows[0]
 }
@@ -217,17 +217,17 @@ $assertions.Add(
     "$($operation.Status) / $(if ($demandRows.Count -eq 1) { $demandRows[0].Status } else { '(no demand)' }) / $($ended.Stage) / $($ended.BlockReasonCode)")
 
 # 下面这些与旅程转 Completed 是同一次提交（写事务里暂存、一次保存），所以等到阶段之后读是安全的。
-$leaseRows = Invoke-L2Query -Connection $connection -Sql "SELECT ReleasedAt FROM VehicleDispatchLeases WHERE DemandId = '$($demands[0].Id)'"
-$pickupIntent = Get-Intent $demands[0].Id 'TO_PICKUP'
+$leaseRows = Invoke-L2Query -Connection $connection -Sql "SELECT r.ReleasedAt FROM VehiclePurposeClaimRecords AS r JOIN JourneyDemands AS d ON d.JourneyId = r.JourneyId WHERE d.DemandId = '$($demands[0].Id)'"
+# control-server#387：租约与订单占用退役，车辆占用只剩用途占有；「放了」读它的记录与占有行。
+$claimsHeld = Get-Count "SELECT COUNT(*) AS Total FROM VehiclePurposeClaims AS c JOIN JourneyDemands AS d ON d.JourneyId = c.JourneyId WHERE d.DemandId = '$($demands[0].Id)'"
 $loadCommand = Invoke-L2Query -Connection $connection `
     -Sql "SELECT AcknowledgedAt FROM ProtocolOutbox WHERE MessageId = '$($a.Runtime.LoadCommandMessageId)'"
 $assertions.Add(
-    'L2-LD-04', '租约与车辆占用释放，悬空的装货命令被结算（不会再重放进后面的会话）',
-    ($leaseRows.Count -eq 1 -and -not (Test-L2Null $leaseRows[0].ReleasedAt) -and
-        -not (Test-L2Null $pickupIntent.VehicleOccupancyReleasedAt) -and
+    'L2-LD-04', '车辆占用释放（占有记录有释放时刻、占有行已不在），悬空的装货命令被结算（不会再重放进后面的会话）',
+    ($leaseRows.Count -eq 1 -and -not (Test-L2Null $leaseRows[0].ReleasedAt) -and $claimsHeld -eq 0 -and
         $loadCommand.Count -eq 1 -and -not (Test-L2Null $loadCommand[0].AcknowledgedAt)),
-    '租约已释放 / 占用已释放 / 装货命令已结算',
-    "ReleasedAt=$(if ($leaseRows.Count -eq 1) { $leaseRows[0].ReleasedAt } else { '(no lease)' }) / VehicleOccupancyReleasedAt=$($pickupIntent.VehicleOccupancyReleasedAt) / AcknowledgedAt=$(if ($loadCommand.Count -eq 1) { $loadCommand[0].AcknowledgedAt } else { '(no command)' })")
+    '占有记录已释放 / 占有行 0 / 装货命令已结算',
+    "ReleasedAt=$(if ($leaseRows.Count -eq 1) { $leaseRows[0].ReleasedAt } else { '(no claim record)' }) / 占有行 $claimsHeld / AcknowledgedAt=$(if ($loadCommand.Count -eq 1) { $loadCommand[0].AcknowledgedAt } else { '(no command)' })")
 
 $workflows = Get-Count "SELECT COUNT(*) AS Total FROM RecoveryWorkflows WHERE DemandId = '$($demands[0].Id)'"
 $recoverySessions = Get-Count "SELECT COUNT(*) AS Total FROM ExceptionRecoverySessions WHERE AgvId = '$($failing.AgvId)'"
@@ -294,13 +294,13 @@ $alarmed = Wait-L2Condition -Description 'the stop past its deadline with a door
 $alarmSince = ConvertTo-Instant $alarmed.BlockReasonSince
 $operation = Get-Operation $demands[1].Id
 $demandRows = Invoke-L2Query -Connection $connection -Sql "SELECT Status FROM AcceptedDemands WHERE DemandId = '$($demands[1].Id)'"
-$leaseRows = Invoke-L2Query -Connection $connection -Sql "SELECT ReleasedAt FROM VehicleDispatchLeases WHERE DemandId = '$($demands[1].Id)'"
+$leaseRows = Invoke-L2Query -Connection $connection -Sql "SELECT r.ReleasedAt FROM VehiclePurposeClaimRecords AS r JOIN JourneyDemands AS d ON d.JourneyId = r.JourneyId WHERE d.DemandId = '$($demands[1].Id)'"
 $assertions.Add(
-    'L2-LD-09', '告警挂上：stage 仍是 AwaitingLoadResult（不是 Blocked）、开始时间不早于期限、需求与租约都没动',
+    'L2-LD-09', '告警挂上：stage 仍是 AwaitingLoadResult（不是 Blocked）、开始时间不早于期限、需求与用途占有记录都没动',
     ([string]$alarmed.Stage -eq 'AwaitingLoadResult' -and $null -ne $alarmSince -and $alarmSince -ge $b.Deadline -and
         [string]$operation.Status -eq 'Prepared' -and $demandRows.Count -eq 1 -and [string]$demandRows[0].Status -eq 'Accepted' -and
         $leaseRows.Count -eq 1 -and (Test-L2Null $leaseRows[0].ReleasedAt)),
-    "AwaitingLoadResult / since >= $($b.Deadline.ToString('o')) / Prepared / Accepted / 租约未释放",
+    "AwaitingLoadResult / since >= $($b.Deadline.ToString('o')) / Prepared / Accepted / 占有记录未释放",
     "$($alarmed.Stage) / since $($alarmed.BlockReasonSince) / $($operation.Status) / $(if ($demandRows.Count -eq 1) { $demandRows[0].Status } else { '(no demand)' }) / ReleasedAt='$(if ($leaseRows.Count -eq 1) { $leaseRows[0].ReleasedAt })'")
 
 # 否定判据要有界：让运行时确实又跑几轮，再说它还在等、开始时间没动。

@@ -66,7 +66,7 @@ public sealed class JourneyRuntimeWorkerCargoRecoveryTests
                 Assert.Equal("DurableAck", FirstLineType(ack));
                 Assert.Equal(DemandExecutionStatus.Cancelled, (await fixture.DemandRowAsync()).Status);
                 Assert.Equal("TERMINATED_BY_FAULT_CARGO_HANDOFF", (await fixture.RuntimeAsync()).BlockReasonCode);
-                await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(fixture.Context);
+                await VehicleOccupancyAssertions.AssertOpenClaimRecordsAndPurposeClaimsMatchAsync(fixture.Context);
                 await ZeroChangePin.AssertMatchesAsync(fixture.Context, "fault-cargo-handoff");
                 await SuppressionAssertions.AssertNothingSuppressedAsync(fixture.Context);
 
@@ -114,7 +114,7 @@ public sealed class JourneyRuntimeWorkerCargoRecoveryTests
                 Assert.Equal("DurableAck", FirstLineType(ack));
                 Assert.Equal(DemandExecutionStatus.Cancelled, (await fixture.DemandRowAsync()).Status);
                 Assert.Equal("TERMINATED_BY_FAULT_CARGO_HANDOFF", (await fixture.RuntimeAsync()).BlockReasonCode);
-                await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(fixture.Context);
+                await VehicleOccupancyAssertions.AssertOpenClaimRecordsAndPurposeClaimsMatchAsync(fixture.Context);
                 await ZeroChangePin.AssertMatchesAsync(fixture.Context, "forced-mechanical-recovery");
                 await SuppressionAssertions.AssertNothingSuppressedAsync(fixture.Context);
 
@@ -193,7 +193,7 @@ public sealed class JourneyRuntimeWorkerCargoRecoveryTests
         Assert.Equal(JourneyRuntimeStage.Completed, (await fixture.RuntimeAsync(ended.DemandId)).Stage);
         Assert.Equal(DemandExecutionStatus.Cancelled, (await fixture.Context.AcceptedDemands.AsNoTracking()
             .SingleAsync(row => row.DemandId == ended.DemandId, token)).Status);
-        await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(fixture.Context);
+        await VehicleOccupancyAssertions.AssertOpenClaimRecordsAndPurposeClaimsMatchAsync(fixture.Context);
     }
 
     private static async Task<string> OpenSessionAsync(

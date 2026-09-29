@@ -813,8 +813,9 @@ pwsh -NoProfile -File .\scripts\l2\Test-L2PortLockQueueing.ps1
     判法只有一条：直读的东西要么与被等的条件落在**同一次提交**，要么在因果上**必然先于**它落库，否则就是这种
     形状。v2 服务端的写入边界，核对过的记在这里，下次不必再读一遍服务端（行号会漂，按名字查）：
     - **站点期限到期结束本站**（`JourneyRuntimeEngine.TryEndStopAtStationDeadlineAsync` →
-      `PickupStopTermination.StageAsync`）一次提交：需求 `Cancelled`、调度租约 `ReleasedAt`、取货单的
-      `VehicleOccupancyReleasedAt`、录入请求在发件箱里结算、旅程 `Completed` / `CANCELLED_BY_STATION_TIMEOUT`。
+      `PickupStopTermination.StageAsync`）一次提交：需求 `Cancelled`、用途占有行删除且它的记录写上 `ReleasedAt`
+      （control-server#387 之前是调度租约与取货单上的订单占用，已退役）、录入请求在发件箱里结算、旅程 `Completed` /
+      `CANCELLED_BY_STATION_TIMEOUT`。
       等到旅程 `Completed` 再读这几样是安全的。
     - **到站那一轮**：车辆业务状态、工作清单、计划、录入请求四条出站报文各自在发布时落库
       （`WireToGateStore.QueueOutboundEnvelopeAsync` 每条一次保存），之后引擎才保存 `AwaitingSublot`；期限起点随工作清单那次

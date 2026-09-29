@@ -14,7 +14,7 @@
   `workflow.operationTimeoutMs` 不改（README 第 11 条）。
 - 判据来源：服务端 SQLite（`ProtocolInbox` 里车载端发来的 `OperationProgress`／`OperationResult`／
   `LoadCancellationStartRequested`／`LoadCancellationResult`，`StationOperations`，`JourneyRuntimes`，`AcceptedDemands`，
-  `VehicleDispatchLeases`，`OrderIntents`，`RecoveryWorkflows`）与模拟器 `/snapshot` 的仓位物理状态。
+  `VehiclePurposeClaimRecords`／`VehiclePurposeClaims`，`OrderIntents`，`RecoveryWorkflows`）与模拟器 `/snapshot` 的仓位物理状态。
   车载端界面只用来驱动：录入子批号、按「取消装货」与它的确认框；另读一次倒计时控件的 UIA 状态
   （AutomationId `StationDepartureCountdown` 的 `ItemStatus`，是档位枚举不是文案），作为「车载端自己也认定期限已过」
   的前提——期限后的提示与倒计时文案 onboard-hmi#78 改过，判据一个字都不比。
@@ -215,13 +215,14 @@ $assertions.Add(
     'L2-DC-09', "目标仓 $slotNo 空着、门关、锁上、开锁输出复位",
     ($finalPhysical -eq 'CLOSED/EMPTY/1/0'), 'CLOSED/EMPTY/1/0', $finalPhysical)
 
-$lease = Get-Scalar "SELECT ReleasedAt AS Value FROM VehicleDispatchLeases WHERE DemandId = '$demandId'"
-$occupancy = Get-Scalar "SELECT VehicleOccupancyReleasedAt AS Value FROM OrderIntents WHERE DemandId = '$demandId' AND Purpose = 'TO_PICKUP'"
+$lease = Get-Scalar "SELECT r.ReleasedAt AS Value FROM VehiclePurposeClaimRecords AS r JOIN JourneyDemands AS d ON d.JourneyId = r.JourneyId WHERE d.DemandId = '$demandId'"
+# control-server#387：租约与订单占用退役，车辆占用只剩用途占有；「放了」读它的记录（上一行）与占有行（这一行）。
+$claimsHeld = Get-Count "SELECT COUNT(*) AS Total FROM VehiclePurposeClaims AS c JOIN JourneyDemands AS d ON d.JourneyId = c.JourneyId WHERE d.DemandId = '$demandId'"
 $toGate = Get-Count "SELECT COUNT(*) AS Total FROM OrderIntents WHERE DemandId = '$demandId' AND Purpose = 'TO_GATE'"
 $assertions.Add(
-    'L2-DC-10', '车辆释放：调度租约与车辆占用都释放，没有去关卡的单',
-    (-not [string]::IsNullOrEmpty($lease) -and -not [string]::IsNullOrEmpty($occupancy) -and $toGate -eq 0),
-    '租约已释放 / 占用已释放 / TO_GATE 0', "ReleasedAt='$lease' / VehicleOccupancyReleasedAt='$occupancy' / TO_GATE $toGate")
+    'L2-DC-10', '车辆释放：用途占有记录有释放时刻、占有行已不在，没有去关卡的单',
+    (-not [string]::IsNullOrEmpty($lease) -and $claimsHeld -eq 0 -and $toGate -eq 0),
+    '占有记录已释放 / 占有行 0 / TO_GATE 0', "ReleasedAt='$lease' / 占有行 $claimsHeld / TO_GATE $toGate")
 
 $footprint = Get-FailedFootprint $attemptId
 $operation = Get-L2StationOperation -Connection $connection -DemandId $demandId -OperationType 'Load'

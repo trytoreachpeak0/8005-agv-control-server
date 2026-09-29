@@ -172,7 +172,7 @@
 | demand | `resultFromASupersededSessionGenerationIsRefused` | FP-IS-05 | `CV-SESSION-RECONNECT-DURING-RECOVERY`（`SUPERSEDE_STALE_SESSION_GENERATION`） | 带旧代次的结果被拒并断开 | 疑点 25：这个向量 FP-IS-00 也有 |
 | demand | `controlServerHostProcessWasActuallyReplaced` | FP-IS-05 | 没有向量对应（只是前提） | 两次宿主进程 ID 不同，第一个在重启前已退出 | 疑点 26：应改为运行级 |
 | demand | `acceptedDemandSurvivesTheHostRestart` | FP-IS-05 | FP-IS-05 两个向量都不涉及服务端进程重启 | 库文件相同，AcceptedDemands 行在重启前后逐列保留 | 疑点 27：没有向量对应 |
-| demand | `vehicleDispatchLeaseSurvivesTheHostRestart` | FP-IS-05 | 同上 | VehicleDispatchLeases 行在重启前后逐列保留 | 疑点 27 |
+| demand | `vehicleClaimRecordSurvivesTheHostRestart`（control-server#387 之前名为 `vehicleDispatchLeaseSurvivesTheHostRestart`） | FP-IS-05 | 同上 | 用途占有记录（`VehiclePurposeClaimRecords`，control-server#387 退役租约表后取代它）在重启前后逐列保留 | 疑点 27 |
 | demand | `restartedHostServesTheSameStore` | FP-IS-05 | `CV-SESSION-RECONNECT-DURING-RECOVERY`（代次在旧库基础上继续） | 重启后握手的代次等于旧库代次加一，build 与 protocol 都等于绑定值 | |
 
 ### journey（`run-journey-g3.ps1`）

@@ -449,7 +449,7 @@ public sealed class StoppedRebuildExitTests
             Assert.Equal(
                 (OwnOrderRebuildStates.Ended, "REBUILT_ORDER_ENDED_AGAIN_WITHIN_WINDOW", OperatorId),
                 (record.State, record.StoppedReason, record.OperatorId));
-            await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(reading);
+            await VehicleOccupancyAssertions.AssertOpenClaimRecordsAndPurposeClaimsMatchAsync(reading);
             await ClosureSnapshotAssertions.AssertClosureSentAsync(
                 reading, stopped.AgvId, fixture.Peer.Lines.Select(line => System.Text.Encoding.UTF8.GetString(line)), 1,
                 stop.StationId);
@@ -752,7 +752,7 @@ public sealed class StoppedRebuildExitTests
             Assert.Equal("HANDED_OFF_IN_EXCEPTION_SESSION", binding.ReleasedReason);
             Assert.NotNull(binding.ReleasedAt);
             Assert.Equal(OwnOrderRebuildStates.Ended, (await RebuildForAsync(fixture, stopped.GateUpperId)).State);
-            await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(reading);
+            await VehicleOccupancyAssertions.AssertOpenClaimRecordsAndPurposeClaimsMatchAsync(reading);
             if (session == "ready")
             {
                 Assert.Equal(SessionReadiness.Ready, (await reading.SessionRecoveries.AsNoTracking().SingleAsync(Token)).Readiness);
@@ -827,7 +827,7 @@ public sealed class StoppedRebuildExitTests
                 (await reading.AcceptedDemands.AsNoTracking().SingleAsync(row => row.DemandId == FirstDemandId, Token)).Status);
             Assert.Equal(OwnOrderRebuildStates.Ended, (await RebuildForAsync(fixture, stoppedOrder)).State);
             Assert.Empty(await reading.FaultedVehicleCargo.AsNoTracking().ToArrayAsync(Token));
-            await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(reading);
+            await VehicleOccupancyAssertions.AssertOpenClaimRecordsAndPurposeClaimsMatchAsync(reading);
             if (session == "ready")
             {
                 Assert.Equal(SessionReadiness.Ready, (await reading.SessionRecoveries.AsNoTracking().SingleAsync(Token)).Readiness);
@@ -903,7 +903,7 @@ public sealed class StoppedRebuildExitTests
                 (await reading.AcceptedDemands.AsNoTracking().SingleAsync(row => row.DemandId == FirstDemandId, Token)).Status);
             Assert.Equal(OwnOrderRebuildStates.Ended, (await RebuildForAsync(fixture, cancelled.Unload.UpperId)).State);
             Assert.Equal(cancelled.GateCreates, fixture.Riot.CreateCount("TO_GATE"));
-            await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(reading);
+            await VehicleOccupancyAssertions.AssertOpenClaimRecordsAndPurposeClaimsMatchAsync(reading);
             Assert.Equal(SessionReadiness.Ready, (await reading.SessionRecoveries.AsNoTracking().SingleAsync(Token)).Readiness);
         }
         finally
@@ -1022,7 +1022,7 @@ public sealed class StoppedRebuildExitTests
                 DemandExecutionStatus.Cancelled,
                 (await reading.AcceptedDemands.AsNoTracking().SingleAsync(row => row.DemandId == FirstDemandId, Token)).Status);
             Assert.Equal(OwnOrderRebuildStates.Ended, (await RebuildForAsync(fixture, ended)).State);
-            await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(reading);
+            await VehicleOccupancyAssertions.AssertOpenClaimRecordsAndPurposeClaimsMatchAsync(reading);
             for (int round = 0; round < 3; round++)
             {
                 await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
@@ -1377,7 +1377,7 @@ public sealed class StoppedRebuildExitTests
                 DemandExecutionStatus.Cancelled,
                 (await after.AcceptedDemands.AsNoTracking().SingleAsync(row => row.DemandId == SecondDemandId, Token)).Status);
             Assert.Equal(OwnOrderRebuildStates.Ended, (await RebuildForAsync(fixture, stopped.GateUpperId)).State);
-            await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(after);
+            await VehicleOccupancyAssertions.AssertOpenClaimRecordsAndPurposeClaimsMatchAsync(after);
             Assert.Equal(SessionReadiness.Ready, (await store.DecideReadinessAsync(fixture.Options.AgvId, generation, Token)).Readiness);
         }
         finally

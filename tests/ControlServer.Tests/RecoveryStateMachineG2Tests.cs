@@ -152,7 +152,7 @@ public sealed class RecoveryStateMachineG2Tests
                     TestContext.Current.CancellationToken)).RequestJson, StringComparison.Ordinal);
                 Assert.Equal(DemandExecutionStatus.RecoveryRequired, (await firstContext.AcceptedDemands.SingleAsync(
                     TestContext.Current.CancellationToken)).Status);
-                Assert.Null((await firstContext.VehicleDispatchLeases.SingleAsync(
+                Assert.Null((await firstContext.Set<VehiclePurposeClaimRecordRow>().SingleAsync(
                     TestContext.Current.CancellationToken)).ReleasedAt);
             }
 
@@ -183,7 +183,7 @@ public sealed class RecoveryStateMachineG2Tests
                 TestContext.Current.CancellationToken));
             Assert.Equal(2, await restartedContext.OrderIntents.CountAsync(
                 TestContext.Current.CancellationToken));
-            Assert.Single(await restartedContext.VehicleDispatchLeases.ToArrayAsync(
+            Assert.Single(await restartedContext.Set<VehiclePurposeClaimRecordRow>().ToArrayAsync(
                 TestContext.Current.CancellationToken));
             Assert.Single(await restartedContext.StationOperations.ToArrayAsync(
                 TestContext.Current.CancellationToken));
@@ -868,9 +868,6 @@ public sealed class RecoveryStateMachineG2Tests
             await connection.OpenAsync(token);
             await using ControlServerDbContext context = await CreateContextAsync(connection);
             await SeedBlockedJourneyAsync(context);
-            OrderIntentRow pickup = await context.OrderIntents.SingleAsync(row => row.UpperId == "UPPER-PICKUP", token);
-            pickup.VehicleOccupancyClaimedAt = Now.AddMinutes(-8);
-            await context.SaveChangesAsync(token);
             OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), proofVariable);
             OnboardConnectionState state = CurrentState();
             await processor.ProcessAsync(RecoverySessionRequest(proof), state, token);
@@ -881,13 +878,12 @@ public sealed class RecoveryStateMachineG2Tests
             Assert.Equal("DurableAck", MessageType(ack));
             Assert.Equal(RecoveryWorkflowState.Reconciled, (await context.RecoveryWorkflows.SingleAsync(token)).State);
             Assert.Equal(DemandExecutionStatus.Cancelled, (await context.AcceptedDemands.SingleAsync(token)).Status);
-            Assert.NotNull((await context.VehicleDispatchLeases.SingleAsync(token)).ReleasedAt);
+            Assert.NotNull((await context.Set<VehiclePurposeClaimRecordRow>().SingleAsync(token)).ReleasedAt);
             Assert.Equal(StationOperationStatus.Cancelled, (await context.StationOperations.SingleAsync(token)).Status);
             JourneyRuntimeRow runtime = await context.JourneyRuntimes.SingleAsync(token);
             Assert.Equal(JourneyRuntimeStage.Completed, runtime.Stage);
             Assert.Equal("TERMINATED_BY_FAULT_CARGO_HANDOFF", runtime.BlockReasonCode);
-            Assert.NotNull((await context.OrderIntents.AsNoTracking()
-                .SingleAsync(row => row.UpperId == "UPPER-PICKUP", token)).VehicleOccupancyReleasedAt);
+            Assert.Empty(await context.Set<VehiclePurposeClaimRow>().AsNoTracking().ToArrayAsync(token));
             Assert.Equal("CLOSED", (await context.ExceptionRecoverySessions.SingleAsync(token)).State);
             Assert.Equal("CLOSED", await LatestSessionSnapshotStateAsync(context));
 
@@ -1180,9 +1176,6 @@ public sealed class RecoveryStateMachineG2Tests
             await connection.OpenAsync(token);
             await using ControlServerDbContext context = await CreateContextAsync(connection);
             await SeedBlockedJourneyAsync(context);
-            OrderIntentRow pickup = await context.OrderIntents.SingleAsync(row => row.UpperId == "UPPER-PICKUP", token);
-            pickup.VehicleOccupancyClaimedAt = Now.AddMinutes(-8);
-            await context.SaveChangesAsync(token);
             RecordingLogger<OnboardRecoveryCoordinator> log = new();
             OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
                 context, new WireToGateStore(context), new FixedTimeProvider(Now), Configuration(proofVariable),
@@ -1208,9 +1201,8 @@ public sealed class RecoveryStateMachineG2Tests
             JourneyRuntimeRow runtime = await context.JourneyRuntimes.SingleAsync(token);
             Assert.Equal(JourneyRuntimeStage.Blocked, runtime.Stage);
             Assert.Equal(messageType + "_NOT_RECONCILED", runtime.BlockReasonCode);
-            Assert.Null((await context.VehicleDispatchLeases.SingleAsync(token)).ReleasedAt);
-            Assert.Null((await context.OrderIntents.AsNoTracking()
-                .SingleAsync(row => row.UpperId == "UPPER-PICKUP", token)).VehicleOccupancyReleasedAt);
+            Assert.Null((await context.Set<VehiclePurposeClaimRecordRow>().SingleAsync(token)).ReleasedAt);
+            Assert.Single(await context.Set<VehiclePurposeClaimRow>().AsNoTracking().ToArrayAsync(token));
             Assert.Equal(StationOperationStatus.RecoveryRequired, (await context.StationOperations.SingleAsync(token)).Status);
             Assert.Empty(await context.TransportDemandCompletions.ToArrayAsync(token));
 
@@ -1356,9 +1348,6 @@ public sealed class RecoveryStateMachineG2Tests
             await connection.OpenAsync(token);
             await using ControlServerDbContext context = await CreateContextAsync(connection);
             await SeedBlockedJourneyAsync(context);
-            OrderIntentRow pickup = await context.OrderIntents.SingleAsync(row => row.UpperId == "UPPER-PICKUP", token);
-            pickup.VehicleOccupancyClaimedAt = Now.AddMinutes(-8);
-            await context.SaveChangesAsync(token);
             OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), proofVariable);
             OnboardConnectionState state = CurrentState();
             // Session A: the same handoff submitted twice; the first reports FAILED and closes A.
@@ -1423,7 +1412,7 @@ public sealed class RecoveryStateMachineG2Tests
             Assert.Equal(JourneyRuntimeStage.Completed, runtime.Stage);
             Assert.Equal("CANCELLED_BY_LOAD_COMPENSATION", runtime.BlockReasonCode);
             Assert.Equal(DemandExecutionStatus.Cancelled, (await context.AcceptedDemands.SingleAsync(token)).Status);
-            Assert.NotNull((await context.VehicleDispatchLeases.SingleAsync(token)).ReleasedAt);
+            Assert.NotNull((await context.Set<VehiclePurposeClaimRecordRow>().SingleAsync(token)).ReleasedAt);
             Dictionary<string, (string Reason, string? Outcome)> reasons = await ClosingReasonsAsync(context);
             Assert.Equal(("RECOVERY_ACTION_RESULT_NOT_RECONCILED", "FAILED"),
                 reasons[StableGuid(RequestId, "exception-recovery-session")]);
@@ -1644,9 +1633,6 @@ public sealed class RecoveryStateMachineG2Tests
             await connection.OpenAsync(token);
             await using ControlServerDbContext context = await CreateContextAsync(connection);
             await SeedBlockedJourneyAsync(context);
-            OrderIntentRow pickup = await context.OrderIntents.SingleAsync(row => row.UpperId == "UPPER-PICKUP", token);
-            pickup.VehicleOccupancyClaimedAt = Now.AddMinutes(-8);
-            await context.SaveChangesAsync(token);
             RecordingLogger<OnboardRecoveryCoordinator> log = new();
             OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
                 context, new WireToGateStore(context), new FixedTimeProvider(Now), Configuration(proofVariable),
@@ -1686,9 +1672,8 @@ public sealed class RecoveryStateMachineG2Tests
             JourneyRuntimeRow runtime = await context.JourneyRuntimes.SingleAsync(token);
             Assert.Equal(JourneyRuntimeStage.Blocked, runtime.Stage);
             Assert.Equal("LOAD_RESULT_REQUIRES_RECOVERY", runtime.BlockReasonCode);
-            Assert.Null((await context.VehicleDispatchLeases.SingleAsync(token)).ReleasedAt);
-            Assert.Null((await context.OrderIntents.AsNoTracking()
-                .SingleAsync(row => row.UpperId == "UPPER-PICKUP", token)).VehicleOccupancyReleasedAt);
+            Assert.Null((await context.Set<VehiclePurposeClaimRecordRow>().SingleAsync(token)).ReleasedAt);
+            Assert.Single(await context.Set<VehiclePurposeClaimRow>().AsNoTracking().ToArrayAsync(token));
             Assert.Empty(await context.TransportDemandCompletions.ToArrayAsync(token));
         }
         finally
@@ -2240,7 +2225,6 @@ public sealed class RecoveryStateMachineG2Tests
             await connection.OpenAsync(token);
             await using ControlServerDbContext context = await CreateContextAsync(connection);
             await SeedBlockedJourneyAsync(context);
-            await ClaimPickupOccupancyAsync(context);
             OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), proofVariable);
             OnboardConnectionState state = CurrentState();
             await processor.ProcessAsync(RecoverySessionRequest(proof), state, token);
@@ -2340,7 +2324,6 @@ public sealed class RecoveryStateMachineG2Tests
             await connection.OpenAsync(token);
             await using ControlServerDbContext context = await CreateContextAsync(connection);
             await SeedBlockedJourneyAsync(context);
-            await ClaimPickupOccupancyAsync(context);
             RecordingPeer peer = new(context);
             OnboardMessageProcessor processor = Processor(context, peer, proofVariable);
             OnboardConnectionState state = CurrentState(deferOutbound: true);
@@ -2367,9 +2350,8 @@ public sealed class RecoveryStateMachineG2Tests
             JourneyRuntimeRow runtime = await context.JourneyRuntimes.AsNoTracking().SingleAsync(token);
             Assert.Equal((JourneyRuntimeStage.Blocked, runtimeBefore.BlockReasonCode),
                 (runtime.Stage, runtime.BlockReasonCode));
-            Assert.Null((await context.VehicleDispatchLeases.AsNoTracking().SingleAsync(token)).ReleasedAt);
-            Assert.Null((await context.OrderIntents.AsNoTracking()
-                .SingleAsync(row => row.UpperId == "UPPER-PICKUP", token)).VehicleOccupancyReleasedAt);
+            Assert.Null((await context.Set<VehiclePurposeClaimRecordRow>().AsNoTracking().SingleAsync(token)).ReleasedAt);
+            Assert.Single(await context.Set<VehiclePurposeClaimRow>().AsNoTracking().ToArrayAsync(token));
             Assert.Equal(StationOperationStatus.RecoveryRequired,
                 (await context.StationOperations.AsNoTracking().SingleAsync(token)).Status);
             Assert.Empty(await context.TransportDemandCompletions.ToArrayAsync(token));
@@ -2550,7 +2532,6 @@ public sealed class RecoveryStateMachineG2Tests
             await connection.OpenAsync(token);
             await using ControlServerDbContext context = await CreateContextAsync(connection);
             await SeedBlockedJourneyAsync(context);
-            await ClaimPickupOccupancyAsync(context);
             MovableTimeProvider clock = new(Now);
             EventRecordingLogger<OnboardRecoveryCoordinator> log = new();
             OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
@@ -2574,7 +2555,7 @@ public sealed class RecoveryStateMachineG2Tests
 
             Assert.Equal("DurableAck", MessageType(ack));
             Assert.Equal(before, await BusinessPictureAsync(context));
-            Assert.Null((await context.VehicleDispatchLeases.AsNoTracking().SingleAsync(token)).ReleasedAt);
+            Assert.Null((await context.Set<VehiclePurposeClaimRecordRow>().AsNoTracking().SingleAsync(token)).ReleasedAt);
             await AssertLateResultRecordedAsync(context, firstSessionId, late, lateOutcome, Now.AddMinutes(2));
             Assert.Equal(logsBefore + 1, log.Entries.Count);
             AssertSingleLateResultLog(log, firstSessionId, SecondActionId, lateOutcome);
@@ -2606,7 +2587,6 @@ public sealed class RecoveryStateMachineG2Tests
             await connection.OpenAsync(token);
             await using ControlServerDbContext context = await CreateContextAsync(connection);
             await SeedBlockedJourneyAsync(context);
-            await ClaimPickupOccupancyAsync(context);
             MovableTimeProvider clock = new(Now);
             EventRecordingLogger<OnboardRecoveryCoordinator> log = new();
             OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
@@ -2658,7 +2638,6 @@ public sealed class RecoveryStateMachineG2Tests
             await connection.OpenAsync(token);
             await using ControlServerDbContext context = await CreateContextAsync(connection);
             await SeedBlockedJourneyAsync(context);
-            await ClaimPickupOccupancyAsync(context);
             MovableTimeProvider clock = new(Now);
             EventRecordingLogger<OnboardRecoveryCoordinator> log = new();
             OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
@@ -2675,9 +2654,9 @@ public sealed class RecoveryStateMachineG2Tests
             Assert.Equal(DemandExecutionStatus.Cancelled, settled.Demand);
             Assert.Equal(JourneyRuntimeStage.Completed, settled.Stage);
             Assert.Equal("CANCELLED_BY_LOAD_COMPENSATION", settled.BlockReasonCode);
-            Assert.Equal(Now.AddMinutes(1), settled.LeaseReleasedAt);
-            await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(context);
-            Assert.Equal(Now.AddMinutes(1), settled.OccupancyReleasedAt);
+            Assert.Equal(Now.AddMinutes(1), settled.ClaimRecordReleasedAt);
+            await VehicleOccupancyAssertions.AssertOpenClaimRecordsAndPurposeClaimsMatchAsync(context);
+            Assert.False(settled.ClaimHeld);
             clock.Current = Now.AddMinutes(2);
 
             Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(late, state, token)));
@@ -2721,7 +2700,6 @@ public sealed class RecoveryStateMachineG2Tests
             await connection.OpenAsync(token);
             await using ControlServerDbContext context = await CreateContextAsync(connection);
             await SeedBlockedJourneyAsync(context);
-            await ClaimPickupOccupancyAsync(context);
             MovableTimeProvider clock = new(Now);
             EventRecordingLogger<OnboardRecoveryCoordinator> log = new();
             OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
@@ -2765,9 +2743,8 @@ public sealed class RecoveryStateMachineG2Tests
             runtime.Stage = JourneyRuntimeStage.Completed;
             runtime.SetBlockReason(null, clock.Current);
             runtime.UpdatedAt = clock.Current;
-            (await context.VehicleDispatchLeases.SingleAsync(token)).ReleasedAt = clock.Current;
-            (await context.OrderIntents.SingleAsync(row => row.UpperId == "UPPER-PICKUP", token))
-                .VehicleOccupancyReleasedAt = clock.Current;
+            (await context.Set<VehiclePurposeClaimRecordRow>().SingleAsync(token)).ReleasedAt = clock.Current;
+            context.Set<VehiclePurposeClaimRow>().Remove(await context.Set<VehiclePurposeClaimRow>().SingleAsync(token));
             context.TransportDemandCompletions.Add(new TransportDemandCompletionRow
             {
                 TransportDemandKey = demand.TransportDemandKey,
@@ -2817,7 +2794,6 @@ public sealed class RecoveryStateMachineG2Tests
             await connection.OpenAsync(token);
             await using ControlServerDbContext context = await CreateContextAsync(connection);
             await SeedBlockedJourneyAsync(context);
-            await ClaimPickupOccupancyAsync(context);
             MovableTimeProvider clock = new(Now);
             EventRecordingLogger<OnboardRecoveryCoordinator> log = new();
             OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
@@ -2886,7 +2862,6 @@ public sealed class RecoveryStateMachineG2Tests
             await connection.OpenAsync(token);
             await using ControlServerDbContext context = await CreateContextAsync(connection);
             await SeedBlockedJourneyAsync(context);
-            await ClaimPickupOccupancyAsync(context);
             WireToGateStore store = new(context);
             EventRecordingLogger<OnboardRecoveryCoordinator> log = new();
             OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
@@ -2955,7 +2930,6 @@ public sealed class RecoveryStateMachineG2Tests
             await connection.OpenAsync(token);
             await using ControlServerDbContext context = await CreateContextAsync(connection);
             await SeedBlockedJourneyAsync(context);
-            await ClaimPickupOccupancyAsync(context);
             MovableTimeProvider clock = new(Now);
             EventRecordingLogger<OnboardRecoveryCoordinator> log = new();
             OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
@@ -3023,7 +2997,6 @@ public sealed class RecoveryStateMachineG2Tests
             await connection.OpenAsync(token);
             await using ControlServerDbContext context = await CreateContextAsync(connection);
             await SeedBlockedJourneyAsync(context);
-            await ClaimPickupOccupancyAsync(context);
             MovableTimeProvider clock = new(Now);
             EventRecordingLogger<OnboardRecoveryCoordinator> log = new();
             OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
@@ -3086,7 +3059,6 @@ public sealed class RecoveryStateMachineG2Tests
             await connection.OpenAsync(token);
             await using ControlServerDbContext context = await CreateContextAsync(connection);
             await SeedBlockedJourneyAsync(context);
-            await ClaimPickupOccupancyAsync(context);
             MovableTimeProvider clock = new(Now);
             EventRecordingLogger<OnboardRecoveryCoordinator> log = new();
             OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
@@ -3244,7 +3216,7 @@ public sealed class RecoveryStateMachineG2Tests
                 TestContext.Current.CancellationToken)).State);
             Assert.Equal(DemandExecutionStatus.RecoveryRequired, (await context.AcceptedDemands.SingleAsync(
                 TestContext.Current.CancellationToken)).Status);
-            Assert.Null((await context.VehicleDispatchLeases.SingleAsync(
+            Assert.Null((await context.Set<VehiclePurposeClaimRecordRow>().SingleAsync(
                 TestContext.Current.CancellationToken)).ReleasedAt);
             Assert.Empty(await context.TransportDemandCompletions.ToArrayAsync(
                 TestContext.Current.CancellationToken));
@@ -3518,7 +3490,7 @@ public sealed class RecoveryStateMachineG2Tests
                 TestContext.Current.CancellationToken)).State);
             Assert.Equal(DemandExecutionStatus.Cancelled, (await context.AcceptedDemands.SingleAsync(
                 TestContext.Current.CancellationToken)).Status);
-            Assert.NotNull((await context.VehicleDispatchLeases.SingleAsync(
+            Assert.NotNull((await context.Set<VehiclePurposeClaimRecordRow>().SingleAsync(
                 TestContext.Current.CancellationToken)).ReleasedAt);
             Assert.Equal(StationOperationStatus.Cancelled, (await context.StationOperations.SingleAsync(
                 TestContext.Current.CancellationToken)).Status);
@@ -3559,7 +3531,7 @@ public sealed class RecoveryStateMachineG2Tests
                 TestContext.Current.CancellationToken)).State);
             Assert.Equal(DemandExecutionStatus.RecoveryRequired, (await context.AcceptedDemands.SingleAsync(
                 TestContext.Current.CancellationToken)).Status);
-            Assert.Null((await context.VehicleDispatchLeases.SingleAsync(
+            Assert.Null((await context.Set<VehiclePurposeClaimRecordRow>().SingleAsync(
                 TestContext.Current.CancellationToken)).ReleasedAt);
             Assert.Equal(StationOperationStatus.Prepared, (await context.StationOperations.SingleAsync(
                 TestContext.Current.CancellationToken)).Status);
@@ -4173,10 +4145,10 @@ public sealed class RecoveryStateMachineG2Tests
     /// <summary>
     /// control-server#131: each of the three results that end a demand whose load was commanded -- an
     /// in-flight cancellation, a compensation, a fault cargo handoff -- frees the vehicle in the same change
-    /// that cancels the demand, releases the lease and cancels the slot operation. Until #131 they wrote all
+    /// that cancels the demand, releases the vehicle and cancels the slot operation. Until #131 they wrote all
     /// of that by hand except the vehicle occupancy, so the pickup order kept holding the vehicle and the
-    /// occupancy index refused its next order (VEHICLE_OCCUPANCY_CONFLICT). The second claim below is that
-    /// index's decision, the same call the runtime makes before it dispatches.
+    /// occupancy index refused its next order (VEHICLE_OCCUPANCY_CONFLICT). Since control-server#387 the vehicle's
+    /// one occupancy is its purpose claim, and the claim below is the key's decision the next acceptance meets.
     /// </summary>
     [Theory]
     [Trait("IntegrationSlice", "FP-IS-02")]
@@ -4201,9 +4173,6 @@ public sealed class RecoveryStateMachineG2Tests
                 await SeedCancellableLoadAsync(context);
             else
                 await SeedBlockedJourneyAsync(context);
-            OrderIntentRow pickup = await context.OrderIntents.SingleAsync(row => row.UpperId == "UPPER-PICKUP", token);
-            pickup.VehicleOccupancyClaimedAt = Now.AddMinutes(-8);
-            await context.SaveChangesAsync(token);
             OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), proofVariable);
             OnboardConnectionState state = CurrentState();
 
@@ -4213,13 +4182,12 @@ public sealed class RecoveryStateMachineG2Tests
             Assert.Equal(RecoveryWorkflowState.Reconciled, (await context.RecoveryWorkflows
                 .SingleAsync(row => row.ResultMessageId != null, token)).State);
             Assert.Equal(DemandExecutionStatus.Cancelled, (await context.AcceptedDemands.SingleAsync(token)).Status);
-            Assert.NotNull((await context.VehicleDispatchLeases.SingleAsync(token)).ReleasedAt);
+            Assert.NotNull((await context.Set<VehiclePurposeClaimRecordRow>().SingleAsync(token)).ReleasedAt);
             Assert.Equal(StationOperationStatus.Cancelled, (await context.StationOperations.SingleAsync(token)).Status);
             JourneyRuntimeRow runtime = await context.JourneyRuntimes.SingleAsync(token);
             Assert.Equal(JourneyRuntimeStage.Completed, runtime.Stage);
             Assert.Equal(reasonCode, runtime.BlockReasonCode);
-            Assert.NotNull((await context.OrderIntents.AsNoTracking()
-                .SingleAsync(row => row.UpperId == "UPPER-PICKUP", token)).VehicleOccupancyReleasedAt);
+            Assert.Empty(await context.Set<VehiclePurposeClaimRow>().AsNoTracking().ToArrayAsync(token));
             await ZeroChangePin.AssertMatchesAsync(context, "commanded-ending-" + messageType);
             // 批次7-05（control-server#210）：取消与补偿是本地取消，按业务键抑制；故障货物交接不是（REQ-0156 只列四个码）。
             if (reasonCode == "TERMINATED_BY_FAULT_CARGO_HANDOFF")
@@ -4227,11 +4195,14 @@ public sealed class RecoveryStateMachineG2Tests
             else
                 await SuppressionAssertions.AssertTheDemandSuppressedAsync(context, reasonCode);
 
-            OrderIntentRow next = Intent("next-pickup-leg", "UPPER-NEXT-PICKUP", "TO_PICKUP", 11);
-            context.OrderIntents.Add(next);
-            await context.SaveChangesAsync(token);
-            Assert.True(await new VehicleDispatchPolicyStore(context).TryClaimVehicleOccupancyAsync(
-                next.UpperId, Now.AddMinutes(1), token));
+            // The vehicle takes its next journey: the claim's key lets a new holder in (batch 8-16, control-server#387;
+            // this used to claim the next order's occupancy on OrderIntents).
+            Assert.Equal(
+                VehiclePurposeAcquisitionOutcome.Acquired,
+                await new VehiclePurposeLedgerStore(context).TryAcquireAsync(
+                    new VehiclePurposeClaim("VEHICLE-001", VehiclePurposes.Transport, "journey:NEXT", Now.AddMinutes(1)),
+                    station: null,
+                    token));
         }
         finally
         {
@@ -4293,7 +4264,7 @@ public sealed class RecoveryStateMachineG2Tests
             JourneyRuntimeRow runtime = await context.JourneyRuntimes.SingleAsync(token);
             Assert.Equal(JourneyRuntimeStage.Completed, runtime.Stage);
             Assert.Equal("TERMINATED_BY_FAULT_CARGO_HANDOFF", runtime.BlockReasonCode);
-            Assert.NotNull((await context.VehicleDispatchLeases.SingleAsync(token)).ReleasedAt);
+            Assert.NotNull((await context.Set<VehiclePurposeClaimRecordRow>().SingleAsync(token)).ReleasedAt);
         }
         finally
         {
@@ -5728,14 +5699,6 @@ public sealed class RecoveryStateMachineG2Tests
             })), state, token)));
     }
 
-    private static async Task ClaimPickupOccupancyAsync(ControlServerDbContext context)
-    {
-        OrderIntentRow pickup = await context.OrderIntents.SingleAsync(
-            row => row.UpperId == "UPPER-PICKUP", TestContext.Current.CancellationToken);
-        pickup.VehicleOccupancyClaimedAt = Now.AddMinutes(-8);
-        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
-    }
-
     /// <summary>
     /// Everything a recovery result may settle, and every session, as the store has it: two pictures taken either
     /// side of a result that must only be recorded compare equal.
@@ -5746,8 +5709,8 @@ public sealed class RecoveryStateMachineG2Tests
         string? BlockReasonCode,
         DateTimeOffset? BlockReasonSince,
         DateTimeOffset? RuntimeUpdatedAt,
-        DateTimeOffset? LeaseReleasedAt,
-        DateTimeOffset? OccupancyReleasedAt,
+        DateTimeOffset? ClaimRecordReleasedAt,
+        bool ClaimHeld,
         StationOperationStatus Operation,
         string Sessions,
         int Snapshots,
@@ -5765,9 +5728,8 @@ public sealed class RecoveryStateMachineG2Tests
             runtime.BlockReasonCode,
             runtime.BlockReasonSince,
             runtime.UpdatedAt,
-            (await context.VehicleDispatchLeases.AsNoTracking().SingleAsync(token)).ReleasedAt,
-            (await context.OrderIntents.AsNoTracking()
-                .SingleAsync(row => row.UpperId == "UPPER-PICKUP", token)).VehicleOccupancyReleasedAt,
+            (await context.Set<VehiclePurposeClaimRecordRow>().AsNoTracking().SingleAsync(token)).ReleasedAt,
+            await context.Set<VehiclePurposeClaimRow>().AsNoTracking().AnyAsync(token),
             (await context.StationOperations.AsNoTracking().SingleAsync(token)).Status,
             string.Join(';', sessions.OrderBy(row => row.ExceptionRecoverySessionId, StringComparer.Ordinal)
                 .Select(row => $"{row.ExceptionRecoverySessionId}:{row.State}:{row.Revision}:{row.SelectedAction}")),
@@ -5980,14 +5942,16 @@ public sealed class RecoveryStateMachineG2Tests
             AcceptedAt = Now.AddMinutes(-8),
             Status = DemandExecutionStatus.RecoveryRequired
         });
-        context.VehicleDispatchLeases.Add(new VehicleDispatchLeaseRow
+        // Acceptance writes the purpose claim with its open record (batch 8-16, control-server#387; the lease they replaced
+        // was written beside the claim since batch 7, control-server#206).
+        context.Set<VehiclePurposeClaimRecordRow>().Add(new VehiclePurposeClaimRecordRow
         {
+            RecordId = "record:" + DemandId,
             JourneyId = JourneyIdentity.ForAnchorDemand(DemandId),
-            DemandId = DemandId,
+            Purpose = VehiclePurposes.Transport,
             VehicleKey = "VEHICLE-001",
             AcquiredAt = Now.AddMinutes(-8)
         });
-        // Batch 7 (control-server#206): acceptance writes the purpose claim beside the lease.
         context.Set<VehiclePurposeClaimRow>().Add(new VehiclePurposeClaimRow
         {
             VehicleKey = "VEHICLE-001",

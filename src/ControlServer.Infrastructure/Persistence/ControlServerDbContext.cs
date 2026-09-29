@@ -8,7 +8,6 @@ namespace ControlServer.Infrastructure.Persistence;
 public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbContext> options) : DbContext(options)
 {
     public DbSet<AcceptedDemandRow> AcceptedDemands => Set<AcceptedDemandRow>();
-    public DbSet<VehicleDispatchLeaseRow> VehicleDispatchLeases => Set<VehicleDispatchLeaseRow>();
     public DbSet<OrderIntentRow> OrderIntents => Set<OrderIntentRow>();
     public DbSet<RiotDispatchAuditEventRow> RiotDispatchAuditEvents => Set<RiotDispatchAuditEventRow>();
     public DbSet<ExperimentalRiotCreateAuthorizationRow> ExperimentalRiotCreateAuthorizations =>
@@ -92,14 +91,6 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
         modelBuilder.Entity<AcceptedDemandRow>().HasKey(row => row.DemandId);
         modelBuilder.Entity<AcceptedDemandRow>().HasIndex(row => row.TransportDemandKey).IsUnique();
         modelBuilder.Entity<AcceptedDemandRow>().Property(row => row.Status).HasConversion<string>();
-        // Batch 7 (control-server#206): keyed on the journey, the demand kept as a plain column because scripts and
-        // G3 scenarios read it, and because every release site still finds the lease by its anchor demand.
-        modelBuilder.Entity<VehicleDispatchLeaseRow>().HasKey(row => row.JourneyId);
-        modelBuilder.Entity<VehicleDispatchLeaseRow>().HasIndex(row => row.DemandId);
-        modelBuilder.Entity<VehicleDispatchLeaseRow>()
-            .HasIndex(row => row.VehicleKey)
-            .IsUnique()
-            .HasFilter("ReleasedAt IS NULL");
         modelBuilder.Entity<OrderIntentRow>().HasKey(row => row.MovementLegId);
         modelBuilder.Entity<OrderIntentRow>().HasIndex(row => row.UpperId).IsUnique();
         modelBuilder.Entity<OrderIntentRow>().Property(row => row.Status).IsConcurrencyToken();
@@ -304,16 +295,6 @@ public sealed class AcceptedDemandRow
     public DemandExecutionStatus Status { get; set; }
 }
 
-public sealed class VehicleDispatchLeaseRow
-{
-    /// <summary>The journey the lease is held for; the key since batch 7 (control-server#206).</summary>
-    public required string JourneyId { get; set; }
-    public required string DemandId { get; set; }
-    public required string VehicleKey { get; set; }
-    public DateTimeOffset AcquiredAt { get; set; }
-    public DateTimeOffset? ReleasedAt { get; set; }
-}
-
 public sealed class OrderIntentRow
 {
     public required string MovementLegId { get; set; }
@@ -341,12 +322,6 @@ public sealed class OrderIntentRow
     public string? LastReconciliationOutcome { get; set; }
     public DateTimeOffset? LastReconciliationOutcomeAt { get; set; }
     public string? LastReconciliationReceiptJson { get; set; }
-
-    // Vehicle-occupancy uniqueness moved down from the lease table (specification 5.1).
-    // Nothing writes these yet — see Batch2CapabilityModel for why the index is filtered on
-    // ClaimedAt being set, and why that keeps current behaviour unchanged.
-    public DateTimeOffset? VehicleOccupancyClaimedAt { get; set; }
-    public DateTimeOffset? VehicleOccupancyReleasedAt { get; set; }
 }
 
 public sealed class RiotDispatchAuditEventRow

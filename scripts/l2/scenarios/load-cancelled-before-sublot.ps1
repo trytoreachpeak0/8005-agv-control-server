@@ -60,7 +60,7 @@ function Get-Runtime([string]$demandId) {
 
 function Get-Intent([string]$demandId, [string]$purpose) {
     $rows = Invoke-L2Query -Connection $connection `
-        -Sql "SELECT UpperId, OrderId, Status, VehicleOccupancyReleasedAt FROM OrderIntents WHERE DemandId = '$demandId' AND Purpose = '$purpose'"
+        -Sql "SELECT UpperId, OrderId, Status FROM OrderIntents WHERE DemandId = '$demandId' AND Purpose = '$purpose'"
     if ($rows.Count -eq 0) { return $null }
     return $rows[0]
 }
@@ -194,14 +194,14 @@ function Add-StopEndedAssertions([string]$prefix, [string]$demandId, [object]$ca
         'Completed / CANCELLED_BY_OPERATOR / Cancelled',
         "$($ended.Stage) / $($ended.BlockReasonCode) / $(if ($demandRows.Count -eq 1) { $demandRows[0].Status } else { '(no demand row)' })")
 
-    $leaseRows = Invoke-L2Query -Connection $connection -Sql "SELECT ReleasedAt FROM VehicleDispatchLeases WHERE DemandId = '$demandId'"
-    $pickupIntent = Get-Intent $demandId 'TO_PICKUP'
+    $leaseRows = Invoke-L2Query -Connection $connection -Sql "SELECT r.ReleasedAt FROM VehiclePurposeClaimRecords AS r JOIN JourneyDemands AS d ON d.JourneyId = r.JourneyId WHERE d.DemandId = '$demandId'"
+    # control-server#387：租约与订单占用退役，车辆占用只剩用途占有；「放了」读它的记录与占有行。
+    $claimsHeld = Get-Count "SELECT COUNT(*) AS Total FROM VehiclePurposeClaims AS c JOIN JourneyDemands AS d ON d.JourneyId = c.JourneyId WHERE d.DemandId = '$demandId'"
     $assertions.Add(
-        "$prefix-d", '调度租约与车辆占用都释放了',
-        ($leaseRows.Count -eq 1 -and -not (Test-L2Null $leaseRows[0].ReleasedAt) -and
-            -not (Test-L2Null $pickupIntent.VehicleOccupancyReleasedAt)),
-        '租约已释放 / 占用已释放',
-        "ReleasedAt=$(if ($leaseRows.Count -eq 1) { $leaseRows[0].ReleasedAt } else { '(no lease row)' }) / VehicleOccupancyReleasedAt=$($pickupIntent.VehicleOccupancyReleasedAt)")
+        "$prefix-d", '车辆占用释放了：用途占有记录有释放时刻，占有行已不在',
+        ($leaseRows.Count -eq 1 -and -not (Test-L2Null $leaseRows[0].ReleasedAt) -and $claimsHeld -eq 0),
+        '占有记录已释放 / 占有行 0',
+        "ReleasedAt=$(if ($leaseRows.Count -eq 1) { $leaseRows[0].ReleasedAt } else { '(no claim record)' }) / 占有行 $claimsHeld")
 
     $entryRequest = Invoke-L2Query -Connection $connection `
         -Sql "SELECT AcknowledgedAt FROM ProtocolOutbox WHERE MessageId = '$($waiting.SublotRequestMessageId)'"

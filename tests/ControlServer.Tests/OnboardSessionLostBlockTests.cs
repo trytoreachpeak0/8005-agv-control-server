@@ -198,7 +198,7 @@ public sealed class OnboardSessionLostBlockTests
         JourneyRuntimeRow held = await fixture.RuntimeAsync();
         Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, held.Stage);
         Assert.Equal(DemandExecutionStatus.Accepted, (await fixture.DemandRowAsync()).Status);
-        Assert.Null((await fixture.LeaseAsync()).ReleasedAt);
+        Assert.Null((await fixture.ClaimRecordAsync()).ReleasedAt);
         Assert.Empty(await fixture.Context.RiotOrderCommandAudit.AsNoTracking()
             .ToArrayAsync(TestContext.Current.CancellationToken));
     }

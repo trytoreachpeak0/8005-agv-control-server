@@ -118,7 +118,7 @@ $workflowState = Get-G3Scalar $connection "SELECT State AS Value FROM RecoveryWo
 $demandStatus = Get-G3Scalar $connection "SELECT Status AS Value FROM AcceptedDemands WHERE DemandId = '$demandId'"
 $loadStatus = Get-G3Scalar $connection "SELECT Status AS Value FROM StationOperations WHERE SlotOperationAttemptId = '$attemptId'"
 $journey = "$(Get-G3Scalar $connection "SELECT Stage AS Value FROM JourneyRuntimes WHERE DemandId = '$demandId'")/$(Get-G3Scalar $connection "SELECT BlockReasonCode AS Value FROM JourneyRuntimes WHERE DemandId = '$demandId'")"
-$released = Test-G3Present (Get-G3Scalar $connection "SELECT ReleasedAt AS Value FROM VehicleDispatchLeases WHERE DemandId = '$demandId'")
+$released = Test-G3Present (Get-G3Scalar $connection "SELECT r.ReleasedAt AS Value FROM VehiclePurposeClaimRecords AS r JOIN JourneyDemands AS d ON d.JourneyId = r.JourneyId WHERE d.DemandId = '$demandId'")
 $toGate = Get-G3Count $connection "SELECT COUNT(*) AS Total FROM OrderIntents WHERE DemandId = '$demandId' AND Purpose = 'TO_GATE'"
 $sessionState = if (Test-G3Present $sessionId) { Get-G3Scalar $connection "SELECT State AS Value FROM ExceptionRecoverySessions WHERE ExceptionRecoverySessionId = '$sessionId'" } else { '(none)' }
 $orders = @($riot.Snapshot().body.orders).Count
@@ -131,7 +131,7 @@ $assertions.Add(
     "$workflowState / $sessionState / $demandStatus / $loadStatus / 释放=$released / $journey / TO_GATE $toGate / RIoT 单 $orders")
 
 Add-G3VehicleReleasedForNextDemand $Context 'G3-07-26' `
-    '补偿收敛之后车辆放出来了：这条需求的 TO_PICKUP 单车辆占用已释放，同一台车在 60 秒内接了下一单（旅程到 AwaitingPickupArrival，不是 Blocked/VEHICLE_OCCUPANCY_CONFLICT；control-server#131）' `
+    '补偿收敛之后车辆放出来了：这条需求所在旅程的用途占有记录已释放，同一台车在 60 秒内接了下一单（旅程到 AwaitingPickupArrival、没有停摆原因码；control-server#131，#387 起读用途占有）' `
     $demandId 'G3-07C'
 
 $journal.Note('FP-IS-07: an UNKNOWN load was compensated on authorization against a recovery session, proven empty without unlocking.')

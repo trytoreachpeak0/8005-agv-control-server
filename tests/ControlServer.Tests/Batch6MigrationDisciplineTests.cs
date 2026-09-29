@@ -75,6 +75,8 @@ public sealed class Batch6MigrationDisciplineTests
         "20260928153736_MapNameBaselines",
         // control-server#386：批次 8 建表迁移——新建用途占有记录、站点独占与经过、等待点登记四组表（记录表建空，回填归 #387），VehiclePurposeClaims 加用途 CHECK；选甲放宽 JourneyRuntimes 锚需求与只属搬运的 14 列、OrderIntents／RiotDispatchAuditEvents／ExperimentalRiotCreateAuthorizations／OwnOrderRebuilds 的 DemandId 必填性（都是保留列序的手写重建）；既有列序与行不变。自己的断言在 Batch8MigrationDisciplineTests。
         "20260929044052_Batch8VehiclePurposePersistence",
+        // control-server#387：批次 8 第二次迁移——删前核数据（未结束的旧占用没有对应用途占有即整体拒绝、列出行、什么都不删），从占有行与已释放租约回填占有记录，删租约表与 OrderIntents 的两列订单占用及其过滤唯一索引（原生 DROP COLUMN，其余列序不变）。自己的断言在 Batch8OccupancyRetirementMigrationTests。
+        "20260929070322_Batch8RetireOldVehicleOccupancy",
     ];
 
     [Fact]
@@ -124,7 +126,10 @@ public sealed class Batch6MigrationDisciplineTests
         Assert.NotEmpty(before["DispatchZoneAreaAssignments"]);
         Assert.NotEmpty(before["ConfigurationConsumerBindings"]);
 
-        await fixture.Context.Database.MigrateAsync(TestContext.Current.CancellationToken);
+        // Up to the last migration that keeps every existing table: the next one (batch 8-16, control-server#387) drops the
+        // dispatch lease table and two order occupancy columns, and asserts every other table itself.
+        await fixture.Context.GetService<IMigrator>().MigrateAsync(
+            Batch7MigrationDisciplineTests.LastMigrationWithTheLeases, TestContext.Current.CancellationToken);
 
         foreach (string table in existingTables.Where(table => table != "__EFMigrationsHistory"))
         {

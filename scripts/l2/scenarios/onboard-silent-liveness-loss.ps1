@@ -83,9 +83,9 @@ function Get-OrderCommandCount {
     return [int]$rows[0].N
 }
 
-function Get-ReleasedLeaseCount {
+function Get-ReleasedClaimRecordCount {
     $rows = Invoke-L2Query -Connection $connection `
-        -Sql 'SELECT COUNT(*) AS N FROM VehicleDispatchLeases WHERE ReleasedAt IS NOT NULL'
+        -Sql 'SELECT COUNT(*) AS N FROM VehiclePurposeClaimRecords WHERE ReleasedAt IS NOT NULL'
     return [int]$rows[0].N
 }
 
@@ -220,9 +220,9 @@ $assertions.Add(
 
 $assertions.Add(
     'L2-SL-07', '失联不结束需求、不释放租约',
-    ((Get-DemandStatus) -eq 'Accepted' -and (Get-ReleasedLeaseCount) -eq 0),
+    ((Get-DemandStatus) -eq 'Accepted' -and (Get-ReleasedClaimRecordCount) -eq 0),
     'Accepted / 0 条已释放的租约',
-    "$(Get-DemandStatus) / $(Get-ReleasedLeaseCount) 条已释放的租约")
+    "$(Get-DemandStatus) / $(Get-ReleasedClaimRecordCount) 条已释放的用途占有记录")
 
 $orderCommandsAfter = Get-OrderCommandCount
 $assertions.Add(

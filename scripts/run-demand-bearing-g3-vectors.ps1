@@ -287,7 +287,7 @@ function Test-RowsPreserved {
 
 function Read-ControlDatabase {
     $countedTables = @(
-        'OrderIntents', 'RiotDispatchAuditEvents', 'AcceptedDemands', 'VehicleDispatchLeases',
+        'OrderIntents', 'RiotDispatchAuditEvents', 'AcceptedDemands', 'VehiclePurposeClaimRecords',
         'StationOperations', 'OperationResults', 'UnloadBatches', 'StopClosures',
         'TransportDemandCompletions', 'ProtocolInbox')
     $counts = [ordered]@{}
@@ -302,9 +302,10 @@ function Read-ControlDatabase {
         acceptedDemandRows = Invoke-SqliteRows -DatabasePath $controlDatabasePath `
             -Sql 'SELECT DemandId, TransportDemandKey, DemandRevision, Status FROM AcceptedDemands ORDER BY DemandId' `
             -Columns @('demandId', 'transportDemandKey', 'demandRevision', 'status')
-        vehicleLeaseRows = Invoke-SqliteRows -DatabasePath $controlDatabasePath `
-            -Sql 'SELECT DemandId, VehicleKey, AcquiredAt, ReleasedAt FROM VehicleDispatchLeases ORDER BY DemandId' `
-            -Columns @('demandId', 'vehicleKey', 'acquiredAt', 'releasedAt')
+        # The vehicle's occupancy history since control-server#387 retired the dispatch lease: one record per claim.
+        vehicleClaimRecordRows = Invoke-SqliteRows -DatabasePath $controlDatabasePath `
+            -Sql 'SELECT JourneyId, VehicleKey, AcquiredAt, ReleasedAt FROM VehiclePurposeClaimRecords ORDER BY JourneyId, AcquiredAt' `
+            -Columns @('journeyId', 'vehicleKey', 'acquiredAt', 'releasedAt')
         auditRows = Invoke-SqliteRows -DatabasePath $controlDatabasePath -Sql @'
 SELECT UpperId, DispatchGeneration, Sequence, Phase, Outcome, EligibilityBasis,
        HttpStatusCode, BusinessCode, ResultPresent, ReturnedOrderId
@@ -604,7 +605,7 @@ $demandClosureRowsPass = $null -ne $baseline -and $null -ne $final -and
 
 # Nothing left this machine. The restored store gains business rows -- that is the vector -- but the
 # tables that only an external call can grow must be byte-for-byte the same count as the baseline.
-$externalTables = @('OrderIntents', 'RiotDispatchAuditEvents', 'AcceptedDemands', 'VehicleDispatchLeases')
+$externalTables = @('OrderIntents', 'RiotDispatchAuditEvents', 'AcceptedDemands', 'VehiclePurposeClaimRecords')
 $noExternalSideEffectsPass = $null -ne $baseline -and $null -ne $final -and
     @($externalTables | Where-Object {
         [long]$baseline.counts[$_] -ne [long]$final.counts[$_] }).Count -eq 0 -and
@@ -624,10 +625,10 @@ $demandSurvivesRestartPass = $null -ne $afterProbe -and $null -ne $final -and
     (Test-RowsPreserved -Before $afterProbe.acceptedDemandRows -After $final.acceptedDemandRows `
         -IdentityColumns @('demandId', 'transportDemandKey', 'demandRevision', 'status'))
 
-$vehicleLeaseSurvivesRestartPass = $null -ne $afterProbe -and $null -ne $final -and
-    [long]$afterProbe.counts['VehicleDispatchLeases'] -eq [long]$final.counts['VehicleDispatchLeases'] -and
-    (Test-RowsPreserved -Before $afterProbe.vehicleLeaseRows -After $final.vehicleLeaseRows `
-        -IdentityColumns @('demandId', 'vehicleKey', 'acquiredAt', 'releasedAt'))
+$vehicleClaimRecordSurvivesRestartPass = $null -ne $afterProbe -and $null -ne $final -and
+    [long]$afterProbe.counts['VehiclePurposeClaimRecords'] -eq [long]$final.counts['VehiclePurposeClaimRecords'] -and
+    (Test-RowsPreserved -Before $afterProbe.vehicleClaimRecordRows -After $final.vehicleClaimRecordRows `
+        -IdentityColumns @('journeyId', 'vehicleKey', 'acquiredAt', 'releasedAt'))
 
 # The restarted host has to be serving that same store, not a fresh one: a new session on the old
 # file continues the generation sequence instead of restarting it at 1.
@@ -748,7 +749,7 @@ $assertions = [ordered]@{
     unloadResultClosedTheDemandAtomically = $demandClosureRowsPass
     controlServerHostProcessWasActuallyReplaced = $hostReplacedPass
     acceptedDemandSurvivesTheHostRestart = $demandSurvivesRestartPass
-    vehicleDispatchLeaseSurvivesTheHostRestart = $vehicleLeaseSurvivesRestartPass
+    vehicleClaimRecordSurvivesTheHostRestart = $vehicleClaimRecordSurvivesRestartPass
     restartedHostServesTheSameStore = $restartedHostServesTheSameStorePass
     noMovementOrExternalSideEffects = $noExternalSideEffectsPass
     listenersReleased = $portsReleased

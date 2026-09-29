@@ -130,46 +130,6 @@ public sealed class VehicleDispatchPolicyStore(ControlServerDbContext dbContext)
 
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
-
-    public async Task<bool> TryClaimVehicleOccupancyAsync(
-        string upperId,
-        DateTimeOffset claimedAt,
-        CancellationToken cancellationToken)
-    {
-        OrderIntentRow row = await dbContext.OrderIntents
-            .SingleAsync(intent => intent.UpperId == upperId, cancellationToken)
-            .ConfigureAwait(false);
-
-        row.VehicleOccupancyClaimedAt = claimedAt;
-        row.VehicleOccupancyReleasedAt = null;
-
-        try
-        {
-            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            return true;
-        }
-        catch (DbUpdateException failure) when (!JourneyRowConflict.Is(failure))
-        {
-            // The unique index decided, not a read-then-write: another order already occupies
-            // this vehicle. Detaching leaves the context usable for the rest of the round. A journey row
-            // committed to since the round read it is not this and goes to the runtime (control-server#357).
-            dbContext.Entry(row).State = EntityState.Detached;
-            return false;
-        }
-    }
-
-    public async Task ReleaseVehicleOccupancyAsync(
-        string upperId,
-        DateTimeOffset releasedAt,
-        CancellationToken cancellationToken)
-    {
-        OrderIntentRow row = await dbContext.OrderIntents
-            .SingleAsync(intent => intent.UpperId == upperId, cancellationToken)
-            .ConfigureAwait(false);
-
-        row.VehicleOccupancyReleasedAt = releasedAt;
-        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-    }
 }
 
 /// <summary>Storage for the <c>RouteGraphSnapshot</c> engine's two refresh cycles (ticket 12).</summary>

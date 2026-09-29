@@ -314,23 +314,22 @@ public sealed class Batch7JourneyAppendPersistenceTests
     }
 
     /// <summary>
-    /// 追加不重复认领占用：租约、用途占有、订单占用三样各自仍然只有一行。
+    /// 追加不重复认领占用：用途占有与它的记录仍然各只有一行（批次8-16，control-server#387 退役了租约与订单占用，原来比三样）。
     /// </summary>
     /// <remarks>
-    /// 票面点名要求这一条。它在实现上是<b>构造上的保证</b>——三张表各有唯一索引，重复认领会抛——
-    /// 但「构造上不会发生」和「有判据说它没发生」是两件事：构造哪天换了（比如索引因为别的需要放宽），
-    /// 不会有任何东西提醒。这一条把那个保证变成一句可以变红的话。
+    /// 票面点名要求这一条。它在实现上是<b>构造上的保证</b>——占有行主键一车一行，重复认领会抛——
+    /// 但「构造上不会发生」和「有判据说它没发生」是两件事：构造哪天换了，
+    /// 不会有任何东西提醒。这一条把那个保证变成一句可以变红的话。记录表没有唯一索引（它是证据不是仲裁者），
+    /// 所以「只有一条记录」只能由这里断。
     /// </remarks>
     [Fact]
-    public async Task AnAppendClaimsNoSecondLeaseNoSecondPurposeClaimAndNoSecondOrderOccupancy()
+    public async Task AnAppendClaimsNoSecondPurposeClaimAndWritesNoSecondRecord()
     {
         await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
         JourneyExecutionPlan first = await Batch7JourneyFixture.AcceptAsync(
             fixture.Context, FirstDemandId, AgvId, VehicleKey, Batch7JourneyFixture.Now);
         string journeyId = JourneyIdentity.ForAnchorDemand(FirstDemandId);
         CancellationToken token = TestContext.Current.CancellationToken;
-        int claimedBefore = await fixture.NewContext().OrderIntents
-            .CountAsync(row => row.VehicleOccupancyClaimedAt != null, token);
 
         await new WireToGateStore(fixture.NewContext()).AppendToJourneyAsync(
             Batch7JourneyFixture.Snapshot(SecondDemandId, Batch7JourneyFixture.Now.AddMinutes(1)),
@@ -338,15 +337,9 @@ public sealed class Batch7JourneyAppendPersistenceTests
             token);
 
         ControlServerDbContext read = fixture.NewContext();
-        Assert.Equal(1, await read.VehicleDispatchLeases.CountAsync(row => row.VehicleKey == VehicleKey, token));
+        Assert.Equal(1, await read.Set<VehiclePurposeClaimRecordRow>().CountAsync(row => row.VehicleKey == VehicleKey, token));
         Assert.Equal(1, await read.Set<VehiclePurposeClaimRow>()
             .CountAsync(row => row.VehicleKey == VehicleKey, token));
-        // 订单占用这一项，这个夹具里比的是「追加没有新认领一份」而不是「恰好一份」：
-        // Batch7JourneyFixture.AcceptAsync 是直写的受理，不走认领那一步，所以这里前后都是 0。
-        // 「恰好一份」由走完整受理路径的那些用例覆盖（RecoveryStateMachineG2Tests 里读 UPPER-PICKUP 的那几条）。
-        Assert.Equal(
-            claimedBefore,
-            await read.OrderIntents.CountAsync(row => row.VehicleOccupancyClaimedAt != null, token));
     }
 
     private static JourneyAppendPlan AppendPlan(JourneyExecutionPlan first, string journeyId) =>

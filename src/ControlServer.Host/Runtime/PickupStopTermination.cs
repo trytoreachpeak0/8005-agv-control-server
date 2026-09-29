@@ -279,11 +279,8 @@ public sealed class PickupStopTermination(ControlServerDbContext dbContext, Plan
         ArgumentNullException.ThrowIfNull(runtime);
         ArgumentException.ThrowIfNullOrWhiteSpace(reasonCode);
 
-        await JourneyLeaseRelease.StageAsync(dbContext, runtime.JourneyId, endedAt, cancellationToken)
+        await JourneyPurposeClaimRelease.StageAsync(dbContext, runtime.JourneyId, endedAt, reasonCode, cancellationToken)
             .ConfigureAwait(false);
-        OrderIntentRow pickup = await dbContext.OrderIntents
-            .SingleAsync(row => row.UpperId == runtime.PickupUpperId, cancellationToken).ConfigureAwait(false);
-        pickup.VehicleOccupancyReleasedAt ??= endedAt;
 
         // Nobody is going to answer the entry request now. Left unsettled it is replayed into every
         // later session, where the peer refuses it as a business id whose content changed and tears

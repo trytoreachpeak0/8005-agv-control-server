@@ -79,13 +79,25 @@ namespace ControlServer.Tests;
 /// （<c>evidence/cs357/green/</c>）。这一列在集成分支上还不存在，所以录只能在本票分支上录；它不是「重录来变绿」，
 /// 撑着它的是与集成分支旧基线的逐字比对。
 /// </para>
+/// <para>
+/// <b>control-server#387 退役了租约与订单占用：十份终结状态基线里，租约一节换成占有记录一节，<c>OrderIntents</c> 每行少了
+/// 末尾两列，其余逐字未动。</b>这两样在集成分支上已经不存在（表删了、列删了），所以同 cs#357，只能在本票分支上录。判据：与
+/// <b>集成分支上的</b>旧基线（<c>fp/v2-impl@af2b02cb</c>）按表逐字段比——每条租约行对应恰好一条占有记录，车、旅程、取得与释放
+/// 时刻逐字相同（记录的 <c>RecordId</c> 是随机 GUID，只钉有没有值）；每行 <c>OrderIntents</c> 去掉
+/// 订单占用的认领与释放两列后逐字相同；其余各节与四份看板基线逐字相同。先算出该是
+/// 多少：十份各一条租约，应有 10 条对应，实数 10；取货单十份、另有三份 <c>commanded-ending-*</c> 与 <c>unload</c> 各多一行去关卡
+/// 的单，应有 14 行少两列，实数 14；其余差异 0（<c>evidence/cs387/green/01-zero-change-pin-vs-integration-tip.txt</c>）。
+/// 订单占用「晚一轮释放」在这里看不出来：这批夹具的钟不走，两个时刻本来就相同。
+/// </para>
 /// </remarks>
 internal static class ZeroChangePin
 {
     private static readonly string[] Tables =
     [
         "AcceptedDemands",
-        "VehicleDispatchLeases",
+        // control-server#387 retired the lease: the claim's record carries what the lease row did (the vehicle, the journey,
+        // when it was taken and given back).
+        "VehiclePurposeClaimRecords",
         "VehiclePurposeClaims",
         "OrderIntents",
         "JourneyRuntimes",
@@ -112,6 +124,8 @@ internal static class ZeroChangePin
         // by column name like the rest: of the tables pinned here only JourneyRuntimes has a column named exactly Version
         // (PolicyVersion and the like are other names and stay pinned in full).
         "Version",
+        // control-server#387: a claim record's key is a fresh GUID on every acceptance.
+        "RecordId",
     };
 
     internal static async Task AssertMatchesAsync(
