@@ -99,11 +99,18 @@ public sealed class VehiclePurposeLedgerStore(ControlServerDbContext context) : 
             {
                 return VehiclePurposeAcquisitionOutcome.VehicleHeld;
             }
-            if (stationHolder is not null && !stationIsOurs)
+            if (station is not null && stationIsOurs)
+            {
+                // The vehicle is free but the station is already this journey's: its claim was released and the station
+                // not yet (the station waits for departure evidence, REQ-0293). Not "held by someone else".
+                return VehiclePurposeAcquisitionOutcome.StationAlreadyHeld;
+            }
+            if (stationHolder is not null)
             {
                 return VehiclePurposeAcquisitionOutcome.StationHeld;
             }
-            // Whoever refused this one has let go since: the caller's next round decides again.
+            // Neither is held now: whoever refused this one let go between the refusal and these reads, and the caller's
+            // next round decides again.
             return StationExclusivityWrites.IsStationConflict(failure)
                 ? VehiclePurposeAcquisitionOutcome.StationHeld
                 : VehiclePurposeAcquisitionOutcome.VehicleHeld;

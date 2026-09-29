@@ -321,6 +321,50 @@ public sealed class Batch8PersistencePortTests
     }
 
     [Fact]
+    public async Task AskingForOccupiedWhileHoldingItReservedIsAlreadyHeldAndLeavesItReserved()
+    {
+        // "Already held" writes nothing, the state included: the caller still moves it on with MarkOccupiedAsync.
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        StationExclusivityStore store = new(fixture.Context);
+        Assert.Equal(
+            StationExclusivityAcquisitionOutcome.Acquired,
+            await store.TryAcquireAsync(WaitingPoint(214), "VK-01", "idle:VK-01:1", Now, Token));
+
+        Assert.Equal(
+            StationExclusivityAcquisitionOutcome.AlreadyHeld,
+            await new StationExclusivityStore(fixture.NewContext()).TryAcquireAsync(
+                WaitingPoint(214) with { State = StationExclusivityStates.Occupied }, "VK-01", "idle:VK-01:1",
+                Now.AddMinutes(1), Token));
+        Assert.Equal(
+            new StationExclusivity(26, 214, "WAITING_POINT", "RESERVED", "VK-01", "idle:VK-01:1", Now, 3),
+            await store.ReadAsync(26, 214, Token));
+    }
+
+    [Fact]
+    public async Task AskingAgainAfterTheClaimWasReleasedButTheStationWasNotIsStationAlreadyHeldNotStationHeld()
+    {
+        // The claim goes when the vehicle is taken for other work; the station only on departure evidence (REQ-0293). In
+        // between, the station is this journey's and the vehicle is free: that is not "the station is someone else's"
+        // (incremental review of control-server#394, B).
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        VehiclePurposeLedgerStore ledger = new(fixture.Context);
+        Assert.Equal(
+            VehiclePurposeAcquisitionOutcome.Acquired,
+            await ledger.TryAcquireAsync(Claim("idle:VK-01:1", VehiclePurposes.IdleReturn), WaitingPoint(214), Token));
+        Assert.True(await ledger.ReleaseAsync("VK-01", "idle:VK-01:1", Now.AddMinutes(1), "TRANSPORT_ACCEPTED", Token));
+
+        Assert.Equal(
+            VehiclePurposeAcquisitionOutcome.StationAlreadyHeld,
+            await new VehiclePurposeLedgerStore(fixture.NewContext())
+                .TryAcquireAsync(Claim("idle:VK-01:1", VehiclePurposes.IdleReturn), WaitingPoint(214), Token));
+        // Nothing was written: the vehicle is still free, and the station still has its one passage.
+        Assert.Null(await ledger.ReadClaimAsync("VK-01", Token));
+        Assert.Single(await Batch7JourneyFixture.DumpAsync(fixture.Connection, "StationExclusivities"));
+        Assert.Single(await Batch7JourneyFixture.DumpAsync(fixture.Connection, "StationExclusivityRecords"));
+        Assert.Single(await Batch7JourneyFixture.DumpAsync(fixture.Connection, "VehiclePurposeClaimRecords"));
+    }
+
+    [Fact]
     public async Task RetryingAClaimWithAStationThatAlreadySucceededIsAlreadyHeldEvenThoughTheStationsKeyRefusesFirst()
     {
         // EF inserts the station before the claim, so a retry is refused by the station's key; the answer must still be

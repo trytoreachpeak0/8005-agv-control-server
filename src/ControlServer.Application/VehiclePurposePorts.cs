@@ -99,6 +99,8 @@ public enum VehiclePurposeAcquisitionOutcome
 
     /// <summary>
     /// 请求的全部本来就是这趟旅程的：它以同一用途占着这辆车，请求了站点时也占着那个站点（崩溃后重试就是这样）。没有写任何东西。
+    /// 站点的状态也不变：请求的是 <c>OCCUPIED</c> 而持有的仍是 <c>RESERVED</c> 时，它仍是 <c>RESERVED</c>，调用方还要调
+    /// <see cref="IStationExclusivityStore.MarkOccupiedAsync"/>。
     /// </summary>
     AlreadyHeld,
 
@@ -109,6 +111,12 @@ public enum VehiclePurposeAcquisitionOutcome
 
     /// <summary>车不是别人的，但站点被别的旅程占着；什么也没写，用途占有也没留下。</summary>
     StationHeld,
+
+    /// <summary>
+    /// 车是空的，站点却已经是这趟旅程的：它的用途占有已经放了，站点还等着离点证据（<c>REQ-0293</c>）。什么也没写，车仍是空的；
+    /// 调用方不能把它当成「站点被别人占着」去换别的站点。
+    /// </summary>
+    StationAlreadyHeld,
 }
 
 /// <summary>单独取得一个站点独占的结果。</summary>
@@ -117,7 +125,9 @@ public enum StationExclusivityAcquisitionOutcome
     Acquired,
 
     /// <summary>
-    /// 这趟旅程的这辆车本来就占着这个站点（崩溃后重试）。没有写任何东西，状态与时刻不变。调用方不能把它当成「被占」去换别的站点，
+    /// 这趟旅程的这辆车本来就占着这个站点（崩溃后重试）。没有写任何东西，状态与时刻不变：请求的是 <c>OCCUPIED</c> 而持有的仍是
+    /// <c>RESERVED</c> 时它仍是 <c>RESERVED</c>，调用方还要调 <see cref="IStationExclusivityStore.MarkOccupiedAsync"/>。
+    /// 调用方不能把它当成「被占」去换别的站点，
     /// 否则会把自己占着的那个晾着——等待点数等于车辆数时就是规格 5.4 说的互锁。
     /// </summary>
     AlreadyHeld,

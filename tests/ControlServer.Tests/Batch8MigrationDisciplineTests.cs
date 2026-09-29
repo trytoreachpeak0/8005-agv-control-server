@@ -1,3 +1,4 @@
+using System.Reflection;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -191,6 +192,48 @@ public sealed class Batch8MigrationDisciplineTests
         }
         Assert.Equal(0L, await ScalarAsync(fixture.Connection, "SELECT COUNT(*) FROM pragma_foreign_key_check"));
         Assert.Equal("ok", await ScalarTextAsync(fixture.Connection, "PRAGMA integrity_check"));
+    }
+
+    [Fact]
+    public async Task EveryHandWrittenCopyListNamesEveryColumnTheTableHadInItsOrder()
+    {
+        // A column with a default -- JourneyRuntimes.Version is NOT NULL DEFAULT 0 -- left out of a copy list is not
+        // caught by comparing values: it comes back as its default, and a seed that holds the default everywhere reads the
+        // same (incremental review of control-server#394, A). So the lists themselves are compared with the table.
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync(migrate: false);
+        await fixture.Context.GetService<IMigrator>().MigrateAsync(PreviousMigration, Token);
+        Type migration = typeof(ControlServerDbContext).Assembly.GetTypes()
+            .Single(type => type.Name == Batch8MigrationSuffix.TrimStart('_') && typeof(Migration).IsAssignableFrom(type));
+        (string Table, string[] Columns)[] lists =
+        [
+            .. migration.GetFields(BindingFlags.NonPublic | BindingFlags.Static)
+                .Where(field => field.FieldType.Name == "Table")
+                .Select(field => field.GetValue(null)!)
+                .Select(table => (
+                    (string)table.GetType().GetProperty("Name")!.GetValue(table)!,
+                    (string[])table.GetType().GetProperty("Columns")!.GetValue(table)!))
+        ];
+
+        // Two definitions per rebuilt table -- as it was, and as this migration leaves it -- and no table left out.
+        Assert.Equal(RebuiltTables.Length * 2, lists.Length);
+        Assert.Equal(RebuiltTables, lists.Select(list => list.Table).Distinct().Order(StringComparer.Ordinal));
+        foreach ((string table, string[] columns) in lists)
+        {
+            Assert.Equal(await ColumnNamesAsync(fixture.Connection, table), columns);
+        }
+    }
+
+    private static async Task<string[]> ColumnNamesAsync(SqliteConnection connection, string table)
+    {
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = $"SELECT name FROM pragma_table_info('{table}') ORDER BY cid";
+        List<string> names = [];
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(Token);
+        while (await reader.ReadAsync(Token))
+        {
+            names.Add(reader.GetString(0));
+        }
+        return [.. names];
     }
 
     [Fact]
