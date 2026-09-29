@@ -259,7 +259,8 @@ public sealed class StationExclusivityStore(ControlServerDbContext context) : IS
             .. rows.OrderBy(row => row.ReservedAt ?? row.OccupiedAt).ThenBy(row => row.RecordId, StringComparer.Ordinal)
                 .Select(row => new StationExclusivityRecord(
                     row.RecordId, row.MapId, row.StationId, row.StationKind, row.VehicleKey, row.JourneyId,
-                    row.WaitingPointVersion, row.ReservedAt, row.OccupiedAt, row.ReleasedAt, row.ReleaseReason))
+                    row.WaitingPointVersion, row.ReservedAt, row.OccupiedAt, row.ReleasedAt, row.ReleaseReason,
+                    row.ChargerRosterVersion))
         ];
     }
 
@@ -294,7 +295,7 @@ public sealed class StationExclusivityStore(ControlServerDbContext context) : IS
 
     private static StationExclusivity ToModel(StationExclusivityRow row) =>
         new(row.MapId, row.StationId, row.StationKind, row.State, row.VehicleKey, row.JourneyId, row.StateSince,
-            row.WaitingPointVersion);
+            row.WaitingPointVersion, row.ChargerRosterVersion);
 }
 
 /// <summary>The rows and the conflict classification the ledger and the station store share.</summary>
@@ -329,7 +330,8 @@ internal static class StationExclusivityWrites
                 JourneyId = journeyId,
                 StateSince = at,
                 WaitingPointVersion = request.WaitingPointVersion,
-                RecordId = recordId
+                RecordId = recordId,
+                ChargerRosterVersion = request.ChargerRosterVersion
             },
             new StationExclusivityRecordRow
             {
@@ -341,7 +343,8 @@ internal static class StationExclusivityWrites
                 JourneyId = journeyId,
                 WaitingPointVersion = request.WaitingPointVersion,
                 ReservedAt = occupied ? null : at,
-                OccupiedAt = occupied ? at : null
+                OccupiedAt = occupied ? at : null,
+                ChargerRosterVersion = request.ChargerRosterVersion
             }
         ];
     }
