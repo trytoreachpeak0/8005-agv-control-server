@@ -674,26 +674,42 @@ public sealed class OnboardJourneyPublisher(
             cancellationToken,
             keepAcknowledgedIgnoring);
 
-    private static object CurrentStopWorklistPayload(CurrentStopWorklistProjection projection) => new
+    private static object CurrentStopWorklistPayload(CurrentStopWorklistProjection projection)
     {
-        projection.StationId,
-        worklistRevision = projection.Revision,
-        projection.OperationSessionId,
-        projection.StationDepartureDeadlineAt,
-        items = projection.Items.Select(item => new
+        ValidateCurrentStopWorklist(projection);
+        return new
         {
-            item.DemandId,
-            item.TransportDemandKey,
-            item.Sublot,
-            item.WorkType,
-            item.StopRole,
-            item.ExpectedBasketCount
-        }),
-        projection.StopEndedReason
-    };
+            projection.StationId,
+            worklistRevision = projection.Revision,
+            projection.OperationSessionId,
+            projection.StationDepartureDeadlineAt,
+            items = projection.Items.Select(item => new
+            {
+                item.DemandId,
+                item.TransportDemandKey,
+                item.Sublot,
+                item.WorkType,
+                item.StopRole,
+                item.ExpectedBasketCount
+            }),
+            projection.StopEndedReason
+        };
+    }
 
+    /// <summary>
+    /// v3 的清单条件（control-server#382）：<c>items</c> 非空时 <c>stopEndedReason</c> 必须是 null，为空时必须给出原因。
+    /// </summary>
+    /// <remarks>
+    /// 车载端按 schema 拒收违反它的清单并断会话，而本服务端运行时不按 schema 校验出站报文，出站 schema 检查只在测试里跑。所以在组装
+    /// 这里守：一张该说原因却没说的空清单，宁可在服务端这一侧当场失败，也不要发出去让车拆会话。原因的取值由
+    /// <c>StopEndedReasons.ForEnding</c> 一处给出。
+    /// </remarks>
     internal static void ValidateCurrentStopWorklist(CurrentStopWorklistProjection projection)
     {
+        ArgumentNullException.ThrowIfNull(projection);
+        if ((projection.Items.Count == 0) != (projection.StopEndedReason is not null))
+            throw new InvalidDataException(
+                "stopEndedReason must be present exactly when the worklist has no items.");
     }
 
     private static object UpcomingStopPlanPayload(UpcomingStopPlanProjection projection) => new

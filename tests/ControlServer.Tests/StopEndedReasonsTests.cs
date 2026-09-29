@@ -78,9 +78,9 @@ public sealed class StopEndedReasonsTests
         CurrentStopWorklistItem item = new(
             "00000000-0000-4000-8000-000000000001", "KEY-1", "SUBLOT-1", "LOAD", "PICKUP", 7);
 
-        Assert.Throws<InvalidOperationException>(() => OnboardJourneyPublisher.ValidateCurrentStopWorklist(
+        Assert.Throws<InvalidDataException>(() => OnboardJourneyPublisher.ValidateCurrentStopWorklist(
             new CurrentStopWorklistProjection("12", 3, null, null, [], StopEndedReason: null)));
-        Assert.Throws<InvalidOperationException>(() => OnboardJourneyPublisher.ValidateCurrentStopWorklist(
+        Assert.Throws<InvalidDataException>(() => OnboardJourneyPublisher.ValidateCurrentStopWorklist(
             new CurrentStopWorklistProjection("12", 3, null, null, [item], StopEndedReason: "COMPLETED")));
         OnboardJourneyPublisher.ValidateCurrentStopWorklist(
             new CurrentStopWorklistProjection("12", 3, null, null, [], StopEndedReason: "COMPLETED"));
