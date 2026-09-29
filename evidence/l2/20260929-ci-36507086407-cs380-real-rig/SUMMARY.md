@@ -34,7 +34,7 @@
 
 `real-onboard-compensate-then-reconnect` 三遍，重连握手末尾的就绪（附在 `RecoveryStateReport` 应答后）都是先「收到」，再发布 `source=SessionReadiness`，没有 ack 之后的重发夹在中间。这个场景走的是补偿入口，所以 `faultCargoHandoff=False`，符合预期。
 
-每一条服务端 1103 都能按 messageId 在车载端找到对应的「收到」。
+服务端 1103 共 97 条，逐条按 messageId 在车载端日志里找「收到SessionReadiness」：96 条能找到，1 条找不到。找不到的是 `real-onboard-compensate-then-reconnect-01` 里 09:21:18 那条：第 1 代会话上的 READY，附在 `SafetyStateChanged 006735af` 的应答后面。场景在 09:21:18.508 对车载端断电重启，车载端日志停在 09:21:17.608，下一行已经是 09:21:18.920 重启后的启动日志。推的：进程在读到这一行之前就被结束了。服务端日志只精确到秒，所以这一条的先后无法再细分。旧连接随进程一起消失，新会话第 2 代从握手重新开始，这条没有影响。两个场景都没有出现 1104（握手中压住）。
 
 ## 目录内容
 
