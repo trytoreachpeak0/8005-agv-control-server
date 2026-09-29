@@ -48,7 +48,7 @@ public sealed class ProtocolOutboxIdentityStartupCheckTests
         Assert.DoesNotContain("AGV-001", refused.Message, StringComparison.Ordinal);
         Assert.Contains(
             FormattableString.Invariant(
-                $"this build speaks {ProtocolCandidateIdentity.ProfileId} protocolVersion {ProtocolCandidateIdentity.ProtocolVersion} release {ProtocolCandidateIdentity.ReleaseVersion}"),
+                $"This build speaks {ProtocolCandidateIdentity.ProfileId} protocolVersion {ProtocolCandidateIdentity.ProtocolVersion} release {ProtocolCandidateIdentity.ReleaseVersion}"),
             refused.Message, StringComparison.Ordinal);
         Assert.Contains("C:/data/controlserver.db", refused.Message, StringComparison.Ordinal);
         Assert.Contains("start the build that wrote them", refused.Message, StringComparison.Ordinal);

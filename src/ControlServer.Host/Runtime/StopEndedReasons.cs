@@ -20,6 +20,11 @@ namespace ControlServer.Host.Runtime;
 /// 测试就会红。今天每条来路的码都在下表里，<c>StopEndedReasonsTests</c> 逐条按值断言。
 /// </para>
 /// <para>
+/// <b>新增 <see cref="PickupStopTermination"/> 或 <see cref="JourneyClosure"/> 的调用方——包括从 <c>fp/v2-impl</c> merge 进批次分支带来的——
+/// 要回到这里补它的原因码。</b>未知码在暂存收尾快照时抛出，整次终结随之回滚，下一轮再来一遍，那一站就结束不了；没有测试走到那条来路时，
+/// 这件事只会在车上显出来。
+/// </para>
+/// <para>
 /// <c>CANCELLED_BY_STOP_COMPLETE</c> 不在表里：它今天在 <c>src/</c> 里没有生产者（见
 /// <see cref="PickupStopTermination.KeySuppressingReasonCodes"/> 的注释），协议的七个取值里也没有与它对应的一项。谁产生它，谁回到这里
 /// 与协议一起定它说什么。

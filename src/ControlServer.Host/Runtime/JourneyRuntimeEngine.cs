@@ -3679,7 +3679,14 @@ public sealed partial class JourneyRuntimeEngine(
             // above, and it is unique to this journey's leg, so the correlationId was only ever a
             // second name for a fact already proven.
             string correlationId = RequiredString(root, "correlationId");
-            bool valid = (correlationId == DepartureCheckMessageId(stops.Current) ||
+            // v3 (control-server#382, review S1): only an answer to a departure check is a departure permit. A SAFE answer
+            // under this check id that says it answered a HOLD_RELEASE or NON_BUSINESS_MOVE check answered another question.
+            bool answersADepartureCheck =
+                payload.TryGetProperty("checkPurpose", out JsonElement checkPurpose) &&
+                checkPurpose.ValueKind == JsonValueKind.String &&
+                checkPurpose.GetString() == PreDepartureCheckPurposes.Departure;
+            bool valid = answersADepartureCheck &&
+                         (correlationId == DepartureCheckMessageId(stops.Current) ||
                           correlationId == DepartureCheckId(stops.Current)) &&
                          RequiredString(root, "agvId") == runtime.AgvId &&
                          root.GetProperty("sessionGeneration").GetInt64() == session.SessionGeneration &&
