@@ -102,6 +102,57 @@ internal static class JourneyMembershipSeed
     }
 
     /// <summary>
+    /// A journey stop at <paramref name="stationId"/>, for store-level tests that have no journey row. Only its identity, role
+    /// and station carry meaning; the ids are placeholders derived from <paramref name="stopId"/>.
+    /// </summary>
+    internal static JourneyStopRow Stop(string journeyId, string stopId, int sequence, string role, string stationId) => new()
+    {
+        StopId = stopId,
+        JourneyId = journeyId,
+        Sequence = sequence,
+        StopRole = role,
+        StationId = stationId,
+        StationRiotId = sequence,
+        DispatchZone = "ZONE-1",
+        OperationSessionId = $"SESSION-{journeyId}",
+        MovementLegId = $"LEG-{stopId}",
+        UpperId = $"UPPER-{stopId}",
+        VehicleBusinessMessageId = $"VBS-{stopId}",
+        WorklistMessageId = $"WL-{stopId}",
+        PlanMessageId = $"PLAN-{stopId}",
+        Status = JourneyStopStatuses.Pending,
+        CreatedAt = DateTimeOffset.UnixEpoch
+    };
+
+    /// <summary>
+    /// A demand's membership in a journey, for store-level tests that have no journey row: the stops it is loaded and unloaded
+    /// at, and its two slot operation attempts -- what ties a slot operation to its stop (control-server#251).
+    /// </summary>
+    internal static JourneyDemandRow Membership(
+        string journeyId,
+        string demandId,
+        string pickupStopId,
+        string unloadStopId,
+        string loadAttemptId,
+        string unloadAttemptId) => new()
+    {
+        JourneyId = journeyId,
+        DemandId = demandId,
+        PickupStopId = pickupStopId,
+        UnloadStopId = unloadStopId,
+        ExpectedBasketCount = 1,
+        TargetSlotsJson = "[1]",
+        LoadSlotOperationAttemptId = loadAttemptId,
+        LoadCommandMessageId = $"LOAD-COMMAND-{demandId}",
+        UnloadSlotOperationAttemptId = unloadAttemptId,
+        UnloadCommandMessageId = $"UNLOAD-COMMAND-{demandId}",
+        DispatchZone = "ZONE-1",
+        DispatchGeneration = 1,
+        Status = JourneyDemandStatuses.PendingLoad,
+        AddedAt = DateTimeOffset.UnixEpoch
+    };
+
+    /// <summary>
     /// Makes <paramref name="journey"/> a two-demand journey: a further accepted demand, a copy of the anchor's with its own
     /// id, business key and sublot, in <paramref name="status"/>, and its membership. Saved.
     /// </summary>

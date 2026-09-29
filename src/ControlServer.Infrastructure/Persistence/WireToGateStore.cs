@@ -1791,6 +1791,31 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         };
     }
 
+    /// <summary>
+    /// The station of the stop a slot operation is performed at: the pickup stop of the demand's membership for its load, the
+    /// unload stop for its unload. <c>null</c> when no membership names this operation's attempt.
+    /// </summary>
+    /// <remarks>
+    /// The membership is found by the operation's own attempt id, not by "the membership in force": the attempt id is what
+    /// ties an operation to one membership, and so to one pickup and one unload stop, in a journey of several stops
+    /// (control-server#211). The journey row's <c>PickupStationId</c> and <c>GateStationId</c> are the anchor demand's and are
+    /// not read (control-server#251).
+    /// </remarks>
+    private async Task<string?> OperationStopStationIdAsync(StationOperationPlan plan, CancellationToken cancellationToken)
+    {
+        IQueryable<JourneyDemandRow> memberships = dbContext.Set<JourneyDemandRow>().AsNoTracking()
+            .Where(row => row.DemandId == plan.DemandId);
+        IQueryable<string> stopIds = plan.OperationType == SlotOperationType.Load
+            ? memberships.Where(row => row.LoadSlotOperationAttemptId == plan.SlotOperationAttemptId)
+                .Select(row => row.PickupStopId)
+            : memberships.Where(row => row.UnloadSlotOperationAttemptId == plan.SlotOperationAttemptId)
+                .Select(row => row.UnloadStopId);
+        return await dbContext.Set<JourneyStopRow>().AsNoTracking()
+            .Where(stop => stopIds.Contains(stop.StopId))
+            .Select(stop => stop.StationId)
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<ProtocolOutboxRow> PrepareSlotOperationAsync(
         StationOperationPlan plan, string messageId, string commandJson, CancellationToken cancellationToken)
     {
@@ -1831,6 +1856,18 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         {
             throw new BusinessIdentityConflictException(
                 "Only the operation at the AREA machine station may carry a station/task admission identity.");
+        }
+        // control-server#251: and the station is that operation's own. The runtime's two call sites name the station of the
+        // stop the vehicle is at, which is right by construction -- but only for those two call sites. Checked ahead of the
+        // replay branch too, whose comparison is with the frozen snapshot, not with the stop.
+        if (hasAdmissionIdentity)
+        {
+            string? stationId = await OperationStopStationIdAsync(plan, cancellationToken).ConfigureAwait(false);
+            if (!string.Equals(stationId, plan.AdmissionStationId, StringComparison.Ordinal))
+            {
+                throw new BusinessIdentityConflictException(FormattableString.Invariant(
+                    $"The admission identity names station {plan.AdmissionStationId}, but the {plan.OperationType} of demand {plan.DemandId} is at {stationId ?? "no stop of any journey"}."));
+            }
         }
 
         StationOperationRow? existing = await dbContext.StationOperations

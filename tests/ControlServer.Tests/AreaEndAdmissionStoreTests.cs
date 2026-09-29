@@ -30,6 +30,7 @@ public sealed class AreaEndAdmissionStoreTests
     {
         await using TaskTypeStationPersistenceFixture fixture = await WithFrozenReverseDemandAsync();
         await AcceptAsync(fixture, ReverseDemand, TransportTaskTypes.StagingToWire);
+        await SeedReverseJourneyAsync(fixture);
         WireToGateStore store = new(fixture.Context);
         StationOperationPlan unload = Plan(
             "ATTEMPT-UNLOAD", ReverseDemand, SlotOperationType.Unload, "N1-1", TransportTaskTypes.StagingToWire);
@@ -120,6 +121,7 @@ public sealed class AreaEndAdmissionStoreTests
     {
         await using TaskTypeStationPersistenceFixture fixture = await WithFrozenReverseDemandAsync();
         await AcceptAsync(fixture, ReverseDemand, TransportTaskTypes.StagingToWire);
+        await SeedReverseJourneyAsync(fixture);
         WireToGateStore store = new(fixture.Context);
         StationOperationPlan unload = Plan(
             "ATTEMPT-UNLOAD", ReverseDemand, SlotOperationType.Unload, "N1-1", TransportTaskTypes.StagingToWire);
@@ -283,6 +285,56 @@ public sealed class AreaEndAdmissionStoreTests
         Assert.Equal([("ATTEMPT-A-LOAD", "N1-1"), ("ATTEMPT-B-LOAD", "N2-1")], frozen);
     }
 
+    /// <summary>
+    /// control-server#251 (ticket item 4, one derivation of "which station is the AREA end"): the runtime's admission
+    /// question for a demand that is not the journey's anchor is asked at that demand's own stop. Demand A anchors the
+    /// journey and loads at N1-1; demand B loads at N2-1. After dispatch the policy moves: WIRE_TO_GATE is admitted at N2-1
+    /// only, so B's entry should go on; or at N1-1 only, so it should be held. Asked at the anchor's pickup, both come out
+    /// the other way round.
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    [InlineData("N2-1", true)]
+    [InlineData("N1-1", false)]
+    public async Task AFurtherDemandIsAskedAboutAtItsOwnStopsStationNotTheAnchors(string admittingStation, bool expected)
+    {
+        const string DemandA = "D-MULTI-A";
+        const string DemandB = "D-MULTI-B";
+        await using TaskTypeStationPersistenceFixture fixture = await WithFrozenReverseDemandAsync();
+        await AcceptAsync(fixture, DemandA, TransportTaskTypes.WireToGate);
+        await AcceptAsync(fixture, DemandB, TransportTaskTypes.WireToGate);
+        await SeedStopAsync(fixture, "STOP-PICKUP-A", 1, JourneyStopRoles.Pickup, "N1-1");
+        await SeedStopAsync(fixture, "STOP-PICKUP-B", 2, JourneyStopRoles.Pickup, "N2-1");
+        await SeedStopAsync(fixture, "STOP-GATE", 3, JourneyStopRoles.Unload, "GATE-1");
+        await SeedMembershipAsync(fixture, DemandA, "STOP-PICKUP-A", "STOP-GATE", "ATTEMPT-A-LOAD", "ATTEMPT-A-UNLOAD");
+        await SeedMembershipAsync(fixture, DemandB, "STOP-PICKUP-B", "STOP-GATE", "ATTEMPT-B-LOAD", "ATTEMPT-B-UNLOAD");
+        WireToGateStore store = new(fixture.Context);
+        // The policy after dispatch: WIRE_TO_GATE at one of the two pickups only.
+        await store.ApplyAdmissionPolicyAsync(
+            new AdmissionPolicyDefinition(
+                2, "DEPLOY-1", [new StationTaskTypeAdmission(admittingStation, TransportTaskTypes.WireToGate)], Now),
+            Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        // RED-ONLY: the old signature takes the journey row, whose anchor is A; it is the only way it can be asked about B.
+        bool admitted = await store.IsTaskTypeAllowedAtAreaEndAsync(
+            new JourneyRuntimeRow
+            {
+                JourneyId = "J-1", DemandId = DemandA, AgvId = "AGV-1", VehicleKey = "VEHICLE-1", MapIdentity = "MAP-25",
+                DispatchZone = "ZONE-1", RouteEvidenceId = "ROUTE-1", PickupStationId = "N1-1", GateStationId = "GATE-1",
+                TargetSlotsJson = "[1]", OperationSessionId = "SESSION-J-1", PickupMovementLegId = "L1", PickupUpperId = "U1",
+                GateMovementLegId = "L2", GateUpperId = "U2", VehicleBusinessMessageId = "M1", WorklistMessageId = "M2",
+                PlanMessageId = "M3", SublotRequestMessageId = "M4", LoadCommandMessageId = "M5",
+                LoadSlotOperationAttemptId = "ATTEMPT-A-LOAD", PreDepartureSafetyCheckMessageId = "M6",
+                PreDepartureSafetyCheckId = "S1", GateVehicleBusinessMessageId = "M7", GateWorklistMessageId = "M8",
+                GatePlanMessageId = "M9", UnloadCommandMessageId = "M10", UnloadSlotOperationAttemptId = "ATTEMPT-A-UNLOAD"
+            },
+            TransportTaskTypes.WireToGate,
+            Token);
+
+        Assert.Equal(expected, admitted);
+    }
+
     /// <summary>The refusal the station check makes: the conflict exception, and no operation, admission snapshot or outbox row.</summary>
     private static async Task AssertRefusedWithNothingWrittenAsync(TaskTypeStationPersistenceFixture fixture, Exception? refused)
     {
@@ -296,7 +348,14 @@ public sealed class AreaEndAdmissionStoreTests
         Assert.Equal((0, 0, 0), (operations, snapshots, outbox));
     }
 
-    /// <summary>A journey stop at <paramref name="stationId"/>; only its identity, role and station matter to the store's check.</summary>
+    /// <summary>The reverse demand's journey: loaded at a staging station, unloaded at the AREA machine N1-1.</summary>
+    private static async Task SeedReverseJourneyAsync(TaskTypeStationPersistenceFixture fixture)
+    {
+        await SeedStopAsync(fixture, "STOP-STAGING", 1, JourneyStopRoles.Pickup, "STAGING-1");
+        await SeedStopAsync(fixture, "STOP-MACHINE", 2, JourneyStopRoles.Unload, "N1-1");
+        await SeedMembershipAsync(fixture, ReverseDemand, "STOP-STAGING", "STOP-MACHINE", "ATTEMPT-LOAD", "ATTEMPT-UNLOAD");
+    }
+
     private static async Task SeedStopAsync(
         TaskTypeStationPersistenceFixture fixture,
         string stopId,
@@ -305,29 +364,11 @@ public sealed class AreaEndAdmissionStoreTests
         string stationId,
         string journeyId = "J-1")
     {
-        fixture.Context.Set<JourneyStopRow>().Add(new JourneyStopRow
-        {
-            StopId = stopId,
-            JourneyId = journeyId,
-            Sequence = sequence,
-            StopRole = role,
-            StationId = stationId,
-            StationRiotId = sequence,
-            DispatchZone = "ZONE-1",
-            OperationSessionId = $"SESSION-{journeyId}",
-            MovementLegId = $"LEG-{stopId}",
-            UpperId = $"UPPER-{stopId}",
-            VehicleBusinessMessageId = $"VBS-{stopId}",
-            WorklistMessageId = $"WL-{stopId}",
-            PlanMessageId = $"PLAN-{stopId}",
-            Status = JourneyStopStatuses.Pending,
-            CreatedAt = Now
-        });
+        fixture.Context.Set<JourneyStopRow>().Add(JourneyMembershipSeed.Stop(journeyId, stopId, sequence, role, stationId));
         await fixture.Context.SaveChangesAsync(Token);
         fixture.Context.ChangeTracker.Clear();
     }
 
-    /// <summary>A demand's membership in a journey: the stops it is loaded and unloaded at, and its two operation attempts.</summary>
     private static async Task SeedMembershipAsync(
         TaskTypeStationPersistenceFixture fixture,
         string demandId,
@@ -337,23 +378,8 @@ public sealed class AreaEndAdmissionStoreTests
         string unloadAttemptId,
         string journeyId = "J-1")
     {
-        fixture.Context.Set<JourneyDemandRow>().Add(new JourneyDemandRow
-        {
-            JourneyId = journeyId,
-            DemandId = demandId,
-            PickupStopId = pickupStopId,
-            UnloadStopId = unloadStopId,
-            ExpectedBasketCount = 1,
-            TargetSlotsJson = "[1]",
-            LoadSlotOperationAttemptId = loadAttemptId,
-            LoadCommandMessageId = $"LOAD-COMMAND-{demandId}",
-            UnloadSlotOperationAttemptId = unloadAttemptId,
-            UnloadCommandMessageId = $"UNLOAD-COMMAND-{demandId}",
-            DispatchZone = "ZONE-1",
-            DispatchGeneration = 1,
-            Status = JourneyDemandStatuses.PendingLoad,
-            AddedAt = Now
-        });
+        fixture.Context.Set<JourneyDemandRow>().Add(JourneyMembershipSeed.Membership(
+            journeyId, demandId, pickupStopId, unloadStopId, loadAttemptId, unloadAttemptId));
         await fixture.Context.SaveChangesAsync(Token);
         fixture.Context.ChangeTracker.Clear();
     }
