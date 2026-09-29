@@ -176,6 +176,7 @@ builder.Services.AddGovernance(builder.Configuration);
 builder.Services.AddTaskTypeStations();
 builder.Services.AddMultiDemandJourneys();
 builder.Services.AddVehiclePurposes();
+builder.Services.AddIdleReturn(builder.Configuration);
 builder.Services.AddCharging();
 builder.Services.AddPlanRevision();
 

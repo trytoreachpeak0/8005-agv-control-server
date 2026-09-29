@@ -52,6 +52,9 @@ public static class DispatchAdmissionCriteria
             // Required rather than optional, unlike the three appended below: a safety block a
             // caller may leave out is a safety block that will be left out.
             new VehicleFaultBlockCriterion(faultStore),
+            // Required, like the fault block: a vehicle committed to an idle return takes no transport (control-server#389,
+            // REQ-0292), and the reason has to reach the backlog rather than surface only as the claims key refusing intake.
+            new IdleReturnCommitmentCriterion(dbContext),
             new WorkTypeScopeCriterion(options),
             // Required rather than optional for the same reason as the fault block: B2's two
             // vehicle filters are fail-closed, and a fail-closed rule a caller may omit is one
@@ -141,6 +144,7 @@ public static class DispatchAdmissionCriteria
         services.AddScoped<IDispatchAdmissionCriterion, TransportDemandKeySuppressedCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, TransportDemandKeyAlreadyAcceptedCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, VehicleFaultBlockCriterion>();
+        services.AddScoped<IDispatchAdmissionCriterion, IdleReturnCommitmentCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, WorkTypeScopeCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, VehicleTaskTypeAdmissionCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, DispatchZoneVehicleCriterion>();

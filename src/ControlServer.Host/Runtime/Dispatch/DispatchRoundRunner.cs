@@ -4,6 +4,7 @@ using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Host.Runtime.Fleet;
+using ControlServer.Host.Runtime.IdleReturn;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -49,7 +50,8 @@ public sealed class DispatchRoundRunner(
     OnboardDispatchFactsReader onboardFacts,
     IOptions<JourneyRuntimeOptions> options,
     TimeProvider timeProvider,
-    ILogger<JourneyRuntimeEngine> logger)
+    ILogger<JourneyRuntimeEngine> logger,
+    IdleReturnEvaluator idleReturn)
 {
     // The backlog's decision fingerprint is a hash over this serialisation, so it is the engine's setting exactly: a
     // different one would read every backlog row written before the move as a changed demand.
@@ -323,6 +325,16 @@ public sealed class DispatchRoundRunner(
 
         // 收尾：没人出价的那些任务，判断还攒在内存里，一起落库。
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        // 空闲返回（批次8-18，control-server#389）：任务优先派车之后，才轮到这一轮没被选中的空闲车。在途车不交过去。
+        // 放在上面那次保存之后：承诺自己保存一次，变更跟踪里不能还压着这一轮别的东西。评估器是必填的（审查 4）：可选注入时宿主漏注册
+        // 会静默成「从不评估」。开关关着时它什么也不读、不写。
+        await idleReturn.EvaluateAsync(
+                currentMap,
+                [.. participants.Where(p => !p.UnderWay)
+                    .Select(p => new IdleReturnCandidate(p.Vehicle, p.Facts, p.MayStillTakeWork))],
+                cancellationToken)
+            .ConfigureAwait(false);
 
         // After every vehicle, a budget-exhausted one included. Whether any vehicle at all could take a demand
         // is only answerable across the fleet; JourneyBacklog, overwritten vehicle by vehicle, cannot say.

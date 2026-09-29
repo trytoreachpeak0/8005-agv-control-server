@@ -318,6 +318,11 @@ if ($setup.ContainsKey('Stations')) {
         }
     }
 }
+# control-server#389: idle return, off unless a scenario says IdleReturn = $true. Off is the product default until
+# control-server#390 lands, and it is what keeps the default waiting points of every Fleet scenario from moving a vehicle.
+if ($setup.ContainsKey('IdleReturn') -and $setup.IdleReturn -isnot [bool]) {
+    throw "IdleReturn in $Scenario.setup.psd1 is `$true or `$false."
+}
 
 if (-not $OnboardRepository) {
     $OnboardRepository = Join-Path (Split-Path -Parent $Repository) '8005-agv-onboard-hmi'
@@ -532,6 +537,10 @@ try {
     $waitingPoints = Resolve-L2WaitingPoints -Setup $setup -Where "$Scenario.setup.psd1" -FleetCount $fleet.Count
     foreach ($point in @($waitingPoints | Where-Object { $null -ne $_ })) {
         $riotArguments += "--FakeRiot:Seed:Stations:$($point.StationId)=$($point.StationName)"
+        # control-server#389: a point given a Node sits on the route graph, so an idle return can reach it.
+        if ($null -ne $point.Node) {
+            $riotArguments += "--FakeRiot:Seed:StationNodes:$($point.StationId)=$($point.Node)"
+        }
     }
     if ($setup.ContainsKey('RouteCosts')) {
         foreach ($key in ($setup.RouteCosts.Keys | Sort-Object)) {
@@ -747,6 +756,15 @@ try {
             $serverEnvironment["RouteGraph__$key"] = [string]$setup.RouteGraph[$key]
         }
         $journal.Note("Route graph engine enabled for map $mapId.")
+    }
+
+    # Idle return (control-server#389), validated above. It needs the route graph as well: without it no waiting point is
+    # reachable and the server commits nothing.
+    if ($setup.ContainsKey('IdleReturn') -and $setup.IdleReturn) {
+        $serverEnvironment['IdleReturn__Enabled'] = 'true'
+        # The transitional startup guard refuses Enabled alone until control-server#390 lands; only this rig says it knows.
+        $serverEnvironment['IdleReturn__AllowWithoutExecutionForL2Only'] = 'true'
+        $journal.Note('Idle return enabled.')
     }
 
     # The RIoT command options, only when a scenario asks. REQ-0248 makes the emergency-retry backoff
@@ -1421,7 +1439,9 @@ try {
                              'DispatchZoneParameterVersions', 'DispatchZoneParameters', 'VehiclePurposeClaims',
                              'VehiclePurposeClaimRecords',
                              # The waiting point registration the orchestrator imported before the start (control-server#388).
-                             'WaitingPointVersions', 'WaitingPoints', 'WaitingPointVehicleScopes')) {
+                             'WaitingPointVersions', 'WaitingPoints', 'WaitingPointVehicleScopes',
+                             # Idle return commitments reserve a waiting point (control-server#389).
+                             'StationExclusivities', 'StationExclusivityRecords')) {
             try {
                 $rows = Invoke-L2Query -Connection $connection -Sql "SELECT * FROM $table"
                 [IO.File]::WriteAllText(
