@@ -5,6 +5,8 @@
 | 目录 | 内容 | 结论 |
 | --- | --- | --- |
 | `l2-waiting-points-refuses-start-1`、`-2` | 负向场景 `waiting-points-fewer-than-vehicles-refuses-start`，完整保留（含日志与库快照）；`-2` 是最终代码（报错带缺几个、哪些车、命令），`-1` 是改报错之前 | 两次都 PASS |
+| `l2-waiting-points-refuses-start-3` | 负向场景，审查后的代码 `a8041ea9`（WPR-03 断言命令里 `--database` 是本轮 stage 的库文件全路径） | PASS |
+| `red/l2-wpr03-database-path-placeholder` | 同一场景，把 `WaitingPointStartupCheck` 传给报错的库路径改成 `null`（报错里只剩 `<controlserver.db>` 占位），`refusal-line.log` 是那一行拒绝原文 | FAIL：只有 L2-WPR-03 红，WPR-01/02/04 照旧 PASS |
 | `red/l2-startup-check-removed` | 同一场景，去掉 `Program.cs` 里 `WaitingPointStartupCheck.EnsureAsync` 那一行（备份还原，不用 `git checkout`） | FAIL：服务端 120 秒后仍在运行，`/health/live` 答过 |
 | `l2-fleet-<场景>` | 8 个 `Fleet` 场景第一轮，`setup.psd1` 一个都没改，编排器默认每车登记一个等待点 | 5 PASS，3 FAIL |
 | `l2-fleet-rerun-<场景>` | 第一轮红的 3 个，本机不跑别的重活时重跑 | 3 PASS，服务端日志 0 次车载端静默 |
@@ -23,8 +25,10 @@
 - 本票分支的每个 `Fleet` 场景的 `timeline.jsonl` 里都有一行 `"criterion":"waiting-points-imported"`（值是登记版本号，附站号与覆盖）；
 - `base-af2b02cb/` 下三份的 `timeline.jsonl` 里一行都没有——基线的编排器不认识等待点。
 
-`grep -c waiting-points-imported */timeline.jsonl` 一眼可见。负向场景 `-3` 与红证据 `red/l2-wpr03-database-path-placeholder`
-跑在第一轮审查之后的改动上，同样未提交，同样显示提交号 `d1f19090`（上一次提交），按上面同一个判据与各自的判据编号区分。
+`grep -c waiting-points-imported */timeline.jsonl` 一眼可见。
+
+审查之后的两次不一样：负向场景 `-3` 跑在已提交的 `a8041ea9` 上，工作树干净，提交号就是它跑的代码；红证据
+`red/l2-wpr03-database-path-placeholder` 也显示 `a8041ea9`，但那是在它上面临时改了一行（见下表），跑完用备份还原。
 
 ## 第一轮那 3 个红与本票无关
 
