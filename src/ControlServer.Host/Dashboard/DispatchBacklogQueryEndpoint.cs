@@ -66,6 +66,9 @@ internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
                 "这个子批次的这类任务已在本地取消过、或已以故障货物交接终止，按业务键永久不再执行；MES 换了新的需求号也一样",
             [DispatchReasonCodes.TransportDemandKeyAlreadyAccepted] =
                 "这个子批次的这类任务已由另一个需求号受理过（在办、已完成或已取消），同一件活不再重复受理",
+            // 批次8-18（control-server#389）：空闲返回的承诺不被搬运抢，正常调度结论，不是故障。
+            [DispatchReasonCodes.VehicleCommittedToIdleReturn] =
+                "这辆车已承诺返回等待点，返回不被搬运取消或抢走；由别的车接，或等它到点后下一轮再派",
             // 批次9-02（control-server#400）：逐车硬阻断，看板展示归批次9-10，这里只有派车原因的一句说明。
             [DispatchReasonCodes.ChargingPolicyNotApproved] =
                 "这辆车没有已批准并激活、适用范围覆盖它的充电策略版本，不承接新任务；别的车照常，导入、批准并激活一版覆盖它的策略即解除",
@@ -92,6 +95,13 @@ internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
                 "同一份 MES 快照里这个批次同时命中了不止一种任务类型，这个批次的需求都先不派，请到 MES 核对数据",
             [DemandReleaseReasons.Released] =
                 "这条需求已从原来的车上释放，正在等改派给别的车",
+            // 批次8-20（control-server#391，REQ-0204）：公共站点同时只由一台车占用或预占。都是正常调度的结论，那辆车离开后再派。
+            [DispatchReasonCodes.FixedTaskStationReservedByOtherVehicle] =
+                "这条需求的公共站点（如派工待送站）已被另一台车预占、正在前往，等它到站并离开后再派",
+            [DispatchReasonCodes.FixedTaskStationOccupiedByOtherVehicle] =
+                "这条需求的公共站点（如派工待送站）上正停着另一台车，等它离开后再派",
+            [DispatchReasonCodes.FixedTaskStationApproachedByOtherVehicle] =
+                "这条需求的公共站点正是另一台车的下一站、它还在等这个站空出来，等它到站并离开后再派",
         };
 
     private readonly TimeProvider _clock;

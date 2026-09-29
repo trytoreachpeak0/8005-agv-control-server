@@ -86,9 +86,11 @@ public sealed partial class MultiVehicleExecutionTests
 
         ChargingPolicyCommissioningCriterion criterion = Assert.Single(idle.OfType<ChargingPolicyCommissioningCriterion>());
         Assert.Same(criterion, Assert.Single(enRoute.OfType<ChargingPolicyCommissioningCriterion>()));
+        // Behind the fault block (15) and the idle return commitment (16, control-server#389): vehicle-side verdicts first.
+        Assert.Equal(17, criterion.Order);
         Assert.Equal(
-            nameof(VehicleFaultBlockCriterion),
-            enRoute.OrderBy(item => item.Order).TakeWhile(item => item != criterion).Last().GetType().Name);
+            [nameof(VehicleFaultBlockCriterion), nameof(IdleReturnCommitmentCriterion)],
+            enRoute.Where(item => item.Order is 15 or 16).OrderBy(item => item.Order).Select(item => item.GetType().Name));
         Assert.Equal(DispatchReasonCodes.ChargingPolicyNotApproved, await criterion.EvaluateAsync(Evaluation("BROKERX-0002"), TestContext.Current.CancellationToken));
         Assert.Equal(DispatchAdmissionChain.Eligible, await criterion.EvaluateAsync(Evaluation("BROKERX-0001"), TestContext.Current.CancellationToken));
     }

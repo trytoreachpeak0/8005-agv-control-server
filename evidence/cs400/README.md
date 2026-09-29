@@ -23,6 +23,7 @@
 | M5 | 名册校验不再拒绝等待点 | `EachClassOfErrorRejectsTheWholeFileAndWritesNothing(waiting)`、`AFileWithSeveralErrorsReportsThemAllAtOnce` |
 | M6 | 从 `DispatchAdmissionCriteria.Default` 里去掉新判据 | `AVehicleThePolicyDoesNotCoverIsRefusedWithTheNewReasonAndTheOtherVehicleTakesTheDemand`、`WithNoPolicyAtAllTheRoundStillRunsAndEveryVehicleIsRefused`、`TheEnRouteChainCarriesTheSameCommissioningCriterionAndRefusesTheSameVehicle` |
 | MC（审查后补） | 判据对解析器回 `Unreadable` 的决定放行 | `AnUnreadablePolicyDecisionIsRefusedLikeAMissingOne`（补这条之前，该变异下定向 65 条全绿存活） |
+| MI（合入 cs#389 后） | 共用判定 `VehicleNewPurposeReadiness.JudgeAsync` 跳过投运一格 | `IdleReturnCommitmentTests.AVehicleWithoutAnEffectiveChargingPolicyIsNotCommittedToAnIdleReturn`（派车链判据直接调 `CommissioningVerdictAsync`，不受此变异影响，照常绿） |
 
 M2、M4 第一次写成 `if (false)`，编译器以 CS0162（不可达代码）拒绝、没有跑成，不算绿；改成 `if (dryRun && !dryRun)` 这类非常量条件后才生效。
 宿主 DI 那一行注册（`AddDispatchAdmission`）的变异由上面的 L2 红证据覆盖。

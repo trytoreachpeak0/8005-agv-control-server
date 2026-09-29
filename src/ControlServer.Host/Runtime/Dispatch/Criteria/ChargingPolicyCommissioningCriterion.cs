@@ -19,7 +19,7 @@ namespace ControlServer.Host.Runtime.Dispatch.Criteria;
 /// and the charging allocation read; a policy that cannot be read is a policy that is not there.
 /// </para>
 /// <para>
-/// <b>Order 16 -- right behind the fault block.</b> Like it, the verdict is about the vehicle and not the demand, so nothing
+/// <b>Order 17 -- right behind the fault block and the idle return commitment (16).</b> Like it, the verdict is about the vehicle and not the demand, so nothing
 /// more expensive runs first. One log line per vehicle and reason per chain instance, which the host builds per round.
 /// </para>
 /// </remarks>
@@ -38,7 +38,7 @@ public sealed class ChargingPolicyCommissioningCriterion(
     private readonly ILogger _logger = logger ?? NullLogger<ChargingPolicyCommissioningCriterion>.Instance;
     private readonly HashSet<(string VehicleKey, string Reason)> _logged = [];
 
-    public int Order => 16;
+    public int Order => 17;
 
     public async Task<string> EvaluateAsync(
         DispatchCandidateEvaluation evaluation,
@@ -47,25 +47,22 @@ public sealed class ChargingPolicyCommissioningCriterion(
         ArgumentNullException.ThrowIfNull(evaluation);
 
         string vehicleKey = evaluation.Vehicle.VehicleKey;
-        if (string.IsNullOrWhiteSpace(vehicleKey))
+        // One definition with the idle return (control-server#400 after #389): VehicleNewPurposeReadiness.
+        (string verdict, VehicleChargingPolicyDecision decision) = await VehicleNewPurposeReadiness
+            .CommissioningVerdictAsync(_resolver, vehicleKey, cancellationToken).ConfigureAwait(false);
+        if (verdict == DispatchAdmissionChain.Eligible)
         {
-            return DispatchReasonCodes.ChargingPolicyNotApproved;
-        }
-        VehicleChargingPolicyDecision decision =
-            await _resolver.ResolveForNewDecisionAsync(vehicleKey, cancellationToken).ConfigureAwait(false);
-        if (decision.Commissioned)
-        {
-            return DispatchAdmissionChain.Eligible;
+            return verdict;
         }
         if (_logged.Add((vehicleKey, decision.Reason)))
         {
             LogNotCommissioned(
                 _logger,
-                vehicleKey,
+                vehicleKey ?? string.Empty,
                 decision.Reason,
                 decision.Detail ?? "no approved, activated policy version covers this vehicle",
                 null);
         }
-        return DispatchReasonCodes.ChargingPolicyNotApproved;
+        return verdict;
     }
 }

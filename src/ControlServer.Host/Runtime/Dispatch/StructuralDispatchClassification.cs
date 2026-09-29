@@ -81,7 +81,8 @@ public static class StructuralDispatchClassification
     private const int TransportDemandKeySuppressed = 11;
     private const int TransportDemandKeyAlreadyAccepted = 12;
     private const int FaultBlock = 15;
-    private const int ChargingPolicyCommissioning = 16;
+    private const int IdleReturnCommitment = 16;
+    private const int ChargingPolicyCommissioning = 17;
     private const int WorkTypeScope = 20;
     private const int VehicleTaskType = 25;
     private const int RequiredMesFacts = 30;
@@ -100,6 +101,7 @@ public static class StructuralDispatchClassification
     private const int SublotTaskTypeConflict = 35;
     private const int EnRouteAppend = 98;
     private const int LoadingPhaseOpen = 99;
+    private const int FixedStationSingleOccupancy = 99;
 
     private static readonly DispatchReasonClassification[] Rows =
     [
@@ -123,7 +125,11 @@ public static class StructuralDispatchClassification
         Backlog(VehicleFaultBlockCriterion.IdentityUnresolvedReason, FaultBlock,
             "This vehicle's identity; says nothing about the demand."),
 
-        // ---- ChargingPolicyCommissioningCriterion (16) --------------------------------------------------
+        // ---- IdleReturnCommitmentCriterion (16) ---------------------------------------------------------
+        Backlog(DispatchReasonCodes.VehicleCommittedToIdleReturn, IdleReturnCommitment,
+            "control-server#389, REQ-0292: this vehicle committed to an idle return, which no later transport takes over. " +
+            "Another vehicle, or this one once the return has converged (control-server#390), takes the demand."),
+        // ---- ChargingPolicyCommissioningCriterion (17) --------------------------------------------------
         Backlog(DispatchReasonCodes.ChargingPolicyNotApproved, ChargingPolicyCommissioning,
             "control-server#400, REQ-0282: this vehicle has no approved, activated charging policy covering it. The " +
             "vehicle's side, not the demand's: another vehicle takes it, and activating a policy that covers this one " +
@@ -310,6 +316,17 @@ public static class StructuralDispatchClassification
             "control-server#212, REQ-0354: this vehicle's loading phase has ended -- held past its cargo holding " +
             "deadline, full and gone from its last pickup, or its plan loaded with appending forbidden. This " +
             "vehicle's journey only: another vehicle takes the demand, and this one does after it unloads."),
+
+        // ---- FixedStationSingleOccupancyCriterion (99) --------------------------------------------------
+        Backlog(DispatchReasonCodes.FixedTaskStationReservedByOtherVehicle, FixedStationSingleOccupancy,
+            "control-server#391, REQ-0204: the public station this candidate would make the vehicle's next stop is reserved " +
+            "by another vehicle on its way there. Waiting clears it: that vehicle arrives, leaves, and the station is free."),
+        Backlog(DispatchReasonCodes.FixedTaskStationOccupiedByOtherVehicle, FixedStationSingleOccupancy,
+            "control-server#391, REQ-0204: the same, with the other vehicle already standing at the station. Its departure " +
+            "evidence releases it; a vehicle standing there itself is not refused, so the demand is not stranded."),
+        Backlog(DispatchReasonCodes.FixedTaskStationApproachedByOtherVehicle, FixedStationSingleOccupancy,
+            "control-server#391, REQ-0204: no one holds the station yet, but another vehicle has it as its next stop and is " +
+            "waiting for the per-round reservation to give it to it. Its departure evidence frees it in turn."),
 
         // ---- written by the engine after the chain ------------------------------------------------------
         Backlog("FINAL_DYNAMIC_FACTS_NOT_READY", null, "The pre-intake re-read of this vehicle's facts failed."),

@@ -1,0 +1,39 @@
+diff --git a/src/ControlServer.Host/Runtime/Dispatch/Criteria/IdleReturnCommitmentCriterion.cs b/src/ControlServer.Host/Runtime/Dispatch/Criteria/IdleReturnCommitmentCriterion.cs
+index 6c672a12..7a0c2d20 100644
+--- a/src/ControlServer.Host/Runtime/Dispatch/Criteria/IdleReturnCommitmentCriterion.cs
++++ b/src/ControlServer.Host/Runtime/Dispatch/Criteria/IdleReturnCommitmentCriterion.cs
+@@ -39,6 +39,6 @@ public sealed class IdleReturnCommitmentCriterion(ControlServerDbContext dbConte
+                 row => row.VehicleKey == evaluation.Vehicle.VehicleKey && row.Purpose == VehiclePurposes.IdleReturn,
+                 cancellationToken)
+             .ConfigureAwait(false);
+-        return committed ? DispatchReasonCodes.VehicleCommittedToIdleReturn : DispatchAdmissionChain.Eligible;
++        return DispatchAdmissionChain.Eligible;
+     }
+ }
+diff --git a/src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs b/src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs
+index 4edb5fe5..b67d9f6c 100644
+--- a/src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs
++++ b/src/ControlServer.Host/Runtime/Dispatch/DispatchRoundRunner.cs
+@@ -836,7 +836,7 @@ public sealed class DispatchRoundRunner(
+         // 这里读的是用途占有（批次8-16，control-server#387 退役了租约）。它只是这辆车的预判，谁占到仍由受理时
+         // VehiclePurposeClaims 的主键决定：读完到受理之间别的旅程占上了，受理会被主键整个拒掉。
+         if (!underWay && await dbContext.Set<VehiclePurposeClaimRow>().AnyAsync(
+-                row => row.VehicleKey == selected.Vehicle.VehicleKey,
++                row => row.VehicleKey == selected.Vehicle.VehicleKey && row.Purpose != VehiclePurposes.IdleReturn,
+                 cancellationToken).ConfigureAwait(false))
+         {
+             return CandidateDispatchOutcome.VehicleCannotTake;
+diff --git a/src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs b/src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs
+index 435f43b9..84c08c91 100644
+--- a/src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs
++++ b/src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs
+@@ -1114,6 +1114,9 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
+         // occupancy that used to be written beside it are gone), taken with its record in this acceptance's save. It is
+         // inserted, never read first: the key decides who holds the vehicle, and a vehicle some other journey holds
+         // refuses the whole acceptance below.
++        await dbContext.Set<VehiclePurposeClaimRow>()
++            .Where(row => row.VehicleKey == orderIntent.VehicleKey && row.Purpose == VehiclePurposes.IdleReturn)
++            .ExecuteDeleteAsync(cancellationToken).ConfigureAwait(false);
+         ForgetClaimsThisContextLastSaw(orderIntent.VehicleKey);
+         dbContext.AddRange(VehiclePurposeClaimWrites.NewRows(
+             new VehiclePurposeClaim(orderIntent.VehicleKey, VehiclePurposes.Transport, journeyId, snapshot.AcceptedAt)));
