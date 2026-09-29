@@ -19,6 +19,7 @@ public static class RiotDataPlane
         MapStationReadCounter mapStationReads = app.Services.GetRequiredService<MapStationReadCounter>();
         MapListReadCounter mapListReads = app.Services.GetRequiredService<MapListReadCounter>();
         AbsentOrderReadFaults absentOrderReadFaults = app.Services.GetRequiredService<AbsentOrderReadFaults>();
+        TimeProvider clock = app.Services.GetRequiredService<TimeProvider>();
 
         app.MapGet("/api/task/vehicles/getVehicleInfoByDeviceKey", async (
             [FromQuery] string key, CancellationToken cancellationToken) =>
@@ -32,6 +33,12 @@ public static class RiotDataPlane
                 // gateway turns that into fail-closed UNKNOWN facts, which is what a scenario
                 // asking for an unknown vehicle should be able to exercise.
                 return Ok(null);
+            }
+            vehicle = FakeChargingModel.Effective(state, vehicle, clock.GetUtcNow());
+            if (state.ChargeByVehicle.TryGetValue(key, out FakeVehicleCharge? charge) &&
+                charge.BatteryUnreadable != FakeBatteryUnreadable.None)
+            {
+                return Ok(CardWithout(vehicle, charge.BatteryUnreadable));
             }
             return Ok(new
             {
@@ -138,7 +145,7 @@ public static class RiotDataPlane
                 ["station_offset"] = station.StationOffset,
                 ["type"] = station.Type,
                 ["desc"] = "",
-                ["user_define_properties"] = new Dictionary<string, object?>(StringComparer.Ordinal),
+                ["user_define_properties"] = UserDefineProperties(state, mapId, station.Id),
             }).ToArray());
         });
 
@@ -203,11 +210,17 @@ public static class RiotDataPlane
             string? appointVehicleKey = root.TryGetProperty("appointVehicleKey", out JsonElement appointed)
                 ? appointed.GetString()
                 : null;
+            // An act mission carries no mapId or destination (control-server#402); RIoT reports both as 0 for it.
             FakeMission[] missions = root.TryGetProperty("mission", out JsonElement missionArray)
                 ? missionArray.EnumerateArray().Select(item => new FakeMission(
                     item.GetProperty("type").GetString() ?? "move",
-                    item.GetProperty("mapId").GetInt32(),
-                    item.GetProperty("destination").GetInt32())).ToArray()
+                    OptionalInt(item, "mapId"),
+                    OptionalInt(item, "destination"))
+                {
+                    ActionId = OptionalInt(item, "actionId"),
+                    ActionParam1 = OptionalInt(item, "actionParam1"),
+                    ActionParam2 = OptionalInt(item, "actionParam2")
+                }).ToArray()
                 : [];
             FakeOrder? created = CreateOrder(engine, upperId, appointVehicleKey, missions);
             return created is null
@@ -240,6 +253,7 @@ public static class RiotDataPlane
                 return (null, null);
             }
             long sequence = state.NextOrderSequence;
+            IReadOnlyList<FakeMission> recorded = FakeChargingModel.Expand(state, appointVehicleKey, missions);
             FakeOrder order = new()
             {
                 Id = 488000 + sequence,
@@ -248,8 +262,9 @@ public static class RiotDataPlane
                 OrderState = 1,
                 AppointVehicleKey = appointVehicleKey,
                 ExecuteVehicleKey = "--",
-                EndStationNo = missions.Count > 0 ? missions[missions.Count - 1].Destination : null,
-                Missions = missions
+                // The last move's station: a trailing act has destination 0, and 0 is not where the vehicle is sent.
+                EndStationNo = recorded.LastOrDefault(mission => mission.Type == "move")?.Destination,
+                Missions = recorded
             };
             Dictionary<string, FakeOrder> orders = new(state.OrdersByUpperId, StringComparer.Ordinal)
             {
@@ -268,9 +283,78 @@ public static class RiotDataPlane
         executeVehicleKey = order.ExecuteVehicleKey,
         endStationNo = order.EndStationNo,
         missions = order.Missions
-            .Select(mission => new { type = mission.Type, mapId = mission.MapId, destination = mission.Destination })
+            .Select(mission => mission.Type == "act"
+                ? ActBody(mission)
+                : (object)new { type = mission.Type, mapId = mission.MapId, destination = mission.Destination })
             .ToArray()
     };
+
+    /// <summary>
+    /// An act mission under the field names the real RIoT uses (Round 24 <c>S1b-detail-final.json</c>). A move keeps the
+    /// three fields it always had, so an order with no act is answered byte for byte as before control-server#402.
+    /// </summary>
+    private static object ActBody(FakeMission mission) => new
+    {
+        type = mission.Type,
+        mapId = mission.MapId,
+        destination = mission.Destination,
+        actionId = mission.ActionId,
+        actionParam1 = mission.ActionParam1,
+        actionParam2 = mission.ActionParam2,
+        resultCode = mission.ResultCode,
+        resultStr = mission.ResultStr,
+        missionState = mission.MissionState
+    };
+
+    /// <summary>
+    /// The vehicle card with the battery reading missing (control-server#402, REQ-0287). The keys are left out rather
+    /// than sent as null: "the card said nothing" is the loss being simulated.
+    /// </summary>
+    private static Dictionary<string, object?> CardWithout(FakeVehicle vehicle, FakeBatteryUnreadable unreadable)
+    {
+        Dictionary<string, object?> card = new(StringComparer.Ordinal)
+        {
+            ["deviceKey"] = vehicle.DeviceKey,
+            ["enable"] = vehicle.Enable,
+            ["status"] = vehicle.Status,
+            ["procState"] = vehicle.ProcState,
+            ["currentMap"] = vehicle.CurrentMap,
+            ["currentPosition"] = vehicle.CurrentPosition,
+            ["battery"] = vehicle.Battery,
+            ["batteryState"] = vehicle.BatteryState,
+            ["speed"] = vehicle.Speed,
+            ["lockStatus"] = vehicle.LockStatus,
+            ["orderTaskId"] = vehicle.OrderTaskId
+        };
+        if (unreadable is FakeBatteryUnreadable.Battery or FakeBatteryUnreadable.Both)
+        {
+            card.Remove("battery");
+        }
+        if (unreadable is FakeBatteryUnreadable.BatteryState or FakeBatteryUnreadable.Both)
+        {
+            card.Remove("batteryState");
+        }
+        return card;
+    }
+
+    /// <summary>
+    /// A registered charger's enter/exit station, in the shape map 26 reports for 211: <c>{"enter_exit":"212"}</c>, the
+    /// value a string. Empty for every other station, which is every station until a scenario registers a charger.
+    /// </summary>
+    private static Dictionary<string, object?> UserDefineProperties(FakeRiotState state, int mapId, int stationId)
+    {
+        Dictionary<string, object?> properties = new(StringComparer.Ordinal);
+        if (FakeChargingModel.FindCharger(state, mapId, stationId) is { EnterExitStationId: int enterExit })
+        {
+            properties["enter_exit"] = enterExit.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+        return properties;
+    }
+
+    private static int OptionalInt(JsonElement item, string name) =>
+        item.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.Number
+            ? value.GetInt32()
+            : 0;
 
     internal static IResult Ok(object? result) => Results.Json(new { code = "0", message = "成功", result });
 
