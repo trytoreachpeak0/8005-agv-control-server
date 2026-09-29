@@ -275,37 +275,17 @@ internal sealed class FixedStationExclusivitySweep(
 
     private async Task ReleaseAsync(StationExclusivityRow row, CancellationToken cancellationToken)
     {
-        DateTimeOffset now = timeProvider.GetUtcNow();
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken)
             .ConfigureAwait(false);
-        int deleted = await dbContext.Set<StationExclusivityRow>()
-            .Where(item => item.MapId == row.MapId && item.StationId == row.StationId &&
-                           item.JourneyId == row.JourneyId && item.RecordId == row.RecordId)
-            .ExecuteDeleteAsync(cancellationToken).ConfigureAwait(false);
-        if (deleted == 0)
+        if (!await FixedStationExclusivity.ReleaseAsReadAsync(
+                dbContext, row, timeProvider.GetUtcNow(), FixedStationExclusivity.ReleasedOnDepartureEvidence,
+                cancellationToken).ConfigureAwait(false))
         {
-            // Released or handed over through another path since it was read: nothing of it is this sweep's any more.
+            // Released (by hand, control-server#419) or handed over through another path since it was read: nothing of it is
+            // this sweep's any more.
             return;
         }
-
-        await dbContext.Set<StationExclusivityRecordRow>()
-            .Where(record => record.RecordId == row.RecordId)
-            .ExecuteUpdateAsync(
-                setters => setters
-                    .SetProperty(record => record.ReleasedAt, now)
-                    .SetProperty(record => record.ReleaseReason, FixedStationExclusivity.ReleasedOnDepartureEvidence),
-                cancellationToken)
-            .ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-
-        // A tracked copy would still read held; the next reserve reads again.
-        foreach (var stale in dbContext.ChangeTracker.Entries<StationExclusivityRow>()
-                     .Where(entry => entry.Entity.MapId == row.MapId && entry.Entity.StationId == row.StationId &&
-                                     entry.State == EntityState.Unchanged)
-                     .ToArray())
-        {
-            stale.State = EntityState.Detached;
-        }
         LogReleased(logger, row.MapId, row.StationId, row.VehicleKey, row.JourneyId, null);
     }
 

@@ -282,6 +282,8 @@ if (app.Configuration.GetValue<bool>("EmergencyStopRelease:enabled"))
 if (app.Configuration.GetValue<bool>("VehicleFaultRecovery:enabled"))
 {
     app.MapVehicleFaultRecovery();
+    // control-server#419：公共站点与等待点独占的人工释放，同一把凭据、同一个开关。
+    app.MapStationExclusivityRelease();
 }
 app.MapDashboardQueries();
 // 防饥饿阈值的标定证据（批次7-09，control-server#214）：只读，JSON 与 CSV。

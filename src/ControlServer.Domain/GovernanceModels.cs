@@ -35,7 +35,12 @@ public enum GovernedObjectKind
     ChargerRoster,
 
     /// <summary><c>ChargingPolicyVersion</c> 的内容（三个阈值、耗电估计、无进展观察策略、适用车辆），一版一份（REQ-0281、REQ-0282；control-server#399）。</summary>
-    ChargingPolicy
+    ChargingPolicy,
+
+    /// <summary>
+    /// 一个站点独占（<c>(MapId, StationId)</c>）。不是受治理配置、没有版本：审计的是现场人工释放它这一次操作（control-server#419）。
+    /// </summary>
+    StationExclusivity
 }
 
 /// <summary>

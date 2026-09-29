@@ -74,6 +74,12 @@ internal static partial class Program
             index += 2;
         }
 
+        // The one verb that can run with the server up goes to its Host entry then, and opens no database of its own.
+        if (args[0] == ReleaseStationExclusivityCommand && options.ContainsKey("server"))
+        {
+            return await ReleaseStationExclusivityViaServerAsync(options);
+        }
+
         if (!options.TryGetValue("database", out string? databasePath))
         {
             return Usage("--database is required");
@@ -122,6 +128,7 @@ internal static partial class Program
             ReadDispatchZoneParametersCommand => await ReadDispatchZoneParametersAsync(context, governance, options),
             ImportWaitingPointsCommand => await ImportWaitingPointsAsync(context, governance, options, now),
             ReadWaitingPointsCommand => await ReadWaitingPointsAsync(context, governance, options),
+            ReleaseStationExclusivityCommand => await ReleaseStationExclusivityAsync(context, governance, options, now),
             _ => Usage($"unknown command '{args[0]}'")
         };
     }
