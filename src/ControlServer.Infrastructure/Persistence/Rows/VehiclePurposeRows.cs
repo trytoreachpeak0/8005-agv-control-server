@@ -58,11 +58,17 @@ public sealed class StationExclusivityRow
     /// <summary>进入当前状态的时刻。</summary>
     public DateTimeOffset StateSince { get; set; }
 
-    /// <summary>所依据的等待点登记版本；固定公共站点为空。</summary>
+    /// <summary>所依据的等待点登记版本；固定公共站点与充电桩为空。</summary>
     public long? WaitingPointVersion { get; set; }
 
     /// <summary>这一次独占的经过是哪一条 <see cref="StationExclusivityRecordRow"/>。</summary>
     public required string RecordId { get; set; }
+
+    /// <summary>
+    /// 这次预占所依据的充电桩名册版本；只有 <c>CHARGER</c> 有（批次 9 建表票 control-server#399）。放在最后一列：它是那次迁移
+    /// 手写重建时追加的，前面各列的位置不变。
+    /// </summary>
+    public long? ChargerRosterVersion { get; set; }
 }
 
 /// <summary>
@@ -85,6 +91,9 @@ public sealed class StationExclusivityRecordRow
     public DateTimeOffset? OccupiedAt { get; set; }
     public DateTimeOffset? ReleasedAt { get; set; }
     public string? ReleaseReason { get; set; }
+
+    /// <summary>同 <see cref="StationExclusivityRow.ChargerRosterVersion"/>。</summary>
+    public long? ChargerRosterVersion { get; set; }
 }
 
 /// <summary>等待点登记的一个版本（受治理配置，照每区派车参数）。只追加，写入即不可改。</summary>

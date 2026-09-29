@@ -89,6 +89,14 @@ namespace ControlServer.Tests;
 /// 的单，应有 14 行少两列，实数 14；其余差异 0（<c>evidence/cs387/green/01-zero-change-pin-vs-integration-tip.txt</c>）。
 /// 订单占用「晚一轮释放」在这里看不出来：这批夹具的钟不走，两个时刻本来就相同。
 /// </para>
+/// <para>
+/// <b>control-server#399（批次 9 建表）给十份终结状态基线加了三个字段，其余逐字未动。</b>那一票给 <c>OrderIntents</c> 加了订单形态
+/// （缺省即回填 <c>SINGLE_MOVE</c>），给 <c>JourneyRuntimes</c> 加了两列今天全空的列。这三列在集成分支上还不存在，所以同 cs#357
+/// 只能在本票分支上录。判据：把新基线里的 <c>|OrderShape='SINGLE_MOVE'</c>、<c>|ChargingPolicyVersion=NULL</c>、
+/// <c>|PublishedBatteryState=NULL</c> 删掉，与<b>集成分支上的</b>旧基线（<c>fp/v2-impl@3fc3587b</c>）逐字相同，十四份全部成立。
+/// 先算出该是多少：旧基线里 <c>OrderIntents</c> 共 14 行、<c>JourneyRuntimes</c> 共 10 行，新基线里三个字段实数 14、10、10；
+/// 比对脚本另改一个无关字符验过会报红（<c>evidence/cs399/green/</c>）。
+/// </para>
 /// </remarks>
 internal static class ZeroChangePin
 {

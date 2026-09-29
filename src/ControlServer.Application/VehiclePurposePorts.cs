@@ -15,7 +15,7 @@ public static class StationExclusivityStates
     public static IReadOnlyList<string> All { get; } = [Reserved, Occupied];
 }
 
-/// <summary>独占的这个站点是哪一种。等待点与 <c>REQ-0204</c> 固定公共站点共用同一个原语（规格 5.4）。</summary>
+/// <summary>独占的这个站点是哪一种。等待点、<c>REQ-0204</c> 固定公共站点与充电桩共用同一个原语（规格 5.4）。</summary>
 public static class StationExclusivityKinds
 {
     public const string WaitingPoint = "WAITING_POINT";
@@ -23,7 +23,10 @@ public static class StationExclusivityKinds
     /// <summary><c>REQ-0204</c> 的每图每任务类型一个 <c>FixedTaskStation</c>（批次8-20，control-server#391）。</summary>
     public const string FixedTaskStation = "FIXED_TASK_STATION";
 
-    public static IReadOnlyList<string> All { get; } = [WaitingPoint, FixedTaskStation];
+    /// <summary>名册上的充电桩（<c>REQ-0171</c>、<c>REQ-0173</c>；批次 9 建表票 control-server#399）。</summary>
+    public const string Charger = "CHARGER";
+
+    public static IReadOnlyList<string> All { get; } = [WaitingPoint, FixedTaskStation, Charger];
 }
 
 /// <summary>等待点登记从哪来。</summary>
@@ -79,7 +82,8 @@ public sealed record VehiclePurposeClaimRecord(
 /// <param name="StationId">RIoT 站号（规格里「站点 212」的那个数）。</param>
 /// <param name="JourneyId">持有者：取得这个独占的那次用途占有的旅程。</param>
 /// <param name="StateSince">进入当前状态的时刻。</param>
-/// <param name="WaitingPointVersion">所依据的等待点登记版本；固定公共站点为空。</param>
+/// <param name="WaitingPointVersion">所依据的等待点登记版本；固定公共站点与充电桩为空。</param>
+/// <param name="ChargerRosterVersion">所依据的充电桩名册版本；只有充电桩有（control-server#399）。</param>
 public sealed record StationExclusivity(
     int MapId,
     int StationId,
@@ -88,7 +92,8 @@ public sealed record StationExclusivity(
     string VehicleKey,
     string JourneyId,
     DateTimeOffset StateSince,
-    long? WaitingPointVersion);
+    long? WaitingPointVersion,
+    long? ChargerRosterVersion = null);
 
 /// <summary>站点独占的一次完整经过：预占、到点、释放，以及为什么释放。未释放时 <see cref="ReleasedAt"/> 为空。</summary>
 public sealed record StationExclusivityRecord(
@@ -102,15 +107,18 @@ public sealed record StationExclusivityRecord(
     DateTimeOffset? ReservedAt,
     DateTimeOffset? OccupiedAt,
     DateTimeOffset? ReleasedAt,
-    string? ReleaseReason);
+    string? ReleaseReason,
+    long? ChargerRosterVersion = null);
 
 /// <summary>要取得的站点独占。<paramref name="State"/> 是取得时的状态：承诺时预占，已在点的车直接占用。</summary>
+/// <param name="ChargerRosterVersion">充电桩的预占依据哪一版名册（control-server#399）；别的种类为空。</param>
 public sealed record StationExclusivityRequest(
     int MapId,
     int StationId,
     string StationKind,
     string State,
-    long? WaitingPointVersion);
+    long? WaitingPointVersion,
+    long? ChargerRosterVersion = null);
 
 /// <summary>一次认领的结果。</summary>
 public enum VehiclePurposeAcquisitionOutcome
