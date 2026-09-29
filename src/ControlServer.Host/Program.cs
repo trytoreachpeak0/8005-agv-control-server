@@ -279,11 +279,9 @@ if (app.Configuration.GetValue<bool>("EmergencyStopRelease:enabled"))
 {
     app.MapEmergencyStopRelease();
 }
-// 默认不挂。control-server#299 的故障人工清除：这个入口会清掉一台车的故障、把它的需求交回改派，要现场明确打开才提供。
-if (app.Configuration.GetValue<bool>("VehicleFaultRecovery:enabled"))
-{
-    app.MapVehicleFaultRecovery();
-}
+// 默认不挂。control-server#299 的故障人工清除：这个入口会清掉一台车的故障、把它的需求交回改派，要现场明确打开才提供；
+// control-server#419 的站点独占人工释放同一把凭据、同一个开关。
+app.MapVehicleFaultRecoveryEntriesWhenEnabled();
 app.MapDashboardQueries();
 // 防饥饿阈值的标定证据（批次7-09，control-server#214）：只读，JSON 与 CSV。
 app.MapStarvationCalibrationReport();

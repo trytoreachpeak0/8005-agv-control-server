@@ -74,6 +74,12 @@ internal static partial class Program
             index += 2;
         }
 
+        // The one verb that can run with the server up goes to its Host entry then, and opens no database of its own.
+        if (args[0] == ReleaseStationExclusivityCommand && options.ContainsKey("server"))
+        {
+            return await ReleaseStationExclusivityViaServerAsync(options);
+        }
+
         if (!options.TryGetValue("database", out string? databasePath))
         {
             return Usage("--database is required");
@@ -128,6 +134,7 @@ internal static partial class Program
             ApproveChargingPolicyCommand => await ApproveChargingPolicyAsync(context, governance, options, now),
             ActivateChargingPolicyCommand => await ActivateChargingPolicyAsync(context, governance, options, now),
             ReadChargingPolicyCommand => await ReadChargingPolicyAsync(context, governance, options),
+            ReleaseStationExclusivityCommand => await ReleaseStationExclusivityAsync(context, governance, options, now),
             _ => Usage($"unknown command '{args[0]}'")
         };
     }
@@ -720,9 +727,9 @@ internal static partial class Program
             + "|export-audit|check-binding-snapshots|import-area-assignments|area-assignments"
             + "|activate-task-type-stations|rollback-task-type-stations|reconcile-task-type-stations"
             + "|release-task-type-station-hold|accept-map-name|close-task-type-station-activation|task-type-stations"
-            + "|import-dispatch-zone-parameters|dispatch-zone-parameters|import-waiting-points|read-waiting-points"
-            + "|import-charger-roster|charger-roster|import-charging-policy|approve-charging-policy"
-            + "|activate-charging-policy|charging-policy>"
+            + "|import-dispatch-zone-parameters|dispatch-zone-parameters|release-station-exclusivity"
+            + "|import-waiting-points|read-waiting-points|import-charger-roster|charger-roster|import-charging-policy"
+            + "|approve-charging-policy|activate-charging-policy|charging-policy>"
             + " --database <path> [options]");
         Console.Error.WriteLine("  verify      --record <field-record.json>");
         Console.Error.WriteLine("  release     --agv <agvId> --model <slotModelVersionId>");
@@ -752,6 +759,16 @@ internal static partial class Program
         Console.Error.WriteLine("  task-type-stations      --map <id>   read-only");
         Console.Error.WriteLine("  import-dispatch-zone-parameters --input <zone-parameters.csv> [--dry-run]");
         Console.Error.WriteLine("  dispatch-zone-parameters        [--version <n>]   read-only");
+        Console.Error.WriteLine(
+            "  import-waiting-points --input <waiting-points.csv> --catalog <stations.json> --map <id> --fleet <keys> [--dry-run]");
+        Console.Error.WriteLine("  read-waiting-points             [--version <n>] [--map <id> --fleet <keys>]   read-only");
+        Console.Error.WriteLine(
+            "  release-station-exclusivity --map <id> --station <id> --vehicle-key <VehicleKey> --operator <id>"
+            + " --reason <text> --site-verification <ref> [--role <text>]");
+        Console.Error.WriteLine(
+            "      server running: --server <base url> [--credential-env <variable>]   (no --database; goes through the server)");
+        Console.Error.WriteLine(
+            "      server stopped: --database <path> --probe-server <base url>   (refused if the server answers)");
         Console.Error.WriteLine(
             "  import-charger-roster --input <charger-roster.json> --catalog <stations.json> --map <id> --fleet <keys> [--dry-run]");
         Console.Error.WriteLine("  charger-roster                  [--version <n>]   read-only");
