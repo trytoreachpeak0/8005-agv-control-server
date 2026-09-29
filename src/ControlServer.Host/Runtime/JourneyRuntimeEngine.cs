@@ -3284,7 +3284,7 @@ public sealed partial class JourneyRuntimeEngine(
         {
             return true;
         }
-        return await store.IsTaskTypeAllowedAtAreaEndAsync(runtime, workType, cancellationToken).ConfigureAwait(false);
+        return await store.IsTaskTypeAllowedAtAreaEndAsync(next.Demand.DemandId, workType, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -3462,7 +3462,7 @@ public sealed partial class JourneyRuntimeEngine(
         // At the AREA machine station, not necessarily this one: STAGING_TO_WIRE loads at a staging station and is
         // admitted at the machine it unloads at (control-server#163). Asked here too, before anything is loaded for a
         // machine that would refuse it.
-        if (!await store.IsTaskTypeAllowedAtAreaEndAsync(runtime, demand.WorkType, cancellationToken)
+        if (!await store.IsTaskTypeAllowedAtAreaEndAsync(demand.DemandId, demand.WorkType, cancellationToken)
                 .ConfigureAwait(false))
         {
             runtime.SetBlockReason(AreaEndAdmissionHeldReason, now);

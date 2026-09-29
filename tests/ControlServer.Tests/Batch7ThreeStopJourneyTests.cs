@@ -3,8 +3,10 @@ using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.Dispatch;
+using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using static ControlServer.Tests.Batch7StopDrivenAdvanceDriver;
 using static ControlServer.Tests.JourneyRuntimeWorkerTestKit;
 
@@ -55,6 +57,128 @@ public sealed class Batch7ThreeStopJourneyTests
             await fixture.Context.Set<JourneyStopRow>().AsNoTracking()
                 .ToArrayAsync(TestContext.Current.CancellationToken),
             stop => Assert.Equal(JourneyStopStatuses.Completed, stop.Status));
+    }
+
+    /// <summary>
+    /// 录入处的准入预判问的是被录入的那条需求在它自己停靠上的站，不是锚需求的（control-server#251，调度 09-29 定 B）。
+    /// </summary>
+    /// <remarks>
+    /// 派车之后准入策略变了：锚需求的取货站不再准入 WIRE_TO_GATE，第二条需求的取货站仍准入。第二条需求在它自己的
+    /// 停靠上录入，应当照常下装货命令。按锚需求去问，问到的是那个已被撤销的站，录入就被
+    /// <c>TASK_TYPE_NOT_ALLOWED_AT_STATION</c> 挡住——这正是改签名之前的样子。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AFurtherDemandsEntryIsAdmittedAtItsOwnPickupWhenTheAnchorsIsRevoked()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await DriveToSecondPickupAsync(fixture);
+        await RevokeWireToGateAtAnchorPickupAsync(fixture);
+
+        await EnterSublotAsync(fixture, SecondDemandId, SecondSublot, SecondSubmissionId);
+
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync(FirstDemandId);
+        JourneyDemandRow second = await fixture.Context.Set<JourneyDemandRow>().AsNoTracking()
+            .SingleAsync(row => row.DemandId == SecondDemandId, token);
+        bool loadPrepared = await fixture.Context.StationOperations.AsNoTracking()
+            .AnyAsync(row => row.SlotOperationAttemptId == second.LoadSlotOperationAttemptId, token);
+        Assert.True(
+            loadPrepared && runtime.BlockReasonCode != "TASK_TYPE_NOT_ALLOWED_AT_STATION",
+            $"load prepared: {loadPrepared}; block reason: {runtime.BlockReasonCode ?? "none"}");
+    }
+
+    /// <summary>
+    /// 恢复协调器判「扫码之前能不能取消」时，对已落库的录入同样按那条需求自己停靠的站判准入（control-server#251，
+    /// 调度 09-29 定 B）。
+    /// </summary>
+    /// <remarks>
+    /// 策略变化与上一条相同：锚需求的取货站被撤销，第二个取货站仍准入。第二条需求在它自己的停靠上已有一条落库的录入，
+    /// 那条录入是算数的，所以它挡住「扫码之前取消」，应答是 <c>REJECTED</c>。按锚需求去问，那条录入会被当成「这个站根本
+    /// 做不了」而不计，取消就被放行了。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AFurtherDemandsDurableEntryHoldsItsStopAgainstACancellationWhenTheAnchorsPickupIsRevoked()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await DriveToSecondPickupAsync(fixture);
+        await RevokeWireToGateAtAnchorPickupAsync(fixture);
+        await fixture.ProveSlotDoorsClosedAsync();
+        // The entry is durable but the runtime has not taken it up yet: the state a cancellation can race.
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync(FirstDemandId);
+        StopEntryAddress address = (await JourneyStopCursor.LoadAsync(fixture.Context, runtime, token))
+            .EntryAddressOfCurrentStop(runtime.WorklistRevision);
+        await AddInboxAsync(fixture, SecondSubmissionId, "SublotSubmitted", SublotSubmission(fixture, address, SecondSublot));
+
+        await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+        OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+            connection, new WireToGateStore(connection), fixture.Clock, new ConfigurationBuilder().Build());
+        OnboardConnectionState state = new()
+        {
+            AgvId = fixture.Options.AgvId,
+            SessionGeneration = 1,
+            CapabilityRevision = 1,
+            SafetyRevision = 7,
+            Readiness = SessionReadiness.Ready,
+        };
+        string answer = await processor.ProcessAsync(
+            BeforeSublotEnvelope(fixture, "20000000-0000-4000-8000-000000000251", "LoadCancellationStartRequested", 1, new
+            {
+                cancellationId = "c2510000-0000-4000-8000-000000000001",
+                demandId = SecondDemandId,
+                slotOperationAttemptId = (string?)null,
+                @operator = BeforeSublotOperator(fixture),
+                reason = "Nothing to load at this stop.",
+            }),
+            state,
+            token);
+
+        using JsonDocument document = JsonDocument.Parse(answer.Split('\n', StringSplitOptions.RemoveEmptyEntries)[0]);
+        Assert.Equal(
+            ("LoadCancellationAuthorization", "REJECTED"),
+            (document.RootElement.GetProperty("messageType").GetString(),
+                document.RootElement.GetProperty("payload").GetProperty("decision").GetString()));
+    }
+
+    /// <summary>
+    /// 受理第一条、追加第二条，第一个取货站走完，车停到第二个取货站等录入。与 <see cref="RunThreeStopJourneyAsync"/>
+    /// 的前半段相同。
+    /// </summary>
+    private static async Task DriveToSecondPickupAsync(RuntimeFixture fixture)
+    {
+        fixture.Catalog.Set(
+            fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)),
+            fixture.Demand(SecondDemandId, SecondSublot, Now.AddMinutes(-9), area: SecondPickupArea));
+        fixture.BoxCounts.Set(FirstSublot, 7);
+        fixture.BoxCounts.Set(SecondSublot, 7);
+        await TickAndRunAsync(fixture);
+        await AppendSecondDemandAsync(fixture);
+        await ArriveAtPickupAsync(fixture, FirstDemandId);
+        await EnterSublotAsync(fixture, FirstDemandId, FirstSublot, FirstSubmissionId);
+        await SettleLoadAsync(fixture, FirstDemandId);
+        await AnswerDepartureSafetyAsync(fixture, FirstDemandId, FirstSafetyResultId);
+        await ArriveAtCurrentStopAsync(fixture, SecondDemandId, "TO_GATE");
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync(FirstDemandId)).Stage);
+    }
+
+    /// <summary>派车之后的策略变化：锚需求的取货站不再准入 WIRE_TO_GATE；第二个取货站的那一行留着。</summary>
+    private static async Task RevokeWireToGateAtAnchorPickupAsync(RuntimeFixture fixture)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync(FirstDemandId);
+        string anchorPickup = (await fixture.Context.Set<JourneyStopRow>().AsNoTracking()
+            .SingleAsync(row => row.StopId == JourneyIdentity.PickupStopId(runtime.JourneyId), token)).StationId;
+        Assert.NotEqual(SecondPickupArea, anchorPickup);
+        fixture.Context.StationTaskTypeAdmissions.RemoveRange(
+            await fixture.Context.StationTaskTypeAdmissions
+                .Where(row => row.StationId == anchorPickup && row.TaskType == "WIRE_TO_GATE")
+                .ToArrayAsync(token));
+        await fixture.Context.SaveChangesAsync(token);
+        fixture.Context.ChangeTracker.Clear();
+        Assert.True(await fixture.Context.StationTaskTypeAdmissions.AnyAsync(
+            row => row.StationId == SecondPickupArea && row.TaskType == "WIRE_TO_GATE", token));
     }
 
     /// <summary>
