@@ -919,25 +919,70 @@ public sealed class MovementDispatchService
             ExperimentalAuthorizationId: experimentalAuthorizationId,
             EligibilityBasis: eligibilityBasis);
 
-    private static string ComputeRequestSemanticSha256(OrderIntent intent)
+    /// <summary>
+    /// The digest of what a create for this intent asks RIoT to do, recorded on the create audit rows.
+    /// </summary>
+    /// <remarks>
+    /// <b>A single-move intent's digest is byte-for-byte what it was before order shapes existed</b>: the
+    /// audit rows already written carry it, and the next attempt of the same intent must compare equal
+    /// to them. Every other shape serializes its shape name and its missions as a list, so it can never
+    /// collide with a single-move digest for the same vehicle and station.
+    /// </remarks>
+    public static string ComputeRequestSemanticSha256(OrderIntent intent)
     {
-        byte[] semanticRequest = JsonSerializer.SerializeToUtf8Bytes(new
-        {
-            schemaVersion = 1,
-            endpoint = "byDefaultMissions",
-            upperId = intent.UpperId,
-            appointVehicleKey = intent.VehicleKey,
-            isAppointEnable = 1,
-            lockStatus = 0,
-            orderName = intent.UpperId,
-            mission = new
+        ArgumentNullException.ThrowIfNull(intent);
+        byte[] semanticRequest = string.Equals(intent.OrderShape, OrderShapes.SingleMove, StringComparison.Ordinal)
+            ? JsonSerializer.SerializeToUtf8Bytes(new
             {
-                type = "move",
-                mapId = intent.MapId,
-                destination = intent.DestinationStationId
-            }
-        });
+                schemaVersion = 1,
+                endpoint = "byDefaultMissions",
+                upperId = intent.UpperId,
+                appointVehicleKey = intent.VehicleKey,
+                isAppointEnable = 1,
+                lockStatus = 0,
+                orderName = intent.UpperId,
+                mission = new
+                {
+                    type = "move",
+                    mapId = intent.MapId,
+                    destination = intent.DestinationStationId
+                }
+            })
+            : JsonSerializer.SerializeToUtf8Bytes(new
+            {
+                schemaVersion = 1,
+                endpoint = "byDefaultMissions",
+                orderShape = intent.OrderShape,
+                upperId = intent.UpperId,
+                appointVehicleKey = intent.VehicleKey,
+                isAppointEnable = 1,
+                lockStatus = 0,
+                orderName = intent.UpperId,
+                missions = RequestedMissions(intent)
+            });
         return Convert.ToHexString(SHA256.HashData(semanticRequest)).ToLowerInvariant();
+    }
+
+    private static object[] RequestedMissions(OrderIntent intent)
+    {
+        object move = new
+        {
+            type = "move",
+            mapId = intent.MapId,
+            destination = intent.DestinationStationId
+        };
+        return string.Equals(intent.OrderShape, OrderShapes.Charge, StringComparison.Ordinal)
+            ? [
+                move,
+                new
+                {
+                    type = "act",
+                    actionId = RiotChargingOrderAction.ActionId,
+                    actionParam1 = RiotChargingOrderAction.StartChargingParam1,
+                    actionParam2 = RiotChargingOrderAction.Param2
+                }
+            ]
+            : [move];
     }
 
     private static async Task RecordAfterDispatchAsync(Func<CancellationToken, Task> write)

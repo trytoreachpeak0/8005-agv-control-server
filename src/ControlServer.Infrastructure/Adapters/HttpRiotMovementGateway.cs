@@ -61,6 +61,12 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         this.timeProvider = timeProvider;
     }
 
+    /// <summary>The act a charging order carries after its move to the charger (allowlist 1.2, shape two).</summary>
+    private static readonly OrderMissionAction StartChargingAction = new(
+        RiotChargingOrderAction.ActionId,
+        RiotChargingOrderAction.StartChargingParam1,
+        RiotChargingOrderAction.Param2);
+
     /// <summary>RIoT business code for "订单已存在" on byDefaultMissions (BC-ORDER-004).</summary>
     private const string OrderAlreadyExistsBusinessCode = "0610008";
 
@@ -111,15 +117,36 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
     {
         ArgumentNullException.ThrowIfNull(intent);
         ValidateFrozenIntent(intent);
+        bool charge = string.Equals(intent.OrderShape, OrderShapes.Charge, StringComparison.Ordinal);
+        if (!charge && !string.Equals(intent.OrderShape, OrderShapes.SingleMove, StringComparison.Ordinal))
+        {
+            // The shape column carries no CHECK (#399), so this is where an unknown value stops. Nothing is
+            // sent: guessing a shape would create an order the intent never asked for.
+            return Unknown(
+                intent.UpperId,
+                Receipt("CREATE", "UnsupportedOrderShape", resultPresent: false, failureCategory: "IDENTITY_INVALID"));
+        }
+
         try
         {
-            OrderRef created = await riotSession.Order.CreateMoveOrderAsync(
-                intent.UpperId,
-                intent.VehicleKey,
-                intent.MapId,
-                intent.DestinationStationId,
-                intent.UpperId,
-                cancellationToken).ConfigureAwait(false);
+            // The shape is read from the frozen intent on every attempt, so a retry creates exactly what the
+            // first attempt did, whatever RIoT or the vehicle reported in between.
+            OrderRef created = charge
+                ? await riotSession.Order.CreateMoveOrderAsync(
+                    intent.UpperId,
+                    intent.VehicleKey,
+                    intent.MapId,
+                    intent.DestinationStationId,
+                    StartChargingAction,
+                    intent.UpperId,
+                    cancellationToken).ConfigureAwait(false)
+                : await riotSession.Order.CreateMoveOrderAsync(
+                    intent.UpperId,
+                    intent.VehicleKey,
+                    intent.MapId,
+                    intent.DestinationStationId,
+                    intent.UpperId,
+                    cancellationToken).ConfigureAwait(false);
 
             RiotOrderObservationKind kind = ToObservationKind(created.OrderState);
             if (kind == RiotOrderObservationKind.Unknown ||

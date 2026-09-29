@@ -1,6 +1,8 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using ControlServer.Application;
+using ControlServer.Domain;
 using ControlServer.Infrastructure.Adapters;
 using RIoT.Sdk.Core;
 using RIoT.Sdk.Facade;
@@ -14,6 +16,134 @@ namespace ControlServer.Tests;
 public sealed class HttpRiotChargingOrderGatewayTests
 {
     private static readonly DateTimeOffset ReadAt = new(2026, 9, 29, 8, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public async Task AChargeIntentCreatesAMoveToTheChargerFollowedByTheStartChargingAct()
+    {
+        List<string> bodies = [];
+        RecordingHandler handler = new((request, cancellationToken) =>
+        {
+            bodies.Add(request.Content!.ReadAsStringAsync(cancellationToken).GetAwaiter().GetResult());
+            return JsonResponse(CreateSuccessJson("UPPER-CHARGE"));
+        });
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
+
+        RiotOrderObservation result = await gateway.CreateAsync(
+            Intent(OrderShapes.Charge), TestContext.Current.CancellationToken);
+
+        Assert.Equal(RiotOrderObservationKind.Active, result.Kind);
+        Assert.Equal(211, result.DestinationStationId);
+        Assert.Equal("/api/order/v1/add/byDefaultMissions", handler.LastPath);
+        using JsonDocument document = JsonDocument.Parse(Assert.Single(bodies));
+        JsonElement root = document.RootElement;
+        Assert.Equal("AGV-8005-02", root.GetProperty("appointVehicleKey").GetString());
+        Assert.Equal(1, root.GetProperty("isAppointEnable").GetInt32());
+        Assert.Equal(0, root.GetProperty("lockStatus").GetInt32());
+        Assert.Equal("UPPER-CHARGE", root.GetProperty("orderName").GetString());
+        Assert.Equal("UPPER-CHARGE", root.GetProperty("upperId").GetString());
+        JsonElement[] missions = root.GetProperty("mission").EnumerateArray().ToArray();
+        Assert.Equal(2, missions.Length);
+        Assert.Equal("move", missions[0].GetProperty("type").GetString());
+        Assert.Equal(26, missions[0].GetProperty("mapId").GetInt32());
+        Assert.Equal(211, missions[0].GetProperty("destination").GetInt32());
+        Assert.Equal(
+            ["actionId", "actionParam1", "actionParam2", "type"],
+            missions[1].EnumerateObject().Select(property => property.Name).ToArray());
+        Assert.Equal("act", missions[1].GetProperty("type").GetString());
+        Assert.Equal(78, missions[1].GetProperty("actionId").GetInt32());
+        Assert.Equal(1, missions[1].GetProperty("actionParam1").GetInt32());
+        Assert.Equal(0, missions[1].GetProperty("actionParam2").GetInt32());
+    }
+
+    [Fact]
+    public async Task ASingleMoveIntentStillCreatesExactlyOneMove()
+    {
+        List<string> bodies = [];
+        RecordingHandler handler = new((request, cancellationToken) =>
+        {
+            bodies.Add(request.Content!.ReadAsStringAsync(cancellationToken).GetAwaiter().GetResult());
+            return JsonResponse(CreateSuccessJson("UPPER-CHARGE"));
+        });
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
+
+        await gateway.CreateAsync(Intent(OrderShapes.SingleMove), TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            """{"appointVehicleKey":"AGV-8005-02","isAppointEnable":1,"lockStatus":0,"mission":[{"destination":211,"mapId":26,"type":"move"}],"orderName":"UPPER-CHARGE","upperId":"UPPER-CHARGE"}""",
+            Assert.Single(bodies));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("charge")]
+    [InlineData("CHARGING")]
+    [InlineData("MOVE")]
+    public async Task AnOrderShapeThisServerDoesNotKnowCreatesNothing(string orderShape)
+    {
+        RecordingHandler handler = new((_, _) => JsonResponse(CreateSuccessJson("UPPER-CHARGE")));
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
+
+        RiotOrderObservation result = await gateway.CreateAsync(
+            Intent(orderShape), TestContext.Current.CancellationToken);
+
+        Assert.Equal(RiotOrderObservationKind.Unknown, result.Kind);
+        Assert.Null(result.OrderId);
+        Assert.Equal("CREATE", result.Receipt?.Operation);
+        Assert.Equal("UnsupportedOrderShape", result.Receipt?.Classification);
+        Assert.Equal("IDENTITY_INVALID", result.Receipt?.FailureCategory);
+        Assert.Equal(0, handler.CallCount);
+    }
+
+    public static TheoryData<string> CreateFailures => ["NullResult", "Timeout", "Http503", "AlreadyExists"];
+
+    [Theory]
+    [MemberData(nameof(CreateFailures))]
+    public async Task EveryUnconfirmedCreateReadsTheSameForBothShapesAndIsNotRetried(string failure)
+    {
+        (RiotOrderObservation charge, int chargeCalls) = await CreateWithFailureAsync(OrderShapes.Charge, failure);
+        (RiotOrderObservation single, int singleCalls) = await CreateWithFailureAsync(OrderShapes.SingleMove, failure);
+
+        Assert.Equal(1, chargeCalls);
+        Assert.Equal(1, singleCalls);
+        Assert.Equal(
+            failure == "AlreadyExists" ? RiotOrderObservationKind.AlreadyExists : RiotOrderObservationKind.Unknown,
+            charge.Kind);
+        Assert.Equal(single.Kind, charge.Kind);
+        Assert.Null(charge.OrderId);
+        Assert.NotNull(charge.Receipt);
+        Assert.Equal(single.Receipt, charge.Receipt);
+    }
+
+    [Fact]
+    public async Task ARetriedChargeCreateSendsTheSameChargingOrderAgain()
+    {
+        List<string> bodies = [];
+        RecordingHandler handler = new((request, cancellationToken) =>
+        {
+            bodies.Add(request.Content!.ReadAsStringAsync(cancellationToken).GetAwaiter().GetResult());
+            return bodies.Count == 1
+                ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+                {
+                    Content = new StringContent("{}", Encoding.UTF8, "application/json")
+                }
+                : JsonResponse("""{"code":"0610008","message":"订单已存在","result":null}""");
+        });
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
+        OrderIntent intent = Intent(OrderShapes.Charge);
+
+        RiotOrderObservation first = await gateway.CreateAsync(intent, TestContext.Current.CancellationToken);
+        RiotOrderObservation second = await gateway.CreateAsync(intent, TestContext.Current.CancellationToken);
+
+        Assert.Equal(RiotOrderObservationKind.Unknown, first.Kind);
+        Assert.Equal(RiotOrderObservationKind.AlreadyExists, second.Kind);
+        Assert.Equal(2, bodies.Count);
+        Assert.Equal(bodies[0], bodies[1]);
+        Assert.Contains("\"actionId\":78", bodies[1], StringComparison.Ordinal);
+    }
 
     [Fact]
     public async Task AChargingOrderExpandedThroughTheEnterExitPointReconcilesToTheCharger()
@@ -161,6 +291,34 @@ public sealed class HttpRiotChargingOrderGatewayTests
 
         Assert.Equal(RiotOrderMissionFactsStatus.Unknown, facts.Status);
         Assert.Equal(1, handler.CallCount);
+    }
+
+    private static OrderIntent Intent(string orderShape) => new(
+        "LEG-CHARGE", "CHARGE-DEMAND", "UPPER-CHARGE", "TO_CHARGER", "ST-211",
+        new DateTimeOffset(2026, 9, 29, 8, 0, 0, TimeSpan.Zero),
+        "AGV-8005-02", 26, 211, 1, 1, orderShape);
+
+    private static string CreateSuccessJson(string upperId) =>
+        $$$"""{"code":"0","result":{"id":488650,"orderId":"ORDER-CHARGE","upperId":"{{{upperId}}}","orderState":1}}""";
+
+    private static async Task<(RiotOrderObservation, int)> CreateWithFailureAsync(string orderShape, string failure)
+    {
+        RecordingHandler handler = new((_, _) => failure switch
+        {
+            "NullResult" => JsonResponse("""{"code":"0","message":"成功","result":null}"""),
+            "Timeout" => throw new TaskCanceledException("simulated timeout"),
+            "Http503" => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+            {
+                Content = new StringContent("{}", Encoding.UTF8, "application/json")
+            },
+            "AlreadyExists" => JsonResponse("""{"code":"0610008","message":"订单已存在","result":null}"""),
+            _ => throw new ArgumentOutOfRangeException(nameof(failure))
+        });
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session, new FixedTimeProvider(ReadAt));
+        RiotOrderObservation result = await gateway.CreateAsync(
+            Intent(orderShape), TestContext.Current.CancellationToken);
+        return (result, handler.CallCount);
     }
 
     private static async Task<RiotOrderObservation> ReconcileAsync(string missionsJson, int? endStationNo)
