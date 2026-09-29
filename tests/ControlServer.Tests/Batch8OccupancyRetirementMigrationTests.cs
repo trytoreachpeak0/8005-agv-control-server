@@ -106,6 +106,46 @@ public sealed class Batch8OccupancyRetirementMigrationTests
             fixture, ["OrderIntents occupancy unreleased: UpperId=W2G-D-3-PICKUP-1 DemandId=D-3 VehicleKey=VK-03"]);
     }
 
+    /// <summary>
+    /// 订单占用只能由<b>同一辆车</b>上的旅程开脱（调度 09-29 批时加）：单上的车与旅程的车不一致时，旅程在不在途都不算它的，
+    /// 照样拒绝。
+    /// </summary>
+    [Fact]
+    public async Task AnOpenJourneyOfAnotherVehicleDoesNotExcuseAnUnreleasedOrderOccupancy()
+    {
+        await using Batch7JourneyFixture fixture = await SeededAsync();
+        // D-1's journey is in flight on VK-01 and holds its claim; its pickup order now says VK-09 and is still occupied.
+        await ExecuteAsync(
+            fixture.Connection,
+            "UPDATE OrderIntents SET VehicleKey = 'VK-09' WHERE UpperId = 'W2G-D-1-PICKUP-1'");
+
+        await AssertRefusedAsync(
+            fixture, ["OrderIntents occupancy unreleased: UpperId=W2G-D-1-PICKUP-1 DemandId=D-1 VehicleKey=VK-09"]);
+    }
+
+    /// <summary>拒绝不是死路：按报错把数据修正之后，同一个库再迁移就成功，并照常回填。</summary>
+    [Fact]
+    public async Task OnceTheNamedRowsAreFixedTheSameDatabaseMigrates()
+    {
+        await using Batch7JourneyFixture fixture = await SeededAsync();
+        await ExecuteAsync(fixture.Connection, "DELETE FROM VehiclePurposeClaims WHERE JourneyId = 'journey:D-2'");
+        await Assert.ThrowsAsync<SqliteException>(() => fixture.Context.Database.MigrateAsync(Token));
+
+        // What a person does after finding out why: here, the vehicle is known to be free, so the lease is released.
+        await ExecuteAsync(
+            fixture.Connection,
+            "UPDATE VehicleDispatchLeases SET ReleasedAt = '2026-09-19 09:30:00+00:00' WHERE JourneyId = 'journey:D-2'");
+        await fixture.RenewContextAsync();
+        await fixture.Context.Database.MigrateAsync(Token);
+
+        Assert.Equal(Migration, (await fixture.Context.Database.GetAppliedMigrationsAsync(Token)).Last());
+        Assert.Contains(
+            "lease:VK-02:journey:D-2|VK-02|TRANSPORT|journey:D-2|2026-09-19 09:01:00+00:00|2026-09-19 09:30:00+00:00|DISPATCH_LEASE_RELEASED",
+            await RecordsAsync(fixture.Connection));
+        await using ControlServerDbContext read = fixture.NewContext();
+        await VehicleOccupancyAssertions.AssertOpenClaimRecordsAndPurposeClaimsMatchAsync(read);
+    }
+
     [Fact]
     public async Task EveryMismatchIsNamedInOneRefusal()
     {

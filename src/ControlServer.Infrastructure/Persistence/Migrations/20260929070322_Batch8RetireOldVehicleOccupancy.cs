@@ -12,7 +12,8 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
     /// <remarks>
     /// <para>
     /// <b>It checks before it drops.</b> An unreleased lease with no purpose claim of the same journey on the same vehicle,
-    /// or an unreleased order occupancy whose journey is neither still open nor still holding a claim, is a place where
+    /// or an unreleased order occupancy whose journey on that same vehicle is neither still open nor still holding a claim on
+    /// it (another vehicle's journey does not excuse it), is a place where
     /// the old occupancy and the claim already disagree. Moving it over would make that unexplained state legal, and
     /// dropping it would lose it; so the migration refuses, whole, naming every such row, and drops nothing. A person finds
     /// out why. Do not edit this migration to get past it.
@@ -146,9 +147,11 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                 WHERE o."VehicleOccupancyClaimedAt" IS NOT NULL AND o."VehicleOccupancyReleasedAt" IS NULL
                   AND NOT EXISTS (
                       SELECT 1 FROM "JourneyRuntimes" AS j
-                      WHERE j."PickupUpperId" = o."UpperId"
+                      WHERE j."PickupUpperId" = o."UpperId" AND j."VehicleKey" = o."VehicleKey"
                         AND (j."Stage" <> 'Completed'
-                             OR EXISTS (SELECT 1 FROM "VehiclePurposeClaims" AS c WHERE c."JourneyId" = j."JourneyId")))
+                             OR EXISTS (
+                                 SELECT 1 FROM "VehiclePurposeClaims" AS c
+                                 WHERE c."JourneyId" = j."JourneyId" AND c."VehicleKey" = o."VehicleKey")))
             )
             HAVING count(*) > 0;
             DROP TRIGGER "ef_guard_Batch8RetireOldVehicleOccupancy_refuse";
