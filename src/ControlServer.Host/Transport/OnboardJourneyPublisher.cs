@@ -483,6 +483,9 @@ public sealed class OnboardJourneyPublisher(
                 throw new InvalidDataException("A recovery session without a demand names no slot operation attempt.");
         }
         ValidateSlots(projection.Slots);
+        if (projection.ClosedReason is not null &&
+            (projection.State != "CLOSED" || !ProtocolErrorCodes.All.Contains(projection.ClosedReason)))
+            throw new InvalidDataException("closedReason names a registry code, and only on a CLOSED session.");
         return QueueEnvelopeAsync(
             "ExceptionRecoverySessionSnapshot", messageId, null, agvId, sessionGeneration,
             new
@@ -503,7 +506,8 @@ public sealed class OnboardJourneyPublisher(
                     fact.ReasonCode,
                     fact.SubjectType,
                     fact.SubjectId
-                })
+                }),
+                projection.ClosedReason
             }, cancellationToken);
     }
 
