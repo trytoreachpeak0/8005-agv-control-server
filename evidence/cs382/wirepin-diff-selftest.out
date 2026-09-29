@@ -10,3 +10,15 @@ exit=1
 FAIL normal-journey.txt expected={'stopEndedReason': 3, 'checkPurpose': 1} counted={'stopEndedReason': 3, 'checkPurpose': 0} values={'stopEndedReason': ['"COMPLETED"', 'null']}
     new-key count {'stopEndedReason': 3, 'checkPurpose': 0} != expected {'stopEndedReason': 3, 'checkPurpose': 1}
 exit=1
+== self-test d-completed-to-load-cancelled
+FAIL normal-journey.txt expected={'stopEndedReason': 3, 'checkPurpose': 1} counted={'stopEndedReason': 3, 'checkPurpose': 1} values={'stopEndedReason': ['"LOAD_CANCELLED"', 'null'], 'checkPurpose': ['"DEPARTURE"']}
+    line 25: stopEndedReason 'LOAD_CANCELLED', expected 'COMPLETED' (empty worklist)
+exit=1
+== self-test e-reason-on-worklist-with-items
+FAIL normal-journey.txt expected={'stopEndedReason': 3, 'checkPurpose': 1} counted={'stopEndedReason': 3, 'checkPurpose': 1} values={'stopEndedReason': ['"COMPLETED"', 'null'], 'checkPurpose': ['"DEPARTURE"']}
+    line 9: stopEndedReason 'COMPLETED', expected None (items present)
+exit=1
+== self-test f-departure-to-hold-release
+FAIL normal-journey.txt expected={'stopEndedReason': 3, 'checkPurpose': 1} counted={'stopEndedReason': 3, 'checkPurpose': 1} values={'stopEndedReason': ['"COMPLETED"', 'null'], 'checkPurpose': ['"HOLD_RELEASE"']}
+    line 15: checkPurpose 'HOLD_RELEASE', expected 'DEPARTURE'
+exit=1
