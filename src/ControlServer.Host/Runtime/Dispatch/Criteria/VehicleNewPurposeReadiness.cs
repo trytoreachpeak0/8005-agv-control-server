@@ -15,7 +15,9 @@ namespace ControlServer.Host.Runtime.Dispatch.Criteria;
 /// <para>
 /// 派车链仍是两条判据、顺序不变（结构性告警按判据顺序分类）：<see cref="VehicleFaultBlockCriterion"/> 调
 /// <see cref="FaultVerdictAsync"/>，<see cref="VehicleDynamicFactsCriterion"/> 就是 <see cref="VehicleDynamicFactsCriterion.Evaluate"/>。
-/// 空闲返回调 <see cref="JudgeAsync"/>，两者依次判。批次 9 的投运策略、强制充电、人工充电等待、充电资格暂停加在这里。
+/// 空闲返回调 <see cref="JudgeAsync"/>，三者依次判。批次 9 的投运策略、强制充电、人工充电等待、充电资格暂停加在这里。
+/// 投运策略（control-server#400）是第三格 <see cref="CommissioningVerdictAsync"/>，派车链那一侧是
+/// <see cref="ChargingPolicyCommissioningCriterion"/>（Order 17）——同一个判定，每条链只判一次。
 /// </para>
 /// </remarks>
 public static class VehicleNewPurposeReadiness
@@ -39,15 +41,45 @@ public static class VehicleNewPurposeReadiness
         };
     }
 
-    /// <summary>故障阻断，然后车辆动态事实（安全、在线、绑定、IDLE、地图、新鲜、电量门槛、停止、RIoT 上没有它的单）。</summary>
+    /// <summary>
+    /// 投运（control-server#400；REQ-0282，规格 8.6 逐车硬阻断）：没有已批准、已激活、覆盖这辆车的充电策略版本，或读不到，
+    /// 都不接新用途。能接答 <see cref="DispatchAdmissionChain.Eligible"/>，否则 <see cref="DispatchReasonCodes.ChargingPolicyNotApproved"/>；
+    /// 判定本身一并交回，调用方要写日志时用它的原因与说明。
+    /// </summary>
+    public static async Task<(string Verdict, VehicleChargingPolicyDecision Decision)> CommissioningVerdictAsync(
+        IChargingPolicyResolver chargingPolicy, string vehicleKey, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(chargingPolicy);
+        if (string.IsNullOrWhiteSpace(vehicleKey))
+        {
+            return (DispatchReasonCodes.ChargingPolicyNotApproved,
+                new VehicleChargingPolicyDecision(vehicleKey ?? string.Empty, ChargingPolicyCommissioningReasons.NotApproved, null, "no vehicle key"));
+        }
+
+        VehicleChargingPolicyDecision decision =
+            await chargingPolicy.ResolveForNewDecisionAsync(vehicleKey, cancellationToken).ConfigureAwait(false);
+        return (decision.Commissioned ? DispatchAdmissionChain.Eligible : DispatchReasonCodes.ChargingPolicyNotApproved, decision);
+    }
+
+    /// <summary>故障阻断，然后投运策略，然后车辆动态事实（安全、在线、绑定、IDLE、地图、新鲜、电量门槛、停止、RIoT 上没有它的单）。</summary>
     public static async Task<string> JudgeAsync(
         IVehicleFaultStore faults,
+        IChargingPolicyResolver chargingPolicy,
         DispatchVehicleFacts facts,
         JourneyRuntimeOptions options,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(facts);
         string fault = await FaultVerdictAsync(faults, facts.AgvId, cancellationToken).ConfigureAwait(false);
-        return fault != DispatchAdmissionChain.Eligible ? fault : VehicleDynamicFactsCriterion.Evaluate(facts, options);
+        if (fault != DispatchAdmissionChain.Eligible)
+        {
+            return fault;
+        }
+
+        (string commissioning, _) = await CommissioningVerdictAsync(chargingPolicy, facts.VehicleKey, cancellationToken)
+            .ConfigureAwait(false);
+        return commissioning != DispatchAdmissionChain.Eligible
+            ? commissioning
+            : VehicleDynamicFactsCriterion.Evaluate(facts, options);
     }
 }

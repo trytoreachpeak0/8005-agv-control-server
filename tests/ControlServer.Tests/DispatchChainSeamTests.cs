@@ -124,7 +124,8 @@ public sealed class DispatchChainSeamTests
                     boxCountReader: null!,
                     NullLogger<SlotCapacityCriterion>.Instance,
                     suppressions: null!,
-                    dbContext: null!)
+                    dbContext: null!,
+                    chargingPolicy: TestChargingPolicies.AllApproved)
                 .OrderBy(criterion => criterion.Order)
                 .Select(criterion => criterion.GetType().Name)
         ];
@@ -322,5 +323,48 @@ public sealed class DispatchChainSeamTests
                 null,
                 new RiotVehicleObservation("BROKERX-0001", true, true, "IDLE", "MAP-25", 4, 90, "NO_CHARGE", 0, Now),
                 Now));
+    }
+
+    /// <summary>
+    /// 每条派车判据的 <see cref="IDispatchAdmissionCriterion.Order"/> 唯一，除非列在下面的白名单里（control-server#400 审查 S5）。
+    /// 链按 Order 排序，两条判据同号时谁先判由 <c>OrderBy</c> 的稳定排序与注册先后决定——结构性告警按判据次序分类，这种次序不该靠碰巧。
+    /// 本票合入 cs#389 时就撞过一次：空闲返回承诺判据与投运判据都取了 16。
+    /// </summary>
+    /// <remarks>
+    /// 白名单里的三组并列是本票之前就有的，各自写了为什么无害。新加一个并列就要在这里写明理由。扫的是宿主程序集里全部实现，不是某条链。
+    /// </remarks>
+    [Fact]
+    public void EveryDispatchCriterionHasItsOwnOrderUnlessTheTieIsListed()
+    {
+        (int Order, string[] Criteria)[] allowedTies =
+        [
+            // The lookup only records the AREA's assignment and never refuses, so whichever of the two runs first, the verdict is the
+            // conflict's. The chain the tests assemble lists the conflict first; the host registers it after the lookup.
+            (35, [nameof(AreaAssignmentLookupCriterion), nameof(SublotTaskTypeConflictCriterion)]),
+            // Never in one chain: the en-route chain replaces the idle chain's dynamic facts with its own (control-server#211).
+            (80, [nameof(InTransitVehicleFactsCriterion), nameof(VehicleDynamicFactsCriterion)]),
+            // Independent of each other: the loading phase is the en-route chain's, the single occupancy a public station's.
+            (99, [nameof(FixedStationSingleOccupancyCriterion), nameof(LoadingPhaseOpenCriterion)]),
+        ];
+
+        Type[] criteria =
+        [
+            .. typeof(IDispatchAdmissionCriterion).Assembly.GetTypes()
+                .Where(type => type is { IsClass: true, IsAbstract: false } && typeof(IDispatchAdmissionCriterion).IsAssignableFrom(type))
+        ];
+        Assert.Contains(typeof(ChargingPolicyCommissioningCriterion), criteria);
+        // Order is an expression-bodied constant on every criterion, so an uninitialised instance answers it.
+        (int Order, string[] Criteria)[] ties =
+        [
+            .. criteria
+                .GroupBy(type => ((IDispatchAdmissionCriterion)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(type)).Order)
+                .Where(group => group.Count() > 1)
+                .OrderBy(group => group.Key)
+                .Select(group => (group.Key, group.Select(type => type.Name).Order(StringComparer.Ordinal).ToArray()))
+        ];
+
+        Assert.Equal(
+            allowedTies.Select(tie => $"{tie.Order}: {string.Join(", ", tie.Criteria)}"),
+            ties.Select(tie => $"{tie.Order}: {string.Join(", ", tie.Criteria)}"));
     }
 }

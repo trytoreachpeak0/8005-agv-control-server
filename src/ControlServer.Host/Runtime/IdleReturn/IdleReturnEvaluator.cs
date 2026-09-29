@@ -62,6 +62,7 @@ public sealed class IdleReturnEvaluator(
     IVehiclePurposeLedger ledger,
     IStationExclusivityStore stations,
     IVehicleFaultStore faults,
+    IChargingPolicyResolver chargingPolicy,
     IWaitingPointRegistry registry,
     ITaskTypeStationBindingStore bindings,
     RouteGraphAccess routeGraph,
@@ -220,11 +221,12 @@ public sealed class IdleReturnEvaluator(
             return IdleReturnReasons.OwnOrderResultUnknown;
         }
 
-        // 这辆车此刻能不能承接新用途：与派车共用的车辆侧判定（故障阻断，然后动态事实——安全、在线、绑定、IDLE、地图、新鲜、
+        // 这辆车此刻能不能承接新用途：与派车共用的车辆侧判定（故障阻断，然后投运策略——没有已批准策略的车不被承诺空闲返回，
+        // control-server#400——然后动态事实——安全、在线、绑定、IDLE、地图、新鲜、
         // 停止、RIoT 上没有它的单）。故障那一格曾经只在派车链里，空闲返回漏了它（审查 M1）。新鲜度按此刻算，不按这一轮开头读事实的
         // 时刻：承诺发生在任务循环之后。放在电量线之前：一辆故障车先答故障。
         string readiness = await VehicleNewPurposeReadiness.JudgeAsync(
-                faults, candidate.Facts with { ObservedAt = timeProvider.GetUtcNow() }, _runtime, cancellationToken)
+                faults, chargingPolicy, candidate.Facts with { ObservedAt = timeProvider.GetUtcNow() }, _runtime, cancellationToken)
             .ConfigureAwait(false);
         if (readiness != DispatchAdmissionChain.Eligible && !DeferredBatteryCodes.Contains(readiness))
         {

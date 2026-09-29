@@ -48,8 +48,12 @@ A single-vehicle deployment (JourneyRuntime:Fleet empty or one vehicle) is not s
 升级顺序：
 
 1. 停服务（或者就让它在新版本上起一次、被拒）。服务端每次启动都先迁移数据库，所以被拒的那一次也会把库建好、迁移到新版本。
-   全新部署、库还不存在时，也可以用 `ControlServer.Host.exe --migrate-only`：它只迁移建库，然后退出——不开任何监听端口、不连 RIoT、
-   不读 MES、不建单；成功退出码 0，迁移失败非 0。这个开关只给 L2 编排器与首次部署用，不是日常启动方式。
+   `ControlServer.Host.exe --migrate-only` 只迁移建库然后退出（不开监听端口、不连 RIoT、不读 MES、不建单），只给 L2 编排器用。
+   **现场不要单独运行它**：服务端取不到连接串时用默认库 `%ProgramData%\8005\ControlServer\data\controlserver.db`，那是 MVP 生产库；
+   并行实例的连接串只在它安装目录的 `appsettings.Production.json` 里、按当前目录读，从别的目录（例如 `ssh factory01` 进去的用户主目录）
+   运行，退出码照样是 0，迁移的却是 MVP 的库。若确需，只能在并行实例安装目录里运行，或把
+   `--ConnectionStrings:ControlServer "Data Source=<并行实例的库>"` 放在 `--migrate-only` **之前**，并核对迁移出的是哪个文件
+   （批次9-02 审查实测，control-server#400）。
 2. 导出 26 号图的站点目录（见第三节），用 FieldOps 导入登记文件（见第四节）。服务端停着也能导。
 3. 启动服务。
 

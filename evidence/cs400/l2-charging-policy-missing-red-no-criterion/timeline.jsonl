@@ -1,0 +1,39 @@
+{"at":"2026-09-29T16:08:51.3966442+00:00","note":"L2 run 20260929T160851326Z starting for scenario 'charging-policy-missing-vehicle-not-commissioned'."}
+{"at":"2026-09-29T16:08:51.5041948+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-09-29T16:08:51.5114765+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-29T16:09:10.8977402+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-29T16:09:11.1912579+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-29T16:09:11.2775023+00:00","note":"Fleet of 2: AGV-L2-001/BROKERX-L2-0001, AGV-L2-002/BROKERX-L2-0002"}
+{"at":"2026-09-29T16:09:11.3270906+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-09-29T16:09:26.2773059+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-29T16:09:29.6979237+00:00","note":"FieldOps: import-waiting-points --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260929T160851326Z\\controlserver.db --input C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260929T160851326Z\\waiting-points.csv --catalog C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260929T160851326Z\\waiting-points-catalog-25.json --map 25 --fleet BROKERX-L2-0001;BROKERX-L2-0002"}
+{"at":"2026-09-29T16:09:32.2237970+00:00","criterion":"waiting-points-imported","value":"1","detail":{"coverage":{"mapId":25,"vehicleCount":2,"enabledOnMap":2,"assignable":2,"sufficient":true,"shortfall":0,"unassigned":[],"onOtherMaps":{},"warning":null},"stations":[214,215]}}
+{"at":"2026-09-29T16:09:32.2418231+00:00","note":"Waiting points registered on map 25 as version 1: 214=等待点1, 215=等待点2"}
+{"at":"2026-09-29T16:09:34.3250056+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-29T16:09:36.3628834+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-29T16:09:36.5955764+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-29T16:09:37.9708574+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-29T16:09:38.2522308+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-29T16:09:39.6635624+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-29T16:09:39.7647794+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260929T160851326Z\\controlserver.db"}
+{"at":"2026-09-29T16:09:43.3944541+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"94f947e76daf40018e37360d4480c6aa","version":1,"slotCount":8}}}
+{"at":"2026-09-29T16:09:43.4005516+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260929T160851326Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-29T16:09:47.3862644+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"94f947e76daf40018e37360d4480c6aa","boundSlots":8,"version":1}}}
+{"at":"2026-09-29T16:09:47.3901058+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260929T160851326Z\\controlserver.db --agv AGV-L2-002"}
+{"at":"2026-09-29T16:09:52.9863660+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-002","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-002","slotModelVersionId":"94f947e76daf40018e37360d4480c6aa","boundSlots":8,"version":1}}}
+{"at":"2026-09-29T16:09:53.1533801+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-29T16:09:53.1598758+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260929T160851326Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs400-8005-agv-control-server\\evidence\\cs400\\l2-charging-policy-missing-red-no-criterion\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-29T16:09:58.6462908+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs400-8005-agv-control-server\\evidence\\cs400\\l2-charging-policy-missing-red-no-criterion\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"d36af1fcd3c946dc84f4cc3c86b241c1","importedAt":"2026-09-30T00:09:53.5671729+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-29T16:09:58.6752876+00:00","note":"FieldOps: import-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260929T160851326Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs400-8005-agv-control-server\\evidence\\cs400\\l2-charging-policy-missing-red-no-criterion\\snapshots\\preseed-charging-policy.json --fleet BROKERX-L2-0001;BROKERX-L2-0002"}
+{"at":"2026-09-29T16:10:02.1190025+00:00","note":"FieldOps: approve-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260929T160851326Z\\controlserver.db --version 1 --approved-by L2 orchestrator --role L2_PRESET --basis scripts/l2/L2ChargingPolicy.psm1 --source L2_PRESET"}
+{"at":"2026-09-29T16:10:04.7767318+00:00","note":"FieldOps: activate-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260929T160851326Z\\controlserver.db --version 1 --activated-by L2 orchestrator --fleet BROKERX-L2-0001;BROKERX-L2-0002 --allow-non-field-approval"}
+{"at":"2026-09-29T16:10:07.9039693+00:00","criterion":"preseed:charging-policy","value":"OK","detail":{"withoutPolicy":["BROKERX-L2-0001"],"coveredAfter":["BROKERX-L2-0002"],"version":1,"source":"L2_PRESET"}}
+{"at":"2026-09-29T16:10:07.9060518+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-09-29T16:10:07.9174605+00:00","note":"Environment is up; entering scenario 'charging-policy-missing-vehicle-not-commissioned'."}
+{"at":"2026-09-29T16:10:08.1457996+00:00","note":"Publishing demand a5a9fe16c885448f8378ecc4300ad90e (area N1-3)."}
+{"at":"2026-09-29T16:10:08.2120792+00:00","criterion":"journey-accepted","value":"(null)"}
+{"at":"2026-09-29T16:10:10.0759260+00:00","criterion":"journey-accepted","value":"@{JourneyId=journey:a5a9fe16-c885-448f-8378-ecc4300ad90e; AgvId=AGV-L2-001; VehicleKey=BROKERX-L2-0001; Stage=AwaitingPickupArrival; PickupUpperId=W2G-a5a9fe16-c885-448f-8378-ecc4300ad90e-PICKUP-1}"}
+{"at":"2026-09-29T16:10:10.1365538+00:00","criterion":"uncovered-vehicle-refused","value":"False"}
+{"at":"2026-09-29T16:11:10.1166032+00:00","note":"Not reached: Timed out after 60s waiting for: the server logged that BROKERX-L2-0001 takes no new work (CHARGING_POLICY_NOT_APPROVED). Last observed: false"}
+{"at":"2026-09-29T16:11:10.1767809+00:00","criterion":"covered-vehicle-pickup-confirmed","value":"@{Status=CONFIRMED; VehicleKey=BROKERX-L2-0001}"}
+{"at":"2026-09-29T16:11:12.2270378+00:00","note":"L2 port block lock released."}

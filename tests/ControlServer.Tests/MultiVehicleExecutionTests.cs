@@ -944,6 +944,12 @@ public sealed partial class MultiVehicleExecutionTests
         public RecordingAcceptances Acceptances { get; }
         public FleetBoxCounts BoxCounts { get; } = new();
 
+        /// <summary>
+        /// 逐车投运判定（control-server#400）：默认每辆车都有一版已批准的测试策略（<see cref="TestChargingPolicies.AllApproved"/>），
+        /// 与合入前的派车结论等价；要测「没有策略」的用例换掉它再调 <c>RecreateEngineAsync</c>，链随引擎重建。
+        /// </summary>
+        public IChargingPolicyResolver ChargingPolicy { get; set; } = TestChargingPolicies.AllApproved;
+
         /// <summary>Silent unless a test names a vehicle whose Onboard connection is gone (control-server#334).</summary>
         public FleetPeer Peer { get; } = new();
         public EventRecordingLogger<JourneyRuntimeEngine> EngineLog { get; } = new();
@@ -1108,7 +1114,8 @@ public sealed partial class MultiVehicleExecutionTests
                 .WriteVersionAsync(points, Clock.GetUtcNow(), TestContext.Current.CancellationToken);
             Riot.ExtraStations.AddRange(points.Select(point => new RiotMapStation(point.StationId, point.StationName)));
             _idleReturn = fixture => IdleReturnTestKit.Create(
-                fixture.Context, fixture.Options, fixture.Clock, fixture.RouteGraph()!, enabled: true, board: fixture.IdleReturnBoard);
+                fixture.Context, fixture.Options, fixture.Clock, fixture.RouteGraph()!, enabled: true, board: fixture.IdleReturnBoard,
+                chargingPolicy: fixture.ChargingPolicy);
             await RecreateEngineAsync();
         }
 
@@ -1270,6 +1277,7 @@ public sealed partial class MultiVehicleExecutionTests
                         NullLogger<SlotCapacityCriterion>.Instance,
                         new TransportDemandSuppressionStore(Context),
                         Context,
+                        ChargingPolicy,
                         routeGraph: RouteGraph(),
                         catalog: catalogAccess,
                         createGate: gate),
@@ -1287,6 +1295,7 @@ public sealed partial class MultiVehicleExecutionTests
                             NullLogger<SlotCapacityCriterion>.Instance,
                             new TransportDemandSuppressionStore(Context),
                             Context,
+                            ChargingPolicy,
                             routeGraph: RouteGraph(),
                             catalog: catalogAccess,
                             createGate: gate),
@@ -1307,7 +1316,7 @@ public sealed partial class MultiVehicleExecutionTests
                 options,
                 Clock,
                 EngineLog,
-                _idleReturn?.Invoke(this) ?? IdleReturnTestKit.Create(Context, Options, Clock));
+                _idleReturn?.Invoke(this) ?? IdleReturnTestKit.Create(Context, Options, Clock, chargingPolicy: ChargingPolicy));
             return new JourneyRuntimeEngine(
                 Context,
                 Riot,

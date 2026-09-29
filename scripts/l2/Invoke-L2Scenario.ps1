@@ -110,6 +110,8 @@ Import-Module (Join-Path $PSScriptRoot 'L2ExpectedActionOverdue.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'L2DispatchZoneParameters.psm1') -Force
 # Batch 8's WaitingPoints setup key and the Fleet default of one waiting point per vehicle (control-server#388).
 Import-Module (Join-Path $PSScriptRoot 'L2WaitingPoints.psm1') -Force
+# Batch 9's ChargingPolicy setup key and the default approved test policy (control-server#400).
+Import-Module (Join-Path $PSScriptRoot 'L2ChargingPolicy.psm1') -Force
 # Only the real-onboard rig ever takes the desktop lock, but the import stays unconditional so the
 # dependency is visible at the top rather than buried in a branch 150 lines down.
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'DesktopLock.psm1') -Force
@@ -260,6 +262,9 @@ if (-not $slotModelPreseed -and $areaAssignmentsSetting -isnot [bool]) {
 # would hold every existing single-demand scenario's cargo until the cargo holding timeout ran out.
 $cargoHoldingTimeout = Resolve-L2CargoHoldingTimeout -Setup $setup -Where "$Scenario.setup.psd1"
 $dispatchZoneParameters = Resolve-L2DispatchZoneParameters -Setup $setup -Where "$Scenario.setup.psd1"
+# Batch 9 (control-server#400): without an approved, activated charging policy covering it a vehicle takes no new work,
+# so every scenario gets the test policy by default. Read here so a malformed key fails before anything starts.
+$chargingPolicy = Resolve-L2ChargingPolicy -Setup $setup -Where "$Scenario.setup.psd1"
 # A server expected to refuse to start never runs the FieldOps verbs' prerequisites, so there is nothing to preseed.
 if ($expectedStartupRefusal) {
     if ($null -ne $dispatchZoneParameters) {
@@ -267,6 +272,7 @@ if ($expectedStartupRefusal) {
     }
     $slotModelPreseed = $false
     $areaAssignmentsSetting = $false
+    $chargingPolicy = $null
 }
 # The synthetic peer's handshake slot states. Only the fields a vehicle's own state decides; lockState and
 # unlockOutputState stay what an idle vehicle reports, and slotNo is how an entry names its slot.
@@ -1215,6 +1221,26 @@ try {
         }
     }
 
+    # 7d. The approved test charging policy (control-server#400), through the site's own three FieldOps verbs: import,
+    #     approve as L2_PRESET (never FIELD), activate with --allow-non-field-approval. After the preseed above and before
+    #     the scenario publishes its first demand. No charger roster is imported: no version at all is an empty roster.
+    #     ChargingPolicy = $false leaves every vehicle not commissioned; @{ VehicleScope = ... } narrows it.
+    if ($null -eq $chargingPolicy) {
+        $journal.Note('Charging policy preset skipped: ChargingPolicy = $false, or a server expected to refuse to start.')
+    } else {
+        try {
+            $policyPreset = Invoke-L2ChargingPolicyPreset -Policy $chargingPolicy `
+                -Fleet @($fleet | ForEach-Object { $_.VehicleKey }) -InvokeFieldOps $invokeFieldOps -SnapshotRoot $snapshotRoot
+        } catch {
+            $journal.Observe('preseed:charging-policy', 'FAILED', @{ error = $_.Exception.Message })
+            throw
+        }
+        $journal.Observe('preseed:charging-policy', 'OK', @{
+                version = $policyPreset.Version; source = 'L2_PRESET'
+                coveredAfter = @($policyPreset.Activate.impact.coveredAfter)
+                withoutPolicy = @($policyPreset.Activate.impact.vehiclesWithoutPolicyAfter) })
+    }
+
     # Per-zone dispatch parameters (control-server#206). Written straight into the server's database as one version with
     # Source = L2_PRESET -- no governed snapshot, no audit: the FieldOps import verb is control-server#216's, and so is the
     # evidence for it. After the server is live, so its migration has created the tables, and before the scenario
@@ -1264,6 +1290,9 @@ try {
         PickupStationRiotId = $pickupStationRiotId
         HealthPort          = $HealthPort
         SnapshotRoot        = $snapshotRoot
+        # Every component's stdout and stderr, <name>.out.log / <name>.err.log (control-server#400: a scenario reads the
+        # server's log for a fact the database does not keep).
+        LogRoot             = $logRoot
         # Null unless the setup file turned the activation entry point on.
         GovernanceCredential = if ($slotConfigurationActivation) { $governanceCredential } else { $null }
         # Null unless the setup file turned the release-on-confirmation entry point on.
@@ -1441,7 +1470,10 @@ try {
                              # The waiting point registration the orchestrator imported before the start (control-server#388).
                              'WaitingPointVersions', 'WaitingPoints', 'WaitingPointVehicleScopes',
                              # Idle return commitments reserve a waiting point (control-server#389).
-                             'StationExclusivities', 'StationExclusivityRecords')) {
+                             'StationExclusivities', 'StationExclusivityRecords',
+                             # The charging policy the preset imported, approved and activated (control-server#400).
+                             'ChargingPolicyVersions', 'ChargingPolicyVehicleScopes', 'ChargingPolicyApprovals',
+                             'ChargingPolicyActivations', 'ChargerRosterVersions', 'ChargerRosterEntries')) {
             try {
                 $rows = Invoke-L2Query -Connection $connection -Sql "SELECT * FROM $table"
                 [IO.File]::WriteAllText(

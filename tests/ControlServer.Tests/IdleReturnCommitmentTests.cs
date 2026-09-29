@@ -224,6 +224,52 @@ public sealed class IdleReturnCommitmentTests
         Assert.False(await line.IsBelowLineAsync(VehicleA, 55, Token));
     }
 
+    /// <summary>
+    /// 逐车投运（control-server#400；REQ-0282，规格 8.6）：没有已批准、已激活、覆盖它的充电策略版本的车，不被承诺空闲返回——与搬运那条链
+    /// 同一个判定（<see cref="VehicleNewPurposeReadiness.CommissioningVerdictAsync"/>）。策略只覆盖 B：A 答新原因码、一行不写，B 照常承诺。
+    /// </summary>
+    [Fact]
+    public async Task AVehicleWithoutAnEffectiveChargingPolicyIsNotCommittedToAnIdleReturn()
+    {
+        await using Harness harness = await Harness.CreateAsync();
+        harness.ChargingPolicy = TestChargingPolicies.Only(VehicleB);
+
+        IReadOnlyList<IdleReturnVerdict> verdicts = await harness.EvaluateAsync(harness.Candidate(VehicleA), harness.Candidate(VehicleB));
+
+        Assert.Equal(
+            [DispatchReasonCodes.ChargingPolicyNotApproved, IdleReturnReasons.Committed],
+            verdicts.Select(verdict => verdict.Reason));
+        Assert.Null(verdicts[0].JourneyId);
+        Assert.Equal(
+            [VehicleB],
+            await harness.Context.Set<VehiclePurposeClaimRow>().AsNoTracking().Select(row => row.VehicleKey).ToArrayAsync(Token));
+    }
+
+    /// <summary>
+    /// 先后次序（control-server#400 审查 S3）：一辆故障车同时没有生效策略，空闲返回与派车链都先答故障码，不答投运码——故障是更具体、
+    /// 更要紧的原因。空闲返回的次序在共用判定 <see cref="VehicleNewPurposeReadiness.JudgeAsync"/> 里（故障 → 投运 → 动态事实），
+    /// 派车链的次序在判据的 Order 上（故障 15、投运 17）。变异 MD（调换 JudgeAsync 里前两格）时这条变红。
+    /// </summary>
+    [Theory]
+    [InlineData(VehicleFaultLevel.SuspectedBlocked, VehicleFaultBlockCriterion.SuspectedReason)]
+    [InlineData(VehicleFaultLevel.ConfirmedIsolated, VehicleFaultBlockCriterion.IsolatedReason)]
+    public async Task AFaultedVehicleWithoutAPolicyIsRefusedForTheFaultFirstOnBothPaths(VehicleFaultLevel level, string expected)
+    {
+        await using Harness harness = await Harness.CreateAsync();
+        harness.ChargingPolicy = TestChargingPolicies.None;
+        IdleReturnCandidate candidate = harness.Candidate(VehicleA);
+        await harness.RecordFaultAsync(candidate.Vehicle, level);
+
+        IdleReturnVerdict idle = Assert.Single(await harness.EvaluateAsync(candidate));
+        string dispatch = await new DispatchAdmissionChain(
+            [
+                new ChargingPolicyCommissioningCriterion(TestChargingPolicies.None),
+                new VehicleFaultBlockCriterion(new VehicleFaultStore(harness.Context)),
+            ]).EvaluateAsync(new DispatchCandidateEvaluation(null!, null!, candidate.Facts), Token);
+
+        Assert.Equal((expected, expected), (idle.Reason, dispatch));
+    }
+
     [Fact]
     public async Task TheSwitchIsOffByDefaultSoAVehicleMeetingEveryConditionCommitsNothing()
     {
@@ -715,7 +761,7 @@ public sealed class IdleReturnCommitmentTests
     {
         IReadOnlyList<IDispatchAdmissionCriterion> idle = DispatchAdmissionCriteria.Default(
             Options.Create(new JourneyRuntimeOptions()), new MapStationResolver(), null!, null!, null!, null!,
-            NullLogger<SlotCapacityCriterion>.Instance, null!, null!);
+            NullLogger<SlotCapacityCriterion>.Instance, null!, null!, TestChargingPolicies.AllApproved);
         Assert.Single(idle, criterion => criterion is IdleReturnCommitmentCriterion);
         Assert.Single(
             DispatchAdmissionCriteria.InTransit(idle, Options.Create(new JourneyRuntimeOptions())),
@@ -773,6 +819,9 @@ public sealed class IdleReturnCommitmentTests
         /// <summary>替换强制充电线；为空即过渡实现。</summary>
         public IMandatoryChargeLine? ChargeLine { get; set; }
 
+        /// <summary>逐车投运（control-server#400）：默认每辆车都有已批准的测试策略。</summary>
+        public IChargingPolicyResolver ChargingPolicy { get; set; } = TestChargingPolicies.AllApproved;
+
         /// <summary>跨评估保留，像宿主里的单例。</summary>
         public IdleReturnVerdictBoard VerdictBoard { get; } = new();
 
@@ -800,6 +849,7 @@ public sealed class IdleReturnCommitmentTests
                 new VehiclePurposeLedgerStore(Context),
                 new StationExclusivityStore(Context),
                 new VehicleFaultStore(Context),
+                ChargingPolicy,
                 new WaitingPointRegistry(Context, JourneyRuntimeWorkerTestKit.CreateGovernedPublisher(Context)),
                 TaskTypeStationRuntimeSeed.Access(Context).Bindings,
                 new RouteGraphAccess(

@@ -82,6 +82,7 @@ public static class StructuralDispatchClassification
     private const int TransportDemandKeyAlreadyAccepted = 12;
     private const int FaultBlock = 15;
     private const int IdleReturnCommitment = 16;
+    private const int ChargingPolicyCommissioning = 17;
     private const int WorkTypeScope = 20;
     private const int VehicleTaskType = 25;
     private const int RequiredMesFacts = 30;
@@ -128,6 +129,11 @@ public static class StructuralDispatchClassification
         Backlog(DispatchReasonCodes.VehicleCommittedToIdleReturn, IdleReturnCommitment,
             "control-server#389, REQ-0292: this vehicle committed to an idle return, which no later transport takes over. " +
             "Another vehicle, or this one once the return has converged (control-server#390), takes the demand."),
+        // ---- ChargingPolicyCommissioningCriterion (17) --------------------------------------------------
+        Backlog(DispatchReasonCodes.ChargingPolicyNotApproved, ChargingPolicyCommissioning,
+            "control-server#400, REQ-0282: this vehicle has no approved, activated charging policy covering it. The " +
+            "vehicle's side, not the demand's: another vehicle takes it, and activating a policy that covers this one " +
+            "clears it."),
 
         // ---- WorkTypeScopeCriterion (20) ----------------------------------------------------------------
         Backlog(DispatchReasonCodes.OutOfScopeWorkType, WorkTypeScope,

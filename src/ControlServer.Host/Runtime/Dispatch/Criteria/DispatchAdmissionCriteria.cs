@@ -37,6 +37,7 @@ public static class DispatchAdmissionCriteria
         ILogger<SlotCapacityCriterion> slotCapacityLogger,
         ITransportDemandSuppressionStore suppressions,
         ControlServerDbContext dbContext,
+        IChargingPolicyResolver chargingPolicy,
         RouteGraphAccess? routeGraph = null,
         CatalogAvailabilityAccess? catalog = null,
         PreCreateGate? createGate = null,
@@ -55,6 +56,9 @@ public static class DispatchAdmissionCriteria
             // Required, like the fault block: a vehicle committed to an idle return takes no transport (control-server#389,
             // REQ-0292), and the reason has to reach the backlog rather than surface only as the claims key refusing intake.
             new IdleReturnCommitmentCriterion(dbContext),
+            // 批次9-02（control-server#400）：没有已批准策略版本的车不承接新用途。必填，理由同故障阻断：逐车硬阻断（规格 8.6）
+            // 一个调用方可以漏传，就会被最需要它的那个调用方漏掉。
+            new ChargingPolicyCommissioningCriterion(chargingPolicy),
             new WorkTypeScopeCriterion(options),
             // Required rather than optional for the same reason as the fault block: B2's two
             // vehicle filters are fail-closed, and a fail-closed rule a caller may omit is one
@@ -145,6 +149,8 @@ public static class DispatchAdmissionCriteria
         services.AddScoped<IDispatchAdmissionCriterion, TransportDemandKeyAlreadyAcceptedCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, VehicleFaultBlockCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, IdleReturnCommitmentCriterion>();
+        services.AddScoped<IChargingPolicyResolver, ChargingPolicyResolver>();
+        services.AddScoped<IDispatchAdmissionCriterion, ChargingPolicyCommissioningCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, WorkTypeScopeCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, VehicleTaskTypeAdmissionCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, DispatchZoneVehicleCriterion>();

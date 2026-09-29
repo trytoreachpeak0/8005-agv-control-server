@@ -365,6 +365,10 @@ jobs:
               # for a held gate goes on and is given it once released; a second demand at the staging station is not taken
               # while another vehicle holds it, and is taken only after that vehicle leaves on departure evidence.
               @{ Name = 'fixed-station-single-occupancy'; Runs = 1; BatchId = 'batch-8' }
+              # control-server#400, specification 8.6 and 8.3 batch-9: the approved charging policy covers only the second of
+              # two vehicles; the demand goes to it, and the first, asked first, is refused with CHARGING_POLICY_NOT_APPROVED
+              # and gets no order (REQ-0282, per vehicle, the server keeps running).
+              @{ Name = 'charging-policy-missing-vehicle-not-commissioned'; Runs = 1; BatchId = 'batch-9' }
           )
           # One run's usual length in seconds, for dealing scenarios out to lanes longest first. Medians of 31
           # CI jobs from 2026-09-17 (ci-research, control-server#130); normal-load's excludes the build it used

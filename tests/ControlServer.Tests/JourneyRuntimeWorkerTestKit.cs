@@ -98,6 +98,12 @@ internal static class JourneyRuntimeWorkerTestKit
         public ControlServerDbContext Context { get; }
         public RecordingCatalog Catalog { get; }
         public RecordingBoxCounts BoxCounts { get; }
+
+        /// <summary>
+        /// 逐车投运判定（control-server#400）：默认每辆车都有一版已批准的测试策略（<see cref="TestChargingPolicies.AllApproved"/>），
+        /// 与合入前的派车结论等价；要测「没有策略」的用例换掉它再调 <c>RecreateEngineAsync</c>，链随引擎重建。
+        /// </summary>
+        public IChargingPolicyResolver ChargingPolicy { get; set; } = TestChargingPolicies.AllApproved;
         public RecordingRiot Riot { get; }
         public RecordingPeer Peer { get; }
         public RecordingRouteCostProbe RouteCosts { get; }
@@ -1141,6 +1147,7 @@ internal static class JourneyRuntimeWorkerTestKit
                     SlotCapacityLog,
                     new TransportDemandSuppressionStore(Context),
                     Context,
+                    ChargingPolicy,
                     routeGraph: null,
                     catalog: CreateCatalogAccess(),
                     createGate: CreateGate())),
@@ -1156,6 +1163,7 @@ internal static class JourneyRuntimeWorkerTestKit
                         SlotCapacityLog,
                         new TransportDemandSuppressionStore(Context),
                         Context,
+                        ChargingPolicy,
                         routeGraph: null,
                         catalog: CreateCatalogAccess(),
                         createGate: CreateGate()),
@@ -1177,7 +1185,7 @@ internal static class JourneyRuntimeWorkerTestKit
                 options,
                 Clock,
                 EngineLog,
-                IdleReturnTestKit.Create(Context, Options, Clock));
+                IdleReturnTestKit.Create(Context, Options, Clock, chargingPolicy: ChargingPolicy));
             return new JourneyRuntimeEngine(
                 Context,
                 Riot,

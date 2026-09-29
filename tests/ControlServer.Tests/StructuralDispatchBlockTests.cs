@@ -127,6 +127,8 @@ public sealed class StructuralDispatchBlockTests
     // 批次7-05（control-server#210）：按业务键抑制与同键已受理，都是有意不执行，不是故障，归普通积压。
     [InlineData("TRANSPORT_DEMAND_KEY_SUPPRESSED", DispatchReasonClass.Backlog)]
     [InlineData("TRANSPORT_DEMAND_KEY_ALREADY_ACCEPTED", DispatchReasonClass.Backlog)]
+    // 批次9-02（control-server#400）：没有已批准策略的车不承接新用途，车辆侧的状态，别的车照常，归普通积压。
+    [InlineData("CHARGING_POLICY_NOT_APPROVED", DispatchReasonClass.Backlog)]
     public void EveryReasonCodeHasItsClassAndARationale(string reasonCode, DispatchReasonClass expected)
     {
         DispatchReasonClassification row = Assert.Contains(reasonCode, StructuralDispatchClassification.ByCode);
