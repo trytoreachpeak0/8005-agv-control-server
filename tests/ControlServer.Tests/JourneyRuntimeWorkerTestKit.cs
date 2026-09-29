@@ -460,6 +460,7 @@ internal static class JourneyRuntimeWorkerTestKit
                 new
                 {
                     preDepartureSafetyCheckId = runtime.PreDepartureSafetyCheckId,
+                    checkPurpose = "DEPARTURE",
                     outcome = "SAFE",
                     observedAt = Clock.GetUtcNow(),
                     safetyStateVersion = 7,

@@ -576,6 +576,7 @@ public sealed class OnboardMessageProcessorTests
                 ("PreDepartureSafetyCheckResult", "00000000-0000-4000-8000-000000000103", new
                 {
                     preDepartureSafetyCheckId = "00000000-0000-4000-8000-000000000113",
+                    checkPurpose = "DEPARTURE",
                     outcome = "SAFE",
                     observedAt = "2026-08-25T09:00:00Z",
                     safetyStateVersion = 1,

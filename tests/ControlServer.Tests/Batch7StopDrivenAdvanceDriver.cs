@@ -233,6 +233,7 @@ internal static class Batch7StopDrivenAdvanceDriver
     internal static object SafeDepartureAnswer(RuntimeFixture fixture, string checkId, long safetyStateVersion) => new
     {
         preDepartureSafetyCheckId = checkId,
+        checkPurpose = "DEPARTURE",
         outcome = "SAFE",
         observedAt = fixture.Clock.GetUtcNow(),
         safetyStateVersion,

@@ -481,6 +481,7 @@ public sealed class JourneyRuntimeWorkerSlotGroupAndRestartTests
             new
             {
                 preDepartureSafetyCheckId = runtime.PreDepartureSafetyCheckId,
+                checkPurpose = "DEPARTURE",
                 outcome = "SAFE",
                 observedAt = Now,
                 safetyStateVersion = 7,
