@@ -108,6 +108,9 @@ public sealed class JourneyRuntimeWorkerDepartureSafetyTests
         Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, runtime.Stage);
         string expiredCheckId = runtime.PreDepartureSafetyCheckId;
         string expiredMessageId = runtime.PreDepartureSafetyCheckMessageId;
+        // v3 (control-server#382): the first check says what it is for. Without checkPurpose the peer rejects the
+        // check against the schema and every departure is held.
+        Assert.Equal("DEPARTURE", await CheckPurposeAsync(fixture, expiredMessageId));
         await fixture.AddInboxAsync(
             Guid.NewGuid().ToString("D"), "PreDepartureSafetyCheckResult",
             SafeDepartureAnswer(expiredCheckId, 7, fixture.Clock.GetUtcNow()), expiredCheckId);
@@ -124,6 +127,8 @@ public sealed class JourneyRuntimeWorkerDepartureSafetyTests
         Assert.NotNull((await fixture.Context.ProtocolOutbox.SingleAsync(
             row => row.MessageId == expiredMessageId, TestContext.Current.CancellationToken)).FencedAt);
         Assert.Equal(8, await ExpectedSafetyStateVersionAsync(fixture, runtime));
+        // The reissue is the engine's second call site and has to say the same.
+        Assert.Equal("DEPARTURE", await CheckPurposeAsync(fixture, runtime.PreDepartureSafetyCheckMessageId));
 
         await fixture.AddInboxAsync(
             Guid.NewGuid().ToString("D"), "PreDepartureSafetyCheckResult",
@@ -301,6 +306,14 @@ public sealed class JourneyRuntimeWorkerDepartureSafetyTests
             reasonCodes = Array.Empty<string>()
         }
     };
+
+    private static async Task<string?> CheckPurposeAsync(RuntimeFixture fixture, string messageId)
+    {
+        ProtocolOutboxRow check = await fixture.Context.ProtocolOutbox.SingleAsync(
+            row => row.MessageId == messageId, TestContext.Current.CancellationToken);
+        using JsonDocument document = JsonDocument.Parse(check.PayloadJson);
+        return document.RootElement.GetProperty("payload").GetProperty("checkPurpose").GetString();
+    }
 
     private static async Task<long> ExpectedSafetyStateVersionAsync(RuntimeFixture fixture, JourneyRuntimeRow runtime)
     {

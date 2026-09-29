@@ -1373,6 +1373,7 @@ public sealed partial class JourneyRuntimeEngine(
                     session.SessionGeneration,
                     new PreDepartureSafetyCheckCommand(
                         DepartureCheckId(stops.Current),
+                        PreDepartureCheckPurposes.Departure,
                         runtime.DemandId,
                         NextStopAfterCurrent(stops).MovementLegId,
                         session.SafetyRevision ?? throw new InvalidDataException("Safety revision is required."),
@@ -5278,6 +5279,7 @@ public sealed partial class JourneyRuntimeEngine(
             session.SessionGeneration,
             new PreDepartureSafetyCheckCommand(
                 reissuedCheckId,
+                PreDepartureCheckPurposes.Departure,
                 runtime.DemandId,
                 NextStopAfterCurrent(stops).MovementLegId,
                 currentRevision,
