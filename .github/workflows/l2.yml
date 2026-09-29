@@ -643,6 +643,10 @@ jobs:
               # reconnects without a hold; a lock feedback forced to 0 holds this order and stops once; locked again, the
               # latch is released and the held order waits for a person.
               @{ Name = 'real-onboard-in-transit-door-facts';                Runs = 1 }
+              # control-server#375: the read before the pickup leg's create, and later the gate leg's, answers nothing (the fake RIoT
+              # fails that one read); each never-sent intent is created once RIoT answers it is absent, after the vehicle check reads
+              # the real onboard -- on the gate leg with cargo on board.
+              @{ Name = 'real-onboard-unread-pre-create-read';               Runs = 1 }
           )
 
           # Registered before anything can fail, so the upload step always has a path.

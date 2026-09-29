@@ -41,6 +41,12 @@ public sealed record OrderCommand : CommandEnvelope
     public int? EndStationNo { get; init; }
 }
 
+/// <summary>Arms <see cref="AbsentOrderReadFaults"/>: the next <c>Count</c> reads of an absent order answer 503.</summary>
+public sealed record AbsentOrderReadFaultCommand : CommandEnvelope
+{
+    public int? Count { get; init; }
+}
+
 public sealed record StationsCommand : CommandEnvelope
 {
     public Dictionary<string, string>? Stations { get; init; }
@@ -109,6 +115,7 @@ public static class ControlPlane
         CommandEngine<FakeRiotState> engine = app.Services.GetRequiredService<CommandEngine<FakeRiotState>>();
         MapStationReadCounter mapStationReads = app.Services.GetRequiredService<MapStationReadCounter>();
         MapListReadCounter mapListReads = app.Services.GetRequiredService<MapListReadCounter>();
+        AbsentOrderReadFaults absentOrderReadFaults = app.Services.GetRequiredService<AbsentOrderReadFaults>();
         FakeRiotSeed seed = app.Services.GetRequiredService<FakeRiotSeed>();
         RouteGroupBuilder control = app.MapGroup("/control/v1");
 
@@ -128,6 +135,7 @@ public static class ControlPlane
                 faultMode = state.FaultMode.ToString(),
                 delayMs = state.DelayMs,
                 mapStationReads = mapStationReads.Count,
+                absentOrderReadFaults = absentOrderReadFaults.Describe(),
                 vehicles = state.Vehicles.Values.OrderBy(item => item.DeviceKey, StringComparer.Ordinal),
                 orders = state.OrdersByUpperId.Values.OrderBy(item => item.Id),
                 maps = state.StationsByMapId.OrderBy(pair => pair.Key)
@@ -350,6 +358,21 @@ public static class ControlPlane
                     ? null
                     : state with { FaultMode = mode, DelayMs = delay };
             }));
+
+        control.MapPut("/faults/absent-order-reads", (AbsentOrderReadFaultCommand command) =>
+        {
+            if (string.IsNullOrWhiteSpace(command.CommandId) || command.Count is not (>= 0 and <= 100))
+            {
+                return ControlPlaneConventions.Refused(engine, ReasonCodes.InvalidArgument, command.CommandId);
+            }
+
+            absentOrderReadFaults.Arm(command.Count.Value);
+            return Results.Json(ControlPlaneConventions.Envelope(engine, new
+            {
+                commandId = command.CommandId,
+                absentOrderReadFaults = absentOrderReadFaults.Describe()
+            }));
+        });
 
         control.MapPut("/route-costs", (RouteCostsCommand command) =>
             ControlPlaneConventions.Handle(engine, "route-costs", command, state =>

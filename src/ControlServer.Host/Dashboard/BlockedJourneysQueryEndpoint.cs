@@ -122,6 +122,13 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 + "门禁放行后自动重建。具体原因见服务端日志事件 2172",
             [JourneyRuntimeEngine.OwnOrderRebuildOrderUnconfirmedReason] =
                 "重建的运单已向 RIoT 发出，还没确认建成：服务端每一轮按同一个单号对账，不会建第二张。持续不消失请到 RIoT 核对",
+            // control-server#375：一段腿的单从没发出过（建单前的读没读到，或还没轮到建），补建前车况不允许。
+            ["PICKUP_" + JourneyRuntimeEngine.NeverSentLegWaitingVehicleSuffix] =
+                "开往取货站的单还没建出去（建单前向 RIoT 的读没读到，或还没到建单那一步），而车此刻不允许出发"
+                + "（急停、手动、故障、车载端离站摘要不安全或读不到车况）：车况恢复后下一轮自动建单，只建一张",
+            ["GATE_" + JourneyRuntimeEngine.NeverSentLegWaitingVehicleSuffix] =
+                "开往卸货站的单还没建出去（建单前向 RIoT 的读没读到，或还没到建单那一步），而车此刻不允许出发"
+                + "（急停、手动、故障、仓门没锁好、开锁输出没复位或读不到车况）：车况恢复后下一轮自动建单，只建一张",
             // control-server#345：停住之后人的三个出口，都经故障清除同一个入口（/api/safety/v1/vehicle-fault-recoveries）。
             [JourneyRuntimeEngine.OwnOrderRebuildStoppedReason] =
                 "这条需求第一次出问题之后不久又出问题了（又被取消、删除，或又失败）：服务端不再自动重建，挡住并报警，等人处理。"

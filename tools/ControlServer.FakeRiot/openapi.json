@@ -187,6 +187,24 @@
           "409": { "description": "RUN_ID_MISMATCH, COMMAND_ID_CONFLICT or REVISION_CONFLICT." }
         }
       }
+    },
+    "/control/v1/faults/absent-order-reads": {
+      "put": {
+        "summary": "Control plane: fail the next reads of an absent order.",
+        "description": "The next count (0..100) reads by upperId of an order RIoT does not have answer 503 instead of 404, once each (control-server#375). Outside the command engine: no revision moves. /snapshot reports what remains and which upperIds were failed.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": {
+            "allOf": [ { "$ref": "#/components/schemas/CommandEnvelope" } ],
+            "properties": { "count": { "type": "integer", "minimum": 0, "maximum": 100 } },
+            "required": ["count"]
+          } } }
+        },
+        "responses": {
+          "200": { "description": "Armed." },
+          "400": { "description": "INVALID_ARGUMENT." }
+        }
+      }
     }
   },
   "components": {

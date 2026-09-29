@@ -448,9 +448,12 @@ internal static class JourneyRuntimeWorkerTestKit
         }
 
         /// <summary>Carries the journey through a safe departure check onto its way to the gate.</summary>
-        public async Task<JourneyRuntimeRow> AdvanceToGateArrivalAsync()
+        /// <param name="beforeDeparture">Run after the departure check is asked and before its answer is heard: the last moment
+        /// before the round that creates the gate leg's order.</param>
+        public async Task<JourneyRuntimeRow> AdvanceToGateArrivalAsync(Action? beforeDeparture = null)
         {
             JourneyRuntimeRow runtime = await AdvanceToDepartureSafetyAsync();
+            beforeDeparture?.Invoke();
             await AddInboxAsync(
                 Guid.NewGuid().ToString("D"),
                 "PreDepartureSafetyCheckResult",
@@ -1941,6 +1944,13 @@ internal static class JourneyRuntimeWorkerTestKit
         /// </summary>
         public bool CrashAfterNextCreate { get; set; }
 
+        /// <summary>
+        /// While set, a read of an order RIoT does not have answers what the gateway makes of an SDK timeout -- a non-exact
+        /// Unknown -- instead of NotFound (control-server#375): the read before a create that answers nothing. Reads of orders
+        /// RIoT has are not affected.
+        /// </summary>
+        public bool AbsentOrdersReadAsTimeout { get; set; }
+
         public Task<RiotOrderObservation> ReconcileByUpperIdAsync(string upperId, CancellationToken cancellationToken)
         {
             _ = cancellationToken;
@@ -1951,7 +1961,13 @@ internal static class JourneyRuntimeWorkerTestKit
             }
             RiotOrderObservation answer = _orders.TryGetValue(upperId, out RiotOrderObservation? order)
                 ? order
-                : new RiotOrderObservation(upperId, RiotOrderObservationKind.NotFound, null);
+                : AbsentOrdersReadAsTimeout
+                    ? new RiotOrderObservation(
+                        upperId,
+                        RiotOrderObservationKind.Unknown,
+                        null,
+                        Receipt: new RiotOrderCallReceipt("RECONCILE", "SdkFailure", _clock.GetUtcNow(), FailureCategory: "TIMEOUT"))
+                    : new RiotOrderObservation(upperId, RiotOrderObservationKind.NotFound, null);
             AfterReconcile?.Invoke(upperId);
             return Task.FromResult(answer);
         }

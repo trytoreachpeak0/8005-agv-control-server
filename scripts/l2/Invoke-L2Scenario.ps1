@@ -1371,6 +1371,9 @@ try {
                              'FrozenDemandStations', 'CreateGateAudit',
                              # control-server#318: every ending of this server's own order being rebuilt, and how far each got.
                              'OwnOrderRebuilds', 'RiotOrderCommandAudit',
+                             # control-server#375: each order intent's reads and create attempt, in order -- the only record
+                             # of a read before a create that answered nothing, and of what came after it.
+                             'RiotDispatchAuditEvents',
                              'SlotConfigurationActivations', 'ActiveSlotConfigurations',
                              'OnboardAlarmSnapshots', 'BusinessAuditRecords',
                              # What the slot model preseed wrote, and what batch 4's dispatch reads off it.

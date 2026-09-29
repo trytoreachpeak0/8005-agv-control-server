@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-unread-pre-create-read",
+  "runId": "20260928T155344129Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "agvId": "AGV-L2-001",
+    "batchId": "unspecified",
+    "rig": "RealOnboard",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-36446819199-1\\_stage\\l2-20260928T155344129Z",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "vehicleKey": "BROKERX-L2-0001",
+    "onboardHmiCommit": "60f341878a1bce705598aa9043234c1ca2fb1d7a",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "controlServerCommit": "1a73d80e76e89f8af30fb693310ebea17f842add"
+  },
+  "assertions": [
+    {
+      "id": "L2-UR-01",
+      "description": "注入只打中一次，打中的是取货腿那张单的读",
+      "outcome": "PASS",
+      "expected": "[W2G-12a574f8-0935-462b-a0d9-cdface5d91e6-PICKUP-1] / remaining 0",
+      "actual": "[W2G-12a574f8-0935-462b-a0d9-cdface5d91e6-PICKUP-1] / remaining 0"
+    },
+    {
+      "id": "L2-UR-02",
+      "description": "读没读到之后，取货腿照常建出并确认，建单计数恰好是 1",
+      "outcome": "PASS",
+      "expected": "CONFIRMED / 1",
+      "actual": "CONFIRMED / 1"
+    },
+    {
+      "id": "L2-UR-03",
+      "description": "审计链：建单前读没读到 → 建单前读答没有 → 才 arm 建单；中间没有第二次 arm",
+      "outcome": "PASS",
+      "expected": "PRE/UNKNOWN/SdkFailure -> PRE/NOT_FOUND -> CREATE_DISPATCH/ARMED (x1)",
+      "actual": "PRE_CREATE_RECONCILIATION/UNKNOWN/SdkFailure/RIOT_API_FAILURE -> PRE_CREATE_RECONCILIATION/NOT_FOUND/NotFound/ -> CREATE_DISPATCH/ARMED// -> CREATE_REQUEST/STARTED// -> CREATE_RESPONSE/ACCEPTED/SdkAccepted/ -> POST_CREATE_RECONCILIATION/CONFIRMED/Found/"
+    },
+    {
+      "id": "L2-UR-04",
+      "description": "RIoT 上只有一张单，就是取货腿那一张",
+      "outcome": "PASS",
+      "expected": 1,
+      "actual": 1
+    },
+    {
+      "id": "L2-UR-05",
+      "description": "补建的取货单走完：服务端采信到站，真车载端开放录入",
+      "outcome": "PASS",
+      "expected": "AwaitingSublot / can submit",
+      "actual": "AwaitingSublot / True"
+    }
+  ]
+}

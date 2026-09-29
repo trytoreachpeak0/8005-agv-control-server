@@ -179,6 +179,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["TaskTypeStationHoldWriteConcurrencyTests"] = "batch 6 FP-C9b REQ-0340 hold raise idempotency and conditional release (control-server#162); server-internal store, no wire message",
             ["TaskTypeStationStartupTests"] = "batch 6 FP-C9a REQ-0343 startup load of the controlled task type station preset (control-server#159); server startup only, no wire message",
             ["TaskTypeStationStoreTests"] = "batch 6 FP-C9b REQ-0337/REQ-0343 task type rule and per-map binding set versions (control-server#159); server-internal, no wire message",
+            ["UnreadPreCreateReconciliationTests"] = "control-server#375 an order intent whose pre-create RIoT read answered nothing is created once RIoT answers it is absent, for the pickup leg, the gate leg and the same-vehicle rebuild, and a create already sent is never sent again; single-ended server-to-RIoT, no wire message",
             ["Batch7SublotTaskTypeConflictTests"] = "batch 7-06 REQ-0189 one Sublot hitting more than one task type in a snapshot refuses that Sublot's every candidate (control-server#211); a chain criterion over the round's own catalog, no database and no wire message",
             ["Batch7JourneyAppendPersistenceTests"] = "batch 7-06 REQ-0205 appending a demand to a journey under way is one all-or-nothing write (control-server#211): demand row, its stops, its membership and the resequencing of the stops it displaced; server-internal store, no wire message",
             ["Batch7JourneyAwareSlotLedgerTests"] = "batch 7-06 ADR-cross-0059 per-side slot ledger (control-server#211): a vehicle's free slots per side are the session baseline minus what its own journey holds; server-internal, no wire message",
@@ -220,7 +221,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
     private static readonly SortedDictionary<string, (int Count, string Reason)> SliceBearingClassesWithTestsOutside =
         new(StringComparer.Ordinal)
         {
-            ["FakeRiotTests"] = (8, "the fake's own control plane and conflict behaviour; the traited tests are the shapes the production adapter parses"),
+            ["FakeRiotTests"] = (9, "the fake's own control plane and conflict behaviour; the traited tests are the shapes the production adapter parses"),
             ["HttpRiotMovementGatewayTests"] = (27, "RIoT adapter fail-closed and sanitisation behaviour (control-server#330 added the unfiltered order listing and the by-orderId state read; control-server#335 the listed order states); the traited tests are the ones a wire message depends on"),
             ["JourneyRuntimeOptionsTests"] = (4, "option defaults, and the cargo holding timeout (control-server#206; read by the loading phase since control-server#212); the traited tests are the validations that fail a deployment closed"),
             ["OnboardAlarmProjectionTests"] = (1, "the dashboard self-registration convention #12 set up; the traited tests are the ones standing behind OnboardAlarmSnapshot")

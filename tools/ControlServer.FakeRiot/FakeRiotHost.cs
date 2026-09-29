@@ -29,6 +29,7 @@ public static class FakeRiotHost
             instanceId, services.GetRequiredService<FakeRiotSeed>().BuildInitialState));
         builder.Services.AddSingleton<MapStationReadCounter>();
         builder.Services.AddSingleton<MapListReadCounter>();
+        builder.Services.AddSingleton<AbsentOrderReadFaults>();
 
         IPEndPoint? listener = ControlPlaneConventions.ResolveLoopbackListener(
             builder.Configuration, "FakeRiot", DefaultPort);

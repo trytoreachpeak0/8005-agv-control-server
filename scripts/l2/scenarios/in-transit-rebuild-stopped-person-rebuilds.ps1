@@ -198,14 +198,19 @@ $assertions.Add(
 
 # --- 4. 引擎建第三张单：同车同需求、同一个取货停靠 ------------------------------------------------------------
 
-$third = Wait-L2ConditionOrLast -Description 'a third order was made for the same vehicle and demand, and confirmed' `
+# 等的是这一站的重建记录转 REBUILT，不是意图转 CONFIRMED（control-server#375 诊断，run 36476267148）：引擎在同一轮里先把意图
+# 存成 CONFIRMED，约 10 ms 后才在另一次保存里把记录转 REBUILT、清掉旅程码。等 CONFIRMED 的采样可能落在两次保存之间，读到
+# 已确认的单和还没清的码，判据假红。记录转 REBUILT 与清码是同一次保存，等它就不再与采样时机挂钩。也不等「CONFIRMED 且码为空」：
+# 产品真的忘了清码时，那样只会等到超时，红法说不出是哪一样没做到。
+$third = Wait-L2ConditionOrLast -Description 'a third order was made for the same vehicle and demand, and its rebuild recorded done' `
     -Journal $journal -Criterion 'person-rebuild' -TimeoutSeconds 60 `
     -Probe {
         Invoke-Scalar ("SELECT s.Sequence, s.StationId, s.UpperId, o.DemandId, o.VehicleKey, o.DestinationStationId, o.Status, " +
-            "r.Stage, r.BlockReasonCode FROM JourneyStops s JOIN OrderIntents o ON o.UpperId = s.UpperId " +
-            "JOIN JourneyRuntimes r ON r.JourneyId = s.JourneyId WHERE s.StopId = '$([string]$pickupStop.StopId)'")
+            "r.Stage, r.BlockReasonCode, b.State AS RebuildState FROM JourneyStops s JOIN OrderIntents o ON o.UpperId = s.UpperId " +
+            "JOIN JourneyRuntimes r ON r.JourneyId = s.JourneyId " +
+            "LEFT JOIN OwnOrderRebuilds b ON b.NewUpperId = s.UpperId WHERE s.StopId = '$([string]$pickupStop.StopId)'")
     } `
-    -Until { param($v) $v -and [string]$v.UpperId -ne [string]$rebuilt.UpperId -and [string]$v.Status -eq 'CONFIRMED' }
+    -Until { param($v) $v -and [string]$v.UpperId -ne [string]$rebuilt.UpperId -and [string]$v.RebuildState -eq 'REBUILT' }
 $riotOrder = @($riot.Snapshot().body.orders | Where-Object { $third -and [string]$_.upperId -eq [string]$third.UpperId })
 $assertions.Add(
     'L2-SR-04',

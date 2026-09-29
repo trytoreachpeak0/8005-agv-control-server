@@ -143,6 +143,31 @@ public sealed class FakeRiotTests
         Assert.Equal(RiotOrderObservationKind.NotFound, result.Kind);
     }
 
+    /// <summary>
+    /// control-server#375's injection: armed once, the next read of an absent order answers what the gateway makes a non-exact
+    /// Unknown, and only that one -- the vehicle read beside it and the read after it are untouched.
+    /// </summary>
+    [Fact]
+    public async Task AnArmedAbsentOrderReadFaultFailsExactlyTheNextAbsentReadAndNothingElse()
+    {
+        await using FakeRiotFixture fixture = await FakeRiotFixture.StartAsync();
+        HttpRiotMovementGateway gateway = fixture.Gateway();
+        await fixture.CommandAsync(HttpMethod.Put, "faults/absent-order-reads", new { count = 1 });
+
+        RiotVehicleObservation vehicle = await gateway.ReadVehicleAsync(VehicleKey, TestContext.Current.CancellationToken);
+        RiotOrderObservation failed = await gateway.ReconcileByUpperIdAsync("UPPER-375", TestContext.Current.CancellationToken);
+        RiotOrderObservation next = await gateway.ReconcileByUpperIdAsync("UPPER-375", TestContext.Current.CancellationToken);
+        JsonElement faults = (await fixture.CommandAsync(HttpMethod.Put, "faults/absent-order-reads", new { count = 0 }))
+            .GetProperty("body").GetProperty("absentOrderReadFaults");
+
+        Assert.True(vehicle.Connected);
+        Assert.Equal(RiotOrderObservationKind.Unknown, failed.Kind);
+        Assert.Equal("SdkFailure", failed.Receipt?.Classification);
+        Assert.NotNull(failed.Receipt?.FailureCategory);
+        Assert.Equal(RiotOrderObservationKind.NotFound, next.Kind);
+        Assert.Equal(["UPPER-375"], faults.GetProperty("failedUpperIds").EnumerateArray().Select(item => item.GetString()));
+    }
+
     [Fact]
     public async Task AServerErrorFaultLeavesTheAdapterFailClosedRatherThanOptimistic()
     {

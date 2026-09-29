@@ -222,6 +222,13 @@ public sealed partial class JourneyRuntimeEngine(
     public const string CheckpointWaitExceededReason = "VEHICLE_CHECKPOINT_WAIT_EXCEEDED";
 
     /// <summary>
+    /// After the leg name (<c>PICKUP_</c>, <c>GATE_</c>): this leg's order has never been sent, and the vehicle does not now show
+    /// what creating it needs -- Onboard's departure summary, no fault, RIoT's safety read (control-server#375). A wait on the
+    /// vehicle; the next round asks again.
+    /// </summary>
+    public const string NeverSentLegWaitingVehicleSuffix = "CREATE_WAITING_VEHICLE";
+
+    /// <summary>
     /// RIoT reports this leg's in-flight order HANG (9): it stopped executing it, and only a person can move it on, by
     /// continuing or cancelling it in RIoT (control-server#316; riot-behavior-lab BC-ORDER-015).
     /// </summary>
@@ -1060,7 +1067,7 @@ public sealed partial class JourneyRuntimeEngine(
                 // 与关卡侧对称，取这个停靠自己的单号（批次7-06）：旅程行上的 PickupUpperId 是锚需求那一段的，
                 // 第二个取货停靠用它会去确认一段早已走完的移动。
                 if (!await EnsureMovementConfirmedAsync(
-                        runtime, stops.Current.UpperId, "PICKUP", cancellationToken).ConfigureAwait(false))
+                        runtime, stops.Current, currentMap, "PICKUP", cancellationToken).ConfigureAwait(false))
                 {
                     return;
                 }
@@ -1487,7 +1494,7 @@ public sealed partial class JourneyRuntimeEngine(
                     return;
                 }
                 if (!await EnsureMovementConfirmedAsync(
-                        runtime, stops.Current.UpperId, "GATE", cancellationToken).ConfigureAwait(false))
+                        runtime, stops.Current, currentMap, "GATE", cancellationToken).ConfigureAwait(false))
                 {
                     return;
                 }
@@ -2327,16 +2334,48 @@ public sealed partial class JourneyRuntimeEngine(
 
     private async Task<bool> EnsureMovementConfirmedAsync(
         JourneyRuntimeRow runtime,
-        string upperId,
+        JourneyStopRow stop,
+        RiotMapStationCatalogSnapshot currentMap,
         string legName,
         CancellationToken cancellationToken)
     {
+        string upperId = stop.UpperId;
         OrderIntentRow intent = await dbContext.OrderIntents.SingleAsync(
             row => row.UpperId == upperId,
             cancellationToken).ConfigureAwait(false);
         if (intent.Status == "CONFIRMED" && intent.OrderId is not null)
         {
             return true;
+        }
+        // control-server#375: an intent never sent may be created by the reconciliation below, rounds or minutes after the
+        // departure check (or the dispatch admission) that let the leg go -- a read that timed out is enough to put that
+        // distance there -- and the doors, the vehicle's condition, an emergency stop, the catalog or an operator hold may have
+        // changed since. So it is created only once two of the checks a rebuild's HeldBeforeCreateAsync makes pass again
+        // (control-server#366 M1): the vehicle's condition, then REQ-0305's create gate for this stop, which the departure path
+        // asks too. Neither holding writes anything but the journey's code, and the next round asks again. "Never sent" is the
+        // store's own definition, so an intent RESULT_UNKNOWN for a reason a person has to look at -- a read that found an order
+        // not matching it -- is not held here and keeps its {leg}_ResultUnknown. An order already sent is only reconciled, which
+        // moves nothing, and is not held here either.
+        if (await new WireToGateStore(dbContext).IsNeverSentAsync(intent, cancellationToken).ConfigureAwait(false))
+        {
+            if ((await VehicleConditionReasonsAsync(runtime, cancellationToken).ConfigureAwait(false)).Length > 0)
+            {
+                runtime.SetBlockReason($"{legName}_{NeverSentLegWaitingVehicleSuffix}", timeProvider.GetUtcNow());
+                runtime.UpdatedAt = timeProvider.GetUtcNow();
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                return false;
+            }
+
+            CreateGateOutcome gate = await GateLegAsync(
+                    runtime, stop, currentMap, cancellationToken, toTheStopItself: stop.StopRole == JourneyStopRoles.Pickup)
+                .ConfigureAwait(false);
+            if (!gate.IsAllowed)
+            {
+                runtime.SetBlockReason(gate.BlockReason, timeProvider.GetUtcNow());
+                runtime.UpdatedAt = timeProvider.GetUtcNow();
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                return false;
+            }
         }
         MovementDispatchResult result = await movementDispatch.ReconcileOrCreateAsync(
             upperId, cancellationToken).ConfigureAwait(false);

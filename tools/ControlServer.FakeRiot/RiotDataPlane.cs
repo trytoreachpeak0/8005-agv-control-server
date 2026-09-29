@@ -18,6 +18,7 @@ public static class RiotDataPlane
         CommandEngine<FakeRiotState> engine = app.Services.GetRequiredService<CommandEngine<FakeRiotState>>();
         MapStationReadCounter mapStationReads = app.Services.GetRequiredService<MapStationReadCounter>();
         MapListReadCounter mapListReads = app.Services.GetRequiredService<MapListReadCounter>();
+        AbsentOrderReadFaults absentOrderReadFaults = app.Services.GetRequiredService<AbsentOrderReadFaults>();
 
         app.MapGet("/api/task/vehicles/getVehicleInfoByDeviceKey", async (
             [FromQuery] string key, CancellationToken cancellationToken) =>
@@ -147,8 +148,12 @@ public static class RiotDataPlane
             IResult? fault = await ApplyFaultAsync(engine, cancellationToken).ConfigureAwait(false);
             if (fault is not null) return fault;
             FakeRiotState state = engine.Snapshot().State;
-            return state.OrdersByUpperId.TryGetValue(upperId, out FakeOrder? order)
-                ? Ok(OrderBody(order))
+            if (state.OrdersByUpperId.TryGetValue(upperId, out FakeOrder? order))
+            {
+                return Ok(OrderBody(order));
+            }
+            return absentOrderReadFaults.TryConsume(upperId)
+                ? Results.Json(new { }, statusCode: StatusCodes.Status503ServiceUnavailable)
                 : Results.NotFound();
         });
 
@@ -292,6 +297,53 @@ public static class RiotDataPlane
             case FakeRiotFaultMode.Normal:
             default:
                 return null;
+        }
+    }
+}
+
+/// <summary>
+/// The next <c>n</c> reads by upperId of an order RIoT does not have answer 503 instead of 404, once each
+/// (control-server#375): the read before a create that answers nothing, aimed at that read alone. The global fault mode
+/// would fail every read on the data plane at once, the vehicle's included, and on a timing a scenario cannot pin.
+/// </summary>
+/// <remarks>
+/// Outside the command engine for the reason <see cref="MapStationReadCounter"/> is. The upperIds it failed are kept so a
+/// scenario can show which read it hit: a budget spent on some other read would otherwise pass for the one it meant.
+/// </remarks>
+public sealed class AbsentOrderReadFaults
+{
+    private readonly object gate = new();
+    private readonly List<string> failed = [];
+    private int remaining;
+
+    public void Arm(int count)
+    {
+        lock (gate)
+        {
+            remaining = count;
+        }
+    }
+
+    public bool TryConsume(string upperId)
+    {
+        lock (gate)
+        {
+            if (remaining <= 0)
+            {
+                return false;
+            }
+
+            remaining--;
+            failed.Add(upperId);
+            return true;
+        }
+    }
+
+    public object Describe()
+    {
+        lock (gate)
+        {
+            return new { remaining, failedUpperIds = failed.ToArray() };
         }
     }
 }
