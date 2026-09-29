@@ -44,9 +44,12 @@ function Read-SharedText([string]$path) {
 }
 
 function Get-OrdersOf([string]$vehicleKey) {
-    $intents = @(Invoke-L2Query -Connection $connection -Sql "SELECT UpperId FROM OrderIntents WHERE VehicleKey = '$vehicleKey'")
-    $riotOrders = @(@($riot.Snapshot().body.orders) | Where-Object { $null -ne $_ -and [string]$_.appointVehicleKey -eq $vehicleKey })
-    return [pscustomobject]@{ Intents = $intents.Count; RiotOrders = $riotOrders.Count }
+    # Counted in SQL: a query with no rows comes back as $null, and @($null).Count is 1 (the first local run read "1 intent"
+    # for a vehicle that had none -- the snapshot holds only A's order).
+    $intents = [int](Invoke-L2Query -Connection $connection -Sql "SELECT COUNT(*) AS N FROM OrderIntents WHERE VehicleKey = '$vehicleKey'")[0].N
+    $riotOrders = [int](@($riot.Snapshot().body.orders | Where-Object { $null -ne $_ -and [string]$_.appointVehicleKey -eq $vehicleKey }) |
+        Measure-Object).Count
+    return [pscustomobject]@{ Intents = $intents; RiotOrders = $riotOrders }
 }
 
 # --- 0. 前置：策略只覆盖 A ------------------------------------------------------------------------------
