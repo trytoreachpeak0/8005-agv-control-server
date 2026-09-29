@@ -246,6 +246,28 @@ public sealed class IdleReturnCommitmentTests
         Assert.Equal(stations, await harness.Db.DumpAsyncOf("StationExclusivities"));
     }
 
+    /// <summary>
+    /// 空闲车每一轮都被评估：同一辆车同一个原因只记一次日志，原因变了再记；承诺另有事件 2198。
+    /// </summary>
+    [Fact]
+    public async Task AVehiclesRefusalIsLoggedWhenItChangesNotEveryRound()
+    {
+        await using Harness harness = await Harness.CreateAsync();
+        IdleReturnCandidate low = harness.Candidate(VehicleA, battery: 10);
+
+        await harness.EvaluateAsync(low);
+        await harness.EvaluateAsync(low);
+        await harness.EvaluateAsync(harness.Candidate(VehicleA, battery: null));
+        await harness.EvaluateAsync(harness.Candidate(VehicleA));
+
+        Assert.Equal(
+            [(2199, IdleReturnReasons.BelowMandatoryChargeLine), (2199, IdleReturnReasons.BatteryUnknownOrCharging), (2198, "")],
+            harness.Log.Entries
+                .Where(entry => entry.EventId.Id is 2198 or 2199)
+                .Select(entry => (entry.EventId.Id, entry.EventId.Id == 2199 ? entry.Message.Split(": ")[1].Split('.')[0] : "")));
+        Assert.Equal(IdleReturnReasons.Committed, harness.VerdictBoard.Reasons["AGV-" + VehicleA]);
+    }
+
     // ---- 选点：逐点核验，候选不等于拿到 ---------------------------------------------------------------------------
 
     public static TheoryData<string, string?> Exclusions => new()
@@ -506,6 +528,9 @@ public sealed class IdleReturnCommitmentTests
 
         public EventRecordingLogger<IdleReturnEvaluator> Log { get; } = new();
 
+        /// <summary>跨评估保留，像宿主里的单例。</summary>
+        public IdleReturnVerdictBoard VerdictBoard { get; } = new();
+
         public JourneyRuntimeOptions Options { get; } = new()
         {
             MapId = Map,
@@ -545,6 +570,7 @@ public sealed class IdleReturnCommitmentTests
                 new TransitionalMandatoryChargeLine(Microsoft.Extensions.Options.Options.Create(Options)),
                 Microsoft.Extensions.Options.Options.Create(new IdleReturnOptions { Enabled = Enabled }),
                 Microsoft.Extensions.Options.Options.Create(Options),
+                VerdictBoard,
                 new FixedClock(Now),
                 Log);
             return await evaluator.EvaluateAsync(

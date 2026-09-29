@@ -67,6 +67,7 @@ public sealed class IdleReturnEvaluator(
     IMandatoryChargeLine chargeLine,
     IOptions<IdleReturnOptions> idleReturnOptions,
     IOptions<JourneyRuntimeOptions> runtimeOptions,
+    IdleReturnVerdictBoard verdictBoard,
     TimeProvider timeProvider,
     ILogger<IdleReturnEvaluator> logger)
 {
@@ -81,9 +82,11 @@ public sealed class IdleReturnEvaluator(
             "Idle return committed: vehicle {AgvId} reserved waiting point {StationId} (registration version {Version}) " +
             "as journey {JourneyId}, route cost {CostMm} mm; charge line {ChargeLine}.");
 
+    // Information, but only when this vehicle's reason or detail differs from the last round's (IdleReturnVerdictBoard): an
+    // idle vehicle is judged every round, and a line per round per vehicle would bury everything else in the log.
     private static readonly Action<ILogger, string, string, string, Exception?> LogNotCommitted =
         LoggerMessage.Define<string, string, string>(
-            LogLevel.Debug,
+            LogLevel.Information,
             new EventId(2199, nameof(LogNotCommitted)),
             "Idle return not committed for vehicle {AgvId}: {Reason}. {Detail}");
 
@@ -140,6 +143,7 @@ public sealed class IdleReturnEvaluator(
             {
                 ForgetStagedCommitment();
                 LogEvaluationFailed(logger, candidate.Vehicle.AgvId, error);
+                verdictBoard.Record(candidate.Vehicle.AgvId, IdleReturnReasons.EvaluationFailed, error.GetType().Name);
                 verdicts.Add(new IdleReturnVerdict(
                     candidate.Vehicle.AgvId, candidate.Vehicle.VehicleKey, IdleReturnReasons.EvaluationFailed));
             }
@@ -289,6 +293,7 @@ public sealed class IdleReturnEvaluator(
         }
 
         LogCommitted(logger, vehicle.AgvId, chosen.StationId, version, journeyId, chosen.CostMm, chargeLine.Describe(), null);
+        verdictBoard.Record(vehicle.AgvId, IdleReturnReasons.Committed, journeyId);
         return new IdleReturnVerdict(
             vehicle.AgvId, vehicle.VehicleKey, IdleReturnReasons.Committed, chosen.StationId, version, journeyId);
     }
@@ -370,7 +375,10 @@ public sealed class IdleReturnEvaluator(
 
     private IdleReturnVerdict Refuse(FleetVehicle vehicle, string reason, string detail)
     {
-        LogNotCommitted(logger, vehicle.AgvId, reason, detail, null);
+        if (verdictBoard.Record(vehicle.AgvId, reason, detail))
+        {
+            LogNotCommitted(logger, vehicle.AgvId, reason, detail, null);
+        }
         return new IdleReturnVerdict(vehicle.AgvId, vehicle.VehicleKey, reason);
     }
 
@@ -378,4 +386,28 @@ public sealed class IdleReturnEvaluator(
         WaitingPointRegistrationVersion? Registration,
         IReadOnlySet<int> FixedTaskStations,
         RouteGraphAvailability Graph);
+}
+
+/// <summary>
+/// 每辆车最近一次的空闲返回结论（原因码与细节）。宿主里是单例，跨轮次保留：结论变了才记一条 Information 日志（事件 2199），
+/// 看板（批次8-21，control-server#392）也可以从这里读。
+/// </summary>
+public sealed class IdleReturnVerdictBoard
+{
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string Reason, string Detail)> _last =
+        new(StringComparer.Ordinal);
+
+    /// <summary>记下这辆车这一轮的结论；与上一次不同（或第一次）时答真。</summary>
+    public bool Record(string agvId, string reason, string detail)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+        (string, string) now = (reason, detail);
+        bool changed = !_last.TryGetValue(agvId, out (string Reason, string Detail) before) || before != now;
+        _last[agvId] = now;
+        return changed;
+    }
+
+    /// <summary>每辆车最近一次的原因码。</summary>
+    public IReadOnlyDictionary<string, string> Reasons =>
+        _last.ToDictionary(pair => pair.Key, pair => pair.Value.Reason, StringComparer.Ordinal);
 }

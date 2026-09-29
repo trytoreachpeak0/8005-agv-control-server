@@ -20,6 +20,8 @@ internal static class IdleReturnModule
         services.AddOptions<IdleReturnOptions>().Bind(configuration.GetSection(IdleReturnOptions.SectionName));
         // 批次 9 的阈值票只换这一行的实现。
         services.AddSingleton<IMandatoryChargeLine, TransitionalMandatoryChargeLine>();
+        // 单例：结论变了才记日志，要跨轮次（每一轮是一个新的作用域）记得上一轮的结论。
+        services.AddSingleton<IdleReturnVerdictBoard>();
         services.AddScoped<IdleReturnEvaluator>();
         return services;
     }

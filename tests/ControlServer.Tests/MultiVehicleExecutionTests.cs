@@ -1116,6 +1116,7 @@ public sealed partial class MultiVehicleExecutionTests
                 Microsoft.Extensions.Options.Options.Create(
                     new ControlServer.Host.Runtime.IdleReturn.IdleReturnOptions { Enabled = true }),
                 Microsoft.Extensions.Options.Options.Create(fixture.Options),
+                new ControlServer.Host.Runtime.IdleReturn.IdleReturnVerdictBoard(),
                 fixture.Clock,
                 NullLogger<ControlServer.Host.Runtime.IdleReturn.IdleReturnEvaluator>.Instance);
             await RecreateEngineAsync();
