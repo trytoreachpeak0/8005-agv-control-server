@@ -453,6 +453,48 @@ DispatchZoneParameters = @{
 - 负向场景 `waiting-points-fewer-than-vehicles-refuses-start` 是 `Fleet` 两台车 + `WaitingPoints = 1`。
 - 辅助模块是 `L2WaitingPoints.psm1`。
 
+### 批次 9 的默认前置：一版已批准的测试充电策略（control-server#400）
+
+批次9-02 起，一辆投运车辆没有「已批准、已激活、适用范围覆盖它」的 `ChargingPolicyVersion` 时不承接任何新用途（派车链返回
+`CHARGING_POLICY_NOT_APPROVED`，规格 8.6 逐车硬阻断）。服务端出厂不带任何策略，所以**经本编排器跑的每个场景（两套装置都算），编排器在上面
+第 7 步之后、场景发布第一条需求之前，经 `InvokeFieldOps` 做三步**，与现场用的是同一套动词，不直写库：
+
+1. `import-charging-policy --input snapshots/preseed-charging-policy.json --fleet <全部车辆>`；
+2. `approve-charging-policy ... --source L2_PRESET`——来源写 L2 预置，**不写成现场批准**；
+3. `activate-charging-policy ... --allow-non-field-approval`——只有非现场批准的版本，激活必须带这个开关，现场说明里没有它。
+
+取值与理由：
+
+| 字段 | 值 | 理由 |
+| --- | --- | --- |
+| `chargingCompletionThresholdPercent` | 80 | 与 L1 夹具同一组值（`tests/ControlServer.Tests/TestChargingPolicies.cs`） |
+| `mandatoryChargeEntryThresholdPercent` | 30 | 批次9-05 把电量判据改成「电量 − 每趟估计 ≥ 余量，且不低于强制充电线」之后，这组值与今天的 `MinimumBatteryPercent = 30` 逐条等价 |
+| `minimumPostTaskBatteryMarginPercent` | 30 | 同上 |
+| `estimatedTaskConsumptionPercent` | 0 | 同上 |
+| 稳定期／观察窗口／最小增量 | 180 秒／600 秒／3 | 与现场推荐值相同；本批的判据不读它们 |
+| 适用车辆 | 全部 | 空即全部投运车辆 |
+
+**默认不导入名册**：一版名册都没有等于空名册，是合法状态，服务端照常启动、照常派搬运。合成 RIoT 报的电量是 80
+（`tools/ControlServer.FakeRiot/FakeRiotState.cs`），不会触发充电。**既有场景的 `setup.psd1` 一个都不改。**
+
+判据 `preseed:charging-policy` 进 `timeline.jsonl`（值是版本号，附覆盖到与没覆盖到的车）；导入的文件留在
+`snapshots/preseed-charging-policy.json`；收尾快照多了 `db-ChargingPolicyVersions.json`、`db-ChargingPolicyVehicleScopes.json`、
+`db-ChargingPolicyApprovals.json`、`db-ChargingPolicyActivations.json`、`db-ChargerRosterVersions.json`、`db-ChargerRosterEntries.json`。
+`ExpectServerStartupRefusal` 的场景跳过这一步（服务端起不来，没有库可导）。
+
+场景要别的策略时写 `ChargingPolicy` 键：
+
+| 取值 | 编排器做什么 |
+| --- | --- |
+| 不写 | 上面那一版，全部车辆 |
+| `$false` | 不导入：每辆车都不投运 |
+| `@{ VehicleScope = @('BROKERX-L2-0002') }` | 同样的取值，只覆盖列出的车 |
+
+- 负向场景 `charging-policy-missing-vehicle-not-commissioned` 是 `Fleet` 两台车 + 策略只覆盖第二台。
+- `run-journey-g3.ps1` 经本编排器跑它的 `g3-*` 场景，在它的 ControlServer 绑定挪到含本票的提交之后自然获得这一步（绑定归批次9-07）。
+  三个 staged G3 runner 设 `JourneyRuntime__enabled = 'false'`、不派车，逐车判定挡不到它们。
+- 辅助模块是 `L2ChargingPolicy.psm1`。
+
 ### 批次 4 的辅助模块：`L2SlotGroups.psm1`
 
 与 `L2Change.psm1` 同样是单独一个文件，用的场景自己导入：

@@ -124,7 +124,8 @@ public sealed class DispatchChainSeamTests
                     boxCountReader: null!,
                     NullLogger<SlotCapacityCriterion>.Instance,
                     suppressions: null!,
-                    dbContext: null!)
+                    dbContext: null!,
+                    chargingPolicy: TestChargingPolicies.AllApproved)
                 .OrderBy(criterion => criterion.Order)
                 .Select(criterion => criterion.GetType().Name)
         ];

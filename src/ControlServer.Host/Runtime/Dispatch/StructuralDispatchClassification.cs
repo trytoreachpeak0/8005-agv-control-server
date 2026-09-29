@@ -81,6 +81,7 @@ public static class StructuralDispatchClassification
     private const int TransportDemandKeySuppressed = 11;
     private const int TransportDemandKeyAlreadyAccepted = 12;
     private const int FaultBlock = 15;
+    private const int ChargingPolicyCommissioning = 16;
     private const int WorkTypeScope = 20;
     private const int VehicleTaskType = 25;
     private const int RequiredMesFacts = 30;
@@ -121,6 +122,12 @@ public static class StructuralDispatchClassification
             "This vehicle's fault state; another vehicle, or releasing the isolation, lets the demand through."),
         Backlog(VehicleFaultBlockCriterion.IdentityUnresolvedReason, FaultBlock,
             "This vehicle's identity; says nothing about the demand."),
+
+        // ---- ChargingPolicyCommissioningCriterion (16) --------------------------------------------------
+        Backlog(DispatchReasonCodes.ChargingPolicyNotApproved, ChargingPolicyCommissioning,
+            "control-server#400, REQ-0282: this vehicle has no approved, activated charging policy covering it. The " +
+            "vehicle's side, not the demand's: another vehicle takes it, and activating a policy that covers this one " +
+            "clears it."),
 
         // ---- WorkTypeScopeCriterion (20) ----------------------------------------------------------------
         Backlog(DispatchReasonCodes.OutOfScopeWorkType, WorkTypeScope,

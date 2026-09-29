@@ -37,6 +37,7 @@ public static class DispatchAdmissionCriteria
         ILogger<SlotCapacityCriterion> slotCapacityLogger,
         ITransportDemandSuppressionStore suppressions,
         ControlServerDbContext dbContext,
+        IChargingPolicyResolver chargingPolicy,
         RouteGraphAccess? routeGraph = null,
         CatalogAvailabilityAccess? catalog = null,
         PreCreateGate? createGate = null,
@@ -52,6 +53,9 @@ public static class DispatchAdmissionCriteria
             // Required rather than optional, unlike the three appended below: a safety block a
             // caller may leave out is a safety block that will be left out.
             new VehicleFaultBlockCriterion(faultStore),
+            // 批次9-02（control-server#400）：没有已批准策略版本的车不承接新用途。必填，理由同故障阻断：逐车硬阻断（规格 8.6）
+            // 一个调用方可以漏传，就会被最需要它的那个调用方漏掉。
+            new ChargingPolicyCommissioningCriterion(chargingPolicy),
             new WorkTypeScopeCriterion(options),
             // Required rather than optional for the same reason as the fault block: B2's two
             // vehicle filters are fail-closed, and a fail-closed rule a caller may omit is one
@@ -135,6 +139,8 @@ public static class DispatchAdmissionCriteria
         services.AddScoped<IDispatchAdmissionCriterion, TransportDemandKeySuppressedCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, TransportDemandKeyAlreadyAcceptedCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, VehicleFaultBlockCriterion>();
+        services.AddScoped<IChargingPolicyResolver, ChargingPolicyResolver>();
+        services.AddScoped<IDispatchAdmissionCriterion, ChargingPolicyCommissioningCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, WorkTypeScopeCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, VehicleTaskTypeAdmissionCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, DispatchZoneVehicleCriterion>();

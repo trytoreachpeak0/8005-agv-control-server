@@ -242,7 +242,8 @@ public sealed class Batch7TransportDemandKeyAdmissionTests : IAsyncDisposable
             new JourneyRuntimeWorkerTestKit.RecordingBoxCounts(),
             NullLogger<SlotCapacityCriterion>.Instance,
             new TransportDemandSuppressionStore(_context),
-            _context));
+            _context,
+            TestChargingPolicies.AllApproved));
     }
 
     /// <summary>A row the acceptance would have written, in the given state; only the key and the id matter here.</summary>

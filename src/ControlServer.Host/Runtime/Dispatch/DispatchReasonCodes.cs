@@ -181,6 +181,16 @@ public static class DispatchReasonCodes
     public const string TransportDemandKeyAlreadyAccepted = "TRANSPORT_DEMAND_KEY_ALREADY_ACCEPTED";
 
     /// <summary>
+    /// 这辆车没有「已批准、已激活、适用范围覆盖它」的 <c>ChargingPolicyVersion</c>，或读不到（fail-closed）：不承接任何新用途
+    /// （批次9-02，control-server#400；REQ-0282；规格 8.6 逐车硬阻断）。
+    /// </summary>
+    /// <remarks>
+    /// 归普通积压（车辆侧）：别的车照常承接，导入、批准并激活一版覆盖它的策略即解除。空闲返回资格与充电分配用同一个判定
+    /// （<c>IChargingPolicyResolver</c>）。
+    /// </remarks>
+    public const string ChargingPolicyNotApproved = "CHARGING_POLICY_NOT_APPROVED";
+
+    /// <summary>
     /// The reasons that are a configured outcome rather than a problem: they reach the backlog and nothing
     /// else — no structural dispatch block, no alarm, no log at Warning or above.
     /// </summary>
