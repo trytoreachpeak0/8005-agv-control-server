@@ -22,6 +22,14 @@
 | M4 | 去掉「只有测试批准要显式开关」的检查 | `ApprovalAndActivationAreRecordedAndATestOnlyApprovalNeedsTheExplicitSwitch`、`AnL2PresetApprovalActivatesOnlyWithTheExplicitSwitch` |
 | M5 | 名册校验不再拒绝等待点 | `EachClassOfErrorRejectsTheWholeFileAndWritesNothing(waiting)`、`AFileWithSeveralErrorsReportsThemAllAtOnce` |
 | M6 | 从 `DispatchAdmissionCriteria.Default` 里去掉新判据 | `AVehicleThePolicyDoesNotCoverIsRefusedWithTheNewReasonAndTheOtherVehicleTakesTheDemand`、`WithNoPolicyAtAllTheRoundStillRunsAndEveryVehicleIsRefused`、`TheEnRouteChainCarriesTheSameCommissioningCriterionAndRefusesTheSameVehicle` |
+| MC（审查后补） | 判据对解析器回 `Unreadable` 的决定放行 | `AnUnreadablePolicyDecisionIsRefusedLikeAMissingOne`（补这条之前，该变异下定向 65 条全绿存活） |
 
 M2、M4 第一次写成 `if (false)`，编译器以 CS0162（不可达代码）拒绝、没有跑成，不算绿；改成 `if (dryRun && !dryRun)` 这类非常量条件后才生效。
 宿主 DI 那一行注册（`AddDispatchAdmission`）的变异由上面的 L2 红证据覆盖。
+
+## 这些证据跑的是哪一版
+
+- 三份 L2 证据的 `SUMMARY.md` 都写 `controlServerCommit` 为 `b582d638`。其中 `l2-charging-policy-missing-red-no-criterion` 那一份
+  跑的是**在 `b582d638` 上注入过缺陷的工作树**（宿主不注册新判据），不是 `b582d638` 本身；编排器只记 HEAD，看不出工作树改过。
+- 三份都停在 `b582d638`，**不含之后合入的 `f55669db`（#415，充电建单）**。合并之后的回归靠 CI 的 `l2`。
+- 审查后场景脚本把 `$logRoot`、`$HealthPort` 改为从 `$Context` 取（编排器上下文新增 `LogRoot`），判据本身没变。

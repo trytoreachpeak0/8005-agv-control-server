@@ -1266,6 +1266,9 @@ try {
         PickupStationRiotId = $pickupStationRiotId
         HealthPort          = $HealthPort
         SnapshotRoot        = $snapshotRoot
+        # Every component's stdout and stderr, <name>.out.log / <name>.err.log (control-server#400: a scenario reads the
+        # server's log for a fact the database does not keep).
+        LogRoot             = $logRoot
         # Null unless the setup file turned the activation entry point on.
         GovernanceCredential = if ($slotConfigurationActivation) { $governanceCredential } else { $null }
         # Null unless the setup file turned the release-on-confirmation entry point on.

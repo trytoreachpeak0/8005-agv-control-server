@@ -20,6 +20,15 @@ Import, approve and activate a charging policy that covers it (REQ-0282).
 > **升级并行期实例（`scripts/parallel/` 装的那一套）到含本票的版本之前，先按第四节导入、批准并激活策略。**
 > 否则升级后 agv02／agv03 一律不接活。这件事由批次9-13 在 10-07 前做。
 
+### 升级顺序（写死，不要调换）
+
+1. 停服务端，放新包。
+2. 跑一次 `ControlServer.Host.exe --migrate-only`：只迁移库就退出。**FieldOps 不迁移库**，策略表与名册表来自批次9-01 的迁移，
+   不先迁移，第 3 步的导入会因为表不存在而失败。
+3. 按第四节导入策略、以 `--source FIELD` 批准、激活；按第二节导入名册（不在授权窗口里就导入空名册）。
+4. 按第四节「核对」确认每辆车都投运。
+5. 才启动服务。
+
 名册不一样：名册为空（或一版都没导入）**不阻断**，服务端照常派搬运，只是不会自动充电，退化行为（人工充电等待并告警）在批次9-06。
 
 ## 二、充电窗口：开窗导入 211 名册，关窗导入空名册
@@ -115,8 +124,15 @@ ControlServer.FieldOps.exe import-charger-roster --database "<服务端的库文
    ```
 
    一个只有测试批准的版本，不带 `--allow-non-field-approval` 会被拒（`CHARGING_POLICY_ONLY_NON_FIELD_APPROVAL`）。**现场不要带这个开关。**
-4. **核对**：`ControlServer.FieldOps.exe charging-policy --database "<库文件>" --fleet "<...>"`（只读）列出当前生效版本、全部版本的批准与激活历史，
-   以及每辆车投不投运。
+4. **核对**，两处都要对上才算过：
+   - 激活输出的 `impact.vehiclesWithoutPolicyAfter` **必须是 `[]`**。只看 `vehiclesLosingPolicy` 不够：第一次激活时没有「之前的生效版本」，
+     它恒为空，起不到把关作用。
+   - `ControlServer.FieldOps.exe charging-policy --database "<库文件>" --fleet "<...>"`（只读）的 `vehicles` 里**每辆车 `commissioned` 都是 `true`**。
+     它同时列出当前生效版本、全部版本的批准与激活历史。
+
+   `--fleet` 的 `VehicleKey` 一律从部署配置里抄：并行期实例是 `scripts/parallel/instance-factory01-v2.json` 里 `journeyRuntime.vehicleKey`
+   加上 `Fleet` 列表里每一项的 `vehicleKey`。**不要手敲**：策略的适用范围为空（全部车辆）时，任意字符串都会被判为「覆盖」，
+   `--fleet` 填错了核对照样全是 `true`，而服务端实际派车用的是配置里的键。
 
 **策略按「全局一个生效版本」存**：激活一版只覆盖部分车的策略，范围外的车会立刻不接活。激活前看 `impact.vehiclesLosingPolicy`，不是空的就先想清楚。
 

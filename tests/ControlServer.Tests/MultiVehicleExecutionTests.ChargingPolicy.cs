@@ -93,6 +93,30 @@ public sealed partial class MultiVehicleExecutionTests
         Assert.Equal(DispatchAdmissionChain.Eligible, await criterion.EvaluateAsync(Evaluation("BROKERX-0001"), TestContext.Current.CancellationToken));
     }
 
+    /// <summary>
+    /// 判据只认「投运」：解析器读库出错回 <see cref="ChargingPolicyCommissioningReasons.Unreadable"/> 时，判据同样回新原因码，不放行
+    /// （审查变异 MC：放行 Unreadable 时其余用例全绿存活）。
+    /// </summary>
+    [Fact]
+    public async Task AnUnreadablePolicyDecisionIsRefusedLikeAMissingOne()
+    {
+        ChargingPolicyCommissioningCriterion criterion = new(new UnreadableResolver());
+
+        Assert.Equal(
+            DispatchReasonCodes.ChargingPolicyNotApproved,
+            await criterion.EvaluateAsync(Evaluation("BROKERX-0001"), TestContext.Current.CancellationToken));
+    }
+
+    private sealed class UnreadableResolver : IChargingPolicyResolver
+    {
+        public Task<VehicleChargingPolicyDecision> ResolveForNewDecisionAsync(string vehicleKey, CancellationToken cancellationToken) =>
+            Task.FromResult(new VehicleChargingPolicyDecision(
+                vehicleKey, ChargingPolicyCommissioningReasons.Unreadable, null, "database is locked"));
+
+        public Task<ChargingPolicyVersion> ReadFrozenAsync(long version, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+    }
+
     /// <summary>宿主注册了判据与它读的判定（经 <see cref="IChargingPolicyStore"/>），在途链从注册好的空闲链派生，因此也带上它。</summary>
     [Fact]
     public void TheHostRegistersTheCriterionAndTheResolverItReads()

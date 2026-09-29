@@ -358,7 +358,7 @@ $null = Set-L2OnboardSafety -Onboard $onboard -Connection $connection -AgvId $Co
 ## 加一个场景
 
 `scenarios/<名字>.ps1`，接一个 `-Context` 参数。`Context` 上有 `Journal`、`Assertions`、
-`Riot`、`MesIngest`、`Onboard`、`Simulator`、`Connection`（只读 SQLite 连接）、`SnapshotRoot`、
+`Riot`、`MesIngest`、`Onboard`、`Simulator`、`Connection`（只读 SQLite 连接）、`SnapshotRoot`、`LogRoot`（各组件的 `<名字>.out.log`／`.err.log`）、
 `StopComponent`、`InvokeFieldOps`、`DispatchZone`（服务端 `appsettings.json` 里的调度分区）、
 `SlotModelVersionId`（默认前置入库的那一版模型，没做入库时为 `$null`）以及车辆与站点的身份。
 

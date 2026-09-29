@@ -34,7 +34,7 @@ $coveredVehicleKey = 'BROKERX-L2-0002'
 $uncoveredVehicleKey = $Context.VehicleKey
 $demandGuid = [guid]::NewGuid()
 $demandId = $demandGuid.ToString('D')
-$serverLog = Join-Path $logRoot 'control-server.out.log'
+$serverLog = Join-Path $Context.LogRoot 'control-server.out.log'
 $blockedLine = "Vehicle $uncoveredVehicleKey takes no new work: CHARGING_POLICY_NOT_APPROVED"
 
 function Read-SharedText([string]$path) {
@@ -133,7 +133,7 @@ $assertions.Add(
 
 # --- 3. 没有整机拒绝：服务端一直在跑 -----------------------------------------------------------------------
 
-$health = try { (Invoke-WebRequest -Uri "http://127.0.0.1:$HealthPort/health/live" -TimeoutSec 5).StatusCode } catch { $_.Exception.Message }
+$health = try { (Invoke-WebRequest -Uri "http://127.0.0.1:$($Context.HealthPort)/health/live" -TimeoutSec 5).StatusCode } catch { $_.Exception.Message }
 $assertions.Add(
     'L2-CPM-04',
     '逐车判定、不整机拒绝启动：服务端进程在跑、存活检查 200',
