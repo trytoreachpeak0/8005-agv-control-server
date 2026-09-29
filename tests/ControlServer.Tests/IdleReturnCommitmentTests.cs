@@ -334,6 +334,33 @@ public sealed class IdleReturnCommitmentTests
     }
 
     /// <summary>
+    /// 跨票（control-server#391）：旅程在关卡卸完、已经结束，车还占着关卡这个公共站（离点证据之前独占不放）、没有用途占有——
+    /// 它正该离开关卡去等待点。开关打开时它被承诺空闲返回；关卡的独占不被这里动（放它是离点证据的事）。
+    /// </summary>
+    [Fact]
+    public async Task AVehicleWhoseJourneyEndedAtTheGateWhileStillHoldingItCommitsToAnIdleReturn()
+    {
+        await using Harness harness = await Harness.CreateAsync();
+        IdleReturnCandidate candidate = harness.Candidate(VehicleA);
+        await harness.LeaveJourneyWithoutClaimAsync(candidate.Vehicle);
+        await using (ControlServerDbContext context = harness.Db.NewContext())
+        {
+            Assert.Equal(1, await context.JourneyRuntimes.ExecuteUpdateAsync(
+                row => row.SetProperty(journey => journey.Stage, JourneyRuntimeStage.Completed), Token));
+        }
+        await harness.HoldStationAsync(VehicleA, 210, StationExclusivityStates.Occupied, StationExclusivityKinds.FixedTaskStation);
+
+        IdleReturnVerdict verdict = Assert.Single(await harness.EvaluateAsync(candidate));
+
+        Assert.Equal((IdleReturnReasons.Committed, (int?)214), (verdict.Reason, verdict.StationId));
+        StationExclusivity gate = Assert.IsType<StationExclusivity>(
+            await new StationExclusivityStore(harness.Db.NewContext()).ReadAsync(Map, 210, Token));
+        Assert.Equal(
+            (StationExclusivityKinds.FixedTaskStation, StationExclusivityStates.Occupied, VehicleA),
+            (gate.StationKind, gate.State, gate.VehicleKey));
+    }
+
+    /// <summary>
     /// 过渡期的启动护栏（审查 S2）：批次8-19 合入之前，单独打开 <c>IdleReturn:Enabled</c> 拒绝启动；只有合成 L2 同时设
     /// <c>AllowWithoutExecution</c>。宿主注册经 <c>ValidateOnStart</c>，这里按宿主的注册取选项，取即校验。
     /// </summary>
