@@ -51,6 +51,25 @@ public static class VehicleFaultRecoveryEndpoints
             ["PREPARE_CARGO_HANDOFF"] = VehicleFaultRecoveryAction.PrepareCargoHandoff,
         };
 
+    /// <summary>The configuration switch both entries below hang on.</summary>
+    public const string EnabledKey = VehicleFaultRecoveryOptions.SectionName + ":enabled";
+
+    /// <summary>
+    /// Maps this entry and the station exclusivity release (control-server#419) when <see cref="EnabledKey"/> is on, and
+    /// neither otherwise; says which. One place decides it, so the release cannot be left open while recovery is switched off.
+    /// </summary>
+    public static bool MapVehicleFaultRecoveryEntriesWhenEnabled(this WebApplication app)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        if (!app.Configuration.GetValue<bool>(EnabledKey))
+        {
+            return false;
+        }
+        app.MapVehicleFaultRecovery();
+        app.MapStationExclusivityRelease();
+        return true;
+    }
+
     public static void MapVehicleFaultRecovery(this WebApplication app)
     {
         app.MapPost(Route, HandleAsync)

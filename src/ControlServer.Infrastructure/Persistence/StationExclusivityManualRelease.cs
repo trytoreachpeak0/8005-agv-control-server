@@ -44,9 +44,14 @@ public sealed record StationExclusivityManualReleaseResult(
 /// 读到之后被交给了同一辆车的新旅程，同样拒绝——那一次已经不是操作员核实的那一次。
 /// </para>
 /// <para>
-/// <b>持有旅程仍在途、仍以这个站为未完成停靠时拒绝</b>（<see cref="HolderJourneyStillBound"/>）：放了之后下一轮补预占会把站原样还给它，
-/// 或者旅程以为自己还站在点上。先把那趟旅程收尾或阻断（故障人工恢复入口），再来释放。阻断与已完成的旅程可以放：清扫对阻断一律不放，
-/// 那正是要人来判的情况。
+/// <b>持有者仍在途、仍以这个站为未完成停靠时拒绝</b>（<see cref="HolderJourneyStillBound"/>）：放了之后下一轮补预占会把站原样还给它，
+/// 或者旅程以为自己还站在点上。没有旅程行的持有者（cs#389 的空闲返回只写用途占有与等待点预占）以用途占有为准：持有车在同一个
+/// <c>JourneyId</c> 上还占着，就是仍在途（#422 审查必修 1）。先把那趟旅程收尾（故障人工恢复入口），再来释放。
+/// </para>
+/// <para>
+/// <b>阻断的旅程只在车已占用这个站（<c>OCCUPIED</c>）时可以放</b>：清扫对阻断一律不放，那正是要人来判的情况。阻断在路上
+/// （<c>RESERVED</c>、这个站仍是未完成停靠）拒绝（<see cref="HolderJourneyBlockedOnApproach"/>）——修好后恢复，车会照原单开往
+/// 已经放给别的车的站；先用故障恢复入口的放弃出口把那趟旅程收尾。已完成的旅程可以放。
 /// </para>
 /// <para>
 /// <b>服务端在线时</b>（Host 接口）另读一次 RIoT：车在线且报在这个站上，与现场核实冲突，拒绝（<see cref="VehicleReportedAtStation"/>）。
@@ -74,6 +79,7 @@ public static class StationExclusivityManualRelease
     public const string KindNotReleasable = "STATION_KIND_NOT_RELEASABLE_HERE";
     public const string HolderMismatch = "HOLDER_VEHICLE_MISMATCH";
     public const string HolderJourneyStillBound = "HOLDER_JOURNEY_STILL_BOUND";
+    public const string HolderJourneyBlockedOnApproach = "HOLDER_JOURNEY_BLOCKED_ON_APPROACH";
     public const string VehicleReportedAtStation = "VEHICLE_REPORTED_AT_STATION";
     public const string HolderChanged = "HOLDER_CHANGED_SINCE_READ";
 
@@ -166,9 +172,9 @@ public static class StationExclusivityManualRelease
 
         string crossCheck = await CrossCheckAsync(vehicleFacts, held!, cancellationToken).ConfigureAwait(false);
         if (crossCheck == CrossCheckAtThisStation) codes.Add(VehicleReportedAtStation);
-        if (await IsJourneyStillBoundAsync(dbContext, held!, cancellationToken).ConfigureAwait(false))
+        if (await HolderBindingAsync(dbContext, held!, cancellationToken).ConfigureAwait(false) is { } binding)
         {
-            codes.Add(HolderJourneyStillBound);
+            codes.Add(binding);
         }
         if (codes.Count > 0)
         {
@@ -277,24 +283,47 @@ public static class StationExclusivityManualRelease
         };
     }
 
-    // The first half of the sweep's departure evidence, read the same way, except that a blocked journey does not keep the
-    // station here: a person deciding on site is what a blocked journey waits for.
-    private static async Task<bool> IsJourneyStillBoundAsync(
+    // The first half of the sweep's departure evidence, read the same way, with two differences (#422 review).
+    //
+    // No journey row is not "nothing holds it": an idle return (control-server#389) commits with a purpose claim and a
+    // WAITING_POINT reservation under one JourneyId and no JourneyRuntimes row. While the holder's claim on that JourneyId
+    // stands the vehicle is still on its way, so releasing would let a second vehicle into the point it is driving to.
+    //
+    // A blocked journey may be released only where it stands (OCCUPIED). Blocked on its way (RESERVED) with the station
+    // still an unfinished stop, it would drive on to it after a repair resumes it; that journey is taken out through the
+    // fault recovery entry's give-up action first.
+    private static async Task<string?> HolderBindingAsync(
         ControlServerDbContext dbContext, StationExclusivityRow held, CancellationToken cancellationToken)
     {
         JourneyRuntimeRow? journey = await dbContext.JourneyRuntimes.AsNoTracking()
             .SingleOrDefaultAsync(item => item.JourneyId == held.JourneyId, cancellationToken).ConfigureAwait(false);
-        if (journey is null || journey.Stage is JourneyRuntimeStage.Completed or JourneyRuntimeStage.Blocked)
+        if (journey is null)
         {
-            return false;
+            bool claimed = await dbContext.Set<VehiclePurposeClaimRow>().AsNoTracking()
+                .AnyAsync(claim => claim.VehicleKey == held.VehicleKey && claim.JourneyId == held.JourneyId, cancellationToken)
+                .ConfigureAwait(false);
+            return claimed ? HolderJourneyStillBound : null;
         }
-        return await dbContext.Set<JourneyStopRow>().AsNoTracking()
+        if (journey.Stage == JourneyRuntimeStage.Completed)
+        {
+            return null;
+        }
+        bool stillAhead = await dbContext.Set<JourneyStopRow>().AsNoTracking()
             .AnyAsync(stop => stop.JourneyId == held.JourneyId &&
                               stop.StationRiotId == held.StationId &&
                               stop.Status != JourneyStopStatuses.Completed &&
                               stop.Status != JourneyStopStatuses.Removed,
                 cancellationToken)
             .ConfigureAwait(false);
+        if (!stillAhead)
+        {
+            return null;
+        }
+        if (journey.Stage != JourneyRuntimeStage.Blocked)
+        {
+            return HolderJourneyStillBound;
+        }
+        return held.State == StationExclusivityStates.Occupied ? null : HolderJourneyBlockedOnApproach;
     }
 
     private static string? Trimmed(string? text) => string.IsNullOrWhiteSpace(text) ? null : text.Trim();

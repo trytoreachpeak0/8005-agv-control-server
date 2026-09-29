@@ -2,9 +2,13 @@ using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
 using ControlServer.Infrastructure.Persistence;
+using ControlServer.Host.Runtime.Faults;
+using ControlServer.Host.Runtime.Fleet;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -117,6 +121,41 @@ public sealed class StationExclusivityReleaseEndpointsTests
         AdministratorAuditRecordRow audit = await read.Set<AdministratorAuditRecordRow>()
             .SingleAsync(row => row.Action == StationExclusivityManualRelease.AuditAction, Token);
         Assert.Equal((body.AuditRecordId, GovernanceActionOutcome.Succeeded), (audit.AuditRecordId, audit.Outcome));
+    }
+
+    /// <summary>
+    /// 挂不挂由故障恢复的开关决定，经 Program 调用的同一个方法（#422 审查建议 3）：关着时两个入口都不在路由表里，开着时都在。
+    /// </summary>
+    [Theory]
+    [InlineData(null)]
+    [InlineData("false")]
+    [InlineData("true")]
+    public async Task TheEntryIsMappedOnlyWithTheFaultRecoverySwitchOn(string? enabled)
+    {
+        WebApplicationBuilder builder = WebApplication.CreateBuilder();
+        if (enabled is not null)
+        {
+            builder.Configuration[VehicleFaultRecoveryEndpoints.EnabledKey] = enabled;
+        }
+        // Registered so that the handlers' parameters read as services, never resolved: routing is all this looks at.
+        builder.Services.AddScoped<VehicleFaultRecoveryService>(_ => throw new InvalidOperationException("not resolved"));
+        builder.Services.AddScoped<VehicleRoster>(_ => throw new InvalidOperationException("not resolved"));
+        builder.Services.AddScoped<ControlServerDbContext>(_ => throw new InvalidOperationException("not resolved"));
+        builder.Services.AddScoped<IGovernanceAuditWriter>(_ => throw new InvalidOperationException("not resolved"));
+        builder.Services.AddSingleton(TimeProvider.System);
+        await using WebApplication app = builder.Build();
+
+        bool mapped = app.MapVehicleFaultRecoveryEntriesWhenEnabled();
+
+        string[] routes =
+        [
+            .. ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints).OfType<RouteEndpoint>()
+                .Select(endpoint => endpoint.RoutePattern.RawText!)
+        ];
+        bool on = enabled == "true";
+        Assert.Equal(on, mapped);
+        Assert.Equal(on, routes.Contains(StationExclusivityReleaseEndpoints.Route));
+        Assert.Equal(on, routes.Contains(VehicleFaultRecoveryEndpoints.Route));
     }
 
     // ---- helpers ------------------------------------------------------------------------------------------------

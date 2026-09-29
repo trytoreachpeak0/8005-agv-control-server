@@ -28,6 +28,9 @@ public sealed class StationExclusivityFieldOpsTests : IAsyncDisposable
 
     private static readonly DateTimeOffset At = Batch7JourneyFixture.Now;
 
+    /// <summary>A server address nothing answers on: the probe before a direct database write finds the server stopped.</summary>
+    private const string NobodyListens = "http://127.0.0.1:1/";
+
     private static readonly string FieldOps = typeof(StationExclusivityFieldOpsTests).Assembly
         .GetCustomAttributes<AssemblyMetadataAttribute>()
         .Single(attribute => attribute.Key == "ControlServer.FieldOps.Path").Value!;
@@ -43,7 +46,7 @@ public sealed class StationExclusivityFieldOpsTests : IAsyncDisposable
     {
         await SeedAsync();
 
-        (int exit, JsonElement output) = await RunAsync(null, [.. Arguments(), "--database", DatabasePath]);
+        (int exit, JsonElement output) = await RunAsync(null, [.. Arguments(), "--database", DatabasePath, "--probe-server", NobodyListens]);
 
         Assert.Equal(
             (0, "OK", "database", KeyA, "journey:a", StationExclusivityManualRelease.CrossCheckNotAvailable),
@@ -66,7 +69,7 @@ public sealed class StationExclusivityFieldOpsTests : IAsyncDisposable
         int index = Array.IndexOf(arguments, "--site-verification");
 
         (int exit, JsonElement output) = await RunAsync(
-            null, [.. arguments[..index], .. arguments[(index + 2)..], "--database", DatabasePath]);
+            null, [.. arguments[..index], .. arguments[(index + 2)..], "--database", DatabasePath, "--probe-server", NobodyListens]);
 
         Assert.Equal((1, "REJECTED"), (exit, output.GetProperty("outcome").GetString()));
         Assert.Equal(
@@ -81,10 +84,11 @@ public sealed class StationExclusivityFieldOpsTests : IAsyncDisposable
     [Theory]
     [InlineData("--map")]
     [InlineData("--station")]
-    public async Task AMissingStationIsAUsageError(string option)
+    [InlineData("--probe-server")]
+    public async Task AMissingStationOrServerProbeIsAUsageError(string option)
     {
         await SeedAsync();
-        string[] arguments = [.. Arguments(), "--database", DatabasePath];
+        string[] arguments = [.. Arguments(), "--database", DatabasePath, "--probe-server", NobodyListens];
         int index = Array.IndexOf(arguments, option);
 
         (int exit, _) = await RunAsync(null, [.. arguments[..index], .. arguments[(index + 2)..]]);
@@ -133,6 +137,29 @@ public sealed class StationExclusivityFieldOpsTests : IAsyncDisposable
         {
             Environment.SetEnvironmentVariable(variable, null);
         }
+    }
+
+    /// <summary>
+    /// 服务端其实在跑，操作员却给了 <c>--database</c>（#422 审查建议 2）：先探服务端，它应答了（哪怕是 404）就拒绝，<c>SERVER_RUNNING</c>、
+    /// 退出码 1，一行不写、不写审计——在线时要走 <c>--server</c>，那条路有 RIoT 交叉核对。
+    /// </summary>
+    [Fact]
+    public async Task WithTheServerRunningADirectDatabaseWriteIsRefused()
+    {
+        await SeedAsync();
+        string variable = "CONTROL_SERVER_TEST_" + Guid.NewGuid().ToString("N");
+        await using WebApplication app = await StartServerAsync(variable);
+        string address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
+
+        (int exit, JsonElement output) = await RunAsync(
+            null, [.. Arguments(), "--database", DatabasePath, "--probe-server", address]);
+        await app.StopAsync(Token);
+
+        Assert.Equal((1, "SERVER_RUNNING"), (exit, output.GetProperty("outcome").GetString()));
+        await using ControlServerDbContext read = Open();
+        Assert.Single(await read.Set<StationExclusivityRow>().ToArrayAsync(Token));
+        Assert.Equal(
+            0, await read.Set<AdministratorAuditRecordRow>().CountAsync(row => row.Action == StationExclusivityManualRelease.AuditAction, Token));
     }
 
     /// <summary>服务端没应答：<c>UNAVAILABLE</c>，退出码 1，提示改用 <c>--database</c>。</summary>

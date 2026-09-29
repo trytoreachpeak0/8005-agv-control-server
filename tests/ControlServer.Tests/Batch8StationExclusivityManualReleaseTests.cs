@@ -229,9 +229,11 @@ public sealed class Batch8StationExclusivityManualReleaseTests
         await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
         await SeedFinishedHolderAtGateAsync(fixture);
         StationExclusivityStore store = new(fixture.NewContext());
+        // An idle return that has ended: no journey row and no purpose claim on its JourneyId any more, so nothing binds it
+        // (the shape still being driven to is AnIdleReturnStillClaimingItsVehicleKeepsItsWaitingPoint).
         await store.TryAcquireAsync(
             new StationExclusivityRequest(25, WaitingPoint, StationExclusivityKinds.WaitingPoint, StationExclusivityStates.Occupied, 1),
-            KeyA, "journey:idle-a", At, Token);
+            KeyA, "idle-return:ended-a", At, Token);
         await store.TryAcquireAsync(
             new StationExclusivityRequest(25, 210, StationExclusivityKinds.FixedTaskStation, StationExclusivityStates.Occupied, null),
             KeyB, "journey:b", At, Token);
@@ -260,10 +262,11 @@ public sealed class Batch8StationExclusivityManualReleaseTests
     // ---- 持有旅程仍在途、RIoT 说车在站上 --------------------------------------------------------------------------
 
     /// <summary>
-    /// A 的旅程还在途、关卡仍是它未完成的下一站：拒绝（放了下一轮补预占就还给它）。那趟旅程阻断之后——清扫对阻断一律不放、等人判——可以放。
+    /// A 的旅程还在途、关卡仍是它未完成的下一站、站是预占（车在路上）：拒绝，放了下一轮补预占就还给它。阻断之后仍拒（#422 审查建议 1）：
+    /// 修好恢复后车会照原单开往已经放给别的车的关卡，要先用故障恢复的放弃出口收尾。旅程收尾（完成）之后可以放。
     /// </summary>
     [Fact]
-    public async Task AHolderWhoseLiveJourneyStillHasTheStationAheadIsRefusedUntilThatJourneyIsBlocked()
+    public async Task AHolderOnItsWayIsRefusedLiveOrBlockedAndReleasedOnceItsJourneyIsOver()
     {
         await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
         await SeedApproachingAsync(fixture, DemandA, AgvA, KeyA);
@@ -276,7 +279,66 @@ public sealed class Batch8StationExclusivityManualReleaseTests
             (await ReleaseAsync(fixture.NewContext(), null, Request())).Codes);
 
         await SetStageAsync(fixture, DemandA, JourneyRuntimeStage.Blocked);
+        Assert.Equal(
+            [StationExclusivityManualRelease.HolderJourneyBlockedOnApproach],
+            (await ReleaseAsync(fixture.NewContext(), null, Request())).Codes);
+        Assert.Equal(HolderA, (await HeldAtAsync(fixture, Gate))!.JourneyId);
+
+        await SetStageAsync(fixture, DemandA, JourneyRuntimeStage.Completed);
         Assert.True((await ReleaseAsync(fixture.NewContext(), null, Request())).Released);
+    }
+
+    /// <summary>
+    /// 阻断在站上（站为占用、关卡仍是未完成停靠）：清扫一律不放，等人判——现场核实车已不在，人工可以放。
+    /// </summary>
+    [Fact]
+    public async Task AHolderBlockedWhereItStandsIsReleasedOnTheSiteCheck()
+    {
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        await SeedApproachingAsync(fixture, DemandA, AgvA, KeyA);
+        await new StationExclusivityStore(fixture.NewContext()).TryAcquireAsync(
+            new StationExclusivityRequest(25, Gate, StationExclusivityKinds.FixedTaskStation, StationExclusivityStates.Occupied, null),
+            KeyA, HolderA, At, Token);
+        await SetStageAsync(fixture, DemandA, JourneyRuntimeStage.Blocked);
+
+        StationExclusivityManualReleaseResult result = await ReleaseAsync(fixture.NewContext(), null, Request());
+
+        Assert.True(result.Released, string.Join(',', result.Codes));
+        Assert.Null(await HeldAtAsync(fixture, Gate));
+    }
+
+    /// <summary>
+    /// cs#389 的空闲返回（#422 审查必修 1）：承诺只写用途占有 <c>IDLE_RETURN</c> 与等待点预占，同一个 <c>JourneyId</c>，不建旅程行。
+    /// 车在去等待点的路上离线，现场核实「车不在点上」为真——照样拒：放给别的车之后原车重连会照原单开来，两车同点。用途占有释放之后可以放。
+    /// </summary>
+    [Fact]
+    public async Task AnIdleReturnStillClaimingItsVehicleKeepsItsWaitingPoint()
+    {
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        const string idleReturn = "idle-return:KEY-A:1";
+        await new StationExclusivityStore(fixture.NewContext()).TryAcquireAsync(
+            new StationExclusivityRequest(25, WaitingPoint, StationExclusivityKinds.WaitingPoint, StationExclusivityStates.Reserved, 1),
+            KeyA, idleReturn, At, Token);
+        await using (ControlServerDbContext write = fixture.NewContext())
+        {
+            write.Add(new VehiclePurposeClaimRow
+            {
+                VehicleKey = KeyA, Purpose = VehiclePurposes.IdleReturn, JourneyId = idleReturn, ClaimedAt = At
+            });
+            await write.SaveChangesAsync(Token);
+        }
+        StationExclusivityManualReleaseRequest request = Request() with { StationId = WaitingPoint };
+
+        Assert.Equal(
+            [StationExclusivityManualRelease.HolderJourneyStillBound],
+            (await ReleaseAsync(fixture.NewContext(), new Facts(Seen(connected: false, station: null)), request)).Codes);
+        Assert.Equal(idleReturn, (await HeldAtAsync(fixture, WaitingPoint))!.JourneyId);
+
+        await using (ControlServerDbContext write = fixture.NewContext())
+        {
+            await write.Set<VehiclePurposeClaimRow>().Where(row => row.VehicleKey == KeyA).ExecuteDeleteAsync(Token);
+        }
+        Assert.True((await ReleaseAsync(fixture.NewContext(), null, request)).Released);
     }
 
     /// <summary>

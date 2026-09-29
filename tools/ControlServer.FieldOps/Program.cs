@@ -720,7 +720,7 @@ internal static partial class Program
             + "|export-audit|check-binding-snapshots|import-area-assignments|area-assignments"
             + "|activate-task-type-stations|rollback-task-type-stations|reconcile-task-type-stations"
             + "|release-task-type-station-hold|accept-map-name|close-task-type-station-activation|task-type-stations"
-            + "|import-dispatch-zone-parameters|dispatch-zone-parameters>"
+            + "|import-dispatch-zone-parameters|dispatch-zone-parameters|release-station-exclusivity>"
             + " --database <path> [options]");
         Console.Error.WriteLine("  verify      --record <field-record.json>");
         Console.Error.WriteLine("  release     --agv <agvId> --model <slotModelVersionId>");
@@ -750,6 +750,13 @@ internal static partial class Program
         Console.Error.WriteLine("  task-type-stations      --map <id>   read-only");
         Console.Error.WriteLine("  import-dispatch-zone-parameters --input <zone-parameters.csv> [--dry-run]");
         Console.Error.WriteLine("  dispatch-zone-parameters        [--version <n>]   read-only");
+        Console.Error.WriteLine(
+            "  release-station-exclusivity --map <id> --station <id> --vehicle-key <VehicleKey> --operator <id>"
+            + " --reason <text> --site-verification <ref> [--role <text>]");
+        Console.Error.WriteLine(
+            "      server running: --server <base url> [--credential-env <variable>]   (no --database; goes through the server)");
+        Console.Error.WriteLine(
+            "      server stopped: --database <path> --probe-server <base url>   (refused if the server answers)");
         Console.Error.WriteLine();
         Console.Error.WriteLine(
             "import-area-assignments takes a UTF-8 CSV whose header is exactly"

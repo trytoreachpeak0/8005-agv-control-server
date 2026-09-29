@@ -19,6 +19,11 @@ namespace ControlServer.FieldOps;
 /// 同刻只有一方生效。
 /// </para>
 /// <para>
+/// <b>直接写库之前先探一次服务端</b>（#422 审查）：<c>--database</c> 必须同时给 <c>--probe-server &lt;基址&gt;</c>，本工具对它的
+/// <c>/health/live</c> 发一次请求；得到任何 HTTP 应答（服务端在跑）就拒绝（<c>SERVER_RUNNING</c>），一行不写，提示改用
+/// <c>--server</c>——在线时要走 Host 那条有 RIoT 交叉核对的路。连不上才对库执行。
+/// </para>
+/// <para>
 /// 必填：<c>--map</c>、<c>--station</c>、<c>--vehicle-key</c>（持有车的 RIoT <c>VehicleKey</c>）、<c>--operator</c>、<c>--reason</c>、
 /// <c>--site-verification</c>（现场核实「车不在站上」的记录引用）；<c>--role</c> 可选、照录。缺操作员、理由或核实记录不是用法错误，
 /// 是拒绝理由，照样写审计。
@@ -31,8 +36,11 @@ internal static partial class Program
     private const string DefaultCredentialVariable = "CONTROL_SERVER_FAULT_RECOVERY_CREDENTIAL";
 
     private const string ReleaseStationExclusivityUsage =
-        ReleaseStationExclusivityCommand + " needs --map <id> --station <id> and either --database <file> (server stopped) or "
-        + "--server <base url> (server running), with --vehicle-key --operator --reason --site-verification";
+        ReleaseStationExclusivityCommand + " needs --map <id> --station <id> and either --server <base url> (server running) or "
+        + "--database <file> --probe-server <base url> (server stopped), with --vehicle-key --operator --reason --site-verification";
+
+    /// <summary>探测服务端是否在跑的超时：连不上的地址在这之内就会失败，在跑的服务端在这之内一定应答。</summary>
+    private static readonly TimeSpan ServerProbeTimeout = TimeSpan.FromSeconds(5);
 
     private static async Task<int> ReleaseStationExclusivityAsync(
         ControlServerDbContext context,
@@ -40,9 +48,28 @@ internal static partial class Program
         Dictionary<string, string> options,
         DateTimeOffset now)
     {
-        if (!TryReadStation(options, out int mapId, out int stationId))
+        if (!TryReadStation(options, out int mapId, out int stationId) ||
+            !options.TryGetValue("probe-server", out string? probeText) ||
+            !Uri.TryCreate(probeText, UriKind.Absolute, out Uri? probe))
         {
             return Usage(ReleaseStationExclusivityUsage);
+        }
+        if (await ServerAnswersAsync(probe) is int status)
+        {
+            return Emit(
+                new
+                {
+                    command = ReleaseStationExclusivityCommand,
+                    outcome = "SERVER_RUNNING",
+                    via = "database",
+                    mapId,
+                    stationId,
+                    probeServer = probe.ToString(),
+                    probeHttpStatus = status,
+                    detail = "The server answered, so it is running: nothing was written. Run the verb with --server instead, "
+                        + "which goes through the server and checks RIoT."
+                },
+                1);
         }
 
         StationExclusivityManualReleaseResult result = await StationExclusivityManualRelease.ReleaseAsync(
@@ -157,6 +184,21 @@ internal static partial class Program
                     detail = status is 200 or 409 ? null : Read(body, "title") ?? (object)text
                 },
                 outcome == "OK" ? 0 : 1);
+        }
+    }
+
+    /// <summary>服务端对 <c>/health/live</c> 应答了就返回状态码（任何状态码都说明它在跑）；连不上、超时返回空。</summary>
+    private static async Task<int?> ServerAnswersAsync(Uri server)
+    {
+        using HttpClient client = new() { BaseAddress = server, Timeout = ServerProbeTimeout };
+        try
+        {
+            using HttpResponseMessage response = await client.GetAsync("health/live");
+            return (int)response.StatusCode;
+        }
+        catch (Exception unreachable) when (unreachable is HttpRequestException or TaskCanceledException)
+        {
+            return null;
         }
     }
 
