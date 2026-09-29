@@ -316,21 +316,7 @@ public sealed class AreaEndAdmissionStoreTests
             Token);
         fixture.Context.ChangeTracker.Clear();
 
-        // RED-ONLY: the old signature takes the journey row, whose anchor is A; it is the only way it can be asked about B.
-        bool admitted = await store.IsTaskTypeAllowedAtAreaEndAsync(
-            new JourneyRuntimeRow
-            {
-                JourneyId = "J-1", DemandId = DemandA, AgvId = "AGV-1", VehicleKey = "VEHICLE-1", MapIdentity = "MAP-25",
-                DispatchZone = "ZONE-1", RouteEvidenceId = "ROUTE-1", PickupStationId = "N1-1", GateStationId = "GATE-1",
-                TargetSlotsJson = "[1]", OperationSessionId = "SESSION-J-1", PickupMovementLegId = "L1", PickupUpperId = "U1",
-                GateMovementLegId = "L2", GateUpperId = "U2", VehicleBusinessMessageId = "M1", WorklistMessageId = "M2",
-                PlanMessageId = "M3", SublotRequestMessageId = "M4", LoadCommandMessageId = "M5",
-                LoadSlotOperationAttemptId = "ATTEMPT-A-LOAD", PreDepartureSafetyCheckMessageId = "M6",
-                PreDepartureSafetyCheckId = "S1", GateVehicleBusinessMessageId = "M7", GateWorklistMessageId = "M8",
-                GatePlanMessageId = "M9", UnloadCommandMessageId = "M10", UnloadSlotOperationAttemptId = "ATTEMPT-A-UNLOAD"
-            },
-            TransportTaskTypes.WireToGate,
-            Token);
+        bool admitted = await store.IsTaskTypeAllowedAtAreaEndAsync(DemandB, TransportTaskTypes.WireToGate, Token);
 
         Assert.Equal(expected, admitted);
     }

@@ -1771,29 +1771,54 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
     }
 
     /// <summary>
-    /// Whether the task type is admitted at the journey's AREA machine station: its pickup when the machine is where
-    /// it loads, its drop-off when the machine is where it unloads (<see cref="AreaEndOperationAsync"/>). A journey
-    /// whose direction cannot be read is not admitted.
+    /// Whether the task type is admitted at the demand's AREA machine station: the station of the stop it loads at when the
+    /// machine is where it loads, of the stop it unloads at when the machine is where it unloads
+    /// (<see cref="AreaEndOperationAsync"/>). A demand whose direction cannot be read, or that no journey carries, is not
+    /// admitted.
     /// </summary>
+    /// <remarks>
+    /// Asked of the demand, not of the journey (control-server#251): the journey row's <c>DemandId</c>,
+    /// <c>PickupStationId</c> and <c>GateStationId</c> are the anchor demand's, and in a journey of several stops a further
+    /// demand is loaded or unloaded somewhere else, under a rule version of its own. The station comes from
+    /// <see cref="StopStationIds"/>, the one derivation <see cref="PrepareSlotOperationAsync"/> checks against too.
+    /// </remarks>
     public async Task<bool> IsTaskTypeAllowedAtAreaEndAsync(
-        JourneyRuntimeRow runtime,
+        string demandId,
         string taskType,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(runtime);
-        return await AreaEndOperationAsync(runtime.DemandId, taskType, cancellationToken).ConfigureAwait(false) switch
+        ArgumentException.ThrowIfNullOrWhiteSpace(demandId);
+        if (await AreaEndOperationAsync(demandId, taskType, cancellationToken).ConfigureAwait(false)
+            is not { } areaEnd)
         {
-            SlotOperationType.Load => await IsTaskTypeAllowedAsync(runtime.PickupStationId, taskType, cancellationToken)
-                .ConfigureAwait(false),
-            SlotOperationType.Unload => await IsTaskTypeAllowedAsync(runtime.GateStationId, taskType, cancellationToken)
-                .ConfigureAwait(false),
-            _ => false,
-        };
+            return false;
+        }
+        string? stationId = await StopStationIds(
+                dbContext.Set<JourneyDemandRow>().Where(row => row.DemandId == demandId && row.RemovedAt == null),
+                areaEnd)
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        return stationId is not null &&
+               await IsTaskTypeAllowedAsync(stationId, taskType, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
-    /// The station of the stop a slot operation is performed at: the pickup stop of the demand's membership for its load, the
-    /// unload stop for its unload. <c>null</c> when no membership names this operation's attempt.
+    /// "Which station is this": the station of the stop each of <paramref name="memberships"/> performs
+    /// <paramref name="operationType"/> at -- its pickup stop for the load, its unload stop for the unload. The one place
+    /// that maps a demand's operation to a station (control-server#251); callers choose which memberships.
+    /// </summary>
+    private IQueryable<string> StopStationIds(IQueryable<JourneyDemandRow> memberships, SlotOperationType operationType)
+    {
+        IQueryable<string> stopIds = operationType == SlotOperationType.Load
+            ? memberships.Select(row => row.PickupStopId)
+            : memberships.Select(row => row.UnloadStopId);
+        return dbContext.Set<JourneyStopRow>().AsNoTracking()
+            .Where(stop => stopIds.Contains(stop.StopId))
+            .Select(stop => stop.StationId);
+    }
+
+    /// <summary>
+    /// The station of the stop a slot operation is performed at (<see cref="StopStationIds"/>), <c>null</c> when no membership
+    /// names this operation's attempt.
     /// </summary>
     /// <remarks>
     /// The membership is found by the operation's own attempt id, not by "the membership in force": the attempt id is what
@@ -1803,16 +1828,12 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
     /// </remarks>
     private async Task<string?> OperationStopStationIdAsync(StationOperationPlan plan, CancellationToken cancellationToken)
     {
-        IQueryable<JourneyDemandRow> memberships = dbContext.Set<JourneyDemandRow>().AsNoTracking()
+        IQueryable<JourneyDemandRow> memberships = dbContext.Set<JourneyDemandRow>()
             .Where(row => row.DemandId == plan.DemandId);
-        IQueryable<string> stopIds = plan.OperationType == SlotOperationType.Load
+        memberships = plan.OperationType == SlotOperationType.Load
             ? memberships.Where(row => row.LoadSlotOperationAttemptId == plan.SlotOperationAttemptId)
-                .Select(row => row.PickupStopId)
-            : memberships.Where(row => row.UnloadSlotOperationAttemptId == plan.SlotOperationAttemptId)
-                .Select(row => row.UnloadStopId);
-        return await dbContext.Set<JourneyStopRow>().AsNoTracking()
-            .Where(stop => stopIds.Contains(stop.StopId))
-            .Select(stop => stop.StationId)
+            : memberships.Where(row => row.UnloadSlotOperationAttemptId == plan.SlotOperationAttemptId);
+        return await StopStationIds(memberships, plan.OperationType)
             .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
     }
 
