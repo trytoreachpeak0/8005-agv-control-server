@@ -217,7 +217,7 @@ $assertions.Add(
     "$($operation.Status) / $(if ($demandRows.Count -eq 1) { $demandRows[0].Status } else { '(no demand)' }) / $($ended.Stage) / $($ended.BlockReasonCode)")
 
 # 下面这些与旅程转 Completed 是同一次提交（写事务里暂存、一次保存），所以等到阶段之后读是安全的。
-$leaseRows = Invoke-L2Query -Connection $connection -Sql "SELECT r.ReleasedAt FROM VehiclePurposeClaimRecords AS r JOIN JourneyDemands AS d ON d.JourneyId = r.JourneyId WHERE d.DemandId = '$($demands[0].Id)'"
+$leaseRows = Invoke-L2Query -Connection $connection -Sql "SELECT r.ReleasedAt FROM VehiclePurposeClaimRecords AS r JOIN JourneyDemands AS d ON d.JourneyId = r.JourneyId WHERE d.DemandId = '$($demands[0].Id)' ORDER BY r.AcquiredAt DESC LIMIT 1"
 # control-server#387：租约与订单占用退役，车辆占用只剩用途占有；「放了」读它的记录与占有行。
 $claimsHeld = Get-Count "SELECT COUNT(*) AS Total FROM VehiclePurposeClaims AS c JOIN JourneyDemands AS d ON d.JourneyId = c.JourneyId WHERE d.DemandId = '$($demands[0].Id)'"
 $loadCommand = Invoke-L2Query -Connection $connection `
@@ -294,7 +294,7 @@ $alarmed = Wait-L2Condition -Description 'the stop past its deadline with a door
 $alarmSince = ConvertTo-Instant $alarmed.BlockReasonSince
 $operation = Get-Operation $demands[1].Id
 $demandRows = Invoke-L2Query -Connection $connection -Sql "SELECT Status FROM AcceptedDemands WHERE DemandId = '$($demands[1].Id)'"
-$leaseRows = Invoke-L2Query -Connection $connection -Sql "SELECT r.ReleasedAt FROM VehiclePurposeClaimRecords AS r JOIN JourneyDemands AS d ON d.JourneyId = r.JourneyId WHERE d.DemandId = '$($demands[1].Id)'"
+$leaseRows = Invoke-L2Query -Connection $connection -Sql "SELECT r.ReleasedAt FROM VehiclePurposeClaimRecords AS r JOIN JourneyDemands AS d ON d.JourneyId = r.JourneyId WHERE d.DemandId = '$($demands[1].Id)' ORDER BY r.AcquiredAt DESC LIMIT 1"
 $assertions.Add(
     'L2-LD-09', '告警挂上：stage 仍是 AwaitingLoadResult（不是 Blocked）、开始时间不早于期限、需求与用途占有记录都没动',
     ([string]$alarmed.Stage -eq 'AwaitingLoadResult' -and $null -ne $alarmSince -and $alarmSince -ge $b.Deadline -and

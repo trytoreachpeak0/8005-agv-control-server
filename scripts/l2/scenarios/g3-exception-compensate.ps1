@@ -118,7 +118,7 @@ $workflowState = Get-G3Scalar $connection "SELECT State AS Value FROM RecoveryWo
 $demandStatus = Get-G3Scalar $connection "SELECT Status AS Value FROM AcceptedDemands WHERE DemandId = '$demandId'"
 $loadStatus = Get-G3Scalar $connection "SELECT Status AS Value FROM StationOperations WHERE SlotOperationAttemptId = '$attemptId'"
 $journey = "$(Get-G3Scalar $connection "SELECT Stage AS Value FROM JourneyRuntimes WHERE DemandId = '$demandId'")/$(Get-G3Scalar $connection "SELECT BlockReasonCode AS Value FROM JourneyRuntimes WHERE DemandId = '$demandId'")"
-$released = Test-G3Present (Get-G3Scalar $connection "SELECT r.ReleasedAt AS Value FROM VehiclePurposeClaimRecords AS r JOIN JourneyDemands AS d ON d.JourneyId = r.JourneyId WHERE d.DemandId = '$demandId'")
+$released = Test-G3Present (Get-G3Scalar $connection "SELECT r.ReleasedAt AS Value FROM VehiclePurposeClaimRecords AS r JOIN JourneyDemands AS d ON d.JourneyId = r.JourneyId WHERE d.DemandId = '$demandId' ORDER BY r.AcquiredAt DESC LIMIT 1")
 $toGate = Get-G3Count $connection "SELECT COUNT(*) AS Total FROM OrderIntents WHERE DemandId = '$demandId' AND Purpose = 'TO_GATE'"
 $sessionState = if (Test-G3Present $sessionId) { Get-G3Scalar $connection "SELECT State AS Value FROM ExceptionRecoverySessions WHERE ExceptionRecoverySessionId = '$sessionId'" } else { '(none)' }
 $orders = @($riot.Snapshot().body.orders).Count

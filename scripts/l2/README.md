@@ -416,7 +416,7 @@ DispatchZoneParameters = @{
 - **L2 预置不走正式导入**：辅助模块 `L2DispatchZoneParameters.psm1` 直写服务端库，版本号取当前最大 + 1，版本行 `Source = 'L2_PRESET'`、
   `SnapshotId` 为空，不经治理快照与业务审计。正式导入的动词与它的证据归批次7-11（control-server#216）的场景；它合入之后 L2 是否改走
   FieldOps 由它决定。写入的内容留在 `snapshots/preseed-dispatch-zone-parameters.json`，判据 `preseed:dispatch-zone-parameters` 进
-  `timeline.jsonl`；收尾快照多了 `db-DispatchZoneParameterVersions.json`、`db-DispatchZoneParameters.json` 与 `db-VehiclePurposeClaims.json`。
+  `timeline.jsonl`；收尾快照多了 `db-DispatchZoneParameterVersions.json`、`db-DispatchZoneParameters.json` 与 `db-VehiclePurposeClaims.json`（control-server#387 起另有 `db-VehiclePurposeClaimRecords.json`）。
 - 预期服务端启动即拒绝的场景（`ExpectedStartupRefusal`）没有库可写，同时给 `DispatchZoneParameters` 直接报错。
 
 ### 批次 4 的辅助模块：`L2SlotGroups.psm1`

@@ -196,7 +196,7 @@ $assertions.Add(
     ($demandRows.Count -eq 1 -and [string]$demandRows[0].Status -eq 'Cancelled'),
     'Cancelled', $(if ($demandRows.Count -eq 1) { [string]$demandRows[0].Status } else { '(no demand row)' }))
 
-$leaseRows = Invoke-L2Query -Connection $connection -Sql "SELECT r.ReleasedAt FROM VehiclePurposeClaimRecords AS r JOIN JourneyDemands AS d ON d.JourneyId = r.JourneyId WHERE d.DemandId = '$firstId'"
+$leaseRows = Invoke-L2Query -Connection $connection -Sql "SELECT r.ReleasedAt FROM VehiclePurposeClaimRecords AS r JOIN JourneyDemands AS d ON d.JourneyId = r.JourneyId WHERE d.DemandId = '$firstId' ORDER BY r.AcquiredAt DESC LIMIT 1"
 # control-server#387：租约与订单占用退役，车辆占用只剩用途占有；「放了」读它的记录与占有行。
 $claimsHeld = Get-Count "SELECT COUNT(*) AS Total FROM VehiclePurposeClaims AS c JOIN JourneyDemands AS d ON d.JourneyId = c.JourneyId WHERE d.DemandId = '$firstId'"
 $assertions.Add(

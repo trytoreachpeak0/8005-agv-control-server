@@ -215,7 +215,7 @@ $assertions.Add(
     'L2-DC-09', "目标仓 $slotNo 空着、门关、锁上、开锁输出复位",
     ($finalPhysical -eq 'CLOSED/EMPTY/1/0'), 'CLOSED/EMPTY/1/0', $finalPhysical)
 
-$lease = Get-Scalar "SELECT r.ReleasedAt AS Value FROM VehiclePurposeClaimRecords AS r JOIN JourneyDemands AS d ON d.JourneyId = r.JourneyId WHERE d.DemandId = '$demandId'"
+$lease = Get-Scalar "SELECT r.ReleasedAt AS Value FROM VehiclePurposeClaimRecords AS r JOIN JourneyDemands AS d ON d.JourneyId = r.JourneyId WHERE d.DemandId = '$demandId' ORDER BY r.AcquiredAt DESC LIMIT 1"
 # control-server#387：租约与订单占用退役，车辆占用只剩用途占有；「放了」读它的记录（上一行）与占有行（这一行）。
 $claimsHeld = Get-Count "SELECT COUNT(*) AS Total FROM VehiclePurposeClaims AS c JOIN JourneyDemands AS d ON d.JourneyId = c.JourneyId WHERE d.DemandId = '$demandId'"
 $toGate = Get-Count "SELECT COUNT(*) AS Total FROM OrderIntents WHERE DemandId = '$demandId' AND Purpose = 'TO_GATE'"

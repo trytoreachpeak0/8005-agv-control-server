@@ -68,7 +68,7 @@
 24. `preparedAttemptAcceptsItsFirstResult`：由合成对端报 `COMPLETED`，没有车载端，也不是 ALL_EMPTY 证空，向量车载端那一半（`UNLOAD_AUTHORIZED_SLOTS_ONLY`、`REPORT_FINAL_PHYSICAL_STATE`）没有覆盖到。→ **keep FP-IS-04**，注明只覆盖服务端一半。
 25. `resultFromASupersededSessionGenerationIsRefused`：对的是 `CV-SESSION-RECONNECT-DURING-RECOVERY` 的 `SUPERSEDE_STALE_SESSION_GENERATION`，这个向量 FP-IS-00 与 FP-IS-05 共用。→ **keep FP-IS-05**。
 26. `controlServerHostProcessWasActuallyReplaced`：只证明重启真的发生了，是前提，不是证据。→ **make run-wide**。
-27. `acceptedDemandSurvivesTheHostRestart`、`vehicleDispatchLeaseSurvivesTheHostRestart`：FP-IS-05 的两个向量讲的是车载端离线安全收尾与重连，不涉及服务端进程重启后的持久性，其他切片也没有这样的向量。→ 由 FP-IS-05 负责人决定；默认 **keep FP-IS-05**，并注明「无向量对应、范围外补充证据」。
+27. `acceptedDemandSurvivesTheHostRestart`、`vehicleClaimRecordSurvivesTheHostRestart`（control-server#387 改名，原为租约那一条）：FP-IS-05 的两个向量讲的是车载端离线安全收尾与重连，不涉及服务端进程重启后的持久性，其他切片也没有这样的向量。→ 由 FP-IS-05 负责人决定；默认 **keep FP-IS-05**，并注明「无向量对应、范围外补充证据」。
 
 **journey**
 
@@ -155,7 +155,7 @@
 | runner | 断言名 | 当前归属切片 | 依据向量 | 核实到的检查内容 | 疑点 |
 | --- | --- | --- | --- | --- | --- |
 | demand | `protocolAndBuildIdentityBoundToTheSharedBinding` | 运行级 | 运行级前提，不对应向量 | `/version` 的 protocolCommit 等于绑定值、tag 为 `protocol-v1.0.0`，probe 报的 serverBuildCommit 等于绑定值，现场库已读到 | |
-| demand | `noMovementOrExternalSideEffects` | 运行级 | 运行级前提，不对应向量 | OrderIntents、RiotDispatchAuditEvents、AcceptedDemands、VehicleDispatchLeases、StationOperations 的计数与基线相同 | |
+| demand | `noMovementOrExternalSideEffects` | 运行级 | 运行级前提，不对应向量 | OrderIntents、RiotDispatchAuditEvents、AcceptedDemands、StationOperations 的计数与基线相同，VehiclePurposeClaimRecords 的计数与第一次启动（迁移回填）之后相同（control-server#387 前这一项是租约表、比基线） | |
 | demand | `listenersReleased` | 运行级 | 运行级前提，不对应向量 | 结束后控制端口与健康端口都没有监听 | |
 | demand | `secretScan` | 运行级 | 运行级前提，不对应向量 | 证据里没有凭据明文 | |
 | demand | `riotPreCreateReconciliationObservesUnknownOnEveryLeg` | FP-IS-04 | FP-IS-04 内没有；内容对 FP-IS-01 `CV-DEMAND-ACCEPT-TO-PICKUP`（`EXACTLY_ONE_RIOT_ORDER`） | 从**恢复出来的现场库**（服务端启动前）读审计行：每段都有 PRE_CREATE_RECONCILIATION/UNKNOWN、eligibilityBasis 正确、sequence 为 1 | 疑点 19：归错切片，且判的是历史构建 |
@@ -172,7 +172,7 @@
 | demand | `resultFromASupersededSessionGenerationIsRefused` | FP-IS-05 | `CV-SESSION-RECONNECT-DURING-RECOVERY`（`SUPERSEDE_STALE_SESSION_GENERATION`） | 带旧代次的结果被拒并断开 | 疑点 25：这个向量 FP-IS-00 也有 |
 | demand | `controlServerHostProcessWasActuallyReplaced` | FP-IS-05 | 没有向量对应（只是前提） | 两次宿主进程 ID 不同，第一个在重启前已退出 | 疑点 26：应改为运行级 |
 | demand | `acceptedDemandSurvivesTheHostRestart` | FP-IS-05 | FP-IS-05 两个向量都不涉及服务端进程重启 | 库文件相同，AcceptedDemands 行在重启前后逐列保留 | 疑点 27：没有向量对应 |
-| demand | `vehicleClaimRecordSurvivesTheHostRestart`（control-server#387 之前名为 `vehicleDispatchLeaseSurvivesTheHostRestart`） | FP-IS-05 | 同上 | 用途占有记录（`VehiclePurposeClaimRecords`，control-server#387 退役租约表后取代它）在重启前后逐列保留 | 疑点 27 |
+| demand | `vehicleClaimRecordSurvivesTheHostRestart`（control-server#387 之前是租约那一条，改名见该 PR） | FP-IS-05 | 同上 | 用途占有记录（`VehiclePurposeClaimRecords`，control-server#387 退役租约表后取代它）在重启前后逐列保留 | 疑点 27 |
 | demand | `restartedHostServesTheSameStore` | FP-IS-05 | `CV-SESSION-RECONNECT-DURING-RECOVERY`（代次在旧库基础上继续） | 重启后握手的代次等于旧库代次加一，build 与 protocol 都等于绑定值 | |
 
 ### journey（`run-journey-g3.ps1`）

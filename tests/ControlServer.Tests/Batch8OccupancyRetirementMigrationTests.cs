@@ -107,6 +107,23 @@ public sealed class Batch8OccupancyRetirementMigrationTests
     }
 
     /// <summary>
+    /// 开着的租约只能由<b>同车且同旅程</b>的占有行开脱（审查必修 1）：占有行是这辆车别的旅程的，或者租约上的车与占有行的车不同，
+    /// 都照样拒绝。变异 A（去掉车的条件）与 A2（去掉旅程的条件）各让其中一格变绿。
+    /// </summary>
+    [Theory]
+    [InlineData("UPDATE VehiclePurposeClaims SET JourneyId = 'journey:OTHER' WHERE JourneyId = 'journey:D-2'",
+        "VehicleDispatchLeases unreleased: DemandId=D-2 JourneyId=journey:D-2 VehicleKey=VK-02")]
+    [InlineData("UPDATE VehicleDispatchLeases SET VehicleKey = 'VK-09' WHERE JourneyId = 'journey:D-2'",
+        "VehicleDispatchLeases unreleased: DemandId=D-2 JourneyId=journey:D-2 VehicleKey=VK-09")]
+    public async Task AnUnreleasedLeaseIsExcusedOnlyByAClaimOfTheSameVehicleForTheSameJourney(string mismatch, string named)
+    {
+        await using Batch7JourneyFixture fixture = await SeededAsync();
+        await ExecuteAsync(fixture.Connection, mismatch);
+
+        await AssertRefusedAsync(fixture, [named]);
+    }
+
+    /// <summary>
     /// 订单占用只能由<b>同一辆车</b>上的旅程开脱（调度 09-29 批时加）：单上的车与旅程的车不一致时，旅程在不在途都不算它的，
     /// 照样拒绝。
     /// </summary>
@@ -165,10 +182,14 @@ public sealed class Batch8OccupancyRetirementMigrationTests
     }
 
     /// <summary>
-    /// 调度在 control-server#387 票面要求的第一格：升级时在途 → 升级 → 经引擎路径结束 → 同一辆车能经账本再认领。
+    /// 调度在 control-server#387 票面要求的第一格：升级时在途 → 升级 → 经卸货结束 → 同一辆车能经账本再认领。
     /// </summary>
+    /// <remarks>
+    /// 结束走的是存储层的卸货入口 <c>WireToGateStore.CompleteDemandAfterUnloadAsync</c>（运行时卸货时调的就是这一条释放路径），
+    /// 不是整个运行时循环；运行时循环接着跑升级后的库，由审查的升级探针与 G3 覆盖。
+    /// </remarks>
     [Fact]
-    public async Task AJourneyInFlightAtTheUpgradeEndsThroughTheEngineAndItsVehicleIsClaimedAgain()
+    public async Task AJourneyInFlightAtTheUpgradeEndsByItsUnloadAndItsVehicleIsClaimedAgain()
     {
         await using Batch7JourneyFixture fixture = await SeededAsync();
         await fixture.Context.Database.MigrateAsync(Token);
@@ -298,21 +319,29 @@ public sealed class Batch8OccupancyRetirementMigrationTests
     /// 库上造数据、断言删表过程的迁移测试。
     /// </remarks>
     [Fact]
-    public void NothingUnderScriptsTestsSrcOrToolsNamesTheRetiredOccupancyAnyMore()
+    public void NothingUnderScriptsTestsSrcToolsDocsOrWorkflowsNamesTheRetiredOccupancyAnyMore()
     {
         string root = RepositoryRoot();
         string[] allowed =
         [
             // The migrations are history: every one from the lease's creation to its drop names it.
             "src/ControlServer.Infrastructure/Persistence/Migrations/",
+            // Defect records are immutable history (evidence discipline): they name what was there when they were found.
+            "docs/defects/",
             // Seeds and asserts schemas from before the drop.
             "tests/ControlServer.Tests/Batch7MigrationDisciplineTests.cs",
             "tests/ControlServer.Tests/Batch8OccupancyRetirementMigrationTests.cs",
-            "tests/ControlServer.Tests/Batch7JourneyFixture.cs",
         ];
+        // Not whole files: the named number of occurrences, so a new use in the file turns this red.
+        Dictionary<string, int> counted = new(StringComparer.Ordinal)
+        {
+            // WriteLeasesTheWayTheOldVersionDidAsync: the one INSERT that turns seeded records into the leases the old
+            // version wrote, for migration tests that seed a schema from before the drop.
+            ["tests/ControlServer.Tests/Batch7JourneyFixture.cs"] = 1,
+        };
         string[] offenders =
         [
-            .. ((string[])["scripts", "tests", "src", "tools"])
+            .. ((string[])["scripts", "tests", "src", "tools", "docs", ".github"])
                 .Select(directory => Path.Combine(root, directory))
                 .Where(Directory.Exists)
                 .SelectMany(directory => Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories))
@@ -323,7 +352,8 @@ public sealed class Batch8OccupancyRetirementMigrationTests
                 .Where(path =>
                 {
                     string text = File.ReadAllText(Path.Combine(root, path));
-                    return RetiredNames.Any(name => text.Contains(name, StringComparison.OrdinalIgnoreCase));
+                    int found = RetiredNames.Sum(name => Regex.Matches(text, Regex.Escape(name), RegexOptions.IgnoreCase).Count);
+                    return found != counted.GetValueOrDefault(path);
                 })
                 .Order(StringComparer.Ordinal),
         ];

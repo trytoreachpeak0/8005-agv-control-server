@@ -89,6 +89,14 @@ function Get-ReleasedClaimRecordCount {
     return [int]$rows[0].N
 }
 
+# 这条需求所在旅程开着的用途占有记录。「已释放 0 条」在一条记录都没写时也成立，所以另要求它恰好有一条开着的
+# （control-server#387 审查）。
+function Get-OpenClaimRecordCountOfTheDemand {
+    $rows = Invoke-L2Query -Connection $connection `
+        -Sql "SELECT COUNT(*) AS N FROM VehiclePurposeClaimRecords AS r JOIN JourneyDemands AS d ON d.JourneyId = r.JourneyId WHERE d.DemandId = '$demandId' AND r.ReleasedAt IS NULL"
+    return [int]$rows[0].N
+}
+
 # 端点里这条需求的那一行；不在就是 $null。-DateKind String：开始时间原样比较，不经本地时区换算。
 function Get-BlockedEntry {
     $response = Invoke-WebRequest -Uri $endpoint -NoProxy -TimeoutSec 10
@@ -219,10 +227,10 @@ $assertions.Add(
     "$(Format-Entry $held)（$($heldRuntime.Stage)）")
 
 $assertions.Add(
-    'L2-SL-07', '失联不结束需求、不释放租约',
-    ((Get-DemandStatus) -eq 'Accepted' -and (Get-ReleasedClaimRecordCount) -eq 0),
-    'Accepted / 0 条已释放的租约',
-    "$(Get-DemandStatus) / $(Get-ReleasedClaimRecordCount) 条已释放的用途占有记录")
+    'L2-SL-07', '失联不结束需求、不释放车辆占用（用途占有记录仍开着）',
+    ((Get-DemandStatus) -eq 'Accepted' -and (Get-ReleasedClaimRecordCount) -eq 0 -and (Get-OpenClaimRecordCountOfTheDemand) -eq 1),
+    'Accepted / 0 条已释放的用途占有记录 / 这条需求恰有 1 条开着的',
+    "$(Get-DemandStatus) / $(Get-ReleasedClaimRecordCount) 条已释放的用途占有记录 / 这条需求 $(Get-OpenClaimRecordCountOfTheDemand) 条开着的")
 
 $orderCommandsAfter = Get-OrderCommandCount
 $assertions.Add(

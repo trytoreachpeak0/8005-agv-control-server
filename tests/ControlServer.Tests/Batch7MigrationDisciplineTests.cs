@@ -509,11 +509,11 @@ public sealed class Batch7MigrationDisciplineTests
     /// reason: scripts and G3 scenarios read it directly. That ticket dropped the table and moved every one of those readers
     /// onto <c>VehiclePurposeClaims</c> and <c>VehiclePurposeClaimRecords</c> in the same change, so what this guarded
     /// against -- a script silently finding no column -- is now guarded by
-    /// <c>Batch8OccupancyRetirementMigrationTests.NothingUnderScriptsTestsSrcOrToolsNamesTheRetiredOccupancyAnyMore</c>:
+    /// <c>Batch8OccupancyRetirementMigrationTests.NothingUnderScriptsTestsSrcToolsDocsOrWorkflowsNamesTheRetiredOccupancyAnyMore</c>:
     /// no reader of the retired table or columns is left to break.
     /// </remarks>
     [Fact]
-    public async Task JourneyRuntimesAndJourneyBacklogKeepEveryColumnTheyHadAtBatch6SoScriptsStillFindThem()
+    public async Task EveryTableTheScriptsReadKeepsEveryColumnItHadSoScriptsStillFindThem()
     {
         // scripts/ and the G3 scenarios query these two tables directly -- WHERE DemandId = ..., SELECT * -- so the key
         // change must only ever add columns.
@@ -526,6 +526,27 @@ public sealed class Batch7MigrationDisciplineTests
             Assert.Contains("DemandId", after);
         }
         Assert.Contains("JourneyId", await ColumnsAsync(fixture.Connection, "JourneyRuntimes"));
+
+        // Since control-server#387 the scripts and G3 scenarios read the vehicle's occupancy from these three instead of
+        // the retired lease table -- joining the claim records and claims to JourneyDemands by JourneyId, filtering by
+        // DemandId, VehicleKey and ReleasedAt. Held to the columns they had when that started, the same way.
+        Dictionary<string, string[]> readByScriptsSinceBatch8 = new(StringComparer.Ordinal)
+        {
+            ["VehiclePurposeClaimRecords"] =
+                ["AcquiredAt", "JourneyId", "Purpose", "RecordId", "ReleaseReason", "ReleasedAt", "VehicleKey"],
+            ["VehiclePurposeClaims"] = ["ClaimedAt", "JourneyId", "Purpose", "VehicleKey"],
+            ["JourneyDemands"] =
+            [
+                "AddedAt", "DemandId", "DispatchGeneration", "DispatchZone", "DispatchZoneParameterVersion",
+                "ExpectedBasketCount", "JourneyId", "LoadCommandMessageId", "LoadSlotOperationAttemptId", "LoadedSlotsJson",
+                "PickupStopId", "RemovalReason", "RemovedAt", "Status", "TargetSlotsJson", "UnloadCommandMessageId",
+                "UnloadSlotOperationAttemptId", "UnloadStopId",
+            ],
+        };
+        foreach ((string table, string[] columns) in readByScriptsSinceBatch8)
+        {
+            Assert.Empty(columns.Except(await ColumnsAsync(fixture.Connection, table), StringComparer.Ordinal));
+        }
     }
 
     [Fact]

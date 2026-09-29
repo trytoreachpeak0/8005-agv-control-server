@@ -199,6 +199,8 @@ def extract(args: argparse.Namespace) -> None:
             "exactAbsentAtObservation": True,
             "productionIdentityOverlap": False,
             "productionAcceptedDemandCount": count(production, "AcceptedDemands"),
+            # Requires the production store to have been migrated past control-server#387 (VehiclePurposeClaims exists
+            # since batch 7, and is the vehicle's only occupancy since #387); the key name is kept for the output format.
             "productionActiveLeaseCount": int(
                 production.execute(
                     "SELECT COUNT(*) FROM VehiclePurposeClaims"

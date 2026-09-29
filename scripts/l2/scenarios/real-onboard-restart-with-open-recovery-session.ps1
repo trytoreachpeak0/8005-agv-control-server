@@ -393,7 +393,7 @@ $sessionState = Get-G3Scalar $connection "SELECT State AS Value FROM ExceptionRe
 $demandStatus = Get-G3Scalar $connection "SELECT Status AS Value FROM AcceptedDemands WHERE DemandId = '$demandId'"
 $loadStatusFinal = Get-G3Scalar $connection "SELECT Status AS Value FROM StationOperations WHERE SlotOperationAttemptId = '$attemptId'"
 $journeyFinal = "$(Get-G3Scalar $connection "SELECT Stage AS Value FROM JourneyRuntimes WHERE DemandId = '$demandId'")/$(Get-G3Scalar $connection "SELECT BlockReasonCode AS Value FROM JourneyRuntimes WHERE DemandId = '$demandId'")"
-$released = Test-G3Present (Get-G3Scalar $connection "SELECT r.ReleasedAt AS Value FROM VehiclePurposeClaimRecords AS r JOIN JourneyDemands AS d ON d.JourneyId = r.JourneyId WHERE d.DemandId = '$demandId'")
+$released = Test-G3Present (Get-G3Scalar $connection "SELECT r.ReleasedAt AS Value FROM VehiclePurposeClaimRecords AS r JOIN JourneyDemands AS d ON d.JourneyId = r.JourneyId WHERE d.DemandId = '$demandId' ORDER BY r.AcquiredAt DESC LIMIT 1")
 $sessionFinal = Get-G3Session $connection
 $physical = ($load.TargetSlots | Sort-Object | ForEach-Object { "$_=$(Get-G3SlotState $simulator $_)" }) -join ' '
 $expectedPhysical = ($load.TargetSlots | Sort-Object | ForEach-Object { "$_=CLOSED/EMPTY/1/0" }) -join ' '

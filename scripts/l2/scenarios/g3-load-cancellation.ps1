@@ -335,7 +335,7 @@ function Get-Settlement {
         Workflow  = Get-Scalar "SELECT State AS Value FROM RecoveryWorkflows WHERE WorkflowId = '$cancellationId'"
         Demand    = Get-Scalar "SELECT Status AS Value FROM AcceptedDemands WHERE DemandId = '$demandId'"
         Operation = Get-Scalar "SELECT Status AS Value FROM StationOperations WHERE SlotOperationAttemptId = '$attemptId'"
-        Released  = Test-Present (Get-Scalar "SELECT r.ReleasedAt AS Value FROM VehiclePurposeClaimRecords AS r JOIN JourneyDemands AS d ON d.JourneyId = r.JourneyId WHERE d.DemandId = '$demandId'")
+        Released  = Test-Present (Get-Scalar "SELECT r.ReleasedAt AS Value FROM VehiclePurposeClaimRecords AS r JOIN JourneyDemands AS d ON d.JourneyId = r.JourneyId WHERE d.DemandId = '$demandId' ORDER BY r.AcquiredAt DESC LIMIT 1")
         Journey   = "$(Get-Stage)/$(Get-Scalar "SELECT BlockReasonCode AS Value FROM JourneyRuntimes WHERE DemandId = '$demandId'")"
         ToGate    = Get-Count "SELECT COUNT(*) AS Total FROM OrderIntents WHERE DemandId = '$demandId' AND Purpose = 'TO_GATE'"
     }

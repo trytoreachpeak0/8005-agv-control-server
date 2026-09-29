@@ -292,8 +292,13 @@ function Read-ControlDatabase {
         'TransportDemandCompletions', 'ProtocolInbox')
     $counts = [ordered]@{}
     foreach ($table in $countedTables) {
-        $counts[$table] = Invoke-SqliteScalarLong -DatabasePath $controlDatabasePath `
-            -Sql "SELECT COUNT(*) FROM $table"
+        # The claim record table (control-server#386/#387) does not exist yet in a field store restored from before
+        # batch 8; the baseline reads it before the server has migrated that store. Absent counts as 0.
+        $present = Invoke-SqliteScalarLong -DatabasePath $controlDatabasePath `
+            -Sql "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = '$table'"
+        $counts[$table] = if ($present -eq 0) { 0 } else {
+            Invoke-SqliteScalarLong -DatabasePath $controlDatabasePath -Sql "SELECT COUNT(*) FROM $table"
+        }
     }
 
     return [ordered]@{
@@ -303,9 +308,12 @@ function Read-ControlDatabase {
             -Sql 'SELECT DemandId, TransportDemandKey, DemandRevision, Status FROM AcceptedDemands ORDER BY DemandId' `
             -Columns @('demandId', 'transportDemandKey', 'demandRevision', 'status')
         # The vehicle's occupancy history since control-server#387 retired the dispatch lease: one record per claim.
-        vehicleClaimRecordRows = Invoke-SqliteRows -DatabasePath $controlDatabasePath `
-            -Sql 'SELECT JourneyId, VehicleKey, AcquiredAt, ReleasedAt FROM VehiclePurposeClaimRecords ORDER BY JourneyId, AcquiredAt' `
-            -Columns @('journeyId', 'vehicleKey', 'acquiredAt', 'releasedAt')
+        # Empty before the server has migrated a store from before batch 8 (the table is not there yet).
+        vehicleClaimRecordRows = if ($counts['VehiclePurposeClaimRecords'] -eq 0) { @() } else {
+            Invoke-SqliteRows -DatabasePath $controlDatabasePath `
+                -Sql 'SELECT JourneyId, VehicleKey, AcquiredAt, ReleasedAt FROM VehiclePurposeClaimRecords ORDER BY JourneyId, AcquiredAt' `
+                -Columns @('journeyId', 'vehicleKey', 'acquiredAt', 'releasedAt')
+        }
         auditRows = Invoke-SqliteRows -DatabasePath $controlDatabasePath -Sql @'
 SELECT UpperId, DispatchGeneration, Sequence, Phase, Outcome, EligibilityBasis,
        HttpStatusCode, BusinessCode, ResultPresent, ReturnedOrderId
@@ -605,10 +613,14 @@ $demandClosureRowsPass = $null -ne $baseline -and $null -ne $final -and
 
 # Nothing left this machine. The restored store gains business rows -- that is the vector -- but the
 # tables that only an external call can grow must be byte-for-byte the same count as the baseline.
-$externalTables = @('OrderIntents', 'RiotDispatchAuditEvents', 'AcceptedDemands', 'VehiclePurposeClaimRecords')
-$noExternalSideEffectsPass = $null -ne $baseline -and $null -ne $final -and
+# The claim records are compared from after the first host, not from the baseline: that host migrated the restored
+# store, and the migration backfills a record per claim and per released lease it finds (control-server#387). What
+# only an acceptance can add is what must not grow from there on.
+$externalTables = @('OrderIntents', 'RiotDispatchAuditEvents', 'AcceptedDemands')
+$noExternalSideEffectsPass = $null -ne $baseline -and $null -ne $final -and $null -ne $afterProbe -and
     @($externalTables | Where-Object {
         [long]$baseline.counts[$_] -ne [long]$final.counts[$_] }).Count -eq 0 -and
+    [long]$afterProbe.counts['VehiclePurposeClaimRecords'] -eq [long]$final.counts['VehiclePurposeClaimRecords'] -and
     [long]$final.counts['StationOperations'] -eq [long]$baseline.counts['StationOperations']
 
 # --- the demand-bearing half of the process restart vector ------------------------------------------
