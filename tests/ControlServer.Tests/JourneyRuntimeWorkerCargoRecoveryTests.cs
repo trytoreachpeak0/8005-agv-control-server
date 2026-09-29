@@ -1,6 +1,8 @@
 using System.Text.Json;
+using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -17,12 +19,12 @@ namespace ControlServer.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>What "permanently suppressed" means here, and what it does not.</b> REQ-0240 writes a
-/// TransportDemandSuppression keyed by TransportDemandKey. v2 has no such table for any ending --
-/// <c>CANCELLED_BY_OPERATOR</c>, <c>CANCELLED_BY_STATION_TIMEOUT</c> and <c>CANCELLED_BY_LOAD_COMPENSATION</c>
-/// write none either; key suppression is REQ-0155/0156/0211, profiled to batch 7. What does hold for every
-/// ending today is DemandId-level: an accepted demand is never a candidate again (AlreadyAcceptedCriterion),
-/// even while MesIngest keeps listing it. These tests prove that half, for the two endings #137 is about.
+/// <b>What "permanently suppressed" means here.</b> Two halves. DemandId-level: an accepted demand is never a
+/// candidate again (AlreadyAcceptedCriterion), even while MesIngest keeps listing it -- what #137 proved for
+/// these two endings. TransportDemandKey-level: REQ-0240 writes a TransportDemandSuppression with the handoff.
+/// Batch 7-05 (control-server#210) wrote it only for the four local cancellations, as REQ-0156 read in baseline
+/// v1.6.0; CP-0008 (baseline v1.7.0, control-server#395) revised REQ-0156 so that both handoffs write it too, in
+/// the save that ends the demand, and a reissue of the key under a new DemandId is then not dispatched.
 /// </para>
 /// </remarks>
 public sealed class JourneyRuntimeWorkerCargoRecoveryTests
@@ -32,6 +34,8 @@ public sealed class JourneyRuntimeWorkerCargoRecoveryTests
     private const string RequestId = "41370000-0000-4000-8000-000000000001";
     private const string EventId = "31370000-0000-4000-8000-000000000001";
     private const string ActionId = "51370000-0000-4000-8000-000000000001";
+    private const string ReissuedDemandId = "10000000-0000-4000-8000-000000000071";
+    private const string HandoffEnding = "TERMINATED_BY_FAULT_CARGO_HANDOFF";
     private const string ProofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_CARGO_RECOVERY_RUNTIME";
     private const string Proof = "cargo-recovery-runtime-proof-not-a-production-secret";
     private static readonly string[] HardwareChecks = ["LIVE_SLOT_SIGNALS_VALID"];
@@ -68,7 +72,8 @@ public sealed class JourneyRuntimeWorkerCargoRecoveryTests
                 Assert.Equal("TERMINATED_BY_FAULT_CARGO_HANDOFF", (await fixture.RuntimeAsync()).BlockReasonCode);
                 await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(fixture.Context);
                 await ZeroChangePin.AssertMatchesAsync(fixture.Context, "fault-cargo-handoff");
-                await SuppressionAssertions.AssertNothingSuppressedAsync(fixture.Context);
+                // CP-0008 (REQ-0156 as revised): the handoff suppresses the key, like a local cancellation.
+                await SuppressionAssertions.AssertTheDemandSuppressedAsync(fixture.Context, HandoffEnding);
 
                 await fixture.RestoreSessionReadyAsync();
                 AcceptedDemandSnapshot next = await ListNextDemandBesideAsync(fixture, ended);
@@ -116,7 +121,8 @@ public sealed class JourneyRuntimeWorkerCargoRecoveryTests
                 Assert.Equal("TERMINATED_BY_FAULT_CARGO_HANDOFF", (await fixture.RuntimeAsync()).BlockReasonCode);
                 await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(fixture.Context);
                 await ZeroChangePin.AssertMatchesAsync(fixture.Context, "forced-mechanical-recovery");
-                await SuppressionAssertions.AssertNothingSuppressedAsync(fixture.Context);
+                // CP-0008 (REQ-0156 as revised, REQ-0242): the forced recovery's handoff suppresses the key as well.
+                await SuppressionAssertions.AssertTheDemandSuppressedAsync(fixture.Context, HandoffEnding);
 
                 // The vehicle reconnects having adopted the new generation and reports nothing open.
                 WireToGateStore store = new(connection);
@@ -149,6 +155,160 @@ public sealed class JourneyRuntimeWorkerCargoRecoveryTests
         {
             Environment.SetEnvironmentVariable(ProofVariable, null);
         }
+    }
+
+    /// <summary>
+    /// CP-0008 (REQ-0156 as revised, REQ-0240): a fault cargo handoff writes the TransportDemandKey suppression in
+    /// the one save that ends the demand and its journey and reconciles the workflow -- none before the result,
+    /// and no save that carries one without the other. A crash between two saves would leave a handed-off demand
+    /// ended without the suppression REQ-0240 commits atomically with it.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-FAULT-CARGO-HANDOFF")]
+    [Trait("Requirement", "REQ-0156")]
+    public async Task AFaultCargoHandoffSuppressesTheKeyInTheSameSaveAsTheEnding()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        Environment.SetEnvironmentVariable(ProofVariable, Proof);
+        try
+        {
+            (RuntimeFixture fixture, _, int[] slots) = await ReachBlockedLoadAsync();
+            await using (fixture)
+            {
+                await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+                OnboardMessageProcessor processor = RecoveryProcessor(fixture, connection);
+                OnboardConnectionState state = Connection(fixture);
+                string sessionId = await OpenSessionAsync(fixture, processor, state, slots);
+                await processor.ProcessAsync(Action(fixture, sessionId, "FAULT_CARGO_HANDOFF", slots), state, token);
+                string handoffId = (await fixture.Context.RecoveryWorkflows.AsNoTracking().SingleAsync(token)).HandoffId!;
+
+                await AssertSuppressedInTheSaveThatEndsTheDemandAsync(
+                    fixture, () => processor.ProcessAsync(HandedOff(fixture, sessionId, handoffId, slots), state, token));
+            }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(ProofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// CP-0008 (REQ-0156 as revised, REQ-0242): the forced mechanical recovery ends its demand under the same
+    /// <c>TERMINATED_BY_FAULT_CARGO_HANDOFF</c> and writes the suppression in that same save.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-FORCED-MECHANICAL-RECOVERY")]
+    [Trait("Requirement", "REQ-0156")]
+    public async Task AForcedMechanicalRecoverySuppressesTheKeyInTheSameSaveAsTheEnding()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        Environment.SetEnvironmentVariable(ProofVariable, Proof);
+        try
+        {
+            (RuntimeFixture fixture, _, int[] slots) = await ReachBlockedLoadAsync();
+            await using (fixture)
+            {
+                await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+                OnboardMessageProcessor processor = RecoveryProcessor(fixture, connection);
+                OnboardConnectionState state = Connection(fixture);
+                string sessionId = await OpenSessionAsync(fixture, processor, state, slots);
+                await processor.ProcessAsync(Action(fixture, sessionId, "FORCED_MECHANICAL_RECOVERY", slots), state, token);
+
+                await AssertSuppressedInTheSaveThatEndsTheDemandAsync(
+                    fixture, () => processor.ProcessAsync(MechanicallyIsolated(fixture, sessionId, slots), state, token));
+            }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(ProofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// REQ-0155's effect for a suppression a handoff wrote (CP-0008): MesIngest withdraws the handed-off demand
+    /// and lists the same key under a new DemandId. The reissue is never accepted, while an unrelated demand listed
+    /// after it is dispatched to the same vehicle, so the vehicle was free to take it.
+    /// <para>
+    /// <b>What in here is sensitive to the suppression is the reason code, not "not dispatched".</b> Without the
+    /// suppression the reissue is still refused -- by <c>TransportDemandKeyAlreadyAcceptedCriterion</c> (order 12),
+    /// since the handed-off row keeps the key in <c>AcceptedDemands</c> -- and waits as
+    /// TRANSPORT_DEMAND_KEY_ALREADY_ACCEPTED instead (control-server#395 review, probe P1). The suppression (order 11)
+    /// comes first and turns it into TRANSPORT_DEMAND_KEY_SUPPRESSED, which is what the dashboard explains.
+    /// </para>
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-FAULT-CARGO-HANDOFF")]
+    [Trait("Requirement", "REQ-0155")]
+    public async Task AKeySuppressedByAHandoffIsNotDispatchedAgainUnderANewDemandId()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        Environment.SetEnvironmentVariable(ProofVariable, Proof);
+        try
+        {
+            (RuntimeFixture fixture, AcceptedDemandSnapshot ended, int[] slots) = await ReachBlockedLoadAsync();
+            await using (fixture)
+            {
+                await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+                OnboardMessageProcessor processor = RecoveryProcessor(fixture, connection);
+                OnboardConnectionState state = Connection(fixture);
+                string sessionId = await OpenSessionAsync(fixture, processor, state, slots);
+                await processor.ProcessAsync(Action(fixture, sessionId, "FAULT_CARGO_HANDOFF", slots), state, token);
+                string handoffId = (await fixture.Context.RecoveryWorkflows.AsNoTracking().SingleAsync(token)).HandoffId!;
+                Assert.Equal("DurableAck", FirstLineType(
+                    await processor.ProcessAsync(HandedOff(fixture, sessionId, handoffId, slots), state, token)));
+                TransportDemandSuppression written = Assert.Single(await SuppressionAssertions.AllAsync(fixture.Context));
+                Assert.Equal((ended.TransportDemandKey, ended.DemandId, HandoffEnding),
+                    (written.TransportDemandKey, written.DemandId, written.ReasonCode));
+
+                await fixture.RestoreSessionReadyAsync();
+                AcceptedDemandSnapshot reissued = fixture.Demand(ReissuedDemandId, "SUBLOT-001", createdAt: Now.AddMinutes(-9));
+                Assert.Equal(ended.TransportDemandKey, reissued.TransportDemandKey);
+                AcceptedDemandSnapshot next = fixture.Demand(NextDemandId, "SUBLOT-002", createdAt: Now.AddMinutes(-5));
+                fixture.Catalog.Set([reissued, next]);
+                fixture.BoxCounts.Set("SUBLOT-002", 4);
+                await fixture.Engine.ExecuteOnceAsync(token);
+                await fixture.Engine.ExecuteOnceAsync(token);
+
+                JourneyBacklogRow backlog = await fixture.BacklogAsync(ReissuedDemandId);
+                Assert.Equal(DispatchReasonCodes.TransportDemandKeySuppressed, backlog.ReasonCode);
+                Assert.Null(backlog.AcceptedAt);
+                Assert.False(await fixture.Context.AcceptedDemands.AnyAsync(row => row.DemandId == ReissuedDemandId, token));
+                Assert.False(await fixture.Context.JourneyRuntimes.AnyAsync(row => row.DemandId == ReissuedDemandId, token));
+                Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await fixture.RuntimeAsync(next.DemandId)).Stage);
+                Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+                Assert.Equal(written, Assert.Single(await SuppressionAssertions.AllAsync(fixture.Context)));
+            }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(ProofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// Nothing suppressed before <paramref name="result"/>; after it, the demand's suppression, written by exactly one
+    /// save -- and that save is the one that also cancels the demand, closes its journey under the handoff's code and
+    /// reconciles the recovery workflow.
+    /// </summary>
+    private static async Task AssertSuppressedInTheSaveThatEndsTheDemandAsync(RuntimeFixture fixture, Func<Task<string>> result)
+    {
+        await SuppressionAssertions.AssertNothingSuppressedAsync(fixture.Context);
+        Assert.Equal(DemandExecutionStatus.RecoveryRequired, (await fixture.DemandRowAsync()).Status);
+        fixture.SaveChanges.Reset();
+
+        Assert.Equal("DurableAck", FirstLineType(await result()));
+
+        Assert.Equal(DemandExecutionStatus.Cancelled, (await fixture.DemandRowAsync()).Status);
+        Assert.Equal(HandoffEnding, (await fixture.RuntimeAsync()).BlockReasonCode);
+        await SuppressionAssertions.AssertTheDemandSuppressedAsync(fixture.Context, HandoffEnding);
+        string[] save = Assert.Single(fixture.SaveChanges.Saves,
+            written => written.Contains("TransportDemandSuppressionRow.TransportDemandKey"));
+        Assert.Contains("AcceptedDemandRow.Status", save);
+        Assert.Contains("JourneyRuntimeRow.BlockReasonCode", save);
+        Assert.Contains("RecoveryWorkflowRow.State", save);
     }
 
     /// <summary>

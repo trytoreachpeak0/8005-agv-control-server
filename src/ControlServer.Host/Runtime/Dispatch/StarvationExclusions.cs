@@ -15,7 +15,7 @@ namespace ControlServer.Host.Runtime.Dispatch;
 /// </para>
 /// <list type="bullet">
 /// <item>有未解除结构性派车阻断的（批次7-09，REQ-0210）；</item>
-/// <item>业务键已被本地取消抑制的（<see cref="DispatchReasonCodes.TransportDemandKeySuppressed"/>，REQ-0155）；</item>
+/// <item>业务键已被本地取消或故障货物交接终止抑制的（<see cref="DispatchReasonCodes.TransportDemandKeySuppressed"/>，REQ-0155）；</item>
 /// <item>业务键已有别的 <c>DemandId</c> 被受理过的（<see cref="DispatchReasonCodes.TransportDemandKeyAlreadyAccepted"/>）。</item>
 /// </list>
 /// <para>

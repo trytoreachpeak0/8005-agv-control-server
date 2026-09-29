@@ -4221,11 +4221,9 @@ public sealed class RecoveryStateMachineG2Tests
             Assert.NotNull((await context.OrderIntents.AsNoTracking()
                 .SingleAsync(row => row.UpperId == "UPPER-PICKUP", token)).VehicleOccupancyReleasedAt);
             await ZeroChangePin.AssertMatchesAsync(context, "commanded-ending-" + messageType);
-            // 批次7-05（control-server#210）：取消与补偿是本地取消，按业务键抑制；故障货物交接不是（REQ-0156 只列四个码）。
-            if (reasonCode == "TERMINATED_BY_FAULT_CARGO_HANDOFF")
-                await SuppressionAssertions.AssertNothingSuppressedAsync(context);
-            else
-                await SuppressionAssertions.AssertTheDemandSuppressedAsync(context, reasonCode);
+            // 批次7-05（control-server#210）：取消与补偿是本地取消，按业务键抑制；故障货物交接自 CP-0008（REQ-0156 修订，
+            // control-server#395）起同样抑制。
+            await SuppressionAssertions.AssertTheDemandSuppressedAsync(context, reasonCode);
 
             OrderIntentRow next = Intent("next-pickup-leg", "UPPER-NEXT-PICKUP", "TO_PICKUP", 11);
             context.OrderIntents.Add(next);

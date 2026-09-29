@@ -166,12 +166,32 @@ public sealed class PickupStopTermination(ControlServerDbContext dbContext, Plan
             dbContext, runtime.JourneyId, leavingDemandIds: [], currentStopMayGo: false, routing, cancellationToken);
 
     /// <summary>
-    /// 本地取消的四个终态码（<c>REQ-0156</c>）。只有它们按业务键抑制；<c>Succeeded</c>、GONE（v2 没有这条路径）与
-    /// <c>TERMINATED_BY_FAULT_CARGO_HANDOFF</c> 不抑制——需求基线只列这四个，MVP 多写的第五个（<c>557644a6</c>）不移植。
+    /// 按业务键抑制的终态码（<c>REQ-0156</c>，需求基线 <c>v1.7.0</c> 经 <c>CP-0008</c> 修订）：本地取消的四个，加故障货物交接终止
+    /// <c>TERMINATED_BY_FAULT_CARGO_HANDOFF</c>。<c>Succeeded</c>、GONE（v2 没有这条路径）与下面写明的那一个不抑制。
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// <c>TERMINATED_BY_FAULT_CARGO_HANDOFF</c>：故障货物交接（<c>REQ-0240</c>）与强制取出后交接（<c>REQ-0242</c>）两条路都以这个码经
+    /// <see cref="StageAsync(JourneyRuntimeRow, string?, string, string, DateTimeOffset, CancellationToken)"/> 终结
+    /// （<c>OnboardRecoveryCoordinator</c>），所以放在这里就是两条路都与终态同一次保存写抑制。control-server#210 按 <c>v1.6.0</c>
+    /// 的字面只写四个码，control-server#395 按修订后的条文补上，与 MVP 的 <c>557644a6</c> 同义。
+    /// </para>
+    /// <para>
+    /// <b>今天在 v2 上，写不写抑制都不改变「同键以新 <c>DemandId</c> 再现时不派车」这个结果。</b><c>AcceptedDemands.TransportDemandKey</c>
+    /// 是唯一索引、受理行不删，<c>TransportDemandKeyAlreadyAcceptedCriterion</c>（第 12 道）挡住任何已有别的 <c>DemandId</c> 受理过的键，
+    /// 不论那条是怎么结束的。抑制（第 11 道）改变的是积压原因码与看板说明，并按条文把「永久不再执行」记成一条事实
+    /// （control-server#395 独立审查的探针 P1 实测）。
+    /// </para>
+    /// <para>
+    /// <b>不要加 <c>TERMINATED_BY_OPERATOR_AFTER_REBUILD_STOP</c>。</b>人员放弃停住的重建（control-server#345）只在车上没有该任务货物时
+    /// 允许：货物从未离开原取货位置，MES 那边的任务也还在。修订后的 <c>REQ-0156</c> 写明它不写抑制、同键以后再现时可重新派车。
+    /// <b>后半句在 v2 上今天不成立</b>：同键再现照样被上一段说的第 12 道挡住（独立审查探针 P2 实测），调度已报用户。这里只守前半句——
+    /// 不写抑制。今天那条路径不经这里的 <c>StageAsync</c>，但不能靠这个：哪天它改走这里，这个集合就是唯一的闸。
+    /// </para>
+    /// <para>
     /// <c>CANCELLED_BY_STOP_COMPLETE</c> 今天在 <c>src/</c> 里没有生产者，放在这里是为了以后谁产生它谁就自动抑制，
     /// 不必再有人记得回到这里加一行。
+    /// </para>
     /// </remarks>
     public static IReadOnlySet<string> KeySuppressingReasonCodes { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
@@ -179,10 +199,12 @@ public sealed class PickupStopTermination(ControlServerDbContext dbContext, Plan
         "CANCELLED_BY_LOAD_COMPENSATION",
         "CANCELLED_BY_STOP_COMPLETE",
         "CANCELLED_BY_STATION_TIMEOUT",
+        "TERMINATED_BY_FAULT_CARGO_HANDOFF",
     };
 
     /// <summary>
-    /// 终结的是本地取消时，按这条需求的业务键暂存一条抑制（批次7-05，control-server#210；REQ-0155、REQ-0156、REQ-0211）。
+    /// 终结的是本地取消或故障货物交接时，按这条需求的业务键暂存一条抑制（批次7-05，control-server#210；REQ-0155、REQ-0156、
+    /// REQ-0211；交接自 control-server#395，CP-0008）。
     /// </summary>
     /// <remarks>
     /// <para>
