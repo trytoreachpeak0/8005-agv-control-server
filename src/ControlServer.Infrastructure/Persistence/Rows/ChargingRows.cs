@@ -210,6 +210,12 @@ public sealed class StationClearanceRow
 
     /// <summary>协助者（JSON 字符串数组），另记于确认人之外；没有协助者为 <c>[]</c>。</summary>
     public required string AssistantsJson { get; set; }
+
+    /// <summary>人工证明时现场确认的腾空情况（协议 <c>clearedCondition</c>）；系统证明时为空。</summary>
+    public string? ClearedCondition { get; set; }
+
+    /// <summary>人工证明来自哪一个现场确认请求；Host 人工入口没有线上请求时可以为空。</summary>
+    public string? ConfirmationRequestId { get; set; }
 }
 
 /// <summary>服务端持有的人工充电等待，每车一行当前状态。谁置上由主键 <see cref="VehicleKey"/> 决定；经过在 <see cref="ManualChargingHoldRecordRow"/>。</summary>

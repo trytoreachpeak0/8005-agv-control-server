@@ -366,7 +366,13 @@ public interface IChargingCycleStore
     /// 开始一个周期：周期行（<c>ALLOCATED</c>、<c>ACTIVE</c>）、<c>CHARGING</c> 用途占有、<c>CHARGER</c> 预占在同一次保存里，
     /// 要么都在、要么都不在（批次9-06 的原子承诺靠这一点）。
     /// </summary>
-    Task<ChargingCycleStartOutcome> TryStartAsync(ChargingCycleStart start, CancellationToken cancellationToken);
+    /// <param name="sameSave">
+    /// 调用方要与它们同一次保存的其余行（持久化层的实体，例如那趟旅程的行与待建的订单意图）。它们随这次保存一起写入；保存被键拒绝时
+    /// 与本方法自己暂存的行一起撤出上下文，什么也不留。<b>调用方不要先把这些行 Add 进上下文再调用</b>：那样被拒时它们会留在上下文里，
+    /// 随调用方下一次保存被写出去。
+    /// </param>
+    Task<ChargingCycleStartOutcome> TryStartAsync(
+        ChargingCycleStart start, IReadOnlyCollection<object>? sameSave, CancellationToken cancellationToken);
 
     /// <summary>
     /// 推进：把 <paramref name="cycle"/> 里会变的字段（线上状态、阶段、<c>upperId</c>、各时刻、结束原因、观察样本）写回，
@@ -480,6 +486,12 @@ public interface IChargingHoldStore
 /// <param name="WaitingPointMapId">系统证明时，车到的那个等待点。</param>
 /// <param name="ConfirmedBy">人工证明时的确认人（以个人身份）。</param>
 /// <param name="Assistants">人工证明时的协助者，另记（<c>REQ-0179</c>）。</param>
+/// <param name="ClearedCondition">
+/// 人工证明时现场确认的腾空情况，取值同协议 <c>ManualStationClearanceConfirmationRequested.clearedCondition</c>（批次9-08 第 6 条）。
+/// </param>
+/// <param name="ConfirmationRequestId">
+/// 人工证明来自哪一个确认请求：线上消息时是它的 <c>confirmationRequestId</c>；Host 人工入口没有线上请求时为空，或由那个入口自己给一个 id。
+/// </param>
 public sealed record StationClearance(
     string ClearanceId,
     string CycleId,
@@ -496,9 +508,11 @@ public sealed record StationClearance(
     DateTimeOffset? ConfirmedAt,
     string? VehicleFinalPosition,
     string? OldOrderDisposition,
-    IReadOnlyList<string> Assistants);
+    IReadOnlyList<string> Assistants,
+    string? ClearedCondition = null,
+    string? ConfirmationRequestId = null);
 
-/// <summary>清桩的完成证明。</summary>
+/// <summary>清桩的完成证明。字段含义同 <see cref="StationClearance"/>。</summary>
 public sealed record StationClearanceCompletion(
     DateTimeOffset CompletedAt,
     string Proof,
@@ -509,7 +523,9 @@ public sealed record StationClearanceCompletion(
     DateTimeOffset? ConfirmedAt,
     string? VehicleFinalPosition,
     string? OldOrderDisposition,
-    IReadOnlyList<string> Assistants);
+    IReadOnlyList<string> Assistants,
+    string? ClearedCondition = null,
+    string? ConfirmationRequestId = null);
 
 /// <summary>清桩记录。一个充电周期至多一次清桩，由唯一约束保证。</summary>
 public interface IStationClearanceStore

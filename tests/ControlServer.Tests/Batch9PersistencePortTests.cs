@@ -281,8 +281,8 @@ public sealed class Batch9PersistencePortTests
 
         // Neither store reads before writing: the second insert reaches the database and the station's key refuses it,
         // taking its claim and its cycle back with it (REQ-0173).
-        Assert.Equal(ChargingCycleStartOutcome.Started, await first.TryStartAsync(Start("C-1", "agv02"), Token));
-        Assert.Equal(ChargingCycleStartOutcome.StationHeld, await second.TryStartAsync(Start("C-2", "agv03"), Token));
+        Assert.Equal(ChargingCycleStartOutcome.Started, await first.TryStartAsync(Start("C-1", "agv02"), null, Token));
+        Assert.Equal(ChargingCycleStartOutcome.StationHeld, await second.TryStartAsync(Start("C-2", "agv03"), null, Token));
 
         Assert.Equal(["agv02"], (await Batch7JourneyFixture.DumpAsync(fixture.Connection, "VehiclePurposeClaims"))
             .Select(row => row.Split('|')[0]["VehicleKey='".Length..^1]));
@@ -299,7 +299,7 @@ public sealed class Batch9PersistencePortTests
         await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
         ChargingCycleStore cycles = new(fixture.Context);
 
-        Assert.Equal(ChargingCycleStartOutcome.Started, await cycles.TryStartAsync(Start("C-1", "agv02"), Token));
+        Assert.Equal(ChargingCycleStartOutcome.Started, await cycles.TryStartAsync(Start("C-1", "agv02"), null, Token));
 
         ChargingCycle cycle = (await cycles.ReadOpenAsync("agv02", Token))!;
         Assert.Equal(("C-1", "charge:agv02", 26, 211, 2L, 7L, "ALLOCATED", "ACTIVE", 1L),
@@ -316,7 +316,7 @@ public sealed class Batch9PersistencePortTests
 
         // A retry of the same start after a crash writes nothing more.
         Assert.Equal(ChargingCycleStartOutcome.AlreadyStarted,
-            await new ChargingCycleStore(fixture.NewContext()).TryStartAsync(Start("C-1", "agv02"), Token));
+            await new ChargingCycleStore(fixture.NewContext()).TryStartAsync(Start("C-1", "agv02"), null, Token));
         Assert.Single(await Batch7JourneyFixture.DumpAsync(fixture.Connection, "VehiclePurposeClaimRecords"));
     }
 
@@ -327,7 +327,7 @@ public sealed class Batch9PersistencePortTests
         FailOnInsertInto failure = new("StationExclusivities");
         ChargingCycleStore cycles = new(fixture.NewContext(failure));
 
-        await Assert.ThrowsAnyAsync<Exception>(() => cycles.TryStartAsync(Start("C-1", "agv02"), Token));
+        await Assert.ThrowsAnyAsync<Exception>(() => cycles.TryStartAsync(Start("C-1", "agv02"), [ChargingIntent("C-1")], Token));
 
         // Some of the save's inserts had already run when the reservation failed: what is gone was rolled back, not
         // never written.
@@ -336,7 +336,7 @@ public sealed class Batch9PersistencePortTests
         foreach (string table in new[]
                  {
                      "ChargingCycles", "VehiclePurposeClaims", "VehiclePurposeClaimRecords", "StationExclusivities",
-                     "StationExclusivityRecords",
+                     "StationExclusivityRecords", "OrderIntents",
                  })
         {
             Assert.Empty(await Batch7JourneyFixture.DumpAsync(fixture.Connection, table));
@@ -344,11 +344,54 @@ public sealed class Batch9PersistencePortTests
     }
 
     [Fact]
+    public async Task RowsTheCallerSavesAlongsideAreWrittenWithTheCycleAndLeaveNothingBehindWhenTheStartIsRefused()
+    {
+        // Batch 9-06 writes the journey and the pending order intent in the same save as the cycle (#416 review, 2).
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        Assert.Equal(ChargingCycleStartOutcome.Started,
+            await new ChargingCycleStore(fixture.Context).TryStartAsync(Start("C-1", "agv02"), [ChargingIntent("C-1")], Token));
+        Assert.Contains("MovementLegId='LEG-C-1'", Assert.Single(
+            await Batch7JourneyFixture.DumpAsync(fixture.Connection, "OrderIntents")), StringComparison.Ordinal);
+
+        // The second vehicle's start is refused by the charger's key: its intent goes with it, and a later save of the
+        // same context writes nothing of it.
+        await using ControlServerDbContext second = fixture.NewContext();
+        Assert.Equal(ChargingCycleStartOutcome.StationHeld,
+            await new ChargingCycleStore(second).TryStartAsync(Start("C-2", "agv03"), [ChargingIntent("C-2")], Token));
+        Assert.Empty(second.ChangeTracker.Entries());
+        await second.SaveChangesAsync(Token);
+        Assert.Single(await Batch7JourneyFixture.DumpAsync(fixture.Connection, "OrderIntents"));
+    }
+
+    [Fact]
+    public async Task ALostUpdateForgetsOnlyItsOwnRowAndLeavesWhatTheCallerTracksInPlace()
+    {
+        // A concurrency failure used to clear the whole change tracker, taking the caller's own pending rows with it
+        // (#416 review, 3).
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        await new ChargingCycleStore(fixture.Context).TryStartAsync(Start("C-1", "agv02"), null, Token);
+        ChargingCycle read = (await new ChargingCycleStore(fixture.Context).ReadAsync("C-1", Token))!;
+        await using ControlServerDbContext caller = fixture.NewContext(new BeforeSave(fixture.Connection,
+            "UPDATE ChargingCycles SET Version = Version + 1 WHERE CycleId = 'C-1'"));
+        ManualChargingHoldRow pending = new() { VehicleKey = "agv09", HoldId = "MH-9", Reason = "ROSTER_EMPTY", Since = Now };
+        caller.Add(pending);
+
+        Assert.False(await new ChargingCycleStore(caller).UpdateAsync(read with { WireState = "EN_ROUTE" }, Token));
+
+        Assert.Equal(EntityState.Added, caller.Entry(pending).State);
+        Assert.Equal(["MH-9"], caller.ChangeTracker.Entries().Select(entry => entry.Entity).OfType<ManualChargingHoldRow>()
+            .Select(row => row.HoldId));
+        await caller.SaveChangesAsync(Token);
+        Assert.Single(await Batch7JourneyFixture.DumpAsync(fixture.Connection, "ManualChargingHolds"));
+        Assert.Equal("ALLOCATED", (await new ChargingCycleStore(fixture.NewContext()).ReadAsync("C-1", Token))!.WireState);
+    }
+
+    [Fact]
     public async Task ASecondUnfinishedCycleForTheSameVehicleIsRefusedByTheIndexAndAnEndedOneDoesNotCount()
     {
         await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
         ChargingCycleStore cycles = new(fixture.Context);
-        Assert.Equal(ChargingCycleStartOutcome.Started, await cycles.TryStartAsync(Start("C-1", "agv02"), Token));
+        Assert.Equal(ChargingCycleStartOutcome.Started, await cycles.TryStartAsync(Start("C-1", "agv02"), null, Token));
 
         // The index itself, not the claim's key in front of it: a row written around the store.
         SqliteException refused = await Assert.ThrowsAsync<SqliteException>(() => ExecuteAsync(fixture.Connection, CycleInsert("C-2", "CLEARING")));
@@ -358,7 +401,7 @@ public sealed class Batch9PersistencePortTests
 
         // Through the store, the second start is told why.
         Assert.Equal(ChargingCycleStartOutcome.OpenCycleExists,
-            await new ChargingCycleStore(fixture.NewContext()).TryStartAsync(Start("C-3", "agv02") with { StationId = 212 }, Token));
+            await new ChargingCycleStore(fixture.NewContext()).TryStartAsync(Start("C-3", "agv02") with { StationId = 212 }, null, Token));
 
         ChargingCycle open = (await cycles.ReadOpenAsync("agv02", Token))!;
         Assert.True(await cycles.UpdateAsync(
@@ -371,7 +414,7 @@ public sealed class Batch9PersistencePortTests
     {
         await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
         ChargingCycleStore cycles = new(fixture.Context);
-        await cycles.TryStartAsync(Start("C-1", "agv02"), Token);
+        await cycles.TryStartAsync(Start("C-1", "agv02"), null, Token);
         ChargingCycle read = (await cycles.ReadAsync("C-1", Token))!;
 
         Assert.True(await new ChargingCycleStore(fixture.NewContext()).UpdateAsync(
@@ -484,7 +527,7 @@ public sealed class Batch9PersistencePortTests
 
         StationClearanceCompletion manual = new(
             Now.AddMinutes(5), "MANUAL_CONFIRMATION", null, null, "person-7", "R-11", Now.AddMinutes(4), "safe bay 3",
-            "CANCELLED_CONFIRMED", ["person-8"]);
+            "CANCELLED_CONFIRMED", ["person-8"], "STATION_EMPTY", "MC-1");
         Assert.True(await clearances.CompleteAsync("SC-1", manual, Token));
         Assert.False(await new StationClearanceStore(fixture.NewContext()).CompleteAsync(
             "SC-1", manual with { Proof = "ARRIVED_AT_WAITING_POINT" }, Token));
@@ -493,6 +536,8 @@ public sealed class Batch9PersistencePortTests
         Assert.Equal(("MANUAL_CONFIRMATION", "person-7", "safe bay 3", "CANCELLED_CONFIRMED"),
             (done.Proof, done.ConfirmedBy, done.VehicleFinalPosition, done.OldOrderDisposition));
         Assert.Equal(["person-8"], done.Assistants);
+        // What the field confirmed and which request it came through (batch 9-08 item 6, #416 review 1).
+        Assert.Equal(("STATION_EMPTY", "MC-1"), (done.ClearedCondition, done.ConfirmationRequestId));
     }
 
     [Fact]
@@ -603,6 +648,20 @@ public sealed class Batch9PersistencePortTests
     private static ChargingCycleStart Start(string cycleId, string vehicleKey) =>
         new(cycleId, vehicleKey, "charge:" + vehicleKey, 26, 211, 2, 7, Now);
 
+    private static OrderIntentRow ChargingIntent(string cycleId) => new()
+    {
+        MovementLegId = "LEG-" + cycleId,
+        DemandId = null!,
+        UpperId = "W2G-CHARGE-" + cycleId,
+        Purpose = "TO_CHARGER",
+        TargetStationId = "ST-211",
+        VehicleKey = "agv02",
+        MapId = 26,
+        DestinationStationId = 211,
+        CreatedAt = Now,
+        OrderShape = OrderShapes.Charge
+    };
+
     private static string CycleInsert(string cycleId, string phase) =>
         "INSERT INTO ChargingCycles (CycleId, VehicleKey, JourneyId, MapId, StationId, ChargerRosterVersion, " +
         "ChargingPolicyVersion, WireState, Phase, AllocatedAt, Version) " +
@@ -655,6 +714,23 @@ public sealed class Batch9PersistencePortTests
             }
         }
         return [];
+    }
+
+    /// <summary>Runs <paramref name="sql"/> once, just before the first save: another writer committing in between.</summary>
+    private sealed class BeforeSave(SqliteConnection connection, string sql) : SaveChangesInterceptor
+    {
+        private bool _done;
+
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (!_done)
+            {
+                _done = true;
+                await ExecuteAsync(connection, sql);
+            }
+            return await base.SavingChangesAsync(eventData, result, cancellationToken);
+        }
     }
 
     /// <summary>Throws before the first command that inserts into <paramref name="table"/> reaches the database.</summary>

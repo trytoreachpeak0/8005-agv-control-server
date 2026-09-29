@@ -3636,8 +3636,14 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("ClearedCondition")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTimeOffset?>("CompletedAt")
                         .IsConcurrencyToken()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ConfirmationRequestId")
                         .HasColumnType("TEXT");
 
                     b.Property<DateTimeOffset?>("ConfirmedAt")

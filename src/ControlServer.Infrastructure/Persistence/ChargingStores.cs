@@ -416,7 +416,8 @@ public sealed class ChargingCycleStore(ControlServerDbContext context) : IChargi
 {
     private readonly ControlServerDbContext _context = context ?? throw new ArgumentNullException(nameof(context));
 
-    public async Task<ChargingCycleStartOutcome> TryStartAsync(ChargingCycleStart start, CancellationToken cancellationToken)
+    public async Task<ChargingCycleStartOutcome> TryStartAsync(
+        ChargingCycleStart start, IReadOnlyCollection<object>? sameSave, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(start);
         ArgumentException.ThrowIfNullOrWhiteSpace(start.CycleId, nameof(start));
@@ -447,6 +448,7 @@ public sealed class ChargingCycleStore(ControlServerDbContext context) : IChargi
             },
             .. VehiclePurposeClaimWrites.NewRows(claim),
             .. StationExclusivityWrites.NewRows(station, start.VehicleKey, start.JourneyId, start.AllocatedAt),
+            .. sameSave ?? [],
         ];
         _context.AddRange(staged);
         try
@@ -529,8 +531,9 @@ public sealed class ChargingCycleStore(ControlServerDbContext context) : IChargi
         }
         catch (DbUpdateConcurrencyException)
         {
-            // Advanced through another context after this one read the row: nothing of this change was written.
-            _context.ChangeTracker.Clear();
+            // Advanced through another context after this one read the row: nothing of this change was written. Only
+            // this row is forgotten; whatever else the caller tracks stays as it was.
+            _context.Entry(row).State = EntityState.Detached;
             return false;
         }
     }
@@ -821,6 +824,8 @@ public sealed class StationClearanceStore(ControlServerDbContext context) : ISta
         row.VehicleFinalPosition = completion.VehicleFinalPosition;
         row.OldOrderDisposition = completion.OldOrderDisposition;
         row.AssistantsJson = JsonSerializer.Serialize(completion.Assistants);
+        row.ClearedCondition = completion.ClearedCondition;
+        row.ConfirmationRequestId = completion.ConfirmationRequestId;
         try
         {
             await _context.SaveChangesAsync(cancellationToken);
@@ -828,8 +833,8 @@ public sealed class StationClearanceStore(ControlServerDbContext context) : ISta
         }
         catch (DbUpdateConcurrencyException)
         {
-            // Completed through another context after this one read the row.
-            _context.ChangeTracker.Clear();
+            // Completed through another context after this one read the row. Only this row is forgotten.
+            _context.Entry(row).State = EntityState.Detached;
             return false;
         }
     }
@@ -846,7 +851,9 @@ public sealed class StationClearanceStore(ControlServerDbContext context) : ISta
         row.ClearanceId, row.CycleId, row.VehicleKey, row.MapId, row.StationId, row.StartedAt, row.CompletedAt, row.Proof,
         row.WaitingPointMapId, row.WaitingPointStationId, row.ConfirmedBy, row.ConfirmedByRole, row.ConfirmedAt,
         row.VehicleFinalPosition, row.OldOrderDisposition,
-        JsonSerializer.Deserialize<string[]>(row.AssistantsJson) ?? []);
+        JsonSerializer.Deserialize<string[]>(row.AssistantsJson) ?? [],
+        row.ClearedCondition,
+        row.ConfirmationRequestId);
 }
 
 /// <summary>
@@ -898,7 +905,7 @@ public sealed class ManualChargingHoldStore(ControlServerDbContext context) : IM
             .SingleAsync(item => item.HoldId == row.HoldId, cancellationToken);
         row.WarnedAt = warnedAt;
         record.WarnedAt = warnedAt;
-        return await SaveUnlessMovedAsync(cancellationToken);
+        return await SaveUnlessMovedAsync([row, record], cancellationToken);
     }
 
     public async Task<bool> ReleaseAsync(
@@ -918,7 +925,7 @@ public sealed class ManualChargingHoldStore(ControlServerDbContext context) : IM
         _context.Set<ManualChargingHoldRow>().Remove(row);
         record.ReleasedAt = releasedAt;
         record.ReleaseRequestId = releaseRequestId;
-        return await SaveUnlessMovedAsync(cancellationToken);
+        return await SaveUnlessMovedAsync([row, record], cancellationToken);
     }
 
     public async Task<ManualChargingHold?> ReadAsync(string vehicleKey, CancellationToken cancellationToken)
@@ -947,7 +954,7 @@ public sealed class ManualChargingHoldStore(ControlServerDbContext context) : IM
         ];
     }
 
-    private async Task<bool> SaveUnlessMovedAsync(CancellationToken cancellationToken)
+    private async Task<bool> SaveUnlessMovedAsync(object[] rows, CancellationToken cancellationToken)
     {
         try
         {
@@ -956,8 +963,12 @@ public sealed class ManualChargingHoldStore(ControlServerDbContext context) : IM
         }
         catch (DbUpdateConcurrencyException)
         {
-            // Released, or released and placed again, through another context after this one read the row.
-            _context.ChangeTracker.Clear();
+            // Released, or released and placed again, through another context after this one read the row. Only the
+            // rows this change touched are forgotten; whatever else the caller tracks stays as it was.
+            foreach (object row in rows)
+            {
+                _context.Entry(row).State = EntityState.Detached;
+            }
             return false;
         }
     }

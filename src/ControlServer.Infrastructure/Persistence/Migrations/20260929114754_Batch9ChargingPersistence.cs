@@ -350,7 +350,9 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                     ConfirmedAt = table.Column<DateTimeOffset>(type: "TEXT", nullable: true),
                     VehicleFinalPosition = table.Column<string>(type: "TEXT", nullable: true),
                     OldOrderDisposition = table.Column<string>(type: "TEXT", nullable: true),
-                    AssistantsJson = table.Column<string>(type: "TEXT", nullable: false)
+                    AssistantsJson = table.Column<string>(type: "TEXT", nullable: false),
+                    ClearedCondition = table.Column<string>(type: "TEXT", nullable: true),
+                    ConfirmationRequestId = table.Column<string>(type: "TEXT", nullable: true)
                 },
                 constraints: table =>
                 {
