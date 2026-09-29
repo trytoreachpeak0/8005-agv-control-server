@@ -43,7 +43,7 @@ public static class WaitingPointGovernance
 
 /// <summary>
 /// 一次用途占有的记录：谁（车）、为什么（用途）、替谁（持有者，也就是那趟旅程）、何时取得、何时为何释放（<c>REQ-0297</c>）。
-/// 未释放时 <see cref="ReleasedAt"/> 为空；一车至多一条未释放。
+/// 未释放时 <see cref="ReleasedAt"/> 为空。
 /// </summary>
 public sealed record VehiclePurposeClaimRecord(
     string RecordId,
@@ -97,14 +97,33 @@ public enum VehiclePurposeAcquisitionOutcome
     /// <summary>用途占有（以及请求了的站点独占）都已取得，同一次保存。</summary>
     Acquired,
 
-    /// <summary>这趟旅程本来就以同一用途占着这辆车；没有写任何东西。</summary>
+    /// <summary>
+    /// 请求的全部本来就是这趟旅程的：它以同一用途占着这辆车，请求了站点时也占着那个站点（崩溃后重试就是这样）。没有写任何东西。
+    /// </summary>
     AlreadyHeld,
 
-    /// <summary>车被别的旅程或别的用途占着；什么也没写。</summary>
+    /// <summary>
+    /// 车被别的旅程或别的用途占着，或者被这趟旅程占着、却没有它请求的那个站点。什么也没写。
+    /// </summary>
     VehicleHeld,
 
-    /// <summary>车是空的，但站点被别人占着；什么也没写，用途占有也没留下。</summary>
+    /// <summary>车不是别人的，但站点被别的旅程占着；什么也没写，用途占有也没留下。</summary>
     StationHeld,
+}
+
+/// <summary>单独取得一个站点独占的结果。</summary>
+public enum StationExclusivityAcquisitionOutcome
+{
+    Acquired,
+
+    /// <summary>
+    /// 这趟旅程的这辆车本来就占着这个站点（崩溃后重试）。没有写任何东西，状态与时刻不变。调用方不能把它当成「被占」去换别的站点，
+    /// 否则会把自己占着的那个晾着——等待点数等于车辆数时就是规格 5.4 说的互锁。
+    /// </summary>
+    AlreadyHeld,
+
+    /// <summary>站点被别的旅程或别的车占着；什么也没写。</summary>
+    Held,
 }
 
 /// <summary>
@@ -112,8 +131,8 @@ public enum VehiclePurposeAcquisitionOutcome
 /// </summary>
 /// <remarks>
 /// <para>
-/// 谁占到由数据库约束决定，不先读后写：<c>VehiclePurposeClaims</c> 的主键一车一行，<c>VehiclePurposeClaimRecords</c> 的过滤唯一索引
-/// 一车一条未释放，站点独占的主键 <c>(MapId, StationId)</c> 一站一行。
+/// 谁占到由数据库约束决定，不先读后写：<c>VehiclePurposeClaims</c> 的主键一车一行，站点独占的主键 <c>(MapId, StationId)</c>
+/// 一站一行。占有记录与站点经过是证据，不参与仲裁。
 /// </para>
 /// <para>
 /// 认领时可以同时要一个站点独占：两件事在同一次保存里，要么都在、要么都不在（批次8-18 的原子承诺靠这一点）。
@@ -151,10 +170,10 @@ public interface IVehiclePurposeLedger
 public interface IStationExclusivityStore
 {
     /// <summary>
-    /// 为这趟旅程的这辆车取得站点独占，并记下它的经过。站点已被占着（不论是谁）时返回假，什么也不写。
+    /// 为这趟旅程的这辆车取得站点独占，并记下它的经过。站点已被占着时什么也不写，并分清是自己占着还是别人占着。
     /// 要与用途占有一起取得时用 <see cref="IVehiclePurposeLedger.TryAcquireAsync"/>。
     /// </summary>
-    Task<bool> TryAcquireAsync(
+    Task<StationExclusivityAcquisitionOutcome> TryAcquireAsync(
         StationExclusivityRequest request,
         string vehicleKey,
         string journeyId,

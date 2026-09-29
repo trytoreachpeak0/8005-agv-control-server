@@ -11,8 +11,10 @@ public sealed class VehiclePurposeClaimRecordRowConfiguration : IEntityTypeConfi
         builder.ToTable("VehiclePurposeClaimRecords", table => table.HasCheckConstraint(
             "CK_VehiclePurposeClaimRecords_Purpose", CheckConstraintSql.OneOf("Purpose", VehiclePurposes.All)));
         builder.HasKey(row => row.RecordId);
-        // At most one unreleased record per vehicle, decided by the database in the same save as the claim's own key.
-        builder.HasIndex(row => row.VehicleKey).IsUnique().HasFilter("ReleasedAt IS NULL");
+        // Deliberately not unique: the record is evidence, not an arbiter. Who holds a vehicle is decided by
+        // VehiclePurposeClaims' key alone; a second arbiter here could disagree with it -- a record left open by a path
+        // that released the claim without it -- and then refuse the vehicle for good (review of control-server#394).
+        builder.HasIndex(row => row.VehicleKey);
         builder.HasIndex(row => row.JourneyId);
     }
 }

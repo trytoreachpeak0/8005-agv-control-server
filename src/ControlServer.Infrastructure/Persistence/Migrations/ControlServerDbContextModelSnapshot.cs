@@ -1722,7 +1722,6 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("DemandId")
-                        .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.Property<DateTimeOffset>("DueAt")
@@ -3081,9 +3080,7 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("VehicleKey");
 
-                    b.HasIndex("MapId", "StationId")
-                        .IsUnique()
-                        .HasFilter("ReleasedAt IS NULL");
+                    b.HasIndex("MapId", "StationId");
 
                     b.ToTable("StationExclusivityRecords", null, t =>
                         {
@@ -3692,9 +3689,7 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("JourneyId");
 
-                    b.HasIndex("VehicleKey")
-                        .IsUnique()
-                        .HasFilter("ReleasedAt IS NULL");
+                    b.HasIndex("VehicleKey");
 
                     b.ToTable("VehiclePurposeClaimRecords", null, t =>
                         {

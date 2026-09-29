@@ -184,6 +184,9 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
         modelBuilder.Entity<OrderIntentRow>().Property(row => row.DemandId).IsRequired(false);
         modelBuilder.Entity<RiotDispatchAuditEventRow>().Property(row => row.DemandId).IsRequired(false);
         modelBuilder.Entity<ExperimentalRiotCreateAuthorizationRow>().Property(row => row.DemandId).IsRequired(false);
+        // An idle return rides on the journey so that fault supervision and the own-order rebuild reach it too; the
+        // rebuild's record names the journey's anchor demand.
+        modelBuilder.Entity<OwnOrderRebuildRow>().Property(row => row.DemandId).IsRequired(false);
         modelBuilder.Entity<AdmissionPolicyStateRow>().HasKey(row => row.Id);
         modelBuilder.Entity<AdmissionPolicyStateRow>().Property(row => row.Id).ValueGeneratedNever();
         modelBuilder.Entity<StationTaskTypeAdmissionRow>().HasKey(row => new { row.StationId, row.TaskType });

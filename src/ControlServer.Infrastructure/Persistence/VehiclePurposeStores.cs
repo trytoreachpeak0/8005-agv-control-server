@@ -73,18 +73,39 @@ public sealed class VehiclePurposeLedgerStore(ControlServerDbContext context) : 
         }
         catch (DbUpdateException failure) when (StationExclusivityWrites.IsKeyConflict(failure))
         {
-            // One of the keys refused the save, and the save took every row of this acquisition back with it.
+            // One of the keys refused the save, and the save took every row of this acquisition back with it. Which key
+            // refused says little -- EF inserts the station before the claim, so a retry of an acquisition that already
+            // succeeded is refused by the station's key -- so the answer is read from who holds what now.
             foreach (object row in staged)
             {
                 _context.Entry(row).State = EntityState.Detached;
             }
-            if (StationExclusivityWrites.IsStationConflict(failure))
+            VehiclePurposeClaim? vehicleHolder = await ReadClaimAsync(claim.VehicleKey, cancellationToken);
+            StationExclusivityRow? stationHolder = station is null
+                ? null
+                : await _context.Set<StationExclusivityRow>().AsNoTracking()
+                    .SingleOrDefaultAsync(
+                        row => row.MapId == station.MapId && row.StationId == station.StationId, cancellationToken);
+            bool vehicleIsOurs = vehicleHolder is not null
+                                 && vehicleHolder.JourneyId == claim.JourneyId && vehicleHolder.Purpose == claim.Purpose;
+            bool stationIsOurs = station is null
+                                 || (stationHolder is not null && stationHolder.JourneyId == claim.JourneyId
+                                     && stationHolder.VehicleKey == claim.VehicleKey);
+            if (vehicleIsOurs && stationIsOurs)
+            {
+                return VehiclePurposeAcquisitionOutcome.AlreadyHeld;
+            }
+            if (vehicleHolder is not null)
+            {
+                return VehiclePurposeAcquisitionOutcome.VehicleHeld;
+            }
+            if (stationHolder is not null && !stationIsOurs)
             {
                 return VehiclePurposeAcquisitionOutcome.StationHeld;
             }
-            VehiclePurposeClaim? holder = await ReadClaimAsync(claim.VehicleKey, cancellationToken);
-            return holder is not null && holder.JourneyId == claim.JourneyId && holder.Purpose == claim.Purpose
-                ? VehiclePurposeAcquisitionOutcome.AlreadyHeld
+            // Whoever refused this one has let go since: the caller's next round decides again.
+            return StationExclusivityWrites.IsStationConflict(failure)
+                ? VehiclePurposeAcquisitionOutcome.StationHeld
                 : VehiclePurposeAcquisitionOutcome.VehicleHeld;
         }
     }
@@ -108,12 +129,11 @@ public sealed class VehiclePurposeLedgerStore(ControlServerDbContext context) : 
         }
         _context.Set<VehiclePurposeClaimRow>().Remove(claim);
         // A claim the engine wrote directly (before batch 8-16 moves it onto this port) has no record; it is released all
-        // the same, and its history stays on the lease row it was written beside.
-        VehiclePurposeClaimRecordRow? record = await _context.Set<VehiclePurposeClaimRecordRow>()
-            .SingleOrDefaultAsync(
-                row => row.VehicleKey == vehicleKey && row.JourneyId == journeyId && row.ReleasedAt == null,
-                cancellationToken);
-        if (record is not null)
+        // the same, and its history stays on the lease row it was written beside. Records are evidence, not an arbiter,
+        // so nothing guarantees there is at most one open: every open one of this journey on this vehicle is closed.
+        foreach (VehiclePurposeClaimRecordRow record in await _context.Set<VehiclePurposeClaimRecordRow>()
+                     .Where(row => row.VehicleKey == vehicleKey && row.JourneyId == journeyId && row.ReleasedAt == null)
+                     .ToListAsync(cancellationToken))
         {
             record.ReleasedAt = releasedAt;
             record.ReleaseReason = releaseReason;
@@ -156,7 +176,7 @@ public sealed class StationExclusivityStore(ControlServerDbContext context) : IS
 {
     private readonly ControlServerDbContext _context = context ?? throw new ArgumentNullException(nameof(context));
 
-    public async Task<bool> TryAcquireAsync(
+    public async Task<StationExclusivityAcquisitionOutcome> TryAcquireAsync(
         StationExclusivityRequest request,
         string vehicleKey,
         string journeyId,
@@ -173,7 +193,7 @@ public sealed class StationExclusivityStore(ControlServerDbContext context) : IS
         try
         {
             await _context.SaveChangesAsync(cancellationToken);
-            return true;
+            return StationExclusivityAcquisitionOutcome.Acquired;
         }
         catch (DbUpdateException failure) when (StationExclusivityWrites.IsKeyConflict(failure))
         {
@@ -181,7 +201,11 @@ public sealed class StationExclusivityStore(ControlServerDbContext context) : IS
             {
                 _context.Entry(row).State = EntityState.Detached;
             }
-            return false;
+            // The key refused the insert; only who holds the station now decides the answer.
+            StationExclusivity? holder = await ReadAsync(request.MapId, request.StationId, cancellationToken);
+            return holder is not null && holder.JourneyId == journeyId && holder.VehicleKey == vehicleKey
+                ? StationExclusivityAcquisitionOutcome.AlreadyHeld
+                : StationExclusivityAcquisitionOutcome.Held;
         }
     }
 

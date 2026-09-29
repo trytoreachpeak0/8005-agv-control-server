@@ -102,7 +102,7 @@ public static class JourneyDemandStatuses
 /// <remarks>
 /// 与线上 <c>activePurpose</c> 的常量（<c>ControlServer.Domain.VehicleActivePurposes</c>）是两件事：这里是服务端占有的记录，
 /// 那里是协议报文的取值，随协议版本走。今天两边的拼写逐字相同（协议 <c>VehicleBusinessStateSnapshot.activePurpose</c> 的枚举也是这四个），
-/// 由 <c>Batch8PurposeVocabularyTests</c> 钉住「这里每个值在协议枚举里都有」，谁改了一边另一边会红；把一边的值原样写到另一边是
+/// 由 <c>Batch8PersistencePortTests.TheFourPurposesAreDefinedOnceAndEachHasItsWireCounterpartInTheProtocolEnum</c> 钉住「这里每个值在协议枚举里都有」，这里多出协议没有的值、或协议删掉这里在用的值，它就红；把一边的值原样写到另一边是
 /// 批次8-18（control-server#389）的事。本批实际会取得的只有 <see cref="Transport"/> 与 <see cref="IdleReturn"/>。
 /// </remarks>
 public static class VehiclePurposes

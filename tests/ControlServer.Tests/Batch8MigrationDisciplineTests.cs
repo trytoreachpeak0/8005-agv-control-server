@@ -17,8 +17,13 @@ namespace ControlServer.Tests;
 /// 批次 3、6、7 那三份纪律测试的名单也点了本迁移的名。
 /// </para>
 /// <para>
-/// 引擎零行为变化在库这一层的样子：既有表的列、列序与每一行都不变，唯一动到的既有表 <c>VehiclePurposeClaims</c> 只多了一条
-/// CHECK 约束。EF 在 SQLite 上加约束会整表重建并把列重排，所以本迁移手写了保留列序的重建；这里断言它真的保留了。
+/// 引擎零行为变化在库这一层的样子：既有表的列、列序与每一行都不变；重建的六张表只差放宽的 NOT NULL（选甲）与
+/// <c>VehiclePurposeClaims</c> 的用途 CHECK。EF 在 SQLite 上改这两样会整表重建并把列重排，所以本迁移手写了保留列序的重建，
+/// 列清单也是手写的：漏拷一列，那一列在迁移后就成了空值。这里断言它真的一列不漏，所以种子把六张表的每个可空列都填成逐行不同的
+/// 非空值——只填受理路径会写的列时，漏拷一个今天恰好为空的列（在途单的 <c>OrderId</c>）看不出来（control-server#394 审查必修 2）。
+/// </para>
+/// <para>
+/// 这是本迁移唯一的守卫：<c>ZeroChangePins/</c> 走 <c>EnsureCreated</c>，不经过迁移。
 /// </para>
 /// </remarks>
 public sealed class Batch8MigrationDisciplineTests
@@ -80,10 +85,11 @@ public sealed class Batch8MigrationDisciplineTests
                 "IX_StationExclusivities_RecordId unique on RecordId",
                 "IX_StationExclusivities_VehicleKey on VehicleKey",
                 "IX_StationExclusivityRecords_JourneyId on JourneyId",
-                "IX_StationExclusivityRecords_MapId_StationId unique on MapId,StationId where ReleasedAt IS NULL",
+                // The two record tables are evidence, not arbiters: no unique index (control-server#394 review, required 1).
+                "IX_StationExclusivityRecords_MapId_StationId on MapId,StationId",
                 "IX_StationExclusivityRecords_VehicleKey on VehicleKey",
                 "IX_VehiclePurposeClaimRecords_JourneyId on JourneyId",
-                "IX_VehiclePurposeClaimRecords_VehicleKey unique on VehicleKey where ReleasedAt IS NULL",
+                "IX_VehiclePurposeClaimRecords_VehicleKey on VehicleKey",
                 "IX_VehiclePurposeClaims_JourneyId on JourneyId",
             ],
             await IndexesAsync(fixture.Connection, [.. NewTables, "VehiclePurposeClaims"]));
@@ -100,7 +106,7 @@ public sealed class Batch8MigrationDisciplineTests
     }
 
     [Fact]
-    public async Task EveryClaimInFlightGetsItsAcquiredRecordAndEveryExistingRowAndColumnStaysExactlyAsItWas()
+    public async Task WithJourneysInFlightEveryExistingRowAndColumnStaysExactlyAsItWasAndTheNewTablesStartEmpty()
     {
         await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync(migrate: false);
         IMigrator migrator = fixture.Context.GetService<IMigrator>();
@@ -112,6 +118,7 @@ public sealed class Batch8MigrationDisciplineTests
         Assert.Equal(3, rowsBefore["OrderIntents"].Length);
         Assert.Single(rowsBefore["RiotDispatchAuditEvents"]);
         Assert.Single(rowsBefore["ExperimentalRiotCreateAuthorizations"]);
+        Assert.Single(rowsBefore["OwnOrderRebuilds"]);
         Assert.Equal(2, rowsBefore["VehiclePurposeClaims"].Length);
 
         // Journeys in flight while the migration runs: it runs all the same.
@@ -134,21 +141,16 @@ public sealed class Batch8MigrationDisciplineTests
             }
         }
 
-        // One "acquired" per claim held at the upgrade, the ended journey's none; the other new tables are empty.
-        Assert.Equal(
-            [
-                "RecordId='backfill|journey:D-1'|VehicleKey='VK-01'|Purpose='TRANSPORT'|JourneyId='journey:D-1'|AcquiredAt='2026-09-19 09:00:00+00:00'|ReleasedAt=NULL|ReleaseReason=NULL",
-                "RecordId='backfill|journey:D-2'|VehicleKey='VK-02'|Purpose='TRANSPORT'|JourneyId='journey:D-2'|AcquiredAt='2026-09-19 09:01:00+00:00'|ReleasedAt=NULL|ReleaseReason=NULL",
-            ],
-            await Batch7JourneyFixture.DumpAsync(fixture.Connection, "VehiclePurposeClaimRecords"));
-        foreach (string table in NewTables.Where(table => table != "VehiclePurposeClaimRecords"))
+        // Every new table starts empty -- the claim records included: their back-fill belongs to control-server#387, which
+        // switches the engine onto the ledger in the same migration (control-server#394 review, required 1).
+        foreach (string table in NewTables)
         {
             Assert.Empty(await Batch7JourneyFixture.DumpAsync(fixture.Connection, table));
         }
     }
 
     [Fact]
-    public async Task TheFiveRebuiltTablesKeepEveryIndexConstraintAndTriggerAndDifferOnlyInWhatTheMigrationMeantToChange()
+    public async Task TheSixRebuiltTablesKeepEveryIndexConstraintAndTriggerAndDifferOnlyInWhatTheMigrationMeantToChange()
     {
         // A rebuild drops the table with everything hanging off it and puts back only what it names. An object built by
         // hand-written SQL somewhere in the history and forgotten here would vanish silently; this is where it shows.
@@ -163,7 +165,9 @@ public sealed class Batch8MigrationDisciplineTests
 
         foreach (string table in RebuiltTables)
         {
-            // Everything but the table itself -- indexes, partial unique indexes, triggers -- word for word.
+            // Everything but the table itself -- indexes, partial unique indexes, triggers -- word for word. No trigger hangs
+            // off any of the six today (control-server#199's audit triggers are on the two audit tables), so for triggers this
+            // compares two empty sets; it is kept so that one added later is carried or the comparison goes red.
             Assert.Equal(
                 before[table].Where(entry => !entry.StartsWith("table ", StringComparison.Ordinal)),
                 after[table].Where(entry => !entry.StartsWith("table ", StringComparison.Ordinal)));
@@ -229,7 +233,9 @@ public sealed class Batch8MigrationDisciplineTests
         }
         string[] schemaBefore = await SchemaAsync(fixture.Connection);
 
-        await Assert.ThrowsAsync<SqliteException>(() => migrator.MigrateAsync(null, Token));
+        SqliteException failure = await Assert.ThrowsAsync<SqliteException>(() => migrator.MigrateAsync(null, Token));
+        Assert.Equal(275, failure.SqliteExtendedErrorCode); // SQLITE_CONSTRAINT_CHECK
+        Assert.Contains("CK_VehiclePurposeClaims_Purpose", failure.Message, StringComparison.Ordinal);
 
         Assert.Equal(schemaBefore, await SchemaAsync(fixture.Connection));
         Assert.Single(await Batch7JourneyFixture.DumpAsync(fixture.Connection, "VehiclePurposeClaims"));
@@ -249,22 +255,62 @@ public sealed class Batch8MigrationDisciplineTests
         await Batch7JourneyFixture.CompleteByUnloadAsync(fixture.Context, "D-3", now.AddMinutes(10));
         await fixture.RenewContextAsync();
 
-        // The two RIoT tables whose DemandId is relaxed, one row each, so their values are compared too. Written directly:
-        // the rows are only there to be carried through the rebuild.
-        await using SqliteCommand insert = fixture.Connection.CreateCommand();
-        insert.CommandText =
-            """
+        // The RIoT tables and the own-order rebuild record whose DemandId is relaxed, one row each, so their values are
+        // compared too. Written directly: the rows are only there to be carried through the rebuild.
+        await using (SqliteCommand insert = fixture.Connection.CreateCommand())
+        {
+            insert.CommandText =
+                """
             INSERT INTO RiotDispatchAuditEvents (AuditEventId, MovementLegId, DemandId, UpperId, DispatchGeneration, Sequence, AttemptId, AttemptNumber, Phase, Outcome, OccurredAt, RequestSemanticSha256, HttpStatusCode, ResultPresent, EligibilityBasis)
             VALUES ('AE-1', 'LEG-1', 'D-1', 'W2G-D-1-PICKUP-1', 1, 1, 'ATTEMPT-1', 1, 'CREATE', 'ACCEPTED', '2026-09-19 09:00:05+00:00', 'abc', 200, 1, 'FRESH');
             INSERT INTO ExperimentalRiotCreateAuthorizations (AuthorizationId, AuthorizationVersion, UpperId, DemandId, MovementLegId, AgvLifecycleGeneration, DispatchGeneration, ExpiresAt, PersistedAt)
             VALUES ('AUTH-1', 1, 'W2G-D-1-PICKUP-1', 'D-1', 'LEG-1', 1, 1, '2026-09-19 10:00:00+00:00', '2026-09-19 09:00:01+00:00');
+            INSERT INTO OwnOrderRebuilds (RebuildId, JourneyId, DemandId, AgvId, VehicleKey, StopId, Source, EndedUpperId, IncidentAt, RecordedAt, DueAt, NewUpperId, NewMovementLegId, State, CargoEvidenceRequestedWhileReady)
+            VALUES ('RB-1', 'journey:D-1', 'D-1', 'AGV-01', 'VK-01', 'journey:D-1|PICKUP', 'RIOT', 'W2G-D-1-PICKUP-1', '2026-09-19 09:02:00+00:00', '2026-09-19 09:02:01+00:00', '2026-09-19 09:03:00+00:00', 'W2G-D-1-REBUILD-1', 'LEG-RB-1', 'WAITING', 0);
             """;
-        await insert.ExecuteNonQueryAsync(Token);
+            await insert.ExecuteNonQueryAsync(Token);
+        }
+
+        // Every nullable column of the six rebuilt tables gets a value, different on every row, so a column the hand-written
+        // copy leaves out shows as a changed value -- not only the columns the acceptance path happens to write.
+        foreach (string table in RebuiltTables)
+        {
+            foreach ((string column, string type) in await NullableColumnsAsync(fixture.Connection, table))
+            {
+                await using SqliteCommand fill = fixture.Connection.CreateCommand();
+                string value = type.Equals("INTEGER", StringComparison.OrdinalIgnoreCase)
+                    ? "rowid * 1000 + " + (column.Length * 7 % 997).ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    : $"'fill:{column}:' || rowid";
+                fill.CommandText = $"UPDATE \"{table}\" SET \"{column}\" = {value} WHERE \"{column}\" IS NULL";
+                await fill.ExecuteNonQueryAsync(Token);
+            }
+            foreach ((string column, _) in await NullableColumnsAsync(fixture.Connection, table))
+            {
+                Assert.Equal(0L, await ScalarAsync(fixture.Connection, $"SELECT COUNT(*) FROM \"{table}\" WHERE \"{column}\" IS NULL"));
+            }
+            Assert.NotEqual(0L, await ScalarAsync(fixture.Connection, $"SELECT COUNT(*) FROM \"{table}\""));
+        }
     }
 
-    /// <summary>The five tables this migration rebuilds.</summary>
+    private static async Task<List<(string Column, string Type)>> NullableColumnsAsync(SqliteConnection connection, string table)
+    {
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = $"SELECT name, type FROM pragma_table_info('{table}') WHERE \"notnull\" = 0 AND pk = 0";
+        List<(string, string)> columns = [];
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(Token);
+        while (await reader.ReadAsync(Token))
+        {
+            columns.Add((reader.GetString(0), reader.GetString(1)));
+        }
+        return columns;
+    }
+
+    /// <summary>The six tables this migration rebuilds.</summary>
     private static readonly string[] RebuiltTables =
-        ["ExperimentalRiotCreateAuthorizations", "JourneyRuntimes", "OrderIntents", "RiotDispatchAuditEvents", "VehiclePurposeClaims"];
+    [
+        "ExperimentalRiotCreateAuthorizations", "JourneyRuntimes", "OrderIntents", "OwnOrderRebuilds", "RiotDispatchAuditEvents",
+        "VehiclePurposeClaims",
+    ];
 
     /// <summary>Choice A: the columns made nullable, table by table. Nothing else changes nullability.</summary>
     private static readonly Dictionary<string, string[]> RelaxedColumns = new(StringComparer.Ordinal)
@@ -279,6 +325,7 @@ public sealed class Batch8MigrationDisciplineTests
         ["OrderIntents"] = ["DemandId"],
         ["RiotDispatchAuditEvents"] = ["DemandId"],
         ["ExperimentalRiotCreateAuthorizations"] = ["DemandId"],
+        ["OwnOrderRebuilds"] = ["DemandId"],
     };
 
     private static string Relaxed(string table, string column)

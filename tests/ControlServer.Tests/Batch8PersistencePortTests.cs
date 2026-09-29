@@ -83,22 +83,28 @@ public sealed class Batch8PersistencePortTests
     }
 
     [Fact]
-    public async Task AnUnreleasedRecordAloneStillRefusesASecondClaimSoTheHistoryAndTheClaimCannotDisagree()
+    public async Task ARecordLeftOpenByAnotherPathDoesNotRefuseTheVehicleBecauseOnlyTheClaimsKeyArbitrates()
     {
-        // The moment a claim row was lost but its record was not: the record's filtered unique index refuses the second
-        // acquisition on its own, and the claim row inserted beside it goes back with it.
+        // The lock-up control-server#394's review reproduced: the engine ends a journey the old way and deletes the claim row,
+        // but a record stays open. Records are evidence; the vehicle must still be free (control-server#394 review, required 1).
         await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
         await ExecuteAsync(
             fixture.Connection,
             "INSERT INTO VehiclePurposeClaimRecords (RecordId, VehicleKey, Purpose, JourneyId, AcquiredAt) " +
             "VALUES ('R-0', 'VK-01', 'TRANSPORT', 'journey:D-0', '2026-09-19 08:00:00+00:00')");
+        VehiclePurposeLedgerStore ledger = new(fixture.Context);
 
         Assert.Equal(
-            VehiclePurposeAcquisitionOutcome.VehicleHeld,
-            await new VehiclePurposeLedgerStore(fixture.Context)
-                .TryAcquireAsync(Claim("journey:D-1", VehiclePurposes.Transport), null, Token));
-        Assert.Empty(await Batch7JourneyFixture.DumpAsync(fixture.Connection, "VehiclePurposeClaims"));
-        Assert.Single(await Batch7JourneyFixture.DumpAsync(fixture.Connection, "VehiclePurposeClaimRecords"));
+            VehiclePurposeAcquisitionOutcome.Acquired,
+            await ledger.TryAcquireAsync(Claim("journey:D-1", VehiclePurposes.Transport), null, Token));
+        Assert.Equal("journey:D-1", (await ledger.ReadClaimAsync("VK-01", Token))?.JourneyId);
+        Assert.Equal(2, (await ledger.ListClaimHistoryAsync("VK-01", Token)).Count(record => record.ReleasedAt is null));
+
+        // Releasing the new claim closes its own record and leaves the stray one as it was.
+        Assert.True(await ledger.ReleaseAsync("VK-01", "journey:D-1", Now.AddMinutes(1), "DONE", Token));
+        Assert.Equal(
+            ["journey:D-0 open", "journey:D-1 DONE"],
+            (await ledger.ListClaimHistoryAsync("VK-01", Token)).Select(record => $"{record.JourneyId} {record.ReleaseReason ?? "open"}"));
     }
 
     [Theory]
@@ -113,6 +119,7 @@ public sealed class Batch8PersistencePortTests
             SqliteException failure = await Assert.ThrowsAsync<SqliteException>(
                 () => ExecuteAsync(fixture.Connection, string.Format(System.Globalization.CultureInfo.InvariantCulture, insert, refused)));
             Assert.Equal(275, failure.SqliteExtendedErrorCode); // SQLITE_CONSTRAINT_CHECK
+            Assert.Contains($"CK_{table}_Purpose", failure.Message, StringComparison.Ordinal);
         }
         Assert.Empty(await Batch7JourneyFixture.DumpAsync(fixture.Connection, table));
 
@@ -130,7 +137,9 @@ public sealed class Batch8PersistencePortTests
 
         DbUpdateException failure = await Assert.ThrowsAsync<DbUpdateException>(() =>
             new VehiclePurposeLedgerStore(fixture.Context).TryAcquireAsync(Claim("journey:D-1", "PARKING"), null, Token));
-        Assert.Equal(275, Assert.IsType<SqliteException>(failure.InnerException).SqliteExtendedErrorCode);
+        SqliteException refusal = Assert.IsType<SqliteException>(failure.InnerException);
+        Assert.Equal(275, refusal.SqliteExtendedErrorCode);
+        Assert.Contains("CK_VehiclePurposeClaim", refusal.Message, StringComparison.Ordinal);
         Assert.Empty(await Batch7JourneyFixture.DumpAsync(fixture.Connection, "VehiclePurposeClaims"));
         Assert.Empty(await Batch7JourneyFixture.DumpAsync(fixture.Connection, "VehiclePurposeClaimRecords"));
     }
@@ -183,8 +192,8 @@ public sealed class Batch8PersistencePortTests
         StationExclusivityStore first = new(fixture.Context);
         StationExclusivityStore second = new(fixture.NewContext());
 
-        Assert.True(await first.TryAcquireAsync(WaitingPoint(214), "VK-01", "idle:VK-01:1", Now, Token));
-        Assert.False(await second.TryAcquireAsync(WaitingPoint(214), "VK-02", "idle:VK-02:1", Now, Token));
+        Assert.Equal(StationExclusivityAcquisitionOutcome.Acquired, await first.TryAcquireAsync(WaitingPoint(214), "VK-01", "idle:VK-01:1", Now, Token));
+        Assert.Equal(StationExclusivityAcquisitionOutcome.Held, await second.TryAcquireAsync(WaitingPoint(214), "VK-02", "idle:VK-02:1", Now, Token));
         // The loser's rows went back whole: one station row, one passage.
         Assert.Single(await Batch7JourneyFixture.DumpAsync(fixture.Connection, "StationExclusivities"));
         Assert.Single(await Batch7JourneyFixture.DumpAsync(fixture.Connection, "StationExclusivityRecords"));
@@ -203,7 +212,9 @@ public sealed class Batch8PersistencePortTests
         Assert.True(await second.ReleaseAsync(26, 214, "idle:VK-01:1", Now.AddMinutes(5), "DEPARTED:LEG-7", Token));
         Assert.Null(await first.ReadAsync(26, 214, Token));
 
-        Assert.True(await first.TryAcquireAsync(WaitingPoint(214), "VK-02", "idle:VK-02:1", Now.AddMinutes(6), Token));
+        Assert.Equal(
+            StationExclusivityAcquisitionOutcome.Acquired,
+            await first.TryAcquireAsync(WaitingPoint(214), "VK-02", "idle:VK-02:1", Now.AddMinutes(6), Token));
         Assert.Equal(
             ["VK-01 R=09:00 O=09:02 X=09:05 DEPARTED:LEG-7", "VK-02 R=09:06 O=- X=- -"],
             (await second.ListHistoryAsync(26, 214, Token)).Select(record =>
@@ -218,7 +229,7 @@ public sealed class Batch8PersistencePortTests
         await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
         StationExclusivityStore store = new(fixture.Context);
 
-        Assert.True(await store.TryAcquireAsync(
+        Assert.Equal(StationExclusivityAcquisitionOutcome.Acquired, await store.TryAcquireAsync(
             new StationExclusivityRequest(26, 101, StationExclusivityKinds.FixedTaskStation, StationExclusivityStates.Occupied, null),
             "VK-01", "journey:D-1", Now, Token));
 
@@ -249,6 +260,7 @@ public sealed class Batch8PersistencePortTests
 
         SqliteException failure = await Assert.ThrowsAsync<SqliteException>(() => ExecuteAsync(fixture.Connection, insert, values));
         Assert.Equal(275, failure.SqliteExtendedErrorCode);
+        Assert.Contains($"CK_{table}_{column}", failure.Message, StringComparison.Ordinal);
 
         // The store does not pre-check either: a third state reaches the database and is refused there.
         if (column == "State")
@@ -264,7 +276,7 @@ public sealed class Batch8PersistencePortTests
     public async Task AClaimTakenTogetherWithAStationIsOneSaveSoAHeldStationLeavesNoClaimBehind()
     {
         await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
-        Assert.True(await new StationExclusivityStore(fixture.NewContext())
+        Assert.Equal(StationExclusivityAcquisitionOutcome.Acquired, await new StationExclusivityStore(fixture.NewContext())
             .TryAcquireAsync(WaitingPoint(214), "VK-02", "idle:VK-02:1", Now, Token));
         VehiclePurposeLedgerStore ledger = new(fixture.Context);
 
@@ -282,6 +294,55 @@ public sealed class Batch8PersistencePortTests
             ["VK-01"],
             (await new StationExclusivityStore(fixture.NewContext()).ListByVehicleAsync("VK-01", Token))
                 .Select(row => row.VehicleKey));
+    }
+
+    [Fact]
+    public async Task AJourneyAskingAgainForAStationItHoldsIsToldItAlreadyHoldsItNotThatTheStationIsTaken()
+    {
+        // A retry after a crash. Told "held", batch 8-19 would send the vehicle to another waiting point and leave this one
+        // held by nobody who will use it -- with as many waiting points as vehicles, the interlock of specification 5.4.
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        StationExclusivityStore store = new(fixture.Context);
+        Assert.Equal(StationExclusivityAcquisitionOutcome.Acquired, await store.TryAcquireAsync(WaitingPoint(214), "VK-01", "idle:VK-01:1", Now, Token));
+        Assert.True(await store.MarkOccupiedAsync(26, 214, "idle:VK-01:1", Now.AddMinutes(2), Token));
+        StationExclusivityStore retry = new(fixture.NewContext());
+
+        Assert.Equal(
+            StationExclusivityAcquisitionOutcome.AlreadyHeld,
+            await retry.TryAcquireAsync(WaitingPoint(214), "VK-01", "idle:VK-01:1", Now.AddMinutes(3), Token));
+        // Nothing was written: the state and its time stay the occupation's, and there is still one passage.
+        Assert.Equal(
+            new StationExclusivity(26, 214, "WAITING_POINT", "OCCUPIED", "VK-01", "idle:VK-01:1", Now.AddMinutes(2), 3),
+            await retry.ReadAsync(26, 214, Token));
+        Assert.Single(await retry.ListHistoryAsync(26, 214, Token));
+        // Another journey of the same vehicle, or the same journey id on another vehicle, is not the holder.
+        Assert.Equal(StationExclusivityAcquisitionOutcome.Held, await retry.TryAcquireAsync(WaitingPoint(214), "VK-01", "idle:VK-01:2", Now, Token));
+        Assert.Equal(StationExclusivityAcquisitionOutcome.Held, await retry.TryAcquireAsync(WaitingPoint(214), "VK-02", "idle:VK-01:1", Now, Token));
+    }
+
+    [Fact]
+    public async Task RetryingAClaimWithAStationThatAlreadySucceededIsAlreadyHeldEvenThoughTheStationsKeyRefusesFirst()
+    {
+        // EF inserts the station before the claim, so a retry is refused by the station's key; the answer must still be
+        // that the journey holds both, not that the station is taken.
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        Assert.Equal(
+            VehiclePurposeAcquisitionOutcome.Acquired,
+            await new VehiclePurposeLedgerStore(fixture.Context)
+                .TryAcquireAsync(Claim("idle:VK-01:1", VehiclePurposes.IdleReturn), WaitingPoint(214), Token));
+        VehiclePurposeLedgerStore retry = new(fixture.NewContext());
+
+        Assert.Equal(
+            VehiclePurposeAcquisitionOutcome.AlreadyHeld,
+            await retry.TryAcquireAsync(Claim("idle:VK-01:1", VehiclePurposes.IdleReturn), WaitingPoint(214), Token));
+        // Holding the vehicle but asking for a station it does not hold is not "already held".
+        Assert.Equal(
+            VehiclePurposeAcquisitionOutcome.VehicleHeld,
+            await retry.TryAcquireAsync(Claim("idle:VK-01:1", VehiclePurposes.IdleReturn), WaitingPoint(215), Token));
+        foreach (string table in ClaimWithStationTables)
+        {
+            Assert.Single(await Batch7JourneyFixture.DumpAsync(fixture.Connection, table));
+        }
     }
 
     [Theory]

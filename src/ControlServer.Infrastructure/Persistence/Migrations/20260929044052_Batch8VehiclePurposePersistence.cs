@@ -123,12 +123,13 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
             // below is the same one EF performs, with the columns where they were.
             OrderPreservingRebuild.Apply(migrationBuilder, VehiclePurposeClaimsWithPurposeCheck);
 
-            // Choice A of control-server#386: an idle return is a journey without a demand. These four tables take nulls in
+            // Choice A of control-server#386: an idle return is a journey without a demand. These five tables take nulls in
             // the anchor demand and the transport-only columns; every other column, index and row stays as it was.
             OrderPreservingRebuild.Apply(migrationBuilder, JourneyRuntimesWithIdleReturnNullable);
             OrderPreservingRebuild.Apply(migrationBuilder, OrderIntentsWithIdleReturnNullable);
             OrderPreservingRebuild.Apply(migrationBuilder, RiotDispatchAuditEventsWithIdleReturnNullable);
             OrderPreservingRebuild.Apply(migrationBuilder, ExperimentalRiotCreateAuthorizationsWithIdleReturnNullable);
+            OrderPreservingRebuild.Apply(migrationBuilder, OwnOrderRebuildsWithIdleReturnNullable);
 
             migrationBuilder.CreateIndex(
                 name: "IX_StationExclusivities_JourneyId",
@@ -154,9 +155,7 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
             migrationBuilder.CreateIndex(
                 name: "IX_StationExclusivityRecords_MapId_StationId",
                 table: "StationExclusivityRecords",
-                columns: new[] { "MapId", "StationId" },
-                unique: true,
-                filter: "ReleasedAt IS NULL");
+                columns: new[] { "MapId", "StationId" });
 
             migrationBuilder.CreateIndex(
                 name: "IX_StationExclusivityRecords_VehicleKey",
@@ -171,16 +170,7 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
             migrationBuilder.CreateIndex(
                 name: "IX_VehiclePurposeClaimRecords_VehicleKey",
                 table: "VehiclePurposeClaimRecords",
-                column: "VehicleKey",
-                unique: true,
-                filter: "ReleasedAt IS NULL");
-
-            // control-server#386: every claim held at the moment of the upgrade gets its "acquired" record, so the history
-            // starts complete. The id is derived, not random: a claim's journey holds at most one claim, and migrating down
-            // and up again writes the same rows. Journeys in flight are expected here; nothing else is read or changed.
-            migrationBuilder.Sql(
-                "INSERT INTO VehiclePurposeClaimRecords (RecordId, VehicleKey, Purpose, JourneyId, AcquiredAt) " +
-                "SELECT 'backfill|' || JourneyId, VehicleKey, Purpose, JourneyId, ClaimedAt FROM VehiclePurposeClaims;");
+                column: "VehicleKey");
         }
 
         /// <inheritdoc />
@@ -209,6 +199,7 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
             OrderPreservingRebuild.Apply(migrationBuilder, OrderIntentsAtMapNameBaselines);
             OrderPreservingRebuild.Apply(migrationBuilder, RiotDispatchAuditEventsAtMapNameBaselines);
             OrderPreservingRebuild.Apply(migrationBuilder, ExperimentalRiotCreateAuthorizationsAtMapNameBaselines);
+            OrderPreservingRebuild.Apply(migrationBuilder, OwnOrderRebuildsAtMapNameBaselines);
         }
 
         // Table definitions exactly as SQLite stored them at 20260928153736_MapNameBaselines, and as this migration leaves
@@ -515,6 +506,82 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                     "ConsumedAt" TEXT NULL,
                     "ConsumedByAttemptId" TEXT NULL
                 )
+                """
+            };
+
+        private static readonly OrderPreservingRebuild.Table OwnOrderRebuildsAtMapNameBaselines = new(
+            "OwnOrderRebuilds",
+            """
+            CREATE TABLE "ef_temp_OwnOrderRebuilds" (
+                "RebuildId" TEXT NOT NULL CONSTRAINT "PK_OwnOrderRebuilds" PRIMARY KEY,
+                "JourneyId" TEXT NOT NULL,
+                "DemandId" TEXT NOT NULL,
+                "AgvId" TEXT NOT NULL,
+                "VehicleKey" TEXT NOT NULL,
+                "StopId" TEXT NOT NULL,
+                "Source" TEXT NOT NULL,
+                "EndedUpperId" TEXT NOT NULL,
+                "EndedOrderId" TEXT NULL,
+                "EndedOrderState" INTEGER NULL,
+                "IncidentAt" TEXT NOT NULL,
+                "RecordedAt" TEXT NOT NULL,
+                "DueAt" TEXT NOT NULL,
+                "OperatorId" TEXT NULL,
+                "NewUpperId" TEXT NOT NULL,
+                "NewMovementLegId" TEXT NOT NULL,
+                "State" TEXT NOT NULL,
+                "WaitingReason" TEXT NULL,
+                "WaitingSince" TEXT NULL,
+                "RebuiltAt" TEXT NULL,
+                "StoppedReason" TEXT NULL,
+                "StoppedAt" TEXT NULL,
+                "CargoProvenAt" TEXT NULL,
+                "CargoEvidenceMessageId" TEXT NULL,
+                "CargoEvidenceRequestedGeneration" INTEGER NULL,
+                "CargoEvidenceRequestedWhileReady" INTEGER NOT NULL
+            , "CargoEvidenceRequestedAt" TEXT NULL, "CargoEvidenceNotBefore" TEXT NULL, "VehicleHeldAt" TEXT NULL)
+            """,
+            ["RebuildId", "JourneyId", "DemandId", "AgvId", "VehicleKey", "StopId", "Source", "EndedUpperId", "EndedOrderId", "EndedOrderState", "IncidentAt", "RecordedAt", "DueAt", "OperatorId", "NewUpperId", "NewMovementLegId", "State", "WaitingReason", "WaitingSince", "RebuiltAt", "StoppedReason", "StoppedAt", "CargoProvenAt", "CargoEvidenceMessageId", "CargoEvidenceRequestedGeneration", "CargoEvidenceRequestedWhileReady", "CargoEvidenceRequestedAt", "CargoEvidenceNotBefore", "VehicleHeldAt"],
+            [
+                """CREATE INDEX "IX_OwnOrderRebuilds_AgvId_State" ON "OwnOrderRebuilds" ("AgvId", "State")""",
+                """CREATE INDEX "IX_OwnOrderRebuilds_DemandId" ON "OwnOrderRebuilds" ("DemandId")""",
+                """CREATE UNIQUE INDEX "IX_OwnOrderRebuilds_EndedUpperId" ON "OwnOrderRebuilds" ("EndedUpperId")""",
+                """CREATE INDEX "IX_OwnOrderRebuilds_JourneyId_StopId" ON "OwnOrderRebuilds" ("JourneyId", "StopId")""",
+                """CREATE UNIQUE INDEX "IX_OwnOrderRebuilds_NewUpperId" ON "OwnOrderRebuilds" ("NewUpperId")""",
+            ]);
+
+        private static readonly OrderPreservingRebuild.Table OwnOrderRebuildsWithIdleReturnNullable =
+            OwnOrderRebuildsAtMapNameBaselines with
+            {
+                CreateSql = """
+                CREATE TABLE "ef_temp_OwnOrderRebuilds" (
+                    "RebuildId" TEXT NOT NULL CONSTRAINT "PK_OwnOrderRebuilds" PRIMARY KEY,
+                    "JourneyId" TEXT NOT NULL,
+                    "DemandId" TEXT NULL,
+                    "AgvId" TEXT NOT NULL,
+                    "VehicleKey" TEXT NOT NULL,
+                    "StopId" TEXT NOT NULL,
+                    "Source" TEXT NOT NULL,
+                    "EndedUpperId" TEXT NOT NULL,
+                    "EndedOrderId" TEXT NULL,
+                    "EndedOrderState" INTEGER NULL,
+                    "IncidentAt" TEXT NOT NULL,
+                    "RecordedAt" TEXT NOT NULL,
+                    "DueAt" TEXT NOT NULL,
+                    "OperatorId" TEXT NULL,
+                    "NewUpperId" TEXT NOT NULL,
+                    "NewMovementLegId" TEXT NOT NULL,
+                    "State" TEXT NOT NULL,
+                    "WaitingReason" TEXT NULL,
+                    "WaitingSince" TEXT NULL,
+                    "RebuiltAt" TEXT NULL,
+                    "StoppedReason" TEXT NULL,
+                    "StoppedAt" TEXT NULL,
+                    "CargoProvenAt" TEXT NULL,
+                    "CargoEvidenceMessageId" TEXT NULL,
+                    "CargoEvidenceRequestedGeneration" INTEGER NULL,
+                    "CargoEvidenceRequestedWhileReady" INTEGER NOT NULL
+                , "CargoEvidenceRequestedAt" TEXT NULL, "CargoEvidenceNotBefore" TEXT NULL, "VehicleHeldAt" TEXT NULL)
                 """
             };
 
