@@ -78,22 +78,35 @@ public static class WaitingPointStartupCheck
             ? FormattableString.Invariant($"version {number}")
             : "(none imported)";
         string database = databasePath ?? "<controlserver.db>";
-        return FormattableString.Invariant(
+        string summary = FormattableString.Invariant(
                 $"JourneyRuntime:Fleet has {coverage.VehicleCount} vehicles, but waiting point registration {version} gives only ")
             + FormattableString.Invariant(
                 $"{coverage.Assignable} of them a waiting point of their own on Map {coverage.MapId} ({coverage.EnabledOnMap} enabled there).")
             + FormattableString.Invariant($" Short by {coverage.Shortfall}; left without a point: {string.Join(", ", coverage.Unassigned)}.")
             + elsewhere + excluded
-            + FormattableString.Invariant(
-                $" No database edit is needed: register or enable at least {coverage.Shortfall} more waiting point(s) on Map {coverage.MapId} ")
-            + "that these vehicles' whitelists admit, with the server stopped, then start it again: "
-            + FormattableString.Invariant(
-                $"ControlServer.FieldOps.exe import-waiting-points --database \"{database}\" --input <waiting-points.csv> ")
-            + FormattableString.Invariant(
-                $"--catalog <stations-{coverage.MapId}.json> --map {coverage.MapId} --fleet \"{string.Join(";", fleet)}\" ")
-            + "(add --dry-run to preview; read-waiting-points shows the current registration; "
-            + "docs/field/batch-8-waiting-point-registration.md). "
-            + "A single-vehicle deployment (JourneyRuntime:Fleet empty or one vehicle) is not subject to this check.";
+            + " No database edit is needed.";
+        // Points registered on another Map mean the likelier mistake is this server's Map, not the registration: a ready
+        // command for this Map would, followed as written, register waiting points on a Map nobody measured them on (on
+        // site, the MVP's Map 25 with agv01 on it). So no ready command then -- the Map comes first.
+        string register = coverage.OnOtherMaps.Count > 0
+            ? FormattableString.Invariant(
+                  $" First check JourneyRuntime:mapId (this server runs Map {coverage.MapId}): if the vehicles run on the Map the points are registered on, correct it and start again. ")
+              + "Only if they really run on this Map, register waiting points on it with ControlServer.FieldOps.exe import-waiting-points "
+              + "--database <controlserver.db> --input <waiting-points.csv> --catalog <stations.json> --map <the Map the vehicles run on> "
+              + "--fleet <VehicleKey;VehicleKey> (add --dry-run to preview)."
+            : FormattableString.Invariant(
+                  $" Either register or enable at least {coverage.Shortfall} more waiting point(s) on Map {coverage.MapId} ")
+              + "that these vehicles' whitelists admit, with the server stopped, then start it again: "
+              + FormattableString.Invariant(
+                  $"ControlServer.FieldOps.exe import-waiting-points --database \"{database}\" --input <waiting-points.csv> ")
+              + FormattableString.Invariant(
+                  $"--catalog <stations-{coverage.MapId}.json> --map {coverage.MapId} --fleet \"{string.Join(";", fleet)}\" ")
+              + "(add --dry-run to preview; read-waiting-points shows the current registration).";
+        string removeVehicles = FormattableString.Invariant(
+            $" Or take vehicles out of JourneyRuntime:Fleet until the registration covers the rest ({coverage.Assignable} can be covered now; one vehicle is not checked).");
+        return summary + register + removeVehicles
+            + " See docs/field/batch-8-waiting-point-registration.md."
+            + " A single-vehicle deployment (JourneyRuntime:Fleet empty or one vehicle) is not subject to this check.";
     }
 
     public static async Task EnsureAsync(
@@ -115,9 +128,14 @@ public static class WaitingPointStartupCheck
         }
 
         WaitingPointRegistrationVersion? registration = await registry.ReadCurrentAsync(cancellationToken).ConfigureAwait(false);
+        // The active binding set and the latest one, active or not: the same set the import refuses and the eligibility
+        // predicate stops at (WaitingPointImportFacts), so a start, a preview and a commitment never count different points.
         TaskTypeStationBindingSetVersion? active = await bindings.ReadActiveAsync(options.MapId, cancellationToken)
             .ConfigureAwait(false);
-        HashSet<int> fixedStations = [.. (active?.Bindings ?? []).Select(binding => binding.StationRiotId)];
+        TaskTypeStationBindingSetVersion? latest = await bindings.ReadLatestAsync(options.MapId, cancellationToken)
+            .ConfigureAwait(false);
+        HashSet<int> fixedStations =
+            [.. (active?.Bindings ?? []).Concat(latest?.Bindings ?? []).Select(binding => binding.StationRiotId)];
         string[] fleet = [.. options.Fleet.Select(vehicle => vehicle.VehicleKey)];
         WaitingPointCoverage coverage = WaitingPointCoverageCalculator.Evaluate(
             registration?.Points ?? [], options.MapId, fleet, fixedStations);

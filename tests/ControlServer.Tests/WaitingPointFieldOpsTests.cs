@@ -57,6 +57,25 @@ public sealed class WaitingPointFieldOpsTests
         Assert.Equal((2, 3, true), Coverage(read));
     }
 
+    /// <summary>
+    /// 预览与启动同一个覆盖口径：登记之后站 305 被绑成固定站，read-waiting-points 的覆盖不再算它，与启动校验一样说「不够」。
+    /// </summary>
+    [Fact]
+    public async Task TheReadVerbsCoverageLeavesOutAPointBoundAsAFixedStationAfterItWasRegistered()
+    {
+        await using WaitingPointImportHarness harness = await CreateAsync();
+        await harness.ImportAsync(Csv("26,214,等待点1,true,", "26,305,派工待送取货,true,"));
+        (int beforeExit, JsonElement before) = await RunAsync(Read, "--database", harness.DatabasePath, "--map", "26", "--fleet", "VK-A;VK-B");
+        await harness.BindStagingStationAsync();
+
+        (int afterExit, JsonElement after) = await RunAsync(Read, "--database", harness.DatabasePath, "--map", "26", "--fleet", "VK-A;VK-B");
+
+        Assert.Equal((0, 0), (beforeExit, afterExit));
+        Assert.Equal((2, 2, true), Coverage(before));
+        Assert.Equal((2, 2, false), Coverage(after));
+        Assert.Equal(1, after.GetProperty("coverage").GetProperty("assignable").GetInt32());
+    }
+
     [Fact]
     public async Task ARejectedImportExitsOneListsEveryReasonAndWritesNothing()
     {

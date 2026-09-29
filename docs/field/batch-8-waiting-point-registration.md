@@ -11,17 +11,25 @@
 ```
 Waiting point registration refused: WAITING_POINTS_FEWER_THAN_VEHICLES JourneyRuntime:Fleet has 2 vehicles, but waiting point
 registration (none imported) gives only 0 of them a waiting point of their own on Map 26 (0 enabled there). Short by 2; left
-without a point: <agv02 的 VehicleKey>, <agv03 的 VehicleKey>. No database edit is needed: register or enable at least 2 more
-waiting point(s) on Map 26 that these vehicles' whitelists admit, with the server stopped, then start it again:
+without a point: <agv02 的 VehicleKey>, <agv03 的 VehicleKey>. No database edit is needed. Either register or enable at least
+2 more waiting point(s) on Map 26 that these vehicles' whitelists admit, with the server stopped, then start it again:
 ControlServer.FieldOps.exe import-waiting-points --database "<服务端实际打开的库文件>" --input <waiting-points.csv>
 --catalog <stations-26.json> --map 26 --fleet "<agv02 的 VehicleKey>;<agv03 的 VehicleKey>" (add --dry-run to preview;
-read-waiting-points shows the current registration; docs/field/batch-8-waiting-point-registration.md). A single-vehicle
-deployment (JourneyRuntime:Fleet empty or one vehicle) is not subject to this check.
+read-waiting-points shows the current registration). Or take vehicles out of JourneyRuntime:Fleet until the registration
+covers the rest (0 can be covered now; one vehicle is not checked). See docs/field/batch-8-waiting-point-registration.md.
+A single-vehicle deployment (JourneyRuntime:Fleet empty or one vehicle) is not subject to this check.
 ```
 
-意思是：名册里有 2 台车，但登记（这里是一版都没导入）在 26 号图上一个点都分不出来，还差 2 个，两台车都没有着落。**出路不需要改库**：
-报错里已经把命令拼好了，数据库路径是服务端实际打开的那个文件、`--map` 与 `--fleet` 取自服务端自己的配置，只要补上登记文件（第二节）
-与站点目录（第三节）两个路径，先加 `--dry-run` 看一眼，再去掉它导入，然后重启服务。单车部署不受此校验。
+意思是：名册里有 2 台车，但登记（这里是一版都没导入）在 26 号图上一个点都分不出来，还差 2 个，两台车都没有着落。**两条出路都不需要改库**：
+
+- 补登记：报错里已经把命令拼好了，数据库路径是服务端实际打开的那个文件、`--map` 与 `--fleet` 取自服务端自己的配置，只要补上登记文件（第二节）
+  与站点目录（第三节）两个路径，先加 `--dry-run` 看一眼，再去掉它导入，然后重启服务。
+- 或者从 `JourneyRuntime:Fleet` 里摘掉车，直到登记够剩下的车用；只剩一台时不校验。
+
+**点登记在别的图上时，报错不给现成命令。**例如服务端还配着 25 号图、点登记在 26 号图，报错会写
+「Registered on other Maps, which this server does not run: Map 26 x3」，然后先让人核对 `JourneyRuntime:mapId`
+（「First check JourneyRuntime:mapId (this server runs Map 25) ...」），只有车真的跑在这张图上才去这张图登记。原因是：
+照抄一条 `--map 25` 的命令，会把等待点登记到 MVP 与 agv01 所在的 25 号图上，而那里根本没测绘过等待点。
 
 为什么这样定：规格 5.4 的理由是桩少于车时会互锁——一辆无处可去的车会占着另一辆车要用的点。单车部署（`Fleet` 为空或只有一台）不校验，
 行为与升级前完全相同。
@@ -37,7 +45,28 @@ deployment (JourneyRuntime:Fleet empty or one vehicle) is not subject to this ch
 
 **服务端所跑的图要是 26 号图。**v2 出厂的 `appsettings.json` 里 `JourneyRuntime:mapId` 仍是 25（切到 26 属切生产配置，规格第 21.5 节），
 而等待点建在 26 号图上。启动校验**只数本服务端所跑那张图上的启用点**：一个仍配 25 号图的多车部署，即使 26 号图上登记了三个点也会被拒，
-日志会写出「登记在别的图上：Map 26 x3」。这不是登记错了，是部署配置还没切到 26。
+日志会写出 `Registered on other Maps, which this server does not run: Map 26 x3`，并先让人核对 `JourneyRuntime:mapId`。
+这不是登记错了，是部署配置还没切到 26。
+
+## 部署机上的工具从哪来
+
+**发布包里没有 FieldOps。**`New-WireToGateReleaseCandidate.ps1` 打的包只有服务端、看板与车载端；而本票之后，多车部署在启动之前必须先用
+FieldOps 导入等待点。所以部署一台多车服务端时，要随包一起带三样东西过去：
+
+1. **`ControlServer.FieldOps.exe`**：在控制端笔记本上，从**与部署的服务端同一个提交**的干净检出里发布（发布包的
+   `release-manifest.json` 记着服务端提交）。版本要一致，因为 FieldOps 直接写服务端的库，库结构随提交走。
+   ```powershell
+   git -C <control-server 检出> checkout <服务端提交>
+   dotnet publish <control-server 检出>/tools/ControlServer.FieldOps/ControlServer.FieldOps.csproj -c Release -r win-x64 --self-contained true -o C:/8005/fieldops-<提交前 8 位>
+   ```
+   与服务端包一样自带运行时（`win-x64`、`--self-contained true`），部署机上不用另装 .NET。
+2. **`scripts/field/Export-RiotStationCatalog.ps1`**（同一个检出里）。它要 pwsh 7（厂区各机器都是 7.6.5）、能直连 RIoT
+   `172.19.206.222:8888`、以及环境变量 `CONTROL_SERVER_RIOT_CALL_API_KEY`。用 `scripts/Install-ControlServerLocal.ps1` 安装、且没加
+   `-SkipMachineEnvironmentInjection` 的服务端，会把它写进部署机的 Machine 范围；别的装法（例如并行期另起的 v2 实例）以部署机实际环境为准。
+   也可以在控制端笔记本上跑（那里的 User 范围也有这把 key），导出后把 `catalog-26.json` 一起拷过去。
+3. **`docs/field/waiting-points-map26.csv`**（同一个检出里）。
+
+三样都经控制端中转拷到部署机（与服务端包同一条路：`scp` 到部署机上 FieldOps 的目录），不要让部署机自己去拉仓库。
 
 ## 二、登记文件
 

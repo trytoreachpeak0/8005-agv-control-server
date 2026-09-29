@@ -12,6 +12,20 @@
 
 多车场景只留 `SUMMARY.md`、`assertions.json`、`timeline.jsonl`，失败的那几份另附 `went-silent.log`（服务端日志里车载端静默那几行的原文）。
 
+## 读这些证据前要知道的两件事
+
+**本票分支的运行都跑在未提交的工作树上。**`SUMMARY.md` 与 `timeline.jsonl` 里的 `controlServerCommit` 是工作树的 `HEAD`，
+而那时本票的改动还没提交，所以本票分支的每一次运行都显示 `af2b02cb`——与 `base-af2b02cb/` 那几次**同一个提交号**。
+提交号因此分不出哪次是基线、哪次是本票。
+
+**分辨靠 `waiting-points-imported` 这个判据。**它是本票编排器在服务端启动前正式导入等待点时写的（`L2WaitingPoints.psm1`）：
+
+- 本票分支的每个 `Fleet` 场景的 `timeline.jsonl` 里都有一行 `"criterion":"waiting-points-imported"`（值是登记版本号，附站号与覆盖）；
+- `base-af2b02cb/` 下三份的 `timeline.jsonl` 里一行都没有——基线的编排器不认识等待点。
+
+`grep -c waiting-points-imported */timeline.jsonl` 一眼可见。负向场景 `-3` 与红证据 `red/l2-wpr03-database-path-placeholder`
+跑在第一轮审查之后的改动上，同样未提交，同样显示提交号 `d1f19090`（上一次提交），按上面同一个判据与各自的判据编号区分。
+
 ## 第一轮那 3 个红与本票无关
 
 三个红（`binding-hold-dashboard-not-cascading`、`command-surface-order-hold`、`reassign-when-vehicle-ineligible`）是同一个样子：

@@ -77,6 +77,24 @@ public sealed class WaitingPointImportTests
         Assert.Equal((0L, 0L, 0L, 0L, 0L), await harness.FootprintAsync());
     }
 
+    /// <summary>
+    /// 批次 6 激活两步走，第一步写下的绑定版本还没生效时，它的固定站同样不能登记为等待点（同一口径：生效 ∪ 最新）。
+    /// </summary>
+    [Fact]
+    public async Task AStationBoundInALatestBindingVersionNotYetActiveIsRefusedToo()
+    {
+        await using WaitingPointImportHarness harness = await CreateAsync();
+        await harness.BindStagingStationAsync(activate: false);
+
+        WaitingPointImportResult result = await harness.ImportAsync(Csv("26,214,等待点1,true,", "26,305,派工待送取货,true,"));
+
+        Assert.Equal(WaitingPointImportOutcome.Rejected, result.Outcome);
+        Assert.Equal(
+            [$"3 {WaitingPointImportReasonCodes.FixedTaskStation}"],
+            result.Errors.Select(error => $"{error.Line} {error.ReasonCode}"));
+        Assert.Equal((0L, 0L, 0L, 0L, 0L), await harness.FootprintAsync());
+    }
+
     [Fact]
     public async Task AWrongHeaderAndACatalogOfAnotherMapAreRejectedToo()
     {
@@ -140,10 +158,10 @@ public sealed class WaitingPointImportTests
         WaitingPointRegistrationVersion current = (await harness.ReadCurrentAsync())!;
         Assert.Equal(
             (false, WaitingPointEligibilityReasons.Disabled),
-            Decision(WaitingPointEligibility.Judge(current, Catalog(), Map, 214, VehicleA)));
+            Decision(WaitingPointEligibility.Judge(current, NoFixedStations, Catalog(), Map, 214, VehicleA)));
         Assert.Equal(
             (true, WaitingPointEligibilityReasons.Accepts),
-            Decision(WaitingPointEligibility.Judge(current, Catalog(), Map, 215, VehicleA)));
+            Decision(WaitingPointEligibility.Judge(current, NoFixedStations, Catalog(), Map, 215, VehicleA)));
 
         await using ControlServerDbContext context = harness.Open();
         WaitingPointReservationReference reference = await WaitingPointReservationReader.ReadAsync(

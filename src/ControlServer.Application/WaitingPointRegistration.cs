@@ -207,10 +207,10 @@ public sealed class WaitingPointImportService(
                 null,
                 Invariant($"The station catalog is for Map {request.Catalog.MapId}, but the server runs Map {request.MapId} (--map).")));
         }
+        IReadOnlySet<int> fixedStations = await _facts.ReadFixedTaskStationIdsAsync(request.MapId, cancellationToken)
+            .ConfigureAwait(false);
         if (rows.Count > 0)
         {
-            IReadOnlySet<int> fixedStations = await _facts.ReadFixedTaskStationIdsAsync(request.MapId, cancellationToken)
-                .ConfigureAwait(false);
             Judge(request, rows, fixedStations, errors);
         }
 
@@ -228,8 +228,11 @@ public sealed class WaitingPointImportService(
             .. rows.Select(row => row.Entry)
         ];
         IReadOnlyList<WaitingPointChange> changes = Compare(current, rows.Select(row => row.Entry).ToArray(), request.MapId);
+        // The same exclusion the startup check makes, so the preview and the start count the same points. An accepted table
+        // holds no fixed station of this map (refused above), so today this changes nothing here; it keeps the two from
+        // drifting apart if that refusal is ever relaxed. read-waiting-points is where it bites: a binding made after an import.
         WaitingPointCoverage coverage = WaitingPointCoverageCalculator.Evaluate(
-            proposed, request.MapId, request.Fleet, excludedStations: null);
+            proposed, request.MapId, request.Fleet, fixedStations);
         if (changes.Count == 0)
         {
             return new WaitingPointImportResult(
@@ -514,6 +517,12 @@ public static class WaitingPointEligibilityReasons
 
     /// <summary>实时站点目录里没有这个站，或站名与登记的不一致：登记是离线导入的，现场地图可能已经变了。</summary>
     public const string NotInLiveCatalog = "WAITING_POINT_NOT_IN_LIVE_CATALOG";
+
+    /// <summary>
+    /// 这个站现在是某个任务类型绑定的固定站（生效版本或还没激活的最新版本）：登记之后被改成了业务角色（REQ-0297 的「改角色」）。
+    /// 批次 6 的绑定激活不查等待点登记，所以这件事只能在这里拦。
+    /// </summary>
+    public const string RoleChangedToFixedTaskStation = "WAITING_POINT_ROLE_CHANGED_TO_FIXED_TASK_STATION";
 }
 
 /// <summary>判定结果。<paramref name="Version"/> 是据以判定的登记版本，一版都没有为空。</summary>
@@ -529,18 +538,31 @@ public sealed record WaitingPointEligibilityDecision(bool Accepts, string Reason
 /// </remarks>
 public static class WaitingPointEligibility
 {
-    /// <summary>按当前登记与实时站点目录判。<paramref name="liveCatalog"/> 为空或不是这张图的，一律不接。</summary>
+    /// <summary>
+    /// 按当前登记、这张图的任务类型固定站与实时站点目录判。<paramref name="liveCatalog"/> 为空或不是这张图的，一律不接。
+    /// </summary>
+    /// <param name="fixedTaskStations">
+    /// 这张图任务类型绑定的固定站站号，生效版本与最新版本的并集——与启动校验、FieldOps 导入同一个口径
+    /// （<see cref="IWaitingPointImportFacts.ReadFixedTaskStationIdsAsync"/>）。
+    /// </param>
     public static WaitingPointEligibilityDecision Judge(
         WaitingPointRegistrationVersion? current,
+        IReadOnlySet<int> fixedTaskStations,
         RiotMapStationCatalogSnapshot? liveCatalog,
         int mapId,
         int stationId,
         string vehicleKey)
     {
+        ArgumentNullException.ThrowIfNull(fixedTaskStations);
         WaitingPointEligibilityDecision registration = JudgeRegistration(current, mapId, stationId, vehicleKey);
         if (!registration.Accepts)
         {
             return registration;
+        }
+        if (fixedTaskStations.Contains(stationId))
+        {
+            return new WaitingPointEligibilityDecision(
+                false, WaitingPointEligibilityReasons.RoleChangedToFixedTaskStation, current!.Version);
         }
         WaitingPointEntry point = current!.Points.Single(point => point.MapId == mapId && point.StationId == stationId);
         bool listed = liveCatalog is not null && liveCatalog.MapId == mapId && liveCatalog.Stations.Any(station =>

@@ -168,6 +168,13 @@ internal static partial class Program
             return Usage(problem ?? $"{ReadWaitingPointsCommand} takes --map and --fleet together");
         }
 
+        // A point bound as a task type's fixed station after it was registered does not count, exactly as at startup.
+        IReadOnlySet<int> fixedStations = wantsCoverage
+            ? await new WaitingPointImportFacts(
+                    new TaskTypeStationBindingStore(context, new GovernedConfigurationPublisher(governance, governance)),
+                    new CatalogAvailabilityStore(context))
+                .ReadFixedTaskStationIdsAsync(mapId, CancellationToken.None)
+            : new HashSet<int>();
         // The read path publishes nothing; the publisher is only there to build the registry.
         WaitingPointRegistry registry = new(context, new GovernedConfigurationPublisher(governance, governance));
         WaitingPointRegistrationVersion? registration = version is null
@@ -191,7 +198,7 @@ internal static partial class Program
                 source = registration?.Source,
                 points = (registration?.Points ?? []).Select(Point),
                 coverage = wantsCoverage
-                    ? Coverage(WaitingPointCoverageCalculator.Evaluate(registration?.Points ?? [], mapId, fleet, excludedStations: null))
+                    ? Coverage(WaitingPointCoverageCalculator.Evaluate(registration?.Points ?? [], mapId, fleet, fixedStations))
                     : null
             },
             0);

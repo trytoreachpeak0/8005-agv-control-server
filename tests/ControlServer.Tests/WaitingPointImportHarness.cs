@@ -52,6 +52,9 @@ internal sealed class WaitingPointImportHarness : IAsyncDisposable
 
     public string CatalogPath { get; }
 
+    /// <summary>没有任何任务类型固定站。</summary>
+    public static readonly IReadOnlySet<int> NoFixedStations = new HashSet<int>();
+
     public static RiotMapStationCatalogSnapshot Catalog(int mapId = Map) =>
         TaskTypeStationCatalogEvidence.Supplied(mapId, Stations, Imported);
 
@@ -153,8 +156,11 @@ internal sealed class WaitingPointImportHarness : IAsyncDisposable
         return await new StationExclusivityStore(context).ReadAsync(Map, stationId, TestContext.Current.CancellationToken);
     }
 
-    /// <summary>该图一版生效的任务类型绑定：派工待送取货站 305 是 <c>STAGING_TO_WIRE</c> 的固定站。</summary>
-    public async Task BindStagingStationAsync()
+    /// <summary>
+    /// 该图一版任务类型绑定：派工待送取货站 305 是 <c>STAGING_TO_WIRE</c> 的固定站。<paramref name="activate"/> 为假时只写版本、
+    /// 不动生效指针——批次 6 激活要两步走，中间这一版已经写下、还没生效。
+    /// </summary>
+    public async Task BindStagingStationAsync(bool activate = true)
     {
         await using ControlServerDbContext context = Open();
         GovernedConfigurationPublisher publisher = Publisher(context);
@@ -171,7 +177,10 @@ internal sealed class WaitingPointImportHarness : IAsyncDisposable
             TaskTypeStationTestData.Source,
             Imported,
             TestContext.Current.CancellationToken);
-        await bindings.SetActiveAsync(Map, set.Version.Version, Imported, TestContext.Current.CancellationToken);
+        if (activate)
+        {
+            await bindings.SetActiveAsync(Map, set.Version.Version, Imported, TestContext.Current.CancellationToken);
+        }
     }
 
     /// <summary>登记在库里留下的全部痕迹：版本行、等待点行、白名单行、治理快照、导入审计。要么一起有，要么一起没有。</summary>

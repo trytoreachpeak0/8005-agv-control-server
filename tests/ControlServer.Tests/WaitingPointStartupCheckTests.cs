@@ -47,6 +47,8 @@ public sealed class WaitingPointStartupCheckTests
                 $"import-waiting-points --database \"{harness.DatabasePath}\" --input <waiting-points.csv> --catalog <stations-26.json> --map 26 --fleet \"VK-A;VK-B\"",
                 error.Message, StringComparison.Ordinal);
             Assert.Contains("No database edit is needed", error.Message, StringComparison.Ordinal);
+            Assert.Contains("Or take vehicles out of JourneyRuntime:Fleet until the registration covers the rest (1 can be covered now", error.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain("First check JourneyRuntime:mapId", error.Message, StringComparison.Ordinal);
             Assert.Contains("A single-vehicle deployment (JourneyRuntime:Fleet empty or one vehicle) is not subject to this check.", error.Message, StringComparison.Ordinal);
         }
     }
@@ -153,6 +155,10 @@ public sealed class WaitingPointStartupCheckTests
 
         Assert.Contains("on Map 25 (0 enabled there)", error.Message, StringComparison.Ordinal);
         Assert.Contains("Map 26 x3", error.Message, StringComparison.Ordinal);
+        // Followed as written, a ready command for Map 25 would register waiting points on the Map agv01 runs on.
+        Assert.Contains("First check JourneyRuntime:mapId (this server runs Map 25)", error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("--map 25", error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(harness.DatabasePath, error.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -209,14 +215,48 @@ public sealed class WaitingPointStartupCheckTests
             3, "sha", "snapshot", Imported, WaitingPointSources.GovernedImport,
             [new WaitingPointEntry(Map, 214, "等待点1", true, [])]);
 
-        Assert.True(WaitingPointEligibility.Judge(current, Catalog(), Map, 214, VehicleA).Accepts);
+        Assert.True(WaitingPointEligibility.Judge(current, NoFixedStations, Catalog(), Map, 214, VehicleA).Accepts);
         Assert.Equal(
             WaitingPointEligibilityReasons.NotInLiveCatalog,
-            WaitingPointEligibility.Judge(
-                current, TaskTypeStationCatalogEvidence.Supplied(Map, [new RiotMapStation(214, "等待点一")], Imported), Map, 214, VehicleA).Reason);
-        Assert.Equal(WaitingPointEligibilityReasons.NotInLiveCatalog, WaitingPointEligibility.Judge(current, null, Map, 214, VehicleA).Reason);
-        Assert.Equal(WaitingPointEligibilityReasons.NotRegistered, WaitingPointEligibility.Judge(null, Catalog(), Map, 214, VehicleA).Reason);
-        Assert.Equal(3L, WaitingPointEligibility.Judge(current, Catalog(), Map, 215, VehicleA).Version);
+            WaitingPointEligibility.Judge(current, NoFixedStations, TaskTypeStationCatalogEvidence.Supplied(Map, [new RiotMapStation(214, "等待点一")], Imported), Map, 214, VehicleA).Reason);
+        Assert.Equal(WaitingPointEligibilityReasons.NotInLiveCatalog, WaitingPointEligibility.Judge(current, NoFixedStations, null, Map, 214, VehicleA).Reason);
+        Assert.Equal(WaitingPointEligibilityReasons.NotRegistered, WaitingPointEligibility.Judge(null, NoFixedStations, Catalog(), Map, 214, VehicleA).Reason);
+        Assert.Equal(3L, WaitingPointEligibility.Judge(current, NoFixedStations, Catalog(), Map, 215, VehicleA).Version);
+        // A catalog of another Map lists station 214 under the same name, and is still not this Map's (M5b).
+        Assert.Equal(
+            WaitingPointEligibilityReasons.NotInLiveCatalog,
+            WaitingPointEligibility.Judge(current, NoFixedStations, Catalog(25), Map, 214, VehicleA).Reason);
+    }
+
+    /// <summary>
+    /// REQ-0297「改角色」：等待点登记之后，这个站被绑成了任务类型固定站（批次 6 激活不查等待点登记）。判定函数对新承诺说不接，
+    /// 生效版本与还没激活的最新版本里的绑定都算；别的站照旧接。
+    /// </summary>
+    [Fact]
+    public void ThePredicateStopsNewCommitmentsToAPointThatHasSinceBecomeAFixedTaskStation()
+    {
+        WaitingPointRegistrationVersion current = new(
+            4, "sha", "snapshot", Imported, WaitingPointSources.GovernedImport,
+            [new WaitingPointEntry(Map, 214, "等待点1", true, []), new WaitingPointEntry(Map, 215, "等待点2", true, [])]);
+        IReadOnlySet<int> fixedStations = new HashSet<int> { 214 };
+
+        WaitingPointEligibilityDecision changed = WaitingPointEligibility.Judge(current, fixedStations, Catalog(), Map, 214, VehicleA);
+        Assert.Equal((false, WaitingPointEligibilityReasons.RoleChangedToFixedTaskStation, 4L), (changed.Accepts, changed.Reason, changed.Version));
+        Assert.True(WaitingPointEligibility.Judge(current, fixedStations, Catalog(), Map, 215, VehicleA).Accepts);
+    }
+
+    /// <summary>启动校验与导入同口径：还没激活的最新绑定版本里的固定站也不算等待点。</summary>
+    [Fact]
+    public async Task APointBoundInALatestBindingVersionNotYetActiveDoesNotCountAtStartup()
+    {
+        await using WaitingPointImportHarness harness = await CreateAsync();
+        await harness.ImportAsync(Csv("26,214,等待点1,true,", "26,305,派工待送取货,true,"));
+        await harness.BindStagingStationAsync(activate: false);
+
+        InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => EnsureAsync(harness, Runtime(2)));
+
+        Assert.Contains("fixed station: 305", error.Message, StringComparison.Ordinal);
     }
 
     private static int FreePort()
