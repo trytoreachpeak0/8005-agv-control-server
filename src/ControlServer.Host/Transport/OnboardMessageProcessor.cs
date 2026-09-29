@@ -388,7 +388,7 @@ public sealed partial class OnboardMessageProcessor(
                     SessionReadinessDecision snapshotDecision = await store.DecideReadinessAsync(
                         agvId, generation, cancellationToken).ConfigureAwait(false);
                     return AnswerWithReadiness(
-                        snapshotAck, snapshotDecision, agvId, generation, state, announceUnchanged: true);
+                        snapshotAck, snapshotDecision, agvId, generation, state, messageType, messageId, announceUnchanged: true);
                 }
             case "RecoveryStateReport":
                 {
@@ -431,7 +431,7 @@ public sealed partial class OnboardMessageProcessor(
                             acceptedContentSha256 = contentHash,
                             durablyAcceptedAt = timeProvider.GetUtcNow()
                         });
-                    return $"{ack}\n{SessionReadinessLine(decision, agvId, generation, state)}";
+                    return $"{ack}\n{SessionReadinessLine(decision, agvId, generation, state, messageType, messageId)}";
                 }
             case "OperationProgress":
             case "PreDepartureSafetyCheckResult":
@@ -545,7 +545,7 @@ public sealed partial class OnboardMessageProcessor(
                     // produces reached nobody and the vehicle stayed out of work (G3 FP-IS-07
                     // resume-007). This is the widening the earlier note here asked for.
                     return AnswerWithReadiness(
-                        resultAck, resultDecision, agvId, generation, state, announceUnchanged: false);
+                        resultAck, resultDecision, agvId, generation, state, messageType, messageId, announceUnchanged: false);
                 }
             case "HardwareRecoveryRecordSubmitted":
                 {
@@ -557,7 +557,7 @@ public sealed partial class OnboardMessageProcessor(
                     SessionReadinessDecision recordDecision = await store.DecideReadinessAsync(
                         agvId, generation, cancellationToken).ConfigureAwait(false);
                     return AnswerWithReadiness(
-                        recordResult, recordDecision, agvId, generation, state, announceUnchanged: false);
+                        recordResult, recordDecision, agvId, generation, state, messageType, messageId, announceUnchanged: false);
                 }
             case "ExceptionRecoverySessionRequested":
             case "RecoveryActionSubmitted":
@@ -583,7 +583,7 @@ public sealed partial class OnboardMessageProcessor(
                     SessionReadinessDecision recoveryDecision = await store.DecideReadinessAsync(
                         agvId, generation, cancellationToken).ConfigureAwait(false);
                     return AnswerWithReadiness(
-                        recoveryAck, recoveryDecision, agvId, generation, state, announceUnchanged: false);
+                        recoveryAck, recoveryDecision, agvId, generation, state, messageType, messageId, announceUnchanged: false);
                 }
             case "ManualChargingReturnToServiceRequested":
                 {
@@ -639,7 +639,7 @@ public sealed partial class OnboardMessageProcessor(
                         state.SafetySnapshotRequestDue = true;
                     }
                     string ack = DurableAck(messageType, messageId, agvId, generation, contentHash);
-                    return AnswerWithReadiness(ack, decision, agvId, generation, state, announceUnchanged: true);
+                    return AnswerWithReadiness(ack, decision, agvId, generation, state, messageType, messageId, announceUnchanged: true);
                 }
             case "SnapshotAppliedAck":
                 {
@@ -739,15 +739,29 @@ public sealed partial class OnboardMessageProcessor(
         string agvId,
         long generation,
         OnboardConnectionState state,
+        string answeredMessageType,
+        string answeredMessageId,
         bool announceUnchanged)
     {
         bool changed = decision.Readiness != state.Readiness;
         state.Readiness = decision.Readiness;
-        if (!state.HandshakeCompleted || !(changed || announceUnchanged))
+        if (!state.HandshakeCompleted)
+        {
+            if (changed)
+            {
+                // A change held back here is announced by the recovery report's answer; logged so that a readiness the
+                // vehicle never showed can be told apart from one this server never sent (control-server#380).
+                LogSessionReadinessHeldInHandshake(
+                    logger, agvId, generation, ReadinessOnTheWire(decision), ReasonCodeOnTheWire(decision),
+                    answeredMessageType, answeredMessageId);
+            }
+            return answer;
+        }
+        if (!(changed || announceUnchanged))
         {
             return answer;
         }
-        return $"{answer}\n{SessionReadinessLine(decision, agvId, generation, state)}";
+        return $"{answer}\n{SessionReadinessLine(decision, agvId, generation, state, answeredMessageType, answeredMessageId)}";
     }
 
     /// <summary>
@@ -757,24 +771,47 @@ public sealed partial class OnboardMessageProcessor(
     /// line, went with control-server#340. Its callers are <see cref="AnswerWithReadiness"/> and the
     /// recovery report's answer, and nothing else (<c>OnboardHandshakeReadinessArchitectureTests</c>).
     /// </summary>
+    /// <remarks>
+    /// Every line it builds is logged with the answer it rides on (control-server#380). The server sends readiness only
+    /// on a change, and the vehicle shows its recovery entry only on what it last applied, so when the entry does not
+    /// appear this record is what says whether the line left this server at all. The line's own messageId is chosen
+    /// here rather than in <see cref="SerializeEnvelope"/> so that the record can name it; the payload is still built
+    /// before the id and the send time are read, in the order <see cref="SerializeEnvelope"/> keeps.
+    /// </remarks>
     private string SessionReadinessLine(
         SessionReadinessDecision decision,
         string agvId,
         long generation,
-        OnboardConnectionState state) =>
-        SerializeEnvelope(
-            "SessionReadiness", correlationId: null, agvId, generation,
-            new
-            {
-                readiness = decision.Readiness == SessionReadiness.Ready ? "READY" : "RECOVERY_REQUIRED",
-                decidedAt = timeProvider.GetUtcNow(),
-                reasonCodes = decision.Readiness == SessionReadiness.Ready
-                    ? Array.Empty<string>()
-                    : [ProtocolErrorCodes.ToSessionReadinessReasonCode(decision.ReasonCode)],
-                acceptedCapabilityVersion = state.CapabilityRevision ?? 0,
-                acceptedSafetyStateVersion = state.SafetyRevision ?? 0,
-                vehicleBusinessStateRevision = 1
-            });
+        OnboardConnectionState state,
+        string answeredMessageType,
+        string answeredMessageId)
+    {
+        string readiness = ReadinessOnTheWire(decision);
+        string? reasonCode = ReasonCodeOnTheWire(decision);
+        object payload = new
+        {
+            readiness,
+            decidedAt = timeProvider.GetUtcNow(),
+            reasonCodes = reasonCode is null ? Array.Empty<string>() : [reasonCode],
+            acceptedCapabilityVersion = state.CapabilityRevision ?? 0,
+            acceptedSafetyStateVersion = state.SafetyRevision ?? 0,
+            vehicleBusinessStateRevision = 1
+        };
+        string lineMessageId = Guid.NewGuid().ToString("D");
+        string line = ProtocolEnvelope.Serialize(
+            "SessionReadiness", lineMessageId, correlationId: null, agvId, generation, timeProvider.GetUtcNow(), payload);
+        LogSessionReadinessAppended(
+            logger, lineMessageId, agvId, generation, readiness, reasonCode, answeredMessageType, answeredMessageId);
+        return line;
+    }
+
+    private static string ReadinessOnTheWire(SessionReadinessDecision decision) =>
+        decision.Readiness == SessionReadiness.Ready ? "READY" : "RECOVERY_REQUIRED";
+
+    private static string? ReasonCodeOnTheWire(SessionReadinessDecision decision) =>
+        decision.Readiness == SessionReadiness.Ready
+            ? null
+            : ProtocolErrorCodes.ToSessionReadinessReasonCode(decision.ReasonCode);
 
     private string DurableAck(
         string acceptedMessageType,
@@ -842,7 +879,7 @@ public sealed partial class OnboardMessageProcessor(
             firstAck.GetProperty("durablyAcceptedAt").GetDateTimeOffset());
         SessionReadinessDecision decision = await store.DecideReadinessAsync(
             agvId, generation, cancellationToken).ConfigureAwait(false);
-        return AnswerWithReadiness(ack, decision, agvId, generation, state, announceUnchanged: false);
+        return AnswerWithReadiness(ack, decision, agvId, generation, state, messageType, messageId, announceUnchanged: false);
     }
 
     private static void RestoreAcceptedSnapshotVersions(
@@ -1029,6 +1066,32 @@ public sealed partial class OnboardMessageProcessor(
         string reasonCode,
         DateTimeOffset receivedAt,
         DateTimeOffset? stationDepartureDeadline);
+
+    [LoggerMessage(EventId = 1103, Level = LogLevel.Information,
+        Message = "SessionReadiness {ReadinessMessageId} to {AgvId} generation {SessionGeneration}: {Readiness} " +
+                  "[{ReasonCode}], after the answer to {AnsweredMessageType} {AnsweredMessageId}.")]
+    private static partial void LogSessionReadinessAppended(
+        ILogger logger,
+        string readinessMessageId,
+        string agvId,
+        long sessionGeneration,
+        string readiness,
+        string? reasonCode,
+        string answeredMessageType,
+        string answeredMessageId);
+
+    [LoggerMessage(EventId = 1104, Level = LogLevel.Information,
+        Message = "SessionReadiness for {AgvId} generation {SessionGeneration} changed to {Readiness} [{ReasonCode}] " +
+                  "on {AnsweredMessageType} {AnsweredMessageId} inside the reconnect handshake; held back for the " +
+                  "recovery report's answer.")]
+    private static partial void LogSessionReadinessHeldInHandshake(
+        ILogger logger,
+        string agvId,
+        long sessionGeneration,
+        string readiness,
+        string? reasonCode,
+        string answeredMessageType,
+        string answeredMessageId);
 
     [LoggerMessage(EventId = 1101, Level = LogLevel.Warning,
         Message = "Onboard rejected {RejectedMessageType} {RejectedMessageId}: {ReasonCode} at {FieldPath} -- {DisplayMessage}")]

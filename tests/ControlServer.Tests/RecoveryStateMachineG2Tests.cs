@@ -5093,6 +5093,113 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     /// <summary>
+    /// control-server#380. Every SessionReadiness line that leaves the server is logged once, naming the line, the
+    /// readiness and reason it carries, and the answer it rides on. Run 36477303574 of the real-onboard rig could not
+    /// say whether the handoff's RECOVERY_REQUIRED left the server: readiness goes out only on a change, and nothing
+    /// recorded it. The recovery report's answer, which builds its line without going through AnswerWithReadiness, is
+    /// covered too; so is a line whose readiness did not change, which a safety change carries anyway.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
+    public async Task EveryReadinessLineSentIsLoggedWithTheAnswerItRidesOn()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(token);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        await SeedLoadAwaitingResultAsync(context, Now);
+        RecordingPeer peer = new(context);
+        EventRecordingLogger<OnboardMessageProcessor> log = new();
+        OnboardMessageProcessor processor = Processor(context, peer, UnusedProofVariable, log);
+        OnboardConnectionState reconnected = new() { DeferOutboundUntilResponseWritten = true };
+        await ReconnectAsync(processor, peer, reconnected);
+        long generation = reconnected.SessionGeneration!.Value;
+        List<string> wire = [];
+        int reportAt = await FinishHandshakeAsync(processor, peer, reconnected, wire);
+        string reportId = MessageIdOf(RecoveryStateReport(generation, unsettledAttemptId: null));
+
+        const string safetyId = "e0000000-0000-4000-8000-000000003801";
+        const string resultId = "e0000000-0000-4000-8000-000000003802";
+        wire.AddRange(await ExchangeAsync(processor, peer, reconnected, InSession(
+            SafetyChange(safetyId, safetyStateVersion: 9, departureSafe: true), generation)));
+        wire.AddRange(await ExchangeAsync(processor, peer, reconnected, InSession(Envelope(
+            resultId,
+            "OperationResult",
+            OperationResultPayload(completed: false, journalCheckpoint: "RESULT_UNKNOWN_RECORDED")), generation)));
+
+        string[] readinessLines = [.. wire.Skip(reportAt).Where(line => MessageType(line) == "SessionReadiness")];
+        (string Id, string Readiness, string Reason)[] sent = [.. readinessLines.Select(line =>
+        {
+            JsonElement payload = FirstPayload(line);
+            string[] reasons = [.. payload.GetProperty("reasonCodes").EnumerateArray().Select(code => code.GetString()!)];
+            return (MessageIdOf(line), payload.GetProperty("readiness").GetString()!, reasons.SingleOrDefault() ?? "");
+        })];
+        Assert.Equal(["READY", "READY", "RECOVERY_REQUIRED"], sent.Select(item => item.Readiness).ToArray());
+
+        string[] logged = [.. log.Entries.Where(entry => entry.EventId.Id == 1103).Select(entry => entry.Message)];
+        Assert.Equal(sent.Length, logged.Length);
+        (string AnsweredType, string AnsweredId)[] ridesOn =
+            [("RecoveryStateReport", reportId), ("SafetyStateChanged", safetyId), ("OperationResult", resultId)];
+        for (int i = 0; i < sent.Length; i++)
+        {
+            Assert.Equal(
+                $"SessionReadiness {sent[i].Id} to {AgvId} generation {generation}: {sent[i].Readiness} " +
+                $"[{(sent[i].Reason.Length == 0 ? "(null)" : sent[i].Reason)}], " +
+                $"after the answer to {ridesOn[i].AnsweredType} {ridesOn[i].AnsweredId}.",
+                logged[i]);
+        }
+        Assert.DoesNotContain(log.Entries, entry => entry.EventId.Id == 1104);
+    }
+
+    /// <summary>
+    /// control-server#380, the other half of telling "not sent" from "not shown": a readiness change inside the reconnect
+    /// handshake is held back from the wire (control-server#340) and logged as held, naming the message it came on, so
+    /// that it is not read as a line that went out. The connection is set to READY after SessionHello, as in
+    /// <c>AnOperationResultInTheReconnectHandshakeIsOnlyAcknowledgedEvenWhenItChangesReadiness</c>, to reach the change.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
+    public async Task AReadinessChangeHeldBackInTheHandshakeIsLoggedAsHeldNotAsSent()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(token);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        await SeedLoadAwaitingResultAsync(context, Now);
+        RecordingPeer peer = new(context);
+        EventRecordingLogger<OnboardMessageProcessor> log = new();
+        OnboardMessageProcessor processor = Processor(context, peer, UnusedProofVariable, log);
+        OnboardConnectionState reconnected = new() { DeferOutboundUntilResponseWritten = true };
+        await ReconnectAsync(processor, peer, reconnected);
+        long generation = reconnected.SessionGeneration!.Value;
+        reconnected.Readiness = SessionReadiness.Ready;
+
+        const string resultId = "e0000000-0000-4000-8000-000000003803";
+        string[] resent = await ExchangeAsync(processor, peer, reconnected, InSession(Envelope(
+            resultId,
+            "OperationResult",
+            OperationResultPayload(completed: false, journalCheckpoint: "RESULT_UNKNOWN_RECORDED")), generation));
+
+        Assert.Equal(["DurableAck"], resent.Select(MessageType).ToArray());
+        Assert.DoesNotContain(log.Entries, entry => entry.EventId.Id == 1103);
+        (LogLevel _, EventId _, string message) = Assert.Single(log.Entries, entry => entry.EventId.Id == 1104);
+        // The first reason the store names this early in a handshake is the capability snapshot not yet received.
+        Assert.Equal(
+            $"SessionReadiness for {AgvId} generation {generation} changed to RECOVERY_REQUIRED " +
+            $"[{ProtocolErrorCodes.ToSessionReadinessReasonCode("CAPABILITY_SNAPSHOT_REQUIRED")}] on OperationResult " +
+            $"{resultId} inside the reconnect handshake; held back for the recovery report's answer.",
+            message);
+    }
+
+    private static string MessageIdOf(string wire)
+    {
+        using JsonDocument document = JsonDocument.Parse(wire.Split('\n', StringSplitOptions.RemoveEmptyEntries).First());
+        return document.RootElement.GetProperty("messageId").GetString()!;
+    }
+
+    /// <summary>
     /// control-server#340 in the state a real vehicle is in for its whole drive: not ready because it carries a movement
     /// order of this server's, reported as a departure it cannot make (VEHICLE_NOT_READY). It reconnects on the way, and
     /// resends a safety change saying the same thing. Inside the handshake that change is only acknowledged, although
@@ -5746,11 +5853,12 @@ public sealed class RecoveryStateMachineG2Tests
     private static OnboardMessageProcessor Processor(
         ControlServerDbContext context,
         IOnboardPeer peer,
-        string proofVariable)
+        string proofVariable,
+        ILogger<OnboardMessageProcessor>? logger = null)
     {
         WireToGateStore store = new(context);
         return TestOnboardProcessorFactory.Create(
-            context, store, new FixedTimeProvider(Now), Configuration(proofVariable), peer);
+            context, store, new FixedTimeProvider(Now), Configuration(proofVariable), peer, logger: logger);
     }
 
     /// <summary>
