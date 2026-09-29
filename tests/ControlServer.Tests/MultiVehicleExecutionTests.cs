@@ -1088,6 +1088,30 @@ public sealed partial class MultiVehicleExecutionTests
             await Task.CompletedTask;
         }
 
+        /// <summary>空闲返回评估器的工厂；为空即派车轮不评估空闲返回，与本票之前逐字相同（control-server#389）。</summary>
+        private Func<FleetFixture, ControlServer.Host.Runtime.IdleReturn.IdleReturnEvaluator>? _idleReturn;
+
+        /// <summary>打开空闲返回之后每辆车最近一次的结论，跨轮次保留，像宿主里的单例。</summary>
+        public ControlServer.Host.Runtime.IdleReturn.IdleReturnVerdictBoard IdleReturnBoard { get; } = new();
+
+        /// <summary>
+        /// 打开空闲返回（control-server#389）：登记这些等待点、让实时目录列出它们，派车轮末尾按生产的样子评估。要装了路网的夹具。
+        /// </summary>
+        public async Task EnableIdleReturnAsync(params WaitingPointEntry[] points)
+        {
+            if (!_withRouteGraph)
+            {
+                throw new InvalidOperationException("Idle return needs the route graph: create the fixture withRouteGraph.");
+            }
+
+            await new WaitingPointRegistry(Context, JourneyRuntimeWorkerTestKit.CreateGovernedPublisher(Context))
+                .WriteVersionAsync(points, Clock.GetUtcNow(), TestContext.Current.CancellationToken);
+            Riot.ExtraStations.AddRange(points.Select(point => new RiotMapStation(point.StationId, point.StationName)));
+            _idleReturn = fixture => IdleReturnTestKit.Create(
+                fixture.Context, fixture.Options, fixture.Clock, fixture.RouteGraph()!, enabled: true, board: fixture.IdleReturnBoard);
+            await RecreateEngineAsync();
+        }
+
         /// <summary>
         /// 给这辆车留下一条没有释放的用途占有（连同它开着的记录），像一次释放没落库那样。批次8-16（control-server#387）之前
         /// 这里留的是租约；租约退役后，车被占着只剩这一种写法。
@@ -1282,7 +1306,8 @@ public sealed partial class MultiVehicleExecutionTests
                 onboardFacts,
                 options,
                 Clock,
-                EngineLog);
+                EngineLog,
+                _idleReturn?.Invoke(this) ?? IdleReturnTestKit.Create(Context, Options, Clock));
             return new JourneyRuntimeEngine(
                 Context,
                 Riot,
@@ -1864,6 +1889,9 @@ public sealed partial class MultiVehicleExecutionTests
           IRiotRouteCostProbe, IRiotOrderCommandGateway, IRiotVehicleEmergencyFacts, IRiotVehicleOrderFacts,
           IRiotVehicleSafetyFacts, IRiotMapNameCatalog
     {
+        /// <summary>目录里另列的站：空闲返回的用例登记的等待点（control-server#389）。默认为空，目录与本票之前逐字相同。</summary>
+        public List<RiotMapStation> ExtraStations { get; } = [];
+
         private readonly Dictionary<string, RiotOrderObservation> _orders = new(StringComparer.Ordinal);
 
         /// <summary>
@@ -1981,6 +2009,7 @@ public sealed partial class MultiVehicleExecutionTests
                     new RiotMapStation(13, "N1-2"),
                     new RiotMapStation(14, "N1-3"),
                     new RiotMapStation(210, "关卡"),
+                    .. ExtraStations,
                 ]));
         }
 

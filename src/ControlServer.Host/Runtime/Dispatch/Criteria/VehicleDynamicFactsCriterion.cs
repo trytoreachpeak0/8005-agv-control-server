@@ -25,6 +25,12 @@ public sealed class VehicleDynamicFactsCriterion(IOptions<JourneyRuntimeOptions>
 {
     private readonly JourneyRuntimeOptions _options = options.Value;
 
+    /// <summary>The vehicle's battery is not reported. Named because the idle return reads it (control-server#389).</summary>
+    public const string BatteryFactUnknownReason = "BATTERY_FACT_UNKNOWN";
+
+    /// <summary>The vehicle is charging or below the battery threshold. Named for the same reason.</summary>
+    public const string BatteryPolicyNotSatisfiedReason = "BATTERY_POLICY_NOT_SATISFIED";
+
     public int Order => 80;
 
     public Task<string> EvaluateAsync(
@@ -100,13 +106,13 @@ public sealed class VehicleDynamicFactsCriterion(IOptions<JourneyRuntimeOptions>
 
         if (facts.Vehicle.BatteryPercent is null || string.IsNullOrWhiteSpace(facts.Vehicle.BatteryState))
         {
-            return "BATTERY_FACT_UNKNOWN";
+            return BatteryFactUnknownReason;
         }
 
         if (string.Equals(facts.Vehicle.BatteryState, "CHARGING", StringComparison.Ordinal) ||
             facts.Vehicle.BatteryPercent < options.MinimumBatteryPercent)
         {
-            return "BATTERY_POLICY_NOT_SATISFIED";
+            return BatteryPolicyNotSatisfiedReason;
         }
 
         if (facts.Vehicle.Speed is null || facts.Vehicle.Speed != 0)

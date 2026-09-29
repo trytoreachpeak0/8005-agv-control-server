@@ -55,19 +55,8 @@ public sealed class VehicleFaultBlockCriterion(IVehicleFaultStore faults) : IDis
     {
         ArgumentNullException.ThrowIfNull(evaluation);
 
-        string agvId = evaluation.Vehicle.AgvId;
-        if (string.IsNullOrWhiteSpace(agvId))
-        {
-            return IdentityUnresolvedReason;
-        }
-
-        VehicleFaultFact? fault = await faults
-            .ReadAsync(agvId, cancellationToken).ConfigureAwait(false);
-        return fault?.Level switch
-        {
-            VehicleFaultLevel.ConfirmedIsolated => IsolatedReason,
-            VehicleFaultLevel.SuspectedBlocked => SuspectedReason,
-            _ => DispatchAdmissionChain.Eligible
-        };
+        // One definition with the idle return (control-server#389, review M1): VehicleNewPurposeReadiness.
+        return await VehicleNewPurposeReadiness
+            .FaultVerdictAsync(faults, evaluation.Vehicle.AgvId, cancellationToken).ConfigureAwait(false);
     }
 }

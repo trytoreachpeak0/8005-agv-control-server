@@ -43,6 +43,8 @@ builder.Services.AddScoped<DemandIntakeService>();
 builder.Services.AddScoped<MovementDispatchService>();
 builder.Services.AddScoped<JourneyIntakeCoordinator>();
 builder.Services.AddScoped<JourneyRuntimeEngine>();
+// control-server#391: the fixed task station sweep's warnings are raised once and cleared once across rounds.
+builder.Services.AddSingleton<FixedStationSweepWarnings>();
 builder.Services.AddScoped<ForeignRunningOrderSupervisor>();
 builder.Services.AddDispatchAdmission();
 builder.Services.AddOptions<RouteGraphOptions>()
@@ -174,6 +176,7 @@ builder.Services.AddGovernance(builder.Configuration);
 builder.Services.AddTaskTypeStations();
 builder.Services.AddMultiDemandJourneys();
 builder.Services.AddVehiclePurposes();
+builder.Services.AddIdleReturn(builder.Configuration);
 builder.Services.AddCharging();
 builder.Services.AddPlanRevision();
 

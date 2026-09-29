@@ -181,6 +181,34 @@ public static class DispatchReasonCodes
     public const string TransportDemandKeyAlreadyAccepted = "TRANSPORT_DEMAND_KEY_ALREADY_ACCEPTED";
 
     /// <summary>
+    /// 这辆车已承诺空闲返回（<c>REQ-0292</c>；批次8-18，control-server#389）：返回是它当前已承诺的下一站，搬运不取消、不换点、不抢它。
+    /// </summary>
+    /// <remarks>
+    /// 归普通积压：别的车能接，或这辆车返回到点收敛（批次8-19）后下一轮能接。不是故障，也不是整个车队都接不了。
+    /// </remarks>
+    public const string VehicleCommittedToIdleReturn = "VEHICLE_COMMITTED_TO_IDLE_RETURN";
+
+    /// <summary>
+    /// 这条候选会让这辆车的下一站变成它的公共站点（<c>REQ-0204</c>，批次8-20，control-server#391），而那个站此刻被别的车预占着——
+    /// 别的车已被承诺前往、还没到。
+    /// </summary>
+    /// <remarks>归普通积压：那辆车到点、离开并满足离点证据之后就放了，这条需求那时再派。</remarks>
+    public const string FixedTaskStationReservedByOtherVehicle = "FIXED_TASK_STATION_RESERVED_BY_OTHER_VEHICLE";
+
+    /// <summary>
+    /// 同上，而那个站此刻被别的已到达的车占用着（<c>REQ-0204</c>，批次8-20，control-server#391）。
+    /// </summary>
+    /// <remarks>归普通积压，理由同上：占用在车离点之后释放。</remarks>
+    public const string FixedTaskStationOccupiedByOtherVehicle = "FIXED_TASK_STATION_OCCUPIED_BY_OTHER_VEHICLE";
+
+    /// <summary>
+    /// 同上，而那个站此刻没有独占行，但别的车正开往它、还没取得预占（<c>REQ-0204</c>，批次8-20，control-server#391）：那辆车在推进里
+    /// 把它排成了下一站，离站时站被占着就照常出发，等每轮开头的补预占。
+    /// </summary>
+    /// <remarks>归普通积压：那辆车到点、离开之后就放了。</remarks>
+    public const string FixedTaskStationApproachedByOtherVehicle = "FIXED_TASK_STATION_APPROACHED_BY_OTHER_VEHICLE";
+
+    /// <summary>
     /// The reasons that are a configured outcome rather than a problem: they reach the backlog and nothing
     /// else — no structural dispatch block, no alarm, no log at Warning or above.
     /// </summary>

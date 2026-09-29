@@ -22,6 +22,8 @@ Set-StrictMode -Version Latest
 #   an integer N  N default waiting points, 214 .. 214+N-1
 #   a list        explicit points: @{ StationId = 214; StationName = '等待点1'; Enabled = $true; VehicleScope = @('VK') }
 #                 StationName defaults to 等待点<k>, Enabled to $true, VehicleScope to every vehicle (empty)
+#                 Node (control-server#389) puts the station on that node of the fake RIoT's route graph; without it
+#                 the station is on no node, which an idle return reads as unreachable
 
 $script:FirstWaitingPointStation = 214
 
@@ -64,6 +66,7 @@ function Resolve-L2WaitingPoints {
                 StationName  = $(if ($entry.ContainsKey('StationName')) { [string]$entry.StationName } else { "等待点$index" })
                 Enabled      = $(if ($entry.ContainsKey('Enabled')) { [bool]$entry.Enabled } else { $true })
                 VehicleScope = $(if ($entry.ContainsKey('VehicleScope')) { [string[]]@($entry.VehicleScope) } else { [string[]]@() })
+                Node         = $(if ($entry.ContainsKey('Node')) { [int]$entry.Node } else { $null })
             })
     }
     if ($points.Count -eq 0) { throw "WaitingPoints in $Where is empty; give `$false for none." }
@@ -79,6 +82,7 @@ function New-L2DefaultWaitingPoints {
             StationName  = "等待点$k"
             Enabled      = $true
             VehicleScope = [string[]]@()
+            Node         = $null
         }
     }
 }
