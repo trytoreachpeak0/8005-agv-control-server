@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "scenario": "idle-return-two-vehicles-contend-one-waiting-point",
+  "runId": "20260929T170335593Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "fleet": [
+      "AGV-L2-001/BROKERX-L2-0001",
+      "AGV-L2-002/BROKERX-L2-0002"
+    ],
+    "batchId": "unspecified",
+    "vehicleKey": "BROKERX-L2-0001",
+    "controlServerCommit": "1938ba3b8180c2ed419c8e5a13dd1da54f1fdc5e",
+    "agvId": "AGV-L2-001",
+    "rig": "SyntheticOnboard",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260929T170335593Z"
+  },
+  "assertions": [
+    {
+      "id": "L2-IRC-01",
+      "description": "两台空闲车里恰好一辆形成空闲返回承诺（另等十几轮之后仍是一辆）",
+      "outcome": "PASS",
+      "expected": 1,
+      "actual": "1 / 1"
+    },
+    {
+      "id": "L2-IRC-02",
+      "description": "承诺那一辆同一趟预占着 214，是等待点、在途预占；除此之外没有任何站点独占（215 没人预占）",
+      "outcome": "PASS",
+      "expected": "214 RESERVED WAITING_POINT BROKERX-L2-0001 idle-return:BROKERX-L2-0001:20260929T170432240Z",
+      "actual": "214 RESERVED WAITING_POINT BROKERX-L2-0001 idle-return:BROKERX-L2-0001:20260929T170432240Z"
+    },
+    {
+      "id": "L2-IRC-03",
+      "description": "另一辆没有任何用途占有：它的承诺没形成，也没留下半截",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": "BROKERX-L2-0002 : 0"
+    },
+    {
+      "id": "L2-IRC-04",
+      "description": "承诺不建单也不物化旅程：没有旅程行、没有订单意图",
+      "outcome": "PASS",
+      "expected": "0 / 0",
+      "actual": "0 / 0"
+    },
+    {
+      "id": "L2-IRC-05",
+      "description": "承诺之后来的搬运派给了没承诺的那辆，不派给已承诺的那辆",
+      "outcome": "PASS",
+      "expected": "AGV-L2-002",
+      "actual": "AGV-L2-002"
+    },
+    {
+      "id": "L2-IRC-06",
+      "description": "已承诺那辆的空闲返回原样留着：同一趟、同一个点，没被搬运取消、换点或抢走",
+      "outcome": "PASS",
+      "expected": "IDLE_RETURN idle-return:BROKERX-L2-0001:20260929T170432240Z | 214 idle-return:BROKERX-L2-0001:20260929T170432240Z",
+      "actual": "IDLE_RETURN idle-return:BROKERX-L2-0001:20260929T170432240Z | 214 idle-return:BROKERX-L2-0001:20260929T170432240Z"
+    }
+  ]
+}
