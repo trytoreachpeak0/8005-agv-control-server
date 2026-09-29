@@ -304,15 +304,21 @@ public sealed class Batch8FixedStationSingleOccupancyTests
     }
 
     /// <summary>
-    /// FAILED／UNKNOWN：预占的车旅程阻断了（订单结果未知、要人介入），车也不在那个站——预占不放，与等待点同一条规则。
+    /// FAILED／UNKNOWN：车装完离开了公共站点（那个停靠已完成），在去机台的路上旅程阻断了（订单结果未知、要人介入），RIoT 报它在别的站——
+    /// 离点证据的另两条都成立，独占仍不放：阻断的旅程等的是人，车可能还在动。与等待点同一条规则。
     /// </summary>
+    /// <remarks>
+    /// 车还站在公共站点上时阻断不行：那时「停靠未完成」先把释放挡住，走不到阻断这一条（注入变异 M6 在那种写法下存活）。
+    /// </remarks>
     [Fact]
-    public async Task AReservationIsKeptWhileItsJourneyIsBlocked()
+    public async Task AnExclusivityIsKeptWhileItsJourneyIsBlockedEvenOnceTheVehicleHasLeft()
     {
         await using RuntimeFixture fixture = await WithStagingToWireBoundAsync();
         fixture.Catalog.Set(Reverse(fixture, FixtureDemand, "SUBLOT-001"));
         fixture.BoxCounts.Set("SUBLOT-001", 4);
         await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, (await fixture.AdvanceToGateArrivalAsync()).Stage);
+        fixture.Context.ChangeTracker.Clear();
         JourneyRuntimeRow runtime = await fixture.Context.JourneyRuntimes.SingleAsync(Token);
         runtime.Stage = JourneyRuntimeStage.Blocked;
         runtime.SetBlockReason("MOVEMENT_RESULT_UNKNOWN", fixture.Clock.GetUtcNow());
@@ -322,7 +328,7 @@ public sealed class Batch8FixedStationSingleOccupancyTests
 
         await fixture.Engine.ExecuteOnceAsync(Token);
 
-        Assert.Equal(StationExclusivityStates.Reserved, (await HeldAsync(fixture))!.State);
+        Assert.Equal(StationExclusivityStates.Occupied, (await HeldAsync(fixture))!.State);
     }
 
     // ---- 正开往公共站点、还没预占的车（调度 2026-09-29 定：照常出发，判据算它占着，每轮补预占） ----------------------

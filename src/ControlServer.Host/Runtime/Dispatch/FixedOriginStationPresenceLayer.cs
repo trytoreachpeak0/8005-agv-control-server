@@ -38,11 +38,14 @@ public sealed class FixedOriginStationPresenceLayer : IDispatchVehicleComparison
     }
 
     /// <summary>这份出价的取货起点是公共站点，而这辆车此刻就在那里。</summary>
+    /// <remarks>
+    /// 按需求原文判「取货起点就是该公共站点」，不另判固定站在哪一端：固定站在终点（<c>WIRE_TO_GATE</c>）时它就是卸货站，
+    /// 不会等于取货站，另判一次端点只是同一件事的第二种说法（注入变异 M8 证实它删掉也没有用例会红）。
+    /// </remarks>
     internal static bool StandsAtFixedOrigin(EligibleVehicleOffer offer)
     {
         ResolvedJourneyRoute route = offer.Candidate.Route;
-        return route.FixedStation.FixedEnd == FixedStationEnd.Origin &&
-               route.FixedStation.Station?.StationId == route.PickupStationRiotId &&
+        return route.FixedStation.Station?.StationId == route.PickupStationRiotId &&
                offer.Facts.Vehicle.CurrentStationId == route.PickupStationRiotId;
     }
 }
