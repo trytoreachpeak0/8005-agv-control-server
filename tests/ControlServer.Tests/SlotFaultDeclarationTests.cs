@@ -7,12 +7,19 @@ using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.Fleet;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
+using System.Net.Http.Json;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -636,6 +643,132 @@ public sealed class SlotFaultDeclarationTests
         Assert.DoesNotContain(fixture.Peer.Lines, line => MessageType(line) == "SlotFaultDeclarationCommand");
     }
 
+    // --- The switch (review of control-server#383, S1 and S2) ---------------------------------------------------------
+
+    /// <summary>
+    /// Switched on, then off again with a declaration still unanswered: the reconnect does not replay its command. An onboard
+    /// that does not know the command would otherwise be dropped on every reconnect.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    public async Task ASwitchedOffEntryPointDoesNotReplayAPendingDeclarationOnReconnect()
+    {
+        await using Fixture fixture = await Fixture.AwaitingOperatorOnSlotOneAsync();
+        fixture.Peer.Connected = false;
+        await fixture.DeclareAsync();
+        fixture.Peer.Connected = true;
+        fixture.Configuration["SlotFaultDeclaration:enabled"] = "false";
+
+        await fixture.ReconnectAsync();
+
+        Assert.DoesNotContain(fixture.Peer.Lines, line => MessageType(line) == "SlotFaultDeclarationCommand");
+        Assert.Equal(SlotFaultDeclarationStates.Pending, Assert.Single(await fixture.DeclarationsAsync()).State);
+
+        // Switched on again, the next reconnect does replay it: the switch holds the command back, it does not drop it.
+        fixture.Configuration["SlotFaultDeclaration:enabled"] = "true";
+        await fixture.ReconnectAsync();
+        Assert.Single(fixture.Peer.Lines, line => MessageType(line) == "SlotFaultDeclarationCommand");
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    public async Task StartupWarnsAboutPendingDeclarationsOnlyWhileTheSwitchIsOff()
+    {
+        await using Fixture fixture = await Fixture.AwaitingOperatorOnSlotOneAsync();
+        await fixture.DeclareAsync();
+        RecordingLogger<SlotFaultDeclarationTests> log = new();
+
+        IReadOnlyDictionary<string, int> whileOn = await SlotFaultDeclarationStartupCheck.WarnAsync(
+            fixture.Context, enabled: true, log, Token);
+        IReadOnlyDictionary<string, int> whileOff = await SlotFaultDeclarationStartupCheck.WarnAsync(
+            fixture.Context, enabled: false, log, Token);
+
+        Assert.Empty(whileOn);
+        Assert.Equal(1, Assert.Single(whileOff, pair => pair.Key == AgvId).Value);
+        (LogLevel level, string warning) = Assert.Single(log.Entries);
+        Assert.Equal(LogLevel.Warning, level);
+        Assert.Contains("1 declaration(s)", warning, StringComparison.Ordinal);
+        Assert.Contains(AgvId + ": 1", warning, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The route exists only while the switch is on: off, a POST is a 404 -- nothing can be declared, so nothing can be
+    /// sent; on, the same POST reaches the handler, which refuses it for the missing credential.
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [InlineData(false, 404)]
+    [InlineData(true, 401)]
+    public async Task TheRouteIsMappedOnlyWhileTheSwitchIsOn(bool enabled, int expectedStatus)
+    {
+        string credentialVariable = "CONTROL_SERVER_TEST_" + Guid.NewGuid().ToString("N");
+        Environment.SetEnvironmentVariable(credentialVariable, DeclarationCredential);
+        try
+        {
+            WebApplicationBuilder builder = WebApplication.CreateBuilder();
+            builder.WebHost.UseUrls("http://127.0.0.1:0");
+            builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["SlotFaultDeclaration:enabled"] = enabled ? "true" : "false",
+                ["SlotFaultDeclaration:credentialEnvironmentVariable"] = credentialVariable
+            });
+            builder.Services.Configure<SlotFaultDeclarationOptions>(
+                builder.Configuration.GetSection(SlotFaultDeclarationOptions.SectionName));
+            // The handler is never reached past authentication here, so the service needs none of its collaborators.
+            builder.Services.AddScoped(_ => new SlotFaultDeclarationService(
+                null!, null!, null!, TimeProvider.System, NullLogger<SlotFaultDeclarationService>.Instance));
+            builder.Services.AddSingleton(new VehicleRoster(
+                Options.Create(new JourneyRuntimeOptions { AgvId = AgvId, VehicleKey = VehicleKey })));
+            await using WebApplication app = builder.Build();
+
+            bool mapped = app.MapSlotFaultDeclarationWhenEnabled();
+            await app.StartAsync(Token);
+            string address = app.Services.GetRequiredService<IServer>().Features
+                .Get<IServerAddressesFeature>()!.Addresses.Single();
+            using HttpClient client = new() { BaseAddress = new Uri(address) };
+            using HttpResponseMessage response = await client.PostAsJsonAsync(
+                SlotFaultDeclarationEndpoints.Route, Request(), Token);
+            await app.StopAsync(Token);
+
+            Assert.Equal(enabled, mapped);
+            Assert.Equal(expectedStatus, (int)response.StatusCode);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(credentialVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// The premise that makes an attempt filter on the overdue alarm meaningless (review of control-server#383, S4): on the
+    /// wire an alarm has one subject. The overdue alarm's is the slot, so it never names an attempt; one raised with the
+    /// attempt as its subject names no slot and is not an overdue slot at all, so a declaration is refused for it.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    public async Task AnOverdueAlarmNamesTheSlotOnlyAndOneNamingAnAttemptDoesNotCountAsOverdue()
+    {
+        await using Fixture fixture = await Fixture.AwaitingOperatorOnSlotOneAsync();
+        OnboardAlarmEntry slotAlarm = Assert.Single(await new OnboardAlarmProjectionStore(fixture.Context)
+            .ReadExpectedActionOverdueAsync(AgvId, Token));
+        Assert.Equal(1, slotAlarm.PhysicalSlotNumber);
+        Assert.Null(slotAlarm.SlotOperationAttemptId);
+
+        await fixture.SendAlarmSnapshotAsync(2, new
+        {
+            alarmId = OverdueAlarmId,
+            code = "SLOT_EXPECTED_ACTION_OVERDUE",
+            severity = "WARNING",
+            raisedAt = Now.AddMinutes(-2),
+            subjectType = "SLOT_OPERATION",
+            subjectId = "20000000-0000-4000-8000-00000000aaaa",
+            displayMessage = "放入货物并关好1号仓门"
+        });
+
+        Assert.Empty(await new OnboardAlarmProjectionStore(fixture.Context).ReadExpectedActionOverdueAsync(AgvId, Token));
+        Assert.Equal([SlotFaultDeclarationRefusals.ExpectedActionNotOverdue], Conflict(await fixture.PostAsync(Request())));
+    }
+
     // --- The audit ---------------------------------------------------------------------------------------------------
 
     /// <summary>
@@ -869,18 +1002,23 @@ public sealed class SlotFaultDeclarationTests
         {
             Connection = connection;
             Context = context;
-            IConfiguration configuration = new ConfigurationBuilder()
+            // The switch as the host reads it (SlotFaultDeclarationOptions.IsEnabled): on, as on a site that offers the entry
+            // point. A test turns it off through Configuration, which the processor reads on every replay.
+            Configuration = new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["OnboardTransport:CredentialEnvironmentVariable"] = SessionCredentialVariable
+                    ["OnboardTransport:CredentialEnvironmentVariable"] = SessionCredentialVariable,
+                    ["SlotFaultDeclaration:enabled"] = "true"
                 })
                 .Build();
             Processor = TestOnboardProcessorFactory.Create(
-                context, new WireToGateStore(context), Clock, configuration, Peer);
+                context, new WireToGateStore(context), Clock, Configuration, Peer);
             Environment.SetEnvironmentVariable(_credentialVariable, DeclarationCredential);
         }
 
         public SqliteConnection Connection { get; }
+
+        public IConfigurationRoot Configuration { get; }
 
         public ControlServerDbContext Context { get; }
 
@@ -1066,6 +1204,10 @@ public sealed class SlotFaultDeclarationTests
             runtime.SetBlockReason(null, Now.AddMinutes(-4));
             return runtime;
         }
+
+        public Task<string> SendAlarmSnapshotAsync(long revision, params object[] alarms) => Send(
+            "OnboardAlarmSnapshot",
+            new { alarmSnapshotRevision = revision, observedAt = Now.AddSeconds(-10), alarms });
 
         public async Task SetOperationStatusAsync(StationOperationStatus status)
         {

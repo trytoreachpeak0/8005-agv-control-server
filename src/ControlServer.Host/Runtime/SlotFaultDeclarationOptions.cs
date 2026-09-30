@@ -28,6 +28,16 @@ public sealed class SlotFaultDeclarationOptions
 
     public bool Enabled { get; set; }
 
+    /// <summary>
+    /// The switch as every reader of it reads it: the route mapping, the reconnect replay and the startup warning all go
+    /// through here, so "off" means the same thing to each (review of control-server#383, S1/S2).
+    /// </summary>
+    public static bool IsEnabled(IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        return configuration.GetValue<bool>(SectionName + ":enabled");
+    }
+
     public string CredentialEnvironmentVariable { get; set; } = "CONTROL_SERVER_SLOT_FAULT_DECLARATION_CREDENTIAL";
 }
 

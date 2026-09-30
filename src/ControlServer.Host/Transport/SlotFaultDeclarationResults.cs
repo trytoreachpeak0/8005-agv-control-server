@@ -32,10 +32,12 @@ public enum SlotFaultDeclarationResultDisposition
 /// operation or the journey, the two messages can arrive in either order without a settlement running twice or not at all.
 /// </para>
 /// <para>
-/// <b>Nothing the vehicle sends here ends its session.</b> The message is RELIABLE and the vehicle resends it until it is
+/// <b>A well-formed result never ends the session.</b> The message is RELIABLE and the vehicle resends it until it is
 /// acknowledged, so refusing one by throwing would drop the connection and loop on every reconnect. A result for a
 /// declaration this server never made, or for another attempt than the declaration's, is acknowledged, logged and changes
-/// nothing; the inbox keeps the line.
+/// nothing; the inbox keeps the line. A malformed one -- a required field missing, or an <c>outcome</c> outside the
+/// schema's two values -- does throw <see cref="InvalidDataException"/>, which ends the session like any other message
+/// the server cannot read; such a line is a contract violation, not a result to record.
 /// </para>
 /// <para>
 /// <b>The first answer is the record</b> (business deduplication on <c>declarationId</c>): a second result for an answered
@@ -106,22 +108,37 @@ public static class SlotFaultDeclarationResults
     }
 
     /// <summary>
-    /// The commands of this vehicle's declarations that have no answer yet, for the replay after its recovery report.
+    /// The commands of this vehicle's declarations that have no answer yet, for the replay after its recovery report; none
+    /// while the entry point is switched off.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The replay itself sends only outbox rows that are neither acknowledged nor fenced, so a command the vehicle
     /// acknowledged is not sent again: having acknowledged it, the vehicle owes the result, and resends that itself.
+    /// </para>
+    /// <para>
+    /// <b>Switched off means not replayed either</b> (review of control-server#383, S1). A site that turned the entry point
+    /// on and then off again may still hold PENDING declarations; replaying them would put the command in front of an
+    /// onboard that may not know it, which ends that vehicle's session on every reconnect. They stay in the table and the
+    /// outbox, unsent, and the host warns about them at startup (<see cref="SlotFaultDeclarationStartupCheck"/>).
+    /// </para>
     /// </remarks>
-    public static Task<string[]> PendingCommandMessageIdsAsync(
+    public static async Task<string[]> PendingCommandMessageIdsAsync(
         ControlServerDbContext dbContext,
+        IConfiguration configuration,
         string agvId,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(dbContext);
-        return dbContext.Set<SlotFaultDeclarationRow>().AsNoTracking()
+        ArgumentNullException.ThrowIfNull(configuration);
+        if (!ControlServer.Host.Runtime.SlotFaultDeclarationOptions.IsEnabled(configuration))
+        {
+            return [];
+        }
+        return await dbContext.Set<SlotFaultDeclarationRow>().AsNoTracking()
             .Where(row => row.AgvId == agvId && row.State == SlotFaultDeclarationStates.Pending)
             .Select(row => row.CommandMessageId)
-            .ToArrayAsync(cancellationToken);
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static string Required(JsonElement element, string property) =>

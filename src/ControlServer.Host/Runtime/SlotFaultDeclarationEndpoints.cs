@@ -39,6 +39,21 @@ public static class SlotFaultDeclarationEndpoints
     /// <summary>The command's <c>administratorRole</c> enumeration, the same as the recovery session's.</summary>
     public static IReadOnlyList<string> AdministratorRoles { get; } = ["MAINTENANCE_ADMINISTRATOR", "SYSTEM_ADMINISTRATOR"];
 
+    /// <summary>
+    /// Maps the route only when <see cref="SlotFaultDeclarationOptions.IsEnabled"/>; otherwise the route does not exist
+    /// and a POST is a 404. Returns whether it mapped.
+    /// </summary>
+    public static bool MapSlotFaultDeclarationWhenEnabled(this WebApplication app)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        if (!SlotFaultDeclarationOptions.IsEnabled(app.Configuration))
+        {
+            return false;
+        }
+        app.MapSlotFaultDeclaration();
+        return true;
+    }
+
     public static void MapSlotFaultDeclaration(this WebApplication app)
     {
         app.MapPost(Route, HandleAsync)

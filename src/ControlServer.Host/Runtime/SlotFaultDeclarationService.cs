@@ -301,17 +301,19 @@ public sealed class SlotFaultDeclarationService(
             }
         }
 
-        // An alarm that names the attempt it belongs to must name this one; one from an earlier attempt is not overdue now.
+        // The overdue alarm names a slot and nothing else: on the wire an alarm has one subject, and an expected-action-overdue
+        // alarm's is SLOT (CP-0005 4.1; OnboardAlarmCodes.IsSlotExpectedActionOverdue requires the slot number), so it never
+        // carries the attempt it was raised under. Which attempt it belongs to cannot be read off it; that it is the current
+        // one rests on the snapshot being whole -- the vehicle withdraws the alarm when the slot closes -- and on the vehicle
+        // refusing a declaration for an attempt that is not waiting (NOT_APPLICABLE). An attempt filter here was dead code
+        // (review of control-server#383, S4); SlotFaultDeclarationTests pins the premise that made it so.
         IReadOnlyList<OnboardAlarmEntry> overdue = await new OnboardAlarmProjectionStore(dbContext, timeProvider)
             .ReadExpectedActionOverdueAsync(request.AgvId, cancellationToken).ConfigureAwait(false);
-        OnboardAlarmEntry[] forThisOperation = [.. overdue.Where(alarm =>
-            alarm.SlotOperationAttemptId is null ||
-            string.Equals(alarm.SlotOperationAttemptId, operation?.SlotOperationAttemptId, StringComparison.Ordinal))];
-        if (forThisOperation.Length == 0)
+        if (overdue.Count == 0)
         {
             reasons.Add(SlotFaultDeclarationRefusals.ExpectedActionNotOverdue);
         }
-        else if (!forThisOperation.Any(alarm => alarm.PhysicalSlotNumber == request.SlotNo))
+        else if (!overdue.Any(alarm => alarm.PhysicalSlotNumber == request.SlotNo))
         {
             reasons.Add(SlotFaultDeclarationRefusals.NotTheCurrentSlot);
         }

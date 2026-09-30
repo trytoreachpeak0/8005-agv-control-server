@@ -212,6 +212,8 @@ await AreaAssignmentDispatchZoneStartupCheck.EnsureAsync(app.Services, Cancellat
 await TaskTypeStationStartup.EnsureAsync(app.Services, CancellationToken.None);
 // control-server#388：投运车辆数大于 1 而等待点不够每辆车各分一个时拒绝启动（规格 5.4）。在绑定装载之后，固定站不算等待点。
 await WaitingPointStartupCheck.EnsureAsync(app.Services, CancellationToken.None);
+// control-server#383：人工判故障入口关着、库里却有未结判定时告警（它们在关着时不补发）。
+await SlotFaultDeclarationStartupCheck.WarnAsync(app.Services, CancellationToken.None);
 
 app.MapGet("/health/live", () => Results.Ok(new { status = "live" }));
 app.MapGet("/health/ready", async (ControlServerDbContext dbContext, CancellationToken cancellationToken) =>
@@ -293,11 +295,8 @@ if (app.Configuration.GetValue<bool>("VehicleFaultRecovery:enabled"))
     app.MapVehicleFaultRecovery();
 }
 // 默认不挂。control-server#383 的人工判故障（REQ-0359）：这个入口会让车停下一次仓位操作，要现场明确打开才提供；
-// 车载端认识 SlotFaultDeclarationCommand 之前（onboard-hmi#215）也不能打开，否则那台车会反复断开重连。
-if (app.Configuration.GetValue<bool>("SlotFaultDeclaration:enabled"))
-{
-    app.MapSlotFaultDeclaration();
-}
+// 车载端认识 SlotFaultDeclarationCommand 之前（onboard-hmi#215）也不能打开，否则那台车会反复断开重连。判断在方法里，有 L1 护着。
+app.MapSlotFaultDeclarationWhenEnabled();
 app.MapDashboardQueries();
 // 防饥饿阈值的标定证据（批次7-09，control-server#214）：只读，JSON 与 CSV。
 app.MapStarvationCalibrationReport();
