@@ -124,6 +124,12 @@ public static class VehicleActivePurposes
     /// no slot command. Withdrawn, by a snapshot whose purpose is no longer this, when the idle return converges or ends.
     /// </summary>
     public const string IdleReturn = "IDLE_RETURN";
+
+    /// <summary>
+    /// The vehicle is committed to a charger (batch 9-06, control-server#404): it holds the CHARGING purpose and the charger's
+    /// reservation. No worklist, no entry request, no slot command; where the cycle stands is <c>chargingCycleState</c>.
+    /// </summary>
+    public const string Charging = "CHARGING";
 }
 
 /// <summary>
@@ -429,6 +435,14 @@ public enum OperationResultDisposition
 /// <c>observedBatteryPercent</c> as <c>number | null</c>, so an absent reading is a value the
 /// administrator supplied rather than a violation.
 /// </summary>
+/// <param name="VehicleKey">
+/// The RIoT vehicle key of <paramref name="AgvId"/>, resolved from the fleet roster by whoever received the message
+/// (control-server#404). The server's manual-charging hold is kept per vehicle key; null when the AGV is not in the roster,
+/// and then no hold can be found or lifted.
+/// </param>
+/// <param name="DecidedAt">
+/// The receiver's clock at the decision, stamped on the decision and on the hold's release; null falls back to the system clock.
+/// </param>
 public sealed record ManualChargingReturnToServiceRequest(
     string RequestId,
     string AgvId,
@@ -438,7 +452,9 @@ public sealed record ManualChargingReturnToServiceRequest(
     string AdministratorId,
     string AdministratorRole,
     string Reason,
-    double? ObservedBatteryPercent);
+    double? ObservedBatteryPercent,
+    string? VehicleKey = null,
+    DateTimeOffset? DecidedAt = null);
 
 /// <summary>
 /// What the server decided about one such request, durable so the same <c>requestId</c> arriving

@@ -1418,6 +1418,75 @@ public sealed class OnboardMessageProcessorTests
         }
     }
 
+    /// <summary>
+    /// control-server#404: the server now holds a manual-charging hold of its own, kept per RIoT vehicle key, while the request
+    /// names the vehicle by its AGV id. The processor resolves the key from the fleet roster, so an accepted request arriving
+    /// over the wire lifts the hold in the decision's own save -- a request that reached the store without the key would be
+    /// accepted and lift nothing, and the vehicle would stay held for good.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    public async Task ManualChargingReturnToServiceLiftsTheServersHoldOfTheVehicleTheRosterNames()
+    {
+        const string credentialVariable = "CONTROL_SERVER_TEST_MANUAL_CHARGING_HOLD_CREDENTIAL";
+        const string credential = "test-credential-not-for-production";
+        const string vehicleKey = "BROKERX-0001";
+        Environment.SetEnvironmentVariable(credentialVariable, credential);
+        try
+        {
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(TestContext.Current.CancellationToken);
+            DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+                .UseSqlite(connection)
+                .Options;
+            await using ControlServerDbContext context = new(options);
+            await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+            IConfiguration configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["OnboardTransport:CredentialEnvironmentVariable"] = credentialVariable
+                })
+                .Build();
+            WireToGateStore store = new(context);
+            FixedTimeProvider clock = new();
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, store, clock, configuration,
+                runtimeOptions: new ControlServer.Host.Runtime.JourneyRuntimeOptions { AgvId = "AGV-001", VehicleKey = vehicleKey });
+            OnboardConnectionState state = new();
+            await ReachReadyAsync(processor, state, credential, TestContext.Current.CancellationToken);
+            Assert.Equal(
+                ControlServer.Application.ManualChargingHoldPlacement.Placed,
+                await new ManualChargingHoldStore(context).PlaceAsync(
+                    "hold-1", vehicleKey, ControlServer.Application.ManualChargingHoldReasons.RosterEmpty,
+                    new DateTimeOffset(2026, 8, 25, 8, 0, 0, TimeSpan.Zero), TestContext.Current.CancellationToken));
+
+            const string requestId = "00000000-0000-4000-8000-0000000000f1";
+            string answer = await processor.ProcessAsync(
+                Envelope(
+                    "ManualChargingReturnToServiceRequested", "00000000-0000-4000-8000-0000000000f2",
+                    state.SessionGeneration!.Value, ManualChargingReturnPayload(requestId, "MAINTENANCE_ADMINISTRATOR")),
+                state,
+                TestContext.Current.CancellationToken);
+
+            using JsonDocument result = JsonDocument.Parse(answer);
+            Assert.Equal(
+                "RETURNED_TO_ELIGIBILITY_EVALUATION",
+                result.RootElement.GetProperty("payload").GetProperty("outcome").GetString());
+            context.ChangeTracker.Clear();
+            Assert.Empty(await context.Set<ManualChargingHoldRow>().AsNoTracking().ToArrayAsync(TestContext.Current.CancellationToken));
+            ManualChargingHoldRecordRow record = await context.Set<ManualChargingHoldRecordRow>().AsNoTracking()
+                .SingleAsync(TestContext.Current.CancellationToken);
+            Assert.Equal(requestId, record.ReleaseRequestId);
+            // The release carries the processor's own clock, not the machine's (independent review, low item): the charging
+            // allocator compares it with instants its TimeProvider stamps on charging cycles.
+            Assert.Equal(clock.GetUtcNow(), record.ReleasedAt);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(credentialVariable, null);
+        }
+    }
+
     private static object ManualChargingReturnPayload(string requestId, string administratorRole) => new
     {
         requestId,

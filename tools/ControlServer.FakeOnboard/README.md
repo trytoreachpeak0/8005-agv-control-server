@@ -55,6 +55,7 @@ dotnet run --project tools/ControlServer.FakeOnboard --   --FakeOnboard:Peer:por
 | `PUT` | `/load-cancellations/{cancellationId}` | 发 `LoadCancellationStartRequested`，即操作员点「取消装货」 |
 | `GET` | `/load-cancellations` | 读发过的取消：服务端的决定、授权的仓位、报出的结果与是否被确认 |
 | `PUT` | `/sublot-scan` | 指定录入哪个 SUBLOT（`sublot`），以及是否重扫（`rescan`） |
+| `PUT` | `/manual-charging-returns/{requestId}` | 发 `ManualChargingReturnToServiceRequested`，即管理员在车上发起「充电后返回服务」（control-server#404）。`administratorRole` 不给就是 `MAINTENANCE_ADMINISTRATOR`；服务端的应答只进线路日志，效果到服务端的库里看 |
 
 ## 操作员扫码（批次 5，control-server#82）
 

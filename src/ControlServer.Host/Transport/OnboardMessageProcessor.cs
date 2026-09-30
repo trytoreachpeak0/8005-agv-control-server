@@ -19,8 +19,12 @@ public sealed partial class OnboardMessageProcessor(
     TimeProvider timeProvider,
     IConfiguration configuration,
     IOptions<JourneyRuntimeOptions> runtimeOptions,
-    ILogger<OnboardMessageProcessor> logger)
+    ILogger<OnboardMessageProcessor> logger,
+    Runtime.Fleet.VehicleRoster? fleet = null)
 {
+    // The host's one roster (a singleton); a processor built without it, as the tests build it, reads the same options.
+    private readonly Runtime.Fleet.VehicleRoster _fleet = fleet ?? new Runtime.Fleet.VehicleRoster(runtimeOptions);
+
     // The envelope's own settings, not a second copy of them: this instance also hashes the business
     // content the peer hashes, and the two only agree while both use the same serializer settings.
     private static readonly JsonSerializerOptions SerializerOptions = ProtocolEnvelope.SerializerOptions;
@@ -603,7 +607,12 @@ public sealed partial class OnboardMessageProcessor(
                                 RequiredString(payload.GetProperty("administrator"), "operatorId"),
                                 RequiredString(payload, "administratorRole"),
                                 RequiredString(payload, "reason"),
-                                NullableDouble(payload, "observedBatteryPercent")),
+                                NullableDouble(payload, "observedBatteryPercent"),
+                                // control-server#404: the server's manual-charging hold is kept per RIoT vehicle key, and the
+                                // request names the vehicle by its AGV id. Resolved from the fleet roster here, so an accepted
+                                // request lifts the hold in the decision's own save.
+                                _fleet.ByAgvId(agvId)?.VehicleKey,
+                                timeProvider.GetUtcNow()),
                             cancellationToken).ConfigureAwait(false);
                     return SerializeEnvelope(
                         "ManualChargingReturnToServiceResult", messageId, agvId, generation,

@@ -90,6 +90,8 @@ internal static class ReconnectModel
         // cs#390：空闲返回的单被取消／点丢失之后，等车证明停稳才收尾的两种保持。模型没有空闲返回，走不到，理由同上。
         "IDLE_RETURN_ORDER_ENDED_STOP_NOT_PROVEN",
         "IDLE_RETURN_WAITING_POINT_LOST_ORDER_IN_FLIGHT",
+        // cs#404：去充电的旅程发现自己的充电周期不在了，停在原处等人来看。模型没有充电，走不到，理由同上。
+        "CHARGING_CYCLE_MISSING",
     };
 
     /// <summary>

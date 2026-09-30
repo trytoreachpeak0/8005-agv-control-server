@@ -28,12 +28,15 @@ namespace ControlServer.Host.Runtime;
 public sealed class JourneyPlanBuilder(JourneyRuntimeOptions options)
 {
     // A transport journey's legs are BUSINESS: each moves a demand from a pickup station to a dropoff station and does nothing
-    // else. An idle return's one leg is WAITING_POINT, with no legType and no demand (batch 8-19, control-server#390;
-    // IdleReturnPlan below); CHARGER is batch 9.
+    // else. An idle return's one leg is WAITING_POINT (batch 8-19, control-server#390; IdleReturnPlan below) and a charging
+    // journey's one leg is CHARGER (batch 9-06, control-server#404; ChargerPlan below), both with no legType and no demand.
     private const string BusinessStopPurpose = "BUSINESS";
 
     /// <summary><c>stopPurposeCategory</c> of an idle return's leg (protocol <c>2.0.0</c>, <c>FP-IS-12</c>).</summary>
     public const string WaitingPointStopPurpose = "WAITING_POINT";
+
+    /// <summary><c>stopPurposeCategory</c> of a charging journey's leg (protocol <c>2.0.0</c>; batch 9-06, control-server#404).</summary>
+    public const string ChargerStopPurpose = "CHARGER";
 
     /// <summary>
     /// Builds a candidate's route from its AREA station and its task type's fixed station, or names
@@ -279,6 +282,46 @@ public sealed class JourneyPlanBuilder(JourneyRuntimeOptions options)
     /// </summary>
     public static VehicleBusinessProjection IdleReturnBusinessState(long revision) =>
         new(revision, "READY", VehicleActivePurposes.IdleReturn, false, "SUFFICIENT", ChargingCycleWireStates.NotCharging, null, []);
+
+    /// <summary>
+    /// 充电旅程的计划：一条开往充电桩的腿，<c>stopPurposeCategory = CHARGER</c>、<c>legType</c> 与 <c>demandId</c> 为空
+    /// （批次9-06，control-server#404；协议 <c>2.0.0</c> 允许两者为空）。
+    /// </summary>
+    /// <remarks>
+    /// 腿的状态在本票里有两种：承诺了、RIoT 还没确认建单（周期 <c>ALLOCATED</c>）是 <c>PLANNED</c>——车还没有出发，也可能被出发前安全门
+    /// 挡着；RIoT 确认建单之后（周期 <c>EN_ROUTE</c>）是 <c>ACTIVE</c>。到桩之后的状态由批次9-07 接着写。业务腿的生成（<see cref="Plan"/>）不动。
+    /// </remarks>
+    public static UpcomingStopPlanProjection ChargerPlan(
+        JourneyRuntimeRow runtime,
+        JourneyStopRow charger,
+        bool enRoute,
+        long revision)
+    {
+        ArgumentNullException.ThrowIfNull(runtime);
+        ArgumentNullException.ThrowIfNull(charger);
+        return new UpcomingStopPlanProjection(
+            revision,
+            [
+                new UpcomingMovementLeg(
+                    charger.MovementLegId,
+                    null,
+                    ChargerStopPurpose,
+                    null,
+                    null,
+                    charger.Sequence,
+                    charger.StationId,
+                    runtime.MapIdentity,
+                    enRoute ? "ACTIVE" : "PLANNED"),
+            ]);
+    }
+
+    /// <summary>
+    /// 充电旅程的车辆业务状态：<c>activePurpose = CHARGING</c>，没有装货阶段、没有阻断事实，<c>manualChargingHold</c> 为假
+    /// （在人工充电等待中的车不会被分配充电）。<paramref name="chargingCycleState"/> 取充电周期在线上的状态，
+    /// <paramref name="batteryState"/> 取承诺时按判它的那份事实投影、记在旅程上的那一版。
+    /// </summary>
+    public static VehicleBusinessProjection ChargingBusinessState(long revision, string chargingCycleState, string batteryState) =>
+        new(revision, "READY", VehicleActivePurposes.Charging, false, batteryState, chargingCycleState, null, []);
 
     private static string LegState(JourneyStopRow stop, JourneyStopRow current, bool arrivedAtCurrent) =>
         stop.Sequence < current.Sequence ? "COMPLETED"

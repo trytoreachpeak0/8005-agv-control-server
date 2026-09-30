@@ -1342,6 +1342,9 @@ public sealed class JourneyRuntimeWorkerAdmissionTests
                 fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentMap = "OTHER-MAP" };
                 break;
             case "battery-low":
+                // control-server#404: with no charger in the roster the vehicle would be put on manual charging hold, and that
+                // criterion answers before the battery one. A charger it cannot be allocated keeps it queued, so the battery gate shows.
+                await ChargingTestKit.WriteRosterWithAChargerNobodyIsSentToAsync(fixture.Context, fixture.Options.MapId, Now);
                 fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 10 };
                 break;
             case "battery-margin":

@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Host.Runtime.Charging;
 using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Host.Runtime.Fleet;
 using ControlServer.Host.Runtime.IdleReturn;
@@ -53,6 +54,7 @@ public sealed class DispatchRoundRunner(
     ILogger<JourneyRuntimeEngine> logger,
     IdleReturnEvaluator idleReturn,
     IChargingPolicyResolver chargingPolicy,
+    ChargingAllocator chargingAllocation,
     MandatoryChargeBoard? mandatoryCharge = null)
 {
     // The backlog's decision fingerprint is a hash over this serialisation, so it is the engine's setting exactly: a
@@ -199,6 +201,10 @@ public sealed class DispatchRoundRunner(
         catch (Exception error) when (MesIngestReads.IsFailedRead(error, cancellationToken))
         {
             LogCatalogPollFailed(logger, error);
+            // control-server#404, independent review S4: the round has no demands to dispatch, but charging does not depend on
+            // the demand catalog. A MesIngest that is down must not stop a vehicle below its line from being sent to charge,
+            // a manual charging hold's snapshot from being resent, or a failed cycle's charger from being released.
+            await AllocateChargingWithoutDemandsAsync(currentMap, vehicles, cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -245,10 +251,12 @@ public sealed class DispatchRoundRunner(
 
         // 「上次成功接单」从既有旅程记录推出（票面第 6 条带内层），一轮查一次。
         // An idle return (control-server#390) is not work taken on: a vehicle that just went back to a waiting point has not
-        // been dispatched, and counting it would push that vehicle behind the others for the next task.
+        // been dispatched, and counting it would push that vehicle behind the others for the next task. Nor is a charging
+        // journey (control-server#404): a vehicle back from the charger would otherwise be the last to get a task.
         Dictionary<string, DateTimeOffset> lastDispatchedAt = LastDispatchAtByVehicle(
             await dbContext.JourneyRuntimes.AsNoTracking()
-                .Where(row => !row.JourneyId.StartsWith(IdleReturnIdentity.JourneyIdPrefix))
+                .Where(row => !row.JourneyId.StartsWith(IdleReturnIdentity.JourneyIdPrefix) &&
+                              !row.JourneyId.StartsWith(ChargingIdentity.JourneyIdPrefix))
                 .Select(row => new JourneyStart(row.AgvId, row.CreatedAt))
                 .ToArrayAsync(cancellationToken).ConfigureAwait(false));
 
@@ -264,6 +272,15 @@ public sealed class DispatchRoundRunner(
                 participants.Add(participant);
             }
         }
+
+        // 充电分配（批次9-06，control-server#404）：在任务循环之前——强制充电先于普通搬运（REQ-0290）。交过去的是这一轮的空闲车与它们
+        // 这一轮读定的事实（电量、策略版本同一份）；取得承诺的车此后这一轮不接搬运（判据 ChargingStandingCriterion），也不被空闲返回选中。
+        // 分配器是必填的，理由同下面的空闲返回评估器：可选注入时宿主漏注册会静默成「从不分配」。它自己保存，每辆车的失败只丢它自己的暂存行。
+        await chargingAllocation.AllocateAsync(
+                currentMap,
+                [.. participants.Where(p => !p.UnderWay).Select(p => new ChargingCandidate(p.Vehicle, p.Facts))],
+                cancellationToken)
+            .ConfigureAwait(false);
 
         // 任务层的次序：超时层、优先级带、等待年龄，再按首次看到与需求 id 定序（批次7-09，control-server#214），
         // 与车辆侧不相交。每条任务的处境按本轮读一次的分区归属表与每区参数算：轮中导入的新版本下一轮才生效。
@@ -417,6 +434,38 @@ public sealed class DispatchRoundRunner(
             LogBlockedVehicleJudgedACandidate(logger, participant.Vehicle.AgvId, candidate.DemandId, reason, null);
         }
     }
+
+    /// <summary>
+    /// 需求目录读不到的那一轮只做充电分配（control-server#404 独立审查 S4）：为每辆空闲车照常读这一轮的事实（同一个读法、同一份每车预算），
+    /// 交给充电分配器。没有任务循环，没有积压行可写，也不问在途车——它们此刻不会被分配充电。
+    /// </summary>
+    private async Task AllocateChargingWithoutDemandsAsync(
+        RiotMapStationCatalogSnapshot currentMap,
+        IReadOnlyList<FleetVehicle> vehicles,
+        CancellationToken cancellationToken)
+    {
+        VehicleDispatchPolicy policy = await dispatchPolicy.EnsureCurrentAsync(cancellationToken).ConfigureAwait(false);
+        Dictionary<string, DateTimeOffset> noDispatchHistory = new(StringComparer.Ordinal);
+        Dictionary<string, JourneyBacklogRow> noBacklog = new(StringComparer.Ordinal);
+        List<ChargingCandidate> candidates = [];
+        foreach (FleetVehicle vehicle in vehicles)
+        {
+            RoundVehicle? participant = await TryAdmitToRoundAsync(
+                    vehicle, underWay: false, policy, noDispatchHistory, noBacklog, cancellationToken)
+                .ConfigureAwait(false);
+            if (participant is not null)
+            {
+                candidates.Add(new ChargingCandidate(participant.Vehicle, participant.Facts));
+            }
+        }
+
+        await chargingAllocation.AllocateAsync(currentMap, candidates, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 这一轮用的充电分配器（control-server#404）。引擎的充电分支经它做出发前的桩侧复核——同一条候选链，不另写一份。
+    /// </summary>
+    public ChargingAllocator Charging => chargingAllocation;
 
     private async Task<RoundVehicle?> TryAdmitToRoundAsync(
         FleetVehicle vehicle,

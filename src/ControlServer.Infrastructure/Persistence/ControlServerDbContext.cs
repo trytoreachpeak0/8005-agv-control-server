@@ -679,15 +679,28 @@ public sealed class JourneyRuntimeRow
     public bool IsIdleReturn() => JourneyId.StartsWith(IdleReturnIdentity.JourneyIdPrefix, StringComparison.Ordinal);
 
     /// <summary>
+    /// Whether this journey is a charging journey: a move to a rostered charger with no demand (batch 9-06, control-server#404).
+    /// Told apart by the id its commitment was made under (<c>ChargingIdentity.JourneyIdPrefix</c>), like an idle return.
+    /// </summary>
+    public bool IsCharging() => JourneyId.StartsWith(ChargingIdentity.JourneyIdPrefix, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Whether this journey carries no demand at all: an idle return or a charging journey. What a reader that only needs to
+    /// know "is there a demand, a worklist, cargo" asks; one that treats the two kinds differently asks each by name.
+    /// </summary>
+    public bool CarriesNoDemand() => IsIdleReturn() || IsCharging();
+
+    /// <summary>
     /// A column only a transport journey has, read where only a transport journey can be: throws when it is null, which on
-    /// this row means the caller was handed an idle return (control-server#390) -- a defect to surface, never a blank to use.
+    /// this row means the caller was handed an idle return (control-server#390) or a charging journey (control-server#404) --
+    /// a defect to surface, never a blank to use.
     /// </summary>
     public string TransportColumn(
         string? value,
         [System.Runtime.CompilerServices.CallerArgumentExpression(nameof(value))] string column = "") =>
         value ?? throw new InvalidDataException(
             $"Journey '{JourneyId}' has no {column}: only a transport journey carries it, and this one " +
-            (IsIdleReturn() ? "is an idle return." : "is missing it."));
+            (IsIdleReturn() ? "is an idle return." : IsCharging() ? "is a charging journey." : "is missing it."));
     public JourneyRuntimeStage Stage { get; set; }
     public required string AgvId { get; set; }
     public required string VehicleKey { get; set; }

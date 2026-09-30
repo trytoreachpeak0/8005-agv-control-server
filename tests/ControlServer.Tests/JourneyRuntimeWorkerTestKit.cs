@@ -145,7 +145,7 @@ internal static class JourneyRuntimeWorkerTestKit
         public bool EmergencyLatched { get; set; }
 
         /// <summary>
-        /// The orderIds RIoT lists as unfinished (states 1, 3, 7, 9) for this vehicle. Empty by default, so every existing
+        /// The orderIds RIoT lists as unfinished (states 1, 3, 7, 8, 9, 10) for this vehicle. Empty by default, so every existing
         /// test keeps reading "no unfinished order" as before; control-server#335 sets it to exercise the release rule.
         /// </summary>
         public string[] UnfinishedOrderIds { get; set; } = [];
@@ -1187,7 +1187,8 @@ internal static class JourneyRuntimeWorkerTestKit
                 Clock,
                 EngineLog,
                 IdleReturnTestKit.Create(Context, Options, Clock, chargingPolicy: ChargingPolicy),
-                ChargingPolicy);
+                ChargingPolicy,
+                ChargingTestKit.Create(Context, Options, Clock, Riot, Peer, Riot));
             return new JourneyRuntimeEngine(
                 Context,
                 Riot,
@@ -1221,6 +1222,7 @@ internal static class JourneyRuntimeWorkerTestKit
                     Riot,
                     new RiotOrderCommandAuditStore(Context),
                     new VehicleRoster(options),
+                    options,
                     Microsoft.Extensions.Options.Options.Create(ForeignOrderCancel),
                     Clock,
                     ForeignOrderLog),
@@ -2233,6 +2235,7 @@ internal static class JourneyRuntimeWorkerTestKit
                 riot,
                 new RiotOrderCommandAuditStore(context),
                 new VehicleRoster(Microsoft.Extensions.Options.Options.Create(options)),
+                Microsoft.Extensions.Options.Options.Create(options),
                 Microsoft.Extensions.Options.Options.Create(new RiotForeignOrderCancelOptions()),
                 clock,
                 NullLogger<ForeignRunningOrderSupervisor>.Instance);

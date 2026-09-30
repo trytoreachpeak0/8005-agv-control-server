@@ -221,6 +221,24 @@ public static class DispatchReasonCodes
     public const string VehicleCommittedToIdleReturn = "VEHICLE_COMMITTED_TO_IDLE_RETURN";
 
     /// <summary>
+    /// 这辆车已承诺充电（<c>REQ-0290</c>、<c>REQ-0173</c>；批次9-06，control-server#404）：它持有 <c>CHARGING</c> 用途占有与充电桩预占，
+    /// 搬运不取消、不改写、不抢它。
+    /// </summary>
+    /// <remarks>
+    /// 归普通积压（车辆侧）：别的车能接，或这辆车充完电之后能接。不是故障，也不是整个车队都接不了。
+    /// </remarks>
+    public const string VehicleCommittedToCharging = "VEHICLE_COMMITTED_TO_CHARGING";
+
+    /// <summary>
+    /// 这辆车在服务端持有的人工充电等待中（<c>REQ-0171</c> 的退化路径，规格 8.6；批次9-06，control-server#404）：名册为空时需要充电的车、
+    /// 或充电单反复被取消的车被置上，出口只有管理员在车上发起的「充电后返回服务」——电量回升本身不恢复资格。期间不接搬运、不做空闲返回。
+    /// </summary>
+    /// <remarks>
+    /// 归普通积压（车辆侧）：别的车照常承接。只在服务端与看板；下发给车的是 <c>VehicleBusinessStateSnapshot.manualChargingHold</c>，不是这个码。
+    /// </remarks>
+    public const string VehicleInManualChargingHold = "VEHICLE_IN_MANUAL_CHARGING_HOLD";
+
+    /// <summary>
     /// 这条候选会让这辆车的下一站变成它的公共站点（<c>REQ-0204</c>，批次8-20，control-server#391），而那个站此刻被别的车预占着——
     /// 别的车已被承诺前往、还没到。
     /// </summary>
