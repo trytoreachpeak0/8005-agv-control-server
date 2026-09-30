@@ -88,6 +88,8 @@ public sealed class Batch3MigrationDisciplineTests
         "20260929114754_Batch9ChargingPersistence",
         // control-server#383：批次 8 人工判故障（REQ-0359）——新建 SlotFaultDeclarations 一张表（建空），带「同一尝试至多一条未结判定」的过滤唯一索引；既有表与行不变。在 batch-p3/v3 上建，合回集成分支前按先合入的迁移重建。自己的断言在 SlotFaultDeclarationTests。
         "20260930012829_Batch8SlotFaultDeclarations",
+        // control-server#385：批次 8 恢复面（REQ-0242 CP-0008、REQ-0364 CP-0009）——ExceptionRecoverySessions 加可空列 ClosedReason，RecoveryWorkflows 加可空列 HandoffSublot、HandoffReceiverName、HandedOverAt，新建 SlotDoorHolds 一张表（建空，AgvId 普通索引）；纯 ADD COLUMN 与 CREATE TABLE，既有表与行不变。在 batch-p3/v3 上建，合回集成分支前按先合入的迁移重建。自己的断言在 RecoveryStateMachineG2Tests（RecoverySurface 分部）。
+        "20260930041750_Batch8RecoverySurface",
     ];
 
     private static readonly string[] Batch3Tables =
