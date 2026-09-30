@@ -23,7 +23,8 @@ public sealed class OnboardPeerSession(
     CommandEngine<FakeOnboardState> engine,
     FakeOnboardOptions options,
     SlotStateSeed slotStateSeed,
-    FakeLoadCancellations? loadCancellations = null) : IAsyncDisposable
+    FakeLoadCancellations? loadCancellations = null,
+    FakeSlotFaultDeclarations? slotFaultDeclarations = null) : IAsyncDisposable
 {
     // The envelope's own settings: this instance also hashes the OperationResult business content
     // the server hashes back, and the peer's line has to be the bytes the server validates.
@@ -284,6 +285,10 @@ public sealed class OnboardPeerSession(
                 return;
             case "LoadCancellationAuthorization" when loadCancellations is not null:
                 await loadCancellations.ObserveAuthorizationAsync(this, root, cancellationToken).ConfigureAwait(false);
+                return;
+            case "SlotFaultDeclarationCommand" when slotFaultDeclarations is not null:
+                await slotFaultDeclarations.ObserveCommandAsync(this, root, options.AgvId, generation, cancellationToken)
+                    .ConfigureAwait(false);
                 return;
             case "DurableAck" when loadCancellations is not null:
                 loadCancellations.ObserveDurableAck(root);
@@ -812,6 +817,9 @@ public sealed class OnboardPeerSession(
         SendLineAsync(
             Envelope(messageType, messageId, null, engine.Snapshot().State.SessionGeneration, payload),
             cancellationToken);
+
+    /// <summary>Sends a line this peer built itself, as it is (control-server#383's declaration results).</summary>
+    public Task ResendLineAsync(string line, CancellationToken cancellationToken) => SendLineAsync(line, cancellationToken);
 
     private async Task SendLineAsync(string line, CancellationToken cancellationToken)
     {
