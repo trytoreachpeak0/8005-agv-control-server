@@ -783,6 +783,11 @@ public sealed class StopEndedJourneyContinuesTests
     /// <remarks>
     /// 两种时机各一例：离站检查发出之前扣的车，和检查已经发出、车答 SAFE 之前扣的车——后一种不能靠车回 UNSAFE 挡：门锁传感器
     /// 读到一次锁闭车就会回 SAFE。扣车走协调器那一处，理由同 <see cref="AHoldAndItsReleaseMidJourneyStayBelowTheNextStopsBusinessState"/>。
+    /// <para>
+    /// 后一种还钉住一件事（审查 N2 追加）：扣车期间车对旧检查答的 SAFE 在放行之后不算离站证据。所以时序故意取「放行来得快」：
+    /// 扣车期间每轮只走 1 秒，放行时那条应答还没过期（有效期与 <c>MaximumEvidenceAge</c> 都没到）。放行后的第一轮发出一张新检查、
+    /// 不建单；只有车答了这张新检查，下一段的单才建出来。
+    /// </para>
     /// </remarks>
     [Theory]
     [Trait("IntegrationSlice", "FP-IS-08")]
@@ -834,7 +839,7 @@ public sealed class StopEndedJourneyContinuesTests
         }
         for (int round = 0; round < 3; round++)
         {
-            fixture.Clock.Advance(TimeSpan.FromSeconds(30));
+            fixture.Clock.Advance(TimeSpan.FromSeconds(1));
             await fixture.HearFromPeerAsync();
             await TickAndRunAsync(fixture);
         }
@@ -870,23 +875,22 @@ public sealed class StopEndedJourneyContinuesTests
             Assert.NotNull(await coordinator.StageDoorReleaseBusinessStateAsync(agvId, generation, MidJourneyReleaseId, ready: true, token));
             await connection.SaveChangesAsync(token);
         }
-        await fixture.HearFromPeerAsync();
-        await TickAndRunAsync(fixture);
+        // 放行那一张快照抬了旅程的业务基准（审查 M2），引擎手上那一份旅程行的令牌因此旧了：放行后第一轮以乐观冲突回滚、第二轮重放，
+        // 这是引擎既有的处理。所以放行后跑两轮再看。
+        for (int round = 0; round < 2; round++)
+        {
+            await fixture.HearFromPeerAsync();
+            await TickAndRunAsync(fixture);
+        }
         if (checkAlreadySent)
         {
-            // 扣车期间那张检查的 SAFE 应答已经过期：放行后引擎判它无效，等证据过了时效再重发一张新的，车答新的那张。
-            // 这是既有的过期重发，不是本票的行为。
-            string expiredCheckId = heldAt.DepartureSafetyCheckId!;
-            for (int round = 0; round < 3 && (await CurrentStopAsync(fixture, FirstDemandId)).DepartureSafetyCheckId == expiredCheckId; round++)
-            {
-                fixture.Clock.Advance(fixture.Options.MaximumEvidenceAge + TimeSpan.FromSeconds(1));
-                await fixture.HearFromPeerAsync();
-                await TickAndRunAsync(fixture);
-            }
-            JourneyRuntimeRow reissued = await JourneyOfAsync(fixture, FirstDemandId);
-            Assert.True(
-                (await CurrentStopAsync(fixture, FirstDemandId)).DepartureSafetyCheckId != expiredCheckId,
-                $"放行后没有重发离站检查：{reissued.Stage}/{reissued.BlockReasonCode}。");
+            // 放行后：扣车前那张检查已作废，发的是一张新检查；车对旧检查那条还没过期的 SAFE 不算，一张单都不建。
+            JourneyStopRow afterRelease = await CurrentStopAsync(fixture, FirstDemandId);
+            Assert.Equal(heldAt.StopId, afterRelease.StopId);
+            Assert.Equal(intentsBefore, await fixture.Context.OrderIntents.AsNoTracking().CountAsync(token));
+            Assert.NotEqual(heldAt.DepartureSafetyCheckId, afterRelease.DepartureSafetyCheckId);
+            Assert.NotNull(await fixture.Context.ProtocolOutbox.AsNoTracking()
+                .SingleOrDefaultAsync(row => row.MessageId == afterRelease.DepartureSafetyCheckMessageId, token));
         }
         await AnswerDepartureSafetyAsync(fixture, FirstDemandId, "e3850000-0000-4000-8000-000000000003");
         await ArriveAtCurrentStopAsync(fixture, FirstDemandId, "TO_GATE");
