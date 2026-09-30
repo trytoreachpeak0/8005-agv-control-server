@@ -1,3 +1,4 @@
+using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
 using ControlServer.Infrastructure.Persistence;
@@ -21,33 +22,42 @@ namespace ControlServer.Host.Dashboard;
 /// 没读过、或读的那一刻 RIoT 没给百分比，百分比都是 null、等级是 <c>Unknown</c>，这一行照列。
 /// </para>
 /// <para>
-/// 两道线与门槛取宿主上与引擎同一份 <see cref="JourneyRuntimeOptions"/>，随数据一并下发，卡片只把它们写成字。
+/// 救命线与门槛取宿主上与引擎同一份 <see cref="JourneyRuntimeOptions"/>，随数据一并下发，卡片只把它们写成字。另一道线是这辆车当前充电策略的
+/// <c>MandatoryChargeEntryThreshold</c>（批次9-05，control-server#403；此前是 <c>MinimumBatteryPercent</c>），逐行给出，没有已批准策略时为 null、
+/// 等级为 <c>Unknown</c>。
 /// </para>
 /// </remarks>
 internal sealed class WaitingJourneysQueryEndpoint : IDashboardQueryEndpoint
 {
     private readonly JourneyRuntimeOptions _options;
     private readonly TimeProvider _clock;
+    private readonly IServiceScopeFactory? _scopes;
 
-    /// <summary>只供不带宿主的发现（列目录的测试）：门槛与两道线取 <see cref="JourneyRuntimeOptions"/> 的默认值。</summary>
+    /// <summary>
+    /// 只供不带宿主的发现（列目录的测试）：门槛与救命线取 <see cref="JourneyRuntimeOptions"/> 的默认值，读不到充电策略（每行的强制充电线为 null）。
+    /// </summary>
     public WaitingJourneysQueryEndpoint()
-        : this(new JourneyRuntimeOptions(), TimeProvider.System)
+        : this(new JourneyRuntimeOptions(), TimeProvider.System, null)
     {
     }
 
     /// <summary>挂在宿主上时用这一个：与引擎的监看用的是同一份配置（<see cref="DashboardQueryEndpointCatalog.Discover"/>）。</summary>
     [ActivatorUtilitiesConstructor]
-    public WaitingJourneysQueryEndpoint(IOptions<JourneyRuntimeOptions> options)
-        : this((options ?? throw new ArgumentNullException(nameof(options))).Value, TimeProvider.System)
+    public WaitingJourneysQueryEndpoint(IOptions<JourneyRuntimeOptions> options, IServiceScopeFactory scopes)
+        : this((options ?? throw new ArgumentNullException(nameof(options))).Value, TimeProvider.System, scopes)
     {
     }
 
-    internal WaitingJourneysQueryEndpoint(JourneyRuntimeOptions options, TimeProvider clock)
+    /// <param name="scopes">
+    /// 每次请求开一个作用域取 <see cref="IChargingPolicyResolver"/>（它是作用域的，端点是宿主根上造的）；为空时每行的强制充电线为 null。
+    /// </param>
+    internal WaitingJourneysQueryEndpoint(JourneyRuntimeOptions options, TimeProvider clock, IServiceScopeFactory? scopes)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(clock);
         _options = options;
         _clock = clock;
+        _scopes = scopes;
     }
 
     public string Path => DashboardQueryEndpointCatalog.QueryPrefix + "waiting-journeys";
@@ -61,21 +71,29 @@ internal sealed class WaitingJourneysQueryEndpoint : IDashboardQueryEndpoint
             .Where(row => row.Stage != JourneyRuntimeStage.Completed)
             .ToArrayAsync(cancellationToken);
 
+        await using AsyncServiceScope? scope = _scopes?.CreateAsyncScope();
+        IChargingPolicyResolver? resolver = scope?.ServiceProvider.GetRequiredService<IChargingPolicyResolver>();
+        List<object> facts = [];
+        foreach (JourneyRuntimeRow row in journeys
+                     .Where(row => JourneyWaitClassification.IsWaiting(row.Stage, row.BlockReasonCode))
+                     .OrderBy(row => row.AgvId, StringComparer.Ordinal)
+                     .ThenBy(row => row.JourneyId, StringComparer.Ordinal))
+        {
+            int? entry = resolver is null
+                ? null
+                : await WaitingJourneyBattery.MandatoryChargeEntryPercentAsync(resolver, row.VehicleKey, cancellationToken);
+            facts.Add(Fact(row, entry, now));
+        }
+
         return new
         {
             warningAfterSeconds = (long)_options.WaitingJourneyWarningAfter.TotalSeconds,
-            minimumBatteryPercent = _options.MinimumBatteryPercent,
             rescueBatteryPercent = _options.WaitingJourneyRescueBatteryPercent,
-            journeys = journeys
-                .Where(row => JourneyWaitClassification.IsWaiting(row.Stage, row.BlockReasonCode))
-                .OrderBy(row => row.AgvId, StringComparer.Ordinal)
-                .ThenBy(row => row.JourneyId, StringComparer.Ordinal)
-                .Select(row => Fact(row, now))
-                .ToArray()
+            journeys = facts.ToArray()
         };
     }
 
-    private object Fact(JourneyRuntimeRow journey, DateTimeOffset now)
+    private object Fact(JourneyRuntimeRow journey, int? mandatoryChargeEntryPercent, DateTimeOffset now)
     {
         DateTimeOffset? since = journey.WaitingSince;
         long? waitedSeconds = since is { } start ? (long)Math.Max(0, (now - start).TotalSeconds) : null;
@@ -91,7 +109,8 @@ internal sealed class WaitingJourneysQueryEndpoint : IDashboardQueryEndpoint
                 seconds >= (long)_options.WaitingJourneyWarningAfter.TotalSeconds,
             batteryPercent = journey.WaitingBatteryPercent,
             batteryObservedAt = journey.WaitingBatteryObservedAt,
-            batteryLevel = WaitingJourneyBattery.Level(journey.WaitingBatteryPercent, _options).ToString()
+            mandatoryChargeEntryPercent,
+            batteryLevel = WaitingJourneyBattery.Level(journey.WaitingBatteryPercent, mandatoryChargeEntryPercent, _options).ToString()
         };
     }
 }

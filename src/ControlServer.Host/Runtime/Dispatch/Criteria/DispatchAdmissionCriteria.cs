@@ -195,6 +195,8 @@ public static class DispatchAdmissionCriteria
         // 上一轮每辆在途车被「本车货物占侧」判满的那几侧（批次7-07，control-server#212）。单例：这一轮的派车写、下一轮的推进段读，
         // 每一轮是一个新的作用域。
         services.AddSingleton<SlotGroupFullnessBoard>();
+        // control-server#403: which vehicle is in mandatory charging outlives the per-round runner, so the log line fires on change.
+        services.AddSingleton<MandatoryChargeBoard>();
         // The round itself and the Onboard facts it shares with the advance side (control-server#209). Scoped, like
         // the engine: both must be handed the engine's own DbContext -- see DispatchRoundRunner.
         services.AddScoped<OnboardDispatchFactsReader>();

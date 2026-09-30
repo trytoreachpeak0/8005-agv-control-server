@@ -81,6 +81,7 @@ public sealed class IdleReturnEvaluator(
     [
         VehicleDynamicFactsCriterion.BatteryFactUnknownReason,
         VehicleDynamicFactsCriterion.BatteryPolicyNotSatisfiedReason,
+        DispatchReasonCodes.MandatoryChargeRequired,
     ];
 
     /// <summary>「结果未知」的本服务端订单意图状态：建单发出过、而服务端还没核实它的结局。</summary>
@@ -246,7 +247,8 @@ public sealed class IdleReturnEvaluator(
             return IdleReturnReasons.BelowMandatoryChargeLine;
         }
 
-        // 让出去的电量码在这里收回：今天两条线是同一个值，走不到这里；批次 9 之后若出现「线上方、门槛下方」的车，仍拒——宁可不动。
+        // 让出去的电量码在这里收回：强制充电线下方的车上一格已拒；线上方、却保不住任务后余量的车（BATTERY_POLICY_NOT_SATISFIED）仍拒——宁可不动
+        // （批次9-05，control-server#403）。
         if (DeferredBatteryCodes.Contains(readiness))
         {
             return readiness;

@@ -123,7 +123,7 @@ public sealed class WaitingJourneyBatteryWatchTests
 
     /// <summary>
     /// 两道线的四个边界：等于接单线不升级，差 1 升 Error；等于救命线只升 Error，差 1 才加那句话。读不到电量是 Warning，写「unknown」。
-    /// 夹具的接单线是 40（不是产品默认 30），救命线是默认 15；先断言这两个前提，免得夹具改了这里还在测别的数。
+    /// 夹具的接单线是 40（批次9-05 起是夹具测试策略的强制充电线，control-server#403），救命线是默认 15；先断言这两个前提，免得夹具改了这里还在测别的数。
     /// </summary>
     [Theory]
     [InlineData(40, LogLevel.Warning, "battery 40%", false)]
@@ -135,7 +135,8 @@ public sealed class WaitingJourneyBatteryWatchTests
         int? battery, LogLevel expectedLevel, string expectedBattery, bool asksForRescue)
     {
         await using RuntimeFixture fixture = await BlockedAtGateAsync();
-        Assert.Equal(40, fixture.Options.MinimumBatteryPercent);
+        Assert.Equal(40, (await fixture.ChargingPolicy.ResolveForNewDecisionAsync(fixture.Options.VehicleKey, TestContext.Current.CancellationToken))
+            .Effective!.Policy.Content.MandatoryChargeEntryThresholdPercent);
         Assert.Equal(15, fixture.Options.WaitingJourneyRescueBatteryPercent);
         DateTimeOffset blocked = fixture.Clock.GetUtcNow();
         fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = battery };
@@ -147,6 +148,28 @@ public sealed class WaitingJourneyBatteryWatchTests
         Assert.Contains(expectedBattery, message, StringComparison.Ordinal);
         Assert.Equal(asksForRescue, message.Contains(RescueAdvice, StringComparison.Ordinal));
         Assert.Equal(battery, (await ReloadAsync(fixture)).WaitingBatteryPercent);
+    }
+
+    /// <summary>
+    /// 监看不变哑（批次9-05，control-server#403；REQ-0169 只升级告警）：等人期间这辆车没有已批准策略，50% 的电量没有入口线可比，
+    /// 等级是「未知」，告警照常写出（Warning），说明没有策略覆盖它；电量照常落库。
+    /// </summary>
+    [Fact]
+    public async Task AWaitingVehicleWithoutAnApprovedPolicyIsStillLoggedWithAnUnknownLevel()
+    {
+        await using RuntimeFixture fixture = await BlockedAtGateAsync();
+        fixture.ChargingPolicy = TestChargingPolicies.None;
+        await fixture.RecreateEngineAsync();
+        DateTimeOffset blocked = fixture.Clock.GetUtcNow();
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 50 };
+
+        await RoundAtAsync(fixture, blocked + fixture.Options.WaitingJourneyWarningAfter);
+
+        (LogLevel level, string message) = Assert.Single(WatchEntries(fixture));
+        Assert.Equal(LogLevel.Warning, level);
+        Assert.Contains("battery 50%", message, StringComparison.Ordinal);
+        Assert.Contains("No approved charging policy covers this vehicle", message, StringComparison.Ordinal);
+        Assert.Equal(50, (await ReloadAsync(fixture)).WaitingBatteryPercent);
     }
 
     // ---- 间隔 ----------------------------------------------------------------------------------------------------
@@ -831,7 +854,6 @@ public sealed class WaitingJourneyBatteryWatchTests
         JourneyRuntimeOptions defaults = new();
         Assert.Equal(TimeSpan.FromMinutes(10), defaults.WaitingJourneyWarningAfter);
         Assert.Equal(TimeSpan.FromMinutes(5), defaults.WaitingJourneyWarningRepeat);
-        Assert.Equal(30, defaults.MinimumBatteryPercent);
         Assert.Equal(15, defaults.WaitingJourneyRescueBatteryPercent);
         Assert.Equal(TimeSpan.FromSeconds(2), defaults.WaitingJourneyBatteryReadBudget);
     }
@@ -839,15 +861,16 @@ public sealed class WaitingJourneyBatteryWatchTests
     [Theory]
     [InlineData("WaitingJourneyWarningAfter", "00:00:00", "WaitingJourneyWarningAfter must be positive.")]
     [InlineData("WaitingJourneyWarningRepeat", "00:00:00", "WaitingJourneyWarningRepeat must be positive.")]
-    [InlineData("WaitingJourneyRescueBatteryPercent", "0", "WaitingJourneyRescueBatteryPercent must be at least 1 and below MinimumBatteryPercent.")]
-    [InlineData("WaitingJourneyRescueBatteryPercent", "40", "WaitingJourneyRescueBatteryPercent must be at least 1 and below MinimumBatteryPercent.")]
+    // control-server#403: the options check the range only; "below the mandatory charge entry threshold" is checked against the
+    // charging policy versions in effect at startup (ChargingPolicyStartupCheckTests).
+    [InlineData("WaitingJourneyRescueBatteryPercent", "0", "WaitingJourneyRescueBatteryPercent must be in 1..100.")]
+    [InlineData("WaitingJourneyRescueBatteryPercent", "101", "WaitingJourneyRescueBatteryPercent must be in 1..100.")]
     [InlineData("WaitingJourneyBatteryReadBudget", "00:00:00", "WaitingJourneyBatteryReadBudget must be positive and at most 10 s.")]
     [InlineData("WaitingJourneyBatteryReadBudget", "00:00:11", "WaitingJourneyBatteryReadBudget must be positive and at most 10 s.")]
     public async Task ASettingThatCannotBeAWaitingLineIsRefused(string key, string value, string failure)
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         JourneyRuntimeOptions options = fixture.Options;
-        Assert.Equal(40, options.MinimumBatteryPercent);
         new ConfigurationBuilder()
             .AddInMemoryCollection([new KeyValuePair<string, string?>(key, value)])
             .Build()

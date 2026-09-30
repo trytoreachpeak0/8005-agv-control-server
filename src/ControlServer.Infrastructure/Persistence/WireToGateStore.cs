@@ -3403,6 +3403,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
             GateMovementLegId = journey.GateMovementLegId,
             GateUpperId = journey.GateUpperId,
             DispatchGeneration = journey.DispatchGeneration,
+            ChargingPolicyVersion = journey.ChargingPolicyVersion,
+            PublishedBatteryState = journey.PublishedBatteryState,
             VehicleBusinessRevision = 1,
             WorklistRevision = 1,
             PlanRevision = 1,

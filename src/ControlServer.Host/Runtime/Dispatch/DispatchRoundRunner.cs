@@ -51,7 +51,9 @@ public sealed class DispatchRoundRunner(
     IOptions<JourneyRuntimeOptions> options,
     TimeProvider timeProvider,
     ILogger<JourneyRuntimeEngine> logger,
-    IdleReturnEvaluator idleReturn)
+    IdleReturnEvaluator idleReturn,
+    IChargingPolicyResolver chargingPolicy,
+    MandatoryChargeBoard? mandatoryCharge = null)
 {
     // The backlog's decision fingerprint is a hash over this serialisation, so it is the engine's setting exactly: a
     // different one would read every backlog row written before the move as a changed demand.
@@ -119,7 +121,25 @@ public sealed class DispatchRoundRunner(
             "Asking whether vehicle {AgvId} may take an appended demand failed: {ExceptionType}. The round " +
             "left it under way and went on to its end.");
 
+    private static readonly Action<ILogger, string, int, int, long, string, Exception?> LogEnteredMandatoryCharge =
+        LoggerMessage.Define<string, int, int, long, string>(
+            LogLevel.Warning,
+            new EventId(2205, nameof(LogEnteredMandatoryCharge)),
+            "Vehicle {VehicleKey} is below its mandatory charge entry threshold: battery {Battery}% < {Threshold}% " +
+            "(charging policy version {Version}). It takes no new transport, no en-route append and no idle return " +
+            "until it has charged (REQ-0290, {Reason}); a journey it is carrying finishes as planned (REQ-0281).");
+
+    private static readonly Action<ILogger, string, Exception?> LogLeftMandatoryCharge =
+        LoggerMessage.Define<string>(
+            LogLevel.Information,
+            new EventId(2206, nameof(LogLeftMandatoryCharge)),
+            "Vehicle {VehicleKey} is no longer below its mandatory charge entry threshold (or its battery or policy can no " +
+            "longer be read, which blocks it for that reason instead).");
+
     private readonly JourneyRuntimeOptions runtimeOptions = options.Value;
+
+    // control-server#403: the host registers one for the process; a runner built without it keeps its own.
+    private readonly MandatoryChargeBoard _mandatoryCharge = mandatoryCharge ?? new MandatoryChargeBoard();
 
     /// <summary>
     /// Whether this is one of this server's own invariants being broken rather than a peer being unreachable.
@@ -425,8 +445,12 @@ public sealed class DispatchRoundRunner(
                 return null;
             }
 
+            DispatchBatteryPolicy? batteryPolicy = await ReadBatteryPolicyAsync(vehicle, underWay, linked.Token)
+                .ConfigureAwait(false);
             DispatchVehicleFacts facts = new(
-                vehicle.VehicleKey, vehicle.AgvId, onboard, observation, timeProvider.GetUtcNow(), positions, plan);
+                vehicle.VehicleKey, vehicle.AgvId, onboard, observation, timeProvider.GetUtcNow(), positions, plan,
+                batteryPolicy);
+            NoteMandatoryCharge(vehicle.VehicleKey, observation, batteryPolicy);
             return new RoundVehicle(vehicle, facts, underWay, budget)
             {
                 LastDispatchedAt = lastDispatchedAt.TryGetValue(vehicle.AgvId, out DateTimeOffset at) ? at : null,
@@ -460,6 +484,66 @@ public sealed class DispatchRoundRunner(
             await DropWhatTheSegmentStagedAsync(backlogByDemandId, cancellationToken).ConfigureAwait(false);
             return null;
         }
+    }
+
+    /// <summary>
+    /// 这辆车进入或离开强制充电时记一条日志（批次9-05，control-server#403）。判定是 <see cref="BatteryEligibility.IsMandatoryCharge"/>，
+    /// 与派车链答 <see cref="DispatchReasonCodes.MandatoryChargeRequired"/> 的是同一个；电量或策略读不到不算在强制充电（那由各自的码挡）。
+    /// </summary>
+    private void NoteMandatoryCharge(string vehicleKey, RiotVehicleObservation observation, DispatchBatteryPolicy? policy)
+    {
+        bool below = policy is not null && observation.BatteryPercent is int battery &&
+                     BatteryEligibility.IsMandatoryCharge(battery, policy.Content);
+        if (!_mandatoryCharge.Record(vehicleKey, below))
+        {
+            return;
+        }
+        if (below)
+        {
+            LogEnteredMandatoryCharge(
+                logger, vehicleKey, observation.BatteryPercent!.Value, policy!.Content.MandatoryChargeEntryThresholdPercent,
+                policy.Version, DispatchReasonCodes.MandatoryChargeRequired, null);
+        }
+        else
+        {
+            LogLeftMandatoryCharge(logger, vehicleKey, null);
+        }
+    }
+
+    /// <summary>
+    /// 这一轮判这辆车的电量用哪一版充电策略（批次9-05，control-server#403；REQ-0282）。空闲车取此刻为它做新决定的版本；在途车取它那趟
+    /// 旅程派出时记下的版本，激活新版本不改在途旅程的判断。一轮只读这一次：这一轮对它的每条候选、受理前的复查与记到新旅程上的版本号
+    /// 都是这一份，轮中激活的新版本下一轮才生效。
+    /// </summary>
+    /// <remarks>
+    /// 在途旅程没有记下版本（本票上线前派出的）时按新决定读：追加是新任务，没有冻结的快照可守。读不到、没有已批准版本时为空，
+    /// 电量判据据此 fail-closed。
+    /// </remarks>
+    private async Task<DispatchBatteryPolicy?> ReadBatteryPolicyAsync(
+        FleetVehicle vehicle,
+        bool underWay,
+        CancellationToken cancellationToken)
+    {
+        if (underWay)
+        {
+            // 与 ReadEnRoutePlanAsync 取同一行：未完成、未 Blocked 的最早那一趟（客户端排序，SQLite 排不了 DateTimeOffset）。
+            long? frozen = (await dbContext.JourneyRuntimes.AsNoTracking()
+                    .Where(row => row.AgvId == vehicle.AgvId &&
+                        row.Stage != JourneyRuntimeStage.Completed &&
+                        row.Stage != JourneyRuntimeStage.Blocked)
+                    .Select(row => new { row.CreatedAt, row.ChargingPolicyVersion })
+                    .ToArrayAsync(cancellationToken).ConfigureAwait(false))
+                .OrderBy(row => row.CreatedAt)
+                .FirstOrDefault()?.ChargingPolicyVersion;
+            if (frozen is long version)
+            {
+                return DispatchBatteryPolicy.From(
+                    await chargingPolicy.ReadFrozenAsync(version, cancellationToken).ConfigureAwait(false));
+            }
+        }
+
+        return DispatchBatteryPolicy.From(
+            await chargingPolicy.ResolveForNewDecisionAsync(vehicle.VehicleKey, cancellationToken).ConfigureAwait(false));
     }
 
     /// <summary>
@@ -846,7 +930,7 @@ public sealed class DispatchRoundRunner(
         }
 
         if (!await FinalDynamicFactsReadyAsync(
-                selected.Vehicle, underWay, expectedSessionGeneration, selected.Candidate.TargetSlots,
+                selected.Vehicle, underWay, expectedSessionGeneration, selected.Candidate.TargetSlots, selected.Facts,
                 cancellationToken).ConfigureAwait(false))
         {
             await SetBacklogReasonAsync(
@@ -865,7 +949,14 @@ public sealed class DispatchRoundRunner(
                 intakeAt,
                 round.RedispatchGenerations.TryGetValue(demandId, out long redispatchGeneration)
                     ? redispatchGeneration
-                    : null);
+                    : null) with
+            {
+                // REQ-0282：这趟旅程按判它的那一版策略冻结；batteryState 的第一版按同一份事实投影（批次9-05，control-server#403）。
+                // 随受理那一次保存写进旅程行，保存失败两样都不留。追加不走这里的旅程行，旅程保持它派出时的版本。
+                ChargingPolicyVersion = selected.Facts.BatteryPolicy?.Version,
+                PublishedBatteryState = BatteryEligibility.Project(
+                    selected.Facts.Vehicle, selected.Facts.BatteryPolicy, observationFresh: true),
+            };
         // Taken before the call rather than after it: a candidate this vehicle is committing to must stop being
         // a candidate for the rest of the round whatever the intake then reports.
         acceptedDemandIds.Add(demandId);
@@ -879,7 +970,7 @@ public sealed class DispatchRoundRunner(
                     plan,
                     token => FinalDynamicFactsReadyAsync(
                         selected.Vehicle, underWay, expectedSessionGeneration,
-                        selected.Candidate.TargetSlots, token),
+                        selected.Candidate.TargetSlots, selected.Facts, token),
                     cancellationToken)
                 .ConfigureAwait(false);
 
@@ -997,7 +1088,7 @@ public sealed class DispatchRoundRunner(
                 append,
                 token => FinalDynamicFactsReadyAsync(
                     selected.Vehicle, underWay: true, expectedSessionGeneration,
-                    selected.Candidate.TargetSlots, token),
+                    selected.Candidate.TargetSlots, selected.Facts, token),
                 cancellationToken)
             .ConfigureAwait(false);
         return new JourneyIntakeResult(outcome, null);
@@ -1166,13 +1257,15 @@ public sealed class DispatchRoundRunner(
     /// It calls <see cref="VehicleDynamicFactsCriterion.Evaluate"/> rather than repeating its
     /// clauses, so this check and the chain's cannot drift apart. The session generation and slot
     /// checks sit on top of it: they are what makes this a re-check of *this* decision rather than
-    /// a fresh one.
+    /// a fresh one. The charging policy and the en-route plan are the round's (<paramref name="roundFacts"/>), not
+    /// re-read: the battery is re-checked against the version the decision was taken under (control-server#403).
     /// </remarks>
     private async Task<bool> FinalDynamicFactsReadyAsync(
         FleetVehicle fleetVehicle,
         bool underWay,
         long expectedSessionGeneration,
         IReadOnlyCollection<int> targetSlots,
+        DispatchVehicleFacts roundFacts,
         CancellationToken cancellationToken)
     {
         OnboardDispatchFacts? onboard = await onboardFacts.ReadOnboardFactsAsync(fleetVehicle.AgvId, cancellationToken)
@@ -1187,7 +1280,8 @@ public sealed class DispatchRoundRunner(
             fleetVehicle.VehicleKey,
             cancellationToken).ConfigureAwait(false);
         DispatchVehicleFacts facts = new(
-            fleetVehicle.VehicleKey, fleetVehicle.AgvId, onboard, vehicle, timeProvider.GetUtcNow());
+            fleetVehicle.VehicleKey, fleetVehicle.AgvId, onboard, vehicle, timeProvider.GetUtcNow(),
+            Plan: roundFacts.Plan, BatteryPolicy: roundFacts.BatteryPolicy);
         // 复查走的是这辆车自己那条链的那一条判据，不是另一条：在途车永远过不了空闲车的 IDLE 与无订单，
         // 用空闲那条复查等于把每一次追加都拒掉。两条链各有一个可在链外调用的 Evaluate，就是为了这里不走岔。
         return string.Equals(

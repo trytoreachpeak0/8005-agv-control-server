@@ -100,10 +100,11 @@ internal static class JourneyRuntimeWorkerTestKit
         public RecordingBoxCounts BoxCounts { get; }
 
         /// <summary>
-        /// 逐车投运判定（control-server#400）：默认每辆车都有一版已批准的测试策略（<see cref="TestChargingPolicies.AllApproved"/>），
+        /// 逐车投运判定（control-server#400）：默认每辆车都有一版已批准的测试策略，两道线都是 40（<see cref="TestChargingPolicies.AllApprovedAt"/>；
+        /// 这个夹具此前配 <c>MinimumBatteryPercent = 40</c>，批次9-05 起电量阈值读策略，control-server#403），
         /// 与合入前的派车结论等价；要测「没有策略」的用例换掉它再调 <c>RecreateEngineAsync</c>，链随引擎重建。
         /// </summary>
-        public IChargingPolicyResolver ChargingPolicy { get; set; } = TestChargingPolicies.AllApproved;
+        public IChargingPolicyResolver ChargingPolicy { get; set; } = TestChargingPolicies.AllApprovedAt(40);
         public RecordingRiot Riot { get; }
         public RecordingPeer Peer { get; }
         public RecordingRouteCostProbe RouteCosts { get; }
@@ -1185,7 +1186,8 @@ internal static class JourneyRuntimeWorkerTestKit
                 options,
                 Clock,
                 EngineLog,
-                IdleReturnTestKit.Create(Context, Options, Clock, chargingPolicy: ChargingPolicy));
+                IdleReturnTestKit.Create(Context, Options, Clock, chargingPolicy: ChargingPolicy),
+                ChargingPolicy);
             return new JourneyRuntimeEngine(
                 Context,
                 Riot,
@@ -1224,7 +1226,8 @@ internal static class JourneyRuntimeWorkerTestKit
                     ForeignOrderLog),
                 options,
                 Clock,
-                EngineLog);
+                EngineLog,
+                ChargingPolicy);
         }
 
         /// <summary>What the foreign running order supervisor logged (control-server#330): its alarms are log events.</summary>
@@ -1548,7 +1551,6 @@ internal static class JourneyRuntimeWorkerTestKit
             MapIdentity = "MAP-25",
             DispatchZone = "MAP-25-WIRE_TO_GATE",
             DispatchGeneration = 1,
-            MinimumBatteryPercent = 40,
             MaximumEvidenceAge = TimeSpan.FromMinutes(2),
             SublotBoxCountPath = "/api/v2/sublot-box-count",
             AllowedWorkTypes = ["WIRE_TO_GATE"],

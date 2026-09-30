@@ -369,6 +369,12 @@ jobs:
               # two vehicles; the demand goes to it, and the first, asked first, is refused with CHARGING_POLICY_NOT_APPROVED
               # and gets no order (REQ-0282, per vehicle, the server keeps running).
               @{ Name = 'charging-policy-missing-vehicle-not-commissioned'; Runs = 1; BatchId = 'batch-9' }
+              # control-server#403, REQ-0290: a vehicle below the mandatory charge entry threshold, asked first, takes no
+              # transport (the other vehicle does); it gets no order, purpose or station at all.
+              @{ Name = 'mandatory-charge-vehicle-takes-no-transport'; Runs = 1; BatchId = 'batch-9' }
+              # control-server#403, REQ-0281: a policy whose thresholds break the relation is refused whole at import through
+              # FieldOps; the default policy stays active and the next demand is dispatched under it.
+              @{ Name = 'charging-thresholds-relation-refused'; Runs = 1; BatchId = 'batch-9' }
           )
           # One run's usual length in seconds, for dealing scenarios out to lanes longest first. Medians of 31
           # CI jobs from 2026-09-17 (ci-research, control-server#130); normal-load's excludes the build it used

@@ -191,6 +191,16 @@ public static class DispatchReasonCodes
     public const string ChargingPolicyNotApproved = "CHARGING_POLICY_NOT_APPROVED";
 
     /// <summary>
+    /// 这辆车当前电量低于它所用策略版本的 <c>MandatoryChargeEntryThreshold</c>：它此刻属于强制充电，不接普通新任务，也不接途中追加
+    /// （批次9-05，control-server#403；<c>REQ-0281</c>、<c>REQ-0290</c>）。
+    /// </summary>
+    /// <remarks>
+    /// 与「预计任务后保不住余量」（<c>BATTERY_POLICY_NOT_SATISFIED</c>）分开：这辆车该去充电，而那一条只是这一趟接不下。归普通积压（车辆侧）：
+    /// 别的车照常承接。把车排进充电队列、去桩是批次9-06 的事；在那之前这样的车原地不动。
+    /// </remarks>
+    public const string MandatoryChargeRequired = "MANDATORY_CHARGE_REQUIRED";
+
+    /// <summary>
     /// 这辆车已承诺空闲返回（<c>REQ-0292</c>；批次8-18，control-server#389）：返回是它当前已承诺的下一站，搬运不取消、不换点、不抢它。
     /// </summary>
     /// <remarks>
