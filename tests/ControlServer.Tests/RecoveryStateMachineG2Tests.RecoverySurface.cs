@@ -979,6 +979,69 @@ public sealed partial class RecoveryStateMachineG2Tests
         }
     }
 
+    /// <summary>
+    /// A release lifts only the holds its slots cover. The vehicle is held over slot 1 and the release is taken over slot 1;
+    /// while it runs, a second settlement holds slot 2 -- on file before the record by the clock, so what keeps it standing
+    /// is the slot, not the time. The SAFE answer lifts the slot-1 hold alone: the slot-2 hold stands, the vehicle stays
+    /// unready, and the shared new-purpose verdict (transport, idle return, charging) still refuses it.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-VEHICLE-HOLD-DOOR-REPAIR-RELEASE")]
+    public async Task ARepairReleaseLeavesAHoldOnSlotsItDoesNotCoverAndTheVehicleStaysOutOfWork()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_REPAIR_RELEASE_PARTIAL";
+        const string proof = "repair-release-partial-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context, productionShapedSession: true);
+            // The seeded load is settled, so that nothing but the holds keeps the vehicle out of work.
+            (await context.StationOperations.SingleAsync(token)).Status = StationOperationStatus.Cancelled;
+            context.SlotDoorHolds.Add(Hold("f3850000-0000-4000-8000-000000000401", "[1]", Now.AddMinutes(-3)));
+            await context.SaveChangesAsync(token);
+            RecordingPeer peer = new(context);
+            OnboardMessageProcessor processor = Processor(context, peer, proofVariable);
+            OnboardConnectionState state = CurrentState(deferOutbound: true);
+            WireToGateStore store = new(context);
+            int[] slotOne = [1];
+            string sessionId = StableGuid(ReleaseRequestId, "exception-recovery-session");
+            await ExchangeAsync(processor, peer, state, ReleaseSessionRequest(proof, slotOne));
+            Assert.Equal("RecoveryActionAccepted",
+                MessageType((await ExchangeAsync(processor, peer, state, ReleaseAction(sessionId, slotOne)))[0]));
+            context.SlotDoorHolds.Add(Hold("f3850000-0000-4000-8000-000000000402", "[2]", Now.AddMinutes(-2)));
+            await context.SaveChangesAsync(token);
+            await ExchangeAsync(processor, peer, state,
+                ReleaseRecord("e3850000-0000-4000-8000-000000000411", sessionId, slotOne));
+            string check = Assert.Single(
+                await ExchangeAsync(processor, peer, state, SlotReadings("e3850000-0000-4000-8000-000000000412", 8)),
+                line => MessageType(line) == "PreDepartureSafetyCheck");
+
+            await ExchangeAsync(processor, peer, state, HoldReleaseCheckResult("e3850000-0000-4000-8000-000000000413", check));
+
+            Assert.Equal(
+                [
+                    ("f3850000-0000-4000-8000-000000000401", (string?)ReleaseActionId, true),
+                    ("f3850000-0000-4000-8000-000000000402", null, false)
+                ],
+                (await context.SlotDoorHolds.AsNoTracking().OrderBy(row => row.HoldId).ToArrayAsync(token))
+                    .Select(row => (row.HoldId, row.ReleasedByActionId, row.ReleasedAt is not null)).ToArray());
+            Assert.Equal(WireToGateStore.SlotDoorRepairReleaseRequired, (await store.DecideReadinessAsync(AgvId, 3, token)).ReasonCode);
+            Assert.Equal(
+                ControlServer.Host.Runtime.Dispatch.DispatchReasonCodes.VehicleSlotDoorHold,
+                await ControlServer.Host.Runtime.Dispatch.Criteria.VehicleNewPurposeReadiness.BlockVerdictAsync(
+                    new VehicleFaultStore(context), context, AgvId, token));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
     private static SlotDoorHoldRow Hold(string holdId, string slotsJson, DateTimeOffset heldAt) => new()
     {
         HoldId = holdId,
