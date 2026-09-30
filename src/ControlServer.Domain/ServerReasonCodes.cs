@@ -40,6 +40,13 @@ namespace ControlServer.Domain;
 /// <c>SublotRejected</c> surface in the same ticket, having until then only ever been a dispatch
 /// reason code the peer never saw.
 /// </para>
+/// <para>
+/// **<c>SLOT_FAULT_DECLARED</c> is recognised, not produced.** The protocol <c>3.0.0</c> candidate added it for the
+/// vehicle to put on the slot an administrator declared faulty, in that slot's <c>SlotResult.reasonCodes</c> (REQ-0359,
+/// <c>8005-agv-control-server#383</c>). The server settles such a result as it settles every <c>UNKNOWN</c> slot and sends
+/// the code nowhere; it is named here, as <c>OPERATOR_TIMEOUT</c> is, so the one place the server spells it stays under
+/// the registry guard.
+/// </para>
 /// </remarks>
 public static class ServerReasonCodes
 {
@@ -63,6 +70,7 @@ public static class ServerReasonCodes
     public const string RecoveryScopeMismatch = "RECOVERY_SCOPE_MISMATCH";
     public const string RecoverySessionNotOpen = "RECOVERY_SESSION_NOT_OPEN";
     public const string SessionRecoveryRequired = "SESSION_RECOVERY_REQUIRED";
+    public const string SlotFaultDeclared = "SLOT_FAULT_DECLARED";
     public const string SublotBoxCountUnavailable = "SUBLOT_BOX_COUNT_UNAVAILABLE";
     public const string SublotNotInDispatchScope = "SUBLOT_NOT_IN_DISPATCH_SCOPE";
     public const string WorklistRevisionStale = "WORKLIST_REVISION_STALE";

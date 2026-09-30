@@ -35,7 +35,11 @@ public sealed class Batch9MigrationDisciplineTests
     internal const string Batch9Migration = "20260929114754" + Batch9MigrationSuffix;
 
     /// <summary>批次 9 迁移之后允许存在的迁移，按名字点出来。</summary>
-    private static readonly string[] MigrationsAfterBatch9 = [];
+    private static readonly string[] MigrationsAfterBatch9 =
+    [
+        // control-server#383：批次 8 人工判故障（REQ-0359）——新建 SlotFaultDeclarations 一张表（建空），带「同一尝试至多一条未结判定」的过滤唯一索引；既有表与行不变。在 batch-p3/v3 上建，合回集成分支前按先合入的迁移重建。自己的断言在 SlotFaultDeclarationTests。
+        "20260930012829_Batch8SlotFaultDeclarations",
+    ];
 
     private static readonly string[] NewTables =
     [

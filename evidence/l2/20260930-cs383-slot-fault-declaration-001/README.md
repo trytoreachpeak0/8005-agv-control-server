@@ -1,0 +1,1 @@
+只保留摘要、判据、时间线与四张表（SlotFaultDeclarations、StationOperations、JourneyRuntimes、AcceptedDemands）的快照；日志与其余快照未入库。

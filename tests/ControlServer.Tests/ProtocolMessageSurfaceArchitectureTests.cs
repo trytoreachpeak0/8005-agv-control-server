@@ -71,8 +71,8 @@ public sealed class ProtocolMessageSurfaceArchitectureTests
     /// declaration pair <c>SlotFaultDeclarationCommand</c> / <c>SlotFaultDeclarationResult</c> to
     /// <c>FP-IS-07</c>, a slice this line has built. Vendoring the candidate
     /// (<c>8005-agv-control-server#382</c>) and implementing the pair
-    /// (<c>8005-agv-control-server#383</c>) are separate tickets, so the pair is pinned to the
-    /// claiming ticket rather than to a batch.
+    /// (<c>8005-agv-control-server#383</c>) were separate tickets, so the pair was pinned to the
+    /// claiming ticket rather than to a batch until #383 implemented it.
     /// </para>
     /// <para>
     /// <b>Pinning is not waiving.</b> The comparison is exact in both directions: implementing a
@@ -90,8 +90,6 @@ public sealed class ProtocolMessageSurfaceArchitectureTests
             ["DemandSelectionResult"] = "FP-IS-09, batch 11",
             ["ManualStationClearanceConfirmationRequested"] = "FP-IS-13, batch 9",
             ["ManualStationClearanceConfirmationResult"] = "FP-IS-13, batch 9",
-            ["SlotFaultDeclarationCommand"] = "FP-IS-07, claimed by 8005-agv-control-server#383",
-            ["SlotFaultDeclarationResult"] = "FP-IS-07, claimed by 8005-agv-control-server#383",
             ["UnableToChargeFieldConfirmationRequested"] = "FP-IS-13, batch 9",
             ["UnableToChargeFieldConfirmationResult"] = "FP-IS-13, batch 9"
         };

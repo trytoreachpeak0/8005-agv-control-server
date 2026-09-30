@@ -172,6 +172,29 @@
           "409": { "description": "NOT_ALLOWED_IN_STATE: no session to ControlServer is open." }
         }
       }
+    },
+    "/control/v1/slot-fault-declarations": {
+      "get": {
+        "summary": "Every SlotFaultDeclarationCommand this peer received (control-server#383): how often, and what it answered.",
+        "description": "Kept outside the command engine; reading it does not move the revision.",
+        "responses": {
+          "200": { "description": "answer (the current policy) and declarations, oldest first." }
+        }
+      }
+    },
+    "/control/v1/slot-fault-declaration-policy": {
+      "put": {
+        "summary": "How the next SlotFaultDeclarationCommand is answered.",
+        "description": "AUTO (default): APPLIED while the declared attempt's SlotOperationCommand is held open on this peer -- then the held command is answered with an OperationResult, the declared slot UNKNOWN under SLOT_FAULT_DECLARED, earlier slots COMPLETED, later ones NOT_STARTED -- and NOT_APPLICABLE once it was answered. NOT_APPLICABLE: refuse regardless. HOLD: record and answer nothing. A declaration already answered gets its first result line again. Not routed through the command engine.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SlotFaultDeclarationPolicyCommand" } } }
+        },
+        "responses": {
+          "200": { "description": "The policy now in force." },
+          "400": { "description": "INVALID_ARGUMENT: answer is not AUTO, NOT_APPLICABLE or HOLD." }
+        }
+      }
     }
   },
   "components": {
@@ -208,6 +231,18 @@
               "demandId": { "type": "string", "format": "uuid" },
               "slotOperationAttemptId": { "type": "string", "format": "uuid", "nullable": true },
               "reason": { "type": "string" }
+            }
+          }
+        ]
+      },
+      "SlotFaultDeclarationPolicyCommand": {
+        "allOf": [
+          { "$ref": "#/components/schemas/CommandEnvelope" },
+          {
+            "type": "object",
+            "required": ["answer"],
+            "properties": {
+              "answer": { "type": "string", "enum": ["AUTO", "NOT_APPLICABLE", "HOLD"] }
             }
           }
         ]
