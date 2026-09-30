@@ -1381,6 +1381,13 @@ public sealed partial class JourneyRuntimeEngine(
                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                     return;
                 }
+                // 门未证明扣车（REQ-0364，control-server#385 审查 N2 (c)）：扣车没被维修放行解除之前，这趟旅程不离站——不发离站检查、
+                // 不建下一段的单。不能只靠车在门没锁时回 UNSAFE：锁的传感器时好时坏，读到一次锁闭车就会回 SAFE。每一轮回到这里再判。
+                if (await store.SlotDoorHeldAsync(runtime.AgvId, cancellationToken).ConfigureAwait(false))
+                {
+                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    return;
+                }
                 runtime.StationDepartureWaitStartedAt = null;
                 // 卸货停靠的这两个 id 受理时没有写过——在本票之前它永远是旅程的终点，没有「离开之前」可言。
                 // 多停靠计划里它后面还能有停靠，所以第一次要离站时补上并落库。
@@ -1408,6 +1415,13 @@ public sealed partial class JourneyRuntimeEngine(
                 // was judged and the journey never left this stage. Judge it while it is valid.
                 goto case JourneyRuntimeStage.AwaitingDepartureSafety;
             case JourneyRuntimeStage.AwaitingDepartureSafety:
+                // 离站检查已经发出之后才扣的车，同样停在这里（control-server#385 审查 N2 (c)）：不判应答、不重发过期的检查、不建单。
+                // 放行之后照常往下走；那时这张检查多半已过期，由下面的重发补一张新的。
+                if (await store.SlotDoorHeldAsync(runtime.AgvId, cancellationToken).ConfigureAwait(false))
+                {
+                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    return;
+                }
                 SafetyCheckObservation? safety = await AwaitSafeDepartureResultAsync(
                     runtime, stops, session, cancellationToken).ConfigureAwait(false);
                 now = timeProvider.GetUtcNow();

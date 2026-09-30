@@ -853,10 +853,112 @@ public sealed partial class RecoveryStateMachineG2Tests
     }
 
     /// <summary>
+    /// The release's check is recognised however the answer correlates to it (review N1): by the check's id, the way the
+    /// onboard sends it, or by the check command's messageId. Either SAFE answer lifts the hold.
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-VEHICLE-HOLD-DOOR-REPAIR-RELEASE")]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AHoldReleaseAnswerIsRecognisedByEitherCorrelation(bool byCommandMessageId)
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_REPAIR_RELEASE_CORRELATION";
+        const string proof = "repair-release-correlation-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            (RecordingPeer peer, OnboardMessageProcessor processor, OnboardConnectionState state) =
+                await HoldTheVehicleAsync(context, proofVariable, proof);
+            string sessionId = StableGuid(ReleaseRequestId, "exception-recovery-session");
+            await ExchangeAsync(processor, peer, state, ReleaseSessionRequest(proof, RecoverySlots));
+            await ExchangeAsync(processor, peer, state, ReleaseAction(sessionId, RecoverySlots));
+            await ExchangeAsync(processor, peer, state,
+                ReleaseRecord("e3850000-0000-4000-8000-000000000c01", sessionId, RecoverySlots));
+            string check = Assert.Single(
+                await ExchangeAsync(processor, peer, state, SlotReadings("e3850000-0000-4000-8000-000000000c02", 8)),
+                line => MessageType(line) == "PreDepartureSafetyCheck");
+
+            string[] answered = await ExchangeAsync(processor, peer, state, HoldReleaseCheckResult(
+                "e3850000-0000-4000-8000-000000000c03", check, byCommandMessageId: byCommandMessageId));
+
+            Assert.Equal((RecoveryWorkflowState.Reconciled, "SAFE"), await context.RecoveryWorkflows.AsNoTracking()
+                .Where(row => row.WorkflowId == ReleaseActionId).Select(row => ValueTuple.Create(row.State, row.Outcome))
+                .SingleAsync(token));
+            Assert.NotNull((await context.SlotDoorHolds.AsNoTracking().SingleAsync(token)).ReleasedAt);
+            Assert.Equal("READY", PayloadOf(Assert.Single(answered, line => MessageType(line) == "VehicleBusinessStateSnapshot"))
+                .GetProperty("readiness").GetString());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// A <c>ProtocolProblem</c> against any other message of ours leaves a release waiting for its check alone (review
+    /// S-a): only a refusal of that check spends it, and the check's SAFE answer still lifts the hold afterwards.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-VEHICLE-HOLD-DOOR-REPAIR-RELEASE")]
+    public async Task AProblemWithAnotherMessageLeavesAWaitingReleaseAlone()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_REPAIR_RELEASE_OTHER_PROBLEM";
+        const string proof = "repair-release-other-problem-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            (RecordingPeer peer, OnboardMessageProcessor processor, OnboardConnectionState state) =
+                await HoldTheVehicleAsync(context, proofVariable, proof);
+            string sessionId = StableGuid(ReleaseRequestId, "exception-recovery-session");
+            await ExchangeAsync(processor, peer, state, ReleaseSessionRequest(proof, RecoverySlots));
+            await ExchangeAsync(processor, peer, state, ReleaseAction(sessionId, RecoverySlots));
+            await ExchangeAsync(processor, peer, state,
+                ReleaseRecord("e3850000-0000-4000-8000-000000000d01", sessionId, RecoverySlots));
+            string check = Assert.Single(
+                await ExchangeAsync(processor, peer, state, SlotReadings("e3850000-0000-4000-8000-000000000d02", 8)),
+                line => MessageType(line) == "PreDepartureSafetyCheck");
+
+            Assert.Equal(string.Empty, await processor.ProcessAsync(Envelope(
+                "e3850000-0000-4000-8000-000000000d03",
+                "ProtocolProblem",
+                new
+                {
+                    rejectedMessageId = "e3850000-0000-4000-8000-0000000000fe",
+                    rejectedMessageType = "PreDepartureSafetyCheck",
+                    problem = new
+                    {
+                        reasonCode = "PREDEPARTURE_CHECK_EXPIRED", fieldPath = (string?)null, displayMessage = (string?)null
+                    }
+                }), state, token));
+
+            RecoveryWorkflowRow waiting = await context.RecoveryWorkflows.AsNoTracking()
+                .SingleAsync(row => row.WorkflowId == ReleaseActionId, token);
+            Assert.Equal((RecoveryWorkflowState.AwaitingResult, (string?)null), (waiting.State, waiting.Outcome));
+            await ExchangeAsync(processor, peer, state, HoldReleaseCheckResult("e3850000-0000-4000-8000-000000000d04", check));
+            Assert.NotNull((await context.SlotDoorHolds.AsNoTracking().SingleAsync(token)).ReleasedAt);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
     /// The vehicle does not answer the release's check with a SAFE HOLD_RELEASE result (control-server#385 review M1): it
     /// refuses it with a <c>ProtocolProblem</c> -- the onboard's answer to a check whose safety version has moved on
     /// (<c>PREDEPARTURE_CHECK_EXPIRED</c>) or whose purpose it will not run (<c>ACTION_NOT_ALLOWED_IN_STATE</c>), with no
-    /// result -- or answers it as a DEPARTURE check. Each spends the release: its check is settled and never replayed, the
+    /// result -- or answers it as a DEPARTURE check, or answers it under its correlation naming another check's id (review
+    /// S-b). Each spends the release: its check is settled and never replayed, the
     /// vehicle stays held, and a new session is offered the release again and lifts the hold with it. No store edit.
     /// </summary>
     [Theory]
@@ -865,6 +967,7 @@ public sealed partial class RecoveryStateMachineG2Tests
     [InlineData("PREDEPARTURE_CHECK_EXPIRED")]
     [InlineData("ACTION_NOT_ALLOWED_IN_STATE")]
     [InlineData("DEPARTURE")]
+    [InlineData("ANOTHER_CHECK_ID")]
     public async Task ARefusedOrMisansweredReleaseCheckSpendsTheReleaseAndANewOneLiftsTheHold(string answer)
     {
         const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_REPAIR_RELEASE_REFUSED";
@@ -898,6 +1001,13 @@ public sealed partial class RecoveryStateMachineG2Tests
                 await ExchangeAsync(processor, peer, state,
                     HoldReleaseCheckResult("e3850000-0000-4000-8000-000000000a03", check, "SAFE", "DEPARTURE"));
             }
+            else if (answer == "ANOTHER_CHECK_ID")
+            {
+                // Correlated to this check, but naming another check's id (review S-b).
+                await ExchangeAsync(processor, peer, state, HoldReleaseCheckResult(
+                    "e3850000-0000-4000-8000-000000000a03", check, byCommandMessageId: true,
+                    answeredCheckId: "e3850000-0000-4000-8000-0000000000ff"));
+            }
             else
             {
                 Assert.Equal(string.Empty, await processor.ProcessAsync(Envelope(
@@ -914,7 +1024,8 @@ public sealed partial class RecoveryStateMachineG2Tests
             RecoveryWorkflowRow spent = await context.RecoveryWorkflows.AsNoTracking()
                 .SingleAsync(row => row.WorkflowId == ReleaseActionId, token);
             Assert.Equal(
-                (RecoveryWorkflowState.RecoveryRequired, answer == "DEPARTURE" ? "CHECK_ANSWER_MISMATCHED" : answer),
+                (RecoveryWorkflowState.RecoveryRequired,
+                    answer is "DEPARTURE" or "ANOTHER_CHECK_ID" ? "CHECK_ANSWER_MISMATCHED" : answer),
                 (spent.State, spent.Outcome));
             Assert.NotNull((await context.ProtocolOutbox.AsNoTracking()
                 .SingleAsync(row => row.MessageId == checkMessageId, token)).AcknowledgedAt);
@@ -1236,6 +1347,14 @@ public sealed partial class RecoveryStateMachineG2Tests
         return (peer, processor, state);
     }
 
+    /// <summary>A business snapshot's blocking facts as <c>reasonCode/subjectType/subjectId</c>, in order.</summary>
+    private static string[] HoldFacts(JsonElement snapshot) =>
+    [
+        .. snapshot.GetProperty("blockingFacts").EnumerateArray().Select(fact =>
+            $"{fact.GetProperty("reasonCode").GetString()}/{fact.GetProperty("subjectType").GetString()}/" +
+            fact.GetProperty("subjectId").GetString())
+    ];
+
     private static async Task AssertSettledAsEmptyAndHeldAsync(ControlServerDbContext context, string ending, string[] wire)
     {
         CancellationToken token = TestContext.Current.CancellationToken;
@@ -1259,21 +1378,21 @@ public sealed partial class RecoveryStateMachineG2Tests
             (held.Readiness, held.ReasonCode));
         Assert.Equal("SESSION_RECOVERY_REQUIRED", ProtocolErrorCodes.ToSessionReadinessReasonCode(held.ReasonCode));
 
-        // The hold goes out outside the journey, after the journey's closing snapshot and above its revision.
+        // The hold goes out outside the journey, after the journey's closing snapshot and above its revision. The closing
+        // snapshot, staged in the same change, already says the vehicle is held (review N2 (a)): no business state of a
+        // held vehicle reads READY or leaves a held slot out, not even for the moment between the two.
         string[] business = [.. wire.Where(line => MessageType(line) == "VehicleBusinessStateSnapshot")];
         Assert.Equal(2, business.Length);
         JsonElement closing = PayloadOf(business[0]);
         JsonElement holding = PayloadOf(business[1]);
-        Assert.Empty(closing.GetProperty("blockingFacts").EnumerateArray());
         Assert.True(holding.GetProperty("vehicleBusinessStateRevision").GetInt64() >
                     closing.GetProperty("vehicleBusinessStateRevision").GetInt64());
-        Assert.Equal("RECOVERY_REQUIRED", holding.GetProperty("readiness").GetString());
-        Assert.Equal(JsonValueKind.Null, holding.GetProperty("activePurpose").ValueKind);
-        Assert.Equal(
-            ["SLOT_DOOR_LOCK_UNPROVEN_AFTER_EMPTY/SLOT/1", "SLOT_DOOR_LOCK_UNPROVEN_AFTER_EMPTY/SLOT/2"],
-            holding.GetProperty("blockingFacts").EnumerateArray().Select(fact =>
-                $"{fact.GetProperty("reasonCode").GetString()}/{fact.GetProperty("subjectType").GetString()}/" +
-                fact.GetProperty("subjectId").GetString()).ToArray());
+        Assert.All([closing, holding], snapshot =>
+        {
+            Assert.Equal("RECOVERY_REQUIRED", snapshot.GetProperty("readiness").GetString());
+            Assert.Equal(JsonValueKind.Null, snapshot.GetProperty("activePurpose").ValueKind);
+            Assert.Equal(["SLOT_DOOR_LOCK_UNPROVEN_AFTER_EMPTY/SLOT/1", "SLOT_DOOR_LOCK_UNPROVEN_AFTER_EMPTY/SLOT/2"], HoldFacts(snapshot));
+        });
         ProtocolOutboxRow[] rows = await context.ProtocolOutbox.AsNoTracking()
             .Where(row => row.MessageType == "VehicleBusinessStateSnapshot").ToArrayAsync(token);
         Assert.True(rows.Single(row => row.PayloadJson == business[1]).CreatedAt >
@@ -1393,22 +1512,29 @@ public sealed partial class RecoveryStateMachineG2Tests
             }).ToArray()
         });
 
-    /// <summary>The vehicle's answer to <paramref name="check"/>, correlated to it as the protocol requires.</summary>
+    /// <summary>
+    /// The vehicle's answer to <paramref name="check"/>. Correlated the way the onboard correlates it -- by the check's id
+    /// (c79b4c6f, <c>WireToGateSessionClient.SendPreDepartureSafetyCheckResultAsync</c>, review N1) -- unless
+    /// <paramref name="byCommandMessageId"/> asks for the check command's messageId, which the server takes as well.
+    /// </summary>
     private static string HoldReleaseCheckResult(
         string messageId,
         string check,
         string outcome = "SAFE",
-        string checkPurpose = "HOLD_RELEASE")
+        string checkPurpose = "HOLD_RELEASE",
+        bool byCommandMessageId = false,
+        string? answeredCheckId = null)
     {
         using JsonDocument document = JsonDocument.Parse(check);
         JsonElement root = document.RootElement;
         JsonElement payload = root.GetProperty("payload");
+        string checkId = payload.GetProperty("preDepartureSafetyCheckId").GetString()!;
         return Envelope(
             messageId,
             "PreDepartureSafetyCheckResult",
             new
             {
-                preDepartureSafetyCheckId = payload.GetProperty("preDepartureSafetyCheckId").GetString(),
+                preDepartureSafetyCheckId = answeredCheckId ?? checkId,
                 checkPurpose,
                 outcome,
                 observedAt = Now,
@@ -1424,7 +1550,7 @@ public sealed partial class RecoveryStateMachineG2Tests
                     reasonCodes = Array.Empty<string>()
                 }
             },
-            root.GetProperty("messageId").GetString());
+            byCommandMessageId ? root.GetProperty("messageId").GetString() : checkId);
     }
 
     private static JsonElement PayloadOf(string wire)

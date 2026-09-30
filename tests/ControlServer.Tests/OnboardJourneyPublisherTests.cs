@@ -657,6 +657,75 @@ public sealed class OnboardJourneyPublisherTests
         Assert.Equal(3, payload.GetProperty("expectedSafetyStateVersion").GetInt64());
     }
 
+    /// <summary>
+    /// Every business state of a held vehicle says so, whoever built it (control-server#385 review N2 (a)): published or
+    /// staged, a READY projection with no fact leaves as RECOVERY_REQUIRED listing each slot of every hold still standing
+    /// -- one on file, one only in the unsaved change -- and not a lifted one; another vehicle's hold changes nothing, and
+    /// with none left standing the projection leaves as built.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    public async Task EveryBusinessStateOfAHeldVehicleSaysItIsHeld()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(token);
+        DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using ControlServerDbContext context = new(options);
+        await context.Database.EnsureCreatedAsync(token);
+        DateTimeOffset heldAt = new(2026, 9, 30, 8, 0, 0, TimeSpan.Zero);
+        context.SlotDoorHolds.AddRange(
+            new SlotDoorHoldRow { HoldId = "h-on-file", AgvId = "AGV-001", DemandId = "D1", SlotsJson = "[3]", HeldAt = heldAt },
+            new SlotDoorHoldRow
+            {
+                HoldId = "h-lifted", AgvId = "AGV-001", DemandId = "D2", SlotsJson = "[4]", HeldAt = heldAt,
+                ReleasedByActionId = "r", ReleasedAt = heldAt
+            },
+            new SlotDoorHoldRow { HoldId = "h-other-vehicle", AgvId = "AGV-002", DemandId = "D3", SlotsJson = "[5]", HeldAt = heldAt });
+        await context.SaveChangesAsync(token);
+        context.SlotDoorHolds.Add(
+            new SlotDoorHoldRow { HoldId = "h-unsaved", AgvId = "AGV-001", DemandId = "D4", SlotsJson = "[1]", HeldAt = heldAt });
+        WireToGateStore store = new(context);
+        RecordingPeer peer = new(context);
+        OnboardJourneyPublisher publisher = new(store, peer, new AdvancingTimeProvider());
+        VehicleBusinessProjection ready = new(
+            4, "READY", "TRANSPORT", false, "SUFFICIENT", "NOT_CHARGING", LoadingPhaseProjection.Loading, []);
+
+        Assert.True(await OnboardJourneyPublisher.StageVehicleBusinessStateAsync(
+            store, "00000000-0000-4000-8000-000000000451", "AGV-001", 7, ready, heldAt, token));
+        await context.SaveChangesAsync(token);
+        await publisher.PublishVehicleBusinessStateAsync(
+            "00000000-0000-4000-8000-000000000452", "AGV-001", 7, ready with { Revision = 5 }, token);
+        (await context.SlotDoorHolds.SingleAsync(row => row.HoldId == "h-on-file", token)).ReleasedAt = heldAt;
+        (await context.SlotDoorHolds.SingleAsync(row => row.HoldId == "h-unsaved", token)).ReleasedAt = heldAt;
+        await context.SaveChangesAsync(token);
+        await publisher.PublishVehicleBusinessStateAsync(
+            "00000000-0000-4000-8000-000000000453", "AGV-001", 7, ready with { Revision = 6 }, token);
+
+        string[] wires = await context.ProtocolOutbox.AsNoTracking()
+            .OrderBy(row => row.MessageId).Select(row => row.PayloadJson).ToArrayAsync(token);
+        (string Readiness, string Facts, string? Purpose)[] seen =
+        [
+            .. wires.Select(wire =>
+            {
+                using JsonDocument document = JsonDocument.Parse(wire);
+                JsonElement payload = document.RootElement.GetProperty("payload");
+                return (
+                    payload.GetProperty("readiness").GetString()!,
+                    string.Join(",", payload.GetProperty("blockingFacts").EnumerateArray().Select(fact =>
+                        $"{fact.GetProperty("reasonCode").GetString()}/{fact.GetProperty("subjectType").GetString()}/" +
+                        fact.GetProperty("subjectId").GetString())),
+                    payload.GetProperty("activePurpose").GetString());
+            })
+        ];
+        const string Held = "SLOT_DOOR_LOCK_UNPROVEN_AFTER_EMPTY/SLOT/1,SLOT_DOOR_LOCK_UNPROVEN_AFTER_EMPTY/SLOT/3";
+        Assert.Equal(
+            [("RECOVERY_REQUIRED", Held, "TRANSPORT"), ("RECOVERY_REQUIRED", Held, "TRANSPORT"), ("READY", "", "TRANSPORT")],
+            seen);
+    }
+
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-06")]
     [Trait("ProtocolVector", "CV-RELIABLE-RETRY-SAME-CONTENT")]

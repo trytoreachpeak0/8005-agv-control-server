@@ -72,7 +72,12 @@ public sealed class OnboardJourneyPublisher(
     }
 
     /// <param name="keepAcknowledgedIgnoring">见 <see cref="QueueEnvelopeAsync"/> 的同名参数。</param>
-    public Task PublishVehicleBusinessStateAsync(
+    /// <remarks>
+    /// A held vehicle's standing door holds are laid over the projection here (<see cref="WireToGateStore.WithSlotDoorHoldsAsync"/>,
+    /// control-server#385 review N2), as in <see cref="StageVehicleBusinessStateAsync"/>: every business state leaves through
+    /// one of the two.
+    /// </remarks>
+    public async Task PublishVehicleBusinessStateAsync(
         string messageId,
         string agvId,
         long sessionGeneration,
@@ -80,8 +85,10 @@ public sealed class OnboardJourneyPublisher(
         CancellationToken cancellationToken,
         IReadOnlySet<string>? keepAcknowledgedIgnoring = null)
     {
+        ArgumentNullException.ThrowIfNull(projection);
+        projection = await store.WithSlotDoorHoldsAsync(agvId, projection, cancellationToken).ConfigureAwait(false);
         ValidateVehicleBusinessState(projection);
-        return PublishStampedSnapshotAsync(
+        await PublishStampedSnapshotAsync(
             "VehicleBusinessStateSnapshot",
             messageId,
             agvId,
@@ -89,7 +96,7 @@ public sealed class OnboardJourneyPublisher(
             projection.Revision,
             VehicleBusinessStatePayload(projection),
             cancellationToken,
-            keepAcknowledgedIgnoring);
+            keepAcknowledgedIgnoring).ConfigureAwait(false);
     }
 
     private static void ValidateVehicleBusinessState(VehicleBusinessProjection projection)
@@ -828,7 +835,7 @@ public sealed class OnboardJourneyPublisher(
     /// 这一次什么也没加。
     /// </para>
     /// </remarks>
-    public static Task<bool> StageVehicleBusinessStateAsync(
+    public static async Task<bool> StageVehicleBusinessStateAsync(
         WireToGateStore store,
         string messageId,
         string agvId,
@@ -837,10 +844,14 @@ public sealed class OnboardJourneyPublisher(
         DateTimeOffset createdAt,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(store);
+        ArgumentNullException.ThrowIfNull(projection);
+        // A held vehicle's standing door holds, as in PublishVehicleBusinessStateAsync (control-server#385 review N2).
+        projection = await store.WithSlotDoorHoldsAsync(agvId, projection, cancellationToken).ConfigureAwait(false);
         ValidateVehicleBusinessState(projection);
-        return StageStampedSnapshotAsync(
+        return await StageStampedSnapshotAsync(
             store, "VehicleBusinessStateSnapshot", messageId, agvId, sessionGeneration, projection.Revision,
-            VehicleBusinessStatePayload(projection), createdAt, cancellationToken);
+            VehicleBusinessStatePayload(projection), createdAt, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc cref="StageVehicleBusinessStateAsync"/>

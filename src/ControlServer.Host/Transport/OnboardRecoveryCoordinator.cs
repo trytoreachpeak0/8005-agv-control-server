@@ -1445,6 +1445,10 @@ public sealed class OnboardRecoveryCoordinator(
                 cancellationToken).ConfigureAwait(false);
             if (operation is not null) operation.Status = StationOperationStatus.Cancelled;
         }
+        if (doorUnprovenEmpty)
+        {
+            WriteDoorHold(workflow);
+        }
         await new PickupStopTermination(dbContext, await ReadPlanRevisionRoutingAsync(cancellationToken).ConfigureAwait(false))
             .StageAsync(
                 runtime,
@@ -1472,7 +1476,7 @@ public sealed class OnboardRecoveryCoordinator(
         }
         if (doorUnprovenEmpty)
         {
-            await HoldForDoorRepairAsync(workflow, cancellationToken).ConfigureAwait(false);
+            await StageDoorHoldSnapshotAsync(workflow, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -1489,24 +1493,36 @@ public sealed class OnboardRecoveryCoordinator(
     /// </remarks>
     internal async Task HoldForDoorRepairAsync(RecoveryWorkflowRow workflow, CancellationToken cancellationToken)
     {
-        DateTimeOffset now = timeProvider.GetUtcNow();
-        int[] slots = ParseSlots(workflow.SlotsJson);
+        WriteDoorHold(workflow);
+        await StageDoorHoldSnapshotAsync(workflow, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The hold row alone, unsaved. The settlement writes it before it ends the demand (review N2 (a)): a journey the
+    /// settlement closes stages its closing business snapshot through the publisher, which lays the standing holds over it
+    /// -- this one included only if it is already in the change.
+    /// </summary>
+    private void WriteDoorHold(RecoveryWorkflowRow workflow) =>
         dbContext.SlotDoorHolds.Add(new SlotDoorHoldRow
         {
             HoldId = workflow.WorkflowId,
             AgvId = workflow.AgvId,
             DemandId = workflow.DemandId!,
             SlotsJson = workflow.SlotsJson,
-            HeldAt = now
+            HeldAt = timeProvider.GetUtcNow()
         });
+
+    /// <summary>The hold's business snapshot, unsaved, after everything else the settlement staged.</summary>
+    private async Task StageDoorHoldSnapshotAsync(RecoveryWorkflowRow workflow, CancellationToken cancellationToken)
+    {
+        DateTimeOffset now = timeProvider.GetUtcNow();
         long? generation = await dbContext.SessionRecoveries.AsNoTracking()
             .Where(row => row.AgvId == workflow.AgvId)
             .Select(row => (long?)row.SessionGeneration)
             .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
         if (generation is null) return;
-        int[] held = [.. (await HeldSlotsAsync(workflow.AgvId, cancellationToken).ConfigureAwait(false)).Union(slots).Order()];
         await StageDoorHoldBusinessStateAsync(
-            workflow.AgvId, generation.Value, DoorHoldSnapshotId(workflow.WorkflowId), ready: false, held,
+            workflow.AgvId, generation.Value, DoorHoldSnapshotId(workflow.WorkflowId), ready: false,
             now.AddMilliseconds(1), cancellationToken).ConfigureAwait(false);
     }
 
@@ -1621,7 +1637,8 @@ public sealed class OnboardRecoveryCoordinator(
     /// <remarks>
     /// <para>
     /// <b>Only the release's own check, and only as a HOLD_RELEASE answer.</b> The result must correlate to the check this
-    /// server staged for a release still waiting for it, name that check's id, and say <c>checkPurpose</c> HOLD_RELEASE. An
+    /// server staged for a release still waiting for it -- by the check command's messageId or by the check's id, as the
+    /// onboard sends it (review N1) -- name that check's id, and say <c>checkPurpose</c> HOLD_RELEASE. An
     /// answer saying DEPARTURE is not a release, whatever it correlates to, and a HOLD_RELEASE answer never counts as a
     /// departure (the runtime reads DEPARTURE answers only, control-server#382).
     /// </para>
@@ -1644,13 +1661,19 @@ public sealed class OnboardRecoveryCoordinator(
         if (!root.TryGetProperty("correlationId", out JsonElement correlation) ||
             correlation.ValueKind != JsonValueKind.String)
             return null;
-        string checkMessageId = correlation.GetString()!;
+        string correlationId = correlation.GetString()!;
         string agvId = RequiredString(root, "agvId");
         JsonElement payload = root.GetProperty("payload");
-        RecoveryWorkflowRow? release = await dbContext.RecoveryWorkflows.SingleOrDefaultAsync(
-            row => row.AgvId == agvId && row.WorkflowType == RepairReleaseAction &&
-                   row.CommandMessageId == checkMessageId && row.State == RecoveryWorkflowState.AwaitingResult,
-            cancellationToken).ConfigureAwait(false);
+        // Either correlation names the check (review N1): the check command's messageId, or its preDepartureSafetyCheckId --
+        // the onboard (c79b4c6f, WireToGateSessionClient.SendPreDepartureSafetyCheckResultAsync) puts the latter there, and
+        // the runtime's departure reading takes both (FindSafeDepartureResultAsync). Both are derived from the release, so
+        // they name one release at most.
+        RecoveryWorkflowRow? release = (await dbContext.RecoveryWorkflows
+                .Where(row => row.AgvId == agvId && row.WorkflowType == RepairReleaseAction &&
+                              row.CommandMessageId != null && row.State == RecoveryWorkflowState.AwaitingResult)
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false))
+            .SingleOrDefault(row => row.CommandMessageId == correlationId ||
+                                    StableGuid(row.WorkflowId, "hold-release-check") == correlationId);
         if (release is null)
             return null;
 
@@ -1668,7 +1691,7 @@ public sealed class OnboardRecoveryCoordinator(
         }
         release.Outcome = outcome;
         release.UpdatedAt = now;
-        await store.SettleAnsweredCommandAsync(checkMessageId, now, cancellationToken).ConfigureAwait(false);
+        await store.SettleAnsweredCommandAsync(release.CommandMessageId!, now, cancellationToken).ConfigureAwait(false);
         release.State = RecoveryWorkflowState.Reconciled;
         DateTimeOffset recordedAt = await dbContext.HardwareRecoveryRecords.AsNoTracking()
             .Where(record => record.RecoveryActionId == release.WorkflowId)
@@ -1739,25 +1762,38 @@ public sealed class OnboardRecoveryCoordinator(
         CancellationToken cancellationToken) =>
         await StageDoorHoldBusinessStateAsync(
             agvId, sessionGeneration, DoorReleaseSnapshotId(releaseActionId), ready,
-            await HeldSlotsAsync(agvId, cancellationToken).ConfigureAwait(false),
             timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
 
     /// <summary>
-    /// A <c>VehicleBusinessStateSnapshot</c> sent outside any journey for a door hold or its release (control-server#385):
-    /// no active purpose or loading phase, one <c>SLOT_DOOR_LOCK_UNPROVEN_AFTER_EMPTY</c> fact per held slot. Its revision is
-    /// one above the highest this vehicle's business stream has on file, the unsaved changes included -- a settlement that
-    /// closes the journey stages the journey's closing snapshot in the same change.
+    /// The <c>VehicleBusinessStateSnapshot</c> a door hold or its release sends (control-server#385). Its revision is one above
+    /// the highest this vehicle's business stream has on file, the unsaved changes included -- a settlement that closes the
+    /// journey stages the journey's closing snapshot in the same change.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Everything but readiness and the holds is carried over from that highest snapshot</b> (review N2 (b)): the active
+    /// purpose, the loading phase, the charging fields. A hold in the middle of a journey keeps the journey's purpose and
+    /// its loading phase -- a holding countdown included -- on the vehicle, and the publisher's rule that TRANSPORT and a
+    /// loading phase come together holds because it held for that snapshot. A hold that closed the journey carries over
+    /// the closing snapshot's empty purpose. Nothing on file at all (never the case after a settlement) falls back to no
+    /// purpose, SUFFICIENT and NOT_CHARGING.
+    /// </para>
+    /// <para>
+    /// <b>The holds are not written here.</b> The publisher lays every standing hold over every business state it stages
+    /// (<see cref="WireToGateStore.WithSlotDoorHoldsAsync"/>), this one included; so a release leaves READY only when no hold
+    /// is left standing, and lists the ones that are.
+    /// </para>
+    /// </remarks>
     private async Task<string?> StageDoorHoldBusinessStateAsync(
         string agvId,
         long sessionGeneration,
         string messageId,
         bool ready,
-        IReadOnlyCollection<int> heldSlots,
         DateTimeOffset createdAt,
         CancellationToken cancellationToken)
     {
-        long revision = (await HighestBusinessRevisionAsync(agvId, cancellationToken).ConfigureAwait(false) ?? 0) + 1;
+        VehicleBusinessProjection? latest = await LatestBusinessStateAsync(agvId, cancellationToken).ConfigureAwait(false);
+        long revision = (latest?.Revision ?? 0) + 1;
         // A journey still open on this vehicle publishes its stops at base + sequence - 1 (JourneyRuntimeEngine.StopRevision);
         // a hold or release in the middle of it would otherwise sit at or above the next stop's number, and the vehicle
         // refuses that as SNAPSHOT_REVISION_REGRESSION or a content conflict (control-server#385 review M2). Raise its base
@@ -1770,40 +1806,58 @@ public sealed class OnboardRecoveryCoordinator(
         {
             open.VehicleBusinessRevision = revision + 1;
         }
-        VehicleBusinessBlockingFact[] facts =
-        [
-            .. heldSlots.Order().Select(slot => new VehicleBusinessBlockingFact(
-                ServerReasonCodes.SlotDoorLockUnprovenAfterEmpty,
-                "SLOT",
-                slot.ToString(System.Globalization.CultureInfo.InvariantCulture)))
-        ];
+        VehicleBusinessProjection projection = (latest ?? new VehicleBusinessProjection(
+            0, "READY", null, false, "SUFFICIENT", "NOT_CHARGING", null, [])) with
+        {
+            Revision = revision,
+            Readiness = ready ? "READY" : "RECOVERY_REQUIRED",
+            BlockingFacts = []
+        };
         bool staged = await OnboardJourneyPublisher.StageVehicleBusinessStateAsync(
-            store,
-            messageId,
-            agvId,
-            sessionGeneration,
-            new VehicleBusinessProjection(
-                revision, ready ? "READY" : "RECOVERY_REQUIRED", null, false, "SUFFICIENT", "NOT_CHARGING", null, facts),
-            createdAt,
-            cancellationToken).ConfigureAwait(false);
+            store, messageId, agvId, sessionGeneration, projection, createdAt, cancellationToken).ConfigureAwait(false);
         return staged ? dbContext.ProtocolOutbox.Local.Single(row => row.MessageId == messageId).PayloadJson : null;
     }
 
-    private async Task<long?> HighestBusinessRevisionAsync(string agvId, CancellationToken cancellationToken)
+    /// <summary>
+    /// The business state of this vehicle's highest-numbered <c>VehicleBusinessStateSnapshot</c> on file, the unsaved changes
+    /// included, or null when there is none. Acknowledged or fenced alike: the vehicle may have it.
+    /// </summary>
+    private async Task<VehicleBusinessProjection?> LatestBusinessStateAsync(string agvId, CancellationToken cancellationToken)
     {
-        long? highest = await JourneyClosure.HighestSentRevisionAsync(
-            dbContext, agvId, "VehicleBusinessStateSnapshot", cancellationToken).ConfigureAwait(false);
-        foreach (ProtocolOutboxRow row in dbContext.ChangeTracker.Entries<ProtocolOutboxRow>()
-                     .Where(entry => entry.State == EntityState.Added)
-                     .Select(entry => entry.Entity)
-                     .Where(row => row.MessageType == "VehicleBusinessStateSnapshot"))
+        string[] onFile = await dbContext.ProtocolOutbox.AsNoTracking()
+            .Where(row => row.MessageType == "VehicleBusinessStateSnapshot")
+            .Select(row => row.PayloadJson)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        IEnumerable<string> staged = dbContext.ChangeTracker.Entries<ProtocolOutboxRow>()
+            .Where(entry => entry.State == EntityState.Added && entry.Entity.MessageType == "VehicleBusinessStateSnapshot")
+            .Select(entry => entry.Entity.PayloadJson);
+        VehicleBusinessProjection? latest = null;
+        foreach (string wire in onFile.Concat(staged))
         {
-            using JsonDocument document = JsonDocument.Parse(row.PayloadJson);
+            using JsonDocument document = JsonDocument.Parse(wire);
             if (RequiredString(document.RootElement, "agvId") != agvId) continue;
-            long revision = document.RootElement.GetProperty("payload").GetProperty("vehicleBusinessStateRevision").GetInt64();
-            highest = highest is { } seen ? Math.Max(seen, revision) : revision;
+            JsonElement payload = document.RootElement.GetProperty("payload");
+            long revision = payload.GetProperty("vehicleBusinessStateRevision").GetInt64();
+            if (latest is not null && latest.Revision >= revision) continue;
+            JsonElement phase = payload.GetProperty("loadingPhase");
+            latest = new VehicleBusinessProjection(
+                revision,
+                RequiredString(payload, "readiness"),
+                NullableString(payload, "activePurpose"),
+                payload.GetProperty("manualChargingHold").GetBoolean(),
+                RequiredString(payload, "batteryState"),
+                RequiredString(payload, "chargingCycleState"),
+                phase.ValueKind == JsonValueKind.Null
+                    ? null
+                    : new LoadingPhaseProjection(
+                        RequiredString(phase, "state"),
+                        phase.GetProperty("cargoHoldingDeadlineAt") is { ValueKind: JsonValueKind.String } deadline
+                            ? deadline.GetDateTimeOffset()
+                            : null,
+                        NullableString(phase, "closedReason")),
+                []);
         }
-        return highest;
+        return latest;
     }
 
     /// <summary>
@@ -2358,6 +2412,9 @@ public sealed class OnboardRecoveryCoordinator(
             ? throw new InvalidDataException($"Protocol field '{propertyName}' is required.")
             : value;
     }
+
+    private static string? NullableString(JsonElement element, string propertyName) =>
+        element.GetProperty(propertyName) is { ValueKind: JsonValueKind.String } value ? value.GetString() : null;
 
     /// <summary>
     /// 终结之后换序要用的路网与每区参数（批次7-10，control-server#215）；没注册或路网不可用时为空，终结于是只删不换。

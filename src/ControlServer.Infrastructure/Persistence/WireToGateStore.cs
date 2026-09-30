@@ -3618,6 +3618,73 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         dbContext.SlotDoorHolds.AnyAsync(hold => hold.AgvId == agvId && hold.ReleasedAt == null, cancellationToken);
 
     /// <summary>
+    /// The one projection every <c>VehicleBusinessStateSnapshot</c> of a held vehicle goes through (REQ-0364,
+    /// control-server#385 review N2): while a door hold stands, the snapshot is not READY and lists every held slot under
+    /// <c>SLOT_DOOR_LOCK_UNPROVEN_AFTER_EMPTY</c>, whoever built it -- a stop's arrival, a loading phase, a journey's
+    /// closing, the hold or its release. A vehicle with no standing hold gets the projection back unchanged.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Applied by the publisher's two business-state entry points, not by their callers: there are five callers and every
+    /// new one would have to remember it, and forgetting is exactly what made a journey snapshot after a mid-journey hold
+    /// read READY with no fact (review N2).
+    /// </para>
+    /// <para>
+    /// <b>The unsaved change counts.</b> A hold written in the caller's change (the settlement that holds the vehicle) and a
+    /// hold whose release is being written (the release's SAFE check) are read as the caller has them; every other hold is
+    /// read from the store, so a copy tracked earlier by a long-lived context cannot stand in for what is on file.
+    /// </para>
+    /// </remarks>
+    public async Task<VehicleBusinessProjection> WithSlotDoorHoldsAsync(
+        string agvId,
+        VehicleBusinessProjection projection,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(projection);
+        Dictionary<string, SlotDoorHoldRow> holds = await dbContext.SlotDoorHolds.AsNoTracking()
+            .Where(hold => hold.AgvId == agvId)
+            .ToDictionaryAsync(hold => hold.HoldId, StringComparer.Ordinal, cancellationToken).ConfigureAwait(false);
+        foreach (Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<SlotDoorHoldRow> entry in
+                 dbContext.ChangeTracker.Entries<SlotDoorHoldRow>().Where(entry => entry.Entity.AgvId == agvId))
+        {
+            switch (entry.State)
+            {
+                case EntityState.Added or EntityState.Modified:
+                    holds[entry.Entity.HoldId] = entry.Entity;
+                    break;
+                case EntityState.Deleted:
+                    holds.Remove(entry.Entity.HoldId);
+                    break;
+            }
+        }
+
+        int[] held =
+        [
+            .. holds.Values.Where(hold => hold.ReleasedAt is null)
+                .SelectMany(hold => JsonSerializer.Deserialize<int[]>(hold.SlotsJson) ?? [])
+                .Distinct()
+                .Order()
+        ];
+        if (held.Length == 0)
+        {
+            return projection;
+        }
+
+        return projection with
+        {
+            Readiness = "RECOVERY_REQUIRED",
+            BlockingFacts =
+            [
+                .. projection.BlockingFacts.Where(fact => fact.ReasonCode != ServerReasonCodes.SlotDoorLockUnprovenAfterEmpty),
+                .. held.Select(slot => new VehicleBusinessBlockingFact(
+                    ServerReasonCodes.SlotDoorLockUnprovenAfterEmpty,
+                    "SLOT",
+                    slot.ToString(System.Globalization.CultureInfo.InvariantCulture)))
+            ]
+        };
+    }
+
+    /// <summary>
     /// Every station operation with the journey that carries its demand, joined through the demand memberships
     /// (<see cref="DemandJourneyLookup"/>, control-server#207) rather than the journey row's anchor demand.
     /// </summary>
