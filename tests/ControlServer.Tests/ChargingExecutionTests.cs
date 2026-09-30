@@ -1065,6 +1065,75 @@ public sealed class ChargingExecutionTests
     }
 
     /// <summary>
+    /// 被放弃的那张单事后出现在<b>不是我们的车</b>上执行（第二轮审查 S-1，探针 P4）：绝不对别的车发订单命令，也不挡我们的车——不取消、
+    /// 不认下为「在处理中」，只记一行不挡车的记录、打一条 Warning（事件 2189，写明单号与执行车）让人去看；之后每一轮不再重复告警。
+    /// </summary>
+    [Fact]
+    public async Task AnAbandonedChargeOrderExecutingOnAVehicleNotOursIsNeverCancelledAndHoldsNothing()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        fleet.Riot.AnswersAbsentAsRealRiot = true;
+        EventRecordingLogger<ControlServer.Host.Runtime.ForeignOrders.ForeignRunningOrderSupervisor> log = new();
+        (string CycleId, string JourneyId, string UpperId) before = await ResultUnknownAndAbsentAsync(fleet);
+        await fleet.HearFromEveryVehicleAsync();
+        await fleet.RunRoundAsync(fleet.Options.ChargingOrderAbsentAbandonAfter);
+        Assert.Equal(
+            ChargingExecutionReasons.OrderNeverAppeared,
+            (await fleet.Context.Set<ChargingCycleRow>().AsNoTracking().SingleAsync(row => row.CycleId == before.CycleId, Token)).EndReason);
+
+        fleet.Riot.PutOrder(new RiotOrderObservation(
+            before.UpperId, RiotOrderObservationKind.Active, "ORDER-LATE", RiotOrderState.Executing, "NOT-OURS-KEY-9", Map,
+            Near.StationId));
+        for (int round = 0; round < 3; round++)
+        {
+            fleet.Context.ChangeTracker.Clear();
+            await SupervisorOf(fleet, log).SuperviseAsync(Token);
+        }
+        fleet.Context.ChangeTracker.Clear();
+
+        Assert.Empty(fleet.Riot.OrderCommands);
+        Assert.Empty(await ControlServer.Host.Runtime.ForeignOrders.ForeignRunningOrders.HeldAgvIdsAsync(fleet.Context, Token));
+        Assert.Equal(
+            ForeignRiotOrderStates.LeftVehicle,
+            (await fleet.Context.ForeignRiotOrders.AsNoTracking().SingleAsync(Token)).State);
+        var warning = Assert.Single(log.Entries, entry => entry.EventId.Id == 2189);
+        Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Warning, warning.Level);
+        Assert.Contains("ORDER-LATE", warning.Message, StringComparison.Ordinal);
+        Assert.Contains("NOT-OURS-KEY-9", warning.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(log.Entries, entry => entry.EventId.Id is 2180 or 2188);
+    }
+
+    /// <summary>
+    /// 追读窗口过了之后才冒出来、还在排队、已指定给本车的被放弃单（第二轮审查 L-1）：不认它的话，本车会因为名下有未完成的单一直接不到新活，
+    /// 直到 RIoT 把它派到车上跑起来才被认出——车会先动一小段。指定给我们车的那一种不限时，按被放弃的单认下并取消一次。
+    /// </summary>
+    [Fact]
+    public async Task PastTheWindowAQueueingAbandonedChargeOrderAppointedToOurVehicleIsStillCancelled()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        fleet.Riot.AnswersAbsentAsRealRiot = true;
+        EventRecordingLogger<ControlServer.Host.Runtime.ForeignOrders.ForeignRunningOrderSupervisor> log = new();
+        (string CycleId, string JourneyId, string UpperId) before = await ResultUnknownAndAbsentAsync(fleet);
+        await fleet.HearFromEveryVehicleAsync();
+        await fleet.RunRoundAsync(fleet.Options.ChargingOrderAbsentAbandonAfter);
+        fleet.Clock.Advance(fleet.Options.OwnOrderRebuildRepeatWindow + TimeSpan.FromSeconds(1));
+
+        // Queueing, appointed to our vehicle (the double lists the vehicle key as both keys), not yet running.
+        fleet.Riot.PutOrder(new RiotOrderObservation(
+            before.UpperId, RiotOrderObservationKind.Active, "ORDER-LATE", RiotOrderState.Queueing, KeyA, Map, Near.StationId));
+        fleet.Context.ChangeTracker.Clear();
+        await SupervisorOf(fleet, log).SuperviseAsync(Token);
+        fleet.Context.ChangeTracker.Clear();
+
+        ForeignRiotOrderRow row = await fleet.Context.ForeignRiotOrders.AsNoTracking().SingleAsync(Token);
+        Assert.Equal(
+            ("ORDER-LATE", AgvA, AbandonedChargeOrders.OwnershipBasis, (int?)RiotOrderState.Queueing),
+            (row.RiotOrderId, row.AgvId, row.OwnershipBasis, row.OrderStateAtDetection));
+        Assert.Equal([(RiotCommandTypeNames.CancelOrder, "ORDER-LATE")], fleet.Riot.OrderCommands);
+        Assert.Single(log.Entries, entry => entry.EventId.Id == 2188);
+    }
+
+    /// <summary>
     /// 放弃计时按真实 RIoT 的答法算（增量审查 M-A）：真实 RIoT 对它没有的单不回 404，回 HTTP 200、业务码 0、不带 result，网关归为
     /// <c>AbsentAtObservation</c> 的 Unknown。只认 404 时，审查探针 PA 里 20 分钟车停稳、名下没单，一次也没放弃。这里用真实形态：满时限恰好放弃
     /// 一次；中间来一次<b>不精确</b>的 Unknown（带失败类别）就不算「查无此单」、重新计时。

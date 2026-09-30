@@ -85,7 +85,10 @@ internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
             [DispatchReasonCodes.MandatoryChargeRequired] =
                 "这辆车电量低于它所用充电策略的强制充电线，只等去充电，不接新任务也不接途中追加；别的车照常。"
                 + "它若一直没去充电，是在排队等桩：看服务端日志事件 2246（写明分不到桩的原因）——充电桩被占或被预占、"
-                + "RIoT 读不到某辆车的位置或订单清单、路网引擎没开或过期、桩被暂停分配或在地图上改了名",
+                + "RIoT 读不到某辆车的位置或订单清单、路网引擎没开或过期、桩被暂停分配或在地图上改了名；"
+                + "或者车本身此刻不能出发（原因码 CHARGING_DEPARTURE_NOT_PROVEN_AT_ALLOCATION，事件里写明缺哪一项）："
+                + "车上某个仓位没锁好或开锁输出没复位（到车前把仓门关好锁上）、车载端安全摘要带着阻断原因（看车载端屏上的原因）、"
+                + "RIoT 读不到车停稳（看 RIoT 里这辆车是否急停、在动或抱闸）。这几项恢复后下一轮就会分桩",
             // 批次 7（control-server#211～#215）：途中追加、装货阶段、释放改派。都是正常调度的结论，不是故障（规格 8.8 第 4 条）。
             [DispatchReasonCodes.SlotGroupOccupiedByOwnCargo] =
                 "本车货物占侧：所需一侧的空仓已被这辆车自己已装或已预留的货占满，其余条件都满足，等别的车或本车卸货后再派",

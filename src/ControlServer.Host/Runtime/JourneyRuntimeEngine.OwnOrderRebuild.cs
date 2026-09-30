@@ -49,8 +49,8 @@ namespace ControlServer.Host.Runtime;
 /// so it has to show the facts that check would. The first version also created behind the gate when the session was not ready
 /// for the vehicle's own sake alone; it no longer does, because Onboard reports exactly <c>unknownPresent=true</c> in that
 /// state and nothing then vouches for the doors. The state does not last: once the ended order is final, the server's
-/// vehicle-safety read drops <c>RIOT_NONFINAL_ORDER_PRESENT</c> (only states 1, 3, 7 and 9 count), and a stopped vehicle's
-/// session becomes Ready again. A new order already sent is a different matter: reconciling it only reads, so it is
+/// vehicle-safety read drops <c>RIOT_NONFINAL_ORDER_PRESENT</c> (only the non-final states 1, 3, 7, 8, 9 and 10 count), and a
+/// stopped vehicle's session becomes Ready again. A new order already sent is a different matter: reconciling it only reads, so it is
 /// reconciled behind the gate as well, and confirmed there when the create answer was lost and the vehicle is already
 /// driving it (incremental review B2).
 /// </para>

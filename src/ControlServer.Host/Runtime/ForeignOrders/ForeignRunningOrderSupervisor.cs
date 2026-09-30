@@ -145,6 +145,15 @@ public sealed class ForeignRunningOrderSupervisor(
             "it (RiotForeignOrderCancel:Enabled is false). It is not cancelled; the vehicle takes no new work until it has " +
             "ended. A person has to end it in RIoT or at the vehicle.");
 
+    private static readonly Action<ILogger, string, string?, string, string, int?, Exception?> LogAbandonedChargeOrderOnAnotherVehicle =
+        LoggerMessage.Define<string, string?, string, string, int?>(
+            LogLevel.Warning,
+            new EventId(2189, nameof(LogAbandonedChargeOrderOnAnotherVehicle)),
+            "RIoT order {OrderId} (upperId {UpperId}) is a charge order this server created for vehicle {AgvId} and then gave up " +
+            "(CHARGING_ORDER_NEVER_APPEARED), and it is executing on vehicle {ExecuteVehicleKey} in state {OrderState}, which is " +
+            "not one of this server's. Nothing is sent to it and no vehicle of ours is held for it. A person has to look at it " +
+            "in RIoT and decide whether that vehicle should go on with it.");
+
     private static readonly Action<ILogger, string, string?, string, string, int?, Exception?> LogAbandonedChargeOrderFound =
         LoggerMessage.Define<string, string?, string, string, int?>(
             LogLevel.Warning,
@@ -212,10 +221,27 @@ public sealed class ForeignRunningOrderSupervisor(
 
     /// <summary>
     /// Whether <paramref name="order"/> is still in play for <paramref name="row"/>: running on a vehicle of ours -- or, for a charge
-    /// order this server gave up, listed at all (review S-b: queueing is exactly when it has to go).
+    /// order this server gave up, listed and not executed by a vehicle that is not ours (review S-b: queueing is exactly when it
+    /// has to go; second review S-1: one executing on someone else's vehicle is never touched).
     /// </summary>
     private static bool StillInPlay(ForeignRiotOrderRow row, RiotListedOrder? order, Dictionary<string, FleetVehicle> ours) =>
-        RunningOnOurs(order, ours) is not null || (order is not null && IsAbandonedChargeOrder(row));
+        RunningOnOurs(order, ours) is not null ||
+        (order is not null && IsAbandonedChargeOrder(row) && !ExecutedByAVehicleNotOurs(order, ours));
+
+    /// <summary>
+    /// Whether RIoT names a vehicle executing <paramref name="order"/>, and it is not one of ours. RIoT's placeholder <c>--</c> and an
+    /// empty key name none.
+    /// </summary>
+    private static bool ExecutedByAVehicleNotOurs(RiotListedOrder order, Dictionary<string, FleetVehicle> ours) =>
+        ExecutingVehicleKey(order) is { } key && !ours.ContainsKey(key);
+
+    private static string? ExecutingVehicleKey(RiotListedOrder order) =>
+        string.IsNullOrWhiteSpace(order.ExecuteVehicleKey) || order.ExecuteVehicleKey.Trim() == UnassignedVehicleKey
+            ? null
+            : order.ExecuteVehicleKey.Trim();
+
+    /// <summary>RIoT's placeholder in <c>executeVehicleKey</c> before a vehicle is bound (BC-ORDER-012, BC-ORDER-013).</summary>
+    private const string UnassignedVehicleKey = "--";
 
     /// <summary>
     /// The vehicles this server manages now, by RIoT <c>deviceKey</c>: the roster's, less any whose lifecycle is archived --
@@ -285,7 +311,9 @@ public sealed class ForeignRunningOrderSupervisor(
             return;
         }
 
-        if (order is null)
+        // SUSPENDED (8) has been listed as unfinished since the second review's L-2, and it is still not an ending nor a running
+        // order: read it the way it was read while the listing left it out -- by the order itself, not as "left the vehicle".
+        if (order is null || order.OrderState == RiotOrderState.Suspended)
         {
             // Not among the unfinished orders any more: whether it ended is RIoT's to say, by the order itself.
             RiotOrderStateReading reading = await orders.ReadOrderStateAsync(row.RiotOrderId, cancellationToken)
@@ -380,55 +408,97 @@ public sealed class ForeignRunningOrderSupervisor(
     }
 
     /// <summary>
-    /// Records every unfinished order RIoT lists under the <c>upperId</c> of a charge order this server gave up within
-    /// <c>JourneyRuntime:OwnOrderRebuildRepeatWindow</c>, running or not (review S-b). Held against the vehicle it runs on, or,
-    /// while it runs on none, the vehicle it was created for. Staged; the caller saves.
+    /// Records every unfinished order RIoT lists that is a charge order this server gave up and is not yet running on a vehicle of
+    /// ours (review S-b): one under the <c>upperId</c> of a commitment given up within
+    /// <c>JourneyRuntime:OwnOrderRebuildRepeatWindow</c>, and -- with no time limit -- one appointed to a vehicle of ours
+    /// (second review L-1: past the window a queueing order appointed to our vehicle would otherwise keep it from new work, as
+    /// <c>RIOT_VEHICLE_ORDER_OCCUPIED</c>, until RIoT set it moving). Held against the vehicle it is appointed to, or else the one
+    /// it was created for. Staged; the caller saves.
     /// </summary>
+    /// <remarks>
+    /// One executing on a vehicle that is not ours is never cancelled and holds nothing (second review S-1: no order command to
+    /// any other vehicle). It is recorded once as <see cref="ForeignRiotOrderStates.LeftVehicle"/>, which holds nothing, so the
+    /// warning for a person (event 2189) is said once, and a later round still takes it up should it come back unexecuted.
+    /// </remarks>
     private async Task ChaseAbandonedChargeOrdersAsync(
         List<ForeignRiotOrderRow> rows,
         RiotUnfinishedOrderListing listing,
         Dictionary<string, FleetVehicle> ours,
         CancellationToken cancellationToken)
     {
-        IReadOnlyList<Charging.AbandonedChargeOrders.Chased> chased = await Charging.AbandonedChargeOrders
-            .WithinAsync(dbContext, runtimeOptions.Value.OwnOrderRebuildRepeatWindow, timeProvider, cancellationToken)
-            .ConfigureAwait(false);
         HashSet<string> known = new(rows.Select(row => row.RiotOrderId), StringComparer.Ordinal);
-        foreach (Charging.AbandonedChargeOrders.Chased abandoned in chased)
+        RiotListedOrder[] candidates =
+        [
+            .. listing.Orders.Where(order =>
+                !known.Contains(order.OrderId) && RunningOnOurs(order, ours) is null && !string.IsNullOrWhiteSpace(order.UpperId)),
+        ];
+        if (candidates.Length == 0)
         {
-            if (!ours.TryGetValue(abandoned.VehicleKey, out FleetVehicle? createdFor))
+            return;
+        }
+
+        Dictionary<string, string> withinWindow = new(StringComparer.Ordinal);
+        foreach (Charging.AbandonedChargeOrders.Chased abandoned in await Charging.AbandonedChargeOrders
+                     .WithinAsync(dbContext, runtimeOptions.Value.OwnOrderRebuildRepeatWindow, timeProvider, cancellationToken)
+                     .ConfigureAwait(false))
+        {
+            withinWindow.TryAdd(abandoned.UpperId, abandoned.VehicleKey);
+        }
+
+        foreach (RiotListedOrder order in candidates)
+        {
+            string upperId = order.UpperId!.Trim();
+            FleetVehicle? appointed = AppointedToOurs(order, ours);
+            FleetVehicle? createdFor =
+                withinWindow.TryGetValue(upperId, out string? vehicleKey) && ours.TryGetValue(vehicleKey, out FleetVehicle? made)
+                    ? appointed ?? made
+                    : appointed is not null &&
+                      await Charging.AbandonedChargeOrders.IsAbandonedAsync(dbContext, order.OrderId, upperId, cancellationToken)
+                          .ConfigureAwait(false)
+                        ? appointed
+                        : null;
+            if (createdFor is null)
             {
                 continue;
             }
 
-            foreach (RiotListedOrder order in listing.Orders.Where(listed =>
-                         string.Equals(listed.UpperId?.Trim(), abandoned.UpperId, StringComparison.Ordinal) &&
-                         !known.Contains(listed.OrderId)))
+            bool elsewhere = ExecutedByAVehicleNotOurs(order, ours);
+            DateTimeOffset now = timeProvider.GetUtcNow();
+            ForeignRiotOrderRow row = new()
             {
-                FleetVehicle vehicle = RunningOnOurs(order, ours) ?? createdFor;
-                DateTimeOffset now = timeProvider.GetUtcNow();
-                ForeignRiotOrderRow row = new()
-                {
-                    RiotOrderId = order.OrderId,
-                    UpperId = order.UpperId,
-                    AgvId = vehicle.AgvId,
-                    DeviceKey = vehicle.VehicleKey,
-                    Ownership = ForeignRiotOrderOwnership.Foreign,
-                    OwnershipBasis = Charging.AbandonedChargeOrders.OwnershipBasis,
-                    State = ForeignRiotOrderStates.Detected,
-                    OrderStateAtDetection = order.OrderState,
-                    DetectedAt = now,
-                    LastSeenRunningAt = now,
-                    UpdatedAt = now,
-                };
-                dbContext.ForeignRiotOrders.Add(row);
-                rows.Add(row);
-                known.Add(row.RiotOrderId);
+                RiotOrderId = order.OrderId,
+                UpperId = order.UpperId,
+                AgvId = createdFor.AgvId,
+                DeviceKey = createdFor.VehicleKey,
+                Ownership = ForeignRiotOrderOwnership.Foreign,
+                OwnershipBasis = Charging.AbandonedChargeOrders.OwnershipBasis,
+                State = elsewhere ? ForeignRiotOrderStates.LeftVehicle : ForeignRiotOrderStates.Detected,
+                OrderStateAtDetection = order.OrderState,
+                DetectedAt = now,
+                LastSeenRunningAt = now,
+                UpdatedAt = now,
+            };
+            dbContext.ForeignRiotOrders.Add(row);
+            rows.Add(row);
+            known.Add(row.RiotOrderId);
+            if (elsewhere)
+            {
+                LogAbandonedChargeOrderOnAnotherVehicle(
+                    logger, row.RiotOrderId, row.UpperId, row.AgvId, ExecutingVehicleKey(order)!, order.OrderState, null);
+            }
+            else
+            {
                 LogFound(row, order.OrderState);
             }
         }
     }
 
+    /// <summary>The vehicle of ours RIoT has appointed <paramref name="order"/> to, when it has appointed one of ours.</summary>
+    private static FleetVehicle? AppointedToOurs(RiotListedOrder order, Dictionary<string, FleetVehicle> ours) =>
+        !string.IsNullOrWhiteSpace(order.AppointVehicleKey) &&
+        ours.TryGetValue(order.AppointVehicleKey.Trim(), out FleetVehicle? vehicle)
+            ? vehicle
+            : null;
     private void LogFound(ForeignRiotOrderRow row, int? orderState)
     {
         if (IsAbandonedChargeOrder(row))
@@ -551,7 +621,7 @@ public sealed class ForeignRunningOrderSupervisor(
 
         if (!StillInPlay(row, order, ours))
         {
-            if (order is null)
+            if (order is null || order.OrderState == RiotOrderState.Suspended)
             {
                 RiotOrderStateReading reading = await orders.ReadOrderStateAsync(row.RiotOrderId, cancellationToken)
                     .ConfigureAwait(false);

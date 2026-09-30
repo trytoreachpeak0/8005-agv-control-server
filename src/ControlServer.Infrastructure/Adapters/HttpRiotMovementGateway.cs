@@ -20,7 +20,14 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
     IRiotMapNameCatalog, IRiotVehicleSafetyFacts, IVehicleMotionFacts, IRiotVehicleOrderFacts, IRiotOrderListingFacts,
     IRiotOrderMissionFacts
 {
-    private static readonly int[] NonFinalOrderStates = [1, 3, 7, 9];
+    /// <summary>
+    /// The order states that are not an ending: QUEUEING 1, EXECUTING 3, PAUSED 7, SUSPENDED 8, HANG 9 and QUEUE_PRIORITY 10 (the
+    /// SDK's <c>OrderRecordObject.orderState</c>: 10 is "队列优先执行", a queued order moved to the front). 8 and 10 were missing until
+    /// control-server#404's second review (L-2): 10 is a queue state like 1, and 8 -- labelled "已移除" but never observed, and
+    /// counted as occupying the vehicle by REQ-0164 -- is not one of the four explicit endings
+    /// (<c>ForeignRunningOrders.IsExplicitlyEnded</c>). Left out, a vehicle with such an order read as having none.
+    /// </summary>
+    private static readonly int[] NonFinalOrderStates = [1, 3, 7, 8, 9, 10];
 
     /// <summary>
     /// The <c>movementState</c> values this server is prepared to read as "not moving".
@@ -428,7 +435,8 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
     }
 
     /// <summary>
-    /// Every order RIoT holds in states 1, 3, 7 and 9, whichever vehicle it is for (control-server#330).
+    /// Every order RIoT holds in a non-final state (<see cref="NonFinalOrderStates"/>), whichever vehicle it is for
+    /// (control-server#330).
     /// </summary>
     /// <remarks>
     /// The same read and the same state list as <see cref="ReadUnfinishedOrdersAsync"/> and the safety read's

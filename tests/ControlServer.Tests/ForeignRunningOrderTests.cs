@@ -360,6 +360,33 @@ public sealed class ForeignRunningOrderTests
     }
 
     /// <summary>
+    /// 两次读之间它转成 SUSPENDED 8、仍在未完成清单里（control-server#404 第二轮审查 L-2：清单从此也列 8）：它既没在跑、也没终结，
+    /// 不发取消，也不当成「离开了我们的车」放车——记录留在已认出，车照样挡着，与清单还不列 8 时按订单本身回查的结论一样。
+    /// </summary>
+    [Fact]
+    [Trait("Requirement", "REQ-0164")]
+    public async Task Req0164AnOrderSuspendedBetweenTheReadsIsNeitherCancelledNorTakenToHaveLeftTheVehicle()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Riot.PlaceOrder(ForeignOrderId, ForeignUpperId, RiotOrderState.Executing, fixture.Options.VehicleKey);
+        fixture.Riot.BeforeListing = read =>
+        {
+            if (read == 2)
+            {
+                fixture.Riot.PlaceOrder(ForeignOrderId, ForeignUpperId, RiotOrderState.Suspended, fixture.Options.VehicleKey);
+            }
+        };
+
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.True(fixture.Riot.ListingReads >= 2);
+        Assert.Empty(fixture.Riot.OrderCommands);
+        Assert.Empty(await AuditAsync(fixture));
+        Assert.Equal(ForeignRiotOrderStates.Detected, (await RowAsync(fixture)).State);
+        Assert.Equal([fixture.Options.AgvId], await HeldAsync(fixture));
+    }
+
+    /// <summary>
     /// 两次读之间，它换到了另一辆我们的车上：这一轮不发（不是「同一辆」），但记录跟着车走，新的那辆车照样挡着；
     /// 下一轮在新车上再读一次，仍在，才发——只发一次。
     /// </summary>
@@ -742,6 +769,8 @@ public sealed class ForeignRunningOrderTests
     /// 挡着车的外来单离开了 RIoT 的运行列表，按订单号回查却读不到明确终结（SUSPENDED，或者查不到）：没到落定时间照旧；
     /// 从最后一次看见它在跑起过了落定时间，转 <c>UNSETTLED</c>、Error 级告警一次，车照样挡着，不发任何命令（取消已发过的也不再发）。
     /// 之后 RIoT 读回它明确终结，才放车。四种起点：取消已发出、取消已发出后查不到、认不准、没被授权取消。
+    /// 第五种（control-server#404 第二轮审查 L-2）：未完成订单清单从此也列 SUSPENDED 8 与 QUEUE_PRIORITY 10，取消已发出后单转 8 仍留在清单里——
+    /// 照旧按订单本身回查，不当成「离开了我们的车」放车。
     /// </summary>
     /// <remarks>时钟每一步都真的拨了，并断言拨过：判据测到的是离开运行列表之后的时间。</remarks>
     [Theory]
@@ -749,6 +778,7 @@ public sealed class ForeignRunningOrderTests
     [InlineData("cancel-sent-then-not-found")]
     [InlineData("unproven-then-not-found")]
     [InlineData("cancel-not-authorized-then-suspended")]
+    [InlineData("cancel-sent-then-suspended-still-listed")]
     [Trait("Requirement", "REQ-0164")]
     public async Task Req0164AHeldOrderThatLeavesTheRunningListingWithoutEndingGoesToAPersonAndKeepsHoldingTheVehicle(
         string variant)
@@ -776,7 +806,13 @@ public sealed class ForeignRunningOrderTests
         int commands = fixture.Riot.OrderCommands.Count;
         int errors = fixture.ForeignOrderLog.Entries.Count(entry => entry.Level == LogLevel.Error);
 
-        if (variant.EndsWith("suspended", StringComparison.Ordinal))
+        if (variant == "cancel-sent-then-suspended-still-listed")
+        {
+            // control-server#404 second review L-2: the listing asks for SUSPENDED 8 too, so RIoT goes on listing it. Still
+            // neither running nor ended: read by the order itself, as before, not taken for "left the vehicle".
+            fixture.Riot.PlaceOrder(ForeignOrderId, ForeignUpperId, RiotOrderState.Suspended, fixture.Options.VehicleKey);
+        }
+        else if (variant.EndsWith("suspended", StringComparison.Ordinal))
         {
             fixture.Riot.EndPlacedOrder(ForeignOrderId, RiotOrderState.Suspended);
         }

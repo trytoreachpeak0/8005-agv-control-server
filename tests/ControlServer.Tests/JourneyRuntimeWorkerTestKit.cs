@@ -145,7 +145,7 @@ internal static class JourneyRuntimeWorkerTestKit
         public bool EmergencyLatched { get; set; }
 
         /// <summary>
-        /// The orderIds RIoT lists as unfinished (states 1, 3, 7, 9) for this vehicle. Empty by default, so every existing
+        /// The orderIds RIoT lists as unfinished (states 1, 3, 7, 8, 9, 10) for this vehicle. Empty by default, so every existing
         /// test keeps reading "no unfinished order" as before; control-server#335 sets it to exercise the release rule.
         /// </summary>
         public string[] UnfinishedOrderIds { get; set; } = [];
