@@ -191,6 +191,12 @@ $vehicleFaultRecovery = ($setup.ContainsKey('VehicleFaultRecovery') -and $setup.
 $faultRecoveryCredentialVariable = 'CONTROL_SERVER_FAULT_RECOVERY_CREDENTIAL'
 # Not a secret either.
 $faultRecoveryCredential = 'l2-fault-recovery-credential-not-a-production-secret'
+# control-server#383's slot fault declaration entry point (REQ-0359). Off in the product: it stops a slot operation on a
+# vehicle, and an onboard that does not know the command yet (before onboard-hmi#215) would drop its session over it.
+$slotFaultDeclaration = ($setup.ContainsKey('SlotFaultDeclaration') -and $setup.SlotFaultDeclaration)
+$slotFaultDeclarationCredentialVariable = 'CONTROL_SERVER_SLOT_FAULT_DECLARATION_CREDENTIAL'
+# Not a secret either.
+$slotFaultDeclarationCredential = 'l2-slot-fault-declaration-credential-not-a-production-secret'
 # The onboard's protocol connection through tools/ControlServer.ProtocolFaultProxy (control-server#88), which
 # can lose a DurableAck, lose one answer, or drop the link on request. Real onboard only: what those faults
 # exercise is the onboard's journal replay and request retry, and the synthetic peer keeps neither.
@@ -736,6 +742,11 @@ try {
         $serverEnvironment['VehicleFaultRecovery__credentialEnvironmentVariable'] = $faultRecoveryCredentialVariable
         $serverEnvironment[$faultRecoveryCredentialVariable] = $faultRecoveryCredential
     }
+    if ($slotFaultDeclaration) {
+        $serverEnvironment['SlotFaultDeclaration__enabled'] = 'true'
+        $serverEnvironment['SlotFaultDeclaration__credentialEnvironmentVariable'] = $slotFaultDeclarationCredentialVariable
+        $serverEnvironment[$slotFaultDeclarationCredentialVariable] = $slotFaultDeclarationCredential
+    }
     Set-L2ExpectedActionOverdueServerSetting -Environment $serverEnvironment -Threshold $expectedActionOverdueThreshold
     if ($realOnboard) {
         # Only the real onboard polls this projection; the synthetic peer decides for itself what
@@ -1269,6 +1280,7 @@ try {
         # Null unless the setup file turned the release-on-confirmation entry point on.
         EmergencyReleaseCredential = if ($emergencyStopRelease) { $emergencyReleaseCredential } else { $null }
         FaultRecoveryCredential = if ($vehicleFaultRecovery) { $faultRecoveryCredential } else { $null }
+        SlotFaultDeclarationCredential = if ($slotFaultDeclaration) { $slotFaultDeclarationCredential } else { $null }
         # Null unless the setup file asked for the dashboard.
         DashboardUrl        = $dashboardUrl
         # Null unless the setup file declared ExpectServerStartupRefusal: the refusing server's exit code, whether
@@ -1427,6 +1439,8 @@ try {
                              'RiotDispatchAuditEvents',
                              'SlotConfigurationActivations', 'ActiveSlotConfigurations',
                              'OnboardAlarmSnapshots', 'BusinessAuditRecords',
+                             # control-server#383: every slot fault declaration, its readings and the vehicle's answer.
+                             'SlotFaultDeclarations',
                              # What the slot model preseed wrote, and what batch 4's dispatch reads off it.
                              'SlotModelVersions', 'SlotIoBindings', 'DispatchZoneAreaAssignmentVersions',
                              'DispatchZoneAreaAssignments', 'StructuralDispatchBlocks',

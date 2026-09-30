@@ -134,9 +134,8 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
     /// candidate (<c>#84</c>); both have named tests now and neither is pinned. The <c>3.0.0</c>
     /// candidate added six more to built slices -- one to <c>FP-IS-02</c>, five to
     /// <c>FP-IS-07</c> -- vendored by <c>8005-agv-control-server#382</c> and claimed by the tickets
-    /// that build their behaviour: the manual slot-fault declaration by <c>#383</c>, the recovery
-    /// hand-off, close reason and door-unproven hold by <c>#385</c> -- whose four now have named tests and are no
-    /// longer pinned.
+    /// that build their behaviour: the manual slot-fault declaration by <c>#383</c> and the recovery hand-off, close
+    /// reason and door-unproven hold by <c>#385</c>; both have named tests for all their vectors now and pin none.
     /// Such a pin must name its slice and the claiming ticket in exactly the
     /// form <see cref="ClaimedPinLabel"/> gives, and
     /// <see cref="EveryPinnedVectorBelongsOnlyToSlicesThisBatchDoesNotImplement"/> refuses every other
@@ -159,8 +158,6 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
         {
             ["CV-AUTOMATIC-CHARGING-CYCLE"] = "FP-IS-13, batch 9",
             ["CV-MANUAL-STATION-CLEARANCE"] = "FP-IS-13, batch 9",
-            ["CV-SLOT-FAULT-DECLARATION-APPLIED"] = ClaimedPinLabel("FP-IS-07", 383),
-            ["CV-SLOT-FAULT-DECLARATION-NOT-APPLICABLE"] = ClaimedPinLabel("FP-IS-07", 383),
             ["CV-UNABLE-TO-CHARGE-FIELD-CONFIRMATION"] = "FP-IS-13, batch 9",
             ["CV-WAITING-POINT-IDLE-RETURN"] = "FP-IS-12, batch 8",
             ["CV-WORKLIST-SELECTION-ACCEPTED"] = "FP-IS-09, batch 11",

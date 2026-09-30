@@ -637,6 +637,14 @@ public sealed partial class OnboardMessageProcessor(
                     return AnswerWithReadiness(
                         recoveryAck, recoveryDecision, agvId, generation, state, messageType, messageId, announceUnchanged: false);
                 }
+            case "SlotFaultDeclarationResult":
+                // REQ-0359, control-server#383. It settles the declaration only: an APPLIED declaration's effect on the
+                // operation arrives as the OperationResult the vehicle sends next, settled by the case above. Nothing here
+                // throws for a result that matches no pending declaration -- see SlotFaultDeclarationResults.
+                await SlotFaultDeclarationResults.RecordAsync(
+                    dbContext, agvId, messageId, payload, timeProvider.GetUtcNow(), logger, cancellationToken)
+                    .ConfigureAwait(false);
+                return DurableAck(messageType, messageId, agvId, generation, contentHash);
             case "ManualChargingReturnToServiceRequested":
                 {
                     // Not a recovery request despite the administrator context it carries: the

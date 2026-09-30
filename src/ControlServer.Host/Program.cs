@@ -92,6 +92,8 @@ builder.Services.AddScoped<VehicleFaultCoordinator>();
 builder.Services.AddSingleton<JourneyMutationGate>();
 builder.Services.AddSingleton<ControlServer.Host.Runtime.Faults.VehicleFaultResumeFlights>();
 builder.Services.AddScoped<VehicleFaultRecoveryService>();
+// control-server#383: REQ-0359, an administrator declares the slot a vehicle waits on faulty.
+builder.Services.AddScoped<SlotFaultDeclarationService>();
 // B2 multi-vehicle: the roster is the identity register and is fixed for the life of the process;
 // the policy access keeps the three configured tables equal to the roster. The checkpoint ledger is
 // a singleton for the reason the motion ledger is -- how long a vehicle has been waiting is a
@@ -154,6 +156,10 @@ builder.Services.AddOptions<VehicleFaultRecoveryOptions>()
     .Bind(builder.Configuration.GetSection(VehicleFaultRecoveryOptions.SectionName))
     .ValidateOnStart();
 builder.Services.AddSingleton<IValidateOptions<VehicleFaultRecoveryOptions>, VehicleFaultRecoveryOptionsValidator>();
+builder.Services.AddOptions<SlotFaultDeclarationOptions>()
+    .Bind(builder.Configuration.GetSection(SlotFaultDeclarationOptions.SectionName))
+    .ValidateOnStart();
+builder.Services.AddSingleton<IValidateOptions<SlotFaultDeclarationOptions>, SlotFaultDeclarationOptionsValidator>();
 builder.Services.AddSingleton<MapStationResolver>();
 // 固定站按任务类型取得：规则表加本图生效绑定集（control-server#160）。
 builder.Services.AddScoped<IFixedTaskStationResolver, BoundFixedTaskStationResolver>();
@@ -206,6 +212,8 @@ await AreaAssignmentDispatchZoneStartupCheck.EnsureAsync(app.Services, Cancellat
 await TaskTypeStationStartup.EnsureAsync(app.Services, CancellationToken.None);
 // control-server#388：投运车辆数大于 1 而等待点不够每辆车各分一个时拒绝启动（规格 5.4）。在绑定装载之后，固定站不算等待点。
 await WaitingPointStartupCheck.EnsureAsync(app.Services, CancellationToken.None);
+// control-server#383：人工判故障入口关着、库里却有未结判定时告警（它们在关着时不补发）。
+await SlotFaultDeclarationStartupCheck.WarnAsync(app.Services, CancellationToken.None);
 
 app.MapGet("/health/live", () => Results.Ok(new { status = "live" }));
 app.MapGet("/health/ready", async (ControlServerDbContext dbContext, CancellationToken cancellationToken) =>
@@ -286,6 +294,9 @@ if (app.Configuration.GetValue<bool>("VehicleFaultRecovery:enabled"))
 {
     app.MapVehicleFaultRecovery();
 }
+// 默认不挂。control-server#383 的人工判故障（REQ-0359）：这个入口会让车停下一次仓位操作，要现场明确打开才提供；
+// 车载端认识 SlotFaultDeclarationCommand 之前（onboard-hmi#215）也不能打开，否则那台车会反复断开重连。判断在方法里，有 L1 护着。
+app.MapSlotFaultDeclarationWhenEnabled();
 app.MapDashboardQueries();
 // 防饥饿阈值的标定证据（批次7-09，control-server#214）：只读，JSON 与 CSV。
 app.MapStarvationCalibrationReport();

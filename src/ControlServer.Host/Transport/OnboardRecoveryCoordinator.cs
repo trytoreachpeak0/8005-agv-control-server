@@ -373,9 +373,14 @@ public sealed class OnboardRecoveryCoordinator(
         // 这辆车一旦有了下一趟旅程，它们就不在这里面了。
         IReadOnlyList<string> closureIds = await JourneyClosure
             .ReplayIdsAsync(dbContext, agvId, cancellationToken).ConfigureAwait(false);
+        // 人工判故障（REQ-0359，control-server#383）：车还没回答的判定，命令跟着这一轮补发——只在开关开着时。开过又关掉，
+        // 说明这台车（或它的车载端版本）不该再收到这条命令；照补不误会让不认识它的车载端每次重连都被断开。
+        string[] declarationIds = await SlotFaultDeclarationResults
+            .PendingCommandMessageIdsAsync(dbContext, configuration, agvId, cancellationToken).ConfigureAwait(false);
         // 扣车与放行的业务状态（control-server#385）：只补这辆车这条流上号最大的那一张，已经被更高号取代的不补。
         IReadOnlyList<string> doorHoldIds = await DoorHoldSnapshotIdsAsync(agvId, cancellationToken).ConfigureAwait(false);
-        string[] pendingIds = [.. commandIds, .. snapshotIds, .. activationIds, .. closureIds, .. doorHoldIds];
+        string[] pendingIds =
+            [.. commandIds, .. snapshotIds, .. activationIds, .. closureIds, .. declarationIds, .. doorHoldIds];
         if (pendingIds.Length > 0)
             await publisher.ReplayPendingForSessionAsync(
                 agvId, sessionGeneration, pendingIds.ToHashSet(StringComparer.Ordinal), cancellationToken)

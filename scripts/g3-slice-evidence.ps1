@@ -444,7 +444,20 @@ function Get-G3RunnerClaim {
                     'manualChargingReturnSequenceMatchesVector',
                     'manualChargingReturnRequiresVerifiedAdministrator',
                     'eligibilityReevaluatedAfterReturn',
-                    'manualChargingReturnHasNoSideEffects')
+                    'manualChargingReturnHasNoSideEffects',
+                    # CV-SLOT-FAULT-DECLARATION-NOT-APPLICABLE and -APPLIED (protocol 3.0.0, control-server#383): one
+                    # demand, refused at the pickup after a replay, applied at the gate. The server halves are the first
+                    # and last three of each group; the onboard halves are the refusal, the UNKNOWN report and no unlock.
+                    'slotFaultDeclarationNotApplicableSequenceMatchesVector',
+                    'slotFaultDeclaredOnlyOnOverdueSlot',
+                    'operationSettledNormallyWhileDeclarationPending',
+                    'settledAttemptAnswersDeclarationNotApplicable',
+                    'refusedDeclarationWithdrawnWithoutBusinessChange',
+                    'slotFaultDeclarationAppliedSequenceMatchesVector',
+                    'declaredSlotReportedUnknownLaterSlotsNotStarted',
+                    'journeyBlockedOnDeclaredUnknown',
+                    'declarationAndVehicleResultAudited',
+                    'neverUnlockAfterDeclarationApplied')
                 # CV-TASK-TYPE-ADMISSION-FAIL-CLOSED (batch 6, control-server#164): under the factory preset
                 # STAGING_TO_WIRE has no binding, so its demand is never admitted while a WIRE_TO_GATE demand in
                 # the same rounds runs to completion. The onboard half is NEVER_INFER_UNBOUND_TASK_TYPE, read
