@@ -64,7 +64,7 @@ public static class VehicleNewPurposeReadiness
         VehicleChargingPolicyDecision decision =
             await chargingPolicy.ResolveForNewDecisionAsync(vehicleKey, cancellationToken).ConfigureAwait(false);
         if (decision.Effective is { } effective &&
-            effective.Policy.Content.MandatoryChargeEntryThresholdPercent <= rescueBatteryPercent)
+            BatteryEligibility.EntryNotAboveRescueLine(effective.Policy.Content, rescueBatteryPercent))
         {
             return (DispatchReasonCodes.ChargingPolicyEntryNotAboveRescueLine, decision with
             {

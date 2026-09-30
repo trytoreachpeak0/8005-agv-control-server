@@ -261,7 +261,7 @@ public sealed class IdleReturnCommitmentTests
 
         IdleReturnVerdict verdict = Assert.Single(await harness.EvaluateAsync(candidate));
         EventRecordingLogger<ChargingPolicyCommissioningCriterion> log = new();
-        string dispatch = await new ChargingPolicyCommissioningCriterion(harness.ChargingPolicy, Options.Create(harness.Options), log)
+        string dispatch = await new ChargingPolicyCommissioningCriterion(harness.ChargingPolicy, Options.Create(harness.Options), new ChargingPolicyCommissioningLog(), log)
             .EvaluateAsync(new DispatchCandidateEvaluation(null!, null!, candidate.Facts), Token);
         // Error, with the way out in the line: activate a corrected version, no database edit, no restart.
         EventRecordingLogger<ChargingPolicyCommissioningCriterion>.Entry line = Assert.Single(log.Entries);
@@ -326,7 +326,7 @@ public sealed class IdleReturnCommitmentTests
         IdleReturnVerdict idle = Assert.Single(await harness.EvaluateAsync(candidate));
         string dispatch = await new DispatchAdmissionChain(
             [
-                new ChargingPolicyCommissioningCriterion(TestChargingPolicies.None, Options.Create(new JourneyRuntimeOptions())),
+                new ChargingPolicyCommissioningCriterion(TestChargingPolicies.None, Options.Create(new JourneyRuntimeOptions()), new ChargingPolicyCommissioningLog()),
                 new VehicleFaultBlockCriterion(new VehicleFaultStore(harness.Context)),
             ]).EvaluateAsync(new DispatchCandidateEvaluation(null!, null!, candidate.Facts), Token);
 

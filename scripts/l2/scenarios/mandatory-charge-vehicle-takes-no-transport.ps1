@@ -3,17 +3,16 @@
 <#
 低于强制充电线的车不接搬运，原地不动（批次9-05，control-server#403；REQ-0290、REQ-0281）。
 
-编排器的默认前置导入、批准、激活一版测试策略（强制充电线 30、余量 30、每趟估计 0）。主车 A（BROKERX-L2-0001）的电量用合成 RIoT 的
-控制面设成 25、停在取货站上，第二台 B（BROKERX-L2-0002）是 80、停在关卡：路网开着，A 离需求更近，没有电量这一段时需求是 A 的。空闲返回不打开
-（setup 文件写了为什么），那一半由 L1 钉住。
+编排器的默认前置已经激活一版测试策略（强制充电线 30、余量 30），两条线一样高，挡住 25% 的车时分不出是哪一条挡的（审查 S2）。所以场景
+经 FieldOps 再导入、批准（L2_PRESET）、激活一版「强制充电线 30、余量 20、每趟估计 0」——与现场用的是同一组动词，不直写库。电量 25 落在
+两条线之间：余量那一条放行（25 − 0 ≥ 20），只剩强制充电线挡它。
 
-  1. 电量设好之后发一条需求。断言：需求派给 B，不是排在前面的 A；旅程记下判它的策略版本与 SUFFICIENT。
-  2. 第二个事实另等（scripts/l2/README.md 第 14 条）：服务端日志里有 A 进入强制充电的那一行（MANDATORY_CHARGE_REQUIRED）；在一个十几秒
-     的窗口里，A 没有任何建单（库里 OrderIntents、合成 RIoT 的订单表）、没有用途占有、没有站点独占。「一直没有」要持续成立，所以用
-     Wait-L2ConditionOrLast 等满窗口再读最后一次，不在受理那一刻读一次就断言。
+  1. 两车都设成 25，发一条需求。断言：积压行上的原因码是 MANDATORY_CHARGE_REQUIRED（派车链的结论，不是日志行）；在一个十几秒的窗口里
+     没有任何旅程、建单、用途占有或站点独占。「一直没有」要持续成立，所以用 Wait-L2ConditionOrLast 等满窗口再读最后一次。
+  2. 只把 B 抬到 80。断言：需求派给 B，旅程记下的是场景激活的那一版与 SUFFICIENT；A 整段没有足迹。
 
-红证据（缺陷版本）：把 BatteryEligibility.Judge 里阈值那一段（强制充电线与任务后余量）去掉，需求派给更近的 A，L2-MCT-01 变红。只去掉入口线
-那一条不够：默认测试策略的余量也是 30，25 − 0 仍低于余量，被余量那一条挡住（换成 BATTERY_POLICY_NOT_SATISFIED，派车结论不变）。
+红证据（缺陷版本）：只删 BatteryEligibility.Judge 里强制充电线那一段（IsMandatoryCharge → MandatoryChargeRequired），余量那一条照常。
+25 − 0 ≥ 20，两车在第一段就合法，需求当场派出，L2-MCT-01 变红。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
@@ -29,21 +28,13 @@ $connection = $Context.Connection
 $mes = $Context.MesIngest
 $riot = $Context.Riot
 
-$lowAgvId = $Context.AgvId
-$lowVehicleKey = $Context.VehicleKey
-$fineAgvId = 'AGV-L2-002'
-$fineVehicleKey = 'BROKERX-L2-0002'
+$fineAgvId = $Context.AgvId
+$fineVehicleKey = $Context.VehicleKey
+$lowVehicleKey = 'BROKERX-L2-0002'
+$fleetText = "$fineVehicleKey;$lowVehicleKey"
 $lowBattery = 25
 $demandGuid = [guid]::NewGuid()
 $demandId = $demandGuid.ToString('D')
-$serverLog = Join-Path $Context.LogRoot 'control-server.out.log'
-$enteredLine = "Vehicle $lowVehicleKey is below its mandatory charge entry threshold: battery $lowBattery% < 30%"
-
-function Read-SharedText([string]$path) {
-    if (-not (Test-Path -LiteralPath $path)) { return '' }
-    $stream = [IO.File]::Open($path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
-    try { return [IO.StreamReader]::new($stream).ReadToEnd() } finally { $stream.Dispose() }
-}
 
 # Counted in SQL: a query with no rows comes back as $null, and @($null).Count is 1 (charging-policy-missing-vehicle-not-commissioned).
 function Get-Count([string]$sql) { [int](Invoke-L2Query -Connection $connection -Sql $sql)[0].N }
@@ -57,95 +48,120 @@ function Get-FootprintOf([string]$vehicleKey) {
     return "$intents intents, $claims purpose claims, $stations station holds, $riotOrders RIoT orders"
 }
 
-# --- 0. 前置：默认测试策略，A 低于线、B 充足，两车都停在关卡 --------------------------------------------------
-
-$policy = @(Invoke-L2Query -Connection $connection -Sql (
-    'SELECT v.Version, v.MandatoryChargeEntryThresholdPercent AS Entry, v.MinimumPostTaskBatteryMarginPercent AS Margin, ' +
-    'v.EstimatedTaskConsumptionPercent AS Estimate FROM ChargingPolicyVersions v ' +
-    'JOIN ChargingPolicyActivations x ON x.Version = v.Version'))
-$assertions.Add(
-    'L2-MCT-00',
-    '前置：唯一一版已激活的策略是默认测试策略（强制充电线 30、余量 30、每趟估计 0）',
-    ($policy.Count -eq 1 -and [int]$policy[0].Entry -eq 30 -and [int]$policy[0].Margin -eq 30 -and [int]$policy[0].Estimate -eq 0),
-    '1 版 / 30 / 30 / 0',
-    (($policy | ForEach-Object { "v$($_.Version) $($_.Entry)/$($_.Margin)/$($_.Estimate)" }) -join ', '))
-
-# A 停在取货站上（离这条需求最近），B 停在关卡：距离层排在电量层之前，所以没有强制充电那一条时需求是 A 的。两车停在同一个站时，
-# 电量这一末级裁决本来就让 80% 的 B 排在 25% 的 A 前面，红证据就证不出东西——第一次取红时正是这样（工作区 evidence/cs403/）。
-foreach ($vehicle in @(
-        @{ Key = $lowVehicleKey; Battery = $lowBattery; Station = $Context.PickupStationRiotId },
-        @{ Key = $fineVehicleKey; Battery = 80; Station = $Context.GateStationRiotId })) {
+function Set-Battery([string]$vehicleKey, [int]$battery) {
     $null = $riot.Command('Put', 'vehicle', @{
-        vehicleKey = $vehicle.Key; procState = 'IDLE'; movementState = 'MT_FINISHED'; speed = 0
-        currentPosition = $vehicle.Station; battery = $vehicle.Battery
+        vehicleKey = $vehicleKey; procState = 'IDLE'; movementState = 'MT_FINISHED'; speed = 0; battery = $battery
     })
 }
 
-# 路网就绪之后再发需求：就绪之前路网判据挡住一切，两车分不出远近。
-$null = Wait-L2Condition -Description 'the route graph engine finished a refresh cycle' `
-    -Journal $journal -Criterion 'route-graph-ready' -TimeoutSeconds 120 `
-    -Probe {
-        $rows = Invoke-L2Query -Connection $connection `
-            -Sql ("SELECT DesignEdgeCount, RuntimeRefreshedAt, StaleReason FROM RouteGraphSnapshots " +
-                "WHERE MapId = $($Context.MapId)")
-        if ($rows.Count -eq 0) { return $false }
-        return [int]$rows[0].DesignEdgeCount -gt 0 -and
-            $null -ne $rows[0].RuntimeRefreshedAt -and [string]$rows[0].RuntimeRefreshedAt -ne '' -and
-            ($null -eq $rows[0].StaleReason -or [string]$rows[0].StaleReason -eq '')
-    } `
-    -Until { param($v) $v }
+function Get-Journey {
+    $rows = @(Invoke-L2Query -Connection $connection -Sql (
+        "SELECT JourneyId, AgvId, VehicleKey, ChargingPolicyVersion, PublishedBatteryState FROM JourneyRuntimes WHERE DemandId = '$demandId'"))
+    if ($rows.Count -eq 0) { return $null }
+    return $rows[0]
+}
 
-# --- 1. 电量设好、路网就绪之后发需求：派给 B -------------------------------------------------------------------
+# --- 0. 前置：两车先设成 25，再导入并激活「强制充电线 30 > 余量 20」的一版 ---------------------------------------
 
-$journal.Note("Publishing demand $($demandGuid.ToString('N')) (area N1-3) with A at $lowBattery %.")
+# 电量先于策略：新策略一生效，两车就已经落在两条线之间。反过来的话，新策略生效后、电量改之前那几轮里两车按 80% 都合法，
+# 但那时还没有需求，所以次序只是为了读日志时不绕。
+Set-Battery $fineVehicleKey $lowBattery
+Set-Battery $lowVehicleKey $lowBattery
+
+$policy = [ordered]@{
+    minimumPostTaskBatteryMarginPercent  = 20
+    mandatoryChargeEntryThresholdPercent = 30
+    chargingCompletionThresholdPercent   = 80
+    estimatedTaskConsumptionPercent      = 0
+    progressStabilizationSeconds         = 180
+    progressObservationWindowSeconds     = 600
+    progressMinimumIncreasePercent       = 3
+    vehicleScope                         = @()
+    changeNote                           = 'L2 mandatory-charge-vehicle-takes-no-transport: entry 30 above margin 20, so only the entry line blocks 25 %'
+}
+$file = Join-Path $Context.SnapshotRoot 'entry-above-margin-charging-policy.json'
+[IO.File]::WriteAllText($file, ($policy | ConvertTo-Json -Depth 4), [Text.UTF8Encoding]::new($false))
+$imported = & $Context.InvokeFieldOps -Arguments @('import-charging-policy', '--input', $file, '--fleet', $fleetText)
+$version = [string]$imported.version
+$approved = & $Context.InvokeFieldOps -Arguments @('approve-charging-policy', '--version', $version, '--approved-by', 'L2 scenario',
+    '--role', 'L2_PRESET', '--basis', 'scripts/l2/scenarios/mandatory-charge-vehicle-takes-no-transport.ps1', '--source', 'L2_PRESET')
+$activated = & $Context.InvokeFieldOps -Arguments @('activate-charging-policy', '--version', $version, '--activated-by', 'L2 scenario',
+    '--fleet', $fleetText, '--allow-non-field-approval')
+$journal.Observe('scenario-policy', $version, @{ import = $imported; approve = $approved; activate = $activated })
+
+$active = @(Invoke-L2Query -Connection $connection -Sql (
+    'SELECT v.Version, v.MandatoryChargeEntryThresholdPercent AS Entry, v.MinimumPostTaskBatteryMarginPercent AS Margin, ' +
+    'v.EstimatedTaskConsumptionPercent AS Estimate FROM ChargingPolicyActivations x ' +
+    'JOIN ChargingPolicyVersions v ON v.Version = x.Version ORDER BY x.Sequence DESC LIMIT 1'))
+$assertions.Add(
+    'L2-MCT-00',
+    '前置：最后一次激活的是场景导入的那一版（强制充电线 30、余量 20、每趟估计 0）',
+    ([string]$imported.outcome -eq 'OK' -and [string]$approved.outcome -eq 'OK' -and [string]$activated.outcome -eq 'OK' -and
+        $active.Count -eq 1 -and [string]$active[0].Version -eq $version -and
+        [int]$active[0].Entry -eq 30 -and [int]$active[0].Margin -eq 20 -and [int]$active[0].Estimate -eq 0),
+    "OK/OK/OK, v$version 30/20/0",
+    "$($imported.outcome)/$($approved.outcome)/$($activated.outcome), " +
+        (($active | ForEach-Object { "v$($_.Version) $($_.Entry)/$($_.Margin)/$($_.Estimate)" }) -join ', '))
+
+# --- 1. 两车都在两条线之间：派车链答 MANDATORY_CHARGE_REQUIRED，整个窗口零派出 ------------------------------------
+
+$journal.Note("Publishing demand $($demandGuid.ToString('N')) (area N1-3) with both vehicles at $lowBattery %.")
 $null = $mes.Command('Put', "demands/$($demandGuid.ToString('N'))", @{
     sublot = "L2-MCT-$($Context.RunId)"; area = 'N1-3'
     eqp = 'EQP-L2-01'; package = 'L2-PACKAGE'; maxBoxCount = 4
 })
 
-$journey = Wait-L2Condition -Description 'a vehicle took the demand and set off to its pickup' `
-    -Journal $journal -Criterion 'journey-accepted' -TimeoutSeconds 180 `
+$reason = Wait-L2ConditionOrLast -Description 'the dispatch chain wrote its verdict on the demand' `
+    -Journal $journal -Criterion 'backlog-reason' -TimeoutSeconds 60 `
     -Probe {
-        $rows = @(Invoke-L2Query -Connection $connection -Sql (
-            "SELECT JourneyId, AgvId, VehicleKey, ChargingPolicyVersion, PublishedBatteryState FROM JourneyRuntimes WHERE DemandId = '$demandId'"))
+        $rows = @(Invoke-L2Query -Connection $connection -Sql "SELECT ReasonCode FROM JourneyBacklog WHERE DemandId = '$demandId'")
         if ($rows.Count -eq 0) { return $null }
-        return $rows[0]
+        return [string]$rows[0].ReasonCode
     } `
-    -Until { param($v) $null -ne $v }
-
-$assertions.Add(
-    'L2-MCT-01',
-    '需求派给电量充足的 B，不是离需求更近、低于强制充电线的 A；旅程记下判它的策略版本与 SUFFICIENT',
-    ([string]$journey.VehicleKey -eq $fineVehicleKey -and [string]$journey.AgvId -eq $fineAgvId -and
-        [string]$journey.ChargingPolicyVersion -eq [string]$policy[0].Version -and [string]$journey.PublishedBatteryState -eq 'SUFFICIENT'),
-    "$fineVehicleKey / $fineAgvId / v$($policy[0].Version) / SUFFICIENT",
-    "$($journey.VehicleKey) / $($journey.AgvId) / v$($journey.ChargingPolicyVersion) / $($journey.PublishedBatteryState)")
-
-# --- 2. 第二个事实另等：整个窗口里 A 哪儿也不去 ---------------------------------------------------------------
-
-$logged = Wait-L2ConditionOrLast -Description "the server logged that $lowVehicleKey entered mandatory charging" `
-    -Journal $journal -Criterion 'low-vehicle-logged' -TimeoutSeconds 60 `
-    -Probe { (Read-SharedText $serverLog).Contains($enteredLine, [StringComparison]::Ordinal) } `
-    -Until { param($v) $v -eq $true }
-$assertions.Add(
-    'L2-MCT-02',
-    'A 进入强制充电（派车侧 MANDATORY_CHARGE_REQUIRED，服务端日志）',
-    ($logged -eq $true),
-    $enteredLine,
-    $(if ($logged) { 'found' } else { 'not found' }))
+    -Until { param($v) $v -eq 'MANDATORY_CHARGE_REQUIRED' }
 
 # 「一直没有」：等满窗口（十几轮派车），读最后一次。
-$nothing = '0 intents, 0 purpose claims, 0 station holds, 0 RIoT orders'
+$nothing = '0 journeys; 0 intents, 0 purpose claims, 0 station holds, 0 RIoT orders; 0 intents, 0 purpose claims, 0 station holds, 0 RIoT orders'
+$window = Wait-L2ConditionOrLast -Description 'a vehicle below its mandatory charge line got the demand (none may)' `
+    -Journal $journal -Criterion 'nothing-dispatched-below-the-line' -TimeoutSeconds 15 `
+    -Probe {
+        $journeys = Get-Count "SELECT COUNT(*) AS N FROM JourneyRuntimes WHERE DemandId = '$demandId'"
+        "$journeys journeys; $(Get-FootprintOf $fineVehicleKey); $(Get-FootprintOf $lowVehicleKey)"
+    } `
+    -Until { param($v) $v -ne $nothing }
+$assertions.Add(
+    'L2-MCT-01',
+    '两车都在强制充电线 30 与余量 20 之间：派车链答 MANDATORY_CHARGE_REQUIRED，整个窗口里没有旅程、建单、用途占有与站点独占',
+    ($reason -eq 'MANDATORY_CHARGE_REQUIRED' -and $window -eq $nothing),
+    "MANDATORY_CHARGE_REQUIRED / $nothing",
+    "$reason / $window")
+
+# --- 2. 只把 B 抬到 80：需求派给 B，A 仍然哪儿也不去 -------------------------------------------------------------
+
+Set-Battery $fineVehicleKey 80
+$journey = Wait-L2ConditionOrLast -Description 'the vehicle raised above the line took the demand' `
+    -Journal $journal -Criterion 'journey-accepted' -TimeoutSeconds 180 `
+    -Probe { Get-Journey } `
+    -Until { param($v) $null -ne $v }
+$assertions.Add(
+    'L2-MCT-02',
+    'B 抬到 80 之后需求派给 B；旅程记下场景激活的那一版与 SUFFICIENT',
+    ($null -ne $journey -and [string]$journey.VehicleKey -eq $fineVehicleKey -and [string]$journey.AgvId -eq $fineAgvId -and
+        [string]$journey.ChargingPolicyVersion -eq $version -and [string]$journey.PublishedBatteryState -eq 'SUFFICIENT'),
+    "$fineVehicleKey / $fineAgvId / v$version / SUFFICIENT",
+    $(if ($null -ne $journey) { "$($journey.VehicleKey) / $($journey.AgvId) / v$($journey.ChargingPolicyVersion) / $($journey.PublishedBatteryState)" } else { 'not dispatched' }))
+
+$lowNothing = '0 intents, 0 purpose claims, 0 station holds, 0 RIoT orders'
 $footprint = Wait-L2ConditionOrLast -Description "$lowVehicleKey got an order, a purpose or a station (it must not)" `
     -Journal $journal -Criterion 'low-vehicle-footprint-after-window' -TimeoutSeconds 15 `
     -Probe { Get-FootprintOf $lowVehicleKey } `
-    -Until { param($v) $v -ne $nothing }
+    -Until { param($v) $v -ne $lowNothing }
 $journal.Observe('low-vehicle-footprint', $footprint, @{ vehicleKey = $lowVehicleKey; battery = $lowBattery })
 $assertions.Add(
     'L2-MCT-03',
-    'A 在整个窗口里没有建单、没有用途占有、没有站点独占：原地不动（批次9-06 之前）',
-    ($footprint -eq $nothing),
-    $nothing,
+    'A 在整段里没有建单、没有用途占有、没有站点独占：原地不动（批次9-06 之前）',
+    ($footprint -eq $lowNothing),
+    $lowNothing,
     $footprint)
 
-$journal.Note('低于强制充电线的车：搬运派给了另一辆，它哪儿也不去。')
+$journal.Note('低于强制充电线（但满足余量）的车：派车链答 MANDATORY_CHARGE_REQUIRED；抬过线的车接走搬运，低的那辆哪儿也不去。')

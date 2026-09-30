@@ -189,6 +189,59 @@ public sealed class BatteryThresholdEligibilityTests
         }
     }
 
+    /// <summary>
+    /// 救命线的 Error 与投运的 Warning 跨轮只记一次（审查 S3）：宿主每轮新建判据，状态在单例 <see cref="ChargingPolicyCommissioningLog"/> 里。
+    /// 坏版本连续三轮（三个判据实例）只记一条 Error；换回好版本那一轮复位、不记；再坏一次又记一条。没有策略的 Warning 同一个规则。
+    /// </summary>
+    [Fact]
+    public async Task TheCommissioningLogLinesAreWrittenOncePerVehicleAcrossRoundsAndAgainAfterRecovery()
+    {
+        ChargingPolicyCommissioningLog shared = new();
+        EventRecordingLogger<ChargingPolicyCommissioningCriterion> log = new();
+        IChargingPolicyResolver bad = TestChargingPolicies.AllApprovedWith(TestChargingPolicies.Content with
+        {
+            MandatoryChargeEntryThresholdPercent = 15,
+            MinimumPostTaskBatteryMarginPercent = 10,
+        });
+        DispatchCandidateEvaluation evaluation = new(null!, null!, Facts(80, "NO_CHARGE", TestChargingPolicies.Battery()));
+
+        async Task<string> RoundAsync(IChargingPolicyResolver resolver) =>
+            await new ChargingPolicyCommissioningCriterion(
+                    resolver, Microsoft.Extensions.Options.Options.Create(Options()), shared, log)
+                .EvaluateAsync(evaluation, TestContext.Current.CancellationToken);
+
+        for (int round = 0; round < 3; round++)
+        {
+            Assert.Equal(DispatchReasonCodes.ChargingPolicyEntryNotAboveRescueLine, await RoundAsync(bad));
+        }
+        Assert.Single(log.Entries);
+        Assert.Equal(DispatchAdmissionChain.Eligible, await RoundAsync(TestChargingPolicies.AllApproved));
+        Assert.Single(log.Entries);
+        await RoundAsync(bad);
+        Assert.Equal(2, log.Entries.Count);
+        Assert.All(log.Entries, entry => Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Error, entry.Level));
+
+        await RoundAsync(TestChargingPolicies.None);
+        await RoundAsync(TestChargingPolicies.None);
+        Assert.Equal(3, log.Entries.Count);
+        Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Warning, log.Entries[^1].Level);
+    }
+
+    /// <summary>宿主把跨轮状态注册成单例：少了这一行，判据构造不出来（必填参数），不会悄悄退回每轮一个新状态。</summary>
+    [Fact]
+    public void TheHostRegistersTheCommissioningLogAsASingleton()
+    {
+        Microsoft.Extensions.DependencyInjection.ServiceCollection services = new();
+        services.AddDispatchAdmission();
+
+        Assert.Equal(
+            Microsoft.Extensions.DependencyInjection.ServiceLifetime.Singleton,
+            Assert.Single(services, descriptor => descriptor.ServiceType == typeof(ChargingPolicyCommissioningLog)).Lifetime);
+        Assert.Contains(
+            typeof(ChargingPolicyCommissioningCriterion).GetConstructors().Single().GetParameters(),
+            parameter => parameter.ParameterType == typeof(ChargingPolicyCommissioningLog) && !parameter.HasDefaultValue);
+    }
+
     private static JourneyRuntimeOptions Options() =>
         new() { MapIdentity = Map, MaximumEvidenceAge = TimeSpan.FromSeconds(30) };
 

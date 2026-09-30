@@ -102,7 +102,7 @@ public sealed partial class MultiVehicleExecutionTests
     [Fact]
     public async Task AnUnreadablePolicyDecisionIsRefusedLikeAMissingOne()
     {
-        ChargingPolicyCommissioningCriterion criterion = new(new UnreadableResolver(), Options.Create(new JourneyRuntimeOptions()));
+        ChargingPolicyCommissioningCriterion criterion = new(new UnreadableResolver(), Options.Create(new JourneyRuntimeOptions()), new ChargingPolicyCommissioningLog());
 
         Assert.Equal(
             DispatchReasonCodes.ChargingPolicyNotApproved,

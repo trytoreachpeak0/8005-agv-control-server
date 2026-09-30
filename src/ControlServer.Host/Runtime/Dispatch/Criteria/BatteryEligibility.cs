@@ -52,6 +52,16 @@ public static class BatteryEligibility
     }
 
     /// <summary>
+    /// 这一版策略的强制充电线是否不高于服务端的救命告警线（control-server#403）：是则整版不可用。派车电量一段（按本轮读定的那一份）与
+    /// 共用投运判定（<see cref="VehicleNewPurposeReadiness.CommissioningVerdictAsync"/>）都问这一个函数。
+    /// </summary>
+    public static bool EntryNotAboveRescueLine(ChargingPolicyContent policy, int rescueBatteryPercent)
+    {
+        ArgumentNullException.ThrowIfNull(policy);
+        return policy.MandatoryChargeEntryThresholdPercent <= rescueBatteryPercent;
+    }
+
+    /// <summary>
     /// 做完 <paramref name="tasksToCover"/> 趟之后预计的电量是否仍不低于最低任务后电量余量（<c>REQ-0208</c>、<c>REQ-0281</c>）。
     /// </summary>
     public static bool KeepsMarginAfter(int batteryPercent, ChargingPolicyContent policy, int tasksToCover)
@@ -86,12 +96,21 @@ public static class BatteryEligibility
     /// 读数过期不在这里判：两条链在它前面都有 <c>RIOT_VEHICLE_FACT_STALE</c>（观测时刻整体过期），过期的电量走不到这一段。
     /// 那一条的码与位置本票不动，既有判定因此逐条不变。
     /// </remarks>
-    public static string Judge(RiotVehicleObservation vehicle, DispatchBatteryPolicy? policy, int tasksToCover)
+    /// <param name="rescueBatteryPercent">
+    /// 服务端的救命告警线。本轮读定的这一版若强制充电线不高于它，答 <see cref="DispatchReasonCodes.ChargingPolicyEntryNotAboveRescueLine"/>
+    /// （审查 S1：投运判定另读一次解析器，两次读之间可能换了版本；派车只认本轮读定、会记到旅程上的这一份）。
+    /// </param>
+    public static string Judge(RiotVehicleObservation vehicle, DispatchBatteryPolicy? policy, int tasksToCover, int rescueBatteryPercent)
     {
         ArgumentNullException.ThrowIfNull(vehicle);
         if (policy is null)
         {
             return DispatchReasonCodes.ChargingPolicyNotApproved;
+        }
+
+        if (EntryNotAboveRescueLine(policy.Content, rescueBatteryPercent))
+        {
+            return DispatchReasonCodes.ChargingPolicyEntryNotAboveRescueLine;
         }
 
         if (vehicle.BatteryPercent is not int battery || string.IsNullOrWhiteSpace(vehicle.BatteryState))

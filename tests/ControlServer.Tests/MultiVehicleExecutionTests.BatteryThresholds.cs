@@ -158,6 +158,38 @@ public sealed partial class MultiVehicleExecutionTests
     }
 
     /// <summary>
+    /// 一轮只认一份版本（审查 S1，由审查员探针改写）：这一轮为车读策略时生效的是坏版本（强制充电线 15 = 救命线 15），读完之后、投运判据再读之前，
+    /// 修正版（线 40）被激活。车电量 20：按坏版本整版不可用，按好版本低于强制充电线——按哪一版都不该派。修正前投运判据读到好版本放行、
+    /// 电量判据按坏版本的线 15 放行，车被派出、旅程冻结在坏版本上。
+    /// </summary>
+    [Fact]
+    public async Task AVersionActivatedBetweenTheRoundsTwoPolicyReadsDispatchesNothingUnderEither()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(
+            configure: options => options.Fleet = options.Fleet[..1]);
+        TestChargingPolicies.Versions versions = new(TestChargingPolicies.Content with
+        {
+            MandatoryChargeEntryThresholdPercent = 15,
+            MinimumPostTaskBatteryMarginPercent = 10,
+        });
+        fixture.ChargingPolicy = versions;
+        await fixture.RecreateEngineAsync();
+        fixture.Riot.BatteryByVehicle[FleetFixture.VehicleKeys[0]] = 20;
+        versions.AfterNextResolve = () => versions.Activate(TestChargingPolicies.ContentAt(40));
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
+
+        await fixture.RunRoundAsync();
+
+        Assert.True(versions.Resolves >= 2, $"the round read the policy {versions.Resolves} time(s): the activation fell outside the round");
+        Assert.Equal(2, versions.Active);
+        Assert.Empty(fixture.Context.JourneyRuntimes);
+        Assert.Empty(fixture.Riot.Creates);
+        Assert.Equal(
+            DispatchReasonCodes.ChargingPolicyEntryNotAboveRescueLine,
+            Assert.Single(Assert.Single(fixture.RoundOutcomes.Outcomes[^1].CompletedVehicles).Verdicts).ReasonCode);
+    }
+
+    /// <summary>
     /// 在途的判断按旅程记下的版本读回（REQ-0282）：旅程在版本 1（线 40）下派出，之后激活版本 2（线 90）。途中追加按版本 1 判，80 合格，
     /// 追加进同一趟旅程；同一轮里空闲的第二辆车按版本 2 判，被挡。
     /// </summary>
