@@ -15,7 +15,6 @@ public sealed class JourneyRuntimeOptions
     public string MapIdentity { get; set; } = string.Empty;
     public string DispatchZone { get; set; } = string.Empty;
     public long DispatchGeneration { get; set; }
-    public int MinimumBatteryPercent { get; set; } = 30;
     public TimeSpan MaximumEvidenceAge { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
@@ -113,8 +112,9 @@ public sealed class JourneyRuntimeOptions
 
     /// <summary>
     /// The rescue line (control-server#273): under it the watch's log says a person has to move the vehicle to a charger.
-    /// Fifteen percent by default; must be in 1..100 and below <see cref="MinimumBatteryPercent"/>, the line under which the
-    /// same log is already raised to an error.
+    /// Fifteen percent by default; must be in 1..100 here, and below the <c>MandatoryChargeEntryThreshold</c> of every
+    /// charging policy version in effect, which the server checks when it starts (<c>ChargingPolicyStartupCheck</c>,
+    /// control-server#403): that threshold is the line under which the same log is already raised to an error.
     /// </summary>
     public int WaitingJourneyRescueBatteryPercent { get; set; } = 15;
 
@@ -173,9 +173,25 @@ public sealed class FleetVehicleOptions
 
 public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration) : IValidateOptions<JourneyRuntimeOptions>
 {
+    /// <summary>The configuration key batch 9-05 retired (control-server#403). Configuration keys are case-insensitive.</summary>
+    public const string RetiredMinimumBatteryPercentKey = JourneyRuntimeOptions.SectionName + ":minimumBatteryPercent";
+
+    public const string RetiredMinimumBatteryPercentMessage =
+        "JourneyRuntime:minimumBatteryPercent is no longer read: the battery thresholds come from the approved, activated " +
+        "charging policy version (MandatoryChargeEntryThreshold, the minimum post-task battery margin and the estimated " +
+        "consumption per task; REQ-0281, REQ-0282, control-server#403). Remove the key (or the environment variable " +
+        "JourneyRuntime__minimumBatteryPercent) and import, approve and activate a charging policy with ControlServer.FieldOps.";
+
     public ValidateOptionsResult Validate(string? name, JourneyRuntimeOptions options)
     {
         _ = name;
+        // Before the Enabled check: a key that looks like it governs dispatch must not survive on any server, running
+        // journeys or not (control-server#403).
+        if (configuration.GetSection(RetiredMinimumBatteryPercentKey).Exists())
+        {
+            return ValidateOptionsResult.Fail(RetiredMinimumBatteryPercentMessage);
+        }
+
         if (!options.Enabled)
         {
             return ValidateOptionsResult.Success;
@@ -217,13 +233,13 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
         if (options.AgvLifecycleGeneration <= 0) failures.Add("AgvLifecycleGeneration must be positive.");
         if (options.MapId <= 0) failures.Add("MapId must be positive.");
         if (options.DispatchGeneration <= 0) failures.Add("DispatchGeneration must be positive.");
-        if (options.MinimumBatteryPercent is < 1 or > 100) failures.Add("MinimumBatteryPercent must be in 1..100.");
         if (options.WaitingJourneyWarningAfter <= TimeSpan.Zero) failures.Add("WaitingJourneyWarningAfter must be positive.");
         if (options.WaitingJourneyWarningRepeat <= TimeSpan.Zero) failures.Add("WaitingJourneyWarningRepeat must be positive.");
-        if (options.WaitingJourneyRescueBatteryPercent < 1 ||
-            options.WaitingJourneyRescueBatteryPercent >= options.MinimumBatteryPercent)
+        // Below every effective MandatoryChargeEntryThreshold too, checked against the database at startup
+        // (ChargingPolicyStartupCheck, control-server#403); the options alone can only check the range.
+        if (options.WaitingJourneyRescueBatteryPercent is < 1 or > 100)
         {
-            failures.Add("WaitingJourneyRescueBatteryPercent must be at least 1 and below MinimumBatteryPercent.");
+            failures.Add("WaitingJourneyRescueBatteryPercent must be in 1..100.");
         }
         if (options.WaitingJourneyBatteryReadBudget <= TimeSpan.Zero ||
             options.WaitingJourneyBatteryReadBudget > TimeSpan.FromSeconds(10))

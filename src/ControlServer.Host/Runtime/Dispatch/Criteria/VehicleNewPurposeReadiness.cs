@@ -46,8 +46,13 @@ public static class VehicleNewPurposeReadiness
     /// 都不接新用途。能接答 <see cref="DispatchAdmissionChain.Eligible"/>，否则 <see cref="DispatchReasonCodes.ChargingPolicyNotApproved"/>；
     /// 判定本身一并交回，调用方要写日志时用它的原因与说明。
     /// </summary>
+    /// <remarks>
+    /// control-server#403：投运之外再判一条——生效版本的强制充电线不高于 <paramref name="rescueBatteryPercent"/>（服务端的救命告警线）时，
+    /// 这一版视为不可用，答 <see cref="DispatchReasonCodes.ChargingPolicyEntryNotAboveRescueLine"/>。激活走 FieldOps、不经服务端，
+    /// 所以这是服务端在「用」的时候唯一能拦的一处；读它的是派车两条链、空闲返回与充电分配，一处定义。
+    /// </remarks>
     public static async Task<(string Verdict, VehicleChargingPolicyDecision Decision)> CommissioningVerdictAsync(
-        IChargingPolicyResolver chargingPolicy, string vehicleKey, CancellationToken cancellationToken)
+        IChargingPolicyResolver chargingPolicy, string vehicleKey, int rescueBatteryPercent, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(chargingPolicy);
         if (string.IsNullOrWhiteSpace(vehicleKey))
@@ -58,6 +63,17 @@ public static class VehicleNewPurposeReadiness
 
         VehicleChargingPolicyDecision decision =
             await chargingPolicy.ResolveForNewDecisionAsync(vehicleKey, cancellationToken).ConfigureAwait(false);
+        if (decision.Effective is { } effective &&
+            BatteryEligibility.EntryNotAboveRescueLine(effective.Policy.Content, rescueBatteryPercent))
+        {
+            return (DispatchReasonCodes.ChargingPolicyEntryNotAboveRescueLine, decision with
+            {
+                Detail = string.Create(
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    $"charging policy version {effective.Policy.Version} has MandatoryChargeEntryThreshold {effective.Policy.Content.MandatoryChargeEntryThresholdPercent}, not above JourneyRuntime:WaitingJourneyRescueBatteryPercent {rescueBatteryPercent}")
+            });
+        }
+
         return (decision.Commissioned ? DispatchAdmissionChain.Eligible : DispatchReasonCodes.ChargingPolicyNotApproved, decision);
     }
 
@@ -76,7 +92,8 @@ public static class VehicleNewPurposeReadiness
             return fault;
         }
 
-        (string commissioning, _) = await CommissioningVerdictAsync(chargingPolicy, facts.VehicleKey, cancellationToken)
+        (string commissioning, _) = await CommissioningVerdictAsync(
+                chargingPolicy, facts.VehicleKey, options.WaitingJourneyRescueBatteryPercent, cancellationToken)
             .ConfigureAwait(false);
         return commissioning != DispatchAdmissionChain.Eligible
             ? commissioning

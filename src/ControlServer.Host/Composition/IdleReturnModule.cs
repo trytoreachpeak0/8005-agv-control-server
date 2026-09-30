@@ -26,8 +26,8 @@ internal static class IdleReturnModule
         // 过渡期护栏：批次8-19 合入前打开即拒绝启动（审查 S2），由那张票删掉。
         services.AddSingleton<IValidateOptions<IdleReturnOptions>, IdleReturnOptionsValidator>();
         services.AddHostedService<IdleReturnStartupWarning>();
-        // 批次 9 的阈值票只换这一行的实现。
-        services.AddSingleton<IMandatoryChargeLine, TransitionalMandatoryChargeLine>();
+        // 批次9-05（control-server#403）换成按车读充电策略版本的实现。作用域：它读库（IChargingPolicyResolver 是作用域的）。
+        services.AddScoped<IMandatoryChargeLine, PolicyMandatoryChargeLine>();
         // 单例：结论变了才记日志，要跨轮次（每一轮是一个新的作用域）记得上一轮的结论。
         services.AddSingleton<IdleReturnVerdictBoard>();
         services.AddScoped<IdleReturnEvaluator>();

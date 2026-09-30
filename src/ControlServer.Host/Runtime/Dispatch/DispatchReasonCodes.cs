@@ -191,6 +191,28 @@ public static class DispatchReasonCodes
     public const string ChargingPolicyNotApproved = "CHARGING_POLICY_NOT_APPROVED";
 
     /// <summary>
+    /// 这辆车当前电量低于它所用策略版本的 <c>MandatoryChargeEntryThreshold</c>：它此刻属于强制充电，不接普通新任务，也不接途中追加
+    /// （批次9-05，control-server#403；<c>REQ-0281</c>、<c>REQ-0290</c>）。
+    /// </summary>
+    /// <remarks>
+    /// 与「预计任务后保不住余量」（<c>BATTERY_POLICY_NOT_SATISFIED</c>）分开：这辆车该去充电，而那一条只是这一趟接不下。归普通积压（车辆侧）：
+    /// 别的车照常承接。把车排进充电队列、去桩是批次9-06 的事；在那之前这样的车原地不动。
+    /// </remarks>
+    public const string MandatoryChargeRequired = "MANDATORY_CHARGE_REQUIRED";
+
+    /// <summary>
+    /// 这辆车此刻生效的充电策略版本，强制充电线不高于服务端的救命告警线（<c>JourneyRuntime:WaitingJourneyRescueBatteryPercent</c>）：
+    /// 这一版视为不可用，车不承接任何新用途（批次9-05，control-server#403）。
+    /// </summary>
+    /// <remarks>
+    /// 为什么是整版不可用：那样一版生效后，车要等电量掉到救命线以下才算该充电，可能在去充电之前就没电，一台车堵住整个车队。
+    /// 激活走 FieldOps、不经服务端，所以服务端只能在用的时候拦——每轮派车、空闲返回与充电分配读到它就拒，在途旅程照常走完。
+    /// 启动时同一条关系拒绝启动（<c>ChargingPolicyStartupCheck</c>）。归普通积压（车辆侧）：用 FieldOps 激活一版强制充电线高于救命线的版本即解除，
+    /// 不改库、不重启。
+    /// </remarks>
+    public const string ChargingPolicyEntryNotAboveRescueLine = "CHARGING_POLICY_ENTRY_NOT_ABOVE_RESCUE_LINE";
+
+    /// <summary>
     /// 这辆车已承诺空闲返回（<c>REQ-0292</c>；批次8-18，control-server#389）：返回是它当前已承诺的下一站，搬运不取消、不换点、不抢它。
     /// </summary>
     /// <remarks>

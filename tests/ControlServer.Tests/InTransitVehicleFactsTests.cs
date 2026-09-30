@@ -117,7 +117,9 @@ public sealed class InTransitVehicleFactsTests
     [InlineData("wrongMap", "RIOT_VEHICLE_MAP_MISMATCH")]
     [InlineData("staleObservation", "RIOT_VEHICLE_FACT_STALE")]
     [InlineData("batteryUnknown", "BATTERY_FACT_UNKNOWN")]
-    [InlineData("batteryTooLow", "BATTERY_POLICY_NOT_SATISFIED")]
+    [InlineData("batteryTooLow", "MANDATORY_CHARGE_REQUIRED")]
+    [InlineData("batteryShortOfMargin", "BATTERY_POLICY_NOT_SATISFIED")]
+    [InlineData("noChargingPolicy", "CHARGING_POLICY_NOT_APPROVED")]
     [InlineData("charging", "BATTERY_POLICY_NOT_SATISFIED")]
     public void TheFactsBothChainsAskAboutStopAVehicleUnderWayToo(string fault, string reason)
     {
@@ -144,7 +146,9 @@ public sealed class InTransitVehicleFactsTests
     [InlineData("wrongMap", "RIOT_VEHICLE_MAP_MISMATCH")]
     [InlineData("staleObservation", "RIOT_VEHICLE_FACT_STALE")]
     [InlineData("batteryUnknown", "BATTERY_FACT_UNKNOWN")]
-    [InlineData("batteryTooLow", "BATTERY_POLICY_NOT_SATISFIED")]
+    [InlineData("batteryTooLow", "MANDATORY_CHARGE_REQUIRED")]
+    [InlineData("batteryShortOfMargin", "BATTERY_POLICY_NOT_SATISFIED")]
+    [InlineData("noChargingPolicy", "CHARGING_POLICY_NOT_APPROVED")]
     [InlineData("charging", "BATTERY_POLICY_NOT_SATISFIED")]
     public void BothChainsGiveTheSameReasonForTheFactsTheyShare(string fault, string reason)
     {
@@ -155,7 +159,7 @@ public sealed class InTransitVehicleFactsTests
     }
 
     private static JourneyRuntimeOptions Options() =>
-        new() { MapIdentity = Map, MinimumBatteryPercent = 30, MaximumEvidenceAge = TimeSpan.FromSeconds(30) };
+        new() { MapIdentity = Map, MaximumEvidenceAge = TimeSpan.FromSeconds(30) };
 
     /// <summary>一辆停着等活的车：RIoT 那一侧是 <c>IDLE</c>、速度零、没有订单。</summary>
     private static DispatchVehicleFacts Idle() =>
@@ -171,7 +175,8 @@ public sealed class InTransitVehicleFactsTests
                 AllUnlockOutputsReset: true,
                 UnknownPresent: false),
             new RiotVehicleObservation(VehicleKey, true, true, "IDLE", Map, 12, 90, "NO_CHARGE", 0, Now),
-            Now);
+            Now,
+            BatteryPolicy: TestChargingPolicies.Battery());
 
     /// <summary>
     /// 一辆正在跑的车：那几项一起变，因为现实里它们是一起发生的。
@@ -212,6 +217,12 @@ public sealed class InTransitVehicleFactsTests
             "batteryUnknown" => With(facts, observation => observation with { BatteryPercent = null }),
             "batteryTooLow" => With(facts, observation => observation with { BatteryPercent = 12 }),
             "charging" => With(facts, observation => observation with { BatteryState = "CHARGING" }),
+            // control-server#403: above the entry line of 30, but short of the margin of 30 once one task (idle) or the
+            // appended task plus the journey under way (en route) is taken off at 10 each.
+            "batteryShortOfMargin" => With(
+                facts with { BatteryPolicy = new DispatchBatteryPolicy(1, TestChargingPolicies.ContentAt(30) with { EstimatedTaskConsumptionPercent = 10 }) },
+                observation => observation with { BatteryPercent = 35 }),
+            "noChargingPolicy" => facts with { BatteryPolicy = null },
             _ => throw new ArgumentOutOfRangeException(nameof(fault), fault, "unknown fault"),
         };
 

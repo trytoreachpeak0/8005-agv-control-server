@@ -200,28 +200,91 @@ public sealed class IdleReturnCommitmentTests
     }
 
     /// <summary>
-    /// 强制充电线的过渡读法（调度 Coordinator 9 定）：线就是 <c>MinimumBatteryPercent</c>，比较与搬运同一个——低于即拒、等于放行。
-    /// 于是一辆低电量的车，搬运那条链与空闲返回<b>都</b>不给它活：它哪儿也不去。
+    /// 强制充电线（cs#389 的接缝，批次9-05 起按车读充电策略版本，control-server#403）：线是测试策略的 <c>MandatoryChargeEntryThreshold</c> 30，
+    /// 比较与搬运同一个——低于即拒、等于放行。于是一辆低电量的车，搬运那条链与空闲返回<b>都</b>不给它活：它哪儿也不去（REQ-0290）。
     /// </summary>
     [Fact]
     public async Task ALowBatteryVehicleIsSentNowhereNeitherToTransportNorToAWaitingPoint()
     {
         await using Harness harness = await Harness.CreateAsync();
-        IdleReturnCandidate low = harness.Candidate(VehicleA, battery: harness.Options.MinimumBatteryPercent - 1);
-        IdleReturnCandidate atLine = harness.Candidate(VehicleB, battery: harness.Options.MinimumBatteryPercent);
+        int line = TestChargingPolicies.Content.MandatoryChargeEntryThresholdPercent;
+        IdleReturnCandidate low = harness.Candidate(VehicleA, battery: line - 1);
+        IdleReturnCandidate atLine = harness.Candidate(VehicleB, battery: line);
 
         IReadOnlyList<IdleReturnVerdict> verdicts = await harness.EvaluateAsync(low, atLine);
 
         Assert.Equal(
             [IdleReturnReasons.BelowMandatoryChargeLine, IdleReturnReasons.Committed],
             verdicts.Select(verdict => verdict.Reason));
-        // 同一份事实，搬运那条链也不接：两条线是同一个值、同一个比较，没有「搬运挡住了、空闲返回却放它走」的那一段。
-        Assert.Equal("BATTERY_POLICY_NOT_SATISFIED", VehicleDynamicFactsCriterion.Evaluate(low.Facts, harness.Options));
+        // 同一份事实，搬运那条链也不接，答的是强制充电码：同一个判定函数，没有「搬运挡住了、空闲返回却放它走」的那一段。
+        Assert.Equal(DispatchReasonCodes.MandatoryChargeRequired, VehicleDynamicFactsCriterion.Evaluate(low.Facts, harness.Options));
         Assert.Equal(DispatchAdmissionChain.Eligible, VehicleDynamicFactsCriterion.Evaluate(atLine.Facts, harness.Options));
-        // 线跟着配置走，不是另一个写死的数：批次 9 只换这个端口的实现。
-        TransitionalMandatoryChargeLine line = new(Options.Create(new JourneyRuntimeOptions { MinimumBatteryPercent = 55 }));
-        Assert.True(await line.IsBelowLineAsync(VehicleA, 54, Token));
-        Assert.False(await line.IsBelowLineAsync(VehicleA, 55, Token));
+    }
+
+    /// <summary>
+    /// 过渡接缝换了实现之后，线跟着策略走（批次9-05，control-server#403）：同一辆 50% 的车，入口线抬到 55 就不承诺空闲返回、答强制充电线，
+    /// 降到 20 就照常承诺（仍高于夹具救命线 15，否则整版不可用）。没有任何配置项参与。
+    /// </summary>
+    [Theory]
+    [InlineData(55, IdleReturnReasons.BelowMandatoryChargeLine)]
+    [InlineData(20, IdleReturnReasons.Committed)]
+    public async Task TheIdleReturnChargeLineFollowsTheChargingPolicyUpAndDown(int entry, string expected)
+    {
+        await using Harness harness = await Harness.CreateAsync();
+        harness.ChargingPolicy = TestChargingPolicies.AllApprovedWith(TestChargingPolicies.Content with
+        {
+            MandatoryChargeEntryThresholdPercent = entry,
+            MinimumPostTaskBatteryMarginPercent = Math.Min(entry, 30),
+        });
+
+        IdleReturnVerdict verdict = Assert.Single(await harness.EvaluateAsync(harness.Candidate(VehicleA, battery: 50)));
+
+        Assert.Equal(expected, verdict.Reason);
+        PolicyMandatoryChargeLine line = new(harness.ChargingPolicy);
+        Assert.Equal(50 < entry, await line.IsBelowLineAsync(VehicleA, 50, Token));
+        Assert.StartsWith($"{entry} (charging policy version 1", line.Describe(VehicleA), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 生效版本的强制充电线不高于救命线（夹具 15）时整版不可用：空闲返回与派车链答同一个码、一行不写（control-server#403）。
+    /// </summary>
+    [Fact]
+    public async Task AVersionWhoseEntryThresholdIsNotAboveTheRescueLineCommitsNoIdleReturn()
+    {
+        await using Harness harness = await Harness.CreateAsync();
+        harness.ChargingPolicy = TestChargingPolicies.AllApprovedWith(TestChargingPolicies.Content with
+        {
+            MandatoryChargeEntryThresholdPercent = 15,
+            MinimumPostTaskBatteryMarginPercent = 10,
+        });
+        IdleReturnCandidate candidate = harness.Candidate(VehicleA);
+
+        IdleReturnVerdict verdict = Assert.Single(await harness.EvaluateAsync(candidate));
+        EventRecordingLogger<ChargingPolicyCommissioningCriterion> log = new();
+        string dispatch = await new ChargingPolicyCommissioningCriterion(harness.ChargingPolicy, Options.Create(harness.Options), new ChargingPolicyCommissioningLog(), log)
+            .EvaluateAsync(new DispatchCandidateEvaluation(null!, null!, candidate.Facts), Token);
+        // Error, with the way out in the line: activate a corrected version, no database edit, no restart.
+        EventRecordingLogger<ChargingPolicyCommissioningCriterion>.Entry line = Assert.Single(log.Entries);
+        Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Error, line.Level);
+        Assert.Contains("MandatoryChargeEntryThreshold 15, not above JourneyRuntime:WaitingJourneyRescueBatteryPercent 15", line.Message, StringComparison.Ordinal);
+        Assert.Contains("no database edit and no restart are needed", line.Message, StringComparison.Ordinal);
+
+        Assert.Equal(
+            (DispatchReasonCodes.ChargingPolicyEntryNotAboveRescueLine, DispatchReasonCodes.ChargingPolicyEntryNotAboveRescueLine),
+            (verdict.Reason, dispatch));
+        Assert.Empty(await harness.Db.DumpAsyncOf("VehiclePurposeClaims"));
+    }
+
+    /// <summary>
+    /// 读不到策略时线按「低于」答（fail-closed）：宁可原地不动，也不承诺开往等待点。
+    /// </summary>
+    [Fact]
+    public async Task TheChargeLineAnswersBelowWhenNoPolicyCoversTheVehicle()
+    {
+        PolicyMandatoryChargeLine line = new(TestChargingPolicies.None);
+
+        Assert.True(await line.IsBelowLineAsync(VehicleA, 100, Token));
+        Assert.Contains(ChargingPolicyCommissioningReasons.NotApproved, line.Describe(VehicleA), StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -263,7 +326,7 @@ public sealed class IdleReturnCommitmentTests
         IdleReturnVerdict idle = Assert.Single(await harness.EvaluateAsync(candidate));
         string dispatch = await new DispatchAdmissionChain(
             [
-                new ChargingPolicyCommissioningCriterion(TestChargingPolicies.None),
+                new ChargingPolicyCommissioningCriterion(TestChargingPolicies.None, Options.Create(new JourneyRuntimeOptions()), new ChargingPolicyCommissioningLog()),
                 new VehicleFaultBlockCriterion(new VehicleFaultStore(harness.Context)),
             ]).EvaluateAsync(new DispatchCandidateEvaluation(null!, null!, candidate.Facts), Token);
 
@@ -278,10 +341,13 @@ public sealed class IdleReturnCommitmentTests
         ServiceCollection services = new();
         services.AddIdleReturn(new ConfigurationBuilder().AddJsonFile(
             Path.Combine(RepositoryRoot(), "src", "ControlServer.Host", "appsettings.json")).Build());
+        services.AddScoped(_ => TestChargingPolicies.AllApproved);
         await using (ServiceProvider provider = services.BuildServiceProvider())
         {
             Assert.False(provider.GetRequiredService<IOptions<IdleReturnOptions>>().Value.Enabled);
-            Assert.IsType<TransitionalMandatoryChargeLine>(provider.GetRequiredService<IMandatoryChargeLine>());
+            // control-server#403：接缝的实现是按车读策略的那一个，不再是读 MinimumBatteryPercent 的过渡实现。
+            await using AsyncServiceScope scope = provider.CreateAsyncScope();
+            Assert.IsType<PolicyMandatoryChargeLine>(scope.ServiceProvider.GetRequiredService<IMandatoryChargeLine>());
         }
 
         // 开关关着，评估不产生任何写：本票合入后、批次8-19 合入前，「有 IDLE_RETURN 占有却没有旅程行」的车因此不会出现。
@@ -444,17 +510,17 @@ public sealed class IdleReturnCommitmentTests
     }
 
     /// <summary>
-    /// 空闲返回自己的强制充电线比搬运门槛低时，线上方、门槛下方的车照样不承诺（「宁可不动」）。今天两者是同一个值，这条路径只有
-    /// 批次 9 换了线之后才走得到，所以用一条更低的替身线钉住它。
+    /// 强制充电线上方、却保不住任务后余量的车照样不承诺（「宁可不动」）：入口线 30、余量 30、每趟估计 10，电量 35——不在强制充电，
+    /// 35 − 10 = 25 &lt; 30。共用判定答 <c>BATTERY_POLICY_NOT_SATISFIED</c>，空闲返回先让给自己的线（没低于），再把它收回来（批次9-05）。
     /// </summary>
     [Fact]
     public async Task AVehicleAboveItsIdleReturnLineButBelowTheTransportThresholdIsStillRefused()
     {
         await using Harness harness = await Harness.CreateAsync();
-        harness.ChargeLine = new FixedChargeLine(10);
+        harness.ChargingPolicy = TestChargingPolicies.AllApprovedWith(
+            TestChargingPolicies.Content with { EstimatedTaskConsumptionPercent = 10 });
 
-        IdleReturnVerdict verdict = Assert.Single(
-            await harness.EvaluateAsync(harness.Candidate(VehicleA, battery: harness.Options.MinimumBatteryPercent - 1)));
+        IdleReturnVerdict verdict = Assert.Single(await harness.EvaluateAsync(harness.Candidate(VehicleA, battery: 35)));
 
         Assert.Equal("BATTERY_POLICY_NOT_SATISFIED", verdict.Reason);
         Assert.Empty(await harness.Db.DumpAsyncOf("VehiclePurposeClaims"));
@@ -816,7 +882,7 @@ public sealed class IdleReturnCommitmentTests
 
         public EventRecordingLogger<IdleReturnEvaluator> Log { get; } = new();
 
-        /// <summary>替换强制充电线；为空即过渡实现。</summary>
+        /// <summary>替换强制充电线；为空即按 <see cref="ChargingPolicy"/> 读的产品实现。</summary>
         public IMandatoryChargeLine? ChargeLine { get; set; }
 
         /// <summary>逐车投运（control-server#400）：默认每辆车都有已批准的测试策略。</summary>
@@ -829,7 +895,6 @@ public sealed class IdleReturnCommitmentTests
         {
             MapId = Map,
             MapIdentity = "MAP-25",
-            MinimumBatteryPercent = 30,
             MaximumEvidenceAge = TimeSpan.FromMinutes(2),
         };
 
@@ -863,7 +928,7 @@ public sealed class IdleReturnCommitmentTests
                         RuntimeStateMaxAge = TimeSpan.FromHours(1),
                     }),
                     new FixedClock(Now)),
-                ChargeLine ?? new TransitionalMandatoryChargeLine(Microsoft.Extensions.Options.Options.Create(Options)),
+                ChargeLine ?? new PolicyMandatoryChargeLine(ChargingPolicy),
                 Microsoft.Extensions.Options.Options.Create(new IdleReturnOptions { Enabled = Enabled }),
                 Microsoft.Extensions.Options.Options.Create(Options),
                 VerdictBoard,
@@ -891,7 +956,10 @@ public sealed class IdleReturnCommitmentTests
                     new RiotVehicleObservation(
                         vehicleKey, true, true, "IDLE", Options.MapIdentity, station, battery, batteryState, 0,
                         observedAt ?? Now, 0, orderTaskId),
-                    Now),
+                    Now,
+                    // 轮次为这辆车读的那一份策略（control-server#403），与空闲返回的线读同一个解析器。
+                    BatteryPolicy: DispatchBatteryPolicy.From(
+                        ChargingPolicy.ResolveForNewDecisionAsync(vehicleKey, CancellationToken.None).GetAwaiter().GetResult())),
                 LeftOverByTransport: true);
 
         public DispatchCandidateEvaluation Evaluation(string vehicleKey) =>
@@ -1063,14 +1131,6 @@ public sealed class IdleReturnCommitmentTests
         }
 
         public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-    }
-
-    private sealed class FixedChargeLine(int percent) : IMandatoryChargeLine
-    {
-        public ValueTask<bool> IsBelowLineAsync(string vehicleKey, int batteryPercent, CancellationToken cancellationToken) =>
-            ValueTask.FromResult(batteryPercent < percent);
-
-        public string Describe(string vehicleKey) => percent.ToString(System.Globalization.CultureInfo.InvariantCulture);
     }
 
     /// <summary>读这张表时失败。</summary>

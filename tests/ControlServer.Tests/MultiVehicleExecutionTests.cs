@@ -945,10 +945,11 @@ public sealed partial class MultiVehicleExecutionTests
         public FleetBoxCounts BoxCounts { get; } = new();
 
         /// <summary>
-        /// 逐车投运判定（control-server#400）：默认每辆车都有一版已批准的测试策略（<see cref="TestChargingPolicies.AllApproved"/>），
+        /// 逐车投运判定（control-server#400）：默认每辆车都有一版已批准的测试策略，两道线都是 40（<see cref="TestChargingPolicies.AllApprovedAt"/>；
+        /// 这个夹具此前配 <c>MinimumBatteryPercent = 40</c>，批次9-05 起电量阈值读策略，control-server#403），
         /// 与合入前的派车结论等价；要测「没有策略」的用例换掉它再调 <c>RecreateEngineAsync</c>，链随引擎重建。
         /// </summary>
-        public IChargingPolicyResolver ChargingPolicy { get; set; } = TestChargingPolicies.AllApproved;
+        public IChargingPolicyResolver ChargingPolicy { get; set; } = TestChargingPolicies.AllApprovedAt(40);
 
         /// <summary>Silent unless a test names a vehicle whose Onboard connection is gone (control-server#334).</summary>
         public FleetPeer Peer { get; } = new();
@@ -1316,7 +1317,8 @@ public sealed partial class MultiVehicleExecutionTests
                 options,
                 Clock,
                 EngineLog,
-                _idleReturn?.Invoke(this) ?? IdleReturnTestKit.Create(Context, Options, Clock, chargingPolicy: ChargingPolicy));
+                _idleReturn?.Invoke(this) ?? IdleReturnTestKit.Create(Context, Options, Clock, chargingPolicy: ChargingPolicy),
+                ChargingPolicy);
             return new JourneyRuntimeEngine(
                 Context,
                 Riot,
@@ -1350,7 +1352,8 @@ public sealed partial class MultiVehicleExecutionTests
                 JourneyRuntimeWorkerTestKit.QuietForeignOrderRiot.Supervisor(Context, options.Value, Clock),
                 options,
                 Clock,
-                EngineLog);
+                EngineLog,
+                ChargingPolicy);
         }
 
         /// <summary>派车轮写、推进段读的那块板（批次7-07）：宿主里是单例，这里一个夹具一块，跨轮次保留。</summary>
@@ -1555,7 +1558,6 @@ public sealed partial class MultiVehicleExecutionTests
             MapIdentity = "MAP-25",
             DispatchZone = "MAP-25-WIRE_TO_GATE",
             DispatchGeneration = 1,
-            MinimumBatteryPercent = 40,
             MaximumEvidenceAge = TimeSpan.FromMinutes(2),
             SublotBoxCountPath = "/api/v2/sublot-box-count",
             AllowedWorkTypes = ["WIRE_TO_GATE"],
@@ -1943,6 +1945,9 @@ public sealed partial class MultiVehicleExecutionTests
         /// <summary>Every vehicle read, in the order it was asked, so a test can see the segments.</summary>
         public List<string> VehicleReads { get; } = [];
 
+        /// <summary>The battery each vehicle reports (control-server#403); a vehicle not listed reports 80.</summary>
+        public Dictionary<string, int?> BatteryByVehicle { get; } = new(StringComparer.Ordinal);
+
         /// <summary>Every order created, oldest first, as (vehicleKey, upperId, destination station).</summary>
         public List<(string VehicleKey, string UpperId, int DestinationStationId)> Creates { get; } = [];
 
@@ -1976,7 +1981,7 @@ public sealed partial class MultiVehicleExecutionTests
                 ProcState: "IDLE",
                 CurrentMap: options.MapIdentity,
                 CurrentStationId: 300,
-                BatteryPercent: 80,
+                BatteryPercent: BatteryByVehicle.TryGetValue(vehicleKey, out int? battery) ? battery : 80,
                 BatteryState: "NO_CHARGE",
                 Speed: 0,
                 ObservedAt: clock.GetUtcNow(),

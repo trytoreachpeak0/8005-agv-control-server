@@ -204,6 +204,9 @@ await AreaAssignmentDispatchZoneStartupCheck.EnsureAsync(app.Services, Cancellat
 await TaskTypeStationStartup.EnsureAsync(app.Services, CancellationToken.None);
 // control-server#388：投运车辆数大于 1 而等待点不够每辆车各分一个时拒绝启动（规格 5.4）。在绑定装载之后，固定站不算等待点。
 await WaitingPointStartupCheck.EnsureAsync(app.Services, CancellationToken.None);
+// control-server#403：生效的充电策略版本（含在途旅程与充电周期冻结的版本）不满足 REQ-0281 的阈值关系、或救命线不低于它的强制充电线时拒绝启动。
+// 关系只有 ChargingPolicyRules.ThresholdRelationViolations 一份定义，导入也调它。一版都没有照常启动（逐车不投运，control-server#400）。
+await ChargingPolicyStartupCheck.EnsureAsync(app.Services, CancellationToken.None);
 
 app.MapGet("/health/live", () => Results.Ok(new { status = "live" }));
 app.MapGet("/health/ready", async (ControlServerDbContext dbContext, CancellationToken cancellationToken) =>

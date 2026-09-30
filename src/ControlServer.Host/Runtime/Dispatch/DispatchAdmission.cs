@@ -1,5 +1,6 @@
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Host.Runtime.Fleet;
 
 namespace ControlServer.Host.Runtime.Dispatch;
@@ -144,7 +145,8 @@ public sealed record DispatchVehicleFacts(
     RiotVehicleObservation Vehicle,
     DateTimeOffset ObservedAt,
     VehicleSlotPositions? SlotPositions = null,
-    EnRouteVehiclePlan? Plan = null);
+    EnRouteVehiclePlan? Plan = null,
+    DispatchBatteryPolicy? BatteryPolicy = null);
 
 /// <summary>Onboard-side facts a dispatch decision reads.</summary>
 public sealed record OnboardDispatchFacts(

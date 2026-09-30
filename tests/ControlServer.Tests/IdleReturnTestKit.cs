@@ -34,7 +34,7 @@ internal static class IdleReturnTestKit
                 new RouteGraphSnapshotStore(context),
                 Microsoft.Extensions.Options.Options.Create(new RouteGraphOptions { MapId = options.MapId }),
                 clock),
-            new TransitionalMandatoryChargeLine(Microsoft.Extensions.Options.Options.Create(options)),
+            new PolicyMandatoryChargeLine(chargingPolicy ?? TestChargingPolicies.AllApproved),
             Microsoft.Extensions.Options.Options.Create(new IdleReturnOptions { Enabled = enabled }),
             Microsoft.Extensions.Options.Options.Create(options),
             board ?? new IdleReturnVerdictBoard(),

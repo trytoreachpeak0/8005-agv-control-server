@@ -32,7 +32,6 @@ public sealed class TaskTypeAdmissionChainTests : IAsyncDisposable
         MapId = 25,
         AllowedWorkTypes = [.. TransportTaskTypes.All],
         AllowedDispatchZones = ["MAP-25-WIRE_TO_GATE"],
-        MinimumBatteryPercent = 30,
         MaximumEvidenceAge = TimeSpan.FromMinutes(2),
     };
 
