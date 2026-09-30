@@ -8,6 +8,7 @@ using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using static ControlServer.Tests.Batch7StopDrivenAdvanceDriver;
 using static ControlServer.Tests.ClosureSnapshotAssertions;
 using static ControlServer.Tests.JourneyRuntimeWorkerTestKit;
@@ -875,13 +876,21 @@ public sealed class StopEndedJourneyContinuesTests
             Assert.NotNull(await coordinator.StageDoorReleaseBusinessStateAsync(agvId, generation, MidJourneyReleaseId, ready: true, token));
             await connection.SaveChangesAsync(token);
         }
-        // 放行那一张快照抬了旅程的业务基准（审查 M2），引擎手上那一份旅程行的令牌因此旧了：放行后第一轮以乐观冲突回滚、第二轮重放，
-        // 这是引擎既有的处理。所以放行后跑两轮再看。
+        // 放行那一张快照抬了旅程的业务基准（审查 M2），引擎手上那一份旅程行的令牌因此旧了：放行后第一轮以乐观冲突让开、第二轮按新行
+        // 重判，这是引擎既有的处理（control-server#357）。所以放行后跑两轮再看，并钉住两件事：让开只有一次，记的是 Information
+        // （事件 2191 那一句），不是 Warning 或 Error——不会吓到现场；第二轮就走得出去，不会每轮都冲突。
+        int logBeforeRelease = fixture.EngineLog.Entries.Count;
         for (int round = 0; round < 2; round++)
         {
             await fixture.HearFromPeerAsync();
             await TickAndRunAsync(fixture);
         }
+        (LogLevel Level, string Message)[] afterReleaseLog = [.. fixture.EngineLog.Entries.Skip(logBeforeRelease)];
+        Assert.Equal(
+            [LogLevel.Information],
+            afterReleaseLog.Where(entry => entry.Message.Contains("yielded this iteration", StringComparison.Ordinal))
+                .Select(entry => entry.Level).ToArray());
+        Assert.DoesNotContain(afterReleaseLog, entry => entry.Level >= LogLevel.Warning);
         if (checkAlreadySent)
         {
             // 放行后：扣车前那张检查已作废，发的是一张新检查；车对旧检查那条还没过期的 SAFE 不算，一张单都不建。
