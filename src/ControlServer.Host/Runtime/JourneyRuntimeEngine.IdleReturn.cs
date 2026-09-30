@@ -245,7 +245,7 @@ public sealed partial class JourneyRuntimeEngine
             else if (result.Outcome != MovementDispatchOutcome.TerminalReconciliationRequired)
             {
                 // Result unknown, create gate closed, and the like: everything stays, the same upperId is reconciled next round.
-                runtime.SetBlockReason($"{IdleReturnExecutionReasons.LegName}_{result.Outcome}", timeProvider.GetUtcNow());
+                runtime.SetBlockReason(IdleReturnExecutionReasons.LegOutcomeCode(result.Outcome), timeProvider.GetUtcNow());
                 runtime.UpdatedAt = timeProvider.GetUtcNow();
                 await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                 return;

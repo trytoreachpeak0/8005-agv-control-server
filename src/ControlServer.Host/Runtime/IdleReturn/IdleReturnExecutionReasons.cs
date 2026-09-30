@@ -1,3 +1,5 @@
+using ControlServer.Application;
+
 namespace ControlServer.Host.Runtime.IdleReturn;
 
 /// <summary>
@@ -67,6 +69,23 @@ public static class IdleReturnExecutionReasons
     /// <summary>已确认失败的收尾码：下一次承诺要排除原失败点的那几种。</summary>
     public static IReadOnlySet<string> ConfirmedFailures { get; } =
         new HashSet<string>(StringComparer.Ordinal) { OrderEnded, OrderFailed };
+
+    /// <summary>
+    /// 建单没有确认时写在旅程上的码：<c>WAITING_POINT_{Outcome}</c>（与搬运腿的 <c>PICKUP_…</c>／<c>GATE_…</c> 同一种拼法）。引擎与看板说明
+    /// 都经这里拼，免得两边各拼一份、一边改了另一边不知道。
+    /// </summary>
+    public static string LegOutcomeCode(MovementDispatchOutcome outcome) => $"{LegName}_{outcome}";
+
+    /// <summary>
+    /// 会被写进 <c>BlockReasonCode</c> 的建单结果码：<see cref="MovementDispatchOutcome"/> 的每个取值，除了确认（清掉码）与
+    /// 「终结后要对账」（按单已终结往下判，不写码）。新加一个取值就多一个码，看板说明的检查会逼着给它写说明。
+    /// </summary>
+    public static IReadOnlyList<string> LegOutcomeCodes { get; } =
+    [
+        .. Enum.GetValues<MovementDispatchOutcome>()
+            .Where(outcome => outcome is not (MovementDispatchOutcome.Confirmed or MovementDispatchOutcome.TerminalReconciliationRequired))
+            .Select(LegOutcomeCode),
+    ];
 
     /// <summary>这一族全部的码（保持类、收尾类与建单结果码），给看板说明与测试核对用。</summary>
     public static IReadOnlyList<string> All { get; } =

@@ -2,6 +2,7 @@ using System.Data.Common;
 using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Host.Dashboard;
 using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.Faults;
 using ControlServer.Host.Runtime.Commands;
@@ -581,6 +582,21 @@ public sealed class IdleReturnExecutionTests
         Assert.Equal((VehiclePurposes.IdleReturn, waiting.JourneyId), await ClaimOfAsync(fleet, KeyA));
         Assert.Equal(StationExclusivityStates.Reserved, (await StationAsync(fleet, Near.StationId))!.State);
 
+        // What the dashboard's blocked-journeys card shows for this journey: the Chinese description, read through the card's own
+        // endpoint from the row the engine wrote -- not only "the dictionary has a key" (coordinator, control-server#390).
+        object fact = await new BlockedJourneysQueryEndpoint(BlockedJourneyEscalationOptions.Default, fleet.Clock)
+            .ReadAsync(fleet.Context, Token);
+        using (JsonDocument card = JsonDocument.Parse(JsonSerializer.Serialize(fact)))
+        {
+            JsonElement row = Assert.Single(
+                card.RootElement.GetProperty("journeys").EnumerateArray(),
+                item => item.GetProperty("agvId").GetString() == AgvA);
+            Assert.Equal(
+                (IdleReturnExecutionReasons.DepartureNotProven,
+                 BlockedJourneysQueryEndpoint.Descriptions[IdleReturnExecutionReasons.DepartureNotProven]),
+                (row.GetProperty("blockReasonCode").GetString(), row.GetProperty("blockReasonDescription").GetString()));
+        }
+
         if (gap == "session-not-ready")
         {
             return;
@@ -590,6 +606,40 @@ public sealed class IdleReturnExecutionTests
 
         Assert.Single(fleet.Riot.Creates);
         Assert.Null((await IdleJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+    }
+
+    /// <summary>
+    /// 本票会写进 <c>BlockReasonCode</c> 的每一个码在阻断旅程卡片上都有中文说明（调度 2026-09-30：cs#392 暂不开工，不能让原码裸露）。
+    /// 码从两处现取，不抄清单：<see cref="IdleReturnExecutionReasons"/> 的每个字符串常量，与 <see cref="MovementDispatchOutcome"/> 的每个取值
+    /// 拼成的建单结果码——以后加一个常量或一个取值而忘了说明，这里就红。不是阻断码的两个常量点名排除，理由写在旁边。
+    /// </summary>
+    [Fact]
+    public void EveryCodeAnIdleReturnWritesOnItsJourneyHasAChineseDescriptionOnTheBlockedJourneysCard()
+    {
+        string[] notWrittenOnAJourney =
+        [
+            IdleReturnExecutionReasons.LegName, // a prefix, never a code by itself
+            IdleReturnExecutionReasons.ConvergedAtWaitingPoint, // a purpose release reason: a converged journey closes with no code
+        ];
+        string[] constants =
+        [
+            .. typeof(IdleReturnExecutionReasons)
+                .GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+                .Where(field => field.IsLiteral && field.FieldType == typeof(string))
+                .Select(field => (string)field.GetRawConstantValue()!)
+                .Where(code => !notWrittenOnAJourney.Contains(code)),
+        ];
+        // Confirmed clears the code; TerminalReconciliationRequired is judged as an ended order and writes none (the engine's
+        // AdvanceIdleReturnAsync). Every other outcome is written as it is.
+        string[] outcomes =
+        [
+            .. Enum.GetValues<MovementDispatchOutcome>()
+                .Where(outcome => outcome is not (MovementDispatchOutcome.Confirmed or MovementDispatchOutcome.TerminalReconciliationRequired))
+                .Select(IdleReturnExecutionReasons.LegOutcomeCode),
+        ];
+        Assert.Contains(IdleReturnExecutionReasons.DepartureNotProven, constants);
+        Assert.Contains("WAITING_POINT_ResultUnknown", outcomes);
+        Assert.Equal([], [.. constants.Concat(outcomes).Where(code => !BlockedJourneysQueryEndpoint.Descriptions.ContainsKey(code))]);
     }
 
     // ---- 并发、崩溃点与重连 ------------------------------------------------------------------------------------------------
