@@ -117,6 +117,47 @@ public sealed partial class MultiVehicleExecutionTests
     }
 
     /// <summary>
+    /// 强制充电线不高于救命线的版本在运行中被激活（激活走 FieldOps、不经服务端，服务端只能在用的时候拦）：下一轮起每辆车都拿不到新用途、
+    /// 原因码是 <c>CHARGING_POLICY_ENTRY_NOT_ABOVE_RESCUE_LINE</c>，那几轮一张单都不建；再激活一版合格的，下一轮恢复派车。救命线是夹具默认的 15。
+    /// </summary>
+    [Fact]
+    public async Task AVersionWhoseEntryThresholdIsNotAboveTheRescueLineBlocksEveryVehicleUntilACorrectOneIsActivated()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(
+            configure: options => options.Fleet = options.Fleet[..2]);
+        Assert.Equal(15, fixture.Options.WaitingJourneyRescueBatteryPercent);
+        TestChargingPolicies.Versions versions = new(TestChargingPolicies.ContentAt(40));
+        fixture.ChargingPolicy = versions;
+        await fixture.RecreateEngineAsync();
+        versions.Activate(TestChargingPolicies.Content with
+        {
+            MandatoryChargeEntryThresholdPercent = 15,
+            MinimumPostTaskBatteryMarginPercent = 10,
+        });
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
+
+        for (int round = 0; round < 3; round++)
+        {
+            await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+            Assert.All(fixture.RoundOutcomes.Outcomes[^1].CompletedVehicles, vehicle => Assert.Equal(
+                DispatchReasonCodes.ChargingPolicyEntryNotAboveRescueLine, Assert.Single(vehicle.Verdicts).ReasonCode));
+        }
+        Assert.Empty(fixture.Riot.Creates);
+        Assert.Empty(fixture.Context.JourneyRuntimes);
+        Assert.Equal(
+            DispatchReasonCodes.ChargingPolicyEntryNotAboveRescueLine,
+            Assert.Single(await fixture.Context.JourneyBacklog.AsNoTracking().ToArrayAsync(TestContext.Current.CancellationToken)).ReasonCode);
+
+        versions.Activate(TestChargingPolicies.ContentAt(16));
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+
+        JourneyRuntimeRow journey = Assert.Single(
+            await fixture.Context.JourneyRuntimes.AsNoTracking().ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(3L, journey.ChargingPolicyVersion);
+        Assert.Single(fixture.Riot.Creates);
+    }
+
+    /// <summary>
     /// 在途的判断按旅程记下的版本读回（REQ-0282）：旅程在版本 1（线 40）下派出，之后激活版本 2（线 90）。途中追加按版本 1 判，80 合格，
     /// 追加进同一趟旅程；同一轮里空闲的第二辆车按版本 2 判，被挡。
     /// </summary>

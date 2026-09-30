@@ -1,6 +1,7 @@
 using ControlServer.Application;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace ControlServer.Host.Runtime.Dispatch.Criteria;
 
@@ -25,8 +26,22 @@ namespace ControlServer.Host.Runtime.Dispatch.Criteria;
 /// </remarks>
 public sealed class ChargingPolicyCommissioningCriterion(
     IChargingPolicyResolver resolver,
+    IOptions<JourneyRuntimeOptions> options,
     ILogger<ChargingPolicyCommissioningCriterion>? logger = null) : IDispatchAdmissionCriterion
 {
+    // control-server#403: a version in effect whose entry threshold is not above the rescue line is unusable. Error, not
+    // Warning: every vehicle stops taking work until someone activates a corrected version.
+    private static readonly Action<ILogger, string, string, Exception?> LogEntryNotAboveRescueLine =
+        LoggerMessage.Define<string, string>(
+            LogLevel.Error,
+            new EventId(2, nameof(LogEntryNotAboveRescueLine)),
+            "Vehicle {VehicleKey} takes no new work: CHARGING_POLICY_ENTRY_NOT_ABOVE_RESCUE_LINE ({Detail}). Activate, with " +
+            "ControlServer.FieldOps, a charging policy whose MandatoryChargeEntryThreshold is above the rescue line; no database " +
+            "edit and no restart are needed. Journeys under way finish as planned.");
+
+    private readonly int _rescueBatteryPercent =
+        (options ?? throw new ArgumentNullException(nameof(options))).Value.WaitingJourneyRescueBatteryPercent;
+
     private static readonly Action<ILogger, string, string, string, Exception?> LogNotCommissioned =
         LoggerMessage.Define<string, string, string>(
             LogLevel.Warning,
@@ -49,9 +64,17 @@ public sealed class ChargingPolicyCommissioningCriterion(
         string vehicleKey = evaluation.Vehicle.VehicleKey;
         // One definition with the idle return (control-server#400 after #389): VehicleNewPurposeReadiness.
         (string verdict, VehicleChargingPolicyDecision decision) = await VehicleNewPurposeReadiness
-            .CommissioningVerdictAsync(_resolver, vehicleKey, cancellationToken).ConfigureAwait(false);
+            .CommissioningVerdictAsync(_resolver, vehicleKey, _rescueBatteryPercent, cancellationToken).ConfigureAwait(false);
         if (verdict == DispatchAdmissionChain.Eligible)
         {
+            return verdict;
+        }
+        if (verdict == DispatchReasonCodes.ChargingPolicyEntryNotAboveRescueLine)
+        {
+            if (_logged.Add((vehicleKey, verdict)))
+            {
+                LogEntryNotAboveRescueLine(_logger, vehicleKey ?? string.Empty, decision.Detail ?? string.Empty, null);
+            }
             return verdict;
         }
         if (_logged.Add((vehicleKey, decision.Reason)))

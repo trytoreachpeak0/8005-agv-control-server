@@ -134,6 +134,9 @@ public static class StructuralDispatchClassification
             "control-server#400, REQ-0282: this vehicle has no approved, activated charging policy covering it. The " +
             "vehicle's side, not the demand's: another vehicle takes it, and activating a policy that covers this one " +
             "clears it."),
+        Backlog(DispatchReasonCodes.ChargingPolicyEntryNotAboveRescueLine, ChargingPolicyCommissioning,
+            "control-server#403: the policy version in effect puts its mandatory charge entry threshold at or below the rescue " +
+            "line, so it is treated as unusable. The vehicle's side, cleared by activating a version with a higher threshold."),
 
         // ---- WorkTypeScopeCriterion (20) ----------------------------------------------------------------
         Backlog(DispatchReasonCodes.OutOfScopeWorkType, WorkTypeScope,

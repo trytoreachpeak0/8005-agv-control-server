@@ -58,7 +58,7 @@ public static class DispatchAdmissionCriteria
             new IdleReturnCommitmentCriterion(dbContext),
             // 批次9-02（control-server#400）：没有已批准策略版本的车不承接新用途。必填，理由同故障阻断：逐车硬阻断（规格 8.6）
             // 一个调用方可以漏传，就会被最需要它的那个调用方漏掉。
-            new ChargingPolicyCommissioningCriterion(chargingPolicy),
+            new ChargingPolicyCommissioningCriterion(chargingPolicy, options),
             new WorkTypeScopeCriterion(options),
             // Required rather than optional for the same reason as the fault block: B2's two
             // vehicle filters are fail-closed, and a fail-closed rule a caller may omit is one

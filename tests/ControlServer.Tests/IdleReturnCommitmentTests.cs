@@ -223,11 +223,11 @@ public sealed class IdleReturnCommitmentTests
 
     /// <summary>
     /// 过渡接缝换了实现之后，线跟着策略走（批次9-05，control-server#403）：同一辆 50% 的车，入口线抬到 55 就不承诺空闲返回、答强制充电线，
-    /// 降到 10 就照常承诺。没有任何配置项参与。
+    /// 降到 20 就照常承诺（仍高于夹具救命线 15，否则整版不可用）。没有任何配置项参与。
     /// </summary>
     [Theory]
     [InlineData(55, IdleReturnReasons.BelowMandatoryChargeLine)]
-    [InlineData(10, IdleReturnReasons.Committed)]
+    [InlineData(20, IdleReturnReasons.Committed)]
     public async Task TheIdleReturnChargeLineFollowsTheChargingPolicyUpAndDown(int entry, string expected)
     {
         await using Harness harness = await Harness.CreateAsync();
@@ -243,6 +243,36 @@ public sealed class IdleReturnCommitmentTests
         PolicyMandatoryChargeLine line = new(harness.ChargingPolicy);
         Assert.Equal(50 < entry, await line.IsBelowLineAsync(VehicleA, 50, Token));
         Assert.StartsWith($"{entry} (charging policy version 1", line.Describe(VehicleA), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 生效版本的强制充电线不高于救命线（夹具 15）时整版不可用：空闲返回与派车链答同一个码、一行不写（control-server#403）。
+    /// </summary>
+    [Fact]
+    public async Task AVersionWhoseEntryThresholdIsNotAboveTheRescueLineCommitsNoIdleReturn()
+    {
+        await using Harness harness = await Harness.CreateAsync();
+        harness.ChargingPolicy = TestChargingPolicies.AllApprovedWith(TestChargingPolicies.Content with
+        {
+            MandatoryChargeEntryThresholdPercent = 15,
+            MinimumPostTaskBatteryMarginPercent = 10,
+        });
+        IdleReturnCandidate candidate = harness.Candidate(VehicleA);
+
+        IdleReturnVerdict verdict = Assert.Single(await harness.EvaluateAsync(candidate));
+        EventRecordingLogger<ChargingPolicyCommissioningCriterion> log = new();
+        string dispatch = await new ChargingPolicyCommissioningCriterion(harness.ChargingPolicy, Options.Create(harness.Options), log)
+            .EvaluateAsync(new DispatchCandidateEvaluation(null!, null!, candidate.Facts), Token);
+        // Error, with the way out in the line: activate a corrected version, no database edit, no restart.
+        EventRecordingLogger<ChargingPolicyCommissioningCriterion>.Entry line = Assert.Single(log.Entries);
+        Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Error, line.Level);
+        Assert.Contains("MandatoryChargeEntryThreshold 15, not above JourneyRuntime:WaitingJourneyRescueBatteryPercent 15", line.Message, StringComparison.Ordinal);
+        Assert.Contains("no database edit and no restart are needed", line.Message, StringComparison.Ordinal);
+
+        Assert.Equal(
+            (DispatchReasonCodes.ChargingPolicyEntryNotAboveRescueLine, DispatchReasonCodes.ChargingPolicyEntryNotAboveRescueLine),
+            (verdict.Reason, dispatch));
+        Assert.Empty(await harness.Db.DumpAsyncOf("VehiclePurposeClaims"));
     }
 
     /// <summary>
@@ -296,7 +326,7 @@ public sealed class IdleReturnCommitmentTests
         IdleReturnVerdict idle = Assert.Single(await harness.EvaluateAsync(candidate));
         string dispatch = await new DispatchAdmissionChain(
             [
-                new ChargingPolicyCommissioningCriterion(TestChargingPolicies.None),
+                new ChargingPolicyCommissioningCriterion(TestChargingPolicies.None, Options.Create(new JourneyRuntimeOptions())),
                 new VehicleFaultBlockCriterion(new VehicleFaultStore(harness.Context)),
             ]).EvaluateAsync(new DispatchCandidateEvaluation(null!, null!, candidate.Facts), Token);
 
