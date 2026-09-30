@@ -31,6 +31,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ConditionOrLast.psm1') -Force
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2SingleRow.psm1') -Force
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2Chargers.psm1') -Force
 
 $journal = $Context.Journal
@@ -175,10 +176,12 @@ $null = Wait-L2Condition -Description 'one vehicle committed to charging' `
 $upperId = Wait-L2Condition -Description 'the charge order was confirmed by RIoT' `
     -Journal $journal -Criterion 'charge-order-confirmed' -TimeoutSeconds 120 `
     -Probe {
-        $rows = Invoke-L2Query -Connection $connection -Sql (
+        # One cycle on its way is the premise. Two come back as "(2 rows, expected 1)", which then stands in $held and
+        # cannot equal what Get-Commitments reads (L2SingleRow.psm1).
+        $row = Read-L2SingleRow -Connection $connection -Sql (
             "SELECT UpperId FROM ChargingCycles WHERE WireState = 'EN_ROUTE' AND UpperId IS NOT NULL")
-        if ($rows.Count -eq 0) { return $null }
-        return [string]$rows[0].UpperId
+        if ($null -eq $row) { return $null }
+        return [string]$row.UpperId
     } `
     -Until { param($v) $null -ne $v }
 
@@ -188,26 +191,29 @@ $claimCount = Wait-L2ConditionOrLast -Description 'a second charging commitment 
     -Probe { $null = Get-Docked; Get-Count "SELECT COUNT(*) AS N FROM VehiclePurposeClaims WHERE Purpose = 'CHARGING'" } `
     -Until { param($v) $v -ge 2 }
 
-$journeyRows = Invoke-L2Query -Connection $connection -Sql (
+# Exactly one charging journey and one cycle in the whole database: more (a second commitment) or none reads
+# "(N rows, expected 1)" in every column, and the comparisons below go red on it.
+$journeyRow = Read-L2SingleRow -Required -Connection $connection -Sql (
     "SELECT JourneyId, VehicleKey, ChargingPolicyVersion FROM JourneyRuntimes WHERE JourneyId LIKE 'charging:%'")
-$journeyId = if ($journeyRows.Count -ge 1) { [string]$journeyRows[0].JourneyId } else { '(none)' }
-$cycleRows = Invoke-L2Query -Connection $connection -Sql (
+$journeyId = [string]$journeyRow.JourneyId
+$cycleRow = Read-L2SingleRow -Required -Connection $connection -Sql (
     "SELECT CycleId, VehicleKey, StationId, ChargerRosterVersion, ChargingPolicyVersion FROM ChargingCycles")
-$cycleId = if ($cycleRows.Count -ge 1) { [string]$cycleRows[0].CycleId } else { '(none)' }
+$cycleId = [string]$cycleRow.CycleId
 $held = "claims[$($lowest.VehicleKey)=$journeyId] chargers[$charger RESERVED $($lowest.VehicleKey) $journeyId] " +
     "cycles[$($lowest.VehicleKey) $cycleId $charger $upperId] intents[$($lowest.VehicleKey) $upperId CHARGE $charger] " +
     "riot[$upperId] commands[0]"
 $commitments = Get-Commitments
-$journal.Observe('charging-commitment', $commitments, @{ journeys = $journeyRows; cycles = $cycleRows })
+$journal.Observe('charging-commitment', $commitments, @{ journey = $journeyRow; cycle = $cycleRow })
 $assertions.Add(
     'L2-COC-01',
     '三台车同时需要充电：恰好一台取得 CHARGING 用途占有与 211 的预占（另等十几轮之后仍是一台），它是电量最低的那台；' +
         '它的充电单（move + act，形态 CHARGE）在 RIoT 上恰好一张，单号是周期派生的那个',
-    ($claimCount -eq 1 -and $commitments -eq $held -and $journeyRows.Count -eq 1 -and $cycleRows.Count -eq 1 -and
-        [string]$cycleRows[0].ChargingPolicyVersion -eq $version -and [string]$journeyRows[0].ChargingPolicyVersion -eq $version -and
-        [string]$cycleRows[0].ChargerRosterVersion -eq [string]$roster.version),
+    ($claimCount -eq 1 -and $commitments -eq $held -and [string]$cycleRow.StationId -eq '211' -and
+        [string]$cycleRow.VehicleKey -eq $lowest.VehicleKey -and [string]$journeyRow.VehicleKey -eq $lowest.VehicleKey -and
+        [string]$cycleRow.ChargingPolicyVersion -eq $version -and [string]$journeyRow.ChargingPolicyVersion -eq $version -and
+        [string]$cycleRow.ChargerRosterVersion -eq [string]$roster.version),
     "1 / $held / policy v$version / roster v$($roster.version)",
-    "$claimCount / $commitments / policy v$(if ($cycleRows.Count -ge 1) { $cycleRows[0].ChargingPolicyVersion }) / roster v$(if ($cycleRows.Count -ge 1) { $cycleRows[0].ChargerRosterVersion })")
+    "$claimCount / $commitments / policy v$($cycleRow.ChargingPolicyVersion) / roster v$($cycleRow.ChargerRosterVersion)")
 
 # 另两台在队里：各自报「211 已被预占」，什么也没留下。
 $logText = Wait-L2ConditionOrLast -Description 'both queued vehicles reported why they were not allocated' `

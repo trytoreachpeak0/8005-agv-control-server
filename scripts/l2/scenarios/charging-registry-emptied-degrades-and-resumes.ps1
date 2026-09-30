@@ -24,6 +24,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ConditionOrLast.psm1') -Force
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2SingleRow.psm1') -Force
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2Chargers.psm1') -Force
 
 $journal = $Context.Journal
@@ -129,16 +130,18 @@ Set-Battery $a.VehicleKey $lowBattery
 $aUpperId = Wait-L2Condition -Description 'A committed to charging and its order was confirmed by RIoT' `
     -Journal $journal -Criterion 'a-charge-order-confirmed' -TimeoutSeconds 180 `
     -Probe {
-        $rows = Invoke-L2Query -Connection $connection -Sql (
+        # One cycle on its way is the premise. Anything else comes back as "(N rows, expected 1)", which then stands in
+        # $aHeld and cannot equal what Get-CommitmentOf reads (L2SingleRow.psm1).
+        $row = Read-L2SingleRow -Connection $connection -Sql (
             "SELECT UpperId FROM ChargingCycles WHERE VehicleKey = '$($a.VehicleKey)' AND WireState = 'EN_ROUTE' AND UpperId IS NOT NULL")
-        if ($rows.Count -eq 0) { return $null }
-        return [string]$rows[0].UpperId
+        if ($null -eq $row) { return $null }
+        return [string]$row.UpperId
     } `
     -Until { param($v) $null -ne $v }
-$aJourney = [string](Invoke-L2Query -Connection $connection -Sql (
-        "SELECT JourneyId FROM JourneyRuntimes WHERE VehicleKey = '$($a.VehicleKey)' AND JourneyId LIKE 'charging:%'"))[0].JourneyId
-$aCycle = [string](Invoke-L2Query -Connection $connection -Sql (
-        "SELECT CycleId FROM ChargingCycles WHERE VehicleKey = '$($a.VehicleKey)'"))[0].CycleId
+$aJourney = [string](Read-L2SingleRow -Required -Connection $connection -Sql (
+        "SELECT JourneyId FROM JourneyRuntimes WHERE VehicleKey = '$($a.VehicleKey)' AND JourneyId LIKE 'charging:%'")).JourneyId
+$aCycle = [string](Read-L2SingleRow -Required -Connection $connection -Sql (
+        "SELECT CycleId FROM ChargingCycles WHERE VehicleKey = '$($a.VehicleKey)'")).CycleId
 $aHeld = "claim[CHARGING $aJourney] station[211 RESERVED CHARGER $aJourney v$($opened.version)] " +
     "cycle[$aCycle 211 v$($opened.version) ACTIVE $aUpperId] riot[$aUpperId]"
 $aNow = Get-CommitmentOf $a.VehicleKey
@@ -229,17 +232,16 @@ $decision = Wait-L2ConditionOrLast -Description 'the server decided the return t
 $bUpperId = Wait-L2ConditionOrLast -Description 'B, back in service and still below its line, committed to the free charger and its order was confirmed' `
     -Journal $journal -Criterion 'b-charge-order-confirmed' -TimeoutSeconds 120 `
     -Probe {
-        $rows = Invoke-L2Query -Connection $connection -Sql (
+        $row = Read-L2SingleRow -Connection $connection -Sql (
             "SELECT UpperId FROM ChargingCycles WHERE VehicleKey = '$($b.VehicleKey)' AND WireState = 'EN_ROUTE' AND UpperId IS NOT NULL")
-        if ($rows.Count -eq 0) { return $null }
-        return [string]$rows[0].UpperId
+        if ($null -eq $row) { return $null }
+        return [string]$row.UpperId
     } `
     -Until { param($v) $null -ne $v }
-$bJourneyRows = Invoke-L2Query -Connection $connection -Sql (
-    "SELECT JourneyId FROM JourneyRuntimes WHERE VehicleKey = '$($b.VehicleKey)' AND JourneyId LIKE 'charging:%'")
-$bJourney = if ($bJourneyRows.Count -eq 1) { [string]$bJourneyRows[0].JourneyId } else { "($($bJourneyRows.Count) journeys)" }
-$bCycleRows = Invoke-L2Query -Connection $connection -Sql "SELECT CycleId FROM ChargingCycles WHERE VehicleKey = '$($b.VehicleKey)'"
-$bCycle = if ($bCycleRows.Count -eq 1) { [string]$bCycleRows[0].CycleId } else { "($($bCycleRows.Count) cycles)" }
+$bJourney = [string](Read-L2SingleRow -Required -Connection $connection -Sql (
+        "SELECT JourneyId FROM JourneyRuntimes WHERE VehicleKey = '$($b.VehicleKey)' AND JourneyId LIKE 'charging:%'")).JourneyId
+$bCycle = [string](Read-L2SingleRow -Required -Connection $connection -Sql (
+        "SELECT CycleId FROM ChargingCycles WHERE VehicleKey = '$($b.VehicleKey)'")).CycleId
 $bHeld = "claim[CHARGING $bJourney] station[213 RESERVED CHARGER $bJourney v$($reopened.version)] " +
     "cycle[$bCycle 213 v$($reopened.version) ACTIVE $bUpperId] riot[$bUpperId]"
 $bAfter = Get-CommitmentOf $b.VehicleKey
