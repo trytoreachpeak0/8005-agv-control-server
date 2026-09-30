@@ -689,7 +689,7 @@ public sealed class SlotFaultDeclarationTests
     private static object DeclaredUnknownResult() => OperationResultPayload(
         "UNKNOWN",
         [
-            SlotResult(1, "UNKNOWN", "UNKNOWN", "UNLOCKED", "RESET", ["SLOT_FAULT_DECLARED"]),
+            SlotResult(1, "UNKNOWN", "UNKNOWN", "UNLOCKED", "RESET", [ServerReasonCodes.SlotFaultDeclared]),
             SlotResult(2, "NOT_STARTED", "EMPTY", "LOCKED", "RESET", [])
         ],
         "SLOT_FAULT_DECLARATION_APPLIED");

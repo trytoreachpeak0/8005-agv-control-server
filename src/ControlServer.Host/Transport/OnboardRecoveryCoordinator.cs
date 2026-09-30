@@ -352,7 +352,10 @@ public sealed class OnboardRecoveryCoordinator(
         // 这辆车一旦有了下一趟旅程，它们就不在这里面了。
         IReadOnlyList<string> closureIds = await JourneyClosure
             .ReplayIdsAsync(dbContext, agvId, cancellationToken).ConfigureAwait(false);
-        string[] pendingIds = [.. commandIds, .. snapshotIds, .. activationIds, .. closureIds];
+        // 人工判故障（REQ-0359，control-server#383）：车还没回答的判定，命令跟着这一轮补发。
+        string[] declarationIds = await SlotFaultDeclarationResults
+            .PendingCommandMessageIdsAsync(dbContext, agvId, cancellationToken).ConfigureAwait(false);
+        string[] pendingIds = [.. commandIds, .. snapshotIds, .. activationIds, .. closureIds, .. declarationIds];
         if (pendingIds.Length > 0)
             await publisher.ReplayPendingForSessionAsync(
                 agvId, sessionGeneration, pendingIds.ToHashSet(StringComparer.Ordinal), cancellationToken)
