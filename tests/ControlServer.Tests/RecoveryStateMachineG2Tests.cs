@@ -831,9 +831,9 @@ public sealed partial class RecoveryStateMachineG2Tests
 
     /// <summary>
     /// REQ-0242, business half (control-server#137). A forced mechanical recovery on a demand-bearing
-    /// session is the named handoff of ForcedCargoHandoffRecord: the product is the demand's own bound
-    /// cargo, and the verified <c>operator</c> the result carries is the named person. Protocol 2.0.0 has no
-    /// field for an unknown identity, so the "pending inventory" branch is unreachable here. The demand ends
+    /// session is a named handoff: since protocol 3.0.0 (CP-0008, control-server#385) the result carries it as
+    /// <c>cargoHandoff</c> -- the demand's own sublot, the named receiver, when -- and REQ-0242 no longer has an
+    /// unidentified-cargo branch. The demand ends
     /// the way a fault cargo handoff ends it (CONTEXT.md, FaultCargoRecoveryRecord), the vehicle is released
     /// from the journey, and the session closes -- so the same vehicle can open another one. Until #137 the
     /// session stayed EXECUTING forever and every later session request was refused.

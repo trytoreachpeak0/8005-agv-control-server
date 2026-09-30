@@ -757,6 +757,15 @@ function New-L2OnboardDriver {
         $box.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue($Sublot)
     }
 
+    # A text box addressed by AutomationId (control-server#385: the forced recovery hand-off form of onboard-hmi#216,
+    # ForcedHandoffSublot and ForcedHandoffReceiverName). Throws on a missing or disabled box, as SetSublot does.
+    $driver | Add-Member -MemberType ScriptMethod -Name SetTextBox -Value {
+        param([Parameter(Mandatory)][string]$AutomationId, [Parameter(Mandatory)][string]$Text)
+        $box = $this.Element('AutomationId', $AutomationId)
+        if (-not $box) { throw "No element with AutomationId '$AutomationId'." }
+        $box.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue($Text)
+    }
+
     $driver | Add-Member -MemberType ScriptMethod -Name ScanText -Value {
         $box = $this.Element('AutomationId', $this.ScanTextBoxAutomationId)
         if (-not $box) { return $null }
