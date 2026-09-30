@@ -371,12 +371,15 @@ public sealed class SlotFaultDeclarationTests
     /// Two administrators at the same moment: both read that the attempt has no pending declaration, and both write. The
     /// second is interleaved deterministically -- it runs to completion inside the first's save -- so the first's insert
     /// is the one that meets the other's row. The database's filtered unique index is what refuses it, not a read.
+    /// Run on a database the migrations built as well as on EnsureCreated, since production has the former.
     /// </summary>
-    [Fact]
+    [Theory]
     [Trait("IntegrationSlice", "FP-IS-07")]
-    public async Task TwoAdministratorsDeclaringTheSameSlotAtOnceAreHeldToOneDeclarationByTheDatabase()
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TwoAdministratorsDeclaringTheSameSlotAtOnceAreHeldToOneDeclarationByTheDatabase(bool migrate)
     {
-        await using Fixture fixture = await Fixture.AwaitingOperatorOnSlotOneAsync();
+        await using Fixture fixture = await Fixture.AwaitingOperatorOnSlotOneAsync(migrate: migrate);
         RunBeforeSave other = new(async () =>
         {
             var inner = await fixture.PostAsync(Request() with
@@ -395,6 +398,25 @@ public sealed class SlotFaultDeclarationTests
         SlotFaultDeclarationRow declaration = Assert.Single(await fixture.DeclarationsAsync());
         Assert.Equal("system-383", declaration.AdministratorId);
         Assert.Single(await fixture.CommandsAsync());
+    }
+
+    /// <summary>
+    /// The migration writes the one-pending-declaration rule as a partial unique index: its SQL carries the filter.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    public async Task TheMigratedDatabaseHoldsOnePendingDeclarationPerAttemptInAPartialUniqueIndex()
+    {
+        await using Fixture fixture = await Fixture.AwaitingOperatorOnSlotOneAsync(migrate: true);
+        await using SqliteCommand command = fixture.Connection.CreateCommand();
+        command.CommandText =
+            "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'IX_SlotFaultDeclarations_PendingAttempt'";
+
+        string? sql = (string?)await command.ExecuteScalarAsync(Token);
+
+        Assert.Equal(
+            "CREATE UNIQUE INDEX \"IX_SlotFaultDeclarations_PendingAttempt\" ON \"SlotFaultDeclarations\" (\"SlotOperationAttemptId\") WHERE State = 'PENDING'",
+            sql);
     }
 
     /// <summary>
@@ -870,14 +892,22 @@ public sealed class SlotFaultDeclarationTests
 
         public OnboardConnectionState State { get; private set; } = new();
 
-        public static async Task<Fixture> AwaitingOperatorOnSlotOneAsync(int? overdueSlot = 1, bool seedOperation = true)
+        public static async Task<Fixture> AwaitingOperatorOnSlotOneAsync(
+            int? overdueSlot = 1, bool seedOperation = true, bool migrate = false)
         {
             Environment.SetEnvironmentVariable(SessionCredentialVariable, SessionCredential);
             SqliteConnection connection = new("Data Source=:memory:");
             await connection.OpenAsync(Token);
             ControlServerDbContext context = new(
                 new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options);
-            await context.Database.EnsureCreatedAsync(Token);
+            if (migrate)
+            {
+                await context.Database.MigrateAsync(Token);
+            }
+            else
+            {
+                await context.Database.EnsureCreatedAsync(Token);
+            }
             Fixture fixture = new(connection, context);
             await fixture.HandshakeAsync();
             await fixture.SeedLoadAsync(seedOperation);
