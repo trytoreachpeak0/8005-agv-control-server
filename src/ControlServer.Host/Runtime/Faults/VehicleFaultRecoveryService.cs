@@ -439,9 +439,10 @@ public sealed partial class VehicleFaultRecoveryService(
             }
             else
             {
-                // An idle return (control-server#390) carries no demand: its held order is resumed with none, and any cargo
-                // binding found on the vehicle then refuses the resumption as not this order's.
-                string? transportDemandKey = journey.IsIdleReturn()
+                // An idle return (control-server#390) or a charging journey (control-server#404) carries no demand: its held
+                // order is resumed with none, and any cargo binding found on the vehicle then refuses the resumption as not this
+                // order's.
+                string? transportDemandKey = journey.CarriesNoDemand()
                     ? null
                     : await dbContext.AcceptedDemands.AsNoTracking()
                         .Where(row => row.DemandId == journey.DemandId)
@@ -632,6 +633,10 @@ public sealed partial class VehicleFaultRecoveryService(
         {
             return await EndIdleReturnAsync(runtime, now, cancellationToken).ConfigureAwait(false);
         }
+        if (runtime.IsCharging())
+        {
+            return await EndChargingAsync(runtime, now, cancellationToken).ConfigureAwait(false);
+        }
         List<JourneyDemandRow> memberships = await dbContext.Set<JourneyDemandRow>()
             .Where(row => row.JourneyId == runtime.JourneyId && row.RemovedAt == null)
             .ToListAsync(cancellationToken).ConfigureAwait(false);
@@ -689,6 +694,26 @@ public sealed partial class VehicleFaultRecoveryService(
             .ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return VehicleFaultRecoveryDispositions.IdleReturnEnded;
+    }
+
+    /// <summary>
+    /// The FAILED order of a charging journey on its way to the charger, cleared by a person (control-server#404): a confirmed
+    /// failure -- the clearance has just proved the vehicle holds no unfinished order and no latch. The cycle is closed, the
+    /// CHARGING purpose released and the journey closed in the caller's transaction. The charger reservation is not released
+    /// here: REQ-0173 releases it only once charging has stopped, the vehicle is off the charger and the charger is confirmed
+    /// free, which the charging allocation's sweep checks every round. Nothing is rebuilt (REQ-0362's rebuild continues a
+    /// demand, and a charging order has none); the next allocation leaves this charger out for the cooldown, and a second
+    /// failure inside the repeat window puts the vehicle on manual charging hold.
+    /// </summary>
+    private async Task<string> EndChargingAsync(JourneyRuntimeRow runtime, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        JourneyStopRow stop = await dbContext.Set<JourneyStopRow>()
+            .SingleAsync(row => row.JourneyId == runtime.JourneyId, cancellationToken).ConfigureAwait(false);
+        await Charging.ChargingEnding.StageAsync(
+                dbContext, runtime, stop, Charging.ChargingExecutionReasons.OrderFailed, now, cancellationToken)
+            .ConfigureAwait(false);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return VehicleFaultRecoveryDispositions.ChargingEnded;
     }
 
     /// <summary>The two stages in which the journey waits on a move order in flight -- the only ones a FAILED order stops.</summary>

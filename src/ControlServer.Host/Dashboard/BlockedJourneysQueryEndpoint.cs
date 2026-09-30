@@ -1,6 +1,7 @@
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.Charging;
 using ControlServer.Host.Runtime.IdleReturn;
 using ControlServer.Host.Runtime.Release;
 using ControlServer.Infrastructure.Persistence;
@@ -188,6 +189,29 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 "出发之前重新核验，等待点已不合格（停用、改名、不在当前地图、不可达等）：这趟空闲返回作废，车没有动，下一轮重新挑点",
             [IdleReturnExecutionReasons.CommitmentOrphaned] =
                 "空闲返回的承诺变不成一趟行程（车已不在车队、等待点预占已不在、点在别的地图上或已不在登记表上）：承诺作废并释放",
+            // control-server#404：充电旅程（车电量到线后自己开往充电桩）在到桩之前写在旅程上的码。前面几个是途中的，会出现在这张卡片上；
+            // 最后两个是收尾码，写在已完成的旅程上（这张卡片不列），一并写好，别的地方读到时不必再猜。途中单停住用的是通用的那几个码
+            // （ORDER_HANG、ORDER_ENDED_WITHOUT_ARRIVAL、VEHICLE_ORDER_FAILED），说明在上面。
+            [ChargingExecutionReasons.DepartureNotProven] =
+                "去充电还没出发：车开往充电桩之前要过出发安全检查（车载端会话就绪、8 个仓门全部锁好、没有阻断事实、充电策略可用），"
+                + "有一样不满足就不建单。充电桩与充电用途都为它留着，满足之后下一轮自动出发，不需要人确认。持续不消失请检查车载端连接与仓门",
+            [ChargingExecutionReasons.ReservationNotHeld] =
+                "去充电还没出发，而为这趟充电预占的充电桩已经不在这趟名下：服务端不建单、车不动，充电用途仍占着。"
+                + "这是不该出现的状态，请联系开发查看站点独占记录",
+            [ChargingExecutionReasons.CycleMissing] =
+                "这趟充电旅程找不到它的充电周期记录：服务端不建单、不动车。这是不该出现的状态，请联系开发",
+            [ChargingExecutionReasons.LegOutcomeCode(MovementDispatchOutcome.ResultUnknown)] =
+                "开往充电桩的单发给 RIoT 之后结果未知：服务端每一轮按同一个单号对账，不会建第二张、不换桩，车、充电桩预占与充电用途都保持不动，"
+                + "此时车上不会显示「前往充电」。电量继续下降只升级告警。持续不消失请到 RIoT 核对这张单",
+            [ChargingExecutionReasons.LegOutcomeCode(MovementDispatchOutcome.CreateDispatchDisabled)] =
+                "开往充电桩的单没有发出：服务端的建单开关此刻关着。开关打开后下一轮自动建单",
+            [ChargingExecutionReasons.LegOutcomeCode(MovementDispatchOutcome.UnsupportedOrderShape)] =
+                "开往充电桩的单的形态服务端建不了（配置或数据错误），这一段不会建单：请查服务端日志并报开发",
+            [ChargingExecutionReasons.OrderEnded] =
+                "充电单在 RIoT 被取消或删除，车已停稳：这趟充电结束，不重建。充电桩要等确认充电已停、车不在桩上、桩位空闲之后才释放；"
+                + "30 秒内不再把同一个桩分给这辆车，10 分钟内它的充电单再被取消一次，就改为人工充电等待",
+            [ChargingExecutionReasons.OrderFailed] =
+                "充电单 FAILED，故障已由人工清除：这趟充电结束，不重建。充电桩的释放、冷却与再次失败后改为人工充电等待的规则同单被取消",
             [JourneyRuntimeEngine.OwnOrderRebuildCargoUnprovenReason] =
                 "车上有货的故障清除之后，车报的仓位读数还证明不了货在原仓（仓门没锁好、开锁输出没复位、仓位读数未知或没上报、"
                 + "车报有未知，或装货还没落定）：服务端不停也不建单，等车下一次报仓位读数。门锁好、读数恢复后会自动重建；"

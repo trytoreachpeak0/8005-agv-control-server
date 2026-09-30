@@ -467,12 +467,26 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The server holds no manual-charging hold of its own -- <c>VehicleBusinessProjection.ManualChargingHold</c>
-    /// is published as false from both sites that build it -- so the hold being lifted is the
-    /// vehicle's, and this request is the vehicle asking the server to put it back into eligibility
-    /// evaluation. The server's part is therefore to say whether it is in a position to evaluate the
-    /// vehicle at all, and the only fact it holds that can answer no is the session's own readiness:
-    /// a session in RecoveryRequired has facts to reconcile before the vehicle may take work again.
+    /// <b>The hold being lifted is the server's</b> (control-server#404; <c>CV-MANUAL-CHARGING-RETURN</c>'s
+    /// <c>REEVALUATE_ELIGIBILITY_AFTER_RETURN</c>). The server places a manual-charging hold on a vehicle that needs charging
+    /// when the charger roster has no charger for it, or when its charging order keeps being ended (<c>ChargingAllocator</c>),
+    /// keeps it per RIoT vehicle key (<see cref="ManualChargingHoldRow"/>), and publishes it as
+    /// <c>VehicleBusinessStateSnapshot.manualChargingHold</c>. This request -- an administrator at the vehicle, after it has
+    /// been charged by hand -- is the only way out of it: the battery rising does not lift it, and neither does the roster
+    /// being enabled again (the user's decision of 2026-09-29). An accepted request removes the hold row and writes the
+    /// release on its record <b>in the same save as the decision</b>, so there is never an accepted request with the hold still
+    /// standing, nor a lifted hold without the request that lifted it. The next dispatch round judges the vehicle afresh --
+    /// battery, roster and all -- and tells it the hold is off.
+    /// </para>
+    /// <para>
+    /// <b>A rejected request leaves the hold in place</b>, and the two rejections are what they were: a role outside the two the
+    /// profile allows, and a session in RecoveryRequired, which has facts to reconcile before the vehicle may take work again.
+    /// <b>A replayed <c>requestId</c> returns the stored decision and lifts nothing</b> -- a hold placed since the first time
+    /// is a different hold, and needs a request of its own. A vehicle with no hold is decided exactly as before.
+    /// </para>
+    /// <para>
+    /// The request carries the vehicle's key because it arrives naming the AGV id; the receiver resolves it from the fleet
+    /// roster (<c>OnboardMessageProcessor</c>). Without it -- an AGV not in the roster -- there is no hold to find.
     /// </para>
     /// <para>
     /// The role check is here rather than left to the schema because neither end validates against
@@ -540,6 +554,13 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
             DecidedAt = DateTimeOffset.UtcNow
         };
         dbContext.ManualChargingReturnToServiceRequests.Add(row);
+        if (outcome == ManualChargingReturnToServiceDecision.ReturnedToEligibilityEvaluation &&
+            !string.IsNullOrWhiteSpace(request.VehicleKey))
+        {
+            await ManualChargingHoldWrites
+                .StageReleaseAsync(dbContext, request.VehicleKey, request.RequestId, row.DecidedAt, cancellationToken)
+                .ConfigureAwait(false);
+        }
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return ToDecision(row);
     }
@@ -676,12 +697,13 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
                 $"Journey '{plan.JourneyId}' is {journey.Stage} and cannot take an appended demand.");
         }
 
-        // An idle return carries no demand and takes none (control-server#390): the round keeps its vehicle out of the
-        // en-route candidates, and this is the write-side half of that rule.
-        if (journey.IsIdleReturn())
+        // An idle return carries no demand and takes none (control-server#390), and neither does a charging journey
+        // (control-server#404): the round keeps its vehicle out of the en-route candidates, and this is the write-side half
+        // of that rule.
+        if (journey.CarriesNoDemand())
         {
             throw new BusinessIdentityConflictException(
-                $"Journey '{plan.JourneyId}' is an idle return and cannot take an appended demand.");
+                $"Journey '{plan.JourneyId}' is {(journey.IsIdleReturn() ? "an idle return" : "a charging journey")} and cannot take an appended demand.");
         }
 
         // 装货阶段结束了也不接（批次7-07，control-server#212）：持货超时、让站之后不再接受新的待装需求（REQ-0354 末句），

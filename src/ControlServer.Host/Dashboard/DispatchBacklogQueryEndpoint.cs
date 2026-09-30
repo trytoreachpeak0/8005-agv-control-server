@@ -69,6 +69,12 @@ internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
             // 批次8-18（control-server#389）：空闲返回的承诺不被搬运抢，正常调度结论，不是故障。
             [DispatchReasonCodes.VehicleCommittedToIdleReturn] =
                 "这辆车已承诺返回等待点，返回不被搬运取消或抢走；由别的车接，或等它到点后下一轮再派",
+            // 批次9-06（control-server#404）：充电的承诺不被搬运抢；人工充电等待的出口只有「充电后返回服务」。都是车辆侧的正常结论。
+            [DispatchReasonCodes.VehicleCommittedToCharging] =
+                "这辆车已承诺去充电（占着充电用途并预占了充电桩），充电不被搬运取消或抢走；由别的车接，或等它充完电后再派",
+            [DispatchReasonCodes.VehicleInManualChargingHold] =
+                "这辆车在人工充电等待中（充电桩名册里没有它可用的桩，或它的充电单反复被取消），不接任何任务、也不会自己移动；"
+                + "请人工给它充电，再由管理员在车上发起「充电后返回服务」。电量回升、名册重新启用都不会自动解除",
             // 批次9-02（control-server#400）：逐车硬阻断，看板展示归批次9-10，这里只有派车原因的一句说明。
             [DispatchReasonCodes.ChargingPolicyNotApproved] =
                 "这辆车没有已批准并激活、适用范围覆盖它的充电策略版本，不承接新任务；别的车照常，导入、批准并激活一版覆盖它的策略即解除",

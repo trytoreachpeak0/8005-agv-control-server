@@ -380,6 +380,13 @@ jobs:
               # control-server#403, REQ-0281: a policy whose thresholds break the relation is refused whole at import through
               # FieldOps; the default policy stays active and the next demand is dispatched under it.
               @{ Name = 'charging-thresholds-relation-refused'; Runs = 1; BatchId = 'batch-9' }
+              # control-server#404, REQ-0172/0173: one charger, three vehicles below their line at once. The lowest battery
+              # gets the CHARGING purpose and the reservation; a queued vehicle whose battery then falls lower does not take it.
+              @{ Name = 'charging-one-charger-three-vehicles-contend'; Runs = 1; BatchId = 'batch-9' }
+              # control-server#404, REQ-0171: the roster is emptied while one vehicle is on its way to the charger (it goes on);
+              # a vehicle that then needs charging is put on manual charging hold and warned about; the roster back, it is
+              # allocated only after its onboard sends the return to service.
+              @{ Name = 'charging-registry-emptied-degrades-and-resumes'; Runs = 1; BatchId = 'batch-9' }
           )
           # One run's usual length in seconds, for dealing scenarios out to lanes longest first. Medians of 31
           # CI jobs from 2026-09-17 (ci-research, control-server#130); normal-load's excludes the build it used

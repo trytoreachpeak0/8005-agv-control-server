@@ -247,10 +247,12 @@ public sealed class DispatchRoundRunner(
 
         // 「上次成功接单」从既有旅程记录推出（票面第 6 条带内层），一轮查一次。
         // An idle return (control-server#390) is not work taken on: a vehicle that just went back to a waiting point has not
-        // been dispatched, and counting it would push that vehicle behind the others for the next task.
+        // been dispatched, and counting it would push that vehicle behind the others for the next task. Nor is a charging
+        // journey (control-server#404): a vehicle back from the charger would otherwise be the last to get a task.
         Dictionary<string, DateTimeOffset> lastDispatchedAt = LastDispatchAtByVehicle(
             await dbContext.JourneyRuntimes.AsNoTracking()
-                .Where(row => !row.JourneyId.StartsWith(IdleReturnIdentity.JourneyIdPrefix))
+                .Where(row => !row.JourneyId.StartsWith(IdleReturnIdentity.JourneyIdPrefix) &&
+                              !row.JourneyId.StartsWith(ChargingIdentity.JourneyIdPrefix))
                 .Select(row => new JourneyStart(row.AgvId, row.CreatedAt))
                 .ToArrayAsync(cancellationToken).ConfigureAwait(false));
 

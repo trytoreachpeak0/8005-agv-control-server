@@ -195,6 +195,14 @@ public sealed class IdleReturnEvaluator(
             return IdleReturnReasons.VehicleHasPurpose;
         }
 
+        // 服务端持有的人工充电等待（control-server#404）：在等待中的车不接任何新用途、不被移动，电量回升本身不恢复资格——被人充过电的车
+        // 电量在线上，下面的电量检查挡不住它。与派车链、充电分配同一个读法。
+        if (await VehicleNewPurposeReadiness.ManualChargingHoldVerdictAsync(dbContext, vehicle.VehicleKey, cancellationToken)
+                .ConfigureAwait(false) is var hold && hold != DispatchAdmissionChain.Eligible)
+        {
+            return hold;
+        }
+
         // 停在上一次返回的等待点或充电桩上（等离点证据）：它已经在一个等待之处了。持有的是固定公共站（REQ-0204）时不拒——
         // 卸完货、没有下一单的车正该离开那个单车位的公共站去等待点（审查 S4）。充电桩的口径由 B9-07 定，今天保持拒。
         if ((await stations.ListByVehicleAsync(vehicle.VehicleKey, cancellationToken).ConfigureAwait(false))
@@ -229,9 +237,10 @@ public sealed class IdleReturnEvaluator(
 
         // An idle return that ended (control-server#390) proved its vehicle stopped with no order before it closed, so the
         // status its intent was left in -- TERMINAL_RECONCILIATION_REQUIRED after a cancellation, RESULT_UNKNOWN for one never
-        // sent -- is settled, not unknown. Counted, it would keep that vehicle from ever being committed again.
+        // sent -- is settled, not unknown. Counted, it would keep that vehicle from ever being committed again. The same holds
+        // for a charging journey that ended before reaching its charger (control-server#404): it closes on the same proof.
         IQueryable<string> settledIdleReturnLegs = dbContext.Set<JourneyStopRow>()
-            .Where(stop => stop.StopRole == JourneyStopRoles.WaitingPoint &&
+            .Where(stop => (stop.StopRole == JourneyStopRoles.WaitingPoint || stop.StopRole == JourneyStopRoles.Charger) &&
                            dbContext.JourneyRuntimes.Any(journey =>
                                journey.JourneyId == stop.JourneyId && journey.Stage == JourneyRuntimeStage.Completed))
             .Select(stop => stop.MovementLegId);

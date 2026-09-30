@@ -13,6 +13,11 @@
 
 红证据（缺陷版本）：只删 BatteryEligibility.Judge 里强制充电线那一段（IsMandatoryCharge → MandatoryChargeRequired），余量那一条照常。
 25 − 0 ≥ 20，两车在第一段就合法，需求当场派出，L2-MCT-01 变红。
+
+批次9-06（control-server#404）起，低于线的空闲车会被分配去充电，名册里没有可用的桩时进人工充电等待。本场景先导入一版登记站 211 的名册，
+而路网引擎没开：充电分配算不出桩可不可达（CHARGING_ROUTE_GRAPH_UNAVAILABLE），一台也不分、也不置等待，车留在队里——于是挡住搬运的仍是
+强制充电线那一条判据，两车仍然「原地不动」。充电分配、排队与人工充电等待各有自己的场景（charging-one-charger-three-vehicles-contend、
+charging-registry-emptied-degrades-and-resumes）。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
@@ -21,6 +26,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ConditionOrLast.psm1') -Force
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2Chargers.psm1') -Force
 
 $journal = $Context.Journal
 $assertions = $Context.Assertions
@@ -43,6 +49,7 @@ function Get-FootprintOf([string]$vehicleKey) {
     $intents = Get-Count "SELECT COUNT(*) AS N FROM OrderIntents WHERE VehicleKey = '$vehicleKey'"
     $claims = Get-Count "SELECT COUNT(*) AS N FROM VehiclePurposeClaims WHERE VehicleKey = '$vehicleKey'"
     $stations = Get-Count "SELECT COUNT(*) AS N FROM StationExclusivities WHERE VehicleKey = '$vehicleKey'"
+    $stations += Get-Count "SELECT COUNT(*) AS N FROM ManualChargingHolds WHERE VehicleKey = '$vehicleKey'"
     $riotOrders = [int](@($riot.Snapshot().body.orders | Where-Object { $null -ne $_ -and [string]$_.appointVehicleKey -eq $vehicleKey }) |
         Measure-Object).Count
     return "$intents intents, $claims purpose claims, $stations station holds, $riotOrders RIoT orders"
@@ -62,6 +69,15 @@ function Get-Journey {
 }
 
 # --- 0. 前置：两车先设成 25，再导入并激活「强制充电线 30 > 余量 20」的一版 ---------------------------------------
+
+# 名册先于电量（control-server#404）：两车还在 80% 时导入一版登记站 211 的名册。反过来的话，电量一低、名册还是空的那几轮里
+# 两车会被置人工充电等待，此后挡住搬运的就不再是强制充电线。路网引擎没开，所以这一个桩谁也分不到。
+$roster = Invoke-L2ChargerRosterImport -Chargers @(@{ StationId = 211; StationName = '充电点1' }) -MapId $Context.MapId `
+    -Fleet @($fineVehicleKey, $lowVehicleKey) -Riot $riot -InvokeFieldOps $Context.InvokeFieldOps `
+    -SnapshotRoot $Context.SnapshotRoot -Label 'unreachable' `
+    -ChangeNote 'L2 mandatory-charge-vehicle-takes-no-transport: a charger nobody can be sent to (the route graph is off)'
+$journal.Observe('charger-roster', [string]$roster.version, @{ import = $roster })
+if ([string]$roster.outcome -ne 'OK') { throw "The charger roster was not imported: $($roster.outcome)." }
 
 # 电量先于策略：新策略一生效，两车就已经落在两条线之间。反过来的话，新策略生效后、电量改之前那几轮里两车按 80% 都合法，
 # 但那时还没有需求，所以次序只是为了读日志时不绕。
@@ -159,7 +175,7 @@ $footprint = Wait-L2ConditionOrLast -Description "$lowVehicleKey got an order, a
 $journal.Observe('low-vehicle-footprint', $footprint, @{ vehicleKey = $lowVehicleKey; battery = $lowBattery })
 $assertions.Add(
     'L2-MCT-03',
-    'A 在整段里没有建单、没有用途占有、没有站点独占：原地不动（批次9-06 之前）',
+    'A 在整段里没有建单、没有用途占有、没有站点独占或人工充电等待：原地不动（名册里的桩此刻分不到）',
     ($footprint -eq $lowNothing),
     $lowNothing,
     $footprint)

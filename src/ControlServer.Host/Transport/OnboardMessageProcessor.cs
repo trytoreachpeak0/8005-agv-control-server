@@ -603,7 +603,11 @@ public sealed partial class OnboardMessageProcessor(
                                 RequiredString(payload.GetProperty("administrator"), "operatorId"),
                                 RequiredString(payload, "administratorRole"),
                                 RequiredString(payload, "reason"),
-                                NullableDouble(payload, "observedBatteryPercent")),
+                                NullableDouble(payload, "observedBatteryPercent"),
+                                // control-server#404: the server's manual-charging hold is kept per RIoT vehicle key, and the
+                                // request names the vehicle by its AGV id. Resolved from the fleet roster here, so an accepted
+                                // request lifts the hold in the decision's own save.
+                                new Runtime.Fleet.VehicleRoster(runtimeOptions).ByAgvId(agvId)?.VehicleKey),
                             cancellationToken).ConfigureAwait(false);
                     return SerializeEnvelope(
                         "ManualChargingReturnToServiceResult", messageId, agvId, generation,

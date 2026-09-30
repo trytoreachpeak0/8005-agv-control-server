@@ -46,11 +46,28 @@ internal static class ChargingTestKit
                 Microsoft.Extensions.Options.Options.Create(new RouteGraphOptions { MapId = options.MapId }),
                 clock),
             new OnboardJourneyPublisher(new WireToGateStore(context), peer, clock),
-            fleet,
             runtime,
             board ?? new ChargingAllocationBoard(),
             clock,
             logger ?? NullLogger<ChargingAllocator>.Instance);
+    }
+
+    /// <summary>
+    /// 登记一版名册，里面只有一台谁也分不到的桩：站号不在任何夹具的地图与路网上，所以它永远不是候选。
+    /// </summary>
+    /// <remarks>
+    /// 给「低于强制充电线的空闲车不接搬运」那几条用例用（control-server#403 的电量判据）。批次9-06 起，名册里没有这辆车可用的桩时它被置
+    /// 人工充电等待，此后挡住搬运的是等待那条判据（序号更靠前），电量判据的原因码就看不到了。名册里有桩、只是此刻分不到时，车留在充电队列里、
+    /// 不置等待，积压行上仍是 <c>MANDATORY_CHARGE_REQUIRED</c>——这几条用例要看的正是它。名册为空的那一格由 <c>ChargingAllocationTests</c> 覆盖。
+    /// </remarks>
+    public static async Task WriteRosterWithAChargerNobodyIsSentToAsync(ControlServerDbContext context, int mapId, DateTimeOffset at)
+    {
+        await new ChargerRosterStore(context, JourneyRuntimeWorkerTestKit.CreateGovernedPublisher(context)).WriteVersionAsync(
+            [new ChargerRosterEntry(mapId, 9211, "充电点（夹具：不在地图上）", null, null, [])],
+            new ChargerRosterApproval("test fixture", "tests: a charger nobody can be sent to", null),
+            at,
+            TestContext.Current.CancellationToken);
+        context.ChangeTracker.Clear();
     }
 
     /// <summary>一个没有任何未完成订单的 RIoT：清单完整且为空，按单号查不到任何 mission。答复里的时刻固定，不读夹具的时钟。</summary>

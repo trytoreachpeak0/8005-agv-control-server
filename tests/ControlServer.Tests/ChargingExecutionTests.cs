@@ -334,7 +334,9 @@ public sealed class ChargingExecutionTests
     // ---- 重放与重连 ------------------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// 车载端断线时承诺、确认都发生了：四张快照留在发件箱里；重连之后按原 <c>messageId</c> 补发，发件箱里每样仍是那几行，不产生第二份。
+    /// 车载端断线时承诺、确认都发生了：四张快照留在发件箱里，一张也没送到。重连之后，现行的那一对（<c>EN_ROUTE</c>：<c>CHARGER</c> 腿与
+    /// <c>CHARGING</c> 状态）按原 <c>messageId</c> 补发；被它取代、从没被确认的 <c>ALLOCATED</c> 那一对已经退役，不再发——补发按先后发，
+    /// 车载端把低于已采纳修订号的快照当成回退、当场拆会话。发件箱里每样仍是那几行，不产生第二份。
     /// </summary>
     [Fact]
     public async Task AfterAReconnectTheChargerPlanAndChargingStateAreResentUnderTheirOwnIdsWithoutASecondCopy()
@@ -343,20 +345,27 @@ public sealed class ChargingExecutionTests
         fleet.Riot.BatteryByVehicle[KeyA] = 20;
         fleet.Peer.Unavailable = AgvA;
         JourneyRuntimeRow journey = await CommittedAndSentAsync(fleet);
-        string[] ids =
+        string[] superseded =
         [
             ChargingJourneyShape.AllocatedPlanMessageId(journey.JourneyId),
             ChargingJourneyShape.AllocatedStateMessageId(journey.JourneyId),
+        ];
+        string[] current =
+        [
             ChargingJourneyShape.EnRoutePlanMessageId(journey.JourneyId),
             ChargingJourneyShape.EnRouteStateMessageId(journey.JourneyId),
         ];
-        Assert.DoesNotContain(fleet.Peer.Delivered, line => ids.Contains(line.MessageId));
+        Assert.DoesNotContain(fleet.Peer.Delivered, line => superseded.Contains(line.MessageId) || current.Contains(line.MessageId));
 
         fleet.Peer.Unavailable = null;
         await fleet.HearFromEveryVehicleAsync();
         await RoundAsync(fleet);
 
-        Assert.All(ids, id => Assert.Contains(fleet.Peer.Delivered, line => line.MessageId == id));
+        Assert.All(current, id => Assert.Contains(fleet.Peer.Delivered, line => line.MessageId == id));
+        Assert.DoesNotContain(fleet.Peer.Delivered, line => superseded.Contains(line.MessageId));
+        Assert.All(
+            await fleet.Context.ProtocolOutbox.AsNoTracking().Where(row => superseded.Contains(row.MessageId)).ToArrayAsync(Token),
+            row => Assert.NotNull(row.FencedAt));
         Assert.Equal(2, (await PayloadsAsync(fleet, AgvA, "UpcomingStopPlanSnapshot")).Length);
         Assert.Equal(2, (await PayloadsAsync(fleet, AgvA, "VehicleBusinessStateSnapshot")).Length);
     }

@@ -112,6 +112,8 @@ Import-Module (Join-Path $PSScriptRoot 'L2DispatchZoneParameters.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'L2WaitingPoints.psm1') -Force
 # Batch 9's ChargingPolicy setup key and the default approved test policy (control-server#400).
 Import-Module (Join-Path $PSScriptRoot 'L2ChargingPolicy.psm1') -Force
+# Batch 9-06's Chargers setup key: charger stations on the fake Map and its route graph (control-server#404).
+Import-Module (Join-Path $PSScriptRoot 'L2Chargers.psm1') -Force
 # Only the real-onboard rig ever takes the desktop lock, but the import stays unconditional so the
 # dependency is visible at the top rather than buried in a branch 150 lines down.
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'DesktopLock.psm1') -Force
@@ -548,6 +550,15 @@ try {
             $riotArguments += "--FakeRiot:Seed:StationNodes:$($point.StationId)=$($point.Node)"
         }
     }
+    # control-server#404: a Chargers key puts charger stations on the fake Map and, with Node, on its route graph. Only the
+    # stations: registering them on the fake RIoT and importing the charger roster is the scenario's own (L2Chargers.psm1).
+    $chargerStations = Resolve-L2ChargerStations -Setup $setup -Where "$Scenario.setup.psd1"
+    foreach ($charger in @($chargerStations | Where-Object { $null -ne $_ })) {
+        $riotArguments += "--FakeRiot:Seed:Stations:$($charger.StationId)=$($charger.StationName)"
+        if ($null -ne $charger.Node) {
+            $riotArguments += "--FakeRiot:Seed:StationNodes:$($charger.StationId)=$($charger.Node)"
+        }
+    }
     if ($setup.ContainsKey('RouteCosts')) {
         foreach ($key in ($setup.RouteCosts.Keys | Sort-Object)) {
             $riotArguments += "--FakeRiot:Seed:RouteCosts:$key=$($setup.RouteCosts[$key])"
@@ -590,7 +601,7 @@ try {
     if ($setup.ContainsKey('Stations')) {
         $stationTable = @{}
         foreach ($key in $setup.Stations.Keys) { $stationTable[[string]$key] = [string]$setup.Stations[$key] }
-        foreach ($point in @($waitingPoints | Where-Object { $null -ne $_ })) {
+        foreach ($point in @($waitingPoints | Where-Object { $null -ne $_ }) + @($chargerStations | Where-Object { $null -ne $_ })) {
             if (-not $stationTable.ContainsKey([string]$point.StationId)) { $stationTable[[string]$point.StationId] = $point.StationName }
         }
         $null = $riot.Command('Put', "maps/$mapId/stations", @{ stations = $stationTable })

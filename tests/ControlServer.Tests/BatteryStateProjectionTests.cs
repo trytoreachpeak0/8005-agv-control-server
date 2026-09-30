@@ -51,12 +51,14 @@ public sealed class BatteryStateProjectionTests
     /// <summary>
     /// 搬运途中越过入口线，这一趟照常做完（REQ-0281）：派车时 80（<c>SUFFICIENT</c>，版本 1 记在旅程上），派出后掉到 10。取货站到站快照换成
     /// 下一版、投出 <c>MANDATORY_CHARGE</c>，服务端照常发录入请求、收下录入、下装货命令；卸货站同样，旅程完成，收尾快照带着同一个值。
-    /// 完成之后的下一轮，这辆车不再接新搬运，积压的原因码是强制充电。
+    /// 完成之后的下一轮，这辆车不再接新搬运，积压的原因码是强制充电。名册里登记了一台此刻分不到的桩（批次9-06，control-server#404）：
+    /// 名册为空时它会被置人工充电等待，挡住搬运的就换成等待那条判据了。
     /// </summary>
     [Fact]
     public async Task AVehicleThatFallsBelowItsLineOnTheWayFinishesItsJourneyAndThenTakesNoNewWork()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await ChargingTestKit.WriteRosterWithAChargerNobodyIsSentToAsync(fixture.Context, fixture.Options.MapId, Now);
         fixture.Catalog.Set(fixture.Demand(DemandId, "SUBLOT-001", Now.AddMinutes(-10)));
         fixture.BoxCounts.Set("SUBLOT-001", 4);
         await fixture.Engine.ExecuteOnceAsync(Token);

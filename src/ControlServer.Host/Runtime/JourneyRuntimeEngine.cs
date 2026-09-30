@@ -653,6 +653,11 @@ public sealed partial class JourneyRuntimeEngine(
                     {
                         await AdvanceIdleReturnAsync(runtime, currentMap, cancellationToken).ConfigureAwait(false);
                     }
+                    // control-server#404: so has a charging journey, up to its arrival at the charger.
+                    else if (runtime.IsCharging())
+                    {
+                        await AdvanceChargingAsync(runtime, cancellationToken).ConfigureAwait(false);
+                    }
                     else
                     {
                         await AdvanceAsync(runtime, currentMap, cancellationToken).ConfigureAwait(false);
@@ -719,8 +724,9 @@ public sealed partial class JourneyRuntimeEngine(
         // 下一轮按新行重判；它仍算 busy，不会被当空闲车派。
         blocked.UnionWith(yielded);
         // An idle return holds its vehicle (REQ-0290: a purpose already started is not taken over by a new one), so it is busy,
-        // and it takes no appended demand: it carries none to append to (control-server#390).
-        blocked.UnionWith(active.Where(row => row.IsIdleReturn()).Select(row => row.AgvId));
+        // and it takes no appended demand: it carries none to append to (control-server#390). The same goes for a charging
+        // journey (control-server#404): a vehicle committed to charging takes no transport on the way.
+        blocked.UnionWith(active.Where(row => row.CarriesNoDemand()).Select(row => row.AgvId));
         FleetVehicle[] underWay = roster.Vehicles
             .Where(vehicle => busy.Contains(vehicle.AgvId) && !blocked.Contains(vehicle.AgvId) &&
                               !heldByForeignOrder.Contains(vehicle.AgvId))
@@ -3919,14 +3925,17 @@ public sealed partial class JourneyRuntimeEngine(
                 item.Membership.ExpectedBasketCount))]);
 
     // The activePurpose of a transport journey. An idle return (batch 8-19, control-server#390) sends IDLE_RETURN from its own
-    // branch (JourneyRuntimeEngine.IdleReturn.cs, JourneyPlanBuilder.IdleReturnBusinessState); CHARGING is batch 9 and
-    // CLEARING_MAINTENANCE is deferred.
+    // branch (JourneyRuntimeEngine.IdleReturn.cs, JourneyPlanBuilder.IdleReturnBusinessState), and a charging journey (batch
+    // 9-06, control-server#404) sends CHARGING from its own (JourneyRuntimeEngine.Charging.cs,
+    // JourneyPlanBuilder.ChargingBusinessState). CLEARING_MAINTENANCE is deferred.
     private const string TransportPurpose = VehicleActivePurposes.Transport;
 
-    // 8005-agv-program#94's semantic table: a vehicle running this worker is carrying a demand, not charging, so it holds
-    // no charger reservation, no charging order and no charging cycle. "Not in a charging cycle" is a fact it knows, not a
-    // guess; UNKNOWN would report a missing feature as a lost observation. chargingCycleState and manualChargingHold belong
-    // to batch 9-06 and 9-07.
+    // 8005-agv-program#94's semantic table: a vehicle carrying a demand is not charging -- it holds no charger reservation, no
+    // charging order and no charging cycle, because a vehicle gets a charging cycle only while it has no other purpose
+    // (ChargingAllocator). "Not in a charging cycle" is a fact this server knows, not a guess; UNKNOWN would report a missing
+    // feature as a lost observation. A charging journey sends its cycle's own state (ALLOCATED, EN_ROUTE; the rest in batch
+    // 9-07). manualChargingHold is false for the same reason: a hold is placed only on a vehicle with no purpose, and lifted
+    // before it can take one (control-server#404).
     private const string NotInAChargingCycle = "NOT_CHARGING";
 
     /// <summary>
@@ -4792,7 +4801,10 @@ public sealed partial class JourneyRuntimeEngine(
         string.Equals(runtime.BlockReasonCode, PreDepartureSafetyNotValidReason, StringComparison.Ordinal) ||
         // control-server#390: an idle return held because its order may still exist or its vehicle may still move.
         string.Equals(runtime.BlockReasonCode, IdleReturn.IdleReturnExecutionReasons.WaitingPointLostOrderInFlight, StringComparison.Ordinal) ||
-        string.Equals(runtime.BlockReasonCode, IdleReturn.IdleReturnExecutionReasons.OrderEndedStopNotProven, StringComparison.Ordinal);
+        string.Equals(runtime.BlockReasonCode, IdleReturn.IdleReturnExecutionReasons.OrderEndedStopNotProven, StringComparison.Ordinal) ||
+        // control-server#404: a charging journey whose reservation or cycle is gone waits for a person to look.
+        string.Equals(runtime.BlockReasonCode, Charging.ChargingExecutionReasons.ReservationNotHeld, StringComparison.Ordinal) ||
+        string.Equals(runtime.BlockReasonCode, Charging.ChargingExecutionReasons.CycleMissing, StringComparison.Ordinal);
 
     private static bool IsHeldForAreaEndAdmission(JourneyRuntimeRow runtime) =>
         runtime.Stage == JourneyRuntimeStage.AwaitingGateArrival &&

@@ -858,6 +858,16 @@ public sealed partial class JourneyRuntimeEngine
             return OrderEndedWithoutArrivalReason;
         }
 
+        // control-server#404: the order of a journey that carries no demand is never rebuilt. REQ-0360's rebuild goes on carrying
+        // the demands the ended order had not finished, and a charging order (or an idle return's) has none. For a charging order
+        // the cancellation may well be deliberate -- REQ-0178 has a person cancel the HANG order of a vehicle that could not be
+        // charged -- and a rebuilt order would send move + act(78,1,0) to that same charger again, which REQ-0284 sets at zero
+        // retries. Named, not recorded: the charging branch ends the cycle once the vehicle is proven stopped.
+        if (runtime.CarriesNoDemand())
+        {
+            return OrderEndedWithoutArrivalReason;
+        }
+
         // An order this server cancelled itself -- the release service does, through the order command surface, when the
         // vehicle is no longer eligible -- was ended on purpose, not by mistake in RIoT. Rebuilding it would undo that decision.
         if (await dbContext.RiotOrderCommandAudit.AsNoTracking()

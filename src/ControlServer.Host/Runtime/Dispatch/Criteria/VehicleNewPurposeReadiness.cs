@@ -1,5 +1,7 @@
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 
 namespace ControlServer.Host.Runtime.Dispatch.Criteria;
 
@@ -98,5 +100,59 @@ public static class VehicleNewPurposeReadiness
         return commissioning != DispatchAdmissionChain.Eligible
             ? commissioning
             : VehicleDynamicFactsCriterion.Evaluate(facts, options);
+    }
+
+    /// <summary>
+    /// 服务端持有的人工充电等待（批次9-06，control-server#404；<c>REQ-0171</c> 的退化路径，规格 8.6）：在等待中的车不接任何新用途——
+    /// 搬运、空闲返回、自动充电都不接——出口只有「充电后返回服务」，电量回升本身不恢复资格。能接答
+    /// <see cref="DispatchAdmissionChain.Eligible"/>，否则 <see cref="DispatchReasonCodes.VehicleInManualChargingHold"/>。
+    /// </summary>
+    /// <remarks>派车链那一侧是 <see cref="ChargingStandingCriterion"/>（Order 18），空闲返回在它的资格里调，充电分配在它的开头调：同一个读法。</remarks>
+    public static async Task<string> ManualChargingHoldVerdictAsync(
+        ControlServerDbContext dbContext, string vehicleKey, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(dbContext);
+        ArgumentException.ThrowIfNullOrWhiteSpace(vehicleKey);
+        return await dbContext.Set<ManualChargingHoldRow>().AsNoTracking()
+            .AnyAsync(row => row.VehicleKey == vehicleKey, cancellationToken).ConfigureAwait(false)
+            ? DispatchReasonCodes.VehicleInManualChargingHold
+            : DispatchAdmissionChain.Eligible;
+    }
+
+    /// <summary>
+    /// 这辆车此刻能不能承接<b>充电</b>这个新用途（批次9-06，control-server#404）：与派车、空闲返回同一份车辆侧判定，只有电量那一段反过来问——
+    /// 它必须恰好是「低于强制充电线」，别的每一条照旧都要满足。能接答 <see cref="DispatchAdmissionChain.Eligible"/>，否则答挡住它的那一条的码。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>只认这一轮读定的那一份策略</b>（<see cref="DispatchVehicleFacts.BatteryPolicy"/>），不再问解析器：一轮派车对一辆车只认一个版本，
+    /// 判它要不要充电的、搬运判它的、记到充电周期与旅程上的是同一份。没有策略答 <see cref="DispatchReasonCodes.ChargingPolicyNotApproved"/>，
+    /// 强制充电线不高于救命线答 <see cref="DispatchReasonCodes.ChargingPolicyEntryNotAboveRescueLine"/>——策略坏了，充电也一样不接
+    /// （两个码都出自 <see cref="VehicleDynamicFactsCriterion.Evaluate"/> 的电量一段，即 <see cref="BatteryEligibility.Judge"/>）。
+    /// </para>
+    /// <para>
+    /// <b>怎么问「除电量之外」</b>：<see cref="VehicleDynamicFactsCriterion.Evaluate"/> 把电量判在中间（新鲜度之后，停稳与订单占用之前），
+    /// 答了「要充电」就不往后判。所以问两次：照实问一次，必须答 <see cref="DispatchReasonCodes.MandatoryChargeRequired"/>（答别的就是别的挡着，
+    /// 或它根本不需要充电）；再把电量换成一个任何余量都保得住的数问一次，那一次必须放行。判据本身一行不动，两条链永远不会各判各的。
+    /// </para>
+    /// </remarks>
+    public static async Task<string> JudgeForChargingAsync(
+        IVehicleFaultStore faults,
+        DispatchVehicleFacts facts,
+        JourneyRuntimeOptions options,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(facts);
+        string fault = await FaultVerdictAsync(faults, facts.AgvId, cancellationToken).ConfigureAwait(false);
+        if (fault != DispatchAdmissionChain.Eligible)
+        {
+            return fault;
+        }
+
+        string asObserved = VehicleDynamicFactsCriterion.Evaluate(facts, options);
+        return asObserved != DispatchReasonCodes.MandatoryChargeRequired
+            ? asObserved
+            : VehicleDynamicFactsCriterion.Evaluate(
+                facts with { Vehicle = facts.Vehicle with { BatteryPercent = int.MaxValue } }, options);
     }
 }

@@ -10,6 +10,10 @@ namespace ControlServer.Tests;
 /// 电量阈值与强制充电优先在派车轮次上的样子（批次9-05，control-server#403；REQ-0208、REQ-0281、REQ-0282、REQ-0290）。夹具的测试策略
 /// 两道线都是 40（<see cref="TestChargingPolicies.AllApprovedAt"/>），合成 RIoT 报 80，除非用例把某辆车的电量改掉。
 /// </summary>
+/// <remarks>
+/// 批次9-06（control-server#404）起，低于线的空闲车会被分配去充电，名册里没有它可用的桩时被置人工充电等待。要看电量判据自己的原因码的用例
+/// 先登记一台谁也分不到的桩（<see cref="ChargingTestKit.WriteRosterWithAChargerNobodyIsSentToAsync"/>）：车留在充电队列里，不置等待。
+/// </remarks>
 public sealed partial class MultiVehicleExecutionTests
 {
     /// <summary>
@@ -21,6 +25,7 @@ public sealed partial class MultiVehicleExecutionTests
     {
         await using FleetFixture fixture = await FleetFixture.CreateAsync(
             configure: options => options.Fleet = options.Fleet[..2]);
+        await ChargingTestKit.WriteRosterWithAChargerNobodyIsSentToAsync(fixture.Context, fixture.Options.MapId, fixture.Clock.GetUtcNowWithoutTick());
         fixture.Riot.BatteryByVehicle[FleetFixture.VehicleKeys[0]] = 39;
         fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
 
@@ -35,14 +40,16 @@ public sealed partial class MultiVehicleExecutionTests
     }
 
     /// <summary>
-    /// 只有一辆低于入口线的车：需求留在积压里，原因码是新码；车一张单都没有、也没有被任何用途占有——批次9-06 去桩之前它原地不动，
-    /// 与此前低于 30% 的车一样（本票的准入线护栏）。连跑三轮，结论不变。
+    /// 只有一辆低于入口线的车，名册里的桩此刻分不到：需求留在积压里，原因码是新码；车一张单都没有、没有被任何用途占有、也没有被置人工充电
+    /// 等待——它留在充电队列里原地不动（control-server#403 的准入线护栏；批次9-06 起「分得到桩」与「名册为空」两格见
+    /// <c>ChargingAllocationTests</c>）。连跑三轮，结论不变。
     /// </summary>
     [Fact]
     public async Task AVehicleBelowItsMandatoryChargeLineIsSentNowhere()
     {
         await using FleetFixture fixture = await FleetFixture.CreateAsync(
             configure: options => options.Fleet = options.Fleet[..1]);
+        await ChargingTestKit.WriteRosterWithAChargerNobodyIsSentToAsync(fixture.Context, fixture.Options.MapId, fixture.Clock.GetUtcNowWithoutTick());
         fixture.Riot.BatteryByVehicle[FleetFixture.VehicleKeys[0]] = 20;
         fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
 
@@ -57,6 +64,7 @@ public sealed partial class MultiVehicleExecutionTests
         Assert.Empty(fixture.Context.JourneyRuntimes);
         Assert.Empty(fixture.Riot.Creates);
         Assert.Empty(fixture.Context.Set<VehiclePurposeClaimRow>());
+        Assert.Empty(fixture.Context.Set<ManualChargingHoldRow>());
     }
 
     /// <summary>
@@ -91,6 +99,7 @@ public sealed partial class MultiVehicleExecutionTests
         // refused for the zone allowing none), not through a chain without its en-route gate.
         await using FleetFixture fixture = await FleetFixture.CreateAsync(
             configure: options => options.Fleet = options.Fleet[..2], withRouteGraph: true);
+        await ChargingTestKit.WriteRosterWithAChargerNobodyIsSentToAsync(fixture.Context, fixture.Options.MapId, fixture.Clock.GetUtcNowWithoutTick());
         TestChargingPolicies.Versions versions = new(TestChargingPolicies.ContentAt(40));
         fixture.ChargingPolicy = versions;
         await fixture.RecreateEngineAsync();
@@ -198,6 +207,7 @@ public sealed partial class MultiVehicleExecutionTests
     {
         await using FleetFixture fixture = await FleetFixture.CreateAsync(
             configure: options => options.Fleet = options.Fleet[..2], withRouteGraph: true);
+        await ChargingTestKit.WriteRosterWithAChargerNobodyIsSentToAsync(fixture.Context, fixture.Options.MapId, fixture.Clock.GetUtcNowWithoutTick());
         await fixture.AllowEnRouteAppendAsync(1_000_000);
         TestChargingPolicies.Versions versions = new(TestChargingPolicies.ContentAt(40));
         fixture.ChargingPolicy = versions;

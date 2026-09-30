@@ -215,8 +215,9 @@ public sealed partial class JourneyRuntimeEngine
         string orderId,
         CancellationToken cancellationToken)
     {
-        // An idle return (control-server#390) carries no demand and so no cargo: the fault is about its order alone.
-        if (runtime.IsIdleReturn())
+        // An idle return (control-server#390) or a charging journey (control-server#404) carries no demand and so no cargo: the
+        // fault is about its order alone.
+        if (runtime.CarriesNoDemand())
         {
             return new FaultedVehicleContext(new RiotOrderCommandTarget(runtime.AgvId, intent.UpperId, orderId), null);
         }

@@ -691,6 +691,58 @@ public sealed class ChargingAllocationTests
         Assert.Equal(KeyA, (await StationAsync(fleet, Near.StationId))!.VehicleKey);
         JsonElement[] states = await PayloadsAsync(fleet, AgvA, "VehicleBusinessStateSnapshot");
         Assert.Equal([true, false], [.. states.Take(2).Select(state => state.GetProperty("manualChargingHold").GetBoolean())]);
+        // One stream per vehicle: the hold's two snapshots and the charging journey's that follows never share a revision,
+        // and the journey's come after them (the vehicle refuses a revision at or below the one it has adopted).
+        await RoundAsync(fleet);
+        long[] revisions =
+        [
+            .. (await PayloadsAsync(fleet, AgvA, "VehicleBusinessStateSnapshot"))
+                .Select(state => state.GetProperty("vehicleBusinessStateRevision").GetInt64()),
+        ];
+        Assert.True(revisions.Length >= 4, string.Join(',', revisions));
+        Assert.Equal(revisions.Distinct().Order(), revisions);
+        Assert.Equal(
+            [null, null, VehicleActivePurposes.Charging, VehicleActivePurposes.Charging],
+            (await PayloadsAsync(fleet, AgvA, "VehicleBusinessStateSnapshot")).Take(4)
+                .Select(state => state.GetProperty("activePurpose").GetString()));
+    }
+
+    /// <summary>
+    /// 置上等待那一张车从没收到（它当时不在线），解除那一张排进去时把它退役，不再补发：补发按先后发没确认的行，而车载端把低于已采纳修订号的
+    /// 快照当成回退、当场拆会话。车重新连上之后只收到现行的那一张（<c>manualChargingHold=false</c>）。
+    /// </summary>
+    [Fact]
+    public async Task AHoldSnapshotNeverAcknowledgedIsRetiredWhenTheSnapshotLiftingItReplacesIt()
+    {
+        await using FleetFixture fleet = await FleetAsync(roster: false);
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        fleet.Peer.Unavailable = AgvA;
+        await RoundAsync(fleet);
+        ManualChargingHoldRow hold = await fleet.Context.Set<ManualChargingHoldRow>().AsNoTracking().SingleAsync(Token);
+        string placed = ChargingAllocator.PlacedMessageId(hold.HoldId);
+        string released = ChargingAllocator.ReleasedMessageId(hold.HoldId);
+
+        // Charged by hand, then returned to service -- all while the vehicle's link is still down.
+        fleet.Riot.BatteryByVehicle[KeyA] = 90;
+        await ReturnToServiceAsync(fleet, AgvA, KeyA, "00000000-0000-4000-8000-0000000000d2");
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+
+        ProtocolOutboxRow[] rows = await fleet.Context.ProtocolOutbox.AsNoTracking()
+            .Where(row => row.MessageId == placed || row.MessageId == released).ToArrayAsync(Token);
+        Assert.NotNull(rows.Single(row => row.MessageId == placed).FencedAt);
+        Assert.Null(rows.Single(row => row.MessageId == released).FencedAt);
+        Assert.DoesNotContain(fleet.Peer.Delivered, line => line.MessageId == placed || line.MessageId == released);
+
+        fleet.Peer.Unavailable = null;
+        await RoundAsync(fleet);
+
+        Assert.Contains(fleet.Peer.Delivered, line => line.MessageId == released);
+        Assert.DoesNotContain(fleet.Peer.Delivered, line => line.MessageId == placed);
+        Assert.Equal(
+            [true, false],
+            (await PayloadsAsync(fleet, AgvA, "VehicleBusinessStateSnapshot"))
+                .Select(state => state.GetProperty("manualChargingHold").GetBoolean()));
     }
 
     /// <summary>
