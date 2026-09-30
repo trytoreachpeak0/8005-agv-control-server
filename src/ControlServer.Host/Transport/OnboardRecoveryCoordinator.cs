@@ -61,6 +61,14 @@ public sealed class OnboardRecoveryCoordinator(
     internal const string ReleaseReadingsUnprovenOutcome = "READINGS_UNPROVEN";
 
     /// <summary>
+    /// A repair release whose <c>HOLD_RELEASE</c> check the vehicle answered as something else -- another
+    /// <c>checkPurpose</c>, or another check's id under its correlation: the release is spent like unproven readings, so a new
+    /// session can take it again (control-server#385 review M1). A check the vehicle refused outright with a
+    /// <c>ProtocolProblem</c> is spent the same way, its outcome the vehicle's reason code.
+    /// </summary>
+    internal const string ReleaseCheckAnswerMismatchedOutcome = "CHECK_ANSWER_MISMATCHED";
+
+    /// <summary>
     /// The outcome a resume is judged on when the vehicle refused its command (control-server#187). A resume's
     /// outcome is otherwise empty -- its account is the replacement OperationResult -- so this marks, in the store,
     /// that its session closed because the command was refused rather than because a result did not reconcile. The
@@ -1479,7 +1487,7 @@ public sealed class OnboardRecoveryCoordinator(
     /// business snapshot at the same instant, and a replay orders by that time, so this one -- a higher revision -- must sort
     /// after it or the vehicle would read a revision going backwards.
     /// </remarks>
-    private async Task HoldForDoorRepairAsync(RecoveryWorkflowRow workflow, CancellationToken cancellationToken)
+    internal async Task HoldForDoorRepairAsync(RecoveryWorkflowRow workflow, CancellationToken cancellationToken)
     {
         DateTimeOffset now = timeProvider.GetUtcNow();
         int[] slots = ParseSlots(workflow.SlotsJson);
@@ -1618,6 +1626,12 @@ public sealed class OnboardRecoveryCoordinator(
     /// departure (the runtime reads DEPARTURE answers only, control-server#382).
     /// </para>
     /// <para>
+    /// <b>An answer to the release's check that is not that answer spends the release</b> (review M1): the check is
+    /// settled and the release goes to <c>RecoveryRequired</c> under <see cref="ReleaseCheckAnswerMismatchedOutcome"/>.
+    /// Left waiting, it would block every later release of the vehicle (<see cref="RepairReleaseOfferedAsync"/>) with
+    /// nothing left to conclude it, and the vehicle would stay held with no way out short of editing the store.
+    /// </para>
+    /// <para>
     /// <b>What is judged.</b> <c>outcome</c> alone. The check names no target slots, so <c>allTargetSlotsLocked</c> says
     /// nothing here; the held slots were proven LOCKED, RESET and EMPTY by the readings before the check was sent, and this
     /// is the vehicle's own final word that it is safe to take work. SAFE lifts every hold of the vehicle whose slots the
@@ -1637,25 +1651,24 @@ public sealed class OnboardRecoveryCoordinator(
             row => row.AgvId == agvId && row.WorkflowType == RepairReleaseAction &&
                    row.CommandMessageId == checkMessageId && row.State == RecoveryWorkflowState.AwaitingResult,
             cancellationToken).ConfigureAwait(false);
-        if (release is null ||
-            !payload.TryGetProperty("checkPurpose", out JsonElement purpose) ||
-            purpose.ValueKind != JsonValueKind.String ||
-            purpose.GetString() != PreDepartureCheckPurposes.HoldRelease ||
-            RequiredString(payload, "preDepartureSafetyCheckId") != StableGuid(release.WorkflowId, "hold-release-check"))
+        if (release is null)
             return null;
 
         DateTimeOffset now = timeProvider.GetUtcNow();
-        string outcome = RequiredString(payload, "outcome");
-        release.Outcome = outcome;
+        bool ownAnswer = payload.TryGetProperty("checkPurpose", out JsonElement purpose) &&
+                         purpose.ValueKind == JsonValueKind.String &&
+                         purpose.GetString() == PreDepartureCheckPurposes.HoldRelease &&
+                         RequiredString(payload, "preDepartureSafetyCheckId") == StableGuid(release.WorkflowId, "hold-release-check");
+        string outcome = ownAnswer ? RequiredString(payload, "outcome") : ReleaseCheckAnswerMismatchedOutcome;
         release.ResultMessageId = RequiredString(root, "messageId");
-        release.UpdatedAt = now;
-        await store.SettleAnsweredCommandAsync(checkMessageId, now, cancellationToken).ConfigureAwait(false);
         if (outcome != "SAFE")
         {
-            release.State = RecoveryWorkflowState.RecoveryRequired;
-            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            await SpendReleaseCheckAsync(release, outcome, now, cancellationToken).ConfigureAwait(false);
             return null;
         }
+        release.Outcome = outcome;
+        release.UpdatedAt = now;
+        await store.SettleAnsweredCommandAsync(checkMessageId, now, cancellationToken).ConfigureAwait(false);
         release.State = RecoveryWorkflowState.Reconciled;
         DateTimeOffset recordedAt = await dbContext.HardwareRecoveryRecords.AsNoTracking()
             .Where(record => record.RecoveryActionId == release.WorkflowId)
@@ -1672,6 +1685,46 @@ public sealed class OnboardRecoveryCoordinator(
         }
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return release.WorkflowId;
+    }
+
+    /// <summary>
+    /// A <c>ProtocolProblem</c> the vehicle raised against a message of ours (control-server#385 review M1): when it
+    /// refuses the <c>HOLD_RELEASE</c> check of a release still waiting for its answer -- the onboard answers a check it
+    /// will not run, an expired safety version or a purpose it does not take, with <c>PREDEPARTURE_CHECK_EXPIRED</c> or
+    /// <c>ACTION_NOT_ALLOWED_IN_STATE</c> and no result -- that release is spent, its outcome the vehicle's reason code, and
+    /// a new session can take it again. Any other refused message is not this method's. Returns whether it spent one.
+    /// </summary>
+    public async Task<bool> ObserveReleaseCheckRefusedAsync(
+        string agvId,
+        string rejectedMessageId,
+        string reasonCode,
+        CancellationToken cancellationToken)
+    {
+        RecoveryWorkflowRow? release = await dbContext.RecoveryWorkflows.SingleOrDefaultAsync(
+            row => row.AgvId == agvId && row.WorkflowType == RepairReleaseAction &&
+                   row.CommandMessageId == rejectedMessageId && row.State == RecoveryWorkflowState.AwaitingResult,
+            cancellationToken).ConfigureAwait(false);
+        if (release is null)
+            return false;
+        await SpendReleaseCheckAsync(release, reasonCode, timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
+    /// <summary>
+    /// Spends a release at its check: settles the check so it is never replayed, records why, and leaves the release in
+    /// <c>RecoveryRequired</c> -- the vehicle stays held, and the release is offered again to a new session.
+    /// </summary>
+    private async Task SpendReleaseCheckAsync(
+        RecoveryWorkflowRow release,
+        string outcome,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        release.Outcome = outcome;
+        release.State = RecoveryWorkflowState.RecoveryRequired;
+        release.UpdatedAt = now;
+        await store.SettleAnsweredCommandAsync(release.CommandMessageId!, now, cancellationToken).ConfigureAwait(false);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -1705,6 +1758,18 @@ public sealed class OnboardRecoveryCoordinator(
         CancellationToken cancellationToken)
     {
         long revision = (await HighestBusinessRevisionAsync(agvId, cancellationToken).ConfigureAwait(false) ?? 0) + 1;
+        // A journey still open on this vehicle publishes its stops at base + sequence - 1 (JourneyRuntimeEngine.StopRevision);
+        // a hold or release in the middle of it would otherwise sit at or above the next stop's number, and the vehicle
+        // refuses that as SNAPSHOT_REVISION_REGRESSION or a content conflict (control-server#385 review M2). Raise its base
+        // past this revision in the same change, as the loading phase does: every later stop, the first included, lands
+        // above it, and an arrival already queued below it is no longer resent (ArrivalBusinessStateSupersededAsync).
+        foreach (JourneyRuntimeRow open in (await dbContext.JourneyRuntimes
+                     .Where(row => row.AgvId == agvId && row.Stage != JourneyRuntimeStage.Completed)
+                     .ToArrayAsync(cancellationToken).ConfigureAwait(false))
+                 .Where(row => row.Stage != JourneyRuntimeStage.Completed && row.VehicleBusinessRevision <= revision))
+        {
+            open.VehicleBusinessRevision = revision + 1;
+        }
         VehicleBusinessBlockingFact[] facts =
         [
             .. heldSlots.Order().Select(slot => new VehicleBusinessBlockingFact(
@@ -1775,9 +1840,9 @@ public sealed class OnboardRecoveryCoordinator(
         ];
     }
 
-    private static string DoorHoldSnapshotId(string holdId) => StableGuid(holdId, "slot-door-hold-business-state");
+    internal static string DoorHoldSnapshotId(string holdId) => StableGuid(holdId, "slot-door-hold-business-state");
 
-    private static string DoorReleaseSnapshotId(string releaseActionId) =>
+    internal static string DoorReleaseSnapshotId(string releaseActionId) =>
         StableGuid(releaseActionId, "slot-door-release-business-state");
 
     /// <summary>

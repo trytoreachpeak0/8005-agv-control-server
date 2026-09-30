@@ -803,12 +803,13 @@ public sealed partial class RecoveryStateMachineG2Tests
     /// <summary>
     /// Only a SAFE answer to the release's own check, saying HOLD_RELEASE, lifts the hold. An answer saying DEPARTURE
     /// under the same correlation is not a release (and the runtime never takes a HOLD_RELEASE answer for a departure,
-    /// control-server#382); an UNSAFE HOLD_RELEASE answer spends the release.
+    /// control-server#382): it spends the release like an UNSAFE or UNKNOWN HOLD_RELEASE answer does, rather than leave it
+    /// waiting for an answer that will not come (review M1; that a new release then lifts the hold is the next test's).
     /// </summary>
     [Theory]
     [Trait("IntegrationSlice", "FP-IS-07")]
     [Trait("ProtocolVector", "CV-VEHICLE-HOLD-DOOR-REPAIR-RELEASE")]
-    [InlineData("DEPARTURE", "SAFE", RecoveryWorkflowState.AwaitingResult)]
+    [InlineData("DEPARTURE", "SAFE", RecoveryWorkflowState.RecoveryRequired)]
     [InlineData("HOLD_RELEASE", "UNSAFE", RecoveryWorkflowState.RecoveryRequired)]
     [InlineData("HOLD_RELEASE", "UNKNOWN", RecoveryWorkflowState.RecoveryRequired)]
     public async Task OnlyASafeHoldReleaseAnswerToTheReleasesOwnCheckLiftsTheHold(
@@ -844,6 +845,169 @@ public sealed partial class RecoveryStateMachineG2Tests
                 .SingleAsync(row => row.WorkflowId == ReleaseActionId, token)).State);
             Assert.Null((await context.SlotDoorHolds.AsNoTracking().SingleAsync(token)).ReleasedAt);
             Assert.Equal(WireToGateStore.SlotDoorRepairReleaseRequired, (await store.DecideReadinessAsync(AgvId, 3, token)).ReasonCode);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// The vehicle does not answer the release's check with a SAFE HOLD_RELEASE result (control-server#385 review M1): it
+    /// refuses it with a <c>ProtocolProblem</c> -- the onboard's answer to a check whose safety version has moved on
+    /// (<c>PREDEPARTURE_CHECK_EXPIRED</c>) or whose purpose it will not run (<c>ACTION_NOT_ALLOWED_IN_STATE</c>), with no
+    /// result -- or answers it as a DEPARTURE check. Each spends the release: its check is settled and never replayed, the
+    /// vehicle stays held, and a new session is offered the release again and lifts the hold with it. No store edit.
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-VEHICLE-HOLD-DOOR-REPAIR-RELEASE")]
+    [InlineData("PREDEPARTURE_CHECK_EXPIRED")]
+    [InlineData("ACTION_NOT_ALLOWED_IN_STATE")]
+    [InlineData("DEPARTURE")]
+    public async Task ARefusedOrMisansweredReleaseCheckSpendsTheReleaseAndANewOneLiftsTheHold(string answer)
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_REPAIR_RELEASE_REFUSED";
+        const string proof = "repair-release-refused-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            (RecordingPeer peer, OnboardMessageProcessor processor, OnboardConnectionState state) =
+                await HoldTheVehicleAsync(context, proofVariable, proof);
+            WireToGateStore store = new(context);
+            string sessionId = StableGuid(ReleaseRequestId, "exception-recovery-session");
+            await ExchangeAsync(processor, peer, state, ReleaseSessionRequest(proof, RecoverySlots));
+            await ExchangeAsync(processor, peer, state, ReleaseAction(sessionId, RecoverySlots));
+            await ExchangeAsync(processor, peer, state,
+                ReleaseRecord("e3850000-0000-4000-8000-000000000a01", sessionId, RecoverySlots));
+            string check = Assert.Single(
+                await ExchangeAsync(processor, peer, state, SlotReadings("e3850000-0000-4000-8000-000000000a02", 8)),
+                line => MessageType(line) == "PreDepartureSafetyCheck");
+            string checkMessageId;
+            using (JsonDocument checkDocument = JsonDocument.Parse(check))
+            {
+                checkMessageId = checkDocument.RootElement.GetProperty("messageId").GetString()!;
+            }
+
+            if (answer == "DEPARTURE")
+            {
+                await ExchangeAsync(processor, peer, state,
+                    HoldReleaseCheckResult("e3850000-0000-4000-8000-000000000a03", check, "SAFE", "DEPARTURE"));
+            }
+            else
+            {
+                Assert.Equal(string.Empty, await processor.ProcessAsync(Envelope(
+                    "e3850000-0000-4000-8000-000000000a03",
+                    "ProtocolProblem",
+                    new
+                    {
+                        rejectedMessageId = checkMessageId,
+                        rejectedMessageType = "PreDepartureSafetyCheck",
+                        problem = new { reasonCode = answer, fieldPath = (string?)null, displayMessage = (string?)null }
+                    }), state, token));
+            }
+
+            RecoveryWorkflowRow spent = await context.RecoveryWorkflows.AsNoTracking()
+                .SingleAsync(row => row.WorkflowId == ReleaseActionId, token);
+            Assert.Equal(
+                (RecoveryWorkflowState.RecoveryRequired, answer == "DEPARTURE" ? "CHECK_ANSWER_MISMATCHED" : answer),
+                (spent.State, spent.Outcome));
+            Assert.NotNull((await context.ProtocolOutbox.AsNoTracking()
+                .SingleAsync(row => row.MessageId == checkMessageId, token)).AcknowledgedAt);
+            Assert.Null((await context.SlotDoorHolds.AsNoTracking().SingleAsync(token)).ReleasedAt);
+            Assert.Equal(WireToGateStore.SlotDoorRepairReleaseRequired, (await store.DecideReadinessAsync(AgvId, 3, token)).ReasonCode);
+
+            const string againRequestId = "41000000-0000-4000-8000-000000000387";
+            const string againActionId = "71000000-0000-4000-8000-000000000387";
+            string againSessionId = StableGuid(againRequestId, "exception-recovery-session");
+            string[] reopened = await ExchangeAsync(processor, peer, state, ReleaseSessionRequest(
+                proof, RecoverySlots, "e3850000-0000-4000-8000-000000000a04", againRequestId));
+            Assert.Contains("HARDWARE_REPAIR_RELEASE",
+                SessionSnapshotIn(reopened, againSessionId)
+                    .GetProperty("allowedActions").EnumerateArray().Select(item => item.GetString()));
+            Assert.Equal("RecoveryActionAccepted", MessageType((await ExchangeAsync(processor, peer, state,
+                ReleaseAction(againSessionId, RecoverySlots, againActionId, "e3850000-0000-4000-8000-000000000a05")))[0]));
+            await ExchangeAsync(processor, peer, state, ReleaseRecord(
+                "e3850000-0000-4000-8000-000000000a06", againSessionId, RecoverySlots, againActionId));
+            string[] readings = await ExchangeAsync(
+                processor, peer, state, SlotReadings("e3850000-0000-4000-8000-000000000a07", 9));
+            string againCheck = Assert.Single(readings, line => MessageType(line) == "PreDepartureSafetyCheck");
+            Assert.DoesNotContain(readings, line => line.Contains(checkMessageId, StringComparison.Ordinal));
+            await ExchangeAsync(processor, peer, state,
+                HoldReleaseCheckResult("e3850000-0000-4000-8000-000000000a08", againCheck));
+
+            Assert.NotNull((await context.SlotDoorHolds.AsNoTracking().SingleAsync(token)).ReleasedAt);
+            Assert.Equal(SessionReadiness.Ready, (await store.DecideReadinessAsync(AgvId, 3, token)).Readiness);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// A release takes one record (control-server#385 review S1). A second record on the same release, once the first has
+    /// been spent on unproven readings or has lifted the hold, is refused: it neither pulls the release back to waiting for
+    /// readings nor adds a second record the release's check would have to choose between.
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-VEHICLE-HOLD-DOOR-REPAIR-RELEASE")]
+    [InlineData("spent")]
+    [InlineData("lifted")]
+    public async Task ASecondRecordOnARepairReleaseIsRefusedAndChangesNothing(string first)
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_REPAIR_RELEASE_SECOND_RECORD";
+        const string proof = "repair-release-second-record-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            (RecordingPeer peer, OnboardMessageProcessor processor, OnboardConnectionState state) =
+                await HoldTheVehicleAsync(context, proofVariable, proof);
+            string sessionId = StableGuid(ReleaseRequestId, "exception-recovery-session");
+            await ExchangeAsync(processor, peer, state, ReleaseSessionRequest(proof, RecoverySlots));
+            await ExchangeAsync(processor, peer, state, ReleaseAction(sessionId, RecoverySlots));
+            await ExchangeAsync(processor, peer, state,
+                ReleaseRecord("e3850000-0000-4000-8000-000000000b01", sessionId, RecoverySlots));
+            if (first == "spent")
+            {
+                await ExchangeAsync(processor, peer, state,
+                    SlotReadings("e3850000-0000-4000-8000-000000000b02", 8, unprovenSlot: 2));
+            }
+            else
+            {
+                string check = Assert.Single(
+                    await ExchangeAsync(processor, peer, state, SlotReadings("e3850000-0000-4000-8000-000000000b02", 8)),
+                    line => MessageType(line) == "PreDepartureSafetyCheck");
+                await ExchangeAsync(processor, peer, state,
+                    HoldReleaseCheckResult("e3850000-0000-4000-8000-000000000b03", check));
+            }
+            RecoveryWorkflowRow before = await context.RecoveryWorkflows.AsNoTracking()
+                .SingleAsync(row => row.WorkflowId == ReleaseActionId, token);
+            SlotDoorHoldRow holdBefore = await context.SlotDoorHolds.AsNoTracking().SingleAsync(token);
+            Assert.Equal(
+                first == "spent" ? RecoveryWorkflowState.RecoveryRequired : RecoveryWorkflowState.Reconciled, before.State);
+
+            string[] second = await ExchangeAsync(processor, peer, state,
+                ReleaseRecord("e3850000-0000-4000-8000-000000000b04", sessionId, RecoverySlots));
+
+            Assert.Equal("REJECTED", PayloadOf(second[0]).GetProperty("outcome").GetString());
+            RecoveryWorkflowRow after = await context.RecoveryWorkflows.AsNoTracking()
+                .SingleAsync(row => row.WorkflowId == ReleaseActionId, token);
+            Assert.Equal((before.State, before.Outcome, before.CommandMessageId), (after.State, after.Outcome, after.CommandMessageId));
+            Assert.Equal(1, await context.HardwareRecoveryRecords.AsNoTracking()
+                .CountAsync(row => row.RecoveryActionId == ReleaseActionId, token));
+            SlotDoorHoldRow holdAfter = await context.SlotDoorHolds.AsNoTracking().SingleAsync(token);
+            Assert.Equal((holdBefore.ReleasedAt, holdBefore.ReleasedByActionId), (holdAfter.ReleasedAt, holdAfter.ReleasedByActionId));
+            Assert.DoesNotContain(second, line => MessageType(line) is "SafetyStateSnapshotRequested" or "PreDepartureSafetyCheck");
         }
         finally
         {

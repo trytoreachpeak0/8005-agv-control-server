@@ -710,6 +710,74 @@ public sealed class StopEndedJourneyContinuesTests
         });
     }
 
+    /// <summary>
+    /// 旅程途中扣车又放行（control-server#385 审查 M2）：扣车与放行那两张车辆业务状态在旅程之外发，号取「这条流上最大的 + 1」；
+    /// 旅程继续到下一站时，到站那一张的号必须在它们之上，否则车以 <c>SNAPSHOT_REVISION_REGRESSION</c> 断会话。
+    /// </summary>
+    /// <remarks>
+    /// 扣车走协调器自己的那一处（<c>HoldForDoorRepairAsync</c>），不经一条门未证明的取消结果：这个夹具的第二个取货站没有开过门的
+    /// 装货尝试，而号的问题与扣车从哪条结果来无关。放行同样直接暂存放行那一张，读数与放行检查那一段由恢复面的用例守。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AHoldAndItsReleaseMidJourneyStayBelowTheNextStopsBusinessState()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await EndTheSecondPickupByItsDeadlineAsync(fixture);
+        string agvId = fixture.Options.AgvId;
+        long generation = (await fixture.Context.SessionRecoveries.AsNoTracking()
+            .SingleAsync(row => row.AgvId == agvId, token)).SessionGeneration;
+        await using (ControlServerDbContext connection = fixture.OpenConnectionContext())
+        {
+            OnboardRecoveryCoordinator coordinator = TestOnboardProcessorFactory.CreateRecoveryCoordinator(
+                connection, new WireToGateStore(connection), fixture.Clock, new ConfigurationBuilder().Build(), fixture.Peer);
+            await coordinator.HoldForDoorRepairAsync(
+                new RecoveryWorkflowRow
+                {
+                    WorkflowId = MidJourneyHoldId, WorkflowType = "LOAD_CANCELLATION", RequestMessageId = MidJourneyHoldId,
+                    RequestContentHash = "unused", AgvId = agvId, DemandId = SecondDemandId, SlotsJson = "[1]"
+                },
+                token);
+            await connection.SaveChangesAsync(token);
+            SlotDoorHoldRow hold = await connection.SlotDoorHolds.SingleAsync(row => row.HoldId == MidJourneyHoldId, token);
+            hold.ReleasedByActionId = MidJourneyReleaseId;
+            hold.ReleasedAt = fixture.Clock.GetUtcNow();
+            Assert.NotNull(await coordinator.StageDoorReleaseBusinessStateAsync(agvId, generation, MidJourneyReleaseId, ready: true, token));
+            await connection.SaveChangesAsync(token);
+        }
+        long[] outsideTheJourney =
+        [
+            .. (await SnapshotsAsync(fixture.Context, agvId))
+                .Where(item => item.MessageId == OnboardRecoveryCoordinator.DoorHoldSnapshotId(MidJourneyHoldId) ||
+                               item.MessageId == OnboardRecoveryCoordinator.DoorReleaseSnapshotId(MidJourneyReleaseId))
+                .Select(item => item.Revision)
+        ];
+        Assert.Equal(2, outsideTheJourney.Length);
+
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+        await AnswerDepartureSafetyAsync(fixture, FirstDemandId, SecondSafetyResultId);
+        await ArriveAtCurrentStopAsync(fixture, FirstDemandId, "TO_GATE");
+        JourneyStopRow unloadStop = await CurrentStopAsync(fixture, FirstDemandId);
+        Assert.Equal(JourneyStopRoles.Unload, unloadStop.StopRole);
+
+        Snapshot atUnload = Assert.Single(
+            await SnapshotsAsync(fixture.Context, agvId), item => item.MessageId == unloadStop.VehicleBusinessMessageId);
+        Assert.True(
+            atUnload.Revision > outsideTheJourney.Max(),
+            $"卸货站到站那一张车辆业务状态是第 {atUnload.Revision} 号，没有越过扣车与放行的 {string.Join("/", outsideTheJourney)}。");
+        long[] business =
+        [
+            .. (await SnapshotsAsync(fixture.Context, agvId))
+                .Where(item => item.MessageType == "VehicleBusinessStateSnapshot").Select(item => item.Revision)
+        ];
+        Assert.Equal(business.Distinct().Count(), business.Length);
+    }
+
+    private const string MidJourneyHoldId = "e3850000-0000-4000-8000-000000000001";
+    private const string MidJourneyReleaseId = "e3850000-0000-4000-8000-000000000002";
+
     /// <summary>线上发出的那一行里的 <c>stopEndedReason</c>。那一行不在线上就失败。</summary>
     private static string? SentStopEndedReason(RuntimeFixture fixture, string messageId)
     {

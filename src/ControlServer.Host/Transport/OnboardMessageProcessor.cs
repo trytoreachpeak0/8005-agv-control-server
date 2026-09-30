@@ -463,15 +463,10 @@ public sealed partial class OnboardMessageProcessor(
                 {
                     string checkAck = DurableAck(messageType, messageId, agvId, generation, contentHash);
                     // DEPARTURE answers are read by the journey runtime from the inbox (FindSafeDepartureResultAsync, which
-                    // since control-server#382 takes DEPARTURE only). A HOLD_RELEASE answer is the last step of a repair
-                    // release (control-server#385): judged here, and when it lifts the hold, readiness is decided again and
-                    // the released business state goes out after the answer.
-                    if (!payload.TryGetProperty("checkPurpose", out JsonElement checkPurpose) ||
-                        checkPurpose.ValueKind != JsonValueKind.String ||
-                        checkPurpose.GetString() != PreDepartureCheckPurposes.HoldRelease)
-                    {
-                        return checkAck;
-                    }
+                    // since control-server#382 takes DEPARTURE only). An answer correlated to a repair release's check is the
+                    // last step of that release (control-server#385), whatever purpose it says: judged by the coordinator,
+                    // which spends the release on anything but a SAFE HOLD_RELEASE answer to its own check (review M1). When
+                    // it lifts the hold, readiness is decided again and the released business state goes out after the answer.
                     string? releaseActionId = await recoveryCoordinator.ObserveHoldReleaseCheckResultAsync(
                         root, cancellationToken).ConfigureAwait(false);
                     if (releaseActionId is null)
@@ -750,6 +745,11 @@ public sealed partial class OnboardMessageProcessor(
                     // obligation, so record it and keep the session; the envelope itself is
                     // already persisted in the inbox by the caller.
                     JsonElement problem = payload.GetProperty("problem");
+                    // One refusal carries an obligation after all (control-server#385 review M1): the vehicle refusing a
+                    // repair release's HOLD_RELEASE check sends no result, so without this the release would wait forever.
+                    await recoveryCoordinator.ObserveReleaseCheckRefusedAsync(
+                        agvId, RequiredString(payload, "rejectedMessageId"), RequiredString(problem, "reasonCode"),
+                        cancellationToken).ConfigureAwait(false);
                     LogOnboardRejection(
                         logger,
                         NullableString(payload, "rejectedMessageType") ?? "(unstated)",
