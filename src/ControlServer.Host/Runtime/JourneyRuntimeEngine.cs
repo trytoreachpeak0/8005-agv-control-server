@@ -50,9 +50,9 @@ public sealed partial class JourneyRuntimeEngine(
     IOptions<JourneyRuntimeOptions> options,
     TimeProvider timeProvider,
     ILogger<JourneyRuntimeEngine> logger,
+    IChargingPolicyResolver chargingPolicy,
     FixedStationSweepWarnings? fixedStationWarnings = null,
     RiotOrderCommandService? orderCommands = null,
-    IChargingPolicyResolver? chargingPolicy = null,
     IdleReturn.IdleReturnMaterializationFailures? idleReturnMaterializationFailures = null)
 {
     // control-server#390 review L3: consecutive materialization failures outlive the per-round engine (a singleton in the
@@ -476,7 +476,7 @@ public sealed partial class JourneyRuntimeEngine(
             // so it cannot replace the exception a failed round is carrying out of here.
             if (!cancellationToken.IsCancellationRequested)
             {
-                await new WaitingJourneyWatch(dbContext, vehicleFacts, runtimeOptions, timeProvider, logger)
+                await new WaitingJourneyWatch(dbContext, vehicleFacts, chargingPolicy, runtimeOptions, timeProvider, logger)
                     .ObserveAsync(cancellationToken).ConfigureAwait(false);
             }
         }
@@ -1126,7 +1126,8 @@ public sealed partial class JourneyRuntimeEngine(
                     await NameCheckpointWaitAsync(runtime, cancellationToken).ConfigureAwait(false);
                     return;
                 }
-                await PublishPickupStateAsync(runtime, stops, session, holdingApplicable, cancellationToken).ConfigureAwait(false);
+                await PublishPickupStateAsync(runtime, stops, session, holdingApplicable, pickupArrival.Vehicle!, cancellationToken)
+                    .ConfigureAwait(false);
                 // REQ-0204（批次8-20，control-server#391）：到站可信了，这趟旅程在这个公共站点上的预占转为占用，与阶段前移同一次保存。
                 await FixedStationExclusivity.StageOccupyOnArrivalAsync(
                         dbContext, runtime.MapId, stops.Current.StationRiotId, runtime.JourneyId, now, cancellationToken)
@@ -1572,7 +1573,8 @@ public sealed partial class JourneyRuntimeEngine(
                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                     return;
                 }
-                await PublishGateStateAndUnloadAsync(runtime, stops, session, holdingApplicable, cancellationToken).ConfigureAwait(false);
+                await PublishGateStateAndUnloadAsync(runtime, stops, session, holdingApplicable, gateArrival.Vehicle!, cancellationToken)
+                    .ConfigureAwait(false);
                 // Admitted again: the one place the wait's start is cleared.
                 runtime.ReleaseAreaEndAdmissionHold();
                 SetStage(runtime, JourneyRuntimeStage.AwaitingUnloadResult, now);
@@ -1689,11 +1691,16 @@ public sealed partial class JourneyRuntimeEngine(
     /// the two reads could disagree, and then "not arrived" and "the order failed" would be judged
     /// against different facts.
     /// </remarks>
+    /// <param name="Vehicle">
+    /// 到站判定读到的车辆观测；订单还没对上时没读，为空。到站快照的 <c>batteryState</c> 按它投影（批次9-05，control-server#403），
+    /// 不为此再读一次 RIoT：两次读数可能不一致，而到站可信是按这一次判的。
+    /// </param>
     private sealed record ArrivalCheck(
         bool Trusted,
         string Purpose,
         OrderIntentRow Intent,
-        RiotOrderObservation Order);
+        RiotOrderObservation Order,
+        RiotVehicleObservation? Vehicle);
 
     /// <param name="stop">车正驶向的那个停靠——这一次到站判定的全部依据（批次7-06，control-server#211）。</param>
     /// <remarks>
@@ -1731,7 +1738,7 @@ public sealed partial class JourneyRuntimeEngine(
                           order.DestinationStationId == targetStation;
         if (!exactOrder)
         {
-            return new ArrivalCheck(false, purpose, intent, order);
+            return new ArrivalCheck(false, purpose, intent, order, null);
         }
         RiotVehicleObservation vehicle = await vehicleFacts.ReadVehicleAsync(runtime.VehicleKey, cancellationToken)
             .ConfigureAwait(false);
@@ -1749,7 +1756,7 @@ public sealed partial class JourneyRuntimeEngine(
                onboard is not null && onboard.SessionGeneration == session.SessionGeneration &&
                onboard.VehicleStopped && onboard.AllTargetSlotsLocked && onboard.AllUnlockOutputsReset &&
                !onboard.UnknownPresent;
-        return new ArrivalCheck(trusted, purpose, intent, order);
+        return new ArrivalCheck(trusted, purpose, intent, order, vehicle);
     }
 
     /// <summary>
@@ -2544,19 +2551,22 @@ public sealed partial class JourneyRuntimeEngine(
         JourneyStopCursor stops,
         SessionRecoveryRow session,
         bool holdingApplicable,
+        RiotVehicleObservation arrivedVehicle,
         CancellationToken cancellationToken)
     {
         JourneyStopRow stop = stops.Current;
         if (!await ArrivalBusinessStateSupersededAsync(runtime, stop, cancellationToken).ConfigureAwait(false))
         {
             await FenceLoadingPhaseSnapshotSentOnTheWayAsync(runtime, stop, cancellationToken).ConfigureAwait(false);
+            await ProjectBatteryStateForArrivalAsync(runtime, stop, arrivedVehicle, cancellationToken).ConfigureAwait(false);
             await publisher.PublishVehicleBusinessStateAsync(
                 stop.VehicleBusinessMessageId,
                 runtime.AgvId,
                 session.SessionGeneration,
                 TransportBusinessState(
                     StopRevision(runtime.VehicleBusinessRevision, stop),
-                    CurrentLoadingPhase(runtime, holdingApplicable)),
+                    CurrentLoadingPhase(runtime, holdingApplicable),
+                    PublishedBatteryState(runtime)),
                 cancellationToken,
                 keepAcknowledgedIgnoring: NothingButTheEnvelope).ConfigureAwait(false);
         }
@@ -3221,17 +3231,20 @@ public sealed partial class JourneyRuntimeEngine(
         JourneyStopCursor stops,
         SessionRecoveryRow session,
         bool holdingApplicable,
+        RiotVehicleObservation arrivedVehicle,
         CancellationToken cancellationToken)
     {
         JourneyStopRow stop = stops.Current;
         await FenceLoadingPhaseSnapshotSentOnTheWayAsync(runtime, stop, cancellationToken).ConfigureAwait(false);
+        await ProjectBatteryStateForArrivalAsync(runtime, stop, arrivedVehicle, cancellationToken).ConfigureAwait(false);
         await publisher.PublishVehicleBusinessStateAsync(
             stop.VehicleBusinessMessageId,
             runtime.AgvId,
             session.SessionGeneration,
             TransportBusinessState(
                 StopRevision(runtime.VehicleBusinessRevision, stop),
-                CurrentLoadingPhase(runtime, holdingApplicable)),
+                CurrentLoadingPhase(runtime, holdingApplicable),
+                PublishedBatteryState(runtime)),
             cancellationToken).ConfigureAwait(false);
         // The drop-off stop has no departure wait: ADR-cross-0055's wait is the pickup's.
         await PublishStopWorklistAsync(
@@ -3910,14 +3923,67 @@ public sealed partial class JourneyRuntimeEngine(
     // CLEARING_MAINTENANCE is deferred.
     private const string TransportPurpose = VehicleActivePurposes.Transport;
 
-    // 8005-agv-program#94's semantic table: v2 has no automatic charging today (scope specification
-    // 5.5), so this server holds no charger reservation, no charging order and no charging cycle.
-    // "Not in a charging cycle" is a fact it knows, not a guess; UNKNOWN would report a missing
-    // feature as a lost observation. Nor is MANDATORY_CHARGE sent before batch 9.
+    // 8005-agv-program#94's semantic table: a vehicle running this worker is carrying a demand, not charging, so it holds
+    // no charger reservation, no charging order and no charging cycle. "Not in a charging cycle" is a fact it knows, not a
+    // guess; UNKNOWN would report a missing feature as a lost observation. chargingCycleState and manualChargingHold belong
+    // to batch 9-06 and 9-07.
     private const string NotInAChargingCycle = "NOT_CHARGING";
 
-    private static VehicleBusinessProjection TransportBusinessState(long revision, LoadingPhaseProjection loadingPhase) =>
-        new(revision, "READY", TransportPurpose, false, "SUFFICIENT", NotInAChargingCycle, loadingPhase, []);
+    /// <summary>
+    /// 运输旅程的车辆业务状态。<paramref name="batteryState"/> 是这趟旅程记下的那一版投影（<see cref="PublishedBatteryState"/>），
+    /// 不是此刻现读的电量（批次9-05，control-server#403）。
+    /// </summary>
+    private static VehicleBusinessProjection TransportBusinessState(
+        long revision, LoadingPhaseProjection loadingPhase, string batteryState) =>
+        new(revision, "READY", TransportPurpose, false, batteryState, NotInAChargingCycle, loadingPhase, []);
+
+    /// <summary>
+    /// 这趟旅程的车辆业务状态快照里的 <c>batteryState</c>：旅程行上记下的最近一次投影（批次9-05，control-server#403）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>随修订号冻结，重发时原样读回，从不在重发时现读电量</b>（票面第 8 条选的是「记在旅程上」）。同一阶段的快照按确定的消息 id 重发，
+    /// 载荷变了就会被当成语义冲突拒收（<c>OnboardJourneyPublisher</c>），旅程会在重连之间来回打转。
+    /// </para>
+    /// <para>
+    /// 值只在两处变：派车受理时按判它的那份事实投影，写进旅程行（<c>JourneyExecutionPlan.PublishedBatteryState</c>）；每个停靠的到站快照
+    /// <b>第一次</b>排给车之前，按到站判定读到的那次观测与这趟旅程冻结的策略版本重投影（<see cref="ProjectBatteryStateForArrivalAsync"/>）。
+    /// 两处都与新的快照同一次保存。之后这个停靠上的装货阶段快照、这张到站快照的重跑与收尾快照读的都是这一个值。
+    /// 电量变了，下一张带它的快照是下一个停靠的到站快照：新的修订号、新的消息 id（由停靠派生，规则与今天相同）。
+    /// </para>
+    /// <para>
+    /// 为空的是本票上线前派出的旅程：它们排给车的快照里是写死的 <c>SUFFICIENT</c>，又没有冻结的策略版本，照旧发它。
+    /// </para>
+    /// </remarks>
+    internal static string PublishedBatteryState(JourneyRuntimeRow runtime) =>
+        runtime.PublishedBatteryState ?? BatteryStates.BeforePolicyProjection;
+
+    /// <summary>
+    /// 这个停靠的到站快照第一次排给车之前，按到站那次观测与这趟旅程冻结的策略版本重投影 <c>batteryState</c>（批次9-05，control-server#403）。
+    /// 已经排过（到站那一段断线后重跑）就不动：车上那一张的值必须原样再发。
+    /// </summary>
+    /// <remarks>
+    /// 搬运途中越过强制充电线，这里投出 <c>MANDATORY_CHARGE</c>，旅程照常推进：服务端不据此拒装、不取消、不改派（<c>REQ-0281</c>）；
+    /// 车载端也不再据此拒收录入（onboard-hmi#220）。
+    /// </remarks>
+    private async Task ProjectBatteryStateForArrivalAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopRow stop,
+        RiotVehicleObservation arrivedVehicle,
+        CancellationToken cancellationToken)
+    {
+        if (runtime.ChargingPolicyVersion is not long version ||
+            await ArrivalBusinessStateQueuedAsync(stop, cancellationToken).ConfigureAwait(false) is not null)
+        {
+            return;
+        }
+
+        DispatchBatteryPolicy policy = DispatchBatteryPolicy.From(
+            await chargingPolicy.ReadFrozenAsync(version, cancellationToken).ConfigureAwait(false));
+        DateTimeOffset now = timeProvider.GetUtcNow();
+        bool fresh = arrivedVehicle.ObservedAt <= now && now - arrivedVehicle.ObservedAt <= runtimeOptions.MaximumEvidenceAge;
+        runtime.PublishedBatteryState = BatteryEligibility.Project(arrivedVehicle, policy, fresh);
+    }
 
     /// <summary>
     /// 车辆业务状态快照里的 <c>loadingPhase</c>：从旅程行上的三列读（批次7-07，control-server#212）。
@@ -4184,7 +4250,7 @@ public sealed partial class JourneyRuntimeEngine(
             LoadingPhaseMessageId(stop, revision),
             runtime.AgvId,
             session.SessionGeneration,
-            TransportBusinessState(revision, CurrentLoadingPhase(runtime, holdingApplicable)),
+            TransportBusinessState(revision, CurrentLoadingPhase(runtime, holdingApplicable), PublishedBatteryState(runtime)),
             cancellationToken).ConfigureAwait(false);
     }
 

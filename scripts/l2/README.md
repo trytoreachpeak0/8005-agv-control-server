@@ -473,7 +473,7 @@ DispatchZoneParameters = @{
 | 字段 | 值 | 理由 |
 | --- | --- | --- |
 | `chargingCompletionThresholdPercent` | 80 | 与 L1 夹具同一组值（`tests/ControlServer.Tests/TestChargingPolicies.cs`） |
-| `mandatoryChargeEntryThresholdPercent` | 30 | 批次9-05 把电量判据改成「电量 − 每趟估计 ≥ 余量，且不低于强制充电线」之后，这组值与今天的 `MinimumBatteryPercent = 30` 逐条等价 |
+| `mandatoryChargeEntryThresholdPercent` | 30 | 批次9-05 把电量判据改成「电量 − 每趟估计 ≥ 余量，且不低于强制充电线」之后，这组值与此前的 `MinimumBatteryPercent = 30`（批次9-05 已删）逐条等价 |
 | `minimumPostTaskBatteryMarginPercent` | 30 | 同上 |
 | `estimatedTaskConsumptionPercent` | 0 | 同上 |
 | 稳定期／观察窗口／最小增量 | 180 秒／600 秒／3 | 与现场推荐值相同；本批的判据不读它们 |

@@ -93,6 +93,8 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["Batch7TransportDemandKeyAdmissionTests"] = "batch 7-05 REQ-0155/REQ-0156/REQ-0211 the two criteria that keep a suppressed key, and a key another DemandId was accepted under, out of the candidates (control-server#210), plus their backlog registration and dashboard description; server and dashboard only, the reasons are never sent in blockingFacts",
             ["Batch7TransportDemandSuppressionTests"] = "batch 7-05 REQ-0155/REQ-0156 a local cancellation suppresses the business key in the same save as the ending, first writer wins (control-server#210); server-internal persistence, no wire message changes",
             ["Batch7VehicleOccupancyReleaseTests"] = "batch 7 schema ticket control-server#206: the purpose claim is released wherever a journey ends (with its record since control-server#387 retired the lease), so the vehicle takes its next journey after every ending; server-internal occupancy, no wire message",
+            ["BatteryStateProjectionTests"] = "batch 9-05 REQ-0281 the VehicleBusinessStateSnapshot batteryState projection frozen with its revision, and a journey that crosses the mandatory charge line finishing (control-server#403); the conformance vectors carry no battery state",
+            ["BatteryThresholdEligibilityTests"] = "batch 9-05 REQ-0208/REQ-0281/REQ-0290 battery eligibility boundaries, the mandatory charge judgement and the batteryState mapping table (control-server#403); server-internal, no wire message",
             ["BlockedJourneyDashboardTests"] = "batch 5 control-server#80 blocked-journey start time and dashboard card; server and dashboard only, the dashboard is disjoint from the protocol and nothing is pushed (REQ-0270)",
             ["ChargerRosterImportTests"] = "batch 9 REQ-0171/REQ-0288 governed whole-file import of the charger roster: emptying and re-enabling as versions, audits, work in progress listed and left alone (control-server#400); a controlled operations entry point, no wire message",
             ["ChargingFieldOpsTests"] = "batch 9 REQ-0171/REQ-0282 FieldOps charger roster and charging policy verbs' process entry: shipped field files, JSON output, exit codes, read-only open (control-server#400); a controlled operations entry point, no wire message",
@@ -101,6 +103,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["CatalogBindingHoldEngineHookTests"] = "batch 6 FP-C9a REQ-0342 the engine runs catalog change convergence after each complete catalog confirmation (control-server#162); server-internal, no wire message",
             ["CatalogBindingHoldConvergenceTests"] = "batch 6 FP-C9a REQ-0342/REQ-0345 catalog change holds confined to the affected task type (control-server#162); server-internal, no wire message",
             ["ChargingOrderShapePathTests"] = "control-server#401 every path that builds an order intent carries its order shape (LegIntent authorisation, own-order rebuild); server-internal, no wire message",
+            ["ChargingPolicyStartupCheckTests"] = "batch 9-05 REQ-0281 the startup refusal when a charging policy version in effect breaks the threshold relation or the rescue line (control-server#403); server-internal, no wire message",
             ["ControlServerSqliteConnectionTests"] = "cross-cutting guard on the one place the server's SQLite connection string is built; the busy timeout two processes share is a policy, not a slice",
             ["CreateGateTests"] = "7.5 #9, FP-C13 create gate and catalog availability; server-internal gate",
             ["DashboardActionTests"] = "batch 6 FP-C9a REQ-0340 dashboard write action convention, same-origin confirmation page (control-server#162); the dashboard is disjoint from the protocol",
@@ -246,7 +249,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
         {
             ["FakeRiotTests"] = (9, "the fake's own control plane and conflict behaviour; the traited tests are the shapes the production adapter parses"),
             ["HttpRiotMovementGatewayTests"] = (27, "RIoT adapter fail-closed and sanitisation behaviour (control-server#330 added the unfiltered order listing and the by-orderId state read; control-server#335 the listed order states); the traited tests are the ones a wire message depends on"),
-            ["JourneyRuntimeOptionsTests"] = (4, "option defaults, and the cargo holding timeout (control-server#206; read by the loading phase since control-server#212); the traited tests are the validations that fail a deployment closed"),
+            ["JourneyRuntimeOptionsTests"] = (5, "option defaults, the retired minimumBatteryPercent key refusing to start (control-server#403), and the cargo holding timeout (control-server#206; read by the loading phase since control-server#212); the traited tests are the validations that fail a deployment closed"),
             ["OnboardAlarmProjectionTests"] = (1, "the dashboard self-registration convention #12 set up; the traited tests are the ones standing behind OnboardAlarmSnapshot")
         };
 

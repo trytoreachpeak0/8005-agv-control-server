@@ -129,6 +129,10 @@ public sealed class StructuralDispatchBlockTests
     [InlineData("TRANSPORT_DEMAND_KEY_ALREADY_ACCEPTED", DispatchReasonClass.Backlog)]
     // 批次9-02（control-server#400）：没有已批准策略的车不承接新用途，车辆侧的状态，别的车照常，归普通积压。
     [InlineData("CHARGING_POLICY_NOT_APPROVED", DispatchReasonClass.Backlog)]
+    // 批次9-05（control-server#403）：低于强制充电线的车属于充电、不接新任务，车辆侧的状态，别的车照常，归普通积压。
+    [InlineData("MANDATORY_CHARGE_REQUIRED", DispatchReasonClass.Backlog)]
+    // 批次9-05（control-server#403）：生效策略的强制充电线不高于救命线，整版不可用；车辆侧，激活一版合格的即解除，归普通积压。
+    [InlineData("CHARGING_POLICY_ENTRY_NOT_ABOVE_RESCUE_LINE", DispatchReasonClass.Backlog)]
     public void EveryReasonCodeHasItsClassAndARationale(string reasonCode, DispatchReasonClass expected)
     {
         DispatchReasonClassification row = Assert.Contains(reasonCode, StructuralDispatchClassification.ByCode);

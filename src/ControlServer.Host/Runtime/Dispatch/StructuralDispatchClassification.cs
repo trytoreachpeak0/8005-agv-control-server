@@ -134,6 +134,9 @@ public static class StructuralDispatchClassification
             "control-server#400, REQ-0282: this vehicle has no approved, activated charging policy covering it. The " +
             "vehicle's side, not the demand's: another vehicle takes it, and activating a policy that covers this one " +
             "clears it."),
+        Backlog(DispatchReasonCodes.ChargingPolicyEntryNotAboveRescueLine, ChargingPolicyCommissioning,
+            "control-server#403: the policy version in effect puts its mandatory charge entry threshold at or below the rescue " +
+            "line, so it is treated as unusable. The vehicle's side, cleared by activating a version with a higher threshold."),
 
         // ---- WorkTypeScopeCriterion (20) ----------------------------------------------------------------
         Backlog(DispatchReasonCodes.OutOfScopeWorkType, WorkTypeScope,
@@ -223,7 +226,11 @@ public static class StructuralDispatchClassification
         Backlog("RIOT_VEHICLE_MAP_MISMATCH", VehicleDynamicFacts, "This vehicle is on another map right now."),
         Backlog("RIOT_VEHICLE_FACT_STALE", VehicleDynamicFacts, "This vehicle's observation is old."),
         Backlog("BATTERY_FACT_UNKNOWN", VehicleDynamicFacts, "This vehicle's battery is not reported."),
-        Backlog("BATTERY_POLICY_NOT_SATISFIED", VehicleDynamicFacts, "This vehicle is charging or low."),
+        Backlog("BATTERY_POLICY_NOT_SATISFIED", VehicleDynamicFacts,
+            "This vehicle is charging, or would not keep the approved post-task battery margin (control-server#403)."),
+        Backlog(DispatchReasonCodes.MandatoryChargeRequired, VehicleDynamicFacts,
+            "control-server#403, REQ-0290: this vehicle is below its mandatory charge entry threshold and belongs to " +
+            "charging, not to new work. The vehicle's side: another vehicle takes the demand."),
         Backlog("RIOT_VEHICLE_NOT_STOPPED", VehicleDynamicFacts, "This vehicle is moving."),
         Backlog("RIOT_VEHICLE_ORDER_OCCUPIED", VehicleDynamicFacts, "This vehicle holds an order."),
 

@@ -149,7 +149,7 @@ $script:AllowedKeys = [ordered]@{
     'riotCreateDispatch' = @('enabled')
     'riotForeignOrderCancel' = @('enabled')
     'journeyRuntime' = @('enabled', 'pollInterval', 'agvId', 'vehicleKey', 'agvLifecycleGeneration',
-        'mapId', 'mapIdentity', 'dispatchZone', 'dispatchGeneration', 'minimumBatteryPercent',
+        'mapId', 'mapIdentity', 'dispatchZone', 'dispatchGeneration',
         'maximumEvidenceAge', 'departureSafetyResultWait', 'stationDepartureWaitTimeout',
         'cargoHoldingTimeout', 'sublotBoxCountPath', 'allowedWorkTypes', 'allowedDispatchZones',
         'admissionPolicyVersion', 'admissionPolicyDeploymentId', 'checkpointWaitBudget',

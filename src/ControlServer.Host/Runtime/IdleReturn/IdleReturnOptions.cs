@@ -1,4 +1,5 @@
 using ControlServer.Application;
+using ControlServer.Host.Runtime.Dispatch.Criteria;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -29,23 +30,47 @@ public sealed class IdleReturnOptions
 }
 
 /// <summary>
-/// 强制充电入口线的过渡实现：读 <see cref="JourneyRuntimeOptions.MinimumBatteryPercent"/>，与搬运的电量门槛是同一个值。
+/// 强制充电入口线（<see cref="IMandatoryChargeLine"/>）按车读充电策略版本的实现（批次9-05，control-server#403；替换 cs#389 的过渡实现）。
 /// </summary>
 /// <remarks>
-/// 选它的理由：这个值今天已经挡住低电量的车接搬运（<c>VehicleDynamicFactsCriterion</c> 的 <c>BATTERY_POLICY_NOT_SATISFIED</c>，
-/// 判据是「低于它即拒」），空闲返回用同一条线、同一个比较，低电量的车就既不接搬运也不开往等待点，停在原地——不会有一辆低电量的车
-/// 被派去干活。另立一个值会让两条线可能错开，错开的那一段就是「搬运挡住了、空闲返回却放它走」。批次 9 替换这个实现。
+/// <para>
+/// 线是这辆车此刻做新决定用的那一版策略的 <c>MandatoryChargeEntryThreshold</c>（<see cref="IChargingPolicyResolver.ResolveForNewDecisionAsync"/>），
+/// 比较是 <see cref="BatteryEligibility.IsMandatoryCharge"/>——与派车链判 <c>MANDATORY_CHARGE_REQUIRED</c> 的是同一个函数，所以一辆车不会
+/// 「搬运挡住了、空闲返回却放它走」。
+/// </para>
+/// <para>
+/// <b>读不到策略按低于线答。</b>没有已批准版本的车在前面的投运一格已被拒（<c>CHARGING_POLICY_NOT_APPROVED</c>），走不到这里；
+/// 若走到了（轮中策略被撤），宁可让它原地不动，也不承诺它开往等待点。
+/// </para>
+/// <para>
+/// 作用域：每一轮派车一个实例（解析器读库）。<see cref="Describe"/> 给出本实例最近一次为这辆车读到的线与版本号。
+/// </para>
 /// </remarks>
-public sealed class TransitionalMandatoryChargeLine(IOptions<JourneyRuntimeOptions> options) : IMandatoryChargeLine
+public sealed class PolicyMandatoryChargeLine(IChargingPolicyResolver chargingPolicy) : IMandatoryChargeLine
 {
-    private readonly JourneyRuntimeOptions _options = (options ?? throw new ArgumentNullException(nameof(options))).Value;
+    private readonly IChargingPolicyResolver _chargingPolicy =
+        chargingPolicy ?? throw new ArgumentNullException(nameof(chargingPolicy));
 
-    public ValueTask<bool> IsBelowLineAsync(string vehicleKey, int batteryPercent, CancellationToken cancellationToken)
+    private readonly Dictionary<string, string> _described = new(StringComparer.Ordinal);
+
+    public async ValueTask<bool> IsBelowLineAsync(string vehicleKey, int batteryPercent, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(vehicleKey);
-        return ValueTask.FromResult(batteryPercent < _options.MinimumBatteryPercent);
+        VehicleChargingPolicyDecision decision =
+            await _chargingPolicy.ResolveForNewDecisionAsync(vehicleKey, cancellationToken).ConfigureAwait(false);
+        if (decision.Effective is not { } effective)
+        {
+            _described[vehicleKey] = $"unknown ({decision.Reason}: no approved charging policy covers this vehicle)";
+            return true;
+        }
+
+        ChargingPolicyContent policy = effective.Policy.Content;
+        _described[vehicleKey] = string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"{policy.MandatoryChargeEntryThresholdPercent} (charging policy version {effective.Policy.Version}: MandatoryChargeEntryThreshold)");
+        return BatteryEligibility.IsMandatoryCharge(batteryPercent, policy);
     }
 
     public string Describe(string vehicleKey) =>
-        $"{_options.MinimumBatteryPercent} (transitional: {JourneyRuntimeOptions.SectionName}:{nameof(JourneyRuntimeOptions.MinimumBatteryPercent)})";
+        _described.TryGetValue(vehicleKey, out string? described) ? described : "not read yet";
 }

@@ -546,30 +546,6 @@ public sealed class IdleReturnExecutionTests
     }
 
     /// <summary>
-    /// 增量审查 L-b：引擎没拿到投运判定器时，出发安全门按不投运处理——已承诺的空闲返回不建单；拿到之后照常出发。
-    /// </summary>
-    [Fact]
-    public async Task WithoutAChargingPolicyResolverTheEngineDoesNotSendAnIdleReturnOff()
-    {
-        await using FleetFixture fleet = await FleetAsync();
-        await RoundAsync(fleet);
-        Assert.NotNull(await ClaimOfAsync(fleet, KeyA));
-        fleet.OmitEngineChargingPolicy = true;
-        await fleet.RecreateEngineAsync();
-
-        await RoundAsync(fleet);
-        await RoundAsync(fleet);
-
-        Assert.Empty(fleet.Riot.Creates);
-        Assert.Equal(IdleReturnExecutionReasons.DepartureNotProven, (await IdleJourneyAsync(fleet, AgvA))!.BlockReasonCode);
-
-        fleet.OmitEngineChargingPolicy = false;
-        await fleet.RecreateEngineAsync();
-        await RoundAsync(fleet);
-        Assert.Single(fleet.Riot.Creates);
-    }
-
-    /// <summary>
     /// 审查 M1 (a)：FAILED 后由人清除故障，与单被取消走同一套护栏——冷却内不承诺（有别的合格点也不），冷却过后承诺别的点；那一趟又 FAILED、
     /// 又被人清除，就停止自动空闲返回，不回到第一个点。
     /// </summary>

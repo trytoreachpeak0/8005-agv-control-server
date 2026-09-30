@@ -307,7 +307,9 @@ internal static class JourneyClosure
             runtime.AgvId,
             session.SessionGeneration,
             // 与引擎的运输业务状态同一组值（JourneyRuntimeEngine.TransportBusinessState），只是不再有旅程：用途与装货阶段为空。
-            new VehicleBusinessProjection(businessRevision, "READY", null, false, "SUFFICIENT", "NOT_CHARGING", null, []),
+            // batteryState 是这趟旅程最近一次下发的投影（批次9-05，control-server#403），不现读：收尾快照的 id 由旅程派生，重跑时要逐字相同。
+            new VehicleBusinessProjection(
+                businessRevision, "READY", null, false, JourneyRuntimeEngine.PublishedBatteryState(runtime), "NOT_CHARGING", null, []),
             endedAt,
             cancellationToken).ConfigureAwait(false);
         // 收尾时车停在取货停靠上：那一站已经落库、却没人答的扫码同一次改动里答过时（control-server#324，PR #361 审查 S1）——

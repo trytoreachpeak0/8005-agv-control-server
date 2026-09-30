@@ -72,6 +72,12 @@ internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
             // 批次9-02（control-server#400）：逐车硬阻断，看板展示归批次9-10，这里只有派车原因的一句说明。
             [DispatchReasonCodes.ChargingPolicyNotApproved] =
                 "这辆车没有已批准并激活、适用范围覆盖它的充电策略版本，不承接新任务；别的车照常，导入、批准并激活一版覆盖它的策略即解除",
+            // 批次9-05（control-server#403）：强制充电优先，车辆侧的正常结论。去桩由批次9-06 做，在那之前车原地不动。
+            [DispatchReasonCodes.ChargingPolicyEntryNotAboveRescueLine] =
+                "这辆车生效的充电策略版本，强制充电线不高于服务端的救命告警线，这一版不能用，车不接任何新任务（在途的照常做完）；" +
+                "用 FieldOps 激活一版强制充电线高于救命线的策略即恢复，不需要改库，也不需要重启服务",
+            [DispatchReasonCodes.MandatoryChargeRequired] =
+                "这辆车电量低于它所用充电策略的强制充电线，只等去充电，不接新任务也不接途中追加；别的车照常",
             // 批次 7（control-server#211～#215）：途中追加、装货阶段、释放改派。都是正常调度的结论，不是故障（规格 8.8 第 4 条）。
             [DispatchReasonCodes.SlotGroupOccupiedByOwnCargo] =
                 "本车货物占侧：所需一侧的空仓已被这辆车自己已装或已预留的货占满，其余条件都满足，等别的车或本车卸货后再派",

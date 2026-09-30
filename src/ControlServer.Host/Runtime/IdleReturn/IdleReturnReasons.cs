@@ -38,7 +38,7 @@ public static class IdleReturnReasons
     /// <summary>电量读不到，或车正在充电。</summary>
     public const string BatteryUnknownOrCharging = "IDLE_RETURN_BATTERY_UNKNOWN_OR_CHARGING";
 
-    /// <summary>电量低于强制充电入口线（<see cref="ControlServer.Application.IMandatoryChargeLine"/>；批次 8 为过渡实现）。</summary>
+    /// <summary>电量低于强制充电入口线（<see cref="ControlServer.Application.IMandatoryChargeLine"/>；按车读充电策略版本，control-server#403）。</summary>
     public const string BelowMandatoryChargeLine = "IDLE_RETURN_BELOW_MANDATORY_CHARGE_LINE";
 
     /// <summary>不知道车在哪个站：路网代价没有起点。</summary>

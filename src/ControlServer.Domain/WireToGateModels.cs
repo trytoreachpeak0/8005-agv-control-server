@@ -346,7 +346,9 @@ public sealed record JourneyExecutionPlan(
     long? TaskTypeStationBindingSetVersion = null,
     long? StationCatalogRevision = null,
     string? IdentityKey = null,
-    int? FixedTaskStationRiotId = null)
+    int? FixedTaskStationRiotId = null,
+    long? ChargingPolicyVersion = null,
+    string? PublishedBatteryState = null)
 {
     /// <summary>
     /// 这趟受理派生身份（旅程 id、停靠 id、报文与 attempt id）所用的键：需求第一次受理时就是需求 id，改派之后带上代次
@@ -357,6 +359,11 @@ public sealed record JourneyExecutionPlan(
     // FixedTaskStationRiotId: the RIoT station id of this demand's REQ-0204 public station (its task type's
     // FixedTaskStation, batch 8-20, control-server#391) -- the pickup for STAGING_TO_WIRE, the gate for WIRE_TO_GATE.
     // Null for a plan built without a resolved fixed station, which takes no station exclusivity.
+    //
+    // ChargingPolicyVersion: the charging policy version the dispatch decision was judged under (REQ-0282, batch 9-05,
+    // control-server#403), and PublishedBatteryState the batteryState projected from that decision's facts. Both are
+    // written onto the journey row in the acceptance's own save, so a dispatch that fails to save leaves neither behind.
+    // An appended demand does not change them: the journey keeps the version it was dispatched under.
 }
 
 /// <summary>

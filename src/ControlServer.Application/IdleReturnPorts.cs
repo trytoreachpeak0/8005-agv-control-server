@@ -9,16 +9,15 @@ namespace ControlServer.Application;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>这是空闲返回读「强制充电线」的唯一接缝</b>（调度 Coordinator 9 于 2026-09-29 定）。批次 8 没有充电用途，这条线也还没有自己的配置，
-/// 过渡实现读的是今天已经挡住搬运的 <c>JourneyRuntime:MinimumBatteryPercent</c>，于是低电量的车既不接搬运、也不开往等待点，停在原地。
-/// 批次 9 的阈值票只替换这个端口的实现，不改它的调用方。
+/// <b>这是空闲返回读「强制充电线」的唯一接缝</b>（调度 Coordinator 9 于 2026-09-29 定）。批次 8 的过渡实现读 <c>JourneyRuntime:MinimumBatteryPercent</c>；
+/// 批次9-05（control-server#403）把实现换成按车读充电策略版本的 <c>MandatoryChargeEntryThreshold</c>（<c>PolicyMandatoryChargeLine</c>），
+/// 调用方没改，那个配置项已删。
 /// </para>
 /// <para>
 /// 只回答「低于线没有」。电量读不到、车在充电，由调用方各自按不接新承诺处理：那是读数的事，不是线的事。
 /// </para>
 /// <para>
-/// 签名按车、异步（审查 S3）：批次 9（B9-05）按车读充电策略版本、要读库；过渡实现两样都用不上，但签名今天就定好，
-/// 那张票只换实现、不改调用方。
+/// 签名按车、异步（审查 S3）：按车读充电策略版本、要读库。
 /// </para>
 /// </remarks>
 public interface IMandatoryChargeLine
@@ -26,7 +25,7 @@ public interface IMandatoryChargeLine
     /// <summary>这辆车在这个电量下是否低于它的强制充电入口线。低于即不接空闲返回的新承诺。</summary>
     ValueTask<bool> IsBelowLineAsync(string vehicleKey, int batteryPercent, CancellationToken cancellationToken);
 
-    /// <summary>这辆车的线从哪来、是多少，给日志与证据用，例如 <c>30 (transitional: JourneyRuntime:MinimumBatteryPercent)</c>。</summary>
+    /// <summary>这辆车的线从哪来、是多少，给日志与证据用，例如 <c>30 (charging policy version 3: MandatoryChargeEntryThreshold)</c>。</summary>
     string Describe(string vehicleKey);
 }
 

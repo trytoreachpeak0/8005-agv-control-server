@@ -625,14 +625,11 @@ public sealed partial class JourneyRuntimeEngine
     {
         List<string> gaps = [.. await VehicleConditionReasonsAsync(runtime, cancellationToken).ConfigureAwait(false)];
         // Commissioning again (review L4): it was judged when the commitment was made, but a policy withdrawn or broken since
-        // must stop the departure too -- after control-server#403 a broken policy fails every vehicle closed. No resolver at
-        // all is the same: fail closed, never a silent pass.
-        if (chargingPolicy is null)
-        {
-            gaps.Add(Dispatch.DispatchReasonCodes.ChargingPolicyNotApproved);
-        }
-        else if ((await Dispatch.Criteria.VehicleNewPurposeReadiness
-                     .CommissioningVerdictAsync(chargingPolicy, runtime.VehicleKey, cancellationToken)
+        // must stop the departure too -- after control-server#403 a broken policy fails every vehicle closed. The resolver is a
+        // required constructor argument since control-server#403, so there is no "no resolver" case to fail closed on.
+        if ((await Dispatch.Criteria.VehicleNewPurposeReadiness
+                     .CommissioningVerdictAsync(
+                         chargingPolicy, runtime.VehicleKey, runtimeOptions.WaitingJourneyRescueBatteryPercent, cancellationToken)
                      .ConfigureAwait(false)).Verdict is var commissioning &&
                  commissioning != Dispatch.DispatchAdmissionChain.Eligible)
         {
