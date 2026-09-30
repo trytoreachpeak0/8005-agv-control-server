@@ -51,7 +51,7 @@ public static class DispatchAdmissionCriteria
             new TransportDemandKeyAlreadyAcceptedCriterion(dbContext),
             // Required rather than optional, unlike the three appended below: a safety block a
             // caller may leave out is a safety block that will be left out.
-            new VehicleFaultBlockCriterion(faultStore),
+            new VehicleFaultBlockCriterion(faultStore, dbContext),
             // Required, like the fault block: a vehicle committed to an idle return takes no transport (control-server#389,
             // REQ-0292), and the reason has to reach the backlog rather than surface only as the claims key refusing intake.
             new IdleReturnCommitmentCriterion(dbContext),

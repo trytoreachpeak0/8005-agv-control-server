@@ -231,6 +231,24 @@ public sealed class VehicleFaultIsolationTests
         Assert.Equal(expected, await fixture.AdmitAsync(Subject.AgvId));
     }
 
+    /// <summary>
+    /// control-server#385 (REQ-0364): a vehicle held for an unproven door takes no new transport until its repair release --
+    /// the same verdict the idle return reads (VehicleNewPurposeReadiness) -- and takes it again once the hold is released.
+    /// A hold on another vehicle does not block this one.
+    /// </summary>
+    [Theory]
+    [InlineData(false, false, DispatchReasonCodes.VehicleSlotDoorHold)]
+    [InlineData(true, false, DispatchAdmissionChain.Eligible)]
+    [InlineData(false, true, DispatchAdmissionChain.Eligible)]
+    public async Task AVehicleHeldForAnUnprovenDoorTakesNoNewWorkUntilReleased(
+        bool released, bool anotherVehicle, string expected)
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        await fixture.HoldForUnprovenDoorAsync(anotherVehicle ? "AGV-OTHER" : Subject.AgvId, released);
+
+        Assert.Equal(expected, await fixture.AdmitAsync(Subject.AgvId));
+    }
+
     [Fact]
     public async Task AVehicleWithNoFaultFactIsAdmitted() =>
         Assert.Equal(
@@ -1387,7 +1405,7 @@ public sealed class VehicleFaultIsolationTests
                 Faults, Riot, Motion, Riot, audit, commands, Supervisor,
                 new VehicleMotionLedger(faultOptions), faultOptions, Clock,
                 NullLogger<VehicleFaultCoordinator>.Instance);
-            criterion = new VehicleFaultBlockCriterion(Faults);
+            criterion = new VehicleFaultBlockCriterion(Faults, context);
         }
 
         public MovableClock Clock { get; } = new(Now);
@@ -1476,6 +1494,22 @@ public sealed class VehicleFaultIsolationTests
         /// </summary>
         public Task<string> AdmitAsync(string agvId) =>
             criterion.EvaluateAsync(Evaluation(agvId), TestContext.Current.CancellationToken);
+
+        /// <summary>A door-unproven hold on <paramref name="agvId"/> (control-server#385), lifted when <paramref name="released"/>.</summary>
+        public async Task HoldForUnprovenDoorAsync(string agvId, bool released)
+        {
+            context.SlotDoorHolds.Add(new SlotDoorHoldRow
+            {
+                HoldId = "f3850000-0000-4000-8000-000000000201",
+                AgvId = agvId,
+                DemandId = "f3850000-0000-4000-8000-000000000202",
+                SlotsJson = "[1,2]",
+                HeldAt = Now.AddMinutes(-2),
+                ReleasedByActionId = released ? "f3850000-0000-4000-8000-000000000203" : null,
+                ReleasedAt = released ? Now.AddMinutes(-1) : null
+            });
+            await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
 
         public async Task<VehicleFaultFact> ReadFaultAsync() =>
             await ReadFaultOrNullAsync() ?? throw new InvalidOperationException("No fault fact.");

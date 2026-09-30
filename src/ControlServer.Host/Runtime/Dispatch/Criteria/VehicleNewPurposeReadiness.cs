@@ -1,5 +1,7 @@
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 
 namespace ControlServer.Host.Runtime.Dispatch.Criteria;
 
@@ -39,15 +41,40 @@ public static class VehicleNewPurposeReadiness
         };
     }
 
-    /// <summary>故障阻断，然后车辆动态事实（安全、在线、绑定、IDLE、地图、新鲜、电量门槛、停止、RIoT 上没有它的单）。</summary>
+    /// <summary>
+    /// 故障阻断，然后门未证明的扣车（REQ-0364，control-server#385）：扣着的车不接任何新用途。派车链的故障阻断判据调它，
+    /// <see cref="JudgeAsync"/> 也调它，所以搬运、空闲返回、充电走的是同一处。
+    /// </summary>
+    /// <remarks>
+    /// 扣车也让会话不就绪（<c>WireToGateStore.DecideReadinessAsync</c>），动态事实那一格本来就会挡；这里单独判，是为了不靠
+    /// 那条间接的路：原因码直说「被扣」，而且哪天就绪的算法变了、或有一条用途不看会话就绪，扣着的车照样派不出去（准入线 1）。
+    /// </remarks>
+    public static async Task<string> BlockVerdictAsync(
+        IVehicleFaultStore faults, ControlServerDbContext dbContext, string agvId, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(dbContext);
+        string fault = await FaultVerdictAsync(faults, agvId, cancellationToken).ConfigureAwait(false);
+        if (fault != DispatchAdmissionChain.Eligible)
+        {
+            return fault;
+        }
+
+        return await dbContext.SlotDoorHolds.AsNoTracking()
+            .AnyAsync(hold => hold.AgvId == agvId && hold.ReleasedAt == null, cancellationToken).ConfigureAwait(false)
+            ? DispatchReasonCodes.VehicleSlotDoorHold
+            : DispatchAdmissionChain.Eligible;
+    }
+
+    /// <summary>故障阻断与门未证明扣车（<see cref="BlockVerdictAsync"/>），然后车辆动态事实（安全、在线、绑定、IDLE、地图、新鲜、电量门槛、停止、RIoT 上没有它的单）。</summary>
     public static async Task<string> JudgeAsync(
         IVehicleFaultStore faults,
+        ControlServerDbContext dbContext,
         DispatchVehicleFacts facts,
         JourneyRuntimeOptions options,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(facts);
-        string fault = await FaultVerdictAsync(faults, facts.AgvId, cancellationToken).ConfigureAwait(false);
-        return fault != DispatchAdmissionChain.Eligible ? fault : VehicleDynamicFactsCriterion.Evaluate(facts, options);
+        string blocked = await BlockVerdictAsync(faults, dbContext, facts.AgvId, cancellationToken).ConfigureAwait(false);
+        return blocked != DispatchAdmissionChain.Eligible ? blocked : VehicleDynamicFactsCriterion.Evaluate(facts, options);
     }
 }

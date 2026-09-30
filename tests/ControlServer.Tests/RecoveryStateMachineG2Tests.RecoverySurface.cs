@@ -900,6 +900,94 @@ public sealed partial class RecoveryStateMachineG2Tests
         }
     }
 
+    /// <summary>
+    /// What one release lifts, and that it lifts it once. The vehicle carries two holds (slots 1 and 2, from two
+    /// settlements); the release session over both lifts both, naming itself and the time. A third hold that arrives after
+    /// the record -- a settlement the record could not have attested to -- stays. The vehicle resending the SAFE answer under
+    /// a new messageId, later by the clock, rewrites nothing: <c>ReleasedAt</c> and <c>ReleasedByActionId</c> stand as first
+    /// written, and no second business snapshot goes out.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-VEHICLE-HOLD-DOOR-REPAIR-RELEASE")]
+    public async Task ARepairReleaseLiftsTheHoldsOnFileAtItsRecordOnceAndAResendRewritesNothing()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_REPAIR_RELEASE_ONCE";
+        const string proof = "repair-release-once-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context, productionShapedSession: true);
+            context.SlotDoorHolds.AddRange(
+                Hold("f3850000-0000-4000-8000-000000000301", "[1]", Now.AddMinutes(-2)),
+                Hold("f3850000-0000-4000-8000-000000000302", "[2]", Now.AddMinutes(-1)));
+            await context.SaveChangesAsync(token);
+            MovableTimeProvider clock = new(Now);
+            RecordingPeer peer = new(context);
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, new WireToGateStore(context), clock, Configuration(proofVariable), peer);
+            OnboardConnectionState state = CurrentState(deferOutbound: true);
+            string sessionId = StableGuid(ReleaseRequestId, "exception-recovery-session");
+            Assert.Contains("HARDWARE_REPAIR_RELEASE", SessionSnapshotIn(
+                    await ExchangeAsync(processor, peer, state, ReleaseSessionRequest(proof, RecoverySlots)), sessionId)
+                .GetProperty("allowedActions").EnumerateArray().Select(item => item.GetString()));
+            await ExchangeAsync(processor, peer, state, ReleaseAction(sessionId, RecoverySlots));
+            await ExchangeAsync(processor, peer, state,
+                ReleaseRecord("e3850000-0000-4000-8000-000000000311", sessionId, RecoverySlots));
+            clock.Current = Now.AddMinutes(1);
+            context.SlotDoorHolds.Add(Hold("f3850000-0000-4000-8000-000000000303", "[1]", clock.Current));
+            await context.SaveChangesAsync(token);
+            string check = Assert.Single(
+                await ExchangeAsync(processor, peer, state, SlotReadings("e3850000-0000-4000-8000-000000000312", 8)),
+                line => MessageType(line) == "PreDepartureSafetyCheck");
+            clock.Current = Now.AddMinutes(2);
+
+            string[] answered = await ExchangeAsync(
+                processor, peer, state, HoldReleaseCheckResult("e3850000-0000-4000-8000-000000000313", check));
+
+            SlotDoorHoldRow[] holds = await context.SlotDoorHolds.AsNoTracking().OrderBy(row => row.HoldId).ToArrayAsync(token);
+            Assert.Equal(
+                [
+                    ("f3850000-0000-4000-8000-000000000301", (string?)ReleaseActionId, (DateTimeOffset?)Now.AddMinutes(2)),
+                    ("f3850000-0000-4000-8000-000000000302", ReleaseActionId, Now.AddMinutes(2)),
+                    ("f3850000-0000-4000-8000-000000000303", null, null)
+                ],
+                holds.Select(row => (row.HoldId, row.ReleasedByActionId, row.ReleasedAt)).ToArray());
+            JsonElement released = PayloadOf(Assert.Single(answered, line => MessageType(line) == "VehicleBusinessStateSnapshot"));
+            Assert.Equal("RECOVERY_REQUIRED", released.GetProperty("readiness").GetString());
+            Assert.Equal("1", string.Join(",", released.GetProperty("blockingFacts").EnumerateArray()
+                .Select(fact => fact.GetProperty("subjectId").GetString())));
+
+            clock.Current = Now.AddMinutes(5);
+            string[] resent = await ExchangeAsync(
+                processor, peer, state, HoldReleaseCheckResult("e3850000-0000-4000-8000-000000000314", check));
+
+            Assert.Equal("DurableAck", MessageType(resent[0]));
+            Assert.DoesNotContain(resent, line => MessageType(line) == "VehicleBusinessStateSnapshot");
+            Assert.Equal(
+                holds.Select(row => (row.HoldId, row.ReleasedByActionId, row.ReleasedAt)).ToArray(),
+                (await context.SlotDoorHolds.AsNoTracking().OrderBy(row => row.HoldId).ToArrayAsync(token))
+                    .Select(row => (row.HoldId, row.ReleasedByActionId, row.ReleasedAt)).ToArray());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    private static SlotDoorHoldRow Hold(string holdId, string slotsJson, DateTimeOffset heldAt) => new()
+    {
+        HoldId = holdId,
+        AgvId = AgvId,
+        DemandId = DemandId,
+        SlotsJson = slotsJson,
+        HeldAt = heldAt
+    };
+
     // ---------------------------------------------------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------------------------------------------------
