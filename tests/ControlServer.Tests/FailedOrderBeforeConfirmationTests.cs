@@ -71,13 +71,13 @@ public sealed class FailedOrderBeforeConfirmationTests
         await using RuntimeFixture fixture = await GateCreateAnswerLostAsync();
         JourneyRuntimeRow underWay = await fixture.RuntimeAsync();
         fixture.Riot.MovementState = "MT_RUNNING";
-        fixture.Riot.FailOrder(underWay.GateUpperId);
+        fixture.Riot.FailOrder(underWay.GateUpperId!);
 
         await TickAndHearAsync(fixture);
 
         await AssertSessionReadyAsync(fixture);
-        await AssertRecordedHeldAndStoppedAsync(fixture, underWay.GateUpperId);
-        await AssertCargoBoundAsync(fixture, underWay.DemandId);
+        await AssertRecordedHeldAndStoppedAsync(fixture, underWay.GateUpperId!);
+        await AssertCargoBoundAsync(fixture, underWay.DemandId!);
     }
 
     // ---- 闸门后：会话因本车在途单未就绪 ----------------------------------------------------------------------
@@ -120,14 +120,14 @@ public sealed class FailedOrderBeforeConfirmationTests
         JourneyRuntimeRow underWay = await fixture.RuntimeAsync();
         await OwnOrderRebuildTests.DropSessionOnOwnOrderAsync(fixture);
         fixture.Riot.MovementState = "MT_RUNNING";
-        fixture.Riot.FailOrder(underWay.GateUpperId);
+        fixture.Riot.FailOrder(underWay.GateUpperId!);
         Outbound before = await OutboundAsync(fixture);
 
         await TickAndHearAsync(fixture);
 
         await AssertSessionStillNotReadyAsync(fixture);
-        await AssertRecordedHeldAndStoppedAsync(fixture, underWay.GateUpperId);
-        await AssertCargoBoundAsync(fixture, underWay.DemandId);
+        await AssertRecordedHeldAndStoppedAsync(fixture, underWay.GateUpperId!);
+        await AssertCargoBoundAsync(fixture, underWay.DemandId!);
         Assert.Equal(before, await OutboundAsync(fixture));
     }
 
@@ -358,7 +358,7 @@ public sealed class FailedOrderBeforeConfirmationTests
     {
         await using RuntimeFixture fixture = await GateCreateAnswerLostAsync();
         JourneyRuntimeRow underWay = await fixture.RuntimeAsync();
-        fixture.Riot.FailOrder(underWay.GateUpperId);
+        fixture.Riot.FailOrder(underWay.GateUpperId!);
         await TickAndHearAsync(fixture);
         Assert.Equal(VehicleFaultLevel.SuspectedBlocked, (await VehicleFaultRecoveryTests.FaultAsync(fixture)).Level);
         int gateCreates = fixture.Riot.CreateCount("TO_GATE");
@@ -523,7 +523,7 @@ public sealed class FailedOrderBeforeConfirmationTests
     {
         await using RuntimeFixture fixture = await GateCreateAnswerLostAsync();
         JourneyRuntimeRow underWay = await fixture.RuntimeAsync();
-        fixture.Riot.CancelOrder(underWay.GateUpperId);
+        fixture.Riot.CancelOrder(underWay.GateUpperId!);
 
         await TickAndHearAsync(fixture);
 
@@ -646,7 +646,7 @@ public sealed class FailedOrderBeforeConfirmationTests
         JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
         Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, runtime.Stage);
         Assert.Null(fixture.Riot.LoseNextCreateResponseOf);
-        OrderIntentRow intent = await IntentAsync(fixture, runtime.GateUpperId);
+        OrderIntentRow intent = await IntentAsync(fixture, runtime.GateUpperId!);
         Assert.NotEqual("CONFIRMED", intent.Status);
         Assert.Equal(1, intent.CreateAttemptCount);
         fixture.Riot.MovementState = "MT_FINISHED";

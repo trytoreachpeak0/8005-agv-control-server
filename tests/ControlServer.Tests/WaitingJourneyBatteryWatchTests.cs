@@ -395,7 +395,7 @@ public sealed class WaitingJourneyBatteryWatchTests
         await RoundAtAsync(fixture, left + TimeSpan.FromMinutes(12));
         Assert.Null((await ReloadAsync(fixture)).WaitingSince);
 
-        fixture.Riot.FailOrder(onTheWay.GateUpperId);
+        fixture.Riot.FailOrder(onTheWay.GateUpperId!);
         DateTimeOffset failed = left + TimeSpan.FromMinutes(12) + TimeSpan.FromSeconds(2);
         await RoundAtAsync(fixture, failed);
         JourneyRuntimeRow named = await ReloadAsync(fixture);
@@ -492,7 +492,7 @@ public sealed class WaitingJourneyBatteryWatchTests
         await RoundAtAsync(fixture, left + TimeSpan.FromSeconds(2));
         Assert.Equal(JourneyWaitClassification.SessionNotReadyReason, (await ReloadAsync(fixture)).BlockReasonCode);
 
-        fixture.Riot.SetOrderState(onTheWay.GateUpperId, RiotOrderState.Hang, terminal: false);
+        fixture.Riot.SetOrderState(onTheWay.GateUpperId!, RiotOrderState.Hang, terminal: false);
         DateTimeOffset hung = left + TimeSpan.FromMinutes(5);
         await RoundAtAsync(fixture, hung);
         JourneyRuntimeRow hanging = await ReloadAsync(fixture);
@@ -507,7 +507,7 @@ public sealed class WaitingJourneyBatteryWatchTests
         Assert.Contains("(reason ORDER_HANG)", message, StringComparison.Ordinal);
         Assert.Contains("for 10 min", message, StringComparison.Ordinal);
 
-        fixture.Riot.SetOrderState(onTheWay.GateUpperId, RiotOrderState.Executing, terminal: false);
+        fixture.Riot.SetOrderState(onTheWay.GateUpperId!, RiotOrderState.Executing, terminal: false);
         await RoundAtAsync(fixture, hung + fixture.Options.WaitingJourneyWarningAfter + TimeSpan.FromSeconds(2));
         JourneyRuntimeRow continued = await ReloadAsync(fixture);
         Assert.Equal(JourneyWaitClassification.SessionNotReadyReason, continued.BlockReasonCode);

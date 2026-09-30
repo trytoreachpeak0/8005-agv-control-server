@@ -27,11 +27,13 @@ namespace ControlServer.Host.Runtime;
 /// </remarks>
 public sealed class JourneyPlanBuilder(JourneyRuntimeOptions options)
 {
-    // Every leg this runtime plans is BUSINESS: it moves a demand from a pickup station to a
-    // dropoff station and does nothing else. WAITING_POINT is FP-C4, batch 5, and CHARGER is
-    // FP-C1, batch 8 -- neither exists here to be reported, so the constant is a fact about this
-    // profile rather than a placeholder for one.
+    // A transport journey's legs are BUSINESS: each moves a demand from a pickup station to a dropoff station and does nothing
+    // else. An idle return's one leg is WAITING_POINT, with no legType and no demand (batch 8-19, control-server#390;
+    // IdleReturnPlan below); CHARGER is batch 9.
     private const string BusinessStopPurpose = "BUSINESS";
+
+    /// <summary><c>stopPurposeCategory</c> of an idle return's leg (protocol <c>2.0.0</c>, <c>FP-IS-12</c>).</summary>
+    public const string WaitingPointStopPurpose = "WAITING_POINT";
 
     /// <summary>
     /// Builds a candidate's route from its AREA station and its task type's fixed station, or names
@@ -228,6 +230,55 @@ public sealed class JourneyPlanBuilder(JourneyRuntimeOptions options)
                 stop.StationId,
                 LegState(stop, current, arrivedAtCurrent)))]);
     }
+
+    /// <summary>
+    /// 空闲返回的计划：一条开往等待点的腿，<c>stopPurposeCategory = WAITING_POINT</c>、<c>legType</c> 与 <c>demandId</c> 为空
+    /// （批次8-19，control-server#390；协议 <c>2.0.0</c> 允许两者为空）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 腿的状态只有两种：在路上 <c>ACTIVE</c>，到了 <c>ARRIVED</c>。<b>车还停在点上时这条腿不标 <c>COMPLETED</c>、也不删</b>
+    /// （车载端 hmi#217 的跨票契约 P4：删了，到站格退回「旅程未同步」）：空闲返回收敛之后收尾那一张计划仍是这条 <c>ARRIVED</c> 的腿；
+    /// 车被派走时，下一趟旅程的计划整体替换它（ADR-cross-0053），等待点腿随之消失，不会排在业务腿前面（P2、P3）。
+    /// </para>
+    /// <para>
+    /// 业务腿的生成（<see cref="Plan"/>）不动：它只投影搬运停靠。
+    /// </para>
+    /// </remarks>
+    public static UpcomingStopPlanProjection IdleReturnPlan(
+        JourneyRuntimeRow runtime,
+        JourneyStopRow waitingPoint,
+        bool arrived,
+        long revision)
+    {
+        ArgumentNullException.ThrowIfNull(runtime);
+        ArgumentNullException.ThrowIfNull(waitingPoint);
+        return new UpcomingStopPlanProjection(revision, [IdleReturnLeg(runtime, waitingPoint, arrived)]);
+    }
+
+    /// <summary>空闲返回那一条腿，给计划与收尾快照共用。</summary>
+    public static UpcomingMovementLeg IdleReturnLeg(JourneyRuntimeRow runtime, JourneyStopRow waitingPoint, bool arrived)
+    {
+        ArgumentNullException.ThrowIfNull(runtime);
+        ArgumentNullException.ThrowIfNull(waitingPoint);
+        return new UpcomingMovementLeg(
+            waitingPoint.MovementLegId,
+            null,
+            WaitingPointStopPurpose,
+            null,
+            null,
+            waitingPoint.Sequence,
+            waitingPoint.StationId,
+            runtime.MapIdentity,
+            arrived ? "ARRIVED" : "ACTIVE");
+    }
+
+    /// <summary>
+    /// 空闲返回途中的车辆业务状态：<c>activePurpose = IDLE_RETURN</c>，没有装货阶段、没有阻断事实。其余四栏与搬运那一张同值
+    /// （<c>JourneyRuntimeEngine.TransportBusinessState</c>），收尾时撤下用途的那一张同样如此（<c>JourneyClosure</c>）。
+    /// </summary>
+    public static VehicleBusinessProjection IdleReturnBusinessState(long revision) =>
+        new(revision, "READY", VehicleActivePurposes.IdleReturn, false, "SUFFICIENT", ChargingCycleWireStates.NotCharging, null, []);
 
     private static string LegState(JourneyStopRow stop, JourneyStopRow current, bool arrivedAtCurrent) =>
         stop.Sequence < current.Sequence ? "COMPLETED"

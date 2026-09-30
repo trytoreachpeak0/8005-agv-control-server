@@ -17,7 +17,7 @@ namespace ControlServer.Tests;
 internal static class JourneyMembershipSeed
 {
     /// <summary>The anchor demand's membership, exactly as acceptance writes it.</summary>
-    internal static JourneyDemandRow For(JourneyRuntimeRow journey) => Member(journey, journey.DemandId);
+    internal static JourneyDemandRow For(JourneyRuntimeRow journey) => Member(journey, journey.DemandId!);
 
     /// <summary>
     /// 受理会在旅程行旁边写下的全部：两个停靠与锚需求的归属（control-server#206、#211）。手写旅程行的夹具用它，
@@ -59,15 +59,15 @@ internal static class JourneyMembershipSeed
                 JourneyId = journey.JourneyId,
                 Sequence = 2,
                 StopRole = JourneyStopRoles.Unload,
-                StationId = journey.GateStationId,
+                StationId = journey.GateStationId!,
                 StationRiotId = journey.GateStationRiotId,
                 DispatchZone = journey.DispatchZone,
                 OperationSessionId = journey.OperationSessionId,
-                MovementLegId = journey.GateMovementLegId,
-                UpperId = journey.GateUpperId,
-                VehicleBusinessMessageId = journey.GateVehicleBusinessMessageId,
-                WorklistMessageId = journey.GateWorklistMessageId,
-                PlanMessageId = journey.GatePlanMessageId,
+                MovementLegId = journey.GateMovementLegId!,
+                UpperId = journey.GateUpperId!,
+                VehicleBusinessMessageId = journey.GateVehicleBusinessMessageId!,
+                WorklistMessageId = journey.GateWorklistMessageId!,
+                PlanMessageId = journey.GatePlanMessageId!,
                 Status = JourneyStopStatuses.Pending,
                 CreatedAt = journey.CreatedAt
             });
@@ -89,11 +89,11 @@ internal static class JourneyMembershipSeed
             PickupStopId = JourneyIdentity.PickupStopId(journey.JourneyId),
             UnloadStopId = JourneyIdentity.UnloadStopId(journey.JourneyId),
             ExpectedBasketCount = journey.ExpectedBasketCount,
-            TargetSlotsJson = journey.TargetSlotsJson,
-            LoadSlotOperationAttemptId = Own(journey.LoadSlotOperationAttemptId),
-            LoadCommandMessageId = Own(journey.LoadCommandMessageId),
-            UnloadSlotOperationAttemptId = Own(journey.UnloadSlotOperationAttemptId),
-            UnloadCommandMessageId = Own(journey.UnloadCommandMessageId),
+            TargetSlotsJson = journey.TargetSlotsJson!,
+            LoadSlotOperationAttemptId = Own(journey.LoadSlotOperationAttemptId!),
+            LoadCommandMessageId = Own(journey.LoadCommandMessageId!),
+            UnloadSlotOperationAttemptId = Own(journey.UnloadSlotOperationAttemptId!),
+            UnloadCommandMessageId = Own(journey.UnloadCommandMessageId!),
             DispatchZone = journey.DispatchZone,
             DispatchGeneration = journey.DispatchGeneration,
             Status = JourneyDemandStatuses.PendingLoad,

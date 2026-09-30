@@ -72,6 +72,12 @@ public static class JourneyStopRoles
     public const string Charger = "CHARGER";
 
     /// <summary>
+    /// 空闲返回开往等待点的那一个停靠（批次8-19，control-server#390）。没有需求、没有清单、不问录入；它的单经
+    /// <see cref="OrderShapeOf"/> 是单段移动。
+    /// </summary>
+    public const string WaitingPoint = "WAITING_POINT";
+
+    /// <summary>
     /// 这个停靠的订单是哪一种形态：<see cref="Charger"/> 是充电单 <see cref="ControlServer.Domain.OrderShapes.Charge"/>
     /// （<c>move(桩) + act(78,1,0)</c>），其余都是单段移动。
     /// </summary>

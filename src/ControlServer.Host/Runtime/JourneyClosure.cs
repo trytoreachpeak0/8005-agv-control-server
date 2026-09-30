@@ -61,11 +61,93 @@ internal static class JourneyClosure
     {
         ArgumentNullException.ThrowIfNull(dbContext);
         ArgumentNullException.ThrowIfNull(runtime);
+        // An idle return closes through StageIdleReturnAsync: its plan may have to keep the waiting point leg, and it never had
+        // a worklist to close (control-server#390).
+        if (runtime.IsIdleReturn())
+        {
+            throw new InvalidOperationException(
+                $"Journey '{runtime.JourneyId}' is an idle return; it closes through {nameof(StageIdleReturnAsync)}.");
+        }
 
         runtime.Stage = JourneyRuntimeStage.Completed;
         runtime.SetBlockReason(reasonCode, endedAt);
         runtime.UpdatedAt = endedAt;
         await StageSnapshotsAsync(dbContext, runtime, endedAt, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 空闲返回收尾（批次8-19，control-server#390）：阶段写成 Completed、收尾码写成 <paramref name="reasonCode"/>（收敛为 null），
+    /// 暂存两张收尾快照（计划与业务状态），与收尾的其余事实同一次改动。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>业务状态撤下 <c>IDLE_RETURN</c></b>（hmi#217 跨票契约第 1 条）：<c>activePurpose</c> 为空，与搬运收尾同一组值。
+    /// 不发这一张，车载端会一直把车当成在空闲返回里，下一趟业务停靠的录入就一直关着。
+    /// </para>
+    /// <para>
+    /// <b>计划跟着事实走</b>（契约第 2 条）：车停在等待点上收敛时，收尾计划仍是那一条 <c>ARRIVED</c> 的等待点腿（<paramref name="stillAtWaitingPoint"/>），
+    /// 不标完成、不删；没到点就收尾（失败分流、作废）时计划为空。
+    /// </para>
+    /// <para>
+    /// <b>没有清单。</b>空闲返回从没发过清单与录入请求，收尾也不发；三张收尾快照的 id 里清单那一个不落库，补发自然跳过它
+    /// （<see cref="ReplayIdsAsync"/> 只给落了库的）。
+    /// </para>
+    /// </remarks>
+    public static async Task StageIdleReturnAsync(
+        ControlServerDbContext dbContext,
+        JourneyRuntimeRow runtime,
+        JourneyStopRow waitingPoint,
+        string? reasonCode,
+        bool stillAtWaitingPoint,
+        DateTimeOffset endedAt,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(dbContext);
+        ArgumentNullException.ThrowIfNull(runtime);
+        ArgumentNullException.ThrowIfNull(waitingPoint);
+        if (!runtime.IsIdleReturn())
+        {
+            throw new ArgumentException($"Journey '{runtime.JourneyId}' is not an idle return.", nameof(runtime));
+        }
+
+        runtime.Stage = JourneyRuntimeStage.Completed;
+        runtime.SetBlockReason(reasonCode, endedAt);
+        runtime.UpdatedAt = endedAt;
+
+        SessionRecoveryRow? session = await dbContext.SessionRecoveries
+            .SingleOrDefaultAsync(row => row.AgvId == runtime.AgvId, cancellationToken).ConfigureAwait(false);
+        if (session is null)
+        {
+            return;
+        }
+
+        long planRevision =
+            await HighestSentRevisionAsync(dbContext, runtime.AgvId, PlanType, cancellationToken).ConfigureAwait(false) + 1
+            ?? runtime.PlanRevision;
+        long businessRevision =
+            await HighestSentRevisionAsync(dbContext, runtime.AgvId, BusinessType, cancellationToken).ConfigureAwait(false) + 1
+            ?? runtime.VehicleBusinessRevision;
+        WireToGateStore store = new(dbContext);
+        IReadOnlyList<string> ids = SnapshotMessageIds(runtime.JourneyId);
+        await OnboardJourneyPublisher.StageUpcomingStopPlanAsync(
+            store,
+            ids[1],
+            runtime.AgvId,
+            session.SessionGeneration,
+            new UpcomingStopPlanProjection(
+                planRevision,
+                stillAtWaitingPoint ? [JourneyPlanBuilder.IdleReturnLeg(runtime, waitingPoint, arrived: true)] : []),
+            endedAt,
+            cancellationToken).ConfigureAwait(false);
+        await OnboardJourneyPublisher.StageVehicleBusinessStateAsync(
+            store,
+            ids[2],
+            runtime.AgvId,
+            session.SessionGeneration,
+            new VehicleBusinessProjection(businessRevision, "READY", null, false, "SUFFICIENT", "NOT_CHARGING", null, []),
+            // A millisecond after the plan: a replay sends in creation order, and CV-WAITING-POINT-IDLE-RETURN puts the plan first.
+            endedAt.AddMilliseconds(1),
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>这趟旅程三张收尾快照的 messageId。一趟旅程只收尾一次，所以按旅程派生。</summary>
@@ -135,16 +217,35 @@ internal static class JourneyClosure
             .Where(row => row.AgvId == agvId)
             .Select(row => new { row.JourneyId, row.Stage, row.CreatedAt })
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
-        var latest = journeys
+        var newestFirst = journeys
             .OrderByDescending(row => row.CreatedAt)
             .ThenByDescending(row => row.JourneyId, StringComparer.Ordinal)
-            .FirstOrDefault();
-        if (latest is null || latest.Stage != JourneyRuntimeStage.Completed)
+            .ToArray();
+        var latest = newestFirst.FirstOrDefault();
+        if (latest is null)
         {
             return [];
         }
 
-        string[] ids = [.. SnapshotMessageIds(latest.JourneyId)];
+        List<string> ids = [];
+        if (latest.Stage == JourneyRuntimeStage.Completed)
+        {
+            ids.AddRange(SnapshotMessageIds(latest.JourneyId));
+        }
+        // An idle return sends no worklist (control-server#390), so the newest one does not supersede the worklist stream: the
+        // closing worklist of the last transport before it is still the one the vehicle should hold, and replaying it can never
+        // be a regression. Its plan and business state are superseded, so they are not replayed.
+        if (latest.JourneyId.StartsWith(IdleReturnIdentity.JourneyIdPrefix, StringComparison.Ordinal) &&
+            newestFirst.FirstOrDefault(row => !row.JourneyId.StartsWith(IdleReturnIdentity.JourneyIdPrefix, StringComparison.Ordinal))
+                is { Stage: JourneyRuntimeStage.Completed } transport)
+        {
+            ids.Add(SnapshotMessageIds(transport.JourneyId)[0]);
+        }
+        if (ids.Count == 0)
+        {
+            return [];
+        }
+
         string[] stored = await dbContext.ProtocolOutbox.AsNoTracking()
             .Where(row => ids.Contains(row.MessageId))
             .Select(row => row.MessageId)

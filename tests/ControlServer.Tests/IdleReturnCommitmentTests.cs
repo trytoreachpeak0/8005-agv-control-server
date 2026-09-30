@@ -408,39 +408,30 @@ public sealed class IdleReturnCommitmentTests
     }
 
     /// <summary>
-    /// 过渡期的启动护栏（审查 S2）：批次8-19 合入之前，单独打开 <c>IdleReturn:Enabled</c> 拒绝启动；只有合成 L2 同时设
-    /// <c>AllowWithoutExecution</c>。宿主注册经 <c>ValidateOnStart</c>，这里按宿主的注册取选项，取即校验。
+    /// 批次8-19（control-server#390）合入后，单独打开 <c>IdleReturn:Enabled</c> 照常启动：承诺会被执行与释放，批次8-18 那道
+    /// 「打开即拒绝启动」的过渡护栏已删。宿主按同一个注册起来，托管服务照常启动。
     /// </summary>
     [Theory]
-    [InlineData(null, null, true)]
-    [InlineData("true", null, false)]
-    [InlineData("true", "true", true)]
-    [InlineData("false", "true", true)]
-    public void TurningIdleReturnOnBeforeItsExecutionExistsRefusesToStartUnlessTheRigSaysSo(
-        string? enabled, string? allowWithoutExecution, bool starts)
+    [InlineData(null)]
+    [InlineData("true")]
+    [InlineData("false")]
+    public async Task TurningIdleReturnOnStartsNowThatCommitmentsAreExecuted(string? enabled)
     {
-        Dictionary<string, string?> settings = new(StringComparer.Ordinal);
+        HostApplicationBuilder builder = Microsoft.Extensions.Hosting.Host.CreateApplicationBuilder();
         if (enabled is not null)
         {
-            settings["IdleReturn:Enabled"] = enabled;
+            builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["IdleReturn:Enabled"] = enabled });
         }
-        if (allowWithoutExecution is not null)
-        {
-            settings["IdleReturn:AllowWithoutExecutionForL2Only"] = allowWithoutExecution;
-        }
-        ServiceCollection services = new();
-        services.AddIdleReturn(new ConfigurationBuilder().AddInMemoryCollection(settings).Build());
-        using ServiceProvider provider = services.BuildServiceProvider();
+        RecordingHostedService started = new();
+        builder.Services.AddSingleton<IHostedService>(started);
+        builder.Services.AddIdleReturn(builder.Configuration);
+        using IHost host = builder.Build();
 
-        if (starts)
-        {
-            _ = provider.GetRequiredService<IOptions<IdleReturnOptions>>().Value;
-            return;
-        }
-        OptionsValidationException refusal = Assert.Throws<OptionsValidationException>(
-            () => provider.GetRequiredService<IOptions<IdleReturnOptions>>().Value);
-        Assert.Contains(IdleReturnOptionsValidator.RefusalMessage, refusal.Failures);
-        Assert.Contains("control-server#390", IdleReturnOptionsValidator.RefusalMessage, StringComparison.Ordinal);
+        await host.StartAsync(Token);
+
+        Assert.True(started.Started);
+        Assert.Equal(enabled == "true", host.Services.GetRequiredService<IOptions<IdleReturnOptions>>().Value.Enabled);
+        await host.StopAsync(Token);
     }
 
     /// <summary>
@@ -460,75 +451,32 @@ public sealed class IdleReturnCommitmentTests
         Assert.Empty(await harness.Db.DumpAsyncOf("VehiclePurposeClaims"));
     }
 
-    /// <summary>只有合成 L2 那种打开，启动时打一条 Warning（事件 2201）；关着或正常配置什么也不说。</summary>
-    [Theory]
-    [InlineData(true, true, true)]
-    [InlineData(false, true, false)]
-    [InlineData(false, false, false)]
-    public async Task TheL2OnlyWayOfTurningItOnWarnsAtStartup(bool enabled, bool l2Only, bool warns)
-    {
-        EventRecordingLogger<IdleReturnStartupWarning> log = new();
-        IdleReturnStartupWarning warning = new(
-            Options.Create(new IdleReturnOptions { Enabled = enabled, AllowWithoutExecutionForL2Only = l2Only }), log);
-
-        await warning.StartAsync(Token);
-
-        Assert.Equal(warns ? [2201] : [], log.Entries.Select(entry => entry.EventId.Id));
-        if (warns)
-        {
-            Assert.Contains("control-server#390", log.Entries.Single().Message, StringComparison.Ordinal);
-        }
-    }
-
     /// <summary>
-    /// 只给 L2 的确认键不得出现在现场配置、安装脚本与工作流里（审查 S2）：扫仓库里所有 <c>appsettings*.json</c>、<c>scripts/</c> 下
-    /// <c>scripts/l2/</c> 以外的文件与 <c>.github/workflows/</c>。不分大小写：.NET 配置键不分大小写，小写写进 appsettings.json 一样生效。
-    /// L2 编排器里必须有它，否则这条扫描扫的是一个不存在的名字。仓库外的机器级环境变量它覆盖不到。
+    /// 批次8-18 只给合成 L2 的确认键 <c>AllowWithoutExecutionForL2Only</c> 随护栏一起删了（control-server#390）：仓库里的配置、脚本
+    /// （含 L2 编排器）、工作流与源码都不再出现它。不分大小写，理由同 .NET 配置键。
     /// </summary>
     [Fact]
-    public void TheL2OnlyKeyAppearsInNoSiteConfigurationOrInstallScript()
+    public void TheRetiredL2OnlyKeyAppearsNowhere()
     {
-        const string Key = nameof(IdleReturnOptions.AllowWithoutExecutionForL2Only);
+        const string Key = "AllowWithoutExecutionForL2Only";
         string root = RepositoryRoot();
-        string l2 = Path.Combine(root, "scripts", "l2") + Path.DirectorySeparatorChar;
-        string[] configurations = Directory.GetFiles(root, "appsettings*.json", SearchOption.AllDirectories)
-            .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal) &&
-                           !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
-            .ToArray();
-        string[] scripts = Directory.GetFiles(Path.Combine(root, "scripts"), "*", SearchOption.AllDirectories)
-            .Where(path => !path.StartsWith(l2, StringComparison.OrdinalIgnoreCase))
-            .ToArray();
-        string[] workflows = Directory.GetFiles(Path.Combine(root, ".github", "workflows"), "*", SearchOption.AllDirectories);
-        Assert.NotEmpty(configurations);
-        Assert.NotEmpty(scripts);
-        Assert.NotEmpty(workflows);
+        static bool Built(string path) =>
+            path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal) ||
+            path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal);
+        string[] files =
+        [
+            .. Directory.GetFiles(root, "appsettings*.json", SearchOption.AllDirectories),
+            .. Directory.GetFiles(Path.Combine(root, "scripts"), "*", SearchOption.AllDirectories),
+            .. Directory.GetFiles(Path.Combine(root, ".github", "workflows"), "*", SearchOption.AllDirectories),
+            .. Directory.GetFiles(Path.Combine(root, "src"), "*.cs", SearchOption.AllDirectories),
+        ];
+        string[] scanned = [.. files.Where(path => !Built(path))];
+        Assert.Contains(scanned, path => path.EndsWith("Invoke-L2Scenario.ps1", StringComparison.Ordinal));
 
         Assert.Equal(
             [],
-            configurations.Concat(scripts).Concat(workflows)
-                .Where(path => File.ReadAllText(path).Contains(Key, StringComparison.OrdinalIgnoreCase))
+            scanned.Where(path => File.ReadAllText(path).Contains(Key, StringComparison.OrdinalIgnoreCase))
                 .Select(path => Path.GetRelativePath(root, path)));
-        Assert.Contains(Key, File.ReadAllText(Path.Combine(root, "scripts", "l2", "Invoke-L2Scenario.ps1")), StringComparison.Ordinal);
-    }
-
-    /// <summary>
-    /// 护栏在任何托管服务启动之前就拒绝启动（审查 B3）：先注册一个会记下「我启动了」的托管服务，再按宿主注册空闲返回，
-    /// 单独打开开关——宿主启动失败，那个服务从没启动过。去掉 <c>ValidateOnStart</c> 时校验要等第一次取选项，那个服务已经起来了。
-    /// </summary>
-    [Fact]
-    public async Task TheStartupGuardRefusesBeforeAnyHostedServiceStarts()
-    {
-        RecordingHostedService earlier = new();
-        HostApplicationBuilder builder = Microsoft.Extensions.Hosting.Host.CreateApplicationBuilder();
-        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["IdleReturn:Enabled"] = "true" });
-        builder.Services.AddSingleton<IHostedService>(earlier);
-        builder.Services.AddIdleReturn(builder.Configuration);
-        using IHost host = builder.Build();
-
-        OptionsValidationException refusal = await Assert.ThrowsAsync<OptionsValidationException>(() => host.StartAsync(Token));
-
-        Assert.Contains(IdleReturnOptionsValidator.RefusalMessage, refusal.Failures);
-        Assert.False(earlier.Started);
     }
 
     // ---- 选点：逐点核验，候选不等于拿到 ---------------------------------------------------------------------------

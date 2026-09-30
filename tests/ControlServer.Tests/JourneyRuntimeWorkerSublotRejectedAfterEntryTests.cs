@@ -156,7 +156,7 @@ public sealed class JourneyRuntimeWorkerSublotRejectedAfterEntryTests
         // Step 1: the entry request is what the operator is answering.
         JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
         Assert.Contains("SublotEntryRequested", await fixture.OutboxTypesAsync());
-        JsonElement request = await fixture.OutboxPayloadAsync(runtime.SublotRequestMessageId);
+        JsonElement request = await fixture.OutboxPayloadAsync(runtime.SublotRequestMessageId!);
         Assert.Equal(
             [RejectedEntrySublot],
             request.GetProperty("expectedSublots").EnumerateArray().Select(item => item.GetString()));

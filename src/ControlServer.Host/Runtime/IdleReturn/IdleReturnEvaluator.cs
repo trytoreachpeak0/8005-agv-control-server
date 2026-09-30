@@ -212,9 +212,18 @@ public sealed class IdleReturnEvaluator(
             return IdleReturnReasons.ForeignOrderRunning;
         }
 
+        // An idle return that ended (control-server#390) proved its vehicle stopped with no order before it closed, so the
+        // status its intent was left in -- TERMINAL_RECONCILIATION_REQUIRED after a cancellation, RESULT_UNKNOWN for one never
+        // sent -- is settled, not unknown. Counted, it would keep that vehicle from ever being committed again.
+        IQueryable<string> settledIdleReturnLegs = dbContext.Set<JourneyStopRow>()
+            .Where(stop => stop.StopRole == JourneyStopRoles.WaitingPoint &&
+                           dbContext.JourneyRuntimes.Any(journey =>
+                               journey.JourneyId == stop.JourneyId && journey.Stage == JourneyRuntimeStage.Completed))
+            .Select(stop => stop.MovementLegId);
         if (await dbContext.OrderIntents.AsNoTracking()
                 .AnyAsync(
-                    row => row.VehicleKey == vehicle.VehicleKey && UnknownOutcomeIntentStatuses.Contains(row.Status),
+                    row => row.VehicleKey == vehicle.VehicleKey && UnknownOutcomeIntentStatuses.Contains(row.Status) &&
+                           !settledIdleReturnLegs.Contains(row.MovementLegId),
                     cancellationToken)
                 .ConfigureAwait(false))
         {
@@ -283,12 +292,14 @@ public sealed class IdleReturnEvaluator(
         List<string> excluded = [];
         List<IdleReturnPointCandidate> eligible = [];
         int origin = candidate.Facts.Vehicle.CurrentStationId!.Value;
+        int? failedLastTime = await FailedLastTimeAsync(vehicle, cancellationToken).ConfigureAwait(false);
         foreach (WaitingPointEntry point in (reads.Registration?.Points ?? [])
                      .Where(point => point.MapId == _runtime.MapId)
                      .OrderBy(point => point.StationId))
         {
-            string? why = await ExcludeAsync(point, vehicle, origin, currentMap, reads, cancellationToken)
-                .ConfigureAwait(false);
+            string? why = point.StationId == failedLastTime
+                ? IdleReturnReasons.PointFailedLastAttempt
+                : await ExcludeAsync(point, vehicle, origin, currentMap, reads, cancellationToken).ConfigureAwait(false);
             if (why is not null)
             {
                 excluded.Add($"{point.StationId}={why}");
@@ -350,6 +361,28 @@ public sealed class IdleReturnEvaluator(
         }
 
         return reads.Graph.Graph!.Traverse(origin, point.StationId).Reachable ? null : IdleReturnReasons.PointUnreachable;
+    }
+
+    /// <summary>
+    /// 这辆车最近一趟旅程若是一次已确认失败的空闲返回，答它的等待点（<c>REQ-0296</c> 末句：已确认失败只可在排除原失败点后建立新的承诺；
+    /// control-server#390）。最近一趟是别的（搬运、收敛了的空闲返回、另一种收尾），或没有旅程，答空。
+    /// </summary>
+    /// <remarks>「最近一趟」按受理时刻在客户端排：SQLite 不接受 <see cref="DateTimeOffset"/> 的 ORDER BY，一辆车的旅程行按条数算。</remarks>
+    private async Task<int?> FailedLastTimeAsync(FleetVehicle vehicle, CancellationToken cancellationToken)
+    {
+        var journeys = await dbContext.JourneyRuntimes.AsNoTracking()
+            .Where(row => row.AgvId == vehicle.AgvId)
+            .Select(row => new { row.JourneyId, row.CreatedAt, row.BlockReasonCode, row.PickupStationRiotId })
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        var latest = journeys
+            .OrderByDescending(row => row.CreatedAt)
+            .ThenByDescending(row => row.JourneyId, StringComparer.Ordinal)
+            .FirstOrDefault();
+        return latest is not null &&
+               latest.JourneyId.StartsWith(IdleReturnIdentity.JourneyIdPrefix, StringComparison.Ordinal) &&
+               latest.BlockReasonCode is { } code && IdleReturnExecutionReasons.ConfirmedFailures.Contains(code)
+            ? latest.PickupStationRiotId
+            : null;
     }
 
     /// <summary>

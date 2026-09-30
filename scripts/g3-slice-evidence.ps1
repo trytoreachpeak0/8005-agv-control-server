@@ -62,6 +62,10 @@
 # The vector covers plan legs only: several worklist items, cargo holding and station yield have no vector, and
 # the real-rig scenario real-onboard-mixed-side-one-stop that exercises them is in no runner and claims no slice.
 #
+# Batch 8 (control-server#390): the journey runner claims FP-IS-12, one scenario (g3-waiting-point-idle-return),
+# seven assertions. It answers CV-WAITING-POINT-IDLE-RETURN on the real onboard and guards the two cross-ticket
+# contracts with onboard-hmi#217 (docs/g3-slice-claim-review.md has the rows).
+#
 # ---------------------------------------------------------------------------------------------
 # The ruling, 2026-09-09 (ticket 23, the user's decision -- recorded here rather than only in a
 # commit message, because this is the constant it governs):
@@ -491,6 +495,20 @@ function Get-G3RunnerClaim {
                     'onboardShowsTheDispatchPlanInSequenceOrder',
                     'onboardShowsTheAppendedPlanInSequenceOrder',
                     'multiStopJourneyEachDemandLoadedAndUnloadedOnce')
+                # CV-WAITING-POINT-IDLE-RETURN (batch 8, control-server#390; onboard half onboard-hmi#217): an idle
+                # return to waiting point 214 after an unload, converged there, then taken away by the next demand.
+                # Server halves: the vector's message order (plan before business state), convergence (reserve ->
+                # occupy, purpose released) and release on departure evidence. Onboard half,
+                # TREAT_WAITING_POINT_AS_NON_BUSINESS_STOP, read through UI Automation (IdleReturnStatus). The two
+                # cross-ticket contracts are G3-12-03 and G3-12-04; G3-12-05 is the entry that follows.
+                'FP-IS-12' = @(
+                    'idleReturnPlanBeforeBusinessStateBothAcknowledged',
+                    'onboardShowsEnRouteToWaitingPoint',
+                    'convergedWithArrivedLegAndIdleReturnWithdrawn',
+                    'nextJourneyPlanReplacesTheWaitingPointLeg',
+                    'pickupEntryOpensAfterIdleReturnAndPointReleasedOnDeparture',
+                    'idleReturnJourneyFinalStateNoDuplicateCommit',
+                    'onboardNeverLoadsAtWaitingPoint')
             }
         }
     }

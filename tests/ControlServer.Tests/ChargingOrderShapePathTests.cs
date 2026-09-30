@@ -88,5 +88,5 @@ public sealed class ChargingOrderShapePathTests
     }
 
     private static SafetyCheckObservation Safe(JourneyRuntimeRow runtime, DateTimeOffset at) =>
-        new(runtime.PreDepartureSafetyCheckId, 1, true, at, at.AddMinutes(1));
+        new(runtime.PreDepartureSafetyCheckId!, 1, true, at, at.AddMinutes(1));
 }

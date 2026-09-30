@@ -123,20 +123,20 @@ public sealed class Batch7MigrationDisciplineTests
                 [journey.JourneyId + "|PICKUP", "PICKUP", journey.PickupStationId, Text(journey.PickupStationRiotId),
                  journey.DispatchZone, journey.OperationSessionId, journey.PickupMovementLegId, journey.PickupUpperId,
                  journey.VehicleBusinessMessageId, journey.WorklistMessageId, journey.PlanMessageId,
-                 journey.SublotRequestMessageId, journey.PreDepartureSafetyCheckMessageId, journey.PreDepartureSafetyCheckId],
+                 journey.SublotRequestMessageId!, journey.PreDepartureSafetyCheckMessageId!, journey.PreDepartureSafetyCheckId!],
                 StopFields(pickup));
             Assert.Equal(
-                [journey.JourneyId + "|UNLOAD", "UNLOAD", journey.GateStationId, Text(journey.GateStationRiotId),
-                 journey.DispatchZone, journey.OperationSessionId, journey.GateMovementLegId, journey.GateUpperId,
-                 journey.GateVehicleBusinessMessageId, journey.GateWorklistMessageId, journey.GatePlanMessageId,
+                [journey.JourneyId + "|UNLOAD", "UNLOAD", journey.GateStationId!, Text(journey.GateStationRiotId),
+                 journey.DispatchZone, journey.OperationSessionId, journey.GateMovementLegId!, journey.GateUpperId!,
+                 journey.GateVehicleBusinessMessageId!, journey.GateWorklistMessageId!, journey.GatePlanMessageId!,
                  "-", "-", "-"],
                 StopFields(unload));
 
             JourneyDemandRow demand = Assert.Single(demands, row => row.JourneyId == journey.JourneyId);
             Assert.Equal(
-                [journey.DemandId, pickup.StopId, unload.StopId, Text(journey.ExpectedBasketCount),
-                 journey.TargetSlotsJson, journey.LoadSlotOperationAttemptId, journey.LoadCommandMessageId,
-                 journey.UnloadSlotOperationAttemptId, journey.UnloadCommandMessageId, journey.DispatchZone,
+                [journey.DemandId!, pickup.StopId, unload.StopId, Text(journey.ExpectedBasketCount),
+                 journey.TargetSlotsJson!, journey.LoadSlotOperationAttemptId!, journey.LoadCommandMessageId!,
+                 journey.UnloadSlotOperationAttemptId!, journey.UnloadCommandMessageId!, journey.DispatchZone,
                  Text(journey.DispatchGeneration)],
                 [demand.DemandId, demand.PickupStopId, demand.UnloadStopId, Text(demand.ExpectedBasketCount),
                  demand.TargetSlotsJson, demand.LoadSlotOperationAttemptId, demand.LoadCommandMessageId,
@@ -259,7 +259,7 @@ public sealed class Batch7MigrationDisciplineTests
             .SingleAsync(row => row.StopId == JourneyIdentity.UnloadStopId(toGate.JourneyId), cancellationToken);
         await new WireToGateStore(context).AuthorizeMovementAsync(
             JourneyPlanBuilder.LegIntent(toGate, toGateStop, now.AddMinutes(5)),
-            new SafetyCheckObservation(toGate.PreDepartureSafetyCheckId, 1, true, now.AddMinutes(5), now.AddMinutes(6)),
+            new SafetyCheckObservation(toGate.PreDepartureSafetyCheckId!, 1, true, now.AddMinutes(5), now.AddMinutes(6)),
             now.AddMinutes(5),
             cancellationToken);
 
@@ -275,14 +275,14 @@ public sealed class Batch7MigrationDisciplineTests
         context.ProtocolOutbox.AddRange(
             new ProtocolOutboxRow
             {
-                MessageId = toGate.GateVehicleBusinessMessageId,
+                MessageId = toGate.GateVehicleBusinessMessageId!,
                 MessageType = "VehicleBusinessStateSnapshot",
                 PayloadJson = "{\"revision\":1}",
                 CreatedAt = now.AddMinutes(5)
             },
             new ProtocolOutboxRow
             {
-                MessageId = blocked.SublotRequestMessageId,
+                MessageId = blocked.SublotRequestMessageId!,
                 MessageType = "SublotEntryRequest",
                 PayloadJson = "{}",
                 CreatedAt = now.AddMinutes(2),

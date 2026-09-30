@@ -97,6 +97,8 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
         .. Enumerable.Range(0, 9).Select(sequence => FormattableString.Invariant($"FP-IS-{sequence:D2}")),
         "FP-IS-10",
         "FP-IS-11",
+        // 批次8-19（control-server#390）：空闲返回的服务端半边，CV-WAITING-POINT-IDLE-RETURN 有了同名具名测试。
+        "FP-IS-12",
         "FP-IS-14",
         "FP-IS-15"
     ];
@@ -154,7 +156,6 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
             ["CV-AUTOMATIC-CHARGING-CYCLE"] = "FP-IS-13, batch 9",
             ["CV-MANUAL-STATION-CLEARANCE"] = "FP-IS-13, batch 9",
             ["CV-UNABLE-TO-CHARGE-FIELD-CONFIRMATION"] = "FP-IS-13, batch 9",
-            ["CV-WAITING-POINT-IDLE-RETURN"] = "FP-IS-12, batch 8",
             ["CV-WORKLIST-SELECTION-ACCEPTED"] = "FP-IS-09, batch 11",
             ["CV-WORKLIST-SELECTION-STALE-REVISION"] = "FP-IS-09, batch 11"
         };

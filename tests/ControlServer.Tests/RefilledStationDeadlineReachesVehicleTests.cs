@@ -682,7 +682,7 @@ public sealed class RefilledStationDeadlineReachesVehicleTests
                 AgvId = runtime.AgvId,
                 DemandId = DemandId,
                 SlotOperationAttemptId = runtime.LoadSlotOperationAttemptId,
-                SlotsJson = runtime.TargetSlotsJson,
+                SlotsJson = runtime.TargetSlotsJson!,
                 State = RecoveryWorkflowState.AwaitingResult,
                 RequestMessageId = Guid.NewGuid().ToString("D"),
                 RequestContentHash = new string('c', 64),

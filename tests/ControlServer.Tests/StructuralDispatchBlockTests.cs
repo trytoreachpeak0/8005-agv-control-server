@@ -152,8 +152,8 @@ public sealed class StructuralDispatchBlockTests
         string root = FindRepositoryRoot();
         string runtime = Path.Combine(root, "src", "ControlServer.Host", "Runtime");
         Regex code = new("\"([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)\"");
-        // Leg types the plan builder writes into a plan; not verdicts.
-        HashSet<string> notReasonCodes = new(StringComparer.Ordinal) { "WIRE_TO_GATE", "TO_PICKUP", "TO_GATE", "TO_DROPOFF" };
+        // Leg types and stop purposes the plan builder writes into a plan; not verdicts.
+        HashSet<string> notReasonCodes = new(StringComparer.Ordinal) { "WIRE_TO_GATE", "TO_PICKUP", "TO_GATE", "TO_DROPOFF", "WAITING_POINT" };
 
         HashSet<string> written = new(StringComparer.Ordinal);
         foreach (string file in Directory.GetFiles(Path.Combine(runtime, "Dispatch", "Criteria"), "*.cs"))

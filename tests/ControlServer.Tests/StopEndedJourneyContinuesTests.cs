@@ -778,7 +778,7 @@ public sealed class StopEndedJourneyContinuesTests
             JourneyId = runtime.JourneyId,
             Sequence = last + 1,
             StopRole = JourneyStopRoles.Unload,
-            StationId = runtime.GateStationId,
+            StationId = runtime.GateStationId!,
             StationRiotId = runtime.GateStationRiotId,
             DispatchZone = runtime.DispatchZone,
             OperationSessionId = JourneyPlanBuilder.StableGuid(stopId, "session"),

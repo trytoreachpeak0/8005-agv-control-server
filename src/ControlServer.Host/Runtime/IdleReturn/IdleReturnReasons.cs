@@ -63,4 +63,10 @@ public static class IdleReturnReasons
 
     /// <summary>路网上从车的位置到不了这个等待点，或它不在路网上。</summary>
     public const string PointUnreachable = "WAITING_POINT_UNREACHABLE";
+
+    /// <summary>
+    /// 这辆车上一次开往这个等待点已确认失败（单被取消或删除后车停稳、单 FAILED 后故障被人工清除；control-server#390）：
+    /// 下一次承诺排除原失败点（<c>REQ-0296</c> 末句）。车做完别的用途（有了更新的旅程）之后不再排除。
+    /// </summary>
+    public const string PointFailedLastAttempt = "WAITING_POINT_FAILED_LAST_ATTEMPT";
 }

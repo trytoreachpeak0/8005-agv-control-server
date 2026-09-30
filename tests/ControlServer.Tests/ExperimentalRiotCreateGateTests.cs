@@ -700,7 +700,7 @@ public sealed class ExperimentalRiotCreateGateTests
             7);
         await store.AcceptWithOrderIntentAsync(
             new AcceptedDemandSnapshot(
-                intent.DemandId,
+                intent.DemandId!,
                 $"SUBLOT-{suffix}|WIRE_TO_GATE",
                 1,
                 $"history-{suffix}",
@@ -723,7 +723,7 @@ public sealed class ExperimentalRiotCreateGateTests
         AuthorizationId: $"AUTH-{intent.DemandId}",
         AuthorizationVersion: 1,
         UpperId: intent.UpperId,
-        DemandId: intent.DemandId,
+        DemandId: intent.DemandId!,
         MovementLegId: intent.MovementLegId,
         AgvLifecycleGeneration: intent.AgvLifecycleGeneration,
         DispatchGeneration: intent.DispatchGeneration,

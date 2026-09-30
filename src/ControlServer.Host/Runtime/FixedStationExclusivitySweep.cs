@@ -14,8 +14,12 @@ namespace ControlServer.Host.Runtime;
 /// <para>
 /// <b>离点证据，两条都要</b>（<see cref="HasDepartedAsync"/>）：持有的那趟旅程已不再以这个站为未完成的停靠——旅程已完成（或不在了），
 /// 或那个停靠已完成（车离站了）、已移除；并且 RIoT 观测到车此刻在线、当前站是<b>另一个</b>站。当前站还是这个站、为空、读不到，都不算离开。
-/// 下达离站订单那一刻第一条已经成立，第二条要等 RIoT 报出车到了别的站，所以<b>下达离站订单时不释放</b>——与等待点的 <c>REQ-0293</c>
-/// 同一个判法，批次8-19（control-server#390）后合，复用它。
+/// 下达离站订单那一刻第一条已经成立，第二条要等 RIoT 报出车到了别的站，所以<b>下达离站订单时不释放</b>。
+/// </para>
+/// <para>
+/// <b>等待点也在这里放</b>（<c>REQ-0293</c>，批次8-19，control-server#390），同一个判法：空闲返回收敛之后旅程已完成、车停在点上，
+/// 车被派走、RIoT 报出它到了别的站，这一行才放。等待点多一条：它的承诺还握着 <c>IDLE_RETURN</c> 用途占有时一律不放——承诺之后、
+/// 物化之前还没有旅程行，只看车的位置会把刚取得、车还没出发的预占当成已离点放掉。
 /// </para>
 /// <para>
 /// <b>旅程阻断时一律不放</b>，不论预占还是占用：阻断的旅程等的是人，它的订单结果可能未知、车可能还在动（与等待点「结果未知时保持
@@ -45,11 +49,11 @@ internal sealed class FixedStationExclusivitySweep(
     public const string HeldOnApproachReason = "FIXED_TASK_STATION_HELD_ON_APPROACH";
 
 
-    private static readonly Action<ILogger, int, int, string, string, Exception?> LogReleased =
-        LoggerMessage.Define<int, int, string, string>(
+    private static readonly Action<ILogger, string, int, int, string, string, Exception?> LogReleased =
+        LoggerMessage.Define<string, int, int, string, string>(
             LogLevel.Information,
             new EventId(2210, nameof(LogReleased)),
-            "Fixed task station {MapId}/{StationId} released by vehicle {VehicleKey} on departure evidence (journey {JourneyId}).");
+            "{StationKind} {MapId}/{StationId} released by vehicle {VehicleKey} on departure evidence (journey {JourneyId}).");
 
     private static readonly Action<ILogger, int, int, Exception?> LogSweepFailed =
         LoggerMessage.Define<int, int>(
@@ -82,7 +86,8 @@ internal sealed class FixedStationExclusivitySweep(
     public async Task ReleaseDepartedAsync(CancellationToken cancellationToken)
     {
         StationExclusivityRow[] held = await dbContext.Set<StationExclusivityRow>().AsNoTracking()
-            .Where(row => row.StationKind == StationExclusivityKinds.FixedTaskStation)
+            .Where(row => row.StationKind == StationExclusivityKinds.FixedTaskStation ||
+                          row.StationKind == StationExclusivityKinds.WaitingPoint)
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
         foreach (StationExclusivityRow row in held)
         {
@@ -251,6 +256,18 @@ internal sealed class FixedStationExclusivitySweep(
             return false;
         }
 
+        // A waiting point whose idle return still holds its purpose claim has not been left: committed and not yet
+        // materialized, on its way, or held with its order unresolved (control-server#390). Every idle return passes
+        // through the first of these: the dispatch round commits at the end of one engine round, and the next round runs
+        // this sweep before it materializes, so without this check the reservation is released before the vehicle sets off
+        // (removing it turned 34 idle-return tests red).
+        if (row.StationKind == StationExclusivityKinds.WaitingPoint &&
+            await dbContext.Set<VehiclePurposeClaimRow>().AsNoTracking()
+                .AnyAsync(claim => claim.JourneyId == row.JourneyId, cancellationToken).ConfigureAwait(false))
+        {
+            return false;
+        }
+
         if (journey is not null && journey.Stage != JourneyRuntimeStage.Completed)
         {
             bool stillBound = await dbContext.Set<JourneyStopRow>().AsNoTracking()
@@ -286,7 +303,7 @@ internal sealed class FixedStationExclusivitySweep(
             return;
         }
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-        LogReleased(logger, row.MapId, row.StationId, row.VehicleKey, row.JourneyId, null);
+        LogReleased(logger, row.StationKind, row.MapId, row.StationId, row.VehicleKey, row.JourneyId, null);
     }
 
     private void ForgetStagedExclusivity()

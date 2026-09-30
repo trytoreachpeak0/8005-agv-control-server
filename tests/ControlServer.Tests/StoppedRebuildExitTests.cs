@@ -314,7 +314,7 @@ public sealed class StoppedRebuildExitTests
         await OwnOrderRebuildTests.ReportCargoInPlaceAndRunAsync(fixture);
         int gateCreates = fixture.Riot.CreateCount("TO_GATE");
         string rebuiltOrder = (await CurrentStopAsync(fixture, FirstDemandId)).UpperId;
-        Assert.Equal(OwnOrderRebuildStates.Rebuilt, (await RebuildForAsync(fixture, (await fixture.RuntimeAsync()).GateUpperId)).State);
+        Assert.Equal(OwnOrderRebuildStates.Rebuilt, (await RebuildForAsync(fixture, (await fixture.RuntimeAsync()).GateUpperId!)).State);
 
         fixture.Clock.Advance(TimeSpan.FromMinutes(1));
         await fixture.HearFromPeerAsync();
@@ -723,7 +723,7 @@ public sealed class StoppedRebuildExitTests
                 (blocked.JourneyId, blocked.Stage, blocked.BlockReasonCode));
             Assert.Equal(
                 OwnOrderRebuildStates.AwaitingCargoHandoff,
-                (await RebuildForAsync(fixture, stopped.GateUpperId)).State);
+                (await RebuildForAsync(fixture, stopped.GateUpperId!)).State);
             Assert.True(await ClaimAsync(fixture, generation, ready: session == "ready"));
             Assert.False(await ClaimAsync(fixture, generation, ready: session == "ready"));
 
@@ -754,7 +754,7 @@ public sealed class StoppedRebuildExitTests
             FaultedVehicleCargoRow binding = await reading.FaultedVehicleCargo.AsNoTracking().SingleAsync(Token);
             Assert.Equal("HANDED_OFF_IN_EXCEPTION_SESSION", binding.ReleasedReason);
             Assert.NotNull(binding.ReleasedAt);
-            Assert.Equal(OwnOrderRebuildStates.Ended, (await RebuildForAsync(fixture, stopped.GateUpperId)).State);
+            Assert.Equal(OwnOrderRebuildStates.Ended, (await RebuildForAsync(fixture, stopped.GateUpperId!)).State);
             await VehicleOccupancyAssertions.AssertOpenClaimRecordsAndPurposeClaimsMatchAsync(reading);
             if (session == "ready")
             {
@@ -941,7 +941,7 @@ public sealed class StoppedRebuildExitTests
             fixture.Riot.MovementState = "MT_FINISHED";
             fixture.Context.ChangeTracker.Clear();
             int gateCreates = fixture.Riot.CreateCount("TO_GATE");
-            string ended = (await fixture.RuntimeAsync()).GateUpperId;
+            string ended = (await fixture.RuntimeAsync()).GateUpperId!;
             fixture.Riot.CancelOrder(ended);
             fixture.Clock.Advance(TimeSpan.FromSeconds(1));
             await fixture.HearFromPeerAsync();
@@ -1103,7 +1103,7 @@ public sealed class StoppedRebuildExitTests
             FaultedVehicleCargoRow binding = await reading.FaultedVehicleCargo.AsNoTracking().SingleAsync(Token);
             Assert.NotNull(binding.ReleasedAt);
             Assert.Equal("HANDED_OFF_IN_EXCEPTION_SESSION", binding.ReleasedReason);
-            Assert.Equal(OwnOrderRebuildStates.Ended, (await RebuildForAsync(fixture, stopped.GateUpperId)).State);
+            Assert.Equal(OwnOrderRebuildStates.Ended, (await RebuildForAsync(fixture, stopped.GateUpperId!)).State);
         }
         finally
         {
@@ -1259,7 +1259,7 @@ public sealed class StoppedRebuildExitTests
                 Assert.Equal((null, null), (binding.ReleasedAt, binding.ReleasedReason));
             }
 
-            Assert.Equal(OwnOrderRebuildStates.AwaitingCargoHandoff, (await RebuildForAsync(fixture, stopped.GateUpperId)).State);
+            Assert.Equal(OwnOrderRebuildStates.AwaitingCargoHandoff, (await RebuildForAsync(fixture, stopped.GateUpperId!)).State);
             SessionReadinessDecision afterFailure = await store.DecideReadinessAsync(fixture.Options.AgvId, generation, Token);
             Assert.Equal((SessionReadiness.RecoveryRequired, "CARGO_HANDOFF_REQUIRED"), (afterFailure.Readiness, afterFailure.ReasonCode));
 
@@ -1291,7 +1291,7 @@ public sealed class StoppedRebuildExitTests
             JourneyRuntimeRow closed = await after.JourneyRuntimes.AsNoTracking().SingleAsync(Token);
             Assert.Equal((JourneyRuntimeStage.Completed, "TERMINATED_BY_FAULT_CARGO_HANDOFF"), (closed.Stage, closed.BlockReasonCode));
             Assert.Equal("HANDED_OFF_IN_EXCEPTION_SESSION", (await after.FaultedVehicleCargo.AsNoTracking().SingleAsync(Token)).ReleasedReason);
-            Assert.Equal(OwnOrderRebuildStates.Ended, (await RebuildForAsync(fixture, stopped.GateUpperId)).State);
+            Assert.Equal(OwnOrderRebuildStates.Ended, (await RebuildForAsync(fixture, stopped.GateUpperId!)).State);
             Assert.Equal(SessionReadiness.Ready, (await store.DecideReadinessAsync(fixture.Options.AgvId, generation, Token)).Readiness);
         }
         finally
@@ -1379,7 +1379,7 @@ public sealed class StoppedRebuildExitTests
             Assert.Equal(
                 DemandExecutionStatus.Cancelled,
                 (await after.AcceptedDemands.AsNoTracking().SingleAsync(row => row.DemandId == SecondDemandId, Token)).Status);
-            Assert.Equal(OwnOrderRebuildStates.Ended, (await RebuildForAsync(fixture, stopped.GateUpperId)).State);
+            Assert.Equal(OwnOrderRebuildStates.Ended, (await RebuildForAsync(fixture, stopped.GateUpperId!)).State);
             await VehicleOccupancyAssertions.AssertOpenClaimRecordsAndPurposeClaimsMatchAsync(after);
             Assert.Equal(SessionReadiness.Ready, (await store.DecideReadinessAsync(fixture.Options.AgvId, generation, Token)).Readiness);
         }
@@ -1627,7 +1627,7 @@ public sealed class StoppedRebuildExitTests
         await fixture.AdvanceToGateArrivalAsync();
         fixture.Riot.MovementState = "MT_FINISHED";
         fixture.Context.ChangeTracker.Clear();
-        fixture.Riot.CancelOrder((await fixture.RuntimeAsync()).GateUpperId);
+        fixture.Riot.CancelOrder((await fixture.RuntimeAsync()).GateUpperId!);
         await TickAndRunAsync(fixture);
         await OwnOrderRebuildTests.PassTheDelayAsync(fixture);
         // Cargo on board: the first rebuild waits for a snapshot received after it fell due showing the cargo in place
@@ -1820,7 +1820,7 @@ public sealed class StoppedRebuildExitTests
         fixture.Riot.MovementState = "MT_FINISHED";
         fixture.Context.ChangeTracker.Clear();
         int gateCreates = fixture.Riot.CreateCount("TO_GATE");
-        fixture.Riot.CancelOrder((await fixture.RuntimeAsync()).GateUpperId);
+        fixture.Riot.CancelOrder((await fixture.RuntimeAsync()).GateUpperId!);
         fixture.Clock.Advance(TimeSpan.FromSeconds(1));
         await fixture.HearFromPeerAsync();
         await fixture.Engine.ExecuteOnceAsync(Token);

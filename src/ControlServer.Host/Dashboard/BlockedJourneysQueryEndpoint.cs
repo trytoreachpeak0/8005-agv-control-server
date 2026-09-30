@@ -191,7 +191,8 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
         Dictionary<string, SessionRecoveryRow> sessions = await dbContext.SessionRecoveries.AsNoTracking()
             .Where(row => agvIds.Contains(row.AgvId))
             .ToDictionaryAsync(row => row.AgvId, StringComparer.Ordinal, cancellationToken);
-        string[] gateUpperIds = [.. blocked.Select(row => row.GateUpperId)];
+        // An idle return (control-server#390) has no gate leg.
+        string[] gateUpperIds = [.. blocked.Select(row => row.GateUpperId).OfType<string>()];
         HashSet<string> departedForGate = new(
             await dbContext.OrderIntents.AsNoTracking()
                 .Where(row => gateUpperIds.Contains(row.UpperId))
@@ -217,7 +218,7 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 .Select(row => Fact(
                     row,
                     sessions.GetValueOrDefault(row.AgvId),
-                    departedForGate.Contains(row.GateUpperId),
+                    row.GateUpperId is { } gateUpperId && departedForGate.Contains(gateUpperId),
                     ownOrderInFlight.Contains(row.JourneyId),
                     heldByForeignOrder.Contains(row.AgvId),
                     demands.FactsOf(row.JourneyId),
