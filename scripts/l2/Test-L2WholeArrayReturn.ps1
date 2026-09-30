@@ -1,0 +1,304 @@
+#Requires -Version 7
+<#
+.SYNOPSIS
+    Guard and self-check: no script under scripts/ enumerates the output of a function that returns its array whole.
+
+.DESCRIPTION
+    Pure parsing plus a few in-process fixture runs, no rig, a few seconds.
+
+    Invoke-L2Query ends in `return , $rows`. Written as `@(Invoke-L2Query ...)`, the caller holds a one-element array
+    whose element is the whole result: `.Count` is 1 for zero rows and for forty, so a `.Count -eq 1` criterion can
+    never go red, and an empty result throws on the first property read. control-server#428 found 35 such calls in
+    14 scenario files (39 by grep, four of which were comments warning against it) after the same mistake had been
+    fixed six times one site at a time; control-server#390 lost a G3 round to one of them. L2WholeArrayReturn.psm1 is
+    the scan; its header says what it derives, how it resolves names, and what it cannot see.
+
+    Three parts, and the order matters:
+
+      1. Fixtures, two-sided. Every shape the scan claims to judge is written out as a small script and judged twice:
+         by the scan, and by RUNNING it against a whole-array reader that returns 0, 1 and 3 rows and recording how
+         many rows the caller saw. A broken shape must be flagged AND must be measured wrong; a legal shape must be
+         left alone AND must be measured right. The measurement is what keeps the rule honest -- a verdict with no
+         measurement behind it is an opinion about PowerShell, and this whole ticket exists because such opinions
+         were wrong seven times.
+      2. Classifier cases: which function bodies count as returning whole, including the ones that only look like it.
+      3. The scan of scripts/ itself. It also refuses to pass if it did not recognise Invoke-L2Query as a whole-array
+         function: that is the premise the rule stands on, and a scan that lost it would report zero findings for ever.
+
+    Exits 1 on any finding or any self-check failure, and prints every finding either way.
+
+.EXAMPLE
+    pwsh -NoProfile -File ./scripts/l2/Test-L2WholeArrayReturn.ps1
+
+.EXAMPLE
+    pwsh -NoProfile -File ./scripts/l2/Test-L2WholeArrayReturn.ps1 -ListHelpers
+    Also prints every function classified as returning its array whole.
+#>
+[CmdletBinding()]
+param(
+    # Defaults to this repository's scripts/; a directory is accepted so the scan can be pointed at a copy.
+    [string]$ScriptRoot = (Split-Path -Parent $PSScriptRoot),
+
+    [switch]$ListHelpers,
+
+    [switch]$SkipSelfTest
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+Import-Module (Join-Path $PSScriptRoot 'L2WholeArrayReturn.psm1') -Force
+
+$failures = [System.Collections.Generic.List[string]]::new()
+
+function Format-Relative([string]$Path) {
+    return [System.IO.Path]::GetRelativePath($ScriptRoot, $Path).Replace('\', '/')
+}
+
+if (-not $SkipSelfTest) {
+    $scratch = Join-Path ([System.IO.Path]::GetTempPath()) "l2-whole-array-$([guid]::NewGuid().ToString('N'))"
+    $null = New-Item -ItemType Directory -Path $scratch -Force
+
+    # The reader every fixture calls, in a module of its own -- so the fixtures resolve it across files, which is how
+    # every scenario resolves Invoke-L2Query.
+    $readerModule = Join-Path $scratch 'Reader.psm1'
+    Set-Content -LiteralPath $readerModule -Encoding utf8NoBOM -Value @'
+function Read-Shared {
+    param([int]$N, [string]$Tag)
+    $rows = @()
+    for ($i = 0; $i -lt $N; $i++) { $rows += [pscustomobject]@{ Id = $i } }
+    return , $rows
+}
+Export-ModuleMember -Function Read-Shared
+'@
+
+    # Each body must leave the number of rows its caller saw in $seen. $N is the number of rows the reader returns.
+    $fixtures = @(
+        # ------------------------------------------------------------ broken: must be flagged, must measure wrong
+        @{ Name = 'wrapped.ps1'; Broken = 'wrapped'
+           Case = '@( ) straight around the helper -- the 35 sites of control-server#428, verbatim'
+           Body = '$rows = @(Read-Shared -N $N); $seen = $rows.Count' }
+        @{ Name = 'wrapped-multiline-lowercase.ps1'; Broken = 'wrapped'
+           Case = 'the same across lines, with backtick continuations, extra spaces and all lower case'
+           Body = @'
+$rows = @(
+        read-shared   `
+            -N $N `
+            -Tag 'x'
+)
+$seen = $rows.Count
+'@ }
+        @{ Name = 'wrapped-call-operator.ps1'; Broken = 'wrapped'
+           Case = 'through the call operator and a quoted name: @(& ''Read-Shared'' ...)'
+           Body = '$rows = @(& ''Read-Shared'' -N $N); $seen = $rows.Count' }
+        @{ Name = 'wrapped-module-qualified-scope.ps1'; Broken = 'wrapped'
+           Case = 'a whole-array function this file defines with a scope prefix, then wraps'
+           Body = @'
+function script:Read-Local { $r = Read-Shared -N $N; return ,$r }
+$rows = @(script:Read-Local); $seen = $rows.Count
+'@ }
+        @{ Name = 'pass-through-return.ps1'; Broken = 'wrapped'
+           Case = 'the wrapping survives one return: function Get-Mine { return Read-Shared }, then @(Get-Mine)'
+           Body = @'
+function Get-Mine { return Read-Shared -N $N }
+$rows = @(Get-Mine); $seen = $rows.Count
+'@ }
+        @{ Name = 'pass-through-two-levels.ps1'; Broken = 'wrapped'
+           Case = 'through two levels, neither with the return keyword, the second inside an if'
+           Body = @'
+function Get-Inner { Read-Shared -N $N }
+function Get-Outer { if ($true) { Get-Inner } }
+$rows = @(Get-Outer); $seen = $rows.Count
+'@ }
+        @{ Name = 'bare-comma.ps1'; Broken = 'wrapped'
+           Case = 'a function handing back with a bare unary comma, no return keyword'
+           Body = @'
+function Get-Mine { $r = Read-Shared -N $N; , $r }
+$rows = @(Get-Mine); $seen = $rows.Count
+'@ }
+        @{ Name = 'no-enumerate.ps1'; Broken = 'wrapped'
+           Case = 'a function handing back with Write-Output -NoEnumerate'
+           Body = @'
+function Get-Mine { $r = Read-Shared -N $N; Write-Output -NoEnumerate $r }
+$rows = @(Get-Mine); $seen = $rows.Count
+'@ }
+        @{ Name = 'wrapped-inside-return.ps1'; Broken = 'wrapped'
+           Case = 'the helper wraps inside its own return , @(...) -- L2TaskTypeJourney.psm1, verbatim'
+           Body = @'
+function Get-Mine { return , @(Read-Shared -N $N) }
+$rows = Get-Mine; $seen = $rows.Count
+'@ }
+        @{ Name = 'wrapped-loop.ps1'; Broken = 'wrapped'
+           Case = 'a loop inside @( ) whose body hands back one whole result per round'
+           Body = '$rows = @(foreach ($i in 1) { Read-Shared -N $N }); $seen = $rows.Count' }
+        @{ Name = 'piped.ps1'; Broken = 'piped'
+           Case = 'piped straight on: $_ in Where-Object is the whole result'
+           Body = '$rows = @(Read-Shared -N $N | Where-Object { $true }); $seen = $rows.Count' }
+        @{ Name = 'foreach.ps1'; Broken = 'foreach'
+           Case = 'straight after the in of a foreach: one round'
+           Body = '$seen = 0; foreach ($row in Read-Shared -N $N) { $seen++ }' }
+
+        # ------------------------------------------------------------ legal: must be left alone, must measure right
+        @{ Name = 'assigned.ps1'
+           Case = 'assigned directly -- the right way'
+           Body = '$rows = Read-Shared -N $N; $seen = $rows.Count' }
+        @{ Name = 'parenthesised.ps1'
+           Case = 'parenthesised, then .Count'
+           Body = '$seen = (Read-Shared -N $N).Count' }
+        @{ Name = 'parenthesised-then-piped.ps1'
+           Case = 'parenthesised, then piped, inside @( ): legal, used by L2RealStation.psm1, one pair of parentheses away from piped'
+           Body = '$rows = @((Read-Shared -N $N) | Where-Object { $true }); $seen = $rows.Count' }
+        @{ Name = 'assigned-then-wrapped.ps1'
+           Case = 'assigned, then the variable wrapped in @( )'
+           Body = '$r = Read-Shared -N $N; $rows = @($r); $seen = $rows.Count' }
+        @{ Name = 'assigned-then-foreach.ps1'
+           Case = 'assigned, then foreach over the variable'
+           Body = '$r = Read-Shared -N $N; $seen = 0; foreach ($row in $r) { $seen++ }' }
+        @{ Name = 'unrolling-function-wrapped.ps1'
+           Case = 'a function that hands back unrolled (return $r): wrapping it in @( ) is correct'
+           Body = @'
+function Get-Mine { $r = Read-Shared -N $N; return $r }
+$rows = @(Get-Mine); $seen = $rows.Count
+'@ }
+        @{ Name = 'local-shadows-shared.ps1'
+           Case = 'this file defines an unrolling function with the shared helper''s name: the local one wins'
+           Body = @'
+function Read-Shared { param([int]$N) $r = @(); for ($i = 0; $i -lt $N; $i++) { $r += [pscustomobject]@{ Id = $i } }; return $r }
+$rows = @(Read-Shared -N $N); $seen = $rows.Count
+'@ }
+        @{ Name = 'comma-inside-assignment.ps1'
+           Case = 'a unary comma inside an if on the right of an assignment: not the function''s output'
+           Body = @'
+function Get-Mine { $r = if ($true) { , (Read-Shared -N $N) }; return $r }
+$rows = @(Get-Mine); $seen = $rows.Count
+'@ }
+        @{ Name = 'script-block.ps1'
+           Case = 'the helper called inside a script block whose result is assigned'
+           Body = '$block = { Read-Shared -N $N }; $rows = & $block; $seen = $rows.Count' }
+        @{ Name = 'mentioned-not-called.ps1'
+           Case = '@(Read-Shared ...) in a comment and in a string: the four lines a text search counted'
+           Body = @'
+# Do not write @(Read-Shared -N $N): wrapped again it is one element, and that element is the whole result.
+$text = '@(Read-Shared -N 1)'
+$rows = Read-Shared -N $N; $seen = $rows.Count
+'@ }
+    )
+
+    foreach ($fixture in $fixtures) {
+        $fixture.Path = Join-Path $scratch $fixture.Name
+        Set-Content -LiteralPath $fixture.Path -Encoding utf8NoBOM -Value (@(
+                'param([int]$N)'
+                'Set-StrictMode -Version Latest'
+                "Import-Module '$readerModule' -Force"
+                $fixture.Body
+                '$seen'
+            ) -join "`n")
+    }
+
+    $fixtureModel = Get-L2WholeArrayModel -Path (@($readerModule) + @($fixtures | ForEach-Object { $_.Path }))
+    $fixtureFindings = Get-L2WholeArrayMisuse -Model $fixtureModel
+
+    Write-Host 'Self-test: fixtures (verdict of the scan, and rows the caller saw for a reader returning 0 / 1 / 3 rows)'
+    foreach ($fixture in $fixtures) {
+        $found = @($fixtureFindings | Where-Object { $_.File -eq $fixture.Path })
+        $seen = foreach ($n in 0, 1, 3) {
+            try { [string](& $fixture.Path -N $n) } catch { 'throws' }
+        }
+        $measuredRight = ($seen -join ',') -eq '0,1,3'
+        $wantShape = $fixture.ContainsKey('Broken') ? $fixture.Broken : $null
+        $verdict = $found.Count -eq 0 ? 'clean' : (($found | ForEach-Object Shape | Sort-Object -Unique) -join '+')
+
+        $ok = if ($wantShape) {
+            $found.Count -ge 1 -and @($found | Where-Object Shape -eq $wantShape).Count -ge 1 -and -not $measuredRight
+        } else {
+            $found.Count -eq 0 -and $measuredRight
+        }
+        Write-Host ("  {0} {1,-38} scan={2,-8} saw={3,-16} {4}" -f ($ok ? 'ok  ' : 'FAIL'), $fixture.Name, $verdict, ($seen -join ','), $fixture.Case)
+        if (-not $ok) {
+            $failures.Add((
+                    "fixture $($fixture.Name): expected " +
+                    ($wantShape ? "the scan to report '$wantShape' and the caller to see something other than 0,1,3" :
+                        'no finding and the caller to see 0,1,3') +
+                    "; got scan=$verdict saw=$($seen -join ',')"))
+        }
+    }
+
+    # Which bodies count as returning whole. The three "not whole" rows each resemble a whole-array return closely
+    # enough that a rule written from intuition would take them for one.
+    $classifierSource = Join-Path $scratch 'classifier.ps1'
+    Set-Content -LiteralPath $classifierSource -Encoding utf8NoBOM -Value @'
+function Whole-Return { return , $rows }
+function Whole-ReturnTight { return ,$rows }
+function Whole-ReturnWrapped { return , @($rows | Sort-Object Id) }
+function Whole-Bare { , $rows }
+function Whole-EarlyExit { if (-not $rows) { return , @() }; return $rows }
+function Whole-NoEnumerate { $rows | Sort-Object Id | Write-Output -NoEnumerate }
+function Whole-InLoop { foreach ($x in 1, 2) { , $rows } }
+function Whole-PassThrough { return Whole-Return }
+function Whole-PassThroughTwice { Whole-PassThrough }
+function Unrolled-Return { return $rows }
+function Unrolled-Pair { return $a, $b }
+function Unrolled-Assigned { $x = , $rows; return $x }
+function Unrolled-PipedOn { Whole-Return | Sort-Object Id }
+function Unrolled-InScriptBlock { $rows | ForEach-Object { , $_ } }
+class Holder { [object[]] Whole() { return , $this.rows } }
+'@
+    $classifierModel = Get-L2WholeArrayModel -Path @($classifierSource)
+    $whole = @((Get-L2WholeArrayFunctions -Model $classifierModel) | ForEach-Object Name | Sort-Object)
+    $wantWhole = @($classifierModel.Files[0].Functions | ForEach-Object Name | Where-Object { $_ -like 'Whole-*' } | Sort-Object)
+    Write-Host ''
+    Write-Host "Self-test: classifier ($($classifierModel.Files[0].Functions.Count) functions, $($wantWhole.Count) of them whole-array)"
+    if ($wantWhole.Count -ne 9) { $failures.Add("classifier: expected to parse 9 Whole-* functions, parsed $($wantWhole.Count)") }
+    if (($whole -join ' ') -cne ($wantWhole -join ' ')) {
+        $failures.Add("classifier: whole-array functions were [$($whole -join ' ')], expected [$($wantWhole -join ' ')]")
+        Write-Host "  FAIL classified [$($whole -join ' ')]"
+    } else {
+        Write-Host "  ok   classified exactly the Whole-* functions; the Unrolled-* ones and the class method were left out"
+    }
+    # `Unrolled-PipedOn` pipes a whole-array function, which is itself a finding: the classifier fixture doubles as
+    # the check that a finding inside a function body is reported.
+    $classifierFindings = Get-L2WholeArrayMisuse -Model $classifierModel
+    if ($classifierFindings.Count -ne 1 -or $classifierFindings[0].Shape -ne 'piped') {
+        $failures.Add("classifier: expected exactly one 'piped' finding (Unrolled-PipedOn), got $($classifierFindings.Count)")
+    }
+
+    Remove-Item -LiteralPath $scratch -Recurse -Force
+    Write-Host ''
+}
+
+# ------------------------------------------------------------------------------------------ the scan itself
+
+$files = @(Get-ChildItem -Recurse -LiteralPath $ScriptRoot -Include *.ps1, *.psm1 -File | Sort-Object FullName | ForEach-Object FullName)
+if ($files.Count -eq 0) { throw "No scripts under $ScriptRoot" }
+$model = Get-L2WholeArrayModel -Path $files
+$helpers = Get-L2WholeArrayFunctions -Model $model
+$findings = Get-L2WholeArrayMisuse -Model $model
+
+Write-Host "Scan: $($files.Count) scripts under $ScriptRoot, $($helpers.Count) functions return their array whole ($(@($helpers | Where-Object Shared).Count) of them in shared files)."
+if ($ListHelpers) {
+    foreach ($helper in ($helpers | Sort-Object { -not $_.Shared }, File, Line)) {
+        Write-Host ("  {0,-6} {1,-40} {2}:{3}  ({4})" -f ($helper.Shared ? 'shared' : 'local'), $helper.Name, (Format-Relative $helper.File), $helper.Line, $helper.Via)
+    }
+}
+
+# The premise. Only checked where L2.psm1 is part of the scan, so the scan can still be pointed at a partial copy.
+$l2Module = $files | Where-Object { (Split-Path -Leaf $_) -eq 'L2.psm1' } | Select-Object -First 1
+if ($l2Module -and @($helpers | Where-Object { $_.Name -eq 'Invoke-L2Query' -and $_.File -eq $l2Module }).Count -ne 1) {
+    $failures.Add(
+        'premise: Invoke-L2Query in L2.psm1 was not recognised as returning its array whole. Either its return shape ' +
+        'changed (then every caller that assigns it directly now gets $null for an empty result -- see ' +
+        'control-server#428 before going further) or this scan stopped working.')
+}
+
+foreach ($finding in $findings) {
+    Write-Host ("WHOLE ARRAY ENUMERATED ({0}): {1}:{2}  {3}" -f $finding.Shape, (Format-Relative $finding.File), $finding.Line, $finding.Text)
+}
+if ($findings.Count -gt 0) {
+    Write-Host ''
+    Write-Host "$($findings.Count) call(s) enumerate a function that returns its array whole. Assign first: `$rows = Helper ...; then use `$rows."
+    Write-Host 'wrapped: .Count is 1 whatever the result, and an empty result throws on the first property read. See scripts/l2/README.md.'
+}
+
+foreach ($failure in $failures) { Write-Host "SELF-CHECK FAILED: $failure" }
+
+if ($findings.Count -gt 0 -or $failures.Count -gt 0) { exit 1 }
+Write-Host 'No call enumerates a whole-array function.'

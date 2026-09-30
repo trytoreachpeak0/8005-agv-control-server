@@ -1,0 +1,189 @@
+Self-test: fixtures (verdict of the scan, and rows the caller saw for a reader returning 0 / 1 / 3 rows)
+  ok   wrapped.ps1                            scan=wrapped  saw=1,1,1            @( ) straight around the helper -- the 35 sites of control-server#428, verbatim
+  ok   wrapped-multiline-lowercase.ps1        scan=wrapped  saw=1,1,1            the same across lines, with backtick continuations, extra spaces and all lower case
+  ok   wrapped-call-operator.ps1              scan=wrapped  saw=1,1,1            through the call operator and a quoted name: @(& 'Read-Shared' ...)
+  ok   wrapped-module-qualified-scope.ps1     scan=wrapped  saw=1,1,1            a whole-array function this file defines with a scope prefix, then wraps
+  ok   pass-through-return.ps1                scan=wrapped  saw=1,1,1            the wrapping survives one return: function Get-Mine { return Read-Shared }, then @(Get-Mine)
+  ok   pass-through-two-levels.ps1            scan=wrapped  saw=1,1,1            through two levels, neither with the return keyword, the second inside an if
+  ok   bare-comma.ps1                         scan=wrapped  saw=1,1,1            a function handing back with a bare unary comma, no return keyword
+  ok   no-enumerate.ps1                       scan=wrapped  saw=1,1,1            a function handing back with Write-Output -NoEnumerate
+  ok   wrapped-inside-return.ps1              scan=wrapped  saw=1,1,1            the helper wraps inside its own return , @(...) -- L2TaskTypeJourney.psm1, verbatim
+  ok   wrapped-loop.ps1                       scan=wrapped  saw=1,1,1            a loop inside @( ) whose body hands back one whole result per round
+  ok   piped.ps1                              scan=piped    saw=1,1,1            piped straight on: $_ in Where-Object is the whole result
+  ok   foreach.ps1                            scan=foreach  saw=1,1,1            straight after the in of a foreach: one round
+  ok   assigned.ps1                           scan=clean    saw=0,1,3            assigned directly -- the right way
+  ok   parenthesised.ps1                      scan=clean    saw=0,1,3            parenthesised, then .Count
+  ok   parenthesised-then-piped.ps1           scan=clean    saw=0,1,3            parenthesised, then piped, inside @( ): legal, used by L2RealStation.psm1, one pair of parentheses away from piped
+  ok   assigned-then-wrapped.ps1              scan=clean    saw=0,1,3            assigned, then the variable wrapped in @( )
+  ok   assigned-then-foreach.ps1              scan=clean    saw=0,1,3            assigned, then foreach over the variable
+  ok   unrolling-function-wrapped.ps1         scan=clean    saw=0,1,3            a function that hands back unrolled (return $r): wrapping it in @( ) is correct
+  ok   local-shadows-shared.ps1               scan=clean    saw=0,1,3            this file defines an unrolling function with the shared helper's name: the local one wins
+  ok   comma-inside-assignment.ps1            scan=clean    saw=0,1,3            a unary comma inside an if on the right of an assignment: not the function's output
+  ok   script-block.ps1                       scan=clean    saw=0,1,3            the helper called inside a script block whose result is assigned
+  ok   mentioned-not-called.ps1               scan=clean    saw=0,1,3            @(Read-Shared ...) in a comment and in a string: the four lines a text search counted
+
+Self-test: classifier (14 functions, 9 of them whole-array)
+  ok   classified exactly the Whole-* functions; the Unrolled-* ones and the class method were left out
+
+Scan: 188 scripts under <repo>\scripts, 120 functions return their array whole (35 of them in shared files).
+  shared Invoke-L2Query                           l2/L2.psm1:936  (line 955)
+  shared Get-VisibleNames                         l2/L2ClosureCapture.psm1:131  (line 135)
+  shared Get-NamesOnlyVisibleUnderPwshFile        l2/L2ClosureCapture.psm1:177  (line 197)
+  shared Resolve-L2DispatchZoneParameters         l2/L2DispatchZoneParameters.psm1:88  (line 123)
+  shared Get-L2UiaChildren                        l2/L2MultiStopJourney.psm1:39  (line 47)
+  shared Get-L2UiaTexts                           l2/L2MultiStopJourney.psm1:50  (line 53)
+  shared Get-L2PlanLegRows                        l2/L2MultiStopJourney.psm1:85  (line 104)
+  shared Get-L2WorklistRows                       l2/L2MultiStopJourney.psm1:126  (line 140)
+  shared Get-L2JourneyWireSnapshots               l2/L2MultiStopJourney.psm1:172  (line 196)
+  shared Stop-L2DoorSampler                       l2/L2MultiStopJourney.psm1:240  (line 244)
+  shared Get-L2RealInbound                        l2/L2RealOnboard.psm1:58  (line 82)
+  shared Get-L2RealOutbound                       l2/L2RealOnboard.psm1:86  (line 100)
+  shared Get-L2RealProgress                       l2/L2RealOnboard.psm1:103  (line 112)
+  shared Get-L2RealConnectionSequence             l2/L2RealOnboard.psm1:370  (line 371)
+  shared Get-L2Inbound                            l2/L2RealStation.psm1:34  (line 51)
+  shared Get-L2OperationProgress                  l2/L2RealStation.psm1:55  (line 65)
+  shared Get-L2OperationResults                   l2/L2RealStation.psm1:75  (line 77)
+  shared Get-L2AvailableSlots                     l2/L2SlotGroups.psm1:92  (line 100)
+  shared Get-L2StructuralDispatchBlock            l2/L2SlotGroups.psm1:235  (line 245)
+  shared Get-L2TaskTypeHolds                      l2/L2TaskTypeHolds.psm1:170  (line 176)
+  shared Get-L2DemandJourneySnapshots             l2/L2TaskTypeJourney.psm1:83  (line 106)
+  shared Get-L2SecondLegIntents                   l2/L2TaskTypeJourney.psm1:190  (line 195)
+  shared Resolve-L2WaitingPoints                  l2/L2WaitingPoints.psm1:34  (line 43)
+  shared Get-L2DotSourcedLeaves                   l2/L2WholeArrayReturn.psm1:131  (line 139)
+  shared Get-L2WholeArrayFunctions                l2/L2WholeArrayReturn.psm1:232  (line 242)
+  shared Get-L2WholeArrayMisuse                   l2/L2WholeArrayReturn.psm1:249  (line 279)
+  shared Get-L2JourneyClosureBusinessStateIds     l2/scenarios/CargoHoldingCommon.ps1:104  (line 113)
+  shared Get-L2LoadingPhaseSnapshots              l2/scenarios/CargoHoldingCommon.ps1:120  (line 144)
+  shared Get-G3Inbound                            l2/scenarios/G3RecoveryCommon.ps1:31  (line 52)
+  shared Get-G3Outbound                           l2/scenarios/G3RecoveryCommon.ps1:56  (line 69)
+  shared Get-G3Progress                           l2/scenarios/G3RecoveryCommon.ps1:72  (line 81)
+  shared Get-L2JourneyMembers                     l2/scenarios/MultiStopRigCommon.ps1:195  (returns Invoke-L2Query)
+  shared Get-L2JourneyStops                       l2/scenarios/MultiStopRigCommon.ps1:202  (returns Invoke-L2Query)
+  shared Get-L2YieldSnapshotsOf                   l2/scenarios/StationYieldCommon.ps1:85  (line 107)
+  shared Get-L2PriorityWarningRecords             l2/scenarios/TaskPriorityCommon.ps1:137  (line 139)
+  local  ConvertTo-SlotStateArguments             l2/Invoke-L2Scenario.ps1:280  (line 301)
+  local  Get-TargetSlots                          l2/scenarios/area-assignment-version-freeze.ps1:62  (line 64)
+  local  Get-CommandSlots                         l2/scenarios/area-assignment-version-freeze.ps1:110  (line 115)
+  local  Get-CatalogChanges                       l2/scenarios/catalog-change-binding-hold.ps1:47  (line 51)
+  local  Get-WaitingDemands                       l2/scenarios/catalog-change-binding-hold.ps1:181  (line 182)
+  local  Get-Journeys                             l2/scenarios/command-surface-order-hold.ps1:38  (returns Invoke-L2Query)
+  local  Get-HoldAttempts                         l2/scenarios/command-surface-order-hold.ps1:54  (returns Invoke-L2Query)
+  local  Get-EmergencyAttempts                    l2/scenarios/emergency-stop-operator-release.ps1:44  (returns Invoke-L2Query)
+  local  Get-RiotInvocations                      l2/scenarios/emergency-stop-operator-release.ps1:52  (line 54)
+  local  Get-Fault                                l2/scenarios/emergency-stop-operator-release.ps1:57  (returns Invoke-L2Query)
+  local  Get-EmergencyAttempts                    l2/scenarios/emergency-stop-single-trigger.ps1:40  (returns Invoke-L2Query)
+  local  Get-HoldAttempts                         l2/scenarios/emergency-stop-single-trigger.ps1:48  (returns Invoke-L2Query)
+  local  Get-RiotInvocations                      l2/scenarios/emergency-stop-single-trigger.ps1:53  (line 56)
+  local  Get-JourneySnapshots                     l2/scenarios/g3-journey-demand-to-pickup.ps1:57  (line 82)
+  local  Get-RiotOrders                           l2/scenarios/g3-journey-demand-to-pickup.ps1:90  (line 92)
+  local  Get-Inbound                              l2/scenarios/g3-load-cancellation-before-load.ps1:62  (line 78)
+  local  Get-Inbound                              l2/scenarios/g3-load-cancellation.ps1:81  (line 99)
+  local  Get-Progress                             l2/scenarios/g3-load-cancellation.ps1:102  (line 112)
+  local  Get-Requests                             l2/scenarios/g3-manual-charging-return.ps1:39  (line 40)
+  local  Get-Plans                                l2/scenarios/g3-multi-stop-plan.ps1:64  (line 65)
+  local  Get-Outbound                             l2/scenarios/g3-pickup-load-and-correction.ps1:69  (line 82)
+  local  Get-Inbound                              l2/scenarios/g3-pickup-load-and-correction.ps1:86  (line 103)
+  local  Get-Progress                             l2/scenarios/g3-pickup-load-and-correction.ps1:107  (line 117)
+  local  Get-Outbound                             l2/scenarios/g3-predeparture-check-expires.ps1:71  (line 84)
+  local  Get-Inbound                              l2/scenarios/g3-predeparture-check-expires.ps1:87  (line 98)
+  local  Get-Progress                             l2/scenarios/g3-predeparture-check-expires.ps1:101  (line 107)
+  local  Get-Outbound                             l2/scenarios/g3-sublot-rejected.ps1:69  (line 83)
+  local  Get-Inbound                              l2/scenarios/g3-sublot-rejected.ps1:87  (line 102)
+  local  Get-Progress                             l2/scenarios/g3-sublot-rejected.ps1:105  (line 114)
+  local  Get-PlanLegs                             l2/scenarios/g3-waiting-point-idle-return.ps1:91  (line 91)
+  local  Get-IdleReturnClaims                     l2/scenarios/idle-return-two-vehicles-contend-one-waiting-point.ps1:42  (line 43)
+  local  Get-Exclusivities                        l2/scenarios/idle-return-two-vehicles-contend-one-waiting-point.ps1:47  (line 48)
+  local  Get-Attempts                             l2/scenarios/in-transit-door-not-locked.ps1:39  (returns Invoke-L2Query)
+  local  Get-RiotInvocations                      l2/scenarios/in-transit-door-not-locked.ps1:47  (line 49)
+  local  Get-Reasons                              l2/scenarios/in-transit-rebuild-stopped-person-rebuilds.ps1:82  (line 84)
+  local  Get-CommandSlots                         l2/scenarios/mixed-side-station-two-trips.ps1:80  (line 85)
+  local  Get-WarningRecordsMentioning             l2/scenarios/mixed-side-station-two-trips.ps1:177  (line 195)
+  local  Get-Requests                             l2/scenarios/real-onboard-cancellation-authorization-lost.ps1:64  (line 65)
+  local  Stop-DoorSampler                         l2/scenarios/real-onboard-cancellation-authorization-lost.ps1:103  (line 107)
+  local  Get-RecoveryOutbox                       l2/scenarios/real-onboard-compensate-then-reconnect.ps1:43  (line 52)
+  local  Get-ProxyLines                           l2/scenarios/real-onboard-durable-ack-lost.ps1:53  (line 54)
+  local  Get-OverdueReports                       l2/scenarios/real-onboard-expected-action-overdue.ps1:94  (line 95)
+  local  Get-Slots                                l2/scenarios/real-onboard-expected-action-overdue.ps1:129  (line 130)
+  local  Get-TrafficLines                         l2/scenarios/real-onboard-expected-action-overdue.ps1:163  (line 163)
+  local  Get-SafetyMessages                       l2/scenarios/real-onboard-in-transit-door-facts.ps1:51  (line 67)
+  local  Invoke-Sampling                          l2/scenarios/real-onboard-in-transit-door-facts.ps1:126  (line 133)
+  local  Get-Attempts                             l2/scenarios/real-onboard-in-transit-door-facts.ps1:188  (returns Invoke-L2Query)
+  local  Get-RiotInvocations                      l2/scenarios/real-onboard-in-transit-door-facts.ps1:196  (line 197)
+  local  Get-AcknowledgedWorklists                l2/scenarios/real-onboard-mixed-side-one-stop.ps1:80  (line 81)
+  local  Get-Bindings                             l2/scenarios/real-onboard-rebuild-stopped-cargo-handoff.ps1:72  (returns Invoke-L2Query)
+  local  Get-Reasons                              l2/scenarios/real-onboard-rebuild-stopped-cargo-handoff.ps1:115  (line 117)
+  local  Get-Results                              l2/scenarios/real-onboard-recovery-entry-missing.ps1:129  (returns Invoke-L2Query)
+  local  Get-ServerWorklists                      l2/scenarios/real-onboard-refilled-deadline-reaches-vehicle.ps1:88  (line 102)
+  local  Get-RaoIds                               l2/scenarios/real-onboard-restart-after-recovery-session-opened.ps1:76  (line 76)
+  local  Get-RaoSnapshots                         l2/scenarios/real-onboard-restart-after-recovery-session-opened.ps1:101  (line 121)
+  local  Get-RaoRecoverySessions                  l2/scenarios/real-onboard-restart-after-recovery-session-opened.ps1:124  (returns Invoke-L2Query)
+  local  Get-RaoWorkflows                         l2/scenarios/real-onboard-restart-after-recovery-session-opened.ps1:130  (returns Invoke-L2Query)
+  local  Get-RosIds                               l2/scenarios/real-onboard-restart-with-open-recovery-session.ps1:65  (line 65)
+  local  Get-RosSnapshots                         l2/scenarios/real-onboard-restart-with-open-recovery-session.ps1:90  (line 110)
+  local  Get-RosRecoverySessions                  l2/scenarios/real-onboard-restart-with-open-recovery-session.ps1:113  (returns Invoke-L2Query)
+  local  Get-RejectionsOf                         l2/scenarios/real-onboard-stale-stop-after-station-timeout.ps1:112  (line 127)
+  local  Get-ProxyConnections                     l2/scenarios/real-onboard-stale-stop-after-station-timeout.ps1:138  (line 138)
+  local  Get-CommandSlots                         l2/scenarios/slot-group-selection.ps1:62  (line 67)
+  local  Get-Admissions                           l2/scenarios/staging-to-wire-reversed-journey.ps1:72  (line 77)
+  local  Get-CommandSlots                         l2/scenarios/staging-to-wire-slot-group.ps1:62  (line 67)
+  local  Get-EscalationRecords                    l2/scenarios/starvation-threshold-escalation.ps1:45  (line 46)
+  local  Get-Worklists                            l2/scenarios/stop-ended-journey-continues.ps1:46  (line 61)
+  local  Get-PeerSubmissionIds                    l2/scenarios/stop-ended-journey-continues.ps1:136  (line 137)
+  local  Get-Blocks                               l2/scenarios/structural-block-oversized-demand.ps1:49  (line 51)
+  local  Get-WarningRecords                       l2/scenarios/structural-block-oversized-demand.ps1:58  (line 73)
+  local  Get-Journeys                             l2/scenarios/three-vehicle-exit.ps1:47  (returns Invoke-L2Query)
+  local  Get-Suppressions                         l2/scenarios/transport-demand-key-suppressed.ps1:89  (line 92)
+  local  Get-EmergencyAttempts                    l2/scenarios/vehicle-fault-operator-clearance.ps1:48  (returns Invoke-L2Query)
+  local  Get-RiotInvocations                      l2/scenarios/vehicle-fault-operator-clearance.ps1:56  (line 58)
+  local  Get-Fault                                l2/scenarios/vehicle-fault-operator-clearance.ps1:61  (returns Invoke-L2Query)
+  local  Get-Journeys                             l2/scenarios/vehicle-fault-operator-clearance.ps1:66  (returns Invoke-L2Query)
+  local  Get-Reasons                              l2/scenarios/vehicle-fault-operator-clearance.ps1:107  (line 110)
+  local  Get-SafetyChanges                        l2/scenarios/waiting-station-yield-waits-for-door.ps1:43  (line 55)
+  local  Invoke-L2Query                           l2/Test-L2JourneyClosureIds.ps1:51  (line 53)
+  local  Get-OnboardHandleFindings                l2/Test-L2OnboardHandleAfterRestart.ps1:104  (line 173)
+  local  Invoke-OnboardHandleScan                 l2/Test-L2OnboardHandleAfterRestart.ps1:176  (line 187)
+  local  Invoke-L2Query                           l2/Test-L2RealInbound.ps1:60  (line 60)
+  local  Invoke-L2Query                           l2/Test-L2SlotGroups.ps1:64  (line 64)
+  local  Invoke-SqliteRows                        run-demand-bearing-g3-vectors.ps1:199  (line 223)
+  local  Invoke-SqliteRows                        run-staged-g3-restart.ps1:398  (line 422)
+WHOLE ARRAY ENUMERATED (wrapped): l2/L2TaskTypeJourney.psm1:195  Invoke-L2Query -Connection $Connection -Sql (
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/area-assignment-unmapped-silent.ps1:61  Invoke-L2Query -Connection $connection -Sql "SELECT ReasonCode, AcceptedAt FROM JourneyBacklog WHERE DemandId = '$demandId'"
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/area-assignment-unmapped-silent.ps1:154  Invoke-L2Query -Connection $connection -Sql "SELECT Stage FROM JourneyRuntimes WHERE DemandId = '$($mapped.Id)'"
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/area-assignment-unmapped-silent.ps1:159  Invoke-L2Query -Connection $connection -Sql @"
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/area-eqp-unique-across-task-types.ps1:50  Invoke-L2Query -Connection $connection -Sql "SELECT ReasonCode, AcceptedAt FROM JourneyBacklog WHERE DemandId = '$demandId'"
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/area-eqp-unique-across-task-types.ps1:68  Invoke-L2Query -Connection $connection -Sql "SELECT Stage FROM JourneyRuntimes WHERE DemandId = '$demandId'"
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/area-eqp-unique-across-task-types.ps1:74  Invoke-L2Query -Connection $connection `
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/charging-policy-missing-vehicle-not-commissioned.ps1:57  Invoke-L2Query -Connection $connection -Sql (
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/charging-policy-missing-vehicle-not-commissioned.ps1:88  Invoke-L2Query -Connection $connection -Sql (
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/charging-policy-missing-vehicle-not-commissioned.ps1:119  Invoke-L2Query -Connection $connection -Sql (
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/charging-thresholds-relation-refused.ps1:32  Invoke-L2Query -Connection $connection -Sql 'SELECT Version FROM ChargingPolicyActivations ORDER BY Sequence DESC LIMIT 1'
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/charging-thresholds-relation-refused.ps1:108  Invoke-L2Query -Connection $connection -Sql (
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/g3-load-cancellation-before-load.ps1:256  Invoke-L2Query -Connection $connection `
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/g3-load-cancellation-before-load.ps1:258  Invoke-L2Query -Connection $connection -Sql "SELECT r.ReleasedAt FROM VehiclePurposeClaimRecords AS r JOIN JourneyDemands AS d ON d.JourneyId = r.JourneyId WHERE d.DemandId = '$demandId' ORDER BY r.AcquiredAt DESC LIMIT 1"
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/g3-load-cancellation-before-load.ps1:278  Invoke-L2Query -Connection $connection `
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/g3-sublot-rejected.ps1:194  Invoke-L2Query -Connection $connection `
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/g3-sublot-rejected.ps1:293  Invoke-L2Query -Connection $connection `
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/g3-sublot-rejected.ps1:319  Invoke-L2Query -Connection $connection `
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/g3-sublot-rejected.ps1:391  Invoke-L2Query -Connection $connection -Sql "SELECT OverallOutcome FROM OperationResults WHERE SlotOperationAttemptId = '$attemptId'"
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/g3-sublot-rejected.ps1:395  Invoke-L2Query -Connection $connection -Sql "SELECT BlockReasonCode FROM JourneyRuntimes WHERE DemandId = '$demandId'"
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/g3-waiting-point-idle-return.ps1:98  Get-PlanLegs $Plan
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/G3RecoveryCommon.ps1:370  Invoke-L2Query -Connection $connection -Sql "SELECT ReasonCode, AcceptedAt FROM JourneyBacklog WHERE DemandId = '$nextDemandId'"
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/mandatory-charge-vehicle-takes-no-transport.ps1:58  Invoke-L2Query -Connection $connection -Sql (
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/mandatory-charge-vehicle-takes-no-transport.ps1:92  Invoke-L2Query -Connection $connection -Sql (
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/mandatory-charge-vehicle-takes-no-transport.ps1:117  Invoke-L2Query -Connection $connection -Sql "SELECT ReasonCode FROM JourneyBacklog WHERE DemandId = '$demandId'"
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/real-onboard-mixed-side-one-stop.ps1:174  Get-AcknowledgedWorklists $mixedStationName
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/real-onboard-unload-not-emptied.ps1:57  Invoke-L2Query -Connection $connection -Sql "SELECT Readiness FROM SessionRecoveries WHERE AgvId = '$($Context.AgvId)'"
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/stop-ended-journey-continues.ps1:92  Invoke-L2Query -Connection $connection -Sql (
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/stop-ended-journey-continues.ps1:196  Invoke-L2Query -Connection $connection -Sql (
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/sublot-rejected-after-entry.ps1:336  Invoke-L2Query -Connection $connection `
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/task-type-binding-admits-bound-station.ps1:48  Invoke-L2Query -Connection $connection -Sql "SELECT ReasonCode, AcceptedAt FROM JourneyBacklog WHERE DemandId = '$demandId'"
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/task-type-binding-admits-bound-station.ps1:66  Invoke-L2Query -Connection $connection -Sql "SELECT Stage FROM JourneyRuntimes WHERE DemandId = '$demandId'"
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/task-type-binding-admits-bound-station.ps1:72  Invoke-L2Query -Connection $connection `
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/task-type-binding-admits-bound-station.ps1:115  Invoke-L2Query -Connection $connection -Sql @"
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/task-type-binding-missing-not-cascading.ps1:53  Invoke-L2Query -Connection $connection -Sql "SELECT ReasonCode, AcceptedAt FROM JourneyBacklog WHERE DemandId = '$demandId'"
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/task-type-binding-missing-not-cascading.ps1:71  Invoke-L2Query -Connection $connection -Sql "SELECT Stage FROM JourneyRuntimes WHERE DemandId = '$demandId'"
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/task-type-binding-missing-not-cascading.ps1:77  Invoke-L2Query -Connection $connection `
+
+37 call(s) enumerate a function that returns its array whole. Assign first: $rows = Helper ...; then use $rows.
+wrapped: .Count is 1 whatever the result, and an empty result throws on the first property read. See scripts/l2/README.md.
+exit=1
