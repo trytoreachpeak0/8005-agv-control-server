@@ -25,6 +25,8 @@ param([Parameter(Mandatory)][object]$Context)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2SingleRow.psm1') -Force
+
 $journal = $Context.Journal
 $assertions = $Context.Assertions
 $mes = $Context.MesIngest
@@ -151,8 +153,9 @@ Publish-Demand $mapped 'N1-3' 'EQP-L2-N13'
 $stage = Wait-L2Condition -Description 'the N1-3 demand was accepted and dispatched to the pickup station' `
     -Journal $journal -Criterion 'journey-stage' -TimeoutSeconds 90 `
     -Probe {
-        $rows = Invoke-L2Query -Connection $connection -Sql "SELECT Stage FROM JourneyRuntimes WHERE DemandId = '$($mapped.Id)'"
-        if ($rows.Count -eq 0) { $null } else { [string]$rows[0].Stage }
+        # One journey per demand: two rows read "(2 rows, expected 1)" here, which is no stage and says why.
+        $row = Read-L2SingleRow -Connection $connection -Sql "SELECT Stage FROM JourneyRuntimes WHERE DemandId = '$($mapped.Id)'"
+        if ($null -eq $row) { $null } else { [string]$row.Stage }
     } `
     -Until { param($v) $v -eq 'AwaitingPickupArrival' }
 

@@ -44,6 +44,15 @@
       pass-through  a statement in output position that is a bare call of a whole-array function
                     (`function Get-Journeys { return Invoke-L2Query ... }`): the wrapping survives one `return`.
                     Resolved to a fixpoint.
+      relay         a CALL, not a function: `Wait-L2RealOrLast ... -Probe { Get-L2DemandJourneySnapshots ... }`.
+                    A function that has `& $Probe` in output position for one of its script block parameters hands
+                    on whatever that block emits, so such a call counts as whole-array when the block it is given
+                    ends in a whole-array call (or a unary comma). Wait-L2RealOrLast and Wait-L2ConditionOrLast do
+                    this on their timeout path only (`return & $Probe`); on success they hand back the unrolled
+                    value Wait-L2Condition kept. One call, two shapes -- which is why the only safe caller is
+                    `$x = Wait-...OrLast ...; $x = @($x)`, and why `@(Wait-...OrLast ... -Probe { Helper })` is
+                    reported: review of control-server#428 found one in g3-reversed-direction-journey.ps1 that the
+                    first version of this scan walked past. The block is matched by parameter NAME (`-Probe { }`).
 
     "Output position" is a statement of the function's own body, at any depth of if/loop/switch/try, that is not
     inside an assignment, a sub-expression, a nested function or a script block.
@@ -54,21 +63,43 @@
     literal file name (`. (Join-Path $PSScriptRoot 'G3RecoveryCommon.ps1')`). A name defined more than once counts as
     whole-array if ANY of those definitions is.
 
-    WHAT THIS CANNOT SEE. It reads syntax, so:
-      - a call whose name is not a literal: `& $reader ...`, `& $Context.Query ...`, Invoke-Expression, an alias
-        made with Set-Alias or New-Alias;
-      - a whole-array function defined outside the scanned directory, in a class method, or as a script block held
-        in a variable; and one that emits through $PSCmdlet.WriteObject($x, $false);
+    WHAT THIS CANNOT SEE. It reads syntax, so the list below is open-ended by nature. Each entry marked [fixture]
+    is pinned in Test-L2WholeArrayReturn.ps1 as a miss- fixture: measured wrong at runtime, and required NOT to be
+    reported, so that an entry stops being true loudly.
+
+      calls it cannot name
+      - the name is not a literal: `& $reader ...` [fixture], `& $Context.Query ...`, Invoke-Expression,
+        `& (Get-Command Helper) ...` [fixture];
+      - an alias made with Set-Alias or New-Alias [fixture];
+      - a script block held in a variable that hands the helper's output on [fixture], and an inline one:
+        `@(& { Helper })` [fixture], `@(1 | ForEach-Object { Helper })` [fixture], `@(Invoke-Command { Helper })`
+        [fixture]. Only a block given to a relay function by parameter name is followed;
+      - a relay whose block is passed positionally, or handed on through a second function's parameter.
+
+      functions it does not classify
+      - whole-array returns written `return (, $x)` [fixture], `return @(, $x)` [fixture], or with the unary comma
+        inside a ternary [fixture]: only a bare `, $x` and `Write-Output -NoEnumerate` are recognised;
+      - a function defined outside the scanned directory, in a class method, or emitting through
+        $PSCmdlet.WriteObject($x, $false);
       - a function whose only whole-array statement sits inside an assignment-captured block
         (`$x = if (...) { , $rows }` is correctly not output, but `$x = foreach (...) { Helper }` followed by
-        `return , $x` is classified by the second statement alone);
-      - enumeration by anything other than the three shapes above: `$(foreach ($d in $ids) { Helper $d })`,
-        `Helper ... | Out-Null` IS reported (piped) even though it is harmless -- write `$null = Helper ...`;
-      - a stand-in for a whole-array function that lives in a dot-sourced *.ps1 rather than a module (reshaped is
-        judged against *.psm1 definitions only: scenarios legitimately reuse short local names such as Get-Journeys
-        with either shape, and no scenario replaces a function of a file it dot-sources).
-    None of those shapes occurs under scripts/ at the time of writing; Test-L2WholeArrayReturn.ps1 pins, for each
-    shape this module does claim, both the verdict and the measured runtime behaviour behind it.
+        `return , $x` is classified by the second statement alone).
+
+      ways of enumerating it does not look for
+      - `switch (Helper ...) { }` [fixture];
+      - `$(foreach ($d in $ids) { Helper $d })` [fixture];
+      - `Helper ... | Out-Null` IS reported (piped) even though it is harmless -- write `$null = Helper ...`.
+
+      stand-ins it does not see
+      - one written `${function:Helper} = { ... }` [fixture]: only `function Helper { }` is a definition here;
+      - one for a whole-array function that lives in a dot-sourced *.ps1 rather than a module (reshaped is judged
+        against *.psm1 definitions only: scenarios legitimately reuse short local names such as Get-Journeys with
+        either shape, and no scenario replaces a function of a file it dot-sources).
+
+    An earlier version of this comment ended "none of those shapes occurs under scripts/ at the time of writing".
+    That was not measured and it was false: the relay shape above was in the tree and on nobody's list. What is
+    true is narrower -- the scan reports nothing for scripts/ today, and the shapes marked [fixture] are known to
+    escape it.
 #>
 
 Set-StrictMode -Version Latest
@@ -83,13 +114,15 @@ $script:TransparentStatements = @(
     'CatchClauseAst', 'ReturnStatementAst')
 
 function ConvertTo-L2BareCommandName([string]$Name) {
-    # `function script:Invoke-L2Query` and a call to `script:Invoke-L2Query` name the same function.
+    # `function script:Invoke-L2Query`, a call to `script:Invoke-L2Query` and a module-qualified `L2\Invoke-L2Query`
+    # all name the same function.
     if ([string]::IsNullOrEmpty($Name)) { return $null }
-    return ($Name -replace '^(?i)(global|script|local|private):', '')
+    return ($Name -replace '^(?i)(global|script|local|private):', '' -replace '^[^\\]+\\', '')
 }
 
 # Where a pipeline's output ends up: 'array' (the nearest consumer is @(...)), a FunctionDefinitionAst (it is that
-# function's output), or $null (assigned, an argument, a condition, script-level, inside a script block ...).
+# function's output), a ScriptBlockExpressionAst (it is what that `{ ... }` emits), or $null (assigned, an argument,
+# a condition, script-level ...).
 function Get-L2OutputSink([System.Management.Automation.Language.PipelineBaseAst]$Pipeline) {
     $node = $Pipeline.Parent
     if ($null -eq $node -or $node.GetType().Name -notin @('StatementBlockAst', 'NamedBlockAst', 'ReturnStatementAst')) {
@@ -110,6 +143,10 @@ function Get-L2OutputSink([System.Management.Automation.Language.PipelineBaseAst
     if ($node -is [System.Management.Automation.Language.ScriptBlockAst] -and
         $node.Parent -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
         $node.Parent.Parent -isnot [System.Management.Automation.Language.FunctionMemberAst]) {
+        return $node.Parent
+    }
+    if ($node -is [System.Management.Automation.Language.ScriptBlockAst] -and
+        $node.Parent -is [System.Management.Automation.Language.ScriptBlockExpressionAst]) {
         return $node.Parent
     }
     return $null
@@ -171,7 +208,11 @@ function Get-L2WholeArrayModel {
                 Definition  = $definition
                 Whole       = $false
                 Via         = $null
-                PassThrough = [System.Collections.Generic.List[string]]::new()
+                PassThrough = [System.Collections.Generic.List[object]]::new()
+                # Script block parameters whose output this function hands on: `& $Probe` in output position.
+                Relays      = [System.Collections.Generic.List[string]]::new()
+                Parameters  = @(@($definition.Parameters) + @($definition.Body.ParamBlock?.Parameters) |
+                        Where-Object { $null -ne $_ } | ForEach-Object { $_.Name.VariablePath.UserPath })
             }
         }
         $functions = @($functions)
@@ -187,8 +228,16 @@ function Get-L2WholeArrayModel {
                 $owner.Via ??= "line $($pipeline.Extent.StartLineNumber)"
             } elseif ($pipeline.PipelineElements.Count -eq 1 -and
                 $pipeline.PipelineElements[0] -is [System.Management.Automation.Language.CommandAst]) {
-                $called = ConvertTo-L2BareCommandName $pipeline.PipelineElements[0].GetCommandName()
-                if ($called) { $owner.PassThrough.Add($called) }
+                $call = $pipeline.PipelineElements[0]
+                $invoked = $call.CommandElements[0]
+                if ($call.InvocationOperator -in @([System.Management.Automation.Language.TokenKind]::Ampersand,
+                        [System.Management.Automation.Language.TokenKind]::Dot) -and
+                    $invoked -is [System.Management.Automation.Language.VariableExpressionAst] -and
+                    $invoked.VariablePath.UserPath -in $owner.Parameters) {
+                    $owner.Relays.Add($invoked.VariablePath.UserPath)
+                } elseif ($call.GetCommandName()) {
+                    $owner.PassThrough.Add($call)
+                }
             }
         }
         [pscustomobject]@{
@@ -210,10 +259,11 @@ function Get-L2WholeArrayModel {
         foreach ($file in $files) {
             foreach ($function in $file.Functions) {
                 if ($function.Whole) { continue }
-                foreach ($called in $function.PassThrough) {
-                    if (Test-L2WholeArrayName -Model $model -File $file -Name $called) {
+                foreach ($call in $function.PassThrough) {
+                    $via = Get-L2WholeArrayCall -Model $model -File $file -Command $call
+                    if ($via) {
                         $function.Whole = $true
-                        $function.Via = "returns $called"
+                        $function.Via = "returns $via"
                         $changed = $true
                         break
                     }
@@ -237,6 +287,55 @@ function Test-L2WholeArrayName {
         if (@($shared.Functions | Where-Object { $_.Name -ieq $Name -and $_.Whole }).Count -gt 0) { return $true }
     }
     return $false
+}
+
+# The relay parameters of the function a name resolves to: local definitions first, then the shared files.
+function Get-L2RelayParameters {
+    param([Parameter(Mandatory)][object]$Model, [Parameter(Mandatory)][object]$File, [string]$Name)
+
+    if ([string]::IsNullOrEmpty($Name)) { return , @() }
+    $local = @($File.Functions | Where-Object { $_.Name -ieq $Name })
+    if ($local.Count -gt 0) { return , @($local | ForEach-Object { $_.Relays } | Select-Object -Unique) }
+    $shared = foreach ($other in $Model.Files) {
+        if (-not $other.Shared -or $other.Path -eq $File.Path) { continue }
+        $other.Functions | Where-Object { $_.Name -ieq $Name } | ForEach-Object { $_.Relays }
+    }
+    return , @($shared | Select-Object -Unique)
+}
+
+# What makes this call hand its result back whole, as text for the finding -- or $null when it does not: the name of a
+# whole-array function, or a relay function given a script block that ends in a whole-array call.
+function Get-L2WholeArrayCall {
+    param(
+        [Parameter(Mandatory)][object]$Model, [Parameter(Mandatory)][object]$File,
+        [Parameter(Mandatory)][System.Management.Automation.Language.CommandAst]$Command)
+
+    $name = ConvertTo-L2BareCommandName $Command.GetCommandName()
+    if ([string]::IsNullOrEmpty($name)) { return $null }
+    if (Test-L2WholeArrayName -Model $Model -File $File -Name $name) { return $name }
+
+    $relays = Get-L2RelayParameters -Model $Model -File $File -Name $name
+    if ($relays.Count -eq 0) { return $null }
+    $elements = $Command.CommandElements
+    for ($index = 1; $index -lt $elements.Count; $index++) {
+        $parameter = $elements[$index]
+        if ($parameter -isnot [System.Management.Automation.Language.CommandParameterAst]) { continue }
+        # PowerShell accepts any unambiguous prefix of a parameter name, in any case.
+        $bound = @($relays | Where-Object { $_.StartsWith($parameter.ParameterName, [System.StringComparison]::OrdinalIgnoreCase) })
+        if ($bound.Count -eq 0) { continue }
+        $block = $parameter.Argument ?? ($index + 1 -lt $elements.Count ? $elements[$index + 1] : $null)
+        if ($block -isnot [System.Management.Automation.Language.ScriptBlockExpressionAst]) { continue }
+        foreach ($pipeline in $block.FindAll({ param($n) $n -is [System.Management.Automation.Language.PipelineAst] }, $true)) {
+            if ((Get-L2OutputSink $pipeline) -ne $block) { continue }
+            if (Test-L2EmitsWhole $pipeline) { return "$name -$($bound[0]) { , ... }" }
+            if ($pipeline.PipelineElements.Count -eq 1 -and
+                $pipeline.PipelineElements[0] -is [System.Management.Automation.Language.CommandAst]) {
+                $inner = Get-L2WholeArrayCall -Model $Model -File $File -Command $pipeline.PipelineElements[0]
+                if ($inner) { return "$name -$($bound[0]) { $inner }" }
+            }
+        }
+    }
+    return $null
 }
 
 <#
@@ -285,8 +384,8 @@ function Get-L2WholeArrayMisuse {
             $pipeline = $command.Parent
             if ($pipeline -isnot [System.Management.Automation.Language.PipelineAst]) { continue }
             if ($pipeline.PipelineElements[0] -ne $command) { continue }
-            $name = ConvertTo-L2BareCommandName $command.GetCommandName()
-            if (-not (Test-L2WholeArrayName -Model $Model -File $file -Name $name)) { continue }
+            $name = Get-L2WholeArrayCall -Model $Model -File $file -Command $command
+            if (-not $name) { continue }
 
             $shape = if ($pipeline.PipelineElements.Count -gt 1) {
                 'piped'

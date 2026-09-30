@@ -340,7 +340,7 @@ $assertions.Add(
     ($commandPayload.demandId -eq $demandId -and $attempts.Count -eq 1 -and [string]$attempts[0].SublotId -eq $sublot -and
         [int]$commandPayload.expectedBasketCount -eq [int]$dispatched.ExpectedBasketCount),
     "$demandId / $sublot / $($dispatched.ExpectedBasketCount)",
-    "$($commandPayload.demandId) / $(if ($attempts.Count -eq 1) { $attempts[0].SublotId } else { '(no attempt)' }) / $($commandPayload.expectedBasketCount)")
+    "$($commandPayload.demandId) / $(if ($attempts.Count -eq 1) { $attempts[0].SublotId } else { "($($attempts.Count) attempts)" }) / $($commandPayload.expectedBasketCount)")
 
 $consumed = Wait-L2Condition -Description 'the journey left the entry wait on the rescanned submission' `
     -Journal $journal -Criterion 'entry-accepted' -TimeoutSeconds 60 `

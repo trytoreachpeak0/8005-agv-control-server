@@ -14,6 +14,8 @@ param([Parameter(Mandatory)][object]$Context)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2SingleRow.psm1') -Force
+
 $journal = $Context.Journal
 $assertions = $Context.Assertions
 $riot = $Context.Riot
@@ -62,17 +64,17 @@ SELECT (SELECT COUNT(*) FROM AcceptedDemands WHERE DemandId = '$demandId')
 "@
 }
 
+# One row per demand is the premise, and neither the key nor the query makes it so: Read-L2SingleRow hands back a
+# stand-in reading "(N rows, expected 1)" for anything else, so what is built on it goes red and says why.
 function Get-Stage([string]$demandId) {
-    $rows = Invoke-L2Query -Connection $connection -Sql "SELECT Stage FROM JourneyRuntimes WHERE DemandId = '$demandId'"
-    if ($rows.Count -eq 0) { return $null }
-    return [string]$rows[0].Stage
+    $row = Read-L2SingleRow -Connection $connection -Sql "SELECT Stage FROM JourneyRuntimes WHERE DemandId = '$demandId'"
+    if ($null -eq $row) { return $null }
+    return [string]$row.Stage
 }
 
 function Get-Intent([string]$demandId, [string]$purpose) {
-    $rows = Invoke-L2Query -Connection $connection `
+    return Read-L2SingleRow -Connection $connection `
         -Sql "SELECT UpperId, OrderId, Status, DestinationStationId FROM OrderIntents WHERE DemandId = '$demandId' AND Purpose = '$purpose'"
-    if ($rows.Count -eq 0) { return $null }
-    return $rows[0]
 }
 
 function Move-VehicleTo([object]$intent, [int]$stationRiotId, [string]$where) {
@@ -109,8 +111,8 @@ $null = Wait-L2Condition -Description 'the demand was accepted and dispatched to
     -Probe { Get-Stage $demand.Id } -Until { param($v) $v -eq 'AwaitingPickupArrival' }
 $pickupIntent = Wait-L2Condition -Description 'the TO_PICKUP intent was confirmed' `
     -Journal $journal -Criterion 'to-pickup-intent' -TimeoutSeconds 60 `
-    -Probe { $row = Get-Intent $demand.Id 'TO_PICKUP'; if ($row -and [string]$row.Status -eq 'CONFIRMED') { $row } else { $null } } `
-    -Until { param($v) $null -ne $v }
+    -Probe { Get-Intent $demand.Id 'TO_PICKUP' } `
+    -Until { param($v) $v -and [string]$v.Status -eq 'CONFIRMED' }
 
 $freeze = (Invoke-L2Query -Connection $connection -Sql @"
 SELECT (SELECT FrozenVersion FROM ConfigurationConsumerBindings
@@ -141,8 +143,8 @@ $null = Wait-L2Condition -Description 'the journey reached the gate leg' `
     -Probe { Get-Stage $demand.Id } -Until { param($v) $v -eq 'AwaitingGateArrival' }
 $gateIntent = Wait-L2Condition -Description 'the TO_GATE intent was confirmed' `
     -Journal $journal -Criterion 'to-gate-intent' -TimeoutSeconds 60 `
-    -Probe { $row = Get-Intent $demand.Id 'TO_GATE'; if ($row -and [string]$row.Status -eq 'CONFIRMED') { $row } else { $null } } `
-    -Until { param($v) $null -ne $v }
+    -Probe { Get-Intent $demand.Id 'TO_GATE' } `
+    -Until { param($v) $v -and [string]$v.Status -eq 'CONFIRMED' }
 $assertions.Add(
     'L2-TTAB-02', '关卡腿的订单目标站是绑定的 220「关卡2」，不是地图上仍在的 210',
     ([int]$gateIntent.DestinationStationId -eq $boundStation),

@@ -22,6 +22,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ConditionOrLast.psm1') -Force
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2SingleRow.psm1') -Force
 
 $journal = $Context.Journal
 $assertions = $Context.Assertions
@@ -85,10 +86,9 @@ $null = $mes.Command('Put', "demands/$($demandGuid.ToString('N'))", @{
 $journey = Wait-L2Condition -Description 'a vehicle took the demand and set off to its pickup' `
     -Journal $journal -Criterion 'journey-accepted' -TimeoutSeconds 120 `
     -Probe {
-        $rows = Invoke-L2Query -Connection $connection -Sql (
+        # One journey per demand: for two rows every column reads "(2 rows, expected 1)", and the criterion below goes red on it.
+        return Read-L2SingleRow -Connection $connection -Sql (
             "SELECT JourneyId, AgvId, VehicleKey, Stage, PickupUpperId FROM JourneyRuntimes WHERE DemandId = '$demandId'")
-        if ($rows.Count -eq 0) { return $null }
-        return $rows[0]
     } `
     -Until { param($v) $null -ne $v }
 

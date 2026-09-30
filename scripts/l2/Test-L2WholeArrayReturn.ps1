@@ -133,6 +133,24 @@ $rows = Get-Mine; $seen = $rows.Count
         @{ Name = 'wrapped-loop.ps1'; Broken = 'wrapped'
            Case = 'a loop inside @( ) whose body hands back one whole result per round'
            Body = '$rows = @(foreach ($i in 1) { Read-Shared -N $N }); $seen = $rows.Count' }
+        @{ Name = 'wrapped-module-qualified.ps1'; Broken = 'wrapped'
+           Case = 'the helper called by its module-qualified name: @(Reader\Read-Shared ...)'
+           Body = '$rows = @(Reader\Read-Shared -N $N); $seen = $rows.Count' }
+        # The relay: a function that hands on what its script block parameter emits (`return & $Probe`), which is
+        # what Wait-L2RealOrLast and Wait-L2ConditionOrLast do once they time out.
+        @{ Name = 'wrapped-relay.ps1'; Broken = 'wrapped'
+           Case = '@( ) around a relay whose -Probe block ends in the helper -- g3-reversed-direction-journey.ps1:165, which the first version of the scan walked past'
+           Body = @'
+function Invoke-Relay { param([string]$Description, [scriptblock]$Probe) try { throw 'timed out' } catch { return & $Probe } }
+$rows = @(Invoke-Relay -Description 'x' -Probe { Read-Shared -N $N }); $seen = $rows.Count
+'@ }
+        @{ Name = 'wrapped-relay-prefix.ps1'; Broken = 'wrapped'
+           Case = 'the same with the parameter abbreviated, in lower case, and the block ending in a local pass-through function'
+           Body = @'
+function Invoke-Relay { param([scriptblock]$Probe) return & $Probe }
+function Get-Mine { return Read-Shared -N $N }
+$rows = @(Invoke-Relay -pro { Get-Mine }); $seen = $rows.Count
+'@ }
         @{ Name = 'piped.ps1'; Broken = 'piped'
            Case = 'piped straight on: $_ in Where-Object is the whole result'
            Body = '$rows = @(Read-Shared -N $N | Where-Object { $true }); $seen = $rows.Count' }
@@ -166,6 +184,54 @@ $rows = Get-UnderTest; $seen = $rows.Count
         @{ Name = 'miss-subexpression-loop.ps1'; KnownMiss = $true
            Case = 'KNOWN MISS: $( ) collecting a loop that calls the helper each round'
            Body = '$rows = $(foreach ($i in 1, 2) { Read-Shared -N $N }); $seen = $rows.Count' }
+        @{ Name = 'miss-get-command.ps1'; KnownMiss = $true
+           Case = 'KNOWN MISS: the helper reached through Get-Command, @(& (Get-Command Helper) ...)'
+           Body = '$rows = @(& (Get-Command Read-Shared) -N $N); $seen = $rows.Count' }
+        @{ Name = 'miss-inline-script-block.ps1'; KnownMiss = $true
+           Case = 'KNOWN MISS: an inline script block, @(& { Helper })'
+           Body = '$rows = @(& { Read-Shared -N $N }); $seen = $rows.Count' }
+        @{ Name = 'miss-foreach-object-block.ps1'; KnownMiss = $true
+           Case = 'KNOWN MISS: the helper inside a ForEach-Object block, @(1 | ForEach-Object { Helper })'
+           Body = '$rows = @(1 | ForEach-Object { Read-Shared -N $N }); $seen = $rows.Count' }
+        @{ Name = 'miss-invoke-command.ps1'; KnownMiss = $true
+           Case = 'KNOWN MISS: @(Invoke-Command { Helper })'
+           Body = '$rows = @(Invoke-Command { Read-Shared -N $N }); $seen = $rows.Count' }
+        @{ Name = 'miss-relay-positional.ps1'; KnownMiss = $true
+           Case = 'KNOWN MISS: a relay given its block positionally rather than by parameter name'
+           Body = @'
+function Invoke-Relay { param([scriptblock]$Probe) return & $Probe }
+$rows = @(Invoke-Relay { Read-Shared -N $N }); $seen = $rows.Count
+'@ }
+        @{ Name = 'miss-switch.ps1'; KnownMiss = $true
+           Case = 'KNOWN MISS: switch (Helper ...) { } runs its clause once, on the whole result'
+           Body = '$seen = 0; switch (Read-Shared -N $N) { default { $seen++ } }' }
+        @{ Name = 'miss-return-parenthesised-comma.ps1'; KnownMiss = $true
+           Case = 'KNOWN MISS: a whole-array return written return (, $x) is not classified, so wrapping it is not reported'
+           Body = @'
+function Get-Mine { $r = Read-Shared -N $N; return (, $r) }
+$rows = @(Get-Mine); $seen = $rows.Count
+'@ }
+        @{ Name = 'miss-return-array-of-comma.ps1'; KnownMiss = $true
+           Case = 'KNOWN MISS: the same written return @(, $x)'
+           Body = @'
+function Get-Mine { $r = Read-Shared -N $N; return @(, $r) }
+$rows = @(Get-Mine); $seen = $rows.Count
+'@ }
+        @{ Name = 'miss-return-ternary-comma.ps1'; KnownMiss = $true
+           Case = 'KNOWN MISS: the same with the unary comma inside a ternary'
+           Body = @'
+function Get-Mine { $r = Read-Shared -N $N; return ($true ? (, $r) : $null) }
+$rows = @(Get-Mine); $seen = $rows.Count
+'@ }
+        # Like reshaped-stub.ps1 above, it measures RIGHT, and that is the harm: the wrap behind the stub is still
+        # reported as wrapped, but nothing says the stub is why the test over it would pass.
+        @{ Name = 'miss-function-drive-stub.ps1'; KnownMiss = $true; MissShape = 'reshaped'; MeasuresRight = $true
+           Case = 'KNOWN MISS: a stand-in written ${function:Helper} = { ... } that unrolls is not reported as reshaped'
+           Body = @'
+${function:Read-Shared} = { param([int]$N) $r = @(); for ($i = 0; $i -lt $N; $i++) { $r += [pscustomobject]@{ Id = $i } }; return $r }
+function Get-UnderTest { return , @(Read-Shared -N $N) }
+$rows = Get-UnderTest; $seen = $rows.Count
+'@ }
 
         # ------------------------------------------------------------ legal: must be left alone, must measure right
         @{ Name = 'assigned.ps1'
@@ -177,6 +243,19 @@ $rows = Get-UnderTest; $seen = $rows.Count
         @{ Name = 'parenthesised-then-piped.ps1'
            Case = 'parenthesised, then piped, inside @( ): legal, used by L2RealStation.psm1, one pair of parentheses away from piped'
            Body = '$rows = @((Read-Shared -N $N) | Where-Object { $true }); $seen = $rows.Count' }
+        @{ Name = 'relay-assigned-then-wrapped.ps1'
+           Case = 'a relay''s result assigned first and wrapped afterwards: the one form right on both of its paths (g3-multi-stop-plan.ps1)'
+           Body = @'
+function Invoke-Relay { param([scriptblock]$Probe) return & $Probe }
+$rows = Invoke-Relay -Probe { Read-Shared -N $N }
+$rows = @($rows); $seen = $rows.Count
+'@ }
+        @{ Name = 'relay-of-unrolled-block.ps1'
+           Case = 'a relay whose block hands back unrolled rows: wrapping it is correct'
+           Body = @'
+function Invoke-Relay { param([scriptblock]$Probe) return & $Probe }
+$rows = @(Invoke-Relay -Probe { $r = Read-Shared -N $N; $r }); $seen = $rows.Count
+'@ }
         @{ Name = 'assigned-then-wrapped.ps1'
            Case = 'assigned, then the variable wrapped in @( )'
            Body = '$r = Read-Shared -N $N; $rows = @($r); $seen = $rows.Count' }
@@ -241,7 +320,9 @@ $rows = Read-Shared -N $N; $seen = $rows.Count
         $wantRight = $fixture.ContainsKey('MeasuresRight') -and $fixture.MeasuresRight
         $knownMiss = $fixture.ContainsKey('KnownMiss') -and $fixture.KnownMiss
         $ok = if ($knownMiss) {
-            $found.Count -eq 0 -and -not $measuredRight
+            # A miss of one shape only (MissShape) may still be reported as another; any other miss is reported as nothing.
+            $missed = $fixture.ContainsKey('MissShape') ? @($found | Where-Object Shape -eq $fixture.MissShape) : $found
+            $missed.Count -eq 0 -and $measuredRight -eq $wantRight
         } elseif ($wantShape) {
             $found.Count -ge 1 -and @($found | Where-Object Shape -ne $wantShape).Count -eq 0 -and $measuredRight -eq $wantRight
         } else {
@@ -251,7 +332,7 @@ $rows = Read-Shared -N $N; $seen = $rows.Count
         if (-not $ok) {
             $failures.Add((
                     "fixture $($fixture.Name): expected " +
-                    ($knownMiss ? 'a known miss -- no finding, and the caller to see something other than 0,1,3' :
+                    ($knownMiss ? "a known miss -- not reported, and the caller to see $($wantRight ? '0,1,3' : 'something other than 0,1,3')" :
                         $wantShape ? "the scan to report '$wantShape' only and the caller to see $($wantRight ? '0,1,3' : 'something other than 0,1,3')" :
                         'no finding and the caller to see 0,1,3') +
                     "; got scan=$verdict saw=$($seen -join ',')"))

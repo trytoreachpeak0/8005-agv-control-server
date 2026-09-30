@@ -261,7 +261,7 @@ $demandStatus = Get-Scalar "SELECT Status AS Value FROM AcceptedDemands WHERE De
 $blockReason = Get-Scalar "SELECT BlockReasonCode AS Value FROM JourneyRuntimes WHERE DemandId = '$demandId'"
 $workflowText = if ($workflow.Count -eq 1) {
     "$($workflow[0].WorkflowType) / attempt=$($workflow[0].SlotOperationAttemptId) / $($workflow[0].SlotsJson) / 收下 $($workflow[0].ResultMessageId) / $($workflow[0].State)"
-} else { '(no workflow row)' }
+} else { "($($workflow.Count) workflow rows)" }
 $assertions.Add(
     'G3-02-35',
     '只在收到 ALL_EMPTY 结果之后终结：取消工作流无 attempt、仓集合为空、收下的正是车报的那条结果并已收敛；需求 Cancelled、旅程以 CANCELLED_BY_OPERATOR 收尾，车辆租约的释放时刻不早于服务端收到结果（TERMINATE_ONLY_ON_ALL_EMPTY_RESULT）',

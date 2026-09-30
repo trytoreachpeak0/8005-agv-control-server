@@ -21,6 +21,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ConditionOrLast.psm1') -Force
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2SingleRow.psm1') -Force
 
 $journal = $Context.Journal
 $assertions = $Context.Assertions
@@ -54,11 +55,11 @@ function Set-Battery([string]$vehicleKey, [int]$battery) {
     })
 }
 
+# One row per demand is the premise, and neither the key nor the query makes it so: Read-L2SingleRow hands back a
+# stand-in reading "(N rows, expected 1)" for anything else, so what is built on it goes red and says why.
 function Get-Journey {
-    $rows = Invoke-L2Query -Connection $connection -Sql (
+    return Read-L2SingleRow -Connection $connection -Sql (
         "SELECT JourneyId, AgvId, VehicleKey, ChargingPolicyVersion, PublishedBatteryState FROM JourneyRuntimes WHERE DemandId = '$demandId'")
-    if ($rows.Count -eq 0) { return $null }
-    return $rows[0]
 }
 
 # --- 0. 前置：两车先设成 25，再导入并激活「强制充电线 30 > 余量 20」的一版 ---------------------------------------

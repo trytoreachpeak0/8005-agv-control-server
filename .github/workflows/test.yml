@@ -197,6 +197,14 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2WholeArrayReturn.ps1
 
+      # Under a second, no rig and no SQLite. Read-L2SingleRow is what the "one journey per demand" reads go through
+      # since control-server#428: one row is the row, none is $null, several is a stand-in whose every column reads
+      # "(N rows, expected 1)" so the criterion built on it goes red and says why. Every scenario that uses it runs on
+      # a product that gives exactly one row, so no run on any rig ever reaches the two branches it exists for.
+      - name: L2 scenario self-check (single-row read)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/l2/Test-L2SingleRow.ps1
+
       # Exit code is the contract — the guest is zh-CN and prints 已通过! not
       # Passed!, so no step here may match on English console text.
       - name: Test
