@@ -1379,7 +1379,9 @@ public sealed partial class MultiVehicleExecutionTests
                 Clock,
                 EngineLog,
                 _idleReturn?.Invoke(this) ?? IdleReturnTestKit.Create(Context, Options, Clock, chargingPolicy: ChargingPolicy),
-                ChargingPolicy);
+                ChargingPolicy,
+                ChargingTestKit.Create(
+                    Context, Options, Clock, Riot, Peer, Riot, Riot, RouteGraph(), ChargingBoard, ChargingLog));
             return new JourneyRuntimeEngine(
                 Context,
                 Riot,
@@ -1417,6 +1419,38 @@ public sealed partial class MultiVehicleExecutionTests
                 ChargingPolicy,
                 orderCommands: new RiotOrderCommandService(Riot, new RiotOrderCommandAuditStore(Context), Riot, Clock),
                 idleReturnMaterializationFailures: IdleReturnMaterializationFailures);
+        }
+
+        /// <summary>每辆车最近一次的充电分配结论（control-server#404），跨轮次保留，像宿主里的单例。</summary>
+        public ControlServer.Host.Runtime.Charging.ChargingAllocationBoard ChargingBoard { get; } = new();
+
+        /// <summary>充电分配器的日志（control-server#404）：人工充电等待的告警是日志事件。</summary>
+        public EventRecordingLogger<ControlServer.Host.Runtime.Charging.ChargingAllocator> ChargingLog { get; } = new();
+
+        /// <summary>
+        /// 登记充电桩名册的一个新版本（control-server#404），并让实时站点目录列出这些桩。名册为空也是一个版本（「名册置空」）。
+        /// 最近优先要路网，所以要装了路网的夹具。
+        /// </summary>
+        public async Task<ChargerRosterVersion> WriteChargerRosterAsync(params ChargerRosterEntry[] chargers)
+        {
+            if (!_withRouteGraph)
+            {
+                throw new InvalidOperationException("Charging allocation needs the route graph: create the fixture withRouteGraph.");
+            }
+
+            ChargerRosterVersion version = await new ChargerRosterStore(Context, JourneyRuntimeWorkerTestKit.CreateGovernedPublisher(Context))
+                .WriteVersionAsync(
+                    chargers,
+                    new ChargerRosterApproval("test fixture", "tests: charger roster", null),
+                    Clock.GetUtcNowWithoutTick(),
+                    TestContext.Current.CancellationToken);
+            foreach (ChargerRosterEntry charger in chargers.Where(charger =>
+                         Riot.ExtraStations.All(station => station.StationId != charger.StationId)))
+            {
+                Riot.ExtraStations.Add(new RiotMapStation(charger.StationId, charger.StationName));
+            }
+            Context.ChangeTracker.Clear();
+            return version;
         }
 
         /// <summary>空闲返回评估器的日志（control-server#390 增量审查 R1）：停止自动空闲返回那一条（2227）是现场唯一看得到的信号。</summary>
@@ -1999,8 +2033,66 @@ public sealed partial class MultiVehicleExecutionTests
     internal sealed class FleetRiot(MovableClock clock, JourneyRuntimeOptions options)
         : IRiotMovementGateway, IRiotVehicleFacts, IRiotMapStationCatalog, IVehicleMotionFacts,
           IRiotRouteCostProbe, IRiotOrderCommandGateway, IRiotVehicleEmergencyFacts, IRiotVehicleOrderFacts,
-          IRiotVehicleSafetyFacts, IRiotMapNameCatalog
+          IRiotVehicleSafetyFacts, IRiotMapNameCatalog, IRiotOrderListingFacts, IRiotOrderMissionFacts
     {
+        /// <summary>每一次建单的意图，按先后（control-server#404：充电单的形态、目的站与单号都在意图上）。</summary>
+        public List<OrderIntent> CreatedIntents { get; } = [];
+
+        /// <summary>未完成订单清单读不全（control-server#404）：分页没覆盖全部记录，或 RIoT 问不到。</summary>
+        public bool OrderListingIncomplete { get; set; }
+
+        /// <summary>
+        /// 不是本服务端建的、却在跑的单（control-server#404）：清单里的那一行，与按单号读 mission 时答的目的站；目的站为空即读不到。
+        /// </summary>
+        public List<(RiotListedOrder Order, int? DestinationStationId)> ForeignOrders { get; } = [];
+
+        /// <summary>
+        /// RIoT 的按状态订单清单（control-server#404 判「桩有没有被一张在跑的单当成目的站」）：本替身上还没终结的单，加上
+        /// <see cref="ForeignOrders"/>。时刻不读夹具的时钟（逐字转录的用例每读一次钟都走一格）。
+        /// </summary>
+        public Task<RiotUnfinishedOrderListing> ListUnfinishedOrdersAsync(CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            if (OrderListingIncomplete)
+            {
+                return Task.FromResult(new RiotUnfinishedOrderListing(false, [], clock.GetUtcNowWithoutTick()));
+            }
+            RiotListedOrder[] own =
+            [
+                .. _orders.Values
+                    .Where(order => order.Kind == RiotOrderObservationKind.Active && order.OrderId is not null)
+                    .Select(order => new RiotListedOrder(
+                        order.OrderId!, order.UpperId, order.OrderState, order.VehicleKey, order.VehicleKey)),
+            ];
+            return Task.FromResult(new RiotUnfinishedOrderListing(
+                true, [.. own, .. ForeignOrders.Select(foreign => foreign.Order)], clock.GetUtcNowWithoutTick()));
+        }
+
+        public Task<RiotOrderStateReading> ReadOrderStateAsync(string orderId, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult(new RiotOrderStateReading(
+                orderId,
+                _orders.Values.FirstOrDefault(order => order.OrderId == orderId)?.OrderState,
+                clock.GetUtcNowWithoutTick()));
+        }
+
+        public Task<RiotOrderMissionFacts> ReadOrderMissionFactsAsync(string upperId, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            (RiotListedOrder Order, int? DestinationStationId) foreign =
+                ForeignOrders.FirstOrDefault(item => item.Order.UpperId == upperId);
+            RiotOrderObservation? own = _orders.GetValueOrDefault(upperId);
+            int? destination = foreign.Order is not null ? foreign.DestinationStationId : own?.DestinationStationId;
+            return Task.FromResult(destination is int station
+                ? new RiotOrderMissionFacts(
+                    upperId, RiotOrderMissionFactsStatus.Found, foreign.Order?.OrderId ?? own?.OrderId,
+                    foreign.Order?.OrderState ?? own?.OrderState,
+                    [new RiotOrderMissionFact("move", options.MapId, station, 0, 0, 0, null)], clock.GetUtcNowWithoutTick())
+                : new RiotOrderMissionFacts(
+                    upperId, RiotOrderMissionFactsStatus.Unknown, null, null, [], clock.GetUtcNowWithoutTick()));
+        }
+
         /// <summary>目录里另列的站：空闲返回的用例登记的等待点（control-server#389）。默认为空，目录与本票之前逐字相同。</summary>
         public List<RiotMapStation> ExtraStations { get; } = [];
 
@@ -2178,6 +2270,7 @@ public sealed partial class MultiVehicleExecutionTests
         {
             _ = cancellationToken;
             Creates.Add((intent.VehicleKey, intent.UpperId, intent.DestinationStationId));
+            CreatedIntents.Add(intent);
             if (CreateAnswer?.Invoke(intent) is { } answer)
             {
                 return Task.FromResult(answer);

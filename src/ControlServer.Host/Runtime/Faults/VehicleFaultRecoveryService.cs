@@ -115,6 +115,13 @@ public static class VehicleFaultRecoveryDispositions
     /// released, journey closed, the waiting point left to the departure sweep -- and nothing is rebuilt.
     /// </summary>
     public const string IdleReturnEnded = "IDLE_RETURN_ENDED";
+
+    /// <summary>
+    /// The journey was a charging journey (control-server#404): its FAILED order is a confirmed failure, so it ended -- charging
+    /// cycle closed, purpose claim released, journey closed, the charger reservation left to the three confirmations of
+    /// REQ-0173 -- and nothing is rebuilt.
+    /// </summary>
+    public const string ChargingEnded = "CHARGING_ENDED";
 }
 
 /// <summary>

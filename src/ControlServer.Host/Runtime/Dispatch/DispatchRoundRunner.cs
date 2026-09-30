@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Host.Runtime.Charging;
 using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Host.Runtime.Fleet;
 using ControlServer.Host.Runtime.IdleReturn;
@@ -53,6 +54,7 @@ public sealed class DispatchRoundRunner(
     ILogger<JourneyRuntimeEngine> logger,
     IdleReturnEvaluator idleReturn,
     IChargingPolicyResolver chargingPolicy,
+    ChargingAllocator chargingAllocation,
     MandatoryChargeBoard? mandatoryCharge = null)
 {
     // The backlog's decision fingerprint is a hash over this serialisation, so it is the engine's setting exactly: a
@@ -264,6 +266,15 @@ public sealed class DispatchRoundRunner(
                 participants.Add(participant);
             }
         }
+
+        // 充电分配（批次9-06，control-server#404）：在任务循环之前——强制充电先于普通搬运（REQ-0290）。交过去的是这一轮的空闲车与它们
+        // 这一轮读定的事实（电量、策略版本同一份）；取得承诺的车此后这一轮不接搬运（判据 ChargingStandingCriterion），也不被空闲返回选中。
+        // 分配器是必填的，理由同下面的空闲返回评估器：可选注入时宿主漏注册会静默成「从不分配」。它自己保存，每辆车的失败只丢它自己的暂存行。
+        await chargingAllocation.AllocateAsync(
+                currentMap,
+                [.. participants.Where(p => !p.UnderWay).Select(p => new ChargingCandidate(p.Vehicle, p.Facts))],
+                cancellationToken)
+            .ConfigureAwait(false);
 
         // 任务层的次序：超时层、优先级带、等待年龄，再按首次看到与需求 id 定序（批次7-09，control-server#214），
         // 与车辆侧不相交。每条任务的处境按本轮读一次的分区归属表与每区参数算：轮中导入的新版本下一轮才生效。

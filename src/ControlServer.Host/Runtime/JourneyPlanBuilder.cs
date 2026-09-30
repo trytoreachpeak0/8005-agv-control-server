@@ -35,6 +35,9 @@ public sealed class JourneyPlanBuilder(JourneyRuntimeOptions options)
     /// <summary><c>stopPurposeCategory</c> of an idle return's leg (protocol <c>2.0.0</c>, <c>FP-IS-12</c>).</summary>
     public const string WaitingPointStopPurpose = "WAITING_POINT";
 
+    /// <summary><c>stopPurposeCategory</c> of a charging journey's leg (protocol <c>2.0.0</c>; batch 9-06, control-server#404).</summary>
+    public const string ChargerStopPurpose = "CHARGER";
+
     /// <summary>
     /// Builds a candidate's route from its AREA station and its task type's fixed station, or names
     /// why it cannot.

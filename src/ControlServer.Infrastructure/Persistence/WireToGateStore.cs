@@ -3019,7 +3019,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, null)
     };
 
-    private static OrderIntentRow ToRow(OrderIntent intent) => new()
+    internal static OrderIntentRow ToRow(OrderIntent intent) => new()
     {
         MovementLegId = intent.MovementLegId,
         DemandId = intent.DemandId,
@@ -3276,7 +3276,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
     /// journey on a vehicle re-published a revision Onboard had already adopted and had it refused
     /// as SNAPSHOT_REVISION_REGRESSION -- which raises a protocol problem and tears the session down.
     /// </remarks>
-    private async Task SeedSnapshotRevisionsAsync(
+    internal async Task SeedSnapshotRevisionsAsync(
         JourneyRuntimeRow runtime,
         CancellationToken cancellationToken)
     {
@@ -3328,7 +3328,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
     /// counter only records it, and so always equals the highest revision stored on the vehicle's journeys. Its readers
     /// switch over in control-server#208.
     /// </remarks>
-    private async Task AdvanceSnapshotRevisionCounterAsync(
+    internal async Task AdvanceSnapshotRevisionCounterAsync(
         JourneyRuntimeRow runtime,
         CancellationToken cancellationToken)
     {

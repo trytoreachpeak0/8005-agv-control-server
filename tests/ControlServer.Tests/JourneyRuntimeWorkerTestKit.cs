@@ -1187,7 +1187,8 @@ internal static class JourneyRuntimeWorkerTestKit
                 Clock,
                 EngineLog,
                 IdleReturnTestKit.Create(Context, Options, Clock, chargingPolicy: ChargingPolicy),
-                ChargingPolicy);
+                ChargingPolicy,
+                ChargingTestKit.Create(Context, Options, Clock, Riot, Peer, Riot));
             return new JourneyRuntimeEngine(
                 Context,
                 Riot,

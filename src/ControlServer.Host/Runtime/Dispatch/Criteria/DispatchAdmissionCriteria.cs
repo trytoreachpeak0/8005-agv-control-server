@@ -57,6 +57,9 @@ public static class DispatchAdmissionCriteria
             // Required, like the fault block: a vehicle committed to an idle return takes no transport (control-server#389,
             // REQ-0292), and the reason has to reach the backlog rather than surface only as the claims key refusing intake.
             new IdleReturnCommitmentCriterion(dbContext),
+            // Required, for the same reason (control-server#404): a vehicle committed to a charger, or held for manual charging,
+            // takes no transport, and the backlog has to say so.
+            new ChargingStandingCriterion(dbContext),
             // 批次9-02（control-server#400）：没有已批准策略版本的车不承接新用途。必填，理由同故障阻断：逐车硬阻断（规格 8.6）
             // 一个调用方可以漏传，就会被最需要它的那个调用方漏掉。
             new ChargingPolicyCommissioningCriterion(chargingPolicy, options, commissioningLog ?? new ChargingPolicyCommissioningLog()),
@@ -150,6 +153,7 @@ public static class DispatchAdmissionCriteria
         services.AddScoped<IDispatchAdmissionCriterion, TransportDemandKeyAlreadyAcceptedCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, VehicleFaultBlockCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, IdleReturnCommitmentCriterion>();
+        services.AddScoped<IDispatchAdmissionCriterion, ChargingStandingCriterion>();
         services.AddScoped<IChargingPolicyResolver, ChargingPolicyResolver>();
         services.AddScoped<IDispatchAdmissionCriterion, ChargingPolicyCommissioningCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, WorkTypeScopeCriterion>();
