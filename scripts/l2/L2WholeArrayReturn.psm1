@@ -21,6 +21,18 @@
       piped     Helper ... | Where-Object ...   $_ is the whole result, once.
       foreach   foreach ($r in Helper ...)    one iteration, $r is the whole result.
 
+    And one shape that is not a call at all:
+
+      reshaped  function Invoke-L2Query { ... return $rows }
+                                              a stand-in, defined outside the module, for a module function that
+                                              returns whole -- but this one hands back unrolled. Code driven through
+                                              it sees the very shape `@(Helper ...)` happens to be right for, so the
+                                              wrapping mistake measures correct under the stub and wrong on the rig.
+                                              Test-L2SecondLegIntentWait.ps1 stubbed Invoke-L2Query this way, and
+                                              Get-L2SecondLegIntents' `return , @(Invoke-L2Query ...)` passed all of
+                                              its cases while its "more than one second leg" refusal had never once
+                                              been reachable on a real database (control-server#428).
+
     control-server#428 found 39 wrapped Invoke-L2Query calls in 18 files after the same mistake had been fixed six
     times, one site at a time. This module is the scan that replaces remembering.
 
@@ -36,7 +48,8 @@
     "Output position" is a statement of the function's own body, at any depth of if/loop/switch/try, that is not
     inside an assignment, a sub-expression, a nested function or a script block.
 
-    A name is resolved the way the scripts are loaded: a function defined in the calling file wins; otherwise the
+    A name is resolved the way the scripts are loaded: a function defined in the calling file wins (and is reported
+    as reshaped when it replaces a whole-array function of a module with one that is not); otherwise the
     definitions in the shared files apply -- every *.psm1, and every *.ps1 that some scanned script dot-sources by a
     literal file name (`. (Join-Path $PSScriptRoot 'G3RecoveryCommon.ps1')`). A name defined more than once counts as
     whole-array if ANY of those definitions is.
@@ -51,8 +64,9 @@
         `return , $x` is classified by the second statement alone);
       - enumeration by anything other than the three shapes above: `$(foreach ($d in $ids) { Helper $d })`,
         `Helper ... | Out-Null` IS reported (piped) even though it is harmless -- write `$null = Helper ...`;
-      - a scenario-local function shadowing a shared one of the same name with a different return shape in a file
-        that dot-sources a third file defining it again.
+      - a stand-in for a whole-array function that lives in a dot-sourced *.ps1 rather than a module (reshaped is
+        judged against *.psm1 definitions only: scenarios legitimately reuse short local names such as Get-Journeys
+        with either shape, and no scenario replaces a function of a file it dot-sources).
     None of those shapes occurs under scripts/ at the time of writing; Test-L2WholeArrayReturn.ps1 pins, for each
     shape this module does claim, both the verdict and the measured runtime behaviour behind it.
 #>
@@ -244,12 +258,29 @@ function Get-L2WholeArrayFunctions {
 
 <#
 .SYNOPSIS
-    Every call that enumerates a whole-array function's output: File, Line, Helper, Shape (wrapped|piped|foreach), Text.
+    Every call that enumerates a whole-array function's output, and every stand-in that changes such a function's
+    return shape: File, Line, Helper, Shape (wrapped|piped|foreach|reshaped), Text.
 #>
 function Get-L2WholeArrayMisuse {
     param([Parameter(Mandatory)][object]$Model)
 
     $findings = foreach ($file in $Model.Files) {
+        foreach ($function in $file.Functions) {
+            if ($function.Whole) { continue }
+            $replaced = foreach ($module in $Model.Files) {
+                if ($module.Path -eq $file.Path -or $module.Path -notlike '*.psm1') { continue }
+                $module.Functions | Where-Object { $_.Name -ieq $function.Name -and $_.Whole }
+            }
+            $replaced = @($replaced)
+            if ($replaced.Count -eq 0) { continue }
+            [pscustomobject]@{
+                File   = $file.Path
+                Line   = $function.Line
+                Helper = $function.Name
+                Shape  = 'reshaped'
+                Text   = "function $($function.Name) hands back unrolled; $(Split-Path -Leaf $replaced[0].File):$($replaced[0].Line) returns whole"
+            }
+        }
         foreach ($command in $file.Ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true)) {
             $pipeline = $command.Parent
             if ($pipeline -isnot [System.Management.Automation.Language.PipelineAst]) { continue }

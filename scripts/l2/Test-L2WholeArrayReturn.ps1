@@ -9,7 +9,7 @@
     Invoke-L2Query ends in `return , $rows`. Written as `@(Invoke-L2Query ...)`, the caller holds a one-element array
     whose element is the whole result: `.Count` is 1 for zero rows and for forty, so a `.Count -eq 1` criterion can
     never go red, and an empty result throws on the first property read. control-server#428 found 35 such calls in
-    14 scenario files (39 by grep, four of which were comments warning against it) after the same mistake had been
+    14 files (39 by grep, four of which were comments warning against it) after the same mistake had been
     fixed six times one site at a time; control-server#390 lost a G3 round to one of them. L2WholeArrayReturn.psm1 is
     the scan; its header says what it derives, how it resolves names, and what it cannot see.
 
@@ -18,7 +18,10 @@
       1. Fixtures, two-sided. Every shape the scan claims to judge is written out as a small script and judged twice:
          by the scan, and by RUNNING it against a whole-array reader that returns 0, 1 and 3 rows and recording how
          many rows the caller saw. A broken shape must be flagged AND must be measured wrong; a legal shape must be
-         left alone AND must be measured right. The measurement is what keeps the rule honest -- a verdict with no
+         left alone AND must be measured right. (One broken shape, the reshaped stub, must be measured RIGHT: a
+         mistake that measures right under the stub is exactly what it is reported for.) The shapes the scan
+         cannot see are fixtures too: measured wrong and required NOT to be flagged, so the list of blind spots is
+         a measurement that fails when it stops being true. The measurement is what keeps the rule honest -- a verdict with no
          measurement behind it is an opinion about PowerShell, and this whole ticket exists because such opinions
          were wrong seven times.
       2. Classifier cases: which function bodies count as returning whole, including the ones that only look like it.
@@ -137,6 +140,33 @@ $rows = Get-Mine; $seen = $rows.Count
            Case = 'straight after the in of a foreach: one round'
            Body = '$seen = 0; foreach ($row in Read-Shared -N $N) { $seen++ }' }
 
+        # The one broken shape that measures RIGHT, which is the whole trouble with it: a stand-in with the unrolled
+        # shape makes the wrapping mistake in the code under test come out correct, so the test passes on broken code.
+        @{ Name = 'reshaped-stub.ps1'; Broken = 'reshaped'; MeasuresRight = $true
+           Case = 'a stub replaces the module''s whole-array reader with an unrolling one: the wrapping mistake behind it measures right'
+           Body = @'
+function Read-Shared { param([int]$N) $r = @(); for ($i = 0; $i -lt $N; $i++) { $r += [pscustomobject]@{ Id = $i } }; return $r }
+function Get-UnderTest { return , @(Read-Shared -N $N) }
+$rows = Get-UnderTest; $seen = $rows.Count
+'@ }
+
+        # ------------------------------------------------------------ known misses: measured wrong, NOT flagged
+        # What the scan cannot see, pinned so that the list in L2WholeArrayReturn.psm1 and in the README is a
+        # measurement and not a guess. If the scan learns one of these, its fixture fails here: move it up to the
+        # broken ones and take it off both lists.
+        @{ Name = 'miss-name-in-variable.ps1'; KnownMiss = $true
+           Case = 'KNOWN MISS: the helper is called through a variable, @(& $reader ...)'
+           Body = '$reader = ''Read-Shared''; $rows = @(& $reader -N $N); $seen = $rows.Count' }
+        @{ Name = 'miss-alias.ps1'; KnownMiss = $true
+           Case = 'KNOWN MISS: the helper is called through an alias'
+           Body = 'Set-Alias -Name rs -Value Read-Shared; $rows = @(rs -N $N); $seen = $rows.Count' }
+        @{ Name = 'miss-script-block-variable.ps1'; KnownMiss = $true
+           Case = 'KNOWN MISS: a script block held in a variable hands the helper''s output on, and is wrapped'
+           Body = '$reader = { Read-Shared -N $N }; $rows = @(& $reader); $seen = $rows.Count' }
+        @{ Name = 'miss-subexpression-loop.ps1'; KnownMiss = $true
+           Case = 'KNOWN MISS: $( ) collecting a loop that calls the helper each round'
+           Body = '$rows = $(foreach ($i in 1, 2) { Read-Shared -N $N }); $seen = $rows.Count' }
+
         # ------------------------------------------------------------ legal: must be left alone, must measure right
         @{ Name = 'assigned.ps1'
            Case = 'assigned directly -- the right way'
@@ -153,17 +183,18 @@ $rows = Get-Mine; $seen = $rows.Count
         @{ Name = 'assigned-then-foreach.ps1'
            Case = 'assigned, then foreach over the variable'
            Body = '$r = Read-Shared -N $N; $seen = 0; foreach ($row in $r) { $seen++ }' }
+        @{ Name = 'stub-same-shape.ps1'
+           Case = 'a stub that replaces the module''s reader and keeps its shape (return , $r): legal, and direct assignment measures right'
+           Body = @'
+function Read-Shared { param([int]$N) $r = @(); for ($i = 0; $i -lt $N; $i++) { $r += [pscustomobject]@{ Id = $i } }; return , $r }
+function Get-UnderTest { return Read-Shared -N $N }
+$rows = Get-UnderTest; $seen = $rows.Count
+'@ }
         @{ Name = 'unrolling-function-wrapped.ps1'
            Case = 'a function that hands back unrolled (return $r): wrapping it in @( ) is correct'
            Body = @'
 function Get-Mine { $r = Read-Shared -N $N; return $r }
 $rows = @(Get-Mine); $seen = $rows.Count
-'@ }
-        @{ Name = 'local-shadows-shared.ps1'
-           Case = 'this file defines an unrolling function with the shared helper''s name: the local one wins'
-           Body = @'
-function Read-Shared { param([int]$N) $r = @(); for ($i = 0; $i -lt $N; $i++) { $r += [pscustomobject]@{ Id = $i } }; return $r }
-$rows = @(Read-Shared -N $N); $seen = $rows.Count
 '@ }
         @{ Name = 'comma-inside-assignment.ps1'
            Case = 'a unary comma inside an if on the right of an assignment: not the function''s output'
@@ -207,8 +238,12 @@ $rows = Read-Shared -N $N; $seen = $rows.Count
         $wantShape = $fixture.ContainsKey('Broken') ? $fixture.Broken : $null
         $verdict = $found.Count -eq 0 ? 'clean' : (($found | ForEach-Object Shape | Sort-Object -Unique) -join '+')
 
-        $ok = if ($wantShape) {
-            $found.Count -ge 1 -and @($found | Where-Object Shape -eq $wantShape).Count -ge 1 -and -not $measuredRight
+        $wantRight = $fixture.ContainsKey('MeasuresRight') -and $fixture.MeasuresRight
+        $knownMiss = $fixture.ContainsKey('KnownMiss') -and $fixture.KnownMiss
+        $ok = if ($knownMiss) {
+            $found.Count -eq 0 -and -not $measuredRight
+        } elseif ($wantShape) {
+            $found.Count -ge 1 -and @($found | Where-Object Shape -ne $wantShape).Count -eq 0 -and $measuredRight -eq $wantRight
         } else {
             $found.Count -eq 0 -and $measuredRight
         }
@@ -216,7 +251,8 @@ $rows = Read-Shared -N $N; $seen = $rows.Count
         if (-not $ok) {
             $failures.Add((
                     "fixture $($fixture.Name): expected " +
-                    ($wantShape ? "the scan to report '$wantShape' and the caller to see something other than 0,1,3" :
+                    ($knownMiss ? 'a known miss -- no finding, and the caller to see something other than 0,1,3' :
+                        $wantShape ? "the scan to report '$wantShape' only and the caller to see $($wantRight ? '0,1,3' : 'something other than 0,1,3')" :
                         'no finding and the caller to see 0,1,3') +
                     "; got scan=$verdict saw=$($seen -join ',')"))
         }
@@ -290,15 +326,17 @@ if ($l2Module -and @($helpers | Where-Object { $_.Name -eq 'Invoke-L2Query' -and
 }
 
 foreach ($finding in $findings) {
-    Write-Host ("WHOLE ARRAY ENUMERATED ({0}): {1}:{2}  {3}" -f $finding.Shape, (Format-Relative $finding.File), $finding.Line, $finding.Text)
+    $title = $finding.Shape -eq 'reshaped' ? 'WHOLE ARRAY FUNCTION RESHAPED' : "WHOLE ARRAY ENUMERATED ($($finding.Shape))"
+    Write-Host ("{0}: {1}:{2}  {3}" -f $title, (Format-Relative $finding.File), $finding.Line, $finding.Text)
 }
 if ($findings.Count -gt 0) {
     Write-Host ''
-    Write-Host "$($findings.Count) call(s) enumerate a function that returns its array whole. Assign first: `$rows = Helper ...; then use `$rows."
-    Write-Host 'wrapped: .Count is 1 whatever the result, and an empty result throws on the first property read. See scripts/l2/README.md.'
+    Write-Host "$($findings.Count) finding(s). A function that returns its array whole must be assigned first: `$rows = Helper ...; then use `$rows."
+    Write-Host 'wrapped: .Count is 1 whatever the result, and an empty result throws on the first property read.'
+    Write-Host 'reshaped: a stand-in must end in `return , $rows` like the function it replaces. See scripts/l2/README.md.'
 }
 
 foreach ($failure in $failures) { Write-Host "SELF-CHECK FAILED: $failure" }
 
 if ($findings.Count -gt 0 -or $failures.Count -gt 0) { exit 1 }
-Write-Host 'No call enumerates a whole-array function.'
+Write-Host 'No call enumerates a whole-array function, and no stand-in changes the shape of one.'
