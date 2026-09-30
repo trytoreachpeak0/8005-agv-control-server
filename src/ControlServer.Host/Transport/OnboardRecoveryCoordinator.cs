@@ -1806,6 +1806,22 @@ public sealed class OnboardRecoveryCoordinator(
         {
             open.VehicleBusinessRevision = revision + 1;
         }
+        // Every business state of this vehicle numbered below this one and not yet acknowledged is retired in the same change
+        // (third-round review S1), as the engine's loading phase does (FenceSupersededSnapshotAsync): replayed after this one,
+        // the vehicle would read the revision going backwards and drop the session, and be sent it again on the reconnect. Only
+        // rows on file: one staged in this change (a settlement's closing snapshot) is sent before this one, never after.
+        foreach (ProtocolOutboxRow lower in await dbContext.ProtocolOutbox
+                     .Where(row => row.MessageType == "VehicleBusinessStateSnapshot" &&
+                                   row.AcknowledgedAt == null && row.FencedAt == null)
+                     .ToArrayAsync(cancellationToken).ConfigureAwait(false))
+        {
+            using JsonDocument document = JsonDocument.Parse(lower.PayloadJson);
+            if (RequiredString(document.RootElement, "agvId") == agvId &&
+                document.RootElement.GetProperty("payload").GetProperty("vehicleBusinessStateRevision").GetInt64() < revision)
+            {
+                lower.FencedAt = createdAt;
+            }
+        }
         VehicleBusinessProjection projection = (latest ?? new VehicleBusinessProjection(
             0, "READY", null, false, "SUFFICIENT", "NOT_CHARGING", null, [])) with
         {

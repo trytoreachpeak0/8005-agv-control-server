@@ -911,6 +911,89 @@ public sealed class StopEndedJourneyContinuesTests
         Assert.Empty(atUnload.Payload.GetProperty("blockingFacts").EnumerateArray());
     }
 
+    /// <summary>
+    /// 扣车与放行那两张业务状态暂存时，把这辆车业务流上号更低、还没确认的旧快照退役（control-server#385 第三轮审查 S1）：否则放行之后
+    /// 引擎把它们补发在新号之后，车载端判 <c>SNAPSHOT_REVISION_REGRESSION</c> 拆会话，重连后再补、再拆。
+    /// </summary>
+    /// <remarks>
+    /// 形状照审查员的探针：扣车之前这辆车的业务快照都还没确认（车刚重连、确认丢了），扣车、放行，引擎再跑几轮。断的是车看到的：
+    /// 车收到的每一行按顺序喂给一个会校验修订号的替身（<see cref="AdoptingPeer"/>），业务状态这条流上既无回退、也无同号不同内容；
+    /// 旧快照在发件箱里已退役。<c>RecordingPeer</c> 不校验修订号，这类回退它看不见。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AHoldAndItsReleaseRetireTheLowerBusinessStatesNotYetAcknowledged()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await EndTheSecondPickupByItsDeadlineAsync(fixture);
+        string agvId = fixture.Options.AgvId;
+        long generation = (await fixture.Context.SessionRecoveries.AsNoTracking()
+            .SingleAsync(row => row.AgvId == agvId, token)).SessionGeneration;
+        string[] lowerIds =
+        [
+            .. (await SnapshotsAsync(fixture.Context, agvId))
+                .Where(item => item.MessageType == "VehicleBusinessStateSnapshot").Select(item => item.MessageId)
+        ];
+        Assert.NotEmpty(lowerIds);
+        int linesBeforeHold = fixture.Peer.Lines.Count;
+        await using (ControlServerDbContext connection = fixture.OpenConnectionContext())
+        {
+            foreach (ProtocolOutboxRow row in await connection.ProtocolOutbox
+                         .Where(row => lowerIds.Contains(row.MessageId)).ToArrayAsync(token))
+            {
+                row.AcknowledgedAt = null;
+                row.FencedAt = null;
+            }
+            await connection.SaveChangesAsync(token);
+
+            OnboardRecoveryCoordinator coordinator = TestOnboardProcessorFactory.CreateRecoveryCoordinator(
+                connection, new WireToGateStore(connection), fixture.Clock, new ConfigurationBuilder().Build(), fixture.Peer);
+            // 两张各在它那次保存之后发给车，与生产上一样（协调器在应答之后发）。
+            OnboardJourneyPublisher sender = new(new WireToGateStore(connection), fixture.Peer, fixture.Clock);
+            await coordinator.HoldForDoorRepairAsync(
+                new RecoveryWorkflowRow
+                {
+                    WorkflowId = MidJourneyHoldId, WorkflowType = "LOAD_CANCELLATION", RequestMessageId = MidJourneyHoldId,
+                    RequestContentHash = "unused", AgvId = agvId, DemandId = SecondDemandId, SlotsJson = "[1]"
+                },
+                token);
+            await connection.SaveChangesAsync(token);
+            await sender.SendPersistedAsync(OnboardRecoveryCoordinator.DoorHoldSnapshotId(MidJourneyHoldId), token);
+            SlotDoorHoldRow hold = await connection.SlotDoorHolds.SingleAsync(row => row.HoldId == MidJourneyHoldId, token);
+            hold.ReleasedByActionId = MidJourneyReleaseId;
+            hold.ReleasedAt = fixture.Clock.GetUtcNow();
+            Assert.NotNull(await coordinator.StageDoorReleaseBusinessStateAsync(agvId, generation, MidJourneyReleaseId, ready: true, token));
+            await connection.SaveChangesAsync(token);
+            await sender.SendPersistedAsync(OnboardRecoveryCoordinator.DoorReleaseSnapshotId(MidJourneyReleaseId), token);
+        }
+        for (int round = 0; round < 3; round++)
+        {
+            await fixture.HearFromPeerAsync();
+            await TickAndRunAsync(fixture);
+        }
+
+        // 扣车之前那段线上历史先喂进去，让替身手里是车那时已经采纳的号；只看扣车之后新出现的回退与冲突。
+        AdoptingPeer vehicle = new(fixture.Context, fixture.Clock);
+        foreach (byte[] line in fixture.Peer.Lines.Take(linesBeforeHold))
+        {
+            vehicle.Receive(Line(line));
+        }
+        int regressionsBefore = vehicle.Regressions.Count;
+        int conflictsBefore = vehicle.Conflicts.Count;
+        string[] afterHold = [.. fixture.Peer.Lines.Skip(linesBeforeHold).Select(Line)];
+        Assert.Contains(afterHold, line => line.Contains(OnboardRecoveryCoordinator.DoorReleaseSnapshotId(MidJourneyReleaseId), StringComparison.Ordinal));
+        foreach (string line in afterHold)
+        {
+            vehicle.Receive(line);
+        }
+        Assert.DoesNotContain(vehicle.Regressions.Skip(regressionsBefore), item => item.MessageType == "VehicleBusinessStateSnapshot");
+        Assert.DoesNotContain(vehicle.Conflicts.Skip(conflictsBefore), item => item.MessageType == "VehicleBusinessStateSnapshot");
+        Assert.All(
+            await fixture.Context.ProtocolOutbox.AsNoTracking().Where(row => lowerIds.Contains(row.MessageId)).ToArrayAsync(token),
+            row => Assert.NotNull(row.FencedAt));
+    }
+
     private const string MidJourneyHoldId = "e3850000-0000-4000-8000-000000000001";
     private const string MidJourneyReleaseId = "e3850000-0000-4000-8000-000000000002";
 
