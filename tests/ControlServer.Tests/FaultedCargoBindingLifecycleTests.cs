@@ -268,7 +268,7 @@ public sealed class FaultedCargoBindingLifecycleTests
             string result = action == "FAULT_CARGO_HANDOFF"
                 ? HandedOff(fixture, sessionId, actionId, FirstDemandId,
                     (await connection.RecoveryWorkflows.AsNoTracking().SingleAsync(Token)).HandoffId!, slots)
-                : MechanicallyIsolated(fixture, sessionId, actionId, slots);
+                : await MechanicallyIsolatedAsync(fixture, sessionId, actionId, slots);
             Assert.Equal("DurableAck", FirstLineType(await processor.ProcessAsync(result, state, Token)));
         }
 
@@ -1093,8 +1093,12 @@ public sealed class FaultedCargoBindingLifecycleTests
             claiming, fixture.Options.AgvId, generation, ready: true, fixture.Clock.GetUtcNow(), Token);
     }
 
-    private static string MechanicallyIsolated(RuntimeFixture fixture, string sessionId, string actionId, int[] slots) =>
-        Envelope(fixture, "ForcedMechanicalRecoveryResult", new
+    private static async Task<string> MechanicallyIsolatedAsync(
+        RuntimeFixture fixture, string sessionId, string actionId, int[] slots)
+    {
+        (string? demandId, object? cargoHandoff) =
+            await ForcedRecoveryHandoffRecord.ForSessionAsync(fixture.DbOptionsForTests, sessionId, Now);
+        return Envelope(fixture, "ForcedMechanicalRecoveryResult", new
         {
             exceptionRecoverySessionId = sessionId,
             recoveryActionId = actionId,
@@ -1104,8 +1108,11 @@ public sealed class FaultedCargoBindingLifecycleTests
             @operator = BeforeSublotOperator(fixture),
             observedAt = Now,
             electronicEmptyProven = false,
-            vehicleReadyProven = false
+            vehicleReadyProven = false,
+            demandId,
+            cargoHandoff
         });
+    }
 
     private static string Action(
         RuntimeFixture fixture, string sessionId, string demandId, int[] slots, string actionId,

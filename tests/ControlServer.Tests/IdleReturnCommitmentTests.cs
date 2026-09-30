@@ -87,6 +87,7 @@ public sealed class IdleReturnCommitmentTests
         "holds-charger",
         "fault-suspected",
         "fault-isolated",
+        "slot-door-held",
         "has-next-business-target",
         "foreign-order",
         "own-order-result-unknown",
@@ -137,6 +138,11 @@ public sealed class IdleReturnCommitmentTests
             case "fault-isolated":
                 await harness.RecordFaultAsync(candidate.Vehicle, VehicleFaultLevel.ConfirmedIsolated);
                 expected = VehicleFaultBlockCriterion.IsolatedReason;
+                break;
+            case "slot-door-held":
+                // control-server#385（REQ-0364）：门未证明扣着的车不做空闲返回，与派车同一处判（VehicleNewPurposeReadiness）。
+                await harness.HoldForUnprovenDoorAsync(candidate.Vehicle);
+                expected = DispatchReasonCodes.VehicleSlotDoorHold;
                 break;
             case "has-next-business-target":
                 await harness.LeaveJourneyWithoutClaimAsync(candidate.Vehicle);
@@ -936,6 +942,21 @@ public sealed class IdleReturnCommitmentTests
             await using ControlServerDbContext context = Db.NewContext();
             await new VehicleFaultStore(context).RecordLevelAsync(
                 vehicle.AgvId, level, "COMMS_LOST", false, Now.AddMinutes(-1), Token);
+        }
+
+        /// <summary>一条未解除的门未证明扣车（control-server#385）。</summary>
+        public async Task HoldForUnprovenDoorAsync(FleetVehicle vehicle)
+        {
+            await using ControlServerDbContext context = Db.NewContext();
+            context.SlotDoorHolds.Add(new SlotDoorHoldRow
+            {
+                HoldId = "f3850000-0000-4000-8000-000000000101",
+                AgvId = vehicle.AgvId,
+                DemandId = "f3850000-0000-4000-8000-000000000102",
+                SlotsJson = "[1]",
+                HeldAt = Now.AddMinutes(-1)
+            });
+            await context.SaveChangesAsync(Token);
         }
 
         /// <summary>一趟没结束的旅程、却没有用途占有：只剩「有下一业务目标」那一格挡它。</summary>

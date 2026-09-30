@@ -41,6 +41,7 @@ public sealed class JourneyRuntimeWorkerCargoRecoveryTests
     private static readonly string[] HardwareChecks = ["LIVE_SLOT_SIGNALS_VALID"];
     private static readonly string[] HardwareActions = ["ADMINISTRATOR_CONFIRMED_HARDWARE_REPAIRED"];
     private static readonly string[] HardwareObservations = ["Lock replaced; doors shut and read locked."];
+    private static readonly string[] DoorUnprovenReasonCodes = ["SLOT_DOOR_LOCK_UNPROVEN_AFTER_EMPTY"];
 
     /// <summary>
     /// REQ-0240: after a fault cargo handoff the demand is terminated and MesIngest still lists it. It is
@@ -115,7 +116,7 @@ public sealed class JourneyRuntimeWorkerCargoRecoveryTests
                 string sessionId = await OpenSessionAsync(fixture, processor, state, slots);
                 await processor.ProcessAsync(Action(fixture, sessionId, "FORCED_MECHANICAL_RECOVERY", slots), state, token);
 
-                string ack = await processor.ProcessAsync(MechanicallyIsolated(fixture, sessionId, slots), state, token);
+                string ack = await processor.ProcessAsync(await MechanicallyIsolatedAsync(fixture, sessionId, slots), state, token);
                 Assert.Equal("DurableAck", FirstLineType(ack));
                 Assert.Equal(DemandExecutionStatus.Cancelled, (await fixture.DemandRowAsync()).Status);
                 Assert.Equal("TERMINATED_BY_FAULT_CARGO_HANDOFF", (await fixture.RuntimeAsync()).BlockReasonCode);
@@ -217,7 +218,7 @@ public sealed class JourneyRuntimeWorkerCargoRecoveryTests
                 await processor.ProcessAsync(Action(fixture, sessionId, "FORCED_MECHANICAL_RECOVERY", slots), state, token);
 
                 await AssertSuppressedInTheSaveThatEndsTheDemandAsync(
-                    fixture, () => processor.ProcessAsync(MechanicallyIsolated(fixture, sessionId, slots), state, token));
+                    fixture, async () => await processor.ProcessAsync(await MechanicallyIsolatedAsync(fixture, sessionId, slots), state, token));
             }
         }
         finally
@@ -280,6 +281,238 @@ public sealed class JourneyRuntimeWorkerCargoRecoveryTests
                 Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await fixture.RuntimeAsync(next.DemandId)).Stage);
                 Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
                 Assert.Equal(written, Assert.Single(await SuppressionAssertions.AllAsync(fixture.Context)));
+            }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(ProofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// A forced settlement that crashes at its save leaves nothing behind (control-server#385): the save that would have
+    /// kept the result, ended the demand, closed its journey, suppressed its key, recorded the hand-off and closed the
+    /// session fails, and afterwards none of it is there -- not the demand ended without its evidence, nor the evidence
+    /// without the ending. The vehicle resends the same result and it settles then, exactly once.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-FORCED-MECHANICAL-RECOVERY")]
+    public async Task AForcedSettlementThatFailsAtItsSaveLeavesNothingBehindAndSettlesWhenResent()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        Environment.SetEnvironmentVariable(ProofVariable, Proof);
+        try
+        {
+            (RuntimeFixture fixture, _, int[] slots) = await ReachBlockedLoadAsync();
+            await using (fixture)
+            {
+                await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+                OnboardMessageProcessor processor = RecoveryProcessor(fixture, connection);
+                OnboardConnectionState state = Connection(fixture);
+                string sessionId = await OpenSessionAsync(fixture, processor, state, slots);
+                await processor.ProcessAsync(Action(fixture, sessionId, "FORCED_MECHANICAL_RECOVERY", slots), state, token);
+                string result = await MechanicallyIsolatedAsync(fixture, sessionId, slots);
+                fixture.SaveChanges.FailWhen = written => written.Contains("RecoveryResultEvidenceRow.MessageId");
+
+                await Assert.ThrowsAnyAsync<Exception>(() => processor.ProcessAsync(result, state, token));
+
+                fixture.SaveChanges.FailWhen = null;
+                Assert.Contains(fixture.SaveChanges.Saves, written =>
+                    written.Contains("RecoveryResultEvidenceRow.MessageId") && written.Contains("AcceptedDemandRow.Status") &&
+                    written.Contains("TransportDemandSuppressionRow.TransportDemandKey") &&
+                    written.Contains("RecoveryWorkflowRow.HandoffReceiverName") &&
+                    written.Contains("ExceptionRecoverySessionRow.State"));
+                await using (ControlServerDbContext reading = new(fixture.DbOptionsForTests))
+                {
+                    Assert.Equal(DemandExecutionStatus.RecoveryRequired,
+                        (await reading.AcceptedDemands.AsNoTracking().SingleAsync(row => row.DemandId == EndedDemandId, token)).Status);
+                    Assert.Equal(JourneyRuntimeStage.Blocked, (await reading.JourneyRuntimes.AsNoTracking().SingleAsync(token)).Stage);
+                    Assert.Empty(await reading.RecoveryResultEvidence.AsNoTracking().ToArrayAsync(token));
+                    RecoveryWorkflowRow forced = await reading.RecoveryWorkflows.AsNoTracking().SingleAsync(token);
+                    Assert.Equal((RecoveryWorkflowState.AwaitingResult, (string?)null, (string?)null),
+                        (forced.State, forced.ResultMessageId, forced.HandoffReceiverName));
+                    Assert.Equal("EXECUTING", (await reading.ExceptionRecoverySessions.AsNoTracking().SingleAsync(token)).State);
+                    await SuppressionAssertions.AssertNothingSuppressedAsync(reading);
+                }
+
+                Assert.Equal("DurableAck", FirstLineType(await processor.ProcessAsync(result, state, token)));
+
+                Assert.Equal(DemandExecutionStatus.Cancelled, (await fixture.DemandRowAsync()).Status);
+                Assert.Equal(ForcedRecoveryHandoffRecord.ReceiverName, (await fixture.Context.RecoveryWorkflows.AsNoTracking()
+                    .SingleAsync(token)).HandoffReceiverName);
+                await SuppressionAssertions.AssertTheDemandSuppressedAsync(fixture.Context, HandoffEnding);
+                Assert.Single(await fixture.Context.RecoveryResultEvidence.AsNoTracking().ToArrayAsync(token));
+            }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(ProofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// REQ-0364 through the real runtime: a compensation that proves the slots empty with a door unproven ends the demand,
+    /// and the vehicle takes no new work -- the next listed demand is not dispatched -- while it is held; the hardware
+    /// record alone does not change that. Once the repair release has its record, fresh readings and a SAFE HOLD_RELEASE
+    /// check, the vehicle is ready and takes the next demand.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-LOAD-COMPENSATION-EMPTY-DOOR-UNPROVEN")]
+    [Trait("ProtocolVector", "CV-VEHICLE-HOLD-DOOR-REPAIR-RELEASE")]
+    public async Task AVehicleHeldForAnUnprovenDoorTakesNoWorkUntilItsRepairReleaseCompletes()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        Environment.SetEnvironmentVariable(ProofVariable, Proof);
+        try
+        {
+            (RuntimeFixture fixture, AcceptedDemandSnapshot ended, int[] slots) = await ReachBlockedLoadAsync();
+            await using (fixture)
+            {
+                await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+                OnboardMessageProcessor processor = RecoveryProcessor(fixture, connection);
+                OnboardConnectionState state = Connection(fixture);
+                state.HandshakeCompleted = true;
+                string sessionId = await OpenSessionAsync(fixture, processor, state, slots);
+                await processor.ProcessAsync(Action(fixture, sessionId, "COMPENSATE_LOAD_ALL_EMPTY", slots), state, token);
+                string attemptId = (await fixture.OperationAsync(SlotOperationType.Load)).SlotOperationAttemptId;
+                await processor.ProcessAsync(Envelope(fixture, "LoadCompensationRequested", new
+                {
+                    recoveryActionId = ActionId,
+                    exceptionRecoverySessionId = sessionId,
+                    demandId = EndedDemandId,
+                    slotOperationAttemptId = attemptId,
+                    @operator = BeforeSublotOperator(fixture)
+                }), state, token);
+                Assert.Equal("DurableAck", FirstLineType(await processor.ProcessAsync(Envelope(fixture, "LoadCompensationResult", new
+                {
+                    recoveryActionId = ActionId,
+                    demandId = EndedDemandId,
+                    slotOperationAttemptId = attemptId,
+                    overallOutcome = "ALL_EMPTY_DOOR_UNPROVEN",
+                    slotResults = slots.Select(slot => new
+                    {
+                        slotNo = slot,
+                        outcome = slot == slots[^1] ? "FAILED" : "COMPLETED",
+                        finalPhysicalState = "EMPTY",
+                        lockState = slot == slots[^1] ? "UNKNOWN" : "LOCKED",
+                        unlockOutputState = "RESET",
+                        reasonCodes = slot == slots[^1] ? DoorUnprovenReasonCodes : Array.Empty<string>()
+                    }).ToArray(),
+                    observedAt = Now
+                }), state, token)));
+                Assert.Equal(DemandExecutionStatus.Cancelled, (await fixture.DemandRowAsync()).Status);
+                Assert.Equal(WireToGateStore.SlotDoorRepairReleaseRequired,
+                    (await connection.SessionRecoveries.AsNoTracking().SingleAsync(token)).ReasonCode);
+
+                AcceptedDemandSnapshot next = await ListNextDemandBesideAsync(fixture, ended);
+                await fixture.Engine.ExecuteOnceAsync(token);
+                await fixture.Engine.ExecuteOnceAsync(token);
+                Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+                Assert.False(await fixture.Context.JourneyRuntimes.AnyAsync(row => row.DemandId == next.DemandId, token));
+
+                const string releaseRequestId = "41370000-0000-4000-8000-000000000385";
+                const string releaseActionId = "51370000-0000-4000-8000-000000000385";
+                string opened = await processor.ProcessAsync(Envelope(fixture, "ExceptionRecoverySessionRequested", new
+                {
+                    requestId = releaseRequestId,
+                    administrator = BeforeSublotOperator(fixture),
+                    administratorRole = "MAINTENANCE_ADMINISTRATOR",
+                    eventId = EventId,
+                    demandId = (string?)null,
+                    slots,
+                    reason = "Repair the unproven door.",
+                    authenticationProof = Proof
+                }), state, token);
+                string releaseSessionId = FirstLinePayload(opened).GetProperty("exceptionRecoverySessionId").GetString()!;
+                Assert.Equal("RecoveryActionAccepted", FirstLineType(await processor.ProcessAsync(
+                    Envelope(fixture, "RecoveryActionSubmitted", new
+                    {
+                        recoveryActionId = releaseActionId,
+                        exceptionRecoverySessionId = releaseSessionId,
+                        action = "HARDWARE_REPAIR_RELEASE",
+                        eventId = EventId,
+                        demandId = (string?)null,
+                        slots,
+                        @operator = BeforeSublotOperator(fixture),
+                        reason = "Lock replaced."
+                    }), state, token)));
+                Assert.Equal("RECORDED", FirstLinePayload(await processor.ProcessAsync(
+                    Envelope(fixture, "HardwareRecoveryRecordSubmitted", new
+                    {
+                        recordId = "e1370000-0000-4000-8000-000000000385",
+                        exceptionRecoverySessionId = releaseSessionId,
+                        recoveryActionId = releaseActionId,
+                        @operator = BeforeSublotOperator(fixture),
+                        administratorRole = "MAINTENANCE_ADMINISTRATOR",
+                        slots,
+                        checksPerformed = HardwareChecks,
+                        actionsPerformed = HardwareActions,
+                        observations = HardwareObservations,
+                        observedAt = Now
+                    }), state, token)).GetProperty("outcome").GetString());
+                await fixture.Engine.ExecuteOnceAsync(token);
+                Assert.False(await fixture.Context.JourneyRuntimes.AnyAsync(row => row.DemandId == next.DemandId, token));
+
+                long version = (await connection.SessionRecoveries.AsNoTracking().SingleAsync(token)).SafetyRevision!.Value + 1;
+                string readings = await processor.ProcessAsync(Envelope(fixture, "SafetyStateSnapshot", new
+                {
+                    safetyStateVersion = version,
+                    observedAt = Now,
+                    safety = new
+                    {
+                        departureSafe = true,
+                        vehicleStopped = true,
+                        allTargetSlotsLocked = true,
+                        allUnlockOutputsReset = true,
+                        unknownPresent = false,
+                        reasonCodes = Array.Empty<string>()
+                    },
+                    slotStates = Enumerable.Range(1, 8).Select(slot => new
+                    {
+                        slotNo = slot,
+                        operability = "OPERABLE",
+                        administrativeAvailability = "ENABLED",
+                        physicalState = "EMPTY",
+                        lockState = "LOCKED",
+                        unlockOutputState = "RESET",
+                        reasonCodes = Array.Empty<string>()
+                    }).ToArray()
+                }), state, token);
+                string check = readings.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                    .Single(line => FirstLineType(line) == "PreDepartureSafetyCheck");
+                JsonElement checkRoot = JsonDocument.Parse(check).RootElement;
+                System.Text.Json.Nodes.JsonNode checkResult = System.Text.Json.Nodes.JsonNode.Parse(BeforeSublotEnvelope(
+                    fixture, Guid.NewGuid().ToString("D"), "PreDepartureSafetyCheckResult", generation: 1, new
+                    {
+                        preDepartureSafetyCheckId = checkRoot.GetProperty("payload").GetProperty("preDepartureSafetyCheckId").GetString(),
+                        checkPurpose = "HOLD_RELEASE",
+                        outcome = "SAFE",
+                        observedAt = Now,
+                        safetyStateVersion = version,
+                        validUntil = Now.AddMinutes(1),
+                        safety = new
+                        {
+                            departureSafe = true,
+                            vehicleStopped = true,
+                            allTargetSlotsLocked = true,
+                            allUnlockOutputsReset = true,
+                            unknownPresent = false,
+                            reasonCodes = Array.Empty<string>()
+                        }
+                    }))!;
+                checkResult["correlationId"] = checkRoot.GetProperty("messageId").GetString();
+                string answered = await processor.ProcessAsync(checkResult.ToJsonString(), state, token);
+                Assert.Contains(answered.Split('\n', StringSplitOptions.RemoveEmptyEntries),
+                    line => FirstLineType(line) == "VehicleBusinessStateSnapshot");
+                Assert.Equal(SessionReadiness.Ready,
+                    (await connection.SessionRecoveries.AsNoTracking().SingleAsync(token)).Readiness);
+
+                await fixture.Engine.ExecuteOnceAsync(token);
+                await fixture.Engine.ExecuteOnceAsync(token);
+                Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await fixture.RuntimeAsync(next.DemandId)).Stage);
+                Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
             }
         }
         finally
@@ -414,8 +647,11 @@ public sealed class JourneyRuntimeWorkerCargoRecoveryTests
             observedAt = Now
         });
 
-    private static string MechanicallyIsolated(RuntimeFixture fixture, string sessionId, int[] slots) =>
-        Envelope(fixture, "ForcedMechanicalRecoveryResult", new
+    private static async Task<string> MechanicallyIsolatedAsync(RuntimeFixture fixture, string sessionId, int[] slots)
+    {
+        (string? demandId, object? cargoHandoff) =
+            await ForcedRecoveryHandoffRecord.ForSessionAsync(fixture.DbOptionsForTests, sessionId, Now);
+        return Envelope(fixture, "ForcedMechanicalRecoveryResult", new
         {
             exceptionRecoverySessionId = sessionId,
             recoveryActionId = ActionId,
@@ -425,8 +661,11 @@ public sealed class JourneyRuntimeWorkerCargoRecoveryTests
             @operator = BeforeSublotOperator(fixture),
             observedAt = Now,
             electronicEmptyProven = false,
-            vehicleReadyProven = false
+            vehicleReadyProven = false,
+            demandId,
+            cargoHandoff
         });
+    }
 
     private static string HardwareRecord(RuntimeFixture fixture, string sessionId, int[] slots) =>
         Envelope(fixture, "HardwareRecoveryRecordSubmitted", new

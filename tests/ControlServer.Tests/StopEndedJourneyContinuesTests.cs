@@ -8,6 +8,7 @@ using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using static ControlServer.Tests.Batch7StopDrivenAdvanceDriver;
 using static ControlServer.Tests.ClosureSnapshotAssertions;
 using static ControlServer.Tests.JourneyRuntimeWorkerTestKit;
@@ -709,6 +710,292 @@ public sealed class StopEndedJourneyContinuesTests
             Assert.Equal(JsonValueKind.Null, reason.ValueKind);
         });
     }
+
+    /// <summary>
+    /// 旅程途中扣车又放行（control-server#385 审查 M2）：扣车与放行那两张车辆业务状态在旅程之外发，号取「这条流上最大的 + 1」；
+    /// 旅程继续到下一站时，到站那一张的号必须在它们之上，否则车以 <c>SNAPSHOT_REVISION_REGRESSION</c> 断会话。
+    /// </summary>
+    /// <remarks>
+    /// 扣车走协调器自己的那一处（<c>HoldForDoorRepairAsync</c>），不经一条门未证明的取消结果：这个夹具的第二个取货站没有开过门的
+    /// 装货尝试，而号的问题与扣车从哪条结果来无关。放行同样直接暂存放行那一张，读数与放行检查那一段由恢复面的用例守。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AHoldAndItsReleaseMidJourneyStayBelowTheNextStopsBusinessState()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await EndTheSecondPickupByItsDeadlineAsync(fixture);
+        string agvId = fixture.Options.AgvId;
+        long generation = (await fixture.Context.SessionRecoveries.AsNoTracking()
+            .SingleAsync(row => row.AgvId == agvId, token)).SessionGeneration;
+        await using (ControlServerDbContext connection = fixture.OpenConnectionContext())
+        {
+            OnboardRecoveryCoordinator coordinator = TestOnboardProcessorFactory.CreateRecoveryCoordinator(
+                connection, new WireToGateStore(connection), fixture.Clock, new ConfigurationBuilder().Build(), fixture.Peer);
+            await coordinator.HoldForDoorRepairAsync(
+                new RecoveryWorkflowRow
+                {
+                    WorkflowId = MidJourneyHoldId, WorkflowType = "LOAD_CANCELLATION", RequestMessageId = MidJourneyHoldId,
+                    RequestContentHash = "unused", AgvId = agvId, DemandId = SecondDemandId, SlotsJson = "[1]"
+                },
+                token);
+            await connection.SaveChangesAsync(token);
+            SlotDoorHoldRow hold = await connection.SlotDoorHolds.SingleAsync(row => row.HoldId == MidJourneyHoldId, token);
+            hold.ReleasedByActionId = MidJourneyReleaseId;
+            hold.ReleasedAt = fixture.Clock.GetUtcNow();
+            Assert.NotNull(await coordinator.StageDoorReleaseBusinessStateAsync(agvId, generation, MidJourneyReleaseId, ready: true, token));
+            await connection.SaveChangesAsync(token);
+        }
+        long[] outsideTheJourney =
+        [
+            .. (await SnapshotsAsync(fixture.Context, agvId))
+                .Where(item => item.MessageId == OnboardRecoveryCoordinator.DoorHoldSnapshotId(MidJourneyHoldId) ||
+                               item.MessageId == OnboardRecoveryCoordinator.DoorReleaseSnapshotId(MidJourneyReleaseId))
+                .Select(item => item.Revision)
+        ];
+        Assert.Equal(2, outsideTheJourney.Length);
+
+        await fixture.HearFromPeerAsync();
+        await TickAndRunAsync(fixture);
+        await AnswerDepartureSafetyAsync(fixture, FirstDemandId, SecondSafetyResultId);
+        await ArriveAtCurrentStopAsync(fixture, FirstDemandId, "TO_GATE");
+        JourneyStopRow unloadStop = await CurrentStopAsync(fixture, FirstDemandId);
+        Assert.Equal(JourneyStopRoles.Unload, unloadStop.StopRole);
+
+        Snapshot atUnload = Assert.Single(
+            await SnapshotsAsync(fixture.Context, agvId), item => item.MessageId == unloadStop.VehicleBusinessMessageId);
+        Assert.True(
+            atUnload.Revision > outsideTheJourney.Max(),
+            $"卸货站到站那一张车辆业务状态是第 {atUnload.Revision} 号，没有越过扣车与放行的 {string.Join("/", outsideTheJourney)}。");
+        long[] business =
+        [
+            .. (await SnapshotsAsync(fixture.Context, agvId))
+                .Where(item => item.MessageType == "VehicleBusinessStateSnapshot").Select(item => item.Revision)
+        ];
+        Assert.Equal(business.Distinct().Count(), business.Length);
+    }
+
+    /// <summary>
+    /// 旅程途中扣车、不放行（control-server#385 审查 N2 (c)(d)，REQ-0364「结清之后整车不取得业务就绪……保持移动阻断」）：服务端不让这趟
+    /// 旅程离站——不发离站检查，已经发出的检查即使车答了 SAFE 也不判、不建下一段的单；这期间车上最新的每一张业务状态都不是 READY、
+    /// 都列着被扣的仓。放行之后照常离站，到下一站的业务状态恢复正常。
+    /// </summary>
+    /// <remarks>
+    /// 两种时机各一例：离站检查发出之前扣的车，和检查已经发出、车答 SAFE 之前扣的车——后一种不能靠车回 UNSAFE 挡：门锁传感器
+    /// 读到一次锁闭车就会回 SAFE。扣车走协调器那一处，理由同 <see cref="AHoldAndItsReleaseMidJourneyStayBelowTheNextStopsBusinessState"/>。
+    /// <para>
+    /// 后一种还钉住一件事（审查 N2 追加）：扣车期间车对旧检查答的 SAFE 在放行之后不算离站证据。所以时序故意取「放行来得快」：
+    /// 扣车期间每轮只走 1 秒，放行时那条应答还没过期（有效期与 <c>MaximumEvidenceAge</c> 都没到）。放行后的第一轮发出一张新检查、
+    /// 不建单；只有车答了这张新检查，下一段的单才建出来。
+    /// </para>
+    /// </remarks>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AVehicleHeldMidJourneyDoesNotLeaveItsStopAndSaysSoUntilItsRelease(bool checkAlreadySent)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await EndTheSecondPickupByItsDeadlineAsync(fixture);
+        string agvId = fixture.Options.AgvId;
+        long generation = (await fixture.Context.SessionRecoveries.AsNoTracking()
+            .SingleAsync(row => row.AgvId == agvId, token)).SessionGeneration;
+        if (checkAlreadySent)
+        {
+            await fixture.HearFromPeerAsync();
+            await TickAndRunAsync(fixture);
+            Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, (await JourneyOfAsync(fixture, FirstDemandId)).Stage);
+        }
+        JourneyStopRow heldAt = await CurrentStopAsync(fixture, FirstDemandId);
+        int checksBefore = await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .CountAsync(row => row.MessageType == "PreDepartureSafetyCheck", token);
+        int intentsBefore = await fixture.Context.OrderIntents.AsNoTracking().CountAsync(token);
+        Snapshot before = (await SnapshotsAsync(fixture.Context, agvId))
+            .Where(item => item.MessageType == "VehicleBusinessStateSnapshot").MaxBy(item => item.Revision)!;
+
+        await using (ControlServerDbContext connection = fixture.OpenConnectionContext())
+        {
+            OnboardRecoveryCoordinator coordinator = TestOnboardProcessorFactory.CreateRecoveryCoordinator(
+                connection, new WireToGateStore(connection), fixture.Clock, new ConfigurationBuilder().Build(), fixture.Peer);
+            await coordinator.HoldForDoorRepairAsync(
+                new RecoveryWorkflowRow
+                {
+                    WorkflowId = MidJourneyHoldId, WorkflowType = "LOAD_CANCELLATION", RequestMessageId = MidJourneyHoldId,
+                    RequestContentHash = "unused", AgvId = agvId, DemandId = SecondDemandId, SlotsJson = "[1]"
+                },
+                token);
+            await connection.SaveChangesAsync(token);
+        }
+        // 扣车那一张带着旅程此刻的用途与装货阶段（审查 N2 (b)），不把车上的运输状态抹成空。
+        Snapshot holding = Assert.Single(await SnapshotsAsync(fixture.Context, agvId),
+            item => item.MessageId == OnboardRecoveryCoordinator.DoorHoldSnapshotId(MidJourneyHoldId));
+        Assert.Equal(before.Payload.GetProperty("activePurpose").GetRawText(), holding.Payload.GetProperty("activePurpose").GetRawText());
+        Assert.Equal(before.Payload.GetProperty("loadingPhase").GetRawText(), holding.Payload.GetProperty("loadingPhase").GetRawText());
+
+        if (checkAlreadySent)
+        {
+            await AnswerDepartureSafetyAsync(fixture, FirstDemandId, SecondSafetyResultId);
+        }
+        for (int round = 0; round < 3; round++)
+        {
+            fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+            await fixture.HearFromPeerAsync();
+            await TickAndRunAsync(fixture);
+        }
+
+        Assert.Equal(heldAt.StopId, (await CurrentStopAsync(fixture, FirstDemandId)).StopId);
+        Assert.Equal(checksBefore, await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .CountAsync(row => row.MessageType == "PreDepartureSafetyCheck", token));
+        Assert.Equal(intentsBefore, await fixture.Context.OrderIntents.AsNoTracking().CountAsync(token));
+        Snapshot[] sinceHold =
+        [
+            .. (await SnapshotsAsync(fixture.Context, agvId))
+                .Where(item => item.MessageType == "VehicleBusinessStateSnapshot" && item.Revision > before.Revision)
+        ];
+        Assert.NotEmpty(sinceHold);
+        Assert.All(sinceHold, item =>
+        {
+            Assert.Equal("RECOVERY_REQUIRED", item.Payload.GetProperty("readiness").GetString());
+            Assert.Equal(
+                ["SLOT_DOOR_LOCK_UNPROVEN_AFTER_EMPTY/SLOT/1"],
+                item.Payload.GetProperty("blockingFacts").EnumerateArray()
+                    .Select(fact => $"{fact.GetProperty("reasonCode").GetString()}/{fact.GetProperty("subjectType").GetString()}/" +
+                                    fact.GetProperty("subjectId").GetString())
+                    .ToArray());
+        });
+
+        await using (ControlServerDbContext connection = fixture.OpenConnectionContext())
+        {
+            OnboardRecoveryCoordinator coordinator = TestOnboardProcessorFactory.CreateRecoveryCoordinator(
+                connection, new WireToGateStore(connection), fixture.Clock, new ConfigurationBuilder().Build(), fixture.Peer);
+            SlotDoorHoldRow hold = await connection.SlotDoorHolds.SingleAsync(row => row.HoldId == MidJourneyHoldId, token);
+            hold.ReleasedByActionId = MidJourneyReleaseId;
+            hold.ReleasedAt = fixture.Clock.GetUtcNow();
+            Assert.NotNull(await coordinator.StageDoorReleaseBusinessStateAsync(agvId, generation, MidJourneyReleaseId, ready: true, token));
+            await connection.SaveChangesAsync(token);
+        }
+        // 放行那一张快照抬了旅程的业务基准（审查 M2），引擎手上那一份旅程行的令牌因此旧了：放行后第一轮以乐观冲突让开、第二轮按新行
+        // 重判，这是引擎既有的处理（control-server#357）。所以放行后跑两轮再看，并钉住两件事：让开只有一次，记的是 Information
+        // （事件 2191 那一句），不是 Warning 或 Error——不会吓到现场；第二轮就走得出去，不会每轮都冲突。
+        int logBeforeRelease = fixture.EngineLog.Entries.Count;
+        for (int round = 0; round < 2; round++)
+        {
+            await fixture.HearFromPeerAsync();
+            await TickAndRunAsync(fixture);
+        }
+        (LogLevel Level, string Message)[] afterReleaseLog = [.. fixture.EngineLog.Entries.Skip(logBeforeRelease)];
+        Assert.Equal(
+            [LogLevel.Information],
+            afterReleaseLog.Where(entry => entry.Message.Contains("yielded this iteration", StringComparison.Ordinal))
+                .Select(entry => entry.Level).ToArray());
+        Assert.DoesNotContain(afterReleaseLog, entry => entry.Level >= LogLevel.Warning);
+        if (checkAlreadySent)
+        {
+            // 放行后：扣车前那张检查已作废，发的是一张新检查；车对旧检查那条还没过期的 SAFE 不算，一张单都不建。
+            JourneyStopRow afterRelease = await CurrentStopAsync(fixture, FirstDemandId);
+            Assert.Equal(heldAt.StopId, afterRelease.StopId);
+            Assert.Equal(intentsBefore, await fixture.Context.OrderIntents.AsNoTracking().CountAsync(token));
+            Assert.NotEqual(heldAt.DepartureSafetyCheckId, afterRelease.DepartureSafetyCheckId);
+            Assert.NotNull(await fixture.Context.ProtocolOutbox.AsNoTracking()
+                .SingleOrDefaultAsync(row => row.MessageId == afterRelease.DepartureSafetyCheckMessageId, token));
+        }
+        await AnswerDepartureSafetyAsync(fixture, FirstDemandId, "e3850000-0000-4000-8000-000000000003");
+        await ArriveAtCurrentStopAsync(fixture, FirstDemandId, "TO_GATE");
+        JourneyStopRow unloadStop = await CurrentStopAsync(fixture, FirstDemandId);
+        Assert.Equal(JourneyStopRoles.Unload, unloadStop.StopRole);
+        Snapshot atUnload = Assert.Single(
+            await SnapshotsAsync(fixture.Context, agvId), item => item.MessageId == unloadStop.VehicleBusinessMessageId);
+        Assert.Equal("READY", atUnload.Payload.GetProperty("readiness").GetString());
+        Assert.Empty(atUnload.Payload.GetProperty("blockingFacts").EnumerateArray());
+    }
+
+    /// <summary>
+    /// 扣车与放行那两张业务状态暂存时，把这辆车业务流上号更低、还没确认的旧快照退役（control-server#385 第三轮审查 S1）：否则放行之后
+    /// 引擎把它们补发在新号之后，车载端判 <c>SNAPSHOT_REVISION_REGRESSION</c> 拆会话，重连后再补、再拆。
+    /// </summary>
+    /// <remarks>
+    /// 形状照审查员的探针：扣车之前这辆车的业务快照都还没确认（车刚重连、确认丢了），扣车、放行，引擎再跑几轮。断的是车看到的：
+    /// 车收到的每一行按顺序喂给一个会校验修订号的替身（<see cref="AdoptingPeer"/>），业务状态这条流上既无回退、也无同号不同内容；
+    /// 旧快照在发件箱里已退役。<c>RecordingPeer</c> 不校验修订号，这类回退它看不见。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-08")]
+    public async Task AHoldAndItsReleaseRetireTheLowerBusinessStatesNotYetAcknowledged()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await EndTheSecondPickupByItsDeadlineAsync(fixture);
+        string agvId = fixture.Options.AgvId;
+        long generation = (await fixture.Context.SessionRecoveries.AsNoTracking()
+            .SingleAsync(row => row.AgvId == agvId, token)).SessionGeneration;
+        string[] lowerIds =
+        [
+            .. (await SnapshotsAsync(fixture.Context, agvId))
+                .Where(item => item.MessageType == "VehicleBusinessStateSnapshot").Select(item => item.MessageId)
+        ];
+        Assert.NotEmpty(lowerIds);
+        int linesBeforeHold = fixture.Peer.Lines.Count;
+        await using (ControlServerDbContext connection = fixture.OpenConnectionContext())
+        {
+            foreach (ProtocolOutboxRow row in await connection.ProtocolOutbox
+                         .Where(row => lowerIds.Contains(row.MessageId)).ToArrayAsync(token))
+            {
+                row.AcknowledgedAt = null;
+                row.FencedAt = null;
+            }
+            await connection.SaveChangesAsync(token);
+
+            OnboardRecoveryCoordinator coordinator = TestOnboardProcessorFactory.CreateRecoveryCoordinator(
+                connection, new WireToGateStore(connection), fixture.Clock, new ConfigurationBuilder().Build(), fixture.Peer);
+            // 两张各在它那次保存之后发给车，与生产上一样（协调器在应答之后发）。
+            OnboardJourneyPublisher sender = new(new WireToGateStore(connection), fixture.Peer, fixture.Clock);
+            await coordinator.HoldForDoorRepairAsync(
+                new RecoveryWorkflowRow
+                {
+                    WorkflowId = MidJourneyHoldId, WorkflowType = "LOAD_CANCELLATION", RequestMessageId = MidJourneyHoldId,
+                    RequestContentHash = "unused", AgvId = agvId, DemandId = SecondDemandId, SlotsJson = "[1]"
+                },
+                token);
+            await connection.SaveChangesAsync(token);
+            await sender.SendPersistedAsync(OnboardRecoveryCoordinator.DoorHoldSnapshotId(MidJourneyHoldId), token);
+            SlotDoorHoldRow hold = await connection.SlotDoorHolds.SingleAsync(row => row.HoldId == MidJourneyHoldId, token);
+            hold.ReleasedByActionId = MidJourneyReleaseId;
+            hold.ReleasedAt = fixture.Clock.GetUtcNow();
+            Assert.NotNull(await coordinator.StageDoorReleaseBusinessStateAsync(agvId, generation, MidJourneyReleaseId, ready: true, token));
+            await connection.SaveChangesAsync(token);
+            await sender.SendPersistedAsync(OnboardRecoveryCoordinator.DoorReleaseSnapshotId(MidJourneyReleaseId), token);
+        }
+        for (int round = 0; round < 3; round++)
+        {
+            await fixture.HearFromPeerAsync();
+            await TickAndRunAsync(fixture);
+        }
+
+        // 扣车之前那段线上历史先喂进去，让替身手里是车那时已经采纳的号；只看扣车之后新出现的回退与冲突。
+        AdoptingPeer vehicle = new(fixture.Context, fixture.Clock);
+        foreach (byte[] line in fixture.Peer.Lines.Take(linesBeforeHold))
+        {
+            vehicle.Receive(Line(line));
+        }
+        int regressionsBefore = vehicle.Regressions.Count;
+        int conflictsBefore = vehicle.Conflicts.Count;
+        string[] afterHold = [.. fixture.Peer.Lines.Skip(linesBeforeHold).Select(Line)];
+        Assert.Contains(afterHold, line => line.Contains(OnboardRecoveryCoordinator.DoorReleaseSnapshotId(MidJourneyReleaseId), StringComparison.Ordinal));
+        foreach (string line in afterHold)
+        {
+            vehicle.Receive(line);
+        }
+        Assert.DoesNotContain(vehicle.Regressions.Skip(regressionsBefore), item => item.MessageType == "VehicleBusinessStateSnapshot");
+        Assert.DoesNotContain(vehicle.Conflicts.Skip(conflictsBefore), item => item.MessageType == "VehicleBusinessStateSnapshot");
+        Assert.All(
+            await fixture.Context.ProtocolOutbox.AsNoTracking().Where(row => lowerIds.Contains(row.MessageId)).ToArrayAsync(token),
+            row => Assert.NotNull(row.FencedAt));
+    }
+
+    private const string MidJourneyHoldId = "e3850000-0000-4000-8000-000000000001";
+    private const string MidJourneyReleaseId = "e3850000-0000-4000-8000-000000000002";
 
     /// <summary>线上发出的那一行里的 <c>stopEndedReason</c>。那一行不在线上就失败。</summary>
     private static string? SentStopEndedReason(RuntimeFixture fixture, string messageId)

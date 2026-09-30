@@ -283,16 +283,16 @@ public sealed record SlotOperationCommand(
 
 /// <remarks>
 /// <see cref="CheckPurpose"/> is v3's discriminator (control-server#382), one of <see cref="PreDepartureCheckPurposes"/>.
-/// The three fields after it stay non-null because the only purpose assembled today is
-/// <see cref="PreDepartureCheckPurposes.Departure"/>, for which the schema requires all three.
+/// The three fields after it are nullable since control-server#385 added <see cref="PreDepartureCheckPurposes.HoldRelease"/>,
+/// which carries none of them; the publisher requires exactly the ones each purpose's schema branch requires.
 /// </remarks>
 public sealed record PreDepartureSafetyCheckCommand(
     string PreDepartureSafetyCheckId,
     string CheckPurpose,
-    string DemandId,
-    string MovementLegId,
+    string? DemandId,
+    string? MovementLegId,
     long ExpectedSafetyStateVersion,
-    string TargetStationId);
+    string? TargetStationId);
 
 /// <summary>
 /// v3's <c>checkPurpose</c> on <c>PreDepartureSafetyCheck</c> and its result (<c>8005-agv-program#150</c>, control-server#382).

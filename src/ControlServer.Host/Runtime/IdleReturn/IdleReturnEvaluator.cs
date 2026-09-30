@@ -224,7 +224,7 @@ public sealed class IdleReturnEvaluator(
         // 停止、RIoT 上没有它的单）。故障那一格曾经只在派车链里，空闲返回漏了它（审查 M1）。新鲜度按此刻算，不按这一轮开头读事实的
         // 时刻：承诺发生在任务循环之后。放在电量线之前：一辆故障车先答故障。
         string readiness = await VehicleNewPurposeReadiness.JudgeAsync(
-                faults, candidate.Facts with { ObservedAt = timeProvider.GetUtcNow() }, _runtime, cancellationToken)
+                faults, dbContext, candidate.Facts with { ObservedAt = timeProvider.GetUtcNow() }, _runtime, cancellationToken)
             .ConfigureAwait(false);
         if (readiness != DispatchAdmissionChain.Eligible && !DeferredBatteryCodes.Contains(readiness))
         {

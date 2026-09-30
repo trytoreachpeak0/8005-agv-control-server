@@ -60,6 +60,13 @@ public static class ServerReasonCodes
     public const string ProvenRecoveryCheckpointRequired = "PROVEN_RECOVERY_CHECKPOINT_REQUIRED";
     public const string RecoveryActionAlreadySelected = "RECOVERY_ACTION_ALREADY_SELECTED";
     public const string RecoveryActionRequired = "RECOVERY_ACTION_REQUIRED";
+
+    /// <summary>
+    /// Why an exception recovery session closed without its action reconciling (control-server#169, #187, #385): a result
+    /// that reported FAILED or UNKNOWN or a success its slot results do not bear out, or a resume command the vehicle
+    /// refused. It is the session snapshot's <c>closedReason</c>, the one position the registry allows it in.
+    /// </summary>
+    public const string RecoveryActionResultNotReconciled = "RECOVERY_ACTION_RESULT_NOT_RECONCILED";
     public const string RecoveryAuthenticationFailed = "RECOVERY_AUTHENTICATION_FAILED";
     public const string RecoveryDemandMismatch = "RECOVERY_DEMAND_MISMATCH";
     public const string RecoveryDemandNotBlocked = "RECOVERY_DEMAND_NOT_BLOCKED";
@@ -70,6 +77,13 @@ public static class ServerReasonCodes
     public const string RecoveryScopeMismatch = "RECOVERY_SCOPE_MISMATCH";
     public const string RecoverySessionNotOpen = "RECOVERY_SESSION_NOT_OPEN";
     public const string SessionRecoveryRequired = "SESSION_RECOVERY_REQUIRED";
+
+    /// <summary>
+    /// A slot a cancellation or compensation settled as empty while its door lock or unlock output was not proven
+    /// (REQ-0364, CP-0009, control-server#385). It stands in <c>VehicleBusinessStateSnapshot.blockingFacts</c>, one fact
+    /// per held slot, for as long as the vehicle is held for its repair release.
+    /// </summary>
+    public const string SlotDoorLockUnprovenAfterEmpty = "SLOT_DOOR_LOCK_UNPROVEN_AFTER_EMPTY";
     public const string SlotFaultDeclared = "SLOT_FAULT_DECLARED";
     public const string SublotBoxCountUnavailable = "SUBLOT_BOX_COUNT_UNAVAILABLE";
     public const string SublotNotInDispatchScope = "SUBLOT_NOT_IN_DISPATCH_SCOPE";

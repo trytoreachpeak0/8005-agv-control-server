@@ -1724,7 +1724,14 @@ public static class StagedG3TlsHarness
                 // empty or ready; since control-server#137 the server settles the workflow but keeps
                 // the vehicle unready until a HardwareRecoveryRecord names it, on exactly this.
                 ["electronicEmptyProven"] = false,
-                ["vehicleReadyProven"] = false
+                ["vehicleReadyProven"] = false,
+                // Protocol 3.0.0 (CP-0008, control-server#385): both required, both nullable. The result copies the
+                // command's demand, and carries the named hand-off exactly when it is MECHANICALLY_ISOLATED on a session
+                // with a demand. This plane's session has none -- it accepts no demand at all -- so both are null, and the
+                // server reconciles the isolation without settling any demand. The hand-off ending is proven by the L1
+                // tests and by G3-07-43/44 of the real-onboard scenario g3-forced-mechanical-recovery.
+                ["demandId"] = null,
+                ["cargoHandoff"] = null
             });
 
     private static string RecoveryReport(

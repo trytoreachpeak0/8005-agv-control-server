@@ -64,6 +64,14 @@ if (-not $confirmOffered) {
     Add-G3NotReached $assertions $ids $why
     return
 }
+# Protocol 3.0.0 (CP-0008, onboard-hmi#216): the confirm stays disabled until the hand-off is filled in -- the sublot of the
+# demand as the current stop's worklist names it (another sublot raises a warning and needs a second press) and the
+# person it was handed to. The server settles the demand on that record only (control-server#385).
+$handoffSublot = [string](Get-G3Scalar $connection "SELECT Sublot AS Value FROM AcceptedDemands WHERE DemandId = '$demandId'")
+$handoffReceiver = 'G3 交接人 王五'
+$journal.Note("Maintenance fills the hand-off: sublot $handoffSublot, receiver $handoffReceiver.")
+$onboard.SetTextBox('ForcedHandoffSublot', $handoffSublot)
+$onboard.SetTextBox('ForcedHandoffReceiverName', $handoffReceiver)
 $journal.Note('Maintenance has taken the cargo out by hand; presses 已隔离并完成机械取出 and confirms.')
 $null = Invoke-G3ConfirmedButton $onboard $journal '已隔离并完成机械取出' '确认强制机械取出'
 
@@ -110,19 +118,30 @@ $assertions.Add(
     "代数 $generationBefore → $($generationBefore + 1) / 工作流 $($generationBefore + 1) / 命令 $($generationBefore + 1)",
     "代数 $generationBefore → $generationAfter / 工作流 $workflowGeneration / 命令 $commandGeneration")
 
+# Protocol 3.0.0 (CP-0008, control-server#385): the result copies the command's demand and, on a session with a demand, carries
+# the named hand-off -- the sublot identified at the vehicle, who took it, when. The server settles the demand on that record
+# only; without it the result is kept and settles nothing, so G3-07-44 would read the demand still blocked.
+$demandSublot = [string](Get-G3Scalar $connection "SELECT Sublot AS Value FROM AcceptedDemands WHERE DemandId = '$demandId'")
+$handoff = if ($result.Payload.PSObject.Properties['cargoHandoff']) { $result.Payload.cargoHandoff } else { $null }
+$handoffOk = $null -ne $handoff -and [string]$result.Payload.demandId -eq $demandId -and
+    [string]$handoff.sublot -eq $demandSublot -and [string]$handoff.sublot -eq $handoffSublot -and
+    [string]$handoff.receiverName -eq $handoffReceiver -and -not [string]::IsNullOrWhiteSpace([string]$handoff.handedOverAt)
 $assertions.Add(
     'G3-07-43',
-    '车载端报强制恢复结果：MECHANICALLY_ISOLATED，带命令的代数，电子空载与车辆就绪两项证明都没有声称，只报仓位集合（REPORT_FORCED_RECOVERY_OUTCOME / REFUSE_STALE_FORCED_RECOVERY_GENERATION 的正向一半：车载端采纳的是当前代数）',
+    '车载端报强制恢复结果：MECHANICALLY_ISOLATED，带命令的代数，电子空载与车辆就绪两项证明都没有声称，只报仓位集合，抄回命令的需求并带具名交接记录（批号与交接人即界面上所填、批号即该需求的批号、带交接时刻）（REPORT_FORCED_RECOVERY_OUTCOME / REPORT_CARGO_HANDOFF_RECORD_IN_RESULT / COPY_COMMAND_DEMAND_INTO_RESULT / REFUSE_STALE_FORCED_RECOVERY_GENERATION 的正向一半：车载端采纳的是当前代数）',
     ([string]$result.Payload.outcome -eq 'MECHANICALLY_ISOLATED' -and [long]$result.Payload.forcedRecoveryGeneration -eq $commandGeneration -and
         -not [bool]$result.Payload.electronicEmptyProven -and -not [bool]$result.Payload.vehicleReadyProven -and
-        (Format-G3Slots $result.Payload.slots) -eq (Format-G3Slots $load.TargetSlots) -and -not $result.Payload.PSObject.Properties['slotResults']),
-    "MECHANICALLY_ISOLATED / 代数 $commandGeneration / proof false,false / 仓 $(Format-G3Slots $load.TargetSlots) / 无 slotResults",
-    "$($result.Payload.outcome) / 代数 $($result.Payload.forcedRecoveryGeneration) / proof $($result.Payload.electronicEmptyProven),$($result.Payload.vehicleReadyProven) / 仓 $(Format-G3Slots $result.Payload.slots) / slotResults=$([bool]$result.Payload.PSObject.Properties['slotResults'])")
+        (Format-G3Slots $result.Payload.slots) -eq (Format-G3Slots $load.TargetSlots) -and -not $result.Payload.PSObject.Properties['slotResults'] -and
+        $handoffOk),
+    "MECHANICALLY_ISOLATED / 代数 $commandGeneration / proof false,false / 仓 $(Format-G3Slots $load.TargetSlots) / 无 slotResults / 需求 $demandId / 交接 $handoffSublot→$handoffReceiver",
+    "$($result.Payload.outcome) / 代数 $($result.Payload.forcedRecoveryGeneration) / proof $($result.Payload.electronicEmptyProven),$($result.Payload.vehicleReadyProven) / 仓 $(Format-G3Slots $result.Payload.slots) / slotResults=$([bool]$result.Payload.PSObject.Properties['slotResults']) / 需求 $($result.Payload.demandId) / 交接 $(if ($null -eq $handoff) { '无' } else { "$($handoff.sublot)→$($handoff.receiverName) @ $($handoff.handedOverAt)" })")
 
 $workflowState = Get-G3Scalar $connection "SELECT State AS Value FROM RecoveryWorkflows WHERE WorkflowId = '$actionId'"
+$handoffRecorded = [string](Get-G3Scalar $connection "SELECT HandoffReceiverName AS Value FROM RecoveryWorkflows WHERE WorkflowId = '$actionId'")
 $journey = "$(Get-G3Scalar $connection "SELECT Stage AS Value FROM JourneyRuntimes WHERE DemandId = '$demandId'")/$(Get-G3Scalar $connection "SELECT BlockReasonCode AS Value FROM JourneyRuntimes WHERE DemandId = '$demandId'")"
 $session = Get-G3Session $connection
 $recoverySession = Get-G3Scalar $connection "SELECT State AS Value FROM ExceptionRecoverySessions WHERE ExceptionRecoverySessionId = '$([string]$result.Payload.exceptionRecoverySessionId)'"
+$closedReason = Get-G3Scalar $connection "SELECT ClosedReason AS Value FROM ExceptionRecoverySessions WHERE ExceptionRecoverySessionId = '$([string]$result.Payload.exceptionRecoverySessionId)'"
 $demandStatus = Get-G3Scalar $connection "SELECT Status AS Value FROM AcceptedDemands WHERE DemandId = '$demandId'"
 $toGate = Get-G3Count $connection "SELECT COUNT(*) AS Total FROM OrderIntents WHERE DemandId = '$demandId' AND Purpose = 'TO_GATE'"
 # control-server#137 (REQ-0242): the forced result closes the cargo's business as a named handoff -- demand
@@ -135,11 +154,13 @@ $toGate = Get-G3Count $connection "SELECT COUNT(*) AS Total FROM OrderIntents WH
 # (「提交硬件恢复记录」) is a separate button it never touches.
 $assertions.Add(
     'G3-07-44',
-    '强制恢复只结算货物业务：工作流 Reconciled，需求 Cancelled，旅程 Completed/TERMINATED_BY_FAULT_CARGO_HANDOFF，恢复会话 CLOSED，没有去关卡；车辆会话仍 RecoveryRequired，等硬件恢复记录（REQ-0242 / forbidden ready-before-reconciliation、unknown-as-success）',
+    '强制恢复只结算货物业务：工作流 Reconciled 并记下结果里的交接人，需求 Cancelled，旅程 Completed/TERMINATED_BY_FAULT_CARGO_HANDOFF，恢复会话按交接 CLOSED（closedReason 为空），没有去关卡；车辆会话仍 RecoveryRequired，等硬件恢复记录（REQ-0242 / SETTLE_DEMAND_ONLY_ON_NAMED_HANDOFF / forbidden ready-before-reconciliation、unknown-as-success）',
     ($workflowState -eq 'Reconciled' -and $journey -eq 'Completed/TERMINATED_BY_FAULT_CARGO_HANDOFF' -and $recoverySession -eq 'CLOSED' -and
-        [string]$session.Readiness -eq 'RecoveryRequired' -and $demandStatus -eq 'Cancelled' -and $toGate -eq 0),
-    'Reconciled / Completed/TERMINATED_BY_FAULT_CARGO_HANDOFF / 会话 CLOSED / RecoveryRequired / Cancelled / TO_GATE 0',
-    "$workflowState / $journey / 会话 $recoverySession / $($session.Readiness) ($($session.ReasonCode)) / $demandStatus / TO_GATE $toGate")
+        [string]$session.Readiness -eq 'RecoveryRequired' -and $demandStatus -eq 'Cancelled' -and $toGate -eq 0 -and
+        $null -ne $handoff -and $handoffRecorded -eq $handoffReceiver -and
+        ($null -eq $closedReason -or $closedReason -is [System.DBNull])),
+    'Reconciled（交接人 G3 交接人 王五）/ Completed/TERMINATED_BY_FAULT_CARGO_HANDOFF / 会话 CLOSED（原因空）/ RecoveryRequired / Cancelled / TO_GATE 0',
+    "$workflowState（交接人 $handoffRecorded）/ $journey / 会话 $recoverySession（原因 $closedReason）/ $($session.Readiness) ($($session.ReasonCode)) / $demandStatus / TO_GATE $toGate")
 
 $unlocksAfterRequest = @((Get-G3Progress $connection $attemptId) | Where-Object { $_.Phase -eq 'UNLOCKING' -and $_.At -gt $requestedAt })
 $physical = ($load.TargetSlots | Sort-Object | ForEach-Object { "$_=$(Get-G3SlotState $simulator $_)" }) -join ' '
