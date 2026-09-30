@@ -51,8 +51,15 @@ public sealed partial class JourneyRuntimeEngine(
     TimeProvider timeProvider,
     ILogger<JourneyRuntimeEngine> logger,
     FixedStationSweepWarnings? fixedStationWarnings = null,
-    RiotOrderCommandService? orderCommands = null)
+    RiotOrderCommandService? orderCommands = null,
+    IChargingPolicyResolver? chargingPolicy = null,
+    IdleReturn.IdleReturnMaterializationFailures? idleReturnMaterializationFailures = null)
 {
+    // control-server#390 review L3: consecutive materialization failures outlive the per-round engine (a singleton in the
+    // host); an engine built without them keeps its own.
+    private readonly IdleReturn.IdleReturnMaterializationFailures _idleReturnMaterializationFailures =
+        idleReturnMaterializationFailures ?? new IdleReturn.IdleReturnMaterializationFailures();
+
     // control-server#391: the fixed task station sweep's open warnings outlive the per-round engine (the host registers
     // them as a singleton); an engine built without them keeps its own.
     private readonly FixedStationSweepWarnings _fixedStationWarnings = fixedStationWarnings ?? new FixedStationSweepWarnings();

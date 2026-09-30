@@ -1412,8 +1412,13 @@ public sealed partial class MultiVehicleExecutionTests
                 options,
                 Clock,
                 EngineLog,
-                orderCommands: new RiotOrderCommandService(Riot, new RiotOrderCommandAuditStore(Context), Riot, Clock));
+                orderCommands: new RiotOrderCommandService(Riot, new RiotOrderCommandAuditStore(Context), Riot, Clock),
+                chargingPolicy: ChargingPolicy,
+                idleReturnMaterializationFailures: IdleReturnMaterializationFailures);
         }
+
+        /// <summary>空闲返回连续物化失败的轮数（control-server#390 审查 L3）：宿主里是单例，这里一个夹具一份，跨轮次保留。</summary>
+        public ControlServer.Host.Runtime.IdleReturn.IdleReturnMaterializationFailures IdleReturnMaterializationFailures { get; } = new();
 
         /// <summary>派车轮写、推进段读的那块板（批次7-07）：宿主里是单例，这里一个夹具一块，跨轮次保留。</summary>
         public SlotGroupFullnessBoard SlotGroupFullness { get; } = new();

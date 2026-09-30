@@ -32,6 +32,21 @@ public sealed partial class JourneyRuntimeEngine
             new EventId(2222, nameof(LogIdleReturnMaterializationFailed)),
             "Idle return {JourneyId} could not be materialized this round; nothing of it was written and the next round tries again.");
 
+    private static readonly Action<ILogger, string, int, Exception?> LogIdleReturnMaterializationStuck =
+        LoggerMessage.Define<string, int>(
+            LogLevel.Error,
+            new EventId(2228, nameof(LogIdleReturnMaterializationStuck)),
+            "Idle return {JourneyId} has failed to materialize {Rounds} rounds in a row; its vehicle stays committed and does not " +
+            "move until this is fixed. The per-round failures are event 2222.");
+
+    private static readonly Action<ILogger, string, string, string, string, Exception?> LogIdleReturnCancelNotConfirmed =
+        LoggerMessage.Define<string, string, string, string>(
+            LogLevel.Warning,
+            new EventId(2229, nameof(LogIdleReturnCancelNotConfirmed)),
+            "Idle return {JourneyId}: the cancel of order {OrderId} for vehicle {VehicleKey}, whose waiting point is no longer " +
+            "this journey's, was not confirmed ({Outcome}). It is issued only once; the idle return is held until RIoT reports " +
+            "the order ended and the vehicle stopped. Check the order in RIoT.");
+
     private static readonly Action<ILogger, string, string, string, Exception?> LogIdleReturnDepartureNotProven =
         LoggerMessage.Define<string, string, string>(
             LogLevel.Information,
@@ -87,6 +102,7 @@ public sealed partial class JourneyRuntimeEngine
         VehiclePurposeClaimRow[] claims = await dbContext.Set<VehiclePurposeClaimRow>().AsNoTracking()
             .Where(row => row.Purpose == VehiclePurposes.IdleReturn)
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        HashSet<string> pending = new(StringComparer.Ordinal);
         foreach (VehiclePurposeClaimRow claim in claims)
         {
             if (await dbContext.JourneyRuntimes.AsNoTracking()
@@ -95,9 +111,11 @@ public sealed partial class JourneyRuntimeEngine
                 continue;
             }
 
+            pending.Add(claim.JourneyId);
             try
             {
                 await MaterializeIdleReturnAsync(claim, cancellationToken).ConfigureAwait(false);
+                _idleReturnMaterializationFailures.Succeeded(claim.JourneyId);
             }
             catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
             {
@@ -105,8 +123,14 @@ public sealed partial class JourneyRuntimeEngine
                 // attempt staged is dropped wholesale rather than left for a later save to write half of.
                 dbContext.ChangeTracker.Clear();
                 LogIdleReturnMaterializationFailed(logger, claim.JourneyId, error);
+                int rounds = _idleReturnMaterializationFailures.Failed(claim.JourneyId);
+                if (rounds == IdleReturnMaterializationFailures.EscalateAfter)
+                {
+                    LogIdleReturnMaterializationStuck(logger, claim.JourneyId, rounds, error);
+                }
             }
         }
+        _idleReturnMaterializationFailures.RetainOnly(pending);
     }
 
     private async Task MaterializeIdleReturnAsync(VehiclePurposeClaimRow claim, CancellationToken cancellationToken)
@@ -422,16 +446,25 @@ public sealed partial class JourneyRuntimeEngine
         if (order.Kind == RiotOrderObservationKind.Active && order.OrderId is string orderId && orderCommands is not null &&
             !await OwnCancelIssuedAsync(orderId, cancellationToken).ConfigureAwait(false))
         {
-            await orderCommands.IssueAsync(
+            RiotOrderCommandRecord cancel = await orderCommands.IssueAsync(
                     RiotOrderCommandKind.Cancel,
                     new RiotOrderCommandTarget(runtime.AgvId, stop.UpperId, orderId),
                     "control-server#390: the idle return's waiting point is no longer this vehicle's",
                     faultGeneration: null,
                     cancellationToken)
                 .ConfigureAwait(false);
+            if (!cancel.Succeeded)
+            {
+                LogIdleReturnCancelNotConfirmed(
+                    logger, runtime.JourneyId, orderId, runtime.VehicleKey, cancel.Outcome.ToString(), null);
+            }
         }
 
-        if (order.Kind is RiotOrderObservationKind.Terminal or RiotOrderObservationKind.NotFound)
+        // Only a terminal order ends it (review S1). NotFound is not an ending here: the create may have gone out with its
+        // result unknown (neverSent is false), and a NotFound then is what ReconcileOrCreateAsync also holds on -- ending would
+        // release the purpose, the evaluator would count the leg as settled, and the vehicle could set off elsewhere while
+        // this order still turns up in RIoT.
+        if (order.Kind == RiotOrderObservationKind.Terminal)
         {
             await JudgeEndedIdleReturnOrderAsync(
                     runtime, stop, IdleReturnExecutionReasons.WaitingPointLost,
@@ -591,6 +624,20 @@ public sealed partial class JourneyRuntimeEngine
         CancellationToken cancellationToken)
     {
         List<string> gaps = [.. await VehicleConditionReasonsAsync(runtime, cancellationToken).ConfigureAwait(false)];
+        // Commissioning again (review L4): it was judged when the commitment was made, but a policy withdrawn or broken since
+        // must stop the departure too -- after control-server#403 a broken policy fails every vehicle closed. No resolver at
+        // all is the same: fail closed, never a silent pass.
+        if (chargingPolicy is null)
+        {
+            gaps.Add(Dispatch.DispatchReasonCodes.ChargingPolicyNotApproved);
+        }
+        else if ((await Dispatch.Criteria.VehicleNewPurposeReadiness
+                     .CommissioningVerdictAsync(chargingPolicy, runtime.VehicleKey, cancellationToken)
+                     .ConfigureAwait(false)).Verdict is var commissioning &&
+                 commissioning != Dispatch.DispatchAdmissionChain.Eligible)
+        {
+            gaps.Add(commissioning);
+        }
         SessionRecoveryRow? session = await CurrentReadySessionAsync(runtime.AgvId, cancellationToken).ConfigureAwait(false);
         if (session is null)
         {

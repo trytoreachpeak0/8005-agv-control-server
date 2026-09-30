@@ -25,6 +25,8 @@ internal static class IdleReturnModule
         services.AddSingleton<IMandatoryChargeLine, TransitionalMandatoryChargeLine>();
         // 单例：结论变了才记日志，要跨轮次（每一轮是一个新的作用域）记得上一轮的结论。
         services.AddSingleton<IdleReturnVerdictBoard>();
+        // 单例：连续物化失败的轮数要跨轮次记着（审查 L3）。
+        services.AddSingleton<IdleReturnMaterializationFailures>();
         services.AddScoped<IdleReturnEvaluator>();
         return services;
     }

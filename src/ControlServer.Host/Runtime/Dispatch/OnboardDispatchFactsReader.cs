@@ -308,31 +308,37 @@ public sealed class OnboardDispatchFactsReader(
         long safetyRevision,
         CancellationToken cancellationToken)
     {
-        ProtocolInboxRow[] snapshots = await dbContext.ProtocolInbox.AsNoTracking()
+        // Review L2: filtered in the database by message type only, with just the JSON column read, and parsed one row at a
+        // time. Not by vehicle: the inbox has no vehicle column, and a text match on the id does not work -- the serializer
+        // escapes non-ASCII, and the fleet's ids are Chinese (老厂前线新多仓位1 is stored with each character escaped, \u8001 and so on), so such a filter found
+        // no row for any real vehicle and read every one as SAFETY_STATE_UNREADABLE: no idle return would ever set off.
+        string[] snapshots = await dbContext.ProtocolInbox.AsNoTracking()
             .Where(row => row.MessageType == "SafetyStateSnapshot")
+            .Select(row => row.RequestJson)
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
-        JsonElement? latestSlots = null;
+        JsonDocument? latest = null;
         long latestVersion = long.MinValue;
-        List<JsonDocument> documents = [];
         try
         {
-            foreach (ProtocolInboxRow row in snapshots)
+            foreach (string json in snapshots)
             {
-                JsonDocument document = JsonDocument.Parse(row.RequestJson);
-                documents.Add(document);
+                JsonDocument document = JsonDocument.Parse(json);
                 JsonElement root = document.RootElement;
-                if (RequiredString(root, "agvId") != agvId || root.GetProperty("sessionGeneration").GetInt64() != generation)
-                {
-                    continue;
-                }
-                JsonElement payload = root.GetProperty("payload");
-                long version = payload.GetProperty("safetyStateVersion").GetInt64();
+                long version = RequiredString(root, "agvId") == agvId && root.GetProperty("sessionGeneration").GetInt64() == generation
+                    ? root.GetProperty("payload").GetProperty("safetyStateVersion").GetInt64()
+                    : long.MinValue;
                 if (version > latestVersion)
                 {
+                    latest?.Dispose();
+                    latest = document;
                     latestVersion = version;
-                    latestSlots = payload.GetProperty("slotStates");
+                }
+                else
+                {
+                    document.Dispose();
                 }
             }
+            JsonElement? latestSlots = latest?.RootElement.GetProperty("payload").GetProperty("slotStates");
 
             ProtocolInboxRow? summaryRow = await LatestSafetySummaryForSessionAsync(
                 agvId, generation, safetyRevision, cancellationToken).ConfigureAwait(false);
@@ -356,10 +362,7 @@ public sealed class OnboardDispatchFactsReader(
         }
         finally
         {
-            foreach (JsonDocument document in documents)
-            {
-                document.Dispose();
-            }
+            latest?.Dispose();
         }
     }
 
