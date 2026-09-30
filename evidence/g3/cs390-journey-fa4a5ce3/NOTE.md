@@ -21,3 +21,7 @@ The property 'OperationType' cannot be found on this object. Verify that the pro
 ## 教训
 
 写新的真装置场景，申请时段之前应该先用保留下来的库离线把判据的读法跑一遍——这条早就记着，这次跳过了，占掉了一轮时段。修复后已用离线脚本在这一轮的库和合成场景的库上把新场景的全部读库判据跑过一遍，再申请下一轮。
+
+## 为什么整目录入库、它能不能按清单校验
+
+整目录入库只是和 2026-09-22 那份 journey 证据（`evidence/g3/20260922-protocol-v2.0.0-journey-82bfa415`）的做法一致，没有更强的理由。**这份证据不能按 `run-result.json` 里的清单逐个校验 sha256**：仓库的 `.gitattributes` 没有给 `evidence/g3/**` 关换行转换，入库时文本文件（日志、json）的 CRLF 被转成了 LF，检出后的字节与清单记下的不同。这个缺口已报调度、登在看板上，恢复派工时开票；本票不改。
