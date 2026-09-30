@@ -152,6 +152,8 @@ public static class ProtocolErrorCodes
         "FORCED_RECOVERY_HARDWARE_RECOVERY_REQUIRED" => "SESSION_RECOVERY_REQUIRED",
         // A stopped trip with cargo on board handed to the exception recovery session (control-server#345).
         "CARGO_HANDOFF_REQUIRED" => "SESSION_RECOVERY_REQUIRED",
+        // Held for a repair release after slots settled empty with a door unproven (REQ-0364, control-server#385).
+        "SLOT_DOOR_REPAIR_RELEASE_REQUIRED" => "SESSION_RECOVERY_REQUIRED",
         "RECOVERY_REQUIRED" => "SESSION_RECOVERY_REQUIRED",
 
         // An unmapped code is a bug in this switch, not something to put on the wire. Failing here

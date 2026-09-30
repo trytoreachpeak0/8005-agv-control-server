@@ -576,19 +576,17 @@ public sealed class OnboardJourneyPublisherTests
     }
 
     /// <summary>
-    /// v3 的 <c>checkPurpose</c>（control-server#382）：今天只组装 <c>DEPARTURE</c>，另外两种用途的检查拒绝组装。
+    /// v3 的 <c>checkPurpose</c>（control-server#382、#385）：组装 <c>DEPARTURE</c> 与 <c>HOLD_RELEASE</c>，<c>NON_BUSINESS_MOVE</c>
+    /// 与不认识的用途拒绝组装。
     /// </summary>
     /// <remarks>
-    /// 命令记录的三个字段今天都是非空字符串，而 schema 要 <c>NON_BUSINESS_MOVE</c> 的 <c>demandId</c> 为 null、<c>HOLD_RELEASE</c>
-    /// 的三个都为 null。拿非空字段组一条那两种用途的检查，车载端会按 schema 拒收。组装它们归认领的票：<c>HOLD_RELEASE</c> 是
-    /// control-server#385，<c>NON_BUSINESS_MOVE</c> 是空闲返回与自动充电的票。
+    /// <c>NON_BUSINESS_MOVE</c> 归空闲返回与自动充电的票；在那之前组出一条来，车载端没有对应的移动可言。
     /// </remarks>
     [Theory]
     [Trait("IntegrationSlice", "FP-IS-03")]
     [InlineData("NON_BUSINESS_MOVE")]
-    [InlineData("HOLD_RELEASE")]
     [InlineData("SOMETHING_ELSE")]
-    public async Task OnlyADepartureCheckIsAssembledToday(string checkPurpose)
+    public async Task OnlyDepartureAndHoldReleaseChecksAreAssembled(string checkPurpose)
     {
         await using SqliteConnection connection = new("Data Source=:memory:");
         await connection.OpenAsync(TestContext.Current.CancellationToken);
@@ -613,6 +611,50 @@ public sealed class OnboardJourneyPublisherTests
                 "GATE-01"),
             TestContext.Current.CancellationToken));
         Assert.Empty(peer.Lines);
+    }
+
+    /// <summary>
+    /// <c>HOLD_RELEASE</c>（control-server#385）三个字段都发 null；带着任何一个就拒绝组装——schema 的 <c>if/then</c> 要求三者为 null，
+    /// 车载端会按 schema 拒收，而本服务端运行时不按 schema 校验出站报文。
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [InlineData(null, null, null, true)]
+    [InlineData("00000000-0000-4000-8000-000000000433", null, null, false)]
+    [InlineData(null, "00000000-0000-4000-8000-000000000434", null, false)]
+    [InlineData(null, null, "GATE-01", false)]
+    public async Task AHoldReleaseCheckCarriesNoDemandLegOrTargetStation(
+        string? demandId, string? movementLegId, string? targetStationId, bool assembled)
+    {
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using ControlServerDbContext context = new(options);
+        await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+        RecordingPeer peer = new(context);
+        OnboardJourneyPublisher publisher = new(new WireToGateStore(context), peer, new AdvancingTimeProvider());
+        PreDepartureSafetyCheckCommand command = new(
+            "00000000-0000-4000-8000-000000000432", "HOLD_RELEASE", demandId, movementLegId, 3, targetStationId);
+
+        Task Publish() => publisher.PublishPreDepartureSafetyCheckAsync(
+            "00000000-0000-4000-8000-000000000431", "AGV-001", 1, command, TestContext.Current.CancellationToken);
+
+        if (!assembled)
+        {
+            await Assert.ThrowsAsync<InvalidDataException>(Publish);
+            Assert.Empty(peer.Lines);
+            return;
+        }
+        await Publish();
+        using JsonDocument sent = JsonDocument.Parse(Assert.Single(peer.Lines));
+        JsonElement payload = sent.RootElement.GetProperty("payload");
+        Assert.Equal("HOLD_RELEASE", payload.GetProperty("checkPurpose").GetString());
+        Assert.Equal(JsonValueKind.Null, payload.GetProperty("demandId").ValueKind);
+        Assert.Equal(JsonValueKind.Null, payload.GetProperty("movementLegId").ValueKind);
+        Assert.Equal(JsonValueKind.Null, payload.GetProperty("targetStationId").ValueKind);
+        Assert.Equal(3, payload.GetProperty("expectedSafetyStateVersion").GetInt64());
     }
 
     [Fact]

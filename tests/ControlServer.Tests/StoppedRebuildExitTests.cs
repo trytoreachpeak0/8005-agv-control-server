@@ -1095,7 +1095,7 @@ public sealed class StoppedRebuildExitTests
                 await processor.ProcessAsync(Action(fixture, sessionId, "FORCED_MECHANICAL_RECOVERY", slots), state, Token)));
 
             Assert.Equal("DurableAck", FirstLineType(
-                await processor.ProcessAsync(MechanicallyIsolated(fixture, sessionId, slots), state, Token)));
+                await processor.ProcessAsync(await MechanicallyIsolatedAsync(fixture, sessionId, slots), state, Token)));
 
             await using ControlServerDbContext reading = new(fixture.DbOptionsForTests);
             JourneyRuntimeRow closed = await reading.JourneyRuntimes.AsNoTracking().SingleAsync(Token);
@@ -1582,8 +1582,11 @@ public sealed class StoppedRebuildExitTests
             observedAt = Now
         });
 
-    private static string MechanicallyIsolated(RuntimeFixture fixture, string sessionId, int[] slots) =>
-        Envelope(fixture, "ForcedMechanicalRecoveryResult", new
+    private static async Task<string> MechanicallyIsolatedAsync(RuntimeFixture fixture, string sessionId, int[] slots)
+    {
+        (string? demandId, object? cargoHandoff) =
+            await ForcedRecoveryHandoffRecord.ForSessionAsync(fixture.DbOptionsForTests, sessionId, Now);
+        return Envelope(fixture, "ForcedMechanicalRecoveryResult", new
         {
             exceptionRecoverySessionId = sessionId,
             recoveryActionId = ActionId,
@@ -1593,8 +1596,11 @@ public sealed class StoppedRebuildExitTests
             @operator = BeforeSublotOperator(fixture),
             observedAt = Now,
             electronicEmptyProven = false,
-            vehicleReadyProven = false
+            vehicleReadyProven = false,
+            demandId,
+            cargoHandoff
         });
+    }
 
     private static string Envelope(RuntimeFixture fixture, string messageType, object payload) =>
         BeforeSublotEnvelope(fixture, Guid.NewGuid().ToString("D"), messageType, generation: 1, payload);

@@ -388,45 +388,89 @@ public sealed class OnboardJourneyPublisher(
     }
 
     /// <remarks>
-    /// v3 加了必填的 <c>checkPurpose</c>（control-server#382）。今天只组装 <see cref="PreDepartureCheckPurposes.Departure"/>：
-    /// 命令记录的三个字段都是非空字符串，而 schema 要另外两种用途把其中几个置 null，拿非空字段组出来的那两种检查车载端会按 schema
-    /// 拒收。<c>HOLD_RELEASE</c> 由 control-server#385 放开，<c>NON_BUSINESS_MOVE</c> 由空闲返回与自动充电的票放开。
+    /// v3 加了必填的 <c>checkPurpose</c>（control-server#382）。组装两种：<see cref="PreDepartureCheckPurposes.Departure"/>
+    /// 三个字段都必须有，<see cref="PreDepartureCheckPurposes.HoldRelease"/>（control-server#385）三个都必须是 null——与 schema 里
+    /// 两条 <c>if/then</c> 同一条规则，本服务端运行时不按 schema 校验出站报文，所以在这里守。<c>NON_BUSINESS_MOVE</c> 由空闲返回与
+    /// 自动充电的票放开，今天照旧拒绝。
     /// </remarks>
     public Task PublishPreDepartureSafetyCheckAsync(
         string messageId,
         string agvId,
         long sessionGeneration,
         PreDepartureSafetyCheckCommand command,
-        CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(command);
-        ValidateUuid(command.PreDepartureSafetyCheckId, nameof(command.PreDepartureSafetyCheckId));
-        if (command.CheckPurpose != PreDepartureCheckPurposes.Departure)
-            throw new ArgumentOutOfRangeException(
-                nameof(command),
-                command.CheckPurpose,
-                "Only a DEPARTURE check is assembled today; HOLD_RELEASE and NON_BUSINESS_MOVE need nullable fields.");
-        ValidateUuid(command.DemandId, nameof(command.DemandId));
-        ValidateUuid(command.MovementLegId, nameof(command.MovementLegId));
-        ArgumentOutOfRangeException.ThrowIfNegative(command.ExpectedSafetyStateVersion);
-        ArgumentException.ThrowIfNullOrWhiteSpace(command.TargetStationId);
-
-        return PublishEnvelopeAsync(
+        CancellationToken cancellationToken) =>
+        PublishEnvelopeAsync(
             "PreDepartureSafetyCheck",
             messageId,
             correlationId: null,
             agvId,
             sessionGeneration,
-            new
-            {
-                command.PreDepartureSafetyCheckId,
-                command.CheckPurpose,
-                command.DemandId,
-                command.MovementLegId,
-                command.ExpectedSafetyStateVersion,
-                command.TargetStationId
-            },
+            PreDepartureSafetyCheckPayload(command),
             cancellationToken);
+
+    /// <summary>
+    /// 同 <see cref="PublishPreDepartureSafetyCheckAsync"/> 的信封与载荷，但只暂存进调用方那一次还没保存的改动，返回那一行的线上文本；
+    /// 这个 id 已经在发件箱里时返回 null（control-server#385）。
+    /// </summary>
+    /// <remarks>
+    /// 给解除门未证明扣车的 <c>HOLD_RELEASE</c> 检查用：它在收件箱的写事务里、在收到证明读数的那一刻决定发，检查必须与那次判定一起
+    /// 提交，线上文本随那条读数的应答之后发出。静态、不带对端，理由同其余暂存方法。
+    /// </remarks>
+    public static async Task<string?> StagePreDepartureSafetyCheckAsync(
+        WireToGateStore store,
+        string messageId,
+        string agvId,
+        long sessionGeneration,
+        PreDepartureSafetyCheckCommand command,
+        DateTimeOffset createdAt,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(store);
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+        ValidateUuid(messageId, nameof(messageId));
+        ArgumentOutOfRangeException.ThrowIfNegative(sessionGeneration);
+        string wire = SerializeWire(
+            "PreDepartureSafetyCheck", messageId, correlationId: null, agvId, sessionGeneration, createdAt,
+            PreDepartureSafetyCheckPayload(command));
+        return await store.StageOutboundEnvelopeAsync(messageId, "PreDepartureSafetyCheck", wire, createdAt, cancellationToken)
+            .ConfigureAwait(false)
+            ? wire
+            : null;
+    }
+
+    private static object PreDepartureSafetyCheckPayload(PreDepartureSafetyCheckCommand command)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        ValidateUuid(command.PreDepartureSafetyCheckId, nameof(command.PreDepartureSafetyCheckId));
+        ArgumentOutOfRangeException.ThrowIfNegative(command.ExpectedSafetyStateVersion);
+        switch (command.CheckPurpose)
+        {
+            case PreDepartureCheckPurposes.Departure:
+                ValidateUuid(command.DemandId, nameof(command.DemandId));
+                ValidateUuid(command.MovementLegId, nameof(command.MovementLegId));
+                ArgumentException.ThrowIfNullOrWhiteSpace(command.TargetStationId);
+                break;
+            case PreDepartureCheckPurposes.HoldRelease:
+                if (command.DemandId is not null || command.MovementLegId is not null || command.TargetStationId is not null)
+                    throw new InvalidDataException(
+                        "A HOLD_RELEASE check carries no demandId, movementLegId or targetStationId.");
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(command),
+                    command.CheckPurpose,
+                    "Only DEPARTURE and HOLD_RELEASE checks are assembled; NON_BUSINESS_MOVE waits for the idle-return and charging moves.");
+        }
+
+        return new
+        {
+            command.PreDepartureSafetyCheckId,
+            command.CheckPurpose,
+            command.DemandId,
+            command.MovementLegId,
+            command.ExpectedSafetyStateVersion,
+            command.TargetStationId
+        };
     }
 
     public Task<ProtocolOutboxRow> QueueSlotOperationResumeCommandAsync(
@@ -639,6 +683,31 @@ public sealed class OnboardJourneyPublisher(
         return QueueEnvelopeAsync(
             "SlotConfigurationActivationCommand", messageId, null, agvId, sessionGeneration,
             payload, cancellationToken);
+    }
+
+    /// <summary>
+    /// Asks the vehicle for a fresh <c>SafetyStateSnapshot</c>. Not persisted, like the request the message processor appends
+    /// to an answer: it is a question, and a reconnect asks again. Used by a repair release once its record is in, with
+    /// <c>PRE_MOVEMENT_RECONCILIATION</c> (control-server#385).
+    /// </summary>
+    public Task SendSafetyStateSnapshotRequestAsync(
+        string agvId,
+        long sessionGeneration,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+        if (reason is not ("HANDSHAKE" or "VERSION_GAP" or "PRE_MOVEMENT_RECONCILIATION"))
+            throw new ArgumentOutOfRangeException(nameof(reason), reason, "Not a SafetyStateSnapshotRequested reason.");
+        string wire = ProtocolEnvelope.Serialize(
+            "SafetyStateSnapshotRequested",
+            Guid.NewGuid().ToString("D"),
+            null,
+            agvId,
+            sessionGeneration,
+            timeProvider.GetUtcNow(),
+            new { requestedSafetyStateVersion = (long?)null, reason });
+        return peer.SendAsync(Encoding.UTF8.GetBytes(wire + "\n"), cancellationToken);
     }
 
     public async Task SendPersistedAsync(string messageId, CancellationToken cancellationToken)

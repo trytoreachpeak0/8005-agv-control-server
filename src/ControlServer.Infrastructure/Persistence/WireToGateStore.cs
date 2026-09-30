@@ -38,6 +38,13 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
     public const string CargoHandoffRequired = "CARGO_HANDOFF_REQUIRED";
 
     /// <summary>
+    /// The readiness reason while the vehicle is held because a cancellation or compensation settled slots empty with a
+    /// door lock or unlock output unproven (REQ-0364, CP-0009, control-server#385). On the wire it is
+    /// SESSION_RECOVERY_REQUIRED, which is what keeps the onboard's recovery entry open for the repair release.
+    /// </summary>
+    public const string SlotDoorRepairReleaseRequired = "SLOT_DOOR_REPAIR_RELEASE_REQUIRED";
+
+    /// <summary>
     /// A journey publishes its stored revision at the pickup stop and that value plus one at the
     /// gate stop (JourneyRuntimeEngine publishes both stops), so the next journey on the same
     /// vehicle has to start two above the stored one.
@@ -432,6 +439,13 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         // CapabilityRevision is null so the session is not ready anyway, and the honest reason for that
         // is HANDSHAKE_INCOMPLETE -- naming the fingerprint mismatch first would send an operator after
         // a vehicle whose only problem is that it is still handshaking.
+        // REQ-0364 (CP-0009, control-server#385). A cancellation or compensation whose light curtains proved its slots empty
+        // while a lock or unlock output could not be proven settles the demand, and holds the vehicle: nothing else here can
+        // see it, because the operation is settled and the doors may well read locked by now. It lifts only when a
+        // HARDWARE_REPAIR_RELEASE action has run to its end -- record, then readings received after the record, then a SAFE
+        // HOLD_RELEASE check (OnboardRecoveryCoordinator) -- which marks the hold released. A record alone lifts nothing,
+        // and neither does a record on any other action. The forced recovery's hold above is a different one and unchanged.
+        bool slotDoorHeld = await SlotDoorHeldAsync(agvId, cancellationToken).ConfigureAwait(false);
         bool slotConfigurationAgrees = activeSlotConfiguration is null ||
             row.ReportedSlotConfigurationFingerprint is null ||
             string.Equals(
@@ -444,6 +458,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
                      !operationNeedsRecovery &&
                      !forcedRecoveryAwaitsHardwareRecord &&
                      !cargoHandoffAwaited &&
+                     !slotDoorHeld &&
                      row.ReportedForcedRecoveryGeneration == row.ForcedRecoveryGeneration;
         row.Readiness = ready ? SessionReadiness.Ready : SessionReadiness.RecoveryRequired;
         // The slot configuration mismatch is named first when it applies: every other reason here is about this
@@ -454,7 +469,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
             : slotConfigurationAgrees
                 ? GetRecoveryReason(
                     row, noPendingFacts, departureUsable, operationNeedsRecovery, forcedRecoveryAwaitsHardwareRecord,
-                    cargoHandoffAwaited)
+                    cargoHandoffAwaited, slotDoorHeld)
                 : SlotConfigurationFingerprintVerdict.MismatchCode;
         row.UpdatedAt = DateTimeOffset.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -3596,6 +3611,13 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
                 cancellationToken);
 
     /// <summary>
+    /// Whether this vehicle is held for a door-unproven empty settlement that no repair release has lifted yet
+    /// (REQ-0364, control-server#385).
+    /// </summary>
+    public Task<bool> SlotDoorHeldAsync(string agvId, CancellationToken cancellationToken) =>
+        dbContext.SlotDoorHolds.AnyAsync(hold => hold.AgvId == agvId && hold.ReleasedAt == null, cancellationToken);
+
+    /// <summary>
     /// Every station operation with the journey that carries its demand, joined through the demand memberships
     /// (<see cref="DemandJourneyLookup"/>, control-server#207) rather than the journey row's anchor demand.
     /// </summary>
@@ -3623,7 +3645,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         bool departureUsable,
         bool operationNeedsRecovery,
         bool forcedRecoveryAwaitsHardwareRecord,
-        bool cargoHandoffAwaited)
+        bool cargoHandoffAwaited,
+        bool slotDoorHeld)
     {
         if (row.CapabilityRevision is null) return "CAPABILITY_SNAPSHOT_REQUIRED";
         if (row.SafetyRevision is null) return "SAFETY_SNAPSHOT_REQUIRED";
@@ -3638,6 +3661,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         if (operationNeedsRecovery) return "OPERATION_RECOVERY_REQUIRED";
         if (forcedRecoveryAwaitsHardwareRecord) return ForcedRecoveryHardwareRecoveryRequired;
         if (cargoHandoffAwaited) return CargoHandoffRequired;
+        if (slotDoorHeld) return SlotDoorRepairReleaseRequired;
         return "RECOVERY_REQUIRED";
     }
 
