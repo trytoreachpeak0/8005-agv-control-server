@@ -45,7 +45,9 @@ $global:l2wsThrowAfterUtc = $null
         if ($null -ne $global:l2wsThrowAfterUtc -and [DateTime]::UtcNow -gt $global:l2wsThrowAfterUtc) {
             throw [System.InvalidOperationException]::new('the database went away')
         }
-        return $global:l2wsRows
+        # The real Invoke-L2Query's shape, `return , $rows`: a stub that unrolls makes a wrapped call in the
+        # code under test measure right (control-server#428; Test-L2WholeArrayReturn.ps1 reports one as reshaped).
+        return , @($global:l2wsRows)
     }
 }
 

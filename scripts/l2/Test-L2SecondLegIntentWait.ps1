@@ -38,7 +38,11 @@ $module = Get-Module L2TaskTypeJourney
         if ($null -ne $global:l2StubThrowAfterUtc -and [DateTime]::UtcNow -gt $global:l2StubThrowAfterUtc) {
             throw [System.InvalidOperationException]::new('the database went away')
         }
-        return $global:l2StubRows
+        # The real Invoke-L2Query's shape, `return , $rows`, and not `return $rows`. This stub used to unroll, and
+        # under an unrolling stub `@(Invoke-L2Query ...)` is exactly right -- so Get-L2SecondLegIntents, which
+        # wrapped its call that way, passed every case here while on a real database it handed back ONE element
+        # holding the whole result, and the refusal below could never fire (control-server#428).
+        return , @($global:l2StubRows)
     }
 }
 

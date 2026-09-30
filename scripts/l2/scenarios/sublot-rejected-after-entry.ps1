@@ -333,14 +333,14 @@ $commandRow = Invoke-L2Query -Connection $connection `
 $commandPayload = (ConvertFrom-Json -AsHashtable $commandRow[0].PayloadJson).payload
 # 装货命令的载荷里没有 sublot——报文的 schema 只让它带 demandId、attempt 与仓位集合。这条尝试对应的子批号
 # 记在 StationOperations.SublotId 上，所以从那里读。
-$attempts = @(Invoke-L2Query -Connection $connection `
-    -Sql "SELECT SublotId, TargetSlotsJson FROM StationOperations WHERE DemandId = '$demandId' AND OperationType = 'Load'")
+$attempts = Invoke-L2Query -Connection $connection `
+    -Sql "SELECT SublotId, TargetSlotsJson FROM StationOperations WHERE DemandId = '$demandId' AND OperationType = 'Load'"
 $assertions.Add(
     'L2-SRJ-10', '重扫之后发的是装货命令：给的是这条需求与重扫那条子批号，仓位数是受理时冻结的值',
     ($commandPayload.demandId -eq $demandId -and $attempts.Count -eq 1 -and [string]$attempts[0].SublotId -eq $sublot -and
         [int]$commandPayload.expectedBasketCount -eq [int]$dispatched.ExpectedBasketCount),
     "$demandId / $sublot / $($dispatched.ExpectedBasketCount)",
-    "$($commandPayload.demandId) / $(if ($attempts.Count -eq 1) { $attempts[0].SublotId } else { '(no attempt)' }) / $($commandPayload.expectedBasketCount)")
+    "$($commandPayload.demandId) / $(if ($attempts.Count -eq 1) { $attempts[0].SublotId } else { "($($attempts.Count) attempts)" }) / $($commandPayload.expectedBasketCount)")
 
 $consumed = Wait-L2Condition -Description 'the journey left the entry wait on the rescanned submission' `
     -Journal $journal -Criterion 'entry-accepted' -TimeoutSeconds 60 `

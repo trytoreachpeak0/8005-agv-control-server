@@ -171,7 +171,7 @@ try {
         ($null -ne $twoItemWorklist -and (Get-SublotSet $twoItemWorklist.Items) -eq $expectedPair),
         $expectedPair,
         $(if ($null -ne $twoItemWorklist) { "$(Format-L2WireSnapshot $twoItemWorklist)" } else {
-                "(没有两条的已确认清单) $((@(Get-AcknowledgedWorklists $mixedStationName) | ForEach-Object { Format-L2WireSnapshot $_ }) -join ' | ')" }))
+                "(没有两条的已确认清单) $(((Get-AcknowledgedWorklists $mixedStationName) | ForEach-Object { Format-L2WireSnapshot $_ }) -join ' | ')" }))
 
     $rowsAtMixed = Wait-L2ConditionOrLast -Description 'the HMI lists both worklist items at the mixed station' -Journal $journal `
         -Criterion 'mixed-worklist-rows' -TimeoutSeconds 30 -Probe { Get-L2WorklistRows $onboard } `
