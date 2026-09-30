@@ -469,6 +469,15 @@ public sealed class IdleReturnExecutionTests
         await RoundAsync(fleet);
         Assert.Null(await ClaimOfAsync(fleet, KeyA));
         Assert.Equal(IdleReturnReasons.StoppedAfterRepeatedEndedOrders, fleet.IdleReturnBoard.Reasons[AgvA]);
+        // Increment review R1: the warning is the only signal on site (the stop is not on the dashboard), exactly once, and a new
+        // engine -- a new round's scope in the host -- does not say it again.
+        Assert.Single(fleet.IdleReturnLog.Entries, entry => entry.EventId.Id == 2227);
+        await fleet.RecreateEngineAsync();
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+        var warning = Assert.Single(fleet.IdleReturnLog.Entries, entry => entry.EventId.Id == 2227);
+        Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Warning, warning.Level);
+        Assert.Contains(AgvA, warning.Message, StringComparison.Ordinal);
         Assert.Equal(2, (await fleet.Context.JourneyRuntimes.AsNoTracking()
             .Where(row => row.AgvId == AgvA).ToArrayAsync(Token)).Length);
         // Review M1 (b): the reviewer's probe saw 214, 215, 214 -- back to the first point after the second cancellation.
@@ -478,6 +487,86 @@ public sealed class IdleReturnExecutionTests
         fleet.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
         await RoundAsync(fleet);
         Assert.Contains(fleet.Riot.Creates, create => create.VehicleKey == KeyA && create.DestinationStationId == 12);
+    }
+
+    /// <summary>
+    /// 增量审查 L-a（审查员探针的顺序）：取消 → 第二趟在出发之前点被人释放、以 <c>IDLE_RETURN_WAITING_POINT_LOST</c> 收尾（不算失败）→
+    /// 第三趟再被取消。夹在中间的收尾不打断计数：窗口里已确认失败两次，停止自动空闲返回。按「最近两趟」数时这里只冷却，84 秒建了 4 张单。
+    /// </summary>
+    [Fact]
+    public async Task AnEndingThatIsNotAFailureBetweenTwoCancellationsDoesNotBreakTheStop()
+    {
+        await using FleetFixture fleet = await FleetAsync(points: [Near, Far]);
+        JourneyRuntimeRow first = await CommittedAndSentAsync(fleet);
+        fleet.Riot.CancelOrder(first.PickupUpperId);
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+
+        // The second: committed once the delay is over, held at the departure gate, its point released by hand before any
+        // order was created -- it ends as WAITING_POINT_LOST, which is not a failure.
+        await fleet.HearFromEveryVehicleAsync();
+        await fleet.RunRoundAsync(fleet.Options.OwnOrderRebuildDelay);
+        (string Purpose, string JourneyId)? second = await ClaimOfAsync(fleet, KeyA);
+        Assert.NotNull(second);
+        await fleet.ReplaceSafetySnapshotAsync(AgvA, unlockedSlot: 3);
+        await RoundAsync(fleet);
+        StationExclusivityRow secondPoint = await fleet.Context.Set<StationExclusivityRow>().AsNoTracking()
+            .SingleAsync(row => row.JourneyId == second.Value.JourneyId, Token);
+        await ReleaseByHandAsync(fleet, secondPoint.StationId);
+        await fleet.ReplaceSafetySnapshotAsync(AgvA);
+        await RoundAsync(fleet);
+        Assert.Equal(
+            IdleReturnExecutionReasons.WaitingPointLost,
+            (await fleet.Context.JourneyRuntimes.AsNoTracking().SingleAsync(row => row.JourneyId == second.Value.JourneyId, Token))
+                .BlockReasonCode);
+        Assert.Single(fleet.Riot.Creates);
+
+        // The third: committed right away (the latest journey is not a failure), sent, then cancelled too.
+        for (int round = 0; round < 3 && fleet.Riot.Creates.Count < 2; round++)
+        {
+            await RoundAsync(fleet);
+        }
+        JourneyRuntimeRow third = (await IdleJourneyAsync(fleet, AgvA))!;
+        Assert.NotEqual(second.Value.JourneyId, third.JourneyId);
+        Assert.Equal(2, fleet.Riot.Creates.Count);
+        fleet.Riot.CancelOrder(third.PickupUpperId);
+        await RoundAsync(fleet);
+        Assert.Equal(
+            IdleReturnExecutionReasons.OrderEnded,
+            (await fleet.Context.JourneyRuntimes.AsNoTracking().SingleAsync(row => row.JourneyId == third.JourneyId, Token))
+                .BlockReasonCode);
+
+        await RoundAsync(fleet);
+        await fleet.HearFromEveryVehicleAsync();
+        await fleet.RunRoundAsync(fleet.Options.OwnOrderRebuildDelay);
+        await RoundAsync(fleet);
+        Assert.Null(await ClaimOfAsync(fleet, KeyA));
+        Assert.Equal(IdleReturnReasons.StoppedAfterRepeatedEndedOrders, fleet.IdleReturnBoard.Reasons[AgvA]);
+        Assert.Equal(2, fleet.Riot.Creates.Count);
+    }
+
+    /// <summary>
+    /// 增量审查 L-b：引擎没拿到投运判定器时，出发安全门按不投运处理——已承诺的空闲返回不建单；拿到之后照常出发。
+    /// </summary>
+    [Fact]
+    public async Task WithoutAChargingPolicyResolverTheEngineDoesNotSendAnIdleReturnOff()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        await RoundAsync(fleet);
+        Assert.NotNull(await ClaimOfAsync(fleet, KeyA));
+        fleet.OmitEngineChargingPolicy = true;
+        await fleet.RecreateEngineAsync();
+
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+
+        Assert.Empty(fleet.Riot.Creates);
+        Assert.Equal(IdleReturnExecutionReasons.DepartureNotProven, (await IdleJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+
+        fleet.OmitEngineChargingPolicy = false;
+        await fleet.RecreateEngineAsync();
+        await RoundAsync(fleet);
+        Assert.Single(fleet.Riot.Creates);
     }
 
     /// <summary>

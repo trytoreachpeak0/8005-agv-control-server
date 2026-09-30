@@ -1115,7 +1115,7 @@ public sealed partial class MultiVehicleExecutionTests
             Riot.ExtraStations.AddRange(points.Select(point => new RiotMapStation(point.StationId, point.StationName)));
             _idleReturn = fixture => IdleReturnTestKit.Create(
                 fixture.Context, fixture.Options, fixture.Clock, fixture.RouteGraph()!, enabled: true, board: fixture.IdleReturnBoard,
-                chargingPolicy: fixture.ChargingPolicy);
+                logger: fixture.IdleReturnLog, chargingPolicy: fixture.ChargingPolicy);
             await RecreateEngineAsync();
         }
 
@@ -1413,9 +1413,15 @@ public sealed partial class MultiVehicleExecutionTests
                 Clock,
                 EngineLog,
                 orderCommands: new RiotOrderCommandService(Riot, new RiotOrderCommandAuditStore(Context), Riot, Clock),
-                chargingPolicy: ChargingPolicy,
+                chargingPolicy: OmitEngineChargingPolicy ? null : ChargingPolicy,
                 idleReturnMaterializationFailures: IdleReturnMaterializationFailures);
         }
+
+        /// <summary>空闲返回评估器的日志（control-server#390 增量审查 R1）：停止自动空闲返回那一条（2227）是现场唯一看得到的信号。</summary>
+        public EventRecordingLogger<ControlServer.Host.Runtime.IdleReturn.IdleReturnEvaluator> IdleReturnLog { get; } = new();
+
+        /// <summary>引擎不带投运判定器（增量审查 L-b）：出发安全门要按不投运处理，不静默放行。改了之后重建引擎才生效。</summary>
+        public bool OmitEngineChargingPolicy { get; set; }
 
         /// <summary>空闲返回连续物化失败的轮数（control-server#390 审查 L3）：宿主里是单例，这里一个夹具一份，跨轮次保留。</summary>
         public ControlServer.Host.Runtime.IdleReturn.IdleReturnMaterializationFailures IdleReturnMaterializationFailures { get; } = new();

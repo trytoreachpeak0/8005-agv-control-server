@@ -64,9 +64,9 @@ public static class IdleReturnReasons
     public const string CooldownAfterEndedOrder = "IDLE_RETURN_COOLDOWN_AFTER_ENDED_ORDER";
 
     /// <summary>
-    /// 这辆车最近两趟旅程都是已确认失败的空闲返回，后一趟收尾距前一趟不超过 <c>JourneyRuntime:OwnOrderRebuildRepeatWindow</c>
-    /// （默认 10 分钟）：反复取消说明有人要这辆车别动，不再自动承诺空闲返回，告警等人。与搬运的第三道护栏（<c>REQ-0361</c>）对等；
-    /// 窗口过去不自动解除，车做了别的旅程（被派了搬运）才解除。
+    /// 这辆车自最近一趟非空闲返回的旅程之后，已确认失败的空闲返回在 <c>JourneyRuntime:OwnOrderRebuildRepeatWindow</c>（默认 10 分钟）
+    /// 之内累计两次（夹在中间的别的收尾不计数、也不打断计数）：反复取消说明有人要这辆车别动，不再自动承诺空闲返回，告警等人。
+    /// 与搬运的第三道护栏（<c>REQ-0361</c>）对等；窗口过去不自动解除，车做了别的旅程（被派了搬运）才解除。
     /// </summary>
     public const string StoppedAfterRepeatedEndedOrders = "IDLE_RETURN_STOPPED_AFTER_REPEATED_ENDED_ORDERS";
 

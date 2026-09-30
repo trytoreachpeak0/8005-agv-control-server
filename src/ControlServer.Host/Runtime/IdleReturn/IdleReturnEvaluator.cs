@@ -400,14 +400,21 @@ public sealed class IdleReturnEvaluator(
     }
 
     /// <summary>
-    /// 被取消的空闲返回之后的两道护栏（control-server#390 审查问题 2，与搬运自建单被取消的 control-server#318 对等）：
-    /// 这辆车最近一趟是已确认失败的空闲返回，收尾不到 <see cref="JourneyRuntimeOptions.OwnOrderRebuildDelay"/> 答冷却；
-    /// 最近两趟都是、且后一趟收尾距前一趟不超过 <see cref="JourneyRuntimeOptions.OwnOrderRebuildRepeatWindow"/> 答停止——
-    /// 窗口从第一次算起，过了窗口也不自动解除，车有了别的旅程（最近一趟不再是它）才解除。都不是答空。
+    /// 被取消的空闲返回之后的两道护栏（control-server#390 审查问题 2，与搬运自建单被取消的 control-server#318 对等）。只数这辆车
+    /// <b>最近一趟非空闲返回的旅程之后</b>的空闲返回里已确认失败的那些（单被取消、删除，或 FAILED 后故障被人清除）：
+    /// 最近一次收尾不到 <see cref="JourneyRuntimeOptions.OwnOrderRebuildDelay"/> 答冷却；以最近一次为准往回
+    /// <see cref="JourneyRuntimeOptions.OwnOrderRebuildRepeatWindow"/> 之内有两次或以上答停止——过了窗口也不自动解除，车做了一趟
+    /// 别的旅程（被派了搬运）才解除。都不是答空。
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// 不按「最近两趟」数（增量审查 L-a）：中间夹一趟不算失败的收尾（例如出发前点被人释放，<c>IDLE_RETURN_WAITING_POINT_LOST</c>），
+    /// 链就断了，车在取消之间来回换点。现在夹在中间的收尾不计数，也不打断计数。
+    /// </para>
+    /// <para>
     /// 收尾时刻取用途占有的释放时刻（与旅程收尾同一次保存）。「车在急停、手动、故障时不动」那一道不在这里：
     /// 故障与动态事实由 <see cref="VehicleNewPurposeReadiness"/> 挡，建单前另有出发安全门。
+    /// </para>
     /// </remarks>
     private async Task<string?> EndedOrderGuardAsync(FleetVehicle vehicle, CancellationToken cancellationToken)
     {
@@ -415,35 +422,34 @@ public sealed class IdleReturnEvaluator(
             .Where(row => row.AgvId == vehicle.AgvId)
             .Select(row => new { row.JourneyId, row.CreatedAt, row.BlockReasonCode })
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
-        var lastTwo = journeys
-            .OrderByDescending(row => row.CreatedAt)
-            .ThenByDescending(row => row.JourneyId, StringComparer.Ordinal)
-            .Take(2)
-            .ToArray();
-
-        async Task<DateTimeOffset?> EndedAtAsync(string journeyId, string? code)
-        {
-            if (!journeyId.StartsWith(IdleReturnIdentity.JourneyIdPrefix, StringComparison.Ordinal) ||
-                code is null || !IdleReturnExecutionReasons.ConfirmedFailures.Contains(code))
-            {
-                return null;
-            }
-
-            DateTimeOffset?[] released = await dbContext.Set<VehiclePurposeClaimRecordRow>().AsNoTracking()
-                .Where(record => record.JourneyId == journeyId)
-                .Select(record => record.ReleasedAt)
-                .ToArrayAsync(cancellationToken).ConfigureAwait(false);
-            return released.SingleOrDefault(at => at is not null);
-        }
-
-        if (lastTwo.Length == 0 || await EndedAtAsync(lastTwo[0].JourneyId, lastTwo[0].BlockReasonCode) is not { } latest)
+        // Newest first, up to the latest journey that was not an idle return: only the idle returns since the vehicle last did
+        // other work count.
+        string[] failedSinceOtherWork =
+        [
+            .. journeys
+                .OrderByDescending(row => row.CreatedAt)
+                .ThenByDescending(row => row.JourneyId, StringComparer.Ordinal)
+                .TakeWhile(row => row.JourneyId.StartsWith(IdleReturnIdentity.JourneyIdPrefix, StringComparison.Ordinal))
+                .Where(row => row.BlockReasonCode is { } code && IdleReturnExecutionReasons.ConfirmedFailures.Contains(code))
+                .Select(row => row.JourneyId),
+        ];
+        if (failedSinceOtherWork.Length == 0)
         {
             return null;
         }
 
-        if (lastTwo.Length == 2 &&
-            await EndedAtAsync(lastTwo[1].JourneyId, lastTwo[1].BlockReasonCode) is { } earlier &&
-            latest - earlier <= _runtime.OwnOrderRebuildRepeatWindow)
+        DateTimeOffset?[] released = await dbContext.Set<VehiclePurposeClaimRecordRow>().AsNoTracking()
+            .Where(record => failedSinceOtherWork.Contains(record.JourneyId) && record.ReleasedAt != null)
+            .Select(record => record.ReleasedAt)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        DateTimeOffset[] endedAt = [.. released.Select(at => at!.Value)];
+        if (endedAt.Length == 0)
+        {
+            return null;
+        }
+
+        DateTimeOffset latest = endedAt.Max();
+        if (endedAt.Count(at => latest - at <= _runtime.OwnOrderRebuildRepeatWindow) >= 2)
         {
             return IdleReturnReasons.StoppedAfterRepeatedEndedOrders;
         }
