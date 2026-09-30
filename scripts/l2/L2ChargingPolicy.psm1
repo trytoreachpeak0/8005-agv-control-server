@@ -10,7 +10,7 @@ Set-StrictMode -Version Latest
 #
 # The default values are the test fixture's: completion 80, mandatory charge entry 30, minimum post-task margin 30,
 # estimated consumption per task 0, every vehicle. Once control-server batch 9-05 judges "battery - estimate >= margin and
-# not below the entry threshold", these agree with today's MinimumBatteryPercent = 30 case for case, so no existing
+# not below the entry threshold", these agree with the retired MinimumBatteryPercent = 30 case for case, so no existing
 # scenario's dispatch changes. The fake RIoT reports 80 % battery, so nothing here makes a vehicle want to charge. The
 # charger roster is not imported by default: no version at all is an empty roster, which is a legal state.
 #

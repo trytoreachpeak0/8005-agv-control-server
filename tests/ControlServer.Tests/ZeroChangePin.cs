@@ -97,6 +97,14 @@ namespace ControlServer.Tests;
 /// 先算出该是多少：旧基线里 <c>OrderIntents</c> 共 14 行、<c>JourneyRuntimes</c> 共 10 行，新基线里三个字段实数 14、10、10；
 /// 比对脚本另改一个无关字符验过会报红（<c>evidence/cs399/green/</c>）。
 /// </para>
+/// <para>
+/// <b>control-server#403 给七份终结状态基线的 <c>JourneyRuntimes</c> 行各改了两个值，其余逐字未动。</b>那一票在派车受理时把判它的充电策略版本号
+/// 与第一版 <c>batteryState</c> 投影写进 cs#399 建的两列，所以走产品派车路径的旅程上 <c>ChargingPolicyVersion=NULL|PublishedBatteryState=NULL</c>
+/// 变成 <c>=1|='SUFFICIENT'</c>（夹具的测试策略版本 1、电量 80 高于线 40）。同样只能在本票分支上录。判据：把新基线里这 7 处换回 <c>NULL</c>，
+/// 与<b>集成分支上的</b>旧基线（<c>fp/v2-impl@99c35544</c>）逐字相同，十四份全部成立。先算出该是多少：派车路径七份各 1 处，三份
+/// <c>commanded-ending-*</c>（手写旅程行）与四份看板基线 0 处；实数相同。比对脚本另改一个无关字符验过会报红（工作区 <c>evidence/cs403/pins/</c>）。
+/// 下发载荷没有变：WirePins 与出站 schema 检查都绿，投影在这组夹具下就是原来写死的那个值。
+/// </para>
 /// </remarks>
 internal static class ZeroChangePin
 {
