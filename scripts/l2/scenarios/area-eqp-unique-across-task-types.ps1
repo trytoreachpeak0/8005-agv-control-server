@@ -74,11 +74,6 @@ function Get-Stage([string]$demandId) {
     return [string]$row.Stage
 }
 
-function Get-Intent([string]$demandId, [string]$purpose) {
-    return Read-L2SingleRow -Connection $connection `
-        -Sql "SELECT UpperId, OrderId, Status, DestinationStationId FROM OrderIntents WHERE DemandId = '$demandId' AND Purpose = '$purpose'"
-}
-
 # --- 1. 同一 AREA、不同 EQP：其它任务类型的行先放，WIRE_TO_GATE 随后 ---------------------------------
 
 $other = New-Demand 'OTHER'

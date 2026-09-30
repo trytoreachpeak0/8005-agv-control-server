@@ -32,8 +32,31 @@ prints that.
 -Required is for a read that is not polled -- the row was waited for a moment earlier -- where zero rows used to be an
 index-out-of-range that ended the scenario before its criteria table. With it, zero rows is a stand-in too.
 
-A numeric cast of a stand-in column throws ([int]'(2 rows, expected 1)'). Compare such a column as text, or put the
-comparison after one that fails first.
+THE RULE. A criterion built on a single-row read needs at least one `-eq` against a LITERAL expected value.
+
+A stand-in is a non-empty string in every column, so it fails an equality with anything a scenario expects -- and
+SATISFIES most other shapes. Each line below is pinned as a case in Test-L2SingleRow.ps1; with two rows all of these
+are True:
+
+    [string]$row.Stage -ne 'Blocked'          -notmatch, -notin likewise: "it is not X" holds for a stand-in
+    $null -ne $row.Stage                      and [string]$row.Stage -ne '', and a bare truth test of the row or a column
+    $row.Count -lt 5                          the comparison is by TEXT, and '(' sorts before every digit
+    $row.Stage -like '*1*'                    -match '\d' likewise: the text contains "2" and "1"
+    $a.Stage -eq $b.Stage                     two reads that both came back with the same number of rows
+    $row.Stage -eq $row.AgvId                 two columns of one stand-in
+
+The last two are why the text carries no per-call serial: a serial would make two stand-ins differ, but not two
+columns of one, and it defeats the journal's de-duplication (the same state polled for two seconds went from one
+line to nine). So it is a rule, not a mechanism: none of the shapes above may be the ONLY thing a criterion says
+about such a row. Every use under scripts/ today has the literal `-eq` (review of control-server#428 ran each of
+them with 0, 1 and 2 rows).
+
+Two more limits:
+
+  - A numeric cast of a stand-in column throws ([int]'(2 rows, expected 1)'). Compare such a column as text, or put
+    the comparison after one that fails first.
+  - Do not wrap the call: `@(Read-L2SingleRow ...)` is a one-element array for ZERO rows, because the function
+    returns an explicit $null. `.Count` of it is 1. Assign it and test `$null -eq $row`.
 #>
 
 Set-StrictMode -Version Latest

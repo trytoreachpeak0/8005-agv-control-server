@@ -12,6 +12,10 @@
     What is pinned here is what a scenario relies on when it does reach them: the stand-in is NOT $null (a wait on
     "$null -ne $v" ends), it has the query's columns (a property read does not throw under strict mode), and no
     comparison with an expected value holds against it.
+
+    The other half is what a stand-in DOES satisfy -- "is not X", "is not empty", a truth test, a text comparison with a
+    number, equality with another stand-in. Those are pinned too, as HAZARD cases, because the rule that follows from
+    them (a criterion on such a read needs an -eq against a literal) is only as good as the list it rests on.
 #>
 [CmdletBinding()]
 param()
@@ -28,7 +32,13 @@ function New-ConnectionDouble([string[]]$Columns, [object[]]$Rows) {
     $reader | Add-Member -MemberType ScriptMethod -Name GetName -Value { param($i) $this.State.Columns[$i] }
     $reader | Add-Member -MemberType ScriptMethod -Name Read -Value { $this.State.Index++; $this.State.Index -lt $this.State.Rows.Count }
     $reader | Add-Member -MemberType ScriptMethod -Name IsDBNull -Value { param($i) $null -eq $this.State.Rows[$this.State.Index][$i] }
-    $reader | Add-Member -MemberType ScriptMethod -Name GetValue -Value { param($i) $this.State.Rows[$this.State.Index][$i] }
+    # A NULL cell comes back as DBNull, as Microsoft.Data.Sqlite's GetValue does -- NOT as $null. With $null here the
+    # "NULL kept as $null" case below passed with the IsDBNull branch deleted from Read-L2SingleRow (review of #428).
+    $reader | Add-Member -MemberType ScriptMethod -Name GetValue -Value {
+        param($i)
+        $value = $this.State.Rows[$this.State.Index][$i]
+        if ($null -eq $value) { [DBNull]::Value } else { $value }
+    }
     $reader | Add-Member -MemberType ScriptMethod -Name Close -Value { $this.State.Closed = $true }
     $command = [pscustomobject]@{ State = $state; Reader = $reader; CommandText = $null }
     $command | Add-Member -MemberType ScriptMethod -Name ExecuteReader -Value { $this.State.Sql = $this.CommandText; $this.Reader }
@@ -55,9 +65,13 @@ $two = @('AwaitingSublot', 'AGV-1', $null), @('Completed', 'AGV-2', $null)
 
 $connection = New-ConnectionDouble $columns $one
 $row = Read-L2SingleRow -Connection $connection -Sql 'SELECT the row'
-Add-Case 'one row: the row, NULL kept as $null, reader closed and command disposed, the SQL handed over as given' (
-    [string]$row.Stage -ceq 'AwaitingSublot' -and [string]$row.AgvId -ceq 'AGV-1' -and $null -eq $row.BlockReasonCode -and
+Add-Case 'one row: the row, reader closed and command disposed, the SQL handed over as given' (
+    [string]$row.Stage -ceq 'AwaitingSublot' -and [string]$row.AgvId -ceq 'AGV-1' -and
     $connection.State.Closed -and $connection.State.Disposed -and $connection.State.Sql -ceq 'SELECT the row') (Format-Row $row)
+# `$null -eq`, and not a DBNull: the scenarios' Test-Present reads ($null -ne $value -and [string]$value -ne ''), and a
+# DBNull is not $null.
+Add-Case 'a NULL cell is $null in the row, not the DBNull the reader hands out' (
+    $null -eq $row.BlockReasonCode -and $row.BlockReasonCode -isnot [DBNull]) "BlockReasonCode is $($null -eq $row.BlockReasonCode ? '$null' : $row.BlockReasonCode.GetType().Name)"
 
 $row = Read-L2SingleRow -Connection (New-ConnectionDouble $columns @()) -Sql 'q'
 Add-Case 'no row: $null, which is what a wait on this read polls for' ($null -eq $row) (Format-Row $row)
@@ -86,6 +100,36 @@ Add-Case 'rendered the way Wait-L2Condition renders its last observation, it nam
     ([string]$standIn) -like '*(2 rows, expected 1)*') ([string]$standIn)
 $castThrew = try { $null = [int]$standIn.Stage; $false } catch { $true }
 Add-Case 'a numeric cast of a stand-in column throws -- the documented limit: compare such a column as text' $castThrew "threw=$castThrew"
+
+# ---------------------------------------------------------------- what a stand-in SATISFIES: the hazard, pinned
+# Each of these is True for a stand-in, which is why none of them may be the only thing a criterion says about a
+# single-row read (the rule in L2SingleRow.psm1's header). They are cases so that the list is a measurement: if
+# PowerShell or the stand-in's text ever changes one of them, the header is wrong and this says so.
+
+$other = Read-L2SingleRow -Connection (New-ConnectionDouble $columns $two) -Sql 'q2'
+$hazards = [ordered]@{
+    "-ne 'Blocked'"                         = ([string]$standIn.Stage -ne 'Blocked')
+    "-notmatch 'Blocked'"                   = ([string]$standIn.Stage -notmatch 'Blocked')
+    "-notin 'Blocked', 'Completed'"         = ([string]$standIn.Stage -notin 'Blocked', 'Completed')
+    '$null -ne the column'                  = ($null -ne $standIn.Stage)
+    "the column is not ''"                  = ([string]$standIn.Stage -ne '')
+    'the row in a truth test'               = [bool]$standIn
+    'the column in a truth test'            = [bool]$standIn.Stage
+    'the column -lt 5 (compared as text)'   = ($standIn.Stage -lt 5)
+    "-like '*1*'"                           = ($standIn.Stage -like '*1*')
+    "-match '\d'"                           = ($standIn.Stage -match '\d')
+    'the same column of two reads, equal'   = ($standIn.Stage -eq $other.Stage)
+    'two columns of one read, equal'        = ($standIn.Stage -eq $standIn.AgvId)
+}
+foreach ($shape in $hazards.Keys) {
+    Add-Case "HAZARD, holds for a stand-in: $shape" ($hazards[$shape] -eq $true) "$($hazards[$shape])"
+}
+Add-Case 'the rule: an -eq against a literal expected value is what does NOT hold' (
+    -not ([string]$standIn.Stage -eq 'AwaitingSublot') -and -not ([string]$standIn.AgvId -eq 'AGV-1')) 'False, False'
+
+$wrappedNone = @(Read-L2SingleRow -Connection (New-ConnectionDouble $columns @()) -Sql 'q')
+Add-Case 'HAZARD: @(Read-L2SingleRow ...) for no row is ONE element ($null), not an empty array -- do not wrap it' (
+    $wrappedNone.Count -eq 1 -and $null -eq $wrappedNone[0]) "Count=$($wrappedNone.Count)"
 
 # ---------------------------------------------------------------- Select-L2SingleRow on its own
 
