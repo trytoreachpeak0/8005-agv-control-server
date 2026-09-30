@@ -2256,15 +2256,32 @@ public sealed partial class MultiVehicleExecutionTests
                 ]));
         }
 
+        /// <summary>
+        /// 「查无此单」按真实 RIoT 的形态答（control-server#404 增量审查 M-A）：HTTP 200、业务码 0、不带 result，网关归为
+        /// <c>AbsentAtObservation</c> 的 Unknown；只有 HTTP 404 才是 <see cref="RiotOrderObservationKind.NotFound"/>，而真实 RIoT 不回 404。
+        /// 默认关：既有用例按 404 写。
+        /// </summary>
+        public bool AnswersAbsentAsRealRiot { get; set; }
+
         public Task<RiotOrderObservation> ReconcileByUpperIdAsync(
             string upperId,
             CancellationToken cancellationToken)
         {
             _ = cancellationToken;
-            return Task.FromResult(_orders.TryGetValue(upperId, out RiotOrderObservation? order)
+            RiotOrderObservation answer = _orders.TryGetValue(upperId, out RiotOrderObservation? order)
                 ? order
-                : new RiotOrderObservation(upperId, RiotOrderObservationKind.NotFound, null));
+                : new RiotOrderObservation(upperId, RiotOrderObservationKind.NotFound, null);
+            return Task.FromResult(AnswersAbsentAsRealRiot && answer.Kind == RiotOrderObservationKind.NotFound
+                ? RealRiotAbsent(upperId)
+                : answer);
         }
+
+        /// <summary>真实 RIoT 对一个它没有单的 upperId 的回答，经网关之后的样子（<c>HttpRiotMovementGateway.ReconcileByUpperIdAsync</c>）。</summary>
+        public RiotOrderObservation RealRiotAbsent(string upperId) => new(
+            upperId,
+            RiotOrderObservationKind.Unknown,
+            null,
+            Receipt: new RiotOrderCallReceipt("RECONCILE", "AbsentAtObservation", clock.GetUtcNowWithoutTick(), ResultPresent: false));
 
         public Task<RiotOrderObservation> CreateAsync(OrderIntent intent, CancellationToken cancellationToken)
         {

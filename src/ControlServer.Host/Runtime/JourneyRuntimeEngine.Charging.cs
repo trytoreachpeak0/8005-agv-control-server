@@ -99,7 +99,8 @@ public sealed partial class JourneyRuntimeEngine
     /// <para>
     /// <b>结果未知的出口</b>（独立审查 M2(b)）：保持不能是永久的——建单应答丢了而 RIoT 上根本没有这张单时，承诺会永远占着用途与桩，只能改库解开。
     /// 全部成立才放弃这张单、按已确认失败收尾（<see cref="ChargingExecutionReasons.OrderNeverAppeared"/>，计入「两次即停」，走与取消相同的冷却，
-    /// 桩预占照旧按三项确认释放）：RIoT 对这个 <c>upperId</c> 明确答「查无此单」，连续满 <c>JourneyRuntime:ChargingOrderAbsentAbandonAfter</c>
+    /// 桩预占照旧按三项确认释放）：RIoT 对这个 <c>upperId</c> 明确答「查无此单」（HTTP 404，或真实 RIoT 的答法：HTTP 200、业务码 0、不带 result，且没有失败类别，
+    /// 即 <see cref="RiotOrderObservation.IsExactAbsentAtObservation"/>；增量审查 M-A），连续满 <c>JourneyRuntime:ChargingOrderAbsentAbandonAfter</c>
     /// （中间任何一次读到别的、或读不到，重新计时）；车证明停稳、没有任务号；RIoT 的未完成订单清单读全了、里面没有这辆车的单。
     /// 那张单事后才在 RIoT 冒出来、跑到这辆车上时，由外来单监督器取消并告警（<see cref="AbandonedChargeOrders"/>）。
     /// </para>
@@ -284,7 +285,7 @@ public sealed partial class JourneyRuntimeEngine
         JourneyStopRow stop,
         CancellationToken cancellationToken)
     {
-        string notProvenKey = $"charging-end-not-proven:{runtime.JourneyId}";
+        string notProvenKey = ChargingAllocationBoard.EndNotProvenKey(runtime.JourneyId);
         if (await ProvenStoppedWithoutOrderAsync(runtime.VehicleKey, cancellationToken).ConfigureAwait(false)
             is not { } readAt)
         {
@@ -471,9 +472,10 @@ public sealed partial class JourneyRuntimeEngine
             return;
         }
 
-        // Only RIoT's explicit "no such order" counts. An answer that could not be classified, or an order that is there,
-        // breaks the run and the count starts again.
-        if (observed.Kind != RiotOrderObservationKind.NotFound)
+        // Only a "no such order" counts: HTTP 404, or the exact absent-at-observation read -- HTTP 200 / code 0 with no result,
+        // which is what real RIoT answers (review M-A; the create path reads it the same way). An answer that could not be
+        // classified, one with a failure category or a code, or an order that is there, breaks the run and the count starts again.
+        if (observed.Kind != RiotOrderObservationKind.NotFound && !observed.IsExactAbsentAtObservation(stop.UpperId))
         {
             board.SeenOrUnread(stop.UpperId);
             return;

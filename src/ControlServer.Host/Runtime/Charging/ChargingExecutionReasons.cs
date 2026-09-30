@@ -77,15 +77,9 @@ public static class ChargingExecutionReasons
     /// <summary>桩预占的释放原因：周期已以失败结束，充电已停、原车不在桩上、桩位可确认空闲三项都确认了（<c>REQ-0173</c>）。</summary>
     public const string ReservationReleasedAfterEndedCycle = "CHARGER_RELEASED_AFTER_ENDED_CYCLE";
 
-    /// <summary>已确认失败的收尾码：这辆车下一次分配要在冷却期内排除原桩、二次即停的那几种。</summary>
+    /// <summary>已确认失败的收尾码：这辆车之后进冷却（冷却期内一个桩都不分）、计入「两次即停」的那几种。</summary>
     public static IReadOnlySet<string> ConfirmedFailures { get; } =
         new HashSet<string>(StringComparer.Ordinal) { OrderEnded, OrderFailed, OrderNeverAppeared };
-
-    /// <summary>撤回码：单从没发出过的承诺作废时写的那几种。预占当场释放，不计失败。</summary>
-    public static IReadOnlySet<string> Withdrawals { get; } = new HashSet<string>(StringComparer.Ordinal)
-    {
-        WithdrawnReservationLost, WithdrawnChargerNoLongerEligible, WithdrawnNoLongerRequired, WithdrawnDepartureNotProven,
-    };
 
     /// <summary>建单没有确认时写在旅程上的码：<c>CHARGER_{Outcome}</c>。引擎与看板说明都经这里拼。</summary>
     public static string LegOutcomeCode(MovementDispatchOutcome outcome) => $"{LegName}_{outcome}";
@@ -96,19 +90,5 @@ public static class ChargingExecutionReasons
         .. Enum.GetValues<MovementDispatchOutcome>()
             .Where(outcome => outcome is not (MovementDispatchOutcome.Confirmed or MovementDispatchOutcome.TerminalReconciliationRequired))
             .Select(LegOutcomeCode),
-    ];
-
-    /// <summary>这一族写在旅程行上的全部码（保持类与收尾类），给看板说明与测试核对用。</summary>
-    public static IReadOnlyList<string> All { get; } =
-    [
-        DepartureNotProven,
-        CycleMissing,
-        WithdrawnReservationLost,
-        WithdrawnChargerNoLongerEligible,
-        WithdrawnNoLongerRequired,
-        WithdrawnDepartureNotProven,
-        OrderEnded,
-        OrderFailed,
-        OrderNeverAppeared,
     ];
 }

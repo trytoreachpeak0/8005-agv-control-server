@@ -704,7 +704,7 @@ public sealed partial class VehicleFaultRecoveryService(
     /// CHARGING purpose released and the journey closed in the caller's transaction. The charger reservation is not released
     /// here: REQ-0173 releases it only once charging has stopped, the vehicle is off the charger and the charger is confirmed
     /// free, which the charging allocation's sweep checks every round. Nothing is rebuilt (REQ-0362's rebuild continues a
-    /// demand, and a charging order has none); the next allocation leaves this charger out for the cooldown, and a second
+    /// demand, and a charging order has none); for the cooldown the vehicle is committed to no charger at all, and a second
     /// failure inside the repeat window puts the vehicle on manual charging hold.
     /// </summary>
     private async Task<string> EndChargingAsync(JourneyRuntimeRow runtime, DateTimeOffset now, CancellationToken cancellationToken)

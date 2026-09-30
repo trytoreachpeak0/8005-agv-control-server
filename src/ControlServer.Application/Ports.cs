@@ -244,7 +244,29 @@ public sealed record RiotOrderObservation(
     string? VehicleKey = null,
     int? MapId = null,
     int? DestinationStationId = null,
-    RiotOrderCallReceipt? Receipt = null);
+    RiotOrderCallReceipt? Receipt = null)
+{
+    /// <summary>
+    /// The exact absent-at-observation read of <paramref name="expectedUpperId"/>: a RECONCILE that RIoT answered HTTP 200 /
+    /// business code 0 with no result, classified as nothing more than that. It is the form real RIoT answers an upperId it
+    /// has no order for -- only HTTP 404 reads <see cref="RiotOrderObservationKind.NotFound"/>, and RIoT does not answer
+    /// that (the 2026-08-29 field run's reconciliations before every create, control-server#404 review M-A). Any failure
+    /// category, status code, business code or result makes it an ordinary unknown.
+    /// </summary>
+    public bool IsExactAbsentAtObservation(string expectedUpperId) =>
+        Kind == RiotOrderObservationKind.Unknown &&
+        string.Equals(UpperId, expectedUpperId, StringComparison.Ordinal) &&
+        OrderId is null &&
+        Receipt is
+        {
+            Operation: "RECONCILE",
+            Classification: "AbsentAtObservation",
+            HttpStatusCode: null,
+            BusinessCode: null,
+            ResultPresent: false,
+            FailureCategory: null
+        };
+}
 
 public sealed record RiotVehicleObservation(
     string VehicleKey,

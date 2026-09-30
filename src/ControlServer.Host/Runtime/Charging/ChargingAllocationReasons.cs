@@ -53,6 +53,13 @@ public static class ChargingAllocationReasons
     /// <summary>名册里这辆车可用的桩逐个核验后一个都不剩；逐桩原因在细节里（例如 <c>211=CHARGER_RESERVED_OR_OCCUPIED</c>）。车留在队里。</summary>
     public const string NoChargerAvailable = "CHARGING_NO_CHARGER_AVAILABLE";
 
+    /// <summary>
+    /// 有桩可分，但这辆车此刻过不了出发前安全门里派车事实之外的那几项（<c>NonBusinessDepartureGate</c>：会话里某个仓位没锁好或开锁输出没复位、
+    /// 安全摘要带着阻断原因、RIoT 读不到它停稳）：不承诺，缺的那几项在细节里。车留在队里，门一好下一轮就分（增量审查 S-a：不先承诺、等满时限
+    /// 再撤回，那样单车时每约 45 秒循环一次）。
+    /// </summary>
+    public const string DepartureNotProven = "CHARGING_DEPARTURE_NOT_PROVEN_AT_ALLOCATION";
+
     /// <summary>候选算出来了，承诺那一次保存被数据库约束拒掉（车或桩被别人先拿到）；整笔回滚，本轮不换桩，下一轮重评。</summary>
     public const string CommitmentRefused = "CHARGING_COMMITMENT_REFUSED";
 

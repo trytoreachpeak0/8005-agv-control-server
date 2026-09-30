@@ -1222,6 +1222,7 @@ internal static class JourneyRuntimeWorkerTestKit
                     Riot,
                     new RiotOrderCommandAuditStore(Context),
                     new VehicleRoster(options),
+                    options,
                     Microsoft.Extensions.Options.Options.Create(ForeignOrderCancel),
                     Clock,
                     ForeignOrderLog),
@@ -2234,6 +2235,7 @@ internal static class JourneyRuntimeWorkerTestKit
                 riot,
                 new RiotOrderCommandAuditStore(context),
                 new VehicleRoster(Microsoft.Extensions.Options.Options.Create(options)),
+                Microsoft.Extensions.Options.Options.Create(options),
                 Microsoft.Extensions.Options.Options.Create(new RiotForeignOrderCancelOptions()),
                 clock,
                 NullLogger<ForeignRunningOrderSupervisor>.Instance);

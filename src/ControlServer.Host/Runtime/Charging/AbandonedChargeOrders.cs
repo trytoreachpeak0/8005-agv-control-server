@@ -32,6 +32,54 @@ public static class AbandonedChargeOrders
     /// <summary>监督器记在 <c>ForeignRiotOrders.OwnershipBasis</c> 上的依据。</summary>
     public const string OwnershipBasis = "OWN_CHARGE_ORDER_ABANDONED";
 
+    /// <summary>一张在追读窗口内被放弃的充电单：它的 <c>upperId</c> 与为哪辆车建的。</summary>
+    public sealed record Chased(string UpperId, string VehicleKey);
+
+    /// <summary>
+    /// 在 <paramref name="window"/> 之内被放弃的充电单（增量审查 S-b）：监督器在这段时间里按 <c>upperId</c> 追读，排队中的也取消。
+    /// 没有被放弃过的单时不读时钟。时刻在客户端比：SQLite 不接受 <see cref="DateTimeOffset"/> 的比较。
+    /// </summary>
+    public static async Task<IReadOnlyList<Chased>> WithinAsync(
+        ControlServerDbContext dbContext,
+        TimeSpan window,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(dbContext);
+        ArgumentNullException.ThrowIfNull(timeProvider);
+        var ended = await dbContext.Set<ChargingCycleRow>().AsNoTracking()
+            .Where(cycle => cycle.EndReason == ChargingExecutionReasons.OrderNeverAppeared)
+            .Select(cycle => new { cycle.JourneyId, cycle.VehicleKey, cycle.EndedAt })
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        if (ended.Length == 0)
+        {
+            return [];
+        }
+
+        // The upperId from the journey's charger stop, as IsAbandonedAsync reads it: the cycle carries one only once RIoT
+        // confirmed the create, which an abandoned one never had.
+        DateTimeOffset now = timeProvider.GetUtcNow();
+        Dictionary<string, string> recent = ended
+            .Where(cycle => cycle.EndedAt is { } at && now - at <= window)
+            .ToDictionary(cycle => cycle.JourneyId, cycle => cycle.VehicleKey, StringComparer.Ordinal);
+        if (recent.Count == 0)
+        {
+            return [];
+        }
+
+        string[] journeyIds = [.. recent.Keys];
+        var stops = await dbContext.Set<JourneyStopRow>().AsNoTracking()
+            .Where(stop => journeyIds.Contains(stop.JourneyId) && stop.StopRole == JourneyStopRoles.Charger)
+            .Select(stop => new { stop.JourneyId, stop.UpperId })
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        return
+        [
+            .. stops
+                .Where(stop => !string.IsNullOrWhiteSpace(stop.UpperId))
+                .Select(stop => new Chased(stop.UpperId, recent[stop.JourneyId])),
+        ];
+    }
+
     public static async Task<bool> IsAbandonedAsync(
         ControlServerDbContext dbContext,
         string orderId,

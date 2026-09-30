@@ -44,6 +44,25 @@ internal sealed class ForeignRunningOrdersQueryEndpoint : IDashboardQueryEndpoin
                 + "请到 RIoT 按订单号核对这张单的状态；在 RIoT 里把它结束后这一行自动消失。RIoT 里查不到这张单时找值班工程师",
         };
 
+    /// <summary>
+    /// 本服务端自己建了又放弃的充电单（依据 <c>OWN_CHARGE_ORDER_ABANDONED</c>，control-server#404 增量审查 S-b）的说明：上面那几句都说「不是本服务端
+    /// 建的订单」，照那样读现场会去找外部建单人，而这张单是自己的。只列这种单会走到的几种状态。
+    /// </summary>
+    internal static IReadOnlyDictionary<string, string> AbandonedChargeOrderDescriptions { get; } =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [ForeignRunningOrders.CancellingReason] =
+                "这是本服务端自己给这辆车建的充电单：建单后 RIoT 一直查不到它，服务端已放弃那趟充电，它却事后冒了出来（排队中或已在跑）。"
+                + "没有旅程在管它，所以服务端正在取消它（只发一次），RIoT 回查确认它已终结之前，这辆车不接新单、不接途中追加。"
+                + "不用去找外部建单人。取消见效后这一行自动消失；持续十几秒以上仍在，会转成要人处理的原因码",
+            [ForeignRunningOrders.StillRunningAfterCancelReason] =
+                "这是本服务端自己建了又放弃的充电单（建单后 RIoT 一直查不到它）。服务端对它发过一次取消，它仍在 RIoT 里：服务端不会再发第二次，"
+                + "这辆车不接新单、不接途中追加。请到 RIoT 按订单号把这张充电单结束，必要时到车前处理；不用去找外部建单人。它终结后这一行自动消失",
+            [ForeignRunningOrders.UnsettledReason] =
+                "这是本服务端自己建了又放弃的充电单。它已不在 RIoT 的未完成列表里，但按订单号回查读不到它已终结：服务端只认明确终结才放车，"
+                + "这辆车一直不接新单、不接途中追加。请到 RIoT 按订单号核对这张充电单的状态；在 RIoT 里把它结束后这一行自动消失",
+        };
+
     public string Path => DashboardQueryEndpointCatalog.QueryPrefix + "foreign-running-orders";
 
     public async Task<object> ReadAsync(ControlServerDbContext dbContext, CancellationToken cancellationToken)
@@ -73,7 +92,11 @@ internal sealed class ForeignRunningOrdersQueryEndpoint : IDashboardQueryEndpoin
                     ownershipBasis = row.OwnershipBasis,
                     state = row.State,
                     reasonCode,
-                    reasonDescription = reasonCode is null ? null : Descriptions.GetValueOrDefault(reasonCode),
+                    reasonDescription = reasonCode is null
+                        ? null
+                        : string.Equals(row.OwnershipBasis, Runtime.Charging.AbandonedChargeOrders.OwnershipBasis, StringComparison.Ordinal)
+                            ? AbandonedChargeOrderDescriptions.GetValueOrDefault(reasonCode)
+                            : Descriptions.GetValueOrDefault(reasonCode),
                     orderStateAtDetection = row.OrderStateAtDetection,
                     detectedAt = row.DetectedAt,
                     cancelSentAt = row.CancelSentAt,

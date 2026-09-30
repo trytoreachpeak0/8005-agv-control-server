@@ -93,6 +93,45 @@ public sealed class ChargingAllocationBoard
 
     /// <inheritdoc cref="FirstTime"/>
     public void Unsay(string key) => _said.TryRemove(key, out _);
+
+    /// <summary>「取消后一直证明不了停稳」已告警过的那趟充电旅程的键（事件 2256）。</summary>
+    public static string EndNotProvenKey(string journeyId) => EndNotProvenPrefix + journeyId;
+
+    /// <summary>「失败周期留下的桩预占一直放不掉」已告警过的那趟充电旅程的键（事件 2247）。</summary>
+    public static string ReservationStuckKey(string journeyId) => ReservationStuckPrefix + journeyId;
+
+    /// <summary>
+    /// 丢掉已经了结的事的键（增量审查低项）：旅程不再开着的「证明不了停稳」，桩预占已不在的「放不掉」。旅程或预占走别的路了结时——人工清除
+    /// 故障、人工清桩——没有人来 <see cref="Unsay"/>，键会一直留在这块单例板上。
+    /// </summary>
+    /// <param name="openJourneyIds">此刻还开着的旅程里，有「证明不了停稳」键的那几趟。</param>
+    /// <param name="heldReservationJourneyIds">此刻还预占着桩的旅程。</param>
+    public void ForgetSettled(IReadOnlySet<string> openJourneyIds, IReadOnlySet<string> heldReservationJourneyIds)
+    {
+        ArgumentNullException.ThrowIfNull(openJourneyIds);
+        ArgumentNullException.ThrowIfNull(heldReservationJourneyIds);
+        foreach (string key in _said.Keys)
+        {
+            if ((key.StartsWith(EndNotProvenPrefix, StringComparison.Ordinal) &&
+                 !openJourneyIds.Contains(key[EndNotProvenPrefix.Length..])) ||
+                (key.StartsWith(ReservationStuckPrefix, StringComparison.Ordinal) &&
+                 !heldReservationJourneyIds.Contains(key[ReservationStuckPrefix.Length..])))
+            {
+                _said.TryRemove(key, out _);
+            }
+        }
+    }
+
+    /// <summary>有「证明不了停稳」键的旅程：<see cref="ForgetSettled"/> 之前要读它们开没开着。</summary>
+    public IReadOnlyList<string> JourneysSaidEndNotProven =>
+    [
+        .. _said.Keys
+            .Where(key => key.StartsWith(EndNotProvenPrefix, StringComparison.Ordinal))
+            .Select(key => key[EndNotProvenPrefix.Length..]),
+    ];
+
+    private const string EndNotProvenPrefix = "charging-end-not-proven:";
+    private const string ReservationStuckPrefix = "charger-reservation-stuck:";
 }
 
 /// <summary>
@@ -163,6 +202,8 @@ public sealed class ChargingAllocator(
     IManualChargingHoldStore manualHolds,
     ChargerOccupancyReader occupancy,
     RouteGraphAccess routeGraph,
+    OnboardDispatchFactsReader onboardFacts,
+    IRiotVehicleSafetyFacts vehicleSafety,
     OnboardJourneyPublisher publisher,
     IOptions<JourneyRuntimeOptions> runtimeOptions,
     ChargingAllocationBoard board,
@@ -224,7 +265,9 @@ public sealed class ChargingAllocator(
             "CHARGER_TARGETED_BY_RUNNING_ORDER); can RIoT read every fleet vehicle and its unfinished orders " +
             "(CHARGER_OCCUPANCY_UNKNOWN names what could not be read); is the route graph engine enabled and fresh " +
             "(CHARGING_ROUTE_GRAPH_UNAVAILABLE, CHARGER_UNREACHABLE); is the charger on allocation hold or renamed on the Map " +
-            "(CHARGER_ALLOCATION_HELD, CHARGER_NOT_ON_CURRENT_MAP). Said once per vehicle per conclusion.");
+            "(CHARGER_ALLOCATION_HELD, CHARGER_NOT_ON_CURRENT_MAP); can the vehicle set off at all (CHARGING_DEPARTURE_NOT_PROVEN_AT_ALLOCATION " +
+            "names what the departure gate still lacks: a slot not locked, a safety reason, RIoT not reading it stopped). Said " +
+            "once per vehicle per conclusion.");
 
     private static readonly Action<ILogger, int, int, string, DateTimeOffset, string, Exception?> LogReservationStuck =
         LoggerMessage.Define<int, int, string, DateTimeOffset, string>(
@@ -436,6 +479,27 @@ public sealed class ChargingAllocator(
                 waiting: string.Join(", ", excluded.Concat(reads.Occupancy.Unknown)));
         }
 
+        // Review S-a: what the departure gate checks on top of the dispatch facts, checked here with the same reads. Committing
+        // a vehicle the gate would hold back only has it wait out the withdrawal limit and be committed again, round after round.
+        List<string> departureGaps =
+        [
+            .. await NonBusinessDepartureGate.SessionGapsAsync(onboardFacts, vehicle.AgvId, cancellationToken).ConfigureAwait(false),
+        ];
+        try
+        {
+            departureGaps.AddRange(await NonBusinessDepartureGate
+                .RiotStandstillGapsAsync(vehicleSafety, vehicle.VehicleKey, cancellationToken).ConfigureAwait(false));
+        }
+        catch (Exception error) when (NonBusinessDepartureGate.IsUnreadable(error, cancellationToken))
+        {
+            departureGaps.Add(NonBusinessDepartureGate.RiotSafetyUnreadable);
+        }
+        if (departureGaps.Count > 0)
+        {
+            string gaps = string.Join(", ", departureGaps.Distinct(StringComparer.Ordinal));
+            return Refuse(vehicle, ChargingAllocationReasons.DepartureNotProven, $"{detail}; departure: {gaps}", waiting: gaps);
+        }
+
         // Nearest first, over what the chain left; the lower station number on a tie. The station number is the roster's
         // stable identity, so the tie does not turn with the order the roster happens to be read in.
         (ChargerRosterEntry chosen, long costMm) = eligible.OrderBy(item => item.CostMm).ThenBy(item => item.Charger.StationId).First();
@@ -590,6 +654,7 @@ public sealed class ChargingAllocator(
             StationExclusivityRow[] held = await dbContext.Set<StationExclusivityRow>().AsNoTracking()
                 .Where(row => row.StationKind == StationExclusivityKinds.Charger)
                 .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+            await ForgetSettledAsync(held, cancellationToken).ConfigureAwait(false);
             foreach (StationExclusivityRow row in held)
             {
                 ChargingCycleRow? cycle = await dbContext.Set<ChargingCycleRow>().AsNoTracking()
@@ -601,7 +666,7 @@ public sealed class ChargingAllocator(
                 }
 
                 reads.Occupancy ??= await occupancy.ReadAsync(cancellationToken).ConfigureAwait(false);
-                string stuckKey = $"charger-reservation-stuck:{row.JourneyId}";
+                string stuckKey = ChargingAllocationBoard.ReservationStuckKey(row.JourneyId);
                 string? missing =
                     !reads.Occupancy.Vehicles.TryGetValue(row.VehicleKey, out RiotVehicleObservation? vehicle)
                         ? "the vehicle cannot be read from RIoT (offline, or its position is missing)"
@@ -642,6 +707,21 @@ public sealed class ChargingAllocator(
             ForgetStaged(agvId: null);
             LogSweepFailed(logger, error);
         }
+    }
+
+    /// <summary>板上只告警一次的键里，事情已经走别的路了结的，丢掉（<see cref="ChargingAllocationBoard.ForgetSettled"/>）。没有那种键时不读库。</summary>
+    private async Task ForgetSettledAsync(StationExclusivityRow[] held, CancellationToken cancellationToken)
+    {
+        string[] said = [.. board.JourneysSaidEndNotProven];
+        HashSet<string> open = said.Length == 0
+            ? new HashSet<string>(StringComparer.Ordinal)
+            : new HashSet<string>(
+                await dbContext.JourneyRuntimes.AsNoTracking()
+                    .Where(row => said.Contains(row.JourneyId) && row.Stage != JourneyRuntimeStage.Completed)
+                    .Select(row => row.JourneyId)
+                    .ToArrayAsync(cancellationToken).ConfigureAwait(false),
+                StringComparer.Ordinal);
+        board.ForgetSettled(open, new HashSet<string>(held.Select(row => row.JourneyId), StringComparer.Ordinal));
     }
 
     private bool StandsOn(RiotVehicleObservation vehicle, StationExclusivityRow charger) =>

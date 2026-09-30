@@ -144,7 +144,8 @@ public sealed class JourneyRuntimeOptions
     /// <summary>
     /// How long RIoT has to go on answering "no such order" for a charge order whose create went out with its result unknown,
     /// before the server gives the order up and ends the charging commitment as a confirmed failure (control-server#404,
-    /// independent review M2). Every reading in that time has to be "not found" -- any other answer, or none, starts the count
+    /// independent review M2). Every reading in that time has to be "not found" -- HTTP 404, or the exact absent-at-observation
+    /// read real RIoT gives (HTTP 200, code 0, no result; review M-A) -- any other answer, or none, starts the count
     /// again -- and the vehicle has to be proven stopped with no unfinished order of its own. Without it a create whose answer
     /// was lost kept the vehicle's CHARGING purpose and the charger's reservation for ever. Two minutes by default; positive
     /// and at most one hour.

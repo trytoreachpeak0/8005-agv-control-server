@@ -52,6 +52,13 @@ namespace ControlServer.Host.Runtime.ForeignOrders;
 /// read back. The cancel gate above does not apply to it: that gate is about other people's orders, and this one is ours.
 /// </para>
 /// <para>
+/// <b>Such an order is chased while it is still queueing</b> (review S-b): for <c>JourneyRuntime:OwnOrderRebuildRepeatWindow</c>
+/// after the commitment was given up, any unfinished order RIoT lists under its <c>upperId</c> is taken up, running or not --
+/// a queueing one would otherwise be dispatched first and caught only once it had set the vehicle moving. It is held against
+/// the charging vehicle until RIoT names one, and for it "still there" before the cancel is "still listed", not "still
+/// running on the same vehicle". Past the window only a running one is caught, like any order.
+/// </para>
+/// <para>
 /// <b>The 0/1 gate is not relaxed.</b> While a row is in one of <see cref="ForeignRiotOrderStates.Holding"/> its vehicle takes
 /// no new dispatch or appended demand, and its session's unknown is not this server's own order
 /// (<see cref="ForeignRunningOrders.HeldAgvIdsAsync"/>). A row stops holding only when RIoT reads the order back in an explicit
@@ -75,6 +82,7 @@ public sealed class ForeignRunningOrderSupervisor(
     IRiotOrderCommandGateway commands,
     IRiotOrderCommandAuditStore audit,
     VehicleRoster roster,
+    IOptions<JourneyRuntimeOptions> runtimeOptions,
     IOptions<RiotForeignOrderCancelOptions> cancelGate,
     TimeProvider timeProvider,
     ILogger<ForeignRunningOrderSupervisor> logger)
@@ -137,6 +145,16 @@ public sealed class ForeignRunningOrderSupervisor(
             "it (RiotForeignOrderCancel:Enabled is false). It is not cancelled; the vehicle takes no new work until it has " +
             "ended. A person has to end it in RIoT or at the vehicle.");
 
+    private static readonly Action<ILogger, string, string?, string, string, int?, Exception?> LogAbandonedChargeOrderFound =
+        LoggerMessage.Define<string, string?, string, string, int?>(
+            LogLevel.Warning,
+            new EventId(2188, nameof(LogAbandonedChargeOrderFound)),
+            "RIoT order {OrderId} (upperId {UpperId}) is a charge order this server created for vehicle {AgvId} ({DeviceKey}) " +
+            "and then gave up: RIoT had answered \"no such order\" for it long enough, and the charging commitment was ended " +
+            "(CHARGING_ORDER_NEVER_APPEARED). It has now turned up in state {OrderState}. No journey is watching it, so it is " +
+            "cancelled once and the vehicle takes no new work until RIoT reads it back ended. It is not someone else's order: " +
+            "there is nobody outside to look for.");
+
     private static readonly Action<ILogger, string, string, string, DateTimeOffset, Exception?> LogForeignOrderUnsettled =
         LoggerMessage.Define<string, string, string, DateTimeOffset>(
             LogLevel.Error,
@@ -166,6 +184,7 @@ public sealed class ForeignRunningOrderSupervisor(
             }
 
             await RecogniseAsync(rows, listing, ours, cancellationToken).ConfigureAwait(false);
+            await ChaseAbandonedChargeOrdersAsync(rows, listing, ours, cancellationToken).ConfigureAwait(false);
             // A round with nothing foreign on our vehicles -- nearly every round -- writes nothing.
             if (dbContext.ChangeTracker.HasChanges())
             {
@@ -186,9 +205,17 @@ public sealed class ForeignRunningOrderSupervisor(
     /// Whether this deployment may cancel <paramref name="row"/>'s order: a foreign order only where authorized; a charge order
     /// this server created and gave up always -- it is its own (control-server#404).
     /// </summary>
-    private bool MayCancel(ForeignRiotOrderRow row) =>
-        cancelGate.Value.Enabled ||
+    private bool MayCancel(ForeignRiotOrderRow row) => cancelGate.Value.Enabled || IsAbandonedChargeOrder(row);
+
+    private static bool IsAbandonedChargeOrder(ForeignRiotOrderRow row) =>
         string.Equals(row.OwnershipBasis, Charging.AbandonedChargeOrders.OwnershipBasis, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Whether <paramref name="order"/> is still in play for <paramref name="row"/>: running on a vehicle of ours -- or, for a charge
+    /// order this server gave up, listed at all (review S-b: queueing is exactly when it has to go).
+    /// </summary>
+    private static bool StillInPlay(ForeignRiotOrderRow row, RiotListedOrder? order, Dictionary<string, FleetVehicle> ours) =>
+        RunningOnOurs(order, ours) is not null || (order is not null && IsAbandonedChargeOrder(row));
 
     /// <summary>
     /// The vehicles this server manages now, by RIoT <c>deviceKey</c>: the roster's, less any whose lifecycle is archived --
@@ -224,11 +251,14 @@ public sealed class ForeignRunningOrderSupervisor(
         DateTimeOffset now = timeProvider.GetUtcNow();
         RiotListedOrder? order = listing.Orders.FirstOrDefault(
             listed => string.Equals(listed.OrderId, row.RiotOrderId, StringComparison.Ordinal));
-        if (RunningOnOurs(order, ours) is { } vehicle)
+        if (StillInPlay(row, order, ours))
         {
             row.LastSeenRunningAt = now;
-            row.AgvId = vehicle.AgvId;
-            row.DeviceKey = vehicle.VehicleKey;
+            if (RunningOnOurs(order, ours) is { } vehicle)
+            {
+                row.AgvId = vehicle.AgvId;
+                row.DeviceKey = vehicle.VehicleKey;
+            }
             if (row.State is ForeignRiotOrderStates.LeftVehicle or ForeignRiotOrderStates.Ended or ForeignRiotOrderStates.Unsettled)
             {
                 // Back on a vehicle of ours, or back in the running listing. A cancel that already went out is not sent again.
@@ -349,9 +379,64 @@ public sealed class ForeignRunningOrderSupervisor(
         }
     }
 
+    /// <summary>
+    /// Records every unfinished order RIoT lists under the <c>upperId</c> of a charge order this server gave up within
+    /// <c>JourneyRuntime:OwnOrderRebuildRepeatWindow</c>, running or not (review S-b). Held against the vehicle it runs on, or,
+    /// while it runs on none, the vehicle it was created for. Staged; the caller saves.
+    /// </summary>
+    private async Task ChaseAbandonedChargeOrdersAsync(
+        List<ForeignRiotOrderRow> rows,
+        RiotUnfinishedOrderListing listing,
+        Dictionary<string, FleetVehicle> ours,
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyList<Charging.AbandonedChargeOrders.Chased> chased = await Charging.AbandonedChargeOrders
+            .WithinAsync(dbContext, runtimeOptions.Value.OwnOrderRebuildRepeatWindow, timeProvider, cancellationToken)
+            .ConfigureAwait(false);
+        HashSet<string> known = new(rows.Select(row => row.RiotOrderId), StringComparer.Ordinal);
+        foreach (Charging.AbandonedChargeOrders.Chased abandoned in chased)
+        {
+            if (!ours.TryGetValue(abandoned.VehicleKey, out FleetVehicle? createdFor))
+            {
+                continue;
+            }
+
+            foreach (RiotListedOrder order in listing.Orders.Where(listed =>
+                         string.Equals(listed.UpperId?.Trim(), abandoned.UpperId, StringComparison.Ordinal) &&
+                         !known.Contains(listed.OrderId)))
+            {
+                FleetVehicle vehicle = RunningOnOurs(order, ours) ?? createdFor;
+                DateTimeOffset now = timeProvider.GetUtcNow();
+                ForeignRiotOrderRow row = new()
+                {
+                    RiotOrderId = order.OrderId,
+                    UpperId = order.UpperId,
+                    AgvId = vehicle.AgvId,
+                    DeviceKey = vehicle.VehicleKey,
+                    Ownership = ForeignRiotOrderOwnership.Foreign,
+                    OwnershipBasis = Charging.AbandonedChargeOrders.OwnershipBasis,
+                    State = ForeignRiotOrderStates.Detected,
+                    OrderStateAtDetection = order.OrderState,
+                    DetectedAt = now,
+                    LastSeenRunningAt = now,
+                    UpdatedAt = now,
+                };
+                dbContext.ForeignRiotOrders.Add(row);
+                rows.Add(row);
+                known.Add(row.RiotOrderId);
+                LogFound(row, order.OrderState);
+            }
+        }
+    }
+
     private void LogFound(ForeignRiotOrderRow row, int? orderState)
     {
-        if (row.Ownership == ForeignRiotOrderOwnership.Foreign)
+        if (IsAbandonedChargeOrder(row))
+        {
+            // Not event 2180: that one tells the site the order is someone else's, and sends them looking for who made it.
+            LogAbandonedChargeOrderFound(logger, row.RiotOrderId, row.UpperId, row.AgvId, row.DeviceKey, orderState, null);
+        }
+        else if (row.Ownership == ForeignRiotOrderOwnership.Foreign)
         {
             LogForeignOrderFound(
                 logger, row.RiotOrderId, row.UpperId, row.AgvId, row.DeviceKey, orderState, row.OwnershipBasis, null);
@@ -464,7 +549,7 @@ public sealed class ForeignRunningOrderSupervisor(
             return;
         }
 
-        if (RunningOnOurs(order, ours) is null)
+        if (!StillInPlay(row, order, ours))
         {
             if (order is null)
             {

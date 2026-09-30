@@ -954,17 +954,13 @@ public sealed partial class JourneyRuntimeEngine
                 reasons.Add(Release.DemandReleaseRules.MapMismatchReason);
             }
 
-            RiotVehicleSafetyObservation safety = await vehicleSafety
-                .ReadVehicleSafetyAsync(runtime.VehicleKey, cancellationToken).ConfigureAwait(false);
-            if (safety.MotionState != RiotVehicleMotionState.Stopped)
-            {
-                reasons.AddRange(safety.ReasonCodes.Count > 0 ? safety.ReasonCodes : ["RIOT_VEHICLE_NOT_STOPPED"]);
-            }
+            // The same read the charging allocation makes before it commits (control-server#404 review S-a).
+            reasons.AddRange(await Dispatch.NonBusinessDepartureGate
+                .RiotStandstillGapsAsync(vehicleSafety, runtime.VehicleKey, cancellationToken).ConfigureAwait(false));
         }
-        catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
-                                      !cancellationToken.IsCancellationRequested)
+        catch (Exception error) when (Dispatch.NonBusinessDepartureGate.IsUnreadable(error, cancellationToken))
         {
-            reasons.Add("RIOT_VEHICLE_SAFETY_UNREADABLE");
+            reasons.Add(Dispatch.NonBusinessDepartureGate.RiotSafetyUnreadable);
         }
 
         return [.. reasons];

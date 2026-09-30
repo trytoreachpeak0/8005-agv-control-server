@@ -635,21 +635,9 @@ public sealed partial class JourneyRuntimeEngine
         {
             gaps.Add(commissioning);
         }
-        SessionRecoveryRow? session = await CurrentReadySessionAsync(runtime.AgvId, cancellationToken).ConfigureAwait(false);
-        if (session is null)
-        {
-            gaps.Add("ONBOARD_SESSION_NOT_READY");
-        }
-        else if (session.SafetyRevision is not long safetyRevision)
-        {
-            gaps.Add("SAFETY_STATE_UNREADABLE");
-        }
-        else
-        {
-            gaps.AddRange(await onboardFacts
-                .ReadDepartureSafetyGapsAsync(runtime.AgvId, session.SessionGeneration, safetyRevision, cancellationToken)
-                .ConfigureAwait(false));
-        }
+        // The same read the charging allocation makes before it commits (control-server#404 review S-a).
+        gaps.AddRange(await Dispatch.NonBusinessDepartureGate
+            .SessionGapsAsync(onboardFacts, runtime.AgvId, cancellationToken).ConfigureAwait(false));
         return [.. gaps.Distinct(StringComparer.Ordinal)];
     }
 
