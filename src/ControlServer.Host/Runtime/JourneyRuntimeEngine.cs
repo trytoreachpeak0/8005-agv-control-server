@@ -656,7 +656,7 @@ public sealed partial class JourneyRuntimeEngine(
                     // control-server#404: so has a charging journey, up to its arrival at the charger.
                     else if (runtime.IsCharging())
                     {
-                        await AdvanceChargingAsync(runtime, cancellationToken).ConfigureAwait(false);
+                        await AdvanceChargingAsync(runtime, currentMap, cancellationToken).ConfigureAwait(false);
                     }
                     else
                     {
@@ -4802,8 +4802,7 @@ public sealed partial class JourneyRuntimeEngine(
         // control-server#390: an idle return held because its order may still exist or its vehicle may still move.
         string.Equals(runtime.BlockReasonCode, IdleReturn.IdleReturnExecutionReasons.WaitingPointLostOrderInFlight, StringComparison.Ordinal) ||
         string.Equals(runtime.BlockReasonCode, IdleReturn.IdleReturnExecutionReasons.OrderEndedStopNotProven, StringComparison.Ordinal) ||
-        // control-server#404: a charging journey whose reservation or cycle is gone waits for a person to look.
-        string.Equals(runtime.BlockReasonCode, Charging.ChargingExecutionReasons.ReservationNotHeld, StringComparison.Ordinal) ||
+        // control-server#404: a charging journey whose cycle is gone waits for a person to look.
         string.Equals(runtime.BlockReasonCode, Charging.ChargingExecutionReasons.CycleMissing, StringComparison.Ordinal);
 
     private static bool IsHeldForAreaEndAdmission(JourneyRuntimeRow runtime) =>

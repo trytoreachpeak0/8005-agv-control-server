@@ -45,6 +45,13 @@ namespace ControlServer.Host.Runtime.ForeignOrders;
 /// The gate is read after the armed-attempt check: a cancel that may already have gone out is never re-decided by it.
 /// </para>
 /// <para>
+/// <b>One kind of this server's own order is handled here too</b> (control-server#404): a charge order the server gave up --
+/// its create went out, RIoT answered "no such order" for long enough, and the charging commitment was closed
+/// (<see cref="Charging.AbandonedChargeOrders"/>). Should RIoT show it running on a vehicle of ours after all, no journey is
+/// watching it, so it is taken through the same steps as a proven foreign order: recorded, the vehicle held, cancelled once,
+/// read back. The cancel gate above does not apply to it: that gate is about other people's orders, and this one is ours.
+/// </para>
+/// <para>
 /// <b>The 0/1 gate is not relaxed.</b> While a row is in one of <see cref="ForeignRiotOrderStates.Holding"/> its vehicle takes
 /// no new dispatch or appended demand, and its session's unknown is not this server's own order
 /// (<see cref="ForeignRunningOrders.HeldAgvIdsAsync"/>). A row stops holding only when RIoT reads the order back in an explicit
@@ -166,15 +173,22 @@ public sealed class ForeignRunningOrderSupervisor(
             }
         }
 
-        bool mayCancel = cancelGate.Value.Enabled;
         foreach (ForeignRiotOrderRow row in rows.Where(row =>
                      row.Ownership == ForeignRiotOrderOwnership.Foreign &&
                      (row.State is ForeignRiotOrderStates.Detected or ForeignRiotOrderStates.CancelDecided ||
-                      (mayCancel && row.State == ForeignRiotOrderStates.HeldCancelNotAuthorized))))
+                      (MayCancel(row) && row.State == ForeignRiotOrderStates.HeldCancelNotAuthorized))))
         {
             await CancelAsync(row, ours, cancellationToken).ConfigureAwait(false);
         }
     }
+
+    /// <summary>
+    /// Whether this deployment may cancel <paramref name="row"/>'s order: a foreign order only where authorized; a charge order
+    /// this server created and gave up always -- it is its own (control-server#404).
+    /// </summary>
+    private bool MayCancel(ForeignRiotOrderRow row) =>
+        cancelGate.Value.Enabled ||
+        string.Equals(row.OwnershipBasis, Charging.AbandonedChargeOrders.OwnershipBasis, StringComparison.Ordinal);
 
     /// <summary>
     /// The vehicles this server manages now, by RIoT <c>deviceKey</c>: the roster's, less any whose lifecycle is archived --
@@ -363,7 +377,12 @@ public sealed class ForeignRunningOrderSupervisor(
                 .AnyAsync(row => row.OrderId == orderId || (upperId != null && row.UpperId == upperId), cancellationToken)
                 .ConfigureAwait(false))
         {
-            return (null, "ORDER_INTENT");
+            // control-server#404: a charge order this server gave up has an intent too, and nothing of this server's is
+            // watching it any more. It is cancelled like a foreign one.
+            return await Charging.AbandonedChargeOrders.IsAbandonedAsync(dbContext, orderId, upperId, cancellationToken)
+                .ConfigureAwait(false)
+                ? (ForeignRiotOrderOwnership.Foreign, Charging.AbandonedChargeOrders.OwnershipBasis)
+                : (null, "ORDER_INTENT");
         }
 
         // A command this server issued to the order as its own -- this handling's own cancels aside -- means it was once
@@ -410,7 +429,7 @@ public sealed class ForeignRunningOrderSupervisor(
         }
 
         // The cancel gate (independent review M1): a deployment not authorized to cancel only recognises, holds and alarms.
-        if (!cancelGate.Value.Enabled)
+        if (!MayCancel(row))
         {
             if (row.State != ForeignRiotOrderStates.HeldCancelNotAuthorized)
             {

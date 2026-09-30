@@ -201,6 +201,10 @@ public sealed class DispatchRoundRunner(
         catch (Exception error) when (MesIngestReads.IsFailedRead(error, cancellationToken))
         {
             LogCatalogPollFailed(logger, error);
+            // control-server#404, independent review S4: the round has no demands to dispatch, but charging does not depend on
+            // the demand catalog. A MesIngest that is down must not stop a vehicle below its line from being sent to charge,
+            // a manual charging hold's snapshot from being resent, or a failed cycle's charger from being released.
+            await AllocateChargingWithoutDemandsAsync(currentMap, vehicles, cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -430,6 +434,38 @@ public sealed class DispatchRoundRunner(
             LogBlockedVehicleJudgedACandidate(logger, participant.Vehicle.AgvId, candidate.DemandId, reason, null);
         }
     }
+
+    /// <summary>
+    /// 需求目录读不到的那一轮只做充电分配（control-server#404 独立审查 S4）：为每辆空闲车照常读这一轮的事实（同一个读法、同一份每车预算），
+    /// 交给充电分配器。没有任务循环，没有积压行可写，也不问在途车——它们此刻不会被分配充电。
+    /// </summary>
+    private async Task AllocateChargingWithoutDemandsAsync(
+        RiotMapStationCatalogSnapshot currentMap,
+        IReadOnlyList<FleetVehicle> vehicles,
+        CancellationToken cancellationToken)
+    {
+        VehicleDispatchPolicy policy = await dispatchPolicy.EnsureCurrentAsync(cancellationToken).ConfigureAwait(false);
+        Dictionary<string, DateTimeOffset> noDispatchHistory = new(StringComparer.Ordinal);
+        Dictionary<string, JourneyBacklogRow> noBacklog = new(StringComparer.Ordinal);
+        List<ChargingCandidate> candidates = [];
+        foreach (FleetVehicle vehicle in vehicles)
+        {
+            RoundVehicle? participant = await TryAdmitToRoundAsync(
+                    vehicle, underWay: false, policy, noDispatchHistory, noBacklog, cancellationToken)
+                .ConfigureAwait(false);
+            if (participant is not null)
+            {
+                candidates.Add(new ChargingCandidate(participant.Vehicle, participant.Facts));
+            }
+        }
+
+        await chargingAllocation.AllocateAsync(currentMap, candidates, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 这一轮用的充电分配器（control-server#404）。引擎的充电分支经它做出发前的桩侧复核——同一条候选链，不另写一份。
+    /// </summary>
+    public ChargingAllocator Charging => chargingAllocation;
 
     private async Task<RoundVehicle?> TryAdmitToRoundAsync(
         FleetVehicle vehicle,

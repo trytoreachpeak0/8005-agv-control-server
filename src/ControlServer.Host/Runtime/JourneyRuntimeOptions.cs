@@ -140,6 +140,16 @@ public sealed class JourneyRuntimeOptions
     /// minutes by default; must be positive.
     /// </summary>
     public TimeSpan OwnOrderRebuildRepeatWindow { get; set; } = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// How long RIoT has to go on answering "no such order" for a charge order whose create went out with its result unknown,
+    /// before the server gives the order up and ends the charging commitment as a confirmed failure (control-server#404,
+    /// independent review M2). Every reading in that time has to be "not found" -- any other answer, or none, starts the count
+    /// again -- and the vehicle has to be proven stopped with no unfinished order of its own. Without it a create whose answer
+    /// was lost kept the vehicle's CHARGING purpose and the charger's reservation for ever. Two minutes by default; positive
+    /// and at most one hour.
+    /// </summary>
+    public TimeSpan ChargingOrderAbsentAbandonAfter { get; set; } = TimeSpan.FromSeconds(120);
 }
 
 /// <summary>One vehicle's identity and the policy slice configured for it.</summary>
@@ -251,6 +261,11 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
             failures.Add("OwnOrderRebuildDelay must be positive and at most 10 min.");
         }
         if (options.OwnOrderRebuildRepeatWindow <= TimeSpan.Zero) failures.Add("OwnOrderRebuildRepeatWindow must be positive.");
+        if (options.ChargingOrderAbsentAbandonAfter <= TimeSpan.Zero ||
+            options.ChargingOrderAbsentAbandonAfter > TimeSpan.FromHours(1))
+        {
+            failures.Add("ChargingOrderAbsentAbandonAfter must be positive and at most 1 h.");
+        }
         if (options.AdmissionPolicyVersion <= 0) failures.Add("AdmissionPolicyVersion must be positive.");
         RequireText(options.AdmissionPolicyDeploymentId, nameof(options.AdmissionPolicyDeploymentId), failures);
         if (!options.AllowedDispatchZones.Contains(options.DispatchZone, StringComparer.Ordinal))

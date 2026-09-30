@@ -194,4 +194,20 @@ public sealed class ChargerOccupancyReader(
 
         return new ChargerOccupancySnapshot(unknown, vehicles, standing, targets);
     }
+
+    /// <summary>
+    /// RIoT 的未完成订单清单读全了、且里面没有一张指定给这辆车或由它执行的单。清单不完整答假——不知道就不算没有。
+    /// </summary>
+    /// <remarks>
+    /// 引擎放弃一张「发出过、RIoT 一直查无此单」的充电单之前核这一条（独立审查 M2(b)）：按 <c>upperId</c> 查不到，不等于这辆车身上没有单。
+    /// </remarks>
+    public async Task<bool> VehicleHasNoUnfinishedOrderAsync(string vehicleKey, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(vehicleKey);
+        RiotUnfinishedOrderListing listing = await orderListing.ListUnfinishedOrdersAsync(cancellationToken).ConfigureAwait(false);
+        return listing.IsComplete &&
+               !listing.Orders.Any(order =>
+                   string.Equals(order.ExecuteVehicleKey, vehicleKey, StringComparison.Ordinal) ||
+                   string.Equals(order.AppointVehicleKey, vehicleKey, StringComparison.Ordinal));
+    }
 }

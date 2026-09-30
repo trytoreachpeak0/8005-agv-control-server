@@ -255,21 +255,37 @@ public sealed class ChargingExecutionTests
         Assert.Equal(ChargingExecutionReasons.DepartureNotProven, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
     }
 
-    /// <summary>这趟充电的桩预占行不在了、而单还没发出过：不建单，写明原因等人查，用途占有与周期不动。</summary>
+    /// <summary>
+    /// 这趟充电的桩预占行不在了、而单还没发出过：承诺立刻作废（独立审查 M2(a)）——不建那张单，周期结束、用途占有释放、旅程收尾，不再停在
+    /// 「请联系开发」上占着用途。车下一轮按正常链重新评估，是一个新的承诺、新的单号。
+    /// </summary>
     [Fact]
-    public async Task WithoutItsReservationAChargingJourneyCreatesNoOrder()
+    public async Task WithoutItsReservationACommitmentNeverSentIsWithdrawnAndTheVehicleIsJudgedAfresh()
     {
         await using FleetFixture fleet = await FleetAsync();
         fleet.Riot.BatteryByVehicle[KeyA] = 20;
         await RoundAsync(fleet);
+        (string CycleId, string JourneyId, string UpperId) before = await CommitmentOfAsync(fleet, KeyA);
         await fleet.Context.Set<StationExclusivityRow>().ExecuteDeleteAsync(Token);
 
         await RoundAsync(fleet);
+
+        Assert.DoesNotContain(fleet.Riot.Creates, create => create.UpperId == before.UpperId);
+        JourneyRuntimeRow withdrawn = await fleet.Context.JourneyRuntimes.AsNoTracking()
+            .SingleAsync(row => row.JourneyId == before.JourneyId, Token);
+        Assert.Equal(
+            (JourneyRuntimeStage.Completed, ChargingExecutionReasons.WithdrawnReservationLost),
+            (withdrawn.Stage, withdrawn.BlockReasonCode));
+        ChargingCycleRow cycle = await fleet.Context.Set<ChargingCycleRow>().AsNoTracking()
+            .SingleAsync(row => row.CycleId == before.CycleId, Token);
+        Assert.Equal((ChargingCyclePhases.Ended, ChargingExecutionReasons.WithdrawnReservationLost), (cycle.Phase, cycle.EndReason));
+
+        await RoundAsync(fleet);
         await RoundAsync(fleet);
 
-        Assert.Empty(fleet.Riot.Creates);
-        Assert.Equal(ChargingExecutionReasons.ReservationNotHeld, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
-        Assert.Equal(VehiclePurposes.Charging, (await ClaimOfAsync(fleet, KeyA))!.Value.Purpose);
+        (string CycleId, string JourneyId, string UpperId) again = await CommitmentOfAsync(fleet, KeyA);
+        Assert.NotEqual(before.UpperId, again.UpperId);
+        Assert.Equal([again.UpperId], fleet.Riot.Creates.Select(create => create.UpperId));
     }
 
     // ---- 崩溃点 --------------------------------------------------------------------------------------------------------
@@ -375,8 +391,8 @@ public sealed class ChargingExecutionTests
     /// <summary>
     /// 第一行（<c>ALLOCATED</c>／<c>EN_ROUTE</c>，车还没到桩）：不重建（与空闲返回单同一条路，<c>REQ-0360</c> 的重建承载需求，充电单没有需求）。
     /// 车还可能在动时，预占、周期与用途占有都保持——不许「取消即释放预占」；车证明停稳、没有活动订单之后才按已确认失败收尾：周期结束、用途释放、
-    /// 撤下 <c>CHARGING</c>。桩预占这时仍在，下一轮按三项确认（不在充电、车不在桩上、桩可确认空闲）才释放。冷却期内这个桩对这辆车是「刚失败」，
-    /// 不再分给它；冷却过后它按正常候选链重新排队，是一个新的周期、新的单号。
+    /// 撤下 <c>CHARGING</c>。桩预占这时仍在，下一轮按三项确认（不在充电、车不在桩上、桩可确认空闲）才释放。冷却期内这辆车不被承诺任何充电桩；
+    /// 冷却过后它按正常候选链重新排队，是一个新的周期、新的单号。
     /// </summary>
     [Fact]
     public async Task AChargingOrderCancelledOnTheWayIsNeverRebuiltAndEndsOnlyOnceTheVehicleIsProvenStopped()
@@ -419,12 +435,10 @@ public sealed class ChargingExecutionTests
             .SingleAsync(row => row.JourneyId == journey.JourneyId, Token);
         Assert.Equal(ChargingExecutionReasons.ReservationReleasedAfterEndedCycle, passage.ReleaseReason);
 
-        // Within the cooldown the charger is "just failed" for this vehicle; nothing is rebuilt and nothing new is created.
+        // Within the cooldown the vehicle is committed to no charger at all; nothing is rebuilt and nothing new is created.
         await RoundAsync(fleet);
         Assert.Null(await ClaimOfAsync(fleet, KeyA));
-        Assert.Contains(
-            $"{Near.StationId}={ChargingAllocationReasons.ChargerFailedJustNow}",
-            fleet.ChargingBoard.Verdicts[AgvA].Detail, StringComparison.Ordinal);
+        Assert.Equal(ChargingAllocationReasons.CooldownAfterFailedCycle, fleet.ChargingBoard.Verdicts[AgvA].Reason);
         Assert.Single(fleet.Riot.Creates);
         Assert.Empty(await fleet.Context.OwnOrderRebuilds.AsNoTracking().ToArrayAsync(Token));
 
@@ -607,6 +621,445 @@ public sealed class ChargingExecutionTests
             JsonValueKind.Null,
             (await PayloadsAsync(fleet, AgvA, "VehicleBusinessStateSnapshot")).Last().GetProperty("activePurpose").ValueKind);
         Assert.Single(fleet.Riot.Creates);
+        // Independent review S1: the closing snapshot is sent, not only left in the outbox -- otherwise the vehicle goes on
+        // showing "going to charge" with its entry closed until something else happens to be sent to it.
+        string closing = Assert.Single(await ClosingStateMessageIdsAsync(fleet, AgvA));
+        Assert.Contains(fleet.Peer.Delivered, line => line.MessageId == closing);
+    }
+
+    // ---- 出发前复核（独立审查 M1）------------------------------------------------------------------------------------
+
+    public static TheoryData<string, string> CommitmentsThatNoLongerStand => new()
+    {
+        { "roster-emptied", ChargingExecutionReasons.WithdrawnChargerNoLongerEligible },
+        { "another-vehicle-charging-on-it", ChargingExecutionReasons.WithdrawnChargerNoLongerEligible },
+        { "charger-allocation-held", ChargingExecutionReasons.WithdrawnChargerNoLongerEligible },
+        { "battery-back-above-the-line", ChargingExecutionReasons.WithdrawnNoLongerRequired },
+    };
+
+    /// <summary>
+    /// 承诺了 211、被没锁好的仓门挡在出发前安全门上的车，等的这段时间里承诺不再成立——名册被置空（关窗）、另一台车停在 211 上充着电、211 被置
+    /// 分配暂停、这辆车的电量回到了线上——然后门关好。修复前两轮之内就建出了去 211 的充电单（审查探针 P7）。现在建单之前对这一个桩重跑桩侧判定
+    /// 与「还需不需要充电」：不成立就在同一次保存里作废承诺（周期结束、用途与预占释放、旅程收尾），去 211 的单一张也不建，车被告知。
+    /// 「单已经发出之后名册被置空 → 继续」的对照是 <c>ChargingAllocationTests.WhenTheRosterIsEmptiedBetweenRoundsCommittedCyclesGoOnAndQueuedVehiclesAreHeld</c>。
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(CommitmentsThatNoLongerStand))]
+    public async Task ACommitmentHeldAtTheDepartureGateIsWithdrawnOnceItNoLongerStandsAndNoOrderGoesToThatCharger(
+        string what, string expected)
+    {
+        await using FleetFixture fleet = await FleetAsync(vehicles: 2);
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        await RoundAsync(fleet);
+        (string CycleId, string JourneyId, string UpperId) before = await CommitmentOfAsync(fleet, KeyA);
+        await fleet.ReplaceSafetySnapshotAsync(AgvA, unlockedSlot: 3);
+        await RoundAsync(fleet);
+        Assert.Equal(ChargingExecutionReasons.DepartureNotProven, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+        Assert.Empty(fleet.Riot.Creates);
+
+        switch (what)
+        {
+            case "roster-emptied":
+                await fleet.WriteChargerRosterAsync();
+                break;
+            case "another-vehicle-charging-on-it":
+                fleet.Riot.VehicleOverrides[FleetFixture.VehicleKeys[1]] =
+                    seen => seen with { CurrentStationId = Near.StationId, BatteryState = "CHARGING" };
+                break;
+            case "charger-allocation-held":
+                await new ChargingHoldStore(fleet.Context).RecordStationHoldAsync(
+                    new ChargingStationAllocationHold(
+                        "hold-1", "hold-key-1", ChargingStationHoldTriggers.Maintenance, Map, Near.StationId, 1, null, null, null,
+                        null, null, null, null, null, null, null, fleet.Clock.GetUtcNowWithoutTick(), null, null, null, null, null,
+                        null, null, null, null, null, null),
+                    Token);
+                break;
+            case "battery-back-above-the-line":
+                fleet.Riot.BatteryByVehicle[KeyA] = 95;
+                break;
+        }
+        fleet.Context.ChangeTracker.Clear();
+
+        // The door is locked again. Before the fix the order to 211 was created within two rounds of this.
+        await fleet.ReplaceSafetySnapshotAsync(AgvA);
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+
+        Assert.DoesNotContain(
+            fleet.Riot.Creates, create => create.VehicleKey == KeyA && create.DestinationStationId == Near.StationId);
+        JourneyRuntimeRow withdrawn = await fleet.Context.JourneyRuntimes.AsNoTracking()
+            .SingleAsync(row => row.JourneyId == before.JourneyId, Token);
+        Assert.Equal((JourneyRuntimeStage.Completed, expected), (withdrawn.Stage, withdrawn.BlockReasonCode));
+        ChargingCycleRow cycle = await fleet.Context.Set<ChargingCycleRow>().AsNoTracking()
+            .SingleAsync(row => row.CycleId == before.CycleId, Token);
+        Assert.Equal((ChargingCyclePhases.Ended, expected), (cycle.Phase, cycle.EndReason));
+        // The purpose and the reservation went in that same save, each passage closed under the same reason.
+        Assert.Equal(
+            expected,
+            (await fleet.Context.Set<VehiclePurposeClaimRecordRow>().AsNoTracking()
+                .SingleAsync(row => row.JourneyId == before.JourneyId, Token)).ReleaseReason);
+        StationExclusivityRecordRow passage = await fleet.Context.Set<StationExclusivityRecordRow>().AsNoTracking()
+            .SingleAsync(row => row.JourneyId == before.JourneyId, Token);
+        Assert.Equal(expected, passage.ReleaseReason);
+        Assert.NotNull(passage.ReleasedAt);
+        Assert.NotEqual(before.JourneyId, (await StationAsync(fleet, Near.StationId))?.JourneyId);
+        // The vehicle is told: the snapshot taking CHARGING down was staged and reached it.
+        string closing = Assert.Single(await ClosingStateMessageIdsAsync(fleet, AgvA));
+        Assert.Contains(fleet.Peer.Delivered, line => line.MessageId == closing);
+        // A withdrawal is not a failure: nothing counts towards the second strike and there is no cooldown.
+        Assert.NotEqual(ChargingAllocationReasons.CooldownAfterFailedCycle, fleet.ChargingBoard.Verdicts[AgvA].Reason);
+        Assert.DoesNotContain(
+            await fleet.Context.Set<ManualChargingHoldRow>().AsNoTracking().ToArrayAsync(Token),
+            hold => hold.Reason == ManualChargingHoldReasons.ChargingRepeatedlyFailed);
+        if (what == "roster-emptied")
+        {
+            // Outside the charging window: no automatic charging, and the vehicle that still needs it waits for a person.
+            Assert.Equal(
+                (KeyA, ManualChargingHoldReasons.RosterEmpty),
+                await fleet.Context.Set<ManualChargingHoldRow>().AsNoTracking()
+                    .Select(row => new ValueTuple<string, string>(row.VehicleKey, row.Reason)).SingleAsync(Token));
+            Assert.Empty(fleet.Riot.Creates);
+        }
+    }
+
+    // ---- 承诺的出口（独立审查 M2）------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// 出不了门的车不一直占着桩（审查探针 P1b）：安全门持续不过，超过 <c>JourneyRuntime:OwnOrderRebuildDelay</c> 承诺作废，桩让给队里的下一台车。
+    /// 宽限之内什么都不动。门还没好的时候这辆车不会被重新承诺（共用的车辆侧判定挡着），所以不会每 30 秒来回一次。
+    /// </summary>
+    [Theory]
+    [InlineData("door-unlocked")]
+    [InlineData("session-not-ready")]
+    public async Task ACommitmentThatCannotLeaveIsWithdrawnAfterTheGraceAndItsChargerGoesToTheNextVehicle(string gap)
+    {
+        await using FleetFixture fleet = await FleetAsync(vehicles: 2);
+        string keyB = FleetFixture.VehicleKeys[1];
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        fleet.Riot.BatteryByVehicle[keyB] = 30;
+        await RoundAsync(fleet);
+        (string CycleId, string JourneyId, string UpperId) before = await CommitmentOfAsync(fleet, KeyA);
+        if (gap == "door-unlocked")
+        {
+            await fleet.ReplaceSafetySnapshotAsync(AgvA, unlockedSlot: 3);
+        }
+        else
+        {
+            await fleet.DropSessionAsync(AgvA);
+        }
+
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+
+        // Within the grace: held exactly as it was.
+        Assert.Equal(ChargingExecutionReasons.DepartureNotProven, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+        Assert.Equal(before, await CommitmentOfAsync(fleet, KeyA));
+        Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
+
+        await fleet.HearFromEveryVehicleAsync();
+        await fleet.RunRoundAsync(fleet.Options.OwnOrderRebuildDelay);
+        await RoundAsync(fleet);
+
+        JourneyRuntimeRow withdrawn = await fleet.Context.JourneyRuntimes.AsNoTracking()
+            .SingleAsync(row => row.JourneyId == before.JourneyId, Token);
+        Assert.Equal(
+            (JourneyRuntimeStage.Completed, ChargingExecutionReasons.WithdrawnDepartureNotProven),
+            (withdrawn.Stage, withdrawn.BlockReasonCode));
+        Assert.Null(await ClaimOfAsync(fleet, KeyA));
+        Assert.Equal((keyB, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
+        Assert.DoesNotContain(fleet.Riot.Creates, create => create.VehicleKey == KeyA);
+        Assert.Single(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2254);
+
+        // Still shut: not committed again, round after round.
+        for (int round = 0; round < 3; round++)
+        {
+            await RoundAsync(fleet);
+        }
+        Assert.Null(await ClaimOfAsync(fleet, KeyA));
+        Assert.Single(await fleet.Context.JourneyRuntimes.AsNoTracking().Where(row => row.VehicleKey == KeyA).ToArrayAsync(Token));
+    }
+
+    /// <summary>
+    /// 撤回不是失败：门好了之后这辆车下一轮就重新排队并取得桩，不进冷却、不计入「两次即停」。
+    /// </summary>
+    [Fact]
+    public async Task AWithdrawnCommitmentIsNotAFailureTheVehicleIsCommittedAgainAsSoonAsItMayLeave()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        await RoundAsync(fleet);
+        (string CycleId, string JourneyId, string UpperId) before = await CommitmentOfAsync(fleet, KeyA);
+        await fleet.ReplaceSafetySnapshotAsync(AgvA, unlockedSlot: 3);
+        await RoundAsync(fleet);
+        await fleet.HearFromEveryVehicleAsync();
+        await fleet.RunRoundAsync(fleet.Options.OwnOrderRebuildDelay);
+        Assert.Null(await ClaimOfAsync(fleet, KeyA));
+        Assert.Null(await StationAsync(fleet, Near.StationId));
+
+        await fleet.ReplaceSafetySnapshotAsync(AgvA);
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+
+        (string CycleId, string JourneyId, string UpperId) again = await CommitmentOfAsync(fleet, KeyA);
+        Assert.NotEqual(before.CycleId, again.CycleId);
+        Assert.Equal([again.UpperId], fleet.Riot.Creates.Select(create => create.UpperId));
+        Assert.Empty(await fleet.Context.Set<ManualChargingHoldRow>().AsNoTracking().ToArrayAsync(Token));
+    }
+
+    /// <summary>
+    /// 建单应答丢了、RIoT 上根本没有这张单（审查探针 P1：修复前 12 小时后承诺原样，211 一直被预占，什么人工动作都解不开）。现在有受治理的出口：
+    /// RIoT 对这个单号<b>连续</b>答「查无此单」满 <c>JourneyRuntime:ChargingOrderAbsentAbandonAfter</c>（默认 120 秒；中间读到别的就重新计时），
+    /// 车证明停稳、名下没有未完成的单，才放弃这张单、按已确认失败收尾——告警、计入「两次即停」、走与取消相同的冷却；桩预占照旧按三项确认释放。
+    /// 任何一项不成立都保持原样。
+    /// </summary>
+    [Fact]
+    public async Task ACreateWhoseAnswerWasLostIsGivenUpOnlyAfterRiotSaidNoSuchOrderLongEnoughWithTheVehicleProvenIdle()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        Assert.Equal(TimeSpan.FromSeconds(120), fleet.Options.ChargingOrderAbsentAbandonAfter);
+        (string CycleId, string JourneyId, string UpperId) before = await ResultUnknownAndAbsentAsync(fleet);
+
+        // 100 s of "no such order": kept.
+        await fleet.HearFromEveryVehicleAsync();
+        await fleet.RunRoundAsync(TimeSpan.FromSeconds(100));
+        Assert.Equal(before, await CommitmentOfAsync(fleet, KeyA));
+
+        // One reading that is not "no such order" -- RIoT answered something it could not classify -- and the count starts again.
+        fleet.Riot.PutOrder(new RiotOrderObservation(before.UpperId, RiotOrderObservationKind.Unknown, null));
+        await RoundAsync(fleet);
+        fleet.Riot.PutOrder(new RiotOrderObservation(before.UpperId, RiotOrderObservationKind.NotFound, null));
+        await RoundAsync(fleet);
+        await fleet.HearFromEveryVehicleAsync();
+        await fleet.RunRoundAsync(TimeSpan.FromSeconds(100));
+        Assert.Equal(before, await CommitmentOfAsync(fleet, KeyA));
+
+        // Long enough now, but the vehicle is not proven stopped: kept.
+        fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { Speed = 0.3, ProcState = "RUNNING" };
+        await fleet.HearFromEveryVehicleAsync();
+        await fleet.RunRoundAsync(TimeSpan.FromSeconds(30));
+        Assert.Equal(before, await CommitmentOfAsync(fleet, KeyA));
+        // Stopped, but RIoT lists an unfinished order for it under another number: kept.
+        fleet.Riot.VehicleOverrides.Remove(KeyA);
+        fleet.Riot.ForeignOrders.Add((new RiotListedOrder("F-9", "SOMEONE-ELSES", RiotOrderState.Queueing, KeyA, null), 12));
+        await RoundAsync(fleet);
+        Assert.Equal(before, await CommitmentOfAsync(fleet, KeyA));
+        Assert.DoesNotContain(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2255);
+
+        fleet.Riot.ForeignOrders.Clear();
+        await RoundAsync(fleet);
+
+        JourneyRuntimeRow ended = await fleet.Context.JourneyRuntimes.AsNoTracking()
+            .SingleAsync(row => row.JourneyId == before.JourneyId, Token);
+        Assert.Equal(
+            (JourneyRuntimeStage.Completed, ChargingExecutionReasons.OrderNeverAppeared), (ended.Stage, ended.BlockReasonCode));
+        ChargingCycleRow cycle = await fleet.Context.Set<ChargingCycleRow>().AsNoTracking()
+            .SingleAsync(row => row.CycleId == before.CycleId, Token);
+        Assert.Equal((ChargingCyclePhases.Ended, ChargingExecutionReasons.OrderNeverAppeared), (cycle.Phase, cycle.EndReason));
+        Assert.Null(await ClaimOfAsync(fleet, KeyA));
+        var alarm = Assert.Single(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2255);
+        Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Warning, alarm.Level);
+        Assert.Contains(before.UpperId, alarm.Message, StringComparison.Ordinal);
+        Assert.Single(fleet.Riot.Creates);
+        Assert.Empty(await fleet.Context.OwnOrderRebuilds.AsNoTracking().ToArrayAsync(Token));
+
+        // A confirmed failure like a cancellation: the reservation goes on the three confirmations, then the cooldown.
+        await RoundAsync(fleet);
+        Assert.Null(await StationAsync(fleet, Near.StationId));
+        await RoundAsync(fleet);
+        Assert.Equal(ChargingAllocationReasons.CooldownAfterFailedCycle, fleet.ChargingBoard.Verdicts[AgvA].Reason);
+        await fleet.HearFromEveryVehicleAsync();
+        await fleet.RunRoundAsync(fleet.Options.OwnOrderRebuildDelay);
+        Assert.NotEqual(before.UpperId, (await CommitmentOfAsync(fleet, KeyA)).UpperId);
+    }
+
+    /// <summary>
+    /// 被放弃的那张单事后才在 RIoT 冒出来、跑到这辆车上：那趟旅程已经收尾，没有任何东西在看着它。外来单监督器把它当成要取消的单——记下、
+    /// 这辆车不接新活、取消只发一次、告警——哪怕本部署没有被授权取消<b>别人</b>的单（这张是自己的）。还在进行的充电单不受影响：它是本服务端
+    /// 自己的在途单，监督器不碰。
+    /// </summary>
+    [Fact]
+    public async Task AnAbandonedChargeOrderThatTurnsUpRunningOnTheVehicleIsCancelledOnceAndAlarmed()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        EventRecordingLogger<ControlServer.Host.Runtime.ForeignOrders.ForeignRunningOrderSupervisor> log = new();
+        ControlServer.Host.Runtime.ForeignOrders.RiotForeignOrderCancelOptions gate = new();
+        Assert.False(gate.Enabled);
+        ControlServer.Host.Runtime.ForeignOrders.ForeignRunningOrderSupervisor Supervisor() => new(
+            fleet.Context,
+            fleet.Riot,
+            fleet.Riot,
+            new RiotOrderCommandAuditStore(fleet.Context),
+            new ControlServer.Host.Runtime.Fleet.VehicleRoster(Microsoft.Extensions.Options.Options.Create(fleet.Options)),
+            Microsoft.Extensions.Options.Options.Create(gate),
+            fleet.Clock,
+            log);
+
+        (string CycleId, string JourneyId, string UpperId) before = await ResultUnknownAndAbsentAsync(fleet);
+        // While the commitment stands, the same order running would be this server's own: left alone.
+        fleet.Riot.PutOrder(new RiotOrderObservation(
+            before.UpperId, RiotOrderObservationKind.Active, "ORDER-LATE", RiotOrderState.Executing, KeyA, Map, Near.StationId));
+        await Supervisor().SuperviseAsync(Token);
+        Assert.Empty(await fleet.Context.ForeignRiotOrders.AsNoTracking().ToArrayAsync(Token));
+        Assert.Empty(fleet.Riot.OrderCommands);
+
+        // Back to "no such order", long enough: given up.
+        fleet.Riot.PutOrder(new RiotOrderObservation(before.UpperId, RiotOrderObservationKind.NotFound, null));
+        fleet.Context.ChangeTracker.Clear();
+        await RoundAsync(fleet);
+        await fleet.HearFromEveryVehicleAsync();
+        await fleet.RunRoundAsync(fleet.Options.ChargingOrderAbsentAbandonAfter);
+        Assert.Equal(
+            ChargingExecutionReasons.OrderNeverAppeared,
+            (await fleet.Context.Set<ChargingCycleRow>().AsNoTracking().SingleAsync(row => row.CycleId == before.CycleId, Token)).EndReason);
+
+        // And now RIoT shows it running on the vehicle after all.
+        fleet.Riot.PutOrder(new RiotOrderObservation(
+            before.UpperId, RiotOrderObservationKind.Active, "ORDER-LATE", RiotOrderState.Executing, KeyA, Map, Near.StationId));
+        fleet.Context.ChangeTracker.Clear();
+        await Supervisor().SuperviseAsync(Token);
+        fleet.Context.ChangeTracker.Clear();
+        await Supervisor().SuperviseAsync(Token);
+        fleet.Context.ChangeTracker.Clear();
+
+        ForeignRiotOrderRow row = await fleet.Context.ForeignRiotOrders.AsNoTracking().SingleAsync(Token);
+        Assert.Equal(
+            ("ORDER-LATE", before.UpperId, AgvA, AbandonedChargeOrders.OwnershipBasis),
+            (row.RiotOrderId, row.UpperId, row.AgvId, row.OwnershipBasis));
+        Assert.Equal([(RiotCommandTypeNames.CancelOrder, "ORDER-LATE")], fleet.Riot.OrderCommands);
+        Assert.Contains(
+            AgvA, await ControlServer.Host.Runtime.ForeignOrders.ForeignRunningOrders.HeldAgvIdsAsync(fleet.Context, Token));
+        Assert.Contains(log.Entries, entry => entry.EventId.Id == 2180 && entry.Message.Contains(AbandonedChargeOrders.OwnershipBasis, StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// 充电单被取消之后车一直证明不了停稳（被关机、拖走、读不到）：预占、周期与用途照旧保持——不凭时间放；但超过
+    /// <c>JourneyRuntime:OwnOrderRebuildRepeatWindow</c> 告警一次（事件 2256，带车号与桩号），不让它无声地占着唯一的桩。人工清桩归 control-server#406。
+    /// </summary>
+    [Fact]
+    public async Task ACancelledChargingWhoseVehicleIsNeverProvenStoppedIsAlarmedOncePastTheWindowAndKeepsEverything()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        JourneyRuntimeRow journey = await CommittedAndSentAsync(fleet);
+        (string CycleId, string JourneyId, string UpperId) before = await CommitmentOfAsync(fleet, KeyA);
+        fleet.Riot.CancelOrder(journey.PickupUpperId);
+        fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { Connected = false, CurrentStationId = 12 };
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+        Assert.DoesNotContain(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2256);
+
+        await fleet.HearFromEveryVehicleAsync();
+        await fleet.RunRoundAsync(fleet.Options.OwnOrderRebuildRepeatWindow + TimeSpan.FromMinutes(1));
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+
+        var alarm = Assert.Single(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2256);
+        Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Warning, alarm.Level);
+        Assert.Contains(KeyA, alarm.Message, StringComparison.Ordinal);
+        Assert.Contains(Near.StationId.ToString(System.Globalization.CultureInfo.InvariantCulture), alarm.Message, StringComparison.Ordinal);
+        Assert.Equal(before, await CommitmentOfAsync(fleet, KeyA));
+        Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
+    }
+
+    /// <summary>
+    /// 周期已按失败收尾、而桩的预占一直放不掉（三项确认拿不到：这里是车读出来就停在桩上）：同样不凭时间放，超过窗口告警一次（事件 2247，
+    /// 带车、桩与缺的是哪一项）。
+    /// </summary>
+    [Fact]
+    public async Task AReservationLeftByAFailedCycleThatCannotBeReleasedIsAlarmedOncePastTheWindow()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        JourneyRuntimeRow journey = await CommittedAndSentAsync(fleet);
+        fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = Near.StationId };
+        fleet.Riot.CancelOrder(journey.PickupUpperId);
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+        Assert.Equal(
+            ChargingExecutionReasons.OrderEnded,
+            (await fleet.Context.Set<ChargingCycleRow>().AsNoTracking().SingleAsync(Token)).EndReason);
+        Assert.DoesNotContain(fleet.ChargingLog.Entries, entry => entry.EventId.Id == 2247);
+
+        await fleet.HearFromEveryVehicleAsync();
+        await fleet.RunRoundAsync(fleet.Options.OwnOrderRebuildRepeatWindow + TimeSpan.FromMinutes(1));
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+
+        var alarm = Assert.Single(fleet.ChargingLog.Entries, entry => entry.EventId.Id == 2247);
+        Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Warning, alarm.Level);
+        Assert.Contains(KeyA, alarm.Message, StringComparison.Ordinal);
+        Assert.Contains("standing on the charger", alarm.Message, StringComparison.Ordinal);
+        Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
+    }
+
+    // ---- 按车冷却（独立审查 M3）--------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// 名册里有 211 与 221。去 211 的充电单被人在 RIoT 里取消（审查探针 P2：修复前 3 秒后就建出了去 221 的单）。冷却是这辆车的，不是某个桩的：
+    /// <c>JourneyRuntime:OwnOrderRebuildDelay</c> 之内不给它承诺任何充电桩，一张单也不建；过了冷却它重新排队。
+    /// </summary>
+    [Fact]
+    public async Task AVehicleWhoseChargingOrderWasJustCancelledIsSentToNoOtherChargerDuringTheCooldown()
+    {
+        await using FleetFixture fleet = await FleetAsync(chargers: [Near, Far]);
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        JourneyRuntimeRow first = await CommittedAndSentAsync(fleet);
+        Assert.Equal(Near.StationId, Assert.Single(fleet.Riot.Creates).DestinationStationId);
+        fleet.Riot.CancelOrder(first.PickupUpperId);
+
+        for (int round = 0; round < 6; round++)
+        {
+            await RoundAsync(fleet);
+            Assert.Single(fleet.Riot.Creates);
+            Assert.Null(await StationAsync(fleet, Far.StationId));
+        }
+
+        Assert.Equal(
+            ChargingExecutionReasons.OrderEnded,
+            (await fleet.Context.Set<ChargingCycleRow>().AsNoTracking().SingleAsync(Token)).EndReason);
+        Assert.Null(await ClaimOfAsync(fleet, KeyA));
+        Assert.Equal(ChargingAllocationReasons.CooldownAfterFailedCycle, fleet.ChargingBoard.Verdicts[AgvA].Reason);
+
+        await fleet.HearFromEveryVehicleAsync();
+        await fleet.RunRoundAsync(fleet.Options.OwnOrderRebuildDelay);
+        await RoundAsync(fleet);
+
+        Assert.Equal(VehiclePurposes.Charging, (await ClaimOfAsync(fleet, KeyA))!.Value.Purpose);
+        Assert.Equal(2, fleet.Riot.Creates.Count);
+    }
+
+    /// <summary>
+    /// 取消的间隔略大于 <c>JourneyRuntime:OwnOrderRebuildRepeatWindow</c>（审查探针 P2b）：按定下的口径——窗口内两次才停——这些失败不会累计成
+    /// 人工充电等待，但每一次取消之后这辆车都先冷却，冷却期内哪个桩都不去。（每一轮都要一个人隔十多分钟去取消一次；窗口内第二次即停由
+    /// <see cref="ASecondEndedChargingOrderWithinTheWindowPutsTheVehicleOnManualHold"/> 守。）
+    /// </summary>
+    [Fact]
+    public async Task OrdersCancelledMoreThanTheWindowApartNeverAddUpToAHoldButEachOneStillCoolsTheVehicleDown()
+    {
+        await using FleetFixture fleet = await FleetAsync(chargers: [Near, Far]);
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        JourneyRuntimeRow journey = await CommittedAndSentAsync(fleet);
+
+        for (int cancelled = 1; cancelled <= 3; cancelled++)
+        {
+            fleet.Riot.CancelOrder(journey.PickupUpperId);
+            for (int round = 0; round < 4; round++)
+            {
+                await RoundAsync(fleet);
+                Assert.Equal(cancelled, fleet.Riot.Creates.Count);
+            }
+            Assert.Equal(ChargingAllocationReasons.CooldownAfterFailedCycle, fleet.ChargingBoard.Verdicts[AgvA].Reason);
+
+            // More than the window later (the vehicle's session is heard from again first: the long step aged it out).
+            await fleet.RunRoundAsync(fleet.Options.OwnOrderRebuildRepeatWindow + TimeSpan.FromMinutes(1));
+            await RoundAsync(fleet);
+            await RoundAsync(fleet);
+            journey = (await ChargingJourneyAsync(fleet, AgvA))!;
+            Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, journey.Stage);
+            Assert.Equal(cancelled + 1, fleet.Riot.Creates.Count);
+        }
+
+        Assert.Empty(await fleet.Context.Set<ManualChargingHoldRow>().AsNoTracking().ToArrayAsync(Token));
     }
 
     // ---- 看板说明 --------------------------------------------------------------------------------------------------------
@@ -637,6 +1090,47 @@ public sealed class ChargingExecutionTests
         Assert.Equal("CONFIRMED", (await fleet.Context.OrderIntents.AsNoTracking()
             .SingleAsync(row => row.UpperId == journey.PickupUpperId, Token)).Status);
         return journey;
+    }
+
+    /// <summary>
+    /// 这辆车发件箱里「撤下 CHARGING」的业务状态快照的消息 id：没有现行用途、不在充电周期里、也不是人工充电等待的那一张。
+    /// </summary>
+    private static async Task<string[]> ClosingStateMessageIdsAsync(FleetFixture fleet, string agvId)
+    {
+        var rows = await fleet.Context.ProtocolOutbox.AsNoTracking()
+            .Where(row => row.MessageType == "VehicleBusinessStateSnapshot")
+            .Select(row => new { row.MessageId, row.PayloadJson })
+            .ToArrayAsync(Token);
+        return
+        [
+            .. rows.Where(row =>
+                {
+                    using JsonDocument envelope = JsonDocument.Parse(row.PayloadJson);
+                    JsonElement payload = envelope.RootElement.GetProperty("payload");
+                    return envelope.RootElement.GetProperty("agvId").GetString() == agvId &&
+                           payload.GetProperty("activePurpose").ValueKind == JsonValueKind.Null &&
+                           payload.GetProperty("chargingCycleState").GetString() == ChargingCycleWireStates.NotCharging &&
+                           !payload.GetProperty("manualChargingHold").GetBoolean();
+                })
+                .Select(row => row.MessageId),
+        ];
+    }
+
+    /// <summary>
+    /// 承诺、过安全门、建单发出去而应答丢了（结果未知），RIoT 上按这个单号查无此单：答那份承诺的三个身份。旅程停在 <c>CHARGER_ResultUnknown</c>。
+    /// </summary>
+    private static async Task<(string CycleId, string JourneyId, string UpperId)> ResultUnknownAndAbsentAsync(FleetFixture fleet)
+    {
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        fleet.Riot.CreateAnswer = intent => new RiotOrderObservation(intent.UpperId, RiotOrderObservationKind.Unknown, null);
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+        fleet.Riot.CreateAnswer = null;
+        Assert.Single(fleet.Riot.Creates);
+        Assert.Equal(
+            ChargingExecutionReasons.LegOutcomeCode(MovementDispatchOutcome.ResultUnknown),
+            (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+        return await CommitmentOfAsync(fleet, KeyA);
     }
 
     private static async Task<JourneyRuntimeRow?> ChargingJourneyAsync(FleetFixture fleet, string agvId)

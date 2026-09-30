@@ -154,7 +154,6 @@ public sealed class ChargingAllocationTests
 
     public static TheoryData<string, string, bool> ExcludedChargers => new()
     {
-        { "just-failed", ChargingAllocationReasons.ChargerFailedJustNow, true },
         { "allocation-held", ChargingAllocationReasons.ChargerAllocationHeld, true },
         { "not-on-current-map", ChargingAllocationReasons.ChargerNotOnCurrentMap, true },
         { "renamed-on-current-map", ChargingAllocationReasons.ChargerNotOnCurrentMap, true },
@@ -162,6 +161,8 @@ public sealed class ChargingAllocationTests
         { "project-vehicle-standing-on-it", ChargingAllocationReasons.ChargerOccupiedByVehicle, true },
         { "running-order-heading-for-it", ChargingAllocationReasons.ChargerTargetedByRunningOrder, true },
         { "a-vehicle-position-unreadable", ChargingAllocationReasons.ChargerOccupancyUnknown, false },
+        // 靠改写读数的时刻造出来的：生产的网关给读数盖的是读的那一刻，一辆离线的车读数并不「过期」（它按 RIoT 最后报的位置算，
+        // 见 AnOfflineVehicleCountsWhereRiotLastPlacedItAndDoesNotStopTheFleetFromCharging）。这一格守的是读者自己的新鲜度检查。
         { "a-vehicle-position-stale", ChargingAllocationReasons.ChargerOccupancyUnknown, false },
         { "a-vehicle-position-missing", ChargingAllocationReasons.ChargerOccupancyUnknown, false },
         { "order-listing-incomplete", ChargingAllocationReasons.ChargerOccupancyUnknown, false },
@@ -169,9 +170,10 @@ public sealed class ChargingAllocationTests
     };
 
     /// <summary>
-    /// 候选链的每一步（<c>REQ-0170</c>）：刚失败、分配暂停、不在当前地图（或站名变了）、被别的车预占、本项目的车停在上面、有在跑的单以它为目的站，
-    /// 以及占用事实读不到或过期——每一条都让最近的桩 211 不是候选，原因码精确。前七条只排除 211，车去过滤后最近的 221（不从失败的桩回填）；
-    /// 后五条是「事实未知」，未知不分桩，两个桩都不是候选，车不被分配、什么也不留下。
+    /// 候选链的每一步（<c>REQ-0170</c>）：分配暂停、不在当前地图（或站名变了）、被别的车预占、本项目的车停在上面、有在跑的单以它为目的站，
+    /// 以及占用事实读不到或过期——每一条都让最近的桩 211 不是候选，原因码精确。前六条只排除 211，车去过滤后最近的 221；
+    /// 后五条是「事实未知」，未知不分桩，两个桩都不是候选，车不被分配、什么也不留下。「刚失败」不再是某一个桩的事：冷却期内这辆车一个桩都不分
+    /// （独立审查 M3，<c>ChargingExecutionTests</c> 里按车冷却的那几条）。
     /// </summary>
     [Theory]
     [MemberData(nameof(ExcludedChargers))]
@@ -183,9 +185,6 @@ public sealed class ChargingAllocationTests
         DateTimeOffset now = fleet.Clock.GetUtcNowWithoutTick();
         switch (why)
         {
-            case "just-failed":
-                await EndedCycleAsync(fleet, KeyA, Near.StationId, ChargingExecutionReasons.OrderEnded, now.AddSeconds(-5));
-                break;
             case "allocation-held":
                 await new ChargingHoldStore(fleet.Context).RecordStationHoldAsync(
                     new ChargingStationAllocationHold(
@@ -823,6 +822,192 @@ public sealed class ChargingAllocationTests
         Assert.Null(await StationAsync(fleet, WaitingPoint.StationId));
     }
 
+    // ---- 独立审查：离线车的位置、目录读不到、排队告警、两次即停的口径 ------------------------------------------------
+
+    /// <summary>
+    /// 离线的车按 RIoT 最后报的位置算（独立审查 S2）：最后位置在桩上，那个桩就是被占着的；不在桩上，它不挡任何桩。车队里有一台车没开机
+    /// 不会让别的车都充不了电。（剩余风险：关机的车被人推到桩上，RIoT 报的仍是关机前的位置，服务端看不见。）
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AnOfflineVehicleCountsWhereRiotLastPlacedItAndDoesNotStopTheFleetFromCharging(bool lastSeenOnTheCharger)
+    {
+        await using FleetFixture fleet = await FleetAsync(vehicles: 2, chargers: [Near, Far]);
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        fleet.Riot.VehicleOverrides[KeyB] = seen => seen with
+        {
+            Connected = false,
+            CurrentStationId = lastSeenOnTheCharger ? Near.StationId : 12,
+        };
+
+        await RoundAsync(fleet);
+
+        Assert.Equal(VehiclePurposes.Charging, (await ClaimOfAsync(fleet, KeyA))!.Value.Purpose);
+        if (lastSeenOnTheCharger)
+        {
+            Assert.Equal(KeyA, (await StationAsync(fleet, Far.StationId))?.VehicleKey);
+            Assert.Null(await StationAsync(fleet, Near.StationId));
+            Assert.Contains(
+                $"{Near.StationId}={ChargingAllocationReasons.ChargerOccupiedByVehicle}",
+                fleet.ChargingBoard.Verdicts[AgvA].Detail, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.Equal(KeyA, (await StationAsync(fleet, Near.StationId))?.VehicleKey);
+        }
+    }
+
+    /// <summary>
+    /// 需求目录读不到的那一轮（MesIngest 不可达）没有任务可派，但充电分配照做（独立审查 S4）：它不依赖需求目录。低于线的车照样取得桩。
+    /// </summary>
+    [Fact]
+    public async Task ChargingIsAllocatedInARoundWhoseDemandCatalogCannotBeRead()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        fleet.Catalog.Unreachable = true;
+
+        await RoundAsync(fleet);
+
+        Assert.Equal(VehiclePurposes.Charging, (await ClaimOfAsync(fleet, KeyA))!.Value.Purpose);
+        Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
+    }
+
+    /// <summary>目录读不到的那一轮，人工充电等待照样置上、告警并告诉车（同一处调用做的三件事里的第二件）。</summary>
+    [Fact]
+    public async Task AManualChargingHoldIsPlacedAndToldInARoundWhoseDemandCatalogCannotBeRead()
+    {
+        await using FleetFixture fleet = await FleetAsync(roster: false);
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        fleet.Catalog.Unreachable = true;
+
+        await RoundAsync(fleet);
+
+        Assert.Single(await fleet.Context.Set<ManualChargingHoldRow>().AsNoTracking().ToArrayAsync(Token));
+        Assert.Single(fleet.ChargingLog.Entries, entry => entry.EventId.Id == 2242);
+        Assert.True(Assert.Single(await PayloadsAsync(fleet, AgvA, "VehicleBusinessStateSnapshot"))
+            .GetProperty("manualChargingHold").GetBoolean());
+    }
+
+    /// <summary>
+    /// 低于强制充电线、留在队里分不到桩的车不再静默（独立审查 M2(d)）：告警一次（事件 2246，Warning，写明原因与现场该看什么）。
+    /// 每车每种结论只告警一次——不每轮刷，电量每掉一格也不再告警；结论变了（这里是 RIoT 的订单清单读不全了）再告警一次。
+    /// </summary>
+    [Fact]
+    public async Task AVehicleQueuedBelowItsLineIsWarnedAboutOncePerConclusionNotPerRoundNorPerPercent()
+    {
+        await using FleetFixture fleet = await FleetAsync(vehicles: 2);
+        fleet.Riot.BatteryByVehicle[KeyA] = 30;
+        fleet.Riot.BatteryByVehicle[KeyB] = 20;
+
+        foreach (int battery in new[] { 30, 29, 28, 27 })
+        {
+            fleet.Riot.BatteryByVehicle[KeyA] = battery;
+            await RoundAsync(fleet);
+        }
+
+        Assert.Equal(KeyB, (await StationAsync(fleet, Near.StationId))!.VehicleKey);
+        var warning = Assert.Single(fleet.ChargingLog.Entries, entry => entry.EventId.Id == 2246);
+        Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Warning, warning.Level);
+        Assert.Contains(AgvA, warning.Message, StringComparison.Ordinal);
+        Assert.Contains(ChargingAllocationReasons.NoChargerAvailable, warning.Message, StringComparison.Ordinal);
+        Assert.Contains(
+            $"{Near.StationId}={ChargingAllocationReasons.ChargerReservedOrOccupied}", warning.Message, StringComparison.Ordinal);
+
+        fleet.Riot.OrderListingIncomplete = true;
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+
+        Assert.Equal(2, fleet.ChargingLog.Entries.Count(entry => entry.EventId.Id == 2246));
+        Assert.Contains("ORDER_LISTING_INCOMPLETE", fleet.ChargingLog.Entries.Last(entry => entry.EventId.Id == 2246).Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>路网不可用时需要充电的车同样告警一次（同一个事件），不置人工充电等待。</summary>
+    [Fact]
+    public async Task AVehicleThatCannotBeRoutedToAnyChargerIsWarnedAboutOnce()
+    {
+        await using FleetFixture fleet = await FleetFixture.CreateAsync(configure: options => options.Fleet = options.Fleet[..1]);
+        await ChargingTestKit.WriteRosterWithAChargerNobodyIsSentToAsync(
+            fleet.Context, fleet.Options.MapId, fleet.Clock.GetUtcNowWithoutTick());
+        fleet.Catalog.Set([]);
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+
+        for (int round = 0; round < 3; round++)
+        {
+            await RoundAsync(fleet);
+        }
+
+        var warning = Assert.Single(fleet.ChargingLog.Entries, entry => entry.EventId.Id == 2246);
+        Assert.Contains(ChargingAllocationReasons.RouteGraphUnavailable, warning.Message, StringComparison.Ordinal);
+        Assert.Empty(await fleet.Context.Set<ManualChargingHoldRow>().AsNoTracking().ToArrayAsync(Token));
+    }
+
+    /// <summary>
+    /// 「两次即停」要求最近一次失败也在窗口之内（独立审查低项）：很久以前连着失败过两次、当时没有被置等待（那时它已不需要充电）的车，
+    /// 下一次需要充电时照常分配，不直接进人工充电等待。
+    /// </summary>
+    [Fact]
+    public async Task TwoFailuresLongAgoDoNotPutTheVehicleStraightOnHoldTheNextTimeItNeedsCharging()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        DateTimeOffset now = fleet.Clock.GetUtcNowWithoutTick();
+        await EndedCycleAsync(fleet, KeyA, Near.StationId, ChargingExecutionReasons.OrderEnded, now.AddHours(-3));
+        await EndedCycleAsync(fleet, KeyA, Near.StationId, ChargingExecutionReasons.OrderEnded, now.AddHours(-3).AddMinutes(2));
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+
+        await RoundAsync(fleet);
+
+        Assert.Empty(await fleet.Context.Set<ManualChargingHoldRow>().AsNoTracking().ToArrayAsync(Token));
+        Assert.Equal(VehiclePurposes.Charging, (await ClaimOfAsync(fleet, KeyA))!.Value.Purpose);
+    }
+
+    /// <summary>
+    /// 「两次即停」只数这辆车最近一趟非充电旅程之后的失败（与空闲返回同一个口径）：窗口内刚失败过两次的车被置人工充电等待；同样的两次失败之后
+    /// 它做过别的事，就不算了，照常分配。
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task OnlyFailuresSinceTheVehiclesLastOtherWorkCountTowardsTheSecondStrike(bool didOtherWorkSince)
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        DateTimeOffset now = fleet.Clock.GetUtcNowWithoutTick();
+        await EndedCycleAsync(fleet, KeyA, Near.StationId, ChargingExecutionReasons.OrderEnded, now.AddMinutes(-5));
+        await EndedCycleAsync(fleet, KeyA, Near.StationId, ChargingExecutionReasons.OrderNeverAppeared, now.AddMinutes(-3));
+        if (didOtherWorkSince)
+        {
+            // A finished journey of this vehicle that was not a charging one: the row is shaped by the charging builder
+            // (every required column filled) and then renamed, which is all the allocator reads of it -- its id and when it
+            // was created.
+            (JourneyRuntimeRow other, _, _) = ChargingJourneyShape.Build(
+                ChargingIdentity.JourneyIdFor(KeyA, now.AddMinutes(-1)),
+                new ControlServer.Host.Runtime.Fleet.FleetVehicle(AgvA, KeyA, 1), Near, 1,
+                BatteryStates.Sufficient, fleet.Options, now.AddMinutes(-1));
+            other.JourneyId = "transport-done:other-work";
+            other.Stage = JourneyRuntimeStage.Completed;
+            fleet.Context.JourneyRuntimes.Add(other);
+            await fleet.Context.SaveChangesAsync(Token);
+            fleet.Context.ChangeTracker.Clear();
+        }
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+
+        await RoundAsync(fleet);
+
+        if (didOtherWorkSince)
+        {
+            Assert.Empty(await fleet.Context.Set<ManualChargingHoldRow>().AsNoTracking().ToArrayAsync(Token));
+            Assert.Equal(VehiclePurposes.Charging, (await ClaimOfAsync(fleet, KeyA))!.Value.Purpose);
+        }
+        else
+        {
+            Assert.Equal(
+                ManualChargingHoldReasons.ChargingRepeatedlyFailed,
+                (await fleet.Context.Set<ManualChargingHoldRow>().AsNoTracking().SingleAsync(Token)).Reason);
+            Assert.Null(await ClaimOfAsync(fleet, KeyA));
+        }
+    }
+
     // ---- 登记 ------------------------------------------------------------------------------------------------------------
 
     /// <summary>宿主把跨轮状态（每辆车上一次的分配结论）注册成单例，并把分配器、占用读取与搬运链上的那条判据注册齐。</summary>
@@ -1007,7 +1192,7 @@ public sealed class ChargingAllocationTests
             .DecideManualChargingReturnToServiceAsync(
                 new ManualChargingReturnToServiceRequest(
                     requestId, agvId, generation, Guid.NewGuid().ToString("D"), new string('a', 64), "operator-1", role,
-                    "charged by hand", 85, vehicleKey),
+                    "charged by hand", 85, vehicleKey, fleet.Clock.GetUtcNowWithoutTick()),
                 Token);
         fleet.Context.ChangeTracker.Clear();
         return decision;

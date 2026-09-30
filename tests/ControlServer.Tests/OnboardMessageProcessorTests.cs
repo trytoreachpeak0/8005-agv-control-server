@@ -1448,8 +1448,9 @@ public sealed class OnboardMessageProcessorTests
                 })
                 .Build();
             WireToGateStore store = new(context);
+            FixedTimeProvider clock = new();
             OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
-                context, store, new FixedTimeProvider(), configuration,
+                context, store, clock, configuration,
                 runtimeOptions: new ControlServer.Host.Runtime.JourneyRuntimeOptions { AgvId = "AGV-001", VehicleKey = vehicleKey });
             OnboardConnectionState state = new();
             await ReachReadyAsync(processor, state, credential, TestContext.Current.CancellationToken);
@@ -1476,7 +1477,9 @@ public sealed class OnboardMessageProcessorTests
             ManualChargingHoldRecordRow record = await context.Set<ManualChargingHoldRecordRow>().AsNoTracking()
                 .SingleAsync(TestContext.Current.CancellationToken);
             Assert.Equal(requestId, record.ReleaseRequestId);
-            Assert.NotNull(record.ReleasedAt);
+            // The release carries the processor's own clock, not the machine's (independent review, low item): the charging
+            // allocator compares it with instants its TimeProvider stamps on charging cycles.
+            Assert.Equal(clock.GetUtcNow(), record.ReleasedAt);
         }
         finally
         {

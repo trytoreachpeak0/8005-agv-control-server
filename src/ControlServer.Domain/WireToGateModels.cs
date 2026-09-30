@@ -440,6 +440,9 @@ public enum OperationResultDisposition
 /// (control-server#404). The server's manual-charging hold is kept per vehicle key; null when the AGV is not in the roster,
 /// and then no hold can be found or lifted.
 /// </param>
+/// <param name="DecidedAt">
+/// The receiver's clock at the decision, stamped on the decision and on the hold's release; null falls back to the system clock.
+/// </param>
 public sealed record ManualChargingReturnToServiceRequest(
     string RequestId,
     string AgvId,
@@ -450,7 +453,8 @@ public sealed record ManualChargingReturnToServiceRequest(
     string AdministratorRole,
     string Reason,
     double? ObservedBatteryPercent,
-    string? VehicleKey = null);
+    string? VehicleKey = null,
+    DateTimeOffset? DecidedAt = null);
 
 /// <summary>
 /// What the server decided about one such request, durable so the same <c>requestId</c> arriving

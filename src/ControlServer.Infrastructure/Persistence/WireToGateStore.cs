@@ -551,7 +551,9 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
             ProblemFieldPath = fieldPath,
             ProblemDisplayMessage = displayMessage,
             VehicleBusinessStateRevision = revision,
-            DecidedAt = DateTimeOffset.UtcNow
+            // The caller's clock where it has one (control-server#404 review): the hold's release carries the same instant,
+            // and the allocator compares it with the instants its own TimeProvider stamps on charging cycles.
+            DecidedAt = request.DecidedAt ?? DateTimeOffset.UtcNow
         };
         dbContext.ManualChargingReturnToServiceRequests.Add(row);
         if (outcome == ManualChargingReturnToServiceDecision.ReturnedToEligibilityEvaluation &&

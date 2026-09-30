@@ -44,6 +44,12 @@ public static class ChargingAllocationReasons
     /// <summary>这辆车的充电单短时间内第二次被取消、删除或 FAILED：不再自动分配，置人工充电等待并告警。</summary>
     public const string RepeatedlyFailedManualHold = "CHARGING_REPEATEDLY_FAILED_MANUAL_HOLD";
 
+    /// <summary>
+    /// 这辆车最近一次充电刚以已确认失败结束，还在 <c>JourneyRuntime:OwnOrderRebuildDelay</c> 之内：这段时间不给它承诺<b>任何</b>充电桩
+    /// （独立审查 M3：只排除刚失败的那一个桩时，人刚取消去 211 的单，3 秒后车就开往 221）。与空闲返回的冷却同形。
+    /// </summary>
+    public const string CooldownAfterFailedCycle = "CHARGING_COOLDOWN_AFTER_FAILED_CYCLE";
+
     /// <summary>名册里这辆车可用的桩逐个核验后一个都不剩；逐桩原因在细节里（例如 <c>211=CHARGER_RESERVED_OR_OCCUPIED</c>）。车留在队里。</summary>
     public const string NoChargerAvailable = "CHARGING_NO_CHARGER_AVAILABLE";
 
@@ -55,8 +61,11 @@ public static class ChargingAllocationReasons
 
     // ---- 候选桩被排除的原因（REQ-0170 的候选链，按这个顺序判）----
 
-    /// <summary>这辆车最近一次充电在这个桩上已确认失败，还在冷却期内（<c>REQ-0170</c>「排除刚失败的站点」）。</summary>
-    public const string ChargerFailedJustNow = "CHARGER_FAILED_JUST_NOW";
+    /// <summary>
+    /// 这个桩不在当前生效的名册里（或名册里它的车辆范围不含这辆车）。只在出发前复核已承诺的桩时答：分配只从名册里取候选，走不到这一格。
+    /// 「排除刚失败的站点」（<c>REQ-0170</c>）由 <see cref="CooldownAfterFailedCycle"/> 覆盖：冷却期内这辆车一个桩都不分。
+    /// </summary>
+    public const string ChargerNotInRoster = "CHARGER_NOT_IN_ROSTER";
 
     /// <summary>这个桩的分配暂停着（批次9-08、9-09 写）。</summary>
     public const string ChargerAllocationHeld = "CHARGER_ALLOCATION_HELD";

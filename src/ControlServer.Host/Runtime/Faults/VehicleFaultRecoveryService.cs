@@ -369,8 +369,10 @@ public sealed partial class VehicleFaultRecoveryService(
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         // Nothing is sent to the vehicle: the journey goes on, so it has no closure to be told of (control-server#323's path 7
         // was the release this replaced), and the stop it shows is the one the rebuilt order goes to. An idle return is the
-        // exception (control-server#390): it has just closed, and the vehicle is told IDLE_RETURN is withdrawn.
-        if (disposition == VehicleFaultRecoveryDispositions.IdleReturnEnded)
+        // exception (control-server#390): it has just closed, and the vehicle is told IDLE_RETURN is withdrawn. So is a
+        // charging journey (control-server#404, independent review S1): without this its closing snapshots sat in the outbox
+        // and the vehicle went on showing "going to charge" with its entry closed.
+        if (disposition is VehicleFaultRecoveryDispositions.IdleReturnEnded or VehicleFaultRecoveryDispositions.ChargingEnded)
         {
             await JourneyClosure.SendAsync(publisher, dbContext, subject.AgvId, cancellationToken).ConfigureAwait(false);
         }

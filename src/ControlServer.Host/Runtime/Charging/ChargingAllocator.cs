@@ -55,6 +55,44 @@ public sealed class ChargingAllocationBoard
     /// <summary>每辆车最近一次的原因码与细节。</summary>
     public IReadOnlyDictionary<string, (string Reason, string Detail)> Verdicts =>
         _last.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _waiting = new(StringComparer.Ordinal);
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTimeOffset> _absentSince =
+        new(StringComparer.Ordinal);
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _said = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// 一辆低于强制充电线的车这一轮为什么分不到桩（<paramref name="conclusion"/>，不带电量——电量每掉一格不该再告警一次）；不再等桩时传空。
+    /// 与上一次不同时答真：每车每种结论只告警一次，变了再告警（独立审查 M2(d)）。
+    /// </summary>
+    public bool RecordWaiting(string agvId, string? conclusion)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+        if (conclusion is null)
+        {
+            _waiting.TryRemove(agvId, out _);
+            return false;
+        }
+
+        bool changed = !_waiting.TryGetValue(agvId, out string? before) || !string.Equals(before, conclusion, StringComparison.Ordinal);
+        _waiting[agvId] = conclusion;
+        return changed;
+    }
+
+    /// <summary>
+    /// RIoT 从哪一刻起对这张充电单持续答「查无此单」（独立审查 M2(b)）：第一次读到时记下，之后每次读到都答同一个时刻。
+    /// 进程重启后从头计——只会让放弃来得更晚。
+    /// </summary>
+    public DateTimeOffset AbsentSince(string upperId, DateTimeOffset now) => _absentSince.GetOrAdd(upperId, now);
+
+    /// <summary>这张单这一次读到的不是「查无此单」（读到了别的，或没读到）：连续性断了，重新计时。</summary>
+    public void SeenOrUnread(string upperId) => _absentSince.TryRemove(upperId, out _);
+
+    /// <summary>这件事是不是第一次说：同一个键只答一次真，直到 <see cref="Unsay"/>。给「状态持续过久」一类只告警一次的告警用。</summary>
+    public bool FirstTime(string key) => _said.TryAdd(key, 0);
+
+    /// <inheritdoc cref="FirstTime"/>
+    public void Unsay(string key) => _said.TryRemove(key, out _);
 }
 
 /// <summary>
@@ -84,10 +122,16 @@ public sealed class ChargingAllocationBoard
 /// 平手取站号小的；不从全图或失败的桩回填。
 /// </para>
 /// <para>
-/// <b>「刚失败」</b>按车按时间：这辆车最近一次已确认失败（单被取消或删除，或 FAILED 后故障由人清除）的充电周期所在的桩，收尾后
-/// <see cref="JourneyRuntimeOptions.OwnOrderRebuildDelay"/> 之内不再分给它。只对这辆车算——桩对所有车不可用是「分配暂停」，由批次9-08、9-09 写。
-/// 同一辆车自上一次人工充电等待解除以来、<see cref="JourneyRuntimeOptions.OwnOrderRebuildRepeatWindow"/> 之内已确认失败两次，就不再自动分配，
-/// 置人工充电等待（<see cref="ManualChargingHoldReasons.ChargingRepeatedlyFailed"/>）由人处理——与搬运自建单「再次出问题即停」对等。
+/// <b>「刚失败」按车冷却</b>（独立审查 M3，与空闲返回 <c>IdleReturnEvaluator.EndedOrderGuardAsync</c> 同形）：这辆车最近一次充电以已确认失败
+/// 结束（单被取消或删除、FAILED 后故障由人清除、或发出后 RIoT 一直查无此单而被放弃）之后，<see cref="JourneyRuntimeOptions.OwnOrderRebuildDelay"/>
+/// 之内不给它承诺任何充电桩——不只是失败的那一个：人刚在 RIoT 里取消了它的单，它不该几秒后就开往另一个桩。桩对所有车不可用是「分配暂停」，
+/// 由批次9-08、9-09 写。
+/// </para>
+/// <para>
+/// <b>两次即停</b>：只数这辆车自最近一趟非充电旅程之后、且自上一次人工充电等待解除之后的已确认失败。以最近一次为基准往回
+/// <see cref="JourneyRuntimeOptions.OwnOrderRebuildRepeatWindow"/> 之内有两次，且最近一次距今也在窗口之内，就不再自动分配，置人工充电等待
+/// （<see cref="ManualChargingHoldReasons.ChargingRepeatedlyFailed"/>）由人处理——与搬运自建单「再次出问题即停」对等。要求最近一次也在窗口内，
+/// 是为了不让很久以前的两次失败在这辆车下一次需要充电时直接把它送进等待。
 /// </para>
 /// <para>
 /// <b>原子承诺</b>（<c>REQ-0173</c>，<see cref="ChargingCommitment.TryCommitAsync"/>）：周期行、<c>CHARGING</c> 用途占有、<c>CHARGER</c> 预占、
@@ -170,7 +214,34 @@ public sealed class ChargingAllocator(
             "The sweep that releases charger reservations left by failed charging cycles failed this round; every reservation " +
             "stays as it is and the next round tries again.");
 
+    private static readonly Action<ILogger, string, string, string, Exception?> LogWaitingForCharger =
+        LoggerMessage.Define<string, string, string>(
+            LogLevel.Warning,
+            new EventId(2246, nameof(LogWaitingForCharger)),
+            "Vehicle {AgvId} is below its mandatory charge line and no charger can be allocated to it: {Reason}. {Detail} " +
+            "It stays queued, takes no transport and no idle return, and its battery goes on falling. Check on site: is the " +
+            "charger free and is nothing standing on it (CHARGER_RESERVED_OR_OCCUPIED, CHARGER_OCCUPIED_BY_VEHICLE, " +
+            "CHARGER_TARGETED_BY_RUNNING_ORDER); can RIoT read every fleet vehicle and its unfinished orders " +
+            "(CHARGER_OCCUPANCY_UNKNOWN names what could not be read); is the route graph engine enabled and fresh " +
+            "(CHARGING_ROUTE_GRAPH_UNAVAILABLE, CHARGER_UNREACHABLE); is the charger on allocation hold or renamed on the Map " +
+            "(CHARGER_ALLOCATION_HELD, CHARGER_NOT_ON_CURRENT_MAP). Said once per vehicle per conclusion.");
+
+    private static readonly Action<ILogger, int, int, string, DateTimeOffset, string, Exception?> LogReservationStuck =
+        LoggerMessage.Define<int, int, string, DateTimeOffset, string>(
+            LogLevel.Warning,
+            new EventId(2247, nameof(LogReservationStuck)),
+            "Charger {MapId}/{StationId} is still reserved by vehicle {VehicleKey}, whose charging cycle ended in a confirmed " +
+            "failure at {EndedAt}: {Missing}. It is released only once charging has stopped, the vehicle is read off the " +
+            "charger and the charger is confirmed free, so no other vehicle can be allocated it until then. Someone has to " +
+            "look at the vehicle and the charger (the manual release of a charger is control-server#406).");
+
     private readonly JourneyRuntimeOptions _runtime = runtimeOptions.Value;
+
+    /// <summary>跨轮次保留的那块板（宿主里是单例）：引擎的充电分支也经这里记「只告警一次」与「查无此单从何时起」。</summary>
+    public ChargingAllocationBoard Board => board;
+
+    /// <summary>读「桩是否被占」的那一个读者；引擎放弃一张查无此单的充电单之前，经它核这辆车名下没有未完成的单。</summary>
+    public ChargerOccupancyReader Occupancy => occupancy;
 
     /// <summary>评估这一轮交来的每一辆车。</summary>
     /// <param name="currentMap">这一轮读到的实时站点目录：桩要在其中、站名与名册登记一致才是候选。</param>
@@ -296,21 +367,26 @@ public sealed class ChargingAllocator(
         string batteryNote = string.Create(CultureInfo.InvariantCulture, $"battery={battery}");
         DateTimeOffset now = timeProvider.GetUtcNow();
 
-        FailedCycles failed = await FailedCyclesAsync(vehicle.VehicleKey, cancellationToken).ConfigureAwait(false);
-        if (failed.RepeatedWithin(_runtime.OwnOrderRebuildRepeatWindow))
+        FailedCycles failed = await FailedCyclesAsync(vehicle, cancellationToken).ConfigureAwait(false);
+        if (failed.RepeatedWithin(_runtime.OwnOrderRebuildRepeatWindow, now))
         {
             await PlaceManualChargingHoldAsync(
                 candidate, ManualChargingHoldReasons.ChargingRepeatedlyFailed, now, cancellationToken).ConfigureAwait(false);
             return Refuse(vehicle, ChargingAllocationReasons.RepeatedlyFailedManualHold, batteryNote);
         }
 
+        // Independent review M3: the cooldown is the vehicle's, not one charger's. Somebody has just ended its charging order
+        // by hand; for this long it is committed to no charger at all.
+        if (failed.CoolingDown(_runtime.OwnOrderRebuildDelay, now))
+        {
+            return Refuse(vehicle, ChargingAllocationReasons.CooldownAfterFailedCycle, batteryNote);
+        }
+
         reads.Roster ??= new RosterRead(await roster.ReadCurrentAsync(cancellationToken).ConfigureAwait(false));
         ChargerRosterEntry[] usable =
         [
             .. (reads.Roster.Current?.Chargers ?? [])
-                .Where(charger => charger.MapId == _runtime.MapId &&
-                                  (charger.VehicleScope.Count == 0 ||
-                                   charger.VehicleScope.Contains(vehicle.VehicleKey, StringComparer.Ordinal)))
+                .Where(charger => UsableBy(charger, vehicle.VehicleKey))
                 .OrderBy(charger => charger.StationId),
         ];
         if (usable.Length == 0)
@@ -325,21 +401,20 @@ public sealed class ChargingAllocator(
             : RouteGraphAvailability.Stale("ROUTE_GRAPH_DISABLED_OR_OTHER_MAP");
         if (!reads.Graph.IsUsable)
         {
-            return Refuse(vehicle, ChargingAllocationReasons.RouteGraphUnavailable, $"{batteryNote}; {reads.Graph.StaleReason}");
+            return Refuse(
+                vehicle, ChargingAllocationReasons.RouteGraphUnavailable, $"{batteryNote}; {reads.Graph.StaleReason}",
+                waiting: reads.Graph.StaleReason ?? "");
         }
 
         reads.Occupancy ??= await occupancy.ReadAsync(cancellationToken).ConfigureAwait(false);
         int origin = candidate.Facts.Vehicle.CurrentStationId!.Value;
-        int? failedJustNow = failed.Latest is { } latest && now - latest.EndedAt < _runtime.OwnOrderRebuildDelay
-            ? latest.StationId
-            : null;
         List<string> excluded = [];
         List<(ChargerRosterEntry Charger, long CostMm)> eligible = [];
         foreach (ChargerRosterEntry charger in usable)
         {
-            string? why = charger.StationId == failedJustNow
-                ? ChargingAllocationReasons.ChargerFailedJustNow
-                : await ExcludeAsync(charger, vehicle, origin, currentMap, reads, cancellationToken).ConfigureAwait(false);
+            string? why = await ExcludeAsync(
+                    charger, vehicle.VehicleKey, origin, currentMap, reads, ownReservation: false, cancellationToken)
+                .ConfigureAwait(false);
             if (why is not null)
             {
                 excluded.Add($"{charger.StationId}={why}");
@@ -356,7 +431,9 @@ public sealed class ChargingAllocator(
         }
         if (eligible.Count == 0)
         {
-            return Refuse(vehicle, ChargingAllocationReasons.NoChargerAvailable, detail);
+            return Refuse(
+                vehicle, ChargingAllocationReasons.NoChargerAvailable, detail,
+                waiting: string.Join(", ", excluded.Concat(reads.Occupancy.Unknown)));
         }
 
         // Nearest first, over what the chain left; the lower station number on a tie. The station number is the roster's
@@ -384,6 +461,7 @@ public sealed class ChargingAllocator(
 
         LogCommitted(logger, vehicle.AgvId, chosen.StationId, journeyId, costMm, battery, detail, null);
         board.Record(vehicle.AgvId, ChargingAllocationReasons.Committed, detail);
+        board.RecordWaiting(vehicle.AgvId, null);
         return new ChargingAllocationVerdict(
             vehicle.AgvId, vehicle.VehicleKey, ChargingAllocationReasons.Committed, detail, chosen.StationId, journeyId);
     }
@@ -391,12 +469,16 @@ public sealed class ChargingAllocator(
     /// <summary>
     /// 名册上的一个桩此刻能不能分给这辆车（<c>REQ-0170</c> 候选链第 2～4 步，「刚失败」由调用方先判）。能答空，否则答那一条的码。
     /// </summary>
+    /// <param name="ownReservation">
+    /// 这辆车自己已经预占着这个桩（出发前复核）：本服务端的独占行那一步跳过——那一行就是它自己的，是不是它的由调用方先核。
+    /// </param>
     private async Task<string?> ExcludeAsync(
         ChargerRosterEntry charger,
-        FleetVehicle vehicle,
+        string vehicleKey,
         int origin,
         RiotMapStationCatalogSnapshot currentMap,
         RoundReads reads,
+        bool ownReservation,
         CancellationToken cancellationToken)
     {
         if ((await holds.ListActiveStationHoldsAsync(charger.MapId, charger.StationId, cancellationToken).ConfigureAwait(false))
@@ -417,17 +499,74 @@ public sealed class ChargingAllocator(
 
         // REQ-0173: a charger this server has reserved or occupied is not taken by anyone, whatever their battery. Read now,
         // per vehicle: a charger the vehicle before this one in the queue has just reserved has to be seen.
-        if (await stations.ReadAsync(charger.MapId, charger.StationId, cancellationToken).ConfigureAwait(false) is not null)
+        if (!ownReservation &&
+            await stations.ReadAsync(charger.MapId, charger.StationId, cancellationToken).ConfigureAwait(false) is not null)
         {
             return ChargingAllocationReasons.ChargerReservedOrOccupied;
         }
 
-        if (reads.Occupancy!.Judge(charger.MapId, charger.StationId, vehicle.VehicleKey) is { } occupied)
+        if (reads.Occupancy!.Judge(charger.MapId, charger.StationId, vehicleKey) is { } occupied)
         {
             return occupied;
         }
 
         return reads.Graph!.Graph!.Traverse(origin, charger.StationId).Reachable ? null : ChargingAllocationReasons.ChargerUnreachable;
+    }
+
+    private bool UsableBy(ChargerRosterEntry charger, string vehicleKey) =>
+        charger.MapId == _runtime.MapId &&
+        (charger.VehicleScope.Count == 0 || charger.VehicleScope.Contains(vehicleKey, StringComparer.Ordinal));
+
+    /// <summary>
+    /// 出发前复核（独立审查 M1）：一辆已经预占了这个桩、单还从没发出过的车，此刻还能不能被派去这个桩。能答空，否则答不成立的那一条的码。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 承诺与出发之间可以隔很久——出发前安全门没过时承诺一直等着。这段时间里名册可以被置空（关窗：窗口外不自动充电，别的系统可能正要用这个桩）、
+    /// 桩可以被置分配暂停、地图上可以改名、别的车可以停上去、路可以断。所以建单之前对这<b>一个</b>桩重跑分配时的那条候选链
+    /// （同一个 <see cref="ExcludeAsync"/>，不另写一份），只少「本服务端的独占行」那一步：那一行是它自己的。
+    /// </para>
+    /// <para>
+    /// 名册按此刻生效的版本读，不按周期记下的版本：已经在路上的周期按自己记下的版本继续（票面 8.2），还没出发的不算在路上。
+    /// 读不到、读不全一律按不成立答——这里没有「不知道所以照旧出发」。
+    /// </para>
+    /// </remarks>
+    public async Task<string?> WhyCommittedChargerNoLongerStandsAsync(
+        string vehicleKey,
+        int mapId,
+        int stationId,
+        RiotMapStationCatalogSnapshot currentMap,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(vehicleKey);
+        ArgumentNullException.ThrowIfNull(currentMap);
+        ChargerRosterEntry? charger = ((await roster.ReadCurrentAsync(cancellationToken).ConfigureAwait(false))?.Chargers ?? [])
+            .FirstOrDefault(entry => entry.MapId == mapId && entry.StationId == stationId && UsableBy(entry, vehicleKey));
+        if (charger is null)
+        {
+            return ChargingAllocationReasons.ChargerNotInRoster;
+        }
+
+        RoundReads reads = new()
+        {
+            Graph = routeGraph.Enabled && routeGraph.MapId == _runtime.MapId
+                ? await routeGraph.ReadAsync(cancellationToken).ConfigureAwait(false)
+                : RouteGraphAvailability.Stale("ROUTE_GRAPH_DISABLED_OR_OTHER_MAP"),
+        };
+        if (!reads.Graph.IsUsable)
+        {
+            return ChargingAllocationReasons.RouteGraphUnavailable;
+        }
+
+        reads.Occupancy = await occupancy.ReadAsync(cancellationToken).ConfigureAwait(false);
+        if (!reads.Occupancy.Vehicles.TryGetValue(vehicleKey, out RiotVehicleObservation? seen) ||
+            seen.CurrentStationId is not int origin)
+        {
+            return ChargingAllocationReasons.ChargerOccupancyUnknown;
+        }
+
+        return await ExcludeAsync(charger, vehicleKey, origin, currentMap, reads, ownReservation: true, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>
@@ -462,12 +601,30 @@ public sealed class ChargingAllocator(
                 }
 
                 reads.Occupancy ??= await occupancy.ReadAsync(cancellationToken).ConfigureAwait(false);
-                if (!reads.Occupancy.Vehicles.TryGetValue(row.VehicleKey, out RiotVehicleObservation? vehicle) ||
-                    string.IsNullOrWhiteSpace(vehicle.BatteryState) ||
-                    string.Equals(vehicle.BatteryState, BatteryEligibility.ChargingBatteryState, StringComparison.Ordinal) ||
-                    StandsOn(vehicle, row) ||
-                    reads.Occupancy.Judge(row.MapId, row.StationId, askingVehicleKey: null) is not null)
+                string stuckKey = $"charger-reservation-stuck:{row.JourneyId}";
+                string? missing =
+                    !reads.Occupancy.Vehicles.TryGetValue(row.VehicleKey, out RiotVehicleObservation? vehicle)
+                        ? "the vehicle cannot be read from RIoT (offline, or its position is missing)"
+                    : string.IsNullOrWhiteSpace(vehicle.BatteryState)
+                        ? "the vehicle's battery state cannot be read, so charging is not known to have stopped"
+                    : string.Equals(vehicle.BatteryState, BatteryEligibility.ChargingBatteryState, StringComparison.Ordinal)
+                        ? "the vehicle reports it is charging"
+                    : StandsOn(vehicle, row)
+                        ? "the vehicle is read standing on the charger"
+                    : reads.Occupancy.Judge(row.MapId, row.StationId, askingVehicleKey: null) is { } occupied
+                        ? $"the charger is not confirmed free ({occupied})"
+                    : null;
+                if (missing is not null)
                 {
+                    // Independent review M2(c): nothing releases it but the three confirmations, and a vehicle switched off or
+                    // towed away never gives them. Past the repeat window somebody is told, once; the manual release of a
+                    // charger is control-server#406's.
+                    if (cycle.EndedAt is { } endedAt &&
+                        timeProvider.GetUtcNow() - endedAt > _runtime.OwnOrderRebuildRepeatWindow &&
+                        board.FirstTime(stuckKey))
+                    {
+                        LogReservationStuck(logger, row.MapId, row.StationId, row.VehicleKey, endedAt, missing, null);
+                    }
                     continue;
                 }
 
@@ -475,6 +632,7 @@ public sealed class ChargingAllocator(
                         row.MapId, row.StationId, row.JourneyId, timeProvider.GetUtcNow(),
                         ChargingExecutionReasons.ReservationReleasedAfterEndedCycle, cancellationToken).ConfigureAwait(false))
                 {
+                    board.Unsay(stuckKey);
                     LogReservationReleased(logger, row.MapId, row.StationId, row.VehicleKey, row.JourneyId, null);
                 }
             }
@@ -492,23 +650,42 @@ public sealed class ChargingAllocator(
          string.Equals(vehicle.CurrentMap, _runtime.MapIdentity, StringComparison.Ordinal));
 
     /// <summary>
-    /// 这辆车自上一次人工充电等待解除以来已确认失败的充电周期（单被取消或删除，或 FAILED 后故障由人清除），按收尾时刻。
+    /// 这辆车已确认失败的充电周期（单被取消或删除、FAILED 后故障由人清除、发出后一直查无此单而被放弃）的收尾时刻：只数它最近一趟非充电旅程
+    /// 之后的，且只数上一次人工充电等待解除之后的。
     /// </summary>
     /// <remarks>
-    /// 从上一次解除算起：解除是一个人在车前核对过之后做的，它之前的失败那个人已经处理了；不从那里截断，解除之后第一次分配就会又被置回等待。
-    /// 时刻在客户端比：SQLite 不接受 <see cref="DateTimeOffset"/> 的比较与排序，一辆车的周期按条数算。
+    /// <para>
+    /// <b>自最近一趟非充电旅程之后</b>（与空闲返回 <c>EndedOrderGuardAsync</c> 同一个口径）：车做过别的事，之前的充电失败就不再算进「两次即停」。
+    /// </para>
+    /// <para>
+    /// <b>从上一次解除算起</b>：解除是一个人在车前核对过之后做的，它之前的失败那个人已经处理了；不从那里截断，解除之后第一次分配就会又被置回等待。
+    /// </para>
+    /// <para>
+    /// 时刻在客户端比：SQLite 不接受 <see cref="DateTimeOffset"/> 的比较与排序，一辆车的旅程与周期按条数算。
+    /// </para>
     /// </remarks>
-    private async Task<FailedCycles> FailedCyclesAsync(string vehicleKey, CancellationToken cancellationToken)
+    private async Task<FailedCycles> FailedCyclesAsync(FleetVehicle fleetVehicle, CancellationToken cancellationToken)
     {
+        string vehicleKey = fleetVehicle.VehicleKey;
         var ended = await dbContext.Set<ChargingCycleRow>().AsNoTracking()
             .Where(row => row.VehicleKey == vehicleKey && row.Phase == ChargingCyclePhases.Ended && row.EndReason != null)
             .Select(row => new { row.StationId, row.EndedAt, row.EndReason })
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        if (ended.Length == 0)
+        {
+            return new FailedCycles([]);
+        }
+
+        DateTimeOffset[] otherWork = await dbContext.JourneyRuntimes.AsNoTracking()
+            .Where(row => row.AgvId == fleetVehicle.AgvId && !row.JourneyId.StartsWith(ChargingIdentity.JourneyIdPrefix))
+            .Select(row => row.CreatedAt)
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
         DateTimeOffset?[] released = await dbContext.Set<ManualChargingHoldRecordRow>().AsNoTracking()
             .Where(row => row.VehicleKey == vehicleKey && row.ReleasedAt != null)
             .Select(row => row.ReleasedAt)
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
-        DateTimeOffset since = released.Length == 0 ? DateTimeOffset.MinValue : released.Max()!.Value;
+        DateTimeOffset since = released.Select(at => at!.Value).Concat(otherWork)
+            .DefaultIfEmpty(DateTimeOffset.MinValue).Max();
         return new FailedCycles(
         [
             .. ended
@@ -730,11 +907,18 @@ public sealed class ChargingAllocator(
 
     // ---- 结论与收拾 ------------------------------------------------------------------------------------------------------
 
-    private ChargingAllocationVerdict Refuse(FleetVehicle vehicle, string reason, string detail)
+    /// <param name="waiting">
+    /// 非空：这辆车需要充电、留在队里、而此刻分不到桩（独立审查 M2(d)）——不带电量的结论，变了才告警一次（事件 2246）。别的拒绝传空。
+    /// </param>
+    private ChargingAllocationVerdict Refuse(FleetVehicle vehicle, string reason, string detail, string? waiting = null)
     {
         if (board.Record(vehicle.AgvId, reason, detail))
         {
             LogNotAllocated(logger, vehicle.AgvId, reason, detail, null);
+        }
+        if (board.RecordWaiting(vehicle.AgvId, waiting is null ? null : $"{reason}|{waiting}"))
+        {
+            LogWaitingForCharger(logger, vehicle.AgvId, reason, detail, null);
         }
         return new ChargingAllocationVerdict(vehicle.AgvId, vehicle.VehicleKey, reason, detail);
     }
@@ -786,8 +970,15 @@ public sealed class ChargingAllocator(
     {
         public (int StationId, DateTimeOffset EndedAt)? Latest => NewestFirst.Count == 0 ? null : NewestFirst[0];
 
-        /// <summary>以最近一次为准往回 <paramref name="window"/> 之内有两次或以上。过了窗口也不自动解除：出口是人工充电等待的解除。</summary>
-        public bool RepeatedWithin(TimeSpan window) =>
-            Latest is { } latest && NewestFirst.Count(item => latest.EndedAt - item.EndedAt <= window) >= 2;
+        /// <summary>
+        /// 以最近一次为准往回 <paramref name="window"/> 之内有两次或以上，且最近一次距今也不超过 <paramref name="window"/>。
+        /// 置上等待之后不因为过了窗口而自动解除：出口是人工充电等待的解除。
+        /// </summary>
+        public bool RepeatedWithin(TimeSpan window, DateTimeOffset now) =>
+            Latest is { } latest && now - latest.EndedAt <= window &&
+            NewestFirst.Count(item => latest.EndedAt - item.EndedAt <= window) >= 2;
+
+        /// <summary>最近一次失败距今还不到 <paramref name="delay"/>：这辆车此刻不被承诺任何充电桩。</summary>
+        public bool CoolingDown(TimeSpan delay, DateTimeOffset now) => Latest is { } latest && now - latest.EndedAt < delay;
     }
 }
