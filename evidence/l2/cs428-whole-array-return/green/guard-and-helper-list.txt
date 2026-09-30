@@ -9,6 +9,9 @@ Self-test: fixtures (verdict of the scan, and rows the caller saw for a reader r
   ok   no-enumerate.ps1                       scan=wrapped  saw=1,1,1            a function handing back with Write-Output -NoEnumerate
   ok   wrapped-inside-return.ps1              scan=wrapped  saw=1,1,1            the helper wraps inside its own return , @(...) -- L2TaskTypeJourney.psm1, verbatim
   ok   wrapped-loop.ps1                       scan=wrapped  saw=1,1,1            a loop inside @( ) whose body hands back one whole result per round
+  ok   wrapped-module-qualified.ps1           scan=wrapped  saw=1,1,1            the helper called by its module-qualified name: @(Reader\Read-Shared ...)
+  ok   wrapped-relay.ps1                      scan=wrapped  saw=1,1,1            @( ) around a relay whose -Probe block ends in the helper -- g3-reversed-direction-journey.ps1:165, which the first version of the scan walked past
+  ok   wrapped-relay-prefix.ps1               scan=wrapped  saw=1,1,1            the same with the parameter abbreviated, in lower case, and the block ending in a local pass-through function
   ok   piped.ps1                              scan=piped    saw=1,1,1            piped straight on: $_ in Where-Object is the whole result
   ok   foreach.ps1                            scan=foreach  saw=1,1,1            straight after the in of a foreach: one round
   ok   reshaped-stub.ps1                      scan=reshaped saw=0,1,3            a stub replaces the module's whole-array reader with an unrolling one: the wrapping mistake behind it measures right
@@ -16,9 +19,21 @@ Self-test: fixtures (verdict of the scan, and rows the caller saw for a reader r
   ok   miss-alias.ps1                         scan=clean    saw=1,1,1            KNOWN MISS: the helper is called through an alias
   ok   miss-script-block-variable.ps1         scan=clean    saw=1,1,1            KNOWN MISS: a script block held in a variable hands the helper's output on, and is wrapped
   ok   miss-subexpression-loop.ps1            scan=clean    saw=2,2,2            KNOWN MISS: $( ) collecting a loop that calls the helper each round
+  ok   miss-get-command.ps1                   scan=clean    saw=1,1,1            KNOWN MISS: the helper reached through Get-Command, @(& (Get-Command Helper) ...)
+  ok   miss-inline-script-block.ps1           scan=clean    saw=1,1,1            KNOWN MISS: an inline script block, @(& { Helper })
+  ok   miss-foreach-object-block.ps1          scan=clean    saw=1,1,1            KNOWN MISS: the helper inside a ForEach-Object block, @(1 | ForEach-Object { Helper })
+  ok   miss-invoke-command.ps1                scan=clean    saw=1,1,1            KNOWN MISS: @(Invoke-Command { Helper })
+  ok   miss-relay-positional.ps1              scan=clean    saw=1,1,1            KNOWN MISS: a relay given its block positionally rather than by parameter name
+  ok   miss-switch.ps1                        scan=clean    saw=1,1,1            KNOWN MISS: switch (Helper ...) { } runs its clause once, on the whole result
+  ok   miss-return-parenthesised-comma.ps1    scan=clean    saw=1,1,1            KNOWN MISS: a whole-array return written return (, $x) is not classified, so wrapping it is not reported
+  ok   miss-return-array-of-comma.ps1         scan=clean    saw=1,1,1            KNOWN MISS: the same written return @(, $x)
+  ok   miss-return-ternary-comma.ps1          scan=clean    saw=1,1,1            KNOWN MISS: the same with the unary comma inside a ternary
+  ok   miss-function-drive-stub.ps1           scan=wrapped  saw=0,1,3            KNOWN MISS: a stand-in written ${function:Helper} = { ... } that unrolls is not reported as reshaped
   ok   assigned.ps1                           scan=clean    saw=0,1,3            assigned directly -- the right way
   ok   parenthesised.ps1                      scan=clean    saw=0,1,3            parenthesised, then .Count
   ok   parenthesised-then-piped.ps1           scan=clean    saw=0,1,3            parenthesised, then piped, inside @( ): legal, used by L2RealStation.psm1, one pair of parentheses away from piped
+  ok   relay-assigned-then-wrapped.ps1        scan=clean    saw=0,1,3            a relay's result assigned first and wrapped afterwards: the one form right on both of its paths (g3-multi-stop-plan.ps1)
+  ok   relay-of-unrolled-block.ps1            scan=clean    saw=0,1,3            a relay whose block hands back unrolled rows: wrapping it is correct
   ok   assigned-then-wrapped.ps1              scan=clean    saw=0,1,3            assigned, then the variable wrapped in @( )
   ok   assigned-then-foreach.ps1              scan=clean    saw=0,1,3            assigned, then foreach over the variable
   ok   stub-same-shape.ps1                    scan=clean    saw=0,1,3            a stub that replaces the module's reader and keeps its shape (return , $r): legal, and direct assignment measures right
@@ -30,7 +45,7 @@ Self-test: fixtures (verdict of the scan, and rows the caller saw for a reader r
 Self-test: classifier (14 functions, 9 of them whole-array)
   ok   classified exactly the Whole-* functions; the Unrolled-* ones and the class method were left out
 
-Scan: 188 scripts under <repo>/scripts, 122 functions return their array whole (35 of them in shared files).
+Scan: 190 scripts under <repo>/scripts, 123 functions return their array whole (36 of them in shared files).
   shared Invoke-L2Query                           l2/L2.psm1:936  (line 955)
   shared Get-VisibleNames                         l2/L2ClosureCapture.psm1:131  (line 135)
   shared Get-NamesOnlyVisibleUnderPwshFile        l2/L2ClosureCapture.psm1:177  (line 197)
@@ -54,9 +69,10 @@ Scan: 188 scripts under <repo>/scripts, 122 functions return their array whole (
   shared Get-L2DemandJourneySnapshots             l2/L2TaskTypeJourney.psm1:83  (line 106)
   shared Get-L2SecondLegIntents                   l2/L2TaskTypeJourney.psm1:190  (line 195)
   shared Resolve-L2WaitingPoints                  l2/L2WaitingPoints.psm1:34  (line 43)
-  shared Get-L2DotSourcedLeaves                   l2/L2WholeArrayReturn.psm1:145  (line 153)
-  shared Get-L2WholeArrayFunctions                l2/L2WholeArrayReturn.psm1:246  (line 256)
-  shared Get-L2WholeArrayMisuse                   l2/L2WholeArrayReturn.psm1:264  (line 310)
+  shared Get-L2DotSourcedLeaves                   l2/L2WholeArrayReturn.psm1:182  (line 190)
+  shared Get-L2RelayParameters                    l2/L2WholeArrayReturn.psm1:293  (line 296)
+  shared Get-L2WholeArrayFunctions                l2/L2WholeArrayReturn.psm1:345  (line 355)
+  shared Get-L2WholeArrayMisuse                   l2/L2WholeArrayReturn.psm1:363  (line 409)
   shared Get-L2JourneyClosureBusinessStateIds     l2/scenarios/CargoHoldingCommon.ps1:104  (line 113)
   shared Get-L2LoadingPhaseSnapshots              l2/scenarios/CargoHoldingCommon.ps1:120  (line 144)
   shared Get-G3Inbound                            l2/scenarios/G3RecoveryCommon.ps1:31  (line 52)
@@ -92,9 +108,9 @@ Scan: 188 scripts under <repo>/scripts, 122 functions return their array whole (
   local  Get-Outbound                             l2/scenarios/g3-predeparture-check-expires.ps1:71  (line 84)
   local  Get-Inbound                              l2/scenarios/g3-predeparture-check-expires.ps1:87  (line 98)
   local  Get-Progress                             l2/scenarios/g3-predeparture-check-expires.ps1:101  (line 107)
-  local  Get-Outbound                             l2/scenarios/g3-sublot-rejected.ps1:69  (line 83)
-  local  Get-Inbound                              l2/scenarios/g3-sublot-rejected.ps1:87  (line 102)
-  local  Get-Progress                             l2/scenarios/g3-sublot-rejected.ps1:105  (line 114)
+  local  Get-Outbound                             l2/scenarios/g3-sublot-rejected.ps1:71  (line 85)
+  local  Get-Inbound                              l2/scenarios/g3-sublot-rejected.ps1:89  (line 104)
+  local  Get-Progress                             l2/scenarios/g3-sublot-rejected.ps1:107  (line 116)
   local  Get-PlanLegs                             l2/scenarios/g3-waiting-point-idle-return.ps1:91  (line 91)
   local  Get-IdleReturnClaims                     l2/scenarios/idle-return-two-vehicles-contend-one-waiting-point.ps1:42  (line 43)
   local  Get-Exclusivities                        l2/scenarios/idle-return-two-vehicles-contend-one-waiting-point.ps1:47  (line 48)
@@ -132,8 +148,8 @@ Scan: 188 scripts under <repo>/scripts, 122 functions return their array whole (
   local  Get-Admissions                           l2/scenarios/staging-to-wire-reversed-journey.ps1:72  (line 77)
   local  Get-CommandSlots                         l2/scenarios/staging-to-wire-slot-group.ps1:62  (line 67)
   local  Get-EscalationRecords                    l2/scenarios/starvation-threshold-escalation.ps1:45  (line 46)
-  local  Get-Worklists                            l2/scenarios/stop-ended-journey-continues.ps1:46  (line 61)
-  local  Get-PeerSubmissionIds                    l2/scenarios/stop-ended-journey-continues.ps1:136  (line 137)
+  local  Get-Worklists                            l2/scenarios/stop-ended-journey-continues.ps1:47  (line 62)
+  local  Get-PeerSubmissionIds                    l2/scenarios/stop-ended-journey-continues.ps1:137  (line 138)
   local  Get-Blocks                               l2/scenarios/structural-block-oversized-demand.ps1:49  (line 51)
   local  Get-WarningRecords                       l2/scenarios/structural-block-oversized-demand.ps1:58  (line 73)
   local  Get-Journeys                             l2/scenarios/three-vehicle-exit.ps1:47  (returns Invoke-L2Query)

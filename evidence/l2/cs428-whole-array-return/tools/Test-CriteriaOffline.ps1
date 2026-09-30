@@ -5,7 +5,7 @@
     conditions: as recorded, with the rows doubled, and with no rows.
 
 .DESCRIPTION
-    Nothing here is a copy of a scenario. For each case the read is cut out of the scenario file by line range --
+    Nothing here is a copy of a scenario. For each case the read is cut out of the scenario file at an anchor line --
     once from the file as it was on the base commit (-OldRoot) and once from the working tree -- and the criterion is
     a string that must occur verbatim in that file, or the case is refused. What the case adds is only the values the
     scenario would have had in its variables at that point, read from the same database.
@@ -19,6 +19,11 @@
     What each kind of case must show:
       count      an "exactly N rows" criterion.  new: as-is True, doubled False, empty False (a verdict, not a throw).
                                                  old: printed; doubled True means the criterion was idling.
+      single-row a read through Read-L2SingleRow. new: the row (or its value) as-is, "(2 rows, expected 1)" doubled,
+                                                 $null when empty.
+      single-row-required  the same with -Required: a verdict in all three, the two-row and zero-row ones unlike
+                                                 the one-row one.
+      criterion  a criterion that is not a row count.  new: True as-is, False when empty, never a throw.
       first-row  `if ($rows.Count -eq 0) { return $null }; return $rows[0]` in a function or a probe.
                                                  new: a row (or its value) as-is and doubled, $null when empty.
       index      `(...)[0]` followed by a property read.   new: the same value as-is and doubled.
@@ -49,6 +54,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $hostDirectory = Join-Path $Repository 'src/ControlServer.Host/bin/Release/net8.0/win-x64'
 Import-Module (Join-Path $Repository 'scripts/l2/L2.psm1') -Force
+Import-Module (Join-Path $Repository 'scripts/l2/L2SingleRow.psm1') -Force
 $null = New-Item -ItemType Directory -Path $ScratchRoot -Force
 
 # ------------------------------------------------------------------------------------------------ databases
@@ -110,6 +116,9 @@ function Format-Seen($Value) {
     if ($Value -is [array]) { return "array[$($Value.Count)]" }
     if ($Value -is [string]) { return "'$Value'" }
     if ($Value -is [ValueType]) { return "$Value" }
+    # Read-L2SingleRow's stand-in: every column reads "(N rows, expected 1)".
+    $texts = @($Value.PSObject.Properties | ForEach-Object { [string]$_.Value } | Select-Object -Unique)
+    if ($texts.Count -eq 1 -and $texts[0] -match '^\(\d+ rows, expected 1\)$') { return "stand-in $($texts[0])" }
     return 'row'
 }
 
@@ -126,25 +135,34 @@ function Get-CaseSource([hashtable]$Case, [string]$Form) {
         if ($null -eq $definition) { throw "$($Case.Id): no function $name in $($Case.File)" }
         $parts.Add($definition.Extent.Text)
     }
-    # Lines is one range (from, to) or a list of ranges.
-    $ranges = [System.Collections.Generic.List[object]]::new()
-    if ($Case.ContainsKey('Lines')) {
-        if ($Case.Lines[0] -is [array]) { foreach ($range in $Case.Lines) { $ranges.Add($range) } } else { $ranges.Add($Case.Lines) }
+    # Cut by ANCHOR, not by line number: the two forms of a file no longer have the same line numbers. An anchor is
+    # a regex that must match exactly one line of the file; Cut is a list of (anchor, number of lines from there).
+    # CutOld and ProbeOld are for a read whose first line reads differently in the old form.
+    $findLine = {
+        param([string]$anchor)
+        $hits = @(0..($lines.Count - 1) | Where-Object { $lines[$_] -match $anchor })
+        if ($hits.Count -ne 1) { throw "$($Case.Id): anchor /$anchor/ matches $($hits.Count) lines of $($Case.File) ($Form)" }
+        return $hits[0]
     }
-    foreach ($range in $ranges) {
-        $parts.Add(($lines[($range[0] - 1)..($range[1] - 1)]) -join "`n")
+    $cuts = ($Form -eq 'old' -and $Case.ContainsKey('CutOld')) ? $Case.CutOld : $Case['Cut']
+    foreach ($cut in @($cuts)) {
+        if ($null -eq $cut) { continue }
+        $start = & $findLine $cut[0]
+        $parts.Add(($lines[$start..($start + $cut[1] - 1)]) -join "`n")
     }
-    if ($Case.ContainsKey('Probe')) {
-        # The innermost script block around that line: the probe handed to Wait-L2Condition.
+    $probe = ($Form -eq 'old' -and $Case.ContainsKey('ProbeOld')) ? $Case.ProbeOld : $Case['Probe']
+    if ($probe) {
+        # The innermost script block around the anchored line: the probe handed to Wait-L2Condition.
+        $probeLine = (& $findLine $probe) + 1
         $block = $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.ScriptBlockExpressionAst] -and
-                $n.Extent.StartLineNumber -le $Case.Probe -and $n.Extent.EndLineNumber -ge $Case.Probe }, $true) |
+                $n.Extent.StartLineNumber -le $probeLine -and $n.Extent.EndLineNumber -ge $probeLine }, $true) |
             Sort-Object { $_.Extent.EndOffset - $_.Extent.StartOffset } | Select-Object -First 1
-        if ($null -eq $block) { throw "$($Case.Id): no script block around line $($Case.Probe)" }
+        if ($null -eq $block) { throw "$($Case.Id): no script block around line $probeLine" }
         $parts.Add("`$probeUnderTest = $($block.Extent.Text)")
     }
     $body = $parts -join "`n"
     $observe = ($Form -eq 'old' -and $Case.ContainsKey('ObserveOld')) ? $Case.ObserveOld : $Case['Observe']
-    $wrapped = "$body`n$observe" -match '@\(\s*(Invoke-L2Query|Get-PlanLegs|Get-AcknowledgedWorklists)'
+    $wrapped = "$body`n$observe" -match '@\(\s*(Invoke-L2Query|Get-PlanLegs|Get-AcknowledgedWorklists|Wait-L2RealOrLast)'
     if ($Form -eq 'old' -and -not $wrapped) { throw "$($Case.Id): the old text does not wrap the helper -- wrong lines?" }
     if ($Form -eq 'new' -and $wrapped) { throw "$($Case.Id): the new text still wraps the helper" }
     if ($observe -and -not $Case['ObserveIsCall']) {
@@ -168,6 +186,18 @@ function Invoke-L2Query {
         }
     }
     return L2\Invoke-L2Query -Connection $Connection -Sql $text
+}
+function Read-L2SingleRow {
+    param($Connection, $Sql, [switch]$Required)
+    $text = $Sql
+    if ($Sql -match $script:injectPattern) {
+        $text = switch ($script:injectedCondition) {
+            'doubled' { "SELECT * FROM ($Sql) UNION ALL SELECT * FROM ($Sql)" }
+            'empty'   { "SELECT * FROM ($Sql) WHERE 0" }
+            default   { $Sql }
+        }
+    }
+    return L2SingleRow\Read-L2SingleRow -Connection $Connection -Sql $text -Required:$Required
 }
 # For a case's own setup: never injected.
 function Query([string]$Sql) { return L2\Invoke-L2Query -Connection $connection -Sql $Sql }
@@ -222,14 +252,24 @@ foreach ($case in $cases) {
     $verdict = switch ($case.Kind) {
         'count' { $new[0] -eq 'True' -and $new[1] -eq 'False' -and $new[2] -eq 'False' }
         'first-row' { $new[0] -notlike 'throws*' -and $new[0] -ne '$null' -and $new[0] -notlike 'array*' -and $new[1] -eq $new[0] -and $new[2] -eq '$null' }
+        'single-row' {
+            $new[0] -notlike 'throws*' -and $new[0] -ne '$null' -and $new[0] -notlike 'array*' -and $new[0] -notlike '*rows, expected 1*' -and
+            $new[1] -like '*(2 rows, expected 1)*' -and $new[2] -eq '$null'
+        }
+        # A read that is not polled: not one row must be a verdict that differs from the one-row verdict, never a throw.
+        'single-row-required' {
+            @($new | Where-Object { $_ -like 'throws*' }).Count -eq 0 -and $new[1] -ne $new[0] -and $new[2] -ne $new[0] -and
+            ($new[1] -in 'True', 'False' -or ($new[1] -like '*(2 rows, expected 1)*' -and $new[2] -like '*(0 rows, expected 1)*'))
+        }
+        'criterion' { $new[0] -eq 'True' -and $new[2] -eq 'False' -and $new[1] -notlike 'throws*' }
         'index'     { $new[0] -notlike 'throws*' -and $new[1] -eq $new[0] }
-        'text'      { @($new | Where-Object { $_ -like 'throws*' }).Count -eq 0 }
+        'text'      { @($new | Where-Object { $_ -like 'throws*' }).Count -eq 0 -and (-not $case['ExpectNew'] -or (($new -join ' | ') -ceq ($case.ExpectNew -join ' | '))) }
         default     { throw "$($case.Id): unknown kind $($case.Kind)" }
     }
     if (-not $verdict) { $problems.Add("$($case.Id) ($($case.Kind)) new=$($new -join ' | ') old/doubled=$($seen['old/doubled'])") }
     $rows.Add([pscustomobject]@{
             Idle = ($case.Kind -eq 'count' -and $seen['old/doubled'] -eq 'True')
-            Id = $case.Id; Kind = $case.Kind; Site = "$(Split-Path -Leaf $case.File):$($case.ContainsKey('Site') ? $case.Site : ($case.ContainsKey('Probe') ? $case.Probe : @($case.Lines | ForEach-Object { $_ })[0]))"
+            Id = $case.Id; Kind = $case.Kind; Site = "$(Split-Path -Leaf $case.File)  $($case['Site'] ?? $case['Probe'] ?? @($case['Cut'])[0][0])"
             Database = (Get-CaseDatabase $case).Source; Ok = $verdict; Seen = $seen; Observe = $case['Observe']; Note = $case['Note']
         })
 }
