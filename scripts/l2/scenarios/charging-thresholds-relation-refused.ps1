@@ -20,6 +20,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ConditionOrLast.psm1') -Force
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2SingleRow.psm1') -Force
 
 $journal = $Context.Journal
 $assertions = $Context.Assertions
@@ -29,7 +30,7 @@ $mes = $Context.MesIngest
 function Get-Count([string]$sql) { [int](Invoke-L2Query -Connection $connection -Sql $sql)[0].N }
 
 function Get-ActiveVersion {
-    $rows = @(Invoke-L2Query -Connection $connection -Sql 'SELECT Version FROM ChargingPolicyActivations ORDER BY Sequence DESC LIMIT 1')
+    $rows = Invoke-L2Query -Connection $connection -Sql 'SELECT Version FROM ChargingPolicyActivations ORDER BY Sequence DESC LIMIT 1'
     if ($rows.Count -eq 0) { return $null }
     return [long]$rows[0].Version
 }
@@ -105,10 +106,9 @@ $null = $mes.Command('Put', "demands/$($demandGuid.ToString('N'))", @{
 $journey = Wait-L2ConditionOrLast -Description 'the demand published after the refused import was dispatched' `
     -Journal $journal -Criterion 'demand-dispatched-under-default-policy' -TimeoutSeconds 120 `
     -Probe {
-        $rows = @(Invoke-L2Query -Connection $connection -Sql (
-            "SELECT VehicleKey, ChargingPolicyVersion, PublishedBatteryState FROM JourneyRuntimes WHERE DemandId = '$demandId'"))
-        if ($rows.Count -eq 0) { return $null }
-        return $rows[0]
+        # One journey per demand: for two rows every column reads "(2 rows, expected 1)", and the criterion below goes red on it.
+        return Read-L2SingleRow -Connection $connection -Sql (
+            "SELECT VehicleKey, ChargingPolicyVersion, PublishedBatteryState FROM JourneyRuntimes WHERE DemandId = '$demandId'")
     } `
     -Until { param($v) $null -ne $v }
 

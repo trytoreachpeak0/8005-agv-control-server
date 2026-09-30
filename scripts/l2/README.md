@@ -694,8 +694,32 @@ DispatchZoneParameters = @{
 写成边车文件而不是命令行开关，是因为忘了传开关的那一次，场景会安安静静地证明另一回事。装置选错
 更是如此：把 `real-onboard-*` 跑在合成对端上，它会绿，而绿的是完全另一件事。
 
-**写场景时最容易踩的一条：不要把返回查询结果的函数直接送进管道。**`Invoke-L2Query` 用
-`return , $rows` 保住整张结果集，而这个包装**穿得过一层 `return`**：
+**写场景时最容易踩的一条：整体返回数组的函数，先赋值再用。**`Invoke-L2Query` 用
+`return , $rows` 保住整张结果集（零行是空数组而不是 `$null`，一行是一个元素的数组而不是那一行本身）。
+这个约定只对「原样收下那一个对象」的调用方成立。凡是会**枚举**函数输出的写法，拿到的都是
+「一个元素，那个元素是整张表」：
+
+```powershell
+$rows = @(Invoke-L2Query -Connection $connection -Sql '...')      # 错（wrapped）
+Invoke-L2Query -Connection $connection -Sql '...' | Where-Object { ... }   # 错（piped）
+foreach ($row in Invoke-L2Query -Connection $connection -Sql '...') { }    # 错（foreach）
+
+$rows = Invoke-L2Query -Connection $connection -Sql '...'         # 对：直接赋值
+$first = (Invoke-L2Query -Connection $connection -Sql '...')[0]   # 对：圆括号取值
+@((Invoke-L2Query -Connection $connection -Sql '...') | Where-Object { ... })   # 对：先圆括号，再送管道
+```
+
+包了 `@()` 之后的三个症状，按危害排：
+
+1. **`.Count` 恒为 1。**零行、一行、四十行数出来都是 1，所以 `$rows.Count -eq 1`（恰好一行）永远不会红，
+   而「出现了第二行」正是这类判据要防的。
+2. **空结果抛异常。**`$rows[0]` 是那张空表，严格模式下对它取属性直接抛错，场景中断而不是给出结论
+   （control-server#390 第一轮 G3 的 G3-12-07）。在 `Wait-L2Condition` 的探针里它被吞掉，表现成一次干等到超时。
+3. **有行的时候读出来看着是对的。**取属性会成员展开到每一行，单行时与正确写法的结果一模一样，多行时拼成
+   「三个值连成一行」。毛病因此藏得住：control-server#428 之前它被修过六次，每次只修踩到的那一处，
+   那一次扫出来还有 35 处 `@(Invoke-L2Query …)`，分布在 14 个文件里，其中 10 处在 CI 每轮都不跑的真装置与 G3 场景里。
+
+这个包装**穿得过一层 `return`**，所以不只是 `Invoke-L2Query`：
 
 ```powershell
 function Get-Journeys { return Invoke-L2Query -Connection $connection -Sql '...' }
@@ -704,9 +728,67 @@ Get-Journeys | Where-Object { $_.AgvId -eq $id }   # 错：管道里只有一个
 $rows = Get-Journeys; $rows | Where-Object { ... }  # 对：赋值展开了外面那层
 ```
 
-写错的症状是「三趟 journey 都在库里，却一趟都找不到」——`$_.AgvId` 成员展开成三个值拼成一行，
-一条也匹配不上。单行结果时完全看不出来，多行才现形。`Wait-L2Condition` 会吞掉探针里的异常
-（那是「还没到」和「探针写错了」共用的路径），所以它表现为一次干等到超时。
+`Get-L2Real*`、`Get-L2Journey*`、`Get-G3Inbound`／`Get-G3Outbound`、各场景自己的 `Get-Inbound`、`Get-PlanLegs`
+等一百多个函数都是同一个形状。名单不用记，也不手写：`Test-L2WholeArrayReturn.ps1` 从语法树推导
+（输出位置上的一元逗号、`Write-Output -NoEnumerate`、原样转交另一个整体返回的函数），`-ListHelpers` 会把它们列出来。
+
+**护栏。**`pwsh -NoProfile -File ./scripts/l2/Test-L2WholeArrayReturn.ps1`，几秒钟，不起任何进程，`test.yml` 每轮都跑。
+它扫 `scripts/` 下所有 `.ps1`／`.psm1`，上面三种写法出现一处就红。另报第四种，不是调用而是替身：
+
+- **reshaped**：在模块外面另写一个与模块里整体返回函数同名的函数（自检脚本里替换 `Invoke-L2Query` 的桩），
+  结尾却是 `return $rows`。在这种桩下面 `@(Invoke-L2Query …)` 恰好是对的，于是被测代码里的包装错误在自检里量出来
+  正确、到真库上才错。`Get-L2SecondLegIntents` 就是这样带着 `return , @(Invoke-L2Query …)` 过了自己的全部用例，
+  而「一条需求有两条第二程就拒绝判定」那条保护在真库上从来走不到。**桩的结尾必须是 `return , @(...)`。**
+
+**`Wait-L2RealOrLast`／`Wait-L2ConditionOrLast` 的结果，先赋值再 `@()`。**这两个函数成功时交回展开的值，超时时走
+`return & $Probe`，把探针里那次整体返回原样交出来——同一个调用两种形状。所以：
+
+```powershell
+$snapshots = @(Wait-L2RealOrLast … -Probe { Get-L2DemandJourneySnapshots $connection $demandId } …)   # 错：超时路径上 .Count 恒为 1
+$snapshots = Wait-L2RealOrLast … -Probe { Get-L2DemandJourneySnapshots $connection $demandId } …
+$snapshots = @($snapshots)                                                                             # 对：两条路径都对
+```
+
+护栏把「在输出位置上 `& $某个脚本块参数`」的函数认作转交函数；按参数名给它的脚本块如果以整体返回的调用收尾，
+这次调用就按整体返回对待。control-server#428 的第一版护栏没有这一条，`g3-reversed-direction-journey.ps1` 里正好有一处。
+
+它查不到的写法（读的是语法，不是运行）。每一条都做成了 `miss-` 夹具：实测运行结果是错的、扫描确实不报，
+所以这份清单是量出来的，哪一条不再成立夹具会红：
+
+- 叫不出名字的调用：`& $reader …`、`& (Get-Command Helper) …`、别名、`Invoke-Expression`；
+- 脚本块：存在变量里的、内联的 `@(& { Helper })`、`@(1 | ForEach-Object { Helper })`、`@(Invoke-Command { Helper })`，
+  以及按位置而不是按参数名传给转交函数的脚本块；
+- 没被认成整体返回的函数：`return (, $x)`、`return @(, $x)`、三元里的 `(, $x)`（只认裸的 `, $x` 与
+  `Write-Output -NoEnumerate`）；定义在 `scripts/` 之外或类方法里的；用 `$PSCmdlet.WriteObject($x, $false)` 交回的；
+- 别的枚举方式：`switch (Helper …) { }`、`$(foreach (…) { Helper })`；
+- 写成 `${function:Helper} = { … }` 的替身。
+
+`Helper … | Out-Null` 会被报成 piped，虽然它无害——写成 `$null = Helper …`。护栏的每一种判定都有夹具，并且**实际运行量过**
+调用方看到几行，所以规则失灵时它自己会红，不会安静地报 0 处。
+
+**「这条需求的那一趟旅程」这类本该恰好一行的读取，用 `Read-L2SingleRow`**（`L2SingleRow.psm1`，场景里自己 `Import-Module`）。
+`if ($rows.Count -eq 0) { return $null }; return $rows[0]` 在两行时安静地取第一行，而 `JourneyRuntimes WHERE DemandId`、
+`OrderIntents WHERE DemandId AND Purpose` 的键都不唯一，也没有 `ORDER BY`。`Read-L2SingleRow` 一行交回那一行，零行交回 `$null`
+（等待探针轮询的就是它），多行交回一个替身：列与查询相同，每一列的值都是 `(N rows, expected 1)`。替身是值不是异常，
+因为探针里的异常会被 `Wait-L2Condition` 吞成一次干等；拿它去和期望的阶段、车号、状态比都不成立，判据于是变红，
+actual 里写着行数。`-Required` 给不在探针里的读取用：零行也交回替身，而不是下标越界让场景在判据表之前中断。
+
+**规则一句话：建在单行读取上的判据，至少要有一个与字面期望值比较的 `-eq`。**替身每一列都是非空字符串，和期望值比相等
+一定不成立，但下面这些写法在替身上**都是 True**（每一条在 `Test-L2SingleRow.ps1` 里有用例钉着）：
+
+- 「不是 X」：`-ne 'X'`、`-notmatch`、`-notin`；
+- 「有值」：`$null -ne 列`、`[string]列 -ne ''`、直接拿行或列做真值判断；
+- 和数比大小：`列 -lt 5`（按文本比，`(` 排在所有数字前面）；`-like '*1*'`、`-match '\d'`（文字里有 2 和 1）；
+- 替身和替身：两次读取的同名列相等，同一次读取的两列也相等。
+
+所以上面任何一种都不能是判据对这一行说的唯一一句话。替身不带每次不同的序号是有意的：序号补不了「同一次读取的两列相等」，
+还会让日志去重失效（同一状态轮询 2 秒从 1 行变成 9 行）。另外两条限制：替身的列做数值转换会抛错
+（`[int]'(2 rows, expected 1)'`），这种列按文本比；不要写 `@(Read-L2SingleRow …)`，零行时它交回的是显式的 `$null`，
+包出来 `.Count` 是 1。
+
+**判「恰好 N 行」的判据，写完做一次「多一行必须红、零行必须给出结论」的验证。**把场景里的读法原样抽出来对着保留的库跑，
+把查询包成 `SELECT * FROM (…) UNION ALL SELECT * FROM (…)`（行数翻倍）与 `SELECT * FROM (…) WHERE 0`（零行）各跑一次。
+翻倍后仍然绿的判据是在空转。做法与每处的结果见 `evidence/l2/cs428-whole-array-return/`。
 
 **真装置下驱动条码只用 `SetSublot()` + `Submit()`，不注入按键。**`ValuePattern.SetValue` 和
 「手动提交」按钮的 `InvokePattern` 都不需要窗口有焦点，所以跑的时候不跟操作员抢键盘，别的窗口

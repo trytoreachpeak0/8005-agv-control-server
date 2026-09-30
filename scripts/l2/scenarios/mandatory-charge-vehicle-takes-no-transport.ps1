@@ -21,6 +21,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ConditionOrLast.psm1') -Force
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2SingleRow.psm1') -Force
 
 $journal = $Context.Journal
 $assertions = $Context.Assertions
@@ -54,11 +55,11 @@ function Set-Battery([string]$vehicleKey, [int]$battery) {
     })
 }
 
+# One row per demand is the premise, and neither the key nor the query makes it so: Read-L2SingleRow hands back a
+# stand-in reading "(N rows, expected 1)" for anything else, so what is built on it goes red and says why.
 function Get-Journey {
-    $rows = @(Invoke-L2Query -Connection $connection -Sql (
-        "SELECT JourneyId, AgvId, VehicleKey, ChargingPolicyVersion, PublishedBatteryState FROM JourneyRuntimes WHERE DemandId = '$demandId'"))
-    if ($rows.Count -eq 0) { return $null }
-    return $rows[0]
+    return Read-L2SingleRow -Connection $connection -Sql (
+        "SELECT JourneyId, AgvId, VehicleKey, ChargingPolicyVersion, PublishedBatteryState FROM JourneyRuntimes WHERE DemandId = '$demandId'")
 }
 
 # --- 0. 前置：两车先设成 25，再导入并激活「强制充电线 30 > 余量 20」的一版 ---------------------------------------
@@ -89,10 +90,10 @@ $activated = & $Context.InvokeFieldOps -Arguments @('activate-charging-policy', 
     '--fleet', $fleetText, '--allow-non-field-approval')
 $journal.Observe('scenario-policy', $version, @{ import = $imported; approve = $approved; activate = $activated })
 
-$active = @(Invoke-L2Query -Connection $connection -Sql (
+$active = Invoke-L2Query -Connection $connection -Sql (
     'SELECT v.Version, v.MandatoryChargeEntryThresholdPercent AS Entry, v.MinimumPostTaskBatteryMarginPercent AS Margin, ' +
     'v.EstimatedTaskConsumptionPercent AS Estimate FROM ChargingPolicyActivations x ' +
-    'JOIN ChargingPolicyVersions v ON v.Version = x.Version ORDER BY x.Sequence DESC LIMIT 1'))
+    'JOIN ChargingPolicyVersions v ON v.Version = x.Version ORDER BY x.Sequence DESC LIMIT 1')
 $assertions.Add(
     'L2-MCT-00',
     '前置：最后一次激活的是场景导入的那一版（强制充电线 30、余量 20、每趟估计 0）',
@@ -114,7 +115,7 @@ $null = $mes.Command('Put', "demands/$($demandGuid.ToString('N'))", @{
 $reason = Wait-L2ConditionOrLast -Description 'the dispatch chain wrote its verdict on the demand' `
     -Journal $journal -Criterion 'backlog-reason' -TimeoutSeconds 60 `
     -Probe {
-        $rows = @(Invoke-L2Query -Connection $connection -Sql "SELECT ReasonCode FROM JourneyBacklog WHERE DemandId = '$demandId'")
+        $rows = Invoke-L2Query -Connection $connection -Sql "SELECT ReasonCode FROM JourneyBacklog WHERE DemandId = '$demandId'"
         if ($rows.Count -eq 0) { return $null }
         return [string]$rows[0].ReasonCode
     } `

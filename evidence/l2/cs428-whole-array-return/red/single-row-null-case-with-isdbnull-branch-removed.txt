@@ -1,0 +1,30 @@
+ok    one row: the row, reader closed and command disposed, the SQL handed over as given -> Stage=AwaitingSublot; AgvId=AGV-1; BlockReasonCode=
+BAD   a NULL cell is $null in the row, not the DBNull the reader hands out -> BlockReasonCode is DBNull
+ok    no row: $null, which is what a wait on this read polls for -> $null
+ok    no row, -Required: a stand-in with the query's columns, each saying 0 rows -> Stage=(0 rows, expected 1); AgvId=(0 rows, expected 1); BlockReasonCode=(0 rows, expected 1)
+ok    two rows: a stand-in, not the first row -- and not $null, so a wait on "$null -ne $v" ends -> Stage=(2 rows, expected 1); AgvId=(2 rows, expected 1); BlockReasonCode=(2 rows, expected 1)
+ok    two rows, -Required: the same stand-in -> Stage=(2 rows, expected 1); AgvId=(2 rows, expected 1); BlockReasonCode=(2 rows, expected 1)
+ok    a stage comparison against the stand-in does not hold -> False
+ok    the "is it CONFIRMED" shape the intent waits use does not hold either -> False
+ok    printed into a criterion's actual text, the stand-in names the count -> (2 rows, expected 1) / (2 rows, expected 1)
+ok    rendered the way Wait-L2Condition renders its last observation, it names the count -> @{Stage=(2 rows, expected 1); AgvId=(2 rows, expected 1); BlockReasonCode=(2 rows, expected 1)}
+ok    a numeric cast of a stand-in column throws -- the documented limit: compare such a column as text -> threw=True
+ok    HAZARD, holds for a stand-in: -ne 'Blocked' -> True
+ok    HAZARD, holds for a stand-in: -notmatch 'Blocked' -> True
+ok    HAZARD, holds for a stand-in: -notin 'Blocked', 'Completed' -> True
+ok    HAZARD, holds for a stand-in: $null -ne the column -> True
+ok    HAZARD, holds for a stand-in: the column is not '' -> True
+ok    HAZARD, holds for a stand-in: the row in a truth test -> True
+ok    HAZARD, holds for a stand-in: the column in a truth test -> True
+ok    HAZARD, holds for a stand-in: the column -lt 5 (compared as text) -> True
+ok    HAZARD, holds for a stand-in: -like '*1*' -> True
+ok    HAZARD, holds for a stand-in: -match '\d' -> True
+ok    HAZARD, holds for a stand-in: the same column of two reads, equal -> True
+ok    HAZARD, holds for a stand-in: two columns of one read, equal -> True
+ok    the rule: an -eq against a literal expected value is what does NOT hold -> False, False
+ok    HAZARD: @(Read-L2SingleRow ...) for no row is ONE element ($null), not an empty array -- do not wrap it -> Count=1
+ok    Select: one row is that row -> Stage=X
+ok    Select: $null rows count as none -> n/a
+ok    Select: three rows say three -> Stage=(3 rows, expected 1)
+L2SingleRow self-check: 1 of 28 cases came out the wrong way.
+exit=1

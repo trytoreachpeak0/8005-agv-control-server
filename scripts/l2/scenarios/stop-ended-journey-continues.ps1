@@ -25,6 +25,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ConditionOrLast.psm1') -Force
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2SingleRow.psm1') -Force
 . (Join-Path $PSScriptRoot 'CargoHoldingCommon.ps1')
 
 $journal = $Context.Journal
@@ -89,8 +90,8 @@ $null = Wait-L2Condition -Description 'demand A was loaded' -Journal $journal -C
 # 第二个取货站上没人扫码：录入请求挂着，到迟到那一步才答。
 $null = $onboard.Command('Put', 'policy', @{ sublot = 'Manual' })
 $bStop = Move-L2CargoVehicleToCurrentStop $Context $journeyId 11
-$bStopRow = @(Invoke-L2Query -Connection $connection -Sql (
-        "SELECT StationId, OperationSessionId FROM JourneyStops WHERE StopId = '$($bStop.StopId)'"))
+$bStopRow = Invoke-L2Query -Connection $connection -Sql (
+        "SELECT StationId, OperationSessionId FROM JourneyStops WHERE StopId = '$($bStop.StopId)'")
 $bStationId = [string]$bStopRow[0].StationId
 # 挂起列表只有键与类型、不带载荷；录入请求的键是 sublot:{作业会话}:{清单号}，按这一站的作业会话认。
 $bKeyPrefix = "sublot:$([string]$bStopRow[0].OperationSessionId):"
@@ -193,9 +194,11 @@ $assertions.Add(
 # --- 5. 车离站到关卡：号在空清单之上，全程没有两版同号 ---------------------------------------------------------
 
 $null = Move-L2CargoVehicleToCurrentStop $Context $journeyId $Context.GateStationRiotId
-$gateStopRow = @(Invoke-L2Query -Connection $connection -Sql (
-        "SELECT StationId FROM JourneyStops WHERE JourneyId = '$journeyId' AND StationRiotId = $($Context.GateStationRiotId)"))
-$gateStationId = [string]$gateStopRow[0].StationId
+# -Required: a journey has one gate stop. Not one row reads "(N rows, expected 1)", no worklist is at such a station,
+# and L2-SEJ-05 goes red with that text in front of its actual.
+$gateStopRow = Read-L2SingleRow -Required -Connection $connection -Sql (
+        "SELECT StationId FROM JourneyStops WHERE JourneyId = '$journeyId' AND StationRiotId = $($Context.GateStationRiotId)")
+$gateStationId = [string]$gateStopRow.StationId
 $atGate = Wait-L2ConditionOrLast -Description 'the gate worklist went out' -Journal $journal -Criterion 'gate-worklist' `
     -TimeoutSeconds 60 `
     -Probe { @((Get-Worklists) | Where-Object { $_.StationId -eq $gateStationId -and $_.Items -gt 0 }) } `
@@ -206,7 +209,7 @@ $assertions.Add(
     'L2-SEJ-05', '关卡那一版清单的号在空清单之上，整条清单流没有两版同号',
     (@($atGate).Count -ge 1 -and $null -ne $empty -and @($atGate)[0].Revision -gt $empty.Revision -and
         @($revisions | Select-Object -Unique).Count -eq $revisions.Count),
-    'gate above the empty one, all distinct', (Format-Worklists $worklistsAtGate))
+    'gate above the empty one, all distinct', "gate stop $gateStationId; $(Format-Worklists $worklistsAtGate)")
 
 $completed = Wait-L2ConditionOrLast -Description 'the journey completed after the gate unload' -Journal $journal `
     -Criterion 'completed' -TimeoutSeconds 120 `

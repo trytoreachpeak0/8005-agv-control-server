@@ -95,7 +95,7 @@ function Test-WaitingPointPlan([object]$Plan) {
 }
 function Format-Plan([object]$Plan) {
     if ($null -eq $Plan) { return '(none)' }
-    $legs = (@(Get-PlanLegs $Plan) | ForEach-Object { "$($_.sequence):$($_.stopPurposeCategory)@$($_.stationId):$($_.state)" }) -join ','
+    $legs = ((Get-PlanLegs $Plan) | ForEach-Object { "$($_.sequence):$($_.stopPurposeCategory)@$($_.stationId):$($_.state)" }) -join ','
     return "plan r$($Plan.Payload.planRevision) [$legs] ack=$($Plan.Acknowledged)"
 }
 

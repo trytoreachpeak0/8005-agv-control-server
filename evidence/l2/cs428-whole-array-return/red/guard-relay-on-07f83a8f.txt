@@ -1,0 +1,7 @@
+Scan: 188 scripts under <scripts/ as of 07f83a8f, before g3-reversed-direction-journey.ps1 was fixed>, 122 functions return their array whole (35 of them in shared files).
+WHOLE ARRAY ENUMERATED (wrapped): l2/scenarios/g3-reversed-direction-journey.ps1:165  Wait-L2RealOrLast -Description 'every plan and worklist snapshot of this journey was acknowledged' `
+
+1 finding(s). A function that returns its array whole must be assigned first: $rows = Helper ...; then use $rows.
+wrapped: .Count is 1 whatever the result, and an empty result throws on the first property read.
+reshaped: a stand-in must end in `return , $rows` like the function it replaces. See scripts/l2/README.md.
+exit=1
