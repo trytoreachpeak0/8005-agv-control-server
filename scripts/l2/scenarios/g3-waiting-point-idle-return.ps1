@@ -194,8 +194,10 @@ $heldReading = Wait-L2ConditionOrLast -Description 'the HMI stopped showing the 
     -Probe { [pscustomobject]@{ Status = Get-IdleReturnStatus; CanSubmit = [bool]$onboard.CanSubmit() } } `
     -Until { param($v) $v.Status -ne $atPoint -or $v.CanSubmit }
 $heldAtPoint = $heldReading.Status
-$operationsAtPoint = @(Invoke-L2Query -Connection $connection -Sql (
-        'SELECT SlotOperationAttemptId, OperationType FROM StationOperations'))
+# Invoke-L2Query returns its rows whole (return , $rows): assign, do not wrap. Wrapped, an empty result is one element that is an
+# empty array, and reading OperationType off it throws -- the first G3 run of this scenario (cs390-journey-fa4a5ce3) stopped here.
+$operationsAtPoint = Invoke-L2Query -Connection $connection -Sql (
+    'SELECT SlotOperationAttemptId, OperationType FROM StationOperations')
 $assertions.Add(
     'G3-12-07',
     '车停在等待点上：车载端不开放录入（十秒里每次读都不能提交），服务端也没有建任何装卸操作——此刻一条需求都还没有（NEVER_LOAD_AT_WAITING_POINT）',
