@@ -499,6 +499,9 @@ DispatchZoneParameters = @{
 - `run-journey-g3.ps1` 经本编排器跑它的 `g3-*` 场景，在它的 ControlServer 绑定挪到含本票的提交之后自然获得这一步（绑定归批次9-07）。
   三个 staged G3 runner 设 `JourneyRuntime__enabled = 'false'`、不派车，逐车判定挡不到它们。
 - 辅助模块是 `L2ChargingPolicy.psm1`。
+- **打开 `IdleReturn` 的场景要注意（control-server#390）**：激活策略是空闲返回判定的最后一道前提，而它在场景发布第一条需求之前一刻才做，
+  所以空停、没有需求的车会在同一轮就承诺空闲返回，抢在第一条需求被受理之前。先发需求、等搬运的写法判的是一场竞速，会超时；
+  先等空闲返回出现、到点收敛，再发需求（`waiting-point-exclusive-reserve-occupy-release`、`g3-waiting-point-idle-return` 都这样写）。
 
 ### 批次 4 的辅助模块：`L2SlotGroups.psm1`
 

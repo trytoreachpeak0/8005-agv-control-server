@@ -108,6 +108,14 @@ public sealed class IdleReturnEvaluator(
             new EventId(2200, nameof(LogEvaluationFailed)),
             "Idle return evaluation failed for vehicle {AgvId}; it left nothing behind this round and is judged again next round.");
 
+    private static readonly Action<ILogger, string, string, Exception?> LogStoppedAfterRepeatedEnds =
+        LoggerMessage.Define<string, string>(
+            LogLevel.Warning,
+            new EventId(2227, nameof(LogStoppedAfterRepeatedEnds)),
+            "Idle return stopped for vehicle {AgvId}: its last two idle returns both ended with their order cancelled, deleted " +
+            "or failed within the repeat window ({Detail}). No idle return is committed for it until it has done another " +
+            "journey; someone may want it to stay where it is.");
+
     private readonly IdleReturnOptions _options = idleReturnOptions.Value;
     private readonly JourneyRuntimeOptions _runtime = runtimeOptions.Value;
 
@@ -200,6 +208,12 @@ public sealed class IdleReturnEvaluator(
                 .ConfigureAwait(false))
         {
             return IdleReturnReasons.HasNextBusinessTarget;
+        }
+
+        // 上一趟空闲返回的单被人取消、删除或弄成 FAILED：先冷却，再二次就停（与搬运自建单被取消的护栏对等，control-server#390）。
+        if (await EndedOrderGuardAsync(vehicle, cancellationToken).ConfigureAwait(false) is { } ended)
+        {
+            return ended;
         }
 
         // 充电、清桩、维护门禁：批次 8 没有这三种用途，也没有它们的门禁，这一格恒无（不是跳过）。批次 9 加用途时，
@@ -386,6 +400,60 @@ public sealed class IdleReturnEvaluator(
     }
 
     /// <summary>
+    /// 被取消的空闲返回之后的两道护栏（control-server#390 审查问题 2，与搬运自建单被取消的 control-server#318 对等）：
+    /// 这辆车最近一趟是已确认失败的空闲返回，收尾不到 <see cref="JourneyRuntimeOptions.OwnOrderRebuildDelay"/> 答冷却；
+    /// 最近两趟都是、且后一趟收尾距前一趟不超过 <see cref="JourneyRuntimeOptions.OwnOrderRebuildRepeatWindow"/> 答停止——
+    /// 窗口从第一次算起，过了窗口也不自动解除，车有了别的旅程（最近一趟不再是它）才解除。都不是答空。
+    /// </summary>
+    /// <remarks>
+    /// 收尾时刻取用途占有的释放时刻（与旅程收尾同一次保存）。「车在急停、手动、故障时不动」那一道不在这里：
+    /// 故障与动态事实由 <see cref="VehicleNewPurposeReadiness"/> 挡，建单前另有出发安全门。
+    /// </remarks>
+    private async Task<string?> EndedOrderGuardAsync(FleetVehicle vehicle, CancellationToken cancellationToken)
+    {
+        var journeys = await dbContext.JourneyRuntimes.AsNoTracking()
+            .Where(row => row.AgvId == vehicle.AgvId)
+            .Select(row => new { row.JourneyId, row.CreatedAt, row.BlockReasonCode })
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        var lastTwo = journeys
+            .OrderByDescending(row => row.CreatedAt)
+            .ThenByDescending(row => row.JourneyId, StringComparer.Ordinal)
+            .Take(2)
+            .ToArray();
+
+        async Task<DateTimeOffset?> EndedAtAsync(string journeyId, string? code)
+        {
+            if (!journeyId.StartsWith(IdleReturnIdentity.JourneyIdPrefix, StringComparison.Ordinal) ||
+                code is null || !IdleReturnExecutionReasons.ConfirmedFailures.Contains(code))
+            {
+                return null;
+            }
+
+            DateTimeOffset?[] released = await dbContext.Set<VehiclePurposeClaimRecordRow>().AsNoTracking()
+                .Where(record => record.JourneyId == journeyId)
+                .Select(record => record.ReleasedAt)
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+            return released.SingleOrDefault(at => at is not null);
+        }
+
+        if (lastTwo.Length == 0 || await EndedAtAsync(lastTwo[0].JourneyId, lastTwo[0].BlockReasonCode) is not { } latest)
+        {
+            return null;
+        }
+
+        if (lastTwo.Length == 2 &&
+            await EndedAtAsync(lastTwo[1].JourneyId, lastTwo[1].BlockReasonCode) is { } earlier &&
+            latest - earlier <= _runtime.OwnOrderRebuildRepeatWindow)
+        {
+            return IdleReturnReasons.StoppedAfterRepeatedEndedOrders;
+        }
+
+        return timeProvider.GetUtcNow() - latest < _runtime.OwnOrderRebuildDelay
+            ? IdleReturnReasons.CooldownAfterEndedOrder
+            : null;
+    }
+
+    /// <summary>
     /// 从核验后仍合格的点里挑一个：路网代价最小的，平手取站号小的。站号是登记里稳定的身份，平手规则因此不随读取顺序变。
     /// </summary>
     public static IdleReturnPointCandidate? Choose(IEnumerable<IdleReturnPointCandidate> eligible)
@@ -438,6 +506,10 @@ public sealed class IdleReturnEvaluator(
         if (verdictBoard.Record(vehicle.AgvId, reason, detail))
         {
             LogNotCommitted(logger, vehicle.AgvId, reason, detail, null);
+            if (reason == IdleReturnReasons.StoppedAfterRepeatedEndedOrders)
+            {
+                LogStoppedAfterRepeatedEnds(logger, vehicle.AgvId, $"repeat window {_runtime.OwnOrderRebuildRepeatWindow}", null);
+            }
         }
         return new IdleReturnVerdict(vehicle.AgvId, vehicle.VehicleKey, reason);
     }

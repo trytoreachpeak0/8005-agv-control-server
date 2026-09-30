@@ -362,6 +362,7 @@ public sealed class IdleReturnExecutionTests
     /// <summary>
     /// 票面第 7 条（开工核实定的路）：空闲返回单在 RIoT 被取消，不按 <c>REQ-0360</c> 同车重建（它没有需求可承载），按 <c>REQ-0296</c>：车证明停稳、
     /// 没有活动订单之后才是已确认失败——用途占有释放，预占等车不在点上由离点清扫放，下一次承诺排除原失败点、选别的点；没有重建记录。
+    /// 下一次承诺要等 <c>OwnOrderRebuildDelay</c> 的冷却过去（审查问题 2，与搬运自建单被取消的第一道护栏对等）：冷却里答冷却码、不承诺。
     /// </summary>
     [Fact]
     public async Task AnIdleReturnOrderCancelledInRiotEndsOnceTheVehicleIsProvenStoppedAndTheNextCommitmentLeavesThatPointOut()
@@ -381,6 +382,19 @@ public sealed class IdleReturnExecutionTests
         Assert.Equal(journey.JourneyId, (await StationAsync(fleet, Near.StationId))!.JourneyId);
 
         await RoundAsync(fleet);
+
+        // Within the delay: nothing is committed, though Far is free and the vehicle is idle. Without the guard this round
+        // committed it to Far at once, straight over the person's cancellation.
+        Assert.Null(await ClaimOfAsync(fleet, KeyA));
+        Assert.Null(await StationAsync(fleet, Near.StationId));
+        Assert.Equal(IdleReturnReasons.CooldownAfterEndedOrder, fleet.IdleReturnBoard.Reasons[AgvA]);
+        await fleet.HearFromEveryVehicleAsync();
+        await fleet.RunRoundAsync(fleet.Options.OwnOrderRebuildDelay - TimeSpan.FromSeconds(5));
+        Assert.Null(await ClaimOfAsync(fleet, KeyA));
+        Assert.Equal(IdleReturnReasons.CooldownAfterEndedOrder, fleet.IdleReturnBoard.Reasons[AgvA]);
+
+        await fleet.HearFromEveryVehicleAsync();
+        await fleet.RunRoundAsync(TimeSpan.FromSeconds(5));
 
         (string Purpose, string JourneyId)? next = await ClaimOfAsync(fleet, KeyA);
         Assert.NotNull(next);
@@ -402,11 +416,57 @@ public sealed class IdleReturnExecutionTests
 
         await RoundAsync(fleet);
         await RoundAsync(fleet);
+        await fleet.HearFromEveryVehicleAsync();
+        await fleet.RunRoundAsync(fleet.Options.OwnOrderRebuildDelay);
 
         Assert.Null(await ClaimOfAsync(fleet, KeyA));
         Assert.Null(await StationAsync(fleet, Near.StationId));
         // Near is the vehicle's only point and it is free again: without the exclusion it would be committed to it once more.
         Assert.Equal(IdleReturnReasons.NoWaitingPointAvailable, fleet.IdleReturnBoard.Reasons[AgvA]);
+    }
+
+    /// <summary>
+    /// 审查问题 2 的第二道护栏（与搬运的 <c>REQ-0361</c> 对等）：冷却过后承诺去了别的点，那张单又在窗口内被取消——最近两趟都是被取消的
+    /// 空闲返回，不再自动承诺，告警等人；窗口过去也不自动解除。这辆车照样能接搬运，做了别的旅程之后才解除。
+    /// </summary>
+    [Fact]
+    public async Task ASecondCancelledIdleReturnWithinTheRepeatWindowStopsAutomaticIdleReturnsUntilTheVehicleDoesOtherWork()
+    {
+        await using FleetFixture fleet = await FleetAsync(points: [Near, Far]);
+        JourneyRuntimeRow first = await CommittedAndSentAsync(fleet);
+        fleet.Riot.CancelOrder(first.PickupUpperId);
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+        await fleet.HearFromEveryVehicleAsync();
+        await fleet.RunRoundAsync(fleet.Options.OwnOrderRebuildDelay);
+        await RoundAsync(fleet);
+        JourneyRuntimeRow second = (await IdleJourneyAsync(fleet, AgvA))!;
+        Assert.NotEqual(first.JourneyId, second.JourneyId);
+        Assert.Equal("CONFIRMED", (await fleet.Context.OrderIntents.AsNoTracking()
+            .SingleAsync(row => row.UpperId == second.PickupUpperId, Token)).Status);
+
+        fleet.Riot.CancelOrder(second.PickupUpperId);
+        await RoundAsync(fleet);
+        Assert.Equal(
+            IdleReturnExecutionReasons.OrderEnded,
+            (await fleet.Context.JourneyRuntimes.AsNoTracking().SingleAsync(row => row.JourneyId == second.JourneyId, Token))
+                .BlockReasonCode);
+
+        // Past the delay and past the repeat window: still nothing. Near is free again (the failed point of the first, but the
+        // exclusion only looks at the latest), so without the guard the vehicle would be sent there.
+        await RoundAsync(fleet);
+        await fleet.HearFromEveryVehicleAsync();
+        await fleet.RunRoundAsync(fleet.Options.OwnOrderRebuildRepeatWindow + TimeSpan.FromMinutes(1));
+        await RoundAsync(fleet);
+        Assert.Null(await ClaimOfAsync(fleet, KeyA));
+        Assert.Equal(IdleReturnReasons.StoppedAfterRepeatedEndedOrders, fleet.IdleReturnBoard.Reasons[AgvA]);
+        Assert.Equal(2, (await fleet.Context.JourneyRuntimes.AsNoTracking()
+            .Where(row => row.AgvId == AgvA).ToArrayAsync(Token)).Length);
+
+        // Transport is not held back: a demand is taken by this vehicle, and that journey is now its latest, which lifts the stop.
+        fleet.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
+        await RoundAsync(fleet);
+        Assert.Contains(fleet.Riot.Creates, create => create.VehicleKey == KeyA && create.DestinationStationId == 12);
     }
 
     // ---- 急停与故障 ------------------------------------------------------------------------------------------------------
