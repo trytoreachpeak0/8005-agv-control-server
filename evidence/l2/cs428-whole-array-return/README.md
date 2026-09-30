@@ -42,7 +42,7 @@
 
 真正一直在发生的是另外两件事：
 
-- **零行时抛异常而不是给结论。**39 个用例里旧写法有 26 个在零行时抛异常，新写法 2 个（见下）。
+- **零行时抛异常而不是给结论。**38 个用例里旧写法有 26 个在零行时抛异常，新写法 2 个（见下）。
   这就是 control-server#390 第一轮 G3 的 G3-12-07 中断的原因。
 - **「取第一行」的函数返回了所有行。**`if ($rows.Count -eq 0) { return $null }; return $rows[0]` 在两行时
   交回两行的数组，`[string]` 之后是 `"Completed Completed"`。
@@ -50,24 +50,31 @@
 ## 去掉包装之后的另一面：两行被悄悄放过（审查 L1）
 
 只去掉 `@()` 的话，「取第一行」在两行时会安静地取第一行。旧写法遇到两行碰巧判红或抛异常，所以单纯去包装
-在这一点上比原来松。按语义本该恰好一行、而键不唯一也没有 `ORDER BY` 的读取一共 14 处，现在都经
+在这一点上比原来松。按语义本该恰好一行、而键不唯一也没有 `ORDER BY` 的读取一共 13 处，现在都经
 `Read-L2SingleRow`（`scripts/l2/L2SingleRow.psm1`）：一行交回那一行；多行交回一个替身，列与查询相同，每一列的值都是
 `(N rows, expected 1)`，拿它和期望值比都不成立，判据变红，actual 里写着行数。
 
 | 读取 | 处数 | 位置 | 零行 |
 | --- | --- | --- | --- |
 | `JourneyRuntimes WHERE DemandId` | 7 | `Get-Stage`（3 个任务类型场景）、`area-assignment-unmapped-silent` 的探针、`charging-policy-missing…` 与 `charging-thresholds…` 的探针、`mandatory-charge…` 的 `Get-Journey` | `$null`（等待探针轮询的就是它） |
-| `OrderIntents WHERE DemandId AND Purpose` | 3 | `Get-Intent`（3 个任务类型场景） | `$null` |
+| `OrderIntents WHERE DemandId AND Purpose` | 2 | `Get-Intent`（2 个任务类型场景；第三个场景里的 `Get-Intent` 没有调用方，已删） | `$null` |
 | 原来是 `(…)[0]`、没有 `ORDER BY` | 4 | `g3-sublot-rejected.ps1` 的 `$dispatched`、`$refusedRuntime`、`$finalRuntime`，`stop-ended-journey-continues.ps1` 的 `$gateStopRow` | 替身（`-Required`），不再下标越界 |
 
-每处按 0／1／2 行离线重放过（`green/criteria-offline.txt` 里 `single-row` 与 `single-row-required` 两类，共 14 个用例）：
+每处按 0／1／2 行离线重放过（`green/criteria-offline.txt` 里 `single-row` 与 `single-row-required` 两类，共 13 个用例）：
 
 - 一行：和改动前读到的值相同；
 - 两行：`(2 rows, expected 1)`，或判据为 False；
-- 零行：前 10 处是 `$null`，后 4 处是 `(0 rows, expected 1)` 或判据为 False。
+- 零行：前 9 处是 `$null`，后 4 处是 `(0 rows, expected 1)` 或判据为 False。
 
-`Read-L2SingleRow` 自己有自检 `scripts/l2/Test-L2SingleRow.ps1`（13 条，`green/single-row.txt`），因为正确的产品上永远恰好一行，
+`Read-L2SingleRow` 自己有自检 `scripts/l2/Test-L2SingleRow.ps1`（28 条，`green/single-row.txt`），因为正确的产品上永远恰好一行，
 任何装置上的绿跑都走不到它存在的那两个分支。
+
+**替身的边界（增量审查）。**替身每一列都是非空字符串：和字面期望值比相等一定不成立，但「不是 X」、「有值」、真值判断、
+和数按文本比大小、替身与替身相等，这些在替身上都是 True。增量审查把 13 处读取在 0／1／2 行下逐处实跑过，没有误绿；
+规则写成一句——**建在单行读取上的判据，至少要有一个与字面期望值比较的 `-eq`**——清单在 `L2SingleRow.psm1` 头注释里，
+每一条在自检里有一条 HAZARD 用例钉着。自检里对 NULL 的那条用例原来是空转的（连接替身对 NULL 直接交回 `$null`，
+删掉 `IsDBNull` 分支仍然全绿）；替身改成交回 `DBNull` 之后，删掉那个分支红 1 条：
+`red/single-row-null-case-with-isdbnull-branch-removed.txt`。
 
 **仍然用 `(…)[0]` 的 2 处**，零行时照旧抛异常，是这份报告里「新写法零行抛异常 2 个」的来源：
 `task-type-binding-admits-bound-station.ps1` 的 `$freeze`（全是标量子查询，恒为一行）、
@@ -78,15 +85,16 @@
 | 类别 | 用例数 | 新写法：原样／翻倍／零行 |
 | --- | --- | --- |
 | 「恰好 N 行」判据 | 8 | True／**False**／**False** |
-| `Read-L2SingleRow`（轮询里的读取） | 10 | 一行／`(2 rows, expected 1)`／`$null` |
+| `Read-L2SingleRow`（轮询里的读取） | 9 | 一行／`(2 rows, expected 1)`／`$null` |
 | `Read-L2SingleRow -Required` | 4 | 一行的值／替身或 False／替身或 False |
 | 取第一行或 `$null`（键唯一或带 `LIMIT 1`） | 7 | 一行／同一行／`$null` |
 | `(…)[0]`（恒为一行） | 2 | 值／同一个值／抛异常 |
 | 「至少一行」的判据（`L2-UE-05`／`L2-UE-08`） | 1 | True／True／**False** |
 | 说明文字 | 7 | 三种条件都不抛异常；两行不再被说成「没有行」 |
 
-`39 cases, 39 as required, 0 not.` 第 38 处调用点（`Get-L2SecondLegIntents`）不在这 39 个里，它有自己的自检，见下。
-39 个用例对应 37 处读取加 2 条说明文字（同一处读取的判据和说明文字各算一个用例）。
+`38 cases, 38 as required, 0 not.` `Get-L2SecondLegIntents` 那一处不在这 38 个里，它有自己的自检，见下；
+`area-eqp-unique-across-task-types.ps1` 里没有调用方的 `Get-Intent` 已删，也不在。
+38 个用例对应 36 处读取加 2 条说明文字（同一处读取的判据和说明文字各算一个用例）。
 
 说明文字里原来有三处把两行说成没有行（审查 L2）：`L2-SRJ-10` 的 `(no attempt)`、`G3-02-35` 的 `(no workflow row)`、
 `G3-02-45` 的 `(no row)`。现在照实写行数：`(2 attempts)`、`(2 workflow rows)`、`(2 rows)`。
@@ -126,9 +134,10 @@
 | --- | --- | --- |
 | 本机全部合成 L2，default 模式，`849a09ad`（第一轮） | 70 个场景、72 次运行，72 PASS、0 FAIL，2093 秒 | `green/synthetic-l2-default-849a09ad.txt` |
 | 审查意见改动之后，重跑被改到的 9 个合成场景（加 1 个提供库的），`8cee3acf` | 10 PASS | `green/synthetic-l2-kept-databases.txt` |
-| 离线判据重放（用上一行留下的库） | 39 个用例，39 个符合 | `green/criteria-offline.txt` |
+| 离线判据重放（用上一行留下的库） | 38 个用例，38 个符合 | `green/criteria-offline.txt` |
 | 本机服务端全量 `dotnet test`，`4cff9f8a`（第一轮） | 3633 通过、0 失败 | 见 PR 正文 |
-| `test.yml` 的 15 个脚本自检步骤，`8cee3acf` | 全部退出码 0 | |
+| 增量审查意见之后，`area-eqp-unique-across-task-types` 重跑，`91bddb1a` | 1 PASS | |
+| `test.yml` 的 15 个脚本自检步骤，`91bddb1a` | 全部退出码 0 | |
 
 `849a09ad` 之后被改过的合成场景正好是第二行重跑的那 9 个；其余 61 个合成场景的文件和它们加载的模块自那以后没有变。
 服务端全量在审查意见改动之后没有在本机重跑：这一轮没有动 `src/` 与 `tests/`，由 CI 的那一轮覆盖。

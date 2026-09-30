@@ -1,4 +1,4 @@
-HEAD 8cee3acfc449c0b76fa1c1a7347d8888e3a75379; old form from the files at d5efa06f
+HEAD 91bddb1ad3e43274b3ebe3651ccaf36263e5653c; old form from the files at d5efa06f
 
 ok   L2-CPM-00  [count]  charging-policy-missing-vehicle-not-commissioned.ps1  ^\$policyRows = 
      db: kept stage of charging-policy-missing-vehicle-not-commissioned run 20260930T124426898Z at 8cee3acf
@@ -241,16 +241,6 @@ ok   area-eqp-unique-across-task-types Get-Stage  [single-row]  area-eqp-unique-
           doubled '(2 rows, expected 1)'
           empty   $null
 
-ok   area-eqp-unique-across-task-types Get-Intent  [single-row]  area-eqp-unique-across-task-types.ps1  Get-Intent
-     db: kept stage of area-eqp-unique-across-task-types run 20260930T124426830Z at 8cee3acf
-     criterion: Get-Intent $demandId $purpose
-     old: as-is   row
-          doubled array[2]
-          empty   $null
-     new: as-is   row
-          doubled stand-in (2 rows, expected 1)
-          empty   $null
-
 ok   task-type-binding-admits-bound-station Get-Stage  [single-row]  task-type-binding-admits-bound-station.ps1  Get-Stage
      db: kept stage of task-type-binding-admits-bound-station run 20260930T124614505Z at 8cee3acf
      criterion: Get-Stage $demandId
@@ -400,6 +390,6 @@ ok   mandatory-charge probe backlog-reason  [first-row]  mandatory-charge-vehicl
           doubled 'DEMAND_ALREADY_ACCEPTED'
           empty   $null
 
-39 cases, 39 as required, 0 not.
+38 cases, 38 as required, 0 not.
 count criteria: 8. Old form with the rows doubled: 1 stayed True (idle), 5 went False (another conjunct read the joined rows), 2 threw.
-Old form with no rows: 26 of 39 threw; new form: 2.
+Old form with no rows: 26 of 38 threw; new form: 2.

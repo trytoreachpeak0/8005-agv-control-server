@@ -236,6 +236,8 @@ foreach ($name in 'area-eqp-unique-across-task-types', 'task-type-binding-admits
             Id = "$name Get-Stage"; Kind = 'single-row'; File = "$scenarios/$name.ps1"; Stage = $name
             Functions = 'Get-Stage'; Setup = $runtimeDemand; Observe = 'Get-Stage $demandId'; ObserveIsCall = $true; Site = 'Get-Stage'
         })
+    # area-eqp-unique-across-task-types.ps1 had a Get-Intent nothing called; it was removed rather than converted.
+    if ($name -eq 'area-eqp-unique-across-task-types') { continue }
     $cases.Add(@{
             Id = "$name Get-Intent"; Kind = 'single-row'; File = "$scenarios/$name.ps1"; Stage = $name
             Functions = 'Get-Intent'; Setup = $intentDemand; Observe = 'Get-Intent $demandId $purpose'; ObserveIsCall = $true; Site = 'Get-Intent'

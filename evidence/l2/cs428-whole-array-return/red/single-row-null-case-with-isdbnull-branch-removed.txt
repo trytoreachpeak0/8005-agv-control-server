@@ -1,5 +1,5 @@
 ok    one row: the row, reader closed and command disposed, the SQL handed over as given -> Stage=AwaitingSublot; AgvId=AGV-1; BlockReasonCode=
-ok    a NULL cell is $null in the row, not the DBNull the reader hands out -> BlockReasonCode is $null
+BAD   a NULL cell is $null in the row, not the DBNull the reader hands out -> BlockReasonCode is DBNull
 ok    no row: $null, which is what a wait on this read polls for -> $null
 ok    no row, -Required: a stand-in with the query's columns, each saying 0 rows -> Stage=(0 rows, expected 1); AgvId=(0 rows, expected 1); BlockReasonCode=(0 rows, expected 1)
 ok    two rows: a stand-in, not the first row -- and not $null, so a wait on "$null -ne $v" ends -> Stage=(2 rows, expected 1); AgvId=(2 rows, expected 1); BlockReasonCode=(2 rows, expected 1)
@@ -26,5 +26,5 @@ ok    HAZARD: @(Read-L2SingleRow ...) for no row is ONE element ($null), not an 
 ok    Select: one row is that row -> Stage=X
 ok    Select: $null rows count as none -> n/a
 ok    Select: three rows say three -> Stage=(3 rows, expected 1)
-L2SingleRow self-check: all 28 cases as expected.
-exit=0
+L2SingleRow self-check: 1 of 28 cases came out the wrong way.
+exit=1
