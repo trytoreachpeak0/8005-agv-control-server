@@ -1556,7 +1556,7 @@ public sealed class VehicleFaultRecoveryTests
         fixture.BoxCounts.Set(FirstSublot, 7);
         await fixture.AdvanceToGateArrivalAsync();
         fixture.Riot.MovementState = "MT_FINISHED";
-        fixture.Riot.FailOrder((await fixture.RuntimeAsync()).GateUpperId);
+        fixture.Riot.FailOrder((await fixture.RuntimeAsync()).GateUpperId!);
         await TickAndRunAsync(fixture);
         Assert.Equal("VEHICLE_ORDER_FAILED", (await fixture.RuntimeAsync()).BlockReasonCode);
         fixture.Context.ChangeTracker.Clear();

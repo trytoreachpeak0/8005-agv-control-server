@@ -1118,7 +1118,7 @@ public sealed class JourneyRuntimeWorkerAdmissionTests
         Assert.Equal("T3-7", runtime.PickupStationId);
         Assert.Equal(fixture.Options.DispatchZone, runtime.DispatchZone);
         DemandAreaAssignmentFreeze? freeze = await new DemandAreaAssignmentFreezeStore(fixture.Context)
-            .ReadAsync(runtime.DemandId, TestContext.Current.CancellationToken);
+            .ReadAsync(runtime.DemandId!, TestContext.Current.CancellationToken);
         Assert.Equal(table.Version, freeze?.Version);
         Assert.Equal(table.SnapshotId, freeze?.SnapshotId);
     }
@@ -1170,7 +1170,7 @@ public sealed class JourneyRuntimeWorkerAdmissionTests
         Assert.Equal(
             2,
             (await new DemandAreaAssignmentFreezeStore(fixture.Context)
-                .ReadAsync(runtime.DemandId, TestContext.Current.CancellationToken))?.Version);
+                .ReadAsync(runtime.DemandId!, TestContext.Current.CancellationToken))?.Version);
     }
 
     /// <summary>
@@ -1217,7 +1217,7 @@ public sealed class JourneyRuntimeWorkerAdmissionTests
         Assert.Equal(
             before.Version,
             (await new DemandAreaAssignmentFreezeStore(fixture.Context)
-                .ReadAsync(runtime.DemandId, TestContext.Current.CancellationToken))?.Version);
+                .ReadAsync(runtime.DemandId!, TestContext.Current.CancellationToken))?.Version);
     }
 
     [Fact]

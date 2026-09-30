@@ -116,8 +116,14 @@ public sealed record VehicleBusinessProjection(
 /// </summary>
 public static class VehicleActivePurposes
 {
-    /// <summary>The vehicle is carrying a demand; the only purpose the v2 journey runtime can be in.</summary>
+    /// <summary>The vehicle is carrying a demand.</summary>
     public const string Transport = "TRANSPORT";
+
+    /// <summary>
+    /// The vehicle is on its way to a waiting point with no demand (batch 8-19, control-server#390): no worklist, no entry request,
+    /// no slot command. Withdrawn, by a snapshot whose purpose is no longer this, when the idle return converges or ends.
+    /// </summary>
+    public const string IdleReturn = "IDLE_RETURN";
 }
 
 /// <summary>

@@ -4315,7 +4315,7 @@ public sealed class RecoveryStateMachineG2Tests
             JourneyRuntimeRow runtime = await context.JourneyRuntimes.AsNoTracking().SingleAsync(token);
             Assert.Equal(JourneyRuntimeStage.Completed, runtime.Stage);
             await ClosureSnapshotAssertions.AssertClosureSentAsync(
-                context, AgvId, peer.Lines, 3, atUnloadStop ? runtime.GateStationId : runtime.PickupStationId);
+                context, AgvId, peer.Lines, 3, atUnloadStop ? runtime.GateStationId! : runtime.PickupStationId);
         }
         finally
         {

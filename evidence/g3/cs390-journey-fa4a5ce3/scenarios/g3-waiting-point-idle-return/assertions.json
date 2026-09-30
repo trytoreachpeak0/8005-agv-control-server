@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "scenario": "g3-waiting-point-idle-return",
+  "runId": "20260930T074440450Z",
+  "outcome": "FAIL",
+  "failureReason": "The property 'OperationType' cannot be found on this object. Verify that the property exists.",
+  "identity": {
+    "controlServerCommit": "fa4a5ce363263931580bc2a91ba4c2f378e17ed4",
+    "batchId": "batch-8",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260930T074440450Z",
+    "agvId": "AGV-L2-001",
+    "onboardHmiCommit": "f3c3e939f650b3479bc929d2fc25fbb53ebbe6ef",
+    "rig": "RealOnboard",
+    "vehicleKey": "BROKERX-L2-0001",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28"
+  },
+  "assertions": [
+    {
+      "id": "G3-12-01",
+      "description": "车空闲、没有需求：空闲返回是一趟没有需求的旅程，开往 214 的单段移动已确认、214 是它的在途预占；途中计划（一条 WAITING_POINT、ACTIVE 的腿）先于 activePurpose=IDLE_RETURN 的业务状态进发件箱，两张都被真车载端确认（CV-WAITING-POINT-IDLE-RETURN 的消息顺序）",
+      "outcome": "PASS",
+      "expected": "无需求 / 214 RESERVED idle-return:BROKERX-L2-0001:20260930T074520807Z / 计划先于业务状态、都已确认",
+      "actual": "demand ''/'' / RESERVED WAITING_POINT idle-return:BROKERX-L2-0001:20260930T074520807Z / plan r1 [1:WAITING_POINT@等待点1:ACTIVE] ack=True @ 09/30/2026 07:45:22 +00:00 / business r1 purpose=IDLE_RETURN ack=True @ 09/30/2026 07:45:22 +00:00"
+    },
+    {
+      "id": "G3-12-02",
+      "description": "车载端确认了途中两张之后，到站那一格报 EN_ROUTE_TO_WAITING_POINT（TREAT_WAITING_POINT_AS_NON_BUSINESS_STOP）",
+      "outcome": "PASS",
+      "expected": "EN_ROUTE_TO_WAITING_POINT",
+      "actual": "'EN_ROUTE_TO_WAITING_POINT'"
+    }
+  ]
+}

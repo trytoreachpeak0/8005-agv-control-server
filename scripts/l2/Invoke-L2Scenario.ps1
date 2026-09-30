@@ -768,8 +768,6 @@ try {
     # reachable and the server commits nothing.
     if ($setup.ContainsKey('IdleReturn') -and $setup.IdleReturn) {
         $serverEnvironment['IdleReturn__Enabled'] = 'true'
-        # The transitional startup guard refuses Enabled alone until control-server#390 lands; only this rig says it knows.
-        $serverEnvironment['IdleReturn__AllowWithoutExecutionForL2Only'] = 'true'
         $journal.Note('Idle return enabled.')
     }
 

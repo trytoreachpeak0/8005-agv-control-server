@@ -1305,7 +1305,7 @@ public sealed class OnboardRecoveryCoordinator(
             {
                 LogCancellationFoundStopDecided(
                     logger ?? (ILogger)NullLogger.Instance,
-                    workflow.WorkflowId, stop.DemandId, stop.Stage.ToString(), stop.BlockReasonCode, null);
+                    workflow.WorkflowId, stop.DemandId ?? stop.JourneyId, stop.Stage.ToString(), stop.BlockReasonCode, null);
                 return;
             }
             // 这条需求在这趟旅程里的归属：命令发没发、要结算哪一版录入请求，都挂在它身上（批次7-06，control-server#211）。

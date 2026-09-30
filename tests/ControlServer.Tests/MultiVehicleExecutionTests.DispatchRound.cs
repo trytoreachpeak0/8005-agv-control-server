@@ -1903,7 +1903,7 @@ public sealed partial class MultiVehicleExecutionTests
                      .ToArrayAsync(cancellationToken)).OrderBy(row => row.AgvId, StringComparer.Ordinal))
         {
             Line(
-                $"journey {journey.AgvId} {Short(journey.DemandId)} {journey.Stage} " +
+                $"journey {journey.AgvId} {Short(journey.DemandId!)} {journey.Stage} " +
                 $"block={journey.BlockReasonCode ?? "-"} pickup={journey.PickupStationRiotId} " +
                 $"slots={journey.TargetSlotsJson} baskets={journey.ExpectedBasketCount}");
         }

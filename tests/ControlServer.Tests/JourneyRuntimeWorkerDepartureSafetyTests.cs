@@ -106,8 +106,8 @@ public sealed class JourneyRuntimeWorkerDepartureSafetyTests
         fixture.BoxCounts.Set("SUBLOT-001", 4);
         JourneyRuntimeRow runtime = await fixture.AdvanceToDepartureSafetyAsync();
         Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, runtime.Stage);
-        string expiredCheckId = runtime.PreDepartureSafetyCheckId;
-        string expiredMessageId = runtime.PreDepartureSafetyCheckMessageId;
+        string expiredCheckId = runtime.PreDepartureSafetyCheckId!;
+        string expiredMessageId = runtime.PreDepartureSafetyCheckMessageId!;
         await fixture.AddInboxAsync(
             Guid.NewGuid().ToString("D"), "PreDepartureSafetyCheckResult",
             SafeDepartureAnswer(expiredCheckId, 7, fixture.Clock.GetUtcNow()), expiredCheckId);
@@ -127,7 +127,7 @@ public sealed class JourneyRuntimeWorkerDepartureSafetyTests
 
         await fixture.AddInboxAsync(
             Guid.NewGuid().ToString("D"), "PreDepartureSafetyCheckResult",
-            SafeDepartureAnswer(runtime.PreDepartureSafetyCheckId, 8, fixture.Clock.GetUtcNow()),
+            SafeDepartureAnswer(runtime.PreDepartureSafetyCheckId!, 8, fixture.Clock.GetUtcNow()),
             runtime.PreDepartureSafetyCheckId);
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
 
@@ -152,7 +152,7 @@ public sealed class JourneyRuntimeWorkerDepartureSafetyTests
             "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
         fixture.BoxCounts.Set("SUBLOT-001", 4);
         JourneyRuntimeRow runtime = await fixture.AdvanceToDepartureSafetyAsync();
-        string firstCheckId = runtime.PreDepartureSafetyCheckId;
+        string firstCheckId = runtime.PreDepartureSafetyCheckId!;
 
         await fixture.AddSafetyStateChangedAsync(8, departureSafe: false, vehicleStopped: true);
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
@@ -186,7 +186,7 @@ public sealed class JourneyRuntimeWorkerDepartureSafetyTests
             "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
         fixture.BoxCounts.Set("SUBLOT-001", 4);
         JourneyRuntimeRow runtime = await fixture.AdvanceToDepartureSafetyAsync();
-        string firstCheckId = runtime.PreDepartureSafetyCheckId;
+        string firstCheckId = runtime.PreDepartureSafetyCheckId!;
         DateTimeOffset answeredAt = fixture.Clock.GetUtcNow();
         await fixture.AddInboxAsync(
             Guid.NewGuid().ToString("D"), "PreDepartureSafetyCheckResult",
@@ -241,7 +241,7 @@ public sealed class JourneyRuntimeWorkerDepartureSafetyTests
         JourneyRuntimeRow runtime = await fixture.AdvanceToDepartureSafetyAsync();
         Assert.Null(runtime.BlockReasonCode);
         Assert.Null(runtime.BlockReasonSince);
-        string firstCheckId = runtime.PreDepartureSafetyCheckId;
+        string firstCheckId = runtime.PreDepartureSafetyCheckId!;
         DateTimeOffset answeredAt = fixture.Clock.GetUtcNow();
         await fixture.AddInboxAsync(
             Guid.NewGuid().ToString("D"), "PreDepartureSafetyCheckResult",

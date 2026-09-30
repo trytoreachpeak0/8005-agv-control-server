@@ -92,7 +92,9 @@ public static class StarvationCalibrationQuery
         ArgumentNullException.ThrowIfNull(dbContext);
         bool InWindow(DateTimeOffset at) => at >= from && at < to;
 
+        // Idle returns (control-server#390) carry no demand and belong to no zone: they are not transport cycles.
         var journeys = await dbContext.JourneyRuntimes.AsNoTracking()
+            .Where(row => !row.JourneyId.StartsWith(ControlServer.Application.IdleReturnIdentity.JourneyIdPrefix))
             .Select(row => new { row.JourneyId, row.AgvId, row.DispatchZone, row.Stage, row.CreatedAt, row.UpdatedAt })
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
         var memberships = await dbContext.Set<JourneyDemandRow>().AsNoTracking()

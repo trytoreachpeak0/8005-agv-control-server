@@ -1,5 +1,7 @@
+using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.IdleReturn;
 using ControlServer.Host.Runtime.Release;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -155,6 +157,37 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 + "交接入口仍在：再经故障清除入口发 PREPARE_CARGO_HANDOFF 把这一趟挂回来重新交接；"
                 + "若车上已经没货（例如一趟里只交接掉一部分，剩下的还没装），发 TERMINATE_STOPPED_TRIP 放弃剩下的，"
                 + "MES 那边要人手工收尾。在那之前需求不改派，这辆车不接新单",
+            // control-server#390：空闲返回（车没有需求时自己开回等待点）写在旅程上的码。前六个是途中的，会出现在这张卡片上；
+            // 后六个是收尾码，写在已完成的旅程上（这张卡片不列），一并写好，别的地方读到时不必再猜。
+            [IdleReturnExecutionReasons.DepartureNotProven] =
+                "空闲返回还没出发：车开往等待点之前要过出发安全检查（车载端会话就绪、8 个仓门全部锁好、没有阻断事实），"
+                + "有一样不满足就不建单。满足之后下一轮自动出发，不需要人确认。持续不消失请检查车载端连接与仓门",
+            [IdleReturnExecutionReasons.OrderEndedStopNotProven] =
+                "空闲返回的单在 RIoT 被取消或删除了：服务端在等车证明已经停稳、身上没有单，才结束这趟空闲返回，不重建。"
+                + "车停稳后自动结束。持续不消失请到 RIoT 与现场查看车是否还在动",
+            [IdleReturnExecutionReasons.WaitingPointLostOrderInFlight] =
+                "空闲返回途中，要去的等待点已被人工释放或归了别的车：服务端已向 RIoT 取消这张单（只取消一次），"
+                + "车不会再开往那个点，等车停稳后结束这趟。持续不消失请到 RIoT 查看取消是否生效",
+            [IdleReturnExecutionReasons.LegOutcomeCode(MovementDispatchOutcome.ResultUnknown)] =
+                "开往等待点的单发给 RIoT 之后结果未知：服务端每一轮按同一个单号对账，不会建第二张，车、等待点与用途都保持不动。"
+                + "持续不消失请到 RIoT 核对这张单",
+            [IdleReturnExecutionReasons.LegOutcomeCode(MovementDispatchOutcome.CreateDispatchDisabled)] =
+                "开往等待点的单没有发出：服务端的建单开关此刻关着。开关打开后下一轮自动建单",
+            [IdleReturnExecutionReasons.LegOutcomeCode(MovementDispatchOutcome.UnsupportedOrderShape)] =
+                "开往等待点的单的形态服务端建不了（配置或数据错误），这一段不会建单：请查服务端日志并报开发",
+            [IdleReturnExecutionReasons.OrderEnded] =
+                "空闲返回的单在 RIoT 被取消或删除，车已停稳：这趟空闲返回结束，不重建。30 秒内这辆车不再自动空闲返回，"
+                + "10 分钟内它的空闲返回再被取消一次，就停止自动空闲返回，直到它做了别的旅程",
+            [IdleReturnExecutionReasons.OrderFailed] =
+                "空闲返回的单 FAILED，故障已由人工清除：这趟空闲返回结束，不重建。冷却与再次失败后停止的规则同单被取消",
+            [IdleReturnExecutionReasons.WaitingPointLost] =
+                "出发之前，要去的等待点已被人工释放或归了别的车：这趟空闲返回作废，车没有动",
+            [IdleReturnExecutionReasons.WaitingPointLostAtArrival] =
+                "车到了等待点，但那个点已不归这趟空闲返回（被人工释放或归了别的车）：不占用它，这趟作废。请到现场确认车停的位置",
+            [IdleReturnExecutionReasons.WaitingPointNoLongerEligible] =
+                "出发之前重新核验，等待点已不合格（停用、改名、不在当前地图、不可达等）：这趟空闲返回作废，车没有动，下一轮重新挑点",
+            [IdleReturnExecutionReasons.CommitmentOrphaned] =
+                "空闲返回的承诺变不成一趟行程（车已不在车队、等待点预占已不在、点在别的地图上或已不在登记表上）：承诺作废并释放",
             [JourneyRuntimeEngine.OwnOrderRebuildCargoUnprovenReason] =
                 "车上有货的故障清除之后，车报的仓位读数还证明不了货在原仓（仓门没锁好、开锁输出没复位、仓位读数未知或没上报、"
                 + "车报有未知，或装货还没落定）：服务端不停也不建单，等车下一次报仓位读数。门锁好、读数恢复后会自动重建；"
@@ -191,7 +224,8 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
         Dictionary<string, SessionRecoveryRow> sessions = await dbContext.SessionRecoveries.AsNoTracking()
             .Where(row => agvIds.Contains(row.AgvId))
             .ToDictionaryAsync(row => row.AgvId, StringComparer.Ordinal, cancellationToken);
-        string[] gateUpperIds = [.. blocked.Select(row => row.GateUpperId)];
+        // An idle return (control-server#390) has no gate leg.
+        string[] gateUpperIds = [.. blocked.Select(row => row.GateUpperId).OfType<string>()];
         HashSet<string> departedForGate = new(
             await dbContext.OrderIntents.AsNoTracking()
                 .Where(row => gateUpperIds.Contains(row.UpperId))
@@ -217,7 +251,7 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 .Select(row => Fact(
                     row,
                     sessions.GetValueOrDefault(row.AgvId),
-                    departedForGate.Contains(row.GateUpperId),
+                    row.GateUpperId is { } gateUpperId && departedForGate.Contains(gateUpperId),
                     ownOrderInFlight.Contains(row.JourneyId),
                     heldByForeignOrder.Contains(row.AgvId),
                     demands.FactsOf(row.JourneyId),

@@ -365,6 +365,11 @@ jobs:
               # for a held gate goes on and is given it once released; a second demand at the staging station is not taken
               # while another vehicle holds it, and is taken only after that vehicle leaves on departure evidence.
               @{ Name = 'fixed-station-single-occupancy'; Runs = 1; BatchId = 'batch-8' }
+              # control-server#390, REQ-0293/0295: the idle vehicle's commitment becomes a journey and a single move to the
+              # waiting point; on arrival the reservation turns into an occupancy and the purpose is released; a transport's
+              # order leaves the occupancy standing until RIoT reports the vehicle elsewhere; unloaded at the gate, the vehicle
+              # returns idle again and the gate is released on departure evidence.
+              @{ Name = 'waiting-point-exclusive-reserve-occupy-release'; Runs = 1; BatchId = 'batch-8' }
               # control-server#400, specification 8.6 and 8.3 batch-9: the approved charging policy covers only the second of
               # two vehicles; the demand goes to it, and the first, asked first, is refused with CHARGING_POLICY_NOT_APPROVED
               # and gets no order (REQ-0282, per vehicle, the server keeps running).
@@ -414,6 +419,9 @@ jobs:
               # control-server#389, local runs (2026-09-29): 25 s of deliberate waits (the two Wait-L2ConditionOrLast windows)
               # on top of a two-vehicle start and one transport.
               'idle-return-two-vehicles-contend-one-waiting-point' = 75
+              # control-server#390, one local run (2026-09-30): 91 s for the scenario itself -- two idle returns, one
+              # transport, 10 s of deliberate waiting -- 161 s with the build.
+              'waiting-point-exclusive-reserve-occupy-release' = 110
           }
 
           # Registered before anything can fail, so the upload step below always has a path: without it

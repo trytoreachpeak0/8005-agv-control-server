@@ -87,6 +87,9 @@ internal static class ReconnectModel
         // cs#335：在途门锁未能证明锁闭而按住、急停，以及自动解除后单被跑起来而没人按继续。模型没有门锁读数，走不到，理由同上。
         "VEHICLE_DOOR_NOT_PROVEN_LOCKED",
         "HELD_ORDER_RESUMED_WITHOUT_CONTINUE",
+        // cs#390：空闲返回的单被取消／点丢失之后，等车证明停稳才收尾的两种保持。模型没有空闲返回，走不到，理由同上。
+        "IDLE_RETURN_ORDER_ENDED_STOP_NOT_PROVEN",
+        "IDLE_RETURN_WAITING_POINT_LOST_ORDER_IN_FLIGHT",
     };
 
     /// <summary>

@@ -300,7 +300,7 @@ public sealed class AcceptedDemandRow
 public sealed class OrderIntentRow
 {
     public required string MovementLegId { get; set; }
-    public required string DemandId { get; set; }
+    public string? DemandId { get; set; }
     public required string UpperId { get; set; }
     public required string Purpose { get; set; }
     public required string TargetStationId { get; set; }
@@ -337,7 +337,7 @@ public sealed class RiotDispatchAuditEventRow
 {
     public required string AuditEventId { get; set; }
     public required string MovementLegId { get; set; }
-    public required string DemandId { get; set; }
+    public string? DemandId { get; set; }
     public required string UpperId { get; set; }
     public long DispatchGeneration { get; set; }
     public long Sequence { get; set; }
@@ -659,8 +659,35 @@ public sealed class JourneyRuntimeRow
     /// </summary>
     public required string JourneyId { get; set; }
 
-    /// <summary>The anchor demand: the first demand the journey accepted. Every existing reader still finds the row by it.</summary>
-    public required string DemandId { get; set; }
+    /// <summary>
+    /// The anchor demand: the first demand the journey accepted. Every existing reader still finds the row by it. Null on an
+    /// idle return (batch 8-19, control-server#390), which is a journey without a demand (<see cref="IsIdleReturn"/>); so are
+    /// the gate, slot, load, unload, sublot and pre-departure columns only a transport has.
+    /// </summary>
+    /// <remarks>
+    /// A reader that can only ever meet a transport journey reads these through <see cref="TransportColumn"/>, which throws on
+    /// null rather than letting an idle return walk into transport code with a blank demand. A reader that may meet either
+    /// kind asks <see cref="IsIdleReturn"/> first.
+    /// </remarks>
+    public string? DemandId { get; set; }
+
+    /// <summary>
+    /// Whether this journey is an idle return: a move to a waiting point with no demand (batch 8-19, control-server#390). Its
+    /// id is the one its commitment was made under (<c>IdleReturnIdentity.JourneyIdPrefix</c>), which is what tells it apart;
+    /// a null <see cref="DemandId"/> is a consequence, not the test.
+    /// </summary>
+    public bool IsIdleReturn() => JourneyId.StartsWith(IdleReturnIdentity.JourneyIdPrefix, StringComparison.Ordinal);
+
+    /// <summary>
+    /// A column only a transport journey has, read where only a transport journey can be: throws when it is null, which on
+    /// this row means the caller was handed an idle return (control-server#390) -- a defect to surface, never a blank to use.
+    /// </summary>
+    public string TransportColumn(
+        string? value,
+        [System.Runtime.CompilerServices.CallerArgumentExpression(nameof(value))] string column = "") =>
+        value ?? throw new InvalidDataException(
+            $"Journey '{JourneyId}' has no {column}: only a transport journey carries it, and this one " +
+            (IsIdleReturn() ? "is an idle return." : "is missing it."));
     public JourneyRuntimeStage Stage { get; set; }
     public required string AgvId { get; set; }
     public required string VehicleKey { get; set; }
@@ -671,15 +698,15 @@ public sealed class JourneyRuntimeRow
     public required string RouteEvidenceId { get; set; }
     public required string PickupStationId { get; set; }
     public int PickupStationRiotId { get; set; }
-    public required string GateStationId { get; set; }
+    public string? GateStationId { get; set; }
     public int GateStationRiotId { get; set; }
     public int ExpectedBasketCount { get; set; }
-    public required string TargetSlotsJson { get; set; }
+    public string? TargetSlotsJson { get; set; }
     public required string OperationSessionId { get; set; }
     public required string PickupMovementLegId { get; set; }
     public required string PickupUpperId { get; set; }
-    public required string GateMovementLegId { get; set; }
-    public required string GateUpperId { get; set; }
+    public string? GateMovementLegId { get; set; }
+    public string? GateUpperId { get; set; }
     public long DispatchGeneration { get; set; }
     public long VehicleBusinessRevision { get; set; }
     public long WorklistRevision { get; set; }
@@ -687,16 +714,16 @@ public sealed class JourneyRuntimeRow
     public required string VehicleBusinessMessageId { get; set; }
     public required string WorklistMessageId { get; set; }
     public required string PlanMessageId { get; set; }
-    public required string SublotRequestMessageId { get; set; }
-    public required string LoadCommandMessageId { get; set; }
-    public required string LoadSlotOperationAttemptId { get; set; }
-    public required string PreDepartureSafetyCheckMessageId { get; set; }
-    public required string PreDepartureSafetyCheckId { get; set; }
-    public required string GateVehicleBusinessMessageId { get; set; }
-    public required string GateWorklistMessageId { get; set; }
-    public required string GatePlanMessageId { get; set; }
-    public required string UnloadCommandMessageId { get; set; }
-    public required string UnloadSlotOperationAttemptId { get; set; }
+    public string? SublotRequestMessageId { get; set; }
+    public string? LoadCommandMessageId { get; set; }
+    public string? LoadSlotOperationAttemptId { get; set; }
+    public string? PreDepartureSafetyCheckMessageId { get; set; }
+    public string? PreDepartureSafetyCheckId { get; set; }
+    public string? GateVehicleBusinessMessageId { get; set; }
+    public string? GateWorklistMessageId { get; set; }
+    public string? GatePlanMessageId { get; set; }
+    public string? UnloadCommandMessageId { get; set; }
+    public string? UnloadSlotOperationAttemptId { get; set; }
     public string? ConsumedSublotMessageId { get; set; }
     public string? ConsumedSafetyResultMessageId { get; set; }
     /// <summary>

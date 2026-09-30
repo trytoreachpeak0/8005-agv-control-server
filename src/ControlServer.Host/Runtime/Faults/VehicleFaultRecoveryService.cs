@@ -109,6 +109,12 @@ public static class VehicleFaultRecoveryDispositions
     /// recovery session (REQ-0238, control-server#345). Nothing was released.
     /// </summary>
     public const string AwaitingCargoHandoff = "AWAITING_CARGO_HANDOFF";
+
+    /// <summary>
+    /// The journey was an idle return (control-server#390): its FAILED order is a confirmed failure, so it ended -- purpose claim
+    /// released, journey closed, the waiting point left to the departure sweep -- and nothing is rebuilt.
+    /// </summary>
+    public const string IdleReturnEnded = "IDLE_RETURN_ENDED";
 }
 
 /// <summary>
@@ -355,7 +361,12 @@ public sealed partial class VehicleFaultRecoveryService(
             cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         // Nothing is sent to the vehicle: the journey goes on, so it has no closure to be told of (control-server#323's path 7
-        // was the release this replaced), and the stop it shows is the one the rebuilt order goes to.
+        // was the release this replaced), and the stop it shows is the one the rebuilt order goes to. An idle return is the
+        // exception (control-server#390): it has just closed, and the vehicle is told IDLE_RETURN is withdrawn.
+        if (disposition == VehicleFaultRecoveryDispositions.IdleReturnEnded)
+        {
+            await JourneyClosure.SendAsync(publisher, dbContext, subject.AgvId, cancellationToken).ConfigureAwait(false);
+        }
 
         // A new episode starts from an empty window, as after a resumption.
         ledger.Forget(subject.DeviceKey);
@@ -421,10 +432,14 @@ public sealed partial class VehicleFaultRecoveryService(
             }
             else
             {
-                string transportDemandKey = await dbContext.AcceptedDemands.AsNoTracking()
-                    .Where(row => row.DemandId == journey.DemandId)
-                    .Select(row => row.TransportDemandKey)
-                    .SingleAsync(cancellationToken).ConfigureAwait(false);
+                // An idle return (control-server#390) carries no demand: its held order is resumed with none, and any cargo
+                // binding found on the vehicle then refuses the resumption as not this order's.
+                string? transportDemandKey = journey.IsIdleReturn()
+                    ? null
+                    : await dbContext.AcceptedDemands.AsNoTracking()
+                        .Where(row => row.DemandId == journey.DemandId)
+                        .Select(row => row.TransportDemandKey)
+                        .SingleAsync(cancellationToken).ConfigureAwait(false);
                 resumption = new VehicleFaultResumption(
                     new RiotOrderCommandTarget(subject.AgvId, intent.UpperId, orderId),
                     journey.DemandId,
@@ -606,6 +621,10 @@ public sealed partial class VehicleFaultRecoveryService(
 
         JourneyRuntimeRow runtime = await dbContext.JourneyRuntimes
             .SingleAsync(row => row.JourneyId == read.JourneyId, cancellationToken).ConfigureAwait(false);
+        if (runtime.IsIdleReturn())
+        {
+            return await EndIdleReturnAsync(runtime, now, cancellationToken).ConfigureAwait(false);
+        }
         List<JourneyDemandRow> memberships = await dbContext.Set<JourneyDemandRow>()
             .Where(row => row.JourneyId == runtime.JourneyId && row.RemovedAt == null)
             .ToListAsync(cancellationToken).ConfigureAwait(false);
@@ -643,6 +662,26 @@ public sealed partial class VehicleFaultRecoveryService(
         runtime.UpdatedAt = now;
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return stopped ? VehicleFaultRecoveryDispositions.RebuildStopped : VehicleFaultRecoveryDispositions.RebuildScheduled;
+    }
+
+    /// <summary>
+    /// The FAILED order of an idle return, cleared by a person (control-server#390): a confirmed failure under REQ-0296 -- the
+    /// clearance has just proved the vehicle holds no unfinished order and no latch, and a person has confirmed the cause removed
+    /// on site. The purpose claim is released and the journey closed in the caller's transaction; the waiting point reservation
+    /// is left to the departure sweep, which frees it once the vehicle is seen elsewhere. The next commitment leaves this point
+    /// out. Nothing is rebuilt: REQ-0362's rebuild continues a demand, and an idle return has none.
+    /// </summary>
+    private async Task<string> EndIdleReturnAsync(JourneyRuntimeRow runtime, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        JourneyStopRow stop = await dbContext.Set<JourneyStopRow>()
+            .SingleAsync(row => row.JourneyId == runtime.JourneyId, cancellationToken).ConfigureAwait(false);
+        await IdleReturn.IdleReturnEnding.StageAsync(
+                dbContext, runtime, stop, IdleReturn.IdleReturnExecutionReasons.OrderFailed,
+                IdleReturn.IdleReturnExecutionReasons.OrderFailed, stillAtWaitingPoint: false, releaseStationNow: null, now,
+                cancellationToken)
+            .ConfigureAwait(false);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return VehicleFaultRecoveryDispositions.IdleReturnEnded;
     }
 
     /// <summary>The two stages in which the journey waits on a move order in flight -- the only ones a FAILED order stops.</summary>

@@ -31,7 +31,7 @@ public sealed record DemandCatalogSnapshot(
 
 public sealed record OrderIntent(
     string MovementLegId,
-    string DemandId,
+    string? DemandId,
     string UpperId,
     string Purpose,
     string TargetStationId,

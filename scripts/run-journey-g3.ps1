@@ -238,6 +238,20 @@ $scenarioAssertions = [ordered]@{
         'G3-08-06' = 'onboardShowsTheAppendedPlanInSequenceOrder'
         'G3-08-07' = 'multiStopJourneyEachDemandLoadedAndUnloadedOnce'
     }
+    # Batch 8 (control-server#390): CV-WAITING-POINT-IDLE-RETURN. One vehicle unloads, has no demand left and
+    # returns idle to waiting point 214, converges there, and is taken away by the next demand. Guards the two
+    # cross-ticket contracts with onboard-hmi#217: the release sends a business state whose activePurpose is no
+    # longer IDLE_RETURN, and the waiting-point leg follows the facts (ARRIVED while the vehicle stands there,
+    # gone once the next journey's plan replaces it); the pickup entry that follows still opens.
+    'g3-waiting-point-idle-return' = [ordered]@{
+        'G3-12-01' = 'idleReturnPlanBeforeBusinessStateBothAcknowledged'
+        'G3-12-02' = 'onboardShowsEnRouteToWaitingPoint'
+        'G3-12-03' = 'convergedWithArrivedLegAndIdleReturnWithdrawn'
+        'G3-12-04' = 'nextJourneyPlanReplacesTheWaitingPointLeg'
+        'G3-12-05' = 'pickupEntryOpensAfterIdleReturnAndPointReleasedOnDeparture'
+        'G3-12-06' = 'idleReturnJourneyFinalStateNoDuplicateCommit'
+        'G3-12-07' = 'onboardNeverLoadsAtWaitingPoint'
+    }
 }
 
 function Get-ScriptFunction {

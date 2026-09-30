@@ -1,0 +1,20 @@
+[11:40:51 INF] No migrations were applied. The database is already up to date.
+[11:40:52 INF] Task type station preset C:\Users\szy\AppData\Local\Temp\l2-20260930T033953374Z\task-type-stations.settings.json loaded: rule version 1 (new), Map 25 binding set version 1 (new) active.
+[11:40:52 INF] Onboard NDJSON listener started on 127.0.0.1:48405; transport=plaintext
+[11:40:53 INF] Now listening on: http://127.0.0.1:48407
+[11:40:53 INF] Application started. Press Ctrl+C to shut down.
+[11:40:53 INF] Hosting environment: Production
+[11:40:53 INF] Content root path: C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs390-8005-agv-control-server\src\ControlServer.Host\bin\Release\net8.0\win-x64
+[11:40:54 INF] SessionReadiness 722747b9-878f-42e3-b7a4-824b776ed72a to AGV-L2-001 generation 1: READY [null], after the answer to RecoveryStateReport cacda16b-96e1-48d2-817a-b2478e30db19.
+[11:40:56 INF] Idle return not committed for vehicle AGV-L2-001: CHARGING_POLICY_NOT_APPROVED. 
+[11:41:19 INF] Idle return committed: vehicle AGV-L2-001 reserved waiting point 214 (registration version 1) as journey idle-return:BROKERX-L2-0001:20260930T034119019Z, route cost 20000 mm; charge line 30 (transitional: JourneyRuntime:MinimumBatteryPercent).
+[11:41:19 INF] Idle return idle-return:BROKERX-L2-0001:20260930T034119019Z materialized for vehicle BROKERX-L2-0001: one move to waiting point 214.
+[11:41:21 INF] Idle return idle-return:BROKERX-L2-0001:20260930T034119019Z: vehicle BROKERX-L2-0001 arrived at waiting point 214; the reservation is now an occupancy and the IDLE_RETURN purpose is released. The occupancy is released only on departure evidence.
+[11:41:24 INF] Idle return not committed for vehicle AGV-L2-001: IDLE_RETURN_NOT_LEFT_OVER_BY_TRANSPORT. 
+[11:41:35 INF] WAITING_POINT 25/214 released by vehicle BROKERX-L2-0001 on departure evidence (journey idle-return:BROKERX-L2-0001:20260930T034119019Z).
+[11:42:11 INF] Idle return committed: vehicle AGV-L2-001 reserved waiting point 214 (registration version 1) as journey idle-return:BROKERX-L2-0001:20260930T034211097Z, route cost 20000 mm; charge line 30 (transitional: JourneyRuntime:MinimumBatteryPercent).
+[11:42:12 INF] Idle return idle-return:BROKERX-L2-0001:20260930T034211097Z materialized for vehicle BROKERX-L2-0001: one move to waiting point 214.
+[11:42:13 INF] FIXED_TASK_STATION 25/210 released by vehicle BROKERX-L2-0001 on departure evidence (journey journey:3e8d6695-8fae-4a0e-9544-b270701593f1).
+[11:42:13 INF] Idle return idle-return:BROKERX-L2-0001:20260930T034211097Z: vehicle BROKERX-L2-0001 arrived at waiting point 214; the reservation is now an occupancy and the IDLE_RETURN purpose is released. The occupancy is released only on departure evidence.
+[11:42:14 INF] Idle return not committed for vehicle AGV-L2-001: IDLE_RETURN_VEHICLE_HOLDS_STATION. 
+[11:42:42 WRN] Onboard connection ended with a protocol or transport error.

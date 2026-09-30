@@ -676,6 +676,14 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
                 $"Journey '{plan.JourneyId}' is {journey.Stage} and cannot take an appended demand.");
         }
 
+        // An idle return carries no demand and takes none (control-server#390): the round keeps its vehicle out of the
+        // en-route candidates, and this is the write-side half of that rule.
+        if (journey.IsIdleReturn())
+        {
+            throw new BusinessIdentityConflictException(
+                $"Journey '{plan.JourneyId}' is an idle return and cannot take an appended demand.");
+        }
+
         // 装货阶段结束了也不接（批次7-07，control-server#212）：持货超时、让站之后不再接受新的待装需求（REQ-0354 末句），
         // 装满之后离开最后一个装货停靠同样是终点——「离开」指服务端为离站向 RIoT 请求移动，而那一次保存就写下了 CLOSED。
         // 所以「是否已经离开」在这里读的是同一次写入留下的那一列，与判 Blocked 同一个道理：轮次读到的计划在它自己的
@@ -3071,7 +3079,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         row.GateStationId == journey.GateStationId &&
         row.GateStationRiotId == journey.GateStationRiotId &&
         row.ExpectedBasketCount == journey.ExpectedBasketCount &&
-        (JsonSerializer.Deserialize<int[]>(row.TargetSlotsJson) ?? []).SequenceEqual(journey.TargetSlots) &&
+        (JsonSerializer.Deserialize<int[]>(row.TransportColumn(row.TargetSlotsJson)) ?? []).SequenceEqual(journey.TargetSlots) &&
         row.OperationSessionId == journey.OperationSessionId &&
         row.PickupMovementLegId == journey.PickupMovementLegId &&
         row.PickupUpperId == journey.PickupUpperId &&
@@ -3372,6 +3380,47 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         string.Equals(existing.DemandId, snapshot.DemandId, StringComparison.Ordinal) &&
         await DemandJourneyLookup.ReleasedForRedispatch(dbContext)
             .AnyAsync(row => row.DemandId == snapshot.DemandId, cancellationToken).ConfigureAwait(false);
+
+    /// <summary>
+    /// 把一次空闲返回承诺物化成旅程（批次8-19，control-server#390）：旅程行、开往等待点的那一个停靠与它的订单意图，同一次保存。
+    /// 这个旅程 id 已经有旅程行时什么也不写，返回假——物化按 <c>JourneyId</c> 幂等，承诺与物化之间崩溃了，下一轮补建恰好一次。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 快照修订号的基准与受理一样从按车计数器派生、并在同一次保存里推进计数器（<see cref="SeedSnapshotRevisionsAsync"/>、
+    /// <see cref="AdvanceSnapshotRevisionCounterAsync"/>）：车载端按消息类型记修订号，空闲返回发出的计划与业务状态必须接在上一趟之后。
+    /// </para>
+    /// <para>
+    /// 先读一次只为分清「已经物化过」；两个上下文同时物化同一个承诺时，由 <c>JourneyRuntimes</c> 的主键拒绝后到的那一次。
+    /// </para>
+    /// </remarks>
+    public async Task<bool> MaterializeIdleReturnAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopRow stop,
+        OrderIntent orderIntent,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(runtime);
+        ArgumentNullException.ThrowIfNull(stop);
+        ArgumentNullException.ThrowIfNull(orderIntent);
+        if (!runtime.IsIdleReturn())
+        {
+            throw new ArgumentException($"Journey '{runtime.JourneyId}' is not an idle return.", nameof(runtime));
+        }
+        if (await dbContext.JourneyRuntimes.AsNoTracking()
+                .AnyAsync(row => row.JourneyId == runtime.JourneyId, cancellationToken).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        await SeedSnapshotRevisionsAsync(runtime, cancellationToken).ConfigureAwait(false);
+        dbContext.JourneyRuntimes.Add(runtime);
+        dbContext.Set<JourneyStopRow>().Add(stop);
+        dbContext.OrderIntents.Add(ToRow(orderIntent));
+        await AdvanceSnapshotRevisionCounterAsync(runtime, cancellationToken).ConfigureAwait(false);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return true;
+    }
 
     private static JourneyRuntimeRow ToRuntimeRow(string demandId, JourneyExecutionPlan journey)
     {

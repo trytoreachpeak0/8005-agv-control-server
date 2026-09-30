@@ -51,8 +51,15 @@ public sealed partial class JourneyRuntimeEngine(
     TimeProvider timeProvider,
     ILogger<JourneyRuntimeEngine> logger,
     IChargingPolicyResolver chargingPolicy,
-    FixedStationSweepWarnings? fixedStationWarnings = null)
+    FixedStationSweepWarnings? fixedStationWarnings = null,
+    RiotOrderCommandService? orderCommands = null,
+    IdleReturn.IdleReturnMaterializationFailures? idleReturnMaterializationFailures = null)
 {
+    // control-server#390 review L3: consecutive materialization failures outlive the per-round engine (a singleton in the
+    // host); an engine built without them keeps its own.
+    private readonly IdleReturn.IdleReturnMaterializationFailures _idleReturnMaterializationFailures =
+        idleReturnMaterializationFailures ?? new IdleReturn.IdleReturnMaterializationFailures();
+
     // control-server#391: the fixed task station sweep's open warnings outlive the per-round engine (the host registers
     // them as a singleton); an engine built without them keeps its own.
     private readonly FixedStationSweepWarnings _fixedStationWarnings = fixedStationWarnings ?? new FixedStationSweepWarnings();
@@ -595,6 +602,11 @@ public sealed partial class JourneyRuntimeEngine(
                     : "none";
         }
 
+        // control-server#390: an idle return commitment the dispatch round made (a purpose claim and a waiting point
+        // reservation, batch 8-18) becomes a journey here, before this round reads which journeys it advances. A commitment
+        // that cannot become one is released here too, so none can hold its vehicle for good.
+        await MaterializeIdleReturnsAsync(cancellationToken).ConfigureAwait(false);
+
         JourneyRuntimeRow[] active = await dbContext.JourneyRuntimes
             .Where(row => row.Stage != JourneyRuntimeStage.Completed)
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
@@ -636,7 +648,15 @@ public sealed partial class JourneyRuntimeEngine(
             {
                 try
                 {
-                    await AdvanceAsync(runtime, currentMap, cancellationToken).ConfigureAwait(false);
+                    // control-server#390: an idle return has its own branch; it never enters the transport state machine.
+                    if (runtime.IsIdleReturn())
+                    {
+                        await AdvanceIdleReturnAsync(runtime, currentMap, cancellationToken).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        await AdvanceAsync(runtime, currentMap, cancellationToken).ConfigureAwait(false);
+                    }
                 }
                 catch (Exception error)
                     when (!JourneyRowConflict.Is(error) &&
@@ -698,6 +718,9 @@ public sealed partial class JourneyRuntimeEngine(
         // 这一轮让开的车（control-server#357）：手里那份旅程是旧读，此刻库里的它可能已经收尾或转了阻塞。这一轮不把它当可追加的车去问，
         // 下一轮按新行重判；它仍算 busy，不会被当空闲车派。
         blocked.UnionWith(yielded);
+        // An idle return holds its vehicle (REQ-0290: a purpose already started is not taken over by a new one), so it is busy,
+        // and it takes no appended demand: it carries none to append to (control-server#390).
+        blocked.UnionWith(active.Where(row => row.IsIdleReturn()).Select(row => row.AgvId));
         FleetVehicle[] underWay = roster.Vehicles
             .Where(vehicle => busy.Contains(vehicle.AgvId) && !blocked.Contains(vehicle.AgvId) &&
                               !heldByForeignOrder.Contains(vehicle.AgvId))
@@ -1396,7 +1419,7 @@ public sealed partial class JourneyRuntimeEngine(
                     session.SessionGeneration,
                     new PreDepartureSafetyCheckCommand(
                         DepartureCheckId(stops.Current),
-                        runtime.DemandId,
+                        runtime.TransportColumn(runtime.DemandId),
                         NextStopAfterCurrent(stops).MovementLegId,
                         session.SafetyRevision ?? throw new InvalidDataException("Safety revision is required."),
                         NextStopAfterCurrent(stops).StationId),
@@ -1797,7 +1820,7 @@ public sealed partial class JourneyRuntimeEngine(
             await InFlightFaultContextAsync(runtime, intent, orderId, cancellationToken).ConfigureAwait(false),
             cancellationToken).ConfigureAwait(false);
 
-        LogOrderFailedSymptom(logger, intent.UpperId, runtime.AgvId, runtime.DemandId, null);
+        LogOrderFailedSymptom(logger, intent.UpperId, runtime.AgvId, runtime.DemandId ?? runtime.JourneyId, null);
         checkpointWaits.Clear(runtime.VehicleKey);
         if (!string.Equals(runtime.BlockReasonCode, VehicleFaultEvidence.OrderFailed, StringComparison.Ordinal))
         {
@@ -1919,7 +1942,7 @@ public sealed partial class JourneyRuntimeEngine(
         if (!string.Equals(runtime.BlockReasonCode, code, StringComparison.Ordinal))
         {
             LogInTransitOrderStalled(
-                logger, upperId, runtime.DemandId, runtime.AgvId, order.OrderState, reason, null);
+                logger, upperId, runtime.DemandId ?? runtime.JourneyId, runtime.AgvId, order.OrderState, reason, null);
             runtime.SetBlockReason(code, now);
             runtime.UpdatedAt = now;
         }
@@ -2266,7 +2289,7 @@ public sealed partial class JourneyRuntimeEngine(
             DateTimeOffset? lastInboundAt = await LatestInboundAtForSessionAsync(
                 runtime.AgvId, session.SessionGeneration, cancellationToken).ConfigureAwait(false);
             LogOnboardSessionLost(
-                logger, runtime.AgvId, session.SessionGeneration, runtime.DemandId, lastInboundAt, null);
+                logger, runtime.AgvId, session.SessionGeneration, runtime.DemandId ?? runtime.JourneyId, lastInboundAt, null);
             runtime.SetBlockReason(OnboardSessionLostReason, now);
             runtime.UpdatedAt = now;
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -2351,7 +2374,7 @@ public sealed partial class JourneyRuntimeEngine(
         string reason = exceeded ? CheckpointWaitExceededReason : CheckpointWaitReason;
         if (exceeded)
         {
-            LogCheckpointWaitExceeded(logger, runtime.AgvId, runtime.DemandId, null);
+            LogCheckpointWaitExceeded(logger, runtime.AgvId, runtime.DemandId ?? runtime.JourneyId, null);
         }
         if (string.Equals(runtime.BlockReasonCode, reason, StringComparison.Ordinal))
         {
@@ -3646,7 +3669,7 @@ public sealed partial class JourneyRuntimeEngine(
             cancellationToken).ConfigureAwait(false);
         runtime.UpdatedAt = now;
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        LogSublotRejected(logger, demandId ?? runtime.DemandId, reasonCode, null);
+        LogSublotRejected(logger, demandId ?? runtime.TransportColumn(runtime.DemandId), reasonCode, null);
     }
 
     /// <summary>
@@ -3812,7 +3835,7 @@ public sealed partial class JourneyRuntimeEngine(
         // ever asked before the gate leg is created. A journey accepted before control-server#160 froze no versions;
         // it is judged as the WIRE_TO_GATE on the runtime's Map it was, the way the dropoff below falls back.
         DemandTaskTypeStationFreeze? frozenVersions = await _taskTypeStations.Freezes
-            .ReadAsync(runtime.DemandId, cancellationToken).ConfigureAwait(false);
+            .ReadAsync(runtime.TransportColumn(runtime.DemandId), cancellationToken).ConfigureAwait(false);
         string taskType = frozenVersions is null
             ? TransportTaskTypes.WireToGate
             : await dbContext.AcceptedDemands
@@ -3828,7 +3851,7 @@ public sealed partial class JourneyRuntimeEngine(
         }
 
         IReadOnlyList<FrozenStationFact> frozen = await catalogStore
-            .ReadFrozenStationsAsync(runtime.DemandId, cancellationToken).ConfigureAwait(false);
+            .ReadFrozenStationsAsync(runtime.TransportColumn(runtime.DemandId), cancellationToken).ConfigureAwait(false);
         FrozenStationFact? dropoff = toTheStopItself
             ? null
             : frozen.FirstOrDefault(station => station.Role == FrozenStationRole.Dropoff);
@@ -3847,7 +3870,7 @@ public sealed partial class JourneyRuntimeEngine(
 
         return await createGate.EvaluateAsync(
             new CreateGateRequest(
-                runtime.DemandId,
+                runtime.TransportColumn(runtime.DemandId),
                 transportDemandKey,
                 runtime.AgvId,
                 runtime.VehicleKey,
@@ -3895,8 +3918,9 @@ public sealed partial class JourneyRuntimeEngine(
                 stop.StopRole == JourneyStopRoles.Pickup ? "PICKUP" : "DROPOFF",
                 item.Membership.ExpectedBasketCount))]);
 
-    // Likewise the only activePurpose this runtime can be in. CHARGING is batch 8, IDLE_RETURN is
-    // batch 5, CLEARING_MAINTENANCE is deferred; a vehicle running this worker is carrying a demand.
+    // The activePurpose of a transport journey. An idle return (batch 8-19, control-server#390) sends IDLE_RETURN from its own
+    // branch (JourneyRuntimeEngine.IdleReturn.cs, JourneyPlanBuilder.IdleReturnBusinessState); CHARGING is batch 9 and
+    // CLEARING_MAINTENANCE is deferred.
     private const string TransportPurpose = VehicleActivePurposes.Transport;
 
     // 8005-agv-program#94's semantic table: a vehicle running this worker is carrying a demand, not charging, so it holds
@@ -4404,7 +4428,7 @@ public sealed partial class JourneyRuntimeEngine(
     /// </remarks>
     private static string PickupDispatchPlanMessageId(JourneyRuntimeRow runtime) =>
         JourneyPlanBuilder.StableGuid(
-            runtime.JourneyId == JourneyIdentity.ForAnchorDemand(runtime.DemandId) ? runtime.DemandId : runtime.JourneyId,
+            runtime.JourneyId == JourneyIdentity.ForAnchorDemand(runtime.TransportColumn(runtime.DemandId)) ? runtime.TransportColumn(runtime.DemandId) : runtime.JourneyId,
             "pickup-dispatch-plan");
 
     /// <summary>
@@ -4765,7 +4789,10 @@ public sealed partial class JourneyRuntimeEngine(
         string.Equals(runtime.BlockReasonCode, OnboardSessionLostReason, StringComparison.Ordinal) ||
         string.Equals(runtime.BlockReasonCode, StationTimeoutDoorNotClosedReason, StringComparison.Ordinal) ||
         string.Equals(runtime.BlockReasonCode, LoadCorrectionInProgressReason, StringComparison.Ordinal) ||
-        string.Equals(runtime.BlockReasonCode, PreDepartureSafetyNotValidReason, StringComparison.Ordinal);
+        string.Equals(runtime.BlockReasonCode, PreDepartureSafetyNotValidReason, StringComparison.Ordinal) ||
+        // control-server#390: an idle return held because its order may still exist or its vehicle may still move.
+        string.Equals(runtime.BlockReasonCode, IdleReturn.IdleReturnExecutionReasons.WaitingPointLostOrderInFlight, StringComparison.Ordinal) ||
+        string.Equals(runtime.BlockReasonCode, IdleReturn.IdleReturnExecutionReasons.OrderEndedStopNotProven, StringComparison.Ordinal);
 
     private static bool IsHeldForAreaEndAdmission(JourneyRuntimeRow runtime) =>
         runtime.Stage == JourneyRuntimeStage.AwaitingGateArrival &&
@@ -4818,7 +4845,7 @@ public sealed partial class JourneyRuntimeEngine(
             logger,
             runtime.AgvId,
             stops.Current.StationId,
-            runtime.DemandId,
+            runtime.DemandId ?? runtime.JourneyId,
             runtimeOptions.AreaEndAdmissionRevokedTimeout,
             null);
         return true;
@@ -5069,7 +5096,7 @@ public sealed partial class JourneyRuntimeEngine(
             await StopEndWorklist.SendAsync(publisher, dbContext, runtime.AgvId, cancellationToken).ConfigureAwait(false);
         }
         checkpointWaits.Clear(runtime.VehicleKey);
-        LogStationDeadlineEndedStop(logger, runtime.AgvId, runtime.DemandId, deadline, null);
+        LogStationDeadlineEndedStop(logger, runtime.AgvId, runtime.DemandId ?? runtime.JourneyId, deadline, null);
         return true;
     }
 
@@ -5109,7 +5136,7 @@ public sealed partial class JourneyRuntimeEngine(
             }
             runtime.SetBlockReason(StationTimeoutDoorNotClosedReason, now);
             LogStationTimeoutDoorNotClosed(
-                logger, runtime.AgvId, runtime.DemandId, stationId, deadline, null);
+                logger, runtime.AgvId, runtime.DemandId ?? runtime.JourneyId, stationId, deadline, null);
             return true;
         }
         if (runtime.BlockReasonCode != StationTimeoutDoorNotClosedReason)
@@ -5370,7 +5397,7 @@ public sealed partial class JourneyRuntimeEngine(
             session.SessionGeneration,
             new PreDepartureSafetyCheckCommand(
                 reissuedCheckId,
-                runtime.DemandId,
+                runtime.TransportColumn(runtime.DemandId),
                 NextStopAfterCurrent(stops).MovementLegId,
                 currentRevision,
                 NextStopAfterCurrent(stops).StationId),

@@ -54,7 +54,8 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `in-transit-rebuild-stopped-person-rebuilds` | 合成 | **control-server#345（出口甲）**：本服务端自己的在途单被取消、同车重建，重建出来的单在窗口内又被取消而停住（`OWN_ORDER_REBUILD_STOPPED`）；没确认已查明原因的请求 409；署名、确认的 `REBUILD_STOPPED_ORDER` 200、停住的记录原行重开，引擎给同车同需求建第三张单；同一请求再来一次 `AlreadyDone`；全程没有订单命令或急停 | `evidence/cs345/`（修复前 `012c31b2` 红、修复后绿） |
 | `stop-ended-journey-continues` | 合成 | **control-server#324（program#86 v2 的 B 形态，上真车前）**：两条需求在两个取货站，甲装上车；车到第二站，合成车载端把乙的录入请求挂着不答，站点期限结束这一站，车带着甲的货持货等单——断言乙终结、旅程不收尾；车收到并确认这一站的空清单（号最大，作业会话与期限为 null）；迟到的扫码答 `SublotRejected` / `WORKLIST_REVISION_STALE`（`demandId` 空、号是空清单的号）；迟到的取消 `REJECTED` / `WORKLIST_REVISION_STALE`；关卡清单号在空清单之上、全程不重号；会话代全程不变。这个装置里甲、乙共用关卡卸货站，SEJ-05 判不出号冲突，号冲突由 L1 `WhenTheNextStopCarriesNoneOfTheEndedDemandsItStillStartsAboveTheEmptyWorklist` 守 | `evidence/cs324/`（修前 SEJ-02～05 红、修后 6/6） |
 | `real-onboard-rebuild-stopped-cargo-handoff` | **真的** | **control-server#345（交接衔接）**：装货提交、TO_GATE 单 FAILED（车静止在取货站，不急停）→ 光幕固定成「没挡住」模拟货没了 → 人工清除 → 快照显示仓空、重建停住 `OWN_ORDER_REBUILD_CARGO_NOT_IN_PLACE` → 人工重建 409、转交接 200、重复 `AlreadyDone` → 会话 `CARGO_HANDOFF_REQUIRED` → 车载端出「故障交接」入口，UIA 交接 → 需求终结、绑定了结、记录 `ENDED`、会话就绪 → 车接下一单。只覆盖取货站上静止时的故障（简化，不是遗漏） | `evidence/cs345/real-rig.md`（衔接 b 的变异红只落 `L2-RH-07/08`） |
-| `idle-return-two-vehicles-contend-one-waiting-point` | 合成 ×2 | **control-server#389（批次8-18，REQ-0291、REQ-0292）**：两台空闲车停在关卡，登记两个等待点但只有 214 在路网上；恰好一辆承诺空闲返回（`IDLE_RETURN` 用途占有与 214 的预占同一趟，另等 15 秒仍只有一辆，`L2-IRC-01`～`03`），承诺不建单、不物化旅程（`L2-IRC-04`）；之后来的搬运派给没承诺的那辆（`L2-IRC-05`），承诺原样留着（另等 10 秒，`L2-IRC-06`） | `evidence/cs389/l2/idle-return-6d20fd21-green`（红证据：承诺没占住那辆车，搬运派给了它 `evidence/cs389/l2/idle-return-red-claim-not-on-vehicle`） |
+| `idle-return-two-vehicles-contend-one-waiting-point` | 合成 ×2 | **control-server#389（批次8-18，REQ-0291、REQ-0292）**：两台空闲车停在关卡，登记两个等待点但只有 214 在路网上；恰好一辆承诺空闲返回（`IDLE_RETURN` 用途占有与 214 的预占同一趟，另等 15 秒仍只有一辆，`L2-IRC-01`～`03`），承诺物化成恰好一趟空闲返回旅程与一张开往 214 的意图，没有搬运（`L2-IRC-04`，control-server#390 起承诺会被执行）；之后来的搬运派给没承诺的那辆（`L2-IRC-05`），承诺原样留着（另等 10 秒，`L2-IRC-06`） | `evidence/cs389/l2/idle-return-6d20fd21-green`（红证据：承诺没占住那辆车，搬运派给了它 `evidence/cs389/l2/idle-return-red-claim-not-on-vehicle`） |
+| `waiting-point-exclusive-reserve-occupy-release` | 合成 | **control-server#390（批次8-19，REQ-0293～0295）**：车停在关卡、没有需求，空闲返回物化成一趟没有需求的旅程与开往 214 的单段移动，214 在途预占（`L2-WPR-01`）；到点转占用、用途释放（`L2-WPR-02`）；需求派给停在 214 的车（`L2-WPR-03`），单已下达、车还在点上时占用不放（另等 10 秒，`L2-WPR-04`），RIoT 报车到了机台才以 `DEPARTED_STATION` 释放（`L2-WPR-05`）；卸完再次空闲返回，关卡凭离点证据释放（`L2-WPR-06`） | `evidence/cs390/l2/wpr-b3a8be72-green`（红证据：离点清扫把「车有了新订单」当离点证据，只有 `L2-WPR-04` 红 `evidence/cs390/l2/wpr-red-new-order-counts-as-departure`） |
 | `waiting-points-fewer-than-vehicles-refuses-start` | 合成（服务端不起来） | **control-server#388（批次8-17，规格 5.4）**：两台车只登记一个等待点，服务端在监听之前拒绝启动，日志写明车辆数、点数与 `import-waiting-points`；另等 15 秒库里没有受理、假 RIoT 没有建单 | `evidence/cs388/l2-waiting-points-refuses-start-2`（去掉启动校验的红：`evidence/cs388/red/l2-startup-check-removed`） |
 
 编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。三个是**红的**，各自的原因见文末：
@@ -498,6 +499,9 @@ DispatchZoneParameters = @{
 - `run-journey-g3.ps1` 经本编排器跑它的 `g3-*` 场景，在它的 ControlServer 绑定挪到含本票的提交之后自然获得这一步（绑定归批次9-07）。
   三个 staged G3 runner 设 `JourneyRuntime__enabled = 'false'`、不派车，逐车判定挡不到它们。
 - 辅助模块是 `L2ChargingPolicy.psm1`。
+- **打开 `IdleReturn` 的场景要注意（control-server#390）**：激活策略是空闲返回判定的最后一道前提，而它在场景发布第一条需求之前一刻才做，
+  所以空停、没有需求的车会在同一轮就承诺空闲返回，抢在第一条需求被受理之前。先发需求、等搬运的写法判的是一场竞速，会超时；
+  先等空闲返回出现、到点收敛，再发需求（`waiting-point-exclusive-reserve-occupy-release`、`g3-waiting-point-idle-return` 都这样写）。
 
 ### 批次 4 的辅助模块：`L2SlotGroups.psm1`
 
@@ -661,9 +665,10 @@ DispatchZoneParameters = @{
 
 - `WaitingPoints`（control-server#388） —— 等待点登记。不写时 `Fleet` 场景每车一个、单车场景不登记；`$false` 不登记；整数是默认点的个数；列表逐个写站号、
   站名、启用、白名单与路网节点（`Node`，control-server#389）。在服务端第一次启动之前经 `--migrate-only` 与 FieldOps `import-waiting-points` 正式导入。
-- `IdleReturn`（control-server#389） —— `$true` 打开空闲返回（服务端 `IdleReturn:Enabled`，连同只有本编排器会设的 `IdleReturn:AllowWithoutExecutionForL2Only`：过渡期的启动护栏单独见到 `Enabled` 就拒绝启动）。不写即关，与产品默认一致；
-  批次8-19（control-server#390）合入之前产品默认关，任何环境都不得打开，只有 L2 场景用它。空闲返回还要路网（`RouteGraph`）开着、
-  等待点在路网上（`WaitingPoints` 列表项的 `Node`），否则一个点也不承诺。
+- `IdleReturn`（control-server#389） —— `$true` 打开空闲返回（服务端 `IdleReturn:Enabled`）。不写即关，与产品默认一致。批次8-19（control-server#390）
+  合入之后承诺会被执行：物化、建单、到点收敛、离点释放，所以打开它的场景里车会在没有需求时自己开往等待点；批次8-18 那道单独打开即拒绝启动的
+  过渡护栏与只给本编排器的确认键已随之删掉。空闲返回还要路网（`RouteGraph`）开着、等待点在路网上（`WaitingPoints` 列表项的 `Node`），
+  否则一个点也不承诺。
 
 下面四个键是批次 4 的仓位分组（control-server#71），默认前置见上面「派车场景的默认前置」。四个键的结构（仓号、字段名、键之间的组合规则，含
 `OnboardPeers` 各项自带的 `SlotStates`）都在启动任何进程之前校验，写错直接报错，而不是几分钟后表现成「一辆车也没派出去」；

@@ -490,7 +490,7 @@ public sealed class Batch7CargoHoldingDashboardTests
         journey.LoadingPhaseState = LoadingPhaseStates.Loading;
         journey.CargoHoldingStartedAt = Now.AddMinutes(-8);
         await database.SeedAsync(journey);
-        await database.SetMembershipStatusAsync(journey, journey.DemandId, JourneyDemandStatuses.Unloaded);
+        await database.SetMembershipStatusAsync(journey, journey.DemandId!, JourneyDemandStatuses.Unloaded);
         await database.AppendDemandAsync(journey, "D-SECOND", dispatchZoneParameterVersion: 1);
         await database.AppendDemandAsync(journey, "D-RELEASED", dispatchZoneParameterVersion: 1);
         await database.RemoveMembershipAsync(journey, "D-RELEASED");
@@ -1085,7 +1085,7 @@ public sealed class Batch7CargoHoldingDashboardTests
             await using ControlServerDbContext context = NewContext();
             if (!await context.AcceptedDemands.AnyAsync(row => row.DemandId == journey.DemandId, Token))
             {
-                context.AcceptedDemands.Add(Demand(journey.DemandId));
+                context.AcceptedDemands.Add(Demand(journey.DemandId!));
             }
             context.JourneyRuntimes.Add(journey);
             JourneyMembershipSeed.Seed(context, journey);
