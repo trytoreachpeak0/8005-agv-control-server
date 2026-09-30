@@ -45,7 +45,7 @@ function Publish-Demand([object]$demand, [string]$workType, [string]$area, [stri
 }
 
 function Get-Backlog([string]$demandId) {
-    $rows = @(Invoke-L2Query -Connection $connection -Sql "SELECT ReasonCode, AcceptedAt FROM JourneyBacklog WHERE DemandId = '$demandId'")
+    $rows = Invoke-L2Query -Connection $connection -Sql "SELECT ReasonCode, AcceptedAt FROM JourneyBacklog WHERE DemandId = '$demandId'"
     if ($rows.Count -eq 0) { return $null }
     return $rows[0]
 }
@@ -63,14 +63,14 @@ SELECT (SELECT COUNT(*) FROM AcceptedDemands WHERE DemandId = '$demandId')
 }
 
 function Get-Stage([string]$demandId) {
-    $rows = @(Invoke-L2Query -Connection $connection -Sql "SELECT Stage FROM JourneyRuntimes WHERE DemandId = '$demandId'")
+    $rows = Invoke-L2Query -Connection $connection -Sql "SELECT Stage FROM JourneyRuntimes WHERE DemandId = '$demandId'"
     if ($rows.Count -eq 0) { return $null }
     return [string]$rows[0].Stage
 }
 
 function Get-Intent([string]$demandId, [string]$purpose) {
-    $rows = @(Invoke-L2Query -Connection $connection `
-        -Sql "SELECT UpperId, OrderId, Status, DestinationStationId FROM OrderIntents WHERE DemandId = '$demandId' AND Purpose = '$purpose'")
+    $rows = Invoke-L2Query -Connection $connection `
+        -Sql "SELECT UpperId, OrderId, Status, DestinationStationId FROM OrderIntents WHERE DemandId = '$demandId' AND Purpose = '$purpose'"
     if ($rows.Count -eq 0) { return $null }
     return $rows[0]
 }
@@ -112,7 +112,7 @@ $pickupIntent = Wait-L2Condition -Description 'the TO_PICKUP intent was confirme
     -Probe { $row = Get-Intent $demand.Id 'TO_PICKUP'; if ($row -and [string]$row.Status -eq 'CONFIRMED') { $row } else { $null } } `
     -Until { param($v) $null -ne $v }
 
-$freeze = @(Invoke-L2Query -Connection $connection -Sql @"
+$freeze = (Invoke-L2Query -Connection $connection -Sql @"
 SELECT (SELECT FrozenVersion FROM ConfigurationConsumerBindings
          WHERE ConsumerKind = 'TransportDemand' AND ConsumerId = '$($demand.Id)' AND ObjectKind = 'TaskTypeStationRule') AS RuleVersion,
        (SELECT FrozenVersion FROM ConfigurationConsumerBindings

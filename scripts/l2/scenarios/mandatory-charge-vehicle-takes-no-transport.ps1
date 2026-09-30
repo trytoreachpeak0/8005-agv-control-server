@@ -55,8 +55,8 @@ function Set-Battery([string]$vehicleKey, [int]$battery) {
 }
 
 function Get-Journey {
-    $rows = @(Invoke-L2Query -Connection $connection -Sql (
-        "SELECT JourneyId, AgvId, VehicleKey, ChargingPolicyVersion, PublishedBatteryState FROM JourneyRuntimes WHERE DemandId = '$demandId'"))
+    $rows = Invoke-L2Query -Connection $connection -Sql (
+        "SELECT JourneyId, AgvId, VehicleKey, ChargingPolicyVersion, PublishedBatteryState FROM JourneyRuntimes WHERE DemandId = '$demandId'")
     if ($rows.Count -eq 0) { return $null }
     return $rows[0]
 }
@@ -89,10 +89,10 @@ $activated = & $Context.InvokeFieldOps -Arguments @('activate-charging-policy', 
     '--fleet', $fleetText, '--allow-non-field-approval')
 $journal.Observe('scenario-policy', $version, @{ import = $imported; approve = $approved; activate = $activated })
 
-$active = @(Invoke-L2Query -Connection $connection -Sql (
+$active = Invoke-L2Query -Connection $connection -Sql (
     'SELECT v.Version, v.MandatoryChargeEntryThresholdPercent AS Entry, v.MinimumPostTaskBatteryMarginPercent AS Margin, ' +
     'v.EstimatedTaskConsumptionPercent AS Estimate FROM ChargingPolicyActivations x ' +
-    'JOIN ChargingPolicyVersions v ON v.Version = x.Version ORDER BY x.Sequence DESC LIMIT 1'))
+    'JOIN ChargingPolicyVersions v ON v.Version = x.Version ORDER BY x.Sequence DESC LIMIT 1')
 $assertions.Add(
     'L2-MCT-00',
     '前置：最后一次激活的是场景导入的那一版（强制充电线 30、余量 20、每趟估计 0）',
@@ -114,7 +114,7 @@ $null = $mes.Command('Put', "demands/$($demandGuid.ToString('N'))", @{
 $reason = Wait-L2ConditionOrLast -Description 'the dispatch chain wrote its verdict on the demand' `
     -Journal $journal -Criterion 'backlog-reason' -TimeoutSeconds 60 `
     -Probe {
-        $rows = @(Invoke-L2Query -Connection $connection -Sql "SELECT ReasonCode FROM JourneyBacklog WHERE DemandId = '$demandId'")
+        $rows = Invoke-L2Query -Connection $connection -Sql "SELECT ReasonCode FROM JourneyBacklog WHERE DemandId = '$demandId'"
         if ($rows.Count -eq 0) { return $null }
         return [string]$rows[0].ReasonCode
     } `

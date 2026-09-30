@@ -54,11 +54,11 @@ function Get-OrdersOf([string]$vehicleKey) {
 
 # --- 0. 前置：策略只覆盖 A ------------------------------------------------------------------------------
 
-$policyRows = @(Invoke-L2Query -Connection $connection -Sql (
+$policyRows = Invoke-L2Query -Connection $connection -Sql (
     'SELECT v.Version, s.VehicleKey, a.Source FROM ChargingPolicyVersions v ' +
     'JOIN ChargingPolicyActivations x ON x.Version = v.Version ' +
     'JOIN ChargingPolicyApprovals a ON a.Version = v.Version ' +
-    'LEFT JOIN ChargingPolicyVehicleScopes s ON s.Version = v.Version'))
+    'LEFT JOIN ChargingPolicyVehicleScopes s ON s.Version = v.Version')
 $assertions.Add(
     'L2-CPM-00',
     '前置：唯一一版已激活的策略经 FieldOps 导入、以 L2_PRESET 批准，适用范围只有 A',
@@ -85,8 +85,8 @@ $null = $mes.Command('Put', "demands/$($demandGuid.ToString('N'))", @{
 $journey = Wait-L2Condition -Description 'a vehicle took the demand and set off to its pickup' `
     -Journal $journal -Criterion 'journey-accepted' -TimeoutSeconds 120 `
     -Probe {
-        $rows = @(Invoke-L2Query -Connection $connection -Sql (
-            "SELECT JourneyId, AgvId, VehicleKey, Stage, PickupUpperId FROM JourneyRuntimes WHERE DemandId = '$demandId'"))
+        $rows = Invoke-L2Query -Connection $connection -Sql (
+            "SELECT JourneyId, AgvId, VehicleKey, Stage, PickupUpperId FROM JourneyRuntimes WHERE DemandId = '$demandId'")
         if ($rows.Count -eq 0) { return $null }
         return $rows[0]
     } `
@@ -116,8 +116,8 @@ $assertions.Add(
 $pickup = Wait-L2ConditionOrLast -Description "A's pickup order is confirmed" `
     -Journal $journal -Criterion 'covered-vehicle-pickup-confirmed' -TimeoutSeconds 60 `
     -Probe {
-        $rows = @(Invoke-L2Query -Connection $connection -Sql (
-            "SELECT Status, VehicleKey FROM OrderIntents WHERE UpperId = '$([string]$journey.PickupUpperId)'"))
+        $rows = Invoke-L2Query -Connection $connection -Sql (
+            "SELECT Status, VehicleKey FROM OrderIntents WHERE UpperId = '$([string]$journey.PickupUpperId)'")
         if ($rows.Count -eq 0) { return $null }
         return $rows[0]
     } `

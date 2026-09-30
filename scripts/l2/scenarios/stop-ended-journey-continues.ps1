@@ -89,8 +89,8 @@ $null = Wait-L2Condition -Description 'demand A was loaded' -Journal $journal -C
 # 第二个取货站上没人扫码：录入请求挂着，到迟到那一步才答。
 $null = $onboard.Command('Put', 'policy', @{ sublot = 'Manual' })
 $bStop = Move-L2CargoVehicleToCurrentStop $Context $journeyId 11
-$bStopRow = @(Invoke-L2Query -Connection $connection -Sql (
-        "SELECT StationId, OperationSessionId FROM JourneyStops WHERE StopId = '$($bStop.StopId)'"))
+$bStopRow = Invoke-L2Query -Connection $connection -Sql (
+        "SELECT StationId, OperationSessionId FROM JourneyStops WHERE StopId = '$($bStop.StopId)'")
 $bStationId = [string]$bStopRow[0].StationId
 # 挂起列表只有键与类型、不带载荷；录入请求的键是 sublot:{作业会话}:{清单号}，按这一站的作业会话认。
 $bKeyPrefix = "sublot:$([string]$bStopRow[0].OperationSessionId):"
@@ -193,8 +193,8 @@ $assertions.Add(
 # --- 5. 车离站到关卡：号在空清单之上，全程没有两版同号 ---------------------------------------------------------
 
 $null = Move-L2CargoVehicleToCurrentStop $Context $journeyId $Context.GateStationRiotId
-$gateStopRow = @(Invoke-L2Query -Connection $connection -Sql (
-        "SELECT StationId FROM JourneyStops WHERE JourneyId = '$journeyId' AND StationRiotId = $($Context.GateStationRiotId)"))
+$gateStopRow = Invoke-L2Query -Connection $connection -Sql (
+        "SELECT StationId FROM JourneyStops WHERE JourneyId = '$journeyId' AND StationRiotId = $($Context.GateStationRiotId)")
 $gateStationId = [string]$gateStopRow[0].StationId
 $atGate = Wait-L2ConditionOrLast -Description 'the gate worklist went out' -Journal $journal -Criterion 'gate-worklist' `
     -TimeoutSeconds 60 `

@@ -253,9 +253,9 @@ $assertions.Add(
     "ALL_EMPTY / 0 条逐仓结果 / 0 条进度 / $slotsBefore",
     "$([string]$cancellationResult.Payload.overallOutcome) / $($slotResults.Count) 条逐仓结果 / $progress 条进度 / $slotsAfter")
 
-$workflow = @(Invoke-L2Query -Connection $connection `
-        -Sql "SELECT WorkflowType, State, SlotOperationAttemptId, SlotsJson, ResultMessageId FROM RecoveryWorkflows WHERE WorkflowId = '$cancellationId'")
-$lease = @(Invoke-L2Query -Connection $connection -Sql "SELECT r.ReleasedAt FROM VehiclePurposeClaimRecords AS r JOIN JourneyDemands AS d ON d.JourneyId = r.JourneyId WHERE d.DemandId = '$demandId' ORDER BY r.AcquiredAt DESC LIMIT 1")
+$workflow = Invoke-L2Query -Connection $connection `
+        -Sql "SELECT WorkflowType, State, SlotOperationAttemptId, SlotsJson, ResultMessageId FROM RecoveryWorkflows WHERE WorkflowId = '$cancellationId'"
+$lease = Invoke-L2Query -Connection $connection -Sql "SELECT r.ReleasedAt FROM VehiclePurposeClaimRecords AS r JOIN JourneyDemands AS d ON d.JourneyId = r.JourneyId WHERE d.DemandId = '$demandId' ORDER BY r.AcquiredAt DESC LIMIT 1"
 $releasedAt = if ($lease.Count -eq 1 -and (Test-Present $lease[0].ReleasedAt)) { ConvertTo-Instant $lease[0].ReleasedAt } else { $null }
 $demandStatus = Get-Scalar "SELECT Status AS Value FROM AcceptedDemands WHERE DemandId = '$demandId'"
 $blockReason = Get-Scalar "SELECT BlockReasonCode AS Value FROM JourneyRuntimes WHERE DemandId = '$demandId'"
@@ -275,8 +275,8 @@ $assertions.Add(
 
 $operations = Get-Count "SELECT COUNT(*) AS Total FROM StationOperations WHERE DemandId = '$demandId'"
 $commands = Get-Count "SELECT COUNT(*) AS Total FROM ProtocolOutbox WHERE MessageType = 'SlotOperationCommand'"
-$entryRequest = @(Invoke-L2Query -Connection $connection `
-        -Sql "SELECT AcknowledgedAt FROM ProtocolOutbox WHERE MessageId = '$($waiting.SublotRequestMessageId)'")
+$entryRequest = Invoke-L2Query -Connection $connection `
+        -Sql "SELECT AcknowledgedAt FROM ProtocolOutbox WHERE MessageId = '$($waiting.SublotRequestMessageId)'"
 $submissions = Get-Count "SELECT COUNT(*) AS Total FROM ProtocolInbox WHERE MessageType = 'SublotSubmitted'"
 $toGate = Get-Count "SELECT COUNT(*) AS Total FROM OrderIntents WHERE DemandId = '$demandId' AND Purpose = 'TO_GATE'"
 $recoveryRequired = Get-Count "SELECT COUNT(*) AS Total FROM StationOperations WHERE Status = 'RecoveryRequired'"

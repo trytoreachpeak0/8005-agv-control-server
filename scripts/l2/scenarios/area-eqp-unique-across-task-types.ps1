@@ -47,7 +47,7 @@ function Publish-Demand([object]$demand, [string]$workType, [string]$area, [stri
 }
 
 function Get-Backlog([string]$demandId) {
-    $rows = @(Invoke-L2Query -Connection $connection -Sql "SELECT ReasonCode, AcceptedAt FROM JourneyBacklog WHERE DemandId = '$demandId'")
+    $rows = Invoke-L2Query -Connection $connection -Sql "SELECT ReasonCode, AcceptedAt FROM JourneyBacklog WHERE DemandId = '$demandId'"
     if ($rows.Count -eq 0) { return $null }
     return $rows[0]
 }
@@ -65,14 +65,14 @@ SELECT (SELECT COUNT(*) FROM AcceptedDemands WHERE DemandId = '$demandId')
 }
 
 function Get-Stage([string]$demandId) {
-    $rows = @(Invoke-L2Query -Connection $connection -Sql "SELECT Stage FROM JourneyRuntimes WHERE DemandId = '$demandId'")
+    $rows = Invoke-L2Query -Connection $connection -Sql "SELECT Stage FROM JourneyRuntimes WHERE DemandId = '$demandId'"
     if ($rows.Count -eq 0) { return $null }
     return [string]$rows[0].Stage
 }
 
 function Get-Intent([string]$demandId, [string]$purpose) {
-    $rows = @(Invoke-L2Query -Connection $connection `
-        -Sql "SELECT UpperId, OrderId, Status, DestinationStationId FROM OrderIntents WHERE DemandId = '$demandId' AND Purpose = '$purpose'")
+    $rows = Invoke-L2Query -Connection $connection `
+        -Sql "SELECT UpperId, OrderId, Status, DestinationStationId FROM OrderIntents WHERE DemandId = '$demandId' AND Purpose = '$purpose'"
     if ($rows.Count -eq 0) { return $null }
     return $rows[0]
 }

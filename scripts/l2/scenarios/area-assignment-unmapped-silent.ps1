@@ -58,7 +58,7 @@ function Publish-Demand([object]$demand, [string]$area, [string]$eqp) {
 }
 
 function Get-Backlog([string]$demandId) {
-    $rows = @(Invoke-L2Query -Connection $connection -Sql "SELECT ReasonCode, AcceptedAt FROM JourneyBacklog WHERE DemandId = '$demandId'")
+    $rows = Invoke-L2Query -Connection $connection -Sql "SELECT ReasonCode, AcceptedAt FROM JourneyBacklog WHERE DemandId = '$demandId'"
     if ($rows.Count -eq 0) { return $null }
     return $rows[0]
 }
@@ -151,12 +151,12 @@ Publish-Demand $mapped 'N1-3' 'EQP-L2-N13'
 $stage = Wait-L2Condition -Description 'the N1-3 demand was accepted and dispatched to the pickup station' `
     -Journal $journal -Criterion 'journey-stage' -TimeoutSeconds 90 `
     -Probe {
-        $rows = @(Invoke-L2Query -Connection $connection -Sql "SELECT Stage FROM JourneyRuntimes WHERE DemandId = '$($mapped.Id)'")
+        $rows = Invoke-L2Query -Connection $connection -Sql "SELECT Stage FROM JourneyRuntimes WHERE DemandId = '$($mapped.Id)'"
         if ($rows.Count -eq 0) { $null } else { [string]$rows[0].Stage }
     } `
     -Until { param($v) $v -eq 'AwaitingPickupArrival' }
 
-$freeze = @(Invoke-L2Query -Connection $connection -Sql @"
+$freeze = Invoke-L2Query -Connection $connection -Sql @"
 SELECT b.FrozenVersion AS FrozenVersion, b.SnapshotId AS FrozenSnapshotId, v.SnapshotId AS VersionSnapshotId,
        (SELECT MAX(Version) FROM DispatchZoneAreaAssignmentVersions) AS CurrentVersion,
        r.DispatchZone AS DispatchZone
@@ -164,7 +164,7 @@ FROM ConfigurationConsumerBindings b
 JOIN DispatchZoneAreaAssignmentVersions v ON v.Version = b.FrozenVersion
 JOIN JourneyRuntimes r ON r.DemandId = b.ConsumerId
 WHERE b.ConsumerKind = 'TransportDemand' AND b.ObjectKind = 'DispatchZoneAreaAssignment' AND b.ConsumerId = '$($mapped.Id)'
-"@)
+"@
 $assertions.Add(
     'L2-AAU-04', 'N1-3 正常受理：冻结行的版本等于当前版本、快照是那一版的快照，路线调度区取自表',
     ($stage -eq 'AwaitingPickupArrival' -and $freeze.Count -eq 1 -and
