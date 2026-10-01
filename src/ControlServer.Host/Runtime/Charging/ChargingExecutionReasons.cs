@@ -102,6 +102,27 @@ public static class ChargingExecutionReasons
     /// </summary>
     public const string ReservationLostAtArrival = "CHARGING_RESERVATION_LOST_AT_ARRIVAL";
 
+    /// <summary>
+    /// 充电单已是终态 <c>SUCCESS</c>，车辆那一半的到桩证据却一直不成立（车读到在别的站、读不到当前站、没停稳）：周期保持 <c>EN_ROUTE</c>、预占保持，
+    /// 没有超时分支；持续超过 <c>JourneyRuntime:OwnOrderRebuildRepeatWindow</c> 告警一次（独立审查 M1）。证据成立时清掉。
+    /// </summary>
+    public const string ArrivalNotProven = "CHARGING_ARRIVAL_NOT_PROVEN";
+
+    /// <summary>
+    /// 已确认的充电单在到桩之前对 RIoT 答「查无此单」（真实形态 HTTP 200 不带 result，或 404），车也不在桩上充电：用途、预占、周期都保持，不建单、
+    /// 不发命令；持续超过 <c>JourneyRuntime:OwnOrderRebuildRepeatWindow</c> 告警一次（独立审查 M1）。单重新读到时清掉。
+    /// </summary>
+    public const string OrderNotFound = "CHARGING_ORDER_NOT_FOUND";
+
+    /// <summary>
+    /// 充满之后一直留在桩上的车电量又掉到强制充电线以下（独立审查 S6）：它持有的这一轮以这个原因收尾，桩随之释放、同一轮按正常分配链在原桩上重新充电。
+    /// 不是失败。
+    /// </summary>
+    public const string RechargedOnHeldCharger = "CHARGING_RECHARGED_ON_HELD_CHARGER";
+
+    /// <summary>桩占用的释放原因：充满的车没离开、又需要充电，同一个桩交给它的下一轮（独立审查 S6）。</summary>
+    public const string ChargerReleasedForRecharge = "CHARGER_RELEASED_FOR_RECHARGE";
+
     /// <summary>到桩之后那一段自己写、也由它自己清掉的码：单 <c>SUCCESS</c> 那一支不替它们清。</summary>
     public static IReadOnlySet<string> AtChargerCodes { get; } = new HashSet<string>(StringComparer.Ordinal)
     {

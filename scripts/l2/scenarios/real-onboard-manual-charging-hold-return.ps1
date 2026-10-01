@@ -13,10 +13,11 @@ cs#404 让服务端在名册为空时置人工充电等待（ROSTER_EMPTY）、�
 判据：
 - L2-RMH-01：电量压到 20：服务端置等待（ROSTER_EMPTY），manualChargingHold=true 的业务状态被真车载端确认，界面充电那一格的文字写
   「需人工充电：服务端保持」。
-- L2-RMH-02：电量回到 80（有人在现场充过电）：之后十秒里等待仍在、界面仍写着它——电量回升本身不解除（NEVER_CLEAR_HOLD_LOCALLY 的服务端一半）。
+- L2-RMH-02：电量回到 80（有人在现场充过电），并发一条需求：之后十秒里等待仍在、界面仍写着它、那条需求没有派给它——电量回升本身不解除
+  （NEVER_CLEAR_HOLD_LOCALLY 的服务端一半），等待期间不派单（独立审查 S7）。
 - L2-RMH-03：管理员点「充电后返回服务」并确认：服务端受理（RETURNED_TO_ELIGIBILITY_EVALUATION），同一次保存删掉等待、经过上写解除时刻与请求号；
   manualChargingHold=false 的业务状态被确认，界面不再写等待。
-- L2-RMH-04：解除之后车重新可派：一条需求派给它，开往取货站的单已确认。
+- L2-RMH-04：解除之后车重新可派：等待期间那条需求派给它，开往取货站的单已确认。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
@@ -99,15 +100,27 @@ if ($held -ne 'ROSTER_EMPTY | True | True') {
 # --- 2. 电量回升不解除 ----------------------------------------------------------------------------------------
 
 Set-Battery 80
-$stillHeld = Wait-L2ConditionOrLast -Description 'the hold was lifted by the battery coming back (it must not)' `
+# Independent review S7: a demand is waiting while the hold is on, and it is not taken -- the hold, not an empty catalogue, is
+# what keeps the vehicle from work. The same demand is the one L2-RMH-04 sees taken once the hold is lifted.
+$guid = [guid]::NewGuid()
+$journal.Note("Publishing demand $($guid.ToString('N')) while the hold is on.")
+$null = $mes.Command('Put', "demands/$($guid.ToString('N'))", @{
+    sublot = "L2-RMH-$($Context.RunId)"; area = 'N1-3'; eqp = 'EQP-L2-01'; package = 'L2-PACKAGE'; maxBoxCount = 4
+})
+function Get-DemandIntents {
+    $row = Read-L2SingleRow -Connection $connection -Sql (
+        "SELECT COUNT(*) AS N FROM OrderIntents WHERE DemandId = '$($guid.ToString('D'))'")
+    return [int]$row.N
+}
+$stillHeld = Wait-L2ConditionOrLast -Description 'the hold was lifted by the battery coming back, or the demand was taken (neither may be)' `
     -Journal $journal -Criterion 'hold-kept-after-battery' -TimeoutSeconds 10 `
-    -Probe { "$(Get-Hold) | $([string](Get-ChargingText) -like "*$holdText*")" } `
-    -Until { param($v) $v -ne 'ROSTER_EMPTY | True' }
+    -Probe { "$(Get-Hold) | $([string](Get-ChargingText) -like "*$holdText*") | intents $(Get-DemandIntents)" } `
+    -Until { param($v) $v -ne 'ROSTER_EMPTY | True | intents 0' }
 $assertions.Add(
     'L2-RMH-02',
-    '电量回到 80 之后十秒里，服务端的等待仍在、界面仍写着「需人工充电：服务端保持」：电量回升本身不解除',
-    ($stillHeld -eq 'ROSTER_EMPTY | True'),
-    'ROSTER_EMPTY | True',
+    '电量回到 80、并有一条需求在等之后十秒里，服务端的等待仍在、界面仍写着「需人工充电：服务端保持」，那条需求没有派给它（没有任何订单意图）：电量回升本身不解除，等待期间不派单',
+    ($stillHeld -eq 'ROSTER_EMPTY | True | intents 0'),
+    'ROSTER_EMPTY | True | intents 0',
     $stillHeld)
 
 # --- 3. 管理员点「充电后返回服务」：解除 -------------------------------------------------------------------------
@@ -146,11 +159,6 @@ $assertions.Add(
 
 # --- 4. 解除之后车重新可派 ---------------------------------------------------------------------------------------
 
-$guid = [guid]::NewGuid()
-$journal.Note("Publishing demand $($guid.ToString('N')).")
-$null = $mes.Command('Put', "demands/$($guid.ToString('N'))", @{
-    sublot = "L2-RMH-$($Context.RunId)"; area = 'N1-3'; eqp = 'EQP-L2-01'; package = 'L2-PACKAGE'; maxBoxCount = 4
-})
 $pickup = Wait-L2ConditionOrLast -Description 'the vehicle took the demand after the hold was lifted' -Journal $journal `
     -Criterion 'dispatched-after-return' -TimeoutSeconds 90 `
     -Probe {
@@ -160,7 +168,7 @@ $pickup = Wait-L2ConditionOrLast -Description 'the vehicle took the demand after
     -Until { param($v) $null -ne $v -and [string]$v.Status -eq 'CONFIRMED' }
 $assertions.Add(
     'L2-RMH-04',
-    '解除之后车重新可派：一条需求派给这辆车，开往取货站的单已确认',
+    '解除之后车重新可派：等待期间没派出去的那条需求派给了这辆车，开往取货站的单已确认',
     ([string]${pickup}?.Status -eq 'CONFIRMED' -and [string]${pickup}?.VehicleKey -eq $vehicleKey),
     "CONFIRMED $vehicleKey",
     "$(${pickup}?.Status) $(${pickup}?.VehicleKey)")
