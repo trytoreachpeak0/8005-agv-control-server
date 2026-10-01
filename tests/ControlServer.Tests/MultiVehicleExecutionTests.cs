@@ -1378,7 +1378,7 @@ public sealed partial class MultiVehicleExecutionTests
                 options,
                 Clock,
                 EngineLog,
-                _idleReturn?.Invoke(this) ?? IdleReturnTestKit.Create(Context, Options, Clock, chargingPolicy: ChargingPolicy),
+                _idleReturn?.Invoke(this) ?? IdleReturnTestKit.Create(Context, Options, Clock, board: IdleReturnBoard, chargingPolicy: ChargingPolicy),
                 ChargingPolicy,
                 ChargingTestKit.Create(
                     Context, Options, Clock, Riot, Peer, Riot, Riot, RouteGraph(), ChargingBoard, ChargingLog));

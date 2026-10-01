@@ -29,7 +29,7 @@ namespace ControlServer.Tests;
 /// </para>
 /// </remarks>
 [Trait("IntegrationSlice", "FP-IS-12")]
-public sealed class IdleReturnExecutionTests
+public sealed partial class IdleReturnExecutionTests
 {
     private const string Vector = "CV-WAITING-POINT-IDLE-RETURN";
     private const int Map = 25;
@@ -1307,7 +1307,8 @@ public sealed class IdleReturnExecutionTests
         DbCommandInterceptor? commands = null)
     {
         FleetFixture fleet = await FleetFixture.CreateAsync(
-            configure: options => options.Fleet = options.Fleet[..vehicles], withRouteGraph: true, commands: commands);
+            configure: options => options.Fleet = options.Fleet[..vehicles], withRouteGraph: true,
+            commands: RecordIdleReturnCodes(commands));
         await fleet.ReplaceRouteGraphAsync(Edges(), Stations());
         await fleet.EnableIdleReturnAsync(points ?? [Near]);
         fleet.Catalog.Set([]);
