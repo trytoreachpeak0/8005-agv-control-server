@@ -16,6 +16,12 @@ public enum SessionReadiness
 
 public sealed record SessionReadinessDecision(SessionReadiness Readiness, string ReasonCode);
 
+/// <summary>
+/// One entry of a RecoveryStateReport's pendingResults: the result's messageId and the business content hash
+/// (its <c>resultContentSha256</c>) the vehicle holds for it.
+/// </summary>
+public sealed record ReportedPendingResult(string MessageId, string ContentSha256);
+
 public sealed record StationOperationPlan(
     string SlotOperationAttemptId,
     string DemandId,
