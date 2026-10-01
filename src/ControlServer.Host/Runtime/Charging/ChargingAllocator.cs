@@ -835,7 +835,17 @@ public sealed class ChargingAllocator(
     /// 别的车也分不到（占用判法读到它停在上面）。否则什么也不动，答假。
     /// </summary>
     /// <remarks>
+    /// <para>
     /// 调用方已经判过「需要强制充电」：报 <c>CHARGING</c> 的车不进这里，桩上还在充着的车不会被收尾。没有离桩，所以不记离桩时刻。
+    /// </para>
+    /// <para>
+    /// <b>先放桩、后重新承诺，中间有一个空窗</b>（增量审查 S-c）：这里提交之后，同一轮的 <see cref="SelectAndCommitAsync"/> 才为这辆车重新承诺。
+    /// 那一步可能不成（安全门没过、路网不可用、预占那一条写失败……），那一轮结束时这个桩在本服务端没有独占行，车却还停在上面。
+    /// 兜住它的是占用判法，不是独占行：<see cref="ChargerOccupancySnapshot.Judge"/> 读到有车停在桩上，对别的车答
+    /// <c>CHARGER_OCCUPIED_BY_VEHICLE</c>，只对停在上面的这辆车不算占用——所以同一轮里排在队里的别的车分不到它，下一轮这辆车按正常链重新预占。
+    /// 用例 <c>WhenTheRechargeCommitmentFailsTheChargerLeftWithoutARowStillGoesToNobodyElseAndIsRetakenNextRound</c> 钉住这一点。
+    /// 车读不到时这个兜底不成立，但车读不到也到不了这里：资格判定读的就是它这一轮的读数。
+    /// </para>
     /// </remarks>
     private async Task<bool> HandOverForRechargeAsync(
         StationExclusivity claim,

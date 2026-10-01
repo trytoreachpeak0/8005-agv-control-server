@@ -112,15 +112,24 @@ function Get-DemandIntents {
         "SELECT COUNT(*) AS N FROM OrderIntents WHERE DemandId = '$($guid.ToString('D'))'")
     return [int]$row.N
 }
+function Get-DemandAccepted {
+    $row = Read-L2SingleRow -Connection $connection -Sql (
+        "SELECT COUNT(*) AS N FROM AcceptedDemands WHERE DemandId = '$($guid.ToString('D'))'")
+    return [int]$row.N
+}
+# Incremental review S-f: the not-taken window starts only once the demand is on the server; a window that ran while the demand
+# was still on its way would prove nothing.
+$null = Wait-L2ConditionOrLast -Description 'the demand reached the server' -Journal $journal -Criterion 'demand-accepted' `
+    -TimeoutSeconds 60 -Probe { Get-DemandAccepted } -Until { param($v) $v -eq 1 }
 $stillHeld = Wait-L2ConditionOrLast -Description 'the hold was lifted by the battery coming back, or the demand was taken (neither may be)' `
     -Journal $journal -Criterion 'hold-kept-after-battery' -TimeoutSeconds 10 `
-    -Probe { "$(Get-Hold) | $([string](Get-ChargingText) -like "*$holdText*") | intents $(Get-DemandIntents)" } `
-    -Until { param($v) $v -ne 'ROSTER_EMPTY | True | intents 0' }
+    -Probe { "$(Get-Hold) | $([string](Get-ChargingText) -like "*$holdText*") | accepted $(Get-DemandAccepted) | intents $(Get-DemandIntents)" } `
+    -Until { param($v) $v -ne 'ROSTER_EMPTY | True | accepted 1 | intents 0' }
 $assertions.Add(
     'L2-RMH-02',
-    '电量回到 80、并有一条需求在等之后十秒里，服务端的等待仍在、界面仍写着「需人工充电：服务端保持」，那条需求没有派给它（没有任何订单意图）：电量回升本身不解除，等待期间不派单',
-    ($stillHeld -eq 'ROSTER_EMPTY | True | intents 0'),
-    'ROSTER_EMPTY | True | intents 0',
+    '电量回到 80、一条需求已到服务端（AcceptedDemands 里有它）之后十秒里，服务端的等待仍在、界面仍写着「需人工充电：服务端保持」，那条需求没有派给它（没有任何订单意图）：电量回升本身不解除，等待期间不派单',
+    ($stillHeld -eq 'ROSTER_EMPTY | True | accepted 1 | intents 0'),
+    'ROSTER_EMPTY | True | accepted 1 | intents 0',
     $stillHeld)
 
 # --- 3. 管理员点「充电后返回服务」：解除 -------------------------------------------------------------------------

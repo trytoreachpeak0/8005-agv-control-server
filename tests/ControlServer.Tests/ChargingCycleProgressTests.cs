@@ -1241,6 +1241,117 @@ public sealed class ChargingCycleProgressTests
         Assert.Equal((ChargingCyclePhases.Ended, ChargingExecutionReasons.Departed), (ended.Phase, ended.EndReason));
     }
 
+    // ---- 增量审查 S-a、S-b、S-c ----------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// 单据丢失时的到桩只认「停稳在这个桩上」的车（增量审查 S-a）：单取消或查无此单，车报 <c>CHARGING</c>，却停在另一个桩 221、或者在 211 上还在动，
+    /// 都不算到桩——不转占用、不进 <c>CHARGING</c>、不记到桩时刻、没有 2263。查无此单与车在动时周期仍是 <c>EN_ROUTE</c>；取消而车在 221 停稳，
+    /// 按 control-server#404 的原路收尾成已确认失败，那是正确的那条路，这里只断它没被认作到桩。
+    /// </summary>
+    [Theory]
+    [InlineData("real-absent", "at-221")]
+    [InlineData("real-absent", "moving")]
+    [InlineData("cancelled", "at-221")]
+    [InlineData("cancelled", "moving")]
+    public async Task AChargeOrderGoneWithTheVehicleChargingElsewhereOrMovingIsNotTakenAsArrived(string shape, string where)
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        JourneyRuntimeRow journey = await EnRouteAsync(fleet);
+        OrderGone(fleet, journey.PickupUpperId, shape);
+        fleet.Riot.BatteryByVehicle[KeyA] = 40;
+        fleet.Riot.VehicleOverrides[KeyA] = seen => where == "at-221"
+            ? seen with { CurrentStationId = Far.StationId, BatteryState = Charging }
+            : seen with { CurrentStationId = Near.StationId, BatteryState = Charging, Speed = 300, ProcState = "RUNNING" };
+
+        for (int minute = 0; minute < 20; minute++)
+        {
+            await fleet.HearFromEveryVehicleAsync();
+            await fleet.RunRoundAsync(TimeSpan.FromMinutes(1));
+        }
+
+        ChargingCycleRow cycle = await CycleAsync(fleet, KeyA);
+        Assert.Null(cycle.ArrivedAt);
+        Assert.NotEqual(ChargingCycleWireStates.Charging, cycle.WireState);
+        Assert.DoesNotContain(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2263);
+        Assert.NotEqual(StationExclusivityStates.Occupied, (await StationAsync(fleet, Near.StationId))?.State);
+        if (shape == "real-absent" || where == "moving")
+        {
+            Assert.Equal((ChargingCyclePhases.Active, ChargingCycleWireStates.EnRoute), (cycle.Phase, cycle.WireState));
+            Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
+        }
+        Assert.Single(fleet.Riot.Creates);
+        Assert.Empty(fleet.Riot.OrderCommands);
+    }
+
+    /// <summary>
+    /// 车卡上的当前地图不是这一趟的地图，站号对上了也不认到桩（增量审查 S-b：去掉地图那一项原先全绿）：单 <c>SUCCESS</c>、车报在 211 上 <c>CHARGING</c>，
+    /// 周期仍 <c>EN_ROUTE</c>、预占不转占用，写 <c>CHARGING_ARRIVAL_NOT_PROVEN</c>。
+    /// </summary>
+    [Fact]
+    public async Task AVehicleReadOnAnotherMapIsNotTakenAsArrivedAtTheCharger()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        JourneyRuntimeRow journey = await EnRouteAsync(fleet);
+        fleet.Riot.CompleteOrder(journey.PickupUpperId);
+        fleet.Riot.BatteryByVehicle[KeyA] = 40;
+        fleet.Riot.VehicleOverrides[KeyA] = seen => seen with
+        {
+            CurrentStationId = Near.StationId,
+            CurrentMap = "老厂前线new_other",
+            BatteryState = Charging,
+        };
+
+        for (int round = 0; round < 3; round++)
+        {
+            await RoundAsync(fleet);
+        }
+
+        ChargingCycleRow cycle = await CycleAsync(fleet, KeyA);
+        Assert.Equal((ChargingCycleWireStates.EnRoute, (DateTimeOffset?)null), (cycle.WireState, cycle.ArrivedAt));
+        Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
+        Assert.Equal(ChargingExecutionReasons.ArrivalNotProven, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+    }
+
+    /// <summary>
+    /// 原桩重充是「先放桩、再按正常链重新承诺」（独立审查 S6）。重新承诺在那一轮失败时（这里注入预占那一条插入失败），211 在本服务端没有独占行，
+    /// A 却停在上面——这个空窗靠分配的占用判法兜住：它读到 A 停在 211，所以同一轮里排在队里的 B 分不到 211（增量审查 S-c）。下一轮 A 重新预占 211。
+    /// </summary>
+    [Fact]
+    public async Task WhenTheRechargeCommitmentFailsTheChargerLeftWithoutARowStillGoesToNobodyElseAndIsRetakenNextRound()
+    {
+        FailingInsert crash = new("INSERT INTO \"StationExclusivities\"");
+        await using FleetFixture fleet = await FleetAsync(vehicles: 2, commands: crash);
+        JourneyRuntimeRow first = await CompletedAsync(fleet);
+        AtCharger(fleet, KeyA, 80, NotCharging);
+        for (int round = 0; round < 3; round++)
+        {
+            await RoundAsync(fleet);
+        }
+
+        AtCharger(fleet, KeyA, 20, NotCharging);
+        fleet.Riot.BatteryByVehicle[KeyB] = 15;
+        crash.Armed = true;
+        await Record.ExceptionAsync(() => RoundAsync(fleet));
+
+        Assert.Equal(1, crash.Fired);
+        fleet.Context.ChangeTracker.Clear();
+        Assert.Null(await StationAsync(fleet, Near.StationId));
+        ChargingCycleRow old = await fleet.Context.Set<ChargingCycleRow>().AsNoTracking()
+            .SingleAsync(row => row.JourneyId == first.JourneyId, Token);
+        Assert.Equal(ChargingExecutionReasons.RechargedOnHeldCharger, old.EndReason);
+        Assert.Null(await ClaimOfAsync(fleet, KeyB));
+        (string Reason, string Detail) b = fleet.ChargingBoard.Verdicts[AgvB];
+        Assert.Equal(ChargingAllocationReasons.NoChargerAvailable, b.Reason);
+        Assert.Contains($"{Near.StationId}={ChargingAllocationReasons.ChargerOccupiedByVehicle}", b.Detail, StringComparison.Ordinal);
+
+        await RoundAsync(fleet);
+
+        StationExclusivityRow retaken = (await StationAsync(fleet, Near.StationId))!;
+        Assert.Equal((KeyA, StationExclusivityStates.Reserved), (retaken.VehicleKey, retaken.State));
+        Assert.NotEqual(first.JourneyId, retaken.JourneyId);
+        Assert.Null(await ClaimOfAsync(fleet, KeyB));
+    }
+
     // ---- 夹具 ------------------------------------------------------------------------------------------------------------
 
     /// <summary>A 低电、承诺、建单、确认：周期 <c>EN_ROUTE</c>。</summary>
@@ -1298,6 +1409,10 @@ public sealed class ChargingCycleProgressTests
                 break;
             case "not-found-404":
                 fleet.Riot.PutOrder(new RiotOrderObservation(upperId, RiotOrderObservationKind.NotFound, null));
+                break;
+            case "cancelled":
+                fleet.Riot.PutOrder(new RiotOrderObservation(
+                    upperId, RiotOrderObservationKind.Terminal, $"ORDER-{upperId}", RiotOrderState.Cancelled, KeyA, Map, Near.StationId));
                 break;
             case "deleted":
                 fleet.Riot.PutOrder(new RiotOrderObservation(
