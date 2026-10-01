@@ -494,6 +494,75 @@ public sealed class ManualStationClearanceTests : IDisposable
     }
 
     /// <summary>
+    /// 审查 W1（审查员探针 Q5）：重核的另一半是「在充电」。旧单 <c>HANG</c> 时确认；车读在 300（不在原桩）但电池状态 <c>CHARGING</c>，旧单取消：
+    /// 不完成、不放桩，码是 <see cref="ChargingExecutionReasons.ClearanceChargerNotVacant"/>，2274 恰好一次；读到不再充电的那一轮完成。
+    /// </summary>
+    [Fact]
+    public async Task AVehicleOffTheChargerButChargingDoesNotCompleteTheClearance()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        JourneyRuntimeRow journey = await ConfirmedAsync(fleet);
+        MovedOff(fleet);
+        Assert.False((await Clearance(fleet).DecideAsync(Request("00000000-0000-4000-8000-000000000a31"), Token)).StationReleased);
+
+        fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = 300, BatteryState = "CHARGING" };
+        fleet.Riot.CancelOrder(journey.PickupUpperId);
+        await RoundsAsync(fleet, 3);
+
+        Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
+        Assert.Null((await ClearanceRowAsync(fleet)).CompletedAt);
+        Assert.Equal(ChargingExecutionReasons.ClearanceChargerNotVacant, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+        Assert.Single(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2274);
+
+        MovedOff(fleet);
+        await RoundAsync(fleet);
+        Assert.Null(await HolderAsync(fleet, Near.StationId));
+        Assert.NotNull((await ClearanceRowAsync(fleet)).CompletedAt);
+    }
+
+    /// <summary>
+    /// 审查 W3：清桩中旧单被人继续——排队（1）、执行（3）、队列优先（10）——时按下的确认直接拒收（<see cref="ManualStationClearance.NotAllowedInState"/>），
+    /// 什么都不记：引擎只在看到继续的第一轮作废一次确认，之后按下的确认若记下来，会一直留着，只剩完成前的重核兜底。暂停（7）不会让车动，照常记下。
+    /// 旧单之后被取消：被拒的那几种状态下没有确认，桩不放，要再确认一次才完成。
+    /// </summary>
+    [Theory]
+    [InlineData(RiotOrderState.Queueing, false)]
+    [InlineData(RiotOrderState.Executing, false)]
+    [InlineData(RiotOrderState.QueuePriority, false)]
+    [InlineData(RiotOrderState.Paused, true)]
+    public async Task AConfirmationPressedWhileTheOldOrderCanMoveTheVehicleIsRefusedAndNotRecorded(int state, bool recorded)
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        JourneyRuntimeRow journey = await ConfirmedAsync(fleet);
+        MovedOff(fleet);
+        fleet.Riot.PutOrder(fleet.Riot.OrderOf(journey.PickupUpperId)! with { OrderState = state });
+        await RoundAsync(fleet);
+
+        ManualStationClearanceConfirmation decision = await Clearance(fleet)
+            .DecideAsync(Request("00000000-0000-4000-8000-000000000a41"), Token);
+        Assert.Equal(
+            recorded ? (FieldConfirmationDecision.Confirmed, (string?)null, false)
+                : (FieldConfirmationDecision.Rejected, ManualStationClearance.NotAllowedInState, false),
+            (decision.Decision.Outcome, decision.Decision.ProblemReasonCode, decision.StationReleased));
+        StationClearanceRow row = await ClearanceRowAsync(fleet);
+        Assert.Equal(
+            recorded ? ("op-r11", "00000000-0000-4000-8000-000000000a41") : ((string?)null, (string?)null),
+            (row.ConfirmedBy, row.ConfirmationRequestId));
+        Assert.Null(row.CompletedAt);
+
+        fleet.Riot.CancelOrder(journey.PickupUpperId);
+        await RoundAsync(fleet);
+        if (!recorded)
+        {
+            Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
+            Assert.Null((await ClearanceRowAsync(fleet)).CompletedAt);
+            Assert.True((await Clearance(fleet).DecideAsync(Request("00000000-0000-4000-8000-000000000a42"), Token)).StationReleased);
+        }
+        Assert.Null(await HolderAsync(fleet, Near.StationId));
+        Assert.NotNull((await ClearanceRowAsync(fleet)).CompletedAt);
+    }
+
+    /// <summary>
     /// 审查 N4：2273 按次计——旧单被继续（3）告警一次，回到 <c>HANG</c> 之后再被继续又告警一次；两次之间同一次继续看多少轮都只有一次。
     /// </summary>
     [Fact]

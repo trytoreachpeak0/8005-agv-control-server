@@ -71,7 +71,8 @@ public sealed partial class JourneyRuntimeEngine
             "CHARGING_CLEARANCE_CHARGER_NOT_VACANT: vehicle {VehicleKey} (journey {JourneyId}): the charger {StationId} was " +
             "confirmed clear and the old order has ended ({Disposition}), but RIoT reads the vehicle back on the charger or " +
             "charging. The clearance is not completed and the charger is not released until it reads the charger vacant " +
-            "(control-server#406 review N1).");
+            "(control-server#406 review N1). If the vehicle is in fact off the charger and RIoT's position is stale, relocate " +
+            "it in RIoT or power it off.");
 
     private static readonly Action<ILogger, string, string, int, string, Exception?> LogClearingExitUnavailable =
         LoggerMessage.Define<string, string, int, string>(
@@ -334,11 +335,7 @@ public sealed partial class JourneyRuntimeEngine
         if (!ManualStationClearance.Settled(disposition))
         {
             // Review S5: out of HANG into a state that can move the vehicle -- somebody let the order go on in RIoT.
-            bool resumed = order is
-            {
-                Kind: RiotOrderObservationKind.Active,
-                OrderState: RiotOrderState.Queueing or RiotOrderState.Executing or RiotOrderState.QueuePriority,
-            };
+            bool resumed = ManualStationClearance.CanMoveTheVehicle(order);
             if (!resumed)
             {
                 // Review N4: back to HANG (or anything that cannot move it) -- the next resume is a new one, said again.

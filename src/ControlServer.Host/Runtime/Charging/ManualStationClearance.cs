@@ -166,12 +166,13 @@ public sealed class ManualStationClearance(
                 ? null
                 : await FindTargetAsync(request.VehicleKey, cancellationToken).ConfigureAwait(false);
             RiotVehicleObservation? vehicle = await ReadVehicleAsync(request.VehicleKey, cancellationToken).ConfigureAwait(false);
-            string disposition = target is null
-                ? PositionUnknown
-                : await OldOrderDispositionAsync(target.UpperId, cancellationToken).ConfigureAwait(false);
+            RiotOrderObservation? oldOrder = target is null
+                ? null
+                : await ReadOldOrderAsync(target.UpperId, cancellationToken).ConfigureAwait(false);
+            string disposition = oldOrder is null ? PositionUnknown : Disposition(oldOrder, target!.UpperId);
 
             string? role = roles.GrantedRole(request.OperatorId, FieldOperatorRoleRoster.StationClearanceRoles);
-            (string? code, string? field, string? message) = Judge(request, role, target, vehicle, disposition);
+            (string? code, string? field, string? message) = Judge(request, role, target, vehicle, disposition, oldOrder);
             DateTimeOffset now = timeProvider.GetUtcNow();
             bool released = false;
 
@@ -393,26 +394,24 @@ public sealed class ManualStationClearance(
         public ValueTask DisposeAsync() => _own?.DisposeAsync() ?? ValueTask.CompletedTask;
     }
 
-    /// <summary>
-    /// 旧单此刻的处置：<c>CANCELLED</c>、<c>DELETED</c>、<c>SUCCESS</c>、<c>FAILED</c>、<c>ABSENT</c>（查无此单）为已终结；<c>HANG</c>、<c>ACTIVE</c>、
-    /// <c>SUSPENDED</c>、<c>UNKNOWN</c> 不是。
-    /// </summary>
-    public async Task<string> OldOrderDispositionAsync(string upperId, CancellationToken cancellationToken)
+    /// <summary>旧单此刻在 RIoT 里的样子；读不到记 <see cref="RiotOrderObservationKind.Unknown"/>（处置随之是 <see cref="PositionUnknown"/>）。</summary>
+    private async Task<RiotOrderObservation> ReadOldOrderAsync(string upperId, CancellationToken cancellationToken)
     {
-        RiotOrderObservation order;
         try
         {
-            order = await vehicleFacts.ReconcileByUpperIdAsync(upperId, cancellationToken).ConfigureAwait(false);
+            return await vehicleFacts.ReconcileByUpperIdAsync(upperId, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
                                       !cancellationToken.IsCancellationRequested)
         {
-            return PositionUnknown;
+            return new RiotOrderObservation(upperId, RiotOrderObservationKind.Unknown, null);
         }
-        return Disposition(order, upperId);
     }
 
-    /// <inheritdoc cref="OldOrderDispositionAsync"/>
+    /// <summary>
+    /// 旧单此刻的处置：<c>CANCELLED</c>、<c>DELETED</c>、<c>SUCCESS</c>、<c>FAILED</c>、<c>ABSENT</c>（查无此单）为已终结；<c>HANG</c>、<c>ACTIVE</c>、
+    /// <c>SUSPENDED</c>、<c>UNKNOWN</c> 不是。
+    /// </summary>
     public static string Disposition(RiotOrderObservation order, string upperId)
     {
         ArgumentNullException.ThrowIfNull(order);
@@ -440,6 +439,17 @@ public sealed class ManualStationClearance(
             ? ChargingExecutionReasons.UnableToChargeCleared
             : ChargingExecutionReasons.ClearedByOperator;
 
+    /// <summary>
+    /// 旧单离开 <c>HANG</c> 进了会让车动的状态——排队（1）、执行（3）、队列优先（10）：有人在 RIoT 里让它继续了（审查 S5）。暂停（7）、挂起（8）
+    /// 不算。引擎据此告警并作废已记下的确认（审查 N1），人工确认据此拒收（审查 W3）。
+    /// </summary>
+    public static bool CanMoveTheVehicle(RiotOrderObservation? order) =>
+        order is
+        {
+            Kind: RiotOrderObservationKind.Active,
+            OrderState: RiotOrderState.Queueing or RiotOrderState.Executing or RiotOrderState.QueuePriority,
+        };
+
     /// <summary>旧单处置是否已终结（<c>REQ-0178</c>：清桩只在旧单确认终态之后完成释放）。</summary>
     public static bool Settled(string disposition) =>
         disposition is "CANCELLED" or "DELETED" or "SUCCESS" or "FAILED" or "ABSENT";
@@ -465,7 +475,8 @@ public sealed class ManualStationClearance(
         string? role,
         Target? target,
         RiotVehicleObservation? vehicle,
-        string disposition)
+        string disposition,
+        RiotOrderObservation? oldOrder)
     {
         if (role is null)
         {
@@ -493,6 +504,14 @@ public sealed class ManualStationClearance(
         {
             return (NotAllowedInState, "payload.stationId",
                 "RIoT reads the vehicle still on the charger, or charging: the confirmation conflicts with a fresh system fact.");
+        }
+        if (target.CompletedClearance is null && target.Cycle.Phase == ChargingCyclePhases.Clearing && CanMoveTheVehicle(oldOrder))
+        {
+            // Review W3: the engine voids a recorded confirmation once, on the first round it sees the resume; one pressed after
+            // that would stay recorded with the vehicle free to drive back, guarded only by the re-read before completion.
+            return (NotAllowedInState, "payload.stationId",
+                $"The old charge order has been let go on in RIoT (state {oldOrder!.OrderState}) and may drive the vehicle back " +
+                "to the charger; end it in RIoT first, then confirm again.");
         }
         if (target.CompletedClearance is null && target.Cycle.Phase != ChargingCyclePhases.Clearing && !Settled(disposition))
         {
