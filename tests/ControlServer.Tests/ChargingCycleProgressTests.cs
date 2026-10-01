@@ -372,7 +372,27 @@ public sealed class ChargingCycleProgressTests
             plan.GetProperty("legs").EnumerateArray(),
             leg => Assert.NotEqual(JourneyPlanBuilder.ChargerStopPurpose, leg.GetProperty("stopPurposeCategory").GetString()));
         Assert.Equal("BUSINESS", plan.GetProperty("legs")[0].GetProperty("stopPurposeCategory").GetString());
-        Assert.NotNull(transport);
+
+        // Taken off the charger and at the pickup, the entry opens: the journey waits for the sublot, and the plan the
+        // vehicle is sent has its business leg ARRIVED at the pickup N1-1 (RIoT station 12) -- nothing of the charging cycle stands in the way.
+        fleet.Riot.CompleteOrder(transport.PickupUpperId);
+        fleet.Riot.BatteryByVehicle[KeyA] = 80;
+        fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = 12, BatteryState = NotCharging };
+        for (int round = 0; round < 3; round++)
+        {
+            await fleet.HearFromEveryVehicleAsync();
+            await RoundAsync(fleet);
+        }
+
+        Assert.Equal(
+            JourneyRuntimeStage.AwaitingSublot,
+            (await fleet.Context.JourneyRuntimes.AsNoTracking()
+                .SingleAsync(row => row.JourneyId == transport.JourneyId, Token)).Stage);
+        JsonElement atPickup = (await PayloadsAsync(fleet, AgvA, "UpcomingStopPlanSnapshot"))[^1].GetProperty("legs")[0];
+        Assert.Equal(
+            ("BUSINESS", "ARRIVED", "N1-1"),
+            (atPickup.GetProperty("stopPurposeCategory").GetString(), atPickup.GetProperty("state").GetString(),
+                atPickup.GetProperty("stationId").GetString()));
     }
 
     /// <summary>已 <c>COMPLETE</c>、仍报 <c>CHARGING</c>、没有搬运可接的车，空闲返回照常选中它（#389、#390），去等待点就是离桩。</summary>
