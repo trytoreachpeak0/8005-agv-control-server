@@ -266,6 +266,25 @@ public sealed class ChargingAllocationTests
             fleet.ChargingBoard.Verdicts[AgvA].Detail, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// 桩与另一个站共用一个节点（control-server#431）：桩照样可达，按最近优先取得。快照按站号读回，同节点上站号更大的 213 排在 211 后面——
+    /// 修复之前反查表「后来的赢」，211 因此被判 <c>CHARGER_UNREACHABLE</c>，正是 control-server#404 的 L2 日志里那一行。
+    /// </summary>
+    [Fact]
+    public async Task AChargerSharingItsNodeWithAnotherStationIsStillReachable()
+    {
+        await using FleetFixture fleet = await FleetAsync(chargers: [Near]);
+        await fleet.ReplaceRouteGraphAsync(Edges(), [.. Stations(), new(213, "充电点2", 5, 0, 5000, 6, 0)]);
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+
+        await RoundAsync(fleet);
+
+        (string reason, string detail) = fleet.ChargingBoard.Verdicts[AgvA];
+        Assert.DoesNotContain(ChargingAllocationReasons.ChargerUnreachable, detail, StringComparison.Ordinal);
+        Assert.Equal(ChargingAllocationReasons.Committed, reason);
+        Assert.Equal(KeyA, (await StationAsync(fleet, Near.StationId))?.VehicleKey);
+    }
+
     // ---- 排队（REQ-0172、REQ-0173）--------------------------------------------------------------------------------------
 
     /// <summary>一桩三车：电量最低的那辆取得；另两辆留在队里，原因是桩已被预占，什么也没留下。</summary>
