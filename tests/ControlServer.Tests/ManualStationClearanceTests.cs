@@ -292,6 +292,10 @@ public sealed class ManualStationClearanceTests : IDisposable
         RiotOrderObservation hanging = await fleet.Riot.ReconcileByUpperIdAsync(journey.PickupUpperId, Token);
         Assert.Equal((RiotCommandTypeNames.For(RiotOrderCommandKind.Cancel), hanging.OrderId), (cancel.Command, cancel.OrderId));
         Assert.Single(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2270);
+        // The cancel falls inside REQ-0148 case 1's window: after the confirmation, before the clearance completes (REQ-0178).
+        ChargingCycleRow stillClearing = await OpenCycleAsync(fleet);
+        Assert.Equal((ChargingCyclePhases.Clearing, (DateTimeOffset?)null), (stillClearing.Phase, stillClearing.EndedAt));
+        Assert.Equal(ChargingExecutionReasons.ClearedOldOrderUnsettled, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
 
         fleet.Riot.CancelOrder(journey.PickupUpperId);
         await RoundAsync(fleet);

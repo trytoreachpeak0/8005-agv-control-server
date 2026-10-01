@@ -163,8 +163,9 @@ public sealed class JourneyRuntimeOptions
     /// </summary>
     /// <remarks>
     /// On, it cancels exactly one order, once, narrower than REQ-0148's first case allows: the order under this cycle's own
-    /// <c>upperId</c> (ownership proven by the persisted intent and cycle, not by the id's shape), only after the manual
-    /// clearance is complete, only while this round's read finds it <c>HANG</c> and in no other state, executed by this
+    /// <c>upperId</c> (ownership proven by the persisted intent and cycle, not by the id's shape), only once a person's
+    /// clearance confirmation is recorded (REQ-0179's proof, <c>StationClearanceRow.CompletedAt</c>) and before the clearance
+    /// completes in REQ-0178's sense -- the old order ended, the charger released, the cycle ended -- only while this round's read finds it <c>HANG</c> and in no other state, executed by this
     /// cycle's own vehicle (never one RIoT reads on any other vehicle), and only when the command audit holds no cancel for
     /// that order yet; an unconfirmed cancel is not sent again (event 2270). It releases nothing itself and rebuilds nothing:
     /// the charger and the purpose are released only in a later round that reads the order terminal, exactly as when a

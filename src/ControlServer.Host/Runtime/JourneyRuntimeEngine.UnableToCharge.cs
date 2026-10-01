@@ -275,7 +275,7 @@ public sealed partial class JourneyRuntimeEngine
     }
 
     /// <summary>
-    /// 清桩已确认、旧单仍 <c>HANG</c>：开关 <c>JourneyRuntime:UnableToChargeOldOrderCancelEnabled</c> 打开（默认）时由本服务端取消这张旧单，一次；关着什么也不做。
+    /// 已取得人工清桩确认、旧单仍 <c>HANG</c>（清桩闭环还没完成）：开关 <c>JourneyRuntime:UnableToChargeOldOrderCancelEnabled</c> 打开（默认）时由本服务端取消这张旧单，一次；关着什么也不做。
     /// </summary>
     /// <remarks>
     /// <para>
@@ -285,7 +285,9 @@ public sealed partial class JourneyRuntimeEngine
     /// </para>
     /// <para>
     /// <b>打开后取消哪张单、在什么条件下</b>（比条文窄，条文从进入清桩中就允许）：只取消这个周期自己 <c>upperId</c> 下的那张——归属凭本库的
-    /// 停靠与意图证明，不凭 <c>upperId</c> 的形态；只在清桩已完成之后；这一轮重读到它恰好是 <c>HANG</c>（其它任何状态都不发）、且执行它的就是这个周期的车
+    /// 停靠与意图证明，不凭 <c>upperId</c> 的形态；只在取得人工清桩确认之后（<c>REQ-0179</c> 的完成证明，清桩记录的 <c>CompletedAt</c>）、
+    /// 清桩闭环完成之前（<c>REQ-0178</c>：旧单终结才完成清桩，在这里就是桩释放、周期结束的那一轮；这一支只在周期仍是 <c>CLEARING</c> 时走到）——
+    /// 正落在 <c>REQ-0148</c> 情形一「进入清桩中闭环后、清桩完成之前」的窗口里，比它窄：不在人到场之前取消；这一轮重读到它恰好是 <c>HANG</c>（其它任何状态都不发）、且执行它的就是这个周期的车
     /// （RIoT 读到别的车、或读不到执行车，都不发：条文「未由非 8005 管辖的车辆执行」要先证明）；命令审计里这张单还没有取消记录（只发一次，没确认也不重发，
     /// 事件 2270）。取消本身什么也不放、不重建：桩与用途照旧要等之后某一轮读到旧单已终结才释放，车在那之前一直留着，与人在 RIoT 里取消走同一条路。
     /// </para>

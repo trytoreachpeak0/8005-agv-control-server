@@ -16,7 +16,8 @@
 用途仍是 CLEARING_MAINTENANCE——不读一次就断言（scripts/l2/README.md 第 14 条）。
 
 **人工清桩**：车被挪回 210；合成车载端以 L2-R11 发 ManualStationClearanceConfirmationRequested。旧单还 HANG：CONFIRMED、stationReleased=false、桩不放。
-然后旧单在 RIoT 里被取消（真车上是人在 RIoT 里取消；服务端不取消充电单）：这一轮释放 211（CHARGER_RELEASED_ON_MANUAL_CLEARANCE）、周期以
+取消开关默认打开（REQ-0148 v1.9.0 情形一）：服务端对旧单恰好发一次 CMD_ORDER_CANCEL，桩仍不放（假 RIoT 只记下命令、不改单）。
+然后旧单在 RIoT 里被取消：这一轮释放 211（CHARGER_RELEASED_ON_MANUAL_CLEARANCE）、周期以
 CHARGING_UNABLE_TO_CHARGE_CLEARED 结束、旅程收尾，暂停没有恢复行。
 
 **清桩之后**：车仍低电，另等十秒：不进人工充电等待、没有第二个充电周期，服务端日志里有「211=CHARGER_ALLOCATION_HELD」的排队告警。
@@ -201,6 +202,33 @@ $assertions.Add(
     ($whileHung -eq $expectedWhileHung),
     $expectedWhileHung,
     $whileHung)
+
+# --- 4b. 取消开关默认打开（REQ-0148 v1.9.0 情形一）：服务端对旧单恰好发一次 CMD_ORDER_CANCEL，桩仍不放（另等） ---------
+
+# The fake RIoT records an order command and leaves the order as it is, so the old order stays HANG here: what this
+# step shows is the call itself, once, while the clearance has not completed (REQ-0178), and not again afterwards.
+$oldOrderId = [string](@($riot.Snapshot().body.orders | Where-Object { $null -ne $_ -and [string]$_.upperId -eq $upperId }) |
+    Select-Object -First 1).orderId
+function Get-CancelCalls {
+    $calls = @(@($riot.Snapshot().body.commandInvocations) |
+        Where-Object { $null -ne $_ -and [string]$_.commandType -eq 'CMD_ORDER_CANCEL' })
+    "$($calls.Count) cancels @ $((@($calls | ForEach-Object { [string]$_.target } | Sort-Object -Unique)) -join ',') | $(Get-ChargerHeld)"
+}
+$cancelledOnce = "1 cancels @ $oldOrderId | RESERVED $vehicleKey $journeyId"
+$firstCancel = Wait-L2Condition -Description 'the server cancelled the old charge order once' `
+    -Journal $journal -Criterion 'old-order-cancelled' -TimeoutSeconds 30 `
+    -Probe { Get-CancelCalls } `
+    -Until { param($v) -not $v.StartsWith('0 cancels') }
+$cancelSteady = Wait-L2ConditionOrLast -Description 'a second cancel or a release appeared before the old order ended (none may)' `
+    -Journal $journal -Criterion 'old-order-cancelled-once' -TimeoutSeconds 8 `
+    -Probe { Get-CancelCalls } `
+    -Until { param($v) $v -ne $cancelledOnce }
+$assertions.Add(
+    'L2-UTC-03b',
+    '取消开关默认打开：确认之后服务端对那张旧充电单恰好发一次 CMD_ORDER_CANCEL；旧单仍 HANG 时另等八秒，不发第二次，211 仍是这一趟的（清桩未完成）',
+    ($firstCancel -eq $cancelledOnce -and $cancelSteady -eq $cancelledOnce),
+    $cancelledOnce,
+    "$firstCancel / $cancelSteady")
 
 # --- 5. 旧单在 RIoT 里结束的那一轮：放 211，暂停仍在 ----------------------------------------------------------------
 
