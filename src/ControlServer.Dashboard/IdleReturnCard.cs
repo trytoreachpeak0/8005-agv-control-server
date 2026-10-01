@@ -24,7 +24,7 @@ public sealed class IdleReturnCard : IDashboardCard
     {
         StringBuilder html = new();
         html.Append("<table><tr><th>agvId</th><th>步骤</th><th>等待点</th><th>原因码</th><th>REQ-0296 分支</th>")
-            .Append("<th>上一趟收尾</th></tr>");
+            .Append("<th>评估结论</th><th>上一趟收尾</th></tr>");
         if (fact.TryGetProperty("vehicles", out JsonElement vehicles) && vehicles.ValueKind == JsonValueKind.Array)
         {
             foreach (JsonElement vehicle in vehicles.EnumerateArray())
@@ -35,6 +35,7 @@ public sealed class IdleReturnCard : IDashboardCard
                     .Append(DashboardPageRenderer.Cell(Station(vehicle)))
                     .Append(DashboardPageRenderer.Cell(Reason(vehicle, "reasonCode", "reasonDescription", "reasonSince")))
                     .Append(DashboardPageRenderer.Cell(StationHoldingRendering.Str(vehicle, "failureBranchDescription") ?? ""))
+                    .Append(DashboardPageRenderer.Cell(Verdict(vehicle)))
                     .Append(DashboardPageRenderer.Cell(LastEnded(vehicle)))
                     .Append("</tr>");
             }
@@ -77,6 +78,25 @@ public sealed class IdleReturnCard : IDashboardCard
                       + $"{StationHoldingRendering.Str(holding, "status")}，自 {StationHoldingRendering.Str(holding, "stateSince")}");
         }
         return string.Join("；", parts);
+    }
+
+    /// <summary>
+    /// 评估器最近一轮已完成的评估对这辆车的结论（冷却、停止、电量、外来订单……）。这一轮没评估到它时照服务端的话说没评估，不写更早的码。
+    /// </summary>
+    private static string Verdict(JsonElement vehicle)
+    {
+        if (!vehicle.TryGetProperty("verdict", out JsonElement verdict) || verdict.ValueKind != JsonValueKind.Object)
+        {
+            return "（服务端未提供该字段）";
+        }
+        if (StationHoldingRendering.Str(verdict, "note") is { } note)
+        {
+            return note;
+        }
+        string reason = Reason(verdict, "reasonCode", "reasonDescription", since: null);
+        string detail = StationHoldingRendering.Str(verdict, "detail") is { } text ? $"。细节：{text}" : "";
+        string at = StationHoldingRendering.Str(verdict, "passStartedAt") is { } passAt ? $"（评估于 {passAt}）" : "";
+        return $"{reason}{detail}{at}";
     }
 
     private static string LastEnded(JsonElement vehicle)

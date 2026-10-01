@@ -29,7 +29,7 @@ namespace ControlServer.Tests;
 /// </para>
 /// </remarks>
 [Trait("IntegrationSlice", "FP-IS-12")]
-public sealed class IdleReturnExecutionTests
+public sealed partial class IdleReturnExecutionTests
 {
     private const string Vector = "CV-WAITING-POINT-IDLE-RETURN";
     private const int Map = 25;

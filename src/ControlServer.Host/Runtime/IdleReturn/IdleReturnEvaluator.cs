@@ -130,15 +130,21 @@ public sealed class IdleReturnEvaluator(
     {
         ArgumentNullException.ThrowIfNull(currentMap);
         ArgumentNullException.ThrowIfNull(candidates);
+        // control-server#392: every call is one pass, the early returns included, so a vehicle not handed over this round reads
+        // as not evaluated rather than as its previous verdict.
+        verdictBoard.BeginPass(timeProvider.GetUtcNow());
         if (candidates.Count == 0)
         {
+            verdictBoard.EndPass(timeProvider.GetUtcNow());
             return [];
         }
 
         // 关着就什么也不读：关掉只挡新承诺，这一句之后没有任何写入的可能。
         if (!_options.Enabled)
         {
-            return [.. candidates.Select(candidate => Refuse(candidate.Vehicle, IdleReturnReasons.Disabled, ""))];
+            IdleReturnVerdict[] disabled = [.. candidates.Select(candidate => Refuse(candidate.Vehicle, IdleReturnReasons.Disabled, ""))];
+            verdictBoard.EndPass(timeProvider.GetUtcNow());
+            return disabled;
         }
 
         // 读在每辆车的 try 里（审查 S5）：它抛了只是这一辆这一轮不评估，不让空闲返回的故障跳过轮次结局的记录。
@@ -173,6 +179,7 @@ public sealed class IdleReturnEvaluator(
             }
         }
 
+        verdictBoard.EndPass(timeProvider.GetUtcNow());
         return verdicts;
     }
 
@@ -547,24 +554,104 @@ public sealed class IdleReturnEvaluator(
 
 /// <summary>
 /// 每辆车最近一次的空闲返回结论（原因码与细节）。宿主里是单例，跨轮次保留：结论变了才记一条 Information 日志（事件 2199），
-/// 看板（批次8-21，control-server#392）也可以从这里读。
+/// 看板（批次8-21，control-server#392）从 <see cref="LatestCompletedPass"/> 读。
 /// </summary>
+/// <remarks>
+/// <para>
+/// <b>为什么要分轮次</b>（control-server#392）：只有交给评估器的车才会被改写。读 RIoT 抛了异常、这一轮预算用尽、或者已经在途的车
+/// 不是候选，它在「最近一次」里停着上一轮的结论，而且看不出来。看板拿它当现状，就是 REQ-0269 不许的不确定新旧的旧值。
+/// </para>
+/// <para>
+/// <b>怎么切</b>：<see cref="IdleReturnEvaluator.EvaluateAsync"/> 一开头 <see cref="BeginPass"/>，这一轮的结论记进暂存；评估走完
+/// （包括开关关着、候选为空的提前返回）<see cref="EndPass"/> 把暂存整份换成「最近一轮已完成的评估」。看板只读已完成的那一份，所以
+/// 读取正好落在一轮中途时看到的是上一轮完整的结论，不会一轮刚开始就所有车都变成「本轮没有评估」。一轮没走完就被取消时不发布，
+/// 已完成的仍是上一轮。重启后还没有任何一轮完成，<see cref="LatestCompletedPass"/> 为空。
+/// </para>
+/// <para>
+/// 日志「变了才记」比的仍是这辆车最近一次记下的结论（<see cref="Record"/> 的返回值），与轮次无关，语义不变。
+/// </para>
+/// </remarks>
 public sealed class IdleReturnVerdictBoard
 {
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string Reason, string Detail)> _last =
-        new(StringComparer.Ordinal);
+    private readonly object _gate = new();
+    private readonly Dictionary<string, (string Reason, string Detail)> _last = new(StringComparer.Ordinal);
+    private Dictionary<string, IdleReturnBoardVerdict>? _staging;
+    private DateTimeOffset _stagingStartedAt;
+    private long _passes;
+    private IdleReturnBoardPass? _completed;
 
     /// <summary>记下这辆车这一轮的结论；与上一次不同（或第一次）时答真。</summary>
     public bool Record(string agvId, string reason, string detail)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
-        (string, string) now = (reason, detail);
-        bool changed = !_last.TryGetValue(agvId, out (string Reason, string Detail) before) || before != now;
-        _last[agvId] = now;
-        return changed;
+        lock (_gate)
+        {
+            (string, string) now = (reason, detail);
+            bool changed = !_last.TryGetValue(agvId, out (string Reason, string Detail) before) || before != now;
+            _last[agvId] = now;
+            if (_staging is not null)
+            {
+                _staging[agvId] = new IdleReturnBoardVerdict(reason, detail);
+            }
+            return changed;
+        }
     }
 
-    /// <summary>每辆车最近一次的原因码。</summary>
-    public IReadOnlyDictionary<string, string> Reasons =>
-        _last.ToDictionary(pair => pair.Key, pair => pair.Value.Reason, StringComparer.Ordinal);
+    /// <summary>每辆车最近一次的原因码（不分轮次）。</summary>
+    public IReadOnlyDictionary<string, string> Reasons
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _last.ToDictionary(pair => pair.Key, pair => pair.Value.Reason, StringComparer.Ordinal);
+            }
+        }
+    }
+
+    /// <summary>一轮评估开始：此后的结论记进这一轮的暂存，已完成的那一份不动。</summary>
+    public void BeginPass(DateTimeOffset startedAt)
+    {
+        lock (_gate)
+        {
+            _staging = new Dictionary<string, IdleReturnBoardVerdict>(StringComparer.Ordinal);
+            _stagingStartedAt = startedAt;
+        }
+    }
+
+    /// <summary>一轮评估走完：这一轮评估过的车与结论整份成为「最近一轮已完成的评估」。没评估到的车不在其中。</summary>
+    public void EndPass(DateTimeOffset completedAt)
+    {
+        lock (_gate)
+        {
+            if (_staging is null)
+            {
+                return;
+            }
+            _completed = new IdleReturnBoardPass(++_passes, _stagingStartedAt, completedAt, _staging);
+            _staging = null;
+        }
+    }
+
+    /// <summary>最近一轮已完成的评估；重启后还没有完成过一轮时为空。</summary>
+    public IdleReturnBoardPass? LatestCompletedPass
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _completed;
+            }
+        }
+    }
 }
+
+/// <summary>一辆车在一轮评估里的结论。</summary>
+public sealed record IdleReturnBoardVerdict(string Reason, string Detail);
+
+/// <summary>一轮已完成的评估：第几轮、何时开始与走完、这一轮评估过的每辆车（按 <c>agvId</c>）与结论。</summary>
+public sealed record IdleReturnBoardPass(
+    long Number,
+    DateTimeOffset StartedAt,
+    DateTimeOffset CompletedAt,
+    IReadOnlyDictionary<string, IdleReturnBoardVerdict> Verdicts);

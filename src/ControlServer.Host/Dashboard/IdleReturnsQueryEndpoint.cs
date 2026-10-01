@@ -12,7 +12,7 @@ namespace ControlServer.Host.Dashboard;
 
 /// <summary>
 /// 车队视图「空闲返回」的数据面（批次8-21，control-server#392；REQ-0290～0297）：每台车的空闲返回走到哪一步、失败按 REQ-0296 的哪一支、
-/// 等待点占着没有、最近一趟空闲返回怎么收的尾。
+/// 等待点占着没有、最近一趟空闲返回怎么收的尾，以及评估器最近一轮已完成的评估对它的结论（不能返回的原因、冷却、停止）。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -22,6 +22,12 @@ namespace ControlServer.Host.Dashboard;
 /// <para>
 /// <b>「到点待收敛」并在「在途」里</b>：RIoT 报单成功、车还没证明停稳时，引擎不落任何与在途不同的值（意图仍是 <c>CONFIRMED</c>，
 /// 阻断码清空或是检查点等待），看板分不出这两者，也不另算。
+/// </para>
+/// <para>
+/// <b>评估结论读结论板</b>（<see cref="IdleReturnVerdictBoard.LatestCompletedPass"/>，宿主单例）：冷却与停止两种结论只在那里，不在库里。
+/// 只取最近一轮已完成的评估；车不在其中（在途、读 RIoT 失败、预算用尽）或服务启动以来还没完成过一轮时，写没评估，不显示更早的结论。
+/// 那一轮走完已超过 <see cref="PassLivenessPollIntervals"/> 个轮询间隔时，评估没在跑（全车队没有空闲车时派车轮不跑），每辆车都写没评估。
+/// 这只管结论这一格；步骤、等待点与上一趟收尾读的是库里的落库事实，照常给。
 /// </para>
 /// <para>
 /// 「在点」的车写「等待点占用直到离点证据满足」，不写「空闲」二字：车停在等待点上不接空闲返回，但等待点一直归它。
@@ -94,25 +100,58 @@ internal sealed class IdleReturnsQueryEndpoint : IDashboardQueryEndpoint
         IdleReturnExecutionReasons.WaitingPointLost,
     };
 
+    /// <summary>车不在最近一轮已完成的评估里时，结论那一格写的话。不显示它更早的结论（REQ-0269）。</summary>
+    internal const string NotEvaluatedThisPass =
+        "本轮没有评估这辆车：最近一轮空闲返回评估没有交到它（车在途、读 RIoT 失败或这一轮时间用尽时都是这样），这里不显示它更早的结论";
+
+    /// <summary>服务启动以来还没有完成过一轮评估时，结论那一格写的话。</summary>
+    internal const string NoPassCompletedYet =
+        "本轮没有评估这辆车：服务启动以来还没有完成过一轮空闲返回评估";
+
+    /// <summary>
+    /// 评估在不在跑的时效窗口是几个引擎轮询间隔（<c>JourneyRuntime:PollInterval</c>）。最近一轮已完成的评估走完超过这么久，
+    /// 就是评估没在跑——全车队没有空闲车时派车轮不跑（引擎在派车之前退出）、引擎这一轮出错、进程卡住，三种都是这样。
+    /// </summary>
+    /// <remarks>
+    /// 判的是「评估还在不在跑」，不是重算结论：窗口内照写评估器的结论，窗口外一律不写结论。与会话存活（<c>SessionLiveness.Timeout</c>，
+    /// 心跳两秒、六秒超时）同一个形状。
+    /// </remarks>
+    internal const int PassLivenessPollIntervals = 3;
+
     private readonly VehicleRoster _roster;
+    private readonly IdleReturnVerdictBoard _board;
+    private readonly TimeSpan _passLiveness;
     private readonly TimeProvider _clock;
 
     public IdleReturnsQueryEndpoint()
-        : this(new VehicleRoster(Options.Create(new JourneyRuntimeOptions())), TimeProvider.System)
+        : this(Options.Create(new JourneyRuntimeOptions()), new IdleReturnVerdictBoard(), TimeProvider.System)
     {
     }
 
+    /// <summary>
+    /// 挂在宿主上时用这一个：名册从宿主的同一份配置建，结论板是评估器写的那一块单例。结论板是必填的：宿主漏注册时看板查询
+    /// 在启动时就构造失败，而不是静默成「从没评估过」。
+    /// </summary>
     [ActivatorUtilitiesConstructor]
-    public IdleReturnsQueryEndpoint(VehicleRoster roster)
-        : this(roster, TimeProvider.System)
+    public IdleReturnsQueryEndpoint(IOptions<JourneyRuntimeOptions> options, IdleReturnVerdictBoard board)
+        : this(options, board, TimeProvider.System)
     {
     }
 
-    internal IdleReturnsQueryEndpoint(VehicleRoster roster, TimeProvider clock)
+    internal IdleReturnsQueryEndpoint(IOptions<JourneyRuntimeOptions> options, IdleReturnVerdictBoard board, TimeProvider clock)
     {
-        _roster = roster ?? throw new ArgumentNullException(nameof(roster));
+        ArgumentNullException.ThrowIfNull(options);
+        _roster = new VehicleRoster(options);
+        _board = board ?? throw new ArgumentNullException(nameof(board));
+        _passLiveness = options.Value.PollInterval * PassLivenessPollIntervals;
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
     }
+
+    /// <summary>超出时效窗口时，结论那一格写的话（窗口按实际配置的轮询间隔算）。</summary>
+    internal static string PassNotRunning(TimeSpan window) =>
+        string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"本轮没有评估这辆车：最近 {window.TotalSeconds:0.###} 秒内没有完成过一轮空闲返回评估（全车队没有空闲车时派车轮不跑，引擎出错时也是），这里不显示更早的结论");
 
     public string Path => DashboardQueryEndpointCatalog.QueryPrefix + "idle-returns";
 
@@ -120,8 +159,8 @@ internal sealed class IdleReturnsQueryEndpoint : IDashboardQueryEndpoint
     {
         ArgumentNullException.ThrowIfNull(dbContext);
 
-        DashboardFleetContact contact =
-            await DashboardFleetContact.ReadAsync(dbContext, _roster, _clock.GetUtcNow(), cancellationToken);
+        DateTimeOffset now = _clock.GetUtcNow();
+        DashboardFleetContact contact = await DashboardFleetContact.ReadAsync(dbContext, _roster, now, cancellationToken);
         FleetVehicle[] inContact = [.. contact.Vehicles.Where(contact.InContact)];
         Dictionary<string, VehiclePurposeClaimRow> claims = await VehiclePurposeFacts.ReadAsync(dbContext, cancellationToken);
         StationExclusivityRow[] waitingPoints =
@@ -144,6 +183,9 @@ internal sealed class IdleReturnsQueryEndpoint : IDashboardQueryEndpoint
             .GroupBy(record => record.JourneyId, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.Max(record => record.ReleasedAt), StringComparer.Ordinal);
 
+        IdleReturnBoardPass? pass = _board.LatestCompletedPass;
+        // 窗口外的一轮不当作这一轮：它说的是评估停下之前的事。
+        string? notRunning = pass is not null && now - pass.CompletedAt > _passLiveness ? PassNotRunning(_passLiveness) : null;
         return new
         {
             vehicles = inContact.Select(vehicle => Fact(
@@ -153,6 +195,8 @@ internal sealed class IdleReturnsQueryEndpoint : IDashboardQueryEndpoint
                     intents,
                     releasedAt,
                     waitingPoints.FirstOrDefault(row => row.VehicleKey == vehicle.VehicleKey),
+                    notRunning is null ? pass : null,
+                    notRunning,
                     contact))
                 .ToArray(),
             unavailableVehicles = contact.Unavailable(),
@@ -166,6 +210,8 @@ internal sealed class IdleReturnsQueryEndpoint : IDashboardQueryEndpoint
         Dictionary<string, OrderIntentRow> intents,
         Dictionary<string, DateTimeOffset?> releasedAt,
         StationExclusivityRow? waitingPoint,
+        IdleReturnBoardPass? pass,
+        string? notRunning,
         DashboardFleetContact contact)
     {
         JourneyRuntimeRow? open = journeys.SingleOrDefault(row => row.IsIdleReturn() && row.Stage != JourneyRuntimeStage.Completed);
@@ -206,6 +252,7 @@ internal sealed class IdleReturnsQueryEndpoint : IDashboardQueryEndpoint
                     stationId = waitingPoint.StationId,
                     holding = StationHoldings.Project(waitingPoint, contact),
                 },
+            verdict = Verdict(vehicle, pass, notRunning),
             lastEnded = lastEnded is null
                 ? null
                 : new
@@ -220,6 +267,23 @@ internal sealed class IdleReturnsQueryEndpoint : IDashboardQueryEndpoint
                         ? BranchDescriptions[ended]
                         : null,
                 },
+        };
+    }
+
+    /// <summary>
+    /// 评估器对这辆车的结论（资格、冷却、停止……），只取最近一轮<b>已完成</b>的评估：车不在其中时说没评估，不拿更早一轮的结论顶上。
+    /// </summary>
+    private static object Verdict(FleetVehicle vehicle, IdleReturnBoardPass? pass, string? notRunning)
+    {
+        IdleReturnBoardVerdict? verdict = pass?.Verdicts.GetValueOrDefault(vehicle.AgvId);
+        return new
+        {
+            evaluated = verdict is not null,
+            reasonCode = verdict?.Reason,
+            reasonDescription = IdleReturnCodeDescriptions.DescribeVerdict(verdict?.Reason),
+            detail = string.IsNullOrEmpty(verdict?.Detail) ? null : verdict.Detail,
+            passStartedAt = verdict is null ? null : pass?.StartedAt,
+            note = verdict is not null ? null : notRunning ?? (pass is null ? NoPassCompletedYet : NotEvaluatedThisPass),
         };
     }
 

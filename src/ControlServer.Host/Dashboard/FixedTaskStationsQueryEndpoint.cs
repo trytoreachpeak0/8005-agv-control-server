@@ -27,9 +27,13 @@ internal sealed class FixedTaskStationsQueryEndpoint : IDashboardQueryEndpoint
     {
     }
 
+    /// <summary>
+    /// 挂在宿主上时用这一个：名册从宿主的同一份配置建（<see cref="VehicleRoster"/> 只读配置、建好不变，与引擎那份单例逐项相同），
+    /// 不要求宿主另外注册名册——看板的最小宿主只配了运行时选项。
+    /// </summary>
     [ActivatorUtilitiesConstructor]
-    public FixedTaskStationsQueryEndpoint(VehicleRoster roster)
-        : this(roster, TimeProvider.System)
+    public FixedTaskStationsQueryEndpoint(IOptions<JourneyRuntimeOptions> options)
+        : this(new VehicleRoster(options), TimeProvider.System)
     {
     }
 

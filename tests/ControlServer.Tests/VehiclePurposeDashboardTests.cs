@@ -212,6 +212,7 @@ public sealed class VehiclePurposeDashboardTests
     [InlineData(IdleReturnsQueryEndpoint.StepCreateResultUnknown, "WAITING_POINT_ResultUnknown")]
     [InlineData(IdleReturnsQueryEndpoint.StepEnRoute, null)]
     [InlineData(IdleReturnsQueryEndpoint.StepEnRoute, JourneyRuntimeEngine.CheckpointWaitReason)]
+    [InlineData(IdleReturnsQueryEndpoint.StepEnRoute, JourneyRuntimeEngine.CheckpointWaitExceededReason)]
     [InlineData(IdleReturnsQueryEndpoint.StepOrderStalled, JourneyRuntimeEngine.OrderHangReason)]
     [InlineData(IdleReturnsQueryEndpoint.StepHeldAwaitingStop, IdleReturnExecutionReasons.OrderEndedStopNotProven)]
     [InlineData(IdleReturnsQueryEndpoint.StepFailedAwaitingManual, VehicleFaultEvidence.OrderFailed)]
@@ -244,8 +245,11 @@ public sealed class VehiclePurposeDashboardTests
                 vehicle.GetProperty("failureBranch").GetString());
             if (step == IdleReturnsQueryEndpoint.StepAtPoint)
             {
-                Assert.Contains("等待点占用直到离点证据满足", row, StringComparison.Ordinal);
-                Assert.DoesNotContain("空闲", row, StringComparison.Ordinal);
+                // The step cell and the holding say "occupied until departure evidence", never "空闲" (idle) about the vehicle.
+                string stepCell = Cell(row, 1);
+                Assert.Contains("等待点占用直到离点证据满足", stepCell, StringComparison.Ordinal);
+                Assert.DoesNotContain("空闲", stepCell, StringComparison.Ordinal);
+                Assert.DoesNotContain("空闲", Cell(row, 2), StringComparison.Ordinal);
             }
             AssertOnlyLost(fact.RootElement, html);
             AssertCleanHtml(html);
@@ -287,6 +291,177 @@ public sealed class VehiclePurposeDashboardTests
         }
     }
 
+    /// <summary>
+    /// 评估结论一格：服务启动以来还没完成过一轮评估时写「本轮没有评估」（不留白、不摆旧码）；完成一轮之后，在其中的车写码与中文说明，
+    /// 不在其中的车写「本轮没有评估」；一轮正在进行时读到的仍是上一轮完整的结论，不会一轮刚开始所有车都变成没评估。
+    /// </summary>
+    [Fact]
+    public async Task TheVerdictCellReadsOnlyTheLatestCompletedPass()
+    {
+        await using DashboardDatabase database = await DashboardDatabase.CreateAsync();
+        IdleReturnVerdictBoard board = new();
+
+        (JsonDocument fresh, string freshHtml) = await ReadAsync(database, "idle-returns", board);
+        using (fresh)
+        {
+            Assert.All(fresh.RootElement.GetProperty("vehicles").EnumerateArray(), vehicle =>
+                Assert.Equal(IdleReturnsQueryEndpoint.NoPassCompletedYet, vehicle.GetProperty("verdict").GetProperty("note").GetString()));
+            Assert.Contains(IdleReturnsQueryEndpoint.NoPassCompletedYet, RowOf(freshHtml, "AGV-01"), StringComparison.Ordinal);
+        }
+
+        board.BeginPass(At);
+        board.Record("AGV-01", IdleReturnReasons.CooldownAfterEndedOrder, "");
+        board.Record("AGV-02", IdleReturnReasons.NoWaitingPointAvailable, "214=WAITING_POINT_RESERVED_OR_OCCUPIED");
+        board.EndPass(DateTimeOffset.UtcNow);
+        // The next pass has begun and recorded AGV-01 anew, but has not finished: the card still reads the completed one.
+        board.BeginPass(At.AddSeconds(2));
+        board.Record("AGV-01", IdleReturnReasons.StoppedAfterRepeatedEndedOrders, "");
+
+        (JsonDocument fact, string html) = await ReadAsync(database, "idle-returns", board);
+        using (fact)
+        {
+            JsonElement[] vehicles = [.. fact.RootElement.GetProperty("vehicles").EnumerateArray()];
+            JsonElement cooling = vehicles[0].GetProperty("verdict");
+            Assert.True(cooling.GetProperty("evaluated").GetBoolean());
+            Assert.Equal(IdleReturnReasons.CooldownAfterEndedOrder, cooling.GetProperty("reasonCode").GetString());
+            Assert.Equal(At, cooling.GetProperty("passStartedAt").GetDateTimeOffset());
+            Assert.Contains(
+                $"{IdleReturnReasons.CooldownAfterEndedOrder}：{IdleReturnCodeDescriptions.VerdictCodes[IdleReturnReasons.CooldownAfterEndedOrder]}",
+                RowOf(html, "AGV-01"),
+                StringComparison.Ordinal);
+            Assert.DoesNotContain(IdleReturnReasons.StoppedAfterRepeatedEndedOrders, html, StringComparison.Ordinal);
+            Assert.Contains("细节：214=WAITING_POINT_RESERVED_OR_OCCUPIED", RowOf(html, "AGV-02"), StringComparison.Ordinal);
+            JsonElement absent = vehicles[2].GetProperty("verdict");
+            Assert.False(absent.GetProperty("evaluated").GetBoolean());
+            Assert.Equal(IdleReturnsQueryEndpoint.NotEvaluatedThisPass, absent.GetProperty("note").GetString());
+            Assert.Contains(IdleReturnsQueryEndpoint.NotEvaluatedThisPass, RowOf(html, "AGV-03"), StringComparison.Ordinal);
+            AssertOnlyLost(fact.RootElement, html);
+        }
+
+        board.EndPass(DateTimeOffset.UtcNow);
+        (JsonDocument next, string nextHtml) = await ReadAsync(database, "idle-returns", board);
+        using (next)
+        {
+            Assert.Contains(IdleReturnReasons.StoppedAfterRepeatedEndedOrders, RowOf(nextHtml, "AGV-01"), StringComparison.Ordinal);
+            Assert.Contains(IdleReturnsQueryEndpoint.NotEvaluatedThisPass, RowOf(nextHtml, "AGV-02"), StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>
+    /// 时效窗口（调度 10-01 定的方案 A）：最近一轮已完成的评估走完已超过 3 个轮询间隔，评估没在跑——全车队没有空闲车时派车轮不跑、
+    /// 评估或引擎这一轮抛了异常（开了一轮却没走完）——每辆车的结论一格都写没评估与原因，不写那一轮的码。用途、等待点、公共站点三张卡片
+    /// 读的是落库事实，不受这个窗口影响，照常给值。
+    /// </summary>
+    [Fact]
+    public async Task APassOlderThanThreePollIntervalsIsNotShownAndTheOtherCardsStillShowTheirFacts()
+    {
+        await using DashboardDatabase database = await DashboardDatabase.CreateAsync();
+        await database.SeedAsync(context =>
+        {
+            AddWaitingPoints(context, version: 1, (212, true));
+            context.Add(new TaskTypeStationActiveBindingSetRow { MapId = MapId, ActiveVersion = 1, State = "ACTIVE", UpdatedAt = At });
+            context.Add(Binding(version: 1, "LOAD", 301));
+            context.AddRange(Holding(StationExclusivityKinds.FixedTaskStation, 301, "K-02", StationExclusivityStates.Occupied, null));
+            SeedIdleReturnStep(context, IdleReturnsQueryEndpoint.StepEnRoute, null, IdleReturnIdentity.JourneyIdFor("K-01", At));
+        });
+        IdleReturnVerdictBoard board = new();
+        board.BeginPass(DateTimeOffset.UtcNow.AddSeconds(-31));
+        board.Record("AGV-01", IdleReturnReasons.Committed, "j");
+        board.Record("AGV-02", IdleReturnReasons.CooldownAfterEndedOrder, "");
+        board.EndPass(DateTimeOffset.UtcNow.AddSeconds(-30));
+        // A pass that began and then threw before it finished: it publishes nothing.
+        board.BeginPass(DateTimeOffset.UtcNow.AddSeconds(-20));
+        board.Record("AGV-02", IdleReturnReasons.EvaluationFailed, "InvalidOperationException");
+
+        string expected = IdleReturnsQueryEndpoint.PassNotRunning(TimeSpan.FromSeconds(6));
+        (JsonDocument fact, string html) = await ReadAsync(database, "idle-returns", board);
+        using (fact)
+        {
+            JsonElement[] vehicles = [.. fact.RootElement.GetProperty("vehicles").EnumerateArray()];
+            Assert.All(vehicles, vehicle =>
+            {
+                Assert.False(vehicle.GetProperty("verdict").GetProperty("evaluated").GetBoolean());
+                Assert.Equal(expected, vehicle.GetProperty("verdict").GetProperty("note").GetString());
+            });
+            Assert.Contains("最近 6 秒内没有完成过一轮空闲返回评估", RowOf(html, "AGV-01"), StringComparison.Ordinal);
+            Assert.DoesNotContain(IdleReturnReasons.Committed, html, StringComparison.Ordinal);
+            Assert.DoesNotContain(IdleReturnReasons.CooldownAfterEndedOrder, html, StringComparison.Ordinal);
+            Assert.DoesNotContain(IdleReturnReasons.EvaluationFailed, html, StringComparison.Ordinal);
+            // The step is a stored fact: still shown.
+            Assert.Equal(IdleReturnsQueryEndpoint.StepEnRoute, vehicles[0].GetProperty("step").GetString());
+        }
+
+        (JsonDocument purposes, _) = await ReadAsync(database, "vehicle-purposes");
+        using (purposes)
+        {
+            Assert.Equal("IDLE_RETURN", purposes.RootElement.GetProperty("vehicles")[0].GetProperty("purpose").GetString());
+        }
+        (JsonDocument points, _) = await ReadAsync(database, "waiting-points");
+        using (points)
+        {
+            Assert.Equal(
+                "RESERVED", points.RootElement.GetProperty("points")[0].GetProperty("holding").GetProperty("status").GetString());
+        }
+        (JsonDocument stations, _) = await ReadAsync(database, "fixed-task-stations");
+        using (stations)
+        {
+            Assert.Equal(
+                "OCCUPIED", stations.RootElement.GetProperty("stations")[0].GetProperty("holding").GetProperty("status").GetString());
+        }
+    }
+
+    /// <summary>
+    /// 窗口按实际配置的 <c>JourneyRuntime:PollInterval</c> 算、倍数是 3：轮询 5 秒时 10 秒前走完的一轮还在窗口内（15 秒），照写结论；
+    /// 同一轮在默认 2 秒的配置下已在窗口外（6 秒）。
+    /// </summary>
+    [Fact]
+    public async Task TheLivenessWindowIsThreeOfTheConfiguredPollIntervals()
+    {
+        Assert.Equal(3, IdleReturnsQueryEndpoint.PassLivenessPollIntervals);
+        Assert.Equal(TimeSpan.FromSeconds(2), FleetOptions.Value.PollInterval);
+        await using DashboardDatabase database = await DashboardDatabase.CreateAsync();
+        IdleReturnVerdictBoard board = new();
+        board.BeginPass(DateTimeOffset.UtcNow.AddSeconds(-11));
+        board.Record("AGV-01", IdleReturnReasons.CooldownAfterEndedOrder, "");
+        board.EndPass(DateTimeOffset.UtcNow.AddSeconds(-10));
+
+        IOptions<JourneyRuntimeOptions> slow = Options.Create(new JourneyRuntimeOptions
+        {
+            PollInterval = TimeSpan.FromSeconds(5),
+            Fleet = FleetOptions.Value.Fleet,
+        });
+        foreach ((IOptions<JourneyRuntimeOptions> options, bool shown) in new[] { (slow, true), (FleetOptions, false) })
+        {
+            await using ControlServerDbContext context = database.NewContext();
+            object rows = await new IdleReturnsQueryEndpoint(options, board, TimeProvider.System)
+                .ReadAsync(context, TestContext.Current.CancellationToken);
+            using JsonDocument fact = JsonDocument.Parse(JsonSerializer.Serialize(rows));
+            JsonElement verdict = fact.RootElement.GetProperty("vehicles")[0].GetProperty("verdict");
+            Assert.Equal(shown, verdict.GetProperty("evaluated").GetBoolean());
+            if (!shown)
+            {
+                Assert.Equal(IdleReturnsQueryEndpoint.PassNotRunning(TimeSpan.FromSeconds(6)), verdict.GetProperty("note").GetString());
+            }
+        }
+    }
+
+    /// <summary>结论板的「变了才记」不随轮次改变：同一辆车下一轮同一结论答假，结论变了答真。</summary>
+    [Fact]
+    public void TheVerdictBoardStillReportsAChangeOnlyWhenTheVerdictChangesAcrossPasses()
+    {
+        IdleReturnVerdictBoard board = new();
+        board.BeginPass(At);
+        Assert.True(board.Record("AGV-01", IdleReturnReasons.Disabled, ""));
+        board.EndPass(At);
+        board.BeginPass(At.AddSeconds(2));
+        Assert.False(board.Record("AGV-01", IdleReturnReasons.Disabled, ""));
+        Assert.True(board.Record("AGV-01", IdleReturnReasons.Committed, "j"));
+        board.EndPass(At.AddSeconds(2));
+        // Outside any pass (a caller that never began one) the change detection still works and nothing is published.
+        Assert.False(board.Record("AGV-01", IdleReturnReasons.Committed, "j"));
+        Assert.Equal(2, board.LatestCompletedPass!.Number);
+    }
+
     // ---------------- 原因码说明 ----------------
 
     /// <summary>
@@ -321,6 +496,41 @@ public sealed class VehiclePurposeDashboardTests
                 IdleReturnsQueryEndpoint.StepCommitted,
                 IdleReturnsQueryEndpoint.Classify(null, journey, "CONFIRMED", "ORDER-1", null));
         }
+    }
+
+    /// <summary>
+    /// 阻断卡片上，空闲返回行的共用码用空闲返回口径的说明（调度 09-30，cs#390 增量审查 L-d）；同一个码在搬运行上照旧是搬运口径。
+    /// </summary>
+    [Fact]
+    public async Task TheBlockedJourneyCardDescribesASharedCodeOnAnIdleReturnRowInIdleReturnTerms()
+    {
+        await using DashboardDatabase database = await DashboardDatabase.CreateAsync();
+        await database.SeedAsync(context =>
+        {
+            AddIdleReturnJourney(
+                context, "K-01", IdleReturnIdentity.JourneyIdFor("K-01", At), JourneyRuntimeEngine.OrderHangReason, completed: false, "CONFIRMED");
+            JourneyRuntimeRow transport = WaitingJourneyBatteryWatchTests.Runtime("D-HANG", JourneyRuntimeStage.AwaitingGateArrival, At);
+            transport.SetBlockReason(JourneyRuntimeEngine.OrderHangReason, At);
+            context.Add(transport);
+        });
+
+        await using ControlServerDbContext context = database.NewContext();
+        object rows = await new BlockedJourneysQueryEndpoint().ReadAsync(context, TestContext.Current.CancellationToken);
+        using JsonDocument fact = JsonDocument.Parse(JsonSerializer.Serialize(rows));
+        JsonElement[] journeys = [.. fact.RootElement.GetProperty("journeys").EnumerateArray()];
+        JsonElement idle = journeys.Single(row => row.GetProperty("agvId").GetString() == "AGV-01");
+        JsonElement carrying = journeys.Single(row => row.GetProperty("agvId").GetString() == "AGV-D-HANG");
+        Assert.Equal(
+            IdleReturnCodeDescriptions.SharedCodesOnIdleReturnJourneys[JourneyRuntimeEngine.OrderHangReason],
+            idle.GetProperty("blockReasonDescription").GetString());
+        Assert.Equal(
+            BlockedJourneysQueryEndpoint.Descriptions[JourneyRuntimeEngine.OrderHangReason],
+            carrying.GetProperty("blockReasonDescription").GetString());
+
+        IDashboardCard card = DashboardCardCatalog.Discovered.Cards.Single(candidate => candidate.CardId == new BlockedJourneyCard().CardId);
+        string html = card.RenderFact(fact.RootElement);
+        Assert.Contains("开往等待点的空闲返回单在 RIoT 上挂起", RowWith(html, "<td>AGV-01</td>"), StringComparison.Ordinal);
+        Assert.DoesNotContain("同一条需求", RowWith(html, "<td>AGV-01</td>"), StringComparison.Ordinal);
     }
 
     /// <summary>评估器的每一个结论码（<see cref="IdleReturnReasons"/> 的公开常量，反射扫）都有中文说明。</summary>
@@ -490,7 +700,8 @@ public sealed class VehiclePurposeDashboardTests
         SiteVerificationRef = "site-check",
     };
 
-    private static async Task<(JsonDocument Fact, string Html)> ReadAsync(DashboardDatabase database, string path)
+    private static async Task<(JsonDocument Fact, string Html)> ReadAsync(
+        DashboardDatabase database, string path, IdleReturnVerdictBoard? board = null)
     {
         IDashboardCard card = DashboardCardCatalog.Discovered.Cards
             .Single(candidate => candidate.SourcePath == DashboardPaths.QueryPrefix + path);
@@ -503,7 +714,7 @@ public sealed class VehiclePurposeDashboardTests
             VehiclePurposesQueryEndpoint => new VehiclePurposesQueryEndpoint(Roster, TimeProvider.System),
             WaitingPointsQueryEndpoint => new WaitingPointsQueryEndpoint(Roster, TimeProvider.System),
             FixedTaskStationsQueryEndpoint => new FixedTaskStationsQueryEndpoint(Roster, TimeProvider.System),
-            IdleReturnsQueryEndpoint => new IdleReturnsQueryEndpoint(Roster, TimeProvider.System),
+            IdleReturnsQueryEndpoint => new IdleReturnsQueryEndpoint(FleetOptions, board ?? new IdleReturnVerdictBoard(), TimeProvider.System),
             _ => throw new InvalidOperationException(path),
         };
         await using ControlServerDbContext context = database.NewContext();
@@ -512,7 +723,9 @@ public sealed class VehiclePurposeDashboardTests
         return (document, card.RenderFact(document.RootElement));
     }
 
-    private static readonly VehicleRoster Roster = new(Options.Create(new JourneyRuntimeOptions
+    private static VehicleRoster Roster => new(FleetOptions);
+
+    private static readonly IOptions<JourneyRuntimeOptions> FleetOptions = Options.Create(new JourneyRuntimeOptions
     {
         Fleet =
         [
@@ -523,7 +736,7 @@ public sealed class VehiclePurposeDashboardTests
                 AgvLifecycleGeneration = 1,
             }),
         ],
-    }));
+    });
 
     /// <summary>AGV-05 是唯一的失联车：它只在失联列表里，任何一行都不以它开头。</summary>
     private static void AssertOnlyLost(JsonElement root, string html)
@@ -545,13 +758,18 @@ public sealed class VehiclePurposeDashboardTests
         }
     }
 
+    /// <summary>一行里第 <paramref name="index"/> 个单元格（从 0 数）的内容。</summary>
+    private static string Cell(string row, int index) =>
+        row.Split("<td>")[index + 1].Split("</td>")[0];
+
     private static string RowOf(string html, string agvId) => RowWith(html, "<tr><td>" + agvId + "</td>");
 
     private static string RowWith(string html, string marker)
     {
         int start = html.IndexOf(marker, StringComparison.Ordinal);
         Assert.True(start >= 0, "No row with " + marker + ".");
-        start = html.LastIndexOf("<tr>", start + "<tr>".Length - 1, StringComparison.Ordinal);
+        // Rows may carry attributes (<tr class=...>), so the row start is the last "<tr" at or before the marker.
+        start = html.LastIndexOf("<tr", start + "<tr".Length - 1, StringComparison.Ordinal);
         int end = html.IndexOf("</tr>", start, StringComparison.Ordinal);
         return html[start..end];
     }
