@@ -9,7 +9,7 @@ namespace ControlServer.Host.Runtime;
 
 // 批次9-06（control-server#404）：充电旅程从承诺到去桩途中的推进。承诺（周期、CHARGING 用途占有、CHARGER 预占、旅程行、停靠与订单意图，
 // 同一次保存）由派车轮里的充电分配形成（ChargingAllocator）；这里发计划与业务状态、过出发前安全门、建单与对账、途中监看、失败收尾。
-// 到桩、充电中、充满、离桩与释放在批次9-07。
+// 到桩、充电中、充满在 JourneyRuntimeEngine.ChargingCycle.cs，离桩与释放在充电分配的清扫里（批次9-07）。
 public sealed partial class JourneyRuntimeEngine
 {
     private static readonly Action<ILogger, string, string, string, Exception?> LogChargingDepartureNotProven =
@@ -117,7 +117,7 @@ public sealed partial class JourneyRuntimeEngine
     /// <b>收尾不放桩预占</b>：那要三项确认，由充电分配每轮开头的清扫做。
     /// </para>
     /// <para>
-    /// <b>单到了终态 <c>SUCCESS</c></b>：充电动作已经接上，本票到此为止——不收尾、不释放、不改周期，原样留给批次9-07。
+    /// <b>单到了终态 <c>SUCCESS</c></b>：充电动作已经接上，交给到桩之后那一段（批次9-07，<see cref="AdvanceAtChargerAsync"/>）：到桩、开始充电、充满。
     /// </para>
     /// <para>
     /// <b>车可能在动时不按超时释放。</b>单发出过之后，这里没有一个只因为等久了就放车、放桩或换单号的分支：放弃一张查无此单的充电单要凭
@@ -249,14 +249,15 @@ public sealed partial class JourneyRuntimeEngine
             .ConfigureAwait(false);
         if (order is { Kind: RiotOrderObservationKind.Terminal, OrderState: RiotOrderState.Success })
         {
-            // The charge action took: the rest of the cycle is batch 9-07's. A code a stalled order left is not true any more.
-            checkpointWaits.Clear(runtime.VehicleKey);
-            if (runtime.BlockReasonCode is not null)
+            // The charge action took: arrival, charging and completion (batch 9-07, JourneyRuntimeEngine.ChargingCycle.cs). A
+            // code a stalled order left is not true any more; the codes that part writes are its own to clear.
+            if (runtime.BlockReasonCode is { } code && !ChargingExecutionReasons.AtChargerCodes.Contains(code))
             {
                 runtime.SetBlockReason(null, now);
                 runtime.UpdatedAt = now;
                 await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             }
+            await AdvanceAtChargerAsync(runtime, stop, intent, order, cycle, cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -642,6 +643,8 @@ public sealed partial class JourneyRuntimeEngine
                         runtime.VehicleBusinessMessageId,
                         ChargingJourneyShape.EnRoutePlanMessageId(runtime.JourneyId),
                         ChargingJourneyShape.EnRouteStateMessageId(runtime.JourneyId),
+                        ChargingJourneyShape.ArrivedPlanMessageId(runtime.JourneyId),
+                        ChargingJourneyShape.ChargingStateMessageId(runtime.JourneyId),
                     },
                     cancellationToken)
                 .ConfigureAwait(false);

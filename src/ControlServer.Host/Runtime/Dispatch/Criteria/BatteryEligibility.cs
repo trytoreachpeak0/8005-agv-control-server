@@ -38,7 +38,7 @@ public sealed record DispatchBatteryPolicy(long Version, ChargingPolicyContent C
 /// </remarks>
 public static class BatteryEligibility
 {
-    /// <summary>车在充电中：本票保留「充电中一律不派」这一支（放开由批次9-07 按充电周期状态做）。</summary>
+    /// <summary>车在充电中：报这个值的车不派，除非本周期已充满（<see cref="ChargingVehicleMayTakeWork"/>）。</summary>
     public const string ChargingBatteryState = "CHARGING";
 
     /// <summary>
@@ -73,14 +73,14 @@ public static class BatteryEligibility
     }
 
     /// <summary>
-    /// 在桩上充电的车能不能接活离桩：批次9-07 按充电周期状态放开（充满后在桩上接活）。本票不放开，恒为否——
-    /// 这一支的判定入口就是这里，9-07 只换这个函数的实现。
+    /// 报 <c>CHARGING</c> 的车能不能接活离桩（批次9-07，control-server#405 放开）：只有本周期已 <c>COMPLETE</c> 的能——充满的车停在桩上只要还插着
+    /// 就一直报 <c>CHARGING</c>，一律拒绝会把它永远困在桩上（MVP 线踩过同一个坑）。充满之前的 <c>CHARGING</c> 照旧拒绝。
     /// </summary>
+    /// <param name="chargingCycleComplete">这一轮为这辆车读定的 <see cref="DispatchVehicleFacts.ChargingCycleComplete"/>。</param>
     public static bool ChargingVehicleMayTakeWork(RiotVehicleObservation vehicle, bool chargingCycleComplete = false)
     {
         ArgumentNullException.ThrowIfNull(vehicle);
-        _ = chargingCycleComplete;
-        return false;
+        return chargingCycleComplete;
     }
 
     /// <summary>

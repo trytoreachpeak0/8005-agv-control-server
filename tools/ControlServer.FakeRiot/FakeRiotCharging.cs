@@ -297,7 +297,10 @@ public static class FakeChargingModel
         {
             return state;
         }
-        return WithVehicle(state, state.Vehicles[vehicleKey], charge with
+        // The charge order took the vehicle to the charger, so that is where its card says it is (control-server#405): the
+        // server proves the arrival from the card's current station. Only here -- a move-only order to the charger, or one
+        // that hangs, leaves the position to the scenario's PUT /vehicle as before.
+        return WithVehicle(state, state.Vehicles[vehicleKey] with { CurrentPosition = stationId }, charge with
         {
             Docked = true,
             Charging = true,

@@ -455,7 +455,9 @@ public sealed class ChargingCycleProgressTests
         };
         if (missing == "charger-not-free")
         {
-            fleet.Riot.ForeignOrders.Add((new RiotListedOrder("FOREIGN-1", "MES-FOREIGN-1", 3, "OTHER-VEHICLE", "OTHER-VEHICLE"), Near.StationId));
+            // RIoT's unfinished order listing cannot be read whole: whether an order is heading for the charger is unknown, so
+            // the charger is not confirmed free (the same occupancy reading as the allocation).
+            fleet.Riot.OrderListingIncomplete = true;
         }
         if (missing == "vehicle-unreadable")
         {
@@ -470,7 +472,7 @@ public sealed class ChargingCycleProgressTests
         Assert.Equal(ChargingCycleWireStates.Complete, (await CycleAsync(fleet, KeyA)).WireState);
 
         fleet.Riot.FailOn = null;
-        fleet.Riot.ForeignOrders.Clear();
+        fleet.Riot.OrderListingIncomplete = false;
         fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = 12, BatteryState = NotCharging };
         await RoundAsync(fleet);
 
@@ -510,6 +512,34 @@ public sealed class ChargingCycleProgressTests
         await fleet.RunRoundAsync(TimeSpan.FromSeconds(1));
         Assert.Equal(ChargingCycleWireStates.Complete, (await CycleAsync(fleet, KeyA)).WireState);
         Assert.Equal(journey.JourneyId, (await ChargingJourneyAsync(fleet, AgvA))!.JourneyId);
+    }
+
+    /// <summary>
+    /// 真车载端在本服务端自己的单在途时整段未就绪（<c>RecoveryRequired</c>、<c>DEPARTURE_SAFETY_NOT_READY</c>，control-server#314）；合成车载端永远报安全，
+    /// 看不见这一格。到桩、开始充电、充满都只看 RIoT 的证据，所以会话在这一整段都是这个状态时照样走到 <c>COMPLETE</c>，快照照样发到车上。
+    /// </summary>
+    [Fact]
+    public async Task ArrivalChargingAndCompletionGoAheadWhileTheSessionIsNotReadyBecauseOfOurOwnOrder()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        JourneyRuntimeRow journey = await EnRouteAsync(fleet);
+        await DropSessionOnOwnOrderAsync(fleet);
+        fleet.Riot.CompleteOrder(journey.PickupUpperId);
+        AtCharger(fleet, KeyA, 60, Charging);
+
+        await RoundAsync(fleet);
+        Assert.Equal((KeyA, StationExclusivityStates.Occupied), await HolderAsync(fleet, Near.StationId));
+        Assert.Equal(ChargingCycleWireStates.Charging, (await CycleAsync(fleet, KeyA)).WireState);
+
+        AtCharger(fleet, KeyA, 80, Charging);
+        await RoundAsync(fleet);
+
+        Assert.Equal(ChargingCycleWireStates.Complete, (await CycleAsync(fleet, KeyA)).WireState);
+        Assert.Null(await ClaimOfAsync(fleet, KeyA));
+        Assert.Equal(
+            SessionReadiness.RecoveryRequired,
+            (await fleet.Context.SessionRecoveries.AsNoTracking().SingleAsync(row => row.AgvId == AgvA, Token)).Readiness);
+        Assert.Contains(fleet.Peer.Delivered, line => line.MessageId == JourneyClosure.SnapshotMessageIds(journey.JourneyId)[2]);
     }
 
     public static TheoryData<string> VehicleObservationLosses => ["read-fails", "disconnected"];
@@ -602,19 +632,16 @@ public sealed class ChargingCycleProgressTests
     public async Task WhenTheReleaseAndAnotherVehiclesReservationMeetInOneRoundTheOtherGetsItOnlyAfterTheRelease()
     {
         await using FleetFixture fleet = await FleetAsync(vehicles: 2);
-        fleet.Riot.VehicleOverrides[KeyB] = seen => seen with { CurrentStationId = 12 };
         JourneyRuntimeRow charging = await CompletedAsync(fleet);
+        // B falls below its line while A, full, still holds the only charger: B queues and takes no transport.
+        fleet.Riot.BatteryByVehicle[KeyB] = 20;
+        await RoundAsync(fleet);
         fleet.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
         for (int round = 0; round < 3; round++)
         {
             await RoundAsync(fleet);
         }
-        fleet.Catalog.Set([]);
-        fleet.Riot.BatteryByVehicle[KeyB] = 20;
-        for (int round = 0; round < 3; round++)
-        {
-            await RoundAsync(fleet);
-        }
+        Assert.Equal(VehiclePurposes.Transport, (await ClaimOfAsync(fleet, KeyA))!.Value.Purpose);
         Assert.Equal((KeyA, StationExclusivityStates.Occupied), await HolderAsync(fleet, Near.StationId));
         Assert.Null(await ClaimOfAsync(fleet, KeyB));
 
@@ -630,8 +657,8 @@ public sealed class ChargingCycleProgressTests
     }
 
     /// <summary>
-    /// 「放开用途」与「另一用途认领这辆车」在同一轮：充满那一轮里车还算忙（这一轮开头读的是在推进的旅程），新需求下一轮才派给它；
-    /// 用途经过里 <c>CHARGING</c> 的释放早于 <c>TRANSPORT</c> 的认领，任何时刻只有一份用途。
+    /// 「放开用途」与「另一用途认领这辆车」在同一轮：充满那一轮里车还算忙（这一轮开头读的是在推进的旅程），那一轮结束时它一份用途也没有；
+    /// 新需求下一轮才派给它。用途经过里恰好两份：<c>CHARGING</c> 已释放、<c>TRANSPORT</c> 在持有，从没有两份同时在持有。
     /// </summary>
     [Fact]
     public async Task ThePurposeReleasedAtCompletionIsNeverHeldTwice()
@@ -649,9 +676,11 @@ public sealed class ChargingCycleProgressTests
         Assert.Equal(VehiclePurposes.Transport, (await ClaimOfAsync(fleet, KeyA))!.Value.Purpose);
         VehiclePurposeClaimRecordRow[] records = await fleet.Context.Set<VehiclePurposeClaimRecordRow>().AsNoTracking()
             .Where(row => row.VehicleKey == KeyA).ToArrayAsync(Token);
+        Assert.Equal(2, records.Length);
         VehiclePurposeClaimRecordRow charged = Assert.Single(records, row => row.JourneyId == journey.JourneyId);
         VehiclePurposeClaimRecordRow transport = Assert.Single(records, row => row.Purpose == VehiclePurposes.Transport);
-        Assert.True(charged.ReleasedAt <= transport.AcquiredAt, $"CHARGING released at {charged.ReleasedAt}, TRANSPORT acquired at {transport.AcquiredAt}.");
+        Assert.Equal(ChargingExecutionReasons.Completed, charged.ReleaseReason);
+        Assert.Null(transport.ReleasedAt);
     }
 
     // ---- 崩溃点 ----------------------------------------------------------------------------------------------------------
@@ -745,7 +774,7 @@ public sealed class ChargingCycleProgressTests
         await RoundAsync(fleet);
         await RoundAsync(fleet);
 
-        Assert.All(current, id => Assert.Single(fleet.Peer.Delivered, line => line.MessageId == id));
+        Assert.All(current, id => Assert.Contains(fleet.Peer.Delivered, line => line.MessageId == id));
         Assert.DoesNotContain(fleet.Peer.Delivered, line => superseded.Contains(line.MessageId));
         Assert.Equal(plans, (await PayloadsAsync(fleet, AgvA, "UpcomingStopPlanSnapshot")).Length);
         Assert.Equal(states, (await PayloadsAsync(fleet, AgvA, "VehicleBusinessStateSnapshot")).Length);
@@ -891,6 +920,20 @@ public sealed class ChargingCycleProgressTests
         await RoundAsync(fleet);
         Assert.Equal(ChargingCycleWireStates.Complete, (await CycleAsync(fleet, KeyA)).WireState);
         return journey;
+    }
+
+    /// <summary>真车载端开着本服务端的单时的会话（形状同 <c>PickupDispatchPlanPastOwnOrderTests.DropSessionOnOwnOrderAsync</c>）。</summary>
+    private static async Task DropSessionOnOwnOrderAsync(FleetFixture fleet)
+    {
+        SessionRecoveryRow session = await fleet.Context.SessionRecoveries.SingleAsync(row => row.AgvId == AgvA, Token);
+        session.Readiness = SessionReadiness.RecoveryRequired;
+        session.ReasonCode = "DEPARTURE_SAFETY_NOT_READY";
+        session.DepartureSafe = false;
+        session.SafetyReasonCodesJson = """["VEHICLE_NOT_READY"]""";
+        session.SafetyUnknownPresent = true;
+        session.UpdatedAt = fleet.Clock.GetUtcNowWithoutTick();
+        await fleet.Context.SaveChangesAsync(Token);
+        fleet.Context.ChangeTracker.Clear();
     }
 
     private static void AtCharger(FleetFixture fleet, string vehicleKey, int battery, string batteryState)

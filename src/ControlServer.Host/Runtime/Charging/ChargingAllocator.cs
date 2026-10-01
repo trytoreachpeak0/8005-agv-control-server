@@ -94,6 +94,36 @@ public sealed class ChargingAllocationBoard
     /// <inheritdoc cref="FirstTime"/>
     public void Unsay(string key) => _said.TryRemove(key, out _);
 
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTimeOffset> _sampleRun =
+        new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// 充电中这一个新鲜的电量样本是否接着上一个新鲜样本（批次9-07，control-server#405；<c>REQ-0287</c>）：两次观测时刻相隔不超过
+    /// <paramref name="maxGap"/> 才算连续。记下它，答它是否连续——一个周期的第一个样本、遥测断过之后的第一个样本都不连续，只重新开始观察。
+    /// 观测时刻没有往前走（同一个读数读了两次）不算新样本，什么也不改、答否。进程重启后从头计：只会让充满判得更晚。
+    /// </summary>
+    public bool ContinuesSampleRun(string cycleId, DateTimeOffset observedAt, TimeSpan maxGap)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(cycleId);
+        if (_sampleRun.TryGetValue(cycleId, out DateTimeOffset previous))
+        {
+            if (observedAt <= previous)
+            {
+                return false;
+            }
+            _sampleRun[cycleId] = observedAt;
+            return observedAt - previous <= maxGap;
+        }
+        _sampleRun[cycleId] = observedAt;
+        return false;
+    }
+
+    /// <summary>电量遥测断了（读不到、过期）或周期已不在充电：下一个新鲜样本重新开始观察。</summary>
+    public void BreakSampleRun(string cycleId) => _sampleRun.TryRemove(cycleId, out _);
+
+    /// <summary>「到桩之后失联」已升级告警过的键（事件 2261、2262）：一种失联一次，恢复时 <see cref="Unsay"/>。</summary>
+    public static string ChargingLossKey(string journeyId, string code) => $"charging-loss:{code}:{journeyId}";
+
     /// <summary>「取消后一直证明不了停稳」已告警过的那趟充电旅程的键（事件 2256）。</summary>
     public static string EndNotProvenKey(string journeyId) => EndNotProvenPrefix + journeyId;
 
@@ -247,6 +277,13 @@ public sealed class ChargingAllocator(
             new EventId(2244, nameof(LogReservationReleased)),
             "Charger {MapId}/{StationId} released: the charging cycle of vehicle {VehicleKey} (journey {JourneyId}) ended in a " +
             "confirmed failure, and charging has stopped, the vehicle is not on the charger and the charger is confirmed free.");
+
+    private static readonly Action<ILogger, int, int, string, string, Exception?> LogReleasedOnDeparture =
+        LoggerMessage.Define<int, int, string, string>(
+            LogLevel.Information,
+            new EventId(2248, nameof(LogReleasedOnDeparture)),
+            "Charger {MapId}/{StationId} released: vehicle {VehicleKey} was full (journey {JourneyId}) and has left it -- charging " +
+            "has stopped, the vehicle is not on the charger and the charger is confirmed free. Its charging cycle is closed.");
 
     private static readonly Action<ILogger, Exception?> LogSweepFailed =
         LoggerMessage.Define(
@@ -659,6 +696,12 @@ public sealed class ChargingAllocator(
             {
                 ChargingCycleRow? cycle = await dbContext.Set<ChargingCycleRow>().AsNoTracking()
                     .SingleOrDefaultAsync(item => item.JourneyId == row.JourneyId, cancellationToken).ConfigureAwait(false);
+                if (cycle is { Phase: ChargingCyclePhases.Active, WireState: ChargingCycleWireStates.Complete })
+                {
+                    // Batch 9-07: full, its purpose released, the charger still its occupancy until it has left.
+                    await ReleaseOnDepartureAsync(row, cycle, reads, cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
                 if (cycle is not { Phase: ChargingCyclePhases.Ended, EndReason: { } reason } ||
                     !ChargingExecutionReasons.ConfirmedFailures.Contains(reason))
                 {
@@ -667,18 +710,7 @@ public sealed class ChargingAllocator(
 
                 reads.Occupancy ??= await occupancy.ReadAsync(cancellationToken).ConfigureAwait(false);
                 string stuckKey = ChargingAllocationBoard.ReservationStuckKey(row.JourneyId);
-                string? missing =
-                    !reads.Occupancy.Vehicles.TryGetValue(row.VehicleKey, out RiotVehicleObservation? vehicle)
-                        ? "the vehicle cannot be read from RIoT (offline, or its position is missing)"
-                    : string.IsNullOrWhiteSpace(vehicle.BatteryState)
-                        ? "the vehicle's battery state cannot be read, so charging is not known to have stopped"
-                    : string.Equals(vehicle.BatteryState, BatteryEligibility.ChargingBatteryState, StringComparison.Ordinal)
-                        ? "the vehicle reports it is charging"
-                    : StandsOn(vehicle, row)
-                        ? "the vehicle is read standing on the charger"
-                    : reads.Occupancy.Judge(row.MapId, row.StationId, askingVehicleKey: null) is { } occupied
-                        ? $"the charger is not confirmed free ({occupied})"
-                    : null;
+                string? missing = WhyNotYetReleasable(row, reads.Occupancy);
                 if (missing is not null)
                 {
                     // Independent review M2(c): nothing releases it but the three confirmations, and a vehicle switched off or
@@ -707,6 +739,81 @@ public sealed class ChargingAllocator(
             ForgetStaged(agvId: null);
             LogSweepFailed(logger, error);
         }
+    }
+
+    /// <summary>
+    /// <c>REQ-0173</c> 的三项确认缺哪一项（都在答空）：充电已停止（新鲜读数不是 <c>CHARGING</c>）、原车已离开（当前站不是这个桩）、
+    /// 桩位可确认空闲（与分配同一个占用判法）。车读不到也不算离开。失败周期与充满离桩用同一个判法。
+    /// </summary>
+    private string? WhyNotYetReleasable(StationExclusivityRow row, ChargerOccupancySnapshot occupancyFacts) =>
+        !occupancyFacts.Vehicles.TryGetValue(row.VehicleKey, out RiotVehicleObservation? vehicle)
+            ? "the vehicle cannot be read from RIoT (offline, or its position is missing)"
+        : string.IsNullOrWhiteSpace(vehicle.BatteryState)
+            ? "the vehicle's battery state cannot be read, so charging is not known to have stopped"
+        : string.Equals(vehicle.BatteryState, BatteryEligibility.ChargingBatteryState, StringComparison.Ordinal)
+            ? "the vehicle reports it is charging"
+        : StandsOn(vehicle, row)
+            ? "the vehicle is read standing on the charger"
+        : occupancyFacts.Judge(row.MapId, row.StationId, askingVehicleKey: null) is { } occupied
+            ? $"the charger is not confirmed free ({occupied})"
+        : null;
+
+    /// <summary>
+    /// 充满的车离桩（批次9-07，control-server#405；<c>REQ-0173</c>）：三项确认都在，才在<b>一个事务</b>里删独占行、把释放写进它的经过、
+    /// 周期收尾（阶段 <c>ENDED</c>、线上回 <c>NOT_CHARGING</c>、记离桩与释放时刻）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>下达下一单时不释放</b>：那一刻车还停在桩上，第二项不成立。RIoT 在下一单队首自动插 <c>act(78,2,0)</c>，本服务端不发任何离桩命令；
+    /// 队首有没有那个动作也不当作离桩证据（调度 09-29，PR #414 审查）。
+    /// </para>
+    /// <para>
+    /// <b>同一个事务</b>：「写释放经过、删独占行」与「周期收尾」之间崩掉，事务回滚，桩仍是占用、周期仍是 <c>COMPLETE</c>，下一轮整笔重来——
+    /// 不会留下「桩已空而周期未收尾」。删行与周期更新都带着读到时的条件（持有者与经过、周期版本），另一处已经动过就一样都不写。
+    /// </para>
+    /// <para>
+    /// 先于这一轮的分配做（<see cref="AllocateAsync"/> 开头），所以排队的车在释放提交之后才能取得这个桩，同一轮里也是。
+    /// </para>
+    /// </remarks>
+    private async Task ReleaseOnDepartureAsync(
+        StationExclusivityRow row,
+        ChargingCycleRow cycle,
+        RoundReads reads,
+        CancellationToken cancellationToken)
+    {
+        reads.Occupancy ??= await occupancy.ReadAsync(cancellationToken).ConfigureAwait(false);
+        if (WhyNotYetReleasable(row, reads.Occupancy) is not null)
+        {
+            return;
+        }
+
+        DateTimeOffset now = timeProvider.GetUtcNow();
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        if (!await FixedStationExclusivity.ReleaseAsReadAsync(
+                dbContext, row, now, ChargingExecutionReasons.ChargerReleasedOnDeparture, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+        int closed = await dbContext.Set<ChargingCycleRow>()
+            .Where(item => item.CycleId == cycle.CycleId && item.Version == cycle.Version)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(item => item.Phase, ChargingCyclePhases.Ended)
+                    .SetProperty(item => item.WireState, ChargingCycleWireStates.NotCharging)
+                    .SetProperty(item => item.DepartedAt, now)
+                    .SetProperty(item => item.ReleasedAt, now)
+                    .SetProperty(item => item.EndedAt, now)
+                    .SetProperty(item => item.EndReason, ChargingExecutionReasons.Departed)
+                    .SetProperty(item => item.Version, cycle.Version + 1),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (closed == 0)
+        {
+            // The cycle moved since it was read: neither half is written.
+            return;
+        }
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        LogReleasedOnDeparture(logger, row.MapId, row.StationId, row.VehicleKey, row.JourneyId, null);
     }
 
     /// <summary>板上只告警一次的键里，事情已经走别的路了结的，丢掉（<see cref="ChargingAllocationBoard.ForgetSettled"/>）。没有那种键时不读库。</summary>

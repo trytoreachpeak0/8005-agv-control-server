@@ -97,6 +97,18 @@ public static class ChargingExecutionReasons
     public const string BatteryTelemetryLost = "CHARGING_BATTERY_TELEMETRY_LOST";
 
     /// <summary>
+    /// 到桩证据满足了，这个桩的独占却已不是这一趟的（被人工释放、之后可能归了别的车，control-server#406）：不转占用、不释放任何东西，保持并告警，
+    /// 交人到现场确认车停在哪里。
+    /// </summary>
+    public const string ReservationLostAtArrival = "CHARGING_RESERVATION_LOST_AT_ARRIVAL";
+
+    /// <summary>到桩之后那一段自己写、也由它自己清掉的码：单 <c>SUCCESS</c> 那一支不替它们清。</summary>
+    public static IReadOnlySet<string> AtChargerCodes { get; } = new HashSet<string>(StringComparer.Ordinal)
+    {
+        ChargerNotEngaged, VehicleObservationLost, BatteryTelemetryLost, ReservationLostAtArrival,
+    };
+
+    /// <summary>
     /// 充满（<c>COMPLETE</c>）：充电旅程的收尾码与 <c>CHARGING</c> 用途占有的释放原因。不是释放桩——桩仍是这辆车的占用，等离桩三项确认（<c>REQ-0281</c>）。
     /// </summary>
     public const string Completed = "CHARGING_COMPLETE";
