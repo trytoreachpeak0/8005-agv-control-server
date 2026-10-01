@@ -252,7 +252,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         string? provenRecoveryCheckpoint,
         IReadOnlyCollection<int> activeUnlockSlots,
         IReadOnlyCollection<string> pendingAttemptIds,
-        IReadOnlyCollection<string> pendingResultIds,
+        IReadOnlyCollection<ReportedPendingResult> pendingResults,
         CancellationToken cancellationToken)
     {
         SessionRecoveryRow row = await GetCurrentSessionAsync(agvId, sessionGeneration, cancellationToken)
@@ -268,7 +268,9 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         row.ProvenRecoveryCheckpoint = provenRecoveryCheckpoint;
         row.ActiveUnlockSlotsJson = JsonSerializer.Serialize(NormalizeSlots(activeUnlockSlots));
         row.PendingAttemptIdsJson = SerializeSorted(pendingAttemptIds);
-        row.PendingResultIdsJson = SerializeSorted(pendingResultIds);
+        row.PendingResultIdsJson = SerializeSorted(
+            await ResultsNotProcessedInThisGenerationAsync(agvId, sessionGeneration, pendingResults, cancellationToken)
+                .ConfigureAwait(false));
         // The report can name an attempt this server settled long ago, and nothing may arrive for it
         // afterwards: its result was accepted in an earlier session. Settling reported attempts only when
         // a result arrives left such a session on PENDING_FACT_RECONCILIATION_REQUIRED until some later
@@ -279,6 +281,67 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         row.ReasonCode = "RECOVERY_RECONCILIATION_PENDING";
         row.UpdatedAt = DateTimeOffset.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The messageIds of <paramref name="pendingResults"/> less every one this session generation has already
+    /// processed as an OperationResult with the same business content.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// control-server#435. A reconnecting vehicle resends its unacknowledged result before it reports, so the result can
+    /// be processed in this generation while the session has no pending list yet -- and the report then names it. The
+    /// vehicle's replay after the handshake is byte for byte the line already processed, so the inbox answers it from
+    /// its first response and <see cref="ReconcileReportedPendingResultAsync"/> never runs for it. Nothing else takes it
+    /// off while the link stays up: the session sat on PENDING_FACT_RECONCILIATION_REQUIRED, heartbeats flowing (hmi#233
+    /// real-rig run 36828773806, generation 7). The report is therefore reconciled here against what this generation has
+    /// already seen, which is what the replay would have done.
+    /// </para>
+    /// <para>
+    /// An inbox row stands for a processed line: <c>CaptureFirstResponseAsync</c> writes it -- and rewrites it to a new
+    /// generation's line on a rebound resend -- in the transaction that processed the line, after processing returned.
+    /// A result this generation has not processed stays pending; one processed only in an earlier generation stays
+    /// pending too, for the rebound replay to reprocess and reconcile (CV-OPERATION-RESULT-UNKNOWN-RECONCILE). So does
+    /// one whose business content differs from what the report holds.
+    /// </para>
+    /// </remarks>
+    private async Task<string[]> ResultsNotProcessedInThisGenerationAsync(
+        string agvId, long sessionGeneration, IReadOnlyCollection<ReportedPendingResult> pendingResults,
+        CancellationToken cancellationToken)
+    {
+        if (pendingResults.Count == 0)
+        {
+            return [];
+        }
+
+        string[] messageIds = pendingResults.Select(item => item.MessageId).ToArray();
+        ProtocolInboxRow[] processed = await dbContext.ProtocolInbox.AsNoTracking()
+            .Where(item => messageIds.Contains(item.MessageId) && item.MessageType == "OperationResult")
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        return pendingResults
+            .Where(pending => !processed.Any(item =>
+                string.Equals(item.MessageId, pending.MessageId, StringComparison.Ordinal) &&
+                IsResultOfThisGeneration(item.RequestJson, agvId, sessionGeneration, pending.ContentSha256)))
+            .Select(pending => pending.MessageId)
+            .ToArray();
+    }
+
+    private static bool IsResultOfThisGeneration(
+        string requestJson, string agvId, long sessionGeneration, string resultContentSha256)
+    {
+        using JsonDocument document = JsonDocument.Parse(requestJson);
+        JsonElement root = document.RootElement;
+        return root.TryGetProperty("agvId", out JsonElement lineAgvId) &&
+               lineAgvId.ValueKind == JsonValueKind.String &&
+               string.Equals(lineAgvId.GetString(), agvId, StringComparison.Ordinal) &&
+               root.TryGetProperty("sessionGeneration", out JsonElement lineGeneration) &&
+               lineGeneration.ValueKind == JsonValueKind.Number &&
+               lineGeneration.GetInt64() == sessionGeneration &&
+               root.TryGetProperty("payload", out JsonElement payload) &&
+               payload.ValueKind == JsonValueKind.Object &&
+               payload.TryGetProperty("resultContentSha256", out JsonElement contentSha256) &&
+               contentSha256.ValueKind == JsonValueKind.String &&
+               string.Equals(contentSha256.GetString(), resultContentSha256, StringComparison.Ordinal);
     }
 
     /// <summary>

@@ -462,6 +462,131 @@ public sealed class RecoveryStateMachineG2Tests
         }
     }
 
+    /// <summary>
+    /// control-server#435 as the vehicle sees it: the UNKNOWN result is processed in this generation before the
+    /// session's RecoveryStateReport names it as pending, the vehicle's byte-identical replay is answered from the inbox,
+    /// and a real compensation then closes the attempt. The vehicle must be told READY in the answer to its
+    /// LoadCompensationResult -- the line it actually reads -- not left on PENDING_FACT_RECONCILIATION_REQUIRED with
+    /// nothing in a healthy link to move it (hmi#233 real-rig run 36828773806, generation 7).
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-COMPENSATE")]
+    [Trait("ProtocolVector", "CV-OPERATION-RESULT-UNKNOWN-RECONCILE")]
+    public async Task ACompensationAfterAResultReportedAsPendingInItsOwnGenerationTellsTheVehicleItIsReady()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_COMPENSATE_SAME_GENERATION";
+        const string proof = "compensate-same-generation-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context, productionShapedSession: true);
+            // The result below is what puts the operation into RecoveryRequired.
+            (await context.StationOperations.SingleAsync(token)).Status = StationOperationStatus.Prepared;
+            await context.SaveChangesAsync(token);
+            RecordingPeer peer = new(context);
+            OnboardMessageProcessor processor = Processor(context, peer, proofVariable);
+            OnboardConnectionState state = CurrentState();
+
+            const string resultMessageId = "e0000000-0000-4000-8000-000000000435";
+            string result = Envelope(
+                resultMessageId,
+                "OperationResult",
+                OperationResultPayload(completed: false, journalCheckpoint: "RESULT_UNKNOWN_RECORDED"));
+            await processor.ProcessAsync(result, state, token);
+            string resultContentSha256;
+            using (JsonDocument document = JsonDocument.Parse(result))
+            {
+                resultContentSha256 = document.RootElement
+                    .GetProperty("payload").GetProperty("resultContentSha256").GetString()!;
+            }
+            await processor.ProcessAsync(
+                Envelope(
+                    "f2000000-0000-4000-8000-000000000435",
+                    "RecoveryStateReport",
+                    new
+                    {
+                        reportId = "f3000000-0000-4000-8000-000000000435",
+                        unsettledSlotOperationAttemptId = AttemptId,
+                        provenRecoveryCheckpoint = "SAFE_FINISH_REACHED",
+                        activeUnlockSlots = Array.Empty<int>(),
+                        forcedRecoveryGeneration = 0,
+                        pendingResults = new[]
+                        {
+                            new
+                            {
+                                messageType = "OperationResult",
+                                messageId = resultMessageId,
+                                businessId = AttemptId,
+                                contentSha256 = resultContentSha256
+                            }
+                        }
+                    }),
+                state,
+                token);
+            Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(result, state, token)));
+
+            await processor.ProcessAsync(RecoverySessionRequest(proof), state, token);
+            await processor.ProcessAsync(RecoveryAction("COMPENSATE_LOAD_ALL_EMPTY"), state, token);
+            await processor.ProcessAsync(
+                Envelope(
+                    "90000000-0000-4000-8000-000000000435",
+                    "LoadCompensationRequested",
+                    new
+                    {
+                        recoveryActionId = ActionId,
+                        exceptionRecoverySessionId = StableGuid(RequestId, "exception-recovery-session"),
+                        demandId = DemandId,
+                        slotOperationAttemptId = AttemptId,
+                        @operator = Operator()
+                    }),
+                state,
+                token);
+            Assert.Single(peer.Lines, line => MessageType(line) == "LoadCompensationCommand");
+            string response = await processor.ProcessAsync(
+                AllEmptyCompensationResult(Envelope(
+                    "a0000000-0000-4000-8000-000000000435",
+                    "LoadCompensationResult",
+                    new
+                    {
+                        recoveryActionId = ActionId,
+                        demandId = DemandId,
+                        slotOperationAttemptId = AttemptId,
+                        overallOutcome = "FAILED",
+                        slotResults = Array.Empty<object>(),
+                        observedAt = Now.AddSeconds(3)
+                    })),
+                state,
+                token);
+
+            // Every line the vehicle reads, in one assertion: a red names what it was told, not just that the count differs.
+            SessionRecoveryRow session = await context.SessionRecoveries.AsNoTracking().SingleAsync(token);
+            Assert.Equal(
+                (Lines: "DurableAck|SessionReadiness:READY", PendingResults: "[]", Reason: "READY"),
+                (Lines: string.Join('|', response.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(line =>
+                    {
+                        using JsonDocument document = JsonDocument.Parse(line);
+                        string type = document.RootElement.GetProperty("messageType").GetString()!;
+                        return type == "SessionReadiness"
+                            ? $"{type}:{document.RootElement.GetProperty("payload").GetProperty("readiness").GetString()}"
+                            : type;
+                    })),
+                 PendingResults: session.PendingResultIdsJson,
+                 Reason: session.ReasonCode));
+            Assert.Equal(StationOperationStatus.Cancelled, (await context.StationOperations.SingleAsync(token)).Status);
+            Assert.Equal(SessionReadiness.Ready, state.Readiness);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-00")]
     [Trait("IntegrationSlice", "FP-IS-05")]
