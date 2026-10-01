@@ -401,6 +401,8 @@ public sealed class Batch7CargoHoldingDashboardTests
         builder.Services.AddOptions<JourneyRuntimeOptions>()
             .Bind(builder.Configuration.GetSection(JourneyRuntimeOptions.SectionName));
         builder.Services.AddDbContext<ControlServerDbContext>(options => options.UseSqlite(database.Connection));
+        // control-server#392: the idle return card reads the evaluator's verdict board, a host singleton.
+        builder.Services.AddSingleton<ControlServer.Host.Runtime.IdleReturn.IdleReturnVerdictBoard>();
         await using WebApplication app = builder.Build();
         app.MapDashboardQueries();
         await app.StartAsync(Token);
