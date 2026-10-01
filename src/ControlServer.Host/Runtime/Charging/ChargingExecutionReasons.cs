@@ -145,6 +145,12 @@ public static class ChargingExecutionReasons
     public const string OldOrderResumedWhileClearing = "CHARGING_OLD_ORDER_RESUMED_WHILE_CLEARING";
 
     /// <summary>
+    /// 清桩中，人工确认已记下、旧单也已终结，但 RIoT 此刻读到车在线且停在原桩上、或正在充电：桩没有腾空，不完成清桩、不放桩（control-server#406
+    /// 审查 N1，执行前重核前提）。车被挪开之后的那一轮完成。
+    /// </summary>
+    public const string ClearanceChargerNotVacant = "CHARGING_CLEARANCE_CHARGER_NOT_VACANT";
+
+    /// <summary>
     /// 充不上之后人工清桩完成、旧单已终结：周期结束、桩的独占释放、<c>CLEARING_MAINTENANCE</c> 用途放开、旅程收尾。桩的分配暂停<b>不</b>解除
     /// （要 <c>ChargingStationRecoveryConfirmation</c>）。不是「已确认失败」：不计入「两次即停」、不进冷却。
     /// </summary>

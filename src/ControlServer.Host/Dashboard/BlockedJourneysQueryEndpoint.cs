@@ -267,6 +267,9 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
             [ChargingExecutionReasons.OldOrderResumedWhileClearing] =
                 "现场注意车辆可能移动：这辆车正在等人工清桩，但它那张旧充电单在 RIoT 里被人恢复了（从 HANG 回到排队或执行），"
                 + "车可能自己开回充电桩，而现场可能有人正在清桩。请立刻联系现场，并在 RIoT 里结束这张旧单。服务端不会因此急停或取消",
+            [ChargingExecutionReasons.ClearanceChargerNotVacant] =
+                "清桩还不能完成：人工确认已记下、旧充电单也已结束，但 RIoT 此刻读到这辆车又停在原充电桩上（或正在充电），桩并没有腾空。"
+                + "桩暂不释放；请到现场把车挪开，读到桩空了的那一轮会自动完成清桩",
             [ChargingExecutionReasons.UnableToChargeCleared] =
                 "充不上的这次充电已收尾：清桩已确认、旧单已结束，充电桩的独占已释放，车可以按常规派车检查接活或去别的桩充电。"
                 + "这个桩仍暂停分配，要等维修后做恢复确认",

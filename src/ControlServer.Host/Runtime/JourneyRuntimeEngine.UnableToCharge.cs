@@ -61,7 +61,25 @@ public sealed partial class JourneyRuntimeEngine
             "CHARGING_OLD_ORDER_RESUMED_WHILE_CLEARING: vehicle {VehicleKey} (journey {JourneyId}) is held for a manual clearance " +
             "at charger {StationId}, and its old charge order {UpperId} has left HANG for {Disposition} in RIoT: somebody let it " +
             "go on, and the vehicle may drive back onto the charger while a person is clearing it. Warn the people on site. This " +
-            "server sends no emergency stop and no cancel for it (control-server#406 review S5).");
+            "server sends no emergency stop and no cancel for it (control-server#406 review S5). A manual clearance confirmation " +
+            "recorded before this no longer counts: the charger has to be confirmed clear again.");
+
+    private static readonly Action<ILogger, string, string, int, string, Exception?> LogClearanceChargerNotVacant =
+        LoggerMessage.Define<string, string, int, string>(
+            LogLevel.Warning,
+            new EventId(2274, nameof(LogClearanceChargerNotVacant)),
+            "CHARGING_CLEARANCE_CHARGER_NOT_VACANT: vehicle {VehicleKey} (journey {JourneyId}): the charger {StationId} was " +
+            "confirmed clear and the old order has ended ({Disposition}), but RIoT reads the vehicle back on the charger or " +
+            "charging. The clearance is not completed and the charger is not released until it reads the charger vacant " +
+            "(control-server#406 review N1).");
+
+    private static readonly Action<ILogger, string, string, int, string, Exception?> LogClearingExitUnavailable =
+        LoggerMessage.Define<string, string, int, string>(
+            LogLevel.Warning,
+            new EventId(2275, nameof(LogClearingExitUnavailable)),
+            "Vehicle {VehicleKey} (journey {JourneyId}) is held at charger {StationId} for a manual clearance, and the manual " +
+            "station clearance exit is no longer available ({Reasons}): nobody can confirm it clear now. Restore the field " +
+            "operator roster or an entry (control-server#406 review N3).");
 
     private static readonly Action<ILogger, string, string, int, string, Exception?> LogClearedChargerReleased =
         LoggerMessage.Define<string, string, int, string>(
@@ -291,6 +309,13 @@ public sealed partial class JourneyRuntimeEngine
 
         StationClearanceRow? clearance = await dbContext.Set<StationClearanceRow>().AsNoTracking()
             .SingleOrDefaultAsync(row => row.CycleId == cycle.CycleId, cancellationToken).ConfigureAwait(false);
+        // Review N3: the exit was there when the clearance began; said once a cycle if it has gone since.
+        if (clearance is { CompletedAt: null } &&
+            (clearanceExit is null ? StationClearanceExit.NoEntry : clearanceExit.Unavailable()) is { } exitGone &&
+            dispatchRound.Charging.Board.FirstTime("clearing-exit-unavailable:" + cycle.CycleId))
+        {
+            LogClearingExitUnavailable(logger, runtime.VehicleKey, runtime.JourneyId, stop.StationRiotId, exitGone, null);
+        }
         RiotOrderObservation order;
         try
         {
@@ -304,6 +329,7 @@ public sealed partial class JourneyRuntimeEngine
         string disposition = ManualStationClearance.Disposition(order, stop.UpperId);
         DateTimeOffset? confirmedAt = clearance?.ConfirmedAt;
         string unsettledKey = "clearing-old-order-unsettled:" + runtime.JourneyId;
+        string resumedKey = "clearing-old-order-resumed:" + runtime.JourneyId;
 
         if (!ManualStationClearance.Settled(disposition))
         {
@@ -313,11 +339,23 @@ public sealed partial class JourneyRuntimeEngine
                 Kind: RiotOrderObservationKind.Active,
                 OrderState: RiotOrderState.Queueing or RiotOrderState.Executing or RiotOrderState.QueuePriority,
             };
-            if (resumed && dispatchRound.Charging.Board.FirstTime("clearing-old-order-resumed:" + runtime.JourneyId))
+            if (!resumed)
+            {
+                // Review N4: back to HANG (or anything that cannot move it) -- the next resume is a new one, said again.
+                dispatchRound.Charging.Board.Unsay(resumedKey);
+            }
+            else if (dispatchRound.Charging.Board.FirstTime(resumedKey))
             {
                 LogOldOrderResumedWhileClearing(
                     logger, runtime.VehicleKey, runtime.JourneyId, stop.StationRiotId, stop.UpperId,
                     string.Create(CultureInfo.InvariantCulture, $"orderState {order.OrderState}"), null);
+                // Review N1: the vehicle may come back onto the charger, so "the charger is clear" said before this no longer
+                // holds; that order's later ending (a SUCCESS at the charger, say) completes nothing without a new confirmation.
+                if (clearance is { CompletedAt: null, ConfirmedAt: not null })
+                {
+                    await VoidRecordedConfirmationAsync(clearance.ClearanceId, cancellationToken).ConfigureAwait(false);
+                    confirmedAt = null;
+                }
             }
             if (clearance is { CompletedAt: null })
             {
@@ -341,6 +379,7 @@ public sealed partial class JourneyRuntimeEngine
             return;
         }
 
+        dispatchRound.Charging.Board.Unsay(resumedKey);
         if (clearance is not { ConfirmedAt: not null, CompletedAt: null })
         {
             // The old order has ended, nobody has confirmed the charger clear yet: the vehicle stays, waiting for that person.
@@ -348,6 +387,31 @@ public sealed partial class JourneyRuntimeEngine
                 .ConfigureAwait(false);
             return;
         }
+
+        // Review N1 (re-check the premise before acting, as in control-server#404): completing writes "the charger is clear";
+        // it is not written while RIoT reads the vehicle back on the charger or charging.
+        RiotVehicleObservation? vehicle;
+        try
+        {
+            vehicle = await vehicleFacts.ReadVehicleAsync(runtime.VehicleKey, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
+                                      !cancellationToken.IsCancellationRequested)
+        {
+            vehicle = null;
+        }
+        string notVacantKey = "clearing-charger-not-vacant:" + runtime.JourneyId;
+        if (ManualStationClearance.StillOnTheCharger(vehicle, cycle.StationId, runtimeOptions.MapIdentity))
+        {
+            await SetChargingCodeAsync(runtime, ChargingExecutionReasons.ClearanceChargerNotVacant, now, cancellationToken)
+                .ConfigureAwait(false);
+            if (dispatchRound.Charging.Board.FirstTime(notVacantKey))
+            {
+                LogClearanceChargerNotVacant(logger, runtime.VehicleKey, runtime.JourneyId, stop.StationRiotId, disposition, null);
+            }
+            return;
+        }
+        dispatchRound.Charging.Board.Unsay(notVacantKey);
 
         if (await ChargerClearanceRelease.CompleteAndReleaseAsync(
                 dbContext, clearance.ClearanceId, cycle.CycleId, cycle.Version, ChargingExecutionReasons.UnableToChargeCleared,
@@ -358,6 +422,27 @@ public sealed partial class JourneyRuntimeEngine
             LogClearedChargerReleased(logger, runtime.JourneyId, runtime.VehicleKey, stop.StationRiotId, disposition, null);
         }
         await CloseClearedChargingAsync(runtime, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 作废还没完成的清桩记录上已记下的人工确认（确认人、角色、时刻、最终位置、处置、腾空情况、确认号清空）：旧单被人在 RIoT 里继续之后，「桩已腾空」不再成立
+    /// （审查 N1）。按「还没完成、确认已记下」更新；同一刻被完成了就什么也不改。那一次判定本身仍在确认请求表与管理员审计里。
+    /// </summary>
+    private async Task VoidRecordedConfirmationAsync(string clearanceId, CancellationToken cancellationToken)
+    {
+        await dbContext.Set<StationClearanceRow>()
+            .Where(row => row.ClearanceId == clearanceId && row.CompletedAt == null && row.ConfirmedAt != null)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(row => row.ConfirmedBy, (string?)null)
+                    .SetProperty(row => row.ConfirmedByRole, (string?)null)
+                    .SetProperty(row => row.ConfirmedAt, (DateTimeOffset?)null)
+                    .SetProperty(row => row.VehicleFinalPosition, (string?)null)
+                    .SetProperty(row => row.OldOrderDisposition, (string?)null)
+                    .SetProperty(row => row.ClearedCondition, (string?)null)
+                    .SetProperty(row => row.ConfirmationRequestId, (string?)null),
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>

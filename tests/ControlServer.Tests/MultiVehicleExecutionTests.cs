@@ -929,6 +929,11 @@ public sealed partial class MultiVehicleExecutionTests
                 AuditRetentionPolicy.Default);
             AreaAssignments = new CountingAreaAssignments(
                 new AreaAssignmentStore(context, new GovernedConfigurationPublisher(governance, governance)));
+            ClearanceRoles = new ControlServer.Host.Runtime.Charging.FieldOperatorRoleOptions
+            {
+                Path = ClearanceRosterPath,
+                OnboardClearanceEntryDeclared = true,
+            };
             Engine = CreateEngine();
         }
 
@@ -1426,24 +1431,20 @@ public sealed partial class MultiVehicleExecutionTests
                 orderCommands: new RiotOrderCommandService(Riot, new RiotOrderCommandAuditStore(Context), Riot, Clock),
                 idleReturnMaterializationFailures: IdleReturnMaterializationFailures,
                 clearanceExit: new ControlServer.Host.Runtime.Charging.StationClearanceExit(
-                    new ControlServer.Host.Runtime.Charging.FieldOperatorRoleRoster(Microsoft.Extensions.Options.Options.Create(
-                        new ControlServer.Host.Runtime.Charging.FieldOperatorRoleOptions { Path = ClearanceRosterPath })),
-                    Microsoft.Extensions.Options.Options.Create(
-                        new ControlServer.Host.Runtime.Charging.FieldOperatorRoleOptions { Path = ClearanceRosterPath }),
-                    ClearanceConfiguration));
+                    new ControlServer.Host.Runtime.Charging.FieldOperatorRoleRoster(Microsoft.Extensions.Options.Options.Create(ClearanceRoles)),
+                    Microsoft.Extensions.Options.Options.Create(ClearanceRoles),
+                    new ConfigurationBuilder().Build(),
+                    Microsoft.Extensions.Options.Options.Create(new VehicleFaultRecoveryOptions())));
         }
 
         /// <summary>
-        /// 人工清桩的出口（control-server#406 审查 M1）：默认可用——名单里有一名 R-11、Host 入口映射着。要它不可用的用例改名单文件或这份配置；
-        /// 两样都每次现读。
+        /// 人工清桩的出口（control-server#406 审查 M1）：默认可用——名单里有一名 R-11、声明了车载端入口（Host 入口要一个有值的凭据变量，夹具不设
+        /// 进程级的环境变量）。要它不可用的用例改名单文件或 <see cref="ClearanceRoles"/>；名单文件每次现读，选项对象引擎读的就是这一个。
         /// </summary>
         public string ClearanceRosterPath { get; } = WriteClearanceRoster();
 
         /// <inheritdoc cref="ClearanceRosterPath"/>
-        public Microsoft.Extensions.Configuration.IConfigurationRoot ClearanceConfiguration { get; } =
-            new Microsoft.Extensions.Configuration.ConfigurationBuilder()
-                .AddInMemoryCollection(new Dictionary<string, string?> { ["VehicleFaultRecovery:enabled"] = "true" })
-                .Build();
+        public ControlServer.Host.Runtime.Charging.FieldOperatorRoleOptions ClearanceRoles { get; }
 
         private static string WriteClearanceRoster()
         {

@@ -251,7 +251,7 @@ public sealed class ChargingUnableToChargeTests
                 File.WriteAllText(fleet.ClearanceRosterPath, """{"operators":[{"operatorId":"op-plain","roles":["R-04"]}]}""");
                 break;
             case "no-entry":
-                fleet.ClearanceConfiguration["VehicleFaultRecovery:enabled"] = "false";
+                fleet.ClearanceRoles.OnboardClearanceEntryDeclared = false;
                 break;
         }
         await FailingAtChargerAsync(fleet);
@@ -270,36 +270,56 @@ public sealed class ChargingUnableToChargeTests
         Assert.DoesNotContain(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2264);
 
         File.WriteAllText(fleet.ClearanceRosterPath, roster);
-        fleet.ClearanceConfiguration["VehicleFaultRecovery:enabled"] = "true";
+        fleet.ClearanceRoles.OnboardClearanceEntryDeclared = true;
         await RoundAsync(fleet);
         await RoundAsync(fleet);
         Assert.Single(await HoldsAsync(fleet));
     }
 
     /// <summary>
-    /// 出口判定本身：名单与入口两样各自缺什么报什么；Host 入口没开时，部署方声明了车载端入口（<c>FieldOperatorRoles:OnboardClearanceEntryDeclared</c>）也算有入口。
+    /// 出口判定本身：名单与入口两样各自缺什么报什么。名单里的 R-11 条目没写 <c>operatorId</c> 不算有人（审查 N2，变异 X2）；Host 入口开着但凭据变量没值，
+    /// 入口每次都答 503，不算入口（审查 N2）；Host 入口没开时，部署方声明了车载端入口（<c>FieldOperatorRoles:OnboardClearanceEntryDeclared</c>）也算有入口。
     /// 启动时不可用告警一次（事件 2272）；没在跑旅程的服务端不看。
     /// </summary>
     [Theory]
-    [InlineData(true, true, false, null)]
-    [InlineData(true, false, true, null)]
-    [InlineData(true, false, false, StationClearanceExit.NoEntry)]
-    [InlineData(false, true, false, StationClearanceExit.RosterEmpty)]
-    [InlineData(false, false, false, StationClearanceExit.RosterEmpty + "," + StationClearanceExit.NoEntry)]
-    public void TheExitNeedsSomeoneOnTheRosterAndAnEntry(bool rosterHasR11, bool hostEntry, bool onboardDeclared, string? expected)
+    [InlineData("r11", "host-with-credential", false, null)]
+    [InlineData("r11", "none", true, null)]
+    [InlineData("r11", "none", false, StationClearanceExit.NoEntry)]
+    [InlineData("r11", "host-without-credential", false, StationClearanceExit.NoEntry)]
+    [InlineData("empty", "host-with-credential", false, StationClearanceExit.RosterEmpty)]
+    [InlineData("r11-without-operator-id", "host-with-credential", false, StationClearanceExit.RosterEmpty)]
+    [InlineData("empty", "none", false, StationClearanceExit.RosterEmpty + "," + StationClearanceExit.NoEntry)]
+    public void TheExitNeedsSomeoneOnTheRosterAndAnEntry(string roster, string host, bool onboardDeclared, string? expected)
     {
         string path = Path.Combine(Path.GetTempPath(), $"exit-roster-{Guid.NewGuid():N}.json");
-        File.WriteAllText(path, rosterHasR11 ? """{"operators":[{"operatorId":"op-r11","roles":["R-11"]}]}""" : """{"operators":[]}""");
+        File.WriteAllText(path, roster switch
+        {
+            "r11" => """{"operators":[{"operatorId":"op-r11","roles":["R-11"]}]}""",
+            "r11-without-operator-id" => """{"operators":[{"roles":["R-11"]},{"operatorId":" ","roles":["R-13"]}]}""",
+            _ => """{"operators":[]}""",
+        });
+        // A credential variable of this test's own, so no other test sees it set.
+        string credential = "CS406_EXIT_TEST_CREDENTIAL_" + Guid.NewGuid().ToString("N");
+        if (host == "host-with-credential")
+        {
+            Environment.SetEnvironmentVariable(credential, "secret");
+        }
         try
         {
             FieldOperatorRoleOptions roles = new() { Path = path, OnboardClearanceEntryDeclared = onboardDeclared };
-            Microsoft.Extensions.Configuration.IConfiguration configuration = new Microsoft.Extensions.Configuration.ConfigurationBuilder()
-                .AddInMemoryCollection(new Dictionary<string, string?> { ["VehicleFaultRecovery:enabled"] = hostEntry ? "true" : "false" })
+            IConfigurationRoot configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?> { ["VehicleFaultRecovery:enabled"] = host == "none" ? "false" : "true" })
                 .Build();
             StationClearanceExit exit = new(
                 new FieldOperatorRoleRoster(Microsoft.Extensions.Options.Options.Create(roles)),
                 Microsoft.Extensions.Options.Options.Create(roles),
-                configuration);
+                configuration,
+                Microsoft.Extensions.Options.Options.Create(new VehicleFaultRecoveryOptions { CredentialEnvironmentVariable = credential }));
+            Assert.Equal(expected, exit.Unavailable());
+
+            // Review N2: the route was mapped once, at startup; a later change of the switch moves neither the route nor this.
+            configuration["VehicleFaultRecovery:enabled"] = host == "none" ? "true" : "false";
+            Environment.SetEnvironmentVariable(credential, host == "host-with-credential" ? null : "secret");
             Assert.Equal(expected, exit.Unavailable());
 
             foreach (bool journeysRun in new[] { true, false })
@@ -315,6 +335,7 @@ public sealed class ChargingUnableToChargeTests
         }
         finally
         {
+            Environment.SetEnvironmentVariable(credential, null);
             File.Delete(path);
         }
     }

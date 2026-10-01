@@ -15,21 +15,29 @@ namespace ControlServer.Host.Runtime.Charging;
 /// <b>可用的意思</b>，两样都要：
 /// <list type="number">
 /// <item>名单可读、且至少有一个具名的人持有 R-11 或 R-13（<see cref="FieldOperatorRoleRoster.AnyoneHolds"/>）——否则任何确认都被拒；</item>
-/// <item>至少有一个入口：Host 的清桩入口已映射（<c>VehicleFaultRecovery:enabled</c>，与 <see cref="ChargingStationEndpoints.MapChargingStationEntries"/>
-/// 同一个判断），或部署方声明了车载端开着入口（<see cref="FieldOperatorRoleOptions.OnboardClearanceEntryDeclared"/>；协议里没有能读到它的字段）。</item>
+/// <item>至少有一个走得通的入口：Host 的清桩入口已映射（<c>VehicleFaultRecovery:enabled</c>，与 <see cref="ChargingStationEndpoints.MapChargingStationEntries"/>
+/// 同一个判断）<b>并且</b>它的凭据变量有值（没有值时入口每次都答 503，审查 N2），或部署方声明了车载端开着入口
+/// （<see cref="FieldOperatorRoleOptions.OnboardClearanceEntryDeclared"/>；协议里没有能读到它的字段）。</item>
 /// </list>
-/// 名单文件与 <c>VehicleFaultRecovery:enabled</c> 每次现读；改了名单文件不用重启。
+/// Host 入口那一项<b>在构造时取一次</b>（宿主里是单例，启动时自检就构造了它）：路由只在启动时按当时的配置映射，之后热重载改了开关，路由也不会跟着挂上或撤下，
+/// 判定就不能现读（审查 N2）。名单文件每次现读，改了名单不用重启。
 /// </para>
 /// </remarks>
 public sealed class StationClearanceExit(
     FieldOperatorRoleRoster roster,
     IOptions<FieldOperatorRoleOptions> options,
-    IConfiguration configuration)
+    IConfiguration configuration,
+    IOptions<VehicleFaultRecoveryOptions> recoveryOptions)
 {
+    // Taken once, as the route was mapped once (review N2).
+    private readonly bool _hostEntryOffered =
+        configuration.GetValue<bool>(VehicleFaultRecoveryEndpoints.EnabledKey) &&
+        !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(recoveryOptions.Value.CredentialEnvironmentVariable));
+
     /// <summary>名单没配、读不到、为空，或没有人持有 R-11／R-13。</summary>
     public const string RosterEmpty = "FIELD_OPERATOR_ROSTER_EMPTY";
 
-    /// <summary>Host 入口没映射，也没声明车载端入口。</summary>
+    /// <summary>Host 入口没映射或没有凭据，也没声明车载端入口。</summary>
     public const string NoEntry = "STATION_CLEARANCE_ENTRY_NOT_OFFERED";
 
     private static readonly Action<ILogger, string, Exception?> LogUnavailableAtStartup =
@@ -49,8 +57,7 @@ public sealed class StationClearanceExit(
         {
             reasons.Add(RosterEmpty);
         }
-        if (!configuration.GetValue<bool>(VehicleFaultRecoveryEndpoints.EnabledKey) &&
-            !options.Value.OnboardClearanceEntryDeclared)
+        if (!_hostEntryOffered && !options.Value.OnboardClearanceEntryDeclared)
         {
             reasons.Add(NoEntry);
         }

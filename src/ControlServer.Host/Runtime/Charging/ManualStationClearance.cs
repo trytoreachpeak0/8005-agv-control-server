@@ -215,7 +215,9 @@ public sealed class ManualStationClearance(
                             ForgetWhatThisWrote();
                             continue;
                         }
-                        if (Settled(disposition))
+                        // Review N1: the old order has ended, but the charger is completed vacant only if RIoT does not read the
+                        // vehicle back on it (or charging) right now -- a recorded confirmation can be older than that.
+                        if (Settled(disposition) && !StillOnTheCharger(vehicle, target.Cycle.StationId, _runtime.MapIdentity))
                         {
                             if (!await ChargerClearanceRelease.CompleteAndReleaseAsync(
                                     dbContext, clearanceId, target.Cycle.CycleId, target.Cycle.Version, EndingOf(target.Cycle),
@@ -442,6 +444,16 @@ public sealed class ManualStationClearance(
     public static bool Settled(string disposition) =>
         disposition is "CANCELLED" or "DELETED" or "SUCCESS" or "FAILED" or "ABSENT";
 
+    /// <summary>
+    /// RIoT 读到这辆车在线，并且停在这个桩上（地图对得上或没报地图）、或正在充电：桩没有腾空。读不到、离线答假——断电移车、拖车正是人工清桩要接的情形。
+    /// 人工确认的冲突判断与完成清桩前的重核（审查 N1）用的是同一个判断。
+    /// </summary>
+    public static bool StillOnTheCharger(RiotVehicleObservation? vehicle, int stationId, string mapIdentity) =>
+        vehicle is { Connected: true } &&
+        ((vehicle.CurrentStationId == stationId &&
+          (string.IsNullOrEmpty(vehicle.CurrentMap) || string.Equals(vehicle.CurrentMap, mapIdentity, StringComparison.Ordinal))) ||
+         string.Equals(vehicle.BatteryState, BatteryEligibility.ChargingBatteryState, StringComparison.Ordinal));
+
     /// <summary>确认那一刻读到的车辆位置：<c>地图/站</c>；读不到、离线、没有当前站记 <see cref="PositionUnknown"/>。</summary>
     public static string FinalPosition(RiotVehicleObservation? vehicle) =>
         vehicle is { Connected: true, CurrentStationId: int station }
@@ -476,11 +488,8 @@ public sealed class ManualStationClearance(
             return (StationMismatch, "payload.stationId",
                 $"The vehicle is held at charger {target.StationName}, not at {request.StationId}.");
         }
-        if (target.CompletedClearance is null && !target.ConfirmationRecorded && vehicle is { Connected: true } &&
-            ((vehicle.CurrentStationId == target.Cycle.StationId &&
-              (string.IsNullOrEmpty(vehicle.CurrentMap) ||
-               string.Equals(vehicle.CurrentMap, _runtime.MapIdentity, StringComparison.Ordinal))) ||
-             string.Equals(vehicle.BatteryState, BatteryEligibility.ChargingBatteryState, StringComparison.Ordinal)))
+        if (target.CompletedClearance is null && !target.ConfirmationRecorded &&
+            StillOnTheCharger(vehicle, target.Cycle.StationId, _runtime.MapIdentity))
         {
             return (NotAllowedInState, "payload.stationId",
                 "RIoT reads the vehicle still on the charger, or charging: the confirmation conflicts with a fresh system fact.");
