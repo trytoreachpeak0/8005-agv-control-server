@@ -243,6 +243,16 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 "这次充电已结束：车充满后接了下一项任务离开充电桩，充电已停、车不在桩上、桩位空闲三项都确认了，充电桩已释放",
             [ChargingExecutionReasons.ChargerReleasedOnDeparture] =
                 "充电桩已释放：充满的车离开了桩（充电已停、车不在桩上、桩位空闲三项确认），桩可以分给下一辆车",
+            [ChargingExecutionReasons.ArrivalNotProven] =
+                "充电单显示已完成，但读不到车停在充电桩上（车报在别的站、读不到当前站，或没有停稳）：服务端不认定到桩、不按超时推进，"
+                + "预占和充电用途都保持，持续十分钟以上会告警一次。请到现场看车停在哪里",
+            [ChargingExecutionReasons.OrderNotFound] =
+                "充电单已发出并确认，RIoT 现在却查不到这张单，车也没有停在充电桩上充电：服务端不重建、不发命令，预占和充电用途都保持，"
+                + "持续十分钟以上会告警一次。请在 RIoT 上查这张单去了哪里、车在哪里",
+            [ChargingExecutionReasons.RechargedOnHeldCharger] =
+                "这次充电已结束：车充满后一直停在桩上，电量又掉到强制充电线以下，服务端在同一个桩上给它开了下一次充电",
+            [ChargingExecutionReasons.ChargerReleasedForRecharge] =
+                "充电桩转给同一辆车的下一次充电：车充满后没离开，电量又掉到强制充电线以下，桩随即重新预占给它",
             [ChargingExecutionReasons.OrderFailed] =
                 "充电单 FAILED，故障已由人工清除：这趟充电结束，不重建。充电桩的释放、冷却与再次失败后改为人工充电等待的规则同单被取消",
             [JourneyRuntimeEngine.OwnOrderRebuildCargoUnprovenReason] =

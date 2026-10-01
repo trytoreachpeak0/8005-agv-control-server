@@ -126,7 +126,7 @@ public static class ChargingExecutionReasons
     /// <summary>到桩之后那一段自己写、也由它自己清掉的码：单 <c>SUCCESS</c> 那一支不替它们清。</summary>
     public static IReadOnlySet<string> AtChargerCodes { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
-        ChargerNotEngaged, VehicleObservationLost, BatteryTelemetryLost, ReservationLostAtArrival,
+        ChargerNotEngaged, VehicleObservationLost, BatteryTelemetryLost, ReservationLostAtArrival, ArrivalNotProven,
     };
 
     /// <summary>

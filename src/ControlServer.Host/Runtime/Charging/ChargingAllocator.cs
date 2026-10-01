@@ -315,6 +315,23 @@ public sealed class ChargingAllocator(
             "charger and the charger is confirmed free, so no other vehicle can be allocated it until then. Someone has to " +
             "look at the vehicle and the charger (the manual release of a charger is control-server#406).");
 
+    private static readonly Action<ILogger, int, int, string, DateTimeOffset, string, Exception?> LogDepartureNotConfirmed =
+        LoggerMessage.Define<int, int, string, DateTimeOffset, string>(
+            LogLevel.Warning,
+            new EventId(2249, nameof(LogDepartureNotConfirmed)),
+            "Charger {MapId}/{StationId} is still occupied by vehicle {VehicleKey}, which was charged full at {CompletedAt} and " +
+            "has not been confirmed off it since: {Missing}. It is released only once charging has stopped, the vehicle is " +
+            "read off the charger and the charger is confirmed free, so no other vehicle can be allocated it until then. Said " +
+            "once; someone may want to look at the vehicle (switched off on the charger, or simply given no work).");
+
+    private static readonly Action<ILogger, int, int, string, string, int, Exception?> LogHandedOverForRecharge =
+        LoggerMessage.Define<int, int, string, string, int>(
+            LogLevel.Information,
+            new EventId(2250, nameof(LogHandedOverForRecharge)),
+            "Charger {MapId}/{StationId}: vehicle {VehicleKey} was charged full in journey {JourneyId}, never left it, and is " +
+            "below its mandatory charge line again ({Battery}%). That cycle is ended and the charger released for the vehicle's " +
+            "next charge, which is allocated by the ordinary chain in this round.");
+
     private readonly JourneyRuntimeOptions _runtime = runtimeOptions.Value;
 
     /// <summary>跨轮次保留的那块板（宿主里是单例）：引擎的充电分支也经这里记「只告警一次」与「查无此单从何时起」。</summary>
@@ -426,8 +443,14 @@ public sealed class ChargingAllocator(
         // A charger this vehicle still holds from a cycle that ended: until the three confirmations release it (the sweep at
         // the top of this round), sending the vehicle anywhere as a charging vehicle would send a second charge action to a
         // charger it may still be standing on.
-        if ((await stations.ListByVehicleAsync(vehicle.VehicleKey, cancellationToken).ConfigureAwait(false))
-            .Any(held => held.StationKind == StationExclusivityKinds.Charger))
+        StationExclusivity[] heldChargers =
+        [
+            .. (await stations.ListByVehicleAsync(vehicle.VehicleKey, cancellationToken).ConfigureAwait(false))
+                .Where(held => held.StationKind == StationExclusivityKinds.Charger),
+        ];
+        if (heldChargers.Length > 0 &&
+            !(heldChargers.Length == 1 &&
+              await HandOverForRechargeAsync(heldChargers[0], candidate, cancellationToken).ConfigureAwait(false)))
         {
             return ChargingAllocationReasons.VehicleStillHoldsCharger;
         }
@@ -782,38 +805,115 @@ public sealed class ChargingAllocator(
         CancellationToken cancellationToken)
     {
         reads.Occupancy ??= await occupancy.ReadAsync(cancellationToken).ConfigureAwait(false);
-        if (WhyNotYetReleasable(row, reads.Occupancy) is not null)
+        if (WhyNotYetReleasable(row, reads.Occupancy) is { } missing)
         {
+            // Independent review S1: nothing releases it but the three confirmations, and a vehicle switched off on the charger,
+            // or one simply given no work, never gives them. Past the repeat window from the completion somebody is told,
+            // once, like the reservation of a failed cycle (event 2247).
+            if (cycle.CompletedAt is { } completedAt &&
+                timeProvider.GetUtcNow() - completedAt > _runtime.OwnOrderRebuildRepeatWindow &&
+                board.FirstTime(ChargingAllocationBoard.ReservationStuckKey(row.JourneyId)))
+            {
+                LogDepartureNotConfirmed(logger, row.MapId, row.StationId, row.VehicleKey, completedAt, missing, null);
+            }
             return;
         }
 
+        if (await CloseCompletedCycleAsync(
+                row, cycle, ChargingExecutionReasons.ChargerReleasedOnDeparture, ChargingExecutionReasons.Departed, departed: true,
+                cancellationToken).ConfigureAwait(false))
+        {
+            board.Unsay(ChargingAllocationBoard.ReservationStuckKey(row.JourneyId));
+            LogReleasedOnDeparture(logger, row.MapId, row.StationId, row.VehicleKey, row.JourneyId, null);
+        }
+    }
+
+    /// <summary>
+    /// 充满之后一直留在桩上的车又需要强制充电（独立审查 S6）：这辆车持有的这个桩来自一个 <c>COMPLETE</c> 的周期、它此刻就停在这个桩上，
+    /// 才在一个事务里把那一轮收尾（<see cref="ChargingExecutionReasons.RechargedOnHeldCharger"/>）、把桩以
+    /// <see cref="ChargingExecutionReasons.ChargerReleasedForRecharge"/> 释放，答真——它随后按正常分配链进队，原桩离它最近（它就停在上面），
+    /// 别的车也分不到（占用判法读到它停在上面）。否则什么也不动，答假。
+    /// </summary>
+    /// <remarks>
+    /// 调用方已经判过「需要强制充电」：报 <c>CHARGING</c> 的车不进这里，桩上还在充着的车不会被收尾。没有离桩，所以不记离桩时刻。
+    /// </remarks>
+    private async Task<bool> HandOverForRechargeAsync(
+        StationExclusivity claim,
+        ChargingCandidate candidate,
+        CancellationToken cancellationToken)
+    {
+        StationExclusivityRow? held = await dbContext.Set<StationExclusivityRow>().AsNoTracking()
+            .SingleOrDefaultAsync(
+                row => row.MapId == claim.MapId && row.StationId == claim.StationId && row.JourneyId == claim.JourneyId,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (held is null)
+        {
+            return false;
+        }
+        ChargingCycleRow? cycle = await dbContext.Set<ChargingCycleRow>().AsNoTracking()
+            .SingleOrDefaultAsync(item => item.JourneyId == held.JourneyId, cancellationToken).ConfigureAwait(false);
+        RiotVehicleObservation vehicle = candidate.Facts.Vehicle;
+        if (cycle is not { Phase: ChargingCyclePhases.Active, WireState: ChargingCycleWireStates.Complete } ||
+            !StandsOn(vehicle, held) ||
+            string.Equals(vehicle.BatteryState, BatteryEligibility.ChargingBatteryState, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!await CloseCompletedCycleAsync(
+                held, cycle, ChargingExecutionReasons.ChargerReleasedForRecharge, ChargingExecutionReasons.RechargedOnHeldCharger,
+                departed: false, cancellationToken).ConfigureAwait(false))
+        {
+            return false;
+        }
+        board.Unsay(ChargingAllocationBoard.ReservationStuckKey(held.JourneyId));
+        LogHandedOverForRecharge(
+            logger, held.MapId, held.StationId, held.VehicleKey, held.JourneyId, vehicle.BatteryPercent ?? -1, null);
+        return true;
+    }
+
+    /// <summary>
+    /// 一个 <c>COMPLETE</c> 周期的桩释放与周期收尾，<b>一个事务</b>：删独占行（带读到的持有者与经过）、把释放原因写进经过，周期回
+    /// <c>NOT_CHARGING</c>、<c>ENDED</c>。删行与周期更新都带着读到时的条件——周期按版本号（另一处已经动过这个周期，就一样都不写、事务回滚）。
+    /// 答两半是否都写成了。
+    /// </summary>
+    private async Task<bool> CloseCompletedCycleAsync(
+        StationExclusivityRow row,
+        ChargingCycleRow cycle,
+        string releaseReason,
+        string endReason,
+        bool departed,
+        CancellationToken cancellationToken)
+    {
         DateTimeOffset now = timeProvider.GetUtcNow();
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        if (!await FixedStationExclusivity.ReleaseAsReadAsync(
-                dbContext, row, now, ChargingExecutionReasons.ChargerReleasedOnDeparture, cancellationToken).ConfigureAwait(false))
+        if (!await FixedStationExclusivity.ReleaseAsReadAsync(dbContext, row, now, releaseReason, cancellationToken)
+                .ConfigureAwait(false))
         {
-            return;
+            return false;
         }
+        DateTimeOffset? departedAt = departed ? now : null;
         int closed = await dbContext.Set<ChargingCycleRow>()
             .Where(item => item.CycleId == cycle.CycleId && item.Version == cycle.Version)
             .ExecuteUpdateAsync(
                 setters => setters
                     .SetProperty(item => item.Phase, ChargingCyclePhases.Ended)
                     .SetProperty(item => item.WireState, ChargingCycleWireStates.NotCharging)
-                    .SetProperty(item => item.DepartedAt, now)
+                    .SetProperty(item => item.DepartedAt, departedAt)
                     .SetProperty(item => item.ReleasedAt, now)
                     .SetProperty(item => item.EndedAt, now)
-                    .SetProperty(item => item.EndReason, ChargingExecutionReasons.Departed)
+                    .SetProperty(item => item.EndReason, endReason)
                     .SetProperty(item => item.Version, cycle.Version + 1),
                 cancellationToken)
             .ConfigureAwait(false);
         if (closed == 0)
         {
             // The cycle moved since it was read: neither half is written.
-            return;
+            return false;
         }
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-        LogReleasedOnDeparture(logger, row.MapId, row.StationId, row.VehicleKey, row.JourneyId, null);
+        return true;
     }
 
     /// <summary>板上只告警一次的键里，事情已经走别的路了结的，丢掉（<see cref="ChargingAllocationBoard.ForgetSettled"/>）。没有那种键时不读库。</summary>

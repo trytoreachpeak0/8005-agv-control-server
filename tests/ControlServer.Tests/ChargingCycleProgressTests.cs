@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
@@ -7,6 +8,7 @@ using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using static ControlServer.Tests.ChargingAllocationTests;
 using static ControlServer.Tests.ChargingExecutionTests;
 using FleetFixture = ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture;
@@ -1173,6 +1175,39 @@ public sealed class ChargingCycleProgressTests
         Assert.DoesNotContain(fleet.Riot.Creates, create => create.DestinationStationId == 12);
     }
 
+    /// <summary>
+    /// 离桩释放读到周期之后、写之前，周期被别处动过（版本号变了）：这一轮两半一样都不写——桩仍是占用、周期仍是 <c>COMPLETE</c>；下一轮按新读到的版本
+    /// 照常释放（独立审查 R8：去掉周期上的版本条件原先全绿）。
+    /// </summary>
+    [Fact]
+    public async Task WhenTheCycleMovedBetweenItsReadAndTheDepartureReleaseNeitherHalfIsWritten()
+    {
+        CycleMovedUnderfoot moved = new();
+        await using FleetFixture fleet = await FleetAsync(commands: moved);
+        await CompletedAsync(fleet);
+        fleet.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
+        for (int round = 0; round < 3; round++)
+        {
+            await RoundAsync(fleet);
+        }
+        fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = 12, BatteryState = NotCharging };
+        moved.Armed = true;
+
+        await RoundAsync(fleet);
+
+        Assert.Equal(1, moved.Fired);
+        fleet.Context.ChangeTracker.Clear();
+        Assert.Equal((KeyA, StationExclusivityStates.Occupied), await HolderAsync(fleet, Near.StationId));
+        ChargingCycleRow kept = await fleet.Context.Set<ChargingCycleRow>().AsNoTracking().SingleAsync(Token);
+        Assert.Equal((ChargingCycleWireStates.Complete, ChargingCyclePhases.Active), (kept.WireState, kept.Phase));
+
+        await RoundAsync(fleet);
+
+        Assert.Null(await StationAsync(fleet, Near.StationId));
+        ChargingCycleRow ended = await fleet.Context.Set<ChargingCycleRow>().AsNoTracking().SingleAsync(Token);
+        Assert.Equal((ChargingCyclePhases.Ended, ChargingExecutionReasons.Departed), (ended.Phase, ended.EndReason));
+    }
+
     // ---- 夹具 ------------------------------------------------------------------------------------------------------------
 
     /// <summary>A 低电、承诺、建单、确认：周期 <c>EN_ROUTE</c>。</summary>
@@ -1268,5 +1303,49 @@ public sealed class ChargingCycleProgressTests
 
         public Task<ChargingPolicyVersion> ReadFrozenAsync(long version, CancellationToken cancellationToken) =>
             Task.FromResult(version == first.Policy.Version ? first.Policy : later.Policy);
+    }
+
+    /// <summary>
+    /// armed 之后第一次更新充电周期之前，在同一个事务里先把周期的版本号加一：读到周期之后、写之前「另一处动过它」。
+    /// </summary>
+    private sealed class CycleMovedUnderfoot : DbCommandInterceptor
+    {
+        public bool Armed { get; set; }
+
+        public int Fired { get; private set; }
+
+        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            Move(command);
+            return base.NonQueryExecutingAsync(command, eventData, result, cancellationToken);
+        }
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            Move(command);
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
+
+        private void Move(DbCommand command)
+        {
+            if (!Armed || !command.CommandText.Contains("UPDATE \"ChargingCycles\"", StringComparison.Ordinal))
+            {
+                return;
+            }
+            Armed = false;
+            Fired++;
+            using DbCommand other = command.Connection!.CreateCommand();
+            other.Transaction = command.Transaction;
+            other.CommandText = "UPDATE \"ChargingCycles\" SET \"Version\" = \"Version\" + 1";
+            other.ExecuteNonQuery();
+        }
     }
 }

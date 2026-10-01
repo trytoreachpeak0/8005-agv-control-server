@@ -59,6 +59,15 @@ public sealed partial class JourneyRuntimeEngine
             "no fresh battery reading since {Since}; the completion judgement is suspended. Only this alarm escalates (REQ-0287): " +
             "nothing is ended, released, reassigned or moved, and the last reading before the gap is not taken as still true.");
 
+    private static readonly Action<ILogger, string, string, string, int, Exception?> LogChargerArrivedWithOrderLost =
+        LoggerMessage.Define<string, string, string, int>(
+            LogLevel.Warning,
+            new EventId(2263, nameof(LogChargerArrivedWithOrderLost)),
+            "CHARGING_ORDER_LOST_AT_CHARGER: charging journey {JourneyId}: RIoT no longer has charge order {UpperId}, and " +
+            "vehicle {VehicleKey} stands still on charger {StationId} reading CHARGING. It is taken as arrived with the order " +
+            "lost, and its completion is judged on its battery as for any other arrival. Nothing is created or sent; someone " +
+            "may want to look at why the order went.");
+
     /// <summary>
     /// 充电单已是终态 <c>SUCCESS</c>（充电动作已经接上，Q-033）：到桩、开始充电、充满。每一轮只走这一段里的一步，证据不足就什么也不推进。
     /// </summary>
@@ -85,11 +94,14 @@ public sealed partial class JourneyRuntimeEngine
     /// 各升级告警一次。什么也不结束、不释放、不改派、不移动、不暂停桩。
     /// </para>
     /// </remarks>
+    /// <param name="order">
+    /// 读到的那张单：判到桩用。到桩之后（独立审查 M1）不再读单，传空。
+    /// </param>
     private async Task AdvanceAtChargerAsync(
         JourneyRuntimeRow runtime,
         JourneyStopRow stop,
         OrderIntentRow intent,
-        RiotOrderObservation order,
+        RiotOrderObservation? order,
         ChargingCycleRow cycle,
         CancellationToken cancellationToken)
     {
@@ -118,8 +130,11 @@ public sealed partial class JourneyRuntimeEngine
 
         if (cycle.ArrivedAt is null)
         {
-            await JudgeChargerArrivalAsync(runtime, stop, intent, order, cycle, vehicle, now, cancellationToken)
-                .ConfigureAwait(false);
+            if (order is not null)
+            {
+                await JudgeChargerArrivalAsync(runtime, stop, intent, order, cycle, vehicle, now, cancellationToken)
+                    .ConfigureAwait(false);
+            }
             return;
         }
 
@@ -135,27 +150,68 @@ public sealed partial class JourneyRuntimeEngine
         }
     }
 
+    /// <summary>
+    /// 充电单在判到桩之前就不见了（删除、取消、查无此单；独立审查 M1）：车在线、停稳在这个桩上、新鲜地读到 <c>CHARGING</c>，就按「到桩、单据丢失」
+    /// 走同一个到桩判定，答真；否则什么也不做，答假，交给调用方原来的那条路。
+    /// </summary>
+    private async Task<bool> ArriveWithTheOrderLostAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopRow stop,
+        OrderIntentRow intent,
+        ChargingCycleRow cycle,
+        CancellationToken cancellationToken)
+    {
+        RiotVehicleObservation? vehicle;
+        try
+        {
+            vehicle = await vehicleFacts.ReadVehicleAsync(runtime.VehicleKey, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
+                                      !cancellationToken.IsCancellationRequested)
+        {
+            return false;
+        }
+
+        DateTimeOffset now = timeProvider.GetUtcNow();
+        if (vehicle is not { Connected: true } ||
+            !StandsStillAt(vehicle, runtime, stop.StationRiotId, now) ||
+            !ReadsChargingFreshly(vehicle, now))
+        {
+            return false;
+        }
+
+        await JudgeChargerArrivalAsync(runtime, stop, intent, order: null, cycle, vehicle, now, cancellationToken)
+            .ConfigureAwait(false);
+        return true;
+    }
+
+    /// <param name="order">
+    /// 终态 <c>SUCCESS</c> 的那张单；空表示单已不见（<see cref="ArriveWithTheOrderLostAsync"/>）——那时订单那一半不判，车辆那一半之外还要新鲜地读到充电。
+    /// </param>
     private async Task JudgeChargerArrivalAsync(
         JourneyRuntimeRow runtime,
         JourneyStopRow stop,
         OrderIntentRow intent,
-        RiotOrderObservation order,
+        RiotOrderObservation? order,
         ChargingCycleRow cycle,
         RiotVehicleObservation vehicle,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        bool exactOrder = !string.IsNullOrWhiteSpace(order.OrderId) &&
-                          order.OrderId == intent.OrderId &&
-                          order.VehicleKey == runtime.VehicleKey &&
-                          order.MapId == runtime.MapId &&
-                          order.DestinationStationId == stop.StationRiotId;
+        bool exactOrder = order is null
+            ? ReadsChargingFreshly(vehicle, now)
+            : !string.IsNullOrWhiteSpace(order.OrderId) &&
+              order.OrderId == intent.OrderId &&
+              order.VehicleKey == runtime.VehicleKey &&
+              order.MapId == runtime.MapId &&
+              order.DestinationStationId == stop.StationRiotId;
         if (!exactOrder || !StandsStillAt(vehicle, runtime, stop.StationRiotId, now))
         {
-            // The order says it succeeded, the vehicle does not yet (or the order is not the one we sent): reconciled again
-            // next round. No timeout.
-            await ClearChargingCodeAsync(runtime, now, cancellationToken).ConfigureAwait(false);
-            await NameCheckpointWaitAsync(runtime, cancellationToken).ConfigureAwait(false);
+            // The order says it succeeded, the vehicle does not (or the order is not the one we sent): reconciled again next
+            // round, no timeout. Independent review M1: named, and told once past the window -- an order that succeeded and
+            // a vehicle never proven at the charger is a vehicle nobody knows the whereabouts of.
+            await NameChargingLossAsync(runtime, stop, ChargingExecutionReasons.ArrivalNotProven, now, cancellationToken)
+                .ConfigureAwait(false);
             return;
         }
 
@@ -195,6 +251,14 @@ public sealed partial class JourneyRuntimeEngine
             dispatchRound.Charging.Board.ContinuesSampleRun(cycle.CycleId, vehicle.ObservedAt, runtimeOptions.MaximumEvidenceAge);
             LogChargingStarted(logger, runtime.JourneyId, runtime.VehicleKey, stop.StationRiotId, vehicle.BatteryPercent ?? -1, null);
         }
+        if (order is null)
+        {
+            LogChargerArrivedWithOrderLost(logger, runtime.JourneyId, stop.UpperId, runtime.VehicleKey, stop.StationRiotId, null);
+        }
+        dispatchRound.Charging.Board.Unsay(
+            ChargingAllocationBoard.ChargingLossKey(runtime.JourneyId, ChargingExecutionReasons.ArrivalNotProven));
+        dispatchRound.Charging.Board.Unsay(
+            ChargingAllocationBoard.ChargingLossKey(runtime.JourneyId, ChargingExecutionReasons.OrderNotFound));
         await SendAtChargerSnapshotsAsync(runtime, arrivedPlan: true, charging, cancellationToken).ConfigureAwait(false);
     }
 
@@ -353,12 +417,25 @@ public sealed partial class JourneyRuntimeEngine
         }
     }
 
-    /// <summary>这一段自己写的码（失联两种、到桩不充电）在证据回来之后清掉；别的码不碰。</summary>
+    /// <summary>单 <c>SUCCESS</c> 或到桩之后：停滞的单留下的码已经不成立；到桩之后这一段自己写的码由它自己清（<see cref="ChargingExecutionReasons.AtChargerCodes"/>）。</summary>
+    private async Task ClearCodesNotTheChargersAsync(JourneyRuntimeRow runtime, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        if (runtime.BlockReasonCode is not { } code || ChargingExecutionReasons.AtChargerCodes.Contains(code))
+        {
+            return;
+        }
+        runtime.SetBlockReason(null, now);
+        runtime.UpdatedAt = now;
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>这一段自己写的码（失联两种、到桩不充电、到桩证据不成立）在证据回来之后清掉；别的码不碰。</summary>
     private async Task ClearChargingCodeAsync(JourneyRuntimeRow runtime, DateTimeOffset now, CancellationToken cancellationToken)
     {
         if (runtime.BlockReasonCode is not (ChargingExecutionReasons.VehicleObservationLost
             or ChargingExecutionReasons.BatteryTelemetryLost
-            or ChargingExecutionReasons.ChargerNotEngaged))
+            or ChargingExecutionReasons.ChargerNotEngaged
+            or ChargingExecutionReasons.ArrivalNotProven))
         {
             return;
         }

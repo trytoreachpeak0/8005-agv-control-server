@@ -245,20 +245,55 @@ public sealed partial class JourneyRuntimeEngine
             await PublishChargingSnapshotsAsync(runtime, stop, enRoute: true, cancellationToken).ConfigureAwait(false);
         }
 
+        if (cycle.ArrivedAt is not null)
+        {
+            // Independent review M1: the arrival is proven (an order that succeeded plus the vehicle standing on the charger),
+            // and from here on the cycle is judged on the vehicle and its battery alone. The order is not read again: deleted,
+            // cleaned up or answered absent afterwards, it says nothing more about a vehicle that is on the charger, and
+            // waiting to read SUCCESS again would leave the vehicle on the charger for good.
+            await ClearCodesNotTheChargersAsync(runtime, now, cancellationToken).ConfigureAwait(false);
+            await AdvanceAtChargerAsync(runtime, stop, intent, order: null, cycle, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         RiotOrderObservation order = await vehicleFacts.ReconcileByUpperIdAsync(stop.UpperId, cancellationToken)
             .ConfigureAwait(false);
         if (order is { Kind: RiotOrderObservationKind.Terminal, OrderState: RiotOrderState.Success })
         {
             // The charge action took: arrival, charging and completion (batch 9-07, JourneyRuntimeEngine.ChargingCycle.cs). A
             // code a stalled order left is not true any more; the codes that part writes are its own to clear.
-            if (runtime.BlockReasonCode is { } code && !ChargingExecutionReasons.AtChargerCodes.Contains(code))
-            {
-                runtime.SetBlockReason(null, now);
-                runtime.UpdatedAt = now;
-                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            }
+            await ClearCodesNotTheChargersAsync(runtime, now, cancellationToken).ConfigureAwait(false);
             await AdvanceAtChargerAsync(runtime, stop, intent, order, cycle, cancellationToken).ConfigureAwait(false);
             return;
+        }
+
+        bool absent = order.Kind == RiotOrderObservationKind.NotFound || order.IsExactAbsentAtObservation(stop.UpperId);
+        if (absent || order is { Kind: RiotOrderObservationKind.Terminal, OrderState: RiotOrderState.Cancelled or RiotOrderState.Deleted })
+        {
+            // Independent review M1: gone before its success was seen. A vehicle standing still on this charger and reading
+            // CHARGING is there and charging whatever became of the order: taken as arrived with the order lost, and judged on
+            // its battery from here on. Anything less is not taken as an arrival.
+            if (await ArriveWithTheOrderLostAsync(runtime, stop, intent, cycle, cancellationToken).ConfigureAwait(false))
+            {
+                return;
+            }
+            if (absent)
+            {
+                // Not an ending RIoT reported, so nothing below judges it: named, kept, and told once past the window.
+                // Never advanced by a timeout -- the vehicle may still be on its way.
+                await NameChargingLossAsync(runtime, stop, ChargingExecutionReasons.OrderNotFound, now, cancellationToken)
+                    .ConfigureAwait(false);
+                return;
+            }
+        }
+        else if (runtime.BlockReasonCode == ChargingExecutionReasons.OrderNotFound)
+        {
+            // Read again: the code is no longer true.
+            dispatchRound.Charging.Board.Unsay(
+                ChargingAllocationBoard.ChargingLossKey(runtime.JourneyId, ChargingExecutionReasons.OrderNotFound));
+            runtime.SetBlockReason(null, now);
+            runtime.UpdatedAt = now;
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
 
         if (await NameStalledOrderAsync(runtime, intent, order, cancellationToken).ConfigureAwait(false))
