@@ -68,13 +68,15 @@ public sealed record ManualStationClearanceRequest(
 /// </para>
 /// <para>
 /// <b>确认之后</b>（同一个事务）：清桩记录写上确认人、角色、时刻、车辆最终位置（确认那一刻读到的 RIoT 位置，读不到记 <c>UNKNOWN</c>）、旧单处置、
-/// <c>clearedCondition</c>；<b>只有旧单已终结</b>（取消、删除、成功、失败，或 RIoT 答查无此单——真实形态的 HTTP 200 不带 result 与 404 都算）才在同一个事务里
-/// 释放（<see cref="ChargerClearanceRelease"/>），<c>stationReleased=true</c>。旧单还没收敛（仍 <c>HANG</c>、读不到）答 <c>stationReleased=false</c>，由引擎在
-/// 对账到终态的那一轮释放。桩的分配暂停不解除，车的派单资格不在这里恢复（调度 09-30 对齐第 8 条）。
+/// <c>clearedCondition</c>。<b>只有旧单已终结</b>（取消、删除、成功、失败，或 RIoT 答查无此单——真实形态的 HTTP 200 不带 result 与 404 都算）才
+/// <b>完成</b>清桩（写 <c>CompletedAt</c>）并在同一个事务里释放（<see cref="ChargerClearanceRelease"/>），<c>stationReleased=true</c>。充不上之后的清桩中，
+/// 旧单还没收敛（仍 <c>HANG</c>、读不到）时只记下确认、<c>CompletedAt</c> 留空（<c>REQ-0178</c>：取消结果未知时不完成清桩；control-server#406 独立审查），
+/// 答 <c>stationReleased=false</c>，由引擎在对账到终态的那一轮完成并释放；别的保持状态没有这一轮，旧单没终结就拒绝。桩的分配暂停不解除，车的派单资格
+/// 不在这里恢复（调度 09-30 对齐第 8 条）。
 /// </para>
 /// <para>
-/// <b>同一次清桩的第二个确认号</b>（车载端重启后再按会换新号；调度 09-30 对齐第 7 条）：清桩记录已经完成的，不再写第二次、不再释放第二次，答
-/// <c>CONFIRMED</c>，<c>stationReleased</c> 照此刻桩是否已放开。
+/// <b>同一次清桩的第二个确认号</b>（车载端重启后再按会换新号；调度 09-30 对齐第 7 条）：确认已经记下或清桩已经完成的，不再记第二次、不再释放第二次，答
+/// <c>CONFIRMED</c>；确认已记下而旧单此刻已终结的，由这一次完成并释放，<c>stationReleased</c> 照此刻桩是否已放开。
 /// </para>
 /// <para>
 /// <b>并发</b>：车载端与 Host 几乎同时确认、或确认与引擎那一轮的释放撞在一起时，清桩记录的完成带着并发令牌、释放带着读到的版本与持有者，只有一方写成；
@@ -199,6 +201,34 @@ public sealed class ManualStationClearance(
                             released = true;
                         }
                     }
+                    else if (target.Cycle.Phase == ChargingCyclePhases.Clearing)
+                    {
+                        // After an unable-to-charge (review of control-server#406): the confirmation is recorded now, and the clearance
+                        // completes -- CompletedAt, and the release -- only once the old order has ended too (REQ-0178, REQ-0179). A
+                        // second number for a confirmation already recorded records nothing again.
+                        string clearanceId = target.ClearanceId ?? JourneyPlanBuilder.StableGuid(target.Cycle.CycleId, "station-clearance");
+                        if (!target.ConfirmationRecorded &&
+                            !await RecordConfirmationAsync(clearanceId, request, role!, vehicle, disposition, now, cancellationToken)
+                                .ConfigureAwait(false))
+                        {
+                            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                            ForgetWhatThisWrote();
+                            continue;
+                        }
+                        if (Settled(disposition))
+                        {
+                            if (!await ChargerClearanceRelease.CompleteAndReleaseAsync(
+                                    dbContext, clearanceId, target.Cycle.CycleId, target.Cycle.Version, EndingOf(target.Cycle),
+                                    disposition, now, cancellationToken)
+                                    .ConfigureAwait(false))
+                            {
+                                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                                ForgetWhatThisWrote();
+                                continue;
+                            }
+                            released = true;
+                        }
+                    }
                     else
                     {
                         string clearanceId = target.ClearanceId ?? JourneyPlanBuilder.StableGuid(target.Cycle.CycleId, "station-clearance");
@@ -278,6 +308,37 @@ public sealed class ManualStationClearance(
 
         throw new InvalidOperationException(
             $"Manual station clearance {request.ConfirmationRequestId} lost every race it entered; nothing was written.");
+    }
+
+    /// <summary>
+    /// 清桩中：只记下人工确认（确认人、角色、时刻、车辆最终位置、此刻的旧单处置、<c>clearedCondition</c>、确认号），<b>不写</b>
+    /// <see cref="StationClearanceRow.CompletedAt"/>。按「还没记过确认、还没完成」更新，另一方先记下了答假（调用方回滚、重判）。
+    /// </summary>
+    private async Task<bool> RecordConfirmationAsync(
+        string clearanceId,
+        ManualStationClearanceRequest request,
+        string role,
+        RiotVehicleObservation? vehicle,
+        string disposition,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        string confirmedBy = request.OperatorId!.Trim();
+        string position = FinalPosition(vehicle);
+        int recorded = await dbContext.Set<StationClearanceRow>()
+            .Where(row => row.ClearanceId == clearanceId && row.ConfirmedAt == null && row.CompletedAt == null)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(row => row.ConfirmedBy, confirmedBy)
+                    .SetProperty(row => row.ConfirmedByRole, role)
+                    .SetProperty(row => row.ConfirmedAt, now)
+                    .SetProperty(row => row.VehicleFinalPosition, position)
+                    .SetProperty(row => row.OldOrderDisposition, disposition)
+                    .SetProperty(row => row.ClearedCondition, request.ClearedCondition)
+                    .SetProperty(row => row.ConfirmationRequestId, request.ConfirmationRequestId),
+                cancellationToken)
+            .ConfigureAwait(false);
+        return recorded == 1;
     }
 
     /// <summary>
@@ -415,7 +476,7 @@ public sealed class ManualStationClearance(
             return (StationMismatch, "payload.stationId",
                 $"The vehicle is held at charger {target.StationName}, not at {request.StationId}.");
         }
-        if (target.CompletedClearance is null && vehicle is { Connected: true } &&
+        if (target.CompletedClearance is null && !target.ConfirmationRecorded && vehicle is { Connected: true } &&
             ((vehicle.CurrentStationId == target.Cycle.StationId &&
               (string.IsNullOrEmpty(vehicle.CurrentMap) ||
                string.Equals(vehicle.CurrentMap, _runtime.MapIdentity, StringComparison.Ordinal))) ||
@@ -509,7 +570,8 @@ public sealed class ManualStationClearance(
             .ConfigureAwait(false);
         return new Target(
             cycle, stop.StationId, stop.UpperId, clearance?.ClearanceId,
-            clearance is { CompletedAt: not null } ? clearance : null, chargerHeld);
+            clearance is { CompletedAt: not null } ? clearance : null, chargerHeld,
+            clearance is { ConfirmedAt: not null, CompletedAt: null });
     }
 
     private Task<string> WriteAuditAsync(
@@ -562,11 +624,13 @@ public sealed class ManualStationClearance(
     /// <param name="ClearanceId">这个周期已有的清桩记录；没有为空（失败周期、保持状态的周期由确认这一刻开始并完成）。</param>
     /// <param name="CompletedClearance">已经完成的那一次清桩：同一次清桩的第二个确认号不再写、不再放。</param>
     /// <param name="ChargerHeld">这一趟此刻还持有这个桩的独占。</param>
+    /// <param name="ConfirmationRecorded">清桩中：人工确认已经记下、清桩还没完成（旧单那时还没终结）。</param>
     private sealed record Target(
         ChargingCycleRow Cycle,
         string StationName,
         string UpperId,
         string? ClearanceId,
         StationClearance? CompletedClearance,
-        bool ChargerHeld);
+        bool ChargerHeld,
+        bool ConfirmationRecorded);
 }

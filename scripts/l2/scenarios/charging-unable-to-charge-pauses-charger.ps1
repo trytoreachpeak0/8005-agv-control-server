@@ -16,8 +16,8 @@
 用途仍是 CLEARING_MAINTENANCE——不读一次就断言（scripts/l2/README.md 第 14 条）。
 
 **人工清桩**：车被挪回 210；合成车载端以 L2-R11 发 ManualStationClearanceConfirmationRequested。旧单还 HANG：CONFIRMED、stationReleased=false、桩不放。
-取消开关默认打开（REQ-0148 v1.9.0 情形一）：服务端对旧单恰好发一次 CMD_ORDER_CANCEL，桩仍不放（假 RIoT 只记下命令、不改单）。
-然后旧单在 RIoT 里被取消：这一轮释放 211（CHARGER_RELEASED_ON_MANUAL_CLEARANCE）、周期以
+清桩还没完成（REQ-0178）。取消开关默认关：服务端不发 CMD_ORDER_CANCEL（另等八秒，RIoT 一侧与命令审计都是 0），桩仍不放。
+然后旧单在 RIoT 里被取消（真车上是人去取消）：清桩在这一轮完成，这一轮释放 211（CHARGER_RELEASED_ON_MANUAL_CLEARANCE）、周期以
 CHARGING_UNABLE_TO_CHARGE_CLEARED 结束、旅程收尾，暂停没有恢复行。
 
 **清桩之后**：车仍低电，另等十秒：不进人工充电等待、没有第二个充电周期，服务端日志里有「211=CHARGER_ALLOCATION_HELD」的排队告警。
@@ -51,7 +51,8 @@ function Read-SharedText([string]$path) {
     try { return [IO.StreamReader]::new($stream).ReadToEnd() } finally { $stream.Dispose() }
 }
 
-# Counted in SQL: a query with no rows comes back as $null, and @($null).Count is 1.
+# Counted in SQL, so there is always exactly one row to read. Invoke-L2Query hands the whole result set back as one array
+# (README, "whole-array return"); counting rows on the PowerShell side would have to step around that.
 function Get-Count([string]$sql) { [int](Invoke-L2Query -Connection $connection -Sql $sql)[0].N }
 
 function Get-Cycle {
@@ -162,18 +163,19 @@ $assertions.Add(
 
 # --- 3. 第二个事实：车保持原位、原桩不重试（另等） ---------------------------------------------------------------
 
-$steady = "1 intents | $upperId | RESERVED $vehicleKey $journeyId | CLEARING_MAINTENANCE $journeyId | 1 holds"
+$steady = "1 intents | $upperId | RESERVED $vehicleKey $journeyId | CLEARING_MAINTENANCE $journeyId | 1 holds | 0 order commands"
 $stays = Wait-L2ConditionOrLast -Description 'a new order or a release appeared while clearing (none may)' `
     -Journal $journal -Criterion 'stays-while-clearing' -TimeoutSeconds 10 `
     -Probe {
         "$(Get-Count "SELECT COUNT(*) AS N FROM OrderIntents WHERE VehicleKey = '$vehicleKey'") intents | " +
             "$((Get-RiotOrders) -join ',') | $(Get-ChargerHeld) | $(Get-Claim) | " +
-            "$(Get-Count "SELECT COUNT(*) AS N FROM ChargingStationAllocationHolds") holds"
+            "$(Get-Count "SELECT COUNT(*) AS N FROM ChargingStationAllocationHolds") holds | " +
+            "$(Get-Count "SELECT COUNT(*) AS N FROM RiotOrderCommandAudit") order commands"
     } `
     -Until { param($v) $v -ne $steady }
 $assertions.Add(
     'L2-UTC-02',
-    '确认之后另等十秒：没有任何新的订单意图、RIoT 上仍只有那一张充电单、211 仍是这一趟的、用途仍是 CLEARING_MAINTENANCE、只有一条暂停（车保持原位，原桩重试为 0）',
+    '确认之后另等十秒：没有任何新的订单意图、RIoT 上仍只有那一张充电单、211 仍是这一趟的、用途仍是 CLEARING_MAINTENANCE、只有一条暂停、命令审计里一条订单命令都没有（车保持原位，原桩重试为 0，取消开关默认关）',
     ($stays -eq $steady),
     $steady,
     $stays)
@@ -190,45 +192,40 @@ $whileHung = Wait-L2Condition -Description 'the server decided the clearance con
         $row = Read-L2SingleRow -Connection $connection -Sql (
             "SELECT Outcome, StationReleased FROM ManualStationClearanceConfirmations WHERE ConfirmationRequestId = '$firstId'")
         $clearance = Read-L2SingleRow -Connection $connection -Sql (
-            "SELECT IFNULL(ConfirmedBy, '') AS ConfirmedBy, IFNULL(OldOrderDisposition, '') AS Disposition FROM StationClearances")
+            "SELECT IFNULL(ConfirmedBy, '') AS ConfirmedBy, IFNULL(OldOrderDisposition, '') AS Disposition, " +
+            "CASE WHEN CompletedAt IS NULL THEN 'open' ELSE 'completed' END AS Completion FROM StationClearances")
         if ($null -eq $row) { return $null }
-        "$($row.Outcome) released=$($row.StationReleased) | $($clearance.ConfirmedBy) $($clearance.Disposition) | $(Get-ChargerHeld)"
+        "$($row.Outcome) released=$($row.StationReleased) | $($clearance.ConfirmedBy) $($clearance.Disposition) $($clearance.Completion) | $(Get-ChargerHeld)"
     } `
     -Until { param($v) $null -ne $v }
-$expectedWhileHung = "CONFIRMED released=0 | L2-R11 HANG | RESERVED $vehicleKey $journeyId"
+$expectedWhileHung = "CONFIRMED released=0 | L2-R11 HANG open | RESERVED $vehicleKey $journeyId"
 $assertions.Add(
     'L2-UTC-03',
-    '车被挪开后，L2-R11 经车载端确认清桩；旧单还停在 HANG：CONFIRMED、stationReleased=false，清桩记录写上确认人与旧单处置 HANG，211 不放',
+    '车被挪开后，L2-R11 经车载端确认清桩；旧单还停在 HANG：CONFIRMED、stationReleased=false，清桩记录写上确认人与此刻的旧单处置 HANG、清桩未完成（REQ-0178），211 不放',
     ($whileHung -eq $expectedWhileHung),
     $expectedWhileHung,
     $whileHung)
 
-# --- 4b. 取消开关默认打开（REQ-0148 v1.9.0 情形一）：服务端对旧单恰好发一次 CMD_ORDER_CANCEL，桩仍不放（另等） ---------
+# --- 4b. 取消开关默认关：确认之后旧单仍 HANG，服务端不发 CMD_ORDER_CANCEL，桩仍不放（另等） ------------------------------
 
-# The fake RIoT records an order command and leaves the order as it is, so the old order stays HANG here: what this
-# step shows is the call itself, once, while the clearance has not completed (REQ-0178), and not again afterwards.
-$oldOrderId = [string](@($riot.Snapshot().body.orders | Where-Object { $null -ne $_ -and [string]$_.upperId -eq $upperId }) |
-    Select-Object -First 1).orderId
+# Off by default until a cancel of a HANG charge order has been measured on a real vehicle (review of control-server#406):
+# the old order is a person's to end in RIoT. Read on both sides: the fake RIoT's calls and the server's own command audit.
 function Get-CancelCalls {
     $calls = @(@($riot.Snapshot().body.commandInvocations) |
         Where-Object { $null -ne $_ -and [string]$_.commandType -eq 'CMD_ORDER_CANCEL' })
-    "$($calls.Count) cancels @ $((@($calls | ForEach-Object { [string]$_.target } | Sort-Object -Unique)) -join ',') | $(Get-ChargerHeld)"
+    "$($calls.Count) cancels | $(Get-Count "SELECT COUNT(*) AS N FROM RiotOrderCommandAudit") audited | $(Get-ChargerHeld)"
 }
-$cancelledOnce = "1 cancels @ $oldOrderId | RESERVED $vehicleKey $journeyId"
-$firstCancel = Wait-L2Condition -Description 'the server cancelled the old charge order once' `
-    -Journal $journal -Criterion 'old-order-cancelled' -TimeoutSeconds 30 `
+$noCancel = "0 cancels | 0 audited | RESERVED $vehicleKey $journeyId"
+$cancelSteady = Wait-L2ConditionOrLast -Description 'a cancel or a release appeared before the old order ended (none may)' `
+    -Journal $journal -Criterion 'old-order-not-cancelled-by-default' -TimeoutSeconds 8 `
     -Probe { Get-CancelCalls } `
-    -Until { param($v) -not $v.StartsWith('0 cancels') }
-$cancelSteady = Wait-L2ConditionOrLast -Description 'a second cancel or a release appeared before the old order ended (none may)' `
-    -Journal $journal -Criterion 'old-order-cancelled-once' -TimeoutSeconds 8 `
-    -Probe { Get-CancelCalls } `
-    -Until { param($v) $v -ne $cancelledOnce }
+    -Until { param($v) $v -ne $noCancel }
 $assertions.Add(
     'L2-UTC-03b',
-    '取消开关默认打开：确认之后服务端对那张旧充电单恰好发一次 CMD_ORDER_CANCEL；旧单仍 HANG 时另等八秒，不发第二次，211 仍是这一趟的（清桩未完成）',
-    ($firstCancel -eq $cancelledOnce -and $cancelSteady -eq $cancelledOnce),
-    $cancelledOnce,
-    "$firstCancel / $cancelSteady")
+    '取消开关默认关：确认之后旧单仍 HANG，另等八秒，服务端没有发 CMD_ORDER_CANCEL（RIoT 一侧与命令审计都是 0），211 仍是这一趟的（清桩未完成）',
+    ($cancelSteady -eq $noCancel),
+    $noCancel,
+    $cancelSteady)
 
 # --- 5. 旧单在 RIoT 里结束的那一轮：放 211，暂停仍在 ----------------------------------------------------------------
 
@@ -242,15 +239,19 @@ $released = Wait-L2ConditionOrLast -Description 'the charger was released once t
             "WHERE MapId = $($Context.MapId) AND StationId = $charger AND JourneyId = '$journeyId'")
         $journey = Read-L2SingleRow -Connection $connection -Sql (
             "SELECT Stage, IFNULL(BlockReasonCode, '') AS Code FROM JourneyRuntimes WHERE JourneyId = '$journeyId'")
+        $clearance = Read-L2SingleRow -Connection $connection -Sql (
+            "SELECT IFNULL(OldOrderDisposition, '') AS Disposition, " +
+            "CASE WHEN CompletedAt IS NULL THEN 'open' ELSE 'completed' END AS Completion FROM StationClearances")
         "$(Get-ChargerHeld) | $(${record}?.Reason) | $(${cycle}?.Phase) $(${cycle}?.EndReason) | " +
-            "$(${journey}?.Stage) $(${journey}?.Code) | $(Get-Claim) | $(Get-Holds)"
+            "$(${journey}?.Stage) $(${journey}?.Code) | $(Get-Claim) | $(Get-Holds) | " +
+            "$(${clearance}?.Completion) $(${clearance}?.Disposition)"
     } `
     -Until { param($v) $v.StartsWith('(none)') -and $v.Contains('Completed') }
 $expectedReleased = '(none) | CHARGER_RELEASED_ON_MANUAL_CLEARANCE | ENDED CHARGING_UNABLE_TO_CHARGE_CLEARED | ' +
-    'Completed CHARGING_UNABLE_TO_CHARGE_CLEARED | (none) | UNABLE_TO_CHARGE_CONFIRMED UNKNOWN recovered=0'
+    'Completed CHARGING_UNABLE_TO_CHARGE_CLEARED | (none) | UNABLE_TO_CHARGE_CONFIRMED UNKNOWN recovered=0 | completed CANCELLED'
 $assertions.Add(
     'L2-UTC-04',
-    '旧单在 RIoT 里结束的那一轮：211 的独占释放（CHARGER_RELEASED_ON_MANUAL_CLEARANCE）、周期以 CHARGING_UNABLE_TO_CHARGE_CLEARED 结束、旅程收尾、用途放开；暂停仍在（没有恢复）',
+    '旧单在 RIoT 里结束的那一轮：清桩在这一刻完成（旧单处置 CANCELLED）、211 的独占释放（CHARGER_RELEASED_ON_MANUAL_CLEARANCE）、周期以 CHARGING_UNABLE_TO_CHARGE_CLEARED 结束、旅程收尾、用途放开；暂停仍在（没有恢复）',
     ($released -eq $expectedReleased),
     $expectedReleased,
     $released)

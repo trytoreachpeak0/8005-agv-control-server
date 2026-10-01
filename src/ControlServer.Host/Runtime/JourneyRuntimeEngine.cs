@@ -53,7 +53,8 @@ public sealed partial class JourneyRuntimeEngine(
     IChargingPolicyResolver chargingPolicy,
     FixedStationSweepWarnings? fixedStationWarnings = null,
     RiotOrderCommandService? orderCommands = null,
-    IdleReturn.IdleReturnMaterializationFailures? idleReturnMaterializationFailures = null)
+    IdleReturn.IdleReturnMaterializationFailures? idleReturnMaterializationFailures = null,
+    Charging.StationClearanceExit? clearanceExit = null)
 {
     // control-server#390 review L3: consecutive materialization failures outlive the per-round engine (a singleton in the
     // host); an engine built without them keeps its own.

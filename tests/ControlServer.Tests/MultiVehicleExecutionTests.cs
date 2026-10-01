@@ -16,6 +16,7 @@ using ControlServer.Infrastructure.Adapters;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -1298,6 +1299,7 @@ public sealed partial class MultiVehicleExecutionTests
 
         public async ValueTask DisposeAsync()
         {
+            File.Delete(ClearanceRosterPath);
             await Context.DisposeAsync();
             await _connection.DisposeAsync();
         }
@@ -1422,7 +1424,32 @@ public sealed partial class MultiVehicleExecutionTests
                 EngineLog,
                 ChargingPolicy,
                 orderCommands: new RiotOrderCommandService(Riot, new RiotOrderCommandAuditStore(Context), Riot, Clock),
-                idleReturnMaterializationFailures: IdleReturnMaterializationFailures);
+                idleReturnMaterializationFailures: IdleReturnMaterializationFailures,
+                clearanceExit: new ControlServer.Host.Runtime.Charging.StationClearanceExit(
+                    new ControlServer.Host.Runtime.Charging.FieldOperatorRoleRoster(Microsoft.Extensions.Options.Options.Create(
+                        new ControlServer.Host.Runtime.Charging.FieldOperatorRoleOptions { Path = ClearanceRosterPath })),
+                    Microsoft.Extensions.Options.Options.Create(
+                        new ControlServer.Host.Runtime.Charging.FieldOperatorRoleOptions { Path = ClearanceRosterPath }),
+                    ClearanceConfiguration));
+        }
+
+        /// <summary>
+        /// 人工清桩的出口（control-server#406 审查 M1）：默认可用——名单里有一名 R-11、Host 入口映射着。要它不可用的用例改名单文件或这份配置；
+        /// 两样都每次现读。
+        /// </summary>
+        public string ClearanceRosterPath { get; } = WriteClearanceRoster();
+
+        /// <inheritdoc cref="ClearanceRosterPath"/>
+        public Microsoft.Extensions.Configuration.IConfigurationRoot ClearanceConfiguration { get; } =
+            new Microsoft.Extensions.Configuration.ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?> { ["VehicleFaultRecovery:enabled"] = "true" })
+                .Build();
+
+        private static string WriteClearanceRoster()
+        {
+            string path = Path.Combine(Path.GetTempPath(), $"fleet-roster-{Guid.NewGuid():N}.json");
+            File.WriteAllText(path, """{"operators":[{"operatorId":"fleet-r11","roles":["R-11"]}]}""");
+            return path;
         }
 
         /// <summary>每辆车最近一次的充电分配结论（control-server#404），跨轮次保留，像宿主里的单例。</summary>

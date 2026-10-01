@@ -139,6 +139,12 @@ public static class ChargingExecutionReasons
     public const string ClearedOldOrderUnsettled = "CHARGING_CLEARED_OLD_ORDER_UNSETTLED";
 
     /// <summary>
+    /// 清桩中，旧充电单在 RIoT 里从 <c>HANG</c> 回到了可能让车动的状态（排队 1、执行 3、队列优先 10）：有人在 RIoT 里让它继续了，车可能开回桩上，
+    /// 而现场正有人在清桩（control-server#406 审查 S5）。只告警、不急停、不取消。
+    /// </summary>
+    public const string OldOrderResumedWhileClearing = "CHARGING_OLD_ORDER_RESUMED_WHILE_CLEARING";
+
+    /// <summary>
     /// 充不上之后人工清桩完成、旧单已终结：周期结束、桩的独占释放、<c>CLEARING_MAINTENANCE</c> 用途放开、旅程收尾。桩的分配暂停<b>不</b>解除
     /// （要 <c>ChargingStationRecoveryConfirmation</c>）。不是「已确认失败」：不计入「两次即停」、不进冷却。
     /// </summary>

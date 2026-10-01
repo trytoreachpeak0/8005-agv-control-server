@@ -4,6 +4,7 @@ using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime.Charging;
 using ControlServer.Host.Runtime.Commands;
+using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -31,17 +32,36 @@ public sealed partial class JourneyRuntimeEngine
             new EventId(2265, nameof(LogClearedOldOrderUnsettled)),
             "CHARGING_CLEARED_OLD_ORDER_UNSETTLED: the charger {StationId} that vehicle {VehicleKey} (journey {JourneyId}) " +
             "could not charge at was confirmed clear at {ClearedAt}, but its old charge order is still {Disposition} in RIoT. " +
-            "The charger is released only once that order has ended (REQ-0178); until then it stays held. Cancel the order " +
-            "in RIoT: this server cancels it at most once, and only while JourneyRuntime:UnableToChargeOldOrderCancelEnabled " +
-            "is on (REQ-0148, baseline v1.9.0), and never again once that cancel went unconfirmed.");
+            "The clearance completes and the charger is released only once that order has ended (REQ-0178); until then it " +
+            "stays held. End the order " +
+            "in RIoT. This server cancels it at most once, and only while JourneyRuntime:UnableToChargeOldOrderCancelEnabled " +
+            "is on (off by default; REQ-0148 v1.9.0 case 1), never again once that cancel went unconfirmed.");
 
-    private static readonly Action<ILogger, string, string, string, string, Exception?> LogClearedOldOrderCancelNotConfirmed =
-        LoggerMessage.Define<string, string, string, string>(
+    private static readonly Action<ILogger, string, string, int, string, Exception?> LogClearanceExitUnavailable =
+        LoggerMessage.Define<string, string, int, string>(
+            LogLevel.Warning,
+            new EventId(2271, nameof(LogClearanceExitUnavailable)),
+            "Vehicle {VehicleKey} (journey {JourneyId}) shows every strict fact of an unable-to-charge at charger {StationId}, " +
+            "but the manual station clearance exit is not available ({Reasons}), so it is not paused for a clearance: the HANG " +
+            "stays ORDER_HANG and ends in RIoT as before. Configure FieldOperatorRoles:Path with an R-11 or R-13, and " +
+            "VehicleFaultRecovery:enabled or FieldOperatorRoles:OnboardClearanceEntryDeclared (control-server#406).");
+
+    private static readonly Action<ILogger, string, string, string, TimeSpan, string, Exception?> LogClearedOldOrderCancelNotConfirmed =
+        LoggerMessage.Define<string, string, string, TimeSpan, string>(
             LogLevel.Warning,
             new EventId(2270, nameof(LogClearedOldOrderCancelNotConfirmed)),
-            "Charging journey {JourneyId} of vehicle {VehicleKey}: the cancel of old charge order {OrderId} after the manual " +
-            "clearance was not confirmed ({Outcome}). It is not sent again; the charger stays held until RIoT reads the order " +
-            "ended. Cancel it in RIoT.");
+            "Charging journey {JourneyId} of vehicle {VehicleKey}: old charge order {OrderId} has not ended {Window} after this " +
+            "server cancelled it (still {Disposition} in RIoT). The cancel is not sent again; the clearance does not complete " +
+            "and the charger stays held until RIoT reads the order ended. End it in RIoT.");
+
+    private static readonly Action<ILogger, string, string, int, string, string, Exception?> LogOldOrderResumedWhileClearing =
+        LoggerMessage.Define<string, string, int, string, string>(
+            LogLevel.Warning,
+            new EventId(2273, nameof(LogOldOrderResumedWhileClearing)),
+            "CHARGING_OLD_ORDER_RESUMED_WHILE_CLEARING: vehicle {VehicleKey} (journey {JourneyId}) is held for a manual clearance " +
+            "at charger {StationId}, and its old charge order {UpperId} has left HANG for {Disposition} in RIoT: somebody let it " +
+            "go on, and the vehicle may drive back onto the charger while a person is clearing it. Warn the people on site. This " +
+            "server sends no emergency stop and no cancel for it (control-server#406 review S5).");
 
     private static readonly Action<ILogger, string, string, int, string, Exception?> LogClearedChargerReleased =
         LoggerMessage.Define<string, string, int, string>(
@@ -96,6 +116,16 @@ public sealed partial class JourneyRuntimeEngine
         {
             vehicle = null;
         }
+        DateTimeOffset now = timeProvider.GetUtcNow();
+        if (cycle.FirstChargingSeenAt is null &&
+            string.Equals(vehicle?.BatteryState, BatteryEligibility.ChargingBatteryState, StringComparison.Ordinal))
+        {
+            // REQ-0174 "no CHARGING the whole cycle": a CHARGING read while the order hangs counts as seen, for good -- not
+            // only for this round's run (review P1 of control-server#406).
+            cycle.FirstChargingSeenAt = now;
+            cycle.Version++;
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
         StationExclusivityRow? reservation = await dbContext.Set<StationExclusivityRow>().AsNoTracking()
             .SingleOrDefaultAsync(
                 row => row.MapId == runtime.MapId && row.StationId == stop.StationRiotId &&
@@ -103,7 +133,6 @@ public sealed partial class JourneyRuntimeEngine
                 cancellationToken)
             .ConfigureAwait(false);
 
-        DateTimeOffset now = timeProvider.GetUtcNow();
         IReadOnlyList<string> missing = UnableToChargeFacts.Missing(
             runtime, stop, intent.OrderId, cycle.FirstChargingSeenAt, reservation?.JourneyId, order, missions, vehicle, now,
             runtimeOptions.MaximumEvidenceAge);
@@ -119,6 +148,31 @@ public sealed partial class JourneyRuntimeEngine
         DateTimeOffset firstSeen = board.FirstObserved(key, now);
         if (!board.ContinuesSampleRun(key, missions.ObservedAt, runtimeOptions.MaximumEvidenceAge))
         {
+            return false;
+        }
+
+        // Review M1: formed, the vehicle's only way out is a person's clearance. Where nobody can give one, it is not formed:
+        // the HANG stays ORDER_HANG, which still ends in RIoT, and the reason is said once.
+        // An engine built without the exit (none registered) cannot vouch for one: treated as not offered.
+        if ((clearanceExit is null ? StationClearanceExit.NoEntry : clearanceExit.Unavailable()) is { } unavailable)
+        {
+            if (board.FirstTime("clearance-exit-unavailable:" + cycle.CycleId))
+            {
+                LogClearanceExitUnavailable(logger, runtime.VehicleKey, runtime.JourneyId, stop.StationRiotId, unavailable, null);
+            }
+            board.BreakSampleRun(key);
+            board.ForgetObserved(key);
+            return false;
+        }
+
+        // The purpose first (review item 5): when the claim is not this journey's CHARGING one, nothing is formed.
+        if (!await VehiclePurposeClaimTransition.StageAsync(
+                dbContext, runtime.VehicleKey, runtime.JourneyId, VehiclePurposes.Charging, VehiclePurposes.ClearingMaintenance,
+                now, ChargingStationHoldTriggers.UnableToChargeConfirmed, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            board.BreakSampleRun(key);
+            board.ForgetObserved(key);
             return false;
         }
 
@@ -172,10 +226,6 @@ public sealed partial class JourneyRuntimeEngine
         cycle.WireState = ChargingCycleWireStates.UnableToCharge;
         cycle.Phase = ChargingCyclePhases.Clearing;
         cycle.Version++;
-        await VehiclePurposeClaimTransition.StageAsync(
-                dbContext, runtime.VehicleKey, runtime.JourneyId, VehiclePurposes.Charging, VehiclePurposes.ClearingMaintenance,
-                now, ChargingStationHoldTriggers.UnableToChargeConfirmed, cancellationToken)
-            .ConfigureAwait(false);
         checkpointWaits.Clear(runtime.VehicleKey);
         runtime.SetBlockReason(ChargingExecutionReasons.UnableToChargeClearing, now);
         runtime.UpdatedAt = now;
@@ -195,29 +245,38 @@ public sealed partial class JourneyRuntimeEngine
     }
 
     /// <summary>
-    /// 清桩中的一轮：车保持原位，什么命令都不发；人工清桩确认之前只补发清桩中的快照，确认之后旧单对账到终态的那一轮释放并收尾。
+    /// 清桩中的一轮（周期 <see cref="ChargingCyclePhases.Clearing"/>，清桩记录还没完成）：补发清桩中快照；旧单还没终结时（开关打开）先取消一次；人工确认已记下、
+    /// 旧单也已终结时<b>完成清桩</b>并放桩；否则保持，写看得见的码。
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>出口</b>（<c>held-state-needs-governed-exit</c>）：唯一的出口是人工清桩确认（<see cref="ManualStationClearance"/>）。没人来确认，车就一直留着、桩一直暂停着——
-    /// 这正是用户 09-29 定的「由有权限的人现场挪车」；告警在形成确认的那一刻发过一次（事件 2264），看板上一直挂着
-    /// <see cref="ChargingExecutionReasons.UnableToChargeClearing"/>。
+    /// <b>顺序</b>（control-server#406 独立审查，调度 10-01 定）：取消在前、完成在后，三者不互相等——
+    /// <list type="number">
+    /// <item>进入清桩中、清桩还没完成（<c>CompletedAt</c> 为空）时，旧单读到 <c>HANG</c> 就由这里发一次取消（<see cref="CancelOldOrderWhileClearingAsync"/>）。
+    /// 它不等人工确认，所以落在 <c>REQ-0148</c>（基线 <c>v1.9.0</c>）情形一的窗口里：进入清桩中闭环后、清桩完成之前。</item>
+    /// <item>人工确认随时可以到，先记下来（<see cref="ManualStationClearance"/>）。</item>
+    /// <item>只有「人工确认已记下」与「旧单已终结」两样都齐了，才写 <c>CompletedAt</c> 并放桩（<see cref="ChargerClearanceRelease.CompleteAndReleaseAsync"/>，
+    /// <c>REQ-0178</c>：取消结果未知时不完成清桩；<c>REQ-0179</c>：人工确认是完成的证明）。哪一样后到，就由哪一边完成。</item>
+    /// </list>
     /// </para>
     /// <para>
-    /// <b>确认之后旧单还没收敛</b>（仍 <c>HANG</c>、读不到、结果未知，<c>REQ-0178</c>）：桩不放、用途不放、继续对账，写
-    /// <see cref="ChargingExecutionReasons.ClearedOldOrderUnsettled"/>；超过 <c>JourneyRuntime:OwnOrderRebuildRepeatWindow</c> 告警一次（事件 2265），
-    /// 请人在 RIoT 里取消旧单。开关打开（默认）时本服务端先取消一次（<c>REQ-0148</c> 情形一，基线 <c>v1.9.0</c>，<c>CP-0010</c>），
-    /// 见 <see cref="CancelClearedOldOrderWhenEnabledAsync"/>；取消之后照样等对账读到终态。
+    /// <b>保持状态要看得见</b>（<c>held-state-needs-governed-exit</c>）：没人确认时是 <see cref="ChargingExecutionReasons.UnableToChargeClearing"/>
+    /// （形成确认那一刻告警过，事件 2264）；确认已记下、旧单还没终结时是 <see cref="ChargingExecutionReasons.ClearedOldOrderUnsettled"/>，从确认起超过
+    /// <c>JourneyRuntime:OwnOrderRebuildRepeatWindow</c> 告警一次（事件 2265）；发出的取消过了观察窗口旧单仍没终结告警一次（事件 2270，审查 S3）；
+    /// 旧单从 <c>HANG</c> 回到排队或执行——有人在 RIoT 里让它继续，车可能开回桩上——立刻告警一次、码换成
+    /// <see cref="ChargingExecutionReasons.OldOrderResumedWhileClearing"/>（事件 2273，审查 S5；不急停、不取消）。出口是人在 RIoT 里把旧单结束——
+    /// 开关关着时这本来就是唯一的路。
     /// </para>
     /// <para>
-    /// <b>执行前重判前提</b>：释放那一刻重读清桩记录、这一轮重新读旧单，释放本身带着读到的周期版本与独占持有者（<see cref="ChargerClearanceRelease"/>），
-    /// 人工确认在同一刻放过了就什么也不写。<b>清桩中有人在 RIoT 里取消旧单：不重建</b>——这一段不经 <see cref="NameStalledOrderAsync"/>，
-    /// 「取消即重建」的登记（<see cref="RecordOrderEndedInRiotAsync"/>）走不到这里。
+    /// <b>执行前重判前提</b>：完成那一刻按「还没完成、确认已记下」更新、按读到的周期版本与持有者释放，人工确认在同一刻完成过就什么也不写。
+    /// <b>清桩中有人在 RIoT 里取消旧单：不重建</b>——这一段不经 <see cref="NameStalledOrderAsync"/>，「取消即重建」的登记
+    /// （<see cref="RecordOrderEndedInRiotAsync"/>）走不到这里。
     /// </para>
     /// </remarks>
     private async Task AdvanceClearingAsync(
         JourneyRuntimeRow runtime,
         JourneyStopRow stop,
+        OrderIntentRow intent,
         ChargingCycleRow cycle,
         CancellationToken cancellationToken)
     {
@@ -232,13 +291,6 @@ public sealed partial class JourneyRuntimeEngine
 
         StationClearanceRow? clearance = await dbContext.Set<StationClearanceRow>().AsNoTracking()
             .SingleOrDefaultAsync(row => row.CycleId == cycle.CycleId, cancellationToken).ConfigureAwait(false);
-        if (clearance is not { CompletedAt: { } clearedAt })
-        {
-            await SetChargingCodeAsync(runtime, ChargingExecutionReasons.UnableToChargeClearing, now, cancellationToken)
-                .ConfigureAwait(false);
-            return;
-        }
-
         RiotOrderObservation order;
         try
         {
@@ -250,22 +302,56 @@ public sealed partial class JourneyRuntimeEngine
             order = new RiotOrderObservation(stop.UpperId, RiotOrderObservationKind.Unknown, null);
         }
         string disposition = ManualStationClearance.Disposition(order, stop.UpperId);
+        DateTimeOffset? confirmedAt = clearance?.ConfirmedAt;
         string unsettledKey = "clearing-old-order-unsettled:" + runtime.JourneyId;
+
         if (!ManualStationClearance.Settled(disposition))
         {
-            await SetChargingCodeAsync(runtime, ChargingExecutionReasons.ClearedOldOrderUnsettled, now, cancellationToken)
+            // Review S5: out of HANG into a state that can move the vehicle -- somebody let the order go on in RIoT.
+            bool resumed = order is
+            {
+                Kind: RiotOrderObservationKind.Active,
+                OrderState: RiotOrderState.Queueing or RiotOrderState.Executing or RiotOrderState.QueuePriority,
+            };
+            if (resumed && dispatchRound.Charging.Board.FirstTime("clearing-old-order-resumed:" + runtime.JourneyId))
+            {
+                LogOldOrderResumedWhileClearing(
+                    logger, runtime.VehicleKey, runtime.JourneyId, stop.StationRiotId, stop.UpperId,
+                    string.Create(CultureInfo.InvariantCulture, $"orderState {order.OrderState}"), null);
+            }
+            if (clearance is { CompletedAt: null })
+            {
+                await CancelOldOrderWhileClearingAsync(runtime, stop, intent, order, cancellationToken).ConfigureAwait(false);
+                await WarnCancelNotTakenAsync(runtime, intent, disposition, now, cancellationToken).ConfigureAwait(false);
+            }
+            await SetChargingCodeAsync(
+                    runtime,
+                    resumed ? ChargingExecutionReasons.OldOrderResumedWhileClearing
+                    : confirmedAt is null ? ChargingExecutionReasons.UnableToChargeClearing
+                    : ChargingExecutionReasons.ClearedOldOrderUnsettled,
+                    now,
+                    cancellationToken)
                 .ConfigureAwait(false);
-            await CancelClearedOldOrderWhenEnabledAsync(runtime, stop, order, cancellationToken).ConfigureAwait(false);
-            if (now - clearedAt > runtimeOptions.OwnOrderRebuildRepeatWindow && dispatchRound.Charging.Board.FirstTime(unsettledKey))
+            if (confirmedAt is { } since && now - since > runtimeOptions.OwnOrderRebuildRepeatWindow &&
+                dispatchRound.Charging.Board.FirstTime(unsettledKey))
             {
                 LogClearedOldOrderUnsettled(
-                    logger, stop.StationRiotId, runtime.VehicleKey, runtime.JourneyId, clearedAt, disposition, null);
+                    logger, stop.StationRiotId, runtime.VehicleKey, runtime.JourneyId, since, disposition, null);
             }
             return;
         }
 
-        if (await ChargerClearanceRelease.ReleaseAsync(
-                dbContext, cycle.CycleId, cycle.Version, ChargingExecutionReasons.UnableToChargeCleared, now, cancellationToken)
+        if (clearance is not { ConfirmedAt: not null, CompletedAt: null })
+        {
+            // The old order has ended, nobody has confirmed the charger clear yet: the vehicle stays, waiting for that person.
+            await SetChargingCodeAsync(runtime, ChargingExecutionReasons.UnableToChargeClearing, now, cancellationToken)
+                .ConfigureAwait(false);
+            return;
+        }
+
+        if (await ChargerClearanceRelease.CompleteAndReleaseAsync(
+                dbContext, clearance.ClearanceId, cycle.CycleId, cycle.Version, ChargingExecutionReasons.UnableToChargeCleared,
+                disposition, now, cancellationToken)
                 .ConfigureAwait(false))
         {
             dispatchRound.Charging.Board.Unsay(unsettledKey);
@@ -275,47 +361,79 @@ public sealed partial class JourneyRuntimeEngine
     }
 
     /// <summary>
-    /// 已取得人工清桩确认、旧单仍 <c>HANG</c>（清桩闭环还没完成）：开关 <c>JourneyRuntime:UnableToChargeOldOrderCancelEnabled</c> 打开（默认）时由本服务端取消这张旧单，一次；关着什么也不做。
+    /// 清桩中、清桩还没完成、旧单仍 <c>HANG</c>：开关 <c>JourneyRuntime:UnableToChargeOldOrderCancelEnabled</c> 打开时由本服务端取消这张旧单，一次；
+    /// 开关默认关，关着什么也不做。
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>依据</b>：<c>REQ-0148</c>（基线 <c>v1.9.0</c>，<c>CP-0010</c>）情形一——车辆按 <c>REQ-0178</c> 进入清桩中闭环后、清桩完成之前，
-    /// 本服务端自建的充电周期旧单尚未终结，可以取消；白名单第 1.3 节同口径。<c>REQ-0178</c> 要求清桩前旧单到取消终态，所以默认开。
-    /// 开关留作立即收紧的手段（白名单第五节第二行：软件负责人可立即收紧，恢复要批准人批准）；关着时旧单只对账，事件 2265 请人在 RIoT 里取消。
+    /// <b>依据</b>：<c>REQ-0148</c>（基线 <c>v1.9.0</c>，<c>CP-0010</c>）情形一——车辆按 <c>REQ-0178</c> 进入清桩中闭环后、清桩完成之前，本服务端自建的
+    /// 充电周期旧单尚未终结，可以取消；白名单第 1.3 节同口径。调用方只在周期是 <c>CLEARING</c>、清桩记录还没完成时调它。
     /// </para>
     /// <para>
-    /// <b>打开后取消哪张单、在什么条件下</b>（比条文窄，条文从进入清桩中就允许）：只取消这个周期自己 <c>upperId</c> 下的那张——归属凭本库的
-    /// 停靠与意图证明，不凭 <c>upperId</c> 的形态；只在取得人工清桩确认之后（<c>REQ-0179</c> 的完成证明，清桩记录的 <c>CompletedAt</c>）、
-    /// 清桩闭环完成之前（<c>REQ-0178</c>：旧单终结才完成清桩，在这里就是桩释放、周期结束的那一轮；这一支只在周期仍是 <c>CLEARING</c> 时走到）——
-    /// 正落在 <c>REQ-0148</c> 情形一「进入清桩中闭环后、清桩完成之前」的窗口里，比它窄：不在人到场之前取消；这一轮重读到它恰好是 <c>HANG</c>（其它任何状态都不发）、且执行它的就是这个周期的车
-    /// （RIoT 读到别的车、或读不到执行车，都不发：条文「未由非 8005 管辖的车辆执行」要先证明）；命令审计里这张单还没有取消记录（只发一次，没确认也不重发，
-    /// 事件 2270）。取消本身什么也不放、不重建：桩与用途照旧要等之后某一轮读到旧单已终结才释放，车在那之前一直留着，与人在 RIoT 里取消走同一条路。
+    /// <b>为什么默认关</b>（control-server#406 独立审查，调度 10-01 定）：取消一张停在桩上的 <c>HANG</c> 充电单之后，RIoT 会不会在队首插入离桩动作
+    /// <c>act(78,2,0)</c>、让车在现场的人旁边动起来，没有任何现场证据（白名单与实验室只记了「下一张单的队首」会插）。这是准入线 1 的风险。关着时出口是
+    /// 「人在 RIoT 里结束旧单，服务端读到终态，加上人工确认，放桩」。等 10-08 现场经用户授权在 agv02 上实测过取消的效果，再定要不要打开。
+    /// </para>
+    /// <para>
+    /// <b>打开后取消哪张、在什么条件下</b>，全部同时满足才发：这一轮重读到它恰好是 <c>HANG</c>（其它任何状态都不发）；RIoT 的单号就是这个周期订单意图上的
+    /// 那一张（<c>order.OrderId == intent.OrderId</c>，归属凭本库的意图，不凭 <c>upperId</c> 的形态）；执行它的就是这个周期的车（读到别的车、或读不到执行车，
+    /// 都不发：条文「未由非 8005 管辖的车辆执行」要先证明）；命令审计里这张单还没有取消记录（只发一次，没确认也不重发，事件 2270）。取消本身什么也不放、
+    /// 不重建：桩与用途等之后某一轮读到旧单终结、并且人工确认已记下才完成清桩释放，车在那之前一直留着。
     /// </para>
     /// </remarks>
-    private async Task CancelClearedOldOrderWhenEnabledAsync(
+    private async Task CancelOldOrderWhileClearingAsync(
         JourneyRuntimeRow runtime,
         JourneyStopRow stop,
+        OrderIntentRow intent,
         RiotOrderObservation order,
         CancellationToken cancellationToken)
     {
         if (!runtimeOptions.UnableToChargeOldOrderCancelEnabled || orderCommands is null ||
             order is not { Kind: RiotOrderObservationKind.Active, OrderState: RiotOrderState.Hang, OrderId: string orderId } ||
+            !string.Equals(orderId, intent.OrderId, StringComparison.Ordinal) ||
             !string.Equals(order.VehicleKey, runtime.VehicleKey, StringComparison.Ordinal) ||
             await OwnCancelIssuedAsync(orderId, cancellationToken).ConfigureAwait(false))
         {
             return;
         }
 
-        RiotOrderCommandRecord cancel = await orderCommands.IssueAsync(
+        // Not judged here (review S3): a cancel RIoT applies a moment later still reads HANG on the read-back. Whether it took is
+        // judged by WarnCancelNotTakenAsync, once the settle window has passed.
+        _ = await orderCommands.IssueAsync(
                 RiotOrderCommandKind.Cancel,
                 new RiotOrderCommandTarget(runtime.AgvId, stop.UpperId, orderId),
-                "control-server#406: REQ-0148 (v1.9.0) case 1, the old charge order of a clearance confirmed after an unable-to-charge",
+                "control-server#406: REQ-0148 (v1.9.0) case 1, the old charge order of a cycle in the clearing loop",
                 faultGeneration: null,
                 cancellationToken)
             .ConfigureAwait(false);
-        if (!cancel.Succeeded)
+    }
+
+    /// <summary>
+    /// 本服务端取消过这张旧单、过了 <c>JourneyRuntime:UnableToChargeOldOrderCancelSettleWindow</c>（默认 60 秒）它仍没终结：告警一次（事件 2270）。
+    /// 窗口内转为终态的不告警（审查 S3：取消若是异步生效，发出后那一刻回读到的 <c>HANG</c> 不说明取消没起作用）。不重发、不做别的。
+    /// </summary>
+    private async Task WarnCancelNotTakenAsync(
+        JourneyRuntimeRow runtime,
+        OrderIntentRow intent,
+        string disposition,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (intent.OrderId is not string orderId)
         {
-            LogClearedOldOrderCancelNotConfirmed(logger, runtime.JourneyId, runtime.VehicleKey, orderId, cancel.Outcome.ToString(), null);
+            return;
+        }
+        string cancel = RiotCommandTypeNames.For(RiotOrderCommandKind.Cancel);
+        DateTimeOffset[] issued = await dbContext.RiotOrderCommandAudit.AsNoTracking()
+            .Where(row => row.CommandType == cancel && row.TargetOrderId == orderId)
+            .Select(row => row.IssuedAt)
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+        TimeSpan window = runtimeOptions.UnableToChargeOldOrderCancelSettleWindow;
+        if (issued.Length > 0 && now - issued.Min() >= window &&
+            dispatchRound.Charging.Board.FirstTime("clearing-cancel-not-taken:" + runtime.JourneyId))
+        {
+            LogClearedOldOrderCancelNotConfirmed(logger, runtime.JourneyId, runtime.VehicleKey, orderId, window, disposition, null);
         }
     }
 

@@ -7,6 +7,7 @@ namespace ControlServer.Host.Runtime.Charging;
 
 /// <summary>
 /// 人工清桩确认之后、旧单已终结时的那一次释放（批次9-08，control-server#406）：周期结束、这一趟持有的桩独占释放、车的用途放开，<b>一个事务</b>。
+/// 充不上之后的清桩中，清桩在这一刻才完成（<see cref="CompleteAndReleaseAsync"/>）。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -113,6 +114,76 @@ public static class ChargerClearanceRelease
             stale.State = EntityState.Detached;
         }
         return true;
+    }
+
+    /// <summary>
+    /// 充不上之后的清桩中：人工确认已经记下（<see cref="StationClearanceRow.ConfirmedAt"/>）且旧单此刻已终结，<b>清桩在这一刻完成</b>——写
+    /// <see cref="StationClearanceRow.CompletedAt"/>、证明与旧单的终态处置，并在同一个事务里放桩（<see cref="ReleaseAsync"/>）。答是否这一次完成了。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为什么完成要等两样</b>（control-server#406 独立审查）：cs#399 的模型里清桩完成就是 <c>CompletedAt</c>；<c>REQ-0178</c> 说旧单要先到取消终态、
+    /// 取消结果未知时不完成清桩，<c>REQ-0179</c> 说人工确认是完成的证明。所以两样齐了才完成。人工确认先到、旧单后终结，由引擎在读到终态的那一轮完成；
+    /// 旧单先终结、确认后到，由确认那一刻完成。两边调的都是这一个函数。
+    /// </para>
+    /// <para>
+    /// <b>只有一方写成</b>：完成按「还没完成、确认已记下」更新，释放按读到的周期版本与持有者；任一步更新到 0 行，整个事务回滚、什么也不写，答假。
+    /// 调用方已经开着事务时用它的（答假时调用方回滚）。
+    /// </para>
+    /// </remarks>
+    public static async Task<bool> CompleteAndReleaseAsync(
+        ControlServerDbContext dbContext,
+        string clearanceId,
+        string cycleId,
+        long cycleVersion,
+        string endReason,
+        string settledDisposition,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(dbContext);
+        ArgumentException.ThrowIfNullOrWhiteSpace(clearanceId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(settledDisposition);
+
+        IDbContextTransaction? transaction = dbContext.Database.CurrentTransaction is null
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
+            : null;
+        await using (transaction)
+        {
+            int completed = await dbContext.Set<StationClearanceRow>()
+                .Where(row => row.ClearanceId == clearanceId && row.CompletedAt == null && row.ConfirmedAt != null)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(row => row.CompletedAt, now)
+                        .SetProperty(row => row.Proof, StationClearanceProofs.ManualConfirmation)
+                        .SetProperty(row => row.OldOrderDisposition, settledDisposition),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (completed == 0 ||
+                !await ReleaseAsync(dbContext, cycleId, cycleVersion, endReason, now, cancellationToken).ConfigureAwait(false))
+            {
+                await RollBackAsync(transaction, cancellationToken).ConfigureAwait(false);
+                ForgetClearance(dbContext, clearanceId);
+                return false;
+            }
+
+            if (transaction is not null)
+            {
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            }
+        }
+        ForgetClearance(dbContext, clearanceId);
+        return true;
+    }
+
+    /// <summary>变更跟踪里这条清桩记录的旧副本（更新绕过了它）。</summary>
+    private static void ForgetClearance(ControlServerDbContext dbContext, string clearanceId)
+    {
+        foreach (var stale in dbContext.ChangeTracker.Entries<StationClearanceRow>()
+                     .Where(entry => entry.Entity.ClearanceId == clearanceId).ToArray())
+        {
+            stale.State = EntityState.Detached;
+        }
     }
 
     private static async Task RollBackAsync(IDbContextTransaction? transaction, CancellationToken cancellationToken)

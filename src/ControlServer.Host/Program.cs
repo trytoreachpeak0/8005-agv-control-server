@@ -207,6 +207,8 @@ await WaitingPointStartupCheck.EnsureAsync(app.Services, CancellationToken.None)
 // control-server#403：生效的充电策略版本（含在途旅程与充电周期冻结的版本）不满足 REQ-0281 的阈值关系、或救命线不低于它的强制充电线时拒绝启动。
 // 关系只有 ChargingPolicyRules.ThresholdRelationViolations 一份定义，导入也调它。一版都没有照常启动（逐车不投运，control-server#400）。
 await ChargingPolicyStartupCheck.EnsureAsync(app.Services, CancellationToken.None);
+// control-server#406 审查 M1：人工清桩的出口（名单加至少一个入口）不可用时告警一次；那时充不上照旧写 ORDER_HANG，不进清桩中。
+ControlServer.Host.Runtime.Charging.StationClearanceExit.LogAtStartup(app.Services);
 
 app.MapGet("/health/live", () => Results.Ok(new { status = "live" }));
 app.MapGet("/health/ready", async (ControlServerDbContext dbContext, CancellationToken cancellationToken) =>

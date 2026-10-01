@@ -755,12 +755,15 @@ try {
     }
     Set-L2ExpectedActionOverdueServerSetting -Environment $serverEnvironment -Threshold $expectedActionOverdueThreshold
     # control-server#406: the R-11/R-13 roster the manual station clearance checks an operatorId against. Only when a scenario
-    # names it; without it the server has no roster, and every clearance confirmation is refused.
+    # names it; without it the server has no roster, every clearance confirmation is refused, and -- review M1 -- an
+    # unable-to-charge is never formed (the exit is unavailable; the HANG stays ORDER_HANG). Both rigs offer the onboard
+    # entry (the synthetic peer's control plane, the real onboard's hmi#229 entry), so the roster comes with that declaration.
     if ($setup.ContainsKey('FieldOperatorRoles')) {
         $rosterPath = Join-Path $EvidenceRoot 'field-operator-roles.json'
         @{ operators = @($setup.FieldOperatorRoles | ForEach-Object { @{ operatorId = [string]$_.OperatorId; roles = @($_.Roles) } }) } |
             ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $rosterPath -Encoding utf8NoBOM
         $serverEnvironment['FieldOperatorRoles__Path'] = $rosterPath
+        $serverEnvironment['FieldOperatorRoles__OnboardClearanceEntryDeclared'] = 'true'
         $journal.Note("Field operator roster: $(@($setup.FieldOperatorRoles | ForEach-Object { "$($_.OperatorId)=$(@($_.Roles) -join '+')" }) -join ', ').")
     }
     if ($realOnboard) {

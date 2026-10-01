@@ -7,6 +7,9 @@ using ControlServer.Host.Runtime.Charging;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
 using static ControlServer.Tests.ChargingAllocationTests;
 using static ControlServer.Tests.ChargingExecutionTests;
 using FleetFixture = ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture;
@@ -115,6 +118,7 @@ public sealed class ChargingUnableToChargeTests
         "no-code-at-all",
         "407802-but-not-hang",
         "charging-seen-once",
+        "order-on-another-vehicle",
         "facts-stale",
         "facts-conflict",
     ];
@@ -159,9 +163,13 @@ public sealed class ChargingUnableToChargeTests
             case "charging-seen-once":
                 fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = Near.StationId, BatteryState = "CHARGING" };
                 await RoundAsync(fleet);
+                // Review P1: CHARGING read once while the order hangs, then never again. Seen is seen for the whole cycle (REQ-0174),
+                // so the ten rounds of NO_CHARGE below form nothing.
                 fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = Near.StationId, BatteryState = NotCharging };
-                // The reading in between broke the run; seen once more it is a new run, which is still only one observation.
-                fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = Near.StationId, BatteryState = "CHARGING" };
+                break;
+            case "order-on-another-vehicle":
+                // Review P4: RIoT reads the order executed by another vehicle; every other fact holds.
+                fleet.Riot.PutOrder(fleet.Riot.OrderOf(upperId)! with { VehicleKey = "SOMEONE-ELSE" });
                 break;
             case "facts-stale":
                 fleet.Riot.VehicleOverrides[KeyA] = seen => seen with
@@ -190,6 +198,124 @@ public sealed class ChargingUnableToChargeTests
         if (fleet.Riot.OrderOf(upperId)!.OrderState == RiotOrderState.Hang)
         {
             Assert.Equal(JourneyRuntimeEngine.OrderHangReason, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+        }
+    }
+
+    /// <summary>
+    /// 审查第 5 条：严格事实全都成立，但车的用途占有已不是这趟旅程的 <c>CHARGING</c>（这里被改成了别的用途）——用途转换写不成，就不形成确认：
+    /// 不暂停桩、不进清桩中，十轮里一条暂停都没有。
+    /// </summary>
+    [Fact]
+    public async Task AClaimThatIsNotThisJourneysChargingOneFormsNoConfirmation()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        await FailingAtChargerAsync(fleet);
+        await fleet.Context.Set<VehiclePurposeClaimRow>()
+            .Where(row => row.VehicleKey == KeyA)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(row => row.Purpose, VehiclePurposes.Transport), Token);
+
+        for (int round = 0; round < 10; round++)
+        {
+            await RoundAsync(fleet);
+        }
+
+        Assert.Empty(await HoldsAsync(fleet));
+        Assert.Equal(ChargingCyclePhases.Active, (await OpenCycleAsync(fleet)).Phase);
+        Assert.DoesNotContain(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2264);
+    }
+
+    public static TheoryData<string, string> UnavailableExits => new()
+    {
+        { "roster-empty", StationClearanceExit.RosterEmpty },
+        { "roster-without-r11-or-r13", StationClearanceExit.RosterEmpty },
+        { "no-entry", StationClearanceExit.NoEntry },
+    };
+
+    /// <summary>
+    /// 审查必修 M1：严格事实全部成立，但人工清桩的出口此刻没人走得通（名单为空、名单里没人持 R-11／R-13、Host 入口没映射也没声明车载端入口）：
+    /// 不形成确认、不暂停桩，单照旧是 <c>ORDER_HANG</c>（RIoT 那一侧的出口还在）；告警恰好一次（事件 2271），说出是哪一样。出口恢复之后，同一组事实照常
+    /// 形成确认——挡住它的确实是出口。
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(UnavailableExits))]
+    public async Task WithNoWayOutForAPersonTheHangStaysOrderHangAndNothingIsPaused(string exit, string reason)
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        string roster = File.ReadAllText(fleet.ClearanceRosterPath);
+        switch (exit)
+        {
+            case "roster-empty":
+                File.WriteAllText(fleet.ClearanceRosterPath, """{"operators":[]}""");
+                break;
+            case "roster-without-r11-or-r13":
+                File.WriteAllText(fleet.ClearanceRosterPath, """{"operators":[{"operatorId":"op-plain","roles":["R-04"]}]}""");
+                break;
+            case "no-entry":
+                fleet.ClearanceConfiguration["VehicleFaultRecovery:enabled"] = "false";
+                break;
+        }
+        await FailingAtChargerAsync(fleet);
+
+        for (int round = 0; round < 10; round++)
+        {
+            await RoundAsync(fleet);
+        }
+
+        Assert.Empty(await HoldsAsync(fleet));
+        Assert.Equal(ChargingCyclePhases.Active, (await OpenCycleAsync(fleet)).Phase);
+        Assert.Equal(VehiclePurposes.Charging, (await ClaimOfAsync(fleet, KeyA))!.Value.Purpose);
+        Assert.Equal(JourneyRuntimeEngine.OrderHangReason, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+        EventRecordingLogger<JourneyRuntimeEngine>.Entry warned = Assert.Single(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2271);
+        Assert.Contains(reason, warned.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2264);
+
+        File.WriteAllText(fleet.ClearanceRosterPath, roster);
+        fleet.ClearanceConfiguration["VehicleFaultRecovery:enabled"] = "true";
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+        Assert.Single(await HoldsAsync(fleet));
+    }
+
+    /// <summary>
+    /// 出口判定本身：名单与入口两样各自缺什么报什么；Host 入口没开时，部署方声明了车载端入口（<c>FieldOperatorRoles:OnboardClearanceEntryDeclared</c>）也算有入口。
+    /// 启动时不可用告警一次（事件 2272）；没在跑旅程的服务端不看。
+    /// </summary>
+    [Theory]
+    [InlineData(true, true, false, null)]
+    [InlineData(true, false, true, null)]
+    [InlineData(true, false, false, StationClearanceExit.NoEntry)]
+    [InlineData(false, true, false, StationClearanceExit.RosterEmpty)]
+    [InlineData(false, false, false, StationClearanceExit.RosterEmpty + "," + StationClearanceExit.NoEntry)]
+    public void TheExitNeedsSomeoneOnTheRosterAndAnEntry(bool rosterHasR11, bool hostEntry, bool onboardDeclared, string? expected)
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"exit-roster-{Guid.NewGuid():N}.json");
+        File.WriteAllText(path, rosterHasR11 ? """{"operators":[{"operatorId":"op-r11","roles":["R-11"]}]}""" : """{"operators":[]}""");
+        try
+        {
+            FieldOperatorRoleOptions roles = new() { Path = path, OnboardClearanceEntryDeclared = onboardDeclared };
+            Microsoft.Extensions.Configuration.IConfiguration configuration = new Microsoft.Extensions.Configuration.ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?> { ["VehicleFaultRecovery:enabled"] = hostEntry ? "true" : "false" })
+                .Build();
+            StationClearanceExit exit = new(
+                new FieldOperatorRoleRoster(Microsoft.Extensions.Options.Options.Create(roles)),
+                Microsoft.Extensions.Options.Options.Create(roles),
+                configuration);
+            Assert.Equal(expected, exit.Unavailable());
+
+            foreach (bool journeysRun in new[] { true, false })
+            {
+                EventRecordingLogger<StationClearanceExit> log = new();
+                ServiceCollection services = new();
+                services.AddSingleton(exit);
+                services.AddSingleton<ILogger<StationClearanceExit>>(log);
+                services.AddSingleton(Microsoft.Extensions.Options.Options.Create(new JourneyRuntimeOptions { Enabled = journeysRun }));
+                StationClearanceExit.LogAtStartup(services.BuildServiceProvider());
+                Assert.Equal(journeysRun && expected is not null ? 1 : 0, log.Entries.Count(entry => entry.EventId.Id == 2272));
+            }
+        }
+        finally
+        {
+            File.Delete(path);
         }
     }
 

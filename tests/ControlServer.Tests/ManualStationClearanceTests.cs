@@ -193,7 +193,7 @@ public sealed class ManualStationClearanceTests : IDisposable
     }
 
     /// <summary>
-    /// 取消开关关着（收紧之后的样子）、旧单仍 <c>HANG</c> 时确认：记下确认、<c>stationReleased=false</c>，桩与用途都不放，一条订单命令都不发；
+    /// 取消开关关着（默认）、旧单仍 <c>HANG</c> 时确认：记下确认、<c>stationReleased=false</c>，桩与用途都不放，一条订单命令都不发；
     /// 之后每一轮写「旧单未收敛」的码、超过十分钟告警恰好一次；有人在 RIoT 里把旧单取消之后的那一轮才释放并收尾——释放只有一次，之后桩仍暂停。
     /// </summary>
     [Fact]
@@ -237,74 +237,267 @@ public sealed class ManualStationClearanceTests : IDisposable
     }
 
     /// <summary>
-    /// 取消开关（<c>UnableToChargeOldOrderCancelEnabled</c>）按默认值、即打开（<c>REQ-0148</c> 情形一，基线 <c>v1.9.0</c>；上一条用例钉住关着时一条订单命令都没有）：
-    /// 清桩确认之前什么也不发；确认之后、旧单是 <c>SUSPENDED</c> 时不发；旧单 <c>HANG</c> 但 RIoT 读到执行车是别的车、或读不到执行车时不发；
-    /// 旧单 <c>HANG</c> 且由本车执行时，恰好对这个周期自己的那张单发一次 <c>CMD_ORDER_CANCEL</c>。RIoT 没把它变成取消（替身照旧答 HANG）：告警一次（事件 2270）、
-    /// 之后十五轮不重发、桩一直留着；取消不替代对账，读到旧单终结的那一轮才放桩。
+    /// 取消开关（<c>UnableToChargeOldOrderCancelEnabled</c>，默认关；上一条用例钉住关着时一条订单命令都没有）打开时，取消落在 <c>REQ-0148</c>（基线
+    /// <c>v1.9.0</c>）情形一的窗口里：进入清桩中之后、清桩完成之前，不等人工确认。形成确认之前不发；旧单 <c>SUSPENDED</c> 不发；执行车是别的车或读不到不发；
+    /// RIoT 单号不是这个周期意图上的那一张不发；本车本单 <c>HANG</c> 时恰好一次——此刻还没有任何人确认，清桩记录没有 <c>ConfirmedAt</c> 也没有
+    /// <c>CompletedAt</c>。RIoT 没把它变成取消（替身照旧答 HANG）：发出那一刻不告警，过了观察窗口（60 秒）仍是 HANG 告警一次（事件 2270，审查 S3）、
+    /// 之后不重发、桩一直留着；人工确认到了只记下、不完成；
+    /// 读到旧单终结的那一轮才完成清桩并放桩。
     /// </summary>
     [Fact]
-    public async Task WithTheCancelSwitchOnTheOldOrderIsCancelledOnceAndTheChargerStillWaitsForItToEnd()
+    public async Task WithTheCancelSwitchOnTheOldOrderIsCancelledOnceWhileClearingAndTheClearanceStillWaitsForItToEnd()
     {
         await using FleetFixture fleet = await FleetAsync();
+        fleet.Options.UnableToChargeOldOrderCancelEnabled = true;
         JourneyRuntimeRow journey = await ConfirmedAsync(fleet);
-        MovedOff(fleet);
-        for (int minute = 0; minute < 3; minute++)
-        {
-            await fleet.HearFromEveryVehicleAsync();
-            await fleet.RunRoundAsync(TimeSpan.FromMinutes(1));
-        }
         Assert.Empty(fleet.Riot.OrderCommands);
+        RiotOrderObservation hanging = fleet.Riot.OrderOf(journey.PickupUpperId)!;
 
-        ManualStationClearanceConfirmation decision = await Clearance(fleet)
-            .DecideAsync(Request("00000000-0000-4000-8000-000000000a0c"), Token);
-        Assert.False(decision.StationReleased);
-
-        // Unsettled but not HANG: the switch cancels nothing.
+        // Unsettled but not HANG; HANG on another vehicle or on none; HANG under another RIoT order id: none of them is cancelled.
         fleet.Riot.SuspendOrder(journey.PickupUpperId);
-        for (int minute = 0; minute < 3; minute++)
-        {
-            await fleet.HearFromEveryVehicleAsync();
-            await fleet.RunRoundAsync(TimeSpan.FromMinutes(1));
-        }
+        await RoundsAsync(fleet, 2);
         Assert.Empty(fleet.Riot.OrderCommands);
-
-        // HANG, but RIoT reads it executed by another vehicle, or by none: not proven ours to cancel (REQ-0148 case 1).
         fleet.Riot.HangOrder(journey.PickupUpperId);
         foreach (string? executor in new[] { "AGV-NOT-OURS", null })
         {
             fleet.Riot.ExecuteOrderOn(journey.PickupUpperId, executor);
-            for (int minute = 0; minute < 2; minute++)
-            {
-                await fleet.HearFromEveryVehicleAsync();
-                await fleet.RunRoundAsync(TimeSpan.FromMinutes(1));
-            }
+            await RoundsAsync(fleet, 2);
             Assert.Empty(fleet.Riot.OrderCommands);
         }
+        fleet.Riot.PutOrder(hanging with { OrderId = "ORDER-NOT-THIS-INTENT" });
+        await RoundsAsync(fleet, 2);
+        Assert.Empty(fleet.Riot.OrderCommands);
 
-        fleet.Riot.ExecuteOrderOn(journey.PickupUpperId, KeyA);
+        // This vehicle, this intent's order, HANG: cancelled once, before anybody has confirmed anything.
+        fleet.Riot.PutOrder(hanging);
+        await RoundsAsync(fleet, 1);
+        (string Command, string OrderId) cancel = Assert.Single(fleet.Riot.OrderCommands);
+        Assert.Equal((RiotCommandTypeNames.For(RiotOrderCommandKind.Cancel), hanging.OrderId), (cancel.Command, cancel.OrderId));
+        StationClearanceRow beforeAnyone = await ClearanceRowAsync(fleet);
+        Assert.Equal(((DateTimeOffset?)null, (DateTimeOffset?)null), (beforeAnyone.ConfirmedAt, beforeAnyone.CompletedAt));
+        Assert.Equal(ChargingCyclePhases.Clearing, (await OpenCycleAsync(fleet)).Phase);
+        Assert.Equal(ChargingExecutionReasons.UnableToChargeClearing, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+        // Review S3: the read-back right after the cancel still says HANG; that alone is not "the cancel did not take".
+        Assert.DoesNotContain(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2270);
+
         for (int minute = 0; minute < 15; minute++)
         {
             await fleet.HearFromEveryVehicleAsync();
             await fleet.RunRoundAsync(TimeSpan.FromMinutes(1));
             Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
         }
-        (string Command, string OrderId) cancel = Assert.Single(fleet.Riot.OrderCommands);
-        RiotOrderObservation hanging = await fleet.Riot.ReconcileByUpperIdAsync(journey.PickupUpperId, Token);
-        Assert.Equal((RiotCommandTypeNames.For(RiotOrderCommandKind.Cancel), hanging.OrderId), (cancel.Command, cancel.OrderId));
+        Assert.Single(fleet.Riot.OrderCommands);
+        // Past the settle window and still HANG: said once.
         Assert.Single(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2270);
-        // The cancel falls inside REQ-0148 case 1's window: after the confirmation, before the clearance completes (REQ-0178).
-        ChargingCycleRow stillClearing = await OpenCycleAsync(fleet);
-        Assert.Equal((ChargingCyclePhases.Clearing, (DateTimeOffset?)null), (stillClearing.Phase, stillClearing.EndedAt));
+
+        MovedOff(fleet);
+        ManualStationClearanceConfirmation decision = await Clearance(fleet)
+            .DecideAsync(Request("00000000-0000-4000-8000-000000000a0c"), Token);
+        Assert.Equal((FieldConfirmationDecision.Confirmed, false), (decision.Decision.Outcome, decision.StationReleased));
+        await RoundsAsync(fleet, 2);
+        StationClearanceRow recorded = await ClearanceRowAsync(fleet);
+        Assert.Equal(("op-r11", (DateTimeOffset?)null), (recorded.ConfirmedBy, recorded.CompletedAt));
         Assert.Equal(ChargingExecutionReasons.ClearedOldOrderUnsettled, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+        Assert.Single(fleet.Riot.OrderCommands);
 
         fleet.Riot.CancelOrder(journey.PickupUpperId);
         await RoundAsync(fleet);
 
         Assert.Null(await HolderAsync(fleet, Near.StationId));
         Assert.Null(await ClaimOfAsync(fleet, KeyA));
+        StationClearanceRow completed = await ClearanceRowAsync(fleet);
+        Assert.Equal(("CANCELLED", StationClearanceProofs.ManualConfirmation), (completed.OldOrderDisposition, completed.Proof));
+        Assert.NotNull(completed.CompletedAt);
         Assert.Single(fleet.Riot.OrderCommands);
     }
 
+    /// <summary>
+    /// 审查 S3 的另一半：开关打开，取消发出后 20 秒旧单在 RIoT 里转为终态（取消异步生效的样子）——过了观察窗口也<b>不</b>告警 2270；没人确认，
+    /// 清桩不完成、桩留着；人确认的那一刻完成并放桩。
+    /// </summary>
+    [Fact]
+    public async Task AnOldOrderThatEndsWithinTheSettleWindowAfterTheCancelIsNotWarnedAbout()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        fleet.Options.UnableToChargeOldOrderCancelEnabled = true;
+        JourneyRuntimeRow journey = await ConfirmedAsync(fleet);
+        await RoundsAsync(fleet, 1);
+        Assert.Single(fleet.Riot.OrderCommands);
+
+        fleet.Clock.Advance(TimeSpan.FromSeconds(20));
+        fleet.Riot.CancelOrder(journey.PickupUpperId);
+        for (int minute = 0; minute < 3; minute++)
+        {
+            await fleet.HearFromEveryVehicleAsync();
+            await fleet.RunRoundAsync(TimeSpan.FromMinutes(1));
+        }
+
+        Assert.DoesNotContain(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2270);
+        Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
+        Assert.Null((await ClearanceRowAsync(fleet)).CompletedAt);
+        MovedOff(fleet);
+        ManualStationClearanceConfirmation decision = await Clearance(fleet)
+            .DecideAsync(Request("00000000-0000-4000-8000-000000000a0f"), Token);
+        Assert.Equal((FieldConfirmationDecision.Confirmed, true), (decision.Decision.Outcome, decision.StationReleased));
+        Assert.Single(fleet.Riot.OrderCommands);
+    }
+
+    public static TheoryData<int, bool> OldOrderStatesAfterTheConfirmation => new()
+    {
+        { RiotOrderState.Queueing, true },
+        { RiotOrderState.Executing, true },
+        { RiotOrderState.Paused, false },
+        { RiotOrderState.Suspended, false },
+        { RiotOrderState.QueuePriority, true },
+    };
+
+    /// <summary>
+    /// 审查探针 P6 收作正式用例，加审查 S5：开关关着（默认），确认已记下，旧单在 RIoT 里离开 <c>HANG</c> 停在别的未终结状态。一条订单命令都不发、
+    /// 不完成、桩留着，十分钟后 2265 恰好一次；有人在 RIoT 里取消之后的那一轮完成并放桩。离开 <c>HANG</c> 到排队（1）、执行（3）、队列优先（10）——
+    /// 有人让它继续了，车可能开回桩上——立刻告警恰好一次（事件 2273）、码是 <see cref="ChargingExecutionReasons.OldOrderResumedWhileClearing"/>，
+    /// 不急停；暂停（7）、挂起（8）不告警这一条，码仍是 <see cref="ChargingExecutionReasons.ClearedOldOrderUnsettled"/>。
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(OldOrderStatesAfterTheConfirmation))]
+    public async Task AnOldOrderLeftInAnotherUnendedStateAfterTheConfirmationIsOnlyWatched(int state, bool canMoveTheVehicle)
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        JourneyRuntimeRow journey = await ConfirmedAsync(fleet);
+        MovedOff(fleet);
+        Assert.False((await Clearance(fleet).DecideAsync(Request("00000000-0000-4000-8000-000000000a10"), Token)).StationReleased);
+        fleet.Riot.PutOrder(fleet.Riot.OrderOf(journey.PickupUpperId)! with { OrderState = state });
+
+        await RoundAsync(fleet);
+        Assert.Equal(canMoveTheVehicle ? 1 : 0, fleet.EngineLog.Entries.Count(entry => entry.EventId.Id == 2273));
+        Assert.Equal(
+            canMoveTheVehicle ? ChargingExecutionReasons.OldOrderResumedWhileClearing : ChargingExecutionReasons.ClearedOldOrderUnsettled,
+            (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+        for (int minute = 0; minute < 12; minute++)
+        {
+            await fleet.HearFromEveryVehicleAsync();
+            await fleet.RunRoundAsync(TimeSpan.FromMinutes(1));
+            Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
+        }
+
+        Assert.Empty(fleet.Riot.OrderCommands);
+        Assert.Empty(fleet.Riot.EmergencyCommands);
+        Assert.Null((await ClearanceRowAsync(fleet)).CompletedAt);
+        Assert.Single(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2265);
+        Assert.Equal(canMoveTheVehicle ? 1 : 0, fleet.EngineLog.Entries.Count(entry => entry.EventId.Id == 2273));
+
+        fleet.Riot.CancelOrder(journey.PickupUpperId);
+        await RoundAsync(fleet);
+        Assert.Null(await HolderAsync(fleet, Near.StationId));
+        Assert.NotNull((await ClearanceRowAsync(fleet)).CompletedAt);
+    }
+
+    /// <summary>
+    /// 还没人确认时旧单被人在 RIoT 里继续（执行，3）：码换成「现场注意车辆可能移动」（审查 S5）。之后旧单在 RIoT 里被取消、已终结，而人还没确认：
+    /// 警示不再成立，码回到 <see cref="ChargingExecutionReasons.UnableToChargeClearing"/>（等人工清桩），不在看板上挂一条过时的「车辆可能移动」；
+    /// 清桩不完成、桩留着，直到人确认。
+    /// </summary>
+    [Fact]
+    public async Task OnceTheResumedOldOrderEndsTheMayMoveWarningGivesWayToWaitingForThePerson()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        JourneyRuntimeRow journey = await ConfirmedAsync(fleet);
+        fleet.Riot.PutOrder(fleet.Riot.OrderOf(journey.PickupUpperId)! with { OrderState = RiotOrderState.Executing });
+        await RoundAsync(fleet);
+        Assert.Equal(ChargingExecutionReasons.OldOrderResumedWhileClearing, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+
+        fleet.Riot.CancelOrder(journey.PickupUpperId);
+        await RoundsAsync(fleet, 2);
+
+        Assert.Equal(ChargingExecutionReasons.UnableToChargeClearing, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+        Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
+        Assert.Null((await ClearanceRowAsync(fleet)).CompletedAt);
+        Assert.Single(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2273);
+    }
+
+    /// <summary>
+    /// <see cref="ChargerClearanceRelease.CompleteAndReleaseAsync"/> 自己的契约：清桩记录还没记下人工确认时什么也不写、答假——旧单再终结也不完成、
+    /// 不放桩（<c>REQ-0179</c>：完成要有证明）。两个调用方今天都先查过这一条（变异 T3 在它们那里看不见），这条用例直接钉住函数本身。
+    /// </summary>
+    [Fact]
+    public async Task CompletingAClearanceNobodyConfirmedWritesNothing()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        JourneyRuntimeRow journey = await ConfirmedAsync(fleet);
+        fleet.Riot.CancelOrder(journey.PickupUpperId);
+        StationClearanceRow clearance = await ClearanceRowAsync(fleet);
+        ChargingCycleRow cycle = await OpenCycleAsync(fleet);
+
+        bool completed = await ChargerClearanceRelease.CompleteAndReleaseAsync(
+            fleet.Context, clearance.ClearanceId, cycle.CycleId, cycle.Version, ChargingExecutionReasons.UnableToChargeCleared,
+            "CANCELLED", fleet.Clock.GetUtcNow(), Token);
+
+        Assert.False(completed);
+        fleet.Context.ChangeTracker.Clear();
+        Assert.Null((await ClearanceRowAsync(fleet)).CompletedAt);
+        Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
+        Assert.Equal(ChargingCyclePhases.Clearing, (await OpenCycleAsync(fleet)).Phase);
+    }
+
+    /// <summary>
+    /// 开关关着（默认），旧单先在 RIoT 里结束、人后到：读到旧单终结的那些轮里清桩<b>不</b>完成——没有人工确认这个证明（<c>REQ-0179</c>）——桩留着、
+    /// 码是 <see cref="ChargingExecutionReasons.UnableToChargeClearing"/>；人确认的那一刻同时完成并放桩（<c>stationReleased=true</c>）。与上一条
+    /// （确认先到、旧单后终结）合起来，两样哪一样后到都由那一边完成，不互相等。
+    /// </summary>
+    [Fact]
+    public async Task WhenTheOldOrderEndsBeforeTheConfirmationTheClearanceCompletesWhenThePersonConfirms()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        JourneyRuntimeRow journey = await ConfirmedAsync(fleet);
+        fleet.Riot.CancelOrder(journey.PickupUpperId);
+        MovedOff(fleet);
+        await RoundsAsync(fleet, 5);
+
+        Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
+        Assert.Null((await ClearanceRowAsync(fleet)).CompletedAt);
+        Assert.Equal(ChargingExecutionReasons.UnableToChargeClearing, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+        Assert.Empty(fleet.Riot.OrderCommands);
+
+        ManualStationClearanceConfirmation decision = await Clearance(fleet)
+            .DecideAsync(Request("00000000-0000-4000-8000-000000000a0d"), Token);
+
+        Assert.Equal((FieldConfirmationDecision.Confirmed, true), (decision.Decision.Outcome, decision.StationReleased));
+        Assert.Null(await HolderAsync(fleet, Near.StationId));
+        StationClearanceRow completed = await ClearanceRowAsync(fleet);
+        Assert.Equal(("op-r11", "CANCELLED"), (completed.ConfirmedBy, completed.OldOrderDisposition));
+        Assert.NotNull(completed.CompletedAt);
+        await RoundAsync(fleet);
+        Assert.Equal(JourneyRuntimeStage.Completed, (await fleet.Context.JourneyRuntimes.AsNoTracking()
+            .SingleAsync(row => row.JourneyId == journey.JourneyId, Token)).Stage);
+    }
+
+    /// <summary>
+    /// 审查探针 P2 收作正式用例：确认已记下、旧单还 <c>HANG</c>，之后 RIoT 读不到这张单（一般的 <c>Unknown</c>，不是真实 RIoT「查无此单」的确切形态）：
+    /// 继续对账、不完成、不放桩（<c>REQ-0178</c>）。审查员的变异 R1（把读不到当成查无此单）在这里变红。
+    /// </summary>
+    [Fact]
+    public async Task AnUnreadableOldOrderAfterTheConfirmationCompletesAndReleasesNothing()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        JourneyRuntimeRow journey = await ConfirmedAsync(fleet);
+        MovedOff(fleet);
+        Assert.False((await Clearance(fleet).DecideAsync(Request("00000000-0000-4000-8000-000000000a0e"), Token)).StationReleased);
+        fleet.Riot.PutOrder(new RiotOrderObservation(journey.PickupUpperId, RiotOrderObservationKind.Unknown, null));
+
+        await RoundsAsync(fleet, 5);
+
+        Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
+        Assert.Equal(VehiclePurposes.ClearingMaintenance, (await ClaimOfAsync(fleet, KeyA))!.Value.Purpose);
+        Assert.Null((await ClearanceRowAsync(fleet)).CompletedAt);
+        Assert.Equal(ChargingExecutionReasons.ClearedOldOrderUnsettled, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+    }
+
+    private static async Task RoundsAsync(FleetFixture fleet, int rounds)
+    {
+        for (int round = 0; round < rounds; round++)
+        {
+            await RoundAsync(fleet);
+        }
+    }
     // ---- 重放、换号重提、第二个确认号 ------------------------------------------------------------------------------------
 
     /// <summary>
@@ -336,8 +529,8 @@ public sealed class ManualStationClearanceTests : IDisposable
     }
 
     /// <summary>
-    /// 同一次清桩来了第二个确认号（车载端重启后再按）：答 <c>CONFIRMED</c>，不写第二次清桩记录、不放第二次；旧单此时已终结而桩还没放的，
-    /// 由这一次放（与引擎同一个释放，只有一方生效）。
+    /// 同一次清桩来了第二个确认号（车载端重启后再按）：答 <c>CONFIRMED</c>，不再记一次确认、不放第二次；旧单此时已终结而清桩还没完成的，
+    /// 由这一次完成并放（与引擎同一个函数，只有一方生效）。第一次确认时旧单还 <c>HANG</c>：只记下确认、<c>CompletedAt</c> 仍为空（<c>REQ-0178</c>）。
     /// </summary>
     [Fact]
     public async Task ASecondConfirmationNumberForTheSameClearanceRecordsAndReleasesNothingTwice()
@@ -348,7 +541,9 @@ public sealed class ManualStationClearanceTests : IDisposable
         ManualStationClearanceConfirmation first = await Clearance(fleet)
             .DecideAsync(Request("00000000-0000-4000-8000-000000000a05"), Token);
         Assert.False(first.StationReleased);
-        DateTimeOffset completedAt = (await ClearanceRowAsync(fleet)).CompletedAt!.Value;
+        StationClearanceRow recorded = await ClearanceRowAsync(fleet);
+        Assert.Equal(("op-r11", (DateTimeOffset?)null), (recorded.ConfirmedBy, recorded.CompletedAt));
+        DateTimeOffset confirmedAt = recorded.ConfirmedAt!.Value;
 
         ManualStationClearanceConfirmation second = await Clearance(fleet)
             .DecideAsync(Request("00000000-0000-4000-8000-000000000a06", operatorId: "op-r13"), Token);
@@ -360,7 +555,8 @@ public sealed class ManualStationClearanceTests : IDisposable
         Assert.Equal((FieldConfirmationDecision.Confirmed, true), (third.Decision.Outcome, third.StationReleased));
 
         StationClearanceRow clearance = await ClearanceRowAsync(fleet);
-        Assert.Equal(("op-r11", completedAt), (clearance.ConfirmedBy, clearance.CompletedAt!.Value));
+        Assert.Equal(("op-r11", confirmedAt, "CANCELLED"), (clearance.ConfirmedBy, clearance.ConfirmedAt!.Value, clearance.OldOrderDisposition));
+        Assert.NotNull(clearance.CompletedAt);
         Assert.Null(await HolderAsync(fleet, Near.StationId));
         Assert.Single(await fleet.Context.Set<StationExclusivityRecordRow>().AsNoTracking()
             .Where(row => row.ReleaseReason == ChargingExecutionReasons.ChargerReleasedOnManualClearance).ToArrayAsync(Token));
@@ -625,6 +821,48 @@ public sealed class ManualStationClearanceTests : IDisposable
     }
 
     /// <summary>
+    /// cs#405 留下的「到桩不充电」（<see cref="ChargingExecutionReasons.ChargerNotEngaged"/>：单已 <c>SUCCESS</c>，车停在桩上一直读不到 <c>CHARGING</c>）
+    /// 由人工清桩收尾：车被挪离桩之后，R-11 确认——旧单已终结，当场释放桩（<c>stationReleased=true</c>），周期以
+    /// <see cref="ChargingExecutionReasons.ClearedByOperator"/> 结束、<b>不暂停桩</b>，下一轮旅程收尾。车还停在桩上时确认被拒（与系统事实冲突）。
+    /// </summary>
+    [Fact]
+    public async Task AChargerNotEngagedIsReleasedByAManualClearance()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        JourneyRuntimeRow journey = await CommittedAndSentAsync(fleet);
+        fleet.Riot.CompleteOrder(journey.PickupUpperId);
+        fleet.Riot.BatteryByVehicle[KeyA] = 40;
+        AtTheCharger(fleet);
+        for (int minute = 0; minute < 20; minute++)
+        {
+            await fleet.HearFromEveryVehicleAsync();
+            await fleet.RunRoundAsync(TimeSpan.FromMinutes(1));
+        }
+        Assert.Equal(ChargingExecutionReasons.ChargerNotEngaged, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+
+        ManualStationClearanceConfirmation onTheCharger = await Clearance(fleet)
+            .DecideAsync(Request("00000000-0000-4000-8000-000000000a17"), Token);
+        Assert.Equal(
+            (FieldConfirmationDecision.Rejected, ManualStationClearance.NotAllowedInState, false),
+            (onTheCharger.Decision.Outcome, onTheCharger.Decision.ProblemReasonCode, onTheCharger.StationReleased));
+
+        MovedOff(fleet);
+        ManualStationClearanceConfirmation decision = await Clearance(fleet)
+            .DecideAsync(Request("00000000-0000-4000-8000-000000000a18"), Token);
+
+        Assert.Equal((FieldConfirmationDecision.Confirmed, true), (decision.Decision.Outcome, decision.StationReleased));
+        Assert.Null(await HolderAsync(fleet, Near.StationId));
+        Assert.Equal(ChargingExecutionReasons.ClearedByOperator, (await fleet.Context.Set<ChargingCycleRow>().AsNoTracking()
+            .SingleAsync(row => row.JourneyId == journey.JourneyId, Token)).EndReason);
+        Assert.Empty(await HoldsAsync(fleet));
+        await RoundAsync(fleet);
+        Assert.Equal(JourneyRuntimeStage.Completed, (await fleet.Context.JourneyRuntimes.AsNoTracking()
+            .SingleAsync(row => row.JourneyId == journey.JourneyId, Token)).Stage);
+        Assert.Null(await ClaimOfAsync(fleet, KeyA));
+    }
+
+    /// <summary>
     /// 失败周期留下的预占放不掉（车读不到，事件 2247 的那一格）：人工清桩把那一行放掉，周期不再动。
     /// </summary>
     [Fact]
@@ -702,16 +940,21 @@ public sealed class ManualStationClearanceTests : IDisposable
         Assert.Equal(result.GetRawText(), resubmitted.GetRawText());
     }
 
-    public static TheoryData<string> VectorRefusals => ["ordinary-operator", "identity-conflict", "station-mismatch"];
+    public static TheoryData<string, string> VectorRefusals => new()
+    {
+        { "ordinary-operator", ManualStationClearance.NotAuthorized },
+        { "identity-conflict", ManualStationClearance.NotAllowedInState },
+        { "station-mismatch", ManualStationClearance.StationMismatch },
+    };
 
     /// <summary>
     /// <c>CV-MANUAL-STATION-CLEARANCE</c>「拒绝不释放」：普通操作员、与系统事实冲突（RIoT 读到车仍在桩上）、站点不符，各一种输入。回
-    /// <c>REJECTED</c>、带协议登记过的 <c>problem.reasonCode</c>、<c>stationReleased=false</c>，桩的独占不动。
+    /// <c>REJECTED</c>、带那一种输入对应的那一个原因码（都是协议登记过的）、<c>stationReleased=false</c>，桩的独占不动。
     /// </summary>
     [Theory]
     [MemberData(nameof(VectorRefusals))]
     [Trait("ProtocolVector", Vector)]
-    public async Task CvManualStationClearanceRefusesWithoutReleasing(string input)
+    public async Task CvManualStationClearanceRefusesWithoutReleasing(string input, string reasonCode)
     {
         await using FleetFixture fleet = await FleetAsync();
         JourneyRuntimeRow journey = await ConfirmedAsync(fleet);
@@ -726,9 +969,7 @@ public sealed class ManualStationClearanceTests : IDisposable
 
         Assert.Equal("REJECTED", result.GetProperty("outcome").GetString());
         Assert.False(result.GetProperty("stationReleased").GetBoolean());
-        Assert.Contains(
-            result.GetProperty("problem").GetProperty("reasonCode").GetString(),
-            new[] { ManualStationClearance.NotAuthorized, ManualStationClearance.StationMismatch, ManualStationClearance.NotAllowedInState });
+        Assert.Equal(reasonCode, result.GetProperty("problem").GetProperty("reasonCode").GetString());
         Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
         Assert.Null((await ClearanceRowAsync(fleet)).CompletedAt);
     }

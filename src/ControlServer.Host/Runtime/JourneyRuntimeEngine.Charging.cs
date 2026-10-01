@@ -162,7 +162,7 @@ public sealed partial class JourneyRuntimeEngine
         {
             // Batch 9-08 (control-server#406): could not charge. The vehicle stays where it is until a person confirms the
             // charger clear; nothing below runs for it -- no order, no command, no rebuild.
-            await AdvanceClearingAsync(runtime, stop, cycle, cancellationToken).ConfigureAwait(false);
+            await AdvanceClearingAsync(runtime, stop, intent, cycle, cancellationToken).ConfigureAwait(false);
             return;
         }
 

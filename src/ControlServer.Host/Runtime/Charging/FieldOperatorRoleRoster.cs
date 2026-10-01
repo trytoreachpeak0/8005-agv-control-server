@@ -21,6 +21,16 @@ public sealed class FieldOperatorRoleOptions
 
     /// <summary>名单文件路径；相对路径按程序目录解析。空即没有名单。</summary>
     public string? Path { get; set; }
+
+    /// <summary>
+    /// 部署方声明：这里的车载端开着人工清桩入口（onboard-hmi#229：车载端 <c>wireToGate.recoveryResumeEnabled</c> 为真，并配了维护人员凭据）。
+    /// 默认假。
+    /// </summary>
+    /// <remarks>
+    /// 协议的 <c>CapabilitySnapshot</c> 没有任何字段说车载端有没有这个入口，服务端从线路上看不到，所以只能由部署方在这里声明；声明错了，
+    /// 「已确认充不上」之后车载端点不出确认，出口只剩 Host 入口（<see cref="StationClearanceExit"/>）。
+    /// </remarks>
+    public bool OnboardClearanceEntryDeclared { get; set; }
 }
 
 /// <summary>
@@ -51,11 +61,26 @@ public sealed class FieldOperatorRoleRoster(IOptions<FieldOperatorRoleOptions> o
         {
             return null;
         }
-        string[] roles = RolesOf(operatorId.Trim());
+        string trimmed = operatorId.Trim();
+        string[] roles =
+        [
+            .. Entries()
+                .Where(entry => string.Equals(entry.OperatorId?.Trim(), trimmed, StringComparison.Ordinal))
+                .SelectMany(entry => entry.Roles ?? []),
+        ];
         return allowed.FirstOrDefault(role => roles.Contains(role, StringComparer.Ordinal));
     }
 
-    private string[] RolesOf(string operatorId)
+    /// <summary>名单此刻可读，且至少有一个具名的人持有 <paramref name="allowed"/> 之一。没配、读不到、为空都答假。</summary>
+    public bool AnyoneHolds(IReadOnlyList<string> allowed)
+    {
+        ArgumentNullException.ThrowIfNull(allowed);
+        return Entries().Any(entry =>
+            !string.IsNullOrWhiteSpace(entry.OperatorId) &&
+            (entry.Roles ?? []).Any(role => allowed.Contains(role, StringComparer.Ordinal)));
+    }
+
+    private IReadOnlyList<RosterEntry> Entries()
     {
         string? path = options.Value.Path;
         if (string.IsNullOrWhiteSpace(path))
@@ -65,12 +90,7 @@ public sealed class FieldOperatorRoleRoster(IOptions<FieldOperatorRoleOptions> o
         string full = System.IO.Path.IsPathRooted(path) ? path : System.IO.Path.Combine(AppContext.BaseDirectory, path);
         try
         {
-            RosterDocument? document = JsonSerializer.Deserialize<RosterDocument>(File.ReadAllText(full), ReadOptions);
-            return document?.Operators?
-                       .Where(entry => string.Equals(entry.OperatorId?.Trim(), operatorId, StringComparison.Ordinal))
-                       .SelectMany(entry => entry.Roles ?? [])
-                       .ToArray()
-                   ?? [];
+            return JsonSerializer.Deserialize<RosterDocument>(File.ReadAllText(full), ReadOptions)?.Operators ?? [];
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException)
         {
