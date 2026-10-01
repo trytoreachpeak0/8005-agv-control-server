@@ -33,7 +33,10 @@ jobs:
     # Skipped, not cancelled: GitHub decides this before any runner is involved.
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: [self-hosted, cs-test]
-    timeout-minutes: 30
+    # 30 until 2026-10-02: the suite had grown to ~26 minutes of dotnet test (3960 tests) and run
+    # 36921421653 (PR #437) hit the limit during artifact upload, ending "cancelled". A timeout cancel
+    # is the same path as a manual cancel and can wedge the runner session, so the limit keeps headroom.
+    timeout-minutes: 45
     env:
       # NuGet's vulnerability audit fetches its data from nuget.org during every restore, and with
       # TreatWarningsAsErrors a failed fetch (NU1900) is a red run that says nothing about the code:
