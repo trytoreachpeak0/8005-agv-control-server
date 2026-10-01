@@ -9,7 +9,7 @@
 | 维护者 | Zhengyu Shao |
 | 绑定环境 | `RIOT-8005-RUNTIME`，运行 build `v2.2.0.14` |
 | 绑定契约快照 | `RIOT-OPENAPI-8005-202607-EARLY-01` |
-| 本版依据 | 需求基线 `v1.1.0`（SHA-256 `5fe4b701…fb53`，tag `requirements-baseline-v1.1.0`）；第 1.5 节「解除」随需求基线 `v1.3.0`（SHA-256 `ac74c78e…bec7`，tag `requirements-baseline-v1.3.0`，`CP-0003`）跟改 |
+| 本版依据 | 需求基线 `v1.1.0`（SHA-256 `5fe4b701…fb53`，tag `requirements-baseline-v1.1.0`）；第 1.5 节「解除」随需求基线 `v1.3.0`（SHA-256 `ac74c78e…bec7`，tag `requirements-baseline-v1.3.0`，`CP-0003`）跟改；第 1.2 节形态二的载体与第 1.3 节 `CMD_ORDER_CANCEL` 的使用条件随需求基线 `v1.9.0`（tag `requirements-baseline-v1.9.0`，`CP-0010`）跟改 |
 | 首次成文 | 2026-09-08 |
 
 ## 这份文档是什么
@@ -69,7 +69,7 @@ Evidence 段落按 `Snapshot SHA-256 = 205a1c4bd5760e3f5a50de3eec050d5d8e99eec4a
 
 | 方法 | 路径 | Facade | 用 |
 | --- | --- | --- | --- |
-| GET | `/api/imap/v1/mapInfo/getALLMapInfoExcludeMapJson` | `ListMapsAsync` | 否 |
+| GET | `/api/imap/v1/mapInfo/getALLMapInfoExcludeMapJson` | `ListMapsAsync` | **是** |
 | GET | `/api/task/vehicles/getAllVehicleSimpleInfo` | `GetDispatchableVehiclesAsync` | 否 |
 | GET | `/api/task/vehicles/getVehicleInfoByDeviceKey` | `GetVehicleCardAsync` | **是** |
 | GET | `/api/order/v1/orderRecord/detailByUpperId/{upperId}` | `GetOrderByUpperIdAsync`／`FindOrderByUpperIdAsync` | **是** |
@@ -92,11 +92,11 @@ Evidence 段落按 `Snapshot SHA-256 = 205a1c4bd5760e3f5a50de3eec050d5d8e99eec4a
 
 ### 1.2 建单：两种形态，不是一种
 
-载体 `REQ-0147`（端点与前置条件）、`REQ-0294`（空闲返回只用单段 move）。
+载体 `REQ-0147`（端点、前置条件，以及 `v1.9.0` 起写进条文的形态二，`CP-0010`）、`REQ-0171`（形态二的目标桩须在 8005 独占充电桩名册内）、`REQ-0294`（空闲返回只用单段 move）。
 
 | 方法 | 路径 | Facade | 用 |
 | --- | --- | --- | --- |
-| POST | `/api/order/v1/add/byDefaultMissions` | `CreateMoveOrderAsync`（只建得出形态一） | **是** |
+| POST | `/api/order/v1/add/byDefaultMissions` | `CreateMoveOrderAsync`（形态一；带开始充电动作的重载建形态二） | **是** |
 
 端点只有一个，**订单体有两种获批形态**：
 
@@ -115,9 +115,11 @@ Evidence 段落按 `Snapshot SHA-256 = 205a1c4bd5760e3f5a50de3eec050d5d8e99eec4a
 
 两条约束跟着形态二：
 
-- **`CreateMoveOrderAsync` 建不出形态二。**它内部写死单元素 `Mission` 数组与 `Type = "move"`，
-  没有 act 参数也没有重载。要建充电订单必须先扩这个 Facade 方法——**不是**改用 `.Raw`。
-- **目标桩必须来自人工录入的充电桩名册。**RIoT 侧没有任何字段能标识充电桩，角色不能由站点名
+- **形态二只经具名 Facade 建。**`riot-sdk` `0.2.0-fp.4` 起 `CreateMoveOrderAsync` 有一个带开始充电动作的
+  重载，`8005-agv-control-server` 建充电单用的就是它（control-server#401）——**不是**改用 `.Raw`。
+  act 段只批 `actionId=78`、`actionParam1=1`、`actionParam2=0` 这一组，不批其它 act、其它动作或参数，
+  也不批只含 act 的订单（`REQ-0147`）。
+- **目标桩必须来自人工录入的充电桩名册**（`REQ-0171`）。RIoT 侧没有任何字段能标识充电桩，角色不能由站点名
   称、坐标或现场习惯猜测（`StationOperationalRole`）。录错一个 id 的后果是车开到普通工作站执
   行 `act(78,1,0)`，结果是 HANG + 407802。
 
@@ -136,7 +138,7 @@ Evidence 段落按 `Snapshot SHA-256 = 205a1c4bd5760e3f5a50de3eec050d5d8e99eec4a
 
 | 命令 | 使用条件 |
 | --- | --- |
-| `CMD_ORDER_CANCEL` | 仅作用于 8005 自己创建且可关联 `TransportDemand` 的订单 |
+| `CMD_ORDER_CANCEL` | 只作用于三类订单：8005 自己创建且可关联 `TransportDemand` 的订单；按 `REQ-0164` 认定的已证明外来运行订单，对它只允许取消；本服务端自己创建的充电订单，只在两种情形下——按 `REQ-0178` 进入清桩中后、清桩完成前该周期旧充电订单尚未终结，或本服务端已放弃的充电订单事后在 RIoT 出现且没有由非 8005 管辖的车辆执行。充电订单的归属以本服务端持久化的订单意图与充电周期记录证明，`upperId` 形态只作辅助；取消前再次读取，同一订单只发一次，结果未知或仍未终结时不重发、继续对账并告警，不改单、不重建（`REQ-0148`） |
 | `CMD_ORDER_HELD` | 已批准保护条件下可自动触发 |
 | `CMD_ORDER_CONTINUE_FROM_HELD` | 暂停原因消除 ＋ 重连/未结操作对账完成 ＋ 重新通过 `PreDepartureSafetyCheck` ＋ 服务端生成本次明确授权，四者齐备 |
 | `CMD_ORDER_CONTINUE_FROM_HANG` | 只用于已批准原因白名单中的普通 HANG，受次数上限约束；**未知原因和充电失败不使用** |
@@ -308,6 +310,8 @@ Facade，全部在第一节的表里：
 | `requirements/baselines/current-requirements-v1.1.0.md` | `REQ-0146`／`REQ-0147`／`REQ-0148`／`REQ-0149`（第一节主体）、`REQ-0294`（空闲返回）、`REQ-0309`（具名 Facade）、`REQ-0246`／`REQ-0248`（急停行为）、`REQ-0168`（诊断端点） |
 | `requirements/change-proposals/CP-0001.md` | 1.1 末尾五个 `imap` 端点的增列依据 |
 | `requirements/change-proposals/CP-0003.md` | 1.5「解除」按修订后的 `REQ-0247`／`REQ-0248` 与新增的 `REQ-0356` 跟改的依据（需求基线 `v1.3.0`） |
+| `requirements/change-proposals/CP-0006.md` | 1.3 `CMD_ORDER_CANCEL` 可作用于已证明外来运行订单的依据（需求基线 `v1.5.0`）；这半句当时没有抄进本文档，随 `CP-0010` 补上 |
+| `requirements/change-proposals/CP-0010.md` | 1.2 形态二写进 `REQ-0147`、1.3 `CMD_ORDER_CANCEL` 可作用于本服务端自建充电订单的依据（需求基线 `v1.9.0`） |
 | [票据 37](../.scratch/current-requirements-baseline/issues/37-decide-riot-api-allowlist-and-call-safety-boundary.md) | 冻结证据；1.5 与 1.6 的部分内容目前只有这一个来源 |
 | `.scratch/8005-full-product/issues/04-answer.md` 第 1.6 节 | 充电订单形态二 |
 | `rcs/riot-behavior-lab/` Round 24／25 | `act(78,…)` 的实测响应与自动插入行为 |
