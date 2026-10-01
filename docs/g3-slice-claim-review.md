@@ -407,3 +407,48 @@ L2 id 与断言名的对应在 `$scenarioAssertions`（第 74–185 行）；运
 | journey | `pickupEntryOpensAfterIdleReturnAndPointReleasedOnDeparture`（G3-12-05） | FP-IS-12 | 同一向量（`RELEASE_ON_DEPARTURE_EVIDENCE`） | 车到 12 号站，车载端能录入、甲的装货 `Committed`；214 的独占行消失，记录的释放原因是 `DEPARTED_STATION` | 离点证据是 RIoT 报当前站为另一站，与 cs#391 同一判法 |
 | journey | `idleReturnJourneyFinalStateNoDuplicateCommit`（G3-12-06） | FP-IS-12 | 同一向量 finalState | 甲一笔装、一笔卸都 `Committed`、需求 `Succeeded`，旅程 `Completed`；装过的仓 `CLOSED/EMPTY/1/0` | |
 | journey | `onboardNeverLoadsAtWaitingPoint`（G3-12-07） | FP-IS-12 | 同一向量（`NEVER_LOAD_AT_WAITING_POINT`） | 车停在 214、界面报 `AT_WAITING_POINT` 的十秒里，每次读车载端都不能提交；这段时间服务端没有建任何装卸操作（此刻一条需求都还没有） | 服务端到等待点不发清单，所以车载端没有可录入的东西；本条证的是两端合起来的结果 |
+
+## 批次 9 新增：FP-IS-13 的 CV-AUTOMATIC-CHARGING-CYCLE（control-server#405）
+
+批次 9 的充电中、充满与离桩（批次9-07）在 journey runner 认领 `FP-IS-13` 的第一条向量：一条场景 `g3-automatic-charging-cycle`、七条断言，全部是切片断言，不加运行级断言。journey runner 因此从 16 个场景变成 17 个。车载端的半边是 onboard-hmi#220（充电停靠是非业务停靠：显示充电状态、不开录入）。向量内容按票面与服务端 `vendor/8005-agv-protocol/integration-slices/index.json` 的 `FP-IS-13` 段对照（`vectors/` 不在服务端 vendor 里）；检查内容取自场景脚本里 `$assertions.Add` 的判定文字。
+
+| runner | 运行级 | 切片断言 | 合计 |
+| --- | --- | --- | --- |
+| journey 新增 | 0 | 7（FP-IS-13 7） | 7 |
+
+**`FP-IS-13` 此时不算整片认领完。**它的 `vectorIds` 有四条：
+
+| 向量 | 谁认领、用什么名字 | 位置 |
+| --- | --- | --- |
+| `CV-AUTOMATIC-CHARGING-CYCLE` | 本票，下表七条 | 场景 `g3-automatic-charging-cycle`，G3-13-01～07 |
+| `CV-MANUAL-STATION-CLEARANCE` | 场景文件由批次9-08（control-server#406）写；登记进 runner 与本表由出口批次9-14（control-server#412）做 | 预留 G3-13-11～19，认领表 `FP-IS-13` 列表接在本票七条之后 |
+| `CV-UNABLE-TO-CHARGE-FIELD-CONFIRMATION` | 场景文件由批次9-12（control-server#410）写；登记同上由 control-server#412 做 | 预留 G3-13-21～29，同上 |
+| `CV-MANUAL-CHARGING-RETURN` | 今天只以 FP-IS-07 的四个名字断言（疑点 29）；`FP-IS-13` 要认领得用自己的名字 | 未定，由 control-server#412 决定是否在 `g3-manual-charging-return` 里另加断言 |
+
+服务端的已实施切片集合（`ProtocolVectorTestBindingArchitectureTests.SlicesThisLineImplements`）本票没有加 `FP-IS-13`：另两条向量的服务端同名测试还没有，由最后补齐的那张票加。
+
+### 向量产品断言到 G3 断言
+
+| 向量 | 归属 | 条目 | 对应的 G3 断言 |
+| --- | --- | --- | --- |
+| `CV-AUTOMATIC-CHARGING-CYCLE` | 服务端 | `CLAIM_VEHICLE_FOR_CHARGING_PURPOSE` | `chargingPurposeClaimedFromAllocationUntilComplete`（G3-13-02） |
+| `CV-AUTOMATIC-CHARGING-CYCLE` | 服务端 | `NEVER_DISPATCH_DURING_CHARGING` | `neverDispatchedWhileChargingBelowCompletion`（G3-13-04） |
+| `CV-AUTOMATIC-CHARGING-CYCLE` | 车载端 | 不在桩上装货（hmi#220 的 `NEVER_LOAD_AT_CHARGER`） | `onboardShowsChargingAndNeverLoadsAtCharger`（G3-13-03） |
+| `CV-AUTOMATIC-CHARGING-CYCLE` | 两端 | `orderedExpectedMessages`（计划 → 确认 → 业务状态 → 确认） | `chargerPlanBeforeChargingBusinessStateBothAcknowledged`（G3-13-01）、`completeWithArrivedChargerLegPurposeReleasedChargerKept`（G3-13-05，收尾那一对同样先计划后业务状态、都被确认） |
+| `CV-AUTOMATIC-CHARGING-CYCLE` | 两端 | `forbiddenSideEffects`：`duplicate-riot-order`；finalState | `chargingCycleFinalStateNoDuplicateOrder`（G3-13-07） |
+| `CV-AUTOMATIC-CHARGING-CYCLE` | 两端 | `forbiddenSideEffects`：`unknown-as-success` | 没有 G3 断言：真装置上造不出「建单结果未知」而不碰 RIoT 网关；由 G2 同名测试 `CvAutomaticChargingCycleNeverDispatchesDuringCharging`（对账答不上的那几轮周期停在原地）守 |
+| — | 两端 | REQ-0281、REQ-0173（充满放用途、离桩才释放） | `completeWithArrivedChargerLegPurposeReleasedChargerKept`（G3-13-05）、`nextJourneyLeavesChargerAndChargerReleasedOnDeparture`（G3-13-06） |
+
+### 逐条表
+
+场景：`scripts/l2/scenarios/g3-automatic-charging-cycle.ps1`（驱动在 `MultiStopRigCommon.ps1` 与 `CargoHoldingCommon.ps1`）。一辆车停在关卡，电量压到 25（默认测试策略强制充电线 30、完成阈值 80），充电桩 211 放在假地图节点 6、假 RIoT 每秒涨 1%；充电中发需求甲，充满后甲把车派走，12 号站装甲、关卡卸甲。车载端读 UIA `ChargingStatus` 的 `ItemStatus`（chargingCycleState 原值）。
+
+| runner | 断言名 | 当前归属切片 | 依据向量 | 核实到的检查内容 | 疑点 |
+| --- | --- | --- | --- | --- | --- |
+| journey | `chargerPlanBeforeChargingBusinessStateBothAcknowledged`（G3-13-01） | FP-IS-13 | `CV-AUTOMATIC-CHARGING-CYCLE` `orderedExpectedMessages` | 充电旅程与充电意图都没有需求号；一条 `CHARGER`、`ACTIVE` 腿的计划早于 `activePurpose=CHARGING`、`EN_ROUTE` 的业务状态进发件箱，两张都被确认 | 顺序按发件箱 `CreatedAt` 判（业务状态晚 1 毫秒写入），与 G3-12-01 同 |
+| journey | `chargingPurposeClaimedFromAllocationUntilComplete`（G3-13-02） | FP-IS-13 | 同一向量（`CLAIM_VEHICLE_FOR_CHARGING_PURPOSE`） | 分配时与整段充电中，用途一直是那一趟的 `CHARGING`；周期 `COMPLETE` 时用途为空 | 持续读，不读一次 |
+| journey | `onboardShowsChargingAndNeverLoadsAtCharger`（G3-13-03） | FP-IS-13 | 同一向量（车载端，hmi#220） | 周期 `CHARGING`、211 是这一趟的 `OCCUPIED`、界面报 `CHARGING`；其后十秒每次读车载端都不能提交，服务端没有建任何装卸操作 | |
+| journey | `neverDispatchedWhileChargingBelowCompletion`（G3-13-04） | FP-IS-13 | 同一向量（`NEVER_DISPATCH_DURING_CHARGING`） | 甲发布之后十秒里没有甲的旅程，周期一直 `CHARGING`、用途一直是 `CHARGING` | 假 RIoT 每秒涨 1%，十秒内到不了 80 |
+| journey | `completeWithArrivedChargerLegPurposeReleasedChargerKept`（G3-13-05） | FP-IS-13 | 同一向量；REQ-0281 | 收尾计划仍是那一条 `CHARGER` 腿、`ARRIVED`，收尾业务状态 `COMPLETE`、`activePurpose` 为空，两张都被确认；界面报 `COMPLETE`；211 仍是这一趟的 `OCCUPIED` | |
+| journey | `nextJourneyLeavesChargerAndChargerReleasedOnDeparture`（G3-13-06） | FP-IS-13 | 同一向量；REQ-0173；hmi#220 跨票契约（离桩接活的计划不含充电腿） | 下达那一刻 211 仍占用；被确认的最新计划属于甲、不含 `CHARGER` 腿；12 号站甲装货 `Committed`；211 以 `CHARGER_RELEASED_ON_DEPARTURE` 释放、周期以 `CHARGING_DEPARTED` 收尾 | 离桩证据是 RIoT 报不再充电、当前站为另一站、桩可确认空闲三项；队首的 `act(78,2,0)` 不作证据 |
+| journey | `chargingCycleFinalStateNoDuplicateOrder`（G3-13-07） | FP-IS-13 | 同一向量 finalState、`duplicate-riot-order` | 甲一笔装、一笔卸都 `Committed`、需求 `Succeeded`，旅程 `Completed`；假 RIoT 上 `W2G-CHARGE-*` 的单恰好一张；装过的仓 `CLOSED/EMPTY/1/0` | |

@@ -295,24 +295,29 @@ public sealed class JourneyPlanBuilder(JourneyRuntimeOptions options)
         JourneyRuntimeRow runtime,
         JourneyStopRow charger,
         bool enRoute,
-        long revision)
+        long revision) =>
+        new(revision, [ChargerLeg(runtime, charger, enRoute ? "ACTIVE" : "PLANNED")]);
+
+    /// <summary>
+    /// 充电旅程那一条 <c>CHARGER</c> 腿，给途中的计划、到桩的计划与充满时的收尾快照共用（批次9-07，control-server#405）。
+    /// <paramref name="state"/> 是 <c>PLANNED</c>、<c>ACTIVE</c> 或 <c>ARRIVED</c>：到桩之后一直是 <c>ARRIVED</c>，充满之后车还在桩上也是——
+    /// 车载端按当前腿（第一条不是 <c>COMPLETED</c> 的）判断车停在充电桩上，据此显示「已充满，在充电桩待命」、不开录入。
+    /// </summary>
+    public static UpcomingMovementLeg ChargerLeg(JourneyRuntimeRow runtime, JourneyStopRow charger, string state)
     {
         ArgumentNullException.ThrowIfNull(runtime);
         ArgumentNullException.ThrowIfNull(charger);
-        return new UpcomingStopPlanProjection(
-            revision,
-            [
-                new UpcomingMovementLeg(
-                    charger.MovementLegId,
-                    null,
-                    ChargerStopPurpose,
-                    null,
-                    null,
-                    charger.Sequence,
-                    charger.StationId,
-                    runtime.MapIdentity,
-                    enRoute ? "ACTIVE" : "PLANNED"),
-            ]);
+        ArgumentException.ThrowIfNullOrWhiteSpace(state);
+        return new UpcomingMovementLeg(
+            charger.MovementLegId,
+            null,
+            ChargerStopPurpose,
+            null,
+            null,
+            charger.Sequence,
+            charger.StationId,
+            runtime.MapIdentity,
+            state);
     }
 
     /// <summary>

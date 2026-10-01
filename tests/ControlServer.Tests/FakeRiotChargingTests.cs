@@ -128,6 +128,26 @@ public sealed class FakeRiotChargingTests
         Assert.Equal(2, act.GetProperty("missionState").GetInt32());
     }
 
+    /// <summary>
+    /// control-server#405（调度 10-01 定）：充电单推到完成、开始充电时，车的当前位置就是那个桩——服务端判到桩看的是 RIoT 车卡上的当前站，
+    /// 车仍报在原站时「充满让桩」那一段在 L2 里走不到。只这一处改位置；只有移动、没有开始充电动作的单照旧不动车（上一条）。
+    /// </summary>
+    [Fact]
+    public async Task AChargeOrderThatStartsChargingLeavesTheVehicleStandingOnTheCharger()
+    {
+        MovableClock clock = new(Start);
+        await using FakeRiotTests.FakeRiotFixture fixture = await FakeRiotTests.FakeRiotFixture.StartAsync(clock);
+        await RegisterChargerAsync(fixture, enterExit: EnterExit);
+        RiotVehicleObservation before = await ReadVehicleAsync(fixture, VehicleKey);
+
+        await CreateAsync(fixture, "UPPER-CHARGE-AT", VehicleKey, Move(Charger), StartCharge());
+        await CompleteAsync(fixture, "UPPER-CHARGE-AT");
+        RiotVehicleObservation after = await ReadVehicleAsync(fixture, VehicleKey);
+
+        Assert.NotEqual(Charger, before.CurrentStationId);
+        Assert.Equal(("CHARGING", (int?)Charger), (after.BatteryState, after.CurrentStationId));
+    }
+
     [Fact]
     public async Task AChargerWithAnEnterExitStationExpandsTheChargeOrderIntoThreeMissionsAndOneWithoutDoesNot()
     {

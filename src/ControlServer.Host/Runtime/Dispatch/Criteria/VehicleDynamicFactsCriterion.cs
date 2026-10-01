@@ -108,8 +108,10 @@ public sealed class VehicleDynamicFactsCriterion(IOptions<JourneyRuntimeOptions>
         }
 
         // 电量一段（批次9-05，control-server#403）：阈值来自这一轮为这辆车读的策略版本，一趟新任务按一份耗电估计算。
+        // 本周期已充满、仍插在桩上报 CHARGING 的车不因 CHARGING 被拒（批次9-07，control-server#405）。
         string battery = BatteryEligibility.Judge(
-            facts.Vehicle, facts.BatteryPolicy, tasksToCover: 1, options.WaitingJourneyRescueBatteryPercent);
+            facts.Vehicle, facts.BatteryPolicy, tasksToCover: 1, options.WaitingJourneyRescueBatteryPercent,
+            facts.ChargingCycleComplete);
         if (battery != DispatchAdmissionChain.Eligible)
         {
             return battery;

@@ -252,6 +252,21 @@ $scenarioAssertions = [ordered]@{
         'G3-12-06' = 'idleReturnJourneyFinalStateNoDuplicateCommit'
         'G3-12-07' = 'onboardNeverLoadsAtWaitingPoint'
     }
+    # Batch 9 (control-server#405): CV-AUTOMATIC-CHARGING-CYCLE. One vehicle pushed below its mandatory charge line is sent
+    # to charger 211, charges, is not dispatched while charging, completes, and is taken away by the next demand; the
+    # charger is released only once the vehicle has left it. Onboard half onboard-hmi#220 (ChargingStatus, no entry at the
+    # charger); the cross-ticket contract is G3-13-06 (the next plan carries no CHARGER leg, the pickup entry opens).
+    # CV-MANUAL-STATION-CLEARANCE and CV-UNABLE-TO-CHARGE-FIELD-CONFIRMATION are FP-IS-13's too; their scenarios are written
+    # by control-server#406 and #410 and registered here by the exit ticket control-server#412 (G3-13-11 onwards).
+    'g3-automatic-charging-cycle' = [ordered]@{
+        'G3-13-01' = 'chargerPlanBeforeChargingBusinessStateBothAcknowledged'
+        'G3-13-02' = 'chargingPurposeClaimedFromAllocationUntilComplete'
+        'G3-13-03' = 'onboardShowsChargingAndNeverLoadsAtCharger'
+        'G3-13-04' = 'neverDispatchedWhileChargingBelowCompletion'
+        'G3-13-05' = 'completeWithArrivedChargerLegPurposeReleasedChargerKept'
+        'G3-13-06' = 'nextJourneyLeavesChargerAndChargerReleasedOnDeparture'
+        'G3-13-07' = 'chargingCycleFinalStateNoDuplicateOrder'
+    }
 }
 
 function Get-ScriptFunction {

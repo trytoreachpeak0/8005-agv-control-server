@@ -499,9 +499,14 @@ public sealed class DispatchRoundRunner(
 
             DispatchBatteryPolicy? batteryPolicy = await ReadBatteryPolicyAsync(vehicle, underWay, linked.Token)
                 .ConfigureAwait(false);
+            // Read only for a vehicle that reports CHARGING: nothing else is asked about a vehicle that does not (batch 9-07).
+            bool chargingComplete =
+                string.Equals(observation.BatteryState, BatteryEligibility.ChargingBatteryState, StringComparison.Ordinal) &&
+                await ChargingCycleFacts.CompleteOnChargerAsync(dbContext, vehicle.VehicleKey, linked.Token)
+                    .ConfigureAwait(false);
             DispatchVehicleFacts facts = new(
                 vehicle.VehicleKey, vehicle.AgvId, onboard, observation, timeProvider.GetUtcNow(), positions, plan,
-                batteryPolicy);
+                batteryPolicy, chargingComplete);
             NoteMandatoryCharge(vehicle.VehicleKey, observation, batteryPolicy);
             return new RoundVehicle(vehicle, facts, underWay, budget)
             {
@@ -1333,7 +1338,7 @@ public sealed class DispatchRoundRunner(
             cancellationToken).ConfigureAwait(false);
         DispatchVehicleFacts facts = new(
             fleetVehicle.VehicleKey, fleetVehicle.AgvId, onboard, vehicle, timeProvider.GetUtcNow(),
-            Plan: roundFacts.Plan, BatteryPolicy: roundFacts.BatteryPolicy);
+            Plan: roundFacts.Plan, BatteryPolicy: roundFacts.BatteryPolicy, ChargingCycleComplete: roundFacts.ChargingCycleComplete);
         // 复查走的是这辆车自己那条链的那一条判据，不是另一条：在途车永远过不了空闲车的 IDLE 与无订单，
         // 用空闲那条复查等于把每一次追加都拒掉。两条链各有一个可在链外调用的 Evaluate，就是为了这里不走岔。
         return string.Equals(

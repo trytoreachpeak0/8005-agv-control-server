@@ -44,6 +44,12 @@ internal static class ChargingJourneyShape
     /// <inheritdoc cref="AllocatedStateMessageId"/>
     public static string EnRoutePlanMessageId(string journeyId) => JourneyPlanBuilder.StableGuid(journeyId, "charger-plan-en-route");
 
+    /// <summary>到桩那一张计划（那条 <c>CHARGER</c> 腿报 <c>ARRIVED</c>）的消息 id（批次9-07）。</summary>
+    public static string ArrivedPlanMessageId(string journeyId) => JourneyPlanBuilder.StableGuid(journeyId, "charger-plan-arrived");
+
+    /// <summary>开始充电那一张业务状态（<c>chargingCycleState=CHARGING</c>）的消息 id（批次9-07）。</summary>
+    public static string ChargingStateMessageId(string journeyId) => JourneyPlanBuilder.StableGuid(journeyId, "charger-vehicle-state-charging");
+
     public static (JourneyRuntimeRow Runtime, JourneyStopRow Stop, OrderIntent Intent) Build(
         string journeyId,
         FleetVehicle vehicle,

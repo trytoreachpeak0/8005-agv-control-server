@@ -1,5 +1,6 @@
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Host.Runtime.Charging;
 using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Host.Runtime.Fleet;
@@ -203,10 +204,15 @@ public sealed class IdleReturnEvaluator(
             return hold;
         }
 
-        // 停在上一次返回的等待点或充电桩上（等离点证据）：它已经在一个等待之处了。持有的是固定公共站（REQ-0204）时不拒——
-        // 卸完货、没有下一单的车正该离开那个单车位的公共站去等待点（审查 S4）。充电桩的口径由 B9-07 定，今天保持拒。
-        if ((await stations.ListByVehicleAsync(vehicle.VehicleKey, cancellationToken).ConfigureAwait(false))
-            .Any(held => held.StationKind is StationExclusivityKinds.WaitingPoint or StationExclusivityKinds.Charger))
+        // 停在上一次返回的等待点上（等离点证据）：它已经在一个等待之处了。持有的是固定公共站（REQ-0204）时不拒——
+        // 卸完货、没有下一单的车正该离开那个单车位的公共站去等待点（审查 S4）。
+        // 充电桩（批次9-07，control-server#405 定的口径）：本周期已充满的车照常评估——空闲返回是它离桩的两种下一用途之一（规格 8.7），
+        // 不放开它，没有搬运时充满的车会一直占着桩。别的持桩（还在充、或失败周期等三项确认的）照旧拒。
+        IReadOnlyList<StationExclusivity> held = await stations.ListByVehicleAsync(vehicle.VehicleKey, cancellationToken)
+            .ConfigureAwait(false);
+        if (held.Any(row => row.StationKind == StationExclusivityKinds.WaitingPoint) ||
+            (held.Any(row => row.StationKind == StationExclusivityKinds.Charger) &&
+             !await ChargingCycleFacts.CompleteOnChargerAsync(dbContext, vehicle.VehicleKey, cancellationToken).ConfigureAwait(false)))
         {
             return IdleReturnReasons.VehicleHoldsStation;
         }
@@ -267,9 +273,11 @@ public sealed class IdleReturnEvaluator(
         }
 
         RiotVehicleObservation observed = candidate.Facts.Vehicle;
+        // 报 CHARGING 的车不去等待点，本周期已充满的除外（批次9-07：与派车电量判据同一个放开，读的是这一轮的同一份事实）。
         if (observed.BatteryPercent is not int battery ||
             string.IsNullOrWhiteSpace(observed.BatteryState) ||
-            string.Equals(observed.BatteryState, "CHARGING", StringComparison.Ordinal))
+            (string.Equals(observed.BatteryState, "CHARGING", StringComparison.Ordinal) &&
+             !BatteryEligibility.ChargingVehicleMayTakeWork(observed, candidate.Facts.ChargingCycleComplete)))
         {
             return IdleReturnReasons.BatteryUnknownOrCharging;
         }

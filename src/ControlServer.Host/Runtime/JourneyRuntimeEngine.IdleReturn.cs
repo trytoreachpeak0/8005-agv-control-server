@@ -336,15 +336,8 @@ public sealed partial class JourneyRuntimeEngine
     {
         RiotVehicleObservation vehicle = await vehicleFacts.ReadVehicleAsync(runtime.VehicleKey, cancellationToken)
             .ConfigureAwait(false);
-        DateTimeOffset now = timeProvider.GetUtcNow();
-        return vehicle.Connected && vehicle.Enabled &&
-               vehicle.ProcState == "IDLE" &&
-               vehicle.CurrentMap == runtime.MapIdentity &&
-               vehicle.CurrentStationId == stop.StationRiotId &&
-               vehicle.Speed == 0 &&
-               vehicle.LockStatus == 0 &&
-               string.IsNullOrWhiteSpace(vehicle.OrderTaskId) &&
-               vehicle.ObservedAt <= now && now - vehicle.ObservedAt <= runtimeOptions.MaximumEvidenceAge;
+        // The same vehicle half as a charger arrival (batch 9-07): one definition for both non-business stops.
+        return StandsStillAt(vehicle, runtime, stop.StationRiotId, timeProvider.GetUtcNow());
     }
 
     /// <summary>

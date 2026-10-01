@@ -242,12 +242,21 @@ $docked = Wait-L2ConditionOrLast -Description 'the vehicle holding the reservati
     -Journal $journal -Criterion 'docked-on-the-charger' -TimeoutSeconds 30 `
     -Probe { (Get-Docked) -join ',' } `
     -Until { param($v) $v -ne '' }
+# Batch 9-07 (control-server#405): the order done and the vehicle standing on the charger charging, the server proves the
+# arrival and the reservation becomes an occupancy (the fake RIoT now puts the vehicle on the charger when charging starts).
+# Everything else of the commitment is unchanged; from here on the held line says OCCUPIED.
+$heldOnCharger = $held.Replace("chargers[$charger RESERVED ", "chargers[$charger OCCUPIED ")
+$occupied = Wait-L2ConditionOrLast -Description 'the reservation became an occupancy once the vehicle stood on the charger' `
+    -Journal $journal -Criterion 'occupied-on-the-charger' -TimeoutSeconds 30 `
+    -Probe { $null = Get-Docked; Get-Commitments } `
+    -Until { param($v) $v -eq $heldOnCharger }
+$held = $heldOnCharger
 $assertions.Add(
     'L2-COC-03',
-    '充电单完成后，在 211 上 docked 的正是预占它的那台车',
-    ($docked -eq $lowest.VehicleKey),
-    $lowest.VehicleKey,
-    $docked)
+    '充电单完成后，在 211 上 docked 的正是预占它的那台车；服务端判到桩，211 由预占转为这一趟的占用，承诺的其余部分逐字不变',
+    ($docked -eq $lowest.VehicleKey -and $occupied -eq $held),
+    "$($lowest.VehicleKey) / $held",
+    "$docked / $occupied")
 
 # --- 4. 第二个事实：队里一台的电量降到比已预占那台更低，抢不走 ------------------------------------------------
 

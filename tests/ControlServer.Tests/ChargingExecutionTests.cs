@@ -482,9 +482,12 @@ public sealed class ChargingExecutionTests
         Assert.Single(await fleet.Context.JourneyRuntimes.AsNoTracking().ToArrayAsync(Token));
     }
 
-    /// <summary>第三行（单已是终态 <c>SUCCESS</c>，充电已接上）：没有可取消的单；本票到此为止，周期、用途与预占原样留给批次9-07 接着做。</summary>
+    /// <summary>
+    /// 第三行（单已是终态 <c>SUCCESS</c>，充电已接上）：没有可取消的单，什么也不重建；周期与用途原样交给到桩之后那一段（批次9-07，
+    /// control-server#405）——到桩证据满足，预占转占用，周期开始充电。
+    /// </summary>
     [Fact]
-    public async Task AChargingOrderThatSucceededIsLeftForTheRestOfTheCycle()
+    public async Task AChargingOrderThatSucceededHandsTheCycleToItsChargerWithNothingRebuilt()
     {
         await using FleetFixture fleet = await FleetAsync();
         fleet.Riot.BatteryByVehicle[KeyA] = 20;
@@ -501,7 +504,10 @@ public sealed class ChargingExecutionTests
         Assert.Equal(before, await CommitmentOfAsync(fleet, KeyA));
         JourneyRuntimeRow still = (await ChargingJourneyAsync(fleet, AgvA))!;
         Assert.Equal((JourneyRuntimeStage.AwaitingPickupArrival, (string?)null), (still.Stage, still.BlockReasonCode));
-        Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
+        Assert.Equal((KeyA, StationExclusivityStates.Occupied), await HolderAsync(fleet, Near.StationId));
+        Assert.Equal(
+            ChargingCycleWireStates.Charging,
+            (await fleet.Context.Set<ChargingCycleRow>().AsNoTracking().SingleAsync(Token)).WireState);
         Assert.Single(fleet.Riot.Creates);
         Assert.Empty(await fleet.Context.OwnOrderRebuilds.AsNoTracking().ToArrayAsync(Token));
     }
@@ -1390,7 +1396,7 @@ public sealed class ChargingExecutionTests
     // ---- 夹具 ------------------------------------------------------------------------------------------------------------
 
     /// <summary>第一轮分配承诺，第二轮过安全门、建单并确认：答那一趟充电的旅程行。</summary>
-    private static async Task<JourneyRuntimeRow> CommittedAndSentAsync(FleetFixture fleet)
+    internal static async Task<JourneyRuntimeRow> CommittedAndSentAsync(FleetFixture fleet)
     {
         await RoundAsync(fleet);
         await RoundAsync(fleet);
@@ -1442,7 +1448,7 @@ public sealed class ChargingExecutionTests
         return await CommitmentOfAsync(fleet, KeyA);
     }
 
-    private static async Task<JourneyRuntimeRow?> ChargingJourneyAsync(FleetFixture fleet, string agvId)
+    internal static async Task<JourneyRuntimeRow?> ChargingJourneyAsync(FleetFixture fleet, string agvId)
     {
         JourneyRuntimeRow[] rows = await fleet.Context.JourneyRuntimes.AsNoTracking()
             .Where(row => row.AgvId == agvId && row.JourneyId.StartsWith(ChargingIdentity.JourneyIdPrefix))

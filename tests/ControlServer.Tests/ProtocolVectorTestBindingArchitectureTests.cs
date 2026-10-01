@@ -153,7 +153,6 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
     private static readonly IReadOnlyDictionary<string, string> VectorsAwaitingTheirSlice =
         new SortedDictionary<string, string>(StringComparer.Ordinal)
         {
-            ["CV-AUTOMATIC-CHARGING-CYCLE"] = "FP-IS-13, batch 9",
             ["CV-MANUAL-STATION-CLEARANCE"] = "FP-IS-13, batch 9",
             ["CV-UNABLE-TO-CHARGE-FIELD-CONFIRMATION"] = "FP-IS-13, batch 9",
             ["CV-WORKLIST-SELECTION-ACCEPTED"] = "FP-IS-09, batch 11",

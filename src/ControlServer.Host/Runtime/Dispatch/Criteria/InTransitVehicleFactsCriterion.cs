@@ -80,8 +80,9 @@ public sealed class InTransitVehicleFactsCriterion(IOptions<JourneyRuntimeOption
 
         // 电量一段（批次9-05，control-server#403；REQ-0281）：阈值来自这趟旅程派出时记下的策略版本。追加就是新任务，所以电量掉到
         // 强制充电线以下的在途车不再接追加（当前这一趟照常做完，不在这里）；余量按追加后整趟还没卸完的需求数算，只往保守的方向估。
+        // 充满后接了活、还没离桩（仍报 CHARGING）的车同样不因 CHARGING 被拒（批次9-07）。
         return BatteryEligibility.Judge(
             facts.Vehicle, facts.BatteryPolicy, BatteryEligibility.TasksToCoverAfterAppend(facts.Plan),
-            options.WaitingJourneyRescueBatteryPercent);
+            options.WaitingJourneyRescueBatteryPercent, facts.ChargingCycleComplete);
     }
 }
