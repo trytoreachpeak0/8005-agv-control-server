@@ -16,6 +16,7 @@ using ControlServer.Infrastructure.Adapters;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -928,6 +929,11 @@ public sealed partial class MultiVehicleExecutionTests
                 AuditRetentionPolicy.Default);
             AreaAssignments = new CountingAreaAssignments(
                 new AreaAssignmentStore(context, new GovernedConfigurationPublisher(governance, governance)));
+            ClearanceRoles = new ControlServer.Host.Runtime.Charging.FieldOperatorRoleOptions
+            {
+                Path = ClearanceRosterPath,
+                OnboardClearanceEntryDeclared = true,
+            };
             Engine = CreateEngine();
         }
 
@@ -1077,6 +1083,10 @@ public sealed partial class MultiVehicleExecutionTests
             await Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
             Context.ChangeTracker.Clear();
         }
+
+        /// <summary>同一个库上的另一个上下文：一个与引擎那一轮并行的入站或 Host 请求（control-server#406 的并发交错）。</summary>
+        public ControlServerDbContext NewContext() =>
+            new(new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(_connection).Options);
 
         public async Task<JourneyRuntimeRow> JourneyOfAsync(string agvId) =>
             await Context.JourneyRuntimes.AsNoTracking()
@@ -1294,6 +1304,7 @@ public sealed partial class MultiVehicleExecutionTests
 
         public async ValueTask DisposeAsync()
         {
+            File.Delete(ClearanceRosterPath);
             await Context.DisposeAsync();
             await _connection.DisposeAsync();
         }
@@ -1418,7 +1429,28 @@ public sealed partial class MultiVehicleExecutionTests
                 EngineLog,
                 ChargingPolicy,
                 orderCommands: new RiotOrderCommandService(Riot, new RiotOrderCommandAuditStore(Context), Riot, Clock),
-                idleReturnMaterializationFailures: IdleReturnMaterializationFailures);
+                idleReturnMaterializationFailures: IdleReturnMaterializationFailures,
+                clearanceExit: new ControlServer.Host.Runtime.Charging.StationClearanceExit(
+                    new ControlServer.Host.Runtime.Charging.FieldOperatorRoleRoster(Microsoft.Extensions.Options.Options.Create(ClearanceRoles)),
+                    Microsoft.Extensions.Options.Options.Create(ClearanceRoles),
+                    new ConfigurationBuilder().Build(),
+                    Microsoft.Extensions.Options.Options.Create(new VehicleFaultRecoveryOptions())));
+        }
+
+        /// <summary>
+        /// 人工清桩的出口（control-server#406 审查 M1）：默认可用——名单里有一名 R-11、声明了车载端入口（Host 入口要一个有值的凭据变量，夹具不设
+        /// 进程级的环境变量）。要它不可用的用例改名单文件或 <see cref="ClearanceRoles"/>；名单文件每次现读，选项对象引擎读的就是这一个。
+        /// </summary>
+        public string ClearanceRosterPath { get; } = WriteClearanceRoster();
+
+        /// <inheritdoc cref="ClearanceRosterPath"/>
+        public ControlServer.Host.Runtime.Charging.FieldOperatorRoleOptions ClearanceRoles { get; }
+
+        private static string WriteClearanceRoster()
+        {
+            string path = Path.Combine(Path.GetTempPath(), $"fleet-roster-{Guid.NewGuid():N}.json");
+            File.WriteAllText(path, """{"operators":[{"operatorId":"fleet-r11","roles":["R-11"]}]}""");
+            return path;
         }
 
         /// <summary>每辆车最近一次的充电分配结论（control-server#404），跨轮次保留，像宿主里的单例。</summary>
@@ -2083,6 +2115,12 @@ public sealed partial class MultiVehicleExecutionTests
             (RiotListedOrder Order, int? DestinationStationId) foreign =
                 ForeignOrders.FirstOrDefault(item => item.Order.UpperId == upperId);
             RiotOrderObservation? own = _orders.GetValueOrDefault(upperId);
+            if (foreign.Order is null && own is not null && MissionOverrides.TryGetValue(upperId, out IReadOnlyList<RiotOrderMissionFact>? missions))
+            {
+                return Task.FromResult(new RiotOrderMissionFacts(
+                    upperId, RiotOrderMissionFactsStatus.Found, own.OrderId, MissionOrderStateOverride ?? own.OrderState, missions,
+                    clock.GetUtcNowWithoutTick()));
+            }
             int? destination = foreign.Order is not null ? foreign.DestinationStationId : own?.DestinationStationId;
             return Task.FromResult(destination is int station
                 ? new RiotOrderMissionFacts(
@@ -2091,6 +2129,29 @@ public sealed partial class MultiVehicleExecutionTests
                     [new RiotOrderMissionFact("move", options.MapId, station, 0, 0, 0, null)], clock.GetUtcNowWithoutTick())
                 : new RiotOrderMissionFacts(
                     upperId, RiotOrderMissionFactsStatus.Unknown, null, null, [], clock.GetUtcNowWithoutTick()));
+        }
+
+        /// <summary>
+        /// 按单号读任务明细时答的那几段（control-server#406）：去桩的 move 之外，开始充电的 act 与它的结果码。没有登记的单照旧只答一段 move。
+        /// </summary>
+        public Dictionary<string, IReadOnlyList<RiotOrderMissionFact>> MissionOverrides { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>任务明细里答的订单状态，与订单观测不同时用（control-server#406：两处读数冲突）。为空即与订单观测相同。</summary>
+        public int? MissionOrderStateOverride { get; set; }
+
+        /// <summary>
+        /// 充电单在桩上执行开始充电、RIoT 返回 <paramref name="resultCode"/> 并把单挂起（<c>HANG</c>，control-server#406）：订单观测是 <c>HANG</c>，
+        /// 任务明细是去桩的 move 加 <c>act(78,1,0)</c> 带这个结果码。
+        /// </summary>
+        public void FailToCharge(string upperId, int? resultCode = 407802)
+        {
+            HangOrder(upperId);
+            RiotOrderObservation order = _orders[upperId];
+            MissionOverrides[upperId] =
+            [
+                new RiotOrderMissionFact("move", order.MapId, order.DestinationStationId, 0, 0, 0, null),
+                new RiotOrderMissionFact("act", 0, 0, 78, 1, 0, resultCode),
+            ];
         }
 
         /// <summary>目录里另列的站：空闲返回的用例登记的等待点（control-server#389）。默认为空，目录与本票之前逐字相同。</summary>
@@ -2263,17 +2324,26 @@ public sealed partial class MultiVehicleExecutionTests
         /// </summary>
         public bool AnswersAbsentAsRealRiot { get; set; }
 
-        public Task<RiotOrderObservation> ReconcileByUpperIdAsync(
+        /// <summary>
+        /// 按单号对账之前先做的一件事（control-server#406 的并发交错：引擎读到清桩已完成、正去读旧单的那一刻，另一个确认到来）。为空即不做。
+        /// </summary>
+        public Func<string, Task>? BeforeReconcile { get; set; }
+
+        public async Task<RiotOrderObservation> ReconcileByUpperIdAsync(
             string upperId,
             CancellationToken cancellationToken)
         {
             _ = cancellationToken;
+            if (BeforeReconcile is { } meanwhile)
+            {
+                await meanwhile(upperId);
+            }
             RiotOrderObservation answer = _orders.TryGetValue(upperId, out RiotOrderObservation? order)
                 ? order
                 : new RiotOrderObservation(upperId, RiotOrderObservationKind.NotFound, null);
-            return Task.FromResult(AnswersAbsentAsRealRiot && answer.Kind == RiotOrderObservationKind.NotFound
+            return AnswersAbsentAsRealRiot && answer.Kind == RiotOrderObservationKind.NotFound
                 ? RealRiotAbsent(upperId)
-                : answer);
+                : answer;
         }
 
         /// <summary>真实 RIoT 对一个它没有单的 upperId 的回答，经网关之后的样子（<c>HttpRiotMovementGateway.ReconcileByUpperIdAsync</c>）。</summary>
@@ -2344,6 +2414,18 @@ public sealed partial class MultiVehicleExecutionTests
             {
                 Kind = RiotOrderObservationKind.Terminal,
                 OrderState = RiotOrderState.Cancelled,
+            };
+
+        /// <summary>Has RIoT read <paramref name="upperId"/>'s order as executed by <paramref name="vehicleKey"/> (control-server#406).</summary>
+        public void ExecuteOrderOn(string upperId, string? vehicleKey) =>
+            _orders[upperId] = _orders[upperId] with { VehicleKey = vehicleKey };
+
+        /// <summary>Moves an order to RIoT's SUSPENDED (8), which the gateway reads as Active (control-server#406).</summary>
+        public void SuspendOrder(string upperId) =>
+            _orders[upperId] = _orders[upperId] with
+            {
+                Kind = RiotOrderObservationKind.Active,
+                OrderState = RiotOrderState.Suspended,
             };
 
         /// <summary>Moves an order to RIoT's HANG (9), which the gateway reads as Active (control-server#316).</summary>

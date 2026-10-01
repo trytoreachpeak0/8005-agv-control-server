@@ -90,6 +90,12 @@ public sealed class ChargerOccupancyReader(
 {
     private readonly JourneyRuntimeOptions _runtime = runtimeOptions.Value;
 
+    /// <summary>
+    /// 按 <c>upperId</c> 读一张单的状态与每一段任务（<c>detailByUpperId</c>）的那一个读者：引擎判「已确认充不上」时读充电动作的结果码
+    /// （批次9-08，control-server#406）。
+    /// </summary>
+    public IRiotOrderMissionFacts OrderMissions => orderMissions;
+
     public async Task<ChargerOccupancySnapshot> ReadAsync(CancellationToken cancellationToken)
     {
         List<string> unknown = [];

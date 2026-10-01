@@ -20,7 +20,8 @@ internal static class TestOnboardProcessorFactory
         IOnboardPeer? peer = null,
         JourneyRuntimeOptions? runtimeOptions = null,
         ILogger<OnboardMessageProcessor>? logger = null,
-        ILogger<OnboardRecoveryCoordinator>? recoveryLogger = null)
+        ILogger<OnboardRecoveryCoordinator>? recoveryLogger = null,
+        ControlServer.Host.Runtime.Charging.ManualStationClearance? stationClearance = null)
     {
         OnboardJourneyPublisher publisher = new(store, peer ?? new SilentPeer(), timeProvider);
         SlotConfigurationActivationDispatcher activationDispatcher = ActivationDispatcher(context, publisher);
@@ -35,7 +36,8 @@ internal static class TestOnboardProcessorFactory
             timeProvider,
             configuration,
             Options.Create(runtimeOptions ?? new JourneyRuntimeOptions()),
-            logger ?? NullLogger<OnboardMessageProcessor>.Instance);
+            logger ?? NullLogger<OnboardMessageProcessor>.Instance,
+            stationClearance: stationClearance);
     }
 
     /// <summary>

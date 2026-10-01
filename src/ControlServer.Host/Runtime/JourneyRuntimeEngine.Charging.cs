@@ -149,7 +149,20 @@ public sealed partial class JourneyRuntimeEngine
             .ConfigureAwait(false);
         if (cycle is null)
         {
+            // Batch 9-08: a cycle a manual station clearance ended leaves its journey for this round to close.
+            if (await CloseClearedChargingAsync(runtime, cancellationToken).ConfigureAwait(false))
+            {
+                return;
+            }
             await HoldChargingAsync(runtime, ChargingExecutionReasons.CycleMissing, now, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        if (cycle.Phase == ChargingCyclePhases.Clearing)
+        {
+            // Batch 9-08 (control-server#406): could not charge. The vehicle stays where it is until a person confirms the
+            // charger clear; nothing below runs for it -- no order, no command, no rebuild.
+            await AdvanceClearingAsync(runtime, stop, intent, cycle, cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -294,6 +307,21 @@ public sealed partial class JourneyRuntimeEngine
             runtime.SetBlockReason(null, now);
             runtime.UpdatedAt = now;
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // Batch 9-08 (control-server#406): a HANG with every strict fact of REQ-0174 is a confirmed failure to charge. Anything
+        // less -- a HANG alone, a HANG with another code -- goes on below as the HANG it is (REQ-0175).
+        if (order is { Kind: RiotOrderObservationKind.Active, OrderState: RiotOrderState.Hang })
+        {
+            if (await ConfirmUnableToChargeAsync(runtime, stop, intent, order, cycle, cancellationToken).ConfigureAwait(false))
+            {
+                return;
+            }
+        }
+        else
+        {
+            dispatchRound.Charging.Board.BreakSampleRun(UnableToChargeFacts.ContinuityKey(cycle.CycleId));
+            dispatchRound.Charging.Board.ForgetObserved(UnableToChargeFacts.ContinuityKey(cycle.CycleId));
         }
 
         if (await NameStalledOrderAsync(runtime, intent, order, cancellationToken).ConfigureAwait(false))
@@ -680,6 +708,8 @@ public sealed partial class JourneyRuntimeEngine
                         ChargingJourneyShape.EnRouteStateMessageId(runtime.JourneyId),
                         ChargingJourneyShape.ArrivedPlanMessageId(runtime.JourneyId),
                         ChargingJourneyShape.ChargingStateMessageId(runtime.JourneyId),
+                        ChargingJourneyShape.ClearingPlanMessageId(runtime.JourneyId),
+                        ChargingJourneyShape.ClearingStateMessageId(runtime.JourneyId),
                     },
                     cancellationToken)
                 .ConfigureAwait(false);

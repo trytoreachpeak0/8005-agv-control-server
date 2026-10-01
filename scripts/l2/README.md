@@ -670,6 +670,16 @@ DispatchZoneParameters = @{
   过渡护栏与只给本编排器的确认键已随之删掉。空闲返回还要路网（`RouteGraph`）开着、等待点在路网上（`WaitingPoints` 列表项的 `Node`），
   否则一个点也不承诺。
 
+下面这个键是批次 9 的：
+
+- `FieldOperatorRoles`（control-server#406） —— 服务端的 R-11／R-13 名单，人工清桩确认按 `operatorId` 查它。写成
+  `@(@{ OperatorId = 'L2-R11'; Roles = @('R-11') })`；编排器把它写成证据目录下的 `field-operator-roles.json`，经
+  `FieldOperatorRoles__Path` 交给服务端，并在时间线上记一行名单；同时传 `FieldOperatorRoles__OnboardClearanceEntryDeclared=true`，
+  因为两套装置都有车载端的清桩入口（合成对端的控制面、真车载端 onboard-hmi#229 的入口）。不写就都不传：服务端没有名单，任何清桩确认都被拒
+  （`RECOVERY_AUTHENTICATION_FAILED`），而且人工清桩的出口不可用，充不上**根本不会形成**「已确认充不上」，单照旧是 `ORDER_HANG`
+  （control-server#406 审查 M1）。所以测「不形成」的负向场景也要写它，否则绿的是出口，不是判据。用它的场景是
+  `charging-unable-to-charge-pauses-charger`、`charging-general-fault-does-not-pause` 与 `g3-manual-station-clearance`。
+
 下面四个键是批次 4 的仓位分组（control-server#71），默认前置见上面「派车场景的默认前置」。四个键的结构（仓号、字段名、键之间的组合规则，含
 `OnboardPeers` 各项自带的 `SlotStates`）都在启动任何进程之前校验，写错直接报错，而不是几分钟后表现成「一辆车也没派出去」；
 只有 `SlotStates` 的取值是假车载端启动时按协议枚举校验，写错那台对端启动即失败。

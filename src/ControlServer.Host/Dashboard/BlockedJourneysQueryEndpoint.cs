@@ -255,6 +255,28 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 "充电桩转给同一辆车的下一次充电：车充满后没离开，电量又掉到强制充电线以下，桩随即重新预占给它",
             [ChargingExecutionReasons.OrderFailed] =
                 "充电单 FAILED，故障已由人工清除：这趟充电结束，不重建。充电桩的释放、冷却与再次失败后改为人工充电等待的规则同单被取消",
+            // control-server#406：充不上与清桩。前两个写在还开着的充电旅程上（车停在原桩上），后面是收尾码与桩的独占经过上的释放原因。
+            [ChargingExecutionReasons.UnableToChargeClearing] =
+                "已确认充不上：车到了充电桩、执行了开始充电，RIoT 返回 407802 且订单停在 HANG，全程没充上。这个桩已暂停分配，车留在原地，"
+                + "服务端不建单、不动车。请 R-11／R-13 名单里的人到现场把车挪开、确认桩已腾空（车载端「确认清桩」或服务端清桩入口），"
+                + "并在 RIoT 里结束这张旧充电单；两样都齐了才放桩",
+            [ChargingExecutionReasons.ClearedOldOrderUnsettled] =
+                "人工清桩确认已记下，但旧的充电单在 RIoT 里还没结束（仍 HANG 或读不到）：清桩还没完成、桩暂不释放，"
+                + "等旧单结束的那一轮再完成并释放。请在 RIoT 里把这张旧单结束；持续十分钟以上会告警一次"
+                + "（服务端默认不取消充电单；取消开关打开时它会先发一次取消）",
+            [ChargingExecutionReasons.OldOrderResumedWhileClearing] =
+                "现场注意车辆可能移动：这辆车正在等人工清桩，但它那张旧充电单在 RIoT 里被人恢复了（从 HANG 回到排队或执行），"
+                + "车可能自己开回充电桩，而现场可能有人正在清桩。请立刻联系现场，并在 RIoT 里结束这张旧单。之前的清桩确认已作废，旧单结束后须重新确认；旧单处在排队或执行时按下的确认不会被接受。服务端不会因此急停或取消",
+            [ChargingExecutionReasons.ClearanceChargerNotVacant] =
+                "清桩还不能完成：人工确认已记下、旧充电单也已结束，但 RIoT 此刻读到这辆车又停在原充电桩上（或正在充电），桩并没有腾空。"
+                + "桩暂不释放；请到现场把车挪开，读到桩空了的那一轮会自动完成清桩。如果车其实已不在桩上（RIoT 的位置没更新），请在 RIoT 里给车重定位，或者给车断电",
+            [ChargingExecutionReasons.UnableToChargeCleared] =
+                "充不上的这次充电已收尾：清桩已确认、旧单已结束，充电桩的独占已释放，车可以按常规派车检查接活或去别的桩充电。"
+                + "这个桩仍暂停分配，要等维修后做恢复确认",
+            [ChargingExecutionReasons.ClearedByOperator] =
+                "这次充电由人工清桩收尾：有权限的人确认车已挪开、桩已腾空，旧单已结束，这一趟占着的充电桩已释放、充电用途已放开。不暂停这个桩",
+            [ChargingExecutionReasons.ChargerReleasedOnManualClearance] =
+                "充电桩的独占已释放：人工清桩已确认、旧充电单已结束",
             [JourneyRuntimeEngine.OwnOrderRebuildCargoUnprovenReason] =
                 "车上有货的故障清除之后，车报的仓位读数还证明不了货在原仓（仓门没锁好、开锁输出没复位、仓位读数未知或没上报、"
                 + "车报有未知，或装货还没落定）：服务端不停也不建单，等车下一次报仓位读数。门锁好、读数恢复后会自动重建；"

@@ -151,6 +151,41 @@ public sealed class JourneyRuntimeOptions
     /// and at most one hour.
     /// </summary>
     public TimeSpan ChargingOrderAbsentAbandonAfter { get; set; } = TimeSpan.FromSeconds(120);
+
+    /// <summary>
+    /// Whether the server itself cancels the old charge order of a cycle in the clearing loop after an unable-to-charge
+    /// (control-server#406). <b>Off by default.</b> REQ-0148 as revised in requirements baseline v1.9.0 (CP-0010) allows
+    /// <c>CMD_ORDER_CANCEL</c> for this server's own charge order in its first case -- the vehicle is in REQ-0178's clearing
+    /// loop and the cycle's old order has not ended -- but nobody has yet seen what cancelling a HANG charge order does to a
+    /// vehicle standing on its charger: whether RIoT inserts the leave-the-charger act(78,2,0) and moves it beside the person
+    /// clearing it (the independent review of #406; admission line 1). It stays off until that is measured on agv02, with the
+    /// user's authorisation, on site (10-08). Off, a person ends the old order in RIoT, the server reads it ended, and with the
+    /// manual confirmation the clearance completes.
+    /// </summary>
+    /// <remarks>
+    /// On, it cancels exactly one order, once, inside REQ-0148's first case: only while the cycle is clearing and its clearance
+    /// has not completed (no <c>CompletedAt</c>), whether or not a person has confirmed yet; only while this round's read finds
+    /// it <c>HANG</c> and in no other state; only the order of this cycle's own intent (<c>order.OrderId == intent.OrderId</c>,
+    /// ownership proven by the persisted intent, not by the id's shape), executed by this cycle's own vehicle (never one RIoT
+    /// reads on any other vehicle or on none); and only when the command audit holds no cancel for that order yet. An
+    /// unconfirmed cancel is not sent again (event 2270). It releases nothing and rebuilds nothing: the clearance completes
+    /// only once the old order reads ended and a person's confirmation is recorded, and the vehicle stays held until then.
+    /// </remarks>
+    public bool UnableToChargeOldOrderCancelEnabled { get; set; }
+
+    /// <summary>
+    /// How long after the server's cancel of a clearing cycle's old charge order it waits for RIoT to read the order ended
+    /// before it warns that the cancel did not take (event 2270; control-server#406 review S3). Sixty seconds by default;
+    /// positive and at most ten minutes.
+    /// </summary>
+    /// <remarks>
+    /// The cancel's own read-back comes a moment after the call, and if RIoT applies a cancel asynchronously that read can
+    /// still say HANG for an order that is about to end: warning on it would cry wolf. Sixty seconds is twelve of the field
+    /// runtime's five-second rounds and two of the thirty-second waits this runtime already gives a person by the vehicle
+    /// (<see cref="OwnOrderRebuildDelay"/>); an order still not ended after that is no longer "on its way". Nothing waits on
+    /// it -- the clearance completes whenever the order reads ended -- it only decides when the warning is said.
+    /// </remarks>
+    public TimeSpan UnableToChargeOldOrderCancelSettleWindow { get; set; } = TimeSpan.FromSeconds(60);
 }
 
 /// <summary>One vehicle's identity and the policy slice configured for it.</summary>
@@ -256,6 +291,11 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
             options.WaitingJourneyBatteryReadBudget > TimeSpan.FromSeconds(10))
         {
             failures.Add("WaitingJourneyBatteryReadBudget must be positive and at most 10 s.");
+        }
+        if (options.UnableToChargeOldOrderCancelSettleWindow <= TimeSpan.Zero ||
+            options.UnableToChargeOldOrderCancelSettleWindow > TimeSpan.FromMinutes(10))
+        {
+            failures.Add("UnableToChargeOldOrderCancelSettleWindow must be positive and at most 10 minutes.");
         }
         if (options.OwnOrderRebuildDelay <= TimeSpan.Zero || options.OwnOrderRebuildDelay > TimeSpan.FromMinutes(10))
         {

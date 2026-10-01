@@ -393,6 +393,11 @@ jobs:
               # control-server#405, specification 8.3/8.5 "one charger, three vehicles, the full one yields": the full vehicle
               # takes a demand and leaves, and the charger goes to the lowest queued vehicle.
               @{ Name = 'charging-full-vehicle-yields-charger'; Runs = 1; BatchId = 'batch-9' }
+              # control-server#406, REQ-0174/0284: 407802 + final HANG + no CHARGING pauses the charger and holds the
+              # vehicle where it is; an R-11 manual clearance releases the charger only once the old order has ended.
+              @{ Name = 'charging-unable-to-charge-pauses-charger'; Runs = 1; BatchId = 'batch-9' }
+              # control-server#406, REQ-0175: a HANG with another code, or 407802 away from the charger, pauses nothing.
+              @{ Name = 'charging-general-fault-does-not-pause'; Runs = 1; BatchId = 'batch-9' }
           )
           # One run's usual length in seconds, for dealing scenarios out to lanes longest first. Medians of 31
           # CI jobs from 2026-09-17 (ci-research, control-server#130); normal-load's excludes the build it used
