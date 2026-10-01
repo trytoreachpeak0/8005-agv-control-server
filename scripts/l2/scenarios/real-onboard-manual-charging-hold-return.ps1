@@ -13,8 +13,9 @@ cs#404 让服务端在名册为空时置人工充电等待（ROSTER_EMPTY）、�
 判据：
 - L2-RMH-01：电量压到 20：服务端置等待（ROSTER_EMPTY），manualChargingHold=true 的业务状态被真车载端确认，界面充电那一格的文字写
   「需人工充电：服务端保持」。
-- L2-RMH-02：电量回到 80（有人在现场充过电），并发一条需求：之后十秒里等待仍在、界面仍写着它、那条需求没有派给它——电量回升本身不解除
-  （NEVER_CLEAR_HOLD_LOCALLY 的服务端一半），等待期间不派单（独立审查 S7）。
+- L2-RMH-02：电量回到 80（有人在现场充过电），并发一条需求；等服务端看到它、以 VEHICLE_IN_MANUAL_CHARGING_HOLD 记进积压之后十秒里，
+  等待仍在、界面仍写着它、积压原因不变、没有订单意图——电量回升本身不解除（NEVER_CLEAR_HOLD_LOCALLY 的服务端一半），等待期间派车轮
+  在轮内拒绝它（独立审查 S7，增量审查 S-f）。不拿 AcceptedDemands 当「到了没派」的前提：需求是派出那一刻才写进去的。
 - L2-RMH-03：管理员点「充电后返回服务」并确认：服务端受理（RETURNED_TO_ELIGIBILITY_EVALUATION），同一次保存删掉等待、经过上写解除时刻与请求号；
   manualChargingHold=false 的业务状态被确认，界面不再写等待。
 - L2-RMH-04：解除之后车重新可派：等待期间那条需求派给它，开往取货站的单已确认。
@@ -112,24 +113,31 @@ function Get-DemandIntents {
         "SELECT COUNT(*) AS N FROM OrderIntents WHERE DemandId = '$($guid.ToString('D'))'")
     return [int]$row.N
 }
-function Get-DemandAccepted {
+function Get-BacklogReason {
     $row = Read-L2SingleRow -Connection $connection -Sql (
-        "SELECT COUNT(*) AS N FROM AcceptedDemands WHERE DemandId = '$($guid.ToString('D'))'")
-    return [int]$row.N
+        "SELECT ReasonCode FROM JourneyBacklog WHERE DemandId = '$($guid.ToString('D'))'")
+    if ($null -eq $row) { return '(not seen)' }
+    return [string]$row.ReasonCode
 }
-# Incremental review S-f: the not-taken window starts only once the demand is on the server; a window that ran while the demand
-# was still on its way would prove nothing.
-$null = Wait-L2ConditionOrLast -Description 'the demand reached the server' -Journal $journal -Criterion 'demand-accepted' `
-    -TimeoutSeconds 60 -Probe { Get-DemandAccepted } -Until { param($v) $v -eq 1 }
+# Incremental review S-f. The window starts only once the server has seen the demand and refused this vehicle for the hold:
+# a window that ran while the demand was still on its way would prove nothing. AcceptedDemands cannot say "seen and not taken":
+# a demand is written there together with its order intent (WireToGateStore.AcceptWithOrderIntentAsync), i.e. once it has been
+# taken. The dispatch backlog row is what a round leaves for a demand it saw and did not take, with the reason why; the vehicle
+# on hold is still a free vehicle and is refused inside the round under VEHICLE_IN_MANUAL_CHARGING_HOLD (ChargingStandingCriterion).
+# The backlog reason is rewritten every round, so every sample in the window has to carry that code, and no intent -- the first
+# sample that does not ends the window and is what the criterion reports.
+$null = Wait-L2ConditionOrLast -Description 'the server saw the demand and refused this vehicle for the hold' -Journal $journal `
+    -Criterion 'demand-backlogged' -TimeoutSeconds 60 -Probe { Get-BacklogReason } `
+    -Until { param($v) $v -eq 'VEHICLE_IN_MANUAL_CHARGING_HOLD' }
 $stillHeld = Wait-L2ConditionOrLast -Description 'the hold was lifted by the battery coming back, or the demand was taken (neither may be)' `
     -Journal $journal -Criterion 'hold-kept-after-battery' -TimeoutSeconds 10 `
-    -Probe { "$(Get-Hold) | $([string](Get-ChargingText) -like "*$holdText*") | accepted $(Get-DemandAccepted) | intents $(Get-DemandIntents)" } `
-    -Until { param($v) $v -ne 'ROSTER_EMPTY | True | accepted 1 | intents 0' }
+    -Probe { "$(Get-Hold) | $([string](Get-ChargingText) -like "*$holdText*") | backlog $(Get-BacklogReason) | intents $(Get-DemandIntents)" } `
+    -Until { param($v) $v -ne 'ROSTER_EMPTY | True | backlog VEHICLE_IN_MANUAL_CHARGING_HOLD | intents 0' }
 $assertions.Add(
     'L2-RMH-02',
-    '电量回到 80、一条需求已到服务端（AcceptedDemands 里有它）之后十秒里，服务端的等待仍在、界面仍写着「需人工充电：服务端保持」，那条需求没有派给它（没有任何订单意图）：电量回升本身不解除，等待期间不派单',
-    ($stillHeld -eq 'ROSTER_EMPTY | True | accepted 1 | intents 0'),
-    'ROSTER_EMPTY | True | accepted 1 | intents 0',
+    '电量回到 80、服务端看到了一条需求并以人工充电等待为由不派（积压原因 VEHICLE_IN_MANUAL_CHARGING_HOLD）之后十秒里，每次采样都是：服务端的等待仍在、界面仍写着「需人工充电：服务端保持」、积压原因仍是这一条、没有任何订单意图——电量回升本身不解除，等待期间派车轮在轮内拒绝它',
+    ($stillHeld -eq 'ROSTER_EMPTY | True | backlog VEHICLE_IN_MANUAL_CHARGING_HOLD | intents 0'),
+    'ROSTER_EMPTY | True | backlog VEHICLE_IN_MANUAL_CHARGING_HOLD | intents 0',
     $stillHeld)
 
 # --- 3. 管理员点「充电后返回服务」：解除 -------------------------------------------------------------------------
