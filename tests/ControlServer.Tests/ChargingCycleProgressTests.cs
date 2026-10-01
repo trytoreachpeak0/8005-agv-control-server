@@ -1125,6 +1125,32 @@ public sealed class ChargingCycleProgressTests
     }
 
     /// <summary>
+    /// 原桩重充只给「就停在这个桩上」的车（独立审查 S6）：充满的车已经离开了桩、桩却还不能确认空闲（订单清单读不全），这时电量掉到强制充电线以下，
+    /// 旧周期不收尾、桩不放——三项确认还没齐，放桩就是凭「要充电」越过了它们。车照旧以「仍持有充电桩」挡在分配外。
+    /// </summary>
+    [Fact]
+    public async Task AFullVehicleThatLeftItsChargerUnconfirmedGetsNoRechargeHandOver()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        JourneyRuntimeRow first = await CompletedAsync(fleet);
+        fleet.Riot.OrderListingIncomplete = true;
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = 300, BatteryState = NotCharging };
+
+        for (int round = 0; round < 3; round++)
+        {
+            await RoundAsync(fleet);
+        }
+
+        StationExclusivityRow holder = (await StationAsync(fleet, Near.StationId))!;
+        Assert.Equal((KeyA, first.JourneyId), (holder.VehicleKey, holder.JourneyId));
+        ChargingCycleRow cycle = await fleet.Context.Set<ChargingCycleRow>().AsNoTracking().SingleAsync(Token);
+        Assert.Equal((ChargingCyclePhases.Active, ChargingCycleWireStates.Complete), (cycle.Phase, cycle.WireState));
+        Assert.Equal(ChargingAllocationReasons.VehicleStillHoldsCharger, fleet.ChargingBoard.Verdicts[AgvA].Reason);
+        Assert.Single(fleet.Riot.Creates, create => create.DestinationStationId == Near.StationId);
+    }
+
+    /// <summary>
     /// 充满的车一直不离桩（停在桩上、不接活）：桩一直是它的占用，不按超时释放；充满超过 <c>JourneyRuntime:OwnOrderRebuildRepeatWindow</c> 告警恰好一次，
     /// 写明桩、车与缺哪一项确认（独立审查 S1，同失败周期的事件 2247）。
     /// </summary>
@@ -1135,7 +1161,14 @@ public sealed class ChargingCycleProgressTests
         await CompletedAsync(fleet);
         AtCharger(fleet, KeyA, 80, NotCharging);
 
-        for (int minute = 0; minute < 25; minute++)
+        for (int minute = 0; minute < 5; minute++)
+        {
+            await fleet.HearFromEveryVehicleAsync();
+            await fleet.RunRoundAsync(TimeSpan.FromMinutes(1));
+        }
+        Assert.DoesNotContain(fleet.ChargingLog.Entries, entry => entry.EventId.Id == 2249);
+
+        for (int minute = 5; minute < 25; minute++)
         {
             await fleet.HearFromEveryVehicleAsync();
             await fleet.RunRoundAsync(TimeSpan.FromMinutes(1));
