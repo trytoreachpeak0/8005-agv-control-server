@@ -66,6 +66,11 @@
 # seven assertions. It answers CV-WAITING-POINT-IDLE-RETURN on the real onboard and guards the two cross-ticket
 # contracts with onboard-hmi#217 (docs/g3-slice-claim-review.md has the rows).
 #
+# Batch 9 (control-server#405): the journey runner claims FP-IS-13 for CV-AUTOMATIC-CHARGING-CYCLE, one scenario
+# (g3-automatic-charging-cycle), seven assertions. FP-IS-13 is not complete with it: CV-MANUAL-STATION-CLEARANCE and
+# CV-UNABLE-TO-CHARGE-FIELD-CONFIRMATION are added by the exit ticket control-server#412, and CV-MANUAL-CHARGING-RETURN
+# stays asserted under FP-IS-07's names until FP-IS-13 claims it under its own (review item 29).
+#
 # ---------------------------------------------------------------------------------------------
 # The ruling, 2026-09-09 (ticket 23, the user's decision -- recorded here rather than only in a
 # commit message, because this is the constant it governs):
@@ -509,6 +514,22 @@ function Get-G3RunnerClaim {
                     'pickupEntryOpensAfterIdleReturnAndPointReleasedOnDeparture',
                     'idleReturnJourneyFinalStateNoDuplicateCommit',
                     'onboardNeverLoadsAtWaitingPoint')
+                # CV-AUTOMATIC-CHARGING-CYCLE (batch 9, control-server#404/#405; onboard half onboard-hmi#220): a vehicle
+                # below its mandatory charge line charges at 211, completes, and leaves on the next demand. Every entry
+                # answers one item of the vector: orderedExpectedMessages (G3-13-01), CLAIM_VEHICLE_FOR_CHARGING_PURPOSE
+                # (G3-13-02), NEVER_DISPATCH_DURING_CHARGING (G3-13-04), the onboard half NEVER_LOAD_AT_CHARGER (G3-13-03),
+                # finalState and forbiddenSideEffects duplicate-riot-order (G3-13-07); G3-13-05 and G3-13-06 are the
+                # completion and the release on departure (REQ-0281, REQ-0173). Names of its own, never FP-IS-07's: the
+                # manual charging return stays FP-IS-07's claim (review item 29). FP-IS-13's other two vectors are claimed by
+                # the exit ticket control-server#412 under further names in this list.
+                'FP-IS-13' = @(
+                    'chargerPlanBeforeChargingBusinessStateBothAcknowledged',
+                    'chargingPurposeClaimedFromAllocationUntilComplete',
+                    'onboardShowsChargingAndNeverLoadsAtCharger',
+                    'neverDispatchedWhileChargingBelowCompletion',
+                    'completeWithArrivedChargerLegPurposeReleasedChargerKept',
+                    'nextJourneyLeavesChargerAndChargerReleasedOnDeparture',
+                    'chargingCycleFinalStateNoDuplicateOrder')
             }
         }
     }

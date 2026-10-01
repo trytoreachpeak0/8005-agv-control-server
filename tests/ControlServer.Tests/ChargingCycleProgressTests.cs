@@ -140,6 +140,19 @@ public sealed class ChargingCycleProgressTests
         await RoundAsync(fleet);
         Assert.Equal(ChargingCycleWireStates.EnRoute, (await CycleAsync(fleet, KeyA)).WireState);
 
+        // A CHARGING reading that is no longer fresh is not the start: arrived, the cycle stays EN_ROUTE.
+        fleet.Riot.VehicleOverrides[KeyA] = seen => seen with
+        {
+            CurrentStationId = Near.StationId,
+            BatteryState = Charging,
+            ObservedAt = seen.ObservedAt - fleet.Options.MaximumEvidenceAge - TimeSpan.FromSeconds(1),
+        };
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+        Assert.Equal(
+            (ChargingCycleWireStates.EnRoute, (DateTimeOffset?)null),
+            ((await CycleAsync(fleet, KeyA)).WireState, (await CycleAsync(fleet, KeyA)).FirstChargingSeenAt));
+
         AtCharger(fleet, KeyA, 40, Charging);
         await RoundAsync(fleet);
 

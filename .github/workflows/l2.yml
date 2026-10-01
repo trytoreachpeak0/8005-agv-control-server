@@ -387,6 +387,12 @@ jobs:
               # a vehicle that then needs charging is put on manual charging hold and warned about; the roster back, it is
               # allocated only after its onboard sends the return to service.
               @{ Name = 'charging-registry-emptied-degrades-and-resumes'; Runs = 1; BatchId = 'batch-9' }
+              # control-server#405, REQ-0281/0173: one vehicle charges to COMPLETE (purpose released, charger still occupied),
+              # is sent away by a demand, and the charger is released only after it has left -- not when the order is issued.
+              @{ Name = 'charging-full-cycle'; Runs = 1; BatchId = 'batch-9' }
+              # control-server#405, specification 8.3/8.5 "one charger, three vehicles, the full one yields": the full vehicle
+              # takes a demand and leaves, and the charger goes to the lowest queued vehicle.
+              @{ Name = 'charging-full-vehicle-yields-charger'; Runs = 1; BatchId = 'batch-9' }
           )
           # One run's usual length in seconds, for dealing scenarios out to lanes longest first. Medians of 31
           # CI jobs from 2026-09-17 (ci-research, control-server#130); normal-load's excludes the build it used
@@ -685,6 +691,12 @@ jobs:
               # fails that one read); each never-sent intent is created once RIoT answers it is absent, after the vehicle check reads
               # the real onboard -- on the gate leg with cargo on board.
               @{ Name = 'real-onboard-unread-pre-create-read';               Runs = 1 }
+              # control-server#405 (onboard half onboard-hmi#220): a charging cycle on the real onboard -- CHARGING and COMPLETE
+              # shown, no entry at the charger, entry at the pickup once the full vehicle is sent away, the charger released.
+              @{ Name = 'real-onboard-charging-cycle';                       Runs = 1 }
+              # control-server#405 (control-server#404 review S6): the server-held manual charging hold shown on the real onboard,
+              # kept when the battery comes back, and lifted only by the administrator's 充电后返回服务.
+              @{ Name = 'real-onboard-manual-charging-hold-return';          Runs = 1 }
           )
 
           # Registered before anything can fail, so the upload step always has a path.
