@@ -768,7 +768,17 @@ public sealed class ExpectedActionOverdueTests
                 provenRecoveryCheckpoint = (string?)null,
                 activeUnlockSlots = Array.Empty<int>(),
                 forcedRecoveryGeneration = 0,
-                pendingResults = (pendingResultMessageIds ?? []).Select(id => new { messageId = id }).ToArray()
+                // PendingResultRef as the protocol requires it: the server reads contentSha256 to tell whether a result it
+                // has already processed is the one reported (control-server#435).
+                pendingResults = (pendingResultMessageIds ?? [])
+                    .Select(id => new
+                    {
+                        messageType = "OperationResult",
+                        messageId = id,
+                        businessId = id,
+                        contentSha256 = new string('d', 64)
+                    })
+                    .ToArray()
             });
 
         /// <summary>
