@@ -191,7 +191,10 @@ $pickup = Wait-L2Condition -Description 'the pickup order of the demand was conf
     -Until { param($v) $null -ne $v -and [string]$v.Status -eq 'CONFIRMED' }
 $pickupOrder = @($riot.Snapshot().body.orders | Where-Object { $null -ne $_ -and [string]$_.upperId -eq [string]$pickup.UpperId })[0]
 $head = $pickupOrder.missions[0]
-$headText = "$($head.type) $($head.actionId) $($head.actionParam1) $($head.actionParam2)"
+# The control plane's snapshot writes an act without actionParam2 (only the data-plane answer in the real RIoT's field
+# names carries it), so a missing actionParam2 reads as '-'; when it is there it must be 0.
+$param2 = $head.PSObject.Properties['actionParam2']
+$headText = "$($head.type) $($head.actionId) $($head.actionParam1) $(if ($null -eq $param2) { '-' } else { $param2.Value })"
 $journal.Observe('departure-order-head', $headText, @{ order = $pickupOrder })
 
 # 另等：单已下达、车还在 211 的这段时间里，211 会不会被放掉（它不能）。
@@ -202,9 +205,9 @@ $whileStill = Wait-L2ConditionOrLast -Description 'the charger was released whil
 $assertions.Add(
     'L2-CFC-04',
     '需求派给了充满的这辆车（仍报 CHARGING），开往取货站的单已确认、假 RIoT 在它队首插了 act(78,2,0)；从下达起另等十秒，211 一直是充电那一趟的占用、周期一直是 COMPLETE（下达下一单不释放）',
-    ([string]$pickup.VehicleKey -eq $vehicleKey -and $headText -eq 'act 78 2 0' -and
+    ([string]$pickup.VehicleKey -eq $vehicleKey -and $headText -in @('act 78 2 0', 'act 78 2 -') -and
         $whileStill -eq "OCCUPIED $vehicleKey $journeyId | COMPLETE"),
-    "$vehicleKey / act 78 2 0 / OCCUPIED $vehicleKey $journeyId | COMPLETE",
+    "$vehicleKey / act 78 2 0|- / OCCUPIED $vehicleKey $journeyId | COMPLETE",
     "$($pickup.VehicleKey) / $headText / $whileStill")
 
 # --- 4. 离桩：RIoT 执行那张单（离桩动作停止充电），车到机台 12；三项确认之后才释放 ---------------------------------
