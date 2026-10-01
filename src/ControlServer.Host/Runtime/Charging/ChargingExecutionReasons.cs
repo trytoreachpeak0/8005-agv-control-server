@@ -77,6 +77,36 @@ public static class ChargingExecutionReasons
     /// <summary>桩预占的释放原因：周期已以失败结束，充电已停、原车不在桩上、桩位可确认空闲三项都确认了（<c>REQ-0173</c>）。</summary>
     public const string ReservationReleasedAfterEndedCycle = "CHARGER_RELEASED_AFTER_ENDED_CYCLE";
 
+    // ---- 到桩之后（批次9-07，control-server#405）----
+
+    /// <summary>
+    /// 到桩之后过了宽限（<c>JourneyRuntime:OwnOrderRebuildDelay</c>）一直读不到 <c>batteryState=CHARGING</c>：不是充不上的确认（<c>REQ-0175</c>），
+    /// 周期、用途、桩占用都保持，告警一次交人处理；不暂停桩、不暂停车。读到 <c>CHARGING</c> 时清掉。
+    /// </summary>
+    public const string ChargerNotEngaged = "CHARGER_NOT_ENGAGED";
+
+    /// <summary>
+    /// RIoT 车辆观测丢失（读不到、或报离线）：按「车可能仍在桩上」保持一切，不发任何命令；持续超过 <c>JourneyRuntime:OwnOrderRebuildRepeatWindow</c>
+    /// 只升级告警（<c>REQ-0287</c>）。观测恢复时清掉。
+    /// </summary>
+    public const string VehicleObservationLost = "CHARGING_VEHICLE_OBSERVATION_LOST";
+
+    /// <summary>
+    /// 电量遥测丢失（读不到电量或读数过期）：暂停完成判断，恢复后以新鲜、连续的样本重新观察，不拿丢失前的读数（<c>REQ-0287</c>）；持续超时只升级告警。
+    /// </summary>
+    public const string BatteryTelemetryLost = "CHARGING_BATTERY_TELEMETRY_LOST";
+
+    /// <summary>
+    /// 充满（<c>COMPLETE</c>）：充电旅程的收尾码与 <c>CHARGING</c> 用途占有的释放原因。不是释放桩——桩仍是这辆车的占用，等离桩三项确认（<c>REQ-0281</c>）。
+    /// </summary>
+    public const string Completed = "CHARGING_COMPLETE";
+
+    /// <summary>充满的车取得下一用途、离桩三项确认之后，充电周期的结束原因（<c>REQ-0173</c>）。不是失败。</summary>
+    public const string Departed = "CHARGING_DEPARTED";
+
+    /// <summary>桩占用的释放原因：充满的车已停止充电、离开了桩、桩位可确认空闲（<c>REQ-0173</c>）。</summary>
+    public const string ChargerReleasedOnDeparture = "CHARGER_RELEASED_ON_DEPARTURE";
+
     /// <summary>已确认失败的收尾码：这辆车之后进冷却（冷却期内一个桩都不分）、计入「两次即停」的那几种。</summary>
     public static IReadOnlySet<string> ConfirmedFailures { get; } =
         new HashSet<string>(StringComparer.Ordinal) { OrderEnded, OrderFailed, OrderNeverAppeared };

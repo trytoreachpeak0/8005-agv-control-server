@@ -76,9 +76,10 @@ public static class BatteryEligibility
     /// 在桩上充电的车能不能接活离桩：批次9-07 按充电周期状态放开（充满后在桩上接活）。本票不放开，恒为否——
     /// 这一支的判定入口就是这里，9-07 只换这个函数的实现。
     /// </summary>
-    public static bool ChargingVehicleMayTakeWork(RiotVehicleObservation vehicle)
+    public static bool ChargingVehicleMayTakeWork(RiotVehicleObservation vehicle, bool chargingCycleComplete = false)
     {
         ArgumentNullException.ThrowIfNull(vehicle);
+        _ = chargingCycleComplete;
         return false;
     }
 
@@ -100,7 +101,12 @@ public static class BatteryEligibility
     /// 服务端的救命告警线。本轮读定的这一版若强制充电线不高于它，答 <see cref="DispatchReasonCodes.ChargingPolicyEntryNotAboveRescueLine"/>
     /// （审查 S1：投运判定另读一次解析器，两次读之间可能换了版本；派车只认本轮读定、会记到旅程上的这一份）。
     /// </param>
-    public static string Judge(RiotVehicleObservation vehicle, DispatchBatteryPolicy? policy, int tasksToCover, int rescueBatteryPercent)
+    public static string Judge(
+        RiotVehicleObservation vehicle,
+        DispatchBatteryPolicy? policy,
+        int tasksToCover,
+        int rescueBatteryPercent,
+        bool chargingCycleComplete = false)
     {
         ArgumentNullException.ThrowIfNull(vehicle);
         if (policy is null)
@@ -119,7 +125,7 @@ public static class BatteryEligibility
         }
 
         if (string.Equals(vehicle.BatteryState, ChargingBatteryState, StringComparison.Ordinal) &&
-            !ChargingVehicleMayTakeWork(vehicle))
+            !ChargingVehicleMayTakeWork(vehicle, chargingCycleComplete))
         {
             return VehicleDynamicFactsCriterion.BatteryPolicyNotSatisfiedReason;
         }
