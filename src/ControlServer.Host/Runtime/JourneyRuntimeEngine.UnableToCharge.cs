@@ -32,8 +32,8 @@ public sealed partial class JourneyRuntimeEngine
             "CHARGING_CLEARED_OLD_ORDER_UNSETTLED: the charger {StationId} that vehicle {VehicleKey} (journey {JourneyId}) " +
             "could not charge at was confirmed clear at {ClearedAt}, but its old charge order is still {Disposition} in RIoT. " +
             "The charger is released only once that order has ended (REQ-0178); until then it stays held. Cancel the order " +
-            "in RIoT -- this server does not cancel a charge order (allowlist 1.3, REQ-0148) unless " +
-            "JourneyRuntime:UnableToChargeOldOrderCancelEnabled is on.");
+            "in RIoT: this server cancels it at most once, and only while JourneyRuntime:UnableToChargeOldOrderCancelEnabled " +
+            "is on (REQ-0148, baseline v1.9.0), and never again once that cancel went unconfirmed.");
 
     private static readonly Action<ILogger, string, string, string, string, Exception?> LogClearedOldOrderCancelNotConfirmed =
         LoggerMessage.Define<string, string, string, string>(
@@ -206,8 +206,8 @@ public sealed partial class JourneyRuntimeEngine
     /// <para>
     /// <b>确认之后旧单还没收敛</b>（仍 <c>HANG</c>、读不到、结果未知，<c>REQ-0178</c>）：桩不放、用途不放、继续对账，写
     /// <see cref="ChargingExecutionReasons.ClearedOldOrderUnsettled"/>；超过 <c>JourneyRuntime:OwnOrderRebuildRepeatWindow</c> 告警一次（事件 2265），
-    /// 请人在 RIoT 里取消旧单——本服务端默认不取消充电单（白名单第 1.3 节、<c>REQ-0148</c>；放宽要走需求基线变更）。取消那一步做成了默认关的开关，
-    /// 见 <see cref="CancelClearedOldOrderWhenEnabledAsync"/>。
+    /// 请人在 RIoT 里取消旧单。开关打开（默认）时本服务端先取消一次（<c>REQ-0148</c> 情形一，基线 <c>v1.9.0</c>，<c>CP-0010</c>），
+    /// 见 <see cref="CancelClearedOldOrderWhenEnabledAsync"/>；取消之后照样等对账读到终态。
     /// </para>
     /// <para>
     /// <b>执行前重判前提</b>：释放那一刻重读清桩记录、这一轮重新读旧单，释放本身带着读到的周期版本与独占持有者（<see cref="ChargerClearanceRelease"/>），
@@ -275,17 +275,19 @@ public sealed partial class JourneyRuntimeEngine
     }
 
     /// <summary>
-    /// 清桩已确认、旧单仍 <c>HANG</c>：开关 <c>JourneyRuntime:UnableToChargeOldOrderCancelEnabled</c> 打开时由本服务端取消这张旧单，一次；默认关，什么也不做。
+    /// 清桩已确认、旧单仍 <c>HANG</c>：开关 <c>JourneyRuntime:UnableToChargeOldOrderCancelEnabled</c> 打开（默认）时由本服务端取消这张旧单，一次；关着什么也不做。
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>为什么默认关</b>：<c>REQ-0148</c> 与白名单第 1.3 节只允许为它们列出的用途发 <c>CMD_ORDER_CANCEL</c>，充电单不在其中；放宽要走需求基线变更。
-    /// 调度 2026-10-01 定：先把这一步做成开关、默认关，由用户决定是否、何时打开。关着时旧单只对账，事件 2265 请人在 RIoT 里取消。
+    /// <b>依据</b>：<c>REQ-0148</c>（基线 <c>v1.9.0</c>，<c>CP-0010</c>）情形一——车辆按 <c>REQ-0178</c> 进入清桩中闭环后、清桩完成之前，
+    /// 本服务端自建的充电周期旧单尚未终结，可以取消；白名单第 1.3 节同口径。<c>REQ-0178</c> 要求清桩前旧单到取消终态，所以默认开。
+    /// 开关留作立即收紧的手段（白名单第五节第二行：软件负责人可立即收紧，恢复要批准人批准）；关着时旧单只对账，事件 2265 请人在 RIoT 里取消。
     /// </para>
     /// <para>
-    /// <b>打开后取消哪张单、在什么条件下</b>：只取消这个周期自己 <c>upperId</c> 下的那张（本服务端建的），只在清桩已完成之后、RIoT 读到它恰好是
-    /// <c>HANG</c> 时（其它任何状态都不发），且命令审计里这张单还没有取消记录（只发一次，没确认也不重发）。取消本身什么也不放：桩与用途照旧要等之后某一轮
-    /// 读到旧单已终结才释放，与人在 RIoT 里取消走同一条路。
+    /// <b>打开后取消哪张单、在什么条件下</b>（比条文窄，条文从进入清桩中就允许）：只取消这个周期自己 <c>upperId</c> 下的那张——归属凭本库的
+    /// 停靠与意图证明，不凭 <c>upperId</c> 的形态；只在清桩已完成之后；这一轮重读到它恰好是 <c>HANG</c>（其它任何状态都不发）、且执行它的就是这个周期的车
+    /// （RIoT 读到别的车、或读不到执行车，都不发：条文「未由非 8005 管辖的车辆执行」要先证明）；命令审计里这张单还没有取消记录（只发一次，没确认也不重发，
+    /// 事件 2270）。取消本身什么也不放、不重建：桩与用途照旧要等之后某一轮读到旧单已终结才释放，车在那之前一直留着，与人在 RIoT 里取消走同一条路。
     /// </para>
     /// </remarks>
     private async Task CancelClearedOldOrderWhenEnabledAsync(
@@ -296,6 +298,7 @@ public sealed partial class JourneyRuntimeEngine
     {
         if (!runtimeOptions.UnableToChargeOldOrderCancelEnabled || orderCommands is null ||
             order is not { Kind: RiotOrderObservationKind.Active, OrderState: RiotOrderState.Hang, OrderId: string orderId } ||
+            !string.Equals(order.VehicleKey, runtime.VehicleKey, StringComparison.Ordinal) ||
             await OwnCancelIssuedAsync(orderId, cancellationToken).ConfigureAwait(false))
         {
             return;
@@ -304,7 +307,7 @@ public sealed partial class JourneyRuntimeEngine
         RiotOrderCommandRecord cancel = await orderCommands.IssueAsync(
                 RiotOrderCommandKind.Cancel,
                 new RiotOrderCommandTarget(runtime.AgvId, stop.UpperId, orderId),
-                "control-server#406: the charger was confirmed clear after an unable-to-charge; REQ-0148 cancel switch is on",
+                "control-server#406: REQ-0148 (v1.9.0) case 1, the old charge order of a clearance confirmed after an unable-to-charge",
                 faultGeneration: null,
                 cancellationToken)
             .ConfigureAwait(false);

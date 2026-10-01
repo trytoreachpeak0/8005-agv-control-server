@@ -42,7 +42,7 @@ public static class UnableToChargeFacts
     /// <summary><see cref="VerifiedFailureCode"/> 所依据的 RIoT 契约快照（白名单「绑定契约快照」）。同上，不是现读。</summary>
     public const string VerifiedRiotContract = "RIOT-OPENAPI-8005-202607-EARLY-01";
 
-    /// <summary>RIoT 的充电动作号与「开始充电」参数（白名单第 1.2 节形态二）。</summary>
+    /// <summary>RIoT 的充电动作号与「开始充电」参数（<c>REQ-0147</c>，基线 <c>v1.9.0</c>；白名单第 1.2 节形态二）。</summary>
     public const int ChargeActionId = 78;
 
     /// <inheritdoc cref="ChargeActionId"/>

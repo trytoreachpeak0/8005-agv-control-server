@@ -2388,6 +2388,10 @@ public sealed partial class MultiVehicleExecutionTests
                 OrderState = RiotOrderState.Cancelled,
             };
 
+        /// <summary>Has RIoT read <paramref name="upperId"/>'s order as executed by <paramref name="vehicleKey"/> (control-server#406).</summary>
+        public void ExecuteOrderOn(string upperId, string? vehicleKey) =>
+            _orders[upperId] = _orders[upperId] with { VehicleKey = vehicleKey };
+
         /// <summary>Moves an order to RIoT's SUSPENDED (8), which the gateway reads as Active (control-server#406).</summary>
         public void SuspendOrder(string upperId) =>
             _orders[upperId] = _orders[upperId] with

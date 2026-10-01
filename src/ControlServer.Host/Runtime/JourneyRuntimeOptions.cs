@@ -154,18 +154,23 @@ public sealed class JourneyRuntimeOptions
 
     /// <summary>
     /// Whether the server itself cancels the old charge order of an unable-to-charge cycle once a person has confirmed the
-    /// charger clear (control-server#406). <b>Off by default, and off until the requirements baseline says otherwise:</b>
-    /// REQ-0148 and allowlist 1.3 allow <c>CMD_ORDER_CANCEL</c> only for the purposes they name, and a charge order is not
-    /// one of them; the coordinator's ruling of 2026-10-01 is to build the step behind this switch, leave it off, and let the
-    /// user decide. Off, the old order is only reconciled and a person cancels it in RIoT (event 2265 asks for that).
+    /// charger clear (control-server#406). <b>On by default.</b> REQ-0148 as revised in requirements baseline v1.9.0
+    /// (CP-0010) allows <c>CMD_ORDER_CANCEL</c> for this server's own charge order in its first case -- the vehicle is in
+    /// REQ-0178's clearing loop and the cycle's old order has not ended -- and REQ-0178 needs that order ended before the
+    /// clearance completes. Off, the old order is only reconciled and a person cancels it in RIoT (event 2265 asks for
+    /// that): the switch stays as the way to tighten at once (allowlist section 5, second row: the software owner may
+    /// tighten immediately; loosening again needs the approver).
     /// </summary>
     /// <remarks>
-    /// On, it cancels exactly one order, once: the order under this cycle's own <c>upperId</c> (so one this server created),
-    /// only after the manual clearance is complete, only while RIoT reads it <c>HANG</c> and in no other state, and only when
-    /// the command audit holds no cancel for that order yet. It releases nothing itself: the charger and the purpose are
-    /// released only in a later round that reads the order terminal, exactly as when a person cancels it.
+    /// On, it cancels exactly one order, once, narrower than REQ-0148's first case allows: the order under this cycle's own
+    /// <c>upperId</c> (ownership proven by the persisted intent and cycle, not by the id's shape), only after the manual
+    /// clearance is complete, only while this round's read finds it <c>HANG</c> and in no other state, executed by this
+    /// cycle's own vehicle (never one RIoT reads on any other vehicle), and only when the command audit holds no cancel for
+    /// that order yet; an unconfirmed cancel is not sent again (event 2270). It releases nothing itself and rebuilds nothing:
+    /// the charger and the purpose are released only in a later round that reads the order terminal, exactly as when a
+    /// person cancels it, and the vehicle stays held until then.
     /// </remarks>
-    public bool UnableToChargeOldOrderCancelEnabled { get; set; }
+    public bool UnableToChargeOldOrderCancelEnabled { get; set; } = true;
 }
 
 /// <summary>One vehicle's identity and the policy slice configured for it.</summary>

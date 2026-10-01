@@ -193,13 +193,14 @@ public sealed class ManualStationClearanceTests : IDisposable
     }
 
     /// <summary>
-    /// 旧单仍 <c>HANG</c> 时确认：记下确认、<c>stationReleased=false</c>，桩与用途都不放；之后每一轮写「旧单未收敛」的码、超过十分钟告警恰好一次；
-    /// 有人在 RIoT 里把旧单取消之后的那一轮才释放并收尾——释放只有一次，之后桩仍暂停。
+    /// 取消开关关着（收紧之后的样子）、旧单仍 <c>HANG</c> 时确认：记下确认、<c>stationReleased=false</c>，桩与用途都不放，一条订单命令都不发；
+    /// 之后每一轮写「旧单未收敛」的码、超过十分钟告警恰好一次；有人在 RIoT 里把旧单取消之后的那一轮才释放并收尾——释放只有一次，之后桩仍暂停。
     /// </summary>
     [Fact]
     public async Task ConfirmedWhileTheOldOrderHangsReleasesOnlyInTheRoundItEnds()
     {
         await using FleetFixture fleet = await FleetAsync();
+        fleet.Options.UnableToChargeOldOrderCancelEnabled = false;
         JourneyRuntimeRow journey = await ConfirmedAsync(fleet);
         MovedOff(fleet);
 
@@ -236,15 +237,15 @@ public sealed class ManualStationClearanceTests : IDisposable
     }
 
     /// <summary>
-    /// 取消开关（<c>UnableToChargeOldOrderCancelEnabled</c>，默认关；上一条用例钉住关着时一条订单命令都没有）打开时：清桩确认之前什么也不发；确认之后、
-    /// 旧单是 <c>SUSPENDED</c> 时不发；旧单 <c>HANG</c> 时，恰好对这个周期自己的那张单发一次 <c>CMD_ORDER_CANCEL</c>。RIoT 没把它变成取消（替身照旧答 HANG）：告警一次（事件 2270）、
+    /// 取消开关（<c>UnableToChargeOldOrderCancelEnabled</c>）按默认值、即打开（<c>REQ-0148</c> 情形一，基线 <c>v1.9.0</c>；上一条用例钉住关着时一条订单命令都没有）：
+    /// 清桩确认之前什么也不发；确认之后、旧单是 <c>SUSPENDED</c> 时不发；旧单 <c>HANG</c> 但 RIoT 读到执行车是别的车、或读不到执行车时不发；
+    /// 旧单 <c>HANG</c> 且由本车执行时，恰好对这个周期自己的那张单发一次 <c>CMD_ORDER_CANCEL</c>。RIoT 没把它变成取消（替身照旧答 HANG）：告警一次（事件 2270）、
     /// 之后十五轮不重发、桩一直留着；取消不替代对账，读到旧单终结的那一轮才放桩。
     /// </summary>
     [Fact]
     public async Task WithTheCancelSwitchOnTheOldOrderIsCancelledOnceAndTheChargerStillWaitsForItToEnd()
     {
         await using FleetFixture fleet = await FleetAsync();
-        fleet.Options.UnableToChargeOldOrderCancelEnabled = true;
         JourneyRuntimeRow journey = await ConfirmedAsync(fleet);
         MovedOff(fleet);
         for (int minute = 0; minute < 3; minute++)
@@ -267,7 +268,20 @@ public sealed class ManualStationClearanceTests : IDisposable
         }
         Assert.Empty(fleet.Riot.OrderCommands);
 
+        // HANG, but RIoT reads it executed by another vehicle, or by none: not proven ours to cancel (REQ-0148 case 1).
         fleet.Riot.HangOrder(journey.PickupUpperId);
+        foreach (string? executor in new[] { "AGV-NOT-OURS", null })
+        {
+            fleet.Riot.ExecuteOrderOn(journey.PickupUpperId, executor);
+            for (int minute = 0; minute < 2; minute++)
+            {
+                await fleet.HearFromEveryVehicleAsync();
+                await fleet.RunRoundAsync(TimeSpan.FromMinutes(1));
+            }
+            Assert.Empty(fleet.Riot.OrderCommands);
+        }
+
+        fleet.Riot.ExecuteOrderOn(journey.PickupUpperId, KeyA);
         for (int minute = 0; minute < 15; minute++)
         {
             await fleet.HearFromEveryVehicleAsync();

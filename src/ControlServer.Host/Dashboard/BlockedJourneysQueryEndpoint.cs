@@ -261,7 +261,8 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 + "服务端不建单、不动车。请 R-11／R-13 名单里的人到现场把车挪开、确认桩已腾空（车载端「确认清桩」或服务端清桩入口）",
             [ChargingExecutionReasons.ClearedOldOrderUnsettled] =
                 "清桩已确认，但旧的充电单在 RIoT 里还没结束（仍 HANG 或读不到）：桩暂不释放，等旧单结束的那一轮再释放。"
-                + "持续十分钟以上会告警一次；请在 RIoT 里把这张旧单取消（服务端不取消充电单）",
+                + "服务端会对这张旧单发一次取消（取消开关打开时，默认打开）；持续十分钟以上会告警一次，"
+                + "这时请在 RIoT 里确认它的状态，没结束就在 RIoT 里把它取消",
             [ChargingExecutionReasons.UnableToChargeCleared] =
                 "充不上的这次充电已收尾：清桩已确认、旧单已结束，充电桩的独占已释放，车可以按常规派车检查接活或去别的桩充电。"
                 + "这个桩仍暂停分配，要等维修后做恢复确认",

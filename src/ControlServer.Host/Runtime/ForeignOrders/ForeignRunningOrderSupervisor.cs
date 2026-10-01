@@ -49,7 +49,10 @@ namespace ControlServer.Host.Runtime.ForeignOrders;
 /// its create went out, RIoT answered "no such order" for long enough, and the charging commitment was closed
 /// (<see cref="Charging.AbandonedChargeOrders"/>). Should RIoT show it running on a vehicle of ours after all, no journey is
 /// watching it, so it is taken through the same steps as a proven foreign order: recorded, the vehicle held, cancelled once,
-/// read back. The cancel gate above does not apply to it: that gate is about other people's orders, and this one is ours.
+/// read back. The cancel gate above does not apply to it: that gate is about other people's orders, and this one is ours --
+/// cancelled under REQ-0148's second case for this server's own charge orders (requirements baseline v1.9.0, CP-0010: an
+/// abandoned charge order that later turns up in RIoT and is not executed by a vehicle 8005 does not govern), which needs
+/// no foreign-order authorisation. CP-0010 ratified this branch after it had merged.
 /// </para>
 /// <para>
 /// <b>Such an order is chased while it is still queueing</b> (review S-b): for <c>JourneyRuntime:OwnOrderRebuildRepeatWindow</c>
@@ -212,7 +215,7 @@ public sealed class ForeignRunningOrderSupervisor(
 
     /// <summary>
     /// Whether this deployment may cancel <paramref name="row"/>'s order: a foreign order only where authorized; a charge order
-    /// this server created and gave up always -- it is its own (control-server#404).
+    /// this server created and gave up always -- REQ-0148 (v1.9.0, CP-0010) case 2 (control-server#404).
     /// </summary>
     private bool MayCancel(ForeignRiotOrderRow row) => cancelGate.Value.Enabled || IsAbandonedChargeOrder(row);
 
