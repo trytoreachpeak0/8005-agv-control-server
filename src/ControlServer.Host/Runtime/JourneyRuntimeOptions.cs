@@ -151,6 +151,21 @@ public sealed class JourneyRuntimeOptions
     /// and at most one hour.
     /// </summary>
     public TimeSpan ChargingOrderAbsentAbandonAfter { get; set; } = TimeSpan.FromSeconds(120);
+
+    /// <summary>
+    /// Whether the server itself cancels the old charge order of an unable-to-charge cycle once a person has confirmed the
+    /// charger clear (control-server#406). <b>Off by default, and off until the requirements baseline says otherwise:</b>
+    /// REQ-0148 and allowlist 1.3 allow <c>CMD_ORDER_CANCEL</c> only for the purposes they name, and a charge order is not
+    /// one of them; the coordinator's ruling of 2026-10-01 is to build the step behind this switch, leave it off, and let the
+    /// user decide. Off, the old order is only reconciled and a person cancels it in RIoT (event 2265 asks for that).
+    /// </summary>
+    /// <remarks>
+    /// On, it cancels exactly one order, once: the order under this cycle's own <c>upperId</c> (so one this server created),
+    /// only after the manual clearance is complete, only while RIoT reads it <c>HANG</c> and in no other state, and only when
+    /// the command audit holds no cancel for that order yet. It releases nothing itself: the charger and the purpose are
+    /// released only in a later round that reads the order terminal, exactly as when a person cancels it.
+    /// </remarks>
+    public bool UnableToChargeOldOrderCancelEnabled { get; set; }
 }
 
 /// <summary>One vehicle's identity and the policy slice configured for it.</summary>

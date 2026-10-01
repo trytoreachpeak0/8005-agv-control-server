@@ -123,6 +123,40 @@ public static class ChargingExecutionReasons
     /// <summary>桩占用的释放原因：充满的车没离开、又需要充电，同一个桩交给它的下一轮（独立审查 S6）。</summary>
     public const string ChargerReleasedForRecharge = "CHARGER_RELEASED_FOR_RECHARGE";
 
+    // ---- 充不上与清桩（批次9-08，control-server#406）----
+
+    /// <summary>
+    /// 「已确认充不上」（<c>REQ-0174</c>）已经形成：桩已以不可变事件暂停，车的用途转为 <c>CLEARING_MAINTENANCE</c>，周期进清桩中。
+    /// 车保持原位——本服务端不为它建任何单、不发任何移动命令，它不接搬运、不做空闲返回、不进充电分配。出口只有人工清桩确认
+    /// （车载端 <c>ManualStationClearanceConfirmationRequested</c> 或 Host 接口，R-11／R-13 名单里的人）。
+    /// </summary>
+    public const string UnableToChargeClearing = "CHARGING_UNABLE_TO_CHARGE";
+
+    /// <summary>
+    /// 人工清桩已确认，旧充电单还没有终结（仍 <c>HANG</c>、读不到或结果未知，<c>REQ-0178</c>）：桩不释放、用途不放，继续对账；旧单对账到终态的那一轮
+    /// 才释放。超过 <c>JourneyRuntime:OwnOrderRebuildRepeatWindow</c> 告警一次，请人在 RIoT 里取消旧单。
+    /// </summary>
+    public const string ClearedOldOrderUnsettled = "CHARGING_CLEARED_OLD_ORDER_UNSETTLED";
+
+    /// <summary>
+    /// 充不上之后人工清桩完成、旧单已终结：周期结束、桩的独占释放、<c>CLEARING_MAINTENANCE</c> 用途放开、旅程收尾。桩的分配暂停<b>不</b>解除
+    /// （要 <c>ChargingStationRecoveryConfirmation</c>）。不是「已确认失败」：不计入「两次即停」、不进冷却。
+    /// </summary>
+    public const string UnableToChargeCleared = "CHARGING_UNABLE_TO_CHARGE_CLEARED";
+
+    /// <summary>
+    /// 别的保持状态（到桩不充电、到桩时桩已不是这一趟的、取消后证明不了停稳、失联、充满后离桩确认不了、失败周期的预占放不掉）由人工清桩收尾：
+    /// 周期结束、这一趟持有的桩释放、用途放开。不暂停桩，不是「已确认失败」。
+    /// </summary>
+    public const string ClearedByOperator = "CHARGING_CLEARED_BY_OPERATOR";
+
+    /// <summary>桩独占的释放原因：人工清桩确认、旧单已终结（批次9-08）。写在独占的经过上，不在旅程行上。</summary>
+    public const string ChargerReleasedOnManualClearance = "CHARGER_RELEASED_ON_MANUAL_CLEARANCE";
+
+    /// <summary>由人工清桩收尾的两种结束原因。</summary>
+    public static IReadOnlySet<string> ClearedEndings { get; } =
+        new HashSet<string>(StringComparer.Ordinal) { UnableToChargeCleared, ClearedByOperator };
+
     /// <summary>到桩之后那一段自己写、也由它自己清掉的码：单 <c>SUCCESS</c> 那一支不替它们清。</summary>
     public static IReadOnlySet<string> AtChargerCodes { get; } = new HashSet<string>(StringComparer.Ordinal)
     {

@@ -50,6 +50,16 @@ internal static class ChargingJourneyShape
     /// <summary>开始充电那一张业务状态（<c>chargingCycleState=CHARGING</c>）的消息 id（批次9-07）。</summary>
     public static string ChargingStateMessageId(string journeyId) => JourneyPlanBuilder.StableGuid(journeyId, "charger-vehicle-state-charging");
 
+    /// <summary>
+    /// 充不上之后清桩中的那一张计划（那条 <c>CHARGER</c> 腿留着，车载端靠它取原桩的站点号，调度 09-30 对齐第 6 条）的消息 id（批次9-08）。
+    /// </summary>
+    public static string ClearingPlanMessageId(string journeyId) => JourneyPlanBuilder.StableGuid(journeyId, "charger-plan-clearing");
+
+    /// <summary>
+    /// 清桩中那一张业务状态（<c>chargingCycleState=UNABLE_TO_CHARGE</c>、<c>activePurpose=CLEARING_MAINTENANCE</c>）的消息 id（批次9-08）。
+    /// </summary>
+    public static string ClearingStateMessageId(string journeyId) => JourneyPlanBuilder.StableGuid(journeyId, "charger-vehicle-state-clearing");
+
     public static (JourneyRuntimeRow Runtime, JourneyStopRow Stop, OrderIntent Intent) Build(
         string journeyId,
         FleetVehicle vehicle,

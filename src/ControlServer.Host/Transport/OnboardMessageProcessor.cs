@@ -2,8 +2,10 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.Charging;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -20,7 +22,8 @@ public sealed partial class OnboardMessageProcessor(
     IConfiguration configuration,
     IOptions<JourneyRuntimeOptions> runtimeOptions,
     ILogger<OnboardMessageProcessor> logger,
-    Runtime.Fleet.VehicleRoster? fleet = null)
+    Runtime.Fleet.VehicleRoster? fleet = null,
+    Runtime.Charging.ManualStationClearance? stationClearance = null)
 {
     // The host's one roster (a singleton); a processor built without it, as the tests build it, reads the same options.
     private readonly Runtime.Fleet.VehicleRoster _fleet = fleet ?? new Runtime.Fleet.VehicleRoster(runtimeOptions);
@@ -629,6 +632,55 @@ public sealed partial class OnboardMessageProcessor(
                                     displayMessage = decision.ProblemDisplayMessage
                                 },
                             vehicleBusinessStateRevision = decision.VehicleBusinessStateRevision
+                        });
+                }
+            case "ManualStationClearanceConfirmationRequested" when stationClearance is not null:
+                {
+                    // Batch 9-08 (control-server#406): answered inline like the return to service above. The whole decision is
+                    // Runtime.Charging.ManualStationClearance's, shared with the Host entry; the digest is the payload's alone, so
+                    // a resubmission under a new messageId is the same request (coordinator's alignment of 09-30, item 2).
+                    string confirmationRequestId = RequiredUuid(payload, "confirmationRequestId");
+                    JsonElement operatorContext = payload.GetProperty("operator");
+                    ManualStationClearanceConfirmation clearance;
+                    try
+                    {
+                        clearance = await stationClearance.DecideAsync(
+                            new ManualStationClearanceRequest(
+                                ManualStationClearanceSources.Onboard,
+                                agvId,
+                                _fleet.ByAgvId(agvId)?.VehicleKey,
+                                confirmationRequestId,
+                                generation,
+                                messageId,
+                                WireContentHash.Sha256(payload.GetRawText()),
+                                RequiredString(payload, "stationId"),
+                                NullableString(payload, "publicStationFunction"),
+                                RequiredString(payload, "clearedCondition"),
+                                RequiredString(operatorContext, "operatorId"),
+                                RequiredString(operatorContext, "verificationMethod"),
+                                operatorContext.GetProperty("verifiedAt").GetDateTimeOffset(),
+                                payload.GetProperty("observedAt").GetDateTimeOffset()),
+                            cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (FieldConfirmationContentConflictException conflict)
+                    {
+                        throw new ProtocolContentConflictException(conflict.Message);
+                    }
+                    return SerializeEnvelope(
+                        "ManualStationClearanceConfirmationResult", messageId, agvId, generation,
+                        new
+                        {
+                            confirmationRequestId,
+                            outcome = clearance.Decision.Outcome,
+                            problem = clearance.Decision.ProblemReasonCode is null
+                                ? null
+                                : new
+                                {
+                                    reasonCode = clearance.Decision.ProblemReasonCode,
+                                    fieldPath = clearance.Decision.ProblemFieldPath,
+                                    displayMessage = clearance.Decision.ProblemDisplayMessage
+                                },
+                            stationReleased = clearance.StationReleased
                         });
                 }
             case "SafetyStateChanged":

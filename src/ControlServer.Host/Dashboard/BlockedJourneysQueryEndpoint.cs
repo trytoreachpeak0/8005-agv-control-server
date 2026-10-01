@@ -255,6 +255,20 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 "充电桩转给同一辆车的下一次充电：车充满后没离开，电量又掉到强制充电线以下，桩随即重新预占给它",
             [ChargingExecutionReasons.OrderFailed] =
                 "充电单 FAILED，故障已由人工清除：这趟充电结束，不重建。充电桩的释放、冷却与再次失败后改为人工充电等待的规则同单被取消",
+            // control-server#406：充不上与清桩。前两个写在还开着的充电旅程上（车停在原桩上），后面是收尾码与桩的独占经过上的释放原因。
+            [ChargingExecutionReasons.UnableToChargeClearing] =
+                "已确认充不上：车到了充电桩、执行了开始充电，RIoT 返回 407802 且订单停在 HANG，全程没充上。这个桩已暂停分配，车留在原地，"
+                + "服务端不建单、不动车。请 R-11／R-13 名单里的人到现场把车挪开、确认桩已腾空（车载端「确认清桩」或服务端清桩入口）",
+            [ChargingExecutionReasons.ClearedOldOrderUnsettled] =
+                "清桩已确认，但旧的充电单在 RIoT 里还没结束（仍 HANG 或读不到）：桩暂不释放，等旧单结束的那一轮再释放。"
+                + "持续十分钟以上会告警一次；请在 RIoT 里把这张旧单取消（服务端不取消充电单）",
+            [ChargingExecutionReasons.UnableToChargeCleared] =
+                "充不上的这次充电已收尾：清桩已确认、旧单已结束，充电桩的独占已释放，车可以按常规派车检查接活或去别的桩充电。"
+                + "这个桩仍暂停分配，要等维修后做恢复确认",
+            [ChargingExecutionReasons.ClearedByOperator] =
+                "这次充电由人工清桩收尾：有权限的人确认车已挪开、桩已腾空，旧单已结束，这一趟占着的充电桩已释放、充电用途已放开。不暂停这个桩",
+            [ChargingExecutionReasons.ChargerReleasedOnManualClearance] =
+                "充电桩的独占已释放：人工清桩已确认、旧充电单已结束",
             [JourneyRuntimeEngine.OwnOrderRebuildCargoUnprovenReason] =
                 "车上有货的故障清除之后，车报的仓位读数还证明不了货在原仓（仓门没锁好、开锁输出没复位、仓位读数未知或没上报、"
                 + "车报有未知，或装货还没落定）：服务端不停也不建单，等车下一次报仓位读数。门锁好、读数恢复后会自动重建；"

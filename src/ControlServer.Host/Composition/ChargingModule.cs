@@ -31,6 +31,10 @@ internal static class ChargingModule
         services.AddSingleton<ChargingAllocationBoard>();
         services.AddScoped<ChargerOccupancyReader>();
         services.AddScoped<ChargingAllocator>();
+        // 批次9-08（control-server#406）：人工清桩确认（车载端与 Host 共用一个判定）与它查的 R-11／R-13 名单（只读文件，每次判定现读）。
+        services.AddOptions<FieldOperatorRoleOptions>().BindConfiguration(FieldOperatorRoleOptions.SectionName);
+        services.AddSingleton<FieldOperatorRoleRoster>();
+        services.AddScoped<ManualStationClearance>();
         return services;
     }
 }

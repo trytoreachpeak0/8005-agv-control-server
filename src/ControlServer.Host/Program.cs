@@ -285,6 +285,8 @@ if (app.Configuration.GetValue<bool>("EmergencyStopRelease:enabled"))
 // 默认不挂。control-server#299 的故障人工清除：这个入口会清掉一台车的故障、把它的需求交回改派，要现场明确打开才提供；
 // control-server#419 的站点独占人工释放同一把凭据、同一个开关。
 app.MapVehicleFaultRecoveryEntriesWhenEnabled();
+// 批次9-08（control-server#406）：充电桩的维修暂停（总是挂）、恢复确认与人工清桩（与上面同一个开关、同一把凭据）。
+app.MapChargingStationEntries();
 app.MapDashboardQueries();
 // 防饥饿阈值的标定证据（批次7-09，control-server#214）：只读，JSON 与 CSV。
 app.MapStarvationCalibrationReport();

@@ -754,6 +754,15 @@ try {
         $serverEnvironment[$faultRecoveryCredentialVariable] = $faultRecoveryCredential
     }
     Set-L2ExpectedActionOverdueServerSetting -Environment $serverEnvironment -Threshold $expectedActionOverdueThreshold
+    # control-server#406: the R-11/R-13 roster the manual station clearance checks an operatorId against. Only when a scenario
+    # names it; without it the server has no roster, and every clearance confirmation is refused.
+    if ($setup.ContainsKey('FieldOperatorRoles')) {
+        $rosterPath = Join-Path $EvidenceRoot 'field-operator-roles.json'
+        @{ operators = @($setup.FieldOperatorRoles | ForEach-Object { @{ operatorId = [string]$_.OperatorId; roles = @($_.Roles) } }) } |
+            ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $rosterPath -Encoding utf8NoBOM
+        $serverEnvironment['FieldOperatorRoles__Path'] = $rosterPath
+        $journal.Note("Field operator roster: $(@($setup.FieldOperatorRoles | ForEach-Object { "$($_.OperatorId)=$(@($_.Roles) -join '+')" }) -join ', ').")
+    }
     if ($realOnboard) {
         # Only the real onboard polls this projection; the synthetic peer decides for itself what
         # the safety summary says. Leaving it off for the synthetic rig keeps those scenarios

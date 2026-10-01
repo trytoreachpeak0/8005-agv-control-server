@@ -130,6 +130,12 @@ public static class VehicleActivePurposes
     /// reservation. No worklist, no entry request, no slot command; where the cycle stands is <c>chargingCycleState</c>.
     /// </summary>
     public const string Charging = "CHARGING";
+
+    /// <summary>
+    /// The vehicle could not charge and stands on the charger it failed at (batch 9-08, control-server#406): nothing moves it
+    /// until a person with the clearance permission has moved it off and confirmed the charger clear.
+    /// </summary>
+    public const string ClearingMaintenance = "CLEARING_MAINTENANCE";
 }
 
 /// <summary>

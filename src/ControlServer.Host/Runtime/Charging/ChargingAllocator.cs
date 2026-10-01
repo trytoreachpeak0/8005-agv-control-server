@@ -121,6 +121,18 @@ public sealed class ChargingAllocationBoard
     /// <summary>电量遥测断了（读不到、过期）或周期已不在充电：下一个新鲜样本重新开始观察。</summary>
     public void BreakSampleRun(string cycleId) => _sampleRun.TryRemove(cycleId, out _);
 
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTimeOffset> _firstObserved =
+        new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// 一件持续成立的事从哪一刻起被看到（批次9-08：充不上的那组事实第一次全部成立的时刻）：第一次记下，之后答同一个时刻，直到
+    /// <see cref="ForgetObserved"/>。进程重启后从头记。
+    /// </summary>
+    public DateTimeOffset FirstObserved(string key, DateTimeOffset at) => _firstObserved.GetOrAdd(key, at);
+
+    /// <inheritdoc cref="FirstObserved"/>
+    public void ForgetObserved(string key) => _firstObserved.TryRemove(key, out _);
+
     /// <summary>「到桩之后失联」已升级告警过的键（事件 2261、2262）：一种失联一次，恢复时 <see cref="Unsay"/>。</summary>
     public static string ChargingLossKey(string journeyId, string code) => $"charging-loss:{code}:{journeyId}";
 
