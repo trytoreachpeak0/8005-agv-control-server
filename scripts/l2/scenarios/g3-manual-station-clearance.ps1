@@ -156,8 +156,10 @@ $exchange = Wait-L2ConditionOrLast -Description 'the server answered the clearan
     -Criterion 'clearance-answered' -TimeoutSeconds 60 `
     -Probe {
         $request = @((Get-L2RealInbound $connection 'ManualStationClearanceConfirmationRequested') | Where-Object { $null -ne $_ }) | Select-Object -Last 1
-        if ($null -eq $request -or $null -eq $request.ResponseLine) { return $null }
-        [pscustomobject]@{ Request = $request; Result = ($request.ResponseLine | ConvertFrom-Json).payload }
+        # Get-L2RealInbound's shape: the first answer's type is .Response and its payload .ResponsePayload (ResponseLine is
+        # G3RecoveryCommon's shape and is absent here, which StrictMode turns into a throw).
+        if ($null -eq $request -or $request.Response -ne 'ManualStationClearanceConfirmationResult') { return $null }
+        [pscustomobject]@{ Request = $request; Result = $request.ResponsePayload }
     } `
     -Until { param($v) $null -ne $v }
 $status = Wait-L2ConditionOrLast -Description 'the HMI shows the confirmation released the charger' -Journal $journal `
