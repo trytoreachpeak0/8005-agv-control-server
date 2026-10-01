@@ -943,6 +943,8 @@ public sealed class ChargingCycleProgressTests
 
         for (int minute = 0; minute < 15; minute++)
         {
+            // Gaining 1% a minute: a battery that stood still this long would be no progress (control-server#407).
+            AtCharger(fleet, KeyA, 60 + minute, Charging);
             await fleet.HearFromEveryVehicleAsync();
             await fleet.RunRoundAsync(TimeSpan.FromMinutes(1));
         }

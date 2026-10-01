@@ -1311,6 +1311,7 @@ public sealed partial class MultiVehicleExecutionTests
 
         private JourneyRuntimeEngine CreateEngine()
         {
+            ControlServer.Host.Runtime.Charging.StationClearanceExit clearanceExit = CreateClearanceExit();
             WireToGateStore store = new(Context);
             IOptions<JourneyRuntimeOptions> options =
                 Microsoft.Extensions.Options.Options.Create(Options);
@@ -1392,7 +1393,8 @@ public sealed partial class MultiVehicleExecutionTests
                 _idleReturn?.Invoke(this) ?? IdleReturnTestKit.Create(Context, Options, Clock, board: IdleReturnBoard, chargingPolicy: ChargingPolicy),
                 ChargingPolicy,
                 ChargingTestKit.Create(
-                    Context, Options, Clock, Riot, Peer, Riot, Riot, RouteGraph(), ChargingBoard, ChargingLog));
+                    Context, Options, Clock, Riot, Peer, Riot, Riot, RouteGraph(), ChargingBoard, ChargingLog,
+                    clearanceExit: clearanceExit));
             return new JourneyRuntimeEngine(
                 Context,
                 Riot,
@@ -1430,12 +1432,35 @@ public sealed partial class MultiVehicleExecutionTests
                 ChargingPolicy,
                 orderCommands: new RiotOrderCommandService(Riot, new RiotOrderCommandAuditStore(Context), Riot, Clock),
                 idleReturnMaterializationFailures: IdleReturnMaterializationFailures,
-                clearanceExit: new ControlServer.Host.Runtime.Charging.StationClearanceExit(
-                    new ControlServer.Host.Runtime.Charging.FieldOperatorRoleRoster(Microsoft.Extensions.Options.Options.Create(ClearanceRoles)),
-                    Microsoft.Extensions.Options.Options.Create(ClearanceRoles),
-                    new ConfigurationBuilder().Build(),
-                    Microsoft.Extensions.Options.Options.Create(new VehicleFaultRecoveryOptions())));
+                clearanceExit: clearanceExit);
         }
+
+        /// <summary>
+        /// 引擎与充电分配共用的那一个出口判定。<see cref="HostRecoveryEntryOffered"/> 为真时 Host 入口算可用：开关打开、凭据变量（每个夹具一个名字）有值。
+        /// 判定在构造时取 Host 入口的快照，所以改了它要 <see cref="RecreateEngineAsync"/>。
+        /// </summary>
+        private ControlServer.Host.Runtime.Charging.StationClearanceExit CreateClearanceExit()
+        {
+            string variable = "W2G_TEST_RECOVERY_" + _hostCredentialSuffix;
+            Environment.SetEnvironmentVariable(variable, HostRecoveryEntryOffered ? "fixture-credential" : null);
+            return new ControlServer.Host.Runtime.Charging.StationClearanceExit(
+                new ControlServer.Host.Runtime.Charging.FieldOperatorRoleRoster(Microsoft.Extensions.Options.Options.Create(ClearanceRoles)),
+                Microsoft.Extensions.Options.Options.Create(ClearanceRoles),
+                new ConfigurationBuilder()
+                    .AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        [VehicleFaultRecoveryEndpoints.EnabledKey] = HostRecoveryEntryOffered ? "true" : "false",
+                    })
+                    .Build(),
+                Microsoft.Extensions.Options.Options.Create(new VehicleFaultRecoveryOptions { CredentialEnvironmentVariable = variable }));
+        }
+
+        private readonly string _hostCredentialSuffix = Guid.NewGuid().ToString("N");
+
+        /// <summary>
+        /// Host 的放宽类入口（桩与车的恢复、清桩）算不算可用（control-server#407：中断与无进展的隔离要它）。默认否；改了要 <see cref="RecreateEngineAsync"/>。
+        /// </summary>
+        public bool HostRecoveryEntryOffered { get; set; }
 
         /// <summary>
         /// 人工清桩的出口（control-server#406 审查 M1）：默认可用——名单里有一名 R-11、声明了车载端入口（Host 入口要一个有值的凭据变量，夹具不设

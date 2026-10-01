@@ -304,6 +304,7 @@ public sealed partial class JourneyRuntimeEngine
             // Read again: the code is no longer true.
             dispatchRound.Charging.Board.Unsay(
                 ChargingAllocationBoard.ChargingLossKey(runtime.JourneyId, ChargingExecutionReasons.OrderNotFound));
+            dispatchRound.Charging.Board.Unsay(EvidenceMissingKey(runtime.JourneyId));
             runtime.SetBlockReason(null, now);
             runtime.UpdatedAt = now;
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);

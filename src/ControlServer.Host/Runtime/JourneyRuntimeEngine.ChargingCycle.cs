@@ -122,6 +122,7 @@ public sealed partial class JourneyRuntimeEngine
         {
             // The vehicle may still be on the charger: everything is kept, nothing is sent (REQ-0287).
             board.BreakSampleRun(cycle.CycleId);
+            await BreakChargingProgressObservationAsync(cycle, cancellationToken).ConfigureAwait(false);
             await NameChargingLossAsync(runtime, stop, ChargingExecutionReasons.VehicleObservationLost, now, cancellationToken)
                 .ConfigureAwait(false);
             return;
@@ -146,7 +147,7 @@ public sealed partial class JourneyRuntimeEngine
 
         if (cycle.WireState == ChargingCycleWireStates.Charging)
         {
-            await JudgeChargingCompletionAsync(runtime, stop, cycle, vehicle, now, cancellationToken).ConfigureAwait(false);
+            await JudgeChargingCompletionAsync(runtime, stop, intent, cycle, vehicle, now, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -259,6 +260,7 @@ public sealed partial class JourneyRuntimeEngine
             ChargingAllocationBoard.ChargingLossKey(runtime.JourneyId, ChargingExecutionReasons.ArrivalNotProven));
         dispatchRound.Charging.Board.Unsay(
             ChargingAllocationBoard.ChargingLossKey(runtime.JourneyId, ChargingExecutionReasons.OrderNotFound));
+        dispatchRound.Charging.Board.Unsay(EvidenceMissingKey(runtime.JourneyId));
         await SendAtChargerSnapshotsAsync(runtime, arrivedPlan: true, charging, cancellationToken).ConfigureAwait(false);
     }
 
@@ -309,6 +311,7 @@ public sealed partial class JourneyRuntimeEngine
     private async Task JudgeChargingCompletionAsync(
         JourneyRuntimeRow runtime,
         JourneyStopRow stop,
+        OrderIntentRow intent,
         ChargingCycleRow cycle,
         RiotVehicleObservation vehicle,
         DateTimeOffset now,
@@ -320,6 +323,7 @@ public sealed partial class JourneyRuntimeEngine
             // Telemetry lost: the completion judgement waits, and the reading before the gap is never taken as still true --
             // the run of samples is broken, so the first fresh one after it only starts observing again.
             board.BreakSampleRun(cycle.CycleId);
+            await BreakChargingProgressObservationAsync(cycle, cancellationToken).ConfigureAwait(false);
             await NameChargingLossAsync(runtime, stop, ChargingExecutionReasons.BatteryTelemetryLost, now, cancellationToken)
                 .ConfigureAwait(false);
             return;
@@ -334,6 +338,11 @@ public sealed partial class JourneyRuntimeEngine
         int threshold = policy.Content.ChargingCompletionThresholdPercent;
         if (!continuous || battery < threshold)
         {
+            // Completion first (control-server#407): a reading that reaches the threshold completes the cycle whatever its
+            // batteryState says; only below it can a stop be an interruption, and only while charging is progress observed.
+            await ObserveChargingProgressAsync(
+                    runtime, stop, intent, cycle, vehicle, battery, continuous, policy.Content, now, cancellationToken)
+                .ConfigureAwait(false);
             return;
         }
 
@@ -385,6 +394,11 @@ public sealed partial class JourneyRuntimeEngine
     /// <summary>
     /// 一种失联：第一次写上它的码；持续超过 <c>JourneyRuntime:OwnOrderRebuildRepeatWindow</c> 升级告警一次。别的什么也不做。
     /// </summary>
+    /// <remarks>
+    /// <b>按旅程计时，不按码计时</b>（control-server#407 S-e）：证据缺失那一族码（<see cref="ChargingExecutionReasons.EvidenceMissingCodes"/>）
+    /// 之间来回切换——读数时有时无时，到桩未证实与车辆观测丢失会一轮一换——不是一次新的缺失：码换成这一轮的，开始时刻保留（落库，重启不丢），
+    /// 升级告警这一趟只报一次。证据真正回来、码被清掉时才重新起算。
+    /// </remarks>
     private async Task NameChargingLossAsync(
         JourneyRuntimeRow runtime,
         JourneyStopRow stop,
@@ -394,15 +408,22 @@ public sealed partial class JourneyRuntimeEngine
     {
         if (!string.Equals(runtime.BlockReasonCode, code, StringComparison.Ordinal))
         {
-            runtime.SetBlockReason(code, now);
+            if (runtime.BlockReasonCode is { } held && ChargingExecutionReasons.EvidenceMissingCodes.Contains(held) &&
+                ChargingExecutionReasons.EvidenceMissingCodes.Contains(code))
+            {
+                runtime.EscalateBlockReason(code);
+            }
+            else
+            {
+                runtime.SetBlockReason(code, now);
+            }
             runtime.UpdatedAt = now;
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            return;
         }
 
         if (runtime.BlockReasonSince is not { } since ||
             now - since <= runtimeOptions.OwnOrderRebuildRepeatWindow ||
-            !dispatchRound.Charging.Board.FirstTime(ChargingAllocationBoard.ChargingLossKey(runtime.JourneyId, code)))
+            !dispatchRound.Charging.Board.FirstTime(EvidenceMissingKey(runtime.JourneyId)))
         {
             return;
         }
@@ -417,10 +438,17 @@ public sealed partial class JourneyRuntimeEngine
         }
     }
 
+    /// <summary>证据缺失那一族码这一趟已升级告警过的键：按旅程，不按码（control-server#407 S-e）。</summary>
+    private static string EvidenceMissingKey(string journeyId) =>
+        ChargingAllocationBoard.ChargingLossKey(journeyId, "EVIDENCE_MISSING");
+
     /// <summary>单 <c>SUCCESS</c> 或到桩之后：停滞的单留下的码已经不成立；到桩之后这一段自己写的码由它自己清（<see cref="ChargingExecutionReasons.AtChargerCodes"/>）。</summary>
     private async Task ClearCodesNotTheChargersAsync(JourneyRuntimeRow runtime, DateTimeOffset now, CancellationToken cancellationToken)
     {
-        if (runtime.BlockReasonCode is not { } code || ChargingExecutionReasons.AtChargerCodes.Contains(code))
+        // The evidence-missing codes are cleared by the evidence coming back, not by the order reading SUCCESS: clearing one
+        // here would restart the time it has been missing (control-server#407 S-e).
+        if (runtime.BlockReasonCode is not { } code || ChargingExecutionReasons.AtChargerCodes.Contains(code) ||
+            ChargingExecutionReasons.EvidenceMissingCodes.Contains(code))
         {
             return;
         }
@@ -440,6 +468,7 @@ public sealed partial class JourneyRuntimeEngine
             return;
         }
         dispatchRound.Charging.Board.Unsay(ChargingAllocationBoard.ChargingLossKey(runtime.JourneyId, runtime.BlockReasonCode));
+        dispatchRound.Charging.Board.Unsay(EvidenceMissingKey(runtime.JourneyId));
         runtime.SetBlockReason(null, now);
         runtime.UpdatedAt = now;
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
