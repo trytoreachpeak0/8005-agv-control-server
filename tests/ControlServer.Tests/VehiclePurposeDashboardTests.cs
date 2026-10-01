@@ -70,7 +70,7 @@ public sealed class VehiclePurposeDashboardTests
             Assert.Contains("充电旅程 charging:K-02:1", RowOf(html, "AGV-02"), StringComparison.Ordinal);
             Assert.Contains("IDLE_RETURN（空闲返回", RowOf(html, "AGV-03"), StringComparison.Ordinal);
             Assert.Contains("空闲返回记录 idle-return:K-03:", RowOf(html, "AGV-03"), StringComparison.Ordinal);
-            Assert.Contains("无（没有任何用途占着这辆车", RowOf(html, "AGV-04"), StringComparison.Ordinal);
+            Assert.Contains("<td>无（没有任何用途占着这辆车）</td>", RowOf(html, "AGV-04"), StringComparison.Ordinal);
         }
     }
 
@@ -247,6 +247,7 @@ public sealed class VehiclePurposeDashboardTests
             {
                 // The step cell and the holding say "occupied until departure evidence", never "空闲" (idle) about the vehicle.
                 string stepCell = Cell(row, 1);
+                Assert.Contains("服务端记录这个等待点被它占用", stepCell, StringComparison.Ordinal);
                 Assert.Contains("等待点占用直到离点证据满足", stepCell, StringComparison.Ordinal);
                 Assert.DoesNotContain("空闲", stepCell, StringComparison.Ordinal);
                 Assert.DoesNotContain("空闲", Cell(row, 2), StringComparison.Ordinal);
@@ -309,12 +310,12 @@ public sealed class VehiclePurposeDashboardTests
             Assert.Contains(IdleReturnsQueryEndpoint.NoPassCompletedYet, RowOf(freshHtml, "AGV-01"), StringComparison.Ordinal);
         }
 
-        board.BeginPass(At);
+        long pass1 = board.BeginPass(At);
         board.Record("AGV-01", IdleReturnReasons.CooldownAfterEndedOrder, "");
         board.Record("AGV-02", IdleReturnReasons.NoWaitingPointAvailable, "214=WAITING_POINT_RESERVED_OR_OCCUPIED");
-        board.EndPass(DateTimeOffset.UtcNow);
+        board.EndPass(pass1, DateTimeOffset.UtcNow);
         // The next pass has begun and recorded AGV-01 anew, but has not finished: the card still reads the completed one.
-        board.BeginPass(At.AddSeconds(2));
+        long pass2 = board.BeginPass(At.AddSeconds(2));
         board.Record("AGV-01", IdleReturnReasons.StoppedAfterRepeatedEndedOrders, "");
 
         (JsonDocument fact, string html) = await ReadAsync(database, "idle-returns", board);
@@ -338,7 +339,7 @@ public sealed class VehiclePurposeDashboardTests
             AssertOnlyLost(fact.RootElement, html);
         }
 
-        board.EndPass(DateTimeOffset.UtcNow);
+        board.EndPass(pass2, DateTimeOffset.UtcNow);
         (JsonDocument next, string nextHtml) = await ReadAsync(database, "idle-returns", board);
         using (next)
         {
@@ -365,12 +366,12 @@ public sealed class VehiclePurposeDashboardTests
             SeedIdleReturnStep(context, IdleReturnsQueryEndpoint.StepEnRoute, null, IdleReturnIdentity.JourneyIdFor("K-01", At));
         });
         IdleReturnVerdictBoard board = new();
-        board.BeginPass(DateTimeOffset.UtcNow.AddSeconds(-31));
+        long pass3 = board.BeginPass(DateTimeOffset.UtcNow.AddSeconds(-31));
         board.Record("AGV-01", IdleReturnReasons.Committed, "j");
         board.Record("AGV-02", IdleReturnReasons.CooldownAfterEndedOrder, "");
-        board.EndPass(DateTimeOffset.UtcNow.AddSeconds(-30));
+        board.EndPass(pass3, DateTimeOffset.UtcNow.AddSeconds(-30));
         // A pass that began and then threw before it finished: it publishes nothing.
-        board.BeginPass(DateTimeOffset.UtcNow.AddSeconds(-20));
+        _ = board.BeginPass(DateTimeOffset.UtcNow.AddSeconds(-20));
         board.Record("AGV-02", IdleReturnReasons.EvaluationFailed, "InvalidOperationException");
 
         string expected = IdleReturnsQueryEndpoint.PassNotRunning(TimeSpan.FromSeconds(6));
@@ -421,9 +422,9 @@ public sealed class VehiclePurposeDashboardTests
         Assert.Equal(TimeSpan.FromSeconds(2), FleetOptions.Value.PollInterval);
         await using DashboardDatabase database = await DashboardDatabase.CreateAsync();
         IdleReturnVerdictBoard board = new();
-        board.BeginPass(DateTimeOffset.UtcNow.AddSeconds(-11));
+        long pass5 = board.BeginPass(DateTimeOffset.UtcNow.AddSeconds(-11));
         board.Record("AGV-01", IdleReturnReasons.CooldownAfterEndedOrder, "");
-        board.EndPass(DateTimeOffset.UtcNow.AddSeconds(-10));
+        board.EndPass(pass5, DateTimeOffset.UtcNow.AddSeconds(-10));
 
         IOptions<JourneyRuntimeOptions> slow = Options.Create(new JourneyRuntimeOptions
         {
@@ -450,16 +451,52 @@ public sealed class VehiclePurposeDashboardTests
     public void TheVerdictBoardStillReportsAChangeOnlyWhenTheVerdictChangesAcrossPasses()
     {
         IdleReturnVerdictBoard board = new();
-        board.BeginPass(At);
+        long pass6 = board.BeginPass(At);
         Assert.True(board.Record("AGV-01", IdleReturnReasons.Disabled, ""));
-        board.EndPass(At);
-        board.BeginPass(At.AddSeconds(2));
+        board.EndPass(pass6, At);
+        long pass7 = board.BeginPass(At.AddSeconds(2));
         Assert.False(board.Record("AGV-01", IdleReturnReasons.Disabled, ""));
         Assert.True(board.Record("AGV-01", IdleReturnReasons.Committed, "j"));
-        board.EndPass(At.AddSeconds(2));
+        board.EndPass(pass7, At.AddSeconds(2));
         // Outside any pass (a caller that never began one) the change detection still works and nothing is published.
         Assert.False(board.Record("AGV-01", IdleReturnReasons.Committed, "j"));
         Assert.Equal(2, board.LatestCompletedPass!.Number);
+    }
+
+    /// <summary>
+    /// 两轮重叠（审查低优先级项）：先开的一轮凭它的令牌提交时，后开的一轮已经接管了暂存，先开的那一轮什么也不发布；后开的一轮
+    /// 凭自己的令牌提交，发布的是它自己的结论。
+    /// </summary>
+    [Fact]
+    public void AnOverlappedPassCannotPublishTheNextPassesHalfFinishedStaging()
+    {
+        IdleReturnVerdictBoard board = new();
+        long first = board.BeginPass(At);
+        board.Record("AGV-01", IdleReturnReasons.Disabled, "");
+        long second = board.BeginPass(At.AddSeconds(1));
+        board.Record("AGV-02", IdleReturnReasons.Committed, "j");
+
+        board.EndPass(first, At.AddSeconds(2));
+        Assert.Null(board.LatestCompletedPass);
+
+        board.EndPass(second, At.AddSeconds(3));
+        IdleReturnBoardPass pass = board.LatestCompletedPass!;
+        Assert.Equal(["AGV-02"], pass.Verdicts.Keys);
+        Assert.Equal(At.AddSeconds(3), pass.CompletedAt);
+    }
+
+    /// <summary>服务端没给 <c>holding</c> 的一行补齐表头那五格，不错列（审查 S3）。</summary>
+    [Fact]
+    public void AStationRowWithoutAHoldingStillFillsTheFiveHoldingCells()
+    {
+        using JsonDocument fact = JsonDocument.Parse(
+            """{"registration":null,"points":[{"mapId":26,"stationId":211,"stationName":"WP-211","vehicleScope":[]}],"unavailableVehicles":[]}""");
+        string html = new WaitingPointCard().RenderFact(fact.RootElement);
+        string row = RowWith(html, "<td>211</td>");
+        Assert.Equal(10, row.Split("<td>").Length - 1);
+        Assert.Contains("（服务端未提供该字段）", row, StringComparison.Ordinal);
+        int headers = html.Split("<th>").Length - 1;
+        Assert.Equal(headers, row.Split("<td>").Length - 1);
     }
 
     // ---------------- 原因码说明 ----------------
@@ -486,16 +523,75 @@ public sealed class VehiclePurposeDashboardTests
                 Assert.NotEqual(transport, description);
             }
         }
-        // 共用码在空闲返回旅程上会被步骤分类认出来，不会落到「已承诺」的兜底里。
-        foreach (string code in IdleReturnCodeDescriptions.SharedCodesOnIdleReturnJourneys.Keys.Where(code =>
-                     code is not (JourneyRuntimeEngine.CheckpointWaitReason or JourneyRuntimeEngine.CheckpointWaitExceededReason)))
-        {
-            JourneyRuntimeRow journey = IdleReturnRuntime("K-01", IdleReturnIdentity.JourneyIdFor("K-01", At));
-            journey.SetBlockReason(code, At);
-            Assert.NotEqual(
-                IdleReturnsQueryEndpoint.StepCommitted,
-                IdleReturnsQueryEndpoint.Classify(null, journey, "CONFIRMED", "ORDER-1", null));
-        }
+    }
+
+    /// <summary>
+    /// 开着的空闲返回旅程上每一个码 → 期望的步骤（独立审查 S2）。逐码写死期望值：码进错了组（例如从「失败待人工」里漏掉
+    /// <c>HELD_ORDER_RESUMED_WITHOUT_CONTINUE</c>），它会落到意图状态的兜底（单已确认就是「在途」），这里就红。
+    /// 每行带上这个码在现实里出现时意图的状态。
+    /// </summary>
+    public static TheoryData<string, string, string> CodeToStep { get; } = new()
+    {
+        { JourneyRuntimeEngine.OrderHangReason, "CONFIRMED", IdleReturnsQueryEndpoint.StepOrderStalled },
+        { JourneyRuntimeEngine.OrderStateUnrecognizedReason, "CONFIRMED", IdleReturnsQueryEndpoint.StepOrderStalled },
+        { VehicleFaultEvidence.OrderFailed, "CONFIRMED", IdleReturnsQueryEndpoint.StepFailedAwaitingManual },
+        { VehicleFaultEvidence.DoorNotProvenLocked, "CONFIRMED", IdleReturnsQueryEndpoint.StepFailedAwaitingManual },
+        { JourneyRuntimeEngine.HeldOrderResumedWithoutContinueReason, "CONFIRMED", IdleReturnsQueryEndpoint.StepFailedAwaitingManual },
+        { JourneyRuntimeEngine.CheckpointWaitReason, "CONFIRMED", IdleReturnsQueryEndpoint.StepEnRoute },
+        { JourneyRuntimeEngine.CheckpointWaitExceededReason, "CONFIRMED", IdleReturnsQueryEndpoint.StepEnRoute },
+        { JourneyRuntimeEngine.AdvanceFailedReason, "CONFIRMED", IdleReturnsQueryEndpoint.StepAdvanceFailed },
+        { IdleReturnExecutionReasons.DepartureNotProven, "PENDING_RECONCILIATION", IdleReturnsQueryEndpoint.StepCommitted },
+        { IdleReturnExecutionReasons.WaitingPointLostOrderInFlight, "CONFIRMED", IdleReturnsQueryEndpoint.StepHeldAwaitingStop },
+        { IdleReturnExecutionReasons.OrderEndedStopNotProven, "CONFIRMED", IdleReturnsQueryEndpoint.StepHeldAwaitingStop },
+        { "WAITING_POINT_ResultUnknown", "PENDING_RECONCILIATION", IdleReturnsQueryEndpoint.StepCreateResultUnknown },
+        { "WAITING_POINT_CreateDispatchDisabled", "PENDING_RECONCILIATION", IdleReturnsQueryEndpoint.StepCommitted },
+        { "WAITING_POINT_UnsupportedOrderShape", "PENDING_RECONCILIATION", IdleReturnsQueryEndpoint.StepCommitted },
+    };
+
+    [Theory]
+    [MemberData(nameof(CodeToStep))]
+    public void EachCodeOnAnOpenIdleReturnJourneyMapsToItsStep(string code, string intentStatus, string expected)
+    {
+        JourneyRuntimeRow journey = IdleReturnRuntime("K-01", IdleReturnIdentity.JourneyIdFor("K-01", At));
+        journey.SetBlockReason(code, At);
+        Assert.Equal(
+            expected,
+            IdleReturnsQueryEndpoint.Classify(
+                null, journey, intentStatus, intentStatus == "CONFIRMED" ? "ORDER-1" : null, null));
+    }
+
+    /// <summary>
+    /// 对照表盖住开着的空闲返回旅程上可能出现的每一个码（保持类、建单结果码、共用码）：新加一个而没进表就红。收尾码写在已完成的
+    /// 旅程上，不走步骤分类。
+    /// </summary>
+    [Fact]
+    public void TheCodeToStepTableCoversEveryCodeAnOpenIdleReturnJourneyCanCarry()
+    {
+        HashSet<string> table = [.. CodeToStep.Select(row => row.Data.Item1)];
+        string[] inFlight =
+        [
+            IdleReturnExecutionReasons.DepartureNotProven,
+            IdleReturnExecutionReasons.WaitingPointLostOrderInFlight,
+            IdleReturnExecutionReasons.OrderEndedStopNotProven,
+            .. IdleReturnExecutionReasons.LegOutcomeCodes,
+            .. IdleReturnCodeDescriptions.SharedCodesOnIdleReturnJourneys.Keys,
+        ];
+        Assert.DoesNotContain(inFlight, code => !table.Contains(code));
+    }
+
+    /// <summary>
+    /// 检查点等待与等待超时是两件事，现场要一眼分得开（调度 10-01、审查 MJ）：期望值写成字面量，不从被测的说明表里取。
+    /// </summary>
+    [Fact]
+    public void TheCheckpointWaitAndTheCheckpointWaitExceededReadDifferently()
+    {
+        string wait = IdleReturnCodeDescriptions.DescribeJourneyCode("VEHICLE_WAITING_AT_CHECKPOINT")!;
+        string exceeded = IdleReturnCodeDescriptions.DescribeJourneyCode("VEHICLE_CHECKPOINT_WAIT_EXCEEDED")!;
+        Assert.Equal("开往等待点的车停在 RIoT 的检查点前等放行：这是 RIoT 的交通管制，服务端不干预，放行后自动继续", wait);
+        Assert.Equal(
+            "开往等待点的车在 RIoT 检查点前等放行，已超过服务端的等待时限：服务端只告警，不急停、不另选等待点。"
+            + "请到 RIoT 查看交通管制为什么一直不放行",
+            exceeded);
     }
 
     /// <summary>

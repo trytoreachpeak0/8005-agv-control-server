@@ -1307,7 +1307,8 @@ public sealed partial class IdleReturnExecutionTests
         DbCommandInterceptor? commands = null)
     {
         FleetFixture fleet = await FleetFixture.CreateAsync(
-            configure: options => options.Fleet = options.Fleet[..vehicles], withRouteGraph: true, commands: commands);
+            configure: options => options.Fleet = options.Fleet[..vehicles], withRouteGraph: true,
+            commands: RecordIdleReturnCodes(commands));
         await fleet.ReplaceRouteGraphAsync(Edges(), Stations());
         await fleet.EnableIdleReturnAsync(points ?? [Near]);
         fleet.Catalog.Set([]);

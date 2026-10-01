@@ -17,6 +17,10 @@ public static class StationHoldingRendering
     /// <summary>表头里与 <see cref="Cells"/> 对应的那几列。</summary>
     public const string HeaderCells = "<th>状态</th><th>持有车辆</th><th>持有者</th><th>进入该状态</th><th>依据版本</th>";
 
+    /// <summary>服务端没给 <c>holding</c> 时补齐与 <see cref="HeaderCells"/> 对应的五格，第一格说明缺了什么，表格不错列。</summary>
+    public static string MissingCells() =>
+        DashboardPageRenderer.Cell("（服务端未提供该字段）") + string.Concat(Enumerable.Repeat(DashboardPageRenderer.Cell(""), 4));
+
     /// <summary>一个站点的独占写成五格。</summary>
     public static string Cells(JsonElement holding)
     {

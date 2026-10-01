@@ -35,7 +35,7 @@ public sealed class FixedTaskStationCard : IDashboardCard
                     .Append(DashboardPageRenderer.Cell(Binding(station)))
                     .Append(station.TryGetProperty("holding", out JsonElement holding)
                         ? StationHoldingRendering.Cells(holding)
-                        : DashboardPageRenderer.Cell("（服务端未提供该字段）"))
+                        : StationHoldingRendering.MissingCells())
                     .Append("</tr>");
             }
         }

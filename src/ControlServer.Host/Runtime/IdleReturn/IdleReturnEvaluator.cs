@@ -132,10 +132,10 @@ public sealed class IdleReturnEvaluator(
         ArgumentNullException.ThrowIfNull(candidates);
         // control-server#392: every call is one pass, the early returns included, so a vehicle not handed over this round reads
         // as not evaluated rather than as its previous verdict.
-        verdictBoard.BeginPass(timeProvider.GetUtcNow());
+        long pass = verdictBoard.BeginPass(timeProvider.GetUtcNow());
         if (candidates.Count == 0)
         {
-            verdictBoard.EndPass(timeProvider.GetUtcNow());
+            verdictBoard.EndPass(pass, timeProvider.GetUtcNow());
             return [];
         }
 
@@ -143,7 +143,7 @@ public sealed class IdleReturnEvaluator(
         if (!_options.Enabled)
         {
             IdleReturnVerdict[] disabled = [.. candidates.Select(candidate => Refuse(candidate.Vehicle, IdleReturnReasons.Disabled, ""))];
-            verdictBoard.EndPass(timeProvider.GetUtcNow());
+            verdictBoard.EndPass(pass, timeProvider.GetUtcNow());
             return disabled;
         }
 
@@ -179,7 +179,7 @@ public sealed class IdleReturnEvaluator(
             }
         }
 
-        verdictBoard.EndPass(timeProvider.GetUtcNow());
+        verdictBoard.EndPass(pass, timeProvider.GetUtcNow());
         return verdicts;
     }
 
@@ -577,6 +577,8 @@ public sealed class IdleReturnVerdictBoard
     private readonly Dictionary<string, (string Reason, string Detail)> _last = new(StringComparer.Ordinal);
     private Dictionary<string, IdleReturnBoardVerdict>? _staging;
     private DateTimeOffset _stagingStartedAt;
+    private long _stagingToken;
+    private long _tokens;
     private long _passes;
     private IdleReturnBoardPass? _completed;
 
@@ -609,22 +611,29 @@ public sealed class IdleReturnVerdictBoard
         }
     }
 
-    /// <summary>一轮评估开始：此后的结论记进这一轮的暂存，已完成的那一份不动。</summary>
-    public void BeginPass(DateTimeOffset startedAt)
+    /// <summary>
+    /// 一轮评估开始：此后的结论记进这一轮的暂存，已完成的那一份不动。答这一轮的令牌，<see cref="EndPass"/> 凭它提交。
+    /// </summary>
+    public long BeginPass(DateTimeOffset startedAt)
     {
         lock (_gate)
         {
             _staging = new Dictionary<string, IdleReturnBoardVerdict>(StringComparer.Ordinal);
             _stagingStartedAt = startedAt;
+            _stagingToken = ++_tokens;
+            return _stagingToken;
         }
     }
 
-    /// <summary>一轮评估走完：这一轮评估过的车与结论整份成为「最近一轮已完成的评估」。没评估到的车不在其中。</summary>
-    public void EndPass(DateTimeOffset completedAt)
+    /// <summary>
+    /// 一轮评估走完：这一轮评估过的车与结论整份成为「最近一轮已完成的评估」。没评估到的车不在其中。令牌不是当前这一轮的（两轮重叠，
+    /// 后开的那一轮已经接管了暂存）时什么也不提交，免得先开的一轮把后一轮的半截暂存当成完整的一轮发布出去。
+    /// </summary>
+    public void EndPass(long token, DateTimeOffset completedAt)
     {
         lock (_gate)
         {
-            if (_staging is null)
+            if (_staging is null || token != _stagingToken)
             {
                 return;
             }

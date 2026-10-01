@@ -63,7 +63,7 @@ internal sealed class IdleReturnsQueryEndpoint : IDashboardQueryEndpoint
             [StepHeldAwaitingStop] = "保持中：单已在 RIoT 终结或等待点已不归它，服务端在等车证明停稳、身上没有单，才结束这趟；期间用途与等待点都不放",
             [StepFailedAwaitingManual] = "失败待人工：单失败或行驶中门锁出问题，车已判为疑似故障，用途与等待点预占保持，要现场人员经故障清除入口处理",
             [StepAdvanceFailed] = "推进出错：服务端推进这趟空闲返回时出错，它停在原处、一步没动，每一轮重试",
-            [StepAtPoint] = "在点：等待点占用直到离点证据满足（车停在等待点上，这个点一直归它，车离开之后才放）",
+            [StepAtPoint] = "在点：服务端记录这个等待点被它占用（等待点占用直到离点证据满足才放）",
         };
 
     internal static IReadOnlyDictionary<string, string> BranchDescriptions { get; } =
@@ -110,7 +110,8 @@ internal sealed class IdleReturnsQueryEndpoint : IDashboardQueryEndpoint
 
     /// <summary>
     /// 评估在不在跑的时效窗口是几个引擎轮询间隔（<c>JourneyRuntime:PollInterval</c>）。最近一轮已完成的评估走完超过这么久，
-    /// 就是评估没在跑——全车队没有空闲车时派车轮不跑（引擎在派车之前退出）、引擎这一轮出错、进程卡住，三种都是这样。
+    /// 就是评估没在跑：全车队没有空闲车时派车轮不跑（引擎在派车之前退出），MesIngest 读不到时派车轮只做充电分配就返回
+    /// （<c>DispatchRoundRunner</c> 读目录失败那一支），引擎这一轮出错，或一轮本身跑得比窗口还慢（例如 RIoT 应答慢）。
     /// </summary>
     /// <remarks>
     /// 判的是「评估还在不在跑」，不是重算结论：窗口内照写评估器的结论，窗口外一律不写结论。与会话存活（<c>SessionLiveness.Timeout</c>，
@@ -151,7 +152,9 @@ internal sealed class IdleReturnsQueryEndpoint : IDashboardQueryEndpoint
     internal static string PassNotRunning(TimeSpan window) =>
         string.Create(
             System.Globalization.CultureInfo.InvariantCulture,
-            $"本轮没有评估这辆车：最近 {window.TotalSeconds:0.###} 秒内没有完成过一轮空闲返回评估（全车队没有空闲车时派车轮不跑，引擎出错时也是），这里不显示更早的结论");
+            $"本轮没有评估这辆车：最近 {window.TotalSeconds:0.###} 秒内没有完成过一轮空闲返回评估。")
+        + "可能的原因：全车队没有空闲车（派车轮不跑）、MesIngest 读不到（这一轮不派车）、引擎这一轮出错、一轮跑得太慢（例如 RIoT 应答慢）。"
+        + "这里不显示更早的结论";
 
     public string Path => DashboardQueryEndpointCatalog.QueryPrefix + "idle-returns";
 
