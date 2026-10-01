@@ -404,9 +404,10 @@ public sealed partial class OnboardMessageProcessor(
                     {
                         pendingAttempts.Add(attempt.GetString()!);
                     }
-                    string[] pendingResults = payload.GetProperty("pendingResults")
+                    ReportedPendingResult[] pendingResults = payload.GetProperty("pendingResults")
                         .EnumerateArray()
-                        .Select(item => RequiredString(item, "messageId"))
+                        .Select(item => new ReportedPendingResult(
+                            RequiredString(item, "messageId"), RequiredString(item, "contentSha256")))
                         .ToArray();
                     string? unsettledAttemptId = payload.GetProperty("unsettledSlotOperationAttemptId").ValueKind == JsonValueKind.Null
                         ? null

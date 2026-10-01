@@ -927,14 +927,13 @@ public sealed class OnboardMessageProcessorTests
     /// resends its unacknowledged result first, the server processes it under the new generation, and only then does
     /// the session's RecoveryStateReport name that result as pending. The vehicle's later replay of the result is
     /// byte-identical to the line already processed in this generation, so the inbox answers it from its first
-    /// response and nothing reconciles it.
+    /// response and nothing reconciles it on the way in.
     /// </summary>
     /// <remarks>
     /// hmi#233 real-rig run 36828773806: generation 7 processed the UNKNOWN result at 07:16:24.72, its report listed it
     /// at 07:16:26.69, a compensation closed the attempt as Cancelled at 07:16:32 -- and the session stayed on
     /// PENDING_FACT_RECONCILIATION_REQUIRED, heartbeats flowing, until the scenario timed out. The compensation is
-    /// stood in for here by closing the operation and running what the recovery-result path runs after it
-    /// (<c>SettleReportedAttemptsAsync</c>, then <c>DecideReadinessAsync</c>).
+    /// stood in for by <see cref="CloseAttemptAsync"/>.
     /// </remarks>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-03")]
@@ -950,114 +949,30 @@ public sealed class OnboardMessageProcessorTests
             CancellationToken token = TestContext.Current.CancellationToken;
             await using SqliteConnection connection = new("Data Source=:memory:");
             await connection.OpenAsync(token);
-            DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
-                .UseSqlite(connection)
-                .Options;
-            await using ControlServerDbContext context = new(options);
-            await context.Database.EnsureCreatedAsync(token);
-            IConfiguration configuration = new ConfigurationBuilder()
-                .AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["OnboardTransport:CredentialEnvironmentVariable"] = credentialVariable
-                })
-                .Build();
+            await using ControlServerDbContext context = await PendingResultContextAsync(connection, token);
             WireToGateStore store = new(context);
-            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
-                context, store, new FixedTimeProvider(), configuration);
+            OnboardMessageProcessor processor = PendingResultProcessor(context, store, credentialVariable);
             OnboardConnectionState firstState = new();
             await ReachReadyAsync(processor, firstState, credential, token);
-
             const string attemptId = "00000000-0000-4000-8000-000000000420";
-            const string demandId = "00000000-0000-4000-8000-000000000411";
-            await store.AcceptWithOrderIntentAsync(
-                new AcceptedDemandSnapshot(
-                    demandId,
-                    "SUBLOT-004|WIRE_TO_GATE",
-                    7,
-                    "00000000-0000-4000-8000-000000000499",
-                    21,
-                    new DateTimeOffset(2026, 8, 25, 9, 0, 0, TimeSpan.Zero)),
-                new OrderIntent(
-                    "00000000-0000-4000-8000-000000000498",
-                    demandId,
-                    "W2G-D-411-PICKUP-1",
-                    "TO_PICKUP",
-                    "PICKUP-01",
-                    new DateTimeOffset(2026, 8, 25, 9, 0, 0, TimeSpan.Zero)),
-                token);
-            await store.PrepareSlotOperationAsync(
-                new StationOperationPlan(
-                    attemptId,
-                    demandId,
-                    "SUBLOT-004",
-                    [1],
-                    SlotOperationType.Load,
-                    0,
-                    new string('c', 64),
-                    new DateTimeOffset(2026, 8, 25, 9, 0, 0, TimeSpan.Zero)),
-                "00000000-0000-4000-8000-000000000419",
-                "load-command-json",
-                token);
+            await PrepareUnknownLoadAsync(store, attemptId, "00000000-0000-4000-8000-000000000411", "4", token);
 
             // The settlement result goes out in the first session and is processed, but its acknowledgement never
             // reaches the vehicle.
             string original = Envelope("OperationResult", attemptId, firstState.SessionGeneration,
-                OperationResultPayload(demandId, attemptId, "LOAD", "UNKNOWN", overallOutcome: "UNKNOWN"));
+                OperationResultPayload("00000000-0000-4000-8000-000000000411", attemptId, "LOAD", "UNKNOWN",
+                    overallOutcome: "UNKNOWN"));
             await processor.ProcessAsync(original, firstState, token);
 
             OnboardConnectionState secondState = new();
-            await processor.ProcessAsync(
-                Envelope("SessionHello", Guid.NewGuid().ToString("D"), null,
-                    new { protocolReleaseIdentity = ReleaseIdentity(), credentialProof = credential }),
-                secondState,
-                token);
-            long secondGeneration = secondState.SessionGeneration!.Value;
-            JsonNode reboundNode = JsonNode.Parse(original)!;
-            reboundNode["sessionGeneration"] = secondGeneration;
-            string rebound = reboundNode.ToJsonString();
-
+            long secondGeneration = await OpenSessionAsync(processor, secondState, credential, token);
+            string rebound = Rebound(original, secondGeneration);
             // The handshake opens by resending the outbox: the rebound result is processed in this generation while
             // the session has no report yet, so there is nothing on the pending list to take it off.
             await processor.ProcessAsync(rebound, secondState, token);
-            await processor.ProcessAsync(
-                Envelope("CapabilitySnapshot", Guid.NewGuid().ToString("D"), secondGeneration,
-                    new { capabilityVersion = 1, activeSlotConfigurationFingerprint = new string('0', 64) }),
-                secondState,
-                token);
-            await processor.ProcessAsync(
-                Envelope("SafetyStateSnapshot", Guid.NewGuid().ToString("D"), secondGeneration,
-                    new { safetyStateVersion = 1, safety = Safety(departureSafe: true) }),
-                secondState,
-                token);
-            string resultContentSha256;
-            using (JsonDocument originalDocument = JsonDocument.Parse(original))
-            {
-                resultContentSha256 = originalDocument.RootElement
-                    .GetProperty("payload").GetProperty("resultContentSha256").GetString()!;
-            }
             // The vehicle had not settled the attempt yet when it built the report, so it names the result as pending.
-            await processor.ProcessAsync(
-                Envelope("RecoveryStateReport", Guid.NewGuid().ToString("D"), secondGeneration,
-                    new
-                    {
-                        reportId = Guid.NewGuid().ToString("D"),
-                        unsettledSlotOperationAttemptId = attemptId,
-                        provenRecoveryCheckpoint = "SAFE_FINISH_REACHED",
-                        activeUnlockSlots = Array.Empty<int>(),
-                        forcedRecoveryGeneration = 0,
-                        pendingResults = new[]
-                        {
-                            new
-                            {
-                                messageType = "OperationResult",
-                                messageId = attemptId,
-                                businessId = attemptId,
-                                contentSha256 = resultContentSha256
-                            }
-                        }
-                    }),
-                secondState,
-                token);
+            await FinishHandshakeAsync(
+                processor, secondState, attemptId, ResultContentSha256(original), token);
 
             // After the handshake the vehicle replays the result so the server can reconcile it -- byte for byte the
             // line this generation already processed.
@@ -1066,14 +981,7 @@ public sealed class OnboardMessageProcessorTests
             Assert.Equal(WireContentHash(rebound), AcceptedContentSha256(replayAck));
 
             // A compensation then closes the attempt.
-            context.ChangeTracker.Clear();
-            StationOperationRow operation = await context.StationOperations
-                .SingleAsync(row => row.SlotOperationAttemptId == attemptId, token);
-            operation.Status = StationOperationStatus.Cancelled;
-            await context.SaveChangesAsync(token);
-            context.ChangeTracker.Clear();
-            await store.SettleReportedAttemptsAsync("AGV-001", secondGeneration, token);
-            SessionReadinessDecision decision = await store.DecideReadinessAsync("AGV-001", secondGeneration, token);
+            SessionReadinessDecision decision = await CloseAttemptAsync(context, store, attemptId, secondGeneration, token);
 
             SessionRecoveryRow session = await context.SessionRecoveries.AsNoTracking().SingleAsync(token);
             // One assertion over all three, so a red names the whole state rather than its first difference.
@@ -1089,6 +997,249 @@ public sealed class OnboardMessageProcessorTests
         {
             Environment.SetEnvironmentVariable(credentialVariable, null);
         }
+    }
+
+    /// <summary>
+    /// The ordinary order inside one generation, kept as it was by control-server#435: a report naming a result this
+    /// server has not processed keeps it pending -- nothing reconciles a result it has not seen -- and the result
+    /// arriving afterwards takes it off.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-03")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-OPERATION-RESULT-UNKNOWN-RECONCILE")]
+    public async Task AReportedResultNotYetProcessedStaysPendingUntilItArrivesInTheSameGeneration()
+    {
+        const string credentialVariable = "CONTROL_SERVER_TEST_REPORT_FIRST_RECONCILE_CREDENTIAL";
+        const string credential = "test-credential-not-for-production";
+        Environment.SetEnvironmentVariable(credentialVariable, credential);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await PendingResultContextAsync(connection, token);
+            WireToGateStore store = new(context);
+            OnboardMessageProcessor processor = PendingResultProcessor(context, store, credentialVariable);
+            await ReachReadyAsync(processor, new OnboardConnectionState(), credential, token);
+            const string attemptId = "00000000-0000-4000-8000-000000000520";
+            const string demandId = "00000000-0000-4000-8000-000000000511";
+            await PrepareUnknownLoadAsync(store, attemptId, demandId, "5", token);
+
+            OnboardConnectionState secondState = new();
+            long secondGeneration = await OpenSessionAsync(processor, secondState, credential, token);
+            string result = Envelope("OperationResult", attemptId, secondGeneration,
+                OperationResultPayload(demandId, attemptId, "LOAD", "UNKNOWN", overallOutcome: "UNKNOWN"));
+            string report = await FinishHandshakeAsync(
+                processor, secondState, attemptId, ResultContentSha256(result), token);
+
+            Assert.Equal("RECOVERY_REQUIRED", ReadinessOf(report));
+            Assert.Equal($"[\"{attemptId}\"]",
+                (await context.SessionRecoveries.AsNoTracking().SingleAsync(token)).PendingResultIdsJson);
+            Assert.Empty(await context.OperationResults.ToListAsync(token));
+
+            await processor.ProcessAsync(result, secondState, token);
+            Assert.Equal("[]",
+                (await context.SessionRecoveries.AsNoTracking().SingleAsync(token)).PendingResultIdsJson);
+            Assert.Equal(new SessionReadinessDecision(SessionReadiness.Ready, "READY"),
+                await CloseAttemptAsync(context, store, attemptId, secondGeneration, token));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(credentialVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// control-server#435 takes a result off a report only when the line this generation processed carries the business
+    /// content the report holds for it. Under the same messageId and generation with a different
+    /// <c>resultContentSha256</c>, the report is not about the result the server saw, and it stays pending.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-03")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-OPERATION-RESULT-UNKNOWN-RECONCILE")]
+    public async Task AReportedResultWhoseContentDiffersFromTheProcessedOneStaysPending()
+    {
+        const string credentialVariable = "CONTROL_SERVER_TEST_CONTENT_MISMATCH_RECONCILE_CREDENTIAL";
+        const string credential = "test-credential-not-for-production";
+        Environment.SetEnvironmentVariable(credentialVariable, credential);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await PendingResultContextAsync(connection, token);
+            WireToGateStore store = new(context);
+            OnboardMessageProcessor processor = PendingResultProcessor(context, store, credentialVariable);
+            await ReachReadyAsync(processor, new OnboardConnectionState(), credential, token);
+            const string attemptId = "00000000-0000-4000-8000-000000000620";
+            const string demandId = "00000000-0000-4000-8000-000000000611";
+            await PrepareUnknownLoadAsync(store, attemptId, demandId, "6", token);
+
+            OnboardConnectionState secondState = new();
+            long secondGeneration = await OpenSessionAsync(processor, secondState, credential, token);
+            string result = Envelope("OperationResult", attemptId, secondGeneration,
+                OperationResultPayload(demandId, attemptId, "LOAD", "UNKNOWN", overallOutcome: "UNKNOWN"));
+            await processor.ProcessAsync(result, secondState, token);
+            string otherContent = new('e', 64);
+            Assert.NotEqual(otherContent, ResultContentSha256(result));
+            await FinishHandshakeAsync(processor, secondState, attemptId, otherContent, token);
+
+            Assert.Equal($"[\"{attemptId}\"]",
+                (await context.SessionRecoveries.AsNoTracking().SingleAsync(token)).PendingResultIdsJson);
+            Assert.Equal(
+                new SessionReadinessDecision(SessionReadiness.RecoveryRequired, "PENDING_FACT_RECONCILIATION_REQUIRED"),
+                await CloseAttemptAsync(context, store, attemptId, secondGeneration, token));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(credentialVariable, null);
+        }
+    }
+
+    private static async Task<ControlServerDbContext> PendingResultContextAsync(
+        SqliteConnection connection, CancellationToken token)
+    {
+        ControlServerDbContext context = new(new DbContextOptionsBuilder<ControlServerDbContext>()
+            .UseSqlite(connection)
+            .Options);
+        await context.Database.EnsureCreatedAsync(token);
+        return context;
+    }
+
+    private static OnboardMessageProcessor PendingResultProcessor(
+        ControlServerDbContext context, WireToGateStore store, string credentialVariable) =>
+        TestOnboardProcessorFactory.Create(
+            context,
+            store,
+            new FixedTimeProvider(),
+            new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["OnboardTransport:CredentialEnvironmentVariable"] = credentialVariable
+                })
+                .Build());
+
+    /// <summary>A load prepared for slot 1, for an UNKNOWN result to put into RecoveryRequired.</summary>
+    private static async Task PrepareUnknownLoadAsync(
+        WireToGateStore store, string attemptId, string demandId, string distinct, CancellationToken token)
+    {
+        await store.AcceptWithOrderIntentAsync(
+            new AcceptedDemandSnapshot(
+                demandId,
+                $"SUBLOT-00{distinct}|WIRE_TO_GATE",
+                7,
+                $"00000000-0000-4000-8000-000000000{distinct}99",
+                21,
+                new DateTimeOffset(2026, 8, 25, 9, 0, 0, TimeSpan.Zero)),
+            new OrderIntent(
+                $"00000000-0000-4000-8000-000000000{distinct}98",
+                demandId,
+                $"W2G-D-{distinct}11-PICKUP-1",
+                "TO_PICKUP",
+                "PICKUP-01",
+                new DateTimeOffset(2026, 8, 25, 9, 0, 0, TimeSpan.Zero)),
+            token);
+        await store.PrepareSlotOperationAsync(
+            new StationOperationPlan(
+                attemptId,
+                demandId,
+                $"SUBLOT-00{distinct}",
+                [1],
+                SlotOperationType.Load,
+                0,
+                new string('c', 64),
+                new DateTimeOffset(2026, 8, 25, 9, 0, 0, TimeSpan.Zero)),
+            $"00000000-0000-4000-8000-000000000{distinct}19",
+            "load-command-json",
+            token);
+    }
+
+    /// <summary>A reconnect's SessionHello; returns the new generation.</summary>
+    private static async Task<long> OpenSessionAsync(
+        OnboardMessageProcessor processor, OnboardConnectionState state, string credential, CancellationToken token)
+    {
+        await processor.ProcessAsync(
+            Envelope("SessionHello", Guid.NewGuid().ToString("D"), null,
+                new { protocolReleaseIdentity = ReleaseIdentity(), credentialProof = credential }),
+            state,
+            token);
+        return state.SessionGeneration!.Value;
+    }
+
+    /// <summary>
+    /// The rest of a reconnect's handshake: capability, a departure-safe safety baseline, and a recovery report naming
+    /// <paramref name="attemptId"/> as unsettled and its result as pending with <paramref name="resultContentSha256"/>.
+    /// Returns the report's answer.
+    /// </summary>
+    private static async Task<string> FinishHandshakeAsync(
+        OnboardMessageProcessor processor, OnboardConnectionState state, string attemptId,
+        string resultContentSha256, CancellationToken token)
+    {
+        long generation = state.SessionGeneration!.Value;
+        await processor.ProcessAsync(
+            Envelope("CapabilitySnapshot", Guid.NewGuid().ToString("D"), generation,
+                new { capabilityVersion = 1, activeSlotConfigurationFingerprint = new string('0', 64) }),
+            state,
+            token);
+        await processor.ProcessAsync(
+            Envelope("SafetyStateSnapshot", Guid.NewGuid().ToString("D"), generation,
+                new { safetyStateVersion = 1, safety = Safety(departureSafe: true) }),
+            state,
+            token);
+        return await processor.ProcessAsync(
+            Envelope("RecoveryStateReport", Guid.NewGuid().ToString("D"), generation,
+                new
+                {
+                    reportId = Guid.NewGuid().ToString("D"),
+                    unsettledSlotOperationAttemptId = attemptId,
+                    provenRecoveryCheckpoint = "SAFE_FINISH_REACHED",
+                    activeUnlockSlots = Array.Empty<int>(),
+                    forcedRecoveryGeneration = 0,
+                    pendingResults = new[]
+                    {
+                        new
+                        {
+                            messageType = "OperationResult",
+                            messageId = attemptId,
+                            businessId = attemptId,
+                            contentSha256 = resultContentSha256
+                        }
+                    }
+                }),
+            state,
+            token);
+    }
+
+    /// <summary>
+    /// Stands in for a compensation closing the attempt: the operation is Cancelled, and what the recovery-result path
+    /// runs after a reconciled recovery runs (<c>SettleReportedAttemptsAsync</c>, then <c>DecideReadinessAsync</c>).
+    /// </summary>
+    private static async Task<SessionReadinessDecision> CloseAttemptAsync(
+        ControlServerDbContext context, WireToGateStore store, string attemptId, long generation, CancellationToken token)
+    {
+        context.ChangeTracker.Clear();
+        StationOperationRow operation = await context.StationOperations
+            .SingleAsync(row => row.SlotOperationAttemptId == attemptId, token);
+        operation.Status = StationOperationStatus.Cancelled;
+        await context.SaveChangesAsync(token);
+        context.ChangeTracker.Clear();
+        await store.SettleReportedAttemptsAsync("AGV-001", generation, token);
+        return await store.DecideReadinessAsync("AGV-001", generation, token);
+    }
+
+    private static string Rebound(string line, long generation)
+    {
+        JsonNode node = JsonNode.Parse(line)!;
+        node["sessionGeneration"] = generation;
+        return node.ToJsonString();
+    }
+
+    private static string ResultContentSha256(string resultLine)
+    {
+        using JsonDocument document = JsonDocument.Parse(resultLine);
+        return document.RootElement.GetProperty("payload").GetProperty("resultContentSha256").GetString()!;
     }
 
     private static string AcceptedContentSha256(string acknowledgementLine)
