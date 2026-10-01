@@ -46,12 +46,8 @@ function Resolve-L2ChargerStations {
     if (@($stations | ForEach-Object { $_.StationId } | Sort-Object -Unique).Count -ne $stations.Count) {
         throw "Chargers in $Where names a station twice."
     }
-    # The server's route graph answers traversal by node, one station per node (RouteGraph.TraversalCostsFrom reads
-    # its node-to-station table, where the later station wins). Two chargers on one node: one of them reads unreachable.
-    $nodes = @($stations | Where-Object { $null -ne $_.Node } | ForEach-Object { $_.Node })
-    if (@($nodes | Sort-Object -Unique).Count -ne $nodes.Count) {
-        throw "Chargers in $Where puts two chargers on one node; the server's route graph reaches one station per node."
-    }
+    # Two chargers may share a node: the server's route graph reaches every station on a node at that node's cost
+    # (control-server#431 removed the one-station-per-node limit this used to guard against).
     return , $stations.ToArray()
 }
 

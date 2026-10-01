@@ -58,17 +58,17 @@ public sealed class RouteGraph
 {
     private readonly Dictionary<int, List<RouteGraphEdge>> _outgoingByNode;
     private readonly Dictionary<int, int> _nodeByStation;
-    private readonly Dictionary<int, int> _stationByNode;
+    private readonly Dictionary<int, List<int>> _stationsByNode;
 
     private RouteGraph(
         Dictionary<int, List<RouteGraphEdge>> outgoingByNode,
         Dictionary<int, int> nodeByStation,
-        Dictionary<int, int> stationByNode,
+        Dictionary<int, List<int>> stationsByNode,
         int edgeCount)
     {
         _outgoingByNode = outgoingByNode;
         _nodeByStation = nodeByStation;
-        _stationByNode = stationByNode;
+        _stationsByNode = stationsByNode;
         EdgeCount = edgeCount;
     }
 
@@ -124,7 +124,7 @@ public sealed class RouteGraph
         }
 
         Dictionary<int, int> nodeByStation = [];
-        Dictionary<int, int> stationByNode = [];
+        Dictionary<int, List<int>> stationsByNode = [];
         foreach (RouteGraphStation station in stations)
         {
             if (removedStationIds.Contains(station.StationId))
@@ -133,13 +133,22 @@ public sealed class RouteGraph
             }
 
             nodeByStation[station.StationId] = station.Node;
-            // Round 43 measured 206 stations onto 206 distinct nodes with zero collisions. If two
-            // ever share one, the later wins for the reverse lookup — which only affects
-            // diagnostics, never a routing decision, because routing goes station → node.
-            stationByNode[station.Node] = station.StationId;
+            // One node can carry several stations, and every one of them is a routing endpoint:
+            // TraversalCostsFrom answers by reading this reverse lookup, so a node that kept only
+            // one station would make the others silently unreachable (control-server#431). Shared
+            // nodes are an ordinary product of RouteGraphStationPlacement, which snaps each station
+            // to the nearer end of its edge. Round 43 found none on map25 (206 stations onto 206
+            // distinct nodes); map26, the map the v2 line runs on, was never measured for them.
+            if (!stationsByNode.TryGetValue(station.Node, out List<int>? onNode))
+            {
+                onNode = [];
+                stationsByNode[station.Node] = onNode;
+            }
+
+            onNode.Add(station.StationId);
         }
 
-        return new RouteGraph(outgoing, nodeByStation, stationByNode, edgeCount);
+        return new RouteGraph(outgoing, nodeByStation, stationsByNode, edgeCount);
     }
 
     /// <summary>Whether the graph knows where this station sits.</summary>
@@ -194,7 +203,9 @@ public sealed class RouteGraph
                 continue;
             }
 
-            if (_stationByNode.TryGetValue(node, out int stationId))
+            // Every station on the node is reached at the node's cost, including any that share
+            // the origin's node: those come out at 0, the same place the vehicle already is.
+            foreach (int stationId in _stationsByNode.GetValueOrDefault(node) ?? [])
             {
                 byStation.TryAdd(stationId, cost);
             }
