@@ -170,6 +170,35 @@ public sealed class RouteGraphEngineTests
         Assert.Equal(new RouteGraphTraversal(true, 0), graph.Traverse(213, 210));
     }
 
+    [Theory]
+    [MemberData(nameof(SharedStationOrders))]
+    public void ARemovedStationOnASharedNodeStaysOffTheGraphWhileItsSiblingStaysOn(bool sharedStationLast)
+    {
+        // A node's list is created by whichever of its stations comes first. A removed station
+        // must stay out of that list whether or not a sibling already created it, and removing it
+        // must not take the sibling with it.
+        List<RouteGraphStation> stations = Stations.Select(ToDomainStation).ToList();
+        RouteGraphStation shared = new(213, 5);
+        if (sharedStationLast)
+        {
+            stations.Add(shared);
+        }
+        else
+        {
+            stations.Insert(0, shared);
+        }
+
+        RouteGraph graph = RouteGraph.Build(
+            Edges.Select(ToDomainEdge).ToList(), stations, new HashSet<int>(), new HashSet<int> { 213 });
+
+        Assert.False(graph.KnowsStation(213));
+        Assert.Equal(RouteGraphTraversal.Unreachable, graph.Traverse(11, 213));
+        Assert.Equal(RouteGraphTraversal.Unreachable, graph.Traverse(210, 213));
+        Assert.Equal(new RouteGraphTraversal(true, 40000), graph.Traverse(11, 210));
+        Assert.Equal([11, 12, 210], graph.TraversalCostsFrom(11).Keys.Order());
+        Assert.Equal([11, 12, 210], graph.TraversalCostsFrom(210).Keys.Order());
+    }
+
     [Fact]
     public void TwoStationsSnappedOntoTheSameEndpointAreBothReachable()
     {

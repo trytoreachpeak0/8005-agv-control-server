@@ -204,7 +204,9 @@ public sealed class RouteGraph
             }
 
             // Every station on the node is reached at the node's cost, including any that share
-            // the origin's node: those come out at 0, the same place the vehicle already is.
+            // the origin's node: those come out at 0. That says only that both stations snapped
+            // onto the same endpoint; with a large placement residual they need not stand at the
+            // same physical spot.
             foreach (int stationId in _stationsByNode.GetValueOrDefault(node) ?? [])
             {
                 byStation.TryAdd(stationId, cost);
