@@ -268,17 +268,13 @@ internal static class JourneyClosure
             new UpcomingStopPlanProjection(planRevision, [JourneyPlanBuilder.IdleReturnLeg(runtime, waitingPoint, arrived: true)]),
             endedAt,
             cancellationToken).ConfigureAwait(false);
+        // A millisecond after the plan: a replay sends in creation order, the plan first as everywhere else.
+        VehicleBusinessProjection state = new(
+            businessRevision, "READY", null, false, JourneyRuntimeEngine.PublishedBatteryState(runtime),
+            ChargingCycleWireStates.NotCharging, null, []);
         await OnboardJourneyPublisher.StageVehicleBusinessStateAsync(
-            store,
-            ids[2],
-            runtime.AgvId,
-            session.SessionGeneration,
-            new VehicleBusinessProjection(
-                businessRevision, "READY", null, false, JourneyRuntimeEngine.PublishedBatteryState(runtime),
-                ChargingCycleWireStates.NotCharging, null, []),
-            // A millisecond after the plan: a replay sends in creation order, the plan first as everywhere else.
-            endedAt.AddMilliseconds(1),
-            cancellationToken).ConfigureAwait(false);
+            store, ids[2], runtime.AgvId, session.SessionGeneration, state, endedAt.AddMilliseconds(1), cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>

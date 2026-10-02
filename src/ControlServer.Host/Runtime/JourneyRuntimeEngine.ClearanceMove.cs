@@ -793,17 +793,13 @@ public sealed partial class JourneyRuntimeEngine
                 ]),
             now,
             cancellationToken).ConfigureAwait(false);
+        // A millisecond after the plan, so a replay -- which sends in creation order -- sends the plan first too.
+        VehicleBusinessProjection state = new(
+            stateRevision, "READY", cycle is null ? null : VehicleActivePurposes.ClearingMaintenance, false,
+            PublishedBatteryState(runtime), cycle?.WireState ?? ChargingCycleWireStates.NotCharging, null, []);
         await OnboardJourneyPublisher.StageVehicleBusinessStateAsync(
-            store,
-            stateId,
-            runtime.AgvId,
-            session.SessionGeneration,
-            new VehicleBusinessProjection(
-                stateRevision, "READY", cycle is null ? null : VehicleActivePurposes.ClearingMaintenance, false,
-                PublishedBatteryState(runtime), cycle?.WireState ?? ChargingCycleWireStates.NotCharging, null, []),
-            // A millisecond after the plan, so a replay -- which sends in creation order -- sends the plan first too.
-            now.AddMilliseconds(1),
-            cancellationToken).ConfigureAwait(false);
+            store, stateId, runtime.AgvId, session.SessionGeneration, state, now.AddMilliseconds(1), cancellationToken)
+            .ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         await SendIdleReturnSnapshotAsync(planId, cancellationToken).ConfigureAwait(false);
         await SendIdleReturnSnapshotAsync(stateId, cancellationToken).ConfigureAwait(false);
