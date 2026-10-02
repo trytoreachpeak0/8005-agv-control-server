@@ -3935,8 +3935,10 @@ public sealed partial class JourneyRuntimeEngine(
     // charging order and no charging cycle, because a vehicle gets a charging cycle only while it has no other purpose
     // (ChargingAllocator). "Not in a charging cycle" is a fact this server knows, not a guess; UNKNOWN would report a missing
     // feature as a lost observation. A charging journey sends its cycle's own state (ALLOCATED, EN_ROUTE; the rest in batch
-    // 9-07). manualChargingHold is false for the same reason: a hold is placed only on a vehicle with no purpose, and lifted
-    // before it can take one (control-server#404).
+    // 9-07). manualChargingHold is false for the same reason: a hold is placed on a vehicle with no purpose (control-server#404),
+    // or -- since control-server#410 -- on one entering CLEARING_MAINTENANCE after a field-confirmed unable-to-charge, and either
+    // way is lifted before the vehicle can take a transport purpose. The clearing snapshots project false too; once the clearance
+    // ends and the purpose is released, charging allocation sends true.
     private const string NotInAChargingCycle = "NOT_CHARGING";
 
     /// <summary>

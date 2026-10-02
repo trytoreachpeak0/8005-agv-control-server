@@ -63,8 +63,8 @@ public static class ChargingPolicyDecisions
 /// </para>
 /// <para>
 /// <b>身份在判定那一刻重核，人工不能覆盖</b>：这辆车有一个未结束的周期、周期的目标桩就是 <c>chargerStationId</c>、周期没到 <c>COMPLETE</c>、本周期没读到过充电、
-/// RIoT 此刻新鲜地读到车在线、停在这个桩上、没在充电，车的用途是这一趟的 <c>CHARGING</c>，人工清桩的出口可用（与引擎形成确认时同一个检查）。任何一项不成立都拒绝，
-/// 读不到 RIoT 也拒绝——不以人工覆盖未知。
+/// RIoT 此刻新鲜地读到车在线、停在这个桩上、没在充电，旧单没有被人在 RIoT 里继续（会让车动的排队、执行、队列优先，与人工清桩同一个判断，审查 S1），
+/// 车的用途是这一趟的 <c>CHARGING</c>，人工清桩的出口可用（与引擎形成确认时同一个检查）。任何一项不成立都拒绝，读不到 RIoT 也拒绝——不以人工覆盖未知。
 /// </para>
 /// <para>
 /// <b>确认之后与系统确认同一条路</b>：写下的行与 <c>JourneyRuntimeEngine.ConfirmUnableToChargeAsync</c> 逐项相同，主键与幂等键也相同（暂停事件
@@ -74,15 +74,21 @@ public static class ChargingPolicyDecisions
 /// 由引擎下一轮的清桩分支照系统确认那样做——<c>VehicleBusinessStateSnapshot</c> 也是那一轮发出，与「充电后返回服务」之后由下一轮发快照同一个规则。
 /// </para>
 /// <para>
-/// <b>系统已经确认过这一次充不上</b>（周期已因它进清桩中）：不写第二条事件，答 <c>CONFIRMED</c>；<c>chargingPolicyDecision</c> 与本周期之前那次现场确认给的相同，
-/// 之前没有就按此刻的事实定。
+/// <b>系统已经确认过这一次充不上</b>（周期已因它进清桩中）：不写第二条事件，答 <c>CONFIRMED</c>；<c>chargingPolicyDecision</c> 与本周期之前那次现场确认给的相同。
+/// 之前没有时按此刻的事实定，但只在 RIoT 此刻新鲜地读到车停在这个桩上时；否则给 <c>RETRY_LATER</c>、不新置人工充电等待（审查 S2）——车可能早已被挪走，
+/// 一份陈旧的电量不该把它放进只有人才能解除的等待。
 /// </para>
 /// <para>
 /// <b><c>chargingPolicyDecision</c> 只由服务端的事实定</b>（<c>DECIDE_CHARGING_POLICY_CENTRALLY</c>）：见 <see cref="DecidePolicyAsync"/>。拒绝时为空——拒绝即
 /// 服务端什么都没改，不宣称一个并没做的决定。
 /// </para>
 /// <para>
-/// <b>并发</b>：周期按并发令牌改、暂停事件按主键插，与引擎同一刻形成时只有一方写成；输的一方回滚到保存点，从头再判一次（读到的已是赢的那一方留下的）。RIoT 在事务之外读。
+/// <b>人工充电等待会置在持有用途的车上</b>：给 <c>MANUAL_CHARGING_HOLD</c> 时，等待在车进清桩中（用途 <c>CLEARING_MAINTENANCE</c>）的同一个事务里置上。清桩中的
+/// 业务状态快照照引擎今天的投影报 <c>manualChargingHold=false</c>；清桩完成、用途放开之后，由充电分配补发 <c>true</c>（备注 2，快照本身由调度另行跟进）。
+/// </para>
+/// <para>
+/// <b>并发</b>：周期按并发令牌改、暂停事件按主键插，与引擎同一刻形成时只有一方写成；输的一方回滚到保存点，从头再判一次（读到的已是赢的那一方留下的）。
+/// 判成拒绝时，落盘之前再核一次周期版本：读周期与读用途之间引擎形成了确认，读到的事实前后不一，版本一变就整次重判（审查 S3 的用例钉住）。
 /// </para>
 /// </remarks>
 public sealed class UnableToChargeFieldConfirmations(
@@ -387,19 +393,24 @@ public sealed class UnableToChargeFieldConfirmations(
             return (NotAllowedInState, "payload.chargerStationId",
                 "RIoT has read this vehicle charging in this cycle: charging was established, so this is not an unable-to-charge.");
         }
-        DateTimeOffset now = timeProvider.GetUtcNow();
-        if (facts.Vehicle is not { Connected: true } vehicle ||
-            vehicle.ObservedAt > now || now - vehicle.ObservedAt > _runtime.MaximumEvidenceAge)
+        if (!Fresh(facts.Vehicle))
         {
             return (NotAllowedInState, "payload.chargerStationId",
                 "RIoT gives no fresh reading of the vehicle now; an unknown position is not confirmed by hand.");
         }
-        if (vehicle.CurrentStationId != cycle.StationId ||
-            !string.Equals(vehicle.CurrentMap, _runtime.MapIdentity, StringComparison.Ordinal) ||
-            vehicle.Speed is > 0d)
+        if (!OnTheCharger(facts.Vehicle!, cycle))
         {
             return (NotAllowedInState, "payload.chargerStationId",
                 $"RIoT does not read the vehicle standing on charger {facts.StationName} now.");
+        }
+        RiotVehicleObservation vehicle = facts.Vehicle!;
+        if (ManualStationClearance.CanMoveTheVehicle(facts.Order))
+        {
+            // Review S1 (as ManualStationClearance refuses it, review W3 of control-server#406): the old order has been let go on in
+            // RIoT and may drive the vehicle, so it is not standing failed at the charger.
+            return (NotAllowedInState, "payload.chargerStationId",
+                $"The charge order is going on in RIoT (state {facts.Order!.OrderState}) and may move the vehicle; it has not failed to " +
+                "charge here.");
         }
         if (string.Equals(vehicle.BatteryState, BatteryEligibility.ChargingBatteryState, StringComparison.Ordinal))
         {
@@ -418,8 +429,24 @@ public sealed class UnableToChargeFieldConfirmations(
         return (null, null, null);
     }
 
+    /// <summary>RIoT 此刻有这辆车在线、新鲜的读数（不超过 <c>JourneyRuntime:MaximumEvidenceAge</c>，也不在将来）。</summary>
+    private bool Fresh(RiotVehicleObservation? vehicle)
+    {
+        DateTimeOffset now = timeProvider.GetUtcNow();
+        return vehicle is { Connected: true } &&
+               vehicle.ObservedAt <= now && now - vehicle.ObservedAt <= _runtime.MaximumEvidenceAge;
+    }
+
+    /// <summary>这份读数里车停在周期的桩上（站号与地图都对、没在动）。</summary>
+    private bool OnTheCharger(RiotVehicleObservation vehicle, ChargingCycleRow cycle) =>
+        vehicle.CurrentStationId == cycle.StationId &&
+        string.Equals(vehicle.CurrentMap, _runtime.MapIdentity, StringComparison.Ordinal) &&
+        vehicle.Speed is not > 0d;
+
     /// <summary>
     /// 确认时的 <c>chargingPolicyDecision</c>：本周期之前已有一次现场确认的，照它（不重新置人工充电等待）；否则按此刻的事实定（<see cref="DecidePolicyAsync"/>）。
+    /// 系统已经确认过、又没有之前的现场确认时，电量要取自一份新鲜、车在桩上的读数（审查 S2）；没有这样的读数就不新置等待，给
+    /// <see cref="ChargingPolicyDecisions.RetryLater"/>——结果仍是 <c>CONFIRMED</c>，因为这一次充不上已经确认过了。
     /// </summary>
     private async Task<(string Policy, bool NewlyDecided)> PolicyForAsync(
         UnableToChargeFieldConfirmationRequest request, Facts facts, CancellationToken cancellationToken)
@@ -435,6 +462,10 @@ public sealed class UnableToChargeFieldConfirmations(
             if (earlier.Where(row => row.DecidedAt >= cycle.AllocatedAt).OrderBy(row => row.DecidedAt).FirstOrDefault() is { } first)
             {
                 return (first.ChargingPolicyDecision!, false);
+            }
+            if (!Fresh(facts.Vehicle) || !OnTheCharger(facts.Vehicle!, cycle))
+            {
+                return (ChargingPolicyDecisions.RetryLater, false);
             }
         }
         return (await DecidePolicyAsync(cycle, facts.Vehicle?.BatteryPercent, cancellationToken).ConfigureAwait(false), true);

@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
@@ -6,6 +7,7 @@ using ControlServer.Host.Runtime.Charging;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -178,6 +180,31 @@ public sealed class UnableToChargeFieldConfirmationTests : IDisposable
         {
             await AssertNothingPausedAsync(fleet);
         }
+    }
+
+    public static TheoryData<int> OrderStatesThatCanMoveTheVehicle =>
+        [RiotOrderState.Queueing, RiotOrderState.Executing, RiotOrderState.QueuePriority];
+
+    /// <summary>
+    /// 审查 S1：旧单被人在 RIoT 里继续（排队、执行、队列优先——会让车动的状态），车即使此刻停在桩上也不是「充不上停在那里」：<c>REJECTED</c>
+    /// （<c>ACTION_NOT_ALLOWED_IN_STATE</c>），什么都不暂停，引擎之后也不会报「清桩中旧单被继续」（2273）。与人工清桩拒收的是同一个判断。
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(OrderStatesThatCanMoveTheVehicle))]
+    public async Task AnOldOrderLetGoOnInRiotIsNotConfirmedAsUnableToCharge(int state)
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        JourneyRuntimeRow journey = await UnconfirmedAtChargerAsync(fleet);
+        fleet.Riot.PutOrder(fleet.Riot.OrderOf(journey.PickupUpperId)! with { OrderState = state });
+
+        UnableToChargeFieldConfirmation decision = await Decider(fleet)
+            .DecideAsync(Request("00000000-0000-4000-8000-000000000d30"), Token);
+
+        Assert.Equal((FieldConfirmationDecision.Rejected, UnableToChargeFieldConfirmations.NotAllowedInState, (string?)null),
+            (decision.Decision.Outcome, decision.Decision.ProblemReasonCode, decision.ChargingPolicyDecision));
+        await AssertNothingPausedAsync(fleet);
+        await RoundAsync(fleet);
+        Assert.DoesNotContain(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2273);
     }
 
     // ---- observedCondition 四值 -----------------------------------------------------------------------------------------
@@ -403,6 +430,33 @@ public sealed class UnableToChargeFieldConfirmationTests : IDisposable
         Assert.Null(await new ManualChargingHoldStore(fleet.Context).ReadAsync(KeyA, Token));
     }
 
+    public static TheoryData<string> ReadingsNotOnTheCharger => ["stale-thirty-minutes", "fresh-but-moved-off"];
+
+    /// <summary>
+    /// 审查 S2：系统已确认、本周期还没有现场确认，而此刻的读数不新鲜（30 分钟前）或车已不在桩上：仍答 <c>CONFIRMED</c>（这一次充不上已经确认过），
+    /// 但不拿这份读数的电量（20）去置人工充电等待——给 <c>RETRY_LATER</c>，没有等待。
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(ReadingsNotOnTheCharger))]
+    public async Task AfterTheSystemOneAReadingNotOnTheChargerPlacesNoManualHold(string reading)
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        await ConfirmedAsync(fleet);
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        DateTimeOffset old = fleet.Clock.GetUtcNow() - TimeSpan.FromMinutes(30);
+        fleet.Riot.VehicleOverrides[KeyA] = reading == "stale-thirty-minutes"
+            ? seen => seen with { CurrentStationId = Near.StationId, BatteryState = "NO_CHARGE", ObservedAt = old }
+            : seen => seen with { CurrentStationId = 300, BatteryState = "NO_CHARGE" };
+
+        UnableToChargeFieldConfirmation decision = await Decider(fleet)
+            .DecideAsync(Request("00000000-0000-4000-8000-000000000d31"), Token);
+
+        Assert.Equal((FieldConfirmationDecision.Confirmed, ChargingPolicyDecisions.RetryLater),
+            (decision.Decision.Outcome, decision.ChargingPolicyDecision));
+        Assert.Null(await new ManualChargingHoldStore(fleet.Context).ReadAsync(KeyA, Token));
+        Assert.Single(await HoldsAsync(fleet));
+    }
+
     // ---- 并发读改写 --------------------------------------------------------------------------------------------------------
 
     /// <summary>
@@ -437,6 +491,37 @@ public sealed class UnableToChargeFieldConfirmationTests : IDisposable
         Assert.Null(only.ConfirmedByPersonId);
         Assert.Single(await fleet.Context.Set<UnableToChargeFieldConfirmationRow>().AsNoTracking().ToArrayAsync(Token));
         Assert.Single(await fleet.Context.Set<StationClearanceRow>().AsNoTracking().ToArrayAsync(Token));
+    }
+
+    /// <summary>
+    /// 审查 S3：读周期与读用途之间（同一个判定里的两次读库），引擎那一轮按严格事实形成了确认。判定读到「周期还是 ACTIVE、用途已是 CLEARING_MAINTENANCE」，
+    /// 前后不一，按这份事实会拒绝（用途不是这一趟的 <c>CHARGING</c>）；拒绝落盘之前再核周期版本，发现变了，整次重判，读到系统那一条，答 <c>CONFIRMED</c>。
+    /// 只一条暂停事件（系统的）、一行判定。
+    /// </summary>
+    [Fact]
+    public async Task AConfirmationFormedBetweenReadingTheCycleAndTheClaimIsJudgedAgain()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        await FailingAtChargerAsync(fleet);
+        await RoundAsync(fleet);
+        Assert.Empty(await HoldsAsync(fleet));
+
+        BeforeFirstCommand interleave = new("\"VehiclePurposeClaims\"", async () =>
+        {
+            await RoundAsync(fleet);
+            Assert.Single(await HoldsAsync(fleet));
+        });
+        await using ControlServerDbContext own = new(new DbContextOptionsBuilder<ControlServerDbContext>()
+            .UseSqlite(fleet.Context.Database.GetDbConnection()).AddInterceptors(interleave).Options);
+
+        UnableToChargeFieldConfirmation decision = await Decider(fleet, own)
+            .DecideAsync(Request("00000000-0000-4000-8000-000000000d32"), Token);
+
+        Assert.True(interleave.Fired);
+        Assert.Equal(FieldConfirmationDecision.Confirmed, decision.Decision.Outcome);
+        ChargingStationAllocationHoldRow only = Assert.Single(await HoldsAsync(fleet));
+        Assert.Null(only.ConfirmedByPersonId);
+        Assert.Single(await fleet.Context.Set<UnableToChargeFieldConfirmationRow>().AsNoTracking().ToArrayAsync(Token));
     }
 
     // ---- 重放、重连、内容冲突、崩溃点（经真实的消息处理） ----------------------------------------------------------------------------
@@ -811,6 +896,24 @@ public sealed class UnableToChargeFieldConfirmationTests : IDisposable
 
         public Task<RiotOrderObservation> CreateAsync(OrderIntent intent, CancellationToken cancellationToken) =>
             inner.CreateAsync(intent, cancellationToken);
+    }
+
+    /// <summary>这个上下文第一次执行含 <paramref name="contains"/> 的查询之前，先让另一件事做完；只一次。</summary>
+    private sealed class BeforeFirstCommand(string contains, Func<Task> meanwhile) : DbCommandInterceptor
+    {
+        public bool Fired { get; private set; }
+
+        public override async ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (!Fired && command.CommandText.Contains(contains, StringComparison.Ordinal))
+            {
+                Fired = true;
+                await meanwhile();
+            }
+            return await base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
     }
 
     /// <summary>RIoT 读不到车（网关报错）。</summary>
