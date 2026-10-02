@@ -349,6 +349,18 @@ internal static class ChargingDashboardDescriptions
             [ChargingExecutionReasons.ClearedOldOrderUnsettled] = "在 RIoT 里把这张旧充电单结束",
             [ChargingExecutionReasons.ClearanceChargerNotVacant] =
                 "到现场把车挪离原桩；车其实已不在桩上时，在 RIoT 里给车重定位或给车断电",
+            // control-server#409：清桩开往等待点。
+            [ChargingExecutionReasons.ClearanceToWaitingPoint] = "提醒现场人员这辆车正自己开往等待点，注意避让；不用别的处理",
+            [ChargingExecutionReasons.ClearanceNoWaitingPoint] =
+                "看等待点为什么都不可用（占用、白名单、地图、路网）；急着用桩时由 R-11／R-13 名单里的人到现场挪车并确认清桩",
+            [ChargingExecutionReasons.ClearanceDepartureNotProven] = "检查车的急停、手动模式、故障与车载端连接、仓门",
+            [ChargingExecutionReasons.ClearanceVehicleOffCharger] =
+                "到现场确认车的位置；车已挪开、桩已腾空时由 R-11／R-13 名单里的人确认清桩",
+            [ChargingExecutionReasons.ClearanceMoveNotConfirmed] = "到 RIoT 核对这张开往等待点的单与车的状态",
+            [ChargingExecutionReasons.ClearanceMoveHeld] = "到 RIoT 核对这张开往等待点的单去了哪里、车在哪里、是否还在动",
+            [ChargingExecutionReasons.ClearanceMoveEnded] =
+                "R-11／R-13 名单里的人到现场把车挪开、确认桩已腾空并确认清桩；桩修好后做恢复确认",
+            [ChargingExecutionReasons.ClearanceArrivalNotProven] = "到现场看车停在哪里、是否已停稳",
             [ChargingExecutionReasons.ChargerNotEngaged] = "到现场看车是否插好、充电桩是否通电",
             // control-server#407：充电中断与充电无进展。
             [ChargingExecutionReasons.InterruptionClearing] =
@@ -405,6 +417,10 @@ internal static class ChargingDashboardDescriptions
             or ChargingExecutionReasons.StalledUnstableReadings
             or ChargingExecutionReasons.ClearedOldOrderUnsettled
             or ChargingExecutionReasons.ClearanceChargerNotVacant
+            or ChargingExecutionReasons.ClearanceNoWaitingPoint
+            or ChargingExecutionReasons.ClearanceVehicleOffCharger
+            or ChargingExecutionReasons.ClearanceMoveHeld
+            or ChargingExecutionReasons.ClearanceMoveEnded
             or ChargingExecutionReasons.VehicleObservationLost
             or ChargingExecutionReasons.ReservationLostAtArrival
             or ChargingExecutionReasons.CycleMissing

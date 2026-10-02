@@ -174,6 +174,26 @@ public sealed class JourneyRuntimeOptions
     public bool UnableToChargeOldOrderCancelEnabled { get; set; }
 
     /// <summary>
+    /// Whether a vehicle in the clearing loop is driven to a waiting point by this server (control-server#409, REQ-0178, the
+    /// system proof of REQ-0179). <b>Off by default</b>, and off means exactly what the clearing loop did before: the vehicle
+    /// stays where it is and only a person's manual station clearance (control-server#406) completes it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Not to be switched on before the RIoT call allowlist names this use.</b> The order is form one of section 1.2 (one
+    /// <c>move</c> through <c>byDefaultMissions</c>, REQ-0294), whose "use" column today reads "transport, idle return" only;
+    /// the coordinator adds "clearance to a waiting point" through a change of its own. Off, this server makes no RIoT call it
+    /// did not make before.
+    /// </para>
+    /// <para>
+    /// On, the vehicle sets off by itself the round after its old charge order reads ended -- which, with
+    /// <see cref="UnableToChargeOldOrderCancelEnabled"/> off, is the moment a person ends it in RIoT. People on site have to know
+    /// that before it is switched on: it is a run that moves a vehicle (admission line 1).
+    /// </para>
+    /// </remarks>
+    public bool ClearanceToWaitingPointEnabled { get; set; }
+
+    /// <summary>
     /// How long a charging vehicle has to read "not charging" without a break before it is a confirmed interruption
     /// (control-server#407, REQ-0285). The first reading only starts the observation; the interruption is confirmed at the
     /// first later reading whose observation time is at least this far from it, every reading in between fresh, continuous

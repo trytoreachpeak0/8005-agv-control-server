@@ -299,6 +299,35 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 "这次充电由人工清桩收尾：有权限的人确认车已挪开、桩已腾空，旧单已结束，这一趟占着的充电桩已释放、充电用途已放开。不暂停这个桩",
             [ChargingExecutionReasons.ChargerReleasedOnManualClearance] =
                 "充电桩的独占已释放：人工清桩已确认、旧充电单已结束",
+            // control-server#409：清桩开往等待点（开关 JourneyRuntime:ClearanceToWaitingPointEnabled，默认关）。
+            [ChargingExecutionReasons.ClearanceToWaitingPoint] =
+                "现场注意车辆在动：这辆车充不上、在清桩中，旧充电单已结束，服务端已为它预占了一个等待点，正把它从充电桩开过去。"
+                + "到点后自动完成清桩、释放充电桩；充电桩仍暂停分配，要等维修后做恢复确认。人工清桩确认也照样可以按，按了只完成清桩，不会让车停下",
+            [ChargingExecutionReasons.ClearanceNoWaitingPoint] =
+                "清桩中的车可以离桩了，但没有一个可用的等待点（都被占着或预占着、不在当前地图、不在白名单、路不通，或刚在这个点上失败过）。"
+                + "车留在原桩上排队，服务端不会把它开到别的站点。等有等待点空出来会自动出发；也可以由 R-11／R-13 名单里的人到现场挪车并确认清桩",
+            [ChargingExecutionReasons.ClearanceDepartureNotProven] =
+                "清桩中的车要开往等待点，但出发前的安全检查没过（急停、手动模式、故障、车载端没就绪或仓门没锁好等），这一轮不出发、不建单，下一轮再检查",
+            [ChargingExecutionReasons.ClearanceVehicleOffCharger] =
+                "旧充电单已结束，但 RIoT 读不到这辆车静止停在原充电桩上（可能被人挪走、断电或拖走，或位置没更新），服务端不会自己把它开走。"
+                + "请 R-11／R-13 名单里的人到现场确认车已挪开、桩已腾空，再确认清桩",
+            [ChargingExecutionReasons.ClearanceMoveNotConfirmed] =
+                "开往等待点的订单已经发给 RIoT，但还没确认建成（应答丢了、建单开关关着等）。车、目标等待点、清桩用途都保持不变，"
+                + "服务端用同一个订单号继续对账，不会重复建单、不会换点",
+            [ChargingExecutionReasons.ClearanceMoveHeld] =
+                "开往等待点的订单在 RIoT 里已不在执行（被取消、删除、查不到这张单，或等待点已经不归这一趟），但还证明不了车已停稳、身上没有订单。"
+                + "服务端保持一切、不换点、不发取消；请在 RIoT 上核对这张单和车的状态，需要时到现场确认",
+            [ChargingExecutionReasons.ClearanceMoveEnded] =
+                "开往等待点的订单没到点就被人结束了（在 RIoT 里取消或删除，或 FAILED 后由人清除了故障），车已证明停稳。服务端不重建这张单，"
+                + "等待点已释放，这一次清桩不会再自动出发。请 R-11／R-13 名单里的人到现场把车挪开、确认桩已腾空并确认清桩",
+            [ChargingExecutionReasons.ClearanceArrivalNotProven] =
+                "开往等待点的订单 RIoT 报已完成，但还读不到车静止停在那个等待点上（位置、速度、空闲状态或数据新鲜度不满足）。清桩还没完成、桩暂不释放，"
+                + "下一轮再判；持续较久会告警一次。请到现场看车停在哪里",
+            [ChargingExecutionReasons.UnableToChargeClearedAtWaitingPoint] =
+                "充不上的这次充电已收尾：车已被服务端开到等待点并停稳，清桩由系统证明完成，充电桩的独占已释放，车占着那个等待点，"
+                + "之后按常规派车检查接活或去别的桩充电。这个桩仍暂停分配，要等维修后做恢复确认",
+            [ChargingExecutionReasons.ChargerReleasedOnClearanceAtWaitingPoint] =
+                "充电桩的独占已释放：清桩中的车已被开到等待点并停稳，充电已停、原车已离桩",
             [JourneyRuntimeEngine.OwnOrderRebuildCargoUnprovenReason] =
                 "车上有货的故障清除之后，车报的仓位读数还证明不了货在原仓（仓门没锁好、开锁输出没复位、仓位读数未知或没上报、"
                 + "车报有未知，或装货还没落定）：服务端不停也不建单，等车下一次报仓位读数。门锁好、读数恢复后会自动重建；"

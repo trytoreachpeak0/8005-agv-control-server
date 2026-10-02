@@ -403,6 +403,9 @@ jobs:
               @{ Name = 'charging-interruption-isolates'; Runs = 1; BatchId = 'batch-9' }
               # control-server#407, REQ-0285/0282: CHARGING with no gain over the frozen (shortened) window -- both paused.
               @{ Name = 'charging-no-progress-isolates'; Runs = 1; BatchId = 'batch-9' }
+              # control-server#409, REQ-0178/0179: the clearing vehicle queues when no waiting point is eligible, wins the
+              # last one in the round it frees, drives there, and the charger is released only in the arrival's round.
+              @{ Name = 'charging-clearance-to-waiting-point'; Runs = 1; BatchId = 'batch-9' }
           )
           # One run's usual length in seconds, for dealing scenarios out to lanes longest first. Medians of 31
           # CI jobs from 2026-09-17 (ci-research, control-server#130); normal-load's excludes the build it used

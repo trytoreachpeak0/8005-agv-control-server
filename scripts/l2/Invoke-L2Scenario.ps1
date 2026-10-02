@@ -717,8 +717,9 @@ try {
     # control-server#273's waiting journey watch: how long a journey may stand waiting for a person before it is logged,
     # and how often again; control-server#318's delay before an ended order of this server's is rebuilt, and the window
     # within which a second ending stops it. Passed only when the setup file names them, so every other scenario keeps the
-    # server's own defaults.
-    foreach ($key in 'WaitingJourneyWarningAfter', 'WaitingJourneyWarningRepeat', 'OwnOrderRebuildDelay', 'OwnOrderRebuildRepeatWindow') {
+    # server's own defaults. control-server#409's clearance-to-waiting-point switch (off by default) goes the same way.
+    foreach ($key in 'WaitingJourneyWarningAfter', 'WaitingJourneyWarningRepeat', 'OwnOrderRebuildDelay', 'OwnOrderRebuildRepeatWindow',
+            'ClearanceToWaitingPointEnabled') {
         if ($setup.ContainsKey($key)) {
             $serverEnvironment["JourneyRuntime__$key"] = [string]$setup[$key]
         }

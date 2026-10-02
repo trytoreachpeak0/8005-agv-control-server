@@ -297,8 +297,16 @@ public sealed partial class JourneyRuntimeEngine
         JourneyStopRow stop,
         OrderIntentRow intent,
         ChargingCycleRow cycle,
+        RiotMapStationCatalogSnapshot currentMap,
         CancellationToken cancellationToken)
     {
+        // control-server#409: a vehicle on its way to a waiting point is advanced there; nothing below runs for it.
+        if (await ActiveClearanceMoveAsync(runtime, cancellationToken).ConfigureAwait(false) is { } move)
+        {
+            await AdvanceClearanceMoveAsync(runtime, move, currentMap, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         DateTimeOffset now = timeProvider.GetUtcNow();
         await ReplayChargingSnapshotsAsync(runtime, now, cancellationToken).ConfigureAwait(false);
         if (await StageClearingSnapshotsAsync(runtime, stop, now, cancellationToken).ConfigureAwait(false))
@@ -381,9 +389,14 @@ public sealed partial class JourneyRuntimeEngine
         {
             // The old order has ended, nobody has confirmed the charger clear yet: the vehicle stays, waiting for that person.
             // The code names why it is clearing: unable to charge, or an interruption or no progress (control-server#407).
-            await SetChargingCodeAsync(
-                    runtime, await ClearingWaitCodeAsync(runtime, cycle, cancellationToken).ConfigureAwait(false), now, cancellationToken)
-                .ConfigureAwait(false);
+            // control-server#409: or, with JourneyRuntime:ClearanceToWaitingPointEnabled on, it is committed to a waiting point.
+            string waiting = await ClearingWaitCodeAsync(runtime, cycle, cancellationToken).ConfigureAwait(false);
+            if (clearance is { CompletedAt: null } && waiting != ChargingExecutionReasons.ClearingVehicleStillCharging)
+            {
+                waiting = await TryStartClearanceMoveAsync(runtime, stop, cycle, currentMap, waiting, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            await SetChargingCodeAsync(runtime, waiting, now, cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -542,8 +555,10 @@ public sealed partial class JourneyRuntimeEngine
         }
 
         DateTimeOffset now = timeProvider.GetUtcNow();
+        // The charger's stop: a clearance move (control-server#409) may have left a second one, removed by now.
         JourneyStopRow stop = await dbContext.Set<JourneyStopRow>()
-            .SingleAsync(row => row.JourneyId == runtime.JourneyId, cancellationToken).ConfigureAwait(false);
+            .SingleAsync(row => row.JourneyId == runtime.JourneyId && row.StopRole == JourneyStopRoles.Charger, cancellationToken)
+            .ConfigureAwait(false);
         stop.Status = JourneyStopStatuses.Completed;
         checkpointWaits.Clear(runtime.VehicleKey);
         // Released with the charger already; a claim still standing (a crash between the two saves cannot leave one, but a

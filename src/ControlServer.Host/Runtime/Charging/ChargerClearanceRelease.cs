@@ -33,13 +33,15 @@ public static class ChargerClearanceRelease
     /// 调用方已经开着事务时不另开：答假时前半可能已在那个事务里写下，调用方要回滚它（<see cref="ManualStationClearance"/> 就这么做）。
     /// </remarks>
     /// <param name="cycleVersion">读到周期时的版本号；周期已结束时不看。</param>
+    /// <param name="releaseReason">写在桩独占经过上的释放原因；系统到等待点完成清桩时另给（control-server#409）。</param>
     public static async Task<bool> ReleaseAsync(
         ControlServerDbContext dbContext,
         string cycleId,
         long cycleVersion,
         string endReason,
         DateTimeOffset now,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string releaseReason = ChargingExecutionReasons.ChargerReleasedOnManualClearance)
     {
         ArgumentNullException.ThrowIfNull(dbContext);
         ArgumentException.ThrowIfNullOrWhiteSpace(cycleId);
@@ -87,7 +89,7 @@ public static class ChargerClearanceRelease
 
             if (held is not null &&
                 !await FixedStationExclusivity.ReleaseAsReadAsync(
-                        dbContext, held, now, ChargingExecutionReasons.ChargerReleasedOnManualClearance, cancellationToken)
+                        dbContext, held, now, releaseReason, cancellationToken)
                     .ConfigureAwait(false))
             {
                 await RollBackAsync(transaction, cancellationToken).ConfigureAwait(false);

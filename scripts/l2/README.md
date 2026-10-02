@@ -680,6 +680,9 @@ DispatchZoneParameters = @{
   （`RECOVERY_AUTHENTICATION_FAILED`），而且人工清桩的出口不可用，充不上**根本不会形成**「已确认充不上」，单照旧是 `ORDER_HANG`
   （control-server#406 审查 M1）。所以测「不形成」的负向场景也要写它，否则绿的是出口，不是判据。用它的场景是
   `charging-unable-to-charge-pauses-charger`、`charging-general-fault-does-not-pause` 与 `g3-manual-station-clearance`。
+- `ClearanceToWaitingPointEnabled`（control-server#409） —— 写 `$true` 时编排器传 `JourneyRuntime__ClearanceToWaitingPointEnabled=True`：
+  清桩中的车在旧单结束之后由服务端开往等待点，到点即完成清桩。服务端默认关，关着时清桩中只等人工。用它的场景是
+  `charging-clearance-to-waiting-point`；它还要 `IdleReturn`、`RouteGraph` 与带 `Node` 的等待点，理由同空闲返回。
 
 下面四个键是批次 4 的仓位分组（control-server#71），默认前置见上面「派车场景的默认前置」。四个键的结构（仓号、字段名、键之间的组合规则，含
 `OnboardPeers` 各项自带的 `SlotStates`）都在启动任何进程之前校验，写错直接报错，而不是几分钟后表现成「一辆车也没派出去」；
