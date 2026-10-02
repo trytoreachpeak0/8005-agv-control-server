@@ -70,7 +70,8 @@ internal static class ChargingDashboardDescriptions
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
             [VehicleChargingEligibilityHoldReasons.InterruptionConfirmed] = "充电中断：这辆车充电中途断开，恢复之前不再给它分桩",
-            [VehicleChargingEligibilityHoldReasons.NoProgressConfirmed] = "充电无进展：这辆车充了一段时间电量不涨，恢复之前不再给它分桩",
+            [VehicleChargingEligibilityHoldReasons.NoProgressConfirmed] =
+                "充电无进展：这辆车充了一段时间电量不涨，或在没离开过的桩上第二次掉回强充线以下（原桩反复重充），恢复之前不再给它分桩",
         };
 
     /// <summary>服务端置人工充电等待的原因（<see cref="ManualChargingHoldReasons"/>）。</summary>
@@ -349,6 +350,16 @@ internal static class ChargingDashboardDescriptions
             [ChargingExecutionReasons.ClearanceChargerNotVacant] =
                 "到现场把车挪离原桩；车其实已不在桩上时，在 RIoT 里给车重定位或给车断电",
             [ChargingExecutionReasons.ChargerNotEngaged] = "到现场看车是否插好、充电桩是否通电",
+            // control-server#407：充电中断与充电无进展。
+            [ChargingExecutionReasons.InterruptionClearing] =
+                "R-11／R-13 名单里的人到现场把车挪开、确认桩已腾空；之后桩与车各自检查，分别做桩的恢复确认与车的充电资格恢复",
+            [ChargingExecutionReasons.NoProgressClearing] =
+                "R-11／R-13 名单里的人到现场把车挪开、确认桩已腾空；之后检查桩的输出与车的电池，分别做桩的恢复确认与车的充电资格恢复",
+            [ChargingExecutionReasons.ClearingVehicleStillCharging] = "现场先结束这辆车的充电，再把车挪开，再确认清桩",
+            [ChargingExecutionReasons.InterruptionNotIsolated] =
+                "到现场查看车与桩；车和桩都没被暂停，车一直占着这个桩。要自动隔离，配置清桩名单与 VehicleFaultRecovery 入口",
+            [ChargingExecutionReasons.NoProgressNotIsolated] =
+                "到现场查看车的电池与桩的输出；车和桩都没被暂停，车一直占着这个桩。要自动隔离，配置清桩名单与 VehicleFaultRecovery 入口",
             [ChargingExecutionReasons.VehicleObservationLost] = "检查车与 RIoT 的连接；车可能仍在桩上，不要据此认为桩已空",
             [ChargingExecutionReasons.BatteryTelemetryLost] = "检查车的电量上报与 RIoT",
             [ChargingExecutionReasons.ReservationLostAtArrival] = "到现场确认车停的位置与桩的归属",
@@ -384,6 +395,11 @@ internal static class ChargingDashboardDescriptions
             or ChargingStationHoldTriggers.InterruptionConfirmed
             or ChargingStationHoldTriggers.NoProgressConfirmed
             or ChargingExecutionReasons.UnableToChargeClearing
+            or ChargingExecutionReasons.InterruptionClearing
+            or ChargingExecutionReasons.NoProgressClearing
+            or ChargingExecutionReasons.ClearingVehicleStillCharging
+            or ChargingExecutionReasons.InterruptionNotIsolated
+            or ChargingExecutionReasons.NoProgressNotIsolated
             or ChargingExecutionReasons.ClearedOldOrderUnsettled
             or ChargingExecutionReasons.ClearanceChargerNotVacant
             or ChargingExecutionReasons.VehicleObservationLost
@@ -419,15 +435,22 @@ internal static class ChargingDashboardDescriptions
     internal const string NoChargerAvailableNote =
         "无合格桩（CHARGING_NO_CHARGER_AVAILABLE）不单列在这里：它是充电分配的结论，看「逐车充电状态」卡片的排队原因（取自最近一轮已完成的分配）；服务端日志事件 2246 每车每种结论告警一次";
 
-    /// <summary>中断与无进展（批次9-09，control-server#407）还没合入。</summary>
-    internal const string InterruptionNotImplemented =
-        "充电中断、充电无进展与车辆充电资格暂停：本版本未实施（批次9-09，control-server#407），这几格不会有内容";
+    /// <summary>中断与无进展在告警卡片上的样子（批次9-09，control-server#407）。</summary>
+    internal const string InterruptionAlarmsNote =
+        "充电中断与充电无进展：隔离了的，以桩的分配暂停（INTERRUPTION_CONFIRMED／NO_PROGRESS_CONFIRMED）与清桩中的旅程码列在这里；"
+        + "只告警、未隔离的，以旅程码 CHARGING_INTERRUPTION_NOT_ISOLATED／CHARGING_NO_PROGRESS_NOT_ISOLATED 列在这里。车的充电资格暂停看「充电暂停与等待」";
+
+    /// <summary>车辆充电资格暂停从哪来、怎么恢复（批次9-09，control-server#407）。</summary>
+    internal const string EligibilityHoldsNote =
+        "车辆充电资格暂停来自充电中断、充电无进展或原桩反复重充（原桩反复重充只暂停车、不暂停桩）。暂停着的车不分任何桩，需要充电时排队并告警。"
+        + "恢复走 Host 的车辆充电资格恢复入口，与桩的恢复确认各自独立";
 
     /// <summary>Host 上的三个充电桩入口（control-server#406）：看板只读，只写出路径作为指引。</summary>
     internal static object HostEntries { get; } = new
     {
         maintenanceHold = "POST " + ChargingStationEndpoints.HoldRoute,
         recovery = "POST " + ChargingStationEndpoints.RecoveryRoute,
+        vehicleEligibilityRecovery = "POST " + ChargingStationEndpoints.VehicleRecoveryRoute,
         manualClearance = "POST " + ChargingStationEndpoints.ClearanceRoute,
         stationExclusivityRelease = "POST " + StationExclusivityReleaseEndpoints.Route,
     };

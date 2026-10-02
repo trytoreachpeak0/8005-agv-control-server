@@ -21,7 +21,7 @@ namespace ControlServer.Host.Dashboard;
 /// <item>车载端会话失联、而服务端还为它记着充电周期、桩、清桩或人工充电等待的车（REQ-0287 的第三种失联）。</item>
 /// </list>
 /// <para>
-/// <b>无合格桩</b>不单列：它是充电分配的结论，看逐车卡片的排队原因（<c>notReadable</c> 里写明）。<b>中断、无进展</b>（批次9-09）本版本未实施。
+/// <b>无合格桩</b>不单列：它是充电分配的结论，看逐车卡片的排队原因（<c>notReadable</c> 里写明）。<b>中断、无进展</b>（批次9-09）以桩的暂停与旅程码出现（<c>notReadable</c> 里写明）。
 /// </para>
 /// </remarks>
 internal sealed class ChargingAlarmsQueryEndpoint : IDashboardQueryEndpoint
@@ -163,7 +163,7 @@ internal sealed class ChargingAlarmsQueryEndpoint : IDashboardQueryEndpoint
             notReadable = new[]
             {
                 ChargingDashboardDescriptions.NoChargerAvailableNote,
-                ChargingDashboardDescriptions.InterruptionNotImplemented,
+                ChargingDashboardDescriptions.InterruptionAlarmsNote,
             },
             unavailableVehicles = facts.Contact.Unavailable(),
         };

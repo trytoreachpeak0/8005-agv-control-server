@@ -346,6 +346,69 @@ public sealed class ChargingDashboardTests
     }
 
     /// <summary>
+    /// 逐车卡片的「充电资格暂停」一格读真实的暂停（批次9-09，control-server#407）：有一条没恢复的暂停时写原因（码与中文说明）与起始时刻；暂停已经恢复的车、
+    /// 从没被暂停过的车都写「无」。数据面里给出最早那一条的原因、时刻与未恢复的条数。
+    /// </summary>
+    [Fact]
+    public async Task TheVehicleCardShowsTheVehiclesOwnChargingEligibilityPause()
+    {
+        await using ChargingDatabase database = await ChargingDatabase.CreateAsync();
+        DateTimeOffset now = database.Now;
+        await database.SeedAsync(context =>
+        {
+            AddRoster(context, 1, now.AddDays(-1), "张三", [211]);
+            context.Add(new VehicleChargingEligibilityHoldRow
+            {
+                HoldId = "VH-02",
+                IdempotencyKey = "VH-02",
+                VehicleKey = "K-02",
+                Reason = VehicleChargingEligibilityHoldReasons.InterruptionConfirmed,
+                HeldAt = now.AddMinutes(-15),
+            });
+            context.Add(new VehicleChargingEligibilityHoldRow
+            {
+                HoldId = "VH-03",
+                IdempotencyKey = "VH-03",
+                VehicleKey = "K-03",
+                Reason = VehicleChargingEligibilityHoldReasons.NoProgressConfirmed,
+                HeldAt = now.AddMinutes(-90),
+            });
+            context.Add(new VehicleChargingEligibilityRecoveryRow
+            {
+                RecoveryId = "VR-03",
+                HoldId = "VH-03",
+                RecoveredBy = "P-001",
+                RecovererRole = "维护管理员",
+                RecoveredAt = now.AddMinutes(-60),
+                Basis = "电池已换",
+            });
+        });
+
+        (JsonDocument fact, string html) = await ReadAsync(database, "charging-vehicles");
+        using (fact)
+        {
+            JsonElement[] vehicles = [.. fact.RootElement.GetProperty("vehicles").EnumerateArray()];
+            JsonElement held = vehicles.Single(v => v.GetProperty("agvId").GetString() == "AGV-02");
+            Assert.True(held.GetProperty("eligibilityHeld").GetBoolean());
+            JsonElement hold = held.GetProperty("eligibilityHold");
+            Assert.Equal(VehicleChargingEligibilityHoldReasons.InterruptionConfirmed, hold.GetProperty("reason").GetString());
+            Assert.Equal(now.AddMinutes(-15), hold.GetProperty("heldAt").GetDateTimeOffset());
+            Assert.Equal(1, hold.GetProperty("openHolds").GetInt32());
+            JsonElement recovered = vehicles.Single(v => v.GetProperty("agvId").GetString() == "AGV-03");
+            Assert.False(recovered.GetProperty("eligibilityHeld").GetBoolean());
+            Assert.Equal(JsonValueKind.Null, recovered.GetProperty("eligibilityHold").ValueKind);
+
+            string heldCell = Cell(RowOf(html, "AGV-02"), 12);
+            Assert.StartsWith("暂停中：INTERRUPTION_CONFIRMED：充电中断", heldCell, StringComparison.Ordinal);
+            Assert.Contains("，自 ", heldCell, StringComparison.Ordinal);
+            Assert.Equal("无", Cell(RowOf(html, "AGV-03"), 12));
+            Assert.Equal("无", Cell(RowOf(html, "AGV-01"), 12));
+            Assert.DoesNotContain("本版本未实施", html, StringComparison.Ordinal);
+            AssertCleanHtml(html);
+        }
+    }
+
+    /// <summary>
     /// 电量、batteryState 与排队原因只读最近一轮已完成的分配：后开的一轮还没走完时看到的是上一轮完整的值；车不在那一轮里写没评估，
     /// 不拿它更早的值。
     /// </summary>
@@ -573,7 +636,7 @@ public sealed class ChargingDashboardTests
 
     /// <summary>
     /// 人工充电等待两种原因各一条（失联车照列、标出失联）并写明解除方式；清桩中两辆（一辆人工确认已记下、一辆还没有）；最近的清桩记录里
-    /// 人工确认时刻与清桩完成时刻分开写；车辆充电资格暂停写明本版本未实施，库里有行时照列。
+    /// 人工确认时刻与清桩完成时刻分开写；车辆充电资格暂停照列，并写明它从哪来、怎么恢复（批次9-09，control-server#407）。
     /// </summary>
     [Fact]
     public async Task ManualHoldsClearingVehiclesClearanceRecordsAndEligibilityHoldsAreListed()
@@ -624,7 +687,7 @@ public sealed class ChargingDashboardTests
             Assert.Equal(["AGV-02", "AGV-03"], clearing.Select(c => c.GetProperty("agvId").GetString()));
             JsonElement recent = root.GetProperty("recentClearances")[0];
             Assert.NotEqual(recent.GetProperty("confirmedAt").GetDateTimeOffset(), recent.GetProperty("completedAt").GetDateTimeOffset());
-            Assert.Equal(ChargingDashboardDescriptions.InterruptionNotImplemented, root.GetProperty("eligibilityHoldsNote").GetString());
+            Assert.Equal(ChargingDashboardDescriptions.EligibilityHoldsNote, root.GetProperty("eligibilityHoldsNote").GetString());
             Assert.Single(root.GetProperty("eligibilityHolds").EnumerateArray());
 
             string lostHold = RowWith(html, "<td>AGV-05（车辆失联");
@@ -645,7 +708,8 @@ public sealed class ChargingDashboardTests
             Assert.Contains("挪到 300 号点旁", recordRow, StringComparison.Ordinal);
             Assert.Contains("P-009", recordRow, StringComparison.Ordinal);
             Assert.Contains("NO_PROGRESS_CONFIRMED：充电无进展", RowWith(html, "<td>AGV-04</td><td>NO_PROGRESS"), StringComparison.Ordinal);
-            Assert.Contains("本版本未实施", html, StringComparison.Ordinal);
+            Assert.DoesNotContain("本版本未实施", html, StringComparison.Ordinal);
+            Assert.Contains(ChargingDashboardDescriptions.EligibilityHoldsNote, html, StringComparison.Ordinal);
             AssertCleanHtml(html);
         }
     }
@@ -742,7 +806,7 @@ public sealed class ChargingDashboardTests
             Assert.Contains("CHARGING_BATTERY_TELEMETRY_LOST：充电中读不到新鲜的电量", html, StringComparison.Ordinal);
             Assert.Contains("CHARGER_NOT_ENGAGED：车已到充电桩并停稳", html, StringComparison.Ordinal);
             Assert.Contains("缺哪一项见服务端日志事件 2249", html, StringComparison.Ordinal);
-            Assert.Contains(ChargingDashboardDescriptions.InterruptionNotImplemented, html, StringComparison.Ordinal);
+            Assert.Contains(ChargingDashboardDescriptions.InterruptionAlarmsNote, html, StringComparison.Ordinal);
             AssertCleanHtml(html);
         }
     }
