@@ -100,6 +100,59 @@ public sealed class SchemaConformanceToolTests : IDisposable
         Assert.Equal("(absent)", violations[0]!["errors"]![0]!["actual"]!.GetValue<string>());
     }
 
+    /// <summary>
+    /// control-server#410: a REJECTED <c>UnableToChargeFieldConfirmationResult</c> answers <c>chargingPolicyDecision: null</c> -- the server
+    /// decided nothing. The schema allows the null and requires the field, so the shape the processor sends conforms and the same line
+    /// with the field left out does not.
+    /// </summary>
+    [Fact]
+    public async Task ARejectedUnableToChargeResultCarriesANullPolicyDecisionAndMayNotOmitIt()
+    {
+        const string site = "OnboardMessageProcessor.ProcessCurrentSessionMessageAsync";
+        Dictionary<string, object?> payload = new(StringComparer.Ordinal)
+        {
+            ["confirmationRequestId"] = "33333333-3333-4333-8333-333333333333",
+            ["outcome"] = "REJECTED",
+            ["problem"] = new
+            {
+                reasonCode = "RECOVERY_AUTHENTICATION_FAILED",
+                fieldPath = "payload.operator.operatorId",
+                displayMessage = "only R-11 confirms"
+            },
+            ["chargingPolicyDecision"] = null
+        };
+        string withNull = UnableToChargeResultLine(payload);
+        payload.Remove("chargingPolicyDecision");
+        string omitted = UnableToChargeResultLine(payload);
+
+        ToolRun conforming = await RunToolAsync(
+            "unable-to-charge-rejected", [Record("UnableToChargeFieldConfirmationResult", site, withNull)]);
+        ToolRun violating = await RunToolAsync(
+            "unable-to-charge-rejected-omitted", [Record("UnableToChargeFieldConfirmationResult", site, omitted)]);
+
+        Assert.Equal(0, conforming.ExitCode);
+        Assert.Equal(1, violating.ExitCode);
+        JsonNode error = Violations(violating)[0]!["errors"]![0]!;
+        Assert.Equal(("#/payload/chargingPolicyDecision", "required"),
+            (error["pointer"]!.GetValue<string>(), error["keyword"]!.GetValue<string>()));
+    }
+
+    private static string UnableToChargeResultLine(Dictionary<string, object?> payload) =>
+        JsonSerializer.Serialize(new
+        {
+            protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
+            profileId = ProtocolCandidateIdentity.ProfileId,
+            protocolReleaseVersion = ProtocolCandidateIdentity.ReleaseVersion,
+            protocolReleaseManifestSha256 = ProtocolCandidateIdentity.ManifestSha256,
+            messageType = "UnableToChargeFieldConfirmationResult",
+            messageId = MessageId,
+            correlationId = CorrelationId,
+            agvId = Agv,
+            sessionGeneration = 1L,
+            sentAt = SentAt,
+            payload
+        });
+
     [Fact]
     public async Task AMessageTypeTheContractDoesNotHaveIsAViolationAgainstTheManifest()
     {

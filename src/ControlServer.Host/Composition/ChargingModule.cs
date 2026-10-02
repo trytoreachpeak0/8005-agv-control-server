@@ -36,6 +36,7 @@ internal static class ChargingModule
         services.AddSingleton<FieldOperatorRoleRoster>();
         services.AddSingleton<StationClearanceExit>();
         services.AddScoped<ManualStationClearance>();
+        services.AddScoped<UnableToChargeFieldConfirmations>();
         return services;
     }
 }
