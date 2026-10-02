@@ -476,7 +476,7 @@ DispatchZoneParameters = @{
 | `mandatoryChargeEntryThresholdPercent` | 30 | 批次9-05 把电量判据改成「电量 − 每趟估计 ≥ 余量，且不低于强制充电线」之后，这组值与此前的 `MinimumBatteryPercent = 30`（批次9-05 已删）逐条等价 |
 | `minimumPostTaskBatteryMarginPercent` | 30 | 同上 |
 | `estimatedTaskConsumptionPercent` | 0 | 同上 |
-| 稳定期／观察窗口／最小增量 | 180 秒／600 秒／3 | 与现场推荐值相同；本批的判据不读它们 |
+| 稳定期／观察窗口／最小增量 | 180 秒／600 秒／3 | 与现场推荐值相同；无进展判定（control-server#407）读它们，要在场景里看到无进展的写 `Progress` 缩短 |
 | 适用车辆 | 全部 | 空即全部投运车辆 |
 
 **默认不导入名册**：一版名册都没有等于空名册，是合法状态，服务端照常启动、照常派搬运。合成 RIoT 报的电量是 80
@@ -494,6 +494,7 @@ DispatchZoneParameters = @{
 | 不写 | 上面那一版，全部车辆 |
 | `$false` | 不导入：每辆车都不投运 |
 | `@{ VehicleScope = @('BROKERX-L2-0002') }` | 同样的取值，只覆盖列出的车 |
+| `@{ Progress = @{ StabilizationSeconds = 5; ObservationWindowSeconds = 20; MinimumIncreasePercent = 3 } }` | 同样的取值，只把无进展观察换成给定的三个数（control-server#407：默认 180 秒／600 秒跑满要十几分钟）；可与 `VehicleScope` 一起写 |
 
 - 负向场景 `charging-policy-missing-vehicle-not-commissioned` 是 `Fleet` 两台车 + 策略只覆盖第二台。
 - `run-journey-g3.ps1` 经本编排器跑它的 `g3-*` 场景，在它的 ControlServer 绑定挪到含本票的提交之后自然获得这一步（绑定归批次9-07）。

@@ -177,6 +177,12 @@ public static class ChargingExecutionReasons
     public const string NoProgressClearing = "CHARGING_NO_PROGRESS_CONFIRMED";
 
     /// <summary>
+    /// 中断或无进展隔离之后的清桩中，还没人确认，RIoT 却读到车仍在充电（无进展可能只是涨得慢）：人工确认会因「车仍在充电」被拒，清桩也完成不了。
+    /// 告警一次，请现场先结束充电、再挪车、再确认清桩。读到不再充电时换回这一种的等人确认码。
+    /// </summary>
+    public const string ClearingVehicleStillCharging = "CHARGING_CLEARING_VEHICLE_STILL_CHARGING";
+
+    /// <summary>
     /// 中断已经确认，但隔离的出口此刻不可用（人工清桩出口或 Host 恢复入口缺一样）：只告警、未隔离——周期、桩占用、车原位都保持，不建单、不发命令、
     /// 不释放、不改派。人工清桩可以收尾它。
     /// </summary>

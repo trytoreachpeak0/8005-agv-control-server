@@ -282,6 +282,9 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 "充电不涨：车一直报在充电，但过了稳定期和整个观察窗口，电量增加不到策略规定的最小值，原因未知、不判定是车还是桩的问题。"
                 + "这个桩已暂停分配，这辆车的充电资格也已暂停，车留在原地，服务端不在原桩重新充电、不派它去别的桩、不建单、不动车。"
                 + "请 R-11／R-13 名单里的人到现场把车挪开、确认桩已腾空。之后桩与车各自检查、各自做恢复确认",
+            [ChargingExecutionReasons.ClearingVehicleStillCharging] =
+                "车仍在充电：这辆车因充电中断或充电不涨已暂停、在等人工清桩，但 RIoT 读到它还在充电（可能只是涨得慢）。车在充电时清桩确认会被拒，"
+                + "清桩也完成不了。请现场先结束充电，再把车挪开，再确认清桩",
             [ChargingExecutionReasons.InterruptionNotIsolated] =
                 "充电中断，只告警、未隔离：车还没充满就停了，但人工清桩或服务端恢复入口没有配置好，所以没有暂停桩和车。车和桩都保持原样，"
                 + "服务端不重新充电、不换桩、不动车，车一直占着这个桩。请到现场查看车和桩；配置好清桩名单与恢复入口（VehicleFaultRecovery）后才会自动隔离",

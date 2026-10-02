@@ -18,6 +18,9 @@ Set-StrictMode -Version Latest
 #   absent        the default policy above, for every vehicle
 #   $false        import nothing: every vehicle stays not commissioned (the negative scenario's other half)
 #   a table       @{ VehicleScope = @('<VehicleKey>', ...) } -- the default values, applied only to those vehicles
+#                 @{ Progress = @{ StabilizationSeconds = 5; ObservationWindowSeconds = 20; MinimumIncreasePercent = 3 } }
+#                 -- the no-progress observation shortened (control-server#407: 180 s / 600 s takes a quarter of an hour);
+#                 the two keys may be given together, and each table key must be one of these
 
 $script:DefaultPolicy = [ordered]@{
     minimumPostTaskBatteryMarginPercent  = 30
@@ -39,6 +42,7 @@ function Resolve-L2ChargingPolicy {
     )
 
     $scope = [string[]]@()
+    $progress = $null
     if ($Setup.ContainsKey('ChargingPolicy')) {
         $setting = $Setup.ChargingPolicy
         if ($setting -is [bool]) {
@@ -47,17 +51,33 @@ function Resolve-L2ChargingPolicy {
             }
             return $null
         }
-        if ($setting -isnot [hashtable] -or @($setting.Keys | Where-Object { $_ -cne 'VehicleScope' }).Count -gt 0 -or
-            -not $setting.ContainsKey('VehicleScope')) {
-            throw "ChargingPolicy in $Where is `$false or a table with exactly one key, VehicleScope."
+        if ($setting -isnot [hashtable] -or $setting.Count -eq 0 -or
+            @($setting.Keys | Where-Object { $_ -cnotin @('VehicleScope', 'Progress') }).Count -gt 0) {
+            throw "ChargingPolicy in $Where is `$false or a table whose keys are VehicleScope and/or Progress."
         }
-        $scope = [string[]]@($setting.VehicleScope)
-        if ($scope.Count -eq 0 -or @($scope | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -gt 0) {
-            throw "ChargingPolicy.VehicleScope in $Where lists at least one VehicleKey; leave the key out for every vehicle."
+        if ($setting.ContainsKey('VehicleScope')) {
+            $scope = [string[]]@($setting.VehicleScope)
+            if ($scope.Count -eq 0 -or @($scope | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -gt 0) {
+                throw "ChargingPolicy.VehicleScope in $Where lists at least one VehicleKey; leave the key out for every vehicle."
+            }
+        }
+        if ($setting.ContainsKey('Progress')) {
+            $progress = $setting.Progress
+            $names = @('StabilizationSeconds', 'ObservationWindowSeconds', 'MinimumIncreasePercent')
+            if ($progress -isnot [hashtable] -or $progress.Count -ne 3 -or
+                @($progress.Keys | Where-Object { $_ -cnotin $names }).Count -gt 0 -or
+                @($names | Where-Object { $progress[$_] -isnot [int] -or $progress[$_] -lt 0 }).Count -gt 0) {
+                throw "ChargingPolicy.Progress in $Where is a table of exactly StabilizationSeconds, ObservationWindowSeconds and MinimumIncreasePercent, each a non-negative int."
+            }
         }
     }
     $policy = [ordered]@{}
     foreach ($key in $script:DefaultPolicy.Keys) { $policy[$key] = $script:DefaultPolicy[$key] }
+    if ($null -ne $progress) {
+        $policy['progressStabilizationSeconds'] = $progress.StabilizationSeconds
+        $policy['progressObservationWindowSeconds'] = $progress.ObservationWindowSeconds
+        $policy['progressMinimumIncreasePercent'] = $progress.MinimumIncreasePercent
+    }
     $policy['vehicleScope'] = $scope
     $policy['changeNote'] = 'L2 preset (scripts/l2/L2ChargingPolicy.psm1): the test fixture values, never a field approval.'
     return $policy

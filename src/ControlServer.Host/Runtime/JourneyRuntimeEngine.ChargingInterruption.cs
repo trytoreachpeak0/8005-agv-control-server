@@ -317,17 +317,59 @@ public sealed partial class JourneyRuntimeEngine
     /// 清桩中「等人确认」时旅程上写的码：按这个周期的桩暂停是因为什么形成的——中断、无进展各有自己的码，充不上（和没有暂停的）照旧
     /// <see cref="ChargingExecutionReasons.UnableToChargeClearing"/>。
     /// </summary>
-    private async Task<string> ClearingWaitCodeAsync(ChargingCycleRow cycle, CancellationToken cancellationToken)
+    /// <remarks>
+    /// 中断与无进展之后，车可能还在充电（无进展可能只是涨得慢）：那时人工确认会以「车仍在充电」被拒，完成前的重核也挡住它。所以这两种先读一次车，
+    /// 读到 <c>CHARGING</c> 就写 <see cref="ChargingExecutionReasons.ClearingVehicleStillCharging"/>、告警一次（事件 2280），不静默等着。读不到车不算在充电。
+    /// </remarks>
+    private async Task<string> ClearingWaitCodeAsync(
+        JourneyRuntimeRow runtime, ChargingCycleRow cycle, CancellationToken cancellationToken)
     {
         string[] triggers = await dbContext.Set<ChargingStationAllocationHoldRow>().AsNoTracking()
             .Where(row => row.CycleId == cycle.CycleId)
             .Select(row => row.Trigger)
             .ToArrayAsync(cancellationToken)
             .ConfigureAwait(false);
-        return triggers.Contains(ChargingStationHoldTriggers.InterruptionConfirmed, StringComparer.Ordinal)
+        string waiting = triggers.Contains(ChargingStationHoldTriggers.InterruptionConfirmed, StringComparer.Ordinal)
             ? ChargingExecutionReasons.InterruptionClearing
             : triggers.Contains(ChargingStationHoldTriggers.NoProgressConfirmed, StringComparer.Ordinal)
                 ? ChargingExecutionReasons.NoProgressClearing
                 : ChargingExecutionReasons.UnableToChargeClearing;
+        if (waiting == ChargingExecutionReasons.UnableToChargeClearing)
+        {
+            return waiting;
+        }
+
+        RiotVehicleObservation? vehicle;
+        try
+        {
+            vehicle = await vehicleFacts.ReadVehicleAsync(runtime.VehicleKey, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
+                                      !cancellationToken.IsCancellationRequested)
+        {
+            vehicle = null;
+        }
+        string stillChargingKey = "clearing-vehicle-still-charging:" + runtime.JourneyId;
+        if (vehicle is { Connected: true } &&
+            string.Equals(vehicle.BatteryState, BatteryEligibility.ChargingBatteryState, StringComparison.Ordinal))
+        {
+            if (dispatchRound.Charging.Board.FirstTime(stillChargingKey))
+            {
+                LogClearingVehicleStillCharging(
+                    logger, runtime.VehicleKey, runtime.JourneyId, cycle.StationId, vehicle.BatteryPercent ?? -1, null);
+            }
+            return ChargingExecutionReasons.ClearingVehicleStillCharging;
+        }
+        dispatchRound.Charging.Board.Unsay(stillChargingKey);
+        return waiting;
     }
+
+    private static readonly Action<ILogger, string, string, int, int, Exception?> LogClearingVehicleStillCharging =
+        LoggerMessage.Define<string, string, int, int>(
+            LogLevel.Warning,
+            new EventId(2280, nameof(LogClearingVehicleStillCharging)),
+            "CHARGING_CLEARING_VEHICLE_STILL_CHARGING: vehicle {VehicleKey} (journey {JourneyId}) is held for a manual clearance " +
+            "at charger {StationId} after an interruption or no charging progress, and RIoT reads it still charging ({Battery}%). " +
+            "A clearance confirmation is refused while it charges and the clearance cannot complete. On site: end the charging " +
+            "first, then move the vehicle off the charger, then confirm the charger clear (control-server#407).");
 }

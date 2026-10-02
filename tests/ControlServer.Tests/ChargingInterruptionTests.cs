@@ -551,6 +551,128 @@ public sealed class ChargingInterruptionTests
         Assert.Equal(2, fleet.EngineLog.Entries.Count(entry => entry.EventId.Id == 2278));
     }
 
+    /// <summary>
+    /// 只告警的中断有出口（调度 10-02 第 3 点）：有人把车挪开、确认清桩——周期以 <c>CHARGING_CLEARED_BY_OPERATOR</c> 收尾、211 放开、旅程收尾，
+    /// 没有任何暂停；这辆车之后又低于强制充电线时照常拿到新的充电承诺。
+    /// </summary>
+    [Fact]
+    public async Task AnAlarmOnlyInterruptionIsLeftByAManualClearanceAndTheVehicleIsCommittedAgainLater()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        await ChargingAsync(fleet, battery: 50);
+        AtCharger(fleet, KeyA, 50, NotCharging);
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+        Assert.Equal(ChargingExecutionReasons.InterruptionNotIsolated, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+
+        MovedOff(fleet);
+        Assert.True((await ClearanceFor(fleet).DecideAsync(ClearanceRequest(), Token)).StationReleased);
+        await RoundAsync(fleet);
+        Assert.Equal(
+            (JourneyRuntimeStage.Completed, ChargingExecutionReasons.ClearedByOperator),
+            ((await ChargingJourneyAsync(fleet, AgvA))!.Stage, (await CycleAsync(fleet)).EndReason));
+        Assert.Null(await HolderAsync(fleet, Near.StationId));
+        Assert.Empty(await StationHoldsAsync(fleet));
+        Assert.Empty(await VehicleHoldsAsync(fleet));
+
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        await RoundAsync(fleet);
+        Assert.Equal(ChargingAllocationReasons.Committed, fleet.ChargingBoard.Verdicts[AgvA].Reason);
+        Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
+    }
+
+    /// <summary>
+    /// 只告警的无进展有出口：车又涨起来、涨到完成阈值——照常 <c>COMPLETE</c>、放开用途，只告警的码不再挂着；桩按充满离桩的三项确认释放，与平常一样。
+    /// </summary>
+    [Fact]
+    public async Task AnAlarmOnlyNoProgressThatGainsAgainCompletesAsUsual()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        await ChargingAsync(fleet, battery: 50);
+        for (int round = 0; round < 40; round++)
+        {
+            await LongRoundAsync(fleet, TimeSpan.FromSeconds(30));
+        }
+        Assert.Equal(ChargingExecutionReasons.NoProgressNotIsolated, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+
+        for (int step = 1; step <= 6; step++)
+        {
+            AtCharger(fleet, KeyA, 50 + (step * 5), Charging);
+            await LongRoundAsync(fleet, TimeSpan.FromSeconds(30));
+        }
+
+        Assert.Equal(ChargingCycleWireStates.Complete, (await CycleAsync(fleet)).WireState);
+        Assert.Equal(
+            (JourneyRuntimeStage.Completed, ChargingExecutionReasons.Completed),
+            ((await ChargingJourneyAsync(fleet, AgvA))!.Stage, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode));
+        Assert.Null(await ClaimOfAsync(fleet, KeyA));
+
+        MovedOff(fleet);
+        await RoundAsync(fleet);
+        Assert.Null(await HolderAsync(fleet, Near.StationId));
+    }
+
+    /// <summary>
+    /// 只告警的 S-d 有出口：车留在桩上、一直不交桩；有人把车挪开（三项确认都在）——211 按充满离桩释放，下一轮这辆车照常拿到新的充电承诺。
+    /// </summary>
+    [Fact]
+    public async Task AnAlarmOnlySecondRechargeReleasesTheChargerOnceTheVehicleLeavesAndItIsCommittedAgain()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        await RechargedOnceAndFullAgainAsync(fleet);
+        AtCharger(fleet, KeyA, 20, NotCharging);
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+        Assert.Equal(ChargingAllocationReasons.VehicleStillHoldsCharger, fleet.ChargingBoard.Verdicts[AgvA].Reason);
+
+        fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = 300, BatteryState = NotCharging };
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+
+        Assert.Equal(ChargingAllocationReasons.Committed, fleet.ChargingBoard.Verdicts[AgvA].Reason);
+        Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
+        Assert.Empty(await StationHoldsAsync(fleet));
+    }
+
+    /// <summary>
+    /// 无进展可能在车「仍在充电、只是涨得慢」时形成（调度 10-02 第 2 点）：进了清桩中之后车还报 <c>CHARGING</c>——旅程写
+    /// <c>CHARGING_CLEARING_VEHICLE_STILL_CHARGING</c>、告警恰好一次（事件 2280），清桩确认被拒、桩不放；现场结束充电之后码换回
+    /// <c>CHARGING_NO_PROGRESS_CONFIRMED</c>，挪车、确认，清桩完成。
+    /// </summary>
+    [Fact]
+    public async Task AVehicleStillChargingWhileClearingIsNamedAndWarnedOnceUntilTheChargingIsEnded()
+    {
+        await using FleetFixture fleet = await IsolatingFleetAsync();
+        await ChargingAsync(fleet, battery: 50);
+        for (int round = 0; round < 40 && (await StationHoldsAsync(fleet)).Length == 0; round++)
+        {
+            // Slow: one percent every five minutes, below the 3 % the window asks for.
+            AtCharger(fleet, KeyA, 50 + (round / 10), Charging);
+            await LongRoundAsync(fleet, TimeSpan.FromSeconds(30));
+        }
+        Assert.Equal(ChargingStationHoldTriggers.NoProgressConfirmed, Assert.Single(await StationHoldsAsync(fleet)).Trigger);
+
+        for (int minute = 0; minute < 15; minute++)
+        {
+            await LongRoundAsync(fleet, TimeSpan.FromMinutes(1));
+        }
+        Assert.Equal(ChargingExecutionReasons.ClearingVehicleStillCharging, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+        Assert.Single(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2280);
+        ManualStationClearanceConfirmation refused = await ClearanceFor(fleet).DecideAsync(ClearanceRequest(), Token);
+        Assert.Equal((FieldConfirmationDecision.Rejected, false), (refused.Decision.Outcome, refused.StationReleased));
+        Assert.Equal((KeyA, StationExclusivityStates.Occupied), await HolderAsync(fleet, Near.StationId));
+
+        AtCharger(fleet, KeyA, 53, NotCharging);
+        await RoundAsync(fleet);
+        Assert.Equal(ChargingExecutionReasons.NoProgressClearing, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+
+        MovedOff(fleet);
+        ManualStationClearanceConfirmation confirmed = await ClearanceFor(fleet).DecideAsync(
+            ClearanceRequest("00000000-0000-4000-8000-000000000408"), Token);
+        Assert.True(confirmed.StationReleased);
+        Assert.Single(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2280);
+    }
+
     // ---- 重放、重启、崩溃点、与人工清桩同一刻 ----------------------------------------------------------------------------
 
     /// <summary>
@@ -927,9 +1049,9 @@ public sealed class ChargingInterruptionTests
             fleet.Clock,
             NullLogger<ManualStationClearance>.Instance);
 
-    private static ManualStationClearanceRequest ClearanceRequest() =>
+    private static ManualStationClearanceRequest ClearanceRequest(string confirmationRequestId = "00000000-0000-4000-8000-000000000407") =>
         new(
-            ManualStationClearanceSources.Onboard, AgvA, KeyA, "00000000-0000-4000-8000-000000000407", 1, Guid.NewGuid().ToString("D"),
+            ManualStationClearanceSources.Onboard, AgvA, KeyA, confirmationRequestId, 1, Guid.NewGuid().ToString("D"),
             $"{Near.StationName}||fleet-r11|STATION_EMPTY", Near.StationName, null, "STATION_EMPTY", "fleet-r11", "BADGE",
             DateTimeOffset.Parse("2026-10-02T06:00:00Z", System.Globalization.CultureInfo.InvariantCulture),
             DateTimeOffset.Parse("2026-10-02T06:00:00Z", System.Globalization.CultureInfo.InvariantCulture));
