@@ -63,7 +63,7 @@ public sealed class ChargingClearanceToWaitingPointTests
         Assert.Null(await StationAsync(fleet, Point214.StationId));
         Assert.Empty(await ClearanceStopsAsync(fleet, journey));
         Assert.Equal(ChargingExecutionReasons.UnableToChargeClearing, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
-        Assert.DoesNotContain(fleet.EngineLog.Entries, entry => entry.EventId.Id is >= 2290 and <= 2296);
+        Assert.DoesNotContain(fleet.EngineLog.Entries, entry => entry.EventId.Id is >= 2300 and <= 2306);
 
         ChargingUnableToChargeTests.AtTheCharger(fleet);
         fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = 300, BatteryState = "NO_CHARGE" };
@@ -94,7 +94,7 @@ public sealed class ChargingClearanceToWaitingPointTests
         Assert.Equal((KeyA, journey.JourneyId, StationExclusivityStates.Reserved), (reserved.VehicleKey, reserved.JourneyId, reserved.State));
         Assert.Single(fleet.Riot.Creates);
         Assert.Equal(ChargingExecutionReasons.ClearanceToWaitingPoint, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
-        Assert.Single(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2290);
+        Assert.Single(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2300);
 
         await RoundAsync(fleet);
 
@@ -148,7 +148,7 @@ public sealed class ChargingClearanceToWaitingPointTests
         Assert.Equal((JourneyPlanBuilder.WaitingPointStopPurpose, "ARRIVED"),
             (arrived.GetProperty("stopPurposeCategory").GetString(), arrived.GetProperty("state").GetString()));
         Assert.Equal(JsonValueKind.Null, (await PayloadsAsync(fleet, AgvA, "VehicleBusinessStateSnapshot"))[^1].GetProperty("activePurpose").ValueKind);
-        Assert.Single(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2295);
+        Assert.Single(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2305);
         Assert.Equal(2, fleet.Riot.Creates.Count);
         Assert.Empty(fleet.Riot.OrderCommands);
         Assert.Empty(fleet.Riot.EmergencyCommands);
@@ -227,6 +227,23 @@ public sealed class ChargingClearanceToWaitingPointTests
     }
 
     /// <summary>
+    /// 读数时刻晚于判定时刻（合成 L2 第一轮抓到的缺陷）：真实进程里时间在读车期间照走，RIoT 读数的时刻会落在读之前取的「此刻」之后。夹具时钟默认静止，
+    /// 所以这里让它每被读一次就走 1 毫秒。「车静止停在桩上」要求读数不晚于此刻，判定用的此刻必须在读车之后取，否则车永远判不新鲜、永远不出发。
+    /// </summary>
+    [Fact]
+    public async Task AReadingStampedAfterTheMomentItIsJudgedAtStillCountsAsFresh()
+    {
+        await using FleetFixture fleet = await ClearanceFleetAsync();
+        JourneyRuntimeRow journey = await OldOrderEndedAsync(fleet);
+        fleet.Clock.Tick = TimeSpan.FromMilliseconds(1);
+
+        await RoundAsync(fleet);
+
+        Assert.Equal(ChargingExecutionReasons.ClearanceToWaitingPoint, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+        Assert.Equal((KeyA, journey.JourneyId), ((await StationAsync(fleet, 214))!.VehicleKey, (await StationAsync(fleet, 214))!.JourneyId));
+    }
+
+    /// <summary>
     /// 出发前提来回抖（这里是急停一会儿有一会儿没有）：承诺之后建单前复核不过就撤回（从没发出过，预占当场放）；撤回之后隔
     /// <c>JourneyRuntime:OwnOrderRebuildDelay</c> 才再承诺——不会每隔一轮就承诺、撤回一次，留下一串从没发出过的意图。
     /// </summary>
@@ -280,7 +297,7 @@ public sealed class ChargingClearanceToWaitingPointTests
     }
 
     /// <summary>
-    /// 无合格点：唯一登记的 214 已被空闲返回预占。原地排队、写 <see cref="ChargingExecutionReasons.ClearanceNoWaitingPoint"/>、告警恰好一次（事件 2291，十轮），
+    /// 无合格点：唯一登记的 214 已被空闲返回预占。原地排队、写 <see cref="ChargingExecutionReasons.ClearanceNoWaitingPoint"/>、告警恰好一次（事件 2301，十轮），
     /// 没有任何订单意图、停靠或预占；不退到桩旁的 212 或任何登记外的站。点空出来之后照常出发。
     /// </summary>
     [Fact]
@@ -303,7 +320,7 @@ public sealed class ChargingClearanceToWaitingPointTests
         Assert.DoesNotContain(fleet.Riot.Creates, create => create.VehicleKey == KeyA && create.UpperId != journey.PickupUpperId);
         Assert.Null(await StationAsync(fleet, 212));
         Assert.Equal(ChargingExecutionReasons.ClearanceNoWaitingPoint, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
-        Assert.Single(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2291);
+        Assert.Single(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2301);
     }
 
     // ---- 并发：争最后一个点 ----------------------------------------------------------------------------------------------
@@ -614,7 +631,7 @@ public sealed class ChargingClearanceToWaitingPointTests
         Assert.Empty(fleet.Riot.OrderCommands);
         Assert.Empty(await fleet.Context.Set<OwnOrderRebuildRow>().AsNoTracking().ToArrayAsync(Token));
         Assert.Equal(ChargingExecutionReasons.ClearanceMoveEnded, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
-        Assert.Single(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2294);
+        Assert.Single(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2304);
         Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, Near.StationId));
 
         ManualStationClearanceConfirmation decision = await ManualClearance(fleet).DecideAsync(Request("00000000-0000-4000-8000-0000000c4093"), Token);

@@ -18,7 +18,7 @@ public sealed partial class JourneyRuntimeEngine
     private static readonly Action<ILogger, string, string, int, int, long, Exception?> LogClearanceMoveCommitted =
         LoggerMessage.Define<string, string, int, int, long>(
             LogLevel.Warning,
-            new EventId(2290, nameof(LogClearanceMoveCommitted)),
+            new EventId(2300, nameof(LogClearanceMoveCommitted)),
             "CHARGING_CLEARANCE_TO_WAITING_POINT: vehicle {VehicleKey} (journey {JourneyId}) could not charge at charger {StationId}; " +
             "its old order has ended and it is now committed to waiting point {WaitingPoint} (route cost {CostMm} mm). It will " +
             "drive there by itself once the pre-departure gate passes: people on site, mind the vehicle. Arriving completes the " +
@@ -27,7 +27,7 @@ public sealed partial class JourneyRuntimeEngine
     private static readonly Action<ILogger, string, string, string, Exception?> LogClearanceNoWaitingPoint =
         LoggerMessage.Define<string, string, string>(
             LogLevel.Warning,
-            new EventId(2291, nameof(LogClearanceNoWaitingPoint)),
+            new EventId(2301, nameof(LogClearanceNoWaitingPoint)),
             "CHARGING_CLEARANCE_NO_WAITING_POINT: vehicle {VehicleKey} (journey {JourneyId}) may leave its charger for a waiting " +
             "point, but none is eligible ({Excluded}). It stays where it is and no other station is guessed (REQ-0178); a manual " +
             "station clearance still completes it.");
@@ -35,14 +35,14 @@ public sealed partial class JourneyRuntimeEngine
     private static readonly Action<ILogger, string, string, string, Exception?> LogClearanceMoveWithdrawn =
         LoggerMessage.Define<string, string, string>(
             LogLevel.Information,
-            new EventId(2292, nameof(LogClearanceMoveWithdrawn)),
+            new EventId(2302, nameof(LogClearanceMoveWithdrawn)),
             "Clearance move of vehicle {VehicleKey} (journey {JourneyId}) withdrawn before any order went out ({Why}); its waiting " +
             "point reservation is released and the clearing is judged again next round.");
 
     private static readonly Action<ILogger, string, string, string, string, Exception?> LogClearanceMoveHeld =
         LoggerMessage.Define<string, string, string, string>(
             LogLevel.Warning,
-            new EventId(2293, nameof(LogClearanceMoveHeld)),
+            new EventId(2303, nameof(LogClearanceMoveHeld)),
             "CHARGING_CLEARANCE_MOVE_HELD: clearance move {UpperId} of vehicle {VehicleKey} (journey {JourneyId}) is held ({Why}): " +
             "the vehicle, its waiting point, its purpose and the charger all stay, no other point is chosen and this server sends " +
             "no cancel. Check the order and the vehicle in RIoT.");
@@ -50,7 +50,7 @@ public sealed partial class JourneyRuntimeEngine
     private static readonly Action<ILogger, string, string, string, Exception?> LogClearanceMoveEnded =
         LoggerMessage.Define<string, string, string>(
             LogLevel.Warning,
-            new EventId(2294, nameof(LogClearanceMoveEnded)),
+            new EventId(2304, nameof(LogClearanceMoveEnded)),
             "CHARGING_CLEARANCE_MOVE_ENDED: clearance move {UpperId} of vehicle {VehicleKey} (journey {JourneyId}) was ended by a " +
             "person before it arrived and the vehicle is proven stopped. It is not rebuilt and this clearing does not set off by " +
             "itself again: a person with R-11 or R-13 has to confirm the charger clear (control-server#404's rule for charging " +
@@ -59,7 +59,7 @@ public sealed partial class JourneyRuntimeEngine
     private static readonly Action<ILogger, string, string, int, Exception?> LogClearedAtWaitingPoint =
         LoggerMessage.Define<string, string, int>(
             LogLevel.Information,
-            new EventId(2295, nameof(LogClearedAtWaitingPoint)),
+            new EventId(2305, nameof(LogClearedAtWaitingPoint)),
             "Charging journey {JourneyId}: vehicle {VehicleKey} arrived at waiting point {WaitingPoint}; the clearance is complete " +
             "(system proof, REQ-0179), the charger's exclusivity and the vehicle's purpose are released and the waiting point is " +
             "now its occupancy. The charger's allocation hold stays.");
@@ -67,7 +67,7 @@ public sealed partial class JourneyRuntimeEngine
     private static readonly Action<ILogger, string, string, string, Exception?> LogClearanceMoveNotStarted =
         LoggerMessage.Define<string, string, string>(
             LogLevel.Information,
-            new EventId(2296, nameof(LogClearanceMoveNotStarted)),
+            new EventId(2306, nameof(LogClearanceMoveNotStarted)),
             "Vehicle {VehicleKey} (journey {JourneyId}) does not set off for a waiting point this round: {Why}.");
 
     /// <summary>这趟旅程还在进行的那一次清桩移动（带跟踪）；没有为空。</summary>
