@@ -348,6 +348,26 @@ public sealed class VehiclePurposeDashboardTests
         }
     }
 
+    /// <summary>一轮的完成时刻在此刻之后（时钟回拨）：与过期的一轮同样不可用，结论那一格写没评估（control-server#408 独立审查 S3）。</summary>
+    [Fact]
+    public async Task APassCompletedAfterNowIsNotShownBecauseTheClockWentBack()
+    {
+        await using DashboardDatabase database = await DashboardDatabase.CreateAsync();
+        IdleReturnVerdictBoard board = new();
+        long pass = board.BeginPass(DateTimeOffset.UtcNow.AddSeconds(29));
+        board.Record("AGV-01", IdleReturnReasons.Committed, "j");
+        board.EndPass(pass, DateTimeOffset.UtcNow.AddSeconds(30));
+
+        (JsonDocument fact, string _) = await ReadAsync(database, "idle-returns", board);
+        using (fact)
+        {
+            JsonElement verdict = fact.RootElement.GetProperty("vehicles").EnumerateArray()
+                .Single(vehicle => vehicle.GetProperty("agvId").GetString() == "AGV-01").GetProperty("verdict");
+            Assert.False(verdict.GetProperty("evaluated").GetBoolean());
+            Assert.Equal(IdleReturnsQueryEndpoint.PassNotRunning(TimeSpan.FromSeconds(6)), verdict.GetProperty("note").GetString());
+        }
+    }
+
     /// <summary>
     /// 时效窗口（调度 10-01 定的方案 A）：最近一轮已完成的评估走完已超过 3 个轮询间隔，评估没在跑——全车队没有空闲车时派车轮不跑、
     /// 评估或引擎这一轮抛了异常（开了一轮却没走完）——每辆车的结论一格都写没评估与原因，不写那一轮的码。用途、等待点、公共站点三张卡片

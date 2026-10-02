@@ -63,33 +63,30 @@ internal sealed class WaitingPointsQueryEndpoint : IDashboardQueryEndpoint
             await StationHoldings.ReadAsync(dbContext, StationExclusivityKinds.WaitingPoint, cancellationToken);
 
         List<object> points = [];
-        foreach (WaitingPointEntry point in registration?.Points ?? [])
+        foreach ((WaitingPointEntry? point, StationExclusivityRow? holding) in StationHoldings.MergeWithHeld(
+                     registration?.Points ?? [], point => (point.MapId, point.StationId), held))
         {
-            StationExclusivityRow? holding = held.SingleOrDefault(row => row.MapId == point.MapId && row.StationId == point.StationId);
-            points.Add(Point(
-                point.MapId,
-                point.StationId,
-                point.StationName,
-                inCurrentRegistration: true,
-                enabled: point.Enabled,
-                point.VehicleScope,
-                holding,
-                note: holding is not null && !point.Enabled ? DisabledStillHeld : null,
-                contact));
-        }
-        foreach (StationExclusivityRow orphan in held.Where(row =>
-                     registration?.Points.Any(point => point.MapId == row.MapId && point.StationId == row.StationId) != true))
-        {
-            points.Add(Point(
-                orphan.MapId,
-                orphan.StationId,
-                stationName: null,
-                inCurrentRegistration: false,
-                enabled: null,
-                vehicleScope: [],
-                orphan,
-                NotInCurrentRegistrationStillHeld,
-                contact));
+            points.Add(point is not null
+                ? Point(
+                    point.MapId,
+                    point.StationId,
+                    point.StationName,
+                    inCurrentRegistration: true,
+                    enabled: point.Enabled,
+                    point.VehicleScope,
+                    holding,
+                    note: holding is not null && !point.Enabled ? DisabledStillHeld : null,
+                    contact)
+                : Point(
+                    holding!.MapId,
+                    holding.StationId,
+                    stationName: null,
+                    inCurrentRegistration: false,
+                    enabled: null,
+                    vehicleScope: [],
+                    holding,
+                    NotInCurrentRegistrationStillHeld,
+                    contact));
         }
 
         return new
@@ -137,6 +134,6 @@ internal sealed class WaitingPointsQueryEndpoint : IDashboardQueryEndpoint
                     "这个等待点已不在当前登记里（登记换版时被删掉），但仍被下面这辆车预占或占用：要等离点证据满足才放",
                 _ => null,
             },
-            holding = StationHoldings.Project(holding, contact),
+            holding = StationHoldings.Project(holding, contact, StationExclusivityKinds.WaitingPoint),
         };
 }

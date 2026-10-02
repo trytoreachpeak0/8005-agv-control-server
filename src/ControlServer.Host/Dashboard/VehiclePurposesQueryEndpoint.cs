@@ -67,8 +67,8 @@ internal sealed class VehiclePurposesQueryEndpoint : IDashboardQueryEndpoint
             ? "没有任何用途占着这辆车"
             : DashboardDescriptions.Purposes.GetValueOrDefault(claim.Purpose) ?? "服务端记下的用途没有中文说明，请报开发",
         holderJourneyId = claim?.JourneyId,
-        holderKind = claim is null ? null : VehiclePurposeFacts.HolderKind(claim.JourneyId),
-        holderKindDescription = claim is null ? null : VehiclePurposeFacts.HolderKindDescription(claim.JourneyId),
+        holderKind = claim is null ? null : VehiclePurposeFacts.HolderKind(claim.JourneyId, claim.Purpose),
+        holderKindDescription = claim is null ? null : VehiclePurposeFacts.HolderKindDescription(claim.JourneyId, claim.Purpose),
         claimedAt = claim?.ClaimedAt,
     };
 }

@@ -971,7 +971,8 @@ public sealed partial class MultiVehicleExecutionTests
             IDispatchAdmissionCriterion? extraCriterion = null,
             bool withRouteGraph = false,
             bool routeGraphOnInTransitChain = true,
-            Microsoft.EntityFrameworkCore.Diagnostics.DbCommandInterceptor? commands = null)
+            Microsoft.EntityFrameworkCore.Diagnostics.DbCommandInterceptor? commands = null,
+            Microsoft.EntityFrameworkCore.Diagnostics.ISaveChangesInterceptor? saves = null)
         {
             SqliteConnection connection = new("Data Source=:memory:");
             await connection.OpenAsync(TestContext.Current.CancellationToken);
@@ -980,6 +981,10 @@ public sealed partial class MultiVehicleExecutionTests
             if (commands is not null)
             {
                 builder.AddInterceptors(commands);
+            }
+            if (saves is not null)
+            {
+                builder.AddInterceptors(saves);
             }
             DbContextOptions<ControlServerDbContext> dbOptions = builder.Options;
             ControlServerDbContext context = new(dbOptions);
@@ -1302,11 +1307,20 @@ public sealed partial class MultiVehicleExecutionTests
             Context.ChangeTracker.Clear();
         }
 
+        /// <summary>
+        /// 夹具释放时跑的检查（control-server#408：充电看板的说明守卫在这里断言这个用例写过的码都有说明）。先释放资源再断言，断言失败不漏连接。
+        /// </summary>
+        public List<Action> DisposeChecks { get; } = [];
+
         public async ValueTask DisposeAsync()
         {
             File.Delete(ClearanceRosterPath);
             await Context.DisposeAsync();
             await _connection.DisposeAsync();
+            foreach (Action check in DisposeChecks)
+            {
+                check();
+            }
         }
 
         private JourneyRuntimeEngine CreateEngine()

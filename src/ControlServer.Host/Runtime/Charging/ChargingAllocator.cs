@@ -27,6 +27,20 @@ public sealed record ChargingAllocationVerdict(
     public bool Committed => Reason == ChargingAllocationReasons.Committed;
 }
 
+/// <summary>一辆车在一轮分配里的结论。</summary>
+public sealed record ChargingBoardVerdict(string Reason, string Detail);
+
+/// <summary>一辆车在一轮分配里读到的电量观测：RIoT 的电量与电池状态、按冻结策略投影的 batteryState、观测时刻。</summary>
+public sealed record ChargingBoardObservation(int? BatteryPercent, string? RiotBatteryState, string BatteryState, DateTimeOffset ObservedAt);
+
+/// <summary>一轮已完成的分配：第几轮、何时开始与走完、这一轮交来的每辆车（按 <c>agvId</c>）的结论与电量观测。</summary>
+public sealed record ChargingBoardPass(
+    long Number,
+    DateTimeOffset StartedAt,
+    DateTimeOffset CompletedAt,
+    IReadOnlyDictionary<string, ChargingBoardVerdict> Verdicts,
+    IReadOnlyDictionary<string, ChargingBoardObservation> Observations);
+
 /// <summary>每辆车最近一次的充电分配结论，跨轮次保留（宿主里是单例）。</summary>
 /// <remarks>
 /// 一辆空闲车每一轮都判一次；结论变了才记一条日志（事件 2241），看板（批次9-10）也可以从这里读。放单例而不是静态字段或作用域实例上：
@@ -49,12 +63,90 @@ public sealed class ChargingAllocationBoard
             ? before != now
             : reason != ChargingAllocationReasons.NotRequired;
         _last[agvId] = now;
+        lock (_passGate)
+        {
+            if (_staging is not null)
+            {
+                _staging.Verdicts[agvId] = new ChargingBoardVerdict(reason, detail);
+            }
+        }
         return changed;
     }
 
-    /// <summary>每辆车最近一次的原因码与细节。</summary>
+    /// <summary>每辆车最近一次的原因码与细节（不分轮次）。</summary>
     public IReadOnlyDictionary<string, (string Reason, string Detail)> Verdicts =>
         _last.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+
+    // ---- 分轮次（批次9-10，control-server#408；与 IdleReturnVerdictBoard 同一个写法，调度 10-02 批准）----
+    // 看板只读「最近一轮已完成的分配」：读取正好落在一轮中途时看到的是上一轮完整的结论；车不在那一轮里（没交来、这一轮出错）就没有它的值，
+    // 不拿它更早的结论或电量充数（REQ-0269）。日志「变了才记」的语义不变（仍比 _last）。
+
+    private readonly object _passGate = new();
+    private ChargingBoardPassBuilder? _staging;
+    private long _tokens;
+    private long _passes;
+    private ChargingBoardPass? _completed;
+
+    /// <summary>一轮分配开始：此后的结论与电量观测记进这一轮的暂存，已完成的那一份不动。答这一轮的令牌，<see cref="EndPass"/> 凭它提交。</summary>
+    public long BeginPass(DateTimeOffset startedAt)
+    {
+        lock (_passGate)
+        {
+            _staging = new ChargingBoardPassBuilder(++_tokens, startedAt);
+            return _staging.Token;
+        }
+    }
+
+    /// <summary>
+    /// 这一轮为这辆车读到的电量观测（派车轮交来的 RIoT 读数）与按它冻结的策略投影的 batteryState。只登记，不参与任何判定。
+    /// </summary>
+    public void RecordObservation(string agvId, int? batteryPercent, string? riotBatteryState, string batteryState, DateTimeOffset observedAt)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+        lock (_passGate)
+        {
+            if (_staging is not null)
+            {
+                _staging.Observations[agvId] = new ChargingBoardObservation(batteryPercent, riotBatteryState, batteryState, observedAt);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 一轮分配走完：这一轮的结论与观测整份成为「最近一轮已完成的分配」。令牌不是当前这一轮的（两轮重叠，后开的一轮已接管暂存）时什么也不提交。
+    /// </summary>
+    public void EndPass(long token, DateTimeOffset completedAt)
+    {
+        lock (_passGate)
+        {
+            if (_staging is null || _staging.Token != token)
+            {
+                return;
+            }
+            _completed = new ChargingBoardPass(++_passes, _staging.StartedAt, completedAt, _staging.Verdicts, _staging.Observations);
+            _staging = null;
+        }
+    }
+
+    /// <summary>最近一轮已完成的分配；重启后还没有完成过一轮时为空。</summary>
+    public ChargingBoardPass? LatestCompletedPass
+    {
+        get
+        {
+            lock (_passGate)
+            {
+                return _completed;
+            }
+        }
+    }
+
+    private sealed class ChargingBoardPassBuilder(long token, DateTimeOffset startedAt)
+    {
+        public long Token { get; } = token;
+        public DateTimeOffset StartedAt { get; } = startedAt;
+        public Dictionary<string, ChargingBoardVerdict> Verdicts { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, ChargingBoardObservation> Observations { get; } = new(StringComparer.Ordinal);
+    }
 
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _waiting = new(StringComparer.Ordinal);
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTimeOffset> _absentSince =
@@ -361,11 +453,28 @@ public sealed class ChargingAllocator(
     {
         ArgumentNullException.ThrowIfNull(currentMap);
         ArgumentNullException.ThrowIfNull(candidates);
+        // control-server#408: the dashboard reads only a completed pass; every exit below ends it, an escaping exception does not.
+        long pass = board.BeginPass(timeProvider.GetUtcNow());
         RoundReads reads = new();
         await ReleaseReservationsOfFailedCyclesAsync(reads, cancellationToken).ConfigureAwait(false);
         if (candidates.Count == 0)
         {
+            board.EndPass(pass, timeProvider.GetUtcNow());
             return [];
+        }
+
+        foreach (ChargingCandidate candidate in candidates)
+        {
+            // Registered for the dashboard only, from the facts this round was handed; nothing below reads it back. A vehicle RIoT
+            // reports offline or disabled has no current battery (REQ-0269, review S2): registered as not fresh, with no reading.
+            RiotVehicleObservation seen = candidate.Facts.Vehicle;
+            bool reachable = seen.Connected && seen.Enabled;
+            board.RecordObservation(
+                candidate.Vehicle.AgvId,
+                reachable ? seen.BatteryPercent : null,
+                reachable ? seen.BatteryState : null,
+                BatteryEligibility.Project(seen, candidate.Facts.BatteryPolicy, observationFresh: reachable),
+                seen.ObservedAt);
         }
 
         Dictionary<string, ChargingAllocationVerdict> verdicts = new(StringComparer.Ordinal);
@@ -406,6 +515,7 @@ public sealed class ChargingAllocator(
             }
         }
 
+        board.EndPass(pass, timeProvider.GetUtcNow());
         return [.. candidates.Select(candidate => verdicts[candidate.Vehicle.AgvId])];
     }
 
