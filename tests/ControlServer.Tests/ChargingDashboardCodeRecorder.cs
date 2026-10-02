@@ -37,6 +37,38 @@ internal sealed class ChargingDashboardCodeRecorder : ISaveChangesInterceptor
             "Charging codes written in this test with no description on the charging dashboard: "
             + string.Join(", ", Undescribed.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)));
 
+    /// <summary>
+    /// 排队原因与 batteryState 不落库，所以从这个用例真实跑出来的地方收：充电分配每次结论变了写的日志（事件 2241，原因码在消息里）、
+    /// 板上每辆车最近一次的结论，以及最近一轮已完成的分配里的结论与 batteryState。每一个都要有逐车卡片上的中文说明。
+    /// </summary>
+    public static void AssertEveryAllocationCodeIsDescribed(
+        Host.Runtime.Charging.ChargingAllocationBoard board, IEnumerable<EventRecordingLogger<Host.Runtime.Charging.ChargingAllocator>.Entry> log)
+    {
+        HashSet<string> reasons = new(StringComparer.Ordinal);
+        foreach (EventRecordingLogger<Host.Runtime.Charging.ChargingAllocator>.Entry entry in log.Where(entry => entry.EventId.Id == 2241))
+        {
+            System.Text.RegularExpressions.Match match =
+                System.Text.RegularExpressions.Regex.Match(entry.Message, @"^Charging not allocated for vehicle .+?: ([A-Za-z0-9_]+)\.");
+            Assert.True(match.Success, "Unexpected 2241 message shape: " + entry.Message);
+            reasons.Add(match.Groups[1].Value);
+        }
+        reasons.UnionWith(board.Verdicts.Values.Select(verdict => verdict.Reason));
+        Host.Runtime.Charging.ChargingBoardPass? pass = board.LatestCompletedPass;
+        reasons.UnionWith(pass?.Verdicts.Values.Select(verdict => verdict.Reason) ?? []);
+        string[] undescribed =
+        [
+            .. reasons.Where(reason => ChargingDashboardDescriptions.DescribeAllocationReason(reason) is null)
+                .Select(reason => reason + " (queue reason)"),
+            .. (pass?.Observations.Values.Select(observed => observed.BatteryState) ?? [])
+                .Where(state => !ChargingDashboardDescriptions.BatteryStateProjections.ContainsKey(state))
+                .Select(state => state + " (batteryState)"),
+        ];
+        Assert.True(
+            undescribed.Length == 0,
+            "Charging allocation codes from this test with no description on the charging dashboard: "
+            + string.Join(", ", undescribed.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)));
+    }
+
     public InterceptionResult<int> SavingChanges(DbContextEventData eventData, InterceptionResult<int> result)
     {
         Inspect(eventData.Context);

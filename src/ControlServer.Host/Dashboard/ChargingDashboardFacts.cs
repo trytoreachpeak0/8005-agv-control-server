@@ -3,6 +3,7 @@ using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.Charging;
+using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Host.Runtime.Faults;
 using ControlServer.Host.Runtime.Fleet;
 using ControlServer.Infrastructure.Persistence;
@@ -102,16 +103,16 @@ internal static class ChargingDashboardDescriptions
         {
             [JourneyRuntimeEngine.OrderHangReason] =
                 "开往充电桩（或在桩上）的充电单在 RIoT 上挂起（HANG），例如急停或切了手动：这不算「充不上」，服务端不暂停桩、不暂停车的充电资格、"
-                + "不释放、不重建，车、桩预占与充电用途都保持。请到现场确认原因，在 RIoT 里继续（continue）；继续后原因码自动消失",
+                + "不释放，也不会另建一张充电单，车、桩预占与充电用途都保持。请到现场确认原因，在 RIoT 里继续（continue）；继续后原因码自动消失",
             [JourneyRuntimeEngine.OrderStateUnrecognizedReason] =
                 "充电单在 RIoT 上处于未识别的状态（SUSPENDED 8）：服务端按仍在执行处理，车、桩预占与充电用途都保持，不做任何自动动作，"
                 + "请人工到 RIoT 核实",
             [JourneyRuntimeEngine.OrderEndedWithoutArrivalReason] =
-                "充电单在 RIoT 被取消或删除，服务端还没证明车已停稳、名下没有单：车、桩预占与充电用途都保持，不重建。车证明停稳之后这次充电按失败结束，"
+                "充电单在 RIoT 被取消或删除，服务端还没证明车已停稳、名下没有单：车、桩预占与充电用途都保持，也不会另建一张充电单。车证明停稳之后这次充电按失败结束，"
                 + "桩要等充电已停、车不在桩上、桩位空闲三项确认之后才放。持续不消失请到现场看车是否还在动",
             [VehicleFaultEvidence.OrderFailed] =
                 "充电单在 RIoT 上失败（FAILED），服务端已把车判为疑似故障：不派新单，车、桩预占与充电用途都保持。请到现场排除原因；若急停已锁住，"
-                + "先按急停人工解除；然后由现场人员经故障清除入口确认。故障清除后这次充电按失败结束、不重建；30 秒内不给这辆车安排任何充电桩，"
+                + "先按急停人工解除；然后由现场人员经故障清除入口确认。故障清除后这次充电按失败结束，不会另建一张充电单；30 秒内不给这辆车安排任何充电桩，"
                 + "10 分钟内它的充电再失败一次，就改为人工充电等待",
             [VehicleFaultEvidence.DoorNotProvenLocked] =
                 "车在开往充电桩的途中，车载端报门锁未锁闭或仓位状态读不到：服务端已按住这张单，证不出停稳即急停，并把车判为疑似故障，"
@@ -150,6 +151,83 @@ internal static class ChargingDashboardDescriptions
         : code.StartsWith("CHARGING_", StringComparison.Ordinal) || code.StartsWith("CHARGER_", StringComparison.Ordinal)
             ? BlockedJourneysQueryEndpoint.Descriptions.GetValueOrDefault(code)
             : null;
+
+    /// <summary>
+    /// 充电分配的结论码（<see cref="ChargingAllocationReasons"/> 的每个常量，看板测试反射扫）：逐车卡片「排队原因」那一格。
+    /// 故障阻断、投运策略与车辆动态事实那几格用的是派车链共用的码，说明取派车积压卡片那一份（<see cref="DescribeAllocationReason"/>）。
+    /// </summary>
+    internal static IReadOnlyDictionary<string, string> AllocationReasons { get; } =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [ChargingAllocationReasons.Committed] = "已安排充电：桩已为它预占，充电用途与开往桩的单在同一次保存里形成",
+            [ChargingAllocationReasons.NotRequired] = "不需要充电：电量不低于它所用策略版本的强制充电线",
+            [ChargingAllocationReasons.ManualChargingHoldActive] = "在人工充电等待中：不分桩，要先由管理员在车上点「充电后返回服务」",
+            [ChargingAllocationReasons.VehicleHasPurpose] = "车已有用途（搬运、空闲返回或一次没结束的充电）：已开始的用途保持，不改去充电",
+            [ChargingAllocationReasons.VehicleEligibilityHeld] = "这辆车的充电资格暂停着：恢复之前不分桩",
+            [ChargingAllocationReasons.VehicleStillHoldsCharger] =
+                "这辆车自己还占着一个充电桩（上一次充电结束了、桩还没按三项确认放掉）：不再给它分桩，免得向原桩再发一次充电动作",
+            [ChargingAllocationReasons.VehiclePositionUnknown] = "不知道车停在哪个站：算不出到各个桩的路程，不分桩",
+            [ChargingAllocationReasons.RouteGraphUnavailable] = "路网没开或这张图的路网不可用：最近优先无从计算，不猜",
+            [ChargingAllocationReasons.RosterEmptyManualHold] = "名册里没有这辆车能用的桩：转为人工充电等待并告警",
+            [ChargingAllocationReasons.RepeatedlyFailedManualHold] = "这辆车的充电单短时间内第二次被取消、删除或失败：转为人工充电等待并告警",
+            [ChargingAllocationReasons.CooldownAfterFailedCycle] = "刚有一次充电以失败结束，还在冷却时间里：这段时间不给它安排任何充电桩",
+            [ChargingAllocationReasons.NoChargerAvailable] = "无合格桩：名册里这辆车能用的桩逐个核过之后一个都不剩（逐桩原因见细节），车留在队里",
+            [ChargingAllocationReasons.DepartureNotProven] =
+                "有桩可分，但车此刻过不了出发前安全检查（仓门没锁好、安全摘要有阻断原因、RIoT 读不到它停稳）：不安排，门一好下一轮就分",
+            [ChargingAllocationReasons.CommitmentRefused] = "算出了桩，保存时被数据库拒掉（车或桩被别人先拿到）：整笔回滚，下一轮重评",
+            [ChargingAllocationReasons.EvaluationFailed] = "评估这辆车时出了异常：它这一轮什么也没留下，下一轮重评；详情见服务端日志事件 2243",
+            [ChargingAllocationReasons.ChargerNotInRoster] = "桩不在当前生效的名册里（或名册里它的车辆范围不含这辆车）",
+            [ChargingAllocationReasons.ChargerAllocationHeld] = "桩的分配暂停着",
+            [ChargingAllocationReasons.ChargerNotOnCurrentMap] = "桩不在 RIoT 当前地图的站点目录里，或站名与名册登记的不一致",
+            [ChargingAllocationReasons.ChargerReservedOrOccupied] = "桩已被别的车预占或占用（预占成功后不可抢占）",
+            [ChargingAllocationReasons.ChargerOccupancyUnknown] = "桩占用未知：车辆位置、未完成订单清单或订单目的站有一样读不全，未知即不分配",
+            [ChargingAllocationReasons.ChargerOccupiedByVehicle] = "本项目另一辆车停在这个桩上",
+            [ChargingAllocationReasons.ChargerTargetedByRunningOrder] = "本项目车辆有一张在跑的单以这个桩为目的站",
+            [ChargingAllocationReasons.ChargerUnreachable] = "路网上从车的位置到不了这个桩，或它不在路网上",
+        };
+
+    /// <summary>
+    /// 充电分配借用的派车链判定码（<c>VehicleNewPurposeReadiness.JudgeForChargingAsync</c>：故障阻断、<c>VehicleDynamicFactsCriterion.Evaluate</c>；
+    /// <c>BatteryEligibility.Judge</c> 的策略与电量几支），按「为什么不给它分桩」写。由说明守卫在真实跑出来的结论里找到，再按那两处源码补全同族的码。
+    /// </summary>
+    internal static IReadOnlyDictionary<string, string> ReadinessReasons { get; } =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [VehicleFaultBlockCriterion.SuspectedReason] = "车被判为疑似故障：故障清除之前不给它安排充电（也不派别的活）",
+            [VehicleFaultBlockCriterion.IsolatedReason] = "车已被故障隔离：解除隔离之前不给它安排充电",
+            [VehicleFaultBlockCriterion.IdentityUnresolvedReason] = "车的故障记录对不上身份：说不准它有没有故障，不给它安排充电",
+            ["ONBOARD_FACTS_NOT_READY"] = "车载端会话没有就绪：拿不到车载端的事实，不给它安排充电",
+            ["ONBOARD_DEPARTURE_UNSAFE"] = "车载端此刻报不能出发（仓门没锁好、安全摘要带阻断原因或有未知）：不给它安排充电",
+            ["RIOT_VEHICLE_NOT_AVAILABLE"] = "RIoT 报这辆车离线或被禁用：不给它安排充电",
+            ["RIOT_VEHICLE_BINDING_MISMATCH"] = "RIoT 读回来的车与这辆车的绑定对不上：不给它安排充电",
+            ["RIOT_VEHICLE_NOT_IDLE"] = "RIoT 报这辆车不空闲：不给它安排充电",
+            ["RIOT_VEHICLE_MAP_MISMATCH"] = "RIoT 报这辆车此刻在别的地图上：不给它安排充电",
+            ["RIOT_VEHICLE_FACT_STALE"] = "这辆车的 RIoT 读数太旧或时刻在未来：说不准它此刻的状态，不给它安排充电",
+            [VehicleDynamicFactsCriterion.BatteryFactUnknownReason] = "电量未知：RIoT 没报这辆车的电量或电池状态，不知道要不要充电，不分桩",
+            [VehicleDynamicFactsCriterion.BatteryPolicyNotSatisfiedReason] = "车正在充电（例如有人在给它充）：不另外给它分桩",
+            ["RIOT_VEHICLE_NOT_STOPPED"] = "RIoT 读到这辆车在动（或读不到速度）：不给它安排充电",
+            ["RIOT_VEHICLE_ORDER_OCCUPIED"] = "RIoT 上这辆车身上有单（被锁定或有任务号）：不给它安排充电",
+            [Runtime.Dispatch.DispatchReasonCodes.ChargingPolicyNotApproved] = "这辆车没有已批准、已生效的充电策略：不知道强制充电线在哪，不分桩",
+            [Runtime.Dispatch.DispatchReasonCodes.ChargingPolicyEntryNotAboveRescueLine] =
+                "这辆车的充电策略里强制充电线不高于服务端的救命告警线：这一版策略不能用，不分桩",
+        };
+
+    /// <summary>一个排队原因码的中文说明：充电分配自己的码、借用的派车链判定码，或派车积压卡片那一份。没有说明时答空。</summary>
+    internal static string? DescribeAllocationReason(string? code) =>
+        code is null ? null
+        : AllocationReasons.GetValueOrDefault(code)
+          ?? ReadinessReasons.GetValueOrDefault(code)
+          ?? DispatchBacklogQueryEndpoint.Descriptions.GetValueOrDefault(code);
+
+    /// <summary><c>VehicleBusinessStateSnapshot.batteryState</c> 的四个值。</summary>
+    internal static IReadOnlyDictionary<string, string> BatteryStateProjections { get; } =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [Runtime.Dispatch.BatteryStates.Sufficient] = "够用：跑完下一趟还保得住最低任务后电量余量",
+            [Runtime.Dispatch.BatteryStates.Low] = "偏低：不低于强制充电线，但跑完下一趟保不住最低任务后电量余量",
+            [Runtime.Dispatch.BatteryStates.MandatoryCharge] = "强制充电：低于它所用策略版本的强制充电线",
+            [Runtime.Dispatch.BatteryStates.Unknown] = "未知：没有已批准策略，或电量、电池状态读不到",
+        };
 
     // ---- 桩的阶段（充电桩卡片）----
 
@@ -295,13 +373,18 @@ internal static class ChargingDashboardDescriptions
 
     // ---- 本版本读不到、或还没实施的几格 ----
 
-    /// <summary>逐车此刻电量与 batteryState 投影：服务端没有落库，只在派车轮里现读 RIoT（调度 10-02 报，待定）。</summary>
-    internal const string BatteryNotReadable =
-        "看板读不到：服务端没有记下每辆车此刻的电量与 batteryState，它们只在每轮派车时从 RIoT 现读、用完即丢；电量请看 RIoT";
+    /// <summary>车不在最近一轮已完成的充电分配里时，电量与排队原因那几格写的话。不显示它更早的值（REQ-0269）。</summary>
+    internal const string NotEvaluatedThisPass =
+        "本轮没有评估这辆车：最近一轮充电分配没有交到它（车不空闲、在途或在干别的活时派车轮不把它交给充电分配），这里不显示它更早的电量与结论";
 
-    /// <summary>排队原因：只在内存里的「最近一次」结论上，没有轮次与时刻，原样给就是不确定新旧的旧值（REQ-0269）。</summary>
-    internal const string QueueReasonNotReadable =
-        "看板读不到：分不到桩的原因只记在服务端内存里的「最近一次」结论上，没有轮次与时刻，不能当现状显示；原因见服务端日志事件 2241、2246";
+    /// <summary>服务启动以来还没有完成过一轮充电分配时写的话。</summary>
+    internal const string NoPassCompletedYet = "本轮没有评估这辆车：服务启动以来还没有完成过一轮充电分配";
+
+    /// <summary>超出时效窗口时写的话（窗口按实际配置的轮询间隔算），原因列全。</summary>
+    internal static string PassNotRunning(TimeSpan window) =>
+        string.Create(CultureInfo.InvariantCulture, $"本轮没有评估这辆车：最近 {window.TotalSeconds:0.###} 秒内没有完成过一轮充电分配。")
+        + "可能的原因：全车队没有空闲车（派车轮不跑）、MesIngest 读不到（这一轮不派车）、引擎这一轮出错、一轮跑得太慢（例如 RIoT 应答慢）。"
+        + "这里不显示更早的电量与结论";
 
     /// <summary>无合格桩：同上。</summary>
     internal const string NoChargerAvailableNotReadable =

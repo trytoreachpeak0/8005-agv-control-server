@@ -455,6 +455,7 @@ public sealed class ExpectedActionOverdueTests
         builder.Services.AddDbContext<ControlServerDbContext>(options => options.UseSqlite(fixture.Connection));
         // control-server#392: the idle return card reads the evaluator's verdict board, a host singleton.
         builder.Services.AddSingleton<ControlServer.Host.Runtime.IdleReturn.IdleReturnVerdictBoard>();
+        builder.Services.AddSingleton<ControlServer.Host.Runtime.Charging.ChargingAllocationBoard>();
         await using WebApplication app = builder.Build();
         app.MapDashboardQueries();
         await app.StartAsync(TestContext.Current.CancellationToken);

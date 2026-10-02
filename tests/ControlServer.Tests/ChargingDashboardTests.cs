@@ -269,11 +269,11 @@ public sealed class ChargingDashboardTests
     // ---------------- 逐车充电状态 ----------------
 
     /// <summary>
-    /// 每台车的用途、chargingCycleState、阶段、目标桩、名册与策略版本、旅程上的码（含建单结果未知），人工充电等待；电量、batteryState 与排队原因
-    /// 写读不到（不摆任何值）；失联车只进失联列表，不出现它失联前的周期。
+    /// 每台车的用途、chargingCycleState、阶段、目标桩、名册与策略版本、旅程上的码（含建单结果未知），人工充电等待；服务启动以来还没完成过一轮
+    /// 充电分配时，电量、batteryState 与排队原因写没评估（不摆任何值）；失联车只进失联列表，不出现它失联前的周期。
     /// </summary>
     [Fact]
-    public async Task EachVehicleShowsItsPurposeCycleTargetAndVersionsAndBatteryIsSaidToBeUnreadable()
+    public async Task EachVehicleShowsItsPurposeCycleTargetAndVersionsAndBatteryIsNotEvaluatedBeforeAnyPass()
     {
         await using ChargingDatabase database = await ChargingDatabase.CreateAsync();
         DateTimeOffset now = database.Now;
@@ -317,27 +317,187 @@ public sealed class ChargingDashboardTests
             Assert.Equal(["agvId", "reason"],
                 root.GetProperty("unavailableVehicles")[0].EnumerateObject().Select(p => p.Name));
             Assert.Equal("AGV-05", root.GetProperty("unavailableVehicles")[0].GetProperty("agvId").GetString());
-            // 电量这一格没有任何字段：数据面里不存在可以误读成现状的数。
-            Assert.False(vehicles[1].TryGetProperty("batteryPercent", out _));
+            // 没评估时电量这一格只有那一句话：数据面里不存在可以误读成现状的数。
+            JsonElement allocation = vehicles[1].GetProperty("allocation");
+            Assert.Equal(ChargingDashboardDescriptions.NoPassCompletedYet, allocation.GetProperty("note").GetString());
+            Assert.Equal(JsonValueKind.Null, allocation.GetProperty("batteryPercent").ValueKind);
+            Assert.Equal(JsonValueKind.Null, allocation.GetProperty("reason").ValueKind);
 
             string allocatedRow = RowOf(html, "AGV-02");
-            Assert.Equal("读不到（见上）", Cell(allocatedRow, 1));
-            Assert.Equal("读不到（见上）", Cell(allocatedRow, 2));
+            Assert.Equal(ChargingDashboardDescriptions.NoPassCompletedYet, Cell(allocatedRow, 1));
+            Assert.Equal("", Cell(allocatedRow, 2));
             Assert.Contains("ALLOCATED：已分配", Cell(allocatedRow, 4), StringComparison.Ordinal);
             Assert.Contains("26/211 CHG-211", Cell(allocatedRow, 6), StringComparison.Ordinal);
             Assert.Equal("充电桩名册 v3", Cell(allocatedRow, 7));
             Assert.Equal("充电策略 v7", Cell(allocatedRow, 8));
             Assert.Contains("CHARGER_ResultUnknown：开往充电桩的单发给 RIoT 之后结果未知", Cell(allocatedRow, 9), StringComparison.Ordinal);
-            Assert.Equal("读不到（见上）", Cell(allocatedRow, 10));
+            Assert.Equal(ChargingDashboardDescriptions.NoPassCompletedYet, Cell(allocatedRow, 10));
             Assert.Contains("CLEARING_MAINTENANCE（清桩或维护", RowOf(html, "AGV-03"), StringComparison.Ordinal);
             Assert.Contains("清桩中的充电旅程", RowOf(html, "AGV-03"), StringComparison.Ordinal);
             Assert.Contains("CHARGING_UNABLE_TO_CHARGE：已确认充不上", RowOf(html, "AGV-03"), StringComparison.Ordinal);
             Assert.Contains("ROSTER_EMPTY：名册为空", RowOf(html, "AGV-04"), StringComparison.Ordinal);
-            Assert.Contains("电量与 batteryState：看板读不到", html, StringComparison.Ordinal);
-            Assert.Contains("排队原因：看板读不到", html, StringComparison.Ordinal);
             AssertOnlyLost(html);
             AssertCleanHtml(html);
         }
+    }
+
+    /// <summary>
+    /// 电量、batteryState 与排队原因只读最近一轮已完成的分配：后开的一轮还没走完时看到的是上一轮完整的值；车不在那一轮里写没评估，
+    /// 不拿它更早的值。
+    /// </summary>
+    [Fact]
+    public async Task BatteryAndQueueReasonComeOnlyFromTheLatestCompletedPass()
+    {
+        await using ChargingDatabase database = await ChargingDatabase.CreateAsync();
+        // 时效窗口按真实时钟判：建库迁移要几秒，所以这里取板子写入那一刻的时钟，不用建库时的 Now。
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        ChargingAllocationBoard board = new();
+        long first = board.BeginPass(now.AddSeconds(-2));
+        board.RecordObservation("AGV-02", 18, "NO_CHARGE", "MANDATORY_CHARGE", now.AddSeconds(-2));
+        board.Record("AGV-02", ChargingAllocationReasons.NoChargerAvailable, "211=CHARGER_RESERVED_OR_OCCUPIED");
+        board.RecordObservation("AGV-03", 64, "NO_CHARGE", "SUFFICIENT", now.AddSeconds(-2));
+        board.Record("AGV-03", ChargingAllocationReasons.NotRequired, "");
+        board.EndPass(first, now.AddSeconds(-1));
+        board.BeginPass(now);
+        board.RecordObservation("AGV-02", 99, "CHARGING", "SUFFICIENT", now);
+        board.Record("AGV-02", ChargingAllocationReasons.Committed, "half-finished pass");
+        board.Record("AGV-01", ChargingAllocationReasons.NotRequired, "");
+
+        (JsonDocument fact, string html) = await ReadAsync(database, "charging-vehicles", board);
+        using (fact)
+        {
+            Dictionary<string, JsonElement> allocation = fact.RootElement.GetProperty("vehicles").EnumerateArray()
+                .ToDictionary(v => v.GetProperty("agvId").GetString()!, v => v.GetProperty("allocation"));
+            Assert.Equal((18, "MANDATORY_CHARGE", ChargingAllocationReasons.NoChargerAvailable),
+                (allocation["AGV-02"].GetProperty("batteryPercent").GetInt32(), allocation["AGV-02"].GetProperty("batteryState").GetString(),
+                    allocation["AGV-02"].GetProperty("reason").GetString()));
+            Assert.Equal(now.AddSeconds(-2), allocation["AGV-02"].GetProperty("batteryObservedAt").GetDateTimeOffset());
+            Assert.Equal(ChargingDashboardDescriptions.NotEvaluatedThisPass, allocation["AGV-01"].GetProperty("note").GetString());
+            Assert.Equal(JsonValueKind.Null, allocation["AGV-01"].GetProperty("reason").ValueKind);
+
+            string row = RowOf(html, "AGV-02");
+            Assert.StartsWith("18%（RIoT 读数，观测于 ", Cell(row, 1), StringComparison.Ordinal);
+            Assert.Contains("RIoT 电池状态 NO_CHARGE", Cell(row, 1), StringComparison.Ordinal);
+            Assert.StartsWith("MANDATORY_CHARGE：强制充电", Cell(row, 2), StringComparison.Ordinal);
+            Assert.StartsWith("CHARGING_NO_CHARGER_AVAILABLE：无合格桩", Cell(row, 10), StringComparison.Ordinal);
+            Assert.Contains("细节：211=CHARGER_RESERVED_OR_OCCUPIED", Cell(row, 10), StringComparison.Ordinal);
+            Assert.StartsWith("64%", Cell(RowOf(html, "AGV-03"), 1), StringComparison.Ordinal);
+            Assert.Equal(ChargingDashboardDescriptions.NotEvaluatedThisPass, Cell(RowOf(html, "AGV-01"), 1));
+            AssertCleanHtml(html);
+        }
+    }
+
+    /// <summary>
+    /// 最近一轮走完已超过 3 个轮询间隔（按实际配置）：分配没在跑，电量与排队原因都写没评估并列全原因，不显示更早的值；窗口内照常显示。
+    /// 用途与周期这些库里的事实不受影响。
+    /// </summary>
+    [Theory]
+    [InlineData(5, true)]
+    [InlineData(7, false)]
+    public async Task APassOlderThanThreeConfiguredPollIntervalsIsNotShown(int secondsAgo, bool shown)
+    {
+        await using ChargingDatabase database = await ChargingDatabase.CreateAsync();
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        await database.SeedAsync(context =>
+        {
+            AddRoster(context, 2, now.AddDays(-1), "张三", [211]);
+            AddCharging(context, "K-02", 211, ChargingCyclePhases.Active, ChargingCycleWireStates.Charging,
+                StationExclusivityStates.Occupied, now.AddMinutes(-3));
+        });
+        ChargingAllocationBoard board = new();
+        long pass = board.BeginPass(now.AddSeconds(-secondsAgo - 1));
+        board.RecordObservation("AGV-01", 55, "NO_CHARGE", "SUFFICIENT", now.AddSeconds(-secondsAgo - 1));
+        board.Record("AGV-01", ChargingAllocationReasons.NotRequired, "");
+        board.EndPass(pass, now.AddSeconds(-secondsAgo));
+        // 轮询间隔 2 秒：窗口 6 秒。
+        IOptions<JourneyRuntimeOptions> options = Options.Create(new JourneyRuntimeOptions
+        {
+            MapId = MapId,
+            PollInterval = TimeSpan.FromSeconds(2),
+            Fleet = FleetOptions.Value.Fleet,
+        });
+
+        (JsonDocument fact, string html) = await ReadAsync(database, "charging-vehicles", board, options);
+        using (fact)
+        {
+            Dictionary<string, JsonElement> vehicles = fact.RootElement.GetProperty("vehicles").EnumerateArray()
+                .ToDictionary(v => v.GetProperty("agvId").GetString()!);
+            JsonElement allocation = vehicles["AGV-01"].GetProperty("allocation");
+            if (shown)
+            {
+                Assert.Equal(55, allocation.GetProperty("batteryPercent").GetInt32());
+                Assert.Equal(JsonValueKind.Null, allocation.GetProperty("note").ValueKind);
+            }
+            else
+            {
+                Assert.Equal(ChargingDashboardDescriptions.PassNotRunning(TimeSpan.FromSeconds(6)), allocation.GetProperty("note").GetString());
+                Assert.Equal(JsonValueKind.Null, allocation.GetProperty("batteryPercent").ValueKind);
+                Assert.Equal(JsonValueKind.Null, allocation.GetProperty("reason").ValueKind);
+                Assert.Contains("最近 6 秒内没有完成过一轮充电分配", Cell(RowOf(html, "AGV-01"), 1), StringComparison.Ordinal);
+                foreach (string cause in new[] { "全车队没有空闲车", "MesIngest 读不到", "引擎这一轮出错", "一轮跑得太慢" })
+                {
+                    Assert.Contains(cause, Cell(RowOf(html, "AGV-01"), 10), StringComparison.Ordinal);
+                }
+                Assert.DoesNotContain("55%", html, StringComparison.Ordinal);
+            }
+            Assert.Equal(ChargingCycleWireStates.Charging, vehicles["AGV-02"].GetProperty("chargingCycleState").GetString());
+        }
+    }
+
+    /// <summary>窗口是 3 个轮询间隔，与空闲返回结论那一格同一个数（cs#392）；改它要改这条用例。</summary>
+    [Fact]
+    public void TheLivenessWindowIsThreePollIntervalsLikeTheIdleReturnVerdicts()
+    {
+        Assert.Equal(3, ChargingVehiclesQueryEndpoint.PassLivenessPollIntervals);
+        Assert.Equal(IdleReturnsQueryEndpoint.PassLivenessPollIntervals, ChargingVehiclesQueryEndpoint.PassLivenessPollIntervals);
+    }
+
+    /// <summary>两轮重叠时，先开的一轮凭旧令牌提交不了后一轮的半截暂存；后一轮自己走完才发布。</summary>
+    [Fact]
+    public void AnOverlappedPassCannotPublishTheNextPassesHalfFinishedStaging()
+    {
+        ChargingAllocationBoard board = new();
+        DateTimeOffset at = DateTimeOffset.UnixEpoch;
+        long first = board.BeginPass(at);
+        long second = board.BeginPass(at.AddSeconds(1));
+        board.Record("AGV-01", ChargingAllocationReasons.NotRequired, "");
+        board.EndPass(first, at.AddSeconds(2));
+        Assert.Null(board.LatestCompletedPass);
+        board.EndPass(second, at.AddSeconds(3));
+        Assert.Equal(ChargingAllocationReasons.NotRequired, board.LatestCompletedPass!.Verdicts["AGV-01"].Reason);
+    }
+
+    /// <summary>阻断卡片上，充电旅程行的共用码用充电口径（不写「重建」「需求」）；同一个码在搬运行上照旧是搬运口径。</summary>
+    [Fact]
+    public async Task TheBlockedJourneyCardDescribesASharedCodeOnAChargingRowInChargingTerms()
+    {
+        await using ChargingDatabase database = await ChargingDatabase.CreateAsync();
+        DateTimeOffset now = database.Now;
+        await database.SeedAsync(context =>
+        {
+            AddRoster(context, 2, now.AddDays(-1), "张三", [211]);
+            AddCharging(context, "K-01", 211, ChargingCyclePhases.Active, ChargingCycleWireStates.EnRoute,
+                StationExclusivityStates.Reserved, now.AddMinutes(-3), code: JourneyRuntimeEngine.OrderHangReason);
+            JourneyRuntimeRow transport = WaitingJourneyBatteryWatchTests.Runtime("D-HANG", JourneyRuntimeStage.AwaitingGateArrival, now);
+            transport.SetBlockReason(JourneyRuntimeEngine.OrderHangReason, now);
+            context.Add(transport);
+        });
+
+        await using ControlServerDbContext context = database.NewContext();
+        object rows = await new BlockedJourneysQueryEndpoint().ReadAsync(context, TestContext.Current.CancellationToken);
+        using JsonDocument fact = JsonDocument.Parse(JsonSerializer.Serialize(rows));
+        JsonElement[] journeys = [.. fact.RootElement.GetProperty("journeys").EnumerateArray()];
+        string charging = journeys.Single(row => row.GetProperty("agvId").GetString() == "AGV-01")
+            .GetProperty("blockReasonDescription").GetString()!;
+        Assert.Equal(ChargingDashboardDescriptions.SharedCodesOnChargingJourneys[JourneyRuntimeEngine.OrderHangReason], charging);
+        Assert.DoesNotContain("重建", charging, StringComparison.Ordinal);
+        Assert.DoesNotContain("需求", charging, StringComparison.Ordinal);
+        Assert.Equal(
+            BlockedJourneysQueryEndpoint.Descriptions[JourneyRuntimeEngine.OrderHangReason],
+            journeys.Single(row => row.GetProperty("agvId").GetString() == "AGV-D-HANG").GetProperty("blockReasonDescription").GetString());
+
+        string html = new BlockedJourneyCard().RenderFact(fact.RootElement);
+        Assert.Contains("开往充电桩（或在桩上）的充电单在 RIoT 上挂起", RowWith(html, "<td>AGV-01</td>"), StringComparison.Ordinal);
     }
 
     // ---------------- 充电暂停与等待 ----------------
@@ -526,6 +686,12 @@ public sealed class ChargingDashboardTests
         });
         Assert.All(VehicleChargingEligibilityHoldReasons.All,
             reason => Assert.True(ChargingDashboardDescriptions.EligibilityHoldReasons.ContainsKey(reason), reason));
+        Assert.All(
+            typeof(ChargingAllocationReasons).GetFields().Where(field => field.IsLiteral).Select(field => (string)field.GetRawConstantValue()!),
+            reason => Assert.NotNull(ChargingDashboardDescriptions.DescribeAllocationReason(reason)));
+        Assert.All(
+            typeof(Host.Runtime.Dispatch.BatteryStates).GetFields().Where(field => field.IsLiteral).Select(field => (string)field.GetRawConstantValue()!),
+            state => Assert.True(ChargingDashboardDescriptions.BatteryStateProjections.ContainsKey(state), state));
         Assert.All(StationClearanceProofs.All, proof => Assert.True(ChargingDashboardDescriptions.ClearanceProofs.ContainsKey(proof), proof));
         Assert.All(
             typeof(ManualChargingHoldReasons).GetFields().Where(field => field.IsLiteral).Select(field => (string)field.GetRawConstantValue()!),
@@ -541,6 +707,7 @@ public sealed class ChargingDashboardTests
             Assert.True(ChargingDashboardDescriptions.FieldActions.ContainsKey(pair.Key), pair.Key);
             // 充电口径：充电单没有需求，被取消后不重建（与搬运口径不同）。
             Assert.DoesNotContain("需求", pair.Value, StringComparison.Ordinal);
+            Assert.DoesNotContain("重建", pair.Value, StringComparison.Ordinal);
             Assert.NotEqual(BlockedJourneysQueryEndpoint.Descriptions.GetValueOrDefault(pair.Key), pair.Value);
         });
     }
@@ -731,7 +898,8 @@ public sealed class ChargingDashboardTests
     private static void AddManualHold(ControlServerDbContext context, string vehicleKey, string reason, DateTimeOffset since) =>
         context.Add(new ManualChargingHoldRow { VehicleKey = vehicleKey, HoldId = "manual:" + vehicleKey, Reason = reason, Since = since });
 
-    private static async Task<(JsonDocument Fact, string Html)> ReadAsync(ChargingDatabase database, string path)
+    private static async Task<(JsonDocument Fact, string Html)> ReadAsync(
+        ChargingDatabase database, string path, ChargingAllocationBoard? board = null, IOptions<JourneyRuntimeOptions>? options = null)
     {
         IDashboardCard card = DashboardCardCatalog.Discovered.Cards
             .Single(candidate => candidate.SourcePath == DashboardPaths.QueryPrefix + path);
@@ -742,7 +910,8 @@ public sealed class ChargingDashboardTests
         endpoint = endpoint switch
         {
             ChargersQueryEndpoint => new ChargersQueryEndpoint(FleetOptions, TimeProvider.System),
-            ChargingVehiclesQueryEndpoint => new ChargingVehiclesQueryEndpoint(new VehicleRoster(FleetOptions), TimeProvider.System),
+            ChargingVehiclesQueryEndpoint => new ChargingVehiclesQueryEndpoint(
+                options ?? FleetOptions, board ?? new ChargingAllocationBoard(), TimeProvider.System),
             ChargingHoldsQueryEndpoint => new ChargingHoldsQueryEndpoint(new VehicleRoster(FleetOptions), TimeProvider.System),
             ChargingAlarmsQueryEndpoint => new ChargingAlarmsQueryEndpoint(FleetOptions, TimeProvider.System),
             _ => throw new InvalidOperationException(path),

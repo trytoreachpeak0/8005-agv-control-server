@@ -384,7 +384,7 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
             pickupStationId = row.PickupStationId,
             gateStationId = row.GateStationId,
             blockReasonCode = row.BlockReasonCode,
-            blockReasonDescription = Describe(row.BlockReasonCode, foreignOrderHoldsVehicle, row.IsIdleReturn()),
+            blockReasonDescription = Describe(row.BlockReasonCode, foreignOrderHoldsVehicle, row.IsIdleReturn(), row.IsCharging()),
             blockReasonSince = row.BlockReasonSince,
             blockedSeconds = blockedFor is TimeSpan elapsed ? (long?)elapsed.TotalSeconds : null,
             escalationLevel = level.ToString(),
@@ -424,11 +424,13 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
     /// 只加在说明上，不改码：旅程码由引擎按自己的事实写，改它会牵动停住码族、失联码与推进失败码的判定。外来单本身在车队视图
     /// 「车上的外来订单」里，一张单一行。
     /// </remarks>
-    private static string? Describe(string? blockReasonCode, bool foreignOrderHoldsVehicle, bool idleReturn)
+    private static string? Describe(string? blockReasonCode, bool foreignOrderHoldsVehicle, bool idleReturn, bool charging)
     {
         // control-server#392: an idle return borrows a few transport codes (ORDER_HANG and the like) whose wording here is about a
-        // demand and a rebuild; it has neither, so its rows take the idle return wording.
+        // demand and a rebuild; it has neither, so its rows take the idle return wording. control-server#408: so does a charging
+        // journey -- a cancelled charge order is never rebuilt -- so its rows take the charging wording.
         string? description = idleReturn ? IdleReturnCodeDescriptions.DescribeJourneyCode(blockReasonCode)
+            : charging ? ChargingDashboardDescriptions.DescribeChargingCode(blockReasonCode)
             : blockReasonCode is { } code ? Descriptions.GetValueOrDefault(code) : null;
         if (!foreignOrderHoldsVehicle)
         {

@@ -159,6 +159,92 @@ public sealed class ChargingDashboardRealRunTests
         }
     }
 
+    // ---- 电量与排队原因：分配板最近一轮已完成的分配（调度 10-02，照 cs#392 的 M1～M6）----
+
+    private static string AgvB => FleetFixture.AgvIds[1];
+
+    private static string KeyB => FleetFixture.VehicleKeys[1];
+
+    /// <summary>一轮分配交到的车：电量、RIoT 电池状态、观测时刻、batteryState 投影与结论都是那一轮的。</summary>
+    [Fact]
+    public async Task AVehicleTheRoundEvaluatedShowsItsBatteryAndReasonFromThatRound()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        fleet.Riot.BatteryByVehicle[KeyA] = 77;
+        await RoundAsync(fleet);
+        await fleet.HearFromEveryVehicleAsync();
+
+        JsonElement allocation = await AllocationAsync(fleet, AgvA);
+        Assert.Equal(JsonValueKind.Null, allocation.GetProperty("note").ValueKind);
+        Assert.Equal(77, allocation.GetProperty("batteryPercent").GetInt32());
+        Assert.Equal(ChargingAllocationReasons.NotRequired, allocation.GetProperty("reason").GetString());
+        Assert.NotEqual(JsonValueKind.Null, allocation.GetProperty("batteryObservedAt").ValueKind);
+        Assert.Equal("SUFFICIENT", allocation.GetProperty("batteryState").GetString());
+    }
+
+    /// <summary>上一轮评估过、这一轮读 RIoT 失败没交到的车：写没评估，不显示它上一轮的电量与结论；同一轮里别的车照常。</summary>
+    [Fact]
+    public async Task AVehicleWhoseRiotReadFailsThisRoundReadsAsNotEvaluatedRatherThanItsPreviousBattery()
+    {
+        await using FleetFixture fleet = await FleetAsync(vehicles: 2);
+        fleet.Riot.BatteryByVehicle[KeyA] = 66;
+        fleet.Riot.BatteryByVehicle[KeyB] = 88;
+        await RoundAsync(fleet);
+        Assert.Equal(66, (await AllocationAsync(fleet, AgvA)).GetProperty("batteryPercent").GetInt32());
+
+        fleet.Riot.FailOn = KeyA;
+        await RoundAsync(fleet);
+        await fleet.HearFromEveryVehicleAsync();
+
+        JsonElement lost = await AllocationAsync(fleet, AgvA);
+        Assert.Equal(ChargingDashboardDescriptions.NotEvaluatedThisPass, lost.GetProperty("note").GetString());
+        Assert.Equal(JsonValueKind.Null, lost.GetProperty("batteryPercent").ValueKind);
+        Assert.Equal(JsonValueKind.Null, lost.GetProperty("reason").ValueKind);
+        Assert.Equal(88, (await AllocationAsync(fleet, AgvB)).GetProperty("batteryPercent").GetInt32());
+    }
+
+    /// <summary>候选为空的一轮（唯一的车读 RIoT 失败）也算走完一轮：写「本轮没有评估这辆车」，不是「还没完成过一轮」。</summary>
+    [Fact]
+    public async Task APassWithNoCandidatesStillCompletesAndLeavesTheVehicleNotEvaluated()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        fleet.Riot.FailOn = KeyA;
+        await RoundAsync(fleet);
+        await fleet.HearFromEveryVehicleAsync();
+
+        Assert.NotNull(fleet.ChargingBoard.LatestCompletedPass);
+        Assert.Equal(ChargingDashboardDescriptions.NotEvaluatedThisPass, (await AllocationAsync(fleet, AgvA)).GetProperty("note").GetString());
+    }
+
+    /// <summary>派车轮停了（时钟走过 3 个轮询间隔而没有新的一轮走完）：电量与结论写没评估；用途与周期这些库里的事实照常。</summary>
+    [Fact]
+    public async Task OnceNoPassCompletesWithinTheWindowTheBatteryIsNotShownAndTheCycleStillIs()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        await ChargingCycleProgressTests.ChargingAsync(fleet, battery: 60);
+        fleet.Clock.Advance(fleet.Options.PollInterval * ChargingVehiclesQueryEndpoint.PassLivenessPollIntervals + TimeSpan.FromSeconds(1));
+        await fleet.HearFromEveryVehicleAsync();
+
+        (JsonDocument vehicles, string _) = await ReadAsync(fleet, "charging-vehicles");
+        using (vehicles)
+        {
+            JsonElement vehicle = vehicles.RootElement.GetProperty("vehicles")[0];
+            Assert.StartsWith("本轮没有评估这辆车：最近 ", vehicle.GetProperty("allocation").GetProperty("note").GetString(), StringComparison.Ordinal);
+            Assert.Equal(JsonValueKind.Null, vehicle.GetProperty("allocation").GetProperty("batteryPercent").ValueKind);
+            Assert.Equal(ChargingCycleWireStates.Charging, vehicle.GetProperty("chargingCycleState").GetString());
+        }
+    }
+
+    private static async Task<JsonElement> AllocationAsync(FleetFixture fleet, string agvId)
+    {
+        (JsonDocument vehicles, string _) = await ReadAsync(fleet, "charging-vehicles");
+        using (vehicles)
+        {
+            return vehicles.RootElement.GetProperty("vehicles").EnumerateArray()
+                .Single(v => v.GetProperty("agvId").GetString() == agvId).GetProperty("allocation").Clone();
+        }
+    }
+
     private static async Task<(JsonDocument Fact, string Html)> ReadAsync(FleetFixture fleet, string path)
     {
         IOptions<Host.Runtime.JourneyRuntimeOptions> options = Options.Create(fleet.Options);
@@ -167,7 +253,7 @@ public sealed class ChargingDashboardRealRunTests
         IDashboardQueryEndpoint endpoint = path switch
         {
             "chargers" => new ChargersQueryEndpoint(options, fleet.Clock),
-            "charging-vehicles" => new ChargingVehiclesQueryEndpoint(new VehicleRoster(options), fleet.Clock),
+            "charging-vehicles" => new ChargingVehiclesQueryEndpoint(options, fleet.ChargingBoard, fleet.Clock),
             "charging-holds" => new ChargingHoldsQueryEndpoint(new VehicleRoster(options), fleet.Clock),
             "charging-alarms" => new ChargingAlarmsQueryEndpoint(options, fleet.Clock),
             _ => throw new InvalidOperationException(path),

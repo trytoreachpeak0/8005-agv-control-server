@@ -1095,6 +1095,7 @@ public sealed class ChargingAllocationTests
         FleetFixture fleet = await FleetFixture.CreateAsync(
             configure: options => options.Fleet = options.Fleet[..vehicles], withRouteGraph: true, commands: commands, saves: codes);
         fleet.DisposeChecks.Add(codes.AssertEveryCodeIsDescribed);
+        fleet.DisposeChecks.Add(() => ChargingDashboardCodeRecorder.AssertEveryAllocationCodeIsDescribed(fleet.ChargingBoard, fleet.ChargingLog.Entries));
         await fleet.ReplaceRouteGraphAsync(Edges(), Stations());
         if (roster)
         {
