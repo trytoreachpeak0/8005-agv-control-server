@@ -188,7 +188,10 @@ internal sealed class IdleReturnsQueryEndpoint : IDashboardQueryEndpoint
 
         IdleReturnBoardPass? pass = _board.LatestCompletedPass;
         // 窗口外的一轮不当作这一轮：它说的是评估停下之前的事。
-        string? notRunning = pass is not null && now - pass.CompletedAt > _passLiveness ? PassNotRunning(_passLiveness) : null;
+        // 完成时刻在此刻之后说明时钟回拨过，与过期的一轮同样不可用（control-server#408 独立审查 S3，写法同 VehicleDynamicFactsCriterion）。
+        string? notRunning = pass is not null && (pass.CompletedAt > now || now - pass.CompletedAt > _passLiveness)
+            ? PassNotRunning(_passLiveness)
+            : null;
         return new
         {
             vehicles = inContact.Select(vehicle => Fact(
@@ -253,7 +256,7 @@ internal sealed class IdleReturnsQueryEndpoint : IDashboardQueryEndpoint
                 {
                     mapId = waitingPoint.MapId,
                     stationId = waitingPoint.StationId,
-                    holding = StationHoldings.Project(waitingPoint, contact),
+                    holding = StationHoldings.Project(waitingPoint, contact, StationExclusivityKinds.WaitingPoint),
                 },
             verdict = Verdict(vehicle, pass, notRunning),
             lastEnded = lastEnded is null

@@ -65,29 +65,28 @@ internal sealed class FixedTaskStationsQueryEndpoint : IDashboardQueryEndpoint
             await StationHoldings.ReadAsync(dbContext, StationExclusivityKinds.FixedTaskStation, cancellationToken);
 
         List<object> stations = [];
-        foreach (IGrouping<(int MapId, int StationId), TaskTypeStationBindingRow> station in bindings
-                     .GroupBy(row => (row.MapId, StationId: row.StationRiotId))
-                     .OrderBy(group => group.Key.MapId)
-                     .ThenBy(group => group.Key.StationId))
+        foreach ((IGrouping<(int MapId, int StationId), TaskTypeStationBindingRow>? station, StationExclusivityRow? holding) in
+                 StationHoldings.MergeWithHeld(
+                     bindings
+                         .GroupBy(row => (row.MapId, StationId: row.StationRiotId))
+                         .OrderBy(group => group.Key.MapId)
+                         .ThenBy(group => group.Key.StationId),
+                     group => group.Key,
+                     held))
         {
-            StationExclusivityRow? holding = held.SingleOrDefault(
-                row => row.MapId == station.Key.MapId && row.StationId == station.Key.StationId);
-            stations.Add(Station(
-                station.Key.MapId,
-                station.Key.StationId,
-                station.Select(row => row.StationName).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).FirstOrDefault(),
-                [.. station.Select(row => row.TaskType).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)],
-                station.First().Version,
-                holding,
-                note: null,
-                contact));
-        }
-        foreach (StationExclusivityRow orphan in held.Where(row =>
-                     !bindings.Any(binding => binding.MapId == row.MapId && binding.StationRiotId == row.StationId)))
-        {
-            stations.Add(Station(
-                orphan.MapId, orphan.StationId, stationName: null, taskTypes: [], bindingSetVersion: null, orphan,
-                NotInActiveBindingStillHeld, contact));
+            stations.Add(station is not null
+                ? Station(
+                    station.Key.MapId,
+                    station.Key.StationId,
+                    station.Select(row => row.StationName).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).FirstOrDefault(),
+                    [.. station.Select(row => row.TaskType).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)],
+                    station.First().Version,
+                    holding,
+                    note: null,
+                    contact)
+                : Station(
+                    holding!.MapId, holding.StationId, stationName: null, taskTypes: [], bindingSetVersion: null, holding,
+                    NotInActiveBindingStillHeld, contact));
         }
 
         return new
@@ -116,6 +115,6 @@ internal sealed class FixedTaskStationsQueryEndpoint : IDashboardQueryEndpoint
             registrationNoteDescription = note == NotInActiveBindingStillHeld
                 ? "这个站点已不在本图生效的任务类型绑定集里，但仍被下面这辆车预占或占用：要等离点证据满足才放"
                 : null,
-            holding = StationHoldings.Project(holding, contact),
+            holding = StationHoldings.Project(holding, contact, StationExclusivityKinds.FixedTaskStation),
         };
 }

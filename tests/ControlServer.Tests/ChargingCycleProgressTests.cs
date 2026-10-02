@@ -1366,7 +1366,7 @@ public sealed class ChargingCycleProgressTests
     }
 
     /// <summary>单到 <c>SUCCESS</c>、车停在 211 上报 <c>CHARGING</c>：到桩并开始充电，周期 <c>CHARGING</c>。</summary>
-    private static async Task<JourneyRuntimeRow> ChargingAsync(FleetFixture fleet, int battery)
+    internal static async Task<JourneyRuntimeRow> ChargingAsync(FleetFixture fleet, int battery)
     {
         JourneyRuntimeRow journey = await EnRouteAsync(fleet);
         fleet.Riot.CompleteOrder(journey.PickupUpperId);
@@ -1425,7 +1425,7 @@ public sealed class ChargingCycleProgressTests
         }
     }
 
-    private static void AtCharger(FleetFixture fleet, string vehicleKey, int battery, string batteryState)
+    internal static void AtCharger(FleetFixture fleet, string vehicleKey, int battery, string batteryState)
     {
         fleet.Riot.BatteryByVehicle[vehicleKey] = battery;
         fleet.Riot.VehicleOverrides[vehicleKey] = seen => seen with { CurrentStationId = Near.StationId, BatteryState = batteryState };
