@@ -27,7 +27,8 @@ internal static class ChargingTestKit
         RouteGraphAccess? routeGraph = null,
         ChargingAllocationBoard? board = null,
         ILogger<ChargingAllocator>? logger = null,
-        IRiotVehicleSafetyFacts? vehicleSafety = null)
+        IRiotVehicleSafetyFacts? vehicleSafety = null,
+        StationClearanceExit? clearanceExit = null)
     {
         Microsoft.Extensions.Options.IOptions<JourneyRuntimeOptions> runtime = Microsoft.Extensions.Options.Options.Create(options);
         VehicleRoster fleet = new(runtime);
@@ -53,7 +54,8 @@ internal static class ChargingTestKit
             runtime,
             board ?? new ChargingAllocationBoard(),
             clock,
-            logger ?? NullLogger<ChargingAllocator>.Instance);
+            logger ?? NullLogger<ChargingAllocator>.Instance,
+            clearanceExit);
     }
 
     /// <summary>

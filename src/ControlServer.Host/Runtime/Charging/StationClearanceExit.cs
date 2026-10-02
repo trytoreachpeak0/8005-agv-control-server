@@ -49,6 +49,24 @@ public sealed class StationClearanceExit(
             "FieldOperatorRoles:Path with at least one R-11 or R-13, and VehicleFaultRecovery:enabled or " +
             "FieldOperatorRoles:OnboardClearanceEntryDeclared.");
 
+    /// <summary>Host 的放宽类入口没映射或没有凭据：桩的恢复确认与车的充电资格恢复都走不通（control-server#407）。</summary>
+    public const string NoRecoveryEntry = "CHARGING_RECOVERY_ENTRY_NOT_OFFERED";
+
+    /// <summary>
+    /// 中断与无进展的隔离此刻能不能写（control-server#407）：人工清桩出口可用（<see cref="Unavailable"/>），<b>并且</b> Host 的恢复入口可用——
+    /// 隔离之后桩与车都只能经它恢复。不能写答原因，能写答空。
+    /// </summary>
+    public string? IsolationUnavailable()
+    {
+        string? exit = Unavailable();
+        return _hostEntryOffered ? exit : exit is null ? NoRecoveryEntry : exit + "," + NoRecoveryEntry;
+    }
+
+    /// <summary>
+    /// 只暂停车的充电资格（S-d）此刻能不能写：车的唯一出口是 Host 的车辆资格恢复入口，可用答空，否则答 <see cref="NoRecoveryEntry"/>。
+    /// </summary>
+    public string? VehicleRecoveryUnavailable() => _hostEntryOffered ? null : NoRecoveryEntry;
+
     /// <summary>为什么不可用（一个或两个原因码，逗号分隔）；可用答空。</summary>
     public string? Unavailable()
     {

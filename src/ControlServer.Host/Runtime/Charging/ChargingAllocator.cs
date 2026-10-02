@@ -204,14 +204,33 @@ public sealed class ChargingAllocationBoard
                 return false;
             }
             _sampleRun[cycleId] = observedAt;
-            return observedAt - previous <= maxGap;
+            bool continuous = observedAt - previous <= maxGap;
+            if (!continuous)
+            {
+                _sampleRunStart[cycleId] = observedAt;
+            }
+            return continuous;
         }
         _sampleRun[cycleId] = observedAt;
+        _sampleRunStart[cycleId] = observedAt;
         return false;
     }
 
     /// <summary>电量遥测断了（读不到、过期）或周期已不在充电：下一个新鲜样本重新开始观察。</summary>
-    public void BreakSampleRun(string cycleId) => _sampleRun.TryRemove(cycleId, out _);
+    public void BreakSampleRun(string cycleId)
+    {
+        _sampleRun.TryRemove(cycleId, out _);
+        _sampleRunStart.TryRemove(cycleId, out _);
+    }
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTimeOffset> _sampleRunStart =
+        new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// 这一串连续样本的第一个样本的观测时刻（control-server#407：中断要持续够久才算）；没有在记的串答空。同一份读数重读不改它，断开之后的第一个样本重新记。
+    /// </summary>
+    public DateTimeOffset? SampleRunStart(string key) =>
+        _sampleRunStart.TryGetValue(key, out DateTimeOffset start) ? start : null;
 
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTimeOffset> _firstObserved =
         new(StringComparer.Ordinal);
@@ -224,6 +243,19 @@ public sealed class ChargingAllocationBoard
 
     /// <inheritdoc cref="FirstObserved"/>
     public void ForgetObserved(string key) => _firstObserved.TryRemove(key, out _);
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTimeOffset At, int Percent)> _netGainBaseline =
+        new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// 充电中电量净增长的基准（control-server#407，#442 增量审查 N2）：第一次记下那一刻与电量，之后答同一个，直到 <see cref="MoveNetGainBaseline"/>。
+    /// 进程重启后从头记。
+    /// </summary>
+    public (DateTimeOffset At, int Percent) NetGainBaseline(string key, DateTimeOffset at, int percent) =>
+        _netGainBaseline.GetOrAdd(key, (at, percent));
+
+    /// <inheritdoc cref="NetGainBaseline"/>
+    public void MoveNetGainBaseline(string key, DateTimeOffset at, int percent) => _netGainBaseline[key] = (at, percent);
 
     /// <summary>「到桩之后失联」已升级告警过的键（事件 2261、2262）：一种失联一次，恢复时 <see cref="Unsay"/>。</summary>
     public static string ChargingLossKey(string journeyId, string code) => $"charging-loss:{code}:{journeyId}";
@@ -342,7 +374,8 @@ public sealed class ChargingAllocator(
     IOptions<JourneyRuntimeOptions> runtimeOptions,
     ChargingAllocationBoard board,
     TimeProvider timeProvider,
-    ILogger<ChargingAllocator> logger)
+    ILogger<ChargingAllocator> logger,
+    StationClearanceExit? clearanceExit = null)
 {
     private const string BusinessStateType = "VehicleBusinessStateSnapshot";
 
@@ -436,6 +469,16 @@ public sealed class ChargingAllocator(
             "below its mandatory charge line again ({Battery}%). That cycle is ended and the charger released for the vehicle's " +
             "next charge, which is allocated by the ordinary chain in this round.");
 
+    private static readonly Action<ILogger, int, int, string, int, string, Exception?> LogRepeatedRecharge =
+        LoggerMessage.Define<int, int, string, int, string>(
+            LogLevel.Warning,
+            new EventId(2277, nameof(LogRepeatedRecharge)),
+            "Charger {MapId}/{StationId}: vehicle {VehicleKey} is below its mandatory charge line again ({Battery}%) after it " +
+            "was already recharged once on this charger without doing any work in between. This counts as no charging " +
+            "progress on the vehicle's side (control-server#407 S-d): it is not charged on this charger again and is sent to no " +
+            "other charger. " +
+            "{Outcome} The vehicle stays where it is; someone has to look at it.");
+
     private readonly JourneyRuntimeOptions _runtime = runtimeOptions.Value;
 
     /// <summary>跨轮次保留的那块板（宿主里是单例）：引擎的充电分支也经这里记「只告警一次」与「查无此单从何时起」。</summary>
@@ -490,7 +533,11 @@ public sealed class ChargingAllocator(
                 }
                 else
                 {
-                    verdicts[candidate.Vehicle.AgvId] = Refuse(candidate.Vehicle, refusal, "");
+                    // REQ-0286: a vehicle whose charging eligibility is paused, still below its line, queues and is warned
+                    // about -- it is not tried at another charger.
+                    verdicts[candidate.Vehicle.AgvId] = Refuse(
+                        candidate.Vehicle, refusal, "",
+                        waiting: refusal == ChargingAllocationReasons.VehicleEligibilityHeld ? refusal : null);
                 }
             }
             catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
@@ -993,6 +1040,13 @@ public sealed class ChargingAllocator(
             return false;
         }
 
+        // control-server#407 S-d: a second recharge on the charger it never left is no progress, not another recharge.
+        if (await RechargedOnHeldChargerBeforeAsync(candidate.Vehicle, cycle, cancellationToken).ConfigureAwait(false))
+        {
+            await PauseForRepeatedRechargeAsync(held, cycle, candidate, cancellationToken).ConfigureAwait(false);
+            return false;
+        }
+
         if (!await CloseCompletedCycleAsync(
                 held, cycle, ChargingExecutionReasons.ChargerReleasedForRecharge, ChargingExecutionReasons.RechargedOnHeldCharger,
                 departed: false, cancellationToken).ConfigureAwait(false))
@@ -1003,6 +1057,122 @@ public sealed class ChargingAllocator(
         LogHandedOverForRecharge(
             logger, held.MapId, held.StationId, held.VehicleKey, held.JourneyId, vehicle.BatteryPercent ?? -1, null);
         return true;
+    }
+
+    /// <summary>
+    /// 这辆车持有的这个充满周期，本身是不是一次原桩重充接上来的（<see cref="ChargingExecutionReasons.RechargedOnHeldCharger"/>，control-server#407 S-d）：
+    /// 按分配时刻排，它前面紧挨着的那个周期<b>在同一个桩上</b>以原桩重充收尾，且那次收尾晚于起算点。是，则这一次就是「第二次原桩重充」。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 「窗口」是车一直没离开过桩、没做过别的事的这一段。只看紧挨着的前一个周期，所以车离开过桩、经正常分配链新承诺了一趟充电（前一个周期以离桩、
+    /// 清桩、失败等收尾），回到桩上的第一次原桩重充不算第二次（#442 审查 S1 的探针）。前一个周期必须是同一个桩：交出来重充时原桩被暂停、改分到
+    /// 另一个桩，那个周期也以原桩重充收尾，但车在新桩上的第一次重充不是在「没离开过的桩」上的第二次（#442 增量审查 N1 的探针）。
+    /// </para>
+    /// <para>
+    /// 起算点另外再取：最近一趟非充电旅程、最近一次资格恢复、最近一次人工充电等待解除——这些之后，那个人或那件事已经把旧账了结了。
+    /// 离桩释放与清桩完成<b>不需要</b>作起算点（#442 增量审查 R2）：前一个周期以原桩重充收尾，当前周期就是那一轮紧接着承诺的，两者之间夹不进
+    /// 任何周期的离桩或清桩完成；而车在桩上离桩、被清桩，收尾的正是当前周期本身，轮不到这里判。
+    /// </para>
+    /// <para>时刻在客户端比（SQLite 不比较 <see cref="DateTimeOffset"/>）。</para>
+    /// </remarks>
+    private async Task<bool> RechargedOnHeldChargerBeforeAsync(
+        FleetVehicle fleetVehicle, ChargingCycleRow held, CancellationToken cancellationToken)
+    {
+        string vehicleKey = fleetVehicle.VehicleKey;
+        var cycles = await dbContext.Set<ChargingCycleRow>().AsNoTracking()
+            .Where(row => row.VehicleKey == vehicleKey && row.CycleId != held.CycleId)
+            .Select(row => new { row.AllocatedAt, row.EndedAt, row.EndReason, row.MapId, row.StationId })
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        var previous = cycles
+            .Where(row => row.AllocatedAt < held.AllocatedAt)
+            .OrderByDescending(row => row.AllocatedAt)
+            .FirstOrDefault();
+        if (previous is not { EndReason: ChargingExecutionReasons.RechargedOnHeldCharger, EndedAt: { } rechargedAt }
+            || previous.MapId != held.MapId
+            || previous.StationId != held.StationId)
+        {
+            return false;
+        }
+
+        DateTimeOffset[] otherWork = await dbContext.JourneyRuntimes.AsNoTracking()
+            .Where(row => row.AgvId == fleetVehicle.AgvId && !row.JourneyId.StartsWith(ChargingIdentity.JourneyIdPrefix))
+            .Select(row => row.CreatedAt)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        string[] holdIds = await dbContext.Set<VehicleChargingEligibilityHoldRow>().AsNoTracking()
+            .Where(row => row.VehicleKey == vehicleKey)
+            .Select(row => row.HoldId)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        DateTimeOffset[] recovered = await dbContext.Set<VehicleChargingEligibilityRecoveryRow>().AsNoTracking()
+            .Where(row => holdIds.Contains(row.HoldId))
+            .Select(row => row.RecoveredAt)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        DateTimeOffset?[] released = await dbContext.Set<ManualChargingHoldRecordRow>().AsNoTracking()
+            .Where(row => row.VehicleKey == vehicleKey && row.ReleasedAt != null)
+            .Select(row => row.ReleasedAt)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        DateTimeOffset since = otherWork.Concat(recovered).Concat(released.Select(at => at!.Value))
+            .DefaultIfEmpty(DateTimeOffset.MinValue).Max();
+        return rechargedAt > since;
+    }
+
+    /// <summary>
+    /// 第二次原桩重充（control-server#407 S-d）：不交桩、不在这个桩上再充、不分别的桩。Host 的恢复入口可用时只写<b>车的充电资格暂停</b>
+    /// （原因 <see cref="VehicleChargingEligibilityHoldReasons.NoProgressConfirmed"/>，幂等键按那一个充满周期），<b>不暂停桩</b>；不可用时只告警。
+    /// 告警每个周期一次。车留在原地，桩仍是那个充满周期的占用，由离桩三项确认或人工清桩放开。
+    /// </summary>
+    /// <remarks>
+    /// 只暂停车（#442 审查 S1）：那个周期已经充满，说明桩能正常出电，问题在车这一侧——它什么活都没干就掉回强充线以下两次。现场只有一个桩，连桩一起停就停掉了
+    /// 整个现场的充电。车的出口是 Host 的车辆资格恢复入口，所以只要它可用；不需要清桩出口——车没进清桩中。
+    /// </remarks>
+    private async Task PauseForRepeatedRechargeAsync(
+        StationExclusivityRow held,
+        ChargingCycleRow cycle,
+        ChargingCandidate candidate,
+        CancellationToken cancellationToken)
+    {
+        string? unavailable = clearanceExit is null ? StationClearanceExit.NoRecoveryEntry : clearanceExit.VehicleRecoveryUnavailable();
+        RiotVehicleObservation vehicle = candidate.Facts.Vehicle;
+        DateTimeOffset now = timeProvider.GetUtcNow();
+        string battery = vehicle.BatteryPercent?.ToString(CultureInfo.InvariantCulture) ?? "unread";
+        string evidence = string.Create(
+            CultureInfo.InvariantCulture,
+            $"riot:vehicle/{held.VehicleKey}@{vehicle.ObservedAt:O}; second recharge on held charger {held.StationId} at {battery}% without leaving it (cycle {cycle.CycleId} full at {cycle.CompletedAt:O})");
+        string outcome;
+        if (unavailable is null)
+        {
+            VehicleChargingEligibilityHoldRow vehicleHold = new()
+            {
+                HoldId = JourneyPlanBuilder.StableGuid(cycle.CycleId, "repeated-recharge-vehicle-hold"),
+                IdempotencyKey = JourneyPlanBuilder.StableGuid("REPEATED_RECHARGE|" + cycle.CycleId, "vehicle-charging-eligibility-hold"),
+                VehicleKey = held.VehicleKey,
+                CycleId = cycle.CycleId,
+                Reason = VehicleChargingEligibilityHoldReasons.NoProgressConfirmed,
+                HeldAt = now,
+                EvidenceReference = evidence,
+            };
+            dbContext.Add(vehicleHold);
+            try
+            {
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Nothing of this attempt may ride along with a later save of the round.
+                dbContext.Entry(vehicleHold).State = EntityState.Detached;
+                throw;
+            }
+            outcome = "The vehicle's charging eligibility is paused (NO_PROGRESS_CONFIRMED, root cause UNKNOWN); the charger is not paused -- the cycle before charged it full.";
+        }
+        else
+        {
+            outcome = $"ALARM ONLY, NOT ISOLATED: the vehicle is not paused because the way back from a pause is not available ({unavailable}).";
+        }
+
+        if (board.FirstTime("repeated-recharge:" + cycle.CycleId))
+        {
+            LogRepeatedRecharge(logger, held.MapId, held.StationId, held.VehicleKey, vehicle.BatteryPercent ?? -1, outcome, null);
+        }
     }
 
     /// <summary>

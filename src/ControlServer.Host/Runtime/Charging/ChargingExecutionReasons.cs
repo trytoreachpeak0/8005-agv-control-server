@@ -165,6 +165,46 @@ public static class ChargingExecutionReasons
     /// <summary>桩独占的释放原因：人工清桩确认、旧单已终结（批次9-08）。写在独占的经过上，不在旅程行上。</summary>
     public const string ChargerReleasedOnManualClearance = "CHARGER_RELEASED_ON_MANUAL_CLEARANCE";
 
+    // ---- 中断与无进展（批次9-09，control-server#407）----
+
+    /// <summary>
+    /// <c>ConfirmedChargingInterruption</c>（<c>REQ-0285</c>）已经形成并隔离：桩以不可变事件暂停、车的充电资格暂停（同一次保存，根因 <c>UNKNOWN</c>），
+    /// 用途转为 <c>CLEARING_MAINTENANCE</c>，周期进清桩中。车保持原位，不在原桩重启、不换桩试充；出口是人工清桩确认，桩与车各自经 Host 入口恢复。
+    /// </summary>
+    public const string InterruptionClearing = "CHARGING_INTERRUPTION_CONFIRMED";
+
+    /// <summary><c>ConfirmedChargingNoProgress</c>（<c>REQ-0285</c>）已经形成并隔离，其余同 <see cref="InterruptionClearing"/>。</summary>
+    public const string NoProgressClearing = "CHARGING_NO_PROGRESS_CONFIRMED";
+
+    /// <summary>
+    /// 中断或无进展隔离之后的清桩中，还没人确认，RIoT 却读到车仍在充电（无进展可能只是涨得慢）：人工确认会因「车仍在充电」被拒，清桩也完成不了。
+    /// 告警一次，请现场先结束充电、再挪车、再确认清桩。读到不再充电时换回这一种的等人确认码。
+    /// </summary>
+    public const string ClearingVehicleStillCharging = "CHARGING_CLEARING_VEHICLE_STILL_CHARGING";
+
+    /// <summary>
+    /// 中断已经确认，但隔离的出口此刻不可用（人工清桩出口或 Host 恢复入口缺一样）：只告警、未隔离——周期、桩占用、车原位都保持，不建单、不发命令、
+    /// 不释放、不改派。人工清桩可以收尾它。
+    /// </summary>
+    public const string InterruptionNotIsolated = "CHARGING_INTERRUPTION_NOT_ISOLATED";
+
+    /// <summary>无进展已经确认、隔离的出口不可用：只告警、未隔离，同 <see cref="InterruptionNotIsolated"/>。</summary>
+    public const string NoProgressNotIsolated = "CHARGING_NO_PROGRESS_NOT_ISOLATED";
+
+    /// <summary>
+    /// 兜底（#442 增量审查 N2）：<c>batteryState</c> 在充电与不充电之间来回切，中断、无进展都判不出来，而电量在「稳定期 + 两个观察窗口」里没有净增长。
+    /// 只告警、不隔离（读数在切，判不清是谁的事）；周期、桩占用、车原位都保持。电量涨够了自动清掉；人工清桩可以收尾它。
+    /// </summary>
+    public const string StalledUnstableReadings = "CHARGING_STALLED_UNSTABLE_READINGS";
+
+    /// <summary>
+    /// 到桩之前与之后「证据缺失」的那一族码（control-server#407 S-e）：它们之间来回切换不算新的一次，开始时刻保留，升级告警按旅程只报一次。
+    /// </summary>
+    public static IReadOnlySet<string> EvidenceMissingCodes { get; } = new HashSet<string>(StringComparer.Ordinal)
+    {
+        ArrivalNotProven, VehicleObservationLost, OrderNotFound, BatteryTelemetryLost,
+    };
+
     /// <summary>由人工清桩收尾的两种结束原因。</summary>
     public static IReadOnlySet<string> ClearedEndings { get; } =
         new HashSet<string>(StringComparer.Ordinal) { UnableToChargeCleared, ClearedByOperator };
@@ -173,6 +213,8 @@ public static class ChargingExecutionReasons
     public static IReadOnlySet<string> AtChargerCodes { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
         ChargerNotEngaged, VehicleObservationLost, BatteryTelemetryLost, ReservationLostAtArrival, ArrivalNotProven,
+        // control-server#407: cleared when charging resumes or gains again, not because the order read SUCCESS.
+        InterruptionNotIsolated, NoProgressNotIsolated, StalledUnstableReadings,
     };
 
     /// <summary>

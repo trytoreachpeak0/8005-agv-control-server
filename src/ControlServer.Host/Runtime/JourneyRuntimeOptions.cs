@@ -174,6 +174,17 @@ public sealed class JourneyRuntimeOptions
     public bool UnableToChargeOldOrderCancelEnabled { get; set; }
 
     /// <summary>
+    /// How long a charging vehicle has to read "not charging" without a break before it is a confirmed interruption
+    /// (control-server#407, REQ-0285). The first reading only starts the observation; the interruption is confirmed at the
+    /// first later reading whose observation time is at least this far from it, every reading in between fresh, continuous
+    /// (no gap over <see cref="MaximumEvidenceAge"/>) and not charging. One poll interval apart (about two seconds on site)
+    /// two reads can be one RIoT snapshot read twice (independent review S3a of #442). Sixty seconds by default; positive
+    /// and at most ten minutes. It lives here, not in the ChargingPolicyVersion: that table has no column for it and this
+    /// ticket adds no migration.
+    /// </summary>
+    public TimeSpan ChargingInterruptionConfirmAfter { get; set; } = TimeSpan.FromSeconds(60);
+
+    /// <summary>
     /// How long after the server's cancel of a clearing cycle's old charge order it waits for RIoT to read the order ended
     /// before it warns that the cancel did not take (event 2270; control-server#406 review S3). Sixty seconds by default;
     /// positive and at most ten minutes.
@@ -257,6 +268,11 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
         }
         if (options.PollInterval < TimeSpan.FromMilliseconds(100)) failures.Add("PollInterval must be at least 100 ms.");
         if (options.MaximumEvidenceAge <= TimeSpan.Zero) failures.Add("MaximumEvidenceAge must be positive.");
+        if (options.ChargingInterruptionConfirmAfter <= TimeSpan.Zero ||
+            options.ChargingInterruptionConfirmAfter > TimeSpan.FromMinutes(10))
+        {
+            failures.Add("ChargingInterruptionConfirmAfter must be positive and at most 10 minutes.");
+        }
         if (options.CheckpointWaitBudget <= TimeSpan.Zero)
         {
             failures.Add("CheckpointWaitBudget must be positive.");

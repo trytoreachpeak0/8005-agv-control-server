@@ -101,6 +101,11 @@ internal sealed class ChargingVehiclesQueryEndpoint : IDashboardQueryEndpoint
                                ?? (pass is null ? ChargingDashboardDescriptions.NoPassCompletedYet
                                    : verdict is null && observed is null ? ChargingDashboardDescriptions.NotEvaluatedThisPass
                                    : null);
+        // In memory: SQLite cannot order by a DateTimeOffset.
+        VehicleChargingEligibilityHoldRow? eligibility = facts.OpenEligibilityHolds
+            .Where(row => row.VehicleKey == vehicle.VehicleKey)
+            .OrderBy(row => row.HeldAt)
+            .FirstOrDefault();
         return new
         {
             agvId = vehicle.AgvId,
@@ -168,7 +173,17 @@ internal sealed class ChargingVehiclesQueryEndpoint : IDashboardQueryEndpoint
                     reasonDescription = ChargingDashboardDescriptions.ManualHoldReasons.GetValueOrDefault(manual.Reason),
                     since = manual.Since,
                 },
-            eligibilityHeld = facts.OpenEligibilityHolds.Any(row => row.VehicleKey == vehicle.VehicleKey),
+            eligibilityHeld = eligibility is not null,
+            // control-server#407: the earliest open pause of this vehicle's charging eligibility, as read.
+            eligibilityHold = eligibility is null
+                ? null
+                : new
+                {
+                    reason = eligibility.Reason,
+                    reasonDescription = ChargingDashboardDescriptions.EligibilityHoldReasons.GetValueOrDefault(eligibility.Reason),
+                    heldAt = eligibility.HeldAt,
+                    openHolds = facts.OpenEligibilityHolds.Count(row => row.VehicleKey == vehicle.VehicleKey),
+                },
         };
     }
 }

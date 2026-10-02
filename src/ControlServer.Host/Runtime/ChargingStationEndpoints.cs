@@ -25,6 +25,19 @@ public sealed record ChargingStationHoldHttpRequest(int MapId, int StationId, st
 public sealed record ChargingStationRecoveryHttpRequest(
     int MapId, int StationId, string? OperatorId, string? Basis, string? ClaimedRole);
 
+/// <summary>恢复一辆车充电资格的请求（批次9-09，control-server#407，放宽）。</summary>
+/// <param name="Basis">恢复的依据：电池检查记录、维修单号。</param>
+public sealed record VehicleChargingEligibilityRecoveryHttpRequest(
+    string? AgvId, string? OperatorId, string? Basis, string? ClaimedRole);
+
+/// <summary>一次车辆充电资格恢复的结果。</summary>
+public sealed record VehicleChargingEligibilityRecoveryResponse(
+    string AgvId,
+    string VehicleKey,
+    string Outcome,
+    IReadOnlyList<string> HoldIds,
+    IReadOnlyList<string> Codes);
+
 /// <summary>人工清桩确认的请求（Host 入口，放宽）。<c>clearedCondition</c> 取协议的三个值之一，缺省 <c>STATION_EMPTY</c>。</summary>
 public sealed record ChargingStationClearanceHttpRequest(
     string? AgvId, string? StationId, string? OperatorId, string? ClearedCondition);
@@ -69,9 +82,12 @@ public static class ChargingStationEndpoints
     public const string HoldRoute = "/api/charging/v1/station-holds";
     public const string RecoveryRoute = "/api/charging/v1/station-recoveries";
     public const string ClearanceRoute = "/api/charging/v1/station-clearances";
+    public const string VehicleRecoveryRoute = "/api/charging/v1/vehicle-eligibility-recoveries";
 
     public const string HoldAuditAction = "CHARGING_STATION_MAINTENANCE_HOLD_REQUESTED";
     public const string RecoveryAuditAction = "CHARGING_STATION_RECOVERY_CONFIRMATION";
+    public const string VehicleRecoveryAuditAction = "VEHICLE_CHARGING_ELIGIBILITY_RECOVERY";
+    public const string UnknownVehicle = "UNKNOWN_VEHICLE";
 
     public const string ChargerNotInRoster = "CHARGER_NOT_IN_ROSTER";
     public const string ReasonRequired = "REASON_REQUIRED";
@@ -110,6 +126,13 @@ public static class ChargingStationEndpoints
             new EventId(2269, nameof(LogRecovered)),
             "Charger {MapId}/{StationId} is back in allocation: {OperatorId} confirmed its recovery, closing {Count} hold(s).");
 
+    private static readonly Action<ILogger, string, string, int, Exception?> LogVehicleRecovered =
+        LoggerMessage.Define<string, string, int>(
+            LogLevel.Warning,
+            new EventId(2279, nameof(LogVehicleRecovered)),
+            "Vehicle {VehicleKey}'s charging eligibility is back: {OperatorId} confirmed its recovery, closing {Count} hold(s). " +
+            "No charger's allocation hold is touched (REQ-0286: the vehicle and the charger recover each on its own evidence).");
+
     /// <summary>
     /// 映射三个入口：维修暂停总是映射；恢复确认与人工清桩只在 <see cref="VehicleFaultRecoveryEndpoints.EnabledKey"/> 打开时映射。答后两者有没有映射。
     /// </summary>
@@ -143,6 +166,14 @@ public static class ChargingStationEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
+        app.MapPost(VehicleRecoveryRoute, RecoverVehicleAsync)
+            .WithName("ConfirmVehicleChargingEligibilityRecovery")
+            .WithSummary("Return a vehicle whose charging eligibility was paused to charging allocation (REQ-0285, REQ-0286)")
+            .Produces<VehicleChargingEligibilityRecoveryResponse>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
         return true;
     }
@@ -314,6 +345,93 @@ public static class ChargingStationEndpoints
         return TypedResults.Ok(new ChargingStationHoldResponse(request.MapId, request.StationId, "RECOVERED", recovered, []));
     }
 
+    // ---- 车辆充电资格恢复（放宽，批次9-09）------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// 恢复一辆车的充电资格（control-server#407，<c>REQ-0286</c>）：把它此刻每一条未恢复的资格暂停各记一条恢复。与桩的恢复各自独立——
+    /// 不碰任何桩的分配暂停，桩那一侧仍要 <see cref="RecoverAsync"/>。凭据、开关、具名人员与审计同桩的恢复。
+    /// </summary>
+    public static async Task<Results<Ok<VehicleChargingEligibilityRecoveryResponse>, UnauthorizedHttpResult, ProblemHttpResult>> RecoverVehicleAsync(
+        HttpContext context,
+        VehicleChargingEligibilityRecoveryHttpRequest request,
+        IChargingHoldStore holds,
+        VehicleRoster fleet,
+        IGovernanceAuditWriter audit,
+        IOptions<VehicleFaultRecoveryOptions> recoveryOptions,
+        TimeProvider timeProvider,
+        ILogger<VehicleChargingEligibilityRecoveryHttpRequest> logger,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(holds);
+        ArgumentNullException.ThrowIfNull(fleet);
+        ArgumentNullException.ThrowIfNull(audit);
+        ArgumentNullException.ThrowIfNull(recoveryOptions);
+        ArgumentNullException.ThrowIfNull(timeProvider);
+
+        context.Response.Headers.CacheControl = "no-store";
+        if (Authenticate<VehicleChargingEligibilityRecoveryResponse>(context, recoveryOptions.Value) is { } refused)
+        {
+            return refused;
+        }
+        DateTimeOffset now = timeProvider.GetUtcNow();
+        string? agvId = Trimmed(request?.AgvId);
+        if (agvId is null || fleet.ByAgvId(agvId) is not FleetVehicle vehicle)
+        {
+            await WriteAuditAsync(
+                audit, VehicleRecoveryAuditAction, "vehicle-unknown", GovernanceActionOutcome.Failed, null, now,
+                new { agvId = agvId is { Length: <= MaxIdentifierLength } ? agvId : null, codes = new[] { UnknownVehicle }, result = "REJECTED" },
+                cancellationToken, GovernedObjectKind.AgvLifecycle).ConfigureAwait(false);
+            return TypedResults.Problem(
+                statusCode: StatusCodes.Status404NotFound,
+                title: "Unknown vehicle",
+                detail: UnknownVehicle);
+        }
+
+        string? operatorId = Trimmed(request!.OperatorId);
+        string? basis = Trimmed(request.Basis);
+        string? claimedRole = Trimmed(request.ClaimedRole);
+        List<string> codes = [];
+        if (operatorId is null) codes.Add(OperatorRequired);
+        if (basis is null) codes.Add(BasisRequired);
+        bool fits = (basis?.Length ?? 0) <= MaxTextLength && (operatorId?.Length ?? 0) <= MaxIdentifierLength &&
+                    (claimedRole?.Length ?? 0) <= MaxIdentifierLength;
+        if (!fits) codes.Add(FieldTooLong);
+        IReadOnlyList<VehicleChargingEligibilityHold> active =
+            await holds.ListActiveVehicleHoldsAsync(vehicle.VehicleKey, cancellationToken).ConfigureAwait(false);
+        if (active.Count == 0) codes.Add(NoActiveHold);
+        string objectId = "vehicle-charging-eligibility:" + vehicle.VehicleKey;
+        if (codes.Count > 0)
+        {
+            await WriteAuditAsync(
+                audit, VehicleRecoveryAuditAction, objectId, GovernanceActionOutcome.Failed, fits ? claimedRole : null, now,
+                new { vehicle.AgvId, vehicle.VehicleKey, operatorId = fits ? operatorId : null, basis = fits ? basis : null, codes, result = "REJECTED" },
+                cancellationToken, GovernedObjectKind.AgvLifecycle).ConfigureAwait(false);
+            return TypedResults.Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: "Vehicle charging eligibility recovery refused",
+                detail: string.Join(',', codes),
+                extensions: new Dictionary<string, object?>(StringComparer.Ordinal) { ["codes"] = codes });
+        }
+
+        List<string> recovered = [];
+        foreach (VehicleChargingEligibilityHold hold in active)
+        {
+            ChargingHoldRecovery recovery = await holds.RecoverVehicleHoldAsync(
+                new ChargingHoldRecovery(
+                    Guid.NewGuid().ToString("D"), hold.HoldId, operatorId!, claimedRole ?? "UNSTATED", now, basis!),
+                cancellationToken).ConfigureAwait(false);
+            recovered.Add(recovery.HoldId);
+        }
+        await WriteAuditAsync(
+            audit, VehicleRecoveryAuditAction, objectId, GovernanceActionOutcome.Succeeded, claimedRole, now,
+            new { vehicle.AgvId, vehicle.VehicleKey, operatorId, basis, claimedRole, recovered, result = "RECOVERED" },
+            cancellationToken, GovernedObjectKind.AgvLifecycle).ConfigureAwait(false);
+        LogVehicleRecovered(logger, vehicle.VehicleKey, operatorId!, recovered.Count, null);
+        return TypedResults.Ok(
+            new VehicleChargingEligibilityRecoveryResponse(vehicle.AgvId, vehicle.VehicleKey, "RECOVERED", recovered, []));
+    }
+
     // ---- 人工清桩（放宽）--------------------------------------------------------------------------------------------------
 
     public static async Task<Results<Ok<ChargingStationClearanceResponse>, UnauthorizedHttpResult, ProblemHttpResult>> ClearAsync(
@@ -470,11 +588,12 @@ public static class ChargingStationEndpoints
         string? claimedRole,
         DateTimeOffset now,
         object detail,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        GovernedObjectKind kind = GovernedObjectKind.StationExclusivity) =>
         audit.WriteAdministratorAsync(
             new GovernanceAuditEntry(
                 action,
-                GovernedObjectKind.StationExclusivity,
+                kind,
                 objectId,
                 null,
                 outcome,

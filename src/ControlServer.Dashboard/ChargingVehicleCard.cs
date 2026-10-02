@@ -59,8 +59,26 @@ public sealed class ChargingVehicleCard : IDashboardCard
                + DashboardPageRenderer.Cell(ChargingCardRendering.JourneyCode(vehicle))
                + DashboardPageRenderer.Cell(QueueReason(allocation))
                + DashboardPageRenderer.Cell(manual)
-               + DashboardPageRenderer.Cell(eligibilityHeld ? "暂停中（见「充电暂停与等待」）" : "本版本未实施（批次9-09）")
+               + DashboardPageRenderer.Cell(Eligibility(vehicle, eligibilityHeld))
                + "</tr>";
+    }
+
+    /// <summary>
+    /// 充电资格暂停那一格（control-server#407）：没有暂停写「无」；有暂停写原因（码与中文说明）与起始时刻，几条都在时写条数，并指到「充电暂停与等待」。
+    /// 服务端没给原因（旧服务端只给 <c>eligibilityHeld</c>）时只写暂停中。
+    /// </summary>
+    private static string Eligibility(JsonElement vehicle, bool held)
+    {
+        if (!held)
+        {
+            return "无";
+        }
+        if (!vehicle.TryGetProperty("eligibilityHold", out JsonElement hold) || hold.ValueKind != JsonValueKind.Object)
+        {
+            return "暂停中（见「充电暂停与等待」）";
+        }
+        string count = StationHoldingRendering.Str(hold, "openHolds") is { } open && open != "1" ? $"（共 {open} 条）" : "";
+        return $"暂停中：{ChargingCardRendering.Coded(hold, "reason", "reasonDescription")}，自 {DashboardPageRenderer.Text(hold, "heldAt")}{count}（见「充电暂停与等待」）";
     }
 
     /// <summary>电量与读数来源；没评估时只写那一句话（同一句也写在排队原因那一格），不写任何数。</summary>

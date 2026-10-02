@@ -50,7 +50,7 @@ internal sealed class ChargingHoldsQueryEndpoint : IDashboardQueryEndpoint
             await ChargingDashboardFacts.ReadAsync(dbContext, _roster, _clock.GetUtcNow(), cancellationToken);
         return new
         {
-            eligibilityHoldsNote = ChargingDashboardDescriptions.InterruptionNotImplemented,
+            eligibilityHoldsNote = ChargingDashboardDescriptions.EligibilityHoldsNote,
             eligibilityHolds = facts.OpenEligibilityHolds
                 .Select(hold => new
                 {

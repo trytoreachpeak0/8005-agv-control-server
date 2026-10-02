@@ -398,6 +398,11 @@ jobs:
               @{ Name = 'charging-unable-to-charge-pauses-charger'; Runs = 1; BatchId = 'batch-9' }
               # control-server#406, REQ-0175: a HANG with another code, or 407802 away from the charger, pauses nothing.
               @{ Name = 'charging-general-fault-does-not-pause'; Runs = 1; BatchId = 'batch-9' }
+              # control-server#407, REQ-0285/0286: charging stops below the threshold -- the charger and the vehicle's
+              # charging eligibility are both paused, the vehicle stays where it is, and nothing is sent afterwards.
+              @{ Name = 'charging-interruption-isolates'; Runs = 1; BatchId = 'batch-9' }
+              # control-server#407, REQ-0285/0282: CHARGING with no gain over the frozen (shortened) window -- both paused.
+              @{ Name = 'charging-no-progress-isolates'; Runs = 1; BatchId = 'batch-9' }
           )
           # One run's usual length in seconds, for dealing scenarios out to lanes longest first. Medians of 31
           # CI jobs from 2026-09-17 (ci-research, control-server#130); normal-load's excludes the build it used

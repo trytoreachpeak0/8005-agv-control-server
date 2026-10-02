@@ -272,7 +272,29 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 + "桩暂不释放；请到现场把车挪开，读到桩空了的那一轮会自动完成清桩。如果车其实已不在桩上（RIoT 的位置没更新），请在 RIoT 里给车重定位，或者给车断电",
             [ChargingExecutionReasons.UnableToChargeCleared] =
                 "充不上的这次充电已收尾：清桩已确认、旧单已结束，充电桩的独占已释放，车可以按常规派车检查接活或去别的桩充电。"
-                + "这个桩仍暂停分配，要等维修后做恢复确认",
+                + "这个桩仍暂停分配，要等维修后做恢复确认。如果这次是因充电中断或充电不涨而清桩的，车的充电资格也仍暂停，要另做车辆充电资格恢复，在那之前它不会被派去任何桩",
+            // control-server#407：充电中断与充电无进展。前两个是已隔离、在清桩中；后两个是隔离出口不可用时的只告警。
+            [ChargingExecutionReasons.InterruptionClearing] =
+                "充电中断：车在桩上充着电，还没充满就停了（连续两次读到不在充电），原因未知、不判定是车还是桩的问题。这个桩已暂停分配，"
+                + "这辆车的充电资格也已暂停，车留在原地，服务端不在原桩重新充电、不派它去别的桩、不建单、不动车。请 R-11／R-13 名单里的人到现场把车挪开、"
+                + "确认桩已腾空（车载端「确认清桩」或服务端清桩入口）。之后桩与车各自检查、各自做恢复确认",
+            [ChargingExecutionReasons.NoProgressClearing] =
+                "充电不涨：车一直报在充电，但过了稳定期和整个观察窗口，电量增加不到策略规定的最小值，原因未知、不判定是车还是桩的问题。"
+                + "这个桩已暂停分配，这辆车的充电资格也已暂停，车留在原地，服务端不在原桩重新充电、不派它去别的桩、不建单、不动车。"
+                + "请 R-11／R-13 名单里的人到现场把车挪开、确认桩已腾空。之后桩与车各自检查、各自做恢复确认",
+            [ChargingExecutionReasons.ClearingVehicleStillCharging] =
+                "车仍在充电：这辆车因充电中断或充电不涨已暂停、在等人工清桩，但 RIoT 读到它还在充电（可能只是涨得慢）。车在充电时清桩确认会被拒，"
+                + "清桩也完成不了。请现场先结束充电，再把车挪开，再确认清桩",
+            [ChargingExecutionReasons.InterruptionNotIsolated] =
+                "充电中断，只告警、未隔离：车还没充满就停了，但人工清桩或服务端恢复入口没有配置好，所以没有暂停桩和车。车和桩都保持原样，"
+                + "服务端不重新充电、不换桩、不动车，车一直占着这个桩。请到现场查看车和桩；配置好清桩名单与恢复入口（VehicleFaultRecovery）后才会自动隔离",
+            [ChargingExecutionReasons.NoProgressNotIsolated] =
+                "充电不涨，只告警、未隔离：车一直报在充电但电量不涨，人工清桩或服务端恢复入口没有配置好，所以没有暂停桩和车。车和桩都保持原样，"
+                + "服务端不重新充电、不换桩、不动车，车一直占着这个桩。请到现场查看车和桩；配置好清桩名单与恢复入口（VehicleFaultRecovery）后才会自动隔离",
+            [ChargingExecutionReasons.StalledUnstableReadings] =
+                "充电卡住，读数不稳：车在桩上，RIoT 报的充电状态在「充电」与「不充电」之间来回切，所以既判不成充电中断、也判不成充电不涨，"
+                + "但过了稳定期和两个观察窗口电量没有净增长。只告警、未隔离：判不清是车还是桩的问题，所以没有暂停桩和车，服务端不重新充电、不换桩、不动车，"
+                + "车一直占着这个桩。请到现场查看车的充电接触与桩的输出；需要让车离开时走人工清桩。电量涨上来后这个码会自动消失",
             [ChargingExecutionReasons.ClearedByOperator] =
                 "这次充电由人工清桩收尾：有权限的人确认车已挪开、桩已腾空，旧单已结束，这一趟占着的充电桩已释放、充电用途已放开。不暂停这个桩",
             [ChargingExecutionReasons.ChargerReleasedOnManualClearance] =

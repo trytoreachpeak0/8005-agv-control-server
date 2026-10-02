@@ -362,7 +362,7 @@ public sealed partial class JourneyRuntimeEngine
             await SetChargingCodeAsync(
                     runtime,
                     resumed ? ChargingExecutionReasons.OldOrderResumedWhileClearing
-                    : confirmedAt is null ? ChargingExecutionReasons.UnableToChargeClearing
+                    : confirmedAt is null ? await ClearingWaitCodeAsync(runtime, cycle, cancellationToken).ConfigureAwait(false)
                     : ChargingExecutionReasons.ClearedOldOrderUnsettled,
                     now,
                     cancellationToken)
@@ -380,7 +380,9 @@ public sealed partial class JourneyRuntimeEngine
         if (clearance is not { ConfirmedAt: not null, CompletedAt: null })
         {
             // The old order has ended, nobody has confirmed the charger clear yet: the vehicle stays, waiting for that person.
-            await SetChargingCodeAsync(runtime, ChargingExecutionReasons.UnableToChargeClearing, now, cancellationToken)
+            // The code names why it is clearing: unable to charge, or an interruption or no progress (control-server#407).
+            await SetChargingCodeAsync(
+                    runtime, await ClearingWaitCodeAsync(runtime, cycle, cancellationToken).ConfigureAwait(false), now, cancellationToken)
                 .ConfigureAwait(false);
             return;
         }
