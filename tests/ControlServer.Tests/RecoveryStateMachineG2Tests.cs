@@ -14,7 +14,7 @@ using Microsoft.Extensions.Logging;
 
 namespace ControlServer.Tests;
 
-public sealed class RecoveryStateMachineG2Tests
+public sealed partial class RecoveryStateMachineG2Tests
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private static readonly int[] RecoverySlots = [1, 2];
