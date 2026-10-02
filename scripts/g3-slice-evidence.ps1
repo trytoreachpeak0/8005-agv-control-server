@@ -67,9 +67,10 @@
 # contracts with onboard-hmi#217 (docs/g3-slice-claim-review.md has the rows).
 #
 # Batch 9 (control-server#405): the journey runner claims FP-IS-13 for CV-AUTOMATIC-CHARGING-CYCLE, one scenario
-# (g3-automatic-charging-cycle), seven assertions. FP-IS-13 is not complete with it: CV-MANUAL-STATION-CLEARANCE and
-# CV-UNABLE-TO-CHARGE-FIELD-CONFIRMATION are added by the exit ticket control-server#412, and CV-MANUAL-CHARGING-RETURN
-# stays asserted under FP-IS-07's names until FP-IS-13 claims it under its own (review item 29).
+# (g3-automatic-charging-cycle), seven assertions. The exit ticket control-server#412 added CV-MANUAL-STATION-CLEARANCE
+# (g3-manual-station-clearance, four) and CV-UNABLE-TO-CHARGE-FIELD-CONFIRMATION (g3-unable-to-charge-field-confirmation,
+# seven), the scenarios control-server#406 and #410 wrote. CV-MANUAL-CHARGING-RETURN stays asserted under FP-IS-07's names
+# until FP-IS-13 claims it under its own (review item 29); the exit changes no existing scenario, so it did not.
 #
 # ---------------------------------------------------------------------------------------------
 # The ruling, 2026-09-09 (ticket 23, the user's decision -- recorded here rather than only in a
@@ -529,7 +530,25 @@ function Get-G3RunnerClaim {
                     'neverDispatchedWhileChargingBelowCompletion',
                     'completeWithArrivedChargerLegPurposeReleasedChargerKept',
                     'nextJourneyLeavesChargerAndChargerReleasedOnDeparture',
-                    'chargingCycleFinalStateNoDuplicateOrder')
+                    'chargingCycleFinalStateNoDuplicateOrder',
+                    # CV-MANUAL-STATION-CLEARANCE (control-server#406, onboard half onboard-hmi#221), registered by
+                    # control-server#412: RELEASE_STATION_ONLY_ON_CONFIRMED_CLEARANCE (G3-13-14), orderedExpectedMessages
+                    # (G3-13-13), the onboard entry (G3-13-12) and its precondition (G3-13-11).
+                    'unableToChargePausesChargerAndClearingStateAcknowledged',
+                    'onboardShowsUnableToChargeAndClearanceEntry',
+                    'clearanceRequestedAndConfirmedWithStationReleased',
+                    'chargerReleasedOnlyOnConfirmedClearanceNoOrderCommand',
+                    # CV-UNABLE-TO-CHARGE-FIELD-CONFIRMATION (control-server#410, onboard half onboard-hmi#222), registered
+                    # by control-server#412: orderedExpectedMessages (G3-13-23, G3-13-24), DECIDE_CHARGING_POLICY_CENTRALLY
+                    # and RECORD_FIELD_OBSERVATION (G3-13-25), duplicate-riot-order (G3-13-26), the onboard entry and result
+                    # (G3-13-22, G3-13-27) and the no-automatic-confirmation precondition (G3-13-21).
+                    'hangWithoutVerifiedCodeIsNotConfirmedAutomatically',
+                    'onboardShowsUnableToChargeEntryAtCharger',
+                    'fieldConfirmationRequestedAndConfirmedWithManualHold',
+                    'clearingBusinessStateAfterResultAcknowledged',
+                    'fieldConfirmationPausesChargerAndRecordsObservation',
+                    'vehicleHeldInPlaceNoDuplicateOrder',
+                    'onboardKeepsConfirmedResultAfterClearing')
             }
         }
     }
