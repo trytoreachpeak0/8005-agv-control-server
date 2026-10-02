@@ -1,0 +1,182 @@
+using System.Text.Json;
+using ControlServer.Application;
+using ControlServer.Dashboard;
+using ControlServer.Host.Dashboard;
+using ControlServer.Host.Runtime.Charging;
+using ControlServer.Host.Runtime.Fleet;
+using Microsoft.Extensions.Options;
+using static ControlServer.Tests.ChargingAllocationTests;
+using FleetFixture = ControlServer.Tests.MultiVehicleExecutionTests.FleetFixture;
+
+namespace ControlServer.Tests;
+
+/// <summary>
+/// 充电看板（批次9-10，control-server#408）读引擎真实跑出来的状态，不是手种的库行：名册为空退化到人工充电等待、已确认充不上进清桩中、
+/// 充满之后一直停在桩上超过告警窗口。三种都在充电执行的车队夹具里按真实轮次走到，再读四个数据面、交给卡片渲染。
+/// </summary>
+/// <remarks>夹具挂着 <see cref="ChargingDashboardCodeRecorder"/>：这几条用例写下的每个码同样要有说明。</remarks>
+public sealed class ChargingDashboardRealRunTests
+{
+    private static CancellationToken Token => TestContext.Current.CancellationToken;
+
+    private static string AgvA => FleetFixture.AgvIds[0];
+
+    private static string KeyA => FleetFixture.VehicleKeys[0];
+
+    /// <summary>名册置空、车电量 20：引擎把它放进人工充电等待；充电桩卡片醒目写名册为空并列出这辆车，告警卡片有名册为空与人工充电等待两条。</summary>
+    [Fact]
+    public async Task AnEmptyRosterTheEngineDegradedToManualChargingIsShownWithTheWaitingVehicle()
+    {
+        await using FleetFixture fleet = await FleetAsync(roster: true, chargers: []);
+        fleet.Riot.BatteryByVehicle[KeyA] = 20;
+        for (int round = 0; round < 4; round++)
+        {
+            await RoundAsync(fleet);
+        }
+        await fleet.HearFromEveryVehicleAsync();
+
+        (JsonDocument chargers, string chargerHtml) = await ReadAsync(fleet, "chargers");
+        using (chargers)
+        {
+            Assert.True(chargers.RootElement.GetProperty("rosterEmpty").GetBoolean());
+            Assert.Contains(ChargersQueryEndpoint.RosterEmptyBanner, chargerHtml, StringComparison.Ordinal);
+            Assert.Contains($"正在等人工充电的车：{AgvA}（ROSTER_EMPTY，自 ", chargerHtml, StringComparison.Ordinal);
+        }
+
+        (JsonDocument holds, string holdHtml) = await ReadAsync(fleet, "charging-holds");
+        using (holds)
+        {
+            Assert.Contains("ROSTER_EMPTY：名册为空", holdHtml, StringComparison.Ordinal);
+            Assert.Contains(ChargingDashboardDescriptions.ManualHoldReleaseHint, holdHtml, StringComparison.Ordinal);
+        }
+
+        (JsonDocument alarms, string _) = await ReadAsync(fleet, "charging-alarms");
+        using (alarms)
+        {
+            Assert.Equal(
+                [ChargingDashboardDescriptions.AlarmRosterEmpty + "@", ChargingDashboardDescriptions.AlarmManualChargingHold + "@" + AgvA],
+                alarms.RootElement.GetProperty("alarms").EnumerateArray()
+                    .Select(a => a.GetProperty("code").GetString() + "@" + a.GetProperty("agvId").GetString())
+                    .Order(StringComparer.Ordinal));
+        }
+    }
+
+    /// <summary>
+    /// 已确认充不上：充电桩卡片上这个桩是「清桩中」、带着充不上的分配暂停，持有者是清桩中的充电旅程；暂停卡片列出清桩中的车与它此刻的码；
+    /// 告警卡片有充不上的暂停与清桩中两条；逐车卡片的用途是 CLEARING_MAINTENANCE。
+    /// </summary>
+    [Fact]
+    public async Task AConfirmedFailureToChargeIsShownAsClearingWithItsPauseOnEveryCard()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        await ChargingUnableToChargeTests.ConfirmedAsync(fleet);
+        await fleet.HearFromEveryVehicleAsync();
+
+        (JsonDocument chargers, string chargerHtml) = await ReadAsync(fleet, "chargers");
+        using (chargers)
+        {
+            JsonElement charger = chargers.RootElement.GetProperty("chargers").EnumerateArray()
+                .Single(c => c.GetProperty("stationId").GetInt32() == Near.StationId);
+            Assert.Equal(ChargingDashboardDescriptions.StageClearing, charger.GetProperty("stage").GetString());
+            Assert.Equal("清桩中的充电旅程", charger.GetProperty("holding").GetProperty("holderKind").GetString());
+            Assert.Equal(ChargingStationHoldTriggers.UnableToChargeConfirmed,
+                charger.GetProperty("allocationHolds")[0].GetProperty("trigger").GetString());
+            Assert.Equal(ChargingExecutionReasons.UnableToChargeClearing, charger.GetProperty("journeyCode").GetString());
+            Assert.Contains("CLEARING：清桩中", chargerHtml, StringComparison.Ordinal);
+            Assert.Contains("UNABLE_TO_CHARGE_CONFIRMED：充不上", chargerHtml, StringComparison.Ordinal);
+        }
+
+        (JsonDocument holds, string holdHtml) = await ReadAsync(fleet, "charging-holds");
+        using (holds)
+        {
+            Assert.Equal(AgvA, Assert.Single(holds.RootElement.GetProperty("clearing").EnumerateArray()).GetProperty("agvId").GetString());
+            Assert.Contains("CHARGING_UNABLE_TO_CHARGE：已确认充不上", holdHtml, StringComparison.Ordinal);
+            Assert.Contains("还没有人工确认", holdHtml, StringComparison.Ordinal);
+        }
+
+        (JsonDocument alarms, string _) = await ReadAsync(fleet, "charging-alarms");
+        using (alarms)
+        {
+            Assert.Equal(
+                [ChargingExecutionReasons.UnableToChargeClearing, ChargingStationHoldTriggers.UnableToChargeConfirmed],
+                alarms.RootElement.GetProperty("alarms").EnumerateArray().Select(a => a.GetProperty("code").GetString()!)
+                    .Order(StringComparer.Ordinal));
+        }
+
+        (JsonDocument vehicles, string _) = await ReadAsync(fleet, "charging-vehicles");
+        using (vehicles)
+        {
+            JsonElement vehicle = vehicles.RootElement.GetProperty("vehicles")[0];
+            Assert.Equal(
+                (VehiclePurposes.ClearingMaintenance, "CLEARING_MAINTENANCE", ChargingCycleWireStates.UnableToCharge),
+                (vehicle.GetProperty("purpose").GetString(), vehicle.GetProperty("holderKind").GetString(),
+                    vehicle.GetProperty("chargingCycleState").GetString()));
+        }
+    }
+
+    /// <summary>
+    /// 充满之后一直停在桩上（没接到活、仍报在充电）：充电桩卡片是「充满待离桩」、自充满时刻起算；超过告警窗口（10 分钟）后标出来并指到事件 2249，
+    /// 告警卡片多出一条。充满的那趟旅程已收尾，阻断卡片上看不到它——这正是桩独占视图要补的那一块。
+    /// </summary>
+    [Fact]
+    public async Task AFullVehicleLeftOnItsChargerIsShownAwaitingDepartureAndFlaggedPastTheWindow()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        await ChargingCycleProgressTests.ChargingAsync(fleet, battery: 60);
+        ChargingCycleProgressTests.AtCharger(fleet, KeyA, 80, "CHARGING");
+        await RoundAsync(fleet);
+
+        (JsonDocument justFull, string _) = await ReadAsync(fleet, "chargers");
+        using (justFull)
+        {
+            JsonElement charger = justFull.RootElement.GetProperty("chargers")[0];
+            Assert.Equal(ChargingDashboardDescriptions.StageCompleteAwaitingDeparture, charger.GetProperty("stage").GetString());
+            Assert.False(charger.GetProperty("overdue").GetBoolean());
+        }
+
+        for (int minute = 0; minute < 11; minute++)
+        {
+            await fleet.HearFromEveryVehicleAsync();
+            await fleet.RunRoundAsync(TimeSpan.FromMinutes(1));
+        }
+        await fleet.HearFromEveryVehicleAsync();
+
+        (JsonDocument chargers, string html) = await ReadAsync(fleet, "chargers");
+        using (chargers)
+        {
+            JsonElement charger = chargers.RootElement.GetProperty("chargers")[0];
+            Assert.Equal(ChargingDashboardDescriptions.StageCompleteAwaitingDeparture, charger.GetProperty("stage").GetString());
+            Assert.True(charger.GetProperty("overdue").GetBoolean());
+            Assert.Contains("COMPLETE_AWAITING_DEPARTURE：充满待离桩", html, StringComparison.Ordinal);
+            Assert.Contains("事件 2249", html, StringComparison.Ordinal);
+        }
+
+        (JsonDocument alarms, string _) = await ReadAsync(fleet, "charging-alarms");
+        using (alarms)
+        {
+            Assert.Contains(alarms.RootElement.GetProperty("alarms").EnumerateArray(),
+                a => a.GetProperty("code").GetString() == ChargingDashboardDescriptions.StageCompleteAwaitingDeparture);
+        }
+    }
+
+    private static async Task<(JsonDocument Fact, string Html)> ReadAsync(FleetFixture fleet, string path)
+    {
+        IOptions<Host.Runtime.JourneyRuntimeOptions> options = Options.Create(fleet.Options);
+        IDashboardCard card = DashboardCardCatalog.Discovered.Cards
+            .Single(candidate => candidate.SourcePath == DashboardPaths.QueryPrefix + path);
+        IDashboardQueryEndpoint endpoint = path switch
+        {
+            "chargers" => new ChargersQueryEndpoint(options, fleet.Clock),
+            "charging-vehicles" => new ChargingVehiclesQueryEndpoint(new VehicleRoster(options), fleet.Clock),
+            "charging-holds" => new ChargingHoldsQueryEndpoint(new VehicleRoster(options), fleet.Clock),
+            "charging-alarms" => new ChargingAlarmsQueryEndpoint(options, fleet.Clock),
+            _ => throw new InvalidOperationException(path),
+        };
+        fleet.Context.ChangeTracker.Clear();
+        object rows = await endpoint.ReadAsync(fleet.Context, Token);
+        JsonDocument document = JsonDocument.Parse(JsonSerializer.Serialize(rows));
+        string html = card.RenderFact(document.RootElement);
+        Assert.DoesNotContain("<form", html, StringComparison.OrdinalIgnoreCase);
+        return (document, html);
+    }
+}

@@ -253,7 +253,7 @@ internal sealed class IdleReturnsQueryEndpoint : IDashboardQueryEndpoint
                 {
                     mapId = waitingPoint.MapId,
                     stationId = waitingPoint.StationId,
-                    holding = StationHoldings.Project(waitingPoint, contact),
+                    holding = StationHoldings.Project(waitingPoint, contact, StationExclusivityKinds.WaitingPoint),
                 },
             verdict = Verdict(vehicle, pass, notRunning),
             lastEnded = lastEnded is null
