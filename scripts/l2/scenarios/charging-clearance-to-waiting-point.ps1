@@ -206,7 +206,8 @@ $reopen = Invoke-L2WaitingPointImport -Points @(
 $journal.Observe('waiting-points-reopened', 'all vehicles', @{ import = $reopen })
 $null = $riot.Command('Put', "orders/$upperId", @{ orderState = 2 })
 
-$null = Wait-L2Condition -Description 'A queued with no eligible waiting point' `
+# Not a throwing wait: a version that sends A somewhere instead must go red on L2-CWP-02, which says what it did.
+$null = Wait-L2ConditionOrLast -Description 'A queued with no eligible waiting point' `
     -Journal $journal -Criterion 'no-waiting-point' -TimeoutSeconds 60 `
     -Probe { Get-JourneyCode $journeyId } -Until { param($v) $v.EndsWith('CHARGING_CLEARANCE_NO_WAITING_POINT') }
 $queued = "AwaitingPickupArrival CHARGING_CLEARANCE_NO_WAITING_POINT | 0 clearance intents | 1 stations held by A | 1 intents of A | 214 OCCUPIED $vehicleB"
