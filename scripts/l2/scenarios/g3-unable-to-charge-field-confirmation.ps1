@@ -23,12 +23,14 @@ MANUAL_CHARGING_HOLD → 211 暂停（记确认人）、车进清桩中保持原
 - G3-13-21（服务端，前提）：车停在 211、单 HANG 而结果码不是 407802：旅程写 ORDER_HANG，没有任何暂停，周期仍 ACTIVE——系统没有自动确认。
 - G3-13-22（车载端）：充电用途、计划当前腿是 211 时，「现场确认充不上」入口出现（「接不上充电」按钮可按，说明一行 `UnableToChargeNotice` 不在）。
 - G3-13-23（两端，`orderedExpectedMessages` 前两条）：车载端发 Requested（操作员 L2-OPERATOR、chargerStationId 是计划里那条 CHARGER 腿的站点、
-  CONNECTION_FAILED），服务端回 Result：CONFIRMED、problem 为空、chargingPolicyDecision=MANUAL_CHARGING_HOLD；界面结果一行 `UnableToChargeStatus`
-  报 CONFIRMED。
+  CONNECTION_FAILED），服务端回 Result：CONFIRMED、problem 为空、chargingPolicyDecision=MANUAL_CHARGING_HOLD。只断线路。
 - G3-13-24（两端，`orderedExpectedMessages` 后两条）：Result 之后，业务状态 UNABLE_TO_CHARGE、CLEARING_MAINTENANCE 进发件箱并被车载端确认。
 - G3-13-25（服务端，`DECIDE_CHARGING_POLICY_CENTRALLY`、`RECORD_FIELD_OBSERVATION`）：一条 UNABLE_TO_CHARGE_CONFIRMED 的暂停，确认人 L2-OPERATOR、角色 R-11、
   现场处置 CONNECTION_FAILED；周期 UNABLE_TO_CHARGE／CLEARING；人工充电等待原因 UNABLE_TO_CHARGE_LOW_BATTERY；判定记下一行。
 - G3-13-26（服务端，forbiddenSideEffects `duplicate-riot-order`；车保持原位）：RIoT 上恰好一张充电单，没有任何订单命令，211 仍是这一趟的。
+- G3-13-27（车载端）：界面结果一行 `UnableToChargeStatus` 报 CONFIRMED。**已知红，等 onboard-hmi#242**：车载端在业务状态的 activePurpose
+  不再是 CHARGING 时清掉上一次结果（`ServerSaysTheChargingIsOver`），而确认之后服务端把用途转成 CLEARING_MAINTENANCE，结果一行只闪一下。
+  第一遍（G3-13-23 拆分之前）的红证据：`evidence/l2/20261002-cs410-g3-unable-to-charge-field-confirmation-red-before-g3-13-23-split`。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
@@ -59,7 +61,7 @@ $chargerName = '充电点1'
 $vehicleKey = $Context.VehicleKey
 # CONNECTION_FAILED's caption on the HMI (WireToGateUnableToChargeText.ConditionLabel): the button is addressed by it.
 $conditionButton = '接不上充电'
-$all = @('G3-13-21', 'G3-13-22', 'G3-13-23', 'G3-13-24', 'G3-13-25', 'G3-13-26')
+$all = @('G3-13-21', 'G3-13-22', 'G3-13-23', 'G3-13-24', 'G3-13-25', 'G3-13-26', 'G3-13-27')
 
 function Get-Cycle {
     Read-L2SingleRow -Connection $connection -Sql (
@@ -135,7 +137,7 @@ $assertions.Add(
     'ORDER_HANG | (none) | ACTIVE',
     "$hanging / $settled")
 if ($settled -ne 'ORDER_HANG | (none) | ACTIVE') {
-    Add-L2RealNotReached $assertions @('G3-13-22', 'G3-13-23', 'G3-13-24', 'G3-13-25', 'G3-13-26') '前提不成立：系统已自动确认或旅程不在 ORDER_HANG'
+    Add-L2RealNotReached $assertions @('G3-13-22', 'G3-13-23', 'G3-13-24', 'G3-13-25', 'G3-13-26', 'G3-13-27') '前提不成立：系统已自动确认或旅程不在 ORDER_HANG'
     return
 }
 
@@ -150,7 +152,7 @@ $assertions.Add(
     'offered=True | notice=False',
     $offered)
 if ($offered -ne 'offered=True | notice=False') {
-    Add-L2RealNotReached $assertions @('G3-13-23', 'G3-13-24', 'G3-13-25', 'G3-13-26') '车载端没有出现现场确认充不上入口（检查 UnableToChargeEntry 是否已写进车载端配置）'
+    Add-L2RealNotReached $assertions @('G3-13-23', 'G3-13-24', 'G3-13-25', 'G3-13-26', 'G3-13-27') '车载端没有出现现场确认充不上入口（检查 UnableToChargeEntry 是否已写进车载端配置）'
     return
 }
 
@@ -172,14 +174,22 @@ $status = Wait-L2ConditionOrLast -Description 'the HMI shows the confirmation wa
 $requestPayload = ${exchange}?.Request?.Payload
 $assertions.Add(
     'G3-13-23',
-    '车载端发 UnableToChargeFieldConfirmationRequested（L2-OPERATOR、计划里那条 CHARGER 腿的站点、CONNECTION_FAILED），服务端回 Result：CONFIRMED、problem 为空、chargingPolicyDecision=MANUAL_CHARGING_HOLD（名册只有 211、电量 25 低于最低余量 30）；界面结果一行报 CONFIRMED',
+    '车载端发 UnableToChargeFieldConfirmationRequested（L2-OPERATOR、计划里那条 CHARGER 腿的站点、CONNECTION_FAILED），服务端回 Result：CONFIRMED、problem 为空、chargingPolicyDecision=MANUAL_CHARGING_HOLD（名册只有 211、电量 25 低于最低余量 30）',
     ($null -ne $exchange -and [string]$requestPayload.operator.operatorId -eq 'L2-OPERATOR' -and
         [string]$requestPayload.chargerStationId -eq $chargerName -and [string]$requestPayload.observedCondition -eq 'CONNECTION_FAILED' -and
         [string]$exchange.Result.outcome -eq 'CONFIRMED' -and $null -eq $exchange.Result.problem -and
-        [string]$exchange.Result.chargingPolicyDecision -eq 'MANUAL_CHARGING_HOLD' -and $status -eq 'CONFIRMED'),
-    "L2-OPERATOR / $chargerName / CONNECTION_FAILED -> CONFIRMED / null / MANUAL_CHARGING_HOLD / CONFIRMED",
+        [string]$exchange.Result.chargingPolicyDecision -eq 'MANUAL_CHARGING_HOLD'),
+    "L2-OPERATOR / $chargerName / CONNECTION_FAILED -> CONFIRMED / null / MANUAL_CHARGING_HOLD",
     "$(${requestPayload}?.operator?.operatorId) / $(${requestPayload}?.chargerStationId) / $(${requestPayload}?.observedCondition) -> " +
-        "$(${exchange}?.Result?.outcome) / $(${exchange}?.Result?.problem) / $(${exchange}?.Result?.chargingPolicyDecision) / $status")
+        "$(${exchange}?.Result?.outcome) / $(${exchange}?.Result?.problem) / $(${exchange}?.Result?.chargingPolicyDecision)")
+# Known red until onboard-hmi#242: the onboard forgets the outcome once activePurpose leaves CHARGING, and a confirmation
+# turns it into CLEARING_MAINTENANCE within a second (G3-13-24).
+$assertions.Add(
+    'G3-13-27',
+    '车载端界面结果一行 UnableToChargeStatus 报 CONFIRMED（已知红，等 onboard-hmi#242：用途转为 CLEARING_MAINTENANCE 时车载端清掉了结果）',
+    ($status -eq 'CONFIRMED'),
+    'CONFIRMED',
+    $status)
 
 # --- 4. Result 之后：清桩中的业务状态被确认；服务端的暂停、周期与人工充电等待 ----------------------------------------------------
 
