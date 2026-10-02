@@ -380,27 +380,50 @@ public sealed class IdleReturnEvaluator(
     /// 一个等待点能不能接这辆车的新承诺（<c>REQ-0293</c> 前半句）：登记与实时目录（当前地图、专用角色、白名单、站点身份），
     /// 没被别的承诺预占或占用，路网可达。能接答空。
     /// </summary>
-    private async Task<string?> ExcludeAsync(
+    private Task<string?> ExcludeAsync(
         WaitingPointEntry point,
         FleetVehicle vehicle,
         int origin,
         RiotMapStationCatalogSnapshot currentMap,
         RoundReads reads,
+        CancellationToken cancellationToken) =>
+        ExcludePointAsync(
+            reads.Registration, reads.FixedTaskStations, currentMap, _runtime.MapId, reads.Graph.Graph!, point, vehicle.VehicleKey,
+            origin, async (stationId, token) => await stations.ReadAsync(_runtime.MapId, stationId, token).ConfigureAwait(false) is not null,
+            cancellationToken);
+
+    /// <summary>
+    /// 一个等待点能不能接这辆车的新承诺：上面那一个判法本身，抽出来给清桩开往等待点共用（批次9-11，control-server#409：「同一个等待点集合、
+    /// 同一个判法」，只改可见性与签名）。<paramref name="isHeld"/> 现读这个站此刻有没有被预占或占用——前一辆刚预占的点后一辆要看得见。
+    /// </summary>
+    internal static async Task<string?> ExcludePointAsync(
+        WaitingPointRegistrationVersion? registration,
+        IReadOnlySet<int> fixedTaskStations,
+        RiotMapStationCatalogSnapshot currentMap,
+        int mapId,
+        Domain.RouteGraph graph,
+        WaitingPointEntry point,
+        string vehicleKey,
+        int origin,
+        Func<int, CancellationToken, Task<bool>> isHeld,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(graph);
+        ArgumentNullException.ThrowIfNull(point);
+        ArgumentNullException.ThrowIfNull(isHeld);
         WaitingPointEligibilityDecision decision = WaitingPointEligibility.Judge(
-            reads.Registration, reads.FixedTaskStations, currentMap, _runtime.MapId, point.StationId, vehicle.VehicleKey);
+            registration, fixedTaskStations, currentMap, mapId, point.StationId, vehicleKey);
         if (!decision.Accepts)
         {
             return decision.Reason;
         }
 
-        if (await stations.ReadAsync(_runtime.MapId, point.StationId, cancellationToken).ConfigureAwait(false) is not null)
+        if (await isHeld(point.StationId, cancellationToken).ConfigureAwait(false))
         {
             return IdleReturnReasons.PointTaken;
         }
 
-        return reads.Graph.Graph!.Traverse(origin, point.StationId).Reachable ? null : IdleReturnReasons.PointUnreachable;
+        return graph.Traverse(origin, point.StationId).Reachable ? null : IdleReturnReasons.PointUnreachable;
     }
 
     /// <summary>

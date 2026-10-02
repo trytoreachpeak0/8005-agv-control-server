@@ -165,6 +165,55 @@ public static class ChargingExecutionReasons
     /// <summary>桩独占的释放原因：人工清桩确认、旧单已终结（批次9-08）。写在独占的经过上，不在旅程行上。</summary>
     public const string ChargerReleasedOnManualClearance = "CHARGER_RELEASED_ON_MANUAL_CLEARANCE";
 
+    // ---- 清桩开往等待点（批次9-11，control-server#409；开关 JourneyRuntime:ClearanceToWaitingPointEnabled，默认关）----
+
+    /// <summary>
+    /// 清桩中的车正被本服务端开往一个等待点（已原子预占、开往它的单已建或待建）：到点即完成清桩并释放桩（<c>REQ-0179</c> 的系统证明）。
+    /// 现场人员注意这辆车在动。
+    /// </summary>
+    public const string ClearanceToWaitingPoint = "CHARGING_CLEARANCE_TO_WAITING_POINT";
+
+    /// <summary>
+    /// 清桩中的车可以出发，但没有一个合格的等待点（都被占或预占、不在当前地图、白名单不含它、不可达、刚失败过）：原地排队、告警一次，
+    /// 不猜别的站点（<c>REQ-0178</c>）。人工清桩仍可收尾。
+    /// </summary>
+    public const string ClearanceNoWaitingPoint = "CHARGING_CLEARANCE_NO_WAITING_POINT";
+
+    /// <summary>清桩中的车要开往等待点，但出发前安全门没过（急停、手动、故障、车载端未就绪、投运等）：不建单，下一轮再判。</summary>
+    public const string ClearanceDepartureNotProven = "CHARGING_CLEARANCE_DEPARTURE_NOT_PROVEN";
+
+    /// <summary>
+    /// 旧单已结束，但 RIoT 读不到车停在原桩上（被人挪走、断电、拖走，或位置不新鲜）：服务端不把它当成可以自己开走的车，只等人工清桩。
+    /// </summary>
+    public const string ClearanceVehicleOffCharger = "CHARGING_CLEARANCE_VEHICLE_OFF_CHARGER";
+
+    /// <summary>开往等待点的单建了还没确认（结果未知、建单开关关着等）：车、目标点、用途、预占全部保持，不换号、不换点、不重复建单。</summary>
+    public const string ClearanceMoveNotConfirmed = "CHARGING_CLEARANCE_MOVE_NOT_CONFIRMED";
+
+    /// <summary>
+    /// 开往等待点的单在 RIoT 里已不在执行（被取消、删除、查无此单，或等待点已不是这一趟的），车却证明不了停稳没单：保持一切、告警一次，
+    /// 不盲选别的点、不发取消（本服务端从不取消清桩移动单）。
+    /// </summary>
+    public const string ClearanceMoveHeld = "CHARGING_CLEARANCE_MOVE_HELD";
+
+    /// <summary>
+    /// 开往等待点的单没到点就被人结束了——在 RIoT 里取消或删除、或 FAILED 后故障由人清除——车已证明停稳：不重建（与 control-server#404 对充电单的
+    /// 规则同），等待点预占已放，这个周期不再自动出发，只留人工清桩的出口。告警一次。
+    /// </summary>
+    public const string ClearanceMoveEnded = "CHARGING_CLEARANCE_MOVE_ENDED";
+
+    /// <summary>开往等待点的单 RIoT 报成功，但车还没证明停在那个点上（位置、速度、空闲、新鲜度）：不完成清桩，下一轮再判；久了告警一次。</summary>
+    public const string ClearanceArrivalNotProven = "CHARGING_CLEARANCE_ARRIVAL_NOT_PROVEN";
+
+    /// <summary>
+    /// 充不上之后由系统证明完成清桩（车已到地图等待点，<c>REQ-0179</c>）：周期结束、桩的独占释放、用途放开、等待点预占转占用、旅程收尾。
+    /// 桩的分配暂停<b>不</b>解除。不是「已确认失败」。
+    /// </summary>
+    public const string UnableToChargeClearedAtWaitingPoint = "CHARGING_UNABLE_TO_CHARGE_CLEARED_AT_WAITING_POINT";
+
+    /// <summary>桩独占的释放原因：清桩中的车已到等待点（系统证明清桩），充电已停、原车已离桩。写在独占的经过上。</summary>
+    public const string ChargerReleasedOnClearanceAtWaitingPoint = "CHARGER_RELEASED_ON_CLEARANCE_AT_WAITING_POINT";
+
     // ---- 中断与无进展（批次9-09，control-server#407）----
 
     /// <summary>
@@ -205,9 +254,9 @@ public static class ChargingExecutionReasons
         ArrivalNotProven, VehicleObservationLost, OrderNotFound, BatteryTelemetryLost,
     };
 
-    /// <summary>由人工清桩收尾的两种结束原因。</summary>
+    /// <summary>由清桩收尾的结束原因：人工清桩的两种，与系统到等待点的那一种（control-server#409）。</summary>
     public static IReadOnlySet<string> ClearedEndings { get; } =
-        new HashSet<string>(StringComparer.Ordinal) { UnableToChargeCleared, ClearedByOperator };
+        new HashSet<string>(StringComparer.Ordinal) { UnableToChargeCleared, ClearedByOperator, UnableToChargeClearedAtWaitingPoint };
 
     /// <summary>到桩之后那一段自己写、也由它自己清掉的码：单 <c>SUCCESS</c> 那一支不替它们清。</summary>
     public static IReadOnlySet<string> AtChargerCodes { get; } = new HashSet<string>(StringComparer.Ordinal)

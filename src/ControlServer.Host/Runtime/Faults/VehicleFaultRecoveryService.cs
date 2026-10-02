@@ -122,6 +122,13 @@ public static class VehicleFaultRecoveryDispositions
     /// REQ-0173 -- and nothing is rebuilt.
     /// </summary>
     public const string ChargingEnded = "CHARGING_ENDED";
+
+    /// <summary>
+    /// The journey was a clearing vehicle's move to a waiting point (control-server#409): its FAILED order ended the move only --
+    /// waiting point reservation released, the cycle still clearing and no longer driven anywhere by this server -- and nothing
+    /// is rebuilt. A person's manual station clearance completes it.
+    /// </summary>
+    public const string ClearanceMoveEnded = "CLEARANCE_MOVE_ENDED";
 }
 
 /// <summary>
@@ -637,7 +644,10 @@ public sealed partial class VehicleFaultRecoveryService(
         }
         if (runtime.IsCharging())
         {
-            return await EndChargingAsync(runtime, now, cancellationToken).ConfigureAwait(false);
+            // control-server#409: the order that failed was a clearing vehicle's move to a waiting point, not its charge order.
+            return intent.Purpose == Charging.ClearanceMoveShape.IntentPurpose
+                ? await EndClearanceMoveAsync(runtime, intent, now, cancellationToken).ConfigureAwait(false)
+                : await EndChargingAsync(runtime, now, cancellationToken).ConfigureAwait(false);
         }
         List<JourneyDemandRow> memberships = await dbContext.Set<JourneyDemandRow>()
             .Where(row => row.JourneyId == runtime.JourneyId && row.RemovedAt == null)
@@ -710,12 +720,40 @@ public sealed partial class VehicleFaultRecoveryService(
     private async Task<string> EndChargingAsync(JourneyRuntimeRow runtime, DateTimeOffset now, CancellationToken cancellationToken)
     {
         JourneyStopRow stop = await dbContext.Set<JourneyStopRow>()
-            .SingleAsync(row => row.JourneyId == runtime.JourneyId, cancellationToken).ConfigureAwait(false);
+            .SingleAsync(row => row.JourneyId == runtime.JourneyId && row.StopRole == JourneyStopRoles.Charger, cancellationToken)
+            .ConfigureAwait(false);
         await Charging.ChargingEnding.StageAsync(
                 dbContext, runtime, stop, Charging.ChargingExecutionReasons.OrderFailed, now, cancellationToken)
             .ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return VehicleFaultRecoveryDispositions.ChargingEnded;
+    }
+
+    /// <summary>
+    /// The FAILED move of a clearing vehicle to a waiting point, cleared by a person (control-server#409): the clearance has
+    /// just proved the vehicle holds no unfinished order and no latch. The move ends -- its waiting point reservation released,
+    /// the journey's current stop back on the charger -- and the cycle stays in the clearing loop, which does not set off by
+    /// itself again: a person confirms the charger clear (the rule control-server#404 set for charging orders: no rebuild).
+    /// Ending the cycle here, as <see cref="EndChargingAsync"/> does, would leave its clearance for ever incomplete.
+    /// </summary>
+    private async Task<string> EndClearanceMoveAsync(
+        JourneyRuntimeRow runtime, OrderIntentRow intent, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        JourneyStopRow move = await dbContext.Set<JourneyStopRow>()
+            .SingleAsync(row => row.JourneyId == runtime.JourneyId && row.UpperId == intent.UpperId, cancellationToken)
+            .ConfigureAwait(false);
+        await Charging.ClearanceMoveEnding.StageAsync(
+                dbContext, runtime, move, Charging.ClearanceMoveReleaseReasons.Ended, now, cancellationToken)
+            .ConfigureAwait(false);
+        bool clearing = await dbContext.Set<ChargingCycleRow>().AsNoTracking()
+            .AnyAsync(row => row.JourneyId == runtime.JourneyId && row.Phase == ChargingCyclePhases.Clearing, cancellationToken)
+            .ConfigureAwait(false);
+        runtime.SetBlockReason(
+            clearing ? Charging.ChargingExecutionReasons.ClearanceMoveEnded : Charging.ChargingExecutionReasons.UnableToChargeCleared,
+            now);
+        runtime.UpdatedAt = now;
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return VehicleFaultRecoveryDispositions.ClearanceMoveEnded;
     }
 
     /// <summary>The two stages in which the journey waits on a move order in flight -- the only ones a FAILED order stops.</summary>

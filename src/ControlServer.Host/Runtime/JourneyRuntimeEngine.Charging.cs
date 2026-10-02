@@ -139,8 +139,10 @@ public sealed partial class JourneyRuntimeEngine
         }
 
         DateTimeOffset now = timeProvider.GetUtcNow();
+        // The charger's stop: a clearance move to a waiting point (control-server#409) is a second stop of the same journey.
         JourneyStopRow stop = await dbContext.Set<JourneyStopRow>()
-            .SingleAsync(row => row.JourneyId == runtime.JourneyId, cancellationToken).ConfigureAwait(false);
+            .SingleAsync(row => row.JourneyId == runtime.JourneyId && row.StopRole == JourneyStopRoles.Charger, cancellationToken)
+            .ConfigureAwait(false);
         OrderIntentRow intent = await dbContext.OrderIntents.AsNoTracking()
             .SingleAsync(row => row.UpperId == stop.UpperId, cancellationToken).ConfigureAwait(false);
         ChargingCycleRow? cycle = await dbContext.Set<ChargingCycleRow>()
@@ -149,6 +151,13 @@ public sealed partial class JourneyRuntimeEngine
             .ConfigureAwait(false);
         if (cycle is null)
         {
+            // control-server#409: a manual clearance completed while the vehicle was on its way to a waiting point; the move
+            // goes on (the confirmation does not cancel it) and closes the journey once it arrives or ends.
+            if (await ActiveClearanceMoveAsync(runtime, cancellationToken).ConfigureAwait(false) is { } move)
+            {
+                await AdvanceClearanceMoveAsync(runtime, move, currentMap, cancellationToken).ConfigureAwait(false);
+                return;
+            }
             // Batch 9-08: a cycle a manual station clearance ended leaves its journey for this round to close.
             if (await CloseClearedChargingAsync(runtime, cancellationToken).ConfigureAwait(false))
             {
@@ -162,7 +171,7 @@ public sealed partial class JourneyRuntimeEngine
         {
             // Batch 9-08 (control-server#406): could not charge. The vehicle stays where it is until a person confirms the
             // charger clear; nothing below runs for it -- no order, no command, no rebuild.
-            await AdvanceClearingAsync(runtime, stop, intent, cycle, cancellationToken).ConfigureAwait(false);
+            await AdvanceClearingAsync(runtime, stop, intent, cycle, currentMap, cancellationToken).ConfigureAwait(false);
             return;
         }
 

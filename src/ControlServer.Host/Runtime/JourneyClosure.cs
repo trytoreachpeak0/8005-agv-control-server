@@ -217,6 +217,67 @@ internal static class JourneyClosure
     }
 
     /// <summary>
+    /// 清桩中的车到了等待点、清桩由系统证明完成之后的收尾（批次9-11，control-server#409）：阶段写成 Completed、收尾码
+    /// <paramref name="reasonCode"/>，暂存两张收尾快照，与清桩完成、等待点转占用同一次改动。
+    /// </summary>
+    /// <remarks>
+    /// <b>计划留那条 <c>ARRIVED</c> 的等待点腿</b>，与空闲返回收敛同一个形状（hmi#217 跨票契约 P4：车还停在点上时不删这条腿）；业务状态撤下
+    /// <c>CLEARING_MAINTENANCE</c>：<c>activePurpose</c> 为空、<c>chargingCycleState = NOT_CHARGING</c>。车之后按 <c>REQ-0180</c> 走常规派车检查。
+    /// </remarks>
+    public static async Task StageClearanceAtWaitingPointAsync(
+        ControlServerDbContext dbContext,
+        JourneyRuntimeRow runtime,
+        JourneyStopRow waitingPoint,
+        string reasonCode,
+        DateTimeOffset endedAt,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(dbContext);
+        ArgumentNullException.ThrowIfNull(runtime);
+        ArgumentNullException.ThrowIfNull(waitingPoint);
+        ArgumentException.ThrowIfNullOrWhiteSpace(reasonCode);
+        if (!runtime.IsCharging())
+        {
+            throw new ArgumentException($"Journey '{runtime.JourneyId}' is not a charging journey.", nameof(runtime));
+        }
+
+        runtime.Stage = JourneyRuntimeStage.Completed;
+        runtime.SetBlockReason(reasonCode, endedAt);
+        runtime.UpdatedAt = endedAt;
+
+        SessionRecoveryRow? session = await dbContext.SessionRecoveries
+            .SingleOrDefaultAsync(row => row.AgvId == runtime.AgvId, cancellationToken).ConfigureAwait(false);
+        if (session is null)
+        {
+            return;
+        }
+
+        long planRevision =
+            await HighestSentRevisionAsync(dbContext, runtime.AgvId, PlanType, cancellationToken).ConfigureAwait(false) + 1
+            ?? runtime.PlanRevision;
+        long businessRevision =
+            await HighestSentRevisionAsync(dbContext, runtime.AgvId, BusinessType, cancellationToken).ConfigureAwait(false) + 1
+            ?? runtime.VehicleBusinessRevision;
+        WireToGateStore store = new(dbContext);
+        IReadOnlyList<string> ids = SnapshotMessageIds(runtime.JourneyId);
+        await OnboardJourneyPublisher.StageUpcomingStopPlanAsync(
+            store,
+            ids[1],
+            runtime.AgvId,
+            session.SessionGeneration,
+            new UpcomingStopPlanProjection(planRevision, [JourneyPlanBuilder.IdleReturnLeg(runtime, waitingPoint, arrived: true)]),
+            endedAt,
+            cancellationToken).ConfigureAwait(false);
+        // A millisecond after the plan: a replay sends in creation order, the plan first as everywhere else.
+        VehicleBusinessProjection state = new(
+            businessRevision, "READY", null, false, JourneyRuntimeEngine.PublishedBatteryState(runtime),
+            ChargingCycleWireStates.NotCharging, null, []);
+        await OnboardJourneyPublisher.StageVehicleBusinessStateAsync(
+            store, ids[2], runtime.AgvId, session.SessionGeneration, state, endedAt.AddMilliseconds(1), cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// 充电旅程在充满（<c>COMPLETE</c>）时收尾（批次9-07，control-server#405）：阶段写成 Completed、收尾码 <see cref="ChargingExecutionReasons.Completed"/>，
     /// 暂存两张收尾快照，与转 <c>COMPLETE</c>、放开 <c>CHARGING</c> 用途同一次改动。
     /// </summary>

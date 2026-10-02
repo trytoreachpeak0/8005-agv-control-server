@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "scenario": "charging-clearance-to-waiting-point",
+  "runId": "20261002T080948108Z",
+  "outcome": "FAIL",
+  "failureReason": "Timed out after 60s waiting for: A queued with no eligible waiting point. Last observed: \"AwaitingPickupArrival CHARGING_CLEARANCE_VEHICLE_OFF_CHARGER\"",
+  "identity": {
+    "batchId": "unspecified",
+    "agvId": "AGV-L2-001",
+    "controlServerCommit": "92585a2ee424a31fbb580b1cf7d2fbc61fb33bba",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261002T080948108Z",
+    "rig": "SyntheticOnboard",
+    "fleet": [
+      "AGV-L2-001/BROKERX-L2-0001",
+      "AGV-L2-002/BROKERX-L2-0002"
+    ],
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "vehicleKey": "BROKERX-L2-0001"
+  },
+  "assertions": [
+    {
+      "id": "L2-CWP-01",
+      "description": "A 在 211 上充不上（407802 + HANG）：桩暂停（UNABLE_TO_CHARGE_CONFIRMED，未恢复），周期清桩中，A 的用途 CLEARING_MAINTENANCE；B 收敛占着 214",
+      "outcome": "PASS",
+      "expected": "UNABLE_TO_CHARGE_CONFIRMED recovered=0 | CLEARING | CLEARING_MAINTENANCE charging:BROKERX-L2-0001:20261002T081041038Z / 214 OCCUPIED BROKERX-L2-0002",
+      "actual": "UNABLE_TO_CHARGE_CONFIRMED recovered=0 | CLEARING | CLEARING_MAINTENANCE charging:BROKERX-L2-0001:20261002T081041038Z / 214 OCCUPIED BROKERX-L2-0002 idle-return:BROKERX-L2-0002:20261002T081037676Z"
+    }
+  ]
+}

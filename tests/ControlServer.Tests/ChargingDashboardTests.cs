@@ -811,6 +811,18 @@ public sealed class ChargingDashboardTests
         }
     }
 
+    /// <summary>清桩开往等待点的告警码各有固定的紧急程度：车正在被派往等待点的那一个是 Critical（现场可能有车在动），停在原地等人的是 High。</summary>
+    [Theory]
+    [InlineData(ChargingExecutionReasons.ClearanceToWaitingPoint, ChargingDashboardDescriptions.SeverityCritical)]
+    [InlineData(ChargingExecutionReasons.ClearanceNoWaitingPoint, ChargingDashboardDescriptions.SeverityHigh)]
+    [InlineData(ChargingExecutionReasons.ClearanceVehicleOffCharger, ChargingDashboardDescriptions.SeverityHigh)]
+    [InlineData(ChargingExecutionReasons.ClearanceMoveHeld, ChargingDashboardDescriptions.SeverityHigh)]
+    [InlineData(ChargingExecutionReasons.ClearanceMoveEnded, ChargingDashboardDescriptions.SeverityHigh)]
+    public void EachClearanceMoveAlarmHasItsSeverity(string code, string severity)
+    {
+        Assert.Equal(severity, ChargingDashboardDescriptions.SeverityOf(code));
+    }
+
     // ---------------- 说明与共用读法 ----------------
 
     /// <summary>每个取值集合的每个值都有中文说明（新加一个而忘了说明就红）；真实跑出来的码另由 <see cref="ChargingDashboardCodeRecorder"/> 核。</summary>

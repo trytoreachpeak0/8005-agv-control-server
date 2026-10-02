@@ -487,6 +487,9 @@ public sealed class ChargingAllocator(
     /// <summary>读「桩是否被占」的那一个读者；引擎放弃一张查无此单的充电单之前，经它核这辆车名下没有未完成的单。</summary>
     public ChargerOccupancyReader Occupancy => occupancy;
 
+    /// <summary>选桩用的那一份路网；清桩开往等待点（control-server#409）按同一份判可达，不另读一份。</summary>
+    public RouteGraphAccess RouteGraph => routeGraph;
+
     /// <summary>评估这一轮交来的每一辆车。</summary>
     /// <param name="currentMap">这一轮读到的实时站点目录：桩要在其中、站名与名册登记一致才是候选。</param>
     public async Task<IReadOnlyList<ChargingAllocationVerdict>> AllocateAsync(
