@@ -63,7 +63,7 @@ public static class ChargingPolicyDecisions
 /// </para>
 /// <para>
 /// <b>身份在判定那一刻重核，人工不能覆盖</b>：这辆车有一个未结束的周期、周期的目标桩就是 <c>chargerStationId</c>、周期没到 <c>COMPLETE</c>、本周期没读到过充电、
-/// RIoT 此刻新鲜地读到车在线、停在这个桩上、没在充电，旧单没有被人在 RIoT 里继续（会让车动的排队、执行、队列优先，与人工清桩同一个判断，审查 S1），
+/// RIoT 此刻新鲜地读到车在线、停在这个桩上、没在充电，旧单此刻读得到、而且没有被人在 RIoT 里继续（会让车动的排队、执行、队列优先，与人工清桩同一个判断，审查 S1；读不到同样拒绝，增量审查），
 /// 车的用途是这一趟的 <c>CHARGING</c>，人工清桩的出口可用（与引擎形成确认时同一个检查）。任何一项不成立都拒绝，读不到 RIoT 也拒绝——不以人工覆盖未知。
 /// </para>
 /// <para>
@@ -404,6 +404,12 @@ public sealed class UnableToChargeFieldConfirmations(
                 $"RIoT does not read the vehicle standing on charger {facts.StationName} now.");
         }
         RiotVehicleObservation vehicle = facts.Vehicle!;
+        if (facts.Order is null or { Kind: RiotOrderObservationKind.Unknown })
+        {
+            // Incremental review: an old order RIoT cannot read now may be one that is going on; unread is refused, as S1's case.
+            return (NotAllowedInState, "payload.chargerStationId",
+                "RIoT gives no reading of the charge order now; whether it could still move the vehicle is not confirmed by hand.");
+        }
         if (ManualStationClearance.CanMoveTheVehicle(facts.Order))
         {
             // Review S1 (as ManualStationClearance refuses it, review W3 of control-server#406): the old order has been let go on in
@@ -514,8 +520,11 @@ public sealed class UnableToChargeFieldConfirmations(
         {
             return new Facts(null, "", "", false, null, null, false, null, null);
         }
-        // RIoT first, then the database in one go: an engine round that forms the same confirmation in between is then either
-        // wholly before these reads or caught by the cycle's version when writing (DecideAsync re-checks it for a refusal too).
+        // The vehicle from RIoT first, then the database, then the old order from RIoT. Called directly (the Host's tests), the
+        // database reads run in no transaction, so an engine round can commit between two of them; the cycle's version catches it
+        // when writing, and DecideAsync re-checks it before storing a refusal. Through OnboardMessageProcessor all of this runs inside
+        // the inbox transaction, which on SQLite holds the write lock from its start, so no engine round commits in between (nor
+        // while the two RIoT reads are in flight).
         RiotVehicleObservation? vehicle = await ReadVehicleAsync(vehicleKey, cancellationToken).ConfigureAwait(false);
         ChargingCycleRow? cycle = await dbContext.Set<ChargingCycleRow>().AsNoTracking()
             .SingleOrDefaultAsync(row => row.VehicleKey == vehicleKey && row.Phase != ChargingCyclePhases.Ended, cancellationToken)

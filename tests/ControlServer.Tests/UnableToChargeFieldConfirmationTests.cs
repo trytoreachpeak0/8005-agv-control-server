@@ -207,6 +207,24 @@ public sealed class UnableToChargeFieldConfirmationTests : IDisposable
         Assert.DoesNotContain(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2273);
     }
 
+    /// <summary>
+    /// 增量审查：旧单此刻读不到（RIoT 读单出错）——它可能正被人在 RIoT 里继续，与 S1 同一个局面：<c>REJECTED</c>（<c>ACTION_NOT_ALLOWED_IN_STATE</c>），
+    /// 什么都不暂停。读不到也拒绝。
+    /// </summary>
+    [Fact]
+    public async Task AnUnreadableOldOrderIsNotConfirmedAsUnableToCharge()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        await UnconfirmedAtChargerAsync(fleet);
+
+        UnableToChargeFieldConfirmation decision = await Decider(fleet, riot: new UnreadableOrderRiot(fleet.Riot))
+            .DecideAsync(Request("00000000-0000-4000-8000-000000000d33"), Token);
+
+        Assert.Equal((FieldConfirmationDecision.Rejected, UnableToChargeFieldConfirmations.NotAllowedInState, (string?)null),
+            (decision.Decision.Outcome, decision.Decision.ProblemReasonCode, decision.ChargingPolicyDecision));
+        await AssertNothingPausedAsync(fleet);
+    }
+
     // ---- observedCondition 四值 -----------------------------------------------------------------------------------------
 
     public static TheoryData<string, bool> Conditions => new()
@@ -914,6 +932,19 @@ public sealed class UnableToChargeFieldConfirmationTests : IDisposable
             }
             return await base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
         }
+    }
+
+    /// <summary>RIoT 读不到旧单（网关报错）；读车照常。</summary>
+    private sealed class UnreadableOrderRiot(IRiotVehicleFacts inner) : IRiotVehicleFacts
+    {
+        public Task<RiotVehicleObservation> ReadVehicleAsync(string vehicleKey, CancellationToken cancellationToken) =>
+            inner.ReadVehicleAsync(vehicleKey, cancellationToken);
+
+        public Task<RiotOrderObservation> ReconcileByUpperIdAsync(string upperId, CancellationToken cancellationToken) =>
+            throw new HttpRequestException("RIoT gateway unavailable (test)");
+
+        public Task<RiotOrderObservation> CreateAsync(OrderIntent intent, CancellationToken cancellationToken) =>
+            inner.CreateAsync(intent, cancellationToken);
     }
 
     /// <summary>RIoT 读不到车（网关报错）。</summary>
