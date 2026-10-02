@@ -82,6 +82,8 @@ internal static class ChargingDashboardDescriptions
                 "名册为空：充电桩名册是空的（或没有这辆车能用的桩），自动充电停了，这辆车等人工充电",
             [ManualChargingHoldReasons.ChargingRepeatedlyFailed] =
                 "反复失败：这辆车的充电单短时间内第二次被取消、删除或失败，说明有人要它别动，不再自动给它安排充电，改为人工充电等待",
+            [ManualChargingHoldReasons.UnableToChargeLowBattery] =
+                "充不上且电量等不起：维护人员现场确认这辆车在桩上充不上，名册里没有别的桩给它，电量又已低于最低余量，改为人工充电等待",
         };
 
     /// <summary>人工充电等待的解除提示：只有这一个出口。</summary>

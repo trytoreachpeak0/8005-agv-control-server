@@ -131,6 +131,11 @@ public static class ManualChargingHoldReasons
     /// 不再自动分配充电，改为人工充电等待并告警，由人处理——与搬运自建单的「再次出问题即停」（<c>REQ-0361</c>）对等。
     /// </summary>
     public const string ChargingRepeatedlyFailed = "CHARGING_REPEATEDLY_FAILED";
+
+    /// <summary>
+    /// 现场确认充不上之后（批次9-12，control-server#410）：名册里没有别的桩给这辆车，而它的电量已低于这个周期策略的最低任务后电量余量、等不起桩恢复。
+    /// </summary>
+    public const string UnableToChargeLowBattery = "UNABLE_TO_CHARGE_LOW_BATTERY";
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

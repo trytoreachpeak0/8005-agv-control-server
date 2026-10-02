@@ -172,6 +172,13 @@ $recoveryResume = ($setup.ContainsKey('RecoveryResume') -and $setup.RecoveryResu
 if ($recoveryResume -and -not $realOnboard) {
     throw "RecoveryResume needs Onboard = 'Real': the synthetic peer never starts a recovery session."
 }
+# The onboard's unable-to-charge field confirmation entry (onboard-hmi#222). Ships false, because a server without
+# control-server#410 drops the connection on that message; turned on here only for a scenario that declares it, and only
+# then is the property written at all, so older onboard commits and every other scenario keep the settings they had.
+$unableToChargeEntry = ($setup.ContainsKey('UnableToChargeEntry') -and $setup.UnableToChargeEntry)
+if ($unableToChargeEntry -and -not $realOnboard) {
+    throw "UnableToChargeEntry needs Onboard = 'Real': the synthetic peer has no unable-to-charge entry."
+}
 # Not a secret: it authorises nothing outside this loopback rig, and the whole point of the run is
 # that it is written down in the evidence.
 $recoveryProofVariable = 'CONTROL_SERVER_RECOVERY_PROOF'
@@ -992,6 +999,9 @@ try {
                 # Ships false. Configuration.Validate() then also insists the proof variable is
                 # populated, which the process environment below does.
                 $settings.wireToGate.recoveryResumeEnabled = $recoveryResume
+                if ($unableToChargeEntry) {
+                    $settings.wireToGate.unableToChargeEntryEnabled = $true
+                }
                 # WireToGate readiness runs through this projection: App.xaml.cs awaits the first
                 # refresh before the handshake snapshot, and vehicleStoppedProvider reads it on
                 # every safety summary afterwards.

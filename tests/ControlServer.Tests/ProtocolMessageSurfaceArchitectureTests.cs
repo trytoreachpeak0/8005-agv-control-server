@@ -79,9 +79,7 @@ public sealed class ProtocolMessageSurfaceArchitectureTests
             ["CapabilitySnapshotRequested"] =
                 "predates v2; the server refuses readiness with CAPABILITY_VERSION_GAP instead of asking again",
             ["DemandSelectionRequested"] = "FP-IS-09, batch 11",
-            ["DemandSelectionResult"] = "FP-IS-09, batch 11",
-            ["UnableToChargeFieldConfirmationRequested"] = "FP-IS-13, batch 9",
-            ["UnableToChargeFieldConfirmationResult"] = "FP-IS-13, batch 9"
+            ["DemandSelectionResult"] = "FP-IS-09, batch 11"
         };
 
     /// <summary>
