@@ -465,7 +465,9 @@ public sealed class ChargingInterruptionTests
             bool offline = minute % 2 == 0;
             fleet.Riot.VehicleOverrides[KeyA] = seen => seen with
             {
-                CurrentStationId = Near.StationId, BatteryState = NotCharging, Connected = !offline,
+                CurrentStationId = Near.StationId,
+                BatteryState = NotCharging,
+                Connected = !offline,
             };
             await LongRoundAsync(fleet, TimeSpan.FromMinutes(1));
         }
