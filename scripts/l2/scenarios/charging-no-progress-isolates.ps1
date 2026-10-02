@@ -61,11 +61,11 @@ function Get-Claim {
 }
 
 function Get-Pauses {
-    $station = @(Invoke-L2Query -Connection $connection -Sql (
+    $station = Invoke-L2Query -Connection $connection -Sql (
         "SELECT h.""Trigger"" AS Trig, h.RootCause FROM ChargingStationAllocationHolds h " +
-        "WHERE h.MapId = $($Context.MapId) AND h.StationId = $charger"))
-    $vehicle = @(Invoke-L2Query -Connection $connection -Sql (
-        "SELECT Reason FROM VehicleChargingEligibilityHolds WHERE VehicleKey = '$vehicleKey'"))
+        "WHERE h.MapId = $($Context.MapId) AND h.StationId = $charger")
+    $vehicle = Invoke-L2Query -Connection $connection -Sql (
+        "SELECT Reason FROM VehicleChargingEligibilityHolds WHERE VehicleKey = '$vehicleKey'")
     $s = if ($station.Count -eq 0) { '(none)' } else { (@($station | ForEach-Object { "$($_.Trig) $($_.RootCause)" }) -join '; ') }
     $v = if ($vehicle.Count -eq 0) { '(none)' } else { (@($vehicle | ForEach-Object { [string]$_.Reason }) -join '; ') }
     return "$s | $v"
