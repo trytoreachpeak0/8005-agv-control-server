@@ -160,8 +160,12 @@ public sealed class ChargingDashboardTests
                 AddStationHold(context, 213, ChargingStationHoldTriggers.Maintenance, now.AddMinutes(-60), null, null);
             context.Add(new ChargingStationRecoveryRow
             {
-                RecoveryId = "R-1", HoldId = recovered.HoldId, RecoveredBy = "P-007", RecovererRole = "R-11",
-                RecoveredAt = now.AddMinutes(-30), Basis = "修好了",
+                RecoveryId = "R-1",
+                HoldId = recovered.HoldId,
+                RecoveredBy = "P-007",
+                RecovererRole = "R-11",
+                RecoveredAt = now.AddMinutes(-30),
+                Basis = "修好了",
             });
         });
 
@@ -536,8 +540,11 @@ public sealed class ChargingDashboardTests
             context.Add(record);
             context.Add(new VehicleChargingEligibilityHoldRow
             {
-                HoldId = "VH-1", IdempotencyKey = "VH-1", VehicleKey = "K-04",
-                Reason = VehicleChargingEligibilityHoldReasons.NoProgressConfirmed, HeldAt = now.AddMinutes(-50),
+                HoldId = "VH-1",
+                IdempotencyKey = "VH-1",
+                VehicleKey = "K-04",
+                Reason = VehicleChargingEligibilityHoldReasons.NoProgressConfirmed,
+                HeldAt = now.AddMinutes(-50),
             });
         });
 
@@ -743,8 +750,13 @@ public sealed class ChargingDashboardTests
     {
         StationExclusivityRow Held(int stationId) => new()
         {
-            MapId = MapId, StationId = stationId, StationKind = StationExclusivityKinds.Charger, State = StationExclusivityStates.Reserved,
-            VehicleKey = "K-01", JourneyId = "j-" + stationId, RecordId = "r-" + stationId,
+            MapId = MapId,
+            StationId = stationId,
+            StationKind = StationExclusivityKinds.Charger,
+            State = StationExclusivityStates.Reserved,
+            VehicleKey = "K-01",
+            JourneyId = "j-" + stationId,
+            RecordId = "r-" + stationId,
         };
         IReadOnlyList<(string? Entry, StationExclusivityRow? Holding)> merged = StationHoldings.MergeWithHeld(
             ["b", "a"], name => (MapId, name == "a" ? 211 : 212), [Held(213), Held(211)]);
