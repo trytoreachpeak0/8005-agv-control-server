@@ -292,7 +292,8 @@ public sealed partial class JourneyRuntimeEngine
         {
             // Re-check the premise right before the create (REQ-0296, first branch): anything no longer true, and nothing has
             // ever gone out, so the commitment is withdrawn whole and the clearing judged afresh next round.
-            (string? why, string code) = await ClearanceMoveWithdrawalAsync(runtime, move, cycle, clearingOpen, held, currentMap, cancellationToken)
+            (string? why, string code) = await ClearanceMoveWithdrawalAsync(
+                    runtime, move, charger, cycle, clearance, clearingOpen, held, currentMap, cancellationToken)
                 .ConfigureAwait(false);
             if (why is not null)
             {
@@ -427,7 +428,9 @@ public sealed partial class JourneyRuntimeEngine
     private async Task<(string? Why, string Code)> ClearanceMoveWithdrawalAsync(
         JourneyRuntimeRow runtime,
         JourneyStopRow move,
+        JourneyStopRow charger,
         ChargingCycleRow? cycle,
+        StationClearanceRow? clearance,
         bool clearingOpen,
         StationExclusivityRow? held,
         RiotMapStationCatalogSnapshot currentMap,
@@ -445,6 +448,30 @@ public sealed partial class JourneyRuntimeEngine
         if (held is null)
         {
             return ("WAITING_POINT_RESERVATION_GONE", ChargingExecutionReasons.UnableToChargeClearing);
+        }
+        // Review M-1 of #446: the same exclusion the commitment makes. A person's confirmation recorded and not yet complete means
+        // someone is at the charger dealing with this vehicle; it is not driven off from beside them. The clearing branch then
+        // completes that confirmation (or names why it cannot).
+        if (clearance is { ConfirmedAt: not null })
+        {
+            return ("MANUAL_CONFIRMATION_RECORDED", ChargingExecutionReasons.UnableToChargeClearing);
+        }
+
+        // Review S-2 of #446: the old charge order read again, judged as at the commitment.
+        RiotOrderObservation oldOrder;
+        try
+        {
+            oldOrder = await vehicleFacts.ReconcileByUpperIdAsync(charger.UpperId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
+                                      !cancellationToken.IsCancellationRequested)
+        {
+            oldOrder = new RiotOrderObservation(charger.UpperId, RiotOrderObservationKind.Unknown, null);
+        }
+        string disposition = ManualStationClearance.Disposition(oldOrder, charger.UpperId);
+        if (!ManualStationClearance.Settled(disposition))
+        {
+            return ("OLD_ORDER_NOT_READ_ENDED:" + disposition, ChargingExecutionReasons.UnableToChargeClearing);
         }
 
         RiotVehicleObservation? vehicle = await ReadVehicleOrNullAsync(runtime.VehicleKey, cancellationToken).ConfigureAwait(false);

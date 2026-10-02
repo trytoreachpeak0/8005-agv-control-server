@@ -275,6 +275,62 @@ public sealed class ChargingClearanceToWaitingPointTests
         Assert.Equal((KeyA, journey.JourneyId), ((await StationAsync(fleet, 214))!.VehicleKey, (await StationAsync(fleet, 214))!.JourneyId));
     }
 
+    public static TheoryData<string> PremisesLostBeforeTheCreate =>
+    [
+        "manual-confirmation-recorded",
+        "vehicle-moved-off-the-charger",
+        "old-order-not-ended-any-more",
+        "switched-off",
+    ];
+
+    /// <summary>
+    /// 承诺之后、建单之前，前提丢了一样（#446 审查 M-1、S-1、S-2）：人工清桩确认已记下而还没完成（有人正在桩旁处理这辆车）、车被挪离原桩、
+    /// 旧单又读成没终结、开关被关掉——建单前复核按承诺时同一组前提再判，撤回：不建单，等待点预占当场放（经过上写撤回），停靠移除。
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(PremisesLostBeforeTheCreate))]
+    public async Task APremiseLostBetweenTheCommitmentAndTheCreateWithdrawsItWithoutAnOrder(string lost)
+    {
+        await using FleetFixture fleet = await ClearanceFleetAsync();
+        JourneyRuntimeRow journey = await OldOrderEndedAsync(fleet);
+        await RoundAsync(fleet);
+        Assert.Equal(KeyA, (await StationAsync(fleet, 214))?.VehicleKey);
+        Assert.Single(fleet.Riot.Creates);
+        switch (lost)
+        {
+            case "manual-confirmation-recorded":
+                // The probe of the review: the confirmation is recorded, the vehicle still reads on the charger.
+                Assert.Equal(1, await fleet.Context.Set<StationClearanceRow>()
+                    .Where(row => row.CompletedAt == null)
+                    .ExecuteUpdateAsync(setters => setters
+                        .SetProperty(row => row.ConfirmedAt, fleet.Clock.GetUtcNow())
+                        .SetProperty(row => row.ConfirmedBy, "fleet-r11"), Token));
+                break;
+            case "vehicle-moved-off-the-charger":
+                fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = 300, BatteryState = "NO_CHARGE" };
+                break;
+            case "old-order-not-ended-any-more":
+                fleet.Riot.PutOrder(fleet.Riot.OrderOf(journey.PickupUpperId)! with
+                {
+                    Kind = RiotOrderObservationKind.Active,
+                    OrderState = RiotOrderState.Hang,
+                });
+                break;
+            case "switched-off":
+                fleet.Options.ClearanceToWaitingPointEnabled = false;
+                break;
+        }
+
+        await RoundAsync(fleet);
+
+        Assert.Single(fleet.Riot.Creates);
+        Assert.Null(await StationAsync(fleet, 214));
+        Assert.Single(await fleet.Context.Set<StationExclusivityRecordRow>().AsNoTracking()
+            .Where(row => row.StationId == 214 && row.ReleaseReason == ClearanceMoveReleaseReasons.Withdrawn).ToArrayAsync(Token));
+        Assert.Equal(JourneyStopStatuses.Removed, Assert.Single(await ClearanceStopsAsync(fleet, journey)).Status);
+        Assert.Empty(fleet.Riot.OrderCommands);
+    }
+
     // ---- 选点：共用集合、无合格点、不猜站 --------------------------------------------------------------------------------
 
     /// <summary>

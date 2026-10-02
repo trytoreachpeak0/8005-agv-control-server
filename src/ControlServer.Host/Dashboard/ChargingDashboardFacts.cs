@@ -399,6 +399,7 @@ internal static class ChargingDashboardDescriptions
     internal static string SeverityOf(string code) => code switch
     {
         ChargingExecutionReasons.OldOrderResumedWhileClearing
+            or ChargingExecutionReasons.ClearanceToWaitingPoint
             or VehicleFaultEvidence.DoorNotProvenLocked
             or JourneyRuntimeEngine.HeldOrderResumedWithoutContinueReason => SeverityCritical,
         AlarmRosterEmpty

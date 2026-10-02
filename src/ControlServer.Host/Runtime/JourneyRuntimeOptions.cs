@@ -190,6 +190,12 @@ public sealed class JourneyRuntimeOptions
     /// <see cref="UnableToChargeOldOrderCancelEnabled"/> off, is the moment a person ends it in RIoT. People on site have to know
     /// that before it is switched on: it is a run that moves a vehicle (admission line 1).
     /// </para>
+    /// <para>
+    /// <b>Switching it off stops new departures only.</b> A commitment whose order has not gone out yet is withdrawn; a move
+    /// whose order has already gone out is driven to its end -- this server never cancels a clearance move (allowlist 1.3
+    /// approves no cancel for it). To stop a vehicle already on its way, cancel its order in RIoT; the clearing then does not
+    /// set off by itself again and only a manual station clearance completes it.
+    /// </para>
     /// </remarks>
     public bool ClearanceToWaitingPointEnabled { get; set; }
 
