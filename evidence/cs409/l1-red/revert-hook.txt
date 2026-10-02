@@ -1,0 +1,45 @@
+  Failed ControlServer.Tests.ChargingClearanceToWaitingPointTests.TheClearingVehicleTakesWhatAnIdleReturnLeftOfTheSameWaitingPoints [2 s]
+  Error Message:
+  Failed ControlServer.Tests.ChargingClearanceToWaitingPointTests.AMoveThatNeverAppearsIsAbandonedOnEvidenceAndTheNextAttemptSkipsItsPoint [1 s]
+  Error Message:
+Expected: Tuple ("BROKERX-0001", "RESERVED")
+Actual:   null
+  Failed ControlServer.Tests.ChargingClearanceToWaitingPointTests.TheClearingVehicleDoesNotSetOffWhileAConditionIsMissing(missing: "emergency-stop") [1 s]
+  Error Message:
+Expected: "CHARGING_CLEARANCE_DEPARTURE_NOT_PROVEN"
+Actual:   "CHARGING_UNABLE_TO_CHARGE"
+  Failed ControlServer.Tests.ChargingClearanceToWaitingPointTests.TheClearingVehicleDoesNotSetOffWhileAConditionIsMissing(missing: "fault-in-effect") [1 s]
+  Error Message:
+Expected: "CHARGING_CLEARANCE_DEPARTURE_NOT_PROVEN"
+Actual:   "CHARGING_UNABLE_TO_CHARGE"
+  Failed ControlServer.Tests.ChargingClearanceToWaitingPointTests.TheClearingVehicleDoesNotSetOffWhileAConditionIsMissing(missing: "vehicle-off-the-charger") [1 s]
+  Error Message:
+Expected: "CHARGING_CLEARANCE_VEHICLE_OFF_CHARGER"
+Actual:   "CHARGING_UNABLE_TO_CHARGE"
+  Failed ControlServer.Tests.ChargingClearanceToWaitingPointTests.AMoveCancelledInRiotIsNotRebuiltAndOnlyAManualClearanceIsLeft [1 s]
+  Error Message:
+  Failed ControlServer.Tests.ChargingClearanceToWaitingPointTests.AManualConfirmationWhileDrivingCompletesTheClearanceOnceAndTheVehicleDrivesOn [1 s]
+  Error Message:
+Expected: Tuple ("BROKERX-0001", "RESERVED")
+Actual:   null
+  Failed ControlServer.Tests.ChargingClearanceToWaitingPointTests.AManualConfirmationAfterTheArrivalRecordsNothingTwice [1 s]
+  Error Message:
+  Failed ControlServer.Tests.ChargingClearanceToWaitingPointTests.AfterAReconnectTheClearanceMoveSnapshotsAreResentUnderTheirOwnIdsWithoutASecondCopy [1 s]
+  Error Message:
+Expected: 2
+Actual:   1
+  Failed ControlServer.Tests.ChargingClearanceToWaitingPointTests.ACrashInsideTheArrivalSaveLeavesNoHalfAndTheNextRoundCompletes [1 s]
+  Error Message:
+  Failed ControlServer.Tests.ChargingClearanceToWaitingPointTests.WithNoEligibleWaitingPointTheVehicleQueuesWhereItIsAndNoOtherStationIsGuessed [1 s]
+  Error Message:
+Expected: "CHARGING_CLEARANCE_NO_WAITING_POINT"
+Actual:   "CHARGING_UNABLE_TO_CHARGE"
+  Failed ControlServer.Tests.ChargingClearanceToWaitingPointTests.TheClearingVehicleDrivesToAWaitingPointAndArrivingCompletesTheClearanceInOneSave [912 ms]
+  Error Message:
+  Failed ControlServer.Tests.ChargingClearanceToWaitingPointTests.AnUnknownCreateResultKeepsEverythingAndNeverMakesASecondOrderOrAnotherId [1 s]
+  Error Message:
+Expected: Tuple ("BROKERX-0001", "RESERVED")
+Actual:   null
+  Failed ControlServer.Tests.ChargingClearanceToWaitingPointTests.AFailedMoveClearedByAPersonEndsOnlyTheMoveAndTheClearanceStillCompletes [891 ms]
+  Error Message:
+Failed!  - Failed:    14, Passed:     6, Skipped:     0, Total:    20, Duration: 28 s - ControlServer.Tests.dll (net8.0)
