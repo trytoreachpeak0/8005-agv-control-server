@@ -1,0 +1,238 @@
+{
+  "schemaVersion": "1",
+  "instanceId": "l2-riot",
+  "runId": "run-057cbb95",
+  "revision": 8,
+  "observedAt": "2026-10-02T23:43:45.3021267+08:00",
+  "body": {
+    "faultMode": "Normal",
+    "delayMs": 0,
+    "mapStationReads": 63,
+    "absentOrderReadFaults": {
+      "remaining": 0,
+      "failedUpperIds": []
+    },
+    "vehicles": [
+      {
+        "deviceKey": "BROKERX-L2-0001",
+        "enable": true,
+        "status": 1,
+        "procState": "IDLE",
+        "currentMap": "MAP-L2",
+        "currentPosition": 210,
+        "battery": 10,
+        "batteryState": "NO_CHARGE",
+        "speed": 0,
+        "lockStatus": 0,
+        "orderTaskId": null,
+        "movementState": "MT_FINISHED",
+        "controlState": "CONTROL_STATE_OK",
+        "emergencyState": "OK",
+        "breakSwitchState": "MOVABLE",
+        "locationState": "LOCATION_STATE_RUNNING",
+        "processingOrder": false,
+        "integrationLevel": "ON_LINE"
+      },
+      {
+        "deviceKey": "BROKERX-L2-0002",
+        "enable": true,
+        "status": 1,
+        "procState": "IDLE",
+        "currentMap": "MAP-L2",
+        "currentPosition": 210,
+        "battery": 45,
+        "batteryState": "NO_CHARGE",
+        "speed": 0,
+        "lockStatus": 0,
+        "orderTaskId": null,
+        "movementState": "MT_FINISHED",
+        "controlState": "CONTROL_STATE_OK",
+        "emergencyState": "OK",
+        "breakSwitchState": "MOVABLE",
+        "locationState": "LOCATION_STATE_RUNNING",
+        "processingOrder": false,
+        "integrationLevel": "ON_LINE"
+      },
+      {
+        "deviceKey": "BROKERX-L2-0003",
+        "enable": true,
+        "status": 1,
+        "procState": "IDLE",
+        "currentMap": "MAP-L2",
+        "currentPosition": 211,
+        "battery": 40,
+        "batteryState": "CHARGING",
+        "speed": 0,
+        "lockStatus": 0,
+        "orderTaskId": null,
+        "movementState": "MT_FINISHED",
+        "controlState": "CONTROL_STATE_OK",
+        "emergencyState": "OK",
+        "breakSwitchState": "MOVABLE",
+        "locationState": "LOCATION_STATE_RUNNING",
+        "processingOrder": false,
+        "integrationLevel": "ON_LINE"
+      }
+    ],
+    "orders": [
+      {
+        "id": 488001,
+        "orderId": "ORDER-000001",
+        "upperId": "W2G-CHARGE-BROKERX-L2-0003-20261002T154311615Z",
+        "orderState": 5,
+        "appointVehicleKey": "BROKERX-L2-0003",
+        "executeVehicleKey": "--",
+        "endStationNo": 211,
+        "missions": [
+          {
+            "type": "move",
+            "mapId": 25,
+            "destination": 211
+          },
+          {
+            "type": "act",
+            "mapId": 0,
+            "destination": 0,
+            "actionId": 78,
+            "actionParam1": 1,
+            "resultCode": 0,
+            "resultStr": "未知类型错误,导致订单挂起:错误编码为:0",
+            "missionState": 2
+          }
+        ]
+      }
+    ],
+    "maps": [
+      {
+        "mapId": 25,
+        "stations": [
+          {
+            "id": 11,
+            "name": "C15-13",
+            "edgeId": 6,
+            "posX": 0,
+            "posY": 0,
+            "posYaw": 0,
+            "stationOffset": 0,
+            "type": 1
+          },
+          {
+            "id": 12,
+            "name": "N1-3_N1-7",
+            "edgeId": 2,
+            "posX": 0,
+            "posY": 20000,
+            "posYaw": 0,
+            "stationOffset": 0,
+            "type": 1
+          },
+          {
+            "id": 210,
+            "name": "关卡",
+            "edgeId": 4,
+            "posX": 20000,
+            "posY": 20000,
+            "posYaw": 0,
+            "stationOffset": 0,
+            "type": 1
+          },
+          {
+            "id": 211,
+            "name": "充电点1",
+            "edgeId": 5,
+            "posX": 20000,
+            "posY": 0,
+            "posYaw": 0,
+            "stationOffset": 0,
+            "type": 1
+          },
+          {
+            "id": 214,
+            "name": "等待点1",
+            "edgeId": 0,
+            "posX": 0,
+            "posY": 0,
+            "posYaw": 0,
+            "stationOffset": 0,
+            "type": 1
+          },
+          {
+            "id": 215,
+            "name": "等待点2",
+            "edgeId": 0,
+            "posX": 0,
+            "posY": 0,
+            "posYaw": 0,
+            "stationOffset": 0,
+            "type": 1
+          },
+          {
+            "id": 216,
+            "name": "等待点3",
+            "edgeId": 0,
+            "posX": 0,
+            "posY": 0,
+            "posYaw": 0,
+            "stationOffset": 0,
+            "type": 1
+          }
+        ]
+      }
+    ],
+    "commandInvocations": [],
+    "edgeGroups": [],
+    "dynamicRouteCosts": {},
+    "removedEdges": [
+      {
+        "mapId": 25,
+        "edgeIds": []
+      }
+    ],
+    "removedStations": [
+      {
+        "mapId": 25,
+        "stationIds": []
+      }
+    ],
+    "mapNames": [
+      {
+        "mapId": 25,
+        "name": "老厂前线new_wk"
+      }
+    ],
+    "mapListServerError": false,
+    "mapListReads": 62,
+    "mapListServerErrors": 0,
+    "charging": {
+      "chargers": [
+        {
+          "mapId": 25,
+          "stationId": 211,
+          "enterExitStationId": null,
+          "chargeIntervalSeconds": 60,
+          "chargePercentPerInterval": 1,
+          "expandDeparture": false
+        }
+      ],
+      "dischargeIntervalSeconds": 0,
+      "dischargePercentPerInterval": 0,
+      "vehicles": [
+        {
+          "vehicleKey": "BROKERX-L2-0003",
+          "battery": 40,
+          "batteryState": "CHARGING",
+          "docked": true,
+          "chargerMapId": 25,
+          "chargerStationId": 211,
+          "anchorAt": "2026-10-02T23:43:28.3341733+08:00",
+          "startOutcome": "Normal",
+          "hangResultCode": null,
+          "interruptAtPercent": null,
+          "noProgress": false,
+          "batteryUnreadable": "None"
+        }
+      ],
+      "startOutcomeByUpperId": []
+    }
+  }
+}

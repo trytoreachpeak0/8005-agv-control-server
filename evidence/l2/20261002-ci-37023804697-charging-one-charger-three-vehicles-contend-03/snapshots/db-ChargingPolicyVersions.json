@@ -1,0 +1,30 @@
+[
+  {
+    "Version": 1,
+    "ContentSha256": "3b6a51de64e4aa1d051e361d3c4f460ac59f4297bdebab735853724bb5a93869",
+    "SnapshotId": "653c366c26ff47e587bc469a93d60672",
+    "WrittenAt": "2026-10-02 23:45:27.3026454+08:00",
+    "ChangeNote": "L2 preset (scripts/l2/L2ChargingPolicy.psm1): the test fixture values, never a field approval.",
+    "MinimumPostTaskBatteryMarginPercent": 30,
+    "MandatoryChargeEntryThresholdPercent": 30,
+    "ChargingCompletionThresholdPercent": 80,
+    "EstimatedTaskConsumptionPercent": 0,
+    "ProgressStabilizationSeconds": 180,
+    "ProgressObservationWindowSeconds": 600,
+    "ProgressMinimumIncreasePercent": 3
+  },
+  {
+    "Version": 2,
+    "ContentSha256": "2893f0a0bee17ff5975f189528ca71330bfa49d48fd9e41c105f516c786d5029",
+    "SnapshotId": "5a370cca8f9946a6a49d6e4319abc23c",
+    "WrittenAt": "2026-10-02 23:45:37.3389114+08:00",
+    "ChangeNote": "L2 charging-one-charger-three-vehicles-contend: entry 60, so 50 / 45 / 40 % all need charging at once",
+    "MinimumPostTaskBatteryMarginPercent": 20,
+    "MandatoryChargeEntryThresholdPercent": 60,
+    "ChargingCompletionThresholdPercent": 80,
+    "EstimatedTaskConsumptionPercent": 0,
+    "ProgressStabilizationSeconds": 180,
+    "ProgressObservationWindowSeconds": 600,
+    "ProgressMinimumIncreasePercent": 3
+  }
+]

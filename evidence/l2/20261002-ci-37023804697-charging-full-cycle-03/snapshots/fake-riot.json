@@ -1,0 +1,204 @@
+{
+  "schemaVersion": "1",
+  "instanceId": "l2-riot",
+  "runId": "run-2861dc3a",
+  "revision": 10,
+  "observedAt": "2026-10-02T23:28:53.8183518+08:00",
+  "body": {
+    "faultMode": "Normal",
+    "delayMs": 0,
+    "mapStationReads": 52,
+    "absentOrderReadFaults": {
+      "remaining": 0,
+      "failedUpperIds": []
+    },
+    "vehicles": [
+      {
+        "deviceKey": "BROKERX-L2-0001",
+        "enable": true,
+        "status": 1,
+        "procState": "IDLE",
+        "currentMap": "MAP-L2",
+        "currentPosition": 12,
+        "battery": 100,
+        "batteryState": "NO_CHARGE",
+        "speed": 0,
+        "lockStatus": 0,
+        "orderTaskId": null,
+        "movementState": "MT_FINISHED",
+        "controlState": "CONTROL_STATE_OK",
+        "emergencyState": "OK",
+        "breakSwitchState": "MOVABLE",
+        "locationState": "LOCATION_STATE_RUNNING",
+        "processingOrder": false,
+        "integrationLevel": "ON_LINE"
+      }
+    ],
+    "orders": [
+      {
+        "id": 488001,
+        "orderId": "ORDER-000001",
+        "upperId": "W2G-CHARGE-BROKERX-L2-0001-20261002T152818617Z",
+        "orderState": 5,
+        "appointVehicleKey": "BROKERX-L2-0001",
+        "executeVehicleKey": "BROKERX-L2-0001",
+        "endStationNo": 211,
+        "missions": [
+          {
+            "type": "move",
+            "mapId": 25,
+            "destination": 212
+          },
+          {
+            "type": "move",
+            "mapId": 25,
+            "destination": 211
+          },
+          {
+            "type": "act",
+            "mapId": 0,
+            "destination": 0,
+            "actionId": 78,
+            "actionParam1": 1,
+            "resultCode": 0,
+            "resultStr": "未知类型错误,导致订单挂起:错误编码为:0",
+            "missionState": 2
+          }
+        ]
+      },
+      {
+        "id": 488002,
+        "orderId": "ORDER-000002",
+        "upperId": "W2G-f99b5191-bc78-46f1-a816-1208eb73c088-PICKUP-1",
+        "orderState": 3,
+        "appointVehicleKey": "BROKERX-L2-0001",
+        "executeVehicleKey": "BROKERX-L2-0001",
+        "endStationNo": 12,
+        "missions": [
+          {
+            "type": "act",
+            "mapId": 0,
+            "destination": 0,
+            "actionId": 78,
+            "actionParam1": 2,
+            "resultCode": 0,
+            "resultStr": "未知类型错误,导致订单挂起:错误编码为:0",
+            "missionState": 2
+          },
+          {
+            "type": "move",
+            "mapId": 25,
+            "destination": 212
+          },
+          {
+            "type": "move",
+            "mapId": 25,
+            "destination": 12
+          }
+        ]
+      }
+    ],
+    "maps": [
+      {
+        "mapId": 25,
+        "stations": [
+          {
+            "id": 11,
+            "name": "C15-13",
+            "edgeId": 6,
+            "posX": 0,
+            "posY": 0,
+            "posYaw": 0,
+            "stationOffset": 0,
+            "type": 1
+          },
+          {
+            "id": 12,
+            "name": "N1-3_N1-7",
+            "edgeId": 2,
+            "posX": 0,
+            "posY": 20000,
+            "posYaw": 0,
+            "stationOffset": 0,
+            "type": 1
+          },
+          {
+            "id": 210,
+            "name": "关卡",
+            "edgeId": 4,
+            "posX": 20000,
+            "posY": 20000,
+            "posYaw": 0,
+            "stationOffset": 0,
+            "type": 1
+          },
+          {
+            "id": 211,
+            "name": "充电点1",
+            "edgeId": 5,
+            "posX": 20000,
+            "posY": 0,
+            "posYaw": 0,
+            "stationOffset": 0,
+            "type": 1
+          }
+        ]
+      }
+    ],
+    "commandInvocations": [],
+    "edgeGroups": [],
+    "dynamicRouteCosts": {},
+    "removedEdges": [
+      {
+        "mapId": 25,
+        "edgeIds": []
+      }
+    ],
+    "removedStations": [
+      {
+        "mapId": 25,
+        "stationIds": []
+      }
+    ],
+    "mapNames": [
+      {
+        "mapId": 25,
+        "name": "老厂前线new_wk"
+      }
+    ],
+    "mapListServerError": false,
+    "mapListReads": 51,
+    "mapListServerErrors": 0,
+    "charging": {
+      "chargers": [
+        {
+          "mapId": 25,
+          "stationId": 211,
+          "enterExitStationId": 212,
+          "chargeIntervalSeconds": 1,
+          "chargePercentPerInterval": 5,
+          "expandDeparture": true
+        }
+      ],
+      "dischargeIntervalSeconds": 0,
+      "dischargePercentPerInterval": 0,
+      "vehicles": [
+        {
+          "vehicleKey": "BROKERX-L2-0001",
+          "battery": 100,
+          "batteryState": "NO_CHARGE",
+          "docked": false,
+          "chargerMapId": null,
+          "chargerStationId": null,
+          "anchorAt": "2026-10-02T23:28:53.49127+08:00",
+          "startOutcome": "Normal",
+          "hangResultCode": null,
+          "interruptAtPercent": null,
+          "noProgress": false,
+          "batteryUnreadable": "None"
+        }
+      ],
+      "startOutcomeByUpperId": []
+    }
+  }
+}
