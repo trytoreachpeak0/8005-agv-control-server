@@ -115,11 +115,24 @@ public sealed partial class JourneyRuntimeEngine
         var released = await dbContext.Set<StationExclusivityRecordRow>().AsNoTracking()
             .Where(row => row.JourneyId == runtime.JourneyId && row.StationKind == StationExclusivityKinds.WaitingPoint &&
                           row.ReleaseReason != null)
-            .Select(row => new { row.StationId, row.ReleaseReason })
+            .Select(row => new { row.StationId, row.ReleaseReason, row.ReleasedAt })
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
         if (released.Any(row => row.ReleaseReason == ClearanceMoveReleaseReasons.Ended))
         {
             return ChargingExecutionReasons.ClearanceMoveEnded;
+        }
+
+        // A premise that flaps (a session that comes and goes, say) would otherwise commit and withdraw every other round,
+        // each time leaving an intent that never went out. After a withdrawal the next commitment waits
+        // JourneyRuntime:OwnOrderRebuildDelay; the journey keeps the code the withdrawal wrote, which says why.
+        DateTimeOffset[] withdrawn =
+        [
+            .. released.Where(row => row.ReleaseReason == ClearanceMoveReleaseReasons.Withdrawn && row.ReleasedAt is not null)
+                .Select(row => row.ReleasedAt!.Value),
+        ];
+        if (withdrawn.Length > 0 && timeProvider.GetUtcNow() - withdrawn.Max() < runtimeOptions.OwnOrderRebuildDelay)
+        {
+            return runtime.BlockReasonCode ?? waiting;
         }
 
         RiotVehicleObservation? vehicle = await ReadVehicleOrNullAsync(runtime.VehicleKey, cancellationToken).ConfigureAwait(false);

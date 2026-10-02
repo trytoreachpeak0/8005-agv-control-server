@@ -226,6 +226,38 @@ public sealed class ChargingClearanceToWaitingPointTests
         Assert.Equal(expected, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
     }
 
+    /// <summary>
+    /// 出发前提来回抖（这里是急停一会儿有一会儿没有）：承诺之后建单前复核不过就撤回（从没发出过，预占当场放）；撤回之后隔
+    /// <c>JourneyRuntime:OwnOrderRebuildDelay</c> 才再承诺——不会每隔一轮就承诺、撤回一次，留下一串从没发出过的意图。
+    /// </summary>
+    [Fact]
+    public async Task AFlappingPremiseDoesNotCommitAndWithdrawEveryOtherRound()
+    {
+        await using FleetFixture fleet = await ClearanceFleetAsync();
+        JourneyRuntimeRow journey = await OldOrderEndedAsync(fleet);
+        await RoundAsync(fleet);
+        Assert.Single(await ClearanceStopsAsync(fleet, journey));
+
+        fleet.Riot.SafetyReasons = ["RIOT_EMERGENCY_NOT_OK"];
+        await RoundAsync(fleet);
+        Assert.Null(await StationAsync(fleet, 214));
+        Assert.Equal(ChargingExecutionReasons.ClearanceDepartureNotProven, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+
+        fleet.Riot.SafetyReasons = [];
+        for (int round = 0; round < 10; round++)
+        {
+            await RoundAsync(fleet);
+        }
+        Assert.Single(await ClearanceStopsAsync(fleet, journey));
+        Assert.Null(await StationAsync(fleet, 214));
+        Assert.Single(fleet.Riot.Creates);
+
+        await fleet.HearFromEveryVehicleAsync();
+        await fleet.RunRoundAsync(fleet.Options.OwnOrderRebuildDelay);
+        Assert.Equal(2, (await ClearanceStopsAsync(fleet, journey)).Length);
+        Assert.Equal((KeyA, journey.JourneyId), ((await StationAsync(fleet, 214))!.VehicleKey, (await StationAsync(fleet, 214))!.JourneyId));
+    }
+
     // ---- 选点：共用集合、无合格点、不猜站 --------------------------------------------------------------------------------
 
     /// <summary>
