@@ -78,7 +78,7 @@ public sealed class ChargingVehicleCard : IDashboardCard
             return "暂停中（见「充电暂停与等待」）";
         }
         string count = StationHoldingRendering.Str(hold, "openHolds") is { } open && open != "1" ? $"（共 {open} 条）" : "";
-        return $"暂停中：{ChargingCardRendering.Coded(hold, "reason", "reasonDescription")}，自 {DashboardPageRenderer.Text(hold, "heldAt")}{count}（恢复见「充电暂停与等待」）";
+        return $"暂停中：{ChargingCardRendering.Coded(hold, "reason", "reasonDescription")}，自 {DashboardPageRenderer.Text(hold, "heldAt")}{count}（见「充电暂停与等待」）";
     }
 
     /// <summary>电量与读数来源；没评估时只写那一句话（同一句也写在排队原因那一格），不写任何数。</summary>
