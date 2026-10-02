@@ -386,9 +386,9 @@ internal static class ChargingDashboardDescriptions
         + "可能的原因：全车队没有空闲车（派车轮不跑）、MesIngest 读不到（这一轮不派车）、引擎这一轮出错、一轮跑得太慢（例如 RIoT 应答慢）。"
         + "这里不显示更早的电量与结论";
 
-    /// <summary>无合格桩：同上。</summary>
-    internal const string NoChargerAvailableNotReadable =
-        "无合格桩（CHARGING_NO_CHARGER_AVAILABLE）这一种告警看板读不到：它只在服务端内存与日志里（事件 2246，每车每种结论告警一次），见服务端日志";
+    /// <summary>无合格桩为什么不在告警卡片的行里：它是分配结论，在逐车卡片的排队原因那一格。</summary>
+    internal const string NoChargerAvailableNote =
+        "无合格桩（CHARGING_NO_CHARGER_AVAILABLE）不单列在这里：它是充电分配的结论，看「逐车充电状态」卡片的排队原因（取自最近一轮已完成的分配）；服务端日志事件 2246 每车每种结论告警一次";
 
     /// <summary>中断与无进展（批次9-09，control-server#407）还没合入。</summary>
     internal const string InterruptionNotImplemented =

@@ -599,7 +599,7 @@ public sealed class ChargingDashboardTests
             // 从没导入过名册本身就是一条告警。
             Assert.Equal([ChargingDashboardDescriptions.AlarmRosterNeverImported],
                 alarms.RootElement.GetProperty("alarms").EnumerateArray().Select(a => a.GetProperty("code").GetString()));
-            Assert.Contains(ChargingDashboardDescriptions.NoChargerAvailableNotReadable, alarmHtml, StringComparison.Ordinal);
+            Assert.Contains(ChargingDashboardDescriptions.NoChargerAvailableNote, alarmHtml, StringComparison.Ordinal);
         }
     }
 
