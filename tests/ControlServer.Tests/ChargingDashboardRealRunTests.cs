@@ -182,6 +182,35 @@ public sealed class ChargingDashboardRealRunTests
         Assert.Equal("SUFFICIENT", allocation.GetProperty("batteryState").GetString());
     }
 
+    /// <summary>
+    /// 独立审查 S2（REQ-0269）：RIoT 报这辆车离线（或被禁用）时，它报的电量不是此刻的读数：看板不显示电量与 RIoT 电池状态，batteryState 投影为
+    /// <c>UNKNOWN</c>，写「电量拿不到」。分别看离线、被禁用两种，电量各压到低于和高于强制充电线。
+    /// </summary>
+    [Theory]
+    [InlineData(false, true, 62)]
+    [InlineData(false, true, 10)]
+    [InlineData(true, false, 62)]
+    public async Task AVehicleRiotReportsOfflineOrDisabledShowsNoBattery(bool connected, bool enabled, int battery)
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        fleet.Riot.BatteryByVehicle[KeyA] = battery;
+        fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { Connected = connected, Enabled = enabled };
+        await RoundAsync(fleet);
+        await fleet.HearFromEveryVehicleAsync();
+
+        (JsonDocument vehicles, string html) = await ReadAsync(fleet, "charging-vehicles");
+        using (vehicles)
+        {
+            JsonElement allocation = vehicles.RootElement.GetProperty("vehicles")[0].GetProperty("allocation");
+            Assert.Equal(JsonValueKind.Null, allocation.GetProperty("note").ValueKind);
+            Assert.Equal(JsonValueKind.Null, allocation.GetProperty("batteryPercent").ValueKind);
+            Assert.Equal(JsonValueKind.Null, allocation.GetProperty("riotBatteryState").ValueKind);
+            Assert.Equal("UNKNOWN", allocation.GetProperty("batteryState").GetString());
+            Assert.Contains("电量拿不到", html, StringComparison.Ordinal);
+            Assert.DoesNotContain(battery + "%", html, StringComparison.Ordinal);
+        }
+    }
+
     /// <summary>上一轮评估过、这一轮读 RIoT 失败没交到的车：写没评估，不显示它上一轮的电量与结论；同一轮里别的车照常。</summary>
     [Fact]
     public async Task AVehicleWhoseRiotReadFailsThisRoundReadsAsNotEvaluatedRatherThanItsPreviousBattery()

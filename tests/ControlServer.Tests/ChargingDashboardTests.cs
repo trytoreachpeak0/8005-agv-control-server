@@ -504,6 +504,71 @@ public sealed class ChargingDashboardTests
         Assert.Contains("开往充电桩（或在桩上）的充电单在 RIoT 上挂起", RowWith(html, "<td>AGV-01</td>"), StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// 独立审查 S1：清桩中的旧单被人在 RIoT 里恢复时（车可能移动），充电桩卡片的阶段格写「车可能移动，先联系现场」，整行与整张卡片里都没有
+    /// 「保持原位」；旧单没被恢复的清桩中只写服务端自己的行为（不建单、不动车）。
+    /// </summary>
+    [Fact]
+    public async Task AClearingChargerWhoseOldOrderWasResumedSaysTheVehicleMayMoveAndNeverThatItStaysPut()
+    {
+        await using ChargingDatabase database = await ChargingDatabase.CreateAsync();
+        DateTimeOffset now = database.Now;
+        await database.SeedAsync(context =>
+        {
+            AddRoster(context, 2, now.AddDays(-1), "张三", [211, 212]);
+            AddCharging(context, "K-01", 211, ChargingCyclePhases.Clearing, ChargingCycleWireStates.UnableToCharge,
+                StationExclusivityStates.Occupied, now.AddMinutes(-20), purpose: VehiclePurposes.ClearingMaintenance,
+                code: ChargingExecutionReasons.OldOrderResumedWhileClearing);
+            AddCharging(context, "K-02", 212, ChargingCyclePhases.Clearing, ChargingCycleWireStates.UnableToCharge,
+                StationExclusivityStates.Occupied, now.AddMinutes(-20), purpose: VehiclePurposes.ClearingMaintenance,
+                code: ChargingExecutionReasons.UnableToChargeClearing);
+        });
+
+        (JsonDocument fact, string html) = await ReadAsync(database, "chargers");
+        using (fact)
+        {
+            Dictionary<int, JsonElement> chargers = fact.RootElement.GetProperty("chargers").EnumerateArray()
+                .ToDictionary(c => c.GetProperty("stationId").GetInt32());
+            Assert.Equal(ChargingDashboardDescriptions.ClearingVehicleMayMove, chargers[211].GetProperty("stageDescription").GetString());
+            Assert.Equal(ChargingDashboardDescriptions.ChargerStages[ChargingDashboardDescriptions.StageClearing],
+                chargers[212].GetProperty("stageDescription").GetString());
+            string resumed = RowWith(html, "<td>211</td>");
+            Assert.Contains("CLEARING：车可能移动，先联系现场", resumed, StringComparison.Ordinal);
+            Assert.DoesNotContain("保持原位", resumed, StringComparison.Ordinal);
+            Assert.Contains("服务端不为它建单、不动车", RowWith(html, "<td>212</td>"), StringComparison.Ordinal);
+            Assert.DoesNotContain("保持原位", html, StringComparison.Ordinal);
+        }
+
+        (JsonDocument vehicles, string vehicleHtml) = await ReadAsync(database, "charging-vehicles");
+        using (vehicles)
+        {
+            Assert.DoesNotContain("保持原位", vehicleHtml, StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>独立审查 S3：一轮的完成时刻在此刻之后（时钟回拨），与过期的一轮同样不可用：电量与排队原因写没评估，不显示那一轮的值。</summary>
+    [Fact]
+    public async Task APassCompletedAfterNowIsNotShownBecauseTheClockWentBack()
+    {
+        await using ChargingDatabase database = await ChargingDatabase.CreateAsync();
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        ChargingAllocationBoard board = new();
+        long pass = board.BeginPass(now.AddSeconds(29));
+        board.RecordObservation("AGV-01", 55, "NO_CHARGE", "SUFFICIENT", now.AddSeconds(29));
+        board.Record("AGV-01", ChargingAllocationReasons.NotRequired, "");
+        board.EndPass(pass, now.AddSeconds(30));
+
+        (JsonDocument fact, string html) = await ReadAsync(database, "charging-vehicles", board);
+        using (fact)
+        {
+            JsonElement allocation = fact.RootElement.GetProperty("vehicles").EnumerateArray()
+                .Single(v => v.GetProperty("agvId").GetString() == "AGV-01").GetProperty("allocation");
+            Assert.StartsWith("本轮没有评估这辆车：最近 ", allocation.GetProperty("note").GetString(), StringComparison.Ordinal);
+            Assert.Equal(JsonValueKind.Null, allocation.GetProperty("batteryPercent").ValueKind);
+            Assert.DoesNotContain("55%", html, StringComparison.Ordinal);
+        }
+    }
+
     // ---------------- 充电暂停与等待 ----------------
 
     /// <summary>
@@ -569,8 +634,12 @@ public sealed class ChargingDashboardTests
             string resumed = RowOf(html, "AGV-02");
             Assert.Contains("CHARGING_OLD_ORDER_RESUMED_WHILE_CLEARING：现场注意车辆可能移动", resumed, StringComparison.Ordinal);
             Assert.Contains("人工确认已记下于", resumed, StringComparison.Ordinal);
-            Assert.Contains("车保持原位", resumed, StringComparison.Ordinal);
+            // 独立审查 S1：旧单被恢复时，同一行不能再有「车不动」一类的话，「现场要做的」改为先联系现场。
+            Assert.Contains(ChargingDashboardDescriptions.ClearingVehicleMayMove, resumed, StringComparison.Ordinal);
+            Assert.DoesNotContain("保持原位", resumed, StringComparison.Ordinal);
             Assert.Contains("还没有人工确认", RowOf(html, "AGV-03"), StringComparison.Ordinal);
+            Assert.Contains(ChargingDashboardDescriptions.ClearingGuidance, RowOf(html, "AGV-03"), StringComparison.Ordinal);
+            Assert.DoesNotContain("保持原位", html, StringComparison.Ordinal);
             string recordRow = RowWith(html, "<td>AGV-04</td><td>26/213</td>");
             Assert.Contains("MANUAL_CONFIRMATION：人工确认", recordRow, StringComparison.Ordinal);
             Assert.Contains("挪到 300 号点旁", recordRow, StringComparison.Ordinal);

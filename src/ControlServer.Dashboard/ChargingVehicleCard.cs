@@ -59,7 +59,7 @@ public sealed class ChargingVehicleCard : IDashboardCard
                + DashboardPageRenderer.Cell(ChargingCardRendering.JourneyCode(vehicle))
                + DashboardPageRenderer.Cell(QueueReason(allocation))
                + DashboardPageRenderer.Cell(manual)
-               + DashboardPageRenderer.Cell(eligibilityHeld ? "暂停中（见「充电暂停与等待」）" : "")
+               + DashboardPageRenderer.Cell(eligibilityHeld ? "暂停中（见「充电暂停与等待」）" : "本版本未实施（批次9-09）")
                + "</tr>";
     }
 
@@ -74,8 +74,12 @@ public sealed class ChargingVehicleCard : IDashboardCard
         {
             return note;
         }
-        string percent = StationHoldingRendering.Str(allocation, "batteryPercent") is { } value ? value + "%" : "RIoT 没报电量";
-        return $"{percent}（RIoT 读数，观测于 {DashboardPageRenderer.Text(allocation, "batteryObservedAt")}，"
+        if (StationHoldingRendering.Str(allocation, "batteryPercent") is not { } percent)
+        {
+            // Offline, disabled, or no battery reported: there is no current reading, and no number is shown (REQ-0269).
+            return $"电量拿不到：RIoT 没报电量，或报这辆车离线、被禁用（取自充电分配 {DashboardPageRenderer.Text(allocation, "passCompletedAt")} 走完的那一轮）";
+        }
+        return $"{percent}%（RIoT 读数，观测于 {DashboardPageRenderer.Text(allocation, "batteryObservedAt")}，"
                + $"RIoT 电池状态 {StationHoldingRendering.Str(allocation, "riotBatteryState") ?? "没报"}；"
                + $"取自充电分配 {DashboardPageRenderer.Text(allocation, "passCompletedAt")} 走完的那一轮）";
     }

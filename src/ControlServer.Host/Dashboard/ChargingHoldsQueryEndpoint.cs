@@ -94,7 +94,7 @@ internal sealed class ChargingHoldsQueryEndpoint : IDashboardQueryEndpoint
                         mapId = cycle.MapId,
                         stationId = cycle.StationId,
                         stationName = facts.StationNameOf(cycle.ChargerRosterVersion, cycle.MapId, cycle.StationId),
-                        guidance = "车保持原位，服务端不为它建单、不动车；等 R-11／R-13 名单里的人到现场确认清桩，并在 RIoT 里结束旧充电单",
+                        guidance = ChargingDashboardDescriptions.WhileClearing(journey?.BlockReasonCode, ChargingDashboardDescriptions.ClearingGuidance),
                         journeyCode = journey?.BlockReasonCode,
                         journeyCodeDescription = ChargingDashboardDescriptions.DescribeChargingCode(journey?.BlockReasonCode),
                         journeyCodeSince = journey?.BlockReasonCode is null ? null : journey.BlockReasonSince,

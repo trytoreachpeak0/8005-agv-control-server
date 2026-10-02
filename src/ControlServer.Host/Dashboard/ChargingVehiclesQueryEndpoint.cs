@@ -69,7 +69,8 @@ internal sealed class ChargingVehiclesQueryEndpoint : IDashboardQueryEndpoint
         ChargingDashboardFacts facts = await ChargingDashboardFacts.ReadAsync(dbContext, _roster, now, cancellationToken);
         ChargingBoardPass? pass = _board.LatestCompletedPass;
         // 窗口外的一轮不当作这一轮：它说的是分配停下之前的事。
-        string? notRunning = pass is not null && now - pass.CompletedAt > _passLiveness
+        // 完成时刻在此刻之后说明时钟回拨过，与过期的一轮同样不可用（独立审查 S3，写法同 VehicleDynamicFactsCriterion）。
+        string? notRunning = pass is not null && (pass.CompletedAt > now || now - pass.CompletedAt > _passLiveness)
             ? ChargingDashboardDescriptions.PassNotRunning(_passLiveness)
             : null;
         return new

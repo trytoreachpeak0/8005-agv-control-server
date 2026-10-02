@@ -41,7 +41,7 @@ internal static class ChargingDashboardDescriptions
             [ChargingCycleWireStates.EnRoute] = "去桩途中：开往桩的单已确认，车到桩、停稳并证明之后转充电",
             [ChargingCycleWireStates.Charging] = "充电中：车在桩上，RIoT 报它在充电",
             [ChargingCycleWireStates.Complete] = "已充满：用途已放开，车还停在桩上、桩仍归它，等它离桩三项确认之后才放",
-            [ChargingCycleWireStates.UnableToCharge] = "已确认充不上：桩已暂停分配，车保持原位等人工清桩",
+            [ChargingCycleWireStates.UnableToCharge] = "已确认充不上：桩已暂停分配，服务端不为它建单、不动车，等人工清桩",
             [ChargingCycleWireStates.Unknown] = "未知：服务端说不准这一次充电走到了哪一步",
         };
 
@@ -50,7 +50,7 @@ internal static class ChargingDashboardDescriptions
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
             [ChargingCyclePhases.Active] = "进行中：从分配到充满离桩",
-            [ChargingCyclePhases.Clearing] = "清桩中：车保持原位，等有权限的人现场确认清桩、旧单终结",
+            [ChargingCyclePhases.Clearing] = "清桩中：服务端不为它建单、不动车，等有权限的人现场确认清桩、旧单终结",
             [ChargingCyclePhases.Ended] = "已结束",
         };
 
@@ -103,7 +103,7 @@ internal static class ChargingDashboardDescriptions
         {
             [JourneyRuntimeEngine.OrderHangReason] =
                 "开往充电桩（或在桩上）的充电单在 RIoT 上挂起（HANG），例如急停或切了手动：这不算「充不上」，服务端不暂停桩、不暂停车的充电资格、"
-                + "不释放，也不会另建一张充电单，车、桩预占与充电用途都保持。请到现场确认原因，在 RIoT 里继续（continue）；继续后原因码自动消失",
+                + "不释放，也不会另建一张充电单，车、桩预占与充电用途都保持。请到现场确认原因，在 RIoT 里继续（continue）；继续后车会接着开往充电桩，原因码自动消失",
             [JourneyRuntimeEngine.OrderStateUnrecognizedReason] =
                 "充电单在 RIoT 上处于未识别的状态（SUSPENDED 8）：服务端按仍在执行处理，车、桩预占与充电用途都保持，不做任何自动动作，"
                 + "请人工到 RIoT 核实",
@@ -250,13 +250,29 @@ internal static class ChargingDashboardDescriptions
                 "充满待离桩：车已充满、用途已放开，还停在桩上。要等它接到下一项任务离开，并且充电已停、车不在桩上、桩位可确认空闲三项都确认了才放；"
                 + "服务端不会为离桩单独建单",
             [StageClearing] =
-                "清桩中：车保持原位，服务端不为它建单、不动车。要等有权限的人现场确认清桩（车已挪开、桩已腾空），并且旧充电单在 RIoT 里终结，"
+                "清桩中：服务端不为它建单、不动车。要等有权限的人现场确认清桩（车已挪开、桩已腾空），并且旧充电单在 RIoT 里终结，"
                 + "两样都齐了的那一轮才放",
             [StageFailedCycleAwaitingRelease] =
                 "失败待放桩：这一次充电已按失败结束，桩还没放。要等充电已停、原车不在桩上、桩位可确认空闲三项都确认了才放，没有按时间放的分支",
             [StageHeldWithoutOpenCycle] =
                 "桩仍被持有，但它的充电周期已结束（或找不到）而结束原因不在自动放桩的几种里：服务端不会自动放。请到现场确认后经人工释放入口处理，并报开发",
         };
+
+    /// <summary>
+    /// 清桩中、旧充电单却被人在 RIoT 里恢复了（<see cref="ChargingExecutionReasons.OldOrderResumedWhileClearing"/>）时，阶段与「现场要做的」那一格写的话。
+    /// 这时车可能自己开回桩上，任何「车不动」一类的话都不能出现在同一行（独立审查 S1）。
+    /// </summary>
+    internal const string ClearingVehicleMayMove =
+        "车可能移动，先联系现场：这辆车的旧充电单在 RIoT 里被人恢复了，车可能自己开回充电桩，而现场可能有人正在清桩。"
+        + "请立刻通知现场人员避让，并在 RIoT 里结束这张旧单；旧单结束后须重新确认清桩";
+
+    /// <summary>清桩中、旧单没被恢复时「现场要做的」那一格：只说服务端自己做什么、不做什么。</summary>
+    internal const string ClearingGuidance =
+        "服务端不为它建单、不动车；等 R-11／R-13 名单里的人到现场确认清桩，并在 RIoT 里结束旧充电单";
+
+    /// <summary>清桩中的车此刻的说明：旧单被恢复时是 <see cref="ClearingVehicleMayMove"/>，否则是 <paramref name="otherwise"/>。</summary>
+    internal static string WhileClearing(string? journeyCode, string otherwise) =>
+        journeyCode == ChargingExecutionReasons.OldOrderResumedWhileClearing ? ClearingVehicleMayMove : otherwise;
 
     // ---- 告警（充电告警卡片）----
 

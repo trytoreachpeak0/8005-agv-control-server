@@ -190,7 +190,9 @@ internal sealed class ChargersQueryEndpoint : IDashboardQueryEndpoint
             },
             holding = StationHoldings.Project(holding, facts.Contact, StationExclusivityKinds.Charger, purpose),
             stage,
-            stageDescription = ChargingDashboardDescriptions.ChargerStages[stage],
+            stageDescription = stage == ChargingDashboardDescriptions.StageClearing
+                ? ChargingDashboardDescriptions.WhileClearing(journey?.BlockReasonCode, ChargingDashboardDescriptions.ChargerStages[stage])
+                : ChargingDashboardDescriptions.ChargerStages[stage],
             stageSince,
             stageSeconds = stageSince is { } start ? (long?)Math.Max(0, (now - start).TotalSeconds) : null,
             overdue = overdueBy is not null,
