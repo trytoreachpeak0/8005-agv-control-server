@@ -187,7 +187,7 @@ run [`37013472279`](https://github.com/trytoreachpeak0/8005-agv-control-server/a
 **需求承载 G3 本轮未跑（调度 2026-10-02 定，先例 cs#387 09-29）**：`run-demand-bearing-g3-vectors.ps1` 必须传 `-FieldRunRoot`，一直用的外场库
 `C:\Users\szy\w2g-stage\run\fullloop-20260829T131549Z` 已不存在，本机 `C:\Users\szy`、`D:\` 五层内没有副本。
 **这样覆盖不到的**：这个 runner 认领 `FP-IS-04`（11 条断言）与 `FP-IS-05`（5 条），外加 4 条运行级断言（`docs/g3-slice-claim-review.md` 计数表），
-即需求承载那几条向量在 G3 层的面；它们在批次 9 代码上的 G3 结论本轮没有。G2 与合成 L2 仍覆盖它们。外场库重建由调度记为待决、批次 9 之后开票。
+即需求承载那几条向量在 G3 层的面；它们在批次 9 代码上的 G3 结论本轮没有。G2 与合成 L2 仍覆盖它们。外场库重建跟进 cs#453。
 
 **`FP-IS-13` 的四道门禁**：G1 是协议侧发布证据——`protocol-v2.0.0` 的 G1 在发布态通过（program#97），本批协议零改动，车载端 G2 在发布态重跑了一次；
 两端 G2 PASS；G3 由 journey 的 `g3-automatic-charging-cycle`、`g3-manual-station-clearance`、`g3-unable-to-charge-field-confirmation` 认领，18 条断言全过，`formalSlicePass true`。**四道全 PASS。**
@@ -253,9 +253,9 @@ run [`37013472279`](https://github.com/trytoreachpeak0/8005-agv-control-server/a
 
 ### 行为与现场
 
-- **人工充电等待的投影**：清桩中快照的 `manualChargingHold=false` 投影（cs#410 关票评论「跟进事项」，待 cs#409 合入后处理），**目前没有载体票**。
-- **RIoT 读取放在收件箱写锁内**（cs#410 关票评论，与 cs#406 同形），**目前没有载体票**。
-- **日志事件号重号**：`2108`、`2110`、`2189`、`2250`（以及 `1`、`2`）各有两处或以上定义；其中 `2189`（`ForeignRunningOrderSupervisor.cs:154` 与 `JourneyRuntimeEngine.cs:456`）、`2250`（`ChargingAllocator.cs:467` 与 `JourneyRuntimeEngine.Charging.cs:18`）是批次 9 引入的。按事件号筛日志的人会把两件事混在一起。cs#449 跟进（唯一性架构测试并修现有重号），不挡 10-08。
+- **人工充电等待的投影**：清桩中快照的 `manualChargingHold=false` 投影（cs#410 关票评论「跟进事项」），跟进 cs#451。
+- **RIoT 读取放在收件箱写锁内**（cs#410 关票评论，与 cs#406 同形）：RIoT 慢时拖住引擎与其它车入站，跟进 cs#452。
+- **日志事件号重号**：`2108`、`2110`、`2189`、`2250`（以及 `1`、`2`）各有两处或以上定义；其中 `2189`（`ForeignRunningOrderSupervisor.cs:154` 与 `JourneyRuntimeEngine.cs:456`）、`2250`（`ChargingAllocator.cs:467` 与 `JourneyRuntimeEngine.Charging.cs:18`）是批次 9 引入的（2108、2110 早于批次 9）。按事件号筛日志的人会把两件事混在一起。cs#449 跟进（唯一性架构测试并修现有重号），不挡 10-08。
 - cs#447：等待点移动 `SUCCESS` 后证明不了到点时，旅程收不了尾、没有受治理的出口（空闲返回与清桩同一机理，读代码推断，未跑过）。清桩开往等待点的开关出厂关，所以批次 9 默认配置下只有空闲返回一支可能遇到（推断，未核实）。
 - cs#432：合成 RIoT 与 L1 替身对不存在的单回 404，真实 RIoT 回 200 不带 `result`，测试走不到真车上那条分支。
 - `REQ-0208` 余量一支只有 L1，没有 L2（第五节第 6 条）。
@@ -264,7 +264,7 @@ run [`37013472279`](https://github.com/trytoreachpeak0/8005-agv-control-server/a
 
 ### 测试与证据的边界
 
-- **需求承载 G3 本轮未跑**，`FP-IS-04`／`05` 在批次 9 代码上没有 G3 结论；外场库重建待决（第三节）。
+- **需求承载 G3 本轮未跑**，`FP-IS-04`／`05` 在批次 9 代码上没有 G3 结论；外场库重建跟进 cs#453（第三节）。
 - `CV-MANUAL-CHARGING-RETURN` 只以 `FP-IS-07` 的名字被 G3 断言，`FP-IS-13` 名下没有（第三节）。
 - 人工清桩结果在屏上只能按文字找到（操作记录那一条没有 AutomationId／ItemStatus），与 onboard-hmi#241 同类，待决；入口下方的结果一行要不要在清桩结束后短暂保留，是产品取舍，批次 9 之后定（第四节、缺陷单）。
 - cs#448：`ExpectedActionOverdueTests` 的 HTTP 集成用例在负载下偶发红（兜底 run `37006671205`）。
@@ -283,6 +283,6 @@ run [`37013472279`](https://github.com/trytoreachpeak0/8005-agv-control-server/a
 
 - 10-08 上车实况与 `REQ-0174` 现场补证：docs-only 追加提交，由调度在 10-08 后派。
 - cs#411（人工）：批准、导入、激活与开关窗记录。
-- 需求承载 G3 外场库重建（调度记待决）。
-- 待决：操作记录里清桩结果的稳定读取句柄；结果一行是否短暂保留；告警推送渠道（program#134／#162）；清桩中 `manualChargingHold` 投影与 RIoT 读取在写锁内两项的载体。
+- 需求承载 G3 外场库重建（cs#453）。
+- 待决：操作记录里清桩结果的稳定读取句柄；结果一行是否短暂保留；告警推送渠道（program#134／#162）；清桩中 `manualChargingHold` 投影（cs#451）与 RIoT 读取在写锁内（cs#452）。
 - cs#393 合回后按 15 片全量重证。
