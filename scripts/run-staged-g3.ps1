@@ -102,7 +102,12 @@ param(
     #     (cs#386 to #392), batch 9's cs#399 to #410, and the follow-ups through PR #446.
     #   $OnboardCommit -> 4e40e196, the w2g/fp-v2-impl tip: hmi#217, #220, #221, #222 and hmi#233, #236, #239, #242.
     #   $SimulatorCommit and $ProtocolCommit unchanged: batch 9 changes no protocol and no simulator.
-    [string]$ControlServerCommit = '8467480da57b324abfd9f59769e0fdc49c73e7e7',
+    #   Same day, after the first journey round went red on G3-13-13 (docs/defects/20261002-manual-station-clearance-
+    #   result-line-blank-after-clearance-ends.md): the journey runner takes its scenario scripts from the bound
+    #   ControlServer commit, so the rewritten criterion (b0f070db) needs the binding on the exit branch.
+    #   $ControlServerCommit -> 8d0a644e, the exit branch; git diff 8467480d 8d0a644e -- src tests tools is empty, so the
+    #     product is 8467480d. Onboard, simulator and protocol unchanged.
+    [string]$ControlServerCommit = '8d0a644edfd4be30b99f5bf03bf17060ea0b0727',
     [string]$OnboardCommit = '4e40e196205d55c363f97850d10bd18df9a686c0',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
     [string]$ProtocolCommit = '86575456c847041515b7b75e8851a00e0d939804',
