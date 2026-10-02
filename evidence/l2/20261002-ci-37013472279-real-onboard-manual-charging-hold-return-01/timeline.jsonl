@@ -1,0 +1,52 @@
+{"at":"2026-10-02T14:14:27.6757772+00:00","note":"L2 run 20261002T141427625Z starting for scenario 'real-onboard-manual-charging-hold-return'."}
+{"at":"2026-10-02T14:14:27.7118463+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-10-02T14:14:27.7143528+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-10-02T14:14:27.9556330+00:00","note":"Reusing cached onboard-hmi publish for 4e40e196205d55c363f97850d10bd18df9a686c0."}
+{"at":"2026-10-02T14:14:28.1046794+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-10-02T14:14:28.1129532+00:00","note":"Peers: onboard-hmi@4e40e196205d55c363f97850d10bd18df9a686c0, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-10-02T14:14:28.1309988+00:00","note":"Interactive desktop lock acquired."}
+{"at":"2026-10-02T14:14:29.1398136+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-10-02T14:14:29.3876910+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-10-02T14:14:31.2299070+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-10-02T14:14:31.3290585+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-10-02T14:14:36.4556712+00:00","note":"Package capacity rules imported."}
+{"at":"2026-10-02T14:14:36.4584603+00:00","note":"No waiting point registration: a single-vehicle rig, or WaitingPoints = $false."}
+{"at":"2026-10-02T14:14:38.5429422+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-10-02T14:14:39.4473607+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-10-02T14:14:39.5540188+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-10-02T14:14:41.5466017+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-10-02T14:14:41.5621719+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-10-02T14:14:41.6137756+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-10-02T14:14:42.5191898+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-10-02T14:14:42.5696754+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-37013472279-1\\_stage\\l2-20261002T141427625Z\\controlserver.db"}
+{"at":"2026-10-02T14:14:44.4010684+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"52b08572d6b0495e9f95e0222f7574f9","version":1,"slotCount":8}}}
+{"at":"2026-10-02T14:14:44.4085716+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-37013472279-1\\_stage\\l2-20261002T141427625Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-10-02T14:14:46.1872557+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"52b08572d6b0495e9f95e0222f7574f9","boundSlots":8,"version":1}}}
+{"at":"2026-10-02T14:14:46.3096001+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-10-02T14:14:46.3115713+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-37013472279-1\\_stage\\l2-20261002T141427625Z\\controlserver.db --input C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-37013472279-1\\real-onboard-manual-charging-hold-return-01\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-10-02T14:14:48.2108667+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-37013472279-1\\real-onboard-manual-charging-hold-return-01\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"c505d44da26f4dfe8b4fb2182f8b97c5","importedAt":"2026-10-02T22:14:46.5710123+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-10-02T14:14:48.2282920+00:00","note":"FieldOps: import-charging-policy --database C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-37013472279-1\\_stage\\l2-20261002T141427625Z\\controlserver.db --input C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-37013472279-1\\real-onboard-manual-charging-hold-return-01\\snapshots\\preseed-charging-policy.json --fleet BROKERX-L2-0001"}
+{"at":"2026-10-02T14:14:50.0187379+00:00","note":"FieldOps: approve-charging-policy --database C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-37013472279-1\\_stage\\l2-20261002T141427625Z\\controlserver.db --version 1 --approved-by L2 orchestrator --role L2_PRESET --basis scripts/l2/L2ChargingPolicy.psm1 --source L2_PRESET"}
+{"at":"2026-10-02T14:14:51.6758835+00:00","note":"FieldOps: activate-charging-policy --database C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-37013472279-1\\_stage\\l2-20261002T141427625Z\\controlserver.db --version 1 --activated-by L2 orchestrator --fleet BROKERX-L2-0001 --allow-non-field-approval"}
+{"at":"2026-10-02T14:14:53.4242345+00:00","criterion":"preseed:charging-policy","value":"OK","detail":{"version":1,"coveredAfter":["BROKERX-L2-0001"],"withoutPolicy":[],"source":"L2_PRESET"}}
+{"at":"2026-10-02T14:14:53.4257691+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-10-02T14:14:53.4462814+00:00","note":"Environment is up; entering scenario 'real-onboard-manual-charging-hold-return'."}
+{"at":"2026-10-02T14:14:53.8147075+00:00","criterion":"session-readiness","value":"Ready"}
+{"at":"2026-10-02T14:14:53.9643788+00:00","criterion":"hold-shown","value":"(none) | (none) | False"}
+{"at":"2026-10-02T14:14:54.8049886+00:00","criterion":"hold-shown","value":"ROSTER_EMPTY | True | True"}
+{"at":"2026-10-02T14:14:54.8392615+00:00","note":"Publishing demand ea0c7f75050f454aaf51a43487aa24ca while the hold is on."}
+{"at":"2026-10-02T14:14:54.8969431+00:00","criterion":"demand-backlogged","value":"(not seen)"}
+{"at":"2026-10-02T14:14:55.6805437+00:00","criterion":"demand-backlogged","value":"VEHICLE_IN_MANUAL_CHARGING_HOLD"}
+{"at":"2026-10-02T14:14:55.7198825+00:00","criterion":"hold-kept-after-battery","value":"ROSTER_EMPTY | True | backlog VEHICLE_IN_MANUAL_CHARGING_HOLD | intents 0"}
+{"at":"2026-10-02T14:15:05.7124481+00:00","note":"Not reached: Timed out after 10s waiting for: the hold was lifted by the battery coming back, or the demand was taken (neither may be). Last observed: \"ROSTER_EMPTY | True | backlog VEHICLE_IN_MANUAL_CHARGING_HOLD | intents 0\""}
+{"at":"2026-10-02T14:15:05.8107911+00:00","criterion":"return-entry","value":"True"}
+{"at":"2026-10-02T14:15:05.8123087+00:00","note":"Administrator presses 充电后返回服务 and confirms."}
+{"at":"2026-10-02T14:15:06.9561563+00:00","note":"Pressing 充电后返回服务 (attempt 1)."}
+{"at":"2026-10-02T14:15:07.9727977+00:00","criterion":"return-decided","value":"@{RequestId=dfca7de3-d035-4918-bec3-fc77cc8809cc; Outcome=RETURNED_TO_ELIGIBILITY_EVALUATION}"}
+{"at":"2026-10-02T14:15:08.0174669+00:00","criterion":"hold-lifted","value":"(none) | released dfca7de3-d035-4918-bec3-fc77cc8809cc | True | True"}
+{"at":"2026-10-02T14:15:08.2937893+00:00","criterion":"hold-lifted","value":"(none) | released dfca7de3-d035-4918-bec3-fc77cc8809cc | False | False"}
+{"at":"2026-10-02T14:15:08.3218720+00:00","criterion":"dispatched-after-return","value":"(null)"}
+{"at":"2026-10-02T14:15:09.3386393+00:00","criterion":"dispatched-after-return","value":"@{Status=PENDING_RECONCILIATION; VehicleKey=BROKERX-L2-0001}"}
+{"at":"2026-10-02T14:15:09.5932394+00:00","criterion":"dispatched-after-return","value":"@{Status=CONFIRMED; VehicleKey=BROKERX-L2-0001}"}
+{"at":"2026-10-02T14:15:09.5984814+00:00","note":"Real onboard: the server-held manual charging hold was shown, outlived the battery coming back, and was lifted only by 充电后返回服务."}
+{"at":"2026-10-02T14:15:10.2074345+00:00","note":"L2 port block lock released."}

@@ -94,8 +94,21 @@ param(
     #     although the session is not ready only because of this server's own order in flight).
     #   $OnboardCommit -> 86d42ce5, the w2g/fp-v2-impl tip after onboard-hmi#194 merged the batch-7 G2 evidence;
     #     ecdb3a0b..86d42ce5 is evidence/ only.
-    [string]$ControlServerCommit = '82bfa41511e515aa1063a9acfd900bd7b443d933',
-    [string]$OnboardCommit = '86d42ce5362a8273525b8ba1acb387e4331bcfed',
+    #
+    # 2026-10-02, batch 9 exit (control-server#412): FP-IS-13 gets its G3 surface (g3-automatic-charging-cycle, cs#405;
+    #   g3-manual-station-clearance and g3-unable-to-charge-field-confirmation, cs#406/#410, registered by cs#412).
+    #   The batch 8 exit (cs#393) has not merged, so the line is still on protocol-v2.0.0.
+    #   $ControlServerCommit -> 8467480d, the fp/v2-impl tip before the exit ticket: batch 8's tickets that merged
+    #     (cs#386 to #392), batch 9's cs#399 to #410, and the follow-ups through PR #446.
+    #   $OnboardCommit -> 4e40e196, the w2g/fp-v2-impl tip: hmi#217, #220, #221, #222 and hmi#233, #236, #239, #242.
+    #   $SimulatorCommit and $ProtocolCommit unchanged: batch 9 changes no protocol and no simulator.
+    #   Same day, after the first journey round went red on G3-13-13 (docs/defects/20261002-manual-station-clearance-
+    #   result-line-blank-after-clearance-ends.md): the journey runner takes its scenario scripts from the bound
+    #   ControlServer commit, so the rewritten criterion (b0f070db) needs the binding on the exit branch.
+    #   $ControlServerCommit -> 8d0a644e, the exit branch; git diff 8467480d 8d0a644e -- src tests tools is empty, so the
+    #     product is 8467480d. Onboard, simulator and protocol unchanged.
+    [string]$ControlServerCommit = '8d0a644edfd4be30b99f5bf03bf17060ea0b0727',
+    [string]$OnboardCommit = '4e40e196205d55c363f97850d10bd18df9a686c0',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
     [string]$ProtocolCommit = '86575456c847041515b7b75e8851a00e0d939804',
     # The ref whose tip -OnboardCommit must equal. It is a parameter rather than a literal because the

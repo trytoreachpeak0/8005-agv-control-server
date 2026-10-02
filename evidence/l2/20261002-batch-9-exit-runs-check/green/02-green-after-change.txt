@@ -1,0 +1,15 @@
+charging-policy-missing-vehicle-not-commissioned   Runs=3 DefaultRuns=- ok
+mandatory-charge-vehicle-takes-no-transport        Runs=3 DefaultRuns=- ok
+charging-thresholds-relation-refused               Runs=3 DefaultRuns=- ok
+charging-one-charger-three-vehicles-contend        Runs=3 DefaultRuns=- ok
+charging-registry-emptied-degrades-and-resumes     Runs=3 DefaultRuns=- ok
+charging-full-cycle                                Runs=3 DefaultRuns=- ok
+charging-full-vehicle-yields-charger               Runs=3 DefaultRuns=- ok
+charging-unable-to-charge-pauses-charger           Runs=3 DefaultRuns=- ok
+charging-general-fault-does-not-pause              Runs=3 DefaultRuns=- ok
+charging-interruption-isolates                     Runs=3 DefaultRuns=- ok
+charging-no-progress-isolates                      Runs=3 DefaultRuns=- ok
+charging-clearance-to-waiting-point                Runs=3 DefaultRuns=- ok
+timeout-minutes: workflow_dispatch 180, otherwise 120
+expected batch-9: 12; batch-9 lines: 12; all scenarios: 79; synthetic scenario files: 79; unlisted files: 0
+PASS

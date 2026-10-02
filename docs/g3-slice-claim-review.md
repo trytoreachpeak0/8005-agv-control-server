@@ -423,7 +423,7 @@ L2 id 与断言名的对应在 `$scenarioAssertions`（第 74–185 行）；运
 | `CV-AUTOMATIC-CHARGING-CYCLE` | 本票，下表七条 | 场景 `g3-automatic-charging-cycle`，G3-13-01～07 |
 | `CV-MANUAL-STATION-CLEARANCE` | 场景文件由批次9-08（control-server#406）写；登记进 runner 与本表由出口批次9-14（control-server#412）做 | 预留 G3-13-11～19，认领表 `FP-IS-13` 列表接在本票七条之后 |
 | `CV-UNABLE-TO-CHARGE-FIELD-CONFIRMATION` | 场景文件由批次9-12（control-server#410）写；登记同上由 control-server#412 做 | 预留 G3-13-21～29，同上 |
-| `CV-MANUAL-CHARGING-RETURN` | 今天只以 FP-IS-07 的四个名字断言（疑点 29）；`FP-IS-13` 要认领得用自己的名字 | 未定，由 control-server#412 决定是否在 `g3-manual-charging-return` 里另加断言 |
+| `CV-MANUAL-CHARGING-RETURN` | 今天只以 FP-IS-07 的四个名字断言（疑点 29）；`FP-IS-13` 要认领得用自己的名字 | control-server#412 决定不加（不改既有场景文件），见「批次 9 出口登记」一节 |
 
 服务端的已实施切片集合（`ProtocolVectorTestBindingArchitectureTests.SlicesThisLineImplements`）本票没有加 `FP-IS-13`：另两条向量的服务端同名测试还没有，由最后补齐的那张票加。
 
@@ -452,3 +452,29 @@ L2 id 与断言名的对应在 `$scenarioAssertions`（第 74–185 行）；运
 | journey | `completeWithArrivedChargerLegPurposeReleasedChargerKept`（G3-13-05） | FP-IS-13 | 同一向量；REQ-0281 | 收尾计划仍是那一条 `CHARGER` 腿、`ARRIVED`，收尾业务状态 `COMPLETE`、`activePurpose` 为空，两张都被确认；界面报 `COMPLETE`；211 仍是这一趟的 `OCCUPIED` | |
 | journey | `nextJourneyLeavesChargerAndChargerReleasedOnDeparture`（G3-13-06） | FP-IS-13 | 同一向量；REQ-0173；hmi#220 跨票契约（离桩接活的计划不含充电腿） | 下达那一刻 211 仍占用；被确认的最新计划属于甲、不含 `CHARGER` 腿；12 号站甲装货 `Committed`；211 以 `CHARGER_RELEASED_ON_DEPARTURE` 释放、周期以 `CHARGING_DEPARTED` 收尾 | 离桩证据是 RIoT 报不再充电、当前站为另一站、桩可确认空闲三项；队首的 `act(78,2,0)` 不作证据 |
 | journey | `chargingCycleFinalStateNoDuplicateOrder`（G3-13-07） | FP-IS-13 | 同一向量 finalState、`duplicate-riot-order` | 甲一笔装、一笔卸都 `Committed`、需求 `Succeeded`，旅程 `Completed`；假 RIoT 上 `W2G-CHARGE-*` 的单恰好一张；装过的仓 `CLOSED/EMPTY/1/0` | |
+
+## 批次 9 出口登记：FP-IS-13 的另两条向量（control-server#412）
+
+批次9-08（control-server#406）与批次9-12（control-server#410）按约定只写了场景文件，没有登记进 runner。出口票批次9-14（control-server#412）把两条场景登记进 journey runner 与认领表 `FP-IS-13` 列表，断言名用上一节预留的 G3-13-11～14、G3-13-21～27；场景文件本身一字未改。journey runner 因此从 17 个场景变成 19 个，等于 `scripts/l2/scenarios/g3-*.ps1` 的总数。检查内容取自两个场景脚本开头的判据说明。
+
+| runner | 运行级 | 切片断言 | 合计 |
+| --- | --- | --- | --- |
+| journey 新增 | 0 | 11（FP-IS-13 11：`CV-MANUAL-STATION-CLEARANCE` 4、`CV-UNABLE-TO-CHARGE-FIELD-CONFIRMATION` 7） | 11 |
+
+**`CV-MANUAL-CHARGING-RETURN` 仍只以 FP-IS-07 的四个名字断言（疑点 29），本票没有给 FP-IS-13 另加名字。**理由：出口票的冲突边界不许改既有场景文件，而另加断言要改 `g3-manual-charging-return`。这四条与 FP-IS-13 在同一个 journey 运行里判定，但 `FP-IS-13` 的 `formalSlicePass` 只由它自己名下的 18 条算出，不含这四条。所以 FP-IS-13 的四条向量里，有三条以自己的名字被 G3 断言，第四条只以 FP-IS-07 的名字断言。
+
+### 逐条表
+
+| runner | 断言名 | 当前归属切片 | 依据向量 | 核实到的检查内容 | 疑点 |
+| --- | --- | --- | --- | --- | --- |
+| journey | `unableToChargePausesChargerAndClearingStateAcknowledged`（G3-13-11） | FP-IS-13 | `CV-MANUAL-STATION-CLEARANCE` 的前提 | 一条 `UNABLE_TO_CHARGE_CONFIRMED` 的暂停；清桩中的计划（恰好一条 `CHARGER` 腿）与业务状态（`UNABLE_TO_CHARGE`、`CLEARING_MAINTENANCE`）都被真车载端确认 | 前提断言，不是向量的产品条目 |
+| journey | `onboardShowsUnableToChargeAndClearanceEntry`（G3-13-12） | FP-IS-13 | 同一向量（车载端，hmi#221） | 界面 `ChargingStatus` 报 `UNABLE_TO_CHARGE`，「确认清桩」入口出现，说明一行 `StationClearanceNotice` 不在 | |
+| journey | `clearanceRequestedAndConfirmedWithStationReleased`（G3-13-13） | FP-IS-13 | 同一向量 `orderedExpectedMessages` | 车载端发 Requested（操作员 L2-OPERATOR、`STATION_EMPTY`、站点是计划里那条 `CHARGER` 腿的站点），服务端回 Result：`CONFIRMED`、problem 为空、`stationReleased=true`；界面结果一行报 `CONFIRMED_STATION_RELEASED` | |
+| journey | `chargerReleasedOnlyOnConfirmedClearanceNoOrderCommand`（G3-13-14） | FP-IS-13 | 同一向量（`RELEASE_STATION_ONLY_ON_CONFIRMED_CLEARANCE`）、finalState | 211 以 `CHARGER_RELEASED_ON_MANUAL_CLEARANCE` 释放，暂停没有恢复行；旅程以 `CHARGING_UNABLE_TO_CHARGE_CLEARED` 收尾、收尾快照被确认；RIoT 上恰好一张充电单，没有任何订单命令 | |
+| journey | `hangWithoutVerifiedCodeIsNotConfirmedAutomatically`（G3-13-21） | FP-IS-13 | `CV-UNABLE-TO-CHARGE-FIELD-CONFIRMATION` 的前提 | 车停在 211、单 HANG 而结果码不是 407802：旅程写 `ORDER_HANG`，没有任何暂停，周期仍 `ACTIVE` | 前提断言 |
+| journey | `onboardShowsUnableToChargeEntryAtCharger`（G3-13-22） | FP-IS-13 | 同一向量（车载端，hmi#222） | 充电用途、计划当前腿是 211 时入口出现，「接不上充电」可按，说明一行 `UnableToChargeNotice` 不在 | 入口由场景 setup 的 `UnableToChargeEntry` 打开；车载端出厂是关 |
+| journey | `fieldConfirmationRequestedAndConfirmedWithManualHold`（G3-13-23） | FP-IS-13 | 同一向量 `orderedExpectedMessages` 前两条 | 车载端发 Requested（L2-OPERATOR、`chargerStationId` 是计划里那条 `CHARGER` 腿的站点、`CONNECTION_FAILED`），服务端回 Result：`CONFIRMED`、problem 为空、`chargingPolicyDecision=MANUAL_CHARGING_HOLD` | 只断线路 |
+| journey | `clearingBusinessStateAfterResultAcknowledged`（G3-13-24） | FP-IS-13 | 同一向量 `orderedExpectedMessages` 后两条 | Result 之后，业务状态 `UNABLE_TO_CHARGE`、`CLEARING_MAINTENANCE` 进发件箱并被车载端确认 | |
+| journey | `fieldConfirmationPausesChargerAndRecordsObservation`（G3-13-25） | FP-IS-13 | 同一向量（`DECIDE_CHARGING_POLICY_CENTRALLY`、`RECORD_FIELD_OBSERVATION`） | 一条 `UNABLE_TO_CHARGE_CONFIRMED` 的暂停，确认人 L2-OPERATOR、角色 R-11、现场处置 `CONNECTION_FAILED`；周期 `UNABLE_TO_CHARGE`／`CLEARING`；人工充电等待原因 `UNABLE_TO_CHARGE_LOW_BATTERY`；判定记下一行 | 角色由服务端按 `operatorId` 查人员名单，线上没有角色字段 |
+| journey | `vehicleHeldInPlaceNoDuplicateOrder`（G3-13-26） | FP-IS-13 | 同一向量 `forbiddenSideEffects`：`duplicate-riot-order` | RIoT 上恰好一张充电单，没有任何订单命令，211 仍是这一趟的 | |
+| journey | `onboardKeepsConfirmedResultAfterClearing`（G3-13-27） | FP-IS-13 | 同一向量（车载端，hmi#222、hmi#242） | 清桩中的业务状态被车载端确认之后，界面结果一行 `UnableToChargeStatus` 在随后 3 秒里每次读都是 `CONFIRMED` | 要车载端含 hmi#242（`w2g/fp-v2-impl@4e40e196` 已含） |

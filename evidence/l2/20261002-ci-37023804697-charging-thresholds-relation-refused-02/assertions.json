@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "scenario": "charging-thresholds-relation-refused",
+  "runId": "20261002T153233298Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "batchId": "batch-9",
+    "controlServerCommit": "6b7b3e38b7d72b454b227a104de2e37a3198db86",
+    "rig": "SyntheticOnboard",
+    "agvId": "AGV-L2-001",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37023804697-1\\_stage\\l2-20261002T153233298Z-slot4",
+    "vehicleKey": "BROKERX-L2-0001"
+  },
+  "assertions": [
+    {
+      "id": "L2-CTR-00",
+      "description": "前置：编排器导入并激活了默认测试策略，库里恰好一版",
+      "outcome": "PASS",
+      "expected": "1 版，已激活",
+      "actual": "1 版，激活 1"
+    },
+    {
+      "id": "L2-CTR-01",
+      "description": "完成线 = 入口线的一版被整份拒绝：退出码 1、REJECTED、原因码是阈值关系那一个，库里版本数不变、生效的仍是默认那一版",
+      "outcome": "PASS",
+      "expected": "1 / REJECTED / CHARGING_POLICY_THRESHOLD_RELATION_VIOLATED / 1 版 / 激活 1",
+      "actual": "1 / REJECTED / CHARGING_POLICY_THRESHOLD_RELATION_VIOLATED / 1 版 / 激活 1"
+    },
+    {
+      "id": "L2-CTR-02",
+      "description": "被拒之后照常派车：需求派给了车，旅程记下的是默认那一版的版本号、SUFFICIENT",
+      "outcome": "PASS",
+      "expected": "BROKERX-L2-0001 / v1 / SUFFICIENT",
+      "actual": "BROKERX-L2-0001 / v1 / SUFFICIENT"
+    }
+  ]
+}

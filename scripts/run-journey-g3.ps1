@@ -257,7 +257,7 @@ $scenarioAssertions = [ordered]@{
     # charger is released only once the vehicle has left it. Onboard half onboard-hmi#220 (ChargingStatus, no entry at the
     # charger); the cross-ticket contract is G3-13-06 (the next plan carries no CHARGER leg, the pickup entry opens).
     # CV-MANUAL-STATION-CLEARANCE and CV-UNABLE-TO-CHARGE-FIELD-CONFIRMATION are FP-IS-13's too; their scenarios are written
-    # by control-server#406 and #410 and registered here by the exit ticket control-server#412 (G3-13-11 onwards).
+    # by control-server#406 and #410 and registered below by the exit ticket control-server#412 (G3-13-11 onwards).
     'g3-automatic-charging-cycle' = [ordered]@{
         'G3-13-01' = 'chargerPlanBeforeChargingBusinessStateBothAcknowledged'
         'G3-13-02' = 'chargingPurposeClaimedFromAllocationUntilComplete'
@@ -266,6 +266,29 @@ $scenarioAssertions = [ordered]@{
         'G3-13-05' = 'completeWithArrivedChargerLegPurposeReleasedChargerKept'
         'G3-13-06' = 'nextJourneyLeavesChargerAndChargerReleasedOnDeparture'
         'G3-13-07' = 'chargingCycleFinalStateNoDuplicateOrder'
+    }
+    # Batch 9 (control-server#406, registered by the exit ticket control-server#412): CV-MANUAL-STATION-CLEARANCE. 407802 +
+    # final HANG at 211 pauses the charger and holds the vehicle in CLEARING_MAINTENANCE; the vehicle is moved off and the
+    # old order cancelled in RIoT, and an R-11 operator confirms the clearance on the real onboard (onboard-hmi#221): the
+    # charger is released only on that confirmation and the pause stays.
+    'g3-manual-station-clearance' = [ordered]@{
+        'G3-13-11' = 'unableToChargePausesChargerAndClearingStateAcknowledged'
+        'G3-13-12' = 'onboardShowsUnableToChargeAndClearanceEntry'
+        'G3-13-13' = 'clearanceRequestedAndConfirmedWithStationReleased'
+        'G3-13-14' = 'chargerReleasedOnlyOnConfirmedClearanceNoOrderCommand'
+    }
+    # Batch 9 (control-server#410, registered by the exit ticket control-server#412): CV-UNABLE-TO-CHARGE-FIELD-CONFIRMATION.
+    # A HANG at 211 without the verified 407802 is not confirmed automatically; an R-11 operator confirms "cannot connect" on
+    # the real onboard (onboard-hmi#222, entry switched on for this run by the scenario's setup), the server decides
+    # MANUAL_CHARGING_HOLD centrally, pauses 211 and holds the vehicle in CLEARING_MAINTENANCE. G3-13-27 needs onboard-hmi#242.
+    'g3-unable-to-charge-field-confirmation' = [ordered]@{
+        'G3-13-21' = 'hangWithoutVerifiedCodeIsNotConfirmedAutomatically'
+        'G3-13-22' = 'onboardShowsUnableToChargeEntryAtCharger'
+        'G3-13-23' = 'fieldConfirmationRequestedAndConfirmedWithManualHold'
+        'G3-13-24' = 'clearingBusinessStateAfterResultAcknowledged'
+        'G3-13-25' = 'fieldConfirmationPausesChargerAndRecordsObservation'
+        'G3-13-26' = 'vehicleHeldInPlaceNoDuplicateOrder'
+        'G3-13-27' = 'onboardKeepsConfirmedResultAfterClearing'
     }
 }
 

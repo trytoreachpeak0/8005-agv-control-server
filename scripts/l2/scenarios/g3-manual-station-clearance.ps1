@@ -20,8 +20,10 @@ G3 `FP-IS-13`：充不上之后的人工清桩（批次9-08，control-server#406
   （UNABLE_TO_CHARGE、CLEARING_MAINTENANCE）都被真车载端确认。
 - G3-13-12（车载端）：界面 `ChargingStatus` 报 UNABLE_TO_CHARGE，「确认清桩」入口出现（说明一行 `StationClearanceNotice` 不在）。
 - G3-13-13（两端，`orderedExpectedMessages`）：车载端发 Requested（操作员 L2-OPERATOR、publicStationFunction 为空、STATION_EMPTY、站点是计划里
-  那条 CHARGER 腿的站点），服务端回 Result：CONFIRMED、problem 为空、stationReleased=true；界面结果一行 `StationClearanceStatus` 报
-  CONFIRMED_STATION_RELEASED。
+  那条 CHARGER 腿的站点），服务端回 Result：CONFIRMED、problem 为空、stationReleased=true；操作员被告知：操作记录里出现
+  「服务端已确认清桩…站点已释放」一行、车载端日志记下本次确认 Confirmed／stationReleased=True、「确认清桩」入口收起。
+  **不读结果一行 `StationClearanceStatus`**：清桩一结束车载端就清空它，而这里确认即结束，读它是与收尾快照赛跑
+  （批次 9 出口 control-server#412 改，原判据在 4e40e196 与 27b58310 上都红；经调度批准越过出口票的冲突边界）。
 - G3-13-14（服务端，`RELEASE_STATION_ONLY_ON_CONFIRMED_CLEARANCE`）：211 的独占以 CHARGER_RELEASED_ON_MANUAL_CLEARANCE 释放，暂停没有恢复行，
   旅程以 CHARGING_UNABLE_TO_CHARGE_CLEARED 收尾、收尾快照被确认；RIoT 上恰好一张充电单，没有任何订单命令。
 #>
@@ -162,21 +164,54 @@ $exchange = Wait-L2ConditionOrLast -Description 'the server answered the clearan
         [pscustomobject]@{ Request = $request; Result = $request.ResponsePayload }
     } `
     -Until { param($v) $null -ne $v }
-$status = Wait-L2ConditionOrLast -Description 'the HMI shows the confirmation released the charger' -Journal $journal `
-    -Criterion 'hmi-clearance-status' -TimeoutSeconds 30 `
-    -Probe { [string](Get-L2LoadingPhaseLine $onboard 'StationClearanceStatus') } `
-    -Until { param($v) $v -eq 'CONFIRMED_STATION_RELEASED' }
+# How the operator is told. Not the result line (StationClearanceStatus): the onboard empties it the moment the server's
+# snapshot ends the clearance, and here the confirmation itself ends it -- the server closes the journey with
+# CHARGING_UNABLE_TO_CHARGE_CLEARED right after the Result. The line therefore exists for milliseconds, and reading it
+# raced the closing snapshot on every onboard since onboard-hmi#221 (the batch-9 exit, control-server#412, saw it blank
+# on 4e40e196 and on 27b58310 alike; docs/defects/20261002-manual-station-clearance-result-line-blank-after-clearance-ends.md).
+# What does reach the operator, on both paths of the press (onboard-hmi#222 review item 4 kept it when the snapshot wins):
+#   (b) the operator record list on screen gets the server's answer as a line of its own and keeps it -- found by its text,
+#       the only handle it has (no AutomationId, no ItemStatus; giving it one is pending, the same kind as onboard-hmi#241);
+#   (c) the onboard's own log names this confirmation's id with outcome=Confirmed and stationReleased=True -- the same press
+#       wrote (b), and (c) is what pins (b) to this request rather than to any earlier one;
+#   (d) the clearance entry is gone: the clearance is over, so nothing invites a second press.
+$recordText = "服务端已确认清桩（充电桩 $chargerName），站点已释放。车辆与站点状态以服务端下发的为准。"
+$record = Wait-L2ConditionOrLast -Description 'the operator record list shows the server confirmed the clearance' -Journal $journal `
+    -Criterion 'hmi-clearance-record' -TimeoutSeconds 30 `
+    -Probe { $null -ne $onboard.Element('Name', $recordText) } `
+    -Until { param($v) $v }
+$requestId = [string]${exchange}?.Request?.Payload?.confirmationRequestId
+$onboardLog = Join-Path $Context.LogRoot 'onboard-app'
+$logged = Wait-L2ConditionOrLast -Description 'the onboard logged the answer to this confirmation' -Journal $journal `
+    -Criterion 'onboard-clearance-logged' -TimeoutSeconds 30 `
+    -Probe {
+        if ([string]::IsNullOrEmpty($requestId) -or -not (Test-Path -LiteralPath $onboardLog)) { return '' }
+        $line = Get-ChildItem -LiteralPath $onboardLog -Filter '*.log' -File |
+            ForEach-Object { Get-Content -LiteralPath $_.FullName -Encoding utf8 } |
+            Where-Object { $_.Contains("人工清桩确认结果：confirmationRequestId=$requestId，") } |
+            Select-Object -Last 1
+        if ($null -eq $line) { return '' }
+        $outcome = [regex]::Match($line, 'outcome=([^，]+)').Groups[1].Value
+        $released = [regex]::Match($line, 'stationReleased=([^，]+)').Groups[1].Value
+        "outcome=$outcome stationReleased=$released"
+    } `
+    -Until { param($v) $v -eq 'outcome=Confirmed stationReleased=True' }
+$entryGone = Wait-L2ConditionOrLast -Description 'the clearance entry is no longer offered' -Journal $journal `
+    -Criterion 'hmi-clearance-entry-gone' -TimeoutSeconds 30 `
+    -Probe { -not [bool]$onboard.ButtonAvailable('确认清桩') } `
+    -Until { param($v) $v }
 $requestPayload = ${exchange}?.Request?.Payload
 $assertions.Add(
     'G3-13-13',
-    '车载端发 ManualStationClearanceConfirmationRequested（操作员 L2-OPERATOR、publicStationFunction 为空、STATION_EMPTY、站点是那条 CHARGER 腿的站点），服务端回 Result：CONFIRMED、problem 为空、stationReleased=true；界面结果一行报 CONFIRMED_STATION_RELEASED',
+    '车载端发 ManualStationClearanceConfirmationRequested（操作员 L2-OPERATOR、publicStationFunction 为空、STATION_EMPTY、站点是那条 CHARGER 腿的站点），服务端回 Result：CONFIRMED、problem 为空、stationReleased=true；操作员被告知：操作记录里出现「服务端已确认清桩…站点已释放」、车载端日志记下本次确认 Confirmed／stationReleased=True、「确认清桩」入口收起（不读结果那一行：清桩一结束它就清空，control-server#412）',
     ($null -ne $exchange -and [string]$requestPayload.operator.operatorId -eq 'L2-OPERATOR' -and $null -eq $requestPayload.publicStationFunction -and
         [string]$requestPayload.clearedCondition -eq 'STATION_EMPTY' -and [string]$requestPayload.stationId -eq $chargerName -and
         [string]$exchange.Result.outcome -eq 'CONFIRMED' -and $null -eq $exchange.Result.problem -and [bool]$exchange.Result.stationReleased -and
-        $status -eq 'CONFIRMED_STATION_RELEASED'),
-    "L2-OPERATOR / null / STATION_EMPTY / $chargerName -> CONFIRMED / null / true / CONFIRMED_STATION_RELEASED",
+        $record -eq $true -and $logged -eq 'outcome=Confirmed stationReleased=True' -and $entryGone -eq $true),
+    "L2-OPERATOR / null / STATION_EMPTY / $chargerName -> CONFIRMED / null / true | record shown | outcome=Confirmed stationReleased=True | entry gone",
     "$(${requestPayload}?.operator?.operatorId) / $(${requestPayload}?.publicStationFunction) / $(${requestPayload}?.clearedCondition) / $(${requestPayload}?.stationId) -> " +
-        "$(${exchange}?.Result?.outcome) / $(${exchange}?.Result?.problem) / $(${exchange}?.Result?.stationReleased) / $status")
+        "$(${exchange}?.Result?.outcome) / $(${exchange}?.Result?.problem) / $(${exchange}?.Result?.stationReleased) | " +
+        "record $(if ($record -eq $true) { 'shown' } else { 'absent' }) | $logged | entry $(if ($entryGone -eq $true) { 'gone' } else { 'still offered' })")
 
 # --- 4. 服务端：只在确认之后放 211，暂停仍在，旅程收尾 --------------------------------------------------------------------
 
