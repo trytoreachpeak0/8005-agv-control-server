@@ -1,9 +1,12 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace ControlServer.Tests;
 
@@ -92,6 +95,9 @@ public sealed partial class RecoveryStateMachineG2Tests
             string response = await processor.ProcessAsync(
                 CompensationRequest("90000000-0000-4000-8000-000000000022"), state, token);
 
+            // Answered as the request already made: no refusal, which the vehicle would take as the compensation's
+            // end and drop the vector it is about to carry out (8005-agv-onboard-hmi#236).
+            Assert.Equal(string.Empty, response);
             string resent = Assert.Single(peer.Lines, line => MessageType(line) == "LoadCompensationCommand");
             Assert.Equal(authorized.CommandMessageId, MessageId(resent));
             Assert.Equal(1, await context.ProtocolOutbox.CountAsync(
@@ -171,6 +177,155 @@ public sealed partial class RecoveryStateMachineG2Tests
             row => row.MessageType == "LoadCorrectionCommand", token));
         RecoveryWorkflowRow after = Assert.Single(await context.RecoveryWorkflows.AsNoTracking().ToArrayAsync(token));
         Assert.Equal(authorized.CommandMessageId, after.CommandMessageId);
+    }
+
+    /// <summary>
+    /// Another operator pressing again is still the same request -- the operator is not one of the manifest's business
+    /// keys -- so it is answered the same way, and who asked again, and when, is written down (8005-agv-onboard-hmi#236).
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-COMPENSATE")]
+    public async Task ACompensationRequestedAgainByAnotherOperatorIsTheSameRequestAndIsAudited()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_COMPENSATE_OTHER_OPERATOR";
+        const string proof = "compensate-other-operator-proof-not-a-production-secret";
+        const string repeatMessageId = "90000000-0000-4000-8000-000000000024";
+        const string otherOperatorId = "maintenance-002";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            RecordingPeer peer = new(context);
+            EventRecordingLogger<OnboardRecoveryCoordinator> log = new();
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, new WireToGateStore(context), new FixedTimeProvider(Now), Configuration(proofVariable),
+                peer, recoveryLogger: log);
+            OnboardConnectionState state = CurrentState();
+            _ = await ReachCompensationResultAsync(processor, state, proof);
+            RecoveryWorkflowRow authorized = await context.RecoveryWorkflows.AsNoTracking().SingleAsync(token);
+            Assert.DoesNotContain(log.Entries, entry => entry.EventId.Id == 2129);
+
+            peer.Lines.Clear();
+            string response = await processor.ProcessAsync(
+                Envelope(
+                    repeatMessageId,
+                    "LoadCompensationRequested",
+                    new
+                    {
+                        recoveryActionId = ActionId,
+                        exceptionRecoverySessionId = StableGuid(RequestId, "exception-recovery-session"),
+                        demandId = DemandId,
+                        slotOperationAttemptId = AttemptId,
+                        @operator = new { operatorId = otherOperatorId, verificationMethod = "BADGE", verifiedAt = Now.AddMinutes(5) }
+                    }),
+                state,
+                token);
+
+            Assert.Equal(string.Empty, response);
+            string resent = Assert.Single(peer.Lines, line => MessageType(line) == "LoadCompensationCommand");
+            Assert.Equal(authorized.CommandMessageId, MessageId(resent));
+            Assert.Equal(1, await context.ProtocolOutbox.CountAsync(
+                row => row.MessageType == "LoadCompensationCommand", token));
+            (LogLevel Level, EventId EventId, string Message) audit = Assert.Single(
+                log.Entries, entry => entry.EventId.Id == 2129);
+            Assert.Contains(otherOperatorId, audit.Message, StringComparison.Ordinal);
+            Assert.Contains(repeatMessageId, audit.Message, StringComparison.Ordinal);
+            Assert.Contains(ActionId, audit.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// The edges of the idempotent answer above: a repeated compensation request is answered as already made only for
+    /// the same compensation, with its command bound, in a session still open. Everything else stays refused, and no
+    /// command is authorized for it (8005-agv-onboard-hmi#236). The fifth edge, another compensation of the session
+    /// awaiting its outcome, is <see cref="ASecondCompensationIsNotAuthorizedWhileTheFirstAwaitsItsOutcome"/>.
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-COMPENSATE")]
+    [InlineData("unknown-action", ServerReasonCodes.ActionNotAllowedInState)]
+    [InlineData("other-demand", ServerReasonCodes.ActionNotAllowedInState)]
+    [InlineData("other-attempt", ServerReasonCodes.ActionNotAllowedInState)]
+    [InlineData("other-session", ServerReasonCodes.ActionNotAllowedInState)]
+    [InlineData("result-reported", ServerReasonCodes.ActionNotAllowedInState)]
+    [InlineData("session-closed", ServerReasonCodes.RecoverySessionNotOpen)]
+    public async Task ARepeatedCompensationRequestOutsideTheSameOpenBoundCompensationIsStillRefused(
+        string variant,
+        string reasonCode)
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_COMPENSATE_REPEAT_REFUSED";
+        const string proof = "compensate-repeat-refused-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            RecordingPeer peer = new(context);
+            OnboardMessageProcessor processor = Processor(context, peer, proofVariable);
+            OnboardConnectionState state = CurrentState();
+            string failedResult = await ReachCompensationResultAsync(processor, state, proof);
+            Assert.NotNull((await context.RecoveryWorkflows.AsNoTracking().SingleAsync(token)).CommandMessageId);
+            switch (variant)
+            {
+                case "result-reported":
+                    Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(failedResult, state, token)));
+                    break;
+                case "session-closed":
+                    // Closed by something other than this compensation's own result, which would have moved the
+                    // workflow past AwaitingResult and be the case above.
+                    ExceptionRecoverySessionRow session = await context.ExceptionRecoverySessions.SingleAsync(token);
+                    session.State = "CLOSED";
+                    await context.SaveChangesAsync(token);
+                    break;
+            }
+
+            RecoveryWorkflowRow before = await context.RecoveryWorkflows.AsNoTracking().SingleAsync(token);
+            int commands = await context.ProtocolOutbox.CountAsync(
+                row => row.MessageType == "LoadCompensationCommand", token);
+            JsonNode request = JsonNode.Parse(CompensationRequest("90000000-0000-4000-8000-000000000023"))!;
+            JsonNode payload = request["payload"]!;
+            switch (variant)
+            {
+                case "unknown-action":
+                    payload["recoveryActionId"] = "50000000-0000-4000-8000-0000000000ff";
+                    break;
+                case "other-demand":
+                    payload["demandId"] = "20000000-0000-4000-8000-0000000000ff";
+                    break;
+                case "other-attempt":
+                    payload["slotOperationAttemptId"] = "30000000-0000-4000-8000-0000000000ff";
+                    break;
+                case "other-session":
+                    payload["exceptionRecoverySessionId"] = "60000000-0000-4000-8000-0000000000ff";
+                    break;
+            }
+
+            string response = await processor.ProcessAsync(request.ToJsonString(), state, token);
+
+            Assert.Equal("LoadCompensationRejected", MessageType(response));
+            Assert.Equal(reasonCode, FirstPayload(response).GetProperty("problem").GetProperty("reasonCode").GetString());
+            Assert.Equal(commands, await context.ProtocolOutbox.CountAsync(
+                row => row.MessageType == "LoadCompensationCommand", token));
+            RecoveryWorkflowRow after = await context.RecoveryWorkflows.AsNoTracking().SingleAsync(token);
+            Assert.Equal(before.State, after.State);
+            Assert.Equal(before.CommandMessageId, after.CommandMessageId);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
     }
 
     /// <summary>The <c>LoadCompensationRequested</c> <see cref="ReachCompensationResultAsync"/> sends, under another id.</summary>
