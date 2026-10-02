@@ -978,7 +978,12 @@ public sealed class OnboardRecoveryCoordinator(
             // the way the correction's twin is: nothing authorized again, the persisted command re-sent by
             // SendTriggeredCommandAsync. Until #236 it was refused here, and the vehicle's answer to that refusal is to
             // drop the compensation it is about to carry out. A workflow with a result is past AwaitingResult and still
-            // refused above; a session closed meanwhile is refused here, so no command goes out for it.
+            // refused above; a session closed meanwhile is refused here and nothing is authorized for it. The refusal
+            // does not stop the command going out again, though: OnboardMessageProcessor runs SendTriggeredCommandAsync
+            // after every LoadCompensationRequested, refused or not, and it re-sends the command persisted under this
+            // recoveryActionId while its outbox row is unsettled. The vehicle, having taken the refusal and dropped its
+            // vector, fails to bind that command and answers FAILED without touching IO. Pinned by
+            // ARepeatedCompensationRequestOutsideTheSameOpenBoundCompensationIsStillRefused; not changed here.
             ExceptionRecoverySessionRow session = await dbContext.ExceptionRecoverySessions.AsNoTracking().SingleAsync(
                 row => row.ExceptionRecoverySessionId == workflow.ExceptionRecoverySessionId,
                 cancellationToken).ConfigureAwait(false);

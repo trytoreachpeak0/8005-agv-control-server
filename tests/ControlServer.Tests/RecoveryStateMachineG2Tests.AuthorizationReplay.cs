@@ -252,15 +252,16 @@ public sealed partial class RecoveryStateMachineG2Tests
     [Theory]
     [Trait("IntegrationSlice", "FP-IS-07")]
     [Trait("ProtocolVector", "CV-EXCEPTION-COMPENSATE")]
-    [InlineData("unknown-action", ServerReasonCodes.ActionNotAllowedInState)]
-    [InlineData("other-demand", ServerReasonCodes.ActionNotAllowedInState)]
-    [InlineData("other-attempt", ServerReasonCodes.ActionNotAllowedInState)]
-    [InlineData("other-session", ServerReasonCodes.ActionNotAllowedInState)]
-    [InlineData("result-reported", ServerReasonCodes.ActionNotAllowedInState)]
-    [InlineData("session-closed", ServerReasonCodes.RecoverySessionNotOpen)]
+    [InlineData("unknown-action", ServerReasonCodes.ActionNotAllowedInState, false)]
+    [InlineData("other-demand", ServerReasonCodes.ActionNotAllowedInState, true)]
+    [InlineData("other-attempt", ServerReasonCodes.ActionNotAllowedInState, true)]
+    [InlineData("other-session", ServerReasonCodes.ActionNotAllowedInState, true)]
+    [InlineData("result-reported", ServerReasonCodes.ActionNotAllowedInState, false)]
+    [InlineData("session-closed", ServerReasonCodes.RecoverySessionNotOpen, true)]
     public async Task ARepeatedCompensationRequestOutsideTheSameOpenBoundCompensationIsStillRefused(
         string variant,
-        string reasonCode)
+        string reasonCode,
+        bool persistedCommandResent)
     {
         const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_COMPENSATE_REPEAT_REFUSED";
         const string proof = "compensate-repeat-refused-proof-not-a-production-secret";
@@ -312,9 +313,23 @@ public sealed partial class RecoveryStateMachineG2Tests
                     break;
             }
 
+            peer.Lines.Clear();
             string response = await processor.ProcessAsync(request.ToJsonString(), state, token);
 
             Assert.Equal("LoadCompensationRejected", MessageType(response));
+            // What actually went out besides the refusal: OnboardMessageProcessor's SendTriggeredCommandAsync runs after
+            // every LoadCompensationRequested, refused or not, and re-sends the command persisted under that
+            // recoveryActionId while its outbox row is unsettled. Not this ticket's to change; pinned so the refusal
+            // is not read as "nothing was sent".
+            string[] commandsSent = [.. peer.Lines.Where(line => MessageType(line) == "LoadCompensationCommand")];
+            if (persistedCommandResent)
+            {
+                Assert.Equal(before.CommandMessageId, MessageId(Assert.Single(commandsSent)));
+            }
+            else
+            {
+                Assert.Empty(commandsSent);
+            }
             Assert.Equal(reasonCode, FirstPayload(response).GetProperty("problem").GetProperty("reasonCode").GetString());
             Assert.Equal(commands, await context.ProtocolOutbox.CountAsync(
                 row => row.MessageType == "LoadCompensationCommand", token));
