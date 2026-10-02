@@ -981,6 +981,51 @@ public sealed class ChargingInterruptionTests
         Assert.Equal(4, fleet.Riot.Creates.Count);
     }
 
+    /// <summary>
+    /// S-d 只看紧挨着的前一个周期（#442 审查 S1）：原桩重充过一次之后，中间夹着一个以失败收尾的充电周期（这里直接写库构造：分配时刻在两者之间、
+    /// <c>CHARGING_ORDER_FAILED</c> 收尾、晚于那次重充结束），再到当前这个充满周期——它不是重充接上来的，掉回强充线以下照常原桩重充，什么也不暂停。
+    /// 单看「起算点之后有没有过重充」会把它判成第二次。
+    /// </summary>
+    [Fact]
+    public async Task ARechargeLongAgoBehindAnotherCycleDoesNotMakeThisOneASecond()
+    {
+        await using FleetFixture fleet = await IsolatingFleetAsync();
+        await RechargedOnceAndFullAgainAsync(fleet);
+        ChargingCycleRow[] cycles = await fleet.Context.Set<ChargingCycleRow>().AsNoTracking()
+            .Where(row => row.VehicleKey == KeyA).ToArrayAsync(Token);
+        ChargingCycleRow recharged = Assert.Single(cycles, row => row.EndReason == ChargingExecutionReasons.RechargedOnHeldCharger);
+        ChargingCycleRow current = Assert.Single(cycles, row => row.Phase != ChargingCyclePhases.Ended);
+        fleet.Context.Add(new ChargingCycleRow
+        {
+            CycleId = "cs407-failed-between",
+            VehicleKey = KeyA,
+            JourneyId = "charging:cs407-failed-between",
+            MapId = current.MapId,
+            StationId = current.StationId,
+            ChargerRosterVersion = current.ChargerRosterVersion,
+            ChargingPolicyVersion = current.ChargingPolicyVersion,
+            WireState = ChargingCycleWireStates.NotCharging,
+            Phase = ChargingCyclePhases.Ended,
+            AllocatedAt = recharged.AllocatedAt + ((current.AllocatedAt - recharged.AllocatedAt) / 2),
+            EndedAt = recharged.EndedAt!.Value + TimeSpan.FromMilliseconds(1),
+            EndReason = ChargingExecutionReasons.OrderFailed,
+        });
+        await fleet.Context.SaveChangesAsync(Token);
+        fleet.Context.ChangeTracker.Clear();
+
+        AtCharger(fleet, KeyA, 20, NotCharging);
+        for (int round = 0; round < 3; round++)
+        {
+            await RoundAsync(fleet);
+        }
+
+        Assert.Empty(await VehicleHoldsAsync(fleet));
+        Assert.DoesNotContain(fleet.ChargingLog.Entries, entry => entry.EventId.Id == 2277);
+        Assert.Equal(
+            ChargingExecutionReasons.RechargedOnHeldCharger,
+            (await fleet.Context.Set<ChargingCycleRow>().AsNoTracking().SingleAsync(row => row.CycleId == current.CycleId, Token)).EndReason);
+    }
+
     // ---- S-e：到桩未证实一类的码按旅程计时 -------------------------------------------------------------------------------
 
     /// <summary>
