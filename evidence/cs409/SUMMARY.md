@@ -10,6 +10,7 @@
 | `l2/red-fallback-to-any-station/` | 缺陷版本：无合格等待点时回退到登记外的站 12 | FAIL：L2-CWP-02 实际建了 30 张清桩意图；L2-CWP-03 随之红 |
 | `l2/red-1-now-before-read/` | 第一轮真实的红：判「车静止在桩上」时先取此刻再读车，读数被判不新鲜 | FAIL：等待超时，`CHARGING_CLEARANCE_VEHICLE_OFF_CHARGER`；修于 `4f9d24347` |
 | `l2/self-checks.txt` | 跑场景之前的 L2 自检（整数组返回护栏等 5 个） | 退出码都是 0 |
+| `full/full-9194f1b03-tail.txt` | 本机全量，merge `origin/fp/v2-impl`（`6281bdab`，含 cs#410）之后的 `9194f1b03` | 4120 通过、0 失败 |
 | `full/full-19ffa4cbf-tail.txt` | 本机全量，审查修复提交 `19ffa4cbf` | 4074 通过、0 失败 |
 | `full/full-9e02f41cc-tail.txt` | 本机全量，提交 `9e02f41cc` | 4070 通过、0 失败 |
 | `full/full-92585a2ee-tail.txt` | 本机全量，第一个提交 `92585a2ee` | 4068 通过、0 失败 |
