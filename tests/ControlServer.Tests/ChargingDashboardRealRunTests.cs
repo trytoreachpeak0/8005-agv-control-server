@@ -187,10 +187,10 @@ public sealed class ChargingDashboardRealRunTests
     /// <c>UNKNOWN</c>，写「电量拿不到」。分别看离线、被禁用两种，电量各压到低于和高于强制充电线。
     /// </summary>
     [Theory]
-    [InlineData(false, true, 62)]
-    [InlineData(false, true, 10)]
-    [InlineData(true, false, 62)]
-    public async Task AVehicleRiotReportsOfflineOrDisabledShowsNoBattery(bool connected, bool enabled, int battery)
+    [InlineData(false, true, 62, "CHARGING_NOT_REQUIRED")]
+    [InlineData(false, true, 10, null)]
+    [InlineData(true, false, 62, "CHARGING_NOT_REQUIRED")]
+    public async Task AVehicleRiotReportsOfflineOrDisabledShowsNoBattery(bool connected, bool enabled, int battery, string? voided)
     {
         await using FleetFixture fleet = await FleetAsync();
         fleet.Riot.BatteryByVehicle[KeyA] = battery;
@@ -208,6 +208,19 @@ public sealed class ChargingDashboardRealRunTests
             Assert.Equal("UNKNOWN", allocation.GetProperty("batteryState").GetString());
             Assert.Contains("电量拿不到", html, StringComparison.Ordinal);
             Assert.DoesNotContain(battery + "%", html, StringComparison.Ordinal);
+
+            // 增量审查 S2'：按那份电量得出的结论不作数——不当结论显示，原码只在括号里。
+            string? reason = allocation.GetProperty("reason").GetString();
+            Assert.False(reason is not null && ChargingDashboardDescriptions.BatteryDerivedReasons.Contains(reason), reason);
+            Assert.Equal(voided, allocation.GetProperty("voidedReason").GetString());
+            if (voided is not null)
+            {
+                Assert.Null(reason);
+                Assert.Equal($"{ChargingDashboardDescriptions.BatteryVerdictVoid}（原结论 {voided}）",
+                    allocation.GetProperty("reasonDescription").GetString());
+                Assert.Contains($"{ChargingDashboardDescriptions.BatteryVerdictVoid}（原结论 {voided}）", html, StringComparison.Ordinal);
+            }
+            Assert.DoesNotContain("不需要充电", html, StringComparison.Ordinal);
         }
     }
 

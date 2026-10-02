@@ -94,6 +94,11 @@ public sealed class ChargingVehicleCard : IDashboardCard
         {
             return note;
         }
+        if (StationHoldingRendering.Str(allocation, "voidedReason") is not null)
+        {
+            // The battery this verdict rests on was not current: the server's sentence carries the original code in brackets.
+            return StationHoldingRendering.Str(allocation, "reasonDescription") ?? "";
+        }
         string reason = ChargingCardRendering.Coded(allocation, "reason", "reasonDescription");
         return StationHoldingRendering.Str(allocation, "detail") is { Length: > 0 } detail ? $"{reason}。细节：{detail}" : reason;
     }

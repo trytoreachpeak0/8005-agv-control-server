@@ -212,6 +212,19 @@ internal static class ChargingDashboardDescriptions
                 "这辆车的充电策略里强制充电线不高于服务端的救命告警线：这一版策略不能用，不分桩",
         };
 
+    /// <summary>
+    /// 按电量下的结论（<c>QualifyAsync</c> 的电量一段：不需要充电、正在充电、强制充电）。这一轮的电量观测不新鲜时它们不作数（增量审查 S2'）。
+    /// </summary>
+    internal static IReadOnlySet<string> BatteryDerivedReasons { get; } = new HashSet<string>(StringComparer.Ordinal)
+    {
+        ChargingAllocationReasons.NotRequired,
+        VehicleDynamicFactsCriterion.BatteryPolicyNotSatisfiedReason,
+        Runtime.Dispatch.DispatchReasonCodes.MandatoryChargeRequired,
+    };
+
+    /// <summary>观测不新鲜时，按电量下的结论那一格写的话；原码另放括号里。</summary>
+    internal const string BatteryVerdictVoid = "电量拿不到，这一轮按电量得出的结论不作数";
+
     /// <summary>一个排队原因码的中文说明：充电分配自己的码、借用的派车链判定码，或派车积压卡片那一份。没有说明时答空。</summary>
     internal static string? DescribeAllocationReason(string? code) =>
         code is null ? null

@@ -83,6 +83,11 @@ internal sealed class ChargingVehiclesQueryEndpoint : IDashboardQueryEndpoint
         };
     }
 
+    /// <summary>这一轮的电量观测不新鲜（登记为空），而结论是按电量下的。</summary>
+    private static bool BatteryVerdictVoid(ChargingBoardObservation? observed, ChargingBoardVerdict? verdict) =>
+        observed is { BatteryPercent: null } && verdict is not null &&
+        ChargingDashboardDescriptions.BatteryDerivedReasons.Contains(verdict.Reason);
+
     private static object Vehicle(ChargingDashboardFacts facts, FleetVehicle vehicle, ChargingBoardPass? pass, string? notRunning)
     {
         VehiclePurposeClaimRow? claim = facts.Claims.GetValueOrDefault(vehicle.VehicleKey);
@@ -112,9 +117,14 @@ internal sealed class ChargingVehiclesQueryEndpoint : IDashboardQueryEndpoint
                 batteryStateDescription = notEvaluated is null && observed is not null
                     ? ChargingDashboardDescriptions.BatteryStateProjections.GetValueOrDefault(observed.BatteryState)
                     : null,
-                reason = notEvaluated is null ? verdict?.Reason : null,
+                // 增量审查 S2'：观测不新鲜（RIoT 报离线、被禁用，电量登记为空）时，按电量得出的结论（不需要充电、强制充电一类）是从那份
+                // 新鲜度未知的电量推出来的，不当结论显示：原码只放进 voidedReason 与说明的括号里。分配判定本身不改。
+                reason = notEvaluated is null && !BatteryVerdictVoid(observed, verdict) ? verdict?.Reason : null,
+                voidedReason = notEvaluated is null && BatteryVerdictVoid(observed, verdict) ? verdict!.Reason : null,
                 reasonDescription = notEvaluated is null && verdict is not null
-                    ? ChargingDashboardDescriptions.DescribeAllocationReason(verdict.Reason) ?? "服务端记下的原因没有中文说明，请报开发"
+                    ? BatteryVerdictVoid(observed, verdict)
+                        ? $"{ChargingDashboardDescriptions.BatteryVerdictVoid}（原结论 {verdict.Reason}）"
+                        : ChargingDashboardDescriptions.DescribeAllocationReason(verdict.Reason) ?? "服务端记下的原因没有中文说明，请报开发"
                     : null,
                 detail = notEvaluated is null ? verdict?.Detail : null,
             },
