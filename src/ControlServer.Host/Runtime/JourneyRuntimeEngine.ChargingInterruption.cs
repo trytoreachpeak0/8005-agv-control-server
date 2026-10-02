@@ -43,8 +43,10 @@ public sealed partial class JourneyRuntimeEngine
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>中断</b>：电量低于本周期冻结的完成阈值，<c>batteryState</c> 读得到且不是 <c>CHARGING</c>，并且这样的新鲜读数<b>连续两次</b>——第二次与第一次的
-    /// 观测时刻往前走了、相隔不超过 <c>JourneyRuntime:MaximumEvidenceAge</c>，中间没有读到 <c>CHARGING</c>、没有遥测缺口。第一次只开始观察。
+    /// <b>中断</b>：电量低于本周期冻结的完成阈值，<c>batteryState</c> 读得到且不是 <c>CHARGING</c>，并且这样的新鲜读数<b>不间断地持续</b>
+    /// <c>JourneyRuntime:ChargingInterruptionConfirmAfter</c>（默认 60 秒）——从第一次读到起，每两个相邻读数的观测时刻往前走、相隔不超过
+    /// <c>JourneyRuntime:MaximumEvidenceAge</c>，中间没有读到 <c>CHARGING</c>、没有遥测缺口，直到某一个读数距第一个不少于那么久。第一次只开始观察
+    /// （#442 审查 S3a：只隔一个轮询间隔的两次读数可能是 RIoT 的同一份快照）。
     /// 读不到电量、读数过期、读不到车、<c>batteryState</c> 为空都<b>不是</b>「不再是 <c>CHARGING</c>」——那是 <c>REQ-0287</c> 的暂停观察，打断这串读数。
     /// 本服务端从不在充满前让车停（离桩只在它取得下一用途之后，而充满前它取不得），所以不用另判「是不是我们让它停的」。
     /// 同一轮电量已达阈值的，调用方先判了充满：充满优先，那不是中断。
@@ -81,7 +83,10 @@ public sealed partial class JourneyRuntimeEngine
                 board.BreakSampleRun(interruptionRun);
                 return;
             }
-            if (!board.ContinuesSampleRun(interruptionRun, vehicle.ObservedAt, runtimeOptions.MaximumEvidenceAge))
+            // Review S3a of #442: two reads one poll apart can be one RIoT snapshot; the stop has to have lasted.
+            if (!board.ContinuesSampleRun(interruptionRun, vehicle.ObservedAt, runtimeOptions.MaximumEvidenceAge) ||
+                board.SampleRunStart(interruptionRun) is not { } stoppedSince ||
+                vehicle.ObservedAt - stoppedSince < runtimeOptions.ChargingInterruptionConfirmAfter)
             {
                 return;
             }
@@ -89,7 +94,7 @@ public sealed partial class JourneyRuntimeEngine
                     runtime, stop, intent, cycle, vehicle, ChargingStationHoldTriggers.InterruptionConfirmed,
                     string.Create(
                         CultureInfo.InvariantCulture,
-                        $"batteryState {vehicle.BatteryState} twice in a row at {battery}%, below the completion threshold {policy.ChargingCompletionThresholdPercent}%"),
+                        $"batteryState {vehicle.BatteryState} without a break from {stoppedSince:O} to {vehicle.ObservedAt:O} at {battery}%, below the completion threshold {policy.ChargingCompletionThresholdPercent}%"),
                     now, cancellationToken)
                 .ConfigureAwait(false);
             return;

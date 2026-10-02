@@ -112,14 +112,33 @@ public sealed class ChargingAllocationBoard
                 return false;
             }
             _sampleRun[cycleId] = observedAt;
-            return observedAt - previous <= maxGap;
+            bool continuous = observedAt - previous <= maxGap;
+            if (!continuous)
+            {
+                _sampleRunStart[cycleId] = observedAt;
+            }
+            return continuous;
         }
         _sampleRun[cycleId] = observedAt;
+        _sampleRunStart[cycleId] = observedAt;
         return false;
     }
 
     /// <summary>电量遥测断了（读不到、过期）或周期已不在充电：下一个新鲜样本重新开始观察。</summary>
-    public void BreakSampleRun(string cycleId) => _sampleRun.TryRemove(cycleId, out _);
+    public void BreakSampleRun(string cycleId)
+    {
+        _sampleRun.TryRemove(cycleId, out _);
+        _sampleRunStart.TryRemove(cycleId, out _);
+    }
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTimeOffset> _sampleRunStart =
+        new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// 这一串连续样本的第一个样本的观测时刻（control-server#407：中断要持续够久才算）；没有在记的串答空。同一份读数重读不改它，断开之后的第一个样本重新记。
+    /// </summary>
+    public DateTimeOffset? SampleRunStart(string key) =>
+        _sampleRunStart.TryGetValue(key, out DateTimeOffset start) ? start : null;
 
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTimeOffset> _firstObserved =
         new(StringComparer.Ordinal);
@@ -351,7 +370,8 @@ public sealed class ChargingAllocator(
             new EventId(2277, nameof(LogRepeatedRecharge)),
             "Charger {MapId}/{StationId}: vehicle {VehicleKey} is below its mandatory charge line again ({Battery}%) after it " +
             "was already recharged once on this charger without doing any work in between. This counts as no charging " +
-            "progress (control-server#407 S-d): it is not charged on this charger again and is sent to no other charger. " +
+            "progress on the vehicle's side (control-server#407 S-d): it is not charged on this charger again and is sent to no " +
+            "other charger. " +
             "{Outcome} The vehicle stays where it is; someone has to look at it.");
 
     private readonly JourneyRuntimeOptions _runtime = runtimeOptions.Value;
@@ -898,7 +918,7 @@ public sealed class ChargingAllocator(
         }
 
         // control-server#407 S-d: a second recharge on the charger it never left is no progress, not another recharge.
-        if (await RechargedOnHeldChargerBeforeAsync(candidate.Vehicle, cancellationToken).ConfigureAwait(false))
+        if (await RechargedOnHeldChargerBeforeAsync(candidate.Vehicle, cycle, cancellationToken).ConfigureAwait(false))
         {
             await PauseForRepeatedRechargeAsync(held, cycle, candidate, cancellationToken).ConfigureAwait(false);
             return false;
@@ -917,21 +937,30 @@ public sealed class ChargingAllocator(
     }
 
     /// <summary>
-    /// 这辆车自最近一趟非充电旅程之后、自最近一次充电资格恢复与人工充电等待解除之后，是否已经在持有的桩上原桩重充过一次
-    /// （<see cref="ChargingExecutionReasons.RechargedOnHeldCharger"/>，control-server#407 S-d）。
+    /// 这辆车持有的这个充满周期，本身是不是一次原桩重充接上来的（<see cref="ChargingExecutionReasons.RechargedOnHeldCharger"/>，control-server#407 S-d）：
+    /// 按分配时刻排，它前面紧挨着的那个周期以原桩重充收尾，且那次收尾晚于起算点。是，则这一次就是「第二次原桩重充」。
     /// </summary>
     /// <remarks>
-    /// 「窗口」是这辆车没离开过桩、没做过别的事的这一段：中间做过别的活，下一次重充是新的一段；有人恢复过它的资格或解除过等待，那个人已经看过它。
-    /// 时刻在客户端比（SQLite 不比较 <see cref="DateTimeOffset"/>）。
+    /// <para>
+    /// 「窗口」是车一直没离开过桩、没做过别的事的这一段。只看紧挨着的前一个周期，所以车离开过桩、经正常分配链新承诺了一趟充电（前一个周期以离桩、
+    /// 清桩、失败等收尾），回到桩上的第一次原桩重充不算第二次（#442 审查 S1 的探针）。起算点另外再取：最近一趟非充电旅程、最近一次资格恢复、
+    /// 最近一次人工充电等待解除、最近一次离桩释放、最近一次清桩完成——这些之后，那个人或那次离开已经把旧账了结了。
+    /// </para>
+    /// <para>时刻在客户端比（SQLite 不比较 <see cref="DateTimeOffset"/>）。</para>
     /// </remarks>
-    private async Task<bool> RechargedOnHeldChargerBeforeAsync(FleetVehicle fleetVehicle, CancellationToken cancellationToken)
+    private async Task<bool> RechargedOnHeldChargerBeforeAsync(
+        FleetVehicle fleetVehicle, ChargingCycleRow held, CancellationToken cancellationToken)
     {
         string vehicleKey = fleetVehicle.VehicleKey;
-        DateTimeOffset?[] recharged = await dbContext.Set<ChargingCycleRow>().AsNoTracking()
-            .Where(row => row.VehicleKey == vehicleKey && row.EndReason == ChargingExecutionReasons.RechargedOnHeldCharger)
-            .Select(row => row.EndedAt)
+        var cycles = await dbContext.Set<ChargingCycleRow>().AsNoTracking()
+            .Where(row => row.VehicleKey == vehicleKey && row.CycleId != held.CycleId)
+            .Select(row => new { row.AllocatedAt, row.EndedAt, row.EndReason })
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
-        if (recharged.Length == 0)
+        var previous = cycles
+            .Where(row => row.AllocatedAt < held.AllocatedAt)
+            .OrderByDescending(row => row.AllocatedAt)
+            .FirstOrDefault();
+        if (previous is not { EndReason: ChargingExecutionReasons.RechargedOnHeldCharger, EndedAt: { } rechargedAt })
         {
             return false;
         }
@@ -952,26 +981,35 @@ public sealed class ChargingAllocator(
             .Where(row => row.VehicleKey == vehicleKey && row.ReleasedAt != null)
             .Select(row => row.ReleasedAt)
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        DateTimeOffset?[] cleared = await dbContext.Set<StationClearanceRow>().AsNoTracking()
+            .Where(row => row.VehicleKey == vehicleKey && row.CompletedAt != null)
+            .Select(row => row.CompletedAt)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        IEnumerable<DateTimeOffset> departed = cycles
+            .Where(row => row.EndReason == ChargingExecutionReasons.Departed && row.EndedAt is not null)
+            .Select(row => row.EndedAt!.Value);
         DateTimeOffset since = otherWork.Concat(recovered).Concat(released.Select(at => at!.Value))
+            .Concat(cleared.Select(at => at!.Value)).Concat(departed)
             .DefaultIfEmpty(DateTimeOffset.MinValue).Max();
-        return recharged.Any(at => at is { } endedAt && endedAt > since);
+        return rechargedAt > since;
     }
 
     /// <summary>
-    /// 第二次原桩重充（control-server#407 S-d）：不交桩、不在这个桩上再充、不分别的桩。隔离的出口可用时（<see cref="StationClearanceExit.IsolationUnavailable"/>）
-    /// 同一次保存写桩的分配暂停与车的充电资格暂停（触发来源 <see cref="ChargingStationHoldTriggers.NoProgressConfirmed"/>，根因 <c>UNKNOWN</c>，
-    /// 幂等键按那一个充满周期）；不可用时只告警。两种情况下车都留在原地，桩仍是那个充满周期的占用，由离桩三项确认或人工清桩放开。告警每个周期一次。
+    /// 第二次原桩重充（control-server#407 S-d）：不交桩、不在这个桩上再充、不分别的桩。Host 的恢复入口可用时只写<b>车的充电资格暂停</b>
+    /// （原因 <see cref="VehicleChargingEligibilityHoldReasons.NoProgressConfirmed"/>，幂等键按那一个充满周期），<b>不暂停桩</b>；不可用时只告警。
+    /// 告警每个周期一次。车留在原地，桩仍是那个充满周期的占用，由离桩三项确认或人工清桩放开。
     /// </summary>
+    /// <remarks>
+    /// 只暂停车（#442 审查 S1）：那个周期已经充满，说明桩能正常出电，问题在车这一侧——它什么活都没干就掉回强充线以下两次。现场只有一个桩，连桩一起停就停掉了
+    /// 整个现场的充电。车的出口是 Host 的车辆资格恢复入口，所以只要它可用；不需要清桩出口——车没进清桩中。
+    /// </remarks>
     private async Task PauseForRepeatedRechargeAsync(
         StationExclusivityRow held,
         ChargingCycleRow cycle,
         ChargingCandidate candidate,
         CancellationToken cancellationToken)
     {
-        string trigger = ChargingStationHoldTriggers.NoProgressConfirmed;
-        string? unavailable = clearanceExit is null
-            ? StationClearanceExit.NoEntry + "," + StationClearanceExit.NoRecoveryEntry
-            : clearanceExit.IsolationUnavailable();
+        string? unavailable = clearanceExit is null ? StationClearanceExit.NoRecoveryEntry : clearanceExit.VehicleRecoveryUnavailable();
         RiotVehicleObservation vehicle = candidate.Facts.Vehicle;
         DateTimeOffset now = timeProvider.GetUtcNow();
         string battery = vehicle.BatteryPercent?.ToString(CultureInfo.InvariantCulture) ?? "unread";
@@ -981,57 +1019,32 @@ public sealed class ChargingAllocator(
         string outcome;
         if (unavailable is null)
         {
-            string dedupKey = "REPEATED_RECHARGE|" + cycle.CycleId;
-            ChargingStationAllocationHoldRow stationHold = new()
-            {
-                HoldId = JourneyPlanBuilder.StableGuid(cycle.CycleId, "repeated-recharge-station-hold"),
-                IdempotencyKey = JourneyPlanBuilder.StableGuid(dedupKey, "charging-station-hold"),
-                Trigger = trigger,
-                RootCause = ChargingHoldRootCauses.Unknown,
-                MapId = held.MapId,
-                StationId = held.StationId,
-                ChargerRosterVersion = cycle.ChargerRosterVersion,
-                VehicleKey = held.VehicleKey,
-                ReservationRecordId = held.RecordId,
-                CycleId = cycle.CycleId,
-                UpperId = cycle.UpperId,
-                ArrivedAt = cycle.ArrivedAt,
-                ChargingStartedAt = cycle.FirstChargingSeenAt,
-                ConfirmedAt = now,
-                HeldAt = now,
-                RawBatteryJson = System.Text.Json.JsonSerializer.Serialize(
-                    new { vehicle.BatteryPercent, vehicle.BatteryState, vehicle.ObservedAt }),
-                EvidenceReference = evidence,
-            };
             VehicleChargingEligibilityHoldRow vehicleHold = new()
             {
                 HoldId = JourneyPlanBuilder.StableGuid(cycle.CycleId, "repeated-recharge-vehicle-hold"),
-                IdempotencyKey = JourneyPlanBuilder.StableGuid(dedupKey, "vehicle-charging-eligibility-hold"),
+                IdempotencyKey = JourneyPlanBuilder.StableGuid("REPEATED_RECHARGE|" + cycle.CycleId, "vehicle-charging-eligibility-hold"),
                 VehicleKey = held.VehicleKey,
                 CycleId = cycle.CycleId,
-                Reason = trigger,
+                Reason = VehicleChargingEligibilityHoldReasons.NoProgressConfirmed,
                 HeldAt = now,
                 EvidenceReference = evidence,
             };
-            dbContext.Add(stationHold);
             dbContext.Add(vehicleHold);
             try
             {
-                // One save: both pauses, or neither.
                 await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             }
             catch
             {
                 // Nothing of this attempt may ride along with a later save of the round.
-                dbContext.Entry(stationHold).State = EntityState.Detached;
                 dbContext.Entry(vehicleHold).State = EntityState.Detached;
                 throw;
             }
-            outcome = "The charger's allocation and the vehicle's charging eligibility are both paused (NO_PROGRESS_CONFIRMED, root cause UNKNOWN).";
+            outcome = "The vehicle's charging eligibility is paused (NO_PROGRESS_CONFIRMED, root cause UNKNOWN); the charger is not paused -- the cycle before charged it full.";
         }
         else
         {
-            outcome = $"ALARM ONLY, NOT ISOLATED: nothing is paused because the way back from a pause is not available ({unavailable}).";
+            outcome = $"ALARM ONLY, NOT ISOLATED: the vehicle is not paused because the way back from a pause is not available ({unavailable}).";
         }
 
         if (board.FirstTime("repeated-recharge:" + cycle.CycleId))

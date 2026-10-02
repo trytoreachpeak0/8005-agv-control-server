@@ -62,6 +62,11 @@ public sealed class StationClearanceExit(
         return _hostEntryOffered ? exit : exit is null ? NoRecoveryEntry : exit + "," + NoRecoveryEntry;
     }
 
+    /// <summary>
+    /// 只暂停车的充电资格（S-d）此刻能不能写：车的唯一出口是 Host 的车辆资格恢复入口，可用答空，否则答 <see cref="NoRecoveryEntry"/>。
+    /// </summary>
+    public string? VehicleRecoveryUnavailable() => _hostEntryOffered ? null : NoRecoveryEntry;
+
     /// <summary>为什么不可用（一个或两个原因码，逗号分隔）；可用答空。</summary>
     public string? Unavailable()
     {

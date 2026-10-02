@@ -2,7 +2,7 @@
 
 <#
 充电中断即两侧隔离（批次9-09，control-server#407；REQ-0285、REQ-0286）：压到强制充电线以下 → 分配、去桩、到桩、CHARGING → 假 RIoT 在 45%
-停止充电（完成阈值 80 之前，没有任何离桩单）→ 服务端连续两次读到 NO_CHARGE，形成中断确认：桩的分配暂停与车的充电资格暂停同一次写下，
+停止充电（完成阈值 80 之前，没有任何离桩单）→ 服务端读到 NO_CHARGE 不间断地持续 60 秒（JourneyRuntime:ChargingInterruptionConfirmAfter 的默认值），形成中断确认：桩的分配暂停与车的充电资格暂停同一次写下，
 根因 UNKNOWN，车的用途转 CLEARING_MAINTENANCE，周期进清桩中（UNABLE_TO_CHARGE），车留在原地。
 
 **装置**：单车停在关卡 210（节点 5）。场景把站 211 登记成假 RIoT 的充电桩（每 2 秒涨 2%），经 FieldOps 的 import-charger-roster 导入名册，
@@ -125,7 +125,7 @@ $null = $riot.Command('Put', "orders/$upperId", @{ orderState = 5 })
 # --- 2. 中断：形成、两侧同时暂停、进清桩中 --------------------------------------------------------------------------
 
 $formed = Wait-L2Condition -Description 'the interruption was confirmed and both sides paused' `
-    -Journal $journal -Criterion 'interruption-isolated' -TimeoutSeconds 120 `
+    -Journal $journal -Criterion 'interruption-isolated' -TimeoutSeconds 240 `
     -Probe {
         $cycle = Get-Cycle
         "$(Get-Pauses) | $(${cycle}?.Phase) $(${cycle}?.WireState)"

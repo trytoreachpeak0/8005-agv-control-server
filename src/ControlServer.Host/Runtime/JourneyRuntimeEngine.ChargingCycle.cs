@@ -415,6 +415,10 @@ public sealed partial class JourneyRuntimeEngine
             }
             else
             {
+                // From no code, or a code of another kind: a new episode of missing evidence, told about afresh. Done here,
+                // where an episode starts, rather than on every path that clears or replaces one of these codes -- the review
+                // of #442 (S2) found two of those that did not (charging starting, CHARGER_NOT_ENGAGED).
+                dispatchRound.Charging.Board.Unsay(EvidenceMissingKey(runtime.JourneyId));
                 runtime.SetBlockReason(code, now);
             }
             runtime.UpdatedAt = now;
