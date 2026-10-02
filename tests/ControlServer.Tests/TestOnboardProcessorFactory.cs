@@ -21,7 +21,8 @@ internal static class TestOnboardProcessorFactory
         JourneyRuntimeOptions? runtimeOptions = null,
         ILogger<OnboardMessageProcessor>? logger = null,
         ILogger<OnboardRecoveryCoordinator>? recoveryLogger = null,
-        ControlServer.Host.Runtime.Charging.ManualStationClearance? stationClearance = null)
+        ControlServer.Host.Runtime.Charging.ManualStationClearance? stationClearance = null,
+        ControlServer.Host.Runtime.Charging.UnableToChargeFieldConfirmations? fieldConfirmations = null)
     {
         OnboardJourneyPublisher publisher = new(store, peer ?? new SilentPeer(), timeProvider);
         SlotConfigurationActivationDispatcher activationDispatcher = ActivationDispatcher(context, publisher);
@@ -37,7 +38,8 @@ internal static class TestOnboardProcessorFactory
             configuration,
             Options.Create(runtimeOptions ?? new JourneyRuntimeOptions()),
             logger ?? NullLogger<OnboardMessageProcessor>.Instance,
-            stationClearance: stationClearance);
+            stationClearance: stationClearance,
+            fieldConfirmations: fieldConfirmations);
     }
 
     /// <summary>

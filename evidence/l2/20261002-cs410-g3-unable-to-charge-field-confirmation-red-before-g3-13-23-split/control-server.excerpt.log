@@ -1,0 +1,37 @@
+# Excerpt of logs/control-server.out.log (16:27:46-16:27:52 local, non-SQL, non-HTTP lines; original line numbers kept).
+13837: [16:27:46 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 5.9039 ms
+14317: [16:27:47 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 4.9476 ms
+14387: [16:27:47 WRN] UNABLE_TO_CHARGE_FIELD_CONFIRMED: L2-OPERATOR (R-11) confirmed on site that vehicle AGV-L2-001 could not charge at charger ����1 (CONNECTION_FAILED); charging policy decision MANUAL_CHARGING_HOLD. The charger is paused for all 8005 allocation (root cause UNKNOWN) and the vehicle stays where it is until a person moves it off and confirms the charger clear.
+14875: [16:27:48 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 6.0483 ms
+15252: [16:27:49 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 4.9211 ms
+15629: [16:27:50 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 5.3355 ms
+15985: [16:27:51 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 9.8487 ms
+16362: [16:27:52 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 4.5832 ms
+
+# The decision insert and the outbox inserts that follow it (SQL, truncated to 400 characters a line).
+--- lines 14380-14386
+14380: LIMIT 2
+14381: [16:27:47 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 10), @p2='?' (Size = 4), @p3='?' (Size = 20), @p4='?' (DbType = DateTimeOffset), @p5='?' (DbType = DateTimeOffset), @p6='?' (Size = 17), @p7='?' (Size = 11), @p8='?' (Size = 9), @p9='?', @p10='?', @p11='?', @p12='?' (Size = 64), @p13='?' (Size = 36), @p14='?' (DbType = Int64), @p15='?' (Size = 7), @p16='?' (D
+14382: INSERT INTO "UnableToChargeFieldConfirmations" ("ConfirmationRequestId", "AgvId", "ChargerStationId", "ChargingPolicyDecision", "DecidedAt", "ObservedAt", "ObservedCondition", "OperatorId", "Outcome", "ProblemDisplayMessage", "ProblemFieldPath", "ProblemReasonCode", "RequestContentHash", "RequestMessageId", "SessionGeneration", "VerificationMethod", "VerifiedAt")
+14383: VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10, @p11, @p12, @p13, @p14, @p15, @p16);
+14384: [16:27:47 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 32), @p1='?' (Size = 35), @p2='?' (Size = 34), @p3='?' (Size = 40), @p4='?' (Size = 4), @p5='?' (Size = 671), @p6='?' (Size = 6), @p7='?' (Size = 18), @p8='?' (Size = 9), @p9='?' (DbType = DateTimeOffset), @p10='?' (DbType = Int64), @p11='?', @p12='?' (DbType = Int64)], CommandType='Text', CommandTimeout='30']
+14385: INSERT INTO "AdministratorAuditRecords" ("AuditRecordId", "Action", "ActorAttribution", "ActorIdentity", "ClaimedAdministratorRole", "DetailJson", "ObjectId", "ObjectKind", "Outcome", "RecordedAt", "RecordedAtUtcTicks", "SnapshotId", "Version")
+14386: VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10, @p11, @p12);
+
+--- lines 14732-14738
+14732: [16:27:47 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (DbType = DateTimeOffset), @p2='?' (DbType = DateTimeOffset), @p3='?' (DbType = DateTimeOffset), @p4='?' (Size = 24), @p5='?' (Size = 654)], CommandType='Text', CommandTimeout='30']
+14733: INSERT INTO "ProtocolOutbox" ("MessageId", "AcknowledgedAt", "CreatedAt", "FencedAt", "MessageType", "PayloadJson")
+14734: VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+14735: [16:27:47 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (DbType = DateTimeOffset), @p2='?' (DbType = DateTimeOffset), @p3='?' (DbType = DateTimeOffset), @p4='?' (Size = 28), @p5='?' (Size = 687)], CommandType='Text', CommandTimeout='30']
+14736: INSERT INTO "ProtocolOutbox" ("MessageId", "AcknowledgedAt", "CreatedAt", "FencedAt", "MessageType", "PayloadJson")
+14737: VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+14738: [16:27:47 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 10), @p0='?' (DbType = Int64)], CommandType='Text', CommandTimeout='30']
+
+--- lines 14735-14741
+14735: [16:27:47 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (DbType = DateTimeOffset), @p2='?' (DbType = DateTimeOffset), @p3='?' (DbType = DateTimeOffset), @p4='?' (Size = 28), @p5='?' (Size = 687)], CommandType='Text', CommandTimeout='30']
+14736: INSERT INTO "ProtocolOutbox" ("MessageId", "AcknowledgedAt", "CreatedAt", "FencedAt", "MessageType", "PayloadJson")
+14737: VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+14738: [16:27:47 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 10), @p0='?' (DbType = Int64)], CommandType='Text', CommandTimeout='30']
+14739: UPDATE "VehicleSnapshotRevisions" SET "VehicleBusinessRevision" = @p0
+14740: WHERE "AgvId" = @p1
+14741: RETURNING 1;
