@@ -122,19 +122,20 @@ public sealed partial class JourneyRuntimeEngine
             return ChargingExecutionReasons.ClearanceMoveEnded;
         }
 
-        DateTimeOffset now = timeProvider.GetUtcNow();
         RiotVehicleObservation? vehicle = await ReadVehicleOrNullAsync(runtime.VehicleKey, cancellationToken).ConfigureAwait(false);
+        // Taken after the read: a reading stamped after a "now" taken before it is not fresh (StandsStillAt wants ObservedAt <= now).
+        DateTimeOffset now = timeProvider.GetUtcNow();
         if (vehicle is null || !StandsStillAt(vehicle, runtime, cycle.StationId, now) ||
             string.Equals(vehicle.BatteryState, BatteryEligibility.ChargingBatteryState, StringComparison.Ordinal))
         {
-            NotStarted(runtime, "the vehicle is not read standing still on its charger, not charging");
+            NotStarted(runtime, "the vehicle is not read standing still on its charger, not charging", Describe(vehicle, now));
             return ChargingExecutionReasons.ClearanceVehicleOffCharger;
         }
 
         IReadOnlyList<string> gaps = await IdleReturnDepartureGapsAsync(runtime, cancellationToken).ConfigureAwait(false);
         if (gaps.Count > 0)
         {
-            NotStarted(runtime, "pre-departure gate: " + string.Join(", ", gaps));
+            NotStarted(runtime, "pre-departure gate: " + string.Join(", ", gaps), null);
             return ChargingExecutionReasons.ClearanceDepartureNotProven;
         }
 
@@ -167,7 +168,7 @@ public sealed partial class JourneyRuntimeEngine
             .ConfigureAwait(false);
         if (outcome != ClearanceWaitingPointCommitOutcome.Committed)
         {
-            NotStarted(runtime, $"the commitment to waiting point {point.StationId} was refused ({outcome})");
+            NotStarted(runtime, $"the commitment to waiting point {point.StationId} was refused ({outcome})", null);
             return waiting;
         }
 
@@ -839,12 +840,22 @@ public sealed partial class JourneyRuntimeEngine
         }
     }
 
+    /// <summary>车辆读数里出发前提读的那几样，给日志用。</summary>
+    private static string Describe(RiotVehicleObservation? vehicle, DateTimeOffset now) =>
+        vehicle is null
+            ? "unread"
+            : string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"connected={vehicle.Connected} enabled={vehicle.Enabled} proc={vehicle.ProcState} map={vehicle.CurrentMap} " +
+                $"station={vehicle.CurrentStationId} speed={vehicle.Speed} lock={vehicle.LockStatus} task={vehicle.OrderTaskId} " +
+                $"battery={vehicle.BatteryState} age={(now - vehicle.ObservedAt).TotalSeconds:0.#}s");
+
     /// <summary>这一轮没出发的理由，理由变了才记一条（每趟旅程）。</summary>
-    private void NotStarted(JourneyRuntimeRow runtime, string why)
+    private void NotStarted(JourneyRuntimeRow runtime, string why, string? detail)
     {
         if (dispatchRound.Charging.Board.FirstTime($"clearance-not-started:{runtime.JourneyId}:{why}"))
         {
-            LogClearanceMoveNotStarted(logger, runtime.VehicleKey, runtime.JourneyId, why, null);
+            LogClearanceMoveNotStarted(logger, runtime.VehicleKey, runtime.JourneyId, detail is null ? why : $"{why} ({detail})", null);
         }
     }
 }
