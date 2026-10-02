@@ -1,0 +1,12 @@
+# Excerpt of logs\onboard-app\agv-20261002.log, lines 13-23 (line 23 is the result the onboard received).
+13: 2026-10-02T18:04:44.4598197+08:00	Information	WireToGateBusinessService	重连后检查授权请求：generation=1，vector=none/none，commandBound=False，结论=无待授权的补偿或修正。
+14: 2026-10-02T18:04:44.4616799+08:00	Information	WireToGateSessionService	上层会话已建立：generation=1，readiness=Ready。
+15: 2026-10-02T18:04:44.5342095+08:00	Information	WireToGateSessionClient	收到SessionReadiness：messageId=1c110229-a70e-4d88-b175-8fa83c659749，generation=1，readiness=READY，reasonCodes=[]，acceptedSafetyStateVersion=2。
+16: 2026-10-02T18:04:44.5349653+08:00	Information	WireToGateSessionClient	会话状态发布：source=SessionReadiness，connected=True，generation=1，readiness=Ready，reasonCodes=[]，safetyStateVersion=2。
+17: 2026-10-02T18:04:44.5464666+08:00	Information	WireToGateSessionClient	会话状态发布：source=SafetyStateChanged-ack，connected=True，generation=1，readiness=Ready，reasonCodes=[]，safetyStateVersion=2。
+18: 2026-10-02T18:05:04.6164671+08:00	Information	WireToGateSessionClient	收到SessionReadiness：messageId=d6acc87e-4577-4fb7-8b31-9835adb129d6，generation=1，readiness=RECOVERY_REQUIRED，reasonCodes=[DEPARTURE_UNSAFE]，acceptedSafetyStateVersion=3。
+19: 2026-10-02T18:05:04.6172954+08:00	Information	WireToGateSessionClient	会话状态发布：source=SessionReadiness，connected=True，generation=1，readiness=RecoveryRequired，reasonCodes=[DEPARTURE_UNSAFE]，safetyStateVersion=3。
+20: 2026-10-02T18:05:04.6180230+08:00	Information	WireToGateBusinessService	判恢复入口：generation=1，readiness=RecoveryRequired，reasonCodes=[DEPARTURE_UNSAFE]，subject=none，recoveryVector=none，recoverySession=none，faultCargoHandoff=False。
+21: 2026-10-02T18:05:04.6268528+08:00	Information	WireToGateSessionClient	会话状态发布：source=SafetyStateChanged-ack，connected=True，generation=1，readiness=RecoveryRequired，reasonCodes=[DEPARTURE_UNSAFE]，safetyStateVersion=3。
+22: 2026-10-02T18:05:12.5469045+08:00	Information	WireToGateBusinessService	提交现场确认充不上：confirmationRequestId=463b7658-d322-4695-aa6e-83b3bbbaa153，charger=充电点1，observedCondition=CONNECTION_FAILED，operator=L2-OPERATOR，resubmission=False。
+23: 2026-10-02T18:05:13.1672463+08:00	Information	WireToGateBusinessService	现场确认充不上结果：confirmationRequestId=463b7658-d322-4695-aa6e-83b3bbbaa153，charger=充电点1，outcome=Confirmed，chargingPolicyDecision=MANUAL_CHARGING_HOLD，reason=无。
