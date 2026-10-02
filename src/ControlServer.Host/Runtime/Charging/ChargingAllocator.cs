@@ -465,13 +465,16 @@ public sealed class ChargingAllocator(
 
         foreach (ChargingCandidate candidate in candidates)
         {
-            // Registered for the dashboard only, from the facts this round was handed; nothing below reads it back.
+            // Registered for the dashboard only, from the facts this round was handed; nothing below reads it back. A vehicle RIoT
+            // reports offline or disabled has no current battery (REQ-0269, review S2): registered as not fresh, with no reading.
+            RiotVehicleObservation seen = candidate.Facts.Vehicle;
+            bool reachable = seen.Connected && seen.Enabled;
             board.RecordObservation(
                 candidate.Vehicle.AgvId,
-                candidate.Facts.Vehicle.BatteryPercent,
-                candidate.Facts.Vehicle.BatteryState,
-                BatteryEligibility.Project(candidate.Facts.Vehicle, candidate.Facts.BatteryPolicy, observationFresh: true),
-                candidate.Facts.ObservedAt);
+                reachable ? seen.BatteryPercent : null,
+                reachable ? seen.BatteryState : null,
+                BatteryEligibility.Project(seen, candidate.Facts.BatteryPolicy, observationFresh: reachable),
+                seen.ObservedAt);
         }
 
         Dictionary<string, ChargingAllocationVerdict> verdicts = new(StringComparer.Ordinal);
