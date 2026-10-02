@@ -35,6 +35,16 @@ public sealed partial class JourneyRuntimeEngine
             "FieldOperatorRoles:Path with an R-11 or R-13, and VehicleFaultRecovery:enabled with its credential " +
             "(control-server#407).");
 
+    private static readonly Action<ILogger, string, string, int, string, DateTimeOffset, DateTimeOffset, Exception?> LogChargingStalled =
+        LoggerMessage.Define<string, string, int, string, DateTimeOffset, DateTimeOffset>(
+            LogLevel.Warning,
+            new EventId(2281, nameof(LogChargingStalled)),
+            "CHARGING_STALLED_UNSTABLE_READINGS: vehicle {VehicleKey} (journey {JourneyId}) at charger {StationId} has gained " +
+            "nothing ({Battery}) between {Since} and {ObservedAt}, while batteryState kept switching, so " +
+            "neither an interruption nor no progress could be confirmed. ALARM ONLY: neither the charger nor the vehicle is " +
+            "paused, nothing is restarted, released, reassigned or moved. Someone has to look at the vehicle and the charger; a " +
+            "manual station clearance can end this charging (control-server#407).");
+
     /// <summary>无进展观察的连续性键：与充满判定的样本连续性分开记。</summary>
     private static string InterruptionRunKey(string cycleId) => "charging-interruption-run:" + cycleId;
 
@@ -60,6 +70,87 @@ public sealed partial class JourneyRuntimeEngine
     /// </para>
     /// </remarks>
     private async Task ObserveChargingProgressAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopRow stop,
+        OrderIntentRow intent,
+        ChargingCycleRow cycle,
+        RiotVehicleObservation vehicle,
+        int battery,
+        bool continuous,
+        ChargingPolicyContent policy,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        await ObserveStopAndProgressAsync(
+                runtime, stop, intent, cycle, vehicle, battery, continuous, policy, now, cancellationToken)
+            .ConfigureAwait(false);
+        await WatchForStallAsync(runtime, stop, cycle, vehicle, battery, policy, now, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 兜底（#442 增量审查 N2）：中断要「不在充电」不间断地持续，无进展要「在充电」不间断地持续；读数在两者之间来回切、电量又一直不涨时，两样都判不出来，
+    /// 也就什么码都不写——车不动，但它无声地卡在桩上。这里不管读数怎么切，按周期看电量的<b>净增长</b>。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 基准是这个周期（本进程里）第一个新鲜读数的时刻与电量。从基准起过了「稳定期 + 两个观察窗口」（本周期冻结的策略版本），电量增加仍不到最小增量：
+    /// 写 <see cref="ChargingExecutionReasons.StalledUnstableReadings"/>，告警一次（事件 2281）。<b>只告警、不隔离</b>：读数在切换，判不清是车还是桩的事，
+    /// 不能拿它去暂停任何一侧。人工清桩接得住它（<see cref="ManualStationClearance.HeldCodes"/>）。涨够了就把基准挪到这一个读数、清掉这个码。
+    /// </para>
+    /// <para>
+    /// 为什么是两个窗口而不是一个：读数稳定的时候，正常的无进展在「稳定期 + 一个窗口」上下判出（窗口从稳定期满后第一个样本开始），兜底要晚于它，
+    /// 不与它抢同一个读数、也不在它之前多报一次告警。中断、无进展任一已经判出（周期进了清桩中，或旅程挂着别的码）时兜底不写。
+    /// 基准记在内存里，进程重启后从第一个读数重新起算，只会报得更晚。
+    /// </para>
+    /// </remarks>
+    private async Task WatchForStallAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopRow stop,
+        ChargingCycleRow cycle,
+        RiotVehicleObservation vehicle,
+        int battery,
+        ChargingPolicyContent policy,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (cycle.Phase != ChargingCyclePhases.Active || cycle.FirstChargingSeenAt is null)
+        {
+            return;
+        }
+        ChargingAllocationBoard board = dispatchRound.Charging.Board;
+        string key = StallKey(cycle.CycleId);
+        (DateTimeOffset since, int startPercent) = board.NetGainBaseline(key, vehicle.ObservedAt, battery);
+        bool stalled = string.Equals(runtime.BlockReasonCode, ChargingExecutionReasons.StalledUnstableReadings, StringComparison.Ordinal);
+        if (battery - startPercent >= policy.ProgressMinimumIncreasePercent)
+        {
+            board.MoveNetGainBaseline(key, vehicle.ObservedAt, battery);
+            if (stalled)
+            {
+                await ClearAlarmOnlyCodeAsync(runtime, cycle, StallTrigger, now, cancellationToken).ConfigureAwait(false);
+            }
+            return;
+        }
+        TimeSpan span = TimeSpan.FromSeconds(policy.ProgressStabilizationSeconds + 2L * policy.ProgressObservationWindowSeconds);
+        if (stalled || runtime.BlockReasonCode is not null || vehicle.ObservedAt - since < span)
+        {
+            return;
+        }
+        await SetChargingCodeAsync(runtime, ChargingExecutionReasons.StalledUnstableReadings, now, cancellationToken)
+            .ConfigureAwait(false);
+        if (board.FirstTime(AlarmOnlyKey(cycle.CycleId, StallTrigger)))
+        {
+            LogChargingStalled(
+                logger, runtime.VehicleKey, runtime.JourneyId, stop.StationRiotId,
+                string.Create(CultureInfo.InvariantCulture, $"from {startPercent}% to {battery}%"), since, vehicle.ObservedAt,
+                null);
+        }
+    }
+
+    private const string StallTrigger = "STALLED_UNSTABLE_READINGS";
+
+    private static string StallKey(string cycleId) => "charging-net-gain:" + cycleId;
+
+    private async Task ObserveStopAndProgressAsync(
         JourneyRuntimeRow runtime,
         JourneyStopRow stop,
         OrderIntentRow intent,

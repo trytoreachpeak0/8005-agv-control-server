@@ -71,7 +71,7 @@ internal static class ChargingDashboardDescriptions
         {
             [VehicleChargingEligibilityHoldReasons.InterruptionConfirmed] = "充电中断：这辆车充电中途断开，恢复之前不再给它分桩",
             [VehicleChargingEligibilityHoldReasons.NoProgressConfirmed] =
-                "充电无进展：这辆车充了一段时间电量不涨，或在没离开过的桩上第二次掉回强充线以下（原桩反复重充），恢复之前不再给它分桩",
+                "充电无进展：这辆车充了一段时间电量不涨，或在同一个没离开过的桩上第二次掉回强充线以下（原桩反复重充），恢复之前不再给它分桩",
         };
 
     /// <summary>服务端置人工充电等待的原因（<see cref="ManualChargingHoldReasons"/>）。</summary>
@@ -360,6 +360,8 @@ internal static class ChargingDashboardDescriptions
                 "到现场查看车与桩；车和桩都没被暂停，车一直占着这个桩。要自动隔离，配置清桩名单与 VehicleFaultRecovery 入口",
             [ChargingExecutionReasons.NoProgressNotIsolated] =
                 "到现场查看车的电池与桩的输出；车和桩都没被暂停，车一直占着这个桩。要自动隔离，配置清桩名单与 VehicleFaultRecovery 入口",
+            [ChargingExecutionReasons.StalledUnstableReadings] =
+                "到现场查看车的充电接触与桩的输出；车和桩都没被暂停，车一直占着这个桩。需要让车离开时，R-11／R-13 名单里的人做人工清桩",
             [ChargingExecutionReasons.VehicleObservationLost] = "检查车与 RIoT 的连接；车可能仍在桩上，不要据此认为桩已空",
             [ChargingExecutionReasons.BatteryTelemetryLost] = "检查车的电量上报与 RIoT",
             [ChargingExecutionReasons.ReservationLostAtArrival] = "到现场确认车停的位置与桩的归属",
@@ -400,6 +402,7 @@ internal static class ChargingDashboardDescriptions
             or ChargingExecutionReasons.ClearingVehicleStillCharging
             or ChargingExecutionReasons.InterruptionNotIsolated
             or ChargingExecutionReasons.NoProgressNotIsolated
+            or ChargingExecutionReasons.StalledUnstableReadings
             or ChargingExecutionReasons.ClearedOldOrderUnsettled
             or ChargingExecutionReasons.ClearanceChargerNotVacant
             or ChargingExecutionReasons.VehicleObservationLost

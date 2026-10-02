@@ -244,6 +244,19 @@ public sealed class ChargingAllocationBoard
     /// <inheritdoc cref="FirstObserved"/>
     public void ForgetObserved(string key) => _firstObserved.TryRemove(key, out _);
 
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTimeOffset At, int Percent)> _netGainBaseline =
+        new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// 充电中电量净增长的基准（control-server#407，#442 增量审查 N2）：第一次记下那一刻与电量，之后答同一个，直到 <see cref="MoveNetGainBaseline"/>。
+    /// 进程重启后从头记。
+    /// </summary>
+    public (DateTimeOffset At, int Percent) NetGainBaseline(string key, DateTimeOffset at, int percent) =>
+        _netGainBaseline.GetOrAdd(key, (at, percent));
+
+    /// <inheritdoc cref="NetGainBaseline"/>
+    public void MoveNetGainBaseline(string key, DateTimeOffset at, int percent) => _netGainBaseline[key] = (at, percent);
+
     /// <summary>「到桩之后失联」已升级告警过的键（事件 2261、2262）：一种失联一次，恢复时 <see cref="Unsay"/>。</summary>
     public static string ChargingLossKey(string journeyId, string code) => $"charging-loss:{code}:{journeyId}";
 
@@ -1048,13 +1061,18 @@ public sealed class ChargingAllocator(
 
     /// <summary>
     /// 这辆车持有的这个充满周期，本身是不是一次原桩重充接上来的（<see cref="ChargingExecutionReasons.RechargedOnHeldCharger"/>，control-server#407 S-d）：
-    /// 按分配时刻排，它前面紧挨着的那个周期以原桩重充收尾，且那次收尾晚于起算点。是，则这一次就是「第二次原桩重充」。
+    /// 按分配时刻排，它前面紧挨着的那个周期<b>在同一个桩上</b>以原桩重充收尾，且那次收尾晚于起算点。是，则这一次就是「第二次原桩重充」。
     /// </summary>
     /// <remarks>
     /// <para>
     /// 「窗口」是车一直没离开过桩、没做过别的事的这一段。只看紧挨着的前一个周期，所以车离开过桩、经正常分配链新承诺了一趟充电（前一个周期以离桩、
-    /// 清桩、失败等收尾），回到桩上的第一次原桩重充不算第二次（#442 审查 S1 的探针）。起算点另外再取：最近一趟非充电旅程、最近一次资格恢复、
-    /// 最近一次人工充电等待解除、最近一次离桩释放、最近一次清桩完成——这些之后，那个人或那次离开已经把旧账了结了。
+    /// 清桩、失败等收尾），回到桩上的第一次原桩重充不算第二次（#442 审查 S1 的探针）。前一个周期必须是同一个桩：交出来重充时原桩被暂停、改分到
+    /// 另一个桩，那个周期也以原桩重充收尾，但车在新桩上的第一次重充不是在「没离开过的桩」上的第二次（#442 增量审查 N1 的探针）。
+    /// </para>
+    /// <para>
+    /// 起算点另外再取：最近一趟非充电旅程、最近一次资格恢复、最近一次人工充电等待解除——这些之后，那个人或那件事已经把旧账了结了。
+    /// 离桩释放与清桩完成<b>不需要</b>作起算点（#442 增量审查 R2）：前一个周期以原桩重充收尾，当前周期就是那一轮紧接着承诺的，两者之间夹不进
+    /// 任何周期的离桩或清桩完成；而车在桩上离桩、被清桩，收尾的正是当前周期本身，轮不到这里判。
     /// </para>
     /// <para>时刻在客户端比（SQLite 不比较 <see cref="DateTimeOffset"/>）。</para>
     /// </remarks>
@@ -1064,13 +1082,15 @@ public sealed class ChargingAllocator(
         string vehicleKey = fleetVehicle.VehicleKey;
         var cycles = await dbContext.Set<ChargingCycleRow>().AsNoTracking()
             .Where(row => row.VehicleKey == vehicleKey && row.CycleId != held.CycleId)
-            .Select(row => new { row.AllocatedAt, row.EndedAt, row.EndReason })
+            .Select(row => new { row.AllocatedAt, row.EndedAt, row.EndReason, row.MapId, row.StationId })
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
         var previous = cycles
             .Where(row => row.AllocatedAt < held.AllocatedAt)
             .OrderByDescending(row => row.AllocatedAt)
             .FirstOrDefault();
-        if (previous is not { EndReason: ChargingExecutionReasons.RechargedOnHeldCharger, EndedAt: { } rechargedAt })
+        if (previous is not { EndReason: ChargingExecutionReasons.RechargedOnHeldCharger, EndedAt: { } rechargedAt }
+            || previous.MapId != held.MapId
+            || previous.StationId != held.StationId)
         {
             return false;
         }
@@ -1091,15 +1111,7 @@ public sealed class ChargingAllocator(
             .Where(row => row.VehicleKey == vehicleKey && row.ReleasedAt != null)
             .Select(row => row.ReleasedAt)
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
-        DateTimeOffset?[] cleared = await dbContext.Set<StationClearanceRow>().AsNoTracking()
-            .Where(row => row.VehicleKey == vehicleKey && row.CompletedAt != null)
-            .Select(row => row.CompletedAt)
-            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
-        IEnumerable<DateTimeOffset> departed = cycles
-            .Where(row => row.EndReason == ChargingExecutionReasons.Departed && row.EndedAt is not null)
-            .Select(row => row.EndedAt!.Value);
         DateTimeOffset since = otherWork.Concat(recovered).Concat(released.Select(at => at!.Value))
-            .Concat(cleared.Select(at => at!.Value)).Concat(departed)
             .DefaultIfEmpty(DateTimeOffset.MinValue).Max();
         return rechargedAt > since;
     }

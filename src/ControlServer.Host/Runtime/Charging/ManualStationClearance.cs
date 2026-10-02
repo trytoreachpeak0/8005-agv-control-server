@@ -124,6 +124,7 @@ public sealed class ManualStationClearance(
         // control-server#407: an interruption or no progress that could only be alarmed about.
         ChargingExecutionReasons.InterruptionNotIsolated,
         ChargingExecutionReasons.NoProgressNotIsolated,
+        ChargingExecutionReasons.StalledUnstableReadings,
     };
 
     private static readonly Action<ILogger, string, string, string, string, bool, string, Exception?> LogDecided =

@@ -192,6 +192,12 @@ public static class ChargingExecutionReasons
     public const string NoProgressNotIsolated = "CHARGING_NO_PROGRESS_NOT_ISOLATED";
 
     /// <summary>
+    /// 兜底（#442 增量审查 N2）：<c>batteryState</c> 在充电与不充电之间来回切，中断、无进展都判不出来，而电量在「稳定期 + 两个观察窗口」里没有净增长。
+    /// 只告警、不隔离（读数在切，判不清是谁的事）；周期、桩占用、车原位都保持。电量涨够了自动清掉；人工清桩可以收尾它。
+    /// </summary>
+    public const string StalledUnstableReadings = "CHARGING_STALLED_UNSTABLE_READINGS";
+
+    /// <summary>
     /// 到桩之前与之后「证据缺失」的那一族码（control-server#407 S-e）：它们之间来回切换不算新的一次，开始时刻保留，升级告警按旅程只报一次。
     /// </summary>
     public static IReadOnlySet<string> EvidenceMissingCodes { get; } = new HashSet<string>(StringComparer.Ordinal)
@@ -208,7 +214,7 @@ public static class ChargingExecutionReasons
     {
         ChargerNotEngaged, VehicleObservationLost, BatteryTelemetryLost, ReservationLostAtArrival, ArrivalNotProven,
         // control-server#407: cleared when charging resumes or gains again, not because the order read SUCCESS.
-        InterruptionNotIsolated, NoProgressNotIsolated,
+        InterruptionNotIsolated, NoProgressNotIsolated, StalledUnstableReadings,
     };
 
     /// <summary>

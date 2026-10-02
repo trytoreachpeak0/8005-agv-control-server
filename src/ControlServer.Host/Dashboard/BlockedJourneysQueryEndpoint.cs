@@ -291,6 +291,10 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
             [ChargingExecutionReasons.NoProgressNotIsolated] =
                 "充电不涨，只告警、未隔离：车一直报在充电但电量不涨，人工清桩或服务端恢复入口没有配置好，所以没有暂停桩和车。车和桩都保持原样，"
                 + "服务端不重新充电、不换桩、不动车，车一直占着这个桩。请到现场查看车和桩；配置好清桩名单与恢复入口（VehicleFaultRecovery）后才会自动隔离",
+            [ChargingExecutionReasons.StalledUnstableReadings] =
+                "充电卡住，读数不稳：车在桩上，RIoT 报的充电状态在「充电」与「不充电」之间来回切，所以既判不成充电中断、也判不成充电不涨，"
+                + "但过了稳定期和两个观察窗口电量没有净增长。只告警、未隔离：判不清是车还是桩的问题，所以没有暂停桩和车，服务端不重新充电、不换桩、不动车，"
+                + "车一直占着这个桩。请到现场查看车的充电接触与桩的输出；需要让车离开时走人工清桩。电量涨上来后这个码会自动消失",
             [ChargingExecutionReasons.ClearedByOperator] =
                 "这次充电由人工清桩收尾：有权限的人确认车已挪开、桩已腾空，旧单已结束，这一趟占着的充电桩已释放、充电用途已放开。不暂停这个桩",
             [ChargingExecutionReasons.ChargerReleasedOnManualClearance] =

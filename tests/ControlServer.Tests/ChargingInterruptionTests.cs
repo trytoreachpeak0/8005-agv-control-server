@@ -1026,6 +1026,172 @@ public sealed class ChargingInterruptionTests
             (await fleet.Context.Set<ChargingCycleRow>().AsNoTracking().SingleAsync(row => row.CycleId == current.CycleId, Token)).EndReason);
     }
 
+    /// <summary>
+    /// S-d 只认同一个桩（#442 增量审查 N1，审查探针 <c>ProbeARechargeHandedOverToAnotherChargerIsNotASecondRechargeThere</c> 收作正式用例）：车在 Near 上充满、
+    /// 留在那里；Near 进维修暂停；车掉回强充线以下，交出来重充，但 Near 暂停着，于是承诺到 Far、开过去充满。那个 Near 的周期也以原桩重充收尾，
+    /// 可车在 Far 上掉下来的第一次重充不是在「没离开过的桩」上的第二次：照常重充，什么也不暂停。
+    /// </summary>
+    [Fact]
+    public async Task ARechargeHandedOverToAnotherChargerIsNotASecondRechargeThere()
+    {
+        await using FleetFixture fleet = await IsolatingFleetAsync(Near, Far);
+        await ChargingAsync(fleet, battery: 60);
+        AtCharger(fleet, KeyA, 80, Charging);
+        await RoundAsync(fleet);
+        Assert.Equal(ChargingCycleWireStates.Complete, (await CycleAsync(fleet)).WireState);
+
+        DateTimeOffset now = fleet.Clock.GetUtcNowWithoutTick();
+        await new ChargingHoldStore(fleet.Context).RecordStationHoldAsync(
+            new ChargingStationAllocationHold(
+                "cs407-n1-hold", "cs407-n1-hold-key", ChargingStationHoldTriggers.Maintenance, Near.MapId, Near.StationId, 1, null, null,
+                null, null, null, null, null, null, null, null, now, null, null, null, null, null, null, null, null, null, null, null),
+            Token);
+        fleet.Context.ChangeTracker.Clear();
+
+        AtCharger(fleet, KeyA, 20, NotCharging);
+        for (int round = 0; round < 4 && fleet.Riot.Creates.Count < 2; round++)
+        {
+            await RoundAsync(fleet);
+        }
+        Assert.Equal(2, fleet.Riot.Creates.Count);
+        Assert.Equal(Far.StationId, fleet.Riot.Creates[^1].DestinationStationId);
+        ChargingCycleRow[] cycles = await fleet.Context.Set<ChargingCycleRow>().AsNoTracking()
+            .Where(row => row.VehicleKey == KeyA).ToArrayAsync(Token);
+        Assert.Contains(
+            cycles, row => row.StationId == Near.StationId && row.EndReason == ChargingExecutionReasons.RechargedOnHeldCharger);
+
+        JourneyRuntimeRow toFar = (await ChargingJourneyAsync(fleet, AgvA))!;
+        fleet.Riot.CompleteOrder(toFar.PickupUpperId);
+        AtFar(fleet, 60, Charging);
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+        AtFar(fleet, 80, Charging);
+        await RoundAsync(fleet);
+        Assert.Equal(
+            (toFar.JourneyId, Far.StationId, ChargingCycleWireStates.Complete),
+            ((await CycleAsync(fleet)).JourneyId, (await CycleAsync(fleet)).StationId, (await CycleAsync(fleet)).WireState));
+        fleet.ChargingLog.Entries.Clear();
+
+        AtFar(fleet, 20, NotCharging);
+        for (int round = 0; round < 4; round++)
+        {
+            await RoundAsync(fleet);
+        }
+
+        Assert.Empty(await VehicleHoldsAsync(fleet));
+        Assert.DoesNotContain(fleet.ChargingLog.Entries, entry => entry.EventId.Id == 2277);
+        Assert.Equal(3, fleet.Riot.Creates.Count);
+        Assert.Equal(Far.StationId, fleet.Riot.Creates[^1].DestinationStationId);
+    }
+
+    // ---- 兜底：读数来回切、电量不涨 ----------------------------------------------------------------------------------------
+
+    public static TheoryData<string> UnstableReadingShapes => ["flapping-every-30s", "one-charging-read-a-minute"];
+
+    /// <summary>
+    /// 兜底（#442 增量审查 N2，审查探针 <c>ProbeAFlappingStopWithAFlatBatteryIsToldAboutSomehow</c>、<c>ProbeAStopBrokenByOneChargingReadAMinuteIsToldAboutSomehow</c>
+    /// 收作正式用例）：<c>batteryState</c> 每 30 秒在充电与不充电之间切，或每分钟里夹一次充电读数，电量平在 50% 一小时——中断与无进展都判不出来。
+    /// 兜底写 <c>CHARGING_STALLED_UNSTABLE_READINGS</c>、告警恰好一次（事件 2281），只告警：没有暂停、周期仍在充电、桩仍占用、不建单不发命令。
+    /// 人工清桩接得住它：车挪开、确认清桩，周期以 <c>CHARGING_CLEARED_BY_OPERATOR</c> 收尾、桩放开。
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(UnstableReadingShapes))]
+    public async Task UnstableReadingsWithAFlatBatteryAreToldOnceAndLeftByAManualClearance(string shape)
+    {
+        await using FleetFixture fleet = await IsolatingFleetAsync();
+        JourneyRuntimeRow journey = await ChargingAsync(fleet, battery: 50);
+        bool flapping = shape == "flapping-every-30s";
+        TimeSpan step = TimeSpan.FromSeconds(flapping ? 30 : 10);
+        int rounds = flapping ? 120 : 360;
+        for (int round = 0; round < rounds; round++)
+        {
+            bool charging = flapping ? round % 2 == 1 : round % 6 == 5;
+            AtCharger(fleet, KeyA, 50, charging ? Charging : NotCharging);
+            await LongRoundAsync(fleet, step);
+        }
+
+        Assert.Equal(ChargingExecutionReasons.StalledUnstableReadings, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+        Assert.Single(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2281);
+        Assert.DoesNotContain(fleet.EngineLog.Entries, entry => entry.EventId.Id is 2276 or 2278);
+        Assert.Empty(await StationHoldsAsync(fleet));
+        Assert.Empty(await VehicleHoldsAsync(fleet));
+        ChargingCycleRow cycle = await OpenCycleAsync(fleet);
+        Assert.Equal(ChargingCyclePhases.Active, cycle.Phase);
+        Assert.Equal((VehiclePurposes.Charging, journey.JourneyId), (await ClaimOfAsync(fleet, KeyA))!.Value);
+        Assert.Equal((KeyA, StationExclusivityStates.Occupied), await HolderAsync(fleet, Near.StationId));
+        Assert.Single(fleet.Riot.Creates);
+        Assert.Empty(fleet.Riot.OrderCommands);
+        Assert.Empty(fleet.Riot.EmergencyCommands);
+
+        MovedOff(fleet);
+        Assert.True((await ClearanceFor(fleet).DecideAsync(ClearanceRequest(), Token)).StationReleased);
+        await RoundAsync(fleet);
+        Assert.Equal(
+            (JourneyRuntimeStage.Completed, ChargingExecutionReasons.ClearedByOperator),
+            ((await ChargingJourneyAsync(fleet, AgvA))!.Stage, (await CycleAsync(fleet)).EndReason));
+        Assert.Null(await HolderAsync(fleet, Near.StationId));
+        Assert.Empty(await StationHoldsAsync(fleet));
+    }
+
+    /// <summary>
+    /// 兜底的时长钉在「稳定期 + 两个观察窗口」（夹具策略 180 + 2 × 600 = 1380 秒），从这个周期第一个新鲜读数起算：读数每 30 秒来回切、电量不动，
+    /// 差一轮不到时没有码，到了的那一轮写码。两个窗口是为了让读数稳定时正常的无进展（约稳定期 + 一个窗口）先判出，兜底不与它抢。
+    /// </summary>
+    [Fact]
+    public async Task TheStallBackstopIsStabilizationPlusTwoObservationWindowsFromTheFirstReading()
+    {
+        await using FleetFixture fleet = await IsolatingFleetAsync();
+        await ChargingAsync(fleet, battery: 50);
+        TimeSpan span = TimeSpan.FromSeconds(180 + (2 * 600));
+        DateTimeOffset? baseline = null;
+        DateTimeOffset? toldAt = null;
+        for (int round = 0; round < 80 && toldAt is null; round++)
+        {
+            AtCharger(fleet, KeyA, 50, round % 2 == 1 ? Charging : NotCharging);
+            await fleet.HearFromEveryVehicleAsync();
+            DateTimeOffset readAt = fleet.Clock.GetUtcNowWithoutTick();
+            baseline ??= readAt;
+            await fleet.RunRoundAsync(TimeSpan.FromSeconds(30));
+            if ((await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode == ChargingExecutionReasons.StalledUnstableReadings)
+            {
+                toldAt = readAt;
+            }
+            else
+            {
+                Assert.True(readAt - baseline!.Value < span + TimeSpan.FromSeconds(30), $"not told at {(readAt - baseline!.Value).TotalSeconds} s");
+            }
+        }
+
+        Assert.NotNull(toldAt);
+        TimeSpan elapsed = toldAt!.Value - baseline!.Value;
+        Assert.True(elapsed >= span && elapsed < span + TimeSpan.FromSeconds(60), $"told at {elapsed.TotalSeconds} s");
+    }
+
+    /// <summary>
+    /// 兜底的码在电量涨够之后自己清掉（最小增量 3%），不再挂在看板上；告警不重复。从那一刻起重新起算。
+    /// </summary>
+    [Fact]
+    public async Task TheStallCodeIsClearedOnceTheBatteryGainsEnough()
+    {
+        await using FleetFixture fleet = await IsolatingFleetAsync();
+        await ChargingAsync(fleet, battery: 50);
+        for (int round = 0; round < 60; round++)
+        {
+            AtCharger(fleet, KeyA, 50, round % 2 == 1 ? Charging : NotCharging);
+            await LongRoundAsync(fleet, TimeSpan.FromSeconds(30));
+        }
+        Assert.Equal(ChargingExecutionReasons.StalledUnstableReadings, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+
+        AtCharger(fleet, KeyA, 52, Charging);
+        await LongRoundAsync(fleet, TimeSpan.FromSeconds(30));
+        Assert.Equal(ChargingExecutionReasons.StalledUnstableReadings, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+        AtCharger(fleet, KeyA, 53, Charging);
+        await LongRoundAsync(fleet, TimeSpan.FromSeconds(30));
+        Assert.Null((await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+        Assert.Single(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2281);
+        Assert.Empty(await StationHoldsAsync(fleet));
+    }
+
     // ---- S-e：到桩未证实一类的码按旅程计时 -------------------------------------------------------------------------------
 
     /// <summary>
@@ -1234,6 +1400,12 @@ public sealed class ChargingInterruptionTests
     {
         fleet.Riot.BatteryByVehicle[vehicleKey] = battery;
         fleet.Riot.VehicleOverrides[vehicleKey] = seen => seen with { CurrentStationId = Near.StationId, BatteryState = batteryState };
+    }
+
+    private static void AtFar(FleetFixture fleet, int battery, string batteryState)
+    {
+        fleet.Riot.BatteryByVehicle[KeyA] = battery;
+        fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = Far.StationId, BatteryState = batteryState };
     }
 
     /// <summary>有人把车挪开了：RIoT 读到它在 300、没在充电。</summary>
