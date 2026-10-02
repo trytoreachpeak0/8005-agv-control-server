@@ -5,6 +5,7 @@
 
 | 目录 | 是什么 | 结论 |
 | --- | --- | --- |
+| `l2/pass-56bc9491/` | 合成 L2 `charging-clearance-to-waiting-point`，审查修复后的提交 `56bc9491`（跑前护栏退出码 0） | PASS，6 条判据 |
 | `l2/pass-9e02f41cc/` | 合成 L2 `charging-clearance-to-waiting-point`，提交 `9e02f41cc` | PASS，6 条判据 |
 | `l2/red-fallback-to-any-station/` | 缺陷版本：无合格等待点时回退到登记外的站 12 | FAIL：L2-CWP-02 实际建了 30 张清桩意图；L2-CWP-03 随之红 |
 | `l2/red-1-now-before-read/` | 第一轮真实的红：判「车静止在桩上」时先取此刻再读车，读数被判不新鲜 | FAIL：等待超时，`CHARGING_CLEARANCE_VEHICLE_OFF_CHARGER`；修于 `4f9d24347` |
@@ -19,5 +20,6 @@
 | `l1-red/withdrawal-m1.txt` | 建单前复核去掉「人工确认已记下就撤回」（审查 M-1） | `APremiseLostBetween…` 只红 manual-confirmation-recorded 一格 |
 | `l1-red/withdrawal-s1.txt` | 建单前复核去掉「车不在桩上就撤回」（审查 S-1） | 只红 vehicle-moved-off-the-charger 一格 |
 | `l1-red/withdrawal-s2.txt` | 建单前复核去掉「旧单不是已终结就撤回」（审查 S-2） | 只红 old-order-not-ended-any-more 一格 |
+| `l1-red/severity-not-critical.txt` | 看板 `SeverityOf` 去掉 `CHARGING_CLEARANCE_TO_WAITING_POINT` 的 Critical（增量审查补测） | `EachClearanceMoveAlarmHasItsSeverity` 只红 Critical 那一格 |
 
 L2 PASS 只证明服务端在假 RIoT、假 MesIngest 与合成车载端下的跨端时序，不代表真车、真实 RCS 合格。
