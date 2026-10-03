@@ -255,7 +255,10 @@ Load-bearing details:
   in `storeProvenance`; its `protocolCommit` is asserted against the binding.
   `-FieldRunRoot <an authorised field run's root>` still restores a field store
   instead, with the `TICKET_17` exemption on that one fact only. A binding older
-  than #453 has no generator scenario, and the runner refuses it. The generator
+  than #453 has no generator scenario, and the runner refuses it before creating
+  anything; `-SelfCheckControlServerCommit <40-hex>` checks a newer commit without
+  moving the binding and marks the run `SELF_CHECK_OVERRIDE` (not gate evidence),
+  as in `run-journey-g3.ps1`. The binding moves only in an exit ticket's first step. The generator
   is not an L2 criterion and is deliberately absent from `l2.yml`.
 - **Check the commit bindings before a G3 run, and move them.** They are literal
   defaults, so a run inherits whatever the last run froze and silently gates old

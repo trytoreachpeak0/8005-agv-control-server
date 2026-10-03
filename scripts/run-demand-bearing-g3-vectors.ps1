@@ -19,6 +19,12 @@ param(
     # this runner claims. Naming a slice this runner does not claim is refused before anything is
     # created -- see scripts/g3-slice-evidence.ps1 for the claim table and the 2026-09-09 ruling.
     [ValidatePattern('^FP-IS-(0[0-9]|1[0-5])$')][string]$Slice,
+    # For checking a change before the shared binding has moved, as run-journey-g3.ps1 has it: clone this
+    # ControlServer commit instead of the bound one. The run records controlServerCommitSource =
+    # SELF_CHECK_OVERRIDE in run-result.json and every gate-result.json, and is not gate evidence. The binding
+    # itself moves only in an exit ticket's first step (control-server#453 needed one: its generator scenario
+    # exists only in commits that contain it). There is no onboard counterpart: this runner clones no onboard.
+    [ValidatePattern('^[0-9a-f]{40}$')][string]$SelfCheckControlServerCommit,
     [string]$ControlServerRepository = (Split-Path -Parent $PSScriptRoot),
     # Both the peer commit binding and the synthetic-peer harness are owned by the staged G3 runner and
     # read back from it rather than restated here, so the two runners can never drift apart.
@@ -90,6 +96,11 @@ $ControlServerCommit = $commitBinding['ControlServerCommit']
 $OnboardCommit = $commitBinding['OnboardCommit']
 $SimulatorCommit = $commitBinding['SimulatorCommit']
 $ProtocolCommit = $commitBinding['ProtocolCommit']
+$controlServerCommitSource = 'SHARED_BINDING'
+if (-not [string]::IsNullOrEmpty($SelfCheckControlServerCommit)) {
+    $ControlServerCommit = $SelfCheckControlServerCommit
+    $controlServerCommitSource = 'SELF_CHECK_OVERRIDE'
+}
 $sharedRunnerSha256 = (Get-FileHash -LiteralPath $SharedRunnerSource -Algorithm SHA256).Hash.ToLowerInvariant()
 $commitBindingFunctionSha256 =
     (Get-FileHash -LiteralPath $CommitBindingFunctionSource -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -113,6 +124,17 @@ if ($storeSource -eq 'FIELD_RUN') {
     $fieldDatabase = Join-Path $FieldRunRoot 'controlserver.db'
     if (-not (Test-Path -LiteralPath $fieldDatabase -PathType Leaf)) {
         throw "FieldRunRoot has no controlserver.db: $FieldRunRoot"
+    }
+} else {
+    # The generator comes from the bound clone, like run-journey-g3.ps1's scenarios: the commit that writes the
+    # store is the commit under test, and a commit older than control-server#453 has none. Asked of the
+    # repository before anything is created: raised later, inside the run, the gate-result writer's own refusal
+    # of a store that was never read is what the operator would see instead.
+    & git -C $ControlServerRepository cat-file -e "${ControlServerCommit}:scripts/l2/scenarios/$storeGeneratorScenario.ps1" 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        throw ("The ControlServer commit $ControlServerCommit ($controlServerCommitSource) has no $storeGeneratorScenario " +
+               'scenario. Move the binding to a commit that has it, pass -SelfCheckControlServerCommit for a self-check, ' +
+               'or pass -FieldRunRoot.')
     }
 }
 New-Item -ItemType Directory -Path $StageRoot, $EvidenceRoot | Out-Null
@@ -384,14 +406,8 @@ try {
     }
 
     if ($storeSource -eq 'SYNTHETIC_RIG') {
-        # The generator comes from the bound clone, like run-journey-g3.ps1's scenarios: the commit that
-        # writes the store is the commit under test, and a binding older than control-server#453 has none.
+        # Checked against the repository before the run started; the clone is that commit.
         $rig = Join-Path $controlSource 'scripts\l2\Invoke-L2Scenario.ps1'
-        $generatorScript = Join-Path $controlSource "scripts\l2\scenarios\$storeGeneratorScenario.ps1"
-        if (-not (Test-Path -LiteralPath $generatorScript -PathType Leaf)) {
-            throw ("The bound ControlServer commit $ControlServerCommit has no $storeGeneratorScenario scenario. " +
-                   'Move the binding to a commit that has it, or pass -FieldRunRoot.')
-        }
         $storeGeneratorEvidence = Join-Path $EvidenceRoot 'store-generator'
         Invoke-LoggedCommand -Name 'generate-demand-bearing-store' -WorkingDirectory $controlSource -FilePath 'pwsh' `
             -Arguments @('-NoProfile', '-File', $rig,
@@ -820,6 +836,7 @@ $configuration = [ordered]@{
         functionSourceSha256 = $commitBindingFunctionSha256
         readFrom = 'param-block-defaults'
         controlServer = $ControlServerCommit
+        controlServerCommitSource = $controlServerCommitSource
         onboardHmi = $OnboardCommit
         slotsSimulator = $SimulatorCommit
         protocol = $ProtocolCommit
@@ -889,6 +906,7 @@ $gateResultPaths = Write-G3GateResults -RunKind $G3RunKind -EvidenceRoot $Eviden
         startedAt = $runStartedAt.ToString('O')
         commits = [ordered]@{
             controlServer = $ControlServerCommit
+            controlServerCommitSource = $controlServerCommitSource
             onboardHmi = $OnboardCommit
             slotsSimulator = $SimulatorCommit
             protocol = $ProtocolCommit
@@ -954,6 +972,7 @@ $result = [ordered]@{
     storeProvenance = $configuration.storeProvenance
     commits = [ordered]@{
         controlServer = $ControlServerCommit
+        controlServerCommitSource = $controlServerCommitSource
         onboardHmi = $OnboardCommit
         slotsSimulator = $SimulatorCommit
         protocol = $ProtocolCommit

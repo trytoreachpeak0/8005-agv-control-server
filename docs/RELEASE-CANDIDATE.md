@@ -531,7 +531,8 @@ commit 里的 L2 场景 `demand-bearing-store-at-unload`，在合成装置上（
 比真车库弱一档**：状态由被测构建经产品代码写出，但不是真需求、真车、真 RIoT。手上有授权现场运行的
 run 目录时，仍可加 `-FieldRunRoot <run 目录>` 恢复它，此时库里的 `protocolCommit` 只记录不断言
 （`TICKET_17` 豁免）；合成库则断言它等于绑定协议。绑定的 ControlServer commit 早于 #453 时没有这个
-场景，runner 直接报错，要么移绑定，要么给 `-FieldRunRoot`。生成场景不是 L2 判据，不进 `l2.yml`。
+场景，runner 在建任何目录之前就报错：要么由出口票移绑定，要么给 `-FieldRunRoot`；只想自检一个更新的提交时用
+`-SelfCheckControlServerCommit <40 位 hex>`，这一轮记 `controlServerCommitSource = SELF_CHECK_OVERRIDE`，不是门禁证据。生成场景不是 L2 判据，不进 `l2.yml`。
 
 `run-staged-g3.ps1` 需要 Node.js 与 pnpm（协议 G1）。三个 runner 都走明文，**都不再需要
 `-InstallTemporaryCurrentUserRoot`**（该参数已随证书机制一并移除），也都不向任何证书存储写入，因此
