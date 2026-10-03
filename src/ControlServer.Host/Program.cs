@@ -204,6 +204,9 @@ if (PackageCapacityImportCommand.IsRequested(args))
     return;
 }
 
+// control-server#384：已有结论的人工判故障，其命令在发件箱里补记为已确认（车载端以结果作答、不回 DurableAck）。必须在下面的身份检查之前，
+// 否则改协议身份后做过判定的库起不来。幂等，每次启动都跑。
+await SlotFaultDeclarationResults.SettleAnsweredCommandsAsync(app.Services, CancellationToken.None);
 // control-server#382：发件箱里有未确认、信封身份不是本构建的行时拒绝启动——补发不改身份，车会拒收并反复断会话。
 await ProtocolOutboxIdentityStartupCheck.EnsureAsync(app.Services, CancellationToken.None);
 // control-server#72：当前分区归属版本把 AREA 归进了未允许的调度区时拒绝启动，并列出是哪几条。

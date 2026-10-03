@@ -58,8 +58,15 @@ public static class SlotFaultDeclarationResults
             new EventId(9503, "SlotFaultDeclarationResultUnmatched"),
             "Vehicle {AgvId} sent a slot fault declaration result for {DeclarationId} that changes nothing: {Disposition}.");
 
+    private static readonly Action<ILogger, int, Exception?> LogBackfilled =
+        LoggerMessage.Define<int>(
+            LogLevel.Information,
+            new EventId(9505, "SlotFaultDeclarationCommandsSettledAtStartup"),
+            "Settled {Count} slot fault declaration command(s) answered before the result settled its command (control-server#384).");
+
     public static async Task<SlotFaultDeclarationResultDisposition> RecordAsync(
         ControlServerDbContext dbContext,
+        WireToGateStore store,
         string agvId,
         string resultMessageId,
         JsonElement payload,
@@ -68,6 +75,7 @@ public static class SlotFaultDeclarationResults
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(dbContext);
+        ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(logger);
         string declarationId = Required(payload, "declarationId");
         string attemptId = Required(payload, "slotOperationAttemptId");
@@ -88,6 +96,13 @@ public static class SlotFaultDeclarationResults
             : declaration.State != SlotFaultDeclarationStates.Pending ? SlotFaultDeclarationResultDisposition.AlreadyAnswered
             : declaration.SlotOperationAttemptId != attemptId ? SlotFaultDeclarationResultDisposition.AttemptMismatch
             : SlotFaultDeclarationResultDisposition.Recorded;
+        if (disposition == SlotFaultDeclarationResultDisposition.AlreadyAnswered)
+        {
+            // A resend, or a store a build before control-server#384 answered without settling: the command is settled
+            // all the same, the declaration stays as first answered.
+            await store.SettleAnsweredCommandAsync(declaration!.CommandMessageId, receivedAt, cancellationToken)
+                .ConfigureAwait(false);
+        }
         if (disposition != SlotFaultDeclarationResultDisposition.Recorded)
         {
             LogUnmatched(logger, agvId, declarationId, disposition.ToString(), null);
@@ -102,6 +117,11 @@ public static class SlotFaultDeclarationResults
                 ? problem.GetRawText()
                 : null;
         declaration.ResultReceivedAt = receivedAt;
+        // The result is the command's answer (control-server#384): store and declaration share the context, so the settle's
+        // save carries the declaration too. The save after it covers a command line that is gone or already settled, where
+        // the settle returns without saving.
+        await store.SettleAnsweredCommandAsync(declaration.CommandMessageId, receivedAt, cancellationToken)
+            .ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         LogRecorded(logger, agvId, declarationId, outcome, null);
         return disposition;
@@ -113,8 +133,9 @@ public static class SlotFaultDeclarationResults
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The replay itself sends only outbox rows that are neither acknowledged nor fenced, so a command the vehicle
-    /// acknowledged is not sent again: having acknowledged it, the vehicle owes the result, and resends that itself.
+    /// Only unanswered declarations are replayed. The vehicle never sends a DurableAck for the command -- its answer is the
+    /// result, which settles the command's outbox line (<see cref="RecordAsync"/>, control-server#384) -- so a command the
+    /// vehicle took but has not yet answered is replayed, and the vehicle answers it again from its own record.
     /// </para>
     /// <para>
     /// <b>Switched off means not replayed either</b> (review of control-server#383, S1). A site that turned the entry point
@@ -139,6 +160,58 @@ public static class SlotFaultDeclarationResults
             .Where(row => row.AgvId == agvId && row.State == SlotFaultDeclarationStates.Pending)
             .Select(row => row.CommandMessageId)
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Settles the commands of declarations that already have their answer and whose outbox line is still unsettled --
+    /// what a build before control-server#384 left behind. Returns how many lines it settled. Idempotent: the host runs it on
+    /// every start, before <see cref="ProtocolOutboxIdentityStartupCheck"/> reads the outbox.
+    /// </summary>
+    /// <remarks>
+    /// A declaration still <see cref="SlotFaultDeclarationStates.Pending"/> keeps its command unsettled: the vehicle owes
+    /// that answer, the reconnect replay may still need the line, and the identity check is right to stop on it.
+    /// </remarks>
+    public static async Task<int> SettleAnsweredCommandsAsync(
+        ControlServerDbContext dbContext, DateTimeOffset settledAt, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(dbContext);
+        string[] answered = await dbContext.Set<SlotFaultDeclarationRow>().AsNoTracking()
+            .Where(row => row.State != SlotFaultDeclarationStates.Pending)
+            .Select(row => row.CommandMessageId)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        if (answered.Length == 0)
+        {
+            return 0;
+        }
+        ProtocolOutboxRow[] unsettled = await dbContext.ProtocolOutbox
+            .Where(row => answered.Contains(row.MessageId) && row.AcknowledgedAt == null)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        foreach (ProtocolOutboxRow row in unsettled)
+        {
+            row.AcknowledgedAt = settledAt;
+        }
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return unsettled.Length;
+    }
+
+    /// <summary>The host's entry point for <see cref="SettleAnsweredCommandsAsync(ControlServerDbContext, DateTimeOffset, CancellationToken)"/>.</summary>
+    public static async Task SettleAnsweredCommandsAsync(IServiceProvider services, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        await using AsyncServiceScope scope = services.CreateAsyncScope();
+        IServiceProvider provider = scope.ServiceProvider;
+        int settled = await SettleAnsweredCommandsAsync(
+                provider.GetRequiredService<ControlServerDbContext>(),
+                (provider.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow(),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (settled > 0)
+        {
+            LogBackfilled(
+                provider.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(SlotFaultDeclarationResults).FullName!),
+                settled,
+                null);
+        }
     }
 
     private static string Required(JsonElement element, string property) =>
