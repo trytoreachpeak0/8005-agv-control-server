@@ -81,13 +81,13 @@ public sealed class FailedOrderBehindSessionGateTests
         JourneyRuntimeRow underWay = await fixture.RuntimeAsync();
         await OwnOrderRebuildTests.DropSessionOnOwnOrderAsync(fixture);
         fixture.Riot.MovementState = "MT_RUNNING";
-        fixture.Riot.FailOrder(underWay.GateUpperId);
+        fixture.Riot.FailOrder(underWay.GateUpperId!);
         Outbound before = await OutboundAsync(fixture);
 
         await TickAndHearAsync(fixture);
 
         await AssertSessionStillNotReadyAsync(fixture);
-        await AssertRecordedHeldAndStoppedAsync(fixture, underWay.GateUpperId);
+        await AssertRecordedHeldAndStoppedAsync(fixture, underWay.GateUpperId!);
         await using (ControlServerDbContext reading = new(fixture.DbOptionsForTests))
         {
             FaultedVehicleCargoRow cargo = await reading.FaultedVehicleCargo.AsNoTracking().SingleAsync(Token);

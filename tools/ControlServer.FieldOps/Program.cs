@@ -36,7 +36,7 @@ internal static partial class Program
     };
 
     /// <summary>取值即「出现」的开关，后面不跟值。</summary>
-    private static readonly HashSet<string> ValuelessOptions = new(StringComparer.Ordinal) { "dry-run" };
+    private static readonly HashSet<string> ValuelessOptions = new(StringComparer.Ordinal) { "dry-run", "allow-non-field-approval" };
 
     internal static async Task<int> Main(string[] args)
     {
@@ -72,6 +72,12 @@ internal static partial class Program
             }
             options[name] = args[index + 1];
             index += 2;
+        }
+
+        // The one verb that can run with the server up goes to its Host entry then, and opens no database of its own.
+        if (args[0] == ReleaseStationExclusivityCommand && options.ContainsKey("server"))
+        {
+            return await ReleaseStationExclusivityViaServerAsync(options);
         }
 
         if (!options.TryGetValue("database", out string? databasePath))
@@ -122,6 +128,13 @@ internal static partial class Program
             ReadDispatchZoneParametersCommand => await ReadDispatchZoneParametersAsync(context, governance, options),
             ImportWaitingPointsCommand => await ImportWaitingPointsAsync(context, governance, options, now),
             ReadWaitingPointsCommand => await ReadWaitingPointsAsync(context, governance, options),
+            ImportChargerRosterCommand => await ImportChargerRosterAsync(context, governance, options, now),
+            ReadChargerRosterCommand => await ReadChargerRosterAsync(context, governance, options),
+            ImportChargingPolicyCommand => await ImportChargingPolicyAsync(context, governance, options, now),
+            ApproveChargingPolicyCommand => await ApproveChargingPolicyAsync(context, governance, options, now),
+            ActivateChargingPolicyCommand => await ActivateChargingPolicyAsync(context, governance, options, now),
+            ReadChargingPolicyCommand => await ReadChargingPolicyAsync(context, governance, options),
+            ReleaseStationExclusivityCommand => await ReleaseStationExclusivityAsync(context, governance, options, now),
             _ => Usage($"unknown command '{args[0]}'")
         };
     }
@@ -131,7 +144,8 @@ internal static partial class Program
     /// </summary>
     internal static bool OpensReadOnly(string command) =>
         command is CheckBindingSnapshotsCommand or ReadAreaAssignmentsCommand or ReadTaskTypeStationsCommand
-            or ReadDispatchZoneParametersCommand or ReadWaitingPointsCommand;
+            or ReadDispatchZoneParametersCommand or ReadWaitingPointsCommand or ReadChargerRosterCommand
+            or ReadChargingPolicyCommand;
 
     private const string CheckBindingSnapshotsCommand = "check-binding-snapshots";
 
@@ -713,7 +727,9 @@ internal static partial class Program
             + "|export-audit|check-binding-snapshots|import-area-assignments|area-assignments"
             + "|activate-task-type-stations|rollback-task-type-stations|reconcile-task-type-stations"
             + "|release-task-type-station-hold|accept-map-name|close-task-type-station-activation|task-type-stations"
-            + "|import-dispatch-zone-parameters|dispatch-zone-parameters>"
+            + "|import-dispatch-zone-parameters|dispatch-zone-parameters|release-station-exclusivity"
+            + "|import-waiting-points|read-waiting-points|import-charger-roster|charger-roster|import-charging-policy"
+            + "|approve-charging-policy|activate-charging-policy|charging-policy>"
             + " --database <path> [options]");
         Console.Error.WriteLine("  verify      --record <field-record.json>");
         Console.Error.WriteLine("  release     --agv <agvId> --model <slotModelVersionId>");
@@ -743,6 +759,27 @@ internal static partial class Program
         Console.Error.WriteLine("  task-type-stations      --map <id>   read-only");
         Console.Error.WriteLine("  import-dispatch-zone-parameters --input <zone-parameters.csv> [--dry-run]");
         Console.Error.WriteLine("  dispatch-zone-parameters        [--version <n>]   read-only");
+        Console.Error.WriteLine(
+            "  import-waiting-points --input <waiting-points.csv> --catalog <stations.json> --map <id> --fleet <keys> [--dry-run]");
+        Console.Error.WriteLine("  read-waiting-points             [--version <n>] [--map <id> --fleet <keys>]   read-only");
+        Console.Error.WriteLine(
+            "  release-station-exclusivity --map <id> --station <id> --vehicle-key <VehicleKey> --operator <id>"
+            + " --reason <text> --site-verification <ref> [--role <text>]");
+        Console.Error.WriteLine(
+            "      server running: --server <base url> [--credential-env <variable>]   (no --database; goes through the server)");
+        Console.Error.WriteLine(
+            "      server stopped: --database <path> --probe-server <base url>   (refused if the server answers)");
+        Console.Error.WriteLine(
+            "  import-charger-roster --input <charger-roster.json> --catalog <stations.json> --map <id> --fleet <keys> [--dry-run]");
+        Console.Error.WriteLine("  charger-roster                  [--version <n>]   read-only");
+        Console.Error.WriteLine("  import-charging-policy --input <charging-policy.json> --fleet <keys> [--dry-run]");
+        Console.Error.WriteLine(
+            "  approve-charging-policy --version <n> --approved-by <person> --role <role> --basis <ref>"
+            + " --source <FIELD|TEST_FIXTURE|L2_PRESET>");
+        Console.Error.WriteLine(
+            "  activate-charging-policy --version <n> --activated-by <person> --fleet <keys>"
+            + " [--allow-non-field-approval] [--dry-run]");
+        Console.Error.WriteLine("  charging-policy                 [--version <n>] [--fleet <keys>]   read-only");
         Console.Error.WriteLine();
         Console.Error.WriteLine(
             "import-area-assignments takes a UTF-8 CSV whose header is exactly"
@@ -781,6 +818,15 @@ internal static partial class Program
             + " value, or a zone not in the table, is unconfigured; an increase of 0 forbids en-route addition in that zone."
             + " The same whole-table rules as import-area-assignments apply, except that a table whose values equal the"
             + " current version writes no new version (UNCHANGED).");
+        Console.Error.WriteLine(
+            "import-charger-roster replaces the whole charger roster. Emptying the roster (closing a charging window) is the"
+            + " same verb with a file whose chargers array is empty; it is a valid version, not an error. Charging under way"
+            + " is listed and continues under its snapshot; nothing is cancelled or released.");
+        Console.Error.WriteLine(
+            "import-charging-policy writes a version only; approve-charging-policy and activate-charging-policy are separate,"
+            + " recorded steps. Only an approved version can be activated, and a version approved only as TEST_FIXTURE or"
+            + " L2_PRESET needs --allow-non-field-approval. There are no default values: a vehicle no active policy covers"
+            + " takes no new work.");
         Console.Error.WriteLine(
             "  --role is recorded as given and is not verified: there is no personnel authentication, and every audit"
             + " record names this deployment, not a person.");

@@ -1095,7 +1095,7 @@ public sealed class JourneyRuntimeWorkerAdmissionTests
         Assert.Equal("T3-7", runtime.PickupStationId);
         Assert.Equal(fixture.Options.DispatchZone, runtime.DispatchZone);
         DemandAreaAssignmentFreeze? freeze = await new DemandAreaAssignmentFreezeStore(fixture.Context)
-            .ReadAsync(runtime.DemandId, TestContext.Current.CancellationToken);
+            .ReadAsync(runtime.DemandId!, TestContext.Current.CancellationToken);
         Assert.Equal(table.Version, freeze?.Version);
         Assert.Equal(table.SnapshotId, freeze?.SnapshotId);
     }
@@ -1147,7 +1147,7 @@ public sealed class JourneyRuntimeWorkerAdmissionTests
         Assert.Equal(
             2,
             (await new DemandAreaAssignmentFreezeStore(fixture.Context)
-                .ReadAsync(runtime.DemandId, TestContext.Current.CancellationToken))?.Version);
+                .ReadAsync(runtime.DemandId!, TestContext.Current.CancellationToken))?.Version);
     }
 
     /// <summary>
@@ -1194,7 +1194,7 @@ public sealed class JourneyRuntimeWorkerAdmissionTests
         Assert.Equal(
             before.Version,
             (await new DemandAreaAssignmentFreezeStore(fixture.Context)
-                .ReadAsync(runtime.DemandId, TestContext.Current.CancellationToken))?.Version);
+                .ReadAsync(runtime.DemandId!, TestContext.Current.CancellationToken))?.Version);
     }
 
     [Fact]
@@ -1227,7 +1227,9 @@ public sealed class JourneyRuntimeWorkerAdmissionTests
     public async Task BatteryAtConfirmedThirtyPercentThresholdRemainsEligible()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
-        fixture.Options.MinimumBatteryPercent = 30;
+        // 批次9-05（control-server#403）：线来自充电策略，不再是 MinimumBatteryPercent。两道线 30、估计 0，等于线即合格。
+        fixture.ChargingPolicy = TestChargingPolicies.AllApprovedAt(30);
+        await fixture.RecreateEngineAsync();
         fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 30 };
         fixture.Catalog.Set(fixture.Demand(
             "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
@@ -1278,7 +1280,9 @@ public sealed class JourneyRuntimeWorkerAdmissionTests
     [InlineData("zone-not-admitted", "DISPATCH_ZONE_VEHICLE_ADMISSION_MISSING")]
     [InlineData("vehicle-not-idle", "RIOT_VEHICLE_NOT_IDLE")]
     [InlineData("vehicle-map-mismatch", "RIOT_VEHICLE_MAP_MISMATCH")]
-    [InlineData("battery-low", "BATTERY_POLICY_NOT_SATISFIED")]
+    // control-server#403: below the mandatory charge entry threshold is its own code; short of the post-task margin keeps the old one.
+    [InlineData("battery-low", "MANDATORY_CHARGE_REQUIRED")]
+    [InlineData("battery-margin", "BATTERY_POLICY_NOT_SATISFIED")]
     [InlineData("riot-order-occupied", "RIOT_VEHICLE_ORDER_OCCUPIED")]
     [InlineData("box-count-missing", "SUBLOT_BOX_COUNT_UNAVAILABLE")]
     [InlineData("package-capacity-missing", "PACKAGE_CAPACITY_NOT_UNIQUE")]
@@ -1315,7 +1319,17 @@ public sealed class JourneyRuntimeWorkerAdmissionTests
                 fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentMap = "OTHER-MAP" };
                 break;
             case "battery-low":
+                // control-server#404: with no charger in the roster the vehicle would be put on manual charging hold, and that
+                // criterion answers before the battery one. A charger it cannot be allocated keeps it queued, so the battery gate shows.
+                await ChargingTestKit.WriteRosterWithAChargerNobodyIsSentToAsync(fixture.Context, fixture.Options.MapId, Now);
                 fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 10 };
+                break;
+            case "battery-margin":
+                // Above the fixture's entry line of 40, but 45 - 10 = 35 is short of the margin of 40.
+                fixture.ChargingPolicy = TestChargingPolicies.AllApprovedWith(
+                    TestChargingPolicies.ContentAt(40) with { EstimatedTaskConsumptionPercent = 10 });
+                await fixture.RecreateEngineAsync();
+                fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 45 };
                 break;
             case "riot-order-occupied":
                 fixture.Riot.Vehicle = fixture.Riot.Vehicle with { LockStatus = 1, OrderTaskId = "ORDER-ACTIVE" };

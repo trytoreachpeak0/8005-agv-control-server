@@ -17,6 +17,8 @@ param([Parameter(Mandatory)][object]$Context)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2SingleRow.psm1') -Force
+
 $journal = $Context.Journal
 $assertions = $Context.Assertions
 $riot = $Context.Riot
@@ -47,7 +49,7 @@ function Publish-Demand([object]$demand, [string]$workType, [string]$area, [stri
 }
 
 function Get-Backlog([string]$demandId) {
-    $rows = @(Invoke-L2Query -Connection $connection -Sql "SELECT ReasonCode, AcceptedAt FROM JourneyBacklog WHERE DemandId = '$demandId'")
+    $rows = Invoke-L2Query -Connection $connection -Sql "SELECT ReasonCode, AcceptedAt FROM JourneyBacklog WHERE DemandId = '$demandId'"
     if ($rows.Count -eq 0) { return $null }
     return $rows[0]
 }
@@ -64,17 +66,12 @@ SELECT (SELECT COUNT(*) FROM AcceptedDemands WHERE DemandId = '$demandId')
 "@
 }
 
+# One row per demand is the premise, and neither the key nor the query makes it so: Read-L2SingleRow hands back a
+# stand-in reading "(N rows, expected 1)" for anything else, so what is built on it goes red and says why.
 function Get-Stage([string]$demandId) {
-    $rows = @(Invoke-L2Query -Connection $connection -Sql "SELECT Stage FROM JourneyRuntimes WHERE DemandId = '$demandId'")
-    if ($rows.Count -eq 0) { return $null }
-    return [string]$rows[0].Stage
-}
-
-function Get-Intent([string]$demandId, [string]$purpose) {
-    $rows = @(Invoke-L2Query -Connection $connection `
-        -Sql "SELECT UpperId, OrderId, Status, DestinationStationId FROM OrderIntents WHERE DemandId = '$demandId' AND Purpose = '$purpose'")
-    if ($rows.Count -eq 0) { return $null }
-    return $rows[0]
+    $row = Read-L2SingleRow -Connection $connection -Sql "SELECT Stage FROM JourneyRuntimes WHERE DemandId = '$demandId'"
+    if ($null -eq $row) { return $null }
+    return [string]$row.Stage
 }
 
 # --- 1. 同一 AREA、不同 EQP：其它任务类型的行先放，WIRE_TO_GATE 随后 ---------------------------------

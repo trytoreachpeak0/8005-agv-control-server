@@ -54,7 +54,8 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `in-transit-rebuild-stopped-person-rebuilds` | 合成 | **control-server#345（出口甲）**：本服务端自己的在途单被取消、同车重建，重建出来的单在窗口内又被取消而停住（`OWN_ORDER_REBUILD_STOPPED`）；没确认已查明原因的请求 409；署名、确认的 `REBUILD_STOPPED_ORDER` 200、停住的记录原行重开，引擎给同车同需求建第三张单；同一请求再来一次 `AlreadyDone`；全程没有订单命令或急停 | `evidence/cs345/`（修复前 `012c31b2` 红、修复后绿） |
 | `stop-ended-journey-continues` | 合成 | **control-server#324（program#86 v2 的 B 形态，上真车前）**：两条需求在两个取货站，甲装上车；车到第二站，合成车载端把乙的录入请求挂着不答，站点期限结束这一站，车带着甲的货持货等单——断言乙终结、旅程不收尾；车收到并确认这一站的空清单（号最大，作业会话与期限为 null）；迟到的扫码答 `SublotRejected` / `WORKLIST_REVISION_STALE`（`demandId` 空、号是空清单的号）；迟到的取消 `REJECTED` / `WORKLIST_REVISION_STALE`；关卡清单号在空清单之上、全程不重号；会话代全程不变。这个装置里甲、乙共用关卡卸货站，SEJ-05 判不出号冲突，号冲突由 L1 `WhenTheNextStopCarriesNoneOfTheEndedDemandsItStillStartsAboveTheEmptyWorklist` 守 | `evidence/cs324/`（修前 SEJ-02～05 红、修后 6/6） |
 | `real-onboard-rebuild-stopped-cargo-handoff` | **真的** | **control-server#345（交接衔接）**：装货提交、TO_GATE 单 FAILED（车静止在取货站，不急停）→ 光幕固定成「没挡住」模拟货没了 → 人工清除 → 快照显示仓空、重建停住 `OWN_ORDER_REBUILD_CARGO_NOT_IN_PLACE` → 人工重建 409、转交接 200、重复 `AlreadyDone` → 会话 `CARGO_HANDOFF_REQUIRED` → 车载端出「故障交接」入口，UIA 交接 → 需求终结、绑定了结、记录 `ENDED`、会话就绪 → 车接下一单。只覆盖取货站上静止时的故障（简化，不是遗漏） | `evidence/cs345/real-rig.md`（衔接 b 的变异红只落 `L2-RH-07/08`） |
-| `idle-return-two-vehicles-contend-one-waiting-point` | 合成 ×2 | **control-server#389（批次8-18，REQ-0291、REQ-0292）**：两台空闲车停在关卡，登记两个等待点但只有 214 在路网上；恰好一辆承诺空闲返回（`IDLE_RETURN` 用途占有与 214 的预占同一趟，另等 15 秒仍只有一辆，`L2-IRC-01`～`03`），承诺不建单、不物化旅程（`L2-IRC-04`）；之后来的搬运派给没承诺的那辆（`L2-IRC-05`），承诺原样留着（另等 10 秒，`L2-IRC-06`） | `evidence/cs389/l2/idle-return-6d20fd21-green`（红证据：承诺没占住那辆车，搬运派给了它 `evidence/cs389/l2/idle-return-red-claim-not-on-vehicle`） |
+| `idle-return-two-vehicles-contend-one-waiting-point` | 合成 ×2 | **control-server#389（批次8-18，REQ-0291、REQ-0292）**：两台空闲车停在关卡，登记两个等待点但只有 214 在路网上；恰好一辆承诺空闲返回（`IDLE_RETURN` 用途占有与 214 的预占同一趟，另等 15 秒仍只有一辆，`L2-IRC-01`～`03`），承诺物化成恰好一趟空闲返回旅程与一张开往 214 的意图，没有搬运（`L2-IRC-04`，control-server#390 起承诺会被执行）；之后来的搬运派给没承诺的那辆（`L2-IRC-05`），承诺原样留着（另等 10 秒，`L2-IRC-06`） | `evidence/cs389/l2/idle-return-6d20fd21-green`（红证据：承诺没占住那辆车，搬运派给了它 `evidence/cs389/l2/idle-return-red-claim-not-on-vehicle`） |
+| `waiting-point-exclusive-reserve-occupy-release` | 合成 | **control-server#390（批次8-19，REQ-0293～0295）**：车停在关卡、没有需求，空闲返回物化成一趟没有需求的旅程与开往 214 的单段移动，214 在途预占（`L2-WPR-01`）；到点转占用、用途释放（`L2-WPR-02`）；需求派给停在 214 的车（`L2-WPR-03`），单已下达、车还在点上时占用不放（另等 10 秒，`L2-WPR-04`），RIoT 报车到了机台才以 `DEPARTED_STATION` 释放（`L2-WPR-05`）；卸完再次空闲返回，关卡凭离点证据释放（`L2-WPR-06`） | `evidence/cs390/l2/wpr-b3a8be72-green`（红证据：离点清扫把「车有了新订单」当离点证据，只有 `L2-WPR-04` 红 `evidence/cs390/l2/wpr-red-new-order-counts-as-departure`） |
 | `waiting-points-fewer-than-vehicles-refuses-start` | 合成（服务端不起来） | **control-server#388（批次8-17，规格 5.4）**：两台车只登记一个等待点，服务端在监听之前拒绝启动，日志写明车辆数、点数与 `import-waiting-points`；另等 15 秒库里没有受理、假 RIoT 没有建单 | `evidence/cs388/l2-waiting-points-refuses-start-2`（去掉启动校验的红：`evidence/cs388/red/l2-startup-check-removed`） |
 
 编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。三个是**红的**，各自的原因见文末：
@@ -359,7 +360,7 @@ $null = Set-L2OnboardSafety -Onboard $onboard -Connection $connection -AgvId $Co
 ## 加一个场景
 
 `scenarios/<名字>.ps1`，接一个 `-Context` 参数。`Context` 上有 `Journal`、`Assertions`、
-`Riot`、`MesIngest`、`Onboard`、`Simulator`、`Connection`（只读 SQLite 连接）、`SnapshotRoot`、
+`Riot`、`MesIngest`、`Onboard`、`Simulator`、`Connection`（只读 SQLite 连接）、`SnapshotRoot`、`LogRoot`（各组件的 `<名字>.out.log`／`.err.log`）、
 `StopComponent`、`InvokeFieldOps`、`DispatchZone`（服务端 `appsettings.json` 里的调度分区）、
 `SlotModelVersionId`（默认前置入库的那一版模型，没做入库时为 `$null`）以及车辆与站点的身份。
 
@@ -456,6 +457,52 @@ DispatchZoneParameters = @{
 - 列表项可以另写 `Node`（control-server#389）：把这个站放到假地图路网的那个节点上。不写就不在路网上，空闲返回判它不可达——
   所以默认登记的点即使打开空闲返回也不会被承诺。
 - 辅助模块是 `L2WaitingPoints.psm1`。
+
+### 批次 9 的默认前置：一版已批准的测试充电策略（control-server#400）
+
+批次9-02 起，一辆投运车辆没有「已批准、已激活、适用范围覆盖它」的 `ChargingPolicyVersion` 时不承接任何新用途（派车链返回
+`CHARGING_POLICY_NOT_APPROVED`，规格 8.6 逐车硬阻断）。服务端出厂不带任何策略，所以**经本编排器跑的每个场景（两套装置都算），编排器在上面
+第 7 步之后、场景发布第一条需求之前，经 `InvokeFieldOps` 做三步**，与现场用的是同一套动词，不直写库：
+
+1. `import-charging-policy --input snapshots/preseed-charging-policy.json --fleet <全部车辆>`；
+2. `approve-charging-policy ... --source L2_PRESET`——来源写 L2 预置，**不写成现场批准**；
+3. `activate-charging-policy ... --allow-non-field-approval`——只有非现场批准的版本，激活必须带这个开关，现场说明里没有它。
+
+取值与理由：
+
+| 字段 | 值 | 理由 |
+| --- | --- | --- |
+| `chargingCompletionThresholdPercent` | 80 | 与 L1 夹具同一组值（`tests/ControlServer.Tests/TestChargingPolicies.cs`） |
+| `mandatoryChargeEntryThresholdPercent` | 30 | 批次9-05 把电量判据改成「电量 − 每趟估计 ≥ 余量，且不低于强制充电线」之后，这组值与此前的 `MinimumBatteryPercent = 30`（批次9-05 已删）逐条等价 |
+| `minimumPostTaskBatteryMarginPercent` | 30 | 同上 |
+| `estimatedTaskConsumptionPercent` | 0 | 同上 |
+| 稳定期／观察窗口／最小增量 | 180 秒／600 秒／3 | 与现场推荐值相同；无进展判定（control-server#407）读它们，要在场景里看到无进展的写 `Progress` 缩短 |
+| 适用车辆 | 全部 | 空即全部投运车辆 |
+
+**默认不导入名册**：一版名册都没有等于空名册，是合法状态，服务端照常启动、照常派搬运。合成 RIoT 报的电量是 80
+（`tools/ControlServer.FakeRiot/FakeRiotState.cs`），不会触发充电。**既有场景的 `setup.psd1` 一个都不改。**
+
+判据 `preseed:charging-policy` 进 `timeline.jsonl`（值是版本号，附覆盖到与没覆盖到的车）；导入的文件留在
+`snapshots/preseed-charging-policy.json`；收尾快照多了 `db-ChargingPolicyVersions.json`、`db-ChargingPolicyVehicleScopes.json`、
+`db-ChargingPolicyApprovals.json`、`db-ChargingPolicyActivations.json`、`db-ChargerRosterVersions.json`、`db-ChargerRosterEntries.json`。
+`ExpectServerStartupRefusal` 的场景跳过这一步（服务端起不来，没有库可导）。
+
+场景要别的策略时写 `ChargingPolicy` 键：
+
+| 取值 | 编排器做什么 |
+| --- | --- |
+| 不写 | 上面那一版，全部车辆 |
+| `$false` | 不导入：每辆车都不投运 |
+| `@{ VehicleScope = @('BROKERX-L2-0002') }` | 同样的取值，只覆盖列出的车 |
+| `@{ Progress = @{ StabilizationSeconds = 5; ObservationWindowSeconds = 20; MinimumIncreasePercent = 3 } }` | 同样的取值，只把无进展观察换成给定的三个数（control-server#407：默认 180 秒／600 秒跑满要十几分钟）；可与 `VehicleScope` 一起写 |
+
+- 负向场景 `charging-policy-missing-vehicle-not-commissioned` 是 `Fleet` 两台车 + 策略只覆盖第二台。
+- `run-journey-g3.ps1` 经本编排器跑它的 `g3-*` 场景，在它的 ControlServer 绑定挪到含本票的提交之后自然获得这一步（绑定归批次9-07）。
+  三个 staged G3 runner 设 `JourneyRuntime__enabled = 'false'`、不派车，逐车判定挡不到它们。
+- 辅助模块是 `L2ChargingPolicy.psm1`。
+- **打开 `IdleReturn` 的场景要注意（control-server#390）**：激活策略是空闲返回判定的最后一道前提，而它在场景发布第一条需求之前一刻才做，
+  所以空停、没有需求的车会在同一轮就承诺空闲返回，抢在第一条需求被受理之前。先发需求、等搬运的写法判的是一场竞速，会超时；
+  先等空闲返回出现、到点收敛，再发需求（`waiting-point-exclusive-reserve-occupy-release`、`g3-waiting-point-idle-return` 都这样写）。
 
 ### 批次 4 的辅助模块：`L2SlotGroups.psm1`
 
@@ -619,9 +666,23 @@ DispatchZoneParameters = @{
 
 - `WaitingPoints`（control-server#388） —— 等待点登记。不写时 `Fleet` 场景每车一个、单车场景不登记；`$false` 不登记；整数是默认点的个数；列表逐个写站号、
   站名、启用、白名单与路网节点（`Node`，control-server#389）。在服务端第一次启动之前经 `--migrate-only` 与 FieldOps `import-waiting-points` 正式导入。
-- `IdleReturn`（control-server#389） —— `$true` 打开空闲返回（服务端 `IdleReturn:Enabled`，连同只有本编排器会设的 `IdleReturn:AllowWithoutExecutionForL2Only`：过渡期的启动护栏单独见到 `Enabled` 就拒绝启动）。不写即关，与产品默认一致；
-  批次8-19（control-server#390）合入之前产品默认关，任何环境都不得打开，只有 L2 场景用它。空闲返回还要路网（`RouteGraph`）开着、
-  等待点在路网上（`WaitingPoints` 列表项的 `Node`），否则一个点也不承诺。
+- `IdleReturn`（control-server#389） —— `$true` 打开空闲返回（服务端 `IdleReturn:Enabled`）。不写即关，与产品默认一致。批次8-19（control-server#390）
+  合入之后承诺会被执行：物化、建单、到点收敛、离点释放，所以打开它的场景里车会在没有需求时自己开往等待点；批次8-18 那道单独打开即拒绝启动的
+  过渡护栏与只给本编排器的确认键已随之删掉。空闲返回还要路网（`RouteGraph`）开着、等待点在路网上（`WaitingPoints` 列表项的 `Node`），
+  否则一个点也不承诺。
+
+下面这个键是批次 9 的：
+
+- `FieldOperatorRoles`（control-server#406） —— 服务端的 R-11／R-13 名单，人工清桩确认按 `operatorId` 查它。写成
+  `@(@{ OperatorId = 'L2-R11'; Roles = @('R-11') })`；编排器把它写成证据目录下的 `field-operator-roles.json`，经
+  `FieldOperatorRoles__Path` 交给服务端，并在时间线上记一行名单；同时传 `FieldOperatorRoles__OnboardClearanceEntryDeclared=true`，
+  因为两套装置都有车载端的清桩入口（合成对端的控制面、真车载端 onboard-hmi#229 的入口）。不写就都不传：服务端没有名单，任何清桩确认都被拒
+  （`RECOVERY_AUTHENTICATION_FAILED`），而且人工清桩的出口不可用，充不上**根本不会形成**「已确认充不上」，单照旧是 `ORDER_HANG`
+  （control-server#406 审查 M1）。所以测「不形成」的负向场景也要写它，否则绿的是出口，不是判据。用它的场景是
+  `charging-unable-to-charge-pauses-charger`、`charging-general-fault-does-not-pause` 与 `g3-manual-station-clearance`。
+- `ClearanceToWaitingPointEnabled`（control-server#409） —— 写 `$true` 时编排器传 `JourneyRuntime__ClearanceToWaitingPointEnabled=True`：
+  清桩中的车在旧单结束之后由服务端开往等待点，到点即完成清桩。服务端默认关，关着时清桩中只等人工。用它的场景是
+  `charging-clearance-to-waiting-point`；它还要 `IdleReturn`、`RouteGraph` 与带 `Node` 的等待点，理由同空闲返回。
 
 下面四个键是批次 4 的仓位分组（control-server#71），默认前置见上面「派车场景的默认前置」。四个键的结构（仓号、字段名、键之间的组合规则，含
 `OnboardPeers` 各项自带的 `SlotStates`）都在启动任何进程之前校验，写错直接报错，而不是几分钟后表现成「一辆车也没派出去」；
@@ -647,8 +708,32 @@ DispatchZoneParameters = @{
 写成边车文件而不是命令行开关，是因为忘了传开关的那一次，场景会安安静静地证明另一回事。装置选错
 更是如此：把 `real-onboard-*` 跑在合成对端上，它会绿，而绿的是完全另一件事。
 
-**写场景时最容易踩的一条：不要把返回查询结果的函数直接送进管道。**`Invoke-L2Query` 用
-`return , $rows` 保住整张结果集，而这个包装**穿得过一层 `return`**：
+**写场景时最容易踩的一条：整体返回数组的函数，先赋值再用。**`Invoke-L2Query` 用
+`return , $rows` 保住整张结果集（零行是空数组而不是 `$null`，一行是一个元素的数组而不是那一行本身）。
+这个约定只对「原样收下那一个对象」的调用方成立。凡是会**枚举**函数输出的写法，拿到的都是
+「一个元素，那个元素是整张表」：
+
+```powershell
+$rows = @(Invoke-L2Query -Connection $connection -Sql '...')      # 错（wrapped）
+Invoke-L2Query -Connection $connection -Sql '...' | Where-Object { ... }   # 错（piped）
+foreach ($row in Invoke-L2Query -Connection $connection -Sql '...') { }    # 错（foreach）
+
+$rows = Invoke-L2Query -Connection $connection -Sql '...'         # 对：直接赋值
+$first = (Invoke-L2Query -Connection $connection -Sql '...')[0]   # 对：圆括号取值
+@((Invoke-L2Query -Connection $connection -Sql '...') | Where-Object { ... })   # 对：先圆括号，再送管道
+```
+
+包了 `@()` 之后的三个症状，按危害排：
+
+1. **`.Count` 恒为 1。**零行、一行、四十行数出来都是 1，所以 `$rows.Count -eq 1`（恰好一行）永远不会红，
+   而「出现了第二行」正是这类判据要防的。
+2. **空结果抛异常。**`$rows[0]` 是那张空表，严格模式下对它取属性直接抛错，场景中断而不是给出结论
+   （control-server#390 第一轮 G3 的 G3-12-07）。在 `Wait-L2Condition` 的探针里它被吞掉，表现成一次干等到超时。
+3. **有行的时候读出来看着是对的。**取属性会成员展开到每一行，单行时与正确写法的结果一模一样，多行时拼成
+   「三个值连成一行」。毛病因此藏得住：control-server#428 之前它被修过六次，每次只修踩到的那一处，
+   那一次扫出来还有 35 处 `@(Invoke-L2Query …)`，分布在 14 个文件里，其中 10 处在 CI 每轮都不跑的真装置与 G3 场景里。
+
+这个包装**穿得过一层 `return`**，所以不只是 `Invoke-L2Query`：
 
 ```powershell
 function Get-Journeys { return Invoke-L2Query -Connection $connection -Sql '...' }
@@ -657,9 +742,67 @@ Get-Journeys | Where-Object { $_.AgvId -eq $id }   # 错：管道里只有一个
 $rows = Get-Journeys; $rows | Where-Object { ... }  # 对：赋值展开了外面那层
 ```
 
-写错的症状是「三趟 journey 都在库里，却一趟都找不到」——`$_.AgvId` 成员展开成三个值拼成一行，
-一条也匹配不上。单行结果时完全看不出来，多行才现形。`Wait-L2Condition` 会吞掉探针里的异常
-（那是「还没到」和「探针写错了」共用的路径），所以它表现为一次干等到超时。
+`Get-L2Real*`、`Get-L2Journey*`、`Get-G3Inbound`／`Get-G3Outbound`、各场景自己的 `Get-Inbound`、`Get-PlanLegs`
+等一百多个函数都是同一个形状。名单不用记，也不手写：`Test-L2WholeArrayReturn.ps1` 从语法树推导
+（输出位置上的一元逗号、`Write-Output -NoEnumerate`、原样转交另一个整体返回的函数），`-ListHelpers` 会把它们列出来。
+
+**护栏。**`pwsh -NoProfile -File ./scripts/l2/Test-L2WholeArrayReturn.ps1`，几秒钟，不起任何进程，`test.yml` 每轮都跑。
+它扫 `scripts/` 下所有 `.ps1`／`.psm1`，上面三种写法出现一处就红。另报第四种，不是调用而是替身：
+
+- **reshaped**：在模块外面另写一个与模块里整体返回函数同名的函数（自检脚本里替换 `Invoke-L2Query` 的桩），
+  结尾却是 `return $rows`。在这种桩下面 `@(Invoke-L2Query …)` 恰好是对的，于是被测代码里的包装错误在自检里量出来
+  正确、到真库上才错。`Get-L2SecondLegIntents` 就是这样带着 `return , @(Invoke-L2Query …)` 过了自己的全部用例，
+  而「一条需求有两条第二程就拒绝判定」那条保护在真库上从来走不到。**桩的结尾必须是 `return , @(...)`。**
+
+**`Wait-L2RealOrLast`／`Wait-L2ConditionOrLast` 的结果，先赋值再 `@()`。**这两个函数成功时交回展开的值，超时时走
+`return & $Probe`，把探针里那次整体返回原样交出来——同一个调用两种形状。所以：
+
+```powershell
+$snapshots = @(Wait-L2RealOrLast … -Probe { Get-L2DemandJourneySnapshots $connection $demandId } …)   # 错：超时路径上 .Count 恒为 1
+$snapshots = Wait-L2RealOrLast … -Probe { Get-L2DemandJourneySnapshots $connection $demandId } …
+$snapshots = @($snapshots)                                                                             # 对：两条路径都对
+```
+
+护栏把「在输出位置上 `& $某个脚本块参数`」的函数认作转交函数；按参数名给它的脚本块如果以整体返回的调用收尾，
+这次调用就按整体返回对待。control-server#428 的第一版护栏没有这一条，`g3-reversed-direction-journey.ps1` 里正好有一处。
+
+它查不到的写法（读的是语法，不是运行）。每一条都做成了 `miss-` 夹具：实测运行结果是错的、扫描确实不报，
+所以这份清单是量出来的，哪一条不再成立夹具会红：
+
+- 叫不出名字的调用：`& $reader …`、`& (Get-Command Helper) …`、别名、`Invoke-Expression`；
+- 脚本块：存在变量里的、内联的 `@(& { Helper })`、`@(1 | ForEach-Object { Helper })`、`@(Invoke-Command { Helper })`，
+  以及按位置而不是按参数名传给转交函数的脚本块；
+- 没被认成整体返回的函数：`return (, $x)`、`return @(, $x)`、三元里的 `(, $x)`（只认裸的 `, $x` 与
+  `Write-Output -NoEnumerate`）；定义在 `scripts/` 之外或类方法里的；用 `$PSCmdlet.WriteObject($x, $false)` 交回的；
+- 别的枚举方式：`switch (Helper …) { }`、`$(foreach (…) { Helper })`；
+- 写成 `${function:Helper} = { … }` 的替身。
+
+`Helper … | Out-Null` 会被报成 piped，虽然它无害——写成 `$null = Helper …`。护栏的每一种判定都有夹具，并且**实际运行量过**
+调用方看到几行，所以规则失灵时它自己会红，不会安静地报 0 处。
+
+**「这条需求的那一趟旅程」这类本该恰好一行的读取，用 `Read-L2SingleRow`**（`L2SingleRow.psm1`，场景里自己 `Import-Module`）。
+`if ($rows.Count -eq 0) { return $null }; return $rows[0]` 在两行时安静地取第一行，而 `JourneyRuntimes WHERE DemandId`、
+`OrderIntents WHERE DemandId AND Purpose` 的键都不唯一，也没有 `ORDER BY`。`Read-L2SingleRow` 一行交回那一行，零行交回 `$null`
+（等待探针轮询的就是它），多行交回一个替身：列与查询相同，每一列的值都是 `(N rows, expected 1)`。替身是值不是异常，
+因为探针里的异常会被 `Wait-L2Condition` 吞成一次干等；拿它去和期望的阶段、车号、状态比都不成立，判据于是变红，
+actual 里写着行数。`-Required` 给不在探针里的读取用：零行也交回替身，而不是下标越界让场景在判据表之前中断。
+
+**规则一句话：建在单行读取上的判据，至少要有一个与字面期望值比较的 `-eq`。**替身每一列都是非空字符串，和期望值比相等
+一定不成立，但下面这些写法在替身上**都是 True**（每一条在 `Test-L2SingleRow.ps1` 里有用例钉着）：
+
+- 「不是 X」：`-ne 'X'`、`-notmatch`、`-notin`；
+- 「有值」：`$null -ne 列`、`[string]列 -ne ''`、直接拿行或列做真值判断；
+- 和数比大小：`列 -lt 5`（按文本比，`(` 排在所有数字前面）；`-like '*1*'`、`-match '\d'`（文字里有 2 和 1）；
+- 替身和替身：两次读取的同名列相等，同一次读取的两列也相等。
+
+所以上面任何一种都不能是判据对这一行说的唯一一句话。替身不带每次不同的序号是有意的：序号补不了「同一次读取的两列相等」，
+还会让日志去重失效（同一状态轮询 2 秒从 1 行变成 9 行）。另外两条限制：替身的列做数值转换会抛错
+（`[int]'(2 rows, expected 1)'`），这种列按文本比；不要写 `@(Read-L2SingleRow …)`，零行时它交回的是显式的 `$null`，
+包出来 `.Count` 是 1。
+
+**判「恰好 N 行」的判据，写完做一次「多一行必须红、零行必须给出结论」的验证。**把场景里的读法原样抽出来对着保留的库跑，
+把查询包成 `SELECT * FROM (…) UNION ALL SELECT * FROM (…)`（行数翻倍）与 `SELECT * FROM (…) WHERE 0`（零行）各跑一次。
+翻倍后仍然绿的判据是在空转。做法与每处的结果见 `evidence/l2/cs428-whole-array-return/`。
 
 **真装置下驱动条码只用 `SetSublot()` + `Submit()`，不注入按键。**`ValuePattern.SetValue` 和
 「手动提交」按钮的 `InvokePattern` 都不需要窗口有焦点，所以跑的时候不跟操作员抢键盘，别的窗口

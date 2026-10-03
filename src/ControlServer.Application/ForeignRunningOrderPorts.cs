@@ -19,7 +19,7 @@ public sealed record RiotListedOrder(
     string? ExecuteVehicleKey);
 
 /// <summary>
-/// Every order RIoT holds in states 1, 3, 7 and 9, or the admission that they could not all be read.
+/// Every order RIoT holds in states 1, 3, 7, 8, 9 and 10, or the admission that they could not all be read.
 /// </summary>
 /// <remarks>
 /// <see cref="IsComplete"/> is false when RIoT could not be asked, or answered with a page that does not cover every record.

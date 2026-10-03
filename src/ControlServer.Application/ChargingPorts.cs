@@ -120,11 +120,22 @@ public static class StationClearanceProofs
     public static IReadOnlyList<string> All { get; } = [ArrivedAtWaitingPoint, ManualConfirmation];
 }
 
-/// <summary>服务端置人工充电等待的原因里，本票已知的那一个；其余由批次9-06 定，库里不设 CHECK。</summary>
+/// <summary>服务端置人工充电等待的原因。库里不设 CHECK；批次9-12 可能另写它自己的原因。</summary>
 public static class ManualChargingHoldReasons
 {
     /// <summary>名册为空（或没有这辆车可用的桩）：退化到人工充电等待并告警，不静默（<c>REQ-0171</c>，规格 8.6）。</summary>
     public const string RosterEmpty = "ROSTER_EMPTY";
+
+    /// <summary>
+    /// 这辆车的充电单在短时间内第二次被取消、删除或 FAILED 后由人清除（批次9-06，control-server#404）：反复结束说明有人要它别动，
+    /// 不再自动分配充电，改为人工充电等待并告警，由人处理——与搬运自建单的「再次出问题即停」（<c>REQ-0361</c>）对等。
+    /// </summary>
+    public const string ChargingRepeatedlyFailed = "CHARGING_REPEATEDLY_FAILED";
+
+    /// <summary>
+    /// 现场确认充不上之后（批次9-12，control-server#410）：名册里没有别的桩给这辆车，而它的电量已低于这个周期策略的最低任务后电量余量、等不起桩恢复。
+    /// </summary>
+    public const string UnableToChargeLowBattery = "UNABLE_TO_CHARGE_LOW_BATTERY";
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

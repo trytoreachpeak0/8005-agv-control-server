@@ -82,6 +82,8 @@ public static class StructuralDispatchClassification
     private const int TransportDemandKeyAlreadyAccepted = 12;
     private const int FaultBlock = 15;
     private const int IdleReturnCommitment = 16;
+    private const int ChargingPolicyCommissioning = 17;
+    private const int ChargingStanding = 18;
     private const int WorkTypeScope = 20;
     private const int VehicleTaskType = 25;
     private const int RequiredMesFacts = 30;
@@ -131,6 +133,23 @@ public static class StructuralDispatchClassification
         Backlog(DispatchReasonCodes.VehicleCommittedToIdleReturn, IdleReturnCommitment,
             "control-server#389, REQ-0292: this vehicle committed to an idle return, which no later transport takes over. " +
             "Another vehicle, or this one once the return has converged (control-server#390), takes the demand."),
+        // ---- ChargingPolicyCommissioningCriterion (17) --------------------------------------------------
+        Backlog(DispatchReasonCodes.ChargingPolicyNotApproved, ChargingPolicyCommissioning,
+            "control-server#400, REQ-0282: this vehicle has no approved, activated charging policy covering it. The " +
+            "vehicle's side, not the demand's: another vehicle takes it, and activating a policy that covers this one " +
+            "clears it."),
+        Backlog(DispatchReasonCodes.ChargingPolicyEntryNotAboveRescueLine, ChargingPolicyCommissioning,
+            "control-server#403: the policy version in effect puts its mandatory charge entry threshold at or below the rescue " +
+            "line, so it is treated as unusable. The vehicle's side, cleared by activating a version with a higher threshold."),
+
+        // ---- ChargingStandingCriterion (18) -------------------------------------------------------------
+        Backlog(DispatchReasonCodes.VehicleCommittedToCharging, ChargingStanding,
+            "control-server#404, REQ-0290, REQ-0173: this vehicle committed to charging -- it holds the CHARGING purpose and a " +
+            "charger reservation, which no transport takes over. Another vehicle, or this one once it has charged, takes the demand."),
+        Backlog(DispatchReasonCodes.VehicleInManualChargingHold, ChargingStanding,
+            "control-server#404, REQ-0171: this vehicle is on the server's manual charging hold (no charger in the roster for " +
+            "it, or its charging order kept being ended). The vehicle's side: another vehicle takes the demand, and an " +
+            "administrator's return-to-service at the vehicle clears it."),
 
         // ---- WorkTypeScopeCriterion (20) ----------------------------------------------------------------
         Backlog(DispatchReasonCodes.OutOfScopeWorkType, WorkTypeScope,
@@ -220,7 +239,11 @@ public static class StructuralDispatchClassification
         Backlog("RIOT_VEHICLE_MAP_MISMATCH", VehicleDynamicFacts, "This vehicle is on another map right now."),
         Backlog("RIOT_VEHICLE_FACT_STALE", VehicleDynamicFacts, "This vehicle's observation is old."),
         Backlog("BATTERY_FACT_UNKNOWN", VehicleDynamicFacts, "This vehicle's battery is not reported."),
-        Backlog("BATTERY_POLICY_NOT_SATISFIED", VehicleDynamicFacts, "This vehicle is charging or low."),
+        Backlog("BATTERY_POLICY_NOT_SATISFIED", VehicleDynamicFacts,
+            "This vehicle is charging, or would not keep the approved post-task battery margin (control-server#403)."),
+        Backlog(DispatchReasonCodes.MandatoryChargeRequired, VehicleDynamicFacts,
+            "control-server#403, REQ-0290: this vehicle is below its mandatory charge entry threshold and belongs to " +
+            "charging, not to new work. The vehicle's side: another vehicle takes the demand."),
         Backlog("RIOT_VEHICLE_NOT_STOPPED", VehicleDynamicFacts, "This vehicle is moving."),
         Backlog("RIOT_VEHICLE_ORDER_OCCUPIED", VehicleDynamicFacts, "This vehicle holds an order."),
 

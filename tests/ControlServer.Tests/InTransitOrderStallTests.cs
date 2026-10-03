@@ -74,7 +74,7 @@ public sealed class InTransitOrderStallTests
     {
         await using RuntimeFixture fixture = await GateArrivalWaitAsync();
         JourneyRuntimeRow before = await fixture.RuntimeAsync();
-        fixture.Riot.SetOrderState(before.GateUpperId, RiotOrderState.Hang, terminal: false);
+        fixture.Riot.SetOrderState(before.GateUpperId!, RiotOrderState.Hang, terminal: false);
 
         await TickAndRunAsync(fixture);
         JourneyRuntimeRow first = await fixture.RuntimeAsync();
@@ -190,7 +190,7 @@ public sealed class InTransitOrderStallTests
     {
         await using RuntimeFixture fixture = await GateArrivalWaitAsync();
         JourneyRuntimeRow before = await fixture.RuntimeAsync();
-        fixture.Riot.SetOrderState(before.GateUpperId, orderState, terminal: true);
+        fixture.Riot.SetOrderState(before.GateUpperId!, orderState, terminal: true);
 
         await fixture.Engine.ExecuteOnceAsync(Token);
 
@@ -230,7 +230,7 @@ public sealed class InTransitOrderStallTests
     {
         await using RuntimeFixture fixture = await GateArrivalWaitAsync();
         JourneyRuntimeRow before = await fixture.RuntimeAsync();
-        fixture.Riot.SetOrderState(before.GateUpperId, RiotOrderState.Hang, terminal: false);
+        fixture.Riot.SetOrderState(before.GateUpperId!, RiotOrderState.Hang, terminal: false);
         await fixture.Engine.ExecuteOnceAsync(Token);
         DateTimeOffset? since = (await fixture.RuntimeAsync()).BlockReasonSince;
         Assert.Equal(OrderHang, (await fixture.RuntimeAsync()).BlockReasonCode);

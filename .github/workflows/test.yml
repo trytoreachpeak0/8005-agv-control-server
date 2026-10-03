@@ -33,7 +33,10 @@ jobs:
     # Skipped, not cancelled: GitHub decides this before any runner is involved.
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: [self-hosted, cs-test]
-    timeout-minutes: 30
+    # 30 until 2026-10-02: the suite had grown to ~26 minutes of dotnet test (3960 tests) and run
+    # 36921421653 (PR #437) hit the limit during artifact upload, ending "cancelled". A timeout cancel
+    # is the same path as a manual cancel and can wedge the runner session, so the limit keeps headroom.
+    timeout-minutes: 45
     env:
       # NuGet's vulnerability audit fetches its data from nuget.org during every restore, and with
       # TreatWarningsAsErrors a failed fetch (NU1900) is a red run that says nothing about the code:
@@ -184,6 +187,26 @@ jobs:
       - name: L2 scenario self-check (closure variable capture)
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2ClosureCapture.ps1
+
+      # A few seconds, pure parsing plus a handful of in-process fixture runs. Invoke-L2Query and over a hundred other
+      # readers under scripts/ end in `return , $rows`; written as `@(Invoke-L2Query ...)` the caller holds ONE
+      # element that is the whole result, so `.Count -eq 1` is true for zero rows and for forty, and an empty
+      # result throws on the first property read. It was fixed six times one site at a time before
+      # control-server#428 found 35 more in 14 files -- ten of them in real-rig and G3 scenarios, which this workflow
+      # never runs, so only a scan can hold the line there. The helpers are derived from the scripts, not
+      # listed, and every shape the scan judges is also measured at runtime, so a rule that stopped matching
+      # fails this step rather than reporting zero findings for ever.
+      - name: L2 scenario self-check (whole-array readers not enumerated)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/l2/Test-L2WholeArrayReturn.ps1
+
+      # Under a second, no rig and no SQLite. Read-L2SingleRow is what the "one journey per demand" reads go through
+      # since control-server#428: one row is the row, none is $null, several is a stand-in whose every column reads
+      # "(N rows, expected 1)" so the criterion built on it goes red and says why. Every scenario that uses it runs on
+      # a product that gives exactly one row, so no run on any rig ever reaches the two branches it exists for.
+      - name: L2 scenario self-check (single-row read)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/l2/Test-L2SingleRow.ps1
 
       # Exit code is the contract — the guest is zh-CN and prints 已通过! not
       # Passed!, so no step here may match on English console text.

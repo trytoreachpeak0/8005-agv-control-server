@@ -824,18 +824,7 @@ public sealed class MovementDispatchService
     private static bool IsExactAbsentAtObservation(
         string expectedUpperId,
         RiotOrderObservation observation) =>
-        observation.Kind == RiotOrderObservationKind.Unknown &&
-        string.Equals(observation.UpperId, expectedUpperId, StringComparison.Ordinal) &&
-        observation.OrderId is null &&
-        observation.Receipt is
-        {
-            Operation: "RECONCILE",
-            Classification: "AbsentAtObservation",
-            HttpStatusCode: null,
-            BusinessCode: null,
-            ResultPresent: false,
-            FailureCategory: null
-        };
+        observation.IsExactAbsentAtObservation(expectedUpperId);
 
     private async Task<MovementDispatchResult> MarkUnknownAsync(
         string upperId,

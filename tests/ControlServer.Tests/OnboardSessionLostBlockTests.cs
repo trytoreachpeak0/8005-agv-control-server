@@ -119,7 +119,7 @@ public sealed class OnboardSessionLostBlockTests
 
         // RIoT 报这一段的移动单 FAILED：引擎登记故障事实并写下 ORDER_FAILED。
         JourneyRuntimeRow beforeFailure = await fixture.RuntimeAsync();
-        fixture.Riot.FailOrder(beforeFailure.GateUpperId);
+        fixture.Riot.FailOrder(beforeFailure.GateUpperId!);
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
         JourneyRuntimeRow failed = await fixture.RuntimeAsync();
         Assert.Equal(VehicleFaultEvidence.OrderFailed, failed.BlockReasonCode);

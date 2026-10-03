@@ -919,22 +919,22 @@ public sealed class BlockedJourneyDashboardTests
 
     private static OrderIntentRow GateIntent(JourneyRuntimeRow runtime) => new()
     {
-        MovementLegId = runtime.GateMovementLegId,
+        MovementLegId = runtime.GateMovementLegId!,
         DemandId = runtime.DemandId,
-        UpperId = runtime.GateUpperId,
+        UpperId = runtime.GateUpperId!,
         Purpose = "TO_GATE",
-        TargetStationId = runtime.GateStationId,
+        TargetStationId = runtime.GateStationId!,
         CreatedAt = Now
     };
 
     /// <summary>A move order this server created for the journey and RIoT accepted, bound to <paramref name="vehicleKey"/>.</summary>
     private static OrderIntentRow ConfirmedIntent(JourneyRuntimeRow runtime, string purpose, string? vehicleKey = null) => new()
     {
-        MovementLegId = purpose == "TO_GATE" ? runtime.GateMovementLegId : runtime.PickupMovementLegId,
+        MovementLegId = purpose == "TO_GATE" ? runtime.GateMovementLegId! : runtime.PickupMovementLegId,
         DemandId = runtime.DemandId,
-        UpperId = purpose == "TO_GATE" ? runtime.GateUpperId : runtime.PickupUpperId,
+        UpperId = purpose == "TO_GATE" ? runtime.GateUpperId! : runtime.PickupUpperId,
         Purpose = purpose,
-        TargetStationId = purpose == "TO_GATE" ? runtime.GateStationId : runtime.PickupStationId,
+        TargetStationId = purpose == "TO_GATE" ? runtime.GateStationId! : runtime.PickupStationId,
         VehicleKey = vehicleKey ?? runtime.VehicleKey,
         MapId = runtime.MapId,
         CreatedAt = Now.AddMinutes(-20),

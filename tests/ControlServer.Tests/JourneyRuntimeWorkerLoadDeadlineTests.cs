@@ -219,7 +219,7 @@ public sealed class JourneyRuntimeWorkerLoadDeadlineTests
                 AgvId = runtime.AgvId,
                 DemandId = runtime.DemandId,
                 SlotOperationAttemptId = runtime.LoadSlotOperationAttemptId,
-                SlotsJson = runtime.TargetSlotsJson,
+                SlotsJson = runtime.TargetSlotsJson!,
                 State = RecoveryWorkflowState.AwaitingResult,
                 RequestMessageId = Guid.NewGuid().ToString("D"),
                 RequestContentHash = new string('c', 64),

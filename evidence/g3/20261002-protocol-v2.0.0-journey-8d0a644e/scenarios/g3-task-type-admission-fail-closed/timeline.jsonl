@@ -1,0 +1,85 @@
+{"at":"2026-10-02T14:49:21.2521588+00:00","note":"L2 run 20261002T144921220Z starting for scenario 'g3-task-type-admission-fail-closed'."}
+{"at":"2026-10-02T14:49:21.3023169+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-10-02T14:49:21.3047877+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-10-02T14:49:27.4342320+00:00","note":"Reusing cached onboard-hmi publish for 4e40e196205d55c363f97850d10bd18df9a686c0."}
+{"at":"2026-10-02T14:49:27.5728596+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-10-02T14:49:27.5770608+00:00","note":"Peers: onboard-hmi@4e40e196205d55c363f97850d10bd18df9a686c0, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-10-02T14:49:27.5826848+00:00","note":"Interactive desktop lock acquired."}
+{"at":"2026-10-02T14:49:28.4996817+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-10-02T14:49:28.7156163+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-10-02T14:49:30.5457647+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-10-02T14:49:30.6924473+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-10-02T14:49:33.9492117+00:00","note":"Package capacity rules imported."}
+{"at":"2026-10-02T14:49:33.9530867+00:00","note":"No waiting point registration: a single-vehicle rig, or WaitingPoints = $false."}
+{"at":"2026-10-02T14:49:36.0883926+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-10-02T14:49:36.2316972+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-10-02T14:49:38.5191281+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-10-02T14:49:38.5302207+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-10-02T14:49:38.5934654+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-10-02T14:49:39.1371097+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-10-02T14:49:39.1878174+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261002T144921220Z\\controlserver.db"}
+{"at":"2026-10-02T14:49:40.6958748+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"caa4136890014806a5a1e8bac0f0b8ab","version":1,"slotCount":8}}}
+{"at":"2026-10-02T14:49:40.7048962+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261002T144921220Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-10-02T14:49:42.0365756+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"caa4136890014806a5a1e8bac0f0b8ab","boundSlots":8,"version":1}}}
+{"at":"2026-10-02T14:49:42.1594796+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-10-02T14:49:42.1622324+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261002T144921220Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs412-8005-agv-control-server\\evidence\\g3\\20261002-protocol-v2.0.0-journey-8d0a644e\\scenarios\\g3-task-type-admission-fail-closed\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-10-02T14:49:43.7065032+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs412-8005-agv-control-server\\evidence\\g3\\20261002-protocol-v2.0.0-journey-8d0a644e\\scenarios\\g3-task-type-admission-fail-closed\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"9d343d9ba34b41b4907d167265f7122f","importedAt":"2026-10-02T22:49:42.3511876+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-10-02T14:49:43.7226305+00:00","note":"FieldOps: import-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261002T144921220Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs412-8005-agv-control-server\\evidence\\g3\\20261002-protocol-v2.0.0-journey-8d0a644e\\scenarios\\g3-task-type-admission-fail-closed\\snapshots\\preseed-charging-policy.json --fleet BROKERX-L2-0001"}
+{"at":"2026-10-02T14:49:45.0639856+00:00","note":"FieldOps: approve-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261002T144921220Z\\controlserver.db --version 1 --approved-by L2 orchestrator --role L2_PRESET --basis scripts/l2/L2ChargingPolicy.psm1 --source L2_PRESET"}
+{"at":"2026-10-02T14:49:46.3703280+00:00","note":"FieldOps: activate-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20261002T144921220Z\\controlserver.db --version 1 --activated-by L2 orchestrator --fleet BROKERX-L2-0001 --allow-non-field-approval"}
+{"at":"2026-10-02T14:49:47.7120697+00:00","criterion":"preseed:charging-policy","value":"OK","detail":{"withoutPolicy":[],"coveredAfter":["BROKERX-L2-0001"],"source":"L2_PRESET","version":1}}
+{"at":"2026-10-02T14:49:47.7138335+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-10-02T14:49:47.7185126+00:00","note":"Environment is up; entering scenario 'g3-task-type-admission-fail-closed'."}
+{"at":"2026-10-02T14:49:47.9661012+00:00","note":"Publishing WIRE_TO_GATE demand 8f3047aebdce4d7a8a427c45b186833b (AREA N1-3, sublot G3-10-20261002T144921220Z)."}
+{"at":"2026-10-02T14:49:48.0565841+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-10-02T14:49:49.8646207+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-10-02T14:49:49.8787788+00:00","criterion":"to_pickup-intent","value":"(null)"}
+{"at":"2026-10-02T14:49:50.1459211+00:00","criterion":"to_pickup-intent","value":"@{UpperId=W2G-8f3047ae-bdce-4d7a-8a42-7c45b186833b-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-10-02T14:49:50.2066162+00:00","criterion":"dispatch-plan-acknowledged","value":"1"}
+{"at":"2026-10-02T14:49:50.2372318+00:00","criterion":"stop-line:en-route-to-origin","value":"@{Direction=取货; TaskType=}"}
+{"at":"2026-10-02T14:49:50.2424231+00:00","note":"Stop line at stop-line:en-route-to-origin: StopDirection=「取货」 TaskType=(empty)"}
+{"at":"2026-10-02T14:49:50.2488198+00:00","note":"Publishing STAGING_TO_WIRE demand 72930531164a431080c288b0bcfcde80 (AREA C15-13), which the factory preset does not bind."}
+{"at":"2026-10-02T14:49:50.2743381+00:00","criterion":"unbound-reason-recorded","value":"(null)"}
+{"at":"2026-10-02T14:49:51.0658586+00:00","criterion":"unbound-reason-recorded","value":"TASK_TYPE_BINDING_MISSING"}
+{"at":"2026-10-02T14:49:51.0744169+00:00","note":"Missing-binding reason observed at 2026-10-02T14:49:51.0697322+00:00; G3-10-04 requires a business-state snapshot after it."}
+{"at":"2026-10-02T14:49:51.0823805+00:00","note":"Vehicle departs for the first stop (12)."}
+{"at":"2026-10-02T14:49:51.1296473+00:00","note":"Vehicle arrives at the first stop (12) and comes to rest."}
+{"at":"2026-10-02T14:49:53.2282247+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-10-02T14:49:53.2424399+00:00","criterion":"origin-worklist-acknowledged","value":"N1-3_N1-7"}
+{"at":"2026-10-02T14:49:53.2655117+00:00","criterion":"stop-line:at-origin","value":"@{Direction=取货; TaskType=焊线→质检关卡}"}
+{"at":"2026-10-02T14:49:53.2676595+00:00","note":"Stop line at stop-line:at-origin: StopDirection=「取货」 TaskType=「焊线→质检关卡」"}
+{"at":"2026-10-02T14:49:53.3187071+00:00","criterion":"onboard-can-submit","value":"True"}
+{"at":"2026-10-02T14:49:53.3239990+00:00","note":"Typing sublot G3-10-20261002T144921220Z into ScanTextBox through UI Automation."}
+{"at":"2026-10-02T14:49:53.3996782+00:00","criterion":"onboard-submit-ready","value":"True"}
+{"at":"2026-10-02T14:49:53.4236931+00:00","note":"Manual submit invoked."}
+{"at":"2026-10-02T14:49:53.4339644+00:00","criterion":"Load-attempt","value":"(null)"}
+{"at":"2026-10-02T14:49:54.2120342+00:00","criterion":"Load-attempt","value":"d92b3783-2c76-cd5d-87c6-4ebb676dbfd7"}
+{"at":"2026-10-02T14:49:54.2609627+00:00","criterion":"Load-waiting-operator","value":"(null)"}
+{"at":"2026-10-02T14:49:55.0549878+00:00","criterion":"Load-waiting-operator","value":"@{At=10/02/2026 14:49:55 +00:00; Phase=WAITING_OPERATOR; Active=System.Object[]}"}
+{"at":"2026-10-02T14:49:55.0797273+00:00","note":"Load d92b3783-2c76-cd5d-87c6-4ebb676dbfd7 targets slots 1; slot 1 is open (door OPEN), setting cargo to OCCUPIED."}
+{"at":"2026-10-02T14:49:55.1171734+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-10-02T14:49:56.1689917+00:00","criterion":"journey-stage","value":"AwaitingStationDeparture"}
+{"at":"2026-10-02T14:50:26.9225764+00:00","criterion":"journey-stage","value":"AwaitingDepartureSafety"}
+{"at":"2026-10-02T14:50:27.1888006+00:00","criterion":"journey-stage","value":"AwaitingGateArrival"}
+{"at":"2026-10-02T14:50:27.1950720+00:00","criterion":"destination-intent","value":"@{UpperId=W2G-8f3047ae-bdce-4d7a-8a42-7c45b186833b-GATE-1; OrderId=ORDER-000002; Status=CONFIRMED; Purpose=TO_GATE}"}
+{"at":"2026-10-02T14:50:27.1989689+00:00","note":"Vehicle departs for the second stop (210)."}
+{"at":"2026-10-02T14:50:27.2237220+00:00","note":"Vehicle arrives at the second stop (210) and comes to rest."}
+{"at":"2026-10-02T14:50:27.2341842+00:00","criterion":"Unload-attempt","value":"(null)"}
+{"at":"2026-10-02T14:50:28.0156956+00:00","criterion":"Unload-attempt","value":"fb0fbe4b-53e5-105b-a6ee-129b5f9436ec"}
+{"at":"2026-10-02T14:50:28.0262368+00:00","criterion":"Unload-waiting-operator","value":"(null)"}
+{"at":"2026-10-02T14:50:29.3466834+00:00","criterion":"Unload-waiting-operator","value":"@{At=10/02/2026 14:50:29 +00:00; Phase=WAITING_OPERATOR; Active=System.Object[]}"}
+{"at":"2026-10-02T14:50:29.3652794+00:00","criterion":"destination-worklist-acknowledged","value":"关卡"}
+{"at":"2026-10-02T14:50:29.3842923+00:00","criterion":"stop-line:at-destination","value":"@{Direction=卸货; TaskType=焊线→质检关卡}"}
+{"at":"2026-10-02T14:50:29.3869688+00:00","note":"Stop line at stop-line:at-destination: StopDirection=「卸货」 TaskType=「焊线→质检关卡」"}
+{"at":"2026-10-02T14:50:29.3888710+00:00","note":"Unload fb0fbe4b-53e5-105b-a6ee-129b5f9436ec targets slots 1; slot 1 is open (door OPEN), setting cargo to EMPTY."}
+{"at":"2026-10-02T14:50:29.4054919+00:00","criterion":"journey-stage","value":"AwaitingUnloadResult"}
+{"at":"2026-10-02T14:50:30.9919192+00:00","criterion":"journey-stage","value":"Completed"}
+{"at":"2026-10-02T14:50:31.0099379+00:00","note":"Stop line at stop-line:completed: StopDirection=(empty) TaskType=(empty)"}
+{"at":"2026-10-02T14:50:31.0264300+00:00","criterion":"runtime-iterations","value":"56"}
+{"at":"2026-10-02T14:50:31.8213134+00:00","criterion":"runtime-iterations","value":"57"}
+{"at":"2026-10-02T14:50:32.8769631+00:00","criterion":"runtime-iterations","value":"58"}
+{"at":"2026-10-02T14:50:33.9230803+00:00","criterion":"runtime-iterations","value":"59"}
+{"at":"2026-10-02T14:50:34.9670944+00:00","criterion":"runtime-iterations","value":"60"}
+{"at":"2026-10-02T14:50:35.0136067+00:00","criterion":"bound-journey-snapshots-acknowledged","value":"@{Journey=System.Object[]; Business=System.Object[]}"}
+{"at":"2026-10-02T14:50:35.0590114+00:00","note":"FP-IS-10: the unbound STAGING_TO_WIRE demand stayed on the server, the bound WIRE_TO_GATE demand ran on the real onboard."}
+{"at":"2026-10-02T14:50:35.6464748+00:00","note":"L2 port block lock released."}

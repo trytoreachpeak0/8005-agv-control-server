@@ -55,6 +55,8 @@ dotnet run --project tools/ControlServer.FakeOnboard --   --FakeOnboard:Peer:por
 | `PUT` | `/load-cancellations/{cancellationId}` | 发 `LoadCancellationStartRequested`，即操作员点「取消装货」 |
 | `GET` | `/load-cancellations` | 读发过的取消：服务端的决定、授权的仓位、报出的结果与是否被确认 |
 | `PUT` | `/sublot-scan` | 指定录入哪个 SUBLOT（`sublot`），以及是否重扫（`rescan`） |
+| `PUT` | `/manual-charging-returns/{requestId}` | 发 `ManualChargingReturnToServiceRequested`，即管理员在车上发起「充电后返回服务」（control-server#404）。`administratorRole` 不给就是 `MAINTENANCE_ADMINISTRATOR`；服务端的应答只进线路日志，效果到服务端的库里看 |
+| `PUT` | `/station-clearances/{confirmationRequestId}` | 发 `ManualStationClearanceConfirmationRequested`，即有清桩权限的人把车挪离充不上的桩后在车上点「确认清桩」（control-server#406）。`stationId` 是计划里 `CHARGER` 腿的站名；`operatorId` 不给是 `FAKE-ONBOARD-CLEARANCE`，能不能确认由场景的 `FieldOperatorRoles` 决定；`publicStationFunction` 不给为空、`clearedCondition` 不给是 `STATION_EMPTY`。同一个确认号再发时逐字节重发第一次的载荷、只换 `messageId`，与真车载端一致；应答只进线路日志 |
 
 ## 操作员扫码（批次 5，control-server#82）
 

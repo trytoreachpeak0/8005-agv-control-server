@@ -7,6 +7,7 @@ using ControlServer.Host.Runtime;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace ControlServer.Tests;
 
@@ -48,7 +49,8 @@ public sealed class WaitingJourneyDashboardTests
         using JsonDocument fact = await ReadAsync(database);
 
         Assert.Equal(600, fact.RootElement.GetProperty("warningAfterSeconds").GetInt64());
-        Assert.Equal(30, fact.RootElement.GetProperty("minimumBatteryPercent").GetInt32());
+        // control-server#403：接单线不再是一个全局配置值，逐行给出这辆车当前充电策略的强制充电线。
+        Assert.False(fact.RootElement.TryGetProperty("minimumBatteryPercent", out _));
         Assert.Equal(15, fact.RootElement.GetProperty("rescueBatteryPercent").GetInt32());
         JsonElement[] journeys = [.. fact.RootElement.GetProperty("journeys").EnumerateArray()];
         Assert.Equal(
@@ -65,6 +67,7 @@ public sealed class WaitingJourneyDashboardTests
         Assert.Equal(9, gate.GetProperty("batteryPercent").GetInt32());
         Assert.Equal(Now.AddSeconds(-2), gate.GetProperty("batteryObservedAt").GetDateTimeOffset());
         Assert.Equal("BelowRescueLine", gate.GetProperty("batteryLevel").GetString());
+        Assert.Equal(30, gate.GetProperty("mandatoryChargeEntryPercent").GetInt32());
 
         JsonElement blocked = journeys[0];
         Assert.Equal("LOAD_RESULT_REQUIRES_RECOVERY", blocked.GetProperty("blockReasonCode").GetString());
@@ -185,12 +188,40 @@ public sealed class WaitingJourneyDashboardTests
         return System.Net.WebUtility.HtmlDecode(html[rowStart..rowEnd]);
     }
 
-    private static async Task<JsonDocument> ReadAsync(DashboardDatabase database)
+    /// <summary>
+    /// 读一次端点。强制充电线来自 <paramref name="chargingPolicy"/>（默认每辆车都有测试策略，线 30），像宿主那样按请求开作用域取解析器。
+    /// </summary>
+    private static async Task<JsonDocument> ReadAsync(DashboardDatabase database, IChargingPolicyResolver? chargingPolicy = null)
     {
+        ServiceCollection services = new();
+        services.AddScoped(_ => chargingPolicy ?? TestChargingPolicies.AllApproved);
+        await using ServiceProvider provider = services.BuildServiceProvider();
         await using ControlServerDbContext reading = database.NewContext();
-        object result = await new WaitingJourneysQueryEndpoint(new JourneyRuntimeOptions(), new FixedClock(Now))
+        object result = await new WaitingJourneysQueryEndpoint(
+                new JourneyRuntimeOptions(), new FixedClock(Now), provider.GetRequiredService<IServiceScopeFactory>())
             .ReadAsync(reading, TestContext.Current.CancellationToken);
         return JsonDocument.Parse(JsonSerializer.Serialize(result));
+    }
+
+    /// <summary>
+    /// 监看不因为没有策略变哑（control-server#403；REQ-0169 只升级告警）：车没有已批准策略时强制充电线为 null，50% 的电量等级是「未知」，
+    /// 这一行照列；9% 仍然是救命线下——救命线不靠策略。
+    /// </summary>
+    [Fact]
+    public async Task AVehicleWithoutAnApprovedPolicyIsListedWithAnUnknownLevelAndTheRescueLineStillApplies()
+    {
+        await using DashboardDatabase database = await DashboardDatabase.CreateAsync();
+        await database.AddAsync("D-HALF", JourneyRuntimeStage.Blocked, stageStart: Now.AddMinutes(-12),
+            battery: 50, readAt: Now.AddSeconds(-2), reason: "LOAD_RESULT_REQUIRES_RECOVERY");
+        await database.AddAsync("D-RESCUE", JourneyRuntimeStage.AwaitingUnloadResult, stageStart: Now.AddMinutes(-12),
+            battery: 9, readAt: Now.AddSeconds(-2));
+
+        using JsonDocument fact = await ReadAsync(database, TestChargingPolicies.None);
+
+        JsonElement[] journeys = [.. fact.RootElement.GetProperty("journeys").EnumerateArray()];
+        Assert.Equal(["AGV-D-HALF", "AGV-D-RESCUE"], journeys.Select(journey => journey.GetProperty("agvId").GetString()));
+        Assert.All(journeys, journey => Assert.Equal(JsonValueKind.Null, journey.GetProperty("mandatoryChargeEntryPercent").ValueKind));
+        Assert.Equal(["Unknown", "BelowRescueLine"], journeys.Select(journey => journey.GetProperty("batteryLevel").GetString()));
     }
 
     private sealed class FixedClock(DateTimeOffset now) : TimeProvider

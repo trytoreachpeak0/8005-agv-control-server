@@ -22,19 +22,22 @@
 | --- | --- |
 | 来源仓库 | `8005-agv-program` |
 | 来源路径 | `docs/riot-call-allowlist.md` |
-| 来源提交 | `70bf4d449477436b1ccfeb5f12091f484f5e772f`（分支 `docs/allowlist-1-5-req-0356`，1.5「解除」随需求基线 v1.3.0 跟改，control-server#63） |
-| 取用日期 | 2026-09-15 |
+| 来源提交 | `01c87efe26465875d658cd2ae90133ac1d4e8faf`（`main`，发布需求基线 v1.9.0：1.2、1.3 节随 CP-0010 跟改，control-server#406） |
+| 取用日期 | 2026-10-01 |
 
 ## 上游改了以后怎么刷新
 
 副本与上游之间**没有自动同步**，也不可能有：CI 看不到另一个仓库。上游动了白名单，
 就要有人跑一遍这四步。
 
-1. 在同时有两个仓库的机器上，把上游文件整份拷过来：
+1. 在同时有两个仓库的机器上，从上游**提交里的 git blob** 整份取出来，不要从工作树拷：
 
    ```bash
-   cp <8005-agv-program>/docs/riot-call-allowlist.md vendor/8005-agv-program/docs/riot-call-allowlist.md
+   git -C <8005-agv-program> show <来源提交>:docs/riot-call-allowlist.md > vendor/8005-agv-program/docs/riot-call-allowlist.md
    ```
+
+   program 仓开着 `core.autocrlf=true`，工作树里那份是 CRLF，而仓库里存的是 LF。用 `cp` 拷工作树会得到一份
+   CRLF 副本和一个对不上 program 的哈希，测试照样绿，但副本已经不是被批准的那份字节（CP-0010 第四节第 3 条）。
 
 2. 算新哈希：
 
@@ -48,7 +51,7 @@
 4. 跑测试。**清单收紧时，服务端可能有调用越界**——那不是测试写错了，是产品代码要跟着改。
 
 **整份拷贝，不要手工编辑副本。**副本与上游的差异没有任何机制能自动发现，唯一的保障
-是「它永远是 `cp` 出来的」这条纪律。
+是「它永远是从上游提交 `git show` 出来的」这条纪律。
 
 ## 行尾
 

@@ -452,25 +452,37 @@ public sealed class WaitingPointRegistry(
             version, snapshot.ContentSha256, snapshot.SnapshotId, loadedAt, WaitingPointSources.GovernedImport, ordered);
     }
 
-    public async Task<WaitingPointRegistrationVersion?> ReadCurrentAsync(CancellationToken cancellationToken)
+    public Task<WaitingPointRegistrationVersion?> ReadCurrentAsync(CancellationToken cancellationToken) =>
+        ReadCurrentFromAsync(_context, cancellationToken);
+
+    public Task<WaitingPointRegistrationVersion?> ReadVersionAsync(long version, CancellationToken cancellationToken) =>
+        ReadVersionFromAsync(_context, version, cancellationToken);
+
+    /// <summary>
+    /// 当前版本，只读、不经治理发布器：给只读登记的调用方用（空闲返回的执行，control-server#390，要核验承诺所指的等待点是否仍然合格）。
+    /// </summary>
+    public static async Task<WaitingPointRegistrationVersion?> ReadCurrentFromAsync(
+        ControlServerDbContext context, CancellationToken cancellationToken)
     {
-        long? current = await _context.Set<WaitingPointVersionRow>()
+        ArgumentNullException.ThrowIfNull(context);
+        long? current = await context.Set<WaitingPointVersionRow>()
             .MaxAsync(row => (long?)row.Version, cancellationToken);
-        return current is null ? null : await ReadVersionAsync(current.Value, cancellationToken);
+        return current is null ? null : await ReadVersionFromAsync(context, current.Value, cancellationToken);
     }
 
-    public async Task<WaitingPointRegistrationVersion?> ReadVersionAsync(long version, CancellationToken cancellationToken)
+    private static async Task<WaitingPointRegistrationVersion?> ReadVersionFromAsync(
+        ControlServerDbContext context, long version, CancellationToken cancellationToken)
     {
-        WaitingPointVersionRow? header = await _context.Set<WaitingPointVersionRow>().AsNoTracking()
+        WaitingPointVersionRow? header = await context.Set<WaitingPointVersionRow>().AsNoTracking()
             .SingleOrDefaultAsync(row => row.Version == version, cancellationToken);
         if (header is null)
         {
             return null;
         }
-        WaitingPointRow[] rows = await _context.Set<WaitingPointRow>().AsNoTracking()
+        WaitingPointRow[] rows = await context.Set<WaitingPointRow>().AsNoTracking()
             .Where(row => row.Version == version)
             .ToArrayAsync(cancellationToken);
-        WaitingPointVehicleScopeRow[] scopes = await _context.Set<WaitingPointVehicleScopeRow>().AsNoTracking()
+        WaitingPointVehicleScopeRow[] scopes = await context.Set<WaitingPointVehicleScopeRow>().AsNoTracking()
             .Where(row => row.Version == version)
             .ToArrayAsync(cancellationToken);
         WaitingPointEntry[] points =

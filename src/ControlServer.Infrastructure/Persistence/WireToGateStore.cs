@@ -259,7 +259,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         string? provenRecoveryCheckpoint,
         IReadOnlyCollection<int> activeUnlockSlots,
         IReadOnlyCollection<string> pendingAttemptIds,
-        IReadOnlyCollection<string> pendingResultIds,
+        IReadOnlyCollection<ReportedPendingResult> pendingResults,
         CancellationToken cancellationToken)
     {
         SessionRecoveryRow row = await GetCurrentSessionAsync(agvId, sessionGeneration, cancellationToken)
@@ -275,7 +275,9 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         row.ProvenRecoveryCheckpoint = provenRecoveryCheckpoint;
         row.ActiveUnlockSlotsJson = JsonSerializer.Serialize(NormalizeSlots(activeUnlockSlots));
         row.PendingAttemptIdsJson = SerializeSorted(pendingAttemptIds);
-        row.PendingResultIdsJson = SerializeSorted(pendingResultIds);
+        row.PendingResultIdsJson = SerializeSorted(
+            await ResultsNotProcessedInThisGenerationAsync(agvId, sessionGeneration, pendingResults, cancellationToken)
+                .ConfigureAwait(false));
         // The report can name an attempt this server settled long ago, and nothing may arrive for it
         // afterwards: its result was accepted in an earlier session. Settling reported attempts only when
         // a result arrives left such a session on PENDING_FACT_RECONCILIATION_REQUIRED until some later
@@ -286,6 +288,67 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         row.ReasonCode = "RECOVERY_RECONCILIATION_PENDING";
         row.UpdatedAt = DateTimeOffset.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The messageIds of <paramref name="pendingResults"/> less every one this session generation has already
+    /// processed as an OperationResult with the same business content.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// control-server#435. A reconnecting vehicle resends its unacknowledged result before it reports, so the result can
+    /// be processed in this generation while the session has no pending list yet -- and the report then names it. The
+    /// vehicle's replay after the handshake is byte for byte the line already processed, so the inbox answers it from
+    /// its first response and <see cref="ReconcileReportedPendingResultAsync"/> never runs for it. Nothing else takes it
+    /// off while the link stays up: the session sat on PENDING_FACT_RECONCILIATION_REQUIRED, heartbeats flowing (hmi#233
+    /// real-rig run 36828773806, generation 7). The report is therefore reconciled here against what this generation has
+    /// already seen, which is what the replay would have done.
+    /// </para>
+    /// <para>
+    /// An inbox row stands for a processed line: <c>CaptureFirstResponseAsync</c> writes it -- and rewrites it to a new
+    /// generation's line on a rebound resend -- in the transaction that processed the line, after processing returned.
+    /// A result this generation has not processed stays pending; one processed only in an earlier generation stays
+    /// pending too, for the rebound replay to reprocess and reconcile (CV-OPERATION-RESULT-UNKNOWN-RECONCILE). So does
+    /// one whose business content differs from what the report holds.
+    /// </para>
+    /// </remarks>
+    private async Task<string[]> ResultsNotProcessedInThisGenerationAsync(
+        string agvId, long sessionGeneration, IReadOnlyCollection<ReportedPendingResult> pendingResults,
+        CancellationToken cancellationToken)
+    {
+        if (pendingResults.Count == 0)
+        {
+            return [];
+        }
+
+        string[] messageIds = pendingResults.Select(item => item.MessageId).ToArray();
+        ProtocolInboxRow[] processed = await dbContext.ProtocolInbox.AsNoTracking()
+            .Where(item => messageIds.Contains(item.MessageId) && item.MessageType == "OperationResult")
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        return pendingResults
+            .Where(pending => !processed.Any(item =>
+                string.Equals(item.MessageId, pending.MessageId, StringComparison.Ordinal) &&
+                IsResultOfThisGeneration(item.RequestJson, agvId, sessionGeneration, pending.ContentSha256)))
+            .Select(pending => pending.MessageId)
+            .ToArray();
+    }
+
+    private static bool IsResultOfThisGeneration(
+        string requestJson, string agvId, long sessionGeneration, string resultContentSha256)
+    {
+        using JsonDocument document = JsonDocument.Parse(requestJson);
+        JsonElement root = document.RootElement;
+        return root.TryGetProperty("agvId", out JsonElement lineAgvId) &&
+               lineAgvId.ValueKind == JsonValueKind.String &&
+               string.Equals(lineAgvId.GetString(), agvId, StringComparison.Ordinal) &&
+               root.TryGetProperty("sessionGeneration", out JsonElement lineGeneration) &&
+               lineGeneration.ValueKind == JsonValueKind.Number &&
+               lineGeneration.GetInt64() == sessionGeneration &&
+               root.TryGetProperty("payload", out JsonElement payload) &&
+               payload.ValueKind == JsonValueKind.Object &&
+               payload.TryGetProperty("resultContentSha256", out JsonElement contentSha256) &&
+               contentSha256.ValueKind == JsonValueKind.String &&
+               string.Equals(contentSha256.GetString(), resultContentSha256, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -482,12 +545,26 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The server holds no manual-charging hold of its own -- <c>VehicleBusinessProjection.ManualChargingHold</c>
-    /// is published as false from both sites that build it -- so the hold being lifted is the
-    /// vehicle's, and this request is the vehicle asking the server to put it back into eligibility
-    /// evaluation. The server's part is therefore to say whether it is in a position to evaluate the
-    /// vehicle at all, and the only fact it holds that can answer no is the session's own readiness:
-    /// a session in RecoveryRequired has facts to reconcile before the vehicle may take work again.
+    /// <b>The hold being lifted is the server's</b> (control-server#404; <c>CV-MANUAL-CHARGING-RETURN</c>'s
+    /// <c>REEVALUATE_ELIGIBILITY_AFTER_RETURN</c>). The server places a manual-charging hold on a vehicle that needs charging
+    /// when the charger roster has no charger for it, or when its charging order keeps being ended (<c>ChargingAllocator</c>),
+    /// keeps it per RIoT vehicle key (<see cref="ManualChargingHoldRow"/>), and publishes it as
+    /// <c>VehicleBusinessStateSnapshot.manualChargingHold</c>. This request -- an administrator at the vehicle, after it has
+    /// been charged by hand -- is the only way out of it: the battery rising does not lift it, and neither does the roster
+    /// being enabled again (the user's decision of 2026-09-29). An accepted request removes the hold row and writes the
+    /// release on its record <b>in the same save as the decision</b>, so there is never an accepted request with the hold still
+    /// standing, nor a lifted hold without the request that lifted it. The next dispatch round judges the vehicle afresh --
+    /// battery, roster and all -- and tells it the hold is off.
+    /// </para>
+    /// <para>
+    /// <b>A rejected request leaves the hold in place</b>, and the two rejections are what they were: a role outside the two the
+    /// profile allows, and a session in RecoveryRequired, which has facts to reconcile before the vehicle may take work again.
+    /// <b>A replayed <c>requestId</c> returns the stored decision and lifts nothing</b> -- a hold placed since the first time
+    /// is a different hold, and needs a request of its own. A vehicle with no hold is decided exactly as before.
+    /// </para>
+    /// <para>
+    /// The request carries the vehicle's key because it arrives naming the AGV id; the receiver resolves it from the fleet
+    /// roster (<c>OnboardMessageProcessor</c>). Without it -- an AGV not in the roster -- there is no hold to find.
     /// </para>
     /// <para>
     /// The role check is here rather than left to the schema because neither end validates against
@@ -552,9 +629,18 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
             ProblemFieldPath = fieldPath,
             ProblemDisplayMessage = displayMessage,
             VehicleBusinessStateRevision = revision,
-            DecidedAt = DateTimeOffset.UtcNow
+            // The caller's clock where it has one (control-server#404 review): the hold's release carries the same instant,
+            // and the allocator compares it with the instants its own TimeProvider stamps on charging cycles.
+            DecidedAt = request.DecidedAt ?? DateTimeOffset.UtcNow
         };
         dbContext.ManualChargingReturnToServiceRequests.Add(row);
+        if (outcome == ManualChargingReturnToServiceDecision.ReturnedToEligibilityEvaluation &&
+            !string.IsNullOrWhiteSpace(request.VehicleKey))
+        {
+            await ManualChargingHoldWrites
+                .StageReleaseAsync(dbContext, request.VehicleKey, request.RequestId, row.DecidedAt, cancellationToken)
+                .ConfigureAwait(false);
+        }
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return ToDecision(row);
     }
@@ -689,6 +775,15 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         {
             throw new BusinessIdentityConflictException(
                 $"Journey '{plan.JourneyId}' is {journey.Stage} and cannot take an appended demand.");
+        }
+
+        // An idle return carries no demand and takes none (control-server#390), and neither does a charging journey
+        // (control-server#404): the round keeps its vehicle out of the en-route candidates, and this is the write-side half
+        // of that rule.
+        if (journey.CarriesNoDemand())
+        {
+            throw new BusinessIdentityConflictException(
+                $"Journey '{plan.JourneyId}' is {(journey.IsIdleReturn() ? "an idle return" : "a charging journey")} and cannot take an appended demand.");
         }
 
         // 装货阶段结束了也不接（批次7-07，control-server#212）：持货超时、让站之后不再接受新的待装需求（REQ-0354 末句），
@@ -3026,7 +3121,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, null)
     };
 
-    private static OrderIntentRow ToRow(OrderIntent intent) => new()
+    internal static OrderIntentRow ToRow(OrderIntent intent) => new()
     {
         MovementLegId = intent.MovementLegId,
         DemandId = intent.DemandId,
@@ -3086,7 +3181,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         row.GateStationId == journey.GateStationId &&
         row.GateStationRiotId == journey.GateStationRiotId &&
         row.ExpectedBasketCount == journey.ExpectedBasketCount &&
-        (JsonSerializer.Deserialize<int[]>(row.TargetSlotsJson) ?? []).SequenceEqual(journey.TargetSlots) &&
+        (JsonSerializer.Deserialize<int[]>(row.TransportColumn(row.TargetSlotsJson)) ?? []).SequenceEqual(journey.TargetSlots) &&
         row.OperationSessionId == journey.OperationSessionId &&
         row.PickupMovementLegId == journey.PickupMovementLegId &&
         row.PickupUpperId == journey.PickupUpperId &&
@@ -3283,7 +3378,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
     /// journey on a vehicle re-published a revision Onboard had already adopted and had it refused
     /// as SNAPSHOT_REVISION_REGRESSION -- which raises a protocol problem and tears the session down.
     /// </remarks>
-    private async Task SeedSnapshotRevisionsAsync(
+    internal async Task SeedSnapshotRevisionsAsync(
         JourneyRuntimeRow runtime,
         CancellationToken cancellationToken)
     {
@@ -3335,7 +3430,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
     /// counter only records it, and so always equals the highest revision stored on the vehicle's journeys. Its readers
     /// switch over in control-server#208.
     /// </remarks>
-    private async Task AdvanceSnapshotRevisionCounterAsync(
+    internal async Task AdvanceSnapshotRevisionCounterAsync(
         JourneyRuntimeRow runtime,
         CancellationToken cancellationToken)
     {
@@ -3388,6 +3483,47 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         await DemandJourneyLookup.ReleasedForRedispatch(dbContext)
             .AnyAsync(row => row.DemandId == snapshot.DemandId, cancellationToken).ConfigureAwait(false);
 
+    /// <summary>
+    /// 把一次空闲返回承诺物化成旅程（批次8-19，control-server#390）：旅程行、开往等待点的那一个停靠与它的订单意图，同一次保存。
+    /// 这个旅程 id 已经有旅程行时什么也不写，返回假——物化按 <c>JourneyId</c> 幂等，承诺与物化之间崩溃了，下一轮补建恰好一次。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 快照修订号的基准与受理一样从按车计数器派生、并在同一次保存里推进计数器（<see cref="SeedSnapshotRevisionsAsync"/>、
+    /// <see cref="AdvanceSnapshotRevisionCounterAsync"/>）：车载端按消息类型记修订号，空闲返回发出的计划与业务状态必须接在上一趟之后。
+    /// </para>
+    /// <para>
+    /// 先读一次只为分清「已经物化过」；两个上下文同时物化同一个承诺时，由 <c>JourneyRuntimes</c> 的主键拒绝后到的那一次。
+    /// </para>
+    /// </remarks>
+    public async Task<bool> MaterializeIdleReturnAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopRow stop,
+        OrderIntent orderIntent,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(runtime);
+        ArgumentNullException.ThrowIfNull(stop);
+        ArgumentNullException.ThrowIfNull(orderIntent);
+        if (!runtime.IsIdleReturn())
+        {
+            throw new ArgumentException($"Journey '{runtime.JourneyId}' is not an idle return.", nameof(runtime));
+        }
+        if (await dbContext.JourneyRuntimes.AsNoTracking()
+                .AnyAsync(row => row.JourneyId == runtime.JourneyId, cancellationToken).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        await SeedSnapshotRevisionsAsync(runtime, cancellationToken).ConfigureAwait(false);
+        dbContext.JourneyRuntimes.Add(runtime);
+        dbContext.Set<JourneyStopRow>().Add(stop);
+        dbContext.OrderIntents.Add(ToRow(orderIntent));
+        await AdvanceSnapshotRevisionCounterAsync(runtime, cancellationToken).ConfigureAwait(false);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
     private static JourneyRuntimeRow ToRuntimeRow(string demandId, JourneyExecutionPlan journey)
     {
         // 派生身份取键不取需求 id（批次7-10，control-server#215）：第一次受理两者相同，改派之后键带代次，
@@ -3418,6 +3554,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
             GateMovementLegId = journey.GateMovementLegId,
             GateUpperId = journey.GateUpperId,
             DispatchGeneration = journey.DispatchGeneration,
+            ChargingPolicyVersion = journey.ChargingPolicyVersion,
+            PublishedBatteryState = journey.PublishedBatteryState,
             VehicleBusinessRevision = 1,
             WorklistRevision = 1,
             PlanRevision = 1,

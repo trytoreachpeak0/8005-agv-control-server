@@ -15,7 +15,8 @@ control-server#389；REQ-0291、REQ-0292、REQ-0293 前半句）。
 **第二个事实**：再来一条搬运需求，它派给没承诺的那辆车，不派给已承诺的那辆；已承诺那辆的占有与预占原样留着（不取消、不换点）。
 同样另等一段再断言「原样」。
 
-本票没有执行：承诺之后不建单、车不动，场景只断言承诺与派车结论，不断言车到点（到点在批次8-19）。
+批次8-19（control-server#390）起承诺会被执行：下一轮物化成一趟空闲返回旅程、建开往 214 的单段移动。本场景不驱动 RIoT 执行那张单
+（它停在排队），所以车一直在途、承诺与预占原样留着；到点、收敛与离点释放在 waiting-point-exclusive-reserve-occupy-release。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
@@ -123,15 +124,20 @@ $assertions.Add(
     0,
     "$otherKey : $($otherClaims.Count)")
 
-# 承诺不是执行：没有旅程行、没有订单意图。
-$journeyCount = [int](Invoke-L2Query -Connection $connection -Sql 'SELECT COUNT(*) AS N FROM JourneyRuntimes')[0].N
-$intentCount = [int](Invoke-L2Query -Connection $connection -Sql 'SELECT COUNT(*) AS N FROM OrderIntents')[0].N
+# 批次8-19（control-server#390）：承诺在下一轮物化成恰好一趟空闲返回旅程、一张开往 214 的意图，都是那一趟；没有第二份，也没有搬运。
+$idleJourneys = Invoke-L2Query -Connection $connection -Sql (
+    "SELECT JourneyId, AgvId FROM JourneyRuntimes WHERE JourneyId LIKE 'idle-return:%'")
+$transportCount = [int](Invoke-L2Query -Connection $connection -Sql (
+    "SELECT COUNT(*) AS N FROM JourneyRuntimes WHERE JourneyId NOT LIKE 'idle-return:%'"))[0].N
+$idleIntents = Invoke-L2Query -Connection $connection -Sql (
+    "SELECT UpperId, DestinationStationId FROM OrderIntents WHERE Purpose = 'TO_WAITING_POINT'")
 $assertions.Add(
     'L2-IRC-04',
-    '承诺不建单也不物化旅程：没有旅程行、没有订单意图',
-    ($journeyCount -eq 0 -and $intentCount -eq 0),
-    '0 / 0',
-    "$journeyCount / $intentCount")
+    '承诺物化成恰好一趟空闲返回旅程（就是承诺那一趟）与一张开往 214 的意图，没有第二份，也没有搬运旅程',
+    ($idleJourneys.Count -eq 1 -and [string]$idleJourneys[0].JourneyId -eq $committedJourney -and $transportCount -eq 0 -and
+        $idleIntents.Count -eq 1 -and [int]$idleIntents[0].DestinationStationId -eq 214),
+    "1 idle return $committedJourney / 0 transport / 1 intent to 214",
+    "$($idleJourneys.Count) idle returns $(($idleJourneys | ForEach-Object { $_.JourneyId }) -join ',') / $transportCount transport / $($idleIntents.Count) intents")
 
 # --- 3. 第二个事实：之后来的搬运不派给已承诺那辆 ------------------------------------------------------------
 

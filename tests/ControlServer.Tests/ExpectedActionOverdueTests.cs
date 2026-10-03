@@ -453,6 +453,9 @@ public sealed class ExpectedActionOverdueTests
         builder.WebHost.UseUrls("http://127.0.0.1:0");
         builder.Logging.ClearProviders();
         builder.Services.AddDbContext<ControlServerDbContext>(options => options.UseSqlite(fixture.Connection));
+        // control-server#392: the idle return card reads the evaluator's verdict board, a host singleton.
+        builder.Services.AddSingleton<ControlServer.Host.Runtime.IdleReturn.IdleReturnVerdictBoard>();
+        builder.Services.AddSingleton<ControlServer.Host.Runtime.Charging.ChargingAllocationBoard>();
         await using WebApplication app = builder.Build();
         app.MapDashboardQueries();
         await app.StartAsync(TestContext.Current.CancellationToken);
@@ -768,7 +771,17 @@ public sealed class ExpectedActionOverdueTests
                 provenRecoveryCheckpoint = (string?)null,
                 activeUnlockSlots = Array.Empty<int>(),
                 forcedRecoveryGeneration = 0,
-                pendingResults = (pendingResultMessageIds ?? []).Select(id => new { messageId = id }).ToArray()
+                // PendingResultRef as the protocol requires it: the server reads contentSha256 to tell whether a result it
+                // has already processed is the one reported (control-server#435).
+                pendingResults = (pendingResultMessageIds ?? [])
+                    .Select(id => new
+                    {
+                        messageType = "OperationResult",
+                        messageId = id,
+                        businessId = id,
+                        contentSha256 = new string('d', 64)
+                    })
+                    .ToArray()
             });
 
         /// <summary>

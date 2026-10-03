@@ -148,7 +148,7 @@ public sealed class JourneyStopEntryRequestIdTests
         context.ProtocolOutbox.AddRange(
             new ProtocolOutboxRow
             {
-                MessageId = runtime.SublotRequestMessageId,
+                MessageId = runtime.SublotRequestMessageId!,
                 MessageType = "SublotEntryRequest",
                 PayloadJson = "{}",
                 CreatedAt = Now

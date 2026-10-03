@@ -192,7 +192,7 @@ function Get-L2SecondLegIntents {
         [Parameter(Mandatory)][object]$Connection,
         [Parameter(Mandatory)][string]$DemandId)
 
-    return , @(Invoke-L2Query -Connection $Connection -Sql (
+    return , (Invoke-L2Query -Connection $Connection -Sql (
         "SELECT UpperId, OrderId, Status, Purpose FROM OrderIntents " +
         "WHERE DemandId = '$DemandId' AND Purpose <> 'TO_PICKUP' ORDER BY UpperId"))
 }

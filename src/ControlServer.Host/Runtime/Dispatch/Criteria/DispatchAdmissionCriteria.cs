@@ -37,10 +37,12 @@ public static class DispatchAdmissionCriteria
         ILogger<SlotCapacityCriterion> slotCapacityLogger,
         ITransportDemandSuppressionStore suppressions,
         ControlServerDbContext dbContext,
+        IChargingPolicyResolver chargingPolicy,
         RouteGraphAccess? routeGraph = null,
         CatalogAvailabilityAccess? catalog = null,
         PreCreateGate? createGate = null,
-        IVehicleSlotLedger? slotLedger = null)
+        IVehicleSlotLedger? slotLedger = null,
+        ChargingPolicyCommissioningLog? commissioningLog = null)
     {
         List<IDispatchAdmissionCriterion> criteria =
         [
@@ -55,6 +57,12 @@ public static class DispatchAdmissionCriteria
             // Required, like the fault block: a vehicle committed to an idle return takes no transport (control-server#389,
             // REQ-0292), and the reason has to reach the backlog rather than surface only as the claims key refusing intake.
             new IdleReturnCommitmentCriterion(dbContext),
+            // Required, for the same reason (control-server#404): a vehicle committed to a charger, or held for manual charging,
+            // takes no transport, and the backlog has to say so.
+            new ChargingStandingCriterion(dbContext),
+            // 批次9-02（control-server#400）：没有已批准策略版本的车不承接新用途。必填，理由同故障阻断：逐车硬阻断（规格 8.6）
+            // 一个调用方可以漏传，就会被最需要它的那个调用方漏掉。
+            new ChargingPolicyCommissioningCriterion(chargingPolicy, options, commissioningLog ?? new ChargingPolicyCommissioningLog()),
             new WorkTypeScopeCriterion(options),
             // Required rather than optional for the same reason as the fault block: B2's two
             // vehicle filters are fail-closed, and a fail-closed rule a caller may omit is one
@@ -145,6 +153,9 @@ public static class DispatchAdmissionCriteria
         services.AddScoped<IDispatchAdmissionCriterion, TransportDemandKeyAlreadyAcceptedCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, VehicleFaultBlockCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, IdleReturnCommitmentCriterion>();
+        services.AddScoped<IDispatchAdmissionCriterion, ChargingStandingCriterion>();
+        services.AddScoped<IChargingPolicyResolver, ChargingPolicyResolver>();
+        services.AddScoped<IDispatchAdmissionCriterion, ChargingPolicyCommissioningCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, WorkTypeScopeCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, VehicleTaskTypeAdmissionCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, DispatchZoneVehicleCriterion>();
@@ -189,6 +200,11 @@ public static class DispatchAdmissionCriteria
         // 上一轮每辆在途车被「本车货物占侧」判满的那几侧（批次7-07，control-server#212）。单例：这一轮的派车写、下一轮的推进段读，
         // 每一轮是一个新的作用域。
         services.AddSingleton<SlotGroupFullnessBoard>();
+        // control-server#403: which vehicle is in mandatory charging outlives the per-round runner, so the log line fires on change.
+        services.AddSingleton<MandatoryChargeBoard>();
+        // control-server#403 review S3: which vehicle was already logged as not commissioned outlives the per-round criterion.
+        // A required constructor argument, so a host that forgets this line fails to build the chain instead of logging every round.
+        services.AddSingleton<ChargingPolicyCommissioningLog>();
         // The round itself and the Onboard facts it shares with the advance side (control-server#209). Scoped, like
         // the engine: both must be handed the engine's own DbContext -- see DispatchRoundRunner.
         services.AddScoped<OnboardDispatchFactsReader>();

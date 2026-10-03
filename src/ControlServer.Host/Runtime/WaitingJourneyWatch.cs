@@ -19,7 +19,7 @@ namespace ControlServer.Host.Runtime;
 /// <b>It reports and nothing else.</b> v2 has no automatic charging before batch 9, and REQ-0169 lets a falling battery
 /// raise the alarm and its urgency, never cancel, reassign to charging or rebuild an order. So this class writes three
 /// columns of its own and a log line; it never writes a stage, a reason code, an order or an outbound message. Under the
-/// dispatch minimum the line is an error; under the rescue line it says a person has to move the vehicle to a charger.
+/// vehicle's mandatory charge entry threshold (its charging policy, control-server#403) the line is an error; under the rescue line it says a person has to move the vehicle to a charger.
 /// Whether a vehicle should instead go and charge on its own is program#134, a batch 9 question.
 /// </para>
 /// <para>
@@ -45,6 +45,7 @@ namespace ControlServer.Host.Runtime;
 internal sealed class WaitingJourneyWatch(
     ControlServerDbContext dbContext,
     IRiotVehicleFacts vehicleFacts,
+    IChargingPolicyResolver chargingPolicy,
     JourneyRuntimeOptions options,
     TimeProvider timeProvider,
     ILogger logger)
@@ -132,7 +133,10 @@ internal sealed class WaitingJourneyWatch(
 
         if (due)
         {
-            Log(runtime, waited, battery, now);
+            // The line is read when a line is logged, not every round: the policy only matters to what the line says.
+            int? entry = await WaitingJourneyBattery.MandatoryChargeEntryPercentAsync(
+                chargingPolicy, runtime.VehicleKey, cancellationToken).ConfigureAwait(false);
+            Log(runtime, waited, battery, entry, now);
         }
 
         bool record = due ||
@@ -195,9 +199,9 @@ internal sealed class WaitingJourneyWatch(
         }
     }
 
-    private void Log(JourneyRuntimeRow runtime, TimeSpan waited, int? battery, DateTimeOffset readAt)
+    private void Log(JourneyRuntimeRow runtime, TimeSpan waited, int? battery, int? entry, DateTimeOffset readAt)
     {
-        WaitingBatteryLevel level = WaitingJourneyBattery.Level(battery, options);
+        WaitingBatteryLevel level = WaitingJourneyBattery.Level(battery, entry, options);
         string where = runtime.BlockReasonCode is { } reason
             ? $"{runtime.Stage} (reason {reason})"
             : runtime.Stage.ToString();
@@ -206,10 +210,14 @@ internal sealed class WaitingJourneyWatch(
             : string.Create(CultureInfo.InvariantCulture, $"unknown (no reading from RIoT at {readAt:O})");
         string advice = level switch
         {
-            WaitingBatteryLevel.Unknown => "The battery could not be read; look at the vehicle. " + NothingMovesIt,
+            WaitingBatteryLevel.Unknown when battery is null => "The battery could not be read; look at the vehicle. " + NothingMovesIt,
+            // control-server#403: without a policy the battery cannot be judged against a threshold; still logged.
+            WaitingBatteryLevel.Unknown =>
+                "No approved charging policy covers this vehicle, so its battery cannot be judged against a mandatory charge " +
+                "entry threshold; look at the vehicle. " + NothingMovesIt,
             WaitingBatteryLevel.BelowDispatchMinimum => string.Create(
                 CultureInfo.InvariantCulture,
-                $"The battery is below the dispatch minimum of {options.MinimumBatteryPercent}%. {NothingMovesIt}"),
+                $"The battery is below the mandatory charge entry threshold of {entry}% of its charging policy. {NothingMovesIt}"),
             WaitingBatteryLevel.BelowRescueLine => string.Create(
                 CultureInfo.InvariantCulture,
                 $"The battery is below the rescue line of {options.WaitingJourneyRescueBatteryPercent}%: a person has to " +

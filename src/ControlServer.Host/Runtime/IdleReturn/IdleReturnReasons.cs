@@ -38,7 +38,7 @@ public static class IdleReturnReasons
     /// <summary>电量读不到，或车正在充电。</summary>
     public const string BatteryUnknownOrCharging = "IDLE_RETURN_BATTERY_UNKNOWN_OR_CHARGING";
 
-    /// <summary>电量低于强制充电入口线（<see cref="ControlServer.Application.IMandatoryChargeLine"/>；批次 8 为过渡实现）。</summary>
+    /// <summary>电量低于强制充电入口线（<see cref="ControlServer.Application.IMandatoryChargeLine"/>；按车读充电策略版本，control-server#403）。</summary>
     public const string BelowMandatoryChargeLine = "IDLE_RETURN_BELOW_MANDATORY_CHARGE_LINE";
 
     /// <summary>不知道车在哪个站：路网代价没有起点。</summary>
@@ -56,6 +56,20 @@ public static class IdleReturnReasons
     /// <summary>评估这辆车时出了异常：它这一轮什么也没留下，别的车照常。</summary>
     public const string EvaluationFailed = "IDLE_RETURN_EVALUATION_FAILED";
 
+    /// <summary>
+    /// 这辆车上一趟空闲返回的单刚被取消、删除，或 FAILED 后故障刚被人清除（已确认失败，control-server#390）：收尾后
+    /// <c>JourneyRuntime:OwnOrderRebuildDelay</c>（默认 30 秒）之内不承诺新的空闲返回，给车旁的人走开或把车停住的时间——
+    /// 与搬运自建单被取消后的第一道护栏（control-server#318）同一个时长、同一个理由。
+    /// </summary>
+    public const string CooldownAfterEndedOrder = "IDLE_RETURN_COOLDOWN_AFTER_ENDED_ORDER";
+
+    /// <summary>
+    /// 这辆车自最近一趟非空闲返回的旅程之后，已确认失败的空闲返回在 <c>JourneyRuntime:OwnOrderRebuildRepeatWindow</c>（默认 10 分钟）
+    /// 之内累计两次（夹在中间的别的收尾不计数、也不打断计数）：反复取消说明有人要这辆车别动，不再自动承诺空闲返回，告警等人。
+    /// 与搬运的第三道护栏（<c>REQ-0361</c>）对等；窗口过去不自动解除，车做了别的旅程（被派了搬运）才解除。
+    /// </summary>
+    public const string StoppedAfterRepeatedEndedOrders = "IDLE_RETURN_STOPPED_AFTER_REPEATED_ENDED_ORDERS";
+
     // 候选等待点被排除的原因：前五个是 WaitingPointEligibilityReasons（批次8-17）的码，原样沿用；下面两个是本票的。
 
     /// <summary>这个等待点此刻被别的承诺预占或占用着。</summary>
@@ -63,4 +77,10 @@ public static class IdleReturnReasons
 
     /// <summary>路网上从车的位置到不了这个等待点，或它不在路网上。</summary>
     public const string PointUnreachable = "WAITING_POINT_UNREACHABLE";
+
+    /// <summary>
+    /// 这辆车上一次开往这个等待点已确认失败（单被取消或删除后车停稳、单 FAILED 后故障被人工清除；control-server#390）：
+    /// 下一次承诺排除原失败点（<c>REQ-0296</c> 末句）。车做完别的用途（有了更新的旅程）之后不再排除。
+    /// </summary>
+    public const string PointFailedLastAttempt = "WAITING_POINT_FAILED_LAST_ATTEMPT";
 }

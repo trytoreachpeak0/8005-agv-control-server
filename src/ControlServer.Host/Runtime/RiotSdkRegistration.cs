@@ -70,6 +70,10 @@ internal static class RiotSdkRegistration
             services.GetRequiredService<HttpRiotMovementGateway>());
         services.AddScoped<IRiotOrderListingFacts>(services =>
             services.GetRequiredService<HttpRiotMovementGateway>());
+        // control-server#404: the charging allocation reads where an order that is not this server's is heading
+        // (detailByUpperId), to tell whether a charger is being driven to.
+        services.AddScoped<IRiotOrderMissionFacts>(services =>
+            services.GetRequiredService<HttpRiotMovementGateway>());
         services.AddScoped<HttpRiotOrderCommandGateway>();
         services.AddScoped<IRiotOrderCommandGateway>(services =>
             services.GetRequiredService<HttpRiotOrderCommandGateway>());

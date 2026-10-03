@@ -40,7 +40,6 @@ public sealed class Batch7TransportDemandKeyAdmissionTests : IAsyncDisposable
         MapId = 25,
         AllowedWorkTypes = [.. TransportTaskTypes.All],
         AllowedDispatchZones = ["MAP-25-WIRE_TO_GATE"],
-        MinimumBatteryPercent = 30,
         MaximumEvidenceAge = TimeSpan.FromMinutes(2),
     };
 
@@ -242,7 +241,8 @@ public sealed class Batch7TransportDemandKeyAdmissionTests : IAsyncDisposable
             new JourneyRuntimeWorkerTestKit.RecordingBoxCounts(),
             NullLogger<SlotCapacityCriterion>.Instance,
             new TransportDemandSuppressionStore(_context),
-            _context));
+            _context,
+            TestChargingPolicies.AllApproved));
     }
 
     /// <summary>A row the acceptance would have written, in the given state; only the key and the id matter here.</summary>

@@ -138,7 +138,7 @@ public sealed class JourneyClosureSnapshotTests
         JourneyRuntimeRow runtime = await fixture.RunToCompletionAsync();
 
         Assert.Equal((JourneyRuntimeStage.Completed, (string?)null), (runtime.Stage, runtime.BlockReasonCode));
-        await AssertClosureSentAsync(fixture.Context, runtime.AgvId, Sent(fixture), 1, runtime.GateStationId);
+        await AssertClosureSentAsync(fixture.Context, runtime.AgvId, Sent(fixture), 1, runtime.GateStationId!);
     }
 
     /// <summary>
@@ -162,7 +162,7 @@ public sealed class JourneyClosureSnapshotTests
         };
         JourneyRuntimeRow first = await fixture.RunToCompletionAsync();
         IReadOnlyList<Snapshot> closure = await AssertClosureSentAsync(
-            fixture.Context, first.AgvId, Sent(fixture), 1, first.GateStationId);
+            fixture.Context, first.AgvId, Sent(fixture), 1, first.GateStationId!);
         peer.LoseBufferedAcks();
         int linesAtClosure = fixture.Peer.Lines.Count;
         // 第一趟途中这个替身已经记过回退：用例一张确认都不投递，引擎每轮把没确认的旧版补发一遍。那是夹具的用法，与收尾无关，

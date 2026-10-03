@@ -1,0 +1,37 @@
+{"at":"2026-09-30T02:13:59.7078386+00:00","note":"L2 run 20260930T021359388Z starting for scenario 'waiting-point-exclusive-reserve-occupy-release'."}
+{"at":"2026-09-30T02:13:59.9599170+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-09-30T02:13:59.9682930+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-30T02:14:31.2954549+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-30T02:14:32.6578875+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-30T02:14:34.0012272+00:00","note":"Route graph engine enabled for map 25."}
+{"at":"2026-09-30T02:14:34.0106821+00:00","note":"Idle return enabled."}
+{"at":"2026-09-30T02:14:34.1693512+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-09-30T02:14:53.4675374+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-30T02:15:00.4682689+00:00","note":"FieldOps: import-waiting-points --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260930T021359388Z\\controlserver.db --input C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260930T021359388Z\\waiting-points.csv --catalog C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260930T021359388Z\\waiting-points-catalog-25.json --map 25 --fleet BROKERX-L2-0001"}
+{"at":"2026-09-30T02:15:06.1497163+00:00","criterion":"waiting-points-imported","value":"1","detail":{"coverage":{"mapId":25,"vehicleCount":1,"enabledOnMap":1,"assignable":1,"sufficient":true,"shortfall":0,"unassigned":[],"onOtherMaps":{},"warning":null},"stations":[214]}}
+{"at":"2026-09-30T02:15:06.1775464+00:00","note":"Waiting points registered on map 25 as version 1: 214=等待点1"}
+{"at":"2026-09-30T02:15:08.4239254+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-30T02:15:17.3869233+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-30T02:15:18.2342494+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-30T02:15:20.8828349+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-30T02:15:21.6585047+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-30T02:15:21.9430150+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-30T02:15:22.3410170+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260930T021359388Z\\controlserver.db"}
+{"at":"2026-09-30T02:15:30.4431034+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"43857b30e59b430ea56098c674693a8e","version":1,"slotCount":8}}}
+{"at":"2026-09-30T02:15:30.4556281+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260930T021359388Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-30T02:15:38.9669792+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"43857b30e59b430ea56098c674693a8e","boundSlots":8,"version":1}}}
+{"at":"2026-09-30T02:15:39.3527940+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-30T02:15:39.3725012+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260930T021359388Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\scratch\\cs390-l2\\wpr-001\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-30T02:15:52.3435845+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\Users\\szy\\Desktop\\8005-workspace-v2\\scratch\\cs390-l2\\wpr-001\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"aa0da49282074b25b87c75f9a6d8d317","importedAt":"2026-09-30T10:15:40.5584263+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-30T02:15:52.3773416+00:00","note":"FieldOps: import-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260930T021359388Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\scratch\\cs390-l2\\wpr-001\\snapshots\\preseed-charging-policy.json --fleet BROKERX-L2-0001"}
+{"at":"2026-09-30T02:16:03.3294454+00:00","note":"FieldOps: approve-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260930T021359388Z\\controlserver.db --version 1 --approved-by L2 orchestrator --role L2_PRESET --basis scripts/l2/L2ChargingPolicy.psm1 --source L2_PRESET"}
+{"at":"2026-09-30T02:16:10.9795896+00:00","note":"FieldOps: activate-charging-policy --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260930T021359388Z\\controlserver.db --version 1 --activated-by L2 orchestrator --fleet BROKERX-L2-0001 --allow-non-field-approval"}
+{"at":"2026-09-30T02:16:18.0273846+00:00","criterion":"preseed:charging-policy","value":"OK","detail":{"withoutPolicy":[],"coveredAfter":["BROKERX-L2-0001"],"version":1,"source":"L2_PRESET"}}
+{"at":"2026-09-30T02:16:18.0315078+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-09-30T02:16:18.0501510+00:00","note":"Environment is up; entering scenario 'waiting-point-exclusive-reserve-occupy-release'."}
+{"at":"2026-09-30T02:16:18.2813450+00:00","criterion":"route-graph-ready","value":"True"}
+{"at":"2026-09-30T02:16:18.3004367+00:00","note":"Publishing demand FIRST ae51aba382dc474983e77df80118a2e0."}
+{"at":"2026-09-30T02:16:18.5742479+00:00","criterion":"stage-first demand","value":"(null)"}
+{"at":"2026-09-30T02:19:18.8567134+00:00","note":"Run failed: Timed out after 180s waiting for: first demand reached AwaitingPickupArrival. Last observed: (nothing)"}
+{"at":"2026-09-30T02:19:18.9407648+00:00","note":"Failure at: at Wait-L2Condition, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs390-8005-agv-control-server\\scripts\\l2\\L2.psm1: line 103\r\nat Wait-Stage, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs390-8005-agv-control-server\\scripts\\l2\\scenarios\\waiting-point-exclusive-reserve-occupy-release.ps1: line 118\r\nat <ScriptBlock>, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs390-8005-agv-control-server\\scripts\\l2\\scenarios\\waiting-point-exclusive-reserve-occupy-release.ps1: line 142\r\nat <ScriptBlock>, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs390-8005-agv-control-server\\scripts\\l2\\Invoke-L2Scenario.ps1: line 1386"}
+{"at":"2026-09-30T02:19:20.4376076+00:00","note":"L2 port block lock released."}

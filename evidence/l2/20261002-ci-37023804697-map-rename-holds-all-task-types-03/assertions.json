@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "scenario": "map-rename-holds-all-task-types",
+  "runId": "20261002T151004616Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "vehicleKey": "BROKERX-L2-0001",
+    "agvId": "AGV-L2-001",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37023804697-1\\_stage\\l2-20261002T151004616Z-slot4",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "controlServerCommit": "6b7b3e38b7d72b454b227a104de2e37a3198db86",
+    "batchId": "batch-8",
+    "rig": "SyntheticOnboard"
+  },
+  "assertions": [
+    {
+      "id": "L2-MR-01",
+      "description": "地图列表读不到的几轮不算改名：窗口内读过列表至少一次、答 500 至少一次，没有暂停，基线与读失败之前相同",
+      "outcome": "PASS",
+      "expected": "reads >= 1, 500s >= 1; (none); name=老厂前线new_wk pending=(none)",
+      "actual": "reads 3, 500s 3; (none); name=老厂前线new_wk pending=(none)"
+    },
+    {
+      "id": "L2-MR-02",
+      "description": "改名之前（地图名 老厂前线new_wk）WIRE_TO_GATE 需求照常受理、建出关卡单并走完",
+      "outcome": "PASS",
+      "expected": "TO_GATE CONFIRMED / Completed",
+      "actual": "TO_GATE CONFIRMED / Completed"
+    },
+    {
+      "id": "L2-MR-03",
+      "description": "改名之后 WIRE_TO_GATE 与 STAGING_TO_WIRE 各恰好一条来源目录变化、原因码 MAP_RENAMED 的暂停，没有别的暂停",
+      "outcome": "PASS",
+      "expected": "STAGING_TO_WIRE/CATALOG_CHANGE/MAP_RENAMED, WIRE_TO_GATE/CATALOG_CHANGE/MAP_RENAMED",
+      "actual": "STAGING_TO_WIRE/CATALOG_CHANGE/MAP_RENAMED, WIRE_TO_GATE/CATALOG_CHANGE/MAP_RENAMED"
+    },
+    {
+      "id": "L2-MR-04",
+      "description": "改名之后车空闲，新的 WIRE_TO_GATE 需求连续几轮都不受理，原因码 TASK_TYPE_HELD",
+      "outcome": "PASS",
+      "expected": "no journey / TASK_TYPE_HELD",
+      "actual": "no journey / TASK_TYPE_HELD"
+    },
+    {
+      "id": "L2-MR-05",
+      "description": "看板暂停卡片上两个任务类型都显示已暂停、来源目录变化、原因地图改名",
+      "outcome": "PASS",
+      "expected": "WIRE_TO_GATE、STAGING_TO_WIRE: 已暂停 目录变化 地图改名",
+      "actual": "WIRE_TO_GATE 在本图需求集合 210 关卡 已暂停 目录变化，自 2026-10-02T15:11:11.1935607+00:00，地图改名 暂停 | STAGING_TO_WIRE 在本图需求集合 230 派工待送取货 已暂停 目录变化，自 2026-10-02T15:11:11.1935607+00:00，地图改名 暂停"
+    },
+    {
+      "id": "L2-MR-06",
+      "description": "基线仍是改名前的名称，新名称待接受",
+      "outcome": "PASS",
+      "expected": "name=老厂前线new_wk pending=老厂前线new_wk-L2-20261002T151004616Z",
+      "actual": "name=老厂前线new_wk pending=老厂前线new_wk-L2-20261002T151004616Z"
+    },
+    {
+      "id": "L2-MR-07",
+      "description": "接受新名之前解除 WIRE_TO_GATE 的暂停被拒，原因码 MAP_RENAME_NOT_ACCEPTED，两条暂停都还在",
+      "outcome": "PASS",
+      "expected": "refused MAP_RENAME_NOT_ACCEPTED; 2 holds",
+      "actual": "ControlServer.FieldOps release-task-type-station-hold exited with 1: {\"command\":\"release-task-type-station-hold\",\"outcome\":\"REJECTED\",\"mapId\":25,\"taskType\":\"WIRE_TO_GATE\",\"violations\":[{\"reasonCode\":\"MAP_RENAME_NOT_ACCEPTED\",\"taskType\":\"WIRE_TO_GATE\",\"stationRiotId\":null,\"detail\":\"Map 25 was renamed from '老厂前线new_wk' to '老厂前线new_wk-L2-20261002T151004616Z' and the new name has not been accepted; run accept-map-name first.\"}],\"released\":[],\"auditRecordId\":\"1e0f8d458cfa405fbb045b04daefe04b\"}; STAGING_TO_WIRE/CATALOG_CHANGE/MAP_RENAMED, WIRE_TO_GATE/CATALOG_CHANGE/MAP_RENAMED"
+    },
+    {
+      "id": "L2-MR-08",
+      "description": "accept-map-name 与两次 release-task-type-station-hold 都成功：没有未解除的暂停，基线换成新名、没有待接受的名称",
+      "outcome": "PASS",
+      "expected": "accept OK, 2 releases OK; (none); name=老厂前线new_wk-L2-20261002T151004616Z pending=(none)",
+      "actual": "accept OK, releases OK/OK; (none); name=老厂前线new_wk-L2-20261002T151004616Z pending=(none)"
+    },
+    {
+      "id": "L2-MR-09",
+      "description": "接受新名并解除暂停之后，等着的那条需求受理、建出关卡单；新名称连读多轮也不再加暂停",
+      "outcome": "PASS",
+      "expected": "TO_GATE CONFIRMED; (none)",
+      "actual": "TO_GATE CONFIRMED; (none)"
+    }
+  ]
+}

@@ -233,7 +233,7 @@ public sealed class JourneyRuntimeWorkerTests
         string early = await fixture.RequestLoadCorrectionOnConnectionAsync(
             connection,
             "70000000-0000-4000-8000-000000000011",
-            runtime.DemandId,
+            runtime.DemandId!,
             load.SlotOperationAttemptId,
             slots);
         Assert.Equal("LoadCorrectionRejected", CorrectionOutcome(early));
@@ -247,7 +247,7 @@ public sealed class JourneyRuntimeWorkerTests
         string inWindow = await fixture.RequestLoadCorrectionOnConnectionAsync(
             connection,
             "70000000-0000-4000-8000-000000000012",
-            runtime.DemandId,
+            runtime.DemandId!,
             load.SlotOperationAttemptId,
             slots);
 

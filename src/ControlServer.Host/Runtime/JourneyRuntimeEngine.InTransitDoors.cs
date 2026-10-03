@@ -215,6 +215,13 @@ public sealed partial class JourneyRuntimeEngine
         string orderId,
         CancellationToken cancellationToken)
     {
+        // An idle return (control-server#390) or a charging journey (control-server#404) carries no demand and so no cargo: the
+        // fault is about its order alone.
+        if (runtime.CarriesNoDemand())
+        {
+            return new FaultedVehicleContext(new RiotOrderCommandTarget(runtime.AgvId, intent.UpperId, orderId), null);
+        }
+
         string transportDemandKey = await dbContext.AcceptedDemands
             .Where(row => row.DemandId == runtime.DemandId)
             .Select(row => row.TransportDemandKey)
@@ -235,7 +242,7 @@ public sealed partial class JourneyRuntimeEngine
         // 这两个字段就只是「这趟旅程的锚」，不是「出事的那一批货」**。
         FaultedVehicleCargoFacts? cargo = carryingCargo
             ? new FaultedVehicleCargoFacts(
-                runtime.DemandId,
+                runtime.TransportColumn(runtime.DemandId),
                 intent.MovementLegId,
                 transportDemandKey,
                 LoadingWitnessed: true,

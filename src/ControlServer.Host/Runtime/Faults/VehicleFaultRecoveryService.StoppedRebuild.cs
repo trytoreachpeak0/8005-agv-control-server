@@ -86,8 +86,9 @@ public sealed partial class VehicleFaultRecoveryService
     /// <summary>
     /// Giving up was asked for a rebuild that stopped because its new order read as ended before it was confirmed
     /// (<see cref="OwnOrderRebuilds.EndedBeforeConfirmation"/>, a SUSPENDED 8 among them). That order may still stand in RIoT,
-    /// and the unfinished-order read the give-up relies on counts 1, 3, 7 and 9, not 8, so it cannot show the vehicle free
-    /// (independent review S1). A person rebuild still applies.
+    /// and the unfinished-order read the give-up relies on did not count 8 when this was written, so it could not show the
+    /// vehicle free (independent review S1). It counts 8 since control-server#404 (second review L-2), but an order that read as
+    /// ended is still not proven gone, so the exit stays closed. A person rebuild still applies.
     /// </summary>
     public const string ExitNewOrderUnsettledReason = "OWN_ORDER_REBUILD_EXIT_NEW_ORDER_UNSETTLED";
 

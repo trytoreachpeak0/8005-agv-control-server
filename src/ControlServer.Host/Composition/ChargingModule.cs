@@ -1,4 +1,5 @@
 using ControlServer.Application;
+using ControlServer.Host.Runtime.Charging;
 using ControlServer.Infrastructure.Persistence;
 
 namespace ControlServer.Host.Composition;
@@ -25,6 +26,17 @@ internal static class ChargingModule
         services.AddScoped<IStationClearanceStore, StationClearanceStore>();
         services.AddScoped<IManualChargingHoldStore, ManualChargingHoldStore>();
         services.AddScoped<IFieldConfirmationRequestStore, FieldConfirmationRequestStore>();
+        // 批次9-06（control-server#404）：充电分配。分配器与占用读取是作用域的（与派车轮共用同一个 DbContext）；每辆车上一次的结论要跨轮次
+        // 记着（结论变了才记日志），所以那块板是单例，不放静态字段、也不放作用域实例上。
+        services.AddSingleton<ChargingAllocationBoard>();
+        services.AddScoped<ChargerOccupancyReader>();
+        services.AddScoped<ChargingAllocator>();
+        // 批次9-08（control-server#406）：人工清桩确认（车载端与 Host 共用一个判定）与它查的 R-11／R-13 名单（只读文件，每次判定现读）。
+        services.AddOptions<FieldOperatorRoleOptions>().BindConfiguration(FieldOperatorRoleOptions.SectionName);
+        services.AddSingleton<FieldOperatorRoleRoster>();
+        services.AddSingleton<StationClearanceExit>();
+        services.AddScoped<ManualStationClearance>();
+        services.AddScoped<UnableToChargeFieldConfirmations>();
         return services;
     }
 }

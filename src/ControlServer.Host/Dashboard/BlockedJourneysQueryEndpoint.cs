@@ -1,5 +1,8 @@
+using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.Charging;
+using ControlServer.Host.Runtime.IdleReturn;
 using ControlServer.Host.Runtime.Release;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -155,6 +158,176 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 + "交接入口仍在：再经故障清除入口发 PREPARE_CARGO_HANDOFF 把这一趟挂回来重新交接；"
                 + "若车上已经没货（例如一趟里只交接掉一部分，剩下的还没装），发 TERMINATE_STOPPED_TRIP 放弃剩下的，"
                 + "MES 那边要人手工收尾。在那之前需求不改派，这辆车不接新单",
+            // control-server#390：空闲返回（车没有需求时自己开回等待点）写在旅程上的码。前六个是途中的，会出现在这张卡片上；
+            // 后六个是收尾码，写在已完成的旅程上（这张卡片不列），一并写好，别的地方读到时不必再猜。
+            [IdleReturnExecutionReasons.DepartureNotProven] =
+                "空闲返回还没出发：车开往等待点之前要过出发安全检查（车载端会话就绪、8 个仓门全部锁好、没有阻断事实），"
+                + "有一样不满足就不建单。满足之后下一轮自动出发，不需要人确认。持续不消失请检查车载端连接与仓门",
+            [IdleReturnExecutionReasons.OrderEndedStopNotProven] =
+                "空闲返回的单在 RIoT 被取消或删除了：服务端在等车证明已经停稳、身上没有单，才结束这趟空闲返回，不重建。"
+                + "车停稳后自动结束。持续不消失请到 RIoT 与现场查看车是否还在动",
+            [IdleReturnExecutionReasons.WaitingPointLostOrderInFlight] =
+                "空闲返回途中，要去的等待点已被人工释放或归了别的车：服务端已向 RIoT 取消这张单（只取消一次），"
+                + "车不会再开往那个点，等车停稳后结束这趟。持续不消失请到 RIoT 查看取消是否生效",
+            [IdleReturnExecutionReasons.LegOutcomeCode(MovementDispatchOutcome.ResultUnknown)] =
+                "开往等待点的单发给 RIoT 之后结果未知：服务端每一轮按同一个单号对账，不会建第二张，车、等待点与用途都保持不动。"
+                + "持续不消失请到 RIoT 核对这张单",
+            [IdleReturnExecutionReasons.LegOutcomeCode(MovementDispatchOutcome.CreateDispatchDisabled)] =
+                "开往等待点的单没有发出：服务端的建单开关此刻关着。开关打开后下一轮自动建单",
+            [IdleReturnExecutionReasons.LegOutcomeCode(MovementDispatchOutcome.UnsupportedOrderShape)] =
+                "开往等待点的单的形态服务端建不了（配置或数据错误），这一段不会建单：请查服务端日志并报开发",
+            [IdleReturnExecutionReasons.OrderEnded] =
+                "空闲返回的单在 RIoT 被取消或删除，车已停稳：这趟空闲返回结束，不重建。30 秒内这辆车不再自动空闲返回，"
+                + "10 分钟内它的空闲返回再被取消一次，就停止自动空闲返回，直到它做了别的旅程",
+            [IdleReturnExecutionReasons.OrderFailed] =
+                "空闲返回的单 FAILED，故障已由人工清除：这趟空闲返回结束，不重建。冷却与再次失败后停止的规则同单被取消",
+            [IdleReturnExecutionReasons.WaitingPointLost] =
+                "出发之前，要去的等待点已被人工释放或归了别的车：这趟空闲返回作废，车没有动",
+            [IdleReturnExecutionReasons.WaitingPointLostAtArrival] =
+                "车到了等待点，但那个点已不归这趟空闲返回（被人工释放或归了别的车）：不占用它，这趟作废。请到现场确认车停的位置",
+            [IdleReturnExecutionReasons.WaitingPointNoLongerEligible] =
+                "出发之前重新核验，等待点已不合格（停用、改名、不在当前地图、不可达等）：这趟空闲返回作废，车没有动，下一轮重新挑点",
+            [IdleReturnExecutionReasons.CommitmentOrphaned] =
+                "空闲返回的承诺变不成一趟行程（车已不在车队、等待点预占已不在、点在别的地图上或已不在登记表上）：承诺作废并释放",
+            // control-server#404：充电旅程（车电量到线后自己开往充电桩）在到桩之前写在旅程上的码。前面几个是途中的，会出现在这张卡片上；
+            // 撤回码与收尾码写在已完成的旅程上（这张卡片不列），一并写好，别的地方读到时不必再猜。途中单停住用的是通用的那几个码
+            // （ORDER_HANG、ORDER_ENDED_WITHOUT_ARRIVAL、VEHICLE_ORDER_FAILED），说明在上面。
+            [ChargingExecutionReasons.DepartureNotProven] =
+                "去充电还没出发：车开往充电桩之前要过出发安全检查（车载端会话就绪、8 个仓门全部锁好、没有阻断事实、充电策略可用），"
+                + "有一样不满足就不建单。满足之后下一轮自动出发，不需要人确认；持续 30 秒仍不满足，这次充电安排作废、充电桩让出来，"
+                + "条件恢复后车重新排队。请检查车载端连接与仓门",
+            [ChargingExecutionReasons.WithdrawnDepartureNotProven] =
+                "去充电的安排已作废：出发安全检查持续 30 秒没通过（车载端掉线、仓门没锁好等）。车没有动，充电桩与充电用途已让出；"
+                + "条件恢复后车会重新排队去充电。请检查车载端连接与仓门",
+            [ChargingExecutionReasons.WithdrawnReservationLost] =
+                "去充电的安排已作废：出发之前发现为它预占的充电桩已不在这趟名下。车没有动，充电用途已释放，下一轮重新排队",
+            [ChargingExecutionReasons.WithdrawnChargerNoLongerEligible] =
+                "去充电的安排已作废：出发之前重新核对，那个充电桩已不能用（充电桩名册被置空或不再登记它、桩被暂停分配、地图上改了名、"
+                + "有别的车停在上面或正开过去、RIoT 读不到车辆位置或订单、路线不通）。车没有动，充电桩与充电用途已让出，下一轮重新挑桩；"
+                + "名册为空时车会转为人工充电等待",
+            [ChargingExecutionReasons.WithdrawnNoLongerRequired] =
+                "去充电的安排已作废：出发之前这辆车已不需要自动充电（电量回到强制充电线以上、正在被人充电，或电量读不到）。"
+                + "车没有动，充电桩与充电用途已让出",
+            [ChargingExecutionReasons.CycleMissing] =
+                "这趟充电旅程找不到它的充电周期记录：服务端不建单、不动车。这是不该出现的状态，请联系开发",
+            [ChargingExecutionReasons.LegOutcomeCode(MovementDispatchOutcome.ResultUnknown)] =
+                "开往充电桩的单发给 RIoT 之后结果未知：服务端每一轮按同一个单号对账，不会建第二张、不换桩，车、充电桩预占与充电用途都保持不动，"
+                + "此时车上不会显示「前往充电」。RIoT 连续 2 分钟（JourneyRuntime:ChargingOrderAbsentAbandonAfter）答查无此单、车停稳且名下没有"
+                + "未完成的单时，服务端放弃这张单、这趟充电按失败结束。持续不消失请到 RIoT 核对这张单与车的状态",
+            [ChargingExecutionReasons.LegOutcomeCode(MovementDispatchOutcome.CreateDispatchDisabled)] =
+                "开往充电桩的单没有发出：服务端的建单开关此刻关着。开关打开后下一轮自动建单",
+            [ChargingExecutionReasons.LegOutcomeCode(MovementDispatchOutcome.UnsupportedOrderShape)] =
+                "开往充电桩的单的形态服务端建不了（配置或数据错误），这一段不会建单：请查服务端日志并报开发",
+            [ChargingExecutionReasons.OrderEnded] =
+                "充电单在 RIoT 被取消或删除，车已停稳：这趟充电结束，不重建。充电桩要等确认充电已停、车不在桩上、桩位空闲之后才释放；"
+                + "30 秒内不给这辆车安排任何充电桩，10 分钟内它的充电再失败一次，就改为人工充电等待",
+            [ChargingExecutionReasons.OrderNeverAppeared] =
+                "开往充电桩的单发出后 RIoT 一直查无此单，车停稳、名下没有未完成的单：服务端放弃这张单，这趟充电按失败结束，不重建。"
+                + "充电桩的释放、冷却与再次失败后改为人工充电等待的规则同单被取消。这张单事后若在车上跑起来，服务端会取消它并告警",
+            // control-server#405：到桩之后。前三个写在还开着的充电旅程上（车在桩上），后三个写在充满收尾的旅程、桩的独占经过与充电周期上。
+            [ChargingExecutionReasons.ChargerNotEngaged] =
+                "车已到充电桩并停稳，但 RIoT 一直没报这辆车在充电（超过 30 秒）：这不算「充不上」的确认，服务端不暂停这个桩、也不动车，"
+                + "充电桩与充电用途都保持。请到现场看车是否插好、充电桩是否通电；车开始充电后这条自动消失",
+            [ChargingExecutionReasons.VehicleObservationLost] =
+                "车在充电桩上（或正到桩）时 RIoT 读不到这辆车、或报它离线：服务端按车可能仍在桩上处理，不发任何停止、重启或移动命令，"
+                + "不结束、不释放、不改派。持续 10 分钟会再告警一次。请检查车与 RIoT 的连接；读得到之后这条自动消失",
+            [ChargingExecutionReasons.BatteryTelemetryLost] =
+                "充电中读不到新鲜的电量：服务端暂停判断是否充满，不拿断线之前的电量当真，恢复后要连续读到新的电量才判。不结束、不释放、"
+                + "不改派、不动车；持续 10 分钟会再告警一次。请检查车的电量上报与 RIoT",
+            [ChargingExecutionReasons.ReservationLostAtArrival] =
+                "车已到充电桩，但这个桩已不归这趟充电（被人工释放或归了别的车）：服务端不占用它、不释放任何东西、不动车。请到现场确认车停的位置与桩的归属",
+            [ChargingExecutionReasons.Completed] =
+                "已充满：电量达到这次充电记下的完成线，充电用途已放开，车可以接新的任务或回等待点。车还停在充电桩上、桩仍归它，"
+                + "等它接到下一项任务离开桩之后才释放；服务端不会为离桩单独建单",
+            [ChargingExecutionReasons.Departed] =
+                "这次充电已结束：车充满后接了下一项任务离开充电桩，充电已停、车不在桩上、桩位空闲三项都确认了，充电桩已释放",
+            [ChargingExecutionReasons.ChargerReleasedOnDeparture] =
+                "充电桩已释放：充满的车离开了桩（充电已停、车不在桩上、桩位空闲三项确认），桩可以分给下一辆车",
+            [ChargingExecutionReasons.ArrivalNotProven] =
+                "充电单显示已完成，但读不到车停在充电桩上（车报在别的站、读不到当前站，或没有停稳）：服务端不认定到桩、不按超时推进，"
+                + "预占和充电用途都保持，持续十分钟以上会告警一次。请到现场看车停在哪里",
+            [ChargingExecutionReasons.OrderNotFound] =
+                "充电单已发出并确认，RIoT 现在却查不到这张单，车也没有停在充电桩上充电：服务端不重建、不发命令，预占和充电用途都保持，"
+                + "持续十分钟以上会告警一次。请在 RIoT 上查这张单去了哪里、车在哪里",
+            [ChargingExecutionReasons.RechargedOnHeldCharger] =
+                "这次充电已结束：车充满后一直停在桩上，电量又掉到强制充电线以下，服务端在同一个桩上给它开了下一次充电",
+            [ChargingExecutionReasons.ChargerReleasedForRecharge] =
+                "充电桩转给同一辆车的下一次充电：车充满后没离开，电量又掉到强制充电线以下，桩随即重新预占给它",
+            [ChargingExecutionReasons.OrderFailed] =
+                "充电单 FAILED，故障已由人工清除：这趟充电结束，不重建。充电桩的释放、冷却与再次失败后改为人工充电等待的规则同单被取消",
+            // control-server#406：充不上与清桩。前两个写在还开着的充电旅程上（车停在原桩上），后面是收尾码与桩的独占经过上的释放原因。
+            [ChargingExecutionReasons.UnableToChargeClearing] =
+                "已确认充不上：车到了充电桩、执行了开始充电，RIoT 返回 407802 且订单停在 HANG，全程没充上。这个桩已暂停分配，车留在原地，"
+                + "服务端不建单、不动车。请 R-11／R-13 名单里的人到现场把车挪开、确认桩已腾空（车载端「确认清桩」或服务端清桩入口），"
+                + "并在 RIoT 里结束这张旧充电单；两样都齐了才放桩",
+            [ChargingExecutionReasons.ClearedOldOrderUnsettled] =
+                "人工清桩确认已记下，但旧的充电单在 RIoT 里还没结束（仍 HANG 或读不到）：清桩还没完成、桩暂不释放，"
+                + "等旧单结束的那一轮再完成并释放。请在 RIoT 里把这张旧单结束；持续十分钟以上会告警一次"
+                + "（服务端默认不取消充电单；取消开关打开时它会先发一次取消）",
+            [ChargingExecutionReasons.OldOrderResumedWhileClearing] =
+                "现场注意车辆可能移动：这辆车正在等人工清桩，但它那张旧充电单在 RIoT 里被人恢复了（从 HANG 回到排队或执行），"
+                + "车可能自己开回充电桩，而现场可能有人正在清桩。请立刻联系现场，并在 RIoT 里结束这张旧单。之前的清桩确认已作废，旧单结束后须重新确认；旧单处在排队或执行时按下的确认不会被接受。服务端不会因此急停或取消",
+            [ChargingExecutionReasons.ClearanceChargerNotVacant] =
+                "清桩还不能完成：人工确认已记下、旧充电单也已结束，但 RIoT 此刻读到这辆车又停在原充电桩上（或正在充电），桩并没有腾空。"
+                + "桩暂不释放；请到现场把车挪开，读到桩空了的那一轮会自动完成清桩。如果车其实已不在桩上（RIoT 的位置没更新），请在 RIoT 里给车重定位，或者给车断电",
+            [ChargingExecutionReasons.UnableToChargeCleared] =
+                "充不上的这次充电已收尾：清桩已确认、旧单已结束，充电桩的独占已释放，车可以按常规派车检查接活或去别的桩充电。"
+                + "这个桩仍暂停分配，要等维修后做恢复确认。如果这次是因充电中断或充电不涨而清桩的，车的充电资格也仍暂停，要另做车辆充电资格恢复，在那之前它不会被派去任何桩",
+            // control-server#407：充电中断与充电无进展。前两个是已隔离、在清桩中；后两个是隔离出口不可用时的只告警。
+            [ChargingExecutionReasons.InterruptionClearing] =
+                "充电中断：车在桩上充着电，还没充满就停了（连续两次读到不在充电），原因未知、不判定是车还是桩的问题。这个桩已暂停分配，"
+                + "这辆车的充电资格也已暂停，车留在原地，服务端不在原桩重新充电、不派它去别的桩、不建单、不动车。请 R-11／R-13 名单里的人到现场把车挪开、"
+                + "确认桩已腾空（车载端「确认清桩」或服务端清桩入口）。之后桩与车各自检查、各自做恢复确认",
+            [ChargingExecutionReasons.NoProgressClearing] =
+                "充电不涨：车一直报在充电，但过了稳定期和整个观察窗口，电量增加不到策略规定的最小值，原因未知、不判定是车还是桩的问题。"
+                + "这个桩已暂停分配，这辆车的充电资格也已暂停，车留在原地，服务端不在原桩重新充电、不派它去别的桩、不建单、不动车。"
+                + "请 R-11／R-13 名单里的人到现场把车挪开、确认桩已腾空。之后桩与车各自检查、各自做恢复确认",
+            [ChargingExecutionReasons.ClearingVehicleStillCharging] =
+                "车仍在充电：这辆车因充电中断或充电不涨已暂停、在等人工清桩，但 RIoT 读到它还在充电（可能只是涨得慢）。车在充电时清桩确认会被拒，"
+                + "清桩也完成不了。请现场先结束充电，再把车挪开，再确认清桩",
+            [ChargingExecutionReasons.InterruptionNotIsolated] =
+                "充电中断，只告警、未隔离：车还没充满就停了，但人工清桩或服务端恢复入口没有配置好，所以没有暂停桩和车。车和桩都保持原样，"
+                + "服务端不重新充电、不换桩、不动车，车一直占着这个桩。请到现场查看车和桩；配置好清桩名单与恢复入口（VehicleFaultRecovery）后才会自动隔离",
+            [ChargingExecutionReasons.NoProgressNotIsolated] =
+                "充电不涨，只告警、未隔离：车一直报在充电但电量不涨，人工清桩或服务端恢复入口没有配置好，所以没有暂停桩和车。车和桩都保持原样，"
+                + "服务端不重新充电、不换桩、不动车，车一直占着这个桩。请到现场查看车和桩；配置好清桩名单与恢复入口（VehicleFaultRecovery）后才会自动隔离",
+            [ChargingExecutionReasons.StalledUnstableReadings] =
+                "充电卡住，读数不稳：车在桩上，RIoT 报的充电状态在「充电」与「不充电」之间来回切，所以既判不成充电中断、也判不成充电不涨，"
+                + "但过了稳定期和两个观察窗口电量没有净增长。只告警、未隔离：判不清是车还是桩的问题，所以没有暂停桩和车，服务端不重新充电、不换桩、不动车，"
+                + "车一直占着这个桩。请到现场查看车的充电接触与桩的输出；需要让车离开时走人工清桩。电量涨上来后这个码会自动消失",
+            [ChargingExecutionReasons.ClearedByOperator] =
+                "这次充电由人工清桩收尾：有权限的人确认车已挪开、桩已腾空，旧单已结束，这一趟占着的充电桩已释放、充电用途已放开。不暂停这个桩",
+            [ChargingExecutionReasons.ChargerReleasedOnManualClearance] =
+                "充电桩的独占已释放：人工清桩已确认、旧充电单已结束",
+            // control-server#409：清桩开往等待点（开关 JourneyRuntime:ClearanceToWaitingPointEnabled，默认关）。
+            [ChargingExecutionReasons.ClearanceToWaitingPoint] =
+                "现场注意车辆在动：这辆车充不上、在清桩中，旧充电单已结束，服务端已为它预占了一个等待点，正把它从充电桩开过去。"
+                + "到点后自动完成清桩、释放充电桩；充电桩仍暂停分配，要等维修后做恢复确认。人工清桩确认也照样可以按，按了只完成清桩，不会让车停下",
+            [ChargingExecutionReasons.ClearanceNoWaitingPoint] =
+                "清桩中的车可以离桩了，但没有一个可用的等待点（都被占着或预占着、不在当前地图、不在白名单、路不通，或刚在这个点上失败过）。"
+                + "车留在原桩上排队，服务端不会把它开到别的站点。等有等待点空出来会自动出发；也可以由 R-11／R-13 名单里的人到现场挪车并确认清桩",
+            [ChargingExecutionReasons.ClearanceDepartureNotProven] =
+                "清桩中的车要开往等待点，但出发前的安全检查没过（急停、手动模式、故障、车载端没就绪或仓门没锁好等），这一轮不出发、不建单，下一轮再检查",
+            [ChargingExecutionReasons.ClearanceVehicleOffCharger] =
+                "旧充电单已结束，但 RIoT 读不到这辆车静止停在原充电桩上（可能被人挪走、断电或拖走，或位置没更新），服务端不会自己把它开走。"
+                + "请 R-11／R-13 名单里的人到现场确认车已挪开、桩已腾空，再确认清桩",
+            [ChargingExecutionReasons.ClearanceMoveNotConfirmed] =
+                "开往等待点的订单已经发给 RIoT，但还没确认建成（应答丢了、建单开关关着等）。车、目标等待点、清桩用途都保持不变，"
+                + "服务端用同一个订单号继续对账，不会重复建单、不会换点",
+            [ChargingExecutionReasons.ClearanceMoveHeld] =
+                "开往等待点的订单在 RIoT 里已不在执行（被取消、删除、查不到这张单，或等待点已经不归这一趟），但还证明不了车已停稳、身上没有订单。"
+                + "服务端保持一切、不换点、不发取消；请在 RIoT 上核对这张单和车的状态，需要时到现场确认",
+            [ChargingExecutionReasons.ClearanceMoveEnded] =
+                "开往等待点的订单没到点就被人结束了（在 RIoT 里取消或删除，或 FAILED 后由人清除了故障），车已证明停稳。服务端不重建这张单，"
+                + "等待点已释放，这一次清桩不会再自动出发。请 R-11／R-13 名单里的人到现场把车挪开、确认桩已腾空并确认清桩",
+            [ChargingExecutionReasons.ClearanceArrivalNotProven] =
+                "开往等待点的订单 RIoT 报已完成，但还读不到车静止停在那个等待点上（位置、速度、空闲状态或数据新鲜度不满足）。清桩还没完成、桩暂不释放，"
+                + "下一轮再判；持续较久会告警一次。请到现场看车停在哪里",
+            [ChargingExecutionReasons.UnableToChargeClearedAtWaitingPoint] =
+                "充不上的这次充电已收尾：车已被服务端开到等待点并停稳，清桩由系统证明完成，充电桩的独占已释放，车占着那个等待点，"
+                + "之后按常规派车检查接活或去别的桩充电。这个桩仍暂停分配，要等维修后做恢复确认",
+            [ChargingExecutionReasons.ChargerReleasedOnClearanceAtWaitingPoint] =
+                "充电桩的独占已释放：清桩中的车已被开到等待点并停稳，充电已停、原车已离桩",
             [JourneyRuntimeEngine.OwnOrderRebuildCargoUnprovenReason] =
                 "车上有货的故障清除之后，车报的仓位读数还证明不了货在原仓（仓门没锁好、开锁输出没复位、仓位读数未知或没上报、"
                 + "车报有未知，或装货还没落定）：服务端不停也不建单，等车下一次报仓位读数。门锁好、读数恢复后会自动重建；"
@@ -191,7 +364,8 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
         Dictionary<string, SessionRecoveryRow> sessions = await dbContext.SessionRecoveries.AsNoTracking()
             .Where(row => agvIds.Contains(row.AgvId))
             .ToDictionaryAsync(row => row.AgvId, StringComparer.Ordinal, cancellationToken);
-        string[] gateUpperIds = [.. blocked.Select(row => row.GateUpperId)];
+        // An idle return (control-server#390) has no gate leg.
+        string[] gateUpperIds = [.. blocked.Select(row => row.GateUpperId).OfType<string>()];
         HashSet<string> departedForGate = new(
             await dbContext.OrderIntents.AsNoTracking()
                 .Where(row => gateUpperIds.Contains(row.UpperId))
@@ -217,7 +391,7 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 .Select(row => Fact(
                     row,
                     sessions.GetValueOrDefault(row.AgvId),
-                    departedForGate.Contains(row.GateUpperId),
+                    row.GateUpperId is { } gateUpperId && departedForGate.Contains(gateUpperId),
                     ownOrderInFlight.Contains(row.JourneyId),
                     heldByForeignOrder.Contains(row.AgvId),
                     demands.FactsOf(row.JourneyId),
@@ -261,7 +435,7 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
             pickupStationId = row.PickupStationId,
             gateStationId = row.GateStationId,
             blockReasonCode = row.BlockReasonCode,
-            blockReasonDescription = Describe(row.BlockReasonCode, foreignOrderHoldsVehicle),
+            blockReasonDescription = Describe(row.BlockReasonCode, foreignOrderHoldsVehicle, row.IsIdleReturn(), row.IsCharging()),
             blockReasonSince = row.BlockReasonSince,
             blockedSeconds = blockedFor is TimeSpan elapsed ? (long?)elapsed.TotalSeconds : null,
             escalationLevel = level.ToString(),
@@ -301,9 +475,14 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
     /// 只加在说明上，不改码：旅程码由引擎按自己的事实写，改它会牵动停住码族、失联码与推进失败码的判定。外来单本身在车队视图
     /// 「车上的外来订单」里，一张单一行。
     /// </remarks>
-    private static string? Describe(string? blockReasonCode, bool foreignOrderHoldsVehicle)
+    private static string? Describe(string? blockReasonCode, bool foreignOrderHoldsVehicle, bool idleReturn, bool charging)
     {
-        string? description = blockReasonCode is { } code ? Descriptions.GetValueOrDefault(code) : null;
+        // control-server#392: an idle return borrows a few transport codes (ORDER_HANG and the like) whose wording here is about a
+        // demand and a rebuild; it has neither, so its rows take the idle return wording. control-server#408: so does a charging
+        // journey -- a cancelled charge order is never rebuilt -- so its rows take the charging wording.
+        string? description = idleReturn ? IdleReturnCodeDescriptions.DescribeJourneyCode(blockReasonCode)
+            : charging ? ChargingDashboardDescriptions.DescribeChargingCode(blockReasonCode)
+            : blockReasonCode is { } code ? Descriptions.GetValueOrDefault(code) : null;
         if (!foreignOrderHoldsVehicle)
         {
             return description;

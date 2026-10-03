@@ -15,7 +15,6 @@ public sealed class JourneyRuntimeOptions
     public string MapIdentity { get; set; } = string.Empty;
     public string DispatchZone { get; set; } = string.Empty;
     public long DispatchGeneration { get; set; }
-    public int MinimumBatteryPercent { get; set; } = 30;
     public TimeSpan MaximumEvidenceAge { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
@@ -113,8 +112,9 @@ public sealed class JourneyRuntimeOptions
 
     /// <summary>
     /// The rescue line (control-server#273): under it the watch's log says a person has to move the vehicle to a charger.
-    /// Fifteen percent by default; must be in 1..100 and below <see cref="MinimumBatteryPercent"/>, the line under which the
-    /// same log is already raised to an error.
+    /// Fifteen percent by default; must be in 1..100 here, and below the <c>MandatoryChargeEntryThreshold</c> of every
+    /// charging policy version in effect, which the server checks when it starts (<c>ChargingPolicyStartupCheck</c>,
+    /// control-server#403): that threshold is the line under which the same log is already raised to an error.
     /// </summary>
     public int WaitingJourneyRescueBatteryPercent { get; set; } = 15;
 
@@ -140,6 +140,89 @@ public sealed class JourneyRuntimeOptions
     /// minutes by default; must be positive.
     /// </summary>
     public TimeSpan OwnOrderRebuildRepeatWindow { get; set; } = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// How long RIoT has to go on answering "no such order" for a charge order whose create went out with its result unknown,
+    /// before the server gives the order up and ends the charging commitment as a confirmed failure (control-server#404,
+    /// independent review M2). Every reading in that time has to be "not found" -- HTTP 404, or the exact absent-at-observation
+    /// read real RIoT gives (HTTP 200, code 0, no result; review M-A) -- any other answer, or none, starts the count
+    /// again -- and the vehicle has to be proven stopped with no unfinished order of its own. Without it a create whose answer
+    /// was lost kept the vehicle's CHARGING purpose and the charger's reservation for ever. Two minutes by default; positive
+    /// and at most one hour.
+    /// </summary>
+    public TimeSpan ChargingOrderAbsentAbandonAfter { get; set; } = TimeSpan.FromSeconds(120);
+
+    /// <summary>
+    /// Whether the server itself cancels the old charge order of a cycle in the clearing loop after an unable-to-charge
+    /// (control-server#406). <b>Off by default.</b> REQ-0148 as revised in requirements baseline v1.9.0 (CP-0010) allows
+    /// <c>CMD_ORDER_CANCEL</c> for this server's own charge order in its first case -- the vehicle is in REQ-0178's clearing
+    /// loop and the cycle's old order has not ended -- but nobody has yet seen what cancelling a HANG charge order does to a
+    /// vehicle standing on its charger: whether RIoT inserts the leave-the-charger act(78,2,0) and moves it beside the person
+    /// clearing it (the independent review of #406; admission line 1). It stays off until that is measured on agv02, with the
+    /// user's authorisation, on site (10-08). Off, a person ends the old order in RIoT, the server reads it ended, and with the
+    /// manual confirmation the clearance completes.
+    /// </summary>
+    /// <remarks>
+    /// On, it cancels exactly one order, once, inside REQ-0148's first case: only while the cycle is clearing and its clearance
+    /// has not completed (no <c>CompletedAt</c>), whether or not a person has confirmed yet; only while this round's read finds
+    /// it <c>HANG</c> and in no other state; only the order of this cycle's own intent (<c>order.OrderId == intent.OrderId</c>,
+    /// ownership proven by the persisted intent, not by the id's shape), executed by this cycle's own vehicle (never one RIoT
+    /// reads on any other vehicle or on none); and only when the command audit holds no cancel for that order yet. An
+    /// unconfirmed cancel is not sent again (event 2270). It releases nothing and rebuilds nothing: the clearance completes
+    /// only once the old order reads ended and a person's confirmation is recorded, and the vehicle stays held until then.
+    /// </remarks>
+    public bool UnableToChargeOldOrderCancelEnabled { get; set; }
+
+    /// <summary>
+    /// Whether a vehicle in the clearing loop is driven to a waiting point by this server (control-server#409, REQ-0178, the
+    /// system proof of REQ-0179). <b>Off by default</b>, and off means exactly what the clearing loop did before: the vehicle
+    /// stays where it is and only a person's manual station clearance (control-server#406) completes it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Not to be switched on before the RIoT call allowlist names this use.</b> The order is form one of section 1.2 (one
+    /// <c>move</c> through <c>byDefaultMissions</c>, REQ-0294), whose "use" column today reads "transport, idle return" only;
+    /// the coordinator adds "clearance to a waiting point" through a change of its own. Off, this server makes no RIoT call it
+    /// did not make before.
+    /// </para>
+    /// <para>
+    /// On, the vehicle sets off by itself the round after its old charge order reads ended -- which, with
+    /// <see cref="UnableToChargeOldOrderCancelEnabled"/> off, is the moment a person ends it in RIoT. People on site have to know
+    /// that before it is switched on: it is a run that moves a vehicle (admission line 1).
+    /// </para>
+    /// <para>
+    /// <b>Switching it off stops new departures only.</b> A commitment whose order has not gone out yet is withdrawn; a move
+    /// whose order has already gone out is driven to its end -- this server never cancels a clearance move (allowlist 1.3
+    /// approves no cancel for it). To stop a vehicle already on its way, cancel its order in RIoT; the clearing then does not
+    /// set off by itself again and only a manual station clearance completes it.
+    /// </para>
+    /// </remarks>
+    public bool ClearanceToWaitingPointEnabled { get; set; }
+
+    /// <summary>
+    /// How long a charging vehicle has to read "not charging" without a break before it is a confirmed interruption
+    /// (control-server#407, REQ-0285). The first reading only starts the observation; the interruption is confirmed at the
+    /// first later reading whose observation time is at least this far from it, every reading in between fresh, continuous
+    /// (no gap over <see cref="MaximumEvidenceAge"/>) and not charging. One poll interval apart (about two seconds on site)
+    /// two reads can be one RIoT snapshot read twice (independent review S3a of #442). Sixty seconds by default; positive
+    /// and at most ten minutes. It lives here, not in the ChargingPolicyVersion: that table has no column for it and this
+    /// ticket adds no migration.
+    /// </summary>
+    public TimeSpan ChargingInterruptionConfirmAfter { get; set; } = TimeSpan.FromSeconds(60);
+
+    /// <summary>
+    /// How long after the server's cancel of a clearing cycle's old charge order it waits for RIoT to read the order ended
+    /// before it warns that the cancel did not take (event 2270; control-server#406 review S3). Sixty seconds by default;
+    /// positive and at most ten minutes.
+    /// </summary>
+    /// <remarks>
+    /// The cancel's own read-back comes a moment after the call, and if RIoT applies a cancel asynchronously that read can
+    /// still say HANG for an order that is about to end: warning on it would cry wolf. Sixty seconds is twelve of the field
+    /// runtime's five-second rounds and two of the thirty-second waits this runtime already gives a person by the vehicle
+    /// (<see cref="OwnOrderRebuildDelay"/>); an order still not ended after that is no longer "on its way". Nothing waits on
+    /// it -- the clearance completes whenever the order reads ended -- it only decides when the warning is said.
+    /// </remarks>
+    public TimeSpan UnableToChargeOldOrderCancelSettleWindow { get; set; } = TimeSpan.FromSeconds(60);
 }
 
 /// <summary>One vehicle's identity and the policy slice configured for it.</summary>
@@ -173,9 +256,25 @@ public sealed class FleetVehicleOptions
 
 public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration) : IValidateOptions<JourneyRuntimeOptions>
 {
+    /// <summary>The configuration key batch 9-05 retired (control-server#403). Configuration keys are case-insensitive.</summary>
+    public const string RetiredMinimumBatteryPercentKey = JourneyRuntimeOptions.SectionName + ":minimumBatteryPercent";
+
+    public const string RetiredMinimumBatteryPercentMessage =
+        "JourneyRuntime:minimumBatteryPercent is no longer read: the battery thresholds come from the approved, activated " +
+        "charging policy version (MandatoryChargeEntryThreshold, the minimum post-task battery margin and the estimated " +
+        "consumption per task; REQ-0281, REQ-0282, control-server#403). Remove the key (or the environment variable " +
+        "JourneyRuntime__minimumBatteryPercent) and import, approve and activate a charging policy with ControlServer.FieldOps.";
+
     public ValidateOptionsResult Validate(string? name, JourneyRuntimeOptions options)
     {
         _ = name;
+        // Before the Enabled check: a key that looks like it governs dispatch must not survive on any server, running
+        // journeys or not (control-server#403).
+        if (configuration.GetSection(RetiredMinimumBatteryPercentKey).Exists())
+        {
+            return ValidateOptionsResult.Fail(RetiredMinimumBatteryPercentMessage);
+        }
+
         if (!options.Enabled)
         {
             return ValidateOptionsResult.Success;
@@ -195,6 +294,11 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
         }
         if (options.PollInterval < TimeSpan.FromMilliseconds(100)) failures.Add("PollInterval must be at least 100 ms.");
         if (options.MaximumEvidenceAge <= TimeSpan.Zero) failures.Add("MaximumEvidenceAge must be positive.");
+        if (options.ChargingInterruptionConfirmAfter <= TimeSpan.Zero ||
+            options.ChargingInterruptionConfirmAfter > TimeSpan.FromMinutes(10))
+        {
+            failures.Add("ChargingInterruptionConfirmAfter must be positive and at most 10 minutes.");
+        }
         if (options.CheckpointWaitBudget <= TimeSpan.Zero)
         {
             failures.Add("CheckpointWaitBudget must be positive.");
@@ -217,24 +321,34 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
         if (options.AgvLifecycleGeneration <= 0) failures.Add("AgvLifecycleGeneration must be positive.");
         if (options.MapId <= 0) failures.Add("MapId must be positive.");
         if (options.DispatchGeneration <= 0) failures.Add("DispatchGeneration must be positive.");
-        if (options.MinimumBatteryPercent is < 1 or > 100) failures.Add("MinimumBatteryPercent must be in 1..100.");
         if (options.WaitingJourneyWarningAfter <= TimeSpan.Zero) failures.Add("WaitingJourneyWarningAfter must be positive.");
         if (options.WaitingJourneyWarningRepeat <= TimeSpan.Zero) failures.Add("WaitingJourneyWarningRepeat must be positive.");
-        if (options.WaitingJourneyRescueBatteryPercent < 1 ||
-            options.WaitingJourneyRescueBatteryPercent >= options.MinimumBatteryPercent)
+        // Below every effective MandatoryChargeEntryThreshold too, checked against the database at startup
+        // (ChargingPolicyStartupCheck, control-server#403); the options alone can only check the range.
+        if (options.WaitingJourneyRescueBatteryPercent is < 1 or > 100)
         {
-            failures.Add("WaitingJourneyRescueBatteryPercent must be at least 1 and below MinimumBatteryPercent.");
+            failures.Add("WaitingJourneyRescueBatteryPercent must be in 1..100.");
         }
         if (options.WaitingJourneyBatteryReadBudget <= TimeSpan.Zero ||
             options.WaitingJourneyBatteryReadBudget > TimeSpan.FromSeconds(10))
         {
             failures.Add("WaitingJourneyBatteryReadBudget must be positive and at most 10 s.");
         }
+        if (options.UnableToChargeOldOrderCancelSettleWindow <= TimeSpan.Zero ||
+            options.UnableToChargeOldOrderCancelSettleWindow > TimeSpan.FromMinutes(10))
+        {
+            failures.Add("UnableToChargeOldOrderCancelSettleWindow must be positive and at most 10 minutes.");
+        }
         if (options.OwnOrderRebuildDelay <= TimeSpan.Zero || options.OwnOrderRebuildDelay > TimeSpan.FromMinutes(10))
         {
             failures.Add("OwnOrderRebuildDelay must be positive and at most 10 min.");
         }
         if (options.OwnOrderRebuildRepeatWindow <= TimeSpan.Zero) failures.Add("OwnOrderRebuildRepeatWindow must be positive.");
+        if (options.ChargingOrderAbsentAbandonAfter <= TimeSpan.Zero ||
+            options.ChargingOrderAbsentAbandonAfter > TimeSpan.FromHours(1))
+        {
+            failures.Add("ChargingOrderAbsentAbandonAfter must be positive and at most 1 h.");
+        }
         if (options.AdmissionPolicyVersion <= 0) failures.Add("AdmissionPolicyVersion must be positive.");
         RequireText(options.AdmissionPolicyDeploymentId, nameof(options.AdmissionPolicyDeploymentId), failures);
         if (!options.AllowedDispatchZones.Contains(options.DispatchZone, StringComparer.Ordinal))

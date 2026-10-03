@@ -110,6 +110,10 @@ Import-Module (Join-Path $PSScriptRoot 'L2ExpectedActionOverdue.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'L2DispatchZoneParameters.psm1') -Force
 # Batch 8's WaitingPoints setup key and the Fleet default of one waiting point per vehicle (control-server#388).
 Import-Module (Join-Path $PSScriptRoot 'L2WaitingPoints.psm1') -Force
+# Batch 9's ChargingPolicy setup key and the default approved test policy (control-server#400).
+Import-Module (Join-Path $PSScriptRoot 'L2ChargingPolicy.psm1') -Force
+# Batch 9-06's Chargers setup key: charger stations on the fake Map and its route graph (control-server#404).
+Import-Module (Join-Path $PSScriptRoot 'L2Chargers.psm1') -Force
 # Only the real-onboard rig ever takes the desktop lock, but the import stays unconditional so the
 # dependency is visible at the top rather than buried in a branch 150 lines down.
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'DesktopLock.psm1') -Force
@@ -167,6 +171,13 @@ if ($null -ne $clockSkewMs -and -not $realOnboard) {
 $recoveryResume = ($setup.ContainsKey('RecoveryResume') -and $setup.RecoveryResume)
 if ($recoveryResume -and -not $realOnboard) {
     throw "RecoveryResume needs Onboard = 'Real': the synthetic peer never starts a recovery session."
+}
+# The onboard's unable-to-charge field confirmation entry (onboard-hmi#222). Ships false, because a server without
+# control-server#410 drops the connection on that message; turned on here only for a scenario that declares it, and only
+# then is the property written at all, so older onboard commits and every other scenario keep the settings they had.
+$unableToChargeEntry = ($setup.ContainsKey('UnableToChargeEntry') -and $setup.UnableToChargeEntry)
+if ($unableToChargeEntry -and -not $realOnboard) {
+    throw "UnableToChargeEntry needs Onboard = 'Real': the synthetic peer has no unable-to-charge entry."
 }
 # Not a secret: it authorises nothing outside this loopback rig, and the whole point of the run is
 # that it is written down in the evidence.
@@ -266,6 +277,9 @@ if (-not $slotModelPreseed -and $areaAssignmentsSetting -isnot [bool]) {
 # would hold every existing single-demand scenario's cargo until the cargo holding timeout ran out.
 $cargoHoldingTimeout = Resolve-L2CargoHoldingTimeout -Setup $setup -Where "$Scenario.setup.psd1"
 $dispatchZoneParameters = Resolve-L2DispatchZoneParameters -Setup $setup -Where "$Scenario.setup.psd1"
+# Batch 9 (control-server#400): without an approved, activated charging policy covering it a vehicle takes no new work,
+# so every scenario gets the test policy by default. Read here so a malformed key fails before anything starts.
+$chargingPolicy = Resolve-L2ChargingPolicy -Setup $setup -Where "$Scenario.setup.psd1"
 # A server expected to refuse to start never runs the FieldOps verbs' prerequisites, so there is nothing to preseed.
 if ($expectedStartupRefusal) {
     if ($null -ne $dispatchZoneParameters) {
@@ -273,6 +287,7 @@ if ($expectedStartupRefusal) {
     }
     $slotModelPreseed = $false
     $areaAssignmentsSetting = $false
+    $chargingPolicy = $null
 }
 # The synthetic peer's handshake slot states. Only the fields a vehicle's own state decides; lockState and
 # unlockOutputState stay what an idle vehicle reports, and slotNo is how an entry names its slot.
@@ -548,6 +563,15 @@ try {
             $riotArguments += "--FakeRiot:Seed:StationNodes:$($point.StationId)=$($point.Node)"
         }
     }
+    # control-server#404: a Chargers key puts charger stations on the fake Map and, with Node, on its route graph. Only the
+    # stations: registering them on the fake RIoT and importing the charger roster is the scenario's own (L2Chargers.psm1).
+    $chargerStations = Resolve-L2ChargerStations -Setup $setup -Where "$Scenario.setup.psd1"
+    foreach ($charger in @($chargerStations | Where-Object { $null -ne $_ })) {
+        $riotArguments += "--FakeRiot:Seed:Stations:$($charger.StationId)=$($charger.StationName)"
+        if ($null -ne $charger.Node) {
+            $riotArguments += "--FakeRiot:Seed:StationNodes:$($charger.StationId)=$($charger.Node)"
+        }
+    }
     if ($setup.ContainsKey('RouteCosts')) {
         foreach ($key in ($setup.RouteCosts.Keys | Sort-Object)) {
             $riotArguments += "--FakeRiot:Seed:RouteCosts:$key=$($setup.RouteCosts[$key])"
@@ -590,7 +614,7 @@ try {
     if ($setup.ContainsKey('Stations')) {
         $stationTable = @{}
         foreach ($key in $setup.Stations.Keys) { $stationTable[[string]$key] = [string]$setup.Stations[$key] }
-        foreach ($point in @($waitingPoints | Where-Object { $null -ne $_ })) {
+        foreach ($point in @($waitingPoints | Where-Object { $null -ne $_ }) + @($chargerStations | Where-Object { $null -ne $_ })) {
             if (-not $stationTable.ContainsKey([string]$point.StationId)) { $stationTable[[string]$point.StationId] = $point.StationName }
         }
         $null = $riot.Command('Put', "maps/$mapId/stations", @{ stations = $stationTable })
@@ -706,8 +730,9 @@ try {
     # control-server#273's waiting journey watch: how long a journey may stand waiting for a person before it is logged,
     # and how often again; control-server#318's delay before an ended order of this server's is rebuilt, and the window
     # within which a second ending stops it. Passed only when the setup file names them, so every other scenario keeps the
-    # server's own defaults.
-    foreach ($key in 'WaitingJourneyWarningAfter', 'WaitingJourneyWarningRepeat', 'OwnOrderRebuildDelay', 'OwnOrderRebuildRepeatWindow') {
+    # server's own defaults. control-server#409's clearance-to-waiting-point switch (off by default) goes the same way.
+    foreach ($key in 'WaitingJourneyWarningAfter', 'WaitingJourneyWarningRepeat', 'OwnOrderRebuildDelay', 'OwnOrderRebuildRepeatWindow',
+            'ClearanceToWaitingPointEnabled') {
         if ($setup.ContainsKey($key)) {
             $serverEnvironment["JourneyRuntime__$key"] = [string]$setup[$key]
         }
@@ -748,6 +773,18 @@ try {
         $serverEnvironment[$slotFaultDeclarationCredentialVariable] = $slotFaultDeclarationCredential
     }
     Set-L2ExpectedActionOverdueServerSetting -Environment $serverEnvironment -Threshold $expectedActionOverdueThreshold
+    # control-server#406: the R-11/R-13 roster the manual station clearance checks an operatorId against. Only when a scenario
+    # names it; without it the server has no roster, every clearance confirmation is refused, and -- review M1 -- an
+    # unable-to-charge is never formed (the exit is unavailable; the HANG stays ORDER_HANG). Both rigs offer the onboard
+    # entry (the synthetic peer's control plane, the real onboard's hmi#229 entry), so the roster comes with that declaration.
+    if ($setup.ContainsKey('FieldOperatorRoles')) {
+        $rosterPath = Join-Path $EvidenceRoot 'field-operator-roles.json'
+        @{ operators = @($setup.FieldOperatorRoles | ForEach-Object { @{ operatorId = [string]$_.OperatorId; roles = @($_.Roles) } }) } |
+            ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $rosterPath -Encoding utf8NoBOM
+        $serverEnvironment['FieldOperatorRoles__Path'] = $rosterPath
+        $serverEnvironment['FieldOperatorRoles__OnboardClearanceEntryDeclared'] = 'true'
+        $journal.Note("Field operator roster: $(@($setup.FieldOperatorRoles | ForEach-Object { "$($_.OperatorId)=$(@($_.Roles) -join '+')" }) -join ', ').")
+    }
     if ($realOnboard) {
         # Only the real onboard polls this projection; the synthetic peer decides for itself what
         # the safety summary says. Leaving it off for the synthetic rig keeps those scenarios
@@ -773,8 +810,6 @@ try {
     # reachable and the server commits nothing.
     if ($setup.ContainsKey('IdleReturn') -and $setup.IdleReturn) {
         $serverEnvironment['IdleReturn__Enabled'] = 'true'
-        # The transitional startup guard refuses Enabled alone until control-server#390 lands; only this rig says it knows.
-        $serverEnvironment['IdleReturn__AllowWithoutExecutionForL2Only'] = 'true'
         $journal.Note('Idle return enabled.')
     }
 
@@ -975,6 +1010,9 @@ try {
                 # Ships false. Configuration.Validate() then also insists the proof variable is
                 # populated, which the process environment below does.
                 $settings.wireToGate.recoveryResumeEnabled = $recoveryResume
+                if ($unableToChargeEntry) {
+                    $settings.wireToGate.unableToChargeEntryEnabled = $true
+                }
                 # WireToGate readiness runs through this projection: App.xaml.cs awaits the first
                 # refresh before the handshake snapshot, and vehicleStoppedProvider reads it on
                 # every safety summary afterwards.
@@ -1226,6 +1264,26 @@ try {
         }
     }
 
+    # 7d. The approved test charging policy (control-server#400), through the site's own three FieldOps verbs: import,
+    #     approve as L2_PRESET (never FIELD), activate with --allow-non-field-approval. After the preseed above and before
+    #     the scenario publishes its first demand. No charger roster is imported: no version at all is an empty roster.
+    #     ChargingPolicy = $false leaves every vehicle not commissioned; @{ VehicleScope = ... } narrows it.
+    if ($null -eq $chargingPolicy) {
+        $journal.Note('Charging policy preset skipped: ChargingPolicy = $false, or a server expected to refuse to start.')
+    } else {
+        try {
+            $policyPreset = Invoke-L2ChargingPolicyPreset -Policy $chargingPolicy `
+                -Fleet @($fleet | ForEach-Object { $_.VehicleKey }) -InvokeFieldOps $invokeFieldOps -SnapshotRoot $snapshotRoot
+        } catch {
+            $journal.Observe('preseed:charging-policy', 'FAILED', @{ error = $_.Exception.Message })
+            throw
+        }
+        $journal.Observe('preseed:charging-policy', 'OK', @{
+                version = $policyPreset.Version; source = 'L2_PRESET'
+                coveredAfter = @($policyPreset.Activate.impact.coveredAfter)
+                withoutPolicy = @($policyPreset.Activate.impact.vehiclesWithoutPolicyAfter) })
+    }
+
     # Per-zone dispatch parameters (control-server#206). Written straight into the server's database as one version with
     # Source = L2_PRESET -- no governed snapshot, no audit: the FieldOps import verb is control-server#216's, and so is the
     # evidence for it. After the server is live, so its migration has created the tables, and before the scenario
@@ -1275,6 +1333,9 @@ try {
         PickupStationRiotId = $pickupStationRiotId
         HealthPort          = $HealthPort
         SnapshotRoot        = $snapshotRoot
+        # Every component's stdout and stderr, <name>.out.log / <name>.err.log (control-server#400: a scenario reads the
+        # server's log for a fact the database does not keep).
+        LogRoot             = $logRoot
         # Null unless the setup file turned the activation entry point on.
         GovernanceCredential = if ($slotConfigurationActivation) { $governanceCredential } else { $null }
         # Null unless the setup file turned the release-on-confirmation entry point on.
@@ -1455,7 +1516,10 @@ try {
                              # The waiting point registration the orchestrator imported before the start (control-server#388).
                              'WaitingPointVersions', 'WaitingPoints', 'WaitingPointVehicleScopes',
                              # Idle return commitments reserve a waiting point (control-server#389).
-                             'StationExclusivities', 'StationExclusivityRecords')) {
+                             'StationExclusivities', 'StationExclusivityRecords',
+                             # The charging policy the preset imported, approved and activated (control-server#400).
+                             'ChargingPolicyVersions', 'ChargingPolicyVehicleScopes', 'ChargingPolicyApprovals',
+                             'ChargingPolicyActivations', 'ChargerRosterVersions', 'ChargerRosterEntries')) {
             try {
                 $rows = Invoke-L2Query -Connection $connection -Sql "SELECT * FROM $table"
                 [IO.File]::WriteAllText(

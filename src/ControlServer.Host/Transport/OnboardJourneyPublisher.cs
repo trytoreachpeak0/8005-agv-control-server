@@ -104,6 +104,9 @@ public sealed class OnboardJourneyPublisher(
         ArgumentNullException.ThrowIfNull(projection);
         if (!ChargingCycleStates.Contains(projection.ChargingCycleState))
             throw new InvalidDataException("chargingCycleState is not allowed by the protocol.");
+        // Since control-server#403 the value is projected rather than a constant, so a typo would reach the peer.
+        if (!BatteryStateValues.Contains(projection.BatteryState))
+            throw new InvalidDataException("batteryState is not allowed by the protocol.");
         // loadingPhase is null exactly when the vehicle has no transport journey
         // (8005-agv-program#94). The schema accepts null either way, so nothing downstream -- not even
         // the outbound schema gate -- would notice a journey reported without its loading phase.
@@ -142,6 +145,11 @@ public sealed class OnboardJourneyPublisher(
             }),
             ObservedAt = sentAt
         };
+
+    private static readonly HashSet<string> BatteryStateValues = new(StringComparer.Ordinal)
+    {
+        "SUFFICIENT", "LOW", "UNKNOWN", "MANDATORY_CHARGE"
+    };
 
     private static readonly HashSet<string> ChargingCycleStates = new(StringComparer.Ordinal)
     {

@@ -1,0 +1,24 @@
+== M1 batch label changed (charging-full-cycle -> batch-8)
+exit=1 expected-failure-present=True FAIL-lines=1
+  FAIL: batch-9 scenarios missing from l2.yml: charging-full-cycle
+== M2 DefaultRuns added (charging-full-vehicle-yields-charger)
+exit=1 expected-failure-present=True FAIL-lines=1
+  FAIL: charging-full-vehicle-yields-charger: DefaultRuns = 3, expected none
+== M3 dispatch timeout 170
+exit=1 expected-failure-present=True FAIL-lines=1
+  FAIL: workflow_dispatch timeout 170 minutes, expected at least 180
+== M4 unregistered scenario file
+exit=1 expected-failure-present=True FAIL-lines=1
+  FAIL: synthetic scenario files not in l2.yml's scenario list: charging-unregistered-probe
+== M5 row deleted (charging-no-progress-isolates)
+exit=1 expected-failure-present=True FAIL-lines=2
+  FAIL: batch-9 scenarios missing from l2.yml: charging-no-progress-isolates
+  FAIL: synthetic scenario files not in l2.yml's scenario list: charging-no-progress-isolates
+== M6 name case changed (Charging-interruption-isolates)
+exit=1 expected-failure-present=True FAIL-lines=3
+  FAIL: batch-9 scenarios missing from l2.yml: charging-interruption-isolates
+  FAIL: batch-9 scenarios not in the exit report's list: Charging-interruption-isolates
+  FAIL: synthetic scenario files not in l2.yml's scenario list: charging-interruption-isolates
+== M7 one batch-9 row back to Runs = 1
+exit=1 expected-failure-present=True FAIL-lines=1
+  FAIL: charging-clearance-to-waiting-point: Runs = 1, expected 3

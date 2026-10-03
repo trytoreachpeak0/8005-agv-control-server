@@ -214,6 +214,11 @@ await TaskTypeStationStartup.EnsureAsync(app.Services, CancellationToken.None);
 await WaitingPointStartupCheck.EnsureAsync(app.Services, CancellationToken.None);
 // control-server#383：人工判故障入口关着、库里却有未结判定时告警（它们在关着时不补发）。
 await SlotFaultDeclarationStartupCheck.WarnAsync(app.Services, CancellationToken.None);
+// control-server#403：生效的充电策略版本（含在途旅程与充电周期冻结的版本）不满足 REQ-0281 的阈值关系、或救命线不低于它的强制充电线时拒绝启动。
+// 关系只有 ChargingPolicyRules.ThresholdRelationViolations 一份定义，导入也调它。一版都没有照常启动（逐车不投运，control-server#400）。
+await ChargingPolicyStartupCheck.EnsureAsync(app.Services, CancellationToken.None);
+// control-server#406 审查 M1：人工清桩的出口（名单加至少一个入口）不可用时告警一次；那时充不上照旧写 ORDER_HANG，不进清桩中。
+ControlServer.Host.Runtime.Charging.StationClearanceExit.LogAtStartup(app.Services);
 
 app.MapGet("/health/live", () => Results.Ok(new { status = "live" }));
 app.MapGet("/health/ready", async (ControlServerDbContext dbContext, CancellationToken cancellationToken) =>
@@ -289,14 +294,14 @@ if (app.Configuration.GetValue<bool>("EmergencyStopRelease:enabled"))
 {
     app.MapEmergencyStopRelease();
 }
-// 默认不挂。control-server#299 的故障人工清除：这个入口会清掉一台车的故障、把它的需求交回改派，要现场明确打开才提供。
-if (app.Configuration.GetValue<bool>("VehicleFaultRecovery:enabled"))
-{
-    app.MapVehicleFaultRecovery();
-}
 // 默认不挂。control-server#383 的人工判故障（REQ-0359）：这个入口会让车停下一次仓位操作，要现场明确打开才提供；
 // 车载端认识 SlotFaultDeclarationCommand 之前（onboard-hmi#215）也不能打开，否则那台车会反复断开重连。判断在方法里，有 L1 护着。
 app.MapSlotFaultDeclarationWhenEnabled();
+// 默认不挂。control-server#299 的故障人工清除：这个入口会清掉一台车的故障、把它的需求交回改派，要现场明确打开才提供；
+// control-server#419 的站点独占人工释放同一把凭据、同一个开关。
+app.MapVehicleFaultRecoveryEntriesWhenEnabled();
+// 批次9-08（control-server#406）：充电桩的维修暂停（总是挂）、恢复确认与人工清桩（与上面同一个开关、同一把凭据）。
+app.MapChargingStationEntries();
 app.MapDashboardQueries();
 // 防饥饿阈值的标定证据（批次7-09，control-server#214）：只读，JSON 与 CSV。
 app.MapStarvationCalibrationReport();

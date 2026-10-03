@@ -62,6 +62,16 @@
 # The vector covers plan legs only: several worklist items, cargo holding and station yield have no vector, and
 # the real-rig scenario real-onboard-mixed-side-one-stop that exercises them is in no runner and claims no slice.
 #
+# Batch 8 (control-server#390): the journey runner claims FP-IS-12, one scenario (g3-waiting-point-idle-return),
+# seven assertions. It answers CV-WAITING-POINT-IDLE-RETURN on the real onboard and guards the two cross-ticket
+# contracts with onboard-hmi#217 (docs/g3-slice-claim-review.md has the rows).
+#
+# Batch 9 (control-server#405): the journey runner claims FP-IS-13 for CV-AUTOMATIC-CHARGING-CYCLE, one scenario
+# (g3-automatic-charging-cycle), seven assertions. The exit ticket control-server#412 added CV-MANUAL-STATION-CLEARANCE
+# (g3-manual-station-clearance, four) and CV-UNABLE-TO-CHARGE-FIELD-CONFIRMATION (g3-unable-to-charge-field-confirmation,
+# seven), the scenarios control-server#406 and #410 wrote. CV-MANUAL-CHARGING-RETURN stays asserted under FP-IS-07's names
+# until FP-IS-13 claims it under its own (review item 29); the exit changes no existing scenario, so it did not.
+#
 # ---------------------------------------------------------------------------------------------
 # The ruling, 2026-09-09 (ticket 23, the user's decision -- recorded here rather than only in a
 # commit message, because this is the constant it governs):
@@ -504,6 +514,54 @@ function Get-G3RunnerClaim {
                     'onboardShowsTheDispatchPlanInSequenceOrder',
                     'onboardShowsTheAppendedPlanInSequenceOrder',
                     'multiStopJourneyEachDemandLoadedAndUnloadedOnce')
+                # CV-WAITING-POINT-IDLE-RETURN (batch 8, control-server#390; onboard half onboard-hmi#217): an idle
+                # return to waiting point 214 after an unload, converged there, then taken away by the next demand.
+                # Server halves: the vector's message order (plan before business state), convergence (reserve ->
+                # occupy, purpose released) and release on departure evidence. Onboard half,
+                # TREAT_WAITING_POINT_AS_NON_BUSINESS_STOP, read through UI Automation (IdleReturnStatus). The two
+                # cross-ticket contracts are G3-12-03 and G3-12-04; G3-12-05 is the entry that follows.
+                'FP-IS-12' = @(
+                    'idleReturnPlanBeforeBusinessStateBothAcknowledged',
+                    'onboardShowsEnRouteToWaitingPoint',
+                    'convergedWithArrivedLegAndIdleReturnWithdrawn',
+                    'nextJourneyPlanReplacesTheWaitingPointLeg',
+                    'pickupEntryOpensAfterIdleReturnAndPointReleasedOnDeparture',
+                    'idleReturnJourneyFinalStateNoDuplicateCommit',
+                    'onboardNeverLoadsAtWaitingPoint')
+                # CV-AUTOMATIC-CHARGING-CYCLE (batch 9, control-server#404/#405; onboard half onboard-hmi#220): a vehicle
+                # below its mandatory charge line charges at 211, completes, and leaves on the next demand. Every entry
+                # answers one item of the vector: orderedExpectedMessages (G3-13-01), CLAIM_VEHICLE_FOR_CHARGING_PURPOSE
+                # (G3-13-02), NEVER_DISPATCH_DURING_CHARGING (G3-13-04), the onboard half NEVER_LOAD_AT_CHARGER (G3-13-03),
+                # finalState and forbiddenSideEffects duplicate-riot-order (G3-13-07); G3-13-05 and G3-13-06 are the
+                # completion and the release on departure (REQ-0281, REQ-0173). Names of its own, never FP-IS-07's: the
+                # manual charging return stays FP-IS-07's claim (review item 29). FP-IS-13's other two vectors are claimed by
+                # the exit ticket control-server#412 under further names in this list.
+                'FP-IS-13' = @(
+                    'chargerPlanBeforeChargingBusinessStateBothAcknowledged',
+                    'chargingPurposeClaimedFromAllocationUntilComplete',
+                    'onboardShowsChargingAndNeverLoadsAtCharger',
+                    'neverDispatchedWhileChargingBelowCompletion',
+                    'completeWithArrivedChargerLegPurposeReleasedChargerKept',
+                    'nextJourneyLeavesChargerAndChargerReleasedOnDeparture',
+                    'chargingCycleFinalStateNoDuplicateOrder',
+                    # CV-MANUAL-STATION-CLEARANCE (control-server#406, onboard half onboard-hmi#221), registered by
+                    # control-server#412: RELEASE_STATION_ONLY_ON_CONFIRMED_CLEARANCE (G3-13-14), orderedExpectedMessages
+                    # (G3-13-13), the onboard entry (G3-13-12) and its precondition (G3-13-11).
+                    'unableToChargePausesChargerAndClearingStateAcknowledged',
+                    'onboardShowsUnableToChargeAndClearanceEntry',
+                    'clearanceRequestedAndConfirmedWithStationReleased',
+                    'chargerReleasedOnlyOnConfirmedClearanceNoOrderCommand',
+                    # CV-UNABLE-TO-CHARGE-FIELD-CONFIRMATION (control-server#410, onboard half onboard-hmi#222), registered
+                    # by control-server#412: orderedExpectedMessages (G3-13-23, G3-13-24), DECIDE_CHARGING_POLICY_CENTRALLY
+                    # and RECORD_FIELD_OBSERVATION (G3-13-25), duplicate-riot-order (G3-13-26), the onboard entry and result
+                    # (G3-13-22, G3-13-27) and the no-automatic-confirmation precondition (G3-13-21).
+                    'hangWithoutVerifiedCodeIsNotConfirmedAutomatically',
+                    'onboardShowsUnableToChargeEntryAtCharger',
+                    'fieldConfirmationRequestedAndConfirmedWithManualHold',
+                    'clearingBusinessStateAfterResultAcknowledged',
+                    'fieldConfirmationPausesChargerAndRecordsObservation',
+                    'vehicleHeldInPlaceNoDuplicateOrder',
+                    'onboardKeepsConfirmedResultAfterClearing')
             }
         }
     }

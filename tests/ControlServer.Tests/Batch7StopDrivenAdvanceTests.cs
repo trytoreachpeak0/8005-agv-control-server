@@ -130,7 +130,7 @@ public sealed class Batch7StopDrivenAdvanceTests
         await ArriveAtPickupAsync(fixture, FirstDemandId);
         await EnterSublotAsync(fixture, FirstDemandId, FirstSublot, FirstSubmissionId);
         JourneyRuntimeRow runtime = await SettleLoadAsync(fixture, FirstDemandId);
-        string firstCheckId = runtime.PreDepartureSafetyCheckId;
+        string firstCheckId = runtime.PreDepartureSafetyCheckId!;
 
         await AddInboxAsync(
             fixture, FirstSafetyResultId, "PreDepartureSafetyCheckResult",
@@ -181,7 +181,7 @@ public sealed class Batch7StopDrivenAdvanceTests
         await EnterSublotAsync(fixture, FirstDemandId, FirstSublot, FirstSubmissionId);
         JourneyRuntimeRow runtime = await SettleLoadAsync(fixture, FirstDemandId);
 
-        JsonElement payload = await OutboundPayloadAsync(fixture, runtime.PreDepartureSafetyCheckMessageId);
+        JsonElement payload = await OutboundPayloadAsync(fixture, runtime.PreDepartureSafetyCheckMessageId!);
         Assert.Equal(runtime.DemandId, payload.GetProperty("demandId").GetString());
         Assert.Equal(
             runtime.PreDepartureSafetyCheckId, payload.GetProperty("preDepartureSafetyCheckId").GetString());
@@ -303,7 +303,7 @@ public sealed class Batch7StopDrivenAdvanceTests
             worklist.GetProperty("items").EnumerateArray()
                 .Select(item => item.GetProperty("demandId").GetString())
                 .Order(StringComparer.Ordinal));
-        JsonElement request = await OutboundPayloadAsync(fixture, runtime.SublotRequestMessageId);
+        JsonElement request = await OutboundPayloadAsync(fixture, runtime.SublotRequestMessageId!);
         Assert.Equal(
             [FirstSublot, SecondSublot],
             request.GetProperty("expectedSublots").EnumerateArray()

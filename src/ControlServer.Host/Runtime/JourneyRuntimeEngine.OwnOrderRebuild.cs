@@ -49,8 +49,8 @@ namespace ControlServer.Host.Runtime;
 /// so it has to show the facts that check would. The first version also created behind the gate when the session was not ready
 /// for the vehicle's own sake alone; it no longer does, because Onboard reports exactly <c>unknownPresent=true</c> in that
 /// state and nothing then vouches for the doors. The state does not last: once the ended order is final, the server's
-/// vehicle-safety read drops <c>RIOT_NONFINAL_ORDER_PRESENT</c> (only states 1, 3, 7 and 9 count), and a stopped vehicle's
-/// session becomes Ready again. A new order already sent is a different matter: reconciling it only reads, so it is
+/// vehicle-safety read drops <c>RIOT_NONFINAL_ORDER_PRESENT</c> (only the non-final states 1, 3, 7, 8, 9 and 10 count), and a
+/// stopped vehicle's session becomes Ready again. A new order already sent is a different matter: reconciling it only reads, so it is
 /// reconciled behind the gate as well, and confirmed there when the create answer was lost and the vehicle is already
 /// driving it (incremental review B2).
 /// </para>
@@ -858,6 +858,16 @@ public sealed partial class JourneyRuntimeEngine
             return OrderEndedWithoutArrivalReason;
         }
 
+        // control-server#404: the order of a journey that carries no demand is never rebuilt. REQ-0360's rebuild goes on carrying
+        // the demands the ended order had not finished, and a charging order (or an idle return's) has none. For a charging order
+        // the cancellation may well be deliberate -- REQ-0178 has a person cancel the HANG order of a vehicle that could not be
+        // charged -- and a rebuilt order would send move + act(78,1,0) to that same charger again, which REQ-0284 sets at zero
+        // retries. Named, not recorded: the charging branch ends the cycle once the vehicle is proven stopped.
+        if (runtime.CarriesNoDemand())
+        {
+            return OrderEndedWithoutArrivalReason;
+        }
+
         // An order this server cancelled itself -- the release service does, through the order command surface, when the
         // vehicle is no longer eligible -- was ended on purpose, not by mistake in RIoT. Rebuilding it would undo that decision.
         if (await dbContext.RiotOrderCommandAudit.AsNoTracking()
@@ -944,17 +954,13 @@ public sealed partial class JourneyRuntimeEngine
                 reasons.Add(Release.DemandReleaseRules.MapMismatchReason);
             }
 
-            RiotVehicleSafetyObservation safety = await vehicleSafety
-                .ReadVehicleSafetyAsync(runtime.VehicleKey, cancellationToken).ConfigureAwait(false);
-            if (safety.MotionState != RiotVehicleMotionState.Stopped)
-            {
-                reasons.AddRange(safety.ReasonCodes.Count > 0 ? safety.ReasonCodes : ["RIOT_VEHICLE_NOT_STOPPED"]);
-            }
+            // The same read the charging allocation makes before it commits (control-server#404 review S-a).
+            reasons.AddRange(await Dispatch.NonBusinessDepartureGate
+                .RiotStandstillGapsAsync(vehicleSafety, runtime.VehicleKey, cancellationToken).ConfigureAwait(false));
         }
-        catch (Exception error) when (error is HttpRequestException or InvalidDataException or TaskCanceledException &&
-                                      !cancellationToken.IsCancellationRequested)
+        catch (Exception error) when (Dispatch.NonBusinessDepartureGate.IsUnreadable(error, cancellationToken))
         {
-            reasons.Add("RIOT_VEHICLE_SAFETY_UNREADABLE");
+            reasons.Add(Dispatch.NonBusinessDepartureGate.RiotSafetyUnreadable);
         }
 
         return [.. reasons];

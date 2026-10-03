@@ -209,7 +209,8 @@ public sealed class DispatchAdmissionChainDerivationTests
             boxCountReader: null!,
             NullLogger<SlotCapacityCriterion>.Instance,
             suppressions: null!,
-            dbContext: null!);
+            dbContext: null!,
+            chargingPolicy: TestChargingPolicies.AllApproved);
 
     private static IReadOnlyList<IDispatchAdmissionCriterion> InTransitChain(
         IReadOnlyList<IDispatchAdmissionCriterion> idle,

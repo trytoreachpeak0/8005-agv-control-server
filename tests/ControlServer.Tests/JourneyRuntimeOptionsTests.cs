@@ -5,10 +5,47 @@ namespace ControlServer.Tests;
 
 public sealed class JourneyRuntimeOptionsTests
 {
-    [Fact]
-    public void ConfirmedBatteryThresholdDefaultsToThirtyPercent()
+    /// <summary>
+    /// 旧配置项 <c>JourneyRuntime:minimumBatteryPercent</c> 退场（批次9-05，control-server#403）：配置里还写着它就拒绝启动，报错写明改由充电策略版本承担——
+    /// 不留一个看着像生效、实际什么都不做的配置项。运行时关着也拒；键名大小写不论（.NET 配置不区分）；环境变量的写法同样被认出。
+    /// </summary>
+    [Theory]
+    [InlineData("JourneyRuntime:minimumBatteryPercent", true)]
+    [InlineData("JourneyRuntime:MinimumBatteryPercent", false)]
+    [InlineData("journeyruntime:MINIMUMBATTERYPERCENT", true)]
+    public void TheRetiredMinimumBatteryPercentKeyRefusesToStart(string key, bool enabled)
     {
-        Assert.Equal(30, new JourneyRuntimeOptions().MinimumBatteryPercent);
+        IConfiguration configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { [key] = "30" })
+            .Build();
+        JourneyRuntimeOptions options = enabled ? ValidEnabledOptions() : new JourneyRuntimeOptions();
+
+        Microsoft.Extensions.Options.ValidateOptionsResult result =
+            new JourneyRuntimeOptionsValidator(configuration).Validate(null, options);
+
+        Assert.True(result.Failed);
+        string failure = Assert.Single(result.Failures!);
+        Assert.Equal(JourneyRuntimeOptionsValidator.RetiredMinimumBatteryPercentMessage, failure);
+        Assert.Contains("charging policy version", failure, StringComparison.Ordinal);
+        Assert.DoesNotContain(typeof(JourneyRuntimeOptions).GetProperties(), property => property.Name == "MinimumBatteryPercent");
+    }
+
+    [Fact]
+    public void TheShippedConfigurationNoLongerCarriesMinimumBatteryPercent()
+    {
+        string root = AppContext.BaseDirectory;
+        while (!File.Exists(Path.Combine(root, "global.json")))
+        {
+            root = Path.GetDirectoryName(root)!;
+        }
+        foreach (string file in new[]
+                 {
+                     Path.Combine(root, "src", "ControlServer.Host", "appsettings.json"),
+                     Path.Combine(root, "scripts", "parallel", "instance-factory01-v2.json"),
+                 })
+        {
+            Assert.DoesNotContain("minimumBatteryPercent", File.ReadAllText(file), StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     [Fact]
@@ -241,7 +278,6 @@ public sealed class JourneyRuntimeOptionsTests
         MapIdentity = "MAP-25",
         DispatchZone = "MAP-25-WIRE_TO_GATE",
         DispatchGeneration = 1,
-        MinimumBatteryPercent = 40,
         SublotBoxCountPath = "/api/v2/sublot-box-count",
         AllowedWorkTypes = ["WIRE_TO_GATE"],
         AllowedDispatchZones = ["MAP-25-WIRE_TO_GATE"],

@@ -162,10 +162,15 @@ $journey = Invoke-L2TaskTypeJourney -Context $Context -DemandId $demandId -Sublo
 # 用 Wait-L2RealOrLast 而不是 Wait-L2Condition：超时不抛错，而是把最后一次读到的那批快照交给判据，于是
 # 「有一份没被确认」落在判据表里、连同是哪一份一起可读，而不是变成场景抛出的一行超时。**判据一个字没放松**：
 # 超时之后它照样判那批值，该红还是红。
-$snapshots = @(Wait-L2RealOrLast -Description 'every plan and worklist snapshot of this journey was acknowledged' `
+#
+# 先赋值，再 @($snapshots)，不要直接写成 @(Wait-L2RealOrLast ...)：超时那条路是 `return & $Probe`，探针里的
+# Get-L2DemandJourneySnapshots 以 `return , @(...)` 整体交回，穿过 *OrLast 之后仍是一个对象。直接包 @() 的话，超时路径上
+# 无论几份快照 .Count 都是 1，零份时取 .Acknowledged 直接抛异常、场景中断、出不了判据表（control-server#428）。
+$snapshots = Wait-L2RealOrLast -Description 'every plan and worklist snapshot of this journey was acknowledged' `
         -Journal $journal -Criterion 'journey-snapshots-acknowledged' -TimeoutSeconds 30 `
         -Probe { Get-L2DemandJourneySnapshots $connection $demandId } `
-        -Until { param($v) @($v).Count -ge 2 -and @($v | Where-Object { $_.Fenced -or -not $_.Acknowledged }).Count -eq 0 })
+        -Until { param($v) @($v).Count -ge 2 -and @($v | Where-Object { $_.Fenced -or -not $_.Acknowledged }).Count -eq 0 }
+$snapshots = @($snapshots)
 $described = (@($snapshots | ForEach-Object { "$(Format-L2JourneySnapshot $_) ack=$($_.Acknowledged) fenced=$($_.Fenced)" }) -join ' | ')
 
 # --- 2. 服务端按规则定方向 -----------------------------------------------------------------------------------------

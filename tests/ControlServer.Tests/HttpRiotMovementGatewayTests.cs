@@ -825,6 +825,50 @@ public sealed class HttpRiotMovementGatewayTests
     }
 
     /// <summary>
+    /// 两处未完成订单读（全清单、按车）问的是同一组非终态，不多不少：1 QUEUEING、3 EXECUTING、7 PAUSED、8 SUSPENDED、9 HANG、
+    /// 10 QUEUE_PRIORITY（control-server#404 第二轮审查 L-2：原来漏了 8 与 10，带着这两种状态的单的车被读成「名下没有单」）。
+    /// 安全读数那一处由 <c>SafetyHandler</c> 核。
+    /// </summary>
+    [Theory]
+    [InlineData("listing")]
+    [InlineData("by-vehicle")]
+    public async Task TheUnfinishedOrderReadsAskForEveryNonFinalState(string read)
+    {
+        List<int[]> asked = [];
+        RecordingHandler handler = new((request, _) =>
+        {
+            Assert.Equal("/api/order/v1/orderRecord", request.RequestUri?.AbsolutePath);
+            asked.Add(
+            [
+                .. request.RequestUri!.Query.TrimStart('?').Split('&')
+                    .Where(pair => pair.StartsWith("filterByState=", StringComparison.Ordinal))
+                    .Select(pair => int.Parse(pair["filterByState=".Length..], System.Globalization.CultureInfo.InvariantCulture))
+                    .Order(),
+            ]);
+            return JsonResponse("""{"code":"0","result":{"current":1,"size":100,"total":0,"records":[]}}""");
+        });
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
+
+        if (read == "listing")
+        {
+            Assert.True((await gateway.ListUnfinishedOrdersAsync(TestContext.Current.CancellationToken)).IsComplete);
+        }
+        else
+        {
+            Assert.False(
+                (await gateway.ReadUnfinishedOrdersAsync("VEHICLE-KEY-01", TestContext.Current.CancellationToken)).HasUnfinishedOrder);
+        }
+
+        Assert.Equal(
+            [
+                RiotOrderState.Queueing, RiotOrderState.Executing, RiotOrderState.Paused, RiotOrderState.Suspended,
+                RiotOrderState.Hang, RiotOrderState.QueuePriority,
+            ],
+            Assert.Single(asked));
+    }
+
+    /// <summary>
     /// A page that does not cover every record, a failed read, and a record with no orderId to address it by, all make the
     /// listing incomplete -- never an empty "no foreign order".
     /// </summary>
@@ -904,7 +948,9 @@ public sealed class HttpRiotMovementGatewayTests
         Assert.Contains("filterByState=1", pairs);
         Assert.Contains("filterByState=3", pairs);
         Assert.Contains("filterByState=7", pairs);
+        Assert.Contains("filterByState=8", pairs);
         Assert.Contains("filterByState=9", pairs);
+        Assert.Contains("filterByState=10", pairs);
         if (afterOrders.HasValue) clock!.Set(afterOrders.Value);
         return JsonResponse(ordersBody);
     });
