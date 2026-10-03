@@ -24,10 +24,12 @@ public sealed class OnboardRecoveryCoordinator(
     /// <summary>
     /// What the onboard shows when a load cancellation is refused because the attempt has a slot fault declaration pending
     /// or applied (control-server#384). The wire code is <c>ACTION_NOT_ALLOWED_IN_STATE</c>: the protocol registry allows
-    /// <c>SLOT_FAULT_DECLARED</c> in <c>OperationResult</c> only, so this message is where the reason is told apart.
+    /// <c>SLOT_FAULT_DECLARED</c> in <c>OperationResult</c> only, so this message is where the reason is told apart. It does
+    /// not send the operator to an exception recovery session: while the declaration waits the journey is not Blocked and
+    /// none can be opened (review of control-server#384, note 4).
     /// </summary>
     public const string SlotFaultDeclaredCancellationMessage =
-        "本次装卸已有人工判故障（待车载端答复或已生效），不能取消；请走异常恢复。";
+        "本次装卸有人工判故障在等结果或已生效，现在不能取消。请等判定结果：车载端拒绝判定后可以重试取消；判定生效后这次装卸转异常处置。";
 
     private static readonly Action<ILogger, string, string, string, Exception?> LogCancellationRefusedForDeclaration =
         LoggerMessage.Define<string, string, string>(

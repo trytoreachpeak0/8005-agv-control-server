@@ -719,6 +719,69 @@ public sealed class SlotFaultDeclarationTests
         await ProtocolOutboxIdentityStartupCheck.EnsureAsync(fixture.Context, NullLogger.Instance, null, Token);
     }
 
+    /// <summary>
+    /// A result that settles no declaration of this server -- one naming another attempt, or a declaration this server never
+    /// made -- settles no command either. Settled, the command's line would never be replayed again and the declaration it
+    /// carries would stay PENDING for good (review of control-server#384, S2).
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [InlineData("attempt-mismatch")]
+    [InlineData("unknown-declaration")]
+    public async Task AnAnswerThatSettlesNoDeclarationLeavesTheCommandUnsettled(string answer)
+    {
+        await using Fixture fixture = await Fixture.AwaitingOperatorOnSlotOneAsync();
+        SlotFaultDeclarationRow declaration = await fixture.DeclareAsync();
+
+        await (answer == "attempt-mismatch"
+            ? fixture.SendResultAsync(declaration.DeclarationId, "20000000-0000-4000-8000-00000000ffff", "APPLIED")
+            : fixture.SendResultAsync(Guid.NewGuid().ToString("D"), AttemptId, "APPLIED"));
+
+        Assert.Equal(SlotFaultDeclarationStates.Pending, Assert.Single(await fixture.DeclarationsAsync()).State);
+        Assert.Null(Assert.Single(await fixture.CommandsAsync()).AcknowledgedAt);
+    }
+
+    /// <summary>
+    /// The host's start order, read from <c>Program.cs</c> (review of control-server#384, S1): the backfill that settles
+    /// answered declarations' commands runs after the database is migrated and before the outbox identity check, or a store
+    /// that declared before this fix is refused at the first start under a new identity; the warning about declarations
+    /// held while switched off runs before the check too, so a refusal is preceded by what explains it. Each call appears
+    /// exactly once.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    public void TheHostSettlesAnsweredDeclarationsAfterMigratingAndBeforeTheOutboxIdentityCheck()
+    {
+        string[] lines = File.ReadAllLines(Path.Combine(RepositoryRoot(), "src", "ControlServer.Host", "Program.cs"));
+        int Line(string call)
+        {
+            int[] found = [.. lines.Select((line, index) => (line.Trim(), index))
+                .Where(item => !item.Item1.StartsWith("//", StringComparison.Ordinal)
+                               && item.Item1.StartsWith("await " + call + "(app.Services", StringComparison.Ordinal))
+                .Select(item => item.index)];
+            return Assert.Single(found);
+        }
+
+        int migrate = Line("EnsureDatabaseAsync");
+        int settle = Line("SlotFaultDeclarationResults.SettleAnsweredCommandsAsync");
+        int warn = Line("SlotFaultDeclarationStartupCheck.WarnAsync");
+        int identity = Line("ProtocolOutboxIdentityStartupCheck.EnsureAsync");
+
+        Assert.True(migrate < settle, $"settle at line {settle + 1} runs before the migration at line {migrate + 1}");
+        Assert.True(settle < identity, $"settle at line {settle + 1} runs after the identity check at line {identity + 1}");
+        Assert.True(warn < identity, $"the warning at line {warn + 1} runs after the identity check at line {identity + 1}");
+    }
+
+    private static string RepositoryRoot()
+    {
+        DirectoryInfo? directory = new(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "ControlServer.sln")))
+        {
+            directory = directory.Parent;
+        }
+        return directory?.FullName ?? throw new InvalidOperationException("ControlServer.sln not found above the test output.");
+    }
+
     // --- Cancelling a declared attempt (review of onboard-hmi#247, control-server#384) -------------------------------
 
     /// <summary>
