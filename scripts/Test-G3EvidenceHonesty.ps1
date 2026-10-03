@@ -11,17 +11,22 @@
     against a throwaway repository whose store generator fails on purpose.
 
     1. formalSlicePass and SELF_CHECK_OVERRIDE. For each of the four run kinds, an all-PASS assertion report
-       is graded by g3-slice-evidence.ps1 -- New-G3Classification and Write-G3GateResult, both -- under five
-       commits records: the staged shape (no source), SHARED_BINDING, a ControlServer override, an onboard
-       override, and a source nobody has defined. Only the first two may say formalSlicePass true; the
-       overrides must say false with formalSliceWithheldReason SELF_CHECK_OVERRIDE while status stays PASS;
-       the unknown source must be withheld too. The all-PASS premise is pinned by the first two, so a grading
-       that passes nothing cannot satisfy the rest.
+       is graded by g3-slice-evidence.ps1 -- New-G3Classification and Write-G3GateResult, both -- under ten
+       commits records: four with no controlServerCommitSource (no source at all, only an onboard source, an
+       empty record, a bare string), an override together with an unknown source, SHARED_BINDING, a
+       ControlServer override, an onboard override, and a source nobody has defined. Only SHARED_BINDING may say
+       formalSlicePass true; every other record says false with the reason that applies -- COMMIT_SOURCE_MISSING,
+       SELF_CHECK_OVERRIDE, UNRECOGNISED_COMMIT_SOURCE, or both of the last two -- while status stays PASS. The
+       all-PASS premise is pinned by the SHARED_BINDING case, so a grading that passes nothing cannot satisfy
+       the rest.
        Then the wiring, read from each runner's AST: every New-G3Classification call passes -Commits
        $commitsRecord, the gate results' Context carries commits = $commitsRecord, and every runner's record
        carries its *CommitSource keys. run-staged-g3.ps1's own $commitSources statement is then run with its
        param defaults and with each of the four commits replaced in turn: SHARED_BINDING four times, then
-       SELF_CHECK_OVERRIDE for the replaced one, which withholds a PASS slice.
+       SELF_CHECK_OVERRIDE for the replaced one, which withholds a PASS slice. The journey and demand-bearing
+       runners' own source statements (the *CommitSource assignments, the -SelfCheck* branches and the
+       $commitsRecord literal) are run the same way, with and without each override parameter, so a record that
+       writes a constant instead of the variable goes red.
 
     2. The demand-bearing runner's error path. A git repository is made in a temporary directory whose
        scripts/l2/Invoke-L2Scenario.ps1 writes an assertions.json with outcome FAIL and a unique
@@ -106,7 +111,13 @@ $runKinds = @(
     'DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT',
     'JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS')
 $commitCases = @(
-    @{ Name = 'no commit source (the staged shape)'; Commits = [ordered]@{ controlServer = 'a' * 40 }; Formal = $true; Reason = $null },
+    # Absence withheld (review S3): before the review a record with no source graded as a pass.
+    @{ Name = 'a record with no commit source'; Commits = [ordered]@{ controlServer = 'a' * 40 }; Formal = $false; Reason = 'COMMIT_SOURCE_MISSING: controlServerCommitSource' },
+    @{ Name = 'only an onboard source'; Commits = [ordered]@{ controlServer = 'a' * 40; onboardCommitSource = 'SHARED_BINDING' }; Formal = $false; Reason = 'COMMIT_SOURCE_MISSING: controlServerCommitSource' },
+    @{ Name = 'an empty record'; Commits = [ordered]@{}; Formal = $false; Reason = 'COMMIT_SOURCE_MISSING: controlServerCommitSource' },
+    @{ Name = 'a bare string'; Commits = 'SHARED_BINDING'; Formal = $false; Reason = 'COMMIT_SOURCE_MISSING: controlServerCommitSource' },
+    # Both reasons kept (review note): the unknown value is not lost behind the override.
+    @{ Name = 'an override and an unknown source'; Commits = [ordered]@{ controlServerCommitSource = 'SELF_CHECK_OVERRIDE'; onboardCommitSource = 'SOMETHING_NEW' }; Formal = $false; Reason = 'SELF_CHECK_OVERRIDE; UNRECOGNISED_COMMIT_SOURCE: onboardCommitSource=SOMETHING_NEW' },
     @{ Name = 'SHARED_BINDING'; Commits = [ordered]@{ controlServer = 'a' * 40; controlServerCommitSource = 'SHARED_BINDING'; onboardCommitSource = 'SHARED_BINDING' }; Formal = $true; Reason = $null },
     @{ Name = 'a ControlServer self-check override'; Commits = [ordered]@{ controlServer = 'b' * 40; controlServerCommitSource = 'SELF_CHECK_OVERRIDE' }; Formal = $false; Reason = 'SELF_CHECK_OVERRIDE' },
     @{ Name = 'an onboard self-check override'; Commits = [ordered]@{ controlServer = 'a' * 40; controlServerCommitSource = 'SHARED_BINDING'; onboardCommitSource = 'SELF_CHECK_OVERRIDE' }; Formal = $false; Reason = 'SELF_CHECK_OVERRIDE' },
@@ -246,6 +257,53 @@ if ($sourcesStatements.Count -eq 1) {
         if ($null -ne $stagedCase.Override -and $null -ne $commitSources) {
             $graded = Get-G3FormalSlicePass -RunKind 'STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT' -SliceStatus 'PASS' -Commits $commitSources
             Check "run-staged-g3.ps1, $($stagedCase.Name): a PASS slice is withheld as SELF_CHECK_OVERRIDE" `
+                ($graded.formalSlicePass -eq $false -and $graded.formalSliceWithheldReason -eq 'SELF_CHECK_OVERRIDE') "$($graded | ConvertTo-Json -Compress)"
+        }
+    }
+}
+
+# The journey and demand-bearing runners' own sources (review S1). A regex over the record literal cannot tell
+# `controlServerCommitSource = $controlServerCommitSource` from `controlServerCommitSource = 'SHARED_BINDING'`, and
+# the second is cs#453's case all over again. So each runner's own statements are run, in their order: every
+# top-level assignment to a *CommitSource variable, every top-level `if` on a -SelfCheck* parameter, and the
+# $commitsRecord literal. Run once with no override and once per override parameter; the record must carry
+# SELF_CHECK_OVERRIDE exactly under the overridden commit's key, and SHARED_BINDING everywhere else.
+$overrideRunners = [ordered]@{
+    'run-demand-bearing-g3-vectors.ps1' = [ordered]@{ SelfCheckControlServerCommit = 'controlServerCommitSource' }
+    'run-journey-g3.ps1' = [ordered]@{
+        SelfCheckControlServerCommit = 'controlServerCommitSource'; SelfCheckOnboardCommit = 'onboardCommitSource' }
+}
+foreach ($file in $overrideRunners.Keys) {
+    $ast = Get-RunnerAst (Join-Path $ScriptRoot $file)
+    $parameters = $overrideRunners[$file]
+    $statements = @($ast.EndBlock.Statements | Where-Object {
+            ($_ -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+             $_.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and
+             ($_.Left.VariablePath.UserPath -like '*CommitSource' -or $_.Left.VariablePath.UserPath -eq 'commitsRecord')) -or
+            ($_ -is [System.Management.Automation.Language.IfStatementAst] -and
+             $_.Clauses[0].Item1.Extent.Text -match '\$SelfCheck\w*Commit\b')
+        })
+    $ifCount = @($statements | Where-Object { $_ -is [System.Management.Automation.Language.IfStatementAst] }).Count
+    Check "${file}: one top-level -SelfCheck* branch per override parameter" ($ifCount -eq $parameters.Count) "$ifCount found"
+    $block = [scriptblock]::Create((@($statements | ForEach-Object { $_.Extent.Text }) -join "`n"))
+    foreach ($override in @($null) + @($parameters.Keys)) {
+        foreach ($name in $parameters.Keys) { Set-Variable -Name $name -Value $null }
+        if ($null -ne $override) { Set-Variable -Name $override -Value ('e' * 40) }
+        $ControlServerCommit = 'a' * 40; $OnboardCommit = 'b' * 40
+        $commitsRecord = $null
+        $thrown = $null
+        try { . $block } catch { $thrown = $_.Exception.Message }
+        $wrong = @($parameters.Keys | ForEach-Object {
+                $key = $parameters[$_]
+                $expected = if ($_ -eq $override) { 'SELF_CHECK_OVERRIDE' } else { 'SHARED_BINDING' }
+                if ($null -eq $commitsRecord -or "$($commitsRecord[$key])" -ne $expected) { "$key=$(${commitsRecord}?[$key]) (expected $expected)" }
+            })
+        $label = if ($null -eq $override) { 'no override' } else { "-$override" }
+        Check "${file}, ${label}: the commits record carries the source the run set" ($null -eq $thrown -and $wrong.Count -eq 0) "$thrown $($wrong -join '; ')"
+        if ($null -ne $override -and $null -ne $commitsRecord) {
+            $graded = Get-G3FormalSlicePass -RunKind $(if ($file -like '*journey*') { 'JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS' } else {
+                    'DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT' }) -SliceStatus 'PASS' -Commits $commitsRecord
+            Check "${file}, ${label}: a PASS slice is withheld as SELF_CHECK_OVERRIDE" `
                 ($graded.formalSlicePass -eq $false -and $graded.formalSliceWithheldReason -eq 'SELF_CHECK_OVERRIDE') "$($graded | ConvertTo-Json -Compress)"
         }
     }

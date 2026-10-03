@@ -24,7 +24,22 @@ $mutations = @(
        To = "        if (`$false) {" },
     @{ Id = 'M7-staged-source-comparison-removed'; File = 'run-staged-g3.ps1'
        From = "`$commitSources = Get-G3CommitSources -Binding"
-       To = "`$commitSources = [ordered]@{ controlServerCommitSource = 'SHARED_BINDING'; onboardCommitSource = 'SHARED_BINDING'; simulatorCommitSource = 'SHARED_BINDING'; protocolCommitSource = 'SHARED_BINDING' }; `$null = Get-G3CommitSources -Binding" }
+       To = "`$commitSources = [ordered]@{ controlServerCommitSource = 'SHARED_BINDING'; onboardCommitSource = 'SHARED_BINDING'; simulatorCommitSource = 'SHARED_BINDING'; protocolCommitSource = 'SHARED_BINDING' }; `$null = Get-G3CommitSources -Binding" },
+    # The review's R1 and R2 (S1): the record literal keeps the key but writes a constant.
+    @{ Id = 'M8-R1-demand-bearing-source-hardcoded'; File = 'run-demand-bearing-g3-vectors.ps1'
+       From = "`n    controlServerCommitSource = `$controlServerCommitSource`n    onboardHmi = "
+       To = "`n    controlServerCommitSource = 'SHARED_BINDING'`n    onboardHmi = " },
+    @{ Id = 'M9-R2-journey-onboard-source-hardcoded'; File = 'run-journey-g3.ps1'
+       From = "    onboardCommitSource = `$onboardCommitSource`n    slotsSimulator"
+       To = "    onboardCommitSource = 'SHARED_BINDING'`n    slotsSimulator" },
+    # S3: a record without controlServerCommitSource passes again.
+    @{ Id = 'M10-missing-source-passes'; File = 'g3-slice-evidence.ps1'
+       From = "    if ('controlServerCommitSource' -notin `$keys) { `$reasons.Add('COMMIT_SOURCE_MISSING: controlServerCommitSource') }`n"
+       To = "" },
+    # The review's note: only the first reason is kept.
+    @{ Id = 'M11-only-first-reason-kept'; File = 'g3-slice-evidence.ps1'
+       From = "    return `$reasons -join '; '"
+       To = "    return `$reasons[0]" }
 )
 
 foreach ($m in $mutations) {

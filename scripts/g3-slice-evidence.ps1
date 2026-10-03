@@ -659,11 +659,17 @@ function Get-G3SliceStatus {
 # still wrote formalSlicePass true (cs#453's self-check run 20261003T042613339Z, FP-IS-04/05/06), so a quoted
 # self-check result carried nothing that would stop it being read as exit evidence.
 #
-# Read from the run's commits record, every key named *CommitSource: the runners that can override a commit
-# record where each one came from there (controlServerCommitSource, onboardCommitSource), and the two staged
-# runners, which always run the binding, record no source at all. Fail-closed on the value: SHARED_BINDING is
-# the only one that leaves the pass alone, so a source some later runner invents is withheld until this
-# function is taught it, rather than passing because nobody listed it.
+# Read from the run's commits record, every key named *CommitSource. All four runners record where each commit
+# came from there: journey and demand-bearing from their -SelfCheck* parameters, run-staged-g3.ps1 by comparing
+# its commits with its own param defaults, the restart runner (which has no commit parameter) as SHARED_BINDING.
+# Fail-closed twice over:
+#   - on the value: SHARED_BINDING is the only one that leaves the pass alone, so a source some later runner
+#     invents is withheld until this function is taught it, rather than passing because nobody listed it;
+#   - on absence: a record without controlServerCommitSource -- empty, a runner that forgot to record it, or
+#     not a record at all -- says nothing about what ran, so it is withheld as COMMIT_SOURCE_MISSING. Silence
+#     passing was exactly the shape cs#453 found: nothing in the evidence said the run was not the gate.
+# Every reason that applies is written, joined by '; ', SELF_CHECK_OVERRIDE first: a record with an override and an
+# unknown value keeps both, so the unknown one is not lost behind the override.
 function Get-G3FormalSliceWithheldReason {
     param([Parameter(Mandatory)][AllowNull()]$Commits)
 
@@ -674,6 +680,7 @@ function Get-G3FormalSliceWithheldReason {
     $keys = if ($Commits -is [System.Collections.IDictionary]) { @($Commits.Keys) } else {
         @($Commits.PSObject.Properties.Name)
     }
+    $reasons = [System.Collections.Generic.List[string]]::new()
     $overridden = [System.Collections.Generic.List[string]]::new()
     $unrecognised = [System.Collections.Generic.List[string]]::new()
     foreach ($key in @($keys | Where-Object { "$_" -like '*CommitSource' })) {
@@ -681,9 +688,11 @@ function Get-G3FormalSliceWithheldReason {
         if ($value -eq 'SHARED_BINDING') { continue }
         if ($value -eq 'SELF_CHECK_OVERRIDE') { $overridden.Add($key) } else { $unrecognised.Add("$key=$value") }
     }
-    if ($overridden.Count -ne 0) { return 'SELF_CHECK_OVERRIDE' }
-    if ($unrecognised.Count -ne 0) { return "UNRECOGNISED_COMMIT_SOURCE: $($unrecognised -join ', ')" }
-    return $null
+    if ($overridden.Count -ne 0) { $reasons.Add('SELF_CHECK_OVERRIDE') }
+    if ($unrecognised.Count -ne 0) { $reasons.Add("UNRECOGNISED_COMMIT_SOURCE: $($unrecognised -join ', ')") }
+    if ('controlServerCommitSource' -notin $keys) { $reasons.Add('COMMIT_SOURCE_MISSING: controlServerCommitSource') }
+    if ($reasons.Count -eq 0) { return $null }
+    return $reasons -join '; '
 }
 
 # Where each of the four commits a run used came from, as *CommitSource entries for its commits record:

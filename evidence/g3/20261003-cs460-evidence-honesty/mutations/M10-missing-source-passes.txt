@@ -1,15 +1,15 @@
-PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, a record with no commit source: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
-PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, a record with no commit source: every slice status PASS, every slice formalSlicePass False
-PASS gate-result.json, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, a record with no commit source, FP-IS-00: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
-PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, only an onboard source: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
-PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, only an onboard source: every slice status PASS, every slice formalSlicePass False
-PASS gate-result.json, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, only an onboard source, FP-IS-00: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
-PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, an empty record: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
-PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, an empty record: every slice status PASS, every slice formalSlicePass False
-PASS gate-result.json, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, an empty record, FP-IS-00: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
-PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, a bare string: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
-PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, a bare string: every slice status PASS, every slice formalSlicePass False
-PASS gate-result.json, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, a bare string, FP-IS-00: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
+FAIL classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, a record with no commit source: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource -- formalSlicePass True, reason 
+FAIL classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, a record with no commit source: every slice status PASS, every slice formalSlicePass False -- FP-IS-00 PASS True ; FP-IS-07 PASS True ; FP-IS-06 PASS True ; FP-IS-14 PASS True ; FP-IS-15 PASS True 
+FAIL gate-result.json, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, a record with no commit source, FP-IS-00: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource -- status PASS, formalSlicePass True, reason 
+FAIL classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, only an onboard source: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource -- formalSlicePass True, reason 
+FAIL classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, only an onboard source: every slice status PASS, every slice formalSlicePass False -- FP-IS-00 PASS True ; FP-IS-07 PASS True ; FP-IS-06 PASS True ; FP-IS-14 PASS True ; FP-IS-15 PASS True 
+FAIL gate-result.json, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, only an onboard source, FP-IS-00: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource -- status PASS, formalSlicePass True, reason 
+FAIL classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, an empty record: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource -- formalSlicePass True, reason 
+FAIL classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, an empty record: every slice status PASS, every slice formalSlicePass False -- FP-IS-00 PASS True ; FP-IS-07 PASS True ; FP-IS-06 PASS True ; FP-IS-14 PASS True ; FP-IS-15 PASS True 
+FAIL gate-result.json, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, an empty record, FP-IS-00: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource -- status PASS, formalSlicePass True, reason 
+FAIL classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, a bare string: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource -- formalSlicePass True, reason 
+FAIL classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, a bare string: every slice status PASS, every slice formalSlicePass False -- FP-IS-00 PASS True ; FP-IS-07 PASS True ; FP-IS-06 PASS True ; FP-IS-14 PASS True ; FP-IS-15 PASS True 
+FAIL gate-result.json, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, a bare string, FP-IS-00: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource -- status PASS, formalSlicePass True, reason 
 PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, an override and an unknown source: formalSlicePass False, reason SELF_CHECK_OVERRIDE; UNRECOGNISED_COMMIT_SOURCE: onboardCommitSource=SOMETHING_NEW
 PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, an override and an unknown source: every slice status PASS, every slice formalSlicePass False
 PASS gate-result.json, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, an override and an unknown source, FP-IS-00: status PASS, formalSlicePass False, reason SELF_CHECK_OVERRIDE; UNRECOGNISED_COMMIT_SOURCE: onboardCommitSource=SOMETHING_NEW
@@ -25,18 +25,18 @@ PASS gate-result.json, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, an onboard 
 PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, a source nobody defined: formalSlicePass False, reason UNRECOGNISED_COMMIT_SOURCE*
 PASS classification, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, a source nobody defined: every slice status PASS, every slice formalSlicePass False
 PASS gate-result.json, STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT, a source nobody defined, FP-IS-00: status PASS, formalSlicePass False, reason UNRECOGNISED_COMMIT_SOURCE*
-PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, a record with no commit source: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
-PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, a record with no commit source: every slice status PASS, every slice formalSlicePass False
-PASS gate-result.json, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, a record with no commit source, FP-IS-00: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
-PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, only an onboard source: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
-PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, only an onboard source: every slice status PASS, every slice formalSlicePass False
-PASS gate-result.json, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, only an onboard source, FP-IS-00: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
-PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, an empty record: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
-PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, an empty record: every slice status PASS, every slice formalSlicePass False
-PASS gate-result.json, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, an empty record, FP-IS-00: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
-PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, a bare string: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
-PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, a bare string: every slice status PASS, every slice formalSlicePass False
-PASS gate-result.json, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, a bare string, FP-IS-00: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
+FAIL classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, a record with no commit source: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource -- formalSlicePass True, reason 
+FAIL classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, a record with no commit source: every slice status PASS, every slice formalSlicePass False -- FP-IS-00 PASS True ; FP-IS-06 PASS True ; FP-IS-15 PASS True ; FP-IS-14 PASS True 
+FAIL gate-result.json, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, a record with no commit source, FP-IS-00: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource -- status PASS, formalSlicePass True, reason 
+FAIL classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, only an onboard source: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource -- formalSlicePass True, reason 
+FAIL classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, only an onboard source: every slice status PASS, every slice formalSlicePass False -- FP-IS-00 PASS True ; FP-IS-06 PASS True ; FP-IS-15 PASS True ; FP-IS-14 PASS True 
+FAIL gate-result.json, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, only an onboard source, FP-IS-00: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource -- status PASS, formalSlicePass True, reason 
+FAIL classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, an empty record: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource -- formalSlicePass True, reason 
+FAIL classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, an empty record: every slice status PASS, every slice formalSlicePass False -- FP-IS-00 PASS True ; FP-IS-06 PASS True ; FP-IS-15 PASS True ; FP-IS-14 PASS True 
+FAIL gate-result.json, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, an empty record, FP-IS-00: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource -- status PASS, formalSlicePass True, reason 
+FAIL classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, a bare string: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource -- formalSlicePass True, reason 
+FAIL classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, a bare string: every slice status PASS, every slice formalSlicePass False -- FP-IS-00 PASS True ; FP-IS-06 PASS True ; FP-IS-15 PASS True ; FP-IS-14 PASS True 
+FAIL gate-result.json, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, a bare string, FP-IS-00: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource -- status PASS, formalSlicePass True, reason 
 PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, an override and an unknown source: formalSlicePass False, reason SELF_CHECK_OVERRIDE; UNRECOGNISED_COMMIT_SOURCE: onboardCommitSource=SOMETHING_NEW
 PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, an override and an unknown source: every slice status PASS, every slice formalSlicePass False
 PASS gate-result.json, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, an override and an unknown source, FP-IS-00: status PASS, formalSlicePass False, reason SELF_CHECK_OVERRIDE; UNRECOGNISED_COMMIT_SOURCE: onboardCommitSource=SOMETHING_NEW
@@ -52,18 +52,18 @@ PASS gate-result.json, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, an onbo
 PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, a source nobody defined: formalSlicePass False, reason UNRECOGNISED_COMMIT_SOURCE*
 PASS classification, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, a source nobody defined: every slice status PASS, every slice formalSlicePass False
 PASS gate-result.json, STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT, a source nobody defined, FP-IS-00: status PASS, formalSlicePass False, reason UNRECOGNISED_COMMIT_SOURCE*
-PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, a record with no commit source: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
-PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, a record with no commit source: every slice status PASS, every slice formalSlicePass False
-PASS gate-result.json, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, a record with no commit source, FP-IS-04: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
-PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, only an onboard source: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
-PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, only an onboard source: every slice status PASS, every slice formalSlicePass False
-PASS gate-result.json, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, only an onboard source, FP-IS-04: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
-PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, an empty record: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
-PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, an empty record: every slice status PASS, every slice formalSlicePass False
-PASS gate-result.json, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, an empty record, FP-IS-04: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
-PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, a bare string: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
-PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, a bare string: every slice status PASS, every slice formalSlicePass False
-PASS gate-result.json, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, a bare string, FP-IS-04: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
+FAIL classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, a record with no commit source: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource -- formalSlicePass True, reason 
+FAIL classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, a record with no commit source: every slice status PASS, every slice formalSlicePass False -- FP-IS-04 PASS True ; FP-IS-05 PASS True ; FP-IS-06 PASS True 
+FAIL gate-result.json, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, a record with no commit source, FP-IS-04: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource -- status PASS, formalSlicePass True, reason 
+FAIL classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, only an onboard source: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource -- formalSlicePass True, reason 
+FAIL classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, only an onboard source: every slice status PASS, every slice formalSlicePass False -- FP-IS-04 PASS True ; FP-IS-05 PASS True ; FP-IS-06 PASS True 
+FAIL gate-result.json, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, only an onboard source, FP-IS-04: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource -- status PASS, formalSlicePass True, reason 
+FAIL classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, an empty record: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource -- formalSlicePass True, reason 
+FAIL classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, an empty record: every slice status PASS, every slice formalSlicePass False -- FP-IS-04 PASS True ; FP-IS-05 PASS True ; FP-IS-06 PASS True 
+FAIL gate-result.json, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, an empty record, FP-IS-04: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource -- status PASS, formalSlicePass True, reason 
+FAIL classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, a bare string: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource -- formalSlicePass True, reason 
+FAIL classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, a bare string: every slice status PASS, every slice formalSlicePass False -- FP-IS-04 PASS True ; FP-IS-05 PASS True ; FP-IS-06 PASS True 
+FAIL gate-result.json, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, a bare string, FP-IS-04: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource -- status PASS, formalSlicePass True, reason 
 PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, an override and an unknown source: formalSlicePass False, reason SELF_CHECK_OVERRIDE; UNRECOGNISED_COMMIT_SOURCE: onboardCommitSource=SOMETHING_NEW
 PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, an override and an unknown source: every slice status PASS, every slice formalSlicePass False
 PASS gate-result.json, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, an override and an unknown source, FP-IS-04: status PASS, formalSlicePass False, reason SELF_CHECK_OVERRIDE; UNRECOGNISED_COMMIT_SOURCE: onboardCommitSource=SOMETHING_NEW
@@ -79,18 +79,18 @@ PASS gate-result.json, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVE
 PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, a source nobody defined: formalSlicePass False, reason UNRECOGNISED_COMMIT_SOURCE*
 PASS classification, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, a source nobody defined: every slice status PASS, every slice formalSlicePass False
 PASS gate-result.json, DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT, a source nobody defined, FP-IS-04: status PASS, formalSlicePass False, reason UNRECOGNISED_COMMIT_SOURCE*
-PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, a record with no commit source: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
-PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, a record with no commit source: every slice status PASS, every slice formalSlicePass False
-PASS gate-result.json, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, a record with no commit source, FP-IS-01: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
-PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, only an onboard source: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
-PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, only an onboard source: every slice status PASS, every slice formalSlicePass False
-PASS gate-result.json, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, only an onboard source, FP-IS-01: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
-PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, an empty record: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
-PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, an empty record: every slice status PASS, every slice formalSlicePass False
-PASS gate-result.json, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, an empty record, FP-IS-01: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
-PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, a bare string: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
-PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, a bare string: every slice status PASS, every slice formalSlicePass False
-PASS gate-result.json, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, a bare string, FP-IS-01: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource
+FAIL classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, a record with no commit source: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource -- formalSlicePass True, reason 
+FAIL classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, a record with no commit source: every slice status PASS, every slice formalSlicePass False -- FP-IS-01 PASS True ; FP-IS-02 PASS True ; FP-IS-03 PASS True ; FP-IS-07 PASS True ; FP-IS-10 PASS True ; FP-IS-11 PASS True ; FP-IS-08 PASS True ; FP-IS-12 PASS True ; FP-IS-13 PASS True 
+FAIL gate-result.json, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, a record with no commit source, FP-IS-01: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource -- status PASS, formalSlicePass True, reason 
+FAIL classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, only an onboard source: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource -- formalSlicePass True, reason 
+FAIL classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, only an onboard source: every slice status PASS, every slice formalSlicePass False -- FP-IS-01 PASS True ; FP-IS-02 PASS True ; FP-IS-03 PASS True ; FP-IS-07 PASS True ; FP-IS-10 PASS True ; FP-IS-11 PASS True ; FP-IS-08 PASS True ; FP-IS-12 PASS True ; FP-IS-13 PASS True 
+FAIL gate-result.json, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, only an onboard source, FP-IS-01: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource -- status PASS, formalSlicePass True, reason 
+FAIL classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, an empty record: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource -- formalSlicePass True, reason 
+FAIL classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, an empty record: every slice status PASS, every slice formalSlicePass False -- FP-IS-01 PASS True ; FP-IS-02 PASS True ; FP-IS-03 PASS True ; FP-IS-07 PASS True ; FP-IS-10 PASS True ; FP-IS-11 PASS True ; FP-IS-08 PASS True ; FP-IS-12 PASS True ; FP-IS-13 PASS True 
+FAIL gate-result.json, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, an empty record, FP-IS-01: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource -- status PASS, formalSlicePass True, reason 
+FAIL classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, a bare string: formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource -- formalSlicePass True, reason 
+FAIL classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, a bare string: every slice status PASS, every slice formalSlicePass False -- FP-IS-01 PASS True ; FP-IS-02 PASS True ; FP-IS-03 PASS True ; FP-IS-07 PASS True ; FP-IS-10 PASS True ; FP-IS-11 PASS True ; FP-IS-08 PASS True ; FP-IS-12 PASS True ; FP-IS-13 PASS True 
+FAIL gate-result.json, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, a bare string, FP-IS-01: status PASS, formalSlicePass False, reason COMMIT_SOURCE_MISSING: controlServerCommitSource -- status PASS, formalSlicePass True, reason 
 PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, an override and an unknown source: formalSlicePass False, reason SELF_CHECK_OVERRIDE; UNRECOGNISED_COMMIT_SOURCE: onboardCommitSource=SOMETHING_NEW
 PASS classification, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, an override and an unknown source: every slice status PASS, every slice formalSlicePass False
 PASS gate-result.json, JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS, an override and an unknown source, FP-IS-01: status PASS, formalSlicePass False, reason SELF_CHECK_OVERRIDE; UNRECOGNISED_COMMIT_SOURCE: onboardCommitSource=SOMETHING_NEW
@@ -159,12 +159,12 @@ PASS premise: what stops the run is the gate-result writer, not the generator
 PASS the console carries the generator's own reason
 PASS runner-error.json carries the generator's own reason and the exit
 PASS the statement after $baseline = Read-ControlDatabase is the FIELD_RUN guard over that baseline
-FAIL FIELD_RUN guard, cs#453's generated store under FIELD_RUN: refused, naming 3 marker(s) -- FIELD_RUN_STORE_IS_GENERATED: -FieldRunRoot was given a store the synthetic L2 rig wrote, not a field run: AcceptedDemands.TransportDemandKey=L2-SUBLOT-20261003T043100565Z|WIRE_TO_GATE; SessionRecoveries.AgvId=AGV-L2-001. Leave -FieldRunRoot out to generate a store on purpose; the field-store exemption and the field-state note do not apply to it.
+PASS FIELD_RUN guard, cs#453's generated store under FIELD_RUN: refused, naming 3 marker(s)
 PASS FIELD_RUN guard, only the generated demand key: refused, naming 1 marker(s)
-FAIL FIELD_RUN guard, only the generated vehicle key: refused, naming 1 marker(s) -- 
+PASS FIELD_RUN guard, only the generated vehicle key: refused, naming 1 marker(s)
 PASS FIELD_RUN guard, only the generated agvId: refused, naming 1 marker(s)
 PASS FIELD_RUN guard, the 2026-08-29 field store: accepted
 PASS FIELD_RUN guard, the 2026-08-29 field store without claim records: accepted
 PASS FIELD_RUN guard, the generated store under SYNTHETIC_RIG: accepted
-G3EvidenceHonesty self-check: 2 check(s) came out the other way.
+G3EvidenceHonesty self-check: 48 check(s) came out the other way.
 
