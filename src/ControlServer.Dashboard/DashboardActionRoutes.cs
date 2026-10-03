@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
@@ -38,7 +39,7 @@ public static class DashboardActionRoutes
         services.AddHttpClient(ControlServerClient, client =>
         {
             client.BaseAddress = new Uri(configuration["Dashboard:controlServerBaseUrl"] ?? "http://127.0.0.1:58007");
-            client.Timeout = TimeSpan.FromSeconds(10);
+            client.Timeout = TimeSpan.FromSeconds(TimeoutSeconds(configuration));
         });
         return services;
     }
@@ -80,23 +81,39 @@ public static class DashboardActionRoutes
 
         IFormCollection form = await context.Request.ReadFormAsync(cancellationToken);
         Dictionary<string, string> fields = new(StringComparer.Ordinal);
+        string? credential = null;
         foreach (DashboardActionField field in action.Fields)
         {
+            if (field.Kind == DashboardActionFieldKind.BearerCredential)
+            {
+                credential = form[field.Name].ToString();
+                continue;
+            }
             fields[field.Name] = form[field.Name].ToString();
         }
 
         HttpClient client = clients.CreateClient(ControlServerClient);
         try
         {
-            using HttpResponseMessage response = await client.PostAsJsonAsync(
-                action.TargetPath, action.BuildRequest(fields), cancellationToken);
+            using HttpRequestMessage forward = new(HttpMethod.Post, action.TargetPath)
+            {
+                Content = JsonContent.Create(action.BuildRequest(fields))
+            };
+            if (!string.IsNullOrWhiteSpace(credential))
+            {
+                forward.Headers.Authorization = new AuthenticationHeaderValue("Bearer", credential);
+            }
+            using HttpResponseMessage response = await client.SendAsync(forward, cancellationToken);
             if (response.IsSuccessStatusCode)
             {
                 context.Response.Headers.Location = "/";
                 return Results.StatusCode(StatusCodes.Status303SeeOther);
             }
             string body = await response.Content.ReadAsStringAsync(cancellationToken);
-            return Page((int)response.StatusCode, action.Title, $"ControlServer 拒绝了这次提交：{Explain(body)}");
+            return Page(
+                (int)response.StatusCode,
+                action.Title,
+                $"ControlServer 拒绝了这次提交：{Explain((int)response.StatusCode, body)}");
         }
         catch (HttpRequestException exception)
         {
@@ -104,9 +121,19 @@ public static class DashboardActionRoutes
         }
         catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            return Page(StatusCodes.Status504GatewayTimeout, action.Title, "ControlServer 未在 10 秒内应答，提交结果未知，请回主页看这一行的状态。");
+            return Page(
+                StatusCodes.Status504GatewayTimeout,
+                action.Title,
+                string.Create(CultureInfo.InvariantCulture, $"ControlServer 未在 {client.Timeout.TotalSeconds:0} 秒内应答，提交结果未知，请回主页看这一行的状态。"));
         }
     }
+
+    /// <summary><c>Dashboard:controlServerTimeoutSeconds</c>, 10 when absent or not a positive whole number.</summary>
+    private static int TimeoutSeconds(IConfiguration configuration) =>
+        int.TryParse(configuration["Dashboard:controlServerTimeoutSeconds"], NumberStyles.None, CultureInfo.InvariantCulture, out int seconds)
+        && seconds > 0
+            ? seconds
+            : 10;
 
     /// <summary>The submission came from a page this dashboard served, reached under a loopback name.</summary>
     private static bool IsOwnSubmission(HttpRequest request)
@@ -142,6 +169,21 @@ public static class DashboardActionRoutes
                     html.Append(CultureInfo.InvariantCulture, $"<p>{label}：{value}</p>")
                         .Append(CultureInfo.InvariantCulture, $"<input type=\"hidden\" name=\"{name}\" value=\"{value}\">");
                     break;
+                case DashboardActionFieldKind.Choice:
+                    html.Append(CultureInfo.InvariantCulture, $"<p><label>{label}<br><select name=\"{name}\"{required}>")
+                        .Append("<option value=\"\">请选择</option>");
+                    foreach (DashboardActionChoice choice in field.Choices ?? [])
+                    {
+                        html.Append(CultureInfo.InvariantCulture,
+                            $"<option value=\"{WebUtility.HtmlEncode(choice.Value)}\">{WebUtility.HtmlEncode(choice.Label)}</option>");
+                    }
+                    html.Append("</select></label></p>");
+                    break;
+                case DashboardActionFieldKind.BearerCredential:
+                    // Never prefilled from the query, never echoed: a link a row carries must not be able to hold it.
+                    html.Append(CultureInfo.InvariantCulture,
+                        $"<p><label>{label}<br><input type=\"password\" name=\"{name}\" autocomplete=\"off\"{required}></label></p>");
+                    break;
                 case DashboardActionFieldKind.TextArea:
                     html.Append(CultureInfo.InvariantCulture,
                         $"<p><label>{label}<br><textarea name=\"{name}\" rows=\"3\" cols=\"60\"{required}></textarea></label></p>");
@@ -167,9 +209,21 @@ public static class DashboardActionRoutes
             Encoding.UTF8,
             statusCode);
 
-    /// <summary>A problem response's detail (or title); anything else as it came, cut short.</summary>
-    private static string Explain(string body)
+    /// <summary>
+    /// A problem response's detail (or title), which for a refusal lists every reason the server gave; anything else as it
+    /// came, cut short. An empty answer says what its status means, so a 401 or a 404 does not read as a blank refusal.
+    /// </summary>
+    private static string Explain(int statusCode, string body)
     {
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return statusCode switch
+            {
+                StatusCodes.Status401Unauthorized => "凭据不对或没有填（401）。",
+                StatusCodes.Status404NotFound => "ControlServer 上没有这个入口（404），可能是现场没有开启它。",
+                _ => $"HTTP {statusCode}，没有说明。"
+            };
+        }
         try
         {
             using JsonDocument document = JsonDocument.Parse(body);
