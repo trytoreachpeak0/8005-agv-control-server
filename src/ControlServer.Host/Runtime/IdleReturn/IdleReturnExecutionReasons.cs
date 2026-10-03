@@ -11,7 +11,7 @@ namespace ControlServer.Host.Runtime.IdleReturn;
 /// </para>
 /// <para>
 /// <b>保持类</b>（旅程停在原处、承诺与独占都不放）：<see cref="DepartureNotProven"/>、<see cref="OrderEndedStopNotProven"/>、
-/// <see cref="WaitingPointLostOrderInFlight"/>，以及建单结果的 <c>WAITING_POINT_{结果}</c>（与搬运的 <c>PICKUP_ResultUnknown</c> 同一个
+/// <see cref="WaitingPointLostOrderInFlight"/>、<see cref="ArrivalNotProven"/>，以及建单结果的 <c>WAITING_POINT_{结果}</c>（与搬运的 <c>PICKUP_ResultUnknown</c> 同一个
 /// 形状）。<b>收尾类</b>（旅程关闭、用途占有释放）：其余。收尾码写在收尾的旅程行上，也是用途占有记录的释放原因。
 /// </para>
 /// </remarks>
@@ -36,6 +36,13 @@ public static class IdleReturnExecutionReasons
     /// 空闲返回单在 RIoT 被取消或删除（不是本服务端取消的），车还没证明停稳：承诺与独占保持，不重建（<c>REQ-0296</c>）。
     /// </summary>
     public const string OrderEndedStopNotProven = "IDLE_RETURN_ORDER_ENDED_STOP_NOT_PROVEN";
+
+    /// <summary>
+    /// 单在 RIoT 上精确地 <c>SUCCESS</c>（订单号、车、图、目标站都对），到点证据的车辆那一半却不满足（control-server#447）：在途保持，下一轮再判，
+    /// 不按超时放车放点。超过 <c>JourneyRuntime:OwnOrderRebuildRepeatWindow</c> 告警一次（事件 2230），之后可由人经等待点到点人工收尾入口
+    /// （<c>WaitingPointArrivalSettlement</c>）收尾。
+    /// </summary>
+    public const string ArrivalNotProven = "IDLE_RETURN_ARRIVAL_NOT_PROVEN";
 
     // ---- 收尾码 ----
 
@@ -63,12 +70,24 @@ public static class IdleReturnExecutionReasons
     /// </summary>
     public const string OrderFailed = "IDLE_RETURN_ORDER_FAILED";
 
+    /// <summary>
+    /// 到点证明不了，由人经等待点到点人工收尾入口确认车就停在这个等待点上（control-server#447）：与收敛同一套记账——预占转占用、用途释放、旅程收尾，
+    /// 收尾快照留那条 <c>ARRIVED</c> 的等待点腿。是收尾码，也是用途占有记录的释放原因；不是失败。
+    /// </summary>
+    public const string ArrivalConfirmedByOperator = "IDLE_RETURN_ARRIVAL_CONFIRMED_BY_OPERATOR";
+
+    /// <summary>
+    /// 到点证明不了，由人经等待点到点人工收尾入口确认车不在这个等待点上（control-server#447）：按已确认失败收尾——用途释放，等待点预占留给离点清扫
+    /// 凭离点证据放，下一次承诺排除这个点，冷却与停止两道护栏照算。
+    /// </summary>
+    public const string NotAtWaitingPointByOperator = "IDLE_RETURN_NOT_AT_WAITING_POINT_BY_OPERATOR";
+
     /// <summary>用途占有的释放原因：到点证据全满足、预占已转占用，车回到可选择（<c>REQ-0293</c>）。等待点占用继续保持。</summary>
     public const string ConvergedAtWaitingPoint = "IDLE_RETURN_CONVERGED_AT_WAITING_POINT";
 
     /// <summary>已确认失败的收尾码：下一次承诺要排除原失败点的那几种。</summary>
     public static IReadOnlySet<string> ConfirmedFailures { get; } =
-        new HashSet<string>(StringComparer.Ordinal) { OrderEnded, OrderFailed };
+        new HashSet<string>(StringComparer.Ordinal) { OrderEnded, OrderFailed, NotAtWaitingPointByOperator };
 
     /// <summary>
     /// 建单没有确认时写在旅程上的码：<c>WAITING_POINT_{Outcome}</c>（与搬运腿的 <c>PICKUP_…</c>／<c>GATE_…</c> 同一种拼法）。引擎与看板说明
@@ -93,11 +112,14 @@ public static class IdleReturnExecutionReasons
         DepartureNotProven,
         WaitingPointLostOrderInFlight,
         OrderEndedStopNotProven,
+        ArrivalNotProven,
         CommitmentOrphaned,
         WaitingPointNoLongerEligible,
         WaitingPointLost,
         WaitingPointLostAtArrival,
         OrderEnded,
         OrderFailed,
+        ArrivalConfirmedByOperator,
+        NotAtWaitingPointByOperator,
     ];
 }
