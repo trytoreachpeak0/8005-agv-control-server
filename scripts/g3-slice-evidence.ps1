@@ -651,6 +651,98 @@ function Get-G3SliceStatus {
     return 'PASS'
 }
 
+# Why a run's slice results must not count as a formal slice pass whatever its assertions said, or $null.
+#
+# control-server#460. A self-check override (-SelfCheckControlServerCommit, -SelfCheckOnboardCommit) tests a
+# commit that is not the shared binding: the run is a functional check of that commit, not gate evidence. Until
+# #460 only a parameter description said so, and the classification and every gate-result.json of such a run
+# still wrote formalSlicePass true (cs#453's self-check run 20261003T042613339Z, FP-IS-04/05/06), so a quoted
+# self-check result carried nothing that would stop it being read as exit evidence.
+#
+# Read from the run's commits record, every key named *CommitSource. All four runners record where each commit
+# came from there: journey and demand-bearing from their -SelfCheck* parameters, run-staged-g3.ps1 by comparing
+# its commits with its own param defaults, the restart runner (which has no commit parameter) as SHARED_BINDING.
+# Fail-closed twice over:
+#   - on the value: SHARED_BINDING is the only one that leaves the pass alone, so a source some later runner
+#     invents is withheld until this function is taught it, rather than passing because nobody listed it;
+#   - on absence: a record without controlServerCommitSource -- empty, a runner that forgot to record it, or
+#     not a record at all -- says nothing about what ran, so it is withheld as COMMIT_SOURCE_MISSING. Silence
+#     passing was exactly the shape cs#453 found: nothing in the evidence said the run was not the gate.
+# Every reason that applies is written, joined by '; ', SELF_CHECK_OVERRIDE first: a record with an override and an
+# unknown value keeps both, so the unknown one is not lost behind the override.
+function Get-G3FormalSliceWithheldReason {
+    param([Parameter(Mandatory)][AllowNull()]$Commits)
+
+    if ($null -eq $Commits) {
+        throw ('No commits record was given, so the run cannot say whether it tested the shared binding. ' +
+               'A run that cannot say so does not grade its slices.')
+    }
+    $keys = if ($Commits -is [System.Collections.IDictionary]) { @($Commits.Keys) } else {
+        @($Commits.PSObject.Properties.Name)
+    }
+    $reasons = [System.Collections.Generic.List[string]]::new()
+    $overridden = [System.Collections.Generic.List[string]]::new()
+    $unrecognised = [System.Collections.Generic.List[string]]::new()
+    foreach ($key in @($keys | Where-Object { "$_" -like '*CommitSource' })) {
+        $value = "$($Commits.$key)"
+        if ($value -eq 'SHARED_BINDING') { continue }
+        if ($value -eq 'SELF_CHECK_OVERRIDE') { $overridden.Add($key) } else { $unrecognised.Add("$key=$value") }
+    }
+    if ($overridden.Count -ne 0) { $reasons.Add('SELF_CHECK_OVERRIDE') }
+    if ($unrecognised.Count -ne 0) { $reasons.Add("UNRECOGNISED_COMMIT_SOURCE: $($unrecognised -join ', ')") }
+    if ('controlServerCommitSource' -notin $keys) { $reasons.Add('COMMIT_SOURCE_MISSING: controlServerCommitSource') }
+    if ($reasons.Count -eq 0) { return $null }
+    return $reasons -join '; '
+}
+
+# Where each of the four commits a run used came from, as *CommitSource entries for its commits record:
+# SHARED_BINDING when the value equals the shared binding, SELF_CHECK_OVERRIDE when it does not. For
+# run-staged-g3.ps1, whose four bindings are its own param defaults: passing -ControlServerCommit (or any of the
+# other three) on the command line ran another commit, and until control-server#460 nothing in the evidence said
+# so. Recorded, not refused -- running another commit to check it is a legitimate use; it just is not the gate.
+# -ceq: the binding is a lowercase full SHA-1 and must match byte for byte (Get-SharedCommitBinding's rule).
+function Get-G3CommitSources {
+    param(
+        [Parameter(Mandatory)][System.Collections.IDictionary]$Actual,
+        [Parameter(Mandatory)][System.Collections.IDictionary]$Binding
+    )
+
+    $sources = [ordered]@{}
+    foreach ($pair in @(
+            @('ControlServerCommit', 'controlServerCommitSource'),
+            @('OnboardCommit', 'onboardCommitSource'),
+            @('SimulatorCommit', 'simulatorCommitSource'),
+            @('ProtocolCommit', 'protocolCommitSource'))) {
+        if (-not $Binding.Contains($pair[0]) -or -not $Actual.Contains($pair[0])) {
+            throw "Get-G3CommitSources needs $($pair[0]) in both the binding and the values the run used."
+        }
+        $sources[$pair[1]] = if ("$($Actual[$pair[0]])" -ceq "$($Binding[$pair[0]])") { 'SHARED_BINDING' } else {
+            'SELF_CHECK_OVERRIDE' }
+    }
+    return $sources
+}
+
+# The one place a slice's formalSlicePass is decided, for New-G3Classification and Write-G3GateResult alike:
+# the slice's own status, the run's assurance level (the 2026-09-09 ruling above), and whether the run tested
+# the shared binding at all (control-server#460). status is left as measured: a self-check's assertions still
+# say what they observed, and only the claim that this counts as the slice passing is withheld.
+function Get-G3FormalSlicePass {
+    param(
+        [Parameter(Mandatory)][string]$RunKind,
+        [Parameter(Mandatory)][string]$SliceStatus,
+        [Parameter(Mandatory)][AllowNull()]$Commits
+    )
+
+    $claim = Get-G3RunnerClaim -RunKind $RunKind
+    $withheld = Get-G3FormalSliceWithheldReason -Commits $Commits
+    return [ordered]@{
+        formalSlicePass = ($SliceStatus -eq 'PASS') -and
+            ($claim.assuranceLevel -in (Get-G3AssuranceLevelsThatCountAsSlicePass)) -and
+            ($null -eq $withheld)
+        formalSliceWithheldReason = $withheld
+    }
+}
+
 # Replaces the literal classification block the three runners used to carry. officialSlices is now
 # computed from the claim and the assertion results; formalSlicePass from the ruling above.
 function New-G3Classification {
@@ -658,23 +750,26 @@ function New-G3Classification {
         [Parameter(Mandatory)][string]$RunKind,
         [Parameter(Mandatory)][string]$RunStatus,
         [Parameter(Mandatory)]$AssertionReport,
+        # The run's commits record, the same one its gate results carry: Get-G3FormalSlicePass reads its
+        # *CommitSource entries. Mandatory so that a runner cannot grade slices without saying what it ran.
+        [Parameter(Mandatory)][AllowNull()]$Commits,
         [switch]$RunnerErrored
     )
 
     $claim = Get-G3RunnerClaim -RunKind $RunKind
-    $counting = Get-G3AssuranceLevelsThatCountAsSlicePass
     $official = [System.Collections.Generic.List[object]]::new()
     $allPass = $true
     foreach ($slice in $claim.slices.Keys) {
         $sliceStatus = Get-G3SliceStatus -RunKind $RunKind -Slice $slice `
             -AssertionReport $AssertionReport -RunnerErrored:$RunnerErrored
-        $formal = ($sliceStatus -eq 'PASS') -and ($claim.assuranceLevel -in $counting)
-        if (-not $formal) { $allPass = $false }
+        $formal = Get-G3FormalSlicePass -RunKind $RunKind -SliceStatus $sliceStatus -Commits $Commits
+        if (-not $formal.formalSlicePass) { $allPass = $false }
         $official.Add([ordered]@{
             integrationSliceId = $slice
             status = $sliceStatus
             assuranceLevel = $claim.assuranceLevel
-            formalSlicePass = $formal
+            formalSlicePass = $formal.formalSlicePass
+            formalSliceWithheldReason = $formal.formalSliceWithheldReason
         })
     }
 
@@ -682,6 +777,7 @@ function New-G3Classification {
         runStatus = $RunStatus
         assuranceLevel = $claim.assuranceLevel
         formalSlicePass = $allPass
+        formalSliceWithheldReason = Get-G3FormalSliceWithheldReason -Commits $Commits
         officialSlices = @($official)
         slicesWithoutSurfaceThisBatch = @((Get-G3SlicesWithoutSurfaceThisBatch).Keys)
         # Unchanged, and still literal on purpose: one runner covering its own slices says nothing
@@ -695,7 +791,8 @@ function New-G3Classification {
 # already write one per slice. schemaVersion 1.3.0 -- 1.2.0 was additive over the 1.1.0 both G2
 # harnesses emit, and 1.3.0 is additive again (ticket 24's optional fieldStoreProvenance), so a
 # 1.1.0 reader still parses it, but a reader that cannot tell the shapes apart cannot tell a graded
-# G3 result from an ungraded G2 one either.
+# G3 result from an ungraded G2 one either. 1.4.0 adds formalSliceWithheldReason (control-server#460),
+# additive again; what changed in meaning is that formalSlicePass is now false for a self-check override.
 function Write-G3GateResult {
     param(
         [Parameter(Mandatory)][string]$RunKind,
@@ -714,17 +811,19 @@ function Write-G3GateResult {
     $sliceReport = Get-G3SliceAssertionReport -RunKind $RunKind -Slice $Slice -AssertionReport $AssertionReport
     $status = Get-G3SliceStatus -RunKind $RunKind -Slice $Slice `
         -AssertionReport $AssertionReport -RunnerErrored:$RunnerErrored
-    $counting = Get-G3AssuranceLevelsThatCountAsSlicePass
+    $formal = Get-G3FormalSlicePass -RunKind $RunKind -SliceStatus $status -Commits $Context['commits']
 
     $result = [ordered]@{
-        schemaVersion = '1.3.0'
+        schemaVersion = '1.4.0'
         gate = 'G3'
         runKind = $RunKind
         runId = $Context['runId']
         integrationSliceId = $Slice
         status = $status
         assuranceLevel = $claim.assuranceLevel
-        formalSlicePass = ($status -eq 'PASS') -and ($claim.assuranceLevel -in $counting)
+        formalSlicePass = $formal.formalSlicePass
+        # control-server#460: why formalSlicePass is false although status may say PASS, or null.
+        formalSliceWithheldReason = $formal.formalSliceWithheldReason
         startedAt = $Context['startedAt']
         finishedAt = ([DateTimeOffset]::UtcNow).ToString('O')
         implementationRepository = '8005-agv-control-server'

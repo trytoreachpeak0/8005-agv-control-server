@@ -207,6 +207,26 @@ $harnessWorktreeClean = @(& git -C $ControlServerRepository status --porcelain).
 
 $G3RunKind = 'STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT'
 . (Join-Path $PSScriptRoot 'g3-slice-evidence.ps1')
+
+# Where the four commits this run uses came from (control-server#460). The binding is this script's own param
+# defaults, read back the way the other three runners read it -- Get-SharedCommitBinding, taken from the restart
+# runner rather than copied -- and compared with the values the run actually got, so a commit passed on the
+# command line is recorded as SELF_CHECK_OVERRIDE and grades no slice as a formal pass. Recorded, not refused.
+$bindingReaderSource = Join-Path $PSScriptRoot 'run-staged-g3-restart.ps1'
+$bindingReader = @([System.Management.Automation.Language.Parser]::ParseFile($bindingReaderSource, [ref]$null, [ref]$null).FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-SharedCommitBinding'
+        }, $true))
+if ($bindingReader.Count -ne 1) {
+    throw "Expected exactly one function 'Get-SharedCommitBinding' in $bindingReaderSource, found $($bindingReader.Count)."
+}
+Invoke-Expression $bindingReader[0].Extent.Text
+$commitSources = Get-G3CommitSources -Binding (Get-SharedCommitBinding -Path (Join-Path $PSScriptRoot 'run-staged-g3.ps1')) -Actual ([ordered]@{
+        ControlServerCommit = $ControlServerCommit
+        OnboardCommit = $OnboardCommit
+        SimulatorCommit = $SimulatorCommit
+        ProtocolCommit = $ProtocolCommit
+    })
 # Before the clones and the builds, not after: naming a slice this runner cannot certify should cost
 # a message, not an hour of cloning and publishing four repositories.
 if (-not [string]::IsNullOrEmpty($Slice)) { Assert-G3SliceIsClaimedBy -RunKind $G3RunKind -Slice $Slice }
@@ -377,8 +397,9 @@ function Get-HttpErrorObservation {
 # The error the run itself hit, printed and saved as runner-error.json. Called directly after the run's
 # try/catch/finally, before any judgement: the judgements read observations an errored run never filled in,
 # and on 2026-09-22 one of them throwing was all such a run printed (control-server#306). Never throws.
+# run-demand-bearing-g3-vectors.ps1 takes this function from here (control-server#460) and names itself in -RunLabel.
 function Write-StagedRunError {
-    param([Management.Automation.ErrorRecord]$ErrorRecord, [string]$EvidenceRoot)
+    param([Management.Automation.ErrorRecord]$ErrorRecord, [string]$EvidenceRoot, [string]$RunLabel = 'Staged G3')
     if ($null -eq $ErrorRecord) { return }
     try {
         $exceptions = [Collections.Generic.List[object]]::new()
@@ -391,7 +412,7 @@ function Write-StagedRunError {
             position = $ErrorRecord.InvocationInfo?.PositionMessage
             scriptStackTrace = $ErrorRecord.ScriptStackTrace
         }
-        Write-Warning "Staged G3 run errored: $($exceptions[0].type): $($exceptions[0].message)"
+        Write-Warning "$RunLabel run errored: $($exceptions[0].type): $($exceptions[0].message)"
         foreach ($inner in @($exceptions | Select-Object -Skip 1)) {
             Write-Warning "  inner: $($inner.type): $($inner.message)"
         }
@@ -403,7 +424,7 @@ function Write-StagedRunError {
             [Text.UTF8Encoding]::new($false))
     }
     catch {
-        Write-Warning "Staged G3 run errored ($($ErrorRecord.Exception.Message)), and recording that failed too: $($_.Exception.Message)"
+        Write-Warning "$RunLabel run errored ($($ErrorRecord.Exception.Message)), and recording that failed too: $($_.Exception.Message)"
     }
 }
 
@@ -3677,18 +3698,27 @@ if (Test-Path -LiteralPath $clonedSliceIndex -PathType Leaf) {
     }
 }
 
+# One record for the gate results, the classification and run-result.json alike: the classification reads it
+# to decide whether the run tested the shared binding (control-server#460), from the *CommitSource entries
+# $commitSources computed against this script's own param defaults.
+$commitsRecord = [ordered]@{
+    controlServer = $ControlServerCommit
+    controlServerCommitSource = $commitSources['controlServerCommitSource']
+    onboardEvidenceBinding = $OnboardCommit
+    onboardCommitSource = $commitSources['onboardCommitSource']
+    slotsSimulator = $SimulatorCommit
+    simulatorCommitSource = $commitSources['simulatorCommitSource']
+    protocol = $ProtocolCommit
+    protocolCommitSource = $commitSources['protocolCommitSource']
+    harness = $harnessCommit
+    harnessWorktreeCleanAtStart = $harnessWorktreeClean
+}
+
 $gateResultPaths = Write-G3GateResults -RunKind $G3RunKind -EvidenceRoot $EvidenceRoot `
     -AssertionReport $assertionReport -Slice $Slice -RunnerErrored:($null -ne $runError) -Context @{
         runId = $runId
         startedAt = $runStartedAt.ToString('O')
-        commits = [ordered]@{
-            controlServer = $ControlServerCommit
-            onboardEvidenceBinding = $OnboardCommit
-            slotsSimulator = $SimulatorCommit
-            protocol = $ProtocolCommit
-            harness = $harnessCommit
-            harnessWorktreeCleanAtStart = $harnessWorktreeClean
-        }
+        commits = $commitsRecord
         protocolReleaseVersion = $expectedProtocol.releaseVersion
         protocolTag = $protocolTag
         protocolProfileId = $expectedProtocol.profileId
@@ -3733,17 +3763,10 @@ $result = [ordered]@{
     completedAtUtc = [DateTimeOffset]::UtcNow
     status = $status
     classification = (New-G3Classification -RunKind $G3RunKind -RunStatus $status `
-        -AssertionReport $assertionReport -RunnerErrored:($null -ne $runError))
+        -AssertionReport $assertionReport -Commits $commitsRecord -RunnerErrored:($null -ne $runError))
     gateResults = @($gateResultPaths | ForEach-Object {
         [IO.Path]::GetRelativePath($EvidenceRoot, $_).Replace('\', '/') })
-    commits = [ordered]@{
-        controlServer = $ControlServerCommit
-        onboardEvidenceBinding = $OnboardCommit
-        slotsSimulator = $SimulatorCommit
-        protocol = $ProtocolCommit
-        harness = $harnessCommit
-        harnessWorktreeCleanAtStart = $harnessWorktreeClean
-    }
+    commits = $commitsRecord
     protocol = [ordered]@{
         tag = $protocolTag
         # False on the v2 line: the tag is named by the candidate identity but has not been cut.

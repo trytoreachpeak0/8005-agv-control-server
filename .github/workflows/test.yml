@@ -164,6 +164,14 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/Test-StagedG3ErrorPath.ps1
 
+      # About ten seconds, no rig. G3 evidence must not claim more than its run tested (control-server#460):
+      # a self-check override grades formalSlicePass false in all four runners, an errored demand-bearing run
+      # writes its own cause before the gate-result writer's refusal, and -FieldRunRoot refuses a store the
+      # synthetic rig wrote. No green G3 run reaches any of the three.
+      - name: G3 runner self-check (evidence honesty)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/Test-G3EvidenceHonesty.ps1
+
       # 1.5 seconds, and the only thing that ever executes Get-G3EvidenceLocationDiagnostic: a G3
       # runner calls it after it has already decided it found nothing, so no green run reaches it.
       # It says WHERE nothing was found, which is what control-server#211 needed and did not have --
