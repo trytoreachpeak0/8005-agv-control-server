@@ -107,8 +107,13 @@ param(
     #   ControlServer commit, so the rewritten criterion (b0f070db) needs the binding on the exit branch.
     #   $ControlServerCommit -> 8d0a644e, the exit branch; git diff 8467480d 8d0a644e -- src tests tools is empty, so the
     #     product is 8467480d. Onboard, simulator and protocol unchanged.
-    [string]$ControlServerCommit = '8d0a644edfd4be30b99f5bf03bf17060ea0b0727',
-    [string]$OnboardCommit = '4e40e196205d55c363f97850d10bd18df9a686c0',
+    #   2026-10-03, control-server#453: the demand-bearing runner now generates its store with the bound commit's own
+    #   L2 scenario demand-bearing-store-at-unload, so the binding has to reach a commit that has it.
+    #   $ControlServerCommit -> a1095ca2, fp/v2-impl 46148e35 plus #453; git diff 8d0a644e a1095ca2 -- src tests tools
+    #     is empty, so the product is still 8467480d.
+    #   $OnboardCommit -> 17043d05, the w2g/fp-v2-impl tip: 4e40e196 plus hmi PR #244, evidence files only.
+    [string]$ControlServerCommit = 'a1095ca2322c6e50172051c6fad3e69445b20411',
+    [string]$OnboardCommit = '17043d0553e4ca5d1f886bac2792402478d96e88',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
     [string]$ProtocolCommit = '86575456c847041515b7b75e8851a00e0d939804',
     # The ref whose tip -OnboardCommit must equal. It is a parameter rather than a literal because the
