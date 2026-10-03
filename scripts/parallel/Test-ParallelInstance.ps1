@@ -1968,6 +1968,108 @@ foreach ($case in $readinessCases) {
 }
 
 Write-Host ''
+Write-Host 'Upgrade and rollback get past the product upgrade preflight (control-server#454)' -ForegroundColor Cyan
+
+<#
+    Update-ControlServerLocal.ps1 refuses an installed configuration whose JourneyRuntime is not
+    disabled ('JourneyRuntime must remain disabled during upgrade.', added with the upgrade script in
+    ae2f99be9). The reason: the upgrade starts the new, unproven binary on the retained configuration
+    -- start, live check, restart, live check again -- and its result file records
+    journeyRuntimeEnabled=false, vehicleMoved=false. A runtime that is on would poll demand and place
+    orders from inside that lifecycle check, and the upgrade's own rollback restores whatever the
+    backup held.
+
+    The parallel overlay writes JourneyRuntime.enabled=true, so after a first install every upgrade
+    and every -Rollback (which runs the upgrade script while the service exists) was refused there.
+    The fix keeps the preflight's intent: the installer stops the service, sets the flag false in the
+    file, and only then calls the upgrade script -- whose backup and rollback therefore hold false --
+    and the overlay writes true again only after the upgrade succeeded.
+#>
+$updateSource = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/Update-ControlServerLocal.ps1') -Raw
+$preflightLine = "if (`$configuration.JourneyRuntime.enabled -ne `$false) { throw 'JourneyRuntime must remain disabled during upgrade.' }"
+Write-Result -Ok ($updateSource.Contains($preflightLine)) `
+    -Name 'the premise: the product upgrade script still refuses an installed configuration with JourneyRuntime on' `
+    -Detail 'the preflight line changed or is gone; reread Update-ControlServerLocal.ps1 before trusting the cases below'
+# The preflight exactly as the upgrade script evaluates it: ConvertFrom-Json without -AsHashtable,
+# whose objects resolve properties ignoring case.
+$preflightPasses = { param([string] $Text) ($Text | ConvertFrom-Json).JourneyRuntime.enabled -eq $false }
+
+$installed = Merge-ConfigurationTree -Base (Copy-Definition $productConfiguration) -Overlay (New-ParallelInstanceConfigurationOverlay -Definition $clearanceDefinition)
+$installedText = ConvertTo-Json -InputObject $installed -Depth 12
+Write-Result -Ok (-not (& $preflightPasses $installedText)) `
+    -Name 'reproduces the defect: the configuration a first install leaves is refused by the upgrade preflight' -Detail 'it passed'
+
+Invoke-PathCase 'disable before upgrade' {
+    $file = Join-Path ([IO.Path]::GetTempPath()) "cs454-preflight-$([guid]::NewGuid().ToString('N')).json"
+    try {
+        # A hand-edited file may spell the section another way; the preflight reads it either way.
+        [IO.File]::WriteAllText($file, ($installedText -replace '"JourneyRuntime"', '"journeyRuntime"'), [Text.UTF8Encoding]::new($false))
+        $before = Get-Content -LiteralPath $file -Raw | ConvertFrom-Json -AsHashtable -Depth 12
+        $null = Set-ParallelInstanceJourneyRuntimeDisabled -Path $file
+        $afterText = Get-Content -LiteralPath $file -Raw
+        $after = $afterText | ConvertFrom-Json -AsHashtable -Depth 12
+        Write-Result -Ok (& $preflightPasses $afterText) -Name 'after the disable step the upgrade preflight passes' -Detail $afterText
+        $journeyKeys = @($after.Keys | Where-Object { $_ -ieq 'JourneyRuntime' })
+        $unchangedJourney = @($before['journeyRuntime'].Keys | Where-Object { $_ -ne 'enabled' } |
+                Where-Object { (ConvertTo-Json $before['journeyRuntime'][$_] -Compress) -cne (ConvertTo-Json $after[$journeyKeys[0]][$_] -Compress) })
+        $otherSections = @($before.Keys | Where-Object { $_ -ine 'journeyRuntime' } |
+                Where-Object { (ConvertTo-Json $before[$_] -Compress -Depth 12) -cne (ConvertTo-Json $after[$_] -Compress -Depth 12) })
+        Write-Result -Ok ($journeyKeys.Count -eq 1 -and $unchangedJourney.Count -eq 0 -and $otherSections.Count -eq 0) `
+            -Name 'the disable step changes JourneyRuntime.enabled and nothing else (one section, identity kept)' `
+            -Detail ("journey sections: $($journeyKeys -join ',') changed journey keys: $($unchangedJourney -join ',') changed sections: $($otherSections -join ',')")
+        # ... and the overlay, applied after a successful upgrade, turns it back on.
+        $restored = Update-ParallelInstanceConfigurationFile -Path $file -Definition $clearanceDefinition
+        $restoredJourney = @($restored.Keys | Where-Object { $_ -ieq 'JourneyRuntime' })
+        Write-Result -Ok ($restoredJourney.Count -eq 1 -and $restored[$restoredJourney[0]]['enabled'] -eq $true) `
+            -Name 'the overlay after a successful upgrade writes JourneyRuntime.enabled back to the definition''s true' `
+            -Detail (ConvertTo-Json $restored[$restoredJourney[0]] -Compress)
+    } finally {
+        Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# The installer's order, read from its AST: in Invoke-ProductInstaller's upgrade branch, the service is
+# stopped, then the flag is set false, then the upgrade script runs; the first-install branch does
+# neither (there is no installed configuration yet). Set-InstanceConfiguration, which writes true
+# again, runs only after Invoke-ProductInstaller returned, on both paths.
+$installerAst = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'Install-ParallelInstanceLocal.ps1'), [ref]$null, [ref]$null)
+$productCalls = @($installerAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Invoke-ProductInstaller' }, $true))
+$invokeProduct = $installerAst.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Invoke-ProductInstaller' }, $true)
+$offsetOf = {
+    param($root, [string] $predicateText)
+    $hit = @($root.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true) |
+            Where-Object { $_.Extent.Text -like $predicateText } | Select-Object -First 1)
+    $hit.Count -eq 0 ? -1 : $hit[0].Extent.StartOffset
+}
+$ifStatement = $null -eq $invokeProduct ? $null : $invokeProduct.Body.Find({ param($n) $n -is [System.Management.Automation.Language.IfStatementAst] -and $n.Extent.Text -like '*Update-ControlServerLocal.ps1*' }, $true)
+$upgradeBranch = $null -eq $ifStatement ? $null : $ifStatement.Clauses[0].Item2
+$firstBranch = $null -eq $ifStatement ? $null : $ifStatement.ElseClause
+$stopAt = $null -eq $upgradeBranch ? -1 : (& $offsetOf $upgradeBranch 'Stop-Service*')
+$disableAt = $null -eq $upgradeBranch ? -1 : (& $offsetOf $upgradeBranch 'Set-ParallelInstanceJourneyRuntimeDisabled*')
+$updateAt = $null -eq $upgradeBranch ? -1 : (& $offsetOf $upgradeBranch '*Update-ControlServerLocal.ps1*')
+Write-Result -Ok ($stopAt -ge 0 -and $disableAt -gt $stopAt -and $updateAt -gt $disableAt) `
+    -Name 'upgrade branch: stop the service, then set JourneyRuntime false, then run the upgrade script' `
+    -Detail "offsets stop=$stopAt disable=$disableAt update=$updateAt"
+$firstDisable = $null -eq $firstBranch ? -1 : (& $offsetOf $firstBranch 'Set-ParallelInstanceJourneyRuntimeDisabled*')
+Write-Result -Ok ($null -ne $firstBranch -and $firstDisable -lt 0) -Name 'first-install branch does not touch JourneyRuntime before the product script' -Detail "found at $firstDisable"
+$orderBad = @()
+foreach ($site in $productCalls) {
+    $block = $site.Parent
+    while ($block -and $block -isnot [System.Management.Automation.Language.StatementBlockAst] -and
+        $block -isnot [System.Management.Automation.Language.NamedBlockAst]) { $block = $block.Parent }
+    $setAfter = @($block.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Set-InstanceConfiguration' }, $false) |
+            Where-Object { $_.Extent.StartOffset -gt $site.Extent.StartOffset })
+    $setBefore = @($block.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Set-InstanceConfiguration' }, $false) |
+            Where-Object { $_.Extent.StartOffset -lt $site.Extent.StartOffset })
+    if ($setAfter.Count -eq 0 -or $setBefore.Count -gt 0) { $orderBad += "line $($site.Extent.StartLineNumber)" }
+}
+Write-Result -Ok ($productCalls.Count -eq 2 -and $orderBad.Count -eq 0) `
+    -Name 'Set-InstanceConfiguration (which writes true back) runs only after the product script, on both paths' -Detail ($orderBad -join ', ')
+# A failed upgrade leaves the flag false -- the safe direction -- and says so instead of only rethrowing.
+$failureReport = $null -eq $upgradeBranch ? $false : $upgradeBranch.Extent.Text.Contains('JOURNEY_RUNTIME_LEFT_DISABLED')
+Write-Result -Ok $failureReport -Name 'a failed upgrade reports JOURNEY_RUNTIME_LEFT_DISABLED (the flag stays false, by design)' -Detail 'no report in the upgrade branch'
+
+Write-Host ''
 Write-Host 'The shipped definition and the installer carry it' -ForegroundColor Cyan
 
 $shippedVfr = $shipped.Contains('vehicleFaultRecovery') ? $shipped['vehicleFaultRecovery'] : $null
