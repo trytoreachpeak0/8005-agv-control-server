@@ -37,6 +37,8 @@ internal static class ChargingModule
         services.AddSingleton<StationClearanceExit>();
         services.AddScoped<ManualStationClearance>();
         services.AddScoped<UnableToChargeFieldConfirmations>();
+        // control-server#447: the waiting point arrival settlement (idle return and clearance move alike) checks the same R-11/R-13 roster.
+        services.AddScoped<Runtime.WaitingPointArrivalSettlement>();
         return services;
     }
 }

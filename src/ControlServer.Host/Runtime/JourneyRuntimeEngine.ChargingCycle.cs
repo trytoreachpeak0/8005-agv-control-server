@@ -556,7 +556,7 @@ public sealed partial class JourneyRuntimeEngine
     }
 
     /// <summary>这趟充电旅程在途中发过的每一张快照的 id：<c>ALLOCATED</c>、<c>EN_ROUTE</c>、到桩、开始充电。</summary>
-    private static IReadOnlyList<string> ChargingSnapshotIds(JourneyRuntimeRow runtime) =>
+    internal static IReadOnlyList<string> ChargingSnapshotIds(JourneyRuntimeRow runtime) =>
     [
         runtime.PlanMessageId,
         runtime.VehicleBusinessMessageId,

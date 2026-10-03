@@ -139,6 +139,7 @@ public sealed class StationExclusivityReleaseEndpointsTests
         }
         // Registered so that the handlers' parameters read as services, never resolved: routing is all this looks at.
         builder.Services.AddScoped<VehicleFaultRecoveryService>(_ => throw new InvalidOperationException("not resolved"));
+        builder.Services.AddScoped<WaitingPointArrivalSettlement>(_ => throw new InvalidOperationException("not resolved"));
         builder.Services.AddScoped<VehicleRoster>(_ => throw new InvalidOperationException("not resolved"));
         builder.Services.AddScoped<ControlServerDbContext>(_ => throw new InvalidOperationException("not resolved"));
         builder.Services.AddScoped<IGovernanceAuditWriter>(_ => throw new InvalidOperationException("not resolved"));
@@ -156,6 +157,8 @@ public sealed class StationExclusivityReleaseEndpointsTests
         Assert.Equal(on, mapped);
         Assert.Equal(on, routes.Contains(StationExclusivityReleaseEndpoints.Route));
         Assert.Equal(on, routes.Contains(VehicleFaultRecoveryEndpoints.Route));
+        // control-server#447: the waiting point arrival settlement hangs on the same switch.
+        Assert.Equal(on, routes.Contains(WaitingPointArrivalSettlementEndpoints.Route));
     }
 
     // ---- helpers ------------------------------------------------------------------------------------------------
