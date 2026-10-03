@@ -722,6 +722,14 @@ $storeProtocolCommit = if ($null -ne $baseline) {
     $null
 }
 $storeProtocolCommitMatches = ($null -ne $storeProtocolCommit) -and ($storeProtocolCommit -eq $ProtocolCommit)
+# Written beside the PASS so a reader can tell whether the seventh conjunct was checked at all: on a field store a
+# PASS here says nothing about the store's protocol, on a generated one it does.
+$protocolCommitConjunct = if ($storeSource -eq 'FIELD_RUN') {
+    "FIELD_RUN: seventh conjunct exempt (TICKET_17); store protocolCommit $storeProtocolCommit recorded, not asserted"
+} else {
+    "SYNTHETIC_RIG: seventh conjunct in force; store protocolCommit $storeProtocolCommit must equal bound " +
+    "$ProtocolCommit -> $(if ($storeProtocolCommitMatches) { 'equal' } else { 'NOT equal' })"
+}
 $protocolBindingPass = $null -ne $version -and
     $version.protocolCommit -eq $ProtocolCommit -and
     $version.protocolTag -eq 'protocol-v2.0.0' -and
@@ -739,6 +747,7 @@ $fieldStoreProvenanceRecord = if ($storeSource -eq 'FIELD_RUN') {
         protocolCommit = $storeProtocolCommit
         matchesBoundProtocolCommit = $storeProtocolCommitMatches
         protocolCommitAsserted = $false
+        protocolCommitConjunct = $protocolCommitConjunct
         exemption = 'TICKET_17_KNOWN_EXEMPTION_FIELD_STORE_HISTORY'
         note = 'The restored store is real state written by an authorised field run (the one used up ' +
                'to batch 7 was 2026-08-29, protocol-v0.1.1). Its recorded protocolCommit is that history, ' +
@@ -763,6 +772,7 @@ $fieldStoreProvenanceRecord = if ($storeSource -eq 'FIELD_RUN') {
         protocolCommit = $storeProtocolCommit
         matchesBoundProtocolCommit = $storeProtocolCommitMatches
         protocolCommitAsserted = $true
+        protocolCommitConjunct = $protocolCommitConjunct
         exemption = $null
         generator = $storeGenerator
         note = 'Generated on the spot by the bound ControlServer commit on the synthetic rig: a synthetic ' +
@@ -940,6 +950,8 @@ $result = [ordered]@{
     # Same record the per-slice gate results carry, at run level so a reader of this file alone can
     # see which field run's history the store carries without opening a slice directory.
     fieldStoreProvenance = $fieldStoreProvenanceRecord
+    # Where the restored store came from, at the top so it is the first thing a reader of a PASS meets.
+    storeProvenance = $configuration.storeProvenance
     commits = [ordered]@{
         controlServer = $ControlServerCommit
         onboardHmi = $OnboardCommit
@@ -952,6 +964,10 @@ $result = [ordered]@{
     configuration = $configuration
     commands = @($commands)
     assertions = $assertionReport
+    # What an assertion actually checked, where a PASS alone would not say. Only names whose meaning depends on the run.
+    assertionDetails = [ordered]@{
+        protocolAndBuildIdentityBoundToTheSharedBinding = $protocolCommitConjunct
+    }
     failedAssertions = $failedAssertions
     probe = $probeResult
     handshakeAfterRestart = $handshakeResult
