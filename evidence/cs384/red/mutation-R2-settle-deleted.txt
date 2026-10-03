@@ -1,0 +1,7 @@
+# mutation R2-settle-deleted: in src/ControlServer.Host/Program.cs
+#   - await SlotFaultDeclarationResults.SettleAnsweredCommandsAsync(app.Services, CancellationToken.None);
+#   + 
+# filter FullyQualifiedName~SlotFaultDeclarationTests.TheHostSettlesAnsweredDeclarations
+  Failed ControlServer.Tests.SlotFaultDeclarationTests.TheHostSettlesAnsweredDeclarationsAfterMigratingAndBeforeTheOutboxIdentityCheck [34 ms]
+   Assert.Single() Failure: The collection was empty
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 72 ms - ControlServer.Tests.dll (net8.0)

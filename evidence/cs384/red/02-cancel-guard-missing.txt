@@ -1,0 +1,10 @@
+# 取消守卫：加了测试与显示文案常量、未加守卫（第 1 项修复已在）
+  Failed ControlServer.Tests.SlotFaultDeclarationTests.ALoadCancellationIsNotAuthorizedForAnAttemptWithAPendingOrAppliedDeclaration(declaration: "PENDING", expected: "REJECTED") [376 ms]
+  Error Message:
+Expected: "REJECTED"
+Actual:   "AUTHORIZED"
+  Failed ControlServer.Tests.SlotFaultDeclarationTests.ALoadCancellationIsNotAuthorizedForAnAttemptWithAPendingOrAppliedDeclaration(declaration: "APPLIED", expected: "REJECTED") [147 ms]
+  Error Message:
+Expected: "REJECTED"
+Actual:   "AUTHORIZED"
+Failed!  - Failed:     2, Passed:    55, Skipped:     0, Total:    57, Duration: 23 s - ControlServer.Tests.dll (net8.0)

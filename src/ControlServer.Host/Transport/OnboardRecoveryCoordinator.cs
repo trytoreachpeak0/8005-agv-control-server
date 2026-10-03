@@ -21,6 +21,23 @@ public sealed class OnboardRecoveryCoordinator(
     ILogger<OnboardRecoveryCoordinator>? logger = null,
     PlanRevisionRoutingSource? planRevisionRouting = null)
 {
+    /// <summary>
+    /// What the onboard shows when a load cancellation is refused because the attempt has a slot fault declaration pending
+    /// or applied (control-server#384). The wire code is <c>ACTION_NOT_ALLOWED_IN_STATE</c>: the protocol registry allows
+    /// <c>SLOT_FAULT_DECLARED</c> in <c>OperationResult</c> only, so this message is where the reason is told apart. It does
+    /// not send the operator to an exception recovery session: while the declaration waits the journey is not Blocked and
+    /// none can be opened (review of control-server#384, note 4).
+    /// </summary>
+    public const string SlotFaultDeclaredCancellationMessage =
+        "本次装卸有人工判故障在等结果或已生效，现在不能取消。请等判定结果：车载端拒绝判定后可以重试取消；判定生效后这次装卸转异常处置。";
+
+    private static readonly Action<ILogger, string, string, string, Exception?> LogCancellationRefusedForDeclaration =
+        LoggerMessage.Define<string, string, string>(
+            LogLevel.Warning,
+            new EventId(9506, nameof(LogCancellationRefusedForDeclaration)),
+            "Load cancellation {CancellationId} for demand {DemandId} refused: attempt {SlotOperationAttemptId} has a slot " +
+            "fault declaration pending or applied (control-server#384).");
+
     private static readonly Action<ILogger, string, string, string, string?, Exception?> LogCancellationFoundStopDecided =
         LoggerMessage.Define<string, string, string, string?>(
             LogLevel.Warning,
@@ -726,11 +743,30 @@ public sealed class OnboardRecoveryCoordinator(
         StationOperationRow? operation = attemptId is null ? null : await dbContext.StationOperations
             .SingleOrDefaultAsync(row => row.SlotOperationAttemptId == attemptId, cancellationToken)
             .ConfigureAwait(false);
-        bool authorized = demand is not null && demand.Status == DemandExecutionStatus.Accepted && sameVehicle &&
+        // A declaration pending or applied on this attempt has stopped, or may yet stop, the operation and sent it to
+        // recovery; a cancellation would give the attempt a second conclusion (review of onboard-hmi#247, control-server#384).
+        // Worse, the onboard refuses a cancellation that arrives after a declaration and says nothing, so an authorized one
+        // would sit in AwaitingResult for good: no timeout, no replay (the replay only takes workflows with a command), and
+        // LoadCancellationBeforeSublot.HasOpenCancellationAsync, which matches it by demand, would hold the stop -- no next
+        // load, no deadline ending it, no settling a determinate failure -- on a journey that is not Blocked and so cannot
+        // reach a forced recovery. The declaration row is written before its command goes out, so judging by the row closes
+        // the race whichever message the vehicle sees first. One the vehicle refused (NOT_APPLICABLE) withdrew itself and
+        // holds nothing back.
+        bool declared = await dbContext.Set<SlotFaultDeclarationRow>().AsNoTracking().AnyAsync(
+            row => row.SlotOperationAttemptId == attemptId &&
+                   (row.State == SlotFaultDeclarationStates.Pending || row.State == SlotFaultDeclarationStates.Applied),
+            cancellationToken).ConfigureAwait(false);
+        bool authorized = !declared &&
+                          demand is not null && demand.Status == DemandExecutionStatus.Accepted && sameVehicle &&
                           (operation is null || operation.DemandId == demandId &&
                            operation.OperationType == SlotOperationType.Load &&
                            operation.Status != StationOperationStatus.RecoveryRequired);
         int[] slots = operation is null ? [] : ParseSlots(operation.TargetSlotsJson);
+        if (declared)
+        {
+            LogCancellationRefusedForDeclaration(
+                logger ?? (ILogger)NullLogger.Instance, cancellationId, demandId, attemptId!, null);
+        }
         if (authorized)
         {
             await UpsertSimpleWorkflowAsync(
@@ -744,8 +780,12 @@ public sealed class OnboardRecoveryCoordinator(
             demandId,
             slotOperationAttemptId = attemptId,
             slots,
-            problem = authorized ? null : RefusedCancellationProblem(
-                demand, "payload.demandId", "Load cancellation is not safe in the current state.")
+            problem = authorized ? null
+                : declared ? Problem(
+                    ServerReasonCodes.ActionNotAllowedInState, "payload.slotOperationAttemptId",
+                    SlotFaultDeclaredCancellationMessage)
+                : RefusedCancellationProblem(
+                    demand, "payload.demandId", "Load cancellation is not safe in the current state.")
         });
     }
 

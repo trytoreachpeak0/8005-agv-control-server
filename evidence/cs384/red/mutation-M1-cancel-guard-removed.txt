@@ -1,0 +1,13 @@
+# mutation M1-cancel-guard-removed: in src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+#   - bool authorized = !declared &&
+#   + bool authorized =
+# filter FullyQualifiedName~SlotFaultDeclarationTests.ALoadCancellationIsNotAuthorized
+  Failed ControlServer.Tests.SlotFaultDeclarationTests.ALoadCancellationIsNotAuthorizedForAnAttemptWithAPendingOrAppliedDeclaration(declaration: "PENDING", expected: "REJECTED") [2 s]
+   Assert.Equal() Failure: Values differ
+Expected: False
+Actual:   True
+  Failed ControlServer.Tests.SlotFaultDeclarationTests.ALoadCancellationIsNotAuthorizedForAnAttemptWithAPendingOrAppliedDeclaration(declaration: "APPLIED", expected: "REJECTED") [183 ms]
+   Assert.Equal() Failure: Values differ
+Expected: False
+Actual:   True
+Failed!  - Failed:     2, Passed:     2, Skipped:     0, Total:     4, Duration: 3 s - ControlServer.Tests.dll (net8.0)

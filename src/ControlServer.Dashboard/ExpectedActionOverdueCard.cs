@@ -17,7 +17,12 @@ namespace ControlServer.Dashboard;
 /// 站点期限到了、门还没关（<c>STATION_TIMEOUT_DOOR_NOT_CLOSED</c>）与期待动作超时在装货站上会同时出现，这里合在同一行，不另起一行。
 /// </para>
 /// <para>
-/// 只读，也只让人看到：没有表单、没有按钮，不改谁先到场。判定表单属于 <c>protocol-v3.0.0</c> 的票（program#115）。
+/// 每行最后一格是人工判故障（REQ-0359，control-server#384）：还没判过的仓给一个链接，指到「人工判故障」动作的确认页，带上车与
+/// 仓位；判过的标出状态——已判定、等车载端结果，已生效，或车载端拒绝了判定及它给的原因（拒绝之后可以再判）。
+/// </para>
+/// <para>
+/// 卡片本身仍然没有表单、没有按钮：主页每 2 秒刷新，表单放在这里会把正在填的说明刷掉，所以表单只在确认页上
+/// （<see cref="DashboardActionRoutes"/>）。卡片不改谁先到场。
 /// </para>
 /// </remarks>
 public sealed class ExpectedActionOverdueCard : IDashboardCard
@@ -45,7 +50,7 @@ public sealed class ExpectedActionOverdueCard : IDashboardCard
         }
         else
         {
-            html.Append("<table><tr><th>车</th><th>站点</th><th>操作</th><th>仓位</th><th>期待的动作</th><th>已等待</th><th>读数</th><th>站点期限</th></tr>");
+            html.Append("<table><tr><th>车</th><th>站点</th><th>操作</th><th>仓位</th><th>期待的动作</th><th>已等待</th><th>读数</th><th>站点期限</th><th>人工判故障</th></tr>");
             foreach (JsonElement slot in slots)
             {
                 html.Append("<tr>")
@@ -57,6 +62,7 @@ public sealed class ExpectedActionOverdueCard : IDashboardCard
                     .Append(DashboardPageRenderer.Cell(Waited(slot)))
                     .Append(DashboardPageRenderer.Cell(Readings(slot)))
                     .Append(DashboardPageRenderer.Cell(StationDeadline(slot)))
+                    .Append(Declaration(slot))
                     .Append("</tr>");
             }
             html.Append("</table>");
@@ -122,6 +128,53 @@ public sealed class ExpectedActionOverdueCard : IDashboardCard
         slot.TryGetProperty("stationTimeoutDoorNotClosed", out JsonElement value) && value.ValueKind == JsonValueKind.True
             ? "站点期限已过，门未关（STATION_TIMEOUT_DOOR_NOT_CLOSED）"
             : string.Empty;
+
+    /// <summary>The last cell: the way to declare, or what became of the declaration.</summary>
+    private static string Declaration(JsonElement slot)
+    {
+        string link = WebUtility.HtmlEncode(SlotFaultDeclarationAction.Link(
+            DashboardPageRenderer.Text(slot, "agvId"), DashboardPageRenderer.Text(slot, "slotNo")));
+        if (!slot.TryGetProperty("declaration", out JsonElement declaration) || declaration.ValueKind != JsonValueKind.Object)
+        {
+            return $"<td><a href=\"{link}\">判故障</a></td>";
+        }
+        string declaredAt = Clock(declaration, "declaredAt");
+        string answeredAt = Clock(declaration, "resultReceivedAt");
+        string by = DashboardPageRenderer.Text(declaration, "administratorId");
+        return DashboardPageRenderer.Text(declaration, "state") switch
+        {
+            "PENDING" => DashboardPageRenderer.Cell($"已判定、等车载端结果（{declaredAt} 由 {by} 判定）"),
+            "APPLIED" => DashboardPageRenderer.Cell($"判定已生效（{declaredAt} 由 {by} 判定，{answeredAt} 车载端应用），这次装卸转人工异常处理"),
+            "NOT_APPLICABLE" => $"<td>{WebUtility.HtmlEncode(
+                    $"车载端拒绝了判定（{declaredAt} 由 {by} 判定，{answeredAt} 拒绝）：{Refusal(declaration)}")}"
+                + $" <a href=\"{link}\">再判</a></td>",
+            var other => DashboardPageRenderer.Cell($"判定状态 {other}（{declaredAt}）")
+        };
+    }
+
+    private static string Refusal(JsonElement declaration)
+    {
+        string? message = declaration.TryGetProperty("displayMessage", out JsonElement text) && text.ValueKind == JsonValueKind.String
+            ? text.GetString()
+            : null;
+        string? code = declaration.TryGetProperty("reasonCode", out JsonElement value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
+        return (message, code) switch
+        {
+            (null, null) => "车载端没有给原因",
+            (null, _) => code!,
+            (_, null) => message,
+            _ => $"{message}（{code}）"
+        };
+    }
+
+    private static string Clock(JsonElement element, string propertyName) =>
+        element.TryGetProperty(propertyName, out JsonElement value)
+        && value.ValueKind == JsonValueKind.String
+        && value.TryGetDateTimeOffset(out DateTimeOffset at)
+            ? at.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture)
+            : "时刻不明";
 
     private static string Duration(JsonElement fact, string propertyName) =>
         fact.TryGetProperty(propertyName, out JsonElement value)

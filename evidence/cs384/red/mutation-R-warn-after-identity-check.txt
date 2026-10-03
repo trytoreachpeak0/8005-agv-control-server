@@ -1,0 +1,10 @@
+# mutation R-warn-after-identity-check: in src/ControlServer.Host/Program.cs
+#   - await SlotFaultDeclarationStartupCheck.WarnAsync(app.Services, CancellationToken.None);
+#   + 
+#   - await ProtocolOutboxIdentityStartupCheck.EnsureAsync(app.Services, CancellationToken.None);
+#   + await ProtocolOutboxIdentityStartupCheck.EnsureAsync(app.Services, CancellationToken.None);
+await SlotFaultDeclarationStartupCheck.WarnAsync(app.Services, CancellationToken.None);
+# filter FullyQualifiedName~SlotFaultDeclarationTests.TheHostSettlesAnsweredDeclarations
+  Failed ControlServer.Tests.SlotFaultDeclarationTests.TheHostSettlesAnsweredDeclarationsAfterMigratingAndBeforeTheOutboxIdentityCheck [54 ms]
+   the warning at line 214 runs after the identity check at line 213
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 100 ms - ControlServer.Tests.dll (net8.0)

@@ -204,6 +204,12 @@ if (PackageCapacityImportCommand.IsRequested(args))
     return;
 }
 
+// control-server#384：已有结论的人工判故障，其命令在发件箱里补记为已确认（车载端以结果作答、不回 DurableAck）。必须在下面的身份检查之前，
+// 否则改协议身份后做过判定的库起不来。幂等，每次启动都跑。
+await SlotFaultDeclarationResults.SettleAnsweredCommandsAsync(app.Services, CancellationToken.None);
+// control-server#383：人工判故障入口关着、库里却有未结判定时告警（它们在关着时不补发）。放在身份检查之前（cs#384 审查注 2）：
+// 未结判定的命令正是身份检查会拦下的行，检查拒绝启动时这条告警要已经打出来，解释那些行是什么。
+await SlotFaultDeclarationStartupCheck.WarnAsync(app.Services, CancellationToken.None);
 // control-server#382：发件箱里有未确认、信封身份不是本构建的行时拒绝启动——补发不改身份，车会拒收并反复断会话。
 await ProtocolOutboxIdentityStartupCheck.EnsureAsync(app.Services, CancellationToken.None);
 // control-server#72：当前分区归属版本把 AREA 归进了未允许的调度区时拒绝启动，并列出是哪几条。
@@ -212,8 +218,6 @@ await AreaAssignmentDispatchZoneStartupCheck.EnsureAsync(app.Services, Cancellat
 await TaskTypeStationStartup.EnsureAsync(app.Services, CancellationToken.None);
 // control-server#388：投运车辆数大于 1 而等待点不够每辆车各分一个时拒绝启动（规格 5.4）。在绑定装载之后，固定站不算等待点。
 await WaitingPointStartupCheck.EnsureAsync(app.Services, CancellationToken.None);
-// control-server#383：人工判故障入口关着、库里却有未结判定时告警（它们在关着时不补发）。
-await SlotFaultDeclarationStartupCheck.WarnAsync(app.Services, CancellationToken.None);
 // control-server#403：生效的充电策略版本（含在途旅程与充电周期冻结的版本）不满足 REQ-0281 的阈值关系、或救命线不低于它的强制充电线时拒绝启动。
 // 关系只有 ChargingPolicyRules.ThresholdRelationViolations 一份定义，导入也调它。一版都没有照常启动（逐车不投运，control-server#400）。
 await ChargingPolicyStartupCheck.EnsureAsync(app.Services, CancellationToken.None);

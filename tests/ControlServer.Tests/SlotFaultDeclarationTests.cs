@@ -643,6 +643,221 @@ public sealed class SlotFaultDeclarationTests
         Assert.DoesNotContain(fixture.Peer.Lines, line => MessageType(line) == "SlotFaultDeclarationCommand");
     }
 
+    // --- The command's outbox line (review of onboard-hmi#247, control-server#384) -----------------------------------
+
+    /// <summary>
+    /// The vehicle answers the command with its result, never with a DurableAck (both vectors: command, result, the server's
+    /// DurableAck), so the result is what settles the command's outbox line, as for every command answered with a business
+    /// result. Left unsettled, the line is under the identity of the build that wrote it forever, and the first start after a
+    /// protocol identity change (control-server#393) is refused with <c>OUTBOX_PROTOCOL_IDENTITY_MISMATCH</c> -- a refusal
+    /// whose way out, "let the vehicle acknowledge its outbox", the vehicle never takes.
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [InlineData("APPLIED")]
+    [InlineData("NOT_APPLICABLE")]
+    public async Task AnAnsweredDeclarationSettlesItsCommandSoTheServerStartsAfterAProtocolIdentityChange(string outcome)
+    {
+        await using Fixture fixture = await Fixture.AwaitingOperatorOnSlotOneAsync();
+        SlotFaultDeclarationRow declaration = await fixture.DeclareAsync();
+
+        await fixture.SendResultAsync(declaration.DeclarationId, AttemptId, outcome);
+        await fixture.WriteCommandsUnderThePreviousIdentityAsync();
+
+        await ProtocolOutboxIdentityStartupCheck.EnsureAsync(fixture.Context, NullLogger.Instance, null, Token);
+        Assert.Equal(Now, Assert.Single(await fixture.CommandsAsync()).AcknowledgedAt);
+    }
+
+    /// <summary>
+    /// A resent result for a declaration already answered -- the vehicle resends until the server's DurableAck arrives --
+    /// settles a command a build before this fix left unsettled. The declaration itself stays as first answered.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    public async Task AResultForAnAlreadyAnsweredDeclarationSettlesACommandLeftUnsettled()
+    {
+        await using Fixture fixture = await Fixture.AwaitingOperatorOnSlotOneAsync();
+        SlotFaultDeclarationRow declaration = await fixture.DeclareAsync();
+        await fixture.SendResultAsync(declaration.DeclarationId, AttemptId, "APPLIED");
+        await fixture.UnsettleCommandsAsync();
+        SlotFaultDeclarationRow first = Assert.Single(await fixture.DeclarationsAsync());
+
+        await fixture.SendResultAsync(declaration.DeclarationId, AttemptId, "APPLIED");
+
+        Assert.Equal(Now, Assert.Single(await fixture.CommandsAsync()).AcknowledgedAt);
+        Assert.Equal(JsonSerializer.Serialize(first), JsonSerializer.Serialize(Assert.Single(await fixture.DeclarationsAsync())));
+    }
+
+    /// <summary>
+    /// A store that took its answers before this fix: startup settles the commands of answered declarations, once and
+    /// idempotently, before the identity check reads the outbox. A declaration still awaiting its answer keeps its command
+    /// unsettled -- the vehicle still owes that answer, and the identity check is right to stop on it.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    public async Task StartupSettlesTheCommandsOfDeclarationsAnsweredBeforeTheFixAndNoOther()
+    {
+        await using Fixture fixture = await Fixture.AwaitingOperatorOnSlotOneAsync();
+        SlotFaultDeclarationRow answered = await fixture.DeclareAsync();
+        await fixture.SendResultAsync(answered.DeclarationId, AttemptId, "NOT_APPLICABLE");
+        await fixture.UnsettleCommandsAsync();
+        await fixture.WriteCommandsUnderThePreviousIdentityAsync();
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            ProtocolOutboxIdentityStartupCheck.EnsureAsync(fixture.Context, NullLogger.Instance, null, Token));
+        Assert.IsType<Accepted<SlotFaultDeclarationResponse>>(
+            (await fixture.PostAsync(Request() with { RequestId = Guid.NewGuid().ToString("D") })).Result);
+        string pendingCommand = (await fixture.DeclarationsAsync())
+            .Single(row => row.State == SlotFaultDeclarationStates.Pending).CommandMessageId;
+
+        int first = await SlotFaultDeclarationResults.SettleAnsweredCommandsAsync(fixture.Context, Now, Token);
+        int second = await SlotFaultDeclarationResults.SettleAnsweredCommandsAsync(fixture.Context, Now, Token);
+
+        Assert.Equal((1, 0), (first, second));
+        ProtocolOutboxRow[] commands = await fixture.CommandsAsync();
+        Assert.Equal(Now, commands.Single(row => row.MessageId == answered.CommandMessageId).AcknowledgedAt);
+        Assert.Null(commands.Single(row => row.MessageId == pendingCommand).AcknowledgedAt);
+        await ProtocolOutboxIdentityStartupCheck.EnsureAsync(fixture.Context, NullLogger.Instance, null, Token);
+    }
+
+    /// <summary>
+    /// A result that settles no declaration of this server -- one naming another attempt, or a declaration this server never
+    /// made -- settles no command either. Settled, the command's line would never be replayed again and the declaration it
+    /// carries would stay PENDING for good (review of control-server#384, S2).
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [InlineData("attempt-mismatch")]
+    [InlineData("unknown-declaration")]
+    public async Task AnAnswerThatSettlesNoDeclarationLeavesTheCommandUnsettled(string answer)
+    {
+        await using Fixture fixture = await Fixture.AwaitingOperatorOnSlotOneAsync();
+        SlotFaultDeclarationRow declaration = await fixture.DeclareAsync();
+
+        await (answer == "attempt-mismatch"
+            ? fixture.SendResultAsync(declaration.DeclarationId, "20000000-0000-4000-8000-00000000ffff", "APPLIED")
+            : fixture.SendResultAsync(Guid.NewGuid().ToString("D"), AttemptId, "APPLIED"));
+
+        Assert.Equal(SlotFaultDeclarationStates.Pending, Assert.Single(await fixture.DeclarationsAsync()).State);
+        Assert.Null(Assert.Single(await fixture.CommandsAsync()).AcknowledgedAt);
+    }
+
+    /// <summary>
+    /// The host's start order, read from <c>Program.cs</c> (review of control-server#384, S1): the backfill that settles
+    /// answered declarations' commands runs after the database is migrated and before the outbox identity check, or a store
+    /// that declared before this fix is refused at the first start under a new identity; the warning about declarations
+    /// held while switched off runs before the check too, so a refusal is preceded by what explains it. Each call appears
+    /// exactly once.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    public void TheHostSettlesAnsweredDeclarationsAfterMigratingAndBeforeTheOutboxIdentityCheck()
+    {
+        string[] lines = File.ReadAllLines(Path.Combine(RepositoryRoot(), "src", "ControlServer.Host", "Program.cs"));
+        int Line(string call)
+        {
+            int[] found = [.. lines.Select((line, index) => (line.Trim(), index))
+                .Where(item => !item.Item1.StartsWith("//", StringComparison.Ordinal)
+                               && item.Item1.StartsWith("await " + call + "(app.Services", StringComparison.Ordinal))
+                .Select(item => item.index)];
+            return Assert.Single(found);
+        }
+
+        int migrate = Line("EnsureDatabaseAsync");
+        int settle = Line("SlotFaultDeclarationResults.SettleAnsweredCommandsAsync");
+        int warn = Line("SlotFaultDeclarationStartupCheck.WarnAsync");
+        int identity = Line("ProtocolOutboxIdentityStartupCheck.EnsureAsync");
+
+        Assert.True(migrate < settle, $"settle at line {settle + 1} runs before the migration at line {migrate + 1}");
+        Assert.True(settle < identity, $"settle at line {settle + 1} runs after the identity check at line {identity + 1}");
+        Assert.True(warn < identity, $"the warning at line {warn + 1} runs after the identity check at line {identity + 1}");
+    }
+
+    private static string RepositoryRoot()
+    {
+        DirectoryInfo? directory = new(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "ControlServer.sln")))
+        {
+            directory = directory.Parent;
+        }
+        return directory?.FullName ?? throw new InvalidOperationException("ControlServer.sln not found above the test output.");
+    }
+
+    // --- Cancelling a declared attempt (review of onboard-hmi#247, control-server#384) -------------------------------
+
+    /// <summary>
+    /// A load cancellation is not authorized for an attempt with a declaration pending or applied: an applied declaration
+    /// has already stopped the operation and sent it to recovery (its result is <c>UNKNOWN</c>), and a pending one may yet
+    /// do so, so a cancellation would give the same attempt a second conclusion and drive the slot declared faulty
+    /// through the cancellation flow. The wire code is the protocol's <c>ACTION_NOT_ALLOWED_IN_STATE</c> -- the registry
+    /// allows <c>SLOT_FAULT_DECLARED</c> in <c>OperationResult</c> only -- and the display message says why. A declaration
+    /// the vehicle refused withdraws itself and holds nothing back; with no declaration at all the same request is
+    /// authorized, which pins that the refusal comes from the declaration and nothing else in the fixture. The onboard
+    /// guards the same in onboard-hmi#247; this is the second line.
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [InlineData(null, "AUTHORIZED")]
+    [InlineData("PENDING", "REJECTED")]
+    [InlineData("APPLIED", "REJECTED")]
+    [InlineData("NOT_APPLICABLE", "AUTHORIZED")]
+    public async Task ALoadCancellationIsNotAuthorizedForAnAttemptWithAPendingOrAppliedDeclaration(
+        string? declaration, string expected)
+    {
+        await using Fixture fixture = await Fixture.AwaitingOperatorOnSlotOneAsync();
+        if (declaration is not null)
+        {
+            SlotFaultDeclarationRow declared = await fixture.DeclareAsync();
+            if (declaration != "PENDING")
+            {
+                await fixture.SendResultAsync(declared.DeclarationId, AttemptId, declaration);
+            }
+        }
+
+        string answer = await fixture.RequestLoadCancellationAsync();
+
+        // First, the consequence. What the runtime reads before it loads the next demand, ends the stop at its deadline or settles a determinate
+        // failure (JourneyRuntimeEngine.OpenCancellationAtCurrentStopAsync and the failure settlement): authorized after a
+        // declaration, the onboard never answers this cancellation, and the stop would stay held by it for good.
+        Assert.Equal(
+            expected == "AUTHORIZED",
+            await LoadCancellationBeforeSublot.HasOpenCancellationAsync(fixture.Context, DemandId, Token));
+        JsonElement authorization = Lines(answer).Select(line => JsonDocument.Parse(line).RootElement)
+            .Single(line => line.GetProperty("messageType").GetString() == "LoadCancellationAuthorization");
+        JsonElement payload = authorization.GetProperty("payload");
+        Assert.Equal(expected, payload.GetProperty("decision").GetString());
+        bool workflowRecorded = await fixture.Context.RecoveryWorkflows.AsNoTracking()
+            .AnyAsync(row => row.WorkflowType == "LOAD_CANCELLATION", Token);
+        Assert.Equal(expected == "AUTHORIZED", workflowRecorded);
+        if (expected == "REJECTED")
+        {
+            JsonElement problem = payload.GetProperty("problem");
+            Assert.Equal(ServerReasonCodes.ActionNotAllowedInState, problem.GetProperty("reasonCode").GetString());
+            Assert.Equal(OnboardRecoveryCoordinator.SlotFaultDeclaredCancellationMessage,
+                problem.GetProperty("displayMessage").GetString());
+        }
+    }
+
+    /// <summary>
+    /// The other order (control-server#384): a load cancellation of the attempt is already authorized and waiting for the
+    /// vehicle's result, so the cancellation is how this operation ends. A declaration is refused with a reason the
+    /// administrator sees on submitting, and nothing is written -- no declaration row, no command.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    public async Task ADeclarationOnAnAttemptWhoseLoadCancellationIsAuthorizedIsRefusedAndWritesNothing()
+    {
+        await using Fixture fixture = await Fixture.AwaitingOperatorOnSlotOneAsync();
+        await fixture.RequestLoadCancellationAsync();
+        Assert.True(await LoadCancellationBeforeSublot.HasOpenCancellationAsync(fixture.Context, DemandId, Token));
+
+        var result = await fixture.PostAsync(Request());
+
+        Assert.Equal([SlotFaultDeclarationRefusals.LoadCancellationInProgress], Conflict(result));
+        Assert.Empty(await fixture.DeclarationsAsync());
+        Assert.Empty(await fixture.CommandsAsync());
+        Assert.DoesNotContain(fixture.Peer.Lines, line => MessageType(line) == "SlotFaultDeclarationCommand");
+    }
+
     // --- The switch (review of control-server#383, S1 and S2) ---------------------------------------------------------
 
     /// <summary>
@@ -1294,6 +1509,17 @@ public sealed class SlotFaultDeclarationTests
             return Assert.Single(await DeclarationsAsync());
         }
 
+        public Task<string> RequestLoadCancellationAsync() => Send(
+            "LoadCancellationStartRequested",
+            new
+            {
+                cancellationId = "c0000000-0000-4000-8000-000000000384",
+                demandId = DemandId,
+                slotOperationAttemptId = AttemptId,
+                @operator = new { operatorId = "operator-384", verificationMethod = "BADGE", verifiedAt = Now },
+                reason = "Operator cancels the load at the station."
+            });
+
         public Task<string> SendResultAsync(string declarationId, string attemptId, string outcome) => Send(
             "SlotFaultDeclarationResult",
             new
@@ -1330,6 +1556,40 @@ public sealed class SlotFaultDeclarationTests
             return await Context.ProtocolOutbox.AsNoTracking()
                 .Where(row => row.MessageType == "SlotFaultDeclarationCommand")
                 .ToArrayAsync(Token);
+        }
+
+        /// <summary>
+        /// What a protocol identity change looks like to the outbox: the command lines were written by the build before.
+        /// Only the commands are rewritten -- the handshake's own lines stay under this build's identity.
+        /// </summary>
+        public async Task WriteCommandsUnderThePreviousIdentityAsync()
+        {
+            Context.ChangeTracker.Clear();
+            foreach (ProtocolOutboxRow row in await Context.ProtocolOutbox
+                         .Where(item => item.MessageType == "SlotFaultDeclarationCommand").ToArrayAsync(Token))
+            {
+                System.Text.Json.Nodes.JsonObject envelope =
+                    System.Text.Json.Nodes.JsonNode.Parse(row.PayloadJson)!.AsObject();
+                envelope["protocolVersion"] = 3;
+                envelope["protocolReleaseVersion"] = "2.0.0";
+                envelope["protocolReleaseManifestSha256"] = "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7";
+                row.PayloadJson = envelope.ToJsonString();
+            }
+            await Context.SaveChangesAsync(Token);
+            Context.ChangeTracker.Clear();
+        }
+
+        /// <summary>The state a build before control-server#384 left an answered declaration's command in.</summary>
+        public async Task UnsettleCommandsAsync()
+        {
+            Context.ChangeTracker.Clear();
+            foreach (ProtocolOutboxRow row in await Context.ProtocolOutbox
+                         .Where(item => item.MessageType == "SlotFaultDeclarationCommand").ToArrayAsync(Token))
+            {
+                row.AcknowledgedAt = null;
+            }
+            await Context.SaveChangesAsync(Token);
+            Context.ChangeTracker.Clear();
         }
 
         public async Task<StationOperationRow> OperationAsync()

@@ -1,0 +1,9 @@
+# mutation M3-backfill-takes-pending-too: in src/ControlServer.Host/Transport/SlotFaultDeclarationResults.cs
+#   - .Where(row => row.State != SlotFaultDeclarationStates.Pending)
+#   + .Where(row => row.State != null)
+# filter FullyQualifiedName~SlotFaultDeclarationTests.StartupSettlesTheCommands
+  Failed ControlServer.Tests.SlotFaultDeclarationTests.StartupSettlesTheCommandsOfDeclarationsAnsweredBeforeTheFixAndNoOther [3 s]
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (1, 0)
+Actual:   Tuple (2, 0)
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 3 s - ControlServer.Tests.dll (net8.0)

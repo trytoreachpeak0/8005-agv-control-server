@@ -1,0 +1,9 @@
+# mutation R5-attempt-mismatch-settles: in src/ControlServer.Host/Transport/SlotFaultDeclarationResults.cs
+#   - if (disposition == SlotFaultDeclarationResultDisposition.AlreadyAnswered)
+#   + if (disposition is SlotFaultDeclarationResultDisposition.AlreadyAnswered or SlotFaultDeclarationResultDisposition.AttemptMismatch)
+# filter FullyQualifiedName~SlotFaultDeclarationTests.AnAnswerThatSettlesNoDeclaration
+  Failed ControlServer.Tests.SlotFaultDeclarationTests.AnAnswerThatSettlesNoDeclarationLeavesTheCommandUnsettled(answer: "attempt-mismatch") [4 s]
+   Assert.Null() Failure: Value of type 'Nullable<DateTimeOffset>' has a value
+Expected: null
+Actual:   2026-09-30T08:00:00.0000000+00:00
+Failed!  - Failed:     1, Passed:     1, Skipped:     0, Total:     2, Duration: 4 s - ControlServer.Tests.dll (net8.0)
