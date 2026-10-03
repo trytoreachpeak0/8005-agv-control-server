@@ -752,6 +752,12 @@ public sealed class SlotFaultDeclarationTests
 
         string answer = await fixture.RequestLoadCancellationAsync();
 
+        // First, the consequence. What the runtime reads before it loads the next demand, ends the stop at its deadline or settles a determinate
+        // failure (JourneyRuntimeEngine.OpenCancellationAtCurrentStopAsync and the failure settlement): authorized after a
+        // declaration, the onboard never answers this cancellation, and the stop would stay held by it for good.
+        Assert.Equal(
+            expected == "AUTHORIZED",
+            await LoadCancellationBeforeSublot.HasOpenCancellationAsync(fixture.Context, DemandId, Token));
         JsonElement authorization = Lines(answer).Select(line => JsonDocument.Parse(line).RootElement)
             .Single(line => line.GetProperty("messageType").GetString() == "LoadCancellationAuthorization");
         JsonElement payload = authorization.GetProperty("payload");
@@ -759,12 +765,6 @@ public sealed class SlotFaultDeclarationTests
         bool workflowRecorded = await fixture.Context.RecoveryWorkflows.AsNoTracking()
             .AnyAsync(row => row.WorkflowType == "LOAD_CANCELLATION", Token);
         Assert.Equal(expected == "AUTHORIZED", workflowRecorded);
-        // What the runtime reads before it loads the next demand, ends the stop at its deadline or settles a determinate
-        // failure (JourneyRuntimeEngine.OpenCancellationAtCurrentStopAsync and the failure settlement): authorized after a
-        // declaration, the onboard never answers this cancellation, and the stop would stay held by it for good.
-        Assert.Equal(
-            expected == "AUTHORIZED",
-            await LoadCancellationBeforeSublot.HasOpenCancellationAsync(fixture.Context, DemandId, Token));
         if (expected == "REJECTED")
         {
             JsonElement problem = payload.GetProperty("problem");
