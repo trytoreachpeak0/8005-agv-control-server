@@ -21,7 +21,10 @@ $mutations = @(
        To = "    return" },
     @{ Id = 'M6-vehicle-key-marker-dropped'; File = 'run-demand-bearing-g3-vectors.ps1'
        From = "        if (`"`$(`$row['vehicleKey'])`" -like 'BROKERX-L2-*') {"
-       To = "        if (`$false) {" }
+       To = "        if (`$false) {" },
+    @{ Id = 'M7-staged-source-comparison-removed'; File = 'run-staged-g3.ps1'
+       From = "`$commitSources = Get-G3CommitSources -Binding"
+       To = "`$commitSources = [ordered]@{ controlServerCommitSource = 'SHARED_BINDING'; onboardCommitSource = 'SHARED_BINDING'; simulatorCommitSource = 'SHARED_BINDING'; protocolCommitSource = 'SHARED_BINDING' }; `$null = Get-G3CommitSources -Binding" }
 )
 
 foreach ($m in $mutations) {

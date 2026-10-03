@@ -1111,13 +1111,18 @@ $status = if ($null -ne $runError) {
 }
 
 # One record for the gate results, the classification and run-result.json alike: the classification reads it
-# to decide whether the run tested the shared binding (control-server#460). This runner always does, so it
-# carries no *CommitSource entry.
+# to decide whether the run tested the shared binding (control-server#460). This runner has no commit
+# parameters: all four are read from run-staged-g3.ps1's param defaults above, so each is the binding by
+# construction and is recorded as such, in the same shape as the runners that can override one.
 $commitsRecord = [ordered]@{
     controlServer = $ControlServerCommit
+    controlServerCommitSource = 'SHARED_BINDING'
     onboardHmi = $OnboardCommit
+    onboardCommitSource = 'SHARED_BINDING'
     slotsSimulator = $SimulatorCommit
+    simulatorCommitSource = 'SHARED_BINDING'
     protocol = $ProtocolCommit
+    protocolCommitSource = 'SHARED_BINDING'
     runner = $runnerCommit
     runnerWorktreeCleanAtStart = $runnerWorktreeClean
 }

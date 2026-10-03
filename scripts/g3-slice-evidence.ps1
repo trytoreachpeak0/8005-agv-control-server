@@ -686,6 +686,33 @@ function Get-G3FormalSliceWithheldReason {
     return $null
 }
 
+# Where each of the four commits a run used came from, as *CommitSource entries for its commits record:
+# SHARED_BINDING when the value equals the shared binding, SELF_CHECK_OVERRIDE when it does not. For
+# run-staged-g3.ps1, whose four bindings are its own param defaults: passing -ControlServerCommit (or any of the
+# other three) on the command line ran another commit, and until control-server#460 nothing in the evidence said
+# so. Recorded, not refused -- running another commit to check it is a legitimate use; it just is not the gate.
+# -ceq: the binding is a lowercase full SHA-1 and must match byte for byte (Get-SharedCommitBinding's rule).
+function Get-G3CommitSources {
+    param(
+        [Parameter(Mandatory)][System.Collections.IDictionary]$Actual,
+        [Parameter(Mandatory)][System.Collections.IDictionary]$Binding
+    )
+
+    $sources = [ordered]@{}
+    foreach ($pair in @(
+            @('ControlServerCommit', 'controlServerCommitSource'),
+            @('OnboardCommit', 'onboardCommitSource'),
+            @('SimulatorCommit', 'simulatorCommitSource'),
+            @('ProtocolCommit', 'protocolCommitSource'))) {
+        if (-not $Binding.Contains($pair[0]) -or -not $Actual.Contains($pair[0])) {
+            throw "Get-G3CommitSources needs $($pair[0]) in both the binding and the values the run used."
+        }
+        $sources[$pair[1]] = if ("$($Actual[$pair[0]])" -ceq "$($Binding[$pair[0]])") { 'SHARED_BINDING' } else {
+            'SELF_CHECK_OVERRIDE' }
+    }
+    return $sources
+}
+
 # The one place a slice's formalSlicePass is decided, for New-G3Classification and Write-G3GateResult alike:
 # the slice's own status, the run's assurance level (the 2026-09-09 ruling above), and whether the run tested
 # the shared binding at all (control-server#460). status is left as measured: a self-check's assertions still

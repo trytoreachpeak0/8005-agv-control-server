@@ -207,6 +207,26 @@ $harnessWorktreeClean = @(& git -C $ControlServerRepository status --porcelain).
 
 $G3RunKind = 'STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT'
 . (Join-Path $PSScriptRoot 'g3-slice-evidence.ps1')
+
+# Where the four commits this run uses came from (control-server#460). The binding is this script's own param
+# defaults, read back the way the other three runners read it -- Get-SharedCommitBinding, taken from the restart
+# runner rather than copied -- and compared with the values the run actually got, so a commit passed on the
+# command line is recorded as SELF_CHECK_OVERRIDE and grades no slice as a formal pass. Recorded, not refused.
+$bindingReaderSource = Join-Path $PSScriptRoot 'run-staged-g3-restart.ps1'
+$bindingReader = @([System.Management.Automation.Language.Parser]::ParseFile($bindingReaderSource, [ref]$null, [ref]$null).FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-SharedCommitBinding'
+        }, $true))
+if ($bindingReader.Count -ne 1) {
+    throw "Expected exactly one function 'Get-SharedCommitBinding' in $bindingReaderSource, found $($bindingReader.Count)."
+}
+Invoke-Expression $bindingReader[0].Extent.Text
+$commitSources = Get-G3CommitSources -Binding (Get-SharedCommitBinding -Path (Join-Path $PSScriptRoot 'run-staged-g3.ps1')) -Actual ([ordered]@{
+        ControlServerCommit = $ControlServerCommit
+        OnboardCommit = $OnboardCommit
+        SimulatorCommit = $SimulatorCommit
+        ProtocolCommit = $ProtocolCommit
+    })
 # Before the clones and the builds, not after: naming a slice this runner cannot certify should cost
 # a message, not an hour of cloning and publishing four repositories.
 if (-not [string]::IsNullOrEmpty($Slice)) { Assert-G3SliceIsClaimedBy -RunKind $G3RunKind -Slice $Slice }
@@ -3679,13 +3699,17 @@ if (Test-Path -LiteralPath $clonedSliceIndex -PathType Leaf) {
 }
 
 # One record for the gate results, the classification and run-result.json alike: the classification reads it
-# to decide whether the run tested the shared binding (control-server#460). This runner always does, so it
-# carries no *CommitSource entry.
+# to decide whether the run tested the shared binding (control-server#460), from the *CommitSource entries
+# $commitSources computed against this script's own param defaults.
 $commitsRecord = [ordered]@{
     controlServer = $ControlServerCommit
+    controlServerCommitSource = $commitSources['controlServerCommitSource']
     onboardEvidenceBinding = $OnboardCommit
+    onboardCommitSource = $commitSources['onboardCommitSource']
     slotsSimulator = $SimulatorCommit
+    simulatorCommitSource = $commitSources['simulatorCommitSource']
     protocol = $ProtocolCommit
+    protocolCommitSource = $commitSources['protocolCommitSource']
     harness = $harnessCommit
     harnessWorktreeCleanAtStart = $harnessWorktreeClean
 }

@@ -18,8 +18,10 @@
        the unknown source must be withheld too. The all-PASS premise is pinned by the first two, so a grading
        that passes nothing cannot satisfy the rest.
        Then the wiring, read from each runner's AST: every New-G3Classification call passes -Commits
-       $commitsRecord, the gate results' Context carries commits = $commitsRecord, and in the two runners that
-       can override a commit that record carries the *CommitSource keys they set.
+       $commitsRecord, the gate results' Context carries commits = $commitsRecord, and every runner's record
+       carries its *CommitSource keys. run-staged-g3.ps1's own $commitSources statement is then run with its
+       param defaults and with each of the four commits replaced in turn: SHARED_BINDING four times, then
+       SELF_CHECK_OVERRIDE for the replaced one, which withholds a PASS slice.
 
     2. The demand-bearing runner's error path. A git repository is made in a temporary directory whose
        scripts/l2/Invoke-L2Scenario.ps1 writes an assertions.json with outcome FAIL and a unique
@@ -164,9 +166,10 @@ try {
 
 # The wiring. A runner that grades with a record lacking its *CommitSource keys would pass every check above
 # and still write formalSlicePass true for an override.
+$allSources = @('controlServerCommitSource', 'onboardCommitSource', 'simulatorCommitSource', 'protocolCommitSource')
 $runnerSources = [ordered]@{
-    'run-staged-g3.ps1' = @()
-    'run-staged-g3-restart.ps1' = @()
+    'run-staged-g3.ps1' = $allSources
+    'run-staged-g3-restart.ps1' = $allSources
     'run-demand-bearing-g3-vectors.ps1' = @('controlServerCommitSource')
     'run-journey-g3.ps1' = @('controlServerCommitSource', 'onboardCommitSource')
 }
@@ -193,9 +196,58 @@ foreach ($file in $runnerSources.Keys) {
         })
     Check "$file assigns `$commitsRecord once, at top level" ($records.Count -eq 1) "$($records.Count) found"
     foreach ($key in $runnerSources[$file]) {
-        Check "$file's `$commitsRecord carries $key = `$$key" `
-            ($records.Count -eq 1 -and $records[0].Right.Extent.Text -match "\b$key\s*=\s*\`$$key\b") `
+        Check "$file's `$commitsRecord carries $key" `
+            ($records.Count -eq 1 -and $records[0].Right.Extent.Text -match "(?m)^\s*$key\s*=\s*\S") `
             "$(${records}?[0]?.Right.Extent.Text)"
+    }
+}
+
+# run-staged-g3.ps1's own sources: its four bindings are its param defaults, so an override is any value passed
+# on the command line. Get-G3CommitSources first, then the runner's own $commitSources statement, evaluated with
+# the binding and with each commit replaced in turn.
+$restartAst = Get-RunnerAst (Join-Path $ScriptRoot 'run-staged-g3-restart.ps1')
+. ([scriptblock]::Create((Get-AstFunction $restartAst 'Get-SharedCommitBinding').Extent.Text))
+$binding = Get-SharedCommitBinding -Path (Join-Path $ScriptRoot 'run-staged-g3.ps1')
+$sourceNames = [ordered]@{
+    ControlServerCommit = 'controlServerCommitSource'; OnboardCommit = 'onboardCommitSource'
+    SimulatorCommit = 'simulatorCommitSource'; ProtocolCommit = 'protocolCommitSource'
+}
+$sources = Get-G3CommitSources -Actual $binding -Binding $binding
+Check 'Get-G3CommitSources: the binding itself is SHARED_BINDING four times' `
+    (@($sources.Values | Where-Object { $_ -ne 'SHARED_BINDING' }).Count -eq 0 -and $sources.Count -eq 4) "$($sources | ConvertTo-Json -Compress)"
+$upper = [ordered]@{}; foreach ($k in $binding.Keys) { $upper[$k] = $binding[$k] }
+$upper['ControlServerCommit'] = $binding['ControlServerCommit'].ToUpperInvariant()
+Check 'Get-G3CommitSources: an uppercase spelling of the bound commit is not the binding' `
+    ((Get-G3CommitSources -Actual $upper -Binding $binding)['controlServerCommitSource'] -eq 'SELF_CHECK_OVERRIDE') 'it was taken as SHARED_BINDING'
+
+$stagedAst = Get-RunnerAst (Join-Path $ScriptRoot 'run-staged-g3.ps1')
+$sourcesStatements = @($stagedAst.EndBlock.Statements | Where-Object {
+        $_ -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+        $_.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and
+        $_.Left.VariablePath.UserPath -eq 'commitSources'
+    })
+Check 'run-staged-g3.ps1 assigns $commitSources once, at top level' ($sourcesStatements.Count -eq 1) "$($sourcesStatements.Count) found"
+if ($sourcesStatements.Count -eq 1) {
+    # $PSScriptRoot is empty inside a created scriptblock; the runner's directory is this one's.
+    $sourcesStatement = [scriptblock]::Create($sourcesStatements[0].Extent.Text.Replace('$PSScriptRoot', "'$ScriptRoot'"))
+    $stagedCases = @(@{ Name = 'the defaults'; Override = $null }) + @($sourceNames.Keys | ForEach-Object { @{ Name = "-$_ on the command line"; Override = $_ } })
+    foreach ($stagedCase in $stagedCases) {
+        $ControlServerCommit = $binding['ControlServerCommit']; $OnboardCommit = $binding['OnboardCommit']
+        $SimulatorCommit = $binding['SimulatorCommit']; $ProtocolCommit = $binding['ProtocolCommit']
+        if ($null -ne $stagedCase.Override) { Set-Variable -Name $stagedCase.Override -Value ('f' * 40) }
+        $commitSources = $null
+        $thrown = $null
+        try { . $sourcesStatement } catch { $thrown = $_.Exception.Message }
+        $expected = [ordered]@{}
+        foreach ($k in $sourceNames.Keys) { $expected[$sourceNames[$k]] = if ($k -eq $stagedCase.Override) { 'SELF_CHECK_OVERRIDE' } else { 'SHARED_BINDING' } }
+        $actualJson = if ($null -ne $commitSources) { $commitSources | ConvertTo-Json -Compress } else { 'null' }
+        Check "run-staged-g3.ps1's commit sources, $($stagedCase.Name): $(($expected.Values | Select-Object -Unique) -join '/')" `
+            ($null -eq $thrown -and $actualJson -eq ($expected | ConvertTo-Json -Compress)) "$thrown $actualJson"
+        if ($null -ne $stagedCase.Override -and $null -ne $commitSources) {
+            $graded = Get-G3FormalSlicePass -RunKind 'STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT' -SliceStatus 'PASS' -Commits $commitSources
+            Check "run-staged-g3.ps1, $($stagedCase.Name): a PASS slice is withheld as SELF_CHECK_OVERRIDE" `
+                ($graded.formalSlicePass -eq $false -and $graded.formalSliceWithheldReason -eq 'SELF_CHECK_OVERRIDE') "$($graded | ConvertTo-Json -Compress)"
+        }
     }
 }
 

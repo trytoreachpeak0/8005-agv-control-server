@@ -62,27 +62,47 @@ PASS classification without a commits record: refused
 PASS run-staged-g3.ps1 grades its slices with -Commits $commitsRecord
 PASS run-staged-g3.ps1 hands its gate results commits = $commitsRecord
 PASS run-staged-g3.ps1 assigns $commitsRecord once, at top level
+PASS run-staged-g3.ps1's $commitsRecord carries controlServerCommitSource
+PASS run-staged-g3.ps1's $commitsRecord carries onboardCommitSource
+PASS run-staged-g3.ps1's $commitsRecord carries simulatorCommitSource
+PASS run-staged-g3.ps1's $commitsRecord carries protocolCommitSource
 PASS run-staged-g3-restart.ps1 grades its slices with -Commits $commitsRecord
 PASS run-staged-g3-restart.ps1 hands its gate results commits = $commitsRecord
 PASS run-staged-g3-restart.ps1 assigns $commitsRecord once, at top level
+PASS run-staged-g3-restart.ps1's $commitsRecord carries controlServerCommitSource
+PASS run-staged-g3-restart.ps1's $commitsRecord carries onboardCommitSource
+PASS run-staged-g3-restart.ps1's $commitsRecord carries simulatorCommitSource
+PASS run-staged-g3-restart.ps1's $commitsRecord carries protocolCommitSource
 PASS run-demand-bearing-g3-vectors.ps1 grades its slices with -Commits $commitsRecord
 PASS run-demand-bearing-g3-vectors.ps1 hands its gate results commits = $commitsRecord
 PASS run-demand-bearing-g3-vectors.ps1 assigns $commitsRecord once, at top level
-PASS run-demand-bearing-g3-vectors.ps1's $commitsRecord carries controlServerCommitSource = $controlServerCommitSource
+PASS run-demand-bearing-g3-vectors.ps1's $commitsRecord carries controlServerCommitSource
 PASS run-journey-g3.ps1 grades its slices with -Commits $commitsRecord
 PASS run-journey-g3.ps1 hands its gate results commits = $commitsRecord
 PASS run-journey-g3.ps1 assigns $commitsRecord once, at top level
-PASS run-journey-g3.ps1's $commitsRecord carries controlServerCommitSource = $controlServerCommitSource
-PASS run-journey-g3.ps1's $commitsRecord carries onboardCommitSource = $onboardCommitSource
+PASS run-journey-g3.ps1's $commitsRecord carries controlServerCommitSource
+PASS run-journey-g3.ps1's $commitsRecord carries onboardCommitSource
+PASS Get-G3CommitSources: the binding itself is SHARED_BINDING four times
+PASS Get-G3CommitSources: an uppercase spelling of the bound commit is not the binding
+PASS run-staged-g3.ps1 assigns $commitSources once, at top level
+PASS run-staged-g3.ps1's commit sources, the defaults: SHARED_BINDING
+PASS run-staged-g3.ps1's commit sources, -ControlServerCommit on the command line: SELF_CHECK_OVERRIDE/SHARED_BINDING
+PASS run-staged-g3.ps1, -ControlServerCommit on the command line: a PASS slice is withheld as SELF_CHECK_OVERRIDE
+PASS run-staged-g3.ps1's commit sources, -OnboardCommit on the command line: SHARED_BINDING/SELF_CHECK_OVERRIDE
+PASS run-staged-g3.ps1, -OnboardCommit on the command line: a PASS slice is withheld as SELF_CHECK_OVERRIDE
+PASS run-staged-g3.ps1's commit sources, -SimulatorCommit on the command line: SHARED_BINDING/SELF_CHECK_OVERRIDE
+PASS run-staged-g3.ps1, -SimulatorCommit on the command line: a PASS slice is withheld as SELF_CHECK_OVERRIDE
+PASS run-staged-g3.ps1's commit sources, -ProtocolCommit on the command line: SHARED_BINDING/SELF_CHECK_OVERRIDE
+PASS run-staged-g3.ps1, -ProtocolCommit on the command line: a PASS slice is withheld as SELF_CHECK_OVERRIDE
 FAIL the first statement after the demand-bearing run's try is Write-StagedRunError -- it is: $portsReleased = @(Get-NetTCPConnection -State Listen -LocalPort $controlPort, $healthPort `
 PASS premise: the throwaway repository has a commit
 PASS the forced run fails
 PASS premise: what stops the run is the gate-result writer, not the generator
-FAIL the console carries the generator's own reason -- Exception: C:\Users\szy\AppData\Local\Temp\cs460-mut-42169292\scripts\g3-slice-evidence.ps1:821
+FAIL the console carries the generator's own reason -- Exception: C:\Users\szy\AppData\Local\Temp\cs460-mut-80c8a525\scripts\g3-slice-evidence.ps1:848
 
 Line |
 
- 821 |              throw ("The gate result for $Slice carries a fieldStorePr …
+ 848 |              throw ("The gate result for $Slice carries a fieldStorePr …
 
      |              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

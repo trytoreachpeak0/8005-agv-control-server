@@ -62,18 +62,26 @@ PASS classification without a commits record: refused
 PASS run-staged-g3.ps1 grades its slices with -Commits $commitsRecord
 PASS run-staged-g3.ps1 hands its gate results commits = $commitsRecord
 PASS run-staged-g3.ps1 assigns $commitsRecord once, at top level
+PASS run-staged-g3.ps1's $commitsRecord carries controlServerCommitSource
+PASS run-staged-g3.ps1's $commitsRecord carries onboardCommitSource
+PASS run-staged-g3.ps1's $commitsRecord carries simulatorCommitSource
+PASS run-staged-g3.ps1's $commitsRecord carries protocolCommitSource
 PASS run-staged-g3-restart.ps1 grades its slices with -Commits $commitsRecord
 PASS run-staged-g3-restart.ps1 hands its gate results commits = $commitsRecord
 PASS run-staged-g3-restart.ps1 assigns $commitsRecord once, at top level
+PASS run-staged-g3-restart.ps1's $commitsRecord carries controlServerCommitSource
+PASS run-staged-g3-restart.ps1's $commitsRecord carries onboardCommitSource
+PASS run-staged-g3-restart.ps1's $commitsRecord carries simulatorCommitSource
+PASS run-staged-g3-restart.ps1's $commitsRecord carries protocolCommitSource
 PASS run-demand-bearing-g3-vectors.ps1 grades its slices with -Commits $commitsRecord
 PASS run-demand-bearing-g3-vectors.ps1 hands its gate results commits = $commitsRecord
 PASS run-demand-bearing-g3-vectors.ps1 assigns $commitsRecord once, at top level
-PASS run-demand-bearing-g3-vectors.ps1's $commitsRecord carries controlServerCommitSource = $controlServerCommitSource
+PASS run-demand-bearing-g3-vectors.ps1's $commitsRecord carries controlServerCommitSource
 PASS run-journey-g3.ps1 grades its slices with -Commits $commitsRecord
 PASS run-journey-g3.ps1 hands its gate results commits = $commitsRecord
 PASS run-journey-g3.ps1 assigns $commitsRecord once, at top level
-PASS run-journey-g3.ps1's $commitsRecord carries controlServerCommitSource = $controlServerCommitSource
-FAIL run-journey-g3.ps1's $commitsRecord carries onboardCommitSource = $onboardCommitSource -- [ordered]@{
+PASS run-journey-g3.ps1's $commitsRecord carries controlServerCommitSource
+FAIL run-journey-g3.ps1's $commitsRecord carries onboardCommitSource -- [ordered]@{
     controlServer = $ControlServerCommit
     controlServerCommitSource = $controlServerCommitSource
     onboardHmi = $OnboardCommit
@@ -82,6 +90,18 @@ FAIL run-journey-g3.ps1's $commitsRecord carries onboardCommitSource = $onboardC
     runner = $runnerCommit
     runnerWorktreeCleanAtStart = $runnerWorktreeClean
 }
+PASS Get-G3CommitSources: the binding itself is SHARED_BINDING four times
+PASS Get-G3CommitSources: an uppercase spelling of the bound commit is not the binding
+PASS run-staged-g3.ps1 assigns $commitSources once, at top level
+PASS run-staged-g3.ps1's commit sources, the defaults: SHARED_BINDING
+PASS run-staged-g3.ps1's commit sources, -ControlServerCommit on the command line: SELF_CHECK_OVERRIDE/SHARED_BINDING
+PASS run-staged-g3.ps1, -ControlServerCommit on the command line: a PASS slice is withheld as SELF_CHECK_OVERRIDE
+PASS run-staged-g3.ps1's commit sources, -OnboardCommit on the command line: SHARED_BINDING/SELF_CHECK_OVERRIDE
+PASS run-staged-g3.ps1, -OnboardCommit on the command line: a PASS slice is withheld as SELF_CHECK_OVERRIDE
+PASS run-staged-g3.ps1's commit sources, -SimulatorCommit on the command line: SHARED_BINDING/SELF_CHECK_OVERRIDE
+PASS run-staged-g3.ps1, -SimulatorCommit on the command line: a PASS slice is withheld as SELF_CHECK_OVERRIDE
+PASS run-staged-g3.ps1's commit sources, -ProtocolCommit on the command line: SHARED_BINDING/SELF_CHECK_OVERRIDE
+PASS run-staged-g3.ps1, -ProtocolCommit on the command line: a PASS slice is withheld as SELF_CHECK_OVERRIDE
 PASS the first statement after the demand-bearing run's try is Write-StagedRunError
 PASS premise: the throwaway repository has a commit
 PASS the forced run fails
