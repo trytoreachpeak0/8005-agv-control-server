@@ -19,6 +19,24 @@ control-server#262。约 2026-10-08 起 `factory01` 上同时跑两套 ControlSe
 
 校验见到 `REPLACE_` 就拒绝，所以**在从 factory01 直查 RIoT 把这两个值取回之前，这份定义过不了校验、装不上**——这是刻意的。另外 map 25、`老厂前线new`、任何 `MAP-25-*` 标识符也一律拒绝：以前「按原样装会指向 MVP 那张图」只写在文档里，现在是一条检查（control-server#262 复审 M3）。
 
+## 清桩出口的两节配置与恢复凭据由部署链写，不再手工合入（control-server#454）
+
+人工清桩出口要两节配置：`VehicleFaultRecovery`（Host 恢复入口开关与凭据变量名）和 `FieldOperatorRoles`（名单路径、车载端入口声明）。
+以前部署链不写这两节，只能装完手工合入；首装会整份重写 `appsettings.Production.json`、重建服务的 `Environment`，手工合入的东西
+就被静默冲掉，服务端只告警 2271/2272、照旧 `ORDER_HANG`。现在：
+
+- 实例定义里必须显式写 `vehicleFaultRecovery.enabled` 与 `fieldOperatorRoles.{path, onboardClearanceEntryDeclared}`，缺了就拒绝。
+  `path` 必须在 `opsRoot` 里（装包会替换安装目录）。凭据变量名**不由定义给**，覆盖层固定写 `CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL`，
+  定义里写 `credentialEnvironmentVariable` 会被拒——免得并行实例指到 MVP 的变量。出厂定义是第一阶段：入口关、未声明车载端入口。
+- 首装、升级、回滚三条路径都跑同一个 `Set-InstanceConfiguration`：合并覆盖层并回读核对覆盖层写的**每一个**值；把凭据写进服务的
+  `Environment`；名单文件不存在就建一个空名单（`{"operators":[]}`，服务端读作「没人有权限」，安全方向），已有的绝不覆盖。
+- 凭据的值：安装与升级取 `deploy-config.json` 的 `faultRecoveryCredential`（控制端从 DPAPI 秘密存储填），没有就沿用服务里已有的那一条；
+  回滚没有 `deploy-config.json`，只沿用已有的。**在产品脚本运行之前**就读，因为首装会重建 `Environment`。入口开着而两处都没有，
+  在停任何东西之前拒绝。
+- 结束时打一行 `CLEARANCE_EXIT_READINESS ...`，按服务端 `StationClearanceExit` 的规则读生效配置、`Environment` 里的变量名（不读值）
+  和名单文件。两节缺失、或入口开着却没有凭据：抛 `CLEARANCE_EXIT_BROKEN`，安装算失败。出口不可用（例如第一阶段名单为空）：
+  打 `CLEARANCE_EXIT_UNAVAILABLE` 警告并列原因码，不算失败。它读的是服务将读的文件，不是运行中进程的判定，服务端没有对外暴露这个状态。
+
 ## 路径和名字只认一种写法
 
 control-server#262 复审找到过一个严重缺陷：卸载脚本在一种很常见的写错下（JSON 里用正斜杠写路径）
@@ -80,7 +98,7 @@ VB 的 `DeleteDirectory`、FSO 的 `DeleteFolder`、CIM，以及挪走、清空�
 | --- | --- |
 | `instance-factory01-v2.json` | 实例定义：端口、目录、服务名、车、RouteGraph、建单闸门 |
 | `ParallelInstance.psm1` | 定义的校验、布局（所有路径与名字的唯一来源）、部署足迹、卸载的删除顺序、唯一的删目录函数。检查全是纯函数，例外只有读路径属性的 `Test-ParallelInstanceReparsePoint` 和删目录的 `Remove-ParallelInstanceDirectory` |
-| `ParallelHost.psm1` | 读机器的辅助函数（MVP 服务指纹、调用产品卸载脚本并确认成功），安装与卸载共用 |
+| `ParallelHost.psm1` | 读写机器的辅助函数（MVP 服务指纹、调用产品卸载脚本并确认成功、把覆盖层合并进 `appsettings.Production.json` 并回读核对），安装与卸载共用 |
 | `Install-ParallelInstanceLocal.ps1` | 在 factory01 上安装／升级／回滚 |
 | `Uninstall-ParallelInstanceLocal.ps1` | 在 factory01 上按部署足迹逐项卸载 |
 | `Start-FakeMesIngestResident.ps1` | FakeMesIngest 常驻的计划任务入口 |

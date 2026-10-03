@@ -251,12 +251,13 @@ $cases = @(
         Mutate = { param($d) $d['dataRoot'] = 'D:\zhengyushao\ControlServer.V2.previous'; $d }
     }
     @{
-        # Two failures, both named: the new opsRoot matches the install's own staging glob, and the
-        # seed file, still under the old opsRoot, is now outside it.
+        # Three failures, all named: the new opsRoot matches the install's own staging glob, and the
+        # seed file and the roster (control-server#454), still under the old opsRoot, are now outside it.
         Name = "opsRoot matches packageRoot's staging glob"
         Expect = @(
             "opsRoot ('D:\zhengyushao\ControlServer.V2.incoming-ops') matches packageRoot's staging glob"
             'fakeMesIngest.seedPath'
+            'fieldOperatorRoles.path'
         )
         Mutate = { param($d) $d['opsRoot'] = 'D:\zhengyushao\ControlServer.V2.incoming-ops'; $d }
     }
@@ -1633,7 +1634,7 @@ $missing = @($layoutDirectories | Where-Object { $directories -notcontains $_ })
 Write-Result -Ok ($missing.Count -eq 0 -and $directories.Count -eq $layoutDirectories.Count) `
     -Name 'the footprint lists exactly the layout''s directories' `
     -Detail ("missing: " + ($missing -join ', ') + "; footprint has $($directories.Count), layout $($layoutDirectories.Count)")
-$layoutFiles = @('ResultRoot', 'FakeLogPath', 'InstalledDefinitionPath', 'SeedPath' | ForEach-Object { $layout.$_ })
+$layoutFiles = @('ResultRoot', 'FakeLogPath', 'InstalledDefinitionPath', 'SeedPath', 'FieldOperatorRosterPath' | ForEach-Object { $layout.$_ })
 $outside = @($layoutFiles | Where-Object { -not $_.StartsWith("$($layout.OpsRoot)\", [StringComparison]::OrdinalIgnoreCase) })
 Write-Result -Ok ($outside.Count -eq 0) -Name 'every other layout path lies inside opsRoot, so it goes with it' `
     -Detail ("outside: " + ($outside -join ', '))

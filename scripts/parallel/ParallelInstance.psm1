@@ -142,7 +142,7 @@ $script:AllowedKeys = [ordered]@{
     '' = @('instanceId', 'serviceName', 'installRoot', 'dataRoot', 'backupRoot', 'packageRoot',
         'opsRoot', 'stagingRoot', 'listenAddress', 'healthBindAddress', 'onboardPort', 'healthPort',
         'dashboardPort', 'mesIngest', 'fakeMesIngest', 'routeGraph', 'riotCreateDispatch', 'riotForeignOrderCancel',
-        'journeyRuntime')
+        'journeyRuntime', 'vehicleFaultRecovery', 'fieldOperatorRoles')
     'mesIngest' = @('baseUrl')
     'fakeMesIngest' = @('installRoot', 'port', 'taskName', 'seedPath')
     'routeGraph' = @('enabled', 'mapId', 'designStateTtl', 'runtimeRefreshPeriod', 'runtimeStateMaxAge')
@@ -154,6 +154,10 @@ $script:AllowedKeys = [ordered]@{
         'cargoHoldingTimeout', 'sublotBoxCountPath', 'allowedWorkTypes', 'allowedDispatchZones',
         'admissionPolicyVersion', 'admissionPolicyDeploymentId', 'checkpointWaitBudget',
         'areaEndAdmissionRevokedTimeout')
+    # control-server#454. credentialEnvironmentVariable is deliberately absent: the overlay writes
+    # this instance's own variable name, so no definition can point the service at the MVP's.
+    'vehicleFaultRecovery' = @('enabled')
+    'fieldOperatorRoles' = @('path', 'onboardClearanceEntryDeclared')
 }
 
 # Names only this instance uses, shared by the installer and the uninstaller so the two cannot
@@ -162,6 +166,9 @@ $script:AllowedKeys = [ordered]@{
 $script:CertificatePasswordVariable = 'CONTROL_SERVER_V2_ONBOARD_CERTIFICATE_PASSWORD'
 $script:ProductionCertificatePasswordVariable = 'CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD'
 $script:FirewallRuleFormat = '8005 AGV ControlServer V2 {0}'
+# control-server#454. Its own name, not the product default CONTROL_SERVER_FAULT_RECOVERY_CREDENTIAL,
+# as for every variable the two instances could otherwise share (coordinator, 2026-10-03).
+$script:FaultRecoveryCredentialVariable = 'CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL'
 
 function Get-ParallelInstanceAllowedKey {
     <#
@@ -467,6 +474,24 @@ function Test-InstancePath {
             } elseif ($accepted.Contains('opsRoot') -and
                 -not $seed.StartsWith("$($accepted['opsRoot'])\", [StringComparison]::OrdinalIgnoreCase)) {
                 $failures += "fakeMesIngest.seedPath ('$seed') must be inside opsRoot ('$($accepted['opsRoot'])'), so that it is removed with it rather than left behind."
+            }
+        }
+    }
+
+    # control-server#454. The roster lives in opsRoot for the seed file's reasons, and one more: the
+    # install root is replaced by every install, so a roster kept there would vanish with the next.
+    $roles = Get-Node -Root $Definition -Key 'fieldOperatorRoles'
+    if ($null -ne $roles) {
+        $rosterPath = (Test-KeyPresent -Node $roles -Key 'path') ? [string] $roles['path'] : $null
+        if ([string]::IsNullOrWhiteSpace($rosterPath)) {
+            $failures += 'fieldOperatorRoles.path must be a non-empty path.'
+        } else {
+            $canonical = Test-CanonicalWindowsPath $rosterPath
+            if ($canonical) {
+                $failures += "fieldOperatorRoles.path ('$rosterPath') $canonical."
+            } elseif ($accepted.Contains('opsRoot') -and
+                -not $rosterPath.StartsWith("$($accepted['opsRoot'])\", [StringComparison]::OrdinalIgnoreCase)) {
+                $failures += "fieldOperatorRoles.path ('$rosterPath') must be inside opsRoot ('$($accepted['opsRoot'])'): every install replaces the install root, and a roster kept anywhere else is not this instance's to create."
             }
         }
     }
@@ -828,6 +853,30 @@ function Test-ParallelInstanceDefinition {
         $failures += 'riotForeignOrderCancel.enabled is true. Cancelling an order running on one of this instance''s vehicles stops a vehicle someone else set moving; pass -AllowRiotForeignOrderCancel to deploy such a configuration deliberately.'
     }
 
+    # ------------------------------------------------- station clearance exit ---
+
+    # control-server#454. The two sections the manual station clearance exit needs. Stated, never
+    # inherited: an absent section deploys a server whose exit is quietly unavailable -- alarms
+    # 2271/2272, an uncharged vehicle left on ORDER_HANG, no onboard entry -- and before this they
+    # were merged in by hand and lost on the next first install. The path is checked with the
+    # other paths (Test-InstancePath).
+    $recovery = Get-Node -Root $Definition -Key 'vehicleFaultRecovery'
+    if ($null -eq $recovery) {
+        $failures += 'vehicleFaultRecovery must be an object; whether this instance offers the Host recovery and clearance entries is not something to inherit.'
+    } elseif (-not (Test-KeyPresent -Node $recovery -Key 'enabled')) {
+        $failures += 'vehicleFaultRecovery.enabled must be stated explicitly.'
+    } elseif ($recovery['enabled'] -isnot [bool]) {
+        $failures += "vehicleFaultRecovery.enabled must be a JSON boolean, got '$($recovery['enabled'])'."
+    }
+    $roles = Get-Node -Root $Definition -Key 'fieldOperatorRoles'
+    if ($null -eq $roles) {
+        $failures += 'fieldOperatorRoles must be an object naming the roster file and whether the onboard clearance entry is declared.'
+    } elseif (-not (Test-KeyPresent -Node $roles -Key 'onboardClearanceEntryDeclared')) {
+        $failures += 'fieldOperatorRoles.onboardClearanceEntryDeclared must be stated explicitly.'
+    } elseif ($roles['onboardClearanceEntryDeclared'] -isnot [bool]) {
+        $failures += "fieldOperatorRoles.onboardClearanceEntryDeclared must be a JSON boolean, got '$($roles['onboardClearanceEntryDeclared'])'."
+    }
+
     return $failures
 }
 
@@ -1185,6 +1234,8 @@ function Get-ParallelInstanceLayout {
         DeploymentConfigPath = "$opsRoot\deploy-config.json"
         FakeInstallRoot = [string] $fake['installRoot']
         SeedPath = [string] $fake['seedPath']
+        # control-server#454. Inside opsRoot (Test-InstancePath), so it goes with it.
+        FieldOperatorRosterPath = [string] $Definition['fieldOperatorRoles']['path']
         FirewallRules = @(
             ($script:FirewallRuleFormat -f [int] $Definition['onboardPort'])
             ($script:FirewallRuleFormat -f [int] $Definition['healthPort'])
@@ -1246,6 +1297,7 @@ function Get-ParallelInstanceName {
         CertificatePasswordVariable = $script:CertificatePasswordVariable
         ProductionCertificatePasswordVariable = $script:ProductionCertificatePasswordVariable
         FirewallRuleFormat = $script:FirewallRuleFormat
+        FaultRecoveryCredentialVariable = $script:FaultRecoveryCredentialVariable
     }
 }
 
@@ -1434,6 +1486,209 @@ function New-ParallelInstanceConfigurationOverlay {
         RouteGraph = $routeGraphOverlay
         RiotCreateDispatch = [ordered]@{ enabled = $Definition['riotCreateDispatch']['enabled'] }
         RiotForeignOrderCancel = [ordered]@{ enabled = $Definition['riotForeignOrderCancel']['enabled'] }
+        # control-server#454. Written on every install, upgrade and rollback, so a first install that
+        # rewrites the file cannot lose them. The variable is named here, never valued.
+        VehicleFaultRecovery = [ordered]@{
+            enabled = $Definition['vehicleFaultRecovery']['enabled']
+            credentialEnvironmentVariable = $script:FaultRecoveryCredentialVariable
+        }
+        FieldOperatorRoles = [ordered]@{
+            path = $Definition['fieldOperatorRoles']['path']
+            onboardClearanceEntryDeclared = $Definition['fieldOperatorRoles']['onboardClearanceEntryDeclared']
+        }
+    }
+}
+
+function Get-ParallelServiceEnvironmentEntry {
+    <#
+        .SYNOPSIS
+            The value of one NAME=value entry in a service's Environment multi-string, or $null.
+
+        .DESCRIPTION
+            Names compare ignoring case, as Windows environment variable names do. The value is
+            everything after the first '=', so a value may itself contain '='.
+    #>
+    [CmdletBinding()]
+    param(
+        [AllowNull()][AllowEmptyCollection()][string[]] $Environment,
+        [Parameter(Mandatory = $true)][string] $Name
+    )
+    foreach ($entry in @($Environment)) {
+        if ($null -ne $entry -and $entry.StartsWith("$Name=", [StringComparison]::OrdinalIgnoreCase)) {
+            return $entry.Substring($Name.Length + 1)
+        }
+    }
+    return $null
+}
+
+function Set-ParallelServiceEnvironmentEntry {
+    <#
+        .SYNOPSIS
+            The Environment multi-string with NAME's entry replaced (or added), every other entry kept
+            in its order.
+
+        .DESCRIPTION
+            Pure: the caller reads and writes the registry. Shared by the MesIngest bearer token and
+            the fault recovery credential (control-server#454), which used to be one inline filter.
+            A value with a line break or NUL is refused: REG_MULTI_SZ would split it into entries.
+    #>
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param(
+        [AllowNull()][AllowEmptyCollection()][string[]] $Environment,
+        [Parameter(Mandatory = $true)][string] $Name,
+        [Parameter(Mandatory = $true)][string] $Value
+    )
+    if ($Value.IndexOfAny([char[]] "`r`n`0") -ge 0) {
+        throw "The value for $Name contains a line break or NUL, which the service's Environment cannot hold."
+    }
+    [string[]] $kept = @(@($Environment) | Where-Object {
+            $null -ne $_ -and -not $_.StartsWith("$Name=", [StringComparison]::OrdinalIgnoreCase) })
+    return [string[]] (@($kept) + "$Name=$Value")
+}
+
+function Resolve-ParallelFaultRecoveryCredential {
+    <#
+        .SYNOPSIS
+            The fault recovery credential this install writes into the service's Environment, or
+            $null when there is none and none is needed. Throws when the entry is on and there is none.
+
+        .DESCRIPTION
+            control-server#454. Two sources, in this order:
+              * -Supplied: from deploy-config.json, which the control host fills from its DPAPI
+                store. An install or upgrade has it; a rollback has no deploy-config.json at all.
+              * -Carried: what the service's Environment held before the product script ran. The
+                caller reads it BEFORE that, because a first install -- and a rollback that lands in
+                the product's first-install branch -- rebuilds the Environment from scratch.
+            With the entry on and neither, the caller must stop before anything is stopped: the
+            server itself would refuse to start (VehicleFaultRecoveryOptionsValidator, ValidateOnStart),
+            but by then the old service is already down.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][System.Collections.IDictionary] $Definition,
+        [AllowNull()][AllowEmptyString()][string] $Supplied,
+        [AllowNull()][AllowEmptyString()][string] $Carried
+    )
+    if (-not [string]::IsNullOrWhiteSpace($Supplied)) { return $Supplied }
+    if (-not [string]::IsNullOrWhiteSpace($Carried)) { return $Carried }
+    # Not Get-Node: it only answers for [hashtable], and a section built with [ordered] is not one.
+    # Here a section it failed to see would mean "entry off", the direction that lets a broken
+    # deployment through.
+    $recovery = $Definition.Contains('vehicleFaultRecovery') ? $Definition['vehicleFaultRecovery'] : $null
+    if ($recovery -is [System.Collections.IDictionary] -and $recovery['enabled'] -eq $true) {
+        throw ("vehicleFaultRecovery.enabled is true, but there is no value for $($script:FaultRecoveryCredentialVariable): " +
+            "deploy-config.json carries no faultRecoveryCredential and the service's Environment holds none. " +
+            'The service would refuse to start without it. Nothing was stopped or changed.')
+    }
+    return $null
+}
+
+function Get-ConfigurationValue {
+    # One key, ignoring case, as .NET configuration reads it.
+    param($Node, [string] $Key)
+    if ($Node -isnot [System.Collections.IDictionary]) { return $null }
+    foreach ($candidate in @($Node.Keys)) {
+        if ([string]::Equals([string] $candidate, $Key, [StringComparison]::OrdinalIgnoreCase)) { return $Node[$candidate] }
+    }
+    return $null
+}
+
+function Get-ParallelClearanceExitReadiness {
+    <#
+        .SYNOPSIS
+            What the service will read for the manual station clearance exit, judged the way the
+            server judges it, and said in one line.
+
+        .DESCRIPTION
+            control-server#454. The server tells nobody but its own log: startup alarm 2272 and,
+            per cycle, 2271. This reads the same three inputs from outside -- the effective
+            appsettings.Production.json, the names in the service's Environment, the roster file --
+            and applies StationClearanceExit's rule:
+              * RosterEmpty when no named person holds R-11 or R-13 (missing, unreadable and empty
+                all count, as in FieldOperatorRoleRoster.AnyoneHolds);
+              * NoEntry when the Host entry is not offered (VehicleFaultRecovery.enabled and its
+                credential variable populated) and the onboard entry is not declared either;
+              * NoRecoveryEntry when the Host entry is not offered, so isolation and the charging
+                recovery have no exit (IsolationUnavailable, VehicleRecoveryUnavailable).
+            Reasons are a state, possibly intended (phase 1 offers no exit on purpose). Fatal is a
+            broken deployment: a section absent from the effective file, or the entry on without its
+            credential, which the server answers by refusing to start.
+
+            Pure. -EnvironmentNames are names only, of entries whose value is not blank; the line
+            never carries a value. -RosterText is the file's text, or $null when it does not exist.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][System.Collections.IDictionary] $Configuration,
+        [AllowEmptyCollection()][string[]] $EnvironmentNames = @(),
+        [AllowNull()][AllowEmptyString()][string] $RosterText
+    )
+
+    $fatal = [System.Collections.Generic.List[string]]::new()
+    $reasons = [System.Collections.Generic.List[string]]::new()
+
+    $recovery = Get-ConfigurationValue $Configuration 'VehicleFaultRecovery'
+    $enabled = $false
+    $variable = 'CONTROL_SERVER_FAULT_RECOVERY_CREDENTIAL'
+    if ($recovery -isnot [System.Collections.IDictionary]) {
+        $fatal.Add('VehicleFaultRecovery is missing from the effective appsettings.Production.json: the Host recovery and clearance entries are off by default, and nothing records that anyone decided so.')
+    } else {
+        $enabled = (Get-ConfigurationValue $recovery 'enabled') -eq $true
+        $named = [string] (Get-ConfigurationValue $recovery 'credentialEnvironmentVariable')
+        if (-not [string]::IsNullOrWhiteSpace($named)) { $variable = $named }
+    }
+    $credentialPresent = @($EnvironmentNames | Where-Object { [string]::Equals($_, $variable, [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0
+    if ($enabled -and -not $credentialPresent) {
+        $fatal.Add("VehicleFaultRecovery.enabled is true but the service's Environment has no $variable; the service refuses to start without it (VehicleFaultRecoveryOptionsValidator).")
+    }
+
+    $roles = Get-ConfigurationValue $Configuration 'FieldOperatorRoles'
+    $declared = $false
+    $rosterPath = ''
+    if ($roles -isnot [System.Collections.IDictionary]) {
+        $fatal.Add('FieldOperatorRoles is missing from the effective appsettings.Production.json: the server has no roster, so nobody can confirm a clearance.')
+    } else {
+        $declared = (Get-ConfigurationValue $roles 'onboardClearanceEntryDeclared') -eq $true
+        $rosterPath = [string] (Get-ConfigurationValue $roles 'path')
+    }
+
+    # FieldOperatorRoleRoster.AnyoneHolds: a named operator with R-11 or R-13; the server reads the
+    # file with System.Text.Json's web defaults, so property names match ignoring case.
+    $rosterState = 'missing'
+    if ($null -ne $RosterText) {
+        $rosterState = 'empty'
+        try {
+            $document = ConvertFrom-Json -InputObject $RosterText -AsHashtable -Depth 12 -ErrorAction Stop
+            foreach ($entry in @(Get-ConfigurationValue $document 'operators')) {
+                $operatorId = Get-ConfigurationValue $entry 'operatorId'
+                $entryRoles = @(Get-ConfigurationValue $entry 'roles')
+                if ($operatorId -is [string] -and -not [string]::IsNullOrWhiteSpace($operatorId) -and
+                    @($entryRoles | Where-Object { $_ -is [string] -and ($_ -ceq 'R-11' -or $_ -ceq 'R-13') }).Count -gt 0) {
+                    $rosterState = 'named'
+                    break
+                }
+            }
+        } catch {
+            $rosterState = 'unreadable'
+        }
+    }
+
+    $hostEntry = $enabled -and $credentialPresent
+    if ($rosterState -ne 'named') { $reasons.Add('FIELD_OPERATOR_ROSTER_EMPTY') }
+    if (-not $hostEntry -and -not $declared) { $reasons.Add('STATION_CLEARANCE_ENTRY_NOT_OFFERED') }
+    if (-not $hostEntry) { $reasons.Add('CHARGING_RECOVERY_ENTRY_NOT_OFFERED') }
+
+    $line = ('CLEARANCE_EXIT_READINESS vehicleFaultRecovery={0} credential={1}:{2} fieldOperatorRoles={3} roster={4} onboardEntryDeclared={5} exit={6}' -f
+        (($recovery -is [System.Collections.IDictionary]) ? ($enabled ? 'enabled' : 'disabled') : 'MISSING'),
+        $variable, ($credentialPresent ? 'present' : 'absent'),
+        (($roles -is [System.Collections.IDictionary]) ? 'present' : 'MISSING'),
+        "$($rosterPath):$rosterState", $declared.ToString().ToLowerInvariant(),
+        ($reasons.Count -eq 0 ? 'available' : "unavailable($($reasons -join ','))"))
+    return [pscustomobject]@{
+        Fatal = @($fatal)
+        Reasons = @($reasons)
+        Line = $line
     }
 }
 
@@ -1445,6 +1700,14 @@ function Merge-ConfigurationTree {
         .DESCRIPTION
             Arrays are replaced wholesale rather than concatenated: allowedWorkTypes is a
             closed list, and an append would silently widen it on every redeployment.
+
+            Keys match ignoring case, as .NET configuration matches them, and that comes from one
+            line: $result is an [ordered] literal, whose dictionary compares keys ignoring case. A
+            base key that differs from an overlay key only in case -- 'vehicleFaultRecovery' or
+            'Enabled' from a hand merge -- is therefore merged into, not written beside: a file
+            repeating a key is refused by the JSON configuration provider. The upgrade case in
+            Test-ParallelInstance.ps1 (control-server#454) pins this; swap the literal for a
+            case-sensitive dictionary and it goes red.
     #>
     [CmdletBinding()]
     param(
@@ -1485,4 +1748,8 @@ Export-ModuleMember -Function @(
     'Assert-ParallelInstanceDefinition'
     'New-ParallelInstanceConfigurationOverlay'
     'Merge-ConfigurationTree'
+    'Get-ParallelServiceEnvironmentEntry'
+    'Set-ParallelServiceEnvironmentEntry'
+    'Resolve-ParallelFaultRecoveryCredential'
+    'Get-ParallelClearanceExitReadiness'
 )

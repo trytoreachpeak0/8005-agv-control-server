@@ -230,5 +230,67 @@ function Invoke-ParallelProductUninstaller {
     }
 }
 
+function Find-OverlayMismatch {
+    # Every scalar or array leaf of the overlay, compared with what was read back (keys ignoring
+    # case, as .NET configuration reads them; values as JSON, so 26 and 26L are one value).
+    param($Overlay, $Actual, [string] $Path)
+    foreach ($key in @($Overlay.Keys)) {
+        $expected = $Overlay[$key]
+        $found = $null
+        if ($Actual -is [System.Collections.IDictionary]) {
+            foreach ($candidate in @($Actual.Keys)) {
+                if ([string]::Equals([string] $candidate, [string] $key, [StringComparison]::OrdinalIgnoreCase)) { $found = $Actual[$candidate] }
+            }
+        }
+        if ($expected -is [System.Collections.IDictionary]) {
+            Find-OverlayMismatch -Overlay $expected -Actual $found -Path "$Path$key."
+        } elseif ((ConvertTo-Json -InputObject $expected -Compress -Depth 12) -cne (ConvertTo-Json -InputObject $found -Compress -Depth 12)) {
+            "$Path$key"
+        }
+    }
+}
+
+function Update-ParallelInstanceConfigurationFile {
+    <#
+        .SYNOPSIS
+            Merges this instance's overlay into appsettings.Production.json, writes it, reads it back
+            and checks every overlay value landed. Returns what was read back.
+
+        .DESCRIPTION
+            Run after the product script on every path -- first install, upgrade, rollback -- so what
+            the definition says is what the file says, whatever the product script left behind
+            (control-server#454: a first install rewrote the file, and the hand-merged clearance
+            sections were gone without a word).
+
+            Out of Install-ParallelInstanceLocal.ps1 so that the self-test can run it on a temporary
+            file. The check used to cover three keys; it now covers every value the overlay writes,
+            because a merge that drops VehicleFaultRecovery starts a service that answers health and
+            has no clearance exit.
+
+            Uses New-ParallelInstanceConfigurationOverlay and Merge-ConfigurationTree from
+            ParallelInstance.psm1, which every caller imports alongside this module.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string] $Path,
+        [Parameter(Mandatory = $true)][System.Collections.IDictionary] $Definition
+    )
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "The product installer wrote no configuration at $Path."
+    }
+    $current = Get-Content -LiteralPath $Path -Raw -Encoding utf8 | ConvertFrom-Json -AsHashtable -Depth 12
+    $overlay = New-ParallelInstanceConfigurationOverlay -Definition $Definition
+    $merged = Merge-ConfigurationTree -Base $current -Overlay $overlay
+    [IO.File]::WriteAllText($Path, (ConvertTo-Json -InputObject $merged -Depth 12), [Text.UTF8Encoding]::new($false))
+
+    $verify = Get-Content -LiteralPath $Path -Raw -Encoding utf8 | ConvertFrom-Json -AsHashtable -Depth 12
+    $mismatches = @(Find-OverlayMismatch -Overlay $overlay -Actual $verify -Path '')
+    if ($mismatches.Count -gt 0) {
+        throw "After the merge, $Path does not carry the overlay's value for: $($mismatches -join ', ')."
+    }
+    return $verify
+}
+
 Export-ModuleMember -Function @('Get-MvpFingerprint', 'Assert-MvpUntouched', 'Format-MvpFingerprint',
-    'Get-ParallelProductUninstallerPath', 'Test-ParallelProductUninstallerPremise', 'Invoke-ParallelProductUninstaller')
+    'Get-ParallelProductUninstallerPath', 'Test-ParallelProductUninstallerPremise', 'Invoke-ParallelProductUninstaller',
+    'Update-ParallelInstanceConfigurationFile')
