@@ -9,8 +9,12 @@
 | `red/mutation-M1-cancel-guard-removed.txt` | 去掉取消守卫：两行红在后果断言上，`HasOpenCancellationAsync` 为 `True`（停靠会被永远等不到结果的取消卡住） |
 | `red/mutation-M2-reverse-guard-removed.txt` | 去掉对称守卫（取消已授权时拒绝判定）：用例红 |
 | `red/mutation-M3-backfill-takes-pending-too.txt` | 启动收尾连 `PENDING` 判定的命令也收：用例红 |
+| `red/mutation-R1-settle-after-identity-check.txt` | 审查 S1：Program.cs 里把补收尾挪到身份检查之后，启动顺序用例红 |
+| `red/mutation-R2-settle-deleted.txt` | 审查 S1：删掉补收尾那一行，启动顺序用例红 |
+| `red/mutation-R-warn-after-identity-check.txt` | 审查注 2：把未结判定告警挪回身份检查之后，启动顺序用例红 |
+| `red/mutation-R5-attempt-mismatch-settles.txt` | 审查 S2：让 AttemptMismatch 也收尾命令，「attempt 不符」那行红（「不认识的判定」那行本无命令可收，保持绿） |
 | `pins/00-baselines.txt` | 两份期待动作超时看板基线在 `batch-p3/v3` 与 `fp/v2-impl` 上逐字相同 |
 | `pins/01-additions-only.txt` | 钉子重录判据：每份恰好多一处 `,"declaration":null`，删掉后与集成分支旧基线逐字相同；比对脚本自检会报红 |
 | `pins/*.actual.txt` | 本票代码跑出的两份新基线原文 |
 | `full/` | 本机全量 `dotnet test` 两次的结尾（`c097d8b2` 与最终 head） |
-| `targeted.txt` | 最终代码上的定向测试结尾 |
+| `targeted.txt`、`targeted-r2.txt` | 定向测试结尾（审查前、审查后补测试） |
