@@ -656,10 +656,74 @@ $cases = @(
         Expect = 'stops a vehicle someone else set moving'
         Mutate = { param($d) $d['riotForeignOrderCancel']['enabled'] = $true; $d }
     }
+
+    # --- The station clearance exit (control-server#454) ---------------------------------
+    # Both sections are stated, never inherited: an absent section deploys an instance whose
+    # clearance exit is silently unavailable (alarms 2271/2272, ORDER_HANG, no onboard entry).
+    @{
+        Name = 'vehicleFaultRecovery absent'
+        Expect = 'vehicleFaultRecovery must be an object'
+        Mutate = { param($d) $d.Remove('vehicleFaultRecovery'); $d }
+    }
+    @{
+        Name = 'vehicleFaultRecovery.enabled absent'
+        Expect = 'vehicleFaultRecovery.enabled must be stated explicitly'
+        Mutate = { param($d) $d['vehicleFaultRecovery'].Remove('enabled'); $d }
+    }
+    @{
+        Name = 'vehicleFaultRecovery.enabled as a string'
+        Expect = "vehicleFaultRecovery.enabled must be a JSON boolean, got 'true'"
+        Mutate = { param($d) $d['vehicleFaultRecovery']['enabled'] = 'true'; $d }
+    }
+    @{
+        # The overlay writes this instance's own variable name; a definition that names one could
+        # point the parallel service at the MVP's credential.
+        Name = 'vehicleFaultRecovery names its own credential variable'
+        Expect = 'vehicleFaultRecovery.credentialEnvironmentVariable is not a key this deployment knows'
+        Mutate = { param($d) $d['vehicleFaultRecovery']['credentialEnvironmentVariable'] = 'CONTROL_SERVER_FAULT_RECOVERY_CREDENTIAL'; $d }
+    }
+    @{
+        Name = 'fieldOperatorRoles absent'
+        Expect = 'fieldOperatorRoles must be an object'
+        Mutate = { param($d) $d.Remove('fieldOperatorRoles'); $d }
+    }
+    @{
+        Name = 'fieldOperatorRoles.path absent'
+        Expect = 'fieldOperatorRoles.path must be a non-empty path'
+        Mutate = { param($d) $d['fieldOperatorRoles'].Remove('path'); $d }
+    }
+    @{
+        # Every install replaces the install root; a roster there would be wiped by the next one.
+        Name = 'fieldOperatorRoles.path inside the install root'
+        Expect = "fieldOperatorRoles.path ('C:\Program Files\8005 AGV\ControlServer.V2\field-operator-roles.json') must be inside opsRoot"
+        Mutate = { param($d) $d['fieldOperatorRoles']['path'] = 'C:\Program Files\8005 AGV\ControlServer.V2\field-operator-roles.json'; $d }
+    }
+    @{
+        Name = 'fieldOperatorRoles.path written with forward slashes'
+        Expect = "fieldOperatorRoles.path ('D:/zhengyushao/control-server-v2-ops/field-operator-roles.json') uses '/'"
+        Mutate = { param($d) $d['fieldOperatorRoles']['path'] = 'D:/zhengyushao/control-server-v2-ops/field-operator-roles.json'; $d }
+    }
+    @{
+        Name = 'fieldOperatorRoles.onboardClearanceEntryDeclared absent'
+        Expect = 'fieldOperatorRoles.onboardClearanceEntryDeclared must be stated explicitly'
+        Mutate = { param($d) $d['fieldOperatorRoles'].Remove('onboardClearanceEntryDeclared'); $d }
+    }
+    @{
+        Name = 'fieldOperatorRoles.onboardClearanceEntryDeclared as a number'
+        Expect = "fieldOperatorRoles.onboardClearanceEntryDeclared must be a JSON boolean, got '1'"
+        Mutate = { param($d) $d['fieldOperatorRoles']['onboardClearanceEntryDeclared'] = 1; $d }
+    }
 )
 
 foreach ($case in $cases) {
-    $mutated = & $case.Mutate (Copy-Definition $baseline)
+    # A mutation that throws (it reached for a section the baseline lacks) is one red case, not
+    # the end of the suite.
+    try {
+        $mutated = & $case.Mutate (Copy-Definition $baseline)
+    } catch {
+        Write-Result -Ok $false -Name $case.Name -Detail "the mutation threw: $($_.Exception.Message)"
+        continue
+    }
 
     # The injection must have changed something. Without this, a Mutate that silently did
     # nothing would still "pass" as long as some unrelated check happened to fire -- and a
@@ -1524,9 +1588,16 @@ $optionSources = @(
     @{ Section = 'routeGraph'; Path = 'src/ControlServer.Host/Runtime/RouteGraph/RouteGraphOptions.cs'; Class = 'RouteGraphOptions'; Excluded = @() }
     @{ Section = 'riotCreateDispatch'; Path = 'src/ControlServer.Host/Runtime/RiotCreateDispatchOptions.cs'; Class = 'RiotCreateDispatchOptions'; Excluded = @() }
     @{ Section = 'riotForeignOrderCancel'; Path = 'src/ControlServer.Host/Runtime/ForeignOrders/RiotForeignOrderCancelOptions.cs'; Class = 'RiotForeignOrderCancelOptions'; Excluded = @() }
+    # control-server#454. The credential variable's NAME is excluded: the overlay writes this
+    # instance's own name, so a definition cannot point the parallel service at the MVP's variable.
+    @{ Section = 'vehicleFaultRecovery'; Path = 'src/ControlServer.Host/Runtime/VehicleFaultRecoveryOptions.cs'; Class = 'VehicleFaultRecoveryOptions'; Excluded = @('CredentialEnvironmentVariable') }
+    @{ Section = 'fieldOperatorRoles'; Path = 'src/ControlServer.Host/Runtime/Charging/FieldOperatorRoleRoster.cs'; Class = 'FieldOperatorRoleOptions'; Excluded = @() }
 )
 foreach ($source in $optionSources) {
     $properties = Get-OptionProperty -RelativePath $source.Path -ClassName $source.Class
+    # Without this an absent section has no keys, no orphans, and passes vacuously.
+    Write-Result -Ok ($allowedKeys.Contains($source.Section) -and @($allowedKeys[$source.Section]).Count -gt 0) `
+        -Name "the whitelist has a $($source.Section) section" -Detail 'missing or empty'
     $orphans = @($allowedKeys[$source.Section] | Where-Object { $key = $_; -not ($properties | Where-Object { $_ -ieq $key }) })
     Write-Result -Ok ($orphans.Count -eq 0) -Name "every $($source.Section) key names a $($source.Class) property" `
         -Detail ("no such property: " + ($orphans -join ', '))
@@ -1637,6 +1708,301 @@ Write-Result -Ok ($merged['RouteGraph']['enabled'] -eq $true -and $merged['Route
 Write-Result -Ok ($merged['MesIngest']['baseUrl'] -eq 'http://127.0.0.1:58188') `
     -Name 'the overlay points MesIngest at the fake catalog' `
     -Detail "got '$($merged['MesIngest']['baseUrl'])'"
+
+Write-Host ''
+Write-Host 'Station clearance exit through first install, upgrade and rollback (control-server#454)' -ForegroundColor Cyan
+
+<#
+    The two sections the clearance exit needs -- VehicleFaultRecovery (the Host entry and its
+    credential) and FieldOperatorRoles (the roster and the onboard-entry declaration) -- used to be
+    merged in by hand after an install. Install-ControlServerLocal.ps1 rewrites
+    appsettings.Production.json and the service's Environment on a first install, so the hand-merged
+    sections and the credential were lost without a word; the server then alarmed 2271/2272, left
+    an uncharged vehicle on ORDER_HANG and offered no clearance entry.
+
+    Each path below starts from the configuration and Environment that path really leaves behind
+    and runs the steps the installer runs, in its order: take the credential (supplied by the
+    control host, or carried over from the service), let the product script do its part, merge the
+    overlay into the file, put the credential into the Environment, read the readiness back.
+
+    Two layers per path. The first uses only the overlay and the merge, which existed before this
+    ticket: it is red on the old code for a content reason (the sections are not there), not
+    because a function is missing. The second runs the whole step.
+#>
+$credentialName = 'CONTROL_SERVER_V2_FAULT_RECOVERY_CREDENTIAL'
+$rosterPath = "$([string] $baseline['opsRoot'])\field-operator-roles.json"
+$clearanceDefinition = Copy-Definition $baseline
+$clearanceDefinition['vehicleFaultRecovery'] = [ordered]@{ enabled = $true }
+$clearanceDefinition['fieldOperatorRoles'] = [ordered]@{ path = $rosterPath; onboardClearanceEntryDeclared = $true }
+
+# What Install-ControlServerLocal.ps1 writes (its $configuration literal), and what it puts into the
+# service's Environment when it creates the service.
+$productConfiguration = [ordered]@{
+    Health = [ordered]@{ url = 'http://172.19.205.222:58107' }
+    ConnectionStrings = [ordered]@{ ControlServer = 'Data Source=C:\ProgramData\8005\ControlServer.V2\data\controlserver.db' }
+    OnboardTransport = [ordered]@{ enabled = $true; listenAddress = '172.19.205.222'; port = 58105; credentialEnvironmentVariable = 'CONTROL_SERVER_ONBOARD_CREDENTIAL' }
+    OnboardSafetyProjection = [ordered]@{ enabled = $true; credentialEnvironmentVariable = 'CONTROL_SERVER_ONBOARD_CREDENTIAL' }
+    JourneyRuntime = [ordered]@{ enabled = $false }
+}
+$productEnvironment = @('DOTNET_ENVIRONMENT=Production', 'CONTROL_SERVER_RIOT_CALL_API_KEY=selftest-riot', 'CONTROL_SERVER_ONBOARD_CREDENTIAL=selftest-onboard')
+
+function Find-CaseTwin {
+    # Keys that differ only in case. .NET configuration reads them as one setting (and the JSON
+    # provider refuses the file outright); a hashtable from ConvertFrom-Json -AsHashtable keeps both.
+    param($Node, [string] $Path)
+    if ($Node -isnot [System.Collections.IDictionary]) { return }
+    $keys = @($Node.Keys | ForEach-Object { [string] $_ })
+    $groups = $keys | Group-Object -Property { $_.ToLowerInvariant() } | Where-Object Count -gt 1
+    foreach ($group in $groups) { "$Path{$($group.Group -join '|')}" }
+    foreach ($key in $keys) { Find-CaseTwin -Node $Node[$key] -Path "$Path$key." }
+}
+
+function Invoke-ClearancePath {
+    <#
+        The installer's sequence for one path, against a temporary configuration file.
+        -ProductRebuildsEnvironment is the first install: the product script creates the service
+        and writes its Environment from scratch, so nothing the old one held survives.
+    #>
+    param(
+        [Parameter(Mandatory = $true)] $Definition,
+        [Parameter(Mandatory = $true)] $BaseConfiguration,
+        [string[]] $EnvironmentBefore = @(),
+        [string] $Supplied,
+        [switch] $ProductRebuildsEnvironment,
+        [string] $RosterText = '{"operators":[{"operatorId":"OP-1","roles":["R-11"]}]}'
+    )
+    $carried = Get-ParallelServiceEnvironmentEntry -Environment $EnvironmentBefore -Name $credentialName
+    $credential = Resolve-ParallelFaultRecoveryCredential -Definition $Definition -Supplied $Supplied -Carried $carried
+    $environment = $ProductRebuildsEnvironment ? @($productEnvironment) : @($EnvironmentBefore)
+    $file = Join-Path ([IO.Path]::GetTempPath()) "cs454-$([guid]::NewGuid().ToString('N')).json"
+    try {
+        [IO.File]::WriteAllText($file, (ConvertTo-Json -InputObject $BaseConfiguration -Depth 12), [Text.UTF8Encoding]::new($false))
+        $merged = Update-ParallelInstanceConfigurationFile -Path $file -Definition $Definition
+        $onDisk = Get-Content -LiteralPath $file -Raw -Encoding utf8 | ConvertFrom-Json -AsHashtable -Depth 12
+    } finally {
+        Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
+    }
+    if ($credential) {
+        $environment = @(Set-ParallelServiceEnvironmentEntry -Environment $environment -Name $credentialName -Value $credential)
+    }
+    $names = @($environment | ForEach-Object { ($_ -split '=', 2)[0] })
+    $readiness = Get-ParallelClearanceExitReadiness -Configuration $onDisk -EnvironmentNames $names -RosterText $RosterText
+    return [pscustomobject]@{ Configuration = $onDisk; Returned = $merged; Environment = $environment; Readiness = $readiness }
+}
+
+function Assert-ClearancePath {
+    param([string] $Name, $Result, [string] $ExpectedCredential)
+    $c = $Result.Configuration
+    $vfr = $c.Contains('VehicleFaultRecovery') ? $c['VehicleFaultRecovery'] : $null
+    $roles = $c.Contains('FieldOperatorRoles') ? $c['FieldOperatorRoles'] : $null
+    Write-Result -Ok ($null -ne $vfr -and $vfr['enabled'] -eq $true -and $vfr['credentialEnvironmentVariable'] -ceq $credentialName) `
+        -Name "$($Name): VehicleFaultRecovery on disk is the definition's, with this instance's variable" `
+        -Detail ("got " + (ConvertTo-Json -InputObject $vfr -Compress))
+    Write-Result -Ok ($null -ne $roles -and $roles['path'] -ceq $rosterPath -and $roles['onboardClearanceEntryDeclared'] -eq $true) `
+        -Name "$($Name): FieldOperatorRoles on disk is the definition's" `
+        -Detail ("got " + (ConvertTo-Json -InputObject $roles -Compress))
+    $twins = @(Find-CaseTwin -Node $c -Path '')
+    Write-Result -Ok ($twins.Count -eq 0) -Name "$($Name): no key on disk differs from another only in case" -Detail ($twins -join ', ')
+    $entries = @($Result.Environment | Where-Object { $_ -like "$credentialName=*" })
+    Write-Result -Ok ($entries.Count -eq 1 -and $entries[0] -ceq "$credentialName=$ExpectedCredential") `
+        -Name "$($Name): the service Environment carries exactly one credential entry, the expected one" `
+        -Detail ("got " + ($entries -join ' | '))
+    $kept = @($productEnvironment | Where-Object { $Result.Environment -notcontains $_ })
+    Write-Result -Ok ($kept.Count -eq 0) -Name "$($Name): the product's own Environment entries are kept" -Detail ("lost " + ($kept -join ', '))
+    Write-Result -Ok (@($Result.Readiness.Fatal).Count -eq 0 -and @($Result.Readiness.Reasons).Count -eq 0) `
+        -Name "$($Name): readiness reads the exit as available" `
+        -Detail ("fatal: " + (@($Result.Readiness.Fatal) -join ' | ') + "; reasons: " + (@($Result.Readiness.Reasons) -join ','))
+}
+
+function Test-OverlayLayer {
+    # The pre-#454 functions alone: overlay merged onto the base the path leaves behind.
+    param([string] $Name, $Base)
+    $layered = Merge-ConfigurationTree -Base $Base -Overlay (New-ParallelInstanceConfigurationOverlay -Definition $clearanceDefinition)
+    $vfr = $layered.Contains('VehicleFaultRecovery') ? $layered['VehicleFaultRecovery'] : $null
+    $roles = $layered.Contains('FieldOperatorRoles') ? $layered['FieldOperatorRoles'] : $null
+    $twins = @(Find-CaseTwin -Node $layered -Path '')
+    Write-Result -Ok ($null -ne $vfr -and $vfr['enabled'] -eq $true -and $null -ne $roles -and $roles['path'] -ceq $rosterPath -and $twins.Count -eq 0) `
+        -Name "$($Name): the overlay merged onto what the product script left carries both sections, once" `
+        -Detail ("VehicleFaultRecovery=" + (ConvertTo-Json -InputObject $vfr -Compress) + " FieldOperatorRoles=" +
+            (ConvertTo-Json -InputObject $roles -Compress) + " twins=" + ($twins -join ','))
+}
+
+function Invoke-PathCase {
+    param([string] $Name, [scriptblock] $Body)
+    try { & $Body } catch { Write-Result -Ok $false -Name "$($Name): the step ran" -Detail "threw: $($_.Exception.Message)" }
+}
+
+# --- First install: the product script writes the file and the Environment from scratch. The
+# credential can only come from the control host (deploy-config.json).
+$firstBase = Copy-Definition $productConfiguration
+Test-OverlayLayer -Name 'first install' -Base $firstBase
+Invoke-PathCase 'first install' {
+    $r = Invoke-ClearancePath -Definition $clearanceDefinition -BaseConfiguration $firstBase -Supplied 'selftest-new' -ProductRebuildsEnvironment
+    Assert-ClearancePath -Name 'first install' -Result $r -ExpectedCredential 'selftest-new'
+}
+
+# --- Upgrade: the product script keeps the installed file and the Environment. The file carries
+# the 10-07 hand merge, with other casing and stale values; the Environment the old credential.
+$upgradeBase = Copy-Definition $productConfiguration
+$upgradeBase['vehicleFaultRecovery'] = [ordered]@{ Enabled = $false; credentialEnvironmentVariable = 'CONTROL_SERVER_FAULT_RECOVERY_CREDENTIAL' }
+$upgradeBase['FieldOperatorRoles'] = [ordered]@{ Path = 'C:\old\roster.json'; onboardClearanceEntryDeclared = $false }
+$upgradeEnvironment = @($productEnvironment) + "$credentialName=selftest-old"
+Test-OverlayLayer -Name 'upgrade' -Base $upgradeBase
+Invoke-PathCase 'upgrade' {
+    $r = Invoke-ClearancePath -Definition $clearanceDefinition -BaseConfiguration $upgradeBase -EnvironmentBefore $upgradeEnvironment -Supplied 'selftest-new'
+    Assert-ClearancePath -Name 'upgrade' -Result $r -ExpectedCredential 'selftest-new'
+}
+
+# --- Rollback: no deploy-config.json, and a previous generation installed before these sections
+# existed. The credential is the one the service already holds.
+$rollbackBase = Copy-Definition $productConfiguration
+Test-OverlayLayer -Name 'rollback' -Base $rollbackBase
+Invoke-PathCase 'rollback' {
+    $r = Invoke-ClearancePath -Definition $clearanceDefinition -BaseConfiguration $rollbackBase -EnvironmentBefore $upgradeEnvironment
+    Assert-ClearancePath -Name 'rollback' -Result $r -ExpectedCredential 'selftest-old'
+}
+# ... and a rollback that lands in the product's first-install branch (the service was gone) still
+# carries the credential it read before the product script ran.
+Invoke-PathCase 'rollback onto a removed service' {
+    $r = Invoke-ClearancePath -Definition $clearanceDefinition -BaseConfiguration $rollbackBase -EnvironmentBefore $upgradeEnvironment -ProductRebuildsEnvironment
+    Assert-ClearancePath -Name 'rollback onto a removed service' -Result $r -ExpectedCredential 'selftest-old'
+}
+
+Write-Host ''
+Write-Host 'The credential: refused before anything is stopped when the entry is on and there is none' -ForegroundColor Cyan
+
+$credentialCases = @(
+    @{ Name = 'first install, entry on, no credential supplied'; Supplied = ''; Carried = @(); Throws = $true }
+    @{ Name = 'rollback, entry on, the service holds none'; Supplied = $null; Carried = @($productEnvironment); Throws = $true }
+    @{ Name = 'entry on, a whitespace credential supplied'; Supplied = '   '; Carried = @(); Throws = $true }
+    @{ Name = 'entry on, supplied wins over carried'; Supplied = 'selftest-new'; Carried = @("$credentialName=selftest-old"); Throws = $false; Expect = 'selftest-new' }
+    @{ Name = 'entry on, carried when none supplied'; Supplied = $null; Carried = @("$credentialName=selftest-old"); Throws = $false; Expect = 'selftest-old' }
+)
+foreach ($case in $credentialCases) {
+    $ok = $false; $detail = ''
+    try {
+        $carried = Get-ParallelServiceEnvironmentEntry -Environment $case.Carried -Name $credentialName
+        $got = Resolve-ParallelFaultRecoveryCredential -Definition $clearanceDefinition -Supplied $case.Supplied -Carried $carried
+        if ($case.Throws) { $detail = "returned '$got' instead of refusing" } else { $ok = $got -ceq $case.Expect; $detail = "got '$got'" }
+    } catch {
+        $message = $_.Exception.Message
+        if ($case.Throws) { $ok = $message.Contains($credentialName); $detail = "refused without naming the variable: $message" }
+        else { $detail = "threw: $message" }
+    }
+    Write-Result -Ok $ok -Name $case.Name -Detail $detail
+}
+# Entry off: no credential is fine, and nothing is added to the Environment.
+Invoke-PathCase 'entry off, no credential' {
+    $off = Copy-Definition $clearanceDefinition
+    $off['vehicleFaultRecovery']['enabled'] = $false
+    $r = Invoke-ClearancePath -Definition $off -BaseConfiguration (Copy-Definition $productConfiguration) -ProductRebuildsEnvironment
+    Write-Result -Ok (@($r.Environment | Where-Object { $_ -like "$credentialName=*" }).Count -eq 0 -and
+        $r.Configuration['VehicleFaultRecovery']['enabled'] -eq $false -and
+        $r.Configuration['VehicleFaultRecovery']['credentialEnvironmentVariable'] -ceq $credentialName) `
+        -Name 'entry off, no credential: accepted, the section is still written, nothing added to the Environment' `
+        -Detail ("environment: " + ($r.Environment -join ' | '))
+}
+Invoke-PathCase 'environment entry replacement' {
+    $replaced = @(Set-ParallelServiceEnvironmentEntry -Environment @('A=1', "$credentialName=old", "$($credentialName)_X=keep", 'B=2') -Name $credentialName -Value 'new=with=equals')
+    Write-Result -Ok (($replaced -join '|') -ceq "A=1|$($credentialName)_X=keep|B=2|$credentialName=new=with=equals") `
+        -Name 'replacing an Environment entry touches only that name (not a longer one sharing its prefix)' -Detail ($replaced -join ' | ')
+    $read = Get-ParallelServiceEnvironmentEntry -Environment $replaced -Name $credentialName
+    Write-Result -Ok ($read -ceq 'new=with=equals') -Name 'reading an entry back keeps an = inside the value' -Detail "got '$read'"
+}
+
+Write-Host ''
+Write-Host 'Readiness: what the service will read, said out loud' -ForegroundColor Cyan
+
+# The reason codes are the server's own (StationClearanceExit.cs). Read from the source, so a rename
+# there turns this red instead of the readiness line drifting into a vocabulary nobody else uses.
+$exitSource = Get-Content -LiteralPath (Join-Path $repoRoot 'src/ControlServer.Host/Runtime/Charging/StationClearanceExit.cs') -Raw
+$code = @{}
+foreach ($constant in @('RosterEmpty', 'NoEntry', 'NoRecoveryEntry')) {
+    $code[$constant] = [regex]::Match($exitSource, "const string $constant = ""([A-Z_]+)""").Groups[1].Value
+}
+Write-Result -Ok (@($code.Values | Where-Object { $_ }).Count -eq 3) -Name 'the three reason codes are read from StationClearanceExit.cs' `
+    -Detail (ConvertTo-Json -InputObject $code -Compress)
+
+$phase1 = Copy-Definition $productConfiguration
+$phase1['VehicleFaultRecovery'] = [ordered]@{ enabled = $false; credentialEnvironmentVariable = $credentialName }
+$phase1['FieldOperatorRoles'] = [ordered]@{ path = $rosterPath; onboardClearanceEntryDeclared = $false }
+$phase2 = Copy-Definition $phase1
+$phase2['VehicleFaultRecovery']['enabled'] = $true
+$phase2['FieldOperatorRoles']['onboardClearanceEntryDeclared'] = $true
+$named = '{"operators":[{"operatorId":"OP-1","roles":["R-11"]}]}'
+# The roster template in PR #455 (control-server#411): operatorId left empty on purpose.
+$template = '{"operators":[{"operatorId":"","fillIn":"...","roles":["R-11"]},{"operatorId":"","fillIn":"...","roles":["R-13"]}]}'
+$withCredential = @('DOTNET_ENVIRONMENT', $credentialName)
+$readinessCases = @(
+    @{ Name = 'both sections missing'; Config = (Copy-Definition $productConfiguration); Env = $withCredential; Roster = $named
+        Fatal = @('VehicleFaultRecovery', 'FieldOperatorRoles'); Reasons = $null }
+    @{ Name = 'entry on, credential variable missing from the service'; Config = $phase2; Env = @('DOTNET_ENVIRONMENT'); Roster = $named
+        Fatal = @($credentialName); Reasons = $null }
+    @{ Name = 'phase 1 as shipped (entry off, empty roster, nothing declared)'; Config = $phase1; Env = @('DOTNET_ENVIRONMENT'); Roster = '{"operators":[]}'
+        Fatal = @(); Reasons = @($code.RosterEmpty, $code.NoEntry, $code.NoRecoveryEntry) }
+    @{ Name = 'phase 2 with a named R-11 and the credential'; Config = $phase2; Env = $withCredential; Roster = $named
+        Fatal = @(); Reasons = @() }
+    @{ Name = 'the PR #455 roster template left unfilled'; Config = $phase2; Env = $withCredential; Roster = $template
+        Fatal = @(); Reasons = @($code.RosterEmpty) }
+    @{ Name = 'roster file missing'; Config = $phase2; Env = $withCredential; Roster = $null
+        Fatal = @(); Reasons = @($code.RosterEmpty) }
+    @{ Name = 'roster file unreadable JSON'; Config = $phase2; Env = $withCredential; Roster = '{"operators":[{'
+        Fatal = @(); Reasons = @($code.RosterEmpty) }
+    @{ Name = 'roster in PascalCase (the server reads it case-insensitively)'; Config = $phase2; Env = $withCredential
+        Roster = '{"Operators":[{"OperatorId":"OP-1","Roles":["R-13"]}]}'; Fatal = @(); Reasons = @() }
+    @{ Name = 'only the onboard entry declared: exit open, recovery entry not'; Config = (& { $c = Copy-Definition $phase1; $c['FieldOperatorRoles']['onboardClearanceEntryDeclared'] = $true; $c })
+        Env = @('DOTNET_ENVIRONMENT'); Roster = $named; Fatal = @(); Reasons = @($code.NoRecoveryEntry) }
+)
+foreach ($case in $readinessCases) {
+    Invoke-PathCase $case.Name {
+        $r = Get-ParallelClearanceExitReadiness -Configuration $case.Config -EnvironmentNames $case.Env -RosterText $case.Roster
+        $fatal = @($r.Fatal)
+        $missingFatal = @($case.Fatal | Where-Object { $f = $_; -not ($fatal | Where-Object { $_.Contains($f) }) })
+        $fatalOk = ($case.Fatal.Count -eq 0) ? ($fatal.Count -eq 0) : ($missingFatal.Count -eq 0)
+        $reasonsOk = ($null -eq $case.Reasons) -or ((@($r.Reasons) -join ',') -ceq (@($case.Reasons) -join ','))
+        $lineOk = $r.Line -like 'CLEARANCE_EXIT_READINESS *' -and -not $r.Line.Contains('selftest')
+        Write-Result -Ok ($fatalOk -and $reasonsOk -and $lineOk) -Name "readiness: $($case.Name)" `
+            -Detail ("fatal: " + ($fatal -join ' | ') + "; reasons: " + (@($r.Reasons) -join ',') + "; line: $($r.Line)")
+    }
+}
+
+Write-Host ''
+Write-Host 'The shipped definition and the installer carry it' -ForegroundColor Cyan
+
+$shippedVfr = $shipped.Contains('vehicleFaultRecovery') ? $shipped['vehicleFaultRecovery'] : $null
+$shippedRoles = $shipped.Contains('fieldOperatorRoles') ? $shipped['fieldOperatorRoles'] : $null
+Write-Result -Ok ($null -ne $shippedVfr -and $shippedVfr['enabled'] -eq $false -and $null -ne $shippedRoles -and
+    $shippedRoles['onboardClearanceEntryDeclared'] -eq $false -and $shippedRoles['path'] -ceq $rosterPath) `
+    -Name 'the shipped definition states phase 1 (entry off, nothing declared, roster in opsRoot)' `
+    -Detail ("vehicleFaultRecovery=" + (ConvertTo-Json -InputObject $shippedVfr -Compress) + " fieldOperatorRoles=" + (ConvertTo-Json -InputObject $shippedRoles -Compress))
+$namesNow = Get-ParallelInstanceName
+Write-Result -Ok ($namesNow.PSObject.Properties.Name -contains 'FaultRecoveryCredentialVariable' -and $namesNow.FaultRecoveryCredentialVariable -ceq $credentialName) `
+    -Name 'the instance names its own fault recovery credential variable' -Detail ("got '" + ($namesNow.PSObject.Properties.Name -contains 'FaultRecoveryCredentialVariable' ? $namesNow.FaultRecoveryCredentialVariable : '(none)') + "'")
+$layoutNow = Get-ParallelInstanceLayout -Definition $baseline
+Write-Result -Ok ($layoutNow.PSObject.Properties.Name -contains 'FieldOperatorRosterPath' -and
+    [string] $layoutNow.FieldOperatorRosterPath -ceq [string] $baseline['fieldOperatorRoles']['path']) `
+    -Name 'the layout carries the roster path (the installer creates an empty roster there, never overwrites one)' -Detail 'missing'
+
+# The installer's wiring. The pure pieces are tested above; this checks the installer calls them,
+# and takes the credential before the product script can replace the Environment it is read from.
+$installerAst = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'Install-ParallelInstanceLocal.ps1'), [ref]$null, [ref]$null)
+$calls = @($installerAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true))
+$productCalls = @($calls | Where-Object { $_.GetCommandName() -eq 'Invoke-ProductInstaller' })
+$resolveCalls = @($calls | Where-Object { $_.GetCommandName() -eq 'Resolve-ParallelFaultRecoveryCredential' })
+$unguarded = @($productCalls | Where-Object {
+        $site = $_
+        -not ($resolveCalls | Where-Object { $_.Extent.StartOffset -lt $site.Extent.StartOffset -and
+                $site.Extent.StartOffset - $_.Extent.StartOffset -lt 6000 })
+    })
+Write-Result -Ok ($productCalls.Count -eq 2 -and $unguarded.Count -eq 0) `
+    -Name 'both product-installer call sites (install, rollback) take the credential first' `
+    -Detail ("call sites: $($productCalls.Count); without a preceding Resolve-: " + (($unguarded | ForEach-Object { "line $($_.Extent.StartLineNumber)" }) -join ', '))
+$setConfig = $installerAst.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Set-InstanceConfiguration' }, $true)
+$inside = $null -eq $setConfig ? @() : @($setConfig.Body.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true) | ForEach-Object { $_.GetCommandName() })
+$needed = @('Update-ParallelInstanceConfigurationFile', 'Set-ParallelServiceEnvironmentEntry', 'Get-ParallelClearanceExitReadiness')
+$absent = @($needed | Where-Object { $inside -notcontains $_ })
+Write-Result -Ok ($absent.Count -eq 0) -Name 'Set-InstanceConfiguration (run by install, upgrade and rollback) writes the sections, the credential and reads readiness' `
+    -Detail ("not called: " + ($absent -join ', '))
 
 Write-Host ''
 Write-Host ("{0} passed, {1} failed" -f $script:Passed, $script:Failed) `
