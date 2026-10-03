@@ -30,6 +30,10 @@ public sealed partial class IdleReturnExecutionTests
         await using FleetFixture fleet = await FleetAsync();
         JourneyRuntimeRow journey = await SucceededWithoutArrivalAsync(fleet, why);
         DateTimeOffset since = (await IdleJourneyAsync(fleet, AgvA))!.BlockReasonSince!.Value;
+        // Not before the window has passed (independent review N2).
+        fleet.Clock.Advance(fleet.Options.OwnOrderRebuildRepeatWindow - TimeSpan.FromSeconds(10));
+        await RoundAsync(fleet);
+        Assert.DoesNotContain(fleet.EngineLog.Entries, entry => entry.EventId.Id == 2230);
 
         fleet.Clock.Advance(TimeSpan.FromHours(2));
         await RoundAsync(fleet);
@@ -59,6 +63,48 @@ public sealed partial class IdleReturnExecutionTests
             Token);
         fleet.Context.ChangeTracker.Clear();
         Assert.Equal(VehicleFaultRecoveryOutcome.Refused, recovery.Outcome);
+    }
+
+    /// <summary>
+    /// 单先停住、后来直接成功（独立审查 S1，探针 P2）：单 HANG 时旅程写 <c>ORDER_HANG</c>；引擎没看到单在走，下一次读到它就已是 <c>SUCCESS</c>。
+    /// 停单码不能留着挡住出口：到点证明不了时换成 <c>IDLE_RETURN_ARRIVAL_NOT_PROVEN</c>，过了时限人工收尾办得成。建单结果未知、后来对账出 SUCCESS
+    /// 的那一种（探针 P1）同样要办得成。
+    /// </summary>
+    [Theory]
+    [InlineData("hang-then-success")]
+    [InlineData("result-unknown-then-success")]
+    public async Task AnOrderThatStalledOrWasUnknownBeforeItSucceededIsStillNamedAndSettleable(string before)
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        JourneyRuntimeRow journey;
+        if (before == "hang-then-success")
+        {
+            journey = await CommittedAndSentAsync(fleet);
+            fleet.Riot.HangOrder(journey.PickupUpperId);
+            await RoundAsync(fleet);
+            Assert.Equal(JourneyRuntimeEngine.OrderHangReason, (await IdleJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+            fleet.Riot.CompleteOrder(journey.PickupUpperId);
+        }
+        else
+        {
+            fleet.Riot.CreateAnswer = intent => new RiotOrderObservation(intent.UpperId, RiotOrderObservationKind.Unknown, null);
+            await RoundAsync(fleet);
+            await RoundAsync(fleet);
+            fleet.Riot.CreateAnswer = null;
+            journey = (await IdleJourneyAsync(fleet, AgvA))!;
+            Assert.Equal(IdleReturnExecutionReasons.LegOutcomeCode(MovementDispatchOutcome.ResultUnknown), journey.BlockReasonCode);
+            fleet.Riot.PutOrder(new RiotOrderObservation(
+                journey.PickupUpperId, RiotOrderObservationKind.Terminal, "ORDER-LATE", RiotOrderState.Success, KeyA, Map, Near.StationId));
+        }
+        Override(fleet, seen => seen);
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+
+        Assert.Equal(IdleReturnExecutionReasons.ArrivalNotProven, (await IdleJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+        fleet.Clock.Advance(fleet.Options.OwnOrderRebuildRepeatWindow + TimeSpan.FromSeconds(1));
+        WaitingPointArrivalSettlementResult result = await SettleAsync(
+            fleet, SettlementRequest(AgvA, KeyA, journey.JourneyId, Near.StationId, WaitingPointArrivalVerdicts.AtWaitingPoint));
+        Assert.True(result.Settled, string.Join(",", result.Codes));
     }
 
     /// <summary>
@@ -195,6 +241,10 @@ public sealed partial class IdleReturnExecutionTests
             case "order-elsewhere":
                 fleet.Riot.PutOrder(order with { DestinationStationId = Far.StationId });
                 break;
+            case "order-cancelled": fleet.Riot.PutOrder(order with { OrderState = RiotOrderState.Cancelled }); break;
+            case "order-other-vehicle": fleet.Riot.PutOrder(order with { VehicleKey = KeyB }); break;
+            case "order-other-map": fleet.Riot.PutOrder(order with { MapId = Map + 1 }); break;
+            case "order-other-id": fleet.Riot.PutOrder(order with { OrderId = "ORDER-OTHER" }); break;
             case "order-unreadable":
                 fleet.Riot.BeforeReconcile = _ => throw new HttpRequestException("RIoT did not answer.");
                 break;
@@ -252,6 +302,10 @@ public sealed partial class IdleReturnExecutionTests
         { "waiting-point-not-held", WaitingPointArrivalSettlement.WaitingPointNotHeld },
         { "order-not-terminal", WaitingPointArrivalSettlement.OrderNotExactSuccess },
         { "order-elsewhere", WaitingPointArrivalSettlement.OrderNotExactSuccess },
+        { "order-cancelled", WaitingPointArrivalSettlement.OrderNotExactSuccess },
+        { "order-other-vehicle", WaitingPointArrivalSettlement.OrderNotExactSuccess },
+        { "order-other-map", WaitingPointArrivalSettlement.OrderNotExactSuccess },
+        { "order-other-id", WaitingPointArrivalSettlement.OrderNotExactSuccess },
         { "order-unreadable", WaitingPointArrivalSettlement.OrderUnreadable },
         { "vehicle-unreadable", WaitingPointArrivalSettlement.VehicleUnreadable },
         { "vehicle-offline", WaitingPointArrivalSettlement.VehicleOffline },

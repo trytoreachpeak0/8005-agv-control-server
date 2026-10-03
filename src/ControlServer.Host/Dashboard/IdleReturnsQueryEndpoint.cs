@@ -61,7 +61,7 @@ internal sealed class IdleReturnsQueryEndpoint : IDashboardQueryEndpoint
             [StepCreateResultUnknown] = "建单结果未知：开往等待点的单发出后还没确认，服务端按同一个单号对账，不建第二张，车、等待点与用途都保持",
             [StepEnRoute] = "在途：开往等待点的单已确认。车到点、停稳并证明之后才收敛",
             [StepArrivalNotProven] =
-                "到点证明不了：RIoT 报单已完成，车却读不到静止停在那个等待点上。用途与等待点预占保持，不按时间放；过了 10 分钟，"
+                "到点证明不了：RIoT 报单已完成，车却读不到静止停在那个等待点上。用途与等待点预占保持，不按时间放；过了配置项 JourneyRuntime:OwnOrderRebuildRepeatWindow 规定的时长，"
                 + "R-11／R-13 名单里的人可经等待点到点人工收尾入口说明车在不在点上（车要在线、停稳）",
             [StepOrderStalled] = "单停住了：开往等待点的单在 RIoT 上挂起或处于未识别状态，用途与等待点预占保持，等人处理",
             [StepHeldAwaitingStop] = "保持中：单已在 RIoT 终结或等待点已不归它，服务端在等车证明停稳、身上没有单，才结束这趟；期间用途与等待点都不放",

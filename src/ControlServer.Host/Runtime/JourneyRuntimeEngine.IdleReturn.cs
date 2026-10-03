@@ -359,18 +359,22 @@ public sealed partial class JourneyRuntimeEngine
     /// 开始时刻从第一次写起不动；持续超过 <c>JourneyRuntime:OwnOrderRebuildRepeatWindow</c> 告警一次（事件 2230）。
     /// </summary>
     /// <remarks>
-    /// 检查点等待的两个码优先：车停在检查点前等放行时那才是要说的事，它清掉之后下一轮写这个码。不放车、不放点：出口是人
+    /// 检查点等待的两个码优先：车停在检查点前等放行时那才是要说的事，它清掉之后下一轮写这个码。停单的码（<c>ORDER_HANG</c> 一类）不优先：单已
+    /// <c>SUCCESS</c>，那个码已过时，留着会让人工收尾永远答「引擎未点名」（独立审查 S1）。别的码（故障、门锁）照旧不覆盖。不放车、不放点：出口是人
     /// （<c>WaitingPointArrivalSettlement</c>），那里现读的前提与这里同一组事实。
     /// </remarks>
     private async Task NameArrivalNotProvenAsync(JourneyRuntimeRow runtime, JourneyStopRow stop, CancellationToken cancellationToken)
     {
-        if (runtime.BlockReasonCode is not null &&
+        // A stalled-order code (ORDER_HANG and its kind) names an order that has since reached SUCCESS: it is stale, and left in
+        // place it would bar the only exit (control-server#447 review S1). The clearance branch overwrites unconditionally.
+        bool replaceable = runtime.BlockReasonCode is null || IsStalledOrderReason(runtime.BlockReasonCode);
+        if (!replaceable &&
             !string.Equals(runtime.BlockReasonCode, IdleReturnExecutionReasons.ArrivalNotProven, StringComparison.Ordinal))
         {
             return;
         }
         DateTimeOffset now = timeProvider.GetUtcNow();
-        if (runtime.BlockReasonCode is null)
+        if (replaceable)
         {
             runtime.SetBlockReason(IdleReturnExecutionReasons.ArrivalNotProven, now);
             runtime.UpdatedAt = now;

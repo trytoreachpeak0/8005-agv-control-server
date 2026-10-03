@@ -146,7 +146,7 @@ public sealed class WaitingPointArrivalSettlement(
         [NotAWaitingPointMove] = "这趟旅程此刻不是在开往等待点（不是空闲返回，也没有一次进行中的清桩移动）",
         [StationMismatch] = "填的等待点不是这趟旅程正开往的那一个：请核对站号",
         [ArrivalNotNamed] = "服务端还没把这趟判成「到点证明不了」（看板上不是那个码）：单可能还在走，或另有别的原因，先按看板上的码处理",
-        [TooEarly] = "到点证明不了还不到 10 分钟（JourneyRuntime:OwnOrderRebuildRepeatWindow）：车可能还在停稳、读数可能还在更新，过了再办",
+        [TooEarly] = "到点证明不了的时长还没超过配置项 JourneyRuntime:OwnOrderRebuildRepeatWindow 规定的时长：车可能还在停稳、读数可能还在更新，过了再办",
         [WaitingPointNotHeld] = "这个等待点已不归这趟旅程（被人工释放或归了别的车）：服务端会按点丢失自己收尾，不用再办",
         [ClearanceStillOpen] = "清桩还没完成：车在等待点上时，先由 R-11／R-13 名单里的人确认清桩，再来办这一项",
         [OrderUnreadable] = "这一刻读不到 RIoT 上这张单：稍后再办",

@@ -171,8 +171,8 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 + "车不会再开往那个点，等车停稳后结束这趟。持续不消失请到 RIoT 查看取消是否生效",
             [IdleReturnExecutionReasons.ArrivalNotProven] =
                 "开往等待点的空闲返回单 RIoT 报已完成，但还读不到车静止停在那个等待点上（位置、地图、速度、空闲状态、锁定或数据新鲜度不满足）。"
-                + "服务端不按时间放车放点，用途与等待点预占保持，下一轮再判；持续 10 分钟会告警一次（事件 2230）。"
-                + "请到现场看车停在哪里：过了 10 分钟，R-11／R-13 名单里的人可经等待点到点人工收尾入口说明车在不在点上，由服务端收尾。"
+                + "服务端不按时间放车放点，用途与等待点预占保持，下一轮再判；持续超过配置项 JourneyRuntime:OwnOrderRebuildRepeatWindow 规定的时长会告警一次（事件 2230）。"
+                + "请到现场看车停在哪里：过了这个时长，R-11／R-13 名单里的人可经等待点到点人工收尾入口说明车在不在点上，由服务端收尾。"
                 + "车离线或读不到时入口会拒绝，要等车重新上线、停稳之后再办",
             [IdleReturnExecutionReasons.LegOutcomeCode(MovementDispatchOutcome.ResultUnknown)] =
                 "开往等待点的单发给 RIoT 之后结果未知：服务端每一轮按同一个单号对账，不会建第二张，车、等待点与用途都保持不动。"
@@ -333,7 +333,7 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 + "等待点已释放，这一次清桩不会再自动出发。请 R-11／R-13 名单里的人到现场把车挪开、确认桩已腾空并确认清桩",
             [ChargingExecutionReasons.ClearanceArrivalNotProven] =
                 "开往等待点的订单 RIoT 报已完成，但还读不到车静止停在那个等待点上（位置、地图、速度、空闲状态、锁定或数据新鲜度不满足）。清桩还没完成、"
-                + "桩暂不释放，下一轮再判；持续 10 分钟会告警一次。请到现场看车停在哪里：过了 10 分钟，R-11／R-13 名单里的人可经等待点到点人工收尾入口"
+                + "桩暂不释放，下一轮再判；持续超过配置项 JourneyRuntime:OwnOrderRebuildRepeatWindow 规定的时长会告警一次。请到现场看车停在哪里：过了这个时长，R-11／R-13 名单里的人可经等待点到点人工收尾入口"
                 + "说明车在不在点上。车在点上而清桩还没完成时，先确认清桩，再经那个入口收尾。车离线或读不到时入口会拒绝，要等车重新上线、停稳之后再办",
             [ChargingExecutionReasons.UnableToChargeClearedAtWaitingPoint] =
                 "充不上的这次充电已收尾：车已被服务端开到等待点并停稳，清桩由系统证明完成，充电桩的独占已释放，车占着那个等待点，"

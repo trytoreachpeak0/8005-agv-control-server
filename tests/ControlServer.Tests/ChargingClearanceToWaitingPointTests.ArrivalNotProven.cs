@@ -152,6 +152,38 @@ public sealed partial class ChargingClearanceToWaitingPointTests
     }
 
     /// <summary>
+    /// 先人工清桩、再办「车不在点上」（独立审查 S2，探针 P3）：清桩已完成，这次移动结束、等待点当场释放，码是清桩收尾码；旅程下一轮自己收尾，
+    /// 不再建单。那一轮里旅程还开着、带着 <c>CHARGING_UNABLE_TO_CHARGE_CLEARED</c>，所以它要有现场说明（夹具释放时的看板守卫核）。
+    /// </summary>
+    [Fact]
+    public async Task NotAtTheWaitingPointAfterAManualClearanceClosesTheJourneyNextRound()
+    {
+        await using FleetFixture fleet = await ClearanceFleetAsync();
+        JourneyRuntimeRow journey = await MoveSucceededWithoutArrivalAsync(fleet, "other-station");
+        fleet.Clock.Advance(fleet.Options.OwnOrderRebuildRepeatWindow + TimeSpan.FromSeconds(1));
+        ManualStationClearanceConfirmation cleared =
+            await ManualClearance(fleet).DecideAsync(Request("00000000-0000-4000-8000-0000000c4479"), Token);
+        Assert.Equal(FieldConfirmationDecision.Confirmed, cleared.Decision.Outcome);
+        fleet.Context.ChangeTracker.Clear();
+
+        WaitingPointArrivalSettlementResult result = await SettleAsync(
+            fleet, SettlementRequest(AgvA, KeyA, journey.JourneyId, 214, WaitingPointArrivalVerdicts.NotAtWaitingPoint));
+
+        Assert.True(result.Settled, string.Join(",", result.Codes));
+        Assert.Equal(ChargingExecutionReasons.UnableToChargeCleared, result.Ending);
+        Assert.Null(await StationAsync(fleet, 214));
+        for (int round = 0; round < 5; round++)
+        {
+            await RoundAsync(fleet);
+        }
+        JourneyRuntimeRow after = await fleet.Context.JourneyRuntimes.AsNoTracking().SingleAsync(row => row.JourneyId == journey.JourneyId, Token);
+        Assert.Equal(JourneyRuntimeStage.Completed, after.Stage);
+        Assert.Equal(2, fleet.Riot.Creates.Count);
+        Assert.Null(await StationAsync(fleet, 214));
+        Assert.Null(await ClaimOfAsync(fleet, KeyA));
+    }
+
+    /// <summary>
     /// 清桩那一支的前提用的是它自己的码与它自己的那一次移动：还不到时限、单还在走、车离线、这次移动已不在进行，都拒绝，什么也不动，留一条失败审计。
     /// </summary>
     [Theory]

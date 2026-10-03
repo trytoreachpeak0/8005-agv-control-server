@@ -187,8 +187,8 @@ ControlServer.FieldOps.exe read-waiting-points --database <controlserver.db> --v
 | `IDLE_RETURN_ARRIVAL_NOT_PROVEN` | 空闲返回旅程；车队视图「空闲返回」里这一步叫 `ARRIVAL_NOT_PROVEN` |
 | `CHARGING_CLEARANCE_ARRIVAL_NOT_PROVEN` | 充电旅程（清桩中开往等待点） |
 
-持续 10 分钟（`JourneyRuntime:OwnOrderRebuildRepeatWindow`）会在服务端日志里告警一次：空闲返回是事件 2230，清桩是事件 2303。
-**过了这 10 分钟才能用这个入口**，之前办会被拒（`ARRIVAL_SETTLEMENT_TOO_EARLY`）。
+持续超过 `JourneyRuntime:OwnOrderRebuildRepeatWindow`（出厂 10 分钟，以现场配置为准）会在服务端日志里告警一次：空闲返回是事件 2230，清桩是事件 2303。
+**过了这个时长才能用这个入口**，之前办会被拒（`ARRIVAL_SETTLEMENT_TOO_EARLY`）。
 
 ### 用之前在现场核实什么
 
@@ -198,7 +198,7 @@ ControlServer.FieldOps.exe read-waiting-points --database <controlserver.db> --v
 3. **车在线。**车离线或 RIoT 读不到它时入口一律拒绝（`ARRIVAL_SETTLEMENT_VEHICLE_OFFLINE`、`ARRIVAL_SETTLEMENT_VEHICLE_UNREADABLE`）：
    服务端证明不了它没在动，就不收尾。**先让车重新上线、停稳，再来办。**
 4. **清桩那一种，车确实在等待点上而清桩还没完成时**：先由 R-11／R-13 名单里的人确认清桩（人工清桩入口），再办这一项。
-   不先确认清桩会被拒（`ARRIVAL_SETTLEMENT_CLEARANCE_STILL_OPEN`）。
+   不先确认清桩会被拒（`ARRIVAL_SETTLEMENT_CLEARANCE_STILL_OPEN`）。车不在等待点上时，先办这一项还是先确认清桩都可以，见下表。
 5. **对照看板，抄下这辆车当前旅程的旅程号和它正开往的等待点站号。**
 
 ### 谁能办、怎么办
@@ -226,7 +226,10 @@ Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:58007/api/field-ops/v1/wai
 | 结论 | 空闲返回 | 清桩开往等待点 |
 | --- | --- | --- |
 | `AT_WAITING_POINT` | 按到点收尾：车占着这个等待点，用途释放，车回到可派。旅程码 `IDLE_RETURN_ARRIVAL_CONFIRMED_BY_OPERATOR` | 按到点收尾：车占着这个等待点，旅程以清桩收尾码收尾 |
-| `NOT_AT_WAITING_POINT` | 按已确认失败结束（`IDLE_RETURN_NOT_AT_WAITING_POINT_BY_OPERATOR`）：用途释放，等待点在车被读到停在别的站后由离点清扫释放；下一次空闲返回不选这个点，冷却与「10 分钟内两次就停止自动空闲返回」照算 | 这次移动结束、等待点当场释放，车回到清桩中，**这一次清桩不会再自动出发**，要人工清桩 |
+| `NOT_AT_WAITING_POINT` | 按已确认失败结束（`IDLE_RETURN_NOT_AT_WAITING_POINT_BY_OPERATOR`）：用途释放，等待点在车被读到停在别的站后由离点清扫释放；下一次空闲返回不选这个点，冷却与「重复窗口内两次就停止自动空闲返回」照算 | 这次移动结束、等待点当场释放。清桩还没确认时车回到清桩中，**这一次清桩不会再自动出发**，要人工清桩确认；清桩已经确认过时，旅程下一轮自己收尾（那一轮看板上是 `CHARGING_UNABLE_TO_CHARGE_CLEARED`，不用处理） |
+
+**办完请现场人员离车。**结论是 `AT_WAITING_POINT` 时车立刻回到可派，下一轮就可能被派去搬运；结论是 `NOT_AT_WAITING_POINT` 的空闲返回，冷却
+（`JourneyRuntime:OwnOrderRebuildDelay`）过后车会自动开往别的等待点。
 
 每一次请求，办成的和被拒的，都写一条管理员审计（动作 `WAITING_POINT_ARRIVAL_SETTLEMENT`），记下办理人、角色、理由、核实记录和这一刻读到的
 RIoT。被拒时返回 409，`codes` 列出全部原因，`descriptions` 是每个原因的中文说明，照着处理之后再提交一次。
