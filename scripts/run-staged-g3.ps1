@@ -377,8 +377,9 @@ function Get-HttpErrorObservation {
 # The error the run itself hit, printed and saved as runner-error.json. Called directly after the run's
 # try/catch/finally, before any judgement: the judgements read observations an errored run never filled in,
 # and on 2026-09-22 one of them throwing was all such a run printed (control-server#306). Never throws.
+# run-demand-bearing-g3-vectors.ps1 takes this function from here (control-server#460) and names itself in -RunLabel.
 function Write-StagedRunError {
-    param([Management.Automation.ErrorRecord]$ErrorRecord, [string]$EvidenceRoot)
+    param([Management.Automation.ErrorRecord]$ErrorRecord, [string]$EvidenceRoot, [string]$RunLabel = 'Staged G3')
     if ($null -eq $ErrorRecord) { return }
     try {
         $exceptions = [Collections.Generic.List[object]]::new()
@@ -391,7 +392,7 @@ function Write-StagedRunError {
             position = $ErrorRecord.InvocationInfo?.PositionMessage
             scriptStackTrace = $ErrorRecord.ScriptStackTrace
         }
-        Write-Warning "Staged G3 run errored: $($exceptions[0].type): $($exceptions[0].message)"
+        Write-Warning "$RunLabel run errored: $($exceptions[0].type): $($exceptions[0].message)"
         foreach ($inner in @($exceptions | Select-Object -Skip 1)) {
             Write-Warning "  inner: $($inner.type): $($inner.message)"
         }
@@ -403,7 +404,7 @@ function Write-StagedRunError {
             [Text.UTF8Encoding]::new($false))
     }
     catch {
-        Write-Warning "Staged G3 run errored ($($ErrorRecord.Exception.Message)), and recording that failed too: $($_.Exception.Message)"
+        Write-Warning "$RunLabel run errored ($($ErrorRecord.Exception.Message)), and recording that failed too: $($_.Exception.Message)"
     }
 }
 
@@ -3677,18 +3678,23 @@ if (Test-Path -LiteralPath $clonedSliceIndex -PathType Leaf) {
     }
 }
 
+# One record for the gate results, the classification and run-result.json alike: the classification reads it
+# to decide whether the run tested the shared binding (control-server#460). This runner always does, so it
+# carries no *CommitSource entry.
+$commitsRecord = [ordered]@{
+    controlServer = $ControlServerCommit
+    onboardEvidenceBinding = $OnboardCommit
+    slotsSimulator = $SimulatorCommit
+    protocol = $ProtocolCommit
+    harness = $harnessCommit
+    harnessWorktreeCleanAtStart = $harnessWorktreeClean
+}
+
 $gateResultPaths = Write-G3GateResults -RunKind $G3RunKind -EvidenceRoot $EvidenceRoot `
     -AssertionReport $assertionReport -Slice $Slice -RunnerErrored:($null -ne $runError) -Context @{
         runId = $runId
         startedAt = $runStartedAt.ToString('O')
-        commits = [ordered]@{
-            controlServer = $ControlServerCommit
-            onboardEvidenceBinding = $OnboardCommit
-            slotsSimulator = $SimulatorCommit
-            protocol = $ProtocolCommit
-            harness = $harnessCommit
-            harnessWorktreeCleanAtStart = $harnessWorktreeClean
-        }
+        commits = $commitsRecord
         protocolReleaseVersion = $expectedProtocol.releaseVersion
         protocolTag = $protocolTag
         protocolProfileId = $expectedProtocol.profileId
@@ -3733,17 +3739,10 @@ $result = [ordered]@{
     completedAtUtc = [DateTimeOffset]::UtcNow
     status = $status
     classification = (New-G3Classification -RunKind $G3RunKind -RunStatus $status `
-        -AssertionReport $assertionReport -RunnerErrored:($null -ne $runError))
+        -AssertionReport $assertionReport -Commits $commitsRecord -RunnerErrored:($null -ne $runError))
     gateResults = @($gateResultPaths | ForEach-Object {
         [IO.Path]::GetRelativePath($EvidenceRoot, $_).Replace('\', '/') })
-    commits = [ordered]@{
-        controlServer = $ControlServerCommit
-        onboardEvidenceBinding = $OnboardCommit
-        slotsSimulator = $SimulatorCommit
-        protocol = $ProtocolCommit
-        harness = $harnessCommit
-        harnessWorktreeCleanAtStart = $harnessWorktreeClean
-    }
+    commits = $commitsRecord
     protocol = [ordered]@{
         tag = $protocolTag
         # False on the v2 line: the tag is named by the candidate identity but has not been cut.

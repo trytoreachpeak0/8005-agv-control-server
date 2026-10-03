@@ -261,7 +261,10 @@ Load-bearing details:
   than #453 has no generator scenario, and the runner refuses it before creating
   anything; `-SelfCheckControlServerCommit <40-hex>` checks a newer commit without
   moving the binding and marks the run `SELF_CHECK_OVERRIDE` (not gate evidence),
-  as in `run-journey-g3.ps1`. The binding moves only in an exit ticket's first step. The generator
+  as in `run-journey-g3.ps1`. Since control-server#460 such a run grades every slice
+  `formalSlicePass: false` with `formalSliceWithheldReason`, decided once in
+  `g3-slice-evidence.ps1` for all four runners, and `-FieldRunRoot` refuses a store
+  the synthetic rig wrote (`L2-SUBLOT-*`, `BROKERX-L2-*`, `AGV-L2-*`). The binding moves only in an exit ticket's first step. The generator
   is not an L2 criterion and is deliberately absent from `l2.yml`.
 - **Check the commit bindings before a G3 run, and move them.** They are literal
   defaults, so a run inherits whatever the last run froze and silently gates old

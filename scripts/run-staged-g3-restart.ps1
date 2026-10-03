@@ -1110,18 +1110,23 @@ $status = if ($null -ne $runError) {
     'STAGED_SLICE_FAIL'
 }
 
+# One record for the gate results, the classification and run-result.json alike: the classification reads it
+# to decide whether the run tested the shared binding (control-server#460). This runner always does, so it
+# carries no *CommitSource entry.
+$commitsRecord = [ordered]@{
+    controlServer = $ControlServerCommit
+    onboardHmi = $OnboardCommit
+    slotsSimulator = $SimulatorCommit
+    protocol = $ProtocolCommit
+    runner = $runnerCommit
+    runnerWorktreeCleanAtStart = $runnerWorktreeClean
+}
+
 $gateResultPaths = Write-G3GateResults -RunKind $G3RunKind -EvidenceRoot $EvidenceRoot `
     -AssertionReport $assertionReport -Slice $Slice -RunnerErrored:($null -ne $runError) -Context @{
         runId = $runId
         startedAt = $runStartedAt.ToString('O')
-        commits = [ordered]@{
-            controlServer = $ControlServerCommit
-            onboardHmi = $OnboardCommit
-            slotsSimulator = $SimulatorCommit
-            protocol = $ProtocolCommit
-            runner = $runnerCommit
-            runnerWorktreeCleanAtStart = $runnerWorktreeClean
-        }
+        commits = $commitsRecord
         # Read back from the server this run actually talked to rather than restated from a constant:
         # this runner clones no protocol repository, so the identity it can honestly cite is the one
         # the running host reported. Null when the run never got a version, which is the same case
@@ -1167,17 +1172,10 @@ $result = [ordered]@{
     completedAtUtc = [DateTimeOffset]::UtcNow
     status = $status
     classification = (New-G3Classification -RunKind $G3RunKind -RunStatus $status `
-        -AssertionReport $assertionReport -RunnerErrored:($null -ne $runError))
+        -AssertionReport $assertionReport -Commits $commitsRecord -RunnerErrored:($null -ne $runError))
     gateResults = @($gateResultPaths | ForEach-Object {
         [IO.Path]::GetRelativePath($EvidenceRoot, $_).Replace('\', '/') })
-    commits = [ordered]@{
-        controlServer = $ControlServerCommit
-        onboardHmi = $OnboardCommit
-        slotsSimulator = $SimulatorCommit
-        protocol = $ProtocolCommit
-        runner = $runnerCommit
-        runnerWorktreeCleanAtStart = $runnerWorktreeClean
-    }
+    commits = $commitsRecord
     configurationSha256 = Get-Sha256Text $configurationJson
     configuration = $configuration
     commands = @($commands)

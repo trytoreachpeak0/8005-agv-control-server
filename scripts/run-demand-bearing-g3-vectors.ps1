@@ -6,7 +6,9 @@ param(
     [string]$EvidenceRoot,
     # Optional since control-server#453. Given, it is a run root produced by an authorised field run: its
     # controlserver.db is the demand-bearing store this runner restores. Nothing here writes to it; the
-    # copy in StageRoot is what the server opens.
+    # copy in StageRoot is what the server opens. A store the synthetic rig wrote is refused
+    # (control-server#460, Assert-FieldRunStoreIsNotGenerated): this path exempts the store's protocolCommit
+    # and calls the store field state, and neither holds for a generated one.
     # Left out, the store is generated on the spot: the bound ControlServer commit's own L2 scenario
     # demand-bearing-store-at-unload drives a synthetic peer and the fake RIoT to the same shape and
     # exports it. The only field store ever used (fullloop-20260829T131549Z, agv01 and the real RIoT)
@@ -21,7 +23,9 @@ param(
     [ValidatePattern('^FP-IS-(0[0-9]|1[0-5])$')][string]$Slice,
     # For checking a change before the shared binding has moved, as run-journey-g3.ps1 has it: clone this
     # ControlServer commit instead of the bound one. The run records controlServerCommitSource =
-    # SELF_CHECK_OVERRIDE in run-result.json and every gate-result.json, and is not gate evidence. The binding
+    # SELF_CHECK_OVERRIDE in run-result.json and every gate-result.json, and is not gate evidence: since
+    # control-server#460 every slice of it is graded formalSlicePass false, formalSliceWithheldReason
+    # SELF_CHECK_OVERRIDE (g3-slice-evidence.ps1, Get-G3FormalSlicePass). The binding
     # itself moves only in an exit ticket's first step (control-server#453 needed one: its generator scenario
     # exists only in commits that contain it). There is no onboard counterpart: this runner clones no onboard.
     [ValidatePattern('^[0-9a-f]{40}$')][string]$SelfCheckControlServerCommit,
@@ -90,6 +94,53 @@ function Get-HarnessSource {
 # Defined by the staged restart runner; taken from there rather than copied, for the same reason the
 # commit values themselves are.
 Invoke-Expression (Get-ScriptFunction -Path $CommitBindingFunctionSource -Name 'Get-SharedCommitBinding')
+# The staged runner's error report (control-server#306), taken the same way (control-server#460): printed and
+# saved as runner-error.json directly after the run's try, before anything can throw over it.
+Invoke-Expression (Get-ScriptFunction -Path $SharedRunnerSource -Name 'Write-StagedRunError')
+
+# What marks a store as written by the synthetic L2 rig rather than by a field run, read from the baseline
+# Read-ControlDatabase takes of it. Invoke-L2Scenario.ps1 names every vehicle BROKERX-L2-<n> / AGV-L2-<n> and
+# every L2 scenario's sublot L2-SUBLOT-..., which becomes the TransportDemandKey; no field run carries either
+# (the 2026-08-29 store reads Q26081298-1, BROKERX-0c20..., 老厂前线新多仓位1). Empty for a field store.
+function Get-GeneratedStoreMarkers {
+    param([Parameter(Mandatory)]$Baseline)
+
+    $markers = [System.Collections.Generic.List[string]]::new()
+    foreach ($row in @($Baseline.acceptedDemandRows)) {
+        if ("$($row['transportDemandKey'])" -like 'L2-SUBLOT-*') {
+            $markers.Add("AcceptedDemands.TransportDemandKey=$($row['transportDemandKey'])")
+        }
+    }
+    foreach ($row in @($Baseline.vehicleClaimRecordRows)) {
+        if ("$($row['vehicleKey'])" -like 'BROKERX-L2-*') {
+            $markers.Add("VehiclePurposeClaimRecords.VehicleKey=$($row['vehicleKey'])")
+        }
+    }
+    foreach ($row in @($Baseline.sessionRecoveryRows)) {
+        if ("$($row['agvId'])" -like 'AGV-L2-*') { $markers.Add("SessionRecoveries.AgvId=$($row['agvId'])") }
+    }
+    return ,$markers
+}
+
+# control-server#460. -FieldRunRoot says "this is real state an authorised field run wrote", and the run then
+# exempts the store's protocolCommit from the identity assertion (TICKET_17) and writes that note into the
+# evidence. cs#453's review fed a generated store through that path and got a PASS stamped as field state:
+# the exemption, and the field-state claim, were both available to a store that never saw a vehicle. So a
+# FIELD_RUN store that carries the rig's marks is refused before the server is started on it.
+function Assert-FieldRunStoreIsNotGenerated {
+    param(
+        [Parameter(Mandatory)][string]$StoreSource,
+        [Parameter(Mandatory)]$Baseline
+    )
+
+    if ($StoreSource -ne 'FIELD_RUN') { return }
+    $markers = Get-GeneratedStoreMarkers -Baseline $Baseline
+    if ($markers.Count -ne 0) {
+        throw ('FIELD_RUN_STORE_IS_GENERATED: -FieldRunRoot was given a store the synthetic L2 rig wrote, not a ' +
+               'field run: ' + ($markers -join '; ') + '. Leave -FieldRunRoot out to generate a store on purpose; ' +
+               'the field-store exemption and the field-state note do not apply to it.')
+    }
+}
 
 $commitBinding = Get-SharedCommitBinding -Path $SharedRunnerSource
 $ControlServerCommit = $commitBinding['ControlServerCommit']
@@ -199,7 +250,14 @@ function Invoke-LoggedCommand {
         exitCode = $exitCode
         log = [IO.Path]::GetRelativePath($EvidenceRoot, $LogPath).Replace('\', '/')
     })
-    if ($exitCode -ne 0) { throw "$Name exited with code $exitCode. See $LogPath" }
+    if ($exitCode -ne 0) {
+        # The tail of the log in the message itself (control-server#460): the message is what runner-error.json
+        # and the console carry, and "see the log" alone is what made the cause something to go and dig for.
+        $tail = @($output | ForEach-Object { "$_" } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+            Select-Object -Last 15)
+        throw ("$Name exited with code $exitCode. See $LogPath" +
+               $(if ($tail.Count -ne 0) { ". Last lines:`n" + ($tail -join "`n") } else { '' }))
+    }
     return @($output)
 }
 
@@ -414,16 +472,28 @@ try {
         # Checked against the repository before the run started; the clone is that commit.
         $rig = Join-Path $controlSource 'scripts\l2\Invoke-L2Scenario.ps1'
         $storeGeneratorEvidence = Join-Path $EvidenceRoot 'store-generator'
-        Invoke-LoggedCommand -Name 'generate-demand-bearing-store' -WorkingDirectory $controlSource -FilePath 'pwsh' `
-            -Arguments @('-NoProfile', '-File', $rig,
-                         '-Scenario', $storeGeneratorScenario,
-                         '-EvidenceRoot', $storeGeneratorEvidence,
-                         '-Repository', $controlSource) `
-            -LogPath (Join-Path $logsRoot 'generate-demand-bearing-store.log') | Out-Null
-        $generatorDocument = Get-Content -Raw -LiteralPath (Join-Path $storeGeneratorEvidence 'assertions.json') |
-            ConvertFrom-Json
+        $generatorAssertions = Join-Path $storeGeneratorEvidence 'assertions.json'
+        try {
+            Invoke-LoggedCommand -Name 'generate-demand-bearing-store' -WorkingDirectory $controlSource -FilePath 'pwsh' `
+                -Arguments @('-NoProfile', '-File', $rig,
+                             '-Scenario', $storeGeneratorScenario,
+                             '-EvidenceRoot', $storeGeneratorEvidence,
+                             '-Repository', $controlSource) `
+                -LogPath (Join-Path $logsRoot 'generate-demand-bearing-store.log') | Out-Null
+        }
+        catch {
+            # The rig exits 1 on any outcome but PASS, so its own verdict is only in its assertions.json: put it
+            # in front of the exit code (control-server#460).
+            $verdict = if (Test-Path -LiteralPath $generatorAssertions -PathType Leaf) {
+                $failed = Get-Content -Raw -LiteralPath $generatorAssertions | ConvertFrom-Json
+                "The store generator reported $($failed.outcome): $($failed.failureReason). "
+            } else { 'The store generator wrote no assertions.json. ' }
+            throw ($verdict + $_.Exception.Message)
+        }
+        $generatorDocument = Get-Content -Raw -LiteralPath $generatorAssertions | ConvertFrom-Json
         if ($generatorDocument.outcome -ne 'PASS') {
-            throw "The store generator did not pass: $($generatorDocument.outcome). See $storeGeneratorEvidence"
+            throw ("The store generator did not pass: $($generatorDocument.outcome): $($generatorDocument.failureReason). " +
+                   "See $storeGeneratorEvidence")
         }
         # Out of the evidence tree: the store is an input, and the restored copy's rows are recorded below.
         $generatedRoot = Join-Path $StageRoot 'generated-store'
@@ -458,7 +528,8 @@ try {
     $fieldDatabaseSha256 = (Get-FileHash -LiteralPath $fieldDatabase -Algorithm SHA256).Hash.ToLowerInvariant()
 
     $baseline = Read-ControlDatabase
-    $preparedRows = @($baseline.stationOperationRows | Where-Object { $_['status'] -eq 'Prepared' })
+    Assert-FieldRunStoreIsNotGenerated -StoreSource $storeSource -Baseline $baseline
+    $preparedRows =@($baseline.stationOperationRows | Where-Object { $_['status'] -eq 'Prepared' })
     $committedRows = @($baseline.stationOperationRows | Where-Object { $_['status'] -eq 'Committed' })
     if ($preparedRows.Count -ne 1) {
         throw "The restored store must hold exactly one Prepared station operation, found $($preparedRows.Count)."
@@ -556,6 +627,12 @@ finally {
         try { $final = Read-ControlDatabase } catch { if ($null -eq $runError) { $runError = $_ } }
     }
 }
+
+# First, before any judgement and before Write-G3GateResults (control-server#460): on an errored run the gate-result
+# writer refuses a store that was never read or a version that was never fetched, and until this call that refusal
+# was all the run printed -- the generator's exit, the store's shape or the host that never came up stayed in a
+# log. Test-G3EvidenceHonesty.ps1 asserts that this call directly follows the try.
+Write-StagedRunError -ErrorRecord $runError -EvidenceRoot $EvidenceRoot -RunLabel 'Demand-bearing G3'
 
 $portsReleased = @(Get-NetTCPConnection -State Listen -LocalPort $controlPort, $healthPort `
         -ErrorAction SilentlyContinue).Count -eq 0
@@ -913,19 +990,24 @@ $status = if ($null -ne $runError) {
     'DEMAND_BEARING_SLICE_FAIL'
 }
 
+# One record for the gate results, the classification and run-result.json alike: the classification reads its
+# controlServerCommitSource to decide whether this run tested the shared binding (control-server#460).
+$commitsRecord = [ordered]@{
+    controlServer = $ControlServerCommit
+    controlServerCommitSource = $controlServerCommitSource
+    onboardHmi = $OnboardCommit
+    slotsSimulator = $SimulatorCommit
+    protocol = $ProtocolCommit
+    runner = $runnerCommit
+    runnerWorktreeCleanAtStart = $runnerWorktreeClean
+}
+
 $gateResultPaths = Write-G3GateResults -RunKind $G3RunKind -EvidenceRoot $EvidenceRoot `
     -AssertionReport $assertionReport -Slice $Slice -RunnerErrored:($null -ne $runError) -Context @{
         runId = $runId
         startedAt = $runStartedAt.ToString('O')
-        commits = [ordered]@{
-            controlServer = $ControlServerCommit
-            controlServerCommitSource = $controlServerCommitSource
-            onboardHmi = $OnboardCommit
-            slotsSimulator = $SimulatorCommit
-            protocol = $ProtocolCommit
-            runner = $runnerCommit
-            runnerWorktreeCleanAtStart = $runnerWorktreeClean
-        }
+        commits = $commitsRecord
+
         # Read back from the server this run actually talked to rather than restated from a constant:
         # this runner clones no protocol repository, so the identity it can honestly cite is the one
         # the running host reported. Null when the run never got a version, which is the same case
@@ -975,7 +1057,7 @@ $result = [ordered]@{
     completedAtUtc = [DateTimeOffset]::UtcNow
     status = $status
     classification = (New-G3Classification -RunKind $G3RunKind -RunStatus $status `
-        -AssertionReport $assertionReport -RunnerErrored:($null -ne $runError))
+        -AssertionReport $assertionReport -Commits $commitsRecord -RunnerErrored:($null -ne $runError))
     gateResults = @($gateResultPaths | ForEach-Object {
         [IO.Path]::GetRelativePath($EvidenceRoot, $_).Replace('\', '/') })
     # Same record the per-slice gate results carry, at run level so a reader of this file alone can
@@ -983,15 +1065,8 @@ $result = [ordered]@{
     fieldStoreProvenance = $fieldStoreProvenanceRecord
     # Where the restored store came from, at the top so it is the first thing a reader of a PASS meets.
     storeProvenance = $configuration.storeProvenance
-    commits = [ordered]@{
-        controlServer = $ControlServerCommit
-        controlServerCommitSource = $controlServerCommitSource
-        onboardHmi = $OnboardCommit
-        slotsSimulator = $SimulatorCommit
-        protocol = $ProtocolCommit
-        runner = $runnerCommit
-        runnerWorktreeCleanAtStart = $runnerWorktreeClean
-    }
+    commits = $commitsRecord
+
     configurationSha256 = Get-Sha256Text $configurationJson
     configuration = $configuration
     commands = @($commands)
