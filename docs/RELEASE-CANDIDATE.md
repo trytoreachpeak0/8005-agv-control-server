@@ -521,9 +521,20 @@ staged G3 向量（合成对端，无移动；runner 自行克隆四个仓库并
 ```powershell
 .\scripts\run-staged-g3.ps1 -StageRoot <不存在的短路径> -EvidenceRoot <新目录>
 .\scripts\run-staged-g3-restart.ps1 -StageRoot <不存在的短路径> -EvidenceRoot <新目录>
-.\scripts\run-demand-bearing-g3-vectors.ps1 -StageRoot <不存在的短路径> -EvidenceRoot <新目录> `
-    -FieldRunRoot <一次现场运行的 run 目录>
+.\scripts\run-demand-bearing-g3-vectors.ps1 -StageRoot <不存在的短路径> -EvidenceRoot <新目录>
 ```
+
+需求承载那个 runner 自 control-server#453 起默认**当场生成**它要恢复的库：用绑定的 ControlServer
+commit 里的 L2 场景 `demand-bearing-store-at-unload`，在合成装置上（合成车载端、假 RIoT、假 MesIngest）
+走到「装货已提交、卸货命令已下发、结果未回」，导出库再恢复。以前用的是 2026-08-29 `agv01` 真车运行
+留下的库（`fullloop-20260829T131549Z`），那个目录已经丢了，再造一份要真车与真 RIoT。**合成库的证据
+比真车库弱一档**：状态由被测构建经产品代码写出，但不是真需求、真车、真 RIoT；而且库是被测构建按自己的 schema
+写的，恢复时不经过跨构建、旧 schema 的迁移，「别的构建写的库也能接上」这一层不再被证明。合成路径上的
+`protocolCommit` 断言是结构上必然成立的（服务端写库前已校验协议身份），只能防「库不是本构建写的」。手上有授权现场运行的
+run 目录时，仍可加 `-FieldRunRoot <run 目录>` 恢复它，此时库里的 `protocolCommit` 只记录不断言
+（`TICKET_17` 豁免）；合成库则断言它等于绑定协议。绑定的 ControlServer commit 早于 #453 时没有这个
+场景，runner 在建任何目录之前就报错：要么由出口票移绑定，要么给 `-FieldRunRoot`；只想自检一个更新的提交时用
+`-SelfCheckControlServerCommit <40 位 hex>`，这一轮记 `controlServerCommitSource = SELF_CHECK_OVERRIDE`，不是门禁证据。生成场景不是 L2 判据，不进 `l2.yml`。
 
 `run-staged-g3.ps1` 需要 Node.js 与 pnpm（协议 G1）。三个 runner 都走明文，**都不再需要
 `-InstallTemporaryCurrentUserRoot`**（该参数已随证书机制一并移除），也都不向任何证书存储写入，因此
