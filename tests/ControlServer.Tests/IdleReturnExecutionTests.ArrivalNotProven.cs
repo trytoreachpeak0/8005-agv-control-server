@@ -178,7 +178,12 @@ public sealed partial class IdleReturnExecutionTests
                 });
                 break;
             case "not-named":
-                await SetJourneyAsync(fleet, journey.JourneyId, row => row.SetBlockReason(JourneyRuntimeEngine.CheckpointWaitReason, fleet.Clock.GetUtcNowWithoutTick()));
+                await SetJourneyAsync(fleet, journey.JourneyId, row =>
+                {
+                    // Named long enough ago that only the code is wrong.
+                    row.SetBlockReason(null, fleet.Clock.GetUtcNowWithoutTick());
+                    row.SetBlockReason(JourneyRuntimeEngine.CheckpointWaitReason, fleet.Clock.GetUtcNowWithoutTick().AddHours(-1));
+                });
                 break;
             case "journey-completed":
                 await SetJourneyAsync(fleet, journey.JourneyId, row => row.Stage = JourneyRuntimeStage.Completed);
