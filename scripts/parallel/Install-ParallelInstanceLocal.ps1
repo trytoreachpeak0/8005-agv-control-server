@@ -223,12 +223,35 @@ try {
         }
 
         if (Get-Service -Name $serviceName -ErrorAction SilentlyContinue) {
+            # The upgrade script refuses an installed configuration whose JourneyRuntime is on: it
+            # starts the new binary on that configuration for its lifecycle check, and a runtime that
+            # is on would poll demand and place orders from inside it. This instance's overlay writes
+            # true, so the flag is set false here -- after the service is stopped, so a running
+            # service never sees the change, and right before the upgrade, so its backup and its
+            # rollback both hold false. Set-InstanceConfiguration writes true again only after this
+            # returns (control-server#454).
+            $configurationPath = Join-Path $installRoot 'appsettings.Production.json'
+            Stop-Service -Name $serviceName -Force
+            (Get-Service -Name $serviceName).WaitForStatus('Stopped', [TimeSpan]::FromSeconds(60))
+            $wasEnabled = Set-ParallelInstanceJourneyRuntimeDisabled -Path $configurationPath
+            Write-Step "$serviceName stopped; JourneyRuntime.enabled set false for the upgrade (was '$wasEnabled')"
             Write-Step "Upgrading $serviceName with Update-ControlServerLocal.ps1"
-            & (Join-Path $scripts 'Update-ControlServerLocal.ps1') `
-                -PackagePath $payload -ResultPath $resultPath -DiagnosticPath $diagnosticPath `
-                -ServiceName $serviceName -InstallRoot $installRoot -DataRoot $dataRoot `
-                -BackupRoot $backupRoot -CertificatePasswordVariable $certificatePasswordVariable `
-                -VerifySafetyProjectionReadOnly
+            try {
+                & (Join-Path $scripts 'Update-ControlServerLocal.ps1') `
+                    -PackagePath $payload -ResultPath $resultPath -DiagnosticPath $diagnosticPath `
+                    -ServiceName $serviceName -InstallRoot $installRoot -DataRoot $dataRoot `
+                    -BackupRoot $backupRoot -CertificatePasswordVariable $certificatePasswordVariable `
+                    -VerifySafetyProjectionReadOnly
+            } catch {
+                # Left false on purpose: the safe direction. Said out loud, because the instance now
+                # dispatches nothing until someone redeploys or restores the flag.
+                $status = (Get-Service -Name $serviceName -ErrorAction SilentlyContinue)?.Status
+                $flagNow = try { (Get-Content -LiteralPath $configurationPath -Raw -Encoding utf8 | ConvertFrom-Json).JourneyRuntime.enabled } catch { "unreadable: $($_.Exception.Message)" }
+                Write-Warning ("JOURNEY_RUNTIME_LEFT_DISABLED: the upgrade failed, and $configurationPath has JourneyRuntime.enabled=" +
+                    "$flagNow (service status: $($status ?? 'absent')). The instance dispatches nothing until it is redeployed " +
+                    'or rolled back successfully, which writes the definition''s value again.')
+                throw
+            }
         } else {
             Write-Step "First install of $serviceName with Install-ControlServerLocal.ps1"
             & (Join-Path $scripts 'Install-ControlServerLocal.ps1') `

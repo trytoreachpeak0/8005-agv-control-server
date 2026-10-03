@@ -318,6 +318,17 @@ Readiness: what the service will read, said out loud
   PASS  readiness: roster in PascalCase (the server reads it case-insensitively)
   PASS  readiness: only the onboard entry declared: exit open, recovery entry not
 
+Upgrade and rollback get past the product upgrade preflight (control-server#454)
+  PASS  the premise: the product upgrade script still refuses an installed configuration with JourneyRuntime on
+  PASS  reproduces the defect: the configuration a first install leaves is refused by the upgrade preflight
+  PASS  after the disable step the upgrade preflight passes
+  PASS  the disable step changes JourneyRuntime.enabled and nothing else (one section, identity kept)
+  PASS  the overlay after a successful upgrade writes JourneyRuntime.enabled back to the definition's true
+  PASS  upgrade branch: stop the service, then set JourneyRuntime false, then run the upgrade script
+  PASS  first-install branch does not touch JourneyRuntime before the product script
+  PASS  Set-InstanceConfiguration (which writes true back) runs only after the product script, on both paths
+  PASS  a failed upgrade reports JOURNEY_RUNTIME_LEFT_DISABLED (the flag stays false, by design)
+
 The shipped definition and the installer carry it
   PASS  the shipped definition states phase 1 (entry off, nothing declared, roster in opsRoot)
   PASS  the instance names its own fault recovery credential variable
@@ -325,4 +336,4 @@ The shipped definition and the installer carry it
   PASS  both product-installer call sites (install, rollback) take the credential first
   PASS  Set-InstanceConfiguration (run by install, upgrade and rollback) writes the sections, the credential and reads readiness
 
-287 passed, 0 failed
+296 passed, 0 failed

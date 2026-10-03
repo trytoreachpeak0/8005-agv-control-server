@@ -291,6 +291,53 @@ function Update-ParallelInstanceConfigurationFile {
     return $verify
 }
 
+function Set-ParallelInstanceJourneyRuntimeDisabled {
+    <#
+        .SYNOPSIS
+            Sets JourneyRuntime.enabled to false in the installed appsettings.Production.json, and
+            nothing else. Returns the value it replaced.
+
+        .DESCRIPTION
+            control-server#454. Update-ControlServerLocal.ps1 refuses an installed configuration whose
+            JourneyRuntime is on ('JourneyRuntime must remain disabled during upgrade.', ae2f99be9):
+            it starts the new, unproven binary on the retained configuration for its lifecycle check,
+            and a runtime that is on would poll demand and place orders from inside that check. The
+            parallel overlay writes true, so every upgrade and rollback after a first install was
+            refused there.
+
+            The installer calls this with the service already STOPPED and immediately before the
+            upgrade script, so the preflight's intent holds rather than being bypassed: the upgrade's
+            lifecycle check runs with the runtime off, its backup holds false, and its rollback
+            restores false. The overlay (Update-ParallelInstanceConfigurationFile) writes true again
+            only after the upgrade returned. A failed upgrade leaves false: the safe direction.
+
+            The section is found ignoring case, as both .NET configuration and the upgrade script's
+            ConvertFrom-Json read it; the file is read back and checked.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string] $Path)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "No installed configuration at $Path."
+    }
+    $configuration = Get-Content -LiteralPath $Path -Raw -Encoding utf8 | ConvertFrom-Json -AsHashtable -Depth 12
+    $section = @($configuration.Keys | Where-Object { [string]::Equals([string] $_, 'JourneyRuntime', [StringComparison]::OrdinalIgnoreCase) })
+    if ($section.Count -ne 1) {
+        throw "$Path has $($section.Count) JourneyRuntime sections; expected exactly one."
+    }
+    $journey = $configuration[$section[0]]
+    $flag = @($journey.Keys | Where-Object { [string]::Equals([string] $_, 'enabled', [StringComparison]::OrdinalIgnoreCase) })
+    $previous = $flag.Count -gt 0 ? $journey[$flag[0]] : $null
+    foreach ($key in $flag) { $journey.Remove($key) }
+    $journey['enabled'] = $false
+    [IO.File]::WriteAllText($Path, (ConvertTo-Json -InputObject $configuration -Depth 12), [Text.UTF8Encoding]::new($false))
+
+    # Read back exactly as the upgrade script will.
+    if ((Get-Content -LiteralPath $Path -Raw -Encoding utf8 | ConvertFrom-Json).JourneyRuntime.enabled -ne $false) {
+        throw "JourneyRuntime.enabled in $Path is not false after it was set."
+    }
+    return $previous
+}
+
 Export-ModuleMember -Function @('Get-MvpFingerprint', 'Assert-MvpUntouched', 'Format-MvpFingerprint',
     'Get-ParallelProductUninstallerPath', 'Test-ParallelProductUninstallerPremise', 'Invoke-ParallelProductUninstaller',
-    'Update-ParallelInstanceConfigurationFile')
+    'Update-ParallelInstanceConfigurationFile', 'Set-ParallelInstanceJourneyRuntimeDisabled')

@@ -37,6 +37,18 @@ control-server#262。约 2026-10-08 起 `factory01` 上同时跑两套 ControlSe
   和名单文件。两节缺失、或入口开着却没有凭据：抛 `CLEARANCE_EXIT_BROKEN`，安装算失败。出口不可用（例如第一阶段名单为空）：
   打 `CLEARANCE_EXIT_UNAVAILABLE` 警告并列原因码，不算失败。它读的是服务将读的文件，不是运行中进程的判定，服务端没有对外暴露这个状态。
 
+## 升级与回滚前先把旅程运行时关掉（control-server#454）
+
+产品升级脚本 `Update-ControlServerLocal.ps1` 的预检要求已装配置里 `JourneyRuntime.enabled` 为 false（`ae2f99be9` 起）：
+它会用保留下来的配置拉起还没验证过的新版本，做启动、存活检查、重启、再检查，结果文件写 `journeyRuntimeEnabled=false`、
+`vehicleMoved=false`；运行时开着，新版本就会在这次检查里取需求、建单。并行实例的覆盖层写的是 true，所以首装之后的升级和
+`-Rollback` 以前都被这道预检拒掉。
+
+现在升级分支的顺序是：先停服务，再把文件里的开关置为 false，然后调升级脚本。于是升级的检查在运行时关着时进行，它的备份和
+失败回退也都停在 false。升级成功后，`Set-InstanceConfiguration` 的覆盖层才把它写回定义里的值。升级失败时开关留在 false（安全
+方向），安装脚本打 `JOURNEY_RUNTIME_LEFT_DISABLED` 警告，写明文件里的值和服务状态。注意：如果升级脚本在它自己停服务之前就失败
+（例如包清单不对），服务会停在我们停下的状态，不会被拉起。
+
 ## 路径和名字只认一种写法
 
 control-server#262 复审找到过一个严重缺陷：卸载脚本在一种很常见的写错下（JSON 里用正斜杠写路径）
