@@ -1,5 +1,7 @@
 # control-server#453：需求承载 G3 用合成库的自检运行与变异证明
 
+**SELF_CHECK_OVERRIDE，只作功能验证，不是出口证据；formalSlicePass 字段因 cs#460 尚未修复而不作数。**
+
 ## 结论
 
 需求承载 G3 runner 改成当场生成合成库之后，在本票分支顶端 `b660f80e` 上跑通：
@@ -9,7 +11,7 @@
 `commits.controlServerCommitSource = SELF_CHECK_OVERRIDE`。共享绑定按调度意见不在本票移动，仍是
 `8d0a644e`，那个提交里没有生成场景。正式的需求承载 G3 结论要等出口票（cs#393）第 1 步把绑定移到包含
 本票的提交之后再跑。**`classification` 与 `gate-result.json` 里的 `formalSlicePass: true` 在这三轮里不作数**：
-分级函数不看 `controlServerCommitSource`，这一点没有在本票改动，已报调度。
+分级函数不看 `controlServerCommitSource`，这一点不在本票改动，由 cs#460 在共用的 `g3-slice-evidence.ps1` 里统一修。
 
 **证据比以前弱一档。**以前恢复的是 2026-08-29 `agv01` 真车、真 RIoT 运行留下的库（`fullloop-20260829T131549Z`，
 已丢失）。现在的库由被测构建在合成装置上写出：合成车载端、假 RIoT、假 MesIngest，没有真车，也没有真 RIoT。
