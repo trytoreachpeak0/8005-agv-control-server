@@ -99,7 +99,7 @@ FieldOps 里的批准记录（`approve-charging-policy` 的 `--approved-by`、`-
 | `docs/field/charging-policy-map26-drill-20261008.json` | `23a29753d4501c584d63ae46b5183886d316ebe510d5bce9bedd8b67e452a465` |
 | `docs/field/charger-roster-map26-station211.json` | `ac69cfbea5b9422835ec2f168c91de02b4422e9f0832236e7b732bba1477233c` |
 | `docs/field/charger-roster-empty.json` | `4524d05180ee6ca3d4d3ead919adafc4e6bebf89d0d3bae0d3ebdf23bf10031f` |
-| `catalog-26.json` | `09952c644c15246ae9b749cf29706e43f5b61d8833dea3cdd9011662834de050` |
+| `catalog-26.json` | `55a1f20b846f672687bb08ac8a731e171824e6f0ff5c0da3ef379a7e1f983c16`（检出后的 LF 版本；跑预演时用的是 CRLF 工作副本，内容相同，提交后对 LF 版本复跑启用版名册预演仍是 `OK`、0 错） |
 
 **结果**（全文在 `dry-run/`；退出码全部为 0）：
 
