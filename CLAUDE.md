@@ -251,8 +251,11 @@ Load-bearing details:
   unload sent, no result" and exports the database, which the runner restores.
   The only field store ever used (`fullloop-20260829T131549Z`, `agv01` and the
   real RIoT) is lost, and making another needs a real vehicle. A generated store
-  is weaker evidence -- no real vehicle, no real RIoT -- and the run records that
-  in `storeProvenance`; its `protocolCommit` is asserted against the binding.
+  is weaker evidence -- no real vehicle, no real RIoT, and no cross-build restore:
+  it is in the build's own schema, so nothing is migrated -- and the run records
+  that in `storeProvenance`. Its `protocolCommit` is asserted against the binding,
+  but holds by construction (the server validates the identity before writing
+  it), so it only shows the store is this build's, not a product regression.
   `-FieldRunRoot <an authorised field run's root>` still restores a field store
   instead, with the `TICKET_17` exemption on that one fact only. A binding older
   than #453 has no generator scenario, and the runner refuses it before creating

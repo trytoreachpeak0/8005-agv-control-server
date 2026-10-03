@@ -15,7 +15,12 @@
 
 **证据比以前弱一档。**以前恢复的是 2026-08-29 `agv01` 真车、真 RIoT 运行留下的库（`fullloop-20260829T131549Z`，
 已丢失）。现在的库由被测构建在合成装置上写出：合成车载端、假 RIoT、假 MesIngest，没有真车，也没有真 RIoT。
-16 条断言的面不变，但 `FP-IS-04`／`05` 的 G3 结论里不再包含「在真车写下的状态上成立」这层意思。
+它在两层上弱了：
+1. 没有真需求、真车、真 RIoT，`FP-IS-04`／`05` 的 G3 结论里不再包含「在真车写下的状态上成立」这层意思。
+2. **没有跨构建、旧 schema 的恢复与迁移。**外场库是 MVP `f48e616` 按旧 schema 写的，v2 服务端恢复它时要先迁移；合成库是被测构建按自己当前的 schema 写的，恢复时迁移什么都不做。所以 `acceptedDemandSurvivesTheHostRestart`、`vehicleClaimRecordSurvivesTheHostRestart`、`noMovementOrExternalSideEffects` 原来顺带证明的「别的构建写的旧库也能接上」，现在不再证明。
+
+第七合取项（库里的 `protocolCommit` 等于绑定协议）在合成路径上是**结构上必然成立**的：服务端写 `SessionRecoveries.ProtocolCommit` 之前，`ValidateProtocolIdentity` 已经要求它等于编进构建的身份（`src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs:134`、`:3634-3643`）。所以这一项只能防「这份库不是本构建写的」，抓不到产品回归；变异也只能靠导出之后手工 `UPDATE` 才够得着它。
+
 `fieldStoreProvenance.riotCreateAuditHistory` 那一节记录的是假 RIoT 的行为：假 RIoT 对从未建过的 `upperId`
 的应答与真 RIoT 不同（`preCreateReconciliationObservedUnknownOnEveryLeg = false`），这一节本来就只记录、不断言
 （cs#60），这里也不能当作关于 RIoT 的证据。
