@@ -1,0 +1,14 @@
+# 在 batch-p3/v3@9497b75b 的产品代码上跑（仅加了测试与一个空壳 SettleAnsweredCommandsAsync => 0）
+  Failed ControlServer.Tests.SlotFaultDeclarationTests.AResultForAnAlreadyAnsweredDeclarationSettlesACommandLeftUnsettled [6 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+  Failed ControlServer.Tests.SlotFaultDeclarationTests.AnAnsweredDeclarationSettlesItsCommandSoTheServerStartsAfterAProtocolIdentityChange(outcome: "NOT_APPLICABLE") [398 ms]
+  Error Message:
+   System.InvalidOperationException : OUTBOX_PROTOCOL_IDENTITY_MISMATCH: The protocol outbox holds unacknowledged lines written under another protocol identity; this build would replay them unchanged into every session, the vehicle would reject them and drop the session on every reconnect. AGV-001: 1 line(s) under AGV_FULL_PRODUCT protocolVersion 3 release 2.0.0 (manifest 4ac095ad371d3aaa60d7c2e01
+  Failed ControlServer.Tests.SlotFaultDeclarationTests.AnAnsweredDeclarationSettlesItsCommandSoTheServerStartsAfterAProtocolIdentityChange(outcome: "APPLIED") [881 ms]
+  Error Message:
+   System.InvalidOperationException : OUTBOX_PROTOCOL_IDENTITY_MISMATCH: The protocol outbox holds unacknowledged lines written under another protocol identity; this build would replay them unchanged into every session, the vehicle would reject them and drop the session on every reconnect. AGV-001: 1 line(s) under AGV_FULL_PRODUCT protocolVersion 3 release 2.0.0 (manifest 4ac095ad371d3aaa60d7c2e01
+  Failed ControlServer.Tests.SlotFaultDeclarationTests.StartupSettlesTheCommandsOfDeclarationsAnsweredBeforeTheFixAndNoOther [1 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Failed!  - Failed:     4, Passed:     0, Skipped:     0, Total:     4, Duration: 9 s - ControlServer.Tests.dll (net8.0)
