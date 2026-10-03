@@ -230,5 +230,255 @@ function Invoke-ParallelProductUninstaller {
     }
 }
 
+function Find-OverlayMismatch {
+    # Every scalar or array leaf of the overlay, compared with what was read back (keys ignoring
+    # case, as .NET configuration reads them; values as JSON, so 26 and 26L are one value).
+    param($Overlay, $Actual, [string] $Path)
+    foreach ($key in @($Overlay.Keys)) {
+        $expected = $Overlay[$key]
+        $found = $null
+        if ($Actual -is [System.Collections.IDictionary]) {
+            foreach ($candidate in @($Actual.Keys)) {
+                if ([string]::Equals([string] $candidate, [string] $key, [StringComparison]::OrdinalIgnoreCase)) { $found = $Actual[$candidate] }
+            }
+        }
+        if ($expected -is [System.Collections.IDictionary]) {
+            Find-OverlayMismatch -Overlay $expected -Actual $found -Path "$Path$key."
+        } elseif ((ConvertTo-Json -InputObject $expected -Compress -Depth 12) -cne (ConvertTo-Json -InputObject $found -Compress -Depth 12)) {
+            "$Path$key"
+        }
+    }
+}
+
+
+# The default for the -Writer seams below. A seam, not a convenience: the self-test passes a writer
+# that loses or corrupts the write, which is the only way to show the read-back checks are live.
+$script:WriteConfigurationFile = {
+    param([string] $Path, [string] $Text)
+    [IO.File]::WriteAllText($Path, $Text, [Text.UTF8Encoding]::new($false))
+}
+
+function Update-ParallelInstanceConfigurationFile {
+    <#
+        .SYNOPSIS
+            Merges this instance's overlay into appsettings.Production.json, writes it, reads it back
+            and checks every overlay value landed. Returns what was read back.
+
+        .DESCRIPTION
+            Run after the product script on every path -- first install, upgrade, rollback -- so what
+            the definition says is what the file says, whatever the product script left behind
+            (control-server#454: a first install rewrote the file, and the hand-merged clearance
+            sections were gone without a word).
+
+            Out of Install-ParallelInstanceLocal.ps1 so that the self-test can run it on a temporary
+            file. The check used to cover three keys; it now covers every value the overlay writes --
+            the vehicle identity and the MesIngest origin first among them -- because a merge that
+            drops one starts a service that answers health and drives the wrong car or has no
+            clearance exit.
+
+            Uses New-ParallelInstanceConfigurationOverlay and Merge-ConfigurationTree from
+            ParallelInstance.psm1, which every caller imports alongside this module.
+
+        .PARAMETER Writer
+            Test seam: { param($Path, $Text) } that writes the file. Callers on the machine omit it.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string] $Path,
+        [Parameter(Mandatory = $true)][System.Collections.IDictionary] $Definition,
+        [scriptblock] $Writer = $script:WriteConfigurationFile
+    )
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "The product installer wrote no configuration at $Path."
+    }
+    $current = Get-Content -LiteralPath $Path -Raw -Encoding utf8 | ConvertFrom-Json -AsHashtable -Depth 12
+    $overlay = New-ParallelInstanceConfigurationOverlay -Definition $Definition
+    $merged = Merge-ConfigurationTree -Base $current -Overlay $overlay
+    $null = & $Writer $Path (ConvertTo-Json -InputObject $merged -Depth 12)
+
+    $verify = Get-Content -LiteralPath $Path -Raw -Encoding utf8 | ConvertFrom-Json -AsHashtable -Depth 12
+    $mismatches = @(Find-OverlayMismatch -Overlay $overlay -Actual $verify -Path '')
+    if ($mismatches.Count -gt 0) {
+        throw "After the merge, $Path does not carry the overlay's value for: $($mismatches -join ', ')."
+    }
+    return $verify
+}
+
+function Set-ParallelInstanceJourneyRuntimeDisabled {
+    <#
+        .SYNOPSIS
+            Sets JourneyRuntime.enabled to false in the installed appsettings.Production.json, and
+            nothing else. Returns the value it replaced.
+
+        .DESCRIPTION
+            control-server#454. Update-ControlServerLocal.ps1 refuses an installed configuration whose
+            JourneyRuntime is on ('JourneyRuntime must remain disabled during upgrade.', ae2f99be9):
+            it starts the new, unproven binary on the retained configuration for its lifecycle check,
+            and a runtime that is on would poll demand and place orders from inside that check. The
+            parallel overlay writes true, so every upgrade and rollback after a first install was
+            refused there. Called only from Invoke-ParallelProductUpgrade, which says when and why.
+
+            The section is found ignoring case, as both .NET configuration and the upgrade script's
+            ConvertFrom-Json read it; the file is read back the way the upgrade script reads it.
+
+        .PARAMETER Writer
+            Test seam, as for Update-ParallelInstanceConfigurationFile.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string] $Path,
+        [scriptblock] $Writer = $script:WriteConfigurationFile
+    )
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "No installed configuration at $Path."
+    }
+    $configuration = Get-Content -LiteralPath $Path -Raw -Encoding utf8 | ConvertFrom-Json -AsHashtable -Depth 12
+    $section = @($configuration.Keys | Where-Object { [string]::Equals([string] $_, 'JourneyRuntime', [StringComparison]::OrdinalIgnoreCase) })
+    if ($section.Count -ne 1) {
+        throw "$Path has $($section.Count) JourneyRuntime sections; expected exactly one."
+    }
+    $journey = $configuration[$section[0]]
+    $flag = @($journey.Keys | Where-Object { [string]::Equals([string] $_, 'enabled', [StringComparison]::OrdinalIgnoreCase) })
+    $previous = $flag.Count -gt 0 ? $journey[$flag[0]] : $null
+    foreach ($key in $flag) { $journey.Remove($key) }
+    $journey['enabled'] = $false
+    $null = & $Writer $Path (ConvertTo-Json -InputObject $configuration -Depth 12)
+
+    # Read back exactly as the upgrade script will.
+    if ((Get-Content -LiteralPath $Path -Raw -Encoding utf8 | ConvertFrom-Json).JourneyRuntime.enabled -ne $false) {
+        throw "JourneyRuntime.enabled in $Path is not false after it was set."
+    }
+    return $previous
+}
+
+function Invoke-ParallelProductUpgrade {
+    <#
+        .SYNOPSIS
+            Runs the product upgrade script on an installed parallel instance, keeping the intent of
+            its preflight. The machine-touching steps are injected.
+
+        .DESCRIPTION
+            control-server#454. Both the upgrade and -Rollback reach the product's
+            Update-ControlServerLocal.ps1 while the service exists. Its preflight refuses an
+            installed configuration whose JourneyRuntime is on, because it starts the new binary on
+            that configuration for its lifecycle check; this instance's overlay writes true. In order:
+
+              1. Refuse while this instance can place RIoT orders (Get-ParallelUpgradeRefusal):
+                 stopping the service also stops the runtime's fault supervision of a vehicle that
+                 may be under way. Nothing has been touched yet.
+              2. Stop the service (StopService), so a running service never sees the flag change.
+              3. Set JourneyRuntime.enabled false in the file. The upgrade's lifecycle check then runs
+                 with the runtime off, its backup holds false, and its rollback restores false --
+                 the preflight's intent, kept rather than bypassed.
+              4. Run the upgrade (InvokeUpdate). The caller writes the definition's value back with
+                 the overlay, and only after this returned.
+            On a failed upgrade the flag stays false (the safe direction), JOURNEY_RUNTIME_LEFT_DISABLED
+            says so and how to recover, and the failure is rethrown unchanged.
+
+        .PARAMETER Actions
+            Hashtable of scriptblocks, all required: StopService (returns once the service is
+            stopped), InvokeUpdate (runs the product upgrade script; throws on failure), and
+            ServiceStatus (returns the service's status, for the failure report).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string] $ConfigurationPath,
+        [Parameter(Mandatory = $true)][hashtable] $Actions
+    )
+    $missing = @('StopService', 'InvokeUpdate', 'ServiceStatus' | Where-Object { -not ($Actions.ContainsKey($_) -and $Actions[$_] -is [scriptblock]) })
+    if ($missing.Count -gt 0) { throw "Invoke-ParallelProductUpgrade: missing action(s) $($missing -join ', '); nothing was run." }
+    if (-not (Test-Path -LiteralPath $ConfigurationPath -PathType Leaf)) {
+        throw "No installed configuration at $ConfigurationPath."
+    }
+
+    $installed = Get-Content -LiteralPath $ConfigurationPath -Raw -Encoding utf8 | ConvertFrom-Json -AsHashtable -Depth 12
+    $refusal = Get-ParallelUpgradeRefusal -Configuration $installed
+    if ($refusal) { throw $refusal }
+
+    $null = & $Actions.StopService
+    $wasEnabled = Set-ParallelInstanceJourneyRuntimeDisabled -Path $ConfigurationPath
+    Write-Host "JourneyRuntime.enabled set false for the upgrade, with the service stopped (was '$wasEnabled')"
+    try {
+        & $Actions.InvokeUpdate | Out-Host
+    } catch {
+        $status = try { & $Actions.ServiceStatus } catch { "unknown: $($_.Exception.Message)" }
+        $flagNow = try { (Get-Content -LiteralPath $ConfigurationPath -Raw -Encoding utf8 | ConvertFrom-Json).JourneyRuntime.enabled } catch { "unreadable: $($_.Exception.Message)" }
+        Write-Warning ("JOURNEY_RUNTIME_LEFT_DISABLED: the upgrade failed, and $ConfigurationPath has JourneyRuntime.enabled=$flagNow " +
+            "(service status: $($status ?? 'absent')). If the upgrade script failed in its own preflight the service is still " +
+            'stopped; if it failed after that, its own rollback restarted the previous binaries with the runtime off. Either way ' +
+            'this instance dispatches nothing. To recover, redeploy the commit that is running now (or a fixed package): that ' +
+            'writes the definition''s value back. Do NOT use -Rollback for this: after a failed install the package swap has not ' +
+            'happened, so -Rollback installs the generation before the running one, which the onboard side may not match.')
+        throw
+    }
+    return $wasEnabled
+}
+
+function Invoke-ParallelInstanceConfigurationStep {
+    <#
+        .SYNOPSIS
+            Everything Set-InstanceConfiguration does after the product script, on every path, with
+            the machine-touching steps injected. Returns the clearance exit readiness.
+
+        .DESCRIPTION
+            control-server#454. In order:
+              1. merge the overlay into appsettings.Production.json and check every value landed
+                 (Update-ParallelInstanceConfigurationFile);
+              2. put the fault recovery credential into the service's Environment, when there is one;
+              3. create an empty roster where the definition points, if there is no file there --
+                 never overwriting one;
+              4. judge the clearance exit from what the service will read, and throw
+                 CLEARANCE_EXIT_BROKEN BEFORE restarting: a service restarted into a broken state
+                 (a section missing, the entry on without its credential) would refuse to start or
+                 run without an exit, and the running one is better left as it is;
+              5. restart the service, so it reads all of the above.
+
+        .PARAMETER Actions
+            Hashtable of scriptblocks, all required: GetEnvironment (returns the service's
+            Environment multi-string), SetEnvironment (takes the new one), RestartService.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string] $ConfigurationPath,
+        [Parameter(Mandatory = $true)][System.Collections.IDictionary] $Definition,
+        [AllowNull()][AllowEmptyString()][string] $Credential,
+        [Parameter(Mandatory = $true)][string] $CredentialVariable,
+        [Parameter(Mandatory = $true)][string] $RosterPath,
+        [Parameter(Mandatory = $true)][hashtable] $Actions
+    )
+    $missing = @('GetEnvironment', 'SetEnvironment', 'RestartService' | Where-Object { -not ($Actions.ContainsKey($_) -and $Actions[$_] -is [scriptblock]) })
+    if ($missing.Count -gt 0) { throw "Invoke-ParallelInstanceConfigurationStep: missing action(s) $($missing -join ', '); nothing was run." }
+
+    $effective = Update-ParallelInstanceConfigurationFile -Path $ConfigurationPath -Definition $Definition
+
+    if (-not [string]::IsNullOrWhiteSpace($Credential)) {
+        [string[]] $before = @(& $Actions.GetEnvironment)
+        $null = & $Actions.SetEnvironment (Set-ParallelServiceEnvironmentEntry -Environment $before -Name $CredentialVariable -Value $Credential)
+    }
+
+    # An empty roster rather than none: the two read the same to the server ("nobody holds the
+    # permission"), but the file is where somebody fills in names later.
+    if (-not (Test-Path -LiteralPath $RosterPath)) {
+        New-Item -ItemType Directory -Path (Split-Path -Parent $RosterPath) -Force | Out-Null
+        [IO.File]::WriteAllText($RosterPath, '{"operators":[]}', [Text.UTF8Encoding]::new($false))
+    }
+
+    # Names of entries whose value is not blank; values never leave this function.
+    $populated = @(@(& $Actions.GetEnvironment) | Where-Object { $null -ne $_ } | ForEach-Object {
+            $parts = $_ -split '=', 2
+            if ($parts.Count -eq 2 -and -not [string]::IsNullOrWhiteSpace($parts[1])) { $parts[0] }
+        })
+    $rosterText = (Test-Path -LiteralPath $RosterPath -PathType Leaf) ? (Get-Content -LiteralPath $RosterPath -Raw -Encoding utf8) : $null
+    $readiness = Get-ParallelClearanceExitReadiness -Configuration $effective -EnvironmentNames $populated -RosterText $rosterText
+    if (@($readiness.Fatal).Count -gt 0) {
+        throw ("CLEARANCE_EXIT_BROKEN (the service was not restarted): " + (@($readiness.Fatal) -join ' ') + " $($readiness.Line)")
+    }
+
+    $null = & $Actions.RestartService
+    return $readiness
+}
+
 Export-ModuleMember -Function @('Get-MvpFingerprint', 'Assert-MvpUntouched', 'Format-MvpFingerprint',
-    'Get-ParallelProductUninstallerPath', 'Test-ParallelProductUninstallerPremise', 'Invoke-ParallelProductUninstaller')
+    'Get-ParallelProductUninstallerPath', 'Test-ParallelProductUninstallerPremise', 'Invoke-ParallelProductUninstaller',
+    'Update-ParallelInstanceConfigurationFile', 'Set-ParallelInstanceJourneyRuntimeDisabled',
+    'Invoke-ParallelProductUpgrade', 'Invoke-ParallelInstanceConfigurationStep')

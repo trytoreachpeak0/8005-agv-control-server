@@ -27,6 +27,12 @@
       * the configuration overlay the product installer does not write -- MesIngest pointed at
         the local double, the JourneyRuntime identity, the RouteGraph section, the RIoT create
         gate -- merged onto appsettings.Production.json;
+      * what the manual station clearance exit needs (control-server#454), on the install, upgrade
+        and rollback paths alike: the VehicleFaultRecovery and FieldOperatorRoles sections, the
+        fault recovery credential in the service's Environment (from deploy-config.json's
+        faultRecoveryCredential, or carried over from the service), an empty roster file if none
+        exists, and a CLEARANCE_EXIT_READINESS line read back from what the service will read --
+        a broken state throws, an unavailable exit warns as CLEARANCE_EXIT_UNAVAILABLE;
       * the resident FakeMesIngest, as a scheduled task;
       * firewall rules for this instance's two ports, named so they cannot be confused with the
         MVP's;
@@ -131,7 +137,8 @@ function Assert-Administrator {
 
 # ------------------------------------------------------- the secrets file ---
 
-# deploy-config.json holds the RIoT call API key and the MesIngest shared secret in plain text.
+# deploy-config.json holds the RIoT call API key, the MesIngest shared secret and (control-server#454) the
+# fault recovery credential in plain text.
 # From the moment the control host copied it, every way out of this script removes it: this try
 # starts before the first check, so a refused definition, a refused config path, a missing
 # elevation and a failure half way through all reach the finally below. Anything that cannot be
@@ -193,6 +200,18 @@ try {
     $mvpBefore = Get-MvpFingerprint
     Write-Step ("MVP service before: " + (Format-MvpFingerprint $mvpBefore))
 
+    # An upgrade or rollback stops the service, and with it the runtime's fault supervision of a
+    # vehicle that may be under way. While the installed configuration can place RIoT orders, refuse
+    # here -- before the installed definition is re-recorded, before a rollback swaps directories,
+    # before anything is unpacked (control-server#454 review S3). Invoke-ParallelProductUpgrade
+    # asks the same question again right before it stops the service.
+    $installedConfigurationPath = Join-Path $installRoot 'appsettings.Production.json'
+    if ((Get-Service -Name $serviceName -ErrorAction SilentlyContinue) -and (Test-Path -LiteralPath $installedConfigurationPath -PathType Leaf)) {
+        $upgradeRefusal = Get-ParallelUpgradeRefusal -Configuration (
+            Get-Content -LiteralPath $installedConfigurationPath -Raw -Encoding utf8 | ConvertFrom-Json -AsHashtable -Depth 12)
+        if ($upgradeRefusal) { throw $upgradeRefusal }
+    }
+
     # The definition this install (or rollback) runs with, recorded before anything changes. The
     # uninstaller reads this copy in preference to instance.json, which the control host
     # overwrites on every deploy and every rollback: an uninstall must remove what was installed,
@@ -217,12 +236,27 @@ try {
         }
 
         if (Get-Service -Name $serviceName -ErrorAction SilentlyContinue) {
+            # The upgrade script's preflight refuses an installed configuration whose JourneyRuntime is
+            # on, and this instance's overlay writes true. Invoke-ParallelProductUpgrade (ParallelHost.psm1)
+            # refuses while RIoT dispatch is open, stops the service, sets the flag false so the
+            # upgrade's lifecycle check, backup and rollback all hold false, and reports a failure as
+            # JOURNEY_RUNTIME_LEFT_DISABLED. Set-InstanceConfiguration writes the definition's value
+            # back only after this returned (control-server#454).
             Write-Step "Upgrading $serviceName with Update-ControlServerLocal.ps1"
-            & (Join-Path $scripts 'Update-ControlServerLocal.ps1') `
-                -PackagePath $payload -ResultPath $resultPath -DiagnosticPath $diagnosticPath `
-                -ServiceName $serviceName -InstallRoot $installRoot -DataRoot $dataRoot `
-                -BackupRoot $backupRoot -CertificatePasswordVariable $certificatePasswordVariable `
-                -VerifySafetyProjectionReadOnly
+            $null = Invoke-ParallelProductUpgrade -ConfigurationPath (Join-Path $installRoot 'appsettings.Production.json') -Actions @{
+                StopService = {
+                    Stop-Service -Name $serviceName -Force
+                    (Get-Service -Name $serviceName).WaitForStatus('Stopped', [TimeSpan]::FromSeconds(60))
+                }
+                InvokeUpdate = {
+                    & (Join-Path $scripts 'Update-ControlServerLocal.ps1') `
+                        -PackagePath $payload -ResultPath $resultPath -DiagnosticPath $diagnosticPath `
+                        -ServiceName $serviceName -InstallRoot $installRoot -DataRoot $dataRoot `
+                        -BackupRoot $backupRoot -CertificatePasswordVariable $certificatePasswordVariable `
+                        -VerifySafetyProjectionReadOnly
+                }
+                ServiceStatus = { [string] (Get-Service -Name $serviceName -ErrorAction SilentlyContinue)?.Status }
+            }
         } else {
             Write-Step "First install of $serviceName with Install-ControlServerLocal.ps1"
             & (Join-Path $scripts 'Install-ControlServerLocal.ps1') `
@@ -232,6 +266,25 @@ try {
                 -ListenAddress $listenAddress -HealthBindAddress $healthBindAddress `
                 -OnboardPort $onboardPort -HealthPort $healthPort `
                 -SkipMachineEnvironmentInjection
+        }
+    }
+
+    function Get-ServiceEnvironment {
+        # This service's registry Environment (REG_MULTI_SZ); empty when the service does not exist.
+        $registryKey = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey("SYSTEM\CurrentControlSet\Services\$serviceName", $false)
+        if ($null -eq $registryKey) { return [string[]] @() }
+        try { return [string[]] @($registryKey.GetValue('Environment', [string[]] @())) } finally { $registryKey.Close() }
+    }
+
+    function Set-ServiceEnvironment {
+        param([string[]] $Environment)
+        $key = "SYSTEM\CurrentControlSet\Services\$serviceName"
+        $registryKey = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($key, $true)
+        if ($null -eq $registryKey) { throw "Cannot open the service registry key: $key" }
+        try {
+            $registryKey.SetValue('Environment', $Environment, [Microsoft.Win32.RegistryValueKind]::MultiString)
+        } finally {
+            $registryKey.Close()
         }
     }
 
@@ -245,41 +298,36 @@ try {
             leaves agvId and vehicleKey coming from the package's own appsettings.json, where they
             still name agv01 -- the production vehicle. An instance deployed without this overlay
             would look isolated and be pointed at the wrong car.
-        #>
-        $configurationPath = Join-Path $installRoot 'appsettings.Production.json'
-        if (-not (Test-Path -LiteralPath $configurationPath -PathType Leaf)) {
-            throw "The product installer wrote no configuration at $configurationPath."
-        }
-        $current = Get-Content -LiteralPath $configurationPath -Raw -Encoding utf8 |
-            ConvertFrom-Json -AsHashtable -Depth 12
-        $overlay = New-ParallelInstanceConfigurationOverlay -Definition $definition
-        $merged = Merge-ConfigurationTree -Base $current -Overlay $overlay
-        [IO.File]::WriteAllText(
-            $configurationPath,
-            (ConvertTo-Json -InputObject $merged -Depth 12),
-            [Text.UTF8Encoding]::new($false))
-        Write-Step "Configuration overlay merged into $configurationPath"
 
-        # Read it back and assert the three keys that decide what this instance does. A merge that
-        # silently dropped one of them would leave a service that starts, answers health and drives
-        # the wrong vehicle on real demand.
-        $verify = Get-Content -LiteralPath $configurationPath -Raw -Encoding utf8 |
-            ConvertFrom-Json -AsHashtable -Depth 12
-        $expected = @{
-            'JourneyRuntime.vehicleKey' = [string] $definition['journeyRuntime']['vehicleKey']
-            'JourneyRuntime.agvId' = [string] $definition['journeyRuntime']['agvId']
-            'MesIngest.baseUrl' = [string] $definition['mesIngest']['baseUrl']
-        }
-        foreach ($pair in $expected.GetEnumerator()) {
-            $parts = $pair.Key.Split('.')
-            $actual = [string] $verify[$parts[0]][$parts[1]]
-            if ($actual -cne $pair.Value) {
-                throw "$($pair.Key) is '$actual' after the merge; expected '$($pair.Value)'."
+            Run on every path -- first install, upgrade, rollback -- and so is everything the manual
+            station clearance exit needs (control-server#454): its two sections in the file, the
+            fault recovery credential in the service's Environment, a roster file to point at, and
+            a readiness line read back from what the service will actually read. A first install
+            rewrites both the file and the Environment; anything merged in by hand used to be lost
+            there without a word.
+        #>
+        param([AllowNull()][AllowEmptyString()][string] $FaultRecoveryCredential)
+
+        $configurationPath = Join-Path $installRoot 'appsettings.Production.json'
+        $rosterPath = $layout.FieldOperatorRosterPath
+        # Merge and check every overlay value, write the credential, create an empty roster if there
+        # is none (never overwriting one), judge the clearance exit -- throwing CLEARANCE_EXIT_BROKEN
+        # before any restart -- and only then restart (ParallelHost.psm1).
+        $readiness = Invoke-ParallelInstanceConfigurationStep -ConfigurationPath $configurationPath -Definition $definition `
+            -Credential $FaultRecoveryCredential -CredentialVariable (Get-ParallelInstanceName).FaultRecoveryCredentialVariable `
+            -RosterPath $rosterPath -Actions @{
+                GetEnvironment = { Get-ServiceEnvironment }
+                SetEnvironment = { param([string[]] $Environment) Set-ServiceEnvironment $Environment }
+                RestartService = { Restart-Service -Name $serviceName -Force }
             }
+        Write-Step "Configuration overlay merged into $configurationPath and verified (vehicle identity, MesIngest origin, clearance exit sections); credential $([string]::IsNullOrWhiteSpace($FaultRecoveryCredential) ? 'not supplied' : 'written, value not shown'); $serviceName restarted"
+        Write-Step $readiness.Line
+        Write-Output $readiness.Line
+        if (@($readiness.Reasons).Count -gt 0) {
+            Write-Warning ("CLEARANCE_EXIT_UNAVAILABLE ($(@($readiness.Reasons) -join ',')): a vehicle that cannot charge stays on " +
+                'ORDER_HANG and isolation is not written (server alarms 2271/2272). Intended in phase 1; otherwise fill in ' +
+                "the roster at $rosterPath and set vehicleFaultRecovery / fieldOperatorRoles in the instance definition.")
         }
-        Write-Step 'Configuration verified: vehicle identity and MesIngest origin are this instance''s own'
-        Restart-Service -Name $serviceName -Force
-        Write-Step "$serviceName restarted with the merged configuration"
     }
 
     function Install-FakeMesIngest {
@@ -374,6 +422,13 @@ try {
         }
         Write-Step "Rolling back $serviceName to the package in $previousRoot"
 
+        # A rollback has no deploy-config.json, so the fault recovery credential is the one the service
+        # already holds. Read before anything moves: if the product script lands in its first-install
+        # branch it rebuilds the Environment, and with the entry on and no credential the rollback
+        # stops here, with the machine untouched (control-server#454).
+        $faultRecoveryCredential = Resolve-ParallelFaultRecoveryCredential -Definition $definition -Supplied $null `
+            -Carried (Get-ParallelServiceEnvironmentEntry -Environment (Get-ServiceEnvironment) -Name (Get-ParallelInstanceName).FaultRecoveryCredentialVariable)
+
         # Swap rather than copy, so rolling back a rollback is the same operation again.
         $swap = Join-Path $layout.PackageParent ($layout.RollbackFilter.Replace('*', $runId))
         if (Test-Path -LiteralPath $packageRoot) { Move-Item -LiteralPath $packageRoot -Destination $swap }
@@ -384,7 +439,7 @@ try {
         # The overlay is reapplied: an upgrade keeps the existing appsettings.Production.json, but a
         # rollback to a generation installed before some overlay key existed would otherwise come
         # back without it.
-        Set-InstanceConfiguration
+        Set-InstanceConfiguration -FaultRecoveryCredential $faultRecoveryCredential
         Install-FakeMesIngest -Zip ''
         Assert-MvpUntouched -Before $mvpBefore -After (Get-MvpFingerprint)
         Write-Step "Rolled back. Result: $resultPath"
@@ -415,6 +470,14 @@ try {
         Write-Step "Package hash verified ($actual)"
 
         $config = Get-Content -Raw -LiteralPath $DeploymentConfigPath -Encoding utf8 | ConvertFrom-Json
+
+        # The fault recovery credential (control-server#454): the control host's value when it sent
+        # one, otherwise what the service already holds -- read now, before a first install rebuilds
+        # the Environment. With the entry on and neither, this stops before anything is unpacked or
+        # stopped.
+        $faultRecoveryCredential = Resolve-ParallelFaultRecoveryCredential -Definition $definition `
+            -Supplied (($config.PSObject.Properties.Name -contains 'faultRecoveryCredential') ? [string] $config.faultRecoveryCredential : $null) `
+            -Carried (Get-ParallelServiceEnvironmentEntry -Environment (Get-ServiceEnvironment) -Name (Get-ParallelInstanceName).FaultRecoveryCredentialVariable)
 
         # ------------------------------------------------------------------ unpack ---
 
@@ -458,7 +521,7 @@ try {
         }
         Write-Step "Installer result written to $resultPath"
 
-        Set-InstanceConfiguration
+        Set-InstanceConfiguration -FaultRecoveryCredential $faultRecoveryCredential
 
         # ------------------------------------------------- MesIngest bearer token ---
 
@@ -468,17 +531,8 @@ try {
         # pointing this instance at a real MesIngest later is a configuration change rather than a
         # redeployment.
         if ($config.PSObject.Properties.Name -contains 'mesIngestSharedSecret' -and $config.mesIngestSharedSecret) {
-            $key = "SYSTEM\CurrentControlSet\Services\$serviceName"
-            $registryKey = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($key, $true)
-            if ($null -eq $registryKey) { throw "Cannot open the service registry key: $key" }
-            try {
-                [string[]]$environment = @($registryKey.GetValue('Environment'))
-                $environment = @($environment | Where-Object { $_ -notlike 'CONTROL_SERVER_MES_INGEST_SHARED_SECRET=*' })
-                $environment += "CONTROL_SERVER_MES_INGEST_SHARED_SECRET=$($config.mesIngestSharedSecret)"
-                $registryKey.SetValue('Environment', $environment, [Microsoft.Win32.RegistryValueKind]::MultiString)
-            } finally {
-                $registryKey.Close()
-            }
+            Set-ServiceEnvironment (Set-ParallelServiceEnvironmentEntry -Environment (Get-ServiceEnvironment) `
+                    -Name 'CONTROL_SERVER_MES_INGEST_SHARED_SECRET' -Value ([string] $config.mesIngestSharedSecret))
             Restart-Service -Name $serviceName -Force
             Write-Step 'MesIngest bearer token added to this service''s environment; service restarted'
         }
@@ -556,7 +610,7 @@ try {
     if (-not $Rollback) {
         $residue = Remove-ParallelInstanceDeploymentConfig -Path $DeploymentConfigPath -Layout $layout -FallbackDirectory $PSScriptRoot
         if ($residue) {
-            $message = "SECRET_FILE_LEFT_BEHIND: $DeploymentConfigPath still holds the plaintext RIoT API key and MesIngest shared secret and must be removed by hand: $residue."
+            $message = "SECRET_FILE_LEFT_BEHIND: $DeploymentConfigPath still holds the plaintext RIoT API key, MesIngest shared secret and fault recovery credential and must be removed by hand: $residue."
             Write-Warning $message
             # After a failure the warning stands beside the real error; after a success it is the
             # error, because an install that leaves its secrets on disk has not succeeded.
