@@ -137,7 +137,8 @@ function Assert-Administrator {
 
 # ------------------------------------------------------- the secrets file ---
 
-# deploy-config.json holds the RIoT call API key and the MesIngest shared secret in plain text.
+# deploy-config.json holds the RIoT call API key, the MesIngest shared secret and (control-server#454) the
+# fault recovery credential in plain text.
 # From the moment the control host copied it, every way out of this script removes it: this try
 # starts before the first check, so a refused definition, a refused config path, a missing
 # elevation and a failure half way through all reach the finally below. Anything that cannot be
@@ -199,6 +200,18 @@ try {
     $mvpBefore = Get-MvpFingerprint
     Write-Step ("MVP service before: " + (Format-MvpFingerprint $mvpBefore))
 
+    # An upgrade or rollback stops the service, and with it the runtime's fault supervision of a
+    # vehicle that may be under way. While the installed configuration can place RIoT orders, refuse
+    # here -- before the installed definition is re-recorded, before a rollback swaps directories,
+    # before anything is unpacked (control-server#454 review S3). Invoke-ParallelProductUpgrade
+    # asks the same question again right before it stops the service.
+    $installedConfigurationPath = Join-Path $installRoot 'appsettings.Production.json'
+    if ((Get-Service -Name $serviceName -ErrorAction SilentlyContinue) -and (Test-Path -LiteralPath $installedConfigurationPath -PathType Leaf)) {
+        $upgradeRefusal = Get-ParallelUpgradeRefusal -Configuration (
+            Get-Content -LiteralPath $installedConfigurationPath -Raw -Encoding utf8 | ConvertFrom-Json -AsHashtable -Depth 12)
+        if ($upgradeRefusal) { throw $upgradeRefusal }
+    }
+
     # The definition this install (or rollback) runs with, recorded before anything changes. The
     # uninstaller reads this copy in preference to instance.json, which the control host
     # overwrites on every deploy and every rollback: an uninstall must remove what was installed,
@@ -223,34 +236,26 @@ try {
         }
 
         if (Get-Service -Name $serviceName -ErrorAction SilentlyContinue) {
-            # The upgrade script refuses an installed configuration whose JourneyRuntime is on: it
-            # starts the new binary on that configuration for its lifecycle check, and a runtime that
-            # is on would poll demand and place orders from inside it. This instance's overlay writes
-            # true, so the flag is set false here -- after the service is stopped, so a running
-            # service never sees the change, and right before the upgrade, so its backup and its
-            # rollback both hold false. Set-InstanceConfiguration writes true again only after this
-            # returns (control-server#454).
-            $configurationPath = Join-Path $installRoot 'appsettings.Production.json'
-            Stop-Service -Name $serviceName -Force
-            (Get-Service -Name $serviceName).WaitForStatus('Stopped', [TimeSpan]::FromSeconds(60))
-            $wasEnabled = Set-ParallelInstanceJourneyRuntimeDisabled -Path $configurationPath
-            Write-Step "$serviceName stopped; JourneyRuntime.enabled set false for the upgrade (was '$wasEnabled')"
+            # The upgrade script's preflight refuses an installed configuration whose JourneyRuntime is
+            # on, and this instance's overlay writes true. Invoke-ParallelProductUpgrade (ParallelHost.psm1)
+            # refuses while RIoT dispatch is open, stops the service, sets the flag false so the
+            # upgrade's lifecycle check, backup and rollback all hold false, and reports a failure as
+            # JOURNEY_RUNTIME_LEFT_DISABLED. Set-InstanceConfiguration writes the definition's value
+            # back only after this returned (control-server#454).
             Write-Step "Upgrading $serviceName with Update-ControlServerLocal.ps1"
-            try {
-                & (Join-Path $scripts 'Update-ControlServerLocal.ps1') `
-                    -PackagePath $payload -ResultPath $resultPath -DiagnosticPath $diagnosticPath `
-                    -ServiceName $serviceName -InstallRoot $installRoot -DataRoot $dataRoot `
-                    -BackupRoot $backupRoot -CertificatePasswordVariable $certificatePasswordVariable `
-                    -VerifySafetyProjectionReadOnly
-            } catch {
-                # Left false on purpose: the safe direction. Said out loud, because the instance now
-                # dispatches nothing until someone redeploys or restores the flag.
-                $status = (Get-Service -Name $serviceName -ErrorAction SilentlyContinue)?.Status
-                $flagNow = try { (Get-Content -LiteralPath $configurationPath -Raw -Encoding utf8 | ConvertFrom-Json).JourneyRuntime.enabled } catch { "unreadable: $($_.Exception.Message)" }
-                Write-Warning ("JOURNEY_RUNTIME_LEFT_DISABLED: the upgrade failed, and $configurationPath has JourneyRuntime.enabled=" +
-                    "$flagNow (service status: $($status ?? 'absent')). The instance dispatches nothing until it is redeployed " +
-                    'or rolled back successfully, which writes the definition''s value again.')
-                throw
+            $null = Invoke-ParallelProductUpgrade -ConfigurationPath (Join-Path $installRoot 'appsettings.Production.json') -Actions @{
+                StopService = {
+                    Stop-Service -Name $serviceName -Force
+                    (Get-Service -Name $serviceName).WaitForStatus('Stopped', [TimeSpan]::FromSeconds(60))
+                }
+                InvokeUpdate = {
+                    & (Join-Path $scripts 'Update-ControlServerLocal.ps1') `
+                        -PackagePath $payload -ResultPath $resultPath -DiagnosticPath $diagnosticPath `
+                        -ServiceName $serviceName -InstallRoot $installRoot -DataRoot $dataRoot `
+                        -BackupRoot $backupRoot -CertificatePasswordVariable $certificatePasswordVariable `
+                        -VerifySafetyProjectionReadOnly
+                }
+                ServiceStatus = { [string] (Get-Service -Name $serviceName -ErrorAction SilentlyContinue)?.Status }
             }
         } else {
             Write-Step "First install of $serviceName with Install-ControlServerLocal.ps1"
@@ -304,40 +309,20 @@ try {
         param([AllowNull()][AllowEmptyString()][string] $FaultRecoveryCredential)
 
         $configurationPath = Join-Path $installRoot 'appsettings.Production.json'
-        # Merges, writes, reads back and checks every value the overlay wrote (ParallelHost.psm1).
-        $effective = Update-ParallelInstanceConfigurationFile -Path $configurationPath -Definition $definition
-        Write-Step "Configuration overlay merged into $configurationPath and verified: vehicle identity, MesIngest origin and the clearance exit sections are this instance's own"
-
-        $credentialVariable = (Get-ParallelInstanceName).FaultRecoveryCredentialVariable
-        if (-not [string]::IsNullOrWhiteSpace($FaultRecoveryCredential)) {
-            Set-ServiceEnvironment (Set-ParallelServiceEnvironmentEntry -Environment (Get-ServiceEnvironment) `
-                    -Name $credentialVariable -Value $FaultRecoveryCredential)
-            Write-Step "$credentialVariable written to this service's Environment (value not shown)"
-        }
-
-        # An empty roster rather than none: the two read the same to the server ("nobody holds the
-        # permission"), but the file is where somebody fills in names later. Never overwritten.
         $rosterPath = $layout.FieldOperatorRosterPath
-        if (-not (Test-Path -LiteralPath $rosterPath)) {
-            New-Item -ItemType Directory -Path (Split-Path -Parent $rosterPath) -Force | Out-Null
-            [IO.File]::WriteAllText($rosterPath, '{"operators":[]}', [Text.UTF8Encoding]::new($false))
-            Write-Step "Empty field operator roster created at $rosterPath (fill in operatorId per car; see the cs#411 template)"
-        }
-
-        Restart-Service -Name $serviceName -Force
-        Write-Step "$serviceName restarted with the merged configuration"
-
-        # Readiness, from what the service reads: the file just verified, the Environment names whose
-        # value is not blank (values never leave this function), and the roster file.
-        $populated = @(Get-ServiceEnvironment | Where-Object { ($_ -split '=', 2).Count -eq 2 -and -not [string]::IsNullOrWhiteSpace(($_ -split '=', 2)[1]) } |
-                ForEach-Object { ($_ -split '=', 2)[0] })
-        $rosterText = (Test-Path -LiteralPath $rosterPath -PathType Leaf) ? (Get-Content -LiteralPath $rosterPath -Raw -Encoding utf8) : $null
-        $readiness = Get-ParallelClearanceExitReadiness -Configuration $effective -EnvironmentNames $populated -RosterText $rosterText
+        # Merge and check every overlay value, write the credential, create an empty roster if there
+        # is none (never overwriting one), judge the clearance exit -- throwing CLEARANCE_EXIT_BROKEN
+        # before any restart -- and only then restart (ParallelHost.psm1).
+        $readiness = Invoke-ParallelInstanceConfigurationStep -ConfigurationPath $configurationPath -Definition $definition `
+            -Credential $FaultRecoveryCredential -CredentialVariable (Get-ParallelInstanceName).FaultRecoveryCredentialVariable `
+            -RosterPath $rosterPath -Actions @{
+                GetEnvironment = { Get-ServiceEnvironment }
+                SetEnvironment = { param([string[]] $Environment) Set-ServiceEnvironment $Environment }
+                RestartService = { Restart-Service -Name $serviceName -Force }
+            }
+        Write-Step "Configuration overlay merged into $configurationPath and verified (vehicle identity, MesIngest origin, clearance exit sections); credential $([string]::IsNullOrWhiteSpace($FaultRecoveryCredential) ? 'not supplied' : 'written, value not shown'); $serviceName restarted"
         Write-Step $readiness.Line
         Write-Output $readiness.Line
-        if (@($readiness.Fatal).Count -gt 0) {
-            throw ("CLEARANCE_EXIT_BROKEN: " + (@($readiness.Fatal) -join ' '))
-        }
         if (@($readiness.Reasons).Count -gt 0) {
             Write-Warning ("CLEARANCE_EXIT_UNAVAILABLE ($(@($readiness.Reasons) -join ',')): a vehicle that cannot charge stays on " +
                 'ORDER_HANG and isolation is not written (server alarms 2271/2272). Intended in phase 1; otherwise fill in ' +
@@ -625,7 +610,7 @@ try {
     if (-not $Rollback) {
         $residue = Remove-ParallelInstanceDeploymentConfig -Path $DeploymentConfigPath -Layout $layout -FallbackDirectory $PSScriptRoot
         if ($residue) {
-            $message = "SECRET_FILE_LEFT_BEHIND: $DeploymentConfigPath still holds the plaintext RIoT API key and MesIngest shared secret and must be removed by hand: $residue."
+            $message = "SECRET_FILE_LEFT_BEHIND: $DeploymentConfigPath still holds the plaintext RIoT API key, MesIngest shared secret and fault recovery credential and must be removed by hand: $residue."
             Write-Warning $message
             # After a failure the warning stands beside the real error; after a success it is the
             # error, because an install that leaves its secrets on disk has not succeeded.

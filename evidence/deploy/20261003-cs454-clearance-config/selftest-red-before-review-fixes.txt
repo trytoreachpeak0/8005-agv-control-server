@@ -1,4 +1,4 @@
-Instance definition: C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs454-8005-agv-control-server\scripts\parallel\instance-factory01-v2.json
+Instance definition: C:\Users\szy\AppData\Local\Temp\cs454\redtree\scripts\parallel\instance-factory01-v2.json
 
 The shipped file (must NOT be deployable yet)
   PASS  the shipped definition is refused for exactly its three map-26 placeholders
@@ -187,7 +187,8 @@ Junctions: measured behaviour, and the refusal (S1 re-review, question 2)
   PASS  ParallelInstance.psm1 deletes nothing outside the two delete functions
   PASS  ParallelInstance.psm1 without its allowances shows exactly the 12 allowed command(s)
   PASS  ParallelHost.psm1 deletes nothing outside the two delete functions
-  PASS  ParallelHost.psm1 without its allowances shows exactly the 10 allowed command(s)
+  FAIL  ParallelHost.psm1 without its allowances shows exactly the 10 allowed command(s)
+        found 1: [Invoke-ParallelProductUninstaller] dynamic command: & $UninstallerPath -ServiceName $ServiceName -InstallRoot $InstallRoot `
   PASS  the module deletes only in Remove-ParallelInstanceDirectory and Remove-ParallelInstanceDeploymentConfig
   PASS  deletion scanner finds: Remove-Item with -Recurse on the config path
   PASS  deletion scanner finds: module-qualified Remove-Item
@@ -269,36 +270,20 @@ Overlay
 
 Station clearance exit through first install, upgrade and rollback (control-server#454)
   PASS  first install: the overlay merged onto what the product script left carries both sections, once
-  PASS  first install: VehicleFaultRecovery on disk is the definition's, with this instance's variable
-  PASS  first install: FieldOperatorRoles on disk is the definition's
-  PASS  first install: no key on disk differs from another only in case
-  PASS  first install: the service Environment carries exactly one credential entry, the expected one
-  PASS  first install: the credential is written, then the service is restarted exactly once
-  PASS  first install: the product's own Environment entries are kept
-  PASS  first install: readiness reads the exit as available
+  FAIL  first install: the step ran
+        threw: The term 'Invoke-ParallelInstanceConfigurationStep' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
   PASS  upgrade: the overlay merged onto what the product script left carries both sections, once
-  PASS  upgrade: VehicleFaultRecovery on disk is the definition's, with this instance's variable
-  PASS  upgrade: FieldOperatorRoles on disk is the definition's
-  PASS  upgrade: no key on disk differs from another only in case
-  PASS  upgrade: the service Environment carries exactly one credential entry, the expected one
-  PASS  upgrade: the credential is written, then the service is restarted exactly once
-  PASS  upgrade: the product's own Environment entries are kept
-  PASS  upgrade: readiness reads the exit as available
+  FAIL  upgrade: the step ran
+        threw: The term 'Invoke-ParallelInstanceConfigurationStep' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
   PASS  rollback: the overlay merged onto what the product script left carries both sections, once
-  PASS  rollback: VehicleFaultRecovery on disk is the definition's, with this instance's variable
-  PASS  rollback: FieldOperatorRoles on disk is the definition's
-  PASS  rollback: no key on disk differs from another only in case
-  PASS  rollback: the service Environment carries exactly one credential entry, the expected one
-  PASS  rollback: the credential is written, then the service is restarted exactly once
-  PASS  rollback: the product's own Environment entries are kept
-  PASS  rollback: readiness reads the exit as available
-  PASS  rollback onto a removed service: VehicleFaultRecovery on disk is the definition's, with this instance's variable
-  PASS  rollback onto a removed service: FieldOperatorRoles on disk is the definition's
-  PASS  rollback onto a removed service: no key on disk differs from another only in case
-  PASS  rollback onto a removed service: the service Environment carries exactly one credential entry, the expected one
-  PASS  rollback onto a removed service: the credential is written, then the service is restarted exactly once
-  PASS  rollback onto a removed service: the product's own Environment entries are kept
-  PASS  rollback onto a removed service: readiness reads the exit as available
+  FAIL  rollback: the step ran
+        threw: The term 'Invoke-ParallelInstanceConfigurationStep' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  FAIL  rollback onto a removed service: the step ran
+        threw: The term 'Invoke-ParallelInstanceConfigurationStep' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
 
 The credential: refused before anything is stopped when the entry is on and there is none
   PASS  first install, entry on, no credential supplied
@@ -306,9 +291,12 @@ The credential: refused before anything is stopped when the entry is on and ther
   PASS  entry on, a whitespace credential supplied
   PASS  entry on, supplied wins over carried
   PASS  entry on, carried when none supplied
-  PASS  entry off, no credential: accepted, the section is still written, nothing added to the Environment
-  PASS  entry off, no credential: the Environment is not rewritten, the service is restarted
-  PASS  entry on without a credential: CLEARANCE_EXIT_BROKEN, and the service is NOT restarted
+  FAIL  entry off, no credential: the step ran
+        threw: The term 'Invoke-ParallelInstanceConfigurationStep' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  FAIL  entry on without a credential: CLEARANCE_EXIT_BROKEN, and the service is NOT restarted
+        message: The term 'Invoke-ParallelInstanceConfigurationStep' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.; actions: 
   PASS  replacing an Environment entry touches only that name (not a longer one sharing its prefix)
   PASS  reading an entry back keeps an = inside the value
 
@@ -330,34 +318,18 @@ Upgrade and rollback get past the product upgrade preflight (control-server#454)
   PASS  after the disable step the upgrade preflight passes
   PASS  the disable step changes JourneyRuntime.enabled and nothing else (one section, identity kept)
   PASS  the overlay after a successful upgrade writes JourneyRuntime.enabled back to the definition's true
-JourneyRuntime.enabled set false for the upgrade, with the service stopped (was 'True')
-upgrade ran
-  PASS  upgrade: the service is stopped while the flag is still true, the upgrade runs with it false, and it stays false for the overlay to restore
-JourneyRuntime.enabled set false for the upgrade, with the service stopped (was 'True')
-  PASS  a failed upgrade is rethrown unchanged, never swallowed (M6)
-  PASS  a failed upgrade leaves JourneyRuntime.enabled false, not restored to true (M5)
-  PASS  a failed upgrade says JOURNEY_RUNTIME_LEFT_DISABLED and to redeploy the running commit, not -Rollback (review S1)
-  PASS  dispatch open: refused before the service is stopped, the file untouched (review S3)
-  PASS  upgrade refusal: RiotCreateDispatch.enabled true -> refused, naming agv02/agv03 Completed
-  PASS  upgrade refusal: riotCreateDispatch.Enabled true (other casing) -> refused, naming agv02/agv03 Completed
-  PASS  upgrade refusal: RiotCreateDispatch.enabled false -> allowed
-  PASS  upgrade refusal: no RiotCreateDispatch section (product default: closed) -> allowed
-  PASS  disabling the runtime: a lost write is caught by the read-back (M4)
-  PASS  the overlay's per-value check catches a write that changed the vehicle identity (M10)
-  PASS  the overlay's per-value check catches a write that changed the vehicle key (M10)
-  PASS  the overlay's per-value check catches a write that changed the MesIngest origin (M10)
-  PASS  the overlay's per-value check catches a write that changed the clearance section (M10)
-  PASS  upgrade branch: runs the product upgrade script through Invoke-ParallelProductUpgrade
-  PASS  upgrade branch: no call of the upgrade script outside the wrapper
-  PASS  first-install branch does not touch JourneyRuntime before the product script
-  PASS  Set-InstanceConfiguration (which writes true back) runs only after the product script, on both paths
-  PASS  the installer refuses an open dispatch gate before recording the definition, swapping a rollback or running a product script
-
-The shipped definition and the installer carry it
-  PASS  the shipped definition states phase 1 (entry off, nothing declared, roster in opsRoot)
-  PASS  the instance names its own fault recovery credential variable
-  PASS  the layout carries the roster path (the installer creates an empty roster there, never overwrites one)
-  PASS  both product-installer call sites (install, rollback) take the credential first
-  PASS  Set-InstanceConfiguration (run by install, upgrade and rollback) goes through Invoke-ParallelInstanceConfigurationStep
-
-317 passed, 0 failed
+  FAIL  upgrade: the service is stopped while the flag is still true, the upgrade runs with it false, and it stays false for the overlay to restore
+        seen:  thrown: The term 'Invoke-ParallelProductUpgrade' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again. after: true
+  FAIL  a failed upgrade is rethrown unchanged, never swallowed (M6)
+        thrown: The term 'Invoke-ParallelProductUpgrade' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+  FAIL  a failed upgrade leaves JourneyRuntime.enabled false, not restored to true (M5)
+        after: true
+  FAIL  a failed upgrade says JOURNEY_RUNTIME_LEFT_DISABLED and to redeploy the running commit, not -Rollback (review S1)
+        warnings: 
+  FAIL  dispatch open: refused before the service is stopped, the file untouched (review S3)
+        thrown: The term 'Invoke-ParallelProductUpgrade' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.; seen: ; file unchanged: True
+Test-ParallelInstance.ps1: The term 'Get-ParallelUpgradeRefusal' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.

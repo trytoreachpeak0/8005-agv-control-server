@@ -1318,7 +1318,12 @@ $scanTargets = [ordered]@{
             'Invoke-ParallelRemovalSequence::$Actions.Process', 'Invoke-ParallelRemovalSequence::$Actions.DirectoryPattern',
             'Invoke-ParallelRemovalSequence::$Actions.ReparsePoint', 'Invoke-ParallelRemovalSequence::$Actions.Directory',
             'Invoke-ParallelRemovalSequence::$result'); Owners = $deleteFunctions; Expected = 12 }
-    'ParallelHost.psm1'                   = @{ Dynamic = @('Invoke-ParallelProductUninstaller::$UninstallerPath'); Owners = @(); Expected = 1 }
+    'ParallelHost.psm1'                   = @{ Dynamic = @('Invoke-ParallelProductUninstaller::$UninstallerPath',
+            # control-server#454: the write seam and the injected machine actions.
+            'Update-ParallelInstanceConfigurationFile::$Writer', 'Set-ParallelInstanceJourneyRuntimeDisabled::$Writer',
+            'Invoke-ParallelProductUpgrade::$Actions.StopService', 'Invoke-ParallelProductUpgrade::$Actions.InvokeUpdate',
+            'Invoke-ParallelProductUpgrade::$Actions.ServiceStatus', 'Invoke-ParallelInstanceConfigurationStep::$Actions.GetEnvironment',
+            'Invoke-ParallelInstanceConfigurationStep::$Actions.SetEnvironment', 'Invoke-ParallelInstanceConfigurationStep::$Actions.RestartService'); Owners = @(); Expected = 10 }
 }
 foreach ($file in $scanTargets.Keys) {
     $source = [IO.File]::ReadAllText((Join-Path $PSScriptRoot $file))
@@ -1774,21 +1779,26 @@ function Invoke-ClearancePath {
     )
     $carried = Get-ParallelServiceEnvironmentEntry -Environment $EnvironmentBefore -Name $credentialName
     $credential = Resolve-ParallelFaultRecoveryCredential -Definition $Definition -Supplied $Supplied -Carried $carried
-    $environment = $ProductRebuildsEnvironment ? @($productEnvironment) : @($EnvironmentBefore)
-    $file = Join-Path ([IO.Path]::GetTempPath()) "cs454-$([guid]::NewGuid().ToString('N')).json"
+    # The service's Environment and its restarts, as the step sees them through its actions.
+    $service = @{ Environment = [string[]] ($ProductRebuildsEnvironment ? @($productEnvironment) : @($EnvironmentBefore)); Log = [System.Collections.Generic.List[string]]::new() }
+    $directory = Join-Path ([IO.Path]::GetTempPath()) "cs454-$([guid]::NewGuid().ToString('N'))"
+    New-Item -ItemType Directory -Path $directory | Out-Null
     try {
+        $file = Join-Path $directory 'appsettings.Production.json'
+        $roster = Join-Path $directory 'field-operator-roles.json'
         [IO.File]::WriteAllText($file, (ConvertTo-Json -InputObject $BaseConfiguration -Depth 12), [Text.UTF8Encoding]::new($false))
-        $merged = Update-ParallelInstanceConfigurationFile -Path $file -Definition $Definition
+        if ($null -ne $RosterText) { [IO.File]::WriteAllText($roster, $RosterText, [Text.UTF8Encoding]::new($false)) }
+        $readiness = Invoke-ParallelInstanceConfigurationStep -ConfigurationPath $file -Definition $Definition -Credential $credential `
+            -CredentialVariable $credentialName -RosterPath $roster -Actions @{
+                GetEnvironment = { $service.Environment }
+                SetEnvironment = { param([string[]] $Environment) $service.Environment = $Environment; $service.Log.Add('set-environment') }
+                RestartService = { $service.Log.Add('restart') }
+            }
         $onDisk = Get-Content -LiteralPath $file -Raw -Encoding utf8 | ConvertFrom-Json -AsHashtable -Depth 12
     } finally {
-        Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $directory -Recurse -Force -ErrorAction SilentlyContinue
     }
-    if ($credential) {
-        $environment = @(Set-ParallelServiceEnvironmentEntry -Environment $environment -Name $credentialName -Value $credential)
-    }
-    $names = @($environment | ForEach-Object { ($_ -split '=', 2)[0] })
-    $readiness = Get-ParallelClearanceExitReadiness -Configuration $onDisk -EnvironmentNames $names -RosterText $RosterText
-    return [pscustomobject]@{ Configuration = $onDisk; Returned = $merged; Environment = $environment; Readiness = $readiness }
+    return [pscustomobject]@{ Configuration = $onDisk; Environment = $service.Environment; Readiness = $readiness; Log = @($service.Log) }
 }
 
 function Assert-ClearancePath {
@@ -1808,6 +1818,10 @@ function Assert-ClearancePath {
     Write-Result -Ok ($entries.Count -eq 1 -and $entries[0] -ceq "$credentialName=$ExpectedCredential") `
         -Name "$($Name): the service Environment carries exactly one credential entry, the expected one" `
         -Detail ("got " + ($entries -join ' | '))
+    # The service must be restarted, once, after the Environment changed: neither the file nor the
+    # credential is read by a running service (review M12).
+    Write-Result -Ok ((@($Result.Log) -join ',') -ceq 'set-environment,restart') `
+        -Name "$($Name): the credential is written, then the service is restarted exactly once" -Detail ("log: " + (@($Result.Log) -join ','))
     $kept = @($productEnvironment | Where-Object { $Result.Environment -notcontains $_ })
     Write-Result -Ok ($kept.Count -eq 0) -Name "$($Name): the product's own Environment entries are kept" -Detail ("lost " + ($kept -join ', '))
     Write-Result -Ok (@($Result.Readiness.Fatal).Count -eq 0 -and @($Result.Readiness.Reasons).Count -eq 0) `
@@ -1902,6 +1916,33 @@ Invoke-PathCase 'entry off, no credential' {
         $r.Configuration['VehicleFaultRecovery']['credentialEnvironmentVariable'] -ceq $credentialName) `
         -Name 'entry off, no credential: accepted, the section is still written, nothing added to the Environment' `
         -Detail ("environment: " + ($r.Environment -join ' | '))
+    Write-Result -Ok ((@($r.Log) -join ',') -ceq 'restart') -Name 'entry off, no credential: the Environment is not rewritten, the service is restarted' `
+        -Detail ("log: " + (@($r.Log) -join ','))
+}
+# A broken state is judged before the restart (review N1): the entry on and no credential reaching the
+# step -- Resolve- would have stopped it earlier; this is the step's own line of defence.
+Invoke-PathCase 'broken state is not restarted into' {
+    $restarts = [System.Collections.Generic.List[string]]::new()
+    $directory = Join-Path ([IO.Path]::GetTempPath()) "cs454-$([guid]::NewGuid().ToString('N'))"
+    New-Item -ItemType Directory -Path $directory | Out-Null
+    try {
+        $file = Join-Path $directory 'appsettings.Production.json'
+        [IO.File]::WriteAllText($file, (ConvertTo-Json -InputObject (Copy-Definition $productConfiguration) -Depth 12), [Text.UTF8Encoding]::new($false))
+        $message = $null
+        try {
+            $null = Invoke-ParallelInstanceConfigurationStep -ConfigurationPath $file -Definition $clearanceDefinition -Credential $null `
+                -CredentialVariable $credentialName -RosterPath (Join-Path $directory 'roster.json') -Actions @{
+                    GetEnvironment = { @($productEnvironment) }
+                    SetEnvironment = { param([string[]] $Environment) $restarts.Add('set-environment') }
+                    RestartService = { $restarts.Add('restart') }
+                }
+        } catch { $message = $_.Exception.Message }
+        Write-Result -Ok ($null -ne $message -and $message.Contains('CLEARANCE_EXIT_BROKEN') -and $restarts.Count -eq 0) `
+            -Name 'entry on without a credential: CLEARANCE_EXIT_BROKEN, and the service is NOT restarted' `
+            -Detail ("message: $message; actions: " + ($restarts -join ','))
+    } finally {
+        Remove-Item -LiteralPath $directory -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 Invoke-PathCase 'environment entry replacement' {
     $replaced = @(Set-ParallelServiceEnvironmentEntry -Environment @('A=1', "$credentialName=old", "$($credentialName)_X=keep", 'B=2') -Name $credentialName -Value 'new=with=equals')
@@ -2028,30 +2069,119 @@ Invoke-PathCase 'disable before upgrade' {
     }
 }
 
-# The installer's order, read from its AST: in Invoke-ProductInstaller's upgrade branch, the service is
-# stopped, then the flag is set false, then the upgrade script runs; the first-install branch does
-# neither (there is no installed configuration yet). Set-InstanceConfiguration, which writes true
-# again, runs only after Invoke-ProductInstaller returned, on both paths.
+# The wrapper the installer's upgrade branch runs (Invoke-ParallelProductUpgrade), driven with fake
+# actions against a temporary configuration file: stop, then set false, then upgrade; on a failure
+# the flag stays false, JOURNEY_RUNTIME_LEFT_DISABLED says how to recover, and the failure is
+# rethrown; with RIoT dispatch open nothing at all happens (review S3, S4 M5/M6).
+function Invoke-UpgradeCase {
+    param([string] $InstalledText, [scriptblock] $Update = { 'upgrade ran' })
+    $directory = Join-Path ([IO.Path]::GetTempPath()) "cs454-upgrade-$([guid]::NewGuid().ToString('N'))"
+    New-Item -ItemType Directory -Path $directory | Out-Null
+    $file = Join-Path $directory 'appsettings.Production.json'
+    [IO.File]::WriteAllText($file, $InstalledText, [Text.UTF8Encoding]::new($false))
+    $seen = [System.Collections.Generic.List[string]]::new()
+    $flagOf = { ((Get-Content -LiteralPath $file -Raw | ConvertFrom-Json).JourneyRuntime.enabled).ToString().ToLowerInvariant() }
+    $thrown = $null; $warnings = @()
+    try {
+        $null = Invoke-ParallelProductUpgrade -ConfigurationPath $file -WarningVariable +warnings -WarningAction SilentlyContinue -Actions @{
+            StopService = { $seen.Add("stop(flag=$(& $flagOf))") }
+            InvokeUpdate = { $seen.Add("update(flag=$(& $flagOf))"); & $Update }
+            ServiceStatus = { 'Running' }
+        }
+    } catch { $thrown = $_.Exception.Message }
+    $after = & $flagOf
+    $text = Get-Content -LiteralPath $file -Raw
+    Remove-Item -LiteralPath $directory -Recurse -Force -ErrorAction SilentlyContinue
+    return [pscustomobject]@{ Seen = @($seen); Thrown = $thrown; Warnings = @($warnings | ForEach-Object { "$_" }); FlagAfter = $after; Text = $text }
+}
+
+Invoke-PathCase 'upgrade wrapper, success' {
+    $r = Invoke-UpgradeCase -InstalledText $installedText
+    Write-Result -Ok ((@($r.Seen) -join ',') -ceq 'stop(flag=true),update(flag=false)' -and $null -eq $r.Thrown -and $r.FlagAfter -eq 'false') `
+        -Name 'upgrade: the service is stopped while the flag is still true, the upgrade runs with it false, and it stays false for the overlay to restore' `
+        -Detail ("seen: " + (@($r.Seen) -join ',') + " thrown: $($r.Thrown) after: $($r.FlagAfter)")
+}
+Invoke-PathCase 'upgrade wrapper, failure' {
+    $r = Invoke-UpgradeCase -InstalledText $installedText -Update { throw 'simulated upgrade failure' }
+    Write-Result -Ok ($r.Thrown -ceq 'simulated upgrade failure') -Name 'a failed upgrade is rethrown unchanged, never swallowed (M6)' -Detail "thrown: $($r.Thrown)"
+    Write-Result -Ok ($r.FlagAfter -eq 'false') -Name 'a failed upgrade leaves JourneyRuntime.enabled false, not restored to true (M5)' -Detail "after: $($r.FlagAfter)"
+    $warning = @($r.Warnings | Where-Object { $_ -like 'JOURNEY_RUNTIME_LEFT_DISABLED*' })
+    Write-Result -Ok ($warning.Count -eq 1 -and $warning[0].Contains('redeploy the commit that is running now') -and $warning[0].Contains('Do NOT use -Rollback')) `
+        -Name 'a failed upgrade says JOURNEY_RUNTIME_LEFT_DISABLED and to redeploy the running commit, not -Rollback (review S1)' -Detail ("warnings: " + ($r.Warnings -join ' | '))
+}
+Invoke-PathCase 'upgrade wrapper, dispatch open' {
+    $open = $installedText | ConvertFrom-Json -AsHashtable -Depth 12
+    $open['RiotCreateDispatch'] = [ordered]@{ enabled = $true }
+    $openText = ConvertTo-Json -InputObject $open -Depth 12
+    $r = Invoke-UpgradeCase -InstalledText $openText
+    Write-Result -Ok ($null -ne $r.Thrown -and $r.Thrown.Contains('UPGRADE_REFUSED_DISPATCH_OPEN') -and @($r.Seen).Count -eq 0 -and $r.Text -ceq $openText) `
+        -Name 'dispatch open: refused before the service is stopped, the file untouched (review S3)' `
+        -Detail ("thrown: $($r.Thrown); seen: " + (@($r.Seen) -join ',') + "; file unchanged: $($r.Text -ceq $openText)")
+}
+$refusalCases = @(
+    @{ Name = 'RiotCreateDispatch.enabled true'; Config = [ordered]@{ RiotCreateDispatch = [ordered]@{ enabled = $true } }; Refused = $true }
+    @{ Name = 'riotCreateDispatch.Enabled true (other casing)'; Config = [ordered]@{ riotCreateDispatch = [ordered]@{ Enabled = $true } }; Refused = $true }
+    @{ Name = 'RiotCreateDispatch.enabled false'; Config = [ordered]@{ RiotCreateDispatch = [ordered]@{ enabled = $false } }; Refused = $false }
+    @{ Name = 'no RiotCreateDispatch section (product default: closed)'; Config = [ordered]@{ JourneyRuntime = [ordered]@{ enabled = $true } }; Refused = $false }
+)
+foreach ($case in $refusalCases) {
+    $refusal = Get-ParallelUpgradeRefusal -Configuration $case.Config
+    Write-Result -Ok ($case.Refused ? ($null -ne $refusal -and $refusal.Contains('agv02') -and $refusal.Contains('Completed')) : ($null -eq $refusal)) `
+        -Name "upgrade refusal: $($case.Name) -> $($case.Refused ? 'refused, naming agv02/agv03 Completed' : 'allowed')" -Detail "got: $refusal"
+}
+
+# The read-back checks, through the -Writer seam: a write that is lost or lands something else must
+# be caught. Without the read-back (M4) or with a per-value check that never reports (M10), these go
+# green on a file that does not say what the overlay wrote -- for M10, a file naming agv01.
+Invoke-PathCase 'read-back checks' {
+    $directory = Join-Path ([IO.Path]::GetTempPath()) "cs454-writer-$([guid]::NewGuid().ToString('N'))"
+    New-Item -ItemType Directory -Path $directory | Out-Null
+    try {
+        $file = Join-Path $directory 'appsettings.Production.json'
+        [IO.File]::WriteAllText($file, $installedText, [Text.UTF8Encoding]::new($false))
+        $lost = { param($Path, $Text) }
+        $message = $null
+        try { $null = Set-ParallelInstanceJourneyRuntimeDisabled -Path $file -Writer $lost } catch { $message = $_.Exception.Message }
+        Write-Result -Ok ($null -ne $message -and $message.Contains('is not false after it was set')) `
+            -Name 'disabling the runtime: a lost write is caught by the read-back (M4)' -Detail "got: $message"
+
+        $base = Copy-Definition $productConfiguration
+        foreach ($tamper in @(
+                @{ Name = 'vehicle identity'; Key = 'JourneyRuntime.agvId'; Edit = { param($t) $t.Replace('老厂前线新多仓位2', '老厂前线新多仓位1') } }
+                @{ Name = 'vehicle key'; Key = 'JourneyRuntime.vehicleKey'; Edit = { param($t) $t.Replace('BROKERX-f38975561adf46ccb1d2f23833c7d0e4', 'BROKERX-0c20ff0600d644869a6a80c186065d85') } }
+                @{ Name = 'MesIngest origin'; Key = 'MesIngest.baseUrl'; Edit = { param($t) $t.Replace('http://127.0.0.1:58188', 'http://127.0.0.1:5088') } }
+                @{ Name = 'clearance section'; Key = 'VehicleFaultRecovery.enabled'; Edit = { param($t) ($t | ConvertFrom-Json -AsHashtable -Depth 12 | ForEach-Object { $_.Remove('VehicleFaultRecovery'); ConvertTo-Json $_ -Depth 12 }) } }
+            )) {
+            [IO.File]::WriteAllText($file, (ConvertTo-Json -InputObject $base -Depth 12), [Text.UTF8Encoding]::new($false))
+            $edit = $tamper.Edit
+            $corrupting = { param($Path, $Text) [IO.File]::WriteAllText($Path, (& $edit $Text), [Text.UTF8Encoding]::new($false)) }.GetNewClosure()
+            $message = $null
+            try { $null = Update-ParallelInstanceConfigurationFile -Path $file -Definition $clearanceDefinition -Writer $corrupting } catch { $message = $_.Exception.Message }
+            Write-Result -Ok ($null -ne $message -and $message.Contains($tamper.Key)) `
+                -Name "the overlay's per-value check catches a write that changed the $($tamper.Name) (M10)" -Detail "got: $message"
+        }
+    } finally {
+        Remove-Item -LiteralPath $directory -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# The installer's wiring, from its AST. The behaviour is tested above through the wrapper; this checks
+# the installer uses the wrapper on its upgrade branch only, passes it the product upgrade script, and
+# writes true back only after the product script returned, on both paths.
 $installerAst = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'Install-ParallelInstanceLocal.ps1'), [ref]$null, [ref]$null)
 $productCalls = @($installerAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Invoke-ProductInstaller' }, $true))
 $invokeProduct = $installerAst.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Invoke-ProductInstaller' }, $true)
-$offsetOf = {
-    param($root, [string] $predicateText)
-    $hit = @($root.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true) |
-            Where-Object { $_.Extent.Text -like $predicateText } | Select-Object -First 1)
-    $hit.Count -eq 0 ? -1 : $hit[0].Extent.StartOffset
-}
 $ifStatement = $null -eq $invokeProduct ? $null : $invokeProduct.Body.Find({ param($n) $n -is [System.Management.Automation.Language.IfStatementAst] -and $n.Extent.Text -like '*Update-ControlServerLocal.ps1*' }, $true)
 $upgradeBranch = $null -eq $ifStatement ? $null : $ifStatement.Clauses[0].Item2
 $firstBranch = $null -eq $ifStatement ? $null : $ifStatement.ElseClause
-$stopAt = $null -eq $upgradeBranch ? -1 : (& $offsetOf $upgradeBranch 'Stop-Service*')
-$disableAt = $null -eq $upgradeBranch ? -1 : (& $offsetOf $upgradeBranch 'Set-ParallelInstanceJourneyRuntimeDisabled*')
-$updateAt = $null -eq $upgradeBranch ? -1 : (& $offsetOf $upgradeBranch '*Update-ControlServerLocal.ps1*')
-Write-Result -Ok ($stopAt -ge 0 -and $disableAt -gt $stopAt -and $updateAt -gt $disableAt) `
-    -Name 'upgrade branch: stop the service, then set JourneyRuntime false, then run the upgrade script' `
-    -Detail "offsets stop=$stopAt disable=$disableAt update=$updateAt"
-$firstDisable = $null -eq $firstBranch ? -1 : (& $offsetOf $firstBranch 'Set-ParallelInstanceJourneyRuntimeDisabled*')
-Write-Result -Ok ($null -ne $firstBranch -and $firstDisable -lt 0) -Name 'first-install branch does not touch JourneyRuntime before the product script' -Detail "found at $firstDisable"
+$wrapperCall = $null -eq $upgradeBranch ? $null : $upgradeBranch.Find({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Invoke-ParallelProductUpgrade' }, $true)
+Write-Result -Ok ($null -ne $wrapperCall -and $wrapperCall.Extent.Text.Contains("Update-ControlServerLocal.ps1")) `
+    -Name 'upgrade branch: runs the product upgrade script through Invoke-ParallelProductUpgrade' -Detail 'not found'
+$bareUpdate = $null -eq $upgradeBranch ? @() : @($upgradeBranch.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.CommandElements[0].Extent.Text -like '*Update-ControlServerLocal.ps1*' }, $true) |
+        Where-Object { $p = $_.Parent; $inWrapper = $false; while ($p) { if ($p -eq $wrapperCall) { $inWrapper = $true; break }; $p = $p.Parent }; -not $inWrapper })
+Write-Result -Ok ($bareUpdate.Count -eq 0) -Name 'upgrade branch: no call of the upgrade script outside the wrapper' -Detail ($bareUpdate | ForEach-Object { "line $($_.Extent.StartLineNumber)" })
+$firstWrapper = $null -eq $firstBranch ? $null : $firstBranch.Find({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -in @('Invoke-ParallelProductUpgrade', 'Set-ParallelInstanceJourneyRuntimeDisabled') }, $true)
+Write-Result -Ok ($null -ne $firstBranch -and $null -eq $firstWrapper) -Name 'first-install branch does not touch JourneyRuntime before the product script' -Detail 'found'
 $orderBad = @()
 foreach ($site in $productCalls) {
     $block = $site.Parent
@@ -2065,9 +2195,16 @@ foreach ($site in $productCalls) {
 }
 Write-Result -Ok ($productCalls.Count -eq 2 -and $orderBad.Count -eq 0) `
     -Name 'Set-InstanceConfiguration (which writes true back) runs only after the product script, on both paths' -Detail ($orderBad -join ', ')
-# A failed upgrade leaves the flag false -- the safe direction -- and says so instead of only rethrowing.
-$failureReport = $null -eq $upgradeBranch ? $false : $upgradeBranch.Extent.Text.Contains('JOURNEY_RUNTIME_LEFT_DISABLED')
-Write-Result -Ok $failureReport -Name 'a failed upgrade reports JOURNEY_RUNTIME_LEFT_DISABLED (the flag stays false, by design)' -Detail 'no report in the upgrade branch'
+# Review S3, the early check: before the installed definition is re-recorded, before the rollback swap,
+# before either product-installer call.
+$allCommands = @($installerAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true))
+$refusalAt = @($allCommands | Where-Object { $_.GetCommandName() -eq 'Get-ParallelUpgradeRefusal' } | ForEach-Object { $_.Extent.StartOffset } | Sort-Object | Select-Object -First 1)
+$recordAt = @($allCommands | Where-Object { $_.GetCommandName() -eq 'Copy-Item' -and $_.Extent.Text.Contains('InstalledDefinitionPath') } | ForEach-Object { $_.Extent.StartOffset })
+$swapAt = @($allCommands | Where-Object { $_.GetCommandName() -eq 'Move-Item' } | ForEach-Object { $_.Extent.StartOffset } | Sort-Object | Select-Object -First 1)
+$productAt = @($productCalls | ForEach-Object { $_.Extent.StartOffset } | Sort-Object | Select-Object -First 1)
+Write-Result -Ok ($refusalAt.Count -eq 1 -and $recordAt.Count -eq 1 -and $refusalAt[0] -lt $recordAt[0] -and $refusalAt[0] -lt $swapAt[0] -and $refusalAt[0] -lt $productAt[0]) `
+    -Name 'the installer refuses an open dispatch gate before recording the definition, swapping a rollback or running a product script' `
+    -Detail "refusal=$refusalAt record=$recordAt swap=$swapAt product=$productAt"
 
 Write-Host ''
 Write-Host 'The shipped definition and the installer carry it' -ForegroundColor Cyan
@@ -2102,9 +2239,9 @@ Write-Result -Ok ($productCalls.Count -eq 2 -and $unguarded.Count -eq 0) `
     -Detail ("call sites: $($productCalls.Count); without a preceding Resolve-: " + (($unguarded | ForEach-Object { "line $($_.Extent.StartLineNumber)" }) -join ', '))
 $setConfig = $installerAst.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Set-InstanceConfiguration' }, $true)
 $inside = $null -eq $setConfig ? @() : @($setConfig.Body.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true) | ForEach-Object { $_.GetCommandName() })
-$needed = @('Update-ParallelInstanceConfigurationFile', 'Set-ParallelServiceEnvironmentEntry', 'Get-ParallelClearanceExitReadiness')
+$needed = @('Invoke-ParallelInstanceConfigurationStep')
 $absent = @($needed | Where-Object { $inside -notcontains $_ })
-Write-Result -Ok ($absent.Count -eq 0) -Name 'Set-InstanceConfiguration (run by install, upgrade and rollback) writes the sections, the credential and reads readiness' `
+Write-Result -Ok ($absent.Count -eq 0) -Name 'Set-InstanceConfiguration (run by install, upgrade and rollback) goes through Invoke-ParallelInstanceConfigurationStep' `
     -Detail ("not called: " + ($absent -join ', '))
 
 Write-Host ''

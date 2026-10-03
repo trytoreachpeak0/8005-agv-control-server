@@ -1134,7 +1134,7 @@ function Remove-ParallelInstanceDeploymentConfig {
         .DESCRIPTION
             The only other delete in this deployment besides Remove-ParallelInstanceDirectory.
 
-            deploy-config.json carries the RIoT call API key and the MesIngest shared secret in
+            deploy-config.json carries the RIoT call API key, the MesIngest shared secret and the fault recovery credential in
             plain text. From the moment the control host copies it, every way out of the install
             must remove it (S1 re-review, round 3): the installer calls this from a finally that
             starts before its first check, and the control host calls it again over ssh after the
@@ -1584,6 +1584,37 @@ function Resolve-ParallelFaultRecoveryCredential {
     return $null
 }
 
+function Get-ParallelUpgradeRefusal {
+    <#
+        .SYNOPSIS
+            Why an upgrade or rollback must not run on this installed configuration now, or $null.
+
+        .DESCRIPTION
+            control-server#454 review S3. An upgrade and a rollback stop the service, and with it the
+            journey runtime -- including its fault supervision of a vehicle that is under way. While
+            the installed configuration lets this instance place RIoT orders (RiotCreateDispatch
+            enabled), a vehicle may be under way, so both are refused before anything is touched.
+            Closing the gate is a configuration change of its own: set RiotCreateDispatch.enabled to
+            false in the installed appsettings.Production.json, restart the service, and wait for
+            agv02 and agv03 to report their orders Completed. Whether a vehicle IS under way cannot be
+            read from here; the gate is the state this instance controls.
+
+            Pure: takes the installed configuration as read. Keys match ignoring case, as .NET reads
+            them; an absent section or flag is the product default, closed.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][System.Collections.IDictionary] $Configuration)
+    $dispatch = Get-ConfigurationValue $Configuration 'RiotCreateDispatch'
+    if ((Get-ConfigurationValue $dispatch 'enabled') -eq $true) {
+        return ('UPGRADE_REFUSED_DISPATCH_OPEN: the installed configuration has RiotCreateDispatch.enabled=true, so a vehicle ' +
+            'may be under way, and stopping the service would stop the runtime''s fault supervision of it. Close the gate ' +
+            'first -- set RiotCreateDispatch.enabled to false in the installed appsettings.Production.json and restart the ' +
+            'service -- then wait until agv02 and agv03 both report their orders Completed, and run this again. Nothing was ' +
+            'stopped or changed.')
+    }
+    return $null
+}
+
 function Get-ConfigurationValue {
     # One key, ignoring case, as .NET configuration reads it.
     param($Node, [string] $Key)
@@ -1752,4 +1783,5 @@ Export-ModuleMember -Function @(
     'Set-ParallelServiceEnvironmentEntry'
     'Resolve-ParallelFaultRecoveryCredential'
     'Get-ParallelClearanceExitReadiness'
+    'Get-ParallelUpgradeRefusal'
 )

@@ -44,10 +44,21 @@ control-server#262。约 2026-10-08 起 `factory01` 上同时跑两套 ControlSe
 `vehicleMoved=false`；运行时开着，新版本就会在这次检查里取需求、建单。并行实例的覆盖层写的是 true，所以首装之后的升级和
 `-Rollback` 以前都被这道预检拒掉。
 
-现在升级分支的顺序是：先停服务，再把文件里的开关置为 false，然后调升级脚本。于是升级的检查在运行时关着时进行，它的备份和
-失败回退也都停在 false。升级成功后，`Set-InstanceConfiguration` 的覆盖层才把它写回定义里的值。升级失败时开关留在 false（安全
-方向），安装脚本打 `JOURNEY_RUNTIME_LEFT_DISABLED` 警告，写明文件里的值和服务状态。注意：如果升级脚本在它自己停服务之前就失败
-（例如包清单不对），服务会停在我们停下的状态，不会被拉起。
+现在升级分支走 `ParallelHost.psm1` 的 `Invoke-ParallelProductUpgrade`，顺序是：
+
+1. **派车闸门开着就拒绝**（`UPGRADE_REFUSED_DISPATCH_OPEN`）。已装配置里 `RiotCreateDispatch.enabled` 为真时，车可能在途，
+   停服务等于中途停掉运行时对它的故障监看。安装脚本在最开头就查一次（在记录定义、回滚对调目录、解包之前），包装函数停服务前
+   再查一次。要升级或回滚，先把已装 `appsettings.Production.json` 里的 `RiotCreateDispatch.enabled` 改成 false 并重启服务，
+   等 `agv02`／`agv03` 的单都 `Completed`，再跑。
+2. 停服务，再把文件里的开关置为 false，然后调升级脚本。于是升级的检查在运行时关着时进行，它的备份和失败回退也都停在 false。
+3. 升级成功后，`Set-InstanceConfiguration` 的覆盖层才把它写回定义里的值。
+
+升级失败时开关留在 false（安全方向），打 `JOURNEY_RUNTIME_LEFT_DISABLED` 警告，写明文件里的值和服务状态，原样抛出。失败后
+服务处在哪种状态取决于升级脚本在哪一步失败：在它自己的预检里失败（例如包清单不对、输出路径已存在），服务停在我们停下的状态；
+预检之后再失败，升级脚本自己的回退会用**旧二进制加 false** 把服务拉起来。两种情况实例都不派车。
+
+**恢复办法是重新部署当前在跑的那个 commit（或修好的新包），不要用 `-Rollback` 来恢复开关。**安装模式失败时代际对调还没发生，
+这时再跑 `-Rollback`，装上的是 `.previous`，也就是更早一代，车载端版本可能对不上。
 
 ## 路径和名字只认一种写法
 
@@ -91,7 +102,7 @@ control-server#262 复审找到过一个严重缺陷：卸载脚本在一种很�
 
 另一个删除入口是 `Remove-ParallelInstanceDeploymentConfig`，只删控制端拷来的那个装着密钥的配置文件。它只认布局里的
 路径 `<运维目录>\deploy-config.json`，而且必须是普通文件；安装脚本在开工前就拒绝别的路径。
-这个文件里是 RIoT 调用密钥和 MesIngest 共享密钥的明文，所以从拷上服务器那一刻起，每一条退出路径都要清掉它：安装
+这个文件里是 RIoT 调用密钥、MesIngest 共享密钥和（有的话）V2 恢复凭据的明文，所以从拷上服务器那一刻起，每一条退出路径都要清掉它：安装
 脚本从第一个检查之前就包了一层 `try/finally`（定义被拒、还没有布局时，只删安装脚本自己目录下的 `deploy-config.json`）；
 安装脚本根本没跑起来时，由控制端事后经 ssh 调用同一个函数再查一遍。删不掉就打印 `SECRET_FILE_LEFT_BEHIND`，不会静默。
 
