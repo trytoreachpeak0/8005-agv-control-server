@@ -136,12 +136,14 @@ $assertions.Add(
     ($null -ne $answer -and [string]$answer.Payload.outcome -eq 'APPLIED' -and
         [string]$answer.Payload.slotOperationAttemptId -eq $attemptId -and $null -eq $answer.Payload.problem -and $answer.Response -eq 'DurableAck'),
     "APPLIED / $attemptId / problem null / DurableAck",
-    $(if ($null -eq $answer) { '(no SlotFaultDeclarationResult)' } else { "$($answer.Payload.outcome) / $($answer.Payload.slotOperationAttemptId) / problem $($answer.PayloadJson) / $($answer.Response)" }))
+    $(if ($null -eq $answer) { '(no SlotFaultDeclarationResult)' } else { "$($answer.Payload.outcome) / $($answer.Payload.slotOperationAttemptId) / problem $(if ($null -eq $answer.Payload.problem) { 'null' } else { $answer.Payload.problem | ConvertTo-Json -Depth 20 -Compress }) / $($answer.Response)" }))
 
 $result = Wait-L2RealOrLast -Description 'the onboard reported the operation' `
     -Journal $journal -Criterion 'operation-result' -TimeoutSeconds 30 `
     -Probe { (Get-L2OperationResults -Connection $connection -AttemptId $attemptId) | Select-Object -First 1 } `
     -Until { param($v) $null -ne $v }
+# $result comes from Get-L2OperationResults, whose rows (Get-L2Inbound) carry Payload but no PayloadJson: under StrictMode a
+# read of PayloadJson throws, which is how the first run on the real onboard ended here (hmi#215, CI run 37102766873).
 $declaredSlot = if ($null -ne $result) { @(@($result.Payload.slotResults) | Where-Object { [int]$_.slotNo -eq $slotNo })[0] } else { $null }
 $otherSlots = if ($null -ne $result) { @(@($result.Payload.slotResults) | Where-Object { [int]$_.slotNo -ne $slotNo }) } else { @() }
 $assertions.Add(
@@ -150,7 +152,7 @@ $assertions.Add(
         @($declaredSlot.reasonCodes) -contains 'SLOT_FAULT_DECLARED' -and
         @($otherSlots | Where-Object { [string]$_.outcome -ne 'NOT_STARTED' }).Count -eq 0),
     "UNKNOWN / slot $slotNo UNKNOWN [SLOT_FAULT_DECLARED] / 其余 NOT_STARTED",
-    $(if ($null -eq $result) { '(no OperationResult)' } else { "$($result.Payload.overallOutcome) / $($result.PayloadJson)" }))
+    $(if ($null -eq $result) { '(no OperationResult)' } else { "$($result.Payload.overallOutcome) / $($result.Payload | ConvertTo-Json -Depth 20 -Compress)" }))
 
 # --- 4. 服务端：RecoveryRequired、Blocked，判定记为 APPLIED ---------------------------------------------------------
 
@@ -164,7 +166,9 @@ $assertions.Add(
     'Blocked / LOAD_RESULT_REQUIRES_RECOVERY', $(if ($runtime) { "$($runtime.Stage) / $($runtime.BlockReasonCode)" } else { '(no runtime)' }))
 
 # The operation was judged in the save that took the OperationResult, before the round that blocked the journey.
-$operationStatus = [string](Get-L2StationOperation -Connection $connection -DemandId $demandId -OperationType 'Load').Status
+# Read through a variable: with no operation row the call returns $null, and .Status on $null throws under StrictMode.
+$operation = Get-L2StationOperation -Connection $connection -DemandId $demandId -OperationType 'Load'
+$operationStatus = if ($null -ne $operation) { [string]$operation.Status } else { '(no operation)' }
 $assertions.Add(
     'L2-RSFD-05', '装货仓位操作 RecoveryRequired（既有 UNKNOWN 结算）',
     ($operationStatus -eq 'RecoveryRequired'), 'RecoveryRequired', $operationStatus)
@@ -176,7 +180,8 @@ $readings = if ($row -and (Test-L2RealPresent $row.ReadingsJson)) { [string]$row
 $assertions.Add(
     'L2-RSFD-06', '判定记录 APPLIED，审计带判定时车载端最近上报的读数与观测时刻',
     ($null -ne $row -and [string]$row.State -eq 'APPLIED' -and [int]$row.SlotNo -eq $slotNo -and
-        [string]$row.SlotOperationAttemptId -eq $attemptId -and $null -ne $readings -and $null -ne $readings.observedAt),
+        [string]$row.SlotOperationAttemptId -eq $attemptId -and $null -ne $readings -and
+        $null -ne $readings.PSObject.Properties['observedAt'] -and $null -ne $readings.observedAt),
     "APPLIED / slot $slotNo / $attemptId / readings with observedAt",
     $(if ($row) { "$($row.State) / slot $($row.SlotNo) / $($row.SlotOperationAttemptId) / $($row.ReadingsJson)" } else { '(no row)' }))
 
