@@ -619,26 +619,26 @@ public sealed class ExpectedActionOverdueTests
 
     private static SlotFaultDeclarationRow Declaration(
         string attemptId, int slotNo, string state, DateTimeOffset declaredAt, string? problem = null) => new()
-    {
-        DeclarationId = Guid.NewGuid().ToString("D"),
-        RequestId = Guid.NewGuid().ToString("D"),
-        RequestContentHash = new string('b', 64),
-        AgvId = AgvId,
-        DemandId = "D-142",
-        SlotOperationAttemptId = attemptId,
-        OperationType = "LOAD",
-        SlotNo = slotNo,
-        FaultCategory = "LOCK",
-        Note = "锁一直读未锁",
-        AdministratorId = "maintenance-7",
-        AdministratorRole = "MAINTENANCE_ADMINISTRATOR",
-        DeclaredAt = declaredAt,
-        CommandMessageId = Guid.NewGuid().ToString("D"),
-        State = state,
-        ResultOutcome = state == SlotFaultDeclarationStates.Pending ? null : state,
-        ResultProblemJson = problem,
-        ResultReceivedAt = state == SlotFaultDeclarationStates.Pending ? null : declaredAt.AddSeconds(2)
-    };
+        {
+            DeclarationId = Guid.NewGuid().ToString("D"),
+            RequestId = Guid.NewGuid().ToString("D"),
+            RequestContentHash = new string('b', 64),
+            AgvId = AgvId,
+            DemandId = "D-142",
+            SlotOperationAttemptId = attemptId,
+            OperationType = "LOAD",
+            SlotNo = slotNo,
+            FaultCategory = "LOCK",
+            Note = "锁一直读未锁",
+            AdministratorId = "maintenance-7",
+            AdministratorRole = "MAINTENANCE_ADMINISTRATOR",
+            DeclaredAt = declaredAt,
+            CommandMessageId = Guid.NewGuid().ToString("D"),
+            State = state,
+            ResultOutcome = state == SlotFaultDeclarationStates.Pending ? null : state,
+            ResultProblemJson = problem,
+            ResultReceivedAt = state == SlotFaultDeclarationStates.Pending ? null : declaredAt.AddSeconds(2)
+        };
 
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-15")]
