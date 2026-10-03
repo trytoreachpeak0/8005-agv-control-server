@@ -225,8 +225,10 @@ public sealed class RouteGraphEdgeRow
 /// <c>ResolvedNode</c> is derived, not read off the wire: RIoT gives a station its <c>edge_id</c>
 /// and coordinates, and the node is whichever of that edge's two endpoints the station sits
 /// nearer. Round 43 measured this on map25 — 206 stations onto 206 distinct nodes, zero
-/// collisions, every station at t=0 or t=1 and none mid-edge. <c>station_offset</c> is zero on all
-/// of them and cannot be used for this.
+/// collisions, every station at t=0 or t=1 and none mid-edge. That is map25's measurement only;
+/// map26, the map the v2 line runs on, has not been measured, and the route graph does not rely on
+/// the absence of collisions (control-server#431). <c>station_offset</c> is zero on all of them and
+/// cannot be used for this.
 /// </remarks>
 public sealed class RouteGraphStationRow
 {

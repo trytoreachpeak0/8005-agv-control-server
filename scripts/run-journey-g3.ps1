@@ -254,6 +254,58 @@ $scenarioAssertions = [ordered]@{
         'G3-08-06' = 'onboardShowsTheAppendedPlanInSequenceOrder'
         'G3-08-07' = 'multiStopJourneyEachDemandLoadedAndUnloadedOnce'
     }
+    # Batch 8 (control-server#390): CV-WAITING-POINT-IDLE-RETURN. One vehicle unloads, has no demand left and
+    # returns idle to waiting point 214, converges there, and is taken away by the next demand. Guards the two
+    # cross-ticket contracts with onboard-hmi#217: the release sends a business state whose activePurpose is no
+    # longer IDLE_RETURN, and the waiting-point leg follows the facts (ARRIVED while the vehicle stands there,
+    # gone once the next journey's plan replaces it); the pickup entry that follows still opens.
+    'g3-waiting-point-idle-return' = [ordered]@{
+        'G3-12-01' = 'idleReturnPlanBeforeBusinessStateBothAcknowledged'
+        'G3-12-02' = 'onboardShowsEnRouteToWaitingPoint'
+        'G3-12-03' = 'convergedWithArrivedLegAndIdleReturnWithdrawn'
+        'G3-12-04' = 'nextJourneyPlanReplacesTheWaitingPointLeg'
+        'G3-12-05' = 'pickupEntryOpensAfterIdleReturnAndPointReleasedOnDeparture'
+        'G3-12-06' = 'idleReturnJourneyFinalStateNoDuplicateCommit'
+        'G3-12-07' = 'onboardNeverLoadsAtWaitingPoint'
+    }
+    # Batch 9 (control-server#405): CV-AUTOMATIC-CHARGING-CYCLE. One vehicle pushed below its mandatory charge line is sent
+    # to charger 211, charges, is not dispatched while charging, completes, and is taken away by the next demand; the
+    # charger is released only once the vehicle has left it. Onboard half onboard-hmi#220 (ChargingStatus, no entry at the
+    # charger); the cross-ticket contract is G3-13-06 (the next plan carries no CHARGER leg, the pickup entry opens).
+    # CV-MANUAL-STATION-CLEARANCE and CV-UNABLE-TO-CHARGE-FIELD-CONFIRMATION are FP-IS-13's too; their scenarios are written
+    # by control-server#406 and #410 and registered below by the exit ticket control-server#412 (G3-13-11 onwards).
+    'g3-automatic-charging-cycle' = [ordered]@{
+        'G3-13-01' = 'chargerPlanBeforeChargingBusinessStateBothAcknowledged'
+        'G3-13-02' = 'chargingPurposeClaimedFromAllocationUntilComplete'
+        'G3-13-03' = 'onboardShowsChargingAndNeverLoadsAtCharger'
+        'G3-13-04' = 'neverDispatchedWhileChargingBelowCompletion'
+        'G3-13-05' = 'completeWithArrivedChargerLegPurposeReleasedChargerKept'
+        'G3-13-06' = 'nextJourneyLeavesChargerAndChargerReleasedOnDeparture'
+        'G3-13-07' = 'chargingCycleFinalStateNoDuplicateOrder'
+    }
+    # Batch 9 (control-server#406, registered by the exit ticket control-server#412): CV-MANUAL-STATION-CLEARANCE. 407802 +
+    # final HANG at 211 pauses the charger and holds the vehicle in CLEARING_MAINTENANCE; the vehicle is moved off and the
+    # old order cancelled in RIoT, and an R-11 operator confirms the clearance on the real onboard (onboard-hmi#221): the
+    # charger is released only on that confirmation and the pause stays.
+    'g3-manual-station-clearance' = [ordered]@{
+        'G3-13-11' = 'unableToChargePausesChargerAndClearingStateAcknowledged'
+        'G3-13-12' = 'onboardShowsUnableToChargeAndClearanceEntry'
+        'G3-13-13' = 'clearanceRequestedAndConfirmedWithStationReleased'
+        'G3-13-14' = 'chargerReleasedOnlyOnConfirmedClearanceNoOrderCommand'
+    }
+    # Batch 9 (control-server#410, registered by the exit ticket control-server#412): CV-UNABLE-TO-CHARGE-FIELD-CONFIRMATION.
+    # A HANG at 211 without the verified 407802 is not confirmed automatically; an R-11 operator confirms "cannot connect" on
+    # the real onboard (onboard-hmi#222, entry switched on for this run by the scenario's setup), the server decides
+    # MANUAL_CHARGING_HOLD centrally, pauses 211 and holds the vehicle in CLEARING_MAINTENANCE. G3-13-27 needs onboard-hmi#242.
+    'g3-unable-to-charge-field-confirmation' = [ordered]@{
+        'G3-13-21' = 'hangWithoutVerifiedCodeIsNotConfirmedAutomatically'
+        'G3-13-22' = 'onboardShowsUnableToChargeEntryAtCharger'
+        'G3-13-23' = 'fieldConfirmationRequestedAndConfirmedWithManualHold'
+        'G3-13-24' = 'clearingBusinessStateAfterResultAcknowledged'
+        'G3-13-25' = 'fieldConfirmationPausesChargerAndRecordsObservation'
+        'G3-13-26' = 'vehicleHeldInPlaceNoDuplicateOrder'
+        'G3-13-27' = 'onboardKeepsConfirmedResultAfterClearing'
+    }
 }
 
 function Get-ScriptFunction {

@@ -498,7 +498,6 @@ function Assert-InstalledSafeState($Effective) {
         [string]$Effective.result -ne 'PASS' -or
         $Effective.baseJourneyRuntimeEnabled -ne $false -or
         $Effective.productionJourneyRuntimeEnabled -ne $false -or
-        [int]$Effective.minimumBatteryPercent -ne 10 -or
         [string]$Effective.serviceState -ne 'Running' -or
         [string]$Effective.serviceStartMode -ne 'Auto' -or
         $Effective.serviceAccountIsLocalSystem -ne $true -or
@@ -516,7 +515,6 @@ function Get-InstalledEffectiveStateSha256($Effective) {
         result = [string]$Effective.result
         baseJourneyRuntimeEnabled = [bool]$Effective.baseJourneyRuntimeEnabled
         productionJourneyRuntimeEnabled = [bool]$Effective.productionJourneyRuntimeEnabled
-        minimumBatteryPercent = [int]$Effective.minimumBatteryPercent
         serviceState = [string]$Effective.serviceState
         serviceStartMode = [string]$Effective.serviceStartMode
         serviceAccountIsLocalSystem = [bool]$Effective.serviceAccountIsLocalSystem
@@ -767,7 +765,6 @@ try {
     $settings.RIoT.callApiKeyEnvironmentVariable = 'CONTROL_SERVER_SHADOW_DUMMY_RIOT_CALL_API_KEY'
     $settings.OnboardSafetyProjection.enabled = $false
     $settings.JourneyRuntime.enabled = $true
-    $settings.JourneyRuntime.minimumBatteryPercent = 10
     $settings.RiotAbsentAtObservationCreateExperiment.enabled = $false
     [IO.File]::WriteAllText(
         $settingsPath,
@@ -833,7 +830,6 @@ try {
         OnboardTransport__credentialEnvironmentVariable = 'CONTROL_SERVER_ONBOARD_CREDENTIAL'
         OnboardSafetyProjection__enabled = 'false'
         JourneyRuntime__enabled = 'true'
-        JourneyRuntime__minimumBatteryPercent = '10'
         RiotAbsentAtObservationCreateExperiment__enabled = 'false'
         MesIngest__baseUrl = [string]$settings.MesIngest.baseUrl
     }

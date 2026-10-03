@@ -1,0 +1,10 @@
+ok    one confirmed intent is returned -> returns u1
+ok    two intents, the first confirmed: the count is refused, not judged -> throws multi
+ok    two intents, only the later one confirmed: still refused, not a bare timeout -> throws multi
+ok    no intent yet: the ordinary timeout, and no talk of a second leg -> throws timeout
+ok    one unconfirmed intent: the ordinary timeout -> throws timeout
+ok    the read after a failed wait may not replace the failure -> throws timeout
+ok    the refusal names every intent it found -> Demand DEMAND-1 has 2 non-TO_PICKUP order intents (TO_DROPOFF/u1, TO_PARK/u2); this driver assumes one second leg and would silently judge whichever sorted first.
+ok    the query orders by UpperId -> SELECT UpperId, OrderId, Status, Purpose FROM OrderIntents WHERE DemandId = 'DEMAND-1' AND Purpose <> 'TO_PICKUP' ORDER BY UpperId
+L2SecondLegIntentWait self-check: all 8 cases as expected.
+exit=0

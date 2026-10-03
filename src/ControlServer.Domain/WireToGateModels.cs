@@ -16,6 +16,12 @@ public enum SessionReadiness
 
 public sealed record SessionReadinessDecision(SessionReadiness Readiness, string ReasonCode);
 
+/// <summary>
+/// One entry of a RecoveryStateReport's pendingResults: the result's messageId and the business content hash
+/// (its <c>resultContentSha256</c>) the vehicle holds for it.
+/// </summary>
+public sealed record ReportedPendingResult(string MessageId, string ContentSha256);
+
 public sealed record StationOperationPlan(
     string SlotOperationAttemptId,
     string DemandId,
@@ -116,8 +122,26 @@ public sealed record VehicleBusinessProjection(
 /// </summary>
 public static class VehicleActivePurposes
 {
-    /// <summary>The vehicle is carrying a demand; the only purpose the v2 journey runtime can be in.</summary>
+    /// <summary>The vehicle is carrying a demand.</summary>
     public const string Transport = "TRANSPORT";
+
+    /// <summary>
+    /// The vehicle is on its way to a waiting point with no demand (batch 8-19, control-server#390): no worklist, no entry request,
+    /// no slot command. Withdrawn, by a snapshot whose purpose is no longer this, when the idle return converges or ends.
+    /// </summary>
+    public const string IdleReturn = "IDLE_RETURN";
+
+    /// <summary>
+    /// The vehicle is committed to a charger (batch 9-06, control-server#404): it holds the CHARGING purpose and the charger's
+    /// reservation. No worklist, no entry request, no slot command; where the cycle stands is <c>chargingCycleState</c>.
+    /// </summary>
+    public const string Charging = "CHARGING";
+
+    /// <summary>
+    /// The vehicle could not charge and stands on the charger it failed at (batch 9-08, control-server#406): nothing moves it
+    /// until a person with the clearance permission has moved it off and confirmed the charger clear.
+    /// </summary>
+    public const string ClearingMaintenance = "CLEARING_MAINTENANCE";
 }
 
 /// <summary>
@@ -362,7 +386,9 @@ public sealed record JourneyExecutionPlan(
     long? TaskTypeStationBindingSetVersion = null,
     long? StationCatalogRevision = null,
     string? IdentityKey = null,
-    int? FixedTaskStationRiotId = null)
+    int? FixedTaskStationRiotId = null,
+    long? ChargingPolicyVersion = null,
+    string? PublishedBatteryState = null)
 {
     /// <summary>
     /// 这趟受理派生身份（旅程 id、停靠 id、报文与 attempt id）所用的键：需求第一次受理时就是需求 id，改派之后带上代次
@@ -373,6 +399,11 @@ public sealed record JourneyExecutionPlan(
     // FixedTaskStationRiotId: the RIoT station id of this demand's REQ-0204 public station (its task type's
     // FixedTaskStation, batch 8-20, control-server#391) -- the pickup for STAGING_TO_WIRE, the gate for WIRE_TO_GATE.
     // Null for a plan built without a resolved fixed station, which takes no station exclusivity.
+    //
+    // ChargingPolicyVersion: the charging policy version the dispatch decision was judged under (REQ-0282, batch 9-05,
+    // control-server#403), and PublishedBatteryState the batteryState projected from that decision's facts. Both are
+    // written onto the journey row in the acceptance's own save, so a dispatch that fails to save leaves neither behind.
+    // An appended demand does not change them: the journey keeps the version it was dispatched under.
 }
 
 /// <summary>
@@ -438,6 +469,14 @@ public enum OperationResultDisposition
 /// <c>observedBatteryPercent</c> as <c>number | null</c>, so an absent reading is a value the
 /// administrator supplied rather than a violation.
 /// </summary>
+/// <param name="VehicleKey">
+/// The RIoT vehicle key of <paramref name="AgvId"/>, resolved from the fleet roster by whoever received the message
+/// (control-server#404). The server's manual-charging hold is kept per vehicle key; null when the AGV is not in the roster,
+/// and then no hold can be found or lifted.
+/// </param>
+/// <param name="DecidedAt">
+/// The receiver's clock at the decision, stamped on the decision and on the hold's release; null falls back to the system clock.
+/// </param>
 public sealed record ManualChargingReturnToServiceRequest(
     string RequestId,
     string AgvId,
@@ -447,7 +486,9 @@ public sealed record ManualChargingReturnToServiceRequest(
     string AdministratorId,
     string AdministratorRole,
     string Reason,
-    double? ObservedBatteryPercent);
+    double? ObservedBatteryPercent,
+    string? VehicleKey = null,
+    DateTimeOffset? DecidedAt = null);
 
 /// <summary>
 /// What the server decided about one such request, durable so the same <c>requestId</c> arriving

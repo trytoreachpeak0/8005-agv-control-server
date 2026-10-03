@@ -107,8 +107,8 @@ public sealed class JourneyRuntimeWorkerDepartureSafetyTests
         fixture.BoxCounts.Set("SUBLOT-001", 4);
         JourneyRuntimeRow runtime = await fixture.AdvanceToDepartureSafetyAsync();
         Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, runtime.Stage);
-        string expiredCheckId = runtime.PreDepartureSafetyCheckId;
-        string expiredMessageId = runtime.PreDepartureSafetyCheckMessageId;
+        string expiredCheckId = runtime.PreDepartureSafetyCheckId!;
+        string expiredMessageId = runtime.PreDepartureSafetyCheckMessageId!;
         // v3 (control-server#382): the first check says what it is for. Without checkPurpose the peer rejects the
         // check against the schema and every departure is held.
         Assert.Equal("DEPARTURE", await CheckPurposeAsync(fixture, expiredMessageId));
@@ -129,11 +129,11 @@ public sealed class JourneyRuntimeWorkerDepartureSafetyTests
             row => row.MessageId == expiredMessageId, TestContext.Current.CancellationToken)).FencedAt);
         Assert.Equal(8, await ExpectedSafetyStateVersionAsync(fixture, runtime));
         // The reissue is the engine's second call site and has to say the same.
-        Assert.Equal("DEPARTURE", await CheckPurposeAsync(fixture, runtime.PreDepartureSafetyCheckMessageId));
+        Assert.Equal("DEPARTURE", await CheckPurposeAsync(fixture, runtime.PreDepartureSafetyCheckMessageId!));
 
         await fixture.AddInboxAsync(
             Guid.NewGuid().ToString("D"), "PreDepartureSafetyCheckResult",
-            SafeDepartureAnswer(runtime.PreDepartureSafetyCheckId, 8, fixture.Clock.GetUtcNow()),
+            SafeDepartureAnswer(runtime.PreDepartureSafetyCheckId!, 8, fixture.Clock.GetUtcNow()),
             runtime.PreDepartureSafetyCheckId);
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
 
@@ -158,7 +158,7 @@ public sealed class JourneyRuntimeWorkerDepartureSafetyTests
             "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
         fixture.BoxCounts.Set("SUBLOT-001", 4);
         JourneyRuntimeRow runtime = await fixture.AdvanceToDepartureSafetyAsync();
-        string firstCheckId = runtime.PreDepartureSafetyCheckId;
+        string firstCheckId = runtime.PreDepartureSafetyCheckId!;
 
         await fixture.AddSafetyStateChangedAsync(8, departureSafe: false, vehicleStopped: true);
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
@@ -192,7 +192,7 @@ public sealed class JourneyRuntimeWorkerDepartureSafetyTests
             "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
         fixture.BoxCounts.Set("SUBLOT-001", 4);
         JourneyRuntimeRow runtime = await fixture.AdvanceToDepartureSafetyAsync();
-        string firstCheckId = runtime.PreDepartureSafetyCheckId;
+        string firstCheckId = runtime.PreDepartureSafetyCheckId!;
         DateTimeOffset answeredAt = fixture.Clock.GetUtcNow();
         await fixture.AddInboxAsync(
             Guid.NewGuid().ToString("D"), "PreDepartureSafetyCheckResult",
@@ -248,7 +248,7 @@ public sealed class JourneyRuntimeWorkerDepartureSafetyTests
         JourneyRuntimeRow runtime = await fixture.AdvanceToDepartureSafetyAsync();
         Assert.Null(runtime.BlockReasonCode);
         Assert.Null(runtime.BlockReasonSince);
-        string firstCheckId = runtime.PreDepartureSafetyCheckId;
+        string firstCheckId = runtime.PreDepartureSafetyCheckId!;
         DateTimeOffset answeredAt = fixture.Clock.GetUtcNow();
         await fixture.AddInboxAsync(
             Guid.NewGuid().ToString("D"), "PreDepartureSafetyCheckResult",
@@ -334,7 +334,7 @@ public sealed class JourneyRuntimeWorkerDepartureSafetyTests
 
         await fixture.AddInboxAsync(
             Guid.NewGuid().ToString("D"), "PreDepartureSafetyCheckResult",
-            SafeDepartureAnswer(runtime.PreDepartureSafetyCheckId, safetyVersion, fixture.Clock.GetUtcNow(), checkPurpose),
+            SafeDepartureAnswer(runtime.PreDepartureSafetyCheckId!, safetyVersion, fixture.Clock.GetUtcNow(), checkPurpose),
             runtime.PreDepartureSafetyCheckId);
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
 

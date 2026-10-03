@@ -104,8 +104,9 @@ public static class DemandJourneyLookup
         ArgumentNullException.ThrowIfNull(dbContext);
         ArgumentNullException.ThrowIfNull(demandIds);
         var rows = await dbContext.JourneyRuntimes.AsNoTracking()
-            .Where(row => demandIds.Contains(row.DemandId))
-            .Select(row => new { row.DemandId, row.Stage })
+            .Where(row => row.DemandId != null && demandIds.Contains(row.DemandId))
+            // An idle return (control-server#390) names no demand and is never one of these rows.
+            .Select(row => new { DemandId = row.DemandId!, row.Stage })
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
         string[] released = await ReleasedForRedispatch(dbContext).AsNoTracking()
             .Where(row => demandIds.Contains(row.DemandId))

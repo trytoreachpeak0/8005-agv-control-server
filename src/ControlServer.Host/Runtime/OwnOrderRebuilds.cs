@@ -135,7 +135,8 @@ internal static class OwnOrderRebuilds
         {
             RebuildId = rebuildId,
             JourneyId = runtime.JourneyId,
-            DemandId = runtime.DemandId,
+            // An idle return is never rebuilt (control-server#390): REQ-0360 and REQ-0361 are about a demand's order.
+            DemandId = runtime.TransportColumn(runtime.DemandId),
             AgvId = runtime.AgvId,
             VehicleKey = runtime.VehicleKey,
             StopId = stop.StopId,
@@ -232,7 +233,8 @@ internal static class OwnOrderRebuilds
         {
             RebuildId = rebuildId,
             JourneyId = runtime.JourneyId,
-            DemandId = runtime.DemandId,
+            // An idle return is never rebuilt (control-server#390): REQ-0360 and REQ-0361 are about a demand's order.
+            DemandId = runtime.TransportColumn(runtime.DemandId),
             AgvId = runtime.AgvId,
             VehicleKey = runtime.VehicleKey,
             StopId = stop.StopId,

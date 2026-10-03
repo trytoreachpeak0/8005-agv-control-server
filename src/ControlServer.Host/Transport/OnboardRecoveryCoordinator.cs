@@ -44,6 +44,14 @@ public sealed class OnboardRecoveryCoordinator(
                 "Exception recovery session {SessionId} had already closed when {WorkflowType} {WorkflowId} reported " +
                 "{Outcome}. The result is recorded as evidence only: demand {DemandId}, its journey, lease and " +
                 "vehicle are left as the session handling them now has them; reconcile by hand if they disagree.");
+    private static readonly Action<ILogger, string, string, string, string, string, Exception?>
+        LogCompensationRequestedAgain =
+            LoggerMessage.Define<string, string, string, string, string>(
+                LogLevel.Information,
+                new EventId(2129, nameof(LogCompensationRequestedAgain)),
+                "Compensation {WorkflowId} of session {SessionId} was requested again by operator {OperatorId} " +
+                "(verified {VerifiedAt}) in message {MessageId}. It was already authorized: nothing is authorized " +
+                "again, and the command it earned is re-sent unchanged.");
 
     /// <summary>
     /// The recovery action that lifts a door-unproven hold (REQ-0364, CP-0009, control-server#385). It sends the vehicle no
@@ -950,7 +958,8 @@ public sealed class OnboardRecoveryCoordinator(
         if (workflow is null || workflow.ExceptionRecoverySessionId != RequiredUuid(payload, "exceptionRecoverySessionId") ||
             workflow.DemandId != RequiredUuid(payload, "demandId") ||
             workflow.SlotOperationAttemptId != RequiredUuid(payload, "slotOperationAttemptId") ||
-            workflow.State is not (RecoveryWorkflowState.AwaitingAuthorization or RecoveryWorkflowState.CommandPending))
+            workflow.State is not (RecoveryWorkflowState.AwaitingAuthorization or RecoveryWorkflowState.CommandPending
+                or RecoveryWorkflowState.AwaitingResult))
         {
             return Response(root, "LoadCompensationRejected", new
             {
@@ -1019,6 +1028,46 @@ public sealed class OnboardRecoveryCoordinator(
             await QueueSessionSnapshotAsync(
                 session, root.GetProperty("sessionGeneration").GetInt64(), cancellationToken).ConfigureAwait(false);
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            // The same compensation asked for again after its command was bound (8005-agv-onboard-hmi#236). The vehicle
+            // asks again when the link dropped before it could know the first request arrived, and it cannot tell
+            // "lost on the way here" from "the command was lost on the way back". So this is the request it already
+            // made -- same recoveryActionId, and the manifest's other business keys checked above -- and it is answered
+            // the way the correction's twin is: nothing authorized again, the persisted command re-sent by
+            // SendTriggeredCommandAsync. Until #236 it was refused here, and the vehicle's answer to that refusal is to
+            // drop the compensation it is about to carry out. A workflow with a result is past AwaitingResult and still
+            // refused above; a session closed meanwhile is refused here and nothing is authorized for it. The refusal
+            // does not stop the command going out again, though: OnboardMessageProcessor runs SendTriggeredCommandAsync
+            // after every LoadCompensationRequested, refused or not, and it re-sends the command persisted under this
+            // recoveryActionId while its outbox row is unsettled. The vehicle, having taken the refusal and dropped its
+            // vector, fails to bind that command and answers FAILED without touching IO. Pinned by
+            // ARepeatedCompensationRequestOutsideTheSameOpenBoundCompensationIsStillRefused; not changed here.
+            ExceptionRecoverySessionRow session = await dbContext.ExceptionRecoverySessions.AsNoTracking().SingleAsync(
+                row => row.ExceptionRecoverySessionId == workflow.ExceptionRecoverySessionId,
+                cancellationToken).ConfigureAwait(false);
+            if (session.State == "CLOSED")
+            {
+                return Response(root, "LoadCompensationRejected", new
+                {
+                    recoveryActionId = actionId,
+                    problem = Problem(ServerReasonCodes.RecoverySessionNotOpen, "payload",
+                        "The recovery session this compensation belongs to has already closed.")
+                });
+            }
+
+            // The operator is not one of the business keys, so another person pressing again is still this request.
+            // Who asked again, and when, is kept here; the command does not change -- it was authorized once.
+            JsonElement requestedBy = payload.GetProperty("operator");
+            LogCompensationRequestedAgain(
+                logger ?? (ILogger)NullLogger.Instance,
+                actionId,
+                workflow.ExceptionRecoverySessionId!,
+                RequiredString(requestedBy, "operatorId"),
+                requestedBy.GetProperty("verifiedAt").GetRawText().Trim('"'),
+                RequiredString(root, "messageId"),
+                null);
         }
         return string.Empty;
     }
@@ -1394,7 +1443,7 @@ public sealed class OnboardRecoveryCoordinator(
             {
                 LogCancellationFoundStopDecided(
                     logger ?? (ILogger)NullLogger.Instance,
-                    workflow.WorkflowId, stop.DemandId, stop.Stage.ToString(), stop.BlockReasonCode, null);
+                    workflow.WorkflowId, stop.DemandId ?? stop.JourneyId, stop.Stage.ToString(), stop.BlockReasonCode, null);
                 return;
             }
             // 这条需求在这趟旅程里的归属：命令发没发、要结算哪一版录入请求，都挂在它身上（批次7-06，control-server#211）。

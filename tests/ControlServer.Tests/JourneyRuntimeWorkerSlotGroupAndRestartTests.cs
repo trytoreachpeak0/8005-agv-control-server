@@ -561,7 +561,7 @@ public sealed class JourneyRuntimeWorkerSlotGroupAndRestartTests
 
         JourneyRuntimeRow runtime = await fixture.RunToGateUnloadAsync();
 
-        JsonElement payload = await fixture.OutboxPayloadAsync(runtime.GateWorklistMessageId);
+        JsonElement payload = await fixture.OutboxPayloadAsync(runtime.GateWorklistMessageId!);
         Assert.Equal("DROPOFF", payload.GetProperty("items")[0].GetProperty("stopRole").GetString());
         Assert.Equal(JsonValueKind.Null, payload.GetProperty("stationDepartureDeadlineAt").ValueKind);
     }
@@ -603,7 +603,7 @@ public sealed class JourneyRuntimeWorkerSlotGroupAndRestartTests
 
         JourneyRuntimeRow runtime = await fixture.AdvanceToSublotWaitAsync();
 
-        JsonElement payload = await fixture.OutboxPayloadAsync(runtime.SublotRequestMessageId);
+        JsonElement payload = await fixture.OutboxPayloadAsync(runtime.SublotRequestMessageId!);
         Assert.Equal(
             ["SUBLOT-001"],
             payload.GetProperty("expectedSublots").EnumerateArray().Select(item => item.GetString()));
@@ -636,7 +636,7 @@ public sealed class JourneyRuntimeWorkerSlotGroupAndRestartTests
         {
             Assert.False(submitted.RootElement.GetProperty("payload").TryGetProperty("demandId", out _));
         }
-        JsonElement command = await fixture.OutboxPayloadAsync(runtime.LoadCommandMessageId);
+        JsonElement command = await fixture.OutboxPayloadAsync(runtime.LoadCommandMessageId!);
         Assert.Equal(runtime.DemandId, command.GetProperty("demandId").GetString());
         Assert.Equal(runtime.LoadSlotOperationAttemptId, command.GetProperty("slotOperationAttemptId").GetString());
     }
@@ -727,7 +727,7 @@ public sealed class JourneyRuntimeWorkerSlotGroupAndRestartTests
         JourneyRuntimeRow runtime = await fixture.RunToGateUnloadAsync();
 
         JsonElement pickup = await fixture.OutboxPayloadAsync(runtime.VehicleBusinessMessageId);
-        JsonElement dropoff = await fixture.OutboxPayloadAsync(runtime.GateVehicleBusinessMessageId);
+        JsonElement dropoff = await fixture.OutboxPayloadAsync(runtime.GateVehicleBusinessMessageId!);
         foreach (JsonElement snapshot in new[] { pickup, dropoff })
         {
             Assert.Equal("TRANSPORT", snapshot.GetProperty("activePurpose").GetString());

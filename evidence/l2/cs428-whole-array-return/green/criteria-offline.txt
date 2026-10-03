@@ -1,0 +1,395 @@
+HEAD 91bddb1ad3e43274b3ebe3651ccaf36263e5653c; old form from the files at d5efa06f
+
+ok   L2-CPM-00  [count]  charging-policy-missing-vehicle-not-commissioned.ps1  ^\$policyRows = 
+     db: kept stage of charging-policy-missing-vehicle-not-commissioned run 20260930T124426898Z at 8cee3acf
+     criterion: $policyRows.Count -eq 1 -and [string]$policyRows[0].VehicleKey -eq $coveredVehicleKey -and [string]$policyRows[0].Source -eq 'L2_PRESET'
+     old: as-is   True
+          doubled False
+          empty   throws (The property 'VehicleKey' cannot be found on this object. Verify that )
+     new: as-is   True
+          doubled False
+          empty   False
+
+ok   L2-MCT-00  [count]  mandatory-charge-vehicle-takes-no-transport.ps1  ^\$active = 
+     db: kept stage of mandatory-charge-vehicle-takes-no-transport run 20260930T124501417Z at 8cee3acf
+     criterion: $active.Count -eq 1 -and [string]$active[0].Version -eq $version -and [int]$active[0].Entry -eq 30 -and [int]$active[0].Margin -eq 20 -and [int]$active[0].Estimate -eq 0
+     old: as-is   True
+          doubled False
+          empty   throws (The property 'Version' cannot be found on this object. Verify that the)
+     new: as-is   True
+          doubled False
+          empty   False
+
+ok   L2-AAU-04  [count]  area-assignment-unmapped-silent.ps1  ^\$freeze = 
+     db: kept stage of area-assignment-unmapped-silent run 20260930T124733246Z at 8cee3acf
+     criterion: $freeze.Count -eq 1 -and [long]$freeze[0].FrozenVersion -eq [long]$freeze[0].CurrentVersion -and [long]$freeze[0].FrozenVersion -eq [long]$current.version -and [string]$freeze[0].FrozenSnapshotId -eq [string]$freeze[0].VersionSnapshotId -and [string]$freeze[0].DispatchZone -eq $zone
+     old: as-is   True
+          doubled throws (Cannot convert the "System.Object[]" value of type "System.Object[]" t)
+          empty   throws (The property 'FrozenVersion' cannot be found on this object. Verify th)
+     new: as-is   True
+          doubled False
+          empty   False
+
+ok   L2-SRJ-10  [count]  sublot-rejected-after-entry.ps1  ^\$attempts = 
+     db: kept stage of sublot-rejected-after-entry run 20260930T124748956Z at 8cee3acf
+     criterion: $attempts.Count -eq 1 -and [string]$attempts[0].SublotId -eq $sublot
+     old: as-is   True
+          doubled False
+          empty   throws (The property 'SublotId' cannot be found on this object. Verify that th)
+     new: as-is   True
+          doubled False
+          empty   False
+
+ok   G3-02-47 results  [count]  g3-sublot-rejected.ps1  ^\$results = 
+     db: rebuilt from evidence/g3/cs390-journey-fa4a5ce3/scenarios/g3-sublot-rejected/snapshots
+     criterion: $results.Count -eq 1 -and [string]$results[0].OverallOutcome -eq 'COMPLETED'
+     old: as-is   True
+          doubled False
+          empty   throws (The property 'OverallOutcome' cannot be found on this object. Verify t)
+     new: as-is   True
+          doubled False
+          empty   False
+
+ok   G3-02-35 workflow  [count]  g3-load-cancellation-before-load.ps1  ^\$workflow = 
+     db: rebuilt from evidence/g3/cs390-journey-fa4a5ce3/scenarios/g3-load-cancellation-before-load/snapshots
+     criterion: $workflow.Count -eq 1 -and [string]$workflow[0].WorkflowType -eq 'LOAD_CANCELLATION' -and -not (Test-Present $workflow[0].SlotOperationAttemptId) -and [string]$workflow[0].SlotsJson -eq '[]'
+     old: as-is   True
+          doubled False
+          empty   throws (The property 'WorkflowType' cannot be found on this object. Verify tha)
+     new: as-is   True
+          doubled False
+          empty   False
+
+ok   G3-02-35 lease  [count]  g3-load-cancellation-before-load.ps1  ^\$lease = 
+     db: rebuilt from evidence/g3/cs390-journey-fa4a5ce3/scenarios/g3-load-cancellation-before-load/snapshots
+     note: The query ends in LIMIT 1, so a second row cannot come from the database; doubled is the wrapper's.
+     criterion: $null -ne $releasedAt
+     old: as-is   True
+          doubled throws (Exception calling "Parse" with "2" argument(s): "String '2026-09-30 07)
+          empty   throws (The property 'ReleasedAt' cannot be found on this object. Verify that )
+     new: as-is   True
+          doubled False
+          empty   False
+
+ok   G3-02-36 entryRequest  [count]  g3-load-cancellation-before-load.ps1  ^\$entryRequest = 
+     db: kept stage of load-cancelled-before-sublot run 20260930T124715233Z at 8cee3acf
+     note: ProtocolOutbox is not in the evidence snapshots; the database is the synthetic twin load-cancelled-before-sublot. MessageId is the primary key, so a second row cannot come from the database.
+     criterion: $entryRequest.Count -eq 1 -and (Test-Present $entryRequest[0].AcknowledgedAt)
+     old: as-is   True
+          doubled True
+          empty   throws (The property 'AcknowledgedAt' cannot be found on this object. Verify t)
+     new: as-is   True
+          doubled False
+          empty   False
+
+ok   L2-UE-05/08 footprint  [criterion]  real-onboard-unload-not-emptied.ps1  Get-RecoveryFootprint
+     db: kept stage of sublot-rejected-after-entry run 20260930T124748956Z at 8cee3acf
+     note: The read decides L2-UE-05 and L2-UE-08 (both compare $footprint with $noRecovery). Database of the synthetic sublot-rejected-after-entry, a run with no recovery: the evidence snapshots of this scenario write an empty table as an empty file, so its two empty recovery tables cannot be rebuilt. A ">= 1 row, the first one Ready" read, so doubled stays True by design.
+     criterion: (Get-RecoveryFootprint) -eq $noRecovery
+     old: as-is   True
+          doubled False
+          empty   throws (The property 'Readiness' cannot be found on this object. Verify that t)
+     new: as-is   True
+          doubled True
+          empty   False
+
+ok   G3-02-45 pendingEntry (actual text)  [text]  g3-sublot-rejected.ps1  ^\$pendingEntry = 
+     db: kept stage of sublot-rejected-after-entry run 20260930T124748956Z at 8cee3acf
+     note: ProtocolOutbox is not in the evidence snapshots; the database is the synthetic twin sublot-rejected-after-entry. Not part of the verdict of G3-02-45, only of its actual text. The text used to say "(no row)" for two rows as well.
+     criterion: $(if ($pendingEntry.Count -eq 1) { $pendingEntry[0].AcknowledgedAt } else { "($($pendingEntry.Count) rows)" })
+     old: as-is   '2026-09-30 12:48:18.0350554+00:00'
+          doubled array[2]
+          empty   throws (The property 'AcknowledgedAt' cannot be found on this object. Verify t)
+     new: as-is   '2026-09-30 12:48:18.0350554+00:00'
+          doubled '(2 rows)'
+          empty   '(0 rows)'
+
+ok   L2-SRJ-10 (actual text)  [text]  sublot-rejected-after-entry.ps1  ^\$attempts = 
+     db: kept stage of sublot-rejected-after-entry run 20260930T124748956Z at 8cee3acf
+     criterion: $(if ($attempts.Count -eq 1) { $attempts[0].SublotId } else { "($($attempts.Count) attempts)" })
+     old: as-is   'L2-SRJ-20260930T124748956Z'
+          doubled array[2]
+          empty   throws (The property 'SublotId' cannot be found on this object. Verify that th)
+     new: as-is   'L2-SRJ-20260930T124748956Z'
+          doubled '(2 attempts)'
+          empty   '(0 attempts)'
+
+ok   G3-02-35 workflowText (actual text)  [text]  g3-load-cancellation-before-load.ps1  ^\$workflow = 
+     db: rebuilt from evidence/g3/cs390-journey-fa4a5ce3/scenarios/g3-load-cancellation-before-load/snapshots
+     criterion: $workflowText
+     old: as-is   'LOAD_CANCELLATION / attempt= / [] / 收下 d3f33ed2-c973-6059-a8e7-da2f513c5d2a / Reconciled'
+          doubled 'LOAD_CANCELLATION LOAD_CANCELLATION / attempt=  / [] [] / 收下 d3f33ed2-c973-6059-a8e7-da2f513c5d2a d3f33ed2-c973-6059-a8e7-da2f513c5d2a / Reconciled Reconciled'
+          empty   throws (The property 'WorkflowType' cannot be found on this object. Verify tha)
+     new: as-is   'LOAD_CANCELLATION / attempt= / [] / 收下 d3f33ed2-c973-6059-a8e7-da2f513c5d2a / Reconciled'
+          doubled '(2 workflow rows)'
+          empty   '(0 workflow rows)'
+
+ok   G3RecoveryCommon backlogText  [text]  G3RecoveryCommon.ps1  ^\s+\$backlog = 
+     db: rebuilt from evidence/g3/cs390-journey-fa4a5ce3/scenarios/g3-load-cancellation-before-load/snapshots
+     criterion: $backlogText
+     old: as-is   '积压 DEMAND_ALREADY_ACCEPTED，受理时间 2026-09-30 07:29:15.7148463+00:00'
+          doubled '积压 DEMAND_ALREADY_ACCEPTED DEMAND_ALREADY_ACCEPTED，受理时间 2026-09-30 07:29:15.7148463+00:00 2026-09-30 07:29:15.7148463+00:00'
+          empty   throws (The property 'ReasonCode' cannot be found on this object. Verify that )
+     new: as-is   '积压 DEMAND_ALREADY_ACCEPTED，受理时间 2026-09-30 07:29:15.7148463+00:00'
+          doubled '积压 DEMAND_ALREADY_ACCEPTED，受理时间 2026-09-30 07:29:15.7148463+00:00'
+          empty   '无积压行'
+
+ok   G3-12-04 Format-Plan (text)  [text]  g3-waiting-point-idle-return.ps1  Format-Plan
+     db: rebuilt from evidence/g3/cs390-journey-fa4a5ce3/scenarios/g3-waiting-point-idle-return/snapshots
+     note: No query: the plan is a two-leg object built here. The old form prints [1 2:BUSINESS BUSINESS@...], which is what control-server#390 saw in G3-12-04.
+     criterion: Format-Plan $plan
+     old: as-is   'plan r3 [1 2:BUSINESS BUSINESS@N1-3 GATE:ARRIVED PLANNED] ack=True'
+          doubled 'plan r3 [1 2:BUSINESS BUSINESS@N1-3 GATE:ARRIVED PLANNED] ack=True'
+          empty   'plan r3 [1 2:BUSINESS BUSINESS@N1-3 GATE:ARRIVED PLANNED] ack=True'
+     new: as-is   'plan r3 [1:BUSINESS@N1-3:ARRIVED,2:BUSINESS@GATE:PLANNED] ack=True'
+          doubled 'plan r3 [1:BUSINESS@N1-3:ARRIVED,2:BUSINESS@GATE:PLANNED] ack=True'
+          empty   'plan r3 [1:BUSINESS@N1-3:ARRIVED,2:BUSINESS@GATE:PLANNED] ack=True'
+
+ok   real-onboard-mixed-side-one-stop (text)  [text]  real-onboard-mixed-side-one-stop.ps1  actual of the two-item worklist criterion
+     db: rebuilt from evidence/g3/cs390-journey-fa4a5ce3/scenarios/g3-multi-stop-plan/snapshots
+     note: No query: Get-L2JourneyWireSnapshots is replaced by two acknowledged worklists with the module's return shape.
+     criterion: ((Get-AcknowledgedWorklists $mixedStationName) | ForEach-Object { Format-L2WireSnapshot $_ }) -join ' | '
+     old: as-is   'r1 2'
+          doubled 'r1 2'
+          empty   'r1 2'
+     new: as-is   'r1 | r2'
+          doubled 'r1 | r2'
+          empty   'r1 | r2'
+
+ok   g3-reversed-direction-journey snapshots (timeout path)  [text]  g3-reversed-direction-journey.ps1  Wait-L2RealOrLast
+     db: rebuilt from evidence/g3/cs390-journey-fa4a5ce3/scenarios/g3-reversed-direction-journey/snapshots
+     note: No database is read. as-is / doubled / empty are 2 / 4 / 0 snapshots.
+     criterion: "$($snapshots.Count) snapshots, unacknowledged $(@($snapshots | Where-Object { -not $_.Acknowledged }).Count)"
+     old: as-is   '1 snapshots, unacknowledged 0'
+          doubled '1 snapshots, unacknowledged 0'
+          empty   throws (The property 'Acknowledged' cannot be found on this object. Verify tha)
+     new: as-is   '2 snapshots, unacknowledged 0'
+          doubled '4 snapshots, unacknowledged 0'
+          empty   '0 snapshots, unacknowledged 0'
+
+ok   L2-TTAB-01 freeze  [index]  task-type-binding-admits-bound-station.ps1  ^\$freeze = 
+     db: kept stage of task-type-binding-admits-bound-station run 20260930T124614505Z at 8cee3acf
+     note: Scalar sub-selects: the query returns one row whatever the tables hold.
+     criterion: [int]$freeze.DropoffStationId -eq $boundStation
+     old: as-is   True
+          doubled throws (Cannot convert the "System.Object[]" value of type "System.Object[]" t)
+          empty   throws (The property 'DropoffStationId' cannot be found on this object. Verify)
+     new: as-is   True
+          doubled True
+          empty   throws (Index was outside the bounds of the array.)
+
+ok   stop-ended bStopRow  [index]  stop-ended-journey-continues.ps1  ^\$bStopRow = 
+     db: kept stage of stop-ended-journey-continues run 20260930T124517535Z at 8cee3acf
+     note: Read by StopId, the primary key.
+     criterion: [string]$bStopRow[0].StationId
+     old: as-is   'C15-13'
+          doubled 'C15-13 C15-13'
+          empty   throws (The property 'StationId' cannot be found on this object. Verify that t)
+     new: as-is   'C15-13'
+          doubled 'C15-13'
+          empty   throws (Index was outside the bounds of the array.)
+
+ok   g3-sublot-rejected dispatched  [single-row-required]  g3-sublot-rejected.ps1  ^\$dispatched = 
+     db: rebuilt from evidence/g3/cs390-journey-fa4a5ce3/scenarios/g3-sublot-rejected/snapshots
+     note: The precondition guard compares this as text now; a stand-in does not cast to a number.
+     criterion: [string]$dispatched.ExpectedBasketCount
+     old: as-is   1
+          doubled throws (Cannot convert the "System.Object[]" value of type "System.Object[]" t)
+          empty   throws (The property 'ExpectedBasketCount' cannot be found on this object. Ver)
+     new: as-is   '1'
+          doubled '(2 rows, expected 1)'
+          empty   '(0 rows, expected 1)'
+
+ok   G3-02-43 / G3-02-45 refusedRuntime  [single-row-required]  g3-sublot-rejected.ps1  ^\$refusedRuntime = 
+     db: rebuilt from evidence/g3/cs390-journey-fa4a5ce3/scenarios/g3-sublot-rejected/snapshots
+     note: The snapshot is the end of the run, so the stage read here is the final one, not AwaitingSublot. Both criteria compare this value with AwaitingSublot before anything else of the row.
+     criterion: [string]$refusedRuntime.Stage
+     old: as-is   'AwaitingStationDeparture'
+          doubled 'AwaitingStationDeparture AwaitingStationDeparture'
+          empty   throws (The property 'Stage' cannot be found on this object. Verify that the p)
+     new: as-is   'AwaitingStationDeparture'
+          doubled '(2 rows, expected 1)'
+          empty   '(0 rows, expected 1)'
+
+ok   G3-02-47 finalRuntime  [single-row-required]  g3-sublot-rejected.ps1  ^\$finalRuntime = 
+     db: rebuilt from evidence/g3/cs390-journey-fa4a5ce3/scenarios/g3-sublot-rejected/snapshots
+     criterion: -not (Test-Present $finalRuntime.BlockReasonCode)
+     old: as-is   True
+          doubled False
+          empty   throws (The property 'BlockReasonCode' cannot be found on this object. Verify )
+     new: as-is   True
+          doubled False
+          empty   False
+
+ok   L2-SEJ-05 gateStopRow  [single-row-required]  stop-ended-journey-continues.ps1  ^\$gateStopRow = 
+     db: kept stage of stop-ended-journey-continues run 20260930T124517535Z at 8cee3acf
+     criterion: [string]$gateStopRow.StationId
+     old: as-is   '关卡'
+          doubled '关卡 关卡'
+          empty   throws (The property 'StationId' cannot be found on this object. Verify that t)
+     new: as-is   '关卡'
+          doubled '(2 rows, expected 1)'
+          empty   '(0 rows, expected 1)'
+
+ok   area-eqp-unique-across-task-types Get-Stage  [single-row]  area-eqp-unique-across-task-types.ps1  Get-Stage
+     db: kept stage of area-eqp-unique-across-task-types run 20260930T124426830Z at 8cee3acf
+     criterion: Get-Stage $demandId
+     old: as-is   'AwaitingPickupArrival'
+          doubled 'AwaitingPickupArrival AwaitingPickupArrival'
+          empty   throws (The property 'Stage' cannot be found on this object. Verify that the p)
+     new: as-is   'AwaitingPickupArrival'
+          doubled '(2 rows, expected 1)'
+          empty   $null
+
+ok   task-type-binding-admits-bound-station Get-Stage  [single-row]  task-type-binding-admits-bound-station.ps1  Get-Stage
+     db: kept stage of task-type-binding-admits-bound-station run 20260930T124614505Z at 8cee3acf
+     criterion: Get-Stage $demandId
+     old: as-is   'Completed'
+          doubled 'Completed Completed'
+          empty   throws (The property 'Stage' cannot be found on this object. Verify that the p)
+     new: as-is   'Completed'
+          doubled '(2 rows, expected 1)'
+          empty   $null
+
+ok   task-type-binding-admits-bound-station Get-Intent  [single-row]  task-type-binding-admits-bound-station.ps1  Get-Intent
+     db: kept stage of task-type-binding-admits-bound-station run 20260930T124614505Z at 8cee3acf
+     criterion: Get-Intent $demandId $purpose
+     old: as-is   row
+          doubled array[2]
+          empty   $null
+     new: as-is   row
+          doubled stand-in (2 rows, expected 1)
+          empty   $null
+
+ok   task-type-binding-missing-not-cascading Get-Stage  [single-row]  task-type-binding-missing-not-cascading.ps1  Get-Stage
+     db: kept stage of task-type-binding-missing-not-cascading run 20260930T124630371Z at 8cee3acf
+     criterion: Get-Stage $demandId
+     old: as-is   'Completed'
+          doubled 'Completed Completed'
+          empty   throws (The property 'Stage' cannot be found on this object. Verify that the p)
+     new: as-is   'Completed'
+          doubled '(2 rows, expected 1)'
+          empty   $null
+
+ok   task-type-binding-missing-not-cascading Get-Intent  [single-row]  task-type-binding-missing-not-cascading.ps1  Get-Intent
+     db: kept stage of task-type-binding-missing-not-cascading run 20260930T124630371Z at 8cee3acf
+     criterion: Get-Intent $demandId $purpose
+     old: as-is   row
+          doubled array[2]
+          empty   $null
+     new: as-is   row
+          doubled stand-in (2 rows, expected 1)
+          empty   $null
+
+ok   mandatory-charge Get-Journey  [single-row]  mandatory-charge-vehicle-takes-no-transport.ps1  Get-Journey
+     db: kept stage of mandatory-charge-vehicle-takes-no-transport run 20260930T124501417Z at 8cee3acf
+     criterion: Get-Journey
+     old: as-is   row
+          doubled array[2]
+          empty   $null
+     new: as-is   row
+          doubled stand-in (2 rows, expected 1)
+          empty   $null
+
+ok   area-assignment-unmapped-silent probe journey-stage  [single-row]  area-assignment-unmapped-silent.ps1  SELECT Stage FROM JourneyRuntimes WHERE DemandId = '\$\(\$mapped\.Id\)'
+     db: kept stage of area-assignment-unmapped-silent run 20260930T124733246Z at 8cee3acf
+     old: as-is   'AwaitingPickupArrival'
+          doubled 'AwaitingPickupArrival AwaitingPickupArrival'
+          empty   throws (The property 'Stage' cannot be found on this object. Verify that the p)
+     new: as-is   'AwaitingPickupArrival'
+          doubled '(2 rows, expected 1)'
+          empty   $null
+
+ok   charging-policy-missing probe journey-accepted  [single-row]  charging-policy-missing-vehicle-not-commissioned.ps1  SELECT JourneyId, AgvId, VehicleKey, Stage, PickupUpperId FROM JourneyRuntimes
+     db: kept stage of charging-policy-missing-vehicle-not-commissioned run 20260930T124426898Z at 8cee3acf
+     old: as-is   row
+          doubled array[2]
+          empty   $null
+     new: as-is   row
+          doubled stand-in (2 rows, expected 1)
+          empty   $null
+
+ok   charging-thresholds probe dispatched  [single-row]  charging-thresholds-relation-refused.ps1  SELECT VehicleKey, ChargingPolicyVersion, PublishedBatteryState FROM JourneyRuntimes
+     db: kept stage of charging-thresholds-relation-refused run 20260930T124453180Z at 8cee3acf
+     old: as-is   row
+          doubled array[2]
+          empty   $null
+     new: as-is   row
+          doubled stand-in (2 rows, expected 1)
+          empty   $null
+
+ok   area-assignment-unmapped-silent Get-Backlog  [first-row]  area-assignment-unmapped-silent.ps1  Get-Backlog
+     db: kept stage of mandatory-charge-vehicle-takes-no-transport run 20260930T124501417Z at 8cee3acf
+     note: Database of mandatory-charge-vehicle-takes-no-transport, the scenario that ends with a backlog row; same SQL.
+     criterion: Get-Backlog $demandId
+     old: as-is   row
+          doubled array[2]
+          empty   $null
+     new: as-is   row
+          doubled row
+          empty   $null
+
+ok   area-eqp-unique-across-task-types Get-Backlog  [first-row]  area-eqp-unique-across-task-types.ps1  Get-Backlog
+     db: kept stage of mandatory-charge-vehicle-takes-no-transport run 20260930T124501417Z at 8cee3acf
+     note: Database of mandatory-charge-vehicle-takes-no-transport, the scenario that ends with a backlog row; same SQL.
+     criterion: Get-Backlog $demandId
+     old: as-is   row
+          doubled array[2]
+          empty   $null
+     new: as-is   row
+          doubled row
+          empty   $null
+
+ok   task-type-binding-admits-bound-station Get-Backlog  [first-row]  task-type-binding-admits-bound-station.ps1  Get-Backlog
+     db: kept stage of mandatory-charge-vehicle-takes-no-transport run 20260930T124501417Z at 8cee3acf
+     note: Database of mandatory-charge-vehicle-takes-no-transport, the scenario that ends with a backlog row; same SQL.
+     criterion: Get-Backlog $demandId
+     old: as-is   row
+          doubled array[2]
+          empty   $null
+     new: as-is   row
+          doubled row
+          empty   $null
+
+ok   task-type-binding-missing-not-cascading Get-Backlog  [first-row]  task-type-binding-missing-not-cascading.ps1  Get-Backlog
+     db: kept stage of mandatory-charge-vehicle-takes-no-transport run 20260930T124501417Z at 8cee3acf
+     note: Database of mandatory-charge-vehicle-takes-no-transport, the scenario that ends with a backlog row; same SQL.
+     criterion: Get-Backlog $demandId
+     old: as-is   row
+          doubled array[2]
+          empty   $null
+     new: as-is   row
+          doubled row
+          empty   $null
+
+ok   charging-thresholds Get-ActiveVersion  [first-row]  charging-thresholds-relation-refused.ps1  Get-ActiveVersion
+     db: kept stage of charging-thresholds-relation-refused run 20260930T124453180Z at 8cee3acf
+     criterion: Get-ActiveVersion
+     old: as-is   1
+          doubled throws (Cannot convert the "System.Object[]" value of type "System.Object[]" t)
+          empty   throws (The property 'Version' cannot be found on this object. Verify that the)
+     new: as-is   1
+          doubled 1
+          empty   $null
+
+ok   charging-policy-missing probe pickup-confirmed  [first-row]  charging-policy-missing-vehicle-not-commissioned.ps1  SELECT Status, VehicleKey FROM OrderIntents WHERE UpperId
+     db: kept stage of charging-policy-missing-vehicle-not-commissioned run 20260930T124426898Z at 8cee3acf
+     old: as-is   row
+          doubled array[2]
+          empty   $null
+     new: as-is   row
+          doubled row
+          empty   $null
+
+ok   mandatory-charge probe backlog-reason  [first-row]  mandatory-charge-vehicle-takes-no-transport.ps1  SELECT ReasonCode FROM JourneyBacklog WHERE DemandId
+     db: kept stage of mandatory-charge-vehicle-takes-no-transport run 20260930T124501417Z at 8cee3acf
+     old: as-is   'DEMAND_ALREADY_ACCEPTED'
+          doubled 'DEMAND_ALREADY_ACCEPTED DEMAND_ALREADY_ACCEPTED'
+          empty   throws (The property 'ReasonCode' cannot be found on this object. Verify that )
+     new: as-is   'DEMAND_ALREADY_ACCEPTED'
+          doubled 'DEMAND_ALREADY_ACCEPTED'
+          empty   $null
+
+38 cases, 38 as required, 0 not.
+count criteria: 8. Old form with the rows doubled: 1 stayed True (idle), 5 went False (another conjunct read the joined rows), 2 threw.
+Old form with no rows: 26 of 38 threw; new form: 2.

@@ -1,5 +1,6 @@
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Host.Runtime.Fleet;
 
 namespace ControlServer.Host.Runtime.Dispatch;
@@ -137,6 +138,10 @@ public sealed record DispatchRoundFacts(
 /// 这辆车此刻的计划，只有在途车有；空闲车为空（批次7-06，control-server#211）。它是两条资格链的分野本身：
 /// 有计划的车问「这条需求插得进你的计划吗」，没有的车问「你现在能不能接一趟新的」。
 /// </param>
+/// <param name="ChargingCycleComplete">
+/// 这辆车的充电周期本周期已 <c>COMPLETE</c>、车还在桩上（周期未结束）：这一轮读一次（批次9-07，control-server#405）。只有它放开电量判据里
+/// 「报 <c>CHARGING</c> 一律不派」那一支——充满的车仍插在桩上报 <c>CHARGING</c>，不放开它就永远接不到活、占着唯一的桩（规格 8.5）。
+/// </param>
 public sealed record DispatchVehicleFacts(
     string VehicleKey,
     string AgvId,
@@ -144,7 +149,9 @@ public sealed record DispatchVehicleFacts(
     RiotVehicleObservation Vehicle,
     DateTimeOffset ObservedAt,
     VehicleSlotPositions? SlotPositions = null,
-    EnRouteVehiclePlan? Plan = null);
+    EnRouteVehiclePlan? Plan = null,
+    DispatchBatteryPolicy? BatteryPolicy = null,
+    bool ChargingCycleComplete = false);
 
 /// <summary>Onboard-side facts a dispatch decision reads.</summary>
 public sealed record OnboardDispatchFacts(

@@ -1368,7 +1368,7 @@ public sealed class Batch7DemandReleaseServiceTests
         fixture.BoxCounts.Set(FirstSublot, 7);
         JourneyRuntimeRow atGate = await fixture.AdvanceToGateArrivalAsync();
         Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, atGate.Stage);
-        fixture.Riot.CancelOrder(atGate.GateUpperId);
+        fixture.Riot.CancelOrder(atGate.GateUpperId!);
         await TickAndRunAsync(fixture);
         fixture.Context.ChangeTracker.Clear();
         CancellingGateway gateway = new(fixture.Clock, _ => { });

@@ -98,6 +98,11 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
         .. Enumerable.Range(0, 9).Select(sequence => FormattableString.Invariant($"FP-IS-{sequence:D2}")),
         "FP-IS-10",
         "FP-IS-11",
+        // 批次8-19（control-server#390）：空闲返回的服务端半边，CV-WAITING-POINT-IDLE-RETURN 有了同名具名测试。
+        "FP-IS-12",
+        // 批次9-12（control-server#410）：现场确认充不上落地，FP-IS-13 的三条向量（CV-AUTOMATIC-CHARGING-CYCLE、
+        // CV-MANUAL-STATION-CLEARANCE、CV-UNABLE-TO-CHARGE-FIELD-CONFIRMATION）都有了同名具名测试。
+        "FP-IS-13",
         "FP-IS-14",
         "FP-IS-15"
     ];
@@ -156,10 +161,6 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
     private static readonly IReadOnlyDictionary<string, string> VectorsAwaitingTheirSlice =
         new SortedDictionary<string, string>(StringComparer.Ordinal)
         {
-            ["CV-AUTOMATIC-CHARGING-CYCLE"] = "FP-IS-13, batch 9",
-            ["CV-MANUAL-STATION-CLEARANCE"] = "FP-IS-13, batch 9",
-            ["CV-UNABLE-TO-CHARGE-FIELD-CONFIRMATION"] = "FP-IS-13, batch 9",
-            ["CV-WAITING-POINT-IDLE-RETURN"] = "FP-IS-12, batch 8",
             ["CV-WORKLIST-SELECTION-ACCEPTED"] = "FP-IS-09, batch 11",
             ["CV-WORKLIST-SELECTION-STALE-REVISION"] = "FP-IS-09, batch 11"
         };

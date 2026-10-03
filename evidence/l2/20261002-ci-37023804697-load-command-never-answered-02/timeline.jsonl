@@ -1,0 +1,45 @@
+{"at":"2026-10-02T16:10:21.1480559+00:00","note":"L2 run 20261002T161021109Z starting for scenario 'load-command-never-answered'."}
+{"at":"2026-10-02T16:10:21.1839589+00:00","note":"L2 port block lock acquired (slot 1, Global\\W2G-L2PortBlock-slot1)."}
+{"at":"2026-10-02T16:10:21.1865348+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-10-02T16:10:22.0707175+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-10-02T16:10:22.3162829+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-10-02T16:10:22.3963085+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-10-02T16:10:27.5330778+00:00","note":"Package capacity rules imported."}
+{"at":"2026-10-02T16:10:27.5358388+00:00","note":"No waiting point registration: a single-vehicle rig, or WaitingPoints = $false."}
+{"at":"2026-10-02T16:10:29.6118667+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-10-02T16:10:30.5312067+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-10-02T16:10:30.6143161+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-10-02T16:10:31.3347567+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-10-02T16:10:31.6022863+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-10-02T16:10:31.6692189+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-10-02T16:10:31.7246555+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37023804697-1\\_stage\\l2-20261002T161021109Z-slot1\\controlserver.db"}
+{"at":"2026-10-02T16:10:33.8293353+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"75e3ee939cf84ef89880c29d4ff700fc","version":1,"slotCount":8}}}
+{"at":"2026-10-02T16:10:33.8376567+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37023804697-1\\_stage\\l2-20261002T161021109Z-slot1\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-10-02T16:10:35.6646278+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"75e3ee939cf84ef89880c29d4ff700fc","boundSlots":8,"version":1}}}
+{"at":"2026-10-02T16:10:35.8497867+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-10-02T16:10:35.8521996+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37023804697-1\\_stage\\l2-20261002T161021109Z-slot1\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37023804697-1\\load-command-never-answered-02\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-10-02T16:10:37.7578715+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37023804697-1\\load-command-never-answered-02\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"3154f7e2446246fa9506e4a5270ed47b","importedAt":"2026-10-03T00:10:36.1180023+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-10-02T16:10:37.7806185+00:00","note":"FieldOps: import-charging-policy --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37023804697-1\\_stage\\l2-20261002T161021109Z-slot1\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37023804697-1\\load-command-never-answered-02\\snapshots\\preseed-charging-policy.json --fleet BROKERX-L2-0001"}
+{"at":"2026-10-02T16:10:39.5469092+00:00","note":"FieldOps: approve-charging-policy --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37023804697-1\\_stage\\l2-20261002T161021109Z-slot1\\controlserver.db --version 1 --approved-by L2 orchestrator --role L2_PRESET --basis scripts/l2/L2ChargingPolicy.psm1 --source L2_PRESET"}
+{"at":"2026-10-02T16:10:41.2473819+00:00","note":"FieldOps: activate-charging-policy --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37023804697-1\\_stage\\l2-20261002T161021109Z-slot1\\controlserver.db --version 1 --activated-by L2 orchestrator --fleet BROKERX-L2-0001 --allow-non-field-approval"}
+{"at":"2026-10-02T16:10:43.0262655+00:00","criterion":"preseed:charging-policy","value":"OK","detail":{"withoutPolicy":[],"coveredAfter":["BROKERX-L2-0001"],"version":1,"source":"L2_PRESET"}}
+{"at":"2026-10-02T16:10:43.0274918+00:00","note":"Per-zone dispatch parameters left unconfigured (the default precondition)."}
+{"at":"2026-10-02T16:10:43.0502939+00:00","note":"Environment is up; entering scenario 'load-command-never-answered'."}
+{"at":"2026-10-02T16:10:43.1455772+00:00","note":"Publishing demand 828cd8ebc0ab4d749bf859607c4d47a1 (sublot L2-SUBLOT-20261002T161021109Z)."}
+{"at":"2026-10-02T16:10:43.1970992+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-10-02T16:10:44.9609218+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-10-02T16:10:44.9707337+00:00","criterion":"to-pickup-intent","value":"(null)"}
+{"at":"2026-10-02T16:10:45.2306375+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-828cd8eb-c0ab-4d74-9bf8-59607c4d47a1-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-10-02T16:10:45.2362408+00:00","note":"Vehicle departs for the pickup station."}
+{"at":"2026-10-02T16:10:45.3210536+00:00","note":"Vehicle arrives at the pickup station and comes to rest."}
+{"at":"2026-10-02T16:10:45.3516629+00:00","criterion":"pending-operation","value":"(null)"}
+{"at":"2026-10-02T16:10:46.3942466+00:00","criterion":"pending-operation","value":"operation:b6f46ebe-a3b1-8251-88da-e3acceefbf9f"}
+{"at":"2026-10-02T16:10:46.3975449+00:00","note":"Load command operation:b6f46ebe-a3b1-8251-88da-e3acceefbf9f reached the peer, which will never answer it."}
+{"at":"2026-10-02T16:10:46.4208228+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-10-02T16:10:46.4710640+00:00","criterion":"runtime-iterations","value":"17"}
+{"at":"2026-10-02T16:10:47.2634876+00:00","criterion":"runtime-iterations","value":"18"}
+{"at":"2026-10-02T16:10:48.0527373+00:00","criterion":"runtime-iterations","value":"19"}
+{"at":"2026-10-02T16:10:49.0770138+00:00","criterion":"runtime-iterations","value":"20"}
+{"at":"2026-10-02T16:10:50.0978843+00:00","criterion":"runtime-iterations","value":"21"}
+{"at":"2026-10-02T16:10:50.1522611+00:00","note":"Scenario finished: the journey waits at AwaitingLoadResult, with no block reason and no exit."}
+{"at":"2026-10-02T16:10:50.5513072+00:00","note":"L2 port block lock released."}

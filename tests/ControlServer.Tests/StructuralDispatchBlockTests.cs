@@ -43,6 +43,8 @@ public sealed class StructuralDispatchBlockTests
     [InlineData("VEHICLE_FAULT_IDENTITY_UNRESOLVED", DispatchReasonClass.Backlog)]
     [InlineData("VEHICLE_COMMITTED_TO_IDLE_RETURN", DispatchReasonClass.Backlog)]
     [InlineData("VEHICLE_SLOT_DOOR_HOLD", DispatchReasonClass.Backlog)]
+    [InlineData("VEHICLE_COMMITTED_TO_CHARGING", DispatchReasonClass.Backlog)]
+    [InlineData("VEHICLE_IN_MANUAL_CHARGING_HOLD", DispatchReasonClass.Backlog)]
     [InlineData("OUT_OF_SCOPE_WORK_TYPE", DispatchReasonClass.Backlog)]
     [InlineData("TASK_TYPE_BINDING_MISSING", DispatchReasonClass.Backlog)]
     [InlineData("TASK_TYPE_BINDING_STATION_NOT_IN_CATALOG", DispatchReasonClass.Backlog)]
@@ -128,6 +130,12 @@ public sealed class StructuralDispatchBlockTests
     // 批次7-05（control-server#210）：按业务键抑制与同键已受理，都是有意不执行，不是故障，归普通积压。
     [InlineData("TRANSPORT_DEMAND_KEY_SUPPRESSED", DispatchReasonClass.Backlog)]
     [InlineData("TRANSPORT_DEMAND_KEY_ALREADY_ACCEPTED", DispatchReasonClass.Backlog)]
+    // 批次9-02（control-server#400）：没有已批准策略的车不承接新用途，车辆侧的状态，别的车照常，归普通积压。
+    [InlineData("CHARGING_POLICY_NOT_APPROVED", DispatchReasonClass.Backlog)]
+    // 批次9-05（control-server#403）：低于强制充电线的车属于充电、不接新任务，车辆侧的状态，别的车照常，归普通积压。
+    [InlineData("MANDATORY_CHARGE_REQUIRED", DispatchReasonClass.Backlog)]
+    // 批次9-05（control-server#403）：生效策略的强制充电线不高于救命线，整版不可用；车辆侧，激活一版合格的即解除，归普通积压。
+    [InlineData("CHARGING_POLICY_ENTRY_NOT_ABOVE_RESCUE_LINE", DispatchReasonClass.Backlog)]
     public void EveryReasonCodeHasItsClassAndARationale(string reasonCode, DispatchReasonClass expected)
     {
         DispatchReasonClassification row = Assert.Contains(reasonCode, StructuralDispatchClassification.ByCode);
@@ -151,8 +159,8 @@ public sealed class StructuralDispatchBlockTests
         string root = FindRepositoryRoot();
         string runtime = Path.Combine(root, "src", "ControlServer.Host", "Runtime");
         Regex code = new("\"([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)\"");
-        // Leg types the plan builder writes into a plan; not verdicts.
-        HashSet<string> notReasonCodes = new(StringComparer.Ordinal) { "WIRE_TO_GATE", "TO_PICKUP", "TO_GATE", "TO_DROPOFF" };
+        // Leg types and stop purposes the plan builder writes into a plan; not verdicts.
+        HashSet<string> notReasonCodes = new(StringComparer.Ordinal) { "WIRE_TO_GATE", "TO_PICKUP", "TO_GATE", "TO_DROPOFF", "WAITING_POINT" };
 
         HashSet<string> written = new(StringComparer.Ordinal);
         foreach (string file in Directory.GetFiles(Path.Combine(runtime, "Dispatch", "Criteria"), "*.cs"))

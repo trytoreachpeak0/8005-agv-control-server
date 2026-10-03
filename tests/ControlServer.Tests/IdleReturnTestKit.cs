@@ -1,3 +1,4 @@
+using ControlServer.Application;
 using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.IdleReturn;
 using ControlServer.Host.Runtime.RouteGraph;
@@ -18,19 +19,22 @@ internal static class IdleReturnTestKit
         RouteGraphAccess? routeGraph = null,
         bool enabled = false,
         IdleReturnVerdictBoard? board = null,
-        ILogger<IdleReturnEvaluator>? logger = null) =>
+        ILogger<IdleReturnEvaluator>? logger = null,
+        IChargingPolicyResolver? chargingPolicy = null) =>
         new(
             context,
             new VehiclePurposeLedgerStore(context),
             new StationExclusivityStore(context),
             new VehicleFaultStore(context),
+            // control-server#400: every vehicle has the approved test policy unless a test says otherwise.
+            chargingPolicy ?? TestChargingPolicies.AllApproved,
             new WaitingPointRegistry(context, JourneyRuntimeWorkerTestKit.CreateGovernedPublisher(context)),
             TaskTypeStationRuntimeSeed.Access(context).Bindings,
             routeGraph ?? new RouteGraphAccess(
                 new RouteGraphSnapshotStore(context),
                 Microsoft.Extensions.Options.Options.Create(new RouteGraphOptions { MapId = options.MapId }),
                 clock),
-            new TransitionalMandatoryChargeLine(Microsoft.Extensions.Options.Options.Create(options)),
+            new PolicyMandatoryChargeLine(chargingPolicy ?? TestChargingPolicies.AllApproved),
             Microsoft.Extensions.Options.Options.Create(new IdleReturnOptions { Enabled = enabled }),
             Microsoft.Extensions.Options.Options.Create(options),
             board ?? new IdleReturnVerdictBoard(),

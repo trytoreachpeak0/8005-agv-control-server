@@ -2,8 +2,10 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.Charging;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -19,8 +21,14 @@ public sealed partial class OnboardMessageProcessor(
     TimeProvider timeProvider,
     IConfiguration configuration,
     IOptions<JourneyRuntimeOptions> runtimeOptions,
-    ILogger<OnboardMessageProcessor> logger)
+    ILogger<OnboardMessageProcessor> logger,
+    Runtime.Fleet.VehicleRoster? fleet = null,
+    Runtime.Charging.ManualStationClearance? stationClearance = null,
+    Runtime.Charging.UnableToChargeFieldConfirmations? fieldConfirmations = null)
 {
+    // The host's one roster (a singleton); a processor built without it, as the tests build it, reads the same options.
+    private readonly Runtime.Fleet.VehicleRoster _fleet = fleet ?? new Runtime.Fleet.VehicleRoster(runtimeOptions);
+
     // The envelope's own settings, not a second copy of them: this instance also hashes the business
     // content the peer hashes, and the two only agree while both use the same serializer settings.
     private static readonly JsonSerializerOptions SerializerOptions = ProtocolEnvelope.SerializerOptions;
@@ -424,9 +432,10 @@ public sealed partial class OnboardMessageProcessor(
                     {
                         pendingAttempts.Add(attempt.GetString()!);
                     }
-                    string[] pendingResults = payload.GetProperty("pendingResults")
+                    ReportedPendingResult[] pendingResults = payload.GetProperty("pendingResults")
                         .EnumerateArray()
-                        .Select(item => RequiredString(item, "messageId"))
+                        .Select(item => new ReportedPendingResult(
+                            RequiredString(item, "messageId"), RequiredString(item, "contentSha256")))
                         .ToArray();
                     string? unsettledAttemptId = payload.GetProperty("unsettledSlotOperationAttemptId").ValueKind == JsonValueKind.Null
                         ? null
@@ -658,7 +667,12 @@ public sealed partial class OnboardMessageProcessor(
                                 RequiredString(payload.GetProperty("administrator"), "operatorId"),
                                 RequiredString(payload, "administratorRole"),
                                 RequiredString(payload, "reason"),
-                                NullableDouble(payload, "observedBatteryPercent")),
+                                NullableDouble(payload, "observedBatteryPercent"),
+                                // control-server#404: the server's manual-charging hold is kept per RIoT vehicle key, and the
+                                // request names the vehicle by its AGV id. Resolved from the fleet roster here, so an accepted
+                                // request lifts the hold in the decision's own save.
+                                _fleet.ByAgvId(agvId)?.VehicleKey,
+                                timeProvider.GetUtcNow()),
                             cancellationToken).ConfigureAwait(false);
                     return SerializeEnvelope(
                         "ManualChargingReturnToServiceResult", messageId, agvId, generation,
@@ -675,6 +689,103 @@ public sealed partial class OnboardMessageProcessor(
                                     displayMessage = decision.ProblemDisplayMessage
                                 },
                             vehicleBusinessStateRevision = decision.VehicleBusinessStateRevision
+                        });
+                }
+            case "ManualStationClearanceConfirmationRequested" when stationClearance is not null:
+                {
+                    // Batch 9-08 (control-server#406): answered inline like the return to service above. The whole decision is
+                    // Runtime.Charging.ManualStationClearance's, shared with the Host entry; the digest is the payload's alone, so
+                    // a resubmission under a new messageId is the same request (coordinator's alignment of 09-30, item 2).
+                    string confirmationRequestId = RequiredUuid(payload, "confirmationRequestId");
+                    JsonElement operatorContext = payload.GetProperty("operator");
+                    ManualStationClearanceConfirmation clearance;
+                    try
+                    {
+                        clearance = await stationClearance.DecideAsync(
+                            new ManualStationClearanceRequest(
+                                ManualStationClearanceSources.Onboard,
+                                agvId,
+                                _fleet.ByAgvId(agvId)?.VehicleKey,
+                                confirmationRequestId,
+                                generation,
+                                messageId,
+                                WireContentHash.Sha256(payload.GetRawText()),
+                                RequiredString(payload, "stationId"),
+                                NullableString(payload, "publicStationFunction"),
+                                RequiredString(payload, "clearedCondition"),
+                                RequiredString(operatorContext, "operatorId"),
+                                RequiredString(operatorContext, "verificationMethod"),
+                                operatorContext.GetProperty("verifiedAt").GetDateTimeOffset(),
+                                payload.GetProperty("observedAt").GetDateTimeOffset()),
+                            cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (FieldConfirmationContentConflictException conflict)
+                    {
+                        throw new ProtocolContentConflictException(conflict.Message);
+                    }
+                    return SerializeEnvelope(
+                        "ManualStationClearanceConfirmationResult", messageId, agvId, generation,
+                        new
+                        {
+                            confirmationRequestId,
+                            outcome = clearance.Decision.Outcome,
+                            problem = clearance.Decision.ProblemReasonCode is null
+                                ? null
+                                : new
+                                {
+                                    reasonCode = clearance.Decision.ProblemReasonCode,
+                                    fieldPath = clearance.Decision.ProblemFieldPath,
+                                    displayMessage = clearance.Decision.ProblemDisplayMessage
+                                },
+                            stationReleased = clearance.StationReleased
+                        });
+                }
+            case "UnableToChargeFieldConfirmationRequested" when fieldConfirmations is not null:
+                {
+                    // Batch 9-12 (control-server#410): answered inline like the clearance above, and decided by
+                    // Runtime.Charging.UnableToChargeFieldConfirmations. The digest is the payload's alone, so a resubmission under a
+                    // new messageId, sentAt or session generation is the same request. The VehicleBusinessStateSnapshot that follows a
+                    // confirmation is the engine's next round's, as after a return to service.
+                    string confirmationRequestId = RequiredUuid(payload, "confirmationRequestId");
+                    JsonElement operatorContext = payload.GetProperty("operator");
+                    UnableToChargeFieldConfirmation confirmation;
+                    try
+                    {
+                        confirmation = await fieldConfirmations.DecideAsync(
+                            new UnableToChargeFieldConfirmationRequest(
+                                agvId,
+                                _fleet.ByAgvId(agvId)?.VehicleKey,
+                                confirmationRequestId,
+                                generation,
+                                messageId,
+                                WireContentHash.Sha256(payload.GetRawText()),
+                                RequiredString(payload, "chargerStationId"),
+                                RequiredString(payload, "observedCondition"),
+                                RequiredString(operatorContext, "operatorId"),
+                                RequiredString(operatorContext, "verificationMethod"),
+                                operatorContext.GetProperty("verifiedAt").GetDateTimeOffset(),
+                                payload.GetProperty("observedAt").GetDateTimeOffset()),
+                            cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (FieldConfirmationContentConflictException conflict)
+                    {
+                        throw new ProtocolContentConflictException(conflict.Message);
+                    }
+                    return SerializeEnvelope(
+                        "UnableToChargeFieldConfirmationResult", messageId, agvId, generation,
+                        new
+                        {
+                            confirmationRequestId,
+                            outcome = confirmation.Decision.Outcome,
+                            problem = confirmation.Decision.ProblemReasonCode is null
+                                ? null
+                                : new
+                                {
+                                    reasonCode = confirmation.Decision.ProblemReasonCode,
+                                    fieldPath = confirmation.Decision.ProblemFieldPath,
+                                    displayMessage = confirmation.Decision.ProblemDisplayMessage
+                                },
+                            chargingPolicyDecision = confirmation.ChargingPolicyDecision
                         });
                 }
             case "SafetyStateChanged":

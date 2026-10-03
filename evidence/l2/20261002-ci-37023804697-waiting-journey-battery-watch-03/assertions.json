@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "scenario": "waiting-journey-battery-watch",
+  "runId": "20261002T152122176Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "vehicleKey": "BROKERX-L2-0001",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37023804697-1\\_stage\\l2-20261002T152122176Z-slot1",
+    "batchId": "batch-8",
+    "controlServerCommit": "6b7b3e38b7d72b454b227a104de2e37a3198db86",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "rig": "SyntheticOnboard",
+    "agvId": "AGV-L2-001"
+  },
+  "assertions": [
+    {
+      "id": "L2-WJ-01",
+      "description": "等满门槛后服务端日志里有这趟旅程的监看记录：ERR 级，阶段 AwaitingUnloadResult，电量 12%，写明低于救命线要人工挪车",
+      "outcome": "PASS",
+      "expected": "[hh:mm:ss ERR] ... AwaitingUnloadResult ... battery 12% ... below the rescue line of 15% ...",
+      "actual": "[23:22:00 ERR] Journey journey:e7a6a42d-ca18-48c4-9408-bcd8f42da311 on vehicle AGV-L2-001 has waited for a person in AwaitingUnloadResult for 0 min; battery 12% as read at 2026-10-02T15:22:00.3428016+00:00. The battery is below the rescue line of 15%: a person has to move the vehicle to a charger. Nothing on this server will move it (REQ-0169)."
+    },
+    {
+      "id": "L2-WJ-02",
+      "description": "端点列出这趟旅程：车、阶段、电量 12%、等级 BelowRescueLine、已过门槛，电量与库里监看记下的一致",
+      "outcome": "PASS",
+      "expected": "AGV-L2-001 / AwaitingUnloadResult / 12 / BelowRescueLine / past threshold",
+      "actual": "AGV-L2-001 / AwaitingUnloadResult / 12 / BelowRescueLine / past=True / waited 5 s / db 12"
+    },
+    {
+      "id": "L2-WJ-03",
+      "description": "看板「等人中的旅程」这一行写着闸口等卸货、12%、需要人工挪车充电",
+      "outcome": "PASS",
+      "expected": "闸口等卸货 ... 12% ... 需要人工挪车充电",
+      "actual": "AGV-L2-001  闸口等卸货    0 分 5 秒  12%  2026-10-02 23:22:00  需要人工挪车充电：在车上用单机方式挪车、充电，不要在 RIoT 里给这辆车下单"
+    },
+    {
+      "id": "L2-WJ-04",
+      "description": "报了但车没动：RIoT 上一张单都没多建，旅程仍停在 AwaitingUnloadResult",
+      "outcome": "PASS",
+      "expected": "2 orders / AwaitingUnloadResult",
+      "actual": "2 orders / AwaitingUnloadResult"
+    },
+    {
+      "id": "L2-WJ-05",
+      "description": "卸货应答回来后旅程照常完成，端点不再列出它",
+      "outcome": "PASS",
+      "expected": "Completed / (not listed)",
+      "actual": "Completed / (not listed)"
+    }
+  ]
+}

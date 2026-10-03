@@ -50,6 +50,8 @@ public static class FakeOnboardHost
         app.MapControlPlaneSlotFaultDeclaration();
         app.MapControlPlaneDeterminateLoadFailure();
         app.MapControlPlaneSublotScan();
+        app.MapControlPlaneManualChargingReturn();
+        app.MapControlPlaneManualStationClearance();
         return app;
     }
 

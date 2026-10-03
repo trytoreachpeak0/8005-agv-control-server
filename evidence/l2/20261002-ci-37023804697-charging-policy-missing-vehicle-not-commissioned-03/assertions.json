@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "scenario": "charging-policy-missing-vehicle-not-commissioned",
+  "runId": "20261002T153236392Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "agvId": "AGV-L2-001",
+    "rig": "SyntheticOnboard",
+    "batchId": "batch-9",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-37023804697-1\\_stage\\l2-20261002T153236392Z-slot2",
+    "vehicleKey": "BROKERX-L2-0001",
+    "controlServerCommit": "6b7b3e38b7d72b454b227a104de2e37a3198db86",
+    "fleet": [
+      "AGV-L2-001/BROKERX-L2-0001",
+      "AGV-L2-002/BROKERX-L2-0002"
+    ]
+  },
+  "assertions": [
+    {
+      "id": "L2-CPM-00",
+      "description": "前置：唯一一版已激活的策略经 FieldOps 导入、以 L2_PRESET 批准，适用范围只有 A",
+      "outcome": "PASS",
+      "expected": "1 行 / BROKERX-L2-0002 / L2_PRESET",
+      "actual": "1/BROKERX-L2-0002/L2_PRESET"
+    },
+    {
+      "id": "L2-CPM-01",
+      "description": "需求派给策略范围内的 A，不是轮次里排在前面的 B",
+      "outcome": "PASS",
+      "expected": "BROKERX-L2-0002 / AGV-L2-002",
+      "actual": "BROKERX-L2-0002 / AGV-L2-002"
+    },
+    {
+      "id": "L2-CPM-02",
+      "description": "B 被派车链以 CHARGING_POLICY_NOT_APPROVED 挡下（服务端日志）",
+      "outcome": "PASS",
+      "expected": "Vehicle BROKERX-L2-0001 takes no new work: CHARGING_POLICY_NOT_APPROVED",
+      "actual": "found"
+    },
+    {
+      "id": "L2-CPM-03",
+      "description": "A 的取货单已确认，而 B 在整个窗口里没有任何建单（库里的订单意图、合成 RIoT 的订单）",
+      "outcome": "PASS",
+      "expected": "CONFIRMED / BROKERX-L2-0002 / B: 0 intents, 0 RIoT orders",
+      "actual": "CONFIRMED / BROKERX-L2-0002 / B: 0 intents, 0 RIoT orders"
+    },
+    {
+      "id": "L2-CPM-04",
+      "description": "逐车判定、不整机拒绝启动：服务端进程在跑、存活检查 200",
+      "outcome": "PASS",
+      "expected": "200",
+      "actual": "200"
+    }
+  ]
+}

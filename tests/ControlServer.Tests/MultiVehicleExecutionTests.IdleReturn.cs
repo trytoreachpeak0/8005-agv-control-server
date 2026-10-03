@@ -51,13 +51,21 @@ public sealed partial class MultiVehicleExecutionTests
     /// 承诺本身原样留着：不取消、不换点。
     /// </summary>
     /// <remarks>
+    /// <para>
     /// 车队裁成一辆：有别的车时需求会被别的车接走，积压上的原因就不是这一条了。
+    /// </para>
+    /// <para>
+    /// 批次8-19（control-server#390）之后，承诺在下一轮开头物化成一趟空闲返回旅程，车从那一刻起是忙的、不再作为空闲车被判
+    /// （那条路的「不抢」由 <c>IdleReturnExecutionTests</c> 断）。承诺判据守的是承诺还没物化的那一段——这里让物化一直失败
+    /// （<see cref="IdleReturnNeverMaterializes"/>）把那一段撑开来测。
+    /// </para>
     /// </remarks>
     [Fact]
     public async Task AVehicleCommittedToAnIdleReturnTakesNoLaterTransportAndTheDemandWaitsWithThatReason()
     {
         await using FleetFixture fixture = await FleetFixture.CreateAsync(
-            configure: options => options.Fleet = options.Fleet[..1], withRouteGraph: true);
+            configure: options => options.Fleet = options.Fleet[..1], withRouteGraph: true,
+            commands: new IdleReturnNeverMaterializes());
         await fixture.AllowEnRouteAppendAsync(1_000_000);
         await fixture.EnableIdleReturnAsync(FleetWaitingPoint);
         // 第一轮没有需求（夹具默认给每辆车一条，这里清掉）：没有合法搬运用途，才轮到空闲返回。
@@ -130,11 +138,13 @@ public sealed partial class MultiVehicleExecutionTests
     /// <summary>
     /// 故障车同时持有空闲返回承诺时，积压显示故障原因：故障判据（15）排在承诺判据（16）之前是有意的，故障是更要人去看的那一个。
     /// </summary>
+    /// <remarks>物化一直失败，理由同上一条（control-server#390）。</remarks>
     [Fact]
     public async Task AFaultedVehicleHoldingAnIdleReturnShowsTheFaultOnTheBacklog()
     {
         await using FleetFixture fixture = await FleetFixture.CreateAsync(
-            configure: options => options.Fleet = options.Fleet[..1], withRouteGraph: true);
+            configure: options => options.Fleet = options.Fleet[..1], withRouteGraph: true,
+            commands: new IdleReturnNeverMaterializes());
         await fixture.EnableIdleReturnAsync(FleetWaitingPoint);
         fixture.Catalog.Set([]);
         await fixture.RunRoundAsync();
@@ -152,5 +162,28 @@ public sealed partial class MultiVehicleExecutionTests
             await fixture.Context.JourneyBacklog.AsNoTracking().ToArrayAsync(TestContext.Current.CancellationToken));
         Assert.Equal(ControlServer.Host.Runtime.Dispatch.Criteria.VehicleFaultBlockCriterion.SuspectedReason, backlog.ReasonCode);
         Assert.Empty(await fixture.Context.JourneyRuntimes.AsNoTracking().ToArrayAsync(TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
+    /// 空闲返回的物化那一次写旅程行时失败（control-server#390），像一直写不进去：承诺留着、旅程物化不出来。只拦带
+    /// <c>idle-return:</c> 旅程 id 的那一条插入，搬运的受理照常写。
+    /// </summary>
+    private sealed class IdleReturnNeverMaterializes : Microsoft.EntityFrameworkCore.Diagnostics.DbCommandInterceptor
+    {
+        public override ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader>>
+            ReaderExecutingAsync(
+                System.Data.Common.DbCommand command,
+                Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData eventData,
+                Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader> result,
+                CancellationToken cancellationToken = default)
+        {
+            if (command.CommandText.Contains("INSERT INTO \"JourneyRuntimes\"", StringComparison.Ordinal) &&
+                command.Parameters.Cast<System.Data.Common.DbParameter>().Any(parameter =>
+                    parameter.Value is string text && text.StartsWith(IdleReturnIdentity.JourneyIdPrefix, StringComparison.Ordinal)))
+            {
+                throw new InvalidOperationException("The idle return journey is not written (test).");
+            }
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
     }
 }

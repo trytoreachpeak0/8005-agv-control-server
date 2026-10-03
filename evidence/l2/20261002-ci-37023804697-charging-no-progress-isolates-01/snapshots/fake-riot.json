@@ -1,0 +1,168 @@
+{
+  "schemaVersion": "1",
+  "instanceId": "l2-riot",
+  "runId": "run-2e45f7c9",
+  "revision": 7,
+  "observedAt": "2026-10-02T23:29:58.1262652+08:00",
+  "body": {
+    "faultMode": "Normal",
+    "delayMs": 0,
+    "mapStationReads": 55,
+    "absentOrderReadFaults": {
+      "remaining": 0,
+      "failedUpperIds": []
+    },
+    "vehicles": [
+      {
+        "deviceKey": "BROKERX-L2-0001",
+        "enable": true,
+        "status": 1,
+        "procState": "IDLE",
+        "currentMap": "MAP-L2",
+        "currentPosition": 211,
+        "battery": 25,
+        "batteryState": "CHARGING",
+        "speed": 0,
+        "lockStatus": 0,
+        "orderTaskId": null,
+        "movementState": "MT_FINISHED",
+        "controlState": "CONTROL_STATE_OK",
+        "emergencyState": "OK",
+        "breakSwitchState": "MOVABLE",
+        "locationState": "LOCATION_STATE_RUNNING",
+        "processingOrder": false,
+        "integrationLevel": "ON_LINE"
+      }
+    ],
+    "orders": [
+      {
+        "id": 488001,
+        "orderId": "ORDER-000001",
+        "upperId": "W2G-CHARGE-BROKERX-L2-0001-20261002T152919595Z",
+        "orderState": 5,
+        "appointVehicleKey": "BROKERX-L2-0001",
+        "executeVehicleKey": "BROKERX-L2-0001",
+        "endStationNo": 211,
+        "missions": [
+          {
+            "type": "move",
+            "mapId": 25,
+            "destination": 211
+          },
+          {
+            "type": "act",
+            "mapId": 0,
+            "destination": 0,
+            "actionId": 78,
+            "actionParam1": 1,
+            "resultCode": 0,
+            "resultStr": "未知类型错误,导致订单挂起:错误编码为:0",
+            "missionState": 2
+          }
+        ]
+      }
+    ],
+    "maps": [
+      {
+        "mapId": 25,
+        "stations": [
+          {
+            "id": 11,
+            "name": "C15-13",
+            "edgeId": 6,
+            "posX": 0,
+            "posY": 0,
+            "posYaw": 0,
+            "stationOffset": 0,
+            "type": 1
+          },
+          {
+            "id": 12,
+            "name": "N1-3_N1-7",
+            "edgeId": 2,
+            "posX": 0,
+            "posY": 20000,
+            "posYaw": 0,
+            "stationOffset": 0,
+            "type": 1
+          },
+          {
+            "id": 210,
+            "name": "关卡",
+            "edgeId": 4,
+            "posX": 20000,
+            "posY": 20000,
+            "posYaw": 0,
+            "stationOffset": 0,
+            "type": 1
+          },
+          {
+            "id": 211,
+            "name": "充电点1",
+            "edgeId": 5,
+            "posX": 20000,
+            "posY": 0,
+            "posYaw": 0,
+            "stationOffset": 0,
+            "type": 1
+          }
+        ]
+      }
+    ],
+    "commandInvocations": [],
+    "edgeGroups": [],
+    "dynamicRouteCosts": {},
+    "removedEdges": [
+      {
+        "mapId": 25,
+        "edgeIds": []
+      }
+    ],
+    "removedStations": [
+      {
+        "mapId": 25,
+        "stationIds": []
+      }
+    ],
+    "mapNames": [
+      {
+        "mapId": 25,
+        "name": "老厂前线new_wk"
+      }
+    ],
+    "mapListServerError": false,
+    "mapListReads": 54,
+    "mapListServerErrors": 0,
+    "charging": {
+      "chargers": [
+        {
+          "mapId": 25,
+          "stationId": 211,
+          "enterExitStationId": null,
+          "chargeIntervalSeconds": 1,
+          "chargePercentPerInterval": 5,
+          "expandDeparture": false
+        }
+      ],
+      "dischargeIntervalSeconds": 0,
+      "dischargePercentPerInterval": 0,
+      "vehicles": [
+        {
+          "vehicleKey": "BROKERX-L2-0001",
+          "battery": 25,
+          "batteryState": "CHARGING",
+          "docked": true,
+          "chargerMapId": 25,
+          "chargerStationId": 211,
+          "anchorAt": "2026-10-02T23:29:21.1460711+08:00",
+          "startOutcome": "Normal",
+          "hangResultCode": null,
+          "interruptAtPercent": null,
+          "noProgress": true,
+          "batteryUnreadable": "None"
+        }
+      ],
+      "startOutcomeByUpperId": []
+    }
+  }
+}

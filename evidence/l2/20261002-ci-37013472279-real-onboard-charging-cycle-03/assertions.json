@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-charging-cycle",
+  "runId": "20261002T141228517Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "batchId": "batch-9",
+    "controlServerCommit": "65a698c27ea263782e7b16805ff8c1be58d74e19",
+    "rig": "RealOnboard",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-37013472279-1\\_stage\\l2-20261002T141228517Z",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "onboardHmiCommit": "4e40e196205d55c363f97850d10bd18df9a686c0",
+    "vehicleKey": "BROKERX-L2-0001",
+    "agvId": "AGV-L2-001"
+  },
+  "assertions": [
+    {
+      "id": "L2-ROC-01",
+      "description": "低电：一条 CHARGER、ACTIVE 腿的计划与 activePurpose=CHARGING 的业务状态都到了真车载端并被确认",
+      "outcome": "PASS",
+      "expected": "plan acknowledged / CHARGING acknowledged",
+      "actual": "plan acknowledged / CHARGING acknowledged"
+    },
+    {
+      "id": "L2-ROC-02",
+      "description": "到桩充电：界面 ChargingStatus 报 CHARGING；车停在桩上那十秒里每次读车载端都不能提交",
+      "outcome": "PASS",
+      "expected": "CHARGING / CanSubmit False",
+      "actual": "CHARGING / CanSubmit False"
+    },
+    {
+      "id": "L2-ROC-03",
+      "description": "充满：界面 ChargingStatus 报 COMPLETE；之后十秒里 211 仍是这一趟的占用、RIoT 上仍只有那一张充电单（不为离桩建单）、车载端仍不能提交",
+      "outcome": "PASS",
+      "expected": "COMPLETE / OCCUPIED charging:BROKERX-L2-0001:20261002T141257280Z | 1 orders | CanSubmit False",
+      "actual": "COMPLETE / OCCUPIED charging:BROKERX-L2-0001:20261002T141257280Z | 1 orders | CanSubmit False"
+    },
+    {
+      "id": "L2-ROC-04",
+      "description": "充满的车被派走：被确认的最新一版计划不含 CHARGER 腿；车到 12 号站，车载端能录入、装货 Committed（充满离桩接走后，在取货站能录入）",
+      "outcome": "PASS",
+      "expected": "0 CHARGER legs / load Committed",
+      "actual": "0 CHARGER legs of 2 / load Committed"
+    },
+    {
+      "id": "L2-ROC-05",
+      "description": "车离开 211 之后：211 以 CHARGER_RELEASED_ON_DEPARTURE 释放，界面 ChargingStatus 回 NOT_CHARGING；卸货之后需求 Succeeded",
+      "outcome": "PASS",
+      "expected": "(none) | CHARGER_RELEASED_ON_DEPARTURE | NOT_CHARGING / Succeeded",
+      "actual": "(none) | CHARGER_RELEASED_ON_DEPARTURE | NOT_CHARGING / Succeeded"
+    }
+  ]
+}

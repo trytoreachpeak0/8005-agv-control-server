@@ -395,6 +395,56 @@ public sealed class WireToGateStoreTests
         Assert.Equal(1, session.SessionGeneration);
     }
 
+    /// <summary>
+    /// control-server#435: a report's pending result is taken off only for this vehicle's own OperationResult, processed
+    /// in this generation with the content the report holds. Inbox lines are keyed by messageId alone, so a line under
+    /// the same id that is another vehicle's, or another message type's, says nothing about this result.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-OPERATION-RESULT-UNKNOWN-RECONCILE")]
+    public async Task OnlyThisVehiclesOwnResultOfThisGenerationIsTakenOffAReport()
+    {
+        await using StoreFixture fixture = await StoreFixture.CreateAsync();
+        await fixture.Store.BeginSessionRecoveryAsync(
+            new SessionIdentity(
+                "AGV-001", 1, ProtocolCandidateIdentity.RepositoryCommit,
+                ProtocolCandidateIdentity.ManifestSha256, ProtocolCandidateIdentity.ProfileId,
+                ProtocolCandidateIdentity.ProtocolVersion),
+            fixture.CancellationToken);
+        string content = new('a', 64);
+        fixture.Context.ProtocolInbox.AddRange(
+            InboxLine("RESULT-SEEN", "OperationResult", "AGV-001", content),
+            InboxLine("RESULT-OF-AGV-002", "OperationResult", "AGV-002", content),
+            InboxLine("RESULT-OF-OTHER-TYPE", "LoadCompensationResult", "AGV-001", content));
+        await fixture.Context.SaveChangesAsync(fixture.CancellationToken);
+        fixture.Context.ChangeTracker.Clear();
+
+        await fixture.Store.ApplyRecoveryReportAsync(
+            "AGV-001", 1, "REPORT-435", 0, null, null, [], [],
+            [
+                new ReportedPendingResult("RESULT-SEEN", content),
+                new ReportedPendingResult("RESULT-OF-AGV-002", content),
+                new ReportedPendingResult("RESULT-OF-OTHER-TYPE", content)
+            ],
+            fixture.CancellationToken);
+
+        Assert.Equal(
+            "[\"RESULT-OF-AGV-002\",\"RESULT-OF-OTHER-TYPE\"]",
+            (await fixture.Context.SessionRecoveries.AsNoTracking().SingleAsync(fixture.CancellationToken))
+                .PendingResultIdsJson);
+
+        static ProtocolInboxRow InboxLine(string messageId, string messageType, string agvId, string content) => new()
+        {
+            MessageId = messageId,
+            MessageType = messageType,
+            RequestJson = $$$"""{"messageType":"{{{messageType}}}","messageId":"{{{messageId}}}","agvId":"{{{agvId}}}","sessionGeneration":1,"payload":{"resultContentSha256":"{{{content}}}"}}""",
+            ContentHash = new string('b', 64),
+            FirstResponseJson = "{}",
+            ReceivedAt = new DateTimeOffset(2026, 8, 25, 9, 0, 0, TimeSpan.Zero)
+        };
+    }
+
     private static async Task ReachReadyAsync(StoreFixture fixture)
     {
         SessionIdentity identity = new(

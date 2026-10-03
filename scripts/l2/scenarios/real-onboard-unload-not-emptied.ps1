@@ -54,7 +54,7 @@ function Get-DemandStatus {
 function Get-Stage { $r = Get-L2Runtime -Connection $connection -DemandId $demandId; if ($r) { [string]$r.Stage } else { $null } }
 
 function Get-RecoveryFootprint {
-    $session = @(Invoke-L2Query -Connection $connection -Sql "SELECT Readiness FROM SessionRecoveries WHERE AgvId = '$($Context.AgvId)'")
+    $session = Invoke-L2Query -Connection $connection -Sql "SELECT Readiness FROM SessionRecoveries WHERE AgvId = '$($Context.AgvId)'"
     return "会话 $(if ($session.Count -ge 1) { $session[0].Readiness } else { '(none)' }) / " +
         "恢复会话 $(Get-Count "SELECT COUNT(*) AS Total FROM ExceptionRecoverySessions WHERE AgvId = '$($Context.AgvId)'") / " +
         "恢复工作流 $(Get-Count "SELECT COUNT(*) AS Total FROM RecoveryWorkflows WHERE DemandId = '$demandId'")"

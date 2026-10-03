@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-unread-pre-create-read",
+  "runId": "20261002T140722348Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "vehicleKey": "BROKERX-L2-0001",
+    "batchId": "batch-9",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-37013472279-1\\_stage\\l2-20261002T140722348Z",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "controlServerCommit": "65a698c27ea263782e7b16805ff8c1be58d74e19",
+    "rig": "RealOnboard",
+    "onboardHmiCommit": "4e40e196205d55c363f97850d10bd18df9a686c0",
+    "agvId": "AGV-L2-001",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28"
+  },
+  "assertions": [
+    {
+      "id": "L2-UR-01-A",
+      "description": "注入只打中一次，打中的是 TO_PICKUP 那张单的读",
+      "outcome": "PASS",
+      "expected": "[0] W2G-b5317f83-ab5f-492e-b1e6-7ba37d4fbf28-PICKUP-1 / remaining 0",
+      "actual": "[W2G-b5317f83-ab5f-492e-b1e6-7ba37d4fbf28-PICKUP-1] / remaining 0"
+    },
+    {
+      "id": "L2-UR-01-B",
+      "description": "读没读到之后，TO_PICKUP 照常建出并确认，建单计数恰好是 1",
+      "outcome": "PASS",
+      "expected": "CONFIRMED / 1",
+      "actual": "CONFIRMED / 1"
+    },
+    {
+      "id": "L2-UR-01-C",
+      "description": "TO_PICKUP 审计链：建单前读没读到 → 建单前读答没有 → 才 arm 建单；只 arm 一次",
+      "outcome": "PASS",
+      "expected": "PRE/UNKNOWN/SdkFailure -> PRE/NOT_FOUND -> CREATE_DISPATCH/ARMED (x1)",
+      "actual": "PRE_CREATE_RECONCILIATION/UNKNOWN/SdkFailure/RIOT_API_FAILURE -> PRE_CREATE_RECONCILIATION/NOT_FOUND/NotFound/ -> CREATE_DISPATCH/ARMED// -> CREATE_REQUEST/STARTED// -> CREATE_RESPONSE/ACCEPTED/SdkAccepted/ -> POST_CREATE_RECONCILIATION/CONFIRMED/Found/"
+    },
+    {
+      "id": "L2-UR-02",
+      "description": "RIoT 上只有一张单，就是取货腿那一张",
+      "outcome": "PASS",
+      "expected": "1 / W2G-b5317f83-ab5f-492e-b1e6-7ba37d4fbf28-PICKUP-1",
+      "actual": "1 / W2G-b5317f83-ab5f-492e-b1e6-7ba37d4fbf28-PICKUP-1"
+    },
+    {
+      "id": "L2-UR-03",
+      "description": "补建的取货单走完：服务端采信到站，真车载端开放录入",
+      "outcome": "PASS",
+      "expected": "AwaitingSublot / can submit",
+      "actual": "AwaitingSublot / True"
+    },
+    {
+      "id": "L2-UR-04-A",
+      "description": "注入只打中一次，打中的是 TO_GATE 那张单的读",
+      "outcome": "PASS",
+      "expected": "[1] W2G-b5317f83-ab5f-492e-b1e6-7ba37d4fbf28-GATE-1 / remaining 0",
+      "actual": "[W2G-b5317f83-ab5f-492e-b1e6-7ba37d4fbf28-PICKUP-1,W2G-b5317f83-ab5f-492e-b1e6-7ba37d4fbf28-GATE-1] / remaining 0"
+    },
+    {
+      "id": "L2-UR-04-B",
+      "description": "读没读到之后，TO_GATE 照常建出并确认，建单计数恰好是 1",
+      "outcome": "PASS",
+      "expected": "CONFIRMED / 1",
+      "actual": "CONFIRMED / 1"
+    },
+    {
+      "id": "L2-UR-04-C",
+      "description": "TO_GATE 审计链：建单前读没读到 → 建单前读答没有 → 才 arm 建单；只 arm 一次",
+      "outcome": "PASS",
+      "expected": "PRE/UNKNOWN/SdkFailure -> PRE/NOT_FOUND -> CREATE_DISPATCH/ARMED (x1)",
+      "actual": "PRE_CREATE_RECONCILIATION/UNKNOWN/SdkFailure/RIOT_API_FAILURE -> PRE_CREATE_RECONCILIATION/NOT_FOUND/NotFound/ -> CREATE_DISPATCH/ARMED// -> CREATE_REQUEST/STARTED// -> CREATE_RESPONSE/ACCEPTED/SdkAccepted/ -> POST_CREATE_RECONCILIATION/CONFIRMED/Found/"
+    },
+    {
+      "id": "L2-UR-05",
+      "description": "RIoT 上共两张单：取货腿一张、关卡腿一张",
+      "outcome": "PASS",
+      "expected": "W2G-b5317f83-ab5f-492e-b1e6-7ba37d4fbf28-GATE-1, W2G-b5317f83-ab5f-492e-b1e6-7ba37d4fbf28-PICKUP-1",
+      "actual": "W2G-b5317f83-ab5f-492e-b1e6-7ba37d4fbf28-GATE-1, W2G-b5317f83-ab5f-492e-b1e6-7ba37d4fbf28-PICKUP-1"
+    }
+  ]
+}

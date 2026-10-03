@@ -32,7 +32,6 @@ public sealed class TaskTypeAdmissionChainTests : IAsyncDisposable
         MapId = 25,
         AllowedWorkTypes = [.. TransportTaskTypes.All],
         AllowedDispatchZones = ["MAP-25-WIRE_TO_GATE"],
-        MinimumBatteryPercent = 30,
         MaximumEvidenceAge = TimeSpan.FromMinutes(2),
     };
 
@@ -157,7 +156,8 @@ public sealed class TaskTypeAdmissionChainTests : IAsyncDisposable
             new JourneyRuntimeWorkerTestKit.RecordingBoxCounts(),
             NullLogger<SlotCapacityCriterion>.Instance,
             new TransportDemandSuppressionStore(_context),
-            _context));
+            _context,
+            TestChargingPolicies.AllApproved));
     }
 
     private static DispatchRoundFacts Round(Func<string, FixedTaskStationResolution> resolve) => new(

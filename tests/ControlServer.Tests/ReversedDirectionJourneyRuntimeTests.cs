@@ -527,7 +527,7 @@ public sealed class ReversedDirectionJourneyRuntimeTests
 
         fixture.Clock.Advance(TimeSpan.FromMinutes(3));
         await fixture.HearFromPeerAsync();
-        fixture.Riot.FailOrder(arrived.GateUpperId);
+        fixture.Riot.FailOrder(arrived.GateUpperId!);
         fixture.Context.ChangeTracker.Clear();
         await fixture.Engine.ExecuteOnceAsync(Token);
         Assert.Equal(
@@ -555,7 +555,7 @@ public sealed class ReversedDirectionJourneyRuntimeTests
         // The order fails again after the escalation: nothing writes its code over the escalated block.
         fixture.Clock.Advance(TimeSpan.FromMinutes(1));
         await fixture.HearFromPeerAsync();
-        fixture.Riot.FailOrder(arrived.GateUpperId);
+        fixture.Riot.FailOrder(arrived.GateUpperId!);
         fixture.Context.ChangeTracker.Clear();
         await fixture.Engine.ExecuteOnceAsync(Token);
         Assert.Equal(
@@ -581,7 +581,7 @@ public sealed class ReversedDirectionJourneyRuntimeTests
 
         fixture.Clock.Advance(TimeSpan.FromMinutes(10));
         await fixture.HearFromPeerAsync();
-        fixture.Riot.FailOrder(arrived.GateUpperId);
+        fixture.Riot.FailOrder(arrived.GateUpperId!);
         fixture.Context.ChangeTracker.Clear();
         await fixture.Engine.ExecuteOnceAsync(Token);
 

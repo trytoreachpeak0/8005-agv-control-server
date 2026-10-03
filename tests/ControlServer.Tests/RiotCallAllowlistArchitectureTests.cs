@@ -43,14 +43,15 @@ namespace ControlServer.Tests;
 public sealed class RiotCallAllowlistArchitectureTests
 {
     /// <summary>
-    /// SHA-256 of the approved allowlist document, over the file's bytes. Taken from
-    /// <c>8005-agv-program</c> commit <c>70bf4d449477436b1ccfeb5f12091f484f5e772f</c> on
-    /// 2026-09-15: section 1.5's release rules brought in line with requirements baseline v1.3.0
-    /// (CP-0003, control-server#63). The approved-call rows are unchanged from the 2026-09-08
-    /// document (<c>3bc055c4</c>).
+    /// SHA-256 of the approved allowlist document, over the file's bytes. Taken with <c>git show</c> from
+    /// <c>8005-agv-program</c> commit <c>01c87efe26465875d658cd2ae90133ac1d4e8faf</c> on 2026-10-01: sections 1.2 and
+    /// 1.3 brought in line with requirements baseline v1.9.0 (CP-0010, control-server#406) -- the charge-order shape
+    /// carried by REQ-0147, and <c>CMD_ORDER_CANCEL</c> for this server's own charge orders in the two cases of
+    /// REQ-0148 -- plus program#145's "used" column for <c>getALLMapInfoExcludeMapJson</c>. The approved-call rows are
+    /// unchanged from the 2026-09-08 document (<c>3bc055c4</c>).
     /// </summary>
     private const string ApprovedAllowlistSha256 =
-        "ad15dd9b04a8b18ac1119b32a7e8ad05c1a57e216e575bfb3ea8e87c816c838f";
+        "843e017bbba7b3edc39d0e868603ecbeef88b93f6d254884c2abdb15f436809b";
 
     private const string FacadeAssembly = "RIoT.Sdk.Facade";
     private const string GeneratedAssembly = "RIoT.Sdk.Generated";

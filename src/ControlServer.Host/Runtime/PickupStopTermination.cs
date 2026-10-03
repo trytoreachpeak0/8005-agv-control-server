@@ -87,7 +87,7 @@ public sealed class PickupStopTermination(ControlServerDbContext dbContext, Plan
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(runtime);
-        return StageAsync(runtime, runtime.DemandId, reasonCode, endedAt, cancellationToken);
+        return StageAsync(runtime, runtime.TransportColumn(runtime.DemandId), reasonCode, endedAt, cancellationToken);
     }
 
     /// <summary>

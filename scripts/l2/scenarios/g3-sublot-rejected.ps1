@@ -26,6 +26,8 @@ param([Parameter(Mandatory)][object]$Context)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2SingleRow.psm1') -Force
+
 $journal = $Context.Journal
 $assertions = $Context.Assertions
 $riot = $Context.Riot
@@ -191,9 +193,11 @@ $intent = Wait-L2Condition -Description 'the TO_PICKUP intent was confirmed' `
         if ($rows.Count -ge 1 -and [string]$rows[0].Status -eq 'CONFIRMED') { $rows[0] } else { $null }
     } `
     -Until { param($v) $null -ne $v }
-$dispatched = @(Invoke-L2Query -Connection $connection `
-        -Sql "SELECT ExpectedBasketCount, TargetSlotsJson FROM JourneyRuntimes WHERE DemandId = '$demandId'")[0]
-if ([int]$dispatched.ExpectedBasketCount -ne $frozenBasketCount) {
+# -Required: not one row is a stand-in whose columns read "(N rows, expected 1)", not an index out of range. Compared
+# as text, because a stand-in does not cast to a number.
+$dispatched = Read-L2SingleRow -Required -Connection $connection `
+        -Sql "SELECT ExpectedBasketCount, TargetSlotsJson FROM JourneyRuntimes WHERE DemandId = '$demandId'"
+if ([string]$dispatched.ExpectedBasketCount -ne [string]$frozenBasketCount) {
     throw "The dispatch froze $($dispatched.ExpectedBasketCount) baskets, not $frozenBasketCount; the capacity change below would not be a mismatch."
 }
 
@@ -290,8 +294,8 @@ $assertions.Add(
      "会话一致=$($submissions.Count -ge 1 -and [string]$rejection.Payload.operationSessionId -eq [string]$submissions[0].Payload.operationSessionId) / " +
      "revision $($rejection.Payload.currentWorklistRevision)"))
 
-$refusedRuntime = @(Invoke-L2Query -Connection $connection `
-        -Sql "SELECT Stage, TargetSlotsJson, ExpectedBasketCount, BlockReasonCode FROM JourneyRuntimes WHERE DemandId = '$demandId'")[0]
+$refusedRuntime = Read-L2SingleRow -Required -Connection $connection `
+        -Sql "SELECT Stage, TargetSlotsJson, ExpectedBasketCount, BlockReasonCode FROM JourneyRuntimes WHERE DemandId = '$demandId'"
 $operationsAfterRefusal = Get-Count "SELECT COUNT(*) AS Total FROM StationOperations WHERE DemandId = '$demandId'"
 $commandsAfterRefusal = Get-Count "SELECT COUNT(*) AS Total FROM ProtocolOutbox WHERE MessageType = 'SlotOperationCommand'"
 $slotsAfterRefusal = Get-AllSlotStates
@@ -316,14 +320,14 @@ $assertions.Add(
     $displayText)
 
 $reopened = [bool]$onboard.CanSubmit()
-$pendingEntry = @(Invoke-L2Query -Connection $connection `
-        -Sql "SELECT AcknowledgedAt FROM ProtocolOutbox WHERE MessageId = '$($waiting.SublotRequestMessageId)'")
+$pendingEntry = Invoke-L2Query -Connection $connection `
+        -Sql "SELECT AcknowledgedAt FROM ProtocolOutbox WHERE MessageId = '$($waiting.SublotRequestMessageId)'"
 $assertions.Add(
     'G3-02-45',
     '拒收之后录入保持打开、可以重扫：车载端录入框可用，服务端仍在等这一站的录入（KEEP_ENTRY_OPEN_FOR_RESCAN）',
     ($reopened -and [string]$refusedRuntime.Stage -eq 'AwaitingSublot'),
     '录入框可用 / AwaitingSublot',
-    "录入框可用=$reopened / $($refusedRuntime.Stage) / 录入请求 AcknowledgedAt=$(if ($pendingEntry.Count -eq 1) { $pendingEntry[0].AcknowledgedAt } else { '(no row)' })")
+    "录入框可用=$reopened / $($refusedRuntime.Stage) / 录入请求 AcknowledgedAt=$(if ($pendingEntry.Count -eq 1) { $pendingEntry[0].AcknowledgedAt } else { "($($pendingEntry.Count) rows)" })")
 
 # --- 3. 容量对照改回 4 箱/篮，操作员重扫，正常装货 ------------------------------------------------
 
@@ -388,11 +392,11 @@ $assertions.Add(
 
 $rejections = (Get-Outbound 'SublotRejected')
 $operations = Get-Count "SELECT COUNT(*) AS Total FROM StationOperations WHERE DemandId = '$demandId'"
-$results = @(Invoke-L2Query -Connection $connection -Sql "SELECT OverallOutcome FROM OperationResults WHERE SlotOperationAttemptId = '$attemptId'")
+$results = Invoke-L2Query -Connection $connection -Sql "SELECT OverallOutcome FROM OperationResults WHERE SlotOperationAttemptId = '$attemptId'"
 $commands = (Get-Outbound 'SlotOperationCommand')
 $unlocks = @((Get-Progress $attemptId) | Where-Object { $_.Phase -eq 'UNLOCKING' } | ForEach-Object { $_.Active } | ForEach-Object { [int]$_ })
 $orders = @($riot.Snapshot().body.orders)
-$finalRuntime = @(Invoke-L2Query -Connection $connection -Sql "SELECT BlockReasonCode FROM JourneyRuntimes WHERE DemandId = '$demandId'")[0]
+$finalRuntime = Read-L2SingleRow -Required -Connection $connection -Sql "SELECT BlockReasonCode FROM JourneyRuntimes WHERE DemandId = '$demandId'"
 $recoveryRequired = Get-Count "SELECT COUNT(*) AS Total FROM StationOperations WHERE Status = 'RecoveryRequired'"
 $assertions.Add(
     'G3-02-47',

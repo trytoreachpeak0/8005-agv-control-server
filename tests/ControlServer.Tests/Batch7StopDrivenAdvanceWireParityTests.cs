@@ -95,8 +95,8 @@ public sealed class Batch7StopDrivenAdvanceWireParityTests
         await ArriveAtPickupAsync(fixture, FirstDemandId);
         await EnterSublotAsync(fixture, FirstDemandId, FirstSublot, FirstSubmissionId);
         JourneyRuntimeRow runtime = await SettleLoadAsync(fixture, FirstDemandId);
-        string expiredCheckId = runtime.PreDepartureSafetyCheckId;
-        string expiredMessageId = runtime.PreDepartureSafetyCheckMessageId;
+        string expiredCheckId = runtime.PreDepartureSafetyCheckId!;
+        string expiredMessageId = runtime.PreDepartureSafetyCheckMessageId!;
         await AddInboxAsync(
             fixture, FirstSafetyResultId, "PreDepartureSafetyCheckResult",
             SafeDepartureAnswer(fixture, expiredCheckId, safetyStateVersion: 7), expiredCheckId);

@@ -181,6 +181,38 @@ public static class DispatchReasonCodes
     public const string TransportDemandKeyAlreadyAccepted = "TRANSPORT_DEMAND_KEY_ALREADY_ACCEPTED";
 
     /// <summary>
+    /// 这辆车没有「已批准、已激活、适用范围覆盖它」的 <c>ChargingPolicyVersion</c>，或读不到（fail-closed）：不承接任何新用途
+    /// （批次9-02，control-server#400；REQ-0282；规格 8.6 逐车硬阻断）。
+    /// </summary>
+    /// <remarks>
+    /// 归普通积压（车辆侧）：别的车照常承接，导入、批准并激活一版覆盖它的策略即解除。空闲返回资格与充电分配用同一个判定
+    /// （<c>IChargingPolicyResolver</c>）。
+    /// </remarks>
+    public const string ChargingPolicyNotApproved = "CHARGING_POLICY_NOT_APPROVED";
+
+    /// <summary>
+    /// 这辆车当前电量低于它所用策略版本的 <c>MandatoryChargeEntryThreshold</c>：它此刻属于强制充电，不接普通新任务，也不接途中追加
+    /// （批次9-05，control-server#403；<c>REQ-0281</c>、<c>REQ-0290</c>）。
+    /// </summary>
+    /// <remarks>
+    /// 与「预计任务后保不住余量」（<c>BATTERY_POLICY_NOT_SATISFIED</c>）分开：这辆车该去充电，而那一条只是这一趟接不下。归普通积压（车辆侧）：
+    /// 别的车照常承接。把车排进充电队列、去桩是批次9-06 的事；在那之前这样的车原地不动。
+    /// </remarks>
+    public const string MandatoryChargeRequired = "MANDATORY_CHARGE_REQUIRED";
+
+    /// <summary>
+    /// 这辆车此刻生效的充电策略版本，强制充电线不高于服务端的救命告警线（<c>JourneyRuntime:WaitingJourneyRescueBatteryPercent</c>）：
+    /// 这一版视为不可用，车不承接任何新用途（批次9-05，control-server#403）。
+    /// </summary>
+    /// <remarks>
+    /// 为什么是整版不可用：那样一版生效后，车要等电量掉到救命线以下才算该充电，可能在去充电之前就没电，一台车堵住整个车队。
+    /// 激活走 FieldOps、不经服务端，所以服务端只能在用的时候拦——每轮派车、空闲返回与充电分配读到它就拒，在途旅程照常走完。
+    /// 启动时同一条关系拒绝启动（<c>ChargingPolicyStartupCheck</c>）。归普通积压（车辆侧）：用 FieldOps 激活一版强制充电线高于救命线的版本即解除，
+    /// 不改库、不重启。
+    /// </remarks>
+    public const string ChargingPolicyEntryNotAboveRescueLine = "CHARGING_POLICY_ENTRY_NOT_ABOVE_RESCUE_LINE";
+
+    /// <summary>
     /// 这辆车已承诺空闲返回（<c>REQ-0292</c>；批次8-18，control-server#389）：返回是它当前已承诺的下一站，搬运不取消、不换点、不抢它。
     /// </summary>
     /// <remarks>
@@ -195,6 +227,24 @@ public static class DispatchReasonCodes
     /// 由 <see cref="Criteria.VehicleNewPurposeReadiness"/> 给出，搬运、空闲返回与充电共用。归普通积压：别的车能接，本车放行后能接。
     /// </remarks>
     public const string VehicleSlotDoorHold = "VEHICLE_SLOT_DOOR_HOLD";
+
+    /// <summary>
+    /// 这辆车已承诺充电（<c>REQ-0290</c>、<c>REQ-0173</c>；批次9-06，control-server#404）：它持有 <c>CHARGING</c> 用途占有与充电桩预占，
+    /// 搬运不取消、不改写、不抢它。
+    /// </summary>
+    /// <remarks>
+    /// 归普通积压（车辆侧）：别的车能接，或这辆车充完电之后能接。不是故障，也不是整个车队都接不了。
+    /// </remarks>
+    public const string VehicleCommittedToCharging = "VEHICLE_COMMITTED_TO_CHARGING";
+
+    /// <summary>
+    /// 这辆车在服务端持有的人工充电等待中（<c>REQ-0171</c> 的退化路径，规格 8.6；批次9-06，control-server#404）：名册为空时需要充电的车、
+    /// 或充电单反复被取消的车被置上，出口只有管理员在车上发起的「充电后返回服务」——电量回升本身不恢复资格。期间不接搬运、不做空闲返回。
+    /// </summary>
+    /// <remarks>
+    /// 归普通积压（车辆侧）：别的车照常承接。只在服务端与看板；下发给车的是 <c>VehicleBusinessStateSnapshot.manualChargingHold</c>，不是这个码。
+    /// </remarks>
+    public const string VehicleInManualChargingHold = "VEHICLE_IN_MANUAL_CHARGING_HOLD";
 
     /// <summary>
     /// 这条候选会让这辆车的下一站变成它的公共站点（<c>REQ-0204</c>，批次8-20，control-server#391），而那个站此刻被别的车预占着——

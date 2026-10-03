@@ -140,10 +140,12 @@ public sealed record VehicleFaultResumeDecision(
     IReadOnlyList<string> Refusals);
 
 /// <summary>The original task a repaired vehicle would continue.</summary>
+/// <param name="DemandId">The journey's anchor demand; null for an idle return (control-server#390), which carries none.</param>
+/// <param name="TransportDemandKey">That demand's business key; null for an idle return.</param>
 public sealed record VehicleFaultResumption(
     RiotOrderCommandTarget Order,
-    string DemandId,
-    string TransportDemandKey,
+    string? DemandId,
+    string? TransportDemandKey,
     string Reason);
 
 /// <summary>

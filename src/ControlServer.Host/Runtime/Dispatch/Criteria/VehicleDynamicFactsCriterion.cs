@@ -4,7 +4,7 @@ namespace ControlServer.Host.Runtime.Dispatch.Criteria;
 
 /// <summary>
 /// The vehicle must currently be safe, available, idle, on the right Map, freshly observed,
-/// adequately charged, stopped and unoccupied.
+/// adequately charged (<see cref="BatteryEligibility"/>), stopped and unoccupied.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -28,7 +28,10 @@ public sealed class VehicleDynamicFactsCriterion(IOptions<JourneyRuntimeOptions>
     /// <summary>The vehicle's battery is not reported. Named because the idle return reads it (control-server#389).</summary>
     public const string BatteryFactUnknownReason = "BATTERY_FACT_UNKNOWN";
 
-    /// <summary>The vehicle is charging or below the battery threshold. Named for the same reason.</summary>
+    /// <summary>
+    /// The vehicle is charging, or its battery less one task's estimated consumption would fall below the approved post-task
+    /// margin (control-server#403). Named for the same reason.
+    /// </summary>
     public const string BatteryPolicyNotSatisfiedReason = "BATTERY_POLICY_NOT_SATISFIED";
 
     public int Order => 80;
@@ -104,15 +107,14 @@ public sealed class VehicleDynamicFactsCriterion(IOptions<JourneyRuntimeOptions>
             return "RIOT_VEHICLE_FACT_STALE";
         }
 
-        if (facts.Vehicle.BatteryPercent is null || string.IsNullOrWhiteSpace(facts.Vehicle.BatteryState))
+        // 电量一段（批次9-05，control-server#403）：阈值来自这一轮为这辆车读的策略版本，一趟新任务按一份耗电估计算。
+        // 本周期已充满、仍插在桩上报 CHARGING 的车不因 CHARGING 被拒（批次9-07，control-server#405）。
+        string battery = BatteryEligibility.Judge(
+            facts.Vehicle, facts.BatteryPolicy, tasksToCover: 1, options.WaitingJourneyRescueBatteryPercent,
+            facts.ChargingCycleComplete);
+        if (battery != DispatchAdmissionChain.Eligible)
         {
-            return BatteryFactUnknownReason;
-        }
-
-        if (string.Equals(facts.Vehicle.BatteryState, "CHARGING", StringComparison.Ordinal) ||
-            facts.Vehicle.BatteryPercent < options.MinimumBatteryPercent)
-        {
-            return BatteryPolicyNotSatisfiedReason;
+            return battery;
         }
 
         if (facts.Vehicle.Speed is null || facts.Vehicle.Speed != 0)
