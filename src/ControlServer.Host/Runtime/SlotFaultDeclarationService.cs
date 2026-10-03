@@ -63,6 +63,12 @@ public static class SlotFaultDeclarationRefusals
     /// <summary>A declaration on this attempt is still waiting for the vehicle's answer.</summary>
     public const string DeclarationPending = "SLOT_FAULT_DECLARATION_PENDING";
 
+    /// <summary>
+    /// A load cancellation of this attempt is authorized and waiting for the vehicle's result (control-server#384): the
+    /// vehicle is proving the slots empty, and the cancellation is how this operation ends.
+    /// </summary>
+    public const string LoadCancellationInProgress = "SLOT_FAULT_LOAD_CANCELLATION_IN_PROGRESS";
+
     /// <summary>No session was ever established with the vehicle, so there is no generation to address the command to.</summary>
     public const string NoSession = "SLOT_FAULT_NO_SESSION";
 
@@ -299,6 +305,14 @@ public sealed class SlotFaultDeclarationService(
             {
                 reasons.Add(SlotFaultDeclarationRefusals.DeclarationPending);
             }
+            // The other order of the guard OnboardRecoveryCoordinator.AuthorizeLoadCancellationAsync keeps (control-server#384,
+            // approved by the coordinator beyond the ticket's untouched list): a cancellation already authorized ends this
+            // attempt, so a declaration would give it a second conclusion. The onboard answers such a declaration
+            // NOT_APPLICABLE (onboard-hmi#247); refused here, the administrator sees why when submitting.
+            if (await HasOpenLoadCancellationAsync(operation.SlotOperationAttemptId, cancellationToken).ConfigureAwait(false))
+            {
+                reasons.Add(SlotFaultDeclarationRefusals.LoadCancellationInProgress);
+            }
         }
 
         // The overdue alarm names a slot and nothing else: on the wire an alarm has one subject, and an expected-action-overdue
@@ -353,6 +367,13 @@ public sealed class SlotFaultDeclarationService(
     private Task<bool> HasPendingDeclarationAsync(string attemptId, CancellationToken cancellationToken) =>
         dbContext.Set<SlotFaultDeclarationRow>().AsNoTracking().AnyAsync(
             row => row.SlotOperationAttemptId == attemptId && row.State == SlotFaultDeclarationStates.Pending,
+            cancellationToken);
+
+    private Task<bool> HasOpenLoadCancellationAsync(string attemptId, CancellationToken cancellationToken) =>
+        dbContext.RecoveryWorkflows.AsNoTracking().AnyAsync(
+            row => row.SlotOperationAttemptId == attemptId &&
+                   row.WorkflowType == LoadCancellationBeforeSublot.WorkflowType &&
+                   row.State == RecoveryWorkflowState.AwaitingResult,
             cancellationToken);
 
     private static SlotFaultDeclarationDecision Refused(IReadOnlyList<string> reasons) =>

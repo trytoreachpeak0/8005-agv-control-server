@@ -283,7 +283,8 @@ public sealed class DashboardActionTests
 
         Assert.Equal(HttpStatusCode.SeeOther, first.StatusCode);
         Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
-        Assert.Contains("SLOT_FAULT_DECLARATION_PENDING", await second.Content.ReadAsStringAsync(Token), StringComparison.Ordinal);
+        string secondPage = WebUtility.HtmlDecode(await second.Content.ReadAsStringAsync(Token));
+        Assert.Contains("SLOT_FAULT_DECLARATION_PENDING：这次装卸已有一条判定在等车载端答复", secondPage, StringComparison.Ordinal);
         string[] requestIds = [.. rig.Forwarded.Select(item => JsonDocument.Parse(item.Body).RootElement.GetProperty("requestId").GetString()!)];
         Assert.Equal(2, requestIds.Distinct(StringComparer.Ordinal).Count());
     }
@@ -312,6 +313,24 @@ public sealed class DashboardActionTests
 
         Assert.Equal(HttpStatusCode.GatewayTimeout, response.StatusCode);
         Assert.Contains("提交结果未知，请回主页看这一行的状态", page, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Every reason the declaration endpoint can refuse with has a Chinese description on the confirmation page. The
+    /// dashboard does not reference the server, so its table copies the codes; this compares the two by reflection.
+    /// </summary>
+    [Fact]
+    public void EveryRefusalTheDeclarationEndpointCanGiveHasAChineseDescription()
+    {
+        string[] codes = [.. typeof(ControlServer.Host.Runtime.SlotFaultDeclarationRefusals)
+            .GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+            .Where(field => field.IsLiteral)
+            .Select(field => (string)field.GetRawConstantValue()!)];
+        IDashboardAction action = DashboardActionCatalog.Discovered.Find(SlotFaultDeclarationAction.Id)!;
+
+        Assert.Contains(ControlServer.Host.Runtime.SlotFaultDeclarationRefusals.LoadCancellationInProgress, codes);
+        Assert.All(codes, code => Assert.False(string.IsNullOrWhiteSpace(action.DescribeReason(code)), code));
+        Assert.Null(action.DescribeReason("NOT_A_REASON"));
     }
 
     private static string Problem(string title, string detail) =>

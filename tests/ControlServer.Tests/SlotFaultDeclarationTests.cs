@@ -759,6 +759,12 @@ public sealed class SlotFaultDeclarationTests
         bool workflowRecorded = await fixture.Context.RecoveryWorkflows.AsNoTracking()
             .AnyAsync(row => row.WorkflowType == "LOAD_CANCELLATION", Token);
         Assert.Equal(expected == "AUTHORIZED", workflowRecorded);
+        // What the runtime reads before it loads the next demand, ends the stop at its deadline or settles a determinate
+        // failure (JourneyRuntimeEngine.OpenCancellationAtCurrentStopAsync and the failure settlement): authorized after a
+        // declaration, the onboard never answers this cancellation, and the stop would stay held by it for good.
+        Assert.Equal(
+            expected == "AUTHORIZED",
+            await LoadCancellationBeforeSublot.HasOpenCancellationAsync(fixture.Context, DemandId, Token));
         if (expected == "REJECTED")
         {
             JsonElement problem = payload.GetProperty("problem");
@@ -766,6 +772,27 @@ public sealed class SlotFaultDeclarationTests
             Assert.Equal(OnboardRecoveryCoordinator.SlotFaultDeclaredCancellationMessage,
                 problem.GetProperty("displayMessage").GetString());
         }
+    }
+
+    /// <summary>
+    /// The other order (control-server#384): a load cancellation of the attempt is already authorized and waiting for the
+    /// vehicle's result, so the cancellation is how this operation ends. A declaration is refused with a reason the
+    /// administrator sees on submitting, and nothing is written -- no declaration row, no command.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    public async Task ADeclarationOnAnAttemptWhoseLoadCancellationIsAuthorizedIsRefusedAndWritesNothing()
+    {
+        await using Fixture fixture = await Fixture.AwaitingOperatorOnSlotOneAsync();
+        await fixture.RequestLoadCancellationAsync();
+        Assert.True(await LoadCancellationBeforeSublot.HasOpenCancellationAsync(fixture.Context, DemandId, Token));
+
+        var result = await fixture.PostAsync(Request());
+
+        Assert.Equal([SlotFaultDeclarationRefusals.LoadCancellationInProgress], Conflict(result));
+        Assert.Empty(await fixture.DeclarationsAsync());
+        Assert.Empty(await fixture.CommandsAsync());
+        Assert.DoesNotContain(fixture.Peer.Lines, line => MessageType(line) == "SlotFaultDeclarationCommand");
     }
 
     // --- The switch (review of control-server#383, S1 and S2) ---------------------------------------------------------

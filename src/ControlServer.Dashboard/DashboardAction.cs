@@ -69,6 +69,11 @@ public interface IDashboardAction
     /// 把提交上来的字段变成转给 ControlServer 的 JSON 请求体。字段校验由服务端做。凭据字段不在 <paramref name="form"/> 里。
     /// </summary>
     object BuildRequest(IReadOnlyDictionary<string, string> form);
+
+    /// <summary>
+    /// 服务端拒绝时给出的一个原因码的中文说明，确认页把它写在原因码旁边；不认识的码返回 null，只显示码本身。
+    /// </summary>
+    string? DescribeReason(string reasonCode) => null;
 }
 
 /// <summary>反射发现的看板动作集合。</summary>

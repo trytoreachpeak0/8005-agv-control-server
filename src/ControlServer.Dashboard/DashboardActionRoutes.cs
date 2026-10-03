@@ -110,10 +110,15 @@ public static class DashboardActionRoutes
                 return Results.StatusCode(StatusCodes.Status303SeeOther);
             }
             string body = await response.Content.ReadAsStringAsync(cancellationToken);
+            string explained = Explain((int)response.StatusCode, body);
+            string[] described = [.. explained.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+                .Select(code => action.DescribeReason(code) is string text ? $"{code}：{text}" : null)
+                .OfType<string>()];
             return Page(
                 (int)response.StatusCode,
                 action.Title,
-                $"ControlServer 拒绝了这次提交：{Explain((int)response.StatusCode, body)}");
+                $"ControlServer 拒绝了这次提交：{explained}"
+                + (described.Length == 0 ? string.Empty : "。" + string.Join("；", described)));
         }
         catch (HttpRequestException exception)
         {

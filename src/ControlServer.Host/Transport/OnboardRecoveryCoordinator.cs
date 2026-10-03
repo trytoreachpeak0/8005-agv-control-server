@@ -29,6 +29,13 @@ public sealed class OnboardRecoveryCoordinator(
     public const string SlotFaultDeclaredCancellationMessage =
         "本次装卸已有人工判故障（待车载端答复或已生效），不能取消；请走异常恢复。";
 
+    private static readonly Action<ILogger, string, string, string, Exception?> LogCancellationRefusedForDeclaration =
+        LoggerMessage.Define<string, string, string>(
+            LogLevel.Warning,
+            new EventId(9506, nameof(LogCancellationRefusedForDeclaration)),
+            "Load cancellation {CancellationId} for demand {DemandId} refused: attempt {SlotOperationAttemptId} has a slot " +
+            "fault declaration pending or applied (control-server#384).");
+
     private static readonly Action<ILogger, string, string, string, string?, Exception?> LogCancellationFoundStopDecided =
         LoggerMessage.Define<string, string, string, string?>(
             LogLevel.Warning,
@@ -736,7 +743,13 @@ public sealed class OnboardRecoveryCoordinator(
             .ConfigureAwait(false);
         // A declaration pending or applied on this attempt has stopped, or may yet stop, the operation and sent it to
         // recovery; a cancellation would give the attempt a second conclusion (review of onboard-hmi#247, control-server#384).
-        // One the vehicle refused (NOT_APPLICABLE) withdrew itself and holds nothing back.
+        // Worse, the onboard refuses a cancellation that arrives after a declaration and says nothing, so an authorized one
+        // would sit in AwaitingResult for good: no timeout, no replay (the replay only takes workflows with a command), and
+        // LoadCancellationBeforeSublot.HasOpenCancellationAsync, which matches it by demand, would hold the stop -- no next
+        // load, no deadline ending it, no settling a determinate failure -- on a journey that is not Blocked and so cannot
+        // reach a forced recovery. The declaration row is written before its command goes out, so judging by the row closes
+        // the race whichever message the vehicle sees first. One the vehicle refused (NOT_APPLICABLE) withdrew itself and
+        // holds nothing back.
         bool declared = await dbContext.Set<SlotFaultDeclarationRow>().AsNoTracking().AnyAsync(
             row => row.SlotOperationAttemptId == attemptId &&
                    (row.State == SlotFaultDeclarationStates.Pending || row.State == SlotFaultDeclarationStates.Applied),
@@ -747,6 +760,11 @@ public sealed class OnboardRecoveryCoordinator(
                            operation.OperationType == SlotOperationType.Load &&
                            operation.Status != StationOperationStatus.RecoveryRequired);
         int[] slots = operation is null ? [] : ParseSlots(operation.TargetSlotsJson);
+        if (declared)
+        {
+            LogCancellationRefusedForDeclaration(
+                logger ?? (ILogger)NullLogger.Instance, cancellationId, demandId, attemptId!, null);
+        }
         if (authorized)
         {
             await UpsertSimpleWorkflowAsync(

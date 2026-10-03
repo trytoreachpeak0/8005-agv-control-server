@@ -62,6 +62,26 @@ public sealed class SlotFaultDeclarationAction : IDashboardAction
     public static string Link(string agvId, string slotNo) =>
         $"/actions/{Id}?agvId={Uri.EscapeDataString(agvId)}&slotNo={Uri.EscapeDataString(slotNo)}";
 
+    /// <summary>
+    /// 判定接口拒绝原因码（<c>SlotFaultDeclarationRefusals</c>）的中文说明。看板不引用服务端程序集，所以码在这里照抄一遍；
+    /// <c>DashboardActionTests</c> 按反射核对服务端的每一个码这里都有说明。
+    /// </summary>
+    private static readonly Dictionary<string, string> Reasons = new(StringComparer.Ordinal)
+    {
+        ["SLOT_FAULT_NO_SLOT_OPERATION_IN_PROGRESS"] = "这辆车此刻没有在装货或卸货",
+        ["SLOT_FAULT_SLOT_NOT_IN_OPERATION"] = "这个仓不在这次装卸的仓位里",
+        ["SLOT_FAULT_EXPECTED_ACTION_NOT_OVERDUE"] = "车没有报这个仓期待动作超时",
+        ["SLOT_FAULT_NOT_THE_CURRENT_SLOT"] = "车正在等的是另一个仓",
+        ["SLOT_FAULT_OPERATION_ALREADY_CLOSED"] = "这次装卸已经有结果（完成、失败或已取消）",
+        ["SLOT_FAULT_OPERATION_ALREADY_UNKNOWN"] = "这次装卸已经判为结果不明、在等异常处置",
+        ["SLOT_FAULT_DECLARATION_PENDING"] = "这次装卸已有一条判定在等车载端答复",
+        ["SLOT_FAULT_LOAD_CANCELLATION_IN_PROGRESS"] = "这次装货已授权取消、车正在证明仓是空的，取消就是它的结局",
+        ["SLOT_FAULT_NO_SESSION"] = "这辆车从没和服务端建立过会话",
+        ["SLOT_FAULT_REQUEST_ID_REUSED"] = "请求号被另一份内容用过",
+    };
+
+    public string? DescribeReason(string reasonCode) => Reasons.GetValueOrDefault(reasonCode);
+
     public object BuildRequest(IReadOnlyDictionary<string, string> form)
     {
         ArgumentNullException.ThrowIfNull(form);
