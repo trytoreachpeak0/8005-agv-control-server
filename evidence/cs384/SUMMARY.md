@@ -16,5 +16,5 @@
 | `pins/00-baselines.txt` | 两份期待动作超时看板基线在 `batch-p3/v3` 与 `fp/v2-impl` 上逐字相同 |
 | `pins/01-additions-only.txt` | 钉子重录判据：每份恰好多一处 `,"declaration":null`，删掉后与集成分支旧基线逐字相同；比对脚本自检会报红 |
 | `pins/*.actual.txt` | 本票代码跑出的两份新基线原文 |
-| `full/` | 本机全量 `dotnet test` 两次的结尾（`c097d8b2` 与最终 head） |
+| `full/` | 本机全量 `dotnet test` 两次的结尾（`c097d8b2` 与 `fb3eb6cb`，后者是审查时的代码） |
 | `targeted.txt`、`targeted-r2.txt` | 定向测试结尾（审查前、审查后补测试） |
