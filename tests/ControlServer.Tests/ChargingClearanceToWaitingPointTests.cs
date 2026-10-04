@@ -755,9 +755,10 @@ public sealed partial class ChargingClearanceToWaitingPointTests
         int vehicles = 1,
         bool enabled = true,
         DbCommandInterceptor? commands = null,
-        WaitingPointEntry[]? points = null)
+        WaitingPointEntry[]? points = null,
+        ChargerRosterEntry[]? chargers = null)
     {
-        FleetFixture fleet = await FleetAsync(vehicles, commands: commands);
+        FleetFixture fleet = await FleetAsync(vehicles, chargers, commands: commands);
         fleet.Options.ClearanceToWaitingPointEnabled = enabled;
         points ??= [Point214];
         await new WaitingPointRegistry(fleet.Context, JourneyRuntimeWorkerTestKit.CreateGovernedPublisher(fleet.Context))
