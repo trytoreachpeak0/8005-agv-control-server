@@ -47,6 +47,22 @@
        And, from the AST, the statement after $baseline = Read-ControlDatabase in the runner's try is the
        Assert-FieldRunStoreIsNotGenerated call.
 
+    4. What the runner actually ran (control-server#466). Section 1's records also carry runnerSource, and only
+       COMMITTED_RUNNER leaves the pass alone: missing, dirty, an input override, unknown provenance, or a value
+       nobody defined each withhold it with its reason. From each runner's AST: one $runnerProvenance statement
+       measuring $PSScriptRoot, before the first statement that touches $StageRoot or $EvidenceRoot; every path
+       parameter whose default derives from $PSScriptRoot is one of its -Inputs, with the param default verbatim;
+       the record's runnerSource is the provenance's. The four runners' source statements are run with HEAD
+       binding another commit than the one on disk (or off -SharedRunnerSource): that commit is
+       SELF_CHECK_OVERRIDE. Then Get-G3RunnerProvenance against a throwaway repository of the runner scripts:
+       committed and clean passes, and so does an earlier run's untracked evidence under evidence/ (review M1 of
+       PR #470); a locally edited default, the same edit behind assume-unchanged and behind skip-worktree, an
+       untracked file outside evidence/ (beside it included), a changed tracked file under evidence/,
+       -SharedRunnerSource at a copy (defaults kept, or one changed), HEAD without the binding, an unborn HEAD
+       (its reason on one line) and no repository at all are each withheld. Each runner prints the provenance in
+       the statement right after measuring it, loudly with reason and paths when it is not COMMITTED_RUNNER
+       (review S2).
+
     The rows are inlined rather than read from evidence/ so that a clone without the evidence tree can run
     this.
 
@@ -112,16 +128,26 @@ $runKinds = @(
     'JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS')
 $commitCases = @(
     # Absence withheld (review S3): before the review a record with no source graded as a pass.
-    @{ Name = 'a record with no commit source'; Commits = [ordered]@{ controlServer = 'a' * 40 }; Formal = $false; Reason = 'COMMIT_SOURCE_MISSING: controlServerCommitSource' },
-    @{ Name = 'only an onboard source'; Commits = [ordered]@{ controlServer = 'a' * 40; onboardCommitSource = 'SHARED_BINDING' }; Formal = $false; Reason = 'COMMIT_SOURCE_MISSING: controlServerCommitSource' },
-    @{ Name = 'an empty record'; Commits = [ordered]@{}; Formal = $false; Reason = 'COMMIT_SOURCE_MISSING: controlServerCommitSource' },
-    @{ Name = 'a bare string'; Commits = 'SHARED_BINDING'; Formal = $false; Reason = 'COMMIT_SOURCE_MISSING: controlServerCommitSource' },
+    @{ Name = 'a record with no commit source'; Commits = [ordered]@{ controlServer = 'a' * 40; runnerSource = 'COMMITTED_RUNNER' }; Formal = $false; Reason = 'COMMIT_SOURCE_MISSING: controlServerCommitSource' },
+    @{ Name = 'only an onboard source'; Commits = [ordered]@{ controlServer = 'a' * 40; onboardCommitSource = 'SHARED_BINDING'; runnerSource = 'COMMITTED_RUNNER' }; Formal = $false; Reason = 'COMMIT_SOURCE_MISSING: controlServerCommitSource' },
+    @{ Name = 'an empty record'; Commits = [ordered]@{}; Formal = $false; Reason = 'COMMIT_SOURCE_MISSING: controlServerCommitSource; RUNNER_SOURCE_MISSING' },
+    @{ Name = 'a bare string'; Commits = 'SHARED_BINDING'; Formal = $false; Reason = 'COMMIT_SOURCE_MISSING: controlServerCommitSource; RUNNER_SOURCE_MISSING' },
     # Both reasons kept (review note): the unknown value is not lost behind the override.
-    @{ Name = 'an override and an unknown source'; Commits = [ordered]@{ controlServerCommitSource = 'SELF_CHECK_OVERRIDE'; onboardCommitSource = 'SOMETHING_NEW' }; Formal = $false; Reason = 'SELF_CHECK_OVERRIDE; UNRECOGNISED_COMMIT_SOURCE: onboardCommitSource=SOMETHING_NEW' },
-    @{ Name = 'SHARED_BINDING'; Commits = [ordered]@{ controlServer = 'a' * 40; controlServerCommitSource = 'SHARED_BINDING'; onboardCommitSource = 'SHARED_BINDING' }; Formal = $true; Reason = $null },
-    @{ Name = 'a ControlServer self-check override'; Commits = [ordered]@{ controlServer = 'b' * 40; controlServerCommitSource = 'SELF_CHECK_OVERRIDE' }; Formal = $false; Reason = 'SELF_CHECK_OVERRIDE' },
-    @{ Name = 'an onboard self-check override'; Commits = [ordered]@{ controlServer = 'a' * 40; controlServerCommitSource = 'SHARED_BINDING'; onboardCommitSource = 'SELF_CHECK_OVERRIDE' }; Formal = $false; Reason = 'SELF_CHECK_OVERRIDE' },
-    @{ Name = 'a source nobody defined'; Commits = [ordered]@{ controlServer = 'a' * 40; controlServerCommitSource = 'SOMETHING_NEW' }; Formal = $false; Reason = 'UNRECOGNISED_COMMIT_SOURCE*' }
+    @{ Name = 'an override and an unknown source'; Commits = [ordered]@{ controlServerCommitSource = 'SELF_CHECK_OVERRIDE'; onboardCommitSource = 'SOMETHING_NEW'; runnerSource = 'COMMITTED_RUNNER' }; Formal = $false; Reason = 'SELF_CHECK_OVERRIDE; UNRECOGNISED_COMMIT_SOURCE: onboardCommitSource=SOMETHING_NEW' },
+    @{ Name = 'SHARED_BINDING'; Commits = [ordered]@{ controlServer = 'a' * 40; controlServerCommitSource = 'SHARED_BINDING'; onboardCommitSource = 'SHARED_BINDING'; runnerSource = 'COMMITTED_RUNNER' }; Formal = $true; Reason = $null },
+    @{ Name = 'a ControlServer self-check override'; Commits = [ordered]@{ controlServer = 'b' * 40; controlServerCommitSource = 'SELF_CHECK_OVERRIDE'; runnerSource = 'COMMITTED_RUNNER' }; Formal = $false; Reason = 'SELF_CHECK_OVERRIDE' },
+    @{ Name = 'an onboard self-check override'; Commits = [ordered]@{ controlServer = 'a' * 40; controlServerCommitSource = 'SHARED_BINDING'; onboardCommitSource = 'SELF_CHECK_OVERRIDE'; runnerSource = 'COMMITTED_RUNNER' }; Formal = $false; Reason = 'SELF_CHECK_OVERRIDE' },
+    @{ Name = 'a source nobody defined'; Commits = [ordered]@{ controlServer = 'a' * 40; controlServerCommitSource = 'SOMETHING_NEW'; runnerSource = 'COMMITTED_RUNNER' }; Formal = $false; Reason = 'UNRECOGNISED_COMMIT_SOURCE*' },
+    # control-server#466: the shared binding, run by something other than the committed runner.
+    @{ Name = 'SHARED_BINDING with no runner source'; Commits = [ordered]@{ controlServerCommitSource = 'SHARED_BINDING' }; Formal = $false; Reason = 'RUNNER_SOURCE_MISSING' },
+    @{ Name = 'SHARED_BINDING from a dirty runner worktree'; Commits = [ordered]@{ controlServerCommitSource = 'SHARED_BINDING'; runnerSource = 'RUNNER_WORKTREE_DIRTY' }; Formal = $false; Reason = 'RUNNER_WORKTREE_DIRTY' },
+    @{ Name = 'SHARED_BINDING through another shared runner'; Commits = [ordered]@{ controlServerCommitSource = 'SHARED_BINDING'; runnerSource = 'RUNNER_INPUT_OVERRIDE: SharedRunnerSource' }; Formal = $false; Reason = 'RUNNER_INPUT_OVERRIDE: SharedRunnerSource' },
+    @{ Name = 'SHARED_BINDING, dirty and through another shared runner'; Commits = [ordered]@{ controlServerCommitSource = 'SHARED_BINDING'; runnerSource = 'RUNNER_WORKTREE_DIRTY; RUNNER_INPUT_OVERRIDE: SharedRunnerSource, ControlServerRepository' }; Formal = $false; Reason = 'RUNNER_WORKTREE_DIRTY; RUNNER_INPUT_OVERRIDE: SharedRunnerSource, ControlServerRepository' },
+    @{ Name = 'SHARED_BINDING with unknown provenance'; Commits = [ordered]@{ controlServerCommitSource = 'SHARED_BINDING'; runnerSource = 'RUNNER_PROVENANCE_UNKNOWN: no repository' }; Formal = $false; Reason = 'RUNNER_PROVENANCE_UNKNOWN: no repository' },
+    @{ Name = 'an override from a dirty runner worktree'; Commits = [ordered]@{ controlServerCommitSource = 'SELF_CHECK_OVERRIDE'; runnerSource = 'RUNNER_WORKTREE_DIRTY' }; Formal = $false; Reason = 'SELF_CHECK_OVERRIDE; RUNNER_WORKTREE_DIRTY' },
+    @{ Name = 'an empty runner source'; Commits = [ordered]@{ controlServerCommitSource = 'SHARED_BINDING'; runnerSource = '' }; Formal = $false; Reason = 'UNRECOGNISED_RUNNER_SOURCE: ' },
+    @{ Name = 'a runner source nobody defined'; Commits = [ordered]@{ controlServerCommitSource = 'SHARED_BINDING'; runnerSource = 'SOMETHING_NEW' }; Formal = $false; Reason = 'UNRECOGNISED_RUNNER_SOURCE: SOMETHING_NEW' },
+    @{ Name = 'a lowercase committed_runner'; Commits = [ordered]@{ controlServerCommitSource = 'SHARED_BINDING'; runnerSource = 'committed_runner' }; Formal = $false; Reason = 'UNRECOGNISED_RUNNER_SOURCE: committed_runner' }
 )
 $sliceIndexPath = Join-Path (Split-Path -Parent $ScriptRoot) 'vendor\8005-agv-protocol\integration-slices\index.json'
 $gradingRoot = Join-Path ([IO.Path]::GetTempPath()) ("g3-evidence-honesty-" + [guid]::NewGuid().ToString('n'))
@@ -211,6 +237,53 @@ foreach ($file in $runnerSources.Keys) {
             ($records.Count -eq 1 -and $records[0].Right.Extent.Text -match "(?m)^\s*$key\s*=\s*\S") `
             "$(${records}?[0]?.Right.Extent.Text)"
     }
+    # control-server#466: the runner source, from the provenance the runner measured, not a constant.
+    Check "$file's `$commitsRecord carries runnerSource = `$runnerProvenance.runnerSource" `
+        ($records.Count -eq 1 -and $records[0].Right.Extent.Text -match '(?m)^\s*runnerSource\s*=\s*\$runnerProvenance\.runnerSource\s*$') `
+        "$(${records}?[0]?.Right.Extent.Text)"
+
+    # control-server#466: one provenance statement, at top level, measuring the repository the script lives in
+    # ($PSScriptRoot, never a parameter), before any top-level statement touches $StageRoot or $EvidenceRoot -- a
+    # measurement taken after the run starts writing would be one an EvidenceRoot inside the repository could
+    # fool, and one taken after a dirty tree was made by the run itself could not be told from the operator's.
+    $topLevel = @($ast.EndBlock.Statements)
+    $provenance = @($topLevel | Where-Object {
+            $_ -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+            $_.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and
+            $_.Left.VariablePath.UserPath -eq 'runnerProvenance'
+        })
+    Check "$file assigns `$runnerProvenance once, at top level, from Get-G3RunnerProvenance -ScriptRoot `$PSScriptRoot" `
+        ($provenance.Count -eq 1 -and $provenance[0].Right.Extent.Text -match '^Get-G3RunnerProvenance\s+-ScriptRoot\s+\$PSScriptRoot\s') `
+        "$($provenance.Count) found: $(${provenance}?[0]?.Right.Extent.Text)"
+    # Review S2 of PR #470: the operator sees the source as the run starts, not after it.
+    $printed = if ($provenance.Count -eq 1) { $topLevel[[array]::IndexOf($topLevel, $provenance[0]) + 1] } else { $null }
+    Check "$file prints the provenance in the statement right after measuring it" `
+        ("$(${printed}?.Extent.Text)" -ceq 'Write-G3RunnerProvenance -Provenance $runnerProvenance') "it is: $(${printed}?.Extent.Text)"
+    $firstWrite = @($topLevel | Where-Object { $_.Extent.Text -match '\$(EvidenceRoot|StageRoot)\b' }) | Select-Object -First 1
+    Check "$file measures its provenance before the first statement that touches `$StageRoot or `$EvidenceRoot" `
+        ($provenance.Count -eq 1 -and $null -ne $firstWrite -and
+         [array]::IndexOf($topLevel, $provenance[0]) -lt [array]::IndexOf($topLevel, $firstWrite)) `
+        "provenance at line $(${provenance}?[0]?.Extent.StartLineNumber), first \$StageRoot/\$EvidenceRoot statement at line $(${firstWrite}?.Extent.StartLineNumber)"
+    # Every path parameter whose default the runner derives from its own location decides what the run reads
+    # (the shared runner, the binding reader, the repository the slice index and identity are read from), so
+    # every one is an -Inputs entry, with its Given the parameter itself and its Default the param block's own
+    # default, character for character. A new such parameter that is not added goes red here.
+    $inputs = [ordered]@{}
+    if ($provenance.Count -eq 1) {
+        foreach ($m in [regex]::Matches($provenance[0].Extent.Text,
+                '(?m)^\s*(\w+)\s*=\s*@\{\s*Given\s*=\s*\$(\w+)\s*;\s*Default\s*=\s*(.+?)\s*\}\s*$')) {
+            $inputs[$m.Groups[1].Value] = @{ Given = $m.Groups[2].Value; Default = $m.Groups[3].Value }
+        }
+    }
+    $located = @($ast.ParamBlock.Parameters | Where-Object { $null -ne $_.DefaultValue -and $_.DefaultValue.Extent.Text -match '\$PSScriptRoot\b' })
+    foreach ($parameter in $located) {
+        $name = $parameter.Name.VariablePath.UserPath
+        Check "${file}: -$name is an -Inputs entry of Get-G3RunnerProvenance, Given `$$name, Default its param default" `
+            ($inputs.Contains($name) -and $inputs[$name].Given -eq $name -and $inputs[$name].Default -ceq $parameter.DefaultValue.Extent.Text) `
+            "$(if ($inputs.Contains($name)) { "Given $($inputs[$name].Given), Default $($inputs[$name].Default)" } else { 'missing' }); param default $($parameter.DefaultValue.Extent.Text)"
+    }
+    Check "${file}: -Inputs names only those parameters" ($inputs.Count -eq $located.Count -and $located.Count -ge 1) `
+        "$($inputs.Count) entries, $($located.Count) located parameters: $($inputs.Keys -join ', ')"
 }
 
 # run-staged-g3.ps1's own sources: its four bindings are its param defaults, so an override is any value passed
@@ -241,11 +314,17 @@ Check 'run-staged-g3.ps1 assigns $commitSources once, at top level' ($sourcesSta
 if ($sourcesStatements.Count -eq 1) {
     # $PSScriptRoot is empty inside a created scriptblock; the runner's directory is this one's.
     $sourcesStatement = [scriptblock]::Create($sourcesStatements[0].Extent.Text.Replace('$PSScriptRoot', "'$ScriptRoot'"))
-    $stagedCases = @(@{ Name = 'the defaults'; Override = $null }) + @($sourceNames.Keys | ForEach-Object { @{ Name = "-$_ on the command line"; Override = $_ } })
+    $stagedCases = @(@{ Name = 'the defaults'; Override = $null }) + @($sourceNames.Keys | ForEach-Object { @{ Name = "-$_ on the command line"; Override = $_ } }) +
+        # control-server#466: HEAD committed another binding than the file on disk says (a locally edited default,
+        # run with no parameter). The runner's values are the disk defaults; the comparison must be with HEAD.
+        @($sourceNames.Keys | ForEach-Object { @{ Name = "HEAD binding another $_ than the disk default"; Override = $_; AtHead = $true } })
     foreach ($stagedCase in $stagedCases) {
         $ControlServerCommit = $binding['ControlServerCommit']; $OnboardCommit = $binding['OnboardCommit']
         $SimulatorCommit = $binding['SimulatorCommit']; $ProtocolCommit = $binding['ProtocolCommit']
-        if ($null -ne $stagedCase.Override) { Set-Variable -Name $stagedCase.Override -Value ('f' * 40) }
+        $atHead = [ordered]@{}; foreach ($k in $binding.Keys) { $atHead[$k] = $binding[$k] }
+        if ($stagedCase.AtHead) { $atHead[$stagedCase.Override] = 'f' * 40 }
+        elseif ($null -ne $stagedCase.Override) { Set-Variable -Name $stagedCase.Override -Value ('f' * 40) }
+        $runnerProvenance = [ordered]@{ bindingAtHead = $atHead; runnerSource = 'COMMITTED_RUNNER' }
         $commitSources = $null
         $thrown = $null
         try { . $sourcesStatement } catch { $thrown = $_.Exception.Message }
@@ -255,7 +334,8 @@ if ($sourcesStatements.Count -eq 1) {
         Check "run-staged-g3.ps1's commit sources, $($stagedCase.Name): $(($expected.Values | Select-Object -Unique) -join '/')" `
             ($null -eq $thrown -and $actualJson -eq ($expected | ConvertTo-Json -Compress)) "$thrown $actualJson"
         if ($null -ne $stagedCase.Override -and $null -ne $commitSources) {
-            $graded = Get-G3FormalSlicePass -RunKind 'STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT' -SliceStatus 'PASS' -Commits $commitSources
+            $graded = Get-G3FormalSlicePass -RunKind 'STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT' -SliceStatus 'PASS' -Commits (
+                [ordered]@{ runnerSource = 'COMMITTED_RUNNER' } + $commitSources)
             Check "run-staged-g3.ps1, $($stagedCase.Name): a PASS slice is withheld as SELF_CHECK_OVERRIDE" `
                 ($graded.formalSlicePass -eq $false -and $graded.formalSliceWithheldReason -eq 'SELF_CHECK_OVERRIDE') "$($graded | ConvertTo-Json -Compress)"
         }
@@ -264,48 +344,100 @@ if ($sourcesStatements.Count -eq 1) {
 
 # The journey and demand-bearing runners' own sources (review S1). A regex over the record literal cannot tell
 # `controlServerCommitSource = $controlServerCommitSource` from `controlServerCommitSource = 'SHARED_BINDING'`, and
-# the second is cs#453's case all over again. So each runner's own statements are run, in their order: every
-# top-level assignment to a *CommitSource variable, every top-level `if` on a -SelfCheck* parameter, and the
-# $commitsRecord literal. Run once with no override and once per override parameter; the record must carry
-# SELF_CHECK_OVERRIDE exactly under the overridden commit's key, and SHARED_BINDING everywhere else.
+# the second is cs#453's case all over again. So each runner's own statements are run, in their order: the
+# $bindingSources assignment, every top-level assignment to a *CommitSource variable, every top-level `if` on a
+# -SelfCheck* parameter, and the $commitsRecord literal. Run once with no override and once per override parameter;
+# the record must carry SELF_CHECK_OVERRIDE exactly under the overridden commit's key, and SHARED_BINDING everywhere
+# else. control-server#466 adds the cases where HEAD committed another binding than the one read off
+# -SharedRunnerSource (an edited default, or a copy with other defaults), with no override parameter: that commit's
+# source must be SELF_CHECK_OVERRIDE too, and the record must carry the provenance's runnerSource.
 $overrideRunners = [ordered]@{
     'run-demand-bearing-g3-vectors.ps1' = [ordered]@{ SelfCheckControlServerCommit = 'controlServerCommitSource' }
     'run-journey-g3.ps1' = [ordered]@{
         SelfCheckControlServerCommit = 'controlServerCommitSource'; SelfCheckOnboardCommit = 'onboardCommitSource' }
 }
+$selfCheckCommit = [ordered]@{ SelfCheckControlServerCommit = 'ControlServerCommit'; SelfCheckOnboardCommit = 'OnboardCommit' }
 foreach ($file in $overrideRunners.Keys) {
     $ast = Get-RunnerAst (Join-Path $ScriptRoot $file)
     $parameters = $overrideRunners[$file]
     $statements = @($ast.EndBlock.Statements | Where-Object {
             ($_ -is [System.Management.Automation.Language.AssignmentStatementAst] -and
              $_.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and
-             ($_.Left.VariablePath.UserPath -like '*CommitSource' -or $_.Left.VariablePath.UserPath -eq 'commitsRecord')) -or
+             ($_.Left.VariablePath.UserPath -like '*CommitSource' -or $_.Left.VariablePath.UserPath -in 'commitsRecord', 'bindingSources')) -or
             ($_ -is [System.Management.Automation.Language.IfStatementAst] -and
              $_.Clauses[0].Item1.Extent.Text -match '\$SelfCheck\w*Commit\b')
         })
     $ifCount = @($statements | Where-Object { $_ -is [System.Management.Automation.Language.IfStatementAst] }).Count
     Check "${file}: one top-level -SelfCheck* branch per override parameter" ($ifCount -eq $parameters.Count) "$ifCount found"
     $block = [scriptblock]::Create((@($statements | ForEach-Object { $_.Extent.Text }) -join "`n"))
-    foreach ($override in @($null) + @($parameters.Keys)) {
+    $runCases = @(@($null) + @($parameters.Keys) | ForEach-Object { @{ Override = $_; AtHead = $null } }) +
+        @($sourceNames.Keys | ForEach-Object { @{ Override = $null; AtHead = $_ } })
+    foreach ($runCase in $runCases) {
+        $override = $runCase.Override
         foreach ($name in $parameters.Keys) { Set-Variable -Name $name -Value $null }
-        if ($null -ne $override) { Set-Variable -Name $override -Value ('e' * 40) }
-        $ControlServerCommit = 'a' * 40; $OnboardCommit = 'b' * 40
+        $commitBinding = [ordered]@{ ControlServerCommit = 'a' * 40; OnboardCommit = 'b' * 40; SimulatorCommit = 'c' * 40; ProtocolCommit = 'd' * 40 }
+        $atHead = [ordered]@{} + $commitBinding
+        if ($null -ne $runCase.AtHead) { $atHead[$runCase.AtHead] = '1' * 40 }
+        elseif ($null -ne $override) { Set-Variable -Name $override -Value ('e' * 40) }
+        $runnerProvenance = [ordered]@{ bindingAtHead = $atHead; runnerSource = 'COMMITTED_RUNNER' }
+        $ControlServerCommit = $commitBinding['ControlServerCommit']; $OnboardCommit = $commitBinding['OnboardCommit']
         $commitsRecord = $null
         $thrown = $null
         try { . $block } catch { $thrown = $_.Exception.Message }
-        $wrong = @($parameters.Keys | ForEach-Object {
-                $key = $parameters[$_]
-                $expected = if ($_ -eq $override) { 'SELF_CHECK_OVERRIDE' } else { 'SHARED_BINDING' }
+        # Every one of the four sources the record carries: SELF_CHECK_OVERRIDE under the overridden parameter's
+        # commit, or under the commit HEAD binds differently, SHARED_BINDING under the other three.
+        $changed = if ($null -ne $runCase.AtHead) { $runCase.AtHead } elseif ($null -ne $override) { $selfCheckCommit[$override] } else { $null }
+        $wrong = @($sourceNames.Keys | ForEach-Object {
+                $key = $sourceNames[$_]
+                $expected = if ($_ -eq $changed) { 'SELF_CHECK_OVERRIDE' } else { 'SHARED_BINDING' }
                 if ($null -eq $commitsRecord -or "$($commitsRecord[$key])" -ne $expected) { "$key=$(${commitsRecord}?[$key]) (expected $expected)" }
             })
-        $label = if ($null -eq $override) { 'no override' } else { "-$override" }
+        if ($null -ne $commitsRecord -and "$($commitsRecord['runnerSource'])" -cne 'COMMITTED_RUNNER') { $wrong += "runnerSource=$($commitsRecord['runnerSource'])" }
+        $label = if ($null -ne $runCase.AtHead) { "HEAD binding another $($runCase.AtHead) than -SharedRunnerSource" } elseif (
+            $null -eq $override) { 'no override' } else { "-$override" }
         Check "${file}, ${label}: the commits record carries the source the run set" ($null -eq $thrown -and $wrong.Count -eq 0) "$thrown $($wrong -join '; ')"
-        if ($null -ne $override -and $null -ne $commitsRecord) {
+        if ($null -ne $changed -and $null -ne $commitsRecord) {
             $graded = Get-G3FormalSlicePass -RunKind $(if ($file -like '*journey*') { 'JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS' } else {
                     'DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT' }) -SliceStatus 'PASS' -Commits $commitsRecord
             Check "${file}, ${label}: a PASS slice is withheld as SELF_CHECK_OVERRIDE" `
                 ($graded.formalSlicePass -eq $false -and $graded.formalSliceWithheldReason -eq 'SELF_CHECK_OVERRIDE') "$($graded | ConvertTo-Json -Compress)"
         }
+    }
+}
+
+# The restart runner reads its commits off run-staged-g3.ps1 on disk and has no override parameter, so until
+# control-server#466 it wrote the literal SHARED_BINDING four times. Its own $commitSources statement and its record,
+# run with HEAD committing the same binding, then another one for each commit in turn.
+$restartSources = @($restartAst.EndBlock.Statements | Where-Object {
+        $_ -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+        $_.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and
+        $_.Left.VariablePath.UserPath -eq 'commitSources'
+    })
+Check 'run-staged-g3-restart.ps1 assigns $commitSources once, at top level' ($restartSources.Count -eq 1) "$($restartSources.Count) found"
+$restartRecord = @($restartAst.EndBlock.Statements | Where-Object {
+        $_ -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+        $_.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and
+        $_.Left.VariablePath.UserPath -eq 'commitsRecord'
+    })
+if ($restartSources.Count -eq 1 -and $restartRecord.Count -eq 1) {
+    $restartBlock = [scriptblock]::Create($restartSources[0].Extent.Text + "`n" + $restartRecord[0].Extent.Text)
+    foreach ($changed in @($null) + @($sourceNames.Keys)) {
+        $commitBinding = [ordered]@{} + $binding
+        $atHead = [ordered]@{} + $binding
+        if ($null -ne $changed) { $atHead[$changed] = '1' * 40 }
+        $runnerProvenance = [ordered]@{ bindingAtHead = $atHead; runnerSource = 'COMMITTED_RUNNER' }
+        $ControlServerCommit = $binding['ControlServerCommit']; $OnboardCommit = $binding['OnboardCommit']
+        $SimulatorCommit = $binding['SimulatorCommit']; $ProtocolCommit = $binding['ProtocolCommit']
+        $runnerCommit = 'a' * 40; $runnerWorktreeClean = $true
+        $commitSources = $null; $commitsRecord = $null; $thrown = $null
+        try { . $restartBlock } catch { $thrown = $_.Exception.Message }
+        $wrong = @($sourceNames.Keys | ForEach-Object {
+                $expected = if ($_ -eq $changed) { 'SELF_CHECK_OVERRIDE' } else { 'SHARED_BINDING' }
+                if ($null -eq $commitsRecord -or "$($commitsRecord[$sourceNames[$_]])" -ne $expected) { "$($sourceNames[$_])=$(${commitsRecord}?[$sourceNames[$_]]) (expected $expected)" }
+            })
+        if ($null -ne $commitsRecord -and "$($commitsRecord['runnerSource'])" -cne 'COMMITTED_RUNNER') { $wrong += "runnerSource=$($commitsRecord['runnerSource'])" }
+        $label = if ($null -eq $changed) { 'HEAD committed the disk binding' } else { "HEAD binding another $changed than the disk default" }
+        Check "run-staged-g3-restart.ps1, ${label}: the commits record carries the source" ($null -eq $thrown -and $wrong.Count -eq 0) "$thrown $($wrong -join '; ')"
     }
 }
 
@@ -406,6 +538,185 @@ foreach ($case in $guardCases) {
     } else {
         Check "FIELD_RUN guard, $($case.Name): accepted" ($null -eq $thrown) "$thrown"
     }
+}
+
+# --- 4. what the runner actually ran (control-server#466) --------------------------------------------------
+# Get-G3RunnerProvenance against a real throwaway repository carrying copies of the runner scripts, committed.
+# Each mutation of that repository the ticket names -- a locally edited default, a dirty worktree, a run through
+# another copy of the shared runner -- and the two git hides from status (assume-unchanged, skip-worktree) must
+# withhold the pass; the committed, clean, default-input repository must not. Then the same function from outside
+# any repository: unknown, withheld.
+$provenanceWork = Join-Path ([IO.Path]::GetTempPath()) ("g3-provenance-" + [guid]::NewGuid().ToString('n').Substring(0, 8))
+$runnerRepository = Join-Path $provenanceWork 'repo'
+$runnerScripts = Join-Path $runnerRepository 'scripts'
+$gitAs = @('-c', 'user.name=selfcheck', '-c', 'user.email=selfcheck@invalid', '-c', 'commit.gpgsign=false')
+function Get-Graded($Provenance) {
+    return Get-G3FormalSlicePass -RunKind 'STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT' -SliceStatus 'PASS' -Commits (
+        [ordered]@{ controlServerCommitSource = 'SHARED_BINDING'; runnerSource = $Provenance.runnerSource })
+}
+try {
+    New-Item -ItemType Directory -Path $runnerScripts, (Join-Path $runnerRepository 'evidence\g3') | Out-Null
+    foreach ($name in 'run-staged-g3.ps1', 'run-staged-g3-restart.ps1', 'g3-slice-evidence.ps1') {
+        Copy-Item -LiteralPath (Join-Path $ScriptRoot $name) -Destination (Join-Path $runnerScripts $name)
+    }
+    $trackedEvidence = Join-Path $runnerRepository 'evidence\g3\SUMMARY.md'
+    Set-Content -LiteralPath $trackedEvidence -Value 'committed evidence'
+    & git -C $runnerRepository init --quiet 2>&1 | Out-Null
+    & git -C $runnerRepository add --all 2>&1 | Out-Null
+    & git -C $runnerRepository @gitAs commit --quiet -m runner 2>&1 | Out-Null
+    $stagedCopy = Join-Path $runnerScripts 'run-staged-g3.ps1'
+    $committedText = Get-Content -Raw -LiteralPath $stagedCopy
+    $defaultInputs = { [ordered]@{
+            SharedRunnerSource = @{ Given = $stagedCopy; Default = (Join-Path $runnerScripts 'run-staged-g3.ps1') }
+            ControlServerRepository = @{ Given = $runnerRepository; Default = (Split-Path -Parent $runnerScripts) }
+        } }
+
+    $clean = Get-G3RunnerProvenance -ScriptRoot $runnerScripts -Inputs (& $defaultInputs)
+    Check 'provenance, the committed runner: COMMITTED_RUNNER, clean, the binding read back out of HEAD' `
+        ($clean.runnerSource -ceq 'COMMITTED_RUNNER' -and $clean.runnerWorktreeClean -eq $true -and
+         $clean.runnerCommit -eq (& git -C $runnerRepository rev-parse HEAD).Trim() -and
+         ($clean.bindingAtHead | ConvertTo-Json -Compress) -eq ($binding | ConvertTo-Json -Compress)) "$($clean | ConvertTo-Json -Compress)"
+    Check 'provenance, the committed runner: a PASS slice is a formal pass' ((Get-Graded $clean).formalSlicePass -eq $true) "$((Get-Graded $clean) | ConvertTo-Json -Compress)"
+
+    # The ticket's first finding: the default edited on disk, run with no parameter.
+    $edited = $committedText.Replace($binding['ControlServerCommit'], '1' * 40)
+    Set-Content -LiteralPath $stagedCopy -Value $edited -NoNewline
+    $dirty = Get-G3RunnerProvenance -ScriptRoot $runnerScripts -Inputs (& $defaultInputs)
+    $diskBinding = Get-SharedCommitBinding -Path $stagedCopy
+    $sources = Get-G3CommitSources -Binding ($dirty.bindingAtHead ?? $diskBinding) -Actual $diskBinding
+    Check 'provenance, a locally edited default: RUNNER_WORKTREE_DIRTY, and the binding is still HEAD''s' `
+        ($dirty.runnerSource -ceq 'RUNNER_WORKTREE_DIRTY' -and $dirty.runnerWorktreeClean -eq $false -and
+         $dirty.bindingAtHead['ControlServerCommit'] -eq $binding['ControlServerCommit']) "$($dirty | ConvertTo-Json -Compress)"
+    Check 'provenance, a locally edited default: the edited commit is SELF_CHECK_OVERRIDE against HEAD' `
+        ($sources['controlServerCommitSource'] -eq 'SELF_CHECK_OVERRIDE' -and $sources['onboardCommitSource'] -eq 'SHARED_BINDING') "$($sources | ConvertTo-Json -Compress)"
+    Check 'provenance, a locally edited default: withheld' ((Get-Graded $dirty).formalSlicePass -eq $false) "$((Get-Graded $dirty) | ConvertTo-Json -Compress)"
+
+    # The same edit hidden from git status, twice over. The premise is checked: status really says nothing.
+    foreach ($flag in '--assume-unchanged', '--skip-worktree') {
+        & git -C $runnerRepository update-index $flag scripts/run-staged-g3.ps1 2>&1 | Out-Null
+        $statusLines = @(& git -C $runnerRepository status --porcelain)
+        $hidden = Get-G3RunnerProvenance -ScriptRoot $runnerScripts -Inputs (& $defaultInputs)
+        Check "provenance, a locally edited default behind $flag (premise: git status is empty)" ($statusLines.Count -eq 0) ($statusLines -join '; ')
+        Check "provenance, a locally edited default behind ${flag}: RUNNER_WORKTREE_DIRTY, withheld" `
+            ($hidden.runnerSource -ceq 'RUNNER_WORKTREE_DIRTY' -and (Get-Graded $hidden).formalSlicePass -eq $false) "$($hidden | ConvertTo-Json -Compress)"
+        & git -C $runnerRepository update-index ($flag -replace '^--', '--no-') scripts/run-staged-g3.ps1 2>&1 | Out-Null
+    }
+    Set-Content -LiteralPath $stagedCopy -Value $committedText -NoNewline
+
+    # Dirty with a file nobody committed, the run's own runner untouched.
+    $stray = Join-Path $runnerScripts 'stray.txt'
+    Set-Content -LiteralPath $stray -Value 'x'
+    $untracked = Get-G3RunnerProvenance -ScriptRoot $runnerScripts -Inputs (& $defaultInputs)
+    Check 'provenance, an untracked file outside evidence/: RUNNER_WORKTREE_DIRTY naming it, withheld' `
+        ($untracked.runnerSource -ceq 'RUNNER_WORKTREE_DIRTY' -and (Get-Graded $untracked).formalSlicePass -eq $false -and
+         @($untracked.runnerDirtyPaths) -ccontains '?? scripts/stray.txt') "$($untracked | ConvertTo-Json -Compress)"
+    # Review S2: printed loudly at the start, with the reason and the path.
+    $notice = (Write-G3RunnerProvenance -Provenance $untracked 6>&1 | Out-String)
+    Check 'provenance printed when not COMMITTED_RUNNER: the warning, the reason and the dirty path' `
+        ($notice -like '*NOT COMMITTED_RUNNER*' -and $notice -like '*RUNNER_WORKTREE_DIRTY*' -and $notice -like '*scripts/stray.txt*') $notice
+    Remove-Item -LiteralPath $stray
+    $quiet = (Write-G3RunnerProvenance -Provenance $clean 6>&1 | Out-String)
+    Check 'provenance printed when COMMITTED_RUNNER: one line, no warning' `
+        ($quiet -like '*COMMITTED_RUNNER*' -and $quiet -notlike '*NOT COMMITTED_RUNNER*' -and @($quiet.Trim() -split "`n").Count -eq 1) $quiet
+
+    # Review M1 of PR #470: an earlier run's evidence, untracked under evidence/, does not make the next run dirty.
+    # Nested, as a runner writes it. A change to evidence/ that git tracks still does.
+    $earlierRun = Join-Path $runnerRepository 'evidence\g3\earlier-run\process-restart'
+    New-Item -ItemType Directory -Path $earlierRun | Out-Null
+    Set-Content -LiteralPath (Join-Path $earlierRun 'run-result.json') -Value '{}'
+    $afterEarlierRun = Get-G3RunnerProvenance -ScriptRoot $runnerScripts -Inputs (& $defaultInputs)
+    Check 'provenance, an earlier run''s untracked evidence under evidence/: COMMITTED_RUNNER, a formal pass' `
+        ($afterEarlierRun.runnerSource -ceq 'COMMITTED_RUNNER' -and $afterEarlierRun.runnerWorktreeClean -eq $true -and
+         (Get-Graded $afterEarlierRun).formalSlicePass -eq $true) "$($afterEarlierRun | ConvertTo-Json -Compress)"
+    Set-Content -LiteralPath $trackedEvidence -Value 'edited evidence'
+    $editedEvidence = Get-G3RunnerProvenance -ScriptRoot $runnerScripts -Inputs (& $defaultInputs)
+    Check 'provenance, a tracked file under evidence/ changed: RUNNER_WORKTREE_DIRTY naming it, withheld' `
+        ($editedEvidence.runnerSource -ceq 'RUNNER_WORKTREE_DIRTY' -and (Get-Graded $editedEvidence).formalSlicePass -eq $false -and
+         @($editedEvidence.runnerDirtyPaths | Where-Object { $_ -like '*evidence/g3/SUMMARY.md' }).Count -eq 1) "$($editedEvidence | ConvertTo-Json -Compress)"
+    Set-Content -LiteralPath $trackedEvidence -Value 'committed evidence'
+    # A file named like evidence/ but beside it is not under it.
+    $lookalike = Join-Path $runnerRepository 'evidence-copy.ps1'
+    Set-Content -LiteralPath $lookalike -Value 'x'
+    $besideEvidence = Get-G3RunnerProvenance -ScriptRoot $runnerScripts -Inputs (& $defaultInputs)
+    Check 'provenance, an untracked file beside evidence/ (evidence-copy.ps1): RUNNER_WORKTREE_DIRTY' `
+        ($besideEvidence.runnerSource -ceq 'RUNNER_WORKTREE_DIRTY') "$($besideEvidence | ConvertTo-Json -Compress)"
+    Remove-Item -LiteralPath $lookalike
+    Remove-Item -LiteralPath (Join-Path $runnerRepository 'evidence\g3\earlier-run') -Recurse -Force
+
+    # The ticket's second finding: -SharedRunnerSource pointing at a copy. One with the defaults left alone and
+    # another harness -- the binding comparison cannot see that one -- and one with another default.
+    $copyRoot = Join-Path $provenanceWork 'copy'
+    New-Item -ItemType Directory -Path $copyRoot | Out-Null
+    foreach ($copyCase in @(
+            @{ Name = 'a copy keeping the defaults'; Text = $committedText.Replace('class StagedG3TlsHarness', 'class StagedG3TlsHarness /* edited */') },
+            @{ Name = 'a copy with another default'; Text = $committedText.Replace($binding['OnboardCommit'], '2' * 40) })) {
+        $copy = Join-Path $copyRoot ([guid]::NewGuid().ToString('n') + '.ps1')
+        Set-Content -LiteralPath $copy -Value $copyCase.Text -NoNewline
+        $inputs = & $defaultInputs
+        $inputs['SharedRunnerSource'] = @{ Given = $copy; Default = (Join-Path $runnerScripts 'run-staged-g3.ps1') }
+        $throughCopy = Get-G3RunnerProvenance -ScriptRoot $runnerScripts -Inputs $inputs
+        $copySources = Get-G3CommitSources -Binding ($throughCopy.bindingAtHead ?? (Get-SharedCommitBinding -Path $copy)) -Actual (Get-SharedCommitBinding -Path $copy)
+        Check "provenance, -SharedRunnerSource at $($copyCase.Name): RUNNER_INPUT_OVERRIDE: SharedRunnerSource, withheld" `
+            ($throughCopy.runnerSource -ceq 'RUNNER_INPUT_OVERRIDE: SharedRunnerSource' -and $throughCopy.runnerWorktreeClean -eq $true -and
+             (Get-Graded $throughCopy).formalSlicePass -eq $false) "$($throughCopy | ConvertTo-Json -Compress)"
+        if ($copyCase.Name -like '*another default*') {
+            Check "provenance, -SharedRunnerSource at $($copyCase.Name): that commit is SELF_CHECK_OVERRIDE against HEAD" `
+                ($copySources['onboardCommitSource'] -eq 'SELF_CHECK_OVERRIDE') "$($copySources | ConvertTo-Json -Compress)"
+        }
+    }
+    # The default, spelled differently, is still the default; an empty value is not.
+    Push-Location $runnerRepository
+    try {
+        $inputs = & $defaultInputs
+        $inputs['SharedRunnerSource'] = @{ Given = '.\scripts\run-staged-g3.ps1'; Default = (Join-Path $runnerScripts 'run-staged-g3.ps1') }
+        $inputs['ControlServerRepository'] = @{ Given = "$runnerRepository\"; Default = (Split-Path -Parent $runnerScripts) }
+        $spelled = Get-G3RunnerProvenance -ScriptRoot $runnerScripts -Inputs $inputs
+        Check 'provenance, the default paths spelled relative and with a trailing separator: COMMITTED_RUNNER' `
+            ($spelled.runnerSource -ceq 'COMMITTED_RUNNER') "$($spelled | ConvertTo-Json -Compress)"
+        $inputs['ControlServerRepository'] = @{ Given = ''; Default = (Split-Path -Parent $runnerScripts) }
+        $empty = Get-G3RunnerProvenance -ScriptRoot $runnerScripts -Inputs $inputs
+        Check 'provenance, an empty -ControlServerRepository: RUNNER_INPUT_OVERRIDE' `
+            ($empty.runnerSource -ceq 'RUNNER_INPUT_OVERRIDE: ControlServerRepository') "$($empty | ConvertTo-Json -Compress)"
+    } finally {
+        Pop-Location
+    }
+
+    # Dirty and through a copy at once: both reasons, dirty first.
+    Set-Content -LiteralPath $stray -Value 'x'
+    $inputs = & $defaultInputs
+    $inputs['SharedRunnerSource'] = @{ Given = $copy; Default = (Join-Path $runnerScripts 'run-staged-g3.ps1') }
+    $both = Get-G3RunnerProvenance -ScriptRoot $runnerScripts -Inputs $inputs
+    Check 'provenance, dirty and through a copy: both reasons' `
+        ($both.runnerSource -ceq 'RUNNER_WORKTREE_DIRTY; RUNNER_INPUT_OVERRIDE: SharedRunnerSource') "$($both | ConvertTo-Json -Compress)"
+    Remove-Item -LiteralPath $stray
+
+    # HEAD without the binding: a commit that dropped run-staged-g3.ps1 from the index, the file still on disk.
+    & git -C $runnerRepository rm --cached --quiet scripts/run-staged-g3.ps1 2>&1 | Out-Null
+    & git -C $runnerRepository @gitAs commit --quiet -m drop 2>&1 | Out-Null
+    $noBinding = Get-G3RunnerProvenance -ScriptRoot $runnerScripts -Inputs (& $defaultInputs)
+    Check 'provenance, HEAD without run-staged-g3.ps1: RUNNER_PROVENANCE_UNKNOWN, no binding, withheld' `
+        ($noBinding.runnerSource -clike 'RUNNER_PROVENANCE_UNKNOWN: *' -and $null -eq $noBinding.bindingAtHead -and
+         (Get-Graded $noBinding).formalSlicePass -eq $false) "$($noBinding | ConvertTo-Json -Compress)"
+
+    # A repository with no commit yet (unborn HEAD): unknown, and the reason on one line although git's runs to two.
+    $unborn = Join-Path $provenanceWork 'unborn'
+    New-Item -ItemType Directory -Path (Join-Path $unborn 'scripts') | Out-Null
+    & git -C $unborn init --quiet 2>&1 | Out-Null
+    $noHead = Get-G3RunnerProvenance -ScriptRoot (Join-Path $unborn 'scripts')
+    Check 'provenance, an unborn HEAD: RUNNER_PROVENANCE_UNKNOWN on one line, withheld' `
+        ($noHead.runnerSource -clike 'RUNNER_PROVENANCE_UNKNOWN: *' -and $noHead.runnerSource -notmatch '[\r\n]' -and
+         (Get-Graded $noHead).formalSlicePass -eq $false) "$($noHead | ConvertTo-Json -Compress)"
+
+    # Outside any repository.
+    $loose = Join-Path $provenanceWork 'loose'
+    New-Item -ItemType Directory -Path $loose | Out-Null
+    $env:GIT_CEILING_DIRECTORIES = $provenanceWork
+    try { $unknown = Get-G3RunnerProvenance -ScriptRoot $loose } finally { Remove-Item Env:GIT_CEILING_DIRECTORIES }
+    Check 'provenance, outside any repository: RUNNER_PROVENANCE_UNKNOWN, no commit, withheld' `
+        ($unknown.runnerSource -clike 'RUNNER_PROVENANCE_UNKNOWN: *' -and $null -eq $unknown.runnerCommit -and
+         $null -eq $unknown.runnerWorktreeClean -and (Get-Graded $unknown).formalSlicePass -eq $false) "$($unknown | ConvertTo-Json -Compress)"
+} finally {
+    Remove-Item -LiteralPath $provenanceWork -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 if ($failures.Count -gt 0) {
