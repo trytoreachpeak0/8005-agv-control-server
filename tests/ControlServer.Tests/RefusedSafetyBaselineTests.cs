@@ -278,6 +278,11 @@ public sealed class RefusedSafetyBaselineTests
             SafetyLine(fixture, "SafetyStateChanged", revision: 7, departureSafe: true), state, token));
 
         Assert.True(failFirst.Fired, "清空那次保存没有被注入失败，这条用例没有造出它要的形状。");
+        // Which save the failure landed on, not only that one did: an extra session update ahead of the clearing would
+        // take the injection and leave this test green for the wrong reason. The clearing save is the one that writes
+        // DepartureSafe (true to null here). SafetyReasonCodesJson would not tell: this fixture's row has none, so clearing
+        // it changes nothing and EF leaves it out of the UPDATE.
+        Assert.Contains("\"DepartureSafe\"", failFirst.FailedCommandText, StringComparison.Ordinal);
         SessionRecoveryRow after = await SessionAsync(fixture);
         Assert.Equal(before.Readiness, after.Readiness);
         Assert.Equal(before.ReasonCode, after.ReasonCode);
@@ -295,6 +300,9 @@ public sealed class RefusedSafetyBaselineTests
         public bool Armed { get; set; }
 
         public bool Fired { get; private set; }
+
+        /// <summary>The statement the failure was injected into, so a test can say which save it hit.</summary>
+        public string? FailedCommandText { get; private set; }
 
         public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
             DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result,
@@ -321,6 +329,7 @@ public sealed class RefusedSafetyBaselineTests
             if (++_updates == failOnUpdateNumber)
             {
                 Fired = true;
+                FailedCommandText = command.CommandText;
                 throw new InvalidOperationException("Injected failure on a SessionRecoveries update (control-server#478 test).");
             }
         }

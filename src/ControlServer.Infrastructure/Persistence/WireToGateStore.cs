@@ -248,8 +248,10 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
 
     /// <summary>
     /// Stops trusting this session's departure safety until the vehicle sends a fresh SafetyStateSnapshot
-    /// (control-server#478): the departure verdict and its reasons are cleared, so <see cref="DecideReadinessAsync"/> reads
-    /// DEPARTURE_SAFETY_NOT_READY and the vehicle is given no work.
+    /// (control-server#478): the departure verdict and its reasons are cleared, so readiness is RecoveryRequired from here
+    /// and the vehicle is given no work. The reason code is the one <see cref="DecideReadinessAsync"/> names:
+    /// DEPARTURE_SAFETY_NOT_READY unless a reason it ranks earlier also holds (a missing capability snapshot or recovery
+    /// report, facts still to reconcile).
     /// </summary>
     /// <remarks>
     /// For a safety message the server refused. Before #478 such a refusal ended the connection, and the reconnect brought
