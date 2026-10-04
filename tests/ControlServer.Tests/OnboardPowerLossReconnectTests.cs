@@ -148,6 +148,11 @@ public sealed class OnboardPowerLossReconnectTests
     /// 以上（写真的卡住了；门槛取比例而不是等于超时本身，审查必修 3 实测等于时余量只有 3 ms）。
     /// </para>
     /// <para>
+    /// 「挂了多久」从<b>最后一次写成功的推送开始</b>量到旧代次离开路由表，不再取最长的一次推送（control-server#440 审查 S1）。卡住的
+    /// 写排在最后一次成功之后，所以在对的产品上这段时间不短于写超时，负载只会让它更长；而卡住的若是 HeartbeatAck、推送晚一点才排到
+    /// 它后面，最长的一次推送就只剩写超时减去那段迟到——1 秒那一格只有约 150 ms 余量，满载时会假红。
+    /// </para>
+    /// <para>
     /// <b>判据按事件，不按墙钟</b>（审查建议）：旧代次离开了路由表；这条连接上有一次写以写超时失败，消息里是<b>配置的</b>秒数与这台车的
     /// 车号；服务端记下连接因错误结束（1003），没有记静默关闭（1005）——放掉它的是写超时，不是静默窗口。墙钟只剩 <see cref="HangGuard"/>。
     /// </para>
@@ -179,7 +184,7 @@ public sealed class OnboardPowerLossReconnectTests
             "变聋之后 5 秒内车没往服务端送任何东西：心跳停了，这不是本条要造的形状。");
         Stopwatch sinceDeaf = Stopwatch.StartNew();
         using CancellationTokenSource pushing = new();
-        Task pusher = rig.PushToSessionUntilCancelledAsync(oldGeneration, payloadBytes: 64 * 1024, pushing.Token);
+        Task pusher = rig.PushToSessionUntilCancelledAsync(oldGeneration, payloadBytes: 64 * 1024, pushing.Token, sinceDeaf);
         TimeSpan? leftAfter;
         try
         {
@@ -210,18 +215,24 @@ public sealed class OnboardPowerLossReconnectTests
             $"{Environment.NewLine}服务端日志：{string.Join("、", serverLog.Select(entry => entry.EventId.Id))}；" +
             $"聋了之后车往服务端送了 {rig.Relay.BytesToServerWhileDeaf} 字节；" +
             $"最长的一次推送 {rig.LongestPush.TotalMilliseconds:F0} ms；" +
+            $"最后一次写成功的推送开始于 t={rig.LastSuccessfulPushStartedAt.TotalSeconds:F1}s；" +
             $"旧代次离开路由表：{(leftAfter is { } at ? $"t={at.TotalSeconds:F1}s" : "没有")}；" +
             $"推送的失败：{rig.PushFailures}；" +
             $"1003 的异常：{string.Join(" | ", writeFailures.Skip(rig.PushFailureReasons.Count))}";
         TestContext.Current.TestOutputHelper?.WriteLine(trace.TrimStart());
         Assert.True(rig.Relay.BytesToServerWhileDeaf > 0, "聋了之后车没再往服务端送任何东西：这是断电，不是本条要造的形状。" + trace);
         Assert.True(
-            rig.LongestPush >= timeout * 0.8,
-            $"最长的一次推送不到写超时 {timeout.TotalSeconds:0.###} 秒的八成：写没有卡住，这一条没造出它要的形状。" + trace);
-        Assert.True(
             leftAfter is not null,
             $"车还在发心跳、只是不读，{HangGuard.TotalSeconds} 秒内旧代次一直没离开路由表：卡住的写没有上限，" +
             "这条连接永远不会被放掉（control-server#334）。" + trace);
+        // The write really was stuck: from the last write that went through to the release, at least eight tenths of the
+        // timeout passed. Measured from the last success rather than as the longest push, which is short whenever the
+        // HeartbeatAck is the write that got stuck and the next push queued behind it late (control-server#440, review S1).
+        TimeSpan stuckFor = leftAfter!.Value - rig.LastSuccessfulPushStartedAt;
+        Assert.True(
+            stuckFor >= timeout * 0.8,
+            $"最后一次写成功的推送在 t={rig.LastSuccessfulPushStartedAt.TotalSeconds:F1}s 开始，到旧代次离开路由表只隔了 " +
+            $"{stuckFor.TotalMilliseconds:F0} ms，不到写超时 {timeout.TotalSeconds:0.###} 秒的八成：写没有卡住，这一条没造出它要的形状。" + trace);
         // One and the same failure carries all three: the configured seconds, the exact type and this vehicle.
         string? timedOut = Array.Find(
             writeFailures, failure => failure.Contains($"did not finish within {timeout.TotalSeconds:0.###} s", StringComparison.Ordinal));
@@ -597,10 +608,22 @@ public sealed class OnboardPowerLossReconnectTests
             }
         }
 
+        /// <summary>
+        /// When the last push that went through began, on the stopwatch handed to <see cref="PushToSessionUntilCancelledAsync"/>;
+        /// the moment pushing began until one does.
+        /// </summary>
+        public TimeSpan LastSuccessfulPushStartedAt => TimeSpan.FromTicks(Interlocked.Read(ref _lastSuccessfulPushStartedAtTicks));
+
+        private long _lastSuccessfulPushStartedAtTicks;
+
         /// <summary>Pushes to the given session through the peer until cancelled, as the runtime's rounds do.</summary>
-        public Task PushToSessionUntilCancelledAsync(long generation, int payloadBytes, CancellationToken cancellationToken) =>
+        /// <param name="since">The test's clock, on which <see cref="LastSuccessfulPushStartedAt"/> is read.</param>
+        public Task PushToSessionUntilCancelledAsync(
+            long generation, int payloadBytes, CancellationToken cancellationToken, Stopwatch? since = null) =>
             Task.Run(async () =>
             {
+                since ??= Stopwatch.StartNew();
+                Interlocked.Exchange(ref _lastSuccessfulPushStartedAtTicks, since.Elapsed.Ticks);
                 string padding = new('x', payloadBytes);
                 while (!cancellationToken.IsCancellationRequested)
                 {
@@ -613,9 +636,11 @@ public sealed class OnboardPowerLossReconnectTests
                         padding
                     }) + "\n");
                     Stopwatch took = Stopwatch.StartNew();
+                    TimeSpan startedAt = since.Elapsed;
                     try
                     {
                         await Peer.SendAsync(line, cancellationToken);
+                        Interlocked.Exchange(ref _lastSuccessfulPushStartedAtTicks, startedAt.Ticks);
                     }
                     catch (Exception error) when (error is IOException or OperationCanceledException
                                                       or ObjectDisposedException or SocketException)
