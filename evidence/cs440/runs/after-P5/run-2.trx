@@ -1,11 +1,11 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<TestRun id="3b5163b6-a045-40c6-a53c-4a6060ed8f1c" name="szy@LAB-WIN-01 2026-10-04 16:48:32" runUser="LAB-WIN-01\szy" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
-  <Times creation="2026-10-04T16:48:32.3011762+08:00" queuing="2026-10-04T16:48:32.3011774+08:00" start="2026-10-04T16:47:53.8482121+08:00" finish="2026-10-04T16:49:16.0282276+08:00" />
-  <TestSettings name="default" id="7a15462d-5f05-46b7-b529-11aa813ac246">
-    <Deployment runDeploymentRoot="szy_LAB-WIN-01_2026-10-04_16_48_32" />
+<TestRun id="f4d5dd68-d88f-4871-a254-0d82a2d437b6" name="szy@LAB-WIN-01 2026-10-04 18:59:36" runUser="LAB-WIN-01\szy" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-04T18:59:36.3866941+08:00" queuing="2026-10-04T18:59:36.3866946+08:00" start="2026-10-04T18:59:20.6471899+08:00" finish="2026-10-04T18:59:51.9803492+08:00" />
+  <TestSettings name="default" id="5ab5cc37-e581-43de-86db-bbb2d1fa07fb">
+    <Deployment runDeploymentRoot="szy_LAB-WIN-01_2026-10-04_18_59_36" />
   </TestSettings>
   <Results>
-    <UnitTestResult executionId="4c5bdf72-d122-491f-bf2e-9c03660b4bb3" testId="7599542f-a816-9db3-952c-8f36a05327ed" testName="ControlServer.Tests.ExpectedActionOverdueTests.TheEndpointAnswersAGetOverHttpAndTheCardRendersWhatItReturns" computerName="LAB-WIN-01" duration="00:00:27.9472659" startTime="2026-10-04T16:48:03.6852036+08:00" endTime="2026-10-04T16:48:31.6573770+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="4c5bdf72-d122-491f-bf2e-9c03660b4bb3">
+    <UnitTestResult executionId="a7ef3ca6-c7aa-4be2-bf64-8ab6c94a3198" testId="7599542f-a816-9db3-952c-8f36a05327ed" testName="ControlServer.Tests.ExpectedActionOverdueTests.TheEndpointAnswersAGetOverHttpAndTheCardRendersWhatItReturns" computerName="LAB-WIN-01" duration="00:00:11.2490532" startTime="2026-10-04T18:59:24.3354692+08:00" endTime="2026-10-04T18:59:35.5955688+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a7ef3ca6-c7aa-4be2-bf64-8ab6c94a3198">
       <Output>
         <StdOut>读了 2 次端点，前 1 次答的是这台车失联；最后一次答的是它在线。</StdOut>
       </Output>
@@ -13,12 +13,12 @@
   </Results>
   <TestDefinitions>
     <UnitTest name="ControlServer.Tests.ExpectedActionOverdueTests.TheEndpointAnswersAGetOverHttpAndTheCardRendersWhatItReturns" storage="c:\users\szy\desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\controlserver.tests\bin\release\net8.0\win-x64\controlserver.tests.dll" id="7599542f-a816-9db3-952c-8f36a05327ed">
-      <Execution id="4c5bdf72-d122-491f-bf2e-9c03660b4bb3" />
+      <Execution id="a7ef3ca6-c7aa-4be2-bf64-8ab6c94a3198" />
       <TestMethod codeBase="C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="ControlServer.Tests.ExpectedActionOverdueTests" name="TheEndpointAnswersAGetOverHttpAndTheCardRendersWhatItReturns" />
     </UnitTest>
   </TestDefinitions>
   <TestEntries>
-    <TestEntry testId="7599542f-a816-9db3-952c-8f36a05327ed" executionId="4c5bdf72-d122-491f-bf2e-9c03660b4bb3" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="7599542f-a816-9db3-952c-8f36a05327ed" executionId="a7ef3ca6-c7aa-4be2-bf64-8ab6c94a3198" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
   </TestEntries>
   <TestLists>
     <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
@@ -28,10 +28,10 @@
     <Counters total="1" executed="1" passed="1" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
     <Output>
       <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 8.0.31)&#xD;
-[xUnit.net 00:00:03.27]   Discovering: ControlServer.Tests&#xD;
-[xUnit.net 00:00:08.09]   Discovered:  ControlServer.Tests&#xD;
-[xUnit.net 00:00:08.69]   Starting:    ControlServer.Tests&#xD;
-[xUnit.net 00:01:20.72]   Finished:    ControlServer.Tests (ID = 'e9a86b65d07f6a984a4a75af2821531c21eb38df17b507165946674f4b81024f')&#xD;
+[xUnit.net 00:00:00.70]   Discovering: ControlServer.Tests&#xD;
+[xUnit.net 00:00:02.88]   Discovered:  ControlServer.Tests&#xD;
+[xUnit.net 00:00:03.16]   Starting:    ControlServer.Tests&#xD;
+[xUnit.net 00:00:30.76]   Finished:    ControlServer.Tests (ID = 'e9a86b65d07f6a984a4a75af2821531c21eb38df17b507165946674f4b81024f')&#xD;
 </StdOut>
     </Output>
   </ResultSummary>

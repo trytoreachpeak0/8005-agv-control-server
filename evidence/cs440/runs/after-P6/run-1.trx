@@ -1,11 +1,11 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<TestRun id="026fa68a-ae21-496e-9eb3-7c5f0bd39a86" name="szy@LAB-WIN-01 2026-10-04 16:53:31" runUser="LAB-WIN-01\szy" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
-  <Times creation="2026-10-04T16:53:31.3194718+08:00" queuing="2026-10-04T16:53:31.3194725+08:00" start="2026-10-04T16:53:19.6882363+08:00" finish="2026-10-04T16:53:40.4182907+08:00" />
-  <TestSettings name="default" id="552505df-5eca-436d-8836-df777c2e9ce6">
-    <Deployment runDeploymentRoot="szy_LAB-WIN-01_2026-10-04_16_53_31" />
+<TestRun id="c2e2b906-4f95-4b34-9e2f-9296a966ef14" name="szy@LAB-WIN-01 2026-10-04 19:00:20" runUser="LAB-WIN-01\szy" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-04T19:00:20.8148790+08:00" queuing="2026-10-04T19:00:20.8148797+08:00" start="2026-10-04T19:00:13.7831806+08:00" finish="2026-10-04T19:00:27.8190804+08:00" />
+  <TestSettings name="default" id="2dadeeff-f404-4e7b-a617-a69579f13c62">
+    <Deployment runDeploymentRoot="szy_LAB-WIN-01_2026-10-04_19_00_20" />
   </TestSettings>
   <Results>
-    <UnitTestResult executionId="31380996-0ff5-43f9-a9b8-7955b7e459ab" testId="eb76a60c-f04e-ab8b-5ab8-f595666cd367" testName="ControlServer.Tests.OnboardSilentLivenessLossTests.NothingSentAfterTheCloseIsProcessed" computerName="LAB-WIN-01" duration="00:00:05.0763271" startTime="2026-10-04T16:53:25.2935797+08:00" endTime="2026-10-04T16:53:30.4013729+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="31380996-0ff5-43f9-a9b8-7955b7e459ab">
+    <UnitTestResult executionId="8b85dd76-af98-44ef-9052-220d0995350c" testId="eb76a60c-f04e-ab8b-5ab8-f595666cd367" testName="ControlServer.Tests.OnboardSilentLivenessLossTests.NothingSentAfterTheCloseIsProcessed" computerName="LAB-WIN-01" duration="00:00:02.8125600" startTime="2026-10-04T19:00:17.7728216+08:00" endTime="2026-10-04T19:00:20.5959430+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="8b85dd76-af98-44ef-9052-220d0995350c">
       <Output>
         <StdOut>对照那一半用了 2 条连接。</StdOut>
       </Output>
@@ -13,12 +13,12 @@
   </Results>
   <TestDefinitions>
     <UnitTest name="ControlServer.Tests.OnboardSilentLivenessLossTests.NothingSentAfterTheCloseIsProcessed" storage="c:\users\szy\desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\controlserver.tests\bin\release\net8.0\win-x64\controlserver.tests.dll" id="eb76a60c-f04e-ab8b-5ab8-f595666cd367">
-      <Execution id="31380996-0ff5-43f9-a9b8-7955b7e459ab" />
+      <Execution id="8b85dd76-af98-44ef-9052-220d0995350c" />
       <TestMethod codeBase="C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="ControlServer.Tests.OnboardSilentLivenessLossTests" name="NothingSentAfterTheCloseIsProcessed" />
     </UnitTest>
   </TestDefinitions>
   <TestEntries>
-    <TestEntry testId="eb76a60c-f04e-ab8b-5ab8-f595666cd367" executionId="31380996-0ff5-43f9-a9b8-7955b7e459ab" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="eb76a60c-f04e-ab8b-5ab8-f595666cd367" executionId="8b85dd76-af98-44ef-9052-220d0995350c" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
   </TestEntries>
   <TestLists>
     <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
@@ -28,10 +28,10 @@
     <Counters total="1" executed="1" passed="1" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
     <Output>
       <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 8.0.31)&#xD;
-[xUnit.net 00:00:01.16]   Discovering: ControlServer.Tests&#xD;
-[xUnit.net 00:00:04.16]   Discovered:  ControlServer.Tests&#xD;
-[xUnit.net 00:00:04.64]   Starting:    ControlServer.Tests&#xD;
-[xUnit.net 00:00:19.84]   Finished:    ControlServer.Tests (ID = 'e9a86b65d07f6a984a4a75af2821531c21eb38df17b507165946674f4b81024f')&#xD;
+[xUnit.net 00:00:00.78]   Discovering: ControlServer.Tests&#xD;
+[xUnit.net 00:00:03.22]   Discovered:  ControlServer.Tests&#xD;
+[xUnit.net 00:00:03.48]   Starting:    ControlServer.Tests&#xD;
+[xUnit.net 00:00:13.49]   Finished:    ControlServer.Tests (ID = 'e9a86b65d07f6a984a4a75af2821531c21eb38df17b507165946674f4b81024f')&#xD;
 </StdOut>
     </Output>
   </ResultSummary>

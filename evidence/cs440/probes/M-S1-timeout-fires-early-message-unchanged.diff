@@ -1,0 +1,14 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardPeer.cs b/src/ControlServer.Host/Transport/OnboardPeer.cs
+index 10cde1e22..dfbbef8d0 100644
+--- a/src/ControlServer.Host/Transport/OnboardPeer.cs
++++ b/src/ControlServer.Host/Transport/OnboardPeer.cs
+@@ -230,7 +230,8 @@ internal sealed class OnboardPeerConnection : IAsyncDisposable
+         Task send = SendCoreAsync(ndjsonLine, cancellationToken);
+         try
+         {
+-            await send.WaitAsync(_writeTimeout, cancellationToken).ConfigureAwait(false);
++            // MUTATION M-S1: a stuck write is let go almost at once, while the message still names the configured seconds.
++            await send.WaitAsync(TimeSpan.FromMilliseconds(50), cancellationToken).ConfigureAwait(false);
+         }
+         catch (TimeoutException error)
+         {

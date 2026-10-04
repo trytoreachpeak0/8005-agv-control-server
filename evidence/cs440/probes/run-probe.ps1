@@ -16,7 +16,7 @@ New-Item -ItemType Directory -Force $out | Out-Null
 if ($Probe) { git apply $Probe; if ($LASTEXITCODE) { throw "probe did not apply" } }
 try {
     "head=$(git rev-parse HEAD) probe=$Probe filter=$Filter" | Set-Content "$out/meta.txt"
-    git diff --stat | Add-Content "$out/meta.txt"
+    git diff --stat -- src tests | Add-Content "$out/meta.txt"
     dotnet build tests/ControlServer.Tests/ControlServer.Tests.csproj -c Release -v q -nologo *> "$out/build.log"
     if ($LASTEXITCODE) { throw "build failed, see $out/build.log" }
     foreach ($i in 1..$Runs) {
