@@ -44,9 +44,12 @@ namespace ControlServer.Domain;
 public static class ServerReasonCodes
 {
     public const string ActionNotAllowedInState = "ACTION_NOT_ALLOWED_IN_STATE";
+    public const string BusinessIdContentConflict = "BUSINESS_ID_CONTENT_CONFLICT";
+    public const string ContentHashMismatch = "CONTENT_HASH_MISMATCH";
     public const string ExpectedBasketCountMismatch = "EXPECTED_BASKET_COUNT_MISMATCH";
     public const string ForcedRecoveryGenerationStale = "FORCED_RECOVERY_GENERATION_STALE";
     public const string OperatorTimeout = "OPERATOR_TIMEOUT";
+    public const string MessageIdContentConflict = "MESSAGE_ID_CONTENT_CONFLICT";
     public const string PackageCapacityUnresolved = "PACKAGE_CAPACITY_UNRESOLVED";
     public const string ProtocolReleaseIdentityMismatch = "PROTOCOL_RELEASE_IDENTITY_MISMATCH";
     public const string ProtocolSchemaInvalid = "PROTOCOL_SCHEMA_INVALID";
@@ -63,6 +66,8 @@ public static class ServerReasonCodes
     public const string RecoveryScopeMismatch = "RECOVERY_SCOPE_MISMATCH";
     public const string RecoverySessionNotOpen = "RECOVERY_SESSION_NOT_OPEN";
     public const string SessionRecoveryRequired = "SESSION_RECOVERY_REQUIRED";
+    public const string SnapshotRevisionContentConflict = "SNAPSHOT_REVISION_CONTENT_CONFLICT";
+    public const string SnapshotRevisionRegression = "SNAPSHOT_REVISION_REGRESSION";
     public const string SublotBoxCountUnavailable = "SUBLOT_BOX_COUNT_UNAVAILABLE";
     public const string SublotNotInDispatchScope = "SUBLOT_NOT_IN_DISPATCH_SCOPE";
     public const string WorklistRevisionStale = "WORKLIST_REVISION_STALE";

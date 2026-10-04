@@ -571,9 +571,11 @@ public sealed class UnableToChargeFieldConfirmationTests : IDisposable
         Assert.Single(await HoldsAsync(fleet));
         Assert.Single(await fleet.Context.Set<UnableToChargeFieldConfirmationRow>().AsNoTracking().ToArrayAsync(Token));
 
-        await Assert.ThrowsAsync<ProtocolContentConflictException>(() => reconnected.ProcessAsync(
-            RequestLine(newSession, id, "00000000-0000-4000-8000-000000000d13", "op-r11", Near.StationName, "CHARGER_FAULT"),
-            newSession, Token));
+        // control-server#478: refused with a ProtocolProblem on a connection that stays, no longer an exception.
+        string conflicting =
+            RequestLine(newSession, id, "00000000-0000-4000-8000-000000000d13", "op-r11", Near.StationName, "CHARGER_FAULT");
+        ProtocolProblemAssert.RefusedLine(
+            await reconnected.ProcessAsync(conflicting, newSession, Token), "BUSINESS_ID_CONTENT_CONFLICT", conflicting);
     }
 
     /// <summary>

@@ -193,10 +193,15 @@ public sealed class ExpectedActionOverdueTests
         await fixture.SafetyChangedAsync(2, affectedSlots: [3]);
         SessionRecoveryRow before = await fixture.SessionAsync();
 
-        await Assert.ThrowsAsync<ProtocolContentConflictException>(
-            () => fixture.SafetySnapshotAsync(2, Slots(slot3Lock: "UNLOCKED")));
-        await Assert.ThrowsAsync<ProtocolContentConflictException>(
-            () => fixture.SafetySnapshotAsync(1, Slots()));
+        // control-server#478: refused with a ProtocolProblem naming each, on a connection that stays.
+        ProtocolProblemAssert.RefusedOfType(
+            await fixture.SafetySnapshotAsync(2, Slots(slot3Lock: "UNLOCKED")),
+            "SNAPSHOT_REVISION_CONTENT_CONFLICT",
+            "SafetyStateSnapshot");
+        ProtocolProblemAssert.RefusedOfType(
+            await fixture.SafetySnapshotAsync(1, Slots()),
+            "SNAPSHOT_REVISION_REGRESSION",
+            "SafetyStateSnapshot");
 
         SessionRecoveryRow after = await fixture.SessionAsync();
         Assert.Equal(before.SafetyRevision, after.SafetyRevision);

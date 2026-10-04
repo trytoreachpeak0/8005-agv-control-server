@@ -179,6 +179,41 @@ public sealed partial class OnboardMessageProcessor(
                     throw new InvalidOperationException(stale.Message);
                 }
             }
+            catch (InboundMessageRejectedException rejected)
+            {
+                // control-server#478: the inbound boundary. A message the server read and will not take is answered with a
+                // ProtocolProblem correlated to it, and the connection stays. Until then this reached OnboardTcpServer's
+                // catch-all and closed the connection, and the onboard replays an unacknowledged message in every handshake,
+                // so one conflicting message ended every reconnect at the same place.
+                //
+                // Nothing of this message is kept: the inbox transaction did not commit, and what it tracked is cleared here
+                // so the next message on this connection does not save it. Nor is anything sent after it: no deferred
+                // recovery send, no safety snapshot request -- those belong to a message that was taken.
+                //
+                // Only this type. ProtocolContentConflictException is also the server's own outbound bookkeeping failing,
+                // which is not the vehicle's to be told about (see InboundMessageRejectedException).
+                dbContext.ChangeTracker.Clear();
+                LogInboundRejected(logger, agvId, messageType, messageId, rejected.ReasonCode, rejected.Message);
+                return SerializeEnvelope(
+                    "ProtocolProblem",
+                    messageId,
+                    agvId,
+                    state.SessionGeneration,
+                    new
+                    {
+                        rejectedMessageId = messageId,
+                        rejectedMessageType = messageType,
+                        problem = new
+                        {
+                            reasonCode = rejected.ReasonCode,
+                            fieldPath = (string?)null,
+                            displayMessage = rejected.Message
+                        },
+                        expectedProtocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
+                        expectedProfileId = ProtocolCandidateIdentity.ProfileId,
+                        expectedProtocolReleaseManifestSha256 = ProtocolCandidateIdentity.ManifestSha256
+                    });
+            }
         }
         // Never inside the handshake (control-server#202). A reconnecting vehicle resends what the last session left
         // unacknowledged and reads exactly one answer per line until its recovery report is answered, so a command
@@ -510,7 +545,7 @@ public sealed partial class OnboardMessageProcessor(
                     string computedResultHash = ComputeOperationResultContentHash(payload);
                     if (!string.Equals(resultContentSha256, computedResultHash, StringComparison.Ordinal))
                     {
-                        throw new ProtocolContentConflictException(
+                        throw new InboundMessageRejectedException(ServerReasonCodes.ContentHashMismatch,
                             "OperationResult resultContentSha256 does not match its business content.");
                     }
                     long forcedGeneration = await store.GetOperationForcedRecoveryGenerationAsync(
@@ -679,7 +714,7 @@ public sealed partial class OnboardMessageProcessor(
                     }
                     catch (FieldConfirmationContentConflictException conflict)
                     {
-                        throw new ProtocolContentConflictException(conflict.Message);
+                        throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict, conflict.Message);
                     }
                     return SerializeEnvelope(
                         "ManualStationClearanceConfirmationResult", messageId, agvId, generation,
@@ -719,7 +754,7 @@ public sealed partial class OnboardMessageProcessor(
                     }
                     catch (FieldConfirmationContentConflictException conflict)
                     {
-                        throw new ProtocolContentConflictException(conflict.Message);
+                        throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict, conflict.Message);
                     }
                     return SerializeEnvelope(
                         "UnableToChargeFieldConfirmationResult", messageId, agvId, generation,
@@ -1312,6 +1347,17 @@ public sealed partial class OnboardMessageProcessor(
         string? reasonCode,
         string answeredMessageType,
         string answeredMessageId);
+
+    [LoggerMessage(EventId = 1105, Level = LogLevel.Warning,
+        Message = "Refused {MessageType} {MessageId} from {AgvId} with ProtocolProblem {ReasonCode}; the connection stays " +
+                  "and nothing of it was kept: {Detail}")]
+    private static partial void LogInboundRejected(
+        ILogger logger,
+        string agvId,
+        string messageType,
+        string messageId,
+        string reasonCode,
+        string detail);
 
     [LoggerMessage(EventId = 1101, Level = LogLevel.Warning,
         Message = "Onboard rejected {RejectedMessageType} {RejectedMessageId}: {ReasonCode} at {FieldPath} -- {DisplayMessage}")]

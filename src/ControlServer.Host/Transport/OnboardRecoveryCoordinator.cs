@@ -160,14 +160,14 @@ public sealed class OnboardRecoveryCoordinator(
         {
             if (existing.WorkflowId != workflowId || existing.MessageType != messageType)
             {
-                throw new ProtocolContentConflictException(
+                throw new InboundMessageRejectedException(ServerReasonCodes.MessageIdContentConflict,
                     "Recovery result MessageId was replayed with a different identity.");
             }
             return DurableAck(messageType, messageId, agvId, sessionGeneration, contentHash);
         }
         if (workflow.ResultMessageId is not null && workflow.ResultMessageId != messageId)
         {
-            throw new ProtocolContentConflictException(
+            throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict,
                 "Recovery workflow already has a different first durable result.");
         }
 
@@ -401,7 +401,8 @@ public sealed class OnboardRecoveryCoordinator(
         if (replay is not null)
         {
             if (replay.RequestContentHash != businessHash || replay.AgvId != agvId)
-                throw new ProtocolContentConflictException("Recovery requestId was replayed with different content.");
+                throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict,
+                    "Recovery requestId was replayed with different content.");
             StationOperationRow? replayOperation = await SessionOperationAsync(replay, cancellationToken)
                 .ConfigureAwait(false);
             return OpenedResponse(root, replay, replayOperation?.SlotOperationAttemptId);
@@ -481,7 +482,8 @@ public sealed class OnboardRecoveryCoordinator(
         if (replay is not null)
         {
             if (replay.RequestContentHash != businessHash || replay.WorkflowType != action)
-                throw new ProtocolContentConflictException("RecoveryActionId was replayed with different content.");
+                throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict,
+                    "RecoveryActionId was replayed with different content.");
             // What the workflow recorded, not a fresh lookup (8005-agv-program#95).
             return AcceptedAction(root, session, actionId, action, replay.SlotOperationAttemptId);
         }
@@ -613,7 +615,8 @@ public sealed class OnboardRecoveryCoordinator(
             HardwareRecoveryRecordRow? replay = await dbContext.HardwareRecoveryRecords.SingleOrDefaultAsync(
                 row => row.RecordId == recordId, cancellationToken).ConfigureAwait(false);
             if (replay is not null && replay.ContentHash != contentHash)
-                throw new ProtocolContentConflictException("Hardware recovery record was replayed with different content.");
+                throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict,
+                    "Hardware recovery record was replayed with different content.");
             if (replay is null)
             {
                 dbContext.HardwareRecoveryRecords.Add(new HardwareRecoveryRecordRow
@@ -1514,7 +1517,8 @@ public sealed class OnboardRecoveryCoordinator(
         {
             if (workflow.WorkflowType != type || workflow.RequestContentHash != PayloadHash(root.GetProperty("payload")) ||
                 workflow.DemandId != demandId || workflow.SlotOperationAttemptId != attemptId)
-                throw new ProtocolContentConflictException("Recovery workflow id was replayed with different content.");
+                throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict,
+                    "Recovery workflow id was replayed with different content.");
             return workflow;
         }
         string agvId = RequiredString(root, "agvId");
@@ -1665,18 +1669,22 @@ public sealed class OnboardRecoveryCoordinator(
     {
         if (workflow.DemandId is not null && payload.TryGetProperty("demandId", out JsonElement demand) &&
             OptionalString(demand) != workflow.DemandId)
-            throw new BusinessIdentityConflictException("Recovery result demandId does not match its workflow.");
+            throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict,
+                "Recovery result demandId does not match its workflow.");
         if (workflow.SlotOperationAttemptId is not null &&
             payload.TryGetProperty("slotOperationAttemptId", out JsonElement attempt) &&
             OptionalString(attempt) != workflow.SlotOperationAttemptId)
-            throw new BusinessIdentityConflictException("Recovery result operation identity does not match its workflow.");
+            throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict,
+                "Recovery result operation identity does not match its workflow.");
         if (workflow.ExceptionRecoverySessionId is not null &&
             payload.TryGetProperty("exceptionRecoverySessionId", out JsonElement session) &&
             OptionalString(session) != workflow.ExceptionRecoverySessionId)
-            throw new BusinessIdentityConflictException("Recovery result session does not match its workflow.");
+            throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict,
+                "Recovery result session does not match its workflow.");
         if (messageType == "FaultCargoRecoveryResult" &&
             RequiredString(payload, "handoffId") != workflow.HandoffId)
-            throw new BusinessIdentityConflictException("Fault cargo handoff result does not match the authorized handoff.");
+            throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict,
+                "Fault cargo handoff result does not match the authorized handoff.");
     }
 
     private static bool HasExactSafeSlotResult(JsonElement payload, int[] expectedSlots, string? expectedState)

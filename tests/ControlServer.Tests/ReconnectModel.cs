@@ -792,6 +792,15 @@ internal static class ReconnectModel
             }
 
             string[] types = [.. answers.Select(MessageTypeOf)];
+            // control-server#478: the refusal is now an answer -- a ProtocolProblem correlated to the resend, on a connection
+            // that stays -- rather than an exception that ended the connection.
+            if (types.FirstOrDefault() == "ProtocolProblem")
+            {
+                using JsonDocument problem = JsonDocument.Parse(answers[0]);
+                string? reasonCode = problem.RootElement.GetProperty("payload").GetProperty("problem")
+                    .GetProperty("reasonCode").GetString();
+                return $"resend of {messageId[..8]} with different content refused: ProtocolProblem {reasonCode} ({where})";
+            }
             if (types.FirstOrDefault() == "DurableAck")
             {
                 Violate(

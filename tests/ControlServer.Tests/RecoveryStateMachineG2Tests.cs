@@ -189,8 +189,12 @@ public sealed partial class RecoveryStateMachineG2Tests
                 TestContext.Current.CancellationToken));
 
             string conflictingAction = RecoveryAction("RESUME_AFTER_REPAIR", reason: "different-content");
-            await Assert.ThrowsAsync<ProtocolContentConflictException>(() => restartedProcessor.ProcessAsync(
-                conflictingAction, CurrentState(), TestContext.Current.CancellationToken));
+            // control-server#478: refused with a ProtocolProblem on a connection that stays, no longer an exception.
+            ProtocolProblemAssert.RefusedLine(
+                await restartedProcessor.ProcessAsync(
+                    conflictingAction, CurrentState(), TestContext.Current.CancellationToken),
+                "MESSAGE_ID_CONTENT_CONFLICT",
+                conflictingAction);
             Assert.Equal(4, await restartedContext.ProtocolOutbox.CountAsync(
                 TestContext.Current.CancellationToken));
         }
@@ -243,13 +247,15 @@ public sealed partial class RecoveryStateMachineG2Tests
 
             // Exactly one. The authorization was consumed with the replacement, so a third result
             // has nothing behind it and lands back on the ordinary replay conflict.
-            await Assert.ThrowsAsync<ProtocolContentConflictException>(() => processor.ProcessAsync(
-                Envelope(
-                    "e0000000-0000-4000-8000-000000000012",
-                    "OperationResult",
-                    OperationResultPayload(journalCheckpoint: "UNAUTHORIZED_THIRD_RESULT")),
-                state,
-                TestContext.Current.CancellationToken));
+            string third = Envelope(
+                "e0000000-0000-4000-8000-000000000012",
+                "OperationResult",
+                OperationResultPayload(journalCheckpoint: "UNAUTHORIZED_THIRD_RESULT"));
+            // control-server#478: refused with a ProtocolProblem on a connection that stays, no longer an exception.
+            ProtocolProblemAssert.RefusedLine(
+                await processor.ProcessAsync(third, state, TestContext.Current.CancellationToken),
+                "BUSINESS_ID_CONTENT_CONFLICT",
+                third);
             Assert.Equal(2, await context.OperationResults.CountAsync(TestContext.Current.CancellationToken));
         }
         finally
@@ -3085,8 +3091,9 @@ public sealed partial class RecoveryStateMachineG2Tests
                 "e0000000-0000-4000-8000-000000001757",
                 "OperationResult",
                 OperationResultPayload(journalCheckpoint: "LATE_RESUME_RESULT_RECORDED"));
-            await Assert.ThrowsAsync<ProtocolContentConflictException>(
-                () => processor.ProcessAsync(late, state, token));
+            // control-server#478: refused with a ProtocolProblem on a connection that stays, no longer an exception.
+            ProtocolProblemAssert.RefusedLine(
+                await processor.ProcessAsync(late, state, token), "BUSINESS_ID_CONTENT_CONFLICT", late);
 
             context.ChangeTracker.Clear();
             Assert.Equal(before, await BusinessPictureAsync(context));
@@ -3353,8 +3360,11 @@ public sealed partial class RecoveryStateMachineG2Tests
                 "a0000000-0000-4000-8000-000000000001",
                 "a0000000-0000-4000-8000-000000000004",
                 StringComparison.Ordinal);
-            await Assert.ThrowsAsync<ProtocolContentConflictException>(() => processor.ProcessAsync(
-                changedResultIdentity, state, TestContext.Current.CancellationToken));
+            // control-server#478: refused with a ProtocolProblem on a connection that stays, no longer an exception.
+            ProtocolProblemAssert.RefusedLine(
+                await processor.ProcessAsync(changedResultIdentity, state, TestContext.Current.CancellationToken),
+                "BUSINESS_ID_CONTENT_CONFLICT",
+                changedResultIdentity);
 
             string cancellationAuthorization = await processor.ProcessAsync(
                 Envelope(
@@ -3383,8 +3393,11 @@ public sealed partial class RecoveryStateMachineG2Tests
 
             string conflictingResult = failedResult.Replace(
                 "PHYSICAL_STATE_UNKNOWN", "DIFFERENT_CONTENT", StringComparison.Ordinal);
-            await Assert.ThrowsAsync<ProtocolContentConflictException>(() => processor.ProcessAsync(
-                conflictingResult, state, TestContext.Current.CancellationToken));
+            // control-server#478: refused with a ProtocolProblem on a connection that stays, no longer an exception.
+            ProtocolProblemAssert.RefusedLine(
+                await processor.ProcessAsync(conflictingResult, state, TestContext.Current.CancellationToken),
+                "MESSAGE_ID_CONTENT_CONFLICT",
+                conflictingResult);
             Assert.Single(await context.RecoveryResultEvidence.ToArrayAsync(
                 TestContext.Current.CancellationToken));
         }
@@ -3514,8 +3527,9 @@ public sealed partial class RecoveryStateMachineG2Tests
             otherKind["messageType"] = "ForcedMechanicalRecoveryResult";
             string otherKindLine = otherKind.ToJsonString();
             using JsonDocument otherDocument = JsonDocument.Parse(otherKindLine);
-            await Assert.ThrowsAsync<ProtocolContentConflictException>(() => coordinator.ProcessResultAsync(
-                otherDocument.RootElement, WireContentHash(otherKindLine), token));
+            InboundMessageRejectedException rejected = await Assert.ThrowsAsync<InboundMessageRejectedException>(
+                () => coordinator.ProcessResultAsync(otherDocument.RootElement, WireContentHash(otherKindLine), token));
+            Assert.Equal("MESSAGE_ID_CONTENT_CONFLICT", rejected.ReasonCode);
         }
         finally
         {

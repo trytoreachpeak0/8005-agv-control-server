@@ -568,7 +568,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         {
             if (replay.RequestContentHash != request.RequestContentHash || replay.AgvId != request.AgvId)
             {
-                throw new ProtocolContentConflictException(
+                throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict,
                     "ManualChargingReturnToService requestId was replayed with different content.");
             }
 
@@ -2294,7 +2294,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
             if (replayEquivalenceHash is null ||
                 replayEquivalenceHash(existing.RequestJson) != replayEquivalenceHash(requestJson))
             {
-                throw new ProtocolContentConflictException("MessageId was replayed with different normalized content.");
+                throw new InboundMessageRejectedException(ServerReasonCodes.MessageIdContentConflict,
+                    "MessageId was replayed with different normalized content.");
             }
 
             // An equivalent resend answered from its first acceptance rather than processed again. The
@@ -2303,7 +2304,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
             if (equivalentReplayResponse is not null)
             {
                 return await equivalentReplayResponse(existing.FirstResponseJson).ConfigureAwait(false)
-                    ?? throw new ProtocolContentConflictException(
+                    ?? throw new InboundMessageRejectedException(ServerReasonCodes.MessageIdContentConflict,
                         "MessageId was replayed with different normalized content.");
             }
 
@@ -2632,7 +2633,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
                         replay.ResultContentSha256 == result.ResultContentSha256;
             if (!same)
             {
-                throw new ProtocolContentConflictException(
+                throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict,
                     "Operation result identity was replayed with different message or content.");
             }
             return OperationResultDisposition.Replay;
@@ -2842,7 +2843,10 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         if (authorization?.CommandContentHash is null ||
             authorization.CommandMessageType != "SlotOperationResumeCommand")
         {
-            throw new ProtocolContentConflictException(
+            // A second result for an attempt that already has a live one, with no resume to account for it: the same
+            // business key (the manifest's businessDedupKeys for OperationResult are demandId and slotOperationAttemptId)
+            // with other content, so BUSINESS_ID_CONTENT_CONFLICT (control-server#478).
+            throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict,
                 "Operation result identity was replayed with different message or content.");
         }
         if (authorization.ForcedRecoveryGeneration != forcedRecoveryGeneration)
@@ -3648,11 +3652,13 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
     {
         if (currentRevision == revision && currentHash != contentHash)
         {
-            throw new ProtocolContentConflictException($"{kind} revision {revision} has conflicting content.");
+            throw new InboundMessageRejectedException(ServerReasonCodes.SnapshotRevisionContentConflict,
+                $"{kind} revision {revision} has conflicting content.");
         }
         if (currentRevision > revision)
         {
-            throw new ProtocolContentConflictException($"{kind} revision regressed from {currentRevision} to {revision}.");
+            throw new InboundMessageRejectedException(ServerReasonCodes.SnapshotRevisionRegression,
+                $"{kind} revision regressed from {currentRevision} to {revision}.");
         }
     }
 

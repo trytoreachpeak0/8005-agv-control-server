@@ -73,6 +73,7 @@ public sealed class InboundContentConflictTests
         conflicting.AssertProblem("MESSAGE_ID_CONTENT_CONFLICT", messageId, "ManualChargingReturnToServiceRequested");
         await rig.AssertConnectionStaysAsync();
         Assert.Equal(inboxHashBefore, await rig.InboxContentHashAsync(messageId));
+        await AssertNextMessageIsTakenAsync(rig, generation);
     }
 
     [Fact]
@@ -98,6 +99,7 @@ public sealed class InboundContentConflictTests
         Assert.False(
             await rig.InboxHasAsync(secondMessageId),
             "被拒的冲突报文进了 ProtocolInbox：下一次同 messageId 的补发会被当成已收、直接回放那份拒绝之外的答案。");
+        await AssertNextMessageIsTakenAsync(rig, generation);
     }
 
     /// <summary>
@@ -141,6 +143,19 @@ public sealed class InboundContentConflictTests
         }
 
         Assert.Equal(inboxHashBefore, await rig.InboxContentHashAsync(messageId));
+    }
+
+    /// <summary>
+    /// 冲突之后同一条连接上的下一条正常报文照常处理、照常入库：被拒那一条没留下任何东西挡住它。
+    /// </summary>
+    private static async Task AssertNextMessageIsTakenAsync(Rig rig, long generation)
+    {
+        string messageId = Guid.NewGuid().ToString("D");
+        Answer next = await rig.Relay.InjectAsync(
+            ManualChargingReturn(messageId, Guid.NewGuid().ToString("D"), generation, "a new request after the conflict"),
+            AnswerWithin);
+        Assert.True(next.MessageType == "ManualChargingReturnToServiceResult", $"冲突之后的下一条没被照常处理：{next.Describe()}");
+        Assert.True(await rig.InboxHasAsync(messageId), "冲突之后的下一条没有入 ProtocolInbox。");
     }
 
     private static string ManualChargingReturn(string messageId, string requestId, long generation, string reason) =>
