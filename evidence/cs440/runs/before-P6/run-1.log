@@ -1,0 +1,97 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 8.0.31)
+[xUnit.net 00:00:01.97]   Discovering: ControlServer.Tests
+[xUnit.net 00:00:07.50]   Discovered:  ControlServer.Tests
+[xUnit.net 00:00:09.79]   Starting:    ControlServer.Tests
+[xUnit.net 00:00:15.05]     ControlServer.Tests.OnboardSilentLivenessLossTests.NothingSentAfterTheCloseIsProcessed [FAIL]
+[xUnit.net 00:00:15.05]       System.IO.IOException : Unable to read data from the transport connection: An established connection was aborted by the software in your host machine..
+[xUnit.net 00:00:15.05]       ---- System.Net.Sockets.SocketException : An established connection was aborted by the software in your host machine.
+[xUnit.net 00:00:15.05]       Stack Trace:
+[xUnit.net 00:00:15.05]            at System.IO.StreamReader.ReadBufferAsync(CancellationToken cancellationToken)
+[xUnit.net 00:00:15.05]            at System.IO.StreamReader.ReadLineAsyncInternal(CancellationToken cancellationToken)
+[xUnit.net 00:00:15.05]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardSilentLivenessLossTests.cs(389,0): at ControlServer.Tests.OnboardSilentLivenessLossTests.ReadWithinGuardAsync(StreamReader reader, String whatDidNotHappen)
+[xUnit.net 00:00:15.05]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardSilentLivenessLossTests.cs(332,0): at ControlServer.Tests.OnboardSilentLivenessLossTests.NothingSentAfterTheCloseIsProcessed()
+[xUnit.net 00:00:15.05]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardSilentLivenessLossTests.cs(369,0): at ControlServer.Tests.OnboardSilentLivenessLossTests.NothingSentAfterTheCloseIsProcessed()
+[xUnit.net 00:00:15.05]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:15.05]         ----- Inner Stack Trace -----
+[xUnit.net 00:00:15.05]            at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.CreateException(SocketError error, Boolean forAsyncThrow)
+[xUnit.net 00:00:15.05]            at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.ReceiveAsync(Socket socket, CancellationToken cancellationToken)
+[xUnit.net 00:00:15.05]            at System.Net.Sockets.Socket.ReceiveAsync(Memory`1 buffer, SocketFlags socketFlags, Boolean fromNetworkStream, CancellationToken cancellationToken)
+[xUnit.net 00:00:15.05]            at System.Net.Sockets.NetworkStream.ReadAsync(Memory`1 buffer, CancellationToken cancellationToken)
+[xUnit.net 00:00:15.05]            at System.IO.StreamReader.ReadBufferAsync(CancellationToken cancellationToken)
+[xUnit.net 00:00:15.05]            at System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start[TStateMachine](TStateMachine& stateMachine)
+[xUnit.net 00:00:15.05]            at System.IO.StreamReader.ReadBufferAsync(CancellationToken cancellationToken)
+[xUnit.net 00:00:15.05]            at System.IO.StreamReader.ReadLineAsyncInternal(CancellationToken cancellationToken)
+[xUnit.net 00:00:15.05]            at System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start[TStateMachine](TStateMachine& stateMachine)
+[xUnit.net 00:00:15.05]            at System.IO.StreamReader.ReadLineAsyncInternal(CancellationToken cancellationToken)
+[xUnit.net 00:00:15.05]            at System.IO.StreamReader.ReadLineAsync(CancellationToken cancellationToken)
+[xUnit.net 00:00:15.05]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardSilentLivenessLossTests.cs(389,0): at ControlServer.Tests.OnboardSilentLivenessLossTests.ReadWithinGuardAsync(StreamReader reader, String whatDidNotHappen)
+[xUnit.net 00:00:15.05]            at System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start[TStateMachine](TStateMachine& stateMachine)
+[xUnit.net 00:00:15.05]            at ControlServer.Tests.OnboardSilentLivenessLossTests.ReadWithinGuardAsync(StreamReader reader, String whatDidNotHappen)
+[xUnit.net 00:00:15.05]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardSilentLivenessLossTests.cs(332,0): at ControlServer.Tests.OnboardSilentLivenessLossTests.NothingSentAfterTheCloseIsProcessed()
+[xUnit.net 00:00:15.05]            at System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1.AsyncStateMachineBox`1.ExecutionContextCallback(Object s)
+[xUnit.net 00:00:15.05]            at System.Threading.ExecutionContext.RunInternal(ExecutionContext executionContext, ContextCallback callback, Object state)
+[xUnit.net 00:00:15.05]            at System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1.AsyncStateMachineBox`1.MoveNext(Thread threadPoolThread)
+[xUnit.net 00:00:15.05]            at System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1.AsyncStateMachineBox`1.MoveNext()
+[xUnit.net 00:00:15.05]            at System.Threading.Tasks.AwaitTaskContinuation.RunOrScheduleAction(IAsyncStateMachineBox box, Boolean allowInlining)
+[xUnit.net 00:00:15.05]            at System.Threading.Tasks.Task.RunContinuations(Object continuationObject)
+[xUnit.net 00:00:15.05]            at System.Threading.Tasks.Task.TrySetResult()
+[xUnit.net 00:00:15.05]            at System.Threading.Tasks.Task.DelayPromise.CompleteTimedOut()
+[xUnit.net 00:00:15.05]            at System.Threading.TimerQueueTimer.Fire(Boolean isThreadPool)
+[xUnit.net 00:00:15.06]            at System.Threading.TimerQueue.FireNextTimers()
+[xUnit.net 00:00:15.06]            at System.Threading.ThreadPoolWorkQueue.Dispatch()
+[xUnit.net 00:00:15.06]            at System.Threading.PortableThreadPool.WorkerThread.WorkerThreadStart()
+[xUnit.net 00:00:15.06]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:15.06]         
+  Failed ControlServer.Tests.OnboardSilentLivenessLossTests.NothingSentAfterTheCloseIsProcessed [4 s]
+  Error Message:
+   System.IO.IOException : Unable to read data from the transport connection: An established connection was aborted by the software in your host machine..
+---- System.Net.Sockets.SocketException : An established connection was aborted by the software in your host machine.
+  Stack Trace:
+     at System.IO.StreamReader.ReadBufferAsync(CancellationToken cancellationToken)
+   at System.IO.StreamReader.ReadLineAsyncInternal(CancellationToken cancellationToken)
+   at ControlServer.Tests.OnboardSilentLivenessLossTests.ReadWithinGuardAsync(StreamReader reader, String whatDidNotHappen) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardSilentLivenessLossTests.cs:line 389
+   at ControlServer.Tests.OnboardSilentLivenessLossTests.NothingSentAfterTheCloseIsProcessed() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardSilentLivenessLossTests.cs:line 332
+   at ControlServer.Tests.OnboardSilentLivenessLossTests.NothingSentAfterTheCloseIsProcessed() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardSilentLivenessLossTests.cs:line 369
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.CreateException(SocketError error, Boolean forAsyncThrow)
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.ReceiveAsync(Socket socket, CancellationToken cancellationToken)
+   at System.Net.Sockets.Socket.ReceiveAsync(Memory`1 buffer, SocketFlags socketFlags, Boolean fromNetworkStream, CancellationToken cancellationToken)
+   at System.Net.Sockets.NetworkStream.ReadAsync(Memory`1 buffer, CancellationToken cancellationToken)
+   at System.IO.StreamReader.ReadBufferAsync(CancellationToken cancellationToken)
+   at System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start[TStateMachine](TStateMachine& stateMachine)
+   at System.IO.StreamReader.ReadBufferAsync(CancellationToken cancellationToken)
+   at System.IO.StreamReader.ReadLineAsyncInternal(CancellationToken cancellationToken)
+   at System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start[TStateMachine](TStateMachine& stateMachine)
+   at System.IO.StreamReader.ReadLineAsyncInternal(CancellationToken cancellationToken)
+   at System.IO.StreamReader.ReadLineAsync(CancellationToken cancellationToken)
+   at ControlServer.Tests.OnboardSilentLivenessLossTests.ReadWithinGuardAsync(StreamReader reader, String whatDidNotHappen) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardSilentLivenessLossTests.cs:line 389
+   at System.Runtime.CompilerServices.AsyncMethodBuilderCore.Start[TStateMachine](TStateMachine& stateMachine)
+   at ControlServer.Tests.OnboardSilentLivenessLossTests.ReadWithinGuardAsync(StreamReader reader, String whatDidNotHappen)
+   at ControlServer.Tests.OnboardSilentLivenessLossTests.NothingSentAfterTheCloseIsProcessed() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardSilentLivenessLossTests.cs:line 332
+   at System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1.AsyncStateMachineBox`1.ExecutionContextCallback(Object s)
+   at System.Threading.ExecutionContext.RunInternal(ExecutionContext executionContext, ContextCallback callback, Object state)
+   at System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1.AsyncStateMachineBox`1.MoveNext(Thread threadPoolThread)
+   at System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1.AsyncStateMachineBox`1.MoveNext()
+   at System.Threading.Tasks.AwaitTaskContinuation.RunOrScheduleAction(IAsyncStateMachineBox box, Boolean allowInlining)
+   at System.Threading.Tasks.Task.RunContinuations(Object continuationObject)
+   at System.Threading.Tasks.Task.TrySetResult()
+   at System.Threading.Tasks.Task.DelayPromise.CompleteTimedOut()
+   at System.Threading.TimerQueueTimer.Fire(Boolean isThreadPool)
+   at System.Threading.TimerQueue.FireNextTimers()
+   at System.Threading.ThreadPoolWorkQueue.Dispatch()
+   at System.Threading.PortableThreadPool.WorkerThread.WorkerThreadStart()
+--- End of stack trace from previous location ---
+
+[xUnit.net 00:00:17.88]   Finished:    ControlServer.Tests (ID = 'e9a86b65d07f6a984a4a75af2821531c21eb38df17b507165946674f4b81024f')
+
+Test Run Failed.
+Total tests: 1
+     Failed: 1
+ Total time: 19.6298 Seconds
+Results File: C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\evidence\cs440\runs\before-P6\run-1.trx

@@ -1,0 +1,42 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="06cbf93e-c499-4e26-a974-ebd617b971e0" name="szy@LAB-WIN-01 2026-10-04 16:44:46" runUser="LAB-WIN-01\szy" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-04T16:44:46.1177804+08:00" queuing="2026-10-04T16:44:46.1177811+08:00" start="2026-10-04T16:44:24.9188127+08:00" finish="2026-10-04T16:45:23.1292800+08:00" />
+  <TestSettings name="default" id="4f8d470d-31f0-4863-b2c7-2db35907205b">
+    <Deployment runDeploymentRoot="szy_LAB-WIN-01_2026-10-04_16_44_46" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="44101b24-ac48-4e29-bfb4-4f0cb975d495" testId="3cb5fa94-8c42-975e-9f44-f52c762bd800" testName="ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsAfterAPowerCutThatLeftTheOldConnectionHalfOpen" computerName="LAB-WIN-01" duration="00:00:15.7736869" startTime="2026-10-04T16:44:29.5577630+08:00" endTime="2026-10-04T16:44:45.3427768+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="44101b24-ac48-4e29-bfb4-4f0cb975d495">
+      <Output>
+        <StdOut>旧代次离开路由表：t=5.5s&#xD;
+第 1 次，t=0.0s 开始：AnsweredButNotRoutable 第 2 代&#xD;
+第 2 次，t=2.0s 开始：AnsweredButNotRoutable 第 3 代&#xD;
+第 3 次，t=4.1s 开始：AnsweredButNotRoutable 第 4 代&#xD;
+第 4 次，t=6.1s 开始：Routable 第 5 代</StdOut>
+      </Output>
+    </UnitTestResult>
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsAfterAPowerCutThatLeftTheOldConnectionHalfOpen" storage="c:\users\szy\desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\controlserver.tests\bin\release\net8.0\win-x64\controlserver.tests.dll" id="3cb5fa94-8c42-975e-9f44-f52c762bd800">
+      <Execution id="44101b24-ac48-4e29-bfb4-4f0cb975d495" />
+      <TestMethod codeBase="C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="ControlServer.Tests.OnboardPowerLossReconnectTests" name="ReconnectsAfterAPowerCutThatLeftTheOldConnectionHalfOpen" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="3cb5fa94-8c42-975e-9f44-f52c762bd800" executionId="44101b24-ac48-4e29-bfb4-4f0cb975d495" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="1" executed="1" passed="1" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 8.0.31)&#xD;
+[xUnit.net 00:00:00.84]   Discovering: ControlServer.Tests&#xD;
+[xUnit.net 00:00:03.58]   Discovered:  ControlServer.Tests&#xD;
+[xUnit.net 00:00:04.00]   Starting:    ControlServer.Tests&#xD;
+[xUnit.net 00:00:57.49]   Finished:    ControlServer.Tests (ID = 'e9a86b65d07f6a984a4a75af2821531c21eb38df17b507165946674f4b81024f')&#xD;
+</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>

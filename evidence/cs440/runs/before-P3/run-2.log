@@ -1,0 +1,61 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 8.0.31)
+[xUnit.net 00:00:00.96]   Discovering: ControlServer.Tests
+[xUnit.net 00:00:03.64]   Discovered:  ControlServer.Tests
+[xUnit.net 00:00:03.97]   Starting:    ControlServer.Tests
+[xUnit.net 00:00:14.61]     ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: 1000) [FAIL]
+[xUnit.net 00:00:14.61]       Assert.Contains() Failure: Sub-string not found
+[xUnit.net 00:00:14.61]       String:    "1× OnboardConnectionUnavailableException: The conn"···
+[xUnit.net 00:00:14.61]       Not found: "did not finish within 1 s"
+[xUnit.net 00:00:14.61]       Stack Trace:
+[xUnit.net 00:00:14.61]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(201,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds)
+[xUnit.net 00:00:14.61]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(211,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds)
+[xUnit.net 00:00:14.61]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:14.62]       Output:
+[xUnit.net 00:00:14.62]         服务端日志：1002、1003；聋了之后车往服务端送了 860 字节；最长的一次推送 2874 ms；旧代次离开路由表：t=3.0s；推送的失败：1× OnboardConnectionUnavailableException: The connection to the Onboard peer 'AGV-POWER-01' (session generation 1) is closed or broken; the line stays unacknowledged for the replay after the reconnect.
+  Failed ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: 1000) [10 s]
+  Error Message:
+   Assert.Contains() Failure: Sub-string not found
+String:    "1× OnboardConnectionUnavailableException: The conn"···
+Not found: "did not finish within 1 s"
+  Stack Trace:
+     at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 201
+   at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 211
+--- End of stack trace from previous location ---
+  Standard Output Messages:
+ 服务端日志：1002、1003；聋了之后车往服务端送了 860 字节；最长的一次推送 2874 ms；旧代次离开路由表：t=3.0s；推送的失败：1× OnboardConnectionUnavailableException: The connection to the Onboard peer 'AGV-POWER-01' (session generation 1) is closed or broken; the line stays unacknowledged for the replay after the reconnect.
+
+
+[xUnit.net 00:00:25.86]     ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: null) [FAIL]
+[xUnit.net 00:00:25.86]       Assert.Contains() Failure: Sub-string not found
+[xUnit.net 00:00:25.86]       String:    "1× OnboardConnectionUnavailableException: The conn"···
+[xUnit.net 00:00:25.86]       Not found: "did not finish within 5 s"
+[xUnit.net 00:00:25.86]       Stack Trace:
+[xUnit.net 00:00:25.86]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(201,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds)
+[xUnit.net 00:00:25.86]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs(211,0): at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds)
+[xUnit.net 00:00:25.86]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:25.86]       Output:
+[xUnit.net 00:00:25.86]         服务端日志：1002、1003；聋了之后车往服务端送了 1720 字节；最长的一次推送 6875 ms；旧代次离开路由表：t=7.0s；推送的失败：1× OnboardConnectionUnavailableException: The connection to the Onboard peer 'AGV-POWER-01' (session generation 1) is closed or broken; the line stays unacknowledged for the replay after the reconnect.
+  Failed ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: null) [11 s]
+  Error Message:
+   Assert.Contains() Failure: Sub-string not found
+String:    "1× OnboardConnectionUnavailableException: The conn"···
+Not found: "did not finish within 5 s"
+  Stack Trace:
+     at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 201
+   at ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(Nullable`1 writeTimeoutMilliseconds) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\OnboardPowerLossReconnectTests.cs:line 211
+--- End of stack trace from previous location ---
+  Standard Output Messages:
+ 服务端日志：1002、1003；聋了之后车往服务端送了 1720 字节；最长的一次推送 6875 ms；旧代次离开路由表：t=7.0s；推送的失败：1× OnboardConnectionUnavailableException: The connection to the Onboard peer 'AGV-POWER-01' (session generation 1) is closed or broken; the line stays unacknowledged for the replay after the reconnect.
+
+
+[xUnit.net 00:00:56.77]   Finished:    ControlServer.Tests (ID = 'e9a86b65d07f6a984a4a75af2821531c21eb38df17b507165946674f4b81024f')
+
+Test Run Failed.
+Total tests: 2
+     Failed: 2
+ Total time: 57.4828 Seconds

@@ -1,0 +1,41 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 8.0.31)
+[xUnit.net 00:00:01.10]   Discovering: ControlServer.Tests
+[xUnit.net 00:00:04.24]   Discovered:  ControlServer.Tests
+[xUnit.net 00:00:04.69]   Starting:    ControlServer.Tests
+  Passed ControlServer.Tests.ExpectedActionOverdueTests.ANewOverdueAlarmAfterTheHandshakeAsksTheVehicleOnceForItsSafetySnapshot [3 s]
+  Passed ControlServer.Tests.ExpectedActionOverdueTests.AnUnloadAtTheGateIsListedAgainstTheGateStation [471 ms]
+  Passed ControlServer.Tests.ExpectedActionOverdueTests.AMidSessionSnapshotLeavesAVehicleHeldForItsHardwareRecoveryRecordHeld [380 ms]
+  Passed ControlServer.Tests.ExpectedActionOverdueTests.WithTheStationDeadlinePassedTheTwoShowAsOneRowNotTwo [293 ms]
+  Passed ControlServer.Tests.ExpectedActionOverdueTests.TheCardRegistersItselfOnTheFleetViewAgainstTheEndpoint [99 ms]
+  Passed ControlServer.Tests.ExpectedActionOverdueTests.WithNothingOverdueTheCardSaysSo [2 ms]
+  Passed ControlServer.Tests.ExpectedActionOverdueTests.TheEndpointAnswersAGetOverHttpAndTheCardRendersWhatItReturns [4 s]
+  Passed ControlServer.Tests.ExpectedActionOverdueTests.WhenTheVehicleWithdrawsTheAlarmTheRowDisappears [219 ms]
+  Passed ControlServer.Tests.ExpectedActionOverdueTests.TheHandshakeSnapshotStillCarriesTheSessionToReadyExactlyAsBefore [197 ms]
+  Passed ControlServer.Tests.ExpectedActionOverdueTests.ASafetyChangeTouchingAnOverdueSlotAsksAgainAndOneTouchingOnlyOtherSlotsDoesNot [323 ms]
+  Passed ControlServer.Tests.ExpectedActionOverdueTests.AMidSessionSnapshotAdvancesTheSafetyRevisionWithoutDroppingTheSessionBackIntoTheHandshake [177 ms]
+  Passed ControlServer.Tests.ExpectedActionOverdueTests.AMidSessionSnapshotStillMayNotChangeARevisionsContentOrGoBackwards [195 ms]
+  Passed ControlServer.Tests.ExpectedActionOverdueTests.AVehicleThatIsNotLinkedIsListedAsUnknownRatherThanShowingItsLastOverdueSlots [232 ms]
+  Passed ControlServer.Tests.ExpectedActionOverdueTests.TheSameSafetyFactReachesTheSameReadinessWhetherItCameAsAChangeOrAsAMidSessionSnapshot(departureSafe: False) [524 ms]
+  Passed ControlServer.Tests.ExpectedActionOverdueTests.TheSameSafetyFactReachesTheSameReadinessWhetherItCameAsAChangeOrAsAMidSessionSnapshot(departureSafe: True) [353 ms]
+  Passed ControlServer.Tests.ExpectedActionOverdueTests.AnOverdueAlarmInsideTheHandshakeIsNotAnsweredWithARequestBetweenTheSnapshotsTheVehicleIsWaitingOn [177 ms]
+  Passed ControlServer.Tests.ExpectedActionOverdueTests.TheEndpointListsTheOverdueSlotWithVehicleStationActionWaitAndTheReadingsTheVehicleSent [218 ms]
+  Passed ControlServer.Tests.ExpectedActionOverdueTests.TheThresholdComesFromItsOwnSettingsFileWhichShipsTheOnboardDefault [10 ms]
+  Passed ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: 1000) [11 s]
+  Passed ControlServer.Tests.ExpectedActionOverdueTests.ReadingsTheVehicleHasSinceSaidChangedAreMarkedAsSuchAndAnOverdueSlotWithoutReadingsSaysSo [268 ms]
+  Passed ControlServer.Tests.ExpectedActionOverdueTests.TheCardShowsOneRowPerSlotWithTheStationDeadlineAndTheReadingsInThatRowAndNoForm [< 1 ms]
+  Passed ControlServer.Tests.ExpectedActionOverdueTests.ASecondSnapshotInsideTheHandshakeIsStillAHandshakeSnapshot [258 ms]
+  Passed ControlServer.Tests.ExpectedActionOverdueTests.AMidSessionSnapshotLeavesASessionHeldForPendingFactsHeldForThem [242 ms]
+  Passed ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: null) [12 s]
+  Passed ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsAfterAPowerCutThatLeftTheOldConnectionHalfOpen [11 s]
+  Passed ControlServer.Tests.OnboardPowerLossReconnectTests.ReconnectsWhileTheServerIsStillWritingIntoTheDeadConnection [11 s]
+[xUnit.net 00:01:20.99]   Finished:    ControlServer.Tests (ID = 'e9a86b65d07f6a984a4a75af2821531c21eb38df17b507165946674f4b81024f')
+
+Test Run Successful.
+Total tests: 26
+     Passed: 26
+ Total time: 1.3615 Minutes
