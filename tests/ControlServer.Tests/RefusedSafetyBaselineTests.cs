@@ -33,6 +33,7 @@ namespace ControlServer.Tests;
 public sealed class RefusedSafetyBaselineTests
 {
     private static readonly int[] FirstSlot = [1];
+    private static readonly string[] LockNotClosed = ["LOCK_NOT_CLOSED"];
 
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-00")]
@@ -100,8 +101,8 @@ public sealed class RefusedSafetyBaselineTests
         // unsafe-then-safe episode -- so "carries on" is the stage moving, not the code disappearing.)
         await fixture.Engine.ExecuteOnceAsync(token);
         JourneyRuntimeRow carryingOn = await fixture.RuntimeAsync();
-        Assert.NotEqual(JourneyRuntimeStage.AwaitingSublot, carryingOn.Stage);
-        Assert.NotEqual("ONBOARD_SESSION_NOT_READY", carryingOn.BlockReasonCode);
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, carryingOn.Stage);
+        Assert.Null(carryingOn.BlockReasonCode);
     }
 
     /// <summary>
@@ -130,6 +131,58 @@ public sealed class RefusedSafetyBaselineTests
         SessionRecoveryRow untrusted = await SessionAsync(fixture);
         Assert.Equal("DEPARTURE_SAFETY_NOT_READY", untrusted.ReasonCode);
         Assert.Null(untrusted.DepartureSafe);
+
+        // A refused snapshot leaves the baseline as untrusted as a refused change does: a change after it, however safe,
+        // does not bring the session back to Ready.
+        await processor.ProcessAsync(SafetyLine(fixture, "SafetyStateChanged", revision: 8, departureSafe: true), state, token);
+        SessionRecoveryRow afterChange = await SessionAsync(fixture);
+        Assert.Equal(SessionReadiness.RecoveryRequired, afterChange.Readiness);
+        Assert.Equal("DEPARTURE_SAFETY_NOT_READY", afterChange.ReasonCode);
+        Assert.Null(afterChange.DepartureSafe);
+    }
+
+    /// <summary>
+    /// The departure verdict is cleared together with its reasons. A vehicle with this server's own slot operation in
+    /// progress reads Ready while its only unsafety is the one that operation causes (LOCK_NOT_CLOSED, nothing unknown --
+    /// WireToGateStore.IsUnsafetyExplainedByOwnCommandAsync). Left behind on an untrusted baseline, those reasons would
+    /// keep that exemption alive and the vehicle Ready; cleared, it reads DEPARTURE_SAFETY_NOT_READY like any other.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    public async Task ARefusedSafetyMessageAlsoEndsTheOwnOperationExemption()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await ReachSublotWaitAsync();
+        await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+        WireToGateStore store = new(connection);
+        OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+            connection, store, fixture.Clock, new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build());
+        OnboardConnectionState state = Connected(fixture);
+        await processor.ProcessAsync(SublotEntry(fixture, await fixture.RuntimeAsync(), "SUBLOT-001"), state, token);
+        await fixture.Engine.ExecuteOnceAsync(token);
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, (await fixture.RuntimeAsync()).Stage);
+        Assert.Equal(StationOperationStatus.Prepared,
+            (await fixture.Context.StationOperations.AsNoTracking().SingleAsync(token)).Status);
+
+        // The baseline says unsafe for the reason the vehicle's own load causes, and nothing is unknown.
+        SessionRecoveryRow session = await fixture.Context.SessionRecoveries.SingleAsync(token);
+        session.DepartureSafe = false;
+        session.SafetyReasonCodesJson = JsonSerializer.Serialize(LockNotClosed);
+        session.SafetyUnknownPresent = false;
+        await fixture.Context.SaveChangesAsync(token);
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Equal(SessionReadiness.Ready, (await store.DecideReadinessAsync(fixture.Options.AgvId, 1, token)).Readiness);
+
+        string conflicting = SafetyLine(fixture, "SafetyStateChanged", revision: 7, departureSafe: true);
+        ProtocolProblemAssert.RefusedLine(
+            Lines(await processor.ProcessAsync(conflicting, state, token))[0], "SNAPSHOT_REVISION_CONTENT_CONFLICT", conflicting);
+
+        SessionRecoveryRow untrusted = await SessionAsync(fixture);
+        Assert.Equal(SessionReadiness.RecoveryRequired, untrusted.Readiness);
+        Assert.Equal("DEPARTURE_SAFETY_NOT_READY", untrusted.ReasonCode);
+        Assert.Null(untrusted.SafetyReasonCodesJson);
+        Assert.Null(untrusted.SafetyUnknownPresent);
     }
 
     /// <summary>
