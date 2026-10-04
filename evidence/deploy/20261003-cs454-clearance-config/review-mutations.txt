@@ -41,6 +41,7 @@
    FAIL  the installer refuses an open dispatch gate before recording the definition, swapping a rollback or running a product script
 
 # 配置缺失补项（自查后调度同意）
+== missing configuration let through : 325 passed, 2 failed -> KILLED
    FAIL  pre-install check: service, configuration missing -> INSTALLED_CONFIGURATION_MISSING
    FAIL  a missing configuration names the path, tells the operator to find out why, and says nothing was touched
 (第一次「恢复旧条件」的变异写错了，调用仍无条件执行，作废；下面是真正把调用包进 if 的版本)
