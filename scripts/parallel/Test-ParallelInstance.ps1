@@ -2083,7 +2083,7 @@ function Invoke-UpgradeCase {
     $flagOf = { ((Get-Content -LiteralPath $file -Raw | ConvertFrom-Json).JourneyRuntime.enabled).ToString().ToLowerInvariant() }
     $thrown = $null; $warnings = @()
     try {
-        $null = Invoke-ParallelProductUpgrade -ConfigurationPath $file -WarningVariable +warnings -WarningAction SilentlyContinue -Actions @{
+        $null = Invoke-ParallelProductUpgrade -ConfigurationPath $file -ServiceName '8005 AGV ControlServer V2' -WarningVariable +warnings -WarningAction SilentlyContinue -Actions @{
             StopService = { $seen.Add("stop(flag=$(& $flagOf))") }
             InvokeUpdate = { $seen.Add("update(flag=$(& $flagOf))"); & $Update }
             ServiceStatus = { 'Running' }
@@ -2118,6 +2118,23 @@ Invoke-PathCase 'upgrade wrapper, dispatch open' {
         -Name 'dispatch open: refused before the service is stopped, the file untouched (review S3)' `
         -Detail ("thrown: $($r.Thrown); seen: " + (@($r.Seen) -join ',') + "; file unchanged: $($r.Text -ceq $openText)")
 }
+$v2Configuration = 'C:\Program Files\8005 AGV\ControlServer.V2\appsettings.Production.json'
+$v2Service = '8005 AGV ControlServer V2'
+$mvpConfiguration = 'C:\Program Files\8005 AGV\ControlServer\appsettings.Production.json'
+$mvpService = '8005 AGV ControlServer'
+# The operator's steps must name THIS instance's file and service, warn off the MVP's (one '.V2'
+# apart), warn about Notepad's "Save As", and put "stop new demand, wait for Completed" before the
+# edit and restart (incremental review, item 1).
+function Test-ClosingSteps {
+    param([string] $Message)
+    $missing = @()
+    foreach ($needle in @($v2Configuration, "NOT the MVP's $mvpConfiguration", "'$v2Service'", "NOT '$mvpService'", 'Notepad', 'agvId', 'stop injecting new demand', 'Completed')) {
+        if (-not $Message.Contains($needle)) { $missing += $needle }
+    }
+    $stopAt = $Message.IndexOf('stop injecting new demand'); $editAt = $Message.IndexOf("edit $v2Configuration"); $restartAt = $Message.IndexOf("restart the service '$v2Service'")
+    if (-not ($stopAt -ge 0 -and $editAt -gt $stopAt -and $restartAt -gt $editAt)) { $missing += "order stop($stopAt) < edit($editAt) < restart($restartAt)" }
+    return $missing
+}
 $refusalCases = @(
     @{ Name = 'RiotCreateDispatch.enabled true'; Config = [ordered]@{ RiotCreateDispatch = [ordered]@{ enabled = $true } }; Refused = $true }
     @{ Name = 'riotCreateDispatch.Enabled true (other casing)'; Config = [ordered]@{ riotCreateDispatch = [ordered]@{ Enabled = $true } }; Refused = $true }
@@ -2125,36 +2142,54 @@ $refusalCases = @(
     @{ Name = 'no RiotCreateDispatch section (product default: closed)'; Config = [ordered]@{ JourneyRuntime = [ordered]@{ enabled = $true } }; Refused = $false }
 )
 foreach ($case in $refusalCases) {
-    $refusal = Get-ParallelUpgradeRefusal -Configuration $case.Config
-    Write-Result -Ok ($case.Refused ? ($null -ne $refusal -and $refusal.Contains('agv02') -and $refusal.Contains('Completed')) : ($null -eq $refusal)) `
-        -Name "upgrade refusal: $($case.Name) -> $($case.Refused ? 'refused, naming agv02/agv03 Completed' : 'allowed')" -Detail "got: $refusal"
+    $refusal = Get-ParallelUpgradeRefusal -Configuration $case.Config -ConfigurationPath $v2Configuration -ServiceName $v2Service
+    $gaps = $case.Refused -and $null -ne $refusal ? @(Test-ClosingSteps $refusal) : @()
+    Write-Result -Ok ($case.Refused ? ($null -ne $refusal -and $refusal.StartsWith('UPGRADE_REFUSED_DISPATCH_OPEN') -and $gaps.Count -eq 0) : ($null -eq $refusal)) `
+        -Name "upgrade refusal: $($case.Name) -> $($case.Refused ? 'refused, with the V2 file and service named and the MVP''s warned off' : 'allowed')" `
+        -Detail "missing: $($gaps -join ' | '); got: $refusal"
 }
 
 # The installer's first check, before anything is touched (Get-ParallelPreInstallRefusal). Fail closed:
 # a service with no installed configuration is a state nobody can explain, and -Rollback used to swap
-# the package directories before finding out (control-server#454, found in self-review after S3).
+# the package directories before finding out (control-server#454, found in self-review after S3); and a
+# file written after the running process started is not what that process is doing (incremental review,
+# item 2) -- the hand edit to "false" that nobody restarted for is exactly the open gate S3 refuses.
 $closedText = ConvertTo-Json -InputObject ([ordered]@{ RiotCreateDispatch = [ordered]@{ enabled = $false }; JourneyRuntime = [ordered]@{ enabled = $true } }) -Depth 5
 $openText = ConvertTo-Json -InputObject ([ordered]@{ RiotCreateDispatch = [ordered]@{ enabled = $true } }) -Depth 5
+$started = [datetime]::new(2026, 10, 8, 8, 0, 0, [DateTimeKind]::Utc)
+$before = $started.AddMinutes(-5); $after = $started.AddMinutes(5)
 $preInstallCases = @(
-    @{ Name = 'no service (first install), no configuration'; Exists = $false; Text = $null; Expect = $null }
-    @{ Name = 'no service, a configuration left behind'; Exists = $false; Text = $openText; Expect = $null }
-    @{ Name = 'service, configuration missing'; Exists = $true; Text = $null; Expect = 'INSTALLED_CONFIGURATION_MISSING' }
-    @{ Name = 'service, configuration empty'; Exists = $true; Text = ''; Expect = 'INSTALLED_CONFIGURATION_UNREADABLE' }
-    @{ Name = 'service, configuration not JSON'; Exists = $true; Text = '{"RiotCreateDispatch":'; Expect = 'INSTALLED_CONFIGURATION_UNREADABLE' }
-    @{ Name = 'service, configuration a JSON array'; Exists = $true; Text = '[1,2]'; Expect = 'INSTALLED_CONFIGURATION_UNREADABLE' }
-    @{ Name = 'service, dispatch open'; Exists = $true; Text = $openText; Expect = 'UPGRADE_REFUSED_DISPATCH_OPEN' }
-    @{ Name = 'service, dispatch closed'; Exists = $true; Text = $closedText; Expect = $null }
+    @{ Name = 'no service (first install), no configuration'; Exists = $false; Status = $null; Text = $null; Write = $null; Start = $null; Expect = $null }
+    @{ Name = 'no service, a configuration left behind'; Exists = $false; Status = $null; Text = $openText; Write = $after; Start = $null; Expect = $null }
+    @{ Name = 'service, configuration missing'; Exists = $true; Status = 'Running'; Text = $null; Write = $null; Start = $started; Expect = 'INSTALLED_CONFIGURATION_MISSING' }
+    @{ Name = 'service, configuration empty'; Exists = $true; Status = 'Running'; Text = ''; Write = $before; Start = $started; Expect = 'INSTALLED_CONFIGURATION_UNREADABLE' }
+    @{ Name = 'service, configuration not JSON'; Exists = $true; Status = 'Running'; Text = '{"RiotCreateDispatch":'; Write = $before; Start = $started; Expect = 'INSTALLED_CONFIGURATION_UNREADABLE' }
+    @{ Name = 'service, configuration a JSON array'; Exists = $true; Status = 'Running'; Text = '[1,2]'; Write = $before; Start = $started; Expect = 'INSTALLED_CONFIGURATION_UNREADABLE' }
+    @{ Name = 'running, dispatch open, file older than the process'; Exists = $true; Status = 'Running'; Text = $openText; Write = $before; Start = $started; Expect = 'UPGRADE_REFUSED_DISPATCH_OPEN' }
+    @{ Name = 'running, dispatch closed, file older than the process'; Exists = $true; Status = 'Running'; Text = $closedText; Write = $before; Start = $started; Expect = $null }
+    @{ Name = 'running, file edited to closed AFTER the process started (not restarted)'; Exists = $true; Status = 'Running'; Text = $closedText; Write = $after; Start = $started; Expect = 'CONFIGURATION_CHANGED_SINCE_START' }
+    @{ Name = 'running, process start time unknown'; Exists = $true; Status = 'Running'; Text = $closedText; Write = $before; Start = $null; Expect = 'SERVICE_START_TIME_UNKNOWN' }
+    @{ Name = 'start pending, process start time unknown'; Exists = $true; Status = 'StartPending'; Text = $closedText; Write = $before; Start = $null; Expect = 'SERVICE_START_TIME_UNKNOWN' }
+    @{ Name = 'service status unknown, process start time unknown'; Exists = $true; Status = $null; Text = $closedText; Write = $before; Start = $null; Expect = 'SERVICE_START_TIME_UNKNOWN' }
+    @{ Name = 'running, file write time unknown'; Exists = $true; Status = 'Running'; Text = $closedText; Write = $null; Start = $started; Expect = 'CONFIGURATION_WRITE_TIME_UNKNOWN' }
+    @{ Name = 'stopped, file newer, no process (the file is the truth)'; Exists = $true; Status = 'Stopped'; Text = $closedText; Write = $after; Start = $null; Expect = $null }
+    @{ Name = 'stopped, dispatch open'; Exists = $true; Status = 'Stopped'; Text = $openText; Write = $after; Start = $null; Expect = 'UPGRADE_REFUSED_DISPATCH_OPEN' }
 )
 foreach ($case in $preInstallCases) {
     $got = $null; $err = $null
-    try { $got = Get-ParallelPreInstallRefusal -ServiceExists $case.Exists -ConfigurationPath 'C:\x\appsettings.Production.json' -ConfigurationText $case.Text }
-    catch { $err = $_.Exception.Message }
-    $ok = $null -eq $err -and (($null -eq $case.Expect) ? ($null -eq $got) : ($null -ne $got -and $got.StartsWith($case.Expect)))
+    try {
+        $got = Get-ParallelPreInstallRefusal -ServiceExists $case.Exists -ServiceStatus $case.Status -ServiceName $v2Service `
+            -ConfigurationPath $v2Configuration -ConfigurationText $case.Text -ConfigurationWriteTimeUtc $case.Write -ProcessStartTimeUtc $case.Start
+    } catch { $err = $_.Exception.Message }
+    $ok = $null -eq $err -and (($null -eq $case.Expect) ? ($null -eq $got) : ($null -ne $got -and $got.StartsWith($case.Expect) -and $got.EndsWith('Nothing was stopped or changed.')))
     Write-Result -Ok $ok -Name "pre-install check: $($case.Name) -> $($case.Expect ?? 'go ahead')" -Detail "got: $got; threw: $err"
 }
-$missing = try { Get-ParallelPreInstallRefusal -ServiceExists $true -ConfigurationPath 'C:\x\appsettings.Production.json' -ConfigurationText $null } catch { '' }
-Write-Result -Ok ($null -ne $missing -and $missing.Contains('C:\x\appsettings.Production.json') -and $missing.Contains('Nothing was stopped or changed')) `
-    -Name 'a missing configuration names the path, tells the operator to find out why, and says nothing was touched' -Detail "got: $missing"
+$missing = Get-ParallelPreInstallRefusal -ServiceExists $true -ServiceStatus 'Running' -ServiceName $v2Service -ConfigurationPath $v2Configuration -ConfigurationText $null -ConfigurationWriteTimeUtc $null -ProcessStartTimeUtc $started
+Write-Result -Ok ($null -ne $missing -and $missing.Contains($v2Configuration) -and $missing.Contains('find out why')) `
+    -Name 'a missing configuration names the V2 path and tells the operator to find out why' -Detail "got: $missing"
+$changed = Get-ParallelPreInstallRefusal -ServiceExists $true -ServiceStatus 'Running' -ServiceName $v2Service -ConfigurationPath $v2Configuration -ConfigurationText $closedText -ConfigurationWriteTimeUtc $after -ProcessStartTimeUtc $started
+Write-Result -Ok ($null -ne $changed -and $changed.Contains("Restart '$v2Service'") -and $changed.Contains("NOT '$mvpService'")) `
+    -Name 'a changed-since-start configuration says to restart the V2 service, not the MVP''s' -Detail "got: $changed"
 
 # The read-back checks, through the -Writer seam: a write that is lost or lands something else must
 # be caught. Without the read-back (M4) or with a per-value check that never reports (M10), these go
@@ -2262,14 +2297,99 @@ $installerAst = [System.Management.Automation.Language.Parser]::ParseFile((Join-
 $calls = @($installerAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true))
 $productCalls = @($calls | Where-Object { $_.GetCommandName() -eq 'Invoke-ProductInstaller' })
 $resolveCalls = @($calls | Where-Object { $_.GetCommandName() -eq 'Resolve-ParallelFaultRecoveryCredential' })
-$unguarded = @($productCalls | Where-Object {
-        $site = $_
-        -not ($resolveCalls | Where-Object { $_.Extent.StartOffset -lt $site.Extent.StartOffset -and
-                $site.Extent.StartOffset - $_.Extent.StartOffset -lt 6000 })
-    })
-Write-Result -Ok ($productCalls.Count -eq 2 -and $unguarded.Count -eq 0) `
-    -Name 'both product-installer call sites (install, rollback) take the credential first' `
-    -Detail ("call sites: $($productCalls.Count); without a preceding Resolve-: " + (($unguarded | ForEach-Object { "line $($_.Extent.StartLineNumber)" }) -join ', '))
+$recordCall = @($calls | Where-Object { $_.GetCommandName() -eq 'Copy-Item' -and $_.Extent.Text.Contains('InstalledDefinitionPath') })
+$firstProduct = @($productCalls | Sort-Object { $_.Extent.StartOffset } | Select-Object -First 1)
+# Incremental review, item 4: the credential refusal says "Nothing was stopped or changed", so it must
+# come before the first change -- re-recording the installed definition -- on both paths: one call,
+# shared by install and rollback, ahead of it.
+Write-Result -Ok ($resolveCalls.Count -eq 1 -and $recordCall.Count -eq 1 -and $productCalls.Count -eq 2 -and
+    $resolveCalls[0].Extent.StartOffset -lt $recordCall[0].Extent.StartOffset -and $resolveCalls[0].Extent.StartOffset -lt $firstProduct[0].Extent.StartOffset) `
+    -Name 'the credential is resolved once, for both paths, before the installed definition is recorded and before any product script' `
+    -Detail ("Resolve- calls: $($resolveCalls.Count) at " + (($resolveCalls | ForEach-Object { "line $($_.Extent.StartLineNumber)" }) -join ', ') + "; record at line $($recordCall | ForEach-Object { $_.Extent.StartLineNumber })")
+
+# Incremental review, item 3: the installer's wiring, from its AST. Each injected action must run the
+# command it stands for (R1-R4, R6 swapped or emptied them and every behaviour test stayed green,
+# because those tests inject their own actions); the pre-install refusal must actually be thrown (R5: a
+# computed refusal that is never thrown is a check that silently does nothing); and its inputs must come
+# from the machine (-ServiceExists and -ServiceStatus from Get-Service, the start time from the process).
+function Get-ActionCommands {
+    # The command names inside one entry of an -Actions hashtable literal passed to $Function.
+    param([string] $Function, [string] $Key)
+    $call = $installerAst.Find({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq $Function }, $true)
+    if ($null -eq $call) { return @('(no call of ' + $Function + ')') }
+    $table = $call.Find({ param($n) $n -is [System.Management.Automation.Language.HashtableAst] }, $true)
+    if ($null -eq $table) { return @('(no -Actions hashtable)') }
+    $pair = @($table.KeyValuePairs | Where-Object { $_.Item1.Extent.Text -eq $Key })
+    if ($pair.Count -ne 1) { return @("(no $Key action)") }
+    return @($pair[0].Item2.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true) | ForEach-Object {
+            $name = $_.GetCommandName(); if ($name) { $name } else { $_.CommandElements[0].Extent.Text } })
+}
+$actionWiring = @(
+    @{ Function = 'Invoke-ParallelProductUpgrade'; Key = 'StopService'; Expect = @('Stop-Service', 'Get-Service'); Text = "WaitForStatus('Stopped'" }
+    @{ Function = 'Invoke-ParallelProductUpgrade'; Key = 'InvokeUpdate'; Expect = @("(Join-Path `$scripts 'Update-ControlServerLocal.ps1')"); Text = '-ServiceName $serviceName' }
+    @{ Function = 'Invoke-ParallelProductUpgrade'; Key = 'ServiceStatus'; Expect = @('Get-Service'); Text = '-Name $serviceName' }
+    @{ Function = 'Invoke-ParallelInstanceConfigurationStep'; Key = 'GetEnvironment'; Expect = @('Get-ServiceEnvironment'); Text = $null }
+    @{ Function = 'Invoke-ParallelInstanceConfigurationStep'; Key = 'SetEnvironment'; Expect = @('Set-ServiceEnvironment'); Text = 'Set-ServiceEnvironment $Environment' }
+    @{ Function = 'Invoke-ParallelInstanceConfigurationStep'; Key = 'RestartService'; Expect = @('Restart-Service'); Text = '-Name $serviceName' }
+)
+foreach ($wire in $actionWiring) {
+    $commands = @(Get-ActionCommands -Function $wire.Function -Key $wire.Key)
+    $absentCommands = @($wire.Expect | Where-Object { $commands -notcontains $_ })
+    $call = $installerAst.Find({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq $wire.Function }, $true)
+    $pairText = ''
+    if ($null -ne $call) {
+        $table = $call.Find({ param($n) $n -is [System.Management.Automation.Language.HashtableAst] }, $true)
+        $pairText = @($table.KeyValuePairs | Where-Object { $_.Item1.Extent.Text -eq $wire.Key } | ForEach-Object { $_.Item2.Extent.Text }) -join ''
+    }
+    $textOk = $null -eq $wire.Text -or $pairText.Contains($wire.Text)
+    Write-Result -Ok ($absentCommands.Count -eq 0 -and $textOk) -Name "wiring: $($wire.Function) -Actions.$($wire.Key) runs $($wire.Expect -join ' + ')" `
+        -Detail ("commands: " + ($commands -join ', ') + "; missing: " + ($absentCommands -join ', ') + "; text '$($wire.Text)' present: $textOk")
+}
+$preCallAst = @($calls | Where-Object { $_.GetCommandName() -eq 'Get-ParallelPreInstallRefusal' } | Select-Object -First 1)
+$argumentText = { param($command, [string] $name)
+    $elements = $command.CommandElements
+    for ($i = 0; $i -lt $elements.Count - 1; $i++) {
+        if ($elements[$i] -is [System.Management.Automation.Language.CommandParameterAst] -and $elements[$i].ParameterName -eq $name) { return $elements[$i + 1].Extent.Text }
+    }
+    return '' }
+$existsText = $preCallAst.Count -eq 1 ? (& $argumentText $preCallAst[0] 'ServiceExists') : ''
+$statusText = $preCallAst.Count -eq 1 ? (& $argumentText $preCallAst[0] 'ServiceStatus') : ''
+$startText = $preCallAst.Count -eq 1 ? (& $argumentText $preCallAst[0] 'ProcessStartTimeUtc') : ''
+$writeText = $preCallAst.Count -eq 1 ? (& $argumentText $preCallAst[0] 'ConfigurationWriteTimeUtc') : ''
+Write-Result -Ok ($existsText.Contains('Get-Service -Name $serviceName') -and $statusText.Contains('Get-Service -Name $serviceName') -and $statusText.Contains('.Status')) `
+    -Name 'wiring: the pre-install check''s -ServiceExists and -ServiceStatus come from Get-Service on this instance''s service' -Detail "exists: $existsText; status: $statusText"
+Write-Result -Ok ($startText.Contains('Get-ParallelServiceProcessStartTimeUtc -ServiceName $serviceName') -and $writeText.Contains('GetLastWriteTimeUtc($installedConfigurationPath)')) `
+    -Name 'wiring: the start time comes from the service''s process and the write time from the installed file' -Detail "start: $startText; write: $writeText"
+# R5: the result is thrown, by the statement right after the call, unconditionally on a refusal.
+$thrown = $false
+if ($preCallAst.Count -eq 1) {
+    $assignment = $preCallAst[0].Parent
+    while ($assignment -and $assignment -isnot [System.Management.Automation.Language.AssignmentStatementAst]) { $assignment = $assignment.Parent }
+    if ($assignment) {
+        $variable = $assignment.Left.Extent.Text
+        $block = $assignment.Parent
+        $index = $block.Statements.IndexOf($assignment)
+        $next = $index -ge 0 -and $index + 1 -lt $block.Statements.Count ? $block.Statements[$index + 1] : $null
+        $thrown = $next -is [System.Management.Automation.Language.IfStatementAst] -and $next.Clauses.Count -eq 1 -and
+            $next.Clauses[0].Item1.Extent.Text -ceq $variable -and $next.Clauses[0].Item2.Statements.Count -eq 1 -and
+            $next.Clauses[0].Item2.Statements[0].Extent.Text -ceq "throw $variable"
+    }
+}
+Write-Result -Ok $thrown -Name 'wiring: the pre-install refusal is thrown by the very next statement (R5: computed but not thrown is a silent no-op)' -Detail 'next statement is not "if (<refusal>) { throw <refusal> }"'
+# Incremental review, item 4: the rollback's previous generation is checked before the record and the
+# swap, and the rollback asks for the product script's result file as the install path does.
+$previousCheck = @($installerAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.IfStatementAst] -and
+            $n.Clauses[0].Item1.Extent.Text.Contains('$Rollback') -and $n.Clauses[0].Item1.Extent.Text.Contains("Join-Path `$previousRoot 'controlserver'") }, $true))
+$swapFirst = @($calls | Where-Object { $_.GetCommandName() -eq 'Move-Item' } | Sort-Object { $_.Extent.StartOffset } | Select-Object -First 1)
+Write-Result -Ok ($previousCheck.Count -eq 1 -and $recordCall.Count -eq 1 -and $previousCheck[0].Extent.StartOffset -lt $recordCall[0].Extent.StartOffset -and
+    $previousCheck[0].Extent.StartOffset -lt $swapFirst[0].Extent.StartOffset -and $previousCheck[0].Clauses[0].Item2.Extent.Text.Contains('throw')) `
+    -Name 'rollback: <previous>\controlserver is checked, and refused on, before the definition is recorded and before any directory is swapped' -Detail "checks found: $($previousCheck.Count)"
+$rollbackBlock = $installerAst.Find({ param($n) $n -is [System.Management.Automation.Language.IfStatementAst] -and $n.Clauses[0].Item1.Extent.Text -ceq '$Rollback' }, $true)
+$rollbackProduct = $null -eq $rollbackBlock ? $null : $rollbackBlock.Clauses[0].Item2.Find({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Invoke-ProductInstaller' }, $true)
+$resultCheck = $null -eq $rollbackBlock ? $null : $rollbackBlock.Clauses[0].Item2.Find({ param($n) $n -is [System.Management.Automation.Language.IfStatementAst] -and
+            $n.Clauses[0].Item1.Extent.Text.Contains('$resultPath') -and $n.Clauses[0].Item2.Extent.Text.Contains('throw') }, $true)
+Write-Result -Ok ($null -ne $rollbackProduct -and $null -ne $resultCheck -and $resultCheck.Extent.StartOffset -gt $rollbackProduct.Extent.StartOffset) `
+    -Name 'rollback: a missing product result file after the product script is refused, as on the install path' -Detail 'no result-file check after Invoke-ProductInstaller in the rollback branch'
 $setConfig = $installerAst.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Set-InstanceConfiguration' }, $true)
 $inside = $null -eq $setConfig ? @() : @($setConfig.Body.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true) | ForEach-Object { $_.GetCommandName() })
 $needed = @('Invoke-ParallelInstanceConfigurationStep')

@@ -47,3 +47,45 @@
 (第一次「恢复旧条件」的变异写错了，调用仍无条件执行，作废；下面是真正把调用包进 if 的版本)
 == old gating restored, as an if around the call : 326 passed, 1 failed -> KILLED
    FAIL  the pre-install check is not inside any if: no file-exists condition can skip it
+
+# 增量审查补项（第 1-5 项）
+== R5 pre-install refusal computed but not thrown (Install-ParallelInstanceLocal.ps1): 345 passed, 1 failed -> KILLED
+   FAIL  wiring: the pre-install refusal is thrown by the very next statement (R5: computed but not thrown is a silent no-op)
+== R1 StopService action does not stop the service (Install-ParallelInstanceLocal.ps1): 345 passed, 1 failed -> KILLED
+   FAIL  wiring: Invoke-ParallelProductUpgrade -Actions.StopService runs Stop-Service + Get-Service
+== R2 InvokeUpdate action runs the first-install script (Install-ParallelInstanceLocal.ps1): 344 passed, 2 failed -> KILLED
+   FAIL  upgrade branch: runs the product upgrade script through Invoke-ParallelProductUpgrade
+   FAIL  wiring: Invoke-ParallelProductUpgrade -Actions.InvokeUpdate runs (Join-Path $scripts 'Update-ControlServerLocal.ps1')
+== R3 ServiceStatus action returns a constant (Install-ParallelInstanceLocal.ps1): 345 passed, 1 failed -> KILLED
+   FAIL  wiring: Invoke-ParallelProductUpgrade -Actions.ServiceStatus runs Get-Service
+== R4 GetEnvironment action returns nothing (Install-ParallelInstanceLocal.ps1): 345 passed, 1 failed -> KILLED
+   FAIL  wiring: Invoke-ParallelInstanceConfigurationStep -Actions.GetEnvironment runs Get-ServiceEnvironment
+== R? SetEnvironment action writes nothing (Install-ParallelInstanceLocal.ps1): 345 passed, 1 failed -> KILLED
+   FAIL  wiring: Invoke-ParallelInstanceConfigurationStep -Actions.SetEnvironment runs Set-ServiceEnvironment
+== R6 RestartService action does not restart (Install-ParallelInstanceLocal.ps1): 345 passed, 1 failed -> KILLED
+   FAIL  wiring: Invoke-ParallelInstanceConfigurationStep -Actions.RestartService runs Restart-Service
+== -ServiceExists not from Get-Service (Install-ParallelInstanceLocal.ps1): 345 passed, 1 failed -> KILLED
+   FAIL  wiring: the pre-install check's -ServiceExists and -ServiceStatus come from Get-Service on this instance's service
+== start time not read from the process (Install-ParallelInstanceLocal.ps1): 345 passed, 1 failed -> KILLED
+   FAIL  wiring: the start time comes from the service's process and the write time from the installed file
+== rollback previous-generation check removed (Install-ParallelInstanceLocal.ps1): 345 passed, 1 failed -> KILLED
+   FAIL  rollback: <previous>\controlserver is checked, and refused on, before the definition is recorded and before any directory is swapped
+== rollback result-file check removed (Install-ParallelInstanceLocal.ps1): 345 passed, 1 failed -> KILLED
+   FAIL  rollback: a missing product result file after the product script is refused, as on the install path
+== item 2: changed-since-start never refuses (ParallelInstance.psm1): 344 passed, 2 failed -> KILLED
+   FAIL  pre-install check: running, file edited to closed AFTER the process started (not restarted) -> CONFIGURATION_CHANGED_SINCE_START
+   FAIL  a changed-since-start configuration says to restart the V2 service, not the MVP's
+== item 2: unknown start time let through (ParallelInstance.psm1): 343 passed, 3 failed -> KILLED
+   FAIL  pre-install check: running, process start time unknown -> SERVICE_START_TIME_UNKNOWN
+   FAIL  pre-install check: start pending, process start time unknown -> SERVICE_START_TIME_UNKNOWN
+   FAIL  pre-install check: service status unknown, process start time unknown -> SERVICE_START_TIME_UNKNOWN
+== item 2: only Running is compared (ParallelInstance.psm1): 344 passed, 2 failed -> KILLED
+   FAIL  pre-install check: start pending, process start time unknown -> SERVICE_START_TIME_UNKNOWN
+   FAIL  pre-install check: service status unknown, process start time unknown -> SERVICE_START_TIME_UNKNOWN
+== item 1: MVP service not warned off (ParallelInstance.psm1): 344 passed, 2 failed -> KILLED
+   FAIL  upgrade refusal: RiotCreateDispatch.enabled true -> refused, with the V2 file and service named and the MVP's warned off
+   FAIL  upgrade refusal: riotCreateDispatch.Enabled true (other casing) -> refused, with the V2 file and service named and the MVP's warned off
+(「先编辑后停需求」第一次写成只改措辞、不改顺序，变异无效，作废；下面是真正改了顺序的版本)
+== item 1: steps reordered (edit, restart, then stop new demand) (ParallelInstance.psm1): 344 passed, 2 failed -> KILLED
+   FAIL  upgrade refusal: RiotCreateDispatch.enabled true -> refused, with the V2 file and service named and the MVP's warned off
+   FAIL  upgrade refusal: riotCreateDispatch.Enabled true (other casing) -> refused, with the V2 file and service named and the MVP's warned off

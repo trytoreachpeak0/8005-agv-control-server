@@ -1584,6 +1584,22 @@ function Resolve-ParallelFaultRecoveryCredential {
     return $null
 }
 
+function Get-ParallelGateClosingSteps {
+    <#
+        The operator's steps to close this instance's RIoT dispatch gate, spelled out with this
+        instance's file and service and the MVP's beside them (control-server#454, incremental review
+        item 1). The two install roots differ only by '.V2', and an operator who edits the MVP's file
+        or restarts the MVP's service has changed production and left this instance's gate open.
+    #>
+    param([string] $ConfigurationPath, [string] $ServiceName)
+    $mvpConfiguration = "$($script:ProductionPaths[0])\appsettings.Production.json"
+    return ("Close the gate on THIS instance, in this order: (1) stop injecting new demand into its FakeMesIngest and wait " +
+        "until agv02 and agv03 both report their last order Completed; (2) edit $ConfigurationPath -- the V2 file, NOT the " +
+        "MVP's $mvpConfiguration -- and set RiotCreateDispatch.enabled to false, with an editor that keeps the file UTF-8 " +
+        '(saving it from Notepad with "Save As" can re-encode it and corrupt the Chinese agvId); (3) restart the service ' +
+        "'$ServiceName' -- NOT '$script:ProductionServiceName'. Then run this again.")
+}
+
 function Get-ParallelUpgradeRefusal {
     <#
         .SYNOPSIS
@@ -1593,24 +1609,26 @@ function Get-ParallelUpgradeRefusal {
             control-server#454 review S3. An upgrade and a rollback stop the service, and with it the
             journey runtime -- including its fault supervision of a vehicle that is under way. While
             the installed configuration lets this instance place RIoT orders (RiotCreateDispatch
-            enabled), a vehicle may be under way, so both are refused before anything is touched.
-            Closing the gate is a configuration change of its own: set RiotCreateDispatch.enabled to
-            false in the installed appsettings.Production.json, restart the service, and wait for
-            agv02 and agv03 to report their orders Completed. Whether a vehicle IS under way cannot be
-            read from here; the gate is the state this instance controls.
+            enabled), a vehicle may be under way, so both are refused before anything is touched. The
+            message carries the closing steps with this instance's own file and service named, and the
+            MVP's beside them as the ones NOT to touch (Get-ParallelGateClosingSteps). Whether a
+            vehicle IS under way cannot be read from here; the gate is the state this instance controls.
 
             Pure: takes the installed configuration as read. Keys match ignoring case, as .NET reads
             them; an absent section or flag is the product default, closed.
     #>
     [CmdletBinding()]
-    param([Parameter(Mandatory = $true)][System.Collections.IDictionary] $Configuration)
+    param(
+        [Parameter(Mandatory = $true)][System.Collections.IDictionary] $Configuration,
+        [Parameter(Mandatory = $true)][string] $ConfigurationPath,
+        [Parameter(Mandatory = $true)][string] $ServiceName
+    )
     $dispatch = Get-ConfigurationValue $Configuration 'RiotCreateDispatch'
     if ((Get-ConfigurationValue $dispatch 'enabled') -eq $true) {
-        return ('UPGRADE_REFUSED_DISPATCH_OPEN: the installed configuration has RiotCreateDispatch.enabled=true, so a vehicle ' +
-            'may be under way, and stopping the service would stop the runtime''s fault supervision of it. Close the gate ' +
-            'first -- set RiotCreateDispatch.enabled to false in the installed appsettings.Production.json and restart the ' +
-            'service -- then wait until agv02 and agv03 both report their orders Completed, and run this again. Nothing was ' +
-            'stopped or changed.')
+        return ("UPGRADE_REFUSED_DISPATCH_OPEN: $ConfigurationPath has RiotCreateDispatch.enabled=true, so a vehicle may be " +
+            'under way, and stopping the service would stop the runtime''s fault supervision of it. ' +
+            (Get-ParallelGateClosingSteps -ConfigurationPath $ConfigurationPath -ServiceName $ServiceName) +
+            ' Nothing was stopped or changed.')
     }
     return $null
 }
@@ -1623,40 +1641,71 @@ function Get-ParallelPreInstallRefusal {
 
         .DESCRIPTION
             control-server#454. Fail closed. With the service present, the installed
-            appsettings.Production.json is what an upgrade and a rollback work on, and three states
-            refuse:
+            appsettings.Production.json is what an upgrade and a rollback work on, and these refuse:
               * INSTALLED_CONFIGURATION_MISSING: the service exists and the file does not. Nobody can
                 say what that instance is doing, and -Rollback used to swap the package directories
                 before finding out (an earlier version of this check ran only when the file existed);
               * INSTALLED_CONFIGURATION_UNREADABLE: empty, not JSON, or not a JSON object;
+              * SERVICE_START_TIME_UNKNOWN / CONFIGURATION_WRITE_TIME_UNKNOWN: the service is not
+                stopped, and one of the two times below cannot be had;
+              * CONFIGURATION_CHANGED_SINCE_START: the file was written after the running process
+                started (incremental review item 2). The process read the file when it started; what
+                the file says now -- RiotCreateDispatch.enabled=false after a hand edit, say -- is not
+                what the process is doing until it restarts, so reading the file would let through
+                exactly the open gate S3 refuses;
               * whatever Get-ParallelUpgradeRefusal says (RIoT dispatch open).
-            With no service there is nothing running to protect and nothing to upgrade: a first
-            install goes ahead, whatever file may be lying around.
+            The time comparison is skipped only for a service that is Stopped: no process, so the file
+            is the truth. With no service there is nothing running to protect and nothing to upgrade:
+            a first install goes ahead, whatever file may be lying around.
 
-            Pure: the caller says whether the service exists and passes the file's text, or $null
-            when the file does not exist.
+            Pure: the caller says whether the service exists and its status, passes the file's text
+            ($null when the file does not exist), its last write time and the process start time, both
+            UTC ($null when unknown).
     #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)][bool] $ServiceExists,
+        [AllowNull()][AllowEmptyString()][string] $ServiceStatus,
+        [Parameter(Mandatory = $true)][string] $ServiceName,
         [Parameter(Mandatory = $true)][string] $ConfigurationPath,
         # Untyped on purpose: a [string] parameter turns $null into '', and $null (missing file) and ''
-        # (empty file) are different refusals.
-        [AllowNull()][AllowEmptyString()] $ConfigurationText
+        # (empty file) are different refusals. The two times are untyped so $null means unknown.
+        [AllowNull()][AllowEmptyString()] $ConfigurationText,
+        [AllowNull()] $ConfigurationWriteTimeUtc,
+        [AllowNull()] $ProcessStartTimeUtc
     )
     if (-not $ServiceExists) { return $null }
+    $nothing = ' Nothing was stopped or changed.'
     if ($null -eq $ConfigurationText) {
-        return ("INSTALLED_CONFIGURATION_MISSING: the service exists but $ConfigurationPath does not. That is not a state any " +
-            'install or rollback leaves behind: find out why the file is gone (restored from the latest backup under the ' +
-            'backup root? removed by hand?) before running this again. Nothing was stopped or changed.')
+        return ("INSTALLED_CONFIGURATION_MISSING: the service '$ServiceName' exists but $ConfigurationPath does not. That is " +
+            'not a state any install or rollback leaves behind: find out why the file is gone (restored from the latest ' +
+            'backup under the backup root? removed by hand?) before running this again.' + $nothing)
     }
     $configuration = $null
     try { $configuration = ConvertFrom-Json -InputObject ([string] $ConfigurationText) -AsHashtable -Depth 12 -ErrorAction Stop } catch { $configuration = $null }
     if ($configuration -isnot [System.Collections.IDictionary]) {
         return ("INSTALLED_CONFIGURATION_UNREADABLE: $ConfigurationPath is not a JSON object (empty, not JSON, or the wrong " +
-            'shape). Find out what wrote it before running this again. Nothing was stopped or changed.')
+            'shape). Find out what wrote it before running this again.' + $nothing)
     }
-    return Get-ParallelUpgradeRefusal -Configuration $configuration
+    if ($ServiceStatus -ne 'Stopped') {
+        if ($null -eq $ProcessStartTimeUtc) {
+            return ("SERVICE_START_TIME_UNKNOWN: the service '$ServiceName' is $(if ($ServiceStatus) { $ServiceStatus } else { 'in an unknown state' }) " +
+                'and the start time of its process cannot be read, so whether it runs on what ' +
+                "$ConfigurationPath says now cannot be told. Find out why (is the process there?) before running this again." + $nothing)
+        }
+        if ($null -eq $ConfigurationWriteTimeUtc) {
+            return ("CONFIGURATION_WRITE_TIME_UNKNOWN: the last write time of $ConfigurationPath cannot be read." + $nothing)
+        }
+        if ([datetime] $ConfigurationWriteTimeUtc -gt [datetime] $ProcessStartTimeUtc) {
+            return ("CONFIGURATION_CHANGED_SINCE_START: $ConfigurationPath was written at " +
+                "$(([datetime] $ConfigurationWriteTimeUtc).ToString('o')), after the process of '$ServiceName' started at " +
+                "$(([datetime] $ProcessStartTimeUtc).ToString('o')). The running process still works on what the file said " +
+                "when it started -- an open RIoT dispatch gate, possibly. Restart '$ServiceName' (the V2 service, NOT " +
+                "'$script:ProductionServiceName') so it reads the file, then run this again." + $nothing)
+        }
+    }
+    $dispatchRefusal = Get-ParallelUpgradeRefusal -Configuration $configuration -ConfigurationPath $ConfigurationPath -ServiceName $ServiceName
+    return $dispatchRefusal
 }
 
 function Get-ConfigurationValue {

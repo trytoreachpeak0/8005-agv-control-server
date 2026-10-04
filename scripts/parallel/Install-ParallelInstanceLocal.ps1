@@ -200,20 +200,66 @@ try {
     $mvpBefore = Get-MvpFingerprint
     Write-Step ("MVP service before: " + (Format-MvpFingerprint $mvpBefore))
 
-    # Before the installed definition is re-recorded, before a rollback swaps directories, before
-    # anything is unpacked, and with no condition around it (control-server#454): with the service
+    function Get-ServiceEnvironment {
+        # This service's registry Environment (REG_MULTI_SZ); empty when the service does not exist.
+        $registryKey = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey("SYSTEM\CurrentControlSet\Services\$serviceName", $false)
+        if ($null -eq $registryKey) { return [string[]] @() }
+        try { return [string[]] @($registryKey.GetValue('Environment', [string[]] @())) } finally { $registryKey.Close() }
+    }
+
+    function Set-ServiceEnvironment {
+        param([string[]] $Environment)
+        $key = "SYSTEM\CurrentControlSet\Services\$serviceName"
+        $registryKey = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($key, $true)
+        if ($null -eq $registryKey) { throw "Cannot open the service registry key: $key" }
+        try {
+            $registryKey.SetValue('Environment', $Environment, [Microsoft.Win32.RegistryValueKind]::MultiString)
+        } finally {
+            $registryKey.Close()
+        }
+    }
+
+    # ------------------------------------------------- refusals, before anything changes ---
+
+    # Every check that can refuse runs here, before the installed definition is re-recorded, before a
+    # rollback swaps directories, before anything is unpacked -- so "Nothing was stopped or changed"
+    # in a refusal is true (control-server#454 incremental review, item 4).
+
+    # The pre-install check, with no condition around it (control-server#454): with the service
     # present, refuse while RIoT dispatch is open (stopping the service would stop the runtime's
-    # fault supervision of a vehicle that may be under way, review S3), and refuse when the installed
+    # fault supervision of a vehicle that may be under way, review S3); refuse when the installed
     # configuration is missing or unreadable -- fail closed, instead of a -Rollback that swaps the
-    # package directories and only then finds out. Invoke-ParallelProductUpgrade asks about dispatch
-    # again right before it stops the service.
+    # package directories and only then finds out; and refuse when the file was written after the
+    # running process started, or either time is unknown -- a hand edit nobody restarted for is not
+    # what the process is doing (incremental review, item 2). Invoke-ParallelProductUpgrade asks
+    # about dispatch again right before it stops the service.
     # ReadAllText, not Get-Content -Raw: the latter returns $null for an empty file, which would read
     # as "missing" rather than "unreadable".
     $installedConfigurationPath = Join-Path $installRoot 'appsettings.Production.json'
+    $installedConfigurationExists = Test-Path -LiteralPath $installedConfigurationPath -PathType Leaf
     $preInstallRefusal = Get-ParallelPreInstallRefusal -ServiceExists ([bool] (Get-Service -Name $serviceName -ErrorAction SilentlyContinue)) `
-        -ConfigurationPath $installedConfigurationPath `
-        -ConfigurationText ((Test-Path -LiteralPath $installedConfigurationPath -PathType Leaf) ? [IO.File]::ReadAllText($installedConfigurationPath) : $null)
+        -ServiceStatus ([string] (Get-Service -Name $serviceName -ErrorAction SilentlyContinue)?.Status) `
+        -ServiceName $serviceName -ConfigurationPath $installedConfigurationPath `
+        -ConfigurationText ($installedConfigurationExists ? [IO.File]::ReadAllText($installedConfigurationPath) : $null) `
+        -ConfigurationWriteTimeUtc ($installedConfigurationExists ? [IO.File]::GetLastWriteTimeUtc($installedConfigurationPath) : $null) `
+        -ProcessStartTimeUtc (Get-ParallelServiceProcessStartTimeUtc -ServiceName $serviceName)
     if ($preInstallRefusal) { throw $preInstallRefusal }
+
+    # A rollback needs a previous generation the product script can install from; checked before the
+    # definition is re-recorded and before any directory is swapped (incremental review, item 4).
+    if ($Rollback -and -not (Test-Path -LiteralPath (Join-Path $previousRoot 'controlserver') -PathType Container)) {
+        throw "No previous generation to roll back to: $previousRoot\controlserver does not exist. Nothing was stopped or changed."
+    }
+
+    # The fault recovery credential (control-server#454): the control host's value when it sent one
+    # (install only: a rollback has no deploy-config.json), otherwise what the service already holds --
+    # read now, before a first install, or a rollback that lands in the product's first-install
+    # branch, rebuilds the Environment. With the entry on and neither, this refuses here, before
+    # anything changes.
+    $config = $Rollback ? $null : (Get-Content -Raw -LiteralPath $DeploymentConfigPath -Encoding utf8 | ConvertFrom-Json)
+    $faultRecoveryCredential = Resolve-ParallelFaultRecoveryCredential -Definition $definition `
+        -Supplied (($null -ne $config -and $config.PSObject.Properties.Name -contains 'faultRecoveryCredential') ? [string] $config.faultRecoveryCredential : $null) `
+        -Carried (Get-ParallelServiceEnvironmentEntry -Environment (Get-ServiceEnvironment) -Name (Get-ParallelInstanceName).FaultRecoveryCredentialVariable)
 
     # The definition this install (or rollback) runs with, recorded before anything changes. The
     # uninstaller reads this copy in preference to instance.json, which the control host
@@ -246,7 +292,7 @@ try {
             # JOURNEY_RUNTIME_LEFT_DISABLED. Set-InstanceConfiguration writes the definition's value
             # back only after this returned (control-server#454).
             Write-Step "Upgrading $serviceName with Update-ControlServerLocal.ps1"
-            $null = Invoke-ParallelProductUpgrade -ConfigurationPath (Join-Path $installRoot 'appsettings.Production.json') -Actions @{
+            $null = Invoke-ParallelProductUpgrade -ConfigurationPath (Join-Path $installRoot 'appsettings.Production.json') -ServiceName $serviceName -Actions @{
                 StopService = {
                     Stop-Service -Name $serviceName -Force
                     (Get-Service -Name $serviceName).WaitForStatus('Stopped', [TimeSpan]::FromSeconds(60))
@@ -269,25 +315,6 @@ try {
                 -ListenAddress $listenAddress -HealthBindAddress $healthBindAddress `
                 -OnboardPort $onboardPort -HealthPort $healthPort `
                 -SkipMachineEnvironmentInjection
-        }
-    }
-
-    function Get-ServiceEnvironment {
-        # This service's registry Environment (REG_MULTI_SZ); empty when the service does not exist.
-        $registryKey = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey("SYSTEM\CurrentControlSet\Services\$serviceName", $false)
-        if ($null -eq $registryKey) { return [string[]] @() }
-        try { return [string[]] @($registryKey.GetValue('Environment', [string[]] @())) } finally { $registryKey.Close() }
-    }
-
-    function Set-ServiceEnvironment {
-        param([string[]] $Environment)
-        $key = "SYSTEM\CurrentControlSet\Services\$serviceName"
-        $registryKey = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($key, $true)
-        if ($null -eq $registryKey) { throw "Cannot open the service registry key: $key" }
-        try {
-            $registryKey.SetValue('Environment', $Environment, [Microsoft.Win32.RegistryValueKind]::MultiString)
-        } finally {
-            $registryKey.Close()
         }
     }
 
@@ -420,17 +447,8 @@ try {
     # ---------------------------------------------------------------------- rollback ---
 
     if ($Rollback) {
-        if (-not (Test-Path -LiteralPath $previousRoot -PathType Container)) {
-            throw "No previous generation at $previousRoot. Nothing to roll back to."
-        }
+        # The previous generation and the credential were checked before anything changed (above).
         Write-Step "Rolling back $serviceName to the package in $previousRoot"
-
-        # A rollback has no deploy-config.json, so the fault recovery credential is the one the service
-        # already holds. Read before anything moves: if the product script lands in its first-install
-        # branch it rebuilds the Environment, and with the entry on and no credential the rollback
-        # stops here, with the machine untouched (control-server#454).
-        $faultRecoveryCredential = Resolve-ParallelFaultRecoveryCredential -Definition $definition -Supplied $null `
-            -Carried (Get-ParallelServiceEnvironmentEntry -Environment (Get-ServiceEnvironment) -Name (Get-ParallelInstanceName).FaultRecoveryCredentialVariable)
 
         # Swap rather than copy, so rolling back a rollback is the same operation again.
         $swap = Join-Path $layout.PackageParent ($layout.RollbackFilter.Replace('*', $runId))
@@ -439,6 +457,11 @@ try {
         if (Test-Path -LiteralPath $swap) { Move-Item -LiteralPath $swap -Destination $previousRoot }
 
         Invoke-ProductInstaller -PackageDirectory $packageRoot
+        # The same proof of completion the install path asks for (incremental review, item 4).
+        if (-not (Test-Path -LiteralPath $resultPath -PathType Leaf)) {
+            throw "The product installer produced no result file at $resultPath."
+        }
+        Write-Step "Installer result written to $resultPath"
         # The overlay is reapplied: an upgrade keeps the existing appsettings.Production.json, but a
         # rollback to a generation installed before some overlay key existed would otherwise come
         # back without it.
@@ -472,15 +495,7 @@ try {
         }
         Write-Step "Package hash verified ($actual)"
 
-        $config = Get-Content -Raw -LiteralPath $DeploymentConfigPath -Encoding utf8 | ConvertFrom-Json
-
-        # The fault recovery credential (control-server#454): the control host's value when it sent
-        # one, otherwise what the service already holds -- read now, before a first install rebuilds
-        # the Environment. With the entry on and neither, this stops before anything is unpacked or
-        # stopped.
-        $faultRecoveryCredential = Resolve-ParallelFaultRecoveryCredential -Definition $definition `
-            -Supplied (($config.PSObject.Properties.Name -contains 'faultRecoveryCredential') ? [string] $config.faultRecoveryCredential : $null) `
-            -Carried (Get-ParallelServiceEnvironmentEntry -Environment (Get-ServiceEnvironment) -Name (Get-ParallelInstanceName).FaultRecoveryCredentialVariable)
+        # $config (deploy-config.json) and $faultRecoveryCredential were read before anything changed.
 
         # ------------------------------------------------------------------ unpack ---
 

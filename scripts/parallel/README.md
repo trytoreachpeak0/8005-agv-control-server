@@ -48,13 +48,27 @@ control-server#262。约 2026-10-08 起 `factory01` 上同时跑两套 ControlSe
 
 1. **派车闸门开着就拒绝**（`UPGRADE_REFUSED_DISPATCH_OPEN`）。已装配置里 `RiotCreateDispatch.enabled` 为真时，车可能在途，
    停服务等于中途停掉运行时对它的故障监看。安装脚本在最开头就查一次（在记录定义、回滚对调目录、解包之前），包装函数停服务前
-   再查一次。要升级或回滚，先把已装 `appsettings.Production.json` 里的 `RiotCreateDispatch.enabled` 改成 false 并重启服务，
-   等 `agv02`／`agv03` 的单都 `Completed`，再跑。
-   同一个开头检查（`Get-ParallelPreInstallRefusal`）还按失败即关拒绝两种说不清的状态：服务在而已装配置不在
-   （`INSTALLED_CONFIGURATION_MISSING`），或配置读不出来（`INSTALLED_CONFIGURATION_UNREADABLE`）。以前这次检查只在配置文件存在时
-   才跑，`-Rollback` 会先对调包目录再失败。服务不在（首装）时不查。
+   再查一次。要升级或回滚，**先手工关闸门，按这个顺序**（拒绝消息里也照抄了这几步）：
+   1. 停止往 FakeMesIngest 注入新需求，等 `agv02`／`agv03` 的最后一张单都 `Completed`；
+   2. 编辑 **V2 的** `C:\Program Files\8005 AGV\ControlServer.V2\appsettings.Production.json`，把 `RiotCreateDispatch.enabled`
+      改成 false。**不是 MVP 的 `C:\Program Files\8005 AGV\ControlServer\appsettings.Production.json`**，两者只差一个 `.V2`。
+      用能保持 UTF-8 的编辑器改；用记事本「另存为」可能换掉编码，把中文 `agvId` 存坏；
+   3. 重启服务 **「8005 AGV ControlServer V2」**，不是 MVP 的「8005 AGV ControlServer」。
+
+   同一个开头检查（`Get-ParallelPreInstallRefusal`）还按失败即关拒绝这几种说不清的状态：
+   - 服务在而已装配置不在（`INSTALLED_CONFIGURATION_MISSING`），或配置读不出来（`INSTALLED_CONFIGURATION_UNREADABLE`）。以前这次
+     检查只在配置文件存在时才跑，`-Rollback` 会先对调包目录再失败；
+   - **配置改了、服务还没重启**（`CONFIGURATION_CHANGED_SINCE_START`）：已装配置的修改时间晚于服务进程的启动时间。只改了文件、
+     没重启时，文件里读到 false，可运行中的进程闸门还开着——正是这道检查要防的情况；
+   - 服务不是 Stopped、却读不到进程启动时间（`SERVICE_START_TIME_UNKNOWN`），或读不到文件修改时间（`CONFIGURATION_WRITE_TIME_UNKNOWN`）。
+
+   服务是 Stopped 时不比时间（没有在跑的进程，文件就是真相）；服务不在（首装）时整个不查。所有拒绝都在记录定义、回滚对调目录、
+   解包之前，所以拒绝消息里的「Nothing was stopped or changed」是真的。回滚还要求 `<包目录>.previous\controlserver` 存在，同样在
+   动手之前查。
 2. 停服务，再把文件里的开关置为 false，然后调升级脚本。于是升级的检查在运行时关着时进行，它的备份和失败回退也都停在 false。
-3. 升级成功后，`Set-InstanceConfiguration` 的覆盖层才把它写回定义里的值。
+3. 升级成功后，`Set-InstanceConfiguration` 的覆盖层把定义里的值写回去——**包括派车闸门**：`RiotCreateDispatch.enabled` 恢复成
+   实例定义里的值。出厂定义是 false，所以照常还是关着；定义里是 true（部署时带 `-AllowRiotCreateDispatch`）的话，升级成功后闸门会
+   重新打开。手工关闸门只为了让这一次升级放行，不改变定义。
 
 升级失败时开关留在 false（安全方向），打 `JOURNEY_RUNTIME_LEFT_DISABLED` 警告，写明文件里的值和服务状态，原样抛出。失败后
 服务处在哪种状态取决于升级脚本在哪一步失败：在它自己的预检里失败（例如包清单不对、输出路径已存在），服务停在我们停下的状态；

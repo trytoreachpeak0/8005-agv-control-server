@@ -383,6 +383,8 @@ function Invoke-ParallelProductUpgrade {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)][string] $ConfigurationPath,
+        # Named in the refusal, so the operator restarts this instance's service and not the MVP's.
+        [Parameter(Mandatory = $true)][string] $ServiceName,
         [Parameter(Mandatory = $true)][hashtable] $Actions
     )
     $missing = @('StopService', 'InvokeUpdate', 'ServiceStatus' | Where-Object { -not ($Actions.ContainsKey($_) -and $Actions[$_] -is [scriptblock]) })
@@ -392,7 +394,7 @@ function Invoke-ParallelProductUpgrade {
     }
 
     $installed = Get-Content -LiteralPath $ConfigurationPath -Raw -Encoding utf8 | ConvertFrom-Json -AsHashtable -Depth 12
-    $refusal = Get-ParallelUpgradeRefusal -Configuration $installed
+    $refusal = Get-ParallelUpgradeRefusal -Configuration $installed -ConfigurationPath $ConfigurationPath -ServiceName $ServiceName
     if ($refusal) { throw $refusal }
 
     $null = & $Actions.StopService
@@ -478,7 +480,30 @@ function Invoke-ParallelInstanceConfigurationStep {
     return $readiness
 }
 
-Export-ModuleMember -Function @('Get-MvpFingerprint', 'Assert-MvpUntouched', 'Format-MvpFingerprint',
+function Get-ParallelServiceProcessStartTimeUtc {
+    <#
+        .SYNOPSIS
+            When the process behind a service started, in UTC; $null when there is no process or it
+            cannot be read.
+
+        .DESCRIPTION
+            control-server#454 incremental review item 2: the installer compares it with the installed
+            configuration's last write time (Get-ParallelPreInstallRefusal). $null is "unknown", and
+            the check refuses on unknown, so nothing here needs to guess. The service name has passed
+            Test-InstanceName (no wildcards, no quotes needed in the WQL filter).
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string] $ServiceName)
+    try {
+        $wmi = Get-CimInstance -ClassName Win32_Service -Filter "Name='$ServiceName'" -ErrorAction Stop
+        if ($null -eq $wmi -or [int] $wmi.ProcessId -le 0) { return $null }
+        return (Get-Process -Id ([int] $wmi.ProcessId) -ErrorAction Stop).StartTime.ToUniversalTime()
+    } catch {
+        return $null
+    }
+}
+
+Export-ModuleMember -Function @('Get-MvpFingerprint', 'Assert-MvpUntouched', 'Format-MvpFingerprint', 'Get-ParallelServiceProcessStartTimeUtc',
     'Get-ParallelProductUninstallerPath', 'Test-ParallelProductUninstallerPremise', 'Invoke-ParallelProductUninstaller',
     'Update-ParallelInstanceConfigurationFile', 'Set-ParallelInstanceJourneyRuntimeDisabled',
     'Invoke-ParallelProductUpgrade', 'Invoke-ParallelInstanceConfigurationStep')

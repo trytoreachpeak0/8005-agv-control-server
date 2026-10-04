@@ -1,4 +1,4 @@
-Instance definition: C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs454-8005-agv-control-server\scripts\parallel\instance-factory01-v2.json
+Instance definition: C:\Users\szy\AppData\Local\Temp\cs454\redtree3\scripts\parallel\instance-factory01-v2.json
 
 The shipped file (must NOT be deployable yet)
   PASS  the shipped definition is refused for exactly its three map-26 placeholders
@@ -375,18 +375,23 @@ The shipped definition and the installer carry it
   PASS  the shipped definition states phase 1 (entry off, nothing declared, roster in opsRoot)
   PASS  the instance names its own fault recovery credential variable
   PASS  the layout carries the roster path (the installer creates an empty roster there, never overwrites one)
-  PASS  the credential is resolved once, for both paths, before the installed definition is recorded and before any product script
+  FAIL  the credential is resolved once, for both paths, before the installed definition is recorded and before any product script
+        Resolve- calls: 2 at line 432, line 481; record at line 224
   PASS  wiring: Invoke-ParallelProductUpgrade -Actions.StopService runs Stop-Service + Get-Service
   PASS  wiring: Invoke-ParallelProductUpgrade -Actions.InvokeUpdate runs (Join-Path $scripts 'Update-ControlServerLocal.ps1')
   PASS  wiring: Invoke-ParallelProductUpgrade -Actions.ServiceStatus runs Get-Service
   PASS  wiring: Invoke-ParallelInstanceConfigurationStep -Actions.GetEnvironment runs Get-ServiceEnvironment
   PASS  wiring: Invoke-ParallelInstanceConfigurationStep -Actions.SetEnvironment runs Set-ServiceEnvironment
   PASS  wiring: Invoke-ParallelInstanceConfigurationStep -Actions.RestartService runs Restart-Service
-  PASS  wiring: the pre-install check's -ServiceExists and -ServiceStatus come from Get-Service on this instance's service
-  PASS  wiring: the start time comes from the service's process and the write time from the installed file
+  FAIL  wiring: the pre-install check's -ServiceExists and -ServiceStatus come from Get-Service on this instance's service
+        exists: ([bool] (Get-Service -Name $serviceName -ErrorAction SilentlyContinue)); status: 
+  FAIL  wiring: the start time comes from the service's process and the write time from the installed file
+        start: ; write: 
   PASS  wiring: the pre-install refusal is thrown by the very next statement (R5: computed but not thrown is a silent no-op)
-  PASS  rollback: <previous>\controlserver is checked, and refused on, before the definition is recorded and before any directory is swapped
-  PASS  rollback: a missing product result file after the product script is refused, as on the install path
+  FAIL  rollback: <previous>\controlserver is checked, and refused on, before the definition is recorded and before any directory is swapped
+        checks found: 0
+  FAIL  rollback: a missing product result file after the product script is refused, as on the install path
+        no result-file check after Invoke-ProductInstaller in the rollback branch
   PASS  Set-InstanceConfiguration (run by install, upgrade and rollback) goes through Invoke-ParallelInstanceConfigurationStep
 
-346 passed, 0 failed
+341 passed, 5 failed
