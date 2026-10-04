@@ -691,6 +691,16 @@ function Get-G3FormalSliceWithheldReason {
     if ($overridden.Count -ne 0) { $reasons.Add('SELF_CHECK_OVERRIDE') }
     if ($unrecognised.Count -ne 0) { $reasons.Add("UNRECOGNISED_COMMIT_SOURCE: $($unrecognised -join ', ')") }
     if ('controlServerCommitSource' -notin $keys) { $reasons.Add('COMMIT_SOURCE_MISSING: controlServerCommitSource') }
+    # control-server#466: what ran, not only which commits it named. Get-G3RunnerProvenance's runnerSource is
+    # COMMITTED_RUNNER or the '; '-joined reasons it found; fail-closed the same two ways as the commit sources.
+    if ('runnerSource' -notin $keys) {
+        $reasons.Add('RUNNER_SOURCE_MISSING')
+    } elseif ("$($Commits.runnerSource)" -cne 'COMMITTED_RUNNER') {
+        foreach ($token in @("$($Commits.runnerSource)" -split '; ')) {
+            if (($token -split ':')[0] -cin (Get-G3RunnerSourceReasons)) { $reasons.Add($token) } else {
+                $reasons.Add("UNRECOGNISED_RUNNER_SOURCE: $token") }
+        }
+    }
     if ($reasons.Count -eq 0) { return $null }
     return $reasons -join '; '
 }
@@ -720,6 +730,139 @@ function Get-G3CommitSources {
             'SELF_CHECK_OVERRIDE' }
     }
     return $sources
+}
+
+# control-server#466. Until then SHARED_BINDING meant "equals the param defaults of the run-staged-g3.ps1 on
+# disk", not "equals the binding the repository committed": a locally edited default, run with no parameter,
+# graded four SHARED_BINDING sources and formalSlicePass true, and -SharedRunnerSource pointing at a copy did the
+# same. runnerWorktreeCleanAtStart was recorded but graded nothing, and it measured -ControlServerRepository
+# rather than the repository the runner lives in (the 2026-09-22 formal evidence says false next to a pass).
+#
+# So each runner now reads, before it writes anything:
+#   - the binding from its own repository's HEAD (git cat-file, not the file on disk), which Get-G3CommitSources
+#     compares the commits it actually uses with: an edited default, or a copy with other defaults, is an override;
+#   - runnerSource, one of the reasons below or COMMITTED_RUNNER, which Get-G3FormalSliceWithheldReason grades:
+#       RUNNER_WORKTREE_DIRTY      the runner's repository has changes, untracked files, or files flagged
+#                                  assume-unchanged / skip-worktree (which git status would not show);
+#       RUNNER_INPUT_OVERRIDE      a path parameter that decides what the run reads -- the shared runner it takes
+#                                  the binding, the harness and its error report from, the file it takes the
+#                                  binding reader from, the repository it reads the slice index and its own
+#                                  identity from -- was given a value other than its default. A copy keeping
+#                                  the defaults but carrying another harness is not visible to the binding check;
+#                                  this is what catches it;
+#       RUNNER_PROVENANCE_UNKNOWN  git could not say: no repository, no HEAD, a failed status, or a binding that
+#                                  does not read back out of HEAD.
+# Recorded, not refused: a self-check from a dirty tree or a copy still runs, it just is not gate evidence. An
+# exit ticket moving the binding edits the defaults, commits, and runs: HEAD then carries the new binding, the
+# tree is clean, and the run grades as before.
+function Get-G3RunnerSourceReasons {
+    return @('RUNNER_WORKTREE_DIRTY', 'RUNNER_INPUT_OVERRIDE', 'RUNNER_PROVENANCE_UNKNOWN')
+}
+
+# git's stdout as UTF-8 bytes, not through the console code page: the blob read back carries Chinese comments,
+# and a mis-decoded one is a parse error that would read as "no binding".
+function Invoke-G3Git {
+    param(
+        [Parameter(Mandatory)][string]$Repository,
+        [Parameter(Mandatory)][string[]]$Arguments
+    )
+
+    $start = [System.Diagnostics.ProcessStartInfo]::new('git')
+    $start.ArgumentList.Add('-C')
+    $start.ArgumentList.Add($Repository)
+    foreach ($argument in $Arguments) { $start.ArgumentList.Add($argument) }
+    $start.RedirectStandardOutput = $true
+    $start.RedirectStandardError = $true
+    $start.UseShellExecute = $false
+    $start.StandardOutputEncoding = [System.Text.UTF8Encoding]::new($false)
+    $process = [System.Diagnostics.Process]::Start($start)
+    $errorRead = $process.StandardError.ReadToEndAsync()
+    $output = $process.StandardOutput.ReadToEnd()
+    $process.WaitForExit()
+    if ($process.ExitCode -ne 0) {
+        throw "git $($Arguments -join ' ') exited with $($process.ExitCode): $($errorRead.Result.Trim())"
+    }
+    return $output
+}
+
+# The four commits out of a run-staged-g3.ps1 text, under Get-SharedCommitBinding's rules (one parameter each, a
+# literal lowercase full SHA-1). Separate from it because that one reads a path, and the reader a runner uses can
+# come from -CommitBindingFunctionSource; this one is only ever this file's.
+function ConvertFrom-G3CommitBindingText {
+    param([Parameter(Mandatory)][string]$Text)
+
+    $parseErrors = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseInput($Text, [ref]$null, [ref]$parseErrors)
+    if ($null -ne $parseErrors -and $parseErrors.Count -gt 0) { throw 'the binding at HEAD does not parse' }
+    if ($null -eq $ast.ParamBlock) { throw 'the binding at HEAD has no param block' }
+    $binding = [ordered]@{}
+    foreach ($name in @('ControlServerCommit', 'OnboardCommit', 'SimulatorCommit', 'ProtocolCommit')) {
+        $candidates = @($ast.ParamBlock.Parameters | Where-Object { $_.Name.VariablePath.UserPath -eq $name })
+        if ($candidates.Count -ne 1 -or
+            $candidates[0].DefaultValue -isnot [System.Management.Automation.Language.StringConstantExpressionAst] -or
+            $candidates[0].DefaultValue.Value -cnotmatch '^[0-9a-f]{40}$') {
+            throw "the binding at HEAD has no single literal lowercase full SHA-1 for `$$name"
+        }
+        $binding[$name] = $candidates[0].DefaultValue.Value
+    }
+    return $binding
+}
+
+# -ScriptRoot is the runner's $PSScriptRoot: the repository measured is the one the runner script lives in, never
+# a parameter. -Inputs names each path parameter that decides what the run reads, with the value the run got and
+# its default (Test-G3EvidenceHonesty pins those defaults to the param block's own). Call it before the run writes
+# anything: an EvidenceRoot or StageRoot inside the repository would otherwise make every run dirty -- or, measured
+# late, hide nothing, since a dirty tree must be seen before the run's own output joins it.
+function Get-G3RunnerProvenance {
+    param(
+        [Parameter(Mandatory)][string]$ScriptRoot,
+        [System.Collections.IDictionary]$Inputs = [ordered]@{}
+    )
+
+    $reasons = [System.Collections.Generic.List[string]]::new()
+    $repository = $null
+    $commit = $null
+    $clean = $null
+    $binding = $null
+    try {
+        $repository = [IO.Path]::GetFullPath((Invoke-G3Git -Repository $ScriptRoot -Arguments 'rev-parse', '--show-toplevel').Trim())
+        $commit = (Invoke-G3Git -Repository $repository -Arguments 'rev-parse', 'HEAD').Trim()
+        if ($commit -cnotmatch '^[0-9a-f]{40}$') { throw "HEAD is not a full SHA-1: $commit" }
+        $status = @((Invoke-G3Git -Repository $repository -Arguments 'status', '--porcelain', '--untracked-files=all') -split "`n" |
+                Where-Object { $_ -ne '' })
+        # ls-files -v tags an assume-unchanged file in lowercase and a skip-worktree file as S: status skips both.
+        $hidden = @((Invoke-G3Git -Repository $repository -Arguments 'ls-files', '-v') -split "`n" |
+                Where-Object { $_ -cmatch '^([a-z]|S) ' })
+        $clean = $status.Count -eq 0 -and $hidden.Count -eq 0
+        $relative = [IO.Path]::GetRelativePath($repository, (Join-Path $ScriptRoot 'run-staged-g3.ps1')).Replace('\', '/')
+        $binding = ConvertFrom-G3CommitBindingText -Text (Invoke-G3Git -Repository $repository -Arguments 'cat-file', 'blob', "HEAD:$relative")
+    } catch {
+        $clean = $null
+        $binding = $null
+        # '; ' joins the reasons; keep the message from splitting one.
+        $reasons.Add("RUNNER_PROVENANCE_UNKNOWN: $($_.Exception.Message.Replace(';', ',').Trim())")
+    }
+    if ($clean -eq $false) { $reasons.Insert(0, 'RUNNER_WORKTREE_DIRTY') }
+
+    $overridden = [System.Collections.Generic.List[string]]::new()
+    foreach ($name in $Inputs.Keys) {
+        $given = $Inputs[$name].Given
+        $default = $Inputs[$name].Default
+        $resolve = { param($path) $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($path).TrimEnd('\', '/') }
+        if ([string]::IsNullOrEmpty($given) -or [string]::IsNullOrEmpty($default) -or
+            (& $resolve $given) -ne (& $resolve $default)) { $overridden.Add($name) }
+    }
+    if ($overridden.Count -ne 0) {
+        $reasons.Insert([int]($clean -eq $false), "RUNNER_INPUT_OVERRIDE: $($overridden -join ', ')")
+    }
+
+    return [ordered]@{
+        runnerRepository = $repository
+        runnerCommit = $commit
+        runnerWorktreeClean = $clean
+        bindingAtHead = $binding
+        runnerSource = if ($reasons.Count -eq 0) { 'COMMITTED_RUNNER' } else { $reasons -join '; ' }
+    }
 }
 
 # The one place a slice's formalSlicePass is decided, for New-G3Classification and Write-G3GateResult alike:

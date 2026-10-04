@@ -265,7 +265,12 @@ Load-bearing details:
   `formalSlicePass: false` with `formalSliceWithheldReason`, decided once in
   `g3-slice-evidence.ps1` for all four runners (`run-staged-g3.ps1` records any commit
   passed on its command line that differs from its own param default the same way), and `-FieldRunRoot` refuses a store
-  the synthetic rig wrote (`L2-SUBLOT-*`, `BROKERX-L2-*`, `AGV-L2-*`). The binding moves only in an exit ticket's first step. The generator
+  the synthetic rig wrote (`L2-SUBLOT-*`, `BROKERX-L2-*`, `AGV-L2-*`). Since control-server#466 the
+  binding a run is compared with is the one committed at the runner repository's `HEAD`, not the file on
+  disk, and a formal pass also needs `runnerSource: COMMITTED_RUNNER`: the runner's own repository clean
+  (assume-unchanged and skip-worktree count as dirty) and every path parameter (`-SharedRunnerSource`,
+  `-CommitBindingFunctionSource`, `-ControlServerRepository`) at its default. Anything else is recorded, not
+  refused, and withholds the pass. So an exit ticket edits the defaults, **commits**, then runs. The binding moves only in an exit ticket's first step. The generator
   is not an L2 criterion and is deliberately absent from `l2.yml`.
 - **Check the commit bindings before a G3 run, and move them.** They are literal
   defaults, so a run inherits whatever the last run froze and silently gates old

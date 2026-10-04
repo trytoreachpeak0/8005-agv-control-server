@@ -147,21 +147,34 @@ $ControlServerCommit = $commitBinding['ControlServerCommit']
 $OnboardCommit = $commitBinding['OnboardCommit']
 $SimulatorCommit = $commitBinding['SimulatorCommit']
 $ProtocolCommit = $commitBinding['ProtocolCommit']
-$controlServerCommitSource = 'SHARED_BINDING'
-if (-not [string]::IsNullOrEmpty($SelfCheckControlServerCommit)) {
-    $ControlServerCommit = $SelfCheckControlServerCommit
-    $controlServerCommitSource = 'SELF_CHECK_OVERRIDE'
-}
 $sharedRunnerSha256 = (Get-FileHash -LiteralPath $SharedRunnerSource -Algorithm SHA256).Hash.ToLowerInvariant()
 $commitBindingFunctionSha256 =
     (Get-FileHash -LiteralPath $CommitBindingFunctionSource -Algorithm SHA256).Hash.ToLowerInvariant()
 
-$runnerCommit = (& git -C $ControlServerRepository rev-parse HEAD).Trim()
-if ($LASTEXITCODE -ne 0) { throw "Unable to read the runner commit from $ControlServerRepository" }
-$runnerWorktreeClean = @(& git -C $ControlServerRepository status --porcelain).Count -eq 0
-
 $G3RunKind = 'DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT'
 . (Join-Path $PSScriptRoot 'g3-slice-evidence.ps1')
+
+# control-server#466: the repository this script lives in (not -ControlServerRepository), whether any path
+# parameter that decides what the run reads was moved off its default -- -SharedRunnerSource also supplies the
+# harness this run compiles and its error report -- and the binding as HEAD committed it, which the commits read
+# off -SharedRunnerSource are compared with. Before anything is written.
+$runnerProvenance = Get-G3RunnerProvenance -ScriptRoot $PSScriptRoot -Inputs ([ordered]@{
+        SharedRunnerSource = @{ Given = $SharedRunnerSource; Default = (Join-Path $PSScriptRoot 'run-staged-g3.ps1') }
+        CommitBindingFunctionSource = @{ Given = $CommitBindingFunctionSource; Default = (Join-Path $PSScriptRoot 'run-staged-g3-restart.ps1') }
+        ControlServerRepository = @{ Given = $ControlServerRepository; Default = (Split-Path -Parent $PSScriptRoot) }
+    })
+$runnerCommit = $runnerProvenance.runnerCommit
+if ($null -eq $runnerCommit) { throw "Unable to read the runner commit: $($runnerProvenance.runnerSource)" }
+$runnerWorktreeClean = $runnerProvenance.runnerWorktreeClean
+$bindingSources = Get-G3CommitSources -Binding ($runnerProvenance.bindingAtHead ?? $commitBinding) -Actual $commitBinding
+$controlServerCommitSource = $bindingSources['controlServerCommitSource']
+if (-not [string]::IsNullOrEmpty($SelfCheckControlServerCommit)) {
+    $ControlServerCommit = $SelfCheckControlServerCommit
+    $controlServerCommitSource = 'SELF_CHECK_OVERRIDE'
+}
+$onboardCommitSource = $bindingSources['onboardCommitSource']
+$simulatorCommitSource = $bindingSources['simulatorCommitSource']
+$protocolCommitSource = $bindingSources['protocolCommitSource']
 # Before the clones and the builds, not after: naming a slice this runner cannot certify
 # should cost a message, not an hour of cloning and publishing.
 if (-not [string]::IsNullOrEmpty($Slice)) { Assert-G3SliceIsClaimedBy -RunKind $G3RunKind -Slice $Slice }
@@ -996,10 +1009,14 @@ $commitsRecord = [ordered]@{
     controlServer = $ControlServerCommit
     controlServerCommitSource = $controlServerCommitSource
     onboardHmi = $OnboardCommit
+    onboardCommitSource = $onboardCommitSource
     slotsSimulator = $SimulatorCommit
+    simulatorCommitSource = $simulatorCommitSource
     protocol = $ProtocolCommit
+    protocolCommitSource = $protocolCommitSource
     runner = $runnerCommit
     runnerWorktreeCleanAtStart = $runnerWorktreeClean
+    runnerSource = $runnerProvenance.runnerSource
 }
 
 $gateResultPaths = Write-G3GateResults -RunKind $G3RunKind -EvidenceRoot $EvidenceRoot `
