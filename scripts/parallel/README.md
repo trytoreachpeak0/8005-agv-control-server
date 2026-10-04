@@ -60,7 +60,10 @@ control-server#262。约 2026-10-08 起 `factory01` 上同时跑两套 ControlSe
      检查只在配置文件存在时才跑，`-Rollback` 会先对调包目录再失败；
    - **配置改了、服务还没重启**（`CONFIGURATION_CHANGED_SINCE_START`）：已装配置的修改时间晚于服务进程的启动时间。只改了文件、
      没重启时，文件里读到 false，可运行中的进程闸门还开着——正是这道检查要防的情况；
-   - 服务不是 Stopped、却读不到进程启动时间（`SERVICE_START_TIME_UNKNOWN`），或读不到文件修改时间（`CONFIGURATION_WRITE_TIME_UNKNOWN`）。
+   - **服务正在启停或状态拿不准**（`SERVICE_NOT_SETTLED`）：只有 Running 和 Stopped 两种状态才判断；StartPending、StopPending、
+     ContinuePending、PausePending、Paused 或读不到状态时直接拒绝，提示稍后再试，不比时间——过渡状态下进程可能还没读完配置，
+     比时间不可靠；
+   - 服务是 Running、却读不到进程启动时间（`SERVICE_START_TIME_UNKNOWN`），或读不到文件修改时间（`CONFIGURATION_WRITE_TIME_UNKNOWN`）。
 
    服务是 Stopped 时不比时间（没有在跑的进程，文件就是真相）；服务不在（首装）时整个不查。所有拒绝都在记录定义、回滚对调目录、
    解包之前，所以拒绝消息里的「Nothing was stopped or changed」是真的。回滚还要求 `<包目录>.previous\controlserver` 存在，同样在

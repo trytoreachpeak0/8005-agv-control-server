@@ -89,3 +89,21 @@
 == item 1: steps reordered (edit, restart, then stop new demand) (ParallelInstance.psm1): 344 passed, 2 failed -> KILLED
    FAIL  upgrade refusal: RiotCreateDispatch.enabled true -> refused, with the V2 file and service named and the MVP's warned off
    FAIL  upgrade refusal: riotCreateDispatch.Enabled true (other casing) -> refused, with the V2 file and service named and the MVP's warned off
+
+# 增量审查补项（R4 与过渡状态）
+== R4 InvokeUpdate returns before the call (script name still in the text) (Install-ParallelInstanceLocal.ps1, mutant parse errors 0): 358 passed, 2 failed -> KILLED
+   FAIL  wiring: Invoke-ParallelProductUpgrade -Actions.InvokeUpdate runs straight through (no early exit, no branch) (R4)
+   FAIL  wiring: the InvokeUpdate action is exactly one statement, the call of Update-ControlServerLocal.ps1 (R4)
+== R4b InvokeUpdate call inside a dead branch (Install-ParallelInstanceLocal.ps1, mutant parse errors 0): 358 passed, 2 failed -> KILLED
+   FAIL  wiring: Invoke-ParallelProductUpgrade -Actions.InvokeUpdate runs straight through (no early exit, no branch) (R4)
+   FAIL  wiring: the InvokeUpdate action is exactly one statement, the call of Update-ControlServerLocal.ps1 (R4)
+== item 2: transitional states compared by time instead of refused (ParallelInstance.psm1, mutant parse errors 0): 351 passed, 9 failed -> KILLED
+   FAIL  pre-install check: start pending, process start time unknown -> SERVICE_NOT_SETTLED
+   FAIL  pre-install check: service status unknown, process start time unknown -> SERVICE_NOT_SETTLED
+   FAIL  pre-install check: start pending, times known, file older -> SERVICE_NOT_SETTLED
+   FAIL  pre-install check: stop pending, times known, file older -> SERVICE_NOT_SETTLED
+   FAIL  pre-install check: continue pending, times known, file older -> SERVICE_NOT_SETTLED
+   FAIL  pre-install check: pause pending, times known, file older -> SERVICE_NOT_SETTLED
+   FAIL  pre-install check: paused, times known, file older -> SERVICE_NOT_SETTLED
+   FAIL  pre-install check: status unknown, times known, file older -> SERVICE_NOT_SETTLED
+   FAIL  a service mid-transition is told to try again later

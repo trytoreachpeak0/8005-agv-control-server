@@ -1646,16 +1646,19 @@ function Get-ParallelPreInstallRefusal {
                 say what that instance is doing, and -Rollback used to swap the package directories
                 before finding out (an earlier version of this check ran only when the file existed);
               * INSTALLED_CONFIGURATION_UNREADABLE: empty, not JSON, or not a JSON object;
-              * SERVICE_START_TIME_UNKNOWN / CONFIGURATION_WRITE_TIME_UNKNOWN: the service is not
-                stopped, and one of the two times below cannot be had;
+              * SERVICE_NOT_SETTLED: the service is neither Running nor Stopped (StartPending, StopPending,
+                ContinuePending, PausePending, Paused, unknown) -- mid-transition the process may not have
+                read the file yet, so no time comparison is attempted;
+              * SERVICE_START_TIME_UNKNOWN / CONFIGURATION_WRITE_TIME_UNKNOWN: the service is Running and
+                one of the two times below cannot be had;
               * CONFIGURATION_CHANGED_SINCE_START: the file was written after the running process
                 started (incremental review item 2). The process read the file when it started; what
                 the file says now -- RiotCreateDispatch.enabled=false after a hand edit, say -- is not
                 what the process is doing until it restarts, so reading the file would let through
                 exactly the open gate S3 refuses;
               * whatever Get-ParallelUpgradeRefusal says (RIoT dispatch open).
-            The time comparison is skipped only for a service that is Stopped: no process, so the file
-            is the truth. With no service there is nothing running to protect and nothing to upgrade:
+            The time comparison runs only for a Running service; a Stopped one has no process, so the
+            file is the truth. With no service there is nothing running to protect and nothing to upgrade:
             a first install goes ahead, whatever file may be lying around.
 
             Pure: the caller says whether the service exists and its status, passes the file's text
@@ -1687,11 +1690,19 @@ function Get-ParallelPreInstallRefusal {
         return ("INSTALLED_CONFIGURATION_UNREADABLE: $ConfigurationPath is not a JSON object (empty, not JSON, or the wrong " +
             'shape). Find out what wrote it before running this again.' + $nothing)
     }
-    if ($ServiceStatus -ne 'Stopped') {
+    # Only two states are settled enough to judge: Stopped (no process; the file is the truth) and
+    # Running (compare the times below). StartPending, StopPending, ContinuePending, PausePending, Paused
+    # or an unknown status refuse outright: mid-transition the process may not have read the file yet,
+    # so a time comparison proves nothing (incremental review, item 2).
+    if ($ServiceStatus -cne 'Stopped' -and $ServiceStatus -cne 'Running') {
+        return ("SERVICE_NOT_SETTLED: the service '$ServiceName' is $(if ($ServiceStatus) { $ServiceStatus } else { 'in an unknown state' }) " +
+            '-- starting, stopping, or a state this check cannot judge. Wait until it is Running or Stopped and try again later.' + $nothing)
+    }
+    if ($ServiceStatus -ceq 'Running') {
         if ($null -eq $ProcessStartTimeUtc) {
-            return ("SERVICE_START_TIME_UNKNOWN: the service '$ServiceName' is $(if ($ServiceStatus) { $ServiceStatus } else { 'in an unknown state' }) " +
-                'and the start time of its process cannot be read, so whether it runs on what ' +
-                "$ConfigurationPath says now cannot be told. Find out why (is the process there?) before running this again." + $nothing)
+            return ("SERVICE_START_TIME_UNKNOWN: the service '$ServiceName' is Running and the start time of its process cannot " +
+                "be read, so whether it runs on what $ConfigurationPath says now cannot be told. Find out why (is the process " +
+                'there?) before running this again.' + $nothing)
         }
         if ($null -eq $ConfigurationWriteTimeUtc) {
             return ("CONFIGURATION_WRITE_TIME_UNKNOWN: the last write time of $ConfigurationPath cannot be read." + $nothing)

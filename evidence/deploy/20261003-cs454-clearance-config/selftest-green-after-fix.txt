@@ -352,12 +352,19 @@ JourneyRuntime.enabled set false for the upgrade, with the service stopped (was 
   PASS  pre-install check: running, dispatch closed, file older than the process -> go ahead
   PASS  pre-install check: running, file edited to closed AFTER the process started (not restarted) -> CONFIGURATION_CHANGED_SINCE_START
   PASS  pre-install check: running, process start time unknown -> SERVICE_START_TIME_UNKNOWN
-  PASS  pre-install check: start pending, process start time unknown -> SERVICE_START_TIME_UNKNOWN
-  PASS  pre-install check: service status unknown, process start time unknown -> SERVICE_START_TIME_UNKNOWN
+  PASS  pre-install check: start pending, process start time unknown -> SERVICE_NOT_SETTLED
+  PASS  pre-install check: service status unknown, process start time unknown -> SERVICE_NOT_SETTLED
+  PASS  pre-install check: start pending, times known, file older -> SERVICE_NOT_SETTLED
+  PASS  pre-install check: stop pending, times known, file older -> SERVICE_NOT_SETTLED
+  PASS  pre-install check: continue pending, times known, file older -> SERVICE_NOT_SETTLED
+  PASS  pre-install check: pause pending, times known, file older -> SERVICE_NOT_SETTLED
+  PASS  pre-install check: paused, times known, file older -> SERVICE_NOT_SETTLED
+  PASS  pre-install check: status unknown, times known, file older -> SERVICE_NOT_SETTLED
   PASS  pre-install check: running, file write time unknown -> CONFIGURATION_WRITE_TIME_UNKNOWN
   PASS  pre-install check: stopped, file newer, no process (the file is the truth) -> go ahead
   PASS  pre-install check: stopped, dispatch open -> UPGRADE_REFUSED_DISPATCH_OPEN
   PASS  a missing configuration names the V2 path and tells the operator to find out why
+  PASS  a service mid-transition is told to try again later
   PASS  a changed-since-start configuration says to restart the V2 service, not the MVP's
   PASS  disabling the runtime: a lost write is caught by the read-back (M4)
   PASS  the overlay's per-value check catches a write that changed the vehicle identity (M10)
@@ -377,11 +384,18 @@ The shipped definition and the installer carry it
   PASS  the layout carries the roster path (the installer creates an empty roster there, never overwrites one)
   PASS  the credential is resolved once, for both paths, before the installed definition is recorded and before any product script
   PASS  wiring: Invoke-ParallelProductUpgrade -Actions.StopService runs Stop-Service + Get-Service
+  PASS  wiring: Invoke-ParallelProductUpgrade -Actions.StopService runs straight through (no early exit, no branch) (R4)
   PASS  wiring: Invoke-ParallelProductUpgrade -Actions.InvokeUpdate runs (Join-Path $scripts 'Update-ControlServerLocal.ps1')
+  PASS  wiring: Invoke-ParallelProductUpgrade -Actions.InvokeUpdate runs straight through (no early exit, no branch) (R4)
   PASS  wiring: Invoke-ParallelProductUpgrade -Actions.ServiceStatus runs Get-Service
+  PASS  wiring: Invoke-ParallelProductUpgrade -Actions.ServiceStatus runs straight through (no early exit, no branch) (R4)
   PASS  wiring: Invoke-ParallelInstanceConfigurationStep -Actions.GetEnvironment runs Get-ServiceEnvironment
+  PASS  wiring: Invoke-ParallelInstanceConfigurationStep -Actions.GetEnvironment runs straight through (no early exit, no branch) (R4)
   PASS  wiring: Invoke-ParallelInstanceConfigurationStep -Actions.SetEnvironment runs Set-ServiceEnvironment
+  PASS  wiring: Invoke-ParallelInstanceConfigurationStep -Actions.SetEnvironment runs straight through (no early exit, no branch) (R4)
   PASS  wiring: Invoke-ParallelInstanceConfigurationStep -Actions.RestartService runs Restart-Service
+  PASS  wiring: Invoke-ParallelInstanceConfigurationStep -Actions.RestartService runs straight through (no early exit, no branch) (R4)
+  PASS  wiring: the InvokeUpdate action is exactly one statement, the call of Update-ControlServerLocal.ps1 (R4)
   PASS  wiring: the pre-install check's -ServiceExists and -ServiceStatus come from Get-Service on this instance's service
   PASS  wiring: the start time comes from the service's process and the write time from the installed file
   PASS  wiring: the pre-install refusal is thrown by the very next statement (R5: computed but not thrown is a silent no-op)
@@ -389,4 +403,4 @@ The shipped definition and the installer carry it
   PASS  rollback: a missing product result file after the product script is refused, as on the install path
   PASS  Set-InstanceConfiguration (run by install, upgrade and rollback) goes through Invoke-ParallelInstanceConfigurationStep
 
-346 passed, 0 failed
+360 passed, 0 failed

@@ -2169,8 +2169,17 @@ $preInstallCases = @(
     @{ Name = 'running, dispatch closed, file older than the process'; Exists = $true; Status = 'Running'; Text = $closedText; Write = $before; Start = $started; Expect = $null }
     @{ Name = 'running, file edited to closed AFTER the process started (not restarted)'; Exists = $true; Status = 'Running'; Text = $closedText; Write = $after; Start = $started; Expect = 'CONFIGURATION_CHANGED_SINCE_START' }
     @{ Name = 'running, process start time unknown'; Exists = $true; Status = 'Running'; Text = $closedText; Write = $before; Start = $null; Expect = 'SERVICE_START_TIME_UNKNOWN' }
-    @{ Name = 'start pending, process start time unknown'; Exists = $true; Status = 'StartPending'; Text = $closedText; Write = $before; Start = $null; Expect = 'SERVICE_START_TIME_UNKNOWN' }
-    @{ Name = 'service status unknown, process start time unknown'; Exists = $true; Status = $null; Text = $closedText; Write = $before; Start = $null; Expect = 'SERVICE_START_TIME_UNKNOWN' }
+    @{ Name = 'start pending, process start time unknown'; Exists = $true; Status = 'StartPending'; Text = $closedText; Write = $before; Start = $null; Expect = 'SERVICE_NOT_SETTLED' }
+    @{ Name = 'service status unknown, process start time unknown'; Exists = $true; Status = $null; Text = $closedText; Write = $before; Start = $null; Expect = 'SERVICE_NOT_SETTLED' }
+    # Not settled refuses even with both times known and the file older than the process: mid-transition
+    # the process may not have read the file yet, so the comparison that would let these through proves
+    # nothing (incremental review, item 2).
+    @{ Name = 'start pending, times known, file older'; Exists = $true; Status = 'StartPending'; Text = $closedText; Write = $before; Start = $started; Expect = 'SERVICE_NOT_SETTLED' }
+    @{ Name = 'stop pending, times known, file older'; Exists = $true; Status = 'StopPending'; Text = $closedText; Write = $before; Start = $started; Expect = 'SERVICE_NOT_SETTLED' }
+    @{ Name = 'continue pending, times known, file older'; Exists = $true; Status = 'ContinuePending'; Text = $closedText; Write = $before; Start = $started; Expect = 'SERVICE_NOT_SETTLED' }
+    @{ Name = 'pause pending, times known, file older'; Exists = $true; Status = 'PausePending'; Text = $closedText; Write = $before; Start = $started; Expect = 'SERVICE_NOT_SETTLED' }
+    @{ Name = 'paused, times known, file older'; Exists = $true; Status = 'Paused'; Text = $closedText; Write = $before; Start = $started; Expect = 'SERVICE_NOT_SETTLED' }
+    @{ Name = 'status unknown, times known, file older'; Exists = $true; Status = $null; Text = $closedText; Write = $before; Start = $started; Expect = 'SERVICE_NOT_SETTLED' }
     @{ Name = 'running, file write time unknown'; Exists = $true; Status = 'Running'; Text = $closedText; Write = $null; Start = $started; Expect = 'CONFIGURATION_WRITE_TIME_UNKNOWN' }
     @{ Name = 'stopped, file newer, no process (the file is the truth)'; Exists = $true; Status = 'Stopped'; Text = $closedText; Write = $after; Start = $null; Expect = $null }
     @{ Name = 'stopped, dispatch open'; Exists = $true; Status = 'Stopped'; Text = $openText; Write = $after; Start = $null; Expect = 'UPGRADE_REFUSED_DISPATCH_OPEN' }
@@ -2187,6 +2196,8 @@ foreach ($case in $preInstallCases) {
 $missing = Get-ParallelPreInstallRefusal -ServiceExists $true -ServiceStatus 'Running' -ServiceName $v2Service -ConfigurationPath $v2Configuration -ConfigurationText $null -ConfigurationWriteTimeUtc $null -ProcessStartTimeUtc $started
 Write-Result -Ok ($null -ne $missing -and $missing.Contains($v2Configuration) -and $missing.Contains('find out why')) `
     -Name 'a missing configuration names the V2 path and tells the operator to find out why' -Detail "got: $missing"
+$unsettled = Get-ParallelPreInstallRefusal -ServiceExists $true -ServiceStatus 'StopPending' -ServiceName $v2Service -ConfigurationPath $v2Configuration -ConfigurationText $closedText -ConfigurationWriteTimeUtc $before -ProcessStartTimeUtc $started
+Write-Result -Ok ($null -ne $unsettled -and $unsettled.Contains('try again later')) -Name 'a service mid-transition is told to try again later' -Detail "got: $unsettled"
 $changed = Get-ParallelPreInstallRefusal -ServiceExists $true -ServiceStatus 'Running' -ServiceName $v2Service -ConfigurationPath $v2Configuration -ConfigurationText $closedText -ConfigurationWriteTimeUtc $after -ProcessStartTimeUtc $started
 Write-Result -Ok ($null -ne $changed -and $changed.Contains("Restart '$v2Service'") -and $changed.Contains("NOT '$mvpService'")) `
     -Name 'a changed-since-start configuration says to restart the V2 service, not the MVP''s' -Detail "got: $changed"
@@ -2344,7 +2355,39 @@ foreach ($wire in $actionWiring) {
     $textOk = $null -eq $wire.Text -or $pairText.Contains($wire.Text)
     Write-Result -Ok ($absentCommands.Count -eq 0 -and $textOk) -Name "wiring: $($wire.Function) -Actions.$($wire.Key) runs $($wire.Expect -join ' + ')" `
         -Detail ("commands: " + ($commands -join ', ') + "; missing: " + ($absentCommands -join ', ') + "; text '$($wire.Text)' present: $textOk")
+
+    # Review R4: the command being there is not the command running -- a 'return' ahead of it, or an
+    # 'if' around it, leaves its text in place and runs nothing (and on -Rollback reports success). So
+    # no action may leave early or branch: no return/exit/throw/break/continue, no if/loop/switch/trap.
+    $value = $null
+    if ($null -ne $call) {
+        $table = $call.Find({ param($n) $n -is [System.Management.Automation.Language.HashtableAst] }, $true)
+        $value = @($table.KeyValuePairs | Where-Object { $_.Item1.Extent.Text -eq $wire.Key } | ForEach-Object { $_.Item2 }) | Select-Object -First 1
+    }
+    $escapes = $null -eq $value ? @('(no action)') : @($value.FindAll({ param($n)
+                $n -is [System.Management.Automation.Language.ReturnStatementAst] -or $n -is [System.Management.Automation.Language.ExitStatementAst] -or
+                $n -is [System.Management.Automation.Language.ThrowStatementAst] -or $n -is [System.Management.Automation.Language.BreakStatementAst] -or
+                $n -is [System.Management.Automation.Language.ContinueStatementAst] -or $n -is [System.Management.Automation.Language.IfStatementAst] -or
+                $n -is [System.Management.Automation.Language.LoopStatementAst] -or $n -is [System.Management.Automation.Language.SwitchStatementAst] -or
+                $n -is [System.Management.Automation.Language.TrapStatementAst] }, $true) | ForEach-Object { $_.Extent.Text.Split("`n")[0].Trim() })
+    Write-Result -Ok ($escapes.Count -eq 0) -Name "wiring: $($wire.Function) -Actions.$($wire.Key) runs straight through (no early exit, no branch) (R4)" `
+        -Detail ("found: " + ($escapes -join ' | '))
 }
+# R4 again, for the one action whose whole job is one call: InvokeUpdate is exactly that call.
+$upgradeCall = $installerAst.Find({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Invoke-ParallelProductUpgrade' }, $true)
+$invokeUpdate = $null
+if ($null -ne $upgradeCall) {
+    $table = $upgradeCall.Find({ param($n) $n -is [System.Management.Automation.Language.HashtableAst] }, $true)
+    $invokeUpdate = @($table.KeyValuePairs | Where-Object { $_.Item1.Extent.Text -eq 'InvokeUpdate' } | ForEach-Object { $_.Item2 }) | Select-Object -First 1
+}
+$updateBlock = $null -eq $invokeUpdate ? $null : $invokeUpdate.Find({ param($n) $n -is [System.Management.Automation.Language.ScriptBlockExpressionAst] }, $true)
+$updateStatements = $null -eq $updateBlock ? @() : @($updateBlock.ScriptBlock.EndBlock.Statements)
+$onlyCall = $updateStatements.Count -eq 1 -and $updateBlock.ScriptBlock.BeginBlock -eq $null -and $updateBlock.ScriptBlock.ProcessBlock -eq $null -and
+    $updateStatements[0] -is [System.Management.Automation.Language.PipelineAst] -and
+    $updateStatements[0].PipelineElements.Count -eq 1 -and $updateStatements[0].PipelineElements[0] -is [System.Management.Automation.Language.CommandAst] -and
+    $updateStatements[0].PipelineElements[0].CommandElements[0].Extent.Text -like '*Update-ControlServerLocal.ps1*'
+Write-Result -Ok $onlyCall -Name 'wiring: the InvokeUpdate action is exactly one statement, the call of Update-ControlServerLocal.ps1 (R4)' `
+    -Detail ("statements: " + (($updateStatements | ForEach-Object { $_.Extent.Text.Split("`n")[0].Trim() }) -join ' | '))
 $preCallAst = @($calls | Where-Object { $_.GetCommandName() -eq 'Get-ParallelPreInstallRefusal' } | Select-Object -First 1)
 $argumentText = { param($command, [string] $name)
     $elements = $command.CommandElements
