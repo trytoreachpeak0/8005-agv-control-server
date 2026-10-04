@@ -216,6 +216,48 @@ public sealed class FieldConfirmationWriteLockTests : IAsyncDisposable
     }
 
     /// <summary>
+    /// 比对管着用途（审查 R3）：观察时车的用途不是这一趟的 <c>CHARGING</c>，按这份事实会拒绝；读完旧单、拿锁之前，用途回到这一趟的 <c>CHARGING</c>，周期不动。
+    /// 锁内比对不上，重新观察，按此刻的事实答 <c>CONFIRMED</c>；不会把观察时那份「用途不是这一趟的」拒绝落盘（拒绝前的复核只看周期版本，挡不住这一种）。
+    /// </summary>
+    [Fact]
+    public async Task AnUnableToChargeIsNotRefusedOnAPurposeThatChangedSinceTheObservation()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        await FailingAtChargerAsync(fleet, resultCode: 1);
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+        string key = FleetFixture.VehicleKeys[0];
+        Assert.Equal(VehiclePurposes.Charging, (await ClaimOfAsync(fleet, key))!.Value.Purpose);
+        await SetPurposeAsync(fleet, key, VehiclePurposes.ClearingMaintenance);
+
+        ObservingRiot riot = new(fleet.Riot);
+        riot.AfterOrderRead = async () =>
+        {
+            riot.AfterOrderRead = null;
+            await SetPurposeAsync(fleet, key, VehiclePurposes.Charging);
+        };
+        await using ControlServerDbContext deciding = fleet.NewContext();
+        OnboardMessageProcessor processor = Processor(fleet, deciding, fieldConfirmations: FieldConfirmations(fleet, deciding, riot));
+        OnboardConnectionState state = await SessionAsync(fleet, AgvA);
+
+        JsonElement result = Payload(
+            await processor.ProcessAsync(UnableToChargeLine(state, "00000000-0000-4000-8000-000000045227"), state, Token),
+            "UnableToChargeFieldConfirmationResult");
+
+        Assert.Equal(2, riot.OrderReads);
+        Assert.Equal("CONFIRMED", result.GetProperty("outcome").GetString());
+        Assert.Single(await HoldsAsync(fleet));
+
+        static async Task SetPurposeAsync(FleetFixture fleet, string vehicleKey, string purpose)
+        {
+            await using ControlServerDbContext other = fleet.NewContext();
+            await other.Set<VehiclePurposeClaimRow>()
+                .Where(row => row.VehicleKey == vehicleKey)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(row => row.Purpose, purpose), Token);
+        }
+    }
+
+    /// <summary>
     /// 每一次观察都过期（每次读完旧单，周期版本都被推进一次），经入站处理器：三次之后抛出与判定自己用尽重试时逐字相同的
     /// <see cref="InvalidOperationException"/>（连接因此结束，与今天一样）。这条消息没有记为处理过（收件箱里没有这一行、没有答复可重放），判定、暂停事件都没写。
     /// 同一行再来、库不再变：照常处理，答 <c>CONFIRMED</c>。
@@ -365,7 +407,7 @@ public sealed class FieldConfirmationWriteLockTests : IAsyncDisposable
         return response;
     }
 
-    private static OnboardMessageProcessor Processor(
+    internal static OnboardMessageProcessor Processor(
         FleetFixture fleet,
         ControlServerDbContext db,
         ManualStationClearance? stationClearance = null,
@@ -374,7 +416,7 @@ public sealed class FieldConfirmationWriteLockTests : IAsyncDisposable
             db, new WireToGateStore(db), fleet.Clock, new ConfigurationBuilder().Build(), runtimeOptions: fleet.Options,
             stationClearance: stationClearance, fieldConfirmations: fieldConfirmations);
 
-    private static async Task<OnboardConnectionState> SessionAsync(FleetFixture fleet, string agvId) => new()
+    internal static async Task<OnboardConnectionState> SessionAsync(FleetFixture fleet, string agvId) => new()
     {
         AgvId = agvId,
         SessionGeneration = await fleet.Context.SessionRecoveries.AsNoTracking()
@@ -383,7 +425,7 @@ public sealed class FieldConfirmationWriteLockTests : IAsyncDisposable
         Readiness = SessionReadiness.Ready,
     };
 
-    private static UnableToChargeFieldConfirmations FieldConfirmations(
+    internal static UnableToChargeFieldConfirmations FieldConfirmations(
         FleetFixture fleet, ControlServerDbContext db, IRiotVehicleFacts riot)
     {
         FieldOperatorRoleRoster roster = new(Options.Create(fleet.ClearanceRoles));
@@ -440,7 +482,7 @@ public sealed class FieldConfirmationWriteLockTests : IAsyncDisposable
     private static string HeartbeatLine(OnboardConnectionState state) =>
         Envelope(state, "Heartbeat", new { observedAt = "2026-09-08T06:00:00Z" });
 
-    private static string UnableToChargeLine(
+    internal static string UnableToChargeLine(
         OnboardConnectionState state, string confirmationRequestId = "00000000-0000-4000-8000-000000045201") =>
         Envelope(state, "UnableToChargeFieldConfirmationRequested", new
         {
@@ -487,7 +529,7 @@ public sealed class FieldConfirmationWriteLockTests : IAsyncDisposable
     private static void MovedOff(FleetFixture fleet) =>
         fleet.Riot.VehicleOverrides[FleetFixture.VehicleKeys[0]] = seen => seen with { CurrentStationId = 300, BatteryState = "NO_CHARGE" };
 
-    private static JsonElement Payload(string response, string messageType)
+    internal static JsonElement Payload(string response, string messageType)
     {
         using JsonDocument document = JsonDocument.Parse(response.Split('\n', StringSplitOptions.RemoveEmptyEntries)[0]);
         Assert.Equal(messageType, document.RootElement.GetProperty("messageType").GetString());

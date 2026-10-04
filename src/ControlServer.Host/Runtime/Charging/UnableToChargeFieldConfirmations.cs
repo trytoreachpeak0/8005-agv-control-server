@@ -607,8 +607,10 @@ public sealed class UnableToChargeFieldConfirmations(
             return new Facts(null, "", "", false, null, null, false, null, null);
         }
 
+        // The charger's stop: a clearance move to a waiting point (control-server#409) is a second stop of the same journey.
         JourneyStopRow stop = await dbContext.Set<JourneyStopRow>().AsNoTracking()
-            .SingleAsync(row => row.JourneyId == cycle.JourneyId, cancellationToken).ConfigureAwait(false);
+            .SingleAsync(row => row.JourneyId == cycle.JourneyId && row.StopRole == JourneyStopRoles.Charger, cancellationToken)
+            .ConfigureAwait(false);
         bool alreadyConfirmed = cycle.Phase == ChargingCyclePhases.Clearing &&
                                 await dbContext.Set<ChargingStationAllocationHoldRow>().AsNoTracking()
                                     .AnyAsync(

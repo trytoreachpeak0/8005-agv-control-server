@@ -950,16 +950,6 @@ public sealed partial class OnboardMessageProcessor(
             });
 
     /// <summary>
-    /// Answers a durable message resent into a later session from its first acceptance, or returns null
-    /// when that first response was not a DurableAck for this message -- a snapshot ack or a recovery
-    /// authorization stays a content conflict, as it did before. Nothing is processed again: the first
-    /// processing committed, and what it wrote is bound to the first line's hash, so a second pass would
-    /// throw on its own. The ack is rebuilt for this session and names the line just received, which is
-    /// what the onboard compares it with; durablyAcceptedAt stays the moment the server took it.
-    /// Readiness is recomputed rather than replayed, because the first response's belonged to a session
-    /// that is gone -- and announced only when it changed, the way every other site here does it.
-    /// </summary>
-    /// <summary>
     /// control-server#452：人工清桩确认与现场确认充不上，在收件箱事务开写锁之前先观察——读库定下对的是哪一个桩、哪一张单，再读 RIoT。别的消息、
     /// 这台服务端没装这两个判定、或这条线已经进过收件箱（重放、换代重发，答第一次的结果，不再判定）时不观察，答空。确认号已经判过的，判定自己不读 RIoT。
     /// 载荷读不出请求时也答空，由处理那一步照旧抛出同一个错误。什么也不写。
@@ -1063,6 +1053,16 @@ public sealed partial class OnboardMessageProcessor(
         ManualStationClearance.Observation? StationClearance,
         UnableToChargeFieldConfirmations.Observation? UnableToCharge);
 
+    /// <summary>
+    /// Answers a durable message resent into a later session from its first acceptance, or returns null
+    /// when that first response was not a DurableAck for this message -- a snapshot ack or a recovery
+    /// authorization stays a content conflict, as it did before. Nothing is processed again: the first
+    /// processing committed, and what it wrote is bound to the first line's hash, so a second pass would
+    /// throw on its own. The ack is rebuilt for this session and names the line just received, which is
+    /// what the onboard compares it with; durablyAcceptedAt stays the moment the server took it.
+    /// Readiness is recomputed rather than replayed, because the first response's belonged to a session
+    /// that is gone -- and announced only when it changed, the way every other site here does it.
+    /// </summary>
     private async Task<string?> RebindDurableAckAsync(
         string firstResponse,
         string messageType,
