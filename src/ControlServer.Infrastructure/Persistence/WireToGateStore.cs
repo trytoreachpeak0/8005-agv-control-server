@@ -255,8 +255,13 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
     /// For a safety message the server refused. Before #478 such a refusal ended the connection, and the reconnect brought
     /// a new safety baseline with it; with the connection kept, the server would otherwise go on judging departure on
     /// whichever content arrived first while the vehicle holds another. The revision and its hash stay: the next snapshot
-    /// must still move the revision forward, so a stale one cannot slip in as the replacement. Readiness is not written
-    /// here; the caller decides it again, as after any safety change.
+    /// must still move the revision forward, so a stale one cannot slip in as the replacement.
+    /// <para>
+    /// Readiness falls in this same save, to what <see cref="DecideReadinessAsync"/> would decide from a cleared verdict;
+    /// the caller decides it again afterwards only to name the reason more precisely. Leaving readiness to that second save
+    /// left a window: had it failed, the connection would end with the row still Ready, and dispatch reads nothing but
+    /// Readiness (control-server#478 incremental review).
+    /// </para>
     /// </remarks>
     public async Task DistrustSafetyBaselineAsync(
         string agvId, long sessionGeneration, CancellationToken cancellationToken)
@@ -266,6 +271,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         row.DepartureSafe = null;
         row.SafetyReasonCodesJson = null;
         row.SafetyUnknownPresent = null;
+        row.Readiness = SessionReadiness.RecoveryRequired;
+        row.ReasonCode = "DEPARTURE_SAFETY_NOT_READY";
         row.UpdatedAt = DateTimeOffset.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }

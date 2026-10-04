@@ -1,9 +1,11 @@
+using System.Data.Common;
 using System.Text.Json;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Options;
 using static ControlServer.Tests.JourneyRuntimeWorkerLoadCancellationBeforeSublotTests;
 using static ControlServer.Tests.JourneyRuntimeWorkerTestKit;
@@ -165,6 +167,110 @@ public sealed class RefusedSafetyBaselineTests
         string[] trusted = Lines(await processor.ProcessAsync(
             SafetyLine(fixture, "SafetyStateChanged", revision: 11, departureSafe: true), state, token));
         Assert.DoesNotContain("SafetyStateSnapshotRequested", trusted.Select(TypeOf));
+    }
+
+    /// <summary>
+    /// The save that clears the departure verdict also lowers readiness (control-server#478 incremental review). Had the
+    /// second save -- the one that decides readiness again -- been the first to lower it, a failure there would end the
+    /// connection with the row still Ready, and dispatch reads nothing but Readiness.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    public async Task WhenTheReadinessDecisionFailsAfterTheVerdictIsClearedTheVehicleIsAlreadyOffDispatch()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await ReachSublotWaitAsync();
+        FailOnSessionUpdate failSecond = new(failOnUpdateNumber: 2);
+        await using ControlServerDbContext connection = new(
+            new DbContextOptionsBuilder<ControlServerDbContext>(fixture.DbOptionsForTests).AddInterceptors(failSecond).Options);
+        OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+            connection, new WireToGateStore(connection), fixture.Clock, new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build());
+        OnboardDispatchFactsReader dispatchFacts = new(fixture.Context, Options.Create(fixture.Options), fixture.Clock);
+
+        failSecond.Armed = true;
+        // The processor throws, which OnboardTcpServer ends the connection on.
+        await Assert.ThrowsAnyAsync<Exception>(() => processor.ProcessAsync(
+            SafetyLine(fixture, "SafetyStateChanged", revision: 7, departureSafe: true), Connected(fixture), token));
+
+        Assert.True(failSecond.Fired, "第二次保存没有被注入失败，这条用例没有造出它要的形状。");
+        SessionRecoveryRow row = await SessionAsync(fixture);
+        Assert.Null(row.DepartureSafe);
+        Assert.Equal(SessionReadiness.RecoveryRequired, row.Readiness);
+        Assert.Equal("DEPARTURE_SAFETY_NOT_READY", row.ReasonCode);
+        Assert.Null(await dispatchFacts.CurrentReadySessionAsync(fixture.Options.AgvId, token));
+    }
+
+    /// <summary>
+    /// If the save that clears the verdict fails, nothing of it is kept and the connection ends: exactly what a refusal
+    /// did before control-server#478, so the reconnect's handshake brings the new safety baseline.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    public async Task WhenClearingTheVerdictFailsTheRowIsUnchangedAndTheConnectionEnds()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await ReachSublotWaitAsync();
+        SessionRecoveryRow before = await SessionAsync(fixture);
+        FailOnSessionUpdate failFirst = new(failOnUpdateNumber: 1);
+        await using ControlServerDbContext connection = new(
+            new DbContextOptionsBuilder<ControlServerDbContext>(fixture.DbOptionsForTests).AddInterceptors(failFirst).Options);
+        OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+            connection, new WireToGateStore(connection), fixture.Clock, new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build());
+        OnboardConnectionState state = Connected(fixture);
+
+        failFirst.Armed = true;
+        await Assert.ThrowsAnyAsync<Exception>(() => processor.ProcessAsync(
+            SafetyLine(fixture, "SafetyStateChanged", revision: 7, departureSafe: true), state, token));
+
+        Assert.True(failFirst.Fired, "清空那次保存没有被注入失败，这条用例没有造出它要的形状。");
+        SessionRecoveryRow after = await SessionAsync(fixture);
+        Assert.Equal(before.Readiness, after.Readiness);
+        Assert.Equal(before.ReasonCode, after.ReasonCode);
+        Assert.Equal(before.DepartureSafe, after.DepartureSafe);
+        Assert.Equal(before.SafetyRevision, after.SafetyRevision);
+        Assert.Equal(before.SafetyHash, after.SafetyHash);
+        Assert.False(state.SafetyBaselineUntrusted);
+    }
+
+    /// <summary>Fails the Nth UPDATE of the SessionRecoveries table once armed, the way a database error would.</summary>
+    private sealed class FailOnSessionUpdate(int failOnUpdateNumber) : DbCommandInterceptor
+    {
+        private int _updates;
+
+        public bool Armed { get; set; }
+
+        public bool Fired { get; private set; }
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            Check(command);
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
+
+        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            Check(command);
+            return base.NonQueryExecutingAsync(command, eventData, result, cancellationToken);
+        }
+
+        private void Check(DbCommand command)
+        {
+            if (!Armed || Fired || !command.CommandText.Contains("UPDATE \"SessionRecoveries\"", StringComparison.Ordinal))
+            {
+                return;
+            }
+            if (++_updates == failOnUpdateNumber)
+            {
+                Fired = true;
+                throw new InvalidOperationException("Injected failure on a SessionRecoveries update (control-server#478 test).");
+            }
+        }
     }
 
     private static OnboardConnectionState Connected(RuntimeFixture fixture) => new()
