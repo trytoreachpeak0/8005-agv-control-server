@@ -1707,10 +1707,16 @@ function Get-ParallelPreInstallRefusal {
         if ($null -eq $ConfigurationWriteTimeUtc) {
             return ("CONFIGURATION_WRITE_TIME_UNKNOWN: the last write time of $ConfigurationPath cannot be read." + $nothing)
         }
-        if ([datetime] $ConfigurationWriteTimeUtc -gt [datetime] $ProcessStartTimeUtc) {
+        # Both to UTC here, whatever the caller did (third quick review, T4): [datetime] comparison ignores
+        # Kind, so a start time handed over in local time on a UTC+8 machine would read 8 hours late and let
+        # a file edited within those 8 hours through. Utc stays as it is; Local converts; Unspecified is
+        # taken as local, as .NET does.
+        $writtenUtc = ([datetime] $ConfigurationWriteTimeUtc).ToUniversalTime()
+        $startedUtc = ([datetime] $ProcessStartTimeUtc).ToUniversalTime()
+        if ($writtenUtc -gt $startedUtc) {
             return ("CONFIGURATION_CHANGED_SINCE_START: $ConfigurationPath was written at " +
-                "$(([datetime] $ConfigurationWriteTimeUtc).ToString('o')), after the process of '$ServiceName' started at " +
-                "$(([datetime] $ProcessStartTimeUtc).ToString('o')). The running process still works on what the file said " +
+                "$($writtenUtc.ToString('o')), after the process of '$ServiceName' started at " +
+                "$($startedUtc.ToString('o')). The running process still works on what the file said " +
                 "when it started -- an open RIoT dispatch gate, possibly. Restart '$ServiceName' (the V2 service, NOT " +
                 "'$script:ProductionServiceName') so it reads the file, then run this again." + $nothing)
         }

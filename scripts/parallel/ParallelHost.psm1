@@ -497,13 +497,33 @@ function Get-ParallelServiceProcessStartTimeUtc {
     try {
         $wmi = Get-CimInstance -ClassName Win32_Service -Filter "Name='$ServiceName'" -ErrorAction Stop
         if ($null -eq $wmi -or [int] $wmi.ProcessId -le 0) { return $null }
-        return (Get-Process -Id ([int] $wmi.ProcessId) -ErrorAction Stop).StartTime.ToUniversalTime()
+        return Get-ParallelProcessStartTimeUtc -ProcessId ([int] $wmi.ProcessId)
     } catch {
         return $null
     }
 }
 
-Export-ModuleMember -Function @('Get-MvpFingerprint', 'Assert-MvpUntouched', 'Format-MvpFingerprint', 'Get-ParallelServiceProcessStartTimeUtc',
+function Get-ParallelProcessStartTimeUtc {
+    <#
+        .SYNOPSIS
+            When a process started, in UTC (Kind Utc); $null when it cannot be read.
+
+        .DESCRIPTION
+            Split out of Get-ParallelServiceProcessStartTimeUtc so the self-test can run it on its own
+            process: reading a service's process (svchost and friends, another account) needs the
+            elevation the installer has and a test run does not. Get-ParallelPreInstallRefusal converts
+            to UTC again itself (third quick review, T4), so this conversion is no longer the only one.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][int] $ProcessId)
+    try {
+        return (Get-Process -Id $ProcessId -ErrorAction Stop).StartTime.ToUniversalTime()
+    } catch {
+        return $null
+    }
+}
+
+Export-ModuleMember -Function @('Get-MvpFingerprint', 'Assert-MvpUntouched', 'Format-MvpFingerprint', 'Get-ParallelServiceProcessStartTimeUtc', 'Get-ParallelProcessStartTimeUtc',
     'Get-ParallelProductUninstallerPath', 'Test-ParallelProductUninstallerPremise', 'Invoke-ParallelProductUninstaller',
     'Update-ParallelInstanceConfigurationFile', 'Set-ParallelInstanceJourneyRuntimeDisabled',
     'Invoke-ParallelProductUpgrade', 'Invoke-ParallelInstanceConfigurationStep')

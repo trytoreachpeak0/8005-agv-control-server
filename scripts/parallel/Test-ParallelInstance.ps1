@@ -2196,6 +2196,39 @@ foreach ($case in $preInstallCases) {
 $missing = Get-ParallelPreInstallRefusal -ServiceExists $true -ServiceStatus 'Running' -ServiceName $v2Service -ConfigurationPath $v2Configuration -ConfigurationText $null -ConfigurationWriteTimeUtc $null -ProcessStartTimeUtc $started
 Write-Result -Ok ($null -ne $missing -and $missing.Contains($v2Configuration) -and $missing.Contains('find out why')) `
     -Name 'a missing configuration names the V2 path and tells the operator to find out why' -Detail "got: $missing"
+# Third quick review, T4: the comparison must not depend on the caller having converted to UTC. [datetime]
+# comparison ignores Kind, so on a UTC+8 machine a start time handed over in local time reads 8 hours
+# late, and a file edited within 8 hours after the start -- not restarted for -- would be let through.
+# The same instant in two Kinds, both directions; on a machine whose local offset is zero the two Kinds
+# are the same ticks and these cases cannot tell the difference, which is said rather than passed.
+$offset = [TimeZoneInfo]::Local.GetUtcOffset($started)
+if ($offset -eq [TimeSpan]::Zero) {
+    Write-Host '  NOTE  local UTC offset is zero here: the mixed-Kind cases below cannot discriminate' -ForegroundColor Yellow
+}
+$startLocal = $started.ToLocalTime()
+$writeLocal = $after.ToLocalTime()
+$mixed = @(
+    @{ Name = 'start time in local Kind, file written 5 minutes after it'; Write = $after; Start = $startLocal; Expect = 'CONFIGURATION_CHANGED_SINCE_START' }
+    @{ Name = 'write time in local Kind, 5 minutes after a UTC start'; Write = $writeLocal; Start = $started; Expect = 'CONFIGURATION_CHANGED_SINCE_START' }
+    @{ Name = 'start time in local Kind, file written 5 minutes before it'; Write = $before; Start = $startLocal; Expect = $null }
+)
+foreach ($case in $mixed) {
+    $got = Get-ParallelPreInstallRefusal -ServiceExists $true -ServiceStatus 'Running' -ServiceName $v2Service -ConfigurationPath $v2Configuration `
+        -ConfigurationText $closedText -ConfigurationWriteTimeUtc $case.Write -ProcessStartTimeUtc $case.Start
+    $ok = ($null -eq $case.Expect) ? ($null -eq $got) : ($null -ne $got -and $got.StartsWith($case.Expect))
+    Write-Result -Ok $ok -Name "pre-install check, times compared as UTC whatever their Kind: $($case.Name) -> $($case.Expect ?? 'go ahead') (T4)" -Detail "got: $got"
+}
+# ... and the reader hands back UTC, read on this test's own process: a service's process (svchost,
+# another account) needs elevation to read, and this run has none. The service reader goes through this
+# one (Get-ParallelServiceProcessStartTimeUtc -> Get-ParallelProcessStartTimeUtc).
+$ownStart = Get-ParallelProcessStartTimeUtc -ProcessId $PID
+$expectedUtc = (Get-Process -Id $PID).StartTime.ToUniversalTime()
+Write-Result -Ok ($ownStart -is [datetime] -and $ownStart.Kind -eq [DateTimeKind]::Utc -and $ownStart.Ticks -eq $expectedUtc.Ticks) `
+    -Name 'Get-ParallelProcessStartTimeUtc returns the process start time as UTC (T4)' -Detail ("got: $ownStart (Kind " + ($ownStart -is [datetime] ? $ownStart.Kind : 'n/a') + "), expected $expectedUtc")
+$readerAst = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'ParallelHost.psm1'), [ref]$null, [ref]$null)
+$serviceReader = $readerAst.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Get-ParallelServiceProcessStartTimeUtc' }, $true)
+$viaProcessReader = $null -ne $serviceReader -and $null -ne $serviceReader.Body.Find({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Get-ParallelProcessStartTimeUtc' }, $true)
+Write-Result -Ok $viaProcessReader -Name 'the service start-time reader goes through Get-ParallelProcessStartTimeUtc' -Detail 'it reads the process some other way'
 $unsettled = Get-ParallelPreInstallRefusal -ServiceExists $true -ServiceStatus 'StopPending' -ServiceName $v2Service -ConfigurationPath $v2Configuration -ConfigurationText $closedText -ConfigurationWriteTimeUtc $before -ProcessStartTimeUtc $started
 Write-Result -Ok ($null -ne $unsettled -and $unsettled.Contains('try again later')) -Name 'a service mid-transition is told to try again later' -Detail "got: $unsettled"
 $changed = Get-ParallelPreInstallRefusal -ServiceExists $true -ServiceStatus 'Running' -ServiceName $v2Service -ConfigurationPath $v2Configuration -ConfigurationText $closedText -ConfigurationWriteTimeUtc $after -ProcessStartTimeUtc $started
@@ -2318,6 +2351,10 @@ Write-Result -Ok ($resolveCalls.Count -eq 1 -and $recordCall.Count -eq 1 -and $p
     -Name 'the credential is resolved once, for both paths, before the installed definition is recorded and before any product script' `
     -Detail ("Resolve- calls: $($resolveCalls.Count) at " + (($resolveCalls | ForEach-Object { "line $($_.Extent.StartLineNumber)" }) -join ', ') + "; record at line $($recordCall | ForEach-Object { $_.Extent.StartLineNumber })")
 
+# These checks match the installer's text closely, and are strict on purpose. When one goes red, first
+# see whether the change is an ordinary rewrite -- splatted parameters, an added log line, throwing an
+# object instead of the string -- and if it is, update the check to match; do not loosen it into
+# something that no longer tells a working call from a dead one.
 # Incremental review, item 3: the installer's wiring, from its AST. Each injected action must run the
 # command it stands for (R1-R4, R6 swapped or emptied them and every behaviour test stayed green,
 # because those tests inject their own actions); the pre-install refusal must actually be thrown (R5: a

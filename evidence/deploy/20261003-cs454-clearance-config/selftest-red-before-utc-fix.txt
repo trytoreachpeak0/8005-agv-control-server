@@ -364,7 +364,8 @@ JourneyRuntime.enabled set false for the upgrade, with the service stopped (was 
   PASS  pre-install check: stopped, file newer, no process (the file is the truth) -> go ahead
   PASS  pre-install check: stopped, dispatch open -> UPGRADE_REFUSED_DISPATCH_OPEN
   PASS  a missing configuration names the V2 path and tells the operator to find out why
-  PASS  pre-install check, times compared as UTC whatever their Kind: start time in local Kind, file written 5 minutes after it -> CONFIGURATION_CHANGED_SINCE_START (T4)
+  FAIL  pre-install check, times compared as UTC whatever their Kind: start time in local Kind, file written 5 minutes after it -> CONFIGURATION_CHANGED_SINCE_START (T4)
+        got: 
   PASS  pre-install check, times compared as UTC whatever their Kind: write time in local Kind, 5 minutes after a UTC start -> CONFIGURATION_CHANGED_SINCE_START (T4)
   PASS  pre-install check, times compared as UTC whatever their Kind: start time in local Kind, file written 5 minutes before it -> go ahead (T4)
   PASS  Get-ParallelProcessStartTimeUtc returns the process start time as UTC (T4)
@@ -408,4 +409,4 @@ The shipped definition and the installer carry it
   PASS  rollback: a missing product result file after the product script is refused, as on the install path
   PASS  Set-InstanceConfiguration (run by install, upgrade and rollback) goes through Invoke-ParallelInstanceConfigurationStep
 
-365 passed, 0 failed
+364 passed, 1 failed

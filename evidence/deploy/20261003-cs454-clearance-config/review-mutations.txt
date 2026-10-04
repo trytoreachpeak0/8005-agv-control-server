@@ -107,3 +107,9 @@
    FAIL  pre-install check: paused, times known, file older -> SERVICE_NOT_SETTLED
    FAIL  pre-install check: status unknown, times known, file older -> SERVICE_NOT_SETTLED
    FAIL  a service mid-transition is told to try again later
+
+# 第三轮快审补项（T4）
+== T4 process reader returns local time (.ToUniversalTime() removed) (ParallelHost.psm1): 364 passed, 1 failed -> KILLED
+   FAIL  Get-ParallelProcessStartTimeUtc returns the process start time as UTC (T4)
+== comparison takes the times as given (no conversion to UTC) (ParallelInstance.psm1): 364 passed, 1 failed -> KILLED
+   FAIL  pre-install check, times compared as UTC whatever their Kind: start time in local Kind, file written 5 minutes after it -> CONFIGURATION_CHANGED_SINCE_START (T4)
