@@ -109,6 +109,7 @@ internal static partial class Program
                 via = "database",
                 mapId,
                 stationId,
+                probeServer = probe.ToString(),
                 codes = result.Codes,
                 stationKind = result.Holder?.StationKind,
                 holderVehicleKey = result.Holder?.VehicleKey,
@@ -213,9 +214,17 @@ internal static partial class Program
     /// 探一次 <c>/health/live</c>。应答了（任何状态码）是 <see cref="ServerProbeState.Answered"/>；连接被主动拒绝（那个地址上没人监听）
     /// 是 <see cref="ServerProbeState.Refused"/>，唯一允许直接写库的结论；超时与其他任何错误是 <see cref="ServerProbeState.Inconclusive"/>。
     /// </summary>
+    /// <remarks>
+    /// 探测不走代理（#459 审查）：控制端笔记本与 vm01 都配着 <c>HTTP_PROXY</c>／系统代理。走代理时，代理死了而服务端在跑，「代理拒绝连接」
+    /// 会被当成「服务端停着」放行写库；服务端停着而代理开着，代理代答的 502 又会被当成服务端在跑。探的是服务端本身，不是代理。
+    /// </remarks>
     private static async Task<ServerProbe> ProbeServerAsync(Uri server)
     {
-        using HttpClient client = new() { BaseAddress = server, Timeout = ServerProbeTimeout };
+        using HttpClient client = new(new SocketsHttpHandler { UseProxy = false })
+        {
+            BaseAddress = server,
+            Timeout = ServerProbeTimeout
+        };
         try
         {
             using HttpResponseMessage response = await client.GetAsync("health/live");

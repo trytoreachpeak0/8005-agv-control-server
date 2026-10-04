@@ -771,6 +771,9 @@ internal static partial class Program
             "      server stopped: --database <path> --probe-server <base url>"
             + "   (writes only if the connection is refused; an answer, a timeout or any other error writes nothing)");
         Console.Error.WriteLine(
+            "      give --probe-server as the server's literal IP (e.g. http://127.0.0.1:58007/), not localhost:"
+            + " each resolved address costs about 2 s to be refused, which runs into the 5 s probe timeout");
+        Console.Error.WriteLine(
             "  import-charger-roster --input <charger-roster.json> --catalog <stations.json> --map <id> --fleet <keys> [--dry-run]");
         Console.Error.WriteLine("  charger-roster                  [--version <n>]   read-only");
         Console.Error.WriteLine("  import-charging-policy --input <charging-policy.json> --fleet <keys> [--dry-run]");

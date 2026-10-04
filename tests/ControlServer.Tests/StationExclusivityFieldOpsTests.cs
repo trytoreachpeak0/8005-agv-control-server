@@ -225,17 +225,55 @@ public sealed class StationExclusivityFieldOpsTests : IAsyncDisposable
     public async Task ARefusedConnectionIsTheOneAnswerThatLetsTheDatabaseWriteThrough()
     {
         await SeedAsync();
-        TcpListener freed = new(IPAddress.Loopback, 0);
-        freed.Start();
-        int port = ((IPEndPoint)freed.LocalEndpoint).Port;
-        freed.Stop();
+        string address = $"http://127.0.0.1:{FreedPort()}/";
 
         (int exit, JsonElement output) = await RunAsync(
-            null, [.. Arguments(), "--database", DatabasePath, "--probe-server", $"http://127.0.0.1:{port}/"]);
+            null, [.. Arguments(), "--database", DatabasePath, "--probe-server", address]);
 
-        Assert.Equal((0, "OK", "database"), (exit, output.GetProperty("outcome").GetString(), output.GetProperty("via").GetString()));
+        Assert.Equal(
+            (0, "OK", "database", address),
+            (exit, output.GetProperty("outcome").GetString(), output.GetProperty("via").GetString(),
+                output.GetProperty("probeServer").GetString()));
         await using ControlServerDbContext read = Open();
         Assert.Empty(await read.Set<StationExclusivityRow>().ToArrayAsync(Token));
+    }
+
+    /// <summary>
+    /// 探测不走代理（#459 审查 S1）：进程环境里挂着一个已经死掉的 <c>HTTP_PROXY</c>，服务端却在跑。走代理时「代理拒绝连接」被当成
+    /// 「服务端停着」放行写库；直连才探到服务端本身，<c>SERVER_RUNNING</c>。
+    /// </summary>
+    [Fact]
+    public async Task ADeadProxyInTheEnvironmentDoesNotHideARunningServer()
+    {
+        await SeedAsync();
+        string variable = "CONTROL_SERVER_TEST_" + Guid.NewGuid().ToString("N");
+        await using WebApplication app = await StartServerAsync(variable);
+        string address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
+        string deadProxy = $"http://127.0.0.1:{FreedPort()}/";
+
+        (int exit, JsonElement output) = await RunWithEnvironmentAsync(
+            [("HTTP_PROXY", deadProxy), ("http_proxy", deadProxy), ("ALL_PROXY", deadProxy), ("NO_PROXY", null), ("no_proxy", null)],
+            [.. Arguments(), "--database", DatabasePath, "--probe-server", address]);
+        await app.StopAsync(Token);
+
+        Assert.Equal((1, "SERVER_RUNNING"), (exit, output.GetProperty("outcome").GetString()));
+        await using ControlServerDbContext read = Open();
+        Assert.Single(await read.Set<StationExclusivityRow>().ToArrayAsync(Token));
+    }
+
+    /// <summary>
+    /// 解析不出的主机名（#459 审查 S3）也是一种 <c>SocketException</c>，但不是「连接被拒」：<c>SERVER_STATE_UNKNOWN</c>，不写库。
+    /// </summary>
+    [Fact]
+    public async Task AnUnresolvableProbeHostIsNotTakenForStopped()
+    {
+        await SeedAsync();
+        const string address = "http://fieldops-probe.invalid:58007/";
+
+        (int exit, JsonElement output) = await RunAsync(
+            null, [.. Arguments(), "--database", DatabasePath, "--probe-server", address]);
+
+        await AssertStateUnknownAndNothingWrittenAsync(exit, output, address);
     }
 
     /// <summary>服务端没应答：<c>UNAVAILABLE</c>，退出码 1，提示改用 <c>--database</c>。</summary>
@@ -296,6 +334,16 @@ public sealed class StationExclusivityFieldOpsTests : IAsyncDisposable
             0, await read.Set<AdministratorAuditRecordRow>().CountAsync(row => row.Action == StationExclusivityManualRelease.AuditAction, Token));
     }
 
+    /// <summary>A loopback port that was just bound and released, so nothing listens on it and a connection is refused.</summary>
+    private static int FreedPort()
+    {
+        TcpListener freed = new(IPAddress.Loopback, 0);
+        freed.Start();
+        int port = ((IPEndPoint)freed.LocalEndpoint).Port;
+        freed.Stop();
+        return port;
+    }
+
     private ControlServerDbContext Open() => new(
         new DbContextOptionsBuilder<ControlServerDbContext>()
             .UseSqlite(ControlServerSqlite.ForDatabaseFile(DatabasePath, readOnly: false))
@@ -329,8 +377,13 @@ public sealed class StationExclusivityFieldOpsTests : IAsyncDisposable
         return app;
     }
 
-    private static async Task<(int ExitCode, JsonElement Output)> RunAsync(
-        (string Name, string? Value)? environment, string[] arguments)
+    private static Task<(int ExitCode, JsonElement Output)> RunAsync(
+        (string Name, string? Value)? environment, string[] arguments) =>
+        RunWithEnvironmentAsync(environment is { } single ? [single] : [], arguments);
+
+    /// <summary>Runs FieldOps; each variable is set in the child's environment, or removed from it when its value is null.</summary>
+    private static async Task<(int ExitCode, JsonElement Output)> RunWithEnvironmentAsync(
+        (string Name, string? Value)[] environment, string[] arguments)
     {
         Assert.True(File.Exists(FieldOps), $"FieldOps was not built next to the tests: {FieldOps}");
         ProcessStartInfo start = new(FieldOps)
@@ -344,7 +397,7 @@ public sealed class StationExclusivityFieldOpsTests : IAsyncDisposable
         {
             start.ArgumentList.Add(argument);
         }
-        if (environment is { } variable)
+        foreach ((string Name, string? Value) variable in environment)
         {
             if (variable.Value is null)
             {
