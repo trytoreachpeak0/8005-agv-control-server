@@ -23,6 +23,11 @@ namespace ControlServer.Host.Runtime.Charging;
 /// <para>
 /// 周期已经结束的（失败周期留下、一直放不掉的预占）只放独占行，周期不再动。
 /// </para>
+/// <para>
+/// <b>车还在开往等待点时不放用途</b>（control-server#462）：清桩移动（control-server#409）途中被人工确认，周期照样结束、桩照样放，用途
+/// <c>CLEARING_MAINTENANCE</c> 跟着旅程留到移动收敛——到点那一轮、或移动结束后旅程收尾那一轮——由收尾放。在那之前车在动，
+/// 派车与充电分配写入时防重复承诺靠的正是这条占有的主键。
+/// </para>
 /// </remarks>
 public static class ChargerClearanceRelease
 {
@@ -98,8 +103,15 @@ public static class ChargerClearanceRelease
 
             if (open)
             {
-                await JourneyPurposeClaimRelease.StageAsync(dbContext, cycle.JourneyId, now, endReason, cancellationToken)
-                    .ConfigureAwait(false);
+                // control-server#462: a vehicle still driving its clearance move keeps its purpose. The journey releases it when
+                // the move converges -- arriving (ClearanceAtWaitingPointClosure), or the move ending and the journey closing
+                // (CloseClearedChargingAsync) -- because until then the vehicle is moving, and the purpose claim's key is what
+                // keeps dispatch and charging allocation from committing it a second time at their write.
+                if (!await DrivesAClearanceMoveAsync(dbContext, cycle.JourneyId, cancellationToken).ConfigureAwait(false))
+                {
+                    await JourneyPurposeClaimRelease.StageAsync(dbContext, cycle.JourneyId, now, endReason, cancellationToken)
+                        .ConfigureAwait(false);
+                }
                 await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             }
 
@@ -176,6 +188,17 @@ public static class ChargerClearanceRelease
         }
         ForgetClearance(dbContext, clearanceId);
         return true;
+    }
+
+    /// <summary>这趟旅程还有一次没结束的清桩移动（control-server#409）：车在开往等待点、或停在那里还没收敛。</summary>
+    private static async Task<bool> DrivesAClearanceMoveAsync(
+        ControlServerDbContext dbContext, string journeyId, CancellationToken cancellationToken)
+    {
+        JourneyStopRow[] moves = await dbContext.Set<JourneyStopRow>().AsNoTracking()
+            .Where(row => row.JourneyId == journeyId && row.StopRole == JourneyStopRoles.WaitingPoint &&
+                          row.Status != JourneyStopStatuses.Completed && row.Status != JourneyStopStatuses.Removed)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        return moves.Any(ClearanceMoveShape.IsClearanceMove);
     }
 
     /// <summary>变更跟踪里这条清桩记录的旧副本（更新绕过了它）。</summary>
