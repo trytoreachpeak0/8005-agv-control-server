@@ -1,7 +1,10 @@
 using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.Charging;
+using ControlServer.Host.Runtime.Commands;
+using ControlServer.Host.Runtime.Faults;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using static ControlServer.Tests.ChargingAllocationTests;
@@ -62,6 +65,88 @@ public sealed partial class ChargingClearanceToWaitingPointTests
         Assert.Equal(JourneyRuntimeStage.Completed, (await fleet.Context.JourneyRuntimes.AsNoTracking()
             .SingleAsync(row => row.JourneyId == journey.JourneyId, Token)).Stage);
         Assert.Null(await ClaimOfAsync(fleet, KeyA));
+    }
+
+    /// <summary>
+    /// 人工清桩确认之后，这次移动不到点就结束的另外三个出口（cs#462 独立审查 S-1、S-2）：单 FAILED、人清除故障；建单发出过、RIoT 一直查无此单、
+    /// 凭证据放弃；单从没发出、建单前复核撤回。每一个都不抛（周期已被人工结束，没有「回到清桩中」的快照可发），旅程随后收尾、用途在收尾时放。
+    /// 撤回那一个不建单。
+    /// </summary>
+    [Theory]
+    [InlineData("failedThenFaultCleared")]
+    [InlineData("neverAppearedAbandoned")]
+    [InlineData("withdrawnBeforeSent")]
+    public async Task EveryOtherWayAMoveEndsAfterAManualClearanceClosesTheJourneyAndReleasesThePurpose(string exit)
+    {
+        await using FleetFixture fleet = await ClearanceFleetAsync();
+        JourneyRuntimeRow journey = await OldOrderEndedAsync(fleet);
+        string upperId = ClearanceMoveShape.UpperIdFor(journey.JourneyId, 1);
+        await RoundAsync(fleet);
+        switch (exit)
+        {
+            case "failedThenFaultCleared":
+                await RoundAsync(fleet);
+                fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = 300, Speed = 300, ProcState = "EXECUTING", OrderTaskId = "T" };
+                await ConfirmOnTheWayAsync(fleet, journey, "00000000-0000-4000-8000-0000000c4624");
+                fleet.Riot.MovementState = "MT_FINISHED";
+                fleet.Riot.FailOrder(upperId);
+                fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = 12, BatteryState = "NO_CHARGE" };
+                await RoundAsync(fleet);
+                await RoundAsync(fleet);
+                Assert.Equal(VehicleFaultEvidence.OrderFailed, (await ChargingJourneyAsync(fleet, AgvA))!.BlockReasonCode);
+                fleet.Context.ChangeTracker.Clear();
+                VehicleFaultRecoveryDecision recovery = await fleet.CreateFaultRecovery().RecoverAsync(
+                    new VehicleFaultRecoveryRequest(
+                        new EmergencyStopSubject(AgvA, KeyA), VehicleFaultRecoveryAction.ClearFault, "operator-1", true, null),
+                    Token);
+                fleet.Context.ChangeTracker.Clear();
+                Assert.Equal(
+                    (VehicleFaultRecoveryOutcome.Cleared, VehicleFaultRecoveryDispositions.ClearanceMoveEnded),
+                    (recovery.Outcome, recovery.Disposition));
+                break;
+            case "neverAppearedAbandoned":
+                fleet.Riot.AnswersAbsentAsRealRiot = true;
+                fleet.Riot.CreateAnswer = intent => fleet.Riot.RealRiotAbsent(intent.UpperId);
+                await RoundAsync(fleet);
+                fleet.Riot.CreateAnswer = null;
+                fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = 12, BatteryState = "NO_CHARGE" };
+                await ConfirmOnTheWayAsync(fleet, journey, "00000000-0000-4000-8000-0000000c4625");
+                for (int round = 0; round < 8; round++)
+                {
+                    await fleet.HearFromEveryVehicleAsync();
+                    await fleet.RunRoundAsync(TimeSpan.FromSeconds(30));
+                }
+                Assert.Single(await fleet.Context.Set<StationExclusivityRecordRow>().AsNoTracking()
+                    .Where(row => row.StationId == 214 && row.ReleaseReason == ClearanceMoveReleaseReasons.NeverAppeared).ToArrayAsync(Token));
+                break;
+            case "withdrawnBeforeSent":
+                fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = 12, BatteryState = "NO_CHARGE" };
+                await ConfirmOnTheWayAsync(fleet, journey, "00000000-0000-4000-8000-0000000c4626");
+                break;
+        }
+
+        for (int round = 0; round < 3; round++)
+        {
+            await RoundAsync(fleet);
+        }
+
+        Assert.Equal(JourneyRuntimeStage.Completed, (await fleet.Context.JourneyRuntimes.AsNoTracking()
+            .SingleAsync(row => row.JourneyId == journey.JourneyId, Token)).Stage);
+        Assert.Null(await ClaimOfAsync(fleet, KeyA));
+        Assert.Null(await StationAsync(fleet, 214));
+        if (exit == "withdrawnBeforeSent")
+        {
+            Assert.DoesNotContain(fleet.Riot.Creates, create => create.UpperId == upperId);
+        }
+    }
+
+    /// <summary>移动已承诺（等待点腿还没结束）时人工清桩确认：清桩完成、桩放开，用途仍跟着旅程（cs#462）。</summary>
+    private static async Task ConfirmOnTheWayAsync(FleetFixture fleet, JourneyRuntimeRow journey, string confirmationRequestId)
+    {
+        ManualStationClearanceConfirmation decision = await ManualClearance(fleet).DecideAsync(Request(confirmationRequestId), Token);
+        Assert.Equal((FieldConfirmationDecision.Confirmed, true), (decision.Decision.Outcome, decision.StationReleased));
+        Assert.Single(await ClearanceStopsAsync(fleet, journey), stop => stop.Status != JourneyStopStatuses.Removed);
+        Assert.Equal((VehiclePurposes.ClearingMaintenance, journey.JourneyId), await ClaimOfAsync(fleet, KeyA));
     }
 
     /// <summary>

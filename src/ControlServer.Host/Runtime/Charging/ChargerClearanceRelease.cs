@@ -194,6 +194,9 @@ public static class ChargerClearanceRelease
     private static async Task<bool> DrivesAClearanceMoveAsync(
         ControlServerDbContext dbContext, string journeyId, CancellationToken cancellationToken)
     {
+        // A move already Completed or Removed is not driving. Were one counted anyway, nothing visible would break: the purpose
+        // would wait one round more, until CloseClearedChargingAsync closes the journey and releases it -- that backstop is why
+        // no test tells the two apart (review M4 of control-server#462 survived on it).
         JourneyStopRow[] moves = await dbContext.Set<JourneyStopRow>().AsNoTracking()
             .Where(row => row.JourneyId == journeyId && row.StopRole == JourneyStopRoles.WaitingPoint &&
                           row.Status != JourneyStopStatuses.Completed && row.Status != JourneyStopStatuses.Removed)
