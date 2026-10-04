@@ -1593,7 +1593,11 @@ function Get-ParallelGateClosingSteps {
     #>
     param([string] $ConfigurationPath, [string] $ServiceName)
     $mvpConfiguration = "$($script:ProductionPaths[0])\appsettings.Production.json"
-    return ("Close the gate on THIS instance, in this order: (1) stop injecting new demand into its FakeMesIngest and wait " +
+    # control-server#472: the script does all of the hand steps below, with the checks; they stay as the
+    # fallback for when it cannot run.
+    return ("Close the gate with remote-ops/factory-server/scripts/20-set-control-server-parallel-dispatch-gate.ps1 -State Closed " +
+        "from the control host, on the user's authorization: it refuses while a journey is in flight, writes the file, restarts " +
+        "the V2 service and verifies it. Only if that script cannot run, close it by hand on THIS instance, in this order: (1) stop injecting new demand into its FakeMesIngest and wait " +
         "until agv02 and agv03 both report their last order Completed; (2) edit $ConfigurationPath -- the V2 file, NOT the " +
         "MVP's $mvpConfiguration -- and set RiotCreateDispatch.enabled to false, with an editor that keeps the file UTF-8 " +
         '(saving it from Notepad with "Save As" can re-encode it and corrupt the Chinese agvId); (3) restart the service ' +
@@ -1723,6 +1727,158 @@ function Get-ParallelPreInstallRefusal {
     }
     $dispatchRefusal = Get-ParallelUpgradeRefusal -Configuration $configuration -ConfigurationPath $ConfigurationPath -ServiceName $ServiceName
     return $dispatchRefusal
+}
+
+function Resolve-ParallelInstanceDatabasePath {
+    <#
+        .SYNOPSIS
+            The SQLite file this instance's service reads, from the installed configuration; throws
+            unless it sits inside the layout's DataRoot.
+
+        .DESCRIPTION
+            control-server#472. Taken from ConnectionStrings:ControlServer -- the value the running
+            service uses -- rather than rebuilt from DataRoot, so a file someone moved is read where
+            the service reads it. Held to DataRoot and away from every production path, so that a
+            configuration pointing at the MVP's database is refused instead of read. Pure.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][System.Collections.IDictionary] $Configuration,
+        [Parameter(Mandatory = $true)][string] $DataRoot,
+        [Parameter(Mandatory = $true)][string] $ConfigurationPath
+    )
+    $connection = [string] (Get-ConfigurationValue (Get-ConfigurationValue $Configuration 'ConnectionStrings') 'ControlServer')
+    $match = [regex]::Match($connection, '(?i)(?:^|;)\s*Data Source\s*=\s*([^;]+)')
+    if (-not $match.Success) {
+        throw "$ConfigurationPath has no Data Source in ConnectionStrings:ControlServer ('$connection'), so the journey state cannot be read."
+    }
+    $path = [Environment]::ExpandEnvironmentVariables($match.Groups[1].Value.Trim()).Replace('/', '\')
+    $root = $DataRoot.TrimEnd('\') + '\'
+    if (-not $path.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) -or $path.Contains('\..\') -or
+        (Test-ParallelInstancePathIsProduction -Path $path)) {
+        throw "The database in $ConfigurationPath ($path) is not inside this instance's data root $DataRoot; refusing to read it."
+    }
+    return $path
+}
+
+function Test-ParallelOrderIntentNeverSent {
+    <#
+        .SYNOPSIS
+            True when an OrderIntents row has certainly never been sent to RIoT.
+
+        .DESCRIPTION
+            control-server#472. A port of WireToGateStore.IsNeverSentAsync and
+            IsNeverSentAfterUnansweredReadsAsync (control-server#375), the single definition the
+            runtime and the release service read: PENDING_RECONCILIATION with no create attempt and no
+            order, or RESULT_UNKNOWN only because every read before the create answered nothing. Every
+            other state may have a live order in RIoT. Test-ParallelInstance.ps1 pins the C# predicate
+            literally, so this port cannot drift silently from it. Pure: the row and its audit events
+            as read from the database (column names as there).
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory = $true)][System.Collections.IDictionary] $Intent,
+        [AllowEmptyCollection()][object[]] $AuditEvents = @()
+    )
+    $attempts = $Intent['CreateAttemptCount']
+    $noAttempt = $null -ne $attempts -and [long] $attempts -eq 0 -and $null -eq $Intent['CreateAttemptId']
+    if ([string] $Intent['Status'] -ceq 'PENDING_RECONCILIATION' -and $noAttempt -and $null -eq $Intent['OrderId']) {
+        return $true
+    }
+    if ([string] $Intent['Status'] -cne 'RESULT_UNKNOWN' -or $null -eq $Intent['DispatchAuditVersion'] -or
+        [long] $Intent['DispatchAuditVersion'] -ne 1 -or -not $noAttempt -or $null -ne $Intent['ExperimentalCreateAuthorizationId']) {
+        return $false
+    }
+    $reads = @($AuditEvents | Where-Object { [string] $_['MovementLegId'] -ceq [string] $Intent['MovementLegId'] })
+    if ($reads.Count -eq 0) { return $false }
+    foreach ($read in $reads) {
+        if ([string] $read['Phase'] -cne 'PRE_CREATE_RECONCILIATION' -or [string] $read['Outcome'] -cnotin @('UNKNOWN', 'NOT_FOUND') -or
+            $null -ne $read['AttemptId'] -or $null -ne $read['ReturnedOrderId'] -or
+            ($null -ne $read['ResultPresent'] -and [bool] $read['ResultPresent'])) {
+            return $false
+        }
+    }
+    return $true
+}
+
+function Get-ParallelDispatchGateRefusal {
+    <#
+        .SYNOPSIS
+            Why the RIoT dispatch gate must not be closed or opened now, judged from the instance's own
+            journey state; $null when it may.
+
+        .DESCRIPTION
+            control-server#472. Both directions restart the V2 service, which stops the journey
+            runtime's fault supervision for as long as the restart takes, so both refuse while a vehicle
+            may be under one of this instance's RIoT orders. They differ in what counts:
+
+              * Close: any journey whose Stage is not Completed (the engine's own definition of active,
+                JourneyRuntimeEngine; Blocked counts). No HTTP endpoint lists them all -- each
+                /api/dashboard/* query returns a subset -- which is why this reads the database.
+              * Open: a journey whose order has been, or may have been, sent. With the gate closed no
+                order can be created (MovementDispatchService returns CreateDispatchDisabled and writes
+                nothing), so the journeys that exist then are waiting for exactly this gate, and refusing
+                them would be a deadlock only a database edit could break. Refused is any journey with an
+                order intent that is not certainly never sent (Test-ParallelOrderIntentNeverSent). A
+                journey's intents are those named on its row (PickupUpperId, GateUpperId) plus every
+                intent for its vehicle created at or after the journey was: the engine keeps at most one
+                active journey per vehicle, and later stops, rebuilds and charging legs get intents of
+                their own that the row does not name. Anything that cannot be dated or read refuses.
+
+            $State is Get-ParallelJourneyDispatchState's output, or $null / an Error string when it could
+            not be read, which refuses in both directions (fail closed). Pure.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][ValidateSet('Close', 'Open')][string] $Direction,
+        [AllowNull()] $State,
+        [Parameter(Mandatory = $true)][string] $ServiceName,
+        [Parameter(Mandatory = $true)][string] $DatabasePath
+    )
+    $nothing = ' Nothing was stopped or changed.'
+    if ($null -eq $State -or $State -isnot [System.Collections.IDictionary] -or $State.Contains('Error')) {
+        $why = ($State -is [System.Collections.IDictionary] -and $State.Contains('Error')) ? $State['Error'] : 'no state was returned'
+        return ("GATE_STATE_UNREADABLE: the journey state of '$ServiceName' could not be read from $DatabasePath ($why), so " +
+            'whether a vehicle is under way cannot be told.' + $nothing)
+    }
+    $journeys = @($State['Journeys'] | Where-Object { [string] $_['Stage'] -cne 'Completed' })
+    if ($Direction -eq 'Close') {
+        if ($journeys.Count -eq 0) { return $null }
+        $listed = ($journeys | ForEach-Object { "$($_['JourneyId']) ($($_['AgvId']), $($_['Stage']))" }) -join '; '
+        return ("GATE_CLOSE_REFUSED_IN_FLIGHT: $DatabasePath has $($journeys.Count) journey(s) of '$ServiceName' not Completed: " +
+            "$listed. Stop injecting demand into its FakeMesIngest, wait until agv02 and agv03 have finished, and run this again." + $nothing)
+    }
+
+    $intents = @($State['OrderIntents'])
+    $sent = [System.Collections.Generic.List[string]]::new()
+    foreach ($journey in $journeys) {
+        [DateTimeOffset] $since = [DateTimeOffset]::MinValue
+        if (-not [DateTimeOffset]::TryParse([string] $journey['CreatedAt'], [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref] $since)) {
+            $sent.Add("$($journey['JourneyId']): its CreatedAt '$($journey['CreatedAt'])' cannot be read")
+            continue
+        }
+        $named = @([string] $journey['PickupUpperId'], [string] $journey['GateUpperId']) | Where-Object { $_ }
+        foreach ($intent in $intents) {
+            $mine = $named -ccontains [string] $intent['UpperId']
+            if (-not $mine -and [string] $intent['VehicleKey'] -ceq [string] $journey['VehicleKey']) {
+                [DateTimeOffset] $created = [DateTimeOffset]::MinValue
+                if (-not [DateTimeOffset]::TryParse([string] $intent['CreatedAt'], [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref] $created)) {
+                    $sent.Add("$($journey['JourneyId']): order intent $($intent['UpperId']) has an unreadable CreatedAt '$($intent['CreatedAt'])'")
+                    continue
+                }
+                $mine = $created -ge $since
+            }
+            if ($mine -and -not (Test-ParallelOrderIntentNeverSent -Intent $intent -AuditEvents @($State['AuditEvents']))) {
+                $sent.Add("$($journey['JourneyId']) ($($journey['AgvId']), $($journey['Stage'])): order intent $($intent['UpperId']) is $($intent['Status'])" +
+                    $(if ($intent['OrderId']) { " with RIoT order $($intent['OrderId'])" } else { '' }))
+            }
+        }
+    }
+    if ($sent.Count -eq 0) { return $null }
+    return ("GATE_OPEN_REFUSED_ORDER_SENT: in $DatabasePath, a journey of '$ServiceName' has an order that was or may have been sent " +
+        "to RIoT, so a vehicle may be under way and restarting the service would stop its fault supervision: $($sent -join '; '). " +
+        'With the gate closed through this script no such order can exist; find out how it came about before opening.' + $nothing)
 }
 
 function Get-ConfigurationValue {
@@ -1895,4 +2051,7 @@ Export-ModuleMember -Function @(
     'Get-ParallelClearanceExitReadiness'
     'Get-ParallelUpgradeRefusal'
     'Get-ParallelPreInstallRefusal'
+    'Resolve-ParallelInstanceDatabasePath'
+    'Test-ParallelOrderIntentNeverSent'
+    'Get-ParallelDispatchGateRefusal'
 )
