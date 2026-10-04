@@ -1088,12 +1088,14 @@ public sealed class ChargingAllocationTests
         int vehicles = 1,
         ChargerRosterEntry[]? chargers = null,
         bool roster = true,
-        DbCommandInterceptor? commands = null)
+        DbCommandInterceptor? commands = null,
+        string? databaseFile = null)
     {
         // control-server#408: every charging code these tests write must have a description on the charging dashboard.
         ChargingDashboardCodeRecorder codes = new();
         FleetFixture fleet = await FleetFixture.CreateAsync(
-            configure: options => options.Fleet = options.Fleet[..vehicles], withRouteGraph: true, commands: commands, saves: codes);
+            configure: options => options.Fleet = options.Fleet[..vehicles], withRouteGraph: true, commands: commands, saves: codes,
+            databaseFile: databaseFile);
         fleet.DisposeChecks.Add(codes.AssertEveryCodeIsDescribed);
         fleet.DisposeChecks.Add(() => ChargingDashboardCodeRecorder.AssertEveryAllocationCodeIsDescribed(fleet.ChargingBoard, fleet.ChargingLog.Entries));
         await fleet.ReplaceRouteGraphAsync(Edges(), Stations());
