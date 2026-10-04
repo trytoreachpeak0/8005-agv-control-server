@@ -972,9 +972,15 @@ public sealed partial class MultiVehicleExecutionTests
             bool withRouteGraph = false,
             bool routeGraphOnInTransitChain = true,
             Microsoft.EntityFrameworkCore.Diagnostics.DbCommandInterceptor? commands = null,
-            Microsoft.EntityFrameworkCore.Diagnostics.ISaveChangesInterceptor? saves = null)
+            Microsoft.EntityFrameworkCore.Diagnostics.ISaveChangesInterceptor? saves = null,
+            string? databaseFile = null)
         {
-            SqliteConnection connection = new("Data Source=:memory:");
+            // control-server#452: a file database gives every NewContext() a connection of its own, so the write lock is the one
+            // production has between the inbound handler, the engine and other vehicles' inbound. The busy timeout is a second,
+            // so a writer stuck behind it fails fast instead of waiting the production 30.
+            SqliteConnection connection = new(databaseFile is null
+                ? "Data Source=:memory:"
+                : ControlServerSqlite.ForDatabaseFile(databaseFile, busyTimeoutSeconds: 1));
             await connection.OpenAsync(TestContext.Current.CancellationToken);
             DbContextOptionsBuilder<ControlServerDbContext> builder =
                 new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection);
@@ -995,6 +1001,7 @@ public sealed partial class MultiVehicleExecutionTests
             FleetFixture fixture = new(
                 connection, context, options, new MovableClock(Now), extraCriterion, withRouteGraph,
                 routeGraphOnInTransitChain);
+            fixture._databaseFile = databaseFile;
             if (withRouteGraph)
             {
                 await fixture.SeedRouteGraphAsync();
@@ -1091,7 +1098,13 @@ public sealed partial class MultiVehicleExecutionTests
 
         /// <summary>同一个库上的另一个上下文：一个与引擎那一轮并行的入站或 Host 请求（control-server#406 的并发交错）。</summary>
         public ControlServerDbContext NewContext() =>
-            new(new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(_connection).Options);
+            _databaseFile is null
+                ? new(new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(_connection).Options)
+                : new(new DbContextOptionsBuilder<ControlServerDbContext>()
+                    .UseSqlite(ControlServerSqlite.ForDatabaseFile(_databaseFile, busyTimeoutSeconds: 1)).Options);
+
+        /// <summary>The database file when the fixture was created on one (control-server#452); in memory otherwise.</summary>
+        private string? _databaseFile;
 
         public async Task<JourneyRuntimeRow> JourneyOfAsync(string agvId) =>
             await Context.JourneyRuntimes.AsNoTracking()
