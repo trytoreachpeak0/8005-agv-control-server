@@ -54,3 +54,18 @@
 **P6。**扫描时发现，CI 上没有观测到过。服务端静默关闭时那一行还没被读走，Windows 回的是重置而不是 EOF，所以修复前的红是 `IOException`。修复后的注入同样只让第一条连接晚一次，理由同 P5。修复后只在「这条连接以 1005 收场」时换新连接重来，上限 10 次；1005 在关连接之前记下，客户端看到连接没了时它已在日志里。输出「对照那一半用了 2 条连接」。
 
 **P7 与 S1。**写卡住的前提改为从最后一次写成功的推送开始量到旧代次离开路由表。卡住的写排在最后一次成功之后，所以在对的产品上这段时间不短于写超时，负载只会让它更长。原来量「最长的一次推送」，HeartbeatAck 先卡住时推送晚多少，它就短多少；写超时 1 s 那一格余量约 150 ms。
+
+## 压力验证与全量（`748a0e1d`，代码同 `06d5d0d9`）
+
+**压力验证**（`runs/stress-748a0e1d/`，脚本 `probes/run-stress.ps1`）：12 个满载 CPU 的空转进程，3 个并行进程各跑 10 轮；每轮 6 条用例（`OnboardPowerLossReconnectTests` 全类 5 条、`TheEndpointAnswersAGetOverHttpAndTheCardRendersWhatItReturns`、`NothingSentAfterTheCloseIsProcessed`）。30 轮共 180 条用例结果，180 通过、0 失败。
+
+其中 1 轮（第 3 个进程第 4 轮）退出码为 1，那一轮 6 条用例全部通过，红的是程序集收尾：
+
+```
+Assembly fixture type 'ControlServer.Tests.OutboundSchemaConformance' threw in DisposeAsync
+System.IO.IOException : The process cannot access the file '...\schema-conformance\schema-conformance.txt' because it is being used by another process.
+```
+
+原因是这个压力脚本让 3 个进程共用同一个编译输出目录，两个进程同时收尾、争写同一个报告文件。这是压力脚本的做法造成的，不是被测用例的失败；正常的单进程运行不会有这种情况。
+
+**全量**（项目规定的 `dotnet test .\tests\ControlServer.Tests\ControlServer.Tests.csproj -c Release`，压力验证结束、占用进程清掉之后单独跑）：退出码 0，`Passed: 4169, Failed: 0`；TRX `total="4172" executed="4169" passed="4169" failed="0"`，没执行的 3 条是 `ReconnectModelTests` 里只在显式指定时才跑的 3 条。没有 schema 收尾失败。
