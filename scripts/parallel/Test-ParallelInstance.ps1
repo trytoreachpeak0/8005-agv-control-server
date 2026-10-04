@@ -2130,6 +2130,32 @@ foreach ($case in $refusalCases) {
         -Name "upgrade refusal: $($case.Name) -> $($case.Refused ? 'refused, naming agv02/agv03 Completed' : 'allowed')" -Detail "got: $refusal"
 }
 
+# The installer's first check, before anything is touched (Get-ParallelPreInstallRefusal). Fail closed:
+# a service with no installed configuration is a state nobody can explain, and -Rollback used to swap
+# the package directories before finding out (control-server#454, found in self-review after S3).
+$closedText = ConvertTo-Json -InputObject ([ordered]@{ RiotCreateDispatch = [ordered]@{ enabled = $false }; JourneyRuntime = [ordered]@{ enabled = $true } }) -Depth 5
+$openText = ConvertTo-Json -InputObject ([ordered]@{ RiotCreateDispatch = [ordered]@{ enabled = $true } }) -Depth 5
+$preInstallCases = @(
+    @{ Name = 'no service (first install), no configuration'; Exists = $false; Text = $null; Expect = $null }
+    @{ Name = 'no service, a configuration left behind'; Exists = $false; Text = $openText; Expect = $null }
+    @{ Name = 'service, configuration missing'; Exists = $true; Text = $null; Expect = 'INSTALLED_CONFIGURATION_MISSING' }
+    @{ Name = 'service, configuration empty'; Exists = $true; Text = ''; Expect = 'INSTALLED_CONFIGURATION_UNREADABLE' }
+    @{ Name = 'service, configuration not JSON'; Exists = $true; Text = '{"RiotCreateDispatch":'; Expect = 'INSTALLED_CONFIGURATION_UNREADABLE' }
+    @{ Name = 'service, configuration a JSON array'; Exists = $true; Text = '[1,2]'; Expect = 'INSTALLED_CONFIGURATION_UNREADABLE' }
+    @{ Name = 'service, dispatch open'; Exists = $true; Text = $openText; Expect = 'UPGRADE_REFUSED_DISPATCH_OPEN' }
+    @{ Name = 'service, dispatch closed'; Exists = $true; Text = $closedText; Expect = $null }
+)
+foreach ($case in $preInstallCases) {
+    $got = $null; $err = $null
+    try { $got = Get-ParallelPreInstallRefusal -ServiceExists $case.Exists -ConfigurationPath 'C:\x\appsettings.Production.json' -ConfigurationText $case.Text }
+    catch { $err = $_.Exception.Message }
+    $ok = $null -eq $err -and (($null -eq $case.Expect) ? ($null -eq $got) : ($null -ne $got -and $got.StartsWith($case.Expect)))
+    Write-Result -Ok $ok -Name "pre-install check: $($case.Name) -> $($case.Expect ?? 'go ahead')" -Detail "got: $got; threw: $err"
+}
+$missing = try { Get-ParallelPreInstallRefusal -ServiceExists $true -ConfigurationPath 'C:\x\appsettings.Production.json' -ConfigurationText $null } catch { '' }
+Write-Result -Ok ($null -ne $missing -and $missing.Contains('C:\x\appsettings.Production.json') -and $missing.Contains('Nothing was stopped or changed')) `
+    -Name 'a missing configuration names the path, tells the operator to find out why, and says nothing was touched' -Detail "got: $missing"
+
 # The read-back checks, through the -Writer seam: a write that is lost or lands something else must
 # be caught. Without the read-back (M4) or with a per-value check that never reports (M10), these go
 # green on a file that does not say what the overlay wrote -- for M10, a file naming agv01.
@@ -2198,13 +2224,20 @@ Write-Result -Ok ($productCalls.Count -eq 2 -and $orderBad.Count -eq 0) `
 # Review S3, the early check: before the installed definition is re-recorded, before the rollback swap,
 # before either product-installer call.
 $allCommands = @($installerAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true))
-$refusalAt = @($allCommands | Where-Object { $_.GetCommandName() -eq 'Get-ParallelUpgradeRefusal' } | ForEach-Object { $_.Extent.StartOffset } | Sort-Object | Select-Object -First 1)
+$refusalAt = @($allCommands | Where-Object { $_.GetCommandName() -eq 'Get-ParallelPreInstallRefusal' } | ForEach-Object { $_.Extent.StartOffset } | Sort-Object | Select-Object -First 1)
 $recordAt = @($allCommands | Where-Object { $_.GetCommandName() -eq 'Copy-Item' -and $_.Extent.Text.Contains('InstalledDefinitionPath') } | ForEach-Object { $_.Extent.StartOffset })
 $swapAt = @($allCommands | Where-Object { $_.GetCommandName() -eq 'Move-Item' } | ForEach-Object { $_.Extent.StartOffset } | Sort-Object | Select-Object -First 1)
 $productAt = @($productCalls | ForEach-Object { $_.Extent.StartOffset } | Sort-Object | Select-Object -First 1)
 Write-Result -Ok ($refusalAt.Count -eq 1 -and $recordAt.Count -eq 1 -and $refusalAt[0] -lt $recordAt[0] -and $refusalAt[0] -lt $swapAt[0] -and $refusalAt[0] -lt $productAt[0]) `
-    -Name 'the installer refuses an open dispatch gate before recording the definition, swapping a rollback or running a product script' `
+    -Name 'the installer runs its pre-install check (open dispatch gate, missing or unreadable configuration) before recording the definition, swapping a rollback or running a product script' `
     -Detail "refusal=$refusalAt record=$recordAt swap=$swapAt product=$productAt"
+# ... unconditionally. The first version sat inside "if the service exists AND the file exists", which
+# is exactly how a missing file skipped it; the function takes both facts and decides itself.
+$preCall = @($allCommands | Where-Object { $_.GetCommandName() -eq 'Get-ParallelPreInstallRefusal' } | Select-Object -First 1)
+$gated = $false
+if ($preCall.Count -eq 1) { $a = $preCall[0].Parent; while ($a) { if ($a -is [System.Management.Automation.Language.IfStatementAst]) { $gated = $true }; $a = $a.Parent } }
+Write-Result -Ok ($preCall.Count -eq 1 -and -not $gated) -Name 'the pre-install check is not inside any if: no file-exists condition can skip it' `
+    -Detail "found: $($preCall.Count); inside an if: $gated"
 
 Write-Host ''
 Write-Host 'The shipped definition and the installer carry it' -ForegroundColor Cyan
