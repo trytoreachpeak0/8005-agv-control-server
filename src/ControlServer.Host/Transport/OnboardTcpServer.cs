@@ -213,6 +213,13 @@ public sealed partial class OnboardTcpServer : BackgroundService
                         OnboardPeerConnection.Encode(response),
                         cancellationToken).ConfigureAwait(false);
                 }
+                // A refused CapabilitySnapshot: its ProtocolProblem is on the wire, and only a new handshake can bring a
+                // new capability baseline (control-server#478, OnboardMessageProcessor.AfterRefusedBaselineAsync).
+                if (state.EndAfterResponse)
+                {
+                    LogEndedAfterRefusedBaseline(_logger, state.AgvId ?? "(no session)", state.SessionGeneration, null);
+                    return;
+                }
                 // Routable only from here, once the recovery report's answer -- its DurableAck and
                 // SessionReadiness -- is on the wire (control-server#259). Before, the vehicle is in its handshake,
                 // reading one line per request, and a push would be read as the answer it is waiting for; it
@@ -319,4 +326,11 @@ public sealed partial class OnboardTcpServer : BackgroundService
                   "connection still open; closing it (ADR-cross-0027). No order is held, ended or reassigned.")]
     private static partial void LogOnboardSessionSilent(
         ILogger logger, string agvId, long? sessionGeneration, TimeSpan silence, Exception? error);
+
+    [LoggerMessage(EventId = 1006, Level = LogLevel.Warning,
+        Message = "Onboard session for {AgvId} (generation {SessionGeneration}) refused its CapabilitySnapshot; the " +
+                  "ProtocolProblem is written and the connection is closed so a new handshake brings a new capability " +
+                  "baseline (control-server#478).")]
+    private static partial void LogEndedAfterRefusedBaseline(
+        ILogger logger, string agvId, long? sessionGeneration, Exception? error);
 }

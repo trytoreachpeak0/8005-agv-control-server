@@ -246,6 +246,39 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Stops trusting this session's departure safety until the vehicle sends a fresh SafetyStateSnapshot
+    /// (control-server#478): the departure verdict and its reasons are cleared, so readiness is RecoveryRequired from here
+    /// and the vehicle is given no work. The reason code is the one <see cref="DecideReadinessAsync"/> names:
+    /// DEPARTURE_SAFETY_NOT_READY unless a reason it ranks earlier also holds (a missing capability snapshot or recovery
+    /// report, facts still to reconcile).
+    /// </summary>
+    /// <remarks>
+    /// For a safety message the server refused. Before #478 such a refusal ended the connection, and the reconnect brought
+    /// a new safety baseline with it; with the connection kept, the server would otherwise go on judging departure on
+    /// whichever content arrived first while the vehicle holds another. The revision and its hash stay: the next snapshot
+    /// must still move the revision forward, so a stale one cannot slip in as the replacement.
+    /// <para>
+    /// Readiness falls in this same save, to what <see cref="DecideReadinessAsync"/> would decide from a cleared verdict;
+    /// the caller decides it again afterwards only to name the reason more precisely. Leaving readiness to that second save
+    /// left a window: had it failed, the connection would end with the row still Ready, and dispatch reads nothing but
+    /// Readiness (control-server#478 incremental review).
+    /// </para>
+    /// </remarks>
+    public async Task DistrustSafetyBaselineAsync(
+        string agvId, long sessionGeneration, CancellationToken cancellationToken)
+    {
+        SessionRecoveryRow row = await GetCurrentSessionAsync(agvId, sessionGeneration, cancellationToken)
+            .ConfigureAwait(false);
+        row.DepartureSafe = null;
+        row.SafetyReasonCodesJson = null;
+        row.SafetyUnknownPresent = null;
+        row.Readiness = SessionReadiness.RecoveryRequired;
+        row.ReasonCode = "DEPARTURE_SAFETY_NOT_READY";
+        row.UpdatedAt = DateTimeOffset.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task ApplyRecoveryReportAsync(
         string agvId, long sessionGeneration, string reportId, long forcedRecoveryGeneration,
         string? unsettledSlotOperationAttemptId,
@@ -568,7 +601,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         {
             if (replay.RequestContentHash != request.RequestContentHash || replay.AgvId != request.AgvId)
             {
-                throw new ProtocolContentConflictException(
+                throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict,
                     "ManualChargingReturnToService requestId was replayed with different content.");
             }
 
@@ -2294,7 +2327,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
             if (replayEquivalenceHash is null ||
                 replayEquivalenceHash(existing.RequestJson) != replayEquivalenceHash(requestJson))
             {
-                throw new ProtocolContentConflictException("MessageId was replayed with different normalized content.");
+                throw new InboundMessageRejectedException(ServerReasonCodes.MessageIdContentConflict,
+                    "MessageId was replayed with different normalized content.");
             }
 
             // An equivalent resend answered from its first acceptance rather than processed again. The
@@ -2303,7 +2337,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
             if (equivalentReplayResponse is not null)
             {
                 return await equivalentReplayResponse(existing.FirstResponseJson).ConfigureAwait(false)
-                    ?? throw new ProtocolContentConflictException(
+                    ?? throw new InboundMessageRejectedException(ServerReasonCodes.MessageIdContentConflict,
                         "MessageId was replayed with different normalized content.");
             }
 
@@ -2511,7 +2545,9 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         }
         if (generation <= row.ForcedRecoveryGeneration)
         {
-            throw new BusinessIdentityConflictException("ForcedRecoveryGeneration must advance monotonically.");
+            // Only ever reached from an inbound FORCED_MECHANICAL_RECOVERY action (control-server#478).
+            throw new InboundMessageRejectedException(ServerReasonCodes.ForcedRecoveryGenerationStale,
+                "ForcedRecoveryGeneration must advance monotonically.");
         }
         row.ForcedRecoveryGeneration = generation;
         row.UpdatedAt = advancedAt;
@@ -2632,7 +2668,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
                         replay.ResultContentSha256 == result.ResultContentSha256;
             if (!same)
             {
-                throw new ProtocolContentConflictException(
+                throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict,
                     "Operation result identity was replayed with different message or content.");
             }
             return OperationResultDisposition.Replay;
@@ -2694,7 +2730,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
             operation.OperationType != result.OperationType ||
             operation.ForcedRecoveryGeneration != forcedRecoveryGeneration)
         {
-            throw new BusinessIdentityConflictException(
+            throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict,
                 "OperationResult does not match the persisted slot operation identity.");
         }
 
@@ -2780,7 +2816,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
                                   existingCompletion.Evidence == result.ResultContentSha256;
             if (!sameCompletion)
             {
-                throw new BusinessIdentityConflictException(
+                throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict,
                     "TransportDemandKey completion differs from the persisted unload result.");
             }
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -2842,12 +2878,15 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         if (authorization?.CommandContentHash is null ||
             authorization.CommandMessageType != "SlotOperationResumeCommand")
         {
-            throw new ProtocolContentConflictException(
+            // A second result for an attempt that already has a live one, with no resume to account for it: the same
+            // business key (the manifest's businessDedupKeys for OperationResult are demandId and slotOperationAttemptId)
+            // with other content, so BUSINESS_ID_CONTENT_CONFLICT (control-server#478).
+            throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict,
                 "Operation result identity was replayed with different message or content.");
         }
         if (authorization.ForcedRecoveryGeneration != forcedRecoveryGeneration)
         {
-            throw new BusinessIdentityConflictException(
+            throw new InboundMessageRejectedException(ServerReasonCodes.ForcedRecoveryGenerationStale,
                 "Replacement OperationResult was authorized at a different forced recovery generation.");
         }
         // The replacement has to settle exactly what was authorized: the same demand and attempt, the
@@ -2867,7 +2906,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
             resumedCommandHash is null ||
             authorization.CommandContentHash != resumedCommandHash)
         {
-            throw new BusinessIdentityConflictException(
+            throw new InboundMessageRejectedException(ServerReasonCodes.RecoveryScopeMismatch,
                 "Replacement OperationResult falls outside its RESUME_AFTER_REPAIR authorization.");
         }
     }
@@ -3648,11 +3687,13 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
     {
         if (currentRevision == revision && currentHash != contentHash)
         {
-            throw new ProtocolContentConflictException($"{kind} revision {revision} has conflicting content.");
+            throw new InboundMessageRejectedException(ServerReasonCodes.SnapshotRevisionContentConflict,
+                $"{kind} revision {revision} has conflicting content.");
         }
         if (currentRevision > revision)
         {
-            throw new ProtocolContentConflictException($"{kind} revision regressed from {currentRevision} to {revision}.");
+            throw new InboundMessageRejectedException(ServerReasonCodes.SnapshotRevisionRegression,
+                $"{kind} revision regressed from {currentRevision} to {revision}.");
         }
     }
 
@@ -3790,7 +3831,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         int[] normalized = slots.Distinct().Order().ToArray();
         if (normalized.Any(slot => slot is < 1 or > 8))
         {
-            throw new BusinessIdentityConflictException("Slot numbers must be in 1..8.");
+            // Its one live caller is ApplyRecoveryReportAsync, an inbound RecoveryStateReport (control-server#478).
+            throw new InboundMessageRejectedException(ServerReasonCodes.SlotSetInvalid, "Slot numbers must be in 1..8.");
         }
         return normalized;
     }

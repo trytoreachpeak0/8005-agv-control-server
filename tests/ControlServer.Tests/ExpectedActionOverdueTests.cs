@@ -187,21 +187,31 @@ public sealed class ExpectedActionOverdueTests
     [Trait("IntegrationSlice", "FP-IS-15")]
     public async Task AMidSessionSnapshotStillMayNotChangeARevisionsContentOrGoBackwards()
     {
-        // 一条冲突都不吞：同一版本换内容、版本倒退，与会话里任何安全消息一样按内容冲突失败关闭，库不动。
+        // 一条冲突都不吞：同一版本换内容、版本倒退，与会话里任何安全消息一样按内容冲突拒收；修订号与哈希不动，出发判定按 control-server#478（审查 S2）清空、等新快照。
         await using Fixture fixture = await Fixture.CreateAsync();
         await fixture.ReachReadyAsync();
         await fixture.SafetyChangedAsync(2, affectedSlots: [3]);
         SessionRecoveryRow before = await fixture.SessionAsync();
 
-        await Assert.ThrowsAsync<ProtocolContentConflictException>(
-            () => fixture.SafetySnapshotAsync(2, Slots(slot3Lock: "UNLOCKED")));
-        await Assert.ThrowsAsync<ProtocolContentConflictException>(
-            () => fixture.SafetySnapshotAsync(1, Slots()));
+        // control-server#478: refused with a ProtocolProblem naming each, on a connection that stays.
+        string sameRevisionOtherContent = await fixture.SafetySnapshotAsync(2, Slots(slot3Lock: "UNLOCKED"));
+        ProtocolProblemAssert.RefusedSafety(
+            sameRevisionOtherContent, "SNAPSHOT_REVISION_CONTENT_CONFLICT", fixture.LastSentMessageId!, "SafetyStateSnapshot",
+            "SessionReadiness", "SafetyStateSnapshotRequested");
+        string goingBackwards = await fixture.SafetySnapshotAsync(1, Slots());
+        ProtocolProblemAssert.RefusedSafety(
+            goingBackwards, "SNAPSHOT_REVISION_REGRESSION", fixture.LastSentMessageId!, "SafetyStateSnapshot",
+            "SafetyStateSnapshotRequested");
 
         SessionRecoveryRow after = await fixture.SessionAsync();
         Assert.Equal(before.SafetyRevision, after.SafetyRevision);
         Assert.Equal(before.SafetyHash, after.SafetyHash);
-        Assert.Equal(SessionReadiness.Ready, after.Readiness);
+        // control-server#478 review S2: the refused snapshot leaves the baseline untrusted until a fresh one arrives, so the
+        // departure verdict is cleared and the session no longer reads Ready (this asserted Ready while a refusal still ended
+        // the connection, which brought a new baseline with the reconnect).
+        Assert.Equal(SessionReadiness.RecoveryRequired, after.Readiness);
+        Assert.Equal("DEPARTURE_SAFETY_NOT_READY", after.ReasonCode);
+        Assert.Null(after.DepartureSafe);
     }
 
     [Fact]
@@ -874,8 +884,13 @@ public sealed class ExpectedActionOverdueTests
             return JsonDocument.Parse(JsonSerializer.Serialize(result));
         }
 
-        private Task<string> Send(string messageType, long? generation, object payload) =>
-            Processor.ProcessAsync(
+        /// <summary>The messageId of the last line sent, so an answer's correlation can be checked against the request.</summary>
+        public string? LastSentMessageId { get; private set; }
+
+        private Task<string> Send(string messageType, long? generation, object payload)
+        {
+            LastSentMessageId = Guid.NewGuid().ToString("D");
+            return Processor.ProcessAsync(
                 JsonSerializer.Serialize(new
                 {
                     protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
@@ -883,7 +898,7 @@ public sealed class ExpectedActionOverdueTests
                     protocolReleaseVersion = ProtocolCandidateIdentity.ReleaseVersion,
                     protocolReleaseManifestSha256 = ProtocolCandidateIdentity.ManifestSha256,
                     messageType,
-                    messageId = Guid.NewGuid().ToString("D"),
+                    messageId = LastSentMessageId,
                     correlationId = (string?)null,
                     agvId = AgvId,
                     sessionGeneration = generation,
@@ -892,6 +907,7 @@ public sealed class ExpectedActionOverdueTests
                 }),
                 State,
                 TestContext.Current.CancellationToken);
+        }
 
         public async ValueTask DisposeAsync()
         {

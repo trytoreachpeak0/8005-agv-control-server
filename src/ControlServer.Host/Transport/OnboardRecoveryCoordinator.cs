@@ -160,14 +160,14 @@ public sealed class OnboardRecoveryCoordinator(
         {
             if (existing.WorkflowId != workflowId || existing.MessageType != messageType)
             {
-                throw new ProtocolContentConflictException(
+                throw new InboundMessageRejectedException(ServerReasonCodes.MessageIdContentConflict,
                     "Recovery result MessageId was replayed with a different identity.");
             }
             return DurableAck(messageType, messageId, agvId, sessionGeneration, contentHash);
         }
         if (workflow.ResultMessageId is not null && workflow.ResultMessageId != messageId)
         {
-            throw new ProtocolContentConflictException(
+            throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict,
                 "Recovery workflow already has a different first durable result.");
         }
 
@@ -401,7 +401,8 @@ public sealed class OnboardRecoveryCoordinator(
         if (replay is not null)
         {
             if (replay.RequestContentHash != businessHash || replay.AgvId != agvId)
-                throw new ProtocolContentConflictException("Recovery requestId was replayed with different content.");
+                throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict,
+                    "Recovery requestId was replayed with different content.");
             StationOperationRow? replayOperation = await SessionOperationAsync(replay, cancellationToken)
                 .ConfigureAwait(false);
             return OpenedResponse(root, replay, replayOperation?.SlotOperationAttemptId);
@@ -481,7 +482,8 @@ public sealed class OnboardRecoveryCoordinator(
         if (replay is not null)
         {
             if (replay.RequestContentHash != businessHash || replay.WorkflowType != action)
-                throw new ProtocolContentConflictException("RecoveryActionId was replayed with different content.");
+                throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict,
+                    "RecoveryActionId was replayed with different content.");
             // What the workflow recorded, not a fresh lookup (8005-agv-program#95).
             return AcceptedAction(root, session, actionId, action, replay.SlotOperationAttemptId);
         }
@@ -613,7 +615,8 @@ public sealed class OnboardRecoveryCoordinator(
             HardwareRecoveryRecordRow? replay = await dbContext.HardwareRecoveryRecords.SingleOrDefaultAsync(
                 row => row.RecordId == recordId, cancellationToken).ConfigureAwait(false);
             if (replay is not null && replay.ContentHash != contentHash)
-                throw new ProtocolContentConflictException("Hardware recovery record was replayed with different content.");
+                throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict,
+                    "Hardware recovery record was replayed with different content.");
             if (replay is null)
             {
                 dbContext.HardwareRecoveryRecords.Add(new HardwareRecoveryRecordRow
@@ -1374,15 +1377,16 @@ public sealed class OnboardRecoveryCoordinator(
                 return;
             }
             // 给了路网的终结在删掉空停靠之后还换序（批次7-10，control-server#215，调度决策 6）；没给就只删不换。
-            await new PickupStopTermination(dbContext, await ReadPlanRevisionRoutingAsync(cancellationToken).ConfigureAwait(false))
+            PickupStopTermination cancelledTermination =
+                new(dbContext, await ReadPlanRevisionRoutingAsync(cancellationToken).ConfigureAwait(false));
+            await RefusedAsInbound(() => cancelledTermination
                 .StageAsync(
                     stop,
                     stopCursor.CurrentSublotRequestMessageId(stop.WorklistRevision),
                     workflow.DemandId,
                     "CANCELLED_BY_OPERATOR",
                     timeProvider.GetUtcNow(),
-                    cancellationToken)
-                .ConfigureAwait(false);
+                    cancellationToken)).ConfigureAwait(false);
             return;
         }
         // A commanded slot operation proven empty -- an in-flight cancellation, a compensation, a fault cargo
@@ -1405,7 +1409,9 @@ public sealed class OnboardRecoveryCoordinator(
                 cancellationToken).ConfigureAwait(false);
             if (operation is not null) operation.Status = StationOperationStatus.Cancelled;
         }
-        await new PickupStopTermination(dbContext, await ReadPlanRevisionRoutingAsync(cancellationToken).ConfigureAwait(false))
+        PickupStopTermination provenEmptyTermination =
+            new(dbContext, await ReadPlanRevisionRoutingAsync(cancellationToken).ConfigureAwait(false));
+        await RefusedAsInbound(() => provenEmptyTermination
             .StageAsync(
                 runtime,
                 // OrNone, unlike the cancellation above: that one runs only while the vehicle is loading at a
@@ -1424,8 +1430,7 @@ public sealed class OnboardRecoveryCoordinator(
                     _ => "CANCELLED_BY_OPERATOR"
                 },
                 timeProvider.GetUtcNow(),
-                cancellationToken)
-            .ConfigureAwait(false);
+                cancellationToken)).ConfigureAwait(false);
         if (messageType is "FaultCargoRecoveryResult" or "ForcedMechanicalRecoveryResult")
         {
             await SettleHandedOffCargoAsync(runtime, cancellationToken).ConfigureAwait(false);
@@ -1514,7 +1519,8 @@ public sealed class OnboardRecoveryCoordinator(
         {
             if (workflow.WorkflowType != type || workflow.RequestContentHash != PayloadHash(root.GetProperty("payload")) ||
                 workflow.DemandId != demandId || workflow.SlotOperationAttemptId != attemptId)
-                throw new ProtocolContentConflictException("Recovery workflow id was replayed with different content.");
+                throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict,
+                    "Recovery workflow id was replayed with different content.");
             return workflow;
         }
         string agvId = RequiredString(root, "agvId");
@@ -1665,18 +1671,22 @@ public sealed class OnboardRecoveryCoordinator(
     {
         if (workflow.DemandId is not null && payload.TryGetProperty("demandId", out JsonElement demand) &&
             OptionalString(demand) != workflow.DemandId)
-            throw new BusinessIdentityConflictException("Recovery result demandId does not match its workflow.");
+            throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict,
+                "Recovery result demandId does not match its workflow.");
         if (workflow.SlotOperationAttemptId is not null &&
             payload.TryGetProperty("slotOperationAttemptId", out JsonElement attempt) &&
             OptionalString(attempt) != workflow.SlotOperationAttemptId)
-            throw new BusinessIdentityConflictException("Recovery result operation identity does not match its workflow.");
+            throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict,
+                "Recovery result operation identity does not match its workflow.");
         if (workflow.ExceptionRecoverySessionId is not null &&
             payload.TryGetProperty("exceptionRecoverySessionId", out JsonElement session) &&
             OptionalString(session) != workflow.ExceptionRecoverySessionId)
-            throw new BusinessIdentityConflictException("Recovery result session does not match its workflow.");
+            throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict,
+                "Recovery result session does not match its workflow.");
         if (messageType == "FaultCargoRecoveryResult" &&
             RequiredString(payload, "handoffId") != workflow.HandoffId)
-            throw new BusinessIdentityConflictException("Fault cargo handoff result does not match the authorized handoff.");
+            throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict,
+                "Fault cargo handoff result does not match the authorized handoff.");
     }
 
     private static bool HasExactSafeSlotResult(JsonElement payload, int[] expectedSlots, string? expectedState)
@@ -1789,6 +1799,38 @@ public sealed class OnboardRecoveryCoordinator(
                 acceptedContentSha256 = contentHash,
                 durablyAcceptedAt = timeProvider.GetUtcNow()
             });
+
+    /// <summary>
+    /// Runs a <see cref="PickupStopTermination"/> on behalf of an inbound recovery result, and refuses that result
+    /// with a <c>ProtocolProblem</c> if the termination will not end the demand because it already completed
+    /// (control-server#478).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The termination is shared with the runtime (<c>VehicleFaultRecoveryService</c>), where its
+    /// <see cref="BusinessIdentityConflictException"/> must keep failing the round. So it is translated here, at the
+    /// two inbound call sites, rather than where it is thrown. ACTION_NOT_ALLOWED_IN_STATE: the result asks to end a
+    /// demand whose state no longer allows it; allowed on every message type.
+    /// </para>
+    /// <para>
+    /// Only that one refusal, matched by <see cref="PickupStopTermination.CompletedDemandRefusal"/>. The call wraps the
+    /// whole of <c>StageAsync</c>, which reaches <c>StageDemandTerminationAsync</c> from inside, and a
+    /// BusinessIdentityConflictException some later change adds anywhere else in it must not be reported to the
+    /// vehicle as this one: it falls through and ends the connection, as such exceptions did before #478.
+    /// </para>
+    /// </remarks>
+    private static async Task RefusedAsInbound(Func<Task> terminate)
+    {
+        try
+        {
+            await terminate().ConfigureAwait(false);
+        }
+        catch (BusinessIdentityConflictException refused)
+            when (string.Equals(refused.Message, PickupStopTermination.CompletedDemandRefusal, StringComparison.Ordinal))
+        {
+            throw new InboundMessageRejectedException(ServerReasonCodes.ActionNotAllowedInState, refused.Message);
+        }
+    }
 
     private static object Problem(string reasonCode, string fieldPath, string displayMessage) => new
     {

@@ -666,9 +666,11 @@ public sealed class WireToGateStoreTests
         Assert.Equal("result-1", first);
         Assert.Equal(first, replay);
         Assert.Equal(1, sideEffects);
-        await Assert.ThrowsAsync<ProtocolContentConflictException>(() => fixture.Store.CaptureFirstResponseAsync(
-            "MSG-001", "different-hash", () => Task.FromResult("must-not-run"),
-            fixture.Now.AddSeconds(2), fixture.CancellationToken));
+        InboundMessageRejectedException rejected = await Assert.ThrowsAsync<InboundMessageRejectedException>(
+            () => fixture.Store.CaptureFirstResponseAsync(
+                "MSG-001", "different-hash", () => Task.FromResult("must-not-run"),
+                fixture.Now.AddSeconds(2), fixture.CancellationToken));
+        Assert.Equal("MESSAGE_ID_CONTENT_CONFLICT", rejected.ReasonCode);
     }
 
     [Fact]
