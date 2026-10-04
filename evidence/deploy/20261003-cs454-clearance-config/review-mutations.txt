@@ -39,3 +39,10 @@
    FAIL  upgrade refusal: riotCreateDispatch.Enabled true (other casing) -> refused, naming agv02/agv03 Completed
 == S3 installer early check removed (Install-ParallelInstanceLocal.ps1): 316 passed, 1 failed -> KILLED
    FAIL  the installer refuses an open dispatch gate before recording the definition, swapping a rollback or running a product script
+
+# 配置缺失补项（自查后调度同意）
+   FAIL  pre-install check: service, configuration missing -> INSTALLED_CONFIGURATION_MISSING
+   FAIL  a missing configuration names the path, tells the operator to find out why, and says nothing was touched
+(第一次「恢复旧条件」的变异写错了，调用仍无条件执行，作废；下面是真正把调用包进 if 的版本)
+== old gating restored, as an if around the call : 326 passed, 1 failed -> KILLED
+   FAIL  the pre-install check is not inside any if: no file-exists condition can skip it

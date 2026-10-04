@@ -200,17 +200,20 @@ try {
     $mvpBefore = Get-MvpFingerprint
     Write-Step ("MVP service before: " + (Format-MvpFingerprint $mvpBefore))
 
-    # An upgrade or rollback stops the service, and with it the runtime's fault supervision of a
-    # vehicle that may be under way. While the installed configuration can place RIoT orders, refuse
-    # here -- before the installed definition is re-recorded, before a rollback swaps directories,
-    # before anything is unpacked (control-server#454 review S3). Invoke-ParallelProductUpgrade
-    # asks the same question again right before it stops the service.
+    # Before the installed definition is re-recorded, before a rollback swaps directories, before
+    # anything is unpacked, and with no condition around it (control-server#454): with the service
+    # present, refuse while RIoT dispatch is open (stopping the service would stop the runtime's
+    # fault supervision of a vehicle that may be under way, review S3), and refuse when the installed
+    # configuration is missing or unreadable -- fail closed, instead of a -Rollback that swaps the
+    # package directories and only then finds out. Invoke-ParallelProductUpgrade asks about dispatch
+    # again right before it stops the service.
+    # ReadAllText, not Get-Content -Raw: the latter returns $null for an empty file, which would read
+    # as "missing" rather than "unreadable".
     $installedConfigurationPath = Join-Path $installRoot 'appsettings.Production.json'
-    if ((Get-Service -Name $serviceName -ErrorAction SilentlyContinue) -and (Test-Path -LiteralPath $installedConfigurationPath -PathType Leaf)) {
-        $upgradeRefusal = Get-ParallelUpgradeRefusal -Configuration (
-            Get-Content -LiteralPath $installedConfigurationPath -Raw -Encoding utf8 | ConvertFrom-Json -AsHashtable -Depth 12)
-        if ($upgradeRefusal) { throw $upgradeRefusal }
-    }
+    $preInstallRefusal = Get-ParallelPreInstallRefusal -ServiceExists ([bool] (Get-Service -Name $serviceName -ErrorAction SilentlyContinue)) `
+        -ConfigurationPath $installedConfigurationPath `
+        -ConfigurationText ((Test-Path -LiteralPath $installedConfigurationPath -PathType Leaf) ? [IO.File]::ReadAllText($installedConfigurationPath) : $null)
+    if ($preInstallRefusal) { throw $preInstallRefusal }
 
     # The definition this install (or rollback) runs with, recorded before anything changes. The
     # uninstaller reads this copy in preference to instance.json, which the control host

@@ -342,6 +342,15 @@ JourneyRuntime.enabled set false for the upgrade, with the service stopped (was 
   PASS  upgrade refusal: riotCreateDispatch.Enabled true (other casing) -> refused, naming agv02/agv03 Completed
   PASS  upgrade refusal: RiotCreateDispatch.enabled false -> allowed
   PASS  upgrade refusal: no RiotCreateDispatch section (product default: closed) -> allowed
+  PASS  pre-install check: no service (first install), no configuration -> go ahead
+  PASS  pre-install check: no service, a configuration left behind -> go ahead
+  PASS  pre-install check: service, configuration missing -> INSTALLED_CONFIGURATION_MISSING
+  PASS  pre-install check: service, configuration empty -> INSTALLED_CONFIGURATION_UNREADABLE
+  PASS  pre-install check: service, configuration not JSON -> INSTALLED_CONFIGURATION_UNREADABLE
+  PASS  pre-install check: service, configuration a JSON array -> INSTALLED_CONFIGURATION_UNREADABLE
+  PASS  pre-install check: service, dispatch open -> UPGRADE_REFUSED_DISPATCH_OPEN
+  PASS  pre-install check: service, dispatch closed -> go ahead
+  PASS  a missing configuration names the path, tells the operator to find out why, and says nothing was touched
   PASS  disabling the runtime: a lost write is caught by the read-back (M4)
   PASS  the overlay's per-value check catches a write that changed the vehicle identity (M10)
   PASS  the overlay's per-value check catches a write that changed the vehicle key (M10)
@@ -351,7 +360,8 @@ JourneyRuntime.enabled set false for the upgrade, with the service stopped (was 
   PASS  upgrade branch: no call of the upgrade script outside the wrapper
   PASS  first-install branch does not touch JourneyRuntime before the product script
   PASS  Set-InstanceConfiguration (which writes true back) runs only after the product script, on both paths
-  PASS  the installer refuses an open dispatch gate before recording the definition, swapping a rollback or running a product script
+  PASS  the installer runs its pre-install check (open dispatch gate, missing or unreadable configuration) before recording the definition, swapping a rollback or running a product script
+  PASS  the pre-install check is not inside any if: no file-exists condition can skip it
 
 The shipped definition and the installer carry it
   PASS  the shipped definition states phase 1 (entry off, nothing declared, roster in opsRoot)
@@ -360,4 +370,4 @@ The shipped definition and the installer carry it
   PASS  both product-installer call sites (install, rollback) take the credential first
   PASS  Set-InstanceConfiguration (run by install, upgrade and rollback) goes through Invoke-ParallelInstanceConfigurationStep
 
-317 passed, 0 failed
+327 passed, 0 failed

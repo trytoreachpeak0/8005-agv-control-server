@@ -50,6 +50,9 @@ control-server#262。约 2026-10-08 起 `factory01` 上同时跑两套 ControlSe
    停服务等于中途停掉运行时对它的故障监看。安装脚本在最开头就查一次（在记录定义、回滚对调目录、解包之前），包装函数停服务前
    再查一次。要升级或回滚，先把已装 `appsettings.Production.json` 里的 `RiotCreateDispatch.enabled` 改成 false 并重启服务，
    等 `agv02`／`agv03` 的单都 `Completed`，再跑。
+   同一个开头检查（`Get-ParallelPreInstallRefusal`）还按失败即关拒绝两种说不清的状态：服务在而已装配置不在
+   （`INSTALLED_CONFIGURATION_MISSING`），或配置读不出来（`INSTALLED_CONFIGURATION_UNREADABLE`）。以前这次检查只在配置文件存在时
+   才跑，`-Rollback` 会先对调包目录再失败。服务不在（首装）时不查。
 2. 停服务，再把文件里的开关置为 false，然后调升级脚本。于是升级的检查在运行时关着时进行，它的备份和失败回退也都停在 false。
 3. 升级成功后，`Set-InstanceConfiguration` 的覆盖层才把它写回定义里的值。
 

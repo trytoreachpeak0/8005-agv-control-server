@@ -1615,6 +1615,50 @@ function Get-ParallelUpgradeRefusal {
     return $null
 }
 
+function Get-ParallelPreInstallRefusal {
+    <#
+        .SYNOPSIS
+            The installer's first check, before it records a definition, swaps a rollback or unpacks
+            anything: why this run must not go ahead, or $null.
+
+        .DESCRIPTION
+            control-server#454. Fail closed. With the service present, the installed
+            appsettings.Production.json is what an upgrade and a rollback work on, and three states
+            refuse:
+              * INSTALLED_CONFIGURATION_MISSING: the service exists and the file does not. Nobody can
+                say what that instance is doing, and -Rollback used to swap the package directories
+                before finding out (an earlier version of this check ran only when the file existed);
+              * INSTALLED_CONFIGURATION_UNREADABLE: empty, not JSON, or not a JSON object;
+              * whatever Get-ParallelUpgradeRefusal says (RIoT dispatch open).
+            With no service there is nothing running to protect and nothing to upgrade: a first
+            install goes ahead, whatever file may be lying around.
+
+            Pure: the caller says whether the service exists and passes the file's text, or $null
+            when the file does not exist.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][bool] $ServiceExists,
+        [Parameter(Mandatory = $true)][string] $ConfigurationPath,
+        # Untyped on purpose: a [string] parameter turns $null into '', and $null (missing file) and ''
+        # (empty file) are different refusals.
+        [AllowNull()][AllowEmptyString()] $ConfigurationText
+    )
+    if (-not $ServiceExists) { return $null }
+    if ($null -eq $ConfigurationText) {
+        return ("INSTALLED_CONFIGURATION_MISSING: the service exists but $ConfigurationPath does not. That is not a state any " +
+            'install or rollback leaves behind: find out why the file is gone (restored from the latest backup under the ' +
+            'backup root? removed by hand?) before running this again. Nothing was stopped or changed.')
+    }
+    $configuration = $null
+    try { $configuration = ConvertFrom-Json -InputObject ([string] $ConfigurationText) -AsHashtable -Depth 12 -ErrorAction Stop } catch { $configuration = $null }
+    if ($configuration -isnot [System.Collections.IDictionary]) {
+        return ("INSTALLED_CONFIGURATION_UNREADABLE: $ConfigurationPath is not a JSON object (empty, not JSON, or the wrong " +
+            'shape). Find out what wrote it before running this again. Nothing was stopped or changed.')
+    }
+    return Get-ParallelUpgradeRefusal -Configuration $configuration
+}
+
 function Get-ConfigurationValue {
     # One key, ignoring case, as .NET configuration reads it.
     param($Node, [string] $Key)
@@ -1784,4 +1828,5 @@ Export-ModuleMember -Function @(
     'Resolve-ParallelFaultRecoveryCredential'
     'Get-ParallelClearanceExitReadiness'
     'Get-ParallelUpgradeRefusal'
+    'Get-ParallelPreInstallRefusal'
 )
