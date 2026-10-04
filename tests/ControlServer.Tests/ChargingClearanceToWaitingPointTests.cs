@@ -28,7 +28,7 @@ namespace ControlServer.Tests;
 /// 300 在节点 1（车队默认停的地方），从 211（节点 6）都可达；212 不在登记里。用例自己把旧单在 RIoT 里结束（取消开关默认关，这正是现场的出口）。
 /// </remarks>
 [Trait("IntegrationSlice", "FP-IS-13")]
-public sealed class ChargingClearanceToWaitingPointTests
+public sealed partial class ChargingClearanceToWaitingPointTests
 {
     private const int Map = 25;
 

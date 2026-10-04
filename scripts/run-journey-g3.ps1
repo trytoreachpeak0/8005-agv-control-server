@@ -35,7 +35,9 @@
 .PARAMETER SelfCheckControlServerCommit
     For developing a scenario before the shared binding has moved: clone this ControlServer commit
     instead of the bound one. The run records controlServerCommitSource = SELF_CHECK_OVERRIDE and must
-    not be committed as gate evidence -- ticket 23's self-check runs go to a temporary directory.
+    not be committed as gate evidence -- ticket 23's self-check runs go to a temporary directory. Since
+    control-server#460 the evidence says so itself: every slice is graded formalSlicePass false with
+    formalSliceWithheldReason SELF_CHECK_OVERRIDE, whatever its assertions said.
 
 .PARAMETER SelfCheckOnboardCommit
     The same thing for the onboard half (control-server#211). The shared binding is deliberately frozen and
@@ -736,7 +738,7 @@ $result = [ordered]@{
     completedAtUtc = [DateTimeOffset]::UtcNow
     status = $status
     classification = (New-G3Classification -RunKind $G3RunKind -RunStatus $status `
-        -AssertionReport $assertionReport -RunnerErrored:($null -ne $runError))
+        -AssertionReport $assertionReport -Commits $commitsRecord -RunnerErrored:($null -ne $runError))
     gateResults = @($gateResultPaths | ForEach-Object {
         [IO.Path]::GetRelativePath($EvidenceRoot, $_).Replace('\', '/') })
     commits = $commitsRecord

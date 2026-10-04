@@ -75,6 +75,15 @@ public sealed partial class JourneyRuntimeEngine
             "{ReasonCode}: idle return {JourneyId} of vehicle {VehicleKey} is held with its commitment and waiting point; nothing " +
             "is released until the vehicle is proven stopped with no order.");
 
+    private static readonly Action<ILogger, string, string, int, DateTimeOffset, Exception?> LogIdleReturnArrivalNotProven =
+        LoggerMessage.Define<string, string, int, DateTimeOffset>(
+            LogLevel.Warning,
+            new EventId(2230, nameof(LogIdleReturnArrivalNotProven)),
+            "IDLE_RETURN_ARRIVAL_NOT_PROVEN: idle return {JourneyId} of vehicle {VehicleKey}: RIoT reports its order to waiting " +
+            "point {StationId} SUCCESS since {Since}, and the vehicle is still not read standing still on that point. Nothing is " +
+            "released by time. Check where the vehicle is; once it is online and stopped, a person can close it through the " +
+            "waiting point arrival settlement entry (control-server#447).");
+
     /// <summary>
     /// 物化：有 <c>IDLE_RETURN</c> 用途占有、却还没有那个 <c>JourneyId</c> 的旅程行的承诺，建旅程行、开往等待点的停靠与订单意图，按
     /// <c>JourneyId</c> 幂等（<see cref="WireToGateStore.MaterializeIdleReturnAsync"/>）。
@@ -313,10 +322,15 @@ public sealed partial class JourneyRuntimeEngine
 
         if (!await ArrivedAtWaitingPointAsync(runtime, stop, cancellationToken).ConfigureAwait(false))
         {
-            // The order says it succeeded, the vehicle does not yet: in transit, reconciled again next round. No timeout.
+            // The order says it succeeded, the vehicle does not yet: in transit, reconciled again next round. No timeout: past
+            // the repeat window somebody is told once, and a person may close it through WaitingPointArrivalSettlement
+            // (control-server#447).
             await NameCheckpointWaitAsync(runtime, cancellationToken).ConfigureAwait(false);
+            await NameArrivalNotProvenAsync(runtime, stop, cancellationToken).ConfigureAwait(false);
             return;
         }
+
+        dispatchRound.Charging.Board.Unsay(ArrivalNotProvenAlertKey(runtime.JourneyId));
 
         await ConvergeIdleReturnAsync(runtime, stop, now, cancellationToken).ConfigureAwait(false);
     }
@@ -339,6 +353,41 @@ public sealed partial class JourneyRuntimeEngine
         // The same vehicle half as a charger arrival (batch 9-07): one definition for both non-business stops.
         return StandsStillAt(vehicle, runtime, stop.StationRiotId, timeProvider.GetUtcNow());
     }
+
+    /// <summary>
+    /// 单已精确 <c>SUCCESS</c>、车辆那一半不满足（control-server#447）：写 <see cref="IdleReturnExecutionReasons.ArrivalNotProven"/>，
+    /// 开始时刻从第一次写起不动；持续超过 <c>JourneyRuntime:OwnOrderRebuildRepeatWindow</c> 告警一次（事件 2230）。
+    /// </summary>
+    /// <remarks>
+    /// 检查点等待的两个码优先：车停在检查点前等放行时那才是要说的事，它清掉之后下一轮写这个码。停单的码（<c>ORDER_HANG</c> 一类）不优先：单已
+    /// <c>SUCCESS</c>，那个码已过时，留着会让人工收尾永远答「引擎未点名」（独立审查 S1）。别的码（故障、门锁）照旧不覆盖。不放车、不放点：出口是人
+    /// （<c>WaitingPointArrivalSettlement</c>），那里现读的前提与这里同一组事实。
+    /// </remarks>
+    private async Task NameArrivalNotProvenAsync(JourneyRuntimeRow runtime, JourneyStopRow stop, CancellationToken cancellationToken)
+    {
+        // A stalled-order code (ORDER_HANG and its kind) names an order that has since reached SUCCESS: it is stale, and left in
+        // place it would bar the only exit (control-server#447 review S1). The clearance branch overwrites unconditionally.
+        bool replaceable = runtime.BlockReasonCode is null || IsStalledOrderReason(runtime.BlockReasonCode);
+        if (!replaceable &&
+            !string.Equals(runtime.BlockReasonCode, IdleReturnExecutionReasons.ArrivalNotProven, StringComparison.Ordinal))
+        {
+            return;
+        }
+        DateTimeOffset now = timeProvider.GetUtcNow();
+        if (replaceable)
+        {
+            runtime.SetBlockReason(IdleReturnExecutionReasons.ArrivalNotProven, now);
+            runtime.UpdatedAt = now;
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        if (runtime.BlockReasonSince is { } since && now - since > runtimeOptions.OwnOrderRebuildRepeatWindow &&
+            dispatchRound.Charging.Board.FirstTime(ArrivalNotProvenAlertKey(runtime.JourneyId)))
+        {
+            LogIdleReturnArrivalNotProven(logger, runtime.JourneyId, runtime.VehicleKey, stop.StationRiotId, since, null);
+        }
+    }
+
+    private static string ArrivalNotProvenAlertKey(string journeyId) => "idle-return-arrival-not-proven:" + journeyId;
 
     /// <summary>
     /// 收敛（<c>REQ-0293</c>）：预占转占用、用途占有释放、旅程收尾，同一次保存。

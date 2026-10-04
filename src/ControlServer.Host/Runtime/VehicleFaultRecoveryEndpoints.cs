@@ -55,7 +55,8 @@ public static class VehicleFaultRecoveryEndpoints
     public const string EnabledKey = VehicleFaultRecoveryOptions.SectionName + ":enabled";
 
     /// <summary>
-    /// Maps this entry and the station exclusivity release (control-server#419) when <see cref="EnabledKey"/> is on, and
+    /// Maps this entry, the station exclusivity release (control-server#419) and the waiting point arrival settlement
+    /// (control-server#447) when <see cref="EnabledKey"/> is on, and
     /// neither otherwise; says which. One place decides it, so the release cannot be left open while recovery is switched off.
     /// </summary>
     public static bool MapVehicleFaultRecoveryEntriesWhenEnabled(this WebApplication app)
@@ -67,6 +68,7 @@ public static class VehicleFaultRecoveryEndpoints
         }
         app.MapVehicleFaultRecovery();
         app.MapStationExclusivityRelease();
+        app.MapWaitingPointArrivalSettlement();
         return true;
     }
 

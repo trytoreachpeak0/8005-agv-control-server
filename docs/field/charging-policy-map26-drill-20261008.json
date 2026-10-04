@@ -1,0 +1,11 @@
+{
+  "minimumPostTaskBatteryMarginPercent": 20,
+  "mandatoryChargeEntryThresholdPercent": 50,
+  "chargingCompletionThresholdPercent": 62,
+  "estimatedTaskConsumptionPercent": 10,
+  "progressStabilizationSeconds": 180,
+  "progressObservationWindowSeconds": 600,
+  "progressMinimumIncreasePercent": 3,
+  "vehicleScope": [],
+  "changeNote": "10-08 演练用临时测试策略：批次 9 方案第七节第 6 条，用户 2026-09-29 同意（转述，control-server#411）。只把强制充电线抬到 50、充满线抬到 62（照 09-12 现场窗口的临时抬线），其余与 charging-policy-map26.json 相同。62 > 50 >= 20（REQ-0281）。演练结束必须换回正式版本 charging-policy-map26.json。"
+}

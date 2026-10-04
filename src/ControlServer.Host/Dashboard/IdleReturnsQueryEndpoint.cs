@@ -20,8 +20,8 @@ namespace ControlServer.Host.Dashboard;
 /// 引擎写什么这里就读什么，不重判资格、不重跑到点证据。
 /// </para>
 /// <para>
-/// <b>「到点待收敛」并在「在途」里</b>：RIoT 报单成功、车还没证明停稳时，引擎不落任何与在途不同的值（意图仍是 <c>CONFIRMED</c>，
-/// 阻断码清空或是检查点等待），看板分不出这两者，也不另算。
+/// <b>「到点证明不了」单列一步</b>（control-server#447）：RIoT 报单成功、车还没证明停稳时，引擎写 <c>IDLE_RETURN_ARRIVAL_NOT_PROVEN</c>，
+/// 这里据此显示 <see cref="StepArrivalNotProven"/>。在那之前（#447 之前）这两者在库里分不开，都显示「在途」。
 /// </para>
 /// <para>
 /// <b>评估结论读结论板</b>（<see cref="IdleReturnVerdictBoard.LatestCompletedPass"/>，宿主单例）：冷却与停止两种结论只在那里，不在库里。
@@ -40,6 +40,7 @@ internal sealed class IdleReturnsQueryEndpoint : IDashboardQueryEndpoint
     internal const string StepCommitted = "COMMITTED";
     internal const string StepCreateResultUnknown = "CREATE_RESULT_UNKNOWN";
     internal const string StepEnRoute = "EN_ROUTE";
+    internal const string StepArrivalNotProven = "ARRIVAL_NOT_PROVEN";
     internal const string StepOrderStalled = "ORDER_STALLED";
     internal const string StepHeldAwaitingStop = "HELD_AWAITING_STOP";
     internal const string StepFailedAwaitingManual = "FAILED_AWAITING_MANUAL";
@@ -58,7 +59,10 @@ internal sealed class IdleReturnsQueryEndpoint : IDashboardQueryEndpoint
             [StepOtherPurpose] = "车正被别的用途占着（见「车辆用途」卡片），不在空闲返回",
             [StepCommitted] = "已承诺：用途与等待点预占已取得，开往等待点的单还没建出去（等物化、等出发安全检查或等建单开关）",
             [StepCreateResultUnknown] = "建单结果未知：开往等待点的单发出后还没确认，服务端按同一个单号对账，不建第二张，车、等待点与用途都保持",
-            [StepEnRoute] = "在途：开往等待点的单已确认。车到点、停稳并证明之后才收敛（已到点、还在等到点证据收敛的车也显示在这一步，服务端没有分开记）",
+            [StepEnRoute] = "在途：开往等待点的单已确认。车到点、停稳并证明之后才收敛",
+            [StepArrivalNotProven] =
+                "到点证明不了：RIoT 报单已完成，车却读不到静止停在那个等待点上。用途与等待点预占保持，不按时间放；过了配置项 JourneyRuntime:OwnOrderRebuildRepeatWindow 规定的时长，"
+                + "R-11／R-13 名单里的人可经等待点到点人工收尾入口说明车在不在点上（车要在线、停稳）",
             [StepOrderStalled] = "单停住了：开往等待点的单在 RIoT 上挂起或处于未识别状态，用途与等待点预占保持，等人处理",
             [StepHeldAwaitingStop] = "保持中：单已在 RIoT 终结或等待点已不归它，服务端在等车证明停稳、身上没有单，才结束这趟；期间用途与等待点都不放",
             [StepFailedAwaitingManual] = "失败待人工：单失败或行驶中门锁出问题，车已判为疑似故障，用途与等待点预占保持，要现场人员经故障清除入口处理",
@@ -321,6 +325,10 @@ internal sealed class IdleReturnsQueryEndpoint : IDashboardQueryEndpoint
             {
                 return StepHeldAwaitingStop;
             }
+            if (code == IdleReturnExecutionReasons.ArrivalNotProven)
+            {
+                return StepArrivalNotProven;
+            }
             if (OrderStalledCodes.Contains(code))
             {
                 return StepOrderStalled;
@@ -344,7 +352,8 @@ internal sealed class IdleReturnsQueryEndpoint : IDashboardQueryEndpoint
 
     private static string? BranchOf(string step) => step switch
     {
-        StepCreateResultUnknown or StepOrderStalled or StepHeldAwaitingStop or StepFailedAwaitingManual => BranchHoldAndReconcile,
+        StepCreateResultUnknown or StepOrderStalled or StepHeldAwaitingStop or StepFailedAwaitingManual or StepArrivalNotProven =>
+            BranchHoldAndReconcile,
         _ => null,
     };
 

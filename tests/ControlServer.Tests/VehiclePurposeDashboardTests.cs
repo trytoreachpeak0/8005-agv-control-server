@@ -213,6 +213,7 @@ public sealed class VehiclePurposeDashboardTests
     [InlineData(IdleReturnsQueryEndpoint.StepEnRoute, null)]
     [InlineData(IdleReturnsQueryEndpoint.StepEnRoute, JourneyRuntimeEngine.CheckpointWaitReason)]
     [InlineData(IdleReturnsQueryEndpoint.StepEnRoute, JourneyRuntimeEngine.CheckpointWaitExceededReason)]
+    [InlineData(IdleReturnsQueryEndpoint.StepArrivalNotProven, IdleReturnExecutionReasons.ArrivalNotProven)]
     [InlineData(IdleReturnsQueryEndpoint.StepOrderStalled, JourneyRuntimeEngine.OrderHangReason)]
     [InlineData(IdleReturnsQueryEndpoint.StepHeldAwaitingStop, IdleReturnExecutionReasons.OrderEndedStopNotProven)]
     [InlineData(IdleReturnsQueryEndpoint.StepFailedAwaitingManual, VehicleFaultEvidence.OrderFailed)]
@@ -239,7 +240,8 @@ public sealed class VehiclePurposeDashboardTests
                 Assert.Contains($"{code}：{System.Net.WebUtility.HtmlEncode(description)}", row, StringComparison.Ordinal);
             }
             bool holds = step is IdleReturnsQueryEndpoint.StepCreateResultUnknown or IdleReturnsQueryEndpoint.StepOrderStalled
-                or IdleReturnsQueryEndpoint.StepHeldAwaitingStop or IdleReturnsQueryEndpoint.StepFailedAwaitingManual;
+                or IdleReturnsQueryEndpoint.StepHeldAwaitingStop or IdleReturnsQueryEndpoint.StepFailedAwaitingManual
+                or IdleReturnsQueryEndpoint.StepArrivalNotProven;
             Assert.Equal(
                 holds ? IdleReturnsQueryEndpoint.BranchHoldAndReconcile : null,
                 vehicle.GetProperty("failureBranch").GetString());
@@ -563,6 +565,7 @@ public sealed class VehiclePurposeDashboardTests
         { IdleReturnExecutionReasons.DepartureNotProven, "PENDING_RECONCILIATION", IdleReturnsQueryEndpoint.StepCommitted },
         { IdleReturnExecutionReasons.WaitingPointLostOrderInFlight, "CONFIRMED", IdleReturnsQueryEndpoint.StepHeldAwaitingStop },
         { IdleReturnExecutionReasons.OrderEndedStopNotProven, "CONFIRMED", IdleReturnsQueryEndpoint.StepHeldAwaitingStop },
+        { IdleReturnExecutionReasons.ArrivalNotProven, "CONFIRMED", IdleReturnsQueryEndpoint.StepArrivalNotProven },
         { "WAITING_POINT_ResultUnknown", "PENDING_RECONCILIATION", IdleReturnsQueryEndpoint.StepCreateResultUnknown },
         { "WAITING_POINT_CreateDispatchDisabled", "PENDING_RECONCILIATION", IdleReturnsQueryEndpoint.StepCommitted },
         { "WAITING_POINT_UnsupportedOrderShape", "PENDING_RECONCILIATION", IdleReturnsQueryEndpoint.StepCommitted },
@@ -593,6 +596,7 @@ public sealed class VehiclePurposeDashboardTests
             IdleReturnExecutionReasons.DepartureNotProven,
             IdleReturnExecutionReasons.WaitingPointLostOrderInFlight,
             IdleReturnExecutionReasons.OrderEndedStopNotProven,
+            IdleReturnExecutionReasons.ArrivalNotProven,
             .. IdleReturnExecutionReasons.LegOutcomeCodes,
             .. IdleReturnCodeDescriptions.SharedCodesOnIdleReturnJourneys.Keys,
         ];

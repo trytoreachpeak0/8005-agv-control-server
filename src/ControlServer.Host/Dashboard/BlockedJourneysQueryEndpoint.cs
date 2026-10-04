@@ -158,8 +158,8 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 + "交接入口仍在：再经故障清除入口发 PREPARE_CARGO_HANDOFF 把这一趟挂回来重新交接；"
                 + "若车上已经没货（例如一趟里只交接掉一部分，剩下的还没装），发 TERMINATE_STOPPED_TRIP 放弃剩下的，"
                 + "MES 那边要人手工收尾。在那之前需求不改派，这辆车不接新单",
-            // control-server#390：空闲返回（车没有需求时自己开回等待点）写在旅程上的码。前六个是途中的，会出现在这张卡片上；
-            // 后六个是收尾码，写在已完成的旅程上（这张卡片不列），一并写好，别的地方读到时不必再猜。
+            // control-server#390：空闲返回（车没有需求时自己开回等待点）写在旅程上的码。前七个是途中的（第四个是 control-server#447 加的），会出现在这张卡片上；
+            // 后八个是收尾码，写在已完成的旅程上（这张卡片不列），一并写好，别的地方读到时不必再猜。
             [IdleReturnExecutionReasons.DepartureNotProven] =
                 "空闲返回还没出发：车开往等待点之前要过出发安全检查（车载端会话就绪、8 个仓门全部锁好、没有阻断事实），"
                 + "有一样不满足就不建单。满足之后下一轮自动出发，不需要人确认。持续不消失请检查车载端连接与仓门",
@@ -169,6 +169,11 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
             [IdleReturnExecutionReasons.WaitingPointLostOrderInFlight] =
                 "空闲返回途中，要去的等待点已被人工释放或归了别的车：服务端已向 RIoT 取消这张单（只取消一次），"
                 + "车不会再开往那个点，等车停稳后结束这趟。持续不消失请到 RIoT 查看取消是否生效",
+            [IdleReturnExecutionReasons.ArrivalNotProven] =
+                "开往等待点的空闲返回单 RIoT 报已完成，但还读不到车静止停在那个等待点上（位置、地图、速度、空闲状态、锁定或数据新鲜度不满足）。"
+                + "服务端不按时间放车放点，用途与等待点预占保持，下一轮再判；持续超过配置项 JourneyRuntime:OwnOrderRebuildRepeatWindow 规定的时长会告警一次（事件 2230）。"
+                + "请到现场看车停在哪里：过了这个时长，R-11／R-13 名单里的人可经等待点到点人工收尾入口说明车在不在点上，由服务端收尾。"
+                + "车离线或读不到时入口会拒绝，要等车重新上线、停稳之后再办",
             [IdleReturnExecutionReasons.LegOutcomeCode(MovementDispatchOutcome.ResultUnknown)] =
                 "开往等待点的单发给 RIoT 之后结果未知：服务端每一轮按同一个单号对账，不会建第二张，车、等待点与用途都保持不动。"
                 + "持续不消失请到 RIoT 核对这张单",
@@ -187,6 +192,12 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 "车到了等待点，但那个点已不归这趟空闲返回（被人工释放或归了别的车）：不占用它，这趟作废。请到现场确认车停的位置",
             [IdleReturnExecutionReasons.WaitingPointNoLongerEligible] =
                 "出发之前重新核验，等待点已不合格（停用、改名、不在当前地图、不可达等）：这趟空闲返回作废，车没有动，下一轮重新挑点",
+            [IdleReturnExecutionReasons.ArrivalConfirmedByOperator] =
+                "到点证明不了，现场人员经等待点到点人工收尾入口确认车就停在等待点上：这趟空闲返回按到点收尾，车占着那个等待点，"
+                + "用途已释放，车回到可派。谁确认的、依据是什么记在管理员审计里",
+            [IdleReturnExecutionReasons.NotAtWaitingPointByOperator] =
+                "到点证明不了，现场人员经等待点到点人工收尾入口确认车不在等待点上：这趟空闲返回按已确认失败结束，不重建；"
+                + "等待点在车被读到停在别的站之后由离点清扫释放。下一次空闲返回不再选这个点，冷却与再次失败后停止的规则同单被取消",
             [IdleReturnExecutionReasons.CommitmentOrphaned] =
                 "空闲返回的承诺变不成一趟行程（车已不在车队、等待点预占已不在、点在别的地图上或已不在登记表上）：承诺作废并释放",
             // control-server#404：充电旅程（车电量到线后自己开往充电桩）在到桩之前写在旅程上的码。前面几个是途中的，会出现在这张卡片上；
@@ -321,8 +332,9 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 "开往等待点的订单没到点就被人结束了（在 RIoT 里取消或删除，或 FAILED 后由人清除了故障），车已证明停稳。服务端不重建这张单，"
                 + "等待点已释放，这一次清桩不会再自动出发。请 R-11／R-13 名单里的人到现场把车挪开、确认桩已腾空并确认清桩",
             [ChargingExecutionReasons.ClearanceArrivalNotProven] =
-                "开往等待点的订单 RIoT 报已完成，但还读不到车静止停在那个等待点上（位置、速度、空闲状态或数据新鲜度不满足）。清桩还没完成、桩暂不释放，"
-                + "下一轮再判；持续较久会告警一次。请到现场看车停在哪里",
+                "开往等待点的订单 RIoT 报已完成，但还读不到车静止停在那个等待点上（位置、地图、速度、空闲状态、锁定或数据新鲜度不满足）。清桩还没完成、"
+                + "桩暂不释放，下一轮再判；持续超过配置项 JourneyRuntime:OwnOrderRebuildRepeatWindow 规定的时长会告警一次。请到现场看车停在哪里：过了这个时长，R-11／R-13 名单里的人可经等待点到点人工收尾入口"
+                + "说明车在不在点上。车在点上而清桩还没完成时，先确认清桩，再经那个入口收尾。车离线或读不到时入口会拒绝，要等车重新上线、停稳之后再办",
             [ChargingExecutionReasons.UnableToChargeClearedAtWaitingPoint] =
                 "充不上的这次充电已收尾：车已被服务端开到等待点并停稳，清桩由系统证明完成，充电桩的独占已释放，车占着那个等待点，"
                 + "之后按常规派车检查接活或去别的桩充电。这个桩仍暂停分配，要等维修后做恢复确认",
