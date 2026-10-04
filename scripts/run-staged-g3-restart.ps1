@@ -1110,18 +1110,28 @@ $status = if ($null -ne $runError) {
     'STAGED_SLICE_FAIL'
 }
 
+# One record for the gate results, the classification and run-result.json alike: the classification reads it
+# to decide whether the run tested the shared binding (control-server#460). This runner has no commit
+# parameters: all four are read from run-staged-g3.ps1's param defaults above, so each is the binding by
+# construction and is recorded as such, in the same shape as the runners that can override one.
+$commitsRecord = [ordered]@{
+    controlServer = $ControlServerCommit
+    controlServerCommitSource = 'SHARED_BINDING'
+    onboardHmi = $OnboardCommit
+    onboardCommitSource = 'SHARED_BINDING'
+    slotsSimulator = $SimulatorCommit
+    simulatorCommitSource = 'SHARED_BINDING'
+    protocol = $ProtocolCommit
+    protocolCommitSource = 'SHARED_BINDING'
+    runner = $runnerCommit
+    runnerWorktreeCleanAtStart = $runnerWorktreeClean
+}
+
 $gateResultPaths = Write-G3GateResults -RunKind $G3RunKind -EvidenceRoot $EvidenceRoot `
     -AssertionReport $assertionReport -Slice $Slice -RunnerErrored:($null -ne $runError) -Context @{
         runId = $runId
         startedAt = $runStartedAt.ToString('O')
-        commits = [ordered]@{
-            controlServer = $ControlServerCommit
-            onboardHmi = $OnboardCommit
-            slotsSimulator = $SimulatorCommit
-            protocol = $ProtocolCommit
-            runner = $runnerCommit
-            runnerWorktreeCleanAtStart = $runnerWorktreeClean
-        }
+        commits = $commitsRecord
         # Read back from the server this run actually talked to rather than restated from a constant:
         # this runner clones no protocol repository, so the identity it can honestly cite is the one
         # the running host reported. Null when the run never got a version, which is the same case
@@ -1167,17 +1177,10 @@ $result = [ordered]@{
     completedAtUtc = [DateTimeOffset]::UtcNow
     status = $status
     classification = (New-G3Classification -RunKind $G3RunKind -RunStatus $status `
-        -AssertionReport $assertionReport -RunnerErrored:($null -ne $runError))
+        -AssertionReport $assertionReport -Commits $commitsRecord -RunnerErrored:($null -ne $runError))
     gateResults = @($gateResultPaths | ForEach-Object {
         [IO.Path]::GetRelativePath($EvidenceRoot, $_).Replace('\', '/') })
-    commits = [ordered]@{
-        controlServer = $ControlServerCommit
-        onboardHmi = $OnboardCommit
-        slotsSimulator = $SimulatorCommit
-        protocol = $ProtocolCommit
-        runner = $runnerCommit
-        runnerWorktreeCleanAtStart = $runnerWorktreeClean
-    }
+    commits = $commitsRecord
     configurationSha256 = Get-Sha256Text $configurationJson
     configuration = $configuration
     commands = @($commands)

@@ -643,7 +643,7 @@ public sealed partial class JourneyRuntimeEngine
     }
 
     /// <summary>清桩中那两张快照的 id：计划在前。</summary>
-    private static IReadOnlyList<string> ClearingSnapshotIds(JourneyRuntimeRow runtime) =>
+    internal static IReadOnlyList<string> ClearingSnapshotIds(JourneyRuntimeRow runtime) =>
     [
         ChargingJourneyShape.ClearingPlanMessageId(runtime.JourneyId),
         ChargingJourneyShape.ClearingStateMessageId(runtime.JourneyId),

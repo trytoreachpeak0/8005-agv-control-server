@@ -158,3 +158,8 @@ ControlServer.FieldOps.exe import-charger-roster --database "<并行实例的库
 
 方案第七节第 6 条提到 10-08 演练用的临时策略（强制充电线 50、充满线 62）。它是一版独立的策略文件，同样走导入、批准、激活三步；演练完照上面「回退」
 换回投运参数那一版。本票不带那份文件。
+
+## 附：清桩开往等待点，单已完成而车证明不了到点
+
+看板上充电旅程的码是 `CHARGING_CLEARANCE_ARRIVAL_NOT_PROVEN`、持续超过 10 分钟时，处理办法见
+[批次 8 文档第七节](batch-8-waiting-point-registration.md#七单已完成车却证明不了到点等待点到点人工收尾control-server447)（control-server#447）。

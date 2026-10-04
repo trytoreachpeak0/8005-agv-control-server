@@ -364,7 +364,12 @@ internal static class ChargingDashboardDescriptions
             [ChargingExecutionReasons.ClearanceMoveHeld] = "到 RIoT 核对这张开往等待点的单去了哪里、车在哪里、是否还在动",
             [ChargingExecutionReasons.ClearanceMoveEnded] =
                 "R-11／R-13 名单里的人到现场把车挪开、确认桩已腾空并确认清桩；桩修好后做恢复确认",
-            [ChargingExecutionReasons.ClearanceArrivalNotProven] = "到现场看车停在哪里、是否已停稳",
+            // control-server#447: a move ended after the clearance was confirmed (manual settlement NOT_AT, or the move ended in RIoT
+            // once a person had cleared the charger) carries this code on the open journey for the one round before it closes.
+            [ChargingExecutionReasons.UnableToChargeCleared] = "不用处理：清桩已确认、充电桩已释放，这趟旅程下一轮自动收尾；桩修好后做恢复确认",
+            [ChargingExecutionReasons.ClearanceArrivalNotProven] =
+                "到现场看车停在哪里、是否已停稳；超过配置项 JourneyRuntime:OwnOrderRebuildRepeatWindow 规定的时长仍是这样，由 R-11／R-13 名单里的人经等待点到点人工收尾入口说明车在不在点上"
+                + "（车在点上而清桩没完成时先确认清桩）。车离线或读不到时入口会拒绝，等车重新上线",
             [ChargingExecutionReasons.ChargerNotEngaged] = "到现场看车是否插好、充电桩是否通电",
             // control-server#407：充电中断与充电无进展。
             [ChargingExecutionReasons.InterruptionClearing] =

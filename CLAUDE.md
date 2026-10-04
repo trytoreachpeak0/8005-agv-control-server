@@ -220,7 +220,7 @@ say which gate, what it costs, and what it proves, then ask:
 | --- | --- | --- |
 | `G1` | `pnpm g1` in the protocol repo | Protocol content manifest and attestation check |
 | `CONTROL_SERVER_G2` | `.\scripts\test-wire-to-gate.ps1 -Gate G2 -Slice <id> -ProtocolManifest <protocol-repo>\manifest\release.json -Output <new dir>` | This side's per-slice conformance |
-| `G3` | `.\scripts\run-staged-g3.ps1`, `run-staged-g3-restart.ps1`, `run-demand-bearing-g3-vectors.ps1`, each with `-StageRoot <short path that does not exist> -EvidenceRoot <new dir>`; the third one also needs `-FieldRunRoot <an authorised field run's root>` | Both-ends integration |
+| `G3` | `.\scripts\run-staged-g3.ps1`, `run-staged-g3-restart.ps1`, `run-demand-bearing-g3-vectors.ps1`, each with `-StageRoot <short path that does not exist> -EvidenceRoot <new dir>`; the third one optionally takes `-FieldRunRoot <an authorised field run's root>` | Both-ends integration |
 | `RC` | `.\scripts\New-WireToGateReleaseCandidate.ps1` | Cutting a release candidate |
 
 Load-bearing details:
@@ -245,10 +245,28 @@ Load-bearing details:
 - `run-staged-g3.ps1` needs Node.js and pnpm because it runs the protocol's G1.
   All three G3 runners are plaintext, run unattended, and share the four commit
   bindings in `run-staged-g3.ps1`'s param block.
-- **`run-demand-bearing-g3-vectors.ps1` takes a third mandatory parameter**,
-  `-FieldRunRoot`: the root of an authorised field run, whose `controlserver.db`
-  it restores read-only as the demand-bearing store. `C:\Users\szy\w2g-stage\run\fullloop-20260829T131549Z`
-  is the one used so far. Without it the runner exits before doing anything.
+- **`run-demand-bearing-g3-vectors.ps1` generates its demand-bearing store by
+  default** (control-server#453): the bound ControlServer commit's L2 scenario
+  `demand-bearing-store-at-unload` drives the synthetic rig to "load committed,
+  unload sent, no result" and exports the database, which the runner restores.
+  The only field store ever used (`fullloop-20260829T131549Z`, `agv01` and the
+  real RIoT) is lost, and making another needs a real vehicle. A generated store
+  is weaker evidence -- no real vehicle, no real RIoT, and no cross-build restore:
+  it is in the build's own schema, so nothing is migrated -- and the run records
+  that in `storeProvenance`. Its `protocolCommit` is asserted against the binding,
+  but holds by construction (the server validates the identity before writing
+  it), so it only shows the store is this build's, not a product regression.
+  `-FieldRunRoot <an authorised field run's root>` still restores a field store
+  instead, with the `TICKET_17` exemption on that one fact only. A binding older
+  than #453 has no generator scenario, and the runner refuses it before creating
+  anything; `-SelfCheckControlServerCommit <40-hex>` checks a newer commit without
+  moving the binding and marks the run `SELF_CHECK_OVERRIDE` (not gate evidence),
+  as in `run-journey-g3.ps1`. Since control-server#460 such a run grades every slice
+  `formalSlicePass: false` with `formalSliceWithheldReason`, decided once in
+  `g3-slice-evidence.ps1` for all four runners (`run-staged-g3.ps1` records any commit
+  passed on its command line that differs from its own param default the same way), and `-FieldRunRoot` refuses a store
+  the synthetic rig wrote (`L2-SUBLOT-*`, `BROKERX-L2-*`, `AGV-L2-*`). The binding moves only in an exit ticket's first step. The generator
+  is not an L2 criterion and is deliberately absent from `l2.yml`.
 - **Check the commit bindings before a G3 run, and move them.** They are literal
   defaults, so a run inherits whatever the last run froze and silently gates old
   code — on 2026-09-04 they still pointed at a ControlServer and an onboard from

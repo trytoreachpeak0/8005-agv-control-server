@@ -4834,6 +4834,8 @@ public sealed partial class JourneyRuntimeEngine(
         // control-server#390: an idle return held because its order may still exist or its vehicle may still move.
         string.Equals(runtime.BlockReasonCode, IdleReturn.IdleReturnExecutionReasons.WaitingPointLostOrderInFlight, StringComparison.Ordinal) ||
         string.Equals(runtime.BlockReasonCode, IdleReturn.IdleReturnExecutionReasons.OrderEndedStopNotProven, StringComparison.Ordinal) ||
+        // control-server#447: its start is what the manual settlement's bound is counted from; a failed advance must not reset it.
+        string.Equals(runtime.BlockReasonCode, IdleReturn.IdleReturnExecutionReasons.ArrivalNotProven, StringComparison.Ordinal) ||
         // control-server#404: a charging journey whose cycle is gone waits for a person to look.
         string.Equals(runtime.BlockReasonCode, Charging.ChargingExecutionReasons.CycleMissing, StringComparison.Ordinal);
 

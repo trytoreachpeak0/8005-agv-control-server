@@ -171,3 +171,66 @@ ControlServer.FieldOps.exe read-waiting-points --database <controlserver.db> --v
 
 空闲返回（车空闲时去等待点）的资格与承诺、默认开关归批次8-18（control-server#389）；独占的预占、转占用与释放归批次8-19
 （control-server#390）。所以**本票合入之后，登记了等待点也不会让任何车移动**：除了启动校验，服务端运行时还不读登记。
+
+## 七、单已完成，车却证明不了到点：等待点到点人工收尾（control-server#447）
+
+### 什么时候用
+
+开往等待点的单有两种：空闲返回（车没活时自己回等待点），和清桩开往等待点（充不上电的车从桩上开去等待点）。RIoT 报这张单已完成之后，
+服务端还要读到车**在线、空闲、速度为零、身上没有任务、读数新鲜，并且当前地图加当前站正好是那个等待点**，才算到点、才收尾。
+
+有时这一条一直满足不了：RIoT 报的地图与服务端配置的对不上，车停偏了停在相邻的站上，或读数一直不新鲜。服务端**不会因为等久了就放车、放点**，
+车会一直挂着这趟没收尾的旅程，派车一直绕开它。看板上这时显示：
+
+| 码 | 在哪 |
+| --- | --- |
+| `IDLE_RETURN_ARRIVAL_NOT_PROVEN` | 空闲返回旅程；车队视图「空闲返回」里这一步叫 `ARRIVAL_NOT_PROVEN` |
+| `CHARGING_CLEARANCE_ARRIVAL_NOT_PROVEN` | 充电旅程（清桩中开往等待点） |
+
+持续超过 `JourneyRuntime:OwnOrderRebuildRepeatWindow`（出厂 10 分钟，以现场配置为准）会在服务端日志里告警一次：空闲返回是事件 2230，清桩是事件 2303。
+**过了这个时长才能用这个入口**，之前办会被拒（`ARRIVAL_SETTLEMENT_TOO_EARLY`）。
+
+### 用之前在现场核实什么
+
+1. **车停在哪里。**站在车旁边看：它是不是正好停在那个等待点上（结论 `AT_WAITING_POINT`），还是停在别处（`NOT_AT_WAITING_POINT`）。
+   拍照或记巡检单号，填进 `siteVerification`。
+2. **车已经停稳、没在执行任务。**服务端自己也会读 RIoT 核对，但人先看一眼：车灯、急停、RIoT 里这辆车身上有没有单。
+3. **车在线。**车离线或 RIoT 读不到它时入口一律拒绝（`ARRIVAL_SETTLEMENT_VEHICLE_OFFLINE`、`ARRIVAL_SETTLEMENT_VEHICLE_UNREADABLE`）：
+   服务端证明不了它没在动，就不收尾。**先让车重新上线、停稳，再来办。**
+4. **清桩那一种，车确实在等待点上而清桩还没完成时**：先由 R-11／R-13 名单里的人确认清桩（人工清桩入口），再办这一项。
+   不先确认清桩会被拒（`ARRIVAL_SETTLEMENT_CLEARANCE_STILL_OPEN`）。车不在等待点上时，先办这一项还是先确认清桩都可以，见下表。
+5. **对照看板，抄下这辆车当前旅程的旅程号和它正开往的等待点站号。**
+
+### 谁能办、怎么办
+
+只有 R-11／R-13 名单里的人（与人工清桩同一份名单，`FieldOperatorRoles:path`）。入口与故障人工恢复同一把凭据、同一个开关
+（`VehicleFaultRecovery:enabled`），在服务端的健康端口上：
+
+```powershell
+$body = @{
+    agvId            = 'agv02'
+    journeyId        = '<看板上这辆车当前旅程的旅程号>'
+    stationId        = 214                       # 它正开往的那个等待点的 RIoT 站号
+    verdict          = 'AT_WAITING_POINT'        # 或 NOT_AT_WAITING_POINT
+    operatorId       = '<名单里的工号>'
+    reason           = '车停在等待点上，RIoT 报的地图不对'
+    siteVerification = '<照片编号或巡检单号>'
+} | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:58007/api/field-ops/v1/waiting-point-arrival-settlements' `
+    -Headers @{ Authorization = "Bearer $env:CONTROL_SERVER_FAULT_RECOVERY_CREDENTIAL" } `
+    -ContentType 'application/json' -Body $body
+```
+
+### 办完之后
+
+| 结论 | 空闲返回 | 清桩开往等待点 |
+| --- | --- | --- |
+| `AT_WAITING_POINT` | 按到点收尾：车占着这个等待点，用途释放，车回到可派。旅程码 `IDLE_RETURN_ARRIVAL_CONFIRMED_BY_OPERATOR` | 按到点收尾：车占着这个等待点，旅程以清桩收尾码收尾 |
+| `NOT_AT_WAITING_POINT` | 按已确认失败结束（`IDLE_RETURN_NOT_AT_WAITING_POINT_BY_OPERATOR`）：用途释放，等待点在车被读到停在别的站后由离点清扫释放；下一次空闲返回不选这个点，冷却与「重复窗口内两次就停止自动空闲返回」照算 | 这次移动结束、等待点当场释放。清桩还没确认时车回到清桩中，**这一次清桩不会再自动出发**，要人工清桩确认；清桩已经确认过时，旅程下一轮自己收尾（那一轮看板上是 `CHARGING_UNABLE_TO_CHARGE_CLEARED`，不用处理） |
+
+**办完请现场人员离车。**结论是 `AT_WAITING_POINT` 时车立刻回到可派，下一轮就可能被派去搬运；结论是 `NOT_AT_WAITING_POINT` 的空闲返回，冷却
+（`JourneyRuntime:OwnOrderRebuildDelay`）过后车会自动开往别的等待点。
+
+每一次请求，办成的和被拒的，都写一条管理员审计（动作 `WAITING_POINT_ARRIVAL_SETTLEMENT`），记下办理人、角色、理由、核实记录和这一刻读到的
+RIoT。被拒时返回 409，`codes` 列出全部原因，`descriptions` 是每个原因的中文说明，照着处理之后再提交一次。
+返回 `ARRIVAL_SETTLEMENT_STATE_CHANGED`，说明核对期间服务端刚推进过这趟旅程，或别人刚办过：什么也没写，看一眼看板再提交。

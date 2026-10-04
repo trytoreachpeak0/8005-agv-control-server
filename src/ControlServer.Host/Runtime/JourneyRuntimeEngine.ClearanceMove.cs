@@ -697,34 +697,17 @@ public sealed partial class JourneyRuntimeEngine
             }
             else
             {
-                ending = (await dbContext.Set<ChargingCycleRow>().AsNoTracking()
-                              .Where(row => row.JourneyId == runtime.JourneyId)
-                              .Select(row => row.EndReason)
-                              .ToArrayAsync(cancellationToken).ConfigureAwait(false))
-                          .SingleOrDefault(reason => reason is not null && ChargingExecutionReasons.ClearedEndings.Contains(reason))
-                      ?? ChargingExecutionReasons.UnableToChargeCleared;
+                ending = await ClearanceAtWaitingPointClosure.EndingAfterClearedCycleAsync(dbContext, runtime.JourneyId, cancellationToken)
+                    .ConfigureAwait(false);
             }
 
-            StationExclusivityRow? held = await WaitingPointExclusivity
-                .HeldByAsync(dbContext, runtime.MapId, move.StationRiotId, runtime.JourneyId, cancellationToken)
-                .ConfigureAwait(false);
-            if (held is null)
+            if (!await ClearanceAtWaitingPointClosure.StageAsync(dbContext, runtime, charger, move, ending, now, cancellationToken)
+                    .ConfigureAwait(false))
             {
                 await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
                 return;
             }
-            await WaitingPointExclusivity.StageOccupyAsync(dbContext, held, now, cancellationToken).ConfigureAwait(false);
-            move.Status = JourneyStopStatuses.Completed;
-            charger.Status = JourneyStopStatuses.Completed;
             checkpointWaits.Clear(runtime.VehicleKey);
-            await JourneyPurposeClaimRelease.StageAsync(dbContext, runtime.JourneyId, now, ending, cancellationToken).ConfigureAwait(false);
-            foreach (string superseded in ChargingSnapshotIds(runtime).Concat(ClearingSnapshotIds(runtime))
-                         .Concat(ClearanceMoveShape.SnapshotIds(runtime.JourneyId, ClearanceMoveShape.AttemptOf(move))))
-            {
-                await FenceSupersededSnapshotAsync(superseded, cancellationToken).ConfigureAwait(false);
-            }
-            await JourneyClosure.StageClearanceAtWaitingPointAsync(dbContext, runtime, move, ending, now, cancellationToken)
-                .ConfigureAwait(false);
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
