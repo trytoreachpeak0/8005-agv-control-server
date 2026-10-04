@@ -140,6 +140,43 @@ public sealed partial class ChargingClearanceToWaitingPointTests
         }
     }
 
+    /// <summary>
+    /// 途中人工清桩确认之后，等待点预占不能由站点独占的人工释放（control-server#419）拿走：这次移动仍以它为未完成停靠，释放答
+    /// <see cref="StationExclusivityManualRelease.HolderJourneyStillBound"/>，预占、用途、旅程原样，之后照常到点收敛。所以引擎里「预占已不是这一趟的」
+    /// 那一支（<c>AdvanceClearanceMoveAsync</c> 的 <c>held is null</c>）在这个中间态下不是 #419 能走到的出口（cs#462 审查）。
+    /// </summary>
+    [Fact]
+    public async Task TheWaitingPointOfAMoveStillOnItsWayIsNotReleasedByHandAfterAManualClearance()
+    {
+        await using FleetFixture fleet = await ClearanceFleetAsync();
+        JourneyRuntimeRow journey = await OldOrderEndedAsync(fleet);
+        await RoundAsync(fleet);
+        await RoundAsync(fleet);
+        fleet.Riot.VehicleOverrides[KeyA] = seen => seen with { CurrentStationId = 300, Speed = 300, ProcState = "EXECUTING", OrderTaskId = "T" };
+        await ConfirmOnTheWayAsync(fleet, journey, "00000000-0000-4000-8000-0000000c4627");
+
+        StationExclusivityManualReleaseResult result = await StationExclusivityManualRelease.ReleaseAsync(
+            fleet.Context,
+            new GovernanceStore(fleet.Context, new GovernanceDeploymentIdentity("deployment:8005-controlserver@test"), AuditRetentionPolicy.Default),
+            vehicleFacts: null,
+            new StationExclusivityManualReleaseRequest(Map, 214, KeyA, "OP-7", "车已拖离等待点", "SITE-2026-1004-01", "班长"),
+            fleet.Clock.GetUtcNow(),
+            Token);
+        fleet.Context.ChangeTracker.Clear();
+
+        Assert.False(result.Released);
+        Assert.Equal([StationExclusivityManualRelease.HolderJourneyStillBound], result.Codes);
+        Assert.Equal((KeyA, StationExclusivityStates.Reserved), await HolderAsync(fleet, 214));
+        Assert.Equal((VehiclePurposes.ClearingMaintenance, journey.JourneyId), await ClaimOfAsync(fleet, KeyA));
+
+        fleet.Riot.CompleteOrder(ClearanceMoveShape.UpperIdFor(journey.JourneyId, 1));
+        StandOn(fleet, 214);
+        await RoundAsync(fleet);
+        Assert.Equal(JourneyRuntimeStage.Completed, (await fleet.Context.JourneyRuntimes.AsNoTracking()
+            .SingleAsync(row => row.JourneyId == journey.JourneyId, Token)).Stage);
+        Assert.Null(await ClaimOfAsync(fleet, KeyA));
+    }
+
     /// <summary>移动已承诺（等待点腿还没结束）时人工清桩确认：清桩完成、桩放开，用途仍跟着旅程（cs#462）。</summary>
     private static async Task ConfirmOnTheWayAsync(FleetFixture fleet, JourneyRuntimeRow journey, string confirmationRequestId)
     {
