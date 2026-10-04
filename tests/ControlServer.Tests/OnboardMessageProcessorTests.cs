@@ -769,11 +769,16 @@ public sealed class OnboardMessageProcessorTests
             // Rebinding the generation is the only difference a resend may carry.
             JsonNode conflicting = JsonNode.Parse(rebound)!;
             conflicting["payload"]!["safetyStateVersion"] = 3;
-            // control-server#478: refused with a ProtocolProblem on a connection that stays, no longer an exception.
-            ProtocolProblemAssert.RefusedLine(
+            // control-server#478: refused with a ProtocolProblem on a connection that stays, no longer an exception; a refused
+            // safety message also lowers readiness and asks for a new safety snapshot (review S2).
+            using JsonDocument conflictingDocument = JsonDocument.Parse(conflicting.ToJsonString());
+            ProtocolProblemAssert.RefusedSafety(
                 await processor.ProcessAsync(conflicting.ToJsonString(), secondState, token),
                 "MESSAGE_ID_CONTENT_CONFLICT",
-                conflicting.ToJsonString());
+                conflictingDocument.RootElement.GetProperty("messageId").GetString()!,
+                "SafetyStateChanged",
+                "SessionReadiness",
+                "SafetyStateSnapshotRequested");
         }
         finally
         {

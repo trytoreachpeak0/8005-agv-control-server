@@ -19,6 +19,26 @@ internal static class ProtocolProblemAssert
             request.RootElement.GetProperty("messageType").GetString()!);
     }
 
+    /// <summary>
+    /// A refused safety message: the ProtocolProblem first, then exactly <paramref name="followingTypes"/> -- the
+    /// SessionReadiness that announces the lowered readiness when it changed, and the SafetyStateSnapshotRequested that asks
+    /// for a new baseline (control-server#478, review S2).
+    /// </summary>
+    public static void RefusedSafety(
+        string response, string reasonCode, string rejectedMessageId, string rejectedMessageType,
+        params string[] followingTypes)
+    {
+        string[] lines = response.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        Refused(lines[0], reasonCode, rejectedMessageId, rejectedMessageType);
+        Assert.Equal(
+            followingTypes,
+            lines.Skip(1).Select(line =>
+            {
+                using JsonDocument document = JsonDocument.Parse(line);
+                return document.RootElement.GetProperty("messageType").GetString()!;
+            }).ToArray());
+    }
+
     /// <summary>Asserts the response is exactly that answer.</summary>
     public static void Refused(string response, string reasonCode, string rejectedMessageId, string rejectedMessageType)
     {

@@ -158,6 +158,48 @@ public sealed class InboundContentConflictTests
         Assert.True(await rig.InboxHasAsync(messageId), "冲突之后的下一条没有入 ProtocolInbox。");
     }
 
+    /// <summary>
+    /// A refused CapabilitySnapshot is answered with its ProtocolProblem and then the server closes the connection
+    /// (control-server#478, review S2 option b): the vehicle answers no CapabilitySnapshotRequested, so only a new
+    /// handshake brings a new capability baseline. That cannot loop -- the onboard sends its capability fresh in each
+    /// handshake under a new messageId, not from its durable outbox -- and the reconnect here gets READY.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    public async Task ARefusedCapabilitySnapshotIsAnsweredThenTheConnectionIsClosedAndTheVehicleReconnects()
+    {
+        await using Rig rig = await Rig.StartAsync();
+        await rig.ConnectAsync();
+        int closedBefore = rig.Relay.ServerClosedConnections;
+
+        // Revision 1 is the handshake's; this is other content under it.
+        string capability = ProtocolEnvelope.Serialize(
+            "CapabilitySnapshot",
+            Guid.NewGuid().ToString("D"),
+            null,
+            AgvId,
+            rig.Generation,
+            DateTimeOffset.UtcNow,
+            new { capabilityVersion = 1, activeSlotConfigurationFingerprint = new string('9', 64) });
+        Answer answer = await rig.Relay.InjectAsync(capability, AnswerWithin);
+
+        answer.AssertProblem(
+            "SNAPSHOT_REVISION_CONTENT_CONFLICT",
+            JsonDocument.Parse(capability).RootElement.GetProperty("messageId").GetString()!,
+            "CapabilitySnapshot");
+        DateTime until = DateTime.UtcNow + AnswerWithin;
+        while (rig.Relay.ServerClosedConnections == closedBefore && DateTime.UtcNow < until)
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(20), TestContext.Current.CancellationToken);
+        }
+        Assert.Equal(closedBefore + 1, rig.Relay.ServerClosedConnections);
+
+        await rig.DisconnectAsync();
+        await rig.ConnectAsync();
+        await rig.AssertConnectionStaysAsync();
+    }
+
     private static string ManualChargingReturn(string messageId, string requestId, long generation, string reason) =>
         ProtocolEnvelope.Serialize(
             "ManualChargingReturnToServiceRequested",

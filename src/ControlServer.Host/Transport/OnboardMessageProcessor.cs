@@ -194,7 +194,7 @@ public sealed partial class OnboardMessageProcessor(
                 // which is not the vehicle's to be told about (see InboundMessageRejectedException).
                 dbContext.ChangeTracker.Clear();
                 LogInboundRejected(logger, agvId, messageType, messageId, rejected.ReasonCode, rejected.Message);
-                return SerializeEnvelope(
+                string problem = SerializeEnvelope(
                     "ProtocolProblem",
                     messageId,
                     agvId,
@@ -213,6 +213,8 @@ public sealed partial class OnboardMessageProcessor(
                         expectedProfileId = ProtocolCandidateIdentity.ProfileId,
                         expectedProtocolReleaseManifestSha256 = ProtocolCandidateIdentity.ManifestSha256
                     });
+                return await AfterRefusedBaselineAsync(problem, messageType, messageId, agvId, state, cancellationToken)
+                    .ConfigureAwait(false);
             }
         }
         // Never inside the handshake (control-server#202). A reconnecting vehicle resends what the last session left
@@ -261,8 +263,23 @@ public sealed partial class OnboardMessageProcessor(
         {
             state.SafetySnapshotRequestDue = true;
         }
+        // control-server#478: while a refused safety message leaves the baseline untrusted, ask again on the vehicle's next
+        // messages. The request sent with the refusal is usually not answered: the onboard leaves a snapshot request
+        // unanswered while it still holds an unacknowledged SafetyStateChanged -- which the refused one is -- and expects
+        // the server to ask again (8005-agv-onboard-hmi WireToGateBusinessService.AnswerSafetyStateSnapshotRequestAsync).
+        // Spaced by SafetySnapshotReaskInterval so a heartbeat every two seconds does not become a request every two seconds.
+        if (state.SafetyBaselineUntrusted &&
+            timeProvider.GetUtcNow() - state.SafetySnapshotRequestedAt >= SafetySnapshotReaskInterval)
+        {
+            state.SafetySnapshotRequestDue = true;
+        }
         return AppendSafetySnapshotRequest(capturedResponse, state);
     }
+
+    /// <summary>
+    /// How long an untrusted safety baseline waits before the server asks again for a snapshot (control-server#478).
+    /// </summary>
+    internal static readonly TimeSpan SafetySnapshotReaskInterval = TimeSpan.FromSeconds(5);
 
     /// <summary>
     /// Asks the vehicle for a fresh SafetyStateSnapshot when this message made one due (REQ-0358,
@@ -302,6 +319,7 @@ public sealed partial class OnboardMessageProcessor(
         {
             return response;
         }
+        state.SafetySnapshotRequestedAt = timeProvider.GetUtcNow();
         string request = SerializeEnvelope(
             "SafetyStateSnapshotRequested",
             correlationId: null,
@@ -446,6 +464,9 @@ public sealed partial class OnboardMessageProcessor(
                         agvId, generation, revision, departureSafe, contentHash, cancellationToken,
                         SafetyReasonCodes(safety), SafetyUnknownPresent(safety)).ConfigureAwait(false);
                     state.SafetyRevision = revision;
+                    // An accepted snapshot is a whole new safety baseline, slot states included: what a refused safety
+                    // message left untrusted is trusted again from here (control-server#478).
+                    state.SafetyBaselineUntrusted = false;
                     string snapshotAck = SnapshotAck(messageId, agvId, generation, "SAFETY_STATE", revision, contentHash);
                     if (!midSession)
                     {
@@ -783,6 +804,13 @@ public sealed partial class OnboardMessageProcessor(
                         SafetyReasonCodes(safety), SafetyUnknownPresent(safety))
                         .ConfigureAwait(false);
                     state.SafetyRevision = revision;
+                    if (state.SafetyBaselineUntrusted)
+                    {
+                        // Taken and acknowledged as always, but a change is not a baseline: it names what changed, not the
+                        // state of every slot. The departure verdict stays untrusted until a SafetyStateSnapshot arrives
+                        // (control-server#478).
+                        await store.DistrustSafetyBaselineAsync(agvId, generation, cancellationToken).ConfigureAwait(false);
+                    }
                     SessionReadinessDecision decision = await store.DecideReadinessAsync(
                         agvId, generation, cancellationToken).ConfigureAwait(false);
                     if (await AffectsAnOverdueSlotAsync(agvId, payload, cancellationToken).ConfigureAwait(false))
@@ -1135,6 +1163,57 @@ public sealed partial class OnboardMessageProcessor(
         SessionReadinessDecision decision = await store.DecideReadinessAsync(
             agvId, generation, cancellationToken).ConfigureAwait(false);
         return AnswerWithReadiness(ack, decision, agvId, generation, state, messageType, messageId, announceUnchanged: false);
+    }
+
+    /// <summary>
+    /// What a refused message leaves behind when it was one of the session's baselines (control-server#478).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Safety</b> (SafetyStateSnapshot, SafetyStateChanged). Before #478 the refusal ended the connection and the
+    /// reconnect's handshake brought a new safety baseline. Kept connected, the server would go on judging departure on the
+    /// content that arrived first while the vehicle holds another, so the baseline is no longer trusted: the departure
+    /// verdict is cleared (<see cref="WireToGateStore.DistrustSafetyBaselineAsync"/>), readiness is decided again --
+    /// RecoveryRequired / DEPARTURE_SAFETY_NOT_READY, the state an unsafe vehicle sits in every day, which holds dispatch and
+    /// nothing more -- and a fresh SafetyStateSnapshot is asked for. Only an accepted SafetyStateSnapshot trusts it again
+    /// (<see cref="OnboardConnectionState.SafetyBaselineUntrusted"/>). Inside the handshake no request is sent; the
+    /// handshake's own snapshot is the new baseline.
+    /// </para>
+    /// <para>
+    /// <b>Capability</b> (CapabilitySnapshot). The vehicle answers no CapabilitySnapshotRequested (8005-agv-onboard-hmi
+    /// <c>WireToGateSessionClient</c> lists it among the messages it only logs), so the session has no way to a new capability
+    /// baseline but a new handshake. The connection is ended after the ProtocolProblem is written, as every refusal was
+    /// before #478. That cannot become the replay loop #478 is about: the onboard sends its CapabilitySnapshot fresh in each
+    /// handshake under a new messageId, straight onto the wire rather than through its durable outbox
+    /// (<c>SendSnapshotAndRequireAckAsync</c>), so a reconnect does not resend the refused one.
+    /// </para>
+    /// </remarks>
+    private async Task<string> AfterRefusedBaselineAsync(
+        string problem,
+        string messageType,
+        string messageId,
+        string agvId,
+        OnboardConnectionState state,
+        CancellationToken cancellationToken)
+    {
+        if (messageType == "CapabilitySnapshot")
+        {
+            state.EndAfterResponse = true;
+            return problem;
+        }
+        if (messageType is not ("SafetyStateSnapshot" or "SafetyStateChanged"))
+        {
+            return problem;
+        }
+        long generation = state.SessionGeneration!.Value;
+        await store.DistrustSafetyBaselineAsync(agvId, generation, cancellationToken).ConfigureAwait(false);
+        state.SafetyBaselineUntrusted = true;
+        SessionReadinessDecision decision = await store.DecideReadinessAsync(agvId, generation, cancellationToken)
+            .ConfigureAwait(false);
+        state.SafetySnapshotRequestDue = true;
+        return AppendSafetySnapshotRequest(
+            AnswerWithReadiness(problem, decision, agvId, generation, state, messageType, messageId, announceUnchanged: false),
+            state);
     }
 
     /// <summary>
@@ -1509,6 +1588,22 @@ public sealed class OnboardConnectionState
 
     /// <summary>The message being processed made a SafetyStateSnapshotRequested due (control-server#142).</summary>
     public bool SafetySnapshotRequestDue { get; set; }
+
+    /// <summary>
+    /// A safety message was refused on this connection and no SafetyStateSnapshot has been accepted since, so the
+    /// session's departure verdict is not trusted (control-server#478). Kept on the connection, not in the database: a
+    /// reconnect is a new session generation, whose handshake brings a new safety baseline.
+    /// </summary>
+    public bool SafetyBaselineUntrusted { get; set; }
+
+    /// <summary>When this connection last sent a SafetyStateSnapshotRequested; spaces the re-asks of control-server#478.</summary>
+    public DateTimeOffset SafetySnapshotRequestedAt { get; set; } = DateTimeOffset.MinValue;
+
+    /// <summary>
+    /// End the connection once the answer to the current line is written. Set for a refused CapabilitySnapshot, which only
+    /// a new handshake can replace (control-server#478).
+    /// </summary>
+    public bool EndAfterResponse { get; set; }
 
     public bool DeferOutboundUntilResponseWritten { get; set; }
     public string? DeferredRecoveryLine { get; set; }

@@ -246,6 +246,30 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Stops trusting this session's departure safety until the vehicle sends a fresh SafetyStateSnapshot
+    /// (control-server#478): the departure verdict and its reasons are cleared, so <see cref="DecideReadinessAsync"/> reads
+    /// DEPARTURE_SAFETY_NOT_READY and the vehicle is given no work.
+    /// </summary>
+    /// <remarks>
+    /// For a safety message the server refused. Before #478 such a refusal ended the connection, and the reconnect brought
+    /// a new safety baseline with it; with the connection kept, the server would otherwise go on judging departure on
+    /// whichever content arrived first while the vehicle holds another. The revision and its hash stay: the next snapshot
+    /// must still move the revision forward, so a stale one cannot slip in as the replacement. Readiness is not written
+    /// here; the caller decides it again, as after any safety change.
+    /// </remarks>
+    public async Task DistrustSafetyBaselineAsync(
+        string agvId, long sessionGeneration, CancellationToken cancellationToken)
+    {
+        SessionRecoveryRow row = await GetCurrentSessionAsync(agvId, sessionGeneration, cancellationToken)
+            .ConfigureAwait(false);
+        row.DepartureSafe = null;
+        row.SafetyReasonCodesJson = null;
+        row.SafetyUnknownPresent = null;
+        row.UpdatedAt = DateTimeOffset.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task ApplyRecoveryReportAsync(
         string agvId, long sessionGeneration, string reportId, long forcedRecoveryGeneration,
         string? unsettledSlotOperationAttemptId,
