@@ -1137,6 +1137,19 @@ public sealed partial class OnboardMessageProcessor(
         return AnswerWithReadiness(ack, decision, agvId, generation, state, messageType, messageId, announceUnchanged: false);
     }
 
+    /// <summary>
+    /// Puts back on this connection the capability and safety versions the first acceptance of a resent
+    /// RecoveryStateReport announced, before the report is processed again in the new session.
+    /// </summary>
+    /// <remarks>
+    /// It changes the connection state before the response factory runs, and stays there on purpose: the
+    /// SessionReadiness the reprocessed report answers with reads these two versions (<c>acceptedCapabilityVersion</c>,
+    /// <c>acceptedSafetyStateVersion</c>). Could that run end in an <see cref="InboundMessageRejectedException"/> after
+    /// the state was changed, a refused message would leave it behind on a connection that stays (control-server#478).
+    /// It cannot: this runs only for a resend the inbox judged equivalent to an accepted report, and the one refusal
+    /// the report's branch can raise -- an active unlock slot outside 1..8 -- depends on the report's own content, which
+    /// was accepted once already.
+    /// </remarks>
     private static void RestoreAcceptedSnapshotVersions(
         string firstResponse,
         OnboardConnectionState state)

@@ -83,6 +83,43 @@ public sealed class JourneyRuntimeWorkerLoadCancellationBeforeSublotTests
     }
 
     /// <summary>
+    /// The before-sublot cancellation's ALL_EMPTY result, arriving for a demand recorded as completed while its stop
+    /// still waits for the entry: the termination is refused with ACTION_NOT_ALLOWED_IN_STATE on a connection that stays,
+    /// and the stop is left as it was (control-server#478, the coordinator's first PickupStopTermination call site).
+    /// </summary>
+    /// <remarks>
+    /// Not a state the server reaches on its own -- a demand completes on its unload, long after its pickup stop -- so
+    /// the completion is written by hand. What it pins is the translation at this call site: without it the refusal is
+    /// a BusinessIdentityConflictException again, and the connection ends.
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    public async Task AnAllEmptyResultForADemandAlreadyCompletedIsRefusedAndLeavesTheStop()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await ReachSublotWaitAsync();
+        await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+        OnboardMessageProcessor processor = BeforeSublotProcessor(fixture, connection);
+        OnboardConnectionState state = BeforeSublotConnection(fixture, generation: 1);
+        await processor.ProcessAsync(
+            CancellationBeforeSublotRequest(fixture, BeforeSublotCancellationId, generation: 1), state, token);
+        AcceptedDemandRow demand = await fixture.Context.AcceptedDemands.SingleAsync(
+            row => row.DemandId == BeforeSublotDemandId, token);
+        demand.Status = DemandExecutionStatus.Succeeded;
+        await fixture.Context.SaveChangesAsync(token);
+
+        string result = CancellationBeforeSublotResult(fixture, "c1000000-0000-4000-8000-000000000478", generation: 1);
+        ProtocolProblemAssert.RefusedLine(
+            await processor.ProcessAsync(result, state, token), "ACTION_NOT_ALLOWED_IN_STATE", result);
+
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync()).Stage);
+        Assert.Equal(RecoveryWorkflowState.AwaitingResult,
+            (await fixture.Context.RecoveryWorkflows.AsNoTracking().SingleAsync(token)).State);
+        Assert.Null((await fixture.ClaimRecordAsync()).ReleasedAt);
+    }
+
+    /// <summary>
     /// The four ways the stop is past the point a cancellation without an attempt could be about it: the
     /// vehicle has not arrived yet, an entry for the stop is already durable, a load was commanded, or a
     /// cancellation is already open. Each is refused with ACTION_NOT_ALLOWED_IN_STATE and records nothing.

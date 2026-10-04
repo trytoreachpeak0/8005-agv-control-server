@@ -2046,6 +2046,54 @@ public sealed class OnboardMessageProcessorTests
         }
     }
 
+    /// <summary>
+    /// A result whose resultId (its messageId) is already on file with other content, arriving where the inbox has no
+    /// row for it: BUSINESS_ID_CONTENT_CONFLICT on a connection that stays, and the stored result untouched
+    /// (control-server#478; ApplyOperationResultAsync's replay check).
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    public async Task AResultIdOnFileWithOtherContentIsRefusedAndKeepsTheStoredResult()
+    {
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using ControlServerDbContext context = await PreparedUnloadAsync(connection);
+        const string resultId = "00000000-0000-4000-8000-0000000004f6";
+        context.OperationResults.Add(new OperationResultRow
+        {
+            ResultId = resultId,
+            SlotOperationAttemptId = PreparedUnloadAttemptId,
+            AgvId = "AGV-001",
+            ForcedRecoveryGeneration = 0,
+            ContentHash = new string('1', 64),
+            ResultContentSha256 = new string('2', 64),
+            OverallOutcome = "COMPLETED",
+            EvidenceJson = "[]",
+            ObservedAt = new DateTimeOffset(2026, 8, 25, 8, 0, 0, TimeSpan.Zero),
+            ReceivedAt = new DateTimeOffset(2026, 8, 25, 8, 0, 0, TimeSpan.Zero)
+        });
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+            context, new WireToGateStore(context), new FixedTimeProvider(), new ConfigurationBuilder().Build());
+        OnboardConnectionState state = new() { AgvId = "AGV-001", SessionGeneration = 1, Readiness = SessionReadiness.Ready };
+
+        string line = Envelope(
+            "OperationResult",
+            resultId,
+            1,
+            OperationResultPayload(PreparedUnloadDemandId, PreparedUnloadAttemptId, "UNLOAD", "EMPTY", [1, 2]));
+        ProtocolProblemAssert.RefusedLine(
+            await processor.ProcessAsync(line, state, TestContext.Current.CancellationToken),
+            "BUSINESS_ID_CONTENT_CONFLICT",
+            line);
+
+        context.ChangeTracker.Clear();
+        OperationResultRow stored = await context.OperationResults.SingleAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(new string('2', 64), stored.ResultContentSha256);
+        Assert.Equal(StationOperationStatus.Prepared, (await context.StationOperations.SingleAsync(
+            TestContext.Current.CancellationToken)).Status);
+    }
+
     private const string PreparedUnloadDemandId = "00000000-0000-4000-8000-0000000004f1";
     private const string PreparedUnloadAttemptId = "00000000-0000-4000-8000-0000000004f2";
 

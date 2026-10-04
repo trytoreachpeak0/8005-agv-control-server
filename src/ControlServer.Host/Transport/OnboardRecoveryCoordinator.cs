@@ -1802,14 +1802,22 @@ public sealed class OnboardRecoveryCoordinator(
 
     /// <summary>
     /// Runs a <see cref="PickupStopTermination"/> on behalf of an inbound recovery result, and refuses that result
-    /// with a <c>ProtocolProblem</c> if the termination will not end the demand (control-server#478).
+    /// with a <c>ProtocolProblem</c> if the termination will not end the demand because it already completed
+    /// (control-server#478).
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The termination is shared with the runtime (<c>VehicleFaultRecoveryService</c>), where its
-    /// <see cref="BusinessIdentityConflictException"/> -- a demand already completed cannot be terminated -- must keep
-    /// failing the round. So it is translated here, at the two inbound call sites, rather than where it is thrown.
-    /// ACTION_NOT_ALLOWED_IN_STATE: the result asks to end a demand whose state no longer allows it; allowed on every
-    /// message type.
+    /// <see cref="BusinessIdentityConflictException"/> must keep failing the round. So it is translated here, at the
+    /// two inbound call sites, rather than where it is thrown. ACTION_NOT_ALLOWED_IN_STATE: the result asks to end a
+    /// demand whose state no longer allows it; allowed on every message type.
+    /// </para>
+    /// <para>
+    /// Only that one refusal, matched by <see cref="PickupStopTermination.CompletedDemandRefusal"/>. The call wraps the
+    /// whole of <c>StageAsync</c>, which reaches <c>StageDemandTerminationAsync</c> from inside, and a
+    /// BusinessIdentityConflictException some later change adds anywhere else in it must not be reported to the
+    /// vehicle as this one: it falls through and ends the connection, as such exceptions did before #478.
+    /// </para>
     /// </remarks>
     private static async Task RefusedAsInbound(Func<Task> terminate)
     {
@@ -1818,6 +1826,7 @@ public sealed class OnboardRecoveryCoordinator(
             await terminate().ConfigureAwait(false);
         }
         catch (BusinessIdentityConflictException refused)
+            when (string.Equals(refused.Message, PickupStopTermination.CompletedDemandRefusal, StringComparison.Ordinal))
         {
             throw new InboundMessageRejectedException(ServerReasonCodes.ActionNotAllowedInState, refused.Message);
         }

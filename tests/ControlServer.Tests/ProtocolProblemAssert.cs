@@ -19,17 +19,6 @@ internal static class ProtocolProblemAssert
             request.RootElement.GetProperty("messageType").GetString()!);
     }
 
-    /// <summary>For a caller that never sees the request line: the answer refuses some message of that type, and is correlated to it.</summary>
-    public static void RefusedOfType(string response, string reasonCode, string rejectedMessageType)
-    {
-        using JsonDocument document = JsonDocument.Parse(response);
-        Refused(
-            response,
-            reasonCode,
-            document.RootElement.GetProperty("payload").GetProperty("rejectedMessageId").GetString()!,
-            rejectedMessageType);
-    }
-
     /// <summary>Asserts the response is exactly that answer.</summary>
     public static void Refused(string response, string reasonCode, string rejectedMessageId, string rejectedMessageType)
     {

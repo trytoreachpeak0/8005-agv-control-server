@@ -194,14 +194,12 @@ public sealed class ExpectedActionOverdueTests
         SessionRecoveryRow before = await fixture.SessionAsync();
 
         // control-server#478: refused with a ProtocolProblem naming each, on a connection that stays.
-        ProtocolProblemAssert.RefusedOfType(
-            await fixture.SafetySnapshotAsync(2, Slots(slot3Lock: "UNLOCKED")),
-            "SNAPSHOT_REVISION_CONTENT_CONFLICT",
-            "SafetyStateSnapshot");
-        ProtocolProblemAssert.RefusedOfType(
-            await fixture.SafetySnapshotAsync(1, Slots()),
-            "SNAPSHOT_REVISION_REGRESSION",
-            "SafetyStateSnapshot");
+        string sameRevisionOtherContent = await fixture.SafetySnapshotAsync(2, Slots(slot3Lock: "UNLOCKED"));
+        ProtocolProblemAssert.Refused(
+            sameRevisionOtherContent, "SNAPSHOT_REVISION_CONTENT_CONFLICT", fixture.LastSentMessageId!, "SafetyStateSnapshot");
+        string goingBackwards = await fixture.SafetySnapshotAsync(1, Slots());
+        ProtocolProblemAssert.Refused(
+            goingBackwards, "SNAPSHOT_REVISION_REGRESSION", fixture.LastSentMessageId!, "SafetyStateSnapshot");
 
         SessionRecoveryRow after = await fixture.SessionAsync();
         Assert.Equal(before.SafetyRevision, after.SafetyRevision);
@@ -847,8 +845,13 @@ public sealed class ExpectedActionOverdueTests
             return JsonDocument.Parse(JsonSerializer.Serialize(result));
         }
 
-        private Task<string> Send(string messageType, long? generation, object payload) =>
-            Processor.ProcessAsync(
+        /// <summary>The messageId of the last line sent, so an answer's correlation can be checked against the request.</summary>
+        public string? LastSentMessageId { get; private set; }
+
+        private Task<string> Send(string messageType, long? generation, object payload)
+        {
+            LastSentMessageId = Guid.NewGuid().ToString("D");
+            return Processor.ProcessAsync(
                 JsonSerializer.Serialize(new
                 {
                     protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
@@ -856,7 +859,7 @@ public sealed class ExpectedActionOverdueTests
                     protocolReleaseVersion = ProtocolCandidateIdentity.ReleaseVersion,
                     protocolReleaseManifestSha256 = ProtocolCandidateIdentity.ManifestSha256,
                     messageType,
-                    messageId = Guid.NewGuid().ToString("D"),
+                    messageId = LastSentMessageId,
                     correlationId = (string?)null,
                     agvId = AgvId,
                     sessionGeneration = generation,
@@ -865,6 +868,7 @@ public sealed class ExpectedActionOverdueTests
                 }),
                 State,
                 TestContext.Current.CancellationToken);
+        }
 
         public async ValueTask DisposeAsync()
         {

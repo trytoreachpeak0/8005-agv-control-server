@@ -719,6 +719,31 @@ public sealed class ManualStationClearanceTests : IDisposable
     }
 
     /// <summary>
+    /// 同一个确认号、换了操作员与 <c>messageId</c> 的一条清桩确认，经真实的消息处理：回 <c>BUSINESS_ID_CONTENT_CONFLICT</c> 的
+    /// <c>ProtocolProblem</c>，连接不断，不记第二条清桩记录（control-server#478；此前是断连接）。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    public async Task TheSameConfirmationNumberWithOtherContentIsRefusedOnTheWireAndRecordsNothing()
+    {
+        await using FleetFixture fleet = await FleetAsync();
+        JourneyRuntimeRow journey = await ConfirmedAsync(fleet);
+        fleet.Riot.CancelOrder(journey.PickupUpperId);
+        MovedOff(fleet);
+        (OnboardMessageProcessor processor, OnboardConnectionState state) = await ProcessorAsync(fleet);
+        const string id = "00000000-0000-4000-8000-000000000b78";
+        await SendAsync(processor, state, id, "00000000-0000-4000-8000-000000000b79", "op-r11", Near.StationName);
+
+        string other = ClearanceLine(state, id, "00000000-0000-4000-8000-000000000b7a", "op-r13", Near.StationName);
+        ProtocolProblemAssert.RefusedLine(
+            await processor.ProcessAsync(other, state, Token), "BUSINESS_ID_CONTENT_CONFLICT", other);
+
+        Assert.Single(await fleet.Context.Set<StationClearanceRow>().AsNoTracking().ToArrayAsync(Token));
+        Assert.False(await fleet.Context.ProtocolInbox.AsNoTracking()
+            .AnyAsync(row => row.MessageId == "00000000-0000-4000-8000-000000000b7a", Token));
+    }
+
+    /// <summary>
     /// 同一次清桩来了第二个确认号（车载端重启后再按）：答 <c>CONFIRMED</c>，不再记一次确认、不放第二次；旧单此时已终结而清桩还没完成的，
     /// 由这一次完成并放（与引擎同一个函数，只有一方生效）。第一次确认时旧单还 <c>HANG</c>：只记下确认、<c>CompletedAt</c> 仍为空（<c>REQ-0178</c>）。
     /// </summary>
@@ -1379,7 +1404,17 @@ public sealed class ManualStationClearanceTests : IDisposable
         OnboardMessageProcessor processor, OnboardConnectionState state, string confirmationRequestId, string messageId,
         string operatorId, string stationId)
     {
-        string line = JsonSerializer.Serialize(new
+        string line = ClearanceLine(state, confirmationRequestId, messageId, operatorId, stationId);
+        string response = await processor.ProcessAsync(line, state, Token);
+        using JsonDocument document = JsonDocument.Parse(response.Split('\n', StringSplitOptions.RemoveEmptyEntries)[0]);
+        Assert.Equal("ManualStationClearanceConfirmationResult", document.RootElement.GetProperty("messageType").GetString());
+        Assert.Equal(messageId, document.RootElement.GetProperty("correlationId").GetString());
+        return document.RootElement.GetProperty("payload").Clone();
+    }
+
+    private static string ClearanceLine(
+        OnboardConnectionState state, string confirmationRequestId, string messageId, string operatorId, string stationId) =>
+        JsonSerializer.Serialize(new
         {
             protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
             profileId = ProtocolCandidateIdentity.ProfileId,
@@ -1401,12 +1436,6 @@ public sealed class ManualStationClearanceTests : IDisposable
                 observedAt = "2026-09-08T06:00:00Z",
             },
         });
-        string response = await processor.ProcessAsync(line, state, Token);
-        using JsonDocument document = JsonDocument.Parse(response.Split('\n', StringSplitOptions.RemoveEmptyEntries)[0]);
-        Assert.Equal("ManualStationClearanceConfirmationResult", document.RootElement.GetProperty("messageType").GetString());
-        Assert.Equal(messageId, document.RootElement.GetProperty("correlationId").GetString());
-        return document.RootElement.GetProperty("payload").Clone();
-    }
 
     private static DefaultHttpContext HttpContextFor(object? body, IPAddress remote, string? bearer = null)
     {
