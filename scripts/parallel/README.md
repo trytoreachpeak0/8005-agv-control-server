@@ -148,8 +148,11 @@ VB 的 `DeleteDirectory`、FSO 的 `DeleteFolder`、CIM，以及挪走、清空�
 - 关：任何旅程不是 `Completed` 就拒绝。开：只拒绝单已经发出或可能已经发出的旅程，「没发过」照搬 `WireToGateStore.IsNeverSentAsync`；
   闸门关着时存在的旅程都在等闸门，拒绝它们就是死锁。读不出一律拒绝。
 - 服务在跑时读一次，停服后再读一次；写开关时回读开关和其余每个值（中文 `agvId`）；重启后要求进程启动时间晚于文件修改时间。
-- `Test-ParallelInstance.ps1` 把这些判据依赖的 C# 条件（`IsNeverSentAsync`、`CreateDispatchDisabled` 不写库、两条建单路径先查闸门、
-  引擎以 `Stage != Completed` 判在途）与读取的列名（对 EF 模型快照）逐字钉住，C# 一改这里就红。
+- 判据依赖的服务端事实钉在 .NET 测试 `tests/ControlServer.Tests/DispatchGatePremiseArchitectureTests.cs` 里，CI 会跑：建单在全仓只有
+  `gateway.CreateAsync(` 一个调用点；走到它的只有那两条建单路径，且都在任何 `await` 和 store 调用之前先查闸门；旅程阶段的完整成员表；
+  引擎读在途旅程的那一整条查询；`IsNeverSentAsync` 的定义原文。`Test-ParallelInstance.ps1` 只核对那些用例还在，另外对照 EF 模型快照
+  核对读取的列名。它们是防回归，不是证明：不经这些写法的改动（换了字段名、反射、绕过网关的 HTTP）看不见。
+- 脚本放在服务器上 `opsRoot\dispatch-gate\<commit>` 子目录里，不覆盖 19 号部署在 `opsRoot` 的安装、卸载脚本和模块。
 
 ## 文件
 

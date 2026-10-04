@@ -538,7 +538,8 @@ function Invoke-ParallelDispatchGateChange {
                  been sent. Unreadable refuses.
               5. Stop the service, and read the state again. This read is the one that counts: a stopped
                  service creates nothing, so nothing can slip in between it and the write. If it refuses
-                 now, the service is started again on the unchanged file and the refusal says so.
+                 now, the service is started again on the unchanged file and the refusal says whether it came back
+                 Running. A service that was Stopped is not touched, and its refusal carries no AFTER_STOP.
               6. Write the flag (Set-ParallelInstanceConfigurationFlag: section found ignoring case, the
                  flag and every other value read back). If the write fails, the original bytes are put
                  back, checked, and the service started again, so the gate is as it was.
@@ -594,7 +595,7 @@ function Invoke-ParallelDispatchGateChange {
     $current = $section.Count -eq 1 -and $section[0] -is [System.Collections.IDictionary] ?
         ($section[0].Keys | Where-Object { $_ -ieq 'enabled' } | ForEach-Object { $section[0][$_] } | Select-Object -First 1) : $null
     if ($current -is [bool] -and $current -eq $target) {
-        return [pscustomobject]@{ Changed = $false; Direction = $Direction; Previous = $current; ServiceStatus = $status
+        return [pscustomobject]@{ Changed = $false; Direction = $Direction; Previous = $current; Now = $current; ServiceStatus = $status
             Message = "RiotCreateDispatch.enabled is already $($target ? 'true' : 'false') in $ConfigurationPath; nothing was touched." }
     }
 
@@ -602,14 +603,23 @@ function Invoke-ParallelDispatchGateChange {
     $refusal = Get-ParallelDispatchGateRefusal -Direction $Direction -State (& $Actions.ReadState) -ServiceName $ServiceName -DatabasePath $DatabasePath
     if ($refusal) { throw $refusal }
 
+    # Starting the service again after a refusal or a failed write, and saying what it is now rather than
+    # assuming it came back (review N4).
+    $startAgain = {
+        $null = & $Actions.StartService
+        $now = [string] (& $Actions.ServiceStatus)
+        $now -ceq 'Running' ? "'$ServiceName' was started again and is Running" : "'$ServiceName' was asked to start again but is '$now' -- check it"
+    }
+
     # 5.
     $wasRunning = $status -ceq 'Running'
     if ($wasRunning) { $null = & $Actions.StopService }
     $refusal = Get-ParallelDispatchGateRefusal -Direction $Direction -State (& $Actions.ReadState) -ServiceName $ServiceName -DatabasePath $DatabasePath
     if ($refusal) {
-        $restarted = $wasRunning ? " The service was stopped for this second read and has been started again on the unchanged $ConfigurationPath." : ''
-        if ($wasRunning) { $null = & $Actions.StartService }
-        throw ('AFTER_STOP ' + $refusal.Replace($nothing, " The configuration was not changed.$restarted"))
+        # A service that was Stopped was not touched, so the refusal's own "nothing was stopped or changed" holds.
+        if (-not $wasRunning) { throw $refusal }
+        throw ('AFTER_STOP ' + $refusal.Replace($nothing,
+                " The configuration was not changed. The service was stopped for this second read; $(& $startAgain), on the unchanged $ConfigurationPath."))
     }
 
     # 6.
@@ -624,15 +634,14 @@ function Invoke-ParallelDispatchGateChange {
             throw ("GATE_WRITE_FAILED: $failure Putting the original bytes of $ConfigurationPath back did not hold either; the service " +
                 "'$ServiceName' is left stopped. Restore the file from the latest backup under the backup root before starting it.")
         }
-        if ($wasRunning) { $null = & $Actions.StartService }
         throw ("GATE_WRITE_FAILED: $failure The original bytes of $ConfigurationPath were put back and checked" +
-            $(if ($wasRunning) { ", and '$ServiceName' was started again" } else { '' }) + '; the gate is as it was.')
+            $(if ($wasRunning) { ", and $(& $startAgain)" } else { '' }) + '; the gate is as it was.')
     }
     $writtenUtc = [IO.File]::GetLastWriteTimeUtc($ConfigurationPath)
 
     # 7.
     if (-not $wasRunning) {
-        return [pscustomobject]@{ Changed = $true; Direction = $Direction; Previous = $previous; ServiceStatus = $status
+        return [pscustomobject]@{ Changed = $true; Direction = $Direction; Previous = $previous; Now = $target; ServiceStatus = $status
             Message = "RiotCreateDispatch.enabled set $($target ? 'true' : 'false') in $ConfigurationPath. '$ServiceName' was $status and is left so; it reads the file when it next starts." }
     }
     $null = & $Actions.StartService
@@ -644,7 +653,7 @@ function Invoke-ParallelDispatchGateChange {
             "$(if ($null -eq $startedUtc) { 'an unknown time' } else { ([datetime] $startedUtc).ToUniversalTime().ToString('o') }), so whether " +
             'the running process reads the new value cannot be shown. Check the service before relying on the gate.')
     }
-    return [pscustomobject]@{ Changed = $true; Direction = $Direction; Previous = $previous; ServiceStatus = $statusAfter
+    return [pscustomobject]@{ Changed = $true; Direction = $Direction; Previous = $previous; Now = $target; ServiceStatus = $statusAfter
         Message = ("RiotCreateDispatch.enabled set $($target ? 'true' : 'false') in $ConfigurationPath at $($writtenUtc.ToString('o')); " +
             "'$ServiceName' restarted, its process started at $(([datetime] $startedUtc).ToUniversalTime().ToString('o')).") }
 }

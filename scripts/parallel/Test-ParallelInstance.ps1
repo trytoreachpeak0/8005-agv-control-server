@@ -1328,7 +1328,7 @@ $scanTargets = [ordered]@{
             'Set-ParallelInstanceConfigurationFlag::$Writer', 'Get-ParallelJourneyDispatchState::$read',
             'Invoke-ParallelDispatchGateChange::$Actions.ServiceStatus', 'Invoke-ParallelDispatchGateChange::$Actions.ReadState',
             'Invoke-ParallelDispatchGateChange::$Actions.StopService', 'Invoke-ParallelDispatchGateChange::$Actions.StartService',
-            'Invoke-ParallelDispatchGateChange::$Actions.ProcessStartTimeUtc'); Owners = @(); Expected = 23 }
+            'Invoke-ParallelDispatchGateChange::$Actions.ProcessStartTimeUtc', 'Invoke-ParallelDispatchGateChange::$startAgain'); Owners = @(); Expected = 25 }
     'Set-ParallelDispatchGateLocal.ps1'   = @{ Dynamic = @(); Owners = @(); Expected = 0 }
 }
 foreach ($file in $scanTargets.Keys) {
@@ -2529,6 +2529,7 @@ $dbCases = @(
     @{ Name = 'the MVP database'; Value = 'Data Source=C:\ProgramData\8005\ControlServer\data\controlserver.db'; Expect = $null }
     @{ Name = 'a sibling that shares the prefix'; Value = 'Data Source=C:\ProgramData\8005\ControlServer.V2-backups\controlserver.db'; Expect = $null }
     @{ Name = 'a climb out of the data root'; Value = 'Data Source=C:\ProgramData\8005\ControlServer.V2\..\ControlServer\data\controlserver.db'; Expect = $null }
+    @{ Name = 'a climb out of the data root to a non-production directory'; Value = 'Data Source=C:\ProgramData\8005\ControlServer.V2\..\Elsewhere\controlserver.db'; Expect = $null }
     @{ Name = 'no Data Source'; Value = 'Mode=ReadOnly'; Expect = $null }
 )
 foreach ($case in $dbCases) {
@@ -2539,36 +2540,17 @@ foreach ($case in $dbCases) {
         -Name "gate: database path from $($case.Name) -> $($case.Expect ?? 'refused, naming the file')" -Detail "got: $got thrown: $thrown"
 }
 
-# --- The premises the open check rests on, pinned literally in the C# they come from. A change there
-# must fail here and send someone back to Test-ParallelOrderIntentNeverSent and Get-ParallelDispatchGateRefusal.
-$storeSource = Get-Content -LiteralPath (Join-Path $repoRoot 'src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs') -Raw
-$orchestrationSource = Get-Content -LiteralPath (Join-Path $repoRoot 'src/ControlServer.Application/WireToGateOrchestration.cs') -Raw
-$engineSource = Get-Content -LiteralPath (Join-Path $repoRoot 'src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs') -Raw
-$squash = { param([string] $Text) [regex]::Replace($Text, '\s+', ' ') }
-$premises = @(
-    @{ Name = 'IsNeverSentAsync: pending, no attempt, no order'; Source = $storeSource
-        Text = 'return (row.Status == "PENDING_RECONCILIATION" && row.CreateAttemptCount == 0 && row.CreateAttemptId is null && row.OrderId is null) || await IsNeverSentAfterUnansweredReadsAsync(row, cancellationToken).ConfigureAwait(false);' }
-    @{ Name = 'IsNeverSentAfterUnansweredReadsAsync: the intent conditions'; Source = $storeSource
-        Text = 'if (row.Status != "RESULT_UNKNOWN" || row.DispatchAuditVersion != 1 || row.CreateAttemptCount != 0 || row.CreateAttemptId is not null || row.ExperimentalCreateAuthorizationId is not null)' }
-    @{ Name = 'IsNeverSentAfterUnansweredReadsAsync: the read conditions'; Source = $storeSource
-        Text = 'return reads.Length > 0 && reads.All(item => item.Phase == "PRE_CREATE_RECONCILIATION" && item.Outcome is "UNKNOWN" or "NOT_FOUND" && item.AttemptId is null && item.ReturnedOrderId is null && item.ResultPresent != true);' }
-    @{ Name = 'a closed gate writes nothing (CreateDispatchDisabled)'; Source = $orchestrationSource
-        Text = 'private static MovementDispatchResult CreateDispatchDisabled(OrderIntent intent) => new(MovementDispatchOutcome.CreateDispatchDisabled, intent.UpperId, null);' }
-)
-foreach ($premise in $premises) {
-    Write-Result -Ok ((& $squash $premise.Source).Contains((& $squash $premise.Text))) -Name "gate premise: $($premise.Name)" `
-        -Detail 'the C# changed; reread it and update Test-ParallelOrderIntentNeverSent / Get-ParallelDispatchGateRefusal before trusting the cases below'
-}
-# Both create paths refuse on the gate before they arm (or record) anything.
-foreach ($method in @('CreateAfterExperimentalAbsenceAsync', 'CreateAfterConfirmedAbsenceAsync')) {
-    $body = [regex]::Match($orchestrationSource, "private async Task<MovementDispatchResult> $method\((?s:.*?)\r?\n    }\r?\n").Value
-    $gateAt = $body.IndexOf('if (!createDispatchPolicy.CreateEnabled)')
-    $firstWrite = @('store.', 'ArmCreateDispatchAsync') | ForEach-Object { $body.IndexOf($_) } | Where-Object { $_ -ge 0 } | Sort-Object | Select-Object -First 1
-    Write-Result -Ok ($gateAt -ge 0 -and ($null -eq $firstWrite -or $gateAt -lt $firstWrite)) -Name "gate premise: $method checks the gate before any store write" `
-        -Detail "gate at $gateAt, first store call at $firstWrite"
-}
-Write-Result -Ok ((& $squash $engineSource).Contains('Stage != JourneyRuntimeStage.Completed')) -Name 'gate premise: the engine counts a journey active while its Stage is not Completed' `
-    -Detail 'no "Stage != JourneyRuntimeStage.Completed" in JourneyRuntimeEngine.cs'
+# --- The server facts the refusal rests on live in the .NET suite, which CI runs (review S3): this script is not in
+# CI, and the literal pins it used to carry were weaker than they read (a substring that appeared three times, a
+# gate-order check that saw only two of the calls that could come first). Here only that they are still there.
+$premiseTests = Get-Content -LiteralPath (Join-Path $repoRoot 'tests/ControlServer.Tests/DispatchGatePremiseArchitectureTests.cs') -Raw
+$premiseNames = @('RiotOrdersAreCreatedAtExactlyOneCallSite', 'OnlyTheTwoCreatePathsReachTheCreateAttempt',
+    'EachCreatePathChecksTheGateBeforeAnythingElseAwaits', 'AClosedGateWritesNothing',
+    'JourneyStagesAreExactlyTheKnownSetWithCompletedTheOnlyTerminal', 'TheEngineReadsActiveJourneysAsStageNotCompleted',
+    'NeverSentIsDefinedAsTheGateScriptPortsIt')
+$premiseMissing = @($premiseNames | Where-Object { -not [regex]::IsMatch($premiseTests, "\[(?:Fact|Theory)\][^{]*?public void $_\(") })
+Write-Result -Ok ($premiseMissing.Count -eq 0) -Name 'gate premise: the server facts are pinned by DispatchGatePremiseArchitectureTests (CI), all seven tests present' `
+    -Detail "missing: $($premiseMissing -join ', ')"
 
 # --- Test-ParallelOrderIntentNeverSent, case by case against the C# above.
 function New-GateIntent {
@@ -2777,13 +2759,13 @@ Write-Result -Ok ($r.Thrown -and $r.Thrown.StartsWith('GATE_CLOSE_REFUSED_IN_FLI
     -Name 'gate change: close with a journey in flight -> refused before the service is stopped, file unchanged' -Detail "calls $($r.Calls) thrown $($r.Thrown)"
 $r = Invoke-GateCase -Direction Close -Text $openConfig -States @($idle, $busy) -StartTimes @($gateStarted)
 Write-Result -Ok ($r.Thrown -and $r.Thrown.StartsWith('AFTER_STOP GATE_CLOSE_REFUSED_IN_FLIGHT:') -and $r.Thrown.Contains('The configuration was not changed.') -and
-    $r.Thrown.Contains('started again') -and -not $r.Thrown.Contains($nothingSuffix) -and $r.Unchanged -and $r.Calls -ceq 'Status,StartTime,ReadState,Stop,ReadState,Start') `
+    $r.Thrown.Contains('started again') -and -not $r.Thrown.Contains($nothingSuffix) -and $r.Unchanged -and $r.Calls -ceq 'Status,StartTime,ReadState,Stop,ReadState,Start,Status') `
     -Name 'gate change: a journey that appears between the two reads -> refused after the stop, service started again on the unchanged file, and said so' -Detail "calls $($r.Calls) thrown $($r.Thrown)"
 $r = Invoke-GateCase -Direction Close -Text $openConfig -States @([ordered]@{ Error = 'unable to open database file' }) -StartTimes @($gateStarted)
 Write-Result -Ok ($r.Thrown -and $r.Thrown.StartsWith('GATE_STATE_UNREADABLE:') -and $r.Unchanged -and $r.Calls -notmatch 'Stop') `
     -Name 'gate change: unreadable journey state -> refused, nothing stopped or written' -Detail "calls $($r.Calls) thrown $($r.Thrown)"
 $r = Invoke-GateCase -Direction Close -Text $openConfig -States @($idle, [ordered]@{ Error = 'disk I/O error' }) -StartTimes @($gateStarted)
-Write-Result -Ok ($r.Thrown -and $r.Thrown.StartsWith('AFTER_STOP GATE_STATE_UNREADABLE:') -and $r.Unchanged -and $r.Calls.EndsWith('Stop,ReadState,Start')) `
+Write-Result -Ok ($r.Thrown -and $r.Thrown.StartsWith('AFTER_STOP GATE_STATE_UNREADABLE:') -and $r.Unchanged -and $r.Calls.EndsWith('Stop,ReadState,Start,Status')) `
     -Name 'gate change: state unreadable after the stop -> refused, service started again, file unchanged' -Detail "calls $($r.Calls) thrown $($r.Thrown)"
 $r = Invoke-GateCase -Direction Close -Text $openConfig -Status $null -States @($idle)
 Write-Result -Ok ($r.Thrown -and $r.Thrown.StartsWith('GATE_SERVICE_MISSING:') -and $r.Thrown.Contains($v2Service) -and $r.Unchanged) `
@@ -2804,7 +2786,7 @@ $r = Invoke-GateCase -Direction Close -Text $openConfig -States @($idle, $idle) 
 Write-Result -Ok ($r.Thrown -and $r.Thrown.StartsWith('GATE_RESTART_UNVERIFIED:') -and $r.Thrown.Contains("'StartPending'")) `
     -Name 'gate change: a service that is not Running after the start -> GATE_RESTART_UNVERIFIED' -Detail "thrown $($r.Thrown)"
 $r = Invoke-GateCase -Direction Close -Text $openConfig -States @($idle, $idle) -StartTimes @($gateStarted) -Writer { param($Path, $Text) [IO.File]::WriteAllText($Path, $Text, [Text.Encoding]::GetEncoding('GB18030')) }
-Write-Result -Ok ($r.Thrown -and $r.Thrown.StartsWith('GATE_WRITE_FAILED:') -and $r.Thrown.Contains('put back and checked') -and $r.Unchanged -and $r.Calls.EndsWith('Stop,ReadState,Start')) `
+Write-Result -Ok ($r.Thrown -and $r.Thrown.StartsWith('GATE_WRITE_FAILED:') -and $r.Thrown.Contains('put back and checked') -and $r.Unchanged -and $r.Calls.EndsWith('Stop,ReadState,Start,Status') -and $r.Thrown.Contains('started again and is Running')) `
     -Name 'gate change: a write that does not read back -> original bytes restored, service started again, gate as it was' -Detail "calls $($r.Calls) unchanged $($r.Unchanged) thrown $($r.Thrown)"
 $r = Invoke-GateCase -Direction Close -Text $closedConfig -States @($busy) -StartTimes @($gateStarted)
 Write-Result -Ok ($null -eq $r.Thrown -and -not $r.Result.Changed -and $r.Unchanged -and $r.Calls -notmatch 'ReadState|Stop|Start(?!Time)') `
@@ -2849,6 +2831,77 @@ foreach ($select in $selects) {
 }
 Write-Result -Ok ($selects.Count -eq 4 -and $schemaGaps.Count -eq 0) -Name 'gate reader: every column its SQL selects exists in the EF model snapshot (JourneyRuntimes, OrderIntents, RiotDispatchAuditEvents)' `
     -Detail "selects found: $($selects.Count) missing: $($schemaGaps -join ', ')"
+
+# --- Review N3: a process that started at the very instant of the write is not shown to have read it.
+$atWrite = { param($Path) [IO.File]::GetLastWriteTimeUtc($Path) }
+$r = Invoke-GateCase -Direction Close -Text $openConfig -States @($idle, $idle) -StartTimes @($gateStarted, $atWrite)
+Write-Result -Ok ($r.Thrown -and $r.Thrown.StartsWith('GATE_RESTART_UNVERIFIED:')) `
+    -Name 'gate change: a process start time equal to the write time -> GATE_RESTART_UNVERIFIED (strictly after is required)' -Detail "thrown $($r.Thrown)"
+
+# --- Review N4: a Stopped service is not touched, so its refusal is the plain one; a service started again after a
+# refusal is reported as it is, not as it was hoped to be.
+$r = Invoke-GateCase -Direction Close -Text $openConfig -Status 'Stopped' -States @($idle, $busy)
+Write-Result -Ok ($r.Thrown -and $r.Thrown.StartsWith('GATE_CLOSE_REFUSED_IN_FLIGHT:') -and $r.Thrown.EndsWith($nothingSuffix) -and $r.Unchanged -and $r.Calls -ceq 'Status,ReadState,ReadState') `
+    -Name 'gate change: a Stopped service refused on the second read -> no AFTER_STOP, "nothing was stopped or changed" holds, nothing started' -Detail "calls $($r.Calls) thrown $($r.Thrown)"
+$r = Invoke-GateCase -Direction Close -Text $openConfig -States @($idle, $busy) -StartTimes @($gateStarted) -StatusAfter 'Stopped'
+Write-Result -Ok ($r.Thrown -and $r.Thrown.StartsWith('AFTER_STOP ') -and $r.Thrown.Contains("asked to start again but is 'Stopped'") -and -not $r.Thrown.Contains('started again and is Running')) `
+    -Name 'gate change: a service that does not come back after a refusal after the stop -> the refusal says so' -Detail "thrown $($r.Thrown)"
+$r = Invoke-GateCase -Direction Close -Text $openConfig -States @($idle, $idle) -StartTimes @($gateStarted) -StatusAfter 'StartPending' -Writer { param($Path, $Text) }
+Write-Result -Ok ($r.Thrown -and $r.Thrown.StartsWith('GATE_WRITE_FAILED:') -and $r.Thrown.Contains("asked to start again but is 'StartPending'")) `
+    -Name 'gate change: a service that does not come back after a failed write -> the failure says so' -Detail "thrown $($r.Thrown)"
+
+# --- Review S5: the open refusal names the way out, in order, with the V2 service and not the MVP's.
+$sentRefusal = Get-ParallelDispatchGateRefusal -Direction Open -State $busy -ServiceName $v2Service -DatabasePath $gateDatabase
+$riotAt = $sentRefusal.IndexOf('in RIoT, confirm that no order is running'); $handAt = $sentRefusal.IndexOf('section 10 of remote-ops/factory-server/docs/wire-to-gate-parallel-cd.md')
+$restartAt = $sentRefusal.IndexOf("restart '$v2Service' only -- never the MVP's service")
+Write-Result -Ok ($riotAt -ge 0 -and $handAt -gt $riotAt -and $restartAt -gt $handAt -and $sentRefusal.Contains('RiotCreateDispatch.enabled to true')) `
+    -Name 'gate refusal: an open refused for a sent order gives the way out: RIoT first, then the hand edit (section 10), then the V2 restart only' -Detail "got: $sentRefusal"
+
+# --- Review S2: -State maps to the direction in one place, and the script takes it from there and reports what was done.
+Write-Result -Ok ((ConvertTo-ParallelGateDirection -State Closed) -ceq 'Close' -and (ConvertTo-ParallelGateDirection -State Open) -ceq 'Open') `
+    -Name 'gate: -State Closed is Close and -State Open is Open' -Detail "Closed -> $(ConvertTo-ParallelGateDirection -State Closed), Open -> $(ConvertTo-ParallelGateDirection -State Open)"
+$directionAssignments = @($gateAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -ieq '$direction' }, $true))
+Write-Result -Ok ($directionAssignments.Count -eq 1 -and $directionAssignments[0].Right.Extent.Text -ceq 'ConvertTo-ParallelGateDirection -State $State') `
+    -Name 'Set-ParallelDispatchGateLocal.ps1 takes its direction only from ConvertTo-ParallelGateDirection -State $State' `
+    -Detail ("assignments: " + (($directionAssignments | ForEach-Object { $_.Extent.Text }) -join ' | '))
+$passLine = @($gateAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.StringConstantExpressionAst] -or $n -is [System.Management.Automation.Language.ExpandableStringExpressionAst] }, $true) |
+        Where-Object { $_.Value -like 'PASS:*' })
+$passText = ($passLine | ForEach-Object { $_.Extent.Text }) -join ' '
+Write-Result -Ok ($passLine.Count -eq 1 -and $passText.Contains('$result.Previous') -and $passText.Contains('$result.Now') -and -not $passText.Contains('$State')) `
+    -Name 'Set-ParallelDispatchGateLocal.ps1 builds its PASS line from the result (Previous, Now), not from -State' -Detail "PASS line: $passText"
+$mismatch = $gateAst.Find({ param($n) $n -is [System.Management.Automation.Language.IfStatementAst] -and $n.Clauses[0].Item1.Extent.Text -ceq "`$result.Now -ne (`$State -eq 'Open')" }, $true)
+Write-Result -Ok ($null -ne $mismatch -and $mismatch.Clauses[0].Item2.Extent.Text.Contains('throw "GATE_STATE_MISMATCH')) `
+    -Name 'Set-ParallelDispatchGateLocal.ps1 throws GATE_STATE_MISMATCH when the gate is not what -State asked for' -Detail 'no such check'
+
+# --- Review S1: the dry run's branch. Its condition is exactly "not ShouldProcess", it returns, and nothing in it
+# changes the machine; and it comes before the change.
+$whatIf = @($gateAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.IfStatementAst] -and $n.Clauses[0].Item1.Extent.Text.Contains('ShouldProcess') }, $true))
+$whatIfOk = $false; $whatIfDetail = "branches mentioning ShouldProcess: $($whatIf.Count)"
+if ($whatIf.Count -eq 1) {
+    $condition = $whatIf[0].Clauses[0].Item1
+    $pipeline = $condition -is [System.Management.Automation.Language.PipelineAst] -and $condition.PipelineElements.Count -eq 1 ? $condition.PipelineElements[0].Expression : $null
+    $notShouldProcess = $pipeline -is [System.Management.Automation.Language.UnaryExpressionAst] -and $pipeline.TokenKind -eq 'Not' -and
+        $pipeline.Child -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and $pipeline.Child.Member.Extent.Text -ceq 'ShouldProcess' -and
+        $pipeline.Child.Expression.Extent.Text -ceq '$PSCmdlet'
+    $body = $whatIf[0].Clauses[0].Item2
+    $commands = @($body.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true) | ForEach-Object { $_.GetCommandName() })
+    $changing = @($commands | Where-Object { $_ -eq 'Invoke-ParallelDispatchGateChange' -or $_ -like 'Stop-*' -or $_ -like 'Start-*' -or $_ -like 'Restart-*' -or $_ -like 'Set-*' -or $_ -like 'Remove-*' -or $_ -like 'New-*' -or $null -eq $_ })
+    $returns = @($body.Statements | Where-Object { $_ -is [System.Management.Automation.Language.ReturnStatementAst] }).Count -eq 1
+    $changeCall = $gateAst.Find({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Invoke-ParallelDispatchGateChange' }, $true)
+    $before = $null -ne $changeCall -and $whatIf[0].Extent.EndOffset -lt $changeCall.Extent.StartOffset
+    $whatIfOk = $notShouldProcess -and $changing.Count -eq 0 -and $returns -and $before
+    $whatIfDetail = "condition '$($condition.Extent.Text)' notShouldProcess=$notShouldProcess changing=[$($changing -join ',')] returns=$returns beforeChange=$before"
+}
+Write-Result -Ok $whatIfOk -Name 'Set-ParallelDispatchGateLocal.ps1: the -WhatIf branch is exactly "-not $PSCmdlet.ShouldProcess(...)", returns, changes nothing, and comes before the change' `
+    -Detail $whatIfDetail
+
+# --- Review N1: the reader opens the store read-only. Without a database to write to there is nothing to observe
+# (it reads only, and a missing file is refused before opening), so the connection string itself is pinned.
+$readerConnections = @($readerAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and
+            $n.Expression.Extent.Text -ceq '[Microsoft.Data.Sqlite.SqliteConnection]' -and $n.Member.Extent.Text -ceq 'new' }, $true))
+$readerConnectionText = ($readerConnections | ForEach-Object { $_.Arguments[0].Extent.Text }) -join ' | '
+Write-Result -Ok ($readerConnections.Count -eq 1 -and $readerConnectionText -match '(^|;)Mode=ReadOnly(;|"$)' -and $readerConnectionText -notmatch 'ReadWrite') `
+    -Name 'gate reader: the one SqliteConnection it opens is Mode=ReadOnly' -Detail "connections: $readerConnectionText"
 
 # --- The reader, on a real SQLite file, when a ControlServer build is there to borrow the provider from.
 $hostBuild = @('Release', 'Debug') | ForEach-Object { Join-Path $repoRoot "src/ControlServer.Host/bin/$_/net8.0/win-x64"; Join-Path $repoRoot "src/ControlServer.Host/bin/$_/net8.0" } |

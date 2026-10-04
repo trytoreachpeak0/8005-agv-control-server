@@ -68,7 +68,8 @@ $null = Assert-ParallelInstanceDefinition -Definition $definition -AllowRiotCrea
 $layout = Get-ParallelInstanceLayout -Definition $definition
 $serviceName = $layout.ServiceName
 $configurationPath = "$($layout.InstallRoot)\appsettings.Production.json"
-$direction = $State -eq 'Closed' ? 'Close' : 'Open'
+# Pinned by Test-ParallelInstance.ps1: -State Closed is Close, -State Open is Open, and nowhere else is it decided.
+$direction = ConvertTo-ParallelGateDirection -State $State
 
 if (-not (Test-Path -LiteralPath $configurationPath -PathType Leaf)) {
     throw "No installed configuration at $configurationPath (service '$serviceName'). Nothing was changed."
@@ -92,6 +93,9 @@ $actions = @{
     ProcessStartTimeUtc = { Get-ParallelServiceProcessStartTimeUtc -ServiceName $serviceName }
 }
 
+# The dry run's promise -- nothing stopped, started or written -- rests on this branch. Test-ParallelInstance.ps1
+# pins its condition and that it calls nothing that changes the machine: a broken condition here would make
+# "-WhatIf -State Open" open the gate for real, and journeys waiting for it would create orders at once.
 if (-not $PSCmdlet.ShouldProcess($serviceName, "Set RiotCreateDispatch.enabled=$($State -eq 'Open' ? 'true' : 'false') and restart")) {
     # Read-only preview: what the checks say right now. Nothing is stopped or written.
     $journeyState = Get-ParallelJourneyDispatchState -DatabasePath $databasePath -AssemblyDirectory $layout.InstallRoot
@@ -112,9 +116,14 @@ try {
     $result = Invoke-ParallelDispatchGateChange -Direction $direction -ConfigurationPath $configurationPath `
         -ServiceName $serviceName -DatabasePath $databasePath -Actions $actions
     Write-Step $result.Message
+    # The verdict comes from what was done, not from what was asked.
+    if ($result.Now -ne ($State -eq 'Open')) {
+        throw "GATE_STATE_MISMATCH: -State $State was asked for, but RiotCreateDispatch.enabled is now $($result.Now) in $configurationPath."
+    }
 } finally {
     $mvpAfter = Get-MvpFingerprint
     Write-Step ("MVP service after:  " + (Format-MvpFingerprint $mvpAfter))
     Assert-MvpUntouched -Before $mvpBefore -After $mvpAfter
 }
-Write-Step "PASS: RiotCreateDispatch.enabled=$($State -eq 'Open' ? 'true' : 'false') on '$serviceName'. The MVP service was not involved."
+Write-Step ("PASS: RiotCreateDispatch.enabled on '$serviceName' was $($result.Previous ?? '(absent)'), is now $($result.Now)" +
+    $(if ($result.Changed) { ', changed by this run' } else { ', unchanged (already so)' }) + '. The MVP service was not involved.')

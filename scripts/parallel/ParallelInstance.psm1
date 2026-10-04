@@ -1802,6 +1802,21 @@ function Test-ParallelOrderIntentNeverSent {
     return $true
 }
 
+function ConvertTo-ParallelGateDirection {
+    <#
+        .SYNOPSIS
+            The gate change -State asks for: Closed is Close (RiotCreateDispatch.enabled false), Open is Open (true).
+
+        .DESCRIPTION
+            control-server#472 review S2. One place, pinned by Test-ParallelInstance.ps1: a swapped mapping makes
+            "-State Closed" a no-op on an open gate that still reports success. Pure.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory = $true)][ValidateSet('Closed', 'Open')][string] $State)
+    return $State -ceq 'Closed' ? 'Close' : 'Open'
+}
+
 function Get-ParallelDispatchGateRefusal {
     <#
         .SYNOPSIS
@@ -1878,7 +1893,12 @@ function Get-ParallelDispatchGateRefusal {
     if ($sent.Count -eq 0) { return $null }
     return ("GATE_OPEN_REFUSED_ORDER_SENT: in $DatabasePath, a journey of '$ServiceName' has an order that was or may have been sent " +
         "to RIoT, so a vehicle may be under way and restarting the service would stop its fault supervision: $($sent -join '; '). " +
-        'With the gate closed through this script no such order can exist; find out how it came about before opening.' + $nothing)
+        'With the gate closed through this script no such order can exist; it happens when the gate was closed by hand while ' +
+        'a journey was under way, and then this refusal does not lift by itself -- the journey never becomes Completed while the ' +
+        "gate stays closed. The way out, in this order: (1) in RIoT, confirm that no order is running on the vehicle(s) named " +
+        "above; (2) only then open the gate by hand as section 10 of remote-ops/factory-server/docs/wire-to-gate-parallel-cd.md " +
+        "says: set RiotCreateDispatch.enabled to true in THIS instance's appsettings.Production.json (the V2 file), keeping it " +
+        "UTF-8; (3) restart '$ServiceName' only -- never the MVP's service." + $nothing)
 }
 
 function Get-ConfigurationValue {
@@ -2054,4 +2074,5 @@ Export-ModuleMember -Function @(
     'Resolve-ParallelInstanceDatabasePath'
     'Test-ParallelOrderIntentNeverSent'
     'Get-ParallelDispatchGateRefusal'
+    'ConvertTo-ParallelGateDirection'
 )
