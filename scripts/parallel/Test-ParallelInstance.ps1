@@ -2650,7 +2650,8 @@ $gateRefusalCases = @(
     @{ Name = 'open, an order for the vehicle with an unreadable CreatedAt'; Direction = 'Open'; State = (New-GateState -Journeys @((New-GateJourney j1 -Pickup p1)) -Intents @((New-GateIntent p1), (New-GateIntent s2 -CreatedAt ''))); Expect = 'GATE_OPEN_REFUSED_ORDER_SENT' }
 )
 foreach ($case in $gateRefusalCases) {
-    $got = Get-ParallelDispatchGateRefusal -Direction $case.Direction -State $case.State -ServiceName $v2Service -DatabasePath $gateDatabase
+    # A throw is a failure of this case, not of the run: the refusal must answer, never break.
+    try { $got = Get-ParallelDispatchGateRefusal -Direction $case.Direction -State $case.State -ServiceName $v2Service -DatabasePath $gateDatabase } catch { $got = "THREW: $($_.Exception.Message)" }
     $named = $null -eq $got -or ($got.Contains($v2Service) -and $got.Contains($gateDatabase) -and $got.EndsWith(' Nothing was stopped or changed.'))
     Write-Result -Ok ($named -and ($null -eq $case.Expect ? ($null -eq $got) : ($null -ne $got -and $got.StartsWith("$($case.Expect):")))) `
         -Name "gate refusal: $($case.Name) -> $($case.Expect ?? 'allowed')" -Detail "got: $got"
