@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
@@ -162,6 +164,80 @@ public sealed class StationExclusivityFieldOpsTests : IAsyncDisposable
             0, await read.Set<AdministratorAuditRecordRow>().CountAsync(row => row.Action == StationExclusivityManualRelease.AuditAction, Token));
     }
 
+    /// <summary>
+    /// 服务端在跑却答得比探测超时慢（#459：负载下一次红在这里放行了写库）：超时不是「停着」，<c>SERVER_STATE_UNKNOWN</c>、退出码 1，
+    /// 一行不写、不写审计，提示里带着探测地址。
+    /// </summary>
+    [Fact]
+    public async Task AServerThatAnswersAfterTheProbeTimeoutIsNotTakenForStopped()
+    {
+        await SeedAsync();
+        string variable = "CONTROL_SERVER_TEST_" + Guid.NewGuid().ToString("N");
+        await using WebApplication app = await StartServerAsync(variable, answerDelay: TimeSpan.FromSeconds(8));
+        string address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
+
+        (int exit, JsonElement output) = await RunAsync(
+            null, [.. Arguments(), "--database", DatabasePath, "--probe-server", address]);
+        await app.StopAsync(Token);
+
+        await AssertStateUnknownAndNothingWrittenAsync(exit, output, address);
+    }
+
+    /// <summary>
+    /// 卡死的服务端进程仍占着端口，内核照样完成握手，却永远不会有 HTTP 应答（#459）：只 accept、从不应答的监听同样是
+    /// <c>SERVER_STATE_UNKNOWN</c>，不写库。
+    /// </summary>
+    [Fact]
+    public async Task APortThatAcceptsButNeverAnswersIsNotTakenForStopped()
+    {
+        await SeedAsync();
+        using TcpListener silent = new(IPAddress.Loopback, 0);
+        silent.Start();
+        List<TcpClient> accepted = [];
+        Task accepting = Task.Run(async () =>
+        {
+            try
+            {
+                while (true)
+                {
+                    accepted.Add(await silent.AcceptTcpClientAsync(Token));
+                }
+            }
+            catch (Exception stopped) when (stopped is OperationCanceledException or SocketException or ObjectDisposedException)
+            {
+            }
+        }, Token);
+        string address = $"http://127.0.0.1:{((IPEndPoint)silent.LocalEndpoint).Port}/";
+
+        (int exit, JsonElement output) = await RunAsync(
+            null, [.. Arguments(), "--database", DatabasePath, "--probe-server", address]);
+        silent.Stop();
+        await accepting;
+        accepted.ForEach(client => client.Dispose());
+
+        await AssertStateUnknownAndNothingWrittenAsync(exit, output, address);
+    }
+
+    /// <summary>
+    /// 失败即关不能修过头（#459）：一个刚释放、确实没人监听的端口，连接被主动拒绝，这是唯一的「停着」，照常对库执行。
+    /// </summary>
+    [Fact]
+    public async Task ARefusedConnectionIsTheOneAnswerThatLetsTheDatabaseWriteThrough()
+    {
+        await SeedAsync();
+        TcpListener freed = new(IPAddress.Loopback, 0);
+        freed.Start();
+        int port = ((IPEndPoint)freed.LocalEndpoint).Port;
+        freed.Stop();
+
+        (int exit, JsonElement output) = await RunAsync(
+            null, [.. Arguments(), "--database", DatabasePath, "--probe-server", $"http://127.0.0.1:{port}/"]);
+
+        Assert.Equal((0, "OK", "database"), (exit, output.GetProperty("outcome").GetString(), output.GetProperty("via").GetString()));
+        await using ControlServerDbContext read = Open();
+        Assert.Empty(await read.Set<StationExclusivityRow>().ToArrayAsync(Token));
+    }
+
     /// <summary>服务端没应答：<c>UNAVAILABLE</c>，退出码 1，提示改用 <c>--database</c>。</summary>
     [Fact]
     public async Task AnUnreachableServerIsUnavailable()
@@ -210,12 +286,22 @@ public sealed class StationExclusivityFieldOpsTests : IAsyncDisposable
             KeyA, "journey:a", At, Token);
     }
 
+    private async Task AssertStateUnknownAndNothingWrittenAsync(int exit, JsonElement output, string address)
+    {
+        Assert.Equal((1, "SERVER_STATE_UNKNOWN"), (exit, output.GetProperty("outcome").GetString()));
+        Assert.Contains(new Uri(address).ToString(), output.GetProperty("detail").GetString(), StringComparison.Ordinal);
+        await using ControlServerDbContext read = Open();
+        Assert.Single(await read.Set<StationExclusivityRow>().ToArrayAsync(Token));
+        Assert.Equal(
+            0, await read.Set<AdministratorAuditRecordRow>().CountAsync(row => row.Action == StationExclusivityManualRelease.AuditAction, Token));
+    }
+
     private ControlServerDbContext Open() => new(
         new DbContextOptionsBuilder<ControlServerDbContext>()
             .UseSqlite(ControlServerSqlite.ForDatabaseFile(DatabasePath, readOnly: false))
             .Options);
 
-    private async Task<WebApplication> StartServerAsync(string credentialVariable)
+    private async Task<WebApplication> StartServerAsync(string credentialVariable, TimeSpan? answerDelay = null)
     {
         WebApplicationBuilder builder = WebApplication.CreateBuilder();
         builder.WebHost.UseUrls("http://127.0.0.1:0");
@@ -234,6 +320,10 @@ public sealed class StationExclusivityFieldOpsTests : IAsyncDisposable
             options.CredentialEnvironmentVariable = credentialVariable;
         });
         WebApplication app = builder.Build();
+        if (answerDelay is { } delay)
+        {
+            app.Use(async (context, next) => { await Task.Delay(delay); await next(context); });
+        }
         app.MapStationExclusivityRelease();
         await app.StartAsync(Token);
         return app;
