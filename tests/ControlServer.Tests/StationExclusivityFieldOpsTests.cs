@@ -239,6 +239,40 @@ public sealed class StationExclusivityFieldOpsTests : IAsyncDisposable
     }
 
     /// <summary>
+    /// <c>--server</c> 那条路同样不走代理（#459 审查）：进程环境里挂着一个已经死掉的 <c>HTTP_PROXY</c>，服务端在跑，照常经 Host 放行。
+    /// </summary>
+    [Fact]
+    public async Task ADeadProxyInTheEnvironmentDoesNotStopTheServerRoute()
+    {
+        await SeedAsync();
+        string variable = "CONTROL_SERVER_TEST_" + Guid.NewGuid().ToString("N");
+        Environment.SetEnvironmentVariable(variable, "fieldops-credential");
+        try
+        {
+            await using WebApplication app = await StartServerAsync(variable);
+            string address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
+            string deadProxy = $"http://127.0.0.1:{FreedPort()}/";
+
+            (int exit, JsonElement output) = await RunWithEnvironmentAsync(
+                [(variable, "fieldops-credential"), ("HTTP_PROXY", deadProxy), ("http_proxy", deadProxy), ("ALL_PROXY", deadProxy),
+                    ("NO_PROXY", null), ("no_proxy", null)],
+                [.. Arguments(), "--server", address, "--credential-env", variable]);
+            await app.StopAsync(Token);
+
+            Assert.Equal(
+                (0, "OK", "server"),
+                (exit, output.GetProperty("outcome").GetString(), output.GetProperty("via").GetString()));
+            Assert.Equal(200, output.GetProperty("httpStatus").GetInt32());
+            await using ControlServerDbContext read = Open();
+            Assert.Empty(await read.Set<StationExclusivityRow>().ToArrayAsync(Token));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(variable, null);
+        }
+    }
+
+    /// <summary>
     /// 探测不走代理（#459 审查 S1）：进程环境里挂着一个已经死掉的 <c>HTTP_PROXY</c>，服务端却在跑。走代理时「代理拒绝连接」被当成
     /// 「服务端停着」放行写库；直连才探到服务端本身，<c>SERVER_RUNNING</c>。
     /// </summary>

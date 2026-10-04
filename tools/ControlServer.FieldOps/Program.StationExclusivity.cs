@@ -136,7 +136,12 @@ internal static partial class Program
         }
 
         StationExclusivityManualReleaseRequest request = StationReleaseRequest(options, mapId, stationId);
-        using HttpClient client = new() { BaseAddress = server, Timeout = TimeSpan.FromSeconds(30) };
+        // Same as the probe (#459 review): the server is on this machine or the plant LAN, never behind a proxy.
+        using HttpClient client = new(new SocketsHttpHandler { UseProxy = false })
+        {
+            BaseAddress = server,
+            Timeout = TimeSpan.FromSeconds(30)
+        };
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", credential);
         HttpResponseMessage response;
         try
