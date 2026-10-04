@@ -118,6 +118,7 @@ $G3RunKind = 'STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT'
 $runnerProvenance = Get-G3RunnerProvenance -ScriptRoot $PSScriptRoot -Inputs ([ordered]@{
         ControlServerRepository = @{ Given = $ControlServerRepository; Default = (Split-Path -Parent $PSScriptRoot) }
     })
+Write-G3RunnerProvenance -Provenance $runnerProvenance
 $runnerCommit = $runnerProvenance.runnerCommit
 if ($null -eq $runnerCommit) { throw "Unable to read the runner commit: $($runnerProvenance.runnerSource)" }
 $runnerWorktreeClean = $runnerProvenance.runnerWorktreeClean

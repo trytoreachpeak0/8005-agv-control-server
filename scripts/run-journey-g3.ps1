@@ -340,6 +340,7 @@ $runnerProvenance = Get-G3RunnerProvenance -ScriptRoot $PSScriptRoot -Inputs ([o
         CommitBindingFunctionSource = @{ Given = $CommitBindingFunctionSource; Default = (Join-Path $PSScriptRoot 'run-staged-g3-restart.ps1') }
         ControlServerRepository = @{ Given = $ControlServerRepository; Default = (Split-Path -Parent $PSScriptRoot) }
     })
+Write-G3RunnerProvenance -Provenance $runnerProvenance
 $runnerCommit = $runnerProvenance.runnerCommit
 if ($null -eq $runnerCommit) { throw "Unable to read the runner commit: $($runnerProvenance.runnerSource)" }
 $runnerWorktreeClean = $runnerProvenance.runnerWorktreeClean

@@ -224,6 +224,7 @@ PASS run-staged-g3.ps1's $commitsRecord carries simulatorCommitSource
 PASS run-staged-g3.ps1's $commitsRecord carries protocolCommitSource
 PASS run-staged-g3.ps1's $commitsRecord carries runnerSource = $runnerProvenance.runnerSource
 PASS run-staged-g3.ps1 assigns $runnerProvenance once, at top level, from Get-G3RunnerProvenance -ScriptRoot $PSScriptRoot
+PASS run-staged-g3.ps1 prints the provenance in the statement right after measuring it
 PASS run-staged-g3.ps1 measures its provenance before the first statement that touches $StageRoot or $EvidenceRoot
 PASS run-staged-g3.ps1: -ControlServerRepository is an -Inputs entry of Get-G3RunnerProvenance, Given $ControlServerRepository, Default its param default
 PASS run-staged-g3.ps1: -Inputs names only those parameters
@@ -236,6 +237,7 @@ PASS run-staged-g3-restart.ps1's $commitsRecord carries simulatorCommitSource
 PASS run-staged-g3-restart.ps1's $commitsRecord carries protocolCommitSource
 PASS run-staged-g3-restart.ps1's $commitsRecord carries runnerSource = $runnerProvenance.runnerSource
 PASS run-staged-g3-restart.ps1 assigns $runnerProvenance once, at top level, from Get-G3RunnerProvenance -ScriptRoot $PSScriptRoot
+PASS run-staged-g3-restart.ps1 prints the provenance in the statement right after measuring it
 PASS run-staged-g3-restart.ps1 measures its provenance before the first statement that touches $StageRoot or $EvidenceRoot
 PASS run-staged-g3-restart.ps1: -ControlServerRepository is an -Inputs entry of Get-G3RunnerProvenance, Given $ControlServerRepository, Default its param default
 PASS run-staged-g3-restart.ps1: -Inputs names only those parameters
@@ -245,6 +247,7 @@ PASS run-demand-bearing-g3-vectors.ps1 assigns $commitsRecord once, at top level
 PASS run-demand-bearing-g3-vectors.ps1's $commitsRecord carries controlServerCommitSource
 PASS run-demand-bearing-g3-vectors.ps1's $commitsRecord carries runnerSource = $runnerProvenance.runnerSource
 PASS run-demand-bearing-g3-vectors.ps1 assigns $runnerProvenance once, at top level, from Get-G3RunnerProvenance -ScriptRoot $PSScriptRoot
+PASS run-demand-bearing-g3-vectors.ps1 prints the provenance in the statement right after measuring it
 PASS run-demand-bearing-g3-vectors.ps1 measures its provenance before the first statement that touches $StageRoot or $EvidenceRoot
 PASS run-demand-bearing-g3-vectors.ps1: -ControlServerRepository is an -Inputs entry of Get-G3RunnerProvenance, Given $ControlServerRepository, Default its param default
 PASS run-demand-bearing-g3-vectors.ps1: -SharedRunnerSource is an -Inputs entry of Get-G3RunnerProvenance, Given $SharedRunnerSource, Default its param default
@@ -257,6 +260,7 @@ PASS run-journey-g3.ps1's $commitsRecord carries controlServerCommitSource
 PASS run-journey-g3.ps1's $commitsRecord carries onboardCommitSource
 PASS run-journey-g3.ps1's $commitsRecord carries runnerSource = $runnerProvenance.runnerSource
 PASS run-journey-g3.ps1 assigns $runnerProvenance once, at top level, from Get-G3RunnerProvenance -ScriptRoot $PSScriptRoot
+PASS run-journey-g3.ps1 prints the provenance in the statement right after measuring it
 PASS run-journey-g3.ps1 measures its provenance before the first statement that touches $StageRoot or $EvidenceRoot
 PASS run-journey-g3.ps1: -ControlServerRepository is an -Inputs entry of Get-G3RunnerProvenance, Given $ControlServerRepository, Default its param default
 PASS run-journey-g3.ps1: -SharedRunnerSource is an -Inputs entry of Get-G3RunnerProvenance, Given $SharedRunnerSource, Default its param default
@@ -337,7 +341,12 @@ PASS provenance, a locally edited default behind --assume-unchanged (premise: gi
 PASS provenance, a locally edited default behind --assume-unchanged: RUNNER_WORKTREE_DIRTY, withheld
 PASS provenance, a locally edited default behind --skip-worktree (premise: git status is empty)
 PASS provenance, a locally edited default behind --skip-worktree: RUNNER_WORKTREE_DIRTY, withheld
-PASS provenance, an untracked file in the runner repository: RUNNER_WORKTREE_DIRTY, withheld
+PASS provenance, an untracked file outside evidence/: RUNNER_WORKTREE_DIRTY naming it, withheld
+PASS provenance printed when not COMMITTED_RUNNER: the warning, the reason and the dirty path
+PASS provenance printed when COMMITTED_RUNNER: one line, no warning
+PASS provenance, an earlier run's untracked evidence under evidence/: COMMITTED_RUNNER, a formal pass
+PASS provenance, a tracked file under evidence/ changed: RUNNER_WORKTREE_DIRTY naming it, withheld
+PASS provenance, an untracked file beside evidence/ (evidence-copy.ps1): RUNNER_WORKTREE_DIRTY
 PASS provenance, -SharedRunnerSource at a copy keeping the defaults: RUNNER_INPUT_OVERRIDE: SharedRunnerSource, withheld
 PASS provenance, -SharedRunnerSource at a copy with another default: RUNNER_INPUT_OVERRIDE: SharedRunnerSource, withheld
 PASS provenance, -SharedRunnerSource at a copy with another default: that commit is SELF_CHECK_OVERRIDE against HEAD
@@ -345,5 +354,6 @@ PASS provenance, the default paths spelled relative and with a trailing separato
 PASS provenance, an empty -ControlServerRepository: RUNNER_INPUT_OVERRIDE
 PASS provenance, dirty and through a copy: both reasons
 PASS provenance, HEAD without run-staged-g3.ps1: RUNNER_PROVENANCE_UNKNOWN, no binding, withheld
+PASS provenance, an unborn HEAD: RUNNER_PROVENANCE_UNKNOWN on one line, withheld
 PASS provenance, outside any repository: RUNNER_PROVENANCE_UNKNOWN, no commit, withheld
 G3EvidenceHonesty self-check: every check as expected.

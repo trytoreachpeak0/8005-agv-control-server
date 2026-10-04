@@ -269,8 +269,13 @@ Load-bearing details:
   binding a run is compared with is the one committed at the runner repository's `HEAD`, not the file on
   disk, and a formal pass also needs `runnerSource: COMMITTED_RUNNER`: the runner's own repository clean
   (assume-unchanged and skip-worktree count as dirty) and every path parameter (`-SharedRunnerSource`,
-  `-CommitBindingFunctionSource`, `-ControlServerRepository`) at its default. Anything else is recorded, not
-  refused, and withholds the pass. So an exit ticket edits the defaults, **commits**, then runs. The binding moves only in an exit ticket's first step. The generator
+  `-CommitBindingFunctionSource`, `-ControlServerRepository`) at its default. The one exemption is an
+  untracked file under `evidence/`: an exit runs several runners in a row and each earlier run's evidence
+  lands there untracked, no runner executes anything under `evidence/`, and a runner copy put there and
+  pointed at is `RUNNER_INPUT_OVERRIDE` anyway. A change to a tracked file under `evidence/`, or an untracked
+  file anywhere else, is still dirty. Each runner prints its runner source as it starts, loudly when it is not
+  `COMMITTED_RUNNER`. Anything else is recorded, not refused, and withholds the pass. So an exit ticket edits
+  the defaults, **commits**, then runs. The binding moves only in an exit ticket's first step. The generator
   is not an L2 criterion and is deliberately absent from `l2.yml`.
 - **Check the commit bindings before a G3 run, and move them.** They are literal
   defaults, so a run inherits whatever the last run froze and silently gates old

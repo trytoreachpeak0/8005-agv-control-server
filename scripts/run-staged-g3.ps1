@@ -227,6 +227,7 @@ Invoke-Expression $bindingReader[0].Extent.Text
 $runnerProvenance = Get-G3RunnerProvenance -ScriptRoot $PSScriptRoot -Inputs ([ordered]@{
         ControlServerRepository = @{ Given = $ControlServerRepository; Default = (Split-Path -Parent $PSScriptRoot) }
     })
+Write-G3RunnerProvenance -Provenance $runnerProvenance
 $commitSources = Get-G3CommitSources -Binding ($runnerProvenance.bindingAtHead ?? (Get-SharedCommitBinding -Path (Join-Path $PSScriptRoot 'run-staged-g3.ps1'))) -Actual ([ordered]@{
         ControlServerCommit = $ControlServerCommit
         OnboardCommit = $OnboardCommit

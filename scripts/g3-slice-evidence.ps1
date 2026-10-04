@@ -743,7 +743,8 @@ function Get-G3CommitSources {
 #     compares the commits it actually uses with: an edited default, or a copy with other defaults, is an override;
 #   - runnerSource, one of the reasons below or COMMITTED_RUNNER, which Get-G3FormalSliceWithheldReason grades:
 #       RUNNER_WORKTREE_DIRTY      the runner's repository has changes, untracked files, or files flagged
-#                                  assume-unchanged / skip-worktree (which git status would not show);
+#                                  assume-unchanged / skip-worktree (which git status would not show). Untracked
+#                                  files under evidence/ alone are exempt: they are earlier runs' output;
 #       RUNNER_INPUT_OVERRIDE      a path parameter that decides what the run reads -- the shared runner it takes
 #                                  the binding, the harness and its error report from, the file it takes the
 #                                  binding reader from, the repository it reads the slice index and its own
@@ -824,23 +825,40 @@ function Get-G3RunnerProvenance {
     $commit = $null
     $clean = $null
     $binding = $null
+    $dirtyPaths = @()
     try {
         $repository = [IO.Path]::GetFullPath((Invoke-G3Git -Repository $ScriptRoot -Arguments 'rev-parse', '--show-toplevel').Trim())
         $commit = (Invoke-G3Git -Repository $repository -Arguments 'rev-parse', 'HEAD').Trim()
         if ($commit -cnotmatch '^[0-9a-f]{40}$') { throw "HEAD is not a full SHA-1: $commit" }
-        $status = @((Invoke-G3Git -Repository $repository -Arguments 'status', '--porcelain', '--untracked-files=all') -split "`n" |
+        # -z: one NUL-terminated "XY path" entry per path, unquoted, relative to the top level; a rename or copy is
+        # followed by its source path as an entry of its own.
+        $entries = @((Invoke-G3Git -Repository $repository -Arguments 'status', '--porcelain=v1', '-z', '--untracked-files=all') -split "`0" |
                 Where-Object { $_ -ne '' })
+        $status = [System.Collections.Generic.List[string]]::new()
+        for ($i = 0; $i -lt $entries.Count; $i++) {
+            $entry = $entries[$i]
+            if ($entry.Length -ge 2 -and $entry.Substring(0, 2) -match '[RC]') { $i++ }
+            # The one exemption (review M1 of PR #470): an untracked file under evidence/. An exit runs several runners
+            # in a row, and each run's evidence lands there untracked, so without it every run after the first was
+            # dirty -- four of the seven formal runs of the last two exits. No runner executes anything under
+            # evidence/, and a runner copy put there and pointed at is RUNNER_INPUT_OVERRIDE anyway. A change to a
+            # tracked file under evidence/, and an untracked file anywhere else, stay dirty.
+            if ($entry.StartsWith('?? evidence/', [StringComparison]::Ordinal)) { continue }
+            $status.Add($entry)
+        }
         # ls-files -v tags an assume-unchanged file in lowercase and a skip-worktree file as S: status skips both.
         $hidden = @((Invoke-G3Git -Repository $repository -Arguments 'ls-files', '-v') -split "`n" |
                 Where-Object { $_ -cmatch '^([a-z]|S) ' })
         $clean = $status.Count -eq 0 -and $hidden.Count -eq 0
+        $dirtyPaths = @(@($status) + @($hidden) | Select-Object -First 10)
         $relative = [IO.Path]::GetRelativePath($repository, (Join-Path $ScriptRoot 'run-staged-g3.ps1')).Replace('\', '/')
         $binding = ConvertFrom-G3CommitBindingText -Text (Invoke-G3Git -Repository $repository -Arguments 'cat-file', 'blob', "HEAD:$relative")
     } catch {
         $clean = $null
         $binding = $null
-        # '; ' joins the reasons; keep the message from splitting one.
-        $reasons.Add("RUNNER_PROVENANCE_UNKNOWN: $($_.Exception.Message.Replace(';', ',').Trim())")
+        # '; ' joins the reasons; keep the message from splitting one, and on one line (git's own messages, such as
+        # an unborn HEAD's, run to several).
+        $reasons.Add("RUNNER_PROVENANCE_UNKNOWN: $(($_.Exception.Message.Replace(';', ',') -replace '\s*\r?\n\s*', ' ').Trim())")
     }
     if ($clean -eq $false) { $reasons.Insert(0, 'RUNNER_WORKTREE_DIRTY') }
 
@@ -862,7 +880,26 @@ function Get-G3RunnerProvenance {
         runnerWorktreeClean = $clean
         bindingAtHead = $binding
         runnerSource = if ($reasons.Count -eq 0) { 'COMMITTED_RUNNER' } else { $reasons -join '; ' }
+        # The first ten of what made it dirty, for Write-G3RunnerProvenance; not part of the record.
+        runnerDirtyPaths = $dirtyPaths
     }
+}
+
+# Printed by each runner directly after Get-G3RunnerProvenance (review S2 of PR #470): a journey run takes some
+# 25 minutes, and an operator who learns only from the gate results that it was never going to count has lost
+# them. One line when the run can be a formal pass, a loud block when it cannot.
+function Write-G3RunnerProvenance {
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Provenance)
+
+    if ($Provenance.runnerSource -ceq 'COMMITTED_RUNNER') {
+        Write-Host "G3 runner source: COMMITTED_RUNNER ($($Provenance.runnerCommit))"
+        return
+    }
+    Write-Host ('=' * 100) -ForegroundColor Yellow
+    Write-Host 'G3 RUNNER SOURCE IS NOT COMMITTED_RUNNER: this run grades no slice as a formal pass.' -ForegroundColor Yellow
+    foreach ($reason in @("$($Provenance.runnerSource)" -split '; ')) { Write-Host "  $reason" -ForegroundColor Yellow }
+    foreach ($path in @($Provenance.runnerDirtyPaths)) { Write-Host "    $path" -ForegroundColor Yellow }
+    Write-Host ('=' * 100) -ForegroundColor Yellow
 }
 
 # The one place a slice's formalSlicePass is decided, for New-G3Classification and Write-G3GateResult alike:

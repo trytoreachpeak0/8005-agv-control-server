@@ -1,3 +1,4 @@
 # FAIL lines and the verdict only; the PASS lines are omitted.
-FAIL run-staged-g3-restart.ps1 measures its provenance before the first statement that touches $StageRoot or $EvidenceRoot -- provenance at line 133, first \/\C:\Users\szy\AppData\Local\Temp\g3-evidence-honesty-a44647ddc97044e2a984093cf6e7619b\3cc4462ff44240718eb745f8ffdd5079 statement at line 126
-G3EvidenceHonesty self-check: 1 check(s) came out the other way.
+FAIL run-staged-g3-restart.ps1 prints the provenance in the statement right after measuring it -- it is: $EvidenceRoot = (Resolve-Path -LiteralPath $EvidenceRoot).Path
+FAIL run-staged-g3-restart.ps1 measures its provenance before the first statement that touches $StageRoot or $EvidenceRoot -- provenance at line 134, first \/\C:\Users\szy\AppData\Local\Temp\g3-evidence-honesty-20aad9d606d74924b52d63446606fa5c\bd8645d2a3814cfead6d6657ea058606 statement at line 127
+G3EvidenceHonesty self-check: 2 check(s) came out the other way.

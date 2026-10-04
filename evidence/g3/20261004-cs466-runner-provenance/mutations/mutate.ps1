@@ -49,7 +49,7 @@ $mutations = @(
        From = '                $reasons.Add("UNRECOGNISED_RUNNER_SOURCE: $token") }'
        To = '                }' },
     @{ Id = 'M13-unknown-provenance-passes'; File = 'g3-slice-evidence.ps1'
-       From = '        $reasons.Add("RUNNER_PROVENANCE_UNKNOWN: $($_.Exception.Message.Replace('';'', '','').Trim())")'
+       From = '        $reasons.Add("RUNNER_PROVENANCE_UNKNOWN: $(($_.Exception.Message.Replace('';'', '','') -replace ''\s*\r?\n\s*'', '' '').Trim())")'
        To = '        $null = 0' },
     # Wiring.
     @{ Id = 'M14-staged-record-runner-source-constant'; File = 'run-staged-g3.ps1'
@@ -61,7 +61,25 @@ $mutations = @(
     @{ Id = 'M16-restart-measures-after-evidence-root-is-created'; File = 'run-staged-g3-restart.ps1'
        From = $provenanceStatement
        To = $provenanceStatement
-       Anchor = "New-Item -ItemType Directory -Path `$StageRoot, `$EvidenceRoot | Out-Null`n" }
+       Anchor = "New-Item -ItemType Directory -Path `$StageRoot, `$EvidenceRoot | Out-Null`n" },
+    # PR #470 review M1: the evidence/ exemption, widened either way, must go red.
+    @{ Id = 'M17-exemption-covers-every-untracked-file'; File = 'g3-slice-evidence.ps1'
+       From = "if (`$entry.StartsWith('?? evidence/', [StringComparison]::Ordinal)) { continue }"
+       To = "if (`$entry.StartsWith('?? ', [StringComparison]::Ordinal)) { continue }" },
+    @{ Id = 'M18-exemption-covers-tracked-changes-under-evidence'; File = 'g3-slice-evidence.ps1'
+       From = "if (`$entry.StartsWith('?? evidence/', [StringComparison]::Ordinal)) { continue }"
+       To = "if (`$entry.Substring(3).StartsWith('evidence/', [StringComparison]::Ordinal)) { continue }" },
+    # PR #470 review S2: printed at the start, and loudly when it matters.
+    @{ Id = 'M19-journey-does-not-print-provenance'; File = 'run-journey-g3.ps1'
+       From = "Write-G3RunnerProvenance -Provenance `$runnerProvenance`n"
+       To = '' },
+    @{ Id = 'M20-printout-quiet-when-not-committed-runner'; File = 'g3-slice-evidence.ps1'
+       From = "    if (`$Provenance.runnerSource -ceq 'COMMITTED_RUNNER') {"
+       To = "    if (`$true) {" },
+    # PR #470 review note: git's two-line message kept as two lines.
+    @{ Id = 'M21-unknown-reason-keeps-newlines'; File = 'g3-slice-evidence.ps1'
+       From = "-replace '\s*\r?\n\s*', ' '"
+       To = "-replace 'NEVER-MATCHES', ' '" }
 )
 
 foreach ($m in $mutations) {

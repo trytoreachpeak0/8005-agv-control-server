@@ -55,9 +55,13 @@
        the record's runnerSource is the provenance's. The four runners' source statements are run with HEAD
        binding another commit than the one on disk (or off -SharedRunnerSource): that commit is
        SELF_CHECK_OVERRIDE. Then Get-G3RunnerProvenance against a throwaway repository of the runner scripts:
-       committed and clean passes; a locally edited default, the same edit behind assume-unchanged and behind
-       skip-worktree, an untracked file, -SharedRunnerSource at a copy (defaults kept, or one changed), HEAD
-       without the binding, and no repository at all are each withheld.
+       committed and clean passes, and so does an earlier run's untracked evidence under evidence/ (review M1 of
+       PR #470); a locally edited default, the same edit behind assume-unchanged and behind skip-worktree, an
+       untracked file outside evidence/ (beside it included), a changed tracked file under evidence/,
+       -SharedRunnerSource at a copy (defaults kept, or one changed), HEAD without the binding, an unborn HEAD
+       (its reason on one line) and no repository at all are each withheld. Each runner prints the provenance in
+       the statement right after measuring it, loudly with reason and paths when it is not COMMITTED_RUNNER
+       (review S2).
 
     The rows are inlined rather than read from evidence/ so that a clone without the evidence tree can run
     this.
@@ -251,6 +255,10 @@ foreach ($file in $runnerSources.Keys) {
     Check "$file assigns `$runnerProvenance once, at top level, from Get-G3RunnerProvenance -ScriptRoot `$PSScriptRoot" `
         ($provenance.Count -eq 1 -and $provenance[0].Right.Extent.Text -match '^Get-G3RunnerProvenance\s+-ScriptRoot\s+\$PSScriptRoot\s') `
         "$($provenance.Count) found: $(${provenance}?[0]?.Right.Extent.Text)"
+    # Review S2 of PR #470: the operator sees the source as the run starts, not after it.
+    $printed = if ($provenance.Count -eq 1) { $topLevel[[array]::IndexOf($topLevel, $provenance[0]) + 1] } else { $null }
+    Check "$file prints the provenance in the statement right after measuring it" `
+        ("$(${printed}?.Extent.Text)" -ceq 'Write-G3RunnerProvenance -Provenance $runnerProvenance') "it is: $(${printed}?.Extent.Text)"
     $firstWrite = @($topLevel | Where-Object { $_.Extent.Text -match '\$(EvidenceRoot|StageRoot)\b' }) | Select-Object -First 1
     Check "$file measures its provenance before the first statement that touches `$StageRoot or `$EvidenceRoot" `
         ($provenance.Count -eq 1 -and $null -ne $firstWrite -and
@@ -547,10 +555,12 @@ function Get-Graded($Provenance) {
         [ordered]@{ controlServerCommitSource = 'SHARED_BINDING'; runnerSource = $Provenance.runnerSource })
 }
 try {
-    New-Item -ItemType Directory -Path $runnerScripts | Out-Null
+    New-Item -ItemType Directory -Path $runnerScripts, (Join-Path $runnerRepository 'evidence\g3') | Out-Null
     foreach ($name in 'run-staged-g3.ps1', 'run-staged-g3-restart.ps1', 'g3-slice-evidence.ps1') {
         Copy-Item -LiteralPath (Join-Path $ScriptRoot $name) -Destination (Join-Path $runnerScripts $name)
     }
+    $trackedEvidence = Join-Path $runnerRepository 'evidence\g3\SUMMARY.md'
+    Set-Content -LiteralPath $trackedEvidence -Value 'committed evidence'
     & git -C $runnerRepository init --quiet 2>&1 | Out-Null
     & git -C $runnerRepository add --all 2>&1 | Out-Null
     & git -C $runnerRepository @gitAs commit --quiet -m runner 2>&1 | Out-Null
@@ -597,9 +607,41 @@ try {
     $stray = Join-Path $runnerScripts 'stray.txt'
     Set-Content -LiteralPath $stray -Value 'x'
     $untracked = Get-G3RunnerProvenance -ScriptRoot $runnerScripts -Inputs (& $defaultInputs)
-    Check 'provenance, an untracked file in the runner repository: RUNNER_WORKTREE_DIRTY, withheld' `
-        ($untracked.runnerSource -ceq 'RUNNER_WORKTREE_DIRTY' -and (Get-Graded $untracked).formalSlicePass -eq $false) "$($untracked | ConvertTo-Json -Compress)"
+    Check 'provenance, an untracked file outside evidence/: RUNNER_WORKTREE_DIRTY naming it, withheld' `
+        ($untracked.runnerSource -ceq 'RUNNER_WORKTREE_DIRTY' -and (Get-Graded $untracked).formalSlicePass -eq $false -and
+         @($untracked.runnerDirtyPaths) -ccontains '?? scripts/stray.txt') "$($untracked | ConvertTo-Json -Compress)"
+    # Review S2: printed loudly at the start, with the reason and the path.
+    $notice = (Write-G3RunnerProvenance -Provenance $untracked 6>&1 | Out-String)
+    Check 'provenance printed when not COMMITTED_RUNNER: the warning, the reason and the dirty path' `
+        ($notice -like '*NOT COMMITTED_RUNNER*' -and $notice -like '*RUNNER_WORKTREE_DIRTY*' -and $notice -like '*scripts/stray.txt*') $notice
     Remove-Item -LiteralPath $stray
+    $quiet = (Write-G3RunnerProvenance -Provenance $clean 6>&1 | Out-String)
+    Check 'provenance printed when COMMITTED_RUNNER: one line, no warning' `
+        ($quiet -like '*COMMITTED_RUNNER*' -and $quiet -notlike '*NOT COMMITTED_RUNNER*' -and @($quiet.Trim() -split "`n").Count -eq 1) $quiet
+
+    # Review M1 of PR #470: an earlier run's evidence, untracked under evidence/, does not make the next run dirty.
+    # Nested, as a runner writes it. A change to evidence/ that git tracks still does.
+    $earlierRun = Join-Path $runnerRepository 'evidence\g3\earlier-run\process-restart'
+    New-Item -ItemType Directory -Path $earlierRun | Out-Null
+    Set-Content -LiteralPath (Join-Path $earlierRun 'run-result.json') -Value '{}'
+    $afterEarlierRun = Get-G3RunnerProvenance -ScriptRoot $runnerScripts -Inputs (& $defaultInputs)
+    Check 'provenance, an earlier run''s untracked evidence under evidence/: COMMITTED_RUNNER, a formal pass' `
+        ($afterEarlierRun.runnerSource -ceq 'COMMITTED_RUNNER' -and $afterEarlierRun.runnerWorktreeClean -eq $true -and
+         (Get-Graded $afterEarlierRun).formalSlicePass -eq $true) "$($afterEarlierRun | ConvertTo-Json -Compress)"
+    Set-Content -LiteralPath $trackedEvidence -Value 'edited evidence'
+    $editedEvidence = Get-G3RunnerProvenance -ScriptRoot $runnerScripts -Inputs (& $defaultInputs)
+    Check 'provenance, a tracked file under evidence/ changed: RUNNER_WORKTREE_DIRTY naming it, withheld' `
+        ($editedEvidence.runnerSource -ceq 'RUNNER_WORKTREE_DIRTY' -and (Get-Graded $editedEvidence).formalSlicePass -eq $false -and
+         @($editedEvidence.runnerDirtyPaths | Where-Object { $_ -like '*evidence/g3/SUMMARY.md' }).Count -eq 1) "$($editedEvidence | ConvertTo-Json -Compress)"
+    Set-Content -LiteralPath $trackedEvidence -Value 'committed evidence'
+    # A file named like evidence/ but beside it is not under it.
+    $lookalike = Join-Path $runnerRepository 'evidence-copy.ps1'
+    Set-Content -LiteralPath $lookalike -Value 'x'
+    $besideEvidence = Get-G3RunnerProvenance -ScriptRoot $runnerScripts -Inputs (& $defaultInputs)
+    Check 'provenance, an untracked file beside evidence/ (evidence-copy.ps1): RUNNER_WORKTREE_DIRTY' `
+        ($besideEvidence.runnerSource -ceq 'RUNNER_WORKTREE_DIRTY') "$($besideEvidence | ConvertTo-Json -Compress)"
+    Remove-Item -LiteralPath $lookalike
+    Remove-Item -LiteralPath (Join-Path $runnerRepository 'evidence\g3\earlier-run') -Recurse -Force
 
     # The ticket's second finding: -SharedRunnerSource pointing at a copy. One with the defaults left alone and
     # another harness -- the binding comparison cannot see that one -- and one with another default.
@@ -655,6 +697,15 @@ try {
     Check 'provenance, HEAD without run-staged-g3.ps1: RUNNER_PROVENANCE_UNKNOWN, no binding, withheld' `
         ($noBinding.runnerSource -clike 'RUNNER_PROVENANCE_UNKNOWN: *' -and $null -eq $noBinding.bindingAtHead -and
          (Get-Graded $noBinding).formalSlicePass -eq $false) "$($noBinding | ConvertTo-Json -Compress)"
+
+    # A repository with no commit yet (unborn HEAD): unknown, and the reason on one line although git's runs to two.
+    $unborn = Join-Path $provenanceWork 'unborn'
+    New-Item -ItemType Directory -Path (Join-Path $unborn 'scripts') | Out-Null
+    & git -C $unborn init --quiet 2>&1 | Out-Null
+    $noHead = Get-G3RunnerProvenance -ScriptRoot (Join-Path $unborn 'scripts')
+    Check 'provenance, an unborn HEAD: RUNNER_PROVENANCE_UNKNOWN on one line, withheld' `
+        ($noHead.runnerSource -clike 'RUNNER_PROVENANCE_UNKNOWN: *' -and $noHead.runnerSource -notmatch '[\r\n]' -and
+         (Get-Graded $noHead).formalSlicePass -eq $false) "$($noHead | ConvertTo-Json -Compress)"
 
     # Outside any repository.
     $loose = Join-Path $provenanceWork 'loose'
