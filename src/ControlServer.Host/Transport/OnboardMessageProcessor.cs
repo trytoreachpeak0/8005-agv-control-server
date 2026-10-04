@@ -140,24 +140,46 @@ public sealed partial class OnboardMessageProcessor(
         // pending-result list is reconciled (CV-OPERATION-RESULT-UNKNOWN-RECONCILE); every other durable
         // message is answered from its first acceptance without touching business state a second time.
         bool reprocessedInTheNewSession = messageType is "RecoveryStateReport" or "OperationResult";
-        string capturedResponse = await store.CaptureFirstResponseAsync(
-            messageId,
-            messageType,
-            persistedRequest,
-            contentHash,
-            () => ProcessCurrentSessionMessageAsync(
-                root, state, messageType, messageId, contentHash, cancellationToken),
-            timeProvider.GetUtcNow(),
-            cancellationToken,
-            GenerationRebindReplayHash,
-            messageType == "RecoveryStateReport"
-                ? response => RestoreAcceptedSnapshotVersions(response, state)
-                : null,
-            reprocessedInTheNewSession
-                ? null
-                : firstResponse => RebindDurableAckAsync(
-                    firstResponse, messageType, messageId, agvId, contentHash, state, cancellationToken))
-            .ConfigureAwait(false);
+        string capturedResponse;
+        // control-server#452: a field confirmation reads RIoT before the inbox transaction below takes the write lock, and is
+        // judged inside it only if the database still says what it said then. If not, nothing was written: the whole inbox
+        // transaction rolls back -- no inbox row, no answer -- and the observation is made again. Twice at most, as the
+        // decisions themselves retry; then the same exception they throw, which ends the connection as it always did.
+        for (int attempt = 0; ; attempt++)
+        {
+            FieldConfirmationObservation? observed = await ObserveFieldConfirmationAsync(
+                root, state, messageType, messageId, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                capturedResponse = await store.CaptureFirstResponseAsync(
+                    messageId,
+                    messageType,
+                    persistedRequest,
+                    contentHash,
+                    () => ProcessCurrentSessionMessageAsync(
+                        root, state, messageType, messageId, contentHash, observed, cancellationToken),
+                    timeProvider.GetUtcNow(),
+                    cancellationToken,
+                    GenerationRebindReplayHash,
+                    messageType == "RecoveryStateReport"
+                        ? response => RestoreAcceptedSnapshotVersions(response, state)
+                        : null,
+                    reprocessedInTheNewSession
+                        ? null
+                        : firstResponse => RebindDurableAckAsync(
+                            firstResponse, messageType, messageId, agvId, contentHash, state, cancellationToken))
+                    .ConfigureAwait(false);
+                break;
+            }
+            catch (FieldConfirmationObservationStaleException stale)
+            {
+                dbContext.ChangeTracker.Clear();
+                if (attempt == 2)
+                {
+                    throw new InvalidOperationException(stale.Message);
+                }
+            }
+        }
         // Never inside the handshake (control-server#202). A reconnecting vehicle resends what the last session left
         // unacknowledged and reads exactly one answer per line until its recovery report is answered, so a command
         // or session snapshot sent after one of these answers would be read in place of the next one, and the
@@ -294,6 +316,7 @@ public sealed partial class OnboardMessageProcessor(
         string messageType,
         string messageId,
         string contentHash,
+        FieldConfirmationObservation? observed,
         CancellationToken cancellationToken)
     {
         JsonElement payload = root.GetProperty("payload");
@@ -641,28 +664,18 @@ public sealed partial class OnboardMessageProcessor(
                     // Batch 9-08 (control-server#406): answered inline like the return to service above. The whole decision is
                     // Runtime.Charging.ManualStationClearance's, shared with the Host entry; the digest is the payload's alone, so
                     // a resubmission under a new messageId is the same request (coordinator's alignment of 09-30, item 2).
-                    string confirmationRequestId = RequiredUuid(payload, "confirmationRequestId");
-                    JsonElement operatorContext = payload.GetProperty("operator");
+                    // control-server#452: judged on what was observed outside the write lock (ProcessAsync), never reading RIoT
+                    // here; an observation the database no longer matches rolls the inbox transaction back.
+                    ManualStationClearanceRequest request = ManualStationClearanceRequestOf(payload, agvId, generation, messageId);
+                    string confirmationRequestId = request.ConfirmationRequestId;
                     ManualStationClearanceConfirmation clearance;
                     try
                     {
-                        clearance = await stationClearance.DecideAsync(
-                            new ManualStationClearanceRequest(
-                                ManualStationClearanceSources.Onboard,
-                                agvId,
-                                _fleet.ByAgvId(agvId)?.VehicleKey,
-                                confirmationRequestId,
-                                generation,
-                                messageId,
-                                WireContentHash.Sha256(payload.GetRawText()),
-                                RequiredString(payload, "stationId"),
-                                NullableString(payload, "publicStationFunction"),
-                                RequiredString(payload, "clearedCondition"),
-                                RequiredString(operatorContext, "operatorId"),
-                                RequiredString(operatorContext, "verificationMethod"),
-                                operatorContext.GetProperty("verifiedAt").GetDateTimeOffset(),
-                                payload.GetProperty("observedAt").GetDateTimeOffset()),
-                            cancellationToken).ConfigureAwait(false);
+                        clearance = await stationClearance.DecideObservedAsync(
+                                request,
+                                observed?.StationClearance ?? throw Stale(ManualStationClearance.LostEveryRace(confirmationRequestId)),
+                                cancellationToken).ConfigureAwait(false)
+                            ?? throw Stale(ManualStationClearance.LostEveryRace(confirmationRequestId));
                     }
                     catch (FieldConfirmationContentConflictException conflict)
                     {
@@ -691,26 +704,18 @@ public sealed partial class OnboardMessageProcessor(
                     // Runtime.Charging.UnableToChargeFieldConfirmations. The digest is the payload's alone, so a resubmission under a
                     // new messageId, sentAt or session generation is the same request. The VehicleBusinessStateSnapshot that follows a
                     // confirmation is the engine's next round's, as after a return to service.
-                    string confirmationRequestId = RequiredUuid(payload, "confirmationRequestId");
-                    JsonElement operatorContext = payload.GetProperty("operator");
+                    // control-server#452: as the clearance above.
+                    UnableToChargeFieldConfirmationRequest request = UnableToChargeRequestOf(payload, agvId, generation, messageId);
+                    string confirmationRequestId = request.ConfirmationRequestId;
                     UnableToChargeFieldConfirmation confirmation;
                     try
                     {
-                        confirmation = await fieldConfirmations.DecideAsync(
-                            new UnableToChargeFieldConfirmationRequest(
-                                agvId,
-                                _fleet.ByAgvId(agvId)?.VehicleKey,
-                                confirmationRequestId,
-                                generation,
-                                messageId,
-                                WireContentHash.Sha256(payload.GetRawText()),
-                                RequiredString(payload, "chargerStationId"),
-                                RequiredString(payload, "observedCondition"),
-                                RequiredString(operatorContext, "operatorId"),
-                                RequiredString(operatorContext, "verificationMethod"),
-                                operatorContext.GetProperty("verifiedAt").GetDateTimeOffset(),
-                                payload.GetProperty("observedAt").GetDateTimeOffset()),
-                            cancellationToken).ConfigureAwait(false);
+                        confirmation = await fieldConfirmations.DecideObservedAsync(
+                                request,
+                                observed?.UnableToCharge
+                                    ?? throw Stale(UnableToChargeFieldConfirmations.LostEveryRace(confirmationRequestId)),
+                                cancellationToken).ConfigureAwait(false)
+                            ?? throw Stale(UnableToChargeFieldConfirmations.LostEveryRace(confirmationRequestId));
                     }
                     catch (FieldConfirmationContentConflictException conflict)
                     {
@@ -954,6 +959,110 @@ public sealed partial class OnboardMessageProcessor(
     /// Readiness is recomputed rather than replayed, because the first response's belonged to a session
     /// that is gone -- and announced only when it changed, the way every other site here does it.
     /// </summary>
+    /// <summary>
+    /// control-server#452：人工清桩确认与现场确认充不上，在收件箱事务开写锁之前先观察——读库定下对的是哪一个桩、哪一张单，再读 RIoT。别的消息、
+    /// 这台服务端没装这两个判定、或这条线已经进过收件箱（重放、换代重发，答第一次的结果，不再判定）时不观察，答空。确认号已经判过的，判定自己不读 RIoT。
+    /// 载荷读不出请求时也答空，由处理那一步照旧抛出同一个错误。什么也不写。
+    /// </summary>
+    private async Task<FieldConfirmationObservation?> ObserveFieldConfirmationAsync(
+        JsonElement root, OnboardConnectionState state, string messageType, string messageId, CancellationToken cancellationToken)
+    {
+        bool observes = messageType switch
+        {
+            "ManualStationClearanceConfirmationRequested" => stationClearance is not null,
+            "UnableToChargeFieldConfirmationRequested" => fieldConfirmations is not null,
+            _ => false,
+        };
+        if (!observes ||
+            await dbContext.ProtocolInbox.AsNoTracking().AnyAsync(row => row.MessageId == messageId, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        JsonElement payload = root.GetProperty("payload");
+        string agvId = state.AgvId!;
+        long generation = state.SessionGeneration!.Value;
+        if (messageType == "ManualStationClearanceConfirmationRequested")
+        {
+            ManualStationClearanceRequest? clearance = Readable(() => ManualStationClearanceRequestOf(payload, agvId, generation, messageId));
+            return clearance is null
+                ? null
+                : new FieldConfirmationObservation(
+                    await stationClearance!.ObserveAsync(clearance, cancellationToken).ConfigureAwait(false), null);
+        }
+        UnableToChargeFieldConfirmationRequest? unableToCharge =
+            Readable(() => UnableToChargeRequestOf(payload, agvId, generation, messageId));
+        return unableToCharge is null
+            ? null
+            : new FieldConfirmationObservation(
+                null, await fieldConfirmations!.ObserveAsync(unableToCharge, cancellationToken).ConfigureAwait(false));
+
+        static T? Readable<T>(Func<T> read) where T : class
+        {
+            try
+            {
+                return read();
+            }
+            catch (Exception error) when (error is InvalidOperationException or KeyNotFoundException or FormatException
+                                              or InvalidDataException)
+            {
+                return null;
+            }
+        }
+    }
+
+    private static FieldConfirmationObservationStaleException Stale(string exhaustedMessage) => new(exhaustedMessage);
+
+    private ManualStationClearanceRequest ManualStationClearanceRequestOf(
+        JsonElement payload, string agvId, long generation, string messageId)
+    {
+        // Batch 9-08 (control-server#406): the digest is the payload's alone, so a resubmission under a new messageId is the same
+        // request (coordinator's alignment of 09-30, item 2).
+        string confirmationRequestId = RequiredUuid(payload, "confirmationRequestId");
+        JsonElement operatorContext = payload.GetProperty("operator");
+        return new ManualStationClearanceRequest(
+            ManualStationClearanceSources.Onboard,
+            agvId,
+            _fleet.ByAgvId(agvId)?.VehicleKey,
+            confirmationRequestId,
+            generation,
+            messageId,
+            WireContentHash.Sha256(payload.GetRawText()),
+            RequiredString(payload, "stationId"),
+            NullableString(payload, "publicStationFunction"),
+            RequiredString(payload, "clearedCondition"),
+            RequiredString(operatorContext, "operatorId"),
+            RequiredString(operatorContext, "verificationMethod"),
+            operatorContext.GetProperty("verifiedAt").GetDateTimeOffset(),
+            payload.GetProperty("observedAt").GetDateTimeOffset());
+    }
+
+    private UnableToChargeFieldConfirmationRequest UnableToChargeRequestOf(
+        JsonElement payload, string agvId, long generation, string messageId)
+    {
+        string confirmationRequestId = RequiredUuid(payload, "confirmationRequestId");
+        JsonElement operatorContext = payload.GetProperty("operator");
+        return new UnableToChargeFieldConfirmationRequest(
+            agvId,
+            _fleet.ByAgvId(agvId)?.VehicleKey,
+            confirmationRequestId,
+            generation,
+            messageId,
+            WireContentHash.Sha256(payload.GetRawText()),
+            RequiredString(payload, "chargerStationId"),
+            RequiredString(payload, "observedCondition"),
+            RequiredString(operatorContext, "operatorId"),
+            RequiredString(operatorContext, "verificationMethod"),
+            operatorContext.GetProperty("verifiedAt").GetDateTimeOffset(),
+            payload.GetProperty("observedAt").GetDateTimeOffset());
+    }
+
+    /// <summary>一条现场确认在锁外观察到的，两种之一（control-server#452）。</summary>
+    private sealed record FieldConfirmationObservation(
+        ManualStationClearance.Observation? StationClearance,
+        UnableToChargeFieldConfirmations.Observation? UnableToCharge);
+
     private async Task<string?> RebindDurableAckAsync(
         string firstResponse,
         string messageType,

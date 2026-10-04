@@ -414,10 +414,7 @@ public sealed class WaitingPointArrivalSettlement(
 
     private async Task<RiotFacts> ReadRiotAsync(JourneyRuntimeRow runtime, Move move, CancellationToken cancellationToken)
     {
-        if (dbContext.Database.CurrentTransaction is not null)
-        {
-            throw new InvalidOperationException("RIoT is read outside the write lock (control-server#452).");
-        }
+        RiotReadOutsideWriteLock.Ensure(dbContext);
         RiotOrderObservation? order;
         try
         {
