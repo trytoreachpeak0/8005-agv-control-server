@@ -1,0 +1,12 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardTcpServer.cs b/src/ControlServer.Host/Transport/OnboardTcpServer.cs
+index 5ef74cb31..b65d0f969 100644
+--- a/src/ControlServer.Host/Transport/OnboardTcpServer.cs
++++ b/src/ControlServer.Host/Transport/OnboardTcpServer.cs
+@@ -240,6 +240,7 @@ public sealed partial class OnboardTcpServer : BackgroundService
+             if (attachedAgvId is not null)
+             {
+                 _peer.Detach(attachedAgvId, connection);
++                await Task.Delay(2000, CancellationToken.None).ConfigureAwait(false); // PROBE P1: widen detach -> log 1003
+             }
+         }
+     }

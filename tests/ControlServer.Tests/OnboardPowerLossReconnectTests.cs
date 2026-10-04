@@ -47,6 +47,13 @@ namespace ControlServer.Tests;
 /// 拿墙钟卡它会在慢机器上假红。墙钟只剩 <see cref="HangGuard"/> 一道挂死保护。
 /// </para>
 /// <para>
+/// <b>每一次尝试也按事件判</b>（control-server#440）：等握手答完，再等服务端二选一——让新代次可路由，或者拒掉它、关掉连接。
+/// 以前一次尝试只给 4 秒握手、答完之后再给 1 秒可路由，满载的机器上服务端只是慢，就被记成「失败」或「不可路由」：
+/// 本机全量里旧代次离表之后的那一次尝试以 4 秒超时记为失败，类就红了。那 4 秒是这个类自己定的，产品里没有对应的预算：服务端
+/// 不给握手设期限，合成车载端也不设；现场车载端设的是每一条答复 2.5 秒（<c>messageTimeoutMs</c>），超时就隔两秒重来——那管的是
+/// 现场恢复得快不快，不是这里要证的「旧连接一放掉，下一次就进得来」。
+/// </para>
+/// <para>
 /// <b>前提也按路由表判。</b>第一次尝试之前旧代次必须还在表里，成功之前必须至少有一次尝试「握手答完、但不可
 /// 路由」——这两条证明这一次确实造出了「旧连接半开占着这辆车」，而不是旧连接早已被关、测试平白绿了。只看
 /// 车载端读到 <c>SessionReadiness</c> 不够：被 Attach 拒掉的那几次握手，车载端也读到了。
@@ -60,9 +67,6 @@ public sealed class OnboardPowerLossReconnectTests
 
     /// <summary>车载端重连失败后等多久再试，取现场车载端日志里的「将在2秒后重连」。</summary>
     private static readonly TimeSpan RetryInterval = TimeSpan.FromSeconds(2);
-
-    /// <summary>一次重连尝试（连接加五步握手）最多等多久，超过就当这次失败。</summary>
-    private static readonly TimeSpan AttemptBudget = TimeSpan.FromSeconds(4);
 
     /// <summary>
     /// 挂死保护：断电之后过了这么久还没恢复，就不再试、判失败。它不是恢复时间的判据。
@@ -144,8 +148,19 @@ public sealed class OnboardPowerLossReconnectTests
     /// 以上（写真的卡住了；门槛取比例而不是等于超时本身，审查必修 3 实测等于时余量只有 3 ms）。
     /// </para>
     /// <para>
-    /// <b>判据按事件，不按墙钟</b>（审查建议）：旧代次离开了路由表；推送以写超时失败，消息里是<b>配置的</b>秒数与这台车的车号；服务端
-    /// 记下连接因错误结束（1003），没有记静默关闭（1005）——放掉它的是写超时，不是静默窗口。墙钟只剩 <see cref="HangGuard"/>。
+    /// 「挂了多久」从<b>最后一次写成功的推送开始</b>量到旧代次离开路由表，不再取最长的一次推送（control-server#440 审查 S1）。卡住的
+    /// 写排在最后一次成功之后，所以在对的产品上这段时间不短于写超时，负载只会让它更长；而卡住的若是 HeartbeatAck、推送晚一点才排到
+    /// 它后面，最长的一次推送就只剩写超时减去那段迟到——1 秒那一格只有约 150 ms 余量，满载时会假红。
+    /// </para>
+    /// <para>
+    /// <b>判据按事件，不按墙钟</b>（审查建议）：旧代次离开了路由表；这条连接上有一次写以写超时失败，消息里是<b>配置的</b>秒数与这台车的
+    /// 车号；服务端记下连接因错误结束（1003），没有记静默关闭（1005）——放掉它的是写超时，不是静默窗口。墙钟只剩 <see cref="HangGuard"/>。
+    /// </para>
+    /// <para>
+    /// <b>超时的那一次写可能是推送，也可能是接收循环自己的 HeartbeatAck</b>（control-server#440）。两者排在同一道发送门后、各自计时；
+    /// 推送把缓冲区写满的那一刻如果正轮到 HeartbeatAck，卡住的就是它，先到点的也是它，推送随后只看到「连接已关」。这是产品承诺过的
+    /// 行为（<c>OnboardPeerConnection</c> 的注释），所以两处都要看：推送记下的失败，和 1003 记下的那个异常。1003 在 <c>Detach</c>
+    /// 之后、连接释放完才写，所以先等它出现，再读日志。
     /// </para>
     /// </remarks>
     /// <param name="writeTimeoutMilliseconds">
@@ -169,7 +184,7 @@ public sealed class OnboardPowerLossReconnectTests
             "变聋之后 5 秒内车没往服务端送任何东西：心跳停了，这不是本条要造的形状。");
         Stopwatch sinceDeaf = Stopwatch.StartNew();
         using CancellationTokenSource pushing = new();
-        Task pusher = rig.PushToSessionUntilCancelledAsync(oldGeneration, payloadBytes: 64 * 1024, pushing.Token);
+        Task pusher = rig.PushToSessionUntilCancelledAsync(oldGeneration, payloadBytes: 64 * 1024, pushing.Token, sinceDeaf);
         TimeSpan? leftAfter;
         try
         {
@@ -181,27 +196,52 @@ public sealed class OnboardPowerLossReconnectTests
             await pusher;
         }
 
+        // The old generation leaves the table in HandleClientAsync's finally; 1003 is written only after the exception has
+        // come out through the scope, the connection and the stream (control-server#440). Wait for it, not for the Detach.
+        if (leftAfter is not null)
+        {
+            await rig.WaitServerLogAsync(1003, HangGuard);
+        }
         EventRecordingLogger<OnboardTcpServer>.Entry[] serverLog = rig.ServerLogSnapshot();
         TimeSpan timeout = configured ?? OnboardTransportOptions.DefaultWriteTimeout;
+        // Every write failure on the old connection: the pusher's, and the one the receive loop ended with.
+        string[] writeFailures =
+        [
+            .. rig.PushFailureReasons,
+            .. serverLog.Where(entry => entry.EventId.Id == 1003 && entry.Error is not null)
+                .Select(entry => $"{entry.Error!.GetType().Name}: {entry.Error.Message}")
+        ];
         string trace =
             $"{Environment.NewLine}服务端日志：{string.Join("、", serverLog.Select(entry => entry.EventId.Id))}；" +
             $"聋了之后车往服务端送了 {rig.Relay.BytesToServerWhileDeaf} 字节；" +
             $"最长的一次推送 {rig.LongestPush.TotalMilliseconds:F0} ms；" +
+            $"最后一次写成功的推送开始于 t={rig.LastSuccessfulPushStartedAt.TotalSeconds:F1}s；" +
             $"旧代次离开路由表：{(leftAfter is { } at ? $"t={at.TotalSeconds:F1}s" : "没有")}；" +
-            $"推送的失败：{rig.PushFailures}";
+            $"推送的失败：{rig.PushFailures}；" +
+            $"1003 的异常：{string.Join(" | ", writeFailures.Skip(rig.PushFailureReasons.Count))}";
         TestContext.Current.TestOutputHelper?.WriteLine(trace.TrimStart());
         Assert.True(rig.Relay.BytesToServerWhileDeaf > 0, "聋了之后车没再往服务端送任何东西：这是断电，不是本条要造的形状。" + trace);
-        Assert.True(
-            rig.LongestPush >= timeout * 0.8,
-            $"最长的一次推送不到写超时 {timeout.TotalSeconds:0.###} 秒的八成：写没有卡住，这一条没造出它要的形状。" + trace);
         Assert.True(
             leftAfter is not null,
             $"车还在发心跳、只是不读，{HangGuard.TotalSeconds} 秒内旧代次一直没离开路由表：卡住的写没有上限，" +
             "这条连接永远不会被放掉（control-server#334）。" + trace);
-        Assert.Contains($"did not finish within {timeout.TotalSeconds:0.###} s", rig.PushFailures, StringComparison.Ordinal);
+        // The write really was stuck: from the last write that went through to the release, at least eight tenths of the
+        // timeout passed. Measured from the last success rather than as the longest push, which is short whenever the
+        // HeartbeatAck is the write that got stuck and the next push queued behind it late (control-server#440, review S1).
+        TimeSpan stuckFor = leftAfter!.Value - rig.LastSuccessfulPushStartedAt;
+        Assert.True(
+            stuckFor >= timeout * 0.8,
+            $"最后一次写成功的推送在 t={rig.LastSuccessfulPushStartedAt.TotalSeconds:F1}s 开始，到旧代次离开路由表只隔了 " +
+            $"{stuckFor.TotalMilliseconds:F0} ms，不到写超时 {timeout.TotalSeconds:0.###} 秒的八成：写没有卡住，这一条没造出它要的形状。" + trace);
+        // One and the same failure carries all three: the configured seconds, the exact type and this vehicle.
+        string? timedOut = Array.Find(
+            writeFailures, failure => failure.Contains($"did not finish within {timeout.TotalSeconds:0.###} s", StringComparison.Ordinal));
+        Assert.True(
+            timedOut is not null,
+            $"这条连接上没有一次写以「did not finish within {timeout.TotalSeconds:0.###} s」失败：放掉它的不是配置的写超时。" + trace);
         // The exact type, not just an IOException: it is what the runtime yields on (incremental review X2).
-        Assert.Contains("× OnboardConnectionUnavailableException: A write to the Onboard peer", rig.PushFailures, StringComparison.Ordinal);
-        Assert.Contains($"'{AgvId}'", rig.PushFailures, StringComparison.Ordinal);
+        Assert.StartsWith("OnboardConnectionUnavailableException: A write to the Onboard peer", timedOut, StringComparison.Ordinal);
+        Assert.Contains($"'{AgvId}'", timedOut, StringComparison.Ordinal);
         Assert.Contains(serverLog, entry => entry.EventId.Id == 1003);
         Assert.DoesNotContain(serverLog, entry => entry.EventId.Id == 1005);
 
@@ -343,6 +383,19 @@ public sealed class OnboardPowerLossReconnectTests
         public string PushFailures => string.Join(
             " | ", _pushFailures.OrderBy(item => item.Key, StringComparer.Ordinal).Select(item => $"{item.Value}× {item.Key}"));
 
+        /// <summary>推送失败过的每一种原因，「类型: 消息」。</summary>
+        public IReadOnlyList<string> PushFailureReasons => [.. _pushFailures.Keys.Order(StringComparer.Ordinal)];
+
+        /// <summary>Waits until the listener has logged the given event, or <paramref name="within"/> runs out.</summary>
+        public async Task WaitServerLogAsync(int eventId, TimeSpan within)
+        {
+            Stopwatch waited = Stopwatch.StartNew();
+            while (waited.Elapsed < within && !ServerLogSnapshot().Any(entry => entry.EventId.Id == eventId))
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(10), TestContext.Current.CancellationToken);
+            }
+        }
+
         public static async Task<Rig> StartAsync(TimeSpan? writeTimeout = null)
         {
             Environment.SetEnvironmentVariable(CredentialVariable, Credential);
@@ -457,7 +510,7 @@ public sealed class OnboardPowerLossReconnectTests
                 {
                     int number = attempts.Count + 1;
                     TimeSpan startedAt = sinceCut.Elapsed;
-                    (AttemptResult result, string detail) = await AttemptAsync();
+                    (AttemptResult result, string detail) = await AttemptAsync(HangGuard - sinceCut.Elapsed);
                     attempts.Add(new Attempt(number, startedAt, result, detail));
                     if (result == AttemptResult.Routable)
                     {
@@ -478,12 +531,19 @@ public sealed class OnboardPowerLossReconnectTests
         }
 
         /// <summary>One reconnect: connect, the five-step handshake, then whether the server made it routable.</summary>
-        private async Task<(AttemptResult Result, string Detail)> AttemptAsync()
+        /// <remarks>
+        /// Judged by what the server did, not by how fast (control-server#440): the handshake is waited out, then the server's
+        /// answer to the attach -- routable, or refused and the connection closed. <paramref name="within"/> is only what is
+        /// left of the hang guard; a loaded machine that answers late still answers.
+        /// </remarks>
+        private async Task<(AttemptResult Result, string Detail)> AttemptAsync(TimeSpan within)
         {
+            Stopwatch attempt = Stopwatch.StartNew();
+            within = within > TimeSpan.FromSeconds(1) ? within : TimeSpan.FromSeconds(1);
             Task handshake = Onboard.ReconnectAsync();
             try
             {
-                await handshake.WaitAsync(AttemptBudget, TestContext.Current.CancellationToken);
+                await handshake.WaitAsync(within, TestContext.Current.CancellationToken);
             }
             catch (Exception error) when (error is IOException or SocketException or OperationCanceledException
                                               or InvalidOperationException or TimeoutException)
@@ -503,9 +563,36 @@ public sealed class OnboardPowerLossReconnectTests
             }
 
             long generation = Engine.Snapshot().State.SessionGeneration;
-            return await WaitRoutableAsync(generation, TimeSpan.FromSeconds(1))
+            return await WaitRoutableOrClosedAsync(generation, within - attempt.Elapsed)
                 ? (AttemptResult.Routable, $"第 {generation} 代")
                 : (AttemptResult.AnsweredButNotRoutable, $"第 {generation} 代");
+        }
+
+        /// <summary>
+        /// After the vehicle has read the handshake's answer, the server either attaches the connection or refuses it -- and a
+        /// refused attach ends the connection (<c>OnboardTcpServer.HandleClientAsync</c>). Waits for whichever happens.
+        /// </summary>
+        /// <remarks>
+        /// The attach runs after the answer is on the wire, so the vehicle can be READY before it is routable; a fixed second
+        /// after the answer read a merely slow attach as a refusal (control-server#440).
+        /// </remarks>
+        private async Task<bool> WaitRoutableOrClosedAsync(long generation, TimeSpan within)
+        {
+            Stopwatch waited = Stopwatch.StartNew();
+            while (true)
+            {
+                if (RoutableGeneration() == generation)
+                {
+                    return true;
+                }
+                // Not READY any more is the pump having ended: EOF (DISCONNECTED) or a reset (FAULTED).
+                if (!Onboard.IsConnected || Engine.Snapshot().State.Readiness != "READY" || waited.Elapsed >= within)
+                {
+                    // Read once more: the attach and the close can both have landed since the first read.
+                    return RoutableGeneration() == generation;
+                }
+                await Task.Delay(TimeSpan.FromMilliseconds(20), TestContext.Current.CancellationToken);
+            }
         }
 
         private async Task DisconnectQuietlyAsync()
@@ -521,10 +608,22 @@ public sealed class OnboardPowerLossReconnectTests
             }
         }
 
+        /// <summary>
+        /// When the last push that went through began, on the stopwatch handed to <see cref="PushToSessionUntilCancelledAsync"/>;
+        /// the moment pushing began until one does.
+        /// </summary>
+        public TimeSpan LastSuccessfulPushStartedAt => TimeSpan.FromTicks(Interlocked.Read(ref _lastSuccessfulPushStartedAtTicks));
+
+        private long _lastSuccessfulPushStartedAtTicks;
+
         /// <summary>Pushes to the given session through the peer until cancelled, as the runtime's rounds do.</summary>
-        public Task PushToSessionUntilCancelledAsync(long generation, int payloadBytes, CancellationToken cancellationToken) =>
+        /// <param name="since">The test's clock, on which <see cref="LastSuccessfulPushStartedAt"/> is read.</param>
+        public Task PushToSessionUntilCancelledAsync(
+            long generation, int payloadBytes, CancellationToken cancellationToken, Stopwatch? since = null) =>
             Task.Run(async () =>
             {
+                since ??= Stopwatch.StartNew();
+                Interlocked.Exchange(ref _lastSuccessfulPushStartedAtTicks, since.Elapsed.Ticks);
                 string padding = new('x', payloadBytes);
                 while (!cancellationToken.IsCancellationRequested)
                 {
@@ -537,9 +636,11 @@ public sealed class OnboardPowerLossReconnectTests
                         padding
                     }) + "\n");
                     Stopwatch took = Stopwatch.StartNew();
+                    TimeSpan startedAt = since.Elapsed;
                     try
                     {
                         await Peer.SendAsync(line, cancellationToken);
+                        Interlocked.Exchange(ref _lastSuccessfulPushStartedAtTicks, startedAt.Ticks);
                     }
                     catch (Exception error) when (error is IOException or OperationCanceledException
                                                       or ObjectDisposedException or SocketException)
@@ -582,7 +683,7 @@ public sealed class OnboardPowerLossReconnectTests
         /// <summary>One reconnect that has to get in, and stay in: the new generation, routable and not closed after.</summary>
         public async Task<long> ReconnectRoutableAsync()
         {
-            (AttemptResult result, string detail) = await AttemptAsync();
+            (AttemptResult result, string detail) = await AttemptAsync(HangGuard);
             Assert.True(result == AttemptResult.Routable, $"重连没有建起可路由的会话：{result} {detail}");
             Assert.True(await StaysConnectedAsync(StaysUp), "重连之后新会话又被服务端关掉了。");
             return Engine.Snapshot().State.SessionGeneration;

@@ -1,0 +1,18 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardPeer.cs b/src/ControlServer.Host/Transport/OnboardPeer.cs
+index 10cde1e22..9e4821012 100644
+--- a/src/ControlServer.Host/Transport/OnboardPeer.cs
++++ b/src/ControlServer.Host/Transport/OnboardPeer.cs
+@@ -228,9 +228,12 @@ internal sealed class OnboardPeerConnection : IAsyncDisposable
+         }
+ 
+         Task send = SendCoreAsync(ndjsonLine, cancellationToken);
++        // PROBE P3: a push's timer fires 3 s after its own deadline, so a write of the receive loop's queued behind it
++        // (a HeartbeatAck, at most one heartbeat period later) times out first -- the order a loaded machine can produce.
++        bool probePush = System.Text.Encoding.UTF8.GetString(ndjsonLine.Span).Contains("FaultCargoRecoveryCommand", StringComparison.Ordinal);
+         try
+         {
+-            await send.WaitAsync(_writeTimeout, cancellationToken).ConfigureAwait(false);
++            await send.WaitAsync(probePush ? _writeTimeout + TimeSpan.FromSeconds(3) : _writeTimeout, cancellationToken).ConfigureAwait(false);
+         }
+         catch (TimeoutException error)
+         {
