@@ -1377,15 +1377,16 @@ public sealed class OnboardRecoveryCoordinator(
                 return;
             }
             // 给了路网的终结在删掉空停靠之后还换序（批次7-10，control-server#215，调度决策 6）；没给就只删不换。
-            await new PickupStopTermination(dbContext, await ReadPlanRevisionRoutingAsync(cancellationToken).ConfigureAwait(false))
+            PickupStopTermination cancelledTermination =
+                new(dbContext, await ReadPlanRevisionRoutingAsync(cancellationToken).ConfigureAwait(false));
+            await RefusedAsInbound(() => cancelledTermination
                 .StageAsync(
                     stop,
                     stopCursor.CurrentSublotRequestMessageId(stop.WorklistRevision),
                     workflow.DemandId,
                     "CANCELLED_BY_OPERATOR",
                     timeProvider.GetUtcNow(),
-                    cancellationToken)
-                .ConfigureAwait(false);
+                    cancellationToken)).ConfigureAwait(false);
             return;
         }
         // A commanded slot operation proven empty -- an in-flight cancellation, a compensation, a fault cargo
@@ -1408,7 +1409,9 @@ public sealed class OnboardRecoveryCoordinator(
                 cancellationToken).ConfigureAwait(false);
             if (operation is not null) operation.Status = StationOperationStatus.Cancelled;
         }
-        await new PickupStopTermination(dbContext, await ReadPlanRevisionRoutingAsync(cancellationToken).ConfigureAwait(false))
+        PickupStopTermination provenEmptyTermination =
+            new(dbContext, await ReadPlanRevisionRoutingAsync(cancellationToken).ConfigureAwait(false));
+        await RefusedAsInbound(() => provenEmptyTermination
             .StageAsync(
                 runtime,
                 // OrNone, unlike the cancellation above: that one runs only while the vehicle is loading at a
@@ -1427,8 +1430,7 @@ public sealed class OnboardRecoveryCoordinator(
                     _ => "CANCELLED_BY_OPERATOR"
                 },
                 timeProvider.GetUtcNow(),
-                cancellationToken)
-            .ConfigureAwait(false);
+                cancellationToken)).ConfigureAwait(false);
         if (messageType is "FaultCargoRecoveryResult" or "ForcedMechanicalRecoveryResult")
         {
             await SettleHandedOffCargoAsync(runtime, cancellationToken).ConfigureAwait(false);
@@ -1797,6 +1799,29 @@ public sealed class OnboardRecoveryCoordinator(
                 acceptedContentSha256 = contentHash,
                 durablyAcceptedAt = timeProvider.GetUtcNow()
             });
+
+    /// <summary>
+    /// Runs a <see cref="PickupStopTermination"/> on behalf of an inbound recovery result, and refuses that result
+    /// with a <c>ProtocolProblem</c> if the termination will not end the demand (control-server#478).
+    /// </summary>
+    /// <remarks>
+    /// The termination is shared with the runtime (<c>VehicleFaultRecoveryService</c>), where its
+    /// <see cref="BusinessIdentityConflictException"/> -- a demand already completed cannot be terminated -- must keep
+    /// failing the round. So it is translated here, at the two inbound call sites, rather than where it is thrown.
+    /// ACTION_NOT_ALLOWED_IN_STATE: the result asks to end a demand whose state no longer allows it; allowed on every
+    /// message type.
+    /// </remarks>
+    private static async Task RefusedAsInbound(Func<Task> terminate)
+    {
+        try
+        {
+            await terminate().ConfigureAwait(false);
+        }
+        catch (BusinessIdentityConflictException refused)
+        {
+            throw new InboundMessageRejectedException(ServerReasonCodes.ActionNotAllowedInState, refused.Message);
+        }
+    }
 
     private static object Problem(string reasonCode, string fieldPath, string displayMessage) => new
     {

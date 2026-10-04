@@ -2512,7 +2512,9 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         }
         if (generation <= row.ForcedRecoveryGeneration)
         {
-            throw new BusinessIdentityConflictException("ForcedRecoveryGeneration must advance monotonically.");
+            // Only ever reached from an inbound FORCED_MECHANICAL_RECOVERY action (control-server#478).
+            throw new InboundMessageRejectedException(ServerReasonCodes.ForcedRecoveryGenerationStale,
+                "ForcedRecoveryGeneration must advance monotonically.");
         }
         row.ForcedRecoveryGeneration = generation;
         row.UpdatedAt = advancedAt;
@@ -2695,7 +2697,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
             operation.OperationType != result.OperationType ||
             operation.ForcedRecoveryGeneration != forcedRecoveryGeneration)
         {
-            throw new BusinessIdentityConflictException(
+            throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict,
                 "OperationResult does not match the persisted slot operation identity.");
         }
 
@@ -2781,7 +2783,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
                                   existingCompletion.Evidence == result.ResultContentSha256;
             if (!sameCompletion)
             {
-                throw new BusinessIdentityConflictException(
+                throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict,
                     "TransportDemandKey completion differs from the persisted unload result.");
             }
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -2851,7 +2853,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         }
         if (authorization.ForcedRecoveryGeneration != forcedRecoveryGeneration)
         {
-            throw new BusinessIdentityConflictException(
+            throw new InboundMessageRejectedException(ServerReasonCodes.ForcedRecoveryGenerationStale,
                 "Replacement OperationResult was authorized at a different forced recovery generation.");
         }
         // The replacement has to settle exactly what was authorized: the same demand and attempt, the
@@ -2871,7 +2873,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
             resumedCommandHash is null ||
             authorization.CommandContentHash != resumedCommandHash)
         {
-            throw new BusinessIdentityConflictException(
+            throw new InboundMessageRejectedException(ServerReasonCodes.RecoveryScopeMismatch,
                 "Replacement OperationResult falls outside its RESUME_AFTER_REPAIR authorization.");
         }
     }
@@ -3796,7 +3798,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         int[] normalized = slots.Distinct().Order().ToArray();
         if (normalized.Any(slot => slot is < 1 or > 8))
         {
-            throw new BusinessIdentityConflictException("Slot numbers must be in 1..8.");
+            // Its one live caller is ApplyRecoveryReportAsync, an inbound RecoveryStateReport (control-server#478).
+            throw new InboundMessageRejectedException(ServerReasonCodes.SlotSetInvalid, "Slot numbers must be in 1..8.");
         }
         return normalized;
     }

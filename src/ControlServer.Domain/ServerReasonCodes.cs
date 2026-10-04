@@ -67,6 +67,7 @@ public static class ServerReasonCodes
     public const string RecoverySessionNotOpen = "RECOVERY_SESSION_NOT_OPEN";
     public const string SessionRecoveryRequired = "SESSION_RECOVERY_REQUIRED";
     public const string SnapshotRevisionContentConflict = "SNAPSHOT_REVISION_CONTENT_CONFLICT";
+    public const string SlotSetInvalid = "SLOT_SET_INVALID";
     public const string SnapshotRevisionRegression = "SNAPSHOT_REVISION_REGRESSION";
     public const string SublotBoxCountUnavailable = "SUBLOT_BOX_COUNT_UNAVAILABLE";
     public const string SublotNotInDispatchScope = "SUBLOT_NOT_IN_DISPATCH_SCOPE";
