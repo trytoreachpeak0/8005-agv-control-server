@@ -2745,6 +2745,82 @@ public sealed partial class RecoveryStateMachineG2Tests
     }
 
     /// <summary>
+    /// control-server#483, reproduction of the defect. The replacement OperationResult of a resume is refused outright
+    /// (RECOVERY_SCOPE_MISMATCH: it settles fewer slots than were authorized), so the server keeps nothing, and since
+    /// 8005-agv-onboard-hmi#254 the vehicle abandons that line instead of resending it. No result will ever come, and the
+    /// session has no way out: it stays EXECUTING with RESUME selected and no allowed action, a forced mechanical
+    /// recovery in the same session is refused as RECOVERY_ACTION_ALREADY_SELECTED, and a new session on the vehicle is
+    /// refused as ACTION_NOT_ALLOWED_IN_STATE. This pins the stuck shape as it stands; the exit #483 adds turns its tail
+    /// into the way out.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-RESUME")]
+    public async Task AResumeWhoseReplacementResultIsRefusedLeavesItsSessionExecutingWithNoWayOut()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_RESUME_RESULT_REFUSED";
+        const string proof = "resume-result-refused-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            RecordingPeer peer = new(context);
+            OnboardMessageProcessor processor = Processor(context, peer, proofVariable);
+            OnboardConnectionState state = CurrentState(deferOutbound: true);
+            await AuthorizeResumeAfterFailedResultAsync(processor, context, state, proof);
+            string sessionId = StableGuid(RequestId, "exception-recovery-session");
+
+            string narrower = Envelope(
+                "e0000000-0000-4000-8000-000000004830",
+                "OperationResult",
+                OperationResultPayload(slots: [1], journalCheckpoint: "RESUME_RESULT_RECORDED"));
+            ProtocolProblemAssert.RefusedLine(
+                await processor.ProcessAsync(narrower, state, token), "RECOVERY_SCOPE_MISMATCH", narrower);
+            await processor.FlushDeferredOutboundAsync(state, token);
+
+            ExceptionRecoverySessionRow session = await context.ExceptionRecoverySessions.AsNoTracking().SingleAsync(token);
+            Assert.Equal(("EXECUTING", "RESUME_AFTER_REPAIR"), (session.State, session.SelectedAction));
+            Assert.Equal(RecoveryWorkflowState.AwaitingResult,
+                (await context.RecoveryWorkflows.AsNoTracking().SingleAsync(token)).State);
+            JsonElement snapshot = await LatestSessionSnapshotAsync(context, sessionId);
+            Assert.Equal("EXECUTING", snapshot.GetProperty("state").GetString());
+            Assert.Empty(snapshot.GetProperty("allowedActions").EnumerateArray());
+
+            string forced = await processor.ProcessAsync(
+                RecoveryAction(
+                    "FORCED_MECHANICAL_RECOVERY",
+                    messageId: "e0000000-0000-4000-8000-000000004831",
+                    actionId: "51000000-0000-4000-8000-000000004831"),
+                state,
+                token);
+            await processor.FlushDeferredOutboundAsync(state, token);
+            Assert.Equal("RecoveryActionRejected", MessageType(forced));
+            Assert.Equal(ServerReasonCodes.RecoveryActionAlreadySelected,
+                FirstPayload(forced).GetProperty("problem").GetProperty("reasonCode").GetString());
+
+            string next = await processor.ProcessAsync(NextSessionRequest(proof), state, token);
+            await processor.FlushDeferredOutboundAsync(state, token);
+            Assert.Equal("ExceptionRecoverySessionRejected", MessageType(next));
+            Assert.Equal(ServerReasonCodes.ActionNotAllowedInState,
+                FirstPayload(next).GetProperty("problem").GetProperty("reasonCode").GetString());
+
+            Assert.Equal(("EXECUTING", session.Revision), await context.ExceptionRecoverySessions.AsNoTracking()
+                .Select(row => ValueTuple.Create(row.State, row.Revision)).SingleAsync(token));
+            Assert.Equal(DemandExecutionStatus.RecoveryRequired, (await context.AcceptedDemands.SingleAsync(token)).Status);
+            Assert.Equal(JourneyRuntimeStage.Blocked,
+                (await context.JourneyRuntimes.AsNoTracking().SingleAsync(token)).Stage);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
     /// control-server#187. The vehicle refuses the resume command itself -- SlotOperationCommandRejected, correlated
     /// to the SlotOperationResumeCommand as the protocol requires. No replacement result will come, so the resume
     /// is judged there and then, the way control-server#169 judges a result that does not reconcile: the resume is
