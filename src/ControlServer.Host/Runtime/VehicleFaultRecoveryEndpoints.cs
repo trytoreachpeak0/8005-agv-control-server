@@ -4,6 +4,7 @@ using System.Text;
 using ControlServer.Host.Runtime.Commands;
 using ControlServer.Host.Runtime.Faults;
 using ControlServer.Host.Runtime.Fleet;
+using ControlServer.Host.Runtime.Recovery;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Options;
 
@@ -56,7 +57,7 @@ public static class VehicleFaultRecoveryEndpoints
 
     /// <summary>
     /// Maps this entry, the station exclusivity release (control-server#419) and the waiting point arrival settlement
-    /// (control-server#447) when <see cref="EnabledKey"/> is on, and
+    /// (control-server#447) and the exception recovery session closing (control-server#483) when <see cref="EnabledKey"/> is on, and
     /// neither otherwise; says which. One place decides it, so the release cannot be left open while recovery is switched off.
     /// </summary>
     public static bool MapVehicleFaultRecoveryEntriesWhenEnabled(this WebApplication app)
@@ -69,6 +70,7 @@ public static class VehicleFaultRecoveryEndpoints
         app.MapVehicleFaultRecovery();
         app.MapStationExclusivityRelease();
         app.MapWaitingPointArrivalSettlement();
+        app.MapRecoverySessionAdministratorClose();
         return true;
     }
 
