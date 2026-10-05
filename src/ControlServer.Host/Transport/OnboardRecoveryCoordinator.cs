@@ -4,6 +4,7 @@ using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.Recovery;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -66,6 +67,13 @@ public sealed class OnboardRecoveryCoordinator(
                 "Compensation {WorkflowId} of session {SessionId} was requested again by operator {OperatorId} " +
                 "(verified {VerifiedAt}) in message {MessageId}. It was already authorized: nothing is authorized " +
                 "again, and the command it earned is re-sent unchanged.");
+
+    private static readonly Action<ILogger, string, Exception?> LogClosingSnapshotNotSent =
+        LoggerMessage.Define<string>(
+            LogLevel.Warning,
+            new EventId(2133, nameof(LogClosingSnapshotNotSent)),
+            "An exception recovery session of vehicle {AgvId} was closed by an administrator, and sending its CLOSED snapshot " +
+            "failed; the closing stands and the snapshot stays in the outbox for the reconnect replay (control-server#483).");
 
     /// <summary>
     /// Why a session closed on a result that did not reconcile (control-server#169). Not a wire code: the
@@ -375,6 +383,185 @@ public sealed class OnboardRecoveryCoordinator(
             workflow, root.GetProperty("sessionGeneration").GetInt64(), cancellationToken).ConfigureAwait(false);
         await SettleAnsweredCommandAsync(workflow, cancellationToken).ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The outcome a workflow is judged on when an administrator closed its session because its result will not come
+    /// (control-server#483). Like <see cref="ResumeCommandRejectedOutcome"/> it marks, in the store, why the session closed;
+    /// it is not a wire code. A result arriving afterwards is refused, and the refusal names it.
+    /// </summary>
+    internal const string AdministratorClosedOutcome = RecoveryWorkflowOutcomes.AdministratorClosed;
+
+    /// <summary>
+    /// Which selected actions an administrator may close a session on while their result is awaited, and the workflow
+    /// states that count as awaiting it (control-server#483). Only a resume so far: the other three are a separate decision
+    /// -- a forced recovery's result is what lifts its hardware hold and fences its generation, and a fault cargo handoff or
+    /// a compensation settles cargo -- and each joins this table only once it has been made.
+    /// </summary>
+    internal static IReadOnlyDictionary<string, IReadOnlySet<RecoveryWorkflowState>> AdministratorClosableActions { get; } =
+        new Dictionary<string, IReadOnlySet<RecoveryWorkflowState>>(StringComparer.Ordinal)
+        {
+            ["RESUME_AFTER_REPAIR"] = new HashSet<RecoveryWorkflowState>
+            {
+                RecoveryWorkflowState.CommandPending,
+                RecoveryWorkflowState.AwaitingResult
+            }
+        };
+
+    /// <summary>
+    /// Closes the vehicle's one open session whose action's result will never come, on an administrator's word
+    /// (control-server#483): the result was refused and abandoned, or the vehicle went away for good. The workflow is judged
+    /// <see cref="RecoveryWorkflowState.RecoveryRequired"/> under <see cref="AdministratorClosedOutcome"/>, its command is
+    /// settled so it is no longer replayed, and the session closes the way a result that does not reconcile closes it
+    /// (<see cref="AdvanceSessionAfterResultAsync"/>): CLOSED, a new revision, a CLOSED snapshot queued. The demand, the
+    /// journey, the operation, the lease and the vehicle are not touched -- exactly as control-server#187 leaves them -- for
+    /// the next session to take up. A replacement result arriving afterwards finds no resume awaiting it and is refused
+    /// whole (<see cref="WireToGateStore"/>, BUSINESS_ID_CONTENT_CONFLICT naming <see cref="AdministratorClosedOutcome"/>).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Only under the caller's write transaction</b>, and refused without one: everything is read and decided inside it,
+    /// so an inbound result that commits first is seen here and this refuses, and one that commits after finds the session
+    /// closed. A refusal writes nothing.
+    /// </para>
+    /// <para>
+    /// <b>Not while the vehicle may still deliver the result</b> (review of control-server#483, S1). While the vehicle is
+    /// connected (<paramref name="connectedSessionGeneration"/> not null) and its latest RecoveryStateReport still names the
+    /// resume's attempt -- as a pending attempt or as its unsettled one -- or names any pending result at all, the result
+    /// may be on its way, and closing would refuse it when it lands and the vehicle would drop a real result. A pending
+    /// result is named by its messageId alone, which does not say which attempt it settles, so any one counts. A vehicle
+    /// that is not connected is closed regardless: waiting for one that never returns is the very thing this exit ends.
+    /// </para>
+    /// <para>
+    /// <b>Nor while the vehicle is in its handshake</b> (incremental review of control-server#483). A SessionHello clears the
+    /// reported pending facts, and the vehicle replays its unacknowledged results before its recovery report is answered,
+    /// which is before its connection becomes routable: in that window the report on file says nothing and the vehicle
+    /// would read as gone. So a vehicle whose hello has arrived and whose connection is not routable yet
+    /// (<paramref name="handshaking"/>), or whose routable connection is of another session generation than the one on file,
+    /// is refused as well -- the facts on file are not its finished report.
+    /// </para>
+    /// </remarks>
+    internal async Task<AdministratorCloseDecision> CloseSessionAwaitingResultAsync(
+        string agvId,
+        string? exceptionRecoverySessionId,
+        long? connectedSessionGeneration,
+        bool handshaking,
+        Action<object?> facts,
+        CancellationToken cancellationToken)
+    {
+        if (dbContext.Database.CurrentTransaction is null)
+            throw new InvalidOperationException(
+                "An exception recovery session is closed by an administrator only under the caller's write transaction.");
+
+        ExceptionRecoverySessionRow? session = await dbContext.ExceptionRecoverySessions.SingleOrDefaultAsync(
+            row => row.AgvId == agvId && row.State != "CLOSED", cancellationToken).ConfigureAwait(false);
+        SessionRecoveryRow? connection = await dbContext.SessionRecoveries.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.AgvId == agvId, cancellationToken).ConfigureAwait(false);
+        RecoveryWorkflowRow[] workflows = session is null
+            ? []
+            : await dbContext.RecoveryWorkflows
+                .Where(row => row.ExceptionRecoverySessionId == session.ExceptionRecoverySessionId)
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        string? selectedAction = session?.SelectedAction;
+        IReadOnlySet<RecoveryWorkflowState>? awaiting = selectedAction is null
+            ? null
+            : AdministratorClosableActions.GetValueOrDefault(selectedAction);
+        // The selected action's workflow still awaiting its result, if any; otherwise its latest, for the audit.
+        RecoveryWorkflowRow? workflow =
+            workflows.FirstOrDefault(row => row.WorkflowType == selectedAction && awaiting?.Contains(row.State) == true) ??
+            workflows.Where(row => row.WorkflowType == selectedAction).MaxBy(row => row.CreatedAt);
+        string[] pendingAttempts = connection is null ? [] : ParseStrings(connection.PendingAttemptIdsJson);
+        string[] pendingResults = connection is null ? [] : ParseStrings(connection.PendingResultIdsJson);
+        string? attemptId = workflow?.SlotOperationAttemptId;
+        bool resultInFlight = connectedSessionGeneration is not null &&
+                              (pendingResults.Length > 0 ||
+                               (attemptId is not null &&
+                                (pendingAttempts.Contains(attemptId, StringComparer.Ordinal) ||
+                                 connection?.UnsettledSlotOperationAttemptId == attemptId)));
+        facts(new
+        {
+            vehicle = new
+            {
+                connected = connectedSessionGeneration is not null,
+                connectedSessionGeneration,
+                handshaking,
+                recordedSessionGeneration = connection?.SessionGeneration,
+                recoveryReportId = connection?.RecoveryReportId,
+                pendingAttemptIds = pendingAttempts,
+                pendingResultIds = pendingResults,
+                unsettledSlotOperationAttemptId = connection?.UnsettledSlotOperationAttemptId
+            },
+            session = session is null
+                ? null
+                : new
+                {
+                    session.ExceptionRecoverySessionId,
+                    session.State,
+                    session.SelectedAction,
+                    session.Revision,
+                    session.DemandId
+                },
+            workflow = workflow is null
+                ? null
+                : new
+                {
+                    workflow.WorkflowId,
+                    workflow.WorkflowType,
+                    state = workflow.State.ToString(),
+                    workflow.SlotOperationAttemptId,
+                    workflow.CommandMessageId,
+                    workflow.ResultMessageId
+                }
+        });
+        if (session is null)
+            return new AdministratorCloseDecision([RecoverySessionAdministratorCloseCodes.SessionNotFound], null);
+        if (exceptionRecoverySessionId is not null &&
+            !string.Equals(exceptionRecoverySessionId, session.ExceptionRecoverySessionId, StringComparison.Ordinal))
+            return Refused(RecoverySessionAdministratorCloseCodes.SessionMismatch);
+        if (session.State != "EXECUTING")
+            return Refused(RecoverySessionAdministratorCloseCodes.SessionNotExecuting);
+        if (awaiting is null)
+            return Refused(RecoverySessionAdministratorCloseCodes.ActionNotClosable);
+        if (workflow is null || !awaiting.Contains(workflow.State))
+            return Refused(RecoverySessionAdministratorCloseCodes.ResultNotAwaited);
+        if (handshaking || (connectedSessionGeneration is not null && connectedSessionGeneration != connection?.SessionGeneration))
+            return Refused(RecoverySessionAdministratorCloseCodes.VehicleHandshakeInProgress);
+        if (resultInFlight)
+            return Refused(RecoverySessionAdministratorCloseCodes.ResultInFlightOnVehicle);
+
+        workflow.State = RecoveryWorkflowState.RecoveryRequired;
+        workflow.Outcome = AdministratorClosedOutcome;
+        workflow.UpdatedAt = timeProvider.GetUtcNow();
+        await AdvanceSessionAfterResultAsync(workflow, connection!.SessionGeneration, cancellationToken).ConfigureAwait(false);
+        await SettleAnsweredCommandAsync(workflow, cancellationToken).ConfigureAwait(false);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return new AdministratorCloseDecision([], session.ExceptionRecoverySessionId);
+
+        AdministratorCloseDecision Refused(string code) => new([code], session.ExceptionRecoverySessionId);
+
+        static string[] ParseStrings(string json) => JsonSerializer.Deserialize<string[]>(json) ?? [];
+    }
+
+    /// <summary>
+    /// Sends the vehicle the session snapshots still waiting for it, from outside its connection's loop, after the closing
+    /// has committed. Nothing here may undo or misreport that: a vehicle that is not connected is not a failure (the
+    /// snapshot stays in the outbox and the reconnect replay delivers it), and any other failure is logged and left to that
+    /// same replay.
+    /// </summary>
+    internal async Task TrySendPendingSessionSnapshotsAsync(string agvId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await SendPendingSessionSnapshotsAsync(agvId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is IOException or ObjectDisposedException)
+        {
+            // Not on the line: the replay after the next recovery report carries it.
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            LogClosingSnapshotNotSent(logger ?? (ILogger)NullLogger.Instance, agvId, error);
+        }
     }
 
     public async Task SendTriggeredCommandAsync(JsonElement root, CancellationToken cancellationToken)
@@ -2003,3 +2190,10 @@ public sealed class OnboardRecoveryCoordinator(
             ? null
             : await planRevisionRouting.ReadAsync(cancellationToken).ConfigureAwait(false);
 }
+
+/// <summary>
+/// What <see cref="OnboardRecoveryCoordinator.CloseSessionAwaitingResultAsync"/> decided: the refusal codes, empty when the
+/// session closed, and the session it judged -- the one it closed, or the vehicle's open one it refused to close -- when there
+/// was one (control-server#483).
+/// </summary>
+internal sealed record AdministratorCloseDecision(IReadOnlyList<string> Codes, string? ExceptionRecoverySessionId);
