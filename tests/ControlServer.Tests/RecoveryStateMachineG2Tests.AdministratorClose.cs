@@ -223,6 +223,8 @@ public sealed partial class RecoveryStateMachineG2Tests
         "connected vehicle reports the attempt as pending only",
         "connected vehicle reports the attempt as unsettled only",
         "connected vehicle reports a pending result",
+        "vehicle in its handshake",
+        "connected at another session generation",
         "missing operator, reason and verification",
         "too long",
     };
@@ -232,7 +234,9 @@ public sealed partial class RecoveryStateMachineG2Tests
     /// the session, its workflows, the business and the outbox are as they were. Only a resume is closable (the coordinator's
     /// decision of 2026-10-05). A connected vehicle whose latest RecoveryStateReport still names the resume's attempt, or any
     /// pending result -- whose messageId does not say which attempt it settles -- may yet deliver the result, so it is not
-    /// closed (review S1). "result no longer awaited" cannot be reached through the protocol -- a judged result closes the
+    /// closed (review S1). Nor is a vehicle in its handshake, whose SessionHello has cleared the facts on file while it is
+    /// about to replay its results, or one connected at another session generation than the facts on file (incremental
+    /// review, item 1). "result no longer awaited" cannot be reached through the protocol -- a judged result closes the
     /// session first -- and is made by hand to pin the check that stands behind the session's state.
     /// </summary>
     [Theory]
@@ -251,6 +255,7 @@ public sealed partial class RecoveryStateMachineG2Tests
             string sessionId = StableGuid(RequestId, "exception-recovery-session");
             RecoverySessionAdministratorCloseRequest request = CloseRequest(sessionId: null);
             long? connected = null;
+            bool handshaking = false;
             string[] expected;
             string? judged = sessionId;
             switch (refusal)
@@ -288,6 +293,19 @@ public sealed partial class RecoveryStateMachineG2Tests
                     await SetReportedPendingFactsAsync(context, attempts: [], unsettled: AttemptId, results: []);
                     connected = SeededSessionGeneration;
                     expected = [RecoverySessionAdministratorCloseCodes.ResultInFlightOnVehicle];
+                    break;
+                case "vehicle in its handshake":
+                    // As a SessionHello leaves it: the reported facts cleared, the connection not routable yet.
+                    await StuckResumeAsync(context, peer);
+                    await SetReportedPendingFactsAsync(context, attempts: [], unsettled: null, results: []);
+                    handshaking = true;
+                    expected = [RecoverySessionAdministratorCloseCodes.VehicleHandshakeInProgress];
+                    break;
+                case "connected at another session generation":
+                    await StuckResumeAsync(context, peer);
+                    await SetReportedPendingFactsAsync(context, attempts: [], unsettled: null, results: []);
+                    connected = SeededSessionGeneration + 1;
+                    expected = [RecoverySessionAdministratorCloseCodes.VehicleHandshakeInProgress];
                     break;
                 case "connected vehicle reports a pending result":
                     await StuckResumeAsync(context, peer);
@@ -329,7 +347,8 @@ public sealed partial class RecoveryStateMachineG2Tests
             string workflows = await WorkflowAccountAsync(context);
             int lines = peer.Lines.Count;
 
-            RecoverySessionAdministratorCloseResult result = await CloseAsync(context, peer, request, new FixedPresence(connected));
+            RecoverySessionAdministratorCloseResult result =
+                await CloseAsync(context, peer, request, new FixedPresence(connected, handshaking));
 
             Assert.False(result.Closed);
             Assert.Equal(expected, result.Codes);
@@ -342,12 +361,14 @@ public sealed partial class RecoveryStateMachineG2Tests
             Assert.Equal((result.AuditRecordId, GovernanceActionOutcome.Failed), (audit.AuditRecordId, audit.Outcome));
             foreach (string code in expected)
                 Assert.Contains(code, audit.DetailJson, StringComparison.Ordinal);
-            if (connected is not null)
+            if (connected is not null || handshaking)
             {
                 using JsonDocument detail = JsonDocument.Parse(audit.DetailJson);
                 JsonElement vehicle = detail.RootElement.GetProperty("read").GetProperty("vehicle");
-                Assert.Equal((true, connected.Value),
-                    (vehicle.GetProperty("connected").GetBoolean(), vehicle.GetProperty("connectedSessionGeneration").GetInt64()));
+                Assert.Equal((connected is not null, handshaking),
+                    (vehicle.GetProperty("connected").GetBoolean(), vehicle.GetProperty("handshaking").GetBoolean()));
+                if (connected is not null)
+                    Assert.Equal(connected.Value, vehicle.GetProperty("connectedSessionGeneration").GetInt64());
             }
         }
         finally
@@ -378,7 +399,7 @@ public sealed partial class RecoveryStateMachineG2Tests
 
             RecoverySessionAdministratorCloseResult result = await CloseAsync(
                 context, peer, CloseRequest(StableGuid(RequestId, "exception-recovery-session")),
-                new FixedPresence(SeededSessionGeneration));
+                new FixedPresence(SeededSessionGeneration, handshaking: false));
 
             Assert.True(result.Closed, string.Join(',', result.Codes));
             Assert.Equal("CLOSED", (await context.ExceptionRecoverySessions.AsNoTracking().SingleAsync(token)).State);
@@ -419,7 +440,7 @@ public sealed partial class RecoveryStateMachineG2Tests
 
             Assert.Null(context.Database.CurrentTransaction);
             await Assert.ThrowsAsync<InvalidOperationException>(() => coordinator.CloseSessionAwaitingResultAsync(
-                AgvId, null, null, _ => { }, token));
+                AgvId, null, null, false, _ => { }, token));
             context.ChangeTracker.Clear();
             Assert.Equal(before, await BusinessPictureAsync(context));
 
@@ -474,6 +495,51 @@ public sealed partial class RecoveryStateMachineG2Tests
                     detail.RootElement.GetProperty("result").GetString(),
                     detail.RootElement.GetProperty("error").GetString()));
             }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(StuckProofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// Review S5, the path with the transaction open (incremental review, item 3): the closing has been decided and staged --
+    /// the workflow judged, the command settled, the session CLOSED, the snapshot queued -- when writing its record fails.
+    /// The transaction rolls back all of it, the failed audit record is written after the rollback, and the exception
+    /// reaches the caller: the session is still EXECUTING and waiting, the command still unsettled, nothing queued.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    public async Task AClosingThatFailsWithItsTransactionOpenRollsBackAndIsAuditedAsFailed()
+    {
+        Environment.SetEnvironmentVariable(StuckProofVariable, StuckProof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            RecordingPeer peer = new(context);
+            await StuckResumeAsync(context, peer);
+            BusinessPicture before = await BusinessPictureAsync(context);
+            string outbox = await OutboxAccountAsync(context);
+            string workflows = await WorkflowAccountAsync(context);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                Closing(context, peer, audit: store => new SuccessAuditFailingWriter(store))
+                    .CloseAsync(CloseRequest(sessionId: null), token));
+            context.ChangeTracker.Clear();
+
+            Assert.Null(context.Database.CurrentTransaction);
+            Assert.Equal(before, await BusinessPictureAsync(context));
+            Assert.Equal(outbox, await OutboxAccountAsync(context));
+            Assert.Equal(workflows, await WorkflowAccountAsync(context));
+            AdministratorAuditRecordRow audit = Assert.Single(await CloseAuditsAsync(context));
+            Assert.Equal(GovernanceActionOutcome.Failed, audit.Outcome);
+            using JsonDocument detail = JsonDocument.Parse(audit.DetailJson);
+            Assert.Equal(("ERROR", typeof(InvalidOperationException).FullName), (
+                detail.RootElement.GetProperty("result").GetString(),
+                detail.RootElement.GetProperty("error").GetString()));
         }
         finally
         {
@@ -564,12 +630,25 @@ public sealed partial class RecoveryStateMachineG2Tests
             Assert.Equal(before, await BusinessPictureAsync(context));
             Assert.Equal(GovernanceActionOutcome.Failed, Assert.Single(await CloseAuditsAsync(context)).Outcome);
 
+            // A vehicle id in the wrong case is another vehicle to SQLite: refused as having no open session, with the id
+            // the server looked up echoed so the person can see the mistake (incremental review, item 2).
+            ProblemHttpResult unknown = Assert.IsType<ProblemHttpResult>((await PostCloseAsync(
+                context, peer, credentialVariable, "Bearer close-credential", request with { AgvId = " agv-8005-01 " })).Result);
+            Assert.Equal(StatusCodes.Status409Conflict, unknown.StatusCode);
+            Assert.Equal([RecoverySessionAdministratorCloseCodes.SessionNotFound],
+                Assert.IsAssignableFrom<IReadOnlyList<string>>(unknown.ProblemDetails.Extensions["codes"]));
+            Assert.Equal("agv-8005-01", unknown.ProblemDetails.Extensions["agvId"]);
+            Assert.Contains("车号填错",
+                Assert.IsAssignableFrom<IReadOnlyDictionary<string, string>>(unknown.ProblemDetails.Extensions["descriptions"])
+                    [RecoverySessionAdministratorCloseCodes.SessionNotFound], StringComparison.Ordinal);
+            Assert.Equal("EXECUTING", (await context.ExceptionRecoverySessions.AsNoTracking().SingleAsync(token)).State);
+
             RecoverySessionAdministratorCloseResponse body = Assert.IsType<Ok<RecoverySessionAdministratorCloseResponse>>(
                 (await PostCloseAsync(context, peer, credentialVariable, "Bearer close-credential", request)).Result).Value!;
             Assert.Equal(("CLOSED", AgvId, sessionId), (body.Outcome, body.AgvId, body.ExceptionRecoverySessionId));
             Assert.Equal("CLOSED", (await context.ExceptionRecoverySessions.AsNoTracking().SingleAsync(token)).State);
             AdministratorAuditRecordRow[] audits = await CloseAuditsAsync(context);
-            Assert.Equal(2, audits.Length);
+            Assert.Equal(3, audits.Length);
             Assert.Contains(audits, row => row.AuditRecordId == body.AuditRecordId &&
                                            row.Outcome == GovernanceActionOutcome.Succeeded &&
                                            row.ObjectId == sessionId &&
@@ -658,13 +737,17 @@ public sealed partial class RecoveryStateMachineG2Tests
         new(AgvId, sessionId, CloseOperator, "车机已换，续作结果永远不会来", "SITE-483-01", "MAINTENANCE_ADMINISTRATOR");
 
     private static RecoverySessionAdministratorClose Closing(
-        ControlServerDbContext context, IOnboardPeer peer, IOnboardConnectionPresence? presence = null) =>
+        ControlServerDbContext context,
+        IOnboardPeer peer,
+        IOnboardConnectionPresence? presence = null,
+        Func<IGovernanceAuditWriter, IGovernanceAuditWriter>? audit = null) =>
         new(
             context,
             TestOnboardProcessorFactory.CreateRecoveryCoordinator(
                 context, new WireToGateStore(context), new FixedTimeProvider(Now), Configuration(StuckProofVariable), peer),
-            presence ?? new FixedPresence(null),
-            new GovernanceStore(context, new GovernanceDeploymentIdentity("deployment:8005-controlserver@test"), AuditRetentionPolicy.Default),
+            presence ?? new FixedPresence(null, handshaking: false),
+            (audit ?? (store => store))(new GovernanceStore(
+                context, new GovernanceDeploymentIdentity("deployment:8005-controlserver@test"), AuditRetentionPolicy.Default)),
             new FixedTimeProvider(Now),
             NullLogger<RecoverySessionAdministratorClose>.Instance);
 
@@ -711,10 +794,14 @@ public sealed partial class RecoveryStateMachineG2Tests
             .OrderBy(row => row.WorkflowId, StringComparer.Ordinal)
             .Select(row => $"{row.WorkflowId}:{row.State}:{row.Outcome}:{row.ResultMessageId}:{row.UpdatedAt}"));
 
-    /// <summary>A vehicle connected at <paramref name="generation"/>, or not connected when it is null.</summary>
-    private sealed class FixedPresence(long? generation) : IOnboardConnectionPresence
+    /// <summary>
+    /// A vehicle connected at <paramref name="generation"/>, or not connected when it is null; and in its handshake or not.
+    /// </summary>
+    private sealed class FixedPresence(long? generation, bool handshaking) : IOnboardConnectionPresence
     {
         public long? ConnectedSessionGeneration(string agvId) => generation;
+
+        public bool IsHandshaking(string agvId) => handshaking;
     }
 
     /// <summary>A presence that fails: the closing breaks before anything is decided.</summary>
@@ -722,6 +809,22 @@ public sealed partial class RecoveryStateMachineG2Tests
     {
         public long? ConnectedSessionGeneration(string agvId) =>
             throw new InvalidOperationException("The connection table could not be read.");
+
+        public bool IsHandshaking(string agvId) => false;
+    }
+
+    /// <summary>An audit writer whose record of a successful closing fails; every other record is written.</summary>
+    private sealed class SuccessAuditFailingWriter(IGovernanceAuditWriter inner) : IGovernanceAuditWriter
+    {
+        public Task<string> WriteBusinessAsync(
+            GovernanceAuditEntry entry, DateTimeOffset recordedAt, CancellationToken cancellationToken) =>
+            inner.WriteBusinessAsync(entry, recordedAt, cancellationToken);
+
+        public Task<string> WriteAdministratorAsync(
+            GovernanceAuditEntry entry, DateTimeOffset recordedAt, CancellationToken cancellationToken) =>
+            entry.Outcome == GovernanceActionOutcome.Succeeded
+                ? throw new InvalidOperationException("The audit store refused the record.")
+                : inner.WriteAdministratorAsync(entry, recordedAt, cancellationToken);
     }
 
     /// <summary>A peer whose every send fails with something other than a lost connection.</summary>

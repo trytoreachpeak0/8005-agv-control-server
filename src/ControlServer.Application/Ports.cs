@@ -78,6 +78,13 @@ public interface IOnboardConnectionPresence
 {
     /// <summary>The session generation of the vehicle's routable connection, or null when it has none.</summary>
     long? ConnectedSessionGeneration(string agvId);
+
+    /// <summary>
+    /// Whether a connection naming the vehicle has sent a SessionHello and is not routable yet: the vehicle is in its
+    /// handshake, where it replays what it has not had acknowledged -- results included -- before its recovery report
+    /// is answered (review of control-server#483).
+    /// </summary>
+    bool IsHandshaking(string agvId);
 }
 
 public interface IDemandAcceptanceStore

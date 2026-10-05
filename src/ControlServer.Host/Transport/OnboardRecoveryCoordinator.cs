@@ -361,11 +361,20 @@ public sealed class OnboardRecoveryCoordinator(
     /// result is named by its messageId alone, which does not say which attempt it settles, so any one counts. A vehicle
     /// that is not connected is closed regardless: waiting for one that never returns is the very thing this exit ends.
     /// </para>
+    /// <para>
+    /// <b>Nor while the vehicle is in its handshake</b> (incremental review of control-server#483). A SessionHello clears the
+    /// reported pending facts, and the vehicle replays its unacknowledged results before its recovery report is answered,
+    /// which is before its connection becomes routable: in that window the report on file says nothing and the vehicle
+    /// would read as gone. So a vehicle whose hello has arrived and whose connection is not routable yet
+    /// (<paramref name="handshaking"/>), or whose routable connection is of another session generation than the one on file,
+    /// is refused as well -- the facts on file are not its finished report.
+    /// </para>
     /// </remarks>
     internal async Task<AdministratorCloseDecision> CloseSessionAwaitingResultAsync(
         string agvId,
         string? exceptionRecoverySessionId,
         long? connectedSessionGeneration,
+        bool handshaking,
         Action<object?> facts,
         CancellationToken cancellationToken)
     {
@@ -404,6 +413,7 @@ public sealed class OnboardRecoveryCoordinator(
             {
                 connected = connectedSessionGeneration is not null,
                 connectedSessionGeneration,
+                handshaking,
                 recordedSessionGeneration = connection?.SessionGeneration,
                 recoveryReportId = connection?.RecoveryReportId,
                 pendingAttemptIds = pendingAttempts,
@@ -443,6 +453,8 @@ public sealed class OnboardRecoveryCoordinator(
             return Refused(RecoverySessionAdministratorCloseCodes.ActionNotClosable);
         if (workflow is null || !awaiting.Contains(workflow.State))
             return Refused(RecoverySessionAdministratorCloseCodes.ResultNotAwaited);
+        if (handshaking || (connectedSessionGeneration is not null && connectedSessionGeneration != connection?.SessionGeneration))
+            return Refused(RecoverySessionAdministratorCloseCodes.VehicleHandshakeInProgress);
         if (resultInFlight)
             return Refused(RecoverySessionAdministratorCloseCodes.ResultInFlightOnVehicle);
 

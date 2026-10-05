@@ -21,6 +21,7 @@ public static class RecoverySessionAdministratorCloseCodes
     public const string ActionNotClosable = "RECOVERY_CLOSE_ACTION_NOT_CLOSABLE";
     public const string ResultNotAwaited = "RECOVERY_CLOSE_RESULT_NOT_AWAITED";
     public const string ResultInFlightOnVehicle = "RECOVERY_CLOSE_RESULT_IN_FLIGHT_ON_VEHICLE";
+    public const string VehicleHandshakeInProgress = "RECOVERY_CLOSE_VEHICLE_HANDSHAKE_IN_PROGRESS";
 
     /// <summary>每一个拒绝码给现场人员看的中文说明：Host 入口的拒绝响应里逐条带上（<c>descriptions</c>）。</summary>
     public static IReadOnlyDictionary<string, string> Descriptions { get; } = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -29,11 +30,12 @@ public static class RecoverySessionAdministratorCloseCodes
         [ReasonRequired] = "没有写理由（reason）",
         [SiteVerificationRequired] = "没有写现场核实记录（siteVerification）：例如确认车已离线、换机或清库，或车上续作没有在执行",
         [FieldTooLong] = "有一项写得太长：理由与核实记录各不超过 500 字，办理人、角色、车号与会话号各不超过 128 字",
-        [SessionNotFound] = "这辆车眼下没有未关闭的异常恢复会话，不用再办",
+        [SessionNotFound] = "这辆车眼下没有未关闭的异常恢复会话，或车号填错了（车号区分大小写）：请核对响应里回显的车号",
         [SessionMismatch] = "填的会话号不是这辆车眼下未关闭的那个会话：可以不填会话号，服务端按车找到它；填了就必须一致",
         [SessionNotExecuting] = "这辆车的会话不在执行中：开着的会话在车上选动作即可",
         [ActionNotClosable] = "这个会话选的动作不能从这里关：目前只有修好后续作（RESUME_AFTER_REPAIR）可以",
         [ResultNotAwaited] = "这个会话的动作已经不在等结果：服务端会自己收尾，不用再办",
+        [VehicleHandshakeInProgress] = "车正在重新连接，连接还没完成，它可能正在补交结果：请等连接完成后再办",
         [ResultInFlightOnVehicle] = "车此刻在线，而且它上报的待处理事项里还有这次续作，结果可能还在路上：现在关会丢掉真实结果。请等车把结果交上来，或等车离线后再办",
     };
 }
@@ -72,7 +74,9 @@ public sealed record RecoverySessionAdministratorCloseResult(
 /// </para>
 /// <para>
 /// <b>车在线、结果可能在路上时不关</b>（审查 S1）：车此刻连着、最近一份恢复报告还点名这次续作的 attempt（待处理 attempt 或未结清 attempt），或
-/// 报着任何待交结果，就拒绝（<see cref="RecoverySessionAdministratorCloseCodes.ResultInFlightOnVehicle"/>）。车不在线照样放行——等一辆永远不回来的车，
+/// 报着任何待交结果，就拒绝（<see cref="RecoverySessionAdministratorCloseCodes.ResultInFlightOnVehicle"/>）。车正在握手（SessionHello 已到、连接还不可
+/// 发送），或在线连接的会话代次与库里记录的不同，也拒绝（<see cref="RecoverySessionAdministratorCloseCodes.VehicleHandshakeInProgress"/>）：这时库里的
+/// 待处理事实已被 SessionHello 清空，或不是这条连接的报告，而车正要补交结果。车不在线照样放行——等一辆永远不回来的车，
 /// 正是这个出口要结束的事。是否在线、会话代次与那三项事实，放行拒绝都记进审计。
 /// </para>
 /// <para>
@@ -159,9 +163,10 @@ public sealed class RecoverySessionAdministratorClose(
         try
         {
             long? connected = presence.ConnectedSessionGeneration(agvId);
+            bool handshaking = presence.IsHandshaking(agvId);
             await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
             AdministratorCloseDecision decision = await coordinator.CloseSessionAwaitingResultAsync(
-                agvId, sessionId, connected, facts => read = facts, cancellationToken).ConfigureAwait(false);
+                agvId, sessionId, connected, handshaking, facts => read = facts, cancellationToken).ConfigureAwait(false);
             judged = decision.ExceptionRecoverySessionId;
             if (decision.Codes.Count > 0)
             {
