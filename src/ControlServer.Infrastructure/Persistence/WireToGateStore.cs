@@ -682,13 +682,71 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
         return row.ForcedRecoveryGeneration;
     }
 
-    public Task<long> GetOperationForcedRecoveryGenerationAsync(
+    /// <summary>
+    /// The forced recovery generation of the slot operation <paramref name="slotOperationAttemptId"/>, or null when this
+    /// server has no such operation (control-server#481, see <see cref="RecordUnknownOperationResultAsync"/>).
+    /// </summary>
+    public Task<long?> FindOperationForcedRecoveryGenerationAsync(
         string slotOperationAttemptId,
         CancellationToken cancellationToken) =>
         dbContext.StationOperations
             .Where(row => row.SlotOperationAttemptId == slotOperationAttemptId)
-            .Select(row => row.ForcedRecoveryGeneration)
-            .SingleAsync(cancellationToken);
+            .Select(row => (long?)row.ForcedRecoveryGeneration)
+            .SingleOrDefaultAsync(cancellationToken);
+
+    /// <summary>
+    /// An OperationResult for a slot operation this server has no record of (control-server#481): one the vehicle owes a
+    /// server whose database has since been replaced, or another server instance it was connected to before. Kept as
+    /// historical evidence and acknowledged, changing nothing else. Until #481 the lookup threw, the connection ended, and
+    /// the onboard replays an unacknowledged result in every handshake, so the vehicle never got past it; a refusal would
+    /// only move that loop to the onboard, which gives a row up on four row-content codes alone (8005-agv-onboard-hmi#254).
+    /// </summary>
+    /// <remarks>
+    /// A row already under this result's id is this result: the inbox has refused anything else sent under the same
+    /// messageId (<c>GenerationRebindReplayHash</c>), so a rebound replay is answered as one. The row takes the vehicle's
+    /// current forced recovery generation, as no operation names one; a second, different result for the same unknown attempt
+    /// is acknowledged but not kept again, the attempt's one live row being taken.
+    /// </remarks>
+    public async Task<OperationResultDisposition> RecordUnknownOperationResultAsync(
+        StationOperationResult result,
+        string agvId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        if (await dbContext.OperationResults.AnyAsync(row => row.ResultId == result.ResultId, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            return OperationResultDisposition.Replay;
+        }
+        long generation = await dbContext.VehicleRecoveryGenerations
+            .Where(row => row.AgvId == agvId)
+            .Select(row => (long?)row.ForcedRecoveryGeneration)
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false) ?? 0;
+        bool attemptTaken = await dbContext.OperationResults.AnyAsync(
+            row => row.SlotOperationAttemptId == result.SlotOperationAttemptId &&
+                   row.ForcedRecoveryGeneration == generation &&
+                   row.SupersededByResultId == null,
+            cancellationToken).ConfigureAwait(false);
+        if (!attemptTaken)
+        {
+            dbContext.OperationResults.Add(new OperationResultRow
+            {
+                ResultId = result.ResultId,
+                SlotOperationAttemptId = result.SlotOperationAttemptId,
+                AgvId = agvId,
+                ForcedRecoveryGeneration = generation,
+                ContentHash = result.WireContentSha256,
+                ResultContentSha256 = result.ResultContentSha256,
+                OverallOutcome = result.OverallOutcome,
+                EvidenceJson = JsonSerializer.Serialize(result.SlotEvidence.OrderBy(item => item.SlotNumber)),
+                ObservedAt = result.ObservedAt,
+                HistoricalOnly = true,
+                ReceivedAt = result.ObservedAt
+            });
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        return OperationResultDisposition.HistoricalOnly;
+    }
 
     public Task AcceptWithOrderIntentAsync(
         AcceptedDemandSnapshot snapshot, OrderIntent orderIntent, CancellationToken cancellationToken) =>
@@ -2723,9 +2781,18 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
             return OperationResultDisposition.HistoricalOnly;
         }
 
-        StationOperationRow operation = await dbContext.StationOperations
-            .SingleAsync(row => row.SlotOperationAttemptId == result.SlotOperationAttemptId, cancellationToken)
+        StationOperationRow? operation = await dbContext.StationOperations
+            .SingleOrDefaultAsync(row => row.SlotOperationAttemptId == result.SlotOperationAttemptId, cancellationToken)
             .ConfigureAwait(false);
+        if (operation is null)
+        {
+            // No operation of this server: kept as the record of what the vehicle said, changing nothing
+            // (control-server#481). The processor sends such a result to RecordUnknownOperationResultAsync before it
+            // gets here; this is for any other caller, which would otherwise throw on an inbound line.
+            resultRow.HistoricalOnly = true;
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return OperationResultDisposition.HistoricalOnly;
+        }
         if (operation.DemandId != result.DemandId ||
             operation.OperationType != result.OperationType ||
             operation.ForcedRecoveryGeneration != forcedRecoveryGeneration)

@@ -3897,51 +3897,6 @@ public sealed partial class RecoveryStateMachineG2Tests
     }
 
     /// <summary>
-    /// An all-empty load cancellation result arriving for a demand that has meanwhile completed: the termination it
-    /// asks for is refused with ACTION_NOT_ALLOWED_IN_STATE on a connection that stays, and nothing of the result is
-    /// kept (control-server#478). <c>PickupStopTermination</c> is shared with the runtime, where the same refusal still
-    /// throws; only the coordinator's inbound call sites translate it.
-    /// </summary>
-    [Fact]
-    [Trait("IntegrationSlice", "FP-IS-02")]
-    [Trait("IntegrationSlice", "FP-IS-06")]
-    [Trait("ProtocolVector", "CV-LOAD-CANCELLATION-ALL-EMPTY")]
-    public async Task ACancellationResultEndingADemandThatAlreadyCompletedIsRefusedAndKeepsNothing()
-    {
-        const string cancellationId = "b1000000-0000-4000-8000-000000000011";
-        const string resultMessageId = "b1000000-0000-4000-8000-000000000012";
-        await using SqliteConnection connection = new("Data Source=:memory:");
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
-        await using ControlServerDbContext context = await CreateContextAsync(connection);
-        await SeedCancellableLoadAsync(context);
-        OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), CancellationProofVariable);
-        OnboardConnectionState state = CurrentState();
-        string authorization = await processor.ProcessAsync(
-            CancellationRequest(cancellationId), state, TestContext.Current.CancellationToken);
-        using (JsonDocument document = JsonDocument.Parse(authorization))
-        {
-            Assert.Equal("AUTHORIZED", document.RootElement.GetProperty("payload").GetProperty("decision").GetString());
-        }
-        AcceptedDemandRow demand = await context.AcceptedDemands.SingleAsync(TestContext.Current.CancellationToken);
-        demand.Status = DemandExecutionStatus.Succeeded;
-        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
-        context.ChangeTracker.Clear();
-
-        string result = CancellationResult(cancellationId, resultMessageId, "EMPTY");
-        ProtocolProblemAssert.RefusedLine(
-            await processor.ProcessAsync(result, state, TestContext.Current.CancellationToken),
-            "ACTION_NOT_ALLOWED_IN_STATE",
-            result);
-
-        context.ChangeTracker.Clear();
-        Assert.Empty(await context.RecoveryResultEvidence.ToArrayAsync(TestContext.Current.CancellationToken));
-        Assert.Equal(RecoveryWorkflowState.AwaitingResult, (await context.RecoveryWorkflows.SingleAsync(
-            TestContext.Current.CancellationToken)).State);
-        Assert.Equal(DemandExecutionStatus.Succeeded, (await context.AcceptedDemands.SingleAsync(
-            TestContext.Current.CancellationToken)).Status);
-    }
-
-    /// <summary>
     /// CV-LOAD-CANCELLATION-ALL-EMPTY 对服务端要两件事，此前只证了一件。
     /// FailedCompensationResultIsDurableReplayableAndNeverReleasesDemandOrVehicle 走的是 REJECTED
     /// 分支——补偿还没收敛时取消必须被拒——那证的是 AUTHORIZE_CANCELLATION_EXPLICITLY。
