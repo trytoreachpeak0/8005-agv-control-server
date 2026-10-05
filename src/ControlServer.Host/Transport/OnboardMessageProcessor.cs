@@ -616,27 +616,37 @@ public sealed partial class OnboardMessageProcessor(
                         throw new InboundMessageRejectedException(ServerReasonCodes.ContentHashMismatch,
                             "OperationResult resultContentSha256 does not match its business content.");
                     }
-                    long forcedGeneration = await store.GetOperationForcedRecoveryGenerationAsync(
+                    long? forcedGeneration = await store.FindOperationForcedRecoveryGenerationAsync(
                         attemptId, cancellationToken).ConfigureAwait(false);
+                    StationOperationResult stationResult = new(
+                        messageId,
+                        attemptId,
+                        demandId,
+                        operationType,
+                        overallOutcome,
+                        evidence,
+                        slotResults.All(item => RequiredString(item, "outcome") == "COMPLETED"),
+                        payload.GetProperty("observedAt").GetDateTimeOffset(),
+                        resultContentSha256,
+                        contentHash,
+                        SlotOutcomeReport.FromSlotResults(payload.GetProperty("slotResults")));
                     OperationResultReceipt receipt = await ReceiptAsync(demandId, cancellationToken)
                         .ConfigureAwait(false);
-                    OperationResultDisposition disposition = await store.ApplyOperationResultAsync(
-                        new StationOperationResult(
-                            messageId,
-                            attemptId,
-                            demandId,
-                            operationType,
-                            overallOutcome,
-                            evidence,
-                            slotResults.All(item => RequiredString(item, "outcome") == "COMPLETED"),
-                            payload.GetProperty("observedAt").GetDateTimeOffset(),
-                            resultContentSha256,
-                            contentHash,
-                            SlotOutcomeReport.FromSlotResults(payload.GetProperty("slotResults"))),
-                        agvId,
-                        forcedGeneration,
-                        cancellationToken,
-                        receipt).ConfigureAwait(false);
+                    OperationResultDisposition disposition;
+                    if (forcedGeneration is long knownGeneration)
+                    {
+                        disposition = await store.ApplyOperationResultAsync(
+                            stationResult, agvId, knownGeneration, cancellationToken, receipt).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        // An attempt this server never commanded (control-server#481): acknowledged and kept as evidence,
+                        // since the vehicle replays the result until it is acknowledged. The line itself stays in the inbox.
+                        disposition = await store.RecordUnknownOperationResultAsync(stationResult, agvId, cancellationToken)
+                            .ConfigureAwait(false);
+                        LogUnknownOperationResult(
+                            logger, agvId, attemptId, demandId, messageId, resultContentSha256, contentHash);
+                    }
                     if (disposition is OperationResultDisposition.FailedBeforeStationDeadline
                         or OperationResultDisposition.FailureReasonWithoutTerminalState)
                     {
@@ -1511,6 +1521,19 @@ public sealed partial class OnboardMessageProcessor(
         string messageId,
         string reasonCode,
         string detail);
+
+    [LoggerMessage(EventId = 1106, Level = LogLevel.Warning,
+        Message = "Vehicle {AgvId} reported a result for slot operation {SlotOperationAttemptId} of demand {DemandId} that " +
+                  "this server never commanded (message {MessageId}, resultContentSha256 {ResultContentSha256}, wire " +
+                  "content {ContentSha256}); acknowledged and kept as historical evidence, nothing settled.")]
+    private static partial void LogUnknownOperationResult(
+        ILogger logger,
+        string agvId,
+        string slotOperationAttemptId,
+        string demandId,
+        string messageId,
+        string resultContentSha256,
+        string contentSha256);
 
     [LoggerMessage(EventId = 1101, Level = LogLevel.Warning,
         Message = "Onboard rejected {RejectedMessageType} {RejectedMessageId}: {ReasonCode} at {FieldPath} -- {DisplayMessage}")]
