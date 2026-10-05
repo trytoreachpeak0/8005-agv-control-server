@@ -113,6 +113,7 @@ builder.Services.AddScoped<ControlServer.Host.Runtime.Recovery.RecoverySessionAd
 builder.Services.AddScoped<SlotConfigurationActivationDispatcher>();
 builder.Services.AddSingleton<OnboardPeer>();
 builder.Services.AddSingleton<IOnboardPeer>(services => services.GetRequiredService<OnboardPeer>());
+builder.Services.AddSingleton<IOnboardConnectionPresence>(services => services.GetRequiredService<OnboardPeer>());
 builder.Services.AddHostedService<OnboardTcpServer>();
 builder.Services.AddOptions<JourneyRuntimeOptions>()
     .Bind(builder.Configuration.GetSection(JourneyRuntimeOptions.SectionName))

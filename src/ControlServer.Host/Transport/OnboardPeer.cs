@@ -58,7 +58,7 @@ namespace ControlServer.Host.Transport;
 /// ended the connection instead, so the outcome for the vehicle is the same; what changed is which end closes.
 /// </para>
 /// </remarks>
-public sealed class OnboardPeer : IOnboardPeer
+public sealed class OnboardPeer : IOnboardPeer, IOnboardConnectionPresence
 {
     private readonly object _gate = new();
     private readonly Dictionary<string, (OnboardPeerConnection Connection, long SessionGeneration)> _connections =
@@ -104,6 +104,18 @@ public sealed class OnboardPeer : IOnboardPeer
             {
                 _connections.Remove(agvId);
             }
+        }
+    }
+
+    /// <inheritdoc/>
+    public long? ConnectedSessionGeneration(string agvId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+        lock (_gate)
+        {
+            return _connections.TryGetValue(agvId, out (OnboardPeerConnection, long SessionGeneration) attached)
+                ? attached.SessionGeneration
+                : null;
         }
     }
 

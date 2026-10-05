@@ -6,7 +6,10 @@ using Microsoft.Extensions.Options;
 
 namespace ControlServer.Host.Runtime.Recovery;
 
-/// <summary>A request to close an exception recovery session whose action's result will never come (control-server#483).</summary>
+/// <summary>
+/// A request to close a vehicle's exception recovery session whose action's result will never come (control-server#483). The
+/// vehicle has at most one open session and is what names it; the session id is optional, and must match when given.
+/// </summary>
 public sealed record RecoverySessionAdministratorCloseHttpRequest(
     string? AgvId,
     string? ExceptionRecoverySessionId,
@@ -15,10 +18,14 @@ public sealed record RecoverySessionAdministratorCloseHttpRequest(
     string? SiteVerification,
     string? ClaimedRole);
 
-/// <summary>The decision, closed or refused; <c>Descriptions</c> carries the Chinese text of every refusal code.</summary>
+/// <summary>
+/// The decision, closed or refused. <c>ExceptionRecoverySessionId</c> is the session judged -- the one closed, or the vehicle's
+/// open one it refused to close -- and null when the vehicle has none. <c>Descriptions</c> carries the Chinese text of every
+/// refusal code.
+/// </summary>
 public sealed record RecoverySessionAdministratorCloseResponse(
     string AgvId,
-    string ExceptionRecoverySessionId,
+    string? ExceptionRecoverySessionId,
     string Outcome,
     IReadOnlyList<string> Codes,
     IReadOnlyDictionary<string, string> Descriptions,
@@ -26,7 +33,8 @@ public sealed record RecoverySessionAdministratorCloseResponse(
 
 /// <summary>
 /// The server-side entry out of an exception recovery session stuck in EXECUTING because its result will never come
-/// (control-server#483): a named person on site says why, and the server closes it if it is still awaiting that result.
+/// (control-server#483): a named person on site says why, and the server closes the vehicle's open session if it is still
+/// awaiting that result and the vehicle, when connected, does not report the result as still on its way.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -36,9 +44,9 @@ public sealed record RecoverySessionAdministratorCloseResponse(
 /// <c>VehicleFaultRecovery:enabled</c>.
 /// </para>
 /// <para>
-/// 200 when closed; 409 with every code (and its Chinese description) when refused; 401 without the credential; 422 when no
-/// vehicle or session is named at all; 503 when the credential variable is empty. Every request that gets past those writes an
-/// administrator audit record.
+/// 200 when closed, with the session closed; 409 with every code (and its Chinese description) when refused; 401 without the
+/// credential; 422 when no vehicle is named; 503 when the credential variable is empty. Every request that gets past those
+/// writes an administrator audit record, and so, on a best-effort basis, does one that fails with an exception.
 /// </para>
 /// </remarks>
 public static class RecoverySessionAdministratorCloseEndpoints
@@ -51,8 +59,10 @@ public static class RecoverySessionAdministratorCloseEndpoints
             .WithName("CloseExceptionRecoverySessionByHand")
             .WithSummary("Close an exception recovery session whose result will never come (control-server#483)")
             .WithDescription(
-                "Checks the operator, the reason and the site verification, and that the named vehicle's session is EXECUTING "
-                + "a RESUME_AFTER_REPAIR still awaiting its result; then judges the resume RecoveryRequired, settles its command and "
+                "Checks the operator, the reason and the site verification, that the named vehicle's one open session is EXECUTING "
+                + "a RESUME_AFTER_REPAIR still awaiting its result (and is the session named, when one is), and that a connected "
+                + "vehicle does not report the resume's attempt or any result as pending; then judges the resume RecoveryRequired, "
+                + "settles its command and "
                 + "closes the session with a CLOSED snapshot. The demand, journey, lease and vehicle stay as they are, for a new "
                 + "session opened on the vehicle.")
             .Produces<RecoverySessionAdministratorCloseResponse>(StatusCodes.Status200OK)
@@ -93,25 +103,25 @@ public static class RecoverySessionAdministratorCloseEndpoints
         }
 
         // A missing operator, reason or site verification is an unmet criterion, audited with the others; only a request that
-        // names no vehicle or no session has nothing to judge.
-        if (request is null || string.IsNullOrWhiteSpace(request.AgvId) || string.IsNullOrWhiteSpace(request.ExceptionRecoverySessionId))
+        // names no vehicle has nothing to judge.
+        if (request is null || string.IsNullOrWhiteSpace(request.AgvId))
         {
             return TypedResults.Problem(
                 statusCode: StatusCodes.Status422UnprocessableEntity,
                 title: "Incomplete exception recovery session closing request",
-                detail: "agvId and exceptionRecoverySessionId are both required.");
+                detail: "agvId is required.");
         }
 
         string agvId = request.AgvId.Trim();
-        string sessionId = request.ExceptionRecoverySessionId.Trim();
         RecoverySessionAdministratorCloseResult result = await closing.CloseAsync(
             new RecoverySessionAdministratorCloseRequest(
-                agvId, sessionId, request.OperatorId, request.Reason, request.SiteVerification, request.ClaimedRole),
+                agvId, request.ExceptionRecoverySessionId, request.OperatorId, request.Reason, request.SiteVerification,
+                request.ClaimedRole),
             cancellationToken).ConfigureAwait(false);
 
         RecoverySessionAdministratorCloseResponse body = new(
             agvId,
-            sessionId,
+            result.ExceptionRecoverySessionId,
             result.Closed ? "CLOSED" : "REJECTED",
             result.Codes,
             result.Codes.Distinct(StringComparer.Ordinal).ToDictionary(

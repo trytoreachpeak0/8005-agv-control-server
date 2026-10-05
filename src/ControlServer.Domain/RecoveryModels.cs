@@ -10,6 +10,16 @@ public enum RecoveryWorkflowState
     HistoricalOnly
 }
 
+/// <summary>Outcomes a recovery workflow is judged on by the server itself rather than by a result. Not wire codes.</summary>
+public static class RecoveryWorkflowOutcomes
+{
+    /// <summary>
+    /// An administrator closed the workflow's session because its result would never come (control-server#483). A result
+    /// arriving afterwards is refused whole, and the refusal names this.
+    /// </summary>
+    public const string AdministratorClosed = "ADMINISTRATOR_CLOSED";
+}
+
 public sealed record ExceptionRecoverySessionProjection(
     string ExceptionRecoverySessionId,
     long RecoverySessionRevision,
