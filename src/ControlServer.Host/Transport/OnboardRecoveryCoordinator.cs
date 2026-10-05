@@ -150,8 +150,16 @@ public sealed class OnboardRecoveryCoordinator(
             _ => RequiredString(payload, "recoveryActionId")
         };
         RecoveryWorkflowRow? workflow = await dbContext.RecoveryWorkflows.SingleOrDefaultAsync(
-            row => row.WorkflowId == workflowId && row.AgvId == agvId,
+            row => row.WorkflowId == workflowId,
             cancellationToken).ConfigureAwait(false);
+        // A workflow this server knows, opened for another vehicle, is a known business id with other content -- refused,
+        // never taken as unknown: the acknowledgement below is only for an id this server has no record of (review of
+        // #489, S2). Until #481 this read filtered on the vehicle too, and such a result ended the connection.
+        if (workflow is not null && workflow.AgvId != agvId)
+        {
+            throw new InboundMessageRejectedException(ServerReasonCodes.BusinessIdContentConflict,
+                "Recovery result names a workflow of another vehicle.");
+        }
         if (workflow is null)
         {
             return await RecordUnknownWorkflowResultAsync(
@@ -1397,8 +1405,10 @@ public sealed class OnboardRecoveryCoordinator(
         // the onboard keeps a refused row on file unless the code is one of four row-content conflicts
         // (8005-agv-onboard-hmi#254), so it came back in every handshake. Checked here, inside the inbox's write
         // transaction, before any termination is staged; PickupStopTermination still throws on such a demand for its
-        // runtime callers.
-        if (await DemandDeliveredAsync(workflow.DemandId, cancellationToken).ConfigureAwait(false))
+        // runtime callers. A correction is not an ending: it settles nothing about the demand, and one opened on a demand
+        // already unloaded is an ordinary path (Batch7StationYieldTests), so it reconciles as before (review of #489, S1).
+        if (messageType != "LoadCorrectionResult" &&
+            await DemandDeliveredAsync(workflow.DemandId, cancellationToken).ConfigureAwait(false))
         {
             workflow.State = RecoveryWorkflowState.RecoveryRequired;
             LogResultForDeliveredDemand(
