@@ -513,6 +513,29 @@ public sealed record ManualChargingReturnToServiceDecision(
 public sealed class ProtocolIdentityMismatchException(string message) : InvalidOperationException(message);
 public sealed class StaleSessionGenerationException(string message) : InvalidOperationException(message);
 public sealed class ProtocolContentConflictException(string message) : InvalidOperationException(message);
+
+/// <summary>
+/// An inbound message from the vehicle that the server read and will not take, for a reason the protocol names
+/// (control-server#478). Thrown only while judging an inbound message; the processor's inbound boundary answers it
+/// with a <c>ProtocolProblem</c> correlated to that message, writes nothing, and keeps the connection.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>A type of its own, not a <see cref="ProtocolContentConflictException"/>.</b> That one is also thrown by the
+/// server's own outbound bookkeeping (a slot operation or outbound envelope replayed with different content), which is
+/// a server fault and must still end the work it is in. Catching it at the inbound boundary would tell the vehicle it
+/// had sent something wrong when the server had. So only this type is caught there, and the outbound sites keep theirs.
+/// </para>
+/// <para>
+/// It carries the reason code and not the rejected message's identity: every site that throws it is judging the one
+/// message the boundary is processing, so the boundary already holds that messageId and messageType, and several
+/// sites (a snapshot revision, a recovery workflow) never see them.
+/// </para>
+/// </remarks>
+public sealed class InboundMessageRejectedException(string reasonCode, string message) : InvalidOperationException(message)
+{
+    public string ReasonCode { get; } = reasonCode;
+}
 public sealed class UnsafePhysicalEvidenceException(string message) : InvalidOperationException(message);
 public sealed class UnsafeMovementAuthorizationException(string message) : InvalidOperationException(message);
 public sealed class ActiveUnlockSetExpansionException(string message) : InvalidOperationException(message);

@@ -79,6 +79,13 @@ namespace ControlServer.Host.Runtime;
 /// </remarks>
 public sealed class PickupStopTermination(ControlServerDbContext dbContext, PlanRevisionRouting? routing = null)
 {
+    /// <summary>
+    /// The refusal <see cref="StageDemandTerminationAsync"/> throws for a demand that already completed. Named so the
+    /// recovery coordinator can translate exactly this refusal, and no other exception of the same type that
+    /// <c>StageAsync</c> may come to throw, when an inbound recovery result asks for it (control-server#478).
+    /// </summary>
+    public const string CompletedDemandRefusal = "A completed demand cannot be terminated at its pickup stop.";
+
     /// <summary>Ends the demand the journey row names, its anchor.</summary>
     public Task StageAsync(
         JourneyRuntimeRow runtime,
@@ -260,8 +267,7 @@ public sealed class PickupStopTermination(ControlServerDbContext dbContext, Plan
             .SingleAsync(row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
         if (demand.Status == DemandExecutionStatus.Succeeded)
         {
-            throw new BusinessIdentityConflictException(
-                "A completed demand cannot be terminated at its pickup stop.");
+            throw new BusinessIdentityConflictException(CompletedDemandRefusal);
         }
         demand.Status = DemandExecutionStatus.Cancelled;
         JourneyDemandRow? membership = await dbContext.Set<JourneyDemandRow>()

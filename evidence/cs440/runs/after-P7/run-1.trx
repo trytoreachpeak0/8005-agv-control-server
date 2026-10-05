@@ -1,0 +1,48 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="6ed33e4c-a171-47d7-8905-23547b30bd92" name="szy@LAB-WIN-01 2026-10-04 19:01:17" runUser="LAB-WIN-01\szy" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-04T19:01:17.8236846+08:00" queuing="2026-10-04T19:01:17.8236854+08:00" start="2026-10-04T19:01:01.1213106+08:00" finish="2026-10-04T19:01:50.2820551+08:00" />
+  <TestSettings name="default" id="46f54772-1040-4460-b8d5-ba0d238c0a68">
+    <Deployment runDeploymentRoot="szy_LAB-WIN-01_2026-10-04_19_01_17" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="985defe6-4ba3-4065-9c0f-12131b925edc" testId="6b0e9fb6-8979-dc32-1e4d-9a0c1c58b3a1" testName="ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: null)" computerName="LAB-WIN-01" duration="00:00:14.2321585" startTime="2026-10-04T19:01:17.8004067+08:00" endTime="2026-10-04T19:01:32.0327500+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="985defe6-4ba3-4065-9c0f-12131b925edc">
+      <Output>
+        <StdOut>服务端日志：1002、1003；聋了之后车往服务端送了 1720 字节；最长的一次推送 3817 ms；最后一次写成功的推送开始于 t=1.9s；旧代次离开路由表：t=7.0s；推送的失败：；1003 的异常：OnboardConnectionUnavailableException: A write to the Onboard peer 'AGV-POWER-01' (session generation 1) did not finish within 5 s; the connection was closed and the line stays unacknowledged for the replay after the reconnect.</StdOut>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="b1e4ed47-2d3a-4d80-ada2-520932b758ac" testId="e31971b0-48f1-6658-cf18-22fc0ffe3604" testName="ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: 1000)" computerName="LAB-WIN-01" duration="00:00:12.5637028" startTime="2026-10-04T19:01:05.2201092+08:00" endTime="2026-10-04T19:01:17.7935997+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="b1e4ed47-2d3a-4d80-ada2-520932b758ac">
+      <Output>
+        <StdOut>服务端日志：1002、1003；聋了之后车往服务端送了 859 字节；最长的一次推送 2 ms；最后一次写成功的推送开始于 t=1.9s；旧代次离开路由表：t=3.0s；推送的失败：；1003 的异常：OnboardConnectionUnavailableException: A write to the Onboard peer 'AGV-POWER-01' (session generation 1) did not finish within 1 s; the connection was closed and the line stays unacknowledged for the replay after the reconnect.</StdOut>
+      </Output>
+    </UnitTestResult>
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: null)" storage="c:\users\szy\desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\controlserver.tests\bin\release\net8.0\win-x64\controlserver.tests.dll" id="6b0e9fb6-8979-dc32-1e4d-9a0c1c58b3a1">
+      <Execution id="985defe6-4ba3-4065-9c0f-12131b925edc" />
+      <TestMethod codeBase="C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="ControlServer.Tests.OnboardPowerLossReconnectTests" name="AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects" />
+    </UnitTest>
+    <UnitTest name="ControlServer.Tests.OnboardPowerLossReconnectTests.AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects(writeTimeoutMilliseconds: 1000)" storage="c:\users\szy\desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\controlserver.tests\bin\release\net8.0\win-x64\controlserver.tests.dll" id="e31971b0-48f1-6658-cf18-22fc0ffe3604">
+      <Execution id="b1e4ed47-2d3a-4d80-ada2-520932b758ac" />
+      <TestMethod codeBase="C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs440-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="ControlServer.Tests.OnboardPowerLossReconnectTests" name="AVehicleThatKeepsTalkingButStopsReadingIsLetGoAndReconnects" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="6b0e9fb6-8979-dc32-1e4d-9a0c1c58b3a1" executionId="985defe6-4ba3-4065-9c0f-12131b925edc" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="e31971b0-48f1-6658-cf18-22fc0ffe3604" executionId="b1e4ed47-2d3a-4d80-ada2-520932b758ac" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="2" executed="2" passed="2" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 8.0.31)&#xD;
+[xUnit.net 00:00:00.78]   Discovering: ControlServer.Tests&#xD;
+[xUnit.net 00:00:03.23]   Discovered:  ControlServer.Tests&#xD;
+[xUnit.net 00:00:03.49]   Starting:    ControlServer.Tests&#xD;
+[xUnit.net 00:00:48.54]   Finished:    ControlServer.Tests (ID = 'e9a86b65d07f6a984a4a75af2821531c21eb38df17b507165946674f4b81024f')&#xD;
+</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>

@@ -1,0 +1,11 @@
+base origin/fp/v2-impl = 0788a7fd77b4959967cf4c1c9dc9f0ba2d825a12
+1. run-staged-g3.ps1, default edited to 1111111111111111111111111111111111111111, no parameter
+   controlServer used: 1111111111111111111111111111111111111111 (committed binding 8d0a644edfd4be30b99f5bf03bf17060ea0b0727)
+   commitSources: {"controlServerCommitSource":"SHARED_BINDING","onboardCommitSource":"SHARED_BINDING","simulatorCommitSource":"SHARED_BINDING","protocolCommitSource":"SHARED_BINDING"}
+   graded: {"formalSlicePass":true,"formalSliceWithheldReason":null}
+2. run-journey-g3.ps1 -SharedRunnerSource <a copy whose OnboardCommit default is 2222222222222222222222222222222222222222>
+   onboard used: 2222222222222222222222222222222222222222 (committed binding 4e40e196205d55c363f97850d10bd18df9a686c0)
+   sources: {"controlServerCommitSource":"SHARED_BINDING","onboardCommitSource":"SHARED_BINDING"}
+   graded: {"formalSlicePass":true,"formalSliceWithheldReason":null}
+3. a record with runnerWorktreeCleanAtStart false (the 2026-09-22 formal evidence's shape)
+   graded: {"formalSlicePass":true,"formalSliceWithheldReason":null}

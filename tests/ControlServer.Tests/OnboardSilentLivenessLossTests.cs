@@ -313,24 +313,7 @@ public sealed class OnboardSilentLivenessLossTests
         await using LivenessRig rig = await LivenessRig.StartAsync(TimeSpan.FromMilliseconds(250));
 
         // 对照：连接活着的时候，同样构造的一行会进收件箱。
-        string acceptedMessageId = Guid.NewGuid().ToString("D");
-        using (TcpClient live = new())
-        {
-            await live.ConnectAsync(IPAddress.Loopback, rig.Port, TestContext.Current.CancellationToken);
-            NetworkStream liveStream = live.GetStream();
-            StreamWriter writer = new(liveStream, new UTF8Encoding(false), leaveOpen: true)
-            {
-                AutoFlush = true,
-                NewLine = "\n"
-            };
-            using StreamReader reader = new(liveStream, Encoding.UTF8, leaveOpen: true);
-            await writer.WriteLineAsync(
-                SessionHello(acceptedMessageId).AsMemory(), TestContext.Current.CancellationToken);
-            // 等的是服务端答复这个事实，不是等够多少毫秒。
-            string? accepted = await ReadWithinGuardAsync(
-                reader, "对照那一半没成立：服务端对活着的连接上这一行没有任何答复。");
-            Assert.NotNull(accepted);
-        }
+        string acceptedMessageId = await SendOnALiveConnectionAsync(rig);
 
         // 被静默关闭之后再寄的一行。
         string lateMessageId = Guid.NewGuid().ToString("D");
@@ -368,6 +351,62 @@ public sealed class OnboardSilentLivenessLossTests
     }
 
     // --- 辅助 ----------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// 对照那一半：在一条活着的连接上寄一行 <c>SessionHello</c>，等服务端答复它，交回这一行的 messageId。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 窗口只有 250 ms，从服务端开始服务这条连接起算；客户端连上之后到这一行写到对端之间，满载的机器上可能就超过它，服务端于是
+    /// 照规矩静默关闭（1005）——这一行还没到，连接就不在了，对照没造出来（control-server#440 扫描时发现，CI 上没有观测到过）。
+    /// </para>
+    /// <para>
+    /// 所以只在<b>这一种</b>结局上换一条新连接重来：这一次连接以 1005 收场。1005 在关连接之前记下，客户端读到 EOF 时它已在日志里，
+    /// 不是猜的。其它任何结局——服务端答了、或者以别的方式关掉——都原样交回断言：答复要非空，「活着的连接上这一行会被处理」的
+    /// 含义不变。重来有上限，一直这样就把最后一次交给断言，照样红。
+    /// </para>
+    /// </remarks>
+    private static async Task<string> SendOnALiveConnectionAsync(LivenessRig rig)
+    {
+        const int MaxConnections = 10;
+        for (int attempt = 1; ; attempt++)
+        {
+            string messageId = Guid.NewGuid().ToString("D");
+            int silentClosesBefore = rig.SilentCloses;
+            using TcpClient live = new();
+            await live.ConnectAsync(IPAddress.Loopback, rig.Port, TestContext.Current.CancellationToken);
+            NetworkStream liveStream = live.GetStream();
+            StreamWriter writer = new(liveStream, new UTF8Encoding(false), leaveOpen: true)
+            {
+                AutoFlush = true,
+                NewLine = "\n"
+            };
+            using StreamReader reader = new(liveStream, Encoding.UTF8, leaveOpen: true);
+            string? accepted;
+            try
+            {
+                await writer.WriteLineAsync(SessionHello(messageId).AsMemory(), TestContext.Current.CancellationToken);
+                // 等的是服务端答复这个事实，不是等够多少毫秒。
+                accepted = await ReadWithinGuardAsync(
+                    reader, "对照那一半没成立：服务端对活着的连接上这一行没有任何答复。");
+            }
+            catch (IOException) when (rig.SilentCloses > silentClosesBefore && attempt < MaxConnections)
+            {
+                // Closed for silence with the line still unread on its side: a reset rather than an EOF. Same ending.
+                continue;
+            }
+            if (accepted is null && rig.SilentCloses > silentClosesBefore && attempt < MaxConnections)
+            {
+                continue;
+            }
+            Assert.True(
+                accepted is not null,
+                $"对照那一半没成立：第 {attempt} 条连接上服务端没有答复这一行就关了连接" +
+                $"（这条连接上静默关闭 {rig.SilentCloses - silentClosesBefore} 次）。");
+            TestContext.Current.TestOutputHelper?.WriteLine($"对照那一半用了 {attempt} 条连接。");
+            return messageId;
+        }
+    }
 
     /// <summary>
     /// 读一行，带一个防挂死的上限。
@@ -510,6 +549,21 @@ public sealed class OnboardSilentLivenessLossTests
 
         public int Port { get; private init; }
 
+        /// <summary>What the listener logged; 1005 is a connection it closed for silence.</summary>
+        public EventRecordingLogger<OnboardTcpServer> Log { get; private init; } = new();
+
+        /// <summary>How many connections the listener has closed for silence so far.</summary>
+        public int SilentCloses
+        {
+            get
+            {
+                lock (Log.Entries)
+                {
+                    return Log.Entries.Count(entry => entry.EventId.Id == 1005);
+                }
+            }
+        }
+
         public static async Task<LivenessRig> StartAsync(TimeSpan idleTimeout)
         {
             Environment.SetEnvironmentVariable(CredentialVariable, Credential);
@@ -533,6 +587,7 @@ public sealed class OnboardSilentLivenessLossTests
             ServiceProvider provider = services.BuildServiceProvider();
 
             int port = ReserveFreePort();
+            EventRecordingLogger<OnboardTcpServer> log = new();
             OnboardTcpServer server = new(
                 Options.Create(new OnboardTransportOptions
                 {
@@ -542,11 +597,11 @@ public sealed class OnboardSilentLivenessLossTests
                 }),
                 provider.GetRequiredService<IServiceScopeFactory>(),
                 new OnboardPeer(),
-                NullLogger<OnboardTcpServer>.Instance,
+                log,
                 TimeProvider.System,
                 idleTimeout);
             await server.StartAsync(TestContext.Current.CancellationToken);
-            return new LivenessRig(connection, context, provider, server) { Port = port };
+            return new LivenessRig(connection, context, provider, server) { Port = port, Log = log };
         }
 
         public async ValueTask DisposeAsync()

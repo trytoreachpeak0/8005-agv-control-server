@@ -1,0 +1,4 @@
+head=88086c4bcac2c39abe4767a5d17d31e178b54004 probe=evidence/cs440/probes/P4-attach-lags-answer.diff filter=FullyQualifiedName~OnboardPowerLossReconnectTests.ReconnectsAfterAPowerCutThatLeftTheOldConnectionHalfOpen
+ src/ControlServer.Host/Transport/OnboardPeer.cs      | 3 +++
+ src/ControlServer.Host/Transport/OnboardTcpServer.cs | 8 ++++++++
+ 2 files changed, 11 insertions(+)

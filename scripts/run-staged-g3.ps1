@@ -221,7 +221,14 @@ if ($bindingReader.Count -ne 1) {
     throw "Expected exactly one function 'Get-SharedCommitBinding' in $bindingReaderSource, found $($bindingReader.Count)."
 }
 Invoke-Expression $bindingReader[0].Extent.Text
-$commitSources = Get-G3CommitSources -Binding (Get-SharedCommitBinding -Path (Join-Path $PSScriptRoot 'run-staged-g3.ps1')) -Actual ([ordered]@{
+# control-server#466: the binding the run is compared with is the one committed at the runner repository's HEAD,
+# so a default edited on disk and run with no parameter is an override too. Measured before anything is written.
+# The disk reading stands in only when HEAD cannot say, and then runnerSource already withholds the pass.
+$runnerProvenance = Get-G3RunnerProvenance -ScriptRoot $PSScriptRoot -Inputs ([ordered]@{
+        ControlServerRepository = @{ Given = $ControlServerRepository; Default = (Split-Path -Parent $PSScriptRoot) }
+    })
+Write-G3RunnerProvenance -Provenance $runnerProvenance
+$commitSources = Get-G3CommitSources -Binding ($runnerProvenance.bindingAtHead ?? (Get-SharedCommitBinding -Path (Join-Path $PSScriptRoot 'run-staged-g3.ps1'))) -Actual ([ordered]@{
         ControlServerCommit = $ControlServerCommit
         OnboardCommit = $OnboardCommit
         SimulatorCommit = $SimulatorCommit
@@ -3723,6 +3730,10 @@ $commitsRecord = [ordered]@{
     protocolCommitSource = $commitSources['protocolCommitSource']
     harness = $harnessCommit
     harnessWorktreeCleanAtStart = $harnessWorktreeClean
+    # control-server#466: the repository this script lives in, which harness* above need not be.
+    runner = $runnerProvenance.runnerCommit
+    runnerWorktreeCleanAtStart = $runnerProvenance.runnerWorktreeClean
+    runnerSource = $runnerProvenance.runnerSource
 }
 
 $gateResultPaths = Write-G3GateResults -RunKind $G3RunKind -EvidenceRoot $EvidenceRoot `

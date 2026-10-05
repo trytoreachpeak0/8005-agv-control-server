@@ -187,21 +187,31 @@ public sealed class ExpectedActionOverdueTests
     [Trait("IntegrationSlice", "FP-IS-15")]
     public async Task AMidSessionSnapshotStillMayNotChangeARevisionsContentOrGoBackwards()
     {
-        // 一条冲突都不吞：同一版本换内容、版本倒退，与会话里任何安全消息一样按内容冲突失败关闭，库不动。
+        // 一条冲突都不吞：同一版本换内容、版本倒退，与会话里任何安全消息一样按内容冲突拒收；修订号与哈希不动，出发判定按 control-server#478（审查 S2）清空、等新快照。
         await using Fixture fixture = await Fixture.CreateAsync();
         await fixture.ReachReadyAsync();
         await fixture.SafetyChangedAsync(2, affectedSlots: [3]);
         SessionRecoveryRow before = await fixture.SessionAsync();
 
-        await Assert.ThrowsAsync<ProtocolContentConflictException>(
-            () => fixture.SafetySnapshotAsync(2, Slots(slot3Lock: "UNLOCKED")));
-        await Assert.ThrowsAsync<ProtocolContentConflictException>(
-            () => fixture.SafetySnapshotAsync(1, Slots()));
+        // control-server#478: refused with a ProtocolProblem naming each, on a connection that stays.
+        string sameRevisionOtherContent = await fixture.SafetySnapshotAsync(2, Slots(slot3Lock: "UNLOCKED"));
+        ProtocolProblemAssert.RefusedSafety(
+            sameRevisionOtherContent, "SNAPSHOT_REVISION_CONTENT_CONFLICT", fixture.LastSentMessageId!, "SafetyStateSnapshot",
+            "SessionReadiness", "SafetyStateSnapshotRequested");
+        string goingBackwards = await fixture.SafetySnapshotAsync(1, Slots());
+        ProtocolProblemAssert.RefusedSafety(
+            goingBackwards, "SNAPSHOT_REVISION_REGRESSION", fixture.LastSentMessageId!, "SafetyStateSnapshot",
+            "SafetyStateSnapshotRequested");
 
         SessionRecoveryRow after = await fixture.SessionAsync();
         Assert.Equal(before.SafetyRevision, after.SafetyRevision);
         Assert.Equal(before.SafetyHash, after.SafetyHash);
-        Assert.Equal(SessionReadiness.Ready, after.Readiness);
+        // control-server#478 review S2: the refused snapshot leaves the baseline untrusted until a fresh one arrives, so the
+        // departure verdict is cleared and the session no longer reads Ready (this asserted Ready while a refusal still ended
+        // the connection, which brought a new baseline with the reconnect).
+        Assert.Equal(SessionReadiness.RecoveryRequired, after.Readiness);
+        Assert.Equal("DEPARTURE_SAFETY_NOT_READY", after.ReasonCode);
+        Assert.Null(after.DepartureSafe);
     }
 
     [Fact]
@@ -462,14 +472,7 @@ public sealed class ExpectedActionOverdueTests
         string address = app.Services.GetRequiredService<IServer>()
             .Features.Get<IServerAddressesFeature>()!.Addresses.Single();
         using HttpClient client = new() { BaseAddress = new Uri(address) };
-        // 存活窗口只有 6 秒，起 Kestrel 之后先让车说一句话，免得在慢机器上被判失联。
-        await fixture.HeartbeatAsync();
-
-        using HttpResponseMessage response = await client.GetAsync(
-            new ExpectedActionOverdueCard().SourcePath, TestContext.Current.CancellationToken);
-        response.EnsureSuccessStatusCode();
-        using JsonDocument fact = JsonDocument.Parse(
-            await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        using JsonDocument fact = await ReadOverHttpWhileLinkedAsync(fixture, client);
         using HttpResponseMessage write = await client.PostAsJsonAsync(
             new ExpectedActionOverdueCard().SourcePath, new { }, TestContext.Current.CancellationToken);
         await app.StopAsync(TestContext.Current.CancellationToken);
@@ -484,6 +487,45 @@ public sealed class ExpectedActionOverdueTests
 
         string html = new ExpectedActionOverdueCard().RenderFact(fact.RootElement);
         Assert.Contains("关好3号仓门", html, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 让车说一句话，再经 HTTP 读端点；端点若说这台车失联，就再来一遍，直到它答出这台车在线时的样子。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 端点经默认构造挂上，用的是真时钟，存活窗口是 <see cref="OnboardAlarmProjectionStore.LinkLivenessTimeout"/>（6 秒）。满载的
+    /// 机器上心跳与读之间可能超过它，端点于是如实把车列进 <c>unavailableVehicles</c>（「车辆失联」）、<c>slots</c> 为空——那是
+    /// 产品该有的答复，不是这条用例要测的东西（control-server#448）。所以只在<b>这一种</b>答复上重来，重来时先再发一次心跳；
+    /// 其它任何答复原样交回给断言。
+    /// </para>
+    /// <para>
+    /// 失联判定本身的边界由 <see cref="AVehicleThatIsNotLinkedIsListedAsUnknownRatherThanShowingItsLastOverdueSlots"/> 用可拨的
+    /// 时钟钉住，这里不重复。重来有上限：一直失联就把最后一份答复交出去，断言照样红。
+    /// </para>
+    /// </remarks>
+    private static async Task<JsonDocument> ReadOverHttpWhileLinkedAsync(Fixture fixture, HttpClient client)
+    {
+        const int MaxReads = 10;
+        for (int read = 1; ; read++)
+        {
+            await fixture.HeartbeatAsync();
+            using HttpResponseMessage response = await client.GetAsync(
+                new ExpectedActionOverdueCard().SourcePath, TestContext.Current.CancellationToken);
+            response.EnsureSuccessStatusCode();
+            JsonDocument fact = JsonDocument.Parse(
+                await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+            bool linkDown = fact.RootElement.GetProperty("unavailableVehicles").EnumerateArray().Any(vehicle =>
+                vehicle.GetProperty("agvId").GetString() == AgvId &&
+                vehicle.GetProperty("reason").GetString() == VehicleAlarmProjection.LinkDownReason);
+            if (!linkDown || read == MaxReads)
+            {
+                TestContext.Current.TestOutputHelper?.WriteLine(
+                    $"读了 {read} 次端点，前 {read - 1} 次答的是这台车失联；最后一次{(linkDown ? "仍然失联" : "答的是它在线")}。");
+                return fact;
+            }
+            fact.Dispose();
+        }
     }
 
     // --- 卡片 ------------------------------------------------------------------------------------------------------
@@ -979,8 +1021,13 @@ public sealed class ExpectedActionOverdueTests
             return JsonDocument.Parse(JsonSerializer.Serialize(result));
         }
 
-        private Task<string> Send(string messageType, long? generation, object payload) =>
-            Processor.ProcessAsync(
+        /// <summary>The messageId of the last line sent, so an answer's correlation can be checked against the request.</summary>
+        public string? LastSentMessageId { get; private set; }
+
+        private Task<string> Send(string messageType, long? generation, object payload)
+        {
+            LastSentMessageId = Guid.NewGuid().ToString("D");
+            return Processor.ProcessAsync(
                 JsonSerializer.Serialize(new
                 {
                     protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
@@ -988,7 +1035,7 @@ public sealed class ExpectedActionOverdueTests
                     protocolReleaseVersion = ProtocolCandidateIdentity.ReleaseVersion,
                     protocolReleaseManifestSha256 = ProtocolCandidateIdentity.ManifestSha256,
                     messageType,
-                    messageId = Guid.NewGuid().ToString("D"),
+                    messageId = LastSentMessageId,
                     correlationId = (string?)null,
                     agvId = AgvId,
                     sessionGeneration = generation,
@@ -997,6 +1044,7 @@ public sealed class ExpectedActionOverdueTests
                 }),
                 State,
                 TestContext.Current.CancellationToken);
+        }
 
         public async ValueTask DisposeAsync()
         {

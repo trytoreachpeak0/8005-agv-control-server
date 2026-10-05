@@ -106,15 +106,23 @@ $OnboardRemoteRef = $onboardRemoteRefCandidates[0].DefaultValue.Value
 $commitBindingSourceSha256 =
     (Get-FileHash -LiteralPath $CommitBindingSource -Algorithm SHA256).Hash.ToLowerInvariant()
 
-# This runner executes from the working tree rather than from an exact clone, so its own identity has
-# to be read back. Read it before anything is written, and commit the runner before the run that will
-# be archived: a run started from a dirty tree cannot report a trustworthy runner identity.
-$runnerCommit = (& git -C $ControlServerRepository rev-parse HEAD).Trim()
-if ($LASTEXITCODE -ne 0) { throw "Unable to read the runner commit from $ControlServerRepository" }
-$runnerWorktreeClean = @(& git -C $ControlServerRepository status --porcelain).Count -eq 0
-
 $G3RunKind = 'STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT'
 . (Join-Path $PSScriptRoot 'g3-slice-evidence.ps1')
+# This runner executes from the working tree rather than from an exact clone, so its own identity has
+# to be read back. Read it before anything is written, and commit the runner before the run that will
+# be archived: a run started from a dirty tree cannot report a trustworthy runner identity, and since
+# control-server#466 does not grade a slice as a formal pass.
+# control-server#466: the repository this script lives in, not -ControlServerRepository, and the binding as HEAD
+# committed it. The commits above are read off the file on disk, so until #466 their four sources were the literal
+# SHARED_BINDING whatever that file said; now an edited default there is SELF_CHECK_OVERRIDE.
+$runnerProvenance = Get-G3RunnerProvenance -ScriptRoot $PSScriptRoot -Inputs ([ordered]@{
+        ControlServerRepository = @{ Given = $ControlServerRepository; Default = (Split-Path -Parent $PSScriptRoot) }
+    })
+Write-G3RunnerProvenance -Provenance $runnerProvenance
+$runnerCommit = $runnerProvenance.runnerCommit
+if ($null -eq $runnerCommit) { throw "Unable to read the runner commit: $($runnerProvenance.runnerSource)" }
+$runnerWorktreeClean = $runnerProvenance.runnerWorktreeClean
+$commitSources = Get-G3CommitSources -Binding ($runnerProvenance.bindingAtHead ?? $commitBinding) -Actual $commitBinding
 # Before the clones and the builds, not after: naming a slice this runner cannot certify
 # should cost a message, not an hour of cloning and publishing.
 if (-not [string]::IsNullOrEmpty($Slice)) { Assert-G3SliceIsClaimedBy -RunKind $G3RunKind -Slice $Slice }
@@ -1116,15 +1124,16 @@ $status = if ($null -ne $runError) {
 # construction and is recorded as such, in the same shape as the runners that can override one.
 $commitsRecord = [ordered]@{
     controlServer = $ControlServerCommit
-    controlServerCommitSource = 'SHARED_BINDING'
+    controlServerCommitSource = $commitSources['controlServerCommitSource']
     onboardHmi = $OnboardCommit
-    onboardCommitSource = 'SHARED_BINDING'
+    onboardCommitSource = $commitSources['onboardCommitSource']
     slotsSimulator = $SimulatorCommit
-    simulatorCommitSource = 'SHARED_BINDING'
+    simulatorCommitSource = $commitSources['simulatorCommitSource']
     protocol = $ProtocolCommit
-    protocolCommitSource = 'SHARED_BINDING'
+    protocolCommitSource = $commitSources['protocolCommitSource']
     runner = $runnerCommit
     runnerWorktreeCleanAtStart = $runnerWorktreeClean
+    runnerSource = $runnerProvenance.runnerSource
 }
 
 $gateResultPaths = Write-G3GateResults -RunKind $G3RunKind -EvidenceRoot $EvidenceRoot `
